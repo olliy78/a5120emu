@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, in Umsetzung — S1, S2, S3 erledigt (§12).
+**Stand:** 2026-09-30, in Umsetzung — S1–S4 erledigt (§12.1).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -578,6 +578,42 @@ am Chip läuft er weiter) → `teilerTakte` liefert danach 0; `rxIntEnabled()` l
 statt D4–3; RR0 D6/D1 nie gesetzt; RTS wirkt ohne Verzögerung. **S5 muss die CTS/DCD-Pegel je
 Karte bewusst setzen** — aktiv getrieben wird RR0 D5/D3 für den Gast sichtbar 1 (offener
 Punkt 2).
+
+**AP-S4 — erledigt 2026-10-01** (`d4f67b6`). `core/serial/{anschluss,wandler,transport,hub}.{h,cpp}`,
+`sio_format.h`, Bibliothek `k1520_serial` (auf `_net`, `_codec`, Threads; `libk1520core`
+bindet sie erst in S5). Namespace `k1520::serial` (Codecs weiter in `::serial`).
+`core/version.h` (`K1520_VERSION_TEXT`) ist jetzt die gemeinsame Quelle für `k1520_version()`
+und die RFC-2217-Signatur. `net::gegenstelle(fd)` ergänzt.
+- **Für die Karten (S5):** `SerialAnschluss` — Pflicht `name/stecker/v24/format/
+  senderHatZeichen/senderNimm/empfaengerFrei/empfange`, optional `taktquellen()/
+  waehleTaktquelle(i)/rts/dtr/setzeEingaenge(cts,dsr,dcd)` (Pegel am Stecker, Verknüpfung
+  macht die Karte), `breakGesendet/breakEmpfang(bool)`. Formathilfe
+  `serialFormatAusSio(kanal, ctc, ctcKanal)` bzw. `(kanal, ctcTakte)`, `PHI_NENN`,
+  `ersatzFormat()`.
+- **Für die Maschine:** `SerialHub(phi)`, `registriere(anschluss)` beim Aufbau, `takt(zyklus)`
+  im Lauf — **je Aufruf höchstens ein Zeichen je Richtung**, also je Instruktion oder in
+  kleinen Batches rufen (arbeitet ohnehin nur alle 1/16 Zeichenzeit).
+- **Für die C-ABI (S6):** `info/konfig/konfigurieren/start/startAuto/stop/stopAlle/status`;
+  `SerialKonfig/Status/Info` 1:1 zu §8, Aufzählungen mit den ABI-Zahlenwerten.
+- **Faden-Modell:** Emulationsfaden nimmt nur den Wandler-Mutex; GUI den Hub-Mutex (kurz);
+  I/O-Faden nur solange aktiv, Reihenfolge Hub → Wandler. Jeder Client-Versuch in eigenem
+  abgekoppelten Faden (`getaddrinfo` ist nicht abbrechbar) → „Trennen" wirkt sofort.
+  `stop` weckt den I/O-Faden, sonst ginge das FIN bis 1 s später hinaus (Wächter < 500 ms).
+- **Abweichungen:** (1) Break heißt `breakGesendet()`/`breakEmpfang(bool)`. (2) SET-CONTROL
+  Flussart nur 1 oder 2 (XON/XOFF), nie 3 — die Brücke ist ein Stecker, ser2net ohne CTS am
+  Gerät bliebe sonst stehen. (3) Fernleitungen gelten als aktiv bis zum ersten SET-CONTROL
+  bzw. NOTIFY-MODEMSTATE; IFSS meldet als Server CTS/DSR/CD fest an. (4) PURGE 1 = unser
+  Sende-, 2 = Empfangspuffer (Sicht des Zugangsservers). (5) Kabel ab verwirft den
+  Sendepuffer, der Empfangspuffer wird noch zugestellt. (6) **Datei meldet VERBUNDEN** —
+  die Statuszeile schließt Datei über `betriebsart` aus (§9). (7) Port 0 in `SerialKonfig`
+  erlaubt (Tests) — **S6 weist ihn an der C-ABI ab**. (8) Statusformat = rohes Gastformat
+  (`format_gueltig`), RFC-2217 meldet das tatsächlich getaktete (notfalls Ersatz). (9) Das
+  Eintragen von `port_vorschlag` ins Port-Feld macht die Oberfläche (S7).
+- **Offen für S5:** RTS-Halt ist wörtlich umgesetzt — ein Gast, der auf V.24 RTS nie setzt,
+  empfängt nichts; am BIOS prüfen. Umstellung `setDFUECallback`/`setPrinterCallback` und
+  `k1520_serial_send`/`set_rx_cb` steht aus.
+- Wächter: `SerialWandler.*`, `SerialClientDauerversuch.*`, Hub-Rundläufe Telnet/RFC2217 über
+  Loopback, Datei (31 Fälle, 10× bei `-j48` stabil).
 
 ## 13. Offene Punkte
 
