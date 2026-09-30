@@ -524,6 +524,9 @@ Dokument im AP-Abschnitt nachführen („erledigt JJJJ-MM-TT", Abweichungen), Co
 
 S1, S2, S3 laufen parallel (S3 berührt `build/` — S1/S2 dann im Worktree).
 
+Zusätzlich **AP-T1b** (Regressionsabdeckung, `doc/design/16_k8915.md` §8a AP-T1) nach S8:
+Abdeckung von S4–S8 messen, Wächter der Festlegungen prüfen, Lücken schließen.
+
 ### 12.1 Stand der Arbeitspakete
 
 **AP-S1 — erledigt 2026-09-30** (`79b811e`). `core/serial/net/{socket,adresse}.{h,cpp}`,
