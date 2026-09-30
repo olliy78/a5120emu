@@ -20,6 +20,9 @@
 #include <vector>
 
 #include "core/filesystem/disk_volume.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/hfe_codec.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
 #include "tests/support/temp_path.h"
 
 namespace fs = std::filesystem;
@@ -316,6 +319,55 @@ TEST(DiskVolume, JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen) {
     std::error_code ec;
     fs::remove(pfad, ec);
     EXPECT_GT(geprueft, 50) << "der Katalog ist unerwartet klein";
+}
+
+/**
+ * @test DiskVolume/JedesKatalogformatHatNormspurenMitEinerUmdrehung (AP-F1)
+ *
+ * Eine vom DiskTool/Emulator angelegte `.hfe` muss so aussehen wie eine am Gerät
+ * formatierte Diskette: je Spur Lücke 2 = 22 × 4E + 12 × 00 (FM 11 + 6), und die Spur ist
+ * in der Datei genau eine Umdrehung lang (5,25″: 100 000 Zellen, aufgerundet auf 256 B
+ * je Seite; 8″ 360 U/min: FM 83 334).  Bis 2026-09-29 war eine cpa780-Spur 94 208 Zellen
+ * lang — `gw write` streckt das auf die Umdrehung, schrieb also mit −6 % Datenrate — und
+ * Lücke 2 = 11: die Diskette lief im Emulator, am echten A5120 nicht.
+ */
+TEST(DiskVolume, JedesKatalogformatHatNormspurenMitEinerUmdrehung) {
+    const std::string pfad = k1520test::tempPath("k1520_dv_norm.hfe");
+    int geprueft = 0;
+    for (const DiskFormat& f : formate().formats()) {
+        SCOPED_TRACE(f.name);
+        std::error_code ec;
+        fs::remove(pfad, ec);
+        ASSERT_NE(DiskImage::create(pfad, f, /*write_protect=*/false), nullptr);
+        DiskMedium m;
+        std::string err;
+        ASSERT_TRUE(HfeCodec::load(pfad, m, nullptr, err)) << err;
+        const bool acht_zoll = nominalRpmForDrives(f.drives) == 360;
+        for (uint8_t c = 0; c < m.numCylinders(); ++c)
+            for (uint8_t h = 0; h < m.numHeads(); ++h) {
+                const TrackImage& t = m.track(c, h);
+                if (t.empty()) continue;
+                const bool   fm  = t.encoding == Encoding::FM;
+                // Eine 8″-DD-Spur (500 kbit/s, > 6250 B) ist auch in einem Format, das der
+                // K5601 anbietet (Combo-BIOS), eine 8″-Umdrehung — 5,25″ fasst sie nicht.
+                const auto   sek = TrackCodec::parseTrack(t);
+                const bool dd8 = !fm && TrackCodec::nominalTrackBytes(sek, t.encoding) > 6250;
+                const size_t rev = dd8 ? 166667 : !acht_zoll ? 100000 : (fm ? 83334 : 166667);
+                const size_t zellen = t.bitcells * (t.cell_factor ? t.cell_factor : 1);
+                EXPECT_GE(zellen, rev) << "Spur " << int(c) << "/" << int(h) << " kürzer als eine Umdrehung";
+                EXPECT_LE(zellen, rev + 2048) << "Spur " << int(c) << "/" << int(h) << " länger als eine Umdrehung";
+                const size_t soll = fm ? 11 + 6 : 22 + 12 + 3;
+                for (const auto& s : sek) {
+                    ASSERT_NE(s.data_pos, SIZE_MAX);
+                    EXPECT_EQ(s.data_pos - (s.id_pos + 7), soll)
+                        << "Lücke 2 auf Spur " << int(c) << "/" << int(h) << " Sektor " << int(s.id);
+                }
+            }
+        ++geprueft;
+    }
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    EXPECT_GT(geprueft, 50);
 }
 
 TEST(DiskVolume, UdosAlsImgWirdAbgelehnt) {

@@ -100,6 +100,14 @@ public:
     Encoding defaultEncoding() const { return default_enc_; }
     void     setDefaultEncoding(Encoding e) { default_enc_ = e; }
 
+    /// @brief Nenndrehzahl des Laufwerks, für das die Diskette gedacht ist (300 = 5,25″,
+    ///        360 = 8″).  Nur für Flussabbilder: eine HFE-Spur ist genau eine Umdrehung
+    ///        lang, und wie viele Zellen das sind, hängt an der Drehzahl (AP-F1).
+    ///        Gesetzt von DiskImage::create (aus der Laufwerksliste des Formats) und
+    ///        HfeCodec::load (Kopf); sonst 300.
+    uint16_t nominalRpm() const { return rpm_; }
+    void     setNominalRpm(uint16_t rpm) { rpm_ = (rpm == 360) ? 360 : 300; }
+
     /// @brief Geometrie + vorherrschendes Verfahren (für UI/Mount-Prüfung).
     DiskGeometry geometry() const;
 
@@ -251,6 +259,7 @@ private:
     uint8_t  num_cyls_    = 0;
     uint8_t  num_heads_   = 0;
     Encoding default_enc_ = Encoding::MFM;
+    uint16_t rpm_         = 300;
 
     std::vector<TrackImage> tracks_;
     std::vector<uint8_t>    dirty_;       ///< je Spur 0/1

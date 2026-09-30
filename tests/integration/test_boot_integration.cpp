@@ -19,6 +19,10 @@
 #include "core/cards/k7024/chargen_zg1.h"   // CHARGEN_ZG1_LATIN — Pixelzeilen 0–7
 #include "core/cards/k7024/chargen_zg2.h"   // CHARGEN_ZG2_LATIN — Pixelzeilen 8–11
 
+#include "core/peripherals/floppy_drive/disk_medium.h"
+#include "core/peripherals/floppy_drive/hfe_codec.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
+
 #include "tests/support/fixtures.h"
 #include "tests/support/keyboard.h"
 #include "tests/support/machine_run.h"
@@ -1072,3 +1076,54 @@ TEST(CreateDiskFormatted, UnbekanntesFormat_gibtFalse) {
     A5120Machine machine;
     EXPECT_FALSE(machine.createDisk(0, path, "gibt_es_nicht", false));
 }
+
+// ── Lücke 2 entscheidet über die Lesbarkeit (AP-F1, doc/design/16_k8915.md) ──────
+//
+// Die ZVE2-Routine 1F7DH des CP/A-Bootsystems (lädt @OS.COM, 1024-B-Sektoren) liest nach
+// der ID-CRC 25 Lückenbytes (1FD8H: 1 + 17 + 1, 2038H: 1 + 6) und macht erst dann MK1
+// neu scharf.  Liegt die Sync-Gruppe des Datenfelds da schon unter dem Kopf, ist das
+// Datenfeld verpasst; gelesen wird das nächste Kennfeld als Daten → CRC-Fehler
+// „RC;T,Si,Se=020001".  Eine vom DiskTool bis 2026-09-29 angelegte Diskette hatte
+// Lücke 2 = 11 × 4E + 12 × 00 (23 Bytes) und lief so am echten A5120 nicht — im Emulator
+// aber doch, weil der Lesestrom Lücke 2 fest mit 18/27 nachbaute und MK1 notfalls
+// zurücksprang.  Beide Fälle unterscheiden sich hier NUR in Lücke 2.
+namespace {
+/// Die Fixture mit neu gebauten Spuren (Lücken wie bis 2026-09-29, Lücke 2 = @p gap2).
+void mitLuecke2(const std::string& ziel, uint8_t gap2) {
+    DiskMedium m;
+    std::string err;
+    ASSERT_TRUE(HfeCodec::load(diskPath("cpa_cpa780_k5601_noclock.hfe"), m, nullptr, err)) << err;
+    for (uint8_t c = 0; c < m.numCylinders(); ++c)
+        for (uint8_t h = 0; h < m.numHeads(); ++h) {
+            const TrackImage& t = m.track(c, h);
+            if (t.empty()) continue;
+            GapParams g = TrackCodec::gapsFor(t.encoding);
+            g.gap4a = 16; g.gap1 = 16; g.gap3 = 24; g.gap2 = gap2;
+            m.setTrack(c, h, TrackCodec::buildTrack(TrackCodec::parseTrack(t), t.encoding, g));
+        }
+    ASSERT_TRUE(HfeCodec::save(ziel, m, err)) << err;
+}
+}  // namespace
+
+TEST(BootIntegrationLuecke2, ZuKnappeLuecke2WirdWieAmGeraetNichtGelesen) {
+    TempDisk d = TempDisk::empty("luecke2_11.hfe");
+    mitLuecke2(d.path(), 11);
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, d.path(), "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+    EXPECT_TRUE(runUntilVramContains(machine, "RC;T,Si,Se=020001", kCpa02BudgetCycles))
+        << "Lücke 2 = 11: 1F7DH muss das Datenfeld verpassen (CRC-Fehler Spur 2):\n"
+        << vramText(machine);
+    EXPECT_EQ(vramText(machine).find("TPA ist OK!"), std::string::npos);
+}
+
+TEST(BootIntegrationLuecke2, NormLuecke2BootetDieselbeDiskette) {
+    TempDisk d = TempDisk::empty("luecke2_22.hfe");
+    mitLuecke2(d.path(), 22);
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, d.path(), "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+    EXPECT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
+        << vramText(machine);
+}
+

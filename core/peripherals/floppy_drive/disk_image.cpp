@@ -10,6 +10,7 @@
 
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/dmk_codec.h"
+#include "core/peripherals/floppy_drive/drive_profile.h"
 #include "core/peripherals/floppy_drive/hfe_codec.h"
 #include "core/peripherals/floppy_drive/img_codec.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
@@ -100,6 +101,7 @@ std::unique_ptr<DiskImage> DiskImage::create(const std::string& path,
     // die uebersprungenen Zylinder bleiben unformatiert.
     img->medium_ = DiskMedium(fmt->physicalCylinders(), num_heads,
                               fmt->tracks.empty() ? enc : fmt->predominantEncoding());
+    img->medium_.setNominalRpm(nominalRpmForDrives(fmt->drives));
 
     // Je Spurbereich eine gueltige IBM-Spur bauen (Verfahren PRO Bereich → Mischdichte).
     // Die Spurnummer im ID-Feld ist die LOGISCHE — so schreibt es auch das Gastsystem.

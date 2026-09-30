@@ -233,6 +233,7 @@ void DiskMedium::restoreFrom(const DiskMedium& snapshot) {
             if (known_[i]) markDirty(c, h);
         }
     default_enc_ = snapshot.default_enc_;
+    rpm_         = snapshot.rpm_;
 }
 
 // ─── Zustandsabfragen ────────────────────────────────────────────────────────

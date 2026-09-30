@@ -136,3 +136,10 @@ const std::vector<std::string>& knownDriveProfileNames() {
     };
     return names;
 }
+
+uint16_t nominalRpmForDrives(const std::vector<std::string>& drives) {
+    if (drives.empty()) return 300;
+    for (const auto& d : drives)
+        if (builtinDriveProfile(d).rpm != 360) return 300;
+    return 360;
+}

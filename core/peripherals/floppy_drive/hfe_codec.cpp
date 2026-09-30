@@ -184,6 +184,7 @@ bool HfeCodec::load(const std::string& path, DiskMedium& out, SourceInfo* info,
     }
 
     out = DiskMedium(num_tracks, num_sides, enc_hdr);
+    out.setNominalRpm(rpm);
 
     for (uint8_t c = 0; c < num_tracks; ++c) {
         const size_t   e            = lut_off + static_cast<size_t>(c) * 4;
@@ -306,29 +307,41 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     const uint8_t num_heads = in.numHeads();
     if (num_cyls == 0 || num_heads == 0) { err = "Leeres Medium"; return false; }
 
-    // 1. Zellen je Spurseite kodieren; laengste Seite bestimmt die einheitliche
-    //    Spurlaenge (HFE-LUT haelt sie je Zylinder, wir nutzen ueberall dieselbe).
-    //    1 Datenbyte = 16 Zellen; + Marge, aufgerundet auf 256 Byte.
+    // 1. Spurlänge je Zylinder: EINE UMDREHUNG in Zellen, nicht „so lang wie der Inhalt".
+    //
+    //    Die Zellenzahl einer HFE-Spur IST ihre Umdrehungszeit: `gw write` rechnet
+    //    time_per_rev = Zellen / (2 × Bitrate) und streckt den Fluss dann auf die
+    //    gemessene Umdrehung des Laufwerks.  Bis 2026-09-29 stand hier „Inhalt + 256 B":
+    //    eine cpa780-Spur (5600 B) ergab 94 208 Zellen = 188 ms, geschrieben wurde sie
+    //    also mit 250 × 188/200 = 235 kbit/s (−6 %), und hinter dem Inhalt lag ein
+    //    flussloser Bereich.  Der Emulator liest die Zellen ohne Zeitachse und merkte
+    //    nichts (doc/design/16_k8915.md AP-F1).
+    //
+    //    Nennumdrehung (DiskMedium::nominalRpm): 5,25″ 300 U/min → 100 000 Zellen; 8″ 360 U/min →
+    //    FM 83 334, MFM (500 kbit/s) 166 667.  Ist der Inhalt länger (eine überlange oder
+    //    eine eingelesene Spur, die schon ihre eigene Umdrehung mitbringt), bestimmt er.
+    //    Aufgerundet auf 256 B je Seite — sonst verteilt ein Leser mit 256-B-Schlitzen
+    //    (Greaseweazle) den Rest des letzten Blocks falsch auf die Seiten.
     //
     //    Gerechnet wird in ZELLEN, nicht in Bytes: eine Spur mit halber Datenrate
-    //    (@ref TrackImage::cell_factor) belegt je Byte doppelt so viele Zellen.  Wer
-    //    hier „Bytes × 2" nimmt, gibt ihr nur die halbe Umdrehung — die letzten
-    //    Sektoren fallen dann beim Kodieren hinten heraus.
-    size_t max_cells = 0;
-    for (uint8_t c = 0; c < num_cyls; ++c)
+    //    (@ref TrackImage::cell_factor) belegt je Byte doppelt so viele Zellen.
+    const bool acht_zoll = (in.nominalRpm() == 360);
+    auto nennZellen = [&](const TrackImage& t) -> size_t {
+        const bool fm = (t.empty() ? in.defaultEncoding() : t.encoding) == Encoding::FM;
+        if (!acht_zoll) return 100000;
+        return fm ? 83334 : 166667;
+    };
+    std::vector<uint32_t> side_lens(num_cyls, 0);
+    for (uint8_t c = 0; c < num_cyls; ++c) {
+        size_t zellen = 0;
         for (uint8_t h = 0; h < num_heads; ++h) {
             const TrackImage& t = in.track(c, h);
             const size_t f = t.cell_factor ? t.cell_factor : 1;
-            max_cells = std::max(max_cells, t.size() * 16 * f);
+            zellen = std::max({zellen, nennZellen(t), t.size() * 16 * f});
         }
-    if (max_cells == 0) max_cells = 3125 * 16;   // leere Diskette: nominale Spurlaenge
-
-    uint32_t side_len = static_cast<uint32_t>(max_cells / 8) + 256;
-    side_len = (side_len + 255) / 256 * 256;
-
-    const uint32_t track_len    = side_len * num_heads;
-    const uint32_t track_blocks = (track_len + 511) / 512;
-    const uint32_t track_pad    = track_blocks * 512;
+        uint32_t side_len = static_cast<uint32_t>((zellen + 7) / 8);
+        side_lens[c] = (side_len + 255) / 256 * 256;
+    }
 
     // 2. Header.
     std::vector<uint8_t> hdr(512, 0x00);
@@ -338,7 +351,7 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     hdr[0x0A] = num_heads;
     hdr[0x0B] = (in.defaultEncoding() == Encoding::FM) ? 2 : 0;     // ISOIBM_FM / _MFM
     wr16(hdr, 0x0C, kNominalBitrate);
-    wr16(hdr, 0x0E, 300);                                           // rpm
+    wr16(hdr, 0x0E, acht_zoll ? 360 : 300);                         // rpm
     hdr[0x10] = 0;                                                  // iface
     hdr[0x11] = 1;                                                  // dnu
     wr16(hdr, 0x12, 1);                                             // track_list_block
@@ -346,13 +359,14 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     hdr[0x15] = 0xFF;                                               // single_step
     for (size_t i = 0x16; i < 512; ++i) hdr[i] = 0xFF;
 
-    // 3. Track-LUT.
+    // 3. Track-LUT (Länge je Zylinder).
     std::vector<uint8_t> lut(512, 0xFF);
     uint32_t blk = 2;                                               // Spurdaten ab Block 2
     for (uint8_t c = 0; c < num_cyls; ++c) {
+        const uint32_t track_len = side_lens[c] * num_heads;
         wr16(lut, static_cast<size_t>(c) * 4 + 0, static_cast<uint16_t>(blk));
         wr16(lut, static_cast<size_t>(c) * 4 + 2, static_cast<uint16_t>(track_len));
-        blk += track_blocks;
+        blk += (track_len + 511) / 512;
     }
 
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
@@ -361,9 +375,10 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     f.write(reinterpret_cast<const char*>(lut.data()), 512);
 
     // 4. Spurdaten seitenverschraenkt (einseitig: kontinuierlich).
-    std::vector<uint8_t> spur(track_pad, kHfeGap);
     for (uint8_t c = 0; c < num_cyls; ++c) {
-        std::fill(spur.begin(), spur.end(), kHfeGap);
+        const uint32_t side_len  = side_lens[c];
+        const uint32_t track_len = side_len * num_heads;
+        std::vector<uint8_t> spur((track_len + 511) / 512 * 512, kHfeGap);
 
         for (uint8_t h = 0; h < num_heads; ++h) {
             const TrackImage& t = in.track(c, h);
@@ -372,12 +387,12 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
             // Spuren mit halber Datenrate (SCP1700-Bootspur) werden mit entsprechend
             // WENIGER Modellzellen kodiert und danach wieder gestreckt — sonst ginge
             // die Spur mit doppelter Rate in die Datei (@ref TrackImage::cell_factor).
-            const uint32_t f    = t.cell_factor ? t.cell_factor : 1;
+            const uint32_t fk   = t.cell_factor ? t.cell_factor : 1;
             const uint32_t ziel = side_len * 8;
-            std::vector<uint8_t> cells = BitCodec::encode(t, ziel / f);
-            if (f > 1) {
+            std::vector<uint8_t> cells = BitCodec::encode(t, ziel / fk);
+            if (fk > 1) {
                 uint32_t erzeugt = 0;
-                cells = BitCodec::upsampleCells(cells, ziel / f, f, erzeugt);
+                cells = BitCodec::upsampleCells(cells, ziel / fk, fk, erzeugt);
             }
             cells.resize(side_len, kHfeGap);
 

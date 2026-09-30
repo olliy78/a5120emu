@@ -297,6 +297,19 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
             return result;
         }
 
+        // Vor die erste Sync-Gruppe ZURÜCKGEHEN, solange dort Lücke (0x4E) oder Sync (0x00)
+        // steht — wie im FM-Zweig.  Sonst begänne die decodierte Spur mit der Indexmarke:
+        // Lücke 4a und das Sync-Feld davor gingen bei jedem Laden verloren, und das
+        // nächste Speichern legte die Indexmarke genau auf das Indexloch (AP-F1).  Ein
+        // flussloser Bereich (Zellwort 0) ist keine Lücke und beendet das Zurückgehen.
+        while (lock_pos >= 16) {
+            const uint16_t davor = get16(stream, lock_pos - 16, bitcell_count);
+            if (davor == 0) break;
+            const uint8_t b = mfm_decode_word(davor);
+            if (b != 0x4E && b != 0x00) break;
+            lock_pos -= 16;
+        }
+
         // Schritt 2b: Ab lock_pos in 16-Zellen-Schritten decodieren, dabei aber an jeder
         // starken Sync-Gruppe NEU einrasten (wie ein echter Datenseparator).  Auf real
         // gelesenen Disketten liegt nicht die ganze Spur in EINER Bytephase: jedes
@@ -550,6 +563,11 @@ std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells) {
                 emitWord(mfm_cell_word(b, prev_d));
             }
         }
+        // Lücke 4b bis zur Zielänge: reguläres 0x4E, taktrichtig an das letzte Datenbit
+        // angeschlossen.  Bis 2026-09-29 wurde hier mit 0-Zellen aufgefüllt — einem
+        // FLUSSLOSEN Bereich (kein einziger Flusswechsel), den kein Laufwerk so schreibt.
+        while (internal_buf.size() < target_bytes)
+            emitWord(mfm_cell_word(0x4E, prev_d));
     } else {
         // FM
         for (size_t i = 0; i < n; ++i) {
@@ -564,40 +582,14 @@ std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells) {
                 emitWord(fm_cell_word(b));
             }
         }
+        // Lücke 4b: reguläres 0xFF mit vollem Takt (s. MFM-Zweig).
+        while (internal_buf.size() < target_bytes)
+            emitWord(fm_cell_word(0xFF));
     }
 
-    // ── Auf target_bytes bringen ──────────────────────────────────────────────
-    // Sicherstellen, dass internal_buf mindestens target_bytes lang ist
-    while (internal_buf.size() < target_bytes)
-        internal_buf.push_back(0);
-    internal_buf.resize(target_bytes);  // bei Überlänge kürzen
-
-    // Wenn internal_buf kürzer als target_bytes: mit Gap-Bytes auffüllen.
-    // Wir kodieren Gap-Füllbytes (MFM: 0x4E, FM: 0xFF) regulär und hängen sie
-    // hinten an, bis target_bytes erreicht ist.
-    if (enc == Encoding::MFM) {
-        // MFM-Gap: reguläres 0x4E-Zellwort, mit aktuellem prev_d = false (worst case)
-        while (internal_buf.size() < target_bytes) {
-            bool dummy = false;
-            uint16_t gw = mfm_cell_word(0x4E, dummy);
-            // Die nächsten 2 Bytes des Zellwortes anhängen
-            if (internal_buf.size() < target_bytes)
-                internal_buf.push_back(static_cast<uint8_t>(gw >> 8));
-            if (internal_buf.size() < target_bytes)
-                internal_buf.push_back(static_cast<uint8_t>(gw & 0xFF));
-        }
-        internal_buf.resize(target_bytes);
-    } else {
-        // FM-Gap: 0xFF mit vollem Clock
-        while (internal_buf.size() < target_bytes) {
-            uint16_t gw = fm_cell_word(0xFF);
-            if (internal_buf.size() < target_bytes)
-                internal_buf.push_back(static_cast<uint8_t>(gw >> 8));
-            if (internal_buf.size() < target_bytes)
-                internal_buf.push_back(static_cast<uint8_t>(gw & 0xFF));
-        }
-        internal_buf.resize(target_bytes);
-    }
+    // Auf target_bytes bringen: aufgefüllt ist oben (Lücke 4b), eine überlange Spur wird
+    // hier gekürzt.
+    internal_buf.resize(target_bytes);
 
     // MSB-first → HFE-LSB-first: bitreverse8 je Byte
     for (auto& byte : internal_buf)

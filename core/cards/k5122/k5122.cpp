@@ -949,7 +949,8 @@ void K5122::startReadTransfer() {
     // SYL-Lader, s. buildFaithfulReadTrack).  Resync-Offset (markPos-4 MFM / -1 FM) und der
     // FM/MFM-Verfahrens-Match stecken in romReadResyncTarget/ioRead; Codierung aus eff_enc.
     auto sektoren    = TrackCodec::parseTrack(ibm_track);
-    read_stream_track_  = TrackCodec::buildFaithfulReadTrack(sektoren, eff_enc);
+    read_stream_track_  = TrackCodec::buildFaithfulReadTrack(
+        sektoren, eff_enc, /*luecke2_vom_medium=*/ibm_track.encoding == Encoding::MFM);
     cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
 
     cur_track_    = &read_stream_track_;
@@ -1017,6 +1018,24 @@ void K5122::resyncToNextMark() {
     // die Marke, Faithful-Layout (buildTrack) mit Offset markPos-(1+nA1) und Encoding-
     // Gate (read_enc_ vs Spur-Codierung). SIZE_MAX = kein MKE (Mismatch/keine Marke).
     size_t t = TrackCodec::romReadResyncTarget(*cur_track_, head_pos_, effReadEnc());
+    // Die Sync-Gruppe muss GANZ noch vor dem Kopf liegen, wenn MK/MK1 neu scharf macht
+    // (wie im /WAIT-Weg: MKE fällt erst, wenn nach dem Scharfmachen das erste Byte einer
+    // Sync-Gruppe ganz durch ist, §7.7).  Hat sie schon begonnen, ist diese Marke verpasst
+    // — die nächste gilt.  Vorher sprang der Strom einfach ein paar Bytes ZURÜCK, und eine
+    // Spur mit zu knapper Lücke 2 (11 × 4E) las sich, die der echte A5120 nicht liest
+    // (doc/design/16_k8915.md AP-F1).
+    if (t != SIZE_MAX) {
+        const size_t sz = cur_track_->bytes.size();
+        const size_t m  = cur_track_->nextMark(head_pos_ % sz);
+        const size_t backoff = (effReadEnc() == Encoding::MFM) ? 4 : 1;
+        // Nur MFM (s. buildFaithfulReadTrack: der FM-Weg ist nicht nachgemessen).
+        if (effReadEnc() == Encoding::MFM && m != SIZE_MAX
+            && (m + sz - head_pos_ % sz) % sz < backoff) {
+            LOG_DEBUG("K5122", "resync: Sync-Gruppe der Marke @%zu schon unter dem Kopf "
+                      "(pos=%zu) — verpasst, nächste Marke", m, head_pos_);
+            t = TrackCodec::romReadResyncTarget(*cur_track_, (m + 1) % sz, effReadEnc());
+        }
+    }
     if (t != SIZE_MAX) {
         head_pos_ = t;
         locked_   = true;
@@ -1392,7 +1411,8 @@ void K5122::commitWriteField() {
 
     // Streaming-Track aktualisieren, damit ein evtl. Verify-Read in derselben Sitzung
     // die frischen Daten sieht (Layout/Größen unverändert → head_pos_ bleibt gültig).
-    read_stream_track_ = TrackCodec::buildFaithfulReadTrack(sektoren, spur.encoding);
+    read_stream_track_ = TrackCodec::buildFaithfulReadTrack(
+        sektoren, spur.encoding, /*luecke2_vom_medium=*/spur.encoding == Encoding::MFM);
     cur_track_      = &read_stream_track_;
 
     // Gnadenfenster für den SCPX-Nachfolge-Verify-Read öffnen: verhindert, dass die

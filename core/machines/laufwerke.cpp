@@ -124,6 +124,9 @@ bool Laufwerke::createDisk(int drive, const std::string& path,
                           + prof.name + ")";
             return false;
         }
+        // Drehzahl des Laufwerks mitgeben: eine .hfe-Spur ist genau eine Umdrehung lang,
+        // beim 8″-Laufwerk (360 U/min) also kürzer als beim 5,25″ (AP-F1).
+        img->medium().setNominalRpm(prof.rpm);
         // Sofort in die Zieldatei schreiben, damit sie ab dem ersten Moment existiert
         // und der Autosave eine Bindung hat.  Leerer Pfad = nur im Speicher.
         if (!path.empty() && !img->saveAs(path, std::nullopt)) {

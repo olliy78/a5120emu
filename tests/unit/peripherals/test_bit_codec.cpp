@@ -480,3 +480,39 @@ TEST(BitCodecFremdeSyncgruppe, NurEineEchteSyncmarke_DatenfeldWirdGefunden) {
 // echten Disketten: `ScpxIntegration.*` liefen auf „82 Spuren mit Daten" (Laufwerk
 // K5601 erreicht nur 80) auf, als die Regel für einzelne Sync-Marken noch pauschal
 // galt statt nur für Datenfelder hinter einem Sektorkopf ohne Datenfeld.
+
+// ─── Lücke 4b im Flussabbild (AP-F1) ─────────────────────────────────────────────
+//
+// Ist die Zielzellenzahl größer als der Inhalt, wird mit regulärem 0x4E aufgefüllt —
+// nicht mit 0-Zellen.  Ein flussloser Bereich ist nichts, was ein Laufwerk schreibt;
+// Greaseweazle legt dort einen „No Flux Area“ an.
+TEST(BitCodecLuecke4b, AufgefuelltWirdMitLueckenbytesNichtFlusslos) {
+    // Ohne Lücke 4b gebaut (track_len = 0) — so kurz wie die Spuren bis 2026-09-29.
+    GapParams g = TrackCodec::gapsFor(Encoding::MFM);
+    g.track_len = 0;
+    const TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM, g);
+    const uint32_t ziel = 100000;
+    ASSERT_LT(t.size() * 16, ziel);
+    const auto cells = BitCodec::encode(t, ziel);
+    ASSERT_EQ(cells.size(), ziel / 8);
+    // Längster Lauf ohne Flusswechsel: im MFM höchstens 3 Nullzellen.
+    size_t lauf = 0, laengster = 0;
+    for (uint32_t p = 0; p < ziel; ++p) {
+        const bool eins = (cells[p / 8] >> (p % 8)) & 1u;   // HFE: LSB zuerst
+        lauf = eins ? 0 : lauf + 1;
+        laengster = std::max(laengster, lauf);
+    }
+    EXPECT_LE(laengster, 3u) << "flussloser Bereich im Abbild";
+    const TrackImage back = BitCodec::decode(cells, ziel, Encoding::MFM);
+    EXPECT_EQ(back.bytes.back(), 0x4E);
+}
+
+// Decodiert beginnt die Spur VOR der Indexmarke (Lücke 4a + Sync bleiben erhalten) —
+// sonst rückte jede Rundreise durch die Datei die Indexmarke auf das Indexloch.
+TEST(BitCodecLuecke4b, RundreiseBehaeltLuecke4aUndIstStabil) {
+    const TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 1024)}, Encoding::MFM);
+    const uint32_t zellen = static_cast<uint32_t>(t.size()) * 16;
+    const TrackImage back = BitCodec::decode(BitCodec::encode(t, zellen), zellen, Encoding::MFM);
+    ASSERT_EQ(back.size(), t.size());
+    EXPECT_EQ(back.bytes, t.bytes);
+}

@@ -527,6 +527,11 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 > - **UDOS/ZDOS auf `.img` ist unmöglich** — die Dateiverkettung steht im Gap hinter der
 >   Daten-CRC; `rawCompatible()` sperrt es. Bei UDOS1715/NDOS ist `.img` dagegen **erlaubt**
 >   (dort trägt die Verkettung in eigenen Zeigersektoren).
+> - **Erzeugte Spuren = Normlücken + genau eine Umdrehung** (AP-F1, `doc/design/16_k8915.md`):
+>   Lücke 2 = 22 × 4E (das CP/A-Bootsystem liest nach der ID-CRC 25 Bytes, bevor es MK1
+>   scharf macht), und die Zellenzahl einer `.hfe`-Spur IST ihre Umdrehungszeit
+>   (`gw write` streckt sie). Der A5120-Lesestrom übernimmt Lücke 2 vom Medium (nur MFM); eine
+>   knappe Diskette scheitert im Emulator wie am Gerät (`BootIntegrationLuecke2.*`).
 > - **`TrackCodec::writeSector` ersetzt ein Datenfeld an Ort und Stelle.** `buildTrack()`
 >   taugt zum Schreiben NICHT: es baut die Spur neu und verlöre alles hinter der Daten-CRC.
 > - **Stapeloperationen sind Transaktionen** — erst planen und urteilen, dann schreiben; ein

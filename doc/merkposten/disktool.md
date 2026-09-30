@@ -739,6 +739,21 @@ Was beim Weiterarbeiten zu wissen ist:
   `K8915Scpx.ImgExportSchreibnachlaufJaUdosNein` (drei UDOS-Fixtures gesperrt allein
   wegen des Kontrollblocks), `Udos1715P8000.WegaStartdisketteWirdErkannt` (jetzt
   `.img`-fähig).
+- **Eine erzeugte Diskette muss aussehen wie eine am Gerät formatierte — Normlücken
+  und EINE Umdrehung** (2026-09-29, `doc/design/16_k8915.md` AP-F1).  Aus Sektoren
+  gebaute Spuren (`create`, `.img` laden, Emulator „Leere Diskette“, A5120-Schreibpfad)
+  haben Lücke 4a/1/2 = 80/50/22 (FM 40/26/11), Lücke 3 nach Sektorgröße und Lücke 4b bis
+  zum Index (`TrackCodec::normGaps`); `HfeCodec::save` schreibt je Spur genau eine
+  Umdrehung in Zellen (5,25″ 100 000, 8″ FM 83 334 / DD 166 667), aufgefüllt mit 4E, nie
+  flusslos.  **Nicht aufweichen:** Lücke 2 unter ~14 × 4E liest das CP/A-Bootsystem
+  (1F7DH: 25 Lückenbytes bis MK1) am Gerät nicht, und die Zellenzahl einer HFE-Spur IST
+  ihre Umdrehungszeit (`gw write` streckt sie auf die gemessene — 188 ms ⇒ −6 %
+  Datenrate).  Der Emulator merkt beides nur, weil der A5120-Lesestrom seit AP-F1 den
+  Abstand ID → Datenmarke vom Medium übernimmt und MK1 eine angefangene Sync-Gruppe
+  verpasst.  **Altdateien reparieren** (CP/A, SCPX): `save-as alt.hfe tmp.img`, dann
+  `save-as tmp.img neu.hfe`.  Wächter:
+  `DiskVolume.JedesKatalogformatHatNormspurenMitEinerUmdrehung`, `TrackCodecNormluecken.*`,
+  `BitCodecLuecke4b.*`, `BootIntegrationLuecke2.*`.
 - **`TrackCodec::writeSector`** ersetzt ein Datenfeld an Ort und Stelle und rechnet die
   CRC neu.  `buildTrack()` taugt zum Schreiben **nicht**: es baut die Spur neu und
   verlöre die Bytes hinter der Daten-CRC — bei UDOS die gesamte Dateiverkettung.
