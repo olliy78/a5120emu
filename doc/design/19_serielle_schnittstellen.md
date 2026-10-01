@@ -1,7 +1,8 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
 **Stand:** 2026-10-01, **abgeschlossen** — S1–S12, T1a, T1b erledigt (§12.1); Bildschirm- und
-Geräteprüfung durch den Anwender bestanden (2026-10-01).
+Geräteprüfung durch den Anwender bestanden (2026-10-01). **Neu:** Testprogramm `SERTEST.COM`
+(§14, AP-ST1 … ST7) — spezifiziert, offen.
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -820,3 +821,271 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 3. ~~**K8915 Loop-Vorgabe**~~ — geklärt in AP-S5: BIOS läuft ohne Echo, Vorgabe bleibt an (§4).
 4. **Statuszeile und Datei:** Soll eine offene Druckdatei in der Statuszeile erscheinen
    (etwa „Drucker → druck.txt")? Entwurf: nein, nur Netzverbindungen (§9).
+
+---
+
+## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
+
+**Stand:** 2026-10-01, **spezifiziert, nicht begonnen.** Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
+
+### 14.1 Ziel
+
+Ein Z80-Programm unter CP/M 2.2, das die seriellen Schnittstellen eines **A5120** (K8025)
+und eines **K8915** (K7028) prüft — am echten Gerät wie im Emulator. Derselbe Ablauf, der
+am Gerät mit Prüfstecker und Nullmodemkabel von Hand läuft, läuft im Testsystem automatisch
+gegen den Rx/Tx-Loop (§6.5) bzw. gegen einen zweiten Emulator über RFC 2217 (Nullmodem-
+Kreuzung §6.4). Das Programm ist damit zugleich Abnahmewerkzeug für Geräte und End-zu-End-
+Wächter der Schnittstellenemulation (SIO, CTC, Wandler, Steuerleitungen, Flusssteuerung).
+
+- Name **„Serial Test"**, Version **0.1**, Datei **`SERTEST.COM`**.
+- Kopfzeile beim Start, genau so: `Serial Test V0.1  (c) 2026 Olaf Krieger`
+- Zwei Rollen: **Tester (Aktiv)** und **Gegenstelle (Passiv)**.
+- Läuft unter **CP/A (A5120)** und **SCPX 8915 V5.3 (K8915)**; benutzt vom Betriebssystem
+  nur das BDOS (Funktionen 0, 6, 9). Alles andere geht direkt auf die Hardware.
+- Bildschirmtexte **ohne Umlaute** (ae/oe/ue/ss) — der Zeichensatz der Geräte kennt sie
+  nicht sicher.
+
+### 14.2 Bedienablauf
+
+**Gemeinsamer Anfang:**
+
+```
+Serial Test V0.1  (c) 2026 Olaf Krieger
+Rechner: A5120 (K8025)
+Schnittstellen:
+  1  DFUE/V.24      SIO A33 Kanal A   V.24
+  2  DFUE/IFSS      SIO A33 Kanal B   IFSS
+  3  Drucker        SIO A32 Kanal B   IFSS
+  -  Tastatur K7637 SIO A32 Kanal A   (Tastatur)
+Tester (Aktiv) oder Gegenstelle (Passiv)? T/G
+```
+
+Die Tastatur wird angezeigt und mit „(Tastatur)" gekennzeichnet, aber **nie** zum Test
+angeboten (ihre SIO umzuprogrammieren nähme dem Programm die Eingabe und damit Ctrl+C).
+Die Liste zeigt nur die Schnittstellen, die die Erkennung (§14.4) gefunden hat.
+
+**Tester:** Die Schnittstellen werden der Reihe nach abgefragt:
+`Test der DFUE/V.24? J/N`. Nur `j`/`J` wählt; alles andere überspringt. Für jede gewählte
+Schnittstelle:
+
+1. `Test mit Pruefstecker? J/N` → §14.5.
+2. `Test mit Gegenstelle? J/N` → §14.6/§14.7. Davor der Hinweis, das Kabel zu stecken und
+   auf der Gegenstelle dieselbe Schnittstelle zu wählen; weiter mit beliebiger Taste.
+
+Jeder Teilschritt endet mit `OK` oder `FEHLER: <Grund>`. Am Ende eine Zusammenfassung je
+Schnittstelle und Rückkehr ins Betriebssystem.
+
+**Gegenstelle:**
+
+```
+Gegenstelle (Passiv): Dieses Geraet mit einem passenden Kabel mit einem
+anderen Rechner verbinden, auf dem Serial Test als Tester (Aktiv) laeuft.
+Beenden mit Ctrl+C.
+Test der DFUE/V.24? J/N
+```
+
+Die Abfrage läuft wie beim Tester der Reihe nach; die **erste** mit `J` bestätigte
+Schnittstelle wird benutzt (weitere Fragen entfallen). Danach läuft die Gegenstelle auf
+**genau dieser einen** Schnittstelle, bis sie mit **Ctrl+C** beendet wird. Wird keine
+gewählt, endet das Programm.
+
+**Ctrl+C** beendet in beiden Rollen an jeder Stelle (auch mitten in einer Übertragung):
+erst Aufräumen (§14.4 „Wiederherstellen"), dann BDOS 0. Die Tastatur wird mit BDOS 6
+(direkte Konsol-E/A) abgefragt, nicht mit BDOS 1/11 — dort griffe die eigene Ctrl+C-/
+Ctrl+S-Behandlung des BDOS dazwischen.
+
+### 14.3 Kommandozeile (Grundlage des automatischen Tests)
+
+```
+SERTEST                      interaktiv wie §14.2
+SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n (Nummer aus der Liste)
+SERTEST G n                  Gegenstelle an Schnittstelle n
+```
+
+- `/P` nur Prüfsteckertest, `/G` nur Gegenstellentest, ohne beide: beide.
+- `/A` = **automatisch**: keine Rückfragen, kein „beliebige Taste"; jede Bestätigung gilt
+  als gegeben. Für die Gegenstelle bedeutet `G n` bereits „ohne Rückfragen".
+- Fehlerhafte Kommandozeile → Kurzhilfe, Ende.
+
+**Ergebniszeilen** (für den Test vom Bildschirm gelesen; Format ist ein **Vertrag**):
+
+```
+SERTEST <name> <TEIL>: OK
+SERTEST <name> <TEIL>: FEHLER <grund>
+SERTEST ENDE OK | SERTEST ENDE FEHLER
+```
+
+`<TEIL>` ∈ `DATEN-LOOP`, `LEITUNGEN-LOOP`, `LEITUNGEN`, `ECHO`, `FLUSS-HW`, `FLUSS-XON`;
+ein Teil, der für die Schnittstelle nicht gilt (Leitungen/FLUSS-HW bei IFSS), erscheint als
+`ENTFAELLT`. Die Gegenstelle gibt nach dem ersten Empfangsinterrupt einmal
+`SERTEST INTERRUPT OK` aus.
+
+### 14.4 Hardwareschicht
+
+**Schnittstellentabelle** (Ports nach §3; Datenport = Basis, Steuerport = Basis+1):
+
+| Rechner | Nr | Name | SIO/Kanal | Daten/Steuer | Art | Baudtakt | Bemerkung |
+|---------|----|------|-----------|--------------|-----|----------|-----------|
+| A5120 | 1 | DFUE/V.24 | A33 A | 50H/51H | V.24 | ZRE-CTC K0 (0CH) | Brücke W1:7 gezeichnet angenommen |
+| A5120 | 2 | DFUE/IFSS | A33 B | 52H/53H | IFSS | ZRE-CTC K0 (0CH) | Brücke X7–X8 gezeichnet angenommen; teilt den Takt mit 1 |
+| A5120 | 3 | Drucker | A32 B | 5EH/5FH | IFSS | CTC A34 K0 (58H) | **CTC nicht anfassen** — Tastatur hängt am selben Takt |
+| A5120 | – | Tastatur K7637 | A32 A | 5CH/5DH | — | CTC A34 K0 | nur Anzeige |
+| K8915 | 1 | Drucker/IFSS1 | SIO1 B | 42H/43H | IFSS | CTC1 K2 (4AH) | |
+| K8915 | 2 | V.24 | SIO1 A | 40H/41H | V.24 | CTC1 K0 (48H) | über Multiplexer D13 |
+| K8915 | 3 | DFUE/IFSS2 | SIO2 A | 50H/51H | IFSS | CTC2 K0 (58H) | |
+| K8915 | – | Tastatur K7672 | SIO2 B | 52H/53H | — | CTC2 K2 | nur Anzeige |
+
+**Nicht anfassen:** ZRE-CTC K2/K3 (CP/A-Uhr, `bios.mac`: „Kanal 0,1 steht fuer den
+Anwender frei"), CTC A34 K0 (Tastatur + Drucker), CTC1 K3 / CTC2 K3 (Zeitgeber K8915),
+CTC2 K2 (Tastatur K8915), den Tastaturkanal jeder SIO.
+
+**Baudrate 9600, Format 8N1:** Zeitkonstante und SIO-Teiler je Kanal so, wie das jeweilige
+BIOS sie für 9600 setzt (CP/A: `portpr` in `src/bc_a5120/bioscsio.mac`/`bioscsib.mac` der
+CPA_Workbench; SCPX 8915: BIOS-Disassemblat, `doc/design/16_k8915.md`). Beim A5120-Drucker
+wird **nur** das SIO-Format gesetzt; der Takt ist dort durch die Tastatur auf 9600 festgelegt.
+Die Annahme „Brücke gezeichnet" steht im README des Programms.
+
+**Maschinenerkennung [?]:** A5120 und K8915 überlappen in 50H–5FH; zu unterscheiden ist
+an einem Port, der nur auf einer Maschine belegt ist (Kandidat: SIO1 des K8915 bei 40H–43H,
+am A5120 im Emulator ohne Gerät → FFH; am Gerät ist zu prüfen, ob dort eine andere Karte
+stecken kann). Grundsatz: **die Erkennung schreibt nur in Steuerregister von Bausteinen, die
+sie selbst gefunden hat** — nie in einen Port, der auf der anderen Maschine ein CTC ist
+(5CH–5FH ist am K8915 ein Spiegel von CTC2, K3 = Zeitgeber). Gefunden gilt eine SIO, wenn
+das Lesen von RR2 über Kanal B einen Wert ≠ FFH liefert bzw. ein geschriebener Vektor
+zurückkommt (nur an SIOs ohne Tastatur). Überstimmbar mit `/M:A` bzw. `/M:K`.
+
+**SIO-Zugriff:** Kanal programmieren (WR4/WR3/WR5/WR1), RTS (WR5 D1) und DTR (WR5 D7)
+setzen, CTS (RR0 D5) und DCD (RR0 D3) lesen, polled Senden/Empfangen mit Zeitüberlauf,
+Fehler aus RR1 (Parität D4, Überlauf D5, Rahmen D6) zählen und mit `Error Reset` löschen.
+**Zeitbasis** für Zeitüberläufe und Pausen: geeichte Zählschleife (φ = 2,4576 MHz an beiden
+Maschinen) — keine Uhr des Betriebssystems.
+
+**Interrupt (nur Gegenstelle):** Mode 2 bleibt, wie das BIOS ihn eingerichtet hat. Die
+Vektortabelle liegt bei `I·256`; den Vektor der SIO liefert RR2 von Kanal B. Das Programm
+**hängt sich ein und reicht weiter**: es ersetzt nur die Einträge des geprüften Kanals
+(Empfangszeichen, Sonderempfang) und springt, wenn der Interrupt nicht von seinem Kanal
+kommt, in den gesicherten alten Eintrag. Teilt der Kanal die SIO mit der Tastatur (A5120
+Drucker, K8915 DFUE/IFSS2), darf WR1 von Kanal B nur so geschrieben werden, dass
+„Status affects Vector" (D2) erhalten bleibt — WR1 ist nicht lesbar, der Wert muss aus dem
+BIOS stammen (Tabelle je Maschine) **[?]**. Ist WR2 noch nicht gesetzt (SIO ohne BIOS-
+Interrupt), setzt das Programm einen eigenen Vektor in eine freie Tabellenzeile **[?]**.
+
+**Wiederherstellen** (bei Ende und bei Ctrl+C, in dieser Reihenfolge): DI, Tabelleneinträge
+zurück, Kanal auf die BIOS-Vorgabe (Format, RTS/DTR, Interruptfreigaben, CTC-Zeitkonstante —
+nichts davon ist rücklesbar, daher eine Tabelle je Maschine), EI. Ein Warmstart nach dem
+Programm muss ein voll bedienbares System hinterlassen — auch nach Ctrl+C mitten im Empfang.
+
+### 14.5 Prüfsteckertest
+
+Prüfstecker = TxD→RxD, RTS→CTS, DTR→DSR+DCD (am Emulator: Rx/Tx-Loop, der laut §6.5 bei V.24
+genau das schließt).
+
+**DATEN-LOOP:** 256 Zeichen (alle Werte 00H–FFH), je Zeichen senden, Echo mit Zeitüberlauf
+abwarten, vergleichen; Fehler = abweichend, fehlend, RR1-Fehler. Ohne Stecker (kein Echo) muss
+**FEHLER** herauskommen, nicht OK.
+
+**LEITUNGEN-LOOP** (nur V.24): RTS/DTR in allen vier Kombinationen setzen, CTS/DCD lesen
+und mit der **Erwartungstabelle der Maschine** vergleichen. Die Z80-SIO hat keinen
+DSR-Eingang; was „DTR→DSR" bewirkt, hängt an der Karte:
+
+| RTS | DTR | A5120 CTS = V106∧V107 | A5120 DCD = V109∧V107 | K8915 CTS / DCD |
+|-----|-----|-----------------------|-----------------------|-----------------|
+| 0 | 0 | 0 | 0 | **[?]** (D13-Weg, §13 Punkt 1) |
+| 1 | 0 | 0 | 0 | **[?]** |
+| 0 | 1 | 0 | 1 | **[?]** |
+| 1 | 1 | 1 | 1 | **[?]** |
+
+Für den K8915 legt AP-ST4 die Zeile nach dem Emulatormodell fest und kennzeichnet sie als
+am Gerät zu bestätigen.
+
+### 14.6 Ablaufprotokoll Tester ↔ Gegenstelle
+
+Leitungen und Daten teilen sich dieselben Steuerleitungen (RTS ist erst Quittung, später
+Bremse). Die Gegenstelle braucht deshalb Abschnitte, die der Tester ankündigt:
+
+- **Ruhezustand der Gegenstelle = Leitungsspiegel** (§14.7 LEITUNGEN) bei gleichzeitig
+  scharfem Empfang (9600 8N1, Interrupt).
+- **Ankündigung** (Tester → Gegenstelle): `1BH 'S' m nL nH s` — `m` = `E` (Echo), `H`
+  (Fluss über Leitungen), `X` (Fluss XON/XOFF); `n` = Anzahl der folgenden Nutzbytes; `s` =
+  Summe der vier Bytes davor mod 256. Kaputte Ankündigung → verworfen, die Gegenstelle bleibt
+  im Ruhezustand.
+- **Bestätigung** (Gegenstelle → Tester): `1BH 'A' m s`.
+- Danach genau `n` Nutzbytes — durch die Länge ist ein 1BH in den Daten kein Problem.
+- **Bericht** (Gegenstelle → Tester) nach dem letzten Echo: `1BH 'B' m ueL ueH s` —
+  `ue` = Empfangsfehler der Gegenstelle (RR1 + Pufferüberlauf).
+- Danach zurück in den Ruhezustand. Zeitüberlauf auf beiden Seiten (Tester: FEHLER;
+  Gegenstelle: Ruhezustand nach einigen Sekunden ohne Byte).
+
+Nutzdaten: Pseudozufallsfolge (LFSR mit festem Startwert), im Modus `X` ohne 11H/13H.
+
+**Kabel:** Nullmodem — TxD↔RxD gekreuzt, RTS→CTS gekreuzt, DTR→DSR+DCD gekreuzt, Masse.
+IFSS: Sendeschleife des einen an die Empfangsschleife des anderen (aktiv/passiv nach Gerät).
+Die genaue Steckerbelegung je Gerät steht im README des Programms **[?]** (liefert der Anwender).
+
+### 14.7 Test mit Gegenstelle (Tester-Schritte)
+
+1. **LEITUNGEN** (nur V.24): Der Tester setzt nacheinander RTS, nimmt RTS weg, setzt DTR,
+   nimmt DTR weg — jeweils nach einer beliebigen Taste (bei `/A` ohne Warten). Die Gegenstelle
+   zeigt ihre Eingänge an (`CTS=1 DCD=0`, nur bei Änderung) und spiegelt sie sofort:
+   CTS_ein → RTS_aus, DCD_ein → DTR_aus. Der Tester zeigt je Schritt
+   `Gegenstelle bestaetigt: JA/NEIN`, Erwartung aus derselben Tabelle wie §14.5 (über das
+   Nullmodemkabel ist „eigenes RTS kommt als eigenes CTS zurück" dieselbe Logik wie am
+   Prüfstecker, nur über den Umweg).
+2. **ECHO:** Ankündigung `E`, 4096 Nutzbytes, 9600 8N1; der Tester sendet und empfängt
+   gleichzeitig (polled), vergleicht das Echo Byte für Byte, wertet den Bericht aus.
+   Die Gegenstelle empfängt **per Interrupt** in einen Ringpuffer (256 B), das Hauptprogramm
+   schickt zurück; beim ersten Empfangsinterrupt einmal `Empfangsinterrupt ausgeloest`
+   (und `SERTEST INTERRUPT OK`).
+3. **FLUSS-HW** (nur V.24): Ankündigung `H`. Die Gegenstelle erzeugt Rückstau: sie hält ihr
+   Zurückschicken regelmäßig an (Pause ~300 ms je 512 Byte), nimmt bei Puffer > 192 Byte RTS
+   weg und setzt es bei < 64 Byte wieder. Der Tester sendet mit **Auto Enables** (WR3 D5),
+   sein Sender hält also an, solange CTS fehlt. OK = Echo fehlerfrei **und** die Gegenstelle
+   hat mindestens einmal gebremst (Zähler im Bericht, Feld hinter `ue` **[?]** AP-ST6 legt
+   das Format fest) **und** kein Überlauf.
+4. **FLUSS-XON** (V.24 und IFSS): wie 3., aber die Gegenstelle sendet XOFF (13H) bei
+   > 192 Byte und XON (11H) bei < 64; der Tester hält sein Senden bei XOFF an. Auf V.24 sind
+   dabei die Auto Enables **aus**, damit nur XON/XOFF wirkt.
+
+Am Ende jedes Teils die Ergebniszeile §14.3.
+
+### 14.8 Einbindung ins Testsystem
+
+- **Quelle im Projekt:** `tools/sertest/` nach dem Muster von `tools/romread/`:
+  `src/sertest.mac`, `build.py` (M80 + LINKMT über `cparun` aus `CPA_Workbench/tools`,
+  überschreibbar mit `CPA_TOOLS`), `README.md` (Bedienung, Kabel, Annahmen), und die
+  gebaute **`tools/sertest/sertest.com` eingecheckt** — die CI hat die CPA_Workbench nicht.
+  Ein Wächter prüft, dass die eingecheckte `.com` zur Quelle passt, wenn die Werkzeugkette
+  vorhanden ist (sonst übersprungen, mit Meldung).
+- **Tests** (`tests/system/`, `k1520_add_test()`): Systemdiskette als `TempDisk`,
+  `SERTEST.COM` mit `DiskVolume` darauf, booten, Aufruf per `typeString()`, Ergebniszeilen
+  aus dem Bildschirm (`vramText()` bzw. `k1520_screen_char` beim K8915).
+  - **Prüfstecker:** eine Maschine, Loop an; alle Schnittstellen beider Maschinen; dazu ein
+    Gegenfall ohne Loop (muss FEHLER melden).
+  - **Gegenstelle:** zwei Maschinen im selben Prozess wie `SerielleKopplung.*`, RFC 2217
+    Server ↔ Client (Nullmodem-Kreuzung, §6.4), „XON/XOFF beachten" an für `FLUSS-XON`.
+    Telnet taugt nur für ECHO/FLUSS-XON (keine Leitungen).
+  - Schnelle Fälle in die Standardregression (Ziel < 5 s je Fall), lange (Kopplung mit Boot
+    beider Maschinen) unter `format_integration` → `tools/dev.sh test-format`.
+
+### 14.9 Arbeitspakete
+
+Jedes AP: Tests grün (`tools/dev.sh test`, bei ST5/ST6 zusätzlich `test-format`), dieses
+Kapitel nachführen („erledigt JJJJ-MM-TT", Abweichungen, geklärte **[?]**), Commit.
+Bauberührende APs nacheinander.
+
+| AP | Inhalt | hängt ab von | Umfang |
+|----|--------|--------------|--------|
+| **ST1** | Gerüst: `tools/sertest/` (Quelle, `build.py`, README, eingecheckte `.com`), Kopfzeile, Rollenwahl, Kommandozeile §14.3 (inkl. `/A`, `/M:`), Konsole über BDOS 6, Ctrl+C-Pfad mit Aufräumhaken, Maschinenerkennung + Schnittstellenliste §14.4 (Tastatur gekennzeichnet), Abfrage J/N je Schnittstelle, Hinweistext Gegenstelle | — | M |
+| **ST2** | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
+| **ST3** | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
+| **ST4** | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine; K8915-Zeile festlegen) + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
+| **ST5** | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
+| **ST6** | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
+| **ST7** | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
+
+### 14.10 Offene Punkte
+
+1. Maschinenerkennung: ist 40H–43H an einem A5120 in jeder Ausbaustufe frei? (ST1, am Gerät)
+2. WR1 D2 / WR2 der mit der Tastatur geteilten SIOs je BIOS (ST3).
+3. CTS/DCD-Weg am K8915 über D13 (§13 Punkt 1) → Erwartungstabelle §14.5 (ST4, am Gerät).
+4. Steckerbelegung Prüfstecker und Nullmodemkabel je Gerät, IFSS aktiv/passiv (Anwender, ST7).
