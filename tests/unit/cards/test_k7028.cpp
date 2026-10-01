@@ -224,8 +224,9 @@ TEST(K7028Seriell, TaktquelleJeKanal)
     EXPECT_EQ(a.ats.anschluss(K7028::Sio1A).format().baud_nenn, 4800u);
 }
 
-/// V.24 (SIO1-A): RTS/DTR aus WR5, /CTSA ← V106, /DCDA ← V109.  Die IFSS-Kanäle haben
-/// keine Steuerleitungen: ihre Eingänge bleiben inaktiv (RR0 wie vor AP-S5).
+/// V.24 (SIO1-A): RTS/DTR aus WR5, /DCDA ← V109, /CTSA nach der Plan-Logik (eigener
+/// Fall unten).  Die IFSS-Kanäle haben keine Steuerleitungen: ihre Eingänge bleiben
+/// inaktiv (RR0 wie vor AP-S5).
 TEST(K7028Seriell, V24LeitungenNurAnSio1A)
 {
     Aufbau a;
@@ -237,15 +238,68 @@ TEST(K7028Seriell, V24LeitungenNurAnSio1A)
     EXPECT_TRUE(v24.rts());
     EXPECT_TRUE(v24.dtr());
     EXPECT_EQ(a.bus.ioRead(0x41) & 0x28, 0x00) << "Einschaltzustand: /CTS, /DCD inaktiv";
-    v24.setzeEingaenge(true, false, false);
-    EXPECT_EQ(a.bus.ioRead(0x41) & 0x28, 0x20) << "CTS";
-    v24.setzeEingaenge(false, true, true);
-    EXPECT_EQ(a.bus.ioRead(0x41) & 0x28, 0x08) << "DCD (DSR hat keinen SIO-Eingang)";
+    v24.setzeEingaenge(true, true, false);
+    EXPECT_EQ(a.bus.ioRead(0x41) & 0x28, 0x20) << "CTS (V106 + V107)";
+    v24.setzeEingaenge(false, false, true);
+    EXPECT_EQ(a.bus.ioRead(0x41) & 0x28, 0x08) << "DCD = V109 allein";
 
     a.ats.anschluss(K7028::Sio1B).setzeEingaenge(true, true, true);
     a.ats.anschluss(K7028::Sio2A).setzeEingaenge(true, true, true);
     EXPECT_EQ(a.bus.ioRead(0x43) & 0x28, 0x00);
     EXPECT_EQ(a.bus.ioRead(0x51) & 0x28, 0x00);
+}
+
+/// /CTSA = V107 ∧ (¬RTSA ∨ V106), /DCDA = V109 (Stromlaufplan 1.45.518732 Blatt 1,
+/// D3:02/D9; Entwurf 19 §14.5, AP-ST4).  Alle acht Kombinationen der Eingänge V106/V107
+/// je RTSA aus/an; RTSA wirkt SOFORT (WR5 schreiben, ohne neuen Stecker-Wechsel).
+TEST(K7028Seriell, CtsANachPlanlogik)
+{
+    Aufbau a;
+    auto& v24 = a.ats.anschluss(K7028::Sio1A);
+    auto rr0 = [&] { a.bus.ioWrite(0x41, 0x10); return a.bus.ioRead(0x41); };   // Reset Ext/Status
+    auto wr5 = [&](uint8_t w) { a.bus.ioWrite(0x41, 0x05); a.bus.ioWrite(0x41, w); };
+    for (int m = 0; m < 16; ++m) {
+        const bool rts = m & 1, v106 = (m >> 1) & 1, v107 = (m >> 2) & 1, v109 = (m >> 3) & 1;
+        wr5(rts ? 0x6A : 0x68);
+        v24.setzeEingaenge(v106, v107, v109);
+        const bool cts = v107 && (!rts || v106);
+        EXPECT_EQ((rr0() & 0x20) != 0, cts)
+            << "RTS=" << rts << " V106=" << v106 << " V107=" << v107;
+        EXPECT_EQ((rr0() & 0x08) != 0, v109) << "DCD = V109, unabhängig vom Rest";
+    }
+    // RTS-Wechsel allein ändert CTS (V106 aus, V107 an): aus → 1, an → 0, aus → 1.
+    v24.setzeEingaenge(false, true, false);
+    wr5(0x68);
+    EXPECT_NE(rr0() & 0x20, 0);
+    wr5(0x6A);
+    EXPECT_EQ(rr0() & 0x20, 0) << "RTS gesetzt, V106 fehlt";
+    wr5(0x68);
+    EXPECT_NE(rr0() & 0x20, 0);
+    // Reset: RTSA aus → CTS = V107.
+    wr5(0x6A);
+    a.ats.reset();
+    EXPECT_NE(a.bus.ioRead(0x41) & 0x20, 0);
+}
+
+/// Mit Loop (Prüfstecker RTS→V106, DTR→V107+V109) zeigt die Karte CTS = DTR, DCD = DTR
+/// — RTS ist am Prüfstecker nicht beobachtbar (§14.5, Erwartungstabelle K8915).
+TEST(K7028Seriell, LoopLiefertCtsGleichDtr)
+{
+    Aufbau a;
+    ctcZeitgeber(a.bus, 0x48, 1);
+    a.sioInit(0x41);
+    Wandlerkette w(a);
+    w.loop(true);
+    for (int m = 0; m < 4; ++m) {
+        const bool rts = m & 1, dtr = (m >> 1) & 1;
+        a.bus.ioWrite(0x41, 0x05);
+        a.bus.ioWrite(0x41, static_cast<uint8_t>(0x68 | (rts ? 0x02 : 0) | (dtr ? 0x80 : 0)));
+        w.laufe(2 * 256);
+        a.bus.ioWrite(0x41, 0x10);
+        const uint8_t r = a.bus.ioRead(0x41);
+        EXPECT_EQ((r & 0x20) != 0, dtr) << "CTS, RTS=" << rts << " DTR=" << dtr;
+        EXPECT_EQ((r & 0x08) != 0, dtr) << "DCD, RTS=" << rts << " DTR=" << dtr;
+    }
 }
 
 /// Loop = der frühere Prüfstecker: jedes Sendebyte kommt nach einer Zeichenzeit am

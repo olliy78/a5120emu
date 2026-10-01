@@ -249,6 +249,25 @@ public:
         return b.find("SERTEST  COM") != std::string::npos;
     }
 
+    /// Vor einem weiteren Programmlauf in derselben Sitzung: alte Ergebniszeilen aus dem
+    /// Bild rollen (CR am Prompt) und das Protokoll leeren.  Sonst fände `bisEnde` das
+    /// alte `SERTEST ENDE …` sofort wieder, und eine gleichlautende neue Zeile gälte als
+    /// schon gesehen.
+    bool neuerLauf(long long frist = 100'000'000) {
+        for (int i = 0; i < 40; ++i) {
+            bool alt = false;
+            for (const std::string& z : zeilenAus(selbst().bild()))
+                if (z.compare(0, 8, "SERTEST ") == 0) alt = true;
+            if (!alt) {
+                protokoll_.leeren();
+                return true;
+            }
+            selbst().tippe("\r");
+            if (!bisPrompt(frist)) return false;
+        }
+        return false;
+    }
+
     /// Ein Schritt der Maschine; zählt die Takte für das Protokoll mit.
     long long lauf() { const long long n = selbst().schritt(); takt_ += n; return n; }
 

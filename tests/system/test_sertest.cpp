@@ -2,7 +2,9 @@
  * @file test_sertest.cpp
  * @brief Sertest.* — SERTEST.COM (Serial Test, Entwurf 19 §14) unter CP/A (A5120) und
  *        SCPX 8915 V5.3 (K8915), AP-ST2: Erkennung + Schnittstellenliste, Kurzhilfe,
- *        Ergebniszeilen, Ctrl+C hinterlässt ein bedienbares System.
+ *        Ergebniszeilen, Ctrl+C hinterlässt ein bedienbares System; AP-ST3: SIO-/CTC-
+ *        Schicht, Interrupt; AP-ST4: Prüfsteckertest (DATEN-LOOP, LEITUNGEN-LOOP) gegen
+ *        den Rx/Tx-Loop, Gegenfall ohne Loop, Ctrl+C mitten im DATEN-LOOP.
  *
  * Gerüst und Hilfen: `tests/system/sertest_hilfen.h`.  Jeder Fall bootet seine eigene
  * Maschine (ctest startet jeden Fall als eigenen Prozess — ein in der Suite geteilter
@@ -21,6 +23,8 @@ using namespace sertest;
 using k1520::serial::SerialStatus;
 
 namespace {
+
+std::string format(const SerialStatus& st);
 
 constexpr long long kFrist = 100'000'000;   // ≈ 40 s Maschinenzeit
 
@@ -89,9 +93,10 @@ void pruefeCtrlCGegenstelle(S& s, const std::string& schnittstelle) {
     EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
 }
 
-/// `sertest t <n> /a`: Ergebniszeilen nach §14.3 bis `SERTEST ENDE`.  Die Prüfschritte
-/// sind noch Platzhalter (ST1: `FEHLER NICHT EINGEBAUT`) — geprüft wird das Format, und
-/// dass ein für IFSS nicht geltender Teil `ENTFAELLT` meldet.
+/// `sertest t <n> /a`: Ergebniszeilen nach §14.3 bis `SERTEST ENDE`.  Die Gegenstellen-
+/// Teile sind bis AP-ST5 Platzhalter (`FEHLER NICHT EINGEBAUT`), der DATEN-LOOP hängt am
+/// Loop der Maschine (A5120 aus, K8915 an) — geprüft wird das Format, und dass ein für
+/// IFSS nicht geltender Teil `ENTFAELLT` meldet.
 template <class S>
 void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) {
     ASSERT_TRUE(s.fehler().empty()) << s.fehler();
@@ -110,7 +115,94 @@ void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) 
         EXPECT_TRUE(z.wert == "OK" || z.wert == "ENTFAELLT" || z.wert.rfind("FEHLER ", 0) == 0) << z.roh;
     }
     // Solange ein Teil nicht eingebaut ist, darf das Ende nicht OK heißen.
+    EXPECT_EQ(p.wert(ifss, "ECHO").value_or("-"), "FEHLER NICHT EINGEBAUT") << p.text();
     EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
+}
+
+// ─── Prüfsteckertest (AP-ST4) ────────────────────────────────────────────────
+
+/// Rx/Tx-Loop (= Prüfstecker, §6.5) an allen Schnittstellen der Maschine setzen.
+template <class S>
+void loopAlle(S& s, bool an) {
+    auto* hub = s.maschine().serialHub();
+    for (int i = 0; i < hub->anzahl(); ++i) {
+        auto k = hub->konfig(i);
+        k.loop = an;
+        ASSERT_TRUE(hub->konfigurieren(i, k)) << i;
+    }
+}
+
+/// Erwartete Rohzeile des LEITUNGEN-LOOP je Kombination (RTS, DTR) → (CTS, DCD).
+std::string leitungsZeile(int rts, int dtr, int cts, int dcd) {
+    char b[80];
+    std::snprintf(b, sizeof b, "  RTS=%d DTR=%d  CTS=%d DCD=%d  erwartet  CTS=%d DCD=%d  RR0=", rts,
+                  dtr, cts, dcd, cts, dcd);
+    return b;
+}
+
+/// Mit Loop: `sertest t <n> /p /a` an jeder Schnittstelle nacheinander → DATEN-LOOP OK,
+/// LEITUNGEN-LOOP OK (V.24, Rohzeilen nach der Erwartungstabelle @p erwartet = CTS/DCD je
+/// Kombination 00, 10, 01, 11) bzw. ENTFAELLT, Ende OK.  Danach `DIR`: am A5120 teilt der
+/// Drucker die SIO mit der Tastatur.
+template <class S>
+void pruefeLoopAlle(S& s, const std::vector<std::string>& namen, const std::vector<bool>& v24,
+                    const int (&erwartet)[4][2]) {
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, true);
+    for (size_t i = 0; i < namen.size(); ++i) {
+        SCOPED_TRACE("Schnittstelle " + std::to_string(i + 1) + " " + namen[i]);
+        ASSERT_TRUE(s.neuerLauf()) << s.bild();
+        s.tippe("sertest t " + std::to_string(i + 1) + " /p /a\r");
+        ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+        const std::string b = s.bild();
+        ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+        const auto& p = s.protokoll();
+        EXPECT_EQ(p.wert(namen[i], "DATEN-LOOP").value_or("-"), "OK") << p.text() << b;
+        EXPECT_EQ(p.wert(namen[i], "LEITUNGEN-LOOP").value_or("-"), v24[i] ? "OK" : "ENTFAELLT")
+            << p.text() << b;
+        EXPECT_FALSE(p.wert(namen[i], "ECHO")) << "nur /P\n" << p.text();
+        EXPECT_EQ(p.ende().value_or("-"), "OK") << p.text();
+        if (v24[i])
+            for (int k = 0; k < 4; ++k)
+                EXPECT_NE(b.find(leitungsZeile(k & 1, k >> 1, erwartet[k][0], erwartet[k][1])),
+                          std::string::npos)
+                    << "Kombination " << k << "\n" << b;
+    }
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+/// Ohne Loop (Kabel ab): an der V.24 @p nr meldet DATEN-LOOP `KEIN ECHO` beim ersten
+/// Zeichen, LEITUNGEN-LOOP FEHLER (alle Eingänge aus), Ende FEHLER.
+template <class S>
+void pruefeOhneLoop(S& s, int nr, const std::string& name) {
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, false);
+    s.tippe("sertest t " + std::to_string(nr) + " /p /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    const auto& p = s.protokoll();
+    EXPECT_EQ(p.wert(name, "DATEN-LOOP").value_or("-"), "FEHLER KEIN ECHO BEI 00H") << p.text();
+    EXPECT_EQ(p.wert(name, "LEITUNGEN-LOOP").value_or("-").rfind("FEHLER RTS=", 0), 0u) << p.text();
+    EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
+}
+
+/// Ctrl+C mitten im DATEN-LOOP: Abbruch, Schnittstelle auf der BIOS-Vorgabe
+/// (@p vorgabe wie `format()`), danach `DIR`.
+template <class S>
+void pruefeCtrlCImDatenLoop(S& s, int nr, const std::string& vorgabe) {
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, true);
+    s.tippe("sertest t " + std::to_string(nr) + " /p /a\r");
+    ASSERT_TRUE(s.bis("Daten-Loop: 256 Zeichen", kFrist)) << s.bild();
+    s.ctrlC();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_NE(s.bild().find("Abbruch mit Ctrl+C."), std::string::npos) << s.bild();
+    EXPECT_TRUE(s.protokoll().zeilen().empty()) << "abgebrochen vor dem Urteil\n" << s.protokoll().text();
+    EXPECT_EQ(format(s.maschine().serialHub()->status(nr - 1)), vorgabe);
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
 }
 
 // ─── SIO-/CTC-Schicht (AP-ST3) ───────────────────────────────────────────────
@@ -264,6 +356,22 @@ TEST(Sertest, A5120_TesterAutomatikLiefertErgebniszeilen) {
     pruefeErgebniszeilen(s, "2", "DFUE/IFSS");
 }
 
+TEST(Sertest, A5120_PruefsteckerMitLoopAnAllenSchnittstellenOk) {
+    SertestA5120 s;
+    const int erwartet[4][2] = {{0, 0}, {0, 0}, {0, 1}, {1, 1}};   // CTS = V106∧V107, DCD = V109∧V107
+    pruefeLoopAlle(s, {"DFUE/V.24", "DFUE/IFSS", "Drucker"}, {true, false, false}, erwartet);
+}
+
+TEST(Sertest, A5120_PruefsteckerOhneLoopMeldetFehler) {
+    SertestA5120 s;
+    pruefeOhneLoop(s, 1, "DFUE/V.24");
+}
+
+TEST(Sertest, A5120_CtrlCImDatenLoopLaesstSystemBedienbar) {
+    SertestA5120 s;
+    pruefeCtrlCImDatenLoop(s, 1, "9600 8N1 rts=1 dtr=1");
+}
+
 TEST(Sertest, A5120_GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer) {
     SertestA5120 s;
     pruefeProgrammierungUndVorgabe(s, {"DFUE/V.24", "DFUE/IFSS", "Drucker"}, {true, false, false},
@@ -309,6 +417,22 @@ TEST(Sertest, K8915_CtrlCInDerGegenstelleLaesstSystemBedienbar) {
 TEST(Sertest, K8915_TesterAutomatikLiefertErgebniszeilen) {
     SertestK8915 s;
     pruefeErgebniszeilen(s, "1", "Drucker/IFSS1");
+}
+
+TEST(Sertest, K8915_PruefsteckerMitLoopAnAllenSchnittstellenOk) {
+    SertestK8915 s;
+    const int erwartet[4][2] = {{0, 0}, {0, 0}, {1, 1}, {1, 1}};   // CTS = V107∧(¬RTS∨V106) = DTR
+    pruefeLoopAlle(s, {"Drucker/IFSS1", "V.24", "DFUE/IFSS2"}, {false, true, false}, erwartet);
+}
+
+TEST(Sertest, K8915_PruefsteckerOhneLoopMeldetFehler) {
+    SertestK8915 s;
+    pruefeOhneLoop(s, 2, "V.24");
+}
+
+TEST(Sertest, K8915_CtrlCImDatenLoopLaesstSystemBedienbar) {
+    SertestK8915 s;
+    pruefeCtrlCImDatenLoop(s, 2, "0 5N1,5 (ungueltig) rts=0 dtr=0");   // Kanal- + CTC-Reset
 }
 
 TEST(Sertest, K8915_GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer) {

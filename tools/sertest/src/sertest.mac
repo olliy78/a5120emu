@@ -15,9 +15,13 @@
 ; mit Zeitueberlauf, RR1-Fehlerzaehlung, Interrupt einhaengen/weiterreichen,
 ; Wiederherstellen (AUFR). Der Tester programmiert die Schnittstelle fuer die
 ; Dauer ihrer Pruefung, die Gegenstelle haengt sich ein und meldet den ersten
-; Empfangsinterrupt. Die Teststeps selbst (Pruefsteckertest, Protokoll) folgen
-; in AP-ST4 ff.; bis dahin melden sie "FEHLER NICHT EINGEBAUT" - ein Test, der
-; nicht laeuft, darf nicht OK melden.
+; Empfangsinterrupt.
+; AP-ST4: Pruefsteckertest (14.5) - DATEN-LOOP (256 Zeichen 00H-FFH, Echo mit
+; Zeitueberlauf, RR1-Fehler) und LEITUNGEN-LOOP (nur V.24: RTS/DTR in allen
+; vier Kombinationen, CTS/DCD gegen die Erwartungstabelle der Maschine, Werte
+; zusaetzlich roh). Die Gegenstellen-Teile (Protokoll) folgen in AP-ST5 ff.;
+; bis dahin melden sie "FEHLER NICHT EINGEBAUT" - ein Test, der nicht laeuft,
+; darf nicht OK melden.
 ;
 ; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
 ;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
@@ -323,13 +327,218 @@ TI_E1:	LD	(HL), A
 	RET
 
 ; -----------------------------------------------------------------------------
-; PRUEFS - Pruefsteckertest (14.5). V0.1: nur das Geruest der Ergebniszeilen.
+; PRUEFS - Pruefsteckertest (14.5): DATEN-LOOP, dann LEITUNGEN-LOOP (nur V.24,
+; an IFSS ENTFAELLT). Die Schnittstelle ist von TESTIF programmiert (SIOPRG).
 ; -----------------------------------------------------------------------------
-PRUEFS:
-	LD	HL, T_DLOOP
-	CALL	ERGNE
+PRUEFS:	CALL	DLOOP
+	CALL	IFART
+	CP	ART_V24
 	LD	HL, T_LLOOP
-	JP	ERGV24
+	JP	NZ, ERGENT
+	JP	LLOOP
+
+; DLOOP - DATEN-LOOP: je Zeichen 00H..FFH senden und das Echo mit Frist
+; abwarten. FEHLER: KEIN ECHO BEI xxH (bricht ab - ohne Pruefstecker kommt
+; nichts, 256 Fristen waeren nur Wartezeit), FALSCH nnnnH (Anzahl
+; abweichender Echos), RR1 nnnnH (Paritaet/Ueberlauf/Rahmen), SENDER BLOCKIERT
+; (Sendepuffer wird nicht leer). Alle 16 Zeichen wird die Tastatur abgefragt -
+; ein Echo kommt schneller als eine ms, ZEITK allein riefe KEYPOL dann nie.
+DLOOP:	LD	DE, M_DLLA
+	CALL	PUTS
+	LD	A, 64			; Empfaenger leeren (Reste von frueher),
+	LD	(DLZ), A		; hoechstens 64 Zeichen
+DL_LR:	LD	DE, 2
+	CALL	EMPF
+	JR	C, DL_GO
+	LD	HL, DLZ
+	DEC	(HL)
+	JR	NZ, DL_LR
+DL_GO:	LD	HL, 0
+	LD	(FEHLZ), HL
+	LD	(DLFAL), HL
+	XOR	A
+	LD	(DLZ), A		; laufendes Zeichen
+DL_LP:	LD	A, (DLZ)
+	AND	0FH
+	CALL	Z, KEYPOL		; Ctrl+C -> ABBRUCH
+	LD	A, (DLZ)
+	LD	DE, 20
+	CALL	SENDE
+	JR	C, DL_TX
+	LD	DE, 20
+	CALL	EMPF
+	JR	C, DL_KE
+	LD	HL, DLZ
+	CP	(HL)
+	JR	Z, DL_NX
+	LD	HL, (DLFAL)
+	INC	HL
+	LD	(DLFAL), HL
+DL_NX:	LD	HL, DLZ
+	INC	(HL)
+	JR	NZ, DL_LP
+	; Urteil
+	LD	HL, (DLFAL)
+	LD	DE, G_FALS
+	LD	A, H
+	OR	L
+	JR	NZ, DL_ZA
+	LD	HL, (FEHLZ)
+	LD	DE, G_RR1
+	LD	A, H
+	OR	L
+	JR	NZ, DL_ZA
+	LD	HL, T_DLOOP
+	JP	ERGOK
+DL_ZA:	PUSH	HL			; FEHLER <grund> nnnnH
+	LD	HL, T_DLOOP
+	CALL	ERGFE0
+	POP	HL
+	CALL	PUTHX4
+	JR	DL_H
+DL_TX:	LD	HL, T_DLOOP
+	LD	DE, G_SBLK
+	JP	ERGFEH
+DL_KE:	LD	HL, T_DLOOP		; FEHLER KEIN ECHO BEI xxH
+	LD	DE, G_KECH
+	CALL	ERGFE0
+	LD	A, (DLZ)
+	CALL	PUTHEX
+DL_H:	LD	A, 'H'
+	CALL	PUTC
+	JP	CRLF
+
+; LLOOP - LEITUNGEN-LOOP (nur V.24): RTS/DTR in den Kombinationen 00, 10, 01,
+; 11 setzen, 10 ms warten, CTS/DCD lesen und mit der Erwartungstabelle der
+; Maschine vergleichen (LLE_A/LLE_K, Spezifikation 14.5). Je Kombination eine
+; Zeile mit den gemessenen Werten und RR0 roh; FEHLER RTS=r DTR=d nennt die
+; erste abweichende. Danach RTS + DTR wieder an (wie SIOPRG).
+LLOOP:	LD	DE, M_LLLA
+	CALL	PUTS
+	XOR	A
+	LD	(LLFEH), A
+	LD	(DLZ), A		; Kombination: D0 = RTS, D1 = DTR
+LL_LP:	LD	A, (DLZ)
+	LD	B, 0
+	RRA
+	JR	NC, LL_1
+	LD	B, W5_RTS
+LL_1:	RRA
+	LD	A, B
+	JR	NC, LL_2
+	OR	W5_DTR
+LL_2:	CALL	SETLEI
+	LD	DE, 10
+	CALL	WARTE
+	CALL	LIESLEI
+	LD	(LLRR0), A
+	LD	HL, LLE_A		; Erwartung der Maschine
+	LD	A, (MASCH)
+	CP	M_A5120
+	JR	Z, LL_3
+	LD	HL, LLE_K
+LL_3:	LD	A, (DLZ)
+	LD	E, A
+	LD	D, 0
+	ADD	HL, DE
+	LD	A, (HL)
+	LD	(LLERW), A
+	; "  RTS=r DTR=d  CTS=c DCD=d  erwartet  CTS=c DCD=d  RR0=xxH"
+	LD	DE, M_LEIN
+	CALL	PUTS
+	CALL	PUTRD
+	LD	A, (LLRR0)
+	CALL	PUTCD
+	LD	DE, M_LERW
+	CALL	PUTS
+	LD	A, (LLERW)
+	CALL	PUTCD
+	LD	DE, M_LRR0
+	CALL	PUTS
+	LD	A, (LLRR0)
+	CALL	PUTHEX
+	LD	A, 'H'
+	CALL	PUTC
+	LD	A, (LLRR0)
+	AND	RR0_CTS OR RR0_DCD
+	LD	HL, LLERW
+	CP	(HL)
+	JR	Z, LL_OK
+	LD	DE, M_LFAL
+	CALL	PUTS
+	LD	A, (LLFEH)
+	OR	A
+	JR	NZ, LL_OK		; nur die erste merken
+	LD	A, (DLZ)
+	OR	80H
+	LD	(LLFEH), A
+LL_OK:	CALL	CRLF
+	LD	HL, DLZ
+	INC	(HL)
+	LD	A, (HL)
+	CP	4
+	JP	C, LL_LP
+	LD	A, W5_RTS OR W5_DTR
+	CALL	SETLEI
+	LD	HL, T_LLOOP
+	LD	A, (LLFEH)
+	OR	A
+	JP	Z, ERGOK
+	LD	(DLZ), A		; Kombination fuer PUTRD
+	LD	DE, M_EMPTY
+	CALL	ERGFE0
+	CALL	PUTRD
+	JP	CRLF
+
+; PUTRD - "RTS=r DTR=d" der Kombination (DLZ).
+PUTRD:	LD	DE, M_LRTS
+	CALL	PUTS
+	LD	A, (DLZ)
+	AND	1
+	CALL	PUTBIT
+	LD	DE, M_LDTR
+	CALL	PUTS
+	LD	A, (DLZ)
+	AND	2
+	JR	PUTBIT
+
+; PUTCD - "  CTS=c DCD=d" aus RR0 in A.
+PUTCD:	PUSH	AF
+	LD	DE, M_LCTS
+	CALL	PUTS
+	POP	AF
+	PUSH	AF
+	AND	RR0_CTS
+	CALL	PUTBIT
+	LD	DE, M_LDCD
+	CALL	PUTS
+	POP	AF
+	AND	RR0_DCD
+	; faellt durch
+; PUTBIT - '0' bei A = 0, sonst '1'.
+PUTBIT:	OR	A
+	LD	A, '0'
+	JR	Z, PB_1
+	INC	A
+PB_1:	JP	PUTC
+
+; PUTHX4 - HL vierstellig hexadezimal. PUTHEX - A zweistellig. Erhalten HL.
+PUTHX4:	LD	A, H
+	CALL	PUTHEX
+	LD	A, L
+PUTHEX:	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	PUTNIB
+	POP	AF
+PUTNIB:	AND	0FH
+	ADD	A, 90H
+	DAA
+	ADC	A, 40H
+	DAA
+	JP	PUTC
 
 ; -----------------------------------------------------------------------------
 ; GEGTST - Test mit Gegenstelle (14.7). V0.1: nur das Geruest.
@@ -369,7 +578,11 @@ ERGENT:	CALL	ERGKPF
 	LD	DE, M_ENTF
 	JR	ERG_A
 
-ERGFEH:	PUSH	DE
+ERGFEH:	CALL	ERGFE0
+	JP	CRLF
+
+; ERGFE0 - wie ERGFEH, aber ohne Zeilenende (der Aufrufer haengt Werte an).
+ERGFE0:	PUSH	DE
 	CALL	ERGKPF
 	LD	A, 1
 	LD	(TFEHL), A
@@ -378,7 +591,7 @@ ERGFEH:	PUSH	DE
 	LD	A, ' '
 	CALL	PUTC
 	POP	DE
-	JR	ERG_A
+	JP	PUTS
 
 ; Zeilenanfang "SERTEST <name> <TEIL>: "; markiert die Schnittstelle als geprueft.
 ERGKPF:	PUSH	HL
@@ -1277,6 +1490,29 @@ T_ECHO:	DB	'ECHO$'
 T_FLHW:	DB	'FLUSS-HW$'
 T_FLXO:	DB	'FLUSS-XON$'
 G_NEIN:	DB	'NICHT EINGEBAUT$'
+G_KECH:	DB	'KEIN ECHO BEI $'
+G_FALS:	DB	'FALSCH $'
+G_RR1:	DB	'RR1 $'
+G_SBLK:	DB	'SENDER BLOCKIERT$'
+M_EMPTY: DB	'$'
+
+; Pruefstecker (14.5)
+M_DLLA:	DB	'Daten-Loop: 256 Zeichen 00H-FFH ...',CR,LF,'$'
+M_LLLA:	DB	'Leitungen-Loop: RTS/DTR -> CTS/DCD',CR,LF,'$'
+M_LEIN:	DB	'  $'
+M_LRTS:	DB	'RTS=$'
+M_LDTR:	DB	' DTR=$'
+M_LCTS:	DB	'  CTS=$'
+M_LDCD:	DB	' DCD=$'
+M_LERW:	DB	'  erwartet$'
+M_LRR0:	DB	'  RR0=$'
+M_LFAL:	DB	'  FALSCH$'
+; Erwartung CTS/DCD je Kombination (D0 = RTS, D1 = DTR) mit Pruefstecker
+; RTS->CTS(V106), DTR->DSR(V107)+DCD(V109), Spezifikation 14.5:
+;  A5120 (K8025): CTS = V106 AND V107, DCD = V109 AND V107
+;  K8915 (K7028): CTS = V107 AND (NOT RTS OR V106), DCD = V109 - also CTS = DTR
+LLE_A:	DB	0, 0, RR0_DCD, RR0_CTS OR RR0_DCD
+LLE_K:	DB	0, 0, RR0_CTS OR RR0_DCD, RR0_CTS OR RR0_DCD
 
 ; =============================================================================
 ; Maschinenbeschreibungen: DW Name, DW Liste, DW Schnittstellentabelle, DB Anzahl
@@ -1402,6 +1638,12 @@ RXEIN:	DS	1		; Ringpuffer: Schreibindex
 RXAUS:	DS	1		;             Leseindex
 RXUEB:	DS	2		; Ringpufferueberlauf
 RXBUF:	DS	256
+; Pruefstecker
+DLZ:	DS	1		; laufendes Zeichen bzw. Kombination
+DLFAL:	DS	2		; abweichende Echos
+LLFEH:	DS	1		; erste abweichende Kombination OR 80H, 0 = keine
+LLRR0:	DS	1		; RR0 gemessen
+LLERW:	DS	1		; CTS/DCD erwartet
 VAREND:
 VARLEN	EQU	VAREND-VARANF
 

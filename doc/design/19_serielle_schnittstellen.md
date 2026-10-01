@@ -814,7 +814,8 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 „DFÜ/IFSS2" (X5) — 2026-10-01, §3.2.
 
 1. ~~**K7028:** Belegung, Taktkanäle, V.24-Leitungen, Brücken~~ — geklärt in AP-S5 (§3.2);
-   Rest: Rückwandbeschriftung, Stecker der K7672, D13-Weg von CTSA/DCDA.
+   Rest: Rückwandbeschriftung, Stecker der K7672. Der Weg von /CTSA und /DCDA ist seit
+   2026-10-01 geklärt (§14.5: ohne D13, CTS = V107 ∧ (¬RTS ∨ V106)).
 2. **K8025:** Weg ZRE-CTC K0 → K8025 geklärt (AP-S5, `K8025::setzeZreTakt`). Die Pegel der
    CTS/DCD-Eingänge der IFSS-Kanäle und der A32 bleiben **vorläufig inaktiv** — es gibt
    keinen Stromlaufplan der K8025 (das PDF hat nur das Blockschaltbild S. 8).
@@ -826,8 +827,9 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 
 ## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
 
-**Stand:** 2026-10-01, **AP-ST1 – AP-ST3 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
-`tests/system/test_sertest.cpp` + `sertest_hilfen.h`; SIO-/CTC-Schicht); weiter mit ST4.
+**Stand:** 2026-10-01, **AP-ST1 – AP-ST4 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
+`tests/system/test_sertest.cpp` + `sertest_hilfen.h`; SIO-/CTC-Schicht; Prüfsteckertest +
+K7028-/CTSA nach Stromlaufplan); weiter mit ST5.
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
@@ -1039,15 +1041,40 @@ abwarten, vergleichen; Fehler = abweichend, fehlend, RR1-Fehler. Ohne Stecker (k
 und mit der **Erwartungstabelle der Maschine** vergleichen. Die Z80-SIO hat keinen
 DSR-Eingang; was „DTR→DSR" bewirkt, hängt an der Karte:
 
-| RTS | DTR | A5120 CTS = V106∧V107 | A5120 DCD = V109∧V107 | K8915 CTS / DCD |
-|-----|-----|-----------------------|-----------------------|-----------------|
-| 0 | 0 | 0 | 0 | **[?]** (D13-Weg, §13 Punkt 1) |
-| 1 | 0 | 0 | 0 | **[?]** |
-| 0 | 1 | 0 | 1 | **[?]** |
-| 1 | 1 | 1 | 1 | **[?]** |
+| RTS | DTR | A5120 CTS = V106∧V107 | A5120 DCD = V109∧V107 | K8915 CTS = V107∧(¬RTS∨V106) | K8915 DCD = V109 |
+|-----|-----|-----------------------|-----------------------|------------------------------|------------------|
+| 0 | 0 | 0 | 0 | 0 | 0 |
+| 1 | 0 | 0 | 0 | 0 | 0 |
+| 0 | 1 | 0 | 1 | **1** | 1 |
+| 1 | 1 | 1 | 1 | 1 | 1 |
 
-Für den K8915 legt AP-ST4 die Zeile nach dem Emulatormodell fest und kennzeichnet sie als
-am Gerät zu bestätigen.
+**K8915-Logik aus dem Stromlaufplan** (1.45.518732 Blatt 1, `k8915schaltung.pdf` S. 11;
+ausgewertet 2026-10-01 mit einem Linienverfolger auf dem 568-dpi-Scan, Wege überlagert
+gegengeprüft): /CTSA und /DCDA laufen **nicht** über den Multiplexer D13 (der schaltet nur
+RxDA und die Takte RxCA/TxCA) und über **keine** Wickelbrücke.
+- /DCDA = D17:01 1Y (Empfänger von **V109**, X3:A09) — direkt.
+- /CTSA = D3:02 (T500 = 74S00) Pin 11 = NAND( NAND(¬/RTSA über D9:02, D17:01 3Y = V106),
+  ¬D17:01 2Y = V107 über D9:03 ).
+- Mit invertierenden Empfängern (P184, V.24 EIN → TTL L; offener Eingang = AUS) ergibt das:
+  **CTS aktiv ⇔ V107 (DSR) EIN ∧ (RTS nicht gesetzt ∨ V106 EIN)**, **DCD aktiv ⇔ V109 EIN**.
+  Sinn: „Senden erlaubt, wenn die DÜE bereit ist und — falls gesendet werden soll — CTS
+  meldet". Die Polarität der P184 ist **angenommen** (wie bei jedem V.24-Empfänger), nicht
+  aus einem Datenblatt belegt.
+- Folge für den Prüfstecker: RTS ist an CTS **nicht** beobachtbar (Zeile 0/1 → CTS = 1, weil
+  ohne RTS-Wunsch V106 nicht zählt). Ein klemmender RTS-Treiber (immer EIN) fällt am
+  Prüfstecker nicht auf; ein ausgefallener (immer AUS) oder ein toter V106-Empfänger schon
+  (Zeile 1/1 → CTS = 0).
+- **Emulatormodell berichtigt (AP-ST4):** `K7028` setzte /CTSA ← V106 und ließ V107 weg
+  (mit Loop CTS = RTS). Jetzt merkt sich die Karte V106/V107 aus `setzeEingaenge` und bildet
+  /CTSA = V107 ∧ (¬RTSA ∨ V106) in `K7028::bildeCtsA` — **auch bei jedem Schreiben in SIO 1**,
+  denn RTSA ist ihr eigener Ausgang und ändert sich ohne Wechsel am Stecker; /DCDA = V109.
+  Mit Loop also CTS = DTR. Wächter `K7028Seriell.CtsANachPlanlogik` (alle 16 Kombinationen
+  RTS/V106/V107/V109, RTS-Wechsel allein, Reset), `K7028Seriell.LoopLiefertCtsGleichDtr`,
+  `Sertest.K8915_PruefsteckerMitLoopAnAllenSchnittstellenOk` (Rohzeilen).
+- **Ausgabe von SERTEST** (ST4): je Kombination eine Rohzeile
+  `  RTS=r DTR=d  CTS=c DCD=d  erwartet  CTS=c DCD=d  RR0=xxH` (bei Abweichung `  FALSCH`
+  dahinter), danach die Ergebniszeile, im Fehlerfall `FEHLER RTS=r DTR=d` (erste
+  abweichende Kombination). Zwischen Setzen und Lesen liegen 10 ms.
 
 ### 14.6 Ablaufprotokoll Tester ↔ Gegenstelle
 
@@ -1134,7 +1161,7 @@ Bauberührende APs nacheinander.
 | **ST1** ✔ | Gerüst: `tools/sertest/` (Quelle, `build.py`, README, eingecheckte `.com`), Kopfzeile, Rollenwahl, Kommandozeile §14.3 (inkl. `/A`, `/M:`), Konsole über BDOS 6, Ctrl+C-Pfad mit Aufräumhaken, Maschinenerkennung + Schnittstellenliste §14.4 (Tastatur gekennzeichnet), Abfrage J/N je Schnittstelle, Hinweistext Gegenstelle | — | M |
 | **ST2** ✔ | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
 | **ST3** ✔ | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
-| **ST4** | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine; K8915-Zeile festlegen) + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
+| **ST4** ✔ | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine, gemessene Werte zusätzlich roh ausgeben) + **K7028 berichtigen**: /CTSA nach der Plan-Logik §14.5 (V107 in `setzeEingaenge` auswerten, Loop/Brücke: CTS = DTR), Wächter dafür + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
 | **ST5** | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
 | **ST6** | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
 | **ST7** | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
@@ -1158,6 +1185,32 @@ Bauberührende APs nacheinander.
 - Im Emulator geprüft: interaktiv T/G mit J/N-Folge, `T n /A`, `G n` + Ctrl+C, Ctrl+C an der
   T/G-Frage, `SERTEST X` und `T 4` → Kurzhilfe, `/M:K` am A5120; danach `DIR` bedienbar.
   K8915-Kaltstart: `<ENTER>` an „Coldstart … --> <ENTER>", dann Autostart `rade` abwarten.
+
+**ST4 erledigt 2026-10-01.** Prüfsteckertest in `sertest.mac` (`PRUEFS` → `DLOOP`, `LLOOP`),
+K7028 berichtigt (§14.5). Erkenntnisse/Abweichungen:
+- **DATEN-LOOP:** vorher den Empfänger leeren (höchstens 64 Reste à 2 ms), dann je Zeichen
+  `SENDE`/`EMPF` mit je 20 ms Frist. Fehlergründe: `KEIN ECHO BEI xxH` (bricht beim ersten
+  fehlenden Echo ab — ohne Prüfstecker kostet das 20 ms statt 256 × 20), `FALSCH nnnnH`
+  (Anzahl abweichender Echos), `RR1 nnnnH`, `SENDER BLOCKIERT`. Davor die Zeile
+  `Daten-Loop: 256 Zeichen 00H-FFH ...`.
+- **Ctrl+C im DATEN-LOOP:** ein Echo kommt in ~1 ms, `ZEITK` (und damit `KEYPOL`) liefe dann
+  kaum je an; der Loop fragt deshalb **alle 16 Zeichen** selbst die Tastatur ab. Der ganze
+  Loop dauert ~0,3 s Maschinenzeit.
+- `ERGFE0` = `ERGFEH` ohne Zeilenende (Grund mit angehängten Werten), `PUTHEX`/`PUTHX4`.
+- Tests (`Sertest.*`, jetzt 23; Laufzeit unter `-j16`): je Maschine
+  `PruefsteckerMitLoopAnAllenSchnittstellenOk` (alle drei Schnittstellen nacheinander mit
+  `T n /P /A`, LEITUNGEN-LOOP-Rohzeilen gegen die Tabelle, danach `DIR` — am A5120 teilt
+  der Drucker die SIO mit der Tastatur; A5120 5,2 s, K8915 6,2 s — knapp über dem Ziel, ein
+  Boot statt drei), `PruefsteckerOhneLoopMeldetFehler` (V.24: `KEIN ECHO BEI 00H`,
+  `FEHLER RTS=…`, Ende FEHLER; 1,2/2,2 s), `CtrlCImDatenLoopLaesstSystemBedienbar`
+  (Abbruch vor dem Urteil, Kanal auf der BIOS-Vorgabe, `DIR`; 1,8/4,8 s).
+  `TesterAutomatikLiefertErgebniszeilen` bleibt bei Ende FEHLER (Gegenstellen-Teile bis ST5
+  `NICHT EINGEBAUT`, jetzt ausdrücklich geprüft).
+- Hilfe `neuerLauf()` (`sertest_hilfen.h`): mehrere Läufe in einer Sitzung — alte
+  `SERTEST …`-Zeilen per CR am Prompt aus dem Bild rollen, Protokoll leeren; sonst fände
+  `bisEnde` das alte `SERTEST ENDE` sofort wieder.
+- K8915 V.24 nach Ctrl+C (Kanal- + CTC-Reset) meldet der Wandler `0 5N1,5 (ungueltig)` —
+  das ist der Einschaltzustand, nicht ein Fehler.
 
 **ST3 erledigt 2026-10-01.** SIO-/CTC-Schicht in `sertest.mac` (Klärungen §14.4). Routinen für
 ST4–ST6 (Konvention: `IFZEIG` zeigt auf die Schnittstelle, Kommentarblock vor `SIOPRG`):
@@ -1230,5 +1283,10 @@ Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
    A5120 A32 ohne Interrupt (D2 aus, WR2 nie gesetzt), K8915 SIO 2 WR1 B = 17H / WR2 = D0H.
    Offen nur am Gerät: ob E4H (CP/A) bzw. FFC0H (SCPX) in allen BIOS-Fassungen frei sind, und
    die Druckervorgabe der SCPX-Fassung 901 (8N1 statt 7O1 — SERTEST stellt 7O1 her).
-3. CTS/DCD-Weg am K8915 über D13 (§13 Punkt 1) → Erwartungstabelle §14.5 (ST4, am Gerät).
+3. ~~CTS/DCD-Weg am K8915 über D13~~ — aus dem Stromlaufplan geklärt (§14.5), im Emulator
+   seit ST4 so nachgebildet; offen nur die Polarität der P184 (Annahme: invertierend) und die
+   Bestätigung am Gerät (SERTEST LEITUNGEN-LOOP gibt die Rohwerte aus), sobald eines läuft.
+5. Wickelbrücke **X14** (Auswahl B des Taktmultiplexers D13:02 → RxCA/TxCA der V.24):
+   X14:1 = Masse, X14:3 = +5 V über R1:07, X14:2 = Auswahleingang. Welche Stellung steckt,
+   bestimmt die Taktquelle der V.24 und damit, ob „CTC1 K0 für 9600" stimmt (Anwender, an der Karte).
 4. Steckerbelegung Prüfstecker und Nullmodemkabel je Gerät, IFSS aktiv/passiv (Anwender, ST7).

@@ -59,7 +59,7 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   Dateischreiben nur im I/O-Faden des Hubs (je Client-Versuch ein abgekoppelter Faden,
   `getaddrinfo` ist nicht abbrechbar). Der Emulationsfaden nimmt nur den Wandler-Mutex;
   Sperrreihenfolge immer Hub → Wandler. Die Kartenlogik (/CTSA = V106 ∧ V107 usw.)
-  steckt in der Karte, nicht im Wandler. Wächter
+  steckt in der Karte, nicht im Wandler (K7028: siehe unten). Wächter
   `SerialHubNebenlaeufig.StatusAusDrittemFadenWaehrendAufUndAbbau` (in AP-T1b mit
   `-fsanitize=thread` gefahren: ohne Befund).
 - **RTS-Halt erst, nachdem der Gast RTS einmal gesetzt hat.** CP/A und SCPX am A5120
@@ -113,6 +113,13 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   (Echo-Gast, Kontextzeiger, Belegung durch einen Transport, Abmelden),
   `…test_k8915_old_callback_pulls_the_loop_of_its_own_channel`.
 
+- **K7028 /CTSA = V107 ∧ (¬RTSA ∨ V106), /DCDA = V109** (Stromlaufplan, Entwurf 19 §14.5,
+  AP-ST4) — anders als an der K8025 (CTS = V106 ∧ V107). RTSA ist der EIGENE SIO-Ausgang:
+  die Karte bildet /CTSA deshalb auch nach jedem Schreiben in SIO 1 neu
+  (`K7028::bildeCtsA`), nicht nur in `setzeEingaenge`. Mit Loop/Brücke folgt CTS = **DTR**,
+  RTS ist am Prüfstecker nicht beobachtbar. Der Wandler bleibt davon unberührt (er liefert
+  weiter die Steckerpegel). Wächter `K7028Seriell.CtsANachPlanlogik`,
+  `…LoopLiefertCtsGleichDtr`, `Sertest.K8915_PruefsteckerMitLoopAnAllenSchnittstellenOk`.
 - **`Z80SIO`-Interrupts nach Datenblatt** (AP-ST3, Wächter in `test_sio.cpp`): RR2 von
   Kanal B **lesen quittiert nicht** (`rr2Vektor()`, ohne Anforderung V3–V1 = 011) — vorher
   stahl jedes Erfragen des Vektors unter DI der Tastatur des K8915 ihren Interrupt; bei

@@ -27,8 +27,16 @@ using k1520::serial::SerialFormat;
 //             125, Treiber D14:03/02 für 103/105/108/113, 111 über X18; Rx-/Tx-Takt
 //             über Multiplexer D13:01/02 (DL153) aus CTC1 ZC/TO0 (über D9:02
 //             invertiert), ZC/TO1 oder den Schrittakten 114/115 — nachgebildet ist
-//             CTC1 K0.  /CTSA ← V106, /DCDA ← V109; V107 hat keinen eigenen
-//             SIO-Eingang (nicht nachgebildet).
+//             CTC1 K0.  /CTSA und /DCDA laufen NICHT über D13 und über keine
+//             Brücke (Entwurf 19 §14.5, ausgewertet 2026-10-01): /DCDA = D17:01 1Y
+//             = V109 direkt; /CTSA = D3:02 Pin 11 = NAND(NAND(¬/RTSA, V106), V107),
+//             d. h. CTS aktiv ⇔ V107 ∧ (¬RTS ∨ V106) — „Senden erlaubt, wenn die DÜE
+//             bereit ist und, falls gesendet werden soll, CTS meldet".  RTS ist der
+//             EIGENE Ausgang RTSA der SIO: /CTSA wird deshalb auch bei jedem
+//             Schreiben in SIO 1 neu gebildet (@ref K7028::bildeCtsA), nicht nur bei
+//             einem Wechsel am Stecker.  Mit Loop/Prüfstecker (RTS→V106, DTR→V107+
+//             V109) folgt CTS = DTR.  Polarität der Empfänger P184 angenommen
+//             (invertierend wie jeder V.24-Empfänger).
 //   SIO1-B  → Karten-X4 (V.24-Pegel, nur 103/104): TxDB über X16:1–3 und D12:02 an
 //             D14:01 1A; RxTxCB = CTC1 ZC/TO2 über D9:02 (BIOS: CTC1-K2 = 4AH für den
 //             Drucker); CTSB/DCDB nur an Wickelbrücken X15:3/4, DCDB mit R1:02
@@ -90,10 +98,12 @@ public:
     }
     bool rts() const override { return ch().rts(); }
     bool dtr() const override { return ch().dtr(); }
-    void setzeEingaenge(bool cts, bool /*dsr*/, bool dcd) override {
+    void setzeEingaenge(bool cts, bool dsr, bool dcd) override {
         if (kanal_ != Sio1A) return;
-        ch().setzeCTS(cts);
-        ch().setzeDCD(dcd);
+        k_.v106_ = cts;
+        k_.v107_ = dsr;
+        ch().setzeDCD(dcd);   // /DCDA = V109 direkt
+        k_.bildeCtsA();       // /CTSA = V107 ∧ (¬RTS ∨ V106)
         k_.updateInternalChain();
         k_.seriell_geaendert_ = true;
     }
@@ -178,12 +188,21 @@ void K7028::ioWrite(uint8_t port, uint8_t data)
     }
     const uint8_t sub = port & 0x03;
     switch ((rel >> 3) & 3) {
-        case 0: sio1_.ioWrite(sub, data); break;
+        case 0: sio1_.ioWrite(sub, data); bildeCtsA(); break;   // WR5 kann RTSA ändern
         case 1: ctc1_.ioWrite(sub, data); break;
         case 2: sio2_.ioWrite(sub, data); break;
         case 3: ctc2_.ioWrite(sub, data); break;
     }
     updateInternalChain();
+}
+
+// /CTSA aus der Plan-Logik (Kopfkommentar, Entwurf 19 §14.5): V107 ∧ (¬RTSA ∨ V106).
+// Hängt am eigenen Ausgang RTSA — daher nach jedem Schreiben in SIO 1 und bei jedem
+// Wechsel am Stecker neu gebildet.  `setzeCTS` meldet nur echte Wechsel (Ext/Status).
+void K7028::bildeCtsA()
+{
+    auto& a = sio1_.channelA();
+    a.setzeCTS(v107_ && (!a.rts() || v106_));
 }
 
 // ─── Interruptkette ──────────────────────────────────────────────────────────
@@ -254,6 +273,7 @@ void K7028::reset()
     ctc1_.reset();
     ctc2_.reset();
     latch_ = 0xFF;
+    bildeCtsA();   // RTSA nach Reset aus: CTS = V107
     updateInternalChain();
 }
 

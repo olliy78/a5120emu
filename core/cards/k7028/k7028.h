@@ -30,6 +30,7 @@
  * @code
  *   Drucker/IFSS1  SIO1-B  X3  nur TxD/RxD — BIOS-Drucker LIST (XON/XOFF)            CTC1 K2
  *   V.24           SIO1-A  X4  V.24 mit Steuerleitungen (Treiber D14, Empfänger D17)  CTC1 K0
+ *                              /CTSA = V107 ∧ (¬RTSA ∨ V106), /DCDA = V109 (§14.5)
  *   DFÜ/IFSS2      SIO2-A  X5  IFSS-Stromschleife (Blatt 2) bzw. TxD/RxD              CTC2 K0
  *   —              SIO2-B  —   Tastatur K7672 (fest, nicht einstellbar; Karten-X6)   CTC2 K2
  * @endcode
@@ -126,6 +127,8 @@ private:
 
     void updateInternalChain();
     Z80SIO::Channel& kanal(Kanal k);
+    /// /CTSA = V107 ∧ (¬RTSA ∨ V106) (Stromlaufplan D3:02/D9, Entwurf 19 §14.5).
+    void bildeCtsA();
 
     Config cfg_;
     Z80SIO sio1_{"ATS-SIO1"};
@@ -135,5 +138,7 @@ private:
     uint8_t latch_  = 0xFF;
     bool    iei_in_ = false;
     bool    seriell_geaendert_ = false;
+    bool    v106_ = false;   ///< V.24-Eingang am Stecker (SIO1-A): Sendebereitschaft
+    bool    v107_ = false;   ///< V.24-Eingang am Stecker (SIO1-A): Betriebsbereitschaft (DSR)
     std::array<std::unique_ptr<Anschluss>, KanalAnzahl> anschluesse_;
 };

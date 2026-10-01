@@ -6,13 +6,13 @@ Gerät mit Prüfstecker bzw. Nullmodemkabel, im Emulator gegen den Rx/Tx-Loop bz
 einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md`
 **§14**.
 
-> **Stand V0.1 (AP-ST3):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
-> Schnittstellenliste, Rollenwahl, J/N-Abfragen, Ctrl+C) und SIO-/CTC-Schicht: der
-> Tester stellt die Schnittstelle für ihre Prüfung auf 9600 8N1 und danach auf die
-> BIOS-Vorgabe zurück; die Gegenstelle hängt sich in den Empfangsinterrupt und meldet
-> den ersten (`SERTEST INTERRUPT OK`). Die Prüfschritte selbst folgen ab AP-ST4; bis
-> dahin meldet jeder Teil `FEHLER NICHT EINGEBAUT` (ein Test, der nicht läuft, meldet
-> nie `OK`).
+> **Stand V0.1 (AP-ST4):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
+> Schnittstellenliste, Rollenwahl, J/N-Abfragen, Ctrl+C), SIO-/CTC-Schicht (9600 8N1 für
+> die Dauer der Prüfung, danach BIOS-Vorgabe; die Gegenstelle hängt sich in den
+> Empfangsinterrupt und meldet den ersten mit `SERTEST INTERRUPT OK`) und der
+> **Prüfsteckertest** (DATEN-LOOP, LEITUNGEN-LOOP). Die Gegenstellen-Teile folgen ab
+> AP-ST5; bis dahin melden sie `FEHLER NICHT EINGEBAUT` (ein Test, der nicht läuft,
+> meldet nie `OK`).
 
 ## Bedienung
 
@@ -58,6 +58,25 @@ Eingabe und damit Ctrl+C.
 SERTEST <name> <TEIL>: OK | FEHLER <grund> | ENTFAELLT
 SERTEST ENDE OK | SERTEST ENDE FEHLER
 ```
+
+## Prüfsteckertest
+
+- **DATEN-LOOP:** 256 Zeichen 00H–FFH, je Zeichen Echo mit 20 ms Frist. `FEHLER KEIN ECHO
+  BEI xxH` (Abbruch beim ersten fehlenden Echo — so sieht „kein Prüfstecker" aus),
+  `FEHLER FALSCH nnnnH`, `FEHLER RR1 nnnnH` (Parität/Überlauf/Rahmen), `FEHLER SENDER
+  BLOCKIERT`.
+- **LEITUNGEN-LOOP** (nur V.24, an IFSS `ENTFAELLT`): RTS/DTR in den Kombinationen 00, 10,
+  01, 11; je Kombination eine Rohzeile mit gemessenem CTS/DCD, Erwartung und RR0:
+
+  ```
+    RTS=0 DTR=1  CTS=1 DCD=1  erwartet  CTS=1 DCD=1  RR0=2CH
+  ```
+
+  Erwartung je Maschine (Prüfstecker RTS→CTS, DTR→DSR+DCD): **A5120** CTS = RTS ∧ DTR,
+  DCD = DTR (K8025: V106/V109 nur mit V107); **K8915** CTS = DCD = DTR (K7028:
+  CTS = V107 ∧ (¬RTS ∨ V106) — RTS ist am Prüfstecker nicht sichtbar, ein ausgefallener
+  RTS-Treiber aber schon in Zeile 11). Im Fehlerfall `FEHLER RTS=r DTR=d` (erste
+  abweichende Kombination).
 
 ## Maschinenerkennung
 
