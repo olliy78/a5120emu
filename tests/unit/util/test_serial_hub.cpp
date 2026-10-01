@@ -572,7 +572,11 @@ TEST(SerialHubGegenseite, AbbruchImRueckstauVerliertNichtsUndDerServerLauschtWei
     EXPECT_EQ(a.a.fifo.size(), 3u);
     EXPECT_EQ(a.a.ueberlauf, 0u);
 
-    // Die Gegenseite legt auf, während der Rückstau steht.
+    // Die Gegenseite legt auf, während der Rückstau steht — sauber (FIN): erst die
+    // Telnet-Verhandlung des Servers lesen, sonst schickt close() mit ungelesenen Daten
+    // ein RST, und Winsock verwirft dann, was noch im Socketpuffer des Servers liegt
+    // (das ist der Fall ResetImRueckstauTrenntSauber).
+    c.hole();
     c.s.schliessen();
     taktOhneLesen(200);
 
