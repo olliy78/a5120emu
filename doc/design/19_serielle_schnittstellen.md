@@ -726,6 +726,22 @@ Gast noch (die Karte erfährt die Belegung erst beim nächsten Wandlerblick, ≤
 Zeichenzeit); `SerialHub::rueckstau` wird nie gefüllt (Schutzcode); unter Winsock verwirft
 ein RST ungelesene Daten im Socketpuffer (OS-Verhalten).
 
+**Nachtrag 2026-10-01 — SIO-Empfangsinterrupt nach Datenblatt** (`216dc14`; Befund aus
+S3/T1a, auf Anwenderwunsch in diesem AP behoben). `Z80SIO::Channel::rxIntEnabled()` las WR1
+D3–D2 statt D4–D3; WR1 = 10H/13H lieferten keinen Empfangsinterrupt. Jetzt entscheidet für
+alle Empfangswege `rxIntFaellig()` über `rx_int_mode`: 10/11 = jedes Zeichen, **01 = nur das
+erste Zeichen nach dem Setzen bzw. nach WR0-Befehl 4** (vorher: jedes Zeichen in leeren
+FIFO). Channel Reset löscht jetzt auch die aus WR1 abgeleiteten Freigaben.
+**Protokollfalle** über `test` + `test-format`: die Gäste schreiben 00H, 04H, 08H, 0CH, 13H,
+17H, 18H, 1CH — der **A5120-Tastaturkanal (K8025 A32-A) bekommt 0CH**, läuft also jetzt in
+Betriebsart 01 statt „jedes Zeichen"; alle Boots, Tastaturtests und Formatierrunden bleiben
+grün. Zwei RETI-Tests und `RX_Interrupt_AllReceivedMode` hatten die falsche Lesart
+festgeschrieben (08H mit Erwartung „jedes Zeichen") und sind auf 10H umgestellt. Neue Wächter
+`Z80SIO.RX_Interrupt_WR1_JedeBetriebsartNachDatenblatt`,
+`…ErstesZeichen_EinmalJeScharfmachen`, `…KanalResetLoeschtDieFreigabe`. Volle Regression:
+`test` 1494, `test-format` 26, `test-matrix` 94, `win` 1465 — alle grün. Offen: Handprobe
+schnelles Tippen/Tastenwiederholung am A5120.
+
 ## 13. Offene Punkte
 
 Entschieden am 2026-09-30: Bindeadresse = alle Schnittstellen (§7.2), Wiederaufnahme beim
