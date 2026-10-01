@@ -53,6 +53,13 @@ k1520_add_test(k8915_scpx SRC test_k8915_scpx.cpp
                           LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
+# K8915 Etappe 4 (doc/design/16_k8915.md §8a AP-E4k): Kaltstart von einer SPURWEISE
+# gelesenen Diskette (Ersatzsitzung ohne Greaseweazle) — keine Maschinenzeit waehrend des
+# Nachladens, Schreiben mit Zuruecklesen, Laufwerks- und Sitzungsschloss.
+k1520_add_test(k8915_physical SRC test_k8915_physical.cpp
+                          LIBS k1520_k8915 k1520_floppy k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
 # Serielle Schnittstellen (Entwurf 19 §11, AP-S8): zwei A5120 im selben Prozess über
 # echtes Loopback-TCP, 1× gegen 10× Takt, Telnet+XON/XOFF und RFC 2217+RTS/CTS.
 # Standardregression 4 KiB je Fall (~2 s); die volle Fassung mit 64 KiB läuft mit den
