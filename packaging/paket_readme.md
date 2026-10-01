@@ -9,6 +9,23 @@ von echten Diskettenabbildern.  Als zweite Maschine ist der **robotron K8915**
 K8915-Systemdiskette liegt nicht bei; eine eigene (SCPX 8915) wird wie beim
 A5120 eingelegt und mit RETURN an der Coldstart-Meldung geladen.
 
+### K8915: eine eigene Bootdiskette
+
+1. `k8915emu` starten, im Kasten „Laufwerke" bei A: **Mount** (oder *Datei ▸
+   Diskette einlegen ▸ Laufwerk A:*) und die `.hfe`/`.dmk`/`.img` Ihrer
+   SCPX-8915-Systemdiskette wählen — am besten eine **Kopie** im
+   Diskettenordner, denn der Emulator schreibt Änderungen in die eingelegte Datei
+   zurück.
+2. *Maschine ▸ Rückstellen*; an der Meldung `* Coldstart * Disk on A: ready ? -->
+   <ENTER>` mit RETURN laden, bis `A>`.
+3. **Neue Bootdiskette selbst machen:** Knopf *Leere Diskette* für B:, unter SCPX
+   `format` (Verfahren 24, Laufwerk B), dann `disgen` (Systemspuren von A: lesen,
+   auf B: schreiben). Die Schritt-für-Schritt-Anleitung steht im Handbuch
+   (*Hilfe*, Abschnitt „Bootdiskette mit DISGEN erstellen"). Mit dem
+   k1520DiskTool geht es ebenso von außen: `k1520disktool-cli create neu.hfe
+   --fs scpx8915 --boot boot.bin` (das Bootabbild `boot.bin` sichert man vorher mit `boot-get`
+   aus einer vorhandenen Systemdiskette; Näheres: Handbuch des DiskTool).
+
 ## Installieren
 
 ```sh

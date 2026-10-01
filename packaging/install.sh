@@ -507,6 +507,19 @@ lib = ctypes.CDLL(str(paths.core_library()))
 lib.k1520_version.restype = ctypes.c_char_p
 print("     Kern:      ", lib.k1520_version().decode())
 
+# Beide Maschinen aus der Bibliothek: ROM- und Zeichengeneratordaten sind
+# einkompiliert, hier zeigt sich, ob die Bibliothek auch den K8915 traegt
+# (K1520_MACHINE_K8915 = 2) und nicht nur den A5120.
+lib.k1520_create.argtypes = [ctypes.c_int]
+lib.k1520_create.restype = ctypes.c_void_p
+lib.k1520_destroy.argtypes = [ctypes.c_void_p]
+for _nr, _name in ((0, "A5120"), (2, "K8915")):
+    _h = lib.k1520_create(_nr)
+    if not _h:
+        sys.exit(_name + ": k1520_create schlug fehl")
+    lib.k1520_destroy(_h)
+print("     Maschinen:  A5120, K8915")
+
 import PySide6
 print("     PySide6:   ", PySide6.__version__)
 
@@ -528,7 +541,11 @@ from app.ui.main_window import MainWindow
 qt = QApplication([])
 fenster = MainWindow()
 fenster.close()
-print("     Oberfläche: baut auf")
+# Das zweite Programmprofil (k8915emu) baut dasselbe Fenster mit eigener Maschine.
+from app import profil as _profil
+fenster = MainWindow(profil=_profil.profil("k8915"))
+fenster.close()
+print("     Oberfläche: baut auf (A5120, K8915)")
 PYEOF
 # Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
 # ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.

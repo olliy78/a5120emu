@@ -80,7 +80,10 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   `--machine k8915` und `bin\k8915emu.cmd`. Startmenü-Namen „A5120 Emulator" /
   „K8915 Emulator" (vorher „A5120-Emulator"). Auslieferungskonfiguration je Programm:
   `share/k1520emu/default_config_a5120.yaml` / `…_k8915.yaml`. Keine
-  K8915-Systemdiskette im Paket (E4l-Rechtsfrage offen). Wächter `py_packaging`
+  K8915-Systemdiskette im Paket (E4l-Rechtsfrage offen, `16_k8915.md` §6.23: nur mit
+  `--disks all`, Wächter `test_k8915_systemdisketten_sind_nicht_in_der_vorgabeauswahl`).
+  **Alle Rauchtests (install.sh, .iss, beide release.yml-Jobs) erzeugen BEIDE Maschinen**
+  (`k1520_create(0)` und `(2)`) — Wächter `test_rauchtests_pruefen_beide_maschinen`. Wächter `py_packaging`
   (`test_launcher_sh_waehlt_die_maschine_am_namen`, `test_iss_hat_den_k8915_emulator_im_startmenue`,
   `test_install_sh_schreibt_und_kennt_den_k8915_starter`).
 

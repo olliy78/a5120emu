@@ -98,6 +98,17 @@ jobs:
           lib = ctypes.CDLL(sys.argv[1])
           lib.k1520_version.restype = ctypes.c_char_p
           print("k1520_version:", lib.k1520_version().decode())
+          # Beide Maschinen: ROM-/Zeichengeneratordaten sind einkompiliert,
+          # der K8915 (K1520_MACHINE_K8915 = 2) muss sich ebenso erzeugen lassen.
+          lib.k1520_create.argtypes = [ctypes.c_int]
+          lib.k1520_create.restype = ctypes.c_void_p
+          lib.k1520_destroy.argtypes = [ctypes.c_void_p]
+          for nr, name in ((0, "A5120"), (2, "K8915")):
+              h = lib.k1520_create(nr)
+              if not h:
+                  sys.exit(name + ": k1520_create schlug fehl")
+              lib.k1520_destroy(h)
+              print("Maschine", name, "laeuft an")
           PY
 
           echo "── kein Pfad des Baurechners in der Bibliothek ──"
@@ -289,7 +300,15 @@ jobs:
             'import ctypes, sys',
             'lib = ctypes.CDLL(sys.argv[1])',
             'lib.k1520_version.restype = ctypes.c_char_p',
-            "print('k1520_version:', lib.k1520_version().decode())")
+            "print('k1520_version:', lib.k1520_version().decode())",
+            'lib.k1520_create.argtypes = [ctypes.c_int]',
+            'lib.k1520_create.restype = ctypes.c_void_p',
+            'lib.k1520_destroy.argtypes = [ctypes.c_void_p]',
+            'for nr, name in ((0, "A5120"), (2, "K8915")):',
+            '    h = lib.k1520_create(nr)',
+            '    if not h: sys.exit(name + ": k1520_create schlug fehl")',
+            '    lib.k1520_destroy(h)',
+            "    print('Maschine', name, 'laeuft an')")
           & python $abi "$root\bin\k1520core.dll"
           if ($LASTEXITCODE -ne 0) { throw 'k1520core.dll ist nicht ladbar' }
 

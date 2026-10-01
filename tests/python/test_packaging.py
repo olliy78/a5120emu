@@ -186,6 +186,36 @@ def test_iss_hat_den_k8915_emulator_im_startmenue():
     assert "bin\\k8915emu.cmd" in iss, "Starter fuer den Aufruf von Hand"
 
 
+def test_rauchtests_pruefen_beide_maschinen():
+    """AP-E4l: Linux-Installer, Windows-Setup und beide Release-Jobs erzeugen
+    den K8915 (``k1520_create(2)``), nicht nur den A5120 — ein Paket, dessen
+    Bibliothek ihn nicht traegt, darf weder installiert noch veroeffentlicht
+    werden."""
+    quellen = {
+        "install.sh": (PACKAGING / "install.sh").read_text(encoding="utf-8"),
+        "k1520emu.iss": (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8"),
+        "release.yml": (PROJECT_ROOT / ".github" / "workflows" / "release.yml")
+                       .read_text(encoding="utf-8"),
+    }
+    for name, text in quellen.items():
+        assert "k1520_create" in text and '(2, "K8915")' in text, name
+        assert "k1520_destroy" in text, name
+    # release.yml hat zwei Rauchtests (Linux, Windows): beide.
+    assert quellen["release.yml"].count('(2, "K8915")') == 2
+    # Installer und Setup bauen auch das Fenster des zweiten Profils.
+    assert 'profil("k8915")' in quellen["install.sh"]
+    assert 'profil("k8915")' in quellen["k1520emu.iss"]
+
+
+def test_k8915_systemdisketten_sind_nicht_in_der_vorgabeauswahl():
+    """Rechtsfrage offen (16_k8915.md §6.23): die Disketten 900/901/904 kommen
+    nur mit ``--disks all`` ins Paket, nie in ``DISKS_DEFAULT``."""
+    text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    block = text[text.index('DISKS_DEFAULT="'):]
+    block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0]
+    assert "k8915" not in block.lower()
+
+
 def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
     text = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
     assert '"%~n0"=="k8915emu"' in text and "--machine k8915" in text
@@ -1240,6 +1270,24 @@ def test_paket_traegt_keinen_pfad_des_baurechners(tmp_path):
 
     roh = (build / "libk1520core.so").read_bytes()
     assert bytes(str(PROJECT_ROOT / "data" / "formats.yaml"), "utf-8") not in roh
+
+    # AP-E4l: ROM-/Zeichengeneratordaten beider Maschinen sind einkompiliert
+    # (`*_data.h`), es darf also weder ein Quellbaumpfad hinzukommen noch der
+    # K8915 fehlen.  Geprueft an derselben Release-Bibliothek.
+    # (Quelltextpfade aus __FILE__ der Log-Makros stehen bei beiden Maschinen
+    # drin und sind keine Suchpfade — gesucht wird nur nach Datenordnern.)
+    for ordner in ("data", "disks", "doc"):
+        assert bytes(str(PROJECT_ROOT / ordner), "utf-8") not in roh, \
+            f"Datenordner des Baurechners ({ordner}/) in der Release-Bibliothek"
+    import ctypes
+    lib = ctypes.CDLL(str(build / "libk1520core.so"))
+    lib.k1520_create.argtypes = [ctypes.c_int]
+    lib.k1520_create.restype = ctypes.c_void_p
+    lib.k1520_destroy.argtypes = [ctypes.c_void_p]
+    for nr in (0, 2):                      # A5120, K8915
+        h = lib.k1520_create(nr)
+        assert h, f"k1520_create({nr}) schlug fehl"
+        lib.k1520_destroy(h)
 
 
 # ─── Vollständige Installation (langsam, braucht Netz) ───────────────────────
