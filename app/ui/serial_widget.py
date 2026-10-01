@@ -1,11 +1,15 @@
 """
-K1520 Emulator - Dock „Schnittstellen" (serielle Schnittstellen nach außen)
-===========================================================================
+K1520 Emulator - Reiter „Schnittstellen" (serielle Schnittstellen nach außen)
+=============================================================================
 
 Je einstellbarer Schnittstelle der Maschine ein Block im Stil der Laufwerkskästen
 (`app/ui/drive_widget.py`), darunter je feste Schnittstelle (Tastatur) eine Zeile.
 Entwurf: ``doc/design/19_serielle_schnittstellen.md`` §9; Einordnung in die
 Oberfläche: ``doc/design/11_python_app.md`` §10.10.
+
+Seit AP-S10 ist das Widget ein Reiter im Einstellungen-Kasten
+(``settings_widget.py``), kein eigener Dock.  Sein 4-Hz-Takt läuft unabhängig davon,
+ob der Reiter obenauf liegt — er füttert auch die Statuszeile.
 
 Leitsätze (nicht aufweichen):
 
@@ -32,7 +36,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QRectF, QSize, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSpinBox, QVBoxLayout, QWidget,
@@ -78,13 +83,182 @@ def _aus_wort(tabelle, wert):
     return None
 
 
-def format_text(st) -> str:
-    """Gastformat als ``9600 Bd 8N1`` (rohes Format der SIO; ``nicht programmiert``)."""
+#: Erklärung der Formatschreibweise (``8N1``) — Tooltip der Formatanzeigen.
+FORMAT_ERKLAERUNG = (
+    "Format wie üblich: Datenbits, Parität, Stoppbits — z. B. 8N1.\n"
+    "Parität: N = keine, E = gerade (even), O = ungerade (odd), "
+    "M = immer 1 (mark), S = immer 0 (space).\n"
+    "Stoppbits: 1, 1.5 oder 2.")
+
+_PARITAET_WORT = {"N": "keine Parität", "E": "gerade Parität (even)",
+                  "O": "ungerade Parität (odd)", "M": "Parität immer 1 (mark)",
+                  "S": "Parität immer 0 (space)"}
+
+
+def format_kuerzel(daten: int, paritaet: str, stopp: str) -> str:
+    """``8N1``, ``7E1``, ``8O1`` — Großbuchstaben, 1,5 Stoppbits als ``1.5``."""
+    return f"{daten}{paritaet}{stopp}"
+
+
+def format_tooltip(kuerzel: str) -> str:
+    """Die Erklärung der Schreibweise, mit dem konkreten Format vorweg."""
+    if (len(kuerzel) >= 3 and kuerzel[0].isdigit() and kuerzel[1] in _PARITAET_WORT
+            and kuerzel[2:] in ("1", "1.5", "2")):
+        bits = kuerzel[2:]
+        konkret = (f"{kuerzel}: {kuerzel[0]} Datenbits, {_PARITAET_WORT[kuerzel[1]]}, "
+                   f"{bits} Stoppbit{'' if bits == '1' else 's'}.\n\n")
+    else:
+        konkret = ""
+    return konkret + FORMAT_ERKLAERUNG
+
+
+def gast_kuerzel(st) -> Optional[str]:
+    """Das Gastformat als ``8N1`` (rohes Format der SIO); ``None`` = nicht programmiert."""
     if not st.format_gueltig:
-        return "Gast nicht programmiert"
+        return None
     par = {0: "N", 1: "O", 2: "E"}.get(st.paritaet, "?")
-    stopp = {2: "1", 3: "1,5", 4: "2"}.get(st.stopp_halbe, "?")
-    return f"Gast {st.baud_nenn} Bd {st.daten}{par}{stopp}"
+    stopp = {2: "1", 3: "1.5", 4: "2"}.get(st.stopp_halbe, "?")
+    return format_kuerzel(st.daten, par, stopp)
+
+
+def format_text(st) -> str:
+    """Gastformat als ``Gast 9600 Bd 8N1`` (``Gast nicht programmiert``)."""
+    k = gast_kuerzel(st)
+    if k is None:
+        return "Gast nicht programmiert"
+    return f"Gast {st.baud_nenn} Bd {k}"
+
+
+def gegenseite_text(st) -> str:
+    """``Gegenseite 9600 Bd 8N1`` (+ `` ⚠`` bei Abweichung); leer, wenn nichts bekannt."""
+    teile = []
+    if st.baud_gegenseite:
+        teile.append(f"{st.baud_gegenseite} Bd")
+    fmt = st.format_gegenseite_text
+    if fmt:
+        teile.append(fmt)
+    if not teile:
+        return ""
+    return "Gegenseite " + " ".join(teile) + (" ⚠" if _abweichend(st) else "")
+
+
+def _abweichend(st) -> bool:
+    return bool(st.baud_abweichend or st.format_abweichend)
+
+
+#: Gast: Ausgänge (RTS, DTR) und Eingänge (CTS, DSR, DCD) der V.24-Schnittstelle.
+GAST_AUSGAENGE = (("RTS", "Anforderung zum Senden"), ("DTR", "Endgerät bereit"))
+GAST_EINGAENGE = (("CTS", "Sendebereit"), ("DSR", "Gegenstelle bereit"),
+                  ("DCD", "Träger erkannt"))
+
+#: Gegenseite je Rolle: der Server sieht, was der Client setzt; der Client, was der
+#: Server meldet (RFC 2217, §6.4 des Entwurfs).
+GEGEN_SERVER = (("RTS", K.SER_L_RTS), ("DTR", K.SER_L_DTR))
+GEGEN_CLIENT = (("CTS", K.SER_L_CTS), ("DSR", K.SER_L_DSR), ("DCD", K.SER_L_DCD),
+                ("RI", K.SER_L_RI))
+
+
+class LeitungsLed(QWidget):
+    """Kleine runde Anzeige: ``True`` = grün leuchtend, ``False`` = dunkel,
+    ``None`` = unbekannt (nur Umriss)."""
+
+    AN, AUS, UNBEKANNT = "#35c43a", "#3a3d3a", None
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._zustand: Optional[bool] = None
+        self.setFixedSize(QSize(14, 14))
+
+    @property
+    def zustand(self) -> Optional[bool]:
+        return self._zustand
+
+    def setze(self, zustand: Optional[bool]):
+        if zustand is not None:
+            zustand = bool(zustand)
+        if zustand != self._zustand:
+            self._zustand = zustand
+            self.update()
+
+    def paintEvent(self, _ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(1.5, 1.5, 11, 11)
+        if self._zustand is None:
+            p.setPen(QPen(QColor("#8a8a8a"), 1.3))
+            p.setBrush(Qt.NoBrush)
+        elif self._zustand:
+            p.setPen(QPen(QColor("#1d7a21"), 1))
+            p.setBrush(QColor(self.AN))
+        else:
+            p.setPen(QPen(QColor("#222"), 1))
+            p.setBrush(QColor(self.AUS))
+        p.drawEllipse(r)
+        if self._zustand:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(255, 255, 255, 110))
+            p.drawEllipse(QRectF(4, 3.5, 3.5, 3.5))      # Glanzpunkt: „leuchtet"
+
+
+class LeitungsAnzeige(QWidget):
+    """LED mit Beschriftung daneben und Tooltip („CTS aktiv“)."""
+
+    def __init__(self, name: str, bedeutung: str, richtung: str, parent=None):
+        super().__init__(parent)
+        self.name, self.bedeutung, self.richtung = name, bedeutung, richtung
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(3)
+        self.led = LeitungsLed()
+        self.etikett = QLabel(name)
+        lay.addWidget(self.led)
+        lay.addWidget(self.etikett)
+        self.setze(None)
+
+    def setze(self, zustand: Optional[bool]):
+        self.led.setze(zustand)
+        wort = {True: "aktiv", False: "inaktiv", None: "unbekannt"}[zustand]
+        tipp = f"{self.name} {wort}"
+        if self.bedeutung:
+            tipp += f" — {self.bedeutung}"
+        if self.richtung:
+            tipp += f" ({self.richtung})"
+        self.setToolTip(tipp)
+
+    @property
+    def zustand(self) -> Optional[bool]:
+        return self.led.zustand
+
+
+class LeitungsReihe(QWidget):
+    """Mehrere Leitungsanzeigen nebeneinander, nach Namen ansprechbar."""
+
+    def __init__(self, gruppen, parent=None):
+        """*gruppen*: [(Gruppenbeschriftung, [(Name, Bedeutung, Richtung), …]), …]."""
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        self.anzeigen: Dict[str, LeitungsAnzeige] = {}
+        self.titel: List[QLabel] = []
+        for text, leitungen in gruppen:
+            if text:
+                t = QLabel(text)
+                t.setStyleSheet("color: #8a8a8a;")
+                lay.addWidget(t)
+                self.titel.append(t)
+            for name, bedeutung, richtung in leitungen:
+                a = LeitungsAnzeige(name, bedeutung, richtung)
+                self.anzeigen[name] = a
+                lay.addWidget(a)
+        lay.addStretch()
+
+    def setze(self, zustaende: Dict[str, Optional[bool]]):
+        for name, a in self.anzeigen.items():
+            a.setze(zustaende.get(name))
+
+    def zustaende(self) -> Dict[str, Optional[bool]]:
+        return {n: a.zustand for n, a in self.anzeigen.items()}
 
 
 def betriebsart_text(st) -> str:
@@ -202,18 +376,42 @@ class SerialBlock(QFrame):
         z2.addStretch()
         lay.addLayout(z2)
 
-        # Zeile 3: Gastformat, Leitungen (nur V.24), Gegenseite.
+        # Zeile 3: Gastformat (8N1 mit Erklärung im Tooltip).
         z3 = QHBoxLayout()
         self.format_label = QLabel()
         z3.addWidget(self.format_label)
-        self.leitungen = QLabel()
-        self.leitungen.setVisible(bool(info.v24))
-        z3.addWidget(self.leitungen)
         z3.addStretch()
-        self.gegenseite = QLabel()
-        self.gegenseite.setVisible(False)
-        z3.addWidget(self.gegenseite)
         lay.addLayout(z3)
+
+        # Zeile 4 (nur V.24): die Leitungen des Gastes als LEDs — Ausgänge RTS/DTR
+        # (der Gast setzt sie), Eingänge CTS/DSR/DCD (der Gast liest sie).
+        self.leitungen = QWidget()
+        z4 = QHBoxLayout(self.leitungen)
+        z4.setContentsMargins(0, 0, 0, 0)
+        self.leitungen_reihe = LeitungsReihe((
+            ("Aus:", [(n, b, "Ausgang des Rechners") for n, b in GAST_AUSGAENGE]),
+            ("Ein:", [(n, b, "Eingang des Rechners") for n, b in GAST_EINGAENGE])))
+        z4.addWidget(self.leitungen_reihe)
+        self.leitungen_hinweis = QLabel("(bei Telnet nicht übertragen)")
+        self.leitungen_hinweis.setStyleSheet("color: #8a8a8a;")
+        z4.addWidget(self.leitungen_hinweis)
+        z4.addStretch()
+        self.leitungen.setVisible(bool(info.v24))
+        lay.addWidget(self.leitungen)
+
+        # Zeile 5: Gegenseite (RFC 2217) — Baud, Format, Leitungen als LEDs.
+        self.gegenseite_zeile = QWidget()
+        z5 = QHBoxLayout(self.gegenseite_zeile)
+        z5.setContentsMargins(0, 0, 0, 0)
+        self.gegenseite = QLabel()
+        z5.addWidget(self.gegenseite)
+        self.gegen_leitungen = LeitungsReihe(
+            (("", [(n, "", "") for n, _b in GEGEN_SERVER + GEGEN_CLIENT]),))
+        self.gegen_leitungen.setVisible(bool(info.v24))
+        z5.addWidget(self.gegen_leitungen)
+        z5.addStretch()
+        self.gegenseite_zeile.setVisible(False)
+        lay.addWidget(self.gegenseite_zeile)
 
         # Meldungszeile — Fehler, Hinweise, „Port belegt …".
         self.meldung = QLabel()
@@ -252,8 +450,18 @@ class SerialBlock(QFrame):
             self._setze_combo(self.rolle, [z[0] for z in ROLLEN].index(k.rolle))
             if not self.host.hasFocus() and self.host.text() != k.host:
                 self.host.setText(k.host)
-            if not self.port.hasFocus() and self.port.value() != k.port:
-                self.port.setValue(k.port)
+            # Im Betrieb zeigt das (gesperrte) Feld den TATSÄCHLICH benutzten Port —
+            # der kann vom eingestellten abweichen (belegt → nächster freier, §7.2).
+            # Gespeichert wird immer der eingestellte (``konfig_lesen`` liest den Kern).
+            st = self._status
+            benutzt = st.port_aktiv if (st is not None and st.zustand in AKTIV
+                                        and st.port_aktiv) else 0
+            zeige = benutzt or k.port
+            if not self.port.hasFocus() and self.port.value() != zeige:
+                self.port.setValue(zeige)
+            self.port.setToolTip(
+                f"Eingestellt: {k.port}, benutzt: {benutzt}" if benutzt and benutzt != k.port
+                else "")
             for box, wert in ((self.loop, k.loop), (self.bruecke, k.rtscts_bruecke),
                               (self.xonxoff, k.xonxoff)):
                 if box.isChecked() != wert:
@@ -407,26 +615,15 @@ class SerialBlock(QFrame):
 
         # Gastformat, Leitungen, Gegenseite.
         self.format_label.setText(format_text(st))
+        kuerzel = gast_kuerzel(st)
+        self.format_label.setToolTip(
+            format_tooltip(kuerzel) if kuerzel else
+            "Der Gast hat die Schnittstelle noch nicht programmiert.")
         if self.info.v24:
-            def p(name, an):
-                return f"{name}{'●' if an else '○'}"
-            text = " ".join((p("RTS", st.rts), p("CTS", st.cts), p("DTR", st.dtr),
-                             p("DSR", st.dsr), p("DCD", st.dcd)))
-            if k.betriebsart == K.SER_TELNET:
-                text += "  (nicht übertragen)"
-            self.leitungen.setText(text)
-        if st.baud_gegenseite:
-            warn = st.baud_abweichend
-            self.gegenseite.setText(f"Gegenseite {st.baud_gegenseite} Bd" + (" ⚠" if warn else ""))
-            self.gegenseite.setStyleSheet(f"color: {FARBE_WARNUNG};" if warn else "")
-            self.gegenseite.setToolTip(
-                "Die Gegenseite arbeitet mit einer anderen Baudrate als der Gast — "
-                "die Zeichen kommen, aber im falschen Takt." if warn else
-                "Baudrate der Gegenseite (RFC 2217).")
-            self.gegenseite.setVisible(True)
-        else:
-            self.gegenseite.setVisible(False)
-
+            self.leitungen_reihe.setze({"RTS": st.rts, "DTR": st.dtr, "CTS": st.cts,
+                                        "DSR": st.dsr, "DCD": st.dcd})
+            self.leitungen_hinweis.setVisible(k.betriebsart == K.SER_TELNET)
+        self._gegenseite_zeigen(st)
         # Meldungszeile: der Kern zuerst, dann unser Hinweis, dann der Loop-Hinweis.
         text, farbe = st.meldung, FARBE_WARNUNG
         if st.zustand == K.SER_FEHLER:
@@ -438,6 +635,44 @@ class SerialBlock(QFrame):
         self.meldung.setText(text)
         self.meldung.setStyleSheet(f"color: {farbe};")
         self.meldung.setVisible(bool(text))
+
+    def _gegenseite_zeigen(self, st):
+        """Baud, Format und Leitungen der Gegenseite (RFC 2217); nichts bekannt ⇒ weg."""
+        text = gegenseite_text(st)
+        if not text:
+            self.gegenseite_zeile.setVisible(False)
+            return
+        self.gegenseite_zeile.setVisible(True)
+        warn = _abweichend(st)
+        self.gegenseite.setText(text)
+        self.gegenseite.setStyleSheet(f"color: {FARBE_WARNUNG};" if warn else "")
+        gründe = []
+        if st.baud_abweichend:
+            gründe.append("eine andere Baudrate")
+        if st.format_abweichend:
+            gründe.append("ein anderes Format")
+        tipp = ("Die Gegenseite arbeitet mit " + " und ".join(gründe) + " als der Gast — "
+                "die Zeichen kommen, aber im falschen Takt bzw. falsch gedeutet."
+                if warn else "Baudrate und Format der Gegenseite (RFC 2217).")
+        tipp += ("\n\nFormat: Datenbits, Parität (N keine, E gerade, O ungerade, "
+                 "M mark, S space), Stoppbits.\n"
+                 "Je Rolle ist bekannt: ein Server sieht RTS und DTR des Clients, "
+                 "ein Client CTS, DSR, DCD und RI des Servers; "
+                 "unbekannte Leitungen stehen als Umriss.")
+        self.gegenseite.setToolTip(tipp)
+        # Nur die Leitungen, die diese Rolle überhaupt sehen kann.
+        sichtbar = GEGEN_SERVER if st.rolle == K.SER_SERVER else GEGEN_CLIENT
+        namen = {n for n, _b in sichtbar}
+        for n, anzeige in self.gegen_leitungen.anzeigen.items():
+            anzeige.setVisible(n in namen)
+        zust = {}
+        for n, bit in sichtbar:
+            zust[n] = st.leitung_gegenseite(bit)
+            anzeige = self.gegen_leitungen.anzeigen[n]
+            anzeige.bedeutung = "Leitung der Gegenseite"
+            anzeige.richtung = ("vom Client gesetzt" if st.rolle == K.SER_SERVER
+                                else "vom Server gemeldet")
+        self.gegen_leitungen.setze(zust)
 
     @staticmethod
     def _zustand_text(st, datei: bool) -> str:

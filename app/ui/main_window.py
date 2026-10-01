@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
         self.settings_widget.speedChanged.connect(self._on_speed_selected)
         self.settings_widget.driveTypesChanged.connect(self._on_drive_types_selected)
         # Serielle Schnittstellen: jede Änderung des Anwenders gehört in die
-        # Konfiguration; die Statuszeile bekommt ihre Felder fertig aus dem Dock.
+        # Konfiguration; die Statuszeile bekommt ihre Felder fertig aus dem Reiter.
         self.serial_widget.changed.connect(self._schedule_autosave)
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
@@ -192,7 +192,7 @@ class MainWindow(QMainWindow):
         # Sammeln im Autosave-Timer sorgt dafür, dass ein Ziehen EINE Schreibung
         # ergibt und nicht fünfzig.
         for dock in (self.screen_dock, self.keyboard_dock,
-                     self.drives_dock, self.settings_dock, self.serial_dock):
+                     self.drives_dock, self.settings_dock):
             dock.visibilityChanged.connect(lambda *_: self._kasten_sichtbarkeit())
             dock.dockLocationChanged.connect(lambda *_: self._schedule_autosave())
             dock.installEventFilter(self)
@@ -328,23 +328,16 @@ class MainWindow(QMainWindow):
         # ── Einstellungen-Dock (rechts, getabbt; anfangs versteckt) ──────────
         self.settings_dock = QDockWidget("Einstellungen", self)
         self.settings_dock.setObjectName("settings_dock")
-        self.settings_widget = SettingsWidget(self.screen_widget, profil=self.profil)
+        # Serielle Schnittstellen nach außen (doc/design/19 §9, AP-S10): ein Reiter
+        # IM Einstellungen-Kasten, kein eigener Kasten.  Namen und Fähigkeiten der
+        # Blöcke kommen aus dem Kern.  Das Widget (und mit ihm sein 4-Hz-Takt für
+        # die Statuszeile) lebt auch, solange der Reiter nicht obenauf liegt.
+        self.serial_widget = SerialWidget(self.emulator)
+        self.settings_widget = SettingsWidget(self.screen_widget, profil=self.profil,
+                                              schnittstellen=self.serial_widget)
         self.settings_dock.setWidget(self.settings_widget)
         self.addDockWidget(Qt.RightDockWidgetArea, self.settings_dock)
         self.tabifyDockWidget(self.drives_dock, self.settings_dock)
-
-        # ── Schnittstellen-Dock (rechts, getabbt) ────────────────────────────
-        # Serielle Schnittstellen nach außen (doc/design/19 §9): je Schnittstelle
-        # der Maschine ein Block, Namen und Fähigkeiten aus dem Kern.
-        self.serial_dock = QDockWidget("Schnittstellen", self)
-        self.serial_dock.setObjectName("serial_dock")
-        self.serial_widget = SerialWidget(self.emulator)
-        serial_scroll = QScrollArea()
-        serial_scroll.setWidgetResizable(True)
-        serial_scroll.setWidget(self.serial_widget)
-        self.serial_dock.setWidget(serial_scroll)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.serial_dock)
-        self.tabifyDockWidget(self.settings_dock, self.serial_dock)
 
         # ── Kastenschalter ───────────────────────────────────────────────────
         # Sie kommen von Qt (``toggleViewAction``) und sind damit immer richtig
@@ -355,9 +348,7 @@ class MainWindow(QMainWindow):
                 ("keyboard", self.keyboard_dock, "&Tastatur", "keyboard", "Tastatur"),
                 ("drives", self.drives_dock, "&Laufwerke", "drives", "Laufwerke"),
                 ("settings", self.settings_dock, "&Einstellungen", "settings",
-                 "Einstellungen"),
-                ("serial", self.serial_dock, "Sch&nittstellen", "serial",
-                 "Schnittstellen")):
+                 "Einstellungen")):
             a = dock.toggleViewAction()
             a.setText(text)
             a.setIcon(icon(bild))
@@ -496,7 +487,7 @@ class MainWindow(QMainWindow):
         # Laufwerke/Einstellungen auf schmalste Breite ohne horizontales Rollen.
         w = getattr(self, "_drives_width", 0)
         if w:
-            schmal = [d for d in (self.drives_dock, self.settings_dock, self.serial_dock)
+            schmal = [d for d in (self.drives_dock, self.settings_dock)
                       if d is not None and d.isVisible() and not d.isFloating()]
             if schmal:
                 self.resizeDocks(schmal, [w] * len(schmal), Qt.Horizontal)
@@ -533,8 +524,7 @@ class MainWindow(QMainWindow):
                 and obj in (getattr(self, "screen_dock", None),
                             getattr(self, "keyboard_dock", None),
                             getattr(self, "drives_dock", None),
-                            getattr(self, "settings_dock", None),
-                            getattr(self, "serial_dock", None))):
+                            getattr(self, "settings_dock", None))):
             if not self._layout_laeuft:
                 # Nicht von uns, also vom Anwender: ab jetzt rückt die
                 # Startaufteilung nichts mehr zurecht.
@@ -600,7 +590,7 @@ class MainWindow(QMainWindow):
         view_menu = menu_bar.addMenu("&Ansicht")
         view_menu.addAction(self.act_vollbild)
         view_menu.addSeparator()
-        for name in ("screen", "keyboard", "drives", "settings", "serial"):
+        for name in ("screen", "keyboard", "drives", "settings"):
             view_menu.addAction(getattr(self, f"act_dock_{name}"))
         view_menu.addSeparator()
 
@@ -787,8 +777,7 @@ class MainWindow(QMainWindow):
         # already 0-sized, so the visible screen dock fills the window).
         self._chrome_hidden = []
         for w in (self.menuBar(), self.controls_bar, self.statusBar(),
-                  self.keyboard_dock, self.drives_dock, self.settings_dock,
-                  self.serial_dock):
+                  self.keyboard_dock, self.drives_dock, self.settings_dock):
             if w is not None and w.isVisible():
                 self._chrome_hidden.append(w)
                 w.hide()

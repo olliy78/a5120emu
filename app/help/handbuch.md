@@ -50,12 +50,10 @@ Taste die echte Tastatur gerade anspricht, und trägt die Anzeigen des Rechners
 Schreibschutz, das erkannte Format, und die Knöpfe zum Einlegen, Anlegen,
 Speichern unter und für die echte Diskette.
 
-**Schnittstellen** — die seriellen Anschlüsse des Rechners nach außen: ein Block je
-Schnittstelle (siehe *Serielle Schnittstellen* unten).
-
-**Einstellungen** — drei Reiter: *Allgemein* (Takt), *Laufwerke*
-(welcher Laufwerkstyp in welchem Steckplatz steckt) und *CRT* (das Aussehen der
-Bildröhre).
+**Einstellungen** — vier Reiter: *Allgemein* (Takt), *Laufwerke*
+(welcher Laufwerkstyp in welchem Steckplatz steckt), *Schnittstellen* (die seriellen
+Anschlüsse des Rechners nach außen, ein Block je Schnittstelle — siehe *Serielle
+Schnittstellen* unten) und *CRT* (das Aussehen der Bildröhre).
 
 Jeder dieser Kästen lässt sich zuklappen, herausziehen und woanders andocken;
 *Ansicht* holt ihn zurück.
@@ -240,8 +238,8 @@ woran es liegt.
 
 ## Serielle Schnittstellen
 
-Der Kasten **Schnittstellen** (getabbt neben *Laufwerke* und *Einstellungen*, in
-*Ansicht* ein- und auszuschalten) verbindet die seriellen Anschlüsse des Rechners mit
+Der Reiter **Schnittstellen** im Kasten *Einstellungen* (*Ansicht ▸ Einstellungen*)
+verbindet die seriellen Anschlüsse des Rechners mit
 der Außenwelt. Je Schnittstelle ein Block; **die Namen und was sie können, kommen
 vom Rechner** (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: V.24, IFS 1, IFS 2). Die
 Tastatur steht als Zeile „fest verdrahtet" darunter — an ihr gibt es nichts zu
@@ -262,6 +260,9 @@ als **Client** wählt er sich selbst bei einer Gegenstelle ein (**Host** und **P
 Ein Server nimmt eine Verbindung zur Zeit an; jede weitere wird abgewiesen. Ist der
 eingestellte Port belegt, nimmt **Starten** den nächsten freien darüber — der
 tatsächliche steht im Kopf des Blocks („lauscht auf 5001") und in der Statuszeile.
+Solange die Schnittstelle läuft, zeigt auch das (gesperrte) Port-Feld den **tatsächlich
+benutzten** Port; nach dem Beenden steht wieder der eingestellte darin, und der wird
+auch gespeichert.
 Hinter dem Host steht, als was er gelesen wurde (IPv4, IPv6, Hostname oder
 **ungültig** — dann bleibt der Knopf gesperrt).
 
@@ -285,9 +286,21 @@ Betriebsart, Rolle, Host, Port und Datei gesperrt.
 * **Takt** — wo der Rechner eine Brücke für die Taktquelle des Anschlusses hat.
 
 Darunter zeigt der Block, womit der **Gast** (das Programm im Rechner) die
-Schnittstelle gerade eingestellt hat (`Gast 9600 Bd 8N1`), bei V.24 die Leitungen,
-und bei RFC2217 die Baudrate der Gegenseite — mit Warnzeichen, wenn sie von der des
-Gastes abweicht. Bei Telnet werden die Leitungen nicht übertragen.
+Schnittstelle gerade eingestellt hat, z. B. `Gast 9600 Bd 8N1`. Das Format steht in
+der üblichen Schreibweise: Datenbits, Parität, Stoppbits — `8N1`, `7E1`, `8O1`
+(Parität **N** keine, **E** gerade/even, **O** ungerade/odd, **M** mark, **S** space;
+anderthalb Stoppbits als `1.5`). Der Tooltip erklärt das am konkreten Format.
+
+Bei V.24 folgen die **Leitungen als Leuchten**: links die Ausgänge des Rechners (RTS,
+DTR), rechts die Eingänge (CTS, DSR, DCD). Grün leuchtend heißt aktiv, dunkel inaktiv,
+ein bloßer Umriss unbekannt; der Tooltip nennt es ausgeschrieben („CTS aktiv"). Bei
+Telnet werden die Leitungen nicht übertragen.
+
+Bei RFC2217 steht eine weitere Zeile **Gegenseite**: Baudrate und Format, mit Warnzeichen
+und Warnfarbe, wenn sie von denen des Gastes abweichen, dazu die Leitungen der Gegenseite
+als Leuchten. Was bekannt ist, hängt von der Rolle ab: ein **Server** sieht RTS und DTR des
+Clients, ein **Client** CTS, DSR, DCD und RI des Servers. Was die Gegenseite noch nicht
+gemeldet hat, bleibt Umriss.
 
 **Beispiele**
 

@@ -1,4 +1,4 @@
-"""Dock „Schnittstellen", Statuszeile und Konfiguration (AP-S7, Entwurf 19 §9/§11).
+"""Reiter „Schnittstellen" im Einstellungen-Kasten, Statuszeile und Konfiguration (AP-S7, Entwurf 19 §9/§11).
 
 Beide Programme (A5120 und K8915 Emulator), headless über ``offscreen``.  Echte
 Loopback-Sockets, nie feste Ports (ein freier wird beim Test erfragt, ein Server
@@ -11,6 +11,8 @@ import time
 
 import pytest
 import yaml
+
+from PySide6.QtCore import Qt
 
 from conftest import requires_core
 
@@ -150,19 +152,62 @@ def test_a_block_per_program_but_no_machine_specific_names_in_the_module():
         assert f'"{name}' not in quelle, name
 
 
-def test_the_dock_is_stacked_with_the_others_and_has_a_view_switch(w):
-    assert w.serial_dock in w.tabifiedDockWidgets(w.drives_dock)
-    assert w.serial_dock.windowTitle() == "Schnittstellen"
-    # In EINEM Ausdruck: die Hülle des QMenu überlebt sonst die Zeile nicht.
+def test_interfaces_are_a_tab_in_the_settings_box_not_a_dock(w):
+    sw = w.settings_widget
+    titel = [sw.tabs.tabText(i) for i in range(sw.tabs.count())]
+    assert titel == ["Allgemein", "Laufwerke", "Schnittstellen", "CRT"]
+    assert sw.tabs.widget(titel.index("Schnittstellen")).isAncestorOf(w.serial_widget)
+    assert sw.isAncestorOf(w.serial_widget)
+    assert not hasattr(w, "serial_dock") and not hasattr(w, "act_dock_serial")
+    assert "serial_dock" not in [d.objectName() for d in w.findChildren(type(w.settings_dock))]
+    sw.zeige_schnittstellen()
+    assert sw.tabs.currentIndex() == 2
+
+
+def test_the_view_menu_has_no_interface_entry_any_more(w):
     texte = next([a.text() for a in m.menu().actions()]
                  for m in w.menuBar().actions() if m.text() == "&Ansicht")
-    assert "Sch&nittstellen" in texte
-    assert w.act_dock_serial.shortcut().isEmpty()      # Kürzeltabelle des Handbuchs = Vertrag
+    assert "Sch&nittstellen" not in texte
+    from app.ui import actions
+    assert "dock_serial" not in actions.REIHENFOLGE
 
 
-def test_the_dock_switch_can_stand_in_the_toolbar(w):
-    w._leiste_fuellen(["power", "dock_serial"])
-    assert w.act_dock_serial in w.controls_bar.actions()
+def test_an_old_toolbar_with_dock_serial_still_loads(w):
+    w._leiste_fuellen(["power", "dock_serial", "dock_settings"])
+    assert w.act_dock_settings in w.controls_bar.actions()
+    w._apply_config({"window": {"toolbar": ["power", "dock_serial", "", "reset"]}})
+    assert w.act_reset in w.controls_bar.actions()
+
+
+def test_an_old_dock_state_with_serial_dock_does_no_harm(w, qapp):
+    """Eine gespeicherte Kastenanordnung, in der noch ``serial_dock`` steht."""
+    import base64
+    from PySide6.QtWidgets import QDockWidget, QMainWindow, QLabel
+    alt = QMainWindow()
+    for name in ("screen_dock", "drives_dock", "settings_dock", "serial_dock"):
+        d = QDockWidget(name, alt)
+        d.setObjectName(name)
+        d.setWidget(QLabel(name))
+        alt.addDockWidget(Qt.RightDockWidgetArea, d)
+    zustand = base64.b64encode(bytes(alt.saveState())).decode("ascii")
+    w._apply_config({"window": {"dock_state": zustand}})
+    qapp.processEvents()
+    assert w.settings_dock.objectName() == "settings_dock"
+    assert w.serial_widget.bloecke()                    # lebt und trägt Blöcke
+    w.serial_widget.aktualisieren()
+
+
+def test_the_widget_keeps_polling_with_another_tab_on_top(w, qapp):
+    """Die Statuszeile ist auch ohne sichtbaren Reiter aktuell: der Takt gehört dem Widget."""
+    w.settings_widget.tabs.setCurrentIndex(0)
+    b = server_einstellen(w.serial_widget.bloecke()[0])
+    b.knopf.click()
+    port = w.emulator.serial_status(0).port_aktiv
+    with socket.create_connection(("127.0.0.1", port), timeout=3):
+        name = w.emulator.serial_info(0).name
+        assert warte(qapp, lambda: f"{name} verbunden" in
+                     w.status_widget.seriell_verbindungen.text.text())     # ohne eigenes aktualisieren()
+    assert w.serial_widget._timer.isActive()
 
 
 # ─── Bedienung: Knopf, Host, Etikett, Sperren ────────────────────────────────
@@ -237,7 +282,8 @@ def test_server_runs_locks_fields_and_the_statusline_shows_the_real_port(w, qapp
         assert frei_.isEnabled()
     b.xonxoff.setChecked(True)
     assert w.emulator.serial_config(0).xonxoff
-    assert b.port.value() == eingestellt               # das Feld behält den Wert
+    assert b.port.value() == st.port_aktiv             # im Betrieb: der benutzte Port
+    assert w.emulator.serial_config(0).port == eingestellt
     srv = w.status_widget.seriell_server
     assert sichtbar(srv, w.status_widget)
     assert srv.text.text() == f"Telnet/RFC2217 Server Port: {st.port_aktiv}"
@@ -246,6 +292,7 @@ def test_server_runs_locks_fields_and_the_statusline_shows_the_real_port(w, qapp
     b.knopf.click()                                    # Beenden
     assert w.emulator.serial_status(0).zustand == K.SER_AUS
     assert b.knopf.text() == "Starten" and b.port.isEnabled()
+    assert b.port.value() == eingestellt               # danach wieder der eingestellte
     assert not sichtbar(srv, w.status_widget)          # Feld weg, nicht leer
 
 
@@ -593,35 +640,153 @@ def test_bytes_over_a_real_socket_do_not_disturb_a_running_machine(w, qapp):
 
 # ─── Ergänzt in AP-T1b ───────────────────────────────────────────────────────
 
-def test_guest_format_and_the_far_side_baud_are_shown_with_a_warning(w, qapp):
-    """Gastformat in Worten, Baud der Gegenseite (RFC 2217) samt Warnfarbe — Text,
-    Sichtbarkeit und Stil sind offscreen prüfbar, nur das Aussehen nicht."""
+def _probe(w, b, **felder):
+    """Einen Probestatus in den Block geben (der Takt wird dafür angehalten)."""
     import dataclasses
-    from app.ui import serial_widget as SW
-    b = w.serial_widget.bloecke()[0]
-    w.serial_widget._timer.stop()           # sonst überschreibt der Takt den Probestatus
+    w.serial_widget._timer.stop()
     echt = w.emulator.serial_status(b.index)
-    st = dataclasses.replace(echt, format_gueltig=True, baud_nenn=1200, daten=7,
-                             paritaet=2, stopp_halbe=4, baud_gegenseite=9600,
-                             baud_abweichend=True)
+    st = dataclasses.replace(echt, **felder)
     b.aktualisieren(st)
-    assert b.format_label.text() == "Gast 1200 Bd 7E2"
-    assert sichtbar(b.gegenseite, b)
-    assert b.gegenseite.text() == "Gegenseite 9600 Bd ⚠"
-    assert SW.FARBE_WARNUNG in b.gegenseite.styleSheet()
-    assert "anderen Baudrate" in b.gegenseite.toolTip()
+    return st
 
-    b.aktualisieren(dataclasses.replace(st, baud_gegenseite=1200, baud_abweichend=False,
-                                        paritaet=0, stopp_halbe=3))
-    assert b.format_label.text() == "Gast 1200 Bd 7N1,5"
-    assert b.gegenseite.text() == "Gegenseite 1200 Bd"
-    assert b.gegenseite.styleSheet() == ""
-    b.aktualisieren(dataclasses.replace(st, paritaet=9, stopp_halbe=0))
+
+def test_guest_format_uses_the_usual_notation_with_a_tooltip(w, qapp):
+    b = w.serial_widget.bloecke()[0]
+    gast = dict(format_gueltig=True, baud_nenn=1200, daten=7)
+    _probe(w, b, paritaet=2, stopp_halbe=4, **gast)
+    assert b.format_label.text() == "Gast 1200 Bd 7E2"
+    _probe(w, b, paritaet=0, stopp_halbe=3, **gast)
+    assert b.format_label.text() == "Gast 1200 Bd 7N1.5"      # Punkt, nicht Komma
+    _probe(w, b, paritaet=1, stopp_halbe=2, daten=8, format_gueltig=True, baud_nenn=9600)
+    assert b.format_label.text() == "Gast 9600 Bd 8O1"
+    tipp = b.format_label.toolTip()
+    for wort in ("8O1", "8 Datenbits", "ungerade", "N = keine", "E = gerade", "O = ungerade",
+                 "M = ", "S = ", "Stoppbits"):
+        assert wort in tipp, wort
+    _probe(w, b, paritaet=9, stopp_halbe=0, **gast)
     assert b.format_label.text() == "Gast 1200 Bd 7??"
-    b.aktualisieren(dataclasses.replace(st, baud_gegenseite=0))
-    assert not sichtbar(b.gegenseite, b)
-    b.aktualisieren(dataclasses.replace(st, format_gueltig=False))
+    _probe(w, b, format_gueltig=False)
     assert b.format_label.text() == "Gast nicht programmiert"
+    assert "noch nicht programmiert" in b.format_label.toolTip()
+
+
+def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
+    from app.ui.serial_widget import LeitungsLed
+    # Telnet-Blöcke ohne V.24 haben keine Leitungsanzeige.
+    for b in w.serial_widget.bloecke():
+        assert sichtbar(b.leitungen, b) == b.info.v24
+    b = next(x for x in w.serial_widget.bloecke() if x.info.v24)
+    anz = b.leitungen_reihe.anzeigen
+    assert list(anz) == ["RTS", "DTR", "CTS", "DSR", "DCD"]
+    assert all(isinstance(a.led, LeitungsLed) for a in anz.values())
+    assert [t.text() for t in b.leitungen_reihe.titel] == ["Aus:", "Ein:"]
+    _probe(w, b, rts=True, dtr=False, cts=True, dsr=False, dcd=True)
+    assert b.leitungen_reihe.zustaende() == dict(RTS=True, DTR=False, CTS=True, DSR=False,
+                                                 DCD=True)
+    assert "CTS aktiv" in anz["CTS"].toolTip() and "Eingang" in anz["CTS"].toolTip()
+    assert "inaktiv" in anz["DTR"].toolTip() and "Ausgang" in anz["DTR"].toolTip()
+    # Die Leuchte zeichnet sich in verschiedenen Zuständen verschieden (Pixelprobe).
+    def pixel(a):
+        bild = a.led.grab().toImage()
+        return bild.pixelColor(bild.width() // 2, bild.height() // 2).name()
+    an, aus = pixel(anz["CTS"]), pixel(anz["DSR"])
+    assert an != aus
+    anz["DSR"].setze(None)
+    assert anz["DSR"].zustand is None and "unbekannt" in anz["DSR"].toolTip()
+    assert pixel(anz["DSR"]) not in (an, aus)               # Umriss: Mitte unausgefüllt
+    # Telnet: Vermerk „nicht übertragen“, bei RFC2217 weg.
+    assert w.emulator.serial_configure(b.index, betriebsart=K.SER_TELNET)
+    b.aktualisieren()
+    assert sichtbar(b.leitungen_hinweis, b)
+    assert w.emulator.serial_configure(b.index, betriebsart=K.SER_RFC2217)
+    b.aktualisieren()
+    assert not sichtbar(b.leitungen_hinweis, b)
+
+
+def test_the_port_field_shows_the_port_in_use_and_the_set_one_after_stopping(w, qapp):
+    """Belegter eingestellter Port: der Server nimmt einen anderen, das Feld zeigt ihn;
+    gespeichert wird der eingestellte."""
+    b = frei(w.serial_widget.bloecke()[0])
+    b.betriebsart.setCurrentIndex(0)
+    b.rolle.setCurrentIndex(0)
+    with socket.socket() as belegt:
+        belegt.bind(("", 0))
+        belegt.listen(1)
+        eingestellt = belegt.getsockname()[1]
+        b.port.setValue(eingestellt)
+        b.knopf.click()
+        st = w.emulator.serial_status(0)
+        if st.zustand != K.SER_LAUSCHT:
+            pytest.skip("der Kern nimmt bei belegtem Port keinen anderen (§7.2)")
+        assert st.port_aktiv != eingestellt
+        assert b.port.value() == st.port_aktiv and not b.port.isEnabled()
+        assert str(eingestellt) in b.port.toolTip()
+        assert w._gather_config()["schnittstellen"][w.emulator.serial_info(0).name]["port"] \
+            == eingestellt
+        b.knopf.click()                                    # Beenden
+        assert b.port.value() == eingestellt and b.port.isEnabled()
+        assert b.port.toolTip() == ""
+
+
+def test_the_far_side_shows_format_and_lines_with_a_warning(w, qapp):
+    """Echter Loopback: ein roher Client verhandelt als RFC2217-Gegenseite des Servers."""
+    from app.ui import serial_widget as SW
+    b = frei(w.serial_widget.bloecke()[0])
+    b.betriebsart.setCurrentIndex(1)                       # RFC2217
+    b.rolle.setCurrentIndex(0)
+    b.port.setValue(freier_port())
+    b.knopf.click()
+    port = w.emulator.serial_status(0).port_aktiv
+
+    def sb(*d):
+        return b"\xff\xfa\x2c" + bytes(d) + b"\xff\xf0"
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as c:
+        assert warte(qapp, lambda: w.emulator.serial_status(0).zustand == K.SER_VERBUNDEN)
+        b.aktualisieren()
+        assert not sichtbar(b.gegenseite_zeile, b)         # noch nichts bekannt
+        c.sendall(b"\xff\xfb\x2c" + sb(2, 7) + sb(3, 3) + sb(4, 1) + sb(5, 11) + sb(5, 9))
+        assert warte(qapp, lambda: w.emulator.serial_status(0).leitungen_gegenseite_bekannt == 3
+                     and w.emulator.serial_status(0).format_gegenseite_bekannt)
+        w.serial_widget.aktualisieren()
+        assert sichtbar(b.gegenseite_zeile, b)
+        assert "7E1" in b.gegenseite.text()
+        st = w.emulator.serial_status(0)
+        assert st.format_abweichend                         # Gast steht auf 8N1
+        assert b.gegenseite.text().endswith("⚠")
+        assert SW.FARBE_WARNUNG in b.gegenseite.styleSheet()
+        assert "anderes Format" in b.gegenseite.toolTip()
+        assert "Server" in b.gegenseite.toolTip() and "Client" in b.gegenseite.toolTip()
+        if b.info.v24:
+            # Server sieht RTS/DTR des Clients; CTS/DSR/DCD/RI sind für ihn ohne Belang.
+            z = b.gegen_leitungen.anzeigen
+            assert z["RTS"].zustand is True and z["DTR"].zustand is False
+            assert not z["RTS"].isHidden() and not z["DTR"].isHidden()
+            assert z["CTS"].isHidden() and z["RI"].isHidden()
+
+
+def test_the_far_side_leds_as_client_and_unknown_as_outline(w, qapp):
+    b = next(x for x in w.serial_widget.bloecke() if x.info.v24)
+    _probe(w, b, rolle=K.SER_CLIENT, betriebsart=K.SER_RFC2217,
+           baud_gegenseite=9600, baud_abweichend=False, format_gegenseite_bekannt=True,
+           daten_gegenseite=8, paritaet_gegenseite=0, stopp_halbe_gegenseite=2,
+           format_abweichend=False,
+           leitungen_gegenseite=K.SER_L_CTS, leitungen_gegenseite_bekannt=K.SER_L_CTS | K.SER_L_DSR)
+    assert b.gegenseite.text() == "Gegenseite 9600 Bd 8N1"
+    assert b.gegenseite.styleSheet() == ""
+    z = b.gegen_leitungen.anzeigen
+    assert (z["CTS"].zustand, z["DSR"].zustand, z["DCD"].zustand, z["RI"].zustand) == \
+        (True, False, None, None)                           # unbekannt = Umriss
+    assert z["RTS"].isHidden() and not z["RI"].isHidden()
+    # Nur Baud bekannt: Text ohne Format, Leitungen alle unbekannt.
+    _probe(w, b, rolle=K.SER_CLIENT, baud_gegenseite=1200, baud_abweichend=True,
+           format_gegenseite_bekannt=False, format_abweichend=False,
+           leitungen_gegenseite_bekannt=0)
+    assert b.gegenseite.text() == "Gegenseite 1200 Bd ⚠"
+    assert "andere Baudrate" in b.gegenseite.toolTip()
+    assert all(a.zustand is None for a in z.values())
+    _probe(w, b, baud_gegenseite=0, format_gegenseite_bekannt=False,
+           leitungen_gegenseite_bekannt=0)
+    assert not sichtbar(b.gegenseite_zeile, b)
 
 
 def test_a_setting_the_core_refuses_says_so_in_the_block(w, qapp, monkeypatch):

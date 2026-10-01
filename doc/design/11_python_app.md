@@ -773,13 +773,17 @@ Festlegungen, die man nicht aufweichen darf:
   Wächter: `test_k8915emu_gui.py` (Stichprobe gegen das EPROM, Boot bis `A>` und `dir`
   über die Bildschirmtastatur).
 
-### 10.10 Der Kasten „Schnittstellen" (2026-10-01, AP-S7)
+### 10.10 Der Reiter „Schnittstellen" (2026-10-01, AP-S7; umgebaut AP-S10)
 
 Serielle Schnittstellen nach außen (Telnet/RFC 2217/Datei), Entwurf
 `doc/design/19_serielle_schnittstellen.md` §9.  `app/ui/serial_widget.py`:
-`SerialWidget` (Inhalt des Docks `serial_dock`, getabbt mit „Laufwerke"/„Einstellungen",
-Menü *Ansicht ▸ Schnittstellen*, Kastenschalter `dock_serial` für die Symbolleiste,
-**kein Tastenkürzel**) und je einstellbarer Schnittstelle ein `SerialBlock`.
+`SerialWidget` (seit AP-S10 ein **Reiter im Einstellungen-Kasten** neben
+Allgemein/Laufwerke/CRT, in einem `QScrollArea`; es gibt **keinen** `serial_dock`, keinen
+Menüeintrag und keinen Kastenschalter `dock_serial` mehr — ein solcher Name in einer
+alten `window.toolbar` wird übergangen, ein `serial_dock` in einer alten `dock_state`
+ignoriert Qt; **kein Tastenkürzel**) und je einstellbarer Schnittstelle ein `SerialBlock`.
+Das Widget gehört dem Hauptfenster (`SettingsWidget(…, schnittstellen=…)`) und sein
+4-Hz-Takt läuft auch bei verdecktem Reiter — er speist die Statuszeile.
 
 * **Namen, Stecker, V.24-Fähigkeit und Taktquellen kommen nur aus dem Kern**
   (`serial_info`/`serial_fixed_names`) — kein Profileintrag, kein `if machine == …`; beide
@@ -809,3 +813,20 @@ Menü *Ansicht ▸ Schnittstellen*, Kastenschalter `dock_serial` für die Symbol
   nimmt sie an der neuen wieder auf; `closeEvent` speichert zuerst (`aktiv` = Zustand
   beim Beenden) und beendet dann.
 * Wächter: `tests/python/test_serial_gui.py` (`py_serial_gui`, beide Programme).
+
+**AP-S10 (Anwenderbefund 2026-10-01), im selben Reiter:**
+
+* **Format** in der üblichen Schreibweise (`8N1`/`7E1`/`8O1`, `1.5`), Tooltip erklärt die
+  Buchstaben (`format_kuerzel`/`format_tooltip`).
+* **Leitungen als LEDs** (`LeitungsLed`/`LeitungsAnzeige`/`LeitungsReihe`, QPainter): grün =
+  aktiv, dunkel = inaktiv, Umriss = unbekannt; Ausgänge (RTS/DTR) und Eingänge
+  (CTS/DSR/DCD) getrennt beschriftet, Tooltip „CTS aktiv (Eingang des Rechners)".  Bei
+  Telnet der Vermerk „nicht übertragen".
+* **Port-Feld** zeigt im Betrieb `port_aktiv`, sonst den eingestellten Wert; gespeichert
+  wird immer der eingestellte (`konfig_lesen` liest den Kern, nicht das Feld) — §7.4a
+  (Vorschlag ins Feld, belegt → nicht gestartet) unverändert.
+* **Gegenseite** (RFC 2217, AP-S11): Baud + Format (`gegenseite_text`), Warnfarbe bei
+  `baud_abweichend` oder `format_abweichend`, Leitungen je Rolle als LEDs (Server: RTS/DTR,
+  Client: CTS/DSR/DCD/RI; unbekannt = Umriss); die Zeile fehlt, solange nichts bekannt ist.
+* Wächter: `tests/python/test_serial_gui.py` (Reiter statt Dock, alte Leiste/`dock_state`,
+  Format, LEDs, Port-Feld, Gegenseite über echten Loopback).

@@ -5,6 +5,8 @@ K1520 Emulator - Settings Widget
 Dockable settings panel with tabbed categories:
 
 * **Allgemein** — general emulator settings (emulation speed dropdown).
+* **Schnittstellen** — die seriellen Schnittstellen nach außen (AP-S10; das
+  Widget kommt vom Hauptfenster, damit sein Takt auch ohne sichtbaren Reiter läuft).
 * **CRT** — every :class:`~app.ui.screen_widget.CRTParams` field as a live
   control (slider + spin box, or colour picker), so the picture-tube look can be
   dialled in interactively.
@@ -18,7 +20,7 @@ from typing import Callable, List
 
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QScrollArea,
-    QSlider, QDoubleSpinBox, QComboBox, QPushButton, QLabel, QColorDialog,
+    QSlider, QDoubleSpinBox, QComboBox, QPushButton, QLabel, QColorDialog, QFrame,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -47,7 +49,7 @@ class SettingsWidget(QWidget):
     #: Profil des K8915 bekommt seine eigene Liste (2,4576 MHz), siehe __init__.
     SPEED_OPTIONS = takt.auswahl()
 
-    def __init__(self, screen_widget, parent=None, profil=None):
+    def __init__(self, screen_widget, parent=None, profil=None, schnittstellen=None):
         super().__init__(parent)
         self.screen = screen_widget
         self.profil = profil or profile.VORGABE
@@ -67,8 +69,21 @@ class SettingsWidget(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_general_tab(), "Allgemein")
         self.tabs.addTab(self._build_drives_tab(), "Laufwerke")
+        self.schnittstellen = schnittstellen
+        if schnittstellen is not None:
+            rolle = QScrollArea()
+            rolle.setWidgetResizable(True)
+            rolle.setFrameShape(QFrame.NoFrame)
+            rolle.setWidget(schnittstellen)
+            self.tabs.addTab(rolle, "Schnittstellen")
         self.tabs.addTab(self._build_crt_tab(), "CRT")
         layout.addWidget(self.tabs)
+
+    def zeige_schnittstellen(self):
+        """Den Reiter „Schnittstellen“ nach vorn holen (für Tests und Aufrufer)."""
+        if self.schnittstellen is not None:
+            self.tabs.setCurrentIndex(self.tabs.indexOf(self.schnittstellen.parentWidget()
+                                                        .parentWidget()))
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
