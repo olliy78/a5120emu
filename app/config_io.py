@@ -10,6 +10,11 @@ added over time.  Sections carried today:
 * ``drive_types`` — the drive-bay configuration: one core ``DriveProfile`` name
   per K5122 slot (``"none"`` = empty slot), restored on the next start
 * ``disks``   — the mounted disk images, so they are restored on the next start
+* ``schnittstellen`` — die seriellen Schnittstellen nach aussen (AP-S7, Entwurf 19 §9):
+  je Name aus dem Kern ``betriebsart``/``rolle``/``host``/``port``/``loop``/
+  ``rtscts_bruecke``/``xonxoff``/``taktquelle``/``datei`` und ``aktiv`` (Zustand beim
+  Beenden → Wiederaufnahme beim Start).  Die Auslieferungsvorgabe trägt keinen
+  Abschnitt; fehlend heisst „nicht anfassen".
 * ``window``  — window size, dock layout (which panels are active, their
   arrangement and sizes) **and die Symbolleiste** (``toolbar``: die Aktionsnamen
   in ihrer Reihenfolge, ``""`` = Trennstrich; ``toolbar_style``: Qts
@@ -119,14 +124,19 @@ def konfig_umziehen(profil: "profile.Programmprofil" = None) -> str:
 
 
 def build_config(crt: CRTParams, general: dict, disks: list,
-                 window: dict = None, drive_types: list = None) -> dict:
+                 window: dict = None, drive_types: list = None,
+                 schnittstellen: dict = None) -> dict:
     """Assemble the full configuration dict from the live application state.
 
     ``drive_types`` is the per-slot list of core ``DriveProfile`` names (one per
     K5122 slot, ``"none"`` = empty slot), so the drive-bay configuration is
     restored on the next start.
+
+    ``schnittstellen`` (AP-S7): Einstellung der seriellen Schnittstellen je Name aus
+    dem Kern samt ``aktiv``.  ``None`` = Abschnitt weglassen (fehlend heisst beim
+    Laden „nicht anfassen"); ein leeres Verzeichnis wird geschrieben.
     """
-    return {
+    data = {
         "version": CONFIG_VERSION,
         "crt": crt.to_dict(),
         "general": dict(general or {}),
@@ -134,6 +144,9 @@ def build_config(crt: CRTParams, general: dict, disks: list,
         "disks": list(disks or []),
         "window": dict(window or {}),
     }
+    if schnittstellen is not None:
+        data["schnittstellen"] = dict(schnittstellen)
+    return data
 
 
 def save_config(path: str, data: dict):

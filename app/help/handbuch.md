@@ -50,6 +50,9 @@ Taste die echte Tastatur gerade anspricht, und trägt die Anzeigen des Rechners
 Schreibschutz, das erkannte Format, und die Knöpfe zum Einlegen, Anlegen,
 Speichern unter und für die echte Diskette.
 
+**Schnittstellen** — die seriellen Anschlüsse des Rechners nach außen: ein Block je
+Schnittstelle (siehe *Serielle Schnittstellen* unten).
+
 **Einstellungen** — drei Reiter: *Allgemein* (Takt), *Laufwerke*
 (welcher Laufwerkstyp in welchem Steckplatz steckt) und *CRT* (das Aussehen der
 Bildröhre).
@@ -63,6 +66,7 @@ alles** — was man aus der Leiste wirft, bleibt erreichbar.
 
 **Statuszeile** — links die letzte Meldung, rechts der Zustand der Maschine:
 Takt, und je Laufwerk eine Leuchte mit dem Namen der eingelegten Diskette.
+Dazu kommen — **nur wenn es etwas zu sagen gibt** — die seriellen Schnittstellen.
 
 ## Die Symbolleiste einrichten
 
@@ -100,6 +104,13 @@ Daneben `A: cpa780.hfe  R/W`: Buchstabe, Name der eingelegten Abbilddatei und ob
 die Maschine darauf schreiben darf (`R/W`) oder nicht (`R/O`). Der volle Pfad
 steht im Tooltip. Ein nicht bestückter Steckplatz bekommt weder Leuchte noch
 Feld. So sieht man den Diskettenzugriff auch bei zugeklapptem Laufwerkskasten.
+
+**Serielle Schnittstellen** — zwei Felder hinter dem Takt, die nur erscheinen,
+wenn sie etwas zu sagen haben: `Telnet/RFC2217 Server Port: 5000` (auf welchen Ports
+ein Server tatsächlich lauscht — das ist nicht immer der eingestellte, siehe unten)
+und `V.24 verbunden, Drucker verbunden` (welche Schnittstellen eine Verbindung
+haben). Ein Client, der noch versucht, und eine Ausgabe in eine Datei erscheinen dort
+nicht; sie stehen im Block. Der Tooltip nennt Protokoll und Gegenstelle.
 
 Zykluszähler und Bildrate standen hier früher. Beide sagen über die Maschine
 nichts, was man beim Arbeiten wissen will.
@@ -227,6 +238,89 @@ Drei Dinge, die man wissen sollte:
 Das Paket `greaseweazle` ist eine freiwillige Zutat; fehlt es, sagt der Knopf,
 woran es liegt.
 
+## Serielle Schnittstellen
+
+Der Kasten **Schnittstellen** (getabbt neben *Laufwerke* und *Einstellungen*, in
+*Ansicht* ein- und auszuschalten) verbindet die seriellen Anschlüsse des Rechners mit
+der Außenwelt. Je Schnittstelle ein Block; **die Namen und was sie können, kommen
+vom Rechner** (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: V.24, IFS 1, IFS 2). Die
+Tastatur steht als Zeile „fest verdrahtet" darunter — an ihr gibt es nichts zu
+stellen.
+
+**Betriebsart**
+
+* **Telnet** — ein Terminalprogramm oder ein anderes Programm verbindet sich mit dem
+  Rechner; der Rechner macht das Echo.
+* **RFC2217** — wie Telnet, aber mit Baudrate und Steuerleitungen (RTS, CTS, DTR,
+  DSR, DCD) über das Netz: die Schnittstelle sieht aus wie ein serieller Port.
+* **Datei** — alles, was der Rechner sendet, wird in eine Datei geschrieben (etwa
+  für einen Drucker). Beim Umschalten fragt ein Dialog nach dem Namen; **Starten**
+  legt die Datei neu an (und überschreibt eine vorhandene).
+
+**Rolle** (nur Telnet/RFC2217): als **Server** wartet der Emulator auf Verbindungen,
+als **Client** wählt er sich selbst bei einer Gegenstelle ein (**Host** und **Port**).
+Ein Server nimmt eine Verbindung zur Zeit an; jede weitere wird abgewiesen. Ist der
+eingestellte Port belegt, nimmt **Starten** den nächsten freien darüber — der
+tatsächliche steht im Kopf des Blocks („lauscht auf 5001") und in der Statuszeile.
+Hinter dem Host steht, als was er gelesen wurde (IPv4, IPv6, Hostname oder
+**ungültig** — dann bleibt der Knopf gesperrt).
+
+**Der Knopf** heißt im Server *Starten*/*Beenden*, im Client *Verbinden*/*Trennen*.
+Ein Client versucht **jede Sekunde** von neuem, bis die Gegenstelle antwortet — auch
+nachdem sie die Verbindung getrennt hat. Das hört nur mit *Trennen* auf, und der Knopf
+heißt schon während der Versuche so. Der Punkt im Kopf ist grau (aus), gelb (lauscht
+oder verbindet), grün (verbunden) oder rot (Fehler); Fehler und Hinweise stehen als
+Zeile im Block, nicht in einem Fenster. Solange eine Schnittstelle läuft, sind
+Betriebsart, Rolle, Host, Port und Datei gesperrt.
+
+**Weitere Einstellungen**
+
+* **Rx/Tx-Loop** — der Prüfstecker: was der Rechner sendet, kommt am selben Anschluss
+  wieder an. Das schließt jede Verbindung aus; der Knopf ist gesperrt, solange es
+  gesetzt ist, und eine laufende Verbindung wird beim Setzen beendet.
+* **RTS/CTS-Brücke** (nur V.24) — am Stecker RTS mit CTS (und DTR mit DSR/DCD)
+  verbunden.
+* **XON/XOFF** — den Empfang anhalten, solange der Rechner XOFF gesendet hat. Bei
+  Übertragungen von Binärdaten aus.
+* **Takt** — wo der Rechner eine Brücke für die Taktquelle des Anschlusses hat.
+
+Darunter zeigt der Block, womit der **Gast** (das Programm im Rechner) die
+Schnittstelle gerade eingestellt hat (`Gast 9600 Bd 8N1`), bei V.24 die Leitungen,
+und bei RFC2217 die Baudrate der Gegenseite — mit Warnzeichen, wenn sie von der des
+Gastes abweicht. Bei Telnet werden die Leitungen nicht übertragen.
+
+**Beispiele**
+
+* *Ein Terminalprogramm anschließen:* Schnittstelle auf **Telnet**, **Server**,
+  **Starten**; dann `telnet 127.0.0.1 5000` (bzw. der Port aus der Anzeige).
+* *Zwei Emulatoren koppeln:* im einen **Server**, im anderen **Client** mit
+  Host `127.0.0.1` und dem Port des Servers, beide auf RFC2217 oder beide auf Telnet.
+  Die Reihenfolge ist gleichgültig — der Client versucht, bis der Server da ist.
+* *Einen echten Port des Wirtsrechners verwenden:* der Emulator spricht kein
+  Hardware-COM direkt. Mit `ser2net` (Linux) bzw. `com0com` und `hub4com` (Windows)
+  wird ein Port zum RFC2217-Server; der Emulator verbindet sich als **RFC2217-Client**
+  dorthin. Umgekehrt öffnet `socat -d -d pty,raw,echo=0 tcp:127.0.0.1:5000` einen
+  Pseudo-Port auf den Server des Emulators.
+* *Aus Python:* `serial.serial_for_url("rfc2217://127.0.0.1:5000")` (pyserial)
+  gegen einen RFC2217-Server des Emulators.
+
+**Sicherheit:** ein Server lauscht auf **allen Netzschnittstellen** des
+Wirtsrechners und verlangt **keine Anmeldung** — wer ihn erreicht, sitzt an der
+Schnittstelle des Rechners. Für den Betrieb im offenen Netz gehört eine Firewall
+davor, oder man bindet den Dienst über einen Tunnel (`ssh -L`) nach außen.
+
+**Gemerkt wird** alles, was im Block steht, samt dem Zustand beim Beenden: was lief,
+wird beim nächsten Start **wieder aufgenommen** — ein Server startet auf dem
+eingestellten Port (ist der belegt, startet er **nicht**; der nächste freie wird ins
+Feld eingetragen, und man startet von Hand), ein Client versucht wieder, eine Datei
+wird **angehängt** statt überschrieben. Mit gesetztem Rx/Tx-Loop wird nichts
+gestartet.
+
+**K8915:** der Selbsttest des Boot-ROMs verlangt das Echo auf allen drei Anschlüssen,
+deshalb steht der Rx/Tx-Loop dort **von Anfang an** und der Knopf ist gesperrt. Nach
+dem Kaltstart (das BIOS braucht das Echo nicht) den Loop **abschalten**, dann lässt
+sich verbinden.
+
 ## Der Takt der Maschine
 
 *Einstellungen ▸ Allgemein ▸ Takt*: `2,45 MHz` — das ist der Takt des echten
@@ -267,7 +361,8 @@ Alles, was man einstellt, landet fortlaufend in
 `%APPDATA%\K1520emu`) — jedes der beiden Programme hat seine eigene Datei, man
 kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
 zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
-Takt, Laufwerksbestückung, eingelegte Disketten, Größe und Lage des Fensters
+Takt, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
+(samt dem, was lief), Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.
 

@@ -772,3 +772,40 @@ Festlegungen, die man nicht aufweichen darf:
   Die PC-Tastatur geht als Qt-Code an den Kern, der sie nach der BIOS-Tabelle übersetzt.
   Wächter: `test_k8915emu_gui.py` (Stichprobe gegen das EPROM, Boot bis `A>` und `dir`
   über die Bildschirmtastatur).
+
+### 10.10 Der Kasten „Schnittstellen" (2026-10-01, AP-S7)
+
+Serielle Schnittstellen nach außen (Telnet/RFC 2217/Datei), Entwurf
+`doc/design/19_serielle_schnittstellen.md` §9.  `app/ui/serial_widget.py`:
+`SerialWidget` (Inhalt des Docks `serial_dock`, getabbt mit „Laufwerke"/„Einstellungen",
+Menü *Ansicht ▸ Schnittstellen*, Kastenschalter `dock_serial` für die Symbolleiste,
+**kein Tastenkürzel**) und je einstellbarer Schnittstelle ein `SerialBlock`.
+
+* **Namen, Stecker, V.24-Fähigkeit und Taktquellen kommen nur aus dem Kern**
+  (`serial_info`/`serial_fixed_names`) — kein Profileintrag, kein `if machine == …`; beide
+  Programme zeigen dieselben Blöcke mit ihren Schnittstellen.
+* **Der Kern ist die Quelle der Wahrheit.**  Ein Bedienelement ruft `serial_configure`;
+  der 4-Hz-Takt (`QTimer`, `TAKT_MS`) lädt die Elemente aus dem Kern nach (ein Feld mit
+  Tastaturfokus bleibt unberührt).  Fehler und Hinweise stehen als Zeile im Block
+  (`Status.meldung`), kein Meldungsfenster.
+* **Sperren** nach Entwurf §4 (im Betrieb Betriebsart/Rolle/Host/Port/Datei; Host im
+  Server immer), **Knopf** „Starten/Beenden" bzw. „Verbinden/Trennen" (Client auch
+  während der Versuche), gesperrt bei Loop/ungültigem Host/fehlender Datei.  Der K8915
+  startet im Loop — der Block zeigt den Grund in der Meldungszeile und im Tooltip.
+  Wird beim Umschalten auf *Datei* der Speichern-Dialog abgebrochen, bleibt die vorige
+  Betriebsart.
+* **Statuszeile:** `MachineStatus.set_seriell` (zwei `SeriellFeld`, ausgeblendet ohne
+  Text).  Der Text wird im Kasten berechnet (`statuszeilentexte`) und per Signal
+  gemeldet: Server = tatsächliche Ports (lauscht/verbunden, Rolle Server), Verbindungen =
+  nur `VERBUNDEN`; Betriebsart *Datei* fällt heraus (der Kern meldet sie als VERBUNDEN).
+* **Konfiguration:** Abschnitt `schnittstellen:` (Schlüssel = Name aus dem Kern;
+  `zustand_lesen`/`zustand_anwenden`, `config_io.build_config(schnittstellen=…)`).  Fehlt
+  der Abschnitt, bleibt alles wie es ist — die Auslieferungsvorgabe trägt keinen.  `aktiv`
+  wird in `MainWindow._apply_config` wieder aufgenommen (`serial_start_auto`, §7.4a:
+  Server nur auf dem eingestellten Port, belegt → nicht gestartet und `port_vorschlag`
+  ins Port-Feld; Client Dauerversuch; Datei anhängend; Loop → kein Start).
+* **Maschinenwechsel:** ein Wechsel der Laufwerksbestückung baut eine neue Maschine
+  (neuer Hub).  `_apply_drive_types` merkt den Stand, beendet die alten Schnittstellen und
+  nimmt sie an der neuen wieder auf; `closeEvent` speichert zuerst (`aktiv` = Zustand
+  beim Beenden) und beendet dann.
+* Wächter: `tests/python/test_serial_gui.py` (`py_serial_gui`, beide Programme).

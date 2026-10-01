@@ -156,7 +156,7 @@ REIHENFOLGE: List = [
     None,
     "einlegen", "auswerfen",
     None,
-    "dock_drives", "dock_settings", "dock_screen", "dock_keyboard",
+    "dock_drives", "dock_settings", "dock_serial", "dock_screen", "dock_keyboard",
     None,
     "vollbild", "standard", "hilfe",
 ]

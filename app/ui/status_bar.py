@@ -31,6 +31,14 @@ Maschine**:
   Beschriftung daneben (``Run Input Output Mode Error Power``, AP-UI2) — drei
   gelbe Lampen unterscheidet man an der Farbe nicht.
 
+* **Serielle Schnittstellen** (AP-S7, doc/design/19_serielle_schnittstellen.md §9) —
+  zwei Felder hinter dem Takt, die **nur erscheinen, wenn sie etwas zu sagen haben**
+  (ausgeblendet, nicht leer): ``Telnet/RFC2217 Server Port: 5000, 5001`` (die
+  tatsächlichen Ports der lauschenden/verbundenen Server) und ``V.24 verbunden,
+  Drucker verbunden`` (nur VERBUNDEN; ein versuchender Client erscheint hier nie,
+  Datei auch nicht).  Der Text kommt fertig aus `app/ui/serial_widget.py`
+  (:meth:`MachineStatus.set_seriell`); dieses Modul kennt keine Schnittstellennamen.
+
 Der ganze Streifen ist eine Anzeige und kein Bedienelement: er nimmt keinen
 Tastaturfokus (der gehört der emulierten Maschine, siehe `app/ui/focus.py`).
 """
@@ -279,6 +287,30 @@ class Frontplatte(QWidget):
         return {l.name: l.an() for l in self._lampen}
 
 
+class SeriellFeld(QWidget):
+    """Ein Feld der seriellen Schnittstellen: Trennstrich + Text, beides ausgeblendet,
+    solange es nichts zu sagen gibt."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.NoFocus)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        lay.addWidget(_trennstrich())
+        self.text = QLabel()
+        self.text.setMargin(2)
+        lay.addWidget(self.text)
+        self.setVisible(False)
+
+    def zeige(self, text: str, tipp: str = "") -> None:
+        if text != self.text.text():
+            self.text.setText(text)
+        if tipp != self.text.toolTip():
+            self.text.setToolTip(tipp)
+        self.setVisible(bool(text))
+
+
 class MachineStatus(QWidget):
     """Der dauerhafte Teil der Statuszeile (Takt + Laufwerke, K8915: Frontplatte)."""
 
@@ -304,6 +336,12 @@ class MachineStatus(QWidget):
             self._lay.addWidget(self.frontplatte)
             self._lay.addWidget(_trennstrich())
         self._lay.addWidget(self.takt)
+        # Serielle Schnittstellen: hinter dem Takt, vor den Laufwerken (feste
+        # Einträge — `set_drive_types` räumt nur, was dahinter kommt).
+        self.seriell_server = SeriellFeld()
+        self.seriell_verbindungen = SeriellFeld()
+        self._lay.addWidget(self.seriell_server)
+        self._lay.addWidget(self.seriell_verbindungen)
         self._fest = self._lay.count()
 
         self._felder: List[DriveField] = []
@@ -337,6 +375,14 @@ class MachineStatus(QWidget):
             if faktor > 0.0 and gemessen < faktor * 0.9:
                 tipp.append("Der Wirtsrechner kommt nicht mit.")
         self.takt.setToolTip("\n".join(tipp))
+
+    # ── Serielle Schnittstellen ──────────────────────────────────────────────
+
+    def set_seriell(self, server: str, server_tipp: str,
+                    verbindungen: str, verbindungen_tipp: str) -> None:
+        """Die beiden Felder setzen; ein leerer Text blendet das Feld aus."""
+        self.seriell_server.zeige(server, server_tipp)
+        self.seriell_verbindungen.zeige(verbindungen, verbindungen_tipp)
 
     # ── Laufwerke ────────────────────────────────────────────────────────────
 
