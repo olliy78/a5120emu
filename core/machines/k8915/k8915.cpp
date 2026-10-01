@@ -33,7 +33,8 @@ K8915Machine::K8915Machine(const Config& cfg)
     // Interruptkette nach der Platzfolge (§6.4 [?]): K5122 → ZRE-CTC → ATS.
     bus_.setInterruptChain({&afs_, &zre_, &ats_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
-    // Schnittstellen nach außen (Entwurf 19 §3.2): Reihenfolge = SIO-Reihenfolge.
+    // Schnittstellen nach außen (Entwurf 19 §3.2): Reihenfolge = Stecker X3, X4, X5
+    // (= Wert von K7028::Kanal, AP-S12).
     for (int k = 0; k < K7028::KanalAnzahl; ++k) {
         const int i = hub_.registriere(ats_.anschluss(static_cast<K7028::Kanal>(k)));
         k1520::serial::SerialKonfig c = hub_.konfig(i);
@@ -54,7 +55,7 @@ void K8915Machine::altRueckruf(K7028::Kanal k, SerialCb cb)
 {
     const bool gesetzt = static_cast<bool>(cb);
     ats_.setAbnehmer(k, std::move(cb));
-    // Hub-Index = Kanal (Anmeldung in SIO-Reihenfolge).
+    // Hub-Index = Kanal (Anmeldung in der Reihenfolge von K7028::Kanal).
     k1520::serial::SerialKonfig c = hub_.konfig(k);
     const bool loop = gesetzt ? false : pruefstecker_;
     if (c.loop == loop) return;

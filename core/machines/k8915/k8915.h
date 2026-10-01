@@ -5,10 +5,11 @@
  * Stand Etappe 4 (doc/design/16_k8915.md §8, AP-E1…AP-E4c): ZRE 045-8762, ATS
  * K7028.30 mit Tastatur K7672, K7024 (012-6820) und K5122 im `/WAIT`-Betrieb mit
  * zwei K5601.  Die Laufwerksverwaltung ist der gemeinsame Baustein @ref Laufwerke
- * (wie beim A5120).  Die seriellen Schnittstellen V.24 (SIO1-A), IFS 1 (SIO1-B,
- * Drucker des BIOS) und IFS 2 (SIO2-A) gehen seit AP-S5 über den `SerialHub` nach
- * außen (Entwurf 19); der ältere Weg `setPrinterCallback`/`printerSend` (IFS 1) und
- * `setDFUECallback`/`dfueSend` (IFS 2) bleibt als Test-Unterbau.  Seit AP-E4b in
+ * (wie beim A5120).  Die seriellen Schnittstellen Drucker/IFSS1 (X3, SIO1-B, Drucker
+ * des BIOS), V.24 (X4, SIO1-A) und DFÜ/IFSS2 (X5, SIO2-A) gehen seit AP-S5 über den
+ * `SerialHub` nach außen (Entwurf 19; Namen nach der Gerätebeschriftung seit AP-S12);
+ * der ältere Weg `setPrinterCallback`/`printerSend` (SIO1-B) und
+ * `setDFUECallback`/`dfueSend` (SIO2-A) bleibt als Test-Unterbau.  Seit AP-E4b in
  * `libk1520core` (`k1520_create(K1520_MACHINE_K8915)`).
  *
  * Steckplätze am Gerät (§6.4): 3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024.
@@ -148,8 +149,8 @@ public:
         return {K7028::TASTATUR_NAME};
     }
 
-    // Alter Unterbau (Tests, `k1520_serial_*`): Drucker = IFS 1 (SIO1-B, vom BIOS
-    // benutzt), DFÜ = IFS 2 (SIO2-A, IFSS).  Ein gesetzter Rückruf nimmt dem Kanal den
+    // Alter Unterbau (Tests, `k1520_serial_*`): Drucker = Drucker/IFSS1 (SIO1-B, vom
+    // BIOS benutzt), DFÜ = DFÜ/IFSS2 (SIO2-A, IFSS).  Ein gesetzter Rückruf nimmt dem Kanal den
     // Loop (Prüfstecker ab — früher: Abnehmer ersetzt die Rückschleife); ein leerer
     // gibt ihn nach der Maschinenvorgabe zurück, sofern kein Transport aktiv ist.
     // Belegt ein Transport/Loop den Stecker, gehen Rückruf und Einspeisen ins Leere.

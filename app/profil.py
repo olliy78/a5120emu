@@ -50,6 +50,25 @@ class Programmprofil:
     eigene_aktionen: Tuple[str, ...] = field(default_factory=tuple)
     #: Die jeweils ANDERE Maschine (für *Werkzeuge ▸ … starten*).
     andere: str = ""
+    #: Frühere Namen serieller Schnittstellen → heutiger Name (Kern).  Die
+    #: Konfiguration ist über den NAMEN verschlüsselt; ohne diese Abbildung wären
+    #: Einstellungen unter einem alten Namen herrenlos (K8915: AP-S12).
+    alte_schnittstellen: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
+
+    def schnittstellen_umbenennen(self, daten: dict) -> dict:
+        """Abschnitt ``schnittstellen`` mit alten Namen auf die heutigen abbilden.
+
+        Ein Eintrag unter dem heutigen Namen geht vor (er ist der jüngere); alles
+        andere bleibt, wie es ist.
+        """
+        if not isinstance(daten, dict) or not self.alte_schnittstellen:
+            return daten
+        neu = dict(daten)
+        for alt, heute in self.alte_schnittstellen:
+            if alt in neu:
+                wert = neu.pop(alt)
+                neu.setdefault(heute, wert)
+        return neu
 
     # Laufwerke stehen in `app/drive_types.py` (je Maschine) — dort ist der
     # Laufwerkskatalog; das Profil reicht nur durch.  Spät importiert: die
@@ -94,6 +113,9 @@ K8915 = Programmprofil(
     frontplatte=True,
     eigene_aktionen=("nmi",),
     andere="a5120",
+    # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
+    # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
+    alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
 )
 
 #: Alle Profile nach Maschinenname.

@@ -620,7 +620,7 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 ## Serielle Schnittstellen nach außen (`core/serial/`, `app/ui/serial_widget.py`)
 
 Die seriellen Kanäle der K8025 (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker) und der K7028 (K8915:
-V.24, IFS 1, IFS 2) gehen über **Telnet** oder **RFC 2217** (Client/Server) oder in eine
+Drucker/IFSS1 X3, V.24 X4, DFÜ/IFSS2 X5 — Namen nach der Gerätebeschriftung, AP-S12) gehen über **Telnet** oder **RFC 2217** (Client/Server) oder in eine
 **Datei** nach außen; die Tastatur bleibt fest verdrahtet. Je Maschine ein `SerialHub`
 (`K1520Machine::serialHub()`, I/O-Faden) mit je Schnittstelle einem `Wandler`; die Karten
 liefern nur einen `SerialAnschluss`. C-ABI `k1520_serial_*`, Python `K1520Emulator.serial_*`,

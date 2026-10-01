@@ -5,7 +5,7 @@
 # Serielle Schnittstellen nach außen — Merkposten
 
 Die seriellen Kanäle der Schnittstellenkarten (A5120: ASS K8025.50 — DFÜ/V.24, DFÜ/IFSS,
-Drucker; K8915: ATS K7028.30 — V.24, IFS 1, IFS 2) sind über **Telnet**, **RFC 2217**
+Drucker; K8915: ATS K7028.30 — Drucker/IFSS1, V.24, DFÜ/IFSS2) sind über **Telnet**, **RFC 2217**
 (jeweils Client oder Server) oder als **Datei** (nur Senden) nach außen geführt. Die
 Tastatur bleibt fest verdrahtet. Entwurf, Belegung, Stand der APs:
 **`doc/design/19_serielle_schnittstellen.md`** (§12.1); Kartenbefunde in
@@ -25,7 +25,10 @@ core/cards/k8025, k7028   je Schnittstelle ein SerialAnschluss (Kartenlogik dort
 
 Maschinen-API: `K1520Machine::serialHub()` (Index = Anmeldereihenfolge = C-ABI-Index),
 `serielleAnschluesse()`, `festeSchnittstellen()`. Reihenfolge A5120: DFÜ/V.24, DFÜ/IFSS,
-Drucker; K8915: V.24, IFS 1, IFS 2.
+Drucker; K8915: Drucker/IFSS1 (X3, SIO1-B), V.24 (X4, SIO1-A), DFÜ/IFSS2 (X5, SIO2-A) —
+nach den Steckern am Gerät (AP-S12; bis dahin „V.24, IFS 1, IFS 2" in SIO-Reihenfolge).
+Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
+`Programmprofil.alte_schnittstellen` beim Laden ab (`app/profil.py`).
 
 ## Was man nicht aufweichen darf
 
@@ -104,7 +107,7 @@ Drucker; K8915: V.24, IFS 1, IFS 2.
   Port 0 ab (Port 0 = „vom System" gibt es nur in C++-Tests). `test_c_api.py` vergleicht
   Felder und Aufzählungen mechanisch.
 - **Alter Unterbau** `k1520_serial_set_rx_cb`/`k1520_serial_send`: DFU/PRINTER → A5120
-  DFÜ/V.24 bzw. Drucker, K8915 IFS 2 bzw. IFS 1; der Rückruf ist
+  DFÜ/V.24 bzw. Drucker, K8915 DFÜ/IFSS2 (SIO2-A) bzw. Drucker/IFSS1 (SIO1-B); der Rückruf ist
   `void (*)(void* ctx, uint8_t byte)` — **Kontext zuerst** (die ctypes-Erklärung stand
   bis AP-T1b vertauscht). Wächter `py_serial_api::test_old_callback_and_send_go_through_the_guest_and_come_back`
   (Echo-Gast, Kontextzeiger, Belegung durch einen Transport, Abmelden),

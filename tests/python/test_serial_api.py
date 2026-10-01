@@ -22,8 +22,8 @@ ERWARTET = {
         v24=[True, False, False], takt=[2, 2, 0],
         fest=["Tastatur K7637 (X4)"]),
     "k8915": dict(
-        namen=["V.24", "IFS 1", "IFS 2"], stecker=["X3", "X4", "X5"],
-        v24=[True, False, False], takt=[0, 0, 0],
+        namen=["Drucker/IFSS1", "V.24", "DFÜ/IFSS2"], stecker=["X3", "X4", "X5"],
+        v24=[False, True, False], takt=[0, 0, 0],
         fest=["Tastatur K7672"]),
 }
 
@@ -209,7 +209,7 @@ def test_client_retries_until_the_server_appears(emu):
 # ─── Alter Unterbau: k1520_serial_set_rx_cb / k1520_serial_send (AP-T1b) ─────
 #
 # Die „Weiche" der C-ABI: DFU/PRINTER → Schnittstelle der Maschine.  A5120: DFU =
-# DFÜ/V.24, PRINTER = Drucker; K8915: DFU = IFS 2, PRINTER = IFS 1 (Entwurf 19 §8).
+# DFÜ/V.24, PRINTER = Drucker; K8915: DFU = DFÜ/IFSS2, PRINTER = Drucker/IFSS1 (Entwurf 19 §8).
 
 def _rx_cb(liste):
     """ctypes-Rückruf, der jedes Byte in *liste* sammelt (Rückgabe festhalten!)."""
@@ -221,12 +221,13 @@ def test_k8915_old_callback_pulls_the_loop_of_its_own_channel():
     wieder — so wird sichtbar, auf welchen Kanal die Weiche zeigt."""
     e = B.K1520Emulator(machine="k8915")
     namen = [e.serial_info(i).name for i in range(e.serial_count())]
-    ifs1, ifs2 = namen.index("IFS 1"), namen.index("IFS 2")
+    ifs1, ifs2, v24 = (namen.index("Drucker/IFSS1"), namen.index("DFÜ/IFSS2"),
+                       namen.index("V.24"))
     assert all(e.serial_config(i).loop for i in range(e.serial_count()))
     cb = _rx_cb([])
     B._lib.k1520_serial_set_rx_cb(e._handle, 1, cb, None)          # PRINTER
     assert not e.serial_config(ifs1).loop
-    assert e.serial_config(ifs2).loop and e.serial_config(0).loop
+    assert e.serial_config(ifs2).loop and e.serial_config(v24).loop
     B._lib.k1520_serial_set_rx_cb(e._handle, 0, cb, None)          # DFU
     assert not e.serial_config(ifs2).loop
     B._lib.k1520_serial_set_rx_cb(e._handle, 1, B.K1520SerialRxCb(), None)   # abmelden
@@ -235,7 +236,7 @@ def test_k8915_old_callback_pulls_the_loop_of_its_own_channel():
     # Unbekannter Port: nichts geschieht (kein Absturz, keine Einstellung geändert).
     B._lib.k1520_serial_set_rx_cb(e._handle, 7, cb, None)
     B._lib.k1520_serial_send(e._handle, 7, 0x41)
-    assert e.serial_config(0).loop
+    assert e.serial_config(v24).loop and e.serial_config(ifs1).loop
     del e
 
 

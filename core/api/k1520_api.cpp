@@ -306,7 +306,7 @@ void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
     // solange weder ein Transport (k1520_serial_start) noch der Rx/Tx-Loop die
     // Schnittstelle belegt; sonst geht er ins Leere.  Ein leerer Rückruf (cb == NULL)
     // meldet ab.  A5120: DFU = DFÜ/V.24, PRINTER = Drucker (A32-B);
-    // K8915: DFU = IFS 2, PRINTER = IFS 1.
+    // K8915: DFU = DFÜ/IFSS2, PRINTER = Drucker/IFSS1.
     K1520Machine::SerialCb f;
     if (cb) f = [cb, ctx](uint8_t b) { cb(ctx, b); };
     if (port == K1520_SERIAL_DFU)

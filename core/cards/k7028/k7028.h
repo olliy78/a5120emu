@@ -8,9 +8,9 @@
  * **A2 wird nicht dekodiert**, jede Vierergruppe erscheint doppelt:
  *
  * @code
- *   40H–43H (= 44H–47H)  SIO 1   A = V.24 (X3), B = IFS 1 (X4, Drucker des BIOS)
+ *   40H–43H (= 44H–47H)  SIO 1   A = V.24 (X4), B = Drucker/IFSS1 (X3, Drucker des BIOS)
  *   48H–4BH (= 4CH–4FH)  CTC 1   K0/K1 → SIO1-A (Multiplexer D13), K2 → SIO1-B, K3 Zeitgeber
- *   50H–53H (= 54H–57H)  SIO 2   A = IFS 2 (X5, IFSS), B = Tastatur K7672
+ *   50H–53H (= 54H–57H)  SIO 2   A = DFÜ/IFSS2 (X5, IFSS), B = Tastatur K7672
  *   58H–5BH (= 5CH–5FH)  CTC 2   K0 Baudtakt SIO 2A, K2 Baudtakt Tastatur, K3 Zeitgeber
  *   60H–67H [?]          Anzeigelatch (ROM/BIOS schreiben nur 61H; §6.2)
  * @endcode
@@ -23,13 +23,15 @@
  * (@ref anschluss), den die Maschine im `SerialHub` anmeldet.  Der Wandler taktet
  * jedes Zeichen nach dem Format, das der Gast in SIO und CTC programmiert hat.
  * Belegung laut Stromlaufplan 1.45.518732 Blatt 1/2 (`k8915schaltung.pdf` S. 11/16)
- * und BIOS (Befund AP-S5, §3.2 des K8915-Entwurfs):
+ * und BIOS (Befund AP-S5); Namen und Stecker nach der Beschriftung am Gerät
+ * (Anwender, AP-S12 — der Plan zählt die Kartenstecker X3/X4 umgekehrt, s. k7028.cpp
+ * und §3.2 des K8915-Entwurfs).  Reihenfolge = Stecker = C-ABI-Index:
  *
  * @code
- *   V.24   SIO1-A  X3  V.24 mit Steuerleitungen (Treiber D14:02/03, Empfänger D17)   CTC1 K0
- *   IFS 1  SIO1-B  X4  V.24-Pegel, nur TxD/RxD — BIOS-Drucker LIST (XON/XOFF)        CTC1 K2
- *   IFS 2  SIO2-A  X5  IFSS-Stromschleife (Blatt 2) bzw. TxD/RxD                     CTC2 K0
- *   —      SIO2-B  ?   Tastatur K7672 (fest, nicht einstellbar)                      CTC2 K2
+ *   Drucker/IFSS1  SIO1-B  X3  nur TxD/RxD — BIOS-Drucker LIST (XON/XOFF)            CTC1 K2
+ *   V.24           SIO1-A  X4  V.24 mit Steuerleitungen (Treiber D14, Empfänger D17)  CTC1 K0
+ *   DFÜ/IFSS2      SIO2-A  X5  IFSS-Stromschleife (Blatt 2) bzw. TxD/RxD              CTC2 K0
+ *   —              SIO2-B  —   Tastatur K7672 (fest, nicht einstellbar; Karten-X6)   CTC2 K2
  * @endcode
  *
  * **Prüfstecker.**  Der Selbsttest des ROMs sendet AAH/55H an SIO1-A, SIO1-B und
@@ -53,9 +55,10 @@
 
 class K7028 : public BusDevice, public InterruptSlave {
 public:
-    /// Serielle Kanäle, die nach außen gehen (SIO2-B gehört der Tastatur).  Zugleich
-    /// die Reihenfolge der Anmeldung im `SerialHub` (= Index der C-ABI).
-    enum Kanal : int { Sio1A = 0, Sio1B = 1, Sio2A = 2, KanalAnzahl = 3 };
+    /// Serielle Kanäle, die nach außen gehen (SIO2-B gehört der Tastatur).  Der Wert
+    /// ist zugleich die Reihenfolge der Anmeldung im `SerialHub` (= Index der C-ABI)
+    /// und folgt den Steckern am Gerät: X3 (SIO1-B), X4 (SIO1-A), X5 (SIO2-A).
+    enum Kanal : int { Sio1B = 0, Sio1A = 1, Sio2A = 2, KanalAnzahl = 3 };
 
     /** @brief Brückenstellungen. */
     struct Config {

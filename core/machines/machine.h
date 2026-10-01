@@ -122,7 +122,7 @@ public:
     // Wandler getaktet); `…Send`: Byte, das von AUSSEN im Empfänger ankommt.  Belegt
     // ein Transport oder der Rx/Tx-Loop die Schnittstelle, gehen beide ins Leere.
     // A5120: DFÜ = DFÜ/V.24 (K8025 A33-A), Drucker = K8025 A32-B.
-    // K8915: DFÜ = IFS 2 (SIO2-A), Drucker = IFS 1 (SIO1-B).
+    // K8915: DFÜ = DFÜ/IFSS2 (SIO2-A), Drucker = Drucker/IFSS1 (SIO1-B).
     using SerialCb = std::function<void(uint8_t)>;
     virtual void setDFUECallback(SerialCb cb) = 0;
     virtual void dfueSend(uint8_t byte) = 0;

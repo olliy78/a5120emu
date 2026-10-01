@@ -1033,7 +1033,8 @@ class MainWindow(QMainWindow):
             # aufnehmen (doc/design/19 §7.4a).  Fehlt der Abschnitt, bleibt alles,
             # wie es ist — die Auslieferungsvorgabe trägt keinen.
             if "schnittstellen" in data:
-                self.serial_widget.zustand_anwenden(data.get("schnittstellen") or {})
+                self.serial_widget.zustand_anwenden(
+                    self.profil.schnittstellen_umbenennen(data.get("schnittstellen") or {}))
 
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})

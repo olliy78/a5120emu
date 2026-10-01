@@ -219,15 +219,16 @@ K1520_API void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
  * SENDET (cb == NULL meldet ab), send legt ein Byte in seinen Empfänger.  Belegt ein
  * Transport oder der Rx/Tx-Loop die Schnittstelle, gehen beide ins Leere.
  * A5120: DFU = DFÜ/V.24 (K8025 A33-A), PRINTER = Drucker (A32-B);
- * K8915: DFU = IFS 2 (SIO2-A), PRINTER = IFS 1 (SIO1-B). */
+ * K8915: DFU = DFÜ/IFSS2 (SIO2-A), PRINTER = Drucker/IFSS1 (SIO1-B). */
 K1520_API void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                                        K1520SerialCallback cb, void* ctx);
 K1520_API void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
 
 /* ─── Serielle Schnittstellen nach außen (Entwurf 19 §8, AP-S6) ───────────────
  * Je Maschine eine Liste einstellbarer Schnittstellen (Index = Reihenfolge der Karten,
- * A5120: 0 DFÜ/V.24, 1 DFÜ/IFSS, 2 Drucker; K8915: 0 V.24, 1 IFS 1, 2 IFS 2).  Die Betriebsart
- * (Telnet / RFC 2217 / Datei) läuft in einem eigenen I/O-Faden des Kerns; die GUI FRAGT AB
+ * A5120: 0 DFÜ/V.24, 1 DFÜ/IFSS, 2 Drucker; K8915: 0 Drucker/IFSS1, 1 V.24, 2 DFÜ/IFSS2).
+ * Die Betriebsart (Telnet / RFC 2217 / Datei) läuft in einem eigenen I/O-Faden des
+ * Kerns; die GUI FRAGT AB
  * (k1520_serial_status), es gibt keinen Rückruf aus dem I/O-Faden.  Alle Funktionen dürfen
  * aus jedem Faden gerufen werden, auch während k1520_run() läuft.
  *

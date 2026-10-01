@@ -41,7 +41,7 @@ bool enthaelt(const std::string& s, const std::string& teil) {
 
 /**
  * @test K8915Machine.DfueUndDruckerHaengenAnIhremEigenenKanal
- * @brief Drucker = SIO1-B („IFS 1"), DFÜ = SIO2-A („IFS 2") (AP-E4c, AP-S5).  Ein
+ * @brief Drucker = SIO1-B („Drucker/IFSS1"), DFÜ = SIO2-A („DFÜ/IFSS2") (AP-E4c, AP-S5).  Ein
  *        Rückruf ERSETZT den Loop (Prüfstecker) nur auf seinem Kanal: SIO1-A schleift weiter,
  *        SIO1-B/SIO2-A gehen nach außen und kommen NICHT als Echo zurück.  Von außen
  *        gesendete Bytes landen im Empfänger des jeweiligen Kanals.

@@ -153,19 +153,25 @@ void ctcZeitgeber(K1520Bus& bus, uint8_t port, uint8_t zk) {
 
 }  // namespace
 
-/// Namen (UI, festgelegt), Stecker, V.24 nur an SIO1-A; Tastatur fest.
+/// Namen und Stecker nach der Beschriftung am Gerät (Anwender, AP-S12): X3
+/// „Drucker/IFSS1" = SIO1-B (BIOS-Drucker), X4 „V.24" = SIO1-A (einzige mit
+/// Steuerleitungen), X5 „DFÜ/IFSS2" = SIO2-A; die Reihenfolge (= Hub-/C-ABI-Index)
+/// folgt den Steckern.  Tastatur fest.
 TEST(K7028Seriell, Kanalzuordnung)
 {
     Aufbau a;
-    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1A).name(), "V.24");
-    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1A).stecker(), "X3");
-    EXPECT_TRUE(a.ats.anschluss(K7028::Sio1A).v24());
-    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1B).name(), "IFS 1");
-    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1B).stecker(), "X4");
+    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1B).name(), "Drucker/IFSS1");
+    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1B).stecker(), "X3");
     EXPECT_FALSE(a.ats.anschluss(K7028::Sio1B).v24());
-    EXPECT_STREQ(a.ats.anschluss(K7028::Sio2A).name(), "IFS 2");
+    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1A).name(), "V.24");
+    EXPECT_STREQ(a.ats.anschluss(K7028::Sio1A).stecker(), "X4");
+    EXPECT_TRUE(a.ats.anschluss(K7028::Sio1A).v24());
+    EXPECT_STREQ(a.ats.anschluss(K7028::Sio2A).name(), "DFÜ/IFSS2");
     EXPECT_STREQ(a.ats.anschluss(K7028::Sio2A).stecker(), "X5");
     EXPECT_FALSE(a.ats.anschluss(K7028::Sio2A).v24());
+    EXPECT_EQ(K7028::Sio1B, 0);
+    EXPECT_EQ(K7028::Sio1A, 1);
+    EXPECT_EQ(K7028::Sio2A, 2);
     for (int k = 0; k < K7028::KanalAnzahl; ++k)
         EXPECT_TRUE(a.ats.anschluss(static_cast<K7028::Kanal>(k)).taktquellen().empty())
             << "K7028: Takt fest verdrahtet";
@@ -218,7 +224,7 @@ TEST(K7028Seriell, TaktquelleJeKanal)
     EXPECT_EQ(a.ats.anschluss(K7028::Sio1A).format().baud_nenn, 4800u);
 }
 
-/// V.24 (SIO1-A): RTS/DTR aus WR5, /CTSA ← V106, /DCDA ← V109.  Die IFS-Kanäle haben
+/// V.24 (SIO1-A): RTS/DTR aus WR5, /CTSA ← V106, /DCDA ← V109.  Die IFSS-Kanäle haben
 /// keine Steuerleitungen: ihre Eingänge bleiben inaktiv (RR0 wie vor AP-S5).
 TEST(K7028Seriell, V24LeitungenNurAnSio1A)
 {

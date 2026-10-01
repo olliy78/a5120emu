@@ -484,7 +484,7 @@ TEST(K8915Scpx, BootetUndSchreibtVonEinemImgAbbild)
 /**
  * @test K8915Scpx.ListGibtUeberV24AusUndHaeltBeiXoff
  * @brief AP-E4c (Fassung V24 XON/XOFF, Diskette 901): die BIOS-`LIST`-Routine (D60FH →
- *        DE99H) gibt Zeichen über SIO1-B (V.24) aus; `LISTST` (DEA2H) liest dafür das
+ *        DE99H) gibt Zeichen über SIO1-B (Drucker/IFSS1, V.24-Pegel) aus; `LISTST` (DEA2H) liest dafür das
  *        zuletzt empfangene Byte aus 42H OHNE RR0-Prüfung (Befund AP-E2). Ein vom Host
  *        gesendetes XOFF (13H) hält den Druck deshalb an — auch nachdem der
  *        Empfangs-FIFO wieder leer ist, was ohne die `Z80SIO`-Korrektur dieses AP
@@ -598,11 +598,15 @@ void loopAlle(K8915Machine& m, bool an) {
 
 }  // namespace
 
+/// Hub-Index der Druckerschnittstelle (X3 „Drucker/IFSS1" = SIO1-B, AP-S12).
+constexpr int kDrucker = 0;
+
 /**
  * @test K8915Seriell.HubUndVorgaben
- * @brief Drei einstellbare Schnittstellen in SIO-Reihenfolge — V.24 (SIO1-A, X3),
- *        IFS 1 (SIO1-B, X4), IFS 2 (SIO2-A, X5) — plus die feste Tastatur; die
- *        Maschinenvorgabe `pruefstecker` ist der Rx/Tx-Loop aller drei.
+ * @brief Drei einstellbare Schnittstellen in Steckerreihenfolge (Gerätebeschriftung,
+ *        AP-S12) — Drucker/IFSS1 (SIO1-B, X3), V.24 (SIO1-A, X4), DFÜ/IFSS2 (SIO2-A,
+ *        X5) — plus die feste Tastatur; die Maschinenvorgabe `pruefstecker` ist der
+ *        Rx/Tx-Loop aller drei.
  */
 TEST(K8915Seriell, HubUndVorgaben)
 {
@@ -610,18 +614,20 @@ TEST(K8915Seriell, HubUndVorgaben)
     auto* hub = m.serialHub();
     ASSERT_NE(hub, nullptr);
     ASSERT_EQ(hub->anzahl(), 3);
-    EXPECT_EQ(hub->info(0).name, "V.24");
+    EXPECT_EQ(hub->info(0).name, "Drucker/IFSS1");
     EXPECT_EQ(hub->info(0).stecker, "X3");
-    EXPECT_TRUE(hub->info(0).v24);
-    EXPECT_EQ(hub->info(1).name, "IFS 1");
-    EXPECT_FALSE(hub->info(1).v24);
-    EXPECT_EQ(hub->info(2).name, "IFS 2");
+    EXPECT_FALSE(hub->info(0).v24);
+    EXPECT_EQ(hub->info(1).name, "V.24");
+    EXPECT_EQ(hub->info(1).stecker, "X4");
+    EXPECT_TRUE(hub->info(1).v24);
+    EXPECT_EQ(hub->info(2).name, "DFÜ/IFSS2");
+    EXPECT_EQ(hub->info(2).stecker, "X5");
     for (int i = 0; i < 3; ++i) {
         EXPECT_TRUE(hub->konfig(i).loop) << i;
         EXPECT_TRUE(hub->info(i).taktquellen.empty()) << i;
     }
     ASSERT_EQ(m.serielleAnschluesse().size(), 3u);
-    EXPECT_STREQ(m.serielleAnschluesse()[1]->name(), "IFS 1");
+    EXPECT_STREQ(m.serielleAnschluesse()[0]->name(), "Drucker/IFSS1");
     EXPECT_EQ(m.festeSchnittstellen(), std::vector<std::string>{"Tastatur K7672"});
 
     K8915Machine::Config c;
@@ -629,13 +635,20 @@ TEST(K8915Seriell, HubUndVorgaben)
     K8915Machine ohne(c);
     for (int i = 0; i < 3; ++i) EXPECT_FALSE(ohne.serialHub()->konfig(i).loop) << i;
 
-    // Alter Unterbau: ein Druckerrückruf zieht den Prüfstecker von IFS 1 ab, ein
-    // leerer steckt ihn wieder.
+    // Alter Unterbau: ein Druckerrückruf zieht den Prüfstecker von Drucker/IFSS1
+    // (SIO1-B) ab, ein DFÜ-Rückruf den von DFÜ/IFSS2 (SIO2-A); ein leerer steckt ihn
+    // wieder.
     m.setPrinterCallback([](uint8_t) {});
-    EXPECT_FALSE(hub->konfig(1).loop);
-    EXPECT_TRUE(hub->konfig(0).loop);
-    m.setPrinterCallback({});
+    EXPECT_FALSE(hub->konfig(kDrucker).loop);
     EXPECT_TRUE(hub->konfig(1).loop);
+    EXPECT_TRUE(hub->konfig(2).loop);
+    m.setPrinterCallback({});
+    EXPECT_TRUE(hub->konfig(kDrucker).loop);
+    m.setDFUECallback([](uint8_t) {});
+    EXPECT_FALSE(hub->konfig(2).loop);
+    EXPECT_TRUE(hub->konfig(1).loop);
+    m.setDFUECallback({});
+    EXPECT_TRUE(hub->konfig(2).loop);
 }
 
 /**
@@ -660,7 +673,7 @@ TEST(K8915Seriell, BiosLaeuftOhneLoopWeiter)
 
 /**
  * @test K8915Seriell.ListUeberIfs1InEineDatei
- * @brief Maschinenprobe: `LIST` des BIOS (SIO1-B = IFS 1) mit Betriebsart Datei — die
+ * @brief Maschinenprobe: `LIST` des BIOS (SIO1-B = Drucker/IFSS1, Index 0) mit Betriebsart Datei — die
  *        Zeichen kommen über `hub.takt` im Lauf von `run()` in der Datei an; der alte
  *        Druckerrückruf schweigt, solange der Transport anliegt.
  */
@@ -676,25 +689,25 @@ TEST(K8915Seriell, ListUeberIfs1InEineDatei)
     auto* hub = m.serialHub();
     const std::string pfad = k1520test::tempPath("k1520_test_k8915_list.txt");
     std::filesystem::remove(std::filesystem::u8path(pfad));
-    auto k = hub->konfig(1);
+    auto k = hub->konfig(kDrucker);
     k.loop = false;
     k.betriebsart = k1520::serial::Betriebsart::Datei;
     k.datei = pfad;
-    ASSERT_TRUE(hub->konfigurieren(1, k));
-    ASSERT_TRUE(hub->start(1));
+    ASSERT_TRUE(hub->konfigurieren(kDrucker, k));
+    ASSERT_TRUE(hub->start(kDrucker));
     m.setPrinterCallback([&](uint8_t b) { alt.push_back(b); });   // Loop bleibt aus
 
     const std::string text = "K8915 LIST";
     druckeUeberBios(m, {text.begin(), text.end()});
     for (int n = 0; n < 200; ++n) {
         m.run(kSchritt);
-        const auto st = hub->status(1);
+        const auto st = hub->status(kDrucker);
         if (st.bytes_gesendet >= text.size() && st.puffer_senden == 0) break;
     }
-    const auto st = hub->status(1);
+    const auto st = hub->status(kDrucker);
     EXPECT_EQ(st.baud_nenn, 9600u) << "CTC1-K2 05H/01H, WR4 44H";
     EXPECT_TRUE(st.format_gueltig);
-    hub->stop(1);
+    hub->stop(kDrucker);
     EXPECT_EQ(dateiLesen(pfad), text);
     EXPECT_TRUE(alt.empty()) << "alter Rückruf ins Leere, solange der Transport anliegt";
     std::filesystem::remove(std::filesystem::u8path(pfad));
@@ -716,20 +729,20 @@ TEST(K8915Seriell, ListUeberTelnetMitXonXoff)
     ladenBisPrompt(m);
 
     auto* hub = m.serialHub();
-    auto k = hub->konfig(1);
+    auto k = hub->konfig(kDrucker);
     k.loop = false;
     k.betriebsart = k1520::serial::Betriebsart::Telnet;
     k.rolle = k1520::serial::Rolle::Server;
     k.port = 0;
-    ASSERT_TRUE(hub->konfigurieren(1, k));
-    ASSERT_TRUE(hub->start(1));
-    const uint16_t port = hub->status(1).port_aktiv;
+    ASSERT_TRUE(hub->konfigurieren(kDrucker, k));
+    ASSERT_TRUE(hub->start(kDrucker));
+    const uint16_t port = hub->status(kDrucker).port_aktiv;
     ASSERT_NE(port, 0);
     net::Socket s = net::verbindenAlle(net::aufloesen("127.0.0.1", port), 2000);
     ASSERT_TRUE(s.gueltig());
-    for (int n = 0; n < 100 && hub->status(1).zustand != k1520::serial::Zustand::Verbunden; ++n)
+    for (int n = 0; n < 100 && hub->status(kDrucker).zustand != k1520::serial::Zustand::Verbunden; ++n)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    ASSERT_EQ(hub->status(1).zustand, k1520::serial::Zustand::Verbunden);
+    ASSERT_EQ(hub->status(kDrucker).zustand, k1520::serial::Zustand::Verbunden);
 
     std::string empf;
     auto abholen = [&] {
@@ -759,7 +772,7 @@ TEST(K8915Seriell, ListUeberTelnetMitXonXoff)
     ASSERT_EQ(net::senden(s.fd(), &xon, 1).status, net::IoStatus::Ok);
     for (int n = 0; n < 300 && empf.find(text) == std::string::npos; ++n) laufen(1);
     EXPECT_NE(empf.find(text), std::string::npos) << empf;
-    hub->stop(1);
+    hub->stop(kDrucker);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
