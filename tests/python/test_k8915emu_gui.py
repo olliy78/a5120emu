@@ -605,6 +605,82 @@ def test_host_keys_on_the_k7672_widget(qapp):
     kb.close()
 
 
+def _tasten_mitschreiben(w, monkeypatch):
+    """Was die Oberfläche an den Kern schickt: ``("p", code, shift, ctrl)``/``("r", code)``."""
+    protokoll = []
+    monkeypatch.setattr(w.emulator, "key_press",
+                        lambda code, shift=False, ctrl=False:
+                        protokoll.append(("p", code, shift, ctrl)))
+    monkeypatch.setattr(w.emulator, "key_release",
+                        lambda code: protokoll.append(("r", code)))
+    return protokoll
+
+
+def _taste(w, art, key, mods, text="", autorep=False):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+    QApplication.sendEvent(w.screen_widget, QKeyEvent(art, key, mods, text, autorep))
+
+
+def test_the_k8915_gui_sends_modifiers_as_keys_and_drops_qt_autorepeat(
+        qapp, konfig_ordner, monkeypatch):
+    """AP-E4g: am K8915 gehen Umschalt/Strg als EIGENE Tasten an die K7672 (im
+    DCP-Modus meldet sie 2AH/1DH einzeln), das Qt-Autorepeat wird verworfen (die
+    Tastatur wiederholt selbst), und das Loslassen trägt denselben Code wie das
+    Drücken — auch wenn die Umschaltung dazwischen fällt (`A` → `a`), sonst hinge die
+    Wiederholung der K7672 fest.  Am A5120 bleibt alles, wie es war."""
+    from PySide6.QtCore import QEvent, Qt
+    P, R = QEvent.KeyPress, QEvent.KeyRelease
+
+    w = _fenster(qapp, "k8915")
+    try:
+        w.run_timer.stop()
+        got = _tasten_mitschreiben(w, monkeypatch)
+        # ALT nicht: die Menüleiste wertet es vor dem Widget aus (s. _MODIFIKATOREN).
+        for key, mod in ((Qt.Key_Shift, Qt.ShiftModifier), (Qt.Key_Control, Qt.ControlModifier)):
+            _taste(w, P, key, mod)
+            _taste(w, R, key, Qt.NoModifier)
+            assert got[-2:] == [("p", int(key), False, False), ("r", int(key))]
+        got.clear()
+
+        _taste(w, P, Qt.Key_A, Qt.NoModifier, "a")
+        _taste(w, P, Qt.Key_A, Qt.NoModifier, "a", autorep=True)   # Qt-Wiederholung
+        _taste(w, R, Qt.Key_A, Qt.NoModifier, "a", autorep=True)
+        assert got == [("p", 0x61, False, False)], "Autorepeat wird nicht weitergereicht"
+        _taste(w, R, Qt.Key_A, Qt.NoModifier, "a")
+        got.clear()
+
+        # Umschalt+A gedrückt, Umschalt zuerst losgelassen: Loslassen trägt den Code
+        # des Drückens (0x41), nicht den, den die Taste jetzt ergäbe (0x61).
+        _taste(w, P, Qt.Key_A, Qt.ShiftModifier, "A")
+        _taste(w, R, Qt.Key_A, Qt.NoModifier, "a")
+        assert got == [("p", 0x41, True, False), ("r", 0x41)]
+        got.clear()
+
+        # Fokusverlust mit gehaltenen Tasten: alles loslassen.
+        from PySide6.QtGui import QFocusEvent
+        from PySide6.QtWidgets import QApplication
+        _taste(w, P, Qt.Key_Shift, Qt.ShiftModifier)
+        _taste(w, P, Qt.Key_X, Qt.ShiftModifier, "X")
+        QApplication.sendEvent(w.screen_widget, QFocusEvent(QEvent.FocusOut))
+        assert sorted(c for c in got if c[0] == "r") == sorted(
+            [("r", int(Qt.Key_Shift)), ("r", 0x58)])
+    finally:
+        _zu(w, qapp)
+
+    # A5120: reine Modifikatoren erzeugen weiter keinen Tastencode.
+    w = _fenster(qapp, "a5120")
+    try:
+        w.run_timer.stop()
+        got = _tasten_mitschreiben(w, monkeypatch)
+        _taste(w, P, Qt.Key_Shift, Qt.ShiftModifier)
+        _taste(w, R, Qt.Key_Shift, Qt.NoModifier)
+        _taste(w, P, Qt.Key_A, Qt.NoModifier, "a", autorep=True)
+        assert got == []
+    finally:
+        _zu(w, qapp)
+
+
 def test_the_toolbar_dialog_offers_only_the_programs_own_actions(qapp, konfig_ordner,
                                                                   monkeypatch):
     """*Symbolleiste einrichten* bietet je Programm nur, was es dort gibt: der

@@ -73,7 +73,7 @@ denen die restlichen Einträge gelten (0668H schaltet den Vergleich auf den zwei
 | `ESC [?12h` / `l` | 04C3H / 04BBH | Modus 23H Bit 1 löschen / setzen + LED Bit 4 [?] |
 | `ESC [?13h` / `l` | 04B1H / 04A6H | LED 21H Bit 0 an / aus [?] |
 | `ESC [?18h` / `l` | 048BH / 0483H | Modus 60H Bit 5 + LED 21H Bit 6 [?] |
-| `ESC [?19h`/`20h`/`21h` | 03ECH/03F4H/03FDH | Register 2DH = 0/1/2 — Stufe, die bei gehaltener Taste als Wiederholungszahl dient (0263H) [?] |
+| `ESC [?19h`/`20h`/`21h` | 03ECH/03F4H/03FDH | Register 2DH = 0/1/2 — wählt bei 0263H–0270H die **Zeichentabellenseite** (`r8 = 3 + 2DH`); **keine** Wiederholungsstufe (berichtigt AP-E4g) |
 | `ESC [?22h` | 043DH | **DCP-Modus: Scancodes statt Zeichen** (29H Bit 0); zurück nur über `ESC c` |
 
 Antworttexte **[Adapter]**: `ESC [?1;1c` (Kennung, 6 Byte) und `ESC [0n` (Status, 3 Byte).
@@ -104,6 +104,15 @@ nach VT52-Sitte `/Z` oder `/K` [?].
 - **DCP-Modus** (`ESC [?22h`): **PC/XT-Scancodes Satz 1**, Drücken = Code, Loslassen = Code
   + 80H; Umschalt- und Steuertaste werden als `2AH` / `1DH` / `9DH` einzeln gemeldet
   (0320H–035FH). **[Adapter]** bestätigt Satz 1 mit E0-Präfix (`E0 2A E0 37`, `E0 AA`).
+- **Tastenwiederholung** (AP-E4g, beide Modi): wiederholt wird nur, wenn Bit 7 der Tastenart
+  (D3 0100H) gesetzt ist (`01E0H`–`01E8H`: `FLAGS` Bit 1, Zähler `2AH = A0H`). Je
+  Matrix-Abtastdurchlauf zählt `2AH` herunter (`0173H`); bei 0 wird die Taste noch einmal
+  gesendet (SCP: `LD SIO,0EH` `0195H`, DCP: `CALL 0320H` `0190H` — Drücken-Code, ohne
+  Loslassen) und `2AH = 12H` geladen (`019BH`). Stillstand unter `DC3` (`0168H`), Ende beim
+  Loslassen (`055AH`), nur die zuletzt gedrückte Taste. Verzögerung = 161, Folge = 18
+  Durchläufe; die **Dauer eines Durchlaufs** ist nicht abgelesen, sondern gerechnet
+  (≈ 5,5 ms **[?]**).  Nicht wiederholend: Umschalt, Strg, Feststell, ALT, `CL`, Tab, BREAK,
+  CLEAR, RESET, ^S, MOD2 und die Ziffern 1 3 5 7 9 sowie ß **[?]**.
 - **Tastenklick** (052DH): kurzer Summerton bei jeder Taste, abschaltbar (23H Bit 2, eine
   Taste der Tastatur schaltet ihn um, 04CFH).
 - **Flusssteuerung**: Solange `DC3` gilt (60H Bit 2), sendet die Tastatur nichts; auch die
@@ -121,7 +130,7 @@ nach VT52-Sitte `/Z` oder `/K` [?].
 2. Welche physische Taste zu welcher Matrixposition gehört — aus dem Belegungsplan
    (`Belegungsplan_Tastatur_K767x.gif`) zu übertragen, wenn das Modell die Originaltasten
    nachbilden soll. Für den Emulator reicht die Zeichenebene (Host-Taste → ASCII/KOI-8).
-3. Bedeutung der Modi `?11`, `?12`, `?13`, `?18` und `?19–21` (welche LED, welche Taste).
+3. Bedeutung der Modi `?11`, `?12`, `?13`, `?18` (welche LED, welche Taste); `?19–21` wählen die Zeichentabellenseite.
 
 ## Folgerung für das Emulatormodell (Etappe 2)
 

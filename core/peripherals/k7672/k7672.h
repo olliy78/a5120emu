@@ -32,8 +32,28 @@
  * Kleinbuchstaben ohne, Großbuchstaben mit Umschalt — vorausgesetzt, die Feststelltaste
  * (3AH, im BIOS ein Wechselschalter) ist nicht eingerastet; ihren Zustand kennt das
  * Modell nicht.
- * Cursortasten = Umschalt + Ziffernblock (BIOS: `^H ^X ^D ^E`).  Tastenwiederholung
- * macht die echte K7672 selbst (`ESC [?19h`); hier nicht nachgebildet.
+ * Cursortasten = Umschalt + Ziffernblock (BIOS: `^H ^X ^D ^E`).
+ *
+ * **Tastenwiederholung** (AP-E4g) macht die Tastatur selbst, in beiden Modi, und
+ * die Firmware belegt ihre Regeln (D2, Hauptschleife 0079H–0178H, Tastendruck 01D4H):
+ * - **Welche Tasten:** Bit 7 der Tastenart (D3 0100H, Register 0DH; 01E0H–01E8H setzt
+ *   dann FLAGS Bit 1).  Buchstaben, Leertaste, Cursor, Return, PF1–PF12, Ziffernblock …
+ *   wiederholen; Umschalt, Strg, Feststell, ALT, `CL`, Tab, BREAK, CLEAR, RESET, ^S, MOD2
+ *   und — auffällig **[?]** — die Ziffern 1 3 5 7 9 und ß nicht (@ref wiederholbar; deren
+ *   Tastenart 31H/33H/…/7EH ist wie die der anderen ESC-Folgen-Tasten ein Zeichen, kein
+ *   Typ mit Bit 7).  Am Gerät nachprüfen.
+ * - **Nur die zuletzt gedrückte Taste** (22H); eine neue Taste beginnt von vorn
+ *   (01E8H lädt den Zähler 2AH), Loslassen beendet (055AH).
+ * - **Zeit:** Zähler 2AH zählt je ABTASTDURCHLAUF der Matrix (015CH–0173H) von A0H
+ *   (= 160) herunter, danach alle 12H (= 18) Durchläufe ein Mal (019BH).  Er steht
+ *   still, solange `DC3` gilt (0168H).  Die Dauer eines Durchlaufs ist NICHT aus der
+ *   Firmware ablesbar, sondern gerechnet (@ref ABTASTDURCHLAUF_TAKTE).
+ * - **Was:** im SCP-Modus das letzte Zeichen noch einmal (0195H `LD SIO,0EH`), im
+ *   DCP-Modus der Drücken-Code noch einmal (0190H → 0320H) — ohne Loslassen dazwischen.
+ * - **`ESC [?19h`/`?20h`/`?21h` sind KEINE Wiederholungsstufen** (README und Entwurf
+ *   vermuteten das): 03ECH/03F4H/03FDH setzen Register 2DH, das bei 0263H–0270H die
+ *   Seite der Zeichentabelle wählt (r8 = 3 + 2DH).  Mit der Wiederholung hat 2DH nichts
+ *   zu tun; das Modell wertet die Folgen nicht aus.
  *
  * **Tasten der Nachbildung** (Bildschirmtastatur, AP-UI1): `QK_TASTE_BASE | Matrix`
  * spricht eine PHYSISCHE Taste an (Matrixposition 00H–7FH, Firmware-Register 22H).
@@ -69,6 +89,23 @@ public:
      * (≈ 0,35 s) auf die Antwort — jede Dauer darunter besteht.
      */
     static constexpr uint64_t SELBSTTEST_TAKTE = 122'880;
+
+    /// Zähler 2AH bei neuer Taste (Firmware 01E8H: `LD 2AH,#A0H`); abgelaufen nach
+    /// A0H Durchläufen mit Zählschritt plus dem Durchlauf, der sendet.
+    static constexpr unsigned WDH_VERZOEGERUNG_DURCHLAEUFE = 0xA0 + 1;
+    /// Zähler 2AH nach dem Senden (019BH: `LD 2AH,#12H`) — 0173H zieht im selben
+    /// Durchlauf schon 1 ab, also senden alle 12H Durchläufe.
+    static constexpr unsigned WDH_FOLGE_DURCHLAEUFE = 0x12;
+    /**
+     * @brief Dauer EINES Matrix-Abtastdurchlaufs der Firmware in CPU-Takten (2,4576 MHz).
+     *
+     * **[?] gerechnet, nicht gemessen:** Z8-Takt 2,4576 MHz = Quarz, Befehlstakt
+     * Quarz/2 (Z8-UART: 2 457 600/256 = 9600 Bd, README); die Abtastung ist 8 Zeilen ×
+     * 16 Spalten × (RL, RLC, JR, DJNZ ≈ 34 Takte) plus Zeilenrahmen und Listenvergleich
+     * ≈ 6 800 Befehlstakte ≈ 5,5 ms.  Daraus ≈ 0,9 s bis zur ersten und ≈ 10 Hz danach.
+     * Messauftrag am Gerät: Zeit bis zur ersten Wiederholung und Abstand danach.
+     */
+    static constexpr uint64_t ABTASTDURCHLAUF_TAKTE = 13'500;
 
     K7672() = default;
 
@@ -111,6 +148,12 @@ public:
     static bool vorsatzUmschalt(uint8_t m);
     /// SCP-Zeichen der Taste @p m (FFH = keins).
     static uint8_t scpZeichen(uint8_t m, bool umschalt);
+    /// Wiederholt die Taste an Matrixposition @p m (Bit 7 der Tastenart, D3 0100H)?
+    static bool wiederholbar(uint8_t m);
+    /// Dasselbe für eine Taste, die nur als DCP-Scancode (ohne Bit 7) bekannt ist.
+    static bool wiederholbarScancode(uint8_t code);
+    /// Dasselbe für ein SCP-Zeichen (Host-Zeichen, auch Strg-Zeichen).
+    static bool wiederholbarZeichen(uint8_t z);
 
     /** @brief Welches Zeichen sendet der SCP-Modus für diesen Host-Tastencode? (0 = keins) */
     static uint8_t zeichenFuer(uint32_t qt_keycode, bool shift, bool ctrl);
@@ -141,6 +184,8 @@ public:
      */
     uint8_t  leds() const           { return leds_; }
     unsigned selbsttests() const    { return selbsttests_; }
+    /// Läuft gerade eine Tastenwiederholung?  (Tests)
+    bool     wiederholtGerade() const { return wdh_.aktiv; }
     /// Liegen noch Bytes auf der Leitung zum Rechner?  (Tests: „alles getippt“)
     bool sendetNoch() const         { return !unterwegs_.empty(); }
 
@@ -157,6 +202,11 @@ private:
     void dcpLoslassen(uint32_t schluessel);
     /// Physische Taste (Matrixposition) drücken/loslassen — Firmware-Tabellen.
     void tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl);
+    /// Wiederholung für diese Taste beginnen (ersetzt eine laufende) bzw. beenden.
+    void wiederholungStart(uint32_t schluessel, std::string bytes);
+    void wiederholungEnde(uint32_t schluessel);
+    void wiederholungStopp() { wdh_ = Wiederholung{}; }
+    void wiederholungTakt(uint64_t dt);
 
     Z80SIO* sio_   = nullptr;
     int     kanal_ = 1;
@@ -179,6 +229,14 @@ private:
 
     bool        esc_aktiv_ = false;
     std::string esc_folge_;           ///< Zeichen nach ESC
+
+    /// Tastenwiederholung: nur die zuletzt gedrückte Taste (Firmware 22H/2AH).
+    struct Wiederholung {
+        bool        aktiv = false;
+        uint32_t    schluessel = 0;
+        std::string bytes;            ///< was je Wiederholung noch einmal gesendet wird
+        int64_t     rest = 0;         ///< Takte bis zur nächsten Wiederholung
+    } wdh_;
 
     uint64_t jetzt_ = 0;
     uint64_t leitung_frei_ = 0;

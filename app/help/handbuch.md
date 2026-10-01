@@ -375,6 +375,12 @@ Weil jeder Tastendruck dem Gast gehört — **auch** `Strg+C`, `Strg+S`, `Strg+P
 und die Funktionstasten, die CP/M braucht —, trägt jede Bedienung des Fensters
 `Strg+Umschalt`. Die einzige Ausnahme ist F11 (Vollbild).
 
+**K8915:** die Tastatur K7672 wiederholt eine gehaltene Taste selbst — nach etwa
+einer Sekunde, dann etwa zehnmal je Sekunde (gerechnet, nicht am Gerät gemessen),
+und wie am Gerät nicht bei Umschalt, Strg, Tab und den Ziffern 1 3 5 7 9. Das
+Wiederholen des PCs wird deshalb nicht weitergereicht. Umschalt und Strg gehen als
+eigene Tasten durch; ALT gibt es nur an der Bildschirmtastatur.
+
 ## Konfiguration — was gemerkt wird und wo
 
 Alles, was man einstellt, landet fortlaufend in

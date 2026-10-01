@@ -505,3 +505,175 @@ TEST(K7672, ScpTabRuecktasteUndUnbekannteTaste)
     }
     EXPECT_EQ(alles(a), (std::vector<int>{0x09, 0x09, 0x08}));
 }
+
+// ─── Tastenwiederholung (AP-E4g) ──────────────────────────────────────────────
+// Die Regeln stehen in der Firmware (k7672.h, „Tastenwiederholung“), die Zeit ist
+// gerechnet [?].  Alle Fälle laufen in 1000-Takt-Schritten durch service() — wie die
+// Laufschleife der Maschine — und nicht durch einen Aufruf, den nur der Test macht.
+
+namespace {
+constexpr uint64_t VERZ  = K7672::WDH_VERZOEGERUNG_DURCHLAEUFE * K7672::ABTASTDURCHLAUF_TAKTE;
+constexpr uint64_t FOLGE = K7672::WDH_FOLGE_DURCHLAEUFE * K7672::ABTASTDURCHLAUF_TAKTE;
+
+constexpr uint32_t QK_F1 = 0x01000030;
+
+struct Ankunft { uint64_t zeit; int byte; };
+
+/// @p takte fahren; liefert jedes eintreffende Byte mit dem Zeitpunkt (auf 1000 genau).
+std::vector<Ankunft> fahre(Aufbau& a, uint64_t takte) {
+    std::vector<Ankunft> v;
+    for (uint64_t t = 0; t < takte; t += 1000) {
+        a.laufe(1000);
+        for (int b; (b = a.lies()) >= 0;) v.push_back({a.t, b});
+    }
+    return v;
+}
+std::vector<int> bytes(const std::vector<Ankunft>& v) {
+    std::vector<int> r;
+    for (const auto& x : v) r.push_back(x.byte);
+    return r;
+}
+}  // namespace
+
+/// DCP: gehaltenes 'a' ⇒ nach der Verzögerung der Drücken-Code wieder und wieder,
+/// OHNE Loslassen dazwischen, im Abstand FOLGE; Loslassen beendet.
+TEST(K7672, WiederholungDcpNachVerzoegerungUndRate)
+{
+    Aufbau a;
+    dcp(a);
+    fahre(a, 100'000);
+    a.kbd.keyPress('a', false, false);
+    const uint64_t t0 = a.t;
+    const auto vor = fahre(a, VERZ - 10'000);
+    EXPECT_EQ(bytes(vor), (std::vector<int>{0x1E})) << "vor Ablauf der Verzögerung nur der Druck";
+
+    const auto v = fahre(a, 10'000 + 3 * FOLGE + 10'000);
+    ASSERT_EQ(v.size(), 4u);
+    for (const auto& x : v) EXPECT_EQ(x.byte, 0x1E) << "kein Loslassen zwischen den Wiederholungen";
+    EXPECT_NEAR(double(v[0].zeit - t0), double(VERZ + K7672::ZEICHEN_TAKTE), 2000);
+    for (size_t i = 1; i < v.size(); ++i)
+        EXPECT_NEAR(double(v[i].zeit - v[i - 1].zeit), double(FOLGE), 2000) << i;
+    EXPECT_TRUE(a.kbd.wiederholtGerade());
+
+    a.kbd.keyRelease('a');
+    EXPECT_FALSE(a.kbd.wiederholtGerade());
+    EXPECT_EQ(bytes(fahre(a, 3 * FOLGE)), (std::vector<int>{0x9E})) << "danach nur der Loslass-Code";
+}
+
+/// Umschalt, Strg, Feststell und ALT haben keine Dauerfunktion (Bit 7 der Tastenart
+/// fehlt) — gehalten kommt der Code genau einmal.  PF1 (Tastenart A6H) dagegen
+/// wiederholt, und die Ziffer 1 (Tastenart 31H) wiederholt laut Firmware nicht [?].
+TEST(K7672, WiederholungOhneModifikatorenAberMitFunktionstasten)
+{
+    {
+        Aufbau a;
+        dcp(a);
+        a.kbd.keyPress(QK_F1, false, false);
+        EXPECT_GE(fahre(a, VERZ + 2 * FOLGE).size(), 3u);
+    }
+    {
+        Aufbau a;
+        dcp(a);
+        a.kbd.keyPress('1', false, false);
+        EXPECT_EQ(fahre(a, VERZ + 2 * FOLGE).size(), 1u);
+        EXPECT_FALSE(a.kbd.wiederholtGerade());
+    }
+    for (uint32_t k : {QK_SHIFT, QK_CONTROL, QK_ALT, QK_CAPSLOCK}) {
+        Aufbau a;
+        dcp(a);
+        a.kbd.keyPress(k, false, false);
+        const auto v = fahre(a, VERZ + 4 * FOLGE);
+        EXPECT_EQ(v.size(), 1u) << std::hex << k;
+        EXPECT_FALSE(a.kbd.wiederholtGerade()) << std::hex << k;
+    }
+}
+
+/// Nur die zuletzt gedrückte Taste wiederholt.  Eine neue Taste beginnt mit voller
+/// Verzögerung, ein Modifikator dazwischen stört nicht, das Loslassen einer ANDEREN
+/// Taste auch nicht.
+TEST(K7672, WiederholungNurDieZuletztGedrueckteTaste)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress('a', false, false);
+    fahre(a, VERZ / 2);
+    a.kbd.keyPress('b', false, false);
+    const uint64_t tb = a.t;
+    const auto v = fahre(a, VERZ + FOLGE + 10'000);
+    // a-Druck wurde schon abgeholt; hier: b-Druck, dann (erst nach VERZ) b, b — nie a.
+    ASSERT_GE(v.size(), 3u);
+    EXPECT_EQ(v[0].byte, 0x30);
+    for (size_t i = 1; i < v.size(); ++i) EXPECT_EQ(v[i].byte, 0x30) << "kein a mehr";
+    EXPECT_GE(v[1].zeit - tb, VERZ) << "die neue Taste beginnt mit voller Verzögerung";
+
+    // Loslassen der alten Taste und ein Modifikator ändern nichts.
+    a.kbd.keyRelease('a');
+    EXPECT_TRUE(a.kbd.wiederholtGerade());
+    a.kbd.keyPress(QK_SHIFT, false, false);
+    EXPECT_TRUE(a.kbd.wiederholtGerade());
+    a.kbd.keyRelease('b');
+    EXPECT_FALSE(a.kbd.wiederholtGerade());
+}
+
+/// SCP-Modus: die Firmware wiederholt dort das letzte Zeichen (0195H, `LD SIO,0EH`).
+TEST(K7672, WiederholungScpWiederholtDasZeichen)
+{
+    Aufbau a;
+    a.kbd.keyPress('x', false, false);
+    const auto v = fahre(a, VERZ + 2 * FOLGE + 10'000);
+    EXPECT_EQ(bytes(v), (std::vector<int>{'x', 'x', 'x', 'x'}));
+    a.kbd.keyRelease('x');
+    EXPECT_TRUE(fahre(a, 3 * FOLGE).empty());
+    // Tab hat keine Dauerfunktion (Matrix 06H, Tastenart 09H).
+    a.kbd.keyPress(QK_TAB, false, false);
+    EXPECT_EQ(bytes(fahre(a, VERZ + 2 * FOLGE)), (std::vector<int>{0x09}));
+}
+
+/// Unter DC3 steht der Zähler still (0168H): weder wiederholt die Taste, noch läuft
+/// die Verzögerung weiter.  Nach DC1 geht es mit dem Rest weiter.
+TEST(K7672, WiederholungStehtUnterDc3Still)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress('a', false, false);
+    fahre(a, VERZ - 20'000);                 // fast abgelaufen
+    a.sende({DC3});
+    EXPECT_TRUE(fahre(a, 3 * VERZ).empty()) << "gesperrt: nichts";
+    a.sende({DC1});
+    const auto v = fahre(a, 40'000);
+    EXPECT_EQ(bytes(v), (std::vector<int>{0x1E})) << "nach XON der Rest der Verzögerung";
+}
+
+/// Physische Tasten (Bildschirmtastatur): Cursor ↑ (Matrix 79H) hat in der Firmware
+/// einen Vorsatz — wiederholt wird Vorsatz + Code (0320H), Umschalt (16H) gar nicht.
+TEST(K7672, WiederholungMatrixtasteMitVorsatz)
+{
+    Aufbau a;
+    dcp(a);
+    a.kbd.keyPress(K7672::QK_TASTE_BASE | 0x79, false, false);
+    const auto v = fahre(a, VERZ + 10'000);
+    EXPECT_EQ(bytes(v), (std::vector<int>{0x2A, 0x48, 0x2A, 0x48}));
+    a.kbd.keyRelease(K7672::QK_TASTE_BASE | 0x79);
+    EXPECT_FALSE(a.kbd.wiederholtGerade());
+
+    Aufbau b;
+    dcp(b);
+    b.kbd.keyPress(K7672::QK_TASTE_BASE | 0x16, false, false);   // Umschalt
+    EXPECT_EQ(fahre(b, VERZ + 2 * FOLGE).size(), 1u);
+}
+
+/// `ESC [?19h/20h/21h` wählen in der Firmware die Zeichentabellenseite (Register 2DH,
+/// 0263H), NICHT die Wiederholung: Zeit und Wirkung bleiben, wie sie sind.
+TEST(K7672, WiederholungHatMitEsc19Bis21Nichts)
+{
+    for (char stufe : {'9', '0', '1'}) {
+        Aufbau a;
+        dcp(a);
+        a.sende({ESC, '[', '?', (stufe == '9') ? uint8_t('1') : uint8_t('2'), uint8_t(stufe), 'h'});
+        a.kbd.keyPress('a', false, false);
+        const uint64_t t0 = a.t;
+        const auto v = fahre(a, VERZ + 10'000);
+        ASSERT_EQ(v.size(), 2u) << stufe;
+        EXPECT_NEAR(double(v[1].zeit - t0), double(VERZ + K7672::ZEICHEN_TAKTE), 2000) << stufe;
+    }
+}

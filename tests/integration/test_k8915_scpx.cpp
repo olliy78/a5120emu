@@ -361,6 +361,56 @@ TEST(K8915Scpx, RuecktasteKorrigiertDieEingabezeile)
     EXPECT_FALSE(enthaelt(m, "DIRX?")) << vramLines(m);
 }
 
+/**
+ * @test K8915Scpx.GehalteneTasteWiederholtAmPrompt
+ * @brief AP-E4g: SCPX läuft bis zum Prompt, `x` wird GEHALTEN — die K7672 wiederholt
+ *        den Drücken-Code selbst (DCP-Modus, Firmware 0190H → 0320H) nach ≈ 0,9 s
+ *        und dann ≈ 10 Hz [?]; das BIOS echot jedes `x`.  Loslassen beendet es, ein
+ *        gehaltenes Umschalt/Strg dagegen erzeugt nie etwas.  Läuft in 5 000-Takt-
+ *        Schritten durch die Maschine (K7672 = 9600 Baud + Zeitgeber-ISR) — die
+ *        Wiederholung zählt also Maschinenzeit im Service-Pfad, nicht in einem Aufruf,
+ *        den nur der Test macht (AP-S9 am A5120: dort wiederholte gar nichts).
+ *        Ohne die Wiederholung steht hier genau ein `x` (Gegenprobe).
+ */
+TEST(K8915Scpx, GehalteneTasteWiederholtAmPrompt)
+{
+    Aufbau x;
+    K8915Machine& m = x.m;
+    ohneSelbsttestZurColdstartMeldung(m);
+    ladenBisPrompt(m);
+
+    auto zaehleX = [&] {
+        const std::string z = letzteZeile(m);
+        return static_cast<int>(std::count(z.begin(), z.end(), 'x'));
+    };
+    auto fahre = [&](long long takte) {
+        for (long long t = 0; t < takte; t += m.run(5'000)) {}
+    };
+    constexpr long long VERZ = K7672::WDH_VERZOEGERUNG_DURCHLAEUFE * K7672::ABTASTDURCHLAUF_TAKTE;
+    constexpr long long FOLGE = K7672::WDH_FOLGE_DURCHLAEUFE * K7672::ABTASTDURCHLAUF_TAKTE;
+
+    // Modifikatoren allein erzeugen nichts, so lange man sie auch hält.
+    m.keyPress(0x01000020, false, false);              // Qt::Key_Shift
+    m.keyPress(0x01000021, false, true);               // Qt::Key_Control
+    fahre(VERZ + 4 * FOLGE);
+    m.keyRelease(0x01000021);
+    m.keyRelease(0x01000020);
+    fahre(1'000'000);
+    ASSERT_EQ(letzteZeile(m), "A>") << vramLines(m);
+
+    m.keyPress('x', false, false);
+    fahre(VERZ / 2);
+    EXPECT_EQ(zaehleX(), 1) << "vor Ablauf der Verzögerung nur der Druck\n" << vramLines(m);
+    fahre(VERZ / 2 + 4 * FOLGE);
+    EXPECT_GE(zaehleX(), 4) << "gehalten: wiederholt\n" << vramLines(m);
+    m.keyRelease('x');
+    fahre(1'000'000);
+    const int nachLoslassen = zaehleX();
+    fahre(VERZ + 3 * FOLGE);
+    EXPECT_EQ(zaehleX(), nachLoslassen) << "nach dem Loslassen wiederholt nichts mehr";
+    EXPECT_LE(nachLoslassen, 8) << "etwa 1 + 4 Wiederholungen, nicht ein Strom\n" << vramLines(m);
+}
+
 /// Kurzer Weg zur Coldstart-Meldung (s. DirSaveEraWarmstartUndRamDisk): `JP` bei
 /// 0000H/0005H im RAM ⇒ das ROM überspringt den Selbsttest wie nach einem Reset.
 void ohneSelbsttestZurColdstartMeldung(K8915Machine& m) {

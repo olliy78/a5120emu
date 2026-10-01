@@ -629,6 +629,62 @@ class KeyboardK7672Widget(KeyboardWidget):
             shift = True
         return (code, shift, ctrl)
 
+    # ── Umschalttasten des PCs und Tastenwiederholung (AP-E4g) ──────────────
+
+    #: Reine Modifikatoren des PCs, die der K8915 als EIGENE Tasten braucht: im
+    #: DCP-Modus meldet die K7672 Umschalt (2AH) und Strg (1DH) einzeln, damit das
+    #: BIOS z. B. Umschalt+PF1 unterscheiden kann.  Der Kern setzt sie zusammen mit
+    #: der je Zeichen gewählten Umschaltung um (kein Doppel: `K7672::dcpDruecken`
+    #: vergleicht mit dem Zustand, den der Rechner kennt).  **ALT fehlt mit Absicht**:
+    #: Qt gibt das Drücken nicht zuverlässig an das Widget (die Menüleiste wertet es
+    #: zuerst aus und holt sich beim Loslassen den Fokus); der ALT des K8915 ist an
+    #: der Bildschirmtastatur (Matrix 6DH) zu haben.
+    _MODIFIKATOREN = (int(Qt.Key_Shift), int(Qt.Key_Control))
+
+    def __init__(self, *args, **kwargs):
+        # Je Host-Taste der Kern-Code, mit dem sie GEDRÜCKT wurde.  Das Loslassen
+        # muss denselben Code tragen: ändert sich die Umschaltung dazwischen
+        # (Umschalt zuerst losgelassen: `A` → `a`), träfe es sonst eine andere
+        # Taste, und die Tastenwiederholung der K7672 liefe weiter.
+        self._core_down = {}
+        super().__init__(*args, **kwargs)
+
+    def host_key_press(self, event):
+        key = int(event.key())
+        if key in self._MODIFIKATOREN:
+            self._mark_down(event)
+            self._core_down[key] = key
+            return (key, False, False)
+        mapped = super().host_key_press(event)
+        if mapped is not None:
+            self._core_down[key] = mapped[0]
+        return mapped
+
+    def host_key_release(self, event):
+        key = int(event.key())
+        if key in self._MODIFIKATOREN:
+            # Die rastenden Umschalttasten der Nachbildung bleiben unberührt.
+            self._mark_up(event)
+            self._core_down.pop(key, None)
+            return (key, False, False)
+        mapped = super().host_key_release(event)
+        code = self._core_down.pop(key, None)
+        if mapped is not None and code is not None:
+            mapped = (code,) + tuple(mapped[1:])
+        return mapped
+
+    def clear_host_keys(self):
+        """Fokusverlust: alle gehaltenen Tasten loslassen — auch im Kern.
+
+        Sonst bliebe Umschalt/Strg dort hängen und die zuletzt gedrückte Taste
+        wiederholte sich endlos (die K7672 wiederholt selbst, bis das Loslassen kommt).
+        """
+        codes = list(self._core_down.values())
+        self._core_down.clear()
+        super().clear_host_keys()
+        for code in codes:
+            self.keyReleased.emit(int(code))
+
     def lock_active(self) -> bool:
         """Keine eigene Feststellung — die führt das BIOS (Lampe CAPS)."""
         return False

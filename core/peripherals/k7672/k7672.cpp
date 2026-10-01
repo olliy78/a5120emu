@@ -101,6 +101,7 @@ void K7672::powerOn()
     gesperrt_ = false;
     modus_    = Modus::Scp;
     leds_     = 0;
+    wiederholungStopp();
     ++selbsttests_;
 }
 
@@ -113,6 +114,7 @@ void K7672::sende(uint8_t b, uint64_t ab)
 
 bool K7672::service(uint64_t now)
 {
+    const uint64_t dt = now > jetzt_ ? now - jetzt_ : 0;
     jetzt_ = now;
     bool geaendert = false;
     if (sio_) {
@@ -129,6 +131,9 @@ bool K7672::service(uint64_t now)
             geaendert = true;
         }
     }
+    // Die Wiederholung läuft in MASCHINENZEIT, hier im ohnehin je Befehl gerufenen
+    // Pfad — nicht über einen Aufruf, den niemand macht (K7637: AP-S9).
+    wiederholungTakt(dt);
     return geaendert;
 }
 
@@ -174,6 +179,7 @@ void K7672::befehl(const std::string& f)
     if (f == "[?22h") {
         // 043DH: 29H Bit0 — Scancodes statt Zeichen; zurück nur über ESC c.
         modus_ = Modus::Dcp;
+        wiederholungStopp();
         umschalt_unten_ = strg_unten_ = false;
         gedrueckt_.clear();
         matrix_gedrueckt_.clear();
@@ -200,6 +206,7 @@ void K7672::neustart(bool mit_test)
     // Der Speicherlöscher 7FH…04H setzt auch den DCP-Modus (29H) zurück.
     gesperrt_ = false;
     modus_    = Modus::Scp;
+    wiederholungStopp();
     leds_     = 0;                    // 21H liegt im Speicherlöscher 04H…7FH
     if (mit_test) {
         selbsttest();
@@ -243,12 +250,16 @@ void K7672::keyPress(uint32_t k, bool shift, bool ctrl)
     if ((k & ~0xFFu) == QK_TASTE_BASE) { tasteMatrix(static_cast<uint8_t>(k & 0x7F), true, shift, ctrl); return; }
     if (modus_ == Modus::Dcp) { tasteDcp(k, true, shift, ctrl); return; }
     const uint8_t z = zeichenFuer(k, shift, ctrl);
-    if (z) sendeZeichen(z);
+    if (!z) return;
+    sendeZeichen(z);
+    if (wiederholbarZeichen(z)) wiederholungStart(k, std::string(1, static_cast<char>(z)));
+    else                        wiederholungStopp();
 }
 
 void K7672::keyRelease(uint32_t k)
 {
     if ((k & ~0xFFu) == QK_TASTE_BASE) { tasteMatrix(static_cast<uint8_t>(k & 0x7F), false, false, false); return; }
+    wiederholungEnde(k);
     if (modus_ == Modus::Dcp) tasteDcp(k, false, false, false);
     // SCP-Modus: Loslassen erzeugt nichts.
 }
@@ -406,6 +417,9 @@ void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
     }
     if (ctrl) t.strg = true;
     dcpDruecken(k, t);
+    // Satz-1-Typematik: der Drücken-Code wiederholt, ohne Loslassen dazwischen.
+    if (wiederholbarScancode(t.code)) wiederholungStart(k, std::string(1, static_cast<char>(t.code)));
+    else                              wiederholungStopp();
 }
 
 void K7672::sendeZeichen(uint8_t ch)
@@ -430,6 +444,65 @@ void K7672::sendeZeichen(uint8_t ch)
 
 uint8_t K7672::scancode(uint8_t m)        { return kScan[m & 0x7F]; }
 bool    K7672::vorsatzUmschalt(uint8_t m) { return (kArt[m & 0x7F] & 0x40) != 0; }
+
+// D3 0100H Bit 7: Dauerfunktion (Firmware 01E0H setzt dann FLAGS Bit 1, 015CH wertet es).
+bool K7672::wiederholbar(uint8_t m) { return (kArt[m & 0x7F] & 0x80) != 0; }
+
+bool K7672::wiederholbarScancode(uint8_t code)
+{
+    // Nur Tasten OHNE Vorsatz: der Host-Weg schickt nie einen (Umschalt/Strg kommen
+    // als eigene Tasten).  Zwei Codes gibt es doppelt — Tab (0FH, Matrix 06H, ohne
+    // Dauerfunktion) und Rücktab (57H mit Vorsatz) —, der ohne Vorsatz zählt.
+    code &= 0x7F;
+    for (int m = 0; m < 128; ++m)
+        if (kScan[m] == code) return (kArt[m] & 0x80) != 0;
+    return false;
+}
+
+bool K7672::wiederholbarZeichen(uint8_t z)
+{
+    // Eintrag in den Zeichentabellen: entscheidet sein Bit 7 (Tab steht drin, ohne
+    // Dauerfunktion).  Fehlt das Zeichen ganz, ist es Strg + Buchstabe: das
+    // Steuerzeichen steht in keiner Tabelle, die Taste ja.
+    auto sucht = [](uint8_t c, bool& da) {
+        bool wdh = false;
+        for (int m = 0; m < 128; ++m)
+            if (kScpGrund[m] == c || kScpUmschalt[m] == c) { da = true; wdh = wdh || (kArt[m] & 0x80); }
+        return wdh;
+    };
+    bool da = false;
+    const bool direkt = sucht(z, da);
+    if (da || z >= 0x20) return direkt;
+    bool da2 = false;
+    return sucht(static_cast<uint8_t>(z + 0x40), da2) || sucht(static_cast<uint8_t>(z + 0x60), da2);
+}
+
+void K7672::wiederholungStart(uint32_t schluessel, std::string bytes)
+{
+    // 01E8H: neue Taste ⇒ Zähler neu auf A0H.  Nur die zuletzt gedrückte wiederholt.
+    wdh_.aktiv      = true;
+    wdh_.schluessel = schluessel;
+    wdh_.bytes      = std::move(bytes);
+    wdh_.rest       = static_cast<int64_t>(WDH_VERZOEGERUNG_DURCHLAEUFE * ABTASTDURCHLAUF_TAKTE);
+}
+
+void K7672::wiederholungEnde(uint32_t schluessel)
+{
+    if (wdh_.aktiv && wdh_.schluessel == schluessel) wiederholungStopp();
+}
+
+void K7672::wiederholungTakt(uint64_t dt)
+{
+    if (!wdh_.aktiv) return;
+    if (gesperrt_) return;            // 0168H: unter DC3 steht der Zähler still
+    wdh_.rest -= static_cast<int64_t>(dt);
+    if (wdh_.rest > 0) return;
+    // Die Leitung muss frei sein, sonst staute sich der Rückstand im Empfänger;
+    // die echte Tastatur sendet im Takt ihres eigenen Durchlaufs, nicht des Rechners.
+    if (!unterwegs_.empty()) return;
+    for (char b : wdh_.bytes) sendeCode(static_cast<uint8_t>(b));
+    wdh_.rest = static_cast<int64_t>(WDH_FOLGE_DURCHLAEUFE * ABTASTDURCHLAUF_TAKTE);
+}
 uint8_t K7672::scpZeichen(uint8_t m, bool umschalt)
 {
     return (umschalt ? kScpUmschalt : kScpGrund)[m & 0x7F];
@@ -438,6 +511,7 @@ uint8_t K7672::scpZeichen(uint8_t m, bool umschalt)
 void K7672::tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl)
 {
     m &= 0x7F;
+    if (!gedrueckt) wiederholungEnde(QK_TASTE_BASE | m);
     if (modus_ == Modus::Scp) {
         if (!gedrueckt) return;                       // SCP: Loslassen erzeugt nichts
         // 0462H / 047EH [?]: Feststell- und GRAPH-Taste schalten Modus und Lampe um.
@@ -451,6 +525,8 @@ void K7672::tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl)
         if (z == 0xFF) return;                        // keine belegte Taste: nichts
         if (ctrl && z >= 0x40 && z <= 0x7F) z &= 0x1F;
         sendeZeichen(z);
+        if (wiederholbar(m)) wiederholungStart(QK_TASTE_BASE | m, std::string(1, static_cast<char>(z)));
+        else                 wiederholungStopp();
         return;
     }
 
@@ -495,4 +571,15 @@ void K7672::tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl)
     if (ist_strg)     strg_unten_ = true;
     for (char b : drueck) sendeCode(static_cast<uint8_t>(b));
     matrix_gedrueckt_.push_back({m, los, ist_umschalt, ist_strg});
+    // Wiederholt wird, was die Firmware beim Drücken der Taste selbst sendet (0320H):
+    // Vorsatz und Code, ohne Umschalt/Strg der Nachbildung (die bleiben unten).
+    const bool modifikator = ist_umschalt || ist_strg || code == SC_FESTSTELL || code == SC_ALT;
+    if (wiederholbar(m)) {
+        std::string wdh;
+        if (sc & 0x80) wdh += char(vorsatzUmschalt(m) ? SC_UMSCHALT : SC_STRG);
+        wdh += char(code);
+        wiederholungStart(QK_TASTE_BASE | m, wdh);
+    } else if (!modifikator) {
+        wiederholungStopp();
+    }
 }
