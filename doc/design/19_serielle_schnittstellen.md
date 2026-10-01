@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, S1–S8 und T1a erledigt (§12.1); offen T1b und die Bildschirm-Checkliste.
+**Stand:** 2026-09-30, S1–S8, T1a und T1b erledigt (§12.1); offen nur die Bildschirm-Checkliste (S8).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -714,6 +714,17 @@ gefunden. `test` (1478), `test-format` (26), `win` (1449) grün; neue Fälle 5×
 - **Offen — nur am Bildschirm prüfbar** (Anwender): Aussehen von Dock/Statuszeile/Tooltips,
   Warnfarbe „Gegenseite … Bd", echtes Terminalprogramm (PuTTY) gegen ein Gast-Terminal-
   programm, echtes Gerät über `ser2net`, Erreichbarkeit im LAN (Firewall, Dual-Stack).
+
+**AP-T1b — erledigt 2026-10-01** (`2aa7830`, `04c8e67`, `03ae045`, `c8bf589`; Ergebnis in
+`16_k8915.md` §8a AP-T1). Abdeckung der geänderten Zeilen seit `4b3685d`: C++ 91,4 → 96,4 %,
+Python 96,3 → 98,4 %. 20 Festlegungen durch Zurückdrehen geprüft, alle rot — drei davon erst
+durch die neuen Wächter (Datenbits-Antwort, Schreibfehler beim Beenden, DFÜ/Drucker-Weiche).
+TSan über Hub, Wandler und Kopplung ohne Befund. **Fehler behoben:** `K1520SerialRxCb` in der
+ctypes-Bindung hatte die Parameter vertauscht (schon auf `main`; die GUI benutzt den Rückruf
+nicht). Befunde ohne Änderung: ein `k1520_serial_send` unmittelbar nach `start` erreicht den
+Gast noch (die Karte erfährt die Belegung erst beim nächsten Wandlerblick, ≤ 1/16
+Zeichenzeit); `SerialHub::rueckstau` wird nie gefüllt (Schutzcode); unter Winsock verwirft
+ein RST ungelesene Daten im Socketpuffer (OS-Verhalten).
 
 ## 13. Offene Punkte
 
