@@ -94,7 +94,13 @@ RTS→CTS, DTR→DSR+DCD jeweils gekreuzt, Masse.
 ```sh
 python3 tools/sertest/build.py          # -> tools/sertest/sertest.com (eingecheckt)
 python3 tools/sertest/build.py clean    # leert tools/sertest/build/
+python3 tools/sertest/build.py --check  # Temp-Bau, bytegleich mit der eingecheckten .com?
+python3 tools/sertest/build.py --out x.com   # Temp-Bau nach x.com
 ```
+
+`--check` ist der ctest-Wächter `cli_sertest_com_passt_zur_quelle`; ohne Werkzeugkette
+endet er mit 77 (= übersprungen). Die Emulatortests stehen in
+`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`).
 
 M80 + LINKMT aus `~/projects/CPA_Workbench/tools` über `cparun`, Ladeadresse
 0100H; Pfad überschreibbar mit `CPA_TOOLS=<pfad>`. Das Skript bricht ab, wenn M80

@@ -826,7 +826,8 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 
 ## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
 
-**Stand:** 2026-10-01, **AP-ST1 erledigt** (Gerüst `tools/sertest/`, V0.1); weiter mit ST2/ST3.
+**Stand:** 2026-10-01, **AP-ST1 + AP-ST2 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
+`tests/system/test_sertest.cpp` + `sertest_hilfen.h`); weiter mit ST3.
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
@@ -1063,7 +1064,9 @@ Am Ende jedes Teils die Ergebniszeile §14.3.
   überschreibbar mit `CPA_TOOLS`), `README.md` (Bedienung, Kabel, Annahmen), und die
   gebaute **`tools/sertest/sertest.com` eingecheckt** — die CI hat die CPA_Workbench nicht.
   Ein Wächter prüft, dass die eingecheckte `.com` zur Quelle passt, wenn die Werkzeugkette
-  vorhanden ist (sonst übersprungen, mit Meldung).
+  vorhanden ist (sonst übersprungen, mit Meldung) — umgesetzt (ST2) als
+  `cli_sertest_com_passt_zur_quelle` = `build.py --check` (baut in ein Temp-Verzeichnis,
+  vergleicht bytegleich; ohne Werkzeugkette Exit 77 = ctest `SKIP_RETURN_CODE`).
 - **Tests** (`tests/system/`, `k1520_add_test()`): Systemdiskette als `TempDisk`,
   `SERTEST.COM` mit `DiskVolume` darauf, booten, Aufruf per `typeString()`, Ergebniszeilen
   aus dem Bildschirm (`vramText()` bzw. `k1520_screen_char` beim K8915).
@@ -1074,6 +1077,9 @@ Am Ende jedes Teils die Ergebniszeile §14.3.
     Telnet taugt nur für ECHO/FLUSS-XON (keine Leitungen).
   - Schnelle Fälle in die Standardregression (Ziel < 5 s je Fall), lange (Kopplung mit Boot
     beider Maschinen) unter `format_integration` → `tools/dev.sh test-format`.
+  - Umgesetzt (ST2): Suite `Sertest.*`, Label `system;fast` — läuft also in der
+    Standardregression mit, obwohl sie in `tests/system/` liegt (ein Boot bis zum Prompt
+    kostet 1–2 s). Pfad der `.com` über die Definition `K1520_SERTEST_COM`.
 
 ### 14.9 Arbeitspakete
 
@@ -1084,7 +1090,7 @@ Bauberührende APs nacheinander.
 | AP | Inhalt | hängt ab von | Umfang |
 |----|--------|--------------|--------|
 | **ST1** ✔ | Gerüst: `tools/sertest/` (Quelle, `build.py`, README, eingecheckte `.com`), Kopfzeile, Rollenwahl, Kommandozeile §14.3 (inkl. `/A`, `/M:`), Konsole über BDOS 6, Ctrl+C-Pfad mit Aufräumhaken, Maschinenerkennung + Schnittstellenliste §14.4 (Tastatur gekennzeichnet), Abfrage J/N je Schnittstelle, Hinweistext Gegenstelle | — | M |
-| **ST2** | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
+| **ST2** ✔ | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
 | **ST3** | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
 | **ST4** | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine; K8915-Zeile festlegen) + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
 | **ST5** | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
@@ -1110,6 +1116,34 @@ Bauberührende APs nacheinander.
 - Im Emulator geprüft: interaktiv T/G mit J/N-Folge, `T n /A`, `G n` + Ctrl+C, Ctrl+C an der
   T/G-Frage, `SERTEST X` und `T 4` → Kurzhilfe, `/M:K` am A5120; danach `DIR` bedienbar.
   K8915-Kaltstart: `<ENTER>` an „Coldstart … --> <ENTER>", dann Autostart `rade` abwarten.
+
+**ST2 erledigt 2026-10-01.** Suite `Sertest.*` (`tests/system/test_sertest.cpp`, Label
+`system;fast`, 11 Fälle) + Wächter `cli_sertest_com_passt_zur_quelle` (`cli;fast`).
+Je Maschine: `ErkenntRechnerUndListetSchnittstellen` (Kopf, „Rechner: … " ohne
+„(vorgegeben)", alle Einträge + Tastatur, Ctrl+C an T/G), `FalscheKommandozeileGibtKurzhilfe`,
+`CtrlCAnDerRollenfrageLaesstSystemBedienbar`, `CtrlCInDerGegenstelleLaesstSystemBedienbar`
+(`G 1`, danach `dir sertest.com`), `TesterAutomatikLiefertErgebniszeilen` (`T n /A` an einer
+IFSS: alle sechs Teile, LEITUNGEN-LOOP/FLUSS-HW `ENTFAELLT`, Ende `FEHLER` solange Teile fehlen —
+**ab ST4 anpassen**); dazu `ZerlegtErgebniszeilen` ohne Maschine. Laufzeit unter `-j16`:
+A5120 1,3–2,1 s, K8915 2,2–4,8 s je Fall (die Ctrl+C-Fälle mit `DIR` am längsten); ein
+in der Suite geteilter Boot bringt unter ctest nichts (jeder Fall ist ein eigener Prozess).
+Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
+- `SertestA5120` / `SertestK8915` (gleiche Oberfläche, Schablonen über beide): Konstruktor
+  kopiert die Fixture als `TempDisk`, spielt `SERTEST.COM` per `DiskVolume::insert` auf
+  (`aufspielen()`, ohne `…~`-Sicherungskopie) und mountet A:; `kaltstart()`, `tippe("…\r")`,
+  `ctrlC()`, `bis(text)`, `bisEnde()`, `bisPrompt()`, `kommando()`, `dirFindetSertest()`,
+  `bild()`, `lauf()`, `maschine()` (für `serialHub()`). K8915-Kaltstart =
+  `k8915test::kaltstartBisPrompt` (Selbsttest übersprungen, `<ENTER>`, Autostart `rade`).
+- `SertestProtokoll` sammelt die Ergebniszeilen während des Laufs (auch herausgerollte):
+  `wert(name, teil)`, `ende()`, `zeilen()`, `text()`. **Falle:** zeichenweise Ausgabe und
+  das Rollen (Blockverschieben über ~40 000 Takte) erzeugen zerrissene Zwischenbilder
+  (`SERTEST DFUE/IFSS DATEN-LOOPKanal A   (Tastatur)`); eine Zeile gilt deshalb erst nach
+  500 000 Takten ununterbrochen im Bild.
+- `hatZeile(bild, text)` vergleicht ganze Zeilen (das VRAM ist mit Leerzeichen aufgefüllt).
+- Zwei Maschinen (ST5): Muster `SerielleKopplung.*` (`verbinden()` dort) — Server:
+  `k = hub.konfig(i)`, `k.betriebsart = Rfc2217`, `k.rolle = Server`, `k.port = 0`,
+  `hub.konfigurieren(i, k)`; gebundenen Port aus `status(i).port_aktiv` dem Client geben, beide Maschinen in EINEM Faden abwechselnd `lauf()`en, am Ende
+  `stopAlle()`. Eine gemischte Kopplung A5120 ↔ K8915 geht mit denselben Klassen.
 
 ### 14.10 Offene Punkte
 

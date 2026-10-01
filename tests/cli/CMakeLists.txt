@@ -51,3 +51,12 @@ endforeach()
 
 list(LENGTH _cli_cases _cli_count)
 message(STATUS "CLI-Tests: ${_cli_count} Fälle aus cases/*.cli")
+
+# Wächter „eingecheckte tools/sertest/sertest.com passt zur Quelle" (Entwurf 19
+# §14.8): baut src/sertest.mac in ein temporäres Verzeichnis neu (M80 + LINKMT
+# über cparun aus der CPA_Workbench, CPA_TOOLS) und vergleicht bytegleich.  Ohne
+# Werkzeugkette — in der CI immer — Exit 77 = übersprungen, mit Meldung.
+add_test(NAME cli_sertest_com_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/sertest/build.py" --check)
+set_tests_properties(cli_sertest_com_passt_zur_quelle PROPERTIES
+    TIMEOUT 120 SKIP_RETURN_CODE 77 LABELS "cli;fast")

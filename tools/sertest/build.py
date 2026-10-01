@@ -16,12 +16,20 @@ Aufruf:
   python3 tools/sertest/build.py            # baut build/sertest.com und
                                            # kopiert es nach tools/sertest/
   python3 tools/sertest/build.py clean      # leert build/
+  python3 tools/sertest/build.py --out <datei>   # in ein temporaeres Verzeichnis
+                                           # bauen, Ergebnis nach <datei>
+  python3 tools/sertest/build.py --check    # neu bauen (temporaer) und mit der
+                                           # eingecheckten .com bytegleich vergleichen;
+                                           # Exit 0 gleich, 1 verschieden/Fehler,
+                                           # 77 Werkzeugkette fehlt (= uebersprungen)
 
 Ergebnis:
   tools/sertest/sertest.com (eingecheckt - die CI hat die CPA_Workbench nicht)
 """
 
 import glob
+import filecmp
+import tempfile
 import os
 import platform
 import shutil
@@ -73,7 +81,7 @@ def find_cparun():
     return path
 
 
-def fix_case(stem, ext):
+def fix_case(BUILD_DIR, stem, ext):
     """cparun erzeugt unter Linux klein geschriebene Ausgaben; vereinheitlichen."""
     up = os.path.join(BUILD_DIR, f'{stem.upper()}.{ext.upper()}')
     lo = os.path.join(BUILD_DIR, f'{stem.lower()}.{ext.lower()}')
@@ -90,7 +98,7 @@ def clean():
         log("    Bereits leer.")
 
 
-def main():
+def main(BUILD_DIR=BUILD_DIR, ziel=None):
     src_up = SOURCE.upper()
     src_mac = os.path.join(SRC_DIR, f'{SOURCE}.mac')
     if not os.path.isfile(src_mac):
@@ -131,14 +139,14 @@ def main():
     if 'No Fatal error' not in (r.stdout or ''):
         raise RuntimeError("M80 meldet Fehler (Zeilen mit Kennbuchstaben in der "
                            "Ausgabe oben; Listing: cparun m80 SERTEST,SERTEST=SERTEST).")
-    erl = fix_case(SOURCE, 'erl')
+    erl = fix_case(BUILD_DIR, SOURCE, 'erl')
     if not os.path.isfile(erl):
         raise RuntimeError("M80 hat keine .ERL erzeugt (Assembler-Ausgabe pruefen).")
 
     # 5) Linken: LINKMT  NAME = NAME / p:100
     log(f"\n[4] LINKMT: {src_up}.ERL -> {src_up}.COM (Ladeadresse 0x{LOADADDR})")
     run([cparun, 'linkmt', f'{src_up}={src_up}/p:{LOADADDR}'], cwd=BUILD_DIR)
-    com = fix_case(SOURCE, 'com')
+    com = fix_case(BUILD_DIR, SOURCE, 'com')
     if not os.path.isfile(com):
         raise RuntimeError("LINKMT hat keine .COM erzeugt (Ausgabe pruefen).")
 
@@ -152,8 +160,9 @@ def main():
             if os.path.basename(f).lower() != keep:
                 os.remove(f)
 
-    # 7) Eingecheckte Fassung neben build/ aktualisieren
-    ziel = os.path.join(SCRIPT_DIR, f'{SOURCE}.com')
+    # 7) Eingecheckte Fassung neben build/ aktualisieren (bzw. --out)
+    if ziel is None:
+        ziel = os.path.join(SCRIPT_DIR, f'{SOURCE}.com')
     shutil.copyfile(com, ziel)
 
     size = os.path.getsize(com)
@@ -164,10 +173,49 @@ def main():
     log("\nAuf eine CP/A- bzw. SCPX-Diskette kopieren und 'SERTEST' starten.")
 
 
+EINGECHECKT = os.path.join(SCRIPT_DIR, f'{SOURCE}.com')
+SKIP = 77          # ctest SKIP_RETURN_CODE
+
+
+def werkzeugkette_da():
+    name = 'cparun.exe' if platform.system() == 'Windows' else 'cparun'
+    return all(os.path.isfile(os.path.join(CPA_TOOLS, t))
+               for t in (name, 'm80.com', 'linkmt.com'))
+
+
+def check():
+    """Waechter: passt die eingecheckte .com zur Quelle?  Baut in ein
+    temporaeres Verzeichnis, die eingecheckte Datei bleibt unberuehrt."""
+    if not werkzeugkette_da():
+        print(f"UEBERSPRUNGEN: CP/M-Werkzeugkette nicht gefunden ({CPA_TOOLS}; "
+              f"CPA_TOOLS=<pfad> setzen) - eingecheckte sertest.com ungeprueft.")
+        return SKIP
+    with tempfile.TemporaryDirectory(prefix='sertest_check_') as tmp:
+        neu = os.path.join(tmp, 'sertest.com')
+        main(os.path.join(tmp, 'build'), neu)
+        if filecmp.cmp(neu, EINGECHECKT, shallow=False):
+            print(f"OK: {EINGECHECKT} passt zur Quelle ({os.path.getsize(neu)} Bytes)")
+            return 0
+        print(f"FEHLER: {EINGECHECKT} passt NICHT zur Quelle src/sertest.mac "
+              f"(neu {os.path.getsize(neu)} B, eingecheckt "
+              f"{os.path.getsize(EINGECHECKT)} B) - 'python3 tools/sertest/build.py' "
+              f"ausfuehren und die .com mit einchecken.", file=sys.stderr)
+        return 1
+
+
 if __name__ == '__main__':
     try:
-        if len(sys.argv) > 1 and sys.argv[1] == 'clean':
+        args = sys.argv[1:]
+        if args[:1] == ['clean']:
             clean()
+        elif args[:1] == ['--check']:
+            sys.exit(check())
+        elif args[:1] == ['--out'] and len(args) == 2:
+            with tempfile.TemporaryDirectory(prefix='sertest_build_') as tmp:
+                main(os.path.join(tmp, 'build'), os.path.abspath(args[1]))
+        elif args:
+            print(__doc__)
+            sys.exit(2)
         else:
             main()
     except RuntimeError as e:
