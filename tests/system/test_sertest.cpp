@@ -10,11 +10,15 @@
  */
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <string>
+#include <vector>
 
+#include "core/serial/hub.h"
 #include "tests/system/sertest_hilfen.h"
 
 using namespace sertest;
+using k1520::serial::SerialStatus;
 
 namespace {
 
@@ -109,6 +113,92 @@ void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) 
     EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
 }
 
+// ─── SIO-/CTC-Schicht (AP-ST3) ───────────────────────────────────────────────
+
+/// Format und Leitungen einer Schnittstelle, wie der Wandler sie aus SIO/CTC liest.
+std::string format(const SerialStatus& st) {
+    char b[80];
+    std::snprintf(b, sizeof b, "%u %d%c%s%s rts=%d dtr=%d", st.baud_nenn, st.daten,
+                  "NOE?"[st.paritaet & 3], st.stopp_halbe == 2 ? "1" : st.stopp_halbe == 4 ? "2" : "1,5",
+                  st.format_gueltig ? "" : " (ungueltig)", st.rts, st.dtr);
+    return b;
+}
+
+template <class S>
+SerialStatus hubStatus(S& s, int i) { return s.maschine().serialHub()->status(i); }
+
+/// `sertest g <n>` für jede Schnittstelle nacheinander: während der Gegenstelle steht der
+/// Kanal auf 9600 8N1 (V.24 zusätzlich mit RTS und DTR — an IFSS meldet der Wandler keine
+/// Leitungen), nach Ctrl+C auf der BIOS-Vorgabe @p vorgabe[n-1] (leer = unverändert
+/// gegenüber vorher).  Zuletzt `DIR` — die Tastatur lebt noch.
+template <class S>
+void pruefeProgrammierungUndVorgabe(S& s, const std::vector<std::string>& namen,
+                                    const std::vector<bool>& v24,
+                                    const std::vector<std::string>& vorgabe) {
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    for (size_t i = 0; i < namen.size(); ++i) {
+        SCOPED_TRACE("Schnittstelle " + std::to_string(i + 1) + " " + namen[i]);
+        const std::string vorher = format(hubStatus(s, static_cast<int>(i)));
+        s.tippe("sertest g " + std::to_string(i + 1) + "\r");
+        ASSERT_TRUE(s.bis("Gegenstelle an " + namen[i] + " bereit.", kFrist)) << s.bild();
+        for (int k = 0; k < 20; ++k) s.lauf();
+        EXPECT_EQ(format(hubStatus(s, static_cast<int>(i))),
+                  v24[i] ? "9600 8N1 rts=1 dtr=1" : "9600 8N1 rts=0 dtr=0");
+        s.ctrlC();
+        ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+        const std::string nachher = format(hubStatus(s, static_cast<int>(i)));
+        EXPECT_EQ(nachher, vorgabe[i].empty() ? vorher : vorgabe[i]) << "vorher: " << vorher;
+    }
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+/// `sertest g <n>`: ein Zeichen von außen löst den Empfangsinterrupt aus
+/// (`SERTEST INTERRUPT OK`); nach Ctrl+C ist die Vektortabelle (I·256) wieder wie vorher
+/// und das System bedienbar.  @p seite = I-Register des BIOS.
+template <class S>
+void pruefeInterrupt(S& s, int nr, const std::string& name, uint16_t seite) {
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    auto* hub = s.maschine().serialHub();
+    const int i = nr - 1;
+    auto k = hub->konfig(i);
+    k.loop = false;   // K8915 startet mit Loop
+    ASSERT_TRUE(hub->konfigurieren(i, k));
+    auto tabelle = [&] {
+        std::vector<uint8_t> t;
+        for (int a = 0; a < 256; ++a) t.push_back(s.maschine().memReadDebug(static_cast<uint16_t>(seite + a)));
+        return t;
+    };
+    const auto vorher = tabelle();
+
+    s.tippe("sertest g " + std::to_string(nr) + "\r");
+    ASSERT_TRUE(s.bis("Gegenstelle an " + name + " bereit.", kFrist)) << s.bild();
+    for (int r = 0; r < 20; ++r) s.lauf();
+    EXPECT_NE(tabelle(), vorher) << "eingehängt";
+    EXPECT_FALSE(s.protokoll().wert("", "INTERRUPT")) << s.protokoll().text();
+    auto& w = hub->wandler(i);
+    w.anbinden();
+    const uint8_t zeichen[] = {'x', 'y', 0x00, 0xFF};
+    ASSERT_EQ(w.fernGib(zeichen, sizeof zeichen), sizeof zeichen);
+    ASSERT_TRUE(s.bis("SERTEST INTERRUPT OK", kFrist)) << s.bild();
+    for (int r = 0; r < 200 && hubStatus(s, i).bytes_empfangen < sizeof zeichen; ++r) s.lauf();
+    EXPECT_EQ(hubStatus(s, i).bytes_empfangen, sizeof zeichen);
+
+    // Ctrl+C erst, wenn das Bild steht: das SCPX-BIOS rollt unter DI (≈ 39 000 Takte),
+    // vier Tastaturbytes in dieser Zeit liefen auch am Gerät über (Strg bliebe „unten").
+    for (int r = 0; r < 100; ++r) s.lauf();
+    s.ctrlC();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_EQ(s.protokoll().wert("", "INTERRUPT").value_or("-"), "OK") << s.protokoll().text();
+    EXPECT_EQ(tabelle(), vorher) << "Vektortabelle nach Ctrl+C wie vor dem Programm";
+    // Ein weiteres Zeichen nach dem Aushängen darf nichts mehr auslösen.
+    const uint8_t noch[] = {'z'};
+    w.fernGib(noch, 1);
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+    w.abbinden();
+}
+
 }  // namespace
 
 // ─── Zerlegen der Ergebniszeilen (ohne Maschine) ─────────────────────────────
@@ -174,6 +264,22 @@ TEST(Sertest, A5120_TesterAutomatikLiefertErgebniszeilen) {
     pruefeErgebniszeilen(s, "2", "DFUE/IFSS");
 }
 
+TEST(Sertest, A5120_GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer) {
+    SertestA5120 s;
+    pruefeProgrammierungUndVorgabe(s, {"DFUE/V.24", "DFUE/IFSS", "Drucker"}, {true, false, false},
+                                   {"9600 8N1 rts=1 dtr=1", "", "9600 7O1 rts=0 dtr=0"});
+}
+
+TEST(Sertest, A5120_DruckerEmpfaengtImInterruptNebenDerTastatur) {
+    SertestA5120 s;
+    pruefeInterrupt(s, 3, "Drucker", 0xF700);
+}
+
+TEST(Sertest, A5120_DfueV24EmpfaengtImInterrupt) {
+    SertestA5120 s;
+    pruefeInterrupt(s, 1, "DFUE/V.24", 0xF700);
+}
+
 // ─── K8915 / SCPX 8915 ───────────────────────────────────────────────────────
 
 TEST(Sertest, K8915_ErkenntRechnerUndListetSchnittstellen) {
@@ -203,4 +309,20 @@ TEST(Sertest, K8915_CtrlCInDerGegenstelleLaesstSystemBedienbar) {
 TEST(Sertest, K8915_TesterAutomatikLiefertErgebniszeilen) {
     SertestK8915 s;
     pruefeErgebniszeilen(s, "1", "Drucker/IFSS1");
+}
+
+TEST(Sertest, K8915_GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer) {
+    SertestK8915 s;
+    pruefeProgrammierungUndVorgabe(s, {"Drucker/IFSS1", "V.24", "DFUE/IFSS2"}, {false, true, false},
+                                   {"9600 7O1 rts=0 dtr=0", "", ""});
+}
+
+TEST(Sertest, K8915_DfueIfss2EmpfaengtImInterruptNebenDerTastatur) {
+    SertestK8915 s;
+    pruefeInterrupt(s, 3, "DFUE/IFSS2", 0xFF00);
+}
+
+TEST(Sertest, K8915_V24EmpfaengtImInterrupt) {
+    SertestK8915 s;
+    pruefeInterrupt(s, 2, "V.24", 0xFF00);
 }

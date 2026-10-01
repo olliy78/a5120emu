@@ -207,7 +207,7 @@ void Z80SIO::Channel::rxByte(uint8_t byte) {
             // Parity error detection not emulated — clear parity/framing/overrun
         }
     } else {
-        rr1 |= 0x08; // Overrun
+        rr1 |= 0x20; // Rx Overrun Error = RR1 D5 (Zilog; bis AP-ST3 fälschlich D3)
     }
     updateRR0();
     if (rxIntFaellig())
@@ -457,6 +457,20 @@ uint8_t Z80SIO::getVector() const {
     return basis;
 }
 
+uint8_t Z80SIO::rr2Vektor() const {
+    const uint8_t basis = ch_b_.wr[2];
+    if (!ch_b_.status_affects_vector) return basis;
+    auto vektor = [&](uint8_t v321) { return static_cast<uint8_t>((basis & 0xF1) | (v321 << 1)); };
+    // Dieselbe Rangfolge wie getVector().
+    if (ch_a_.iei && ch_a_.irq_rx  && !ch_a_.ius) return vektor(0b110);
+    if (ch_a_.iei && ch_a_.irq_tx  && !ch_a_.ius) return vektor(0b100);
+    if (ch_a_.iei && ch_a_.irq_ext && !ch_a_.ius) return vektor(0b101);
+    if (ch_b_.iei && ch_b_.irq_rx  && !ch_b_.ius) return vektor(0b010);
+    if (ch_b_.iei && ch_b_.irq_tx  && !ch_b_.ius) return vektor(0b000);
+    if (ch_b_.iei && ch_b_.irq_ext && !ch_b_.ius) return vektor(0b001);
+    return vektor(0b011);
+}
+
 void Z80SIO::onRETI() {
     // Clear IUS for whichever channel was being serviced
     // Channel A has higher priority, check it first
@@ -560,8 +574,11 @@ uint8_t Z80SIO::readControl(Channel& ch, bool is_b) const {
         case 0: return ch.rr0;
         case 1: return ch.rr1;
         case 2:
-            // Channel B returns modified vector; channel A returns raw WR2 of B
-            if (is_b) return getVector();
+            // Channel B returns modified vector; channel A returns raw WR2 of B.
+            // Lesen ist KEINE Quittung (bis AP-ST3 stand hier getVector(): ein
+            // Lesen von RR2 setzte IUS und löschte die Anforderung — am K8915 nahm
+            // das der Tastatur ihren nächsten Interrupt).
+            if (is_b) return rr2Vektor();
             return ch_b_.wr[2];
         default: return 0xFF;
     }
@@ -573,7 +590,12 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
             if (!ch_a_.rx_fifo.empty()) {
                 uint8_t b = ch_a_.rx_fifo.front();
                 ch_a_.rx_fifo.pop_front();
-                ch_a_.irq_rx = false;
+                // „Jedes Zeichen": solange der FIFO noch Zeichen hält, bleibt die
+                // Anforderung stehen (das nächste Zeichen unterbricht erneut, sobald
+                // IUS per RETI fällt).  Vorher ging sie mit dem ersten Lesen verloren —
+                // eine Tastatur, deren Zeichen sich während eines langen DI stauten,
+                // blieb stumm (K8915, AP-ST3).
+                ch_a_.irq_rx = !ch_a_.rx_fifo.empty() && ch_a_.rxIntEnabled();
                 ch_a_.updateRR0();
                 return b;
             }
@@ -587,7 +609,12 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
             if (!ch_b_.rx_fifo.empty()) {
                 uint8_t b = ch_b_.rx_fifo.front();
                 ch_b_.rx_fifo.pop_front();
-                ch_b_.irq_rx = false;
+                // „Jedes Zeichen": solange der FIFO noch Zeichen hält, bleibt die
+                // Anforderung stehen (das nächste Zeichen unterbricht erneut, sobald
+                // IUS per RETI fällt).  Vorher ging sie mit dem ersten Lesen verloren —
+                // eine Tastatur, deren Zeichen sich während eines langen DI stauten,
+                // blieb stumm (K8915, AP-ST3).
+                ch_b_.irq_rx = !ch_b_.rx_fifo.empty() && ch_b_.rxIntEnabled();
                 ch_b_.updateRR0();
                 return b;
             }

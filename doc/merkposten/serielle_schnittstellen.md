@@ -113,6 +113,12 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   (Echo-Gast, Kontextzeiger, Belegung durch einen Transport, Abmelden),
   `…test_k8915_old_callback_pulls_the_loop_of_its_own_channel`.
 
+- **`Z80SIO`-Interrupts nach Datenblatt** (AP-ST3, Wächter in `test_sio.cpp`): RR2 von
+  Kanal B **lesen quittiert nicht** (`rr2Vektor()`, ohne Anforderung V3–V1 = 011) — vorher
+  stahl jedes Erfragen des Vektors unter DI der Tastatur des K8915 ihren Interrupt; bei
+  „jedes Zeichen" **bleibt die Anforderung stehen, solange der FIFO Zeichen hält**; Überlauf
+  = RR1 **D5**. Prüfprogramm dafür: `tools/sertest/` (Entwurf 19 §14).
+
 ## Tests schreiben
 
 - **Nie feste Ports** (`ctest -j`): Port 0 in C++ (`SerialKonfig::port = 0`, tatsächlicher

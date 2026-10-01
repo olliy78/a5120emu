@@ -159,7 +159,8 @@ TEST(Z80SIO, LeererEmpfaengerLiefertLetztesByte) {
 /**
  * @test Z80SIO/RX_FIFO_Full
  * @brief After three bytes the FIFO is full; a fourth byte causes RR1 overrun bit to be set.
- * @par Pass criterion  rxFull() == true after 3 bytes; RR1 bit 3 (overrun) set after 4th byte.
+ * @par Pass criterion  rxFull() == true after 3 bytes; RR1 D5 (Rx Overrun) set after 4th byte;
+ *       Error Reset (WR0 30H) clears it.
  */
 TEST(Z80SIO, RX_FIFO_Full) {
     Z80SIO sio;
@@ -177,7 +178,10 @@ TEST(Z80SIO, RX_FIFO_Full) {
     // set reg_ptr to 1 to read RR1
     sio.ioWrite(1, 0x01); // WR0: point to register 1
     uint8_t rr1 = sio.ioRead(1);
-    EXPECT_TRUE(rr1 & 0x08); // overrun bit
+    EXPECT_EQ(rr1 & 0x70, 0x20); // Rx Overrun Error = D5 (bis AP-ST3 stand es in D3)
+    sio.ioWrite(1, 0x30);        // Error Reset
+    sio.ioWrite(1, 0x01);
+    EXPECT_EQ(sio.ioRead(1) & 0x70, 0);
 }
 
 // ─── TX interrupt enable ──────────────────────────────────────────────────────
@@ -299,6 +303,50 @@ TEST(Z80SIO, RX_Interrupt_KanalResetLoeschtDieFreigabe) {
     sio.ioWrite(1, 0x18);              // Channel Reset
     sio.channelA().rxByte(0x41);
     EXPECT_FALSE(sio.hasInterrupt());
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_GestauteZeichenUnterbrechenEinzeln
+ * @brief „Jedes Zeichen": stehen nach einer Quittung noch Zeichen im FIFO (gestaut
+ *        während eines langen DI), fordert jedes weitere nach dem Abholen erneut an.
+ *        Vorher löschte das erste Lesen die Anforderung für immer — am K8915 blieb
+ *        die Tastatur danach stumm (AP-ST3).
+ */
+TEST(Z80SIO, RX_Interrupt_GestauteZeichenUnterbrechenEinzeln) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x01);
+    sio.ioWrite(3, 0x10);              // Kanal B: jedes Zeichen
+    for (uint8_t c : {0x1D, 0x2E, 0xAE}) sio.channelB().rxByte(c);
+    for (uint8_t c : {0x1D, 0x2E, 0xAE}) {
+        ASSERT_TRUE(sio.hasInterrupt()) << std::hex << int(c);
+        (void)sio.getVector();
+        EXPECT_EQ(sio.ioRead(2), c);
+        sio.onRETI();
+        sio.setIEI(true);
+    }
+    EXPECT_FALSE(sio.hasInterrupt()) << "FIFO leer";
+}
+
+/**
+ * @test Z80SIO/RR2_LesenQuittiertNicht
+ * @brief RR2 von Kanal B liefert den Vektor samt Anlass (bei „status affects vector"),
+ *        quittiert aber nicht: die Anforderung bleibt, IUS bleibt frei.  Ohne
+ *        Anforderung V3–V1 = 011.  (Vorher rief das Lesen getVector() — ein Programm,
+ *        das unter DI den Vektor erfragt, stahl der Tastatur ihren Interrupt.)
+ */
+TEST(Z80SIO, RR2_LesenQuittiertNicht) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 B
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x14);   // WR1 B: jedes Zeichen + SAV
+    sio.ioWrite(3, 0x02);
+    EXPECT_EQ(sio.ioRead(3), 0xD6) << "nichts anstehend: 011";
+    sio.channelB().rxByte(0x41);
+    sio.ioWrite(3, 0x02);
+    EXPECT_EQ(sio.ioRead(3), 0xD4) << "B Empfang: 010";
+    EXPECT_TRUE(sio.hasInterrupt()) << "Lesen ist keine Quittung";
+    EXPECT_EQ(sio.getVector(), 0xD4);
 }
 
 // ─── Interrupt vector from WR2 ────────────────────────────────────────────────

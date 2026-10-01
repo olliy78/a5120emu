@@ -826,8 +826,8 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 
 ## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
 
-**Stand:** 2026-10-01, **AP-ST1 + AP-ST2 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
-`tests/system/test_sertest.cpp` + `sertest_hilfen.h`); weiter mit ST3.
+**Stand:** 2026-10-01, **AP-ST1 – AP-ST3 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
+`tests/system/test_sertest.cpp` + `sertest_hilfen.h`; SIO-/CTC-Schicht); weiter mit ST4.
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
@@ -949,6 +949,11 @@ BIOS sie für 9600 setzt (CP/A: `portpr` in `src/bc_a5120/bioscsio.mac`/`bioscsi
 CPA_Workbench; SCPX 8915: BIOS-Disassemblat, `doc/design/16_k8915.md`). Beim A5120-Drucker
 wird **nur** das SIO-Format gesetzt; der Takt ist dort durch die Tastatur auf 9600 festgelegt.
 Die Annahme „Brücke gezeichnet" steht im README des Programms.
+Umgesetzt (ST3), je Kanal: CTC-Steuerwort wie das BIOS — CP/A **17H** (`bioscpb.mac`,
+„Vorteiler 16"), SCPX 8915 **07H** (BIOS DE82H/D9C7H) — und Zeitkonstante **1**
+(2,4576 MHz / 16 = 153,6 kHz), dann Kanalreset 18H, WR4 **44H** (×16, 1 Stoppbit, keine
+Parität), WR3 **C1H**, WR5 **EAH** (8 Bit, Sender ein, DTR + RTS), WR1 00H. Am A5120 bestätigt
+der Kaltstart CTC A34 K0 = 05H/01H (9600 × 16 für Tastatur und Drucker).
 
 **Maschinenerkennung** (festgelegt ST1): A5120 und K8915 überlappen in 50H–5FH; unterschieden
 wird an der SIO 1 des K8915 bei 40H–43H (am A5120 im Emulator ohne Gerät → FFH). Ablauf unter
@@ -976,13 +981,50 @@ Vektortabelle liegt bei `I·256`; den Vektor der SIO liefert RR2 von Kanal B. Da
 kommt, in den gesicherten alten Eintrag. Teilt der Kanal die SIO mit der Tastatur (A5120
 Drucker, K8915 DFUE/IFSS2), darf WR1 von Kanal B nur so geschrieben werden, dass
 „Status affects Vector" (D2) erhalten bleibt — WR1 ist nicht lesbar, der Wert muss aus dem
-BIOS stammen (Tabelle je Maschine) **[?]**. Ist WR2 noch nicht gesetzt (SIO ohne BIOS-
-Interrupt), setzt das Programm einen eigenen Vektor in eine freie Tabellenzeile **[?]**.
+BIOS stammen (Tabelle je Maschine). Ist WR2 noch nicht gesetzt (SIO ohne BIOS-
+Interrupt), setzt das Programm einen eigenen Vektor in eine freie Tabellenzeile.
+
+Geklärt (ST3) aus den BIOS-Quellen und gegengeprüft am Kaltstart im Emulator
+(`k1520dbg` mit `iow` auf alle SIO-/CTC-Steuerports, danach `dev sio`/`ivt all`):
+
+| SIO | BIOS | WR1 B / WR2 | Interrupt | SERTEST |
+|-----|------|-------------|-----------|---------|
+| A5120 A32 (Tastatur A, Drucker B) | CP/A 25.09.89 | WR1 A = 00H (`bioskbdc.mac` `k37par`: K7637 **gepollt**), WR1 B = 00H (`bios.mac` `lstlpt`: `@wr1 = 0`), WR2 nie geschrieben | keiner | **eigener Vektor E4H**, D2 bleibt aus |
+| A5120 A33 (DFÜ) | CP/A | `lsttty` WR1 = 00H; nur ein benutzter UC1:-Treiber schreibt WR1 A = 14H, WR1 B = 04H, WR2 = D0H (`bioscsio.mac` `uc1i2`, `ivsio0 = intvuc = D0H`) | nur UC1: | **eigener Vektor E4H**, D2 aus (WR1 B := 00H bei Kanal A) |
+| K8915 SIO 1 (Drucker B, V.24 A) | SCPX 8915 V5.3 | Drucker-Init DE82H schreibt kein WR1/WR2 (nach Kanalreset 00H) | keiner (16_k8915 §AP-B1) | **eigener Vektor C0H**, D2 aus |
+| K8915 SIO 2 (DFÜ A, Tastatur B) | SCPX 8915 V5.3 | **WR1 B = 17H** (D2 gesetzt), **WR2 = D0H** (`scpx8915_v53_bios.prn` D9C7H) | Tastatur D0–D6H | **Vektor des BIOS**: Basis = RR2 B ∧ F1H, Einträge Kanal A **DCH/DEH**; WR1 B/WR2 nie geschrieben |
+
+- **Freie Tabellenzeilen:** CP/A `intvsy+04h` = **E4H** („frei" laut `bios.mac`; der Bereich
+  `intvsy`…`+1FH` = E0–FFH gehört in jedem CP/A-BIOS zur Tabelle — D0–DFH dagegen nur,
+  wenn UC1: eingebunden ist, darunter liegen BIOS-Arbeitszellen). SCPX 8915: **C0H**
+  (FFC0H; das BIOS belegt nur FFD0–FFD7H und FFF0–FFFEH, FF00–FFCFH steht auf FFH).
+- **Eigener Vektor = „Status affects Vector" aus**: eine Zeile für alle Anlässe der SIO,
+  die Empfangsroutine prüft RR0 D0/RR1 und reicht Fremdes an den alten Eintrag weiter
+  (0000H/FFFFH = keiner → nur `RETI`). Am Kanal A setzt SERTEST dafür WR1 B := 00H — B ist
+  dort nie die Tastatur, und ein D2 von früher (UC1:) verböge sonst den Vektor.
+- WR1 des eigenen Kanals im Interruptbetrieb: **10H** (jedes Zeichen).
 
 **Wiederherstellen** (bei Ende und bei Ctrl+C, in dieser Reihenfolge): DI, Tabelleneinträge
 zurück, Kanal auf die BIOS-Vorgabe (Format, RTS/DTR, Interruptfreigaben, CTC-Zeitkonstante —
 nichts davon ist rücklesbar, daher eine Tabelle je Maschine), EI. Ein Warmstart nach dem
 Programm muss ein voll bedienbares System hinterlassen — auch nach Ctrl+C mitten im Empfang.
+
+BIOS-Vorgaben (ST3, Tabellen `V_A1`…`V_K3` in `sertest.mac`, Format des CP/A-`portpr`):
+
+| Schnittstelle | Vorgabe | Quelle |
+|---------------|---------|--------|
+| A5120 1 DFUE/V.24 (A33 A) | ZRE-CTC K0 17H/01H; 18H, WR4 44H, WR1 00H, WR3 C1H, WR5 EAH (9600 8N1, DTR + RTS) | CP/A TTY: an 50H (`iobtty 01811`, `bioscpb.mac`) |
+| A5120 2 DFUE/IFSS (A33 B) | ZRE-CTC K0 17H/01H (geteilt mit 1); Kanalreset | vom BIOS nicht benutzt |
+| A5120 3 Drucker (A32 B) | 18H, WR4 45H, WR1 00H, WR3 41H, WR5 28H (9600 7O1); CTC A34 bleibt | CP/A LPT: an 5EH (`ioblpt 11710`) |
+| K8915 1 Drucker/IFSS1 (SIO1 B) | CTC1 K2 07H/01H; 18H, WR4 45H, WR3 41H, WR5 28H (9600 7O1) | Drucker-Init der Fassung „55 K" (Diskette 900); die Fassung „V24 XON/XOFF" (901) setzt 05H/01H, 44H/C1H/68H (8N1) — §AP-B2-Tabelle in `16_k8915.md` |
+| K8915 2 V.24 (SIO1 A) | CTC1 K0 Reset 03H; Kanalreset | vom BIOS nicht benutzt |
+| K8915 3 DFUE/IFSS2 (SIO2 A) | CTC2 K0 Reset 03H; Kanalreset | vom BIOS nicht benutzt |
+
+CP/A programmiert TTY:/LPT:/UC1: **erst bei der ersten Benutzung** (Statusbit `ltpst`,
+`cdsini`); SERTEST stellt die Werte her, die das BIOS dabei selbst schriebe — ein schon
+benutzter Kanal arbeitet so weiter, ein noch nicht benutzter wird vom BIOS ohnehin neu
+programmiert. Grenze: ein **aktiver UC1:-Treiber** an 50H (Interrupt) wird durch einen Test von
+Schnittstelle 1 abgelöst; danach steht A33 A auf der TTY:-Vorgabe ohne Interrupt.
 
 ### 14.5 Prüfsteckertest
 
@@ -1091,7 +1133,7 @@ Bauberührende APs nacheinander.
 |----|--------|--------------|--------|
 | **ST1** ✔ | Gerüst: `tools/sertest/` (Quelle, `build.py`, README, eingecheckte `.com`), Kopfzeile, Rollenwahl, Kommandozeile §14.3 (inkl. `/A`, `/M:`), Konsole über BDOS 6, Ctrl+C-Pfad mit Aufräumhaken, Maschinenerkennung + Schnittstellenliste §14.4 (Tastatur gekennzeichnet), Abfrage J/N je Schnittstelle, Hinweistext Gegenstelle | — | M |
 | **ST2** ✔ | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
-| **ST3** | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
+| **ST3** ✔ | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
 | **ST4** | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine; K8915-Zeile festlegen) + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
 | **ST5** | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
 | **ST6** | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
@@ -1116,6 +1158,41 @@ Bauberührende APs nacheinander.
 - Im Emulator geprüft: interaktiv T/G mit J/N-Folge, `T n /A`, `G n` + Ctrl+C, Ctrl+C an der
   T/G-Frage, `SERTEST X` und `T 4` → Kurzhilfe, `/M:K` am A5120; danach `DIR` bedienbar.
   K8915-Kaltstart: `<ENTER>` an „Coldstart … --> <ENTER>", dann Autostart `rade` abwarten.
+
+**ST3 erledigt 2026-10-01.** SIO-/CTC-Schicht in `sertest.mac` (Klärungen §14.4). Routinen für
+ST4–ST6 (Konvention: `IFZEIG` zeigt auf die Schnittstelle, Kommentarblock vor `SIOPRG`):
+`SIOPRG` (9600 8N1, RTS + DTR, merkt `AKTIF`), `SETLEI` (A = `W5_RTS`/`W5_DTR`), `AUTOEN`
+(A ≠ 0 = Auto Enables), `LIESLEI` (A = RR0 frisch: `RR0_CTS`, `RR0_DCD`), `SENDE` (A, DE = Frist
+ms → CY = Zeitüberlauf), `EMPF` (DE → A, CY), `WARTE` (DE ms), `EINH`/`AUSH` (Interrupt),
+`RXHOL` (A aus dem Ringpuffer 256 B, CY = leer), Zähler `FEHLZ` (RR1), `INTZ`, `RXUEB`;
+`AUFR` stellt alles her (DI → `AUSH` → `PORTPR` der Vorgabe → EI) und läuft am Ende jeder
+Schnittstelle des Testers, bei jedem Ende und bei Ctrl+C. Erkenntnisse/Abweichungen:
+- **Zeitbasis gemessen** (A5120, `k1520dbg`, 1000 ms): `WARTE` 2 637 741, `EMPF`-Zeitüberlauf
+  2 625 528 Takte statt 2 457 600 — +7 % durch die BIOS-Interrupts und die Tastaturabfrage
+  alle 16 ms. Fristen sind Mindestzeiten.
+- Der Tester programmiert die Schnittstelle für die Dauer ihrer Prüfung (Teile bleiben bis ST4
+  Platzhalter). Die **Gegenstelle** hängt sich schon jetzt ein und meldet den ersten
+  Empfangsinterrupt (`Empfangsinterrupt ausgeloest` + `SERTEST INTERRUPT OK`, aus ST5
+  vorgezogen, damit die Schicht prüfbar ist); empfangene Zeichen werden verworfen.
+- **Drei Fehler im `Z80SIO`** gefunden und behoben (Wächter in `test_sio.cpp`):
+  (1) Lesen von **RR2 B quittierte** (rief `getVector()`: IUS gesetzt, Anforderung gelöscht) —
+  jetzt `rr2Vektor()` ohne Seitenwirkung, ohne Anforderung V3–V1 = 011 (`RR2_LesenQuittiertNicht`);
+  (2) nach dem Abholen eines Zeichens ging die **Anforderung für weitere Zeichen im FIFO
+  verloren** — am K8915 blieb die Tastatur stumm, sobald sich während eines langen DI zwei
+  Bytes gestaut hatten (`RX_Interrupt_GestauteZeichenUnterbrechenEinzeln`);
+  (3) **Überlauf stand in RR1 D3** statt D5 und ließ sich nicht per Error Reset löschen
+  (`RX_FIFO_Full`).
+- **SCPX 8915 rollt den Bildschirm unter DI** (`LDIR` 0730H Bytes ≈ 39 000 Takte, DE19–DE2BH der
+  Fassung 900): vier Tastaturbytes (Strg + C) in dieser Zeit laufen auch am Gerät über, Strg
+  bliebe „unten". Tests drücken Ctrl+C deshalb erst, wenn das Bild steht.
+- Neue Fälle (`Sertest.*`, jetzt 17): je Maschine `GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer`
+  (alle drei Schnittstellen nacheinander: Wandlerstatus 9600 8N1, V.24 mit RTS/DTR; nach
+  Ctrl+C die Vorgabe — A5120 1 = 9600 8N1, 3 = 9600 7O1, K8915 1 = 9600 7O1, sonst wie vor dem
+  Programm; danach `DIR`) und zwei Interruptfälle — an der mit der Tastatur geteilten SIO
+  (A5120 Drucker, K8915 DFUE/IFSS2) und an einer mit eigenem Vektor (A5120 DFUE/V.24, K8915
+  V.24): vier Zeichen über `Wandler::fernGib` → `SERTEST INTERRUPT OK`, alle zugestellt,
+  Ctrl+C, Vektortabelle (I·256) bytegleich wie vorher, `DIR`.
+- Kein eigener Fall „Zeitüberlauf ohne Gegenstelle": den liefert ST4 mit DATEN-LOOP ohne Loop.
 
 **ST2 erledigt 2026-10-01.** Suite `Sertest.*` (`tests/system/test_sertest.cpp`, Label
 `system;fast`, 11 Fälle) + Wächter `cli_sertest_com_passt_zur_quelle` (`cli;fast`).
@@ -1149,6 +1226,9 @@ Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
 
 1. Maschinenerkennung (Verfahren seit ST1 fest, §14.4): ist 40H–43H an einem A5120 in jeder
    Ausbaustufe frei, trägt die SIO 1 des K8915 am Gerät einen RR2 ≠ FFH? (am Gerät; Abhilfe `/M:`)
-2. WR1 D2 / WR2 der mit der Tastatur geteilten SIOs je BIOS (ST3).
+2. ~~WR1 D2 / WR2 der mit der Tastatur geteilten SIOs je BIOS~~ — geklärt in ST3 (§14.4):
+   A5120 A32 ohne Interrupt (D2 aus, WR2 nie gesetzt), K8915 SIO 2 WR1 B = 17H / WR2 = D0H.
+   Offen nur am Gerät: ob E4H (CP/A) bzw. FFC0H (SCPX) in allen BIOS-Fassungen frei sind, und
+   die Druckervorgabe der SCPX-Fassung 901 (8N1 statt 7O1 — SERTEST stellt 7O1 her).
 3. CTS/DCD-Weg am K8915 über D13 (§13 Punkt 1) → Erwartungstabelle §14.5 (ST4, am Gerät).
 4. Steckerbelegung Prüfstecker und Nullmodemkabel je Gerät, IFSS aktiv/passiv (Anwender, ST7).

@@ -10,10 +10,14 @@
 ;
 ; Stand V0.1 (AP-ST1): Geruest. Kopfzeile, Kommandozeile (14.3),
 ; Maschinenerkennung und Schnittstellenliste (14.4), Rollenwahl, J/N-Abfrage
-; je Schnittstelle, Ctrl+C-Pfad mit Aufraeumhaken. Die Teststeps selbst
-; (SIO/CTC-Schicht, Pruefsteckertest, Protokoll) folgen in AP-ST3 ff.; bis
-; dahin melden sie "FEHLER NICHT EINGEBAUT" - ein Test, der nicht laeuft,
-; darf nicht OK melden.
+; je Schnittstelle, Ctrl+C-Pfad mit Aufraeumhaken.
+; AP-ST3: SIO-/CTC-Hardwareschicht (14.4) - 9600 8N1, Leitungen, polled E/A
+; mit Zeitueberlauf, RR1-Fehlerzaehlung, Interrupt einhaengen/weiterreichen,
+; Wiederherstellen (AUFR). Der Tester programmiert die Schnittstelle fuer die
+; Dauer ihrer Pruefung, die Gegenstelle haengt sich ein und meldet den ersten
+; Empfangsinterrupt. Die Teststeps selbst (Pruefsteckertest, Protokoll) folgen
+; in AP-ST4 ff.; bis dahin melden sie "FEHLER NICHT EINGEBAUT" - ein Test, der
+; nicht laeuft, darf nicht OK melden.
 ;
 ; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
 ;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
@@ -56,9 +60,45 @@ ART_IFS	EQU	1		; IFSS bzw. nur 103/104 - keine Steuerleitungen
 ;   +0 DW  Name ('$'-terminiert)
 ;   +2 DB  Art (ART_V24/ART_IFS)
 ;   +3 DB  Datenport
-;   +4 DB  Steuerport
+;   +4 DB  Steuerport (Kanal B: Steuerport OR 2 - an allen Bausteinen hier)
 ;   +5 DB  CTC-Kanalport des Baudtakts (0 = Takt nicht anfassen, A5120-Drucker)
-IF_LEN	EQU	6
+;   +6 DB  CTC-Steuerwort fuer 9600 (wie das BIOS: CP/A 17H, SCPX 07H; ZK = 1)
+;   +7 DB  Kanal (0 = A, 1 = B)
+;   +8 DB  Interruptvektor: 0 = der des BIOS (WR1 B D2 "Status affects Vector"
+;          gesetzt, Basis aus RR2 Kanal B); sonst eigener Vektor, D2 aus
+;   +9 DW  BIOS-Vorgabe des Kanals (Wiederherstellen, Format von PORTPR)
+IF_LEN	EQU	11
+IF_ART	EQU	2
+IF_STE	EQU	4
+IF_CTC	EQU	5
+IF_CTW	EQU	6
+IF_KAN	EQU	7
+IF_VEK	EQU	8
+IF_VOR	EQU	9
+
+; SIO
+W5_STD	EQU	0EAH		; WR5: DTR, 8 Bit, Sender ein, RTS
+W5_RTS	EQU	02H		; WR5 D1
+W5_DTR	EQU	80H		; WR5 D7
+W3_STD	EQU	0C1H		; WR3: 8 Bit, Empfaenger ein
+W3_AUTO	EQU	20H		; WR3 D5 Auto Enables
+RR0_RX	EQU	01H		; RR0 D0 Zeichen da
+RR0_TX	EQU	04H		; RR0 D2 Sendepuffer leer
+RR0_DCD	EQU	08H		; RR0 D3
+RR0_CTS	EQU	20H		; RR0 D5
+RR1_FEH	EQU	70H		; RR1 D4 Paritaet, D5 Ueberlauf, D6 Rahmen
+
+; Zeitbasis: phi = 2,4576 MHz an beiden Maschinen = 2458 Takte je ms.
+; Je ms kommen ~100 Takte fuer ZEITK (Zaehler, Ctrl+C-Takt) hinzu; die
+; Innenschleifen sind darauf abgestimmt (Takte je Durchlauf in Klammern).
+N_WARTE	EQU	181		; DJNZ (13)
+N_SENDE	EQU	60		; IN/AND/JR/DJNZ (39)
+N_EMPF	EQU	65		; IN/RRA/JR/DJNZ (36)
+
+; Eigene Interruptvektoren (WR2 B), wo das BIOS die SIO nicht im Interrupt
+; betreibt. Eine Tabellenzeile, "Status affects Vector" aus:
+VEK_A	EQU	0E4H		; CP/A: intvsy+04h, laut bios.mac "frei"
+VEK_K	EQU	0C0H		; SCPX 8915: FFC0H, das BIOS belegt nur FFD0-FFD7/FFF0-FFFF
 
 ; Erkennung: Bausteinadressen (Datenport Kanal A; Steuer A = +1, B = +3)
 SIO_K1	EQU	40H		; K8915 SIO 1 - am A5120 frei (offener Bus = FFH)
@@ -224,6 +264,7 @@ TESTIF:
 	XOR	A
 	LD	(TFEHL), A
 	LD	(TGELAU), A
+	CALL	SIOPRG			; 9600 8N1 fuer die Dauer der Pruefung
 
 	; --- Pruefstecker -----------------------------------------------------
 	LD	A, (OPTP)
@@ -264,7 +305,8 @@ TI_G1:	LD	DE, M_KABEL
 TI_G2:	CALL	GEGTST
 
 	; --- Ergebnis der Schnittstelle merken --------------------------------
-TI_ERG:	LD	A, (IFLAUF)
+TI_ERG:	CALL	AUFR			; Kanal zurueck auf die BIOS-Vorgabe
+	LD	A, (IFLAUF)
 	LD	E, A
 	LD	D, 0
 	LD	HL, STATUS
@@ -388,9 +430,25 @@ GE_LOS:	LD	DE, M_GBER
 	CALL	PUTNAM
 	LD	DE, M_GBE2
 	CALL	PUTS
-	; V0.1: Ruhezustand ohne Protokoll - laeuft bis Ctrl+C (KEYPOL springt
-	; dann nach ABBRUCH). Ab AP-ST5: Leitungsspiegel + Interrupt-Empfang.
+	; Ruhezustand: 9600 8N1, Empfang im Interrupt; laeuft bis Ctrl+C (KEYPOL
+	; springt dann nach ABBRUCH -> AUFR). Der erste Empfangsinterrupt wird
+	; einmal gemeldet; empfangene Zeichen werden (noch) verworfen.
+	; Ab AP-ST5: Protokoll, Leitungsspiegel, Echo.
+	CALL	SIOPRG
+	CALL	EINH
 GE_RUH:	CALL	KEYPOL
+	LD	A, (INTMLD)
+	OR	A
+	JR	NZ, GE_R2
+	LD	HL, (INTZ)
+	LD	A, H
+	OR	L
+	JR	Z, GE_R2
+	LD	A, 1
+	LD	(INTMLD), A
+	LD	DE, M_INTA
+	CALL	PUTS
+GE_R2:	CALL	RXHOL			; verwerfen
 	JR	GE_RUH
 
 ; =============================================================================
@@ -619,13 +677,432 @@ ENDE:	CALL	AUFR
 
 ; -----------------------------------------------------------------------------
 ; AUFR - zentraler Aufraeumhaken (14.4 "Wiederherstellen"), aufgerufen bei
-; JEDEM Ende und bei Ctrl+C. Reihenfolge ab AP-ST3: DI, Vektortabellen-
-; eintraege zurueck, Kanal auf die BIOS-Vorgabe (Format, RTS/DTR, Interrupt-
-; freigaben, CTC-Zeitkonstante - Tabelle je Maschine), EI.
-; V0.1: die Erkennung hinterlaesst nur einen verbrauchten Registerzeiger,
-; es gibt nichts wiederherzustellen. Muss mehrfach aufrufbar sein.
+; JEDEM Ende, bei Ctrl+C und am Ende jeder Schnittstelle des Testers.
+; Reihenfolge: DI, Empfangsinterrupt des Kanals aus + Vektortabelleneintraege
+; zurueck (AUSH), Kanal auf die BIOS-Vorgabe (Tabelle je Schnittstelle, s.
+; V_xx - Format, RTS/DTR, Interruptfreigaben, CTC-Zeitkonstante), EI.
+; Mehrfach aufrufbar: ohne programmierte Schnittstelle (AKTIF = 0) und ohne
+; Haken (HAKEN = 0) tut es nichts. Zerstoert AF, BC, DE, HL.
 ; -----------------------------------------------------------------------------
-AUFR:	RET
+AUFR:	DI
+	CALL	AUSH
+	LD	HL, (AKTIF)
+	LD	A, H
+	OR	L
+	JR	Z, AU_E
+	LD	DE, IF_VOR
+	ADD	HL, DE
+	CALL	LDHLHL			; HL = Vorgabetabelle
+	CALL	PORTPR
+	LD	HL, 0
+	LD	(AKTIF), HL
+AU_E:	EI
+	RET
+
+; PORTPR - Bausteine nach Tabelle (HL) programmieren, Format wie im CP/A-BIOS
+; (bioschd.mac "portpr"): je Gruppe DB Anzahl+1, Port, Bytes...; Ende DB 1.
+PORTPR:	LD	B, (HL)
+	INC	HL
+	DEC	B
+	RET	Z
+	LD	C, (HL)
+	INC	HL
+	OTIR
+	JR	PORTPR
+
+; =============================================================================
+; SIO-/CTC-Schicht (14.4) - alles fuer die gewaehlte Schnittstelle (IFZEIG)
+; =============================================================================
+; Konvention: Eingabe in A/DE wie angegeben, IFZEIG zeigt auf den Eintrag.
+; Zeiger-Lesen (WR0-Zeiger, dann IN) laeuft unter DI, damit die eigene
+; Empfangsroutine nicht dazwischen den Zeiger verstellt. Die Routinen
+; programmieren nur Register des eigenen Kanals - bis auf WR2/WR1 von Kanal B
+; in EINH, und nur an SIOs ohne Tastatur bzw. so, wie das BIOS sie laesst.
+;
+;   SIOPRG   9600 8N1, RTS+DTR an, Interrupts aus; merkt AKTIF fuer AUFR
+;   SETLEI   A: W5_RTS/W5_DTR setzen (Rest aus), WR5 neu
+;   AUTOEN   A = 0: Auto Enables aus, sonst an (WR3 D5)
+;   LIESLEI  A = RR0 frisch (RR0_CTS, RR0_DCD)
+;   SENDE    A = Zeichen, DE = Frist ms (>= 1). CY = Zeitueberlauf
+;   EMPF     DE = Frist ms (>= 1). A = Zeichen, CY = Zeitueberlauf
+;            (polled - nicht bei eingehaengtem Interrupt benutzen, dort RXHOL)
+;   WARTE    DE ms warten (>= 1)
+;   EINH     Empfangsinterrupt einhaengen (Ringpuffer RXBUF, Zaehler INTZ)
+;   RXHOL    A = Zeichen aus dem Ringpuffer, CY = leer
+;   AUSH     aushaengen (unter DI aufrufen; AUFR tut das)
+; Zaehler: FEHLZ (RR1-Fehler, SIOPRG setzt 0), INTZ (Empfangsinterrupts),
+;          RXUEB (Ringpufferueberlauf). Waehrend jeder Wartezeit wird alle
+;          16 ms die Tastatur abgefragt (KEYPOL - Ctrl+C bricht ab).
+; Die Fristen sind Mindestzeiten (+ die Dauer der Tastaturabfrage).
+
+; SIOPRG - Kanal auf 9600 8N1 (Takt wie das BIOS, SIO x16), RTS und DTR an,
+; Empfaenger und Sender ein, keine Interrupts des Kanals. Zerstoert alles.
+SIOPRG:	LD	HL, (IFZEIG)
+	LD	(AKTIF), HL
+	LD	A, W5_STD
+	LD	(WR5S), A
+	LD	A, W3_STD
+	LD	(WR3S), A
+	LD	HL, 0
+	LD	(FEHLZ), HL
+	DI
+	LD	A, IF_CTC
+	CALL	IFB
+	OR	A
+	JR	Z, SP_1			; A5120-Drucker: Takt = Tastatur, nicht anfassen
+	LD	C, A
+	LD	A, IF_CTW
+	CALL	IFB
+	OUT	(C), A			; Zeitgeber, Vorteiler 16, ZK folgt
+	LD	A, 1
+	OUT	(C), A			; ZK 1: 2,4576 MHz / 16 = 153,6 kHz = 16 x 9600
+SP_1:	CALL	IFSTE
+	LD	HL, SP_TAB
+	LD	B, SP_LEN
+	OTIR
+	LD	A, 5
+	OUT	(C), A
+	LD	A, (WR5S)
+	OUT	(C), A
+	EI
+	RET
+SP_TAB:	DB	18H			; Kanalreset
+	DB	4, 44H			; WR4: x16, 1 Stoppbit, keine Paritaet
+	DB	3, W3_STD		; WR3: 8 Bit, Empfaenger ein
+	DB	1, 0			; WR1: keine Interrupts
+SP_LEN	EQU	$-SP_TAB
+
+; SETLEI - A: W5_RTS und/oder W5_DTR setzen, die nicht genannte Leitung aus.
+SETLEI:	AND	W5_RTS OR W5_DTR
+	LD	B, A
+	LD	A, (WR5S)
+	AND	0FFH XOR (W5_RTS OR W5_DTR)
+	OR	B
+	LD	(WR5S), A
+	CALL	IFSTE
+	DI
+	LD	A, 5
+	OUT	(C), A
+	LD	A, (WR5S)
+	OUT	(C), A
+	EI
+	RET
+
+; AUTOEN - A = 0: Auto Enables aus, sonst an (Sender haelt ohne CTS, 14.7).
+AUTOEN:	OR	A
+	LD	A, W3_STD
+	JR	Z, AE_1
+	OR	W3_AUTO
+AE_1:	LD	(WR3S), A
+	CALL	IFSTE
+	DI
+	LD	A, 3
+	OUT	(C), A
+	LD	A, (WR3S)
+	OUT	(C), A
+	EI
+	RET
+
+; LIESLEI - A = RR0 mit den aktuellen Eingaengen (vorher "Reset Ext/Status
+; Interrupts", damit kein gelatchter Stand gelesen wird). Erhaelt DE, HL.
+LIESLEI: CALL	IFSTE
+	DI
+	LD	A, 10H
+	OUT	(C), A
+	IN	A, (C)
+	EI
+	RET
+
+; SENDE - A = Zeichen, DE = Frist in ms (>= 1). Wartet auf "Sendepuffer
+; leer" (RR0 D2), dann senden. CY = Zeitueberlauf (nicht gesendet).
+; Zerstoert BC, DE.
+SENDE:	PUSH	AF
+	CALL	IFSTE
+SE_MS:	LD	B, N_SENDE
+SE_I:	IN	A, (C)
+	AND	RR0_TX
+	JR	NZ, SE_FR
+	DJNZ	SE_I
+	CALL	ZEITK
+	JR	NZ, SE_MS
+	POP	AF
+	SCF
+	RET
+SE_FR:	POP	AF
+	DEC	C			; Datenport = Steuerport - 1
+	OUT	(C), A
+	OR	A
+	RET
+
+; EMPF - DE = Frist in ms (>= 1). A = Zeichen, CY = Zeitueberlauf.
+; RR1-Fehler des Zeichens zaehlen nach FEHLZ (mit Error Reset); das Zeichen
+; wird trotzdem geliefert. Zerstoert BC, DE.
+EMPF:	CALL	IFSTE
+EP_MS:	LD	B, N_EMPF
+EP_I:	IN	A, (C)
+	RRA				; RR0 D0 -> CY
+	JR	C, EP_DA
+	DJNZ	EP_I
+	CALL	ZEITK
+	JR	NZ, EP_MS
+	SCF
+	RET
+EP_DA:	DI
+	CALL	FEHLR
+	EI
+	DEC	C
+	IN	A, (C)
+	OR	A
+	RET
+
+; WARTE - DE ms warten (>= 1). Zerstoert B, DE.
+WARTE:	LD	B, N_WARTE
+WA_I:	DJNZ	WA_I
+	CALL	ZEITK
+	JR	NZ, WARTE
+	RET
+
+; ZEITK - eine ms ist um: alle 16 ms Tastatur abfragen (Ctrl+C!), DE - 1.
+; Z = Frist abgelaufen. Erhaelt BC, HL.
+ZEITK:	LD	A, (KZAEHL)
+	INC	A
+	LD	(KZAEHL), A
+	AND	0FH
+	CALL	Z, KEYPOL
+	DEC	DE
+	LD	A, D
+	OR	E
+	RET
+
+; FEHLR - RR1 des Kanals (C = Steuerport) lesen; Paritaet/Ueberlauf/Rahmen
+; -> FEHLZ + 1 und Error Reset. Nur unter DI (Zeigerprotokoll). Erhaelt BC,
+; DE, HL. NZ = es lag ein Fehler vor.
+FEHLR:	LD	A, 1
+	OUT	(C), A
+	IN	A, (C)
+	AND	RR1_FEH
+	RET	Z
+	PUSH	HL
+	LD	HL, (FEHLZ)
+	INC	HL
+	LD	(FEHLZ), HL
+	POP	HL
+	LD	A, 30H			; Error Reset
+	OUT	(C), A
+	OR	A			; NZ
+	RET
+
+; -----------------------------------------------------------------------------
+; Interrupt (14.4): Mode 2 bleibt, wie das BIOS ihn eingerichtet hat; die
+; Tabelle liegt bei I*256. Ersetzt werden nur die Eintraege des eigenen
+; Kanals, der alte Inhalt wird gesichert und bei fremdem Anlass angesprungen.
+;  - Vektor des BIOS (IF_VEK = 0, nur K8915 SIO 2 = Tastatur-SIO): WR1 B (D2
+;    "Status affects Vector") und WR2 bleiben unberuehrt; Basis = RR2 B AND
+;    0F1H, Eintraege Kanal A: Basis+0CH (Zeichen), Basis+0EH (Sonderfall).
+;  - Eigener Vektor (alle SIOs, die das BIOS nicht im Interrupt betreibt):
+;    WR2 B := IF_VEK, D2 aus, also EIN Eintrag fuer alle Anlaesse der SIO.
+;    Ist der Kanal A, wird WR1 B := 0 (B ist dort nie die Tastatur, und das
+;    BIOS betreibt B ohne Interrupt) - sonst verbaege ein D2 von frueher den
+;    Vektor. Am A5120-Drucker (A32 B) bleibt D2 aus, wie CP/A es setzt.
+; Empfangsinterrupt bei jedem Zeichen (WR1 = 10H).
+; -----------------------------------------------------------------------------
+EINH:	CALL	IFSTE
+	LD	A, C
+	LD	(ISRPC), A
+	OR	2			; Steuerport Kanal B
+	LD	(ISRPB), A
+	LD	HL, 0
+	LD	(ADR1), HL
+	LD	(ADR2), HL
+	DI
+	LD	A, I
+	LD	(IPAGE), A
+	LD	A, (ISRPB)
+	LD	C, A
+	LD	A, IF_VEK
+	CALL	IFB
+	OR	A
+	JR	Z, EH_BIO
+	; eigener Vektor, D2 aus
+	LD	B, A
+	LD	A, 2
+	OUT	(C), A
+	OUT	(C), B			; WR2 B
+	LD	A, IF_KAN
+	CALL	IFB
+	OR	A
+	JR	NZ, EH_E1		; Kanal B: WR1 B kommt unten (= 10H, D2 aus)
+	LD	A, 1
+	OUT	(C), A
+	XOR	A
+	OUT	(C), A			; Kanal A: WR1 B := 0 (D2 aus)
+EH_E1:	LD	A, B
+	JR	EH_RX
+	; Vektor des BIOS, D2 gesetzt
+EH_BIO:	LD	A, 2
+	OUT	(C), A
+	IN	A, (C)			; RR2 B = Vektor, Bits 3..1 je Anlass
+	AND	0F1H
+	LD	B, A
+	LD	A, IF_KAN
+	CALL	IFB
+	OR	A
+	LD	A, 0EH			; Kanal A: Sonderfall
+	JR	Z, EH_K
+	LD	A, 06H			; Kanal B: Sonderfall
+EH_K:	ADD	A, B
+	PUSH	AF
+	LD	BC, ISR2
+	CALL	SETENT
+	LD	(ADR2), HL
+	LD	(ALT2), DE
+	POP	AF
+	SUB	2			; Empfangszeichen
+EH_RX:	LD	BC, ISR1
+	CALL	SETENT
+	LD	(ADR1), HL
+	LD	(ALT1), DE
+	LD	A, (ISRPC)
+	LD	C, A
+	LD	A, 1
+	OUT	(C), A
+	LD	A, 10H			; WR1: Empfangsinterrupt bei jedem Zeichen
+	OUT	(C), A
+	LD	A, 1
+	LD	(HAKEN), A
+	EI
+	RET
+
+; SETENT - Tabelleneintrag (IPAGE, A) := BC. HL = Adresse, DE = alter Inhalt.
+SETENT:	LD	L, A
+	LD	A, (IPAGE)
+	LD	H, A
+	LD	E, (HL)
+	LD	(HL), C
+	INC	HL
+	LD	D, (HL)
+	LD	(HL), B
+	DEC	HL
+	RET
+
+; AUSH - Empfangsinterrupt aus, Tabelleneintraege zurueck. Unter DI rufen.
+AUSH:	LD	A, (HAKEN)
+	OR	A
+	RET	Z
+	LD	A, (ISRPC)
+	LD	C, A
+	LD	A, 1
+	OUT	(C), A
+	XOR	A
+	OUT	(C), A			; WR1 des Kanals: keine Interrupts
+	LD	(HAKEN), A
+	LD	HL, (ADR1)
+	LD	DE, (ALT1)
+	CALL	AH_1
+	LD	HL, (ADR2)
+	LD	DE, (ALT2)
+AH_1:	LD	A, H
+	OR	L
+	RET	Z
+	LD	(HL), E
+	INC	HL
+	LD	(HL), D
+	RET
+
+; RXHOL - A = aeltestes Zeichen des Ringpuffers, CY = leer. Zerstoert DE, HL.
+RXHOL:	DI
+	LD	A, (RXAUS)
+	LD	HL, RXEIN
+	CP	(HL)
+	JR	Z, RH_L
+	LD	E, A
+	INC	A
+	LD	(RXAUS), A
+	LD	D, 0
+	LD	HL, RXBUF
+	ADD	HL, DE
+	LD	A, (HL)
+	EI
+	OR	A
+	RET
+RH_L:	EI
+	SCF
+	RET
+
+; ISR1/ISR2 - Empfangsroutine des eigenen Kanals (ISR1 = Zeichen bzw. alle
+; Anlaesse bei eigenem Vektor, ISR2 = Sonderfall). Holt alle anstehenden
+; Zeichen in den Ringpuffer; ist nichts fuer den eigenen Kanal da, geht es
+; in den alten Eintrag (0000H/FFFFH = keiner: nur RETI).
+ISR1:	PUSH	HL
+	LD	HL, (ALT1)
+	JR	ISRG
+ISR2:	PUSH	HL
+	LD	HL, (ALT2)
+ISRG:	PUSH	AF
+	PUSH	BC
+	PUSH	DE
+	LD	(ISRALT), HL
+	LD	A, (ISRPC)
+	LD	C, A
+	LD	B, 0			; B = eigener Anlass gefunden
+IG_L:	IN	A, (C)
+	RRA
+	JR	NC, IG_NZ
+	CALL	FEHLR
+	DEC	C
+	IN	A, (C)
+	INC	C
+	CALL	RXREIN
+	LD	HL, (INTZ)
+	INC	HL
+	LD	(INTZ), HL
+	LD	B, 1
+	JR	IG_L
+IG_NZ:	CALL	FEHLR			; Sonderfall ohne Zeichen
+	JR	Z, IG_2
+	LD	B, 1
+IG_2:	LD	A, B
+	OR	A
+	JR	Z, IG_FR
+IG_E:	POP	DE
+	POP	BC
+	POP	AF
+	POP	HL
+	EI
+	RETI
+IG_FR:	LD	HL, (ISRALT)
+	LD	A, H
+	OR	L
+	JR	Z, IG_E
+	LD	A, H
+	AND	L
+	INC	A
+	JR	Z, IG_E
+	POP	DE
+	POP	BC
+	POP	AF
+	EX	(SP), HL		; HL zurueck, alter Eintrag als Ziel
+	RET
+
+; RXREIN - A in den Ringpuffer; voll -> RXUEB + 1. Zerstoert DE, HL.
+RXREIN:	LD	D, A
+	LD	A, (RXEIN)
+	LD	E, A
+	INC	A
+	LD	HL, RXAUS
+	CP	(HL)
+	JR	Z, RR_UEB
+	LD	(RXEIN), A
+	LD	A, D
+	LD	D, 0
+	LD	HL, RXBUF
+	ADD	HL, DE
+	LD	(HL), A
+	RET
+RR_UEB:	LD	HL, (RXUEB)
+	INC	HL
+	LD	(RXUEB), HL
+	RET
 
 ; =============================================================================
 ; Schnittstellentabelle
@@ -648,13 +1125,24 @@ PUTNAM:	LD	HL, (IFZEIG)
 	EX	DE, HL
 	JP	PUTS
 
-; IFART - A = Art der gewaehlten Schnittstelle. Erhaelt HL.
-IFART:	PUSH	HL
+; IFART - A = Art der gewaehlten Schnittstelle. Erhaelt BC, DE, HL.
+IFART:	LD	A, IF_ART
+	; faellt durch
+; IFB - A = Byte +A des gewaehlten Eintrags. Erhaelt BC, DE, HL.
+IFB:	PUSH	HL
 	LD	HL, (IFZEIG)
-	INC	HL
-	INC	HL
-	LD	A, (HL)
+	ADD	A, L
+	LD	L, A
+	JR	NC, IB_1
+	INC	H
+IB_1:	LD	A, (HL)
 	POP	HL
+	RET
+
+; IFSTE - C = Steuerport der gewaehlten Schnittstelle. Erhaelt DE, HL.
+IFSTE:	LD	A, IF_STE
+	CALL	IFB
+	LD	C, A
 	RET
 
 ; LDHLHL - HL = (HL)
@@ -769,6 +1257,8 @@ M_GEGH:	DB	'Gegenstelle (Passiv): Dieses Geraet mit einem passenden Kabel mit ei
 M_KEINE: DB	'Keine Schnittstelle gewaehlt.',CR,LF,'$'
 M_GBER:	DB	'Gegenstelle an $'
 M_GBE2:	DB	' bereit.',CR,LF,'$'
+M_INTA:	DB	'Empfangsinterrupt ausgeloest',CR,LF
+	DB	'SERTEST INTERRUPT OK',CR,LF,'$'
 M_ABBR:	DB	CR,LF,'Abbruch mit Ctrl+C.',CR,LF,'$'
 M_NRF:	DB	'Diese Schnittstelle gibt es nicht.',CR,LF,'$'
 M_UNBEK: DB	'Rechner nicht erkannt. Mit /M:A (A5120) oder /M:K (K8915) vorgeben.',CR,LF,'$'
@@ -812,18 +1302,57 @@ L_K8915: DB	'Schnittstellen:',CR,LF
 
 ; Schnittstellentabellen (Aufbau s. IF_LEN). Ports nach Entwurf 19 Par. 3/14.4.
 ; A5120: Brueckenstellung W1:7 und X7-X8 "gezeichnet" angenommen (ZRE-CTC K0).
+; CTC-Steuerwort wie das BIOS: CP/A 17H (bioscpb.mac), SCPX 8915 07H (DE82H/D9C7H).
 IF_A:	DW	S_A1
-	DB	ART_V24, 50H, 51H, 0CH	; A33 A, Takt ZRE-CTC K0
+	DB	ART_V24, 50H, 51H, 0CH, 17H, 0, VEK_A	; A33 A, Takt ZRE-CTC K0
+	DW	V_A1
 	DW	S_A2
-	DB	ART_IFS, 52H, 53H, 0CH	; A33 B, Takt ZRE-CTC K0 (geteilt mit 1)
+	DB	ART_IFS, 52H, 53H, 0CH, 17H, 1, VEK_A	; A33 B, ZRE-CTC K0 (geteilt mit 1)
+	DW	V_A2
 	DW	S_A3
-	DB	ART_IFS, 5EH, 5FH, 0	; A32 B, Takt CTC A34 K0 = Tastatur: NICHT anfassen
+	DB	ART_IFS, 5EH, 5FH, 0, 0, 1, VEK_A	; A32 B, Takt CTC A34 K0 = Tastatur: NICHT anfassen
+	DW	V_A3
 IF_K:	DW	S_K1
-	DB	ART_IFS, 42H, 43H, 4AH	; SIO1 B, CTC1 K2
+	DB	ART_IFS, 42H, 43H, 4AH, 07H, 1, VEK_K	; SIO1 B, CTC1 K2
+	DW	V_K1
 	DW	S_K2
-	DB	ART_V24, 40H, 41H, 48H	; SIO1 A, CTC1 K0 (ueber Multiplexer D13)
+	DB	ART_V24, 40H, 41H, 48H, 07H, 0, VEK_K	; SIO1 A, CTC1 K0 (Takt ueber D13)
+	DW	V_K2
 	DW	S_K3
-	DB	ART_IFS, 50H, 51H, 58H	; SIO2 A, CTC2 K0
+	DB	ART_IFS, 50H, 51H, 58H, 07H, 0, 0	; SIO2 A, CTC2 K0; Vektor des BIOS
+	DW	V_K3
+
+; BIOS-Vorgaben zum Wiederherstellen (Format PORTPR). Nichts davon ist
+; rueckzulesen; Quellen s. Entwurf 19 Par. 14.4.
+; CP/A 25.09.89 (bios.mac, bioscpb.mac): die Kanaele werden erst bei der
+; ersten Benutzung programmiert (portpr), mit diesen Werten:
+;  A33 A = TTY:/UC1: an 50H, iobtty 01811: ZRE-CTC K0 17H/01H, WR4 44H,
+;          WR1 00H (TTY:, ohne Interrupt), WR3 C1H, WR5 EAH (8N1, DTR+RTS).
+;  A33 B - vom BIOS nicht benutzt: Kanalreset (wie nach dem Kaltstart).
+;  A32 B = LPT: an 5EH, ioblpt 11710: WR4 45H, WR1 00H, WR3 41H, WR5 28H
+;          (7 Bit, ungerade Paritaet, 1 Stoppbit). CTC A34 K0 bleibt.
+V_A1:	DB	2+1, 0CH, 17H, 01H
+	DB	9+1, 51H, 18H, 4, 44H, 1, 0, 3, 0C1H, 5, 0EAH
+	DB	1
+V_A2:	DB	2+1, 0CH, 17H, 01H
+	DB	1+1, 53H, 18H
+	DB	1
+V_A3:	DB	9+1, 5FH, 18H, 4, 45H, 1, 0, 3, 41H, 5, 28H
+	DB	1
+; SCPX 8915 V5.3 "55 K" (Diskette 900): Drucker-Init beim Kaltstart
+; (scpx8915_v53_bios.prn DE82H in der Fassung 900): CTC1 K2 07H/01H, SIO1 B
+; 18H, WR4 45H, WR3 41H, WR5 28H. SIO1 A, SIO2 A, CTC1 K0, CTC2 K0 fasst das
+; BIOS nie an: Kanalreset bzw. CTC-Reset (03H). WR1 B/WR2 der SIO 2 (17H/D0H,
+; D9C7H) werden nie geschrieben, brauchen also nichts.
+V_K1:	DB	2+1, 4AH, 07H, 01H
+	DB	7+1, 43H, 18H, 4, 45H, 3, 41H, 5, 28H
+	DB	1
+V_K2:	DB	1+1, 48H, 03H
+	DB	1+1, 41H, 18H
+	DB	1
+V_K3:	DB	1+1, 58H, 03H
+	DB	1+1, 51H, 18H
+	DB	1
 
 S_A1:	DB	'DFUE/V.24$'
 S_A2:	DB	'DFUE/IFSS$'
@@ -852,6 +1381,27 @@ MBESCH:	DS	2		; -> Maschinenbeschreibung
 IFTAB:	DS	2		; -> Schnittstellentabelle
 IFZEIG:	DS	2		; -> gewaehlter Eintrag
 STATUS:	DS	8		; je Schnittstelle 0/1/2
+; SIO-Schicht
+AKTIF:	DS	2		; -> programmierter Eintrag (fuer AUFR), 0 = keiner
+WR5S:	DS	1		; Schatten WR5
+WR3S:	DS	1		; Schatten WR3
+FEHLZ:	DS	2		; RR1-Fehler (Paritaet, Ueberlauf, Rahmen)
+KZAEHL:	DS	1		; ms-Zaehler fuer die Tastaturabfrage
+HAKEN:	DS	1		; Empfangsinterrupt eingehaengt
+ISRPC:	DS	1		; Steuerport des Kanals (fuer die ISR)
+ISRPB:	DS	1		; Steuerport Kanal B derselben SIO
+IPAGE:	DS	1		; I-Register
+ADR1:	DS	2		; ersetzte Tabelleneintraege (0 = keiner) ...
+ADR2:	DS	2
+ALT1:	DS	2		; ... und ihr alter Inhalt
+ALT2:	DS	2
+ISRALT:	DS	2		; alter Eintrag der laufenden ISR
+INTZ:	DS	2		; Empfangsinterrupts mit Zeichen
+INTMLD:	DS	1		; erster Empfangsinterrupt gemeldet
+RXEIN:	DS	1		; Ringpuffer: Schreibindex
+RXAUS:	DS	1		;             Leseindex
+RXUEB:	DS	2		; Ringpufferueberlauf
+RXBUF:	DS	256
 VAREND:
 VARLEN	EQU	VAREND-VARANF
 

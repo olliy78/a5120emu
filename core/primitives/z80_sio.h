@@ -533,6 +533,10 @@ private:
     bool channelHasInterrupt(const Channel& ch) const;
     /// Wie channelHasInterrupt(), aber ohne bereits bediente Kanäle (IUS).
     bool channelRequests(const Channel& ch) const;
+    /// RR2 von Kanal B: der Vektor, den eine Quittung JETZT liefern würde, ohne zu
+    /// quittieren (kein IUS, keine gelöschte Anforderung).  Mit „status affects
+    /// vector" und ohne anstehende Anforderung V3–V1 = 011 (Datenblatt).
+    uint8_t rr2Vektor() const;
 
     // ─── Register processing helpers ────────────────────────────────────────
 

@@ -6,10 +6,13 @@ Gerät mit Prüfstecker bzw. Nullmodemkabel, im Emulator gegen den Rx/Tx-Loop bz
 einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md`
 **§14**.
 
-> **Stand V0.1 (AP-ST1):** Gerüst. Kopfzeile, Kommandozeile, Maschinenerkennung,
-> Schnittstellenliste, Rollenwahl, J/N-Abfragen, Ctrl+C. Die Prüfschritte selbst
-> folgen ab AP-ST3; bis dahin meldet jeder Teil `FEHLER NICHT EINGEBAUT` (ein Test,
-> der nicht läuft, meldet nie `OK`).
+> **Stand V0.1 (AP-ST3):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
+> Schnittstellenliste, Rollenwahl, J/N-Abfragen, Ctrl+C) und SIO-/CTC-Schicht: der
+> Tester stellt die Schnittstelle für ihre Prüfung auf 9600 8N1 und danach auf die
+> BIOS-Vorgabe zurück; die Gegenstelle hängt sich in den Empfangsinterrupt und meldet
+> den ersten (`SERTEST INTERRUPT OK`). Die Prüfschritte selbst folgen ab AP-ST4; bis
+> dahin meldet jeder Teil `FEHLER NICHT EINGEBAUT` (ein Test, der nicht läuft, meldet
+> nie `OK`).
 
 ## Bedienung
 
@@ -79,7 +82,18 @@ die nicht vom BIOS benutzte SIO 1 des K8915 einen Vektor ≠ FFH trägt (sonst
   A34 K1/K2), stimmt die Baudrate nicht.
 - **A5120-Drucker:** Takt CTC A34 K0 = Takt der Tastatur, wird **nie** angefasst;
   nur das SIO-Format wird gesetzt.
-- φ = 2,4576 MHz an beiden Maschinen (Zeitbasis der Zählschleifen).
+- φ = 2,4576 MHz an beiden Maschinen (Zeitbasis der Zählschleifen; gemessen +7 %
+  durch BIOS-Interrupts — Fristen sind Mindestzeiten).
+- **Interruptvektoren** (Gegenstelle): wo das BIOS die SIO nicht im Interrupt betreibt,
+  ein eigener Vektor ohne „Status affects Vector" — CP/A **E4H** (`intvsy+04h`, laut
+  BIOS frei), SCPX 8915 **C0H** (FFC0H). An der SIO 2 des K8915 (Tastatur) gilt der
+  Vektor des BIOS (D0H, Kanal A = DCH/DEH). Ersetzt werden nur diese Einträge; beim
+  Ende kommen die alten zurück.
+- **BIOS-Vorgabe nach dem Test:** A5120 DFUE/V.24 = TTY:-Werte (9600 8N1, DTR + RTS),
+  Drucker = LPT:-Werte (9600 7O1), DFUE/IFSS Kanalreset; K8915 Drucker/IFSS1 = Werte
+  der BIOS-Fassung „55 K" (9600 7O1 — die Fassung „V24 XON/XOFF" hätte 8N1), V.24 und
+  DFUE/IFSS2 Kanalreset. Ein laufender UC1:-Treiber (CP/A, 50H) wird durch einen Test
+  der DFUE/V.24 abgelöst.
 
 ## Kabel
 
