@@ -11,6 +11,7 @@ sind nur nicht mehr in jeder einzelnen Anfrage geladen.
 | `disktool.md` | `core/filesystem/` + `app/disktool/` — Dateisysteme, Oberfläche |
 | `physische_diskette.md` | `TrackSync` + `app/gw/` — echtes Laufwerk am Greaseweazle |
 | `k8915.md` | `core/machines/k8915/` + Karten `zre8762`/`k7028`, Peripherie `k7672` — zweite Maschine (nicht ausgelagert, sondern direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Zweite Maschine: K8915“) |
+| `serielle_schnittstellen.md` | `core/serial/` + Anschlüsse in `k8025`/`k7028` + Dock „Schnittstellen" — Telnet/RFC 2217/Datei nach außen (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz) |
 
 ## Warum ausgelagert
 

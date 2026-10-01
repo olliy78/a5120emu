@@ -54,6 +54,7 @@ System-Interpreter.
 | `test_k8915emu_gui.py` | K8915 Emulator (AP-UI1): Profil/Titel, eigene Konfiguration + Umzug `config.yaml` → `a5120emu.yaml`, Laufwerke/Takt je Profil, Frontplatte, NMI, Tastatur K7672 gegen das EPROM, Boot bis `A>` + `dir` über die Bildschirmtastatur |
 | `test_k8915_disgen.py` | K8915 (AP-E4n): Bootdiskette mit DISGEN über `QKeyEvent` am Bildschirm-Widget — Fehlschlag bei B: 16 × 256 auf 901, Hostpuffer-Falle, B: auf 1024 ⇒ Kaltstart bis `A>` |
 | `test_serial_gui.py` | Dock „Schnittstellen" (AP-S7, beide Programme): Blockzustände, Knopftexte, Sperren im Betrieb, Host-Etikett, Statuszeilenfelder (tatsächliche Ports; nur VERBUNDEN, nie versuchende Clients/Datei), Konfiguration `schnittstellen:` und Wiederaufnahme (§7.4a), Maschinenwechsel; echte Loopback-Sockets mit freien Ports. Aufräumen siehe `_zu()` (Zeitgeber + Fokusfilter stilllegen, sonst wird die Datei mit jedem Fenster langsamer) |
+| `test_serial_pyserial.py` | Interop (AP-S8): pyserial `rfc2217://` gegen den Emulator-Server — Echo-Gast über die BIOS-Sprungleiste, Bytes beidseitig, Baud (Gast maßgeblich), Steuerleitungen gekreuzt, RTS-Halt. Ohne `pyserial` übersprungen |
 | `test_programme.py` | Nachbarprogramme starten (`app/programme.py`): Befehlszeile, Abkopplung, Startdatei der Werkzeugkonsole, Werkzeugmenü beider Oberflächen |
 
 ## Grenzen

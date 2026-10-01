@@ -617,6 +617,29 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   verschränkt (`NOTE.TO.SD`: Sektor 6, 7, 12, 23, 1, 8, …) — den zweiten fände von Hand
 >   niemand, und einen Namen zum Wiedererkennen gibt es dort auch nicht.
 
+## Serielle Schnittstellen nach außen (`core/serial/`, `app/ui/serial_widget.py`)
+
+Die seriellen Kanäle der K8025 (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker) und der K7028 (K8915:
+V.24, IFS 1, IFS 2) gehen über **Telnet** oder **RFC 2217** (Client/Server) oder in eine
+**Datei** nach außen; die Tastatur bleibt fest verdrahtet. Je Maschine ein `SerialHub`
+(`K1520Machine::serialHub()`, I/O-Faden) mit je Schnittstelle einem `Wandler`; die Karten
+liefern nur einen `SerialAnschluss`. C-ABI `k1520_serial_*`, Python `K1520Emulator.serial_*`,
+Dock „Schnittstellen". Entwurf: `doc/design/19_serielle_schnittstellen.md`.
+
+> **Vor Arbeiten daran: `doc/merkposten/serielle_schnittstellen.md` lesen** (Festlegungen
+> mit Wächtern, wie man einen Gast im Test senden lässt, Gegenstellen). Die teuersten Regeln:
+> - **Maschinenzeit, nicht Uhr:** der Wandler taktet in Maschinentakten nach der vom Gast
+>   programmierten Baud; **verlustfrei durch Rückstau**, nie ein SIO-Überlauf.
+> - **Der Gast ist maßgeblich:** eine RFC-2217-Anfrage ändert Baud/Format nie, sie wird mit
+>   dem Gastwert beantwortet und nur als `baud_abweichend` angezeigt.
+> - **Kein Netz im Emulationsfaden, die Karte kennt kein Netz**; Sperrreihenfolge Hub → Wandler.
+> - **RTS-Halt erst nach dem ersten gesetzten RTS** (CP/A/SCPX setzen es nie); danach sofort.
+>   Nullmodem-Kreuzung nur als Server.
+> - **Loop ⇔ keine Verbindung**; K8915 startet mit Loop an. **Datei meldet VERBUNDEN.**
+> - **Tests: nie feste Ports** (Port 0 bzw. freier Port, nur Loopback). Wächter u. a.
+>   `SerialWandler.*`, `SerialHub.*`, `SerielleKopplung.*` (64 KiB-Fassung in `test-format`),
+>   `py_serial_api`, `py_serial_gui`, `py_serial_pyserial`.
+
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 
 Neben der Datei (`.img`/`.hfe`/`.dmk`) gibt es eine **zweite Art von Bindung** des internen
