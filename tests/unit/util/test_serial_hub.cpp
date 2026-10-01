@@ -28,6 +28,7 @@
 #endif
 
 #include "core/serial/hub.h"
+#include "core/serial/transport.h"
 #include "core/serial/rfc2217_codec.h"
 #include "core/serial/net/socket.h"
 #include "tests/support/temp_path.h"
@@ -145,6 +146,13 @@ TEST(SerialHub, TelnetRundlaufZwischenZweiHubs) {
     EXPECT_TRUE(a.a.dcd);
     EXPECT_EQ(a.a.ueberlauf, 0u);
     EXPECT_EQ(b.st().baud_gegenseite, 0u);   // bei Telnet nicht erkennbar
+    for (const SerialStatus& st : {a.st(), b.st()}) {   // AP-S11: ebenso Format und Leitungen
+        EXPECT_FALSE(st.format_gegenseite_bekannt);
+        EXPECT_FALSE(st.format_abweichend);
+        EXPECT_EQ(st.daten_gegenseite, 0);
+        EXPECT_EQ(st.leitungen_gegenseite_bekannt, 0);
+        EXPECT_EQ(st.leitungen_gegenseite, 0);
+    }
 }
 
 TEST(SerialHub, Rfc2217RundlaufMitNullmodemLeitungenUndBaudhinweis) {
@@ -179,6 +187,52 @@ TEST(SerialHub, Rfc2217RundlaufMitNullmodemLeitungenUndBaudhinweis) {
     ASSERT_TRUE(u.warte([&] {
         return b.a.gelesenText() == "vom Server" && a.a.gelesenText() == "vom Client";
     }, 5000)) << "B: '" << b.a.gelesenText() << "' A: '" << a.a.gelesenText() << "'";
+}
+
+// AP-S11: Format und Leitungen der Gegenseite (Server: Wunsch/RTS+DTR des Clients,
+// Client: Antwort/CTS+DSR+DCD+RI des Servers).
+TEST(SerialHub, Rfc2217ZeigtFormatUndLeitungenDerGegenseite) {
+    Seite a, b;
+    a.a.rtsAus = true;                                   // Server-Gast 9600 8N1, RTS an, DTR aus
+    a.a.dtrAus = false;
+    b.a.rtsAus = false;                                  // Client-Gast 1200 7E1, RTS aus, DTR an
+    b.a.dtrAus = true;
+    b.a.fmt    = serialFormatRechnen(16, 7, 2, 2, 128);
+    Uhrwerk u{{&a, &b}};
+    ASSERT_TRUE(verbinde(u, a, b, Betriebsart::Rfc2217));
+
+    using namespace k1520::serial::gegenleitung;
+    EXPECT_TRUE(u.warte([&] {
+        const auto sa = a.st(), sb = b.st();
+        // Das Format des Clients kommt erst nach der Entprellung (100 ms) richtig an.
+        return sa.format_gegenseite_bekannt && sa.daten_gegenseite == 7 &&
+               sa.paritaet_gegenseite == 2 && sb.format_gegenseite_bekannt &&
+               sa.leitungen_gegenseite_bekannt == (RTS | DTR) &&
+               (sb.leitungen_gegenseite_bekannt & CTS);
+    }, 3000));
+    const SerialStatus sa = a.st(), sb = b.st();
+    // Server sieht den Wunsch des Clients: 7E1 (Parität 2 = gerade, 2 halbe Stoppbits).
+    EXPECT_EQ(sa.daten_gegenseite, 7);
+    EXPECT_EQ(sa.paritaet_gegenseite, 2);
+    EXPECT_EQ(sa.stopp_halbe_gegenseite, 2);
+    EXPECT_TRUE(sa.format_abweichend);
+    // Client sieht die Antwort des Servers: 8N1.
+    EXPECT_EQ(sb.daten_gegenseite, 8);
+    EXPECT_EQ(sb.paritaet_gegenseite, 0);
+    EXPECT_EQ(sb.stopp_halbe_gegenseite, 2);
+    EXPECT_TRUE(sb.format_abweichend);
+    // Leitungen: Server sieht RTS (aus) und DTR (an) des Clients, sonst nichts.
+    EXPECT_EQ(sa.leitungen_gegenseite, DTR);
+    // Client sieht CTS (= Server-RTS) an, DSR/DCD (= Server-DTR) aus; RI ruht.
+    EXPECT_EQ(sb.leitungen_gegenseite_bekannt, CTS | DSR | DCD | RI);
+    EXPECT_EQ(sb.leitungen_gegenseite, CTS);
+
+    // Gleiches Format auf beiden Seiten: keine Abweichung mehr.
+    b.a.fmt = a.a.fmt;
+    EXPECT_TRUE(u.warte([&] { return !a.st().format_abweichend && !b.st().format_abweichend; }, 3000))
+        << a.st().format_abweichend << b.st().format_abweichend;
+    EXPECT_EQ(a.st().daten_gegenseite, 8);
+    EXPECT_EQ(a.st().format_gegenseite_bekannt, true);
 }
 
 // ─── Portwahl, Sperren, Loop ───────────────────────────────────────────────

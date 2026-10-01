@@ -393,6 +393,14 @@ fragt `k1520_serial_status` ab.
   Konfig lesen): der Kern schreibt höchstens `groesse` Bytes und trägt die geschriebene Zahl
   zurück; `groesse` < 4 → `false`.  Eingabe (`configure`): Felder jenseits von `groesse`
   behalten ihren aktuellen Wert.  Neue Felder kommen nur hinten an.
+- **Gegenseite (AP-S11)**: `K1520SerStatus` trägt hinten `daten_/paritaet_/stopp_halbe_gegenseite`,
+  `format_gegenseite_bekannt`, `format_abweichend` (ohne Baud) und die Maske
+  `leitungen_gegenseite` samt `leitungen_gegenseite_bekannt` (`K1520_SER_L_RTS/DTR/CTS/DSR/DCD/RI`,
+  Parität `K1520_SER_PAR_*`).  Nur RFC 2217; Telnet/Datei: nichts bekannt.  Rolle Server: Format =
+  Wunsch des Clients, Leitungen = RTS/DTR des Clients (ab dem ersten SET-CONTROL).  Rolle Client:
+  Format = Antwort des Servers, Leitungen = CTS/DSR/DCD/RI aus NOTIFY-MODEMSTATE.  Python:
+  `SerialStatus.format_gegenseite_text` (`"7E1"`/`None`), `leitung_gegenseite(SER_L_*)`
+  (`True/False/None`), `leitungen_gegenseite_text`.
 - **Zeichenketten**: UTF-8, nullterminiert, an einer Zeichengrenze abgeschnitten.
 - **`configure`** weist ab (nichts wird übernommen): ungültiger Index, **Port 0**, ungültige
   Aufzählung/Taktquelle, im aktiven Betrieb geänderte gesperrte Felder (Betriebsart, Rolle,

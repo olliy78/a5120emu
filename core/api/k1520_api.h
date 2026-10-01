@@ -284,7 +284,35 @@ typedef struct {
     uint16_t port_vorschlag;            /* freier Port, wenn der eingestellte belegt war (start_auto) */
     int      rolle, betriebsart;
     uint32_t versuche;                  /* Client: Versuche seit dem letzten Verbinden */
+    /* AP-S11: Format und Steuerleitungen der Gegenseite (nur RFC 2217; Telnet/Datei: nichts
+     * bekannt).  Rolle Server (Gegenseite = Client): Format = zuletzt GEWUENSCHTE Werte
+     * (SET-DATASIZE/-PARITY/-STOPSIZE); Leitungen = RTS, DTR des Clients (ab dem ersten
+     * SET-CONTROL der jeweiligen Leitung).  Rolle Client (Gegenseite = Server): Format =
+     * Antwort des Servers auf unsere SET-*; Leitungen = CTS, DSR, DCD, RI aus
+     * NOTIFY-MODEMSTATE (ab der ersten Meldung).  Was die Rolle nicht liefert, bleibt in
+     * leitungen_gegenseite_bekannt aus. */
+    uint8_t  daten_gegenseite;          /* 5..8; 0 = unbekannt */
+    uint8_t  paritaet_gegenseite;       /* K1520_SER_PAR_*; nur mit format_gegenseite_bekannt */
+    uint8_t  stopp_halbe_gegenseite;    /* halbe Stoppbits (2, 3, 4); 0 = unbekannt */
+    bool     format_gegenseite_bekannt; /* alle drei Formatfelder bekannt */
+    bool     format_abweichend;         /* Format bekannt und != Format des Gastes (ohne Baud) */
+    uint8_t  leitungen_gegenseite;      /* Bitmaske K1520_SER_L_*; nur Bits aus ..._bekannt */
+    uint8_t  leitungen_gegenseite_bekannt;  /* Bitmaske: welche Leitungen die Rolle kennt */
 } K1520SerStatus;
+
+/* Paritaet der Gegenseite (paritaet_gegenseite) */
+#define K1520_SER_PAR_KEINE 0
+#define K1520_SER_PAR_UNGERADE 1
+#define K1520_SER_PAR_GERADE 2
+#define K1520_SER_PAR_MARK 3
+#define K1520_SER_PAR_SPACE 4
+/* Bits von leitungen_gegenseite(_bekannt) */
+#define K1520_SER_L_RTS 0x01
+#define K1520_SER_L_DTR 0x02
+#define K1520_SER_L_CTS 0x04
+#define K1520_SER_L_DSR 0x08
+#define K1520_SER_L_DCD 0x10
+#define K1520_SER_L_RI  0x20
 
 /** @brief Zahl der einstellbaren Schnittstellen (0 bei einer Maschine ohne). */
 K1520_API int  k1520_serial_count(K1520Handle h);

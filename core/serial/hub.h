@@ -99,6 +99,10 @@ struct SerialStatus {
     bool        format_gueltig = false;
     uint32_t    baud_gegenseite = 0;     ///< RFC 2217, 0 = unbekannt
     bool        baud_abweichend = false;
+    // AP-S11: Format und Leitungen der Gegenseite, Bedeutung je Rolle s. `GegenseiteStand`.
+    uint8_t     daten_gegenseite = 0, paritaet_gegenseite = 0, stopp_halbe_gegenseite = 0;
+    bool        format_gegenseite_bekannt = false, format_abweichend = false;
+    uint8_t     leitungen_gegenseite = 0, leitungen_gegenseite_bekannt = 0;  ///< `gegenleitung::*`
     bool        rts = false, cts = false, dtr = false, dsr = false, dcd = false;
     uint64_t    bytes_gesendet = 0, bytes_empfangen = 0;
     uint32_t    puffer_senden = 0, puffer_empfangen = 0;

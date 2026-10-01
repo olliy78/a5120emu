@@ -40,8 +40,47 @@ void Rfc2217Transport::sendeFormat(const SerialFormat& f) {
     codec_.sendeParitaet(r2::paritaetNetz(f.paritaet));
     codec_.sendeStoppbits(r2::stoppNetz(f.stopp_halbe));
     gesendeteBaud_ = f.baud_nenn;
+    gesendetDaten_ = f.daten;
+    gesendetParitaet_ = f.paritaet;
+    gesendetStopp_ = f.stopp_halbe;
+    formatVergleichen(f);
     // Die Antwort des Servers kommt noch; bis dahin gilt der alte Vergleich nicht mehr.
     abweichend_ = baudGegenseite_ != 0 && baudGegenseite_ != gesendeteBaud_;
+}
+
+void Rfc2217Transport::formatVergleichen(const SerialFormat& gast) {
+    // Client vergleicht mit dem, was er selbst verlangt hat; Server mit dem Gastwert.
+    const uint8_t d = client() ? gesendetDaten_ : gast.daten;
+    const uint8_t p = client() ? gesendetParitaet_ : gast.paritaet;
+    const uint8_t s = client() ? gesendetStopp_ : gast.stopp_halbe;
+    fern_.formatAbweichend = fern_.formatBekannt() &&
+                             (fern_.daten != d || fern_.paritaet != p || fern_.stoppHalbe != s);
+}
+
+GegenseiteStand Rfc2217Transport::gegenseite() const {
+    GegenseiteStand g = fern_;
+    if (client()) {
+        g.leitungenBekannt = fernModemBekannt_ ? (gegenleitung::CTS | gegenleitung::DSR |
+                                                  gegenleitung::DCD | gegenleitung::RI) : 0;
+        if (fernModemBekannt_) {
+            if (fernModem_ & r2::MS_CTS) g.leitungen |= gegenleitung::CTS;
+            if (fernModem_ & r2::MS_DSR) g.leitungen |= gegenleitung::DSR;
+            if (fernModem_ & r2::MS_CD)  g.leitungen |= gegenleitung::DCD;
+            if (fernModem_ & r2::MS_RI)  g.leitungen |= gegenleitung::RI;
+        }
+    } else {
+        // Vor dem ersten SET-CONTROL gelten die Leitungen intern als aktiv (damit der Gast
+        // nicht blockiert), sind der Gegenseite aber nicht bekannt.
+        if (fernRtsBekannt_) {
+            g.leitungenBekannt |= gegenleitung::RTS;
+            if (fernRts_) g.leitungen |= gegenleitung::RTS;
+        }
+        if (fernDtrBekannt_) {
+            g.leitungenBekannt |= gegenleitung::DTR;
+            if (fernDtr_) g.leitungen |= gegenleitung::DTR;
+        }
+    }
+    return g;
 }
 
 uint8_t Rfc2217Transport::modemByte(const WandlerSicht& s, bool v24) const {
@@ -92,7 +131,22 @@ void Rfc2217Transport::abgleich(Wandler& w) {
                         abweichend_ = ev.wert != gesendeteBaud_;
                     }
                     break;
+                case A::Datenbits:
+                    if (ev.antwort && ev.wert) { fern_.daten = static_cast<uint8_t>(ev.wert); formatVergleichen(gast); }
+                    break;
+                case A::Paritaet:
+                    if (ev.antwort && ev.wert) {
+                        fern_.paritaet = ev.wert == 4 ? 3 : ev.wert == 5 ? 4 : r2::paritaetSio(ev.wert);
+                        fern_.paritaetBekannt = fern_.paritaet != 255;
+                        formatVergleichen(gast);
+                    }
+                    break;
+                case A::Stoppbits:
+                    if (ev.antwort && ev.wert) { fern_.stoppHalbe = r2::stoppHalbe(ev.wert); formatVergleichen(gast); }
+                    break;
                 case A::ModemState:
+                    fernModem_ = static_cast<uint8_t>(ev.wert);
+                    fernModemBekannt_ = true;
                     w.fernLeitungen(ev.wert & r2::MS_CTS, ev.wert & r2::MS_DSR,
                                     ev.wert & r2::MS_CD);
                     break;
@@ -119,17 +173,29 @@ void Rfc2217Transport::abgleich(Wandler& w) {
                 if (ev.wert) baudGegenseite_ = ev.wert;
                 codec_.sendeBaud(gast.baud_nenn, true);
                 break;
-            case A::Datenbits: codec_.sendeDatenbits(gast.daten, true); break;
-            case A::Paritaet:  codec_.sendeParitaet(r2::paritaetNetz(gast.paritaet), true); break;
-            case A::Stoppbits: codec_.sendeStoppbits(r2::stoppNetz(gast.stopp_halbe), true); break;
+            case A::Datenbits:
+                if (ev.wert) fern_.daten = static_cast<uint8_t>(ev.wert);
+                codec_.sendeDatenbits(gast.daten, true);
+                break;
+            case A::Paritaet:
+                if (ev.wert) {
+                    fern_.paritaet = ev.wert == 4 ? 3 : ev.wert == 5 ? 4 : r2::paritaetSio(ev.wert);
+                    fern_.paritaetBekannt = fern_.paritaet != 255;
+                }
+                codec_.sendeParitaet(r2::paritaetNetz(gast.paritaet), true);
+                break;
+            case A::Stoppbits:
+                if (ev.wert) fern_.stoppHalbe = r2::stoppHalbe(ev.wert);
+                codec_.sendeStoppbits(r2::stoppNetz(gast.stopp_halbe), true);
+                break;
             case A::Steuerung: {
                 uint8_t antwort = static_cast<uint8_t>(ev.wert);
                 switch (ev.wert) {
-                    case r2::RTS_EIN: fernRts_ = true; break;
-                    case r2::RTS_AUS: fernRts_ = false; break;
+                    case r2::RTS_EIN: fernRts_ = true; fernRtsBekannt_ = true; break;
+                    case r2::RTS_AUS: fernRts_ = false; fernRtsBekannt_ = true; break;
                     case r2::RTS_ABFRAGE: antwort = fernRts_ ? r2::RTS_EIN : r2::RTS_AUS; break;
-                    case r2::DTR_EIN: fernDtr_ = true; break;
-                    case r2::DTR_AUS: fernDtr_ = false; break;
+                    case r2::DTR_EIN: fernDtr_ = true; fernDtrBekannt_ = true; break;
+                    case r2::DTR_AUS: fernDtr_ = false; fernDtrBekannt_ = true; break;
                     case r2::DTR_ABFRAGE: antwort = fernDtr_ ? r2::DTR_EIN : r2::DTR_AUS; break;
                     case r2::BREAK_EIN: w.fernBreak(true); break;
                     case r2::BREAK_AUS: w.fernBreak(false); break;
@@ -208,6 +274,7 @@ void Rfc2217Transport::abgleich(Wandler& w) {
         }
         // Hinweis Baudunterschied (§7.5): Anfrage des Clients ≠ Gastwert.
         abweichend_ = baudGegenseite_ != 0 && baudGegenseite_ != gast.baud_nenn;
+        formatVergleichen(gast);
     }
 }
 

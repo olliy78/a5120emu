@@ -489,6 +489,13 @@ bool k1520_serial_status(K1520Handle h, int i, K1520SerStatus* out) {
     r.rolle = static_cast<int>(s.rolle);
     r.betriebsart = static_cast<int>(s.betriebsart);
     r.versuche = s.versuche;
+    r.daten_gegenseite = s.daten_gegenseite;
+    r.paritaet_gegenseite = s.paritaet_gegenseite;
+    r.stopp_halbe_gegenseite = s.stopp_halbe_gegenseite;
+    r.format_gegenseite_bekannt = s.format_gegenseite_bekannt;
+    r.format_abweichend = s.format_abweichend;
+    r.leitungen_gegenseite = s.leitungen_gegenseite;
+    r.leitungen_gegenseite_bekannt = s.leitungen_gegenseite_bekannt;
     return deliver(out, r);
 }
 

@@ -325,6 +325,14 @@ SerialStatus SerialHub::status(int i) const {
     if (e.transport) {
         s.baud_gegenseite = e.transport->baudGegenseite();
         s.baud_abweichend = e.transport->baudAbweichend();
+        const GegenseiteStand g = e.transport->gegenseite();
+        s.daten_gegenseite              = g.daten;
+        s.paritaet_gegenseite           = g.paritaetBekannt ? g.paritaet : 0;
+        s.stopp_halbe_gegenseite        = g.stoppHalbe;
+        s.format_gegenseite_bekannt     = g.formatBekannt();
+        s.format_abweichend             = g.formatAbweichend;
+        s.leitungen_gegenseite          = g.leitungen & g.leitungenBekannt;
+        s.leitungen_gegenseite_bekannt  = g.leitungenBekannt;
     }
     const WandlerSicht w = e.wandler->sicht();
     s.baud_nenn        = w.format.baud_nenn;

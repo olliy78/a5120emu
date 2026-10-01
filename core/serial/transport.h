@@ -43,6 +43,31 @@ namespace k1520::serial {
 /// `k1520_version()` (`core/version.h`).
 std::string signaturText();
 
+/// Bits der Leitungen der Gegenseite (↔ `K1520_SER_L_*` der C-ABI).
+namespace gegenleitung {
+constexpr uint8_t RTS = 0x01, DTR = 0x02, CTS = 0x04, DSR = 0x08, DCD = 0x10, RI = 0x20;
+}
+
+/// Was RFC 2217 von der Gegenseite verrät (AP-S11).  Je Rolle:
+///   - Server (Gegenseite = Client): Format = zuletzt GEWÜNSCHTE Werte (SET-DATASIZE/-PARITY/
+///     -STOPSIZE); Leitungen = RTS, DTR des Clients (SET-CONTROL), bekannt ab dem ersten
+///     SET-CONTROL der jeweiligen Leitung.  CTS/DSR/DCD/RI des Clients sind nicht zu sehen.
+///   - Client (Gegenseite = Server): Format = Antwortwerte des Servers auf unsere SET-*;
+///     Leitungen = CTS, DSR, DCD, RI aus NOTIFY-MODEMSTATE (ab der ersten Meldung).
+///     RTS/DTR des Servers sind nicht zu sehen.
+/// Telnet und Datei: nichts bekannt.  Ein Wert in `leitungen` zählt nur, wenn sein Bit in
+/// `leitungenBekannt` steht.
+struct GegenseiteStand {
+    uint8_t daten = 0;          ///< 5..8; 0 = unbekannt
+    uint8_t paritaet = 0;       ///< 0 N, 1 O, 2 E, 3 Mark, 4 Space (gültig nur mit `paritaetBekannt`)
+    uint8_t stoppHalbe = 0;     ///< halbe Stoppbits (2, 3, 4); 0 = unbekannt
+    bool paritaetBekannt = false;
+    bool formatBekannt() const { return daten != 0 && paritaetBekannt && stoppHalbe != 0; }
+    bool formatAbweichend = false;   ///< Format bekannt und ≠ Gastformat (ohne Baud)
+    uint8_t leitungen = 0;
+    uint8_t leitungenBekannt = 0;
+};
+
 class NetzTransport {
 public:
     virtual ~NetzTransport() = default;
@@ -61,6 +86,8 @@ public:
     /// Baud der Gegenseite (RFC 2217), 0 = unbekannt; und ob sie vom Gast abweicht.
     virtual uint32_t baudGegenseite() const { return 0; }
     virtual bool baudAbweichend() const { return false; }
+    /// Format und Leitungen der Gegenseite (RFC 2217, AP-S11).
+    virtual GegenseiteStand gegenseite() const { return {}; }
 };
 
 /// Nur Nutzdaten (§7.4).  Eingänge = „verbunden".
@@ -91,8 +118,10 @@ public:
     bool sendenAngehalten() const override { return angehalten_; }
     uint32_t baudGegenseite() const override { return baudGegenseite_; }
     bool baudAbweichend() const override { return abweichend_; }
+    GegenseiteStand gegenseite() const override;
 
 private:
+    void formatVergleichen(const SerialFormat& gast);
     bool client() const { return codec_.rolle() == ::serial::TelnetRolle::Client; }
     void sendeFormat(const SerialFormat& f);                   // Client
     uint8_t modemByte(const WandlerSicht& s, bool v24) const;  // Server (gekreuzt)
@@ -106,6 +135,13 @@ private:
     // Client: was zuletzt gemeldet wurde.
     uint32_t formatStand_ = 0;
     uint32_t gesendeteBaud_ = 0;
+    // AP-S11: Format der Gegenseite (Server: Wunsch des Clients; Client: Antwort des Servers),
+    // dazu bei Client das zuletzt gesendete Format zum Vergleich.
+    GegenseiteStand fern_;
+    uint8_t gesendetDaten_ = 0, gesendetParitaet_ = 0, gesendetStopp_ = 0;
+    bool fernRtsBekannt_ = false, fernDtrBekannt_ = false;
+    uint8_t fernModem_ = 0;       ///< Client: letztes MODEMSTATE
+    bool fernModemBekannt_ = false;
     bool rtsGemeldet_ = false, dtrGemeldet_ = false, brkGemeldet_ = false, xonGemeldet_ = false;
     // Server: Leitungen des Clients und was wir gemeldet haben.
     bool fernRts_ = true, fernDtr_ = true;

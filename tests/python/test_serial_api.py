@@ -284,3 +284,34 @@ def test_old_callback_and_send_go_through_the_guest_and_come_back(emulator, temp
     B._lib.k1520_serial_send(emu._handle, 0, 0x42)
     emu.run(300_000)
     assert dfu == daten
+
+
+def _sb(*daten):
+    """Telnet-Unterverhandlung der COM-PORT-Option (44) mit verdoppeltem IAC."""
+    koerper = b"".join(bytes([d]) + (b"\xff" if d == 255 else b"") for d in daten)
+    return b"\xff\xfa\x2c" + koerper + b"\xff\xf0"
+
+
+def test_rfc2217_status_shows_format_and_lines_of_the_far_side(emu):
+    """AP-S11: Server-Rolle — Format und RTS/DTR des Clients, abgeleitete Texte."""
+    assert emu.serial_configure(0, betriebsart=B.SER_RFC2217, rolle=B.SER_SERVER,
+                                port=freier_port(), loop=False)
+    assert emu.serial_start(0)
+    st = emu.serial_status(0)
+    with socket.create_connection(("127.0.0.1", st.port_aktiv), timeout=3) as c:
+        assert warte(lambda: emu.serial_status(0).zustand == B.SER_VERBUNDEN)
+        s = emu.serial_status(0)
+        assert s.format_gegenseite_text is None and s.leitungen_gegenseite_text is None
+        assert s.leitung_gegenseite(B.SER_L_RTS) is None
+        c.sendall(b"\xff\xfb\x2c" + _sb(2, 7) + _sb(3, 3) + _sb(4, 1)    # 7E1
+                  + _sb(5, 11) + _sb(5, 9))                             # RTS an, DTR aus
+        assert warte(lambda: emu.serial_status(0).format_gegenseite_bekannt)
+        assert warte(lambda: emu.serial_status(0).leitungen_gegenseite_bekannt == 3)
+        s = emu.serial_status(0)
+        assert s.format_gegenseite_text == "7E1"
+        assert s.leitung_gegenseite(B.SER_L_RTS) is True
+        assert s.leitung_gegenseite(B.SER_L_DTR) is False
+        assert s.leitung_gegenseite(B.SER_L_CTS) is None                # Rolle kennt sie nicht
+        assert s.leitungen_gegenseite_text == "RTS"
+        assert s.leitungen_gegenseite == B.SER_L_RTS
+        assert s.format_abweichend == (s.format_gegenseite_text != "8N1")   # Gast: 8N1 im Ruhezustand

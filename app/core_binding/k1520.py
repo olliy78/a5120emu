@@ -401,7 +401,21 @@ class K1520SerStatus(ctypes.Structure):
                 ("port_vorschlag", ctypes.c_uint16),
                 ("rolle", ctypes.c_int),
                 ("betriebsart", ctypes.c_int),
-                ("versuche", ctypes.c_uint32)]
+                ("versuche", ctypes.c_uint32),
+                ("daten_gegenseite", ctypes.c_uint8),
+                ("paritaet_gegenseite", ctypes.c_uint8),
+                ("stopp_halbe_gegenseite", ctypes.c_uint8),
+                ("format_gegenseite_bekannt", ctypes.c_bool),
+                ("format_abweichend", ctypes.c_bool),
+                ("leitungen_gegenseite", ctypes.c_uint8),
+                ("leitungen_gegenseite_bekannt", ctypes.c_uint8)]
+
+
+# Bits von leitungen_gegenseite(_bekannt) und Paritaet der Gegenseite (AP-S11)
+SER_L_RTS, SER_L_DTR, SER_L_CTS, SER_L_DSR, SER_L_DCD, SER_L_RI = 0x01, 0x02, 0x04, 0x08, 0x10, 0x20
+SER_PAR_KEINE, SER_PAR_UNGERADE, SER_PAR_GERADE, SER_PAR_MARK, SER_PAR_SPACE = 0, 1, 2, 3, 4
+_LEITUNG_NAMEN = (("RTS", SER_L_RTS), ("DTR", SER_L_DTR), ("CTS", SER_L_CTS),
+                  ("DSR", SER_L_DSR), ("DCD", SER_L_DCD), ("RI", SER_L_RI))
 
 
 _lib.k1520_serial_count.argtypes = [K1520Handle]
@@ -485,6 +499,38 @@ class SerialStatus:
     rolle: int
     betriebsart: int
     versuche: int
+    # AP-S11 (RFC 2217; Bedeutung je Rolle: Header k1520_api.h, K1520SerStatus)
+    daten_gegenseite: int = 0
+    paritaet_gegenseite: int = 0
+    stopp_halbe_gegenseite: int = 0
+    format_gegenseite_bekannt: bool = False
+    format_abweichend: bool = False
+    leitungen_gegenseite: int = 0
+    leitungen_gegenseite_bekannt: int = 0
+
+    @property
+    def format_gegenseite_text(self) -> Optional[str]:
+        """Format der Gegenseite als ``8N1``/``7E1``/``8O2``/``8N1.5``; ``None`` = unbekannt."""
+        if not self.format_gegenseite_bekannt:
+            return None
+        par = "NOEMS"[self.paritaet_gegenseite] if 0 <= self.paritaet_gegenseite <= 4 else "?"
+        stopp = {2: "1", 3: "1.5", 4: "2"}.get(self.stopp_halbe_gegenseite, "?")
+        return f"{self.daten_gegenseite}{par}{stopp}"
+
+    def leitung_gegenseite(self, bit: int) -> Optional[bool]:
+        """Zustand einer Leitung der Gegenseite (``SER_L_*``); ``None`` = unbekannt."""
+        if not self.leitungen_gegenseite_bekannt & bit:
+            return None
+        return bool(self.leitungen_gegenseite & bit)
+
+    @property
+    def leitungen_gegenseite_text(self) -> Optional[str]:
+        """Aktive bekannte Leitungen, z. B. ``"RTS DTR"``; ``""`` = bekannt, keine aktiv;
+        ``None`` = nichts bekannt."""
+        if not self.leitungen_gegenseite_bekannt:
+            return None
+        return " ".join(n for n, b in _LEITUNG_NAMEN
+                        if self.leitungen_gegenseite_bekannt & self.leitungen_gegenseite & b)
 
 
 def classify_host(host: str) -> int:
