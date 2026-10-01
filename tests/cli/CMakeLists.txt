@@ -65,8 +65,12 @@ set_tests_properties(cli_sertest_com_passt_zur_quelle PROPERTIES
 # Wächter „die Bootdisketten in disks/ tragen die aktuelle SERTEST.COM": sie gehen
 # als Beispieldisketten ins Paket; nach einem Neubau der .com liefert es sonst eine
 # alte Fassung aus.  Nachziehen: python3 tools/sertest/disketten.py --tool <k1520disktool>
+set(_sertest_emulator "")
+foreach(_e IN LISTS CMAKE_CROSSCOMPILING_EMULATOR)   # Cross-Bau: .exe unter wine
+    list(APPEND _sertest_emulator --emulator "${_e}")
+endforeach()
 add_test(NAME cli_sertest_auf_den_disketten
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/sertest/disketten.py"
-            --check --tool "$<TARGET_FILE:k1520disktool>")
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_sertest_emulator})
 set_tests_properties(cli_sertest_auf_den_disketten PROPERTIES
     TIMEOUT 120 LABELS "cli;fast")

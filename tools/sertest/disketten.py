@@ -45,7 +45,8 @@ DISKETTEN = [
 
 
 def tool(disktool, *args):
-    return subprocess.run([disktool, *args], capture_output=True, text=True,
+    # disktool = Befehlszeile als Liste (Emulator wie `wine` + Programm)
+    return subprocess.run([*disktool, *args], capture_output=True, text=True,
                           errors='replace')
 
 
@@ -65,12 +66,15 @@ def lies(disktool, abbild, tmp):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument('--tool', required=True, help='Pfad zu k1520disktool')
+    ap.add_argument('--emulator', action='append', default=[],
+                    help='davor zu setzender Starter (Cross-Bau: wine; wiederholbar)')
     ap.add_argument('--check', action='store_true', help='nur vergleichen')
     ap.add_argument('--ordner', default=os.path.join(REPO, 'disks'),
                     help='Diskettenordner (Vorgabe: disks/)')
     ap.add_argument('--nur', nargs='+', metavar='NAME', default=DISKETTEN,
                     help='nur diese Disketten (Vorgabe: alle aus DISKETTEN)')
     a = ap.parse_args()
+    a.tool = [*a.emulator, a.tool]
 
     with open(COM, 'rb') as f:
         soll = f.read()
