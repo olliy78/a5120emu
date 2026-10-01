@@ -105,6 +105,11 @@ void Z80SIO::Channel::reset() {
     rx_fifo.clear();
     tx_buf.reset();
     irq_rx = irq_tx = irq_ext = false;
+    // Die aus WR1 abgeleiteten Freigaben gehören zu WR1 und gehen mit ihm (sonst
+    // unterbräche ein Kanal nach Channel Reset weiter im alten Empfangsmodus).
+    ext_int_enable = tx_int_enable = status_affects_vector = false;
+    rx_int_mode = SIORxIntMode::DISABLED;
+    rx_int_first_only = false;
     last_rx = 0x00;
     // Die Eingänge (cts_, dcd_, break_rx_) sind Pins und bleiben; nur das Latch
     // geht.  rr0 = 04H wie bisher, solange kein Eingang aktiv ist (Vorgabe).
@@ -171,9 +176,19 @@ bool Z80SIO::Channel::empfaengerFrei() const {
 }
 
 bool Z80SIO::Channel::rxIntEnabled() const {
-    // WR1 bits[3:2]: 10 or 11 = interrupt on all received
-    uint8_t rx_mode = (wr[1] >> 2) & 0x03;
-    return rx_mode >= 2;
+    // WR1 D4–D3: 10 = jedes Zeichen (Parität beeinflusst den Vektor), 11 = jedes
+    // Zeichen (Parität ohne Einfluss) — beide unterbrechen bei jedem Zeichen.
+    return rx_int_mode == SIORxIntMode::ALL_CHARS ||
+           rx_int_mode == SIORxIntMode::SPECIAL_CONDITION;
+}
+
+bool Z80SIO::Channel::rxIntFaellig() {
+    if (rxIntEnabled()) return true;
+    if (rx_int_mode == SIORxIntMode::FIRST_CHAR && rx_int_first_only) {
+        rx_int_first_only = false;
+        return true;
+    }
+    return false;
 }
 
 bool Z80SIO::Channel::txIntEnabled() const {
@@ -195,11 +210,7 @@ void Z80SIO::Channel::rxByte(uint8_t byte) {
         rr1 |= 0x08; // Overrun
     }
     updateRR0();
-    if (rxIntEnabled())
-        irq_rx = true;
-    // First-received mode: interrupt only on first byte in empty FIFO
-    uint8_t rx_mode = (wr[1] >> 2) & 0x03;
-    if (rx_mode == 1 && rx_fifo.size() == 1)
+    if (rxIntFaellig())
         irq_rx = true;
 }
 
@@ -628,6 +639,8 @@ void Z80SIO::processWR1(Channel& ch, uint8_t data, bool is_b) {
     // Rx Int Mode (D4:D3)
     uint8_t rx_mode = (data >> 3) & 0x03;
     ch.rx_int_mode = static_cast<SIORxIntMode>(rx_mode);
+    // Betriebsart 01 ist nach dem Setzen für das nächste Zeichen scharf (Datenblatt).
+    ch.rx_int_first_only = (ch.rx_int_mode == SIORxIntMode::FIRST_CHAR);
 
     // WAIT/READY mode (D7:D5) - not implemented in basic emulation
 }
@@ -856,8 +869,7 @@ void Z80SIO::asyncReceive(Channel& ch, bool bit) {
                     ch.updateRR0();
 
                     // Trigger interrupt
-                    if (ch.rx_int_mode == SIORxIntMode::ALL_CHARS ||
-                        (ch.rx_int_mode == SIORxIntMode::FIRST_CHAR && ch.rx_fifo.size() == 1)) {
+                    if (ch.rxIntFaellig()) {
                         ch.irq_rx = true;
                     }
                 } else {
@@ -917,7 +929,7 @@ void Z80SIO::syncReceive(Channel& ch, bool bit) {
                 ch.rx_fifo.push_back(data);
                 ch.updateRR0();
 
-                if (ch.rx_int_mode != SIORxIntMode::DISABLED) {
+                if (ch.rxIntFaellig()) {
                     ch.irq_rx = true;
                 }
             } else {
@@ -1040,7 +1052,7 @@ void Z80SIO::sdlcReceive(Channel& ch, bool bit) {
                 ch.rx_fifo.push_back(data);
                 ch.updateRR0();
 
-                if (ch.rx_int_mode != SIORxIntMode::DISABLED) {
+                if (ch.rxIntFaellig()) {
                     ch.irq_rx = true;
                 }
             } else {

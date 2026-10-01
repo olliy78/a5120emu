@@ -210,21 +210,95 @@ TEST(Z80SIO, TX_Interrupt_EnabledAfterTxGet) {
 
 /**
  * @test Z80SIO/RX_Interrupt_AllReceivedMode
- * @brief With WR1 bits[3:2] = 10 (interrupt on all received), rxByte() triggers hasInterrupt().
- * @par Pass criterion  hasInterrupt() == false before rxByte(); == true after rxByte().
+ * @brief WR1 D4–D3 = 10 (jedes Zeichen, Parität beeinflusst den Vektor): jedes
+ *        empfangene Zeichen fordert den Interrupt an.
+ * @details Bis 2026-10-01 las `rxIntEnabled()` D3–D2; der Test schrieb damals 08H und
+ *          hielt damit die falsche Lesart fest (08H ist nach Datenblatt Betriebsart 01).
  */
 TEST(Z80SIO, RX_Interrupt_AllReceivedMode) {
     Z80SIO sio;
     sio.setIEI(true);
-
-    // WR1 bits[3:2] = 10 → interrupt on all received characters
-    sio.ioWrite(1, 0x01); // select WR1
-    sio.ioWrite(1, 0x08); // bits[3:2]=10
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x10);              // WR1 D4–D3 = 10
 
     EXPECT_FALSE(sio.hasInterrupt());
-
     sio.channelA().rxByte(0x7F);
     EXPECT_TRUE(sio.hasInterrupt());
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_WR1_JedeBetriebsartNachDatenblatt
+ * @brief Entscheidend ist WR1 D4–D3, nicht D3–D2 (Befund AP-S3/AP-T1a, behoben im
+ *        Rahmen von Entwurf 19).  Gegen die alte Lesart trennen 10H/13H (an, alt: aus),
+ *        04H/1CH… und 00H; D2 (Status Affects Vector) darf nichts freigeben.
+ */
+TEST(Z80SIO, RX_Interrupt_WR1_JedeBetriebsartNachDatenblatt) {
+    struct Fall { uint8_t wr1; bool jedes; const char* was; };
+    const Fall faelle[] = {
+        {0x00, false, "00 aus"},
+        {0x04, false, "nur D2 (SAV) — kein Empfangsinterrupt"},
+        {0x10, true,  "10 jedes Zeichen"},
+        {0x13, true,  "10 + Ext + Tx (BIOS-typisch) — alte Lesart: aus"},
+        {0x14, true,  "10 + SAV"},
+        {0x18, true,  "11 jedes Zeichen, Parität ohne Einfluss"},
+        {0x1C, true,  "11 + SAV"},
+    };
+    for (const Fall& f : faelle) {
+        Z80SIO sio;
+        sio.setIEI(true);
+        sio.ioWrite(3, 0x01);
+        sio.ioWrite(3, f.wr1);         // Kanal B (dort wirkt auch D2)
+        for (int i = 0; i < 2; ++i) {
+            sio.channelB().rxByte(static_cast<uint8_t>(0x41 + i));
+            EXPECT_EQ(sio.hasInterrupt(), f.jedes) << f.was << ", Zeichen " << i;
+            if (sio.hasInterrupt()) { (void)sio.getVector(); sio.onRETI(); sio.setIEI(true); }
+            sio.ioRead(2);             // Zeichen abholen
+            sio.channelB().irq_rx = false;
+        }
+    }
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_ErstesZeichen_EinmalJeScharfmachen
+ * @brief Betriebsart 01 (WR1 = 08H): nur das erste Zeichen nach dem Setzen der
+ *        Betriebsart unterbricht; danach erst wieder nach WR0-Befehl 4 („Enable Int
+ *        on Next Rx Character", 20H).  Vorher: jedes Zeichen in einen leeren FIFO.
+ */
+TEST(Z80SIO, RX_Interrupt_ErstesZeichen_EinmalJeScharfmachen) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x08);              // WR1 D4–D3 = 01
+    auto ch = [&]() -> Z80SIO::Channel& { return sio.channelA(); };
+
+    ch().rxByte(0x31);
+    EXPECT_TRUE(sio.hasInterrupt()) << "erstes Zeichen";
+    (void)sio.getVector(); sio.onRETI(); sio.setIEI(true);
+    ch().irq_rx = false;
+    sio.ioRead(0);                     // FIFO wieder leer
+
+    ch().rxByte(0x32);
+    EXPECT_FALSE(sio.hasInterrupt()) << "zweites Zeichen in leeren FIFO: kein Interrupt";
+    sio.ioRead(0);
+
+    sio.ioWrite(1, 0x20);              // WR0: Befehl 4 = Enable Int on Next Rx Char
+    ch().rxByte(0x33);
+    EXPECT_TRUE(sio.hasInterrupt()) << "nach Befehl 4 wieder scharf";
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_KanalResetLoeschtDieFreigabe
+ * @brief Channel Reset (WR0 = 18H) löscht WR1 — auch die daraus abgeleitete
+ *        Empfangsbetriebsart (vorher stand nur `wr[]` auf 0, `rx_int_mode` blieb).
+ */
+TEST(Z80SIO, RX_Interrupt_KanalResetLoeschtDieFreigabe) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x13);
+    sio.ioWrite(1, 0x18);              // Channel Reset
+    sio.channelA().rxByte(0x41);
+    EXPECT_FALSE(sio.hasInterrupt());
 }
 
 // ─── Interrupt vector from WR2 ────────────────────────────────────────────────
@@ -765,9 +839,7 @@ TEST(Z80SIO, StatusAffectsVector_AlleSechsQuellen) {
     sio.setIEI(true);
     sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 = D0H
     sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x17);   // Ch B WR1: Ext, Tx, SAV, Rx
-    // Ch A WR1 = 17H wie B (D2 wirkt nur an B): D4–3 = 10 UND D3–2 = 01 — Rx-Interrupt
-    // frei, gleich ob man D4–3 (Datenblatt) oder D3–2 (rxIntEnabled(), bekannter
-    // Befund aus AP-S3, Entwurf 19 §12.1) liest.  Mit 13H läge der Test auf dem Befund.
+    // Ch A WR1 = 17H wie B (D2 wirkt nur an B), D4–D3 = 10: Rx-Interrupt frei.
     sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x17);
     auto quittiere = [&] { sio.onRETI(); sio.setIEI(true); };
 

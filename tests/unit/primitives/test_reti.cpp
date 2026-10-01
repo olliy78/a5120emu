@@ -46,7 +46,10 @@ void armPio(Z80PIO& pio, uint8_t vector) {
 void armSio(Z80SIO& sio) {
     sio.setIEI(true);
     sio.ioWrite(1, 0x01);   // WR0 (Kanal A): Zeiger auf WR1
-    sio.ioWrite(1, 0x08);   // WR1 Bits[4:3]=01 → Interrupt beim ersten Zeichen
+    // WR1 D4–D3 = 10 → Interrupt bei JEDEM Zeichen.  Bis 2026-10-01 stand hier 08H
+    // („erstes Zeichen"); die Fälle unten erwarten aber, dass das zweite Zeichen nach
+    // dem RETI wieder anfordert — das trug nur die falsche Lesart D3–D2 der SIO.
+    sio.ioWrite(1, 0x10);
     sio.ioWrite(3, 0x01);   // WR0 (Kanal B): Zeiger auf WR1
     sio.ioWrite(3, 0x04);   // WR1 Bit2: „status affects vector“ (nur Kanal B wirkt)
     sio.ioWrite(3, 0x02);   // WR0 (Kanal B): Zeiger auf WR2

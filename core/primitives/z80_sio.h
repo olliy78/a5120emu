@@ -325,6 +325,9 @@ public:
         // ─── Interrupt control ──────────────────────────────────────────────
         bool ext_int_enable = false;
         bool tx_int_enable = false;
+        /// Betriebsart „Interrupt beim ersten Zeichen" (WR1 D4–D3 = 01): scharf nach dem
+        /// Setzen der Betriebsart und nach WR0-Befehl 4 („Enable Int on Next Rx
+        /// Character"), vom nächsten empfangenen Zeichen verbraucht.
         bool rx_int_first_only = false;
         bool status_affects_vector = false;
 
@@ -366,10 +369,21 @@ public:
         void updateRR0();
         
         /**
-         * @brief Check if receive interrupts are enabled.
-         * @return true if enabled.
+         * @brief Empfangsinterrupt bei JEDEM Zeichen frei (WR1 D4–D3 = 10 oder 11)?
+         *
+         * Maßgeblich ist `rx_int_mode` aus processWR1 — bis 2026-10-01 las diese
+         * Funktion D3–D2 statt D4–D3 und ließ 10H/13H ohne Empfangsinterrupt.
          */
         bool rxIntEnabled() const;
+
+        /**
+         * @brief Löst ein soeben in den FIFO gelegtes Zeichen den Empfangsinterrupt aus?
+         *
+         * Eine Stelle für alle Empfangswege (asynchron, synchron, SDLC): „jedes
+         * Zeichen" (10/11) oder „erstes Zeichen" (01, einmal je Scharfmachen).
+         * Verbraucht die Scharfstellung der Betriebsart 01.
+         */
+        bool rxIntFaellig();
         
         /**
          * @brief Check if transmit interrupts are enabled.
