@@ -409,9 +409,10 @@ class KeyboardWidget(QWidget):
     """Anklickbare Nachbildung der K7637-Tastatur.
 
     Emittiert für jede betätigte Taste :attr:`keyPressed` (mit Shift-/Ctrl-Zustand)
-    und beim Loslassen :attr:`keyReleased`.  (Eine Tastenwiederholung entsteht
-    daraus nicht: die Wiederholung des K7637-Modells hängt an ``tick()``, das der
-    laufende Rechner nicht aufruft.)
+    und beim Loslassen :attr:`keyReleased`.  Die Tastenwiederholung macht der
+    Kern selbst, wie die echte K7637 nur für ihre Dauerfunktionstasten
+    (Leertaste, Kursortasten — doc/design/08_k7637_keyboard.md §2.2a); die
+    Wiederholung der Host-Tastatur wird deshalb verworfen.
 
     SHIFT und CTRL/ET2 wirken auf genau die nächste Taste, LOCK bleibt gesetzt
     (wie auf der echten Tastatur, die mit SHIFT zurückgeschaltet wird).

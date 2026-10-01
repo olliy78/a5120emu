@@ -45,8 +45,9 @@ void K7637::serialize(std::vector<uint8_t>& out) const {
     putPod(out, pressed_scancode_);
     putPod(out, shift_);
     putPod(out, ctrl_);
-    putPod(out, repeat_delay_ms_);
-    putPod(out, repeat_period_ms_);
+    // Früher zwei int-Zähler (ms) an dieser Stelle — gleich breit, das
+    // Snapshot-Layout bleibt damit unverändert.
+    putPod(out, repeat_due_cycle_);
     putPod(out, led_mask_);
     putPod(out, edge_acc_);
     putPod(out, beep_until_cycle_);
@@ -63,8 +64,7 @@ bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
     ok = ok && getPod(p, end, pressed_scancode_);
     ok = ok && getPod(p, end, shift_);
     ok = ok && getPod(p, end, ctrl_);
-    ok = ok && getPod(p, end, repeat_delay_ms_);
-    ok = ok && getPod(p, end, repeat_period_ms_);
+    ok = ok && getPod(p, end, repeat_due_cycle_);
     ok = ok && getPod(p, end, led_mask_);
     ok = ok && getPod(p, end, edge_acc_);
     ok = ok && getPod(p, end, beep_until_cycle_);
@@ -82,16 +82,28 @@ bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
     return ok;
 }
 
+bool K7637::isRepeatCode(uint8_t code) {
+    // ROM robotron-k7637_50-2716.bin, 650H (CTAB1) = 760H (CTAB2):
+    //   20 95 96 94 97 5F 00 … — Leertaste, Kursor ab/links/auf/rechts, 5FH.
+    // Die 00-Einträge sind unbelegt (Code 00H wird nie ausgegeben).
+    switch (code) {
+        case 0x20: case 0x94: case 0x95: case 0x96: case 0x97: case 0x5F:
+            return true;
+        default:
+            return false;
+    }
+}
+
 void K7637::keyPress(int qt_keycode, bool shift, bool ctrl) {
     uint8_t code = translateKey(qt_keycode, shift, ctrl);
 
-    // Record the held key for auto-repeat.
+    // „Jede weitere zu einer Dauerfunktion gedrückte Taste beendet die
+    // Dauerfunktion" — die neue Taste ersetzt die gehaltene.
     pressed_key_      = qt_keycode;
     pressed_scancode_ = code;
     shift_ = shift;
     ctrl_  = ctrl;
-    repeat_delay_ms_  = REPEAT_DELAY_MS;
-    repeat_period_ms_ = 0;
+    repeat_due_cycle_ = isRepeatCode(code) ? cur_cycle_ + REPEAT_DELAY_CYCLES : 0;
 
     sendByte(code);
 }
@@ -100,40 +112,8 @@ void K7637::keyRelease(int qt_keycode) {
     if (pressed_key_ == qt_keycode) {
         pressed_key_      = 0;
         pressed_scancode_ = 0;
-        repeat_delay_ms_  = 0;
-        repeat_period_ms_ = 0;
+        repeat_due_cycle_ = 0;
     }
-}
-
-void K7637::tick(int ms_elapsed) {
-    if (pressed_key_ != 0) {
-        if (repeat_delay_ms_ > 0) {
-            // Still in the initial delay phase.
-            repeat_delay_ms_ -= ms_elapsed;
-            if (repeat_delay_ms_ <= 0) {
-                // Delay expired: fire the first auto-repeat.
-                sendByte(pressed_scancode_);
-                // Switch to period phase; absorb any overshoot.
-                repeat_period_ms_ = REPEAT_PERIOD_MS + repeat_delay_ms_;
-                if (repeat_period_ms_ <= 0) {
-                    // Overshoot ate a whole period too – fire again and reset.
-                    sendByte(pressed_scancode_);
-                    repeat_period_ms_ = REPEAT_PERIOD_MS;
-                }
-                repeat_delay_ms_ = 0; // signal: we are now in period phase
-            }
-        } else {
-            // Period phase.
-            repeat_period_ms_ -= ms_elapsed;
-            while (repeat_period_ms_ <= 0) {
-                sendByte(pressed_scancode_);
-                repeat_period_ms_ += REPEAT_PERIOD_MS;
-            }
-        }
-    }
-
-    // Drain any command bytes the K8025 sent to us.
-    processTxCommands();
 }
 
 int K7637::fallingEdges(uint8_t byte) {
@@ -299,11 +279,11 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     return 0x00;
 }
 
-void K7637::sendByte(uint8_t byte) {
+void K7637::sendByteAt(uint8_t byte, uint64_t at_cycle) {
     // Model the 9600-baud serial line: the byte is not available to the host
     // until its transmission completes, and bytes serialise one after another.
     // service() releases them into the SIO RX FIFO once their time has come.
-    uint64_t start   = std::max(cur_cycle_, next_tx_cycle_);
+    uint64_t start   = std::max(at_cycle, next_tx_cycle_);
     uint64_t release = start + SERIAL_BYTE_CYCLES;
     tx_queue_.push_back({release, byte});
     next_tx_cycle_ = release;
@@ -312,6 +292,16 @@ void K7637::sendByte(uint8_t byte) {
 bool K7637::service(uint64_t now_cycles) {
     cur_cycle_ = now_cycles;
     bool touched = false;
+    // Dauerfunktion: solange die Taste gehalten ist, alle 100 ms erneut senden.
+    // Nur Dauerfunktionscodes setzen repeat_due_cycle_ (s. keyPress).
+    if (repeat_due_cycle_ != 0 && now_cycles >= repeat_due_cycle_) {
+        while (repeat_due_cycle_ <= now_cycles) {
+            // Ab dem FÄLLIGKEITStakt senden, nicht ab „jetzt" — sonst hinge
+            // die Wiederholzeit davon ab, wie oft service() gerufen wird.
+            sendByteAt(pressed_scancode_, repeat_due_cycle_);
+            repeat_due_cycle_ += REPEAT_PERIOD_CYCLES;
+        }
+    }
     // Deliver every byte whose serial transmission has completed.
     while (!tx_queue_.empty() && tx_queue_.front().first <= now_cycles) {
         uint8_t b = tx_queue_.front().second;

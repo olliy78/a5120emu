@@ -691,6 +691,60 @@ TEST(KeyboardIntegration, TypeCommandAtCcpEchoesAndProcesses) {
         << "Screen:\n" << screen;
 }
 
+// ─── Dauerfunktion der K7637: nur bestimmte Tasten wiederholen (AP-S9) ─────────────
+//
+// Befund am echten A5120 unter CP/A: eine GEHALTENE Leertaste wiederholt, eine
+// gehaltene Buchstabentaste nicht.  Ursache ist die Tastatur selbst — die K7637
+// wiederholt nur die bis zu 16 „Dauerfunktionscodes" ihrer Codetabelle
+// (Handbuch §2.2.2; ROM 650H: 20H 95H 96H 94H 97H 5FH), nach 500 ms im Abstand
+// von 100 ms.  Der Emulator wiederholte gar nicht: die Zeitbasis der Wiederholung
+// (`K7637::tick`) rief der laufende Rechner nie auf.
+//
+// Prüfung am CCP: „Q", Leertaste 1,5 s, „A" 1,5 s, „Z" — erwartet wird
+// „Q" + mehrere Leerzeichen + genau EIN „A" + „Z".
+TEST(KeyboardIntegration, HeldSpaceRepeatsHeldLetterDoesNot) {
+    TempDisk disk("cpa_cpa780_k5601_clock.img");
+    A5120Machine machine;
+    machine.powerOn();
+    ASSERT_TRUE(machine.mountDisk(0, disk.path(), "cpa780", /*wp=*/false))
+        << machine.lastError();
+
+    ASSERT_TRUE(runSmallUntil(machine, "Bitte Uhrzeit eingeben!", 40'000'000));
+    runCycles(machine, 2'000'000);
+    typeString(machine, "120000");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "A>", 60'000'000));
+    runCycles(machine, 12'000'000);
+
+    constexpr long long kHold = 3'750'000;   // 1,5 s bei 2,5 MHz
+    auto hold = [&](uint32_t key) {
+        machine.keyPress(key, /*shift=*/false, /*ctrl=*/false);
+        runCycles(machine, kHold);
+        machine.keyRelease(key);
+        runCycles(machine, 1'000'000);
+    };
+
+    typeKey(machine, 'Q');
+    hold(' ');
+    hold('A');
+    typeKey(machine, 'Z');
+    runCycles(machine, 2'000'000);
+
+    const std::string screen = vramText(machine);
+    const size_t q = screen.rfind('Q');
+    ASSERT_NE(q, std::string::npos) << k1520test::vramLines(machine);
+    size_t i = q + 1;
+    while (i < screen.size() && screen[i] == ' ') ++i;
+    const size_t spaces = i - (q + 1);
+    // 1 Anschlag + Wiederholung ab 500 ms alle 100 ms über 1,5 s ≈ 12.
+    EXPECT_GE(spaces, 8u) << "gehaltene Leertaste wiederholt nicht\n"
+                          << k1520test::vramLines(machine);
+    EXPECT_LE(spaces, 14u) << k1520test::vramLines(machine);
+    EXPECT_EQ(screen.compare(i, 2, "AZ"), 0)
+        << "gehaltene Buchstabentaste darf NICHT wiederholen\n"
+        << k1520test::vramLines(machine);
+}
+
 // ─── SCPX 1526 — Boot + interaktives DIR/STAT/PIP (.COM-Laden über den Held-Bus) ─────
 //
 // disks/scpx17_cpa780_k5601.hfe (SCPX 1526 V1.7, ROBOTRON-Loader / SYL-Format) bootet vollautomatisch

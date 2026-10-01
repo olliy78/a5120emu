@@ -57,6 +57,7 @@
 #include <gtest/gtest.h>
 #include "core/peripherals/k7637/k7637.h"
 #include <ios>
+#include <algorithm>
 #include <initializer_list>
 
 // Qt keycode constants (must match k7637.h / k7637.cpp)
@@ -74,7 +75,7 @@ static constexpr int QK_DOWN      = 0x01000015;
 static constexpr int QK_F1        = 0x01000030;
 
 // The K7637 models the 9600-baud serial link: bytes are not delivered to the
-// SIO RX the instant keyPress()/tick()/processTxCommands() run — they are
+// SIO RX the instant keyPress()/processTxCommands() run — they are
 // released by service() once their transmission time has elapsed.  These tests
 // therefore advance a monotonically increasing cycle clock and call service()
 // to flush the queue before inspecting the SIO.  The increment is far larger
@@ -312,6 +313,10 @@ TEST(K7637, CursorUp_Sends_0x94) {
     K7637 kb;
     kb.connect(sio, 0);
 
+    // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
+    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
+    // hinweg als länger als 500 ms gehalten.
+    kb.service(g_clk);
     kb.keyPress(QK_UP, false, false);
 
     auto bytes = drainRx(kb, sio);
@@ -330,6 +335,10 @@ TEST(K7637, CursorDown_Sends_0x95) {
     K7637 kb;
     kb.connect(sio, 0);
 
+    // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
+    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
+    // hinweg als länger als 500 ms gehalten.
+    kb.service(g_clk);
     kb.keyPress(QK_DOWN, false, false);
 
     auto bytes = drainRx(kb, sio);
@@ -348,6 +357,10 @@ TEST(K7637, CursorLeft_Sends_0x96) {
     K7637 kb;
     kb.connect(sio, 0);
 
+    // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
+    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
+    // hinweg als länger als 500 ms gehalten.
+    kb.service(g_clk);
     kb.keyPress(QK_LEFT, false, false);
 
     auto bytes = drainRx(kb, sio);
@@ -366,6 +379,10 @@ TEST(K7637, CursorRight_Sends_0x97) {
     K7637 kb;
     kb.connect(sio, 0);
 
+    // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
+    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
+    // hinweg als länger als 500 ms gehalten.
+    kb.service(g_clk);
     kb.keyPress(QK_RIGHT, false, false);
 
     auto bytes = drainRx(kb, sio);
@@ -477,94 +494,125 @@ TEST(K7637, RawCode_IgnoresCtrl) {
     EXPECT_EQ(bytes[0], 0xC1);
 }
 
-// ─── Key repeat ───────────────────────────────────────────────────────────────
+// ─── Dauerfunktion (Tastenwiederholung) ──────────────────────────────────────
+//
+// Die K7637 wiederholt NUR ihre Dauerfunktionscodes (Handbuch §2.2.2, ROM 650H:
+// 20H 95H 96H 94H 97H 5FH) — nach ≈500 ms, dann alle ≈100 ms.  Die Zeit ist
+// Maschinenzeit: service(now_cycles) treibt sie, 2500 Takte = 1 ms.
+
+namespace {
+constexpr uint64_t kMs = K7637::CYCLES_PER_MS;
+
+// Tastatur + SIO mit eigener Uhr.  bis() lässt die Zeit in 1-ms-Schritten
+// laufen und holt jedes angekommene Byte sofort ab — wie das BIOS am Gerät;
+// in einem Sprung liefe der dreistufige SIO-Empfangspuffer über.
+struct Leitung {
+    Z80SIO   sio;
+    K7637    kb;
+    uint64_t t = 0;
+    Leitung() { sio.setIEI(true); kb.connect(sio, 0); }
+    std::vector<uint8_t> bis(uint64_t ms) {
+        std::vector<uint8_t> out;
+        while (t < ms * kMs) {
+            t = std::min(t + kMs, ms * kMs);
+            kb.service(t);
+            while (sio.ioRead(1) & 0x01) out.push_back(sio.ioRead(0));
+        }
+        return out;
+    }
+};
+}  // namespace
 
 /**
- * @test K7637/KeyRepeat_AfterDelay_SendsAgain
- * @brief After holding a key for the initial delay (≈500 ms), one auto-repeat byte is sent.
- * @par Pass criterion  drainRx returns at least one byte == 0x41 after tick(500).
+ * @test K7637/Dauerfunktion_ListeAusDemRom
+ * @brief Genau die sechs Codes der ROM-Liste 650H sind Dauerfunktionscodes.
  */
-TEST(K7637, KeyRepeat_AfterDelay_SendsAgain) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
-
-    kb.keyPress(0x41, false, false);   // press 'A', sends one byte immediately
-    drainRx(kb, sio);                      // consume the initial byte
-
-    // Advance exactly the repeat delay: one auto-repeat should fire.
-    kb.tick(500);
-
-    auto bytes = drainRx(kb, sio);
-    EXPECT_GE(bytes.size(), 1u);
-    EXPECT_EQ(bytes[0], 0x41);
+TEST(K7637, Dauerfunktion_ListeAusDemRom) {
+    for (int c = 0; c < 256; ++c) {
+        const bool soll = c == 0x20 || c == 0x94 || c == 0x95 || c == 0x96 ||
+                          c == 0x97 || c == 0x5F;
+        EXPECT_EQ(K7637::isRepeatCode(static_cast<uint8_t>(c)), soll) << "Code " << c;
+    }
 }
 
 /**
- * @test K7637/KeyRepeat_PeriodRepeat
- * @brief After the initial delay fires, the repeat continues at the shorter period (≈100 ms).
- * @par Pass criterion  drainRx returns at least one byte == 0x41 after the second tick(100).
+ * @test K7637/Dauerfunktion_LeertasteWiederholtNach500msAlle100ms
+ * @brief Gehaltene Leertaste: keine Wiederholung vor 500 ms, danach je 100 ms eine.
  */
-TEST(K7637, KeyRepeat_PeriodRepeat) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
+TEST(K7637, Dauerfunktion_LeertasteWiederholtNach500msAlle100ms) {
+    Leitung l;
+    l.bis(10);
+    l.kb.keyPress(' ', false, false);              // bei t = 10 ms
+    EXPECT_EQ(l.bis(20).size(), 1u);               // der Anschlag
+    EXPECT_EQ(l.bis(509).size(), 0u);              // Schwelle läuft noch
+    auto b = l.bis(512);                           // 510 ms + 1 Bytezeit
+    ASSERT_EQ(b.size(), 1u);
+    EXPECT_EQ(b[0], 0x20);
+    EXPECT_EQ(l.bis(609).size(), 0u);
+    EXPECT_EQ(l.bis(1012).size(), 5u);             // 610, 710, … 1010 ms
+}
 
-    kb.keyPress(0x41, false, false);
-    drainRx(kb, sio);
+/**
+ * @test K7637/Dauerfunktion_KursortastenWiederholen
+ * @brief Die vier Kursortasten sind Dauerfunktionstasten.
+ */
+TEST(K7637, Dauerfunktion_KursortastenWiederholen) {
+    for (int key : {QK_UP, QK_DOWN, QK_LEFT, QK_RIGHT}) {
+        Leitung l;
+        l.kb.keyPress(key, false, false);
+        EXPECT_EQ(l.bis(1002).size(), 7u) << key;  // 0 ms + 500 … 1000 ms
+    }
+}
 
-    kb.tick(500);   // fires first auto-repeat, switches to period phase
-    drainRx(kb, sio);
-
-    kb.tick(100);   // one period repeat
-    auto bytes = drainRx(kb, sio);
-    EXPECT_GE(bytes.size(), 1u);
-    EXPECT_EQ(bytes[0], 0x41);
+/**
+ * @test K7637/Dauerfunktion_BuchstabeWiederholtNicht
+ * @brief Eine gehaltene Buchstabentaste wird genau EINMAL gesendet (Befund am Gerät).
+ */
+TEST(K7637, Dauerfunktion_BuchstabeWiederholtNicht) {
+    for (int key : {int('A'), int('a'), int('7'), QK_RETURN, QK_F1}) {
+        Leitung l;
+        l.kb.keyPress(key, false, false);
+        EXPECT_EQ(l.bis(3000).size(), 1u) << key;
+    }
 }
 
 /**
  * @test K7637/KeyRelease_StopsRepeat
- * @brief Releasing the pressed key stops auto-repeat; no further bytes are sent.
- * @par Pass criterion  drainRx returns empty vector after keyRelease() + tick(1000).
+ * @brief Loslassen beendet die Dauerfunktion.
  */
 TEST(K7637, KeyRelease_StopsRepeat) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
-
-    kb.keyPress(0x41, false, false);
-    drainRx(kb, sio);
-
-    kb.keyRelease(0x41);
-
-    // Tick well past the delay: no repeat should be sent.
-    kb.tick(1000);
-    auto bytes = drainRx(kb, sio);
-    EXPECT_EQ(bytes.size(), 0u);
+    Leitung l;
+    l.kb.keyPress(' ', false, false);
+    EXPECT_EQ(l.bis(702).size(), 4u);              // 0 + 500/600/700 ms
+    l.kb.keyRelease(' ');
+    EXPECT_EQ(l.bis(3000).size(), 0u);
 }
 
 /**
  * @test K7637/KeyRelease_WrongKey_DoesNotClearRepeat
- * @brief Releasing a different key than the one held does not stop the auto-repeat.
- * @par Pass criterion  drainRx returns at least one byte after tick(500) despite keyRelease('B').
+ * @brief Das Loslassen einer ANDEREN Taste beendet die Dauerfunktion nicht.
  */
 TEST(K7637, KeyRelease_WrongKey_DoesNotClearRepeat) {
-    Z80SIO sio;
-    sio.setIEI(true);
-    K7637 kb;
-    kb.connect(sio, 0);
+    Leitung l;
+    l.kb.keyPress(' ', false, false);
+    l.bis(10);
+    l.kb.keyRelease('B');
+    EXPECT_EQ(l.bis(602).size(), 2u);              // 500 + 600 ms
+}
 
-    kb.keyPress(0x41, false, false);   // 'A' held
-    drainRx(kb, sio);
-
-    kb.keyRelease(0x42);   // release 'B' (wrong key) – should be a no-op
-
-    kb.tick(500);   // 'A' should still repeat
-    auto bytes = drainRx(kb, sio);
-    EXPECT_GE(bytes.size(), 1u);
+/**
+ * @test K7637/Dauerfunktion_WeitereTasteBeendetSie
+ * @brief „Jede weitere zu einer Dauerfunktion gedrückte Taste beendet die
+ *        Dauerfunktion" (Handbuch §2.2.2).
+ */
+TEST(K7637, Dauerfunktion_WeitereTasteBeendetSie) {
+    Leitung l;
+    l.kb.keyPress(' ', false, false);
+    l.bis(702);
+    l.kb.keyPress('X', false, false);              // Leertaste noch gehalten
+    auto b = l.bis(3000);
+    ASSERT_EQ(b.size(), 1u);
+    EXPECT_EQ(b[0], 'X');
 }
 
 // ─── processTxCommands ───────────────────────────────────────────────────────
@@ -786,13 +834,13 @@ TEST(K7637, ChannelB_KeyPress_InjectsIntoChannelB) {
 
 /**
  * @test K7637/NoConnect_KeyPress_NoCrash
- * @brief K7637 without a connected SIO handles keyPress(), tick(), and processTxCommands() safely.
+ * @brief K7637 without a connected SIO handles keyPress(), service(), and processTxCommands() safely.
  * @par Pass criterion  No exception or assertion failure for any of the three calls.
  */
 TEST(K7637, NoConnect_KeyPress_NoCrash) {
     K7637 kb;   // not connected to any SIO
     EXPECT_NO_FATAL_FAILURE(kb.keyPress(0x41, false, false));
-    EXPECT_NO_FATAL_FAILURE(kb.tick(500));
+    EXPECT_NO_FATAL_FAILURE(kb.service(5000000));
     EXPECT_NO_FATAL_FAILURE(kb.processTxCommands());
 }
 

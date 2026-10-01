@@ -33,8 +33,55 @@ Tastendruck → Matrixscan (intern K7637) → 1 Byte Tastencode senden
 ```
 
 - 1 Byte pro Taste (kein Breakcode)
-- Wiederholfunktion: 500ms Verzögerung, dann alle 100ms
+- Wiederholfunktion („Dauerfunktion"): **nur für die Dauerfunktionstasten**
+  (Leertaste, Kursortasten), 500 ms Verzögerung, dann alle 100 ms — §2.2a
 - Prellunterdrückung: 2 aufeinanderfolgende Matrixscans (~10.9ms)
+
+### 2.2a Dauerfunktion — nur bestimmte Tasten wiederholen (AP-S9, 2026-10-01)
+
+**Befund am echten A5120 unter CP/A:** eine gehaltene **Leertaste** wiederholt,
+eine gehaltene **Buchstabentaste** nicht. Der Emulator wiederholte gar nichts.
+
+**Am Gerät entscheidet die Tastatur, nicht das BIOS.** Handbuch §2.2.2: „In jeder
+Codetabelle können bis zu 16 Tasten als Dauerfunktionstasten festgelegt werden.
+Entspricht der aktuelle Tastencode einem solchen Dauerfunktionscode, so wird nach
+einer ersten Zeitschwelle von ca. 500 ms (ROM 480H) das Zeichen im Abstand von
+ca. 100 ms (ROM 481H) ausgegeben, solange die Taste betätigt ist. Jede weitere zu
+einer Dauerfunktion gedrückte Taste beendet die Dauerfunktion." Das ROM
+(`doc/EPROMS/robotron-k7637_50-2716.bin`) trägt die Liste hinter jeder
+Codetabelle; CTAB1 (650H) und CTAB2 (760H) sind gleich belegt:
+
+```
+650H: 20 95 96 94 97 5F 00 00 …   Leertaste, Kursor ab/links/auf/rechts, 5FH
+```
+
+Die Firmware vergleicht den **ausgegebenen Code** mit den 16 Einträgen
+(`0171H: LD E,10H / CP (IX+0) / … / JR Z,01A6H`, dort `LD IX,0480H` für die
+Zeiten). Buchstaben, Ziffern, ET1, PF-Tasten stehen nicht darin — sie kommen
+einmal, wie lange man auch hält.
+
+**Warum der Emulator nicht wiederholte:** das Modell wiederholte pauschal JEDE
+Taste, aber über `K7637::tick(ms)` — und das rief der laufende Rechner nie auf
+(`git log -S'kbd_.tick'` ist leer). Die Wiederholung der Host-Tastatur verwirft
+die Oberfläche bewusst (`isAutoRepeat()`), also kam keine.
+
+**Behebung:** `tick()` ist entfallen; die Dauerfunktion läuft in
+**Maschinenzeit** in `K7637::service(now_cycles)`, das der Rechner ohnehin je
+Instruktion ruft (2 500 Takte = 1 ms, wie die Bytezeit der Leitung).
+`keyPress` setzt den Fälligkeitstakt nur für einen Code aus
+`K7637::isRepeatCode()`; eine Wiederholung geht ab ihrem Fälligkeitstakt auf die
+Leitung, nicht ab dem Aufruf. Im Snapshot ersetzt der eine `uint64_t` die
+beiden früheren `int`-Zähler — gleich breit, das Layout bleibt.
+
+**Nicht beteiligt: der SIO-Empfangsinterrupt (Commit `216dc14`, Betriebsart 01
+„nur beim ersten Zeichen").** Gegenprobe: der Wächter läuft MIT diesem Stand
+grün, sobald die Tastatur wiederholt — die wiederholten Leerzeichen kommen im
+CCP an. Wiederholt hatte der Emulator auch vorher nie.
+
+Wächter: `KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot` (CP/A bis
+`A>`, Leertaste und „A" je 1,5 s Maschinenzeit gehalten: mehrere Leerzeichen,
+genau ein „A"; ohne die Behebung rot mit 1 Leerzeichen),
+`K7637.Dauerfunktion_*`.
 
 ### 2.3 Kommandos (K8025 → K7637) — erkannt an der **Flankenzahl**
 
@@ -191,9 +238,9 @@ public:
     // Akustik-Status (für GUI: kann Ton abspielen)
     bool isBeeeping() const;
 
-    // ─── Takt (für Wiederholrate und Blinken) ────────────────────
-    // Muss regelmäßig aufgerufen werden (z.B. alle 10ms)
-    void tick(int ms_elapsed);
+    // ─── Takt: Byte-Laufzeit der Leitung UND Dauerfunktion (§2.2a) ─
+    // Je Instruktion mit dem Taktzähler gerufen.
+    bool service(uint64_t now_cycles);
 
 private:
     Z80SIO::Channel* sio_ = nullptr;
@@ -202,10 +249,8 @@ private:
     bool     shift_down_  = false;
     bool     ctrl_down_   = false;
     bool     lock_on_     = false;
-    int      repeat_key_  = -1;      // Aktuell gehaltene Taste
-    int      repeat_timer_ = 0;
-    int      repeat_delay_ = 500;    // ms Verzögerung
-    int      repeat_interval_ = 100; // ms Wiederholung
+    int      pressed_key_ = 0;        // Aktuell gehaltene Taste
+    uint64_t repeat_due_cycle_ = 0;   // nächste Wiederholung; 0 = keine
     LEDState leds_{};
     bool     beeping_    = false;
     int      beep_timer_ = 0;
@@ -387,8 +432,8 @@ nachzubauen. Farben schwarz/weiß/rot wie am Original; der Codierstecker am
 rechten Rand fehlt (er wirkt nur unter SIOS).
 
 Ein Klick sendet `keyPressed(keycode, shift, ctrl)`, das Loslassen
-`keyReleased` — gedrückt gehalten läuft also die Tastenwiederholung des
-emulierten K7637 an. SHIFT und CTRL/ET2 wirken auf genau die nächste Taste,
+`keyReleased` — gedrückt gehalten läuft also bei einer Dauerfunktionstaste
+(§2.2a) die Wiederholung des emulierten K7637 an. SHIFT und CTRL/ET2 wirken auf genau die nächste Taste,
 LOCK bleibt gesetzt und wird (wie am Original) mit SHIFT aufgehoben.
 
 ### 7.1 Die Tastencodes des Tastenfelds
@@ -586,6 +631,7 @@ derselben Funktion, die der Kern beim Tastendruck benutzt.
 | Was | Wo |
 |-----|----|
 | Tastencodes, Ctrl, ET1≠ENTER, Kursor, Wiederholung, LED-Kommandos, Byte-Laufzeit | `tests/unit/peripherals/test_k7637.cpp` |
+| Dauerfunktion nur für die ROM-Liste 650H, in Maschinenzeit (§2.2a) | `K7637.Dauerfunktion_*`, `KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot` |
 | Rohcode-Weg (§5.2) | `K7637.RawCode_IsSentVerbatim`, `K7637.RawCode_IgnoresCtrl` |
 | Kommandodekodierung über Flankenzählung (§2.3) | `K7637.CommandDecoding_CountsFallingEdges`, `K7637.CommandDecoding_IgnoresTheByteValue`, `K7637.PreCommand_NeedsTheSecondByte` |
 | Anzeigen und Ton (§2.4) | `K7637.LedCommands_ToggleTheirDisplay`, `K7637.ErrorDisplay_TogglesAndBeepsWhenSwitchedOn`, `K7637.BeepCommand_RunsForAboutOneSecond`, `K7637.ResetCommand_ClearsAllDisplays`, `K7637.EveryCommandByteIsAcknowledged` |
