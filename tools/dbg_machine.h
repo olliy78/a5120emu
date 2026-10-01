@@ -84,9 +84,10 @@ inline std::string lampen61(uint8_t v) {
 
 class DbgMachine {
 public:
-    explicit DbgMachine(bool k8915) {
+    /// @p cfg gilt nur für den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
+    explicit DbgMachine(bool k8915, const A5120Machine::Config& cfg = {}) {
         if (k8915) k8_ = std::make_unique<K8915Machine>();
-        else       a5_ = std::make_unique<A5120Machine>();
+        else       a5_ = std::make_unique<A5120Machine>(cfg);
     }
 
     bool isK8915() const { return k8_ != nullptr; }
@@ -95,6 +96,8 @@ public:
     const char* cpuName() const { return k8_ ? "CPU" : "ZVE1"; }
     A5120Machine* a5120() { return a5_.get(); }
     K8915Machine* k8915() { return k8_.get(); }
+    /// Erweiterungsmodul (A5120.16); nullptr ohne `--em` und immer am K8915.
+    EM* em() { return a5_ ? a5_->em() : nullptr; }
     K1520Machine& base() { return k8_ ? static_cast<K1520Machine&>(*k8_) : *a5_; }
 
     // ─── Lebenslauf ──────────────────────────────────────────────────────────

@@ -1239,3 +1239,148 @@ def test_reset_to_default_restarts_only_when_the_drive_bay_changed(window, qapp,
     qapp.processEvents()
     window._standard_zuruecksetzen()
     assert len(kaltstarts) == 1, "die neue Maschine bliebe sonst ausgeschaltet"
+
+
+# ─── Modellwahl A5120/A5120.16 (S6, doc/design/17_a5120_16.md) ───────────────
+#
+# Das Erweiterungsmodul ist am Kern ein Konstruktorparameter
+# (``K1520Emulator(em=…)``), ein Modellwechsel bedeutet also — wie ein
+# geänderter Laufwerksschacht — eine neue Maschine.  Geprüft wird: die Auswahl
+# erzeugt wirklich eine EM-Maschine, die Leuchten erscheinen nur dann, eine
+# alte Konfiguration ohne den Eintrag bleibt beim A5120, und *Standard
+# zurücksetzen* dreht ein zwischenzeitlich gewähltes A5120.16 zurück.
+
+def test_window_starts_as_plain_a5120_without_em(window):
+    import app.modell as modell
+
+    assert window._model == modell.A5120
+    assert window.emulator.em_variant() == ""
+    assert not window.status_widget.em_sichtbar()
+
+
+def test_selecting_a5120_16_rebuilds_the_machine_with_the_em(window, qapp):
+    """Die Modellwahl im Auswahlfeld erzeugt die Maschine neu — wie ein Kaltstart."""
+    import app.modell as modell
+
+    idx = window.settings_widget.model_combo.findData(modell.A5120_16)
+    assert idx >= 0, "A5120.16 fehlt im Auswahlfeld"
+    window.settings_widget.model_combo.setCurrentIndex(idx)
+    qapp.processEvents()
+
+    assert window._model == modell.A5120_16
+    assert window.emulator.em_variant() == "em256"
+    assert window.status_widget.em_sichtbar()
+
+    # Zurück zum A5120 — die Leuchten verschwinden wieder.
+    idx0 = window.settings_widget.model_combo.findData(modell.A5120)
+    window.settings_widget.model_combo.setCurrentIndex(idx0)
+    qapp.processEvents()
+    assert window.emulator.em_variant() == ""
+    assert not window.status_widget.em_sichtbar()
+
+
+def test_em_lamps_are_hidden_for_the_plain_a5120(window):
+    """Ohne Erweiterungsmodul bleibt die EM-Anzeige aus — auch bei laufender Statuszeile."""
+    window._update_status()
+    assert not window.status_widget.em_sichtbar()
+
+
+def test_em_status_reads_v1_v2_and_mode_from_the_core(window, qapp, monkeypatch):
+    """V1/V2 und der Modus kommen aus `em_leds()`/`em_mode16()` — reine Abfrage."""
+    import app.modell as modell
+
+    idx = window.settings_widget.model_combo.findData(modell.A5120_16)
+    window.settings_widget.model_combo.setCurrentIndex(idx)
+    qapp.processEvents()
+
+    monkeypatch.setattr(window.emulator, "em_leds", lambda: (True, False))
+    monkeypatch.setattr(window.emulator, "em_mode16", lambda: True)
+    window._update_em_status()
+
+    assert window.status_widget._em_v1._an is True
+    assert window.status_widget._em_v2._an is False
+    assert window.status_widget._em_modus.text() == "Modus: 16-Bit"
+
+    monkeypatch.setattr(window.emulator, "em_leds", lambda: (False, True))
+    monkeypatch.setattr(window.emulator, "em_mode16", lambda: False)
+    window._update_em_status()
+
+    assert window.status_widget._em_v1._an is False
+    assert window.status_widget._em_v2._an is True
+    assert window.status_widget._em_modus.text() == "Modus: 8-Bit"
+
+
+def test_old_configuration_without_model_key_falls_back_to_the_plain_a5120(window, qapp):
+    """Eine Konfiguration von vor S6 hat kein `general.model` — läuft als A5120.
+
+    Angewandt wird sie ausgehend von einem Fenster, das GERADE auf A5120.16
+    steht: erst das zeigt, dass das fehlende Feld tatsächlich auf die Vorgabe
+    zurückfällt, statt bloß den Ausgangszustand zu wiederholen.
+    """
+    import app.modell as modell
+
+    idx = window.settings_widget.model_combo.findData(modell.A5120_16)
+    window.settings_widget.model_combo.setCurrentIndex(idx)
+    qapp.processEvents()
+    assert window.emulator.em_variant() == "em256"
+
+    data = window._gather_config()
+    del data["general"]["model"]           # eine Konfiguration von vor S6
+
+    window._apply_config(data)
+
+    assert window._model == modell.A5120
+    assert window.emulator.em_variant() == ""
+    assert window.settings_widget.model_value() == modell.A5120
+
+
+def test_config_roundtrip_carries_the_model(window, qapp, tmp_path):
+    """Modell A5120.16 übersteht Speichern und Laden."""
+    import app.config_io as cfg
+    import app.modell as modell
+
+    idx = window.settings_widget.model_combo.findData(modell.A5120_16)
+    window.settings_widget.model_combo.setCurrentIndex(idx)
+    qapp.processEvents()
+
+    path = tmp_path / "config.yaml"
+    cfg.save_config(str(path), window._gather_config())
+    geladen = cfg.load_config(str(path))
+    assert geladen["general"]["model"] == modell.A5120_16
+
+    window._apply_config(geladen)
+    assert window._model == modell.A5120_16
+    assert window.emulator.em_variant() == "em256"
+
+
+def test_reset_to_default_switches_the_model_back_and_restarts(window, qapp,
+                                                                monkeypatch, tmp_path):
+    """*Standard zurücksetzen* dreht ein zwischenzeitlich gewähltes A5120.16 zurück.
+
+    Die Auslieferung ist der A5120 ohne Erweiterung (`data/default_config.yaml`):
+    ein geändertes MODELL zählt genauso als "die Bestückung hat sich geändert"
+    wie ein geänderter Laufwerksschacht — die neue Maschine muss eingeschaltet
+    werden.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    import app.config_io as cfg
+    import app.modell as modell
+
+    monkeypatch.setattr(cfg, "default_config_path", lambda: str(tmp_path / "config.yaml"))
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+
+    idx = window.settings_widget.model_combo.findData(modell.A5120_16)
+    window.settings_widget.model_combo.setCurrentIndex(idx)
+    qapp.processEvents()
+    assert window._model == modell.A5120_16
+
+    kaltstarts = []
+    monkeypatch.setattr(window, "_cold_restart", lambda: kaltstarts.append(True))
+
+    window._standard_zuruecksetzen()
+
+    assert window._model == modell.A5120
+    assert window.emulator.em_variant() == ""
+    assert kaltstarts, "ein zurückgedrehtes Modell muss die neue Maschine einschalten"

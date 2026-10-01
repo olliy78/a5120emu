@@ -355,6 +355,29 @@ Kaltstart abzukürzen; wer die Uhr braucht, bleibt beim Nenntakt.
 Der eingestellte Takt steht links in der Statuszeile, der **gemessene** in
 dessen Tooltip.
 
+## Modell: A5120 oder A5120.16
+
+*Einstellungen ▸ Allgemein ▸ Modell*: **A5120** (die Vorgabe, ohne Erweiterung)
+oder **A5120.16** — der A5120 mit der Erweiterungskarte EM256 und dem
+16-Bit-Prozessor U8001 zusätzlich zum U880.
+
+Ein Wechsel erzeugt die Maschine neu — wie ein Kaltstart: das Erweiterungsmodul
+ist eine echte Steckkarte, keine Betriebsart, die sich während des Laufs an-
+oder abschalten liesse.
+
+Bei **A5120.16** zeigt die Statuszeile zwei zusätzliche Leuchten und den
+Modus:
+
+| Leuchte | Bedeutung |
+|---------|-----------|
+| V1 | RAMEN — das Erweiterungsmodul hat den Speicher eingeblendet |
+| V2 | 8-Bit-Mode — die Steuerkarte fährt den U880-Bus |
+
+**V1 zeigt nicht den Paritätsfehler**, auch wenn die Leuchte auf der Karte
+dafür Platz hätte — nach dem Schaltplan hängt sie an RAMEN. Daneben steht
+`Modus: 8-Bit` oder `Modus: 16-Bit`, je nachdem, welcher Prozessor gerade den
+Bus hat. Beim schlichten A5120 fehlen beide Leuchten.
+
 ## Die Bildröhre einstellen
 
 *Einstellungen ▸ CRT*: Leuchtfarbe, Helligkeit, Kontrast, Wölbung, Rundung der

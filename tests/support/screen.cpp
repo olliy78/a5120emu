@@ -12,6 +12,10 @@ std::string vramText(A5120Machine& m) {
     return s;
 }
 
+std::string visibleText(A5120Machine& m) {
+    return vramText(m).substr(0, static_cast<size_t>(kVramCols) * kVramRows);
+}
+
 namespace {
 std::string zeilen(const std::string& flat) {
     std::string out;
@@ -38,5 +42,10 @@ std::string vramText(K8915Machine& m) {
 }
 
 std::string vramLines(K8915Machine& m) { return zeilen(vramText(m)); }
+
+void wipeVram(A5120Machine& m) {
+    for (int a = kVramBase; a <= kVramEnd; ++a)
+        m.memWriteDebug(static_cast<uint16_t>(a), 0x00);
+}
 
 }  // namespace k1520test

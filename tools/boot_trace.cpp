@@ -17,6 +17,12 @@
  *                    loaded code (0x0437). Reports I/O-port activity, VRAM writes,
  *                    a loaded-code PC histogram, and the screen as text.
  *
+ *     --em [em256|em064]  A5120.16: Maschine MIT Erweiterungsmodul; jede
+ *                    Kommunikationstransaktion der Karte (PIO A32, A33–A36, A22,
+ *                    Quittungen, Moduswechsel, TREN/BUSRQ/BUSAK, RESET16, NVI) wird
+ *                    eine Zeile "EM …" (Vorgabe em256)
+ *     --cpu u8000    jeden Befehl des U8001 als Zeile "U8 …" (Deckel -W); impliziert --em
+ *
  * --machine k8915 fährt statt des A5120 einen K8915 (eigener Zweig,
  * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
  * PC-Histogramm mit Listing-Namen, Abbruch bei `A>` oder Stillstand.
@@ -37,6 +43,9 @@
 #include "tools/until_cond.h"
 #include "tools/event_bp.h"
 #include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
+#include "tools/em_trace.h"          // --em: EM-Transaktionen als Text
+#include "tools/dbg_u8000.h"         // --cpu u8000: Adressen <<seg>>off
+#include "tools/z8000/z8k_disasm.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -270,6 +279,8 @@ int main(int argc, char** argv) {
     bool      json_summary  = false;         // --json: one machine-readable summary line at the end
     bool      quiet         = false;          // --quiet: suppress the human narrative/report
     bool      fold_on       = false;          // --fold: collapse identical consecutive -w/-z lines
+    const char* em_variant  = nullptr;        // --em [em256|em064]: A5120.16 + EM-Transaktionen
+    bool      trace_u8000   = false;          // --cpu u8000: jeden U8001-Befehl zeigen
     // Disk-mount mode (§6): COW default → the disk is copied to a temp file and that copy
     // is mounted, so a committed fixture is never modified (no more `mktemp; cp` ritual).
     // --rw mounts the original writable; --read-only/--ro mounts it write-protected.
@@ -353,6 +364,16 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--cow")) { mount_mode = MOUNT_COW; }
         else if (!strcmp(argv[i], "--read-only")||!strcmp(argv[i], "--ro")) { mount_mode = MOUNT_RO; }
         else if (!strcmp(argv[i], "--quiet")) { quiet = true; }
+        else if (!strcmp(argv[i], "--em")) {
+            em_variant = "em256";
+            if (i+1 < argc && (!strcmp(argv[i+1],"em256") || !strcmp(argv[i+1],"em064")))
+                em_variant = argv[++i];
+        }
+        else if (!strcmp(argv[i], "--cpu") && i+1 < argc) {
+            const char* c = argv[++i];
+            if (!strcmp(c,"u8000") || !strcmp(c,"u8001") || !strcmp(c,"u8002")) trace_u8000 = true;
+            else if (strcmp(c,"zve1") && strcmp(c,"zve2")) { fprintf(stderr, "--cpu: zve1|zve2|u8000\n"); return 2; }
+        }
         else if (!strcmp(argv[i], "--watch") && i+1 < argc) {   // --watch 0x0000,0x03F8,...
             char* tok = strtok(argv[++i], ",");
             while (tok && watch_n < 16) { watch_addr[watch_n++] = (uint16_t)strtol(tok, nullptr, 0); tok = strtok(nullptr, ","); }
@@ -432,6 +453,7 @@ int main(int argc, char** argv) {
             fprintf(stderr, "WARN: %s gibt es am K8915 nicht (A5120: ZVE2/DMA/Savestates/Boot-ROM-Schritte) — ignoriert\n", f.c_str());
         for (int i = 0; i < watchio_n; ++i)
             if (watchio_cpu[i] == 2) fprintf(stderr, "WARN: --watchio …:zve2 — der K8915 hat keine ZVE2\n");
+        if (em_variant) fprintf(stderr, "WARN: --em/--cpu u8000 gibt es nur am A5120 (A5120.16) — ignoriert\n");
         k8o.quiet = quiet; k8o.json = json_summary; k8o.drive = mount_drive; k8o.until = until;
         if (!limit_set) k8o.limit = 250'000'000;
         k8o.coverage = coverage_on; if (coverage_path) k8o.coverage_path = coverage_path;
@@ -474,8 +496,46 @@ int main(int argc, char** argv) {
     fprintf(stderr, "\n\n");
     }
 
-    A5120Machine machine;
+    if (trace_u8000 && !em_variant) em_variant = "em256";
+    A5120Machine::Config mcfg;
+    if (em_variant) mcfg.em = !strcmp(em_variant,"em064") ? A5120Machine::Config::Em::em064
+                                                          : A5120Machine::Config::Em::em256;
+    A5120Machine machine(mcfg);
     machine.powerOn();
+
+    // ── A5120.16 (S5): EM-Transaktionen (--em) und U8001-Befehle (--cpu u8000) ──
+    long em_events = 0, u8_lines = 0, u8_instr = 0;
+    if (EM* em = machine.em()) {
+        if (!quiet) fprintf(stderr, "EM:         %s%s\n", em_variant,
+                            trace_u8000 ? "  (+ U8001-Befehlstrace)" : "");
+        em->setEventHook([&, em](const EM::EreignisInfo& e) {
+            ++em_events;
+            const Z8000& z = em->u8001();
+            fprintf(stderr, "  [#%d EM  c%-10llu] %-52s ZVE1.PC=%04X U8001.PC=%s\n", trace_seq++,
+                    (unsigned long long)machine.machineCycles(), emtrace::text(e).c_str(),
+                    machine.cpuPC(), dbg16::addrText(z.pcSeg, z.pc, true).c_str());
+        });
+        if (trace_u8000)
+            em->setStepHook([&, em](const Z8000& z) -> bool {
+                if (z.inReset() || z.halted() || z.stopped() || z.busAck() || z.inRepeat()) return false;
+                ++u8_instr;
+                if (u8_lines >= win_cap) return false;
+                auto rw = [&](uint16_t o) -> uint16_t {
+                    Z8kBusCycle c; c.st = Z8kStatus::MemInstr; c.system = z.systemMode();
+                    c.seg = z.pcSeg; c.addr = uint16_t(o & ~1u);
+                    uint32_t cell = em->cellFor16(c) & ~1u;
+                    return uint16_t((em->peek(cell) << 8) | em->peek(cell + 1));
+                };
+                z8k::Line l = z8k::disasm(rw, z.pc, z.segMode(), z.pcSeg);
+                fprintf(stderr, "  [#%d U8  c%-10llu] %s %-28s FCW=%04X R0=%04X R1=%04X R2=%04X R3=%04X SP=%04X\n",
+                        trace_seq++, (unsigned long long)machine.machineCycles(),
+                        dbg16::addrText(z.pcSeg, z.pc, z.segMode()).c_str(), l.text.c_str(),
+                        z.fcw, z.r(0), z.r(1), z.r(2), z.r(3), z.r(15));
+                if (++u8_lines == win_cap)
+                    fprintf(stderr, "  [U8001-Trace: Deckel -W %d erreicht]\n", win_cap);
+                return false;
+            });
+    }
 
     // Live disassembly of the instruction at `a` (decoded from current memory — exact
     // even for self-modifying loader stages). Used by the -w/-z window traces.
@@ -1119,6 +1179,14 @@ int main(int argc, char** argv) {
     }
 
     // --json: one machine-readable summary line (for scripted/agent consumption).
+    if (EM* em = machine.em(); em && !quiet) {
+        const Z8000& z = em->u8001();
+        fprintf(stderr, "EM:         %s-Bit-Mode, %ld Transaktion(en), U8001 PC=%s FCW=%04X %s, %llu U8001-Takte%s\n",
+                em->mode8() ? "8" : "16", em_events, dbg16::addrText(z.pcSeg, z.pc, true).c_str(), z.fcw,
+                z.inReset() ? "(Reset)" : z.busAck() ? "(BUSAK)" : z.halted() ? "(HALT)" : "",
+                (unsigned long long)z.cycles,
+                trace_u8000 ? (", " + std::to_string(u8_instr) + " Befehle").c_str() : "");
+    }
     if (json_summary) {
         fprintf(stderr,
             "{\"boot_reached\":%s,\"cycles\":%d,\"rom_enabled\":%s,\"final_pc\":\"0x%04X\","
@@ -1126,6 +1194,10 @@ int main(int argc, char** argv) {
             boot_reached?"true":"false", cycles_done, machine.isRomEnabled()?"true":"false",
             machine.cpuPC(), pc_hist.size(), zve2_pc_hist.size(),
             (unsigned long long)zve2_instr);
+        if (EM* em = machine.em())
+            fprintf(stderr, "\"em\":{\"mode\":%d,\"events\":%ld,\"u8001_pc\":\"%s\",\"u8001_instr\":%ld},",
+                    em->mode8() ? 8 : 16, em_events,
+                    dbg16::addrText(em->u8001().pcSeg, em->u8001().pc, true).c_str(), u8_instr);
         if (until.kind != UntilCond::NONE)
             fprintf(stderr, "\"until\":{\"set\":true,\"met\":%s,\"cycle\":%d,\"pc\":\"0x%04X\"}}\n",
                     until_hit?"true":"false", until_cycle, until_pc);

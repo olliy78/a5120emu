@@ -52,3 +52,8 @@ add_subdirectory(integration)
 add_subdirectory(cli)
 add_subdirectory(system)
 add_subdirectory(python)
+# Differenzprüfung U8001/U8002 gegen MAMEs z8000 — nur auf Wunsch (Netz), tools/dev.sh test-oracle
+option(K1520_Z8K_MAME_ORACLE "U8001-Primitive gegen MAMEs z8000 prüfen (lädt MAME-Quellen)" OFF)
+if(K1520_Z8K_MAME_ORACLE)
+    add_subdirectory(oracle)
+endif()

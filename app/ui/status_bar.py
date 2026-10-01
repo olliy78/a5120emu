@@ -19,6 +19,12 @@ Maschine**:
   auch ein LEERES Laufwerk, sobald es angesprochen wird — genau wie die Leuchte
   am echten Gerät, und genau das will man sehen, wenn ein Gastsystem auf eine
   Diskette wartet, die niemand eingelegt hat.
+* **beim A5120.16 zwei weitere Leuchten V1/V2 + Modus** — nur sichtbar, wenn
+  das Modell (*Einstellungen ▸ Allgemein*) ein Erweiterungsmodul hat.  **V1
+  ist RAMEN, nicht der Paritätsfehler** (`doc/design/17_a5120_16.md` §S1/S6,
+  Scan 9005/2), V2 ist der 8-Bit-Mode der Steuerkarte; ``Modus:`` zeigt, welche
+  CPU gerade den Bus hat.  Abgefragt wird ``em_leds()``/``em_mode16()`` im
+  selben Sekundentakt wie Takt und Laufwerke.
 
 * **K8915: die sechs Lampen der Frontplatte** (nur im Programmprofil mit
   ``frontplatte``, `app/profil.py`) — in Reihenfolge und Farbe des Geräts
@@ -117,6 +123,43 @@ class DriveLamp(QWidget):
             fuellung = QColor(FARBE_ZUGRIFF) if self._zustand == ZUGRIFF else rand
             malen.setPen(QPen(fuellung, 1.0))
             malen.setBrush(fuellung)
+        malen.drawEllipse(kreis)
+        malen.end()
+
+
+class EmLamp(QWidget):
+    """Eine LED der A5120.16-Steuerkarte (V1/V2) — gefüllt bei „an", sonst der Umriss.
+
+    Dieselbe Zeichnung wie :class:`DriveLamp`, aber nur zwei Zustände: eine
+    EM-Leuchte kennt keinen „Zugriff", sie zeigt einen Pegel.
+    """
+
+    KANTE = 10
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._an = False
+        self.setFixedSize(QSize(self.KANTE + 4, self.KANTE + 4))
+        self.setFocusPolicy(Qt.NoFocus)
+
+    def set_an(self, an: bool) -> None:
+        an = bool(an)
+        if an == self._an:
+            return
+        self._an = an
+        self.update()
+
+    def paintEvent(self, event):
+        malen = QPainter(self)
+        malen.setRenderHint(QPainter.Antialiasing)
+        rand = self.palette().color(self.foregroundRole())
+        kreis = self.rect().adjusted(2, 2, -2, -2)
+        if self._an:
+            malen.setPen(QPen(rand, 1.0))
+            malen.setBrush(rand)
+        else:
+            malen.setPen(QPen(rand, 1.4))
+            malen.setBrush(Qt.NoBrush)
         malen.drawEllipse(kreis)
         malen.end()
 
@@ -344,6 +387,35 @@ class MachineStatus(QWidget):
         self._lay.addWidget(self.seriell_verbindungen)
         self._fest = self._lay.count()
 
+        # A5120.16-Leuchten (V1/V2) + Modus — feste Stelle zwischen Takt und
+        # Laufwerken, standardmässig ausgeblendet (nur der A5120 ohne
+        # Erweiterung).  EIGENE Widget-Liste, damit `set_drive_types` (das
+        # alles nach dem Takt abräumt und neu aufbaut) sie nicht mit wegräumt.
+        self._em_strich = _trennstrich()
+        self._em_v1_label = QLabel("V1")
+        self._em_v1_label.setMargin(2)
+        self._em_v1 = EmLamp()
+        self._em_v2_label = QLabel("V2")
+        self._em_v2_label.setMargin(2)
+        self._em_v2 = EmLamp()
+        self._em_modus = QLabel()
+        self._em_modus.setMargin(2)
+        self._em_widgets: List[QWidget] = [
+            self._em_strich, self._em_v1_label, self._em_v1,
+            self._em_v2_label, self._em_v2, self._em_modus]
+        for w in self._em_widgets:
+            self._lay.addWidget(w)
+        v1_tipp = ("V1 — RAMEN (Steuerkarte 062-9005): das Erweiterungsmodul "
+                   "hat den Speicher eingeblendet.  NICHT der Paritätsfehler.")
+        v2_tipp = "V2 — 8-Bit-Mode: die Steuerkarte fährt den U880-Bus."
+        modus_tipp = "Welche CPU gerade den Bus hat: U880 (8-Bit) oder U8001 (16-Bit)."
+        self._em_v1_label.setToolTip(v1_tipp)
+        self._em_v1.setToolTip(v1_tipp)
+        self._em_v2_label.setToolTip(v2_tipp)
+        self._em_v2.setToolTip(v2_tipp)
+        self._em_modus.setToolTip(modus_tipp)
+        self.set_em_sichtbar(False)
+
         self._felder: List[DriveField] = []
         self._lampen: List[DriveLamp] = []
         self.set_drive_types(self.profil.standard_laufwerke())
@@ -384,14 +456,41 @@ class MachineStatus(QWidget):
         self.seriell_server.zeige(server, server_tipp)
         self.seriell_verbindungen.zeige(verbindungen, verbindungen_tipp)
 
+    # ── A5120.16: EM-Leuchten V1/V2 + Modus ────────────────────────────────────
+
+    def set_em_sichtbar(self, sichtbar: bool) -> None:
+        """Die EM-Anzeige ein-/ausblenden — nur beim A5120.16 bestückt."""
+        self._em_sichtbar_wert = bool(sichtbar)
+        for w in self._em_widgets:
+            w.setVisible(sichtbar)
+
+    def em_sichtbar(self) -> bool:
+        """True, solange die EM-Anzeige eingeblendet ist (für Tests).
+
+        Ein eigenes Merkfeld statt ``isVisible()``: das hängt zusätzlich davon
+        ab, ob das ganze Fenster schon angezeigt wurde (in Tests nicht immer
+        der Fall) und würde dort fälschlich ``False`` melden.
+        """
+        return getattr(self, "_em_sichtbar_wert", False)
+
+    def set_em(self, v1: bool, v2: bool, mode16: bool) -> None:
+        """Die beiden Leuchten und den Modus (8/16-Bit) nachführen."""
+        self._em_v1.set_an(v1)
+        self._em_v2.set_an(v2)
+        self._em_modus.setText("Modus: 16-Bit" if mode16 else "Modus: 8-Bit")
+
     # ── Laufwerke ────────────────────────────────────────────────────────────
 
     def set_drive_types(self, drive_types) -> None:
         """Felder neu aufbauen — je bestücktem K5122-Steckplatz eines."""
-        # Alles ausser dem Taktfeld abräumen — auch die Dehnfuge am Ende, sonst
-        # sammeln sich bei jedem Laufwerkswechsel weitere an.
-        while self._lay.count() > self._fest:
-            eintrag = self._lay.takeAt(self._fest)
+        # Alles ausser den festen Feldern (Frontplatte, Takt, serielle Felder) UND
+        # der EM-Anzeige abräumen — auch die Dehnfuge am Ende, sonst sammeln sich
+        # bei jedem Laufwerkswechsel weitere an.  Die EM-Widgets stehen an fester
+        # Stelle direkt danach (siehe __init__) und bleiben hier unangetastet,
+        # sichtbar oder nicht.
+        ab = self._fest + len(self._em_widgets)
+        while self._lay.count() > ab:
+            eintrag = self._lay.takeAt(ab)
             w = eintrag.widget()
             if w is not None:
                 w.setParent(None)

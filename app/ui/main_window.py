@@ -49,6 +49,7 @@ from app.ui_icons import icon
 from app.core_binding.k1520 import K1520Emulator
 from app import config_io
 from app import drive_types as dt
+from app import modell
 from app import paths
 from app import programme
 from app import profil as profile
@@ -78,12 +79,18 @@ class MainWindow(QMainWindow):
         # empty; K8915: 2× K5601) and is overridden by the restored config / the
         # Einstellungen → Laufwerke tab.
         self._drive_types = self.profil.standard_laufwerke()
+        # Modell (A5120 / A5120.16, app/modell.py) — bestimmt den core-Parameter
+        # ``em=``.  Vorgabe A5120 ohne Erweiterung, überschrieben von der
+        # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
+        # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
+        self._model = modell.DEFAULT_MODEL
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
             self.emulator = K1520Emulator(self._drive_types,
-                                          machine=self.profil.maschine)
+                                          machine=self.profil.maschine,
+                                          em=modell.em_for(self._model))
         except Exception as e:
             QMessageBox.critical(self, "Initialization Error", str(e))
             raise
@@ -175,6 +182,7 @@ class MainWindow(QMainWindow):
         # Konfiguration; die Statuszeile bekommt ihre Felder fertig aus dem Reiter.
         self.serial_widget.changed.connect(self._schedule_autosave)
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
+        self.settings_widget.modelChanged.connect(self._on_model_selected)
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
         # Die Statuszeile nennt die eingelegten Abbilder — sie darf nicht bis zum
@@ -807,6 +815,8 @@ class MainWindow(QMainWindow):
     def _gather_config(self) -> dict:
         """Build the full configuration dict from the live application state."""
         general = {"speed": float(self.speed_factor)}
+        if self.profil.modellwahl:              # nur der A5120 kennt ein Modell
+            general["model"] = self._model
         return config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
@@ -1019,6 +1029,15 @@ class MainWindow(QMainWindow):
             self.settings_widget.set_speed_value(speed)
             self._apply_speed(speed)
 
+            # Modell (A5120/A5120.16) — VOR der Laufwerksbestückung setzen, denn
+            # der einzige tatsächliche Neubau der Maschine passiert unten in
+            # _apply_drive_types (der auch das Modell an den core-Konstruktor
+            # gibt).  Ein fehlender Eintrag ist die Vorgabe A5120 (ohne EM) —
+            # ältere Konfigurationen laufen damit unverändert.
+            self._model = (modell.normalize(general.get("model"))
+                           if self.profil.modellwahl else modell.DEFAULT_MODEL)
+            self.settings_widget.set_model_value(self._model)
+
             # Drive-bay configuration must be applied BEFORE the disks, so the
             # panels for the present slots exist and the machine matches.  During
             # a config restore we never cold-restart here (power-on happens later).
@@ -1108,18 +1127,20 @@ class MainWindow(QMainWindow):
                 "Symbolleiste auf die Auslieferung zurücksetzen?\n\n"
                 "Die gespeicherte Konfiguration wird dabei überschrieben; die "
                 "eingelegten Disketten bleiben liegen.  Ändert sich dabei die "
-                "Laufwerksbestückung, startet die Maschine kalt.",
+                "Laufwerksbestückung oder das Modell, startet die Maschine kalt.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No) != QMessageBox.Yes:
             return
         vorher = list(self._drive_types)
+        modell_vorher = self._model
         self._apply_config(vorgabe)
-        # Ein geänderter Laufwerksschacht bedeutet eine NEUE Maschine
-        # (:meth:`_apply_drive_types`), und die ist noch nicht eingeschaltet:
-        # beim Wiederherstellen kommt das Einschalten sonst später von selbst,
-        # hier läuft die alte schon.  Ohne Bestückungswechsel bleibt die Maschine
-        # in Ruhe — ein Zurücksetzen der Ansicht soll kein CP/A abwürgen.
-        if self._drive_types != vorher:
+        # Ein geänderter Laufwerksschacht ODER ein geändertes Modell bedeutet
+        # eine NEUE Maschine (:meth:`_apply_drive_types`), und die ist noch
+        # nicht eingeschaltet: beim Wiederherstellen kommt das Einschalten
+        # sonst später von selbst, hier läuft die alte schon.  Ohne
+        # Bestückungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
+        # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
+        if self._drive_types != vorher or self._model != modell_vorher:
             self._cold_restart()
         # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
         # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
@@ -1283,6 +1304,22 @@ class MainWindow(QMainWindow):
                     if laeuft and vergangen > 0 else None)
         self.status_widget.set_takt(self.speed_factor if laeuft else None, gemessen)
         self._update_drive_status()
+        self._update_em_status()
+
+    def _update_em_status(self):
+        """Die EM-Leuchten (V1/V2) und den Modus — nur wenn das Modell eins hat.
+
+        Reine Abfrage im selben Sekundentakt wie der Rest der Statuszeile
+        (``em_leds()``/``em_mode16()``, kein Rückruf) — Anschluss aus S5.
+        """
+        if not modell.em_for(self._model):
+            return
+        try:
+            v1, v2 = self.emulator.em_leds()
+            mode16 = self.emulator.em_mode16()
+        except Exception:
+            v1, v2, mode16 = False, False, False
+        self.status_widget.set_em(v1, v2, mode16)
 
     def _update_drive_status(self):
         """Die Laufwerksfelder der Statuszeile aus der Maschine nachziehen.
@@ -1389,31 +1426,48 @@ class MainWindow(QMainWindow):
         self._apply_drive_types(types, cold_restart=True)
         self._schedule_autosave()
 
-    def _apply_drive_types(self, types: list, cold_restart: bool):
-        """Adopt a new drive-bay configuration.
+    def _on_model_selected(self, model: str):
+        """Das Modell-Auswahlfeld (A5120/A5120.16) geändert.
 
-        The core sets the per-slot ``DriveProfile`` at construction time, so a
-        changed bay means a **fresh machine**: the emulator is recreated with the
-        new profiles, every reference is rewired, the drive panels are rebuilt and
-        the disks that still have a drive are remounted.  With *cold_restart* the
-        new machine is powered on immediately (boot ROM restarts); during a config
+        Das Erweiterungsmodul ist am Kern ein Konstruktorparameter
+        (``K1520Emulator(em=…)``, `app/modell.py`), ein Modellwechsel bedeutet
+        also — genau wie ein geänderter Laufwerksschacht — eine **neue
+        Maschine**.  Keine eigene Rückfrage: die vergleichbare Aktion (das
+        Laufwerks-Auswahlfeld) fragt auch nicht nach, sondern startet direkt
+        kalt neu.
+        """
+        self._model = modell.normalize(model)
+        self._apply_drive_types(self._drive_types, cold_restart=True)
+        self._schedule_autosave()
+
+    def _apply_drive_types(self, types: list, cold_restart: bool):
+        """Adopt a new drive-bay configuration (and/or a changed model).
+
+        The core sets the per-slot ``DriveProfile`` **and** the Erweiterungsmodul
+        (``em=``, aus ``self._model``) at construction time, so a changed bay OR
+        a changed model means a **fresh machine**: the emulator is recreated,
+        every reference is rewired, the drive panels are rebuilt and the disks
+        that still have a drive are remounted.  With *cold_restart* the new
+        machine is powered on immediately (boot ROM restarts); during a config
         restore it is ``False`` (power-on happens once, later).
         """
         types = dt.normalize_list(types)
+        em = modell.em_for(self._model)
 
         # Disks whose slot still carries a drive survive the reconfiguration.
         surviving = [m for m in self.drives_widget.get_mounts()
                      if 0 <= int(m.get("drive", -1)) < dt.NUM_SLOTS
                      and dt.is_present(types[int(m["drive"])])]
 
-        # Recreate the machine with the new drive bay.
+        # Recreate the machine with the new drive bay / model.
         try:
-            new_emu = K1520Emulator(types, machine=self.profil.maschine)
+            new_emu = K1520Emulator(types, machine=self.profil.maschine, em=em)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
                                  f"Konnte Maschine nicht neu erzeugen:\n{e}")
             # Keep the settings dropdowns consistent with the machine still in use.
             self.settings_widget.set_drive_types(self._drive_types)
+            self.settings_widget.set_model_value(self._model)
             return
 
         # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
@@ -1435,9 +1489,12 @@ class MainWindow(QMainWindow):
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
+        self.settings_widget.set_model_value(self._model)   # dito
         # Die Statuszeile führt je bestücktem Steckplatz ein Feld — ein
-        # abgemeldetes Laufwerk muss auch dort verschwinden.
+        # abgemeldetes Laufwerk muss auch dort verschwinden.  Die EM-Leuchten
+        # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.
         self.status_widget.set_drive_types(types)
+        self.status_widget.set_em_sichtbar(bool(em))
         self._update_drive_status()
 
         if cold_restart and self._emu_started and self.act_power.isChecked():

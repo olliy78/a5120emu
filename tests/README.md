@@ -62,6 +62,7 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 | `cli/` | 70 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
 | `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS, K8915 FORMAT/DISGEN (`test_k8915_format*.cpp`, Bedienhelfer `k8915_bedienung.h`) — plus die 88er Format-Matrix und die sechs K8915-Verfahren. **Langsam** (Minuten) |
 | `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll |
+| `oracle/` | 1 | Differenzprüfung U8001/U8002 gegen MAMEs z8000 (Label `mame_oracle`). Nur `tools/dev.sh test-oracle` — eigenes `build_oracle/`, lädt MAME-Quellen beim Konfigurieren (`core/primitives/z8000/README.md`) |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
 | `fixtures/` | — | Testdisketten (`tests/fixtures/README.md`) |
 
@@ -156,8 +157,8 @@ Namensraum `k1520test`, für Integrations- und Systemtests gedacht:
 
 | Header | Inhalt |
 |--------|--------|
-| `screen.h` | `vramText()` — Textbildschirm (0xF800) als Zeichenkette; `vramLines()` für lesbare Fehlerausgaben |
-| `machine_run.h` | `runCycles()`, `runSmallUntil()`, `runUntilVramContains()`, `runUntilPC()` |
+| `screen.h` | `vramText()` — Textbildschirm (0xF800) als Zeichenkette; `visibleText()` nur die 24 sichtbaren Zeilen; `vramLines()` für lesbare Fehlerausgaben; `wipeVram()` vor `reset()` |
+| `machine_run.h` | `runCycles()`, `runSmallUntil()`, `runSmallUntilVisible()`, `runUntilVramContains()`, `runUntilPC()` |
 | `keyboard.h` | `typeKey()`, `typeString()`, `typeCtrl()`, `pressKeyUntil()`, `QK_RETURN` |
 | `fixtures.h` | `diskPath()`, `readFileBytes()`, `TempDisk` |
 
@@ -171,6 +172,11 @@ Zwei Regeln, die dahinterstecken:
    eine 9600-Baud-Strecke, das BIOS holt die Zeichen per Timer-ISR ab. Mit
    groben Batches driftet die CTC-Phase so weit, dass Anschläge verlorengehen.
    Ohne Tastaturbezug ist `runUntilVramContains` (100 000) richtig und schneller.
+3. **Nach `reset()` erst den Schirm wischen, dann auf den SICHTBAREN Prompt
+   warten** (`wipeVram()`, `runSmallUntilVisible(m, "A>", …)`). Gelesen wird das
+   K3526-Schattenram — es überlebt die Reset-Taste —, und die CP/A-Statuszeile
+   hinter Zeile 24 enthält „A>" schon vor der Tastaturinitialisierung des BIOS;
+   ein Anschlag dort wird vom Gast verworfen (`KbdNachReset.*`).
 
 ## Vier Windows-Fallen beim Testschreiben
 

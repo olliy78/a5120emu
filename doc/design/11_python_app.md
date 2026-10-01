@@ -830,3 +830,44 @@ Das Widget gehört dem Hauptfenster (`SettingsWidget(…, schnittstellen=…)`) 
   Client: CTS/DSR/DCD/RI; unbekannt = Umriss); die Zeile fehlt, solange nichts bekannt ist.
 * Wächter: `tests/python/test_serial_gui.py` (Reiter statt Dock, alte Leiste/`dock_state`,
   Format, LEDs, Port-Feld, Gegenseite über echten Loopback).
+
+### 10.10 Modellwahl A5120/A5120.16 und die EM-Leuchten (2026-09-29, S6)
+
+`doc/design/17_a5120_16.md` fügt dem A5120 optional die Steuerkarte 062-9005
+samt Erweiterungsmodul (EM256, U8001) hinzu — am Kern nichts als ein weiterer
+Konstruktorparameter (`K1520Emulator(drive_types, em="em256")`). Die
+Oberfläche behandelt einen Modellwechsel deshalb genau wie einen geänderten
+Laufwerksschacht: **eine neue Maschine**, über dieselbe Stelle
+(`MainWindow._apply_drive_types`, jetzt zusätzlich `em=modell.em_for(self._model)`),
+ohne eigene Rückfrage — die vergleichbare Aktion (das Laufwerks-Auswahlfeld)
+fragt auch nicht nach.
+
+* **Eine Zeile Code, ein Modul**: `app/modell.py` (Schnitt wie
+  `app/drive_types.py`/`app/takt.py`) ist die einzige Stelle, die einen
+  Modellschlüssel (`"a5120"`/`"a5120.16"`) auf den core-`em`-Parameter und den
+  Anzeigenamen abbildet. `general.model` in der Konfiguration (`app/config_io.py`,
+  `data/default_config_a5120.yaml`) trägt den Schlüssel; **ein fehlender Eintrag ist
+  die Vorgabe `"a5120"`** — ältere Konfigurationen laufen unverändert weiter.
+* **Die Auswahl sitzt in *Einstellungen ▸ Allgemein*** (`SettingsWidget.model_combo`,
+  neben dem Takt) — kein Menüpunkt, keine `QAction`, kein Tastenkürzel: dasselbe
+  Muster wie Takt und Laufwerkstyp, die auch schon Auswahlfelder statt Menüs
+  sind, und die Kürzeltabelle des Handbuchs bleibt unberührt.
+* **Statuszeile**: zwei zusätzliche Leuchten V1/V2 (`app/ui/status_bar.py`,
+  `EmLamp`) plus `Modus: 8-Bit`/`16-Bit`, an fester Stelle zwischen Takt und
+  Laufwerken (`MachineStatus.set_em_sichtbar`/`set_em`) — sichtbar nur, wenn
+  `self._model` ein Erweiterungsmodul hat. Abgefragt wird `em_leds()`/`em_mode16()`
+  im selben Sekundentakt wie der Rest (`MainWindow._update_status` →
+  `_update_em_status`), reine Abfrage, kein Rückruf (Anschluss aus S5).
+  **V1 zeigt RAMEN, nicht den Paritätsfehler** — der Plan belegt das am
+  Schaltplan (062-9005, Scan 9005/2: A17/08 treibt V1, A17/09+10 hängen an
+  A31/10 = RAMEN).
+* **`set_drive_types` darf die EM-Widgets nicht mit wegräumen**: sie räumt
+  bisher alles nach dem Taktfeld ab und baut die Laufwerksfelder neu auf. Die
+  EM-Anzeige steht jetzt an einer FESTEN Stelle direkt nach dem Takt
+  (`MachineStatus._em_widgets`), und die Räumschleife beginnt erst danach.
+
+* **Nur im Programmprofil mit `modellwahl`** (`app/profil.py`, beim Zusammenführen
+  der Zweige K8915 und a5120.16 am 2026-10-02): der A5120 Emulator zeigt die Auswahl,
+  der K8915 Emulator nicht und schreibt auch kein `general.model` — ein
+  Erweiterungsmodul gibt es nur am A5120 (`K1520Emulator(machine="k8915", em=…)` →
+  `ValueError`, `k1520_create_with_em` mit EM am K8915 → NULL).

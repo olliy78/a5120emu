@@ -80,7 +80,11 @@ void K3526::memWrite(uint16_t addr, uint8_t data) {
     for (int i = 0; i < 4; ++i) {
         uint32_t base = cfg_.groups[i].base_addr;
         if (addr >= base && addr < base + 0x4000u) {
-            if (group_memdi_[i]) return; // write disabled
+            if (group_memdi_[i]) return; // write disabled (MEMDI1/2)
+            // Auf Bus-/MEMDI gebrückte Gruppe: ein Vorrangspeicher (EM) hat den
+            // Zyklus übernommen.  Gelesen wird in diesem Fall gar nicht erst hier —
+            // der Bus fragt dann nur den Vorrangspeicher (K1520Bus::memRead).
+            if (!cfg_.groups[i].memdi_source && bus_ && bus_->memdiActive()) return;
             mem_[addr] = data;
             return;
         }
@@ -97,6 +101,7 @@ void K3526::memWrite(uint16_t addr, uint8_t data) {
  * @param bus K1520 system bus to register on
  */
 void K3526::attachToBus(K1520Bus& bus) {
+    bus_ = &bus;
     for (int i = 0; i < 4; ++i) {
         bus.registerMem(this, cfg_.groups[i].base_addr, 0x4000);
     }

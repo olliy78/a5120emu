@@ -1,0 +1,22 @@
+# boot_trace --cpu u8000 (S5): jeden U8001-Befehl eine Zeile.  Vorlauf 1 legt
+# em16abl.com auf die Diskettenkopie, Vorlauf 2 bootet im Debugger, startet es und
+# sichert den Zustand am ersten Wechsel in den 16-Bit-Mode; der gemessene Lauf
+# setzt dort fort (alle Läufe im selben Temp-Verzeichnis, daher relativer Pfad).
+# `-p`: nicht am „Boot" (erster ZVE1-PC ≥ 0400H, z. B. eine Timer-ISR) aufhören.
+tool:      boot_trace
+disk:      cpa_cpa780_k5601_noclock.img
+file vorlauf.dbg:
+  gscreen "A>" 150000000
+  bmode 16
+  keys EM16ABL\r
+  g 100000000
+  savestate u8000_state.bin
+  q
+setup_run: @k1520disktool put %DISK% %CLI_DIR%/../fixtures/cpm/em16abl.com
+setup_run: @k1520dbg --em em256 %DISK% -x %vorlauf.dbg%
+run:       -L /dev/null --cpu u8000 --load-state u8000_state.bin -c 400000 -p 400000 -W 40 %DISK%
+expect:    EM:         em256  (+ U8001-Befehlstrace)
+expect:    <<0>>%0100 LDL RR14,#%00000FF0
+expect:    LDCTL PSAPSEG,R0
+expect:    U8001-OUT-A33/A35  U8001 OUT %0080  A33=05 A35=A5
+expect:    [U8001-Trace: Deckel -W 40 erreicht]

@@ -1,0 +1,16 @@
+# z8kasm --sym: Symboldatei fuer k1520dbg (nur Marken, <<SEG>>%OFFS NAME); nicht-
+# segmentiert mit --sym-seg.
+tool:         z8kasm
+run:          -o %bild% --sym %marken% --sym-seg 2 %quelle.s%
+tmpfile bild:
+capture_file: marken
+file quelle.s:
+          ORG   %0200
+  ANFANG: LD    R0,#1
+  SCHL:   JR    SCHL
+  WERT    EQU   %1234
+expect: <<2>>%0200 ANFANG
+expect: <<2>>%0204 SCHL
+expect: 2 Marke(n)
+forbid: WERT
+exit:   0

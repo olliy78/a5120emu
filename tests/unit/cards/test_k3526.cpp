@@ -402,32 +402,57 @@ TEST(K3526, AttachToBus_MemDI_ViaDirectControl) {
     EXPECT_EQ(bus.memRead(0x4000), 0xCC);
 }
 
+/// Vorrangspeicher, der die Seite 4000H–40FFH übernimmt (wie das EM256).
+class Vorrang4000 : public MemdiDriver {
+public:
+    uint8_t cell = 0x5A;
+    bool drivesMemdi(uint16_t a) override { return (a & 0xFF00) == 0x4000; }
+    uint8_t memRead(uint16_t) override { return cell; }
+    void memWrite(uint16_t, uint8_t d) override { cell = d; }
+};
+
 /**
- * @test K3526/AttachToBus_BusMemDI_DoesNotGateMemory
- * @brief The global bus-level /MEMDI signal (bus.setMEMDI) does not gate memory:
- *   on the standard A5120 no OPS group is jumpered onto MEMDI1/2, so reads AND
- *   writes pass through while /MEMDI is asserted. (Per-group disable is done via
- *   K3526::setMemDI, tested separately above.)
- * @par Pass criterion  with /MEMDI asserted, writes still land and reads return
- *   them.
+ * @test K3526/BusMemDI_JeZugriff_NurGebrueckteGruppeSchweigt
+ * @brief Bus-/MEMDI wirkt je Zugriff: zieht ein Vorrangspeicher es für 4000H, verwirft
+ *   die auf Bus-/MEMDI gebrückte Gruppe 1 den Schreibzyklus; alle übrigen Adressen
+ *   laufen unverändert.  Ohne Vorrangspeicher gibt es kein Bus-/MEMDI (A5120 pur).
  */
-TEST(K3526, AttachToBus_BusMemDI_DoesNotGateMemory) {
+TEST(K3526, BusMemDI_JeZugriff_NurGebrueckteGruppeSchweigt) {
     K3526 ops;
     K1520Bus bus;
     ops.attachToBus(bus);
-
     bus.memWrite(0x0000, 0x11);
     bus.memWrite(0x4000, 0x22);
-    bus.setMEMDI(true); // global bus signal — no memory-gating effect
-
-    // Reads pass through unchanged
-    EXPECT_EQ(bus.memRead(0x0000), 0x11);
     EXPECT_EQ(bus.memRead(0x4000), 0x22);
-    // Writes still land while /MEMDI is asserted
-    bus.memWrite(0x0000, 0xEE);
+
+    Vorrang4000 em;
+    bus.addMemdiDriver(&em);
+    EXPECT_EQ(bus.memRead(0x4000), 0x5A);         // EM liefert
     bus.memWrite(0x4000, 0xEE);
+    EXPECT_EQ(em.cell, 0xEE);
+    EXPECT_EQ(ops.rawPtr()[0x4000], 0x22);        // K3526 hat nicht mitgeschrieben
+    bus.memWrite(0x0000, 0xEE);                   // andere Adresse: normal
     EXPECT_EQ(bus.memRead(0x0000), 0xEE);
-    EXPECT_EQ(bus.memRead(0x4000), 0xEE);
+}
+
+/**
+ * @test K3526/BusMemDI_GruppeAufMemdi12HoertNichtAufBusMemdi
+ * @brief Eine auf MEMDI1/2 gebrückte Gruppe (memdi_source = true) ignoriert Bus-/MEMDI
+ *   und schreibt mit — sie hört nur auf setMemDI (Koppelbus).
+ */
+TEST(K3526, BusMemDI_GruppeAufMemdi12HoertNichtAufBusMemdi) {
+    K3526::A5120Config cfg;
+    cfg.groups[1].memdi_source = true;
+    K3526 ops(cfg);
+    K1520Bus bus;
+    ops.attachToBus(bus);
+    Vorrang4000 em;
+    bus.addMemdiDriver(&em);
+    bus.memWrite(0x4000, 0x77);
+    EXPECT_EQ(ops.rawPtr()[0x4000], 0x77);
+    ops.setMemDI(1, true);
+    bus.memWrite(0x4000, 0x78);
+    EXPECT_EQ(ops.rawPtr()[0x4000], 0x77);
 }
 
 /**

@@ -160,7 +160,8 @@ TEST_F(Fixture, Bank2ViertelSindGetrennt)
 /**
  * @test ZRE8762.MemdiUndMemdi1
  * @brief /MEMDI aktiv bei Bit7 = 1 (X9 → X8, invertiert), /MEMDI1 aktiv bei Bit3 = 0
- *        (X27 → X12, gekreuzt, ohne Inverter).  /MEMDI geht auf den Bus.
+ *        (X27 → X12, gekreuzt, ohne Inverter).  Zustand der Karte — die Bus-Leitung
+ *        /MEMDI ist seit dem A5120.16 ein je Zugriff getriebenes Signal (MemdiDriver).
  */
 TEST_F(Fixture, MemdiUndMemdi1)
 {
@@ -173,7 +174,6 @@ TEST_F(Fixture, MemdiUndMemdi1)
         out(z.reg);
         EXPECT_EQ(zre.memdi(),  z.memdi)  << "A8H=" << std::hex << int(z.reg);
         EXPECT_EQ(zre.memdi1(), z.memdi1) << "A8H=" << std::hex << int(z.reg);
-        EXPECT_EQ(bus.getMEMDI(), z.memdi);
     }
 }
 

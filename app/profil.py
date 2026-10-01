@@ -46,6 +46,9 @@ class Programmprofil:
     tastatur: str
     #: Frontplatte mit Lampen in der Statuszeile (K8915: Run … Power).
     frontplatte: bool = False
+    #: Modellwahl A5120 / A5120.16 (Erweiterungsmodul, `app/modell.py`) unter
+    #: *Einstellungen ▸ Allgemein* — nur der A5120 kann eins tragen.
+    modellwahl: bool = False
     #: Aktionen, die nur dieses Programm hat (Namen aus `app/ui/actions.py`).
     eigene_aktionen: Tuple[str, ...] = field(default_factory=tuple)
     #: Die jeweils ANDERE Maschine (für *Werkzeuge ▸ … starten*).
@@ -95,6 +98,7 @@ A5120 = Programmprofil(
     nenntakt_hz=2_450_000,
     nenntakt_text="2,45 MHz",
     tastatur="k7637",
+    modellwahl=True,
     andere="k8915",
 )
 

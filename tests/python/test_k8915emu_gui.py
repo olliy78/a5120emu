@@ -65,6 +65,52 @@ def test_titles_and_machines_of_the_two_programs(qapp, konfig_ordner):
             _zu(w, qapp)
 
 
+def test_only_the_a5120_offers_the_a5120_16_model(qapp, konfig_ordner):
+    """Die Modellwahl A5120/A5120.16 (Erweiterungsmodul) gehört dem A5120 Emulator.
+
+    Der K8915 Emulator zeigt sie nicht, schreibt kein ``general.model`` und
+    übernimmt auch keins aus seiner Konfiguration — ein EM gibt es nur am A5120.
+    """
+    from app import config_io, modell
+
+    (konfig_ordner / "k8915emu.yaml").write_text(
+        "version: 1\ngeneral: {model: a5120.16}\n", encoding="utf-8")
+    w = _fenster(qapp, "k8915")
+    try:
+        assert not w.profil.modellwahl
+        assert w.settings_widget.model_combo.isHidden()
+        assert w._model == modell.A5120
+        assert not w.status_widget.em_sichtbar()
+        assert w.emulator.em_variant() == ""
+        w._autosave_now()
+        assert "model" not in config_io.load_config(
+            str(konfig_ordner / "k8915emu.yaml"))["general"]
+    finally:
+        _zu(w, qapp)
+
+    w = _fenster(qapp, "a5120")
+    try:
+        assert w.profil.modellwahl
+        assert not w.settings_widget.model_combo.isHidden()
+    finally:
+        _zu(w, qapp)
+
+
+def test_k8915_refuses_an_extension_module():
+    from app.core_binding.k1520 import K1520Emulator, _lib
+    with pytest.raises(ValueError):
+        K1520Emulator(machine="k8915", em="em256")
+    assert not _lib.k1520_create_with_em(2, None, None, None, None, b"em256")
+    # Ohne EM ist k1520_create_with_em dieselbe Maschine wie k1520_create_configured.
+    h = _lib.k1520_create_with_em(2, None, None, None, None, None)
+    assert h
+    try:
+        assert _lib.k1520_machine_type(h) == 2
+        assert _lib.k1520_em_variant(h) == b""
+    finally:
+        _lib.k1520_destroy(h)
+
+
 def test_k8915emu_reads_and_writes_its_own_config_and_leaves_the_others_alone(
         qapp, konfig_ordner):
     """k8915emu schreibt ``k8915emu.yaml`` — ``config.yaml``/``a5120emu.yaml``

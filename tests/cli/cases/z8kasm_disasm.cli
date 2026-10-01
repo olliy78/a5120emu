@@ -1,0 +1,12 @@
+# z8kasm -d: EM256-Firmware so disassemblieren, wie der U8001 sie ausfuehrt
+# (FCW %C000 = segmentiert).  Zeigt die beiden Befunde aus tools/z8000/README.md:
+# z8001asm.py schreibt Adressen einwortig (-> kurze Segmentform) und ungerade Zeiger.
+tool:   z8kasm
+run:    -d %CLI_DIR%/../fixtures/z8000/fw_march.z8001asm.bin -s --start %40
+
+expect: <<0>>0002   C000                      .WORD %C000
+expect: <<0>>0040
+expect: JP Z,|<<1>>%DE|
+expect: LD @RR7,R1
+forbid: .WORD %3600
+exit:   0

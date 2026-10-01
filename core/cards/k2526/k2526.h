@@ -45,7 +45,8 @@
  *     A5 /WR      – memory test WR signal (input, Strobe: nur während eines
  *                   ZVE1-Schreibzyklus aktiv-LOW → pulseWriteStrobe())
  *     A6 /RDY     – memory/peripheral ready (input)
- *     A7 MEMDI1/2 – memory-disable output (active high → bus_.setMEMDI(true))
+ *     A7 MEMDI1/2 – memory-disable output (active high) auf die Rückverdrahtung
+ *                   (Koppelbus MEMDI1/2), NICHT auf Bus-/MEMDI → onMemdi12()
  *   Port B (mixed):
  *     B0 /LD-ROM    – boot ROM control (output): 1=ROM active, 0=ROM disabled
  *     B1 /INT-BS    – OS-level change request (input from external latch)
@@ -544,6 +545,19 @@ public:
     bool isZVE2InReset() const { return zve2_reset_; }
 
     /**
+     * @brief Ausgang MEMDI1/2 (BS-PIO Port A Bit7) — Rückverdrahtung, nicht Bus-/MEMDI.
+     *
+     * Die Maschine verdrahtet ihn mit Koppelbus `memdi1/2`; darauf hören nur
+     * K3526-Gruppen, die dorthin gebrückt sind (`memdi_source = true`).  Früher trieb
+     * A7 fälschlich die Bus-Leitung /MEMDI (doc/design/17_a5120_16.md §3 S1).
+     * @param cb wird bei jeder Ausgabe an Port A mit dem Pegel von A7 gerufen
+     *           (true = MEMDI1/2 aktiv)
+     */
+    void onMemdi12(std::function<void(bool)> cb) { memdi12_cb_ = std::move(cb); }
+    /** @brief Aktueller Zustand von MEMDI1/2 (BS-PIO A7). */
+    bool memdi12() const { return memdi12_; }
+
+    /**
      * @brief Check whether ZVE2 is stalled by /WAIT-ZVE2.
      *
      * BS-PIO B3=0 (/WAIT-ZVE2 asserted) prevents ZVE2 from executing
@@ -723,6 +737,8 @@ private:
     bool    sps_ind_     = false;   ///< true = Q240 violation occurred (SPS-Ind, A3)
     bool    shutdown_req_= false;   ///< true = /SA asserted (B4=0, power-off request)
     bool    int_bs_active_= false;  ///< true = /INT-BS active (B1=0 input to BS-PIO)
+    bool    memdi12_     = false;   ///< BS-PIO A7 → MEMDI1/2 der Rückverdrahtung
+    std::function<void(bool)> memdi12_cb_;  ///< Koppelbus-Anschluss (Maschine)
 
     uint8_t port_a_inputs_ = 0xFF;  ///< Current Port A input values (bits 0–6)
 

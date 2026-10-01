@@ -1,0 +1,61 @@
+# S5b am lebenden U8001 (em16abl.com): bedingter Haltepunkt, Logpoint, Watchpoint
+# (logisch, mit Busstatus), E/A-Port-Halt, Symbole mit Segment, Halt GENAU an der
+# Flanke (bmode/bint16 mit Zeile „ausgeloest"), snap diff mit EM, dev em (A46/A53/A54).
+tool:      k1520dbg
+disk:      cpa_cpa780_k5601_noclock.img
+setup_run: @k1520disktool put %DISK% %CLI_DIR%/../fixtures/cpm/em16abl.com
+run:       --em em256 %DISK%
+timeout:   120
+file abl.sym:
+  # em16abl (Handschrift, Adressen aus dem Disassembler)
+  <<0>>%0100 START
+  <<0>>%0132 SUMME
+  <<0>>%030E UP_TEST
+  MAILBOX = <<0>>%0080
+stdin:
+  gscreen "A>" 150000000
+  sym %abl.sym%
+  bmode 16
+  keys EM16ABL\r
+  g 100000000
+  bmode off
+  cpu u8000
+  b SUMME if R2==%60
+  lp SUMME R1 R2
+  wp MAILBOX..%00BF
+  disp R1+R2
+  snap a
+  g 3000000
+  bd SUMME
+  lpd SUMME
+  wd all
+  iob %0081
+  g 3000000
+  iod %0081
+  bint16
+  g 3000000
+  snap b
+  snap diff a b
+  dev em
+  q
+exit:      0
+forbid:    unknown command
+forbid:    nicht auswertbar
+expect:    loaded 0 symbol(s) + 4 U8001-Symbol(e) mit Segment
+# bmode: die Flanke kommt vom OUT des U880 (RESET16 los) — Halt NACH diesem Befehl
+expect:    ** Moduswechsel → 16-Bit-Mode : ZVE1 PC=01E1
+expect:    ausgeloest: U880, E/A-Zyklus in 01DF: D3 A9          OUT (A9H),A — Halt nach diesem Befehl
+expect:    bp U8001 @<<0>>%0132 <SUMME> if R2==%60
+expect_re: \[lp\] c[0-9]+ +<<0>>%0132 <SUMME>: 8121 +ADD R1,R2  R1=0\(%0\)  R2=100\(%64\)
+expect:    WR <<0>>%008C (em:0008C)=53  U8001 PC=<<0>>%0114 <START+%14> (DATA, System)
+expect:    ** bp U8001 [R2==%60] : U8001 PC=<<0>>%0132 <SUMME>
+expect:    disp[0] U8001  R1+R2=
+expect:    ** io16 IN %0081=81 : U8001 PC=<<0>>%016E <SUMME+%3C>
+# bint16: die Flanke kommt vom OUT des U8001 — Halt vor seinem NÄCHSTEN Befehl
+expect:    ** INT-16 (A33 Bit 4 → PIO A4) : U8001 PC=<<0>>%026C
+expect:    ausgeloest: U8001, Befehl <<0>>%0268: 3B06 0080                 OUT %0080,R0 — Halt vor dem naechsten U8001-Befehl
+expect:    => <<0>>%026C: 5F00 8000 030E            CALL <<0>>%030E <UP_TEST>
+expect:    EM: A33 0→10
+expect_re: EM-DRAM em:[0-9A-F]{5}\.\.em:[0-9A-F]{5}
+expect:    A46 (Paritaets-FF, Merker)=0
+expect:    A53 (Einzelbefehlszaehler)=11 (Vorlast 11)

@@ -34,6 +34,7 @@ tools/dev.sh trace <boot_trace-args>   # build build_trace/, then run boot_trace
 tools/dev.sh tool <name> [args]  # build build/, then run build/<name> (floppy_diag, k1520dbg, kbd_test…)
 tools/dev.sh test-python         # only the pytest layer (C-ABI + GUI, label "python")
 tools/dev.sh test-level unit     # one test level: unit|debugtools|integration|cli|system|python
+tools/dev.sh test-oracle         # Z8000-Kern gegen MAME (build_oracle/, lädt MAME beim Konfigurieren)
 tools/dev.sh win [ctest-args]    # Cross-Bau nach WINDOWS (MinGW-w64) + Tests unter wine
 tools/dev.sh check               # build both dirs + report freshness
 tools/dev.sh rebuild             # rm -rf build build_trace, then build from scratch
@@ -406,6 +407,22 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
   - The **boot ROM** is mapped at `0x0000–0x03FF` at power-on and unmapped by writing BS-PIO Port B bit0 (`/LD-ROM`); after that the low addresses are plain RAM shared by both CPUs.
 - **C-API boundary** (`core/api/k1520_api.{h,cpp}`): the only surface the Python side sees; keep it `extern "C"` and ABI-stable. `A5120Machine` (`core/machines/a5120/a5120.{h,cpp}`) is the integration point exposing `run()`, disk mounting, framebuffer, keyboard, and debug accessors.
 - **EPROM/charset data** are committed as generated C arrays (`*_data.h`, `chargen_*.h`) produced from binaries by `tools/eprom_to_h.py`; they are not loaded at runtime. The K7024 character generator is the two-EPROM Latin set (`chargen_zg1.h` = pixel rows 0–7 / v171, `chargen_zg2.h` = rows 8–11 / v172); binaries under `doc/EPROMS/K7024/`.
+
+## Variante A5120.16 (Erweiterungsmodul EM064/EM256 mit U8001)
+
+Ein A5120 mit `A5120Machine::Config::em` (`core/cards/em/`, CPU-Primitive
+`core/primitives/z8000.{h,cpp}`, Werkzeuge `tools/z8000/` + `z8kasm`); C-ABI
+`k1520_create_with_em`/`k1520_em_*`, Python `K1520Emulator(em="em256")`, Debugger
+`k1520dbg --em em256` + `cpu u8000` (`tools/k1520dbg.md` §12), `boot_trace --em`. Plan
+und Stand: `doc/design/17_a5120_16.md`. Beim Zusammenführen mit dem Zweig K8915
+(2026-10-02) festgelegt:
+- **Bus-/MEMDI ist ein JE ZUGRIFF getriebenes Signal** (`K1520Bus::MemdiDriver`), es gibt
+  kein `setMEMDI` mehr; die ZRE 045-8762 des K8915 führt /MEMDI nur als Kartenzustand.
+- **Save-State v7** = SIO-Block mit Break/Ext-Latch (K8915-Zweig) + EM-Block; beide Zweige
+  hatten unabhängig „v6“ vergeben, ältere Stände laden deshalb ohne Geräteteil.
+- **Ein EM gibt es nur am A5120**: Modellwahl nur im Programmprofil mit `modellwahl`
+  (`app/profil.py`), `K1520Emulator(machine="k8915", em=…)` → `ValueError`.
+  Wächter `test_only_the_a5120_offers_the_a5120_16_model`.
 
 ## Zweite Maschine: K8915
 

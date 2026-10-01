@@ -86,8 +86,9 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
         // hierüber aus und prüfen in der ISR, ob das Byte angekommen ist.
         pulseWriteStrobe();
     };
-    cpu_.readPort     = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
-    cpu_.writePort    = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
+    // Volle E/A-Adresse auf den Bus: AB8–15 wertet der Attributspeicher des EM256 aus.
+    cpu_.readPort     = [this](uint16_t p)           { return bus_.ioRead(p); };
+    cpu_.writePort    = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p, d); };
     cpu_.retiCallback = [this]()                     { bus_.signalRETI(); };
 
     // ── ZVE2 (DMA-CPU) mit K1520-Bus verdrahten (ohne Q240-Schutz) ──────────
@@ -96,14 +97,17 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
     // Kein retiCallback: ZVE2 führt keine Interrupt-Service-Routinen aus.
     zve2_.readByte  = [this](uint16_t a)           { return bus_.memRead(a); };
     zve2_.writeByte = [this](uint16_t a, uint8_t d){ bus_.memWrite(a, d); };
-    zve2_.readPort  = [this](uint16_t p)           { return bus_.ioRead(p & 0xFF); };
-    zve2_.writePort = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p & 0xFF, d); };
+    zve2_.readPort  = [this](uint16_t p)           { return bus_.ioRead(p); };
+    zve2_.writePort = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p, d); };
 
-    // ── BS-PIO Port-A-Ausgangs-Callback: A7=MEMDI steuert Speichersperre ────
+    // ── BS-PIO Port-A-Ausgangs-Callback: A7 = MEMDI1/2 der Rückverdrahtung ──
+    // NICHT Bus-/MEMDI (X1 C09): das zieht je Zugriff ein Vorrangspeicher (EM),
+    // s. K1520Bus::memRead.  Auf MEMDI1/2 hört am A5120 keine Gruppe — deshalb
+    // läuft HARDYs MEMDI-Test (A7 setzen, weiterrechnen) durch.
     bs_pio_.setPortAOutputCallback([this](uint8_t data) {
-        bool memdi = (data >> 7) & 1;
-        bus_.setMEMDI(memdi);
-        LOG_DEBUG("K2526", "BS-PIO PortA out=0x%02X → MEMDI=%d", data, (int)memdi);
+        memdi12_ = (data >> 7) & 1;
+        if (memdi12_cb_) memdi12_cb_(memdi12_);
+        LOG_DEBUG("K2526", "BS-PIO PortA out=0x%02X → MEMDI1/2=%d", data, (int)memdi12_);
     });
 
     // ── BS-PIO Port-B-Ausgangs-Callback: alle Ausgangsbits dekodieren ────────

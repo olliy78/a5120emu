@@ -88,7 +88,9 @@ void K8915Zre::setReg(uint8_t v)
     const auto& f = cfg_.feld;
     memdi_  = !klemme(f.x8_memdi,   v);   // aktiv L
     memdi1_ = !klemme(f.x12_memdi1, v);
-    bus_.setMEMDI(memdi_);
+    // /MEMDI bleibt Zustand der Karte (memdi()): seit dem A5120.16 ist die Bus-Leitung
+    // ein JE ZUGRIFF getriebenes Signal (K1520Bus::MemdiDriver), kein statischer Pegel,
+    // und am K8915 hört kein Gerät darauf.
     rebuildMap();
     LOG_DEBUG("ZRE8762", "A8H := %02X  /MEMDI=%d /MEMDI1=%d", v, (int)memdi_, (int)memdi1_);
 }

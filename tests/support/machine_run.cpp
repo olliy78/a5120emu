@@ -22,6 +22,14 @@ bool runSmallUntil(A5120Machine& m, const std::string& needle, long long max_cyc
     return false;
 }
 
+bool runSmallUntilVisible(A5120Machine& m, const std::string& needle, long long max_cycles) {
+    for (long long done = 0; done < max_cycles; done += kSmallBatch) {
+        m.run(static_cast<int>(kSmallBatch));
+        if (visibleText(m).find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
 bool runUntilVramContains(A5120Machine& m, const std::string& needle, long long max_cycles) {
     for (long long done = 0; done < max_cycles; done += kCoarseBatch) {
         m.run(static_cast<int>(kCoarseBatch));

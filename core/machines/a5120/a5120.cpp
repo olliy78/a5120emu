@@ -56,6 +56,14 @@ A5120Machine::A5120Machine(const Config& cfg)
     // Laufwerksverwaltung + Formatkatalog (wirft, wenn data/formats.yaml fehlt).
     , lw_(afs_, profilesFromConfig(cfg))
 {
+    // Erweiterungsmodul (A5120.16) — nur auf ausdrücklichen Wunsch.
+    if (cfg.em != Config::Em::none) {
+        EM::Config ec;
+        ec.variante = cfg.em == Config::Em::em064 ? EM::Variante::EM064 : EM::Variante::EM256;
+        ec.lesart   = cfg.em_a22_lesart;
+        em_ = std::make_unique<EM>(bus_, ec);
+    }
+
     // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
     // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
     wireBackplane();
@@ -80,7 +88,28 @@ void A5120Machine::wireBackplane() {
 
     // Interrupt chain (physical slot order: AFS→ASS→ZRE→ABS, OPS has no IRQ)
     // ZRE BS-PIO is on the second chain via Koppelbus (lowest priority)
-    bus_.setInterruptChain({&afs_, &ass_, &zre_});
+    if (em_) {
+        // A5120.16: E/A-Tore A8H–AFH + Vorrangspeicher (/MEMDI je Zugriff).  Die PIO
+        // A32 steht in der IEI/IEO-Kette; empfohlene Steckplätze (Handbuch §1.1):
+        // ASS · ZRE16 · EM064/256 · ZRE — also zwischen ASS und ZRE.  Die Kette selbst
+        // wird laut Handbuch nach Montagevorschrift gewickelt (liegt nicht vor).
+        em_->attachToBus();
+        bus_.setInterruptChain({&afs_, &ass_, em_.get(), &zre_});
+    } else {
+        bus_.setInterruptChain({&afs_, &ass_, &zre_});
+    }
+
+    // MEMDI1/2 der Rückverdrahtung (BS-PIO A7).  KoppelbusSignal führt den
+    // elektrischen Pegel der aktiv-LOW-Leitung (true = H = inaktiv).  Darauf hört nur
+    // eine K3526-Gruppe, die dorthin gebrückt ist (memdi_source = true) — am A5120
+    // keine; Bus-/MEMDI (K1520Bus::memdiActive) ist davon getrennt.
+    zre_.onMemdi12([this](bool asserted) {
+        koppel_.memdi1.drive(!asserted);
+        koppel_.memdi2.drive(!asserted);
+    });
+    for (int g = 0; g < 4; ++g)
+        if (ops_.config().groups[g].memdi_source)
+            koppel_.memdi1.connect([this, g](bool level) { ops_.setMemDI(g, !level); });
 
     // Break-before-execute für Debugger (s. Z80::abortBeforeExecute): fordert ein
     // Trace-Callback mitten in der Instruktionsvorbereitung einen Halt an (stop()),
@@ -160,6 +189,7 @@ void A5120Machine::resetHardware() {
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
     kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
+    if (em_) em_->reset();  // EM: PIO hochohmig ⇒ RESET16/Pull-ups; DRAM + A22 bleiben
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -185,6 +215,7 @@ void A5120Machine::powerOn() {
     // Löschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
     // weiter — inklusive der Reste des vorherigen OS.
     ops_.fill(0xFF);
+    if (em_) em_->powerOn();
     resetHardware();
     LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
@@ -262,6 +293,7 @@ std::vector<A5120Machine::IntSource> A5120Machine::interruptSources() const {
     addSio(ass_.sioA33(),  "K8025 SIO-A33 (DFUE)");
     addSio(ass_.sioA32(),  "K8025 SIO-A32 (Tastatur)");
     addCtc(ass_.ctcA34(),  "K8025 CTC-A34");
+    if (em_) addPio(em_->pio(), "EM PIO-A32");
     addCtc(zre_.ctc(),     "K2526 CTC");
     addPio(zre_.bsPio(),   "K2526 BS-PIO");
     return out;
@@ -309,6 +341,10 @@ void A5120Machine::captureState(MachineSnapshot& s) const {
     // access (dir, file reads/writes) resumes with the head on the right track.
     afs_.serialize(s.device_state);              // K5122 floppy controller
     screen_.serialize(s.device_state);           // K7024 VRAM (v4: screen survives loadstate)
+    // v7: Erweiterungsmodul (A5120.16) — Kennbyte 0 = keins, 1 = EM-Block folgt
+    // (DRAM, Attributspeicher, PIO, Register, U8001 mit Ablaufzustand).
+    s.device_state.push_back(em_ ? 1 : 0);
+    if (em_) em_->serialize(s.device_state);
 }
 
 bool A5120Machine::restoreState(const MachineSnapshot& s) {
@@ -337,6 +373,12 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
         // v4+: K7024 VRAM. Fehlt bei v2/v3-Snapshots (p==end) → Bildschirm bleibt
         // wie er ist; deserialize prüft die Länge selbst.
         if (p < end) screen_.deserialize(p, end);
+        // v7+: EM.  Fehlt bei älteren Ständen (p==end) → das EM behält seinen Zustand.
+        // Ein EM-Block für eine Maschine ohne EM (oder umgekehrt) wird übergangen.
+        if (p < end) {
+            const uint8_t mit_em = *p++;
+            if (mit_em && em_) em_->deserialize(p, end);
+        }
     }
     return true;
 }
@@ -352,11 +394,15 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
 //       Caps/Scroll/Num-Rasten).  Der Blob trägt keine Längen je Chip, also
 //       verschöbe ein v4-Block alles dahinter — ein älterer Stand wird deshalb
 //       OHNE Geräteteil geladen (Geräte behalten ihren Zustand, wie bei v1).
-//   6 = Z80SIO-Kanal um Break-Eingang und Ext/Status-Latch erweitert (AP-S3,
-//       doc/design/19 §6.4) — gleiche Folge: ältere Stände ohne Geräteteil.
+//   6 = (Zweig K8915) Z80SIO-Kanal um Break-Eingang und Ext/Status-Latch erweitert
+//       (AP-S3, doc/design/19 §6.4) — bzw. (Zweig a5120.16) + Erweiterungsmodul.
+//       Beide Zweige haben unabhängig v6 vergeben, die Stände sind nicht unterscheidbar.
+//   7 = beides zusammen: neuer SIO-Block UND Kennbyte + EM-Block am Ende des
+//       Geräteteils (A5120.16, doc/design/17_a5120_16.md S4).  Ältere Stände (≤ v6)
+//       werden ohne Geräteteil geladen.
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
-constexpr uint8_t kStateVersion    = 6;
+constexpr uint8_t kStateVersion    = 7;
 }
 
 uint8_t A5120Machine::keyboardLeds() const {
@@ -409,10 +455,10 @@ bool A5120Machine::loadState(const std::string& path) {
         s.device_state.resize(dev_len);
         if (dev_len) f.read(reinterpret_cast<char*>(s.device_state.data()), dev_len);
         if (!f) return false;
-        // Vor v5 hat der K7637-Block, vor v6 der SIO-Block ein anderes Format;
-        // sequentiell gelesen verschöbe das jeden folgenden Chip.  Lieber ohne
-        // Geräteteil laden.
-        if (version < 6) s.device_state.clear();
+        // Vor v5 hat der K7637-Block, vor v7 der SIO-Block ein anderes Format
+        // (ein v6 kann beides sein, s. o.); sequentiell gelesen verschöbe das jeden
+        // folgenden Chip.  Lieber ohne Geräteteil laden.
+        if (version < 7) s.device_state.clear();
     }
     s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
     return restoreState(s);
@@ -455,6 +501,7 @@ int A5120Machine::run(int max_cycles) {
         if (bus_.isWAIT()) {
             remaining--;
             total_cycles_++;
+            if (em_) em_->advance(1);
             continue;
         }
 
@@ -558,6 +605,7 @@ int A5120Machine::run(int max_cycles) {
                 if (used2 <= 0) used2 = 1;   // Sicherung gegen Endlosschleife
                 remaining     -= used2;
                 total_cycles_ += used2;
+                if (em_) em_->advance(used2);   // A5120.16: U8001 auf Maschinenzeit nachziehen
                 if (held_read_active_) held_read_cycles_ += used2;   // No-Progress-Watchdog
                 afs_.update(used2);          // Floppy-Timer (Byte-Bereitschaft, /STR-Abtastung)
                 // ZVE2-Completion-Handshake [0x03F8]=3 (Boot-ROM 0x026B; Sekundär- und
@@ -586,6 +634,7 @@ int A5120Machine::run(int max_cycles) {
                 afs_.dmaUpdate();
                 remaining--;
                 total_cycles_++;
+                if (em_) em_->advance(1);
                 continue;
             }
         } else {
@@ -620,12 +669,17 @@ int A5120Machine::run(int max_cycles) {
         }
 
         const uint16_t pc_before = zre_.cpuPC();
+        // A5120.16: jeder Befehl des U880 beginnt mit M1 — Takt des FF A29 (EM).
+        if (em_) em_->onU880M1();
         int used = zre_.cpuStep();
         // Debugger-Halt VOR der Instruktion (abortBeforeExecute): die Instruktion ist
         // nicht gelaufen, also weder Takte noch Floppy-/CTC-/Tastatur-Zeit verbuchen.
         if (used == 0 && stop_.load(std::memory_order_relaxed)) break;
         remaining -= used;
         total_cycles_ += used;
+        // A5120.16: der U8001 läuft befehlsweise verschränkt auf derselben Maschinenzeit
+        // (U880 2,45 MHz, U8001 4 MHz; EM::advance rechnet um).  Ohne EM: nichts.
+        if (em_) em_->advance(used);
 
         // Advance floppy index pulse simulation
         afs_.update(used);

@@ -1,0 +1,18 @@
+# S5b: roher Watchpoint auf das EM-DRAM (em:) erfasst auch den U880 über das
+# Fenster — em256ful.com schreibt in Gruppe B über Seite 4 (4000H) in die Zelle 0.
+tool:      k1520dbg
+disk:      cpa_cpa780_k5601_noclock.img
+setup_run: @k1520disktool put %DISK% %CLI_DIR%/../fixtures/cpm/em256ful.com
+run:       --em em256 %DISK%
+timeout:   120
+stdin:
+  gscreen "A>" 150000000
+  wb em:00000..em:3FFFF
+  keys EM256FUL\r
+  g 30000000
+  wl
+  q
+exit:      0
+forbid:    unknown command
+expect:    ** watch WR em:00000=5A by U880 [4000] ZVE1.PC=
+expect_re: \[16:0\] break-wr \[em:00000\.\.em:3FFFF\]  hits=[1-9]

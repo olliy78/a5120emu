@@ -25,6 +25,12 @@ static K1520Machine* toMachine(K1520Handle h) {
     return static_cast<K1520Machine*>(h);
 }
 
+// Erweiterungsmodul (A5120.16): nur ein A5120 kann eins tragen; am K8915 „keins“.
+static const EM* emOf(K1520Handle h) {
+    auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
+    return a ? a->em() : nullptr;
+}
+
 // Grund eines fehlgeschlagenen k1520_create*.  Ein Startabbruch (z. B. fehlender
 // Diskettenformat-Katalog) liefert KEIN Handle — die Meldung muss deshalb ohne
 // Handle abrufbar sein (k1520_last_init_error).
@@ -103,6 +109,93 @@ K1520Handle k1520_create_configured(K1520MachineType type,
         g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
         return nullptr;
     }
+}
+
+K1520Handle k1520_create_with_em(K1520MachineType type,
+                                 const char* d0, const char* d1,
+                                 const char* d2, const char* d3, const char* em) {
+    const std::string e = em ? em : "";
+    // Ohne EM ist es dieselbe Maschine wie k1520_create_configured — auch der K8915.
+    if (e.empty() || e == "none") return k1520_create_configured(type, d0, d1, d2, d3);
+    if (type != K1520_MACHINE_A5120) {
+        g_init_error = "Ein Erweiterungsmodul gibt es nur am A5120 (A5120.16)";
+        return nullptr;
+    }
+
+    setup_logging();
+
+    try {
+        g_init_error.clear();
+        A5120Machine::Config cfg;
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+        if (e == "em064")         cfg.em = A5120Machine::Config::Em::em064;
+        else if (e == "em256")         cfg.em = A5120Machine::Config::Em::em256;
+        else {
+            g_init_error = "Unbekanntes Erweiterungsmodul '" + e + "' (none|em064|em256)";
+            return nullptr;
+        }
+        K1520Machine* m = new A5120Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
+        return m;
+    } catch (const std::exception& ex) {
+        g_init_error = ex.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+const char* k1520_em_variant(K1520Handle h) {
+    const EM* em = emOf(h);
+    if (!em) return "";
+    return em->config().variante == EM::Variante::EM256 ? "em256" : "em064";
+}
+
+bool k1520_em_led_v1(K1520Handle h) {
+    const EM* em = emOf(h);
+    return em && em->ledV1();
+}
+
+bool k1520_em_led_v2(K1520Handle h) {
+    const EM* em = emOf(h);
+    return em && em->ledV2();
+}
+
+bool k1520_em_mode16(K1520Handle h) {
+    const EM* em = emOf(h);
+    return em && !em->mode8();
+}
+
+int k1520_em_state_size(void) {
+    return static_cast<int>(sizeof(K1520EmState));
+}
+
+bool k1520_em_state(K1520Handle h, K1520EmState* out) {
+    const EM* em = emOf(h);
+    if (!em || !out) return false;
+    const Z8000& z = em->u8001();
+    K1520EmState s{};
+    for (int i = 0; i < 14; ++i) s.r[i] = z.Rg[i];
+    s.r14[0] = z.R14[0]; s.r14[1] = z.R14[1];
+    s.r15[0] = z.R15[0]; s.r15[1] = z.R15[1];
+    s.fcw = z.fcw; s.pc = z.pc; s.pc_seg = z.pcSeg;
+    s.psap_seg = z.psapSeg; s.psap_off = z.psapOff; s.refresh = z.refresh;
+    s.model = z.isZ8001() ? 1 : 2;
+    s.cycles = z.cycles;
+    s.in_reset = z.inReset(); s.halted = z.halted(); s.stopped = z.stopped();
+    s.bus_ack = z.busAck(); s.mo_active = z.moActive();
+    s.mode8 = em->mode8(); s.ramen = em->ramEnabled(); s.tren = em->tren();
+    s.trq8 = em->trq8(); s.busrq16 = em->busRq16(); s.stop16 = em->stop16();
+    s.reset16 = em->reset16(); s.vi_pending = em->viPending(); s.nvi = em->nviLine();
+    s.parity_error = em->parityError();
+    s.a33 = em->steuer16(); s.a35 = em->status16(); s.status8 = em->status8();
+    s.vector8 = em->vector8(); s.a53 = em->a53(); s.segment = em->segment();
+    s.seg_mode = em->segMode();
+    *out = s;
+    return true;
 }
 
 const char* k1520_last_init_error(void) {
