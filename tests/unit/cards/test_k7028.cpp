@@ -318,35 +318,3 @@ TEST(K7028Seriell, AlterUnterbauSchweigtBeiBelegtemStecker)
     EXPECT_EQ(w.w1.fernNimm(buf, 4), 1u);
     EXPECT_EQ(buf[0], 0x43);
 }
-
-/**
- * @test K7028.AbnehmerErsetztDieRueckschleifeSeinesKanals
- * @brief AP-E4c / AP-T1a: MIT Prüfstecker ersetzt ein Abnehmer die Rückschleife NUR
- *        auf seinem Kanal — das Byte geht nach außen und kommt nicht zusätzlich als
- *        Echo zurück; die beiden anderen Kanäle schleifen weiter (sonst schlüge der
- *        SIO-Test des ROMs mit angeschlossenem Drucker fehl).  Bei 7 Datenbits (WR5
- *        D6–5 = 01, BIOS-Fassung 900) trägt die Leitung nur die unteren 7 Bit.
- *        (Bis AP-T1a hielt das nur der Integrationsfall mit Fassung 900 fest.)
- */
-TEST(K7028, AbnehmerErsetztDieRueckschleifeSeinesKanals)
-{
-    Aufbau a(K7028::Config::mitPruefstecker());
-    std::vector<uint8_t> ab;
-    a.ats.setAbnehmer(K7028::Sio1B, [&](uint8_t b) { ab.push_back(b); });
-    a.bus.ioWrite(0x40, 0x31);
-    a.bus.ioWrite(0x42, 0x32);
-    a.bus.ioWrite(0x50, 0x33);
-    a.ats.service(0);
-    a.ats.service(100'000);
-    EXPECT_EQ(ab, std::vector<uint8_t>{0x32});
-    EXPECT_EQ(a.bus.ioRead(0x43) & 0x01, 0x00) << "kein Echo neben dem Abnehmer";
-    EXPECT_EQ(a.bus.ioRead(0x40), 0x31);
-    EXPECT_EQ(a.bus.ioRead(0x50), 0x33);
-
-    a.bus.ioWrite(0x43, 0x05);
-    a.bus.ioWrite(0x43, 0x28);           // WR5: 7 Bit, Sender frei
-    a.bus.ioWrite(0x42, 0xC1);
-    a.ats.service(200'000);
-    a.ats.service(300'000);
-    EXPECT_EQ(ab, (std::vector<uint8_t>{0x32, 0x41})) << "Bit 7 liegt nicht auf der Leitung";
-}

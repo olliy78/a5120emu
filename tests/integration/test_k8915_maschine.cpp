@@ -41,8 +41,8 @@ bool enthaelt(const std::string& s, const std::string& teil) {
 
 /**
  * @test K8915Machine.DfueUndDruckerHaengenAnIhremEigenenKanal
- * @brief Drucker = SIO1-B, DFÜ = SIO2-A (AP-E4c).  Ein Rückruf ERSETZT die
- *        Rückschleife des Prüfsteckers nur auf seinem Kanal: SIO1-A schleift weiter,
+ * @brief Drucker = SIO1-B („IFS 1"), DFÜ = SIO2-A („IFS 2") (AP-E4c, AP-S5).  Ein
+ *        Rückruf ERSETZT den Loop (Prüfstecker) nur auf seinem Kanal: SIO1-A schleift weiter,
  *        SIO1-B/SIO2-A gehen nach außen und kommen NICHT als Echo zurück.  Von außen
  *        gesendete Bytes landen im Empfänger des jeweiligen Kanals.
  */
@@ -55,11 +55,21 @@ TEST(K8915Machine, DfueUndDruckerHaengenAnIhremEigenenKanal)
     m.setDFUECallback([&](uint8_t b) { dfue.push_back(b); });
 
     K1520Bus& bus = m.bus();
+    // WR5 = 68H wie das BIOS (8 Bit, Sender frei): seit AP-S5 trägt die Leitung das
+    // programmierte Format — eine unprogrammierte SIO sendet 5 Bit.
+    for (uint8_t steuer : {0x41, 0x43, 0x51}) {
+        bus.ioWrite(steuer, 0x05);
+        bus.ioWrite(steuer, 0x68);
+    }
     bus.ioWrite(0x40, 0x31);              // SIO1-A Daten
     bus.ioWrite(0x42, 0x32);              // SIO1-B Daten = Drucker
     bus.ioWrite(0x50, 0x33);              // SIO2-A Daten = DFÜ
-    m.ats().service(0);
-    m.ats().service(100'000);
+    // Seit AP-S5 taktet der SerialHub der Maschine die Zeichen (ohne CPU-Lauf
+    // hier von Hand, wie im Maschinenlauf: Hub + Kartentakt).
+    for (uint64_t z = 0; z < 100'000; z += 16) {
+        m.serialHub()->takt(z);
+        m.ats().clockTick(16);
+    }
 
     EXPECT_EQ(drucker, std::vector<uint8_t>{0x32});
     EXPECT_EQ(dfue, std::vector<uint8_t>{0x33});
