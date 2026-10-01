@@ -1,18 +1,132 @@
 /**
  * @file k7028.cpp
- * @brief ATS K7028.30 des K8915 — Dekodierung, Interruptkette, Rückschleife.
+ * @brief ATS K7028.30 des K8915 — Dekodierung, Interruptkette, Anschlüsse nach außen.
  * @see k7028.h, doc/design/16_k8915.md §3.2, §8a AP-E2
  */
 
 #include "core/cards/k7028/k7028.h"
 #include "core/logger.h"
-#include <algorithm>
+#include "core/serial/sio_format.h"
+
+using k1520::serial::SerialFormat;
+
+// ─── Anschluss je Kanal (Entwurf 19 §3.2, §5.1, AP-S5) ──────────────────────
+//
+// Stromlaufplan 1.45.518732.4/04 Blatt 1 (k8915schaltung.pdf S. 11):
+//   SIO1-A  → X3 (V.24 mit Steuerleitungen: Empfänger D17:01/02 für 104/106/107/109/
+//             114/115/125, Treiber D14:03/02 für 103/105/108/113, 111 über X18);
+//             Rx-/Tx-Takt über Multiplexer D13:01/02 (DL153) aus CTC1 ZC/TO0 (über
+//             D9:02 invertiert), ZC/TO1 oder den V.24-Schrittakten 114/115 — nachgebildet
+//             ist CTC1 K0 (Asynchronbetrieb).  /CTSA ← V106, /DCDA ← V109; V107 hat
+//             keinen eigenen SIO-Eingang (nicht nachgebildet).
+//   SIO1-B  → X4 (V.24-Pegel, nur 103/104): TxDB über X16:1–3 und D12:02 an D14:01;
+//             RxTxCB = CTC1 ZC/TO2 über D9:02 (BIOS: CTC1-K2 = 4AH für den Drucker);
+//             CTSB/DCDB nur an Wickelbrücken X15:3/4, DCDB mit R1:02 hochgezogen ⇒
+//             beide inaktiv (Brücken offen, wie gezeichnet).
+//   SIO2-A  → X5 (IFSS-Stromschleife Blatt 2, S. 16, über Q1/Q2; zusätzlich 103/104),
+//             Takt CTC2 K0 (ROM/BIOS).  Keine Steuerleitungen.
+// IFSS-Kanäle ohne Steuerleitungen lassen /CTS und /DCD, wie sie seit AP-S3 sind:
+// inaktiv — der Gast sieht dasselbe RR0 wie vorher.
+
+class K7028::Anschluss : public k1520::serial::SerialAnschluss {
+public:
+    Anschluss(K7028& k, Kanal kanal) : k_(k), kanal_(kanal) {}
+
+    const char* name() const override {
+        switch (kanal_) {
+            case Sio1A: return "V.24";
+            case Sio1B: return "IFS 1";
+            default:    return "IFS 2";
+        }
+    }
+    const char* stecker() const override {
+        switch (kanal_) {
+            case Sio1A: return "X3";
+            case Sio1B: return "X4";
+            default:    return "X5";
+        }
+    }
+    bool v24() const override { return kanal_ == Sio1A; }
+
+    SerialFormat format() const override {
+        uint64_t ctc = 0;
+        switch (kanal_) {
+            case Sio1A: ctc = k_.ctc1_.teilerTakte(0); break;
+            case Sio1B: ctc = k_.ctc1_.teilerTakte(2); break;
+            default:    ctc = k_.ctc2_.teilerTakte(0); break;
+        }
+        return k1520::serial::serialFormatAusSio(ch(), ctc);
+    }
+    bool senderHatZeichen() const override { return ch().senderHatZeichen(); }
+    uint8_t senderNimm() override {
+        uint8_t b = ch().txGet();
+        // Die Leitung trägt nur die programmierten Datenbits (AP-E4c: Fassung „55 K"
+        // des BIOS sendet 7 Bit) — Parität selbst bleibt unnachgebildet.
+        const uint8_t bits = ch().format().tx_bits;
+        if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+        if (!belegt_ && abnehmer_) abnehmer_(b);
+        return b;
+    }
+    bool empfaengerFrei() const override { return ch().empfaengerFrei(); }
+    void empfange(uint8_t b) override {
+        ch().rxByte(b);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+    }
+    bool rts() const override { return ch().rts(); }
+    bool dtr() const override { return ch().dtr(); }
+    void setzeEingaenge(bool cts, bool /*dsr*/, bool dcd) override {
+        if (kanal_ != Sio1A) return;
+        ch().setzeCTS(cts);
+        ch().setzeDCD(dcd);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+    }
+    bool breakGesendet() const override { return ch().breakSenden(); }
+    void breakEmpfang(bool aktiv) override {
+        ch().setzeBreakEmpfang(aktiv);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+    }
+    void leitungBelegt(bool belegt) override { belegt_ = belegt; }
+
+    void setAbnehmer(Abnehmer cb) { abnehmer_ = std::move(cb); }
+    void einspeisen(uint8_t b) {
+        if (belegt_) return;   // Transport/Loop am Stecker: ins Leere (Entwurf 19 §8)
+        empfange(b);
+    }
+
+private:
+    Z80SIO::Channel& ch() const { return k_.kanal(kanal_); }
+
+    K7028&   k_;
+    Kanal    kanal_;
+    bool     belegt_ = false;
+    Abnehmer abnehmer_;
+};
 
 K7028::K7028() : K7028(Config{}) {}
 
 K7028::K7028(const Config& cfg) : cfg_(cfg)
 {
+    for (int i = 0; i < KanalAnzahl; ++i)
+        anschluesse_[static_cast<size_t>(i)] =
+            std::make_unique<Anschluss>(*this, static_cast<Kanal>(i));
     updateInternalChain();
+}
+
+K7028::~K7028() = default;
+
+k1520::serial::SerialAnschluss& K7028::anschluss(Kanal k)
+{
+    return *anschluesse_[static_cast<size_t>(k)];
+}
+
+void K7028::setAbnehmer(Kanal k, Abnehmer cb)
+{
+    anschluesse_[static_cast<size_t>(k)]->setAbnehmer(std::move(cb));
 }
 
 void K7028::attachToBus(K1520Bus& bus)
@@ -127,8 +241,6 @@ void K7028::reset()
     ctc1_.reset();
     ctc2_.reset();
     latch_ = 0xFF;
-    for (auto& q : schleife_) q.clear();
-    frei_ab_.fill(0);
     updateInternalChain();
 }
 
@@ -150,46 +262,5 @@ Z80SIO::Channel& K7028::kanal(Kanal k)
 
 void K7028::empfange(Kanal k, uint8_t byte)
 {
-    kanal(k).rxByte(byte);
-    updateInternalChain();
-}
-
-bool K7028::service(uint64_t now)
-{
-    bool geaendert = false;
-    for (int i = 0; i < KanalAnzahl; ++i) {
-        const Kanal k = static_cast<Kanal>(i);
-        Z80SIO::Channel& ch = kanal(k);
-        if (ch.txAvailable()) {
-            uint8_t b = ch.txGet();
-            // Zeichenformat aus WR5 beachten (AP-E4c): bei < 8 Datenbits (Fassung
-            // 900 des K8915-BIOS: 7 Bit) trägt die Leitung nur diese Bits — Parität
-            // selbst bleibt unnachgebildet (kein Paritätsfehler vom Host).
-            if (ch.tx_bits_per_char < 8)
-                b &= static_cast<uint8_t>((1u << ch.tx_bits_per_char) - 1);
-            geaendert = true;
-            // Ein angeschlossener Abnehmer ERSETZT die Rückschleife dieses Kanals
-            // (AP-E4c) — Drucker/DFÜ statt Prüfstecker-Echo, sobald jemand zuhört.
-            // Beide Wege teilen sich dieselbe Leitungspacing: das nächste Zeichen
-            // beginnt frühestens, wenn das vorige "angekommen" ist.
-            if (abnehmer_[i] || cfg_.rueckschleife[i]) {
-                const uint64_t start = std::max(now, frei_ab_[i]);
-                frei_ab_[i] = start + ZEICHEN_TAKTE;
-                schleife_[i].push_back({frei_ab_[i], b, abnehmer_[i] != nullptr});
-            }
-            // sonst: offene Leitung, das Byte geht verloren
-        }
-        auto& q = schleife_[i];
-        while (!q.empty() && q.front().faellig <= now) {
-            if (q.front().nachAussen) {
-                if (abnehmer_[i]) abnehmer_[i](q.front().byte);
-            } else {
-                ch.rxByte(q.front().byte);
-            }
-            q.pop_front();
-            geaendert = true;
-        }
-    }
-    if (geaendert) updateInternalChain();
-    return geaendert;
+    anschluesse_[static_cast<size_t>(k)]->einspeisen(byte);
 }

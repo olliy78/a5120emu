@@ -120,8 +120,14 @@ int SerialHub::registriere(SerialAnschluss& anschluss) {
 
 Wandler& SerialHub::wandler(int i) { return *eintraege_.at(static_cast<size_t>(i))->wandler; }
 
-void SerialHub::takt(uint64_t zyklus) {
-    for (auto& e : eintraege_) e->wandler->takt(zyklus);
+uint64_t SerialHub::takt(uint64_t zyklus) {
+    uint64_t naechster = UINT64_MAX;
+    for (auto& e : eintraege_) naechster = std::min(naechster, e->wandler->takt(zyklus));
+    return naechster;
+}
+
+void SerialHub::gastZurueckgesetzt() {
+    for (auto& e : eintraege_) e->wandler->gastZurueckgesetzt();
 }
 
 // ─── Bedienung ─────────────────────────────────────────────────────────────

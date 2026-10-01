@@ -122,7 +122,12 @@ public:
     Wandler& wandler(int i);   ///< Index muss gültig sein
 
     // ── Emulationsfaden ─────────────────────────────────────────────────────
-    void takt(uint64_t zyklus);
+    /// @return frühester nächster Blick aller Wandler (UINT64_MAX ohne Anschluss) —
+    ///         bis dahin darf die Maschine den Aufruf auslassen.  Springt ihr
+    ///         Taktzähler zurück, ruft sie sofort wieder (die Wandler fangen neu an).
+    uint64_t takt(uint64_t zyklus);
+    /// /RESET der Maschine: `Wandler::gastZurueckgesetzt` für alle (AP-S5).
+    void gastZurueckgesetzt();
 
     // ── Bedienung (jeder Faden) ─────────────────────────────────────────────
     SerialInfo info(int i) const;

@@ -17,7 +17,7 @@ Wandler::Wandler(SerialAnschluss& anschluss, uint64_t phiNenn)
     wirksam_ = kandidat_ = gemeldet_ = ersatz_;
 }
 
-void Wandler::takt(uint64_t zyklus) {
+uint64_t Wandler::takt(uint64_t zyklus) {
     if (zyklus < letzterZyklus_) {
         // Taktzähler zurückgesetzt (neue Maschine, Reset des Zählers): alle Fristen neu.
         naechsterBlick_ = 0;
@@ -26,7 +26,12 @@ void Wandler::takt(uint64_t zyklus) {
         kandidatSeit_ = zyklus;
     }
     letzterZyklus_ = zyklus;
-    if (zyklus < naechsterBlick_) return;
+    if (zyklus < naechsterBlick_) return naechsterBlick_;
+    if (ruhig_.load(std::memory_order_acquire) && (++ruhZaehler_ & 15u) != 0 &&
+        !a_.senderHatZeichen()) {
+        naechsterBlick_ = zyklus + std::max<uint64_t>(1, ztLetzte_ / 16);
+        return naechsterBlick_;
+    }
 
     // Kartenzustand lesen — Emulationsfaden, ohne Sperre.
     const SerialFormat fmt = a_.format();
@@ -36,6 +41,7 @@ void Wandler::takt(uint64_t zyklus) {
     // eingehalten, und die Sperre fällt bei 9600 Bd nur alle 160 Takte an statt je
     // Instruktion.
     naechsterBlick_ = zyklus + std::max<uint64_t>(1, zt / 16);
+    ztLetzte_       = zt;
     const bool rts = v24_ && a_.rts();
     const bool dtr = v24_ && a_.dtr();
     const bool brk = a_.breakGesendet();
@@ -61,11 +67,19 @@ void Wandler::takt(uint64_t zyklus) {
     }
 
     // ── Ausgänge des Gastes ────────────────────────────────────────────────
+    if (rts) rtsBenutzt_ = true;
     if (rts != rts_ || dtr != dtr_ || brk != brk_) {
         rts_ = rts;
         dtr_ = dtr;
         brk_ = brk;
         wecken = true;
+    }
+
+    // ── Belegung des Steckers an die Karte (alter Unterbau stumm, AP-S5) ────
+    const int belegt = (einst_.loop || angebunden_) ? 1 : 0;
+    if (belegt != belegtGemeldet_) {
+        a_.leitungBelegt(belegt != 0);
+        belegtGemeldet_ = belegt;
     }
 
     // ── Eingänge am Stecker (§6.4/§6.5) ─────────────────────────────────────
@@ -123,8 +137,13 @@ void Wandler::takt(uint64_t zyklus) {
 
     // ── Empfangen: Empfangspuffer → Gast ──────────────────────────────────
     // Halt bei XOFF (§6.3) und bei weggenommenem RTS (§6.4, nur V.24; nicht im Loop —
-    // der Prüfstecker hat keine Gegenstelle, die auf CTS hören könnte).
-    const bool halt = (einst_.xonxoff && xoff_) || (v24_ && !einst_.loop && !rts);
+    // der Prüfstecker hat keine Gegenstelle, die auf CTS hören könnte).  Der RTS-Halt
+    // gilt erst, wenn der Gast RTS überhaupt benutzt (AP-S5): SCPX 8915 schreibt
+    // WR5 = 68H (RTS und DTR aus) und CP/A fasst den V.24-Kanal gar nicht an — wörtlich
+    // genommen empfinge ein solcher Gast nie etwas, obwohl am Gerät die Gegenstelle
+    // (Drucker mit XON/XOFF, Terminal ohne Handshake) trotzdem sendet.
+    const bool halt = (einst_.xonxoff && xoff_) ||
+                      (v24_ && !einst_.loop && rtsBenutzt_ && !rts);
     if (!halt && !empf_.leer() && zyklus >= naechsteZustellung_ && a_.empfaengerFrei()) {
         const bool warVoll = empf_.voll();
         a_.empfange(empf_.raus());
@@ -133,11 +152,16 @@ void Wandler::takt(uint64_t zyklus) {
         if (warVoll) wecken = true;   // I/O-Faden liest den Socket wieder
     }
 
+    ruhig_.store(!angebunden_ && !einst_.loop && !einst_.rtscts_bruecke && send_.leer() &&
+                     empf_.leer(),
+                 std::memory_order_release);
     if (wecken && wecker_) wecker_();
+    return naechsterBlick_;
 }
 
 void Wandler::einstellen(const WandlerEinstellung& e) {
     std::lock_guard<std::mutex> l(m_);
+    ruhig_.store(false, std::memory_order_release);
     if (!e.xonxoff) xoff_ = false;   // ausgeschaltet → kein hängender Halt
     const bool wurdeLoop = !einst_.loop && e.loop;
     einst_ = e;
@@ -173,9 +197,18 @@ WandlerSicht Wandler::sicht() const {
     return s;
 }
 
+void Wandler::gastZurueckgesetzt() {
+    std::lock_guard<std::mutex> l(m_);
+    ruhig_.store(false, std::memory_order_release);
+    xoff_ = false;
+    rtsBenutzt_ = false;
+}
+
 void Wandler::anbinden() {
     std::lock_guard<std::mutex> l(m_);
+    ruhig_.store(false, std::memory_order_release);
     angebunden_ = true;
+    rtsBenutzt_ = false;
     fernCts_ = fernDsr_ = fernDcd_ = true;
     fernBrk_ = false;
 }
@@ -183,6 +216,7 @@ void Wandler::anbinden() {
 void Wandler::abbinden() {
     std::lock_guard<std::mutex> l(m_);
     angebunden_ = false;
+    rtsBenutzt_ = false;
     fernCts_ = fernDsr_ = fernDcd_ = fernBrk_ = false;
     send_.leeren();
 }
@@ -208,6 +242,7 @@ size_t Wandler::fernGib(const uint8_t* daten, size_t n) {
     std::lock_guard<std::mutex> l(m_);
     size_t k = 0;
     while (k < n && !empf_.voll()) empf_.rein(daten[k++]);
+    if (k) ruhig_.store(false, std::memory_order_release);
     return k;
 }
 

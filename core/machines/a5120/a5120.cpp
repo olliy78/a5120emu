@@ -115,6 +115,26 @@ void A5120Machine::wireBackplane() {
 
     // Connect keyboard to K8025 SIO A32, Channel A
     kbd_.connect(ass_.sioA32(), 0);
+
+    // Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5).  Taktquelle der Brücken W1:7
+    // und X7–X8 („gezeichnet"): ZRE-CTC K0 — derselbe ZC/TO0, der oben über den
+    // Koppelbus an die CTC A34 geht.
+    ass_.setzeZreTakt([this] { return zre_.ctc().teilerTakte(0); });
+    for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
+        hub_.registriere(ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
+}
+
+// Ausgelagert, damit die heiße Laufschleife nur den Vergleich trägt (Laufzeit, AP-S5).
+void A5120Machine::serielleSchnittstellen() {
+    serial_naechst_ = hub_.takt(total_cycles_);
+    if (ass_.nimmSeriellGeaendert()) bus_.markIntDirty();
+}
+
+std::vector<k1520::serial::SerialAnschluss*> A5120Machine::serielleAnschluesse() {
+    std::vector<k1520::serial::SerialAnschluss*> v;
+    for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
+        v.push_back(&ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
+    return v;
 }
 
 // Systemweiter /RESET des K1520-Backplane: ZVE1 + ALLE peripheren Bausteine.
@@ -137,6 +157,8 @@ void A5120Machine::resetHardware() {
     zre_.cpuReset();
     afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurück
     ass_.reset();       // K8025: Baud-CTC + beide SIOs
+    hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
+    serial_naechst_ = 0;
     kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
     bus_.clearNMI();
     bus_.releaseINT();
@@ -635,6 +657,10 @@ int A5120Machine::run(int max_cycles) {
         // Tastatur-Service kann ein Empfangsbyte an den SIO zustellen (irq_rx) oder
         // ein Kommando verarbeiten (irq_tx) — beides ändert den Interruptzustand.
         if (kbd_.service(total_cycles_)) bus_.markIntDirty();
+
+        // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
+        // 1/16 Zeichenzeit — dazwischen kostet es nur diesen Vergleich.
+        if (total_cycles_ >= serial_naechst_) serielleSchnittstellen();
     }
 
     // Verzoegertes Zurueckschreiben geaenderter Spuren (Laufwerksbaustein, §6.1 des
@@ -696,15 +722,19 @@ const uint8_t* A5120Machine::framebuffer() const {
 }
 
 void A5120Machine::setDFUECallback(SerialCb cb) {
-    ass_.setDFUERxCallback(std::move(cb));
+    ass_.setAbnehmer(K8025::DfueV24, std::move(cb));
 }
 
 void A5120Machine::dfueSend(uint8_t byte) {
-    ass_.dfueRxByte(byte);       // externer serieller Empfang → SIO irq_rx möglich
+    ass_.einspeisen(K8025::DfueV24, byte);   // ins Leere, solange ein Transport anliegt
     bus_.markIntDirty();
 }
 
 void A5120Machine::setPrinterCallback(SerialCb cb) {
-    // Drain printer TX in run() or via callback — store for polling
-    (void)cb;  // TODO: hook into SIO A32 ch B TX callback
+    ass_.setAbnehmer(K8025::Drucker, std::move(cb));
+}
+
+void A5120Machine::printerSend(uint8_t byte) {
+    ass_.einspeisen(K8025::Drucker, byte);
+    bus_.markIntDirty();
 }

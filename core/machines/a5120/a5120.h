@@ -244,11 +244,21 @@ public:
     /// Bildspeicher der K7024 direkt (Bereichsprüfung in der C-ABI).
     uint8_t screenChar(int col, int row) const override { return screen_.vramRead(col, row); }
 
-    // Serial callbacks (DFÜ, printer)
+    // ─── Serielle Schnittstellen (Entwurf 19 §3.1, AP-S5) ─────────────────────
+    // Hub-Reihenfolge: 0 DFÜ/V.24 (X6), 1 DFÜ/IFSS (X5), 2 Drucker (X3); fest:
+    // Tastatur K7637 (X4).
+    k1520::serial::SerialHub* serialHub() override { return &hub_; }
+    std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
+    std::vector<std::string> festeSchnittstellen() const override {
+        return {K8025::TASTATUR_NAME};
+    }
+
+    // Alter Unterbau (K1520Machine): DFÜ = DFÜ/V.24, Drucker = A32-B.
     using SerialCb = std::function<void(uint8_t)>;
     void setDFUECallback(SerialCb cb) override;
-    void setPrinterCallback(SerialCb cb);
+    void setPrinterCallback(SerialCb cb) override;
     void dfueSend(uint8_t byte) override;
+    void printerSend(uint8_t byte) override;
 
     // Debug bus passthrough helpers.
     /** @brief Read memory through the machine bus for diagnostics. */
@@ -414,6 +424,12 @@ private:
 
     /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
     void resetHardware();
+    /// Wandler takten (nur, wenn einer fällig ist) — außerhalb der heißen Schleife.
+#if defined(_MSC_VER)
+    __declspec(noinline) void serielleSchnittstellen();
+#else
+    __attribute__((noinline)) void serielleSchnittstellen();
+#endif
 
     struct KeyEvent { uint32_t keycode; bool shift, ctrl, is_press; };
 
@@ -429,6 +445,11 @@ private:
     K7637         kbd_;
 
     Laufwerke     lw_;        // Laufwerksverwaltung (gemeinsamer Baustein, laufwerke.h)
+
+    /// Schnittstellen nach außen — nach den Karten deklariert, also zuerst zerstört
+    /// (hält Verweise auf die Anschlüsse der K8025).
+    k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
+    uint64_t serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
 
     std::atomic<bool>  stop_{false};
 

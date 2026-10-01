@@ -18,10 +18,11 @@ std::array<DriveProfile, 4> profile(const K8915Machine::Config& cfg) {
 
 K8915Machine::K8915Machine(const Config& cfg)
     : zre_(bus_)
-    , ats_(cfg.pruefstecker ? K7028::Config::mitPruefstecker() : K7028::Config{})
+    , ats_()
     , screen_(bus_, K7024::A5120Config::forK8915())   // registriert VRAM 1000H–17FFH
     , afs_(bus_, profile(cfg), CPU_HZ)
     , lw_(afs_, profile(cfg))
+    , pruefstecker_(cfg.pruefstecker)
 {
     zre_.attachToBus(bus_);
     ats_.attachToBus(bus_);
@@ -32,6 +33,34 @@ K8915Machine::K8915Machine(const Config& cfg)
     // Interruptkette nach der Platzfolge (§6.4 [?]): K5122 → ZRE-CTC → ATS.
     bus_.setInterruptChain({&afs_, &zre_, &ats_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
+    // Schnittstellen nach außen (Entwurf 19 §3.2): Reihenfolge = SIO-Reihenfolge.
+    for (int k = 0; k < K7028::KanalAnzahl; ++k) {
+        const int i = hub_.registriere(ats_.anschluss(static_cast<K7028::Kanal>(k)));
+        k1520::serial::SerialKonfig c = hub_.konfig(i);
+        c.loop = pruefstecker_;   // Prüfstecker = Rx/Tx-Loop (§6.5)
+        hub_.konfigurieren(i, c);
+    }
+}
+
+std::vector<k1520::serial::SerialAnschluss*> K8915Machine::serielleAnschluesse()
+{
+    std::vector<k1520::serial::SerialAnschluss*> v;
+    for (int k = 0; k < K7028::KanalAnzahl; ++k)
+        v.push_back(&ats_.anschluss(static_cast<K7028::Kanal>(k)));
+    return v;
+}
+
+void K8915Machine::altRueckruf(K7028::Kanal k, SerialCb cb)
+{
+    const bool gesetzt = static_cast<bool>(cb);
+    ats_.setAbnehmer(k, std::move(cb));
+    // Hub-Index = Kanal (Anmeldung in SIO-Reihenfolge).
+    k1520::serial::SerialKonfig c = hub_.konfig(k);
+    const bool loop = gesetzt ? false : pruefstecker_;
+    if (c.loop == loop) return;
+    if (loop && k1520::serial::istAktiv(hub_.status(k).zustand)) return;   // Verbindung nicht kappen
+    c.loop = loop;
+    hub_.konfigurieren(k, c);
 }
 
 void K8915Machine::resetHardware()
@@ -41,6 +70,8 @@ void K8915Machine::resetHardware()
     zre_.reset();            // A8H := 00H, CTC, CPU
     afs_.reset();            // K5122: PIOs, Marken-FF; Disketten und Kopfposition bleiben
     ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
+    hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
+    serial_naechst_ = 0;
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -142,7 +173,12 @@ int K8915Machine::run(int max_cycles)
         afs_.update(used);
         bool dirty = zre_.clockTick(used);
         dirty |= ats_.clockTick(used);
-        dirty |= ats_.service(total_cycles_);
+        // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
+        // 1/16 Zeichenzeit — dazwischen kostet es nur diesen Vergleich.
+        if (total_cycles_ >= serial_naechst_) {
+            serial_naechst_ = hub_.takt(total_cycles_);
+            dirty |= ats_.nimmSeriellGeaendert();
+        }
         dirty |= kbd_.service(total_cycles_);
         if (dirty) bus_.markIntDirty();
     }

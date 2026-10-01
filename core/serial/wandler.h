@@ -30,6 +30,7 @@
 #pragma once
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -75,7 +76,9 @@ public:
     // ── Maschinenseite (NUR Emulationsfaden) ────────────────────────────────
     /// Aus dem Lauf der Maschine mit der aktuellen Taktzahl (monoton; springt sie
     /// zurück — Reset des Zählers —, beginnen die Fristen neu).
-    void takt(uint64_t zyklus);
+    /// @return Taktzahl des nächsten „Blicks" — vorher tut `takt` nichts; die
+    ///         Maschine darf den Aufruf bis dahin auslassen (AP-S5, Laufzeit).
+    uint64_t takt(uint64_t zyklus);
 
     // ── Einstellungen (jeder Faden, wirken sofort) ──────────────────────────
     void einstellen(const WandlerEinstellung& e);
@@ -103,6 +106,10 @@ public:
     /// PURGE (§7.5): Sende- und/oder Empfangspuffer leeren.
     void leeren(bool sendepuffer, bool empfangspuffer);
 
+    /// Der Gast wurde zurückgesetzt (/RESET der Maschine, Netz-Ein): ein XOFF- oder
+    /// RTS-Halt des alten Gastes gilt nicht weiter (AP-S5).
+    void gastZurueckgesetzt();
+
     /// Weckruf zum I/O-Faden (Sendepuffer leer → belegt, Empfangspuffer voll → frei,
     /// Leitungen oder gemeldetes Format geändert).  Wird unter dem Wandler-Mutex
     /// gerufen und darf daher nichts sperren (`net::Wecker::wecken` ist nicht blockierend).
@@ -129,6 +136,14 @@ private:
     // Nur Emulationsfaden (ohne Sperre).
     uint64_t letzterZyklus_  = 0;
     uint64_t naechsterBlick_ = 0;
+    /// Leerlauf (AP-S5, Laufzeit): nichts angebunden, kein Loop/keine Brücke, beide
+    /// Puffer leer.  Dann prüft ein Blick nur „hat der Sender ein Zeichen?" und macht
+    /// den vollen Durchlauf (Format, Leitungen, Sperre) nur jeden 16. Blick — also
+    /// einmal je Zeichenzeit, damit der Status nicht veraltet.  Ohne das kosteten die
+    /// drei Wandler des A5120 rund 13 % Laufzeit.
+    std::atomic<bool> ruhig_{false};
+    uint64_t ztLetzte_   = 0;   ///< zuletzt getaktete Zeichenzeit (Emulationsfaden)
+    unsigned ruhZaehler_ = 0;
 
     mutable std::mutex m_;
     // ── unter m_ ──
@@ -138,6 +153,10 @@ private:
     bool     angebunden_ = false;
     bool     fernCts_ = false, fernDsr_ = false, fernDcd_ = false, fernBrk_ = false;
     bool     xoff_ = false;
+    /// Der Gast hat RTS seit dem letzten Anbinden/Reset einmal gesetzt — erst dann
+    /// gilt der RTS-Halt (§6.4; Befund AP-S5: SCPX 8915 und CP/A setzen RTS nie).
+    bool     rtsBenutzt_ = false;
+    int      belegtGemeldet_ = -1;   ///< zuletzt an `leitungBelegt` gemeldet (-1 = nie)
     uint64_t naechstesSenden_ = 0, naechsteZustellung_ = 0;
     SerialFormat format_, wirksam_, kandidat_, gemeldet_;
     uint64_t kandidatSeit_ = 0;

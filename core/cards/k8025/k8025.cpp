@@ -26,6 +26,143 @@
  */
 
 #include "core/cards/k8025/k8025.h"
+#include "core/serial/sio_format.h"
+
+using k1520::serial::SerialFormat;
+using k1520::serial::Taktquelle;
+
+// ─── Anschluss je Schnittstelle (Entwurf 19 §3.1, §5.1, AP-S5) ──────────────
+//
+// Brücken laut Transkription §2.3.1 / §3.1 („gezeichnet" = Index 0):
+//   DFÜ/V.24  (A33-A, X6): W1:7   gezeichnet ZRE-CTC K0, nicht gezeichnet CTC A34 K2
+//   DFÜ/IFSS  (A33-B, X5): X7–X8  ZRE-CTC K0,           X8–X9          CTC A34 K1
+//   Drucker   (A32-B, X3): fest CTC A34 K0 (§2.4)
+// Leitungen der V.24 (§2.3.2): /CTSA = V106 ∧ V107, /DCDA = V109 ∧ V107, DCDB = V107;
+// die IFSS-Kanäle haben keine Steuerleitungen — ihre /CTS- und /DCD-Eingänge (außer
+// DCDB) bleiben, wie sie seit AP-S3 sind: inaktiv (RR0 D5/D3 = 0, der Gast sieht
+// dasselbe RR0 wie vor AP-S5; der Stromlaufplan der K8025 liegt nicht vor).
+
+class K8025::Anschluss : public k1520::serial::SerialAnschluss {
+public:
+    Anschluss(K8025& k, Schnittstelle s) : k_(k), s_(s) {}
+
+    const char* name() const override {
+        switch (s_) {
+            case DfueV24:  return "DFÜ/V.24";
+            case DfueIfss: return "DFÜ/IFSS";
+            default:       return "Drucker";
+        }
+    }
+    const char* stecker() const override {
+        switch (s_) {
+            case DfueV24:  return "X6";
+            case DfueIfss: return "X5";
+            default:       return "X3";
+        }
+    }
+    bool v24() const override { return s_ == DfueV24; }
+    std::vector<Taktquelle> taktquellen() const override {
+        switch (s_) {
+            case DfueV24:  return {{"ZRE-CTC K0 (W1:7)"}, {"CTC A34 K2 (W1:7 versetzt)"}};
+            case DfueIfss: return {{"ZRE-CTC K0 (X7–X8)"}, {"CTC A34 K1 (X8–X9)"}};
+            default:       return {};
+        }
+    }
+    void waehleTaktquelle(int i) override { quelle_ = (i == 1) ? 1 : 0; }
+
+    SerialFormat format() const override {
+        return k1520::serial::serialFormatAusSio(kanal(), ctcTakte());
+    }
+    bool senderHatZeichen() const override { return kanal().senderHatZeichen(); }
+    uint8_t senderNimm() override {
+        uint8_t b = kanal().txGet();
+        // Die Leitung trägt nur die programmierten Datenbits (WR5 D6–5).
+        const uint8_t bits = kanal().format().tx_bits;
+        if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
+        k_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt möglich
+        if (!belegt_ && abnehmer_) abnehmer_(b);
+        return b;
+    }
+    bool empfaengerFrei() const override { return kanal().empfaengerFrei(); }
+    void empfange(uint8_t b) override {
+        kanal().rxByte(b);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+    }
+    bool rts() const override { return kanal().rts(); }
+    bool dtr() const override { return kanal().dtr(); }
+    void setzeEingaenge(bool cts, bool dsr, bool dcd) override {
+        if (s_ != DfueV24) return;   // IFSS: keine Steuerleitungen
+        // Kartenlogik A23 (§2.3.2): V106/V109 nur mit V107 wirksam; V107 zusätzlich
+        // allein an DCDB.
+        k_.sio_dfue_.channelA().setzeCTS(cts && dsr);
+        k_.sio_dfue_.channelA().setzeDCD(dcd && dsr);
+        k_.sio_dfue_.channelB().setzeDCD(dsr);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+    }
+    bool breakGesendet() const override { return kanal().breakSenden(); }
+    void breakEmpfang(bool aktiv) override {
+        kanal().setzeBreakEmpfang(aktiv);
+        k_.updateInternalChain();
+        k_.seriell_geaendert_ = true;
+    }
+    void leitungBelegt(bool belegt) override { belegt_ = belegt; }
+
+    // Alter Unterbau (K8025::setAbnehmer/einspeisen).
+    void setAbnehmer(SerialCallback cb) { abnehmer_ = std::move(cb); }
+    void einspeisen(uint8_t b) {
+        if (belegt_) return;   // Transport/Loop am Stecker: ins Leere (§8)
+        empfange(b);
+    }
+
+private:
+    Z80SIO::Channel& kanal() const {
+        switch (s_) {
+            case DfueV24:  return k_.sio_dfue_.channelA();
+            case DfueIfss: return k_.sio_dfue_.channelB();
+            default:       return k_.sio_kbd_printer_.channelB();
+        }
+    }
+    uint64_t zreTakte() const { return k_.zre_takt_ ? k_.zre_takt_() : 0; }
+    uint64_t ctcTakte() const {
+        switch (s_) {
+            case DfueV24:  return quelle_ == 0 ? zreTakte() : k_.ctc_a34_.teilerTakte(2);
+            case DfueIfss: return quelle_ == 0 ? zreTakte() : k_.ctc_a34_.teilerTakte(1);
+            default:       return k_.ctc_a34_.teilerTakte(0);
+        }
+    }
+
+    K8025&         k_;
+    Schnittstelle  s_;
+    int            quelle_ = 0;
+    bool           belegt_ = false;
+    SerialCallback abnehmer_;
+};
+
+K8025::~K8025() = default;
+
+k1520::serial::SerialAnschluss& K8025::anschluss(Schnittstelle s)
+{
+    return *anschluesse_[static_cast<size_t>(s)];
+}
+
+void K8025::setzeZreTakt(Z80CTC::PeriodenQuelle quelle)
+{
+    zre_takt_ = quelle;
+    // ZC/TO0 der ZRE liegt im Emulator an CLK/TRG0–3 der CTC A34 (Koppelbus, A5120Machine).
+    for (int k = 0; k < 4; ++k) ctc_a34_.setzeEingangsQuelle(k, quelle);
+}
+
+void K8025::setAbnehmer(Schnittstelle s, SerialCallback cb)
+{
+    anschluesse_[static_cast<size_t>(s)]->setAbnehmer(std::move(cb));
+}
+
+void K8025::einspeisen(Schnittstelle s, uint8_t byte)
+{
+    anschluesse_[static_cast<size_t>(s)]->einspeisen(byte);
+}
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
 
@@ -41,6 +178,9 @@
 K8025::K8025(K1520Bus& bus, const A5120Config& cfg)
     : cfg_(cfg)
 {
+    for (int i = 0; i < SchnittstellenAnzahl; ++i)
+        anschluesse_[static_cast<size_t>(i)] =
+            std::make_unique<Anschluss>(*this, static_cast<Schnittstelle>(i));
     bus.registerIO(this, cfg_.io_base, 16);
     // Pre-load Register A31 (U212) with the A41 DIP-switch state so the
     // BIOS reads the correct baud rate and block size from port 0x54.
@@ -252,7 +392,7 @@ uint8_t K8025::keyboardTxGet()
  * @brief Inject one byte received from the DFÜ (modem/host) interface.
  *
  * Pushes @p byte into the SIO A33 channel A RX FIFO and updates the internal
- * daisy chain.  Also invokes dfue_rx_cb_ if a callback is registered.
+ * daisy chain.
  *
  * @param byte Received byte from the DFÜ device (modem or remote host)
  */
@@ -282,19 +422,6 @@ bool K8025::dfueTxAvailable()
 uint8_t K8025::dfueTxGet()
 {
     return sio_dfue_.channelA().txGet();
-}
-
-/**
- * @brief Register a callback invoked whenever the DFÜ SIO receives a byte.
- *
- * The callback is called from within dfueRxByte() after the byte is pushed
- * into the RX FIFO.  Pass an empty std::function to disable the callback.
- *
- * @param cb Callback with signature void(uint8_t), or empty to disable
- */
-void K8025::setDFUERxCallback(SerialCallback cb)
-{
-    dfue_rx_cb_ = std::move(cb);
 }
 
 // ─── Printer interface ────────────────────────────────────────────────────────

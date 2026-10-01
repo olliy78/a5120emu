@@ -5,10 +5,11 @@
  * Stand Etappe 4 (doc/design/16_k8915.md §8, AP-E1…AP-E4c): ZRE 045-8762, ATS
  * K7028.30 mit Tastatur K7672, K7024 (012-6820) und K5122 im `/WAIT`-Betrieb mit
  * zwei K5601.  Die Laufwerksverwaltung ist der gemeinsame Baustein @ref Laufwerke
- * (wie beim A5120).  Drucker (SIO1-B) und DFÜ (SIO2-A, vorläufig) gehen seit
- * AP-E4c über die ABI nach außen (`setDFUECallback`/`dfueSend`,
- * `setPrinterCallback`/`printerSend`).  Seit AP-E4b in `libk1520core`
- * (`k1520_create(K1520_MACHINE_K8915)`).
+ * (wie beim A5120).  Die seriellen Schnittstellen V.24 (SIO1-A), IFS 1 (SIO1-B,
+ * Drucker des BIOS) und IFS 2 (SIO2-A) gehen seit AP-S5 über den `SerialHub` nach
+ * außen (Entwurf 19); der ältere Weg `setPrinterCallback`/`printerSend` (IFS 1) und
+ * `setDFUECallback`/`dfueSend` (IFS 2) bleibt als Test-Unterbau.  Seit AP-E4b in
+ * `libk1520core` (`k1520_create(K1520_MACHINE_K8915)`).
  *
  * Steckplätze am Gerät (§6.4): 3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024.
  */
@@ -31,10 +32,13 @@ public:
     /** @brief Ausstattung, die nicht auf den Karten steht. */
     struct Config {
         /**
-         * Prüfstecker/Rückschleife an SIO1-A, SIO1-B und SIO2-A (§6.10).  Ohne sie
+         * Prüfstecker an SIO1-A, SIO1-B und SIO2-A (§6.10) = Einstellung **Rx/Tx-Loop**
+         * der drei Schnittstellen im `SerialHub` (Entwurf 19 §6.5, AP-S5).  Ohne sie
          * scheitert der SIO-Test des ROMs mit 'G' (alle drei Kanäle ohne Echo) und
          * der Lader startet erst nach `CR`.  **Vorgabe gesteckt** — vorläufig: ob das
          * Gerät die Schleifen selbst schließt, beantwortet erst der Anwender (§6.10).
+         * Das laufende BIOS braucht das Echo nicht (Wächter
+         * `K8915Seriell.BiosLaeuftOhneLoopWeiter`).
          */
         bool pruefstecker = true;
         /** Tastatur K7672 angeschlossen.  Ohne sie scheitert KEY mit 'A' (Gegenprobe). */
@@ -137,21 +141,22 @@ public:
     bool isHeadLoaded() const override              { return lw_.isHeadLoaded(); }
     void setDiskWriteProtect(int d, bool wp) override { lw_.setDiskWriteProtect(d, wp); }
 
-    // ─── DFÜ (SIO2-A) und Drucker (SIO1-B) nach außen (§8a AP-E4c) ───────────
-    // Kanalzuordnung: Drucker = SIO1-B (vom BIOS benutzt, §4.4 belegt); DFÜ =
-    // vorläufig SIO2-A — die IFSS-Kanalzuordnung ist eine offene Anwenderfrage
-    // (§6.6 [?]).  Ein gesetzter Callback ERSETZT den Prüfstecker (Rückschleife)
-    // nur auf seinem EIGENEN Kanal (`K7028::service`); die beiden übrigen Kanäle
-    // bleiben zurückgeschleift, solange `Config::pruefstecker` es vorsieht — sonst
-    // schlüge der ROM-Selbsttest mit einem angeschlossenen Abnehmer fehl.
-    void setDFUECallback(SerialCb cb) override {
-        ats_.setAbnehmer(K7028::Sio2A, std::move(cb));
+    // ─── Serielle Schnittstellen (Entwurf 19 §3.2, AP-S5) ─────────────────────
+    k1520::serial::SerialHub* serialHub() override { return &hub_; }
+    std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
+    std::vector<std::string> festeSchnittstellen() const override {
+        return {K7028::TASTATUR_NAME};
     }
+
+    // Alter Unterbau (Tests, `k1520_serial_*`): Drucker = IFS 1 (SIO1-B, vom BIOS
+    // benutzt), DFÜ = IFS 2 (SIO2-A, IFSS).  Ein gesetzter Rückruf nimmt dem Kanal den
+    // Loop (Prüfstecker ab — früher: Abnehmer ersetzt die Rückschleife); ein leerer
+    // gibt ihn nach der Maschinenvorgabe zurück, sofern kein Transport aktiv ist.
+    // Belegt ein Transport/Loop den Stecker, gehen Rückruf und Einspeisen ins Leere.
+    void setDFUECallback(SerialCb cb) override { altRueckruf(K7028::Sio2A, std::move(cb)); }
     /// Byte von AUSSEN am DFÜ-Kanal empfangen (z. B. ein Antwortzeichen).
     void dfueSend(uint8_t byte) override { ats_.empfange(K7028::Sio2A, byte); }
-    void setPrinterCallback(SerialCb cb) override {
-        ats_.setAbnehmer(K7028::Sio1B, std::move(cb));
-    }
+    void setPrinterCallback(SerialCb cb) override { altRueckruf(K7028::Sio1B, std::move(cb)); }
     /// Byte von AUSSEN am Druckerkanal empfangen (XON/XOFF eines Druckers).
     void printerSend(uint8_t byte) override { ats_.empfange(K7028::Sio1B, byte); }
 
@@ -198,6 +203,7 @@ public:
 
 private:
     void resetHardware();
+    void altRueckruf(K7028::Kanal k, SerialCb cb);
     void tastenAbgeben();     ///< Warteschlange an die K7672 (nur im Lauffaden)
     void anzeigenSpiegeln();  ///< Anzeigen für fremde Fäden spiegeln (nur im Lauffaden)
 
@@ -208,6 +214,10 @@ private:
     K7672     kbd_;       // an SIO2-B
     K5122     afs_;       // Platz 3, 10H–18H, /WAIT-Betrieb
     Laufwerke lw_;        // Laufwerksverwaltung (gemeinsam mit dem A5120)
+    const bool pruefstecker_;
+    /// Nach den Karten: wird zuerst zerstört (hält Verweise auf ihre Anschlüsse).
+    k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
+    uint64_t  serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};   ///< NMI-Taster gedrückt, noch nicht zugestellt

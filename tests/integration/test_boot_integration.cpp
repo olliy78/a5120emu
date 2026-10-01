@@ -27,9 +27,12 @@
 #include "tests/support/keyboard.h"
 #include "tests/support/machine_run.h"
 #include "tests/support/screen.h"
+#include "tests/support/temp_path.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -1127,3 +1130,81 @@ TEST(BootIntegrationLuecke2, NormLuecke2BootetDieselbeDiskette) {
         << vramText(machine);
 }
 
+
+// ─── Serielle Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5) ────────────
+
+namespace {
+std::string dateiLesen(const std::string& pfad) {
+    std::ifstream f(std::filesystem::u8path(pfad), std::ios::binary);
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+}  // namespace
+
+/**
+ * @test A5120Seriell.GastSendetUeberDfueV24InEineDatei
+ * @brief Maschinenprobe: der Hub der A5120Machine hat die drei Anschlüsse der K8025
+ *        (DFÜ/V.24, DFÜ/IFSS, Drucker) und die feste Tastatur; nach dem CP/A-Kaltstart
+ *        sind RTS/DTR der V.24 aus (Befund AP-S5: CP/A fasst A33 nicht an — der
+ *        RTS-Halt des Wandlers darf deshalb erst greifen, wenn der Gast RTS benutzt).
+ *        Ein kleines Programm programmiert dann A33-A (8N1, Takt ZRE-CTC K0 bzw.
+ *        Ersatz 9600) und sendet „A5120" — über `hub.takt` im Lauf von `run()` landet
+ *        es in der Datei.
+ */
+TEST(A5120Seriell, GastSendetUeberDfueV24InEineDatei) {
+    TempDisk a("cpa_cpa780_k5601_clock.img", "a5120_seriell_A.img");
+    A5120Machine m;
+    ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa780", false)) << m.lastError();
+    k1520::serial::SerialHub* hub = m.serialHub();
+    ASSERT_NE(hub, nullptr);
+    ASSERT_EQ(hub->anzahl(), 3);
+    EXPECT_EQ(hub->info(0).name, "DFÜ/V.24");
+    EXPECT_EQ(hub->info(1).name, "DFÜ/IFSS");
+    EXPECT_EQ(hub->info(2).name, "Drucker");
+    ASSERT_EQ(m.serielleAnschluesse().size(), 3u);
+    ASSERT_EQ(m.festeSchnittstellen().size(), 1u);
+    EXPECT_EQ(m.festeSchnittstellen()[0], "Tastatur K7637 (X4)");
+
+    m.powerOn();
+    ASSERT_TRUE(runUntilVramContains(m, "Bitte Uhrzeit eingeben!", 40'000'000));
+    auto* v24 = m.serielleAnschluesse()[0];
+    EXPECT_FALSE(v24->rts()) << "Befund: CP/A setzt RTS auf der V.24 nicht";
+    EXPECT_FALSE(v24->dtr());
+
+    const std::string pfad = k1520test::tempPath("k1520_test_a5120_seriell.txt");
+    std::filesystem::remove(std::filesystem::u8path(pfad));
+    k1520::serial::SerialKonfig k = hub->konfig(0);
+    k.betriebsart = k1520::serial::Betriebsart::Datei;
+    k.datei = pfad;
+    ASSERT_TRUE(hub->konfigurieren(0, k));
+    ASSERT_TRUE(hub->start(0));
+
+    // DI; A33-A: WR4 44H (×16, 1 Stopp), WR3 C1H, WR5 68H (8 Bit, Tx ein);
+    // dann „A5120" über 50H, je Zeichen auf TxEmpty (RR0 D2) warten; danach JR $.
+    const uint16_t org = 0x4000, init = 0x4040, msg = 0x4050;
+    const std::vector<uint8_t> code = {
+        0xF3,                                   // DI
+        0x21, init & 0xFF, init >> 8,           // LD HL,init
+        0x06, 0x07, 0x0E, 0x51, 0xED, 0xB3,     // LD B,7 / LD C,51H / OTIR
+        0x21, msg & 0xFF, msg >> 8,             // LD HL,msg
+        0x7E, 0xB7, 0x28, 0xFE,                 // L: LD A,(HL) / OR A / JR Z,$
+        0xDB, 0x51, 0xE6, 0x04, 0x28, 0xFA,     // W: IN A,(51H) / AND 4 / JR Z,W
+        0x7E, 0xD3, 0x50, 0x23, 0x18, 0xF0,     // LD A,(HL) / OUT (50H),A / INC HL / JR L
+    };
+    for (size_t i = 0; i < code.size(); ++i) m.memWriteDebug(org + i, code[i]);
+    const uint8_t initTab[] = {0x18, 0x04, 0x44, 0x03, 0xC1, 0x05, 0x68};
+    for (size_t i = 0; i < sizeof initTab; ++i) m.memWriteDebug(init + i, initTab[i]);
+    const std::string text = "A5120";
+    for (size_t i = 0; i <= text.size(); ++i)
+        m.memWriteDebug(msg + i, i < text.size() ? static_cast<uint8_t>(text[i]) : 0);
+    m.cpuDebug().PC = org;
+
+    for (int n = 0; n < 400; ++n) {
+        m.run(100'000);
+        const auto st = hub->status(0);
+        if (st.bytes_gesendet >= text.size() && st.puffer_senden == 0) break;
+    }
+    EXPECT_EQ(hub->status(0).bytes_gesendet, text.size());
+    hub->stop(0);   // schreibt den Rest
+    EXPECT_EQ(dateiLesen(pfad), text);
+    std::filesystem::remove(std::filesystem::u8path(pfad));
+}

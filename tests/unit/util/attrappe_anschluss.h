@@ -61,6 +61,8 @@ struct AttrappeAnschluss : k1520::serial::SerialAnschluss {
     }
     bool breakGesendet() const override { return brkAus; }
     void breakEmpfang(bool a) override { brkEin = a; }
+    std::vector<bool> belegtMeldungen;   ///< jede `leitungBelegt`-Meldung (AP-S5)
+    void leitungBelegt(bool b) override { belegtMeldungen.push_back(b); }
 
     void sende(const std::string& s) { for (char c : s) gastSendet.push_back(static_cast<uint8_t>(c)); }
     void sende(const std::vector<uint8_t>& v) { gastSendet.insert(gastSendet.end(), v.begin(), v.end()); }

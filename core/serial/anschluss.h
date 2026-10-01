@@ -117,6 +117,13 @@ public:
     /// Break (optional): der Gast sendet Break (WR5 D4) bzw. ein Break kommt an (RR0 D7).
     virtual bool breakGesendet() const { return false; }
     virtual void breakEmpfang(bool /*aktiv*/) {}
+
+    /// Belegung des Steckers (AP-S5): true, solange ein Transport angebunden ist ODER
+    /// der Rx/Tx-Loop (Prüfstecker) gesetzt ist.  Der Wandler meldet jeden Wechsel
+    /// (und einmal beim ersten `takt`).  Die Karten schalten damit ihren alten
+    /// Test-Unterbau (Rückruf/Einspeisen, `K1520Machine::setDFUECallback` …) stumm:
+    /// „ist ein Transport aktiv, geht er ins Leere" (Entwurf 19 §8).
+    virtual void leitungBelegt(bool /*belegt*/) {}
 };
 
 }  // namespace k1520::serial

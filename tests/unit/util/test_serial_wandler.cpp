@@ -243,12 +243,14 @@ TEST(SerialWandler, XoffHaeltDenEmpfangAnBisXon) {
 
 TEST(SerialWandler, RtsWegHaeltDenEmpfangAnNurBeiV24) {
     AttrappeAnschluss a;
-    a.rtsAus = false;
+    a.rtsAus = true;   // „rtsAus" = Ausgang RTS aktiv
     Wandler w(a);
     w.anbinden();
+    uint64_t z = 0;
+    laufe(w, a, z, Z9600);   // der Gast benutzt RTS …
+    a.rtsAus = false;        // … und nimmt es weg
     const auto d = bytes("xyz");
     w.fernGib(d.data(), d.size());
-    uint64_t z = 0;
     laufe(w, a, z, 20 * Z9600);
     EXPECT_TRUE(a.gelesen.empty());
     a.rtsAus = true;
@@ -265,6 +267,54 @@ TEST(SerialWandler, RtsWegHaeltDenEmpfangAnNurBeiV24) {
     z = 0;
     laufe(wb, b, z, 20 * Z9600);
     EXPECT_EQ(b.gelesenText(), "xyz");
+}
+
+/// Befund AP-S5: SCPX 8915 schreibt WR5 = 68H (RTS und DTR aus), CP/A fasst den
+/// V.24-Kanal nicht an.  Ein Gast, der RTS NIE setzt, benutzt keine Hardware-
+/// Flusssteuerung — der RTS-Halt gilt erst, wenn RTS einmal aktiv war (seit dem
+/// Anbinden bzw. dem letzten Reset des Gastes).
+TEST(SerialWandler, RtsNieGesetztHaeltNicht) {
+    AttrappeAnschluss a;
+    a.rtsAus = false;
+    Wandler w(a);
+    w.anbinden();
+    const auto d = bytes("abc");
+    w.fernGib(d.data(), d.size());
+    uint64_t z = 0;
+    laufe(w, a, z, 10 * Z9600);
+    EXPECT_EQ(a.gelesenText(), "abc");
+
+    // Einmal benutzt → Halt; Reset des Gastes hebt ihn auf.
+    a.rtsAus = true;
+    laufe(w, a, z, Z9600);
+    a.rtsAus = false;
+    w.fernGib(d.data(), d.size());
+    laufe(w, a, z, 10 * Z9600);
+    EXPECT_EQ(a.gelesenText(), "abc");
+    w.gastZurueckgesetzt();
+    laufe(w, a, z, 10 * Z9600);
+    EXPECT_EQ(a.gelesenText(), "abcabc");
+}
+
+/// Der Wandler meldet der Karte, ob Loop oder Transport den Stecker belegen (der alte
+/// Unterbau der Karten schweigt dann).
+TEST(SerialWandler, MeldetDieBelegungDesSteckers) {
+    AttrappeAnschluss a;
+    Wandler w(a);
+    uint64_t z = 0;
+    laufe(w, a, z, Z9600);
+    EXPECT_EQ(a.belegtMeldungen, (std::vector<bool>{false}));
+    WandlerEinstellung e;
+    e.loop = true;
+    w.einstellen(e);
+    laufe(w, a, z, Z9600);
+    e.loop = false;
+    w.einstellen(e);
+    w.anbinden();
+    laufe(w, a, z, Z9600);
+    w.abbinden();
+    laufe(w, a, z, Z9600);
+    EXPECT_EQ(a.belegtMeldungen, (std::vector<bool>{false, true, false}));
 }
 
 TEST(SerialWandler, LoopBringtGesendetesNachEinerZeichenzeitZurueck) {

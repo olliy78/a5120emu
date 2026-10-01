@@ -215,6 +215,11 @@ K1520_API bool k1520_head_loaded(K1520Handle h);
 K1520_API void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 
 /* ─── Serial ports ───────────────────────────────────────────────────────── */
+/* Alter Unterbau für Tests (Entwurf 19 §8): set_rx_cb liefert die Bytes, die der Gast
+ * SENDET (cb == NULL meldet ab), send legt ein Byte in seinen Empfänger.  Belegt ein
+ * Transport oder der Rx/Tx-Loop die Schnittstelle, gehen beide ins Leere.
+ * A5120: DFU = DFÜ/V.24 (K8025 A33-A), PRINTER = Drucker (A32-B);
+ * K8915: DFU = IFS 2 (SIO2-A), PRINTER = IFS 1 (SIO1-B). */
 K1520_API void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                                        K1520SerialCallback cb, void* ctx);
 K1520_API void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);

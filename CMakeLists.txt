@@ -251,7 +251,7 @@ if(BUILD_K1520)
 
     # K8025 ASS – Anschlußsteuerung Seriell (serial interface card)
     add_library(k1520_k8025 STATIC core/cards/k8025/k8025.cpp)
-    target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus)
+    target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus k1520_serial)
     target_include_directories(k1520_k8025 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (formatagnostischer
@@ -273,7 +273,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
         k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke
-        k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger
+        k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger k1520_serial
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -284,7 +284,7 @@ if(BUILD_K1520)
 
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
-    target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger)
+    target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k7028 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # Tastatur K7672 (K8915): Protokollmodell, SCP-Modus
@@ -297,7 +297,7 @@ if(BUILD_K1520)
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
         k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke
-        k1520_floppy2 k1520_bus k1520_logger)
+        k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library

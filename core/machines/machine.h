@@ -16,6 +16,7 @@
 #pragma once
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "core/serial/hub.h"
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -101,19 +102,30 @@ public:
     virtual bool isHeadLoaded() const = 0;
     virtual void setDiskWriteProtect(int drive, bool wp) = 0;
 
-    // ─── Serielle Schnittstelle nach außen (DFÜ) ──────────────────────────────
+    // ─── Serielle Schnittstellen nach außen (Entwurf 19 §8, AP-S5) ────────────
+    /**
+     * @brief Der `SerialHub` der Maschine (einer je Maschine): Einstellen, Starten,
+     *        Status der einstellbaren Schnittstellen.  Index i = Reihenfolge der
+     *        Anmeldung = Reihenfolge von `serielleAnschluesse()` = Index der C-ABI.
+     *        nullptr = Maschine ohne Schnittstellen.
+     */
+    virtual k1520::serial::SerialHub* serialHub() { return nullptr; }
+    /// Die einstellbaren Schnittstellen (Anschlüsse der Karten), in Hub-Reihenfolge.
+    virtual std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() { return {}; }
+    /// Fest verdrahtete, NICHT einstellbare Schnittstellen (Tastatur) als Anzeigename,
+    /// z. B. "Tastatur K7637 (X4)" — Quelle für `k1520_serial_fixed_name` (Leitsatz 7/8).
+    virtual std::vector<std::string> festeSchnittstellen() const { return {}; }
+
+    // ─── Alter Unterbau: DFÜ und Drucker als Rückruf/Einspeisen ───────────────
+    // Bleibt für Tests und `k1520_serial_set_rx_cb`/`k1520_serial_send` (Entwurf 19 §8).
+    // `set…Callback`: Byte, das der Gast SENDET (in seiner Zeichenzeit, über den
+    // Wandler getaktet); `…Send`: Byte, das von AUSSEN im Empfänger ankommt.  Belegt
+    // ein Transport oder der Rx/Tx-Loop die Schnittstelle, gehen beide ins Leere.
+    // A5120: DFÜ = DFÜ/V.24 (K8025 A33-A), Drucker = K8025 A32-B.
+    // K8915: DFÜ = IFS 2 (SIO2-A), Drucker = IFS 1 (SIO1-B).
     using SerialCb = std::function<void(uint8_t)>;
     virtual void setDFUECallback(SerialCb cb) = 0;
     virtual void dfueSend(uint8_t byte) = 0;
-
-    // ─── Serielle Schnittstelle nach außen (Drucker) ──────────────────────────
-    // Vorgabe = keine Wirkung (AP-E4c): der A5120 verdrahtet seinen Druckerkanal
-    // (K8025 SIO A32-B) in diesem AP absichtlich nicht — er hat eine eigene,
-    // bereits bestehende Poll-Schnittstelle (`K8025::printerTxAvailable/TxGet`),
-    // die ein späteres AP an dieselbe ABI hängen kann. `setPrinterCallback`:
-    // Byte, das die Maschine an den Drucker SENDET (Abnehmer nach außen).
-    // `printerSend`: Byte, das von AUSSEN am Druckerkanal EMPFANGEN wird (z. B.
-    // XON/XOFF eines angeschlossenen Druckers).
     virtual void setPrinterCallback(SerialCb) {}
     virtual void printerSend(uint8_t) {}
 

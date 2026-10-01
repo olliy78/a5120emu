@@ -21,7 +21,9 @@
 #include <cctype>
 #include <cstdio>
 #include <atomic>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -35,6 +37,7 @@
 #include "core/peripherals/floppy_drive/track_codec.h"
 #include "tests/support/fixtures.h"
 #include "tests/support/screen.h"
+#include "tests/support/temp_path.h"
 
 using k1520test::TempDisk;
 using k1520test::vramLines;
@@ -571,6 +574,192 @@ TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoffFassung900)
     ASSERT_EQ(empfangen.size(), vorXoff + text.size());
     for (size_t i = 0; i < text.size(); ++i)
         EXPECT_EQ(empfangen[vorXoff + i], text[i] & 0x7F);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// K8915Seriell: die Schnittstellen der ATS über den SerialHub (Entwurf 19 §3.2, AP-S5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+std::string dateiLesen(const std::string& pfad) {
+    std::ifstream f(std::filesystem::u8path(pfad), std::ios::binary);
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+
+void loopAlle(K8915Machine& m, bool an) {
+    auto* hub = m.serialHub();
+    for (int i = 0; i < hub->anzahl(); ++i) {
+        auto k = hub->konfig(i);
+        k.loop = an;
+        ASSERT_TRUE(hub->konfigurieren(i, k));
+    }
+}
+
+}  // namespace
+
+/**
+ * @test K8915Seriell.HubUndVorgaben
+ * @brief Drei einstellbare Schnittstellen in SIO-Reihenfolge — V.24 (SIO1-A, X3),
+ *        IFS 1 (SIO1-B, X4), IFS 2 (SIO2-A, X5) — plus die feste Tastatur; die
+ *        Maschinenvorgabe `pruefstecker` ist der Rx/Tx-Loop aller drei.
+ */
+TEST(K8915Seriell, HubUndVorgaben)
+{
+    K8915Machine m;
+    auto* hub = m.serialHub();
+    ASSERT_NE(hub, nullptr);
+    ASSERT_EQ(hub->anzahl(), 3);
+    EXPECT_EQ(hub->info(0).name, "V.24");
+    EXPECT_EQ(hub->info(0).stecker, "X3");
+    EXPECT_TRUE(hub->info(0).v24);
+    EXPECT_EQ(hub->info(1).name, "IFS 1");
+    EXPECT_FALSE(hub->info(1).v24);
+    EXPECT_EQ(hub->info(2).name, "IFS 2");
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_TRUE(hub->konfig(i).loop) << i;
+        EXPECT_TRUE(hub->info(i).taktquellen.empty()) << i;
+    }
+    ASSERT_EQ(m.serielleAnschluesse().size(), 3u);
+    EXPECT_STREQ(m.serielleAnschluesse()[1]->name(), "IFS 1");
+    EXPECT_EQ(m.festeSchnittstellen(), std::vector<std::string>{"Tastatur K7672"});
+
+    K8915Machine::Config c;
+    c.pruefstecker = false;
+    K8915Machine ohne(c);
+    for (int i = 0; i < 3; ++i) EXPECT_FALSE(ohne.serialHub()->konfig(i).loop) << i;
+
+    // Alter Unterbau: ein Druckerrückruf zieht den Prüfstecker von IFS 1 ab, ein
+    // leerer steckt ihn wieder.
+    m.setPrinterCallback([](uint8_t) {});
+    EXPECT_FALSE(hub->konfig(1).loop);
+    EXPECT_TRUE(hub->konfig(0).loop);
+    m.setPrinterCallback({});
+    EXPECT_TRUE(hub->konfig(1).loop);
+}
+
+/**
+ * @test K8915Seriell.BiosLaeuftOhneLoopWeiter
+ * @brief Offener Punkt 3 aus Entwurf 19: nur der ROM-Selbsttest verlangt das Echo.
+ *        Nach der Coldstart-Meldung wird der Loop an allen drei Schnittstellen gezogen
+ *        — Lader, BIOS-Kaltstart, `rade` und Kommandos laufen trotzdem.
+ */
+TEST(K8915Seriell, BiosLaeuftOhneLoopWeiter)
+{
+    Aufbau x;
+    K8915Machine& m = x.m;
+    m.powerOn();
+    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 60'000'000)) << vramLines(m);
+    loopAlle(m, false);
+    ladenBisPrompt(m);
+    ASSERT_TRUE(befehl(m, "save 1 y.com")) << vramLines(m);
+    ASSERT_TRUE(befehl(m, "dir")) << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, ": Y        COM")) << vramLines(m);
+    EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
+}
+
+/**
+ * @test K8915Seriell.ListUeberIfs1InEineDatei
+ * @brief Maschinenprobe: `LIST` des BIOS (SIO1-B = IFS 1) mit Betriebsart Datei — die
+ *        Zeichen kommen über `hub.takt` im Lauf von `run()` in der Datei an; der alte
+ *        Druckerrückruf schweigt, solange der Transport anliegt.
+ */
+TEST(K8915Seriell, ListUeberIfs1InEineDatei)
+{
+    Aufbau x;
+    K8915Machine& m = x.m;
+    std::vector<uint8_t> alt;
+    m.powerOn();
+    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 60'000'000)) << vramLines(m);
+    ladenBisPrompt(m);
+
+    auto* hub = m.serialHub();
+    const std::string pfad = k1520test::tempPath("k1520_test_k8915_list.txt");
+    std::filesystem::remove(std::filesystem::u8path(pfad));
+    auto k = hub->konfig(1);
+    k.loop = false;
+    k.betriebsart = k1520::serial::Betriebsart::Datei;
+    k.datei = pfad;
+    ASSERT_TRUE(hub->konfigurieren(1, k));
+    ASSERT_TRUE(hub->start(1));
+    m.setPrinterCallback([&](uint8_t b) { alt.push_back(b); });   // Loop bleibt aus
+
+    const std::string text = "K8915 LIST";
+    druckeUeberBios(m, {text.begin(), text.end()});
+    for (int n = 0; n < 200; ++n) {
+        m.run(kSchritt);
+        const auto st = hub->status(1);
+        if (st.bytes_gesendet >= text.size() && st.puffer_senden == 0) break;
+    }
+    const auto st = hub->status(1);
+    EXPECT_EQ(st.baud_nenn, 9600u) << "CTC1-K2 05H/01H, WR4 44H";
+    EXPECT_TRUE(st.format_gueltig);
+    hub->stop(1);
+    EXPECT_EQ(dateiLesen(pfad), text);
+    EXPECT_TRUE(alt.empty()) << "alter Rückruf ins Leere, solange der Transport anliegt";
+    std::filesystem::remove(std::filesystem::u8path(pfad));
+}
+
+/**
+ * @test K8915Seriell.ListUeberTelnetMitXonXoff
+ * @brief Dieselbe Strecke über Telnet (Server auf Loopback, Port vom System): ein
+ *        Client empfängt die Druckausgabe; sein XOFF kommt über den Wandler im
+ *        Empfänger von SIO1-B an und hält `LIST` an, XON gibt den Rest frei.
+ */
+TEST(K8915Seriell, ListUeberTelnetMitXonXoff)
+{
+    namespace net = k1520::serial::net;
+    Aufbau x;
+    K8915Machine& m = x.m;
+    m.powerOn();
+    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 60'000'000)) << vramLines(m);
+    ladenBisPrompt(m);
+
+    auto* hub = m.serialHub();
+    auto k = hub->konfig(1);
+    k.loop = false;
+    k.betriebsart = k1520::serial::Betriebsart::Telnet;
+    k.rolle = k1520::serial::Rolle::Server;
+    k.port = 0;
+    ASSERT_TRUE(hub->konfigurieren(1, k));
+    ASSERT_TRUE(hub->start(1));
+    const uint16_t port = hub->status(1).port_aktiv;
+    ASSERT_NE(port, 0);
+    net::Socket s = net::verbindenAlle(net::aufloesen("127.0.0.1", port), 2000);
+    ASSERT_TRUE(s.gueltig());
+    for (int n = 0; n < 100 && hub->status(1).zustand != k1520::serial::Zustand::Verbunden; ++n)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_EQ(hub->status(1).zustand, k1520::serial::Zustand::Verbunden);
+
+    std::string empf;
+    auto abholen = [&] {
+        uint8_t buf[256];
+        for (;;) {
+            const auto r = net::empfangen(s.fd(), buf, sizeof buf);
+            if (r.status != net::IoStatus::Ok) break;
+            for (size_t i = 0; i < r.n; ++i)
+                if (buf[i] >= 0x20 && buf[i] < 0x7F) empf += static_cast<char>(buf[i]);   // ohne IAC-Verhandlung
+        }
+    };
+    auto laufen = [&](int schritte) {
+        for (int n = 0; n < schritte; ++n) {
+            m.run(kSchritt);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            abholen();
+        }
+    };
+
+    const uint8_t xoff = 0x13, xon = 0x11;
+    ASSERT_EQ(net::senden(s.fd(), &xoff, 1).status, net::IoStatus::Ok);
+    laufen(20);   // XOFF liegt im Empfänger von SIO1-B
+    const std::string text = "TELNET";
+    druckeUeberBios(m, {text.begin(), text.end()});
+    laufen(30);
+    EXPECT_EQ(empf.find(text), std::string::npos) << "hält bei XOFF an: " << empf;
+    ASSERT_EQ(net::senden(s.fd(), &xon, 1).status, net::IoStatus::Ok);
+    for (int n = 0; n < 300 && empf.find(text) == std::string::npos; ++n) laufen(1);
+    EXPECT_NE(empf.find(text), std::string::npos) << empf;
+    hub->stop(1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

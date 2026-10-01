@@ -299,16 +299,22 @@ void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {
 void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                               K1520SerialCallback cb, void* ctx) {
     auto m = toMachine(h);
-    if (port == K1520_SERIAL_DFU) {
-        m->setDFUECallback([cb, ctx](uint8_t b){ if (cb) cb(ctx, b); });
-    } else if (port == K1520_SERIAL_PRINTER) {
-        // Am A5120 ohne Wirkung (K1520Machine-Vorgabe leer, AP-E4c) — der Drucker
-        // dort hat eine eigene, ältere Poll-Schnittstelle (K8025::printerTxAvailable/
-        // TxGet), noch nicht an diese ABI gehängt.
-        m->setPrinterCallback([cb, ctx](uint8_t b){ if (cb) cb(ctx, b); });
-    }
+    // Alter Unterbau (Entwurf 19 §8, seit AP-S5 über die Anschlüsse der Karten): der
+    // Rückruf bekommt die Bytes, die der Gast sendet, in ihrer Zeichenzeit — aber nur,
+    // solange weder ein Transport (k1520_serial_start) noch der Rx/Tx-Loop die
+    // Schnittstelle belegt; sonst geht er ins Leere.  Ein leerer Rückruf (cb == NULL)
+    // meldet ab.  A5120: DFU = DFÜ/V.24, PRINTER = Drucker (A32-B);
+    // K8915: DFU = IFS 2, PRINTER = IFS 1.
+    K1520Machine::SerialCb f;
+    if (cb) f = [cb, ctx](uint8_t b) { cb(ctx, b); };
+    if (port == K1520_SERIAL_DFU)
+        m->setDFUECallback(std::move(f));
+    else if (port == K1520_SERIAL_PRINTER)
+        m->setPrinterCallback(std::move(f));
 }
 
+// Alter Unterbau: das Byte landet sofort im Empfänger — ins Leere, solange ein
+// Transport oder der Loop die Schnittstelle belegt (Entwurf 19 §8).
 void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
     auto m = toMachine(h);
     if (port == K1520_SERIAL_DFU)
