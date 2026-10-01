@@ -280,7 +280,9 @@ _lib.k1520_serial_send.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_uint8]
 _lib.k1520_serial_send.restype = None
 
 # k1520_serial_set_rx_cb(K1520Handle, port: int, cb, user*) -> void
-K1520SerialRxCb = ctypes.CFUNCTYPE(None, ctypes.c_uint8, ctypes.c_void_p)
+# K1520SerialCallback = void (*)(void* ctx, uint8_t byte) — erst der Kontext, dann das
+# Byte (bis AP-T1b stand es hier vertauscht: ein Python-Rückruf bekam ctx als Byte).
+K1520SerialRxCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint8)
 _lib.k1520_serial_set_rx_cb.argtypes = [K1520Handle, ctypes.c_int,
                                         K1520SerialRxCb, ctypes.c_void_p]
 _lib.k1520_serial_set_rx_cb.restype = None
