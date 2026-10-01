@@ -135,6 +135,14 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   `SertestKopplung.*`. Offen (nicht beobachtet): RETI bei ANSTEHENDEM Interrupt weiter oben
   in der Kette — Entwurf 19 §14.10 Punkt 6.
 
+- **SERTEST FLUSS-HW/FLUSS-XON (AP-ST6)** prüfen die Bremse, nicht nur die Daten: ohne
+  Beobachtung blieben sie auch ohne Auto Enables grün — der Rückstau landete verlustfrei in
+  den 4-KiB-Puffern der Wandler. `SertestKopplung.*` sieht deshalb dem Wandler des Testers
+  zu (CTS aus ⇒ keine Bytes abgegeben; Gegenprobe ohne Auto Enables: 1361) und dem der
+  Gegenstelle (`xoffHalt` griff). „XON/XOFF beachten" am Wandler der Gegenstelle **nur**
+  während des Abschnitts X — ECHO/FLUSS-HW übertragen 13H als Daten. Berichtsformat mit
+  Bremszähler: Entwurf 19 §14.6.
+
 ## Tests schreiben
 
 - **Nie feste Ports** (`ctest -j`): Port 0 in C++ (`SerialKonfig::port = 0`, tatsächlicher

@@ -95,10 +95,12 @@ void pruefeCtrlCGegenstelle(S& s, const std::string& schnittstelle) {
 
 /// `sertest t <n> /a`: Ergebniszeilen nach §14.3 bis `SERTEST ENDE`.  Ohne Gegenstelle
 /// (A5120: kein Kabel; K8915: Loop an — die eigene Ankündigung kommt zurück und darf
-/// nicht als Bestätigung gelten) meldet ECHO den Zeitüberlauf der Bestätigung; FLUSS-*
-/// sind bis AP-ST6 Platzhalter (`FEHLER NICHT EINGEBAUT`); der DATEN-LOOP hängt am Loop
-/// der Maschine (A5120 aus, K8915 an).  Geprüft wird das Format, und dass ein für IFSS
-/// nicht geltender Teil `ENTFAELLT` meldet.
+/// nicht als Bestätigung gelten) melden ECHO und FLUSS-XON den Zeitüberlauf der
+/// Bestätigung; der DATEN-LOOP hängt am Loop der Maschine (A5120 aus, K8915 an).
+/// Geprüft wird das Format, und dass ein für IFSS nicht geltender Teil `ENTFAELLT`
+/// meldet.  Das Ende bleibt `FEHLER` — begründet, nicht vorläufig: die
+/// Gegenstellenteile können ohne zweiten Rechner nicht gelingen (seit AP-ST6 gibt es
+/// keinen Platzhalter mehr; `ENDE OK` prüft `SertestKopplung.*`).
 template <class S>
 void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) {
     ASSERT_TRUE(s.fehler().empty()) << s.fehler();
@@ -117,10 +119,10 @@ void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) 
         EXPECT_EQ(z.name, ifss) << z.roh;
         EXPECT_TRUE(z.wert == "OK" || z.wert == "ENTFAELLT" || z.wert.rfind("FEHLER ", 0) == 0) << z.roh;
     }
-    // Ohne Gegenstelle: Zeitüberlauf; solange ein Teil nicht eingebaut ist, darf das
-    // Ende ohnehin nicht OK heißen.
+    // Ohne Gegenstelle: Zeitüberlauf der Bestätigung, also Ende FEHLER.
     EXPECT_EQ(p.wert(ifss, "ECHO").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << p.text();
-    EXPECT_EQ(p.wert(ifss, "FLUSS-XON").value_or("-"), "FEHLER NICHT EINGEBAUT") << p.text();
+    EXPECT_EQ(p.wert(ifss, "FLUSS-XON").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << p.text();
+    for (const Zeile& z : p.zeilen()) EXPECT_EQ(z.wert.find("NICHT EINGEBAUT"), std::string::npos) << z.roh;
     EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
 }
 
@@ -303,11 +305,11 @@ void pruefeInterrupt(S& s, int nr, const std::string& name, uint16_t seite) {
 // ─── Zerlegen der Ergebniszeilen (ohne Maschine) ─────────────────────────────
 
 TEST(Sertest, ZerlegtErgebniszeilen) {
-    auto a = zerlege("SERTEST DFUE/V.24 DATEN-LOOP: FEHLER NICHT EINGEBAUT");
+    auto a = zerlege("SERTEST DFUE/V.24 DATEN-LOOP: FEHLER KEIN ECHO BEI 00H");
     ASSERT_TRUE(a);
     EXPECT_EQ(a->name, "DFUE/V.24");
     EXPECT_EQ(a->teil, "DATEN-LOOP");
-    EXPECT_EQ(a->wert, "FEHLER NICHT EINGEBAUT");
+    EXPECT_EQ(a->wert, "FEHLER KEIN ECHO BEI 00H");
     auto e = zerlege("SERTEST ENDE OK");
     ASSERT_TRUE(e);
     EXPECT_EQ(e->name, "");

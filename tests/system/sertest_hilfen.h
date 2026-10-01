@@ -87,7 +87,7 @@ inline std::string aufspielen(const std::string& pfad) {
 }
 
 /// Eine Ergebniszeile nach §14.3, zerlegt.
-///   `SERTEST DFUE/V.24 DATEN-LOOP: FEHLER NICHT EINGEBAUT` → {DFUE/V.24, DATEN-LOOP, FEHLER NICHT EINGEBAUT}
+///   `SERTEST DFUE/V.24 DATEN-LOOP: FEHLER KEIN ECHO BEI 00H` → {DFUE/V.24, DATEN-LOOP, FEHLER KEIN ECHO BEI 00H}
 ///   `SERTEST ENDE OK`                                     → {"", ENDE, OK}
 ///   `SERTEST INTERRUPT OK`                                → {"", INTERRUPT, OK}
 struct Zeile {

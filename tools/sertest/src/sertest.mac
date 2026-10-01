@@ -24,8 +24,10 @@
 ; Bestaetigung 1BH 'A' m s, n Nutzbytes aus dem LFSR, Bericht 1BH 'B' m ueL ueH s),
 ; Gegenstelle (Ruhezustand = Leitungsspiegel + Interrupt-Empfang, Abschnitt E =
 ; Echo aus dem Hauptprogramm), Tester-Schritte LEITUNGEN und ECHO (14.7).
-; FLUSS-HW/FLUSS-XON folgen in AP-ST6; bis dahin "FEHLER NICHT EINGEBAUT" - ein
-; Test, der nicht laeuft, darf nicht OK melden.
+; AP-ST6: Flusssteuerung (14.7 Schritte 3-4) - FLUSS-HW (nur V.24, Tester mit
+; Auto Enables, Gegenstelle bremst mit RTS) und FLUSS-XON (Gegenstelle bremst mit
+; XOFF/XON, Nutzdaten ohne 11H/13H); Bericht 1BH 'B' m ueL ueH bzL bzH s mit dem
+; Bremszaehler bz.
 ;
 ; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
 ;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
@@ -554,8 +556,9 @@ PUTNIB:	AND	0FH
 	JP	PUTC
 
 ; -----------------------------------------------------------------------------
-; GEGTST - Test mit Gegenstelle (14.7): LEITUNGEN (nur V.24), ECHO; FLUSS-HW
-; und FLUSS-XON folgen in AP-ST6 (bis dahin "FEHLER NICHT EINGEBAUT").
+; GEGTST - Test mit Gegenstelle (14.7): LEITUNGEN (nur V.24), ECHO, FLUSS-HW
+; (nur V.24), FLUSS-XON. ECHO und die beiden FLUSS-Teile sind derselbe Ablauf
+; (ECHOT) mit dem Modus der Ankuendigung: 'E', 'H', 'X'.
 ; -----------------------------------------------------------------------------
 GEGTST:	CALL	IFART
 	CP	ART_V24
@@ -564,20 +567,18 @@ GEGTST:	CALL	IFART
 	CALL	ERGENT
 	JR	GT_2
 GT_1:	CALL	LEITG
-GT_2:	CALL	ECHOT
-	LD	HL, T_FLHW
-	CALL	ERGV24
-	LD	HL, T_FLXO
-	JP	ERGNE
-
-; ERGV24 - Teil HL nur auf V.24: sonst ENTFAELLT, auf V.24 (noch) nicht eingebaut.
-ERGV24:	CALL	IFART
+GT_2:	LD	A, 'E'
+	CALL	ECHOT
+	CALL	IFART
 	CP	ART_V24
-	JP	NZ, ERGENT
-	; faellt durch
-; ERGNE - Teil HL: "FEHLER NICHT EINGEBAUT" (Platzhalter bis AP-ST6)
-ERGNE:	LD	DE, G_NEIN
-	JP	ERGFEH
+	JR	Z, GT_3
+	LD	HL, T_FLHW		; FLUSS-HW braucht RTS/CTS
+	CALL	ERGENT
+	JR	GT_4
+GT_3:	LD	A, 'H'
+	CALL	ECHOT
+GT_4:	LD	A, 'X'
+	JP	ECHOT
 
 ; LEITG - LEITUNGEN ueber die Gegenstelle (14.7 Schritt 1, nur V.24). Die
 ; Gegenstelle spiegelt ihre Eingaenge auf ihre Ausgaenge (CTS -> RTS, DCD ->
@@ -679,24 +680,50 @@ LGSEQ:	DB	0, 2, 3, 2, 0
 LGSLEN	EQU	$-LGSEQ
 
 ; -----------------------------------------------------------------------------
-; ECHOT - ECHO (14.7 Schritt 2, V.24 und IFSS), Protokoll 14.6:
+; ECHOT - A = Modus: 'E' = ECHO (14.7 Schritt 2), 'H' = FLUSS-HW (Schritt 3),
+; 'X' = FLUSS-XON (Schritt 4). Gemeinsamer Ablauf nach Protokoll 14.6:
 ;   Weckzeichen 00H, 200 ms Pause (die Gegenstelle meldet den ersten
 ;   Empfangsinterrupt auf dem Bildschirm - am K8915 rollt das BIOS dabei unter
-;   DI), Ankuendigung 1BH 'S' 'E' nL nH s, Bestaetigung 1BH 'A' 'E' s
+;   DI), Ankuendigung 1BH 'S' m nL nH s, Bestaetigung 1BH 'A' m s
 ;   abwarten (3 s), dann N_ECHO Nutzbytes aus dem LFSR senden und gleichzeitig
 ;   (polled) das Echo Byte fuer Byte vergleichen, zuletzt den Bericht
-;   1BH 'B' 'E' ueL ueH s (3 s). s = Summe der Bytes zwischen 1BH und s.
+;   1BH 'B' m ueL ueH [bzL bzH] s (3 s). s = Summe der Bytes zwischen 1BH und s.
 ; Waehrend der Uebertragung keine Bildschirmausgabe (Rollen unter DI).
 ; FEHLER: SENDER BLOCKIERT, ZEITUEBERLAUF BESTAETIGUNG, BESTAETIGUNG FALSCH,
 ; ZEITUEBERLAUF ECHO BEI nnnnH (so viele kamen zurueck), ZEITUEBERLAUF BERICHT,
 ; BERICHT FALSCH, FALSCH nnnnH (abweichende Echos), RR1 nnnnH (eigene
-; Empfangsfehler), GEGENSTELLE nnnnH (Empfangsfehler laut Bericht).
+; Empfangsfehler), GEGENSTELLE nnnnH (Empfangsfehler laut Bericht), bei H/X
+; zusaetzlich NICHT GEBREMST (Bremszaehler im Bericht = 0).
+; Modus H: nach der Bestaetigung Auto Enables an (WR3 D5) - der Sender haelt,
+; solange CTS fehlt (K8915: CTS = V107 AND (NOT RTS OR V106), das eigene RTS
+; bleibt dafuer gesetzt). Modus X: Nutzdaten ohne 11H/13H (NUTZB); ein
+; empfangenes 13H haelt das Senden an, 11H gibt es frei - beide zaehlen nicht
+; als Echo. Bericht bei H/X mit zweitem Feld bz (Bremszaehler der Gegenstelle).
 ; -----------------------------------------------------------------------------
 N_ECHO	EQU	4096		; Nutzbytes
 N_ETIK	EQU	20		; Leerlaufdurchlaeufe der Echoschleife je ms (je ~115-140 T)
+XON	EQU	11H
+XOFF	EQU	13H
 
-ECHOT:	LD	DE, M_ECLA
+ECHOT:	LD	(ECMOD), A
+	CALL	ECHOK
+	XOR	A			; Auto Enables wieder aus (nur H setzt sie)
+	JP	AUTOEN
+
+ECHOK:	LD	HL, T_ECHO
+	LD	DE, M_ECLA
+	CP	'E'
+	JR	Z, EO_1
+	LD	HL, T_FLHW
+	LD	DE, M_FHLA
+	CP	'H'
+	JR	Z, EO_1
+	LD	HL, T_FLXO
+	LD	DE, M_FXLA
+EO_1:	LD	(ECTEIL), HL
 	CALL	PUTS
+	XOR	A
+	LD	(XOFFT), A
 	CALL	LEEREN
 	XOR	A			; Weckzeichen
 	CALL	SENDB
@@ -709,7 +736,7 @@ ECHOT:	LD	DE, M_ECLA
 	; Ankuendigung
 	LD	A, 'S'
 	LD	(PKBUF), A
-	LD	A, 'E'
+	LD	A, (ECMOD)
 	LD	(PKBUF+1), A
 	LD	HL, N_ECHO
 	LD	(PKBUF+2), HL
@@ -727,10 +754,16 @@ ECHOT:	LD	DE, M_ECLA
 	LD	DE, G_BESF
 	JP	NZ, EC_FE
 	LD	A, (PKBUF)
-	CP	'E'
+	LD	HL, ECMOD
+	CP	(HL)
 	JP	NZ, EC_FE
 	; Uebertragung
-	CALL	IFSTE
+	LD	A, (ECMOD)
+	CP	'H'
+	JR	NZ, EC_AE
+	LD	A, 1			; FLUSS-HW: Sender haelt ohne CTS
+	CALL	AUTOEN
+EC_AE:	CALL	IFSTE
 	LD	A, C
 	LD	(ECSTE), A
 	LD	HL, N_ECHO
@@ -750,12 +783,15 @@ EC_LP:	LD	A, (ECSTE)
 	LD	A, H
 	OR	L
 	JR	Z, EC_RX
+	LD	A, (XOFFT)		; FLUSS-XON: angehalten
+	OR	A
+	JR	NZ, EC_RX
 	IN	A, (C)
 	AND	RR0_TX
 	JR	Z, EC_RX
 	PUSH	DE
 	LD	HL, TXZ
-	CALL	LFSR
+	CALL	NUTZB
 	POP	DE
 	DEC	C			; Datenport
 	OUT	(C), A
@@ -772,9 +808,22 @@ EC_RX:	IN	A, (C)
 	DEC	C
 	IN	A, (C)
 	LD	(ECZ), A
-	PUSH	DE
+	LD	B, A
+	LD	A, (ECMOD)		; FLUSS-XON: 13H/11H sind Steuerung, kein Echo
+	CP	'X'
+	JR	NZ, EC_DAT
+	LD	A, B
+	CP	XOFF
+	JR	Z, EC_XS
+	CP	XON
+	JR	NZ, EC_DAT
+	XOR	A			; XON: A = 0
+EC_XS:	LD	(XOFFT), A		; XOFF: A = 13H <> 0
+	LD	DE, 2000		; Frist neu
+	JP	EC_LP
+EC_DAT:	PUSH	DE
 	LD	HL, RXZ
-	CALL	LFSR
+	CALL	NUTZB
 	POP	DE
 	LD	HL, ECZ
 	CP	(HL)
@@ -792,15 +841,15 @@ EC_G:	LD	HL, (RXN)
 	OR	A			; bei laufendem Echo kommt ZEITK nie dran
 	CALL	Z, KEYPOL
 	LD	DE, 2000		; Frist neu
-	JR	EC_LP
+	JP	EC_LP
 EC_NIX:	LD	HL, ECTIK
 	DEC	(HL)
-	JR	NZ, EC_LP
+	JP	NZ, EC_LP
 	LD	(HL), N_ETIK
 	CALL	ZEITK			; eine ms um (alle 16 die Tastatur)
-	JR	NZ, EC_LP
+	JP	NZ, EC_LP
 	; Zeitueberlauf: so viele Echos kamen an
-	LD	HL, T_ECHO
+	LD	HL, (ECTEIL)
 	LD	DE, G_TECH
 	CALL	ERGFE0
 	LD	HL, N_ECHO
@@ -808,9 +857,13 @@ EC_NIX:	LD	HL, ECTIK
 	OR	A
 	SBC	HL, DE
 	JP	EC_HX
-	; Bericht
-EC_FER:	LD	A, 'B'
+	; Bericht: E = m ue, H/X = m ue bz (14.6)
+EC_FER:	LD	A, (ECMOD)
 	LD	B, 3
+	CP	'E'
+	JR	Z, EC_F1
+	LD	B, 5
+EC_F1:	LD	A, 'B'
 	LD	DE, 3000
 	CALL	EMPPK
 	LD	DE, G_TBER
@@ -818,9 +871,20 @@ EC_FER:	LD	A, 'B'
 	LD	DE, G_BERF
 	JR	NZ, EC_FE
 	LD	A, (PKBUF)
-	CP	'E'
+	LD	HL, ECMOD
+	CP	(HL)
 	JR	NZ, EC_FE
+	LD	A, (ECMOD)		; H/X: "  Gegenstelle hat nnnnH mal gebremst."
+	CP	'E'
+	JR	Z, EC_URT
+	LD	DE, M_GEBR
+	CALL	PUTS
+	LD	HL, (PKBUF+3)
+	CALL	PUTHX4
+	LD	DE, M_GEB2
+	CALL	PUTS
 	; Urteil
+EC_URT:
 	LD	HL, (EFAL)
 	LD	DE, G_FALS
 	LD	A, H
@@ -836,10 +900,18 @@ EC_FER:	LD	A, 'B'
 	LD	A, H
 	OR	L
 	JR	NZ, EC_ZA
-	LD	HL, T_ECHO
+	LD	A, (ECMOD)		; H/X: mindestens einmal gebremst
+	CP	'E'
+	JR	Z, EC_OK
+	LD	HL, (PKBUF+3)
+	LD	DE, G_NGEB
+	LD	A, H
+	OR	L
+	JR	Z, EC_FE
+EC_OK:	LD	HL, (ECTEIL)
 	JP	ERGOK
 EC_ZA:	PUSH	HL			; FEHLER <grund> nnnnH
-	LD	HL, T_ECHO
+	LD	HL, (ECTEIL)
 	CALL	ERGFE0
 	POP	HL
 EC_HX:	CALL	PUTHX4
@@ -847,8 +919,25 @@ EC_HX:	CALL	PUTHX4
 	CALL	PUTC
 	JP	CRLF
 EC_SBL:	LD	DE, G_SBLK
-EC_FE:	LD	HL, T_ECHO
+EC_FE:	LD	HL, (ECTEIL)
 	JP	ERGFEH
+
+; NUTZB - A = naechstes Nutzbyte aus dem LFSR-Zustand bei HL; im Modus X
+; (ECMOD) ohne 11H/13H (die werden uebersprungen - Sender und Vergleich
+; ueberspringen gleich). Zerstoert B, DE.
+NUTZB:	PUSH	HL
+	CALL	LFSR
+	POP	HL
+	LD	B, A
+	LD	A, (ECMOD)
+	CP	'X'
+	LD	A, B
+	RET	NZ
+	CP	XON
+	JR	Z, NUTZB
+	CP	XOFF
+	JR	Z, NUTZB
+	RET
 
 ; LEEREN - Empfaenger leeren (polled; Reste von frueher, hoechstens 64 Zeichen).
 LEEREN:	LD	A, 64
@@ -1040,8 +1129,11 @@ GE_LOS:	LD	DE, M_GBER
 	; Ringpuffer, an V.24 Leitungsspiegel (LEISPI). Je Durchlauf 1 ms warten
 	; (WARTE fragt alle 16 ms die Tastatur ab - Ctrl+C -> ABBRUCH -> AUFR).
 	; Der erste Empfangsinterrupt wird einmal gemeldet. Eine Ankuendigung
-	; 1BH 'S' m nL nH s schaltet in den Abschnitt m (V0.1: nur 'E' = Echo),
-	; danach geht es hierher zurueck. Alles andere wird verworfen.
+	; 1BH 'S' m nL nH s schaltet in den Abschnitt m ('E' = Echo, 'H' = Echo
+	; mit Bremse ueber RTS - nur V.24 -, 'X' = Echo mit Bremse ueber XOFF/XON),
+	; danach geht es hierher zurueck. Alles andere wird verworfen. Der
+	; Leitungsspiegel (und am K8915 die RTS-Probe) laeuft NUR hier, nie
+	; waehrend eines Abschnitts - in H ist RTS die Bremse (14.10 Punkt 7).
 	CALL	SIOPRG
 	CALL	EINH
 	LD	A, 0FFH			; Leitungen beim ersten Durchlauf anzeigen
@@ -1070,9 +1162,16 @@ GE_R2:	CALL	LEISPI
 	JR	C, GE_VER
 	LD	A, (ANKB+1)
 	CP	'E'
-	JR	NZ, GE_VER		; H/X: AP-ST6
-	CALL	ECHOAB
-	JR	GE_RUH
+	JR	Z, GE_AB
+	CP	'X'
+	JR	Z, GE_AB
+	CP	'H'
+	JR	NZ, GE_VER
+	CALL	IFART			; H nur an V.24 (RTS/CTS)
+	CP	ART_V24
+	JR	NZ, GE_VER
+GE_AB:	CALL	ECHOAB
+	JP	GE_RUH
 GE_VER:	LD	DE, M_GVER
 	CALL	PUTS
 	JR	GE_RUH
@@ -1193,11 +1292,19 @@ RW_L:	CALL	RXHOL
 	SCF
 	RET
 
-; ECHOAB - Abschnitt 'E' der Gegenstelle (14.6): Bestaetigung 1BH 'A' m s,
+; ECHOAB - Abschnitt m der Gegenstelle (14.6/14.7): Bestaetigung 1BH 'A' m s,
 ; dann n Nutzbytes aus dem Ringpuffer zurueckschicken (aus dem Hauptprogramm),
-; dann Bericht 1BH 'B' m ueL ueH s mit ue = RR1-Fehler + Ringpufferueberlauf
-; seit der Ankuendigung. Ausgabe nur VOR der Bestaetigung und NACH dem
-; Bericht (am K8915 rollt das BIOS unter DI). 3 s ohne Byte -> Ruhezustand.
+; dann Bericht 1BH 'B' m ueL ueH [bzL bzH] s mit ue = RR1-Fehler +
+; Ringpufferueberlauf seit der Ankuendigung, bz = wie oft gebremst (nur H/X).
+; H/X: Rueckstau erzeugen - je N_BLOCK zurueckgeschickte Bytes N_PAUSE ms
+; Pause; Bremse ueber den Fuellstand des Ringpuffers (FLUSTE). Ausgabe nur VOR
+; der Bestaetigung und NACH dem Bericht (am K8915 rollt das BIOS unter DI).
+; 3 s ohne Byte -> Ruhezustand.
+N_BLOCK	EQU	512		; Bytes je Block ...
+N_PAUSE	EQU	300		; ... danach so viele ms nicht zurueckschicken
+N_BRAN	EQU	192		; Bremse an bei Fuellstand > N_BRAN
+N_BRAB	EQU	64		; Bremse los bei Fuellstand < N_BRAB
+
 ECHOAB:	LD	DE, M_GABS
 	CALL	PUTS
 	LD	A, (ANKB+1)
@@ -1214,6 +1321,13 @@ ECHOAB:	LD	DE, M_GABS
 	LD	(FEHLZ), HL
 	LD	(RXUEB), HL
 	EI
+	LD	(BREMSZ), HL
+	XOR	A
+	LD	(BREMS), A
+	LD	A, (WR5S)		; Leitungen vor dem Abschnitt (Spiegel)
+	LD	(GEWR5), A
+	LD	HL, N_BLOCK
+	LD	(BLKZ), HL
 	LD	A, 'A'
 	LD	(PKBUF), A
 	LD	A, (ANKB+1)
@@ -1221,22 +1335,35 @@ ECHOAB:	LD	DE, M_GABS
 	LD	HL, PKBUF
 	LD	B, 2
 	CALL	SENDPK
-	JR	C, EA_SBL
+	JP	C, EA_SBL
 EA_LP:	LD	HL, (GENR)
 	LD	A, H
 	OR	L
-	JR	Z, EA_BER
+	JP	Z, EA_BER
 	LD	A, L			; alle 16 Zeichen die Tastatur - RXWART
 	AND	0FH			; wartet bei laufendem Echo nie
 	CALL	Z, KEYPOL
-	LD	DE, 3000
+	LD	A, (ANKB+1)		; H/X: nach jedem Block eine Pause
+	CP	'E'
+	JR	Z, EA_RX
+	LD	HL, (BLKZ)
+	DEC	HL
+	LD	(BLKZ), HL
+	LD	A, H
+	OR	L
+	JR	NZ, EA_RX
+	LD	HL, N_BLOCK
+	LD	(BLKZ), HL
+	CALL	PAUSE
+EA_RX:	LD	DE, 3000
 	CALL	RXWART
-	JR	C, EA_TO
+	JP	C, EA_TO
 	CALL	SENDB
-	JR	C, EA_SBL
+	JP	C, EA_SBL
 	LD	HL, (GENR)
 	DEC	HL
 	LD	(GENR), HL
+	CALL	FLUSTE
 	JR	EA_LP
 EA_BER:	DI
 	LD	HL, (FEHLZ)
@@ -1244,23 +1371,115 @@ EA_BER:	DI
 	ADD	HL, DE
 	EI
 	LD	(PKBUF+2), HL
+	LD	HL, (BREMSZ)
+	LD	(PKBUF+4), HL
 	LD	A, 'B'
 	LD	(PKBUF), A
-	LD	HL, PKBUF
-	LD	B, 4			; 'B' m ueL ueH (AP-ST6 haengt Felder an)
+	LD	B, 4			; 'B' m ueL ueH
+	LD	A, (ANKB+1)
+	CP	'E'
+	JR	Z, EA_B1
+	LD	B, 6			; 'B' m ueL ueH bzL bzH
+EA_B1:	LD	HL, PKBUF
 	CALL	SENDPK
-	JR	C, EA_SBL
+	JP	C, EA_SBL
+	CALL	FLUEND
 	LD	DE, M_GAFE
 	CALL	PUTS
 	LD	HL, (PKBUF+2)
 	CALL	PUTHX4
 	LD	A, 'H'
 	CALL	PUTC
+	LD	A, (ANKB+1)
+	CP	'E'
+	JP	Z, CRLF
+	LD	DE, M_GABR		; ", gebremst nnnnH"
+	CALL	PUTS
+	LD	HL, (BREMSZ)
+	CALL	PUTHX4
+	LD	A, 'H'
+	CALL	PUTC
 	JP	CRLF
-EA_TO:	LD	DE, M_GATO
+EA_TO:	CALL	FLUEND
+	LD	DE, M_GATO
 	JP	PUTS
-EA_SBL:	LD	DE, M_GASB
+EA_SBL:	CALL	FLUEND
+	LD	DE, M_GASB
 	JP	PUTS
+
+; PAUSE - N_PAUSE ms nichts zurueckschicken, dabei die Bremse fuehren.
+PAUSE:	LD	HL, N_PAUSE
+	LD	(PAUSZ), HL
+PS_L:	LD	DE, 1
+	CALL	WARTE
+	CALL	FLUSTE
+	LD	HL, (PAUSZ)
+	DEC	HL
+	LD	(PAUSZ), HL
+	LD	A, H
+	OR	L
+	JR	NZ, PS_L
+	RET
+
+; FLUSTE - Bremse der Gegenstelle (14.7 Schritte 3/4) nach dem Fuellstand des
+; Ringpuffers: > N_BRAN bremsen (H: RTS weg, X: XOFF senden), BREMSZ + 1;
+; < N_BRAB loesen (H: RTS wieder an, X: XON). Im Modus E nichts.
+; Zerstoert alles.
+FLUSTE:	LD	A, (ANKB+1)
+	CP	'E'
+	RET	Z
+	LD	B, A			; B = Modus
+	DI
+	LD	A, (RXAUS)
+	LD	C, A
+	LD	A, (RXEIN)
+	EI
+	SUB	C			; Fuellstand (mod 256)
+	LD	C, A
+	LD	A, (BREMS)
+	OR	A
+	JR	NZ, FS_LOS
+	LD	A, C
+	CP	N_BRAN+1
+	RET	C
+	LD	A, 1			; bremsen
+	LD	(BREMS), A
+	LD	HL, (BREMSZ)
+	INC	HL
+	LD	(BREMSZ), HL
+	LD	A, B
+	CP	'H'
+	LD	A, XOFF
+	JP	NZ, SENDB
+	LD	A, (GEWR5)		; RTS weg, DTR bleibt
+	AND	W5_DTR
+	JP	SETLEI
+FS_LOS:	LD	A, C
+	CP	N_BRAB
+	RET	NC
+	XOR	A			; loesen
+	LD	(BREMS), A
+	LD	A, B
+	CP	'H'
+	LD	A, XON
+	JP	NZ, SENDB
+	LD	A, (GEWR5)
+	OR	W5_RTS
+	JP	SETLEI
+
+; FLUEND - Ende eines Abschnitts: H - Leitungen wie vor dem Abschnitt (der
+; Spiegel im Ruhezustand macht dort weiter); X - ein XON hinterher. Das XON
+; loest eine haengende Bremse und auch den Halt "XON/XOFF beachten" im eigenen
+; Wandler, falls ein Byte des Berichts (Summe, Zaehler) zufaellig 13H war.
+FLUEND:	LD	A, (ANKB+1)
+	CP	'H'
+	JR	NZ, FN_1
+	LD	A, (GEWR5)
+	JP	SETLEI
+FN_1:	CP	'X'
+	RET	NZ
+	LD	A, XON
+	JP	SENDB
 
 ; =============================================================================
 ; Maschinenerkennung (14.4)
@@ -2072,6 +2291,7 @@ M_GVER:	DB	'Ankuendigung verworfen.',CR,LF,'$'
 M_GABS:	DB	'Abschnitt $'
 M_GABY:	DB	'H Bytes',CR,LF,'$'
 M_GAFE:	DB	'Abschnitt fertig, Empfangsfehler $'
+M_GABR:	DB	', gebremst $'
 M_GATO:	DB	'Zeitueberlauf, zurueck in den Ruhezustand.',CR,LF,'$'
 M_GASB:	DB	'Sender blockiert, zurueck in den Ruhezustand.',CR,LF,'$'
 M_INTA:	DB	'Empfangsinterrupt ausgeloest',CR,LF
@@ -2093,7 +2313,7 @@ T_LEIT:	DB	'LEITUNGEN$'
 T_ECHO:	DB	'ECHO$'
 T_FLHW:	DB	'FLUSS-HW$'
 T_FLXO:	DB	'FLUSS-XON$'
-G_NEIN:	DB	'NICHT EINGEBAUT$'
+G_NGEB:	DB	'NICHT GEBREMST$'
 G_KECH:	DB	'KEIN ECHO BEI $'
 G_FALS:	DB	'FALSCH $'
 G_RR1:	DB	'RR1 $'
@@ -2123,6 +2343,10 @@ M_LGBE:	DB	'  Gegenstelle bestaetigt: $'
 M_JA:	DB	'JA$'
 M_NEIN:	DB	'NEIN$'
 M_ECLA:	DB	'Echo: 4096 Bytes ueber die Gegenstelle ...',CR,LF,'$'
+M_FHLA:	DB	'Fluss-HW: 4096 Bytes, die Gegenstelle bremst mit RTS ...',CR,LF,'$'
+M_FXLA:	DB	'Fluss-XON: 4096 Bytes, die Gegenstelle bremst mit XOFF ...',CR,LF,'$'
+M_GEBR:	DB	'  Gegenstelle hat $'
+M_GEB2:	DB	'H mal gebremst.',CR,LF,'$'
 ; Erwartung CTS/DCD je Kombination (D0 = RTS, D1 = DTR) mit Pruefstecker
 ; RTS->CTS(V106), DTR->DSR(V107)+DCD(V109), Spezifikation 14.5:
 ;  A5120 (K8025): CTS = V106 AND V107, DCD = V109 AND V107
@@ -2282,6 +2506,14 @@ GENR:	DS	2		;   noch zurueckzuschicken
 RWFR:	DS	2		;   Frist RXWART
 LMERK:	DS	1		;   zuletzt gespiegeltes CTS/DCD (FFH = noch keins)
 PRBZ:	DS	1		;   Durchlaeufe bis zur naechsten Probe (K8915)
+ECMOD:	DS	1		; Tester: Modus 'E'/'H'/'X'
+ECTEIL:	DS	2		;         -> Teil der Ergebniszeile
+XOFFT:	DS	1		;         XOFF empfangen (FLUSS-XON), Senden steht
+BREMS:	DS	1		; Gegenstelle: Bremse gezogen
+BREMSZ:	DS	2		;   wie oft gebremst (Bericht, H/X)
+GEWR5:	DS	1		;   WR5 vor dem Abschnitt
+BLKZ:	DS	2		;   Bytes bis zur naechsten Pause
+PAUSZ:	DS	2		;   ms der laufenden Pause
 VAREND:
 VARLEN	EQU	VAREND-VARANF
 

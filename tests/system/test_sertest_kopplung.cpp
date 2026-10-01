@@ -7,9 +7,11 @@
  * Je Fall zwei Kaltstarts; die Gegenstelle läuft mit `sertest g <n>`, der Tester mit
  * `sertest t <n> /g /a` (nur der Gegenstellentest — ohne Loop fiele der Prüfstecker
  * ohnehin durch).  Geprüft werden die Ergebniszeilen (§14.3) beider Seiten: LEITUNGEN
- * (nur V.24, über den Leitungsspiegel der Gegenstelle) und ECHO (4096 Bytes, Bericht
- * ohne Empfangsfehler); FLUSS-HW/FLUSS-XON bleiben bis AP-ST6 `NICHT EINGEBAUT`, das
- * Ende deshalb `FEHLER`.
+ * (nur V.24, über den Leitungsspiegel der Gegenstelle), ECHO (4096 Bytes, Bericht ohne
+ * Empfangsfehler), FLUSS-HW (nur V.24: Gegenstelle bremst mit RTS, Tester sendet mit
+ * Auto Enables) und FLUSS-XON (Gegenstelle bremst mit XOFF/XON, „XON/XOFF beachten" an
+ * ihrem Wandler) — Ende OK (AP-ST6).  Dazu, am Wandler beobachtet, dass wirklich gebremst
+ * wurde und der Sender des Testers bei fehlendem CTS stand.
  *
  * **Uhr- und Maschinenzeit:** die Bytes laufen verlustfrei mit Rückstau durch die Wandler
  * (Maschinenzeit), die Steuerleitungen und das Netz aber durch die I/O-Fäden der beiden
@@ -26,10 +28,15 @@
 
 #include <chrono>
 #include <functional>
+#include <optional>
+#include <regex>
+#include <set>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include "core/serial/hub.h"
+#include "core/serial/wandler.h"
 #include "tests/system/sertest_hilfen.h"
 
 using namespace sertest;
@@ -134,9 +141,53 @@ template <class S>
     return ::testing::AssertionSuccess();
 }
 
+/// Schalter „XON/XOFF beachten" (§6.3) am Wandler der Schnittstelle @p i.  Wirkt sofort,
+/// auch bei laufender Verbindung (keine gesperrte Einstellung, §4).
+template <class S>
+void xonxoff(S& s, int i, bool an) {
+    SerialHub& h = *s.maschine().serialHub();
+    SerialKonfig k = h.konfig(i);
+    k.xonxoff = an;
+    ASSERT_TRUE(h.konfigurieren(i, k));
+}
+
+/// Was die Paarschleife während der FLUSS-Abschnitte beobachtet (§14.7 Schritte 3/4).
+struct FlussBeobachtung {
+    bool abschnittH = false, abschnittX = false;   ///< Ankündigung an der Gegenstelle gesehen
+    // FLUSS-HW, am Wandler des Testers: Runden mit CTS aus am Anfang UND Ende, und was
+    // der Tester in diesen Runden trotzdem abgab — mit Auto Enables (WR3 D5) höchstens das
+    // Zeichen, das beim Fallen von CTS schon im Sender stand.
+    int      ctsAusPhasen = 0;
+    long     ctsAusRunden = 0;
+    uint64_t gesendetBeiCtsAus = 0;
+    bool     vorher = false;
+    k1520::serial::WandlerSicht alt;
+    // FLUSS-XON, am Wandler der Gegenstelle: der Halt „XON/XOFF beachten" griff.
+    bool xoffHaltGesehen = false;
+    // Gegenstelle: fertige Abschnittszeilen, „verworfen"/„Zeitueberlauf" gesehen.
+    std::set<std::string> fertig;
+    bool verworfen = false, zeitueberlauf = false;
+};
+
+/// `Abschnitt fertig, Empfangsfehler xxxxH[, gebremst yyyyH]` — vollständige Zeile?
+/// Liefert {ue, bz} (bz = -1 ohne Bremszähler, Abschnitt E).
+inline std::optional<std::pair<int, int>> fertigZeile(const std::string& z) {
+    static const std::regex re(
+        "^Abschnitt fertig, Empfangsfehler ([0-9A-F]{4})H(, gebremst ([0-9A-F]{4})H)?$");
+    std::smatch m;
+    if (!std::regex_match(z, m, re)) return std::nullopt;
+    const int ue = std::stoi(m[1].str(), nullptr, 16);
+    const int bz = m[3].matched ? std::stoi(m[3].str(), nullptr, 16) : -1;
+    return std::make_pair(ue, bz);
+}
+
 /// Ein Durchgang: Gegenstelle `sertest g <ng>` an @p g, Tester `sertest t <nt> /g /a` an
-/// @p t; erwartet LEITUNGEN (@p v24: OK, sonst ENTFAELLT), ECHO OK.  Danach Ctrl+C an der
-/// Gegenstelle, beide wieder am Prompt (für einen weiteren Durchgang).
+/// @p t; erwartet LEITUNGEN (@p v24: OK, sonst ENTFAELLT), ECHO OK, FLUSS-HW (@p v24: OK,
+/// sonst ENTFAELLT), FLUSS-XON OK, Ende OK.  Für FLUSS-XON wird „XON/XOFF beachten" am
+/// Wandler der Gegenstelle eingeschaltet, sobald sie den Abschnitt X ankündigt (§14.8) —
+/// vorher nicht: ECHO und FLUSS-HW übertragen alle Bytewerte, ein zurückgeschicktes 13H
+/// hielte sonst den eigenen Empfang an.  Danach Ctrl+C an der Gegenstelle, beide wieder
+/// am Prompt (für einen weiteren Durchgang).
 template <class T, class G>
 void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::string& nameG,
                bool v24) {
@@ -146,25 +197,85 @@ void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::
     g.tippe("sertest g " + std::to_string(ng) + "\r");
     ASSERT_TRUE(p.bisText(g, "Gegenstelle an " + nameG + " bereit.")) << g.bild();
     t.tippe("sertest t " + std::to_string(nt) + " /g /a\r");
-    ASSERT_TRUE(p.bisEnde()) << "Tester:\n" << t.bild() << "\nGegenstelle:\n" << g.bild();
+
+    k1520::serial::Wandler& wt = t.maschine().serialHub()->wandler(nt - 1);
+    k1520::serial::Wandler& wg = g.maschine().serialHub()->wandler(ng - 1);
+    FlussBeobachtung f;
+    const bool ende = p.bis([&] {
+        const std::string gb = g.bild();
+        for (const std::string& z : zeilenAus(gb)) {
+            if (fertigZeile(z)) f.fertig.insert(z);
+            if (z.find("verworfen") != std::string::npos) f.verworfen = true;
+            if (z.find("Zeitueberlauf") != std::string::npos) f.zeitueberlauf = true;
+        }
+        if (!f.abschnittH && gb.find("Abschnitt H:") != std::string::npos) f.abschnittH = true;
+        if (!f.abschnittX && gb.find("Abschnitt X:") != std::string::npos) {
+            f.abschnittX = true;
+            xonxoff(g, ng - 1, true);
+        }
+        if (f.abschnittH && !f.abschnittX) {
+            const auto n = wt.sicht();
+            if (f.vorher && !n.cts) {
+                if (f.alt.cts) ++f.ctsAusPhasen;
+                else {
+                    ++f.ctsAusRunden;
+                    f.gesendetBeiCtsAus += n.bytes_gesendet - f.alt.bytes_gesendet;
+                }
+            }
+            f.alt = n;
+            f.vorher = true;
+        }
+        if (f.abschnittX && wg.sicht().xoffHalt) f.xoffHaltGesehen = true;
+        return t.protokoll().ende().has_value();
+    });
+    xonxoff(g, ng - 1, false);
+    ASSERT_TRUE(ende) << "Tester:\n" << t.bild() << "\nGegenstelle:\n" << g.bild();
+
     const std::string bt = t.bild();
     const auto& pt = t.protokoll();
+    const std::string lageT = "\nTester: " + lage(t, nt - 1) + "\nGegenstelle: " + lage(g, ng - 1);
     EXPECT_EQ(pt.wert(nameT, "LEITUNGEN").value_or("-"), v24 ? "OK" : "ENTFAELLT")
         << pt.text() << bt << "\nGegenstelle:\n" << g.bild();
-    EXPECT_EQ(pt.wert(nameT, "ECHO").value_or("-"), "OK")
-        << pt.text() << "Tester: " << lage(t, nt - 1) << "\nGegenstelle: " << lage(g, ng - 1);
-    EXPECT_EQ(pt.wert(nameT, "FLUSS-XON").value_or("-"), "FEHLER NICHT EINGEBAUT") << pt.text();
+    EXPECT_EQ(pt.wert(nameT, "ECHO").value_or("-"), "OK") << pt.text() << lageT;
+    EXPECT_EQ(pt.wert(nameT, "FLUSS-HW").value_or("-"), v24 ? "OK" : "ENTFAELLT")
+        << pt.text() << lageT << "\nGegenstelle:\n" << g.bild();
+    EXPECT_EQ(pt.wert(nameT, "FLUSS-XON").value_or("-"), "OK")
+        << pt.text() << lageT << "\nGegenstelle:\n" << g.bild();
     EXPECT_FALSE(pt.wert(nameT, "DATEN-LOOP")) << "nur /G\n" << pt.text();
-    EXPECT_EQ(pt.ende().value_or("-"), "FEHLER") << "FLUSS-* fehlen noch\n" << pt.text();
+    EXPECT_EQ(pt.ende().value_or("-"), "OK") << pt.text();
     EXPECT_EQ(bt.find("bestaetigt: NEIN"), std::string::npos) << bt;
 
-    // Gegenstelle: einmal INTERRUPT OK, Abschnitt E ohne Empfangsfehler, zurück im Ruhezustand.
-    ASSERT_TRUE(p.bisText(g, "Abschnitt fertig, Empfangsfehler 0000H")) << g.bild();
+    // FLUSS-HW: die Gegenstelle hat wirklich gebremst (CTS des Testers fiel), und der
+    // Sender des Testers hielt an (Auto Enables) — sonst wäre der Rückstau nur in den
+    // Wandlerpuffern gelandet und der Test grün geblieben.
+    if (v24) {
+        EXPECT_TRUE(f.abschnittH);
+        EXPECT_GT(f.ctsAusPhasen, 0) << "CTS am Tester fiel nie";
+        EXPECT_GT(f.ctsAusRunden, 0);
+        EXPECT_LE(f.gesendetBeiCtsAus, uint64_t(f.ctsAusPhasen))
+            << "Tester sendete bei fehlendem CTS weiter (Auto Enables?) phasen="
+            << f.ctsAusPhasen << " runden=" << f.ctsAusRunden;
+    } else {
+        EXPECT_FALSE(f.abschnittH) << "FLUSS-HW an IFSS";
+    }
+    // FLUSS-XON: XOFF der Gegenstelle hielt ihren eigenen Empfang an (§6.3).
+    EXPECT_TRUE(f.abschnittX);
+    EXPECT_TRUE(f.xoffHaltGesehen) << "Gegenstelle sandte nie XOFF";
+
+    // Gegenstelle: einmal INTERRUPT OK, alle Abschnitte ohne Empfangsfehler, in H/X
+    // gebremst, nichts verworfen, kein Zeitüberlauf.
     EXPECT_EQ(g.protokoll().wert("", "INTERRUPT").value_or("-"), "OK") << g.protokoll().text();
-    const std::string bg = g.bild();
-    EXPECT_NE(bg.find("Abschnitt E: 1000H Bytes"), std::string::npos) << bg;
-    EXPECT_EQ(bg.find("verworfen"), std::string::npos) << bg;
-    EXPECT_EQ(bg.find("Zeitueberlauf"), std::string::npos) << bg;
+    bool eGesehen = false, gebremst = false;
+    for (const std::string& z : f.fertig) {
+        const auto w = fertigZeile(z);
+        EXPECT_EQ(w->first, 0) << z;
+        if (w->second < 0) eGesehen = true;
+        else gebremst = gebremst || w->second > 0;
+    }
+    EXPECT_TRUE(eGesehen) << g.bild();
+    EXPECT_TRUE(gebremst) << g.bild();
+    EXPECT_FALSE(f.verworfen) << g.bild();
+    EXPECT_FALSE(f.zeitueberlauf) << g.bild();
 
     ASSERT_TRUE(t.bisPrompt(kFrist)) << t.bild();
     for (int r = 0; r < 100; ++r) g.lauf();   // Bild der Gegenstelle steht (SCPX rollt unter DI)
@@ -252,8 +363,10 @@ TEST(SertestKopplung, A5120_K8915_V24_BeideRichtungen) {
 /**
  * @test SertestKopplung.OhneGegenstelleZeitueberlauf
  * @brief Gegenfall: verbunden, aber auf dem anderen Rechner läuft SERTEST nicht — an der
- *        V.24 bestätigt niemand die Leitungen (`FEHLER RTS=…`), ECHO endet mit
- *        `FEHLER ZEITUEBERLAUF BESTAETIGUNG`; danach ist der Tester bedienbar.
+ *        V.24 bestätigt niemand die Leitungen (`FEHLER RTS=…`), ECHO, FLUSS-HW und
+ *        FLUSS-XON enden mit `FEHLER ZEITUEBERLAUF BESTAETIGUNG` (Auto Enables erst nach
+ *        der Bestätigung — sonst hieße es hier `SENDER BLOCKIERT`); danach ist der
+ *        Tester bedienbar.
  */
 TEST(SertestKopplung, OhneGegenstelleZeitueberlauf) {
     SertestA5120 t, g;
@@ -265,7 +378,9 @@ TEST(SertestKopplung, OhneGegenstelleZeitueberlauf) {
     ASSERT_TRUE(p.bisEnde()) << t.bild();
     const auto& pt = t.protokoll();
     EXPECT_EQ(pt.wert("DFUE/V.24", "LEITUNGEN").value_or("-").rfind("FEHLER RTS=", 0), 0u) << pt.text();
-    EXPECT_EQ(pt.wert("DFUE/V.24", "ECHO").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << pt.text();
+    for (const char* teil : {"ECHO", "FLUSS-HW", "FLUSS-XON"})
+        EXPECT_EQ(pt.wert("DFUE/V.24", teil).value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG")
+            << teil << "\n" << pt.text();
     EXPECT_EQ(pt.ende().value_or("-"), "FEHLER") << pt.text();
     EXPECT_NE(t.bild().find("bestaetigt: NEIN"), std::string::npos) << t.bild();
     ASSERT_TRUE(t.bisPrompt(kFrist)) << t.bild();

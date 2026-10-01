@@ -6,12 +6,12 @@ Gerät mit Prüfstecker bzw. Nullmodemkabel, im Emulator gegen den Rx/Tx-Loop bz
 einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md`
 **§14**.
 
-> **Stand V0.1 (AP-ST5):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
+> **Stand V0.1 (AP-ST6):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
 > Schnittstellenliste, Rollenwahl, J/N-Abfragen, Ctrl+C), SIO-/CTC-Schicht (9600 8N1 für
 > die Dauer der Prüfung, danach BIOS-Vorgabe), **Prüfsteckertest** (DATEN-LOOP,
-> LEITUNGEN-LOOP) und **Test mit Gegenstelle** (LEITUNGEN, ECHO; Gegenstelle mit
-> Leitungsspiegel und Echo). FLUSS-HW/FLUSS-XON folgen in AP-ST6; bis dahin melden sie
-> `FEHLER NICHT EINGEBAUT` (ein Test, der nicht läuft, meldet nie `OK`).
+> LEITUNGEN-LOOP) und **Test mit Gegenstelle** (LEITUNGEN, ECHO, FLUSS-HW, FLUSS-XON;
+> Gegenstelle mit Leitungsspiegel, Echo und Bremse). Alle Teile sind eingebaut; offen ist
+> nur der Abschluss (ST7: Kabelbelegung, Geräteprüfung).
 
 ## Bedienung
 
@@ -123,11 +123,41 @@ Abschnitt fertig, Empfangsfehler 0000H
   `ZEITUEBERLAUF BESTAETIGUNG` (keine Gegenstelle — auch, wenn ein Prüfstecker steckt),
   `ZEITUEBERLAUF ECHO BEI nnnnH`, `FALSCH nnnnH`, `RR1 nnnnH`, `GEGENSTELLE nnnnH`,
   `ZEITUEBERLAUF BERICHT`, `BESTAETIGUNG FALSCH`, `BERICHT FALSCH`, `SENDER BLOCKIERT`.
+- **FLUSS-HW** (nur V.24, an IFSS `ENTFAELLT`) und **FLUSS-XON** (V.24 und IFSS): wie ECHO,
+  aber die Gegenstelle bremst — siehe *Flusssteuerung*. Zusätzlicher Grund
+  `NICHT GEBREMST` (die Gegenstelle hat nie gebremst, der Test hätte nichts geprüft).
 
 **Protokoll** (Entwurf 19 §14.6): Weckzeichen 00H + 200 ms Pause, Ankündigung
-`1BH 'S' m nL nH s`, Bestätigung `1BH 'A' m s`, n Nutzbytes, Bericht `1BH 'B' m ueL ueH s`;
-`s` = Summe der Bytes zwischen 1BH und s. Während der Übertragung schreibt keine Seite
-auf den Bildschirm (SCPX 8915 rollt unter DI).
+`1BH 'S' m nL nH s` (m = `E` Echo, `H` Fluss über Leitungen, `X` Fluss über XON/XOFF),
+Bestätigung `1BH 'A' m s`, n Nutzbytes, Bericht `1BH 'B' 'E' ueL ueH s` bzw.
+`1BH 'B' m ueL ueH bzL bzH s` bei `H`/`X` (`ue` = Empfangsfehler der Gegenstelle, `bz` =
+wie oft sie gebremst hat); `s` = Summe der Bytes zwischen 1BH und s. Während der
+Übertragung schreibt keine Seite auf den Bildschirm (SCPX 8915 rollt unter DI).
+
+## Flusssteuerung
+
+Beide FLUSS-Teile schicken 4096 Bytes wie ECHO; die **Gegenstelle erzeugt Rückstau**: vor
+jedem 512. zurückgeschickten Byte hält sie 300 ms an. Läuft dabei ihr Empfangspuffer
+(256 Byte, Interrupt) über **192 Byte**, bremst sie, unter **64 Byte** löst sie die Bremse.
+In einem Durchgang bremst sie so siebenmal (`Gegenstelle hat 0007H mal gebremst.`).
+OK = Echo fehlerfrei, kein Empfangsfehler auf beiden Seiten (RR1, Pufferüberlauf) und
+mindestens einmal gebremst.
+
+- **FLUSS-HW:** die Gegenstelle bremst, indem sie **RTS wegnimmt** (DTR bleibt); über das
+  Nullmodemkabel fällt beim Tester CTS. Der Tester sendet mit **Auto Enables** (SIO WR3 D5),
+  sein Sender hält also in Hardware an, solange CTS fehlt. Das eigene RTS des Testers bleibt
+  gesetzt — am K8915 hängt CTS daran (CTS = V107 ∧ (¬RTS ∨ V106)). Auto Enables erst nach
+  der Bestätigung, am Ende wieder aus. Während eines Abschnitts läuft an der Gegenstelle kein
+  Leitungsspiegel und keine K8915-Probe; danach stellt sie ihre Leitungen von vorher her.
+- **FLUSS-XON:** die Gegenstelle bremst mit **XOFF (13H)** und löst mit **XON (11H)**; der
+  Tester hält sein Senden bei XOFF an (Auto Enables aus). Die Nutzdaten enthalten deshalb
+  weder 11H noch 13H (das LFSR überspringt sie auf beiden Seiten). Nach dem Bericht schickt
+  die Gegenstelle noch ein XON (falls ein Berichtsbyte zufällig 13H war).
+- **Im Emulator:** „XON/XOFF beachten" an der Schnittstelle der Gegenstelle nur für
+  FLUSS-XON einschalten — dann hält ihr Wandler den Empfang beim eigenen XOFF sofort an,
+  egal wie lange das Netz braucht. Für ECHO und FLUSS-HW **aus**: dort gehen alle
+  Bytewerte über die Leitung, ein zurückgeschicktes 13H hielte den Empfang an. Ohne den
+  Schalter reichen die 63 Byte Reserve über der Bremsschwelle, solange das Netz flink ist.
 
 ## Maschinenerkennung
 

@@ -827,10 +827,11 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 
 ## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
 
-**Stand:** 2026-10-01, **AP-ST1 – AP-ST5 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
+**Stand:** 2026-10-01, **AP-ST1 – AP-ST6 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
 `tests/system/test_sertest.cpp` + `sertest_hilfen.h`; SIO-/CTC-Schicht; Prüfsteckertest +
 K7028-/CTSA nach Stromlaufplan; Protokoll, Gegenstelle, LEITUNGEN + ECHO mit zwei gekoppelten
-Maschinen, K8025 reicht RETI weiter); weiter mit ST6.
+Maschinen, K8025 reicht RETI weiter; Flusssteuerung FLUSS-HW/FLUSS-XON, gekoppelt `SERTEST
+ENDE OK`); weiter mit ST7.
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
@@ -1103,9 +1104,15 @@ Nutzdaten: Pseudozufallsfolge (LFSR mit festem Startwert), im Modus `X` ohne 11H
   `'A' + m`, beim Bericht `'B' + m +` alle Felder.
 - **Bericht, erweiterbar:** `1BH 'B' m <Felder> s`, jedes Feld 16 Bit (L, H). **Wie viele
   Felder folgen, legt der Modus fest** — der Tester liest genau so viele, wie der von ihm
-  angekündigte Modus vorsieht: `E` = `ue`; `H`/`X` (ST6) = `ue`, dahinter der
-  Bremszähler. Kein Längenbyte: der Tester kennt den Modus, und ein falsch gezählter
-  Bericht fällt an der Summe auf.
+  angekündigte Modus vorsieht. Kein Längenbyte: der Tester kennt den Modus, und ein falsch
+  gezählter Bericht fällt an der Summe auf. **Festgelegt (ST6):**
+
+  | Modus | Bericht | Felder |
+  |-------|---------|--------|
+  | `E` | `1BH 'B' 'E' ueL ueH s` | `ue` |
+  | `H`, `X` | `1BH 'B' m ueL ueH bzL bzH s` | `ue`, `bz` = wie oft die Gegenstelle gebremst hat (RTS weggenommen bzw. XOFF gesendet) |
+
+  `s` = `'B' + m + ueL + ueH (+ bzL + bzH)` mod 256.
 - **Weckzeichen:** der Tester schickt vor der Ankündigung ein 00H und wartet 200 ms. Die
   Gegenstelle meldet den ersten Empfangsinterrupt auf dem Bildschirm, und SCPX 8915 rollt
   das Bild unter DI (≈ 16 ms, §14.9 ST3) — am Gerät liefe dabei der 3-Zeichen-FIFO der SIO
@@ -1120,12 +1127,13 @@ Nutzdaten: Pseudozufallsfolge (LFSR mit festem Startwert), im Modus `X` ohne 11H
 - **LFSR:** 16-Bit-Galois, x¹⁶+x¹⁴+x¹³+x¹¹+1 (Maske B400H), Startwert **ACE1H**, je Nutzbyte
   8 Schritte, Ausgabe = niederes Byte. Nur der Tester kennt die Folge (er vergleicht das
   Echo); die Gegenstelle schickt zurück, was kommt.
-- **Modi in V0.1:** nur `E`. Eine Ankündigung `H`/`X` verwirft die Gegenstelle bis ST6
-  (`Ankuendigung verworfen.`), der Tester liefe in den Zeitüberlauf.
+- **Modi:** `E`, `H` (nur an V.24 — an IFSS verwirft die Gegenstelle die Ankündigung),
+  `X` (seit ST6). Unbekannte Modi verwirft die Gegenstelle (`Ankuendigung verworfen.`).
 - **Ergebnisgründe ECHO:** `SENDER BLOCKIERT`, `ZEITUEBERLAUF BESTAETIGUNG`, `BESTAETIGUNG
   FALSCH`, `ZEITUEBERLAUF ECHO BEI nnnnH` (so viele kamen zurück), `ZEITUEBERLAUF BERICHT`,
   `BERICHT FALSCH`, `FALSCH nnnnH` (abweichende Echos), `RR1 nnnnH` (eigene Empfangsfehler),
-  `GEGENSTELLE nnnnH` (`ue` laut Bericht).
+  `GEGENSTELLE nnnnH` (`ue` laut Bericht); bei `H`/`X` zusätzlich `NICHT GEBREMST` (`bz` = 0).
+  Dieselben Gründe gelten für FLUSS-HW und FLUSS-XON (gleicher Ablauf, anderer Modus).
 
 **Kabel:** Nullmodem — TxD↔RxD gekreuzt, RTS→CTS gekreuzt, DTR→DSR+DCD gekreuzt, Masse.
 IFSS: Sendeschleife des einen an die Empfangsschleife des anderen (aktiv/passiv nach Gerät).
@@ -1171,11 +1179,37 @@ Die genaue Steckerbelegung je Gerät steht im README des Programms **[?]** (lief
    Zurückschicken regelmäßig an (Pause ~300 ms je 512 Byte), nimmt bei Puffer > 192 Byte RTS
    weg und setzt es bei < 64 Byte wieder. Der Tester sendet mit **Auto Enables** (WR3 D5),
    sein Sender hält also an, solange CTS fehlt. OK = Echo fehlerfrei **und** die Gegenstelle
-   hat mindestens einmal gebremst (Zähler im Bericht, Feld hinter `ue` **[?]** AP-ST6 legt
-   das Format fest) **und** kein Überlauf.
+   hat mindestens einmal gebremst (Bremszähler `bz` im Bericht, §14.6) **und** kein Überlauf.
 4. **FLUSS-XON** (V.24 und IFSS): wie 3., aber die Gegenstelle sendet XOFF (13H) bei
    > 192 Byte und XON (11H) bei < 64; der Tester hält sein Senden bei XOFF an. Auf V.24 sind
    dabei die Auto Enables **aus**, damit nur XON/XOFF wirkt.
+
+   **Umgesetzt (ST6), Präzisierungen zu 3./4.:**
+   - **Ein Ablauf, drei Modi:** ECHO, FLUSS-HW und FLUSS-XON sind dieselbe Routine (`ECHOT`,
+     Modus `E`/`H`/`X`): Weckzeichen, Ankündigung, 4096 Nutzbytes mit Echovergleich, Bericht.
+     Urteil zusätzlich `bz` ≥ 1, sonst `FEHLER NICHT GEBREMST`; „kein Überlauf" = eigene
+     RR1-Fehler 0 **und** `ue` der Gegenstelle 0 (RR1 + Ringpufferüberlauf).
+   - **Rückstau der Gegenstelle:** vor jedem 512. zurückgeschickten Byte 300 ms Pause; der
+     Füllstand des Ringpuffers (256 B) wird nach jedem Byte und in der Pause jede ms geprüft
+     (`FLUSTE`): > 192 bremsen, < 64 lösen. In 4096 Bytes ergibt das 7 Bremsungen (die
+     achte Pause fällt hinter das letzte Byte des Testers).
+   - **FLUSS-HW:** Auto Enables (`AUTOEN`) erst **nach** der Bestätigung — ohne Gegenstelle
+     hieße es sonst `SENDER BLOCKIERT` statt Zeitüberlauf; am Ende (auch im Fehlerfall)
+     wieder aus. Das eigene RTS bleibt gesetzt: am K8915 ist CTS = V107 ∧ (¬RTS ∨ V106),
+     mit gesetztem RTS also V106 ∧ V107 wie an der K8025. Die Gegenstelle nimmt nur RTS
+     weg, DTR bleibt (V107 des Testers); am Ende des Abschnitts stellt sie die Leitungen
+     von vorher her, der Spiegel des Ruhezustands macht dort weiter. **Keine RTS-Probe
+     während eines Abschnitts** (§14.10 Punkt 7): Spiegel und Probe laufen nur im
+     Ruhezustand.
+   - **FLUSS-XON:** Nutzdaten ohne 11H/13H — das LFSR überspringt sie auf beiden Seiten
+     gleich (`NUTZB`), die Folge bleibt also vergleichbar. Der Tester wertet 13H/11H im
+     Empfang als Steuerung (zählt nicht als Echo), die Auto Enables bleiben aus. Nach dem
+     Bericht schickt die Gegenstelle ein **XON hinterher**: Bericht und Summe können
+     zufällig 13H enthalten, und mit „XON/XOFF beachten" hielte das ihren eigenen Empfang
+     an, bis zur nächsten Ankündigung (§6.3). Der Tester übergeht das XON (Fremdes vor
+     `1BH`).
+   - Der Tester zeigt vor dem Urteil `  Gegenstelle hat nnnnH mal gebremst.`, die
+     Gegenstelle `Abschnitt fertig, Empfangsfehler nnnnH, gebremst nnnnH`.
 
 Am Ende jedes Teils die Ergebniszeile §14.3.
 
@@ -1201,7 +1235,15 @@ Am Ende jedes Teils die Ergebniszeile §14.3.
     beider Maschinen) unter `format_integration` → `tools/dev.sh test-format`.
   - Umgesetzt (ST5): `SertestKopplung.*` (`tests/system/test_sertest_kopplung.cpp`), zwei
     Binaries aus einer Quelle — `A5120_V24_LeitungenUndEcho` in der Standardregression
-    (`system;fast`, ~3 s), die übrigen unter `format_integration` (`…_lang`).
+    (`system;fast`, ~3 s, seit ST6 mit FLUSS-HW/FLUSS-XON ~4,7 s), die übrigen unter
+    `format_integration` (`…_lang`).
+  - „XON/XOFF beachten" (ST6): **nur** am Wandler der Gegenstelle und **nur** für den
+    Abschnitt X — der Test schaltet es ein, sobald die Gegenstelle `Abschnitt X:` zeigt,
+    und nach dem Durchgang wieder aus. ECHO und FLUSS-HW übertragen alle Bytewerte; ein
+    zurückgeschicktes 13H hielte mit dem Schalter den eigenen Empfang an (Zeitüberlauf).
+    Für den Anwender heißt das: für ECHO/FLUSS-HW aus, für FLUSS-XON an (oder aus mit dem
+    Risiko eines Überlaufs, wenn das Netz langsam ist — dann sind die 63 Byte Reserve
+    über 192 zu wenig).
   - Umgesetzt (ST2): Suite `Sertest.*`, Label `system;fast` — läuft also in der
     Standardregression mit, obwohl sie in `tests/system/` liegt (ein Boot bis zum Prompt
     kostet 1–2 s). Pfad der `.com` über die Definition `K1520_SERTEST_COM`.
@@ -1219,8 +1261,35 @@ Bauberührende APs nacheinander.
 | **ST3** ✔ | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
 | **ST4** ✔ | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine, gemessene Werte zusätzlich roh ausgeben) + **K7028 berichtigen**: /CTSA nach der Plan-Logik §14.5 (V107 in `setzeEingaenge` auswerten, Loop/Brücke: CTS = DTR), Wächter dafür + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
 | **ST5** ✔ | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
-| **ST6** | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
+| **ST6** ✔ | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
 | **ST7** | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
+
+**ST6 erledigt 2026-10-01.** Flusssteuerung in `sertest.mac` (Tester `ECHOT` mit Modus,
+`NUTZB`; Gegenstelle `ECHOAB` mit `PAUSE`, `FLUSTE`, `FLUEND`), Bericht mit Bremszähler
+(§14.6), Präzisierungen §14.7. `.com` jetzt 6,9 KB. Erkenntnisse:
+- **Kein Emulatorfehler.** Auto Enables im `Z80SIO` (Sender gibt bei inaktivem /CTS nichts
+  ab, Empfänger nur bei /DCD; Wächter `Z80SIO.AutoEnables_*` aus AP-S3), RTS-Halt und
+  „XON/XOFF beachten" im Wandler trugen ohne Änderung.
+- **Gebremst wird wirklich, und der Sender steht:** der Kopplungstest beobachtet den Wandler
+  des Testers während FLUSS-HW — CTS fiel 7×, in ~600 Runden mit CTS aus gab der Tester
+  0 Bytes ab. Gegenprobe: mit abgeschalteten Auto Enables im `Z80SIO` waren es 1361, der
+  Fall wird rot. Ohne diese Beobachtung bliebe der Test auch ohne Auto Enables grün — der
+  Rückstau landete verlustfrei in den Wandlerpuffern (4 KiB je Seite fassen die 4096 Bytes).
+- **„XON/XOFF beachten" ist für FLUSS-XON die Absicherung, nicht die Voraussetzung:** ohne
+  Schalter lief FLUSS-XON im Einzellauf ebenfalls `OK` (die Latenz XOFF → Tester blieb unter
+  den 63 Bytes Reserve); unter Last hinge das an der Weckzeit der I/O-Fäden. Mit dem
+  Schalter hält der Wandler der Gegenstelle sofort an — der Test prüft, dass dieser Halt
+  griff (`xoffHalt`).
+- `TesterAutomatikLiefertErgebniszeilen` (beide Maschinen): FLUSS-XON jetzt
+  `FEHLER ZEITUEBERLAUF BESTAETIGUNG`, FLUSS-HW an IFSS `ENTFAELLT`, kein `NICHT EINGEBAUT`
+  mehr (geprüft). Das Ende bleibt `FEHLER` — **begründet**: ohne zweiten Rechner können die
+  Gegenstellenteile nicht gelingen (A5120 ohne Kabel, K8915 mit Loop: die eigene Ankündigung
+  kommt zurück und gilt nicht). `SERTEST ENDE OK` erreichen die Kopplungsfälle.
+- Tests (einzeln, ohne Last): `A5120_V24_LeitungenUndEcho` 4,7 s (Standardregression; unter
+  `-j16` bis ~12 s), `A5120_Ifss_Echo` 3,6 s, `K8915_V24UndIfss2` 9,6 s,
+  `A5120_K8915_V24_BeideRichtungen` 10,1 s, `OhneGegenstelleZeitueberlauf` 4,0 s (ECHO,
+  FLUSS-HW, FLUSS-XON je `ZEITUEBERLAUF BESTAETIGUNG`). Die Gegenstellenzeilen werden während
+  des Laufs eingesammelt — mit drei Abschnitten rollt das Bild der Gegenstelle.
 
 **ST1 erledigt 2026-10-01.** `tools/sertest/` (Quelle, `build.py`, README, eingecheckte
 `sertest.com`, 2,9 KB). Abweichungen/Erkenntnisse:
@@ -1391,6 +1460,7 @@ Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
    träfe es nur eine Anforderung der K5122. Aufgefallen beim Suchen des K8025-Fehlers (ST5).
 7. K8915 als Gegenstelle an der V.24: die RTS-Probe (§14.7 Schritt 1) ist am Gerät ein
    Puls von einigen zehn µs alle ~64 ms — am Gerät gegenprüfen, dass ein Tester damit
-   leben kann (er wertet drei gleiche Lesungen). Für ST6: der Spiegel läuft nur im
-   Ruhezustand — in FLUSS-HW, wo RTS die Bremse ist, darf keine Probe laufen (sie löste
-   die Bremse kurz).
+   leben kann (er wertet drei gleiche Lesungen). In FLUSS-HW, wo RTS die Bremse ist, läuft
+   keine Probe (sie löste die Bremse kurz): Spiegel und Probe laufen nur im Ruhezustand,
+   die Gegenstelle stellt am Ende des Abschnitts ihre Leitungen von vorher her — erledigt
+   ST6.
