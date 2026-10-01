@@ -26,9 +26,22 @@ public:
     void keyPress(int qt_keycode, bool shift, bool ctrl);
     void keyRelease(int qt_keycode);
 
-    // Advance the key-repeat state machine.
-    // Call periodically (e.g. every ~10 ms of simulated time).
-    void tick(int ms_elapsed);
+    // Die Dauerfunktion (Tastenwiederholung) läuft in MASCHINENZEIT über
+    // service() — ein eigenes tick() gibt es nicht mehr: der laufende Rechner
+    // hat es nie aufgerufen, gehaltene Tasten wiederholten deshalb gar nicht
+    // (AP-S9, doc/design/08_k7637_keyboard.md §2.2a).
+
+    /**
+     * @brief Ist @p code ein Dauerfunktionscode (wiederholt beim Halten)?
+     *
+     * Handbuch §2.2.2: „In jeder Codetabelle können bis zu 16 Tasten als
+     * Dauerfunktionstasten festgelegt werden" — nur DIESE wiederholen, nach
+     * ≈500 ms im Abstand von ≈100 ms.  Die Liste steht im ROM hinter jeder
+     * Codetabelle (CTAB1: 650H, CTAB2: 760H, beide gleich belegt) und wird von
+     * der Firmware mit dem AUSGEGEBENEN Code verglichen (ROM 0171H: 16× `CP
+     * (IX+0)`).  Belegt sind Leertaste, die vier Kursortasten und 5FH.
+     */
+    static bool isRepeatCode(uint8_t code);
 
     // Drain command bytes the K8025 sent to the keyboard (LED control,
     // beep, …).  Call whenever sio.channelX().txAvailable() is true.
@@ -87,7 +100,7 @@ public:
     void reset() {
         pressed_key_ = 0; pressed_scancode_ = 0;
         shift_ = ctrl_ = false;
-        repeat_delay_ms_ = repeat_period_ms_ = 0;
+        repeat_due_cycle_ = 0;
         led_mask_ = 0; edge_acc_ = 0; beep_until_cycle_ = 0;
         tx_queue_.clear();
         cur_cycle_ = 0; next_tx_cycle_ = 0;
@@ -138,8 +151,10 @@ private:
     // (nur Konstanten), deshalb statisch — s. codeFor().
     static uint8_t translateKey(int qt_keycode, bool shift, bool ctrl);
 
-    // Inject one byte into the connected SIO channel RX FIFO.
-    void sendByte(uint8_t byte);
+    // Ein Byte auf die serielle Leitung geben; es beginnt frühestens bei
+    // @p at_cycle (Vorgabe: jetzt) und kommt eine Bytezeit später beim SIO an.
+    void sendByte(uint8_t byte) { sendByteAt(byte, cur_cycle_); }
+    void sendByteAt(uint8_t byte, uint64_t at_cycle);
 
     // K7637 type/status byte.  The real keyboard returns a byte whose high
     // nibble (0x8x) identifies it as a K7637 in response to every command it
@@ -160,11 +175,18 @@ private:
     uint8_t pressed_scancode_ = 0;
     bool    shift_ = false;
     bool    ctrl_  = false;
-    int     repeat_delay_ms_  = 0;   // countdown to first auto-repeat
-    int     repeat_period_ms_ = 0;   // countdown between subsequent repeats
+    // Takt (total_cycles_), zu dem die nächste Wiederholung fällig ist;
+    // 0 = keine Dauerfunktion aktiv (Taste losgelassen oder kein Dauercode).
+    uint64_t repeat_due_cycle_ = 0;
 
-    static constexpr int REPEAT_DELAY_MS  = 500;
-    static constexpr int REPEAT_PERIOD_MS = 100;
+public:
+    // Zeitbasis: 2,5 MHz ZVE1-Takt (wie SERIAL_BYTE_CYCLES).  Die echte K7637
+    // hat ihren eigenen Quarz; die Zeiten sind die des Handbuchs (≈500/≈100 ms,
+    // ROM-Bytes 480H/481H).
+    static constexpr uint64_t CYCLES_PER_MS        = 2500;
+    static constexpr uint64_t REPEAT_DELAY_CYCLES  = 500 * CYCLES_PER_MS;
+    static constexpr uint64_t REPEAT_PERIOD_CYCLES = 100 * CYCLES_PER_MS;
+private:
 
     // ── Anzeigen / Kommandodekodierung ────────────────────────────────────
     uint8_t  led_mask_         = 0;   // LED_G00 … LED_ERROR
