@@ -532,6 +532,9 @@ Dokument im AP-Abschnitt nachführen („erledigt JJJJ-MM-TT", Abweichungen), Co
 | **S6** | C-ABI §8 + `app/core_binding/k1520.py` + `py_serial_api` | S5 | S |
 | **S7** | Dock „Schnittstellen", Konfiguration, Handbuch + `py_serial_gui` | S6 | M |
 | **S8** | `SerielleKopplung.*`, `py_serial_pyserial`, Handtest mit `telnet`/`ser2net`/zweitem Emulator; CLAUDE.md-Absatz + `doc/merkposten/serielle_schnittstellen.md` | S6 (S7 für Handtest) | M |
+| **S9** | A5120: Leertaste wiederholt am Gerät, im Emulator nicht (Buchstaben wiederholen beide nicht) — Ursache klären (K7637-Modell, BIOS, SIO-Betriebsart 01 seit `216dc14`?), beheben, Wächter | — | M |
+| **S10** | Oberfläche nach Anwenderbefund 2026-10-01: Schnittstellen als Reiter IM Einstellungen-Kasten (neben Allgemein/Laufwerke/CRT) statt eigenem Dock; Format in der üblichen Schreibweise `8N1`/`7E1`/`8O1` mit Erklärung (Tooltip); Leitungen als LEDs; Port-Feld zeigt im Betrieb den TATSÄCHLICHEN Port; Gegenseite (RFC 2217) mit Format und Leitungen | S11 | M |
+| **S11** | Kern + C-ABI: Format (Datenbits/Parität/Stoppbits) und Steuerleitungen der **Gegenseite** bei RFC 2217 im Status (Felder hinten an `K1520SerStatus`), Python-Bindung | — | S |
 
 S1, S2, S3 laufen parallel (S3 berührt `build/` — S1/S2 dann im Worktree).
 
