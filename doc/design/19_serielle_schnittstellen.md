@@ -745,6 +745,20 @@ festgeschrieben (08H mit Erwartung „jedes Zeichen") und sind auf 10H umgestell
 `test` 1494, `test-format` 26, `test-matrix` 94, `win` 1465 — alle grün. Offen: Handprobe
 schnelles Tippen/Tastenwiederholung am A5120.
 
+**AP-S11 — erledigt 2026-10-01.** `K1520SerStatus` hinten ergänzt: `daten_gegenseite`,
+`paritaet_gegenseite` (`K1520_SER_PAR_*`: keine/ungerade/gerade/mark/space),
+`stopp_halbe_gegenseite`, `format_gegenseite_bekannt` (erst wenn alle drei da sind),
+`format_abweichend` (neben `baud_abweichend`), `leitungen_gegenseite` +
+`leitungen_gegenseite_bekannt` (Masken `K1520_SER_L_RTS/DTR/CTS/DSR/DCD/RI`). Je Rolle:
+**Server** sieht Formatwunsch (SET-DATASIZE/PARITY/STOPSIZE) und RTS/DTR des Clients — je
+Leitung erst ab ihrem ersten SET-CONTROL (die intern angenommene „aktiv"-Vorgabe zählt nicht
+als bekannt); **Client** sieht die Formatantworten und CTS/DSR/DCD/RI aus NOTIFY-MODEMSTATE.
+Telnet/Datei: alles unbekannt. Python: `format_gegenseite_text` („8N1"/„7E1", `None`),
+`leitung_gegenseite(SER_L_*)` → True/False/None, `leitungen_gegenseite_text`. Hinweis: das
+Clientformat kommt erst nach der 100-ms-Entprellung an. Wächter
+`SerialHub.Rfc2217ZeigtFormatUndLeitungenDerGegenseite`,
+`test_rfc2217_status_shows_format_and_lines_of_the_far_side`.
+
 ## 13. Offene Punkte
 
 Entschieden am 2026-09-30: Bindeadresse = alle Schnittstellen (§7.2), Wiederaufnahme beim
