@@ -204,3 +204,83 @@ def test_client_retries_until_the_server_appears(emu):
             assert warte(lambda: emu.serial_status(0).zustand == B.SER_VERBUNDEN)
     emu.serial_stop(0)
     assert emu.serial_status(0).zustand == B.SER_AUS
+
+
+# ─── Alter Unterbau: k1520_serial_set_rx_cb / k1520_serial_send (AP-T1b) ─────
+#
+# Die „Weiche" der C-ABI: DFU/PRINTER → Schnittstelle der Maschine.  A5120: DFU =
+# DFÜ/V.24, PRINTER = Drucker; K8915: DFU = IFS 2, PRINTER = IFS 1 (Entwurf 19 §8).
+
+def _rx_cb(liste):
+    """ctypes-Rückruf, der jedes Byte in *liste* sammelt (Rückgabe festhalten!)."""
+    return B.K1520SerialRxCb(lambda ctx, b: liste.append(b))
+
+
+def test_k8915_old_callback_pulls_the_loop_of_its_own_channel():
+    """Ein gesetzter Rückruf zieht den Loop seines Kanals, ein leerer steckt ihn
+    wieder — so wird sichtbar, auf welchen Kanal die Weiche zeigt."""
+    e = B.K1520Emulator(machine="k8915")
+    namen = [e.serial_info(i).name for i in range(e.serial_count())]
+    ifs1, ifs2 = namen.index("IFS 1"), namen.index("IFS 2")
+    assert all(e.serial_config(i).loop for i in range(e.serial_count()))
+    cb = _rx_cb([])
+    B._lib.k1520_serial_set_rx_cb(e._handle, 1, cb, None)          # PRINTER
+    assert not e.serial_config(ifs1).loop
+    assert e.serial_config(ifs2).loop and e.serial_config(0).loop
+    B._lib.k1520_serial_set_rx_cb(e._handle, 0, cb, None)          # DFU
+    assert not e.serial_config(ifs2).loop
+    B._lib.k1520_serial_set_rx_cb(e._handle, 1, B.K1520SerialRxCb(), None)   # abmelden
+    assert e.serial_config(ifs1).loop
+    assert not e.serial_config(ifs2).loop
+    # Unbekannter Port: nichts geschieht (kein Absturz, keine Einstellung geändert).
+    B._lib.k1520_serial_set_rx_cb(e._handle, 7, cb, None)
+    B._lib.k1520_serial_send(e._handle, 7, 0x41)
+    assert e.serial_config(0).loop
+    del e
+
+
+def test_old_callback_and_send_go_through_the_guest_and_come_back(emulator, temp_disk,
+                                                                   tmp_path):
+    """A5120 mit Echo-Gast auf der DFÜ/V.24: `k1520_serial_send(DFU)` legt das Byte in
+    den Empfänger, der Gast schickt es zurück, der Rückruf bekommt es — samt seinem
+    Kontextzeiger.  Belegt ein Transport die Schnittstelle, gehen beide ins Leere."""
+    import ctypes
+    from serial_gast import bis_zum_prompt, echo_gast_einsetzen
+    emu = echo_gast_einsetzen(bis_zum_prompt(emulator, temp_disk))
+    dfu, drucker, kontexte = [], [], []
+
+    def nimm(ziel):
+        def f(ctx, b):
+            kontexte.append(ctx)
+            ziel.append(b)
+        return B.K1520SerialRxCb(f)
+
+    cb_dfu, cb_dr = nimm(dfu), nimm(drucker)
+    B._lib.k1520_serial_set_rx_cb(emu._handle, 0, cb_dfu, ctypes.c_void_p(0x1234))
+    B._lib.k1520_serial_set_rx_cb(emu._handle, 1, cb_dr, ctypes.c_void_p(0x5678))
+    daten = [0x41, 0x00, 0xFF, 0x0D, 0x7E]
+    for b in daten:
+        B._lib.k1520_serial_send(emu._handle, 0, b)
+        emu.run(100_000)                    # > 1 Zeichenzeit bei 9600 Bd hin und zurück
+    emu.run(200_000)
+    assert dfu == daten
+    assert drucker == []
+    assert set(kontexte) == {0x1234}
+
+    # Ein Transport belegt die Schnittstelle: Einspeisen geht ins Leere (der Gast
+    # bekommt nichts, also landet auch in der Datei nichts), der Rückruf schweigt.
+    datei = tmp_path / "v24.txt"
+    assert emu.serial_configure(0, betriebsart=B.SER_DATEI, datei=str(datei))
+    assert emu.serial_start(0)
+    emu.run(10_000)        # die Belegung erreicht die Karte mit dem nächsten Blick
+    B._lib.k1520_serial_send(emu._handle, 0, 0x43)
+    emu.run(300_000)
+    emu.serial_stop(0)
+    assert dfu == daten
+    assert datei.read_bytes() == b""
+
+    # Abmelden: danach kommt nichts mehr an.
+    B._lib.k1520_serial_set_rx_cb(emu._handle, 0, B.K1520SerialRxCb(), None)
+    B._lib.k1520_serial_send(emu._handle, 0, 0x42)
+    emu.run(300_000)
+    assert dfu == daten

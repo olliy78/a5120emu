@@ -318,3 +318,29 @@ TEST(K7028Seriell, AlterUnterbauSchweigtBeiBelegtemStecker)
     EXPECT_EQ(w.w1.fernNimm(buf, 4), 1u);
     EXPECT_EQ(buf[0], 0x43);
 }
+
+/// Break des Gastes (WR5 D4) erscheint am Anschluss; ein Break vom Wandler setzt RR0 D7
+/// des richtigen Kanals (AP-T1b).
+TEST(K7028Seriell, BreakInBeideRichtungen)
+{
+    Aufbau a;
+    auto rr0 = [&](uint8_t ctrl) { a.bus.ioWrite(ctrl, 0x10); return a.bus.ioRead(ctrl); };
+    struct Fall { K7028::Kanal k; uint8_t ctrl; };
+    for (Fall f : {Fall{K7028::Sio1A, 0x41}, Fall{K7028::Sio1B, 0x43},
+                   Fall{K7028::Sio2A, 0x51}}) {
+        auto& an = a.ats.anschluss(f.k);
+        EXPECT_FALSE(an.breakGesendet());
+        a.bus.ioWrite(f.ctrl, 0x05);
+        a.bus.ioWrite(f.ctrl, 0x78);
+        EXPECT_TRUE(an.breakGesendet()) << int(f.ctrl);
+        a.bus.ioWrite(f.ctrl, 0x05);
+        a.bus.ioWrite(f.ctrl, 0x68);
+        EXPECT_FALSE(an.breakGesendet());
+
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
+        an.breakEmpfang(true);
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x80) << int(f.ctrl);
+        an.breakEmpfang(false);
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
+    }
+}

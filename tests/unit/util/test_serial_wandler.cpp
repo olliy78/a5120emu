@@ -564,3 +564,79 @@ TEST(SerialWandler, Rfc2217ClientBelegtDieLeitungenGerade) {
     EXPECT_EQ(cli.baudGegenseite(), 1200u);
     EXPECT_TRUE(cli.baudAbweichend());
 }
+
+// ─── Ergänzt in AP-T1b ─────────────────────────────────────────────────────
+
+/// Springt der Taktzähler zurück (Maschine neu, Zähler genullt), beginnen alle Fristen
+/// neu — sonst wartete der Wandler bis zur alten Taktzahl und der Gast stünde still.
+TEST(SerialWandler, RuecksprungDesTaktzaehlersStartetDieFristenNeu) {
+    AttrappeAnschluss a;
+    Wandler w(a);
+    w.anbinden();
+    uint64_t z = 50 * Z9600;
+    a.sende("a");
+    laufe(w, a, z, Z9600 / 2);
+    EXPECT_EQ(w.fernBelegt(), 1u);
+    a.sende("bc");
+    z = 0;   // Zähler genullt
+    laufe(w, a, z, 3 * Z9600);
+    EXPECT_EQ(w.fernBelegt(), 3u) << "nach dem Rücksprung nichts mehr gesendet";
+    const uint8_t rein[] = {'x', 'y'};
+    ASSERT_EQ(w.fernGib(rein, 2), 2u);
+    z = 0;
+    laufe(w, a, z, 3 * Z9600);
+    EXPECT_EQ(a.gelesenText(), "xy");
+}
+
+/// Break im Loop: der Prüfstecker gibt das Break des Gastes an seinen eigenen Empfänger
+/// zurück; angebunden kommt es von der Gegenseite, Kabel ab nimmt es weg.
+TEST(SerialWandler, BreakKommtUeberDenLoopUndVonDerGegenseite) {
+    AttrappeAnschluss a;
+    Wandler w(a);
+    WandlerEinstellung e;
+    e.loop = true;
+    w.einstellen(e);
+    uint64_t z = 0;
+    a.brkAus = true;
+    laufe(w, a, z, Z9600);
+    EXPECT_TRUE(a.brkEin);
+    EXPECT_TRUE(w.sicht().brk);
+    a.brkAus = false;
+    laufe(w, a, z, Z9600);
+    EXPECT_FALSE(a.brkEin);
+
+    w.einstellen(WandlerEinstellung{});
+    w.anbinden();
+    EXPECT_TRUE(w.angebunden());
+    w.fernBreak(true);
+    laufe(w, a, z, Z9600);
+    EXPECT_TRUE(a.brkEin);
+    w.abbinden();
+    EXPECT_FALSE(w.angebunden());
+    laufe(w, a, z, Z9600);
+    EXPECT_FALSE(a.brkEin) << "Kabel ab hält kein Break fest";
+}
+
+/// Der Gast wird zurückgesetzt: ein XOFF- und ein RTS-Halt des alten Gastes gelten nicht
+/// weiter (AP-S5), der Empfang geht sofort weiter.
+TEST(SerialWandler, GastResetLoestXoffUndRtsHalt) {
+    AttrappeAnschluss a;
+    Wandler w(a);
+    WandlerEinstellung e;
+    e.xonxoff = true;
+    w.einstellen(e);
+    w.anbinden();
+    uint64_t z = 0;
+    a.sende(std::string(1, '\x13'));   // XOFF
+    laufe(w, a, z, 2 * Z9600);
+    ASSERT_TRUE(w.sicht().xoffHalt);
+    const uint8_t rein[] = {'q'};
+    w.fernGib(rein, 1);
+    laufe(w, a, z, 2 * Z9600);
+    EXPECT_TRUE(a.gelesen.empty());
+    w.gastZurueckgesetzt();
+    a.rtsAus = false;   // der neue Gast hat RTS (noch) nicht gesetzt
+    laufe(w, a, z, 2 * Z9600);
+    EXPECT_EQ(a.gelesenText(), "q");
+    EXPECT_FALSE(w.sicht().xoffHalt);
+}

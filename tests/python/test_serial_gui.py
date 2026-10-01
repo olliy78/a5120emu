@@ -589,3 +589,116 @@ def test_bytes_over_a_real_socket_do_not_disturb_a_running_machine(w, qapp):
             qapp.processEvents()
         w.serial_widget.aktualisieren()
         assert w.emulator.serial_status(0).zustand == K.SER_VERBUNDEN
+
+
+# ─── Ergänzt in AP-T1b ───────────────────────────────────────────────────────
+
+def test_guest_format_and_the_far_side_baud_are_shown_with_a_warning(w, qapp):
+    """Gastformat in Worten, Baud der Gegenseite (RFC 2217) samt Warnfarbe — Text,
+    Sichtbarkeit und Stil sind offscreen prüfbar, nur das Aussehen nicht."""
+    import dataclasses
+    from app.ui import serial_widget as SW
+    b = w.serial_widget.bloecke()[0]
+    w.serial_widget._timer.stop()           # sonst überschreibt der Takt den Probestatus
+    echt = w.emulator.serial_status(b.index)
+    st = dataclasses.replace(echt, format_gueltig=True, baud_nenn=1200, daten=7,
+                             paritaet=2, stopp_halbe=4, baud_gegenseite=9600,
+                             baud_abweichend=True)
+    b.aktualisieren(st)
+    assert b.format_label.text() == "Gast 1200 Bd 7E2"
+    assert sichtbar(b.gegenseite, b)
+    assert b.gegenseite.text() == "Gegenseite 9600 Bd ⚠"
+    assert SW.FARBE_WARNUNG in b.gegenseite.styleSheet()
+    assert "anderen Baudrate" in b.gegenseite.toolTip()
+
+    b.aktualisieren(dataclasses.replace(st, baud_gegenseite=1200, baud_abweichend=False,
+                                        paritaet=0, stopp_halbe=3))
+    assert b.format_label.text() == "Gast 1200 Bd 7N1,5"
+    assert b.gegenseite.text() == "Gegenseite 1200 Bd"
+    assert b.gegenseite.styleSheet() == ""
+    b.aktualisieren(dataclasses.replace(st, paritaet=9, stopp_halbe=0))
+    assert b.format_label.text() == "Gast 1200 Bd 7??"
+    b.aktualisieren(dataclasses.replace(st, baud_gegenseite=0))
+    assert not sichtbar(b.gegenseite, b)
+    b.aktualisieren(dataclasses.replace(st, format_gueltig=False))
+    assert b.format_label.text() == "Gast nicht programmiert"
+
+
+def test_a_setting_the_core_refuses_says_so_in_the_block(w, qapp, monkeypatch):
+    b = frei(w.serial_widget.bloecke()[0])
+    monkeypatch.setattr(b.emulator, "serial_configure", lambda i, **f: False)
+    b.xonxoff.setChecked(not b.xonxoff.isChecked())
+    assert sichtbar(b.meldung, b)
+    assert "nicht übernommen" in b.meldung.text()
+    # Die Anzeige folgt dem Kern, nicht dem Klick.
+    assert b.xonxoff.isChecked() == w.emulator.serial_config(b.index).xonxoff
+
+
+def test_changing_the_drive_bay_drops_a_connected_peer_and_listens_again(w, qapp):
+    """Maschinenwechsel mit VERBUNDENER Gegenseite: die Verbindung endet (Kabel ab),
+    der Server lauscht an der neuen Maschine auf demselben Port, ein neuer Client
+    wird bedient und erscheint in der Statuszeile."""
+    from app import drive_types as dt
+    b = server_einstellen(w.serial_widget.bloecke()[0])
+    b.knopf.click()
+    port = w.emulator.serial_status(0).port_aktiv
+    alt = socket.create_connection(("127.0.0.1", port), timeout=3)
+    assert warte(qapp, lambda: w.emulator.serial_status(0).zustand == K.SER_VERBUNDEN)
+    types = list(w._drive_types)
+    types[-1] = dt.NO_DRIVE if dt.is_present(types[-1]) else dt.default_drive_types(w.maschine)[0]
+    w._apply_drive_types(types, cold_restart=False)
+
+    alt.settimeout(3)
+    rest = b""
+    try:
+        while True:                          # Telnet-Verhandlung, dann EOF
+            stueck = alt.recv(4096)
+            if not stueck:
+                break
+            rest += stueck
+    except (ConnectionResetError, socket.timeout) as e:
+        pytest.fail(f"alte Verbindung nicht sauber beendet: {e!r}")
+    alt.close()
+    st = w.emulator.serial_status(0)
+    assert st.zustand == K.SER_LAUSCHT and st.port_aktiv == port
+    with socket.create_connection(("127.0.0.1", port), timeout=3):
+        assert warte(qapp, lambda: w.emulator.serial_status(0).zustand == K.SER_VERBUNDEN)
+        name = w.emulator.serial_info(0).name
+        assert warte(qapp, lambda: f"{name} verbunden" in w.serial_widget.statuszeilentexte()[2])
+
+
+def test_changing_the_drive_bay_keeps_a_trying_client_trying(w, qapp):
+    from app import drive_types as dt
+    b = client_einstellen(w.serial_widget.bloecke()[0], freier_port())
+    b.knopf.click()
+    assert w.emulator.serial_status(0).zustand == K.SER_VERBINDET
+    types = list(w._drive_types)
+    types[-1] = dt.NO_DRIVE if dt.is_present(types[-1]) else dt.default_drive_types(w.maschine)[0]
+    w._apply_drive_types(types, cold_restart=False)
+    assert w.emulator.serial_status(0).zustand == K.SER_VERBINDET
+    assert w.serial_widget.bloecke()[0].knopf.text() == "Trennen"
+    assert w.serial_widget.statuszeilentexte()[2] == ""
+
+
+def test_a_widget_without_a_machine_says_there_is_nothing_to_set(qapp):
+    from app.ui.serial_widget import SerialWidget
+    from PySide6.QtWidgets import QLabel
+    sw = SerialWidget(None)
+    assert sw.bloecke() == []
+    assert any("keine einstellbaren" in l.text() for l in sw.findChildren(QLabel))
+    sw.alles_beenden()                       # ohne Maschine: nichts zu tun, kein Fehler
+    sw.beenden()
+    assert sw.statuszeilentexte() == ("", "", "", "")
+    assert sw.block("gibt es nicht") is None
+
+
+def test_a_clock_source_given_as_number_is_taken_and_a_wrong_one_skipped(w, qapp):
+    b = next((x for x in w.serial_widget.bloecke() if len(x.info.taktquellen) > 1), None)
+    if b is None:
+        pytest.skip("diese Maschine hat keine wählbare Taktquelle")
+    b.konfig_anwenden({"taktquelle": 1})
+    assert w.emulator.serial_config(b.index).taktquelle == 1
+    b.konfig_anwenden({"taktquelle": 99})
+    assert w.emulator.serial_config(b.index).taktquelle == 1
+    b.konfig_anwenden({"taktquelle": True})   # bool ist keine Zahl im Sinne der Datei
+    assert w.emulator.serial_config(b.index).taktquelle == 1

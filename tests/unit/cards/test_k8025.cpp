@@ -631,3 +631,34 @@ TEST(K8025Seriell, AlterUnterbau)
     card.einspeisen(K8025::DfueV24, 0x66);
     EXPECT_EQ(card.ioRead(0x50), 0x55) << "Einspeisen ins Leere";
 }
+
+/**
+ * @test K8025Seriell.BreakInBeideRichtungen
+ * @brief Break des Gastes (WR5 D4) erscheint am Anschluss; ein Break vom Wandler setzt
+ *        RR0 D7 des richtigen Kanals (AP-T1b).
+ */
+TEST(K8025Seriell, BreakInBeideRichtungen)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    auto rr0 = [&](uint8_t ctrl) { card.ioWrite(ctrl, 0x10); return card.ioRead(ctrl); };
+    struct Fall { K8025::Schnittstelle k; uint8_t ctrl; };
+    for (Fall f : {Fall{K8025::DfueV24, 0x51}, Fall{K8025::DfueIfss, 0x53},
+                   Fall{K8025::Drucker, 0x5F}}) {
+        auto& an = card.anschluss(f.k);
+        EXPECT_FALSE(an.breakGesendet());
+        card.ioWrite(f.ctrl, 0x05);
+        card.ioWrite(f.ctrl, 0x78);   // WR5: Tx ein, 8 Bit, Break
+        EXPECT_TRUE(an.breakGesendet()) << int(f.ctrl);
+        card.ioWrite(f.ctrl, 0x05);
+        card.ioWrite(f.ctrl, 0x68);
+        EXPECT_FALSE(an.breakGesendet());
+
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
+        an.breakEmpfang(true);
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x80) << int(f.ctrl);
+        an.breakEmpfang(false);
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
+    }
+    EXPECT_EQ(rr0(0x5D) & 0x80, 0x00) << "Tastaturkanal unberührt";
+}
