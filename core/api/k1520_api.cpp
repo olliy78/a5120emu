@@ -5,6 +5,8 @@
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
+#include "core/serial/hub.h"
+#include "core/serial/net/adresse.h"
 #include <cstring>
 #include <memory>
 #include <string>
@@ -321,6 +323,183 @@ void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
         m->dfueSend(byte);
     else if (port == K1520_SERIAL_PRINTER)
         m->printerSend(byte);
+}
+
+// ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ─────────────────────────
+
+// Die ganze Datei steht in extern "C" — Vorlagen brauchen C++-Bindung.
+extern "C++" {
+namespace {
+
+using k1520::serial::SerialHub;
+
+SerialHub* hubOf(K1520Handle h) { return toMachine(h)->serialHub(); }
+
+// Gültiger Index → Hub, sonst nullptr.
+SerialHub* hubFor(K1520Handle h, int i) {
+    SerialHub* hub = hubOf(h);
+    return (hub && i >= 0 && i < hub->anzahl()) ? hub : nullptr;
+}
+
+// Nullterminiert und höchstens n-1 Bytes; ein UTF-8-Zeichen wird nie zerschnitten
+// (Fortsetzungsbytes 10xxxxxx am Schnitt gehören zum davor begonnenen Zeichen).
+template <size_t N>
+void copyStr(char (&dst)[N], const std::string& src) {
+    size_t n = src.size() < N - 1 ? src.size() : N - 1;
+    if (n < src.size())
+        while (n > 0 && (static_cast<unsigned char>(src[n]) & 0xC0) == 0x80) --n;
+    std::memcpy(dst, src.data(), n);
+    dst[n] = '\0';
+}
+
+// Feld mit Nullterminator-Sicherung lesen (ein Aufrufer könnte unterminiert füllen).
+template <size_t N>
+std::string readStr(const char (&src)[N]) {
+    size_t n = 0;
+    while (n < N && src[n]) ++n;
+    return std::string(src, n);
+}
+
+// Ausgabestruktur nach der groesse-Regel (Header): nur so viele Bytes, wie der Aufrufer
+// angibt; groesse trägt zurück, wie viel geschrieben wurde.  false bei groesse < 4.
+template <class S>
+bool deliver(S* out, const S& full) {
+    if (!out || out->groesse < sizeof(uint32_t)) return false;
+    const uint32_t n = out->groesse < sizeof(S) ? out->groesse : static_cast<uint32_t>(sizeof(S));
+    S tmp = full;
+    tmp.groesse = n;
+    std::memcpy(out, &tmp, n);
+    return true;
+}
+
+K1520SerKonfig toAbi(const k1520::serial::SerialKonfig& k) {
+    K1520SerKonfig r;
+    std::memset(&r, 0, sizeof r);
+    r.groesse = sizeof r;
+    r.betriebsart = static_cast<int>(k.betriebsart);
+    r.rolle = static_cast<int>(k.rolle);
+    copyStr(r.host, k.host);
+    r.port = k.port;
+    r.loop = k.loop;
+    r.rtscts_bruecke = k.rtscts_bruecke;
+    r.xonxoff = k.xonxoff;
+    r.taktquelle = k.taktquelle;
+    copyStr(r.datei, k.datei);
+    return r;
+}
+
+}  // namespace
+}  // extern "C++"
+
+int k1520_serial_count(K1520Handle h) {
+    SerialHub* hub = hubOf(h);
+    return hub ? hub->anzahl() : 0;
+}
+
+bool k1520_serial_info(K1520Handle h, int i, K1520SerInfo* out) {
+    SerialHub* hub = hubFor(h, i);
+    if (!hub) return false;
+    const auto in = hub->info(i);
+    K1520SerInfo r;
+    std::memset(&r, 0, sizeof r);
+    copyStr(r.name, in.name);
+    copyStr(r.stecker, in.stecker);
+    r.v24 = in.v24;
+    r.taktquellen = static_cast<int>(in.taktquellen.size() < 4 ? in.taktquellen.size() : 4);
+    for (int q = 0; q < r.taktquellen; ++q) copyStr(r.taktquelle_name[q], in.taktquellen[q]);
+    return deliver(out, r);
+}
+
+bool k1520_serial_fixed_name(K1520Handle h, int i, char* buf, int n) {
+    const auto fest = toMachine(h)->festeSchnittstellen();
+    if (!buf || n <= 0 || i < 0 || i >= static_cast<int>(fest.size())) return false;
+    const std::string& s = fest[static_cast<size_t>(i)];
+    size_t k = s.size() < static_cast<size_t>(n) - 1 ? s.size() : static_cast<size_t>(n) - 1;
+    if (k < s.size())
+        while (k > 0 && (static_cast<unsigned char>(s[k]) & 0xC0) == 0x80) --k;
+    std::memcpy(buf, s.data(), k);
+    buf[k] = '\0';
+    return true;
+}
+
+bool k1520_serial_get_config(K1520Handle h, int i, K1520SerKonfig* out) {
+    SerialHub* hub = hubFor(h, i);
+    return hub && deliver(out, toAbi(hub->konfig(i)));
+}
+
+bool k1520_serial_configure(K1520Handle h, int i, const K1520SerKonfig* k) {
+    SerialHub* hub = hubFor(h, i);
+    if (!hub || !k || k->groesse < sizeof(uint32_t)) return false;
+    // Felder jenseits von groesse (ältere Aufrufer) behalten ihren aktuellen Wert.
+    K1520SerKonfig full = toAbi(hub->konfig(i));
+    const size_t n = k->groesse < sizeof full ? k->groesse : sizeof full;
+    std::memcpy(reinterpret_cast<char*>(&full) + sizeof(uint32_t),
+                reinterpret_cast<const char*>(k) + sizeof(uint32_t), n - sizeof(uint32_t));
+    if (full.port == 0) return false;   // „vom System gewählt" gibt es nur im Kern (Tests)
+    k1520::serial::SerialKonfig c;
+    c.betriebsart = static_cast<k1520::serial::Betriebsart>(full.betriebsart);
+    c.rolle = static_cast<k1520::serial::Rolle>(full.rolle);
+    c.host = readStr(full.host);
+    c.port = full.port;
+    c.loop = full.loop;
+    c.rtscts_bruecke = full.rtscts_bruecke;
+    c.xonxoff = full.xonxoff;
+    c.taktquelle = full.taktquelle;
+    c.datei = readStr(full.datei);
+    return hub->konfigurieren(i, c);   // prüft Aufzählungen, Taktquelle, Sperren
+}
+
+bool k1520_serial_start(K1520Handle h, int i) {
+    SerialHub* hub = hubFor(h, i);
+    return hub && hub->start(i);
+}
+
+bool k1520_serial_start_auto(K1520Handle h, int i) {
+    SerialHub* hub = hubFor(h, i);
+    return hub && hub->startAuto(i);
+}
+
+void k1520_serial_stop(K1520Handle h, int i) {
+    if (SerialHub* hub = hubFor(h, i)) hub->stop(i);
+}
+
+bool k1520_serial_status(K1520Handle h, int i, K1520SerStatus* out) {
+    SerialHub* hub = hubFor(h, i);
+    if (!hub) return false;
+    const auto s = hub->status(i);
+    K1520SerStatus r;
+    std::memset(&r, 0, sizeof r);
+    r.zustand = static_cast<int>(s.zustand);
+    r.port_aktiv = s.port_aktiv;
+    copyStr(r.gegenstelle, s.gegenstelle);
+    copyStr(r.meldung, s.meldung);
+    r.baud_nenn = s.baud_nenn;
+    r.daten = s.daten;
+    r.paritaet = s.paritaet;
+    r.stopp_halbe = s.stopp_halbe;
+    r.format_gueltig = s.format_gueltig;
+    r.baud_gegenseite = s.baud_gegenseite;
+    r.baud_abweichend = s.baud_abweichend;
+    r.rts = s.rts; r.cts = s.cts; r.dtr = s.dtr; r.dsr = s.dsr; r.dcd = s.dcd;
+    r.bytes_gesendet = s.bytes_gesendet;
+    r.bytes_empfangen = s.bytes_empfangen;
+    r.puffer_senden = s.puffer_senden;
+    r.puffer_empfangen = s.puffer_empfangen;
+    r.port_vorschlag = s.port_vorschlag;
+    r.rolle = static_cast<int>(s.rolle);
+    r.betriebsart = static_cast<int>(s.betriebsart);
+    r.versuche = s.versuche;
+    return deliver(out, r);
+}
+
+int k1520_serial_classify_host(const char* host) {
+    using k1520::serial::net::AdressArt;
+    switch (k1520::serial::net::adresseKlassifizieren(host ? host : "")) {
+        case AdressArt::IPv4:     return K1520_HOST_IPV4;
+        case AdressArt::IPv6:     return K1520_HOST_IPV6;
+        case AdressArt::Hostname: return K1520_HOST_NAME;
+        default:                  return K1520_HOST_UNGUELTIG;
+    }
 }
 
 uint8_t k1520_mem_read(K1520Handle h, uint16_t addr) {

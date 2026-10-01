@@ -224,6 +224,90 @@ K1520_API void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                                        K1520SerialCallback cb, void* ctx);
 K1520_API void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
 
+/* ─── Serielle Schnittstellen nach außen (Entwurf 19 §8, AP-S6) ───────────────
+ * Je Maschine eine Liste einstellbarer Schnittstellen (Index = Reihenfolge der Karten,
+ * A5120: 0 DFÜ/V.24, 1 DFÜ/IFSS, 2 Drucker; K8915: 0 V.24, 1 IFS 1, 2 IFS 2).  Die Betriebsart
+ * (Telnet / RFC 2217 / Datei) läuft in einem eigenen I/O-Faden des Kerns; die GUI FRAGT AB
+ * (k1520_serial_status), es gibt keinen Rückruf aus dem I/O-Faden.  Alle Funktionen dürfen
+ * aus jedem Faden gerufen werden, auch während k1520_run() läuft.
+ *
+ * Regel für `groesse` (ABI-Erweiterung ohne Bruch): der Aufrufer setzt vor dem Aufruf
+ * `groesse = sizeof(Struktur)` seiner Fassung des Headers.
+ *   - Ausgabestrukturen (Info, Status): der Kern schreibt nur so viele Bytes, wie `groesse`
+ *     angibt (nie über das Ende), und trägt in `groesse` die Zahl der tatsächlich
+ *     geschriebenen Bytes zurück.  `groesse` < 4 → false, nichts geschrieben.
+ *   - Eingabestruktur (Konfig): Felder jenseits von `groesse` behalten ihren aktuellen Wert;
+ *     `groesse` < 4 → false.
+ * Zeichenketten: UTF-8, nullterminiert, bei zu kleinem Feld an einer Zeichengrenze
+ * abgeschnitten.  Aufzählungen sind `int` (Zahlenwerte = Entwurf 19 §8). */
+typedef enum { K1520_SER_TELNET = 0, K1520_SER_RFC2217 = 1, K1520_SER_DATEI = 2 } K1520SerBetriebsart;
+typedef enum { K1520_SER_SERVER = 0, K1520_SER_CLIENT = 1 } K1520SerRolle;
+typedef enum { K1520_SER_AUS = 0, K1520_SER_VERBINDET, K1520_SER_LAUSCHT,
+               K1520_SER_VERBUNDEN, K1520_SER_FEHLER } K1520SerZustand;
+typedef enum { K1520_HOST_UNGUELTIG = 0, K1520_HOST_IPV4, K1520_HOST_IPV6,
+               K1520_HOST_NAME } K1520HostArt;
+
+typedef struct {
+    uint32_t groesse;
+    char     name[32];
+    char     stecker[8];
+    bool     v24;                       /* Steuerleitungen RTS/CTS/DTR/DSR/DCD vorhanden */
+    int      taktquellen;               /* 0 = fester Takt; sonst Zahl der Einträge (max. 4) */
+    char     taktquelle_name[4][32];
+} K1520SerInfo;
+
+typedef struct {
+    uint32_t groesse;
+    int      betriebsart;               /* K1520SerBetriebsart */
+    int      rolle;                     /* K1520SerRolle */
+    char     host[256];
+    uint16_t port;                      /* 1..65535; 0 wird von k1520_serial_configure abgewiesen */
+    bool     loop, rtscts_bruecke, xonxoff;
+    int      taktquelle;
+    char     datei[1024];
+} K1520SerKonfig;
+
+typedef struct {
+    uint32_t groesse;
+    int      zustand;                   /* K1520SerZustand */
+    uint16_t port_aktiv;                /* Server: tatsächlicher Port */
+    char     gegenstelle[96];
+    char     meldung[160];
+    uint32_t baud_nenn;
+    uint8_t  daten, paritaet, stopp_halbe;
+    bool     format_gueltig;
+    uint32_t baud_gegenseite;           /* RFC 2217; 0 = unbekannt */
+    bool     baud_abweichend;
+    bool     rts, cts, dtr, dsr, dcd;
+    uint64_t bytes_gesendet, bytes_empfangen;
+    uint32_t puffer_senden, puffer_empfangen;
+    uint16_t port_vorschlag;            /* freier Port, wenn der eingestellte belegt war (start_auto) */
+    int      rolle, betriebsart;
+    uint32_t versuche;                  /* Client: Versuche seit dem letzten Verbinden */
+} K1520SerStatus;
+
+/** @brief Zahl der einstellbaren Schnittstellen (0 bei einer Maschine ohne). */
+K1520_API int  k1520_serial_count(K1520Handle h);
+K1520_API bool k1520_serial_info(K1520Handle h, int i, K1520SerInfo* out);
+/** @brief Name der @p i-ten FESTEN Schnittstelle (Tastatur-Zeilen; nicht einstellbar).
+ *         false jenseits der Liste — so wird sie durchlaufen. */
+K1520_API bool k1520_serial_fixed_name(K1520Handle h, int i, char* buf, int n);
+/** @brief Einstellungen lesen (die zuletzt übernommenen). */
+K1520_API bool k1520_serial_get_config(K1520Handle h, int i, K1520SerKonfig* out);
+/** @brief Einstellungen übernehmen.  false (nichts übernommen) bei: ungültigem Index,
+ *         Port 0 oder ungültiger Betriebsart/Rolle/Taktquelle, oder wenn die Schnittstelle
+ *         aktiv ist und ein gesperrtes Feld (Betriebsart, Rolle, Host, Port, Datei) geändert wird. */
+K1520_API bool k1520_serial_configure(K1520Handle h, int i, const K1520SerKonfig* k);
+/** @brief Start von Hand: Server mit Portsuche, Client im Dauerversuch, Datei überschreibend. */
+K1520_API bool k1520_serial_start(K1520Handle h, int i);
+/** @brief Wiederaufnahme beim Programmstart: Server NUR auf dem eingestellten Port (belegt →
+ *         false, Status AUS mit `port_vorschlag`), Datei anhängend. */
+K1520_API bool k1520_serial_start_auto(K1520Handle h, int i);
+K1520_API void k1520_serial_stop(K1520Handle h, int i);
+K1520_API bool k1520_serial_status(K1520Handle h, int i, K1520SerStatus* out);
+/** @brief Host-Feld klassifizieren (K1520HostArt). */
+K1520_API int  k1520_serial_classify_host(const char* host);
+
 /* ─── Debug ──────────────────────────────────────────────────────────────── */
 /** @brief Read memory through the machine bus for diagnostics. */
 K1520_API uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);

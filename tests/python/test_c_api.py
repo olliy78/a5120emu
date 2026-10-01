@@ -250,3 +250,71 @@ def test_formats_source_points_at_a_real_file(emulator):
     source = emulator.formats_source()
     assert source, "formats_source ist leer — Katalog nicht geladen"
     assert "formats.yaml" in source
+
+
+# ─── Strukturen und Aufzählungen der seriellen Schnittstellen (Entwurf 19 §8) ──
+
+_C_TYP = {
+    "uint8_t": ctypes.c_uint8, "uint16_t": ctypes.c_uint16, "uint32_t": ctypes.c_uint32,
+    "uint64_t": ctypes.c_uint64, "int": ctypes.c_int, "bool": ctypes.c_bool,
+}
+
+
+def _header_text() -> str:
+    text = HEADER.read_text(encoding="utf-8")
+    return re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+
+
+def _c_feldtyp(typ: str, dims: list):
+    t = _C_TYP[typ] if typ != "char" else ctypes.c_char
+    for d in reversed(dims):
+        t = t * int(d)
+    return t
+
+
+def test_serial_structs_match_the_header_field_by_field():
+    """Name, Typ und Feldgröße jedes Feldes der `K1520Ser*`-Strukturen stimmen mit der
+    ctypes-Seite überein — gleiche Felderfolge heisst gleiches Layout.  Ein fehlendes
+    oder verschobenes Feld bräche sonst still (falsche Werte statt eines Fehlers)."""
+    from app.core_binding import k1520 as B
+    text = _header_text()
+    gefunden = 0
+    for m in re.finditer(r"typedef struct \{([^{}]*)\}\s*(K1520Ser(?:Info|Konfig|Status))\s*;", text, flags=re.S):
+        koerper, name = m.groups()
+        py = getattr(B, name)
+        soll = []
+        for decl in koerper.split(";"):
+            decl = decl.strip()
+            if not decl:
+                continue
+            typ, rest = decl.split(None, 1)
+            for feld in rest.split(","):
+                fm = re.fullmatch(r"\s*(\w+)((?:\[\d+\])*)\s*", feld)
+                assert fm, (name, decl)
+                soll.append((fm.group(1), _c_feldtyp(typ, re.findall(r"\[(\d+)\]", fm.group(2)))))
+        ist = [(n, t) for n, t in py._fields_]
+        assert [n for n, _ in soll] == [n for n, _ in ist], name
+        for (n, ts), (_, ti) in zip(soll, ist):
+            assert ctypes.sizeof(ts) == ctypes.sizeof(ti), (name, n)
+        gefunden += 1
+    assert gefunden == 3
+
+
+def test_serial_enum_values_match_the_binding():
+    from app.core_binding import k1520 as B
+    text = _header_text()
+    werte = {}
+    for m in re.finditer(r"typedef enum \{([^{}]*)\}\s*(K1520Ser(?:Betriebsart|Rolle|Zustand)|K1520HostArt)\s*;", text, flags=re.S):
+        n = 0
+        for eintrag in m.group(1).split(","):
+            eintrag = eintrag.strip()
+            if not eintrag:
+                continue
+            k, _, v = eintrag.partition("=")
+            n = int(v) if v.strip() else n
+            werte[k.strip()] = n
+            n += 1
+    assert len(werte) == 3 + 2 + 5 + 4
+    for k, v in werte.items():
+        pyname = k.replace("K1520_", "", 1)
+        assert getattr(B, pyname) == v, k

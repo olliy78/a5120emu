@@ -23,6 +23,7 @@ import ctypes
 import os
 import sys
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Optional
 import threading
 import time
@@ -343,6 +344,150 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
     print(f"[taste] {was:11s} {_taste_klartext(keycode)}"
           f"  shift={int(shift)} ctrl={int(ctrl)}{ziel}",
           file=sys.stderr, flush=True)
+
+
+# ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────────
+# Zahlenwerte = k1520_api.h.  Die Strukturen müssen bytegleich zum Header sein;
+# test_c_api.py/test_serial_api.py prüfen sizeof gegen die Bibliothek.
+SER_TELNET, SER_RFC2217, SER_DATEI = 0, 1, 2          # K1520SerBetriebsart
+SER_SERVER, SER_CLIENT = 0, 1                          # K1520SerRolle
+SER_AUS, SER_VERBINDET, SER_LAUSCHT, SER_VERBUNDEN, SER_FEHLER = 0, 1, 2, 3, 4  # K1520SerZustand
+HOST_UNGUELTIG, HOST_IPV4, HOST_IPV6, HOST_NAME = 0, 1, 2, 3                   # K1520HostArt
+
+
+class K1520SerInfo(ctypes.Structure):
+    _fields_ = [("groesse", ctypes.c_uint32),
+                ("name", ctypes.c_char * 32),
+                ("stecker", ctypes.c_char * 8),
+                ("v24", ctypes.c_bool),
+                ("taktquellen", ctypes.c_int),
+                ("taktquelle_name", (ctypes.c_char * 32) * 4)]
+
+
+class K1520SerKonfig(ctypes.Structure):
+    _fields_ = [("groesse", ctypes.c_uint32),
+                ("betriebsart", ctypes.c_int),
+                ("rolle", ctypes.c_int),
+                ("host", ctypes.c_char * 256),
+                ("port", ctypes.c_uint16),
+                ("loop", ctypes.c_bool),
+                ("rtscts_bruecke", ctypes.c_bool),
+                ("xonxoff", ctypes.c_bool),
+                ("taktquelle", ctypes.c_int),
+                ("datei", ctypes.c_char * 1024)]
+
+
+class K1520SerStatus(ctypes.Structure):
+    _fields_ = [("groesse", ctypes.c_uint32),
+                ("zustand", ctypes.c_int),
+                ("port_aktiv", ctypes.c_uint16),
+                ("gegenstelle", ctypes.c_char * 96),
+                ("meldung", ctypes.c_char * 160),
+                ("baud_nenn", ctypes.c_uint32),
+                ("daten", ctypes.c_uint8),
+                ("paritaet", ctypes.c_uint8),
+                ("stopp_halbe", ctypes.c_uint8),
+                ("format_gueltig", ctypes.c_bool),
+                ("baud_gegenseite", ctypes.c_uint32),
+                ("baud_abweichend", ctypes.c_bool),
+                ("rts", ctypes.c_bool), ("cts", ctypes.c_bool), ("dtr", ctypes.c_bool),
+                ("dsr", ctypes.c_bool), ("dcd", ctypes.c_bool),
+                ("bytes_gesendet", ctypes.c_uint64),
+                ("bytes_empfangen", ctypes.c_uint64),
+                ("puffer_senden", ctypes.c_uint32),
+                ("puffer_empfangen", ctypes.c_uint32),
+                ("port_vorschlag", ctypes.c_uint16),
+                ("rolle", ctypes.c_int),
+                ("betriebsart", ctypes.c_int),
+                ("versuche", ctypes.c_uint32)]
+
+
+_lib.k1520_serial_count.argtypes = [K1520Handle]
+_lib.k1520_serial_count.restype = ctypes.c_int
+_lib.k1520_serial_info.argtypes = [K1520Handle, ctypes.c_int, ctypes.POINTER(K1520SerInfo)]
+_lib.k1520_serial_info.restype = ctypes.c_bool
+_lib.k1520_serial_fixed_name.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_serial_fixed_name.restype = ctypes.c_bool
+_lib.k1520_serial_get_config.argtypes = [K1520Handle, ctypes.c_int, ctypes.POINTER(K1520SerKonfig)]
+_lib.k1520_serial_get_config.restype = ctypes.c_bool
+_lib.k1520_serial_configure.argtypes = [K1520Handle, ctypes.c_int, ctypes.POINTER(K1520SerKonfig)]
+_lib.k1520_serial_configure.restype = ctypes.c_bool
+_lib.k1520_serial_start.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_serial_start.restype = ctypes.c_bool
+_lib.k1520_serial_start_auto.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_serial_start_auto.restype = ctypes.c_bool
+_lib.k1520_serial_stop.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_serial_stop.restype = None
+_lib.k1520_serial_status.argtypes = [K1520Handle, ctypes.c_int, ctypes.POINTER(K1520SerStatus)]
+_lib.k1520_serial_status.restype = ctypes.c_bool
+_lib.k1520_serial_classify_host.argtypes = [ctypes.c_char_p]
+_lib.k1520_serial_classify_host.restype = ctypes.c_int
+
+
+def _kuerzen(text: str, n: int) -> bytes:
+    """UTF-8, höchstens ``n`` Bytes, nie mitten in einem Zeichen geschnitten."""
+    return text.encode("utf-8")[:n].decode("utf-8", "ignore").encode("utf-8")
+
+
+def _txt(b: bytes) -> str:
+    return b.decode("utf-8", "replace")
+
+
+@dataclass
+class SerialInfo:
+    """Feste Angaben einer Schnittstelle (``K1520SerInfo``)."""
+    name: str
+    stecker: str
+    v24: bool
+    taktquellen: list          # Namen; leer = fester Takt
+
+
+@dataclass
+class SerialKonfig:
+    """Einstellungen (``K1520SerKonfig``); Vorgaben wie im Kern."""
+    betriebsart: int = SER_TELNET
+    rolle: int = SER_SERVER
+    host: str = "127.0.0.1"
+    port: int = 5000
+    loop: bool = False
+    rtscts_bruecke: bool = False
+    xonxoff: bool = False
+    taktquelle: int = 0
+    datei: str = ""
+
+
+@dataclass
+class SerialStatus:
+    """Zustand (``K1520SerStatus``); ``zustand`` = ``SER_*``-Konstante."""
+    zustand: int
+    port_aktiv: int
+    gegenstelle: str
+    meldung: str
+    baud_nenn: int
+    daten: int
+    paritaet: int
+    stopp_halbe: int
+    format_gueltig: bool
+    baud_gegenseite: int
+    baud_abweichend: bool
+    rts: bool
+    cts: bool
+    dtr: bool
+    dsr: bool
+    dcd: bool
+    bytes_gesendet: int
+    bytes_empfangen: int
+    puffer_senden: int
+    puffer_empfangen: int
+    port_vorschlag: int
+    rolle: int
+    betriebsart: int
+    versuche: int
+
+
+def classify_host(host: str) -> int:
+    """Host-Feld klassifizieren → ``HOST_*`` (ungültig/IPv4/IPv6/Name)."""
+    return int(_lib.k1520_serial_classify_host(host.encode("utf-8")))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -793,6 +938,85 @@ class K1520Emulator:
                  for i in range(VRAM_COLS * VRAM_ROWS)]
         return "\n".join("".join(chars[r * VRAM_COLS:(r + 1) * VRAM_COLS])
                           for r in range(VRAM_ROWS))
+
+    # ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────
+
+    def serial_count(self) -> int:
+        """Zahl der einstellbaren Schnittstellen (A5120 und K8915: 3)."""
+        return int(_lib.k1520_serial_count(self._handle))
+
+    def serial_info(self, i: int) -> Optional[SerialInfo]:
+        """Feste Angaben der Schnittstelle ``i``; ``None`` bei ungültigem Index."""
+        r = K1520SerInfo()
+        r.groesse = ctypes.sizeof(r)
+        if not _lib.k1520_serial_info(self._handle, i, ctypes.byref(r)):
+            return None
+        return SerialInfo(_txt(r.name), _txt(r.stecker), bool(r.v24),
+                          [_txt(r.taktquelle_name[q].value) for q in range(r.taktquellen)])
+
+    def serial_fixed_names(self) -> list:
+        """Anzeigenamen der festen, nicht einstellbaren Schnittstellen (Tastatur)."""
+        namen, buf = [], ctypes.create_string_buffer(128)
+        while _lib.k1520_serial_fixed_name(self._handle, len(namen), buf, len(buf)):
+            namen.append(_txt(buf.value))
+        return namen
+
+    def serial_config(self, i: int) -> Optional[SerialKonfig]:
+        """Zuletzt übernommene Einstellungen; ``None`` bei ungültigem Index."""
+        r = K1520SerKonfig()
+        r.groesse = ctypes.sizeof(r)
+        if not _lib.k1520_serial_get_config(self._handle, i, ctypes.byref(r)):
+            return None
+        return SerialKonfig(r.betriebsart, r.rolle, _txt(r.host), r.port, bool(r.loop),
+                            bool(r.rtscts_bruecke), bool(r.xonxoff), r.taktquelle,
+                            _txt(r.datei))
+
+    def serial_configure(self, i: int, **felder) -> bool:
+        """Einstellungen übernehmen: die aktuellen, überschrieben um ``felder`` (Namen wie
+        :class:`SerialKonfig`).  ``False`` (nichts übernommen) bei Port 0, ungültigem Wert
+        oder geändertem gesperrtem Feld im aktiven Betrieb; ``KeyError`` bei unbekanntem Feld."""
+        k = self.serial_config(i)
+        if k is None:
+            return False
+        for name, wert in felder.items():
+            if not hasattr(k, name):
+                raise KeyError(name)
+            setattr(k, name, wert)
+        r = K1520SerKonfig()
+        r.groesse = ctypes.sizeof(r)
+        r.betriebsart, r.rolle = int(k.betriebsart), int(k.rolle)
+        r.host = _kuerzen(k.host, 255)
+        r.port = k.port
+        r.loop, r.rtscts_bruecke, r.xonxoff = bool(k.loop), bool(k.rtscts_bruecke), bool(k.xonxoff)
+        r.taktquelle = int(k.taktquelle)
+        r.datei = _kuerzen(k.datei, 1023)
+        return bool(_lib.k1520_serial_configure(self._handle, i, ctypes.byref(r)))
+
+    def serial_start(self, i: int) -> bool:
+        """Start von Hand (Server mit Portsuche, Client Dauerversuch, Datei überschreibend)."""
+        return bool(_lib.k1520_serial_start(self._handle, i))
+
+    def serial_start_auto(self, i: int) -> bool:
+        """Wiederaufnahme beim Programmstart (Server nur auf dem eingestellten Port;
+        belegt → ``False`` und ``port_vorschlag`` im Status)."""
+        return bool(_lib.k1520_serial_start_auto(self._handle, i))
+
+    def serial_stop(self, i: int):
+        """Beenden/Trennen, sofort."""
+        _lib.k1520_serial_stop(self._handle, i)
+
+    def serial_status(self, i: int) -> Optional[SerialStatus]:
+        """Zustand der Schnittstelle ``i``; ``None`` bei ungültigem Index."""
+        r = K1520SerStatus()
+        r.groesse = ctypes.sizeof(r)
+        if not _lib.k1520_serial_status(self._handle, i, ctypes.byref(r)):
+            return None
+        werte = {}
+        for f, *_ in K1520SerStatus._fields_[1:]:
+            v = getattr(r, f)
+            werte[f] = _txt(v) if isinstance(v, bytes) else v
+        return SerialStatus(**werte)
+
 
     @staticmethod
     def version() -> str:
