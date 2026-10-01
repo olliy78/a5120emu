@@ -14,6 +14,12 @@ einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md
 > [unten](#geräteprüfung-durch-den-anwender); was davon abhängt, steht in den Abschnitten
 > *Annahmen* und *Kabel* als **[bestätigen]**.
 
+**Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/` — allen
+`cpa_cpa780_*` (A5120, CP/A) und `k8915scpx_boot1.hfe` (K8915, SCPX 8915). Die CP/A-Disketten
+gehen als Beispieldisketten ins Paket und landen beim ersten Start im Diskettenordner des
+Anwenders; die K8915-Diskette nur mit `build_payload.sh --disks all` (Rechtsfrage,
+`doc/design/16_k8915.md` §6.23). Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
+
 Inhalt: Bedienung · Prüfsteckertest · Test mit Gegenstelle · Flusssteuerung ·
 Maschinenerkennung · Annahmen · Kabel · Geräteprüfung durch den Anwender · Bauen ·
 Im Emulator ausprobieren.
@@ -396,6 +402,17 @@ M80 + LINKMT aus `~/projects/CPA_Workbench/tools` über `cparun`, Ladeadresse
 nicht `No Fatal error(s)` meldet (M80 selbst endet auch bei Fehlern mit 0). Die
 gebaute `.com` wird nach `tools/sertest/sertest.com` kopiert und **eingecheckt** —
 die CI hat die CPA_Workbench nicht.
+
+**Nach jedem Neubau die Disketten nachziehen:**
+
+```sh
+tools/dev.sh build
+python3 tools/sertest/disketten.py --tool build/k1520disktool          # aufspielen
+python3 tools/sertest/disketten.py --tool build/k1520disktool --check  # = Wächter
+```
+
+Der Wächter `cli_sertest_auf_den_disketten` schlägt an, wenn eine der Disketten
+(Liste `DISKETTEN` im Skript) SERTEST.COM nicht oder in einer anderen Fassung trägt.
 
 ## Im Emulator ausprobieren
 

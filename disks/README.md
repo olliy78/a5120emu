@@ -33,6 +33,11 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `udos1715_640k_pc1715_system.hfe` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM", 80×32×256 — dieselbe Diskette liegt als `.img` unter `tests/fixtures/disks/` | MFS 1.6 |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
+**SERTEST.COM** (Prüfprogramm der seriellen Schnittstellen, `tools/sertest/`) liegt auf
+allen `cpa_cpa780_*` und auf `k8915scpx_boot1.hfe`; nach einem Neubau nachziehen mit
+`python3 tools/sertest/disketten.py --tool build/k1520disktool` (Wächter
+`cli_sertest_auf_den_disketten`).
+
 ## Bootabbilder (`boot_*.bin`) — Systemspuren zum Wiedereinspielen
 
 Bootfähig wird eine Diskette durch die **Systemspuren** vor dem Dateisystem; das

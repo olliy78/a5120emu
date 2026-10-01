@@ -60,3 +60,12 @@ add_test(NAME cli_sertest_com_passt_zur_quelle
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/sertest/build.py" --check)
 set_tests_properties(cli_sertest_com_passt_zur_quelle PROPERTIES
     TIMEOUT 120 SKIP_RETURN_CODE 77 LABELS "cli;fast")
+
+# Wächter „die Bootdisketten in disks/ tragen die aktuelle SERTEST.COM": sie gehen
+# als Beispieldisketten ins Paket; nach einem Neubau der .com liefert es sonst eine
+# alte Fassung aus.  Nachziehen: python3 tools/sertest/disketten.py --tool <k1520disktool>
+add_test(NAME cli_sertest_auf_den_disketten
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/sertest/disketten.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>")
+set_tests_properties(cli_sertest_auf_den_disketten PROPERTIES
+    TIMEOUT 120 LABELS "cli;fast")
