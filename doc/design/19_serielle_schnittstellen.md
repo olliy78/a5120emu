@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, in Umsetzung — S1–S4 erledigt (§12.1).
+**Stand:** 2026-09-30, in Umsetzung — S1–S5 und T1a erledigt (§12.1).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -91,23 +91,28 @@ ob ihr ZC/TO0 im Emulator schon über den Koppelbus zur K8025 geführt ist **[?]
 
 ### 3.2 K8915 — ATS K7028.30
 
-Belegung laut `doc/design/16_k8915.md` §3.2 (ROM- und BIOS-Befund):
+Belegung nach Belegungsplan und Stromlaufplan 1.45.518732 (`k8915schaltung.pdf` S. 5, 11,
+16; geklärt in AP-S5, Befund samt Quelle in `doc/design/16_k8915.md` §3.2):
 
-| Name (UI) | SIO / Kanal | Ports | Art | Steuerleitungen | Takt |
-|-----------|-------------|-------|-----|-----------------|------|
-| **IFS 1** | SIO 1 / A | 40H/41H | IFSS **[?]** | nein | CTC 1 K? **[?]** |
-| **V.24** | SIO 1 / B | 42H/43H | V.24 (Drucker/V.24 des BIOS) | ja **[?]** welche | CTC 1 K? **[?]** |
-| **IFS 2** | SIO 2 / A | 50H/51H | IFSS **[?]** | nein | CTC 2 K0 |
-| Tastatur K7672 | SIO 2 / B | 52H/53H | — | — | fest verdrahtet, **nicht einstellbar** |
+| Name (UI) | Stecker | SIO / Kanal | Ports | Art | Steuerleitungen | Takt |
+|-----------|---------|-------------|-------|-----|-----------------|------|
+| **V.24** | X3 | SIO 1 / A | 40H/41H | volle V.24 (Empfänger D17, Treiber D14) | ja | über Multiplexer D13; nachgebildet CTC 1 K0 |
+| **IFS 1** | X4 | SIO 1 / B | 42H/43H | nur 103/104 — **Drucker des BIOS** („V24 XON/XOFF") | nein | CTC 1 K2 (sicher) |
+| **IFS 2** | X5 | SIO 2 / A | 50H/51H | 103/104 + die IFSS-Stromschleife der Karte | nein | CTC 2 K0 |
+| Tastatur K7672 | — | SIO 2 / B | 52H/53H | — | — | fest verdrahtet, **nicht einstellbar** |
+
+**Abweichung vom ersten Entwurf (AP-S5):** die einzige Schnittstelle mit Steuerleitungen ist
+SIO1-A — „V.24" heißt deshalb SIO1-A, nicht SIO1-B; der BIOS-Drucker liegt auf **IFS 1**.
+CTC 1 CLK/TRG0–2 liegen auf Masse (reine Zeitgeber); CTSB/DCDB nur über Wickelbrücke X15:3/4
+(offen = inaktiv), RTSB/DTRB an keinem Treiber. Nur erschlossen, nicht ganz verfolgt:
+Kanal↔Stecker für SIO1-A/SIO2-A und der Weg CTSA/DCDA durch D13. Sollte die Rückwand anders
+beschriftet sein, sind nur die Namen in `k7028.cpp` zu tauschen.
 
 Die UI-Namen **„V.24", „IFS 1", „IFS 2" sind festgelegt** (Anwender, 2026-09-30) und
 bleiben auch dann, wenn der Belegungsplan die Stecker anders beschriftet; welcher IFSS-Kanal
 „IFS 1" und welcher „IFS 2" heißt, folgt der SIO-Reihenfolge (SIO 1 vor SIO 2).
-Offen und in AP-S5 am Belegungsplan/Stromlaufplan 1.45.518732 zu klären: die Zuordnung
-IFSS/V.24 zu SIO1-A/-B, welcher CTC-1-Kanal welchen SIO-Kanal taktet, welche V.24-Leitungen
-an welchem SIO-Anschluss liegen und welche Wickelbrücken die Kanäle betreffen. Die heutige Verdrahtung
-`K8915Machine` (Drucker = SIO1-B, DFÜ = vorläufig SIO2-A) geht in diesem Modell auf; der
-bisherige `Config::pruefstecker` wird zur Einstellung **Rx/Tx-Loop** je Schnittstelle (§4).
+Die alte Verdrahtung `K8915Machine` (Drucker = SIO1-B = IFS 1, DFÜ = SIO2-A = IFS 2) geht
+in diesem Modell auf; `Config::pruefstecker` ist die Vorgabe des **Rx/Tx-Loop** (§4).
 
 ## 4. Einstellungen je Schnittstelle
 
@@ -128,9 +133,10 @@ damit XON/XOFF bei unterschiedlich schnellen Enden trägt (§6.3); bei Binärüb
 muss es aus sein (0x13 im Datenstrom).
 
 K8915-Vorgabe: der ROM-Selbsttest verlangt das Echo auf SIO1-A, SIO1-B, SIO2-A. Die heutige
-Vorgabe `K7028::Config::mitPruefstecker` bleibt Maschinenvorgabe; sie erscheint in der UI als
-gesetzter Rx/Tx-Loop, solange die Schnittstelle nicht verbunden ist **[?]** — AP-S5 prüft,
-ob das BIOS danach ohne Echo weiterläuft (sonst Loop vorgabemäßig an).
+Vorgabe bleibt Maschinenvorgabe (`K8915Machine::Config::pruefstecker`, **Loop an** für alle
+drei) und erscheint in der UI als gesetzter Rx/Tx-Loop. Geklärt in AP-S5: nur der
+ROM-Selbsttest braucht das Echo, das BIOS nicht (`K8915Seriell.BiosLaeuftOhneLoopWeiter`) —
+der Anwender kann den Loop also nach dem Kaltstart abschalten und verbinden.
 
 **Bewusst nicht einstellbar:** IFSS aktiv/passiv (A61, keine Entsprechung), Adressdekoder
 (W1:1–5, X24/X25), Interruptprioritäten (W1:8–11 — verändern die Kette der ganzen Maschine,
@@ -252,7 +258,11 @@ Empfangspuffer — verlustfrei. Auch über Telnet nutzbar.
 - **Telnet:** keine Leitungen. Eingänge CTS/DSR/DCD = „verbunden".
 - **RTS/CTS-Brücke** (nur V.24) überstimmt: CTS := eigenes RTS, DSR = DCD := eigenes DTR.
 - **Halt bei RTS:** nimmt der eigene Gast RTS weg, stellt der Wandler nichts mehr zu
-  (sofort, nicht erst nach Zeichen unterwegs) — dasselbe Argument wie §6.3. Gegenüber
+  (sofort, nicht erst nach Zeichen unterwegs) — dasselbe Argument wie §6.3. **Erst, nachdem
+  der Gast RTS einmal gesetzt hat** (AP-S5): SCPX 8915 schreibt WR5 = 68H (RTS/DTR aus), CP/A
+  und SCPX am A5120 setzen RTS auf A33-A nie — wörtlich genommen empfinge so ein Gast auf
+  der V.24 nie etwas. Zurückgesetzt beim Anbinden, Abbinden und Maschinen-Reset
+  (`SerialHub::gastZurueckgesetzt`); Wächter `SerialWandler.RtsNieGesetztHaeltNicht`. Gegenüber
   sieht zusätzlich CTS fallen; mit SIO-*Auto Enables* (WR3 D5) hält dessen Sender an —
   `Z80SIO` muss das nachbilden (Sender gibt bei inaktivem CTS nichts ab).
 - Änderungen an CTS/DCD lösen im SIO den Ext/Status-Interrupt aus (vorhandene Latches
@@ -615,15 +625,48 @@ und die RFC-2217-Signatur. `net::gegenstelle(fd)` ergänzt.
 - Wächter: `SerialWandler.*`, `SerialClientDauerversuch.*`, Hub-Rundläufe Telnet/RFC2217 über
   Loopback, Datei (31 Fälle, 10× bei `-j48` stabil).
 
+**AP-S5 — erledigt 2026-10-01** (`7b7b75c`). K8025 und K7028 liefern je einstellbarer
+Schnittstelle einen `SerialAnschluss`; `SerialHub` je Maschine, `libk1520core` bindet
+`k1520_serial`. Belegung und Klärungen: §3.1/§3.2/§4/§13, Befunde mit Quelle in
+`06_k8025_ass.md` (§2, §6, §8, §10) und `16_k8915.md` §3.2.
+- **Maschinen-API für S6:** `K1520Machine::serialHub()` (Index = Anmeldereihenfolge =
+  C-ABI-Index), `serielleAnschluesse()`, `festeSchnittstellen()` (A5120 „Tastatur K7637
+  (X4)", K8915 „Tastatur K7672") für `k1520_serial_fixed_name`. Reihenfolge A5120: DFÜ/V.24,
+  DFÜ/IFSS, Drucker; K8915: V.24, IFS 1, IFS 2.
+- **Alter Unterbau:** `setDFUECallback`/`dfueSend` = A5120 DFÜ/V.24 bzw. K8915 IFS 2,
+  `setPrinterCallback`/`printerSend` = A5120 Drucker (geht jetzt — war vorher leer) bzw.
+  K8915 IFS 1. Bytes in ihrer Zeichenzeit; belegt Loop oder Transport den Stecker, ins Leere.
+  K8915: ein gesetzter Rückruf zieht den Loop seines Kanals, ein leerer steckt ihn wieder.
+  `k1520_serial_set_rx_cb(…, NULL)` meldet ab.
+- **Kern-Ergänzungen:** `SerialAnschluss::leitungBelegt(bool)`; `Wandler/SerialHub::takt`
+  liefern den nächsten fälligen Takt (die Maschine ruft nur dann); Leerlaufpfad;
+  `gastZurueckgesetzt()`; RTS-Halt erst nach erstem RTS (§6.4).
+- **Verhaltensänderung:** Sendebytes auf K8025 A33-A/B und A32-B holt jetzt der Wandler ab
+  (unverbunden verfallen sie in ihrer Zeichenzeit) — vorher blieb ein sendender Gast mit
+  vollem Puffer stehen. Die Leitung trägt das **programmierte** Format (eine unprogrammierte
+  SIO sendet 5 Bit).
+- **Laufzeit** (Thread-CPU, 300 M Takte): A5120 +3,6 % (28,3× → 27,3× Echtzeit), K8915 ± 0.
+- Wächter: `K8025Seriell.*` (5), `K7028Seriell.*` (6), `K8915Seriell.*` (4, u. a. `LIST` über
+  Telnet mit XON/XOFF), `A5120Seriell.GastSendetUeberDfueV24InEineDatei`,
+  `SerialWandler.RtsNieGesetztHaeltNicht`/`MeldetDieBelegungDesSteckers`. `test` und
+  `test-format` grün.
+
+**AP-T1a — erledigt 2026-10-01** (Regressionsabdeckung bis S3, Ergebnis in `16_k8915.md` §8a
+AP-T1). Abdeckung der geänderten Zeilen C++ 91,2 → 93,3 %, Python 90,0 → 93,8 %; zwei schwache
+Wächter verschärft. Befund bestätigt: `Z80SIO::rxIntEnabled()` liest WR1 D3–2 statt D4–3
+(WR1 = 13H gibt keinen Rx-Interrupt) — nicht behoben. Für T1b: die Befehle des Abdeckungsbaus
+stehen im Ergebnisabschnitt, `gcovr` braucht `--gcov-suspicious-hits-threshold 0`.
+
 ## 13. Offene Punkte
 
 Entschieden am 2026-09-30: Bindeadresse = alle Schnittstellen (§7.2), Wiederaufnahme beim
 Start (§7.4a), UI-Namen der K7028 = „V.24"/„IFS 1"/„IFS 2" (§3.2).
 
-1. **K7028:** Belegung, Taktkanäle, V.24-Leitungen, Brücken (§3.2) — braucht
-   Belegungs-/Stromlaufplan (beim Anwender).
-2. **K8025:** Pegel der CTS/DCD-Eingänge der IFSS-Kanäle und der A32; Weg ZRE-CTC K0 → K8025
-   im Emulator (§3.1).
-3. **K8915 Loop-Vorgabe:** läuft das BIOS ohne Prüfstecker-Echo? (§4)
+1. ~~**K7028:** Belegung, Taktkanäle, V.24-Leitungen, Brücken~~ — geklärt in AP-S5 (§3.2);
+   Rest: Rückwandbeschriftung, Stecker der K7672, D13-Weg von CTSA/DCDA.
+2. **K8025:** Weg ZRE-CTC K0 → K8025 geklärt (AP-S5, `K8025::setzeZreTakt`). Die Pegel der
+   CTS/DCD-Eingänge der IFSS-Kanäle und der A32 bleiben **vorläufig inaktiv** — es gibt
+   keinen Stromlaufplan der K8025 (das PDF hat nur das Blockschaltbild S. 8).
+3. ~~**K8915 Loop-Vorgabe**~~ — geklärt in AP-S5: BIOS läuft ohne Echo, Vorgabe bleibt an (§4).
 4. **Statuszeile und Datei:** Soll eine offene Druckdatei in der Statuszeile erscheinen
    (etwa „Drucker → druck.txt")? Entwurf: nein, nur Netzverbindungen (§9).
