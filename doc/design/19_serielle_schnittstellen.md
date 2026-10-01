@@ -1,6 +1,7 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, S1–S11, T1a und T1b erledigt (§12.1); offen nur die Bildschirm-Checkliste.
+**Stand:** 2026-10-01, **abgeschlossen** — S1–S12, T1a, T1b erledigt (§12.1); Bildschirm- und
+Geräteprüfung durch den Anwender bestanden (2026-10-01).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -98,7 +99,7 @@ Kanalzuordnung nach Stromlaufplan 1.45.518732 (`k8915schaltung.pdf` S. 5, 11, 16
 | Index | Name (UI) | Stecker (Gerät) | SIO / Kanal | Ports | Art | Steuerleitungen | Takt |
 |-------|-----------|-----------------|-------------|-------|-----|-----------------|------|
 | 0 | **Drucker/IFSS1** | X3 | SIO 1 / B | 42H/43H | nur 103/104 — **Drucker des BIOS** („V24 XON/XOFF") | nein | CTC 1 K2 |
-| 1 | **V.24** | X4 (Anwender: „vermutlich") | SIO 1 / A | 40H/41H | volle V.24 (Empfänger D17, Treiber D14) | ja | über Multiplexer D13; nachgebildet CTC 1 K0 |
+| 1 | **V.24** | X4 (am Gerät bestätigt) | SIO 1 / A | 40H/41H | volle V.24 (Empfänger D17, Treiber D14) | ja | über Multiplexer D13; nachgebildet CTC 1 K0 |
 | 2 | **DFÜ/IFSS2** | X5 | SIO 2 / A | 50H/51H | 103/104 + die IFSS-Stromschleife der Karte | nein | CTC 2 K0 |
 | — | Tastatur K7672 | (Karte X6?) | SIO 2 / B | 52H/53H | — | — | fest verdrahtet, **nicht einstellbar** |
 
@@ -799,6 +800,11 @@ Umriss; Gruppen „Ausgänge →"/„Eingänge ←" mit Tooltip („vom Rechner 
 Ende-zu-Ende geprüft: Telnet-Verbindung → CTS/DSR/DCD grün, nach dem Trennen wieder aus.
 **Einschränkung:** die Eingänge werden nur nachgeführt, solange die Maschine läuft — angehalten
 behalten die LEDs ihren Stand (im Handbuch vermerkt). `test` 1499, `test-format` 26 grün.
+
+**Abnahme 2026-10-01:** der Anwender hat am Bildschirm und am Gerät geprüft — Reihenfolge und
+Namen der K8915-Schnittstellen (V.24 an X4 bestätigt), LED-Zustände bei Telnet-Verbindung,
+Unterscheidbarkeit gedimmt/Umriss, Leertasten-Wiederholung (S9) und die Punkte der
+Checkliste aus S8/S10: **alles stimmt.** `win` nach S12: 1470 grün.
 
 ## 13. Offene Punkte
 
