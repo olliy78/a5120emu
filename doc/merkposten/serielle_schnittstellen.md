@@ -13,7 +13,7 @@ Tastatur bleibt fest verdrahtet. Entwurf, Belegung, Stand der APs:
 (`app/help/handbuch.md`, „Schnittstellen").
 
 ```
-app/ui/serial_widget.py   Dock „Schnittstellen", Statuszeile (SeriellFeld), Konfiguration
+app/ui/serial_widget.py   Reiter „Schnittstellen" im Einstellungen-Kasten (AP-S10), Statuszeile (SeriellFeld), Konfiguration
 app/core_binding/k1520.py K1520Emulator.serial_* (Datenklassen SerialInfo/Konfig/Status)
 core/api/k1520_api.*      k1520_serial_*  (K1520SerInfo/Konfig/Status, groesse-Regel)
 core/serial/hub.*         SerialHub: einer je Maschine, I/O-Faden, Transporte
@@ -99,7 +99,7 @@ Drucker; K8915: V.24, IFS 1, IFS 2.
   bis „Trennen". Wächter `SerialClientDauerversuch.*`.
 - **Namen und Fähigkeiten liefert der Kern** — kein `if machine == …` in `app/`
   (`test_a_block_per_program_but_no_machine_specific_names_in_the_module`). Kein
-  Tastenkürzel im Dock (Kürzeltabelle des Handbuchs ist ein Vertrag).
+  Tastenkürzel im Reiter (Kürzeltabelle des Handbuchs ist ein Vertrag).
 - **C-ABI:** Strukturen mit `groesse` vorn, neue Felder nur hinten; `configure` weist
   Port 0 ab (Port 0 = „vom System" gibt es nur in C++-Tests). `test_c_api.py` vergleicht
   Felder und Aufzählungen mechanisch.

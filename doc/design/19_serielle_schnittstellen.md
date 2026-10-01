@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, S1–S8, T1a und T1b erledigt (§12.1); offen nur die Bildschirm-Checkliste (S8).
+**Stand:** 2026-09-30, S1–S11, T1a und T1b erledigt (§12.1); offen nur die Bildschirm-Checkliste.
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -435,9 +435,13 @@ prüft Header ↔ Bibliothek ↔ Bindung automatisch mit.
 
 ## 9. Oberfläche
 
-Neuer Dock **„Schnittstellen"** (`app/ui/serial_widget.py`), gestapelt mit „Laufwerke" und
-„Einstellungen" (`tabifyDockWidget`, `main_window.py` ~Z. 314–329), auch im Menü *Ansicht*
-schaltbar (wie die übrigen Kästen). Blöcke im Stil von `drive_widget.py`:
+Reiter **„Schnittstellen"** im Einstellungen-Kasten (`app/ui/serial_widget.py`, eingehängt in
+`settings_widget.py` zwischen „Laufwerke" und „CRT"; **seit AP-S10** — vorher eigener Dock,
+auf Anwenderwunsch verlegt). Format in der üblichen Schreibweise `8N1`/`7E1`/`8O1` mit
+erklärendem Tooltip, Leitungen als LEDs (grün aktiv, dunkel inaktiv, Umriss unbekannt), das
+Port-Feld zeigt im Betrieb den **tatsächlichen** Port (gespeichert bleibt der eingestellte),
+eine Zeile „Gegenseite" mit Baud, Format und — bei V.24 — deren Leitungen (AP-S11).
+Blöcke im Stil von `drive_widget.py` (Skizze des ersten Entwurfs):
 
 ```
 ┌ DFÜ/V.24  (X6) ─────────────────────────────── ● verbunden 192.168.1.5:40122 ┐
@@ -773,6 +777,15 @@ läuft damit grün. Behoben: Wiederholung in Maschinenzeit in `service()`, nur f
 `K7637.Dauerfunktion_*`. Doku `doc/design/08_k7637_keyboard.md` §2.2a. Offen: welche Taste
 5FH sendet (im Modell nur der PC-Unterstrich, der jetzt wiederholt); ROM-Zeiten 480H/481H nicht
 in ms umgerechnet (Handbuchwerte benutzt).
+
+**AP-S10 — erledigt 2026-10-01** (`edbf8cc`). Reiter statt Dock (§9); `serial_dock`,
+`act_dock_serial` und *Ansicht ▸ Schnittstellen* entfallen; ein `dock_serial` in
+`window.toolbar` bzw. ein `serial_dock` in einer alten `dock_state` wird übergangen (Wächter).
+Das `SerialWidget` gehört dem Hauptfenster, sein 4-Hz-Takt läuft auch bei verdecktem Reiter
+(Statuszeile bleibt aktuell). Format `8N1`/`1.5`, LEDs `LeitungsLed`/`LeitungsReihe`
+(„Aus:" RTS/DTR, „Ein:" CTS/DSR/DCD), Port-Feld im Betrieb = `port_aktiv` (Tooltip
+„Eingestellt: X, benutzt: Y"), Gegenseite-Zeile mit ⚠/Warnfarbe bei `baud_abweichend` oder
+`format_abweichend`, fehlt solange nichts bekannt ist. `py_serial_gui` 105 Fälle.
 
 ## 13. Offene Punkte
 

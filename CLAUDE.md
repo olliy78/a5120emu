@@ -624,7 +624,7 @@ V.24, IFS 1, IFS 2) gehen über **Telnet** oder **RFC 2217** (Client/Server) ode
 **Datei** nach außen; die Tastatur bleibt fest verdrahtet. Je Maschine ein `SerialHub`
 (`K1520Machine::serialHub()`, I/O-Faden) mit je Schnittstelle einem `Wandler`; die Karten
 liefern nur einen `SerialAnschluss`. C-ABI `k1520_serial_*`, Python `K1520Emulator.serial_*`,
-Dock „Schnittstellen". Entwurf: `doc/design/19_serielle_schnittstellen.md`.
+Reiter „Schnittstellen" im Einstellungen-Kasten (seit AP-S10, kein eigener Dock). Entwurf: `doc/design/19_serielle_schnittstellen.md`.
 
 > **Vor Arbeiten daran: `doc/merkposten/serielle_schnittstellen.md` lesen** (Festlegungen
 > mit Wächtern, wie man einen Gast im Test senden lässt, Gegenstellen). Die teuersten Regeln:
