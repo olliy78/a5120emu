@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, in Umsetzung — S1–S5 und T1a erledigt (§12.1).
+**Stand:** 2026-09-30, in Umsetzung — S1–S6 und T1a erledigt (§12.1).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -416,6 +416,7 @@ K1520_API int  k1520_serial_count(K1520Handle h);              /* einstellbare *
 K1520_API bool k1520_serial_info(K1520Handle h, int i, K1520SerInfo* out);
 K1520_API bool k1520_serial_fixed_name(K1520Handle h, int i, char* buf, int n); /* Tastatur-Zeilen */
 K1520_API bool k1520_serial_configure(K1520Handle h, int i, const K1520SerKonfig* k);
+K1520_API bool k1520_serial_get_config(K1520Handle h, int i, K1520SerKonfig* out); /* ergänzt in S6 */
 K1520_API bool k1520_serial_start(K1520Handle h, int i);       /* Server: Portsuche §7.2 */
 K1520_API bool k1520_serial_start_auto(K1520Handle h, int i);  /* Wiederaufnahme §7.4a */
 K1520_API void k1520_serial_stop(K1520Handle h, int i);
@@ -656,6 +657,19 @@ AP-T1). Abdeckung der geänderten Zeilen C++ 91,2 → 93,3 %, Python 90,0 → 93
 Wächter verschärft. Befund bestätigt: `Z80SIO::rxIntEnabled()` liest WR1 D3–2 statt D4–3
 (WR1 = 13H gibt keinen Rx-Interrupt) — nicht behoben. Für T1b: die Befehle des Abdeckungsbaus
 stehen im Ergebnisabschnitt, `gcovr` braucht `--gcov-suspicious-hits-threshold 0`.
+
+**AP-S6 — erledigt 2026-10-01** (`1f3c585`). C-ABI §8 vollständig, dazu
+**`k1520_serial_get_config`** (Lesezugriff, den die Oberfläche braucht). `groesse`-Regel
+(Header + `10_c_api.md` §7): Ausgabe schreibt höchstens `groesse` Bytes und trägt die
+geschriebene Zahl zurück; Eingabe lässt Felder jenseits `groesse` unverändert; `< 4` →
+`false`; neue Felder nur hinten. `configure` weist ab: Index, **Port 0**, ungültige
+Aufzählung/Taktquelle, gesperrte Felder im Betrieb. Python (`app/core_binding/k1520.py`):
+`serial_count/info/fixed_names/config/configure(i, **felder)/start/start_auto/stop/status`
+(Datenklassen `SerialInfo/SerialKonfig/SerialStatus`, `None` bei ungültigem Index),
+Konstanten `SER_*`/`HOST_*`, `classify_host(s)`. **K8915 startet mit `loop=True`** —
+`serial_start` liefert dort `false`, bis der Loop aus ist (die Oberfläche muss das zeigen).
+Wächter `py_serial_api` (beide Maschinen, ~2 s), `test_c_api.py` vergleicht jetzt auch Felder
+der `K1520Ser*`-Strukturen und die Enum-Werte.
 
 ## 13. Offene Punkte
 
