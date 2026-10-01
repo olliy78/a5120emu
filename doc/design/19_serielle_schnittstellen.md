@@ -1,8 +1,9 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
 **Stand:** 2026-10-01, **abgeschlossen** — S1–S12, T1a, T1b erledigt (§12.1); Bildschirm- und
-Geräteprüfung durch den Anwender bestanden (2026-10-01). **Neu:** Testprogramm `SERTEST.COM`
-(§14, AP-ST1 … ST7) — spezifiziert, offen.
+Geräteprüfung durch den Anwender bestanden (2026-10-01). Testprogramm `SERTEST.COM`
+(§14, AP-ST1 … ST7) umgesetzt 2026-10-01; **Geräteprüfung von SERTEST durch den Anwender
+offen** (Checkliste `tools/sertest/README.md`, §14.11).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -831,7 +832,8 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 `tests/system/test_sertest.cpp` + `sertest_hilfen.h`; SIO-/CTC-Schicht; Prüfsteckertest +
 K7028-/CTSA nach Stromlaufplan; Protokoll, Gegenstelle, LEITUNGEN + ECHO mit zwei gekoppelten
 Maschinen, K8025 reicht RETI weiter; Flusssteuerung FLUSS-HW/FLUSS-XON, gekoppelt `SERTEST
-ENDE OK`); weiter mit ST7.
+ENDE OK`); **ST7 erledigt** (README mit Kabelbelegung und Checkliste, Merkposten). Offen
+ist nur die Geräteprüfung durch den Anwender (§14.10, §14.11).
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
@@ -1262,7 +1264,20 @@ Bauberührende APs nacheinander.
 | **ST4** ✔ | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine, gemessene Werte zusätzlich roh ausgeben) + **K7028 berichtigen**: /CTSA nach der Plan-Logik §14.5 (V107 in `setzeEingaenge` auswerten, Loop/Brücke: CTS = DTR), Wächter dafür + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
 | **ST5** ✔ | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
 | **ST6** ✔ | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
-| **ST7** | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
+| **ST7** ✔ | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
+
+**ST7 erledigt 2026-10-01.** Nur Dokumentation. `tools/sertest/README.md` abschließend:
+Bedienung, Ergebniszeilen-Vertrag, Annahmen mit **[bestätigen]**-Marken, **Kabel** —
+A5120 aus der Kontaktbelegung der K8025 (X6 103-13 vollständig: Prüfstecker A3–B4, A5–B6,
+B8–A7+A9; X3/X5 103-5: SD−/SD+/ED+/ED− an A1/B2/A3/B4) und A61 (`00_konfiguration.md`:
+DFÜ-IFSS Empfänger aktiv, Sender passiv; Drucker immer aktiv); K8915 nur, was der Plan
+hergibt (V.24 109 = Kartenkontakt A09, Drucker/IFSS1 103 = B03, IFSS2 SD+/SD−/ED−/ED+ an
+A01/B02/A03/B04 — **umgekehrte** Polarität gegenüber der K8025 auf denselben Kontakten),
+alles Übrige als leere Pin-Spalte; Paarung der Schnittstellen A5120 ↔ K8915 (Protokoll trägt
+keine Nummer: 1↔2 V.24, 2↔3 IFSS, Drucker nicht direkt koppelbar). **Checkliste der
+Geräteprüfung** (§14.11). Merkposten: SERTEST-Absätze aus ST3–ST6 in einen Abschnitt
+zusammengeführt; `CLAUDE.md` zwei Zeilen. Neu erkannt beim Zusammenstellen: ein falscher
+Baudtakt (W1:7, X7–X8, X14) fällt am Prüfstecker **nicht** auf, erst gegen die Gegenstelle.
 
 **ST6 erledigt 2026-10-01.** Flusssteuerung in `sertest.mac` (Tester `ECHOT` mit Modus,
 `NUTZB`; Gegenstelle `ECHOAB` mit `PAUSE`, `FLUSTE`, `FLUEND`), Bericht mit Bremszähler
@@ -1437,20 +1452,27 @@ Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
 
 ### 14.10 Offene Punkte
 
-1. Maschinenerkennung (Verfahren seit ST1 fest, §14.4): ist 40H–43H an einem A5120 in jeder
-   Ausbaustufe frei, trägt die SIO 1 des K8915 am Gerät einen RR2 ≠ FFH? (am Gerät; Abhilfe `/M:`)
-2. ~~WR1 D2 / WR2 der mit der Tastatur geteilten SIOs je BIOS~~ — geklärt in ST3 (§14.4):
-   A5120 A32 ohne Interrupt (D2 aus, WR2 nie gesetzt), K8915 SIO 2 WR1 B = 17H / WR2 = D0H.
-   Offen nur am Gerät: ob E4H (CP/A) bzw. FFC0H (SCPX) in allen BIOS-Fassungen frei sind, und
-   die Druckervorgabe der SCPX-Fassung 901 (8N1 statt 7O1 — SERTEST stellt 7O1 her).
-3. ~~CTS/DCD-Weg am K8915 über D13~~ — aus dem Stromlaufplan geklärt (§14.5), im Emulator
-   seit ST4 so nachgebildet; offen nur die Polarität der P184 (Annahme: invertierend) und die
-   Bestätigung am Gerät (SERTEST LEITUNGEN-LOOP gibt die Rohwerte aus), sobald eines läuft.
-5. Wickelbrücke **X14** (Auswahl B des Taktmultiplexers D13:02 → RxCA/TxCA der V.24):
-   X14:1 = Masse, X14:3 = +5 V über R1:07, X14:2 = Auswahleingang. Welche Stellung steckt,
-   bestimmt die Taktquelle der V.24 und damit, ob „CTC1 K0 für 9600" stimmt (Anwender, an der Karte).
-4. Steckerbelegung Prüfstecker und Nullmodemkabel je Gerät, IFSS aktiv/passiv (Anwender, ST7).
-6. **RETI bei anstehendem Interrupt weiter oben in der Kette** (Emulator, nicht beobachtet):
+Alle **[Gerät]**-Punkte klärt der Anwender mit der Checkliste §14.11 (Schritt in Klammern).
+Nummern bleiben stabil (Quelltext und Merkposten verweisen darauf).
+
+1. **[Gerät]** Maschinenerkennung: ist 40H–43H an einem A5120 in jeder Ausbaustufe frei, trägt die SIO 1
+   des K8915 einen RR2 ≠ FFH? Abhilfe bis dahin `/M:` (Schritt 1).
+2. **[Gerät]** Freie Vektoren **E4H** (CP/A) und **FFC0H** (SCPX 8915) in der BIOS-Fassung des Geräts
+   (Schritte 3a/3b) und die Druckervorgabe der SCPX-Fassung **901** (8N1 statt 7O1 — SERTEST
+   stellt 7O1 her; Schritt 5). ~~WR1 D2 / WR2 der mit der Tastatur geteilten SIOs~~ —
+   geklärt in ST3 (§14.4).
+3. **[Gerät]** Polarität der **P184** (Annahme invertierend) über die Rohzeilen von LEITUNGEN-LOOP am K8915
+   (Schritt 2a). ~~CTS/DCD-Weg am K8915 über D13~~ — aus dem Stromlaufplan geklärt (§14.5),
+   seit ST4 nachgebildet.
+4. **[Gerät]** Kabel: Pinbelegung der K8915-Rückwandbuchsen (Bauform, Pin je V.24-Signal bzw. SD/ED),
+   ob am A5120 eine Gehäusebuchse zwischen Karte und Kabel liegt, IFSS aktiv/passiv am K8915,
+   Polarität der IFSS-Schleifen, Prüfstecker für den beidseitig aktiven A5120-Drucker, „IFSS1"
+   am K8915-X3 (laut Plan nur V.24-Pegel). Tabellen mit **[bestätigen]** im README, *Kabel*.
+   ~~Steckerbelegung aus den Unterlagen~~ — eingetragen in ST7, soweit ableitbar.
+5. **[Gerät]** Wickelbrücke **X14** (Auswahl B des Taktmultiplexers D13:02 → RxCA/TxCA der V.24):
+   X14:1 = Masse, X14:3 = +5 V über R1:07, X14:2 = Auswahleingang. Die Stellung bestimmt, ob
+   „CTC1 K0 für 9600" stimmt (Schritte 0, 3); ebenso W1:7 und X7–X8 am A5120.
+6. **[Emulator, nicht beobachtet]** **RETI bei anstehendem Interrupt weiter oben in der Kette:**
    `K1520Bus::updateInterruptChain` sperrt das IEI aller nachrangigen Bausteine, sobald ein
    vorrangiger **anfordert**; ihr `onRETI` prüft dieses IEI. Bei Zilog geben anfordernde (nicht
    bediente) Bausteine IEO beim Dekodieren von ED wieder frei, damit der bediente das 4DH
@@ -1458,9 +1480,13 @@ Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
    verloren. In den SERTEST-Fällen liegen die geprüften SIOs vorn in ihrer Kette (A5120:
    K8025 vor der ZRE-CTC, darin A33 zuerst; K8915: SIO 1/2 vor den CTCs der K7028) — dort
    träfe es nur eine Anforderung der K5122. Aufgefallen beim Suchen des K8025-Fehlers (ST5).
-7. K8915 als Gegenstelle an der V.24: die RTS-Probe (§14.7 Schritt 1) ist am Gerät ein
-   Puls von einigen zehn µs alle ~64 ms — am Gerät gegenprüfen, dass ein Tester damit
-   leben kann (er wertet drei gleiche Lesungen). In FLUSS-HW, wo RTS die Bremse ist, läuft
-   keine Probe (sie löste die Bremse kurz): Spiegel und Probe laufen nur im Ruhezustand,
-   die Gegenstelle stellt am Ende des Abschnitts ihre Leitungen von vorher her — erledigt
-   ST6.
+7. **[Gerät]** K8915 als Gegenstelle an der V.24: die RTS-Probe (§14.7 Schritt 1, Puls von einigen zehn
+   µs alle ~64 ms) — am Gerät prüfen, dass ein Tester damit lebt (Schritt 3).
+   ~~Keine Probe während FLUSS-HW~~ — erledigt ST6.
+
+### 14.11 Geräteprüfung durch den Anwender
+
+Die Checkliste steht an **einer** Stelle: `tools/sertest/README.md`, Abschnitt
+„Geräteprüfung durch den Anwender" (Schritte 0–6, je Schritt Kommando, Erwartung und welcher
+offene Punkt aus §14.10 damit geklärt wird). Befunde hier in §14.10 und in den
+**[bestätigen]**-Stellen des README nachtragen.

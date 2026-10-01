@@ -113,35 +113,47 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   (Echo-Gast, Kontextzeiger, Belegung durch einen Transport, Abmelden),
   `…test_k8915_old_callback_pulls_the_loop_of_its_own_channel`.
 
-- **K7028 /CTSA = V107 ∧ (¬RTSA ∨ V106), /DCDA = V109** (Stromlaufplan, Entwurf 19 §14.5,
-  AP-ST4) — anders als an der K8025 (CTS = V106 ∧ V107). RTSA ist der EIGENE SIO-Ausgang:
-  die Karte bildet /CTSA deshalb auch nach jedem Schreiben in SIO 1 neu
-  (`K7028::bildeCtsA`), nicht nur in `setzeEingaenge`. Mit Loop/Brücke folgt CTS = **DTR**,
-  RTS ist am Prüfstecker nicht beobachtbar. Der Wandler bleibt davon unberührt (er liefert
-  weiter die Steckerpegel). Wächter `K7028Seriell.CtsANachPlanlogik`,
-  `…LoopLiefertCtsGleichDtr`, `Sertest.K8915_PruefsteckerMitLoopAnAllenSchnittstellenOk`.
-- **`Z80SIO`-Interrupts nach Datenblatt** (AP-ST3, Wächter in `test_sio.cpp`): RR2 von
-  Kanal B **lesen quittiert nicht** (`rr2Vektor()`, ohne Anforderung V3–V1 = 011) — vorher
-  stahl jedes Erfragen des Vektors unter DI der Tastatur des K8915 ihren Interrupt; bei
-  „jedes Zeichen" **bleibt die Anforderung stehen, solange der FIFO Zeichen hält**; Überlauf
-  = RR1 **D5**. Prüfprogramm dafür: `tools/sertest/` (Entwurf 19 §14).
+## SERTEST — Prüfprogramm für Gerät und Emulator (Entwurf 19 §14)
 
-- **Jede Karte muss `onRETI` an ihre Bausteine weiterreichen** (`InterruptSlave::onRETI`
-  ist leer vorgegeben). Der K8025 fehlte das bis AP-ST5: ein quittierter SIO-Interrupt der
-  DFÜ blieb für immer „under service", jeder weitere blieb aus — unbemerkt, weil CP/A
-  gepollt arbeitet. Prüft man Interruptempfang, **mehr Zeichen als FIFO (3) + 1** schicken,
-  sonst kommt alles auch mit einem einzigen Interrupt an. Wächter
-  `K8025.RetiGibtDenSioWiederFrei`, `Sertest.*EmpfaengtImInterrupt*` (8 Zeichen),
-  `SertestKopplung.*`. Offen (nicht beobachtet): RETI bei ANSTEHENDEM Interrupt weiter oben
-  in der Kette — Entwurf 19 §14.10 Punkt 6.
+`tools/sertest/` (`src/sertest.mac`, `build.py`, eingecheckte `sertest.com`, README mit
+Bedienung, Kabelbelegung und **Checkliste der Geräteprüfung**). Z80 unter CP/A und
+SCPX 8915: Prüfstecker (DATEN-LOOP, LEITUNGEN-LOOP) und Test gegen eine zweite Maschine
+(LEITUNGEN, ECHO, FLUSS-HW, FLUSS-XON). Wächter `Sertest.*` (eine Maschine, Loop),
+`SertestKopplung.*` (zwei Maschinen über RFC 2217; ein Fall in `tools/dev.sh test`, die
+übrigen in `test-format`), `cli_sertest_com_passt_zur_quelle` (`build.py --check`, ohne
+CPA_Workbench übersprungen).
 
-- **SERTEST FLUSS-HW/FLUSS-XON (AP-ST6)** prüfen die Bremse, nicht nur die Daten: ohne
-  Beobachtung blieben sie auch ohne Auto Enables grün — der Rückstau landete verlustfrei in
-  den 4-KiB-Puffern der Wandler. `SertestKopplung.*` sieht deshalb dem Wandler des Testers
-  zu (CTS aus ⇒ keine Bytes abgegeben; Gegenprobe ohne Auto Enables: 1361) und dem der
-  Gegenstelle (`xoffHalt` griff). „XON/XOFF beachten" am Wandler der Gegenstelle **nur**
-  während des Abschnitts X — ECHO/FLUSS-HW übertragen 13H als Daten. Berichtsformat mit
-  Bremszähler: Entwurf 19 §14.6.
+- **Ergebniszeilen sind ein Vertrag** (`SERTEST <name> <TEIL>: OK|FEHLER …|ENTFAELLT`,
+  `SERTEST ENDE …`); gelesen von `SertestProtokoll` (`tests/system/sertest_hilfen.h`), das
+  eine Zeile erst nach 500 000 Takten ununterbrochen im Bild gelten lässt — zeichenweise
+  Ausgabe und Rollen erzeugen zerrissene Zwischenbilder.
+- **`sertest.com` ist eingecheckt** (die CI hat M80/LINKMT nicht): nach jeder Änderung an
+  der Quelle `python3 tools/sertest/build.py` und die `.com` mitcommitten.
+- **K7028 /CTSA = V107 ∧ (¬RTSA ∨ V106), /DCDA = V109** (Stromlaufplan, §14.5) — anders als
+  K8025 (CTS = V106 ∧ V107). RTSA ist der EIGENE Ausgang: `K7028::bildeCtsA` läuft auch nach
+  jedem Schreiben in SIO 1. Mit Loop CTS = DTR, RTS am Prüfstecker unsichtbar. Darum
+  spiegelt die K8915-Gegenstelle „CTS bei gesetztem RTS" per kurzer RTS-Probe. Wächter
+  `K7028Seriell.CtsANachPlanlogik`, `…LoopLiefertCtsGleichDtr`.
+- **`Z80SIO`-Interrupts nach Datenblatt** (ST3, `test_sio.cpp`): RR2 B **lesen quittiert
+  nicht** (`rr2Vektor()`); bei „jedes Zeichen" bleibt die Anforderung stehen, solange der
+  FIFO Zeichen hält; Überlauf = RR1 **D5**.
+- **Jede Karte reicht `onRETI` an ihre Bausteine weiter** — der K8025 fehlte das bis ST5
+  (ein quittierter DFÜ-Interrupt blieb ewig „under service"; CP/A pollt, darum unbemerkt).
+  Interruptempfang mit **mehr Zeichen als FIFO + 1** prüfen. Wächter
+  `K8025.RetiGibtDenSioWiederFrei`, `Sertest.*EmpfaengtImInterrupt*` (8 Zeichen).
+  Offen: RETI bei anstehendem Interrupt weiter oben in der Kette (§14.10 Punkt 6).
+- **FLUSS-Teile prüfen die Bremse, nicht nur die Daten:** ohne Beobachtung blieben sie auch
+  ohne Auto Enables grün (der Rückstau landet verlustfrei in den 4-KiB-Puffern).
+  `SertestKopplung.*` sieht deshalb dem Wandler des Testers zu (CTS aus ⇒ 0 Bytes
+  abgegeben; Gegenprobe ohne Auto Enables: 1361) und dem der Gegenstelle (`xoffHalt`).
+  „XON/XOFF beachten" am Wandler der Gegenstelle **nur** während Abschnitt X — ECHO und
+  FLUSS-HW übertragen 13H als Daten.
+- **Zwei Maschinen in einem Test** (`test_sertest_kopplung.cpp`):
+  in gleichen Scheiben abwechselnd laufen lassen und auf ein Vielfaches der Echtzeit
+  drosseln — die Steuerleitungen laufen über die I/O-Fäden (Uhrzeit), nicht durch den
+  Rückstau; ungedrosselt sind Fristen von 2 s Maschinenzeit unter `ctest -j` zu kurz.
+- **Ohne Gegenstelle endet `T n /A` mit `SERTEST ENDE FEHLER`** — das ist richtig
+  (K8915 mit Loop: die eigene Ankündigung kommt zurück und gilt nicht).
 
 ## Tests schreiben
 
@@ -154,10 +166,6 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   BIOS-Sprungleiste (`[0001H] + 3` / `+ 6`) auf das Programm biegen, eine Taste
   drücken — fertig als Echo-Gast in `tests/python/serial_gast.py`. **Achtung:** bei „Bitte Uhrzeit eingeben!" ist die
   Seite 0 noch leer (`[0001H] = 0`) — erst am Prompt patchen.
-- **Zwei Maschinen mit Gästen, die auf LEITUNGEN warten** (SERTEST, `test_sertest_kopplung.cpp`):
-  in gleichen Scheiben abwechselnd laufen lassen und auf ein Vielfaches der Echtzeit
-  drosseln — die Steuerleitungen laufen über die I/O-Fäden (Uhrzeit), nicht durch den
-  Rückstau; ungedrosselt sind Fristen von 2 s Maschinenzeit unter `ctest -j` zu kurz.
 - **1× gegen 10×** abwechselnd in einem Faden (je Runde 1 ms gegen 10 ms Maschinenzeit),
   nicht mit Uhrdrosselung — unter Last verlöre die das Verhältnis.
 - **Fenster in GUI-Tests mit `_zu()` schließen** (`test_serial_gui.py`): sonst laufen

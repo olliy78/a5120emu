@@ -639,6 +639,8 @@ Reiter „Schnittstellen" im Einstellungen-Kasten (seit AP-S10, kein eigener Doc
 > - **Tests: nie feste Ports** (Port 0 bzw. freier Port, nur Loopback). Wächter u. a.
 >   `SerialWandler.*`, `SerialHub.*`, `SerielleKopplung.*` (64 KiB-Fassung in `test-format`),
 >   `py_serial_api`, `py_serial_gui`, `py_serial_pyserial`.
+> - **Prüfprogramm `SERTEST.COM`** (`tools/sertest/`, Entwurf 19 §14; `.com` eingecheckt): Wächter
+>   `Sertest.*`/`SertestKopplung.*` (lange Kopplungsfälle in `test-format`); Geräteprüfung offen.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 
