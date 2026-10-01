@@ -148,6 +148,9 @@ CPA_Workbench übersprungen).
   abgegeben; Gegenprobe ohne Auto Enables: 1361) und dem der Gegenstelle (`xoffHalt`).
   „XON/XOFF beachten" am Wandler der Gegenstelle **nur** während Abschnitt X — ECHO und
   FLUSS-HW übertragen 13H als Daten.
+- **Offene Gerätefragen** (X14, P184-Polarität, 40H–43H am A5120, freie Vektoren, Kabel,
+  RTS-Probe) stehen in Entwurf 19 **§14.10** und gesammelt mit den übrigen Anwenderfragen in
+  `doc/design/16_k8915.md` **§6 Punkt 24**. Befund dort UND in §14.10 nachtragen.
 - **Zwei Maschinen in einem Test** (`test_sertest_kopplung.cpp`):
   in gleichen Scheiben abwechselnd laufen lassen und auf ein Vielfaches der Echtzeit
   drosseln — die Steuerleitungen laufen über die I/O-Fäden (Uhrzeit), nicht durch den
