@@ -127,3 +127,14 @@ k1520_add_test(sertest SRC test_sertest.cpp
                        LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
                        LABELS "system;fast" DEFS LOG_LEVEL=2
                        K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com")
+# AP-ST5: Tester gegen Gegenstelle auf zwei gekoppelten Maschinen (RFC 2217, Loopback).
+# Ein schneller Fall (A5120 ↔ A5120 V.24) in der Standardregression, die übrigen
+# (je zwei Kaltstarts, K8915, gemischt, Gegenfall) unter format_integration.
+k1520_add_test(sertest_kopplung SRC test_sertest_kopplung.cpp
+                       LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                       LABELS "system;fast" DEFS LOG_LEVEL=2
+                       K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com")
+k1520_add_test(sertest_kopplung_lang SRC test_sertest_kopplung.cpp
+                       LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                       LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 SERTEST_KOPPLUNG_LANG=1
+                       K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com" TIMEOUT 300)

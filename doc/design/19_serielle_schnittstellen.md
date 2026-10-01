@@ -827,9 +827,10 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 
 ## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
 
-**Stand:** 2026-10-01, **AP-ST1 – AP-ST4 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
+**Stand:** 2026-10-01, **AP-ST1 – AP-ST5 erledigt** (Gerüst `tools/sertest/`, V0.1; Testgerüst
 `tests/system/test_sertest.cpp` + `sertest_hilfen.h`; SIO-/CTC-Schicht; Prüfsteckertest +
-K7028-/CTSA nach Stromlaufplan); weiter mit ST5.
+K7028-/CTSA nach Stromlaufplan; Protokoll, Gegenstelle, LEITUNGEN + ECHO mit zwei gekoppelten
+Maschinen, K8025 reicht RETI weiter); weiter mit ST6.
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
@@ -1096,6 +1097,36 @@ Bremse). Die Gegenstelle braucht deshalb Abschnitte, die der Tester ankündigt:
 
 Nutzdaten: Pseudozufallsfolge (LFSR mit festem Startwert), im Modus `X` ohne 11H/13H.
 
+**Festgelegt in ST5:**
+- **Prüfsumme `s`** = Summe (mod 256) aller Bytes **zwischen 1BH und `s`** — bei der
+  Ankündigung also `'S' + m + nL + nH` („die vier Bytes davor"), bei der Bestätigung
+  `'A' + m`, beim Bericht `'B' + m +` alle Felder.
+- **Bericht, erweiterbar:** `1BH 'B' m <Felder> s`, jedes Feld 16 Bit (L, H). **Wie viele
+  Felder folgen, legt der Modus fest** — der Tester liest genau so viele, wie der von ihm
+  angekündigte Modus vorsieht: `E` = `ue`; `H`/`X` (ST6) = `ue`, dahinter der
+  Bremszähler. Kein Längenbyte: der Tester kennt den Modus, und ein falsch gezählter
+  Bericht fällt an der Summe auf.
+- **Weckzeichen:** der Tester schickt vor der Ankündigung ein 00H und wartet 200 ms. Die
+  Gegenstelle meldet den ersten Empfangsinterrupt auf dem Bildschirm, und SCPX 8915 rollt
+  das Bild unter DI (≈ 16 ms, §14.9 ST3) — am Gerät liefe dabei der 3-Zeichen-FIFO der SIO
+  über, die Ankündigung käme verstümmelt an. Alles vor 1BH verwirft die Gegenstelle.
+- **Keine Bildschirmausgabe während einer Übertragung** (aus demselben Grund): die
+  Gegenstelle schreibt nur **vor** der Bestätigung (`Abschnitt E: 1000H Bytes`) und **nach**
+  dem Bericht (`Abschnitt fertig, Empfangsfehler 0000H`), der Tester erst nach dem Bericht.
+- **Fristen:** Tester — Bestätigung 3 s, Echo 2 s ohne Byte, Bericht 3 s; Gegenstelle —
+  Ankündigung 500 ms je Byte, Abschnitt 3 s ohne Byte (`Zeitueberlauf, zurueck in den
+  Ruhezustand.`). Fremdes vor `1BH 'A'` bzw. `1BH 'B'` übergeht der Tester — auch die
+  eigene Ankündigung, die an einem Prüfstecker zurückkommt (dann: Zeitüberlauf).
+- **LFSR:** 16-Bit-Galois, x¹⁶+x¹⁴+x¹³+x¹¹+1 (Maske B400H), Startwert **ACE1H**, je Nutzbyte
+  8 Schritte, Ausgabe = niederes Byte. Nur der Tester kennt die Folge (er vergleicht das
+  Echo); die Gegenstelle schickt zurück, was kommt.
+- **Modi in V0.1:** nur `E`. Eine Ankündigung `H`/`X` verwirft die Gegenstelle bis ST6
+  (`Ankuendigung verworfen.`), der Tester liefe in den Zeitüberlauf.
+- **Ergebnisgründe ECHO:** `SENDER BLOCKIERT`, `ZEITUEBERLAUF BESTAETIGUNG`, `BESTAETIGUNG
+  FALSCH`, `ZEITUEBERLAUF ECHO BEI nnnnH` (so viele kamen zurück), `ZEITUEBERLAUF BERICHT`,
+  `BERICHT FALSCH`, `FALSCH nnnnH` (abweichende Echos), `RR1 nnnnH` (eigene Empfangsfehler),
+  `GEGENSTELLE nnnnH` (`ue` laut Bericht).
+
 **Kabel:** Nullmodem — TxD↔RxD gekreuzt, RTS→CTS gekreuzt, DTR→DSR+DCD gekreuzt, Masse.
 IFSS: Sendeschleife des einen an die Empfangsschleife des anderen (aktiv/passiv nach Gerät).
 Die genaue Steckerbelegung je Gerät steht im README des Programms **[?]** (liefert der Anwender).
@@ -1109,6 +1140,28 @@ Die genaue Steckerbelegung je Gerät steht im README des Programms **[?]** (lief
    `Gegenstelle bestaetigt: JA/NEIN`, Erwartung aus derselben Tabelle wie §14.5 (über das
    Nullmodemkabel ist „eigenes RTS kommt als eigenes CTS zurück" dieselbe Logik wie am
    Prüfstecker, nur über den Umweg).
+   **Umgesetzt (ST5), mit drei Präzisierungen:**
+   - „CTS_ein → RTS_aus" heißt **Eingang → Ausgang**, nicht „CTS an ⇒ RTS aus": die
+     Gegenstelle setzt ihr RTS auf ihr CTS und ihr DTR auf ihr DCD (`LEISPI`).
+   - **Schrittfolge** `RTS/DTR` = 00 (Grundstellung), 01 (DTR setzen), 11 (RTS setzen),
+     01 (RTS wegnehmen), 00 (DTR wegnehmen): an der A5120 ist CTS = V106 ∧ V107, eine
+     RTS-Flanke ist dort nur bei gesetztem DTR sichtbar — die wörtliche Folge „RTS setzen,
+     wegnehmen, dann DTR" prüfte RTS gar nicht. Am K8915-Tester bestätigt Zeile 11 den
+     Rückweg (CTS = V107 ∧ (¬RTS ∨ V106) = gespiegeltes RTS).
+   - **K8915 als Gegenstelle — Widerspruch zur Tabelle §14.5 aufgelöst:** dort ist
+     CTS = V107 ∧ (¬RTS ∨ V106), hängt also am **eigenen** RTS. Wörtlich „RTS := CTS"
+     schwingt bei V107 = 1, V106 = 0 (RTS aus → CTS 1 → RTS an → CTS 0 → …) — genau im
+     Schritt 01. Schlüssig ist: gespiegelt wird **CTS bei gesetztem eigenem RTS**
+     (= V106 ∧ V107, wie an der K8025). Mit RTS an wird direkt gelesen; mit RTS aus setzt
+     die Gegenstelle alle ~64 ms für einige zehn µs RTS, liest und nimmt es zurück
+     („Probe"), dazwischen gilt CTS = 0. Den kurzen RTS-Puls sieht ein A5120-Tester nur bei
+     gesetztem DTR — er wertet deshalb erst **drei gleiche Lesungen im Abstand von 10 ms**
+     als Bestätigung (Frist 2 s je Schritt).
+   - Anzeige der Gegenstelle: `  CTS=c DCD=d` (das gespiegelte Paar, also beim K8915 das
+     geprobte CTS), nur bei Änderung. Tester je Schritt
+     `  RTS=r DTR=d  CTS=c DCD=d  erwartet  CTS=c DCD=d  Gegenstelle bestaetigt: JA|NEIN`,
+     ohne `/A` davor „Weiter mit beliebiger Taste."; Ergebnis `OK` bzw. `FEHLER RTS=r DTR=d`
+     (erster unbestätigter Schritt). Danach RTS + DTR wieder an.
 2. **ECHO:** Ankündigung `E`, 4096 Nutzbytes, 9600 8N1; der Tester sendet und empfängt
    gleichzeitig (polled), vergleicht das Echo Byte für Byte, wertet den Bericht aus.
    Die Gegenstelle empfängt **per Interrupt** in einen Ringpuffer (256 B), das Hauptprogramm
@@ -1146,6 +1199,9 @@ Am Ende jedes Teils die Ergebniszeile §14.3.
     Telnet taugt nur für ECHO/FLUSS-XON (keine Leitungen).
   - Schnelle Fälle in die Standardregression (Ziel < 5 s je Fall), lange (Kopplung mit Boot
     beider Maschinen) unter `format_integration` → `tools/dev.sh test-format`.
+  - Umgesetzt (ST5): `SertestKopplung.*` (`tests/system/test_sertest_kopplung.cpp`), zwei
+    Binaries aus einer Quelle — `A5120_V24_LeitungenUndEcho` in der Standardregression
+    (`system;fast`, ~3 s), die übrigen unter `format_integration` (`…_lang`).
   - Umgesetzt (ST2): Suite `Sertest.*`, Label `system;fast` — läuft also in der
     Standardregression mit, obwohl sie in `tests/system/` liegt (ein Boot bis zum Prompt
     kostet 1–2 s). Pfad der `.com` über die Definition `K1520_SERTEST_COM`.
@@ -1162,7 +1218,7 @@ Bauberührende APs nacheinander.
 | **ST2** ✔ | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
 | **ST3** ✔ | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
 | **ST4** ✔ | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine, gemessene Werte zusätzlich roh ausgeben) + **K7028 berichtigen**: /CTSA nach der Plan-Logik §14.5 (V107 in `setzeEingaenge` auswerten, Loop/Brücke: CTS = DTR), Wächter dafür + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
-| **ST5** | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
+| **ST5** ✔ | Protokoll §14.6, Gegenstelle (Auswahl einer Schnittstelle, Leitungsspiegel mit Anzeige, Interrupt-Empfang + einmalige Meldung, Echo), Tester-Schritte LEITUNGEN + ECHO + Tests mit zwei gekoppelten Maschinen (RFC 2217) | ST4 | L |
 | **ST6** | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
 | **ST7** | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
 
@@ -1185,6 +1241,41 @@ Bauberührende APs nacheinander.
 - Im Emulator geprüft: interaktiv T/G mit J/N-Folge, `T n /A`, `G n` + Ctrl+C, Ctrl+C an der
   T/G-Frage, `SERTEST X` und `T 4` → Kurzhilfe, `/M:K` am A5120; danach `DIR` bedienbar.
   K8915-Kaltstart: `<ENTER>` an „Coldstart … --> <ENTER>", dann Autostart `rade` abwarten.
+
+**ST5 erledigt 2026-10-01.** Protokoll §14.6, Gegenstelle und Tester-Schritte LEITUNGEN + ECHO
+in `sertest.mac` (`GEGTST` → `LEITG`, `ECHOT`; Gegenstelle `GE_RUH` → `LEISPI`, `ANKLES`,
+`ECHOAB`; Pakete `SENDPK`/`EMPPK`, `LFSR`). `.com` jetzt 6,1 KB. Festlegungen in §14.6
+(„Festgelegt in ST5") und §14.7 Schritt 1. Erkenntnisse:
+- **Emulatorfehler K8025: kein RETI.** `K8025` überschrieb `InterruptSlave::onRETI` nicht —
+  das RETI kam bei keinem ihrer Bausteine (SIO A33, SIO A32, CTC A34) an, ein einmal
+  quittierter Interrupt blieb für immer „under service". Symptom: die Gegenstelle am A5120
+  meldete `SERTEST INTERRUPT OK`, empfing danach aber nur noch, was in den FIFO passte
+  (4 Bytes: 1 abgeholt + 3). Der ST3-Fall `A5120_DfueV24EmpfaengtImInterrupt` schickte
+  genau 4 Zeichen und bemerkte es deshalb nicht. Behoben (`K8025::onRETI` reicht an alle
+  drei weiter), Wächter `K8025.RetiGibtDenSioWiederFrei` (rot ohne den Fix); die beiden
+  A5120-Interruptfälle aus ST3 schicken jetzt 8 Zeichen (der Druckerfall wird ohne Fix rot).
+  CP/A betreibt die Kanäle gepollt — deshalb fiel es vorher nie auf.
+- **Leitungsspiegel ohne Kabel:** an der V.24 spiegelt die Gegenstelle „alles aus" — der
+  ST3-Fall `…GegenstelleProgrammiert9600_8N1…` erwartet dort jetzt `rts=0 dtr=0` (A5120,
+  kein Kabel) bzw. `rts=1 dtr=1` (K8915, Loop = CTS/DCD an).
+- **K8915: Loop beim Koppeln.** Der K8915 startet mit Loop an (§6.5); `start` wird dann
+  abgewiesen — der Kopplungstest prüft das ausdrücklich und schaltet den Loop vorher ab.
+- **Uhr gegen Maschinenzeit:** Daten laufen mit Rückstau durch die Wandler, die
+  Steuerleitungen aber über die I/O-Fäden (Uhrzeit). Die Paarschleife des Tests lässt beide
+  Maschinen in gleichen Scheiben (10 000 Takte) abwechselnd laufen und drosselt auf ≤ 8×
+  Echtzeit; ohne Drossel lägen die 2-s-Fristen unter `ctest -j` in der Größenordnung einer
+  Faden-Weckzeit.
+- `SertestA5120`/`SertestK8915`: `lauf(takte)` (gleiche Scheiben trotz verschiedener
+  Schrittweiten 5 000 / 100 000), `erfasse()`, `takt()`.
+- Tests (Laufzeit einzeln, ohne Last): Standardregression `A5120_V24_LeitungenUndEcho`
+  2,8 s; `format_integration`: `A5120_Ifss_Echo` 2,6 s, `K8915_V24UndIfss2` 6,8 s (V.24 mit der
+  K8915-Probe, dann DFÜ/IFSS2 an der Tastatur-SIO), `A5120_K8915_V24_BeideRichtungen` 6,5 s
+  (A5120-Tester sieht jede RTS-Flanke der K8915-Gegenstelle; dann umgekehrt),
+  `OhneGegenstelleZeitueberlauf` 3,2 s (V.24 `FEHLER RTS=…`, ECHO `FEHLER ZEITUEBERLAUF
+  BESTAETIGUNG`, danach `DIR`). Je 3× unter `-j16` wiederholt: grün.
+  `TesterAutomatikLiefertErgebniszeilen`: ECHO jetzt `FEHLER ZEITUEBERLAUF BESTAETIGUNG`
+  (A5120 ohne Kabel; K8915 mit Loop — die eigene Ankündigung kommt zurück und gilt nicht),
+  FLUSS-XON weiter `NICHT EINGEBAUT`, Ende FEHLER.
 
 **ST4 erledigt 2026-10-01.** Prüfsteckertest in `sertest.mac` (`PRUEFS` → `DLOOP`, `LLOOP`),
 K7028 berichtigt (§14.5). Erkenntnisse/Abweichungen:
@@ -1290,3 +1381,16 @@ Hilfen für ST4–ST6 (`tests/system/sertest_hilfen.h`, Namensraum `sertest`):
    X14:1 = Masse, X14:3 = +5 V über R1:07, X14:2 = Auswahleingang. Welche Stellung steckt,
    bestimmt die Taktquelle der V.24 und damit, ob „CTC1 K0 für 9600" stimmt (Anwender, an der Karte).
 4. Steckerbelegung Prüfstecker und Nullmodemkabel je Gerät, IFSS aktiv/passiv (Anwender, ST7).
+6. **RETI bei anstehendem Interrupt weiter oben in der Kette** (Emulator, nicht beobachtet):
+   `K1520Bus::updateInterruptChain` sperrt das IEI aller nachrangigen Bausteine, sobald ein
+   vorrangiger **anfordert**; ihr `onRETI` prüft dieses IEI. Bei Zilog geben anfordernde (nicht
+   bediente) Bausteine IEO beim Dekodieren von ED wieder frei, damit der bediente das 4DH
+   sieht. Fordert während einer ISR ein vorrangiger Baustein an, ginge im Emulator das RETI
+   verloren. In den SERTEST-Fällen liegen die geprüften SIOs vorn in ihrer Kette (A5120:
+   K8025 vor der ZRE-CTC, darin A33 zuerst; K8915: SIO 1/2 vor den CTCs der K7028) — dort
+   träfe es nur eine Anforderung der K5122. Aufgefallen beim Suchen des K8025-Fehlers (ST5).
+7. K8915 als Gegenstelle an der V.24: die RTS-Probe (§14.7 Schritt 1) ist am Gerät ein
+   Puls von einigen zehn µs alle ~64 ms — am Gerät gegenprüfen, dass ein Tester damit
+   leben kann (er wertet drei gleiche Lesungen). Für ST6: der Spiegel läuft nur im
+   Ruhezustand — in FLUSS-HW, wo RTS die Bremse ist, darf keine Probe laufen (sie löste
+   die Bremse kurz).

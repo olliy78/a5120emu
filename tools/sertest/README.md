@@ -6,13 +6,12 @@ Gerät mit Prüfstecker bzw. Nullmodemkabel, im Emulator gegen den Rx/Tx-Loop bz
 einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md`
 **§14**.
 
-> **Stand V0.1 (AP-ST4):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
+> **Stand V0.1 (AP-ST5):** Gerüst (Kopfzeile, Kommandozeile, Maschinenerkennung,
 > Schnittstellenliste, Rollenwahl, J/N-Abfragen, Ctrl+C), SIO-/CTC-Schicht (9600 8N1 für
-> die Dauer der Prüfung, danach BIOS-Vorgabe; die Gegenstelle hängt sich in den
-> Empfangsinterrupt und meldet den ersten mit `SERTEST INTERRUPT OK`) und der
-> **Prüfsteckertest** (DATEN-LOOP, LEITUNGEN-LOOP). Die Gegenstellen-Teile folgen ab
-> AP-ST5; bis dahin melden sie `FEHLER NICHT EINGEBAUT` (ein Test, der nicht läuft,
-> meldet nie `OK`).
+> die Dauer der Prüfung, danach BIOS-Vorgabe), **Prüfsteckertest** (DATEN-LOOP,
+> LEITUNGEN-LOOP) und **Test mit Gegenstelle** (LEITUNGEN, ECHO; Gegenstelle mit
+> Leitungsspiegel und Echo). FLUSS-HW/FLUSS-XON folgen in AP-ST6; bis dahin melden sie
+> `FEHLER NICHT EINGEBAUT` (ein Test, der nicht läuft, meldet nie `OK`).
 
 ## Bedienung
 
@@ -78,6 +77,58 @@ SERTEST ENDE OK | SERTEST ENDE FEHLER
   RTS-Treiber aber schon in Zeile 11). Im Fehlerfall `FEHLER RTS=r DTR=d` (erste
   abweichende Kombination).
 
+## Test mit Gegenstelle
+
+Zwei Rechner über ein Nullmodemkabel (IFSS: Sendeschleife an Empfangsschleife), auf dem
+einen `SERTEST G n`, auf dem anderen `SERTEST T n` (bzw. `T n /G /A`) — **dieselbe
+Schnittstelle** auf beiden Seiten. Zuerst die Gegenstelle starten.
+
+**Gegenstelle** (`G n`, läuft bis Ctrl+C):
+
+```
+Gegenstelle an DFUE/V.24 bereit.
+  CTS=0 DCD=0                     an V.24: die Eingänge, nur bei Änderung
+Empfangsinterrupt ausgeloest      beim ersten Zeichen, einmal
+SERTEST INTERRUPT OK
+Abschnitt E: 1000H Bytes          Ankündigung des Testers angenommen
+Abschnitt fertig, Empfangsfehler 0000H
+```
+
+- **Ruhezustand:** Empfang im Interrupt in einen Ringpuffer (256 B); an der V.24 ein
+  **Leitungsspiegel**: das eigene RTS folgt dem CTS, das eigene DTR dem DCD. Über das
+  Nullmodemkabel sieht der Tester so sein RTS als CTS und sein DTR als DSR + DCD wieder.
+  Am K8915 hängt CTS am eigenen RTS (K7028: CTS = V107 ∧ (¬RTS ∨ V106)); dort setzt die
+  Gegenstelle bei weggenommenem RTS alle ~64 ms kurz RTS, um das CTS der Gegenseite zu
+  lesen („Probe").
+- **Abschnitt E:** nach der Ankündigung des Testers kommt alles Empfangene aus dem
+  Hauptprogramm zurück; danach ein Bericht mit den eigenen Empfangsfehlern, dann wieder
+  Ruhezustand. Verstümmelte Ankündigungen werden verworfen (`Ankuendigung verworfen.`),
+  3 s ohne Byte → `Zeitueberlauf, zurueck in den Ruhezustand.`
+
+**Tester:**
+
+- **LEITUNGEN** (nur V.24, an IFSS `ENTFAELLT`): RTS/DTR in der Folge 00, 01, 11, 01, 00
+  (Grundstellung, DTR setzen, RTS setzen, RTS weg, DTR weg), ohne `/A` je Schritt nach
+  einer Taste; je Schritt eine Zeile
+
+  ```
+    RTS=1 DTR=1  CTS=1 DCD=1  erwartet  CTS=1 DCD=1  Gegenstelle bestaetigt: JA
+  ```
+
+  Erwartung wie am Prüfstecker (Tabelle oben); bestätigt = drei gleiche Lesungen im
+  Abstand von 10 ms innerhalb von 2 s. Fehler `FEHLER RTS=r DTR=d` (erster unbestätigter
+  Schritt).
+- **ECHO** (V.24 und IFSS): 4096 Bytes (Pseudozufallsfolge) senden und gleichzeitig das
+  Echo Byte für Byte vergleichen, dann den Bericht der Gegenstelle auswerten. Gründe:
+  `ZEITUEBERLAUF BESTAETIGUNG` (keine Gegenstelle — auch, wenn ein Prüfstecker steckt),
+  `ZEITUEBERLAUF ECHO BEI nnnnH`, `FALSCH nnnnH`, `RR1 nnnnH`, `GEGENSTELLE nnnnH`,
+  `ZEITUEBERLAUF BERICHT`, `BESTAETIGUNG FALSCH`, `BERICHT FALSCH`, `SENDER BLOCKIERT`.
+
+**Protokoll** (Entwurf 19 §14.6): Weckzeichen 00H + 200 ms Pause, Ankündigung
+`1BH 'S' m nL nH s`, Bestätigung `1BH 'A' m s`, n Nutzbytes, Bericht `1BH 'B' m ueL ueH s`;
+`s` = Summe der Bytes zwischen 1BH und s. Während der Übertragung schreibt keine Seite
+auf den Bildschirm (SCPX 8915 rollt unter DI).
+
 ## Maschinenerkennung
 
 Nur lesend, bzw. schreibend nur in das Steuerregister einer SIO, die sich vorher
@@ -133,7 +184,9 @@ python3 tools/sertest/build.py --out x.com   # Temp-Bau nach x.com
 
 `--check` ist der ctest-Wächter `cli_sertest_com_passt_zur_quelle`; ohne Werkzeugkette
 endet er mit 77 (= übersprungen). Die Emulatortests stehen in
-`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`).
+`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`) und, mit zwei gekoppelten
+Maschinen, in `tests/system/test_sertest_kopplung.cpp` (`SertestKopplung.*`; ein Fall in
+`tools/dev.sh test`, die übrigen in `tools/dev.sh test-format`).
 
 M80 + LINKMT aus `~/projects/CPA_Workbench/tools` über `cparun`, Ladeadresse
 0100H; Pfad überschreibbar mit `CPA_TOOLS=<pfad>`. Das Skript bricht ab, wenn M80

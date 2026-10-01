@@ -93,10 +93,12 @@ void pruefeCtrlCGegenstelle(S& s, const std::string& schnittstelle) {
     EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
 }
 
-/// `sertest t <n> /a`: Ergebniszeilen nach §14.3 bis `SERTEST ENDE`.  Die Gegenstellen-
-/// Teile sind bis AP-ST5 Platzhalter (`FEHLER NICHT EINGEBAUT`), der DATEN-LOOP hängt am
-/// Loop der Maschine (A5120 aus, K8915 an) — geprüft wird das Format, und dass ein für
-/// IFSS nicht geltender Teil `ENTFAELLT` meldet.
+/// `sertest t <n> /a`: Ergebniszeilen nach §14.3 bis `SERTEST ENDE`.  Ohne Gegenstelle
+/// (A5120: kein Kabel; K8915: Loop an — die eigene Ankündigung kommt zurück und darf
+/// nicht als Bestätigung gelten) meldet ECHO den Zeitüberlauf der Bestätigung; FLUSS-*
+/// sind bis AP-ST6 Platzhalter (`FEHLER NICHT EINGEBAUT`); der DATEN-LOOP hängt am Loop
+/// der Maschine (A5120 aus, K8915 an).  Geprüft wird das Format, und dass ein für IFSS
+/// nicht geltender Teil `ENTFAELLT` meldet.
 template <class S>
 void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) {
     ASSERT_TRUE(s.fehler().empty()) << s.fehler();
@@ -109,13 +111,16 @@ void pruefeErgebniszeilen(S& s, const std::string& nr, const std::string& ifss) 
         EXPECT_TRUE(p.wert(ifss, teil)) << teil << "\n" << p.text();
     EXPECT_EQ(p.wert(ifss, "LEITUNGEN-LOOP").value_or("-"), "ENTFAELLT") << p.text();
     EXPECT_EQ(p.wert(ifss, "FLUSS-HW").value_or("-"), "ENTFAELLT") << p.text();
+    EXPECT_EQ(p.wert(ifss, "LEITUNGEN").value_or("-"), "ENTFAELLT") << p.text();
     for (const Zeile& z : p.zeilen()) {
         if (z.teil == "ENDE") continue;
         EXPECT_EQ(z.name, ifss) << z.roh;
         EXPECT_TRUE(z.wert == "OK" || z.wert == "ENTFAELLT" || z.wert.rfind("FEHLER ", 0) == 0) << z.roh;
     }
-    // Solange ein Teil nicht eingebaut ist, darf das Ende nicht OK heißen.
-    EXPECT_EQ(p.wert(ifss, "ECHO").value_or("-"), "FEHLER NICHT EINGEBAUT") << p.text();
+    // Ohne Gegenstelle: Zeitüberlauf; solange ein Teil nicht eingebaut ist, darf das
+    // Ende ohnehin nicht OK heißen.
+    EXPECT_EQ(p.wert(ifss, "ECHO").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << p.text();
+    EXPECT_EQ(p.wert(ifss, "FLUSS-XON").value_or("-"), "FEHLER NICHT EINGEBAUT") << p.text();
     EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
 }
 
@@ -220,12 +225,13 @@ template <class S>
 SerialStatus hubStatus(S& s, int i) { return s.maschine().serialHub()->status(i); }
 
 /// `sertest g <n>` für jede Schnittstelle nacheinander: während der Gegenstelle steht der
-/// Kanal auf 9600 8N1 (V.24 zusätzlich mit RTS und DTR — an IFSS meldet der Wandler keine
-/// Leitungen), nach Ctrl+C auf der BIOS-Vorgabe @p vorgabe[n-1] (leer = unverändert
+/// Kanal auf 9600 8N1 mit den Leitungen @p waehrend[n-1] (an IFSS meldet der Wandler keine;
+/// an V.24 spiegelt die Gegenstelle ihre Eingänge — ohne Kabel alles aus, mit Loop
+/// RTS/DTR an), nach Ctrl+C auf der BIOS-Vorgabe @p vorgabe[n-1] (leer = unverändert
 /// gegenüber vorher).  Zuletzt `DIR` — die Tastatur lebt noch.
 template <class S>
 void pruefeProgrammierungUndVorgabe(S& s, const std::vector<std::string>& namen,
-                                    const std::vector<bool>& v24,
+                                    const std::vector<std::string>& waehrend,
                                     const std::vector<std::string>& vorgabe) {
     ASSERT_TRUE(s.fehler().empty()) << s.fehler();
     ASSERT_TRUE(s.kaltstart()) << s.bild();
@@ -235,8 +241,7 @@ void pruefeProgrammierungUndVorgabe(S& s, const std::vector<std::string>& namen,
         s.tippe("sertest g " + std::to_string(i + 1) + "\r");
         ASSERT_TRUE(s.bis("Gegenstelle an " + namen[i] + " bereit.", kFrist)) << s.bild();
         for (int k = 0; k < 20; ++k) s.lauf();
-        EXPECT_EQ(format(hubStatus(s, static_cast<int>(i))),
-                  v24[i] ? "9600 8N1 rts=1 dtr=1" : "9600 8N1 rts=0 dtr=0");
+        EXPECT_EQ(format(hubStatus(s, static_cast<int>(i))), waehrend[i]);
         s.ctrlC();
         ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
         const std::string nachher = format(hubStatus(s, static_cast<int>(i)));
@@ -271,7 +276,9 @@ void pruefeInterrupt(S& s, int nr, const std::string& name, uint16_t seite) {
     EXPECT_FALSE(s.protokoll().wert("", "INTERRUPT")) << s.protokoll().text();
     auto& w = hub->wandler(i);
     w.anbinden();
-    const uint8_t zeichen[] = {'x', 'y', 0x00, 0xFF};
+    // Mehr Zeichen als SIO-FIFO (3) + ein Interrupt: bis AP-ST5 reichte die K8025 das
+    // RETI nicht weiter, vier Zeichen kamen trotzdem alle an (1 abgeholt + 3 im FIFO).
+    const uint8_t zeichen[] = {'x', 'y', 0x00, 0xFF, 'a', 'b', 0x1B, 0x55};
     ASSERT_EQ(w.fernGib(zeichen, sizeof zeichen), sizeof zeichen);
     ASSERT_TRUE(s.bis("SERTEST INTERRUPT OK", kFrist)) << s.bild();
     for (int r = 0; r < 200 && hubStatus(s, i).bytes_empfangen < sizeof zeichen; ++r) s.lauf();
@@ -374,7 +381,9 @@ TEST(Sertest, A5120_CtrlCImDatenLoopLaesstSystemBedienbar) {
 
 TEST(Sertest, A5120_GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer) {
     SertestA5120 s;
-    pruefeProgrammierungUndVorgabe(s, {"DFUE/V.24", "DFUE/IFSS", "Drucker"}, {true, false, false},
+    // V.24 ohne Kabel: Leitungsspiegel → RTS/DTR aus.
+    pruefeProgrammierungUndVorgabe(s, {"DFUE/V.24", "DFUE/IFSS", "Drucker"},
+                                   {"9600 8N1 rts=0 dtr=0", "9600 8N1 rts=0 dtr=0", "9600 8N1 rts=0 dtr=0"},
                                    {"9600 8N1 rts=1 dtr=1", "", "9600 7O1 rts=0 dtr=0"});
 }
 
@@ -437,7 +446,10 @@ TEST(Sertest, K8915_CtrlCImDatenLoopLaesstSystemBedienbar) {
 
 TEST(Sertest, K8915_GegenstelleProgrammiert9600_8N1UndStelltDieBiosVorgabeHer) {
     SertestK8915 s;
-    pruefeProgrammierungUndVorgabe(s, {"Drucker/IFSS1", "V.24", "DFUE/IFSS2"}, {false, true, false},
+    // V.24 mit Loop (Vorgabe am K8915): der Spiegel hält RTS/DTR an (CTS = V106 ∧ V107 bei
+    // gesetztem RTS, DCD = DTR).
+    pruefeProgrammierungUndVorgabe(s, {"Drucker/IFSS1", "V.24", "DFUE/IFSS2"},
+                                   {"9600 8N1 rts=0 dtr=0", "9600 8N1 rts=1 dtr=1", "9600 8N1 rts=0 dtr=0"},
                                    {"9600 7O1 rts=0 dtr=0", "", ""});
 }
 

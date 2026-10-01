@@ -159,6 +159,17 @@ public:
      */
     uint8_t getVector() const override;
 
+    /**
+     * @brief RETI an die Bausteine weiterreichen (SIO A33, SIO A32, CTC A34).
+     *
+     * Bis AP-ST5 (2026-10-01) fehlte diese Überschreibung: das RETI kam bei keinem
+     * Baustein der Karte an, ein einmal quittierter SIO-/CTC-Interrupt blieb für immer
+     * „under service" — jeder weitere Empfangsinterrupt der DFÜ blieb aus.  CP/A
+     * betreibt die Kanäle gepollt (nur ein UC1:-Treiber nutzt den Interrupt), deshalb
+     * fiel es erst mit SERTEST.COM auf.  Wächter `K8025.RetiGibtDenSioWiederFrei`.
+     */
+    void    onRETI() override;
+
     /// @brief Anfordernder Baustein (Debugger): SIO A33 (DFÜ), SIO A32 (Tastatur) oder CTC A34.
     const char* intDeviceName() const override {
         if (sio_dfue_.hasInterrupt())         return "K8025 SIO-A33 (DFUE)";

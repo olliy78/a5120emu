@@ -19,9 +19,13 @@
 ; AP-ST4: Pruefsteckertest (14.5) - DATEN-LOOP (256 Zeichen 00H-FFH, Echo mit
 ; Zeitueberlauf, RR1-Fehler) und LEITUNGEN-LOOP (nur V.24: RTS/DTR in allen
 ; vier Kombinationen, CTS/DCD gegen die Erwartungstabelle der Maschine, Werte
-; zusaetzlich roh). Die Gegenstellen-Teile (Protokoll) folgen in AP-ST5 ff.;
-; bis dahin melden sie "FEHLER NICHT EINGEBAUT" - ein Test, der nicht laeuft,
-; darf nicht OK melden.
+; zusaetzlich roh).
+; AP-ST5: Protokoll Tester <-> Gegenstelle (14.6: Ankuendigung 1BH 'S' m nL nH s,
+; Bestaetigung 1BH 'A' m s, n Nutzbytes aus dem LFSR, Bericht 1BH 'B' m ueL ueH s),
+; Gegenstelle (Ruhezustand = Leitungsspiegel + Interrupt-Empfang, Abschnitt E =
+; Echo aus dem Hauptprogramm), Tester-Schritte LEITUNGEN und ECHO (14.7).
+; FLUSS-HW/FLUSS-XON folgen in AP-ST6; bis dahin "FEHLER NICHT EINGEBAUT" - ein
+; Test, der nicht laeuft, darf nicht OK melden.
 ;
 ; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
 ;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
@@ -418,31 +422,12 @@ LLOOP:	LD	DE, M_LLLA
 	XOR	A
 	LD	(LLFEH), A
 	LD	(DLZ), A		; Kombination: D0 = RTS, D1 = DTR
-LL_LP:	LD	A, (DLZ)
-	LD	B, 0
-	RRA
-	JR	NC, LL_1
-	LD	B, W5_RTS
-LL_1:	RRA
-	LD	A, B
-	JR	NC, LL_2
-	OR	W5_DTR
-LL_2:	CALL	SETLEI
+LL_LP:	CALL	KOMLEI
 	LD	DE, 10
 	CALL	WARTE
 	CALL	LIESLEI
 	LD	(LLRR0), A
-	LD	HL, LLE_A		; Erwartung der Maschine
-	LD	A, (MASCH)
-	CP	M_A5120
-	JR	Z, LL_3
-	LD	HL, LLE_K
-LL_3:	LD	A, (DLZ)
-	LD	E, A
-	LD	D, 0
-	ADD	HL, DE
-	LD	A, (HL)
-	LD	(LLERW), A
+	CALL	KOMERW
 	; "  RTS=r DTR=d  CTS=c DCD=d  erwartet  CTS=c DCD=d  RR0=xxH"
 	LD	DE, M_LEIN
 	CALL	PUTS
@@ -489,6 +474,34 @@ LL_OK:	CALL	CRLF
 	CALL	ERGFE0
 	CALL	PUTRD
 	JP	CRLF
+
+; KOMLEI - RTS/DTR nach der Kombination (DLZ): D0 = RTS, D1 = DTR.
+KOMLEI:	LD	A, (DLZ)
+	LD	B, 0
+	RRA
+	JR	NC, KL_1
+	LD	B, W5_RTS
+KL_1:	RRA
+	LD	A, B
+	JR	NC, KL_2
+	OR	W5_DTR
+KL_2:	JP	SETLEI
+
+; KOMERW - LLERW = erwartetes CTS/DCD der Kombination (DLZ) nach der Tabelle
+; der Maschine (LLE_A/LLE_K, Spezifikation 14.5) - am Pruefstecker wie ueber
+; Nullmodemkabel und gespiegelte Gegenstelle (14.7).
+KOMERW:	LD	HL, LLE_A
+	LD	A, (MASCH)
+	CP	M_A5120
+	JR	Z, KE_1
+	LD	HL, LLE_K
+KE_1:	LD	A, (DLZ)
+	LD	E, A
+	LD	D, 0
+	ADD	HL, DE
+	LD	A, (HL)
+	LD	(LLERW), A
+	RET
 
 ; PUTRD - "RTS=r DTR=d" der Kombination (DLZ).
 PUTRD:	LD	DE, M_LRTS
@@ -541,13 +554,17 @@ PUTNIB:	AND	0FH
 	JP	PUTC
 
 ; -----------------------------------------------------------------------------
-; GEGTST - Test mit Gegenstelle (14.7). V0.1: nur das Geruest.
+; GEGTST - Test mit Gegenstelle (14.7): LEITUNGEN (nur V.24), ECHO; FLUSS-HW
+; und FLUSS-XON folgen in AP-ST6 (bis dahin "FEHLER NICHT EINGEBAUT").
 ; -----------------------------------------------------------------------------
-GEGTST:
+GEGTST:	CALL	IFART
+	CP	ART_V24
+	JR	Z, GT_1
 	LD	HL, T_LEIT
-	CALL	ERGV24
-	LD	HL, T_ECHO
-	CALL	ERGNE
+	CALL	ERGENT
+	JR	GT_2
+GT_1:	CALL	LEITG
+GT_2:	CALL	ECHOT
 	LD	HL, T_FLHW
 	CALL	ERGV24
 	LD	HL, T_FLXO
@@ -558,9 +575,385 @@ ERGV24:	CALL	IFART
 	CP	ART_V24
 	JP	NZ, ERGENT
 	; faellt durch
-; ERGNE - Teil HL: "FEHLER NICHT EINGEBAUT" (Platzhalter bis AP-ST4 ff.)
+; ERGNE - Teil HL: "FEHLER NICHT EINGEBAUT" (Platzhalter bis AP-ST6)
 ERGNE:	LD	DE, G_NEIN
 	JP	ERGFEH
+
+; LEITG - LEITUNGEN ueber die Gegenstelle (14.7 Schritt 1, nur V.24). Die
+; Gegenstelle spiegelt ihre Eingaenge auf ihre Ausgaenge (CTS -> RTS, DCD ->
+; DTR); ueber das Nullmodemkabel kommt damit das eigene RTS als CTS, das
+; eigene DTR als DSR + DCD zurueck - dieselbe Erwartung wie am Pruefstecker
+; (LLE_A/LLE_K). Schritte (LGSEQ): Grundstellung 00, DTR setzen, RTS setzen,
+; RTS wegnehmen, DTR wegnehmen - so, dass an der A5120 (CTS = V106 AND V107)
+; jede Flanke von RTS sichtbar ist. Je Schritt (ohne /A nach einer Taste)
+; hoechstens 2 s auf die Antwort warten; bestaetigt = 3 Lesungen im Abstand
+; von 10 ms gleich der Erwartung (eine kurze Probe der Gegenstelle, s. LEISPI,
+; zaehlt so nicht). Danach RTS + DTR wieder an.
+LEITG:	LD	DE, M_LGLA
+	CALL	PUTS
+	XOR	A
+	LD	(LLFEH), A
+	LD	(LGI), A
+LG_LP:	LD	A, (LGI)
+	LD	E, A
+	LD	D, 0
+	LD	HL, LGSEQ
+	ADD	HL, DE
+	LD	A, (HL)
+	LD	(DLZ), A
+	LD	A, (OPTA)		; /A: kein "beliebige Taste"
+	OR	A
+	JR	NZ, LG_1
+	LD	DE, M_TASTE
+	CALL	PUTS
+	CALL	GETKEY
+	CALL	CRLF
+LG_1:	CALL	KOMLEI
+	CALL	KOMERW
+	LD	A, 200			; hoechstens 200 x 10 ms
+	LD	(LGPOL), A
+	XOR	A
+	LD	(LGSTB), A
+LG_W:	LD	DE, 10
+	CALL	WARTE
+	CALL	LIESLEI
+	LD	(LLRR0), A
+	AND	RR0_CTS OR RR0_DCD
+	LD	HL, LLERW
+	CP	(HL)
+	LD	HL, LGSTB
+	JR	Z, LG_GL
+	LD	(HL), 0
+	JR	LG_WN
+LG_GL:	INC	(HL)
+	LD	A, (HL)
+	CP	3
+	JR	NC, LG_ZL		; bestaetigt (LGSTB >= 3)
+LG_WN:	LD	HL, LGPOL
+	DEC	(HL)
+	JR	NZ, LG_W
+	; "  RTS=r DTR=d  CTS=c DCD=d  erwartet  CTS=c DCD=d  Gegenstelle bestaetigt: JA|NEIN"
+LG_ZL:	LD	DE, M_LEIN
+	CALL	PUTS
+	CALL	PUTRD
+	LD	A, (LLRR0)
+	CALL	PUTCD
+	LD	DE, M_LERW
+	CALL	PUTS
+	LD	A, (LLERW)
+	CALL	PUTCD
+	LD	DE, M_LGBE
+	CALL	PUTS
+	LD	DE, M_JA
+	LD	A, (LGSTB)
+	CP	3
+	JR	NC, LG_Z1
+	LD	DE, M_NEIN
+	LD	A, (LLFEH)		; nur die erste merken
+	OR	A
+	JR	NZ, LG_Z1
+	LD	A, (DLZ)
+	OR	80H
+	LD	(LLFEH), A
+LG_Z1:	CALL	PUTS
+	CALL	CRLF
+	LD	HL, LGI
+	INC	(HL)
+	LD	A, (HL)
+	CP	LGSLEN
+	JP	C, LG_LP
+	LD	A, W5_RTS OR W5_DTR
+	CALL	SETLEI
+	LD	HL, T_LEIT
+	LD	A, (LLFEH)
+	OR	A
+	JP	Z, ERGOK
+	LD	(DLZ), A		; Kombination fuer PUTRD
+	LD	DE, M_EMPTY
+	CALL	ERGFE0
+	CALL	PUTRD
+	JP	CRLF
+
+; Schrittfolge der LEITUNGEN (D0 = RTS, D1 = DTR)
+LGSEQ:	DB	0, 2, 3, 2, 0
+LGSLEN	EQU	$-LGSEQ
+
+; -----------------------------------------------------------------------------
+; ECHOT - ECHO (14.7 Schritt 2, V.24 und IFSS), Protokoll 14.6:
+;   Weckzeichen 00H, 200 ms Pause (die Gegenstelle meldet den ersten
+;   Empfangsinterrupt auf dem Bildschirm - am K8915 rollt das BIOS dabei unter
+;   DI), Ankuendigung 1BH 'S' 'E' nL nH s, Bestaetigung 1BH 'A' 'E' s
+;   abwarten (3 s), dann N_ECHO Nutzbytes aus dem LFSR senden und gleichzeitig
+;   (polled) das Echo Byte fuer Byte vergleichen, zuletzt den Bericht
+;   1BH 'B' 'E' ueL ueH s (3 s). s = Summe der Bytes zwischen 1BH und s.
+; Waehrend der Uebertragung keine Bildschirmausgabe (Rollen unter DI).
+; FEHLER: SENDER BLOCKIERT, ZEITUEBERLAUF BESTAETIGUNG, BESTAETIGUNG FALSCH,
+; ZEITUEBERLAUF ECHO BEI nnnnH (so viele kamen zurueck), ZEITUEBERLAUF BERICHT,
+; BERICHT FALSCH, FALSCH nnnnH (abweichende Echos), RR1 nnnnH (eigene
+; Empfangsfehler), GEGENSTELLE nnnnH (Empfangsfehler laut Bericht).
+; -----------------------------------------------------------------------------
+N_ECHO	EQU	4096		; Nutzbytes
+N_ETIK	EQU	20		; Leerlaufdurchlaeufe der Echoschleife je ms (je ~115-140 T)
+
+ECHOT:	LD	DE, M_ECLA
+	CALL	PUTS
+	CALL	LEEREN
+	XOR	A			; Weckzeichen
+	CALL	SENDB
+	JP	C, EC_SBL
+	LD	DE, 200
+	CALL	WARTE
+	CALL	LEEREN
+	LD	HL, 0
+	LD	(FEHLZ), HL
+	; Ankuendigung
+	LD	A, 'S'
+	LD	(PKBUF), A
+	LD	A, 'E'
+	LD	(PKBUF+1), A
+	LD	HL, N_ECHO
+	LD	(PKBUF+2), HL
+	LD	HL, PKBUF
+	LD	B, 4
+	CALL	SENDPK
+	JP	C, EC_SBL
+	; Bestaetigung
+	LD	A, 'A'
+	LD	B, 1
+	LD	DE, 3000
+	CALL	EMPPK
+	LD	DE, G_TBES
+	JP	C, EC_FE
+	LD	DE, G_BESF
+	JP	NZ, EC_FE
+	LD	A, (PKBUF)
+	CP	'E'
+	JP	NZ, EC_FE
+	; Uebertragung
+	CALL	IFSTE
+	LD	A, C
+	LD	(ECSTE), A
+	LD	HL, N_ECHO
+	LD	(TXN), HL
+	LD	(RXN), HL
+	LD	HL, LFSR0
+	LD	(TXZ), HL
+	LD	(RXZ), HL
+	LD	HL, 0
+	LD	(EFAL), HL
+	LD	A, N_ETIK
+	LD	(ECTIK), A
+	LD	DE, 2000		; Frist ohne Echo (ms)
+EC_LP:	LD	A, (ECSTE)
+	LD	C, A
+	LD	HL, (TXN)		; noch zu senden?
+	LD	A, H
+	OR	L
+	JR	Z, EC_RX
+	IN	A, (C)
+	AND	RR0_TX
+	JR	Z, EC_RX
+	PUSH	DE
+	LD	HL, TXZ
+	CALL	LFSR
+	POP	DE
+	DEC	C			; Datenport
+	OUT	(C), A
+	INC	C
+	LD	HL, (TXN)
+	DEC	HL
+	LD	(TXN), HL
+EC_RX:	IN	A, (C)
+	RRA				; RR0 D0 -> CY
+	JR	NC, EC_NIX
+	DI
+	CALL	FEHLR
+	EI
+	DEC	C
+	IN	A, (C)
+	LD	(ECZ), A
+	PUSH	DE
+	LD	HL, RXZ
+	CALL	LFSR
+	POP	DE
+	LD	HL, ECZ
+	CP	(HL)
+	JR	Z, EC_G
+	LD	HL, (EFAL)
+	INC	HL
+	LD	(EFAL), HL
+EC_G:	LD	HL, (RXN)
+	DEC	HL
+	LD	(RXN), HL
+	LD	A, H
+	OR	L
+	JR	Z, EC_FER
+	LD	A, L			; alle 256 Zeichen die Tastatur (Ctrl+C) -
+	OR	A			; bei laufendem Echo kommt ZEITK nie dran
+	CALL	Z, KEYPOL
+	LD	DE, 2000		; Frist neu
+	JR	EC_LP
+EC_NIX:	LD	HL, ECTIK
+	DEC	(HL)
+	JR	NZ, EC_LP
+	LD	(HL), N_ETIK
+	CALL	ZEITK			; eine ms um (alle 16 die Tastatur)
+	JR	NZ, EC_LP
+	; Zeitueberlauf: so viele Echos kamen an
+	LD	HL, T_ECHO
+	LD	DE, G_TECH
+	CALL	ERGFE0
+	LD	HL, N_ECHO
+	LD	DE, (RXN)
+	OR	A
+	SBC	HL, DE
+	JP	EC_HX
+	; Bericht
+EC_FER:	LD	A, 'B'
+	LD	B, 3
+	LD	DE, 3000
+	CALL	EMPPK
+	LD	DE, G_TBER
+	JR	C, EC_FE
+	LD	DE, G_BERF
+	JR	NZ, EC_FE
+	LD	A, (PKBUF)
+	CP	'E'
+	JR	NZ, EC_FE
+	; Urteil
+	LD	HL, (EFAL)
+	LD	DE, G_FALS
+	LD	A, H
+	OR	L
+	JR	NZ, EC_ZA
+	LD	HL, (FEHLZ)
+	LD	DE, G_RR1
+	LD	A, H
+	OR	L
+	JR	NZ, EC_ZA
+	LD	HL, (PKBUF+1)		; Empfangsfehler der Gegenstelle
+	LD	DE, G_GEGF
+	LD	A, H
+	OR	L
+	JR	NZ, EC_ZA
+	LD	HL, T_ECHO
+	JP	ERGOK
+EC_ZA:	PUSH	HL			; FEHLER <grund> nnnnH
+	LD	HL, T_ECHO
+	CALL	ERGFE0
+	POP	HL
+EC_HX:	CALL	PUTHX4
+	LD	A, 'H'
+	CALL	PUTC
+	JP	CRLF
+EC_SBL:	LD	DE, G_SBLK
+EC_FE:	LD	HL, T_ECHO
+	JP	ERGFEH
+
+; LEEREN - Empfaenger leeren (polled; Reste von frueher, hoechstens 64 Zeichen).
+LEEREN:	LD	A, 64
+	LD	(DLZ), A
+LE_L:	LD	DE, 2
+	CALL	EMPF
+	RET	C
+	LD	HL, DLZ
+	DEC	(HL)
+	JR	NZ, LE_L
+	RET
+
+; LFSR - A = naechstes Nutzbyte (14.6): Zustand (DW) bei HL, 16-Bit-Galois-
+; LFSR x^16+x^14+x^13+x^11+1 (Maske B400H), 8 Schritte je Byte, Ausgabe =
+; niederes Byte. Startwert LFSR0. Zerstoert B, DE, HL.
+LFSR0	EQU	0ACE1H
+LFSR:	LD	E, (HL)
+	INC	HL
+	LD	D, (HL)
+	LD	B, 8
+LF_L:	SRL	D
+	RR	E
+	JR	NC, LF_N
+	LD	A, D
+	XOR	0B4H
+	LD	D, A
+LF_N:	DJNZ	LF_L
+	LD	(HL), D
+	DEC	HL
+	LD	(HL), E
+	LD	A, E
+	RET
+
+; SENDB - A senden, Frist 1000 ms. CY = Sender blockiert. Erhaelt BC, HL.
+SENDB:	PUSH	BC
+	PUSH	HL
+	LD	DE, 1000
+	CALL	SENDE
+	POP	HL
+	POP	BC
+	RET
+
+; SENDPK - Paket (14.6) senden: 1BH, B Bytes ab HL, Summe dieser B Bytes.
+; CY = Sender blockiert.
+SENDPK:	XOR	A
+	LD	(PKSUM), A
+	LD	A, 1BH
+	CALL	SENDB
+	RET	C
+PK_L:	LD	A, (PKSUM)
+	ADD	A, (HL)
+	LD	(PKSUM), A
+	LD	A, (HL)
+	CALL	SENDB
+	RET	C
+	INC	HL
+	DJNZ	PK_L
+	LD	A, (PKSUM)
+	JR	SENDB
+
+; EMPPK - Paket (14.6) polled empfangen: A = Typ ('A', 'B'), B = Anzahl Bytes
+; nach dem Typ (ohne Summe), DE = Frist je Byte (ms). Alles vor 1BH Typ wird
+; uebergangen (auch das eigene Paket, das an einem Pruefstecker zurueckkommt).
+; Die Bytes nach dem Typ landen in PKBUF. CY = Zeitueberlauf; sonst Z = Summe
+; stimmt, NZ = Summe falsch.
+EMPPK:	LD	(PKTYP), A
+	LD	A, B
+	LD	(PKANZ), A
+	LD	(PKFR), DE
+EP_SU:	CALL	EMPFR
+	RET	C
+EP_ES:	CP	1BH
+	JR	NZ, EP_SU
+	CALL	EMPFR
+	RET	C
+	LD	HL, PKTYP
+	CP	(HL)
+	JR	NZ, EP_ES		; vielleicht wieder ein 1BH
+	LD	(PKSUM), A
+	LD	HL, PKBUF
+	LD	A, (PKANZ)
+	LD	B, A
+EP_L:	PUSH	BC
+	CALL	EMPFR
+	POP	BC
+	RET	C
+	LD	(HL), A
+	INC	HL
+	LD	C, A
+	LD	A, (PKSUM)
+	ADD	A, C
+	LD	(PKSUM), A
+	DJNZ	EP_L
+	CALL	EMPFR
+	RET	C
+	LD	HL, PKSUM
+	SUB	(HL)
+	RET	Z			; Z, NC
+	LD	A, 1
+	OR	A			; NZ, NC
+	RET
+
+; EMPFR - ein Byte mit der Frist PKFR (EMPF). Erhaelt HL.
+EMPFR:	LD	DE, (PKFR)
+	JP	EMPF
 
 ; =============================================================================
 ; Ergebniszeilen (Spezifikation 14.3 - das Format ist ein VERTRAG)
@@ -643,13 +1036,20 @@ GE_LOS:	LD	DE, M_GBER
 	CALL	PUTNAM
 	LD	DE, M_GBE2
 	CALL	PUTS
-	; Ruhezustand: 9600 8N1, Empfang im Interrupt; laeuft bis Ctrl+C (KEYPOL
-	; springt dann nach ABBRUCH -> AUFR). Der erste Empfangsinterrupt wird
-	; einmal gemeldet; empfangene Zeichen werden (noch) verworfen.
-	; Ab AP-ST5: Protokoll, Leitungsspiegel, Echo.
+	; Ruhezustand (14.6/14.7): 9600 8N1, Empfang im Interrupt in den
+	; Ringpuffer, an V.24 Leitungsspiegel (LEISPI). Je Durchlauf 1 ms warten
+	; (WARTE fragt alle 16 ms die Tastatur ab - Ctrl+C -> ABBRUCH -> AUFR).
+	; Der erste Empfangsinterrupt wird einmal gemeldet. Eine Ankuendigung
+	; 1BH 'S' m nL nH s schaltet in den Abschnitt m (V0.1: nur 'E' = Echo),
+	; danach geht es hierher zurueck. Alles andere wird verworfen.
 	CALL	SIOPRG
 	CALL	EINH
-GE_RUH:	CALL	KEYPOL
+	LD	A, 0FFH			; Leitungen beim ersten Durchlauf anzeigen
+	LD	(LMERK), A
+	LD	A, 1
+	LD	(PRBZ), A
+GE_RUH:	LD	DE, 1
+	CALL	WARTE
 	LD	A, (INTMLD)
 	OR	A
 	JR	NZ, GE_R2
@@ -661,8 +1061,206 @@ GE_RUH:	CALL	KEYPOL
 	LD	(INTMLD), A
 	LD	DE, M_INTA
 	CALL	PUTS
-GE_R2:	CALL	RXHOL			; verwerfen
+GE_R2:	CALL	LEISPI
+	CALL	RXHOL
+	JR	C, GE_RUH
+	CP	1BH			; Fremdes (Weckzeichen ...) verwerfen
+	JR	NZ, GE_RUH
+	CALL	ANKLES
+	JR	C, GE_VER
+	LD	A, (ANKB+1)
+	CP	'E'
+	JR	NZ, GE_VER		; H/X: AP-ST6
+	CALL	ECHOAB
 	JR	GE_RUH
+GE_VER:	LD	DE, M_GVER
+	CALL	PUTS
+	JR	GE_RUH
+
+; LEISPI - Leitungsspiegel der Gegenstelle (nur V.24, 14.7 Schritt 1): die
+; Eingaenge CTS/DCD, wie die Karte sie liefert, auf die Ausgaenge RTS/DTR;
+; bei Aenderung "  CTS=c DCD=d" anzeigen. Ueber das Nullmodemkabel sieht der
+; Tester so sein RTS als CTS und sein DTR als DSR + DCD wieder.
+; K8915 (K7028): CTS = V107 AND (NOT RTS OR V106) haengt am EIGENEN RTS -
+; "RTS := CTS" schwaenge bei V107 = 1, V106 = 0 (RTS aus -> CTS 1 -> RTS an ->
+; CTS 0 ...). Gespiegelt wird dort deshalb CTS bei gesetztem eigenem RTS
+; (= V106 AND V107, wie an der K8025): mit RTS an direkt gelesen, mit RTS aus
+; alle N_PROBE Durchlaeufe (~64 ms) kurz RTS gesetzt, gelesen, zurueck
+; ("Probe", einige zehn Mikrosekunden); dazwischen gilt CTS = 0.
+N_PROBE	EQU	64
+
+LEISPI:	CALL	IFART
+	CP	ART_V24
+	RET	NZ
+	CALL	LIESLEI
+	LD	B, A			; B = RR0
+	LD	A, (MASCH)
+	CP	M_K8915
+	JR	NZ, LS_W
+	LD	A, (WR5S)
+	AND	W5_RTS
+	JR	NZ, LS_W		; RTS an: CTS = V106 AND V107
+	LD	A, B
+	AND	0FFH XOR RR0_CTS	; ohne Probe: CTS = 0
+	LD	B, A
+	LD	HL, PRBZ
+	DEC	(HL)
+	JR	NZ, LS_W
+	LD	(HL), N_PROBE
+	LD	A, (WR5S)		; Probe
+	OR	W5_RTS
+	CALL	WR5A
+	CALL	LIESLEI
+	PUSH	AF
+	LD	A, (WR5S)
+	CALL	WR5A
+	POP	AF
+	LD	B, A
+LS_W:	LD	A, B
+	AND	RR0_CTS OR RR0_DCD
+	LD	HL, LMERK
+	CP	(HL)
+	RET	Z
+	LD	(HL), A
+	LD	C, 0			; CTS -> RTS, DCD -> DTR
+	AND	RR0_CTS
+	JR	Z, LS_1
+	LD	C, W5_RTS
+LS_1:	LD	A, (HL)
+	AND	RR0_DCD
+	LD	A, C
+	JR	Z, LS_2
+	OR	W5_DTR
+LS_2:	CALL	SETLEI
+	LD	A, (LMERK)
+	CALL	PUTCD
+	JP	CRLF
+
+; WR5A - WR5 := A, ohne den Schatten WR5S zu aendern (Probe). Erhaelt DE, HL.
+WR5A:	LD	B, A
+	CALL	IFSTE
+	DI
+	LD	A, 5
+	OUT	(C), A
+	OUT	(C), B
+	EI
+	RET
+
+; ANKLES - nach 1BH den Rest der Ankuendigung 'S' m nL nH s aus dem
+; Ringpuffer (je Byte 500 ms) nach ANKB. CY = verworfen (Zeitueberlauf,
+; kein 'S', Summe falsch).
+ANKLES:	LD	HL, ANKB
+	LD	B, 5
+AK_L:	PUSH	BC
+	PUSH	HL
+	LD	DE, 500
+	CALL	RXWART
+	POP	HL
+	POP	BC
+	RET	C
+	LD	(HL), A
+	INC	HL
+	DJNZ	AK_L
+	LD	A, (ANKB)
+	CP	'S'
+	SCF
+	RET	NZ
+	LD	HL, ANKB
+	XOR	A
+	LD	B, 4
+AK_S:	ADD	A, (HL)
+	INC	HL
+	DJNZ	AK_S
+	CP	(HL)
+	SCF
+	RET	NZ
+	OR	A
+	RET
+
+; RXWART - A = Zeichen aus dem Ringpuffer, hoechstens DE ms warten (Tastatur
+; alle 16 ms). CY = Zeitueberlauf. Zerstoert B, DE, HL.
+RXWART:	LD	(RWFR), DE
+RW_L:	CALL	RXHOL
+	RET	NC
+	LD	DE, 1
+	CALL	WARTE
+	LD	HL, (RWFR)
+	DEC	HL
+	LD	(RWFR), HL
+	LD	A, H
+	OR	L
+	JR	NZ, RW_L
+	SCF
+	RET
+
+; ECHOAB - Abschnitt 'E' der Gegenstelle (14.6): Bestaetigung 1BH 'A' m s,
+; dann n Nutzbytes aus dem Ringpuffer zurueckschicken (aus dem Hauptprogramm),
+; dann Bericht 1BH 'B' m ueL ueH s mit ue = RR1-Fehler + Ringpufferueberlauf
+; seit der Ankuendigung. Ausgabe nur VOR der Bestaetigung und NACH dem
+; Bericht (am K8915 rollt das BIOS unter DI). 3 s ohne Byte -> Ruhezustand.
+ECHOAB:	LD	DE, M_GABS
+	CALL	PUTS
+	LD	A, (ANKB+1)
+	CALL	PUTC
+	LD	DE, M_DPKT
+	CALL	PUTS
+	LD	HL, (ANKB+2)
+	LD	(GENR), HL
+	CALL	PUTHX4
+	LD	DE, M_GABY
+	CALL	PUTS
+	DI
+	LD	HL, 0
+	LD	(FEHLZ), HL
+	LD	(RXUEB), HL
+	EI
+	LD	A, 'A'
+	LD	(PKBUF), A
+	LD	A, (ANKB+1)
+	LD	(PKBUF+1), A
+	LD	HL, PKBUF
+	LD	B, 2
+	CALL	SENDPK
+	JR	C, EA_SBL
+EA_LP:	LD	HL, (GENR)
+	LD	A, H
+	OR	L
+	JR	Z, EA_BER
+	LD	A, L			; alle 16 Zeichen die Tastatur - RXWART
+	AND	0FH			; wartet bei laufendem Echo nie
+	CALL	Z, KEYPOL
+	LD	DE, 3000
+	CALL	RXWART
+	JR	C, EA_TO
+	CALL	SENDB
+	JR	C, EA_SBL
+	LD	HL, (GENR)
+	DEC	HL
+	LD	(GENR), HL
+	JR	EA_LP
+EA_BER:	DI
+	LD	HL, (FEHLZ)
+	LD	DE, (RXUEB)
+	ADD	HL, DE
+	EI
+	LD	(PKBUF+2), HL
+	LD	A, 'B'
+	LD	(PKBUF), A
+	LD	HL, PKBUF
+	LD	B, 4			; 'B' m ueL ueH (AP-ST6 haengt Felder an)
+	CALL	SENDPK
+	JR	C, EA_SBL
+	LD	DE, M_GAFE
+	CALL	PUTS
+	LD	HL, (PKBUF+2)
+	CALL	PUTHX4
+	LD	A, 'H'
+	CALL	PUTC
+	JP	CRLF
+EA_TO:	LD	DE, M_GATO
+	JP	PUTS
+EA_SBL:	LD	DE, M_GASB
+	JP	PUTS
 
 ; =============================================================================
 ; Maschinenerkennung (14.4)
@@ -1470,6 +2068,12 @@ M_GEGH:	DB	'Gegenstelle (Passiv): Dieses Geraet mit einem passenden Kabel mit ei
 M_KEINE: DB	'Keine Schnittstelle gewaehlt.',CR,LF,'$'
 M_GBER:	DB	'Gegenstelle an $'
 M_GBE2:	DB	' bereit.',CR,LF,'$'
+M_GVER:	DB	'Ankuendigung verworfen.',CR,LF,'$'
+M_GABS:	DB	'Abschnitt $'
+M_GABY:	DB	'H Bytes',CR,LF,'$'
+M_GAFE:	DB	'Abschnitt fertig, Empfangsfehler $'
+M_GATO:	DB	'Zeitueberlauf, zurueck in den Ruhezustand.',CR,LF,'$'
+M_GASB:	DB	'Sender blockiert, zurueck in den Ruhezustand.',CR,LF,'$'
 M_INTA:	DB	'Empfangsinterrupt ausgeloest',CR,LF
 	DB	'SERTEST INTERRUPT OK',CR,LF,'$'
 M_ABBR:	DB	CR,LF,'Abbruch mit Ctrl+C.',CR,LF,'$'
@@ -1494,6 +2098,12 @@ G_KECH:	DB	'KEIN ECHO BEI $'
 G_FALS:	DB	'FALSCH $'
 G_RR1:	DB	'RR1 $'
 G_SBLK:	DB	'SENDER BLOCKIERT$'
+G_TBES:	DB	'ZEITUEBERLAUF BESTAETIGUNG$'
+G_BESF:	DB	'BESTAETIGUNG FALSCH$'
+G_TECH:	DB	'ZEITUEBERLAUF ECHO BEI $'
+G_TBER:	DB	'ZEITUEBERLAUF BERICHT$'
+G_BERF:	DB	'BERICHT FALSCH$'
+G_GEGF:	DB	'GEGENSTELLE $'
 M_EMPTY: DB	'$'
 
 ; Pruefstecker (14.5)
@@ -1507,6 +2117,12 @@ M_LDCD:	DB	' DCD=$'
 M_LERW:	DB	'  erwartet$'
 M_LRR0:	DB	'  RR0=$'
 M_LFAL:	DB	'  FALSCH$'
+; Gegenstelle (14.7)
+M_LGLA:	DB	'Leitungen ueber die Gegenstelle: RTS/DTR -> CTS/DCD',CR,LF,'$'
+M_LGBE:	DB	'  Gegenstelle bestaetigt: $'
+M_JA:	DB	'JA$'
+M_NEIN:	DB	'NEIN$'
+M_ECLA:	DB	'Echo: 4096 Bytes ueber die Gegenstelle ...',CR,LF,'$'
 ; Erwartung CTS/DCD je Kombination (D0 = RTS, D1 = DTR) mit Pruefstecker
 ; RTS->CTS(V106), DTR->DSR(V107)+DCD(V109), Spezifikation 14.5:
 ;  A5120 (K8025): CTS = V106 AND V107, DCD = V109 AND V107
@@ -1644,6 +2260,28 @@ DLFAL:	DS	2		; abweichende Echos
 LLFEH:	DS	1		; erste abweichende Kombination OR 80H, 0 = keine
 LLRR0:	DS	1		; RR0 gemessen
 LLERW:	DS	1		; CTS/DCD erwartet
+; Gegenstelle / Protokoll (14.6)
+LGI:	DS	1		; LEITUNGEN: Schritt
+LGPOL:	DS	1		;            verbleibende Lesungen
+LGSTB:	DS	1		;            gleiche Lesungen in Folge
+ECSTE:	DS	1		; ECHO: Steuerport
+ECTIK:	DS	1		;       Leerlaufdurchlaeufe bis zur naechsten ms
+ECZ:	DS	1		;       empfangenes Zeichen
+TXN:	DS	2		;       noch zu senden
+RXN:	DS	2		;       noch zu empfangen
+TXZ:	DS	2		;       LFSR Senden
+RXZ:	DS	2		;       LFSR Vergleich
+EFAL:	DS	2		;       abweichende Echos
+PKBUF:	DS	8		; Paket ohne 1BH/Summe
+PKSUM:	DS	1
+PKTYP:	DS	1
+PKANZ:	DS	1
+PKFR:	DS	2
+ANKB:	DS	5		; Gegenstelle: Ankuendigung 'S' m nL nH s
+GENR:	DS	2		;   noch zurueckzuschicken
+RWFR:	DS	2		;   Frist RXWART
+LMERK:	DS	1		;   zuletzt gespiegeltes CTS/DCD (FFH = noch keins)
+PRBZ:	DS	1		;   Durchlaeufe bis zur naechsten Probe (K8915)
 VAREND:
 VARLEN	EQU	VAREND-VARANF
 

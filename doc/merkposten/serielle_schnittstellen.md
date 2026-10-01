@@ -126,6 +126,15 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   „jedes Zeichen" **bleibt die Anforderung stehen, solange der FIFO Zeichen hält**; Überlauf
   = RR1 **D5**. Prüfprogramm dafür: `tools/sertest/` (Entwurf 19 §14).
 
+- **Jede Karte muss `onRETI` an ihre Bausteine weiterreichen** (`InterruptSlave::onRETI`
+  ist leer vorgegeben). Der K8025 fehlte das bis AP-ST5: ein quittierter SIO-Interrupt der
+  DFÜ blieb für immer „under service", jeder weitere blieb aus — unbemerkt, weil CP/A
+  gepollt arbeitet. Prüft man Interruptempfang, **mehr Zeichen als FIFO (3) + 1** schicken,
+  sonst kommt alles auch mit einem einzigen Interrupt an. Wächter
+  `K8025.RetiGibtDenSioWiederFrei`, `Sertest.*EmpfaengtImInterrupt*` (8 Zeichen),
+  `SertestKopplung.*`. Offen (nicht beobachtet): RETI bei ANSTEHENDEM Interrupt weiter oben
+  in der Kette — Entwurf 19 §14.10 Punkt 6.
+
 ## Tests schreiben
 
 - **Nie feste Ports** (`ctest -j`): Port 0 in C++ (`SerialKonfig::port = 0`, tatsächlicher
@@ -137,6 +146,10 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   BIOS-Sprungleiste (`[0001H] + 3` / `+ 6`) auf das Programm biegen, eine Taste
   drücken — fertig als Echo-Gast in `tests/python/serial_gast.py`. **Achtung:** bei „Bitte Uhrzeit eingeben!" ist die
   Seite 0 noch leer (`[0001H] = 0`) — erst am Prompt patchen.
+- **Zwei Maschinen mit Gästen, die auf LEITUNGEN warten** (SERTEST, `test_sertest_kopplung.cpp`):
+  in gleichen Scheiben abwechselnd laufen lassen und auf ein Vielfaches der Echtzeit
+  drosseln — die Steuerleitungen laufen über die I/O-Fäden (Uhrzeit), nicht durch den
+  Rückstau; ungedrosselt sind Fristen von 2 s Maschinenzeit unter `ctest -j` zu kurz.
 - **1× gegen 10×** abwechselnd in einem Faden (je Runde 1 ms gegen 10 ms Maschinenzeit),
   nicht mit Uhrdrosselung — unter Last verlöre die das Verhältnis.
 - **Fenster in GUI-Tests mit `_zu()` schließen** (`test_serial_gui.py`): sonst laufen

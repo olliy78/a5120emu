@@ -28,11 +28,11 @@
  * Ctrl+C: A5120 `typeCtrl(m,'c')` = `keyPress('c', false, true)`, K8915 Zeichen 03H
  * (die K7672 drückt dafür Strg + C).
  *
- * Zwei gekoppelte Maschinen (ST5/ST6) — Muster `SerielleKopplung.*`
- * (`tests/integration/test_serielle_kopplung.cpp`, `verbinden()`): je Maschine
- * `serialHub()`; Server `k = konfig(i)`, `betriebsart = Rfc2217`, `rolle = Server`,
- * `port = 0`, `konfigurieren(i, k)`; den gebundenen Port aus `status(i).port_aktiv` dem
- * Client geben; beide Maschinen in EINEM Faden abwechselnd `lauf()`en, am Ende `stopAlle()`.
+ * Zwei gekoppelte Maschinen (ST5/ST6): `tests/system/test_sertest_kopplung.cpp`
+ * (`Paar`, `koppeln()`) — RFC 2217 Server ↔ Client über Loopback, Port 0, beide
+ * Maschinen in EINEM Faden in gleichen Scheiben (`lauf(takte)`) abwechselnd, gedrosselt
+ * auf ein Vielfaches der Echtzeit (die Leitungen laufen über den I/O-Faden, also in
+ * Uhrzeit), am Ende `stopAlle()`.
  */
 #pragma once
 
@@ -270,6 +270,17 @@ public:
 
     /// Ein Schritt der Maschine; zählt die Takte für das Protokoll mit.
     long long lauf() { const long long n = selbst().schritt(); takt_ += n; return n; }
+    /// Wie lauf(), aber @p takte Takte — zwei gekoppelte Maschinen laufen damit in
+    /// gleichen Scheiben Maschinenzeit (die Schrittweiten von A5120 und K8915 sind
+    /// verschieden).
+    long long lauf(long long takte) {
+        const long long n = selbst().maschine().run(takte);
+        takt_ += n;
+        return n;
+    }
+    /// Das aktuelle Bild ins Protokoll nehmen (für eigene Laufschleifen).
+    void erfasse() { protokoll_.erfasse(selbst().bild(), takt_); }
+    long long takt() const { return takt_; }
 
 protected:
     SertestProtokoll protokoll_;

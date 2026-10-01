@@ -360,6 +360,38 @@ TEST(K8025, DfueRxByte_TriggersInterrupt_WhenEnabled)
     EXPECT_TRUE(card.hasInterrupt());
 }
 
+/**
+ * @test K8025/RetiGibtDenSioWiederFrei
+ * @brief Nach Quittung (IUS gesetzt) fordert die DFÜ-SIO erst wieder an, wenn das RETI
+ *   über die Karte bei ihr ankommt — bis AP-ST5 reichte die K8025 das RETI nicht weiter,
+ *   jeder zweite Empfangsinterrupt blieb aus (SERTEST-Gegenstelle am A5120).
+ * @par Pass criterion  zweites Zeichen ohne RETI: keine Anforderung; nach
+ *   `bus.signalRETI()`: Anforderung, Vektor erneut quittierbar.
+ */
+TEST(K8025, RetiGibtDenSioWiederFrei)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    bus.setInterruptChain({&card});
+    card.ioWrite(0x51, 0x01);   // WR1: Empfangsinterrupt bei JEDEM Zeichen (D4–D3 = 10,
+    card.ioWrite(0x51, 0x10);   // wie SERTEST; enableRxInterrupts' 0CH ist „erstes Zeichen")
+    card.setIEI(true);
+
+    card.dfueRxByte(0x41);
+    ASSERT_TRUE(card.hasInterrupt());
+    (void)card.getVector();                 // Quittung: IUS
+    (void)card.ioRead(0x50);                // Zeichen abholen
+    card.dfueRxByte(0x42);
+    card.setIEI(true);
+    EXPECT_FALSE(card.hasInterrupt()) << "unter Bedienung fordert der Kanal nicht an";
+
+    bus.signalRETI();
+    card.setIEI(true);
+    EXPECT_TRUE(card.hasInterrupt()) << "RETI muss bei der SIO A33 ankommen";
+    (void)card.getVector();
+    EXPECT_EQ(card.ioRead(0x50), 0x42);
+}
+
 // ─── Sub-chip accessor ────────────────────────────────────────────────────────
 
 /**

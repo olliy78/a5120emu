@@ -343,6 +343,14 @@ uint8_t K8025::getVector() const
     return 0xFF;
 }
 
+void K8025::onRETI()
+{
+    sio_dfue_.onRETI();
+    sio_kbd_printer_.onRETI();
+    ctc_a34_.onRETI();
+    updateInternalChain();
+}
+
 // ─── Keyboard interface ───────────────────────────────────────────────────────
 
 /**
