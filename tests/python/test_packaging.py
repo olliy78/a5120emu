@@ -207,13 +207,17 @@ def test_rauchtests_pruefen_beide_maschinen():
     assert 'profil("k8915")' in quellen["k1520emu.iss"]
 
 
-def test_k8915_systemdisketten_sind_nicht_in_der_vorgabeauswahl():
-    """Rechtsfrage offen (16_k8915.md §6.23): die Disketten 900/901/904 kommen
-    nur mit ``--disks all`` ins Paket, nie in ``DISKS_DEFAULT``."""
+def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
+    """16_k8915.md §6.23, Entscheid des Anwenders 2026-10-01: die Systemdiskette
+    901 (``k8915scpx_boot1.hfe``) gehört zur Vorgabeauswahl — ohne sie startet der
+    K8915 Emulator einer frischen Installation ins Leere.  Sie trägt auch
+    SERTEST.COM (Entwurf 19 §14)."""
     text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     block = text[text.index('DISKS_DEFAULT="'):]
-    block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0]
-    assert "k8915" not in block.lower()
+    block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
+    assert "k8915scpx_boot1.hfe" in block
+    for name in block:
+        assert (PACKAGING.parent / "disks" / name).is_file(), name
 
 
 def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():

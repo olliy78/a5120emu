@@ -14,8 +14,6 @@ sie mit [`uv`](https://github.com/astral-sh/uv) in eine Laufzeitumgebung
 ```sh
 packaging/build_payload.sh                # → dist/k1520emu-<version>-linux-x86_64.tar.gz
 packaging/build_payload.sh --disks all    # alle Disketten aus disks/ statt der Auswahl
-# Achtung: `all` nimmt auch die K8915-Systemdiskette(n) mit (k8915scpx_boot1.hfe, SCPX 8915
-# mit Turbo Pascal) — Rechtsfrage offen (doc/design/16_k8915.md §6.23), nicht fuer Releases.
 packaging/build_payload.sh --no-archive   # nur den Baum, kein Archiv
 ```
 

@@ -16,9 +16,8 @@ einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md
 
 **Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/` — allen
 `cpa_cpa780_*` (A5120, CP/A) und `k8915scpx_boot1.hfe` (K8915, SCPX 8915). Die CP/A-Disketten
-gehen als Beispieldisketten ins Paket und landen beim ersten Start im Diskettenordner des
-Anwenders; die K8915-Diskette nur mit `build_payload.sh --disks all` (Rechtsfrage,
-`doc/design/16_k8915.md` §6.23). Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
+(Auswahl) und die K8915-Diskette gehen als Beispieldisketten ins Paket und landen beim
+ersten Start im Diskettenordner des Anwenders. Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
 
 Inhalt: Bedienung · Prüfsteckertest · Test mit Gegenstelle · Flusssteuerung ·
 Maschinenerkennung · Annahmen · Kabel · Geräteprüfung durch den Anwender · Bauen ·

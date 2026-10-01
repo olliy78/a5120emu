@@ -134,7 +134,7 @@ den bisherigen Zuschnitt von **E4h** (Maschinenwahl) und **E4i** (Frontplatte).
 - Windows: `packaging/k1520emu.iss` `[Icons]` + Eintrag „K8915 Emulator“, gleiches
   `a5120emu.ico`, Ziel `pythonw.exe` mit dem K8915-Einstieg; `bin/k8915emu.cmd`.
 - **Vor Änderungen `doc/merkposten/paketierung.md` lesen** (elf Festlegungen). Wächter
-  `py_packaging` erweitern. Keine K8915-Systemdiskette ins Paket (E4l-Rechtsfrage offen).
+  `py_packaging` erweitern. Die K8915-Systemdiskette 901 gehört seit 2026-10-01 zur Vorgabeauswahl (`16_k8915.md` §6.23).
 
 ## 4. Wächter
 
