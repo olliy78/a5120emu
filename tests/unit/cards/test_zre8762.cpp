@@ -216,3 +216,35 @@ TEST(ZRE8762Config, BrueckenfeldIstKonfiguration)
     EXPECT_EQ(zre.ortVon(0x8000).quelle, K8915Zre::Quelle::Bank1);
     EXPECT_FALSE(zre.memdi1()) << "X13 = Bit7 direkt: 87H ⇒ H ⇒ /MEMDI1 inaktiv";
 }
+
+/**
+ * @test ZRE8762.CtcAnPort80HUndRegisterNurSchreibbar
+ * @brief AP-T1a: die CTC der ZRE liest und schreibt über 80H–83H (Zeitkonstante
+ *        zurück als Zählerstand), das A8H-Register (A8H–ABH) liest den offenen Bus.
+ */
+TEST_F(Fixture, CtcAnPort80HUndRegisterNurSchreibbar)
+{
+    bus.ioWrite(0x81, 0x07);                     // Kanal 1: Zeitgeber, ZK folgt
+    bus.ioWrite(0x81, 0x30);
+    EXPECT_EQ(bus.ioRead(0x81), 0x30);
+    EXPECT_TRUE(zre.ctc().isTimerMode(1));
+    EXPECT_EQ(zre.reg(), 0x00) << "CTC-Zugriffe fassen das Register nicht an";
+    for (uint8_t p = 0xA8; p <= 0xAB; ++p) EXPECT_EQ(bus.ioRead(p), 0xFF);
+}
+
+/**
+ * @test ZRE8762Config.OffeneKlemmeLiestH
+ * @brief Eine Klemme ohne Draht (Nummer außerhalb X9–X27) ist ein offener TTL-Eingang
+ *        und liest H — z. B. Seite 2 dann IMMER aus Bank 1, auch nach /RESET (A8H = 0).
+ */
+TEST(ZRE8762Config, OffeneKlemmeLiestH)
+{
+    K1520Bus bus;
+    K8915Zre::Config cfg;
+    cfg.feld.x22_seite2 = 0;                     // Draht gezogen
+    K8915Zre zre(bus, cfg);
+    zre.attachToBus(bus);
+    zre.powerOn();
+    EXPECT_EQ(zre.ortVon(0x8000).quelle, K8915Zre::Quelle::Bank1);
+    EXPECT_EQ(zre.ortVon(0xC000).quelle, K8915Zre::Quelle::Bus) << "Seite 3 unberührt";
+}

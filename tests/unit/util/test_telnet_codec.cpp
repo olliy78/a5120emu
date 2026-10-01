@@ -233,3 +233,51 @@ TEST(TelnetCodec, NopUndAndereEinzelbefehleWerdenUeberlesen) {
     speise(c, {'a', IAC, 241 /*NOP*/, 'b', IAC, 246 /*AYT*/, 'c'});
     EXPECT_EQ(c.nimmNutzdaten(), (Bytes{'a', 'b', 'c'}));
 }
+
+// ─── AP-T1a: Zustände der Q-Methode, die der Abdeckungsbau ungeprüft fand ──────
+
+/// RFC 1143: ein zweiter eigener Wunsch, solange der erste unbeantwortet ist, geht
+/// NICHT noch einmal hinaus; die Bestätigung schaltet ein, ohne Antwort.
+TEST(TelnetCodec, WiederholterWunschVorDerAntwortGehtNurEinmalHinaus) {
+    TelnetCodec c(TelnetRolle::Client);
+    c.bieteAn(OPT_SGA);
+    c.bieteAn(OPT_SGA);
+    c.verlange(OPT_ECHO);
+    c.verlange(OPT_ECHO);
+    EXPECT_EQ(c.nimmAusgabe(), (Bytes{IAC, WILL, OPT_SGA, IAC, DO, OPT_ECHO}));
+    speise(c, Bytes{IAC, DO, OPT_SGA, IAC, WILL, OPT_ECHO});
+    EXPECT_TRUE(c.lokalAktiv(OPT_SGA));
+    EXPECT_TRUE(c.entferntAktiv(OPT_ECHO));
+    EXPECT_TRUE(c.nimmAusgabe().empty()) << "Bestätigung auf eigene Anfrage bleibt stumm";
+    c.bieteAn(OPT_SGA);
+    EXPECT_TRUE(c.nimmAusgabe().empty()) << "schon aktiv: nichts zu sagen";
+}
+
+/// Schaltet die Gegenseite eine aktive Option ab (WONT/DONT), wird das genau einmal
+/// bestätigt; ein wiederholtes WONT/DONT bleibt stumm (kein Pingpong).
+TEST(TelnetCodec, AbschaltenDurchDieGegenseiteWirdEinmalBestaetigt) {
+    TelnetCodec c(TelnetRolle::Client);
+    c.bieteAn(OPT_SGA);
+    c.verlange(OPT_ECHO);
+    speise(c, Bytes{IAC, DO, OPT_SGA, IAC, WILL, OPT_ECHO});
+    c.nimmAusgabe();
+    speise(c, Bytes{IAC, WONT, OPT_ECHO, IAC, DONT, OPT_SGA});
+    EXPECT_FALSE(c.entferntAktiv(OPT_ECHO));
+    EXPECT_FALSE(c.lokalAktiv(OPT_SGA));
+    EXPECT_EQ(c.nimmAusgabe(), (Bytes{IAC, DONT, OPT_ECHO, IAC, WONT, OPT_SGA}));
+    speise(c, Bytes{IAC, WONT, OPT_ECHO, IAC, DONT, OPT_SGA});
+    EXPECT_TRUE(c.nimmAusgabe().empty());
+}
+
+/// Lehnt die Gegenseite einen eigenen Wunsch ab (WillJa + WONT/DONT), ist die Option
+/// aus, ohne Antwort — und ein späterer Wunsch fragt erneut.
+TEST(TelnetCodec, AbgelehnterWunschIstAusUndDarfErneutGefragtWerden) {
+    TelnetCodec c(TelnetRolle::Client);
+    c.verlange(OPT_ECHO);
+    c.nimmAusgabe();
+    speise(c, Bytes{IAC, WONT, OPT_ECHO});
+    EXPECT_FALSE(c.entferntAktiv(OPT_ECHO));
+    EXPECT_TRUE(c.nimmAusgabe().empty());
+    c.verlange(OPT_ECHO);
+    EXPECT_EQ(c.nimmAusgabe(), (Bytes{IAC, DO, OPT_ECHO}));
+}

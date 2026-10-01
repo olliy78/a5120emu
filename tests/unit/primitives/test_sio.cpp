@@ -753,3 +753,41 @@ TEST(Z80SIO, Leitungen_SerializeRoundTrip) {
     EXPECT_TRUE(b.channelB().dcd());
     EXPECT_EQ(b.ioRead(3) & 0x08, 0x08);
 }
+
+/**
+ * @test Z80SIO/StatusAffectsVector_AlleSechsQuellen
+ * @brief AP-T1a: der Fall oben prüft nur B-Rx und B-Tx; hier die übrigen vier Quellen
+ *        nach Zilog — A-Rx 110, A-Tx 100, A-Ext/Status 101, B-Ext/Status 001.  Genau
+ *        A-Ext und B-Tx waren bis AP-E3 vertauscht.
+ */
+TEST(Z80SIO, StatusAffectsVector_AlleSechsQuellen) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 = D0H
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x17);   // Ch B WR1: Ext, Tx, SAV, Rx
+    // Ch A WR1 = 17H wie B (D2 wirkt nur an B): D4–3 = 10 UND D3–2 = 01 — Rx-Interrupt
+    // frei, gleich ob man D4–3 (Datenblatt) oder D3–2 (rxIntEnabled(), bekannter
+    // Befund aus AP-S3, Entwurf 19 §12.1) liest.  Mit 13H läge der Test auf dem Befund.
+    sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x17);
+    auto quittiere = [&] { sio.onRETI(); sio.setIEI(true); };
+
+    sio.channelA().rxByte(0x01);
+    EXPECT_EQ(sio.getVector(), 0xDC) << "A-Rx 110";
+    quittiere();
+    sio.ioRead(0);                                  // Zeichen abholen
+
+    sio.ioWrite(0, 0x41);
+    sio.channelA().txGet();
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xD8) << "A-Tx 100";
+    quittiere();
+
+    sio.channelA().setzeCTS(true);
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xDA) << "A-Ext/Status 101";
+    quittiere();
+
+    sio.channelB().setzeDCD(true);
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xD2) << "B-Ext/Status 001";
+}

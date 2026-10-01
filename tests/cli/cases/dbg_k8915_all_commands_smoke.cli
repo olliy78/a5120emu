@@ -7,9 +7,24 @@ run:     --machine k8915 %DISK% -x %CLI_DIR%/scripts/all_commands_smoke_k8915.db
 timeout: 300
 exit:    0
 forbid:  unknown command
+# AP-T1a: JEDES Kommando aus dbgm::nurA5120Kommando einzeln — mit nur drei
+# Stichproben blieb der Fall gruen, als "snap" aus der Liste fiel (lief dann am
+# K8915 auf dem Platzhalter-Z80 statt "nicht vorhanden" zu melden).
 expect:  's2' gibt es am K8915 nicht
+expect:  'b2' gibt es am K8915 nicht
+expect:  'bd2' gibt es am K8915 nicht
+expect:  'be2' gibt es am K8915 nicht
+expect:  'bdis2' gibt es am K8915 nicht
+expect:  'bi2' gibt es am K8915 nicht
+expect:  'rj2' gibt es am K8915 nicht
 expect:  'bbusrq' gibt es am K8915 nicht
+expect:  'snap' gibt es am K8915 nicht
+expect:  'restore' gibt es am K8915 nicht
+expect:  'rs' gibt es am K8915 nicht
+expect:  'bs' gibt es am K8915 nicht
+expect:  'rc' gibt es am K8915 nicht
 expect:  'savestate' gibt es am K8915 nicht
+expect:  'loadstate' gibt es am K8915 nicht
 expect:  ZVE2 ('r 2') gibt es am K8915 nicht
 expect:  Die BS-PIO (K2526) gibt es am K8915 nicht
 expect:  0000-0FFF  ROM

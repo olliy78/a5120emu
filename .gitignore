@@ -10,6 +10,7 @@ __pycache__/
 logs/
 *.tmp
 build_k1520/
+build_cov/
 out/
 
 # Paketierung: Release-Bauverzeichnis und geschnürte Archive
