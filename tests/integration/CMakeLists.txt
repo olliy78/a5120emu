@@ -52,3 +52,15 @@ k1520_add_test(k8915_maschine SRC test_k8915_maschine.cpp
 k1520_add_test(k8915_scpx SRC test_k8915_scpx.cpp
                           LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# Serielle Schnittstellen (Entwurf 19 §11, AP-S8): zwei A5120 im selben Prozess über
+# echtes Loopback-TCP, 1× gegen 10× Takt, Telnet+XON/XOFF und RFC 2217+RTS/CTS.
+# Standardregression 4 KiB je Fall (~2 s); die volle Fassung mit 64 KiB läuft mit den
+# langsamen Fällen (`tools/dev.sh test-format`).
+k1520_add_test(serielle_kopplung SRC test_serielle_kopplung.cpp
+                                 LIBS k1520_a5120 k1520_logger
+                                 LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+k1520_add_test(serielle_kopplung_voll SRC test_serielle_kopplung.cpp
+                                 LIBS k1520_a5120 k1520_logger
+                                 LABELS "integration;slow;format_integration"
+                                 DEFS LOG_LEVEL=2 KOPPLUNG_VOLL=1 TIMEOUT 600)
