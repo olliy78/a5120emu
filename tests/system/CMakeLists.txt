@@ -107,3 +107,34 @@ else()
     message(STATUS "Format-Matrix: ${_fmt_n} Tests registriert (LABEL format_matrix)")
 endif()
 
+
+# ─── K8915 (doc/design/16_k8915.md §8a AP-E4f): FORMAT.COM + DISGEN.COM im /WAIT-Betrieb ──
+# Die Kette Leerdiskette → FORMAT (80 Zylinder) → DISGEN → Kaltstart ist die TIEFE
+# (format_integration, ≈ 500 Mio. Takte); jedes zweiseitige 80-Zylinder-Verfahren des
+# FORMAT-Menüs auf Zylinder 00–02 die BREITE (format_matrix, wie die A5120-Matrix).
+k1520_add_test(k8915_format SRC test_k8915_format.cpp
+                            LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
+k1520_add_test(k8915_format_verfahren SRC test_k8915_format_verfahren.cpp
+                            LIBS k1520_k8915 k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_matrix" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# ─── SERTEST.COM (Entwurf 19 §14.8, AP-ST2): Serial Test unter CP/A und SCPX 8915 ──
+# Erkennung + Schnittstellenliste, Kurzhilfe, Ergebniszeilen, Ctrl+C → bedienbar.
+# Gerüst: sertest_hilfen.h.  Die eingecheckte .com kommt über K1520_SERTEST_COM;
+# ob sie zur Quelle passt, prüft cli_sertest_com_passt_zur_quelle.
+k1520_add_test(sertest SRC test_sertest.cpp
+                       LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                       LABELS "system;fast" DEFS LOG_LEVEL=2
+                       K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com")
+# AP-ST5: Tester gegen Gegenstelle auf zwei gekoppelten Maschinen (RFC 2217, Loopback).
+# Ein schneller Fall (A5120 ↔ A5120 V.24) in der Standardregression, die übrigen
+# (je zwei Kaltstarts, K8915, gemischt, Gegenfall) unter format_integration.
+k1520_add_test(sertest_kopplung SRC test_sertest_kopplung.cpp
+                       LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                       LABELS "system;fast" DEFS LOG_LEVEL=2
+                       K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com")
+k1520_add_test(sertest_kopplung_lang SRC test_sertest_kopplung.cpp
+                       LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                       LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 SERTEST_KOPPLUNG_LANG=1
+                       K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com" TIMEOUT 300)

@@ -113,25 +113,95 @@ bool mfmFieldCrcOk(const std::vector<uint8_t>& feld, uint16_t gespeichert) {
 // ─── Gap-Parameter ────────────────────────────────────────────────────────────
 
 GapParams gapsFor(Encoding enc) {
+    // Normlücken (IBM; so schreibt FORMAT.COM des A5120 und des K8915, so stehen sie auf
+    // jeder am Gerät formatierten Diskette — gemessen an den Greaseweazle-Abzügen in
+    // tests/fixtures/disks: 50 / 22 / 32 bzw. 116).  Bis 2026-09-29 standen hier knappe
+    // Werte (Vorspann 16, Lücke 1 16, Lücke 2 11, Lücke 3 24, keine Lücke 4b).  Die las der
+    // Emulator ohne Klage, der echte A5120 nicht: die ZVE2-Routine 1F7DH des
+    // CP/A-Bootsystems liest nach der ID-CRC noch 25 Lückenbytes (1FD8H: 1 + 17 + 1,
+    // 2038H: 1 + 6), bevor sie MK1 neu scharf macht — mit Lücke 2 = 11 × 4E + 12 × 00 ist
+    // die Sync-Gruppe des Datenfelds dann schon unter dem Kopf (doc/design/16_k8915.md
+    // AP-F1).  Beim K8915 dasselbe (AP-E5a: BIOS F780H liest 6 Lückenbytes nach).
     GapParams g;
     if (enc == Encoding::MFM) {
         g.gap_fill  = 0x4E;
         g.sync_len  = 12;
         g.with_iam  = true;
-        g.gap1      = 16;
-        g.gap2      = 11;
-        g.gap3      = 24;
-        g.gap4a     = 16;
+        g.gap4a     = 80;
+        g.gap1      = 50;
+        g.gap2      = 22;
+        g.gap3      = 24;   // Platzhalter; die Spur bekommt ihre aus normGaps()
     } else {
-        // FM (Single Density, IBM-3740-kompatibel)
+        // FM (Single Density, IBM 3740)
         g.gap_fill  = 0xFF;
         g.sync_len  = 6;
         g.with_iam  = true;
-        g.gap1      = 16;
+        g.gap4a     = 40;
+        g.gap1      = 26;
         g.gap2      = 11;
-        g.gap3      = 24;
-        g.gap4a     = 16;
+        g.gap3      = 27;
     }
+    return g;
+}
+
+namespace {
+/// Normlänge von Lücke 3 je Sektorgröße (IBM-Formatiertabellen; A5120 FORMAT.COM:
+/// 26 × 128 → 32, 5 × 1024 → 116, am Abzug gemessen).
+size_t normGap3(Encoding enc, uint16_t size) {
+    const bool mfm = enc == Encoding::MFM;
+    switch (size) {
+        case 128:  return mfm ? 32 : 27;
+        case 256:  return mfm ? 54 : 42;
+        case 512:  return mfm ? 84 : 58;
+        default:   return 116;
+    }
+}
+
+/// Bytes einer Spur mit den Lücken @p g OHNE Lücke 3 und Lücke 4b.
+size_t festeSpurBytes(const std::vector<LogicalSector>& sectors, Encoding enc,
+                      const GapParams& g) {
+    const bool   mfm = enc == Encoding::MFM;
+    const size_t a1  = mfm ? 3 : 0;
+    size_t n = g.gap4a + (g.with_iam ? g.sync_len + a1 + 1 : 0) + g.gap1;
+    for (const auto& s : sectors)
+        n += 2u * (g.sync_len + a1 + 1) + 4u + 2u + g.gap2 + s.size + 2u;
+    return n;
+}
+
+} // namespace
+
+size_t nominalTrackBytes(const std::vector<LogicalSector>& sectors, Encoding enc) {
+    // Die kleinste Umdrehung, in die die Spur mit einer brauchbaren Lücke 3 (≥ 16) passt.
+    // Eine 5,25″-Spur mit gekürzter Lücke 3 (10 × 512) bleibt so eine 5,25″-Spur; erst was
+    // auch dann nicht passt (8″ DD 26 × 256), bekommt die längere Umdrehung.
+    constexpr size_t kMindestLuecke3 = 16;
+    const GapParams g = gapsFor(enc);
+    const size_t    n = festeSpurBytes(sectors, enc, g) + sectors.size() * kMindestLuecke3;
+    static const size_t kMfm[] = {6250, 10416};
+    static const size_t kFm[]  = {3125, 5208, 6250};
+    const bool mfm = enc == Encoding::MFM;
+    const size_t* kand = mfm ? kMfm : kFm;
+    const size_t  zahl = mfm ? 2 : 3;
+    for (size_t i = 0; i < zahl; ++i)
+        if (n <= kand[i]) return kand[i];
+    return kand[zahl - 1];   // überlange Spur: die größte (sie läuft dann über den Index)
+}
+
+GapParams normGaps(const std::vector<LogicalSector>& sectors, Encoding enc) {
+    GapParams g = gapsFor(enc);
+    const size_t umdrehung = nominalTrackBytes(sectors, enc);
+    const size_t fest      = festeSpurBytes(sectors, enc, g);
+    size_t g3 = 0;
+    for (const auto& s : sectors) g3 = std::max(g3, normGap3(enc, s.size));
+    if (g3 == 0) g3 = g.gap3;
+    if (!sectors.empty() && fest + sectors.size() * g3 > umdrehung) {
+        // Kürzen, bis die Spur in die Umdrehung passt — nie unter den Nachlauf hinter
+        // der CRC (UDOS-Sektorkontrollblock, @ref kSectorTailBytes).
+        const size_t rest = umdrehung > fest ? umdrehung - fest : 0;
+        g3 = std::max<size_t>(kSectorTailBytes, rest / sectors.size());
+    }
+    g.gap3      = static_cast<uint8_t>(std::min<size_t>(g3, 255));
+    g.track_len = static_cast<uint16_t>(umdrehung);
     return g;
 }
 
@@ -174,6 +244,9 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
     fill(gaps.gap_fill, gaps.gap4a);
 
     if (gaps.with_iam) {
+        // Sync-Feld vor der Indexmarke (IBM: 12 × 00 bzw. 6 × 00) — so schreibt es
+        // FORMAT.COM; ohne es sähe der Datenseparator die C2-Gruppe unvorbereitet.
+        fill(0x00, gaps.sync_len);
         if (enc == Encoding::MFM) {
             // 3×0xC2 (ohne Marke) + 0xFC (Index-Marke)
             push(0xC2);
@@ -285,11 +358,15 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
         fill(gaps.gap_fill, gaps.gap3 - tail_n);
     }
 
+    // Lücke 4b: bis zum Index auffüllen (eine TrackImage ist genau eine Umdrehung).
+    if (t.bytes.size() < gaps.track_len)
+        fill(gaps.gap_fill, gaps.track_len - t.bytes.size());
+
     return t;
 }
 
 TrackImage buildTrack(const std::vector<LogicalSector>& sectors, Encoding enc) {
-    return buildTrack(sectors, enc, gapsFor(enc));
+    return buildTrack(sectors, enc, normGaps(sectors, enc));
 }
 
 // ─── parseTrack ───────────────────────────────────────────────────────────────
@@ -725,7 +802,8 @@ size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding rea
  * marks[] liegt auf dem FE/FB-Byte (wie buildTrack); CRC ist Standard-IBM-CCITT über die
  * 3×A1-Spanne (identisch zu buildTrack/parseTrack).
  */
-TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc) {
+TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc,
+                                  bool luecke2_vom_medium) {
     TrackImage t;
     t.encoding = enc;
     t.bitcells = 0;
@@ -764,7 +842,30 @@ TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Enc
         push(static_cast<uint8_t>(idCrc >> 8));
         push(static_cast<uint8_t>(idCrc & 0xFF));
 
-        fill(0x4E, (sec.size <= 128u) ? 18u : 27u);
+        // Lücke 2 = der Abstand, den das MEDIUM zwischen ID-CRC und Datenmarke hat (AP-F1).
+        // Das Leseprogramm liest nach dem Kennfeld eine feste Zahl Lückenbytes, bevor es
+        // MK1 neu scharf macht (CP/A-Bootsystem 1F7DH: 25) — ob die Sync-Gruppe des
+        // Datenfelds dann noch vor dem Kopf liegt, entscheidet die Lücke auf der SCHEIBE.
+        // Bis 2026-09-29 stand hier fest 18/27: jede Diskette war gleich gut, auch eine,
+        // die der echte A5120 nicht lesen kann.  Die Datenmarke steht im Strom an
+        // derselben Stelle wie auf dem Medium (Sync und 4 × A1 davor, das vierte A1 auf
+        // dem letzten Sync-Byte).  Ohne Lagedaten (von Hand gebaute Sektoren) bleibt 18/27.
+        //
+        // NUR MFM-Spur, MFM gelesen (@p luecke2_vom_medium, K5122 entscheidet): der Strom
+        // wird im LESE-Verfahren gebaut, auch wenn die Spur im anderen liegt (die
+        // FM/MFM-Probe des BIOS) — die Abstände einer FM-Spur (11 × FF + 6 × 00) passen
+        // dann nicht zum MFM-Strom (bootdisk_mf3200_fmt7 lief so in RC auf Spur 3).  Der
+        // FM-Lesepfad ist nicht nachgemessen; FM bleibt beim alten Strom.
+        {
+            size_t luecke = (sec.size <= 128u) ? 18u : 27u;
+            if (luecke2_vom_medium && isMfm && sec.id_pos != SIZE_MAX && sec.data_pos != SIZE_MAX
+                && sec.data_pos > sec.id_pos + 7) {
+                const size_t abstand = sec.data_pos - (sec.id_pos + 7);   // CRC-Ende → Marke
+                const size_t vorlauf = kSync + (isMfm ? kReadA1 : 0);
+                luecke = abstand > vorlauf ? abstand - vorlauf : 0;
+            }
+            fill(0x4E, luecke);
+        }
 
         // ── DAM ───────────────────────────────────────────────────────────────
         fill(0x00, kSync);

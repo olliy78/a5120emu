@@ -415,6 +415,21 @@ public:
     void releaseWAIT();
 
     /**
+     * @brief Wartetakte, die ein Baustein WÄHREND des laufenden Zugriffs verlangt.
+     *
+     * `/WAIT` auf Zugriffsebene: die K5122 im `/WAIT`-Betrieb (K8915) hält die CPU
+     * bei `IN (16H)`/`OUT (14H)` an, bis das nächste Byte unter dem Kopf ist
+     * (doc/design/07_k5122_afs.md §7.6, doc/design/16_k8915.md §3.4).  Der Baustein
+     * trägt die Takte hier ein; die Laufschleife holt sie nach dem Befehl mit
+     * @ref takeWaitCycles ab und verbucht sie wie Befehlstakte — so laufen Zeitgeber,
+     * Index und SIO während des Wartens weiter.  @ref pendingWaitCycles gibt dem
+     * Baustein die schon verlangten Takte desselben Befehls (Zeitpunkt des Zugriffs).
+     */
+    void addWaitCycles(int n) { wait_cycles_ += n; }
+    int  pendingWaitCycles() const { return wait_cycles_; }
+    int  takeWaitCycles() { const int n = wait_cycles_; wait_cycles_ = 0; return n; }
+
+    /**
      * @brief Assert /BUSRQ – DMA device requests the bus from ZVE1.
      *
      * Called by K5122 when /STR is asserted (start of DMA transfer).
@@ -582,6 +597,7 @@ private:
     bool int_asserted_   = false;  ///< /INT is currently asserted
     bool nmi_pending_    = false;  ///< /NMI edge was detected
     bool wait_asserted_  = false;  ///< /WAIT is asserted (stall access)
+    int  wait_cycles_    = 0;      ///< verlangte Wartetakte des laufenden Befehls (addWaitCycles)
     bool reset_asserted_ = false;  ///< /RESET is asserted (system initializing)
     bool memdi_          = false;  ///< /MEMDI im laufenden Speicherzyklus (s. memdiActive)
     uint16_t io_addr_    = 0;      ///< AB0–15 des laufenden/letzten E/A-Zyklus

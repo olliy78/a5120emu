@@ -130,7 +130,7 @@ formats:
     description: "SCPX 798K — Systemzylinder 0 in 16×256, Daten 5×1024"
     drives:      [K5601]
     encoding:    mfm
-    # GEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe (GeometryProbe):
+    # GEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy_norm.hfe (GeometryProbe):
     # nur Zylinder 0 ist beidseitig 16×256, ab Zylinder 1 durchgängig 5×1024.  Ohne
     # diesen Eintrag passte die Diskette zu keinem Format des Katalogs.
     tracks:
@@ -600,6 +600,7 @@ formats:
 #    data_start   (optional) erste Spur des Dateisystems (Vorgabe cyl 0 / head 0)
 #    containers   (optional) img | hfe | dmk (Vorgabe: alle; udos nie img — udos1715 schon)
 #    detect_rank  (optional) Reihenfolge bei mehrdeutiger Erkennung (kleiner = frueher)
+#    detect       (optional) false = nie erkannt, nur mit --fs NAME (Vorgabe true)
 #
 #  Nur type: cpm      block_size, dir_entries, skew, os
 #  Nur type: udos/    sides_separate, boot_track, directory_track, bitmap_track,
@@ -667,10 +668,35 @@ filesystems:
     description: "SCPX 798K — Systemzylinder 0 in 16×256, Dateisystem ab Zylinder 2"
     format:      scpx798
     type:        cpm
-    # NACHGEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy.hfe.
+    # NACHGEMESSEN an tests/fixtures/disks/scpx17_5x1024_k5601_hardy_norm.hfe.
     data_start:  { cyl: 2, head: 0 }
     block_size:  2048
     dir_entries: 128
+
+  # ══ SCPX 8915 (K8915) ══════════════════════════════════════════════════════
+  # Das BIOS des K8915 (SCPX 8915 V5.3) RECHNET nicht wie CP/A, es hat einen festen
+  # DPB (D751H, von DISGEN eingetragen): A: SPT 80, 2 KB, DSM 389, DRM 127, OFF 2 —
+  # auch auf einer Diskette OHNE Systemspuren.  Die CP/A-Regel trifft das auf jeder
+  # Systemdiskette und auf jeder Diskette, auf die der K8915 schon geschrieben hat,
+  # bitgleich (doc/design/16_k8915.md §8a AP-E5a).  EIGENER GRUND fuer den Eintrag:
+  # eine frisch formatierte, LEERE Diskette ist Sektor fuer Sektor dieselbe wie eine
+  # leere CP/A-Datendiskette (`cpa800`, 192 Plaetze ab Zylinder 0) — wer sie fuer den
+  # K8915 fuellen will, braucht einen Namen (`--fs scpx8915`, `create --fs scpx8915`).
+  # `detect: false`: in der Erkennung machte er nur jede leere cpa800 mehrdeutig.
+  # B: in 16×256 (DISGEN-Einstellung der Diskette 901) braucht nichts: `dtrsl1`
+  # traegt dort ein FESTES Offset, die Regel liefert immer OFF 2 / 128 (DSM 311).
+
+  - name:        scpx8915
+    description: "SCPX 8915 (K8915) 780K — Systemzylinder 0-1, Dateisystem ab Zylinder 2"
+    format:      cpa800
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+    detect:      false
+    # Bootabbilder muessen einen K8915-Ladekopf tragen (Sektor 1: 16 Byte, CRC 0) —
+    # ein A5120-CP/A-Abbild wird abgewiesen statt still geschrieben (AP-E5c).
+    boot_header: k8915
 
   # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
   # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,

@@ -119,7 +119,10 @@
   + "-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
 
 #define Produkt   "K1520emu"
-#define Programm  "A5120-Emulator"
+#define Programm  "A5120 Emulator"
+; Der zweite Emulator derselben Installation: dasselbe Programm mit dem Profil
+; des K8915 (app/main.py --machine k8915), gleiches Symbol, anderer Name.
+#define Programm2 "K8915 Emulator"
 #define Anbieter  "Olaf Krieger"
 
 [Setup]
@@ -234,6 +237,9 @@ Source: "{#Paket}\wheels\{#GwWheel}";        Flags: dontcopy
 ; pythonw.exe, und ohne eigene Angabe steht im Startmenue das Python-Symbol.
 Name: "{group}\{#Programm}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\main.py"""; WorkingDir: "{app}"; Comment: "{#Programm}"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
+Name: "{group}\{#Programm2}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
+  Parameters: """{app}\app\main.py"" --machine k8915"; WorkingDir: "{app}"; Comment: "{#Programm2}"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\k1520DiskTool"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"; \
@@ -648,6 +654,9 @@ begin
   CreateDir(ExpandConstant('{app}\bin'));
   VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
                    ExpandConstant('{app}\bin\a5120emu.cmd'));
+  { Der K8915 Emulator: dieselbe Vorlage, der Dateiname waehlt das Profil. }
+  VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
+                   ExpandConstant('{app}\bin\k8915emu.cmd'));
   VorlageSchreiben(ExpandConstant('{tmp}\disktool_launcher.cmd'),
                    ExpandConstant('{app}\bin\k1520disktool.cmd'));
 
@@ -691,7 +700,7 @@ begin
   Daten := AbweichenderDatenOrdner;
   StringChangeEx(Daten, '\', '\\', True);
 
-  SetArrayLength(Zeilen, 24);
+  SetArrayLength(Zeilen, 36);
   Zeilen[0]  := 'import ctypes, os, sys';
   Zeilen[1]  := 'os.environ["QT_QPA_PLATFORM"] = "offscreen"';
   Zeilen[2]  := 'sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))';
@@ -721,6 +730,21 @@ begin
     geprueft.  Ein fehlendes Greaseweazle darf den Rauchtest nicht kippen. }
   Zeilen[22] := 'from app.gw import verfuegbar';
   Zeilen[23] := 'print("Greaseweazle:", "einsatzbereit" if verfuegbar() else "NICHT installiert")';
+  { Beide Maschinen: ROM- und Zeichengeneratordaten sind einkompiliert; hier
+    zeigt sich, ob die DLL auch den K8915 traegt (K1520_MACHINE_K8915 = 2) und
+    ob das zweite Programmprofil sein Fenster baut. }
+  Zeilen[24] := 'lib.k1520_create.argtypes = [ctypes.c_int]';
+  Zeilen[25] := 'lib.k1520_create.restype = ctypes.c_void_p';
+  Zeilen[26] := 'lib.k1520_destroy.argtypes = [ctypes.c_void_p]';
+  Zeilen[27] := 'for nr, name in ((0, "A5120"), (2, "K8915")):';
+  Zeilen[28] := '    h = lib.k1520_create(nr)';
+  Zeilen[29] := '    if not h: sys.exit(name + ": k1520_create schlug fehl")';
+  Zeilen[30] := '    lib.k1520_destroy(h)';
+  Zeilen[31] := 'print("Maschinen:  A5120, K8915")';
+  Zeilen[32] := 'from app import profil';
+  Zeilen[33] := 'MainWindow(profil=profil.profil("k8915")).close()';
+  Zeilen[34] := 'print("Oberflaeche K8915: baut auf")';
+  Zeilen[35] := 'sys.stdout.flush()';
 
   Datei := ExpandConstant('{app}\.rauchtest.py');
   if not SaveStringsToFile(Datei, Zeilen, False) then

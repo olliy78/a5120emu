@@ -21,7 +21,7 @@ add_library(k1520_testsupport STATIC
     machine_run.cpp
     keyboard.cpp
 )
-target_link_libraries(k1520_testsupport PUBLIC k1520_a5120 k1520_floppy k1520_logger)
+target_link_libraries(k1520_testsupport PUBLIC k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
 target_include_directories(k1520_testsupport PUBLIC ${CMAKE_SOURCE_DIR})
 
 # Fundort der Testdisketten — dieselbe Definition, die k1520_add_test() den

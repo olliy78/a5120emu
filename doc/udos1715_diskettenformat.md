@@ -189,9 +189,9 @@ Geprüft wird deshalb nur noch, dass hinter dem Belegungsplan **`00` oder `77H`*
 und Byte `179H` gar nicht mehr — beim P8000 trägt es `01`.
 Wächter: `Udos1715P8000.*` auf der Fixture `udosP8000_640k_wega.hfe` — sie liegt
 als `.hfe` vor, weil 13 ihrer Sektoren hinter der Daten-CRC die Schreibnaht eines
-nachträglich überschriebenen Sektors tragen (`4E xx yy yy …`); `rawCompatible()` sieht
-dort Bytes außerhalb der Nutzdaten und verweigert `.img`.  Das ist kein Widerspruch zu
-§8 — die Diskette DÜRFTE ein `.img` sein, diese Aufnahme ist es nur nicht.
+nachträglich überschriebenen Sektors tragen (`4E xx yy yy …`).  Bis 2026-09-29 verweigerte
+`rawCompatible()` deshalb `.img`; seit `doc/design/16_k8915.md` AP-E5b erkennt es den reinen
+Schreibnachlauf, und die Diskette ist — wie §8 es sagt — als `.img` exportierbar.
 
 > **Der Systembereich ist beim P8000 größer.** Gesperrt ist dort jeweils der ganze
 > **Kopf 0** (Sektoren 0…15) der Spuren 0 (Urlader/BFOS), **21** (Bootspur), 22
@@ -448,11 +448,11 @@ UDOS 2.2) — dasselbe Bild:
 
 Zwei Eigenheiten dieses Datenträgers sind echt und kein Fehler:
 
-* **`.img` geht hier nicht.**  13 Sektoren tragen hinter der Daten-CRC die
-  **Schreibnaht** eines nachträglich überschriebenen Sektors (`4E xx yy yy …`, z. B.
-  c12h0 Sektor 10 → `4E 13 93 93 93 93 93 93`).  Inhaltlich ist das nichts, aber
-  `rawCompatible()` kann das nicht wissen und verweigert das rohe Sektorabbild —
-  richtig so.  `save-as` in `.hfe` (oder `.dmk`) statt `.img`.
+* **Hinter 13 Daten-CRCs steht eine Schreibnaht.**  Die Sektoren wurden nachträglich
+  überschrieben (`4E xx yy yy …`, z. B. c12h0 Sektor 10 → `4E 13 93 93 93 93 93 93`).
+  Inhaltlich ist das nichts.  Bis 2026-09-29 verweigerte `rawCompatible()` deshalb das
+  rohe Sektorabbild; seit AP-E5b (`doc/design/16_k8915.md`) erkennt es den reinen
+  Schreibnachlauf (`4E` vorn, versetzte Lücke hinten), `.img` geht.
 * **Der eine freie Sektor in Spur 0.**  Die Karte gibt Spur 0 Sektor 1 als frei; das
   Medium ist dort unbeschrieben.  Eine neu angelegte Datei landet also mitten im
   Bootbereich — das tut UDOS selbst genauso, die Karte ist die Wahrheit.

@@ -142,7 +142,21 @@ lib built:
 ```sh
 python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
 bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
+bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
+
+> **Zwei Programme, eine Oberfläche** (2026-09-30, AP-UI1,
+> `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
+> **A5120 Emulator** (`a5120emu`) und **K8915 Emulator** (`k8915emu`, `app/main.py
+> --machine k8915`).  Alles Maschinenspezifische steht im **Programmprofil
+> `app/profil.py`** (Titel, Konfig-/Vorgabedatei, Takt, Tastatur K7637/K7672,
+> Frontplatte, eigene Aktionen wie `nmi` via `actions.NUR_FUER`) — kein
+> `if machine == …` in der Oberfläche.  Konfiguration je Programm im selben
+> Ordner: **`a5120emu.yaml`** / **`k8915emu.yaml`**, Vorgaben
+> **`data/default_config_a5120.yaml`** / **`default_config_k8915.yaml`**; eine alte
+> `config.yaml` zieht der A5120 beim Start EINMAL nach `a5120emu.yaml` um
+> (`config_io.konfig_umziehen`).  Die Starter der Installation sind EINE Vorlage, der
+> NAME (`k8915emu*`) wählt das Profil.  Wächter: `py_k8915emu_gui`.
 
 > **Die Oberfläche des Emulators ist wie die des DiskTool geschnitten**
 > (2026-09-13, `doc/design/11_python_app.md` §10): **jede Bedienung ist eine
@@ -204,10 +218,10 @@ bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 > Handbuchs ist ein Vertrag.  Wächter: `py_programme`.
 >
 > **Der Auslieferungszustand ist eine DATEI, kein Programmtext** (2026-09-14,
-> `doc/design/11_python_app.md` §10.7): `data/default_config.yaml` (in der
-> Installation `share/k1520emu/`) hat denselben Aufbau wie die `config.yaml` des
-> Anwenders und wird an zwei Stellen gebraucht — beim ERSTEN Start, solange es
-> noch keine `config.yaml` gibt, und bei *Ansicht ▸ Standard zurücksetzen*, das
+> `doc/design/11_python_app.md` §10.7): `data/default_config_a5120.yaml` bzw.
+> `…_k8915.yaml` (in der Installation `share/k1520emu/`) hat denselben Aufbau wie
+> die `a5120emu.yaml`/`k8915emu.yaml` des Anwenders und wird an zwei Stellen
+> gebraucht — beim ERSTEN Start, solange es noch keine Konfiguration gibt, und bei *Ansicht ▸ Standard zurücksetzen*, das
 > sie nach Rückfrage anwendet und **sofort** zurückschreibt.  Aufgelöst in
 > `app/paths.py::default_config_file()`, gelesen in
 > `app/config_io.py::standard_konfiguration()`.  Vier Dinge dazu:
@@ -394,6 +408,54 @@ bus/            →  K1520Bus (memory/IO dispatch, INT daisy-chain, BUSRQ, NMI, 
 - **C-API boundary** (`core/api/k1520_api.{h,cpp}`): the only surface the Python side sees; keep it `extern "C"` and ABI-stable. `A5120Machine` (`core/machines/a5120/a5120.{h,cpp}`) is the integration point exposing `run()`, disk mounting, framebuffer, keyboard, and debug accessors.
 - **EPROM/charset data** are committed as generated C arrays (`*_data.h`, `chargen_*.h`) produced from binaries by `tools/eprom_to_h.py`; they are not loaded at runtime. The K7024 character generator is the two-EPROM Latin set (`chargen_zg1.h` = pixel rows 0–7 / v171, `chargen_zg2.h` = rows 8–11 / v172); binaries under `doc/EPROMS/K7024/`.
 
+## Variante A5120.16 (Erweiterungsmodul EM064/EM256 mit U8001)
+
+Ein A5120 mit `A5120Machine::Config::em` (`core/cards/em/`, CPU-Primitive
+`core/primitives/z8000.{h,cpp}`, Werkzeuge `tools/z8000/` + `z8kasm`); C-ABI
+`k1520_create_with_em`/`k1520_em_*`, Python `K1520Emulator(em="em256")`, Debugger
+`k1520dbg --em em256` + `cpu u8000` (`tools/k1520dbg.md` §12), `boot_trace --em`. Plan
+und Stand: `doc/design/17_a5120_16.md`. Beim Zusammenführen mit dem Zweig K8915
+(2026-10-02) festgelegt:
+- **Bus-/MEMDI ist ein JE ZUGRIFF getriebenes Signal** (`K1520Bus::MemdiDriver`), es gibt
+  kein `setMEMDI` mehr; die ZRE 045-8762 des K8915 führt /MEMDI nur als Kartenzustand.
+- **Save-State v7** = SIO-Block mit Break/Ext-Latch (K8915-Zweig) + EM-Block; beide Zweige
+  hatten unabhängig „v6“ vergeben, ältere Stände laden deshalb ohne Geräteteil.
+- **Ein EM gibt es nur am A5120**: Modellwahl nur im Programmprofil mit `modellwahl`
+  (`app/profil.py`), `K1520Emulator(machine="k8915", em=…)` → `ValueError`.
+  Wächter `test_only_the_a5120_offers_the_a5120_16_model`.
+
+## Zweite Maschine: K8915
+
+Robotron K8915 (5¼″, V3) neben dem A5120, eigener Zweig unter `core/machines/k8915/`:
+Karten `zre8762` (CPU + 128 KB RAM, Speicherumschaltung Port A8H), `k7028` (ATS,
+2×SIO+2×CTC), Peripherie `k7672` (Tastatur); wiederverwendet `K7024` und `K5122`
+(zweite Betriebsart `/WAIT`, **ohne** ZVE2 — eigener Zweig, rührt den `/BUSRQ`-Weg/die
+A5120-Boot-Invarianten nicht an), gemeinsamer Baustein `Laufwerke`. **In `libk1520core.so`** (`k1520_create(K1520_MACHINE_K8915)`,
+Python `K1520Emulator(machine="k8915")`; Bild dort nur über `k1520_screen_char`, nie
+`mem_read`). **`boot_trace`/`k1520dbg` mit `--machine k8915`** (AP-E4d: eine CPU,
+A8H-Speicherbild, `map`/`bank`, Ereignisprotokoll K5122/61H/A8H/Interrupts, Abbruch am
+Prompt; ZVE2/`bbusrq`/Snapshots/Savestates melden „nicht vorhanden“ —
+`tools/k1520dbg.md` §11, `tools/boot_trace.md` §7). **Stand 2026-09-30:** eigenes Programm **k8915emu** (AP-UI1: Frontplatte in der
+Statuszeile, NMI-Taster `k1520_nmi`, Bildschirmtastatur K7672 mit Matrixpositionen —
+Vorsatz 2AH/1DH statt `E0`).  Etappen 1–3 fertig (SCPX 8915 V5.3 bootet bis zum Prompt — beide BIOS-Fassungen,
+drei Systemdisketten als Fixtures, AP-B2), AP-E4a/E4b/**E4c**/E4d/E4e/E4f fertig (C-ABI,
+Werkzeuge, **FORMAT.COM + DISGEN.COM laufen**: Leerdiskette → FORMAT → DISGEN → Kaltstart,
+Wächter `K8915Format.*` in `test-format`; **Drucker (SIO1-B) + DFÜ (SIO2-A, vorläufig) nach
+außen** über `K1520Machine::setPrinterCallback`/`printerSend` bzw.
+`setDFUECallback`/`dfueSend`, `Z80SIO` liefert bei leerem Empfänger jetzt das zuletzt
+empfangene Byte statt FFH — Datenblatt-Korrektur, für den A5120 folgenlos); **DiskTool
+(Etappe 5): AP-E5a/E5b/E5c fertig** — BIOS-DPB, `.img`-Export, **bootfähige K8915-Disketten**
+(`create --fs scpx8915 --boot` / `boot-put --fs scpx8915`, Ladekopf wird vor dem Schreiben
+geprüft, A5120-Abbild abgewiesen); Rest von Etappe 4 offen, Arbeitspakete in
+`doc/design/16_k8915.md` §8a. Im `/WAIT`-Zweig liefert das Lesen die Spur **so, wie sie auf
+der Scheibe liegt** (FORMAT.COM prüft Byte für Byte nach), `.img`-Spuren mit Normlücken —
+nicht den nachgebauten 4×A1-Strom des A5120-Wegs.
+
+**Vor Arbeiten daran: `doc/merkposten/k8915.md` lesen** — die Festlegungen mit ihrem
+Wächter (A8H-Brückenfeld, `/WAIT`-Zweig der K5122 samt Spur-wie-sie-liegt und MK = nur
+Markenerkennung, `Z80PIO`/`Z80SIO`-Korrekturen, K7672 SCP/DCP, vorläufige Prüfstecker-Vorgabe,
+`TempDisk`, FORMAT.COM-Bedienung). Plan: `doc/design/16_k8915.md`.
+
 ## Boot-ROM debugging workflow
 
 Der volle CP/A-Kaltstart läuft (Boot-ROM → SYL-Lader → Zweitlader → CP/A-Bootsystem →
@@ -497,6 +559,11 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 > - **UDOS/ZDOS auf `.img` ist unmöglich** — die Dateiverkettung steht im Gap hinter der
 >   Daten-CRC; `rawCompatible()` sperrt es. Bei UDOS1715/NDOS ist `.img` dagegen **erlaubt**
 >   (dort trägt die Verkettung in eigenen Zeigersektoren).
+> - **Erzeugte Spuren = Normlücken + genau eine Umdrehung** (AP-F1, `doc/design/16_k8915.md`):
+>   Lücke 2 = 22 × 4E (das CP/A-Bootsystem liest nach der ID-CRC 25 Bytes, bevor es MK1
+>   scharf macht), und die Zellenzahl einer `.hfe`-Spur IST ihre Umdrehungszeit
+>   (`gw write` streckt sie). Der A5120-Lesestrom übernimmt Lücke 2 vom Medium (nur MFM); eine
+>   knappe Diskette scheitert im Emulator wie am Gerät (`BootIntegrationLuecke2.*`).
 > - **`TrackCodec::writeSector` ersetzt ein Datenfeld an Ort und Stelle.** `buildTrack()`
 >   taugt zum Schreiben NICHT: es baut die Spur neu und verlöre alles hinter der Daten-CRC.
 > - **Stapeloperationen sind Transaktionen** — erst planen und urteilen, dann schreiben; ein
@@ -566,6 +633,31 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 >   die einzige Handhabe: die Sätze einer UDOS-Datei liegen verkettet und physisch
 >   verschränkt (`NOTE.TO.SD`: Sektor 6, 7, 12, 23, 1, 8, …) — den zweiten fände von Hand
 >   niemand, und einen Namen zum Wiedererkennen gibt es dort auch nicht.
+
+## Serielle Schnittstellen nach außen (`core/serial/`, `app/ui/serial_widget.py`)
+
+Die seriellen Kanäle der K8025 (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker) und der K7028 (K8915:
+Drucker/IFSS1 X3, V.24 X4, DFÜ/IFSS2 X5 — Namen nach der Gerätebeschriftung, AP-S12) gehen über **Telnet** oder **RFC 2217** (Client/Server) oder in eine
+**Datei** nach außen; die Tastatur bleibt fest verdrahtet. Je Maschine ein `SerialHub`
+(`K1520Machine::serialHub()`, I/O-Faden) mit je Schnittstelle einem `Wandler`; die Karten
+liefern nur einen `SerialAnschluss`. C-ABI `k1520_serial_*`, Python `K1520Emulator.serial_*`,
+Reiter „Schnittstellen" im Einstellungen-Kasten (seit AP-S10, kein eigener Dock). Entwurf: `doc/design/19_serielle_schnittstellen.md`.
+
+> **Vor Arbeiten daran: `doc/merkposten/serielle_schnittstellen.md` lesen** (Festlegungen
+> mit Wächtern, wie man einen Gast im Test senden lässt, Gegenstellen). Die teuersten Regeln:
+> - **Maschinenzeit, nicht Uhr:** der Wandler taktet in Maschinentakten nach der vom Gast
+>   programmierten Baud; **verlustfrei durch Rückstau**, nie ein SIO-Überlauf.
+> - **Der Gast ist maßgeblich:** eine RFC-2217-Anfrage ändert Baud/Format nie, sie wird mit
+>   dem Gastwert beantwortet und nur als `baud_abweichend` angezeigt.
+> - **Kein Netz im Emulationsfaden, die Karte kennt kein Netz**; Sperrreihenfolge Hub → Wandler.
+> - **RTS-Halt erst nach dem ersten gesetzten RTS** (CP/A/SCPX setzen es nie); danach sofort.
+>   Nullmodem-Kreuzung nur als Server.
+> - **Loop ⇔ keine Verbindung**; K8915 startet mit Loop an. **Datei meldet VERBUNDEN.**
+> - **Tests: nie feste Ports** (Port 0 bzw. freier Port, nur Loopback). Wächter u. a.
+>   `SerialWandler.*`, `SerialHub.*`, `SerielleKopplung.*` (64 KiB-Fassung in `test-format`),
+>   `py_serial_api`, `py_serial_gui`, `py_serial_pyserial`.
+> - **Prüfprogramm `SERTEST.COM`** (`tools/sertest/`, Entwurf 19 §14; `.com` eingecheckt): Wächter
+>   `Sertest.*`/`SertestKopplung.*` (lange Kopplungsfälle in `test-format`); Geräteprüfung offen.
 
 ## Physische Diskette am Greaseweazle (`core/peripherals/floppy_drive/track_sync.*`, `app/gw/`)
 

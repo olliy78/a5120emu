@@ -81,6 +81,10 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         // CP/M-86 des A7100: eigener Eintrag, weil die CP/A-Regel hier NICHT gilt
         // (sie bildet das CP/A-BIOS nach, nicht das SCP1700).
         "scp1700",
+        // SCPX 8915 (K8915): festes OFF 2 auch ohne Systemspuren.  Nur mit `--fs`
+        // (`detect: false`) — eine LEERE Diskette ist sonst von `cpa800` nicht zu
+        // unterscheiden (doc/design/16_k8915.md §8a AP-E5a).
+        "scpx8915",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";
@@ -259,4 +263,27 @@ TEST(FsCatalog, SpaetereDateiUeberschreibtGleichenNamen) {
     FsCatalog cat = FsCatalog::load({a.path(), b.path()}, formate(), &fatal);
     ASSERT_EQ(cat.profiles().size(), 1u);
     EXPECT_EQ(cat.find("x")->dir_entries, 256) << "spaetere Datei hat Vorrang";
+}
+
+/**
+ * @test FsCatalog.DetectUndBootHeaderWerdenGeprueft
+ * @brief AP-T1a (Felder aus AP-E5a/E5c): `detect` nur true/false, `boot_header` nur
+ *        `k8915` oder leer — alles andere wird mit Feldnamen beanstandet und der
+ *        Eintrag übersprungen; ein gültiger Eintrag übernimmt beide Werte.
+ */
+TEST(FsCatalog, DetectUndBootHeaderWerdenGeprueft) {
+    TempKatalog k("filesystems:\n"
+                  "  - name: a\n    format: cpa800\n    type: cpm\n    detect: vielleicht\n"
+                  "  - name: b\n    format: cpa800\n    type: cpm\n    boot_header: a5120\n"
+                  "  - name: c\n    format: cpa800\n    type: cpm\n    detect: false\n"
+                  "    boot_header: k8915\n");
+    std::string fatal;
+    FsCatalog cat = FsCatalog::load({k.path()}, formate(), &fatal);
+    ASSERT_EQ(cat.issues().size(), 2u);
+    EXPECT_NE(cat.issues()[0].find("detect"), std::string::npos)      << cat.issues()[0];
+    EXPECT_NE(cat.issues()[1].find("boot_header"), std::string::npos) << cat.issues()[1];
+    ASSERT_EQ(cat.profiles().size(), 1u);
+    EXPECT_EQ(cat.profiles()[0].name, "c");
+    EXPECT_FALSE(cat.profiles()[0].detect);
+    EXPECT_EQ(cat.profiles()[0].boot_header, "k8915");
 }

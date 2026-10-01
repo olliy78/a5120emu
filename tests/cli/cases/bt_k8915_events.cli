@@ -1,0 +1,15 @@
+# boot_trace --machine k8915 (§8a AP-E4d): Ereignisprotokoll (A8H mit Speicherbild,
+# 61H mit Lampen, K5122-Ports, Interrupts mit Vektor und Quelle) und PC-Histogramm mit
+# Listing-Namen.  Endet am Marken-ISR (--until).
+tool:    boot_trace
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915 --skip-selftest --until PC==0xE965 -l %CLI_DIR%/../../doc/EPROMS/K8915/k8915_zre.prn -l %CLI_DIR%/../../doc/EPROMS/K8915/scpx8915_v53_bios.prn %DISK%
+timeout: 180
+exit:    0
+expect:  === K8915 Boot Trace ===
+expect:  OUT (A8H)=87  ZRE Speicherregister  map=1111111111111111 /MEMDI
+expect:  OUT (61H)=E0  Anzeigefeld  Lampen: Input File
+expect:  IN  (16H)  K5122 Daten lesen
+expect_re: INT Vektor=[0-9A-F]{2} von \S+
+expect:  --until (PC==0xE965): MET
+expect_re: 0x[0-9A-F]{4} ROM : +[0-9]+ +\( *[0-9.]+%\) <L[0-9A-F]{4}\+[0-9]+>  ; 

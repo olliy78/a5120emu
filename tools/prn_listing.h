@@ -196,11 +196,58 @@ inline bool splitSpec(const std::string& spec, std::string& path, long& offset){
     return ok;
 }
 
+/**
+ * Eine `-l`-Spezifikation mit optionalem Quellbereich aufteilen:
+ * "PFAD[@OFFSET][:VON-BIS]" — genauer: hinter dem '@' steht `OFFSET`, `OFFSET:VON-BIS`
+ * oder `:VON-BIS` (Versatz 0).  VON/BIS sind LISTING-Adressen (vor dem Versatz), hex
+ * mit oder ohne `0x`/`H`.  Damit lässt sich ein Teil eines Listings an eine andere
+ * Laufzeitadresse legen, ohne den Rest mitzuverschieben — beim K8915-Boot-ROM läuft
+ * 00D0H–03FFH als Kopie bei F0D0H, 0000H–00CFH und 0400H–09FFH aber an Ort und Stelle
+ * (`k8915_zre.prn@0xF000:00D0-03FF`).  §8a AP-E4d.
+ * @param lo,hi [out] Quellbereich, -1/-1 = ganzes Listing.
+ * @return false bei ungültigem Versatz oder Bereich.
+ */
+inline bool splitSpecRange(const std::string& spec, std::string& path, long& offset,
+                           int& lo, int& hi){
+    lo = hi = -1; offset = 0;
+    size_t at = spec.rfind('@');
+    if (at == std::string::npos){ path = spec; return true; }
+    path = spec.substr(0, at);
+    std::string rest = spec.substr(at+1);
+    size_t colon = rest.find(':');
+    std::string offs = colon == std::string::npos ? rest : rest.substr(0, colon);
+    if (!offs.empty()){
+        bool ok; offset = parseOffset(offs, ok);
+        if (!ok) return false;
+    } else if (colon == std::string::npos) return false;   // "PFAD@" allein
+    if (colon == std::string::npos) return true;
+    std::string rng = rest.substr(colon+1);
+    size_t dash = rng.find('-');
+    if (dash == std::string::npos || dash == 0 || dash+1 >= rng.size()) return false;
+    auto hex = [](std::string t, bool& ok)->long{
+        ok = false;
+        if (t.size()>2 && t[0]=='0' && (t[1]=='x'||t[1]=='X')) t = t.substr(2);
+        if (!t.empty() && (t.back()=='h'||t.back()=='H')) t.pop_back();
+        if (t.empty() || t.size()>4) return 0;
+        for (char c : t) if (!isHexDigit(c)) return 0;
+        ok = true; return strtol(t.c_str(), nullptr, 16);
+    };
+    bool ok1, ok2;
+    long a = hex(rng.substr(0, dash), ok1), b = hex(rng.substr(dash+1), ok2);
+    if (!ok1 || !ok2 || b < a) return false;
+    lo = (int)a; hi = (int)b;
+    return true;
+}
+
 /// Eine geladene .prn-Tabelle: Adresse → kommentierte Quellzeile.
 struct Listing {
     std::map<uint16_t, std::string> by_addr;
     /// Objektbytes je (Laufzeit-)Adresse — nur gefüllt, wenn load(…, want_bytes=true).
     std::map<uint16_t, uint8_t>     bytes_by_addr;
+    /// Labels, die im Listing auf einer EIGENEN Zeile stehen ("L055E:" ohne Code, wie in
+    /// den selbst erzeugten K8915-Listings) — gelten für die nächste Codezeile.  Nur für
+    /// @ref labelNear; by_addr/Symbolimport bleiben davon unberührt.
+    std::map<uint16_t, std::string> labels_by_addr;
 
     /**
      * Lädt eine .prn-Datei.
@@ -211,18 +258,30 @@ struct Listing {
      *                     (Versatz-Abgleich `@auto`).
      * @return Zahl aufgenommener Code-Zeilen (-1 = Datei fehlt).
      */
-    int load(const std::string& path, long addr_offset = 0, bool want_bytes = false){
+    int load(const std::string& path, long addr_offset = 0, bool want_bytes = false,
+             int src_lo = -1, int src_hi = -1){
         std::ifstream f(path);
         if (!f) return -1;
         std::string l; int n = 0;
         uint16_t a; std::string src;
         std::vector<uint8_t> bs;
+        std::string pending_label;             // allein stehendes "NAME:" vor der Codezeile
         while (std::getline(f, l)){
-            if (parseLine(l, a, src, want_bytes? &bs : nullptr)){
+            if (!parseLine(l, a, src, want_bytes? &bs : nullptr)){
+                std::string t = l;
+                while (!t.empty() && (t.back()=='\r' || t.back()==' ' || t.back()=='\t')) t.pop_back();
+                std::string lab = labelOf(t);
+                if (!lab.empty() && lab.size()+1 == t.size()) pending_label = lab;
+                continue;
+            }
+            {
+                // Quellbereich (splitSpecRange): nur Zeilen, deren LISTING-Adresse passt.
+                if (src_lo >= 0 && (a < src_lo || a > src_hi)){ pending_label.clear(); continue; }
                 if (want_bytes)
                     for (size_t k=0;k<bs.size();++k)
                         bytes_by_addr.emplace((uint16_t)((long)a + addr_offset + (long)k), bs[k]);
                 uint16_t key = (uint16_t)((long)a + addr_offset);
+                if (!pending_label.empty()){ labels_by_addr.emplace(key, pending_label); pending_label.clear(); }
                 // Erste Quelle pro Adresse gewinnt (Conditionals/Makro-Reexpansion).
                 if (by_addr.find(key) == by_addr.end()){ by_addr[key] = src; ++n; }
             }
@@ -234,6 +293,51 @@ struct Listing {
     const std::string* find(uint16_t a) const {
         auto it = by_addr.find(a);
         return it == by_addr.end() ? nullptr : &it->second;
+    }
+
+    /**
+     * Stehen an @p a gerade die Objektbytes der Listingzeile im Speicher?
+     *
+     * Für Maschinen, deren Speicherbild umschaltet (K8915: 0000H–0FFFH ist je nach A8H
+     * das Boot-ROM ODER RAM mit dem TPA) — eine ROM-Zeile darf dann nur annotieren,
+     * solange das ROM auch eingeblendet ist.  Verglichen werden die Bytes der Zeile
+     * (höchstens 4, bis zur nächsten Listingzeile).  Ohne Objektbytes (geladen ohne
+     * `want_bytes`) gibt es nichts zu prüfen → true.
+     */
+    template <class ReadByte>
+    bool matches(uint16_t a, ReadByte rd) const {
+        if (bytes_by_addr.empty()) return true;
+        for (int k = 0; k < 4; ++k){
+            const uint16_t x = (uint16_t)(a + k);
+            if (k > 0 && by_addr.count(x)) break;          // nächste Zeile beginnt
+            auto it = bytes_by_addr.find(x);
+            if (it == bytes_by_addr.end()) break;
+            if (rd(x) != it->second) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Nächstes Label an oder vor @p a (höchstens @p max_back Byte zurück) als
+     * "NAME" bzw. "NAME+n" — für PC-Histogramme, deren Adressen meist mitten in einer
+     * Routine liegen.  "" wenn keins in Reichweite.
+     */
+    std::string labelNear(uint16_t a, int max_back = 256) const {
+        auto it = by_addr.upper_bound(a);
+        while (it != by_addr.begin()){
+            --it;
+            if ((int)a - (int)it->first > max_back) break;
+            std::string lab = labelOf(it->second);
+            if (lab.empty()){
+                auto lt = labels_by_addr.find(it->first);
+                if (lt != labels_by_addr.end()) lab = lt->second;
+            }
+            if (!lab.empty()){
+                if (it->first == a) return lab;
+                return lab + "+" + std::to_string(a - it->first);
+            }
+        }
+        return "";
     }
 };
 

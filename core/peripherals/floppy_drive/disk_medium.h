@@ -100,6 +100,14 @@ public:
     Encoding defaultEncoding() const { return default_enc_; }
     void     setDefaultEncoding(Encoding e) { default_enc_ = e; }
 
+    /// @brief Nenndrehzahl des Laufwerks, für das die Diskette gedacht ist (300 = 5,25″,
+    ///        360 = 8″).  Nur für Flussabbilder: eine HFE-Spur ist genau eine Umdrehung
+    ///        lang, und wie viele Zellen das sind, hängt an der Drehzahl (AP-F1).
+    ///        Gesetzt von DiskImage::create (aus der Laufwerksliste des Formats) und
+    ///        HfeCodec::load (Kopf); sonst 300.
+    uint16_t nominalRpm() const { return rpm_; }
+    void     setNominalRpm(uint16_t rpm) { rpm_ = (rpm == 360) ? 360 : 300; }
+
     /// @brief Geometrie + vorherrschendes Verfahren (für UI/Mount-Prüfung).
     DiskGeometry geometry() const;
 
@@ -208,10 +216,16 @@ public:
      * Kriterien (siehe doc/design/09_floppy_drive.md §5):
      *   1. mindestens ein Sektor (@ref TrackCodec::parseTrack),
      *   2. alle ID- und Daten-CRCs gültig,
-     *   3. hinter jeder Daten-CRC ausschließlich Gap-Füllbytes (0x4E / 0xFF / 0x00).
+     *   3. hinter jeder Daten-CRC ausschließlich Gap-Füllbytes (0x4E / 0xFF / 0x00)
+     *      **oder** ein reiner Schreibnachlauf auf einer MFM-Spur: erstes Byte 4E/4F
+     *      (das geschriebene Lückenbyte), letztes Byte versetzte Lücke (Drehung von
+     *      4E oder 90H) — die Naht, an der ein an Ort und Stelle geschriebenes
+     *      Datenfeld in die alte Aufzeichnung übergeht (doc/design/16_k8915.md AP-E5b).
      *
      * Punkt 3 ist der Auslöser: UDOS schreibt dort seinen Sektorkontrollblock
-     * (Verkettungszeiger + eigene CRC), der in einem `.img` ersatzlos verschwände.
+     * (Verkettungszeiger), der in einem `.img` ersatzlos verschwände.  Dessen erstes
+     * Byte ist ein Sektorindex oder FFH, nie 4E/4F — deshalb hält die Ausnahme ihn nicht
+     * für einen Nachlauf.
      * Das Ergebnis wird je Spur gecacht und bei Änderung der Spur verworfen.
      */
     bool trackRawCompatible(uint8_t cyl, uint8_t head) const;
@@ -245,6 +259,7 @@ private:
     uint8_t  num_cyls_    = 0;
     uint8_t  num_heads_   = 0;
     Encoding default_enc_ = Encoding::MFM;
+    uint16_t rpm_         = 300;
 
     std::vector<TrackImage> tracks_;
     std::vector<uint8_t>    dirty_;       ///< je Spur 0/1

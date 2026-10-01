@@ -49,7 +49,7 @@ CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 # erste Maschine, weitere K1520-Rechner bekommen ein eigenes Programm in
 # derselben Installation.  Eine neue gehört hier hinein UND braucht eine
 # <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
-MASCHINEN="a5120emu"
+MASCHINEN="a5120emu k8915emu"
 
 # Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
 # Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
@@ -437,6 +437,11 @@ mkdir -p "$PREFIX/bin"
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/a5120emu"
 chmod +x "$PREFIX/bin/a5120emu"
 
+# Der K8915 Emulator: DIESELBE Vorlage — der Starter erkennt an seinem Namen,
+# welches Programmprofil er übergibt (launcher.sh, `--machine k8915`).
+ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/k8915emu"
+chmod +x "$PREFIX/bin/k8915emu"
+
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
 # entsteht der Starter der Oberflaeche.
@@ -449,6 +454,10 @@ if [ "$SHORTCUTS" = yes ]; then
     ln -sf "$PREFIX/bin/a5120emu" "$BINDIR/a5120emu"
     cp "$PREFIX/share/icons/a5120emu.svg" "$ICONDIR/a5120emu.svg" 2>/dev/null || true
     ersetze_platzhalter "$SELF_DIR/a5120emu.desktop.in" "$PREFIX" > "$APPDIR/a5120emu.desktop"
+
+    # Gleiches Symbol (Icon=a5120emu), anderer Name: „K8915 Emulator".
+    ln -sf "$PREFIX/bin/k8915emu" "$BINDIR/k8915emu"
+    ersetze_platzhalter "$SELF_DIR/k8915emu.desktop.in" "$PREFIX" > "$APPDIR/k8915emu.desktop"
 
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
@@ -464,7 +473,7 @@ if [ "$SHORTCUTS" = yes ]; then
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k1520disktool}"
+    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
         *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
@@ -498,6 +507,19 @@ lib = ctypes.CDLL(str(paths.core_library()))
 lib.k1520_version.restype = ctypes.c_char_p
 print("     Kern:      ", lib.k1520_version().decode())
 
+# Beide Maschinen aus der Bibliothek: ROM- und Zeichengeneratordaten sind
+# einkompiliert, hier zeigt sich, ob die Bibliothek auch den K8915 traegt
+# (K1520_MACHINE_K8915 = 2) und nicht nur den A5120.
+lib.k1520_create.argtypes = [ctypes.c_int]
+lib.k1520_create.restype = ctypes.c_void_p
+lib.k1520_destroy.argtypes = [ctypes.c_void_p]
+for _nr, _name in ((0, "A5120"), (2, "K8915")):
+    _h = lib.k1520_create(_nr)
+    if not _h:
+        sys.exit(_name + ": k1520_create schlug fehl")
+    lib.k1520_destroy(_h)
+print("     Maschinen:  A5120, K8915")
+
 import PySide6
 print("     PySide6:   ", PySide6.__version__)
 
@@ -519,7 +541,11 @@ from app.ui.main_window import MainWindow
 qt = QApplication([])
 fenster = MainWindow()
 fenster.close()
-print("     Oberfläche: baut auf")
+# Das zweite Programmprofil (k8915emu) baut dasselbe Fenster mit eigener Maschine.
+from app import profil as _profil
+fenster = MainWindow(profil=_profil.profil("k8915"))
+fenster.close()
+print("     Oberfläche: baut auf (A5120, K8915)")
 PYEOF
 # Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
 # ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.
@@ -545,11 +571,11 @@ printf "\n"
 info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
-printf "     Starten:      %s\n" "$PREFIX/bin/a5120emu"
+printf "     Starten:      %s  (K8915: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu"
 printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
     "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
-    printf "     oder einfach: a5120emu   (bzw. über das Startmenü)\n"
+    printf "     oder einfach: a5120emu / k8915emu   (bzw. über das Startmenü)\n"
 fi
 
 # Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im

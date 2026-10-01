@@ -304,4 +304,5 @@ def test_beide_handbuecher_erklaeren_das_werkzeugmenue():
 
     dt = (PROJECT_ROOT / "app" / "disktool" / "help" / "handbuch.md"
           ).read_text(encoding="utf-8")
-    assert "A5120-Emulator starten" in dt
+    assert "A5120 Emulator starten" in dt
+    assert "K8915 Emulator starten" in dt

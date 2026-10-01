@@ -222,6 +222,10 @@ sein soll. Dann braucht es ein Bootabbild (`.bin`) — das holt man sich mit
 Abbild nicht in die Systemspuren, wird gar nichts angelegt und die Meldung nennt
 beide Größen.
 
+Für den **K8915** (SCPX 8915) heißt das Dateisystem `scpx8915`; das Bootabbild muss den
+Ladekopf einer K8915-Systemdiskette tragen — ein A5120-Abbild wird abgewiesen, bevor
+etwas angelegt wird. Fertige Abbilder liegen im Ordner `disks/` des Quellbaums.
+
 Eine bootfähige Diskette braucht danach noch die Systemdateien: bei CP/A `@OS.COM`
 und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 
@@ -719,9 +723,10 @@ Zahl der Befunde ist das nicht zu erkennen, an der Zahl der Dateien schon.
 
 ## Die anderen Werkzeuge
 
-Im Menü **Werkzeuge** steht *A5120-Emulator starten*: der Emulator des
-Bürocomputers, der von einer Diskette bootet und das Betriebssystem wirklich
-laufen lässt. Er startet als eigenes Programm und läuft neben dem
+Im Menü **Werkzeuge** stehen *A5120 Emulator starten* und
+*K8915 Emulator starten*: die Emulatoren des Bürocomputers A5120 bzw. des
+Arbeitsplatzcomputers K8915, die von einer Diskette booten und das Betriebssystem wirklich laufen
+lassen. Jeder startet als eigenes Programm und läuft neben dem
 Diskettenwerkzeug weiter.
 
 Beide Programme lesen dieselbe Datei, aber jedes für sich. Hat die Diskette hier

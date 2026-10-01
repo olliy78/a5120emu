@@ -34,6 +34,44 @@ k1520_add_test(disktool_bootdiskette SRC test_disktool_bootdiskette.cpp
                                      LIBS ${_libs} k1520_fs
                                      LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
+# K8915 Etappe 1+2 (doc/design/16_k8915.md §8a AP-E1/AP-E2): ZRE 045-8762, ATS
+# K7028.30 + K7672, K7024 — Selbsttest bis zur Coldstart-Meldung.  Keine Diskette
+# (die K5122 ist bestückt, die Laufwerke bleiben leer ⇒ „Drive A: not ready“).
+k1520_add_test(k8915_boot SRC test_k8915_boot.cpp
+                          LIBS k1520_k8915 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# K8915Machine ohne Boot (AP-T1a): DFÜ/Drucker-Kanal, Fehlerwege von `Laufwerke`,
+# Durchreichungen, Konsolenmodus.  Kein CPU-Lauf, < 1 s.
+k1520_add_test(k8915_maschine SRC test_k8915_maschine.cpp
+                          LIBS k1520_k8915 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# K8915 Etappe 3 (doc/design/16_k8915.md §8a AP-E3): SCPX 8915 von der eigenen Diskette
+# bis zum Prompt, dann dir/save/era/Warmstart/RAM-Disk.  Je Fall ≈ 2–3 s.
+k1520_add_test(k8915_scpx SRC test_k8915_scpx.cpp
+                          LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# K8915 Etappe 4 (doc/design/16_k8915.md §8a AP-E4k): Kaltstart von einer SPURWEISE
+# gelesenen Diskette (Ersatzsitzung ohne Greaseweazle) — keine Maschinenzeit waehrend des
+# Nachladens, Schreiben mit Zuruecklesen, Laufwerks- und Sitzungsschloss.
+k1520_add_test(k8915_physical SRC test_k8915_physical.cpp
+                          LIBS k1520_k8915 k1520_floppy k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# Serielle Schnittstellen (Entwurf 19 §11, AP-S8): zwei A5120 im selben Prozess über
+# echtes Loopback-TCP, 1× gegen 10× Takt, Telnet+XON/XOFF und RFC 2217+RTS/CTS.
+# Standardregression 4 KiB je Fall (~2 s); die volle Fassung mit 64 KiB läuft mit den
+# langsamen Fällen (`tools/dev.sh test-format`).
+k1520_add_test(serielle_kopplung SRC test_serielle_kopplung.cpp
+                                 LIBS k1520_a5120 k1520_logger
+                                 LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+k1520_add_test(serielle_kopplung_voll SRC test_serielle_kopplung.cpp
+                                 LIBS k1520_a5120 k1520_logger
+                                 LABELS "integration;slow;format_integration"
+                                 DEFS LOG_LEVEL=2 KOPPLUNG_VOLL=1 TIMEOUT 600)
+
 # A5120.16, Abnahme S1: Original-BIOS (em256 equ 1) erkennt das EM256, RAM-Floppy M:
 # (doc/design/17_a5120_16.md §3 S1).
 k1520_add_test(em256_ramfloppy SRC test_em256_ramfloppy.cpp LIBS ${_libs} k1520_fs

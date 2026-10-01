@@ -1,7 +1,10 @@
-# a5120emu — Kurzhandbuch
+# a5120emu / k8915emu — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Nachgebildet werden **Bus und Steckkarten** — Z80,
+Verwandten am K1520-Bus. Es gibt ihn in zwei Gestalten: den **A5120 Emulator**
+(`a5120emu`) und den **K8915 Emulator** (`k8915emu`) — dasselbe Programm mit
+eigener Konfiguration, eigener Tastatur und der Frontplatte des K8915; was nur
+den K8915 betrifft, steht im Abschnitt „Der K8915 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
@@ -47,9 +50,10 @@ Taste die echte Tastatur gerade anspricht, und trägt die Anzeigen des Rechners
 Schreibschutz, das erkannte Format, und die Knöpfe zum Einlegen, Anlegen,
 Speichern unter und für die echte Diskette.
 
-**Einstellungen** — drei Reiter: *Allgemein* (Takt), *Laufwerke*
-(welcher Laufwerkstyp in welchem Steckplatz steckt) und *CRT* (das Aussehen der
-Bildröhre).
+**Einstellungen** — vier Reiter: *Allgemein* (Takt), *Laufwerke*
+(welcher Laufwerkstyp in welchem Steckplatz steckt), *Schnittstellen* (die seriellen
+Anschlüsse des Rechners nach außen, ein Block je Schnittstelle — siehe *Serielle
+Schnittstellen* unten) und *CRT* (das Aussehen der Bildröhre).
 
 Jeder dieser Kästen lässt sich zuklappen, herausziehen und woanders andocken;
 *Ansicht* holt ihn zurück.
@@ -60,6 +64,7 @@ alles** — was man aus der Leiste wirft, bleibt erreichbar.
 
 **Statuszeile** — links die letzte Meldung, rechts der Zustand der Maschine:
 Takt, und je Laufwerk eine Leuchte mit dem Namen der eingelegten Diskette.
+Dazu kommen — **nur wenn es etwas zu sagen gibt** — die seriellen Schnittstellen.
 
 ## Die Symbolleiste einrichten
 
@@ -97,6 +102,13 @@ Daneben `A: cpa780.hfe  R/W`: Buchstabe, Name der eingelegten Abbilddatei und ob
 die Maschine darauf schreiben darf (`R/W`) oder nicht (`R/O`). Der volle Pfad
 steht im Tooltip. Ein nicht bestückter Steckplatz bekommt weder Leuchte noch
 Feld. So sieht man den Diskettenzugriff auch bei zugeklapptem Laufwerkskasten.
+
+**Serielle Schnittstellen** — zwei Felder hinter dem Takt, die nur erscheinen,
+wenn sie etwas zu sagen haben: `Telnet/RFC2217 Server Port: 5000` (auf welchen Ports
+ein Server tatsächlich lauscht — das ist nicht immer der eingestellte, siehe unten)
+und `V.24 verbunden, Drucker verbunden` (welche Schnittstellen eine Verbindung
+haben). Ein Client, der noch versucht, und eine Ausgabe in eine Datei erscheinen dort
+nicht; sie stehen im Block. Der Tooltip nennt Protokoll und Gegenstelle.
 
 Zykluszähler und Bildrate standen hier früher. Beide sagen über die Maschine
 nichts, was man beim Arbeiten wissen will.
@@ -224,6 +236,112 @@ Drei Dinge, die man wissen sollte:
 Das Paket `greaseweazle` ist eine freiwillige Zutat; fehlt es, sagt der Knopf,
 woran es liegt.
 
+## Serielle Schnittstellen
+
+Der Reiter **Schnittstellen** im Kasten *Einstellungen* (*Ansicht ▸ Einstellungen*)
+verbindet die seriellen Anschlüsse des Rechners mit
+der Außenwelt. Je Schnittstelle ein Block; **die Namen und was sie können, kommen
+vom Rechner** (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: Drucker/IFSS1 an X3, V.24
+an X4, DFÜ/IFSS2 an X5 — wie am Gerät beschriftet). Die
+Tastatur steht als Zeile „fest verdrahtet" darunter — an ihr gibt es nichts zu
+stellen.
+
+**Betriebsart**
+
+* **Telnet** — ein Terminalprogramm oder ein anderes Programm verbindet sich mit dem
+  Rechner; der Rechner macht das Echo.
+* **RFC2217** — wie Telnet, aber mit Baudrate und Steuerleitungen (RTS, CTS, DTR,
+  DSR, DCD) über das Netz: die Schnittstelle sieht aus wie ein serieller Port.
+* **Datei** — alles, was der Rechner sendet, wird in eine Datei geschrieben (etwa
+  für einen Drucker). Beim Umschalten fragt ein Dialog nach dem Namen; **Starten**
+  legt die Datei neu an (und überschreibt eine vorhandene).
+
+**Rolle** (nur Telnet/RFC2217): als **Server** wartet der Emulator auf Verbindungen,
+als **Client** wählt er sich selbst bei einer Gegenstelle ein (**Host** und **Port**).
+Ein Server nimmt eine Verbindung zur Zeit an; jede weitere wird abgewiesen. Ist der
+eingestellte Port belegt, nimmt **Starten** den nächsten freien darüber — der
+tatsächliche steht im Kopf des Blocks („lauscht auf 5001") und in der Statuszeile.
+Solange die Schnittstelle läuft, zeigt auch das (gesperrte) Port-Feld den **tatsächlich
+benutzten** Port; nach dem Beenden steht wieder der eingestellte darin, und der wird
+auch gespeichert.
+Hinter dem Host steht, als was er gelesen wurde (IPv4, IPv6, Hostname oder
+**ungültig** — dann bleibt der Knopf gesperrt).
+
+**Der Knopf** heißt im Server *Starten*/*Beenden*, im Client *Verbinden*/*Trennen*.
+Ein Client versucht **jede Sekunde** von neuem, bis die Gegenstelle antwortet — auch
+nachdem sie die Verbindung getrennt hat. Das hört nur mit *Trennen* auf, und der Knopf
+heißt schon während der Versuche so. Der Punkt im Kopf ist grau (aus), gelb (lauscht
+oder verbindet), grün (verbunden) oder rot (Fehler); Fehler und Hinweise stehen als
+Zeile im Block, nicht in einem Fenster. Solange eine Schnittstelle läuft, sind
+Betriebsart, Rolle, Host, Port und Datei gesperrt.
+
+**Weitere Einstellungen**
+
+* **Rx/Tx-Loop** — der Prüfstecker: was der Rechner sendet, kommt am selben Anschluss
+  wieder an. Das schließt jede Verbindung aus; der Knopf ist gesperrt, solange es
+  gesetzt ist, und eine laufende Verbindung wird beim Setzen beendet.
+* **RTS/CTS-Brücke** (nur V.24) — am Stecker RTS mit CTS (und DTR mit DSR/DCD)
+  verbunden.
+* **XON/XOFF** — den Empfang anhalten, solange der Rechner XOFF gesendet hat. Bei
+  Übertragungen von Binärdaten aus.
+* **Takt** — wo der Rechner eine Brücke für die Taktquelle des Anschlusses hat.
+
+Darunter zeigt der Block, womit der **Gast** (das Programm im Rechner) die
+Schnittstelle gerade eingestellt hat, z. B. `Gast 9600 Bd 8N1`. Das Format steht in
+der üblichen Schreibweise: Datenbits, Parität, Stoppbits — `8N1`, `7E1`, `8O1`
+(Parität **N** keine, **E** gerade/even, **O** ungerade/odd, **M** mark, **S** space;
+anderthalb Stoppbits als `1.5`). Der Tooltip erklärt das am konkreten Format.
+
+Bei V.24 folgen die **Leitungen als Leuchten**: hinter **Ausgänge →** die Leitungen,
+die der Rechner treibt (RTS, DTR), hinter **Eingänge ←** die, die er empfängt (CTS,
+DSR, DCD). Die Beschriftung nennt die Richtung, nicht den Zustand. **Hellgrün
+leuchtend** heißt aktiv, **gedimmt dunkelgrün** inaktiv, ein bloßer **Umriss**
+unbekannt; der Tooltip nennt es ausgeschrieben („CTS aktiv"). Die Ausgänge leuchten
+nur, wenn das Programm im Rechner sie setzt — CP/A und SCPX tun das nicht, dort
+bleiben RTS und DTR dunkel. Die Eingänge sind unverbunden inaktiv; bei Telnet (und
+Datei) werden sie aktiv, sobald eine Verbindung steht (Leitungen selbst überträgt
+Telnet nicht), bei RFC2217 zeigen sie, was die Gegenseite meldet, mit
+**RTS/CTS-Brücke** oder **Rx/Tx-Loop** folgen sie RTS und DTR. Angezeigt wird, was
+am Rechner anliegt — er muss dafür laufen; im angehaltenen Rechner ändert sich nichts.
+
+Bei RFC2217 steht eine weitere Zeile **Gegenseite**: Baudrate und Format, mit Warnzeichen
+und Warnfarbe, wenn sie von denen des Gastes abweichen, dazu die Leitungen der Gegenseite
+als Leuchten. Was bekannt ist, hängt von der Rolle ab: ein **Server** sieht die
+Ausgänge RTS und DTR des Clients, ein **Client** die Eingänge CTS, DSR, DCD und RI des
+Servers. Was die Gegenseite noch nicht gemeldet hat, bleibt Umriss.
+
+**Beispiele**
+
+* *Ein Terminalprogramm anschließen:* Schnittstelle auf **Telnet**, **Server**,
+  **Starten**; dann `telnet 127.0.0.1 5000` (bzw. der Port aus der Anzeige).
+* *Zwei Emulatoren koppeln:* im einen **Server**, im anderen **Client** mit
+  Host `127.0.0.1` und dem Port des Servers, beide auf RFC2217 oder beide auf Telnet.
+  Die Reihenfolge ist gleichgültig — der Client versucht, bis der Server da ist.
+* *Einen echten Port des Wirtsrechners verwenden:* der Emulator spricht kein
+  Hardware-COM direkt. Mit `ser2net` (Linux) bzw. `com0com` und `hub4com` (Windows)
+  wird ein Port zum RFC2217-Server; der Emulator verbindet sich als **RFC2217-Client**
+  dorthin. Umgekehrt öffnet `socat -d -d pty,raw,echo=0 tcp:127.0.0.1:5000` einen
+  Pseudo-Port auf den Server des Emulators.
+* *Aus Python:* `serial.serial_for_url("rfc2217://127.0.0.1:5000")` (pyserial)
+  gegen einen RFC2217-Server des Emulators.
+
+**Sicherheit:** ein Server lauscht auf **allen Netzschnittstellen** des
+Wirtsrechners und verlangt **keine Anmeldung** — wer ihn erreicht, sitzt an der
+Schnittstelle des Rechners. Für den Betrieb im offenen Netz gehört eine Firewall
+davor, oder man bindet den Dienst über einen Tunnel (`ssh -L`) nach außen.
+
+**Gemerkt wird** alles, was im Block steht, samt dem Zustand beim Beenden: was lief,
+wird beim nächsten Start **wieder aufgenommen** — ein Server startet auf dem
+eingestellten Port (ist der belegt, startet er **nicht**; der nächste freie wird ins
+Feld eingetragen, und man startet von Hand), ein Client versucht wieder, eine Datei
+wird **angehängt** statt überschrieben. Mit gesetztem Rx/Tx-Loop wird nichts
+gestartet.
+
+**K8915:** der Selbsttest des Boot-ROMs verlangt das Echo auf allen drei Anschlüssen,
+deshalb steht der Rx/Tx-Loop dort **von Anfang an** und der Knopf ist gesperrt. Nach
+dem Kaltstart (das BIOS braucht das Echo nicht) den Loop **abschalten**, dann lässt
+sich verbinden.
+
 ## Der Takt der Maschine
 
 *Einstellungen ▸ Allgemein ▸ Takt*: `2,45 MHz` — das ist der Takt des echten
@@ -280,11 +398,21 @@ Weil jeder Tastendruck dem Gast gehört — **auch** `Strg+C`, `Strg+S`, `Strg+P
 und die Funktionstasten, die CP/M braucht —, trägt jede Bedienung des Fensters
 `Strg+Umschalt`. Die einzige Ausnahme ist F11 (Vollbild).
 
+**K8915:** die Tastatur K7672 wiederholt eine gehaltene Taste selbst — nach etwa
+einer Sekunde, dann etwa zehnmal je Sekunde (gerechnet, nicht am Gerät gemessen),
+und wie am Gerät nicht bei Umschalt, Strg, Tab und den Ziffern 1 3 5 7 9. Das
+Wiederholen des PCs wird deshalb nicht weitergereicht. Umschalt und Strg gehen als
+eigene Tasten durch; ALT gibt es nur an der Bildschirmtastatur.
+
 ## Konfiguration — was gemerkt wird und wo
 
 Alles, was man einstellt, landet fortlaufend in
-`~/.config/k1520emu/config.yaml` (Windows: `%APPDATA%\K1520emu`): Bildröhre,
-Takt, Laufwerksbestückung, eingelegte Disketten, Größe und Lage des Fensters
+`~/.config/k1520emu/a5120emu.yaml` bzw. `k8915emu.yaml` (Windows:
+`%APPDATA%\K1520emu`) — jedes der beiden Programme hat seine eigene Datei, man
+kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
+zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
+Takt, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
+(samt dem, was lief), Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.
 
@@ -299,18 +427,22 @@ Takt, Laufwerksbestückung, Fenstergröße, Kästen und Symbolleiste — und
 **überschreibt damit die gespeicherte Konfiguration**; deshalb wird gefragt. Die
 eingelegten Disketten bleiben dabei liegen: was zurückgesetzt wird, ist die
 Einrichtung, nicht die Maschine. Die Vorgabe selbst ist eine Datei des
-Programms (`share/k1520emu/default_config.yaml`, im Quellbaum
-`data/default_config.yaml`) und hat denselben Aufbau wie eine gespeicherte
-Konfiguration — wer einen anderen Auslieferungszustand will, kopiert seinen
-`config.yaml`-Inhalt dorthin.
+Programms (`share/k1520emu/default_config_a5120.yaml` bzw.
+`default_config_k8915.yaml`, im Quellbaum unter `data/`) und hat denselben
+Aufbau wie eine gespeicherte Konfiguration — wer einen anderen
+Auslieferungszustand will, kopiert den Inhalt seiner `a5120emu.yaml` dorthin.
+
+Frühere Fassungen hießen die Datei des A5120 `config.yaml`. Findet der A5120
+Emulator beim Start noch eine `config.yaml`, aber keine `a5120emu.yaml`, benennt
+er sie **einmal** um — die Einrichtung geht beim Update also nicht verloren.
 
 ## Wo die Dateien liegen
 
 | Ordner | Wofür |
 |--------|-------|
 | `K1520emu/Disketten` (im Dokumentenordner) | die Abbilder |
-| `~/.config/k1520emu/config.yaml` | die Konfiguration |
-| `share/k1520emu/default_config.yaml` (in der Installation) | der Auslieferungszustand |
+| `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml` | die Konfiguration je Programm |
+| `share/k1520emu/default_config_a5120.yaml`, `…_k8915.yaml` (in der Installation) | der Auslieferungszustand |
 
 Beim ersten Start nach einer Installation werden die mitgelieferten
 Beispieldisketten dorthin ausgepackt. Verschieben lässt sich das mit den
@@ -321,9 +453,13 @@ Abbilder). Wo das Programm gerade sucht, sagt `a5120emu --paths`.
 
 ```
 a5120emu [DISKETTE …]     bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:
+k8915emu [DISKETTE …]     bis zu zwei Abbilder, A: B:
 a5120emu --paths          aufgelöste Pfade zeigen
 a5120emu --help           Kurzhilfe
 ```
+
+Im Quellbaum heißen die Starter `run_a5120emu.sh` und `run_k8915emu.sh`; beide
+rufen `app/main.py` auf, der zweite mit `--machine k8915`.
 
 Die genannten Disketten liegen **beim Kaltstart schon im Laufwerk** — die
 Maschine bootet also von der ersten. Sie ersetzen die gemerkte Belegung nur für
@@ -334,8 +470,11 @@ Skriptbetrieb); `k1520dbg DISKETTE --console` ist die Konsolenfassung.
 
 ## Die anderen Werkzeuge
 
-Im Menü **Werkzeuge** stehen die beiden Programme, die zur selben Installation
+Im Menü **Werkzeuge** stehen die Programme, die zur selben Installation
 gehören und dieselben Disketten anfassen:
+
+* **K8915 Emulator starten** bzw. **A5120 Emulator starten** — der jeweils
+  andere Emulator, als eigenes Programm mit eigener Konfiguration.
 
 * **k1520DiskTool starten** — das Diskettenwerkzeug: Dateien von einer Diskette
   in einen Ordner holen und wieder zurückschreiben, Disketten anlegen, prüfen,
@@ -354,6 +493,90 @@ Suchpfad, ein anderer Arbeitsordner), kopiert sie sich woandershin.
 > Eine Diskette, die hier im Laufwerk liegt, darf zugleich unter `k1520dbg`
 > offen sein: der Debugger arbeitet standardmäßig auf einer Kopie und schreibt
 > nicht in die Datei zurück.
+
+## Der K8915 Emulator
+
+`k8915emu` ist derselbe Emulator für den **robotron K8915** (Version 3, 5¼″):
+ZRE mit 128 KB, Bildschirmkarte K7024, Tastatur K7672, Diskettensteuerung K5122
+mit zwei K5601. Was anders ist:
+
+* **Einschalten** startet den Selbsttest des Boot-ROMs (ROM, RAM, KEY, CTC, SIO —
+  in der letzten Zeile unter „DIAGNOSTIC"). Er dauert rund 12 Sekunden
+  Maschinenzeit, bei der Vorgabe 10 × Takt also gut eine Sekunde. Danach steht
+  `* Coldstart *  Disk on A: ready ? --> <ENTER>` — **RETURN** lädt das System
+  von A:. SCPX 8915 richtet beim Start die RAM-Disk E: ein und meldet sich mit `A>`.
+* **Takt** 2,4576 MHz (`10 × 2,4576 MHz` usw.).
+* **Laufwerke:** zwei K5601 wie am Gerät; wählbar sind nur 5¼″-Laufwerke.
+* **Die Frontplatte in der Statuszeile** — sechs Lampen, von links nach rechts
+  wie am Gerät von oben nach unten, jede mit ihrem Schild daneben (`Run`, `Input`,
+  `Output`, `Mode`, `Error`, `Power`; der volle Name steht im Tooltip):
+
+  | Lampe | Farbe | leuchtet |
+  |-------|-------|----------|
+  | Run | grün | solange die Emulation läuft (am Gerät vermutlich `/HALT` der CPU — nicht belegt) |
+  | Input File | gelb | beim Lesen von der Diskette |
+  | Output File | gelb | beim Schreiben auf die Diskette |
+  | RUN Mode | gelb | System bereit (erlischt während eines Diskettenzugriffs) |
+  | ERROR | rot | Fehler — Selbsttest, Lesen oder Schreiben |
+  | Power | rot | solange der Rechner eingeschaltet ist |
+
+  Die vier mittleren schaltet das Betriebssystem selbst (Anzeigelatch 61H).
+* **NMI-Taster** — *Maschine ▸ NMI-Taster* und in der Symbolleiste neben
+  *Reset*, ohne Tastenkürzel. Wie am Gerät ist das kein Rückstellen: solange das
+  Boot-ROM eingeblendet ist (Selbsttest, Lader), gehen die Lampen aus und der
+  Selbsttest beginnt von vorn. **Unter SCPX** liegt an der Einsprungstelle RAM —
+  die CPU springt dorthin, meist in einen Absturz. Das ist das Verhalten des
+  Geräts nach den Unterlagen und wird bewusst nicht abgefangen; danach hilft
+  *Rückstellen*.
+* **Die Bildschirmtastatur ist die K7672** (*Ansicht ▸ Tastatur*): deutsche
+  Belegung, Funktionsreihe CTRL · ALT1 ^S MOD2 PF1 · PF2–PF9 · CLEAR RESET BREAK,
+  Mittelblock PF10–PF12, PA1–PA3, GRAPH und Kursorkreuz, Ziffernblock mit CE, `=`
+  und ENTER. Die roten, grünen und grauen Zweitbeschriftungen sind die des
+  Originals (rot = die PC-Bedeutung der Taste: `Pause`, `Pg Up`, `Prt Sc` …).
+  Jede Taste sendet, was die Tastatur-Firmware für sie vorsieht: unter SCPX den
+  PC-Scancode, im Boot-ROM das Zeichen. Tasten, für die es dort nichts gibt
+  (die Funktionstasten im Boot-ROM, `CL` — schaltet am Gerät nur den
+  Tastenklick um), federn zurück und senden nichts. **Umschalt** und **CTRL**
+  rasten für genau eine Taste, **CAPS LOCK** ist eine echte Taste. Die drei
+  Lampen **GRAPH**, **CAPS** und **READY** (grün: die Tastatur darf senden)
+  zeigen den Zustand der Tastatur.
+* Die **PC-Tastatur** geht wie beim A5120 an den Rechner; SCPX setzt die
+  Tasten selbst in Zeichen um (deutsche Belegung: `z`/`y` getauscht). `Strg+Pause`
+  des K8915 liegt auf `^S` der Bildschirmtastatur. Die **Rücktaste** des PCs
+  ist die Kursortaste `←` der K7672: SCPX macht daraus `^H`, und die
+  Eingabezeile löscht das Zeichen auch am Schirm. Die Taste `|←|` ergibt unter
+  SCPX dagegen `DEL` — das Zeichen verschwindet aus der Eingabe, wird aber noch
+  einmal angezeigt (`A>dirxx` führt `dir` aus), wie am Gerät. **Entf** ist die
+  Taste `DEL` der K7672 (`^G`, in Editoren wie TP: Zeichen unter dem Kursor
+  löschen).
+
+### Bootdiskette mit DISGEN erstellen
+
+DISGEN ist ein Maskenprogramm: In einem **Auswahlfeld** wählt der
+**Anfangsbuchstabe** (klein genügt) oder **Esc** schaltet zum nächsten Eintrag,
+**Return** übernimmt das Feld bzw. den ganzen Block, die **Kursortasten**
+wandern zwischen den Feldern eines Blocks, **Strg+C** geht eine Ebene zurück
+(im Befehlsfeld: DISGEN beenden).
+
+1. In A: die Systemdiskette, in B: eine leere Diskette (*Leere Diskette*).
+2. B: formatieren: `format` Return, Verfahren `24` Return, Laufwerk `B`
+   (groß, mit Umschalt) Return, `00` Return, `79` Return, `01` Return, `Y`
+   Return — nach „FUNCTION COMPLETE“ `Y` Return.
+3. `disgen` Return, dann Return (Read system tracks) und Return (Laufwerk A).
+4. **Nur mit der Diskette 901** (sie stellt B: auf 16 × 256 Byte ein):
+   `c` Return (Change device properties), Return (number of drives),
+   `b` Return, zweimal Pfeil ↓ bis `sector length`, zweimal Esc bis `1024`,
+   Return, Return.
+5. `w` Return (Write system tracks), `b` Return.
+6. `e` Return (Exit). Die neue Diskette startet jetzt, in A: eingelegt, bis `A>`.
+
+**`write error or device not ready`** beim Schreiben heißt fast immer: B: ist
+in DISGEN anders eingestellt, als die Diskette formatiert ist (Schritt 4
+vergessen). Return bringt nur ins Laufwerksfeld zurück — mit **Strg+C**
+heraus, dann mit `e` Return beenden und bei Schritt 3 neu anfangen: eine
+Umstellung **nach** dem Fehlschlag reicht nicht, erst der Neustart von DISGEN
+räumt den Puffer des BIOS. Wer DISGEN mit Strg+C verlässt und danach
+Steuerzeichen (`^D` …) statt Buchstaben sieht: einmal Strg drücken.
 
 ## Tastenkürzel
 
@@ -391,6 +614,10 @@ kleiner machen oder unter *CRT* die aufwendigen Regler zurücknehmen.
 **Die Tastatur tippt ins Leere.** Der Fokus liegt nicht auf der Röhre: einmal
 hineinklicken. (Normalerweise holt das Fenster ihn von selbst zurück.)
 
-**Gar nichts startet.** `a5120emu --paths` sagt, wo das Programm die
+**Der K8915 bleibt nach dem Selbsttest mit einem Buchstaben stehen.** Der
+Buchstabe hinter dem Testnamen ist die Fehlerkennung des Boot-ROMs; RETURN
+lädt trotzdem.
+
+**Gar nichts startet.** `a5120emu --paths` (bzw. `k8915emu --paths`) sagt, wo das Programm die
 Kernbibliothek und den Formatkatalog sucht — das ist die erste Frage, wenn
 etwas nicht gefunden wird.

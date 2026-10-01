@@ -55,7 +55,7 @@ using k1520test::vramText;
  */
 TEST(Hardy, RechnerTestRunsCleanWithoutFreezing) {
     A5120Machine machine;
-    ASSERT_TRUE(machine.mountDisk(0, diskPath("scpx17_5x1024_k5601_hardy.hfe"), "cpa780", /*wp=*/true))
+    ASSERT_TRUE(machine.mountDisk(0, diskPath("scpx17_5x1024_k5601_hardy_norm.hfe"), "cpa780", /*wp=*/true))
         << machine.lastError();
     machine.powerOn();
 

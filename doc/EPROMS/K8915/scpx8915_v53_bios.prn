@@ -1,0 +1,2535 @@
+; ============================================================================
+; scpx8915_v53_bios.prn  -  BIOS SCPX 8915 V5.3 (K8915 V3), D600H-EFEFH
+;
+; Quelle: doc/EPROMS/K8915/scpx8915_v53_sys.bin = Systemspuren der eigenen
+; Bootdiskette (disks/k8915scpx_boot1.hfe), geladen wie vom ROM-Lader
+; (tools/k8915_sysload.py): 12 272 Byte nach C000H-EFEFH, Einsprung D600H.
+;   C000H  CCP   'SCPX V0/2 VEB ROBOTRON ELEKTRONIK ZELLA-MEHLIS (REZ), 1988';
+;                beginnt mit JP C31DH / JP C319H -- nicht das DR-Layout
+;   C800H  BDOS  Einsprung C806H (JP C811H + vier Fehlervektoren wie bei DR),
+;                Texte 'SCPX ERR ON  : $BAD SECTOR$SELECT$FILE R/O$'
+;   D600H  BIOS  (dieses Listing)
+; CCP/BDOS sind nur abgegrenzt. Gegen das A5120-SCPX 1526 V1.7
+; (disks/scpx17_cpa780_k5601.hfe) gibt es keinen verschoben gleichen Abschnitt
+; ueber 85 Byte -- ein anderer Stand, fuer die Nachbildung ohne Belang.
+;
+; STATISCHES Disassemblat (tools/z80_disasm2.py, rekursiver Abstieg ab den 18
+; Eintraegen der Sprungleiste, den IM-2-Vektoren und den zur Laufzeit gesetzten
+; Vektoren, dazu linear die nur ueber Patches erreichbaren Varianten) +
+; Handkommentare [STATISCH]. Keine Laufzeitbestaetigung -- es gibt noch keine
+; K8915Machine. Erzeugt von tools/gen_k8915_bios_prn.py; Befunde im
+; Design-Doc doc/design/16_k8915.md §4.4.
+;
+; Was der Kern fuer Etappe 3 daraus braucht (Kurzfassung):
+;   - K5122 im /WAIT-Betrieb: der Lese-ISR E965H und der Schreibpfad EA94H
+;     lesen/schreiben 16H/14H ausgerollt OHNE Statusabfrage.
+;   - Interrupts (IM 2, I = FFH): SIO2-B (Tastatur) D0H..D6H, K5122-PIO1 A
+;     (Index) F0H, PIO1 B Bit1 (Marke) F2H, CTC-ZRE K3 (Zeitgeber 37,6 Hz) FEH.
+;   - Tastatur: K7672 im DCP-Modus, Scancodes Satz 1, Tabellen DC0FH..DCF1H.
+;   - Port 61H = Anzeigefeld der Frontplatte (E0H Lesen, D0H Schreiben, B0H bereit,
+;     60H/50H Fehler; Design-Doc §3.6).
+;
+; FASSUNG: dieses Listing ist die Fassung 'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)'
+; (Disketten 901 und 904). Die Fassung '55 K SCPX 8915 BIOS-Version 5.3' (Diskette
+; 900) weicht in 318 Byte ab (IOBYTE-Weiche, LIST/LISTST/PUNCH/READER, Drucker 7 Bit
+; ungerade Paritaet) -- Tabelle im Design-Doc §4.4, AP-B2. D639H-D7FEH sind der
+; DISGEN-Konfigurationsbereich und je Diskette verschieden (Autostart, F-Tasten, DPB).
+;   - A8H nur 87H (Betrieb) und 06H (Bildspeicher, Warmstart ueber ROM 0406H).
+; ============================================================================
+
+	ORG	C000H
+
+C000                	DS	2048		;CCP (abgegrenzt, s. Kopf)
+C800                	DS	3584		;BDOS, Einsprung C806H (abgegrenzt)
+
+JBOOT:
+D600  C3 A7 D8      	JP D8A7H
+JWBOOT:
+D603  C3 FD D8      	JP D8FDH
+JCONST:
+D606  C3 60 D9      	JP D960H
+JCONIN:
+D609  C3 72 D9      	JP D972H
+JCONOUT:
+D60C  C3 F2 DC      	JP DCF2H
+JLIST:
+D60F  C3 99 DE      	JP DE99H
+JPUNCH:
+D612  C9            	RET		;PUNCH: nur RET
+D613                	DB	00H,00H		;Rest von PUNCH (RET + 2 Fuellbytes)
+JREADER:
+D615  3E 1A         	LD A,1AH		;READER: liefert immer 1AH (^Z = Dateiende)
+D617  C9            	RET
+JHOME:
+D618  C3 3C DF      	JP DF3CH
+JSELDSK:
+D61B  C3 4B DF      	JP DF4BH
+JSETTRK:
+D61E  C3 6C DF      	JP DF6CH
+JSETSEC:
+D621  C3 71 DF      	JP DF71H
+JSETDMA:
+D624  C3 76 DF      	JP DF76H
+JREAD:
+D627  C3 87 DF      	JP DF87H
+JWRITE:
+D62A  C3 49 E0      	JP E049H
+JLISTST:
+D62D  C3 A2 DE      	JP DEA2H
+JSECTRAN:
+D630  C3 7B DF      	JP DF7BH
+JBIOS18:
+D633  C3 92 E2      	JP E292H		;18. Eintrag (SCPX): JP E292H = Diskettentreiber zuruecksetzen, gerufen von WBOOT
+D636  3E FF         	LD A,FFH		;Einhaengepunkt RAM-Disk E: (Laufwerksnummer 4, s. E019H/E225H): hier 'LD A,FFH / RET' = Fehler; RADE.COM patcht es auf seinen Treiber bei EE00H
+D638  C9            	RET
+D639                	DB	00H,50H,F1H,02H,35H,2EH,33H,4DH		;Konfiguration (DISGEN): D639H <>0 = Laufwerk E: (RAM-Disk) zugelassen, setzt RADE; D63AH Zeiger F150H (Tastaturpuffer); D63CH Laufwerkszahl (2); D63DH Versionsfeld '5.3M' (BIOS+3DH, von RADE geprueft)
+D641                	DB	05H,72H,61H,64H,65H,0DH,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H		;Autostart: 40H Byte, beim Kaltstart nach F150H = TASTATURPUFFER kopiert (Zaehler 05, 'rade',CR) -- der CCP 'liest' das Kommando ueber CONIN
+D651                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D661                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D671                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D681                	DB	91H,44H,49H,53H,47H,45H,4EH,35H,33H,0DH,97H,4DH,38H,30H,20H,3DH		;F-Tasten-Belegung: Code 91H..9CH, danach Text bis zum naechsten Byte mit Bit7; FFH = Ende. F1 'DISGEN53'CR, F7 'M80 =', F8 'LINK', F9 'TP'CR, F10 'NSWP'CR, Umsch+BildAuf 'POWER'CR, Umsch+BildAb 'DIR'CR
+D691                	DB	98H,4CH,49H,4EH,4BH,99H,54H,50H,0DH,9AH,4EH,53H,57H,50H,0DH,9BH
+D6A1                	DB	50H,4FH,57H,45H,52H,0DH,9CH,44H,49H,52H,0DH,FFH
+D6AD                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H		;frei (00H)
+D6BD                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D6CD                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D6DD                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D6ED                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+D6FD                	DB	00H,00H,00H,00H
+D701                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,51H,D7H,DDH,EFH,AAH,EFH		;5 DPH (A:..E:), je 16 Byte: XLT=0, DIRBUF EF2AH, DPB, CSV, ALV
+D711                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,74H,D7H,31H,F0H,FEH,EFH
+D721                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,97H,D7H,85H,F0H,52H,F0H
+D731                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,BAH,D7H,D9H,F0H,A6H,F0H
+D741                	DB	00H,00H,00H,00H,00H,00H,00H,00H,2AH,EFH,DDH,D7H,2DH,F1H,FAH,F0H
+D751                	DB	50H,00H,04H,0FH,00H,85H,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,03H		;5 DPB + Treiberangaben, je 23H Byte (SELDSK: DPH+10 -> IY). A: 5x1024 (SPT 80, DSM 389, DRM 127, OFF 2) = cpa800; B: 16x256 (SPT 64, DSM 311); C:/D:/E: wie A:. IY+15 Sektorgroesse 0/1/2/3=128..1024, IY+20 Sektoren je Spur, IY+24 Laufwerksnummer, IY+21 Seiten. B: ist DISGEN-Sache: nur diese Diskette (901) hat 16x256, 900/904 tragen B: wie A: (AP-B2)
+D761                	DB	16H,01H,03H,01H,05H,02H,50H,01H,00H,48H,50H,03H,32H,12H,50H,03H
+D771                	DB	00H,00H,00H,40H,00H,04H,0FH,00H,37H,01H,7FH,00H,C0H,00H,20H,00H
+D781                	DB	02H,00H,01H,16H,04H,03H,01H,10H,02H,50H,01H,01H,48H,50H,03H,32H
+D791                	DB	12H,50H,03H,00H,00H,00H,50H,00H,04H,0FH,00H,85H,01H,7FH,00H,C0H
+D7A1                	DB	00H,20H,00H,02H,00H,03H,16H,01H,03H,01H,05H,02H,50H,01H,02H,48H
+D7B1                	DB	50H,03H,32H,12H,50H,03H,00H,00H,00H,50H,00H,04H,0FH,00H,85H,01H
+D7C1                	DB	7FH,00H,C0H,00H,20H,00H,02H,00H,03H,16H,01H,03H,01H,05H,02H,50H
+D7D1                	DB	01H,03H,48H,50H,03H,32H,12H,50H,03H,00H,00H,00H,50H,00H,04H,0FH
+D7E1                	DB	00H,85H,01H,7FH,00H,C0H,00H,20H,00H,02H,00H,03H,16H,01H,03H,01H
+D7F1                	DB	05H,02H,50H,01H,04H,48H,50H,03H,32H,12H,50H,03H,00H,00H,00H
+D800                	DB	01H,07H,0DH,13H,19H,05H,0BH,11H,17H,03H,09H,0FH,15H,02H,08H,0EH		;Sektoruebersetzung 26 Sektoren, Versatz 6 (8-Zoll-Standard) -- kein DPH verweist darauf (alle XLT=0)
+D810                	DB	14H,1AH,06H,0CH,12H,18H,04H,0AH,10H,16H
+D81A                	DB	0AH,0DH,20H,20H,20H,20H,20H,20H,20H,20H,20H,20H,3EH,3EH,3EH,3EH		;Texte: Einschaltmeldung '>>>>> Konfigurierbare Datenstation K 8915 <<<<<', 'SCPX 8915 V 5.3 Anpassung: V24 (XON/XOFF)', 'System ?'
+D82A                	DB	'>    Konfigurier'
+D83A                	DB	'bare Datenstatio'
+D84A                	DB	'n   K 8915    <<'
+D85A                	DB	3CH,3CH,3CH,0AH,0AH,0DH,20H,20H,20H,20H,20H,20H,20H,20H,20H,20H
+D86A                	DB	'SCPX 8915  V 5.3'
+D87A                	DB	'  Anpassung:  V2'
+D88A                	DB	34H,20H,20H,28H,58H,4FH,4EH,2FH,58H,4FH,46H,46H,29H,0AH,0DH,24H
+D89A                	DB	0AH,0DH,53H,79H,73H,74H,65H,6DH,20H,3FH,0AH,0DH,24H
+BOOT:
+D8A7  3E 87         	LD A,87H		;[BOOT] A8H=87H: Seiten 0-3 RAM, ROM aus (Design-Doc §4.2a)
+D8A9  D3 A8         	OUT (A8H),A
+D8AB  31 00 01      	LD SP,0100H
+D8AE  3E 95         	LD A,95H		;IOBYTE (0003H) = 95H
+D8B0  32 03 00      	LD (0003H),A
+D8B3  21 E0 F7      	LD HL,F7E0H		;F7E0H..F7FAH loeschen und bei F7FBH 'JP D8F8H' ablegen (IOBYTE setzen + WBOOT): das ist die Sprungtabelle der IOBYTE-Geraete (F7E0H CONST, F7E3H CONIN, F7E6H CONOUT fuer CON:=UC1, F7E9H/F7ECH READER UR1/UR2, F7EFH/F7F2H PUNCH UP1/UP2, F7F5H/F7F8H LISTST/LIST fuer LST:=UL1). Nur die Fassung '55 K' (Diskette 900) springt sie an; diese Fassung hat die IOBYTE-Weiche durch je zehn NOP ersetzt (D960H/D972H/DCF2H). Ein nicht belegter Eintrag laeuft ueber die NOPs nach F7FBH = IOBYTE 95H + WBOOT (Design-Doc §4.4, AP-B2)
+D8B6  06 1B         	LD B,1BH
+D8B8  36 00         	LD (HL),00H
+D8BA  23            	INC HL
+D8BB  10 FB         	DJNZ D8B8H
+D8BD  36 C3         	LD (HL),C3H
+D8BF  23            	INC HL
+D8C0  36 F8         	LD (HL),F8H
+D8C2  23            	INC HL
+D8C3  36 D8         	LD (HL),D8H
+D8C5  AF            	XOR A		;Laufwerk/Nutzer (0004H) = 0, Zaehler Cursoradressierung (F1B7H) = 0
+D8C6  32 04 00      	LD (0004H),A
+D8C9  32 B7 F1      	LD (F1B7H),A
+D8CC  3E B0         	LD A,B0H		;Port 61H = B0H: Anzeige 'bereit' (s. E011H)
+D8CE  D3 61         	OUT (61H),A
+D8D0  3E FF         	LD A,FFH		;I = FFH, IM 2: Vektortabelle ab FF00H, SIO2-B-Eintraege bei FFD0H (s. D9ACH)
+D8D2  ED 47         	LD I,A
+D8D4  ED 5E         	IM 2
+D8D6  FB            	EI
+D8D7  0E 0C         	LD C,0CH		;Bild loeschen (0CH), Einschaltmeldung ab D81AH ausgeben
+D8D9  CD F2 DC      	CALL DCF2H
+D8DC  21 1A D8      	LD HL,D81AH
+D8DF  CD 53 D9      	CALL D953H
+D8E2  CD 82 DE      	CALL DE82H		;Drucker-Schnittstelle SIO1-B einrichten (DE82H)
+D8E5  CD 97 D9      	CALL D997H		;Tastatur einrichten (D997H): Puffer leeren, SIO2-B + IM-2-Tabelle, K7672-Kaltstartbefehle
+D8E8  CD B6 E2      	CALL E2B6H		;Polaritaet von MKE (Port 12H Bit1) erkennen und den Treiber darauf einstellen (E2B6H)
+D8EB  01 40 00      	LD BC,0040H		;Autostart: 40H Byte ab D641H in den Tastaturpuffer F150H ('rade' CR)
+D8EE  11 50 F1      	LD DE,F150H
+D8F1  21 41 D6      	LD HL,D641H
+D8F4  ED B0         	LDIR
+D8F6  18 30         	JR D928H
+WBOOT_F7FB:
+D8F8  3E 95         	LD A,95H		;[Einsprung ueber F7FBH] IOBYTE = 95H, weiter in WBOOT
+D8FA  32 03 00      	LD (0003H),A
+WBOOT:
+D8FD  F3            	DI		;[WBOOT] DI, A8H=06H (ROM + Bildspeicher sichtbar), SP=F7E0H
+D8FE  3E 06         	LD A,06H
+D900  D3 A8         	OUT (A8H),A
+D902  31 E0 F7      	LD SP,F7E0H
+D905  3E 03         	LD A,03H		;03H an CTC-ZRE K3 (83H) und K5122-PIO1 A/B (11H/13H): Zeitgeber und Disketten-Interrupts aus, bevor der ROM-Lader laeuft
+D907  00            	NOP
+D908  00            	NOP
+D909  D3 83         	OUT (83H),A
+D90B  D3 11         	OUT (11H),A
+D90D  D3 13         	OUT (13H),A
+D90F  CD 06 04      	CALL 0406H		;CALL 0406H = Diskettenlader im Boot-ROM laedt CCP+BDOS neu; A = Ergebnis (0 = gut)
+D912  47            	LD B,A
+D913  3E 87         	LD A,87H		;A8H=87H (ROM aus), EI
+D915  D3 A8         	OUT (A8H),A
+D917  FB            	EI
+D918  31 00 01      	LD SP,0100H
+D91B  78            	LD A,B
+D91C  A7            	AND A
+D91D  28 06         	JR Z,D925H
+D91F  21 30 17      	LD HL,1730H		;Ladefehler: Cursor an den Anfang der letzten Zeile (1730H = 1000H + 23*80)
+D922  22 B5 F1      	LD (F1B5H),HL
+D925  CD AC D9      	CALL D9ACH		;SIO2-B und IM-2-Tabelle neu (D9ACH)
+D928  CD 92 E2      	CALL E292H		;Diskettentreiber zuruecksetzen (E292H), dann Seite 0 einrichten: JP D603H bei 0000H, JP C806H (BDOS) bei 0005H, DMA 0080H
+D92B  3E C3         	LD A,C3H
+D92D  32 00 00      	LD (0000H),A
+D930  21 03 D6      	LD HL,D603H
+D933  22 01 00      	LD (0001H),HL
+D936  32 05 00      	LD (0005H),A
+D939  21 06 C8      	LD HL,C806H
+D93C  22 06 00      	LD (0006H),HL
+D93F  01 80 00      	LD BC,0080H
+D942  CD 76 DF      	CALL DF76H
+D945  AF            	XOR A
+D946  32 D8 F1      	LD (F1D8H),A
+D949  32 DA F1      	LD (F1DAH),A
+D94C  3A 04 00      	LD A,(0004H)
+D94F  4F            	LD C,A
+D950  C3 00 C0      	JP C000H		;JP C000H = CCP, C = Laufwerk/Nutzer
+D953  4E            	LD C,(HL)		;Text ab HL bis '$' ueber CONOUT
+D954  3E 24         	LD A,24H
+D956  B9            	CP C
+D957  C8            	RET Z
+D958  E5            	PUSH HL
+D959  CD F2 DC      	CALL DCF2H
+D95C  E1            	POP HL
+D95D  23            	INC HL
+D95E  18 F3         	JR D953H
+CONST:
+D960  00            	NOP		;[CONST] zehn NOP = Patchplatz; FFH, wenn der Tastaturpuffer F150H nicht leer ist
+D961  00            	NOP
+D962  00            	NOP
+D963  00            	NOP
+D964  00            	NOP
+D965  00            	NOP
+D966  00            	NOP
+D967  00            	NOP
+D968  00            	NOP
+D969  00            	NOP
+D96A  3A 50 F1      	LD A,(F150H)
+D96D  A7            	AND A
+D96E  C8            	RET Z
+D96F  3E FF         	LD A,FFH
+D971  C9            	RET
+CONIN:
+D972  00            	NOP		;[CONIN] zehn NOP = Patchplatz; wartet auf F150H<>0, nimmt F151H und schiebt den Puffer nach (LDIR) -- alles andere macht die Empfangs-ISR DA19H
+D973  00            	NOP
+D974  00            	NOP
+D975  00            	NOP
+D976  00            	NOP
+D977  00            	NOP
+D978  00            	NOP
+D979  00            	NOP
+D97A  00            	NOP
+D97B  00            	NOP
+D97C  3A 50 F1      	LD A,(F150H)
+D97F  A7            	AND A
+D980  28 FA         	JR Z,D97CH
+D982  F3            	DI
+D983  3D            	DEC A
+D984  32 50 F1      	LD (F150H),A
+D987  4F            	LD C,A
+D988  21 51 F1      	LD HL,F151H
+D98B  7E            	LD A,(HL)
+D98C  28 07         	JR Z,D995H
+D98E  06 00         	LD B,00H
+D990  54            	LD D,H
+D991  5D            	LD E,L
+D992  23            	INC HL
+D993  ED B0         	LDIR
+D995  FB            	EI
+D996  C9            	RET
+D997  AF            	XOR A		;Tastatur-Init: Puffer und Umschaltzustand F14FH loeschen, SIO2-B einrichten, Kaltstartbefehle DBE6H an die K7672 senden
+D998  32 50 F1      	LD (F150H),A
+D99B  32 4F F1      	LD (F14FH),A
+D99E  CD AC D9      	CALL D9ACH
+D9A1  21 E6 DB      	LD HL,DBE6H
+D9A4  CD C7 DB      	CALL DBC7H
+D9A7  AF            	XOR A
+D9A8  32 50 F1      	LD (F150H),A
+D9AB  C9            	RET
+D9AC  01 08 00      	LD BC,0008H		;IM-2-Tabelle D9D5H nach (I)<<8|D0H = FFD0H kopieren, dann Init-Tabelle D9C7H: 2 Byte an 5AH (CTC2-K2), 12 Byte an 53H (SIO2-B)
+D9AF  ED 57         	LD A,I
+D9B1  57            	LD D,A
+D9B2  1E D0         	LD E,D0H
+D9B4  21 D5 D9      	LD HL,D9D5H
+D9B7  ED B0         	LDIR
+D9B9  21 C7 D9      	LD HL,D9C7H
+D9BC  01 5A 02      	LD BC,025AH
+D9BF  ED B3         	OTIR
+D9C1  01 53 0C      	LD BC,0C53H
+D9C4  ED B3         	OTIR
+D9C6  C9            	RET
+D9C7                	DB	07H,01H,00H,18H,04H,44H,03H,C1H,05H,EAH,01H,17H,02H,D0H		;Init CTC2-K2 (5AH: 07H,01H = 9600 Bd) und SIO2-B (53H: 00,18H Kanalreset, WR4=44H, WR3=C1H, WR5=EAH, WR1=17H, WR2=D0H Vektor)
+D9D5                	DB	DDH,D9H,ECH,D9H,19H,DAH,FBH,D9H		;IM-2-Tabelle -> FFD0H (I=FFH): SIO2-B Tx-leer D9DDH, Ext/Status D9ECH, Rx-Zeichen DA19H, Rx-Sonderfall D9FBH ('status affects vector')
+ISR_FFD0:
+D9DD  ED 73 00 EF   	LD (EF00H),SP		;[ISR SIO2-B Tx leer] WR0 = 28H (Tx-Interrupt zuruecksetzen); eigener Stapel EF2AH
+D9E1  31 2A EF      	LD SP,EF2AH
+D9E4  F5            	PUSH AF
+D9E5  C5            	PUSH BC
+D9E6  D5            	PUSH DE
+D9E7  E5            	PUSH HL
+D9E8  06 28         	LD B,28H
+D9EA  18 1C         	JR DA08H
+ISR_FFD2:
+D9EC  ED 73 00 EF   	LD (EF00H),SP		;[ISR SIO2-B Ext/Status] WR0 = 10H (Ext/Status zuruecksetzen)
+D9F0  31 2A EF      	LD SP,EF2AH
+D9F3  F5            	PUSH AF
+D9F4  C5            	PUSH BC
+D9F5  D5            	PUSH DE
+D9F6  E5            	PUSH HL
+D9F7  06 10         	LD B,10H
+D9F9  18 0D         	JR DA08H
+ISR_FFD6:
+D9FB  ED 73 00 EF   	LD (EF00H),SP		;[ISR SIO2-B Rx-Sonderfall] WR0 = 30H (Fehler zuruecksetzen)
+D9FF  31 2A EF      	LD SP,EF2AH
+DA02  F5            	PUSH AF
+DA03  C5            	PUSH BC
+DA04  D5            	PUSH DE
+DA05  E5            	PUSH HL
+DA06  06 30         	LD B,30H
+DA08  AF            	XOR A
+DA09  D3 53         	OUT (53H),A
+DA0B  78            	LD A,B
+DA0C  D3 53         	OUT (53H),A
+DA0E  E1            	POP HL
+DA0F  D1            	POP DE
+DA10  C1            	POP BC
+DA11  F1            	POP AF
+DA12  ED 7B 00 EF   	LD SP,(EF00H)
+DA16  FB            	EI
+DA17  ED 4D         	RETI
+ISR_FFD4:
+DA19  ED 73 00 EF   	LD (EF00H),SP		;[ISR SIO2-B Rx-Zeichen = TASTATUR] Scancode (PC/XT Satz 1) von der K7672 im DCP-Modus; 00H wird verworfen. F14FH = Zustand: Bit0 Strg, Bit1 Feststell, Bit2 Umschalt, Bit3 XOFF
+DA1D  31 2A EF      	LD SP,EF2AH
+DA20  F5            	PUSH AF
+DA21  C5            	PUSH BC
+DA22  D5            	PUSH DE
+DA23  E5            	PUSH HL
+DA24  DB 52         	IN A,(52H)
+DA26  32 4E F1      	LD (F14EH),A
+DA29  A7            	AND A
+DA2A  28 E2         	JR Z,DA0EH
+DA2C  21 4F F1      	LD HL,F14FH
+DA2F  FE 1D         	CP 1DH		;1DH/9DH Strg druecken/loslassen, 2AH/36H bzw. AAH/B6H Umschalt links/rechts, 3AH Feststell (wechselt Bit1), 7EH sendet 'ESC[?18l' an die Tastatur
+DA31  CA 39 DB      	JP Z,DB39H
+DA34  FE 9D         	CP 9DH
+DA36  CA 3E DB      	JP Z,DB3EH
+DA39  FE 2A         	CP 2AH
+DA3B  CA 43 DB      	JP Z,DB43H
+DA3E  FE 36         	CP 36H
+DA40  CA 43 DB      	JP Z,DB43H
+DA43  FE AA         	CP AAH
+DA45  CA 48 DB      	JP Z,DB48H
+DA48  FE B6         	CP B6H
+DA4A  CA 48 DB      	JP Z,DB48H
+DA4D  FE 3A         	CP 3AH
+DA4F  CA 4D DB      	JP Z,DB4DH
+DA52  FE 7E         	CP 7EH
+DA54  CA 55 DB      	JP Z,DB55H
+DA57  7E            	LD A,(HL)		;keine Umschaltung aktiv -> DB5EH (Loslassen-Codes mit Bit7 werden dort verworfen)
+DA58  A7            	AND A
+DA59  CA 5E DB      	JP Z,DB5EH
+DA5C  CB 47         	BIT 0,A
+DA5E  C2 EF DA      	JP NZ,DAEFH
+DA61  CB 57         	BIT 2,A
+DA63  20 23         	JR NZ,DA88H
+DA65  3A 4E F1      	LD A,(F14EH)		;[nur Feststell] erst Ziffernblock DCD5H, dann DC1CH; Kleinbuchstaben -> GROSS (ohne Umschalttaste gehen die Tabellenwerte ueber DB5EH unveraendert -- klein; am Lauf bestaetigt, AP-E3)
+DA68  21 D5 DC      	LD HL,DCD5H
+DA6B  CD D9 DB      	CALL DBD9H
+DA6E  CA 77 DB      	JP Z,DB77H
+DA71  21 1C DC      	LD HL,DC1CH
+DA74  CD D9 DB      	CALL DBD9H
+DA77  20 95         	JR NZ,DA0EH
+DA79  FE 61         	CP 61H
+DA7B  DA 77 DB      	JP C,DB77H
+DA7E  FE 7B         	CP 7BH
+DA80  D2 77 DB      	JP NC,DB77H
+DA83  E6 DF         	AND DFH
+DA85  C3 77 DB      	JP DB77H
+DA88  3A 4E F1      	LD A,(F14EH)		;[Umschalt] 4FH (Zif.-1) = Drucker-Schnittstelle neu (DE82H); 47H (Zif.-7) ruft DEABH -- mitten in LISTST, vermutlich veraltete Adresse [?]
+DA8B  FE 4F         	CP 4FH
+DA8D  20 06         	JR NZ,DA95H
+DA8F  CD 82 DE      	CALL DE82H
+DA92  C3 0E DA      	JP DA0EH
+DA95  FE 47         	CP 47H
+DA97  20 08         	JR NZ,DAA1H
+DA99  0E 0C         	LD C,0CH
+DA9B  CD AB DE      	CALL DEABH
+DA9E  C3 0E DA      	JP DA0EH
+DAA1  21 C2 DC      	LD HL,DCC2H		;Umschalttabelle DCC2H (Cursor), sonst DC1CH; Ziffern 1..9 ausser 3/7 -> AND EFH ('1'->'!'), Buchstaben gross ausser bei Feststell, Rest ueber DCA5H
+DAA4  CD D9 DB      	CALL DBD9H
+DAA7  CA 77 DB      	JP Z,DB77H
+DAAA  21 1C DC      	LD HL,DC1CH
+DAAD  CD D9 DB      	CALL DBD9H
+DAB0  C2 0E DA      	JP NZ,DA0EH
+DAB3  FE 31         	CP 31H
+DAB5  38 26         	JR C,DADDH
+DAB7  FE 3A         	CP 3AH
+DAB9  30 0D         	JR NC,DAC8H
+DABB  FE 33         	CP 33H
+DABD  28 1E         	JR Z,DADDH
+DABF  FE 37         	CP 37H
+DAC1  28 1A         	JR Z,DADDH
+DAC3  E6 EF         	AND EFH
+DAC5  C3 77 DB      	JP DB77H
+DAC8  FE 61         	CP 61H
+DACA  38 11         	JR C,DADDH
+DACC  FE 7B         	CP 7BH
+DACE  30 0D         	JR NC,DADDH
+DAD0  21 4F F1      	LD HL,F14FH
+DAD3  CB 4E         	BIT 1,(HL)
+DAD5  C2 77 DB      	JP NZ,DB77H
+DAD8  E6 DF         	AND DFH
+DADA  C3 77 DB      	JP DB77H
+DADD  32 4E F1      	LD (F14EH),A
+DAE0  21 A5 DC      	LD HL,DCA5H
+DAE3  CD D9 DB      	CALL DBD9H
+DAE6  CA 77 DB      	JP Z,DB77H
+DAE9  3A 4E F1      	LD A,(F14EH)
+DAEC  C3 77 DB      	JP DB77H
+DAEF  3A 4E F1      	LD A,(F14EH)		;[Strg] 45H = Strg+Pause: XOFF-Bit3 wechseln, LED 'ESC[?13h/l' und DC3/DC1 ins Puffer; Tabellen DC0FH/DCD5H/DC1CH; Buchstaben -> AND 9FH (Steuerzeichen)
+DAF2  FE 45         	CP 45H
+DAF4  28 25         	JR Z,DB1BH
+DAF6  21 0F DC      	LD HL,DC0FH
+DAF9  CD D9 DB      	CALL DBD9H
+DAFC  28 79         	JR Z,DB77H
+DAFE  21 D5 DC      	LD HL,DCD5H
+DB01  CD D9 DB      	CALL DBD9H
+DB04  28 71         	JR Z,DB77H
+DB06  21 1C DC      	LD HL,DC1CH
+DB09  CD D9 DB      	CALL DBD9H
+DB0C  C2 0E DA      	JP NZ,DA0EH
+DB0F  FE 61         	CP 61H
+DB11  38 64         	JR C,DB77H
+DB13  FE 7B         	CP 7BH
+DB15  30 60         	JR NC,DB77H
+DB17  E6 9F         	AND 9FH
+DB19  18 5C         	JR DB77H
+DB1B  AF            	XOR A
+DB1C  CB DF         	SET 3,A
+DB1E  AE            	XOR (HL)
+DB1F  77            	LD (HL),A
+DB20  CB 5F         	BIT 3,A
+DB22  3E 11         	LD A,11H
+DB24  21 08 DC      	LD HL,DC08H
+DB27  28 05         	JR Z,DB2EH
+DB29  3E 13         	LD A,13H
+DB2B  21 01 DC      	LD HL,DC01H
+DB2E  32 4E F1      	LD (F14EH),A
+DB31  CD C7 DB      	CALL DBC7H
+DB34  3A 4E F1      	LD A,(F14EH)
+DB37  18 3E         	JR DB77H
+DB39  CB C6         	SET 0,(HL)
+DB3B  C3 0E DA      	JP DA0EH
+DB3E  CB 86         	RES 0,(HL)
+DB40  C3 0E DA      	JP DA0EH
+DB43  CB D6         	SET 2,(HL)
+DB45  C3 0E DA      	JP DA0EH
+DB48  CB 96         	RES 2,(HL)
+DB4A  C3 0E DA      	JP DA0EH
+DB4D  AF            	XOR A
+DB4E  CB CF         	SET 1,A
+DB50  AE            	XOR (HL)
+DB51  77            	LD (HL),A
+DB52  C3 0E DA      	JP DA0EH
+DB55  21 F8 DB      	LD HL,DBF8H
+DB58  CD C7 DB      	CALL DBC7H
+DB5B  C3 0E DA      	JP DA0EH
+DB5E  3A 4E F1      	LD A,(F14EH)
+DB61  CB 7F         	BIT 7,A
+DB63  C2 0E DA      	JP NZ,DA0EH
+DB66  21 D5 DC      	LD HL,DCD5H
+DB69  CD D9 DB      	CALL DBD9H
+DB6C  28 09         	JR Z,DB77H
+DB6E  21 1C DC      	LD HL,DC1CH
+DB71  CD D9 DB      	CALL DBD9H
+DB74  C2 0E DA      	JP NZ,DA0EH
+DB77  21 4E F1      	LD HL,F14EH		;[Zeichen ablegen] 91H..9CH = F-Taste: Text aus D681H; sonst 1 Zeichen. Puffer F150H (Zaehler) + F151H.. max. 100 Zeichen, bei Ueberlauf BEL an die Tastatur
+DB7A  77            	LD (HL),A
+DB7B  FE 91         	CP 91H
+DB7D  38 04         	JR C,DB83H
+DB7F  FE 9D         	CP 9DH
+DB81  38 05         	JR C,DB88H
+DB83  01 01 00      	LD BC,0001H
+DB86  18 1E         	JR DBA6H
+DB88  21 81 D6      	LD HL,D681H
+DB8B  47            	LD B,A
+DB8C  7E            	LD A,(HL)
+DB8D  FE FF         	CP FFH
+DB8F  CA 0E DA      	JP Z,DA0EH
+DB92  B8            	CP B
+DB93  23            	INC HL
+DB94  20 F6         	JR NZ,DB8CH
+DB96  E5            	PUSH HL
+DB97  01 FF FF      	LD BC,FFFFH
+DB9A  03            	INC BC
+DB9B  7E            	LD A,(HL)
+DB9C  23            	INC HL
+DB9D  07            	RLCA
+DB9E  30 FA         	JR NC,DB9AH
+DBA0  E1            	POP HL
+DBA1  78            	LD A,B
+DBA2  B1            	OR C
+DBA3  CA 0E DA      	JP Z,DA0EH
+DBA6  E5            	PUSH HL
+DBA7  21 50 F1      	LD HL,F150H
+DBAA  7E            	LD A,(HL)
+DBAB  5F            	LD E,A
+DBAC  81            	ADD A,C
+DBAD  FE 64         	CP 64H
+DBAF  30 0C         	JR NC,DBBDH
+DBB1  77            	LD (HL),A
+DBB2  16 00         	LD D,00H
+DBB4  23            	INC HL
+DBB5  19            	ADD HL,DE
+DBB6  EB            	EX DE,HL
+DBB7  E1            	POP HL
+DBB8  ED B0         	LDIR
+DBBA  C3 0E DA      	JP DA0EH
+DBBD  E1            	POP HL
+DBBE  21 FF DB      	LD HL,DBFFH
+DBC1  CD C7 DB      	CALL DBC7H
+DBC4  C3 0E DA      	JP DA0EH
+DBC7  AF            	XOR A		;Text bis '$' an die K7672 senden: SIO2-B RR0 Bit2 (Tx leer) pollen, Daten an 52H
+DBC8  D3 53         	OUT (53H),A
+DBCA  DB 53         	IN A,(53H)
+DBCC  CB 57         	BIT 2,A
+DBCE  28 FA         	JR Z,DBCAH
+DBD0  7E            	LD A,(HL)
+DBD1  FE 24         	CP 24H
+DBD3  C8            	RET Z
+DBD4  D3 52         	OUT (52H),A
+DBD6  23            	INC HL
+DBD7  18 EE         	JR DBC7H
+DBD9  46            	LD B,(HL)		;Tabellensuche: (HL) = Anzahl, dann Paare (Schluessel, Wert); Z + A = Wert bei Treffer
+DBDA  23            	INC HL
+DBDB  BE            	CP (HL)
+DBDC  28 05         	JR Z,DBE3H
+DBDE  23            	INC HL
+DBDF  23            	INC HL
+DBE0  10 F9         	DJNZ DBDBH
+DBE2  C9            	RET
+DBE3  23            	INC HL
+DBE4  7E            	LD A,(HL)
+DBE5  C9            	RET
+DBE6                	DB	1BH,5BH,3FH,31H,31H,6CH,1BH,5BH,3FH,31H,39H,68H,1BH,5BH,3FH,32H		;Befehle an die K7672, '$'-begrenzt: DBE6H Kaltstart 'ESC[?11l ESC[?19h ESC[?22h ESC[?18l' (22h = DCP-Modus), DBF8H 'ESC[?18l', DBFFH BEL, DC01H 'ESC[?13h', DC08H 'ESC[?13l' (LED)
+DBF6                	DB	32H,68H,1BH,5BH,3FH,31H,38H,6CH,24H,07H,24H,1BH,5BH,3FH,31H,33H
+DC06                	DB	68H,24H,1BH,5BH,3FH,31H,33H,6CH,24H
+DC0F                	DB	06H,45H,03H,28H,1BH,27H,1CH,1AH,1DH,29H,1EH,35H,1FH		;Tastentabelle Strg (Scancode->Zeichen, Format: Anzahl, Paare)
+DC1C                	DB	44H,01H,1BH,02H,31H,03H,32H,04H,33H,05H,34H,06H,35H,07H,36H,08H		;Tastentabelle Grundbelegung, 68 Paare Scancode(Satz 1)->Zeichen; 3BH..44H (F1..F10) -> 91H..9AH; DIN-Belegung mit [\] fuer Ae/Oe/Ue
+DC2C                	DB	37H,09H,38H,0AH,39H,0BH,30H,0CH,7EH,0DH,27H,0EH,7FH,0FH,09H,10H
+DC3C                	DB	71H,11H,77H,12H,65H,13H,72H,14H,74H,15H,7AH,16H,75H,17H,69H,18H
+DC4C                	DB	6FH,19H,70H,1AH,5DH,1BH,2BH,1CH,0DH,1EH,61H,1FH,73H,20H,64H,21H
+DC5C                	DB	'f"g#h$j%k&l''\([)'
+DC6C                	DB	'#+<,y-x.c/v0b1n2'
+DC7C                	DB	6DH,33H,2CH,34H,2EH,35H,2DH,39H,20H,3BH,91H,3CH,92H,3DH,93H,3EH
+DC8C                	DB	94H,3FH,95H,40H,96H,41H,97H,42H,98H,43H,99H,44H,9AH,45H,03H,46H
+DC9C                	DB	12H,7CH,0DH,7AH,2FH,37H,2AH,4AH,2DH
+DCA5                	DB	0EH,3CH,3EH,30H,3DH,7EH,3FH,27H,60H,2BH,2AH,23H,5EH,2DH,5FH,2EH		;Umschalttabelle, nach ZEICHEN geschluesselt ('<'->'>', '3'->'@', '7'->'/', '['->'{' ...)
+DCB5                	DB	':,;]}[{\|3@7/'
+DCC2                	DB	09H,0FH,01H,53H,07H,49H,9BH,51H,9CH,37H,19H,4BH,08H,50H,18H,4DH		;Tastentabelle Umschalt, Scancode: Ziffernblock als Cursortasten (^H ^X ^D ^E), BildAuf/Ab -> 9BH/9CH
+DCD2                	DB	04H,48H,05H
+DCD5                	DB	0EH,52H,30H,7DH,2CH,53H,2EH,4FH,31H,50H,32H,51H,33H,4BH,34H,4CH		;Tastentabelle Ziffernblock (ohne Umschalt): Ziffern
+DCE5                	DB	'5M6{=G7H8I9N+'
+CONOUT:
+DCF2  00            	NOP		;[CONOUT] zehn NOP = Patchplatz. Cursor = Bit7 im Bildspeicher an F1B5H; jeder VRAM-Zugriff unter DI mit A8H=06H (Seite 0: ROM + K7024 bei 1000H), danach 87H
+DCF3  00            	NOP
+DCF4  00            	NOP
+DCF5  00            	NOP
+DCF6  00            	NOP
+DCF7  00            	NOP
+DCF8  00            	NOP
+DCF9  00            	NOP
+DCFA  00            	NOP
+DCFB  00            	NOP
+DCFC  2A B5 F1      	LD HL,(F1B5H)
+DCFF  F3            	DI
+DD00  3E 06         	LD A,06H
+DD02  D3 A8         	OUT (A8H),A
+DD04  CB BE         	RES 7,(HL)
+DD06  3E 87         	LD A,87H
+DD08  D3 A8         	OUT (A8H),A
+DD0A  FB            	EI
+DD0B  CD 1E DD      	CALL DD1EH
+DD0E  2A B5 F1      	LD HL,(F1B5H)
+DD11  F3            	DI
+DD12  3E 06         	LD A,06H
+DD14  D3 A8         	OUT (A8H),A
+DD16  CB FE         	SET 7,(HL)
+DD18  3E 87         	LD A,87H
+DD1A  D3 A8         	OUT (A8H),A
+DD1C  FB            	EI
+DD1D  C9            	RET
+DD1E  3A B7 F1      	LD A,(F1B7H)		;F1B7H <> 0: Cursoradressierung laeuft (ESC, Zeile+80H, Spalte+80H); Zeile >= 18H = Bild loeschen, Spalte > 4FH = 4FH
+DD21  B7            	OR A
+DD22  28 2E         	JR Z,DD52H
+DD24  3D            	DEC A
+DD25  32 B7 F1      	LD (F1B7H),A
+DD28  28 1A         	JR Z,DD44H
+DD2A  21 00 10      	LD HL,1000H
+DD2D  79            	LD A,C
+DD2E  D6 80         	SUB 80H
+DD30  28 39         	JR Z,DD6BH
+DD32  FE 18         	CP 18H
+DD34  38 05         	JR C,DD3BH
+DD36  CD C2 DD      	CALL DDC2H
+DD39  18 30         	JR DD6BH
+DD3B  47            	LD B,A
+DD3C  11 50 00      	LD DE,0050H
+DD3F  19            	ADD HL,DE
+DD40  10 FD         	DJNZ DD3FH
+DD42  18 27         	JR DD6BH
+DD44  79            	LD A,C
+DD45  D6 80         	SUB 80H
+DD47  FE 50         	CP 50H
+DD49  11 4F 00      	LD DE,004FH
+DD4C  30 01         	JR NC,DD4FH
+DD4E  5F            	LD E,A
+DD4F  19            	ADD HL,DE
+DD50  18 19         	JR DD6BH
+DD52  CB B9         	RES 7,C		;Bit7 des Zeichens loeschen (ist im VRAM das Cursorbit), Steuerzeichen < 20H und 7FH gesondert
+DD54  79            	LD A,C
+DD55  FE 20         	CP 20H
+DD57  38 16         	JR C,DD6FH
+DD59  FE 7F         	CP 7FH
+DD5B  28 12         	JR Z,DD6FH
+DD5D  F3            	DI
+DD5E  3E 06         	LD A,06H
+DD60  D3 A8         	OUT (A8H),A
+DD62  71            	LD (HL),C
+DD63  3E 87         	LD A,87H
+DD65  D3 A8         	OUT (A8H),A
+DD67  FB            	EI
+DD68  CD 02 DE      	CALL DE02H
+DD6B  22 B5 F1      	LD (F1B5H),HL
+DD6E  C9            	RET
+DD6F  11 6B DD      	LD DE,DD6BH		;Steuerzeichen: 0DH CR, 0AH LF (rollt), 08H links, 15H rechts, 18H Cursor nach 1000H, 0CH Bild loeschen, 16H Zeilenrest loeschen, 14H Bildrest loeschen, 1AH hoch, 1BH Cursoradressierung, 7FH links + loeschen, 07H (BEL) wird VERSCHLUCKT; sonst wird das Zeichen dargestellt
+DD72  D5            	PUSH DE
+DD73  FE 0D         	CP 0DH
+DD75  CA 2E DE      	JP Z,DE2EH
+DD78  FE 0A         	CP 0AH
+DD7A  28 76         	JR Z,DDF2H
+DD7C  FE 08         	CP 08H
+DD7E  28 3B         	JR Z,DDBBH
+DD80  FE 15         	CP 15H
+DD82  CA 02 DE      	JP Z,DE02H
+DD85  FE 18         	CP 18H
+DD87  28 65         	JR Z,DDEEH
+DD89  FE 0C         	CP 0CH
+DD8B  28 35         	JR Z,DDC2H
+DD8D  FE 16         	CP 16H
+DD8F  CA 67 DE      	JP Z,DE67H
+DD92  FE 14         	CP 14H
+DD94  CA 47 DE      	JP Z,DE47H
+DD97  FE 1A         	CP 1AH
+DD99  CA 75 DE      	JP Z,DE75H
+DD9C  FE 1B         	CP 1BH
+DD9E  CA 41 DE      	JP Z,DE41H
+DDA1  FE 7F         	CP 7FH
+DDA3  28 06         	JR Z,DDABH
+DDA5  FE 07         	CP 07H
+DDA7  C8            	RET Z
+DDA8  D1            	POP DE
+DDA9  18 B2         	JR DD5DH
+DDAB  CD BB DD      	CALL DDBBH
+DDAE  F3            	DI
+DDAF  3E 06         	LD A,06H
+DDB1  D3 A8         	OUT (A8H),A
+DDB3  36 20         	LD (HL),20H
+DDB5  3E 87         	LD A,87H
+DDB7  D3 A8         	OUT (A8H),A
+DDB9  FB            	EI
+DDBA  C9            	RET
+DDBB  2B            	DEC HL
+DDBC  7C            	LD A,H
+DDBD  FE 0F         	CP 0FH
+DDBF  C0            	RET NZ
+DDC0  23            	INC HL
+DDC1  C9            	RET
+DDC2  21 00 10      	LD HL,1000H		;Bild loeschen: 06H nach 1000H, Wartezeit (21H*256 Schleifen, ~0,1 s), dann 1000H..177FH (BC=0880H: 80H + 7*256 = 780H Byte) mit 20H
+DDC5  F3            	DI
+DDC6  3E 06         	LD A,06H
+DDC8  D3 A8         	OUT (A8H),A
+DDCA  36 06         	LD (HL),06H
+DDCC  3E 87         	LD A,87H
+DDCE  D3 A8         	OUT (A8H),A
+DDD0  FB            	EI
+DDD1  01 00 21      	LD BC,2100H
+DDD4  0D            	DEC C
+DDD5  20 FD         	JR NZ,DDD4H
+DDD7  10 FB         	DJNZ DDD4H
+DDD9  01 80 08      	LD BC,0880H
+DDDC  F3            	DI
+DDDD  3E 06         	LD A,06H
+DDDF  D3 A8         	OUT (A8H),A
+DDE1  36 20         	LD (HL),20H
+DDE3  23            	INC HL
+DDE4  0D            	DEC C
+DDE5  20 FA         	JR NZ,DDE1H
+DDE7  10 F8         	DJNZ DDE1H
+DDE9  3E 87         	LD A,87H
+DDEB  D3 A8         	OUT (A8H),A
+DDED  FB            	EI
+DDEE  21 00 10      	LD HL,1000H
+DDF1  C9            	RET
+DDF2  11 50 00      	LD DE,0050H
+DDF5  19            	ADD HL,DE
+DDF6  7C            	LD A,H
+DDF7  FE 17         	CP 17H
+DDF9  C0            	RET NZ
+DDFA  7D            	LD A,L
+DDFB  FE 80         	CP 80H
+DDFD  D8            	RET C
+DDFE  ED 52         	SBC HL,DE
+DE00  18 0D         	JR DE0FH
+DE02  23            	INC HL		;Cursor weiter; ab 1780H rollen: 1050H..177FH nach 1000H (LDIR), letzte Zeile leeren
+DE03  7C            	LD A,H
+DE04  FE 17         	CP 17H
+DE06  C0            	RET NZ
+DE07  7D            	LD A,L
+DE08  FE 80         	CP 80H
+DE0A  7C            	LD A,H
+DE0B  D8            	RET C
+DE0C  21 30 17      	LD HL,1730H
+DE0F  E5            	PUSH HL
+DE10  01 30 07      	LD BC,0730H
+DE13  21 50 10      	LD HL,1050H
+DE16  11 00 10      	LD DE,1000H
+DE19  F3            	DI
+DE1A  3E 06         	LD A,06H
+DE1C  D3 A8         	OUT (A8H),A
+DE1E  ED B0         	LDIR
+DE20  06 50         	LD B,50H
+DE22  2B            	DEC HL
+DE23  36 20         	LD (HL),20H
+DE25  10 FB         	DJNZ DE22H
+DE27  3E 87         	LD A,87H
+DE29  D3 A8         	OUT (A8H),A
+DE2B  FB            	EI
+DE2C  E1            	POP HL
+DE2D  C9            	RET
+DE2E  E5            	PUSH HL
+DE2F  C1            	POP BC
+DE30  21 80 17      	LD HL,1780H
+DE33  11 50 00      	LD DE,0050H
+DE36  B7            	OR A
+DE37  ED 52         	SBC HL,DE
+DE39  E5            	PUSH HL
+DE3A  ED 42         	SBC HL,BC
+DE3C  E1            	POP HL
+DE3D  C8            	RET Z
+DE3E  30 F7         	JR NC,DE37H
+DE40  C9            	RET
+DE41  3E 02         	LD A,02H
+DE43  32 B7 F1      	LD (F1B7H),A
+DE46  C9            	RET
+DE47  EB            	EX DE,HL
+DE48  21 80 17      	LD HL,1780H
+DE4B  ED 52         	SBC HL,DE
+DE4D  44            	LD B,H
+DE4E  4D            	LD C,L
+DE4F  EB            	EX DE,HL
+DE50  F3            	DI
+DE51  3E 06         	LD A,06H
+DE53  D3 A8         	OUT (A8H),A
+DE55  04            	INC B
+DE56  36 20         	LD (HL),20H
+DE58  23            	INC HL
+DE59  0D            	DEC C
+DE5A  20 FA         	JR NZ,DE56H
+DE5C  10 F8         	DJNZ DE56H
+DE5E  3E 87         	LD A,87H
+DE60  D3 A8         	OUT (A8H),A
+DE62  FB            	EI
+DE63  2A B5 F1      	LD HL,(F1B5H)
+DE66  C9            	RET
+DE67  CD 2E DE      	CALL DE2EH
+DE6A  11 50 00      	LD DE,0050H
+DE6D  19            	ADD HL,DE
+DE6E  ED 5B B5 F1   	LD DE,(F1B5H)
+DE72  B7            	OR A
+DE73  18 D6         	JR DE4BH
+DE75  11 50 00      	LD DE,0050H
+DE78  ED 52         	SBC HL,DE
+DE7A  3E 0F         	LD A,0FH
+DE7C  BC            	CP H
+DE7D  D8            	RET C
+DE7E  2A B5 F1      	LD HL,(F1B5H)
+DE81  C9            	RET
+DE82  21 90 DE      	LD HL,DE90H		;Drucker-Schnittstelle: 2 Byte an 4AH (CTC1-K2), 7 Byte an 43H (SIO1-B)
+DE85  01 4A 02      	LD BC,024AH
+DE88  ED B3         	OTIR
+DE8A  01 43 07      	LD BC,0743H
+DE8D  ED B3         	OTIR
+DE8F  C9            	RET
+DE90                	DB	05H,01H,18H,04H,44H,03H,C1H,05H,68H		;Init CTC1-K2 (4AH: 05H,01H) und SIO1-B/Drucker (43H: 18H, WR4=44H, WR3=C1H, WR5=68H)
+LIST:
+DE99  CD A2 DE      	CALL DEA2H		;[LIST] wartet auf LISTST, Zeichen an SIO1-B (42H)
+DE9C  28 FB         	JR Z,DE99H
+DE9E  79            	LD A,C
+DE9F  D3 42         	OUT (42H),A
+DEA1  C9            	RET
+LISTST:
+DEA2  DB 42         	IN A,(42H)		;[LISTST] XON/XOFF: liest das LETZTE empfangene Byte aus 42H (ohne RR0-Pruefung); 13H (XOFF) oder 14H = nicht bereit, sonst RR0 Bit2 (Tx leer)
+DEA4  E6 7F         	AND 7FH
+DEA6  FE 13         	CP 13H
+DEA8  28 04         	JR Z,DEAEH
+DEAA  FE 14         	CP 14H
+DEAC  20 02         	JR NZ,DEB0H
+DEAE  AF            	XOR A
+DEAF  C9            	RET
+DEB0  DB 43         	IN A,(43H)
+DEB2  E6 04         	AND 04H
+DEB4  28 F8         	JR Z,DEAEH
+DEB6  AF            	XOR A
+DEB7  3D            	DEC A
+DEB8  C9            	RET
+DEB9                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H		;frei (00H)
+DEC9                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DED9                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DEE9                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DEF9                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DF09                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DF19                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DF29                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+DF39                	DB	00H,00H,00H
+HOME:
+DF3C  01 00 00      	LD BC,0000H		;[HOME] Spur 0; Schreibpuffer nur verwerfen, wenn er nicht mehr zu schreiben ist
+DF3F  CD 6C DF      	CALL DF6CH
+DF42  3A D9 F1      	LD A,(F1D9H)
+DF45  B7            	OR A
+DF46  C0            	RET NZ
+DF47  32 D8 F1      	LD (F1D8H),A
+DF4A  C9            	RET
+SELDSK:
+DF4B  21 00 00      	LD HL,0000H		;[SELDSK] C < (D63CH) oder C = 4 bei (D639H) <> 0 (RAM-Disk); HL = D701H + 16*C
+DF4E  3A 3C D6      	LD A,(D63CH)
+DF51  3D            	DEC A
+DF52  B9            	CP C
+DF53  30 09         	JR NC,DF5EH
+DF55  3A 39 D6      	LD A,(D639H)
+DF58  A7            	AND A
+DF59  C8            	RET Z
+DF5A  3E 04         	LD A,04H
+DF5C  B9            	CP C
+DF5D  C0            	RET NZ
+DF5E  79            	LD A,C
+DF5F  32 C9 F1      	LD (F1C9H),A
+DF62  6F            	LD L,A
+DF63  29            	ADD HL,HL
+DF64  29            	ADD HL,HL
+DF65  29            	ADD HL,HL
+DF66  29            	ADD HL,HL
+DF67  11 01 D7      	LD DE,D701H
+DF6A  19            	ADD HL,DE
+DF6B  C9            	RET
+SETTRK:
+DF6C  ED 43 CA F1   	LD (F1CAH),BC
+DF70  C9            	RET
+SETSEC:
+DF71  79            	LD A,C
+DF72  32 CC F1      	LD (F1CCH),A
+DF75  C9            	RET
+SETDMA:
+DF76  ED 43 CD F1   	LD (F1CDH),BC
+DF7A  C9            	RET
+SECTRAN:
+DF7B  7A            	LD A,D
+DF7C  B3            	OR E
+DF7D  28 05         	JR Z,DF84H
+DF7F  EB            	EX DE,HL
+DF80  09            	ADD HL,BC
+DF81  4E            	LD C,(HL)
+DF82  06 00         	LD B,00H
+DF84  60            	LD H,B
+DF85  69            	LD L,C
+DF86  C9            	RET
+READ:
+DF87  3A C9 F1      	LD A,(F1C9H)		;[READ] IY = DPB (E2A4H). IY+15 = 0 (128-B-Sektoren): direkt lesen (DFA9H, Befehl 70H); sonst Blockung ueber den Hostpuffer F1E0H (E0D2H, Digital-Research-Verfahren)
+DF8A  CD A4 E2      	CALL E2A4H
+DF8D  FD 7E 0F      	LD A,(IY+15)
+DF90  A7            	AND A
+DF91  3E 70         	LD A,70H
+DF93  28 14         	JR Z,DFA9H
+DF95  AF            	XOR A
+DF96  32 DA F1      	LD (F1DAH),A
+DF99  3E 01         	LD A,01H
+DF9B  32 DC F1      	LD (F1DCH),A
+DF9E  32 DB F1      	LD (F1DBH),A
+DFA1  3E 02         	LD A,02H
+DFA3  32 DD F1      	LD (F1DDH),A
+DFA6  C3 D2 E0      	JP E0D2H
+DFA9  ED 73 60 F6   	LD (F660H),SP
+DFAD  31 92 F6      	LD SP,F692H
+DFB0  CD B8 DF      	CALL DFB8H
+DFB3  ED 7B 60 F6   	LD SP,(F660H)
+DFB7  C9            	RET
+DFB8  DD 21 B9 F1   	LD IX,F1B9H		;Parameterblock IX = F1B9H fuellen: +0 Befehl (70H Lesen, 50H Schreiben, 80H Ruecksetzen), +1 Laufwerk (IY+24), +2 Spur, +3 Kopf, +4 Sektor, +5..+9 aus dem DPB, +10/11 Puffer, +12/13 Zeiger, +14 = Fehlerbuchstabe (Rueckgabe). F1C8H = 5 Versuche
+DFBC  DD 77 00      	LD (IX+0),A
+DFBF  3E 05         	LD A,05H
+DFC1  32 C8 F1      	LD (F1C8H),A
+DFC4  AF            	XOR A
+DFC5  32 C7 F1      	LD (F1C7H),A
+DFC8  3A CC F1      	LD A,(F1CCH)
+DFCB  DD 77 04      	LD (IX+4),A
+DFCE  DD 36 03 00   	LD (IX+3),00H
+DFD2  3A CA F1      	LD A,(F1CAH)
+DFD5  DD 77 02      	LD (IX+2),A
+DFD8  FD 7E 18      	LD A,(IY+24)
+DFDB  DD 77 01      	LD (IX+1),A
+DFDE  21 0F 00      	LD HL,000FH
+DFE1  19            	ADD HL,DE
+DFE2  DD E5         	PUSH IX
+DFE4  D1            	POP DE
+DFE5  13            	INC DE
+DFE6  13            	INC DE
+DFE7  13            	INC DE
+DFE8  13            	INC DE
+DFE9  13            	INC DE
+DFEA  01 05 00      	LD BC,0005H
+DFED  C5            	PUSH BC
+DFEE  ED B0         	LDIR
+DFF0  C1            	POP BC
+DFF1  DD 36 07 01   	LD (IX+7),01H
+DFF5  09            	ADD HL,BC
+DFF6  DD 75 0C      	LD (IX+12),L
+DFF9  DD 74 0D      	LD (IX+13),H
+DFFC  ED 4B CD F1   	LD BC,(F1CDH)
+E000  DD 71 0A      	LD (IX+10),C
+E003  DD 70 0B      	LD (IX+11),B
+E006  DD 7E 00      	LD A,(IX+0)
+E009  FE 70         	CP 70H
+E00B  3E E0         	LD A,E0H
+E00D  28 02         	JR Z,E011H
+E00F  3E D0         	LD A,D0H		;Port 61H: E0H vor Lesen, D0H vor Schreiben, B0H danach; bei Fehler 60H (Lesen) bzw. 50H (Schreiben). => Anzeigefeld der Frontplatte, aktiv low: Bit4 'Input File', Bit5 'Output File', Bit6 'RUN Mode', Bit7 'ERROR' (Design-Doc §3.6)
+E011  D3 61         	OUT (61H),A
+E013  DD 7E 01      	LD A,(IX+1)		;Laufwerk 4 (E:) -> RAM-Disk D636H, sonst K5122-Treiber E2E1H
+E016  FE 04         	CP 04H
+E018  F5            	PUSH AF
+E019  CC 36 D6      	CALL Z,D636H
+E01C  F1            	POP AF
+E01D  FD E5         	PUSH IY
+E01F  C4 E1 E2      	CALL NZ,E2E1H
+E022  FD E1         	POP IY
+E024  3E B0         	LD A,B0H
+E026  D3 61         	OUT (61H),A
+E028  DD 7E 0E      	LD A,(IX+14)
+E02B  A7            	AND A
+E02C  C8            	RET Z
+E02D  F5            	PUSH AF
+E02E  DD 7E 00      	LD A,(IX+0)
+E031  FE 70         	CP 70H
+E033  3E 60         	LD A,60H
+E035  28 02         	JR Z,E039H
+E037  3E 50         	LD A,50H
+E039  D3 61         	OUT (61H),A
+E03B  F1            	POP AF
+E03C  FE 4B         	CP 4BH		;nur Fehler 'K' (4BH) wird wiederholt (bis 5 Mal), jeder andere -> A = FFH
+E03E  3E FF         	LD A,FFH
+E040  C0            	RET NZ
+E041  21 C8 F1      	LD HL,F1C8H
+E044  35            	DEC (HL)
+E045  C8            	RET Z
+E046  C3 C4 DF      	JP DFC4H
+WRITE:
+E049  3A C9 F1      	LD A,(F1C9H)		;[WRITE] wie READ; C = Schreibart (0 normal, 1 Verzeichnis, 2 unbelegter Block)
+E04C  CD A4 E2      	CALL E2A4H
+E04F  FD 7E 0F      	LD A,(IY+15)
+E052  A7            	AND A
+E053  3E 50         	LD A,50H
+E055  CA A9 DF      	JP Z,DFA9H
+E058  21 DD F1      	LD HL,F1DDH
+E05B  71            	LD (HL),C
+E05C  AF            	XOR A
+E05D  32 DB F1      	LD (F1DBH),A
+E060  32 DC F1      	LD (F1DCH),A
+E063  3A DD F1      	LD A,(F1DDH)
+E066  FE 02         	CP 02H
+E068  20 28         	JR NZ,E092H
+E06A  3A C9 F1      	LD A,(F1C9H)
+E06D  CD A4 E2      	CALL E2A4H
+E070  FD 7E 03      	LD A,(IY+3)
+E073  3C            	INC A
+E074  32 DA F1      	LD (F1DAH),A
+E077  3A C9 F1      	LD A,(F1C9H)
+E07A  32 D4 F1      	LD (F1D4H),A
+E07D  2A CA F1      	LD HL,(F1CAH)
+E080  22 D5 F1      	LD (F1D5H),HL
+E083  3A CC F1      	LD A,(F1CCH)
+E086  32 D7 F1      	LD (F1D7H),A
+E089  E6 07         	AND 07H
+E08B  28 05         	JR Z,E092H
+E08D  3E 01         	LD A,01H
+E08F  32 DB F1      	LD (F1DBH),A
+E092  3A DA F1      	LD A,(F1DAH)
+E095  B7            	OR A
+E096  28 32         	JR Z,E0CAH
+E098  3D            	DEC A
+E099  32 DA F1      	LD (F1DAH),A
+E09C  3A C9 F1      	LD A,(F1C9H)
+E09F  21 D4 F1      	LD HL,F1D4H
+E0A2  BE            	CP (HL)
+E0A3  20 25         	JR NZ,E0CAH
+E0A5  2A CA F1      	LD HL,(F1CAH)
+E0A8  ED 5B D5 F1   	LD DE,(F1D5H)
+E0AC  B7            	OR A
+E0AD  ED 52         	SBC HL,DE
+E0AF  20 19         	JR NZ,E0CAH
+E0B1  21 D7 F1      	LD HL,F1D7H
+E0B4  3A CC F1      	LD A,(F1CCH)
+E0B7  BE            	CP (HL)
+E0B8  20 10         	JR NZ,E0CAH
+E0BA  34            	INC (HL)
+E0BB  7E            	LD A,(HL)
+E0BC  FD BE 00      	CP (IY+0)
+E0BF  38 11         	JR C,E0D2H
+E0C1  36 00         	LD (HL),00H
+E0C3  13            	INC DE
+E0C4  ED 53 D5 F1   	LD (F1D5H),DE
+E0C8  18 08         	JR E0D2H
+E0CA  AF            	XOR A
+E0CB  32 DA F1      	LD (F1DAH),A
+E0CE  3C            	INC A
+E0CF  32 DB F1      	LD (F1DBH),A
+E0D2  3A CC F1      	LD A,(F1CCH)
+E0D5  CB 3F         	SRL A
+E0D7  CB 3F         	SRL A
+E0D9  CB 3F         	SRL A
+E0DB  32 D3 F1      	LD (F1D3H),A
+E0DE  21 D8 F1      	LD HL,F1D8H
+E0E1  7E            	LD A,(HL)
+E0E2  36 01         	LD (HL),01H
+E0E4  B7            	OR A
+E0E5  28 33         	JR Z,E11AH
+E0E7  3A C9 F1      	LD A,(F1C9H)
+E0EA  21 CF F1      	LD HL,F1CFH
+E0ED  BE            	CP (HL)
+E0EE  20 15         	JR NZ,E105H
+E0F0  3A D3 F1      	LD A,(F1D3H)
+E0F3  21 D2 F1      	LD HL,F1D2H
+E0F6  BE            	CP (HL)
+E0F7  20 0C         	JR NZ,E105H
+E0F9  2A D0 F1      	LD HL,(F1D0H)
+E0FC  ED 5B CA F1   	LD DE,(F1CAH)
+E100  B7            	OR A
+E101  ED 52         	SBC HL,DE
+E103  28 32         	JR Z,E137H
+E105  3A D9 F1      	LD A,(F1D9H)
+E108  B7            	OR A
+E109  28 0F         	JR Z,E11AH
+E10B  CD 71 E1      	CALL E171H
+E10E  3A DA F1      	LD A,(F1DAH)
+E111  FE 07         	CP 07H
+E113  30 05         	JR NC,E11AH
+E115  3E 01         	LD A,01H
+E117  32 DB F1      	LD (F1DBH),A
+E11A  3A C9 F1      	LD A,(F1C9H)
+E11D  32 CF F1      	LD (F1CFH),A
+E120  2A CA F1      	LD HL,(F1CAH)
+E123  22 D0 F1      	LD (F1D0H),HL
+E126  3A D3 F1      	LD A,(F1D3H)
+E129  32 D2 F1      	LD (F1D2H),A
+E12C  3A DB F1      	LD A,(F1DBH)
+E12F  B7            	OR A
+E130  C4 75 E1      	CALL NZ,E175H
+E133  AF            	XOR A
+E134  32 D9 F1      	LD (F1D9H),A
+E137  3A CC F1      	LD A,(F1CCH)
+E13A  E6 07         	AND 07H
+E13C  1F            	RRA
+E13D  67            	LD H,A
+E13E  2E 00         	LD L,00H
+E140  CB 1D         	RR L
+E142  11 E0 F1      	LD DE,F1E0H
+E145  19            	ADD HL,DE
+E146  ED 5B CD F1   	LD DE,(F1CDH)
+E14A  01 80 00      	LD BC,0080H
+E14D  3A DC F1      	LD A,(F1DCH)
+E150  B7            	OR A
+E151  20 06         	JR NZ,E159H
+E153  3E 01         	LD A,01H
+E155  32 D9 F1      	LD (F1D9H),A
+E158  EB            	EX DE,HL
+E159  ED B0         	LDIR
+E15B  3A DD F1      	LD A,(F1DDH)
+E15E  FE 01         	CP 01H
+E160  3A C7 F1      	LD A,(F1C7H)
+E163  C0            	RET NZ
+E164  B7            	OR A
+E165  C0            	RET NZ
+E166  AF            	XOR A
+E167  32 D9 F1      	LD (F1D9H),A
+E16A  CD 71 E1      	CALL E171H
+E16D  3A C7 F1      	LD A,(F1C7H)
+E170  C9            	RET
+E171  3E 50         	LD A,50H		;Hostpuffer schreiben (50H) bzw. lesen (70H) -- eigener Stapel F692H
+E173  18 02         	JR E177H
+E175  3E 70         	LD A,70H
+E177  ED 73 60 F6   	LD (F660H),SP
+E17B  31 92 F6      	LD SP,F692H
+E17E  CD 86 E1      	CALL E186H
+E181  ED 7B 60 F6   	LD SP,(F660H)
+E185  C9            	RET
+E186  DD 21 B9 F1   	LD IX,F1B9H
+E18A  DD 77 00      	LD (IX+0),A
+E18D  AF            	XOR A
+E18E  32 C7 F1      	LD (F1C7H),A
+E191  3E 05         	LD A,05H
+E193  32 C8 F1      	LD (F1C8H),A
+E196  CD A1 E2      	CALL E2A1H
+E199  DD 36 03 00   	LD (IX+3),00H
+E19D  3A D0 F1      	LD A,(F1D0H)
+E1A0  DD 77 02      	LD (IX+2),A
+E1A3  FD 7E 18      	LD A,(IY+24)
+E1A6  DD 77 01      	LD (IX+1),A
+E1A9  21 0F 00      	LD HL,000FH
+E1AC  19            	ADD HL,DE
+E1AD  E5            	PUSH HL
+E1AE  DD E5         	PUSH IX
+E1B0  D1            	POP DE
+E1B1  13            	INC DE
+E1B2  13            	INC DE
+E1B3  13            	INC DE
+E1B4  13            	INC DE
+E1B5  13            	INC DE
+E1B6  01 05 00      	LD BC,0005H
+E1B9  C5            	PUSH BC
+E1BA  ED B0         	LDIR
+E1BC  C1            	POP BC
+E1BD  09            	ADD HL,BC
+E1BE  DD 75 0C      	LD (IX+12),L
+E1C1  DD 74 0D      	LD (IX+13),H
+E1C4  3E E0         	LD A,E0H
+E1C6  12            	LD (DE),A
+E1C7  13            	INC DE
+E1C8  3E F1         	LD A,F1H
+E1CA  12            	LD (DE),A
+E1CB  E1            	POP HL
+E1CC  7E            	LD A,(HL)
+E1CD  EE 03         	XOR 03H
+E1CF  47            	LD B,A
+E1D0  3A D2 F1      	LD A,(F1D2H)
+E1D3  28 04         	JR Z,E1D9H
+E1D5  CB 27         	SLA A
+E1D7  10 FC         	DJNZ E1D5H
+E1D9  47            	LD B,A
+E1DA  FD 96 14      	SUB (IY+20)
+E1DD  38 05         	JR C,E1E4H
+E1DF  47            	LD B,A
+E1E0  DD 36 03 01   	LD (IX+3),01H
+E1E4  DD 70 04      	LD (IX+4),B
+E1E7  FD 7E 14      	LD A,(IY+20)
+E1EA  DD 96 04      	SUB (IX+4)
+E1ED  DD BE 07      	CP (IX+7)
+E1F0  30 03         	JR NC,E1F5H
+E1F2  DD 77 07      	LD (IX+7),A
+E1F5  FD 7E 11      	LD A,(IY+17)
+E1F8  DD 96 07      	SUB (IX+7)
+E1FB  32 DF F1      	LD (F1DFH),A
+E1FE  3E 01         	LD A,01H
+E200  DD 96 03      	SUB (IX+3)
+E203  20 03         	JR NZ,E208H
+E205  32 DF F1      	LD (F1DFH),A
+E208  DD 7E 00      	LD A,(IX+0)
+E20B  FE 80         	CP 80H
+E20D  20 03         	JR NZ,E212H
+E20F  C3 E1 E2      	JP E2E1H
+E212  FE 70         	CP 70H
+E214  3E E0         	LD A,E0H
+E216  28 02         	JR Z,E21AH
+E218  3E D0         	LD A,D0H
+E21A  D3 61         	OUT (61H),A
+E21C  DD 34 04      	INC (IX+4)
+E21F  DD 7E 01      	LD A,(IX+1)
+E222  FE 04         	CP 04H
+E224  F5            	PUSH AF
+E225  CC 36 D6      	CALL Z,D636H
+E228  F1            	POP AF
+E229  FD E5         	PUSH IY
+E22B  C4 E1 E2      	CALL NZ,E2E1H
+E22E  FD E1         	POP IY
+E230  3E B0         	LD A,B0H
+E232  D3 61         	OUT (61H),A
+E234  DD 7E 0E      	LD A,(IX+14)
+E237  A7            	AND A
+E238  20 34         	JR NZ,E26EH
+E23A  FD 7E 15      	LD A,(IY+21)
+E23D  FE 01         	CP 01H
+E23F  C8            	RET Z
+E240  3A DF F1      	LD A,(F1DFH)
+E243  A7            	AND A
+E244  C8            	RET Z
+E245  DD 36 04 00   	LD (IX+4),00H
+E249  DD 77 07      	LD (IX+7),A
+E24C  DD 36 03 01   	LD (IX+3),01H
+E250  57            	LD D,A
+E251  1E 00         	LD E,00H
+E253  FD 7E 0F      	LD A,(IY+15)
+E256  FE 02         	CP 02H
+E258  20 02         	JR NZ,E25CH
+E25A  CB 22         	SLA D
+E25C  A7            	AND A
+E25D  20 04         	JR NZ,E263H
+E25F  CB 3A         	SRL D
+E261  CB 1B         	RR E
+E263  AF            	XOR A
+E264  21 E0 F5      	LD HL,F5E0H
+E267  ED 52         	SBC HL,DE
+E269  22 C3 F1      	LD (F1C3H),HL
+E26C  18 97         	JR E205H
+E26E  F5            	PUSH AF
+E26F  DD 7E 00      	LD A,(IX+0)
+E272  FE 70         	CP 70H
+E274  3E 60         	LD A,60H
+E276  28 02         	JR Z,E27AH
+E278  3E 50         	LD A,50H
+E27A  D3 61         	OUT (61H),A
+E27C  F1            	POP AF
+E27D  FE 4B         	CP 4BH
+E27F  3E FF         	LD A,FFH
+E281  C0            	RET NZ
+E282  21 C8 F1      	LD HL,F1C8H
+E285  35            	DEC (HL)
+E286  C8            	RET Z
+E287  C3 96 E1      	JP E196H
+E28A                	DB	DDH,36H,00H,50H,FDH,E1H,18H,DCH		;toter Code (LD (IX+0),50H / POP IY / JR ...)
+BIOS18:
+E292  AF            	XOR A		;[BIOS18] Blockungszustand loeschen, Befehl 80H = Treiber ruecksetzen (Laufwerke auf Spur 0, E332H)
+E293  32 CF F1      	LD (F1CFH),A
+E296  32 D0 F1      	LD (F1D0H),A
+E299  32 D2 F1      	LD (F1D2H),A
+E29C  3E 80         	LD A,80H
+E29E  C3 77 E1      	JP E177H
+E2A1  3A CF F1      	LD A,(F1CFH)
+E2A4  21 FB D6      	LD HL,D6FBH		;IY := DPB des Laufwerks A (Wort bei D70BH + 16*A)
+E2A7  11 10 00      	LD DE,0010H
+E2AA  19            	ADD HL,DE
+E2AB  D6 01         	SUB 01H
+E2AD  30 FB         	JR NC,E2AAH
+E2AF  5E            	LD E,(HL)
+E2B0  23            	INC HL
+E2B1  56            	LD D,(HL)
+E2B2  D5            	PUSH DE
+E2B3  FD E1         	POP IY
+E2B5  C9            	RET
+E2B6  3E CF         	LD A,CFH		;PIO1 B (13H) Mode 3, Maske F7H; liest Port 12H Bit1 = MKE (Marke erkannt) im Ruhezustand: 0 => Maske F3H, Interruptwort 37H (bei high), JP NZ (C2H); 1 => F7H, 17H (bei low), JP Z (CAH). Eingetragen in EC49H/EC4BH (Init-Liste) und ECA0H/ECB5H/ECCAH (Patchwerte) -- das BIOS passt sich der Polaritaet von MKE an
+E2B8  D3 13         	OUT (13H),A
+E2BA  3E F7         	LD A,F7H
+E2BC  D3 13         	OUT (13H),A
+E2BE  01 37 F3      	LD BC,F337H
+E2C1  16 C2         	LD D,C2H
+E2C3  DB 12         	IN A,(12H)
+E2C5  CB 4F         	BIT 1,A
+E2C7  28 05         	JR Z,E2CEH
+E2C9  01 17 F7      	LD BC,F717H
+E2CC  16 CA         	LD D,CAH
+E2CE  78            	LD A,B
+E2CF  32 49 EC      	LD (EC49H),A
+E2D2  79            	LD A,C
+E2D3  32 4B EC      	LD (EC4BH),A
+E2D6  7A            	LD A,D
+E2D7  32 A0 EC      	LD (ECA0H),A
+E2DA  32 B5 EC      	LD (ECB5H),A
+E2DD  32 CA EC      	LD (ECCAH),A
+E2E0  C9            	RET
+E2E1  18 1A         	JR E2FDH		;[K5122-TREIBER] Einsprung mit IX = Parameterblock; Autor 'M.Schurz 07.04.87'
+E2E3                	DB	'07.04.87M.Schurz'		;Autor/Datum des Treibers
+E2F3                	DB	FAH,02H,5EH,ECH,03H,EDH,92H,F6H,8FH,F7H		;Konstanten des Treibers [?]
+E2FD  DD E5         	PUSH IX		;Parameterblock nach F77AH (12 Byte) und 10 Byte Formatangaben nach F786H; Fehler F775H = 0; EBF0H = 0
+E2FF  E1            	POP HL
+E300  ED 73 78 F7   	LD (F778H),SP
+E304  22 76 F7      	LD (F776H),HL
+E307  DD 7E 00      	LD A,(IX+0)
+E30A  FE 00         	CP 00H
+E30C  28 12         	JR Z,E320H
+E30E  11 7A F7      	LD DE,F77AH
+E311  01 0C 00      	LD BC,000CH
+E314  ED B0         	LDIR
+E316  4E            	LD C,(HL)
+E317  23            	INC HL
+E318  46            	LD B,(HL)
+E319  C5            	PUSH BC
+E31A  E1            	POP HL
+E31B  01 0A 00      	LD BC,000AH
+E31E  ED B0         	LDIR
+E320  3E 00         	LD A,00H
+E322  32 75 F7      	LD (F775H),A
+E325  F3            	DI
+E326  32 F0 EB      	LD (EBF0H),A
+E329  FB            	EI
+E32A  DD 7E 00      	LD A,(IX+0)		;Befehl 80H: Spurtabelle F694H.. mit FFH (Position unbekannt), Laufwerke abwaehlen (18H = FFH), Interrupts ein (E7D8H/E840H), 'bereit' der Laufwerke erfassen
+E32D  FE 80         	CP 80H
+E32F  C2 80 E3      	JP NZ,E380H
+E332  06 E1         	LD B,E1H
+E334  21 92 F6      	LD HL,F692H
+E337  36 FF         	LD (HL),FFH
+E339  23            	INC HL
+E33A  10 FB         	DJNZ E337H
+E33C  3E FE         	LD A,FEH
+E33E  32 44 F7      	LD (F744H),A
+E341  21 94 F6      	LD HL,F694H
+E344  22 92 F6      	LD (F692H),HL
+E347  21 60 F7      	LD HL,F760H
+E34A  22 5E F7      	LD (F75EH),HL
+E34D  3E FB         	LD A,FBH
+E34F  32 5B F7      	LD (F75BH),A
+E352  3E FF         	LD A,FFH
+E354  D3 18         	OUT (18H),A
+E356  D3 18         	OUT (18H),A
+E358  32 6D F7      	LD (F76DH),A
+E35B  CD D8 E7      	CALL E7D8H
+E35E  21 3A EC      	LD HL,EC3AH
+E361  CD 40 E8      	CALL E840H
+E364  21 50 F7      	LD HL,F750H
+E367  36 00         	LD (HL),00H
+E369  3E BF         	LD A,BFH
+E36B  D3 10         	OUT (10H),A
+E36D  00            	NOP
+E36E  00            	NOP
+E36F  00            	NOP
+E370  00            	NOP
+E371  00            	NOP
+E372  DB 12         	IN A,(12H)
+E374  CB 47         	BIT 0,A
+E376  28 02         	JR Z,E37AH
+E378  CB C6         	SET 0,(HL)
+E37A  3E FF         	LD A,FFH
+E37C  D3 10         	OUT (10H),A
+E37E  18 1F         	JR E39FH
+E380  21 50 F7      	LD HL,F750H
+E383  CD 46 E9      	CALL E946H
+E386  CB CE         	SET 1,(HL)
+E388  20 0A         	JR NZ,E394H
+E38A  3A 51 F7      	LD A,(F751H)
+E38D  DD BE 01      	CP (IX+1)
+E390  20 02         	JR NZ,E394H
+E392  CB 8E         	RES 1,(HL)
+E394  DB 10         	IN A,(10H)
+E396  E6 04         	AND 04H
+E398  F6 BB         	OR BBH
+E39A  D3 10         	OUT (10H),A
+E39C  CD EC E3      	CALL E3ECH
+E39F  F3            	DI
+E3A0  21 50 F7      	LD HL,F750H
+E3A3  CB 46         	BIT 0,(HL)
+E3A5  20 13         	JR NZ,E3BAH
+E3A7  CD 25 E9      	CALL E925H		;Ende: EBFDH-Pfad (E925H), Fehlerbuchstabe aus F775H nach IX+14, zurueck
+E3AA  FB            	EI
+E3AB  3A 75 F7      	LD A,(F775H)
+E3AE  DD 2A 76 F7   	LD IX,(F776H)
+E3B2  DD 77 0E      	LD (IX+14),A
+E3B5  ED 7B 78 F7   	LD SP,(F778H)
+E3B9  C9            	RET
+E3BA  DD CB 12 46   	BIT 0,(IX+18)
+E3BE  28 E7         	JR Z,E3A7H
+E3C0  3E E0         	LD A,E0H
+E3C2  32 F0 EB      	LD (EBF0H),A
+E3C5  3E 03         	LD A,03H
+E3C7  D3 11         	OUT (11H),A
+E3C9  D3 11         	OUT (11H),A
+E3CB  18 DD         	JR E3AAH
+E3CD  3A 81 F7      	LD A,(F781H)
+E3D0  FE 00         	CP 00H
+E3D2  28 11         	JR Z,E3E5H
+E3D4  3A 7A F7      	LD A,(F77AH)
+E3D7  FE 50         	CP 50H
+E3D9  C8            	RET Z
+E3DA  FE 70         	CP 70H
+E3DC  C8            	RET Z
+E3DD  3A 82 F7      	LD A,(F782H)
+E3E0  FE 02         	CP 02H
+E3E2  CA 28 E4      	JP Z,E428H
+E3E5  3E 80         	LD A,80H
+E3E7  CD F3 E7      	CALL E7F3H
+E3EA  18 B3         	JR E39FH
+E3EC  21 50 F7      	LD HL,F750H		;[Lesen/Schreiben] 3 Versuche Positionieren (F766H..F768H), Spur-/Kopfpruefung; Kopf >= 2 -> Fehler 'Z' (5AH)
+E3EF  CB DE         	SET 3,(HL)
+E3F1  21 66 F7      	LD HL,F766H
+E3F4  36 03         	LD (HL),03H
+E3F6  23            	INC HL
+E3F7  36 06         	LD (HL),06H
+E3F9  23            	INC HL
+E3FA  36 08         	LD (HL),08H
+E3FC  21 7A F7      	LD HL,F77AH
+E3FF  ED 5B 84 F7   	LD DE,(F784H)
+E403  CD C1 E7      	CALL E7C1H
+E406  E5            	PUSH HL
+E407  DD E1         	POP IX
+E409  ED 53 84 F7   	LD (F784H),DE
+E40D  ED 53 4B F7   	LD (F74BH),DE
+E411  ED 53 4D F7   	LD (F74DH),DE
+E415  23            	INC HL
+E416  23            	INC HL
+E417  11 45 F7      	LD DE,F745H
+E41A  01 04 00      	LD BC,0004H
+E41D  ED B0         	LDIR
+E41F  3A 7D F7      	LD A,(F77DH)
+E422  FE 02         	CP 02H
+E424  38 08         	JR C,E42EH
+E426  3E 5A         	LD A,5AH
+E428  32 75 F7      	LD (F775H),A
+E42B  C3 9F E3      	JP E39FH
+E42E  DD 5E 01      	LD E,(IX+1)		;Laufwerk waehlen: Motor-/Select-Maske F76DH/F75DH, Port 18H (High-Nibble /SE, Low-Nibble /LCK), s. CLAUDE.md 'Drive select'
+E431  7B            	LD A,E
+E432  32 51 F7      	LD (F751H),A
+E435  21 60 F7      	LD HL,F760H
+E438  16 00         	LD D,00H
+E43A  19            	ADD HL,DE
+E43B  22 5E F7      	LD (F75EH),HL
+E43E  CD E8 E7      	CALL E7E8H
+E441  EE FF         	XOR FFH
+E443  47            	LD B,A
+E444  3A 6D F7      	LD A,(F76DH)
+E447  A0            	AND B
+E448  32 6D F7      	LD (F76DH),A
+E44B  3A 5D F7      	LD A,(F75DH)
+E44E  A0            	AND B
+E44F  32 5D F7      	LD (F75DH),A
+E452  57            	LD D,A
+E453  CB 00         	RLC B
+E455  CB 00         	RLC B
+E457  CB 00         	RLC B
+E459  CB 00         	RLC B
+E45B  7A            	LD A,D
+E45C  A0            	AND B
+E45D  DD CB 12 4E   	BIT 1,(IX+18)
+E461  20 02         	JR NZ,E465H
+E463  F6 0F         	OR 0FH
+E465  47            	LD B,A
+E466  3A 6B F7      	LD A,(F76BH)
+E469  B8            	CP B
+E46A  21 50 F7      	LD HL,F750H
+E46D  CB 96         	RES 2,(HL)
+E46F  28 02         	JR Z,E473H
+E471  CB D6         	SET 2,(HL)
+E473  78            	LD A,B
+E474  32 6C F7      	LD (F76CH),A
+E477  CB 46         	BIT 0,(HL)
+E479  28 0E         	JR Z,E489H
+E47B  47            	LD B,A
+E47C  3A 6D F7      	LD A,(F76DH)
+E47F  07            	RLCA
+E480  07            	RLCA
+E481  07            	RLCA
+E482  07            	RLCA
+E483  A0            	AND B
+E484  D3 18         	OUT (18H),A
+E486  D3 18         	OUT (18H),A
+E488  78            	LD A,B
+E489  CD 09 E8      	CALL E809H
+E48C  CD 17 E8      	CALL E817H
+E48F  CD CD E3      	CALL E3CDH
+E492  3A 83 F7      	LD A,(F783H)
+E495  47            	LD B,A
+E496  3A 7C F7      	LD A,(F77CH)
+E499  57            	LD D,A
+E49A  AF            	XOR A
+E49B  82            	ADD A,D
+E49C  38 09         	JR C,E4A7H
+E49E  10 FB         	DJNZ E49BH
+E4A0  DD BE 0D      	CP (IX+13)
+E4A3  06 F7         	LD B,F7H
+E4A5  38 02         	JR C,E4A9H
+E4A7  06 FF         	LD B,FFH
+E4A9  16 00         	LD D,00H		;Port 12H: Formatwert aus ECFFH+IX+8 (Dichte/Laufwerkstyp); Patchwerte fuer den Lese-ISR nach Format einspielen (E8D8H mit EC5EH)
+E4AB  DD 5E 08      	LD E,(IX+8)
+E4AE  21 FF EC      	LD HL,ECFFH
+E4B1  19            	ADD HL,DE
+E4B2  7E            	LD A,(HL)
+E4B3  A0            	AND B
+E4B4  D3 12         	OUT (12H),A
+E4B6  32 54 F7      	LD (F754H),A
+E4B9  21 8A EC      	LD HL,EC8AH
+E4BC  CB 03         	RLC E
+E4BE  19            	ADD HL,DE
+E4BF  5E            	LD E,(HL)
+E4C0  23            	INC HL
+E4C1  56            	LD D,(HL)
+E4C2  01 5E EC      	LD BC,EC5EH
+E4C5  CD D8 E8      	CALL E8D8H
+E4C8  CD 4F E8      	CALL E84FH
+E4CB  3A 7E F7      	LD A,(F77EH)
+E4CE  32 47 F7      	LD (F747H),A
+E4D1  21 00 00      	LD HL,0000H
+E4D4  22 49 F7      	LD (F749H),HL
+E4D7  3A 81 F7      	LD A,(F781H)
+E4DA  32 5C F7      	LD (F75CH),A
+E4DD  47            	LD B,A
+E4DE  21 96 F6      	LD HL,F696H
+E4E1  ED 6F         	RLD
+E4E3  23            	INC HL
+E4E4  ED 6F         	RLD
+E4E6  23            	INC HL
+E4E7  23            	INC HL
+E4E8  23            	INC HL
+E4E9  10 F6         	DJNZ E4E1H
+E4EB  FD 21 94 F6   	LD IY,F694H		;Liste der erwarteten Sektorkoepfe ab F694H aufbauen (Spur, Kopf, Sektor, Laenge) und je Eintrag die ID-CRC vorausrechnen (E727H) -- der Lese-ISR vergleicht dann nur
+E4EF  DD 5E 07      	LD E,(IX+7)
+E4F2  21 44 F7      	LD HL,F744H
+E4F5  06 05         	LD B,05H
+E4F7  D5            	PUSH DE
+E4F8  CD 27 E7      	CALL E727H
+E4FB  D1            	POP DE
+E4FC  21 47 F7      	LD HL,F747H
+E4FF  34            	INC (HL)
+E500  CD 6D E7      	CALL E76DH
+E503  20 ED         	JR NZ,E4F2H
+E505  3A 7E F7      	LD A,(F77EH)
+E508  32 47 F7      	LD (F747H),A
+E50B  11 94 F6      	LD DE,F694H
+E50E  ED 53 92 F6   	LD (F692H),DE
+E512  DD 5E 05      	LD E,(IX+5)
+E515  00            	NOP
+E516  01 02 03      	LD BC,0302H
+E519  CD E8 E7      	CALL E7E8H
+E51C  32 4F F7      	LD (F74FH),A
+E51F  3A 7A F7      	LD A,(F77AH)		;Lesen: CALL-Ziel E7BBH := E752H, Schreiben: := E76DH (Patch ECD1H)
+E522  FE 50         	CP 50H
+E524  01 D1 EC      	LD BC,ECD1H
+E527  11 DB EC      	LD DE,ECDBH
+E52A  20 03         	JR NZ,E52FH
+E52C  11 DF EC      	LD DE,ECDFH
+E52F  F5            	PUSH AF
+E530  CD D8 E8      	CALL E8D8H
+E533  F1            	POP AF
+E534  CA 01 E6      	JP Z,E601H
+E537  CD AE E6      	CALL E6AEH
+E53A  CD 7E E7      	CALL E77EH
+E53D  F5            	PUSH AF
+E53E  21 58 F7      	LD HL,F758H
+E541  CB 66         	BIT 4,(HL)
+E543  CB A6         	RES 4,(HL)
+E545  3E 57         	LD A,57H
+E547  E1            	POP HL
+E548  20 08         	JR NZ,E552H
+E54A  E5            	PUSH HL
+E54B  F1            	POP AF
+E54C  3E 00         	LD A,00H
+E54E  28 02         	JR Z,E552H
+E550  3E 43         	LD A,43H
+E552  32 75 F7      	LD (F775H),A		;Fehlerbuchstaben F775H: 'W' 57H (Sektor nicht gefunden) [?], 'C' 43H (Daten-CRC), 'K' 4BH (wiederholbar) [?], 'V' 56H (Spur falsch), 'R' 52H (Zeitueberlauf: kein Index), 'S' 53H (schreibgeschuetzt), 'Z' 5AH (Kopf ungueltig)
+E555  3A 75 F7      	LD A,(F775H)
+E558  FE 00         	CP 00H
+E55A  C8            	RET Z
+E55B  CD 80 E5      	CALL E580H
+E55E  21 67 F7      	LD HL,F767H
+E561  35            	DEC (HL)
+E562  C2 76 E5      	JP NZ,E576H
+E565  3A 45 F7      	LD A,(F745H)
+E568  DD BE 02      	CP (IX+2)
+E56B  CA 9F E3      	JP Z,E39FH
+E56E  3E 56         	LD A,56H
+E570  32 75 F7      	LD (F775H),A
+E573  C3 9F E3      	JP E39FH
+E576  ED 5B 4D F7   	LD DE,(F74DH)
+E57A  DD E5         	PUSH IX
+E57C  E1            	POP HL
+E57D  C3 03 E4      	JP E403H
+E580  3A 45 F7      	LD A,(F745H)
+E583  FE FF         	CP FFH
+E585  28 1D         	JR Z,E5A4H
+E587  21 58 F7      	LD HL,F758H
+E58A  CB 4E         	BIT 1,(HL)
+E58C  20 0F         	JR NZ,E59DH
+E58E  3A 68 F7      	LD A,(F768H)
+E591  3D            	DEC A
+E592  32 68 F7      	LD (F768H),A
+E595  21 67 F7      	LD HL,F767H
+E598  34            	INC (HL)
+E599  E6 07         	AND 07H
+E59B  C0            	RET NZ
+E59C  35            	DEC (HL)
+E59D  3A 67 F7      	LD A,(F767H)
+E5A0  FE 04         	CP 04H
+E5A2  38 19         	JR C,E5BDH
+E5A4  21 44 F7      	LD HL,F744H
+E5A7  06 05         	LD B,05H
+E5A9  CD 27 E7      	CALL E727H
+E5AC  B1            	OR C
+E5AD  C2 1D E9      	JP NZ,E91DH
+E5B0  2A 5E F7      	LD HL,(F75EH)
+E5B3  3A 45 F7      	LD A,(F745H)
+E5B6  FE FF         	CP FFH
+E5B8  28 3D         	JR Z,E5F7H
+E5BA  77            	LD (HL),A
+E5BB  18 1E         	JR E5DBH
+E5BD  FE 01         	CP 01H
+E5BF  28 1A         	JR Z,E5DBH
+E5C1  CB 47         	BIT 0,A
+E5C3  3E 20         	LD A,20H
+E5C5  28 02         	JR Z,E5C9H
+E5C7  3E 00         	LD A,00H
+E5C9  F5            	PUSH AF
+E5CA  3A 6C F7      	LD A,(F76CH)
+E5CD  CD 09 E8      	CALL E809H
+E5D0  F1            	POP AF
+E5D1  F5            	PUSH AF
+E5D2  CD 8B E8      	CALL E88BH
+E5D5  F1            	POP AF
+E5D6  EE 20         	XOR 20H
+E5D8  C3 8B E8      	JP E88BH
+E5DB  F3            	DI		;Rekalibrieren: Motor-Nachlauf F765H, auf Spur 0 fahren
+E5DC  21 65 F7      	LD HL,F765H
+E5DF  36 01         	LD (HL),01H
+E5E1  FB            	EI
+E5E2  3E 1C         	LD A,1CH
+E5E4  CD F3 E7      	CALL E7F3H
+E5E7  3A 6B F7      	LD A,(F76BH)
+E5EA  F6 F0         	OR F0H
+E5EC  32 6B F7      	LD (F76BH),A
+E5EF  D3 18         	OUT (18H),A
+E5F1  3E 19         	LD A,19H
+E5F3  CD F3 E7      	CALL E7F3H
+E5F6  C9            	RET
+E5F7  3A 58 F7      	LD A,(F758H)
+E5FA  35            	DEC (HL)
+E5FB  CB 6F         	BIT 5,A
+E5FD  C0            	RET NZ
+E5FE  34            	INC (HL)
+E5FF  34            	INC (HL)
+E600  C9            	RET
+E601  DB 12         	IN A,(12H)		;[Schreiben] Port 12H Bit5 = 0 (/WP) -> 'S' (schreibgeschuetzt)
+E603  CB 6F         	BIT 5,A
+E605  3E 53         	LD A,53H
+E607  32 75 F7      	LD (F775H),A
+E60A  CA 9F E3      	JP Z,E39FH
+E60D  3A 50 F7      	LD A,(F750H)
+E610  E6 06         	AND 06H
+E612  28 03         	JR Z,E617H
+E614  CD F0 E7      	CALL E7F0H
+E617  CD 7E E7      	CALL E77EH
+E61A  DD CB 03 46   	BIT 0,(IX+3)
+E61E  01 E3 EC      	LD BC,ECE3H
+E621  11 F1 EC      	LD DE,ECF1H
+E624  21 AE EA      	LD HL,EAAEH
+E627  CB D6         	SET 2,(HL)
+E629  28 05         	JR Z,E630H
+E62B  CB 96         	RES 2,(HL)
+E62D  11 F8 EC      	LD DE,ECF8H
+E630  CD D8 E8      	CALL E8D8H
+E633  2A 4B F7      	LD HL,(F74BH)
+E636  22 4D F7      	LD (F74DH),HL
+E639  CD 2A E9      	CALL E92AH
+E63C  CD AE E6      	CALL E6AEH
+E63F  DD CB 12 56   	BIT 2,(IX+18)
+E643  F5            	PUSH AF
+E644  21 58 F7      	LD HL,F758H
+E647  CB 66         	BIT 4,(HL)
+E649  20 4A         	JR NZ,E695H
+E64B  F1            	POP AF
+E64C  3E 00         	LD A,00H
+E64E  C2 52 E5      	JP NZ,E552H
+E651  CB DE         	SET 3,(HL)
+E653  21 2B DB      	LD HL,DB2BH
+E656  22 C2 E9      	LD (E9C2H),HL
+E659  21 40 EB      	LD HL,EB40H
+E65C  22 E3 E9      	LD (E9E3H),HL
+E65F  2A 4B F7      	LD HL,(F74BH)
+E662  22 4D F7      	LD (F74DH),HL
+E665  11 94 F6      	LD DE,F694H
+E668  ED 53 92 F6   	LD (F692H),DE
+E66C  3A 81 F7      	LD A,(F781H)
+E66F  32 5C F7      	LD (F75CH),A
+E672  CD AE E6      	CALL E6AEH
+E675  21 58 F7      	LD HL,F758H
+E678  CB 66         	BIT 4,(HL)
+E67A  28 06         	JR Z,E682H
+E67C  CB A6         	RES 4,(HL)
+E67E  3E 57         	LD A,57H
+E680  18 08         	JR E68AH
+E682  CB 5E         	BIT 3,(HL)
+E684  3E 00         	LD A,00H
+E686  28 02         	JR Z,E68AH
+E688  3E 4B         	LD A,4BH
+E68A  C3 52 E5      	JP E552H
+E68D  2A 4B F7      	LD HL,(F74BH)
+E690  22 4D F7      	LD (F74DH),HL
+E693  18 14         	JR E6A9H
+E695  F1            	POP AF
+E696  28 F5         	JR Z,E68DH
+E698  21 5C F7      	LD HL,F75CH
+E69B  DD 7E 07      	LD A,(IX+7)
+E69E  96            	SUB (HL)
+E69F  DD 86 04      	ADD A,(IX+4)
+E6A2  DD 77 04      	LD (IX+4),A
+E6A5  7E            	LD A,(HL)
+E6A6  DD 77 07      	LD (IX+7),A
+E6A9  3E 57         	LD A,57H
+E6AB  C3 52 E5      	JP E552H
+E6AE  CD EB E8      	CALL E8EBH		;[Transfer starten] PIO1 B Interrupt ein (13H = 83H), Lese-Steuerwort F755H mit Kopfbit nach 10H (/STR=0) -- ab hier arbeitet der ISR E965H je Sektorkopf; die CPU wartet in der Schleife E6DCH auf F758H Bit0 (fertig) oder Zeitueberlauf
+E6B1  3E EE         	LD A,EEH
+E6B3  32 45 F7      	LD (F745H),A
+E6B6  21 7C F7      	LD HL,F77CH
+E6B9  5E            	LD E,(HL)
+E6BA  23            	INC HL
+E6BB  23            	INC HL
+E6BC  56            	LD D,(HL)
+E6BD  ED 53 73 F7   	LD (F773H),DE
+E6C1  21 58 F7      	LD HL,F758H
+E6C4  CB BE         	RES 7,(HL)
+E6C6  F3            	DI
+E6C7  21 58 F7      	LD HL,F758H
+E6CA  CB 86         	RES 0,(HL)
+E6CC  CD 17 E9      	CALL E917H
+E6CF  3E 83         	LD A,83H
+E6D1  D3 13         	OUT (13H),A
+E6D3  3A 55 F7      	LD A,(F755H)
+E6D6  CD CE E8      	CALL E8CEH
+E6D9  D3 10         	OUT (10H),A
+E6DB  FB            	EI
+E6DC  CB 4E         	BIT 1,(HL)
+E6DE  28 0A         	JR Z,E6EAH
+E6E0  3A 64 F7      	LD A,(F764H)
+E6E3  FE 00         	CP 00H
+E6E5  28 33         	JR Z,E71AH
+E6E7  CB E6         	SET 4,(HL)
+E6E9  C9            	RET
+E6EA  CB 46         	BIT 0,(HL)
+E6EC  20 07         	JR NZ,E6F5H
+E6EE  CB 7E         	BIT 7,(HL)
+E6F0  C2 E6 E8      	JP NZ,E8E6H
+E6F3  18 E7         	JR E6DCH
+E6F5  DB 10         	IN A,(10H)
+E6F7  32 52 F7      	LD (F752H),A
+E6FA  DB 12         	IN A,(12H)
+E6FC  32 53 F7      	LD (F753H),A
+E6FF  21 74 F7      	LD HL,F774H
+E702  34            	INC (HL)
+E703  2A 92 F6      	LD HL,(F692H)
+E706  2B            	DEC HL
+E707  2B            	DEC HL
+E708  2B            	DEC HL
+E709  56            	LD D,(HL)
+E70A  2B            	DEC HL
+E70B  5E            	LD E,(HL)
+E70C  ED 53 49 F7   	LD (F749H),DE
+E710  3A 5C F7      	LD A,(F75CH)
+E713  3D            	DEC A
+E714  32 5C F7      	LD (F75CH),A
+E717  C8            	RET Z
+E718  18 AC         	JR E6C6H
+E71A  3E 52         	LD A,52H
+E71C  CD 7D E8      	CALL E87DH
+E71F  2A 5E F7      	LD HL,(F75EH)
+E722  36 FF         	LD (HL),FFH
+E724  C3 9F E3      	JP E39FH
+E727  04            	INC B		;CRC-CCITT (tabellenlos, 4-Bit-Schritte) ueber B Byte ab HL, Startwert F756H/F757H
+E728  04            	INC B
+E729  2B            	DEC HL
+E72A  3A 57 F7      	LD A,(F757H)
+E72D  4F            	LD C,A
+E72E  3A 56 F7      	LD A,(F756H)
+E731  5F            	LD E,A
+E732  23            	INC HL
+E733  07            	RLCA
+E734  07            	RLCA
+E735  07            	RLCA
+E736  07            	RLCA
+E737  E6 0F         	AND 0FH
+E739  AB            	XOR E
+E73A  5F            	LD E,A
+E73B  0F            	RRCA
+E73C  0F            	RRCA
+E73D  0F            	RRCA
+E73E  57            	LD D,A
+E73F  E6 E0         	AND E0H
+E741  AE            	XOR (HL)
+E742  AB            	XOR E
+E743  5F            	LD E,A
+E744  7A            	LD A,D
+E745  E6 1F         	AND 1FH
+E747  A9            	XOR C
+E748  4F            	LD C,A
+E749  7A            	LD A,D
+E74A  0F            	RRCA
+E74B  E6 F0         	AND F0H
+E74D  A9            	XOR C
+E74E  4B            	LD C,E
+E74F  10 E0         	DJNZ E731H
+E751  C9            	RET
+VGL_LESEN:
+E752  FD BE 00      	CP (IY+0)		;[Vergleich beim Lesen] gepatchtes CALL-Ziel von E7BAH [?]
+E755  37            	SCF
+E756  C0            	RET NZ
+E757  79            	LD A,C
+E758  FD BE 01      	CP (IY+1)
+E75B  37            	SCF
+E75C  C0            	RET NZ
+E75D  3F            	CCF
+E75E  FD 23         	INC IY
+E760  FD 23         	INC IY
+E762  FD 23         	INC IY
+E764  FD 23         	INC IY
+E766  DD 34 04      	INC (IX+4)
+E769  DD 35 07      	DEC (IX+7)
+E76C  C9            	RET
+E76D  FD 77 00      	LD (IY+0),A		;[Schreiben] Kopfeintrag ablegen, IY += 4
+E770  FD 71 01      	LD (IY+1),C
+E773  B7            	OR A
+E774  FD 23         	INC IY
+E776  FD 23         	INC IY
+E778  FD 23         	INC IY
+E77A  FD 23         	INC IY
+E77C  1D            	DEC E
+E77D  C9            	RET
+E77E  FD 21 96 F6   	LD IY,F696H
+E782  21 00 00      	LD HL,0000H
+E785  22 70 F7      	LD (F770H),HL
+E788  2A 4B F7      	LD HL,(F74BH)
+E78B  2B            	DEC HL
+E78C  ED 5B 81 F7   	LD DE,(F781H)
+E790  D5            	PUSH DE
+E791  E5            	PUSH HL
+E792  23            	INC HL
+E793  22 4D F7      	LD (F74DH),HL
+E796  21 5B F7      	LD HL,F75BH
+E799  06 FF         	LD B,FFH
+E79B  CD 27 E7      	CALL E727H
+E79E  E1            	POP HL
+E79F  ED 5B 4F F7   	LD DE,(F74FH)
+E7A3  D5            	PUSH DE
+E7A4  06 80         	LD B,80H
+E7A6  CD 31 E7      	CALL E731H
+E7A9  D1            	POP DE
+E7AA  1D            	DEC E
+E7AB  D5            	PUSH DE
+E7AC  20 F6         	JR NZ,E7A4H
+E7AE  D1            	POP DE
+E7AF  E5            	PUSH HL
+E7B0  21 6F F7      	LD HL,F76FH
+E7B3  06 02         	LD B,02H
+E7B5  CD 31 E7      	CALL E731H
+E7B8  E1            	POP HL
+E7B9  D1            	POP DE
+E7BA  CD 00 00      	CALL 0000H
+E7BD  D8            	RET C
+E7BE  20 D0         	JR NZ,E790H
+E7C0  C9            	RET
+E7C1  F5            	PUSH AF
+E7C2  C5            	PUSH BC
+E7C3  D5            	PUSH DE
+E7C4  E5            	PUSH HL
+E7C5  CD D8 E7      	CALL E7D8H
+E7C8  FB            	EI
+E7C9  CD EB E8      	CALL E8EBH
+E7CC  21 3A EC      	LD HL,EC3AH
+E7CF  F3            	DI
+E7D0  CD 40 E8      	CALL E840H
+E7D3  E1            	POP HL
+E7D4  D1            	POP DE
+E7D5  C1            	POP BC
+E7D6  F1            	POP AF
+E7D7  C9            	RET
+E7D8  F3            	DI		;DI, Interrupts aus: 03H an PIO1 A/B (11H/13H) und CTC-ZRE K3 (83H)
+E7D9  3E 03         	LD A,03H
+E7DB  D3 11         	OUT (11H),A
+E7DD  D3 11         	OUT (11H),A
+E7DF  D3 13         	OUT (13H),A
+E7E1  D3 13         	OUT (13H),A
+E7E3  D3 83         	OUT (83H),A
+E7E5  D3 83         	OUT (83H),A
+E7E7  C9            	RET
+E7E8  AF            	XOR A
+E7E9  37            	SCF
+E7EA  17            	RLA
+E7EB  1D            	DEC E
+E7EC  F2 EA E7      	JP P,E7EAH
+E7EF  C9            	RET
+E7F0  DD 7E 0F      	LD A,(IX+15)
+E7F3  06 BD         	LD B,BDH		;Warteschleife A Millisekunden (BDH*13 Takte = 1 ms bei 2,4576 MHz); bricht mit 'R' ab, wenn der Index-Zeitgeber F764H abgelaufen ist
+E7F5  FE 00         	CP 00H
+E7F7  28 05         	JR Z,E7FEH
+E7F9  10 FE         	DJNZ E7F9H
+E7FB  3D            	DEC A
+E7FC  20 F5         	JR NZ,E7F3H
+E7FE  E5            	PUSH HL
+E7FF  21 64 F7      	LD HL,F764H
+E802  BE            	CP (HL)
+E803  00            	NOP
+E804  CA 1A E7      	JP Z,E71AH
+E807  E1            	POP HL
+E808  C9            	RET
+E809  D3 18         	OUT (18H),A		;Port 18H setzen (merkt F76BH), Steuerport 10H in Grundstellung (BBH + /FR)
+E80B  32 6B F7      	LD (F76BH),A
+E80E  DB 10         	IN A,(10H)
+E810  E6 04         	AND 04H
+E812  F6 BB         	OR BBH
+E814  D3 10         	OUT (10H),A
+E816  C9            	RET
+E817  F3            	DI		;Vektoren eintragen: (I)FEH -> EBEFH (CTC-ZRE K3 = Zeitgeber), (I)F0H -> EBC7H (PIO1 A = Index), (I)F2H -> E965H (PIO1 B Bit1 = Marke erkannt); F764H = 0BH Index-Frist, F765H = 60H Motornachlauf; Init-Liste EC54H
+E818  21 64 F7      	LD HL,F764H
+E81B  36 0B         	LD (HL),0BH
+E81D  23            	INC HL
+E81E  36 60         	LD (HL),60H
+E820  21 58 F7      	LD HL,F758H
+E823  36 00         	LD (HL),00H
+E825  ED 57         	LD A,I
+E827  67            	LD H,A
+E828  2E FE         	LD L,FEH
+E82A  36 EF         	LD (HL),EFH
+E82C  23            	INC HL
+E82D  36 EB         	LD (HL),EBH
+E82F  2E F0         	LD L,F0H
+E831  36 C7         	LD (HL),C7H
+E833  23            	INC HL
+E834  36 EB         	LD (HL),EBH
+E836  2E F2         	LD L,F2H
+E838  36 65         	LD (HL),65H
+E83A  23            	INC HL
+E83B  36 E9         	LD (HL),E9H
+E83D  21 54 EC      	LD HL,EC54H
+E840  CD 45 E8      	CALL E845H
+E843  FB            	EI
+E844  C9            	RET
+E845  3E FF         	LD A,FFH		;Init-Liste ab HL: (Port, Wert) bis FFH, per OUTI
+E847  4E            	LD C,(HL)
+E848  23            	INC HL
+E849  ED A3         	OUTI
+E84B  BE            	CP (HL)
+E84C  20 F9         	JR NZ,E847H
+E84E  C9            	RET
+E84F  21 58 F7      	LD HL,F758H
+E852  CB B6         	RES 6,(HL)
+E854  CD 57 E8      	CALL E857H
+E857  2A 5E F7      	LD HL,(F75EH)		;Positionieren: Differenz Soll-/Ist-Spur, Richtung F758H Bit5, Schritte E88AH, Beruhigungszeit IX+16
+E85A  3A 7C F7      	LD A,(F77CH)
+E85D  47            	LD B,A
+E85E  96            	SUB (HL)
+E85F  70            	LD (HL),B
+E860  21 58 F7      	LD HL,F758H
+E863  C8            	RET Z
+E864  CB EE         	SET 5,(HL)
+E866  30 04         	JR NC,E86CH
+E868  CB AE         	RES 5,(HL)
+E86A  ED 44         	NEG
+E86C  CD 76 E8      	CALL E876H
+E86F  DD 7E 10      	LD A,(IX+16)
+E872  CD F3 E7      	CALL E7F3H
+E875  C9            	RET
+E876  4F            	LD C,A
+E877  CB 4E         	BIT 1,(HL)
+E879  28 08         	JR Z,E883H
+E87B  3E 56         	LD A,56H
+E87D  32 75 F7      	LD (F775H),A
+E880  C3 E6 E8      	JP E8E6H
+E883  CD 8A E8      	CALL E88AH
+E886  0D            	DEC C
+E887  20 EE         	JR NZ,E877H
+E889  C9            	RET
+E88A  7E            	LD A,(HL)		;ein Schritt: 10H = 8BH | DIR(Bit5) | /FR, dann IX+9 Impulse (DPB+19: 1, bei Doppelschritt 2) ueber E8A6H
+E88B  E6 20         	AND 20H
+E88D  F6 8B         	OR 8BH
+E88F  C5            	PUSH BC
+E890  47            	LD B,A
+E891  DB 10         	IN A,(10H)
+E893  E6 04         	AND 04H
+E895  B0            	OR B
+E896  D3 10         	OUT (10H),A
+E898  DD 46 09      	LD B,(IX+9)
+E89B  04            	INC B
+E89C  05            	DEC B
+E89D  28 05         	JR Z,E8A4H
+E89F  CD A6 E8      	CALL E8A6H
+E8A2  10 FB         	DJNZ E89FH
+E8A4  C1            	POP BC
+E8A5  C9            	RET
+E8A6  DB 10         	IN A,(10H)		;Schrittimpuls: bei DIR=aus und /TO (12H Bit7) = 0 kein Schritt mehr (Spur 0); sonst Bit7 (/ST) 0 -> 1, Wartezeit IX+14
+E8A8  CB 6F         	BIT 5,A
+E8AA  20 0D         	JR NZ,E8B9H
+E8AC  DB 12         	IN A,(12H)
+E8AE  17            	RLA
+E8AF  38 08         	JR C,E8B9H
+E8B1  E5            	PUSH HL
+E8B2  2A 5E F7      	LD HL,(F75EH)
+E8B5  36 00         	LD (HL),00H
+E8B7  E1            	POP HL
+E8B8  C9            	RET
+E8B9  DB 10         	IN A,(10H)
+E8BB  CB BF         	RES 7,A
+E8BD  D3 10         	OUT (10H),A
+E8BF  CB FF         	SET 7,A
+E8C1  D3 10         	OUT (10H),A
+E8C3  F5            	PUSH AF
+E8C4  C5            	PUSH BC
+E8C5  DD 7E 0E      	LD A,(IX+14)
+E8C8  CD F3 E7      	CALL E7F3H
+E8CB  C1            	POP BC
+E8CC  F1            	POP AF
+E8CD  C9            	RET
+E8CE  DD CB 03 46   	BIT 0,(IX+3)
+E8D2  CB 97         	RES 2,A
+E8D4  C0            	RET NZ
+E8D5  CB D7         	SET 2,A
+E8D7  C9            	RET
+E8D8  0A            	LD A,(BC)
+E8D9  6F            	LD L,A
+E8DA  03            	INC BC
+E8DB  0A            	LD A,(BC)
+E8DC  67            	LD H,A
+E8DD  03            	INC BC
+E8DE  7C            	LD A,H
+E8DF  B5            	OR L
+E8E0  C8            	RET Z
+E8E1  1A            	LD A,(DE)
+E8E2  77            	LD (HL),A
+E8E3  13            	INC DE
+E8E4  18 F2         	JR E8D8H
+E8E6  F3            	DI		;Transfer beenden: PIO1 B Interrupt aus, /STR=1 (10H), Daten-PIO leeren (IN 16H, OUT 14H)
+E8E7  3E 03         	LD A,03H
+E8E9  D3 13         	OUT (13H),A
+E8EB  DB 10         	IN A,(10H)
+E8ED  E6 04         	AND 04H
+E8EF  F6 BB         	OR BBH
+E8F1  DD CB 0C 76   	BIT 6,(IX+12)
+E8F5  20 09         	JR NZ,E900H
+E8F7  F5            	PUSH AF
+E8F8  CB 97         	RES 2,A
+E8FA  D3 10         	OUT (10H),A
+E8FC  00            	NOP
+E8FD  00            	NOP
+E8FE  00            	NOP
+E8FF  F1            	POP AF
+E900  D3 10         	OUT (10H),A
+E902  DB 16         	IN A,(16H)
+E904  3E 00         	LD A,00H
+E906  D3 14         	OUT (14H),A
+E908  FB            	EI
+E909  C9            	RET
+E90A  DB 10         	IN A,(10H)
+E90C  CB EF         	SET 5,A
+E90E  ED 40         	IN B,(C)
+E910  D3 10         	OUT (10H),A
+E912  CB AF         	RES 5,A
+E914  D3 10         	OUT (10H),A
+E916  C9            	RET
+E917  DB 10         	IN A,(10H)
+E919  CB EF         	SET 5,A
+E91B  18 F3         	JR E910H
+E91D  2A 5E F7      	LD HL,(F75EH)
+E920  36 FF         	LD (HL),FFH
+E922  C3 F0 E7      	JP E7F0H
+E925  F5            	PUSH AF		;Ende eines Auftrags -> EBFDH (Motor-Nachlauf/Abwahl), Rueckkehr ueber E3AAH
+E926  E5            	PUSH HL
+E927  C3 FD EB      	JP EBFDH
+E92A  21 50 F7      	LD HL,F750H
+E92D  CB 9E         	RES 3,(HL)
+E92F  3E 04         	LD A,04H
+E931  DD 96 0C      	SUB (IX+12)
+E934  D0            	RET NC
+E935  DD CB 0C 7E   	BIT 7,(IX+12)
+E939  C0            	RET NZ
+E93A  CD 46 E9      	CALL E946H
+E93D  C8            	RET Z
+E93E  21 58 F7      	LD HL,F758H
+E941  CB 4E         	BIT 1,(HL)
+E943  28 F5         	JR Z,E93AH
+E945  C9            	RET
+E946  DB 12         	IN A,(12H)		;Port 12H Bit0 lesen, waehrend Bit2 kurz 0 ist: 'bereit' des gewaehlten Laufwerks
+E948  47            	LD B,A
+E949  CB 97         	RES 2,A
+E94B  D3 12         	OUT (12H),A
+E94D  DB 12         	IN A,(12H)
+E94F  CB 47         	BIT 0,A
+E951  78            	LD A,B
+E952  D3 12         	OUT (12H),A
+E954  C9            	RET
+E955:
+E955  C3 42 EA      	JP EA42H		;Sprungleiste des ISR: E955H -> EA42H (Kopf passt nicht), E958H -> EA94H (Schreiben), E962H -> E9D1H (Datenfeld lesen)
+E958:
+E958  C3 94 EA      	JP EA94H
+E95B                	DB	00H,00H,00H,00H,00H,10H,69H		;Arbeitsbytes des Lese-ISR [?]
+E962:
+E962  C3 D1 E9      	JP E9D1H
+ISR_F2:
+E965  F5            	PUSH AF		;[ISR PIO1 B = MARKE ERKANNT] liest den Sektorkopf AUSGEROLLT, ohne jede Statusabfrage: A1 (weitere A1 ueberspringen), FE, Spur, Kopf, Sektor, Laenge, CRC -- verglichen mit dem erwarteten Eintrag (F692H). Das geht nur, wenn 'IN A,(16H)' die CPU per /WAIT bis zum naechsten Byte anhaelt: die K5122 laeuft im K8915 im WAIT-Betrieb (Doku K5122 §5.6, Decoder-Ausgang 00), nicht mit /BUSRQ
+E966  E5            	PUSH HL
+E967  DB 16         	IN A,(16H)
+E969  21 45 F7      	LD HL,F745H
+E96C  FE A1         	CP A1H
+E96E  C2 00 00      	JP NZ,0000H		;JP NZ,0000H: Ziel wird je Format gepatcht (Patchliste EC5EH)
+E971  DB 16         	IN A,(16H)
+E973  FE A1         	CP A1H
+E975  28 FA         	JR Z,E971H
+E977  FE FE         	CP FEH
+E979  DB 16         	IN A,(16H)
+E97B  C2 32 EA      	JP NZ,EA32H
+E97E  77            	LD (HL),A
+E97F  23            	INC HL
+E980  DB 16         	IN A,(16H)
+E982  77            	LD (HL),A
+E983  23            	INC HL
+E984  C5            	PUSH BC
+E985  DB 16         	IN A,(16H)
+E987  77            	LD (HL),A
+E988  23            	INC HL
+E989  01 73 F7      	LD BC,F773H
+E98C  DB 16         	IN A,(16H)
+E98E  77            	LD (HL),A
+E98F  2A 92 F6      	LD HL,(F692H)
+E992  DB 16         	IN A,(16H)
+E994  BE            	CP (HL)
+E995  C2 7E EA      	JP NZ,EA7EH
+E998  23            	INC HL
+E999  DB 16         	IN A,(16H)
+E99B  BE            	CP (HL)
+E99C  C2 90 EA      	JP NZ,EA90H
+E99F  23            	INC HL
+E9A0  DB 16         	IN A,(16H)
+E9A2  D5            	PUSH DE
+E9A3  E5            	PUSH HL
+E9A4  DB 16         	IN A,(16H)
+E9A6  21 45 F7      	LD HL,F745H
+E9A9  0A            	LD A,(BC)
+E9AA  BE            	CP (HL)
+E9AB  DB 16         	IN A,(16H)
+E9AD  20 A6         	JR NZ,E955H
+E9AF  21 47 F7      	LD HL,F747H
+E9B2  03            	INC BC
+E9B3  DB 16         	IN A,(16H)
+E9B5  00            	NOP
+E9B6  0A            	LD A,(BC)
+E9B7  BE            	CP (HL)
+E9B8  DB 16         	IN A,(16H)
+E9BA  C2 7A EA      	JP NZ,EA7AH
+E9BD  2A 4D F7      	LD HL,(F74DH)
+E9C0  DB 16         	IN A,(16H)
+E9C2  00            	NOP		;Patchstelle (E656H setzt 2BH,DBH = DEC HL / IN A,(16H) fuer den Vergleichslauf)
+E9C3  00            	NOP
+E9C4  16 3A         	LD D,3AH
+E9C6  80            	ADD A,B
+E9C7  F7            	RST 30H
+E9C8  D6 06         	SUB 06H
+E9CA  47            	LD B,A
+E9CB  DB 16         	IN A,(16H)
+E9CD  0E 16         	LD C,16H
+E9CF  00            	NOP
+E9D0  00            	NOP
+E9D1  DB 16         	IN A,(16H)		;Datenfeld: Lueckenbytes zaehlen, auf naechste Marke warten (12H Bit1), dann die Daten per INI/IN A,(16H) nach (F74DH) -- Variante je Format ab E9EBH
+E9D3  CD 0A E9      	CALL E90AH
+E9D6  06 A0         	LD B,A0H
+E9D8  3A 4F F7      	LD A,(F74FH)
+E9DB  5F            	LD E,A
+E9DC  16 A1         	LD D,A1H
+E9DE  DB 12         	IN A,(12H)
+E9E0  CB 4F         	BIT 1,A
+E9E2  00            	NOP
+E9E3  00            	NOP
+E9E4  00            	NOP
+E9E5  10 F7         	DJNZ E9DEH
+E9E7  E1            	POP HL
+E9E8  C3 30 EA      	JP EA30H
+E9EB  DB 16         	IN A,(16H)		;[Variante, nur ueber Patch erreichbar] Datenfeld lesen: A1-Sync ueberspringen, FBH erwarten, 128 Byte per INI (7EH+2) je Durchlauf
+E9ED  BA            	CP D
+E9EE  20 05         	JR NZ,E9F5H
+E9F0  DB 16         	IN A,(16H)
+E9F2  BA            	CP D
+E9F3  28 FB         	JR Z,E9F0H
+E9F5  FE FB         	CP FBH
+E9F7  20 EE         	JR NZ,E9E7H
+E9F9  DB 16         	IN A,(16H)
+E9FB  77            	LD (HL),A
+E9FC  23            	INC HL
+E9FD  06 7E         	LD B,7EH
+E9FF  ED A2         	INI
+EA01  00            	NOP
+EA02  20 00         	JR NZ,EA04H
+EA04  ED A2         	INI
+EA06  1D            	DEC E
+EA07  C2 F9 E9      	JP NZ,E9F9H
+EA0A  DB 16         	IN A,(16H)
+EA0C  22 4D F7      	LD (F74DH),HL
+EA0F  47            	LD B,A
+EA10  00            	NOP
+EA11  DB 16         	IN A,(16H)
+EA13  E1            	POP HL
+EA14  70            	LD (HL),B
+EA15  4F            	LD C,A
+EA16  DB 16         	IN A,(16H)
+EA18  23            	INC HL
+EA19  71            	LD (HL),C
+EA1A  23            	INC HL
+EA1B  DB 16         	IN A,(16H)
+EA1D  CD EB E8      	CALL E8EBH		;Transfer fertig: F758H Bit0 = 1, RETI
+EA20  3E 03         	LD A,03H
+EA22  D3 13         	OUT (13H),A
+EA24  22 92 F6      	LD (F692H),HL
+EA27  D1            	POP DE
+EA28  C1            	POP BC
+EA29  21 58 F7      	LD HL,F758H
+EA2C  CB C6         	SET 0,(HL)
+EA2E  18 05         	JR EA35H
+EA30  D1            	POP DE
+EA31  C1            	POP BC
+EA32  CD 17 E9      	CALL E917H
+EA35  FB            	EI
+EA36  E1            	POP HL
+EA37  F1            	POP AF
+EA38  ED 4D         	RETI
+EA3A                	DB	00H,00H,00H,00H,00H,C3H,FFH,E9H		;Fuellbytes + JP E9FFH (Sprungziel einer Patchvariante)
+EA42  E1            	POP HL		;Kopf passt nicht: gelesene Spur/Sektor nach F749H, ID-CRC pruefen, Spurfehler merken (F758H Bit6)
+EA43  2B            	DEC HL
+EA44  56            	LD D,(HL)
+EA45  2B            	DEC HL
+EA46  5E            	LD E,(HL)
+EA47  ED 53 49 F7   	LD (F749H),DE
+EA4B  D1            	POP DE
+EA4C  21 58 F7      	LD HL,F758H
+EA4F  CB 76         	BIT 6,(HL)
+EA51  20 DE         	JR NZ,EA31H
+EA53  21 44 F7      	LD HL,F744H
+EA56  06 05         	LD B,05H
+EA58  D5            	PUSH DE
+EA59  CD 27 E7      	CALL E727H
+EA5C  D1            	POP DE
+EA5D  B1            	OR C
+EA5E  20 D1         	JR NZ,EA31H
+EA60  21 45 F7      	LD HL,F745H
+EA63  01 73 F7      	LD BC,F773H
+EA66  0A            	LD A,(BC)
+EA67  BE            	CP (HL)
+EA68  21 58 F7      	LD HL,F758H
+EA6B  CB F6         	SET 6,(HL)
+EA6D  CA 31 EA      	JP Z,EA31H
+EA70  CB B6         	RES 6,(HL)
+EA72  21 65 F7      	LD HL,F765H
+EA75  36 01         	LD (HL),01H
+EA77  C3 31 EA      	JP EA31H
+EA7A  E1            	POP HL
+EA7B  C3 30 EA      	JP EA30H
+EA7E  47            	LD B,A
+EA7F  DB 16         	IN A,(16H)
+EA81  4F            	LD C,A
+EA82  78            	LD A,B
+EA83  32 49 F7      	LD (F749H),A
+EA86  79            	LD A,C
+EA87  32 4A F7      	LD (F74AH),A
+EA8A  01 73 F7      	LD BC,F773H
+EA8D  C3 4C EA      	JP EA4CH
+EA90  2B            	DEC HL
+EA91  46            	LD B,(HL)
+EA92  18 ED         	JR EA81H
+EA94  DB 16         	IN A,(16H)		;[Schreiben] nach dem Kopf: Luecke abzaehlen, /WE (10H), dann per OUT (C),D an 14H: 00H-Luecke, 3 x A1H, FBH, die Daten per OUTI und 2 CRC-Bytes -- ebenfalls ohne Statusabfrage, also /WAIT auch beim Schreiben
+EA96  3A 80 F7      	LD A,(F780H)
+EA99  D6 0A         	SUB 0AH
+EA9B  47            	LD B,A
+EA9C  DB 16         	IN A,(16H)
+EA9E  00            	NOP
+EA9F  00            	NOP
+EAA0  00            	NOP
+EAA1  10 F9         	DJNZ EA9CH
+EAA3  DB 16         	IN A,(16H)
+EAA5  3E 00         	LD A,00H
+EAA7  16 00         	LD D,00H
+EAA9  D3 10         	OUT (10H),A
+EAAB  DB 16         	IN A,(16H)
+EAAD  3E 00         	LD A,00H
+EAAF  0E 14         	LD C,14H
+EAB1  D3 10         	OUT (10H),A
+EAB3  ED 51         	OUT (C),D
+EAB5  3A 4F F7      	LD A,(F74FH)
+EAB8  5F            	LD E,A
+EAB9  00            	NOP
+EABA  00            	NOP
+EABB  ED 51         	OUT (C),D
+EABD  00            	NOP
+EABE  00            	NOP
+EABF  10 FA         	DJNZ EABBH
+EAC1  ED 51         	OUT (C),D
+EAC3  3E 00         	LD A,00H
+EAC5  16 A1         	LD D,A1H
+EAC7  ED 51         	OUT (C),D
+EAC9  D3 10         	OUT (10H),A
+EACB  E6 FD         	AND FDH
+EACD  ED 51         	OUT (C),D
+EACF  00            	NOP
+EAD0  00            	NOP
+EAD1  06 FB         	LD B,FBH
+EAD3  ED 51         	OUT (C),D
+EAD5  00            	NOP
+EAD6  00            	NOP
+EAD7  00            	NOP
+EAD8  ED 41         	OUT (C),B
+EADA  D3 10         	OUT (10H),A
+EADC  06 7F         	LD B,7FH
+EADE  ED A3         	OUTI
+EAE0  00            	NOP
+EAE1  00            	NOP
+EAE2  C2 00 00      	JP NZ,0000H
+EAE5  00            	NOP
+EAE6  ED A3         	OUTI
+EAE8  1D            	DEC E
+EAE9  C2 DC EA      	JP NZ,EADCH
+EAEC  EB            	EX DE,HL
+EAED  E1            	POP HL
+EAEE  ED A3         	OUTI
+EAF0  00            	NOP
+EAF1  00            	NOP
+EAF2  ED A3         	OUTI
+EAF4  22 92 F6      	LD (F692H),HL
+EAF7  3E 00         	LD A,00H
+EAF9  D3 14         	OUT (14H),A
+EAFB  00            	NOP
+EAFC  00            	NOP
+EAFD  00            	NOP
+EAFE  D3 14         	OUT (14H),A
+EB00  00            	NOP
+EB01  00            	NOP
+EB02  00            	NOP
+EB03  D3 14         	OUT (14H),A
+EB05  3E 00         	LD A,00H
+EB07  D3 10         	OUT (10H),A
+EB09  ED 53 4D F7   	LD (F74DH),DE
+EB0D  E5            	PUSH HL
+EB0E  21 65 F7      	LD HL,F765H
+EB11  34            	INC (HL)
+EB12  E1            	POP HL
+EB13  C3 1D EA      	JP EA1DH
+EB16  06 04         	LD B,04H		;[Variante, nur ueber Patch erreichbar] Schreib-/Lese-Varianten je Format
+EB18  ED 51         	OUT (C),D
+EB1A  00            	NOP
+EB1B  00            	NOP
+EB1C  00            	NOP
+EB1D  00            	NOP
+EB1E  00            	NOP
+EB1F  00            	NOP
+EB20  10 F6         	DJNZ EB18H
+EB22  3E 00         	LD A,00H
+EB24  06 FB         	LD B,FBH
+EB26  ED 41         	OUT (C),B
+EB28  D3 10         	OUT (10H),A
+EB2A  00            	NOP
+EB2B  00            	NOP
+EB2C  00            	NOP
+EB2D  E6 ED         	AND EDH
+EB2F  ED A3         	OUTI
+EB31  D3 10         	OUT (10H),A
+EB33  06 7E         	LD B,7EH
+EB35  C3 DE EA      	JP EADEH
+EB38  00            	NOP
+EB39  00            	NOP
+EB3A  00            	NOP
+EB3B  00            	NOP
+EB3C  00            	NOP
+EB3D  C3 DE EA      	JP EADEH
+EB40  DB 16         	IN A,(16H)
+EB42  BA            	CP D
+EB43  20 05         	JR NZ,EB4AH
+EB45  DB 16         	IN A,(16H)
+EB47  BA            	CP D
+EB48  28 FB         	JR Z,EB45H
+EB4A  FE FB         	CP FBH
+EB4C  20 6D         	JR NZ,EBBBH
+EB4E  DB 16         	IN A,(16H)
+EB50  23            	INC HL
+EB51  BE            	CP (HL)
+EB52  28 00         	JR Z,EB54H
+EB54  57            	LD D,A
+EB55  DB 16         	IN A,(16H)
+EB57  5F            	LD E,A
+EB58  CD E6 E8      	CALL E8E6H
+EB5B  C5            	PUSH BC
+EB5C  B7            	OR A
+EB5D  0E 00         	LD C,00H
+EB5F  3A 4F F7      	LD A,(F74FH)
+EB62  47            	LD B,A
+EB63  CB 18         	RR B
+EB65  CB 19         	RR C
+EB67  E5            	PUSH HL
+EB68  2A 4D F7      	LD HL,(F74DH)
+EB6B  09            	ADD HL,BC
+EB6C  22 69 F7      	LD (F769H),HL
+EB6F  E5            	PUSH HL
+EB70  C1            	POP BC
+EB71  E1            	POP HL
+EB72  B7            	OR A
+EB73  ED 42         	SBC HL,BC
+EB75  C1            	POP BC
+EB76  28 0E         	JR Z,EB86H
+EB78  38 30         	JR C,EBAAH
+EB7A  2B            	DEC HL
+EB7B  7C            	LD A,H
+EB7C  B5            	OR L
+EB7D  2A 69 F7      	LD HL,(F769H)
+EB80  5A            	LD E,D
+EB81  56            	LD D,(HL)
+EB82  28 02         	JR Z,EB86H
+EB84  23            	INC HL
+EB85  5E            	LD E,(HL)
+EB86  7A            	LD A,D
+EB87  E1            	POP HL
+EB88  BE            	CP (HL)
+EB89  20 20         	JR NZ,EBABH
+EB8B  7B            	LD A,E
+EB8C  23            	INC HL
+EB8D  BE            	CP (HL)
+EB8E  23            	INC HL
+EB8F  20 1A         	JR NZ,EBABH
+EB91  22 92 F6      	LD (F692H),HL
+EB94  21 7E F7      	LD HL,F77EH
+EB97  34            	INC (HL)
+EB98  21 81 F7      	LD HL,F781H
+EB9B  35            	DEC (HL)
+EB9C  21 58 F7      	LD HL,F758H
+EB9F  CB 9E         	RES 3,(HL)
+EBA1  2A 69 F7      	LD HL,(F769H)
+EBA4  22 4D F7      	LD (F74DH),HL
+EBA7  C3 27 EA      	JP EA27H
+EBAA  E1            	POP HL
+EBAB  CD E6 E8      	CALL E8E6H
+EBAE  3E 01         	LD A,01H
+EBB0  32 5C F7      	LD (F75CH),A
+EBB3  21 58 F7      	LD HL,F758H
+EBB6  CB DE         	SET 3,(HL)
+EBB8  C3 27 EA      	JP EA27H
+EBBB  E1            	POP HL
+EBBC  C3 30 EA      	JP EA30H
+EBBF  00            	NOP
+EBC0  00            	NOP
+EBC1  00            	NOP
+EBC2  00            	NOP
+EBC3  00            	NOP
+EBC4  C3 4E EB      	JP EB4EH
+ISR_F0:
+EBC7  FB            	EI		;[ISR PIO1 A = INDEX] Index-Frist F764H neu auf 0BH
+EBC8  E5            	PUSH HL
+EBC9  21 64 F7      	LD HL,F764H
+EBCC  36 0B         	LD (HL),0BH
+EBCE  E1            	POP HL
+EBCF  ED 4D         	RETI
+EBD1  ED 73 6E F7   	LD (F76EH),SP		;[Variante] ISR mit eigenem Stapel F744H: Motor-Nachlauf F765H zaehlen [?]
+EBD5  31 44 F7      	LD SP,F744H
+EBD8  F5            	PUSH AF
+EBD9  E5            	PUSH HL
+EBDA  21 65 F7      	LD HL,F765H
+EBDD  35            	DEC (HL)
+EBDE  C4 CF EB      	CALL NZ,EBCFH
+EBE1  CC 25 E9      	CALL Z,E925H
+EBE4  E1            	POP HL
+EBE5  F1            	POP AF
+EBE6  ED 7B 6E F7   	LD SP,(F76EH)
+EBEA  00            	NOP
+EBEB  00            	NOP
+EBEC  00            	NOP
+EBED  FB            	EI
+EBEE  C9            	RET
+ISR_FE:
+EBEF  18 00         	JR EBF1H		;[ISR CTC-ZRE K3 = ZEITGEBER 37,6 Hz] F764H (Index-Frist, 11 Takte = 290 ms) und F765H (Motornachlauf) herunterzaehlen; abgelaufen -> EBFDH
+EBF1  F5            	PUSH AF
+EBF2  E5            	PUSH HL
+EBF3  21 64 F7      	LD HL,F764H
+EBF6  35            	DEC (HL)
+EBF7  28 04         	JR Z,EBFDH
+EBF9  23            	INC HL
+EBFA  35            	DEC (HL)
+EBFB  20 38         	JR NZ,EC35H
+EBFD  21 50 F7      	LD HL,F750H		;Frist abgelaufen: Motoren aus (18H: Low-Nibble /LCK = 1), bei laufendem Auftrag Laufwerke abwaehlen, F758H Bit1 (Abbruch), Interrupts neu (E7C1H)
+EC00  3A 6B F7      	LD A,(F76BH)
+EC03  F6 0F         	OR 0FH
+EC05  CB 46         	BIT 0,(HL)
+EC07  28 19         	JR Z,EC22H
+EC09  3A 8C F7      	LD A,(F78CH)
+EC0C  CB 47         	BIT 0,A
+EC0E  3E FF         	LD A,FFH
+EC10  20 05         	JR NZ,EC17H
+EC12  3A 6B F7      	LD A,(F76BH)
+EC15  F6 F0         	OR F0H
+EC17  F5            	PUSH AF
+EC18  3E FF         	LD A,FFH
+EC1A  D3 18         	OUT (18H),A
+EC1C  D3 18         	OUT (18H),A
+EC1E  32 6D F7      	LD (F76DH),A
+EC21  F1            	POP AF
+EC22  D3 18         	OUT (18H),A
+EC24  32 6B F7      	LD (F76BH),A
+EC27  21 58 F7      	LD HL,F758H
+EC2A  CB CE         	SET 1,(HL)
+EC2C  CD C1 E7      	CALL E7C1H
+EC2F  DB 10         	IN A,(10H)
+EC31  F6 FB         	OR FBH
+EC33  D3 10         	OUT (10H),A
+EC35  FB            	EI
+EC36  E1            	POP HL
+EC37  F1            	POP AF
+EC38  ED 4D         	RETI
+EC3A                	DB	80H,F8H,11H,F0H,13H,F2H,15H,0FH,17H,4FH,11H,0FH,13H,CFH,13H,F3H		;Init-Liste (Port,Wert; FFH = Ende): CTC-ZRE 80H Vektor F8H (K3 -> FEH); K5122-PIO1 A (11H) Vektor F0H, Mode 0; PIO1 B (13H) Vektor F2H, Mode 3, E/A-Maske F3H, Int.-Steuerwort 37H + Maske FDH (nur Bit1 = Marke); PIO2 A (15H) Mode 0 = Schreibdaten, PIO2 B (17H) Mode 1 = Lesedaten
+EC4A                	DB	13H,37H,13H,FDH,12H,FFH,14H,00H,FFH,FFH
+EC54                	DB	83H,03H,83H,B7H,83H,FFH,11H,83H,FFH,FFH		;Init-Liste Zeitgeber: CTC-ZRE K3 (83H) Reset, B7H (Int., Zeitgeber, Vorteiler 256), ZK FFH => 2,4576 MHz/256/255 = 37,6 Hz; PIO1 A Int. ein
+EC5E                	DB	6FH,E9H,70H,E9H,CFH,E9H,D0H,E9H,03H,EAH,55H,F7H,56H,F7H,57H,F7H		;Patchadressen (0-begrenzt) fuer E8D8H: die Code-Bytes, die je Format umgeschrieben werden (Lese-ISR E96FH/E9CFH/..., Schreibpfad EAAEH/...)
+EC6E                	DB	AEH,EAH,B9H,EAH,BAH,EAH,F8H,EAH,E3H,EAH,E4H,EAH,E2H,E9H,E3H,E9H
+EC7E                	DB	E4H,E9H,1AH,EBH,1BH,EBH,1CH,EBH,53H,EBH,00H,00H
+EC8A                	DB	92H,ECH,A7H,ECH,BCH,ECH,BCH,ECH		;Zeiger auf die Patchwerte je Format (IX+8 = 0..3)
+EC92                	DB	77H,E9H,18H,8AH,36H,87H,84H,CFH,A4H,18H,5BH,FFH,38H,EBH,C2H,EBH		;Patchwerte je Format (zu EC5EH)
+ECA2                	DB	E9H,00H,00H,00H,6BH,32H,EAH,10H,FAH,FBH,85H,E5H,9AH,B4H,06H,09H
+ECB2                	DB	4EH,DEH,EAH,C2H,EBH,E9H,00H,00H,00H,FAH,32H,EAH,18H,8AH,36H,85H
+ECC2                	DB	E5H,9AH,B4H,06H,09H,4EH,38H,EBH,C2H,EBH,E9H,00H,00H,00H,6BH
+ECD1                	DB	C2H,E9H,C3H,E9H,BBH,E7H,BCH,E7H,00H,00H,00H,DBH,52H,E7H,18H,94H		;Patchliste Lesen/Schreiben: E9C2H/E9C3H, E7BBH/E7BCH; Werte ECDBH (Lesen: CALL E752H) bzw. ECDFH (Schreiben: CALL E76DH)
+ECE1                	DB	6DH,E7H
+ECE3                	DB	A6H,EAH,C4H,EAH,06H,EBH,23H,EBH,00H,00H,00H,00H,00H,00H,95H,96H		;Patchlisten Kopf 0/1 (E61AH) [?]
+ECF3                	DB	BFH,B6H,00H,00H,00H,91H,92H,BBH,B2H,00H,00H,00H
+ECFF                	DB	04H,88H,00H,8CH		;Wert fuer Port 12H je Format (04H, 88H, 00H, 8CH)
+ED03                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H		;frei (00H) -- Arbeitsbereich; EF00H SP-Rettung der ISRs, EF2AH ISR-Stapel und DIRBUF, EFAAH/EFDDH ALV/CSV von A:
+ED13                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED23                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED33                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED43                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED53                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED63                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED73                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED83                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+ED93                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EDA3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EDB3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EDC3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EDD3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EDE3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EDF3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE03                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE13                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE23                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE33                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE43                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE53                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE63                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE73                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE83                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EE93                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EEA3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EEB3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EEC3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EED3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EEE3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EEF3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF03                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF13                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF23                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF33                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF43                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF53                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF63                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF73                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF83                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EF93                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EFA3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EFB3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EFC3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EFD3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+EFE3                	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+
+	END

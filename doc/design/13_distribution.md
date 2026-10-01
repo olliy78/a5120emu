@@ -879,8 +879,8 @@ Kommandozeilenprogramm im Paket schon gebahnt hat.
 - **Code Signing**: Windows-Zertifikat (SmartScreen) und Apple Developer ID
   (Notarisierung) sind laufende Kosten — Entscheidung nötig, bevor über „Anwender" jenseits
   des Bekanntenkreises geredet wird.
-- **Diskettenauswahl**: `build_payload.sh` legt sechs Abbilder bei (vier CP/A, eine
-  SCPX, eine UDOS, Liste `DISKS_DEFAULT`) — genug, um jedes der drei Betriebssysteme
+- **Diskettenauswahl**: `build_payload.sh` legt sieben Abbilder bei (vier CP/A, eine
+  SCPX, eine UDOS, die K8915-Systemdiskette 901; Liste `DISKS_DEFAULT`) — genug, um jedes der drei Betriebssysteme
   zu starten, ohne das Paket aufzublähen. Mit `--disks all` kommen alle aus `disks/`
   mit, mit `--disks none` keine.
 - ~~**Schlankmachen unter Windows**~~ ✅ erledigt 2026-08-12: `slim.py` liest die

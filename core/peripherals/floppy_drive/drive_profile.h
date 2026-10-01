@@ -167,6 +167,14 @@ struct DriveProfile {
 const DriveProfile& builtinDriveProfile(const std::string& name);
 
 /**
+ * @brief Nenndrehzahl einer Diskette für die Laufwerke @p drives (Laufwerksliste eines
+ *        Katalogformats): 360 nur, wenn JEDES davon ein 8″-Laufwerk ist, sonst 300 —
+ *        ein Format, das auch ein 5,25″-Laufwerk anbietet, landet im Zweifel dort.
+ *        Gebraucht für die Umdrehungslänge eines Flussabbilds (DiskMedium::nominalRpm).
+ */
+uint16_t nominalRpmForDrives(const std::vector<std::string>& drives);
+
+/**
  * @brief Alle gültigen Profilnamen (inkl. `"none"`).
  *
  * Nötig für die Validierung des Formatkatalogs: @ref builtinDriveProfile liefert für

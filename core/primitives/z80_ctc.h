@@ -197,6 +197,33 @@ public:
      */
     bool    isTimerMode(int channel) const;
 
+    // ─── Teiler je Kanal (AP-S3, doc/design/19_serielle_schnittstellen.md §6.2) ──
+
+    /**
+     * @brief Maschinentakte (φ-Perioden) zwischen zwei ZC/TO-Impulsen des Kanals.
+     *
+     * Zeitgeber: Vorteiler (16/256) × Zeitkonstante.  Zähler: Zeitkonstante ×
+     * Periode des CLK/TRG-Eingangs, die über setzeEingangsQuelle()/
+     * setzeEingangsPeriode() bekannt gemacht wird — bei einer Kaskade fragt die
+     * Quelle den vorgeschalteten Kanal ab (rekursiv).  Zeitkonstante 0 = 256.
+     * @return 0 = unbekannt: Kanal läuft nicht (nicht programmiert, Reset, Zeitgeber
+     *         wartet auf seinen Trigger) oder Zähler an einem Eingang ohne bekannte
+     *         Periode.  Reine Abfrage, ändert keinen Zustand.
+     */
+    uint64_t teilerTakte(int kanal) const;
+
+    /// Rückfrage nach der Periode (Maschinentakte je Impuls) am CLK/TRG-Eingang;
+    /// 0 = unbekannt.  Die Karte verdrahtet damit, was an CLK/TRG hängt.
+    using PeriodenQuelle = std::function<uint64_t()>;
+
+    /// Quelle des CLK/TRG-Eingangs von @p kanal — z. B. für eine Kaskade
+    /// `[&]{ return ctc.teilerTakte(0); }`.  Leere Funktion = unbekannt.
+    void setzeEingangsQuelle(int kanal, PeriodenQuelle quelle);
+
+    /// Fester Takt am CLK/TRG-Eingang (@p takte Maschinentakte je Impuls,
+    /// 0 = unbekannt) — z. B. ein Quarzteiler auf der Karte.
+    void setzeEingangsPeriode(int kanal, uint64_t takte);
+
     /**
      * @brief Return the name of this device.
      * @return Device name for debugging.
@@ -277,4 +304,5 @@ private:
     bool        iei_      = false;     ///< Interrupt Enable Input
     std::string name_;                 ///< Device name
     ZCTOCallback zcto_cb_;             ///< Output pulse callback
+    PeriodenQuelle eingang_[4];        ///< CLK/TRG-Quellen (Verdrahtung, nicht im Savestate)
 };

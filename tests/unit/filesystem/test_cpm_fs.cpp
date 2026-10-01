@@ -231,7 +231,7 @@ TEST(CpmFileSystem, LiestScpx640) {
 }
 
 TEST(CpmFileSystem, LiestScpx798MitGemischterSystemspur) {
-    Volume v = oeffne("scpx17_5x1024_k5601_hardy.hfe", "scpx798");
+    Volume v = oeffne("scpx17_5x1024_k5601_hardy_norm.hfe", "scpx798");
     ASSERT_TRUE(v) << v.error;
     // Zylinder 0 ist 16×256 (2 × 4096 B), ab Zylinder 1 dann 5×1024 (2 × 5120 B):
     // 8192 + 10240 = 18432 — der Datenbereich beginnt hinter beidem.

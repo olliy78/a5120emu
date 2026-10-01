@@ -1,0 +1,9 @@
+# boot_trace --machine k8915 (§8a AP-E4d): Kaltstart (ohne Selbsttest) bis zum stabilen
+# Prompt; eine JSON-Zeile, Exit 0.
+tool:    boot_trace
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915 --skip-selftest --quiet --json %DISK%
+timeout: 180
+exit:    0
+expect:  "machine":"k8915","prompt":true,"stall":false
+expect:  "a8":"0x87","lamps":"0xB0"

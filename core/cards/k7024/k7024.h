@@ -65,12 +65,32 @@ class K7024 : public MemDevice {
 public:
     /** @brief Hardware configuration for the K7024 — mirrors physical jumper settings. */
     struct A5120Config {
-        uint8_t vram_base_hi; ///< High byte of VRAM base (X11/X12 all closed → 0xF8 = 0xF800)
+        uint8_t vram_base_hi; ///< High byte of VRAM base (X11/X12 all closed → 0xF8 = 0xF800; K8915: 0x10)
         bool    cursor_blink; ///< X15/X16: pos1 closed → false (ruhend), pos2 → true (blinkend)
         bool    read_protect; ///< X13/X14: pos1 closed → true (Lesesperre aktiv), pos2 → false
+
+        /// Zeichengenerator, rows 0–7 (1024 bytes, code*8+row); nullptr = eingebauter
+        /// A5120-Satz (v171). Andere Karten (z. B. K8915s 012-6820) haben eigene EPROMs
+        /// mit derselben Adressierung — siehe doc/design/16_k8915.md §3.3.
+        const uint8_t* chargen_rows0_7  = nullptr;
+        /// Zeichengenerator, rows 8–11 (1024 bytes, code*8+(row-8)); nullptr = eingebauter
+        /// A5120-Satz (v172).
+        const uint8_t* chargen_rows8_11 = nullptr;
+
         A5120Config()
             : vram_base_hi(0xF8),
               cursor_blink(false), read_protect(true) {}
+
+        /**
+         * @brief Configuration for the K8915's 012-6820 K7024 variant.
+         *
+         * VRAM at 0x1000 (not 0xF800) and the card's own character generator
+         * (2× 2716, A10 tied low → only the Latin half of each is reachable).
+         * No Lesesperre (read_protect = false): nothing on the K8915 bus answers
+         * reads at 0x1000 instead of the card, and the boot ROM tests the VRAM as RAM.
+         * See doc/design/16_k8915.md §3.3.
+         */
+        static A5120Config forK8915();
     };
 
     /**
@@ -247,6 +267,15 @@ public:
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
+    /**
+     * @brief Look up one 8-bit pixel row of a glyph from the configured character generator.
+     *
+     * @param charCode Character code (0x00–0x7F)
+     * @param pixelRow Pixel row in the cell (0–11)
+     * @return 8-bit pixel row (bit 7 = leftmost pixel)
+     */
+    uint8_t chargenLookupLatin(uint8_t charCode, int pixelRow) const;
+
     /**
      * @brief Render one character cell into the framebuffer.
      *

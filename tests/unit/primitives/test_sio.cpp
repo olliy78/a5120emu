@@ -119,9 +119,48 @@ TEST(Z80SIO, RX_FIFO_MultipleBytes) {
 }
 
 /**
+ * @test Z80SIO.LeererEmpfaengerLiefertLetztesByte
+ * @brief Die echte U856/Z80-SIO hat am Datenregister keinen eigenen "leer"-Zustand:
+ *        Es ist der Ausgang des Empfangs-FIFO, kein separat abschaltbarer Bustreiber.
+ *        Ist der FIFO leer, liefert ein Lesezugriff daher das zuletzt empfangene
+ *        Byte, nicht FFH (`doc/design/16_k8915.md` §8a AP-E4c, Befund AP-E2: das
+ *        K8915-BIOS liest `LISTST` ohne RR0-Prüfung und erwartet dort das letzte
+ *        XON/XOFF-Byte).  Nach Reset (vor dem ersten empfangenen Byte) ist der
+ *        Ruhewert 00H — eine Annahme, das Datenblatt macht dazu keine Aussage.
+ * @par Pass criterion  Direkt nach Reset liefert ein leerer Kanal 00H; nach dem
+ *      Abholen des einzigen empfangenen Bytes liefert ein erneutes Lesen dasselbe
+ *      Byte erneut (nicht FFH); das gilt für beide Kanäle unabhängig voneinander.
+ */
+TEST(Z80SIO, LeererEmpfaengerLiefertLetztesByte) {
+    Z80SIO sio;
+
+    // Direkt nach Reset, noch nie ein Byte empfangen.
+    EXPECT_EQ(sio.ioRead(0), 0x00);
+    EXPECT_EQ(sio.ioRead(2), 0x00);
+
+    sio.channelA().rxByte(0x13);   // XOFF
+    EXPECT_EQ(sio.ioRead(0), 0x13);
+    // FIFO jetzt leer — ein erneutes Lesen liefert weiter 0x13, nicht FFH.
+    EXPECT_EQ(sio.ioRead(0), 0x13);
+    EXPECT_EQ(sio.ioRead(0), 0x13);
+
+    sio.channelA().rxByte(0x11);   // XON überschreibt das zuletzt empfangene Byte
+    EXPECT_EQ(sio.ioRead(0), 0x11);
+    EXPECT_EQ(sio.ioRead(0), 0x11);
+
+    // Kanal B unabhängig davon weiterhin auf seinem eigenen Ruhewert.
+    EXPECT_EQ(sio.ioRead(2), 0x00);
+    sio.channelB().rxByte(0xAA);
+    EXPECT_EQ(sio.ioRead(2), 0xAA);
+    EXPECT_EQ(sio.ioRead(2), 0xAA);
+    EXPECT_EQ(sio.ioRead(0), 0x11) << "Kanal A unverändert";
+}
+
+/**
  * @test Z80SIO/RX_FIFO_Full
  * @brief After three bytes the FIFO is full; a fourth byte causes RR1 overrun bit to be set.
- * @par Pass criterion  rxFull() == true after 3 bytes; RR1 bit 3 (overrun) set after 4th byte.
+ * @par Pass criterion  rxFull() == true after 3 bytes; RR1 D5 (Rx Overrun) set after 4th byte;
+ *       Error Reset (WR0 30H) clears it.
  */
 TEST(Z80SIO, RX_FIFO_Full) {
     Z80SIO sio;
@@ -139,7 +178,10 @@ TEST(Z80SIO, RX_FIFO_Full) {
     // set reg_ptr to 1 to read RR1
     sio.ioWrite(1, 0x01); // WR0: point to register 1
     uint8_t rr1 = sio.ioRead(1);
-    EXPECT_TRUE(rr1 & 0x08); // overrun bit
+    EXPECT_EQ(rr1 & 0x70, 0x20); // Rx Overrun Error = D5 (bis AP-ST3 stand es in D3)
+    sio.ioWrite(1, 0x30);        // Error Reset
+    sio.ioWrite(1, 0x01);
+    EXPECT_EQ(sio.ioRead(1) & 0x70, 0);
 }
 
 // ─── TX interrupt enable ──────────────────────────────────────────────────────
@@ -172,21 +214,139 @@ TEST(Z80SIO, TX_Interrupt_EnabledAfterTxGet) {
 
 /**
  * @test Z80SIO/RX_Interrupt_AllReceivedMode
- * @brief With WR1 bits[3:2] = 10 (interrupt on all received), rxByte() triggers hasInterrupt().
- * @par Pass criterion  hasInterrupt() == false before rxByte(); == true after rxByte().
+ * @brief WR1 D4–D3 = 10 (jedes Zeichen, Parität beeinflusst den Vektor): jedes
+ *        empfangene Zeichen fordert den Interrupt an.
+ * @details Bis 2026-10-01 las `rxIntEnabled()` D3–D2; der Test schrieb damals 08H und
+ *          hielt damit die falsche Lesart fest (08H ist nach Datenblatt Betriebsart 01).
  */
 TEST(Z80SIO, RX_Interrupt_AllReceivedMode) {
     Z80SIO sio;
     sio.setIEI(true);
-
-    // WR1 bits[3:2] = 10 → interrupt on all received characters
-    sio.ioWrite(1, 0x01); // select WR1
-    sio.ioWrite(1, 0x08); // bits[3:2]=10
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x10);              // WR1 D4–D3 = 10
 
     EXPECT_FALSE(sio.hasInterrupt());
-
     sio.channelA().rxByte(0x7F);
     EXPECT_TRUE(sio.hasInterrupt());
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_WR1_JedeBetriebsartNachDatenblatt
+ * @brief Entscheidend ist WR1 D4–D3, nicht D3–D2 (Befund AP-S3/AP-T1a, behoben im
+ *        Rahmen von Entwurf 19).  Gegen die alte Lesart trennen 10H/13H (an, alt: aus),
+ *        04H/1CH… und 00H; D2 (Status Affects Vector) darf nichts freigeben.
+ */
+TEST(Z80SIO, RX_Interrupt_WR1_JedeBetriebsartNachDatenblatt) {
+    struct Fall { uint8_t wr1; bool jedes; const char* was; };
+    const Fall faelle[] = {
+        {0x00, false, "00 aus"},
+        {0x04, false, "nur D2 (SAV) — kein Empfangsinterrupt"},
+        {0x10, true,  "10 jedes Zeichen"},
+        {0x13, true,  "10 + Ext + Tx (BIOS-typisch) — alte Lesart: aus"},
+        {0x14, true,  "10 + SAV"},
+        {0x18, true,  "11 jedes Zeichen, Parität ohne Einfluss"},
+        {0x1C, true,  "11 + SAV"},
+    };
+    for (const Fall& f : faelle) {
+        Z80SIO sio;
+        sio.setIEI(true);
+        sio.ioWrite(3, 0x01);
+        sio.ioWrite(3, f.wr1);         // Kanal B (dort wirkt auch D2)
+        for (int i = 0; i < 2; ++i) {
+            sio.channelB().rxByte(static_cast<uint8_t>(0x41 + i));
+            EXPECT_EQ(sio.hasInterrupt(), f.jedes) << f.was << ", Zeichen " << i;
+            if (sio.hasInterrupt()) { (void)sio.getVector(); sio.onRETI(); sio.setIEI(true); }
+            sio.ioRead(2);             // Zeichen abholen
+            sio.channelB().irq_rx = false;
+        }
+    }
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_ErstesZeichen_EinmalJeScharfmachen
+ * @brief Betriebsart 01 (WR1 = 08H): nur das erste Zeichen nach dem Setzen der
+ *        Betriebsart unterbricht; danach erst wieder nach WR0-Befehl 4 („Enable Int
+ *        on Next Rx Character", 20H).  Vorher: jedes Zeichen in einen leeren FIFO.
+ */
+TEST(Z80SIO, RX_Interrupt_ErstesZeichen_EinmalJeScharfmachen) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x08);              // WR1 D4–D3 = 01
+    auto ch = [&]() -> Z80SIO::Channel& { return sio.channelA(); };
+
+    ch().rxByte(0x31);
+    EXPECT_TRUE(sio.hasInterrupt()) << "erstes Zeichen";
+    (void)sio.getVector(); sio.onRETI(); sio.setIEI(true);
+    ch().irq_rx = false;
+    sio.ioRead(0);                     // FIFO wieder leer
+
+    ch().rxByte(0x32);
+    EXPECT_FALSE(sio.hasInterrupt()) << "zweites Zeichen in leeren FIFO: kein Interrupt";
+    sio.ioRead(0);
+
+    sio.ioWrite(1, 0x20);              // WR0: Befehl 4 = Enable Int on Next Rx Char
+    ch().rxByte(0x33);
+    EXPECT_TRUE(sio.hasInterrupt()) << "nach Befehl 4 wieder scharf";
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_KanalResetLoeschtDieFreigabe
+ * @brief Channel Reset (WR0 = 18H) löscht WR1 — auch die daraus abgeleitete
+ *        Empfangsbetriebsart (vorher stand nur `wr[]` auf 0, `rx_int_mode` blieb).
+ */
+TEST(Z80SIO, RX_Interrupt_KanalResetLoeschtDieFreigabe) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x13);
+    sio.ioWrite(1, 0x18);              // Channel Reset
+    sio.channelA().rxByte(0x41);
+    EXPECT_FALSE(sio.hasInterrupt());
+}
+
+/**
+ * @test Z80SIO/RX_Interrupt_GestauteZeichenUnterbrechenEinzeln
+ * @brief „Jedes Zeichen": stehen nach einer Quittung noch Zeichen im FIFO (gestaut
+ *        während eines langen DI), fordert jedes weitere nach dem Abholen erneut an.
+ *        Vorher löschte das erste Lesen die Anforderung für immer — am K8915 blieb
+ *        die Tastatur danach stumm (AP-ST3).
+ */
+TEST(Z80SIO, RX_Interrupt_GestauteZeichenUnterbrechenEinzeln) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x01);
+    sio.ioWrite(3, 0x10);              // Kanal B: jedes Zeichen
+    for (uint8_t c : {0x1D, 0x2E, 0xAE}) sio.channelB().rxByte(c);
+    for (uint8_t c : {0x1D, 0x2E, 0xAE}) {
+        ASSERT_TRUE(sio.hasInterrupt()) << std::hex << int(c);
+        (void)sio.getVector();
+        EXPECT_EQ(sio.ioRead(2), c);
+        sio.onRETI();
+        sio.setIEI(true);
+    }
+    EXPECT_FALSE(sio.hasInterrupt()) << "FIFO leer";
+}
+
+/**
+ * @test Z80SIO/RR2_LesenQuittiertNicht
+ * @brief RR2 von Kanal B liefert den Vektor samt Anlass (bei „status affects vector"),
+ *        quittiert aber nicht: die Anforderung bleibt, IUS bleibt frei.  Ohne
+ *        Anforderung V3–V1 = 011.  (Vorher rief das Lesen getVector() — ein Programm,
+ *        das unter DI den Vektor erfragt, stahl der Tastatur ihren Interrupt.)
+ */
+TEST(Z80SIO, RR2_LesenQuittiertNicht) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 B
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x14);   // WR1 B: jedes Zeichen + SAV
+    sio.ioWrite(3, 0x02);
+    EXPECT_EQ(sio.ioRead(3), 0xD6) << "nichts anstehend: 011";
+    sio.channelB().rxByte(0x41);
+    sio.ioWrite(3, 0x02);
+    EXPECT_EQ(sio.ioRead(3), 0xD4) << "B Empfang: 010";
+    EXPECT_TRUE(sio.hasInterrupt()) << "Lesen ist keine Quittung";
+    EXPECT_EQ(sio.getVector(), 0xD4);
 }
 
 // ─── Interrupt vector from WR2 ────────────────────────────────────────────────
@@ -204,6 +364,8 @@ TEST(Z80SIO, InterruptVector_FromWR2) {
     // Write WR2 on channel B (port 3 = Ch B control)
     sio.ioWrite(3, 0x02); // WR0: select WR2
     sio.ioWrite(3, 0x60); // WR2 = 0x60
+    sio.ioWrite(3, 0x01); // WR0: select WR1 (Ch B)
+    sio.ioWrite(3, 0x04); // WR1 Bit2 = status affects vector
 
     // Enable RX int on channel A
     sio.ioWrite(1, 0x01);
@@ -230,7 +392,7 @@ TEST(Z80SIO, Priority_ChA_OverChB) {
 
     // Enable RX int on both channels
     sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x08); // Ch A WR1
-    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x08); // Ch B WR1
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x0C); // Ch B WR1 (+ status affects vector)
 
     // Set WR2 (B ctrl port)
     sio.ioWrite(3, 0x02); // select WR2
@@ -244,6 +406,43 @@ TEST(Z80SIO, Priority_ChA_OverChB) {
     // Vector should reflect Ch A (higher priority)
     uint8_t vec = sio.getVector();
     EXPECT_EQ(vec & 0x0E, 0x0C); // Ch A Rx = 110 in bits[3:1]
+}
+
+/**
+ * @test Z80SIO/StatusAffectsVector_ZilogKodierung
+ * @brief Mit WR1 Bit2 (Kanal B) ersetzen die Bits 3…1 die Quelle nach Zilog:
+ *        B-Tx 000, B-Ext 001, B-Rx 010, A-Tx 100, A-Ext 101, A-Rx 110.  Das BIOS des
+ *        K8915 (SIO2-B, WR1 = 17H, WR2 = D0H) erwartet seine Tx-Routine bei D0H und den
+ *        Empfang bei D4H (doc/design/16_k8915.md §4.4, AP-E3).
+ */
+TEST(Z80SIO, StatusAffectsVector_ZilogKodierung) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 = D0H
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x17);   // Ch B WR1 = 17H (Ext, Tx, SAV, Rx alle)
+
+    sio.channelB().rxByte(0x1E);
+    EXPECT_EQ(sio.getVector(), 0xD4) << "Kanal B Empfang";
+    sio.onRETI();
+    sio.setIEI(true);
+
+    sio.ioWrite(2, 0x41);                          // Senden …
+    sio.channelB().txGet();                        // … Puffer geleert → Tx-Interrupt
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xD0) << "Kanal B Tx-Puffer leer";
+}
+
+/**
+ * @test Z80SIO/OhneStatusAffectsVector_BleibtDerVektor
+ * @brief Ohne WR1 Bit2 liefert die SIO den Vektor aus WR2 unverändert.
+ */
+TEST(Z80SIO, OhneStatusAffectsVector_BleibtDerVektor) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0x60);
+    sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x08);   // Ch A: Rx-Interrupt, kein SAV
+    sio.channelA().rxByte(0x01);
+    EXPECT_EQ(sio.getVector(), 0x60);
 }
 
 // ─── IEI/IEO pass-through ────────────────────────────────────────────────────
@@ -437,4 +636,278 @@ TEST(Z80SIO, DeserializeRejectsTruncatedBlob) {
     const uint8_t* p   = blob.data();
     const uint8_t* end = p + blob.size();
     EXPECT_FALSE(b.deserialize(p, end));
+}
+
+// ─── AP-S3: Format-/Leitungsabfrage, Auto Enables, Break (doc/design/19 §6.2/§6.4) ──
+
+namespace {
+/// Schreibt ein Steuerregister WRn des Kanals (A: Port 1, B: Port 3).
+void schreibeWR(Z80SIO& sio, bool kanalB, uint8_t reg, uint8_t wert) {
+    const uint8_t port = kanalB ? 3 : 1;
+    sio.ioWrite(port, reg);      // WR0: Zeiger
+    sio.ioWrite(port, wert);
+}
+}  // namespace
+
+/**
+ * @test Z80SIO/Format_AusWR3WR4WR5
+ * @brief Teiler, Stoppbits, Parität, Tx- und Rx-Bits kommen aus den Registern.
+ */
+TEST(Z80SIO, Format_AusWR3WR4WR5) {
+    Z80SIO sio;
+    schreibeWR(sio, false, 4, 0x44);     // ×16, 1 Stoppbit, keine Parität
+    schreibeWR(sio, false, 3, 0xC1);     // Rx 8 Bit, Rx an
+    schreibeWR(sio, false, 5, 0x68);     // Tx 8 Bit, Tx an
+    auto f = sio.channelA().format();
+    EXPECT_EQ(f.teiler, 16);
+    EXPECT_EQ(f.stopp_halbe, 2);
+    EXPECT_EQ(f.paritaet, 0);
+    EXPECT_EQ(f.tx_bits, 8);
+    EXPECT_EQ(f.rx_bits, 8);
+    EXPECT_TRUE(f.asynchron());
+
+    schreibeWR(sio, true, 4, 0xCF);      // ×64, 2 Stoppbits, gerade Parität
+    schreibeWR(sio, true, 3, 0x40);      // Rx 7 Bit
+    schreibeWR(sio, true, 5, 0x40);      // Tx 6 Bit
+    f = sio.channelB().format();
+    EXPECT_EQ(f.teiler, 64);
+    EXPECT_EQ(f.stopp_halbe, 4);
+    EXPECT_EQ(f.paritaet, 2);
+    EXPECT_EQ(f.tx_bits, 6);
+    EXPECT_EQ(f.rx_bits, 7);
+
+    schreibeWR(sio, true, 4, 0x89);      // ×32, 1½ Stoppbits, ungerade Parität
+    schreibeWR(sio, true, 3, 0x80);      // Rx 6 Bit
+    schreibeWR(sio, true, 5, 0x00);      // Tx 5 Bit
+    f = sio.channelB().format();
+    EXPECT_EQ(f.teiler, 32);
+    EXPECT_EQ(f.stopp_halbe, 3);
+    EXPECT_EQ(f.paritaet, 1);
+    EXPECT_EQ(f.tx_bits, 5);
+    EXPECT_EQ(f.rx_bits, 6);
+}
+
+/**
+ * @test Z80SIO/Format_NachKanalResetUndSynchron
+ * @brief Kanalreset (WR0 Befehl 3) löscht die WRs → ×1, synchron; das Format folgt
+ *        den Registern, nicht den abgeleiteten Feldern.
+ */
+TEST(Z80SIO, Format_NachKanalResetUndSynchron) {
+    Z80SIO sio;
+    schreibeWR(sio, false, 4, 0x44);
+    sio.ioWrite(1, 0x18);                // Kanalreset A
+    auto f = sio.channelA().format();
+    EXPECT_EQ(f.teiler, 1);
+    EXPECT_EQ(f.stopp_halbe, 0);
+    EXPECT_FALSE(f.asynchron());
+}
+
+/**
+ * @test Z80SIO/Format_RtsDtrBreakAusWR5
+ * @brief RTS (D1), DTR (D7) und Break senden (D4) sind als Ausgänge abfragbar.
+ */
+TEST(Z80SIO, Format_RtsDtrBreakAusWR5) {
+    Z80SIO sio;
+    auto& a = sio.channelA();
+    EXPECT_FALSE(a.rts()); EXPECT_FALSE(a.dtr()); EXPECT_FALSE(a.breakSenden());
+    schreibeWR(sio, false, 5, 0xEA);     // DTR, Tx 8, Tx an, RTS
+    EXPECT_TRUE(a.rts()); EXPECT_TRUE(a.dtr()); EXPECT_FALSE(a.breakSenden());
+    schreibeWR(sio, false, 5, 0x78);     // Break, kein RTS/DTR
+    EXPECT_FALSE(a.rts()); EXPECT_FALSE(a.dtr()); EXPECT_TRUE(a.breakSenden());
+}
+
+/**
+ * @test Z80SIO/Leitungen_VorgabeInaktivUndRr0UnveraendertGegenueberFrueher
+ * @brief Nach dem Einschalten sind /CTS und /DCD inaktiv — RR0 zeigt wie bisher 04H
+ *        (nur „Sendepuffer leer“). Das ist die Vorgabe, auf der alle heutigen Pfade laufen.
+ */
+TEST(Z80SIO, Leitungen_VorgabeInaktivUndRr0UnveraendertGegenueberFrueher) {
+    Z80SIO sio;
+    EXPECT_FALSE(sio.channelA().cts());
+    EXPECT_FALSE(sio.channelA().dcd());
+    EXPECT_EQ(sio.ioRead(1), 0x04);
+    EXPECT_EQ(sio.ioRead(3), 0x04);
+}
+
+/**
+ * @test Z80SIO/Leitungen_OhneExtInterruptFolgtRr0DemEingang
+ * @brief Ohne Ext/Status-Freigabe (WR1 D0) zeigen RR0 D5/D3 den Eingang direkt, kein Interrupt.
+ */
+TEST(Z80SIO, Leitungen_OhneExtInterruptFolgtRr0DemEingang) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    auto& a = sio.channelA();
+    a.setzeCTS(true);
+    EXPECT_EQ(sio.ioRead(1) & 0x20, 0x20);
+    a.setzeDCD(true);
+    EXPECT_EQ(sio.ioRead(1) & 0x08, 0x08);
+    a.setzeCTS(false);
+    EXPECT_EQ(sio.ioRead(1) & 0x28, 0x08);
+    EXPECT_FALSE(sio.hasInterrupt());
+}
+
+/**
+ * @test Z80SIO/Leitungen_ExtStatusInterruptBeiFlankeUndLatch
+ * @brief Mit WR1 D0 löst jede Änderung von /CTS oder /DCD einen Ext/Status-Interrupt aus;
+ *        RR0 hält den Zustand zur Zeit der Änderung fest, bis „Reset Ext/Status“ (Befehl 2).
+ */
+TEST(Z80SIO, Leitungen_ExtStatusInterruptBeiFlankeUndLatch) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    schreibeWR(sio, true, 2, 0x40);      // Vektorbasis
+    schreibeWR(sio, true, 1, 0x04);      // B: status affects vector
+    schreibeWR(sio, false, 1, 0x01);     // A: Ext/Status-Interrupt frei
+    auto& a = sio.channelA();
+
+    a.setzeCTS(false);                   // keine Änderung → nichts
+    EXPECT_FALSE(sio.hasInterrupt());
+
+    a.setzeCTS(true);                    // Flanke
+    EXPECT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.ioRead(1) & 0x20, 0x20);
+    a.setzeCTS(false);                   // während des Latch: RR0 bleibt stehen
+    EXPECT_EQ(sio.ioRead(1) & 0x20, 0x20);
+    EXPECT_EQ(sio.getVector(), 0x4A);    // A Ext/Status = 101
+
+    sio.ioWrite(1, 0x10);                // Reset Ext/Status → Latch frei, aktueller Stand
+    EXPECT_EQ(sio.ioRead(1) & 0x20, 0x00);
+    sio.onRETI();
+    EXPECT_FALSE(sio.hasInterrupt());
+
+    a.setzeDCD(true);                    // DCD-Flanke löst ebenso aus
+    EXPECT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.ioRead(1) & 0x08, 0x08);
+}
+
+/**
+ * @test Z80SIO/Leitungen_KanalresetBehaeltDenEingang
+ * @brief Ein Kanalreset löscht Register und Latch, nicht aber den Pegel am Eingang.
+ */
+TEST(Z80SIO, Leitungen_KanalresetBehaeltDenEingang) {
+    Z80SIO sio;
+    sio.channelB().setzeCTS(true);
+    sio.ioWrite(3, 0x18);                // Kanalreset B
+    EXPECT_TRUE(sio.channelB().cts());
+    EXPECT_EQ(sio.ioRead(3), 0x24);
+}
+
+/**
+ * @test Z80SIO/AutoEnables_SenderWartetAufCts
+ * @brief WR3 D5: der Sender gibt bei inaktivem /CTS nichts ab; ohne Auto Enables
+ *        ist /CTS ein freier Eingang.
+ */
+TEST(Z80SIO, AutoEnables_SenderWartetAufCts) {
+    Z80SIO sio;
+    auto& a = sio.channelA();
+    sio.ioWrite(0, 0x41);
+    EXPECT_TRUE(a.senderHatZeichen());   // ohne Auto Enables: CTS egal
+    EXPECT_TRUE(a.txAvailable());
+
+    schreibeWR(sio, false, 3, 0xE1);     // Rx 8, Auto Enables, Rx an
+    EXPECT_FALSE(a.senderHatZeichen());
+    EXPECT_FALSE(a.txAvailable());
+    a.setzeCTS(true);
+    EXPECT_TRUE(a.senderHatZeichen());
+    EXPECT_EQ(a.txGet(), 0x41);
+    EXPECT_FALSE(a.senderHatZeichen());  // Puffer leer
+}
+
+/**
+ * @test Z80SIO/AutoEnables_EmpfaengerNurBeiDcd
+ * @brief WR3 D5: der Empfänger nimmt nur bei aktivem /DCD auf; `empfaengerFrei()`
+ *        meldet zusätzlich einen vollen FIFO.
+ */
+TEST(Z80SIO, AutoEnables_EmpfaengerNurBeiDcd) {
+    Z80SIO sio;
+    auto& b = sio.channelB();
+    EXPECT_TRUE(b.empfaengerFrei());     // ohne Auto Enables: DCD egal
+    schreibeWR(sio, true, 3, 0xE1);
+    EXPECT_FALSE(b.empfaengerFrei());
+    b.rxByte(0x55);                      // ohne DCD verworfen, wie am Gerät
+    EXPECT_EQ(sio.ioRead(3) & 0x01, 0x00);
+    b.setzeDCD(true);
+    EXPECT_TRUE(b.empfaengerFrei());
+    b.rxByte(1); b.rxByte(2); b.rxByte(3);
+    EXPECT_FALSE(b.empfaengerFrei());    // FIFO voll
+    EXPECT_EQ(sio.ioRead(2), 1);
+    EXPECT_TRUE(b.empfaengerFrei());
+}
+
+/**
+ * @test Z80SIO/Break_EmpfangSetztRr0D7MitInterruptAnAnfangUndEnde
+ * @brief Ein empfangenes Break setzt RR0 D7 und löst Ext/Status aus; das Ende ebenso.
+ */
+TEST(Z80SIO, Break_EmpfangSetztRr0D7MitInterruptAnAnfangUndEnde) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    schreibeWR(sio, false, 1, 0x01);
+    auto& a = sio.channelA();
+    a.setzeBreakEmpfang(true);
+    EXPECT_EQ(sio.ioRead(1) & 0x80, 0x80);
+    EXPECT_TRUE(sio.hasInterrupt());
+    (void)sio.getVector();
+    sio.ioWrite(1, 0x10);                // Reset Ext/Status
+    sio.onRETI();
+    EXPECT_EQ(sio.ioRead(1) & 0x80, 0x80);   // Break dauert an
+    EXPECT_FALSE(sio.hasInterrupt());
+    a.setzeBreakEmpfang(false);          // Ende des Break
+    EXPECT_TRUE(sio.hasInterrupt());
+    sio.ioWrite(1, 0x10);
+    EXPECT_EQ(sio.ioRead(1) & 0x80, 0x00);
+}
+
+/**
+ * @test Z80SIO/Leitungen_SerializeRoundTrip
+ * @brief Eingänge und Ext/Status-Latch überstehen eine Momentaufnahme.
+ */
+TEST(Z80SIO, Leitungen_SerializeRoundTrip) {
+    Z80SIO a;
+    schreibeWR(a, false, 1, 0x01);
+    a.channelA().setzeCTS(true);         // latcht
+    a.channelA().setzeCTS(false);
+    a.channelB().setzeDCD(true);
+    std::vector<uint8_t> blob; a.serialize(blob);
+    Z80SIO b;
+    const uint8_t* p = blob.data();
+    ASSERT_TRUE(b.deserialize(p, blob.data() + blob.size()));
+    EXPECT_FALSE(b.channelA().cts());
+    EXPECT_EQ(b.ioRead(1) & 0x20, 0x20); // noch gelatcht
+    EXPECT_TRUE(b.channelB().dcd());
+    EXPECT_EQ(b.ioRead(3) & 0x08, 0x08);
+}
+
+/**
+ * @test Z80SIO/StatusAffectsVector_AlleSechsQuellen
+ * @brief AP-T1a: der Fall oben prüft nur B-Rx und B-Tx; hier die übrigen vier Quellen
+ *        nach Zilog — A-Rx 110, A-Tx 100, A-Ext/Status 101, B-Ext/Status 001.  Genau
+ *        A-Ext und B-Tx waren bis AP-E3 vertauscht.
+ */
+TEST(Z80SIO, StatusAffectsVector_AlleSechsQuellen) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x02); sio.ioWrite(3, 0xD0);   // WR2 = D0H
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x17);   // Ch B WR1: Ext, Tx, SAV, Rx
+    // Ch A WR1 = 17H wie B (D2 wirkt nur an B), D4–D3 = 10: Rx-Interrupt frei.
+    sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x17);
+    auto quittiere = [&] { sio.onRETI(); sio.setIEI(true); };
+
+    sio.channelA().rxByte(0x01);
+    EXPECT_EQ(sio.getVector(), 0xDC) << "A-Rx 110";
+    quittiere();
+    sio.ioRead(0);                                  // Zeichen abholen
+
+    sio.ioWrite(0, 0x41);
+    sio.channelA().txGet();
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xD8) << "A-Tx 100";
+    quittiere();
+
+    sio.channelA().setzeCTS(true);
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xDA) << "A-Ext/Status 101";
+    quittiere();
+
+    sio.channelB().setzeDCD(true);
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xD2) << "B-Ext/Status 001";
 }

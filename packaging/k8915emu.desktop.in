@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=K8915 Emulator
+GenericName=K1520 Emulator
+Comment=Emulator des Arbeitsplatzcomputers robotron K8915 (K1520-Bus)
+Comment[en]=Emulator of the robotron K8915 workstation (K1520 bus)
+Exec="@ROOT@/bin/k8915emu"
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=K8915;K1520;robotron;Z80;SCPX;emulator;
+StartupNotify=true
+StartupWMClass=main.py

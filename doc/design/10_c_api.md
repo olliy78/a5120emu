@@ -370,3 +370,44 @@ install(TARGETS k1520core
     LIBRARY DESTINATION lib
     PUBLIC_HEADER DESTINATION include)
 ```
+
+## 7. Serielle Schnittstellen nach außen (`k1520_serial_*`, AP-S6)
+
+Entwurf: `19_serielle_schnittstellen.md` §8.  Die Funktionen laufen über den `SerialHub` der
+Maschine (`K1520Machine::serialHub()`); der Index ist die Anmeldereihenfolge der Karten
+(A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: V.24, IFS 1, IFS 2).  Sie dürfen aus jedem Faden
+und während `k1520_run()` gerufen werden; es gibt keinen Rückruf aus dem I/O-Faden — die GUI
+fragt `k1520_serial_status` ab.
+
+| Funktion | Zweck |
+|----------|-------|
+| `k1520_serial_count` | Zahl der einstellbaren Schnittstellen |
+| `k1520_serial_info` | Name, Stecker, V.24, Taktquellen (`K1520SerInfo`) |
+| `k1520_serial_fixed_name` | feste Schnittstellen (Tastatur), durchlaufen bis `false` |
+| `k1520_serial_get_config` / `_configure` | Einstellungen lesen / übernehmen (`K1520SerKonfig`) |
+| `k1520_serial_start` / `_start_auto` / `_stop` | Start von Hand / Wiederaufnahme / Beenden |
+| `k1520_serial_status` | Zustand, Zähler, Leitungen (`K1520SerStatus`) |
+| `k1520_serial_classify_host` | Host-Feld → `K1520HostArt` |
+
+- **`groesse`**: der Aufrufer setzt `sizeof` seiner Strukturfassung.  Ausgabe (Info, Status,
+  Konfig lesen): der Kern schreibt höchstens `groesse` Bytes und trägt die geschriebene Zahl
+  zurück; `groesse` < 4 → `false`.  Eingabe (`configure`): Felder jenseits von `groesse`
+  behalten ihren aktuellen Wert.  Neue Felder kommen nur hinten an.
+- **Gegenseite (AP-S11)**: `K1520SerStatus` trägt hinten `daten_/paritaet_/stopp_halbe_gegenseite`,
+  `format_gegenseite_bekannt`, `format_abweichend` (ohne Baud) und die Maske
+  `leitungen_gegenseite` samt `leitungen_gegenseite_bekannt` (`K1520_SER_L_RTS/DTR/CTS/DSR/DCD/RI`,
+  Parität `K1520_SER_PAR_*`).  Nur RFC 2217; Telnet/Datei: nichts bekannt.  Rolle Server: Format =
+  Wunsch des Clients, Leitungen = RTS/DTR des Clients (ab dem ersten SET-CONTROL).  Rolle Client:
+  Format = Antwort des Servers, Leitungen = CTS/DSR/DCD/RI aus NOTIFY-MODEMSTATE.  Python:
+  `SerialStatus.format_gegenseite_text` (`"7E1"`/`None`), `leitung_gegenseite(SER_L_*)`
+  (`True/False/None`), `leitungen_gegenseite_text`.
+- **Zeichenketten**: UTF-8, nullterminiert, an einer Zeichengrenze abgeschnitten.
+- **`configure`** weist ab (nichts wird übernommen): ungültiger Index, **Port 0**, ungültige
+  Aufzählung/Taktquelle, im aktiven Betrieb geänderte gesperrte Felder (Betriebsart, Rolle,
+  Host, Port, Datei).  `start` mit gesetztem Loop → `false`.
+- `k1520_serial_set_rx_cb`/`_send` bleiben als Unterbau für Tests; ist die Schnittstelle von
+  einem Transport oder dem Rx/Tx-Loop belegt, gehen sie ins Leere.
+- **Python**: `K1520Emulator.serial_count/serial_info/serial_config/serial_configure(i, **felder)/
+  serial_start/serial_start_auto/serial_stop/serial_status/serial_fixed_names`, Dataklassen
+  `SerialInfo/SerialKonfig/SerialStatus`, Konstanten `SER_*`/`HOST_*`, `classify_host`.
+  Wächter: `py_serial_api`, `test_c_api.py` (Felder und Aufzählungen Header ↔ Bindung).

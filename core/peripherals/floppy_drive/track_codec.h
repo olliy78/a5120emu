@@ -71,18 +71,29 @@ inline constexpr size_t kSectorTailBytes = 8;
 
 /**
  * @struct GapParams
- * @brief Gap-/Sync-Parameter (Default je Verfahren via TrackCodec::gapsFor()).
+ * @brief Gap-/Sync-Parameter (Default je Verfahren via TrackCodec::gapsFor(), aus
+ *        Sektoren gebaute Spuren via TrackCodec::normGaps()).
  *
  * MFM: Sync 12×00 + 3×A1, Gap-Füller 0x4E.  FM: Sync 6×00, kein A1, Gap-Füller 0xFF.
+ * Die Vorgaben sind die **Normlücken** (IBM, wie FORMAT.COM des A5120/K8915 sie schreibt
+ * und wie sie auf jeder am Gerät formatierten Diskette stehen): MFM 80/50/22, FM 40/26/11
+ * (Lücke 4a / Lücke 1 / Lücke 2).  Lücke 3 hängt an Sektorgröße und Spurlänge
+ * (@ref TrackCodec::normGaps).  Warum das zählt: doc/design/16_k8915.md AP-F1 — eine
+ * Spur mit Lücke 2 = 11 las der Emulator, der echte A5120 nicht.
  */
 struct GapParams {
-    uint8_t  gap1     = 16;    ///< nach IAM
-    uint8_t  gap2     = 11;    ///< zwischen ID-Feld und DAM
+    uint8_t  gap1     = 50;    ///< nach IAM
+    uint8_t  gap2     = 22;    ///< zwischen ID-Feld und DAM
     uint8_t  gap3     = 24;    ///< nach Datenfeld (vor nächstem IDAM)
-    uint16_t gap4a    = 16;    ///< Vor-Index-Gap
+    uint16_t gap4a    = 80;    ///< Vor-Index-Gap (vor der Sync-Gruppe der IAM)
     uint8_t  sync_len = 12;    ///< 00-Sync vor jeder Markengruppe (MFM 12, FM 6)
     uint8_t  gap_fill = 0x4E;  ///< MFM 0x4E, FM 0xFF
     bool     with_iam = true;
+    /// Spurlänge in Bytes, auf die hinter dem letzten Sektor mit Füllbyte aufgefüllt wird
+    /// (Lücke 4b bis zum Index).  0 = nicht auffüllen.  Eine @ref TrackImage ist genau
+    /// eine Umdrehung — nur mit Lücke 4b stimmt `pos / size()` als Drehwinkel, und nur
+    /// so kommt die Spur in einem Flussabbild mit der richtigen Länge an.
+    uint16_t track_len = 0;
 };
 
 /**
@@ -91,20 +102,39 @@ struct GapParams {
  */
 namespace TrackCodec {
 
-/// @brief Verfahrensabhängige Default-Gaps (MFM/FM).
+/// @brief Verfahrensabhängige Normlücken (MFM/FM) ohne Spurlänge; Lücke 3 ist hier nur
+///        ein Platzhalter — für eine ganze Spur @ref normGaps nehmen.
 GapParams gapsFor(Encoding enc);
+
+/// @brief Nennlänge einer Umdrehung in Bytes für eine Spur aus @p sectors: die kleinste
+///        der üblichen Umdrehungen, in die die Spur mit Normlücken passt — MFM 6250
+///        (5,25″, 250 kbit/s, 300 U/min) bzw. 10 416 (8″ DD, 500 kbit/s, 360 U/min),
+///        FM 3125 (125 kbit/s, 5,25″), 5208 (8″ SD, 360 U/min), 6250 (FM mit 250 kbit/s
+///        am 5,25″-Laufwerk).  Passt keine, die größte.
+size_t nominalTrackBytes(const std::vector<LogicalSector>& sectors, Encoding enc);
+
+/**
+ * @brief Normlücken für eine GANZE Spur aus @p sectors (IBM / FORMAT.COM).
+ *
+ * Lücke 4a/1/2 und Sync aus @ref gapsFor; Lücke 3 = die Normlänge der Sektorgröße (MFM:
+ * 128 → 32, 256 → 54, 512 → 84, 1024 → 116; FM: 128 → 27, 256 → 42, 512 → 58, 1024 →
+ * 116), gekürzt, falls die Spur sonst nicht in eine Umdrehung (@ref nominalTrackBytes)
+ * passt, nie unter @ref kSectorTailBytes.  `track_len` = diese Umdrehung (Lücke 4b füllt
+ * bis zum Index).  Das Ergebnis passt damit in die Umdrehung, sobald das überhaupt geht.
+ */
+GapParams normGaps(const std::vector<LogicalSector>& sectors, Encoding enc);
 
 /**
  * @brief Baut eine vollständige Spur mit echten Marken und echten CRCs.
  *
- * Layout: gap4a, optional IAM, gap1, dann je Sektor
- * [Sync IDAM gap2 Sync DAM data CRC gap3], im gewählten Verfahren.
+ * Layout: gap4a, optional [Sync IAM], gap1, dann je Sektor
+ * [Sync IDAM gap2 Sync DAM data CRC gap3], danach Lücke 4b bis `gaps.track_len`.
  * Das Ergebnis-TrackImage trägt @p enc als encoding-Tag und setzt @ref TrackImage::marks
  * auf den Mark-Bytes.  Sektorgröße/-anzahl frei gemischt.
  *
  * @param sectors logische Sektoren (in Reihenfolge der physischen Spurlage)
  * @param enc     Aufzeichnungsverfahren (MFM = verifizierter Boot-Pfad, FM = 8″)
- * @param gaps    Gap-Parameter (Default: gapsFor(enc))
+ * @param gaps    Gap-Parameter (Default: normGaps(sectors, enc) — Normlücken, eine Umdrehung)
  * @return decodiertes TrackImage (Bytes + Marken + Encoding)
  */
 TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
@@ -292,7 +322,11 @@ uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed = 0xFFFF);
  *
  * @param sectors Logische Sektoren in Spurreihenfolge.
  * @param enc     Aufzeichnungsverfahren (MFM = 4×A1-Sync, FM = ohne A1).
+ * @param luecke2_vom_medium  Lücke 2 aus dem Abstand ID-CRC → Datenmarke der Sektoren
+ *        (LogicalSector::id_pos/data_pos) statt fest 18/27 — nur sinnvoll, wenn die
+ *        Sektoren von einer MFM-Spur stammen und MFM gelesen wird (AP-F1).
  */
-TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc);
+TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc,
+                                  bool luecke2_vom_medium = false);
 
 }  // namespace TrackCodec

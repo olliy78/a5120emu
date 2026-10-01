@@ -180,7 +180,7 @@ def test_datei_aus_der_physischen_diskette_ist_byteweise_gleich(hfe, tmp_path):
 
 @pytest.mark.parametrize("name", [
     "udos_boot_scp.hfe", "cpa_cpa780_k5601_clock.hfe",
-    "cpa_cpa780_k5601_noclock.hfe", "scpx17_5x1024_k5601_hardy.hfe",
+    "cpa_cpa780_k5601_noclock.hfe", "scpx17_5x1024_k5601_hardy_norm.hfe",
     "scpx17_cpa780_k5601.hfe",
 ])
 def test_stichprobe_erkennt_dasselbe_wie_die_vollmessung(fixture_disks, name):

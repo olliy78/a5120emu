@@ -46,6 +46,33 @@ def test_hilfe_nennt_die_diskettenargumente():
     assert "k1520dbg" in r.stdout
 
 
+def test_machine_k8915_waehlt_das_programm_k8915emu():
+    """``--machine k8915`` (vom Starter fest übergeben) macht daraus k8915emu —
+    Hilfe und Meldungen nennen das Programm, das der Anwender gestartet hat."""
+    r = start("--machine", "k8915", "--help")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("k8915emu — ")
+    assert "A: B:" in r.stdout and "C:" not in r.stdout.split("\n")[2]
+    r = start("--machine=k8915", "gibtsnichtbestimmt.hfe")
+    assert r.returncode == 2 and r.stderr.startswith("k8915emu:")
+    # Ohne Schalter bleibt es der A5120 Emulator.
+    assert start("--help").stdout.startswith("a5120emu — ")
+
+
+def test_unbekannte_maschine_wird_gemeldet():
+    r = start("--machine", "z9001")
+    assert r.returncode == 2
+    assert "unbekannte Maschine" in r.stderr
+    r = start("--machine")
+    assert r.returncode == 2
+
+
+def test_k8915emu_nimmt_hoechstens_zwei_disketten():
+    r = start("--machine", "k8915", str(DISK780), str(DISK780), str(DISK780))
+    assert r.returncode == 2
+    assert "zwei" in r.stderr
+
+
 def test_fehlende_datei_wird_gemeldet_statt_ignoriert():
     r = start("gibtsnichtbestimmt.hfe")
     assert r.returncode == 2

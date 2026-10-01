@@ -22,8 +22,15 @@ k1520_add_test(k2526 SRC cards/test_k2526.cpp
                      LIBS k1520_k2526 k1520_k3526 k1520_k5122 k1520_floppy LABELS "${_lbl}")
 k1520_add_test(k3526 SRC cards/test_k3526.cpp      LIBS k1520_k3526 k1520_bus LABELS "${_lbl}")
 k1520_add_test(k5122 SRC cards/test_k5122.cpp      LIBS k1520_k5122 LABELS "${_lbl}")
+# K5122 im /WAIT-Betrieb (K8915, doc/design/16_k8915.md AP-E3a)
+k1520_add_test(k5122_wait SRC cards/test_k5122_wait.cpp LIBS k1520_k5122 LABELS "${_lbl}")
 k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
+# ZRE 045-8762 des K8915: Speicherbild je A8H-Wert (doc/design/16_k8915.md §4.2a)
+k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")
+# ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
+k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
+
 # Erweiterungsmodul EM064/EM256 (A5120.16), 8-Bit-Seite — doc/design/17_a5120_16.md §3 S1
 k1520_add_test(em    SRC cards/test_em.cpp         LIBS k1520_em k1520_k3526 k1520_z80 LABELS "${_lbl}")
 k1520_add_test(em16  SRC cards/test_em16.cpp       LIBS k1520_em k1520_k3526 LABELS "${_lbl}")
@@ -31,6 +38,9 @@ k1520_add_test(em16  SRC cards/test_em16.cpp       LIBS k1520_em k1520_k3526 LAB
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
+# Tastatur K7672 des K8915: Protokollmodell (§3.5, AP-E2)
+k1520_add_test(k7672          SRC peripherals/test_k7672.cpp
+                              LIBS k1520_k7672 LABELS "${_lbl}")
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Zeichenbare Sicht auf eine Spur (Diskeditor, §19)
@@ -52,6 +62,16 @@ k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520
 
 # ── core/util/ ───────────────────────────────────────────────────────────────
 k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")
+# Serielle Schnittstellen nach außen, Netzschicht (Entwurf 19 §11) — nur Loopback, nie feste Ports.
+k1520_add_test(serial_adresse SRC util/test_serial_adresse.cpp LIBS k1520_serial_net LABELS "${_lbl}")
+k1520_add_test(serial_netz    SRC util/test_serial_netz.cpp    LIBS k1520_serial_net LABELS "${_lbl}")
+
+# ── core/serial/ (serielle Schnittstellen nach aussen, Entwurf 19) ───────────
+k1520_add_test(telnet_codec  SRC util/test_telnet_codec.cpp  LIBS k1520_serial_codec LABELS "${_lbl}")
+k1520_add_test(rfc2217_codec SRC util/test_rfc2217_codec.cpp LIBS k1520_serial_codec LABELS "${_lbl}")
+# AP-S4: Wandler (Attrappe statt Socket) und SerialHub über Loopback-TCP — nie feste Ports.
+k1520_add_test(serial_wandler SRC util/test_serial_wandler.cpp LIBS k1520_serial k1520_sio LABELS "${_lbl}")
+k1520_add_test(serial_hub     SRC util/test_serial_hub.cpp     LIBS k1520_serial LABELS "${_lbl}")
 
 # ── core/filesystem/ (k1520DiskTool) ─────────────────────────────────────────
 # Prüft gegen die AUSGELIEFERTE data/formats.yaml und die committeten Disketten.

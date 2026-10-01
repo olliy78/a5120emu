@@ -59,6 +59,13 @@ _SPEC: List[Tuple] = [
     ("reset", "&Rückstellen", "reset", "Ctrl+Shift+R",
      "Systemweites /RESET — die Maschine startet neu vom Boot-ROM, bleibt aber an",
      "_on_reset", False),
+    # NMI-Taster der K8915-Frontplatte (nur im Profil K8915, siehe NUR_FUER).
+    # KEIN Kürzel: selten gebraucht, und jedes Strg+Umschalt+… müsste in die
+    # Kürzeltabelle des Handbuchs (ein Vertrag).
+    ("nmi", "&NMI-Taster", "nmi", None,
+     "NMI-Taster der Frontplatte — solange das Boot-ROM eingeblendet ist: Lampen "
+     "aus, Selbsttest von vorn.  Unter SCPX springt die CPU ins RAM bei 0066H "
+     "(wie am Gerät, meist ein Absturz)", "_on_nmi", False),
 
     # ── Ansicht ─────────────────────────────────────────────────────────────
     ("vollbild", "&Vollbild", "fullscreen", "F11",
@@ -82,6 +89,15 @@ _SPEC: List[Tuple] = [
      "Das Diskettenwerkzeug öffnen — Dateien von einer Diskette holen und auf "
      "sie schreiben; es läuft neben dem Emulator weiter",
      "_disktool_starten", False),
+    # Der jeweils andere Emulator — dasselbe Programm mit dem anderen Profil.
+    ("k8915emu", "K&8915 Emulator starten", None, None,
+     "Den K8915 Emulator öffnen — ein eigenes Programm mit eigener "
+     "Konfiguration; es läuft neben diesem weiter",
+     "_andere_maschine_starten", False),
+    ("a5120emu", "&A5120 Emulator starten", None, None,
+     "Den A5120 Emulator öffnen — ein eigenes Programm mit eigener "
+     "Konfiguration; es läuft neben diesem weiter",
+     "_andere_maschine_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -102,6 +118,9 @@ KURZ = {
     "konfig_speichern": "Sichern",
     "power": "Power",
     "reset": "Reset",
+    "nmi": "NMI",
+    "k8915emu": "K8915",
+    "a5120emu": "A5120",
     "vollbild": "Vollbild",
     "standard": "Standard",
     "disktool": "DiskTool",
@@ -117,6 +136,14 @@ DIALOG_NAME = {"power": "Rechner ein-/ausschalten"}
 #: das Menü sagt, was ein Klick TUT.
 POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 
+#: Aktionen, die es nur in EINEM Programm gibt (Name → Maschine des Profils,
+#: `app/profil.py`).  Alle übrigen haben beide.
+NUR_FUER = {
+    "nmi": "k8915",        # NMI-Taster der Frontplatte
+    "k8915emu": "a5120",   # der jeweils ANDERE Emulator
+    "a5120emu": "k8915",
+}
+
 #: Was die Symbolleiste aufnehmen kann, in der Reihenfolge des Einrichtdialogs.
 #: ``None`` ist ein Trennstrich zwischen zwei Gruppen.  Die Namen der
 #: Kastenschalter (``dock_*``) gehören keinem Eintrag in :data:`_SPEC` — sie
@@ -125,7 +152,7 @@ POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 REIHENFOLGE: List = [
     "konfig_laden", "konfig_speichern",
     None,
-    "power", "reset",
+    "power", "reset", "nmi",
     None,
     "einlegen", "auswerfen",
     None,
@@ -147,9 +174,44 @@ STANDARD: List = [
 ]
 
 
-def erzeuge_aktionen(fenster) -> None:
-    """Die Aktionen anlegen, verdrahten und als ``fenster.act_<name>`` ablegen."""
+#: Die Standardleiste des K8915: dieselbe, mit dem NMI-Taster neben Reset — wie
+#: an der Frontplatte des Geräts.
+STANDARD_K8915: List = [
+    "konfig_laden", "konfig_speichern",
+    None,
+    "power", "reset", "nmi",
+    None,
+    "dock_settings", "dock_drives", "dock_keyboard",
+    None,
+    "hilfe",
+]
+
+
+def gibt_es(name: str, maschine: str = "a5120") -> bool:
+    """Hat das Programm der Maschine *maschine* die Aktion *name*?"""
+    return NUR_FUER.get(name, maschine) == maschine
+
+
+def reihenfolge(maschine: str = "a5120") -> List:
+    """:data:`REIHENFOLGE` ohne die Aktionen, die es in diesem Programm nicht gibt."""
+    return [n for n in REIHENFOLGE if n is None or gibt_es(n, maschine)]
+
+
+def standard(maschine: str = "a5120") -> List:
+    """Inhalt der Symbolleiste beim ersten Start (Programmprofil *maschine*)."""
+    return list(STANDARD_K8915 if maschine == "k8915" else STANDARD)
+
+
+def erzeuge_aktionen(fenster, maschine: str = "a5120") -> None:
+    """Die Aktionen anlegen, verdrahten und als ``fenster.act_<name>`` ablegen.
+
+    Aktionen aus :data:`NUR_FUER`, die nicht zur Maschine *maschine* gehören,
+    entstehen gar nicht erst — der A5120 hat keinen NMI-Taster, weder im Menü
+    noch in der Leiste noch im Einrichtdialog.
+    """
     for name, text, bild, kuerzel, tipp, methode, rastend in _SPEC:
+        if not gibt_es(name, maschine):
+            continue
         a = QAction(text, fenster)
         if bild:
             a.setIcon(icon(bild))

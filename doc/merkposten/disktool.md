@@ -82,8 +82,8 @@ Was beim Weiterarbeiten zu wissen ist:
   und 23 ganz, Kopf 1 derselben Spuren trägt Dateidaten.  Wächter: `Udos1715P8000.*`
   auf der Fixture `udosP8000_640k_wega.hfe` — sie liegt als `.hfe` vor, weil 13
   ihrer Sektoren hinter der Daten-CRC die **Schreibnaht** eines überschriebenen Sektors
-  tragen und `rawCompatible()` dafür zu Recht `.img` verweigert (anders als beim
-  PC 1715, dessen Fixture ein `.img` ist).  Lesen **und** Schreiben am echten Laufwerk
+  tragen (bis 2026-09-29 verweigerte `rawCompatible()` dafür `.img`; seit AP-E5b gilt
+  das als Schreibnachlauf, s. u., und `.img` geht).  Lesen **und** Schreiben am echten Laufwerk
   gegengeprüft (Datei einfügen → 4 Spuren zurückgeschrieben und geprüft, frisch
   zurückgelesen byteweise gleich, löschen → 2 Spuren; Vollmessung zeigt genau die
   gemeldeten Spuren geändert, danach aus der Sicherung wiederhergestellt).
@@ -135,6 +135,20 @@ Was beim Weiterarbeiten zu wissen ist:
   Fertige Abbilder: `disks/boot_{cpa780,scpx640,scpx798,udos43}.bin`.  Wächter
   `test_disktool_bootdiskette` — baut die Diskette mit dem Werkzeug und **bootet sie**
   (CP/A bis `A>`, SCPX in beiden Geometrien, UDOS bis `%`).
+- **K8915-Bootdisketten: der Ladekopf wird VOR dem Schreiben geprüft** (2026-09-29,
+  `doc/design/16_k8915.md` AP-E5c).  `scpx8915` (`detect: false`, nur `--fs`) hat als
+  Systemspuren Zylinder 0–1 beidseitig = 20480 B; der Weg `boot-get` → `create --boot` /
+  `boot-put --fs scpx8915` stand schon, neu ist `k8915Bootabbildproblem`
+  (`disk_volume.cpp`): erste 16 Byte CRC-CCITT = 0, Abbild ≥ Sektoren laut Byte 4–6.
+  Geprüft wird bei `FsProfile::boot_header == "k8915"` **oder** wenn Sektor 1 der Diskette
+  schon einen gültigen Ladekopf trägt (auch unter Profil `cpa800`).  **Nicht aufweichen:**
+  kein Profil-Eintrag ohne `boot_header` für ein K8915-Dateisystem, keine Prüfung auf
+  Disketten ohne Ladekopf (leere 5×1024 ist von CP/A nicht zu unterscheiden), und beim
+  Anlegen wird VOR dem Formatieren geurteilt.  Eine frisch mit FORMAT.COM formatierte
+  Diskette braucht bei `boot-put` das `--fs scpx8915`.  Wächter:
+  `K8915Scpx.DiskToolBautBootdisketteAus*`, `.FremdeSystemspurWirdFuerDenK8915Abgelehnt`,
+  `.BootPutMachtEineLeereDisketteBootfaehig`, `K8915Format.FormatDisketteGetBootPutBootetOhneDisgen`
+  (langsam).  Keine C-ABI-Änderung.
 - **UDOS-Dateien tragen mehr als ihre Bytes (2026-08-12, `doc/udos_diskettenformat.md`
   §6/§14).**  Der Kopfsektor steuert, wie UDOS eine Datei **lädt**; am Ende (Offset
   122/124/126) stehen **LOW ADDRESS / HIGH ADDRESS / STACK SIZE** — genau das, was
@@ -676,6 +690,27 @@ Was beim Weiterarbeiten zu wissen ist:
   Dabei fiel eine alte Schwäche auf: „zu wenige Sektoren" war ein Schaden **ohne
   Obergrenze**, sodass 7×512 als „k5601_ss40_9x512 mit 40 defekten Spuren" durchging —
   jetzt ist mehr als ein Viertel abweichender Spuren ein anderes Format (Regel 4b).
+- **Ein LEER gelesenes Verzeichnis ist kein Nachweis — und `scpx8915` wird nie
+  erkannt** (2026-09-29, K8915 AP-E5a, `doc/design/16_k8915.md` §8a).  Das BIOS des K8915
+  hat einen FESTEN DPB (OFF 2, 128 Plätze), auch ohne Systemspuren.  Auf einer vom K8915
+  beschriebenen Diskette ohne Systemspuren gewann `cpa800` (ab c0h0), weil die
+  0xE5-Zylinder 0–1 ein tadellos leeres Verzeichnis ergeben — die Diskette erschien leer,
+  und das nächste `put` legte Block 10 über das Verzeichnis des K8915.  Drei Festlegungen:
+  **(1)** Ein benanntes CP/M-Profil mit **null belegten** Plätzen verliert gegen die
+  CP/A-Regel, wenn diese das Verzeichnis woanders sieht und dort **belegte** Plätze findet
+  (`DiskVolume::open`, nach Stufe 2) — dasselbe tut `selsy` im CP/A-BIOS.  Ein belegtes
+  benanntes Verzeichnis gewinnt weiter immer.
+  **(2)** Eine LEERE 5×1024-Diskette bleibt `cpa800` (192 Plätze, am CP/A nachgewiesen) —
+  das Medium unterscheidet sie nicht von einer leeren K8915-Diskette.  Für die gibt es
+  **`scpx8915`** mit dem neuen Katalogschlüssel **`detect: false`** (nur mit `--fs`); der
+  eigene Grund ist genau diese Leerdiskette.  `info` nennt ihn als Hinweis
+  („Verzeichnis leer — ebenso gut scpx8915 …“).  In die Erkennung darf er NICHT: dort
+  machte er jede leere `cpa800` mehrdeutig und jede CP/A-Diskette mit freier c2h0
+  verdächtig.
+  **(3)** Lücke 2 der aus Sektoren gebauten MFM-Spuren ist **22 × 4E** (vorher 11): mit
+  11 war jede per `create`/`put` erzeugte `.hfe` am K8915 unlesbar („BAD SECTOR“).
+  Wächter: `DiskVolume.Scpx8915*`, `K8915Scpx.DiskTool*` (Rundreise am laufenden K8915),
+  `K8915FormatDiskTool.*` (echtes FORMAT.COM, `format_integration`).
 - **`filesystems:` soll KURZ bleiben.** Vier der fünf CP/M-Profile rechnet `CpaDpbRule`
   bitgleich nach; sie stehen nur noch da, weil `create --fs NAME` einen Namen braucht und
   „cpa780" die bessere Auskunft ist als „cpa_auto". Ein neuer Eintrag braucht einen
@@ -687,6 +722,38 @@ Was beim Weiterarbeiten zu wissen ist:
   `DiskVolume.JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen` legt JEDES
   `formats:`-Format an, öffnet es ohne `--fs` und prüft die Wiedererkennung.  Ein neuer
   Katalogeintrag, den die Erkennung nicht wiederfindet, fällt sofort auf.
+- **Ein reiner SCHREIBNACHLAUF hinter der Daten-CRC sperrt `.img` nicht — ein
+  UDOS-Kontrollblock schon** (2026-09-29, `doc/design/16_k8915.md` AP-E5b).  Jeder an Ort
+  und Stelle geschriebene Sektor einer echt gelesenen Diskette trägt hinter der CRC das
+  geschriebene Lückenbyte `4E` und dann die Naht in die alte Lücke (verrutschter
+  Byterahmen, Taktbits, Reste früherer Schreibläufe): `4E C2 42 42 …`,
+  `4E 43 DC 08 F2 12 12 12`, `4F E4 24 24 …` — K8915 (693 Sektoren auf 900/901/904), P8000
+  (13).  `DiskMedium::computeRawCompatible` lässt das zu, **eng**: nur MFM, Byte 0 =
+  `4E`/`4F`, letztes Byte = eine der 16 Drehungen von `4E`/`90`; dazwischen wird nichts
+  gedeutet.  Der Riegel gegen UDOS ist Byte 0 — dort beginnt der Rückwärtszeiger mit dem
+  Sektorindex (0…25) oder `FF`.  **Nicht aufweichen:** kein Urteil über das erkannte
+  Dateisystem (Mischdisketten), keine FM-Ausnahme ohne Messung, und Byte 0 bleibt Pflicht
+  — ein falsches Zulassen verliert Daten, ein falsches Sperren nicht.  Wächter:
+  `DiskMedium.RawCompatible_SchreibnachlaufIstKeinInhalt`,
+  `.RawCompatible_UdosKontrollblockBleibtGesperrt`,
+  `K8915Scpx.ImgExportSchreibnachlaufJaUdosNein` (drei UDOS-Fixtures gesperrt allein
+  wegen des Kontrollblocks), `Udos1715P8000.WegaStartdisketteWirdErkannt` (jetzt
+  `.img`-fähig).
+- **Eine erzeugte Diskette muss aussehen wie eine am Gerät formatierte — Normlücken
+  und EINE Umdrehung** (2026-09-29, `doc/design/16_k8915.md` AP-F1).  Aus Sektoren
+  gebaute Spuren (`create`, `.img` laden, Emulator „Leere Diskette“, A5120-Schreibpfad)
+  haben Lücke 4a/1/2 = 80/50/22 (FM 40/26/11), Lücke 3 nach Sektorgröße und Lücke 4b bis
+  zum Index (`TrackCodec::normGaps`); `HfeCodec::save` schreibt je Spur genau eine
+  Umdrehung in Zellen (5,25″ 100 000, 8″ FM 83 334 / DD 166 667), aufgefüllt mit 4E, nie
+  flusslos.  **Nicht aufweichen:** Lücke 2 unter ~14 × 4E liest das CP/A-Bootsystem
+  (1F7DH: 25 Lückenbytes bis MK1) am Gerät nicht, und die Zellenzahl einer HFE-Spur IST
+  ihre Umdrehungszeit (`gw write` streckt sie auf die gemessene — 188 ms ⇒ −6 %
+  Datenrate).  Der Emulator merkt beides nur, weil der A5120-Lesestrom seit AP-F1 den
+  Abstand ID → Datenmarke vom Medium übernimmt und MK1 eine angefangene Sync-Gruppe
+  verpasst.  **Altdateien reparieren** (CP/A, SCPX): `save-as alt.hfe tmp.img`, dann
+  `save-as tmp.img neu.hfe`.  Wächter:
+  `DiskVolume.JedesKatalogformatHatNormspurenMitEinerUmdrehung`, `TrackCodecNormluecken.*`,
+  `BitCodecLuecke4b.*`, `BootIntegrationLuecke2.*`.
 - **`TrackCodec::writeSector`** ersetzt ein Datenfeld an Ort und Stelle und rechnet die
   CRC neu.  `buildTrack()` taugt zum Schreiben **nicht**: es baut die Spur neu und
   verlöre die Bytes hinter der Daten-CRC — bei UDOS die gesamte Dateiverkettung.

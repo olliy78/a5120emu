@@ -14,6 +14,7 @@ verdrahtet, aber nicht gerendert.  Pixelprüfungen gehören deshalb nicht hierhe
 Verdrahtungsprüfungen schon.
 """
 
+import atexit
 import os
 import shutil
 import sys
@@ -30,7 +31,26 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Headless-Qt + eigenes Konfigurationsverzeichnis: Tests dürfen die echte
 # ~/.config/k1520emu/config.yaml des Nutzers weder lesen noch überschreiben.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ["XDG_CONFIG_HOME"] = str(Path(__file__).parent / ".config-testrun")
+#
+# **Je PROZESS ein eigenes Verzeichnis, nicht ein gemeinsames.** Ein ctest-Fall
+# der Python-Ebene ist ein eigener `pytest`-Prozess je Testmodul (siehe
+# tests/python/CMakeLists.txt) und läuft unter `ctest -j$JOBS` PARALLEL zu den
+# anderen. Ein fester Pfad hier bedeutete: alle diese Prozesse teilen sich
+# dieselbe `config.yaml` — ein `MainWindow` in Prozess A (z. B.
+# `test_a5120emu_cli.py`, das per Kommandozeile eine Diskette mountet und dann
+# lange rechnet) schreibt per Autosave (jedes `resizeEvent` plant ihn, auch
+# ausserhalb der eigentlichen Diskettenmontage) SEINE Laufwerksbelegung in die
+# gemeinsame Datei; ein `MainWindow()` in Prozess B (z. B. `test_gui_smoke.py`)
+# liest sie beim Konstruieren zurück und findet eine fremde Diskette in einem
+# Laufwerk, das aus SEINER Sicht frisch und leer sein sollte
+# (`test_status_bar_shows_a_field_per_present_drive`, beobachtet unter Last,
+# reproduziert per zwei parallelen Prozessen auf denselben Pfad). Genau dieselbe
+# Fallklasse traf schon den pytest-Cache (`-p no:cacheprovider` weiter unten in
+# tests/python/CMakeLists.txt) — hier ist die Abhilfe ein PID-eigenes
+# Verzeichnis statt eines gemeinsamen.
+_CONFIG_TESTRUN_DIR = Path(__file__).parent / f".config-testrun-{os.getpid()}"
+os.environ["XDG_CONFIG_HOME"] = str(_CONFIG_TESTRUN_DIR)
+atexit.register(shutil.rmtree, str(_CONFIG_TESTRUN_DIR), ignore_errors=True)
 
 
 # ─── Verfügbarkeit ───────────────────────────────────────────────────────────

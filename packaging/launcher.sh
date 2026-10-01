@@ -1,5 +1,12 @@
 #!/bin/sh
-# K1520-Emulator — Starter des A5120.  @ROOT@ wird beim Installieren eingesetzt.
+# K1520-Emulator — Starter des A5120 Emulators UND des K8915 Emulators.  @ROOT@
+# wird beim Installieren eingesetzt.
+#
+# EINE Vorlage für beide: install.sh schreibt sie zweimal (bin/a5120emu,
+# bin/k8915emu), und welcher Emulator startet, sagt der NAME, unter dem der
+# Starter aufgerufen wird (auch über den Verweis in ~/.local/bin).  Der K8915
+# ist dasselbe Programm mit einem anderen Profil (app/main.py --machine k8915,
+# doc/design/18_k8915emu_oberflaeche.md §3).
 #
 # Startet die GUI aus der Laufzeitumgebung der Installation.  Bibliothek,
 # Formatkatalog und Disketten findet der Emulator selbst (app/paths.py bzw.
@@ -42,5 +49,9 @@ DATEN=$("$ROOT/venv/bin/python3" -c \
 if [ -n "$DATEN" ] && mkdir -p "$DATEN" 2>/dev/null; then
     cd "$DATEN" || true
 fi
+
+case "$(basename "$0")" in
+    k8915emu*) set -- --machine k8915 "$@" ;;
+esac
 
 exec "$ROOT/venv/bin/python3" "$ROOT/app/main.py" "$@"

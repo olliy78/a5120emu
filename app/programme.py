@@ -1,8 +1,8 @@
 """Die Nachbarprogramme starten — DiskTool, Emulator, Werkzeugkonsole.
 
-Die Installation bringt vier Programme mit, die dieselben Disketten anfassen:
-die beiden Oberflächen (``a5120emu`` und ``k1520DiskTool``) und die beiden
-Konsolenwerkzeuge (``k1520dbg``, ``k1520disktool-cli``).  Wer eines davon offen
+Die Installation bringt fünf Programme mit, die dieselben Disketten anfassen:
+die drei Oberflächen (``a5120emu``, ``k8915emu`` und ``k1520DiskTool``) und die
+beiden Konsolenwerkzeuge (``k1520dbg``, ``k1520disktool-cli``).  Wer eines davon offen
 hat, braucht regelmässig ein zweites — deshalb kann jede Oberfläche die andere
 aufrufen, und der Emulator zusätzlich eine **Eingabeaufforderung**, in der die
 Konsolenwerkzeuge ohne Pfadangabe laufen.
@@ -40,15 +40,23 @@ from typing import List, Optional, Sequence
 
 from app import paths
 
-#: Kennungen der beiden Oberflächen für :func:`programm_starten`.
+#: Kennungen der Oberflächen für :func:`programm_starten`.  ``EMULATOR`` ist
+#: der A5120 Emulator (der Name stammt aus der Zeit, als es nur ihn gab).
 EMULATOR = "emulator"
+K8915EMU = "k8915emu"
 DISKTOOL = "disktool"
 
-#: (Skript unterhalb der Wurzel, Anzeigename) je Kennung.
+#: (Skript unterhalb der Wurzel, Anzeigename, feste Argumente) je Kennung.  Der
+#: K8915 Emulator ist DASSELBE Skript mit einem anderen Programmprofil
+#: (``--machine k8915``, doc/design/18_k8915emu_oberflaeche.md §2).
 _PROGRAMME = {
-    EMULATOR: ("app/main.py", "a5120emu"),
-    DISKTOOL: ("app/disktool/main.py", "k1520DiskTool"),
+    EMULATOR: ("app/main.py", "a5120emu", ()),
+    K8915EMU: ("app/main.py", "k8915emu", ("--machine", "k8915")),
+    DISKTOOL: ("app/disktool/main.py", "k1520DiskTool", ()),
 }
+
+#: Kennung des Emulators je Maschinenname des Programmprofils.
+EMULATOR_JE_MASCHINE = {"a5120": EMULATOR, "k8915": K8915EMU}
 
 #: Name des Debugger-Handbuchs in :func:`app.paths.doc_dir`.
 HANDBUCH_DBG = "handbuch_k1520dbg.md"
@@ -118,19 +126,19 @@ def arbeitsordner() -> Optional[Path]:
 
 
 def programm_starten(kennung: str, argumente: Sequence[str] = ()) -> None:
-    """Die andere Oberfläche starten (:data:`EMULATOR` oder :data:`DISKTOOL`).
+    """Eine andere Oberfläche starten (:data:`EMULATOR`, :data:`K8915EMU`, :data:`DISKTOOL`).
 
     Raises:
         RuntimeError: wenn das Skript nicht zu finden ist oder der Start
             scheitert — mit einer Meldung, die in ein Meldungsfenster passt.
     """
-    rel, name = _PROGRAMME[kennung]
+    rel, name, fest = _PROGRAMME[kennung]
     skript = paths.base_dir() / rel
     if not skript.is_file():
         raise RuntimeError(
             f"{name} ist nicht zu finden.\n\nErwartet wurde:\n{skript}")
     try:
-        _abgekoppelt([_interpreter(), str(skript), *argumente],
+        _abgekoppelt([_interpreter(), str(skript), *fest, *argumente],
                      cwd=arbeitsordner())
     except OSError as e:
         raise RuntimeError(f"{name} liess sich nicht starten:\n{e}") from e

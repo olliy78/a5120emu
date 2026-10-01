@@ -409,9 +409,10 @@ class KeyboardWidget(QWidget):
     """Anklickbare Nachbildung der K7637-Tastatur.
 
     Emittiert für jede betätigte Taste :attr:`keyPressed` (mit Shift-/Ctrl-Zustand)
-    und beim Loslassen :attr:`keyReleased`.  (Eine Tastenwiederholung entsteht
-    daraus nicht: die Wiederholung des K7637-Modells hängt an ``tick()``, das der
-    laufende Rechner nicht aufruft.)
+    und beim Loslassen :attr:`keyReleased`.  Die Tastenwiederholung macht der
+    Kern selbst, wie die echte K7637 nur für ihre Dauerfunktionstasten
+    (Leertaste, Kursortasten — doc/design/08_k7637_keyboard.md §2.2a); die
+    Wiederholung der Host-Tastatur wird deshalb verworfen.
 
     SHIFT und CTRL/ET2 wirken auf genau die nächste Taste, LOCK bleibt gesetzt
     (wie auf der echten Tastatur, die mit SHIFT zurückgeschaltet wird).
@@ -424,6 +425,24 @@ class KeyboardWidget(QWidget):
     MIN_UNIT = 21.0
     #: Rastermaß, das die Tastatur von sich aus vorschlägt.
     PREF_UNIT = 34.0
+    #: Ränder in Rastern (links, oben, rechts, unten): oben mehr, dort sitzt die
+    #: LED-Leiste der echten Tastatur.
+    PAD = (0.35, 0.75, 0.35, 0.35)
+
+    # ── Einstiegspunkte für eine andere Tastatur (K7672, keyboard_k7672.py) ──
+
+    def _layout(self) -> List[_Key]:
+        """Das Tastenfeld — hier die K7637."""
+        return _build_layout()
+
+    def _anzeigen_verankern(self):
+        """Die Tasten merken, an denen die Anzeigen ausgerichtet werden."""
+        # Die fünf Tasten, über denen die Funktionsanzeigen sitzen (SEL 0…3
+        # und INS MD) — die Anzeigen werden an IHNEN ausgerichtet.
+        reihe0 = sorted((k for k in self._keys if k.y == 0.0), key=lambda k: k.x)
+        self._funktionstasten = reihe0[:5]
+        # Die Fehleranzeige sitzt über der RESET-Taste.
+        self._reset_taste = next(k for k in reihe0 if k.low == "RESET")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -432,7 +451,7 @@ class KeyboardWidget(QWidget):
         self._lock = False        # Feststeller der Bildschirmtastatur
         self._host_caps = False   # Feststeller der ECHTEN Tastatur (erschlossen)
         self._host_down = {}      # Qt-Tastencode → hervorgehobene Tasten
-        self._keys = _build_layout()
+        self._keys = self._layout()
         self._pressed: Optional[_Key] = None     # aktuell gedrückte Taste
         self._pressed_code: Optional[int] = None
         self._leds = 0                           # Bitmaske aus dem Kern
@@ -453,17 +472,11 @@ class KeyboardWidget(QWidget):
                 if code is not None:
                     self._by_code.setdefault(int(code), []).append(key)
 
-        # Die fünf Tasten, über denen die Funktionsanzeigen sitzen (SEL 0…3
-        # und INS MD) — die Anzeigen werden an IHNEN ausgerichtet.
-        reihe0 = sorted((k for k in self._keys if k.y == 0.0), key=lambda k: k.x)
-        self._funktionstasten = reihe0[:5]
-        # Die Fehleranzeige sitzt über der RESET-Taste.
-        self._reset_taste = next(k for k in reihe0 if k.low == "RESET")
+        self._anzeigen_verankern()
 
         self._span_x = span_x = max(k.x + k.w for k in self._keys)
         self._span_y = span_y = max(k.y + k.h for k in self._keys)
-        # Ränder: oben mehr, dort sitzt die LED-Leiste der echten Tastatur.
-        self._pad = (0.35, 0.75, 0.35, 0.35)     # links, oben, rechts, unten
+        self._pad = self.PAD
         self._units_w = span_x + self._pad[0] + self._pad[2]
         self._units_h = span_y + self._pad[1] + self._pad[3]
 

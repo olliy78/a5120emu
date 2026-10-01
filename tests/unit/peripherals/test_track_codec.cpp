@@ -1055,3 +1055,70 @@ TEST(TrackCodecCrcDialekt, GeloeschterSektorWirdGegenSeinEigenesMarkenbytePrueft
     EXPECT_TRUE(parsed[0].data_crc_ok)
         << "die Daten-CRC eines geloeschten Sektors (Marke 0xF8) wurde gegen 0xFB geprueft";
 }
+
+// ─── Normlücken (AP-F1, doc/design/16_k8915.md) ─────────────────────────────────
+//
+// Eine aus Sektoren gebaute Spur (DiskTool `create`, Emulator „Leere Diskette“, .img →
+// Medium) muss so aussehen wie eine am Gerät formatierte: Lücke 1 = 50, Lücke 2 = 22
+// (MFM) bzw. 11 (FM), Lücke 3 nach Sektorgröße, und die ganze Spur passt in EINE
+// Umdrehung.  Die knappen Lücken bis 2026-09-29 (16/11/24, keine Lücke 4b) las der
+// Emulator, der echte A5120 nicht.
+
+namespace {
+struct NormFall { const char* name; Encoding enc; int n; uint16_t size; size_t umdrehung;
+                  size_t gap3; };
+
+std::vector<LogicalSector> spurAus(int n, uint16_t size) {
+    std::vector<LogicalSector> v;
+    for (int i = 1; i <= n; ++i) v.push_back(makeSector(4, 1, static_cast<uint8_t>(i), size));
+    return v;
+}
+} // namespace
+
+TEST(TrackCodecNormluecken, SpurenDerKatalogformatePassenInEineUmdrehung) {
+    const NormFall faelle[] = {
+        {"cpa780 System 26x128 MFM", Encoding::MFM, 26, 128,  6250, 32},
+        {"cpa780/800 Daten 5x1024",  Encoding::MFM,  5, 1024, 6250, 116},
+        {"16x256 MFM",               Encoding::MFM, 16, 256,  6250, 54},
+        {"9x512 MFM",                Encoding::MFM,  9, 512,  6250, 84},
+        {"10x512 MFM (Lücke 3 gekürzt)", Encoding::MFM, 10, 512, 6250, 36},
+        {"8 Zoll SD 26x128 FM",      Encoding::FM,  26, 128,  5208, 27},
+        {"8 Zoll DD 26x256 MFM",     Encoding::MFM, 26, 256, 10416, 54},
+        {"SCP1700-Bootspur 16x128 FM", Encoding::FM, 16, 128, 3125, 27},
+    };
+    for (const auto& f : faelle) {
+        SCOPED_TRACE(f.name);
+        const auto sek = spurAus(f.n, f.size);
+        const GapParams g = TrackCodec::normGaps(sek, f.enc);
+        EXPECT_EQ(g.track_len, f.umdrehung);
+        EXPECT_EQ(g.gap3, f.gap3);
+        const TrackImage t = TrackCodec::buildTrack(sek, f.enc);
+        EXPECT_EQ(t.size(), f.umdrehung) << "Spur = genau eine Umdrehung (Lücke 4b bis zum Index)";
+
+        const auto p = TrackCodec::parseTrack(t);
+        ASSERT_EQ(p.size(), static_cast<size_t>(f.n));
+        const bool mfm = f.enc == Encoding::MFM;
+        // Abstand ID-CRC-Ende → Datenmarke = Lücke 2 + Sync + A1-Gruppe.
+        const size_t soll = mfm ? 22 + 12 + 3 : 11 + 6;
+        for (const auto& s : p) {
+            EXPECT_TRUE(s.id_crc_ok && s.data_crc_ok);
+            EXPECT_EQ(s.data_pos - (s.id_pos + 7), soll) << "Sektor " << int(s.id);
+        }
+        EXPECT_LE(p.back().end_pos + f.gap3, f.umdrehung) << "letzter Sektor läuft über den Index";
+    }
+}
+
+TEST(TrackCodecNormluecken, VorspannWieFormatCom) {
+    // 80 × 4E, 12 × 00, C2 C2 C2 FC, 50 × 4E — so schreibt FORMAT.COM (K8915 §4.4) und so
+    // steht es auf den Greaseweazle-Abzügen.
+    const TrackImage t = TrackCodec::buildTrack(spurAus(5, 1024), Encoding::MFM);
+    size_t i = 0;
+    for (; i < 80; ++i) ASSERT_EQ(t.bytes[i], 0x4E) << i;
+    for (; i < 92; ++i) ASSERT_EQ(t.bytes[i], 0x00) << i;
+    EXPECT_EQ(t.bytes[92], 0xC2);
+    EXPECT_EQ(t.bytes[94], 0xC2);
+    EXPECT_EQ(t.bytes[95], 0xFC);
+    EXPECT_EQ(t.marks[95], MarkType::Index);
+    for (i = 96; i < 146; ++i) ASSERT_EQ(t.bytes[i], 0x4E) << i;
+    EXPECT_EQ(t.bytes[146], 0x00) << "Sync vor dem ersten Kennfeld";
+}

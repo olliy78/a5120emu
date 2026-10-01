@@ -31,8 +31,8 @@ PY="$VENV_DIR/bin/python3"
 export LD_LIBRARY_PATH="$BUILD_DIR:$LD_LIBRARY_PATH"
 
 # Start GUI
-echo "K1520 A5120 Emulator GUI"
-echo "========================"
+echo "A5120 Emulator"
+echo "=============="
 echo ""
 echo "Python: $PY"
 echo "PySide6: $("$PY" -c 'import PySide6; print(PySide6.__version__)')"

@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include "core/machines/machine.h"
 #include "core/bus/k1520_bus.h"
 #include "core/bus/koppelbus.h"
 #include "core/cards/k2526/k2526.h"
@@ -14,6 +15,7 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
+#include "core/machines/laufwerke.h"
 #include "core/cards/em/em.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/peripherals/floppy_drive/disk_format.h"
@@ -27,7 +29,7 @@
 #include <functional>
 #include <memory>
 
-class A5120Machine {
+class A5120Machine : public K1520Machine {
 public:
     /**
      * @brief Laufzeit-Konfiguration der Maschine (per C-API / später GUI / Config-Datei).
@@ -53,15 +55,15 @@ public:
     /** @brief Construct and wire a full A5120 machine instance.
      *  @param cfg Laufwerksbestückung etc. (per C-API/GUI/Config-Datei). */
     explicit A5120Machine(const Config& cfg);
-    ~A5120Machine() = default;
+    ~A5120Machine() override = default;
 
     // Lifecycle
     /** @brief Power-on sequence with bootstrap ROM enabled. */
-    void powerOn();
+    void powerOn() override;
     /** @brief Reset sequence with bootstrap ROM re-enabled. */
-    void reset();
+    void reset() override;
     /** @brief Request emulation stop (breaks out of run() after the current instr). */
-    void stop() { stop_.store(true); }
+    void stop() override { stop_.store(true); }
     /** @brief Clear a pending stop request so the next run() proceeds (debugger resume). */
     void clearStop() { stop_.store(false); }
     /** @brief ZVE1 (main CPU) total executed clock cycles — monotonic timeline for tools. */
@@ -77,11 +79,11 @@ public:
 
     // Run up to max_cycles CPU cycles. Returns cycles actually executed.
     /** @brief Execute up to max_cycles CPU cycles and return consumed cycles. */
-    int  run(int max_cycles);
+    int  run(int max_cycles) override;
 
     // Disk management (thread-safe)
     bool mountDisk(int drive, const std::string& path,
-                   const std::string& format_name, bool write_protect);
+                   const std::string& format_name, bool write_protect) override;
 
     /**
      * @brief Ein **fertig aufgebautes** Abbild anmelden (physische Diskette).
@@ -93,7 +95,7 @@ public:
      *
      * @see doc/design/14_physische_diskette.md
      */
-    bool mountDiskImage(int drive, std::unique_ptr<DiskImage> img, bool write_protect);
+    bool mountDiskImage(int drive, std::unique_ptr<DiskImage> img, bool write_protect) override;
     /**
      * @brief Legt eine NEUE Diskette an und mountet sie.
      *
@@ -112,7 +114,7 @@ public:
      * Überschreibt eine vorhandene Datei.  @see DiskImage::createBlank, DiskImage::create
      */
     bool createDisk(int drive, const std::string& path,
-                    const std::string& format_name, bool write_protect);
+                    const std::string& format_name, bool write_protect) override;
 
     /**
      * @brief Speichert die gemountete Diskette unter neuem Namen/Format und bindet um.
@@ -127,7 +129,7 @@ public:
      *
      * @return false mit Grund in @ref lastError().
      */
-    bool saveDiskAs(int drive, const std::string& path, const std::string& format_name);
+    bool saveDiskAs(int drive, const std::string& path, const std::string& format_name) override;
 
     /**
      * @brief Darf die gemountete Diskette als rohes Sektorimage (`.img`) gespeichert werden?
@@ -136,13 +138,13 @@ public:
      * Daten-CRC trägt (UDOS-Sektorkontrollblock) — beides ginge in einer `.img`
      * verloren.  Die GUI blendet `.img` dann aus.
      */
-    bool isDiskRawCompatible(int drive) const;
+    bool isDiskRawCompatible(int drive) const override;
 
     /// @brief Aktuell gebundene Image-Datei eines Slots ("" = nur im Speicher/leer).
-    std::string diskPath(int drive) const;
+    std::string diskPath(int drive) const override;
 
     /// @brief Containerformat der gebundenen Datei ("img" | "hfe" | "dmk"; "" = keine).
-    std::string diskContainer(int drive) const;
+    std::string diskContainer(int drive) const override;
 
     /**
      * @brief Bedienhinweise zur eingelegten Diskette ("" = sie passt ohne Einschränkung).
@@ -152,7 +154,7 @@ public:
      * die Diskette ist gemountet und lesbar, nur eben angepasst (@ref TrackPitch).
      * Die Oberfläche zeigt die Zeilen im Laufwerkskasten unter dem Dateinamen.
      */
-    std::string diskNotice(int drive) const;
+    std::string diskNotice(int drive) const override;
 
     /// @brief Geometrie der eingelegten Diskette (alles 0, wenn kein Datenträger).
     DiskGeometry diskGeometry(int drive) const;
@@ -183,10 +185,10 @@ public:
      *          noch nicht vollständig gelesen ist, kommt deshalb **leer** zurück —
      *          eine Messung zöge dort die ganze Scheibe ein (0,5–0,8 s je Spur).
      */
-    std::string detectedFormatName(int drive) const;
+    std::string detectedFormatName(int drive) const override;
 
     /// @brief Ausstehende Änderungen aller Laufwerke sofort in die Dateien schreiben.
-    bool flushDisks();
+    bool flushDisks() override;
 
     /**
      * @brief Name des laufwerkstyp-spezifischen Standardformats für einen Slot.
@@ -194,7 +196,7 @@ public:
      * Das Format, das @ref createDisk bei leerem @p format_name wählt (K5601→cpa800,
      * K5600.10→200K, …).  Leerer String, wenn der Slot unbestückt ist.
      */
-    std::string defaultFormatName(int drive) const;
+    std::string defaultFormatName(int drive) const override;
 
     /**
      * @brief Formatnamen, die geometrisch auf das Laufwerk dieses Slots passen.
@@ -204,28 +206,28 @@ public:
      * aus dem Laufwerk ab).  Das Standardformat des Slots steht an erster Stelle.
      * Leere Liste bei unbestücktem Slot.  Für die GUI-Formatauswahl.
      */
-    std::vector<std::string> compatibleFormats(int drive) const;
+    std::vector<std::string> compatibleFormats(int drive) const override;
 
     /** @brief Klartextbeschreibung eines Katalogformats (leer, wenn unbekannt). */
-    std::string formatDescription(const std::string& format_name) const;
+    std::string formatDescription(const std::string& format_name) const override;
 
     /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, übersprungene Formate). */
-    const FormatCatalog& formatCatalog() const { return disk_formats_; }
+    const FormatCatalog& formatCatalog() const override { return lw_.formatCatalog(); }
 
-    bool unmountDisk(int drive);
-    bool isDiskActive(int drive) const;
-    bool isDiskWriteProtected(int drive) const;
+    bool unmountDisk(int drive) override;
+    bool isDiskActive(int drive) const override;
+    bool isDiskWriteProtected(int drive) const override;
     /** @brief Return drive activity LED state (select OR motor) for GUI display. */
-    bool isDiskLedOn(int drive) const;
+    bool isDiskLedOn(int drive) const override;
     /** @brief Return the drive's spindle-motor state (/LCK from the 8212, port 0x18). */
-    bool isMotorOn(int drive) const;
+    bool isMotorOn(int drive) const override;
     /** @brief Return whether the read/write head is loaded (/HL, ctrl port A bit6). */
-    bool isHeadLoaded() const;
-    void setDiskWriteProtect(int drive, bool wp);
+    bool isHeadLoaded() const override;
+    void setDiskWriteProtect(int drive, bool wp) override;
 
     // Keyboard (enqueued thread-safely, consumed in run())
-    void keyPress(uint32_t qt_keycode, bool shift, bool ctrl);
-    void keyRelease(uint32_t qt_keycode);
+    void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
+    void keyRelease(uint32_t qt_keycode) override;
 
     /**
      * @brief Zustand der Tastaturanzeigen (K7637-Doku §2.1/§2.2.3).
@@ -235,34 +237,46 @@ public:
      * E54 hängt an der Spannung und die LOCK-Anzeige C99 am Feststeller der
      * Tastatur selbst — beide kommen hier nicht vor.
      */
-    uint8_t keyboardLeds() const;
+    uint8_t keyboardLeds() const override;
 
     // Framebuffer
-    const uint8_t* framebuffer() const;
-    int  fbWidth()  const { return 640; }
-    int  fbHeight() const { return 288; }
-    bool fbDirty()  const { return screen_.fbDirty(); }
-    void fbClearDirty()   { screen_.fbClearDirty(); }
+    const uint8_t* framebuffer() const override;
+    int  fbWidth()  const override { return 640; }
+    int  fbHeight() const override { return 288; }
+    bool fbDirty()  const override { return screen_.fbDirty(); }
+    void fbClearDirty() override { screen_.fbClearDirty(); }
 
     // Console (CLI) mode
-    void setConsoleMode(bool on) { screen_.setConsoleMode(on); }
-    bool consolePoll(int& x, int& y, char& ch) {
+    void setConsoleMode(bool on) override { screen_.setConsoleMode(on); }
+    bool consolePoll(int& x, int& y, char& ch) override {
         return screen_.pollTextChange(x, y, ch);
     }
+    /// Bildspeicher der K7024 direkt (Bereichsprüfung in der C-ABI).
+    uint8_t screenChar(int col, int row) const override { return screen_.vramRead(col, row); }
 
-    // Serial callbacks (DFÜ, printer)
+    // ─── Serielle Schnittstellen (Entwurf 19 §3.1, AP-S5) ─────────────────────
+    // Hub-Reihenfolge: 0 DFÜ/V.24 (X6), 1 DFÜ/IFSS (X5), 2 Drucker (X3); fest:
+    // Tastatur K7637 (X4).
+    k1520::serial::SerialHub* serialHub() override { return &hub_; }
+    std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
+    std::vector<std::string> festeSchnittstellen() const override {
+        return {K8025::TASTATUR_NAME};
+    }
+
+    // Alter Unterbau (K1520Machine): DFÜ = DFÜ/V.24, Drucker = A32-B.
     using SerialCb = std::function<void(uint8_t)>;
-    void setDFUECallback(SerialCb cb);
-    void setPrinterCallback(SerialCb cb);
-    void dfueSend(uint8_t byte);
+    void setDFUECallback(SerialCb cb) override;
+    void setPrinterCallback(SerialCb cb) override;
+    void dfueSend(uint8_t byte) override;
+    void printerSend(uint8_t byte) override;
 
     // Debug bus passthrough helpers.
     /** @brief Read memory through the machine bus for diagnostics. */
-    uint8_t memReadDebug(uint16_t addr) { return bus_.memRead(addr); }
+    uint8_t memReadDebug(uint16_t addr) override { return bus_.memRead(addr); }
     /** @brief Write memory through the machine bus for diagnostics. */
-    void memWriteDebug(uint16_t addr, uint8_t data) { bus_.memWrite(addr, data); }
+    void memWriteDebug(uint16_t addr, uint8_t data) override { bus_.memWrite(addr, data); }
     /** @brief Read I/O port through the machine bus for diagnostics. */
-    uint8_t ioReadDebug(uint8_t port) { return bus_.ioRead(port); }
+    uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     /** @brief Install a bus trace callback (io, is_read, addr, data). */
     void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
     /** @brief Current PC of the ZVE1 (main Z80). */
@@ -350,7 +364,7 @@ public:
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
     // Debug
-    std::string lastError() const { return last_error_; }
+    std::string lastError() const override { return lw_.lastError(); }
 
     // ─── Snapshot / reverse-debugging support ──────────────────────────────────
     /**
@@ -424,6 +438,12 @@ private:
 
     /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
     void resetHardware();
+    /// Wandler takten (nur, wenn einer fällig ist) — außerhalb der heißen Schleife.
+#if defined(_MSC_VER)
+    __declspec(noinline) void serielleSchnittstellen();
+#else
+    __attribute__((noinline)) void serielleSchnittstellen();
+#endif
 
     struct KeyEvent { uint32_t keycode; bool shift, ctrl, is_press; };
 
@@ -439,12 +459,15 @@ private:
 
     K7637         kbd_;
 
-    FormatCatalog disk_formats_;                  // aus data/formats.yaml (§8.6)
-    std::array<DriveProfile, 4> drive_profiles_;  // Bestückung je Slot (für create-Default)
+    Laufwerke     lw_;        // Laufwerksverwaltung (gemeinsamer Baustein, laufwerke.h)
+
+    /// Schnittstellen nach außen — nach den Karten deklariert, also zuerst zerstört
+    /// (hält Verweise auf die Anschlüsse der K8025).
+    k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
+    uint64_t serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
 
     std::atomic<bool>  stop_{false};
 
-    mutable std::mutex disk_mutex_;
     mutable std::mutex key_mutex_;
     std::deque<KeyEvent> key_queue_;
 
@@ -488,10 +511,4 @@ private:
     // evaluation (cycle windows) once per instruction.
     uint64_t total_cycles_ = 0;
 
-    /// @brief Abstand zweier Autosave-Prüfungen in Maschinentakten (≈ 40 ms @ 2,45 MHz).
-    ///        Die eigentliche Ruhezeit vor dem Schreiben ist @ref kAutoFlushDelayCycles.
-    static constexpr uint64_t kDiskFlushCheckInterval = 100'000;
-    uint64_t next_disk_flush_check_ = kDiskFlushCheckInterval;
-
-    std::string last_error_;
 };

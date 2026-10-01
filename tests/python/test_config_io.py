@@ -17,9 +17,9 @@ from app.ui.screen_widget import CRTParams
 def test_default_config_path_honours_xdg(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     assert cfg.default_config_dir() == str(tmp_path / "k1520emu")
-    # Kein endswith("k1520emu/config.yaml"): unter Windows trennt os.path.join
+    # Kein endswith("k1520emu/a5120emu.yaml"): unter Windows trennt os.path.join
     # mit '\', und der Test pruefte dann nur noch, dass er auf Linux laeuft.
-    assert cfg.default_config_path() == str(tmp_path / "k1520emu" / "config.yaml")
+    assert cfg.default_config_path() == str(tmp_path / "k1520emu" / "a5120emu.yaml")
 
 
 def test_default_config_path_without_xdg(monkeypatch):

@@ -33,13 +33,16 @@ GW=yes
 # Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: je eine
 # startfähige Diskette für CP/A, SCPX und UDOS plus die beiden Combo-Disketten,
 # damit ein Anwender alle drei Betriebssysteme und die Fremdlaufwerkstypen
-# ausprobieren kann, ohne dass das Paket aufgeht.  Alles aus disks/: --disks all.
+# ausprobieren kann, ohne dass das Paket aufgeht — dazu die Systemdiskette des
+# K8915 Emulators (901, SCPX 8915 V5.3; vom Anwender freigegeben 2026-10-01,
+# 16_k8915.md §6.23).  Alles aus disks/: --disks all.
 DISKS_DEFAULT="cpa_cpa780_k5601_clock.hfe
 cpa_cpa780_k5601_noclock.hfe
 cpa_cpa780_combo5zoll_noclock.hfe
 cpa_cpa780_combo8zoll_noclock.hfe
 scpx17_cpa780_k5601.hfe
-udos_boot_k5600_20.hfe"
+udos_boot_k5600_20.hfe
+k8915scpx_boot1.hfe"
 
 usage() {
     cat <<EOF
@@ -478,9 +481,12 @@ cp "$REPO/third_party/isocline/LICENSE" \
 
 cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
 # Auslieferungskonfiguration: der Zustand nach der Erstinstallation und das Ziel
-# von *Ansicht > Standard zuruecksetzen* (app/config_io.py::standard_konfiguration).
-cp "$REPO/data/default_config.yaml" \
-   "$STAGE/payload/share/k1520emu/default_config.yaml"
+# von *Ansicht > Standard zuruecksetzen* (app/config_io.py::standard_konfiguration)
+# — je Programm eine (A5120 Emulator, K8915 Emulator; app/profil.py).
+for _vorgabe in default_config_a5120.yaml default_config_k8915.yaml; do
+    cp "$REPO/data/$_vorgabe" "$STAGE/payload/share/k1520emu/$_vorgabe" \
+        || die "Auslieferungskonfiguration fehlt: data/$_vorgabe"
+done
 cp "$SELF_DIR/icon.svg"      "$STAGE/payload/share/icons/a5120emu.svg"
 # Windows braucht ein .ico (Startmenue, Deinstallationseintrag, Setup selbst).
 # Es liegt eingecheckt daneben, weil der Windows-Laeufer weder Qt noch
@@ -548,6 +554,7 @@ else
     cp "$SELF_DIR/disktool_launcher.sh"     "$STAGE/disktool_launcher.sh"
     cp "$SELF_DIR/k1520disktool.desktop.in" "$STAGE/k1520disktool.desktop.in"
     cp "$SELF_DIR/a5120emu.desktop.in"      "$STAGE/a5120emu.desktop.in"
+    cp "$SELF_DIR/k8915emu.desktop.in"      "$STAGE/k8915emu.desktop.in"
     cp "$SELF_DIR/lib/common.sh"            "$STAGE/lib/common.sh"
     chmod +x "$STAGE/install.sh"
 fi

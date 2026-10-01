@@ -19,13 +19,20 @@
 #include "core/cards/k7024/chargen_zg1.h"   // CHARGEN_ZG1_LATIN — Pixelzeilen 0–7
 #include "core/cards/k7024/chargen_zg2.h"   // CHARGEN_ZG2_LATIN — Pixelzeilen 8–11
 
+#include "core/peripherals/floppy_drive/disk_medium.h"
+#include "core/peripherals/floppy_drive/hfe_codec.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
+
 #include "tests/support/fixtures.h"
 #include "tests/support/keyboard.h"
 #include "tests/support/machine_run.h"
 #include "tests/support/screen.h"
+#include "tests/support/temp_path.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -683,6 +690,60 @@ TEST(KeyboardIntegration, TypeCommandAtCcpEchoesAndProcesses) {
         << "Screen:\n" << screen;
 }
 
+// ─── Dauerfunktion der K7637: nur bestimmte Tasten wiederholen (AP-S9) ─────────────
+//
+// Befund am echten A5120 unter CP/A: eine GEHALTENE Leertaste wiederholt, eine
+// gehaltene Buchstabentaste nicht.  Ursache ist die Tastatur selbst — die K7637
+// wiederholt nur die bis zu 16 „Dauerfunktionscodes" ihrer Codetabelle
+// (Handbuch §2.2.2; ROM 650H: 20H 95H 96H 94H 97H 5FH), nach 500 ms im Abstand
+// von 100 ms.  Der Emulator wiederholte gar nicht: die Zeitbasis der Wiederholung
+// (`K7637::tick`) rief der laufende Rechner nie auf.
+//
+// Prüfung am CCP: „Q", Leertaste 1,5 s, „A" 1,5 s, „Z" — erwartet wird
+// „Q" + mehrere Leerzeichen + genau EIN „A" + „Z".
+TEST(KeyboardIntegration, HeldSpaceRepeatsHeldLetterDoesNot) {
+    TempDisk disk("cpa_cpa780_k5601_clock.img");
+    A5120Machine machine;
+    machine.powerOn();
+    ASSERT_TRUE(machine.mountDisk(0, disk.path(), "cpa780", /*wp=*/false))
+        << machine.lastError();
+
+    ASSERT_TRUE(runSmallUntil(machine, "Bitte Uhrzeit eingeben!", 40'000'000));
+    runCycles(machine, 2'000'000);
+    typeString(machine, "120000");
+    typeKey(machine, QK_RETURN);
+    ASSERT_TRUE(runSmallUntil(machine, "A>", 60'000'000));
+    runCycles(machine, 12'000'000);
+
+    constexpr long long kHold = 3'750'000;   // 1,5 s bei 2,5 MHz
+    auto hold = [&](uint32_t key) {
+        machine.keyPress(key, /*shift=*/false, /*ctrl=*/false);
+        runCycles(machine, kHold);
+        machine.keyRelease(key);
+        runCycles(machine, 1'000'000);
+    };
+
+    typeKey(machine, 'Q');
+    hold(' ');
+    hold('A');
+    typeKey(machine, 'Z');
+    runCycles(machine, 2'000'000);
+
+    const std::string screen = vramText(machine);
+    const size_t q = screen.rfind('Q');
+    ASSERT_NE(q, std::string::npos) << k1520test::vramLines(machine);
+    size_t i = q + 1;
+    while (i < screen.size() && screen[i] == ' ') ++i;
+    const size_t spaces = i - (q + 1);
+    // 1 Anschlag + Wiederholung ab 500 ms alle 100 ms über 1,5 s ≈ 12.
+    EXPECT_GE(spaces, 8u) << "gehaltene Leertaste wiederholt nicht\n"
+                          << k1520test::vramLines(machine);
+    EXPECT_LE(spaces, 14u) << k1520test::vramLines(machine);
+    EXPECT_EQ(screen.compare(i, 2, "AZ"), 0)
+        << "gehaltene Buchstabentaste darf NICHT wiederholen\n"
+        << k1520test::vramLines(machine);
+}
+
 // ─── SCPX 1526 — Boot + interaktives DIR/STAT/PIP (.COM-Laden über den Held-Bus) ─────
 //
 // disks/scpx17_cpa780_k5601.hfe (SCPX 1526 V1.7, ROBOTRON-Loader / SYL-Format) bootet vollautomatisch
@@ -1070,4 +1131,133 @@ TEST(CreateDiskFormatted, UnbekanntesFormat_gibtFalse) {
     const std::string& path = disk.path();
     A5120Machine machine;
     EXPECT_FALSE(machine.createDisk(0, path, "gibt_es_nicht", false));
+}
+
+// ── Lücke 2 entscheidet über die Lesbarkeit (AP-F1, doc/design/16_k8915.md) ──────
+//
+// Die ZVE2-Routine 1F7DH des CP/A-Bootsystems (lädt @OS.COM, 1024-B-Sektoren) liest nach
+// der ID-CRC 25 Lückenbytes (1FD8H: 1 + 17 + 1, 2038H: 1 + 6) und macht erst dann MK1
+// neu scharf.  Liegt die Sync-Gruppe des Datenfelds da schon unter dem Kopf, ist das
+// Datenfeld verpasst; gelesen wird das nächste Kennfeld als Daten → CRC-Fehler
+// „RC;T,Si,Se=020001".  Eine vom DiskTool bis 2026-09-29 angelegte Diskette hatte
+// Lücke 2 = 11 × 4E + 12 × 00 (23 Bytes) und lief so am echten A5120 nicht — im Emulator
+// aber doch, weil der Lesestrom Lücke 2 fest mit 18/27 nachbaute und MK1 notfalls
+// zurücksprang.  Beide Fälle unterscheiden sich hier NUR in Lücke 2.
+namespace {
+/// Die Fixture mit neu gebauten Spuren (Lücken wie bis 2026-09-29, Lücke 2 = @p gap2).
+void mitLuecke2(const std::string& ziel, uint8_t gap2) {
+    DiskMedium m;
+    std::string err;
+    ASSERT_TRUE(HfeCodec::load(diskPath("cpa_cpa780_k5601_noclock.hfe"), m, nullptr, err)) << err;
+    for (uint8_t c = 0; c < m.numCylinders(); ++c)
+        for (uint8_t h = 0; h < m.numHeads(); ++h) {
+            const TrackImage& t = m.track(c, h);
+            if (t.empty()) continue;
+            GapParams g = TrackCodec::gapsFor(t.encoding);
+            g.gap4a = 16; g.gap1 = 16; g.gap3 = 24; g.gap2 = gap2;
+            m.setTrack(c, h, TrackCodec::buildTrack(TrackCodec::parseTrack(t), t.encoding, g));
+        }
+    ASSERT_TRUE(HfeCodec::save(ziel, m, err)) << err;
+}
+}  // namespace
+
+TEST(BootIntegrationLuecke2, ZuKnappeLuecke2WirdWieAmGeraetNichtGelesen) {
+    TempDisk d = TempDisk::empty("luecke2_11.hfe");
+    mitLuecke2(d.path(), 11);
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, d.path(), "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+    EXPECT_TRUE(runUntilVramContains(machine, "RC;T,Si,Se=020001", kCpa02BudgetCycles))
+        << "Lücke 2 = 11: 1F7DH muss das Datenfeld verpassen (CRC-Fehler Spur 2):\n"
+        << vramText(machine);
+    EXPECT_EQ(vramText(machine).find("TPA ist OK!"), std::string::npos);
+}
+
+TEST(BootIntegrationLuecke2, NormLuecke2BootetDieselbeDiskette) {
+    TempDisk d = TempDisk::empty("luecke2_22.hfe");
+    mitLuecke2(d.path(), 22);
+    A5120Machine machine;
+    ASSERT_TRUE(machine.mountDisk(0, d.path(), "cpa780", /*wp=*/false)) << machine.lastError();
+    machine.powerOn();
+    EXPECT_TRUE(runUntilVramContains(machine, "TPA ist OK!", kCpa02BudgetCycles))
+        << vramText(machine);
+}
+
+
+// ─── Serielle Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5) ────────────
+
+namespace {
+std::string dateiLesen(const std::string& pfad) {
+    std::ifstream f(std::filesystem::u8path(pfad), std::ios::binary);
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+}  // namespace
+
+/**
+ * @test A5120Seriell.GastSendetUeberDfueV24InEineDatei
+ * @brief Maschinenprobe: der Hub der A5120Machine hat die drei Anschlüsse der K8025
+ *        (DFÜ/V.24, DFÜ/IFSS, Drucker) und die feste Tastatur; nach dem CP/A-Kaltstart
+ *        sind RTS/DTR der V.24 aus (Befund AP-S5: CP/A fasst A33 nicht an — der
+ *        RTS-Halt des Wandlers darf deshalb erst greifen, wenn der Gast RTS benutzt).
+ *        Ein kleines Programm programmiert dann A33-A (8N1, Takt ZRE-CTC K0 bzw.
+ *        Ersatz 9600) und sendet „A5120" — über `hub.takt` im Lauf von `run()` landet
+ *        es in der Datei.
+ */
+TEST(A5120Seriell, GastSendetUeberDfueV24InEineDatei) {
+    TempDisk a("cpa_cpa780_k5601_clock.img", "a5120_seriell_A.img");
+    A5120Machine m;
+    ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa780", false)) << m.lastError();
+    k1520::serial::SerialHub* hub = m.serialHub();
+    ASSERT_NE(hub, nullptr);
+    ASSERT_EQ(hub->anzahl(), 3);
+    EXPECT_EQ(hub->info(0).name, "DFÜ/V.24");
+    EXPECT_EQ(hub->info(1).name, "DFÜ/IFSS");
+    EXPECT_EQ(hub->info(2).name, "Drucker");
+    ASSERT_EQ(m.serielleAnschluesse().size(), 3u);
+    ASSERT_EQ(m.festeSchnittstellen().size(), 1u);
+    EXPECT_EQ(m.festeSchnittstellen()[0], "Tastatur K7637 (X4)");
+
+    m.powerOn();
+    ASSERT_TRUE(runUntilVramContains(m, "Bitte Uhrzeit eingeben!", 40'000'000));
+    auto* v24 = m.serielleAnschluesse()[0];
+    EXPECT_FALSE(v24->rts()) << "Befund: CP/A setzt RTS auf der V.24 nicht";
+    EXPECT_FALSE(v24->dtr());
+
+    const std::string pfad = k1520test::tempPath("k1520_test_a5120_seriell.txt");
+    std::filesystem::remove(std::filesystem::u8path(pfad));
+    k1520::serial::SerialKonfig k = hub->konfig(0);
+    k.betriebsart = k1520::serial::Betriebsart::Datei;
+    k.datei = pfad;
+    ASSERT_TRUE(hub->konfigurieren(0, k));
+    ASSERT_TRUE(hub->start(0));
+
+    // DI; A33-A: WR4 44H (×16, 1 Stopp), WR3 C1H, WR5 68H (8 Bit, Tx ein);
+    // dann „A5120" über 50H, je Zeichen auf TxEmpty (RR0 D2) warten; danach JR $.
+    const uint16_t org = 0x4000, init = 0x4040, msg = 0x4050;
+    const std::vector<uint8_t> code = {
+        0xF3,                                   // DI
+        0x21, init & 0xFF, init >> 8,           // LD HL,init
+        0x06, 0x07, 0x0E, 0x51, 0xED, 0xB3,     // LD B,7 / LD C,51H / OTIR
+        0x21, msg & 0xFF, msg >> 8,             // LD HL,msg
+        0x7E, 0xB7, 0x28, 0xFE,                 // L: LD A,(HL) / OR A / JR Z,$
+        0xDB, 0x51, 0xE6, 0x04, 0x28, 0xFA,     // W: IN A,(51H) / AND 4 / JR Z,W
+        0x7E, 0xD3, 0x50, 0x23, 0x18, 0xF0,     // LD A,(HL) / OUT (50H),A / INC HL / JR L
+    };
+    for (size_t i = 0; i < code.size(); ++i) m.memWriteDebug(org + i, code[i]);
+    const uint8_t initTab[] = {0x18, 0x04, 0x44, 0x03, 0xC1, 0x05, 0x68};
+    for (size_t i = 0; i < sizeof initTab; ++i) m.memWriteDebug(init + i, initTab[i]);
+    const std::string text = "A5120";
+    for (size_t i = 0; i <= text.size(); ++i)
+        m.memWriteDebug(msg + i, i < text.size() ? static_cast<uint8_t>(text[i]) : 0);
+    m.cpuDebug().PC = org;
+
+    for (int n = 0; n < 400; ++n) {
+        m.run(100'000);
+        const auto st = hub->status(0);
+        if (st.bytes_gesendet >= text.size() && st.puffer_senden == 0) break;
+    }
+    EXPECT_EQ(hub->status(0).bytes_gesendet, text.size());
+    hub->stop(0);   // schreibt den Rest
+    EXPECT_EQ(dateiLesen(pfad), text);
+    std::filesystem::remove(std::filesystem::u8path(pfad));
 }

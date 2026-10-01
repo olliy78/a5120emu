@@ -209,10 +209,35 @@ Formatwechsel per `saveAs()`.
   Header-Verfahren keine Marken, wird **das andere Verfahren probiert** (Mischdichte).
   Überabgetastete Aufnahmen (Bitrate ≥ 375 kbit/s, typ. Greaseweazle 500) werden über
   `BitCodec::downsampleCells` auf die Nominalrate quantisiert.
-* `save`: Header + LUT werden **neu berechnet** — die Spurlänge ergibt sich aus der
-  längsten Spur des Mediums.  Damit kann ein aus `.img` geladenes oder frisch
-  formatiertes Medium ohne Vorlage als `.hfe` geschrieben werden.
-  Unformatierte Spuren werden als Gap-Zellen (`0x88`) abgelegt.
+* `save`: Header + LUT werden **neu berechnet**.  Die Spurlänge je Zylinder ist **eine
+  Umdrehung** (seit AP-F1, 2026-09-29; §4.5): 5,25″ 100 000 Zellen, 8″ (360 U/min) FM
+  83 334 / DD 166 667, aufgerundet auf 256 B je Seite; nur eine längere Spur (Abzug mit
+  eigener Umdrehung, überlange Spur) bestimmt selbst.  Aufgefüllt wird mit Lückenbytes
+  (4E/FF), nie flusslos.  Unformatierte Spuren werden als Gap-Zellen (`0x88`) abgelegt.
+  Der Kopf trägt 360 U/min, wenn das Medium für ein 8″-Laufwerk ist.
+
+### 4.5 Normspur und Umdrehung — was eine erzeugte Diskette am Gerät braucht (AP-F1)
+
+Eine Spur, die aus logischen Sektoren gebaut wird (`DiskImage::create`, `.img` laden, der
+Schreib-/Formatierpfad des A5120-K5122), bekommt **Normlücken**
+(`TrackCodec::normGaps`): 80 × 4E, 12 × 00, `C2 C2 C2 FC`, 50 × 4E, je Sektor 12 × 00 +
+`A1 A1 A1 FE` C H R N CRC, **22 × 4E**, 12 × 00 + `A1 A1 A1 FB`, Daten, CRC, Lücke 3 nach
+Sektorgröße (MFM 128 → 32, 256 → 54, 512 → 84, 1024 → 116; FM 27/42/58) und **Lücke 4b bis
+zum Index** — die Spur ist genau eine Umdrehung (`nominalTrackBytes`: MFM 6250 bzw.
+10 416 für 8″ DD, FM 3125/5208/6250).  Passt die Spur mit der Normlücke 3 nicht, wird nur
+Lücke 3 gekürzt.
+
+Zwei Dinge, die der Emulator selbst nicht merkt, das Gerät aber schon: **Lücke 2** (das
+CP/A-Bootsystem liest nach der ID-CRC 25 Bytes, bevor es MK1 scharf macht — mit 11 × 4E ist
+die Datensync da schon vorbei) und die **Zellenzahl je HFE-Spur** (sie IST die
+Umdrehungszeit: `gw write` streckt sie auf die gemessene Umdrehung — 188 ms Inhalt wurden
+mit 235 statt 250 kbit/s geschrieben).  Der A5120-Lesestrom übernimmt deshalb seit AP-F1
+den Abstand ID → Datenmarke vom Medium (MFM, 07 §10.2).  Welche Umdrehung, sagt
+`DiskMedium::nominalRpm` (360 nur, wenn jedes Laufwerk des Formats ein 8″-Laufwerk ist;
+eine Leerdiskette des Emulators übernimmt die Drehzahl ihres Laufwerks; `.hfe` trägt sie
+im Kopf).  Wächter:
+`DiskVolume.JedesKatalogformatHatNormspurenMitEinerUmdrehung`, `TrackCodecNormluecken.*`,
+`BitCodecLuecke4b.*`, `BootIntegrationLuecke2.*`; Befund: `doc/design/16_k8915.md` AP-F1.
 
 ### 4.3 `.dmk` — David Keil's Disk Image (`DmkCodec`) — **neu**
 
@@ -275,7 +300,13 @@ Eine **Spur** ist `.img`-tauglich, wenn sie
 1. mindestens einen Sektor enthält (`TrackCodec::parseTrack` liefert ≥ 1 Sektor),
 2. bei allen Sektoren **ID- und Daten-CRC gültig** sind,
 3. und hinter jeder Daten-CRC **nur Gap-Füllbytes** stehen
-   (`0x4E`, `0xFF`, `0x00`; geprüft über `LogicalSector::tail`).
+   (`0x4E`, `0xFF`, `0x00`; geprüft über `LogicalSector::tail`) — **oder ein reiner
+   Schreibnachlauf** (seit 2026-09-29, `doc/design/16_k8915.md` AP-E5b): auf einer
+   MFM-Spur Byte 0 = `4E`/`4F` (das geschriebene Lückenbyte) und das letzte Byte eine
+   Drehung von `4E` oder `90` (die alte Lücke, nach der Schreibnaht im falschen
+   Byterahmen gelesen).  So sieht jeder an Ort und Stelle geschriebene Sektor einer echt
+   gelesenen Diskette aus (K8915, P8000); ein UDOS-Kontrollblock beginnt dagegen mit
+   Sektorindex oder `FF` und bleibt gesperrt.
 
 Punkt 3 ist der eigentliche Auslöser: **UDOS** schreibt je Sektor einen
 Sektorkontrollblock (Rückwärts-/Vorwärtszeiger + eigene CRC) direkt hinter die

@@ -105,19 +105,90 @@ void Z80SIO::Channel::reset() {
     rx_fifo.clear();
     tx_buf.reset();
     irq_rx = irq_tx = irq_ext = false;
+    // Die aus WR1 abgeleiteten Freigaben gehören zu WR1 und gehen mit ihm (sonst
+    // unterbräche ein Kanal nach Channel Reset weiter im alten Empfangsmodus).
+    ext_int_enable = tx_int_enable = status_affects_vector = false;
+    rx_int_mode = SIORxIntMode::DISABLED;
+    rx_int_first_only = false;
+    last_rx = 0x00;
+    // Die Eingänge (cts_, dcd_, break_rx_) sind Pins und bleiben; nur das Latch
+    // geht.  rr0 = 04H wie bisher, solange kein Eingang aktiv ist (Vorgabe).
+    ext_latch_ = false;
+    rr0 |= extStatusEingaenge();
 }
 
 void Z80SIO::Channel::updateRR0() {
     rr0 = 0x00;
     if (!rx_fifo.empty()) rr0 |= 0x01;  // Rx Character Available
     if (!tx_buf.has_value()) rr0 |= 0x04; // Tx Buffer Empty
-    if (cts_) rr0 |= 0x20;
+    // D3 DCD, D5 CTS, D7 Break/Abort: festgehalten seit der letzten Ext/Status-
+    // Änderung, sonst der Eingang.  Mit der Vorgabe (alle inaktiv) bleiben die
+    // Bits 0 — genau das RR0 von vor AP-S3.
+    rr0 |= ext_latch_ ? ext_rr0_ : extStatusEingaenge();
+}
+
+void Z80SIO::Channel::extStatusGeaendert() {
+    // Datenblatt (U856, Befehl 2 und RR0 D3): eine Änderung hält die Statusbits
+    // fest und fordert Ext/Status an; erst „Reset Ext/Status“ gibt sie wieder frei.
+    // Ohne Freigabe (WR1 D0) kein Interrupt, RR0 folgt dem Eingang.
+    if (ext_int_enable && !ext_latch_) {
+        ext_latch_ = true;
+        ext_rr0_   = extStatusEingaenge();
+        irq_ext    = true;
+    }
+    updateRR0();
+}
+
+void Z80SIO::Channel::setzeCTS(bool aktiv) {
+    if (cts_ == aktiv) return;
+    cts_ = aktiv;
+    extStatusGeaendert();
+}
+
+void Z80SIO::Channel::setzeDCD(bool aktiv) {
+    if (dcd_ == aktiv) return;
+    dcd_ = aktiv;
+    extStatusGeaendert();
+}
+
+void Z80SIO::Channel::setzeBreakEmpfang(bool aktiv) {
+    if (break_rx_ == aktiv) return;
+    break_rx_ = aktiv;
+    extStatusGeaendert();
+}
+
+Z80SIO::Channel::Format Z80SIO::Channel::format() const {
+    // Kodierung der Bitzahl in WR3 D7–6 / WR5 D6–5: 00=5, 01=7, 10=6, 11=8.
+    static constexpr uint8_t BITS[4] = {5, 7, 6, 8};
+    static constexpr uint8_t TEILER[4] = {1, 16, 32, 64};
+    Format f;
+    f.teiler      = TEILER[(wr[4] >> 6) & 0x03];
+    const uint8_t sb = (wr[4] >> 2) & 0x03;       // 00 synchron, 01 1, 10 1½, 11 2
+    f.stopp_halbe = sb == 0 ? 0 : static_cast<uint8_t>(sb + 1);
+    f.paritaet    = (wr[4] & 0x01) ? ((wr[4] & 0x02) ? 2 : 1) : 0;
+    f.tx_bits     = BITS[(wr[5] >> 5) & 0x03];
+    f.rx_bits     = BITS[(wr[3] >> 6) & 0x03];
+    return f;
+}
+
+bool Z80SIO::Channel::empfaengerFrei() const {
+    return rx_fifo.size() < RX_FIFO_DEPTH && (!autoEnables() || dcd_);
 }
 
 bool Z80SIO::Channel::rxIntEnabled() const {
-    // WR1 bits[3:2]: 10 or 11 = interrupt on all received
-    uint8_t rx_mode = (wr[1] >> 2) & 0x03;
-    return rx_mode >= 2;
+    // WR1 D4–D3: 10 = jedes Zeichen (Parität beeinflusst den Vektor), 11 = jedes
+    // Zeichen (Parität ohne Einfluss) — beide unterbrechen bei jedem Zeichen.
+    return rx_int_mode == SIORxIntMode::ALL_CHARS ||
+           rx_int_mode == SIORxIntMode::SPECIAL_CONDITION;
+}
+
+bool Z80SIO::Channel::rxIntFaellig() {
+    if (rxIntEnabled()) return true;
+    if (rx_int_mode == SIORxIntMode::FIRST_CHAR && rx_int_first_only) {
+        rx_int_first_only = false;
+        return true;
+    }
+    return false;
 }
 
 bool Z80SIO::Channel::txIntEnabled() const {
@@ -125,25 +196,28 @@ bool Z80SIO::Channel::txIntEnabled() const {
 }
 
 void Z80SIO::Channel::rxByte(uint8_t byte) {
+    // Auto Enables (WR3 D5): der Empfänger ist nur bei aktivem /DCD frei — ein
+    // Zeichen bei inaktivem /DCD kommt nie an (Datenblatt, asynchroner Empfang).
+    // Kein bekannter Gast setzt das Bit (s. h-Datei), die Tastaturwege sind unberührt.
+    if (autoEnables() && !dcd_) return;
+    last_rx = byte;  // Datenpfad hinter dem Schieberegister, unabhängig vom FIFO (s. h-Datei).
     if (rx_fifo.size() < RX_FIFO_DEPTH) {
         rx_fifo.push_back(byte);
         if (rx_fifo.size() == 1) {
             // Parity error detection not emulated — clear parity/framing/overrun
         }
     } else {
-        rr1 |= 0x08; // Overrun
+        rr1 |= 0x20; // Rx Overrun Error = RR1 D5 (Zilog; bis AP-ST3 fälschlich D3)
     }
     updateRR0();
-    if (rxIntEnabled())
-        irq_rx = true;
-    // First-received mode: interrupt only on first byte in empty FIFO
-    uint8_t rx_mode = (wr[1] >> 2) & 0x03;
-    if (rx_mode == 1 && rx_fifo.size() == 1)
+    if (rxIntFaellig())
         irq_rx = true;
 }
 
 bool Z80SIO::Channel::txAvailable() const {
-    return tx_buf.has_value();
+    // Auto Enables (WR3 D5): bei inaktivem /CTS gibt der Sender nichts ab — das
+    // Zeichen bleibt im Puffer, RR0 D2 bleibt 0, der Gast wartet (Datenblatt).
+    return tx_buf.has_value() && (!autoEnables() || cts_);
 }
 
 uint8_t Z80SIO::Channel::txGet() {
@@ -281,6 +355,8 @@ void visitChannelPod(ChT& ch, F& f) {
     f(ch.dtr_); f(ch.dcd_); f(ch.cts_latch); f(ch.dcd_latch); f(ch.sync_latch);
     f(ch.rx_state); f(ch.rx_shift_reg); f(ch.rx_bit_count); f(ch.rx_sample_count);
     f(ch.tx_underrun); f(ch.break_abort_detected);
+    f(ch.last_rx);
+    f(ch.break_rx_); f(ch.ext_latch_); f(ch.ext_rr0_);   // AP-S3 (Savestate v6)
 }
 }  // namespace
 
@@ -333,44 +409,66 @@ void Z80SIO::setIEI(bool iei) {
 uint8_t Z80SIO::getVector() const {
     if (!iei_) return 0xFF;
 
-    // Base vector from WR2 of channel B
-    uint8_t vec = ch_b_.wr[2];
+    // Basisvektor aus WR2 von Kanal B.  Mit „status affects vector“ (WR1 Bit2 von
+    // Kanal B) ersetzt die SIO die Bits 3…1 durch die Quelle (Zilog Z80 SIO, WR1/WR2;
+    // U856 gleich):  B: Tx 000, Ext/Status 001, Rx 010, Sonderfall 011 —
+    //                A: Tx 100, Ext/Status 101, Rx 110, Sonderfall 111.
+    // Ohne das Bit bleibt der Vektor unverändert.  (Bis 2026-09-28 waren A-Ext/Status
+    // und B-Tx vertauscht (000/101) und das Bit wurde nicht beachtet; das BIOS des
+    // K8915 legt seine Tx-Routine auf D0H und lief dadurch in die Leere, AP-E3.)
+    const uint8_t basis = ch_b_.wr[2];
+    const bool    sav   = ch_b_.status_affects_vector;
+    auto vektor = [&](uint8_t v321) -> uint8_t {
+        return sav ? static_cast<uint8_t>((basis & 0xF1) | (v321 << 1)) : basis;
+    };
 
-    // Determine which interrupt is active (A > B, Rx > Tx > Ext)
-    // Check IEI and IUS for proper daisy chain handling
-    // Bits [3:1] of vector encode interrupt source per Z80 SIO spec
+    // Rangfolge innerhalb der SIO: A vor B, Rx vor Tx vor Ext/Status.
     if (ch_a_.iei && ch_a_.irq_rx && !ch_a_.ius) {
         ch_a_.irq_rx = false;
         ch_a_.ius = true;
-        return (vec & 0xF1) | 0x0C;  // 110 = Ch A Rx
+        return vektor(0b110);
     }
     if (ch_a_.iei && ch_a_.irq_tx && !ch_a_.ius) {
         ch_a_.irq_tx = false;
         ch_a_.ius = true;
-        return (vec & 0xF1) | 0x08;  // 100 = Ch A Tx
+        return vektor(0b100);
     }
     if (ch_a_.iei && ch_a_.irq_ext && !ch_a_.ius) {
         ch_a_.irq_ext = false;
         ch_a_.ius = true;
-        return (vec & 0xF1) | 0x00;  // 000 = Ch A Ext/Status
+        return vektor(0b101);
     }
     if (ch_b_.iei && ch_b_.irq_rx && !ch_b_.ius) {
         ch_b_.irq_rx = false;
         ch_b_.ius = true;
-        return (vec & 0xF1) | 0x04;  // 010 = Ch B Rx
+        return vektor(0b010);
     }
     if (ch_b_.iei && ch_b_.irq_tx && !ch_b_.ius) {
         ch_b_.irq_tx = false;
         ch_b_.ius = true;
-        return (vec & 0xF1) | 0x0A;  // 101 = Ch B Tx (spec)
+        return vektor(0b000);
     }
     if (ch_b_.iei && ch_b_.irq_ext && !ch_b_.ius) {
         ch_b_.irq_ext = false;
         ch_b_.ius = true;
-        return (vec & 0xF1) | 0x02;  // 001 = Ch B Ext/Status
+        return vektor(0b001);
     }
 
-    return vec;
+    return basis;
+}
+
+uint8_t Z80SIO::rr2Vektor() const {
+    const uint8_t basis = ch_b_.wr[2];
+    if (!ch_b_.status_affects_vector) return basis;
+    auto vektor = [&](uint8_t v321) { return static_cast<uint8_t>((basis & 0xF1) | (v321 << 1)); };
+    // Dieselbe Rangfolge wie getVector().
+    if (ch_a_.iei && ch_a_.irq_rx  && !ch_a_.ius) return vektor(0b110);
+    if (ch_a_.iei && ch_a_.irq_tx  && !ch_a_.ius) return vektor(0b100);
+    if (ch_a_.iei && ch_a_.irq_ext && !ch_a_.ius) return vektor(0b101);
+    if (ch_b_.iei && ch_b_.irq_rx  && !ch_b_.ius) return vektor(0b010);
+    if (ch_b_.iei && ch_b_.irq_tx  && !ch_b_.ius) return vektor(0b000);
+    if (ch_b_.iei && ch_b_.irq_ext && !ch_b_.ius) return vektor(0b001);
+    return vektor(0b011);
 }
 
 void Z80SIO::onRETI() {
@@ -401,6 +499,8 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
             case 2: // Reset Ext/Status Interrupts
                 ch.rr1 &= ~0x1C;
                 ch.irq_ext = false;
+                ch.ext_latch_ = false;   // RR0 D3/D5/D7 zeigen wieder die Eingänge
+                ch.updateRR0();
                 break;
             case 3: // Channel Reset (full initialization)
                 ch.reset();
@@ -474,8 +574,11 @@ uint8_t Z80SIO::readControl(Channel& ch, bool is_b) const {
         case 0: return ch.rr0;
         case 1: return ch.rr1;
         case 2:
-            // Channel B returns modified vector; channel A returns raw WR2 of B
-            if (is_b) return getVector();
+            // Channel B returns modified vector; channel A returns raw WR2 of B.
+            // Lesen ist KEINE Quittung (bis AP-ST3 stand hier getVector(): ein
+            // Lesen von RR2 setzte IUS und löschte die Anforderung — am K8915 nahm
+            // das der Tastatur ihren nächsten Interrupt).
+            if (is_b) return rr2Vektor();
             return ch_b_.wr[2];
         default: return 0xFF;
     }
@@ -487,11 +590,18 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
             if (!ch_a_.rx_fifo.empty()) {
                 uint8_t b = ch_a_.rx_fifo.front();
                 ch_a_.rx_fifo.pop_front();
-                ch_a_.irq_rx = false;
+                // „Jedes Zeichen": solange der FIFO noch Zeichen hält, bleibt die
+                // Anforderung stehen (das nächste Zeichen unterbricht erneut, sobald
+                // IUS per RETI fällt).  Vorher ging sie mit dem ersten Lesen verloren —
+                // eine Tastatur, deren Zeichen sich während eines langen DI stauten,
+                // blieb stumm (K8915, AP-ST3).
+                ch_a_.irq_rx = !ch_a_.rx_fifo.empty() && ch_a_.rxIntEnabled();
                 ch_a_.updateRR0();
                 return b;
             }
-            return 0xFF;
+            // Leerer Empfänger: keine eigene Ruhelage am Datenregister — die echte
+            // U856 liefert das zuletzt empfangene Byte (last_rx), nicht FFH.
+            return ch_a_.last_rx;
         }
         case 1: // Ch A control
             return readControl(ch_a_, false);
@@ -499,11 +609,16 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
             if (!ch_b_.rx_fifo.empty()) {
                 uint8_t b = ch_b_.rx_fifo.front();
                 ch_b_.rx_fifo.pop_front();
-                ch_b_.irq_rx = false;
+                // „Jedes Zeichen": solange der FIFO noch Zeichen hält, bleibt die
+                // Anforderung stehen (das nächste Zeichen unterbricht erneut, sobald
+                // IUS per RETI fällt).  Vorher ging sie mit dem ersten Lesen verloren —
+                // eine Tastatur, deren Zeichen sich während eines langen DI stauten,
+                // blieb stumm (K8915, AP-ST3).
+                ch_b_.irq_rx = !ch_b_.rx_fifo.empty() && ch_b_.rxIntEnabled();
                 ch_b_.updateRR0();
                 return b;
             }
-            return 0xFF;
+            return ch_b_.last_rx;
         }
         case 3: // Ch B control
             return readControl(ch_b_, true);
@@ -551,6 +666,8 @@ void Z80SIO::processWR1(Channel& ch, uint8_t data, bool is_b) {
     // Rx Int Mode (D4:D3)
     uint8_t rx_mode = (data >> 3) & 0x03;
     ch.rx_int_mode = static_cast<SIORxIntMode>(rx_mode);
+    // Betriebsart 01 ist nach dem Setzen für das nächste Zeichen scharf (Datenblatt).
+    ch.rx_int_first_only = (ch.rx_int_mode == SIORxIntMode::FIRST_CHAR);
 
     // WAIT/READY mode (D7:D5) - not implemented in basic emulation
 }
@@ -779,8 +896,7 @@ void Z80SIO::asyncReceive(Channel& ch, bool bit) {
                     ch.updateRR0();
 
                     // Trigger interrupt
-                    if (ch.rx_int_mode == SIORxIntMode::ALL_CHARS ||
-                        (ch.rx_int_mode == SIORxIntMode::FIRST_CHAR && ch.rx_fifo.size() == 1)) {
+                    if (ch.rxIntFaellig()) {
                         ch.irq_rx = true;
                     }
                 } else {
@@ -840,7 +956,7 @@ void Z80SIO::syncReceive(Channel& ch, bool bit) {
                 ch.rx_fifo.push_back(data);
                 ch.updateRR0();
 
-                if (ch.rx_int_mode != SIORxIntMode::DISABLED) {
+                if (ch.rxIntFaellig()) {
                     ch.irq_rx = true;
                 }
             } else {
@@ -963,7 +1079,7 @@ void Z80SIO::sdlcReceive(Channel& ch, bool bit) {
                 ch.rx_fifo.push_back(data);
                 ch.updateRR0();
 
-                if (ch.rx_int_mode != SIORxIntMode::DISABLED) {
+                if (ch.rxIntFaellig()) {
                     ch.irq_rx = true;
                 }
             } else {

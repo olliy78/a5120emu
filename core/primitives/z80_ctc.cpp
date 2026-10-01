@@ -174,6 +174,37 @@ void Z80CTC::clockTick() {
     }
 }
 
+uint64_t Z80CTC::teilerTakte(int kanal) const {
+    if (kanal < 0 || kanal > 3) return 0;
+    const Channel& c = ch_[kanal];
+    // Läuft der Kanal nicht, kommen keine Impulse: nicht programmiert, per D1
+    // angehalten, Zeitkonstante noch ausstehend oder Zeitgeber vor dem Trigger.
+    if (!c.running) return 0;
+    const uint64_t tc = (c.timeConst == 0) ? 256u : c.timeConst;
+    if (!(c.control & CTRL_COUNTER))
+        return ((c.control & CTRL_PRESCALE256) ? 256u : 16u) * tc;
+
+    // Zähler: Periode des Eingangs.  Eine (falsch verdrahtete) Schleife von
+    // Quellen darf nicht endlos rekursieren — ab einer Tiefe, die keine echte
+    // Kaskade erreicht, gilt der Eingang als unbekannt.
+    static thread_local int tiefe = 0;
+    if (!eingang_[kanal] || tiefe > 16) return 0;
+    ++tiefe;
+    const uint64_t periode = eingang_[kanal]();
+    --tiefe;
+    return periode * tc;
+}
+
+void Z80CTC::setzeEingangsQuelle(int kanal, PeriodenQuelle quelle) {
+    if (kanal < 0 || kanal > 3) return;
+    eingang_[kanal] = std::move(quelle);
+}
+
+void Z80CTC::setzeEingangsPeriode(int kanal, uint64_t takte) {
+    if (takte == 0) setzeEingangsQuelle(kanal, {});
+    else            setzeEingangsQuelle(kanal, [takte] { return takte; });
+}
+
 void Z80CTC::reset() {
     for (auto& c : ch_) c = Channel{};
     vec_base_ = 0;

@@ -226,7 +226,7 @@ TEST(DiskToolBootdiskette, GebauteScpxDisketteBootetKalt) {
  */
 TEST(DiskToolBootdiskette, GebauteScpx798DisketteBootetKalt) {
     TempPfad ziel("k1520_bootdisk_scpx798.hfe");
-    ASSERT_NO_FATAL_FAILURE(baueBootdiskette(diskPath("scpx17_5x1024_k5601_hardy.hfe"),
+    ASSERT_NO_FATAL_FAILURE(baueBootdiskette(diskPath("scpx17_5x1024_k5601_hardy_norm.hfe"),
                                              "scpx798", ziel.get(), 18432));
 
     A5120Machine machine;

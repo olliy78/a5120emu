@@ -629,15 +629,16 @@ geht (einlegen bei belegtem, auswerfen bei leerem Laufwerk).
 Der Zustand, in dem der Emulator **nach der Erstinstallation** aufgeht, ist
 keine Sammlung von Vorgabewerten im Programmtext mehr, sondern **eine Datei
 desselben Aufbaus wie die Konfiguration des Anwenders**:
-`data/default_config.yaml` im Quellbaum, `share/k1520emu/default_config.yaml` in
-einer Installation (`packaging/build_payload.sh` legt sie dorthin, Wächter
+`data/default_config_a5120.yaml` bzw. `data/default_config_k8915.yaml` im
+Quellbaum, `share/k1520emu/default_config_*.yaml` in einer Installation (seit
+2026-09-30 je Programm eine, §10.9; vorher `default_config.yaml`) (`packaging/build_payload.sh` legt sie dorthin, Wächter
 `py_packaging`).  Aufgelöst wird sie in `app/paths.py`
 (`default_config_file()`), gelesen in `app/config_io.py`
 (`standard_konfiguration()`), gebraucht an genau zwei Stellen:
 
 * `MainWindow._load_or_create_default_config` — beim ersten Start, solange es
-  noch keine `config.yaml` gibt; sie wird anschliessend als die neue
-  `config.yaml` des Anwenders geschrieben und gehört von da an ihm.
+  noch keine `a5120emu.yaml` bzw. `k8915emu.yaml` gibt; sie wird anschliessend
+  als die neue Konfiguration des Anwenders geschrieben und gehört von da an ihm.
 * `MainWindow._standard_zuruecksetzen` — *Ansicht ▸ Standard zurücksetzen*
   (`act_standard`, kein Tastenkürzel, Symbol `reset-view`).  Nach Rückfrage
   wird die Vorgabe angewandt und **sofort** geschrieben (`_autosave_now()`, nicht
@@ -663,11 +664,11 @@ Vier Festlegungen, die das tragen:
 * **Ohne die Datei läuft alles weiter.**  `standard_konfiguration()` gibt `{}`
   zurück; der erste Start bleibt dann bei den im Programm eingebauten Vorgaben
   (`CRTParams()`, Tempo 1,0, `dt.DEFAULT_DRIVE_TYPES`, `actions.STANDARD`) und
-  schreibt trotzdem eine `config.yaml`, *Standard zurücksetzen* meldet, wo es
+  schreibt trotzdem eine Konfiguration, *Standard zurücksetzen* meldet, wo es
   gesucht hat.  Sie ist eine Beigabe, keine Voraussetzung.
 
 Eine andere Auslieferung herzustellen ist damit ein Kopiervorgang: Fenster
-einrichten, den Inhalt der eigenen `config.yaml` nach `data/default_config.yaml`
+einrichten, den Inhalt der eigenen `a5120emu.yaml` nach `data/default_config_a5120.yaml`
 übernehmen, `disks:` und `window.geometry` streichen.
 
 ### 10.8 Die Nachbarprogramme starten — Werkzeugmenü und Werkzeugkonsole (2026-09-14)
@@ -726,7 +727,111 @@ Das Terminalprogramm wird unter Linux der Reihe nach gesucht
 findet sich keines, nennt die Meldung den Pfad der vorbereiteten Startdatei,
 statt kommentarlos nichts zu tun.
 
-### 10.9 Modellwahl A5120/A5120.16 und die EM-Leuchten (2026-09-29, S6)
+### 10.9 Zwei Programme: A5120 Emulator und K8915 Emulator (2026-09-30, AP-UI1)
+
+Der K8915 bekommt kein Menü im A5120-Emulator, sondern ist ein **eigenes Programm
+mit derselben Codebasis** (`doc/design/18_k8915emu_oberflaeche.md`). Getragen wird das
+vom **Programmprofil** `app/profil.py`: Maschine, Titel, Konfigurations- und
+Vorgabedatei, Takt, Tastatur, Frontplatte, eigene Aktionen. `MainWindow(disks,
+profil=…)` fragt nur das Profil; `app/main.py --machine k8915` wählt es, die Starter
+übergeben es fest (`run_k8915emu.sh`, `bin/k8915emu` — dieselbe Vorlage wie
+`bin/a5120emu`, der Name entscheidet —, Startmenü „K8915 Emulator“).
+
+| | A5120 Emulator | K8915 Emulator |
+|---|---|---|
+| Titel / Programm | „A5120 Emulator“ / `a5120emu` | „K8915 Emulator“ / `k8915emu` |
+| Konfiguration | `a5120emu.yaml` | `k8915emu.yaml` |
+| Vorgabe | `default_config_a5120.yaml` | `default_config_k8915.yaml` |
+| Laufwerke | 3 × K5601 + leer, alle Typen | 2 × K5601, nur 5¼″ |
+| Takt | 2,45 MHz | 2,4576 MHz |
+| Tastatur | K7637 (`keyboard.py`) | K7672 (`keyboard_k7672.py`) |
+| Statuszeile | Takt, Laufwerke | + Frontplatte (6 Lampen) |
+| eigene Aktionen | — | `nmi` (neben Reset, ohne Kürzel) |
+
+Festlegungen, die man nicht aufweichen darf:
+
+* **Kein `if maschine == …` quer durch die Oberfläche** — ein Unterschied gehört ins
+  Profil (oder in eine Tabelle, die nach dem Maschinennamen fragt: `drive_types`,
+  `actions.NUR_FUER`).
+* **Beide Konfigurationen liegen im selben Ordner** (`paths.config_dir()`) und fassen
+  einander nicht an. Die frühere `config.yaml` gehörte dem A5120: gibt es beim Start
+  des A5120 Emulators eine `config.yaml`, aber keine `a5120emu.yaml`, wird sie **einmal
+  umbenannt** (`config_io.konfig_umziehen`, Vermerk im Protokoll) — nicht kopiert, nicht
+  gelöscht; der K8915 rührt sie nicht an. Das DiskTool (QSettings) ist nicht betroffen.
+* **Aktionen, die es nur in einem Programm gibt, entstehen im anderen gar nicht**
+  (`actions.erzeuge_aktionen(fenster, maschine)`, `reihenfolge()`, `standard()`): der
+  A5120 hat keinen NMI-Taster, auch nicht im Einrichtdialog der Symbolleiste. Ein
+  unbekannter Leisten-Name wird wie immer übergangen.
+* **Die Frontplatte** (`status_bar.Frontplatte`): Run grün, Input File/Output File/
+  RUN Mode gelb (61H Bit 4/5/6, aktiv low), ERROR rot (Bit 7), Power rot. Run = die
+  Emulation läuft (Gerät: vermutlich `/HALT` [?]), Power = eingeschaltet. Nachgeführt
+  im 120-ms-Takt der Laufwerksleuchten.
+* **Die K7672 sendet Matrixpositionen** (`TASTE_BASE | m`), nicht Scancodes: was daraus
+  wird (Scancode im DCP-Modus, Zeichen im SCP-Modus), entscheidet der Kern mit den
+  Tabellen der Firmware. Umschalt/CTRL rasten wie bei der K7637 und gehen als Flags mit.
+  Die PC-Tastatur geht als Qt-Code an den Kern, der sie nach der BIOS-Tabelle übersetzt.
+  Wächter: `test_k8915emu_gui.py` (Stichprobe gegen das EPROM, Boot bis `A>` und `dir`
+  über die Bildschirmtastatur).
+
+### 10.10 Der Reiter „Schnittstellen" (2026-10-01, AP-S7; umgebaut AP-S10)
+
+Serielle Schnittstellen nach außen (Telnet/RFC 2217/Datei), Entwurf
+`doc/design/19_serielle_schnittstellen.md` §9.  `app/ui/serial_widget.py`:
+`SerialWidget` (seit AP-S10 ein **Reiter im Einstellungen-Kasten** neben
+Allgemein/Laufwerke/CRT, in einem `QScrollArea`; es gibt **keinen** `serial_dock`, keinen
+Menüeintrag und keinen Kastenschalter `dock_serial` mehr — ein solcher Name in einer
+alten `window.toolbar` wird übergangen, ein `serial_dock` in einer alten `dock_state`
+ignoriert Qt; **kein Tastenkürzel**) und je einstellbarer Schnittstelle ein `SerialBlock`.
+Das Widget gehört dem Hauptfenster (`SettingsWidget(…, schnittstellen=…)`) und sein
+4-Hz-Takt läuft auch bei verdecktem Reiter — er speist die Statuszeile.
+
+* **Namen, Stecker, V.24-Fähigkeit und Taktquellen kommen nur aus dem Kern**
+  (`serial_info`/`serial_fixed_names`) — kein Profileintrag, kein `if machine == …`; beide
+  Programme zeigen dieselben Blöcke mit ihren Schnittstellen.
+* **Der Kern ist die Quelle der Wahrheit.**  Ein Bedienelement ruft `serial_configure`;
+  der 4-Hz-Takt (`QTimer`, `TAKT_MS`) lädt die Elemente aus dem Kern nach (ein Feld mit
+  Tastaturfokus bleibt unberührt).  Fehler und Hinweise stehen als Zeile im Block
+  (`Status.meldung`), kein Meldungsfenster.
+* **Sperren** nach Entwurf §4 (im Betrieb Betriebsart/Rolle/Host/Port/Datei; Host im
+  Server immer), **Knopf** „Starten/Beenden" bzw. „Verbinden/Trennen" (Client auch
+  während der Versuche), gesperrt bei Loop/ungültigem Host/fehlender Datei.  Der K8915
+  startet im Loop — der Block zeigt den Grund in der Meldungszeile und im Tooltip.
+  Wird beim Umschalten auf *Datei* der Speichern-Dialog abgebrochen, bleibt die vorige
+  Betriebsart.
+* **Statuszeile:** `MachineStatus.set_seriell` (zwei `SeriellFeld`, ausgeblendet ohne
+  Text).  Der Text wird im Kasten berechnet (`statuszeilentexte`) und per Signal
+  gemeldet: Server = tatsächliche Ports (lauscht/verbunden, Rolle Server), Verbindungen =
+  nur `VERBUNDEN`; Betriebsart *Datei* fällt heraus (der Kern meldet sie als VERBUNDEN).
+* **Konfiguration:** Abschnitt `schnittstellen:` (Schlüssel = Name aus dem Kern;
+  `zustand_lesen`/`zustand_anwenden`, `config_io.build_config(schnittstellen=…)`).  Fehlt
+  der Abschnitt, bleibt alles wie es ist — die Auslieferungsvorgabe trägt keinen.  `aktiv`
+  wird in `MainWindow._apply_config` wieder aufgenommen (`serial_start_auto`, §7.4a:
+  Server nur auf dem eingestellten Port, belegt → nicht gestartet und `port_vorschlag`
+  ins Port-Feld; Client Dauerversuch; Datei anhängend; Loop → kein Start).
+* **Maschinenwechsel:** ein Wechsel der Laufwerksbestückung baut eine neue Maschine
+  (neuer Hub).  `_apply_drive_types` merkt den Stand, beendet die alten Schnittstellen und
+  nimmt sie an der neuen wieder auf; `closeEvent` speichert zuerst (`aktiv` = Zustand
+  beim Beenden) und beendet dann.
+* Wächter: `tests/python/test_serial_gui.py` (`py_serial_gui`, beide Programme).
+
+**AP-S10 (Anwenderbefund 2026-10-01), im selben Reiter:**
+
+* **Format** in der üblichen Schreibweise (`8N1`/`7E1`/`8O1`, `1.5`), Tooltip erklärt die
+  Buchstaben (`format_kuerzel`/`format_tooltip`).
+* **Leitungen als LEDs** (`LeitungsLed`/`LeitungsAnzeige`/`LeitungsReihe`, QPainter): grün =
+  aktiv, dunkel = inaktiv, Umriss = unbekannt; Ausgänge (RTS/DTR) und Eingänge
+  (CTS/DSR/DCD) getrennt beschriftet, Tooltip „CTS aktiv (Eingang des Rechners)".  Bei
+  Telnet der Vermerk „nicht übertragen".
+* **Port-Feld** zeigt im Betrieb `port_aktiv`, sonst den eingestellten Wert; gespeichert
+  wird immer der eingestellte (`konfig_lesen` liest den Kern, nicht das Feld) — §7.4a
+  (Vorschlag ins Feld, belegt → nicht gestartet) unverändert.
+* **Gegenseite** (RFC 2217, AP-S11): Baud + Format (`gegenseite_text`), Warnfarbe bei
+  `baud_abweichend` oder `format_abweichend`, Leitungen je Rolle als LEDs (Server: RTS/DTR,
+  Client: CTS/DSR/DCD/RI; unbekannt = Umriss); die Zeile fehlt, solange nichts bekannt ist.
+* Wächter: `tests/python/test_serial_gui.py` (Reiter statt Dock, alte Leiste/`dock_state`,
+  Format, LEDs, Port-Feld, Gegenseite über echten Loopback).
+
+### 10.10 Modellwahl A5120/A5120.16 und die EM-Leuchten (2026-09-29, S6)
 
 `doc/design/17_a5120_16.md` fügt dem A5120 optional die Steuerkarte 062-9005
 samt Erweiterungsmodul (EM256, U8001) hinzu — am Kern nichts als ein weiterer
@@ -741,7 +846,7 @@ fragt auch nicht nach.
   `app/drive_types.py`/`app/takt.py`) ist die einzige Stelle, die einen
   Modellschlüssel (`"a5120"`/`"a5120.16"`) auf den core-`em`-Parameter und den
   Anzeigenamen abbildet. `general.model` in der Konfiguration (`app/config_io.py`,
-  `data/default_config.yaml`) trägt den Schlüssel; **ein fehlender Eintrag ist
+  `data/default_config_a5120.yaml`) trägt den Schlüssel; **ein fehlender Eintrag ist
   die Vorgabe `"a5120"`** — ältere Konfigurationen laufen unverändert weiter.
 * **Die Auswahl sitzt in *Einstellungen ▸ Allgemein*** (`SettingsWidget.model_combo`,
   neben dem Takt) — kein Menüpunkt, keine `QAction`, kein Tastenkürzel: dasselbe
@@ -760,3 +865,9 @@ fragt auch nicht nach.
   bisher alles nach dem Taktfeld ab und baut die Laufwerksfelder neu auf. Die
   EM-Anzeige steht jetzt an einer FESTEN Stelle direkt nach dem Takt
   (`MachineStatus._em_widgets`), und die Räumschleife beginnt erst danach.
+
+* **Nur im Programmprofil mit `modellwahl`** (`app/profil.py`, beim Zusammenführen
+  der Zweige K8915 und a5120.16 am 2026-10-02): der A5120 Emulator zeigt die Auswahl,
+  der K8915 Emulator nicht und schreibt auch kein `general.model` — ein
+  Erweiterungsmodul gibt es nur am A5120 (`K1520Emulator(machine="k8915", em=…)` →
+  `ValueError`, `k1520_create_with_em` mit EM am K8915 → NULL).

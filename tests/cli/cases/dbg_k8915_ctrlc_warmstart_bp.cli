@@ -1,0 +1,21 @@
+# K8915 (§8a AP-E4d, Waechter „Haltepunkt 0406H nach Strg+C trifft"): Kaltstart ohne
+# Selbsttest bis zum Prompt, dann ^C — das BIOS ruft den ROM-Lader bei 0406H, der
+# CCP+BDOS nachlaedt.  Der Haltepunkt greift VOR dem Befehl, A8H steht auf 06H (ROM an),
+# und die Annotation kommt aus dem ROM-Listing, weil dessen Bytes dort stehen.
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+timeout: 180
+stdin:
+  gscreen "Coldstart" 20000000
+  keys \r
+  gscreen /^A>\s*$/ 250000000
+  b 0x0406
+  keys \x03
+  rj
+  q
+run:     --machine k8915 --skip-selftest %DISK% -l %CLI_DIR%/../../doc/EPROMS/K8915/k8915_zre.prn
+exit:    0
+expect:  Selbsttest uebersprungen
+expect:  ** bp CPU : CPU PC=0406
+expect:  state: A8H=06 map=R...111111111111
+expect_re: "pc":"0x0406".*"machine":"k8915","a8":"0x06"

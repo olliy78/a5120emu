@@ -1,17 +1,18 @@
-# K1520-Emulator — AUSLIEFERUNGSKONFIGURATION
-# ===========================================
+# A5120 Emulator — AUSLIEFERUNGSKONFIGURATION
+# ============================================
 #
-# Das ist der Zustand, in dem der Emulator nach der Erstinstallation aufgeht:
+# Das ist der Zustand, in dem der A5120 Emulator nach der Erstinstallation aufgeht
+# (der K8915 Emulator hat seine eigene: default_config_k8915.yaml):
 # Bildröhre, Tempo, Laufwerksbestückung, Fenstergröße, Kastenaufteilung und
 # Symbolleiste.  Gelesen wird sie an genau zwei Stellen (`app/config_io.py`,
 # `standard_konfiguration()`):
 #
-#   * beim ERSTEN Start, solange es noch keine `config.yaml` des Anwenders gibt
+#   * beim ERSTEN Start, solange es noch keine `a5120emu.yaml` des Anwenders gibt
 #     (`MainWindow._load_or_create_default_config`), und
 #   * bei *Ansicht ▸ Standard zurücksetzen* — dort überschreibt sie die
 #     Konfiguration des Anwenders.
 #
-# Der Aufbau ist derselbe wie in der gespeicherten `config.yaml`
+# Der Aufbau ist derselbe wie in der gespeicherten `a5120emu.yaml`
 # (`app/config_io.py`), eine gesicherte Konfiguration lässt sich also
 # unverändert hierher kopieren.  ZWEI Abschnitte gehören aber bewusst NICHT
 # hinein:
@@ -70,7 +71,7 @@ window:
   maximized: false
   # QMainWindow.saveState(), base64: welche Kästen sichtbar sind, wo sie liegen
   # und wie breit sie sind.  Neu aufzunehmen, indem man das Fenster einrichtet
-  # und den `window`-Abschnitt der eigenen config.yaml hierher kopiert.
+  # und den `window`-Abschnitt der eigenen a5120emu.yaml hierher kopiert.
   dock_state: AAAA/wAAAAD9AAAAAgAAAAAAAAMnAAACkfwCAAAAAfsAAAAWAHMAYwByAGUAZQBuAF8AZABvAGMAawEAAABUAAACkQAAAQQA////AAAAAQAAAcEAAAKR/AIAAAAC/AAAAFQAAAHgAAAA6AEAAB36AAAAAAIAAAAC+wAAABYAZAByAGkAdgBlAHMAXwBkAG8AYwBrAQAAAAD/////AAAAWgD////7AAAAGgBzAGUAdAB0AGkAbgBnAHMAXwBkAG8AYwBrAQAAAAD/////AAAAygD////7AAAAGgBrAGUAeQBiAG8AYQByAGQAXwBkAG8AYwBrAQAAAjoAAACrAAAAqQD///8AAAAAAAACkQAAAAEAAAACAAAAAQAAAAL8AAAAAQAAAAIAAAABAAAAIABjAG8AbgB0AHIAbwBsAHMAXwB0AG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAA=
   # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
   toolbar:

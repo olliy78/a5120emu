@@ -1,0 +1,1783 @@
+; ============================================================================
+; k8915_zre.prn  -  K8915 V3 Boot-EPROM (045-8762 'ZRE fuer K8G'), 2732, 4 KB, 0000H-0FFFH
+;
+; STATISCHES Disassemblat (tools/z80_disasm2.py) + Handkommentare aus
+; doc/design/16_k8915.md Paragraph 4 (Stromlaufplan 1.45.518762 + ROM-Verhalten,
+; Stand 2026-09-27). Etappe 0 ('Unterlagen sichern') -- KEINE Laufzeitverifikation:
+; es existiert noch kein K8915Machine/Emulator, also keine boot_trace/k1520dbg
+; --coverage-Bestaetigung wie bei zre.prn. Vor Etappe 1/2 (Maschinenabstraktion,
+; A8H-Logik) gegen das Original pruefen, nicht blind uebernehmen.
+;
+; Eigener Dump gegen tiffe.de/robotron/K8915/Eprominhalte/k8915-ZVE_2732.bin
+; byteidentisch (MD5 19e301bd...4b7); ROM-eigene 24-Bit-Pruefsumme (0000-0FFB
+; gegen 0FFD-0FFF) stimmt.
+;
+; Speicherbild (aus dem Stromlaufplan + ROM-Ablauf, Design-Doc §4.1/§4.2):
+;   0000-00CF  laeuft bei 0000H   Reset, Pruefsummentest, Kopierroutine (00C0H)
+;   00D0-03FF  laeuft bei F0D0H  Selbsttest (ROM/RAM/SIO/KEY/CTC) -- NUR als RAM-Spiegel
+;   0400-09FF  laeuft bei 0400H   Diskettenlader (direkt aus dem ROM)
+;   0987-099D  laeuft bei FFE0H  23-Byte-Warmstart-Stub (Quelle hier, Ziel FFE0H)
+;   0A00-0BFF  unbelegt (FFH)
+;   0C00-0CFF  laeuft bei FC00H  Hilfsroutinen (Bildloeschen/Statuszeile/Verzoegerung/Beep)
+;   0D00-0FF5  unbelegt (FFH)
+;   0FF6-0FFF  laeuft bei FFF6H  IM2-Vektor Kanal 3 (-> FC64H), Sprung 001BH, Pruefsumme
+;
+; Bankregister A8H (Design-Doc §4.2, s. Nachtrag unten):
+;   8EH  Reset/Kopieren/Bildtest      ROM an, RAM darueber
+;   06H  Normalbetrieb (Lader)         ROM an (Lader laeuft bei 0400H)
+;   87H  Stub bei FFE0H                ROM AUS (liest 0000H/0005H aus dem RAM)
+;   44H/54H/64H/74H  RAM-Test          waehlt eine von vier 16-KB-Baenken ins Fenster
+;                                      4000H-7FFFH ein
+; Nachtrag 2026-09-28: aus Blatt 3 hergeleitet (Design-Doc §4.2a) -- Bit0 = Seite 0
+; RAM statt ROM, Bit6 = Bank 2 ins Fenster 4000H,
+; Bit5:4 = welches Viertel von Bank 2, Bit7 = /MEMDI (aktiv bei 1). Am Geraet
+; bestaetigt (Brueckenfeld X8-X27, 2026-09-28): Bit2 = Seiten 2 UND 3, Bit3 = /MEMDI1
+; (aktiv bei 0), Bit1 = Seite 1.
+;
+; Bekannte Portbezuege in diesem ROM (Design-Doc §3):
+;   61H       Anzeigefeld der Frontplatte, aktiv low (Design-Doc §3.6): Bit4 Input
+;             File, Bit5 Output File, Bit6 RUN Mode, Bit7 ERROR
+;   A8H       Bankregister der ZRE (dieses Blatt, §3.1 Blatt 3)
+;   52H/53H   SIO2-B = Tastatur K7672 (§3.2), 9600 Bd
+; ============================================================================
+
+	ORG	0000H
+; ---- Reset / Pruefsumme / Kopierroutine (0000H-00CFH) ----------------------
+0000  F3            	DI		;[RESET-EINSPRUNG] DI/IM2/SP=F000H, dann OUT(61H),FFH (alle Lampen des Anzeigefelds aus, Design-Doc §3.6) und OUT(A8H),8EH = Bankregister: ROM an, RAM darueber (Design-Doc §4.2)
+L0001:
+0001  ED 5E         	IM 2
+0003  31 00 F0      	LD SP,F000H
+0006  3E FF         	LD A,FFH
+L0008:
+0008  D3 61         	OUT (61H),A
+000A  3E 8E         	LD A,8EH
+000C  D3 A8         	OUT (A8H),A
+000E  CD C0 00      	CALL sub_00C0		;CALL sub_00C0: kopiert ROM 00D0H-0FFEH (BC=0F2FH Bytes) nach F0D0H-FFFEH -- 'waehrend das ROM bei 0000 sichtbar ist' (§4.2); danach existiert derselbe Code-Bereich doppelt: als ROM unten UND als RAM-Spiegel oben
+0011  CD 09 FC      	CALL FC09H
+0014  3E 06         	LD A,06H		;OUT(A8H),06H = 'ROM an' (Normalbetrieb); der Lader ab 0400H laeuft direkt aus dem ROM (Design-Doc §4.2 Zeile 2)
+0016  D3 A8         	OUT (A8H),A
+0018  C3 00 04      	JP L0400		;JP 0400H: erster Sprung in den Diskettenlader, noch OHNE Selbsttest
+L001B:
+001B  31 00 F0      	LD SP,F000H		;[PRUEFSUMMEN-EINSPRUNG L001B] Zweiter Einstieg, erreicht ueber JP 0FFAH -> JP 001BH am Ende des Ladervorlaufs (§4.3 Schritt 3), wenn KEIN Fremdsystem im RAM gefunden wurde. SP neu setzen, Bildspeicher 17FFH loeschen (Cursor-Byte?), Statuszeile mit Leerzeichen fuellen (FCF8H), ROM erneut nach F0D0H kopieren.
+001E  AF            	XOR A
+001F  32 FF 17      	LD (17FFH),A
+0022  21 F8 FC      	LD HL,FCF8H
+0025  36 20         	LD (HL),20H
+0027  CD C0 00      	CALL sub_00C0
+002A  CD 09 FC      	CALL FC09H
+002D  21 68 FC      	LD HL,FC68H		;HL=FC68H: Name 'ROM' aus der Namenstabelle 'ROMRAMSIOKEYCTC' -- sub_FC19 schreibt ihn nach 1770H und 'DIAGNOSTIC' (FC77H) nach 1740H. Die Statuszeile ist eine LAUFANZEIGE (Name des gerade laufenden Tests), keine Zeile 'ROM RAM SIO KEY CTC' [LAUFZEIT 2026-09-28, K8915Machine, Design-Doc §4.3]
+L0030:
+0030  CD 19 FC      	CALL FC19H
+0033  08            	EX AF,AF'
+0034  3E 41         	LD A,41H
+0036  08            	EX AF,AF'
+0037  FD 21 FD 0F   	LD IY,0FFDH		;24-Bit-Pruefsummen-Vergleich: IY=0FFDH zeigt auf die im ROM abgelegte Summe 0FFDH-0FFFH (=09AB70H, Design-Doc §1/§4.1), HL/DE-Schleife (0044H) bildet die laufende Summe ueber 0000H-0FFBH
+003B  01 FC 0F      	LD BC,0FFCH
+003E  21 00 00      	LD HL,0000H
+0041  E5            	PUSH HL
+0042  D1            	POP DE
+0043  AF            	XOR A
+L0044:
+0044  86            	ADD A,(HL)		;24-Bit-Additionsschleife: A+=[HL], Carry->DE++ (Ueberlauf in DE:A), CPI zaehlt BC (=0FFCH Bytes) herunter; PE (BC!=0) haelt die Schleife
+0045  30 01         	JR NC,L0048
+0047  13            	INC DE
+L0048:
+0048  ED A1         	CPI
+004A  EA 44 00      	JP PE,L0044
+004D  FD 96 02      	SUB (IY+2)		;Vergleich laufende Summe (DE:A) gegen die abgelegte 24-Bit-Pruefsumme (IY) -- bei Gleichheit (Z) weiter zu L0083 (ROM-Test bestanden)
+0050  FD 8E 01      	ADC A,(IY+1)
+0053  9B            	SBC A,E
+0054  FD 8E 00      	ADC A,(IY+0)
+0057  9A            	SBC A,D
+0058  28 29         	JR Z,L0083
+L005A:
+005A  3E 7F         	LD A,7FH		;[ROM-/RAM-FEHLER] Fehlerpfad: OUT(61H),7FH, Kennbuchstabe 'F' (46H) nach 1776H unter dem angezeigten Testnamen, 64 x BEL an die Tastatur (52H), dann JP F3C0H (Tastenschleife: '#' = zyklisch, CR = Lader)
+005C  D3 61         	OUT (61H),A
+005E  CD C0 00      	CALL sub_00C0
+0061  CD 46 FC      	CALL FC46H
+0064  18 07         	JR L006D
+0066  3E FF         	LD A,FFH		;[NMI-EINSPRUNG] NMI-Taster der Frontplatte (orange, Design-Doc §3.6): alle Lampen aus (61H = FFH) und JP 001BH = Selbsttest von vorn. Wirkt so nur, solange das ROM bei 0000H eingeblendet ist (A8H Bit0 = 0: 06H/8EH, also ROM-Selbsttest und Lader); unter SCPX (A8H = 87H) landet der NMI im RAM bei 0066H = mitten im Standard-FCB 005CH ff. -- das BIOS legt dort nichts ab [STATISCH]
+0068  D3 61         	OUT (61H),A
+006A  C3 1B 00      	JP L001B
+L006D:
+006D  21 76 17      	LD HL,1776H
+0070  36 46         	LD (HL),46H
+0072  01 40 10      	LD BC,1040H
+L0075:
+0075  3E 07         	LD A,07H
+0077  D3 52         	OUT (52H),A
+0079  C5            	PUSH BC
+007A  CD 2C FC      	CALL FC2CH
+007D  C1            	POP BC
+007E  10 F5         	DJNZ L0075
+0080  C3 C0 F3      	JP F3C0H
+L0083:
+0083  21 70 17      	LD HL,1770H		;[ROM OK] LD (1771H),'A' macht aus dem Namen 'ROM' den Namen 'RAM' (naechster Test) -- kein Pruefvermerk [LAUFZEIT 2026-09-28]; danach RAM-Test: 4000H-BFFFH mit 55H fuellen (LDIR), dann mit AAH/00H vergleichend gegenlesen (§4.3 'RAM: Muster 55H/AAH/00H ueber alle Baenke')
+0086  23            	INC HL
+0087  36 41         	LD (HL),41H
+0089  21 00 40      	LD HL,4000H
+008C  11 01 40      	LD DE,4001H
+008F  01 FF BF      	LD BC,BFFFH
+0092  36 55         	LD (HL),55H
+0094  ED B0         	LDIR
+0096  11 AA 55      	LD DE,55AAH
+L0099:
+0099  21 00 40      	LD HL,4000H
+009C  01 FF BF      	LD BC,BFFFH
+L009F:
+009F  7E            	LD A,(HL)
+00A0  BA            	CP D
+00A1  20 B7         	JR NZ,L005A
+00A3  73            	LD (HL),E
+00A4  ED A1         	CPI
+00A6  EA 9F 00      	JP PE,L009F
+00A9  7A            	LD A,D
+00AA  FE 55         	CP 55H
+00AC  20 05         	JR NZ,L00B3
+00AE  11 00 AA      	LD DE,AA00H
+00B1  18 E6         	JR L0099
+L00B3:
+00B3  FE AA         	CP AAH
+00B5  11 00 00      	LD DE,0000H
+00B8  28 DF         	JR Z,L0099
+00BA  CD C0 00      	CALL sub_00C0		;Test dieser 16-KB-Seite (4000H-7FFFH) fertig -> erneut kopieren + Sprung in den RAM-Spiegel F0D0H: ab hier laeuft der Code aus der KOPIE, nicht mehr aus dem Alias bei 0000H (wichtig fuer den Bankwechsel A8H=44/54/64/74H, der ja gerade die niedrigen Adressen NICHT betrifft -- nur das Fenster 4000H-7FFFH)
+00BD  C3 D0 F0      	JP F0D0H
+sub_00C0:
+00C0  11 D0 F0      	LD DE,F0D0H		;[KOPIERROUTINE] LDIR ROM(00D0H..0FFEH) -> RAM(F0D0H..FFFEH), BC=0F2FH=3887 Bytes. Deckt Selbsttest UND Diskettenlader UND Hilfsroutinen gleichermassen ab (ein einziger Bulk-Copy fuer den GESAMTEN oberen ROM-Teil); ob eine Stelle danach aus dem ROM (niedrige Adresse, A8H=06H) oder aus der Kopie (hohe Adresse, A8H=87H='ROM aus') laeuft, entscheidet einzig der jeweils aktive Sprung/Call-Zieladresse.
+00C3  21 D0 00      	LD HL,00D0H
+00C6  01 2F 0F      	LD BC,0F2FH
+00C9  ED B0         	LDIR
+00CB  C9            	RET
+00CC  00            	DB	00H
+00CD  00            	DB	00H
+00CE  00            	DB	00H
+00CF  00            	DB	00H
+
+; ---- Selbsttest, laeuft als RAM-Spiegel bei F0D0H (Quelle 00D0H-03FFH) -----
+F0D0  31 00 F0      	LD SP,F000H
+F0D3  CD 46 FC      	CALL sub_FC46
+F0D6  3E 87         	LD A,87H
+F0D8  D3 A8         	OUT (A8H),A
+F0DA  3E 20         	LD A,20H
+F0DC  32 F8 FC      	LD (FCF8H),A
+F0DF  ED 4B F8 FF   	LD BC,(FFF8H)
+F0E3  2A AF FC      	LD HL,(FCAFH)
+F0E6  CD 80 F1      	CALL sub_F180
+F0E9  3E 06         	LD A,06H
+F0EB  D3 A8         	OUT (A8H),A
+F0ED  01 F0 07      	LD BC,07F0H
+F0F0  ED 43 F8 FF   	LD (FFF8H),BC
+F0F4  21 00 10      	LD HL,1000H
+F0F7  22 AF FC      	LD (FCAFH),HL
+F0FA  CD 80 F1      	CALL sub_F180
+F0FD  CD 09 FC      	CALL sub_FC09
+F100  21 FF 3F      	LD HL,3FFFH
+F103  22 F8 FF      	LD (FFF8H),HL
+F106  21 6B FC      	LD HL,FC6BH
+F109  CD 19 FC      	CALL sub_FC19
+F10C  21 70 17      	LD HL,1770H
+F10F  23            	INC HL
+F110  23            	INC HL
+F111  36 5A         	LD (HL),5AH
+F113  21 00 40      	LD HL,4000H
+F116  22 AF FC      	LD (FCAFH),HL
+F119  3E 44         	LD A,44H
+LF11B:
+F11B  D3 A8         	OUT (A8H),A
+F11D  77            	LD (HL),A
+F11E  C6 10         	ADD A,10H
+F120  CB 7F         	BIT 7,A
+F122  28 F7         	JR Z,LF11B
+F124  3E 44         	LD A,44H
+LF126:
+F126  D3 A8         	OUT (A8H),A
+F128  46            	LD B,(HL)
+F129  B8            	CP B
+F12A  28 07         	JR Z,LF133
+F12C  21 76 17      	LD HL,1776H
+F12F  36 50         	LD (HL),50H
+F131  18 34         	JR LF167
+LF133:
+F133  ED 4B F8 FF   	LD BC,(FFF8H)
+F137  CD 80 F1      	CALL sub_F180
+F13A  C6 10         	ADD A,10H
+F13C  CB 7F         	BIT 7,A
+F13E  28 E6         	JR Z,LF126
+F140  3E 06         	LD A,06H
+F142  D3 A8         	OUT (A8H),A
+F144  18 6B         	JR LF1B1
+LF146:
+F146  E1            	POP HL
+F147  F1            	POP AF
+F148  E1            	POP HL
+F149  3E 06         	LD A,06H
+F14B  D3 A8         	OUT (A8H),A
+F14D  2A F8 FF      	LD HL,(FFF8H)
+F150  7C            	LD A,H
+F151  FE 07         	CP 07H
+F153  20 0D         	JR NZ,LF162
+F155  21 6B FC      	LD HL,FC6BH
+F158  CD 19 FC      	CALL sub_FC19
+F15B  21 70 17      	LD HL,1770H
+F15E  23            	INC HL
+F15F  23            	INC HL
+F160  36 42         	LD (HL),42H
+LF162:
+F162  21 76 17      	LD HL,1776H
+F165  36 46         	LD (HL),46H
+LF167:
+F167  3E 7F         	LD A,7FH
+F169  D3 61         	OUT (61H),A
+F16B  01 40 10      	LD BC,1040H
+LF16E:
+F16E  3E 07         	LD A,07H
+F170  D3 52         	OUT (52H),A
+F172  C5            	PUSH BC
+F173  CD 2C FC      	CALL sub_FC2C
+F176  C1            	POP BC
+F177  10 F5         	DJNZ LF16E
+F179  3E 06         	LD A,06H
+F17B  D3 A8         	OUT (A8H),A
+F17D  C3 C0 F3      	JP LF3C0
+sub_F180:
+F180  E5            	PUSH HL
+F181  F5            	PUSH AF
+F182  54            	LD D,H
+F183  5D            	LD E,L
+F184  1C            	INC E
+F185  36 55         	LD (HL),55H
+F187  ED B0         	LDIR
+F189  11 AA 55      	LD DE,55AAH
+LF18C:
+F18C  2A AF FC      	LD HL,(FCAFH)
+F18F  ED 4B F8 FF   	LD BC,(FFF8H)
+LF193:
+F193  7E            	LD A,(HL)
+F194  BA            	CP D
+F195  20 AF         	JR NZ,LF146
+F197  73            	LD (HL),E
+F198  ED A1         	CPI
+F19A  EA 93 F1      	JP PE,LF193
+F19D  7A            	LD A,D
+F19E  FE 55         	CP 55H
+F1A0  20 05         	JR NZ,LF1A7
+F1A2  11 00 AA      	LD DE,AA00H
+F1A5  18 E5         	JR LF18C
+LF1A7:
+F1A7  FE AA         	CP AAH
+F1A9  11 20 00      	LD DE,0020H
+F1AC  28 DE         	JR Z,LF18C
+F1AE  F1            	POP AF
+F1AF  E1            	POP HL
+F1B0  C9            	RET
+LF1B1:
+F1B1  DB 53         	IN A,(53H)
+F1B3  CB 47         	BIT 0,A
+F1B5  28 07         	JR Z,LF1BE
+F1B7  DB 52         	IN A,(52H)
+F1B9  FE 7F         	CP 7FH
+F1BB  CA D6 F2      	JP Z,LF2D6
+LF1BE:
+F1BE  3E 13         	LD A,13H
+F1C0  D3 52         	OUT (52H),A
+F1C2  CD 09 FC      	CALL sub_FC09
+F1C5  21 71 FC      	LD HL,FC71H
+F1C8  CD 19 FC      	CALL sub_FC19
+F1CB  1E 41         	LD E,41H
+F1CD  CD 56 FC      	CALL sub_FC56
+F1D0  CD EF F1      	CALL sub_F1EF
+F1D3  1C            	INC E
+F1D4  21 A9 FC      	LD HL,FCA9H
+F1D7  06 06         	LD B,06H
+LF1D9:
+F1D9  7E            	LD A,(HL)
+F1DA  23            	INC HL
+F1DB  D3 52         	OUT (52H),A
+F1DD  0E 40         	LD C,40H
+F1DF  C5            	PUSH BC
+F1E0  CD 2C FC      	CALL sub_FC2C
+F1E3  C1            	POP BC
+F1E4  10 F3         	DJNZ LF1D9
+F1E6  CD EF F1      	CALL sub_F1EF
+F1E9  3E 11         	LD A,11H
+F1EB  D3 52         	OUT (52H),A
+F1ED  18 19         	JR LF208
+sub_F1EF:
+F1EF  0E FF         	LD C,FFH
+F1F1  06 00         	LD B,00H
+LF1F3:
+F1F3  10 FE         	DJNZ LF1F3
+F1F5  DB 52         	IN A,(52H)
+F1F7  FE 11         	CP 11H
+F1F9  C8            	RET Z
+F1FA  0D            	DEC C
+F1FB  20 F6         	JR NZ,LF1F3
+F1FD  21 76 17      	LD HL,1776H
+F200  73            	LD (HL),E
+F201  3E 11         	LD A,11H
+F203  D3 52         	OUT (52H),A
+F205  C3 67 F1      	JP LF167
+LF208:
+F208  CD 09 FC      	CALL sub_FC09
+F20B  21 74 FC      	LD HL,FC74H
+F20E  CD 19 FC      	CALL sub_FC19
+F211  3E FF         	LD A,FFH
+F213  ED 47         	LD I,A
+F215  3E F0         	LD A,F0H
+F217  D3 80         	OUT (80H),A
+F219  D3 48         	OUT (48H),A
+F21B  D3 58         	OUT (58H),A
+F21D  3E A7         	LD A,A7H
+F21F  D3 83         	OUT (83H),A
+F221  D3 4B         	OUT (4BH),A
+F223  D3 5B         	OUT (5BH),A
+F225  3E 0C         	LD A,0CH
+F227  D3 83         	OUT (83H),A
+F229  87            	ADD A,A
+F22A  D3 4B         	OUT (4BH),A
+F22C  C6 0C         	ADD A,0CH
+F22E  D3 5B         	OUT (5BH),A
+F230  AF            	XOR A
+F231  ED 5E         	IM 2
+F233  FB            	EI
+F234  47            	LD B,A
+LF235:
+F235  10 FE         	DJNZ LF235
+F237  08            	EX AF,AF'
+F238  3E 03         	LD A,03H
+F23A  D3 83         	OUT (83H),A
+F23C  08            	EX AF,AF'
+F23D  87            	ADD A,A
+LF23E:
+F23E  10 FE         	DJNZ LF23E
+F240  08            	EX AF,AF'
+F241  D3 4B         	OUT (4BH),A
+F243  08            	EX AF,AF'
+LF244:
+F244  10 FE         	DJNZ LF244
+F246  F3            	DI
+F247  08            	EX AF,AF'
+F248  D3 5B         	OUT (5BH),A
+F24A  08            	EX AF,AF'
+F24B  A7            	AND A
+F24C  28 02         	JR Z,LF250
+F24E  C6 03         	ADD A,03H
+LF250:
+F250  F6 40         	OR 40H
+F252  FE 47         	CP 47H
+F254  28 07         	JR Z,LF25D
+F256  21 76 17      	LD HL,1776H
+F259  77            	LD (HL),A
+F25A  C3 67 F1      	JP LF167
+LF25D:
+F25D  CD 09 FC      	CALL sub_FC09
+F260  21 6E FC      	LD HL,FC6EH
+F263  CD 19 FC      	CALL sub_FC19
+F266  3E 17         	LD A,17H
+F268  D3 4C         	OUT (4CH),A
+F26A  D3 4D         	OUT (4DH),A
+F26C  D3 4E         	OUT (4EH),A
+F26E  D3 5C         	OUT (5CH),A
+F270  3E 01         	LD A,01H
+F272  D3 4C         	OUT (4CH),A
+F274  D3 4D         	OUT (4DH),A
+F276  D3 4E         	OUT (4EH),A
+F278  D3 5C         	OUT (5CH),A
+F27A  01 45 08      	LD BC,0845H
+F27D  21 EF FC      	LD HL,FCEFH
+F280  ED B3         	OTIR
+F282  01 47 08      	LD BC,0847H
+F285  21 EF FC      	LD HL,FCEFH
+F288  ED B3         	OTIR
+F28A  01 55 08      	LD BC,0855H
+F28D  21 EF FC      	LD HL,FCEFH
+F290  ED B3         	OTIR
+F292  11 00 02      	LD DE,0200H
+F295  3E AA         	LD A,AAH
+LF297:
+F297  4F            	LD C,A
+F298  D3 44         	OUT (44H),A
+F29A  D3 46         	OUT (46H),A
+F29C  D3 54         	OUT (54H),A
+F29E  CD 34 FC      	CALL sub_FC34
+F2A1  DB 44         	IN A,(44H)
+F2A3  B9            	CP C
+F2A4  28 02         	JR Z,LF2A8
+F2A6  CB C3         	SET 0,E
+LF2A8:
+F2A8  DB 46         	IN A,(46H)
+F2AA  B9            	CP C
+F2AB  28 02         	JR Z,LF2AF
+F2AD  CB CB         	SET 1,E
+LF2AF:
+F2AF  DB 54         	IN A,(54H)
+F2B1  B9            	CP C
+F2B2  28 02         	JR Z,LF2B6
+F2B4  CB D3         	SET 2,E
+LF2B6:
+F2B6  AF            	XOR A
+F2B7  15            	DEC D
+F2B8  82            	ADD A,D
+F2B9  28 04         	JR Z,LF2BF
+F2BB  3E 55         	LD A,55H
+F2BD  18 D8         	JR LF297
+LF2BF:
+F2BF  83            	ADD A,E
+F2C0  28 09         	JR Z,LF2CB
+F2C2  21 76 17      	LD HL,1776H
+F2C5  F6 40         	OR 40H
+F2C7  77            	LD (HL),A
+F2C8  C3 67 F1      	JP LF167
+LF2CB:
+F2CB  3A FF 17      	LD A,(17FFH)
+F2CE  CB 57         	BIT 2,A
+F2D0  CA F3 F3      	JP Z,LF3F3
+F2D3  C3 2A 00      	JP 002AH
+LF2D6:
+F2D6  31 00 F0      	LD SP,F000H		;[DIAGNOSEMODUS, laeuft als RAM-Spiegel] Erreicht nur mit DEL (7FH) an der Tastatur (F1B7H). Zeichnet ein TESTBILD (nicht die Statuszeile, berichtigt 2026-09-28) mithilfe der Layout-Tabelle FCB1H-FCE6H (s. FC68H-Kommentar) -- Trennzeichen 48H wiederholt ueber die Zeilen, danach je Spalte ein Fuellwert aus FCF9H/FCFAH. Danach (F3B5H) 'ENTER: LADER / "#": ZYKL.' nach 1734H und weiter in die Tastenschleife F3C0H -- Detailsemantik der einzelnen Tabellenbytes (FCBBH/FCBDH/FCBFH/FCC0H...) noch nicht Byte-fuer-Byte zugeordnet, aber Routine und Datenquelle sind jetzt bekannt.
+F2D9  3E 8E         	LD A,8EH
+F2DB  D3 A8         	OUT (A8H),A
+F2DD  21 00 10      	LD HL,1000H
+F2E0  36 08         	LD (HL),08H
+F2E2  7E            	LD A,(HL)
+F2E3  E6 0F         	AND 0FH
+F2E5  FE 08         	CP 08H
+F2E7  28 0A         	JR Z,LF2F3
+F2E9  3E 1F         	LD A,1FH
+F2EB  32 F9 FC      	LD (FCF9H),A
+F2EE  3E 08         	LD A,08H
+F2F0  32 FA FC      	LD (FCFAH),A
+LF2F3:
+F2F3  3E 06         	LD A,06H
+F2F5  D3 A8         	OUT (A8H),A
+F2F7  F3            	DI
+F2F8  CD 46 FC      	CALL sub_FC46
+F2FB  CD 09 FC      	CALL sub_FC09
+F2FE  CD 00 FC      	CALL sub_FC00
+F301  3A F7 FC      	LD A,(FCF7H)
+F304  11 00 10      	LD DE,1000H
+LF307:
+F307  21 B1 FC      	LD HL,FCB1H
+F30A  ED 4B BB FC   	LD BC,(FCBBH)
+F30E  ED B0         	LDIR
+F310  3D            	DEC A
+F311  20 F4         	JR NZ,LF307
+F313  21 00 10      	LD HL,1000H
+F316  ED 5B BD FC   	LD DE,(FCBDH)
+F31A  0E 00         	LD C,00H
+LF31C:
+F31C  3E 04         	LD A,04H
+LF31E:
+F31E  08            	EX AF,AF'
+F31F  3A BF FC      	LD A,(FCBFH)
+F322  47            	LD B,A
+F323  08            	EX AF,AF'
+LF324:
+F324  36 48         	LD (HL),48H
+F326  23            	INC HL
+F327  10 FB         	DJNZ LF324
+F329  19            	ADD HL,DE
+F32A  3D            	DEC A
+F32B  20 F1         	JR NZ,LF31E
+F32D  CB 49         	BIT 1,C
+F32F  20 08         	JR NZ,LF339
+F331  CB C9         	SET 1,C
+F333  21 00 10      	LD HL,1000H
+F336  19            	ADD HL,DE
+F337  18 E3         	JR LF31C
+LF339:
+F339  21 00 10      	LD HL,1000H
+F33C  DD 21 C0 FC   	LD IX,FCC0H
+LF340:
+F340  3A F9 FC      	LD A,(FCF9H)
+F343  77            	LD (HL),A
+F344  DD 7E 00      	LD A,(IX+0)
+F347  D6 FF         	SUB FFH
+F349  28 0D         	JR Z,LF358
+F34B  DD 56 00      	LD D,(IX+0)
+F34E  DD 5E 01      	LD E,(IX+1)
+F351  19            	ADD HL,DE
+F352  DD 23         	INC IX
+F354  DD 23         	INC IX
+F356  18 E8         	JR LF340
+LF358:
+F358  3E 10         	LD A,10H
+F35A  ED 5B EB FC   	LD DE,(FCEBH)
+F35E  2A ED FC      	LD HL,(FCEDH)
+F361  0E 20         	LD C,20H
+LF363:
+F363  06 12         	LD B,12H
+LF365:
+F365  71            	LD (HL),C
+F366  23            	INC HL
+F367  10 FC         	DJNZ LF365
+F369  3D            	DEC A
+F36A  28 03         	JR Z,LF36F
+F36C  19            	ADD HL,DE
+F36D  18 F4         	JR LF363
+LF36F:
+F36F  3E 8E         	LD A,8EH
+F371  D3 A8         	OUT (A8H),A
+F373  11 40 00      	LD DE,0040H
+F376  21 50 12      	LD HL,1250H
+F379  AF            	XOR A
+LF37A:
+F37A  06 10         	LD B,10H
+LF37C:
+F37C  77            	LD (HL),A
+F37D  23            	INC HL
+F37E  10 FC         	DJNZ LF37C
+F380  19            	ADD HL,DE
+F381  3D            	DEC A
+F382  E6 0F         	AND 0FH
+F384  FE 0F         	CP 0FH
+F386  20 03         	JR NZ,LF38B
+LF388:
+F388  3D            	DEC A
+F389  18 EF         	JR LF37A
+LF38B:
+F38B  FE 0D         	CP 0DH
+F38D  28 F9         	JR Z,LF388
+F38F  FE 0B         	CP 0BH
+F391  28 E7         	JR Z,LF37A
+F393  FE 0A         	CP 0AH
+F395  28 F1         	JR Z,LF388
+F397  3E 06         	LD A,06H
+F399  D3 A8         	OUT (A8H),A
+F39B  3A FA FC      	LD A,(FCFAH)
+F39E  ED 5B E9 FC   	LD DE,(FCE9H)
+F3A2  2A E7 FC      	LD HL,(FCE7H)
+F3A5  0E 00         	LD C,00H
+LF3A7:
+F3A7  06 10         	LD B,10H
+F3A9  23            	INC HL
+LF3AA:
+F3AA  71            	LD (HL),C
+F3AB  0C            	INC C
+F3AC  23            	INC HL
+F3AD  10 FB         	DJNZ LF3AA
+F3AF  3D            	DEC A
+F3B0  28 03         	JR Z,LF3B5
+F3B2  19            	ADD HL,DE
+F3B3  18 F2         	JR LF3A7
+LF3B5:
+F3B5  21 81 FC      	LD HL,FC81H
+F3B8  11 34 17      	LD DE,1734H
+F3BB  01 1D 00      	LD BC,001DH
+F3BE  ED B0         	LDIR
+LF3C0:
+F3C0  DB 53         	IN A,(53H)
+F3C2  CB 47         	BIT 0,A
+F3C4  28 FA         	JR Z,LF3C0
+F3C6  21 F8 FC      	LD HL,FCF8H
+F3C9  36 08         	LD (HL),08H
+F3CB  3E 8E         	LD A,8EH
+F3CD  D3 A8         	OUT (A8H),A
+F3CF  E5            	PUSH HL
+F3D0  CD 09 FC      	CALL sub_FC09
+F3D3  E1            	POP HL
+F3D4  36 20         	LD (HL),20H
+F3D6  3E 06         	LD A,06H
+F3D8  D3 A8         	OUT (A8H),A
+F3DA  DB 52         	IN A,(52H)
+F3DC  57            	LD D,A
+F3DD  21 FF 17      	LD HL,17FFH
+F3E0  FE 23         	CP 23H
+F3E2  20 08         	JR NZ,LF3EC
+F3E4  CB D6         	SET 2,(HL)
+F3E6  CD 04 FC      	CALL sub_FC04
+F3E9  C3 2A 00      	JP 002AH
+LF3EC:
+F3EC  CB 96         	RES 2,(HL)
+F3EE  7A            	LD A,D
+F3EF  FE 0D         	CP 0DH
+F3F1  20 CD         	JR NZ,LF3C0
+LF3F3:
+F3F3  CD 09 FC      	CALL sub_FC09
+F3F6  CD 04 FC      	CALL sub_FC04
+F3F9  C3 03 04      	JP 0403H
+F3FC  FF            	RST 38H
+F3FD  FF            	RST 38H
+F3FE  FF            	RST 38H
+F3FF  FF            	RST 38H
+
+; ---- Diskettenlader, laeuft direkt aus dem ROM (0400H-09FFH) ---------------
+L0400:
+0400  C3 1A 04      	JP L041A		;[LADEREINSPRUNG] JP 041AH -- indirekter erster Schritt, siehe dort
+0403  C3            	DB	C3H
+0404  2B            	DB	2BH
+0405  04            	DB	04H
+0406  F3            	DB	F3H
+0407  21            	DB	21H
+0408  00            	DB	00H
+0409  10            	DB	10H
+040A  01            	DB	01H
+040B  80            	DB	80H
+040C  07            	DB	07H
+040D  CB            	DB	CBH
+040E  BE            	DB	BEH
+040F  23            	DB	23H
+0410  0B            	DB	0BH
+0411  78            	DB	78H
+0412  B1            	DB	B1H
+0413  20            	DB	20H
+0414  F8            	DB	F8H
+0415  3E            	DB	3EH
+0416  01            	DB	01H
+0417  C3            	DB	C3H
+0418  84            	DB	84H
+0419  04            	DB	04H
+L041A:
+041A  21 87 09      	LD HL,0987H		;Kopiert den 23-Byte-'Warmstart-Stub' (Quelle 0987H, s.u.) nach FFE0H und springt ihn an. Der Stub liegt bewusst in der IMMER-RAM-Seite oberhalb 0C000H (Design-Doc §3.1 Seitendekoder D23), damit sein eigener Code-Fetch nicht davon abhaengt, ob A8H gerade das ROM bei 0000H ein- oder ausblendet -- er kann so gefahrlos selbst zwischen beiden Zustaenden hin- und herschalten.
+041D  11 E0 FF      	LD DE,FFE0H
+0420  01 17 00      	LD BC,0017H
+0423  ED B0         	LDIR
+0425  C3 E0 FF      	JP FFE0H
+0428  C2 FA 0F      	JP NZ,L0FFA		;Rueckkehrpunkt aus dem Stub (FFF4H: JP 0428H). Z-Flag noch von der letzten Stub-Pruefung: NZ = kein Fremdsystem im RAM -> JP 0FFAH (Selbsttest); Z = Fremdsystem gefunden ODER Taste CR -> Coldstart-Meldung + Lader weiter (§4.3 Schritt 3/4)
+042B  F3            	DI
+042C  31 E0 F7      	LD SP,F7E0H
+042F  21 00 10      	LD HL,1000H
+0432  36 20         	LD (HL),20H
+0434  54            	LD D,H
+0435  5D            	LD E,L
+0436  13            	INC DE
+0437  01 7F 07      	LD BC,077FH
+043A  ED B0         	LDIR
+043C  3E B0         	LD A,B0H
+043E  CD 07 09      	CALL sub_0907
+0441  2A 20 43      	LD HL,(4320H)
+0444  6F            	LD L,A
+0445  6C            	LD L,H
+0446  64            	LD H,H
+0447  73            	LD (HL),E
+0448  74            	LD (HL),H
+0449  61            	LD H,C
+044A  72            	LD (HL),D
+044B  74            	LD (HL),H
+044C  20 2A         	JR NZ,L0478
+044E  20 20         	JR NZ,L0470
+0450  44            	LD B,H
+0451  69            	LD L,C
+0452  73            	LD (HL),E
+0453  6B            	LD L,E
+0454  20 6F         	JR NZ,L04C5
+0456  6E            	LD L,(HL)
+0457  20 41         	JR NZ,L049A
+0459  3A 20 72      	LD A,(7220H)
+045C  65            	LD H,L
+045D  61            	LD H,C
+045E  64            	LD H,H
+045F  79            	LD A,C
+0460  20 BF         	JR NZ,L0421
+0462  AF            	XOR A
+0463  CD 84 04      	CALL sub_0484
+0466  E9            	JP (HL)
+sub_0467:
+0467  D3 10         	OUT (10H),A
+0469  CB BF         	RES 7,A
+046B  D3 10         	OUT (10H),A
+046D  CB FF         	SET 7,A
+046F  D3 10         	OUT (10H),A
+0471  3E 0D         	LD A,0DH
+sub_0473:
+0473  06 BC         	LD B,BCH
+L0475:
+0475  10 FE         	DJNZ L0475
+0477  3D            	DEC A
+L0478:
+0478  20 F9         	JR NZ,sub_0473
+047A  C9            	RET
+sub_047B:
+047B  3E FB         	LD A,FBH
+047D  D3 10         	OUT (10H),A
+047F  3E FF         	LD A,FFH
+0481  D3 18         	OUT (18H),A
+0483  C9            	RET
+sub_0484:
+0484  32 10 F7      	LD (F710H),A
+0487  AF            	XOR A
+0488  32 11 F7      	LD (F711H),A
+048B  32 12 F7      	LD (F712H),A
+L048E:
+048E  3E 04         	LD A,04H
+0490  32 13 F7      	LD (F713H),A
+0493  32 15 F7      	LD (F715H),A
+L0496:
+0496  3E E0         	LD A,E0H
+0498  D3 61         	OUT (61H),A
+L049A:
+049A  3E FF         	LD A,FFH
+049C  D3 18         	OUT (18H),A
+049E  D3 13         	OUT (13H),A
+04A0  3E F7         	LD A,F7H
+04A2  D3 13         	OUT (13H),A
+04A4  D9            	EXX
+04A5  01 00 00      	LD BC,0000H
+04A8  D9            	EXX
+04A9  DB 12         	IN A,(12H)
+04AB  CB 4F         	BIT 1,A
+04AD  20 11         	JR NZ,L04C0
+04AF  3E CF         	LD A,CFH
+04B1  D3 13         	OUT (13H),A
+04B3  3E F3         	LD A,F3H
+04B5  D3 13         	OUT (13H),A
+04B7  3E 04         	LD A,04H
+04B9  D3 12         	OUT (12H),A
+04BB  D9            	EXX
+04BC  01 04 02      	LD BC,0204H
+04BF  D9            	EXX
+L04C0:
+04C0  3E 7F         	LD A,7FH
+04C2  D3 17         	OUT (17H),A
+04C4  3E 3F         	LD A,3FH
+04C6  D3 15         	OUT (15H),A
+04C8  D3 11         	OUT (11H),A
+04CA  3E FB         	LD A,FBH
+04CC  D3 10         	OUT (10H),A
+04CE  3E EE         	LD A,EEH
+04D0  D3 18         	OUT (18H),A
+04D2  06 50         	LD B,50H
+L04D4:
+04D4  C5            	PUSH BC
+04D5  3E DF         	LD A,DFH
+04D7  CD 67 04      	CALL sub_0467
+04DA  C1            	POP BC
+04DB  DB 12         	IN A,(12H)
+04DD  07            	RLCA
+04DE  30 25         	JR NC,L0505
+04E0  10 F2         	DJNZ L04D4
+L04E2:
+04E2  CD 7B 04      	CALL sub_047B
+04E5  3E 60         	LD A,60H
+04E7  CD 07 09      	CALL sub_0907
+04EA  44            	LD B,H
+04EB  72            	LD (HL),D
+04EC  69            	LD L,C
+04ED  76            	HALT
+04EE  65 20 41 3A 20 6E 6F 74 20 72 65 61 64 79 2C 20 63 68 65 63	'e A: not ready, chec'
+0502  EB            	DB	EBH
+0503  18            	DB	18H
+0504  89            	DB	89H
+L0505:
+0505  3E 9F         	LD A,9FH
+0507  CD 67 04      	CALL sub_0467
+050A  3E DF         	LD A,DFH
+050C  CD 67 04      	CALL sub_0467
+050F  AF            	XOR A
+0510  32 17 F7      	LD (F717H),A
+0513  32 88 F7      	LD (F788H),A
+0516  32 8B F7      	LD (F78BH),A
+0519  3C            	INC A
+051A  32 18 F7      	LD (F718H),A
+051D  32 16 F7      	LD (F716H),A
+0520  21 85 B5      	LD HL,B585H
+0523  22 89 F7      	LD (F789H),HL
+0526  21 1C F7      	LD HL,F71CH
+0529  22 84 F7      	LD (F784H),HL
+052C  3E BB         	LD A,BBH
+052E  D3 10         	OUT (10H),A
+0530  3E 28         	LD A,28H
+0532  CD 73 04      	CALL sub_0473
+0535  D9            	EXX
+0536  79            	LD A,C
+0537  D9            	EXX
+0538  D3 12         	OUT (12H),A
+053A  06 C8         	LD B,C8H
+L053C:
+053C  DB 12         	IN A,(12H)
+053E  1F            	RRA
+053F  30 07         	JR NC,L0548
+0541  0D            	DEC C
+0542  20 F8         	JR NZ,L053C
+0544  10 F6         	DJNZ L053C
+0546  18 9A         	JR L04E2
+L0548:
+0548  21 14 F7      	LD HL,F714H
+054B  36 00         	LD (HL),00H
+L054D:
+054D  DB 16         	IN A,(16H)
+054F  AF            	XOR A
+0550  D3 14         	OUT (14H),A
+0552  0E 10         	LD C,10H
+0554  ED 5B 89 F7   	LD DE,(F789H)
+0558  ED 51         	OUT (C),D
+055A  ED 59         	OUT (C),E
+055C  06 00         	LD B,00H
+L055E:
+055E  DB 12         	IN A,(12H)
+0560  E6 02         	AND 02H
+0562  D9            	EXX
+0563  A8            	XOR B
+0564  D9            	EXX
+0565  28 2C         	JR Z,L0593
+0567  0D            	DEC C
+0568  20 F4         	JR NZ,L055E
+056A  10 F2         	DJNZ L055E
+L056C:
+056C  CD 7B 04      	CALL sub_047B
+056F  3E 60         	LD A,60H
+0571  CD 07 09      	CALL sub_0907
+0574  44            	LD B,H
+0575  69            	LD L,C
+0576  73            	LD (HL),E
+0577  6B            	LD L,E
+0578  2D            	DEC L
+0579  65            	LD H,L
+057A  72            	LD (HL),D
+057B  72            	LD (HL),D
+057C  6F            	LD L,A
+057D  72            	LD (HL),D
+057E  2C            	INC L
+057F  20 63         	JR NZ,L05E4
+0581  68            	LD L,B
+0582  61            	LD H,C
+0583  6E            	LD L,(HL)
+0584  67            	LD H,A
+0585  65            	LD H,L
+0586  20 64         	JR NZ,L05EC
+0588  69            	LD L,C
+0589  73            	LD (HL),E
+058A  EB            	EX DE,HL
+L058B:
+058B  3E 01         	LD A,01H
+058D  32 11 F7      	LD (F711H),A
+0590  C3 8E 04      	JP L048E
+L0593:
+0593  DB 16         	IN A,(16H)
+0595  FE A1         	CP A1H
+0597  28 FA         	JR Z,L0593
+0599  FE FE         	CP FEH
+059B  28 07         	JR Z,L05A4
+059D  FE FB         	CP FBH
+059F  28 AC         	JR Z,L054D
+05A1  C3 C0 08      	JP L08C0
+L05A4:
+05A4  DB 16         	IN A,(16H)
+05A6  21 17 F7      	LD HL,F717H
+05A9  BE            	CP (HL)
+05AA  C2 C0 08      	JP NZ,L08C0
+05AD  DB 16         	IN A,(16H)
+05AF  21 88 F7      	LD HL,F788H
+05B2  BE            	CP (HL)
+05B3  C2 C0 08      	JP NZ,L08C0
+05B6  DB 16         	IN A,(16H)
+05B8  21 18 F7      	LD HL,F718H
+05BB  0E 16         	LD C,16H
+05BD  BE            	CP (HL)
+05BE  C2 C0 08      	JP NZ,L08C0
+05C1  DB 16         	IN A,(16H)
+05C3  A7            	AND A
+05C4  20 02         	JR NZ,L05C8
+05C6  06 01         	LD B,01H
+L05C8:
+05C8  ED 60         	IN H,(C)
+05CA  3D            	DEC A
+05CB  20 02         	JR NZ,L05CF
+05CD  06 02         	LD B,02H
+L05CF:
+05CF  ED 60         	IN H,(C)
+05D1  3D            	DEC A
+05D2  20 02         	JR NZ,L05D6
+05D4  06 04         	LD B,04H
+L05D6:
+05D6  ED 60         	IN H,(C)
+05D8  3D            	DEC A
+05D9  20 02         	JR NZ,L05DD
+05DB  06 08         	LD B,08H
+L05DD:
+05DD  ED 60         	IN H,(C)
+05DF  21 19 F7      	LD HL,F719H
+05E2  70            	LD (HL),B
+05E3  01 10 0E      	LD BC,0E10H
+L05E6:
+05E6  DB 16         	IN A,(16H)
+05E8  00            	NOP
+05E9  00            	NOP
+05EA  00            	NOP
+05EB  00            	NOP
+L05EC:
+05EC  10 F8         	DJNZ L05E6
+05EE  DB 16         	IN A,(16H)
+05F0  3A 17 F7      	LD A,(F717H)
+05F3  A7            	AND A
+L05F4:
+05F4  DB 16         	IN A,(16H)
+05F6  C2 E9 06      	JP NZ,L06E9
+05F9  3A 8B F7      	LD A,(F78BH)
+05FC  A7            	AND A
+05FD  DB 16         	IN A,(16H)
+05FF  C2 F0 06      	JP NZ,L06F0
+0602  3A 16 F7      	LD A,(F716H)
+0605  A7            	AND A
+0606  DB 16         	IN A,(16H)
+0608  21 00 F7      	LD HL,F700H
+060B  20 6A         	JR NZ,L0677
+060D  2A 00 F7      	LD HL,(F700H)
+0610  DB 16         	IN A,(16H)
+0612  ED 51         	OUT (C),D
+0614  ED 59         	OUT (C),E
+0616  06 00         	LD B,00H
+L0618:
+0618  DB 12         	IN A,(12H)
+061A  E6 02         	AND 02H
+061C  D9            	EXX
+061D  A8            	XOR B
+061E  D9            	EXX
+061F  28 08         	JR Z,L0629
+0621  0D            	DEC C
+0622  20 F4         	JR NZ,L0618
+0624  10 F2         	DJNZ L0618
+0626  C3 C0 08      	JP L08C0
+L0629:
+0629  0E 16         	LD C,16H
+L062B:
+062B  DB 16         	IN A,(16H)
+062D  FE A1         	CP A1H
+062F  C2 36 06      	JP NZ,L0636
+0632  00            	NOP
+0633  00            	NOP
+0634  18 F5         	JR L062B
+L0636:
+0636  FE FB         	CP FBH
+0638  C2 C0 08      	JP NZ,L08C0
+063B  3A 19 F7      	LD A,(F719H)
+063E  57            	LD D,A
+063F  06 0F         	LD B,0FH
+L0641:
+0641  DB 16         	IN A,(16H)
+0643  00            	NOP
+0644  00            	NOP
+0645  00            	NOP
+0646  00            	NOP
+0647  00            	NOP
+0648  00            	NOP
+0649  10 F6         	DJNZ L0641
+064B  DB 16         	IN A,(16H)
+064D  00            	NOP
+064E  00            	NOP
+064F  00            	NOP
+0650  06 6E         	LD B,6EH
+0652  DB 16         	IN A,(16H)
+0654  18 04         	JR L065A
+L0656:
+0656  DB 16         	IN A,(16H)
+0658  06 7E         	LD B,7EH
+L065A:
+065A  77            	LD (HL),A
+065B  23            	INC HL
+L065C:
+065C  ED A2         	INI
+065E  00            	NOP
+065F  00            	NOP
+0660  00            	NOP
+0661  00            	NOP
+0662  00            	NOP
+0663  00            	NOP
+0664  20 F6         	JR NZ,L065C
+0666  ED A2         	INI
+0668  15            	DEC D
+0669  C2 56 06      	JP NZ,L0656
+066C  DB 16         	IN A,(16H)
+066E  22 00 F7      	LD (F700H),HL
+0671  22 86 F7      	LD (F786H),HL
+0674  C3 55 07      	JP L0755
+L0677:
+0677  DB 16         	IN A,(16H)
+0679  ED 51         	OUT (C),D
+067B  ED 59         	OUT (C),E
+067D  06 00         	LD B,00H
+L067F:
+067F  DB 12         	IN A,(12H)
+0681  E6 02         	AND 02H
+0683  D9            	EXX
+0684  A8            	XOR B
+0685  D9            	EXX
+0686  28 08         	JR Z,L0690
+0688  0D            	DEC C
+0689  20 F4         	JR NZ,L067F
+068B  10 F2         	DJNZ L067F
+068D  C3 C0 08      	JP L08C0
+L0690:
+0690  0E 16         	LD C,16H
+L0692:
+0692  DB 16         	IN A,(16H)
+0694  FE A1         	CP A1H
+0696  C2 9D 06      	JP NZ,L069D
+0699  00            	NOP
+069A  00            	NOP
+069B  18 F5         	JR L0692
+L069D:
+069D  FE FB         	CP FBH
+069F  C2 C0 08      	JP NZ,L08C0
+06A2  06 10         	LD B,10H
+L06A4:
+06A4  ED A2         	INI
+06A6  00            	NOP
+06A7  00            	NOP
+06A8  00            	NOP
+06A9  00            	NOP
+06AA  00            	NOP
+06AB  00            	NOP
+06AC  20 F6         	JR NZ,L06A4
+06AE  AF            	XOR A
+06AF  32 16 F7      	LD (F716H),A
+06B2  21 00 F7      	LD HL,F700H
+06B5  01 01 10      	LD BC,1001H
+06B8  11 FF FF      	LD DE,FFFFH
+06BB  CD E0 08      	CALL sub_08E0
+06BE  7A            	LD A,D
+06BF  B3            	OR E
+06C0  CA 5D 07      	JP Z,L075D
+06C3  CD 7B 04      	CALL sub_047B
+06C6  3E 60         	LD A,60H
+06C8  CD 07 09      	CALL sub_0907
+06CB  4E            	LD C,(HL)
+06CC  6F            	LD L,A
+06CD  20 73         	JR NZ,L0742
+06CF  79            	LD A,C
+06D0  73            	LD (HL),E
+06D1  74            	LD (HL),H
+06D2  65            	LD H,L
+06D3  6D            	LD L,L
+06D4  20 64         	JR NZ,L073A
+06D6  69            	LD L,C
+06D7  73            	LD (HL),E
+06D8  6B            	LD L,E
+06D9  2C            	INC L
+06DA  20 63         	JR NZ,L073F
+06DC  68            	LD L,B
+06DD  61            	LD H,C
+06DE  6E            	LD L,(HL)
+06DF  67            	LD H,A
+06E0  65            	LD H,L
+06E1  20 64         	JR NZ,L0747
+06E3  69            	LD L,C
+06E4  73            	LD (HL),E
+06E5  EB            	EX DE,HL
+06E6  C3 8B 05      	JP L058B
+L06E9:
+06E9  DB 16         	IN A,(16H)
+06EB  00            	NOP
+06EC  00            	NOP
+06ED  00            	NOP
+06EE  00            	NOP
+06EF  00            	NOP
+L06F0:
+06F0  DB 16         	IN A,(16H)
+06F2  2A 00 F7      	LD HL,(F700H)
+06F5  00            	NOP
+06F6  00            	NOP
+06F7  00            	NOP
+06F8  DB 16         	IN A,(16H)
+06FA  ED 51         	OUT (C),D
+06FC  ED 59         	OUT (C),E
+06FE  ED 5B 84 F7   	LD DE,(F784H)
+0702  06 00         	LD B,00H
+L0704:
+0704  DB 12         	IN A,(12H)
+0706  E6 02         	AND 02H
+0708  D9            	EXX
+0709  A8            	XOR B
+070A  D9            	EXX
+070B  28 08         	JR Z,L0715
+070D  0D            	DEC C
+070E  20 F4         	JR NZ,L0704
+0710  10 F2         	DJNZ L0704
+0712  C3 C0 08      	JP L08C0
+L0715:
+0715  0E 16         	LD C,16H
+L0717:
+0717  DB 16         	IN A,(16H)
+0719  FE A1         	CP A1H
+071B  C2 22 07      	JP NZ,L0722
+071E  00            	NOP
+071F  00            	NOP
+0720  18 F5         	JR L0717
+L0722:
+0722  FE FB         	CP FBH
+0724  C2 C0 08      	JP NZ,L08C0
+0727  D5            	PUSH DE
+0728  3A 19 F7      	LD A,(F719H)
+072B  57            	LD D,A
+L072C:
+072C  DB 16         	IN A,(16H)
+072E  77            	LD (HL),A
+072F  23            	INC HL
+0730  06 7E         	LD B,7EH
+L0732:
+0732  ED A2         	INI
+0734  00            	NOP
+0735  00            	NOP
+0736  00            	NOP
+0737  00            	NOP
+0738  00            	NOP
+0739  00            	NOP
+L073A:
+073A  20 F6         	JR NZ,L0732
+073C  ED A2         	INI
+073E  15            	DEC D
+L073F:
+073F  C2 2C 07      	JP NZ,L072C
+L0742:
+0742  E3            	EX (SP),HL
+0743  37            	SCF
+L0744:
+0744  DB 16         	IN A,(16H)
+0746  77            	LD (HL),A
+L0747:
+0747  00            	NOP
+0748  23            	INC HL
+0749  3F            	CCF
+074A  30 F8         	JR NC,L0744
+074C  DB 16         	IN A,(16H)
+074E  22 84 F7      	LD (F784H),HL
+0751  E1            	POP HL
+0752  22 00 F7      	LD (F700H),HL
+L0755:
+0755  21 18 F7      	LD HL,F718H
+0758  34            	INC (HL)
+0759  21 8B F7      	LD HL,F78BH
+075C  34            	INC (HL)
+L075D:
+075D  21 04 F7      	LD HL,F704H
+0760  3A 10 F7      	LD A,(F710H)
+0763  4F            	LD C,A
+0764  87            	ADD A,A
+0765  81            	ADD A,C
+0766  4F            	LD C,A
+0767  3A 17 F7      	LD A,(F717H)
+076A  81            	ADD A,C
+076B  4F            	LD C,A
+076C  06 00         	LD B,00H
+076E  09            	ADD HL,BC
+076F  22 1A F7      	LD (F71AH),HL
+0772  3A 8B F7      	LD A,(F78BH)
+0775  BE            	CP (HL)
+0776  D2 9E 07      	JP NC,L079E
+0779  21 0B F7      	LD HL,F70BH
+077C  3A 17 F7      	LD A,(F717H)
+077F  4F            	LD C,A
+0780  09            	ADD HL,BC
+0781  7E            	LD A,(HL)
+0782  A7            	AND A
+0783  CA 48 05      	JP Z,L0548
+0786  21 8B F7      	LD HL,F78BH
+0789  BE            	CP (HL)
+078A  C2 48 05      	JP NZ,L0548
+078D  3E 01         	LD A,01H
+078F  32 18 F7      	LD (F718H),A
+0792  32 88 F7      	LD (F788H),A
+0795  21 81 B1      	LD HL,B181H
+0798  22 89 F7      	LD (F789H),HL
+079B  C3 48 05      	JP L0548
+L079E:
+079E  46            	LD B,(HL)
+079F  3A 17 F7      	LD A,(F717H)
+07A2  A7            	AND A
+07A3  20 01         	JR NZ,L07A6
+07A5  05            	DEC B
+L07A6:
+07A6  21 1C F7      	LD HL,F71CH
+07A9  22 84 F7      	LD (F784H),HL
+L07AC:
+07AC  2A 86 F7      	LD HL,(F786H)
+07AF  C5            	PUSH BC
+07B0  CD D7 08      	CALL sub_08D7
+07B3  C1            	POP BC
+07B4  22 86 F7      	LD (F786H),HL
+07B7  2A 84 F7      	LD HL,(F784H)
+07BA  7E            	LD A,(HL)
+07BB  BA            	CP D
+07BC  20 03         	JR NZ,L07C1
+07BE  23            	INC HL
+07BF  7E            	LD A,(HL)
+07C0  BB            	CP E
+L07C1:
+07C1  C2 CE 08      	JP NZ,L08CE
+07C4  23            	INC HL
+07C5  22 84 F7      	LD (F784H),HL
+07C8  10 E2         	DJNZ L07AC
+07CA  18 34         	JR L0800
+07CC  00            	DB	00H
+07CD  00            	DB	00H
+07CE  00            	DB	00H
+07CF  00            	DB	00H
+07D0  FF            	DB	FFH
+07D1  FF            	DB	FFH
+07D2  FF            	DB	FFH
+07D3  FF            	DB	FFH
+07D4  FF            	DB	FFH
+07D5  FF            	DB	FFH
+07D6  FF            	DB	FFH
+07D7  FF            	DB	FFH
+07D8  FF            	DB	FFH
+07D9  FF            	DB	FFH
+07DA  FF            	DB	FFH
+07DB  FF            	DB	FFH
+07DC  FF            	DB	FFH
+07DD  FF            	DB	FFH
+07DE  FF            	DB	FFH
+07DF  FF            	DB	FFH
+07E0  FF            	DB	FFH
+07E1  FF            	DB	FFH
+07E2  FF            	DB	FFH
+07E3  FF            	DB	FFH
+07E4  FF            	DB	FFH
+07E5  FF            	DB	FFH
+07E6  FF            	DB	FFH
+07E7  FF            	DB	FFH
+07E8  FF            	DB	FFH
+07E9  FF            	DB	FFH
+07EA  FF            	DB	FFH
+07EB  FF            	DB	FFH
+07EC  FF            	DB	FFH
+07ED  FF            	DB	FFH
+07EE  FF            	DB	FFH
+07EF  FF            	DB	FFH
+07F0  FF            	DB	FFH
+07F1  FF            	DB	FFH
+07F2  FF            	DB	FFH
+07F3  FF            	DB	FFH
+07F4  FF            	DB	FFH
+07F5  FF            	DB	FFH
+07F6  FF            	DB	FFH
+07F7  FF            	DB	FFH
+07F8  FF            	DB	FFH
+07F9  FF            	DB	FFH
+07FA  FF            	DB	FFH
+07FB  FF            	DB	FFH
+07FC  FF            	DB	FFH
+07FD  FF            	DB	FFH
+07FE  FF            	DB	FFH
+07FF  FF            	DB	FFH
+L0800:
+0800  21 1C F7      	LD HL,F71CH
+0803  22 84 F7      	LD (F784H),HL
+0806  2A 1A F7      	LD HL,(F71AH)
+0809  3A 17 F7      	LD A,(F717H)
+080C  EE 03         	XOR 03H
+080E  3D            	DEC A
+080F  28 14         	JR Z,L0825
+0811  47            	LD B,A
+0812  0E 01         	LD C,01H
+L0814:
+0814  23            	INC HL
+0815  7E            	LD A,(HL)
+0816  A7            	AND A
+0817  20 03         	JR NZ,L081C
+0819  0C            	INC C
+081A  10 F8         	DJNZ L0814
+L081C:
+081C  3A 17 F7      	LD A,(F717H)
+081F  81            	ADD A,C
+0820  FE 03         	CP 03H
+0822  DA 9F 08      	JP C,L089F
+L0825:
+0825  3E B0         	LD A,B0H
+0827  D3 61         	OUT (61H),A
+0829  CD 7B 04      	CALL sub_047B
+082C  3A 11 F7      	LD A,(F711H)
+082F  A7            	AND A
+0830  28 36         	JR Z,L0868
+0832  3E B0         	LD A,B0H
+0834  CD 07 09      	CALL sub_0907
+0837  4C            	LD C,H
+0838  6F            	LD L,A
+0839  61            	LD H,C
+083A  64            	LD H,H
+083B  69            	LD L,C
+083C  6E            	LD L,(HL)
+083D  67            	LD H,A
+083E  20 63         	JR NZ,L08A3
+0840  6F            	LD L,A
+0841  6D            	LD L,L
+0842  70            	LD (HL),B
+0843  6C            	LD L,H
+0844  65            	LD H,L
+0845  74            	LD (HL),H
+0846  65            	LD H,L
+0847  2C            	INC L
+0848  20 72         	JR NZ,L08BC
+084A  65            	LD H,L
+084B  70            	LD (HL),B
+084C  6C            	LD L,H
+084D  61            	LD H,C
+084E  63            	LD H,E
+084F  65            	LD H,L
+0850  20 64         	JR NZ,L08B6
+0852  69            	LD L,C
+0853  73            	LD (HL),E
+0854  6B            	LD L,E
+0855  20 62         	JR NZ,L08B9
+0857  79            	LD A,C
+0858  20 70         	JR NZ,L08CA
+085A  72            	LD (HL),D
+085B  65            	LD H,L
+085C  76            	HALT
+085D  69 6F 75 73 20 64 69 73	'ious dis'
+0865  EB            	DB	EBH
+0866  18            	DB	18H
+0867  30            	DB	30H
+L0868:
+0868  3A 0A F7      	LD A,(F70AH)
+086B  A7            	AND A
+086C  28 2A         	JR Z,L0898
+086E  3E B0         	LD A,B0H
+0870  CD 07 09      	CALL sub_0907
+0873  4C            	LD C,H
+0874  6F            	LD L,A
+0875  61            	LD H,C
+0876  64            	LD H,H
+0877  69            	LD L,C
+0878  6E            	LD L,(HL)
+0879  67            	LD H,A
+087A  20 63         	JR NZ,L08DF
+087C  6F            	LD L,A
+087D  6D            	LD L,L
+087E  70            	LD (HL),B
+087F  6C            	LD L,H
+0880  65            	LD H,L
+0881  74            	LD (HL),H
+0882  65            	LD H,L
+0883  2C            	INC L
+0884  20 72         	JR NZ,L08F8
+0886  65            	LD H,L
+0887  70            	LD (HL),B
+0888  6C            	LD L,H
+0889  61            	LD H,C
+088A  63            	LD H,E
+088B  65            	LD H,L
+088C  20 73         	JR NZ,L0901
+088E  79            	LD A,C
+088F  73            	LD (HL),E
+0890  74            	LD (HL),H
+0891  65            	LD H,L
+0892  6D            	LD L,L
+0893  20 64         	JR NZ,L08F9
+0895  69            	LD L,C
+0896  73            	LD (HL),E
+0897  EB            	EX DE,HL
+L0898:
+0898  2A 02 F7      	LD HL,(F702H)
+089B  3A 12 F7      	LD A,(F712H)
+089E  C9            	RET
+L089F:
+089F  21 17 F7      	LD HL,F717H
+08A2  3E BF         	LD A,BFH
+08A4  CD 67 04      	CALL sub_0467
+08A7  34            	INC (HL)
+08A8  0D            	DEC C
+08A9  20 F4         	JR NZ,L089F
+08AB  21 18 F7      	LD HL,F718H
+08AE  36 01         	LD (HL),01H
+08B0  AF            	XOR A
+08B1  32 8B F7      	LD (F78BH),A
+08B4  32 88 F7      	LD (F788H),A
+08B7  21 85 B5      	LD HL,B585H
+08BA  22 89 F7      	LD (F789H),HL
+08BD  C3 48 05      	JP L0548
+L08C0:
+08C0  21 14 F7      	LD HL,F714H
+08C3  35            	DEC (HL)
+08C4  C2 4D 05      	JP NZ,L054D
+08C7  23            	INC HL
+08C8  35            	DEC (HL)
+L08C9:
+08C9  CA 6C 05      	JP Z,L056C
+08CC  18 06         	JR L08D4
+L08CE:
+08CE  21 13 F7      	LD HL,F713H
+08D1  35            	DEC (HL)
+08D2  28 F5         	JR Z,L08C9
+L08D4:
+08D4  C3 96 04      	JP L0496
+sub_08D7:
+08D7  3A 19 F7      	LD A,(F719H)
+08DA  4F            	LD C,A
+08DB  11 95 E2      	LD DE,E295H
+L08DE:
+08DE  06 80         	LD B,80H
+sub_08E0:
+08E0  7E            	LD A,(HL)
+08E1  AA            	XOR D
+08E2  57            	LD D,A
+08E3  0F            	RRCA
+08E4  0F            	RRCA
+08E5  0F            	RRCA
+08E6  0F            	RRCA
+08E7  E6 0F         	AND 0FH
+08E9  AA            	XOR D
+08EA  57            	LD D,A
+08EB  0F            	RRCA
+08EC  0F            	RRCA
+08ED  0F            	RRCA
+08EE  F5            	PUSH AF
+08EF  E6 1F         	AND 1FH
+08F1  AB            	XOR E
+08F2  5F            	LD E,A
+08F3  F1            	POP AF
+08F4  F5            	PUSH AF
+08F5  0F            	RRCA
+08F6  E6 F0         	AND F0H
+L08F8:
+08F8  AB            	XOR E
+L08F9:
+08F9  5F            	LD E,A
+08FA  F1            	POP AF
+08FB  E6 E0         	AND E0H
+08FD  AA            	XOR D
+08FE  53            	LD D,E
+08FF  5F            	LD E,A
+0900  23            	INC HL
+L0901:
+0901  10 DD         	DJNZ sub_08E0
+0903  0D            	DEC C
+0904  20 D8         	JR NZ,L08DE
+0906  C9            	RET
+sub_0907:
+0907  D3 61         	OUT (61H),A		;[MELDUNGSROUTINE, 'CALL 0907H'-Konvention geklaert 2026-09-28] Alle 6 Aufrufer (043EH/04E7H/0571H/06C8H/0834H/0870H) legen den anzuzeigenden Text NICHT per Zeiger in HL/DE ab, sondern INLINE direkt hinter dem 'CALL 0907H' im Code; das letzte Zeichen traegt Bit7 gesetzt (Endemarke). Belegt: '* Coldstart * Disk on A: read...', 'Drive A: not ready, check', 'Disk-error, change disk', 'No system disk, change disk', 'Loading complete, replace disk...' (2x) -- deckungsgleich mit den in Design-Doc §4.3 genannten Meldungen. Ablauf: OUT(61H) mit dem von JEDEM Aufrufer vorher gesetzten A (nur zwei Werte im ROM: B0H vor 'Coldstart'/'Loading complete', 60H vor den drei Fehlermeldungen -- Anzeigefeld der Frontplatte, aktiv low: B0H = RUN Mode, 60H = ERROR + Input File, Design-Doc §3.6); Kanal-2-Baudrate der Tastatur-CTC (Port 5AH, 2 Byte aus 096FH) und SIO2B/Tastatur-Steuerwoerter (Port 53H, 10 Byte ab 0971H) neu ausgeben (derselbe Wertesatz wie sub_FC46/FC9E-FCA8 im Selbsttest-Block, siehe dort); Bildschirmbereich 1050H-177FH um 50H=80 Byte (1 Zeile) nach 1000H hoch-scrollen, neue Zeile mit Leerzeichen fuellen.
+0909  21 6F 09      	LD HL,096FH
+090C  01 5A 02      	LD BC,025AH
+090F  ED B3         	OTIR
+0911  01 53 0A      	LD BC,0A53H
+0914  ED B3         	OTIR
+0916  11 00 10      	LD DE,1000H
+0919  21 50 10      	LD HL,1050H
+091C  01 30 07      	LD BC,0730H
+091F  ED B0         	LDIR
+0921  62            	LD H,D
+0922  6B            	LD L,E
+0923  3E 20         	LD A,20H
+0925  32 12 F7      	LD (F712H),A
+0928  06 50         	LD B,50H
+L092A:
+092A  77            	LD (HL),A
+092B  23            	INC HL
+092C  10 FC         	DJNZ L092A
+092E  E1            	POP HL		;'POP HL' holt hier NICHT irgendeinen geretteten Wert, sondern die eigene CALL-Ruecksprungadresse vom Stack -- die zeigt exakt auf den Meldungstext, der im Aufrufer direkt hinter 'CALL 0907H' liegt (s.o.). Schleife bei 092FH kopiert byteweise nach [DE] (in die frisch gescrollte Bildzeile) und loescht dabei Bit7 (RLCA+SRL A) -- bis zu dem Byte, dessen Bit7 GESETZT war (das ist die Endemarke UND das letzte kopierte Zeichen). PUSH HL (= Adresse hinter der Endemarke, also die korrekte Fortsetzungsadresse im Aufrufer) + PUSH DE sichern beide fuer den Ausgang der Routine.
+L092F:
+092F  7E            	LD A,(HL)
+0930  07            	RLCA
+0931  CB 3F         	SRL A
+0933  12            	LD (DE),A
+0934  23            	INC HL
+0935  13            	INC DE
+0936  30 F7         	JR NC,L092F
+0938  E5            	PUSH HL
+0939  D5            	PUSH DE
+093A  21 7B 09      	LD HL,097BH		;Haengt einen festen 12-Byte-Text '--> <ENTER>>' aus 097BH an die kopierte Meldung an (Aufforderung zum Weiterdruecken).
+093D  01 0C 00      	LD BC,000CH
+0940  ED B0         	LDIR
+L0942:
+0942  DB 53         	IN A,(53H)		;Wartet auf ein Tastaturzeichen (Port 53H/52H = SIO2B, Tastatur K7672, Design-Doc §3.2): CR(0DH)/7CH/1CH/ESC(1BH) beenden direkt, ESC gefolgt von 'c'(63H) ebenfalls (zweite Schleife ab 095AH) -- passt zu 'ESC c' als Rueckstell-Befehl der K7672 aus Design-Doc §3.5.
+0944  CB 47         	BIT 0,A
+0946  28 FA         	JR Z,L0942
+0948  DB 52         	IN A,(52H)
+094A  FE 0D         	CP 0DH
+094C  28 18         	JR Z,L0966
+094E  FE 7C         	CP 7CH
+0950  28 14         	JR Z,L0966
+0952  FE 1C         	CP 1CH
+0954  28 10         	JR Z,L0966
+0956  FE 1B         	CP 1BH
+0958  20 E8         	JR NZ,L0942
+L095A:
+095A  DB 53         	IN A,(53H)
+095C  CB 47         	BIT 0,A
+095E  28 FA         	JR Z,L095A
+0960  DB 52         	IN A,(52H)
+0962  FE 63         	CP 63H
+0964  18 DC         	JR L0942
+L0966:
+0966  E1            	POP HL		;POP HL holt jetzt das bei 093AH gesicherte DE zurueck (Position direkt hinter der kopierten Meldung, VOR dem angehaengten '--> <ENTER>>'); die folgende Schleife loescht genau diese 12 Byte wieder (der Eingabe-Hinweis verschwindet, die Meldung selbst bleibt stehen). Danach 'RET': das holt das bei 092EH GEPUSHTE HL vom Stack -- der urspruengliche Ruecksprung ist laengst konsumiert, der Call kehrt also nicht hinter 'CALL 0907H' zurueck, sondern hinter die inline liegende Meldung im Aufrufer.
+0967  06 0C         	LD B,0CH
+L0969:
+0969  36 20         	LD (HL),20H
+096B  23            	INC HL
+096C  10 FB         	DJNZ L0969
+096E  C9            	RET
+096F  07            	DB	07H
+0970  01            	DB	01H
+0971  00            	DB	00H
+0972  18            	DB	18H
+0973  04            	DB	04H
+0974  44            	DB	44H
+0975  03            	DB	03H
+0976  C1            	DB	C1H
+0977  05            	DB	05H
+0978  EA            	DB	EAH
+0979  01            	DB	01H
+097A  00            	DB	00H
+097B  20 2D 2D 3E 20 3C 45 4E 54 45 52 3E	' --> <ENTER>>'
+0987  -- 23 Byte -- 	DS	23		;Warmstart-Stub, reine Vorlage -- wird nach FFE0H kopiert (041AH) und NUR DORT ausgefuehrt; Disassemblat siehe Block 'Warmstart-Stub' am Dateiende. Bytes identisch mit FFE0H-FFF6H.
+099E  00 FF         	DB	00H,FFH		;Fuellbytes nach dem Stub
+09A0  B0            	OR B		;[TOTER CODE -- geklaert 2026-09-28] Byteidentische Kopie von 0921H-097FH (dem hinteren Teil der Meldungsroutine 0907H, ab 'LD H,D' bis zum Ende inkl. ihrer eingebetteten Datentabelle und dem '--> <ENTER>>'-Text) -- NICHT der Vorspann mit den beiden OTIRs/dem Scroll-LDIR (0907H-0920H fehlt hier). Kein einziges CALL/JP im gesamten ROM zielt auf 09A0H (durchsucht: alle 16-Bit-Little-Endian-Vorkommen von A0 09 mit vorangehendem CD/C3/…) -- die 96 Byte sind unerreichbarer Fuellcode, vermutlich ein Assembler-/Link-Rest einer frueheren Fassung dieser Routine, ohne Funktion.
+09A1  62            	LD H,D
+09A2  6B            	LD L,E
+09A3  3E 20         	LD A,20H
+09A5  32 12 F7      	LD (F712H),A
+09A8  06 50         	LD B,50H
+L09AA:
+09AA  77            	LD (HL),A
+09AB  23            	INC HL
+09AC  10 FC         	DJNZ L09AA
+09AE  E1            	POP HL
+L09AF:
+09AF  7E            	LD A,(HL)
+09B0  07            	RLCA
+09B1  CB 3F         	SRL A
+09B3  12            	LD (DE),A
+09B4  23            	INC HL
+09B5  13            	INC DE
+09B6  30 F7         	JR NC,L09AF
+09B8  E5            	PUSH HL
+09B9  D5            	PUSH DE
+09BA  21 7B 09      	LD HL,097BH
+09BD  01 0C 00      	LD BC,000CH
+09C0  ED B0         	LDIR
+L09C2:
+09C2  DB 53         	IN A,(53H)		;[TASTATURABFRAGE waehrend des Ladevorlaufs] Pollt SIO-Port 53H (Status) / 52H (Daten) -- das ist laut Design-Doc §3.2 SIO 2 Kanal B = Tastatur K7672. Prueft gelesene Zeichen gegen 0DH/7CH/1CH/1BH (CR bzw. ESC-artige Codes -- passt zum K7672-Protokoll 'ESC c' aus §3.5); zweite Schleife (09DAH) wartet zusaetzlich auf 63H ('c', Zyklustaste '#'? [?]).
+09C4  CB 47         	BIT 0,A
+09C6  28 FA         	JR Z,L09C2
+09C8  DB 52         	IN A,(52H)
+09CA  FE 0D         	CP 0DH
+09CC  28 18         	JR Z,L09E6
+09CE  FE 7C         	CP 7CH
+09D0  28 14         	JR Z,L09E6
+09D2  FE 1C         	CP 1CH
+09D4  28 10         	JR Z,L09E6
+09D6  FE 1B         	CP 1BH
+09D8  20 E8         	JR NZ,L09C2
+L09DA:
+09DA  DB 53         	IN A,(53H)
+09DC  CB 47         	BIT 0,A
+09DE  28 FA         	JR Z,L09DA
+09E0  DB 52         	IN A,(52H)
+09E2  FE 63         	CP 63H
+09E4  18 DC         	JR L09C2
+L09E6:
+09E6  E1            	POP HL
+09E7  06 0C         	LD B,0CH
+L09E9:
+09E9  36 20         	LD (HL),20H
+09EB  23            	INC HL
+09EC  10 FB         	DJNZ L09E9
+09EE  C9            	RET
+09EF  07            	RLCA
+09F0  01 00 18      	LD BC,1800H
+09F3  04            	INC B
+09F4  44            	LD B,H
+09F5  03            	INC BC
+09F6  C1            	POP BC
+09F7  05            	DEC B
+09F8  EA 01 00      	JP PE,L0001
+09FB  20 2D         	JR NZ,L0A2A
+09FD  2D            	DEC L
+09FE  3E 20         	LD A,20H
+
+; ---- Unbelegt (0A00H-0BFFH) ------------------------------------------------
+0A00  FF            	DS	512		;[UNBELEGT] 0A00H-0BFFH durchgehend FFH (unprogrammierte EPROM-Zellen) -- kein Code, keine Daten.
+
+; ---- Hilfsroutinen, laufen als RAM-Spiegel bei FC00H (Quelle 0C00H-0CFFH) --
+FC00  AF            	XOR A		;sub_FC00: Lampentest -- alle Lampen des Anzeigefelds AN (61H = 00H, aktiv low; nur im Diagnosemodus F2F7H, Design-Doc §3.6)
+FC01  D3 61         	OUT (61H),A
+FC03  C9            	RET
+FC04  3E FF         	LD A,FFH		;sub_FC04: alle Lampen AUS (61H = FFH) -- beim Verlassen des Diagnosemodus
+FC06  D3 61         	OUT (61H),A
+FC08  C9            	RET
+sub_FC09:
+FC09  21 00 10      	LD HL,1000H		;sub_FC09: Bildspeicher 1000H-177FH loeschen (0780H=80x24 Byte) mit dem Fuellwert aus FCF8H, dann Statuszeile ab 1780H nochmal explizit setzen -- deckt sich mit VRAM bei 1000H aus Design-Doc §3.3
+FC0C  E5            	PUSH HL
+FC0D  D1            	POP DE
+FC0E  13            	INC DE
+FC0F  01 7F 07      	LD BC,077FH
+FC12  3A F8 FC      	LD A,(FCF8H)
+FC15  77            	LD (HL),A
+FC16  ED B0         	LDIR
+FC18  C9            	RET
+FC19  11 70 17      	LD DE,1770H		;sub_FC19: kopiert den Testnamen ab HL (3 Byte aus 'ROMRAMSIOKEYCTC', FC68H) nach 1770H und 'DIAGNOSTIC' (10 Byte ab FC77H) nach 1740H. Fehlerbuchstabe steht bei 1776H [LAUFZEIT 2026-09-28]
+FC1C  01 03 00      	LD BC,0003H
+FC1F  ED B0         	LDIR
+FC21  21 77 FC      	LD HL,FC77H
+FC24  11 40 17      	LD DE,1740H
+FC27  0E 0A         	LD C,0AH
+FC29  ED B0         	LDIR
+FC2B  C9            	RET
+sub_FC2C:
+FC2C  06 00         	LD B,00H		;sub_FC2C: einfache DJNZ/DEC-C-Verzoegerungsschleife (B*256+C-artig)
+LFC2E:
+FC2E  10 FE         	DJNZ LFC2E
+FC30  0D            	DEC C
+FC31  20 FB         	JR NZ,LFC2E
+FC33  C9            	RET
+FC34  D9            	EXX		;sub_FC34: zweite, laengere Verzoegerungsschleife mit EXX (schont HL/BC des Aufrufers)
+FC35  21 00 02      	LD HL,0200H
+FC38  01 00 00      	LD BC,0000H
+LFC3B:
+FC3B  10 FE         	DJNZ LFC3B
+FC3D  2B            	DEC HL
+FC3E  E5            	PUSH HL
+FC3F  ED 42         	SBC HL,BC
+FC41  E1            	POP HL
+FC42  20 F7         	JR NZ,LFC3B
+FC44  D9            	EXX
+FC45  C9            	RET
+FC46  21 9E FC      	LD HL,FC9EH		;sub_FC46 -- geklaert 2026-09-28, deckt sich mit Design-Doc §3.2: LD HL,FC9EH; zwei OTIRs OHNE HL neu zu laden, HL laeuft also durch. Erster OTIR (2 Byte FC9EH/FC9FH = 07H,01H) an Port 5AH = CTC2-Kanal K2 (Tastatur-Baudrate): Steuerwort 07H (Zeitgeber, Vorteiler 16), Zeitkonstante 01H -- 2,4576 MHz/16 = 153,6 kHz. Zweiter OTIR (9 Byte, HL jetzt bei FCA0H = 18H,04H,44H,03H,C1H,05H,EAH,01H,00H) an Port 53H = SIO2-Kanal B (Tastatur K7672, Design-Doc §3.2): Z80-SIO-Zeigerprotokoll ausgewertet -- 18H (WR0, Pointerbits=0, Reset-artiger Befehl), dann je Zeiger+Wert: WR4=44H ('x16, 1 Stop, keine Paritaet' -- exakt Design-Doc-Wert), WR3=C1H ('Rx enable, 8 Bit' -- exakt Design-Doc-Wert), WR5=EAH (Design-Doc-Wert), WR1=00H (keine Interrupts). Dieselben elf Bytes (07,01,18,04,44,03,C1,05,EA,01, mit einer zusaetzlichen 00H) liegen als eingebettete Datentabelle nochmal bei 096FH/0971H -- vom Lader-Meldungsroutine 0907H per eigenem OTIR gelesen (s. dort); zwei getrennte Kopien derselben Init-Konstanten, keine gemeinsame Tabelle.
+FC49  06 02         	LD B,02H
+FC4B  0E 5A         	LD C,5AH
+FC4D  ED B3         	OTIR
+FC4F  06 09         	LD B,09H
+FC51  0E 53         	LD C,53H
+FC53  ED B3         	OTIR
+FC55  C9            	RET
+FC56  3E 1B         	LD A,1BH		;sub_FC56: kurzer Summerton (Port 52H 1BH/63H mit Verzoegerung dazwischen) -- ACHTUNG Port 52H ist laut §3.2 SIO2-A Datenport (Tastatur/V.24), hier vermutlich zweckentfremdet oder Bezeichnung [?] noch zu pruefen
+FC58  D3 52         	OUT (52H),A
+FC5A  0E 40         	LD C,40H
+FC5C  CD 2C FC      	CALL sub_FC2C
+FC5F  3E 63         	LD A,63H
+FC61  D3 52         	OUT (52H),A
+FC63  C9            	RET
+FC64  3C            	INC A		;[CTC-INTERRUPT-ISR, Ziel des Vektors bei FFF6H] INC A; EI; RETI -- die minimale Zaehl-ISR fuer den CTC-Interrupttest aus §4.3 ('CTC: ... jeweils Kanal 3 als Zeitgeber mit Interrupt').
+FC65  FB            	EI
+FC66  ED 4D         	RETI
+FC68  52            	LD D,D		;[TEXT-/TABELLENBLOCK FC68H-FCF7H -- geklaert 2026-09-28, war im Plan (§8, Etappe 0) noch als '[?]' offen] Reiner Datenbereich, vom Disassembler streckenweise als Fake-Code gezeigt (keine Verstaendnisluecke, nur die Grenze eines blinden Disassemblers -- s. Design-Doc §8). Fuenf Teile: (1) FC68H-FC76H Text 'ROMRAMSIOKEYCTC' -- die 5 Spaltenkoepfe der Statuszeile (sub_FC19 kopiert sie nach 1740H, s. dort); (2) FC77H-FC9DH Text 'DIAGNOSTIC ENTER: LADER  /  "#": ZYKL. ' -- die zweite Statuszeile; (3) FC9EH-FCA8H die CTC2-K2/SIO2B-Init-Tabelle von sub_FC46H (s. dort); (4) FCA9H-FCB0H die Bytes 1BH,5BH,32H,3BH,31H,79H = 'ESC [2;1y' (VT100-DECTST, Design-Doc §3.5) plus zwei Fuellbytes; (5) FCB1H-FCE6H eine Spaltenlayout-Tabelle (Breiten/Schrittweiten fuer die 5 Statuszeilen-Spalten ROM/RAM/SIO/KEY/CTC, inkl. des Trennzeichens 48H), gelesen vom noch nicht kommentierten Rahmen-Zeichenprogramm bei F2D6H (Selbsttest-Block, Aufruf ueber sub_FC46+sub_FC09+sub_FC00 ab F2F7H) -- Bedeutung der einzelnen Tabellenwerte im Detail offen, aber die Adresse und ihr Verbraucher sind jetzt bekannt, keine 'Fake-Code'-Verwechslung mehr; (6) FCE7H-FCF7H+ Init-Tabelle 'FCEFH' fuer SIO1-A/B + SIO2-A (V.24/IFSS, Design-Doc §4.3, zwei Runden AAH/55H): ab FCEFH per Zeigerprotokoll WR3=C1H, WR4=45H ('x16, 1 Stop, UNGERADE Paritaet' -- exakt Design-Doc-Wert fuer IFSS), WR5=68H (exakt Design-Doc-Wert), Rest ausserhalb dieses Blocks.
+FC69  4F            	LD C,A
+FC6A  4D            	LD C,L
+FC6B  52            	LD D,D
+FC6C  41            	LD B,C
+FC6D  4D            	LD C,L
+FC6E  53            	LD D,E
+FC6F  49            	LD C,C
+FC70  4F            	LD C,A
+FC71  4B            	LD C,E
+FC72  45            	LD B,L
+FC73  59            	LD E,C
+FC74  43            	LD B,E
+FC75  54            	LD D,H
+FC76  43            	LD B,E
+FC77  44            	LD B,H
+FC78  49            	LD C,C
+FC79  41            	LD B,C
+FC7A  47            	LD B,A
+FC7B  4E            	LD C,(HL)
+FC7C  4F            	LD C,A
+FC7D  53            	LD D,E
+FC7E  54            	LD D,H
+FC7F  49            	LD C,C
+FC80  43            	LD B,E
+FC81  20 45         	JR NZ,LFCC8
+FC83  4E            	LD C,(HL)
+FC84  54            	LD D,H
+FC85  45            	LD B,L
+FC86  52            	LD D,D
+FC87  3A 20 4C      	LD A,(4C20H)
+FC8A  41            	LD B,C
+FC8B  44            	LD B,H
+FC8C  45            	LD B,L
+FC8D  52            	LD D,D
+FC8E  20 20         	JR NZ,LFCB0
+FC90  2F            	CPL
+FC91  20 20         	JR NZ,LFCB3
+FC93  22 23 22      	LD (2223H),HL
+FC96  3A 20 5A      	LD A,(5A20H)
+FC99  59            	LD E,C
+FC9A  4B            	LD C,E
+FC9B  4C            	LD C,H
+FC9C  2E 20         	LD L,20H
+FC9E  07            	RLCA
+FC9F  01 18 04      	LD BC,0418H
+FCA2  44            	LD B,H
+FCA3  03            	INC BC
+FCA4  C1            	POP BC
+FCA5  05            	DEC B
+FCA6  EA 01 00      	JP PE,0001H
+FCA9  1B            	DEC DE
+FCAA  5B            	LD E,E
+FCAB  32 3B 31      	LD (313BH),A
+FCAE  79            	LD A,C
+FCAF  00            	NOP
+LFCB0:
+FCB0  00            	NOP
+FCB1  48            	LD C,B
+FCB2  20 20         	JR NZ,LFCD4
+FCB4  20 20         	JR NZ,LFCD6
+FCB6  20 20         	JR NZ,LFCD8
+FCB8  20 20         	JR NZ,LFCDA
+FCBA  48            	LD C,B
+FCBB  0A            	LD A,(BC)
+FCBC  00            	NOP
+FCBD  90            	SUB B
+FCBE  01 50 00      	LD BC,0050H
+FCC1  27            	DAA
+FCC2  00            	NOP
+FCC3  01 00 27      	LD BC,2700H
+FCC6  01 54 00      	LD BC,0054H
+FCC9  29            	ADD HL,HL
+FCCA  00            	NOP
+FCCB  28 00         	JR Z,LFCCD
+LFCCD:
+FCCD  27            	DAA
+FCCE  01 55 00      	LD BC,0055H
+FCD1  4F            	LD C,A
+FCD2  00            	NOP
+FCD3  01 00 4F      	LD BC,4F00H
+LFCD6:
+FCD6  01 55 00      	LD BC,0055H
+FCD9  27            	DAA
+LFCDA:
+FCDA  00            	NOP
+FCDB  28 00         	JR Z,LFCDD
+LFCDD:
+FCDD  29            	ADD HL,HL
+FCDE  01 54 00      	LD BC,0054H
+FCE1  27            	DAA
+FCE2  00            	NOP
+FCE3  01 00 27      	LD BC,2700H
+FCE6  FF            	RST 38H
+FCE7  5F            	LD E,A
+FCE8  11 3F 00      	LD DE,003FH
+FCEB  3E 00         	LD A,00H
+FCED  5F            	LD E,A
+FCEE  11 00 18      	LD DE,1800H
+FCF1  03            	INC BC
+FCF2  C1            	POP BC
+FCF3  04            	INC B
+FCF4  45            	LD B,L
+FCF5  05            	DEC B
+FCF6  68            	LD L,B
+FCF7  C0            	RET NZ
+FCF8  08            	EX AF,AF'
+FCF9  FF            	RST 38H
+FCFA  10 FF         	DJNZ LFCFB
+FCFC  FF            	RST 38H
+FCFD  FF            	RST 38H
+FCFE  FF            	RST 38H
+FCFF  FF            	RST 38H
+
+; ---- Unbelegt (0D00H-0FF5H) ------------------------------------------------
+0D00  FF            	DS	758		;[UNBELEGT] 0D00H-0FF5H durchgehend FFH (unprogrammierte EPROM-Zellen).
+
+; ---- IM2-Vektor / Selbsttest-Sprung / Pruefsumme (0FF6H-0FFFH) -------------
+0FF6  64            	DB	64H		;[IM2-VEKTOR CTC-KANAL 3] Adresse FFF6H = (I=FFH)<<8 | Vektorbyte F6H. F6H = CTC-Vektorbasis F0H + Kanal 3 * 2 (Design-Doc §4.3: 'Vektor F0H an 80H/48H/58H, jeweils Kanal 3 als Zeitgeber mit Interrupt'). Inhalt FC64H = ISR-Adresse.
+0FF7  FC            	DB	FCH
+0FF8  FF            	DB	FFH		;unbekannt/ungenutzt (FFH 3FH) -- keine erkannte Bedeutung
+0FF9  3F            	DB	3FH
+L0FFA:
+0FFA  C3 1B 00      	JP L001B		;[SELBSTTEST-SPRUNG] 'JP 001BH', angesprungen ueber 'JP 0FFAH' am Ladervorlauf-Ende (§4.3 Schritt 3). Physisch dieselben Bytes wie an FFFAH (RAM-Spiegel); ausgefuehrt wird hier ueber die NIEDRIGE Adresse, weil A8H zu diesem Zeitpunkt bereits wieder 06H='ROM an' ist (vom Stub am Ende zurueckgesetzt).
+0FFD  09            	DB	09H		;[PRUEFSUMME] 24-Bit-Summe ueber 0000H-0FFBH = 09AB70H (§1: 'die ROM-eigene Pruefsumme stimmt' -- gegen den eigenen Dump verifiziert 2026-09-27).
+0FFE  AB            	DB	ABH
+0FFF  70            	DB	70H
+
+; ---- Warmstart-Stub, Ziel FFE0H (physische Quelle: 0987H-099DH oben) -------
+FFE0  3E 87         	LD A,87H
+FFE2  D3 A8         	OUT (A8H),A
+FFE4  3A 00 00      	LD A,(0000H)
+FFE7  FE C3         	CP C3H
+FFE9  20 05         	JR NZ,FFF0H
+FFEB  3A 05 00      	LD A,(0005H)
+FFEE  FE C3         	CP C3H
+FFF0  3E 06         	LD A,06H
+FFF2  D3 A8         	OUT (A8H),A
+FFF4  C3 28 04      	JP 0428H
+
+	END

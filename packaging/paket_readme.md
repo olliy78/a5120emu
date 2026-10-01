@@ -3,8 +3,28 @@
 Emulator für Rechner am **K1520-Bus**.  Enthalten ist der Bürocomputer
 **robotron A5120** mit seinen Steckkarten (ZRE/K2526, OPS/K3526, ABS/K7024,
 ASS/K8025, AFS/K5122); er bootet die Originalsysteme CP/A, SCPX 1526 und UDOS
-von echten Diskettenabbildern.  Weitere Maschinen der Familie bekommen später
-ein eigenes Programm in derselben Installation.
+von echten Diskettenabbildern.  Als zweite Maschine ist der **robotron K8915**
+(Version 3, 5¼″) dabei — ein eigenes Programm (`k8915emu`, Startmenü
+„K8915 Emulator") mit eigener Konfiguration in derselben Installation.  Eine
+K8915-Systemdiskette liegt nicht bei; eine eigene (SCPX 8915) wird wie beim
+A5120 eingelegt und mit RETURN an der Coldstart-Meldung geladen.
+
+### K8915: eine eigene Bootdiskette
+
+1. `k8915emu` starten, im Kasten „Laufwerke" bei A: **Mount** (oder *Datei ▸
+   Diskette einlegen ▸ Laufwerk A:*) und die `.hfe`/`.dmk`/`.img` Ihrer
+   SCPX-8915-Systemdiskette wählen — am besten eine **Kopie** im
+   Diskettenordner, denn der Emulator schreibt Änderungen in die eingelegte Datei
+   zurück.
+2. *Maschine ▸ Rückstellen*; an der Meldung `* Coldstart * Disk on A: ready ? -->
+   <ENTER>` mit RETURN laden, bis `A>`.
+3. **Neue Bootdiskette selbst machen:** Knopf *Leere Diskette* für B:, unter SCPX
+   `format` (Verfahren 24, Laufwerk B), dann `disgen` (Systemspuren von A: lesen,
+   auf B: schreiben). Die Schritt-für-Schritt-Anleitung steht im Handbuch
+   (*Hilfe*, Abschnitt „Bootdiskette mit DISGEN erstellen"). Mit dem
+   k1520DiskTool geht es ebenso von außen: `k1520disktool-cli create neu.hfe
+   --fs scpx8915 --boot boot.bin` (das Bootabbild `boot.bin` sichert man vorher mit `boot-get`
+   aus einer vorhandenen Systemdiskette; Näheres: Handbuch des DiskTool).
 
 ## Installieren
 
@@ -44,10 +64,12 @@ Weitere Möglichkeiten:
 
 ## Starten
 
-Über das Startmenü („A5120 Emulator") oder auf der Kommandozeile:
+Über das Startmenü („A5120 Emulator" bzw. „K8915 Emulator") oder auf der
+Kommandozeile:
 
 ```sh
 a5120emu
+k8915emu
 ```
 
 Das Paket enthält ein zweites Programm, das **k1520DiskTool**: es tauscht Dateien
@@ -103,7 +125,7 @@ Assembler stehen als Beispielzeilen darin).
 |---|---|
 | Programm | wohin bei der Installation gewählt (Vorschlag `~/K1520emu`) |
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
-| Konfiguration | `~/.config/k1520emu/config.yaml` |
+| Konfiguration | `~/.config/k1520emu/a5120emu.yaml` bzw. `k8915emu.yaml` (je Programm) |
 
 Die Beispieldisketten werden beim ersten Start in den Diskettenordner
 ausgepackt.  Der Emulator schreibt Änderungen an einer eingelegten Diskette

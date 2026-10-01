@@ -18,3 +18,8 @@ pytest>=8.0        # Testebene tests/python/ (C-ABI + GUI)
 # `bitarray`, der Arbeitsfaden stirbt still, und die wartenden Leser laufen in ihre
 # Frist (py_gw_gui lief 300 s in den Zeitueberlauf).  Darum hier ausdruecklich.
 bitarray>=2.9      # Bitzellen in app/gw (kommt sonst nur mit `greaseweazle` mit)
+
+# Interop-Probe der seriellen Schnittstellen (tests/python/test_serial_pyserial.py,
+# Entwurf 19 §11): pyserial als fremder RFC-2217-Client.  Ohne das Paket wird der
+# Test übersprungen; zur Laufzeit braucht es niemand.
+pyserial>=3.5

@@ -33,6 +33,11 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `udos1715_640k_pc1715_system.hfe` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM", 80×32×256 — dieselbe Diskette liegt als `.img` unter `tests/fixtures/disks/` | MFS 1.6 |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
+**SERTEST.COM** (Prüfprogramm der seriellen Schnittstellen, `tools/sertest/`) liegt auf
+allen `cpa_cpa780_*` und auf `k8915scpx_boot1.hfe`; nach einem Neubau nachziehen mit
+`python3 tools/sertest/disketten.py --tool build/k1520disktool` (Wächter
+`cli_sertest_auf_den_disketten`).
+
 ## Bootabbilder (`boot_*.bin`) — Systemspuren zum Wiedereinspielen
 
 Bootfähig wird eine Diskette durch die **Systemspuren** vor dem Dateisystem; das
@@ -50,6 +55,12 @@ tools/dev.sh tool k1520disktool put    neu.hfe auszug/          # @OS.COM und de
 | `boot_scpx640.bin` | 16384 | SCPX 1526 V1.7, 16×256-System | `scpx17_cpa780_k5601.hfe` |
 | `boot_scpx798.bin` | 18432 | SCPX 1526 V1.7, 5×1024-System | `scpx17_5x1024_k5601_hardy.hfe` |
 | `boot_udos43.bin` | 13728 | UDOS 4.3 (Seite 0: Spuren 0–2 + Bootspur 21) | `udos_boot_scp.hfe` |
+| `boot_scpx8915_55k.bin` | 20480 | SCPX 8915 V5.3, Fassung „55 K“ (K8915; Zylinder 0–1 beidseitig 5×1024, **Ladekopf mit CRC**) | `k8915scpx_cpa800_k5601_bios55k-disk900.hfe` |
+| `boot_scpx8915_v24.bin` | 20480 | SCPX 8915 V5.3, Fassung „V24 XON/XOFF“ | `k8915scpx_boot1.hfe` (Diskette 901) |
+
+K8915: `create neu.hfe --fs scpx8915 --boot disks/boot_scpx8915_55k.bin` — der Name `scpx8915`
+ist nötig (seine Systemspuren = Zylinder 0–1), und das Abbild muss einen gültigen
+K8915-Ladekopf tragen (ein CP/A-Abbild des A5120 wird abgewiesen).
 
 Ein eigenes Abbild holt man sich mit `k1520disktool boot-get <diskette> <datei.bin>`
 (in der Oberfläche: „Bootabbild sichern…"). Die Systemspuren **allein** machen noch

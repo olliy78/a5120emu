@@ -19,10 +19,10 @@ stehen diese beiden Eigenschaften nicht im Namen.
 
 | Segment | Werte |
 |---------|-------|
-| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `udos` = UDOS 4.3 · `udos1715` = UDOS1715/NDOS (PC 1715) |
+| system | `cpa` = CP/A · `scpx17` = SCPX 1526 V1.7 · `k8915scpx` = SCPX 8915 · `udos` = UDOS 4.3 · `udos1715` = UDOS1715/NDOS (PC 1715) |
 | diskformat | physisches Format des Mediums: `cpa780` (5¼″ 80 Spuren DS MFM, 26×128 Sys + 5×1024 Daten), `5x1024`, `mini` |
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
-| merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord) |
+| merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord); beim K8915 BIOS-Fassung (`bios55k`, `v24xonxoff`), Besonderheit (`autodbase`) und Diskettennummer des Anwenders (`disk900`) |
 
 ## Dateien
 
@@ -36,7 +36,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_k5601_noclock.img` + **`../cpm/em256adr.com`** | G1-Prüfprogramm (A5120.16) — wird im Test auf die Temp-Kopie geschrieben | `Em256Adr.*` |
 | `cpa_cpa780_k5601_noclock.img` + **`../cpm/em16abl.com`** | S4-Abnahme/G2-Vorlage (A5120.16, U8001) — ebenso | `Em16Abl.*` |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
-| `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` | `test_hardy` |
+| `scpx17_5x1024_k5601_hardy_norm.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` — mit Normlücken neu aufgebaut (`save-as` → `.img` → `.hfe`, 80 Zylinder); ersetzt seit AP-F1 die frühere, vom Emulator gespeicherte Fassung mit Lücke 2 = 11 (am Gerät nicht lesbar) | `test_hardy`, DiskTool-Tests |
 | `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
 | `bootsec_cpa780.bin` | erwarteter Inhalt des Bootsektors einer cpa780-Diskette | `test_boot_integration` (Bootsektor-Vergleich) |
 | `mixed_udos_ss40_over_cpa800.hfe` | **gemischtes Layout**: cpa800, darüber UDOS ss40 im Doppelschritt — Kopf 0 gerade Zylinder 26×128 (UDOS), ungerade 5×1024 (Altbestand), Kopf 1 ganz 5×1024 | `test_disktool_gui` (roh öffnen, Schnitte), `test_gw_physical` |
@@ -45,6 +45,9 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
 | `udosP8000_640k_wega.hfe` | **UDOS1715/NDOS** vom **Robotron P8000** (UDOS 2.2), „WEGA-STARTDISKETTE": 80×32×256, 42 Dateien (UDOS-Dienstprogramme + die WEGA-Urlader und `sa.*`-Werkzeuge). **Anderer Rechner als der PC 1715**, gleiche Diskettensitte — nur mit `77H` statt `00` hinter dem Belegungsplan | `Udos1715P8000.*` |
 | `scp1700_640k_a7100_system.hfe` | **SCP1700/CP/M-86** (A7100), Systemdiskette: 80×2×16×256 MFM — aber **Spur 0 Kopf 0 in FM mit halber Datenrate** (16×128, 125 kbit/s), 46 Dateien | `Scp1700.*` |
+| `k8915scpx_boot1.hfe` | **SCPX 8915 V5.3, Fassung „V24 (XON/XOFF)“** (K8915) = **Diskette 901** des Anwenders (`***901.VOL`; Greaseweazle-Abzug, gleich `disks/k8915scpx_boot1.hfe`; Name aus der Zeit, als es die einzige war): `cpa800`, Systemspuren 5×1024 ab Zylinder 0, DISGEN-Einstellung B: = 16×256, Autostart `rade`, `RADE.COM`, `DISGEN`, `FORMAT`, Turbo Pascal | `K8915Scpx.*` |
+| `k8915scpx_cpa800_k5601_bios55k-disk900.hfe` | **SCPX 8915 V5.3, Fassung „55 K … BIOS-Version 5.3“** = Diskette 900 (`***900.VOL`): IOBYTE-Weiche, anderer Druckertreiber (7 Bit, ungerade Parität), B: = 5×1024, Autostart `rade`; nur Systemprogramme (DISGEN, FORMAT, PIP, POWER, RADE, SOFTKEY, STAT, SUBM, XSUB, DUMP) | `K8915Scpx.Fassung55KVonDiskette900BisZumPrompt` |
+| `k8915scpx_cpa800_k5601_v24xonxoff-autodbase-disk904.hfe` | **Fassung „V24 (XON/XOFF)“** wie 901, anders per DISGEN konfiguriert = Diskette 904 „Grundsoftware“ (`***904.VOL`): Autostart `rade`/`dbase`/`use lohn`/`do lohn`, eigene F-Tasten, B: = 5×1024; **ohne** RADE.COM und DBASE.COM (Autostart läuft absichtlich ins Leere), dafür REDABAS, KP, Turbo Pascal | `K8915Scpx.Grundsoftware904AutostartLaeuftInsLeere` |
 
 Die **gemischte** Diskette entstand am echten Laufwerk: erst vollständig als cpa800
 formatiert, dann mit UDOS `ss40` im Doppelschritt überschrieben.  Sie ist die einzige
@@ -110,7 +113,7 @@ Hintergrund: `doc/scp1700_diskettenformat.md`.
 
 ## Die beiden SCPX-Disketten sind NICHT austauschbar
 
-`scpx17_cpa780_k5601.hfe` trägt ein **16×256**-System, `scpx17_5x1024_k5601_hardy.hfe` ein
+`scpx17_cpa780_k5601.hfe` trägt ein **16×256**-System, `scpx17_5x1024_k5601_hardy_norm.hfe` ein
 **5×1024**-System. Beides sind verschiedene SYSP-Generierungen, keine Kopien voneinander:
 
 - `ScpxIntegration.WrongFormatReadTerminatesInsteadOfFreezing` braucht gerade den

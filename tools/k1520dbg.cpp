@@ -24,9 +24,13 @@
  * Commands come from stdin (interactive or piped) and/or a -x script file.
  * Type `help` for the command list.  See tools/k1520dbg.md for the full manual.
  *
+ * `--machine k8915` fährt statt des A5120 einen K8915 (eine CPU, A8H-Speicherbild,
+ * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
+ *
  * @license MIT
  */
 #include "core/machines/a5120/a5120.h"
+#include "tools/dbg_machine.h"   // A5120 ODER K8915 hinter demselben `m` (§8a AP-E4d)
 #include "core/logger.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
@@ -178,9 +182,15 @@ int main(int argc, char** argv){
     // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     bool start_console = false;   // --console: sofort in den Konsolenmodus (§9)
+    bool machine_k8915 = false;   // --machine k8915 (Vorgabe a5120)
+    bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     for (int i=1;i<argc;++i){
-        if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
+        if (!strcmp(argv[i],"--machine") && i+1<argc){
+            if (!dbgm::parseMachine(argv[++i], machine_k8915)){
+                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915)\n",argv[i]); return 2; } }
+        else if (!strcmp(argv[i],"--skip-selftest")) skip_selftest=true;
+        else if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-l") && i+1<argc) prnfiles.push_back(argv[++i]);
         else if (!strcmp(argv[i],"-b") && i+1<argc) disks[1]=argv[++i];
@@ -208,14 +218,32 @@ int main(int argc, char** argv){
 
     A5120Machine::Config mcfg;
     if (em_opt){
+        if (machine_k8915){ fprintf(stderr,"--em gibt es nur am A5120 (A5120.16)\n"); return 2; }
         const std::string e = em_opt;
         if      (e=="em256") mcfg.em = A5120Machine::Config::Em::em256;
         else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
     }
-    A5120Machine m(mcfg);
+    dbgm::DbgMachine m(machine_k8915, mcfg);
     m.powerOn();
-    EM* em = m.em();          // nullptr ohne --em
+    const bool K8 = m.isK8915();
+    EM* em = m.em();          // nullptr ohne --em (und immer am K8915)
+    const char* C1 = m.cpuName();            // "ZVE1" (A5120) bzw. "CPU" (K8915) in Meldungen
+    if (skip_selftest){
+        if (!K8) fprintf(stderr,"WARN: --skip-selftest gibt es nur am K8915 — ignoriert\n");
+        else {
+            // Genau der Weg eines echten Warmstarts (doc/merkposten/k8915.md): steht bei
+            // 0000H/0005H im RAM ein JP, springt der Stub bei FFE0H ohne Selbsttest zur
+            // Coldstart-Meldung.  Bank 1 direkt — über die CPU-Sicht läge dort das ROM.
+            m.k8915()->zre().bankPoke(0, 0x0000, 0xC3);
+            m.k8915()->zre().bankPoke(0, 0x0005, 0xC3);
+            fprintf(stderr,"K8915: Selbsttest uebersprungen (JP bei 0000H/0005H in Bank 1)\n");
+        }
+    }
+    // Formatname ist bei .hfe/.dmk nur Platzhalter; bei .img entscheidet er.  Der K8915
+    // bootet von cpa800, der A5120 zuerst cpa780 (unverändert).
+    const char* fmt1 = K8 ? "cpa800" : "cpa780";
+    const char* fmt2 = K8 ? "cpa780" : "cpa800";
     bool mount_failed = false;
     // COW temp copies to unlink at exit (empty unless mount_mode==MOUNT_COW).
     std::vector<std::string> cow_temps;
@@ -240,7 +268,7 @@ int main(int argc, char** argv){
         return tmp.string();
     };
     if (disk){ bool wp; std::string mp=prepareDisk(disk,wp);
-        if (!(m.mountDisk(0,mp,"cpa780",wp) || m.mountDisk(0,mp,"cpa800",wp))){
+        if (!(m.mountDisk(0,mp,fmt1,wp) || m.mountDisk(0,mp,fmt2,wp))){
             fprintf(stderr,"WARN: mount '%s' failed: %s\n",disk,m.lastError().c_str());
             mount_failed = true;   // session still runs; reflected in the exit code
         }
@@ -256,7 +284,7 @@ int main(int argc, char** argv){
         if (!disks[drv]) continue;
         bool wp; std::string mp=prepareDisk(disks[drv],wp);
         const char letter = (char)('A'+drv);
-        if (!(m.mountDisk(drv,mp,"cpa780",wp) || m.mountDisk(drv,mp,"cpa800",wp))){
+        if (!(m.mountDisk(drv,mp,fmt1,wp) || m.mountDisk(drv,mp,fmt2,wp))){
             fprintf(stderr,"WARN: mount %c '%s' failed: %s\n",letter,disks[drv],
                     m.lastError().c_str());
             mount_failed = true;
@@ -432,7 +460,7 @@ int main(int argc, char** argv){
     // `.MAC`/`.ASM`-Dateien (Fremdquellen ohne Adressspalte) werden dazu von
     // tools/mac_listing.h assembliert; `.prn`-Listings tragen ihre Adressen selbst.
     auto loadPrnSpec = [&](const std::string& spec)->int{
-        std::string path; long off=0; std::string mode;
+        std::string path; long off=0; std::string mode; int src_lo=-1, src_hi=-1;
         {   size_t at = spec.rfind('@');
             if (at != std::string::npos){
                 std::string s = spec.substr(at+1);
@@ -440,8 +468,10 @@ int main(int argc, char** argv){
                 if (sl=="auto"||sl=="labels"||sl=="noanchor"){ mode=sl; path=spec.substr(0,at); }
             }
         }
-        if (mode.empty() && !prnlst::splitSpec(spec,path,off)){
-            fprintf(stderr,"  bad @offset in '%s'\n",spec.c_str()); return -1; }
+        // PFAD[@OFFSET][:VON-BIS] — VON-BIS begrenzt auf einen Teil des Listings
+        // (K8915-ROM: 00D0H–03FFH läuft als Kopie bei F0D0H, §8a AP-E4d).
+        if (mode.empty() && !prnlst::splitSpecRange(spec,path,off,src_lo,src_hi)){
+            fprintf(stderr,"  bad @offset[:von-bis] in '%s'\n",spec.c_str()); return -1; }
 
         // ── Fremdquelle (.MAC/.ASM): assemblieren statt Listing parsen ────────
         if (maclst::isSourceFile(path)){
@@ -491,10 +521,16 @@ int main(int argc, char** argv){
         }
 
         // ── .prn-Listing ─────────────────────────────────────────────────────
-        int n = prn.load(path, mode=="auto"? 0 : off, /*want_bytes=*/mode=="auto");
-        if (n < 0){ fprintf(stderr,"  cannot open %s\n",path.c_str()); return n; }
+        // Am K8915 immer MIT Objektbytes: annotiert wird nur, solange die Bytes der
+        // Zeile im Speicher stehen (prnFor) — 0000H–0FFFH ist je nach A8H das ROM
+        // oder RAM mit dem TPA, und eine ROM-Zeile über einem .COM wäre Irreführung.
         if (mode=="auto"){
-            maclst::Image img; img.byte = prn.bytes_by_addr;
+            // Versatz an einem eigenen Listing bestimmen — prn kann schon andere
+            // Listings samt Objektbytes tragen, die den Abgleich verfälschten.
+            prnlst::Listing probe;
+            if (probe.load(path, 0, /*want_bytes=*/true) < 0){
+                fprintf(stderr,"  cannot open %s\n",path.c_str()); return -1; }
+            maclst::Image img; img.byte = probe.bytes_by_addr;
             auto match = maclst::findOffset(img,[&](uint16_t a){ return m.memReadDebug(a); });
             if (!match.found)
                 fprintf(stderr,"  @auto: kein Treffer im Speicher (%d Ankerbytes)\n",
@@ -505,11 +541,11 @@ int main(int argc, char** argv){
                         match.matched, match.fixed, 100.0*match.ratio);
                 if (match.ratio < 0.60)
                     fprintf(stderr,"         → Versatz NICHT angewandt (zu unsicher)\n");
-                else if (match.offset){
-                    prn.by_addr.clear(); prn.bytes_by_addr.clear();
-                    n = prn.load(path, match.offset); }
+                else off = match.offset;
             }
         }
+        int n = prn.load(path, off, /*want_bytes=*/K8, src_lo, src_hi);
+        if (n < 0){ fprintf(stderr,"  cannot open %s\n",path.c_str()); return n; }
         // Labels (name:) aus dem Listing als Symbole importieren (b/u/list per Name),
         // ohne bestehende (z.B. -s-/user-) Symbole zu überschreiben.
         int li=0;
@@ -517,12 +553,18 @@ int main(int argc, char** argv){
             std::string lab = prnlst::labelOf(kv.second);
             if (!lab.empty() && sym_by_name.find(lab)==sym_by_name.end()){ symAdd(lab,kv.first); ++li; }
         }
-        char off_s[32]={0}; if(off) snprintf(off_s,sizeof off_s," (offset %+ld / %04X)",off,(uint16_t)off);
+        char off_s[64]={0}; if(off) snprintf(off_s,sizeof off_s," (offset %+ld / %04X)",off,(uint16_t)off);
+        if (src_lo>=0){ size_t l=strlen(off_s);
+            snprintf(off_s+l,sizeof off_s-l," [Quelle %04X..%04X]",src_lo,src_hi); }
         fprintf(stderr,"  loaded %d listing line(s) from %s%s, %d label(s) → symbols\n",n,path.c_str(),off_s,li);
         return n; };
     // Annotation für eine Adresse (leer, wenn keine .prn-Quelle vorliegt).
     auto prnFor = [&](uint16_t a)->std::string{
-        const std::string* s = prn.find(a); return s ? *s : std::string(); };
+        const std::string* s = prn.find(a);
+        if (!s) return std::string();
+        // K8915: nur, wenn die Bytes der Zeile gerade dort stehen (ROM ein-/ausgeblendet).
+        if (K8 && !prn.matches(a,[&](uint16_t x){ return m.memReadDebug(x); })) return std::string();
+        return *s; };
 
     // ─── address / value resolution ──────────────────────────────────────────
     // resolveAddr: number (0x.., ..H, dec) OR a symbol name, optionally NAME+OFF.
@@ -748,7 +790,7 @@ int main(int argc, char** argv){
             it->second.hits++;
             if (it->second.ignore>0){ it->second.ignore--; }   // skip this hit (gdb ignore)
             else {
-                std::string why="bp ZVE1";
+                std::string why=std::string("bp ")+C1;
                 if(!it->second.cond.empty()) why+=" ["+it->second.cond+"]";
                 if(it->second.temp) bp1.erase(it);
                 stopAt(1,z,why);
@@ -786,7 +828,7 @@ int main(int argc, char** argv){
     // master is ZVE2, not ZVE1 — printing ZVE1's PC there is misleading. m.busMasterIsZVE2()
     // is valid inside this callback (set by the run loop around each CPU step).
     auto busWho = [&]{ static char s[20];
-        snprintf(s,sizeof s,"%s.PC=%04X", m.busMasterIsZVE2()?"ZVE2":"ZVE1", m.busMasterPC());
+        snprintf(s,sizeof s,"%s.PC=%04X", m.busMasterIsZVE2()?"ZVE2":C1, m.busMasterPC());
         return s; };
     // Evaluate a memory access against every watchpoint (range + value-condition).
     auto hitMem = [&](bool isRead, uint16_t addr, uint8_t data){
@@ -1132,16 +1174,24 @@ int main(int argc, char** argv){
     // ─── helpers ───────────────────────────────────────────────────────────────
     auto printSnap = [&](int cpu){
         const Snap& s = (cpu==2)?snap2:snap1;
-        if (!s.valid){ fprintf(stderr,"  (ZVE%d: no state captured yet — run first)\n",cpu); return; }
+        const std::string who = (cpu==2)? std::string("ZVE2") : std::string(C1);
+        if (!s.valid){ fprintf(stderr,"  (%s: no state captured yet — run first)\n",who.c_str()); return; }
         uint16_t ret=(uint16_t)(m.memReadDebug(s.SP)|(m.memReadDebug(s.SP+1)<<8));
         char fl[12]; flagsStr(s.AF,fl);
         fprintf(stderr,
-            "  ZVE%d PC=%04X SP=%04X(->%04X) AF=%04X[%s] BC=%04X DE=%04X HL=%04X "
+            "  %s PC=%04X SP=%04X(->%04X) AF=%04X[%s] BC=%04X DE=%04X HL=%04X "
             "IX=%04X IY=%04X  AF'=%04X BC'=%04X DE'=%04X HL'=%04X I=%02X R=%02X%s cyc=%llu\n",
-            cpu,s.PC,s.SP,ret,s.AF,fl,s.BC,s.DE,s.HL,s.IX,s.IY,s.AF_,s.BC_,s.DE_,s.HL_,
+            who.c_str(),s.PC,s.SP,ret,s.AF,fl,s.BC,s.DE,s.HL,s.IX,s.IY,s.AF_,s.BC_,s.DE_,s.HL_,
             s.I,s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
     };
     auto stateLine = [&]{
+        if (K8){   // K8915: eine CPU; was zählt, ist das Speicherbild (A8H) und /MEMDI
+            K8915Machine& k=*m.k8915();
+            fprintf(stderr,"  state: A8H=%02X map=%s /MEMDI=%s 61H=%02X  %c-cyc=%lld%s\n",
+                k.zre().reg(), dbgm::speicherbild(k.zre()).c_str(), k.zre().memdi()?"1":"0",
+                k.ats().anzeige(), rcpfx(), rc(m.cpuCycles()), rel_armed?" (rel)":"");
+            return;
+        }
         fprintf(stderr,"  state: ROM=%s BUSRQ=%s ZVE2=%s  %c-cyc=%lld%s",
             m.isRomEnabled()?"on":"off", m.isBUSRQ()?"yes":"no",
             m.isZVE2InReset()?"reset":(m.isZVE2Waiting()?"wait":"run"),
@@ -1270,7 +1320,7 @@ int main(int argc, char** argv){
         }
         if (hit_cpu==3) hit_cpu=1;
         if (regrab_on_stop){ regrab_on_stop=false; snap1=grab(m.cpuDebug()); hit_pc=m.cpuPC(); }
-        fprintf(stderr,"** %s : ZVE%d PC=%04X\n",stop_reason.c_str(),hit_cpu,hit_pc);
+        fprintf(stderr,"** %s : %s PC=%04X\n",stop_reason.c_str(),hit_cpu==2?"ZVE2":C1,hit_pc);
         if (!origin.empty()) fprintf(stderr,"   ausgeloest: %s\n",origin.c_str());
         printSnap(hit_cpu);
         showInsn("=>", hit_pc);
@@ -1279,14 +1329,14 @@ int main(int argc, char** argv){
         rst38Hint();
         // §17: remember the full state at each PC-breakpoint stop so `rc` can jump back
         // to the previous hit (the snapshot ring only holds coarse pre-command states).
-        if (stop_reason.rfind("bp",0)==0){
+        if (!K8 && stop_reason.rfind("bp",0)==0){   // K8915: keine Snapshots
             bphit_ring.emplace_back(); m.captureState(bphit_ring.back());
             while (bphit_ring.size()>bphit_cap) bphit_ring.pop_front();
         }
     };
     auto screen = [&]{
         for (int row=0;row<24;++row){ char ln[81];
-            for (int c=0;c<80;++c){ uint8_t ch=m.memReadDebug((uint16_t)(0xF800+row*80+c));
+            for (int c=0;c<80;++c){ uint8_t ch=m.screenByte(row,c);
                 ln[c]=(ch>=0x20&&ch<0x7F)?(char)ch:'.'; }
             ln[80]=0; fprintf(stderr,"  |%s|\n",ln); }
     };
@@ -1295,7 +1345,7 @@ int main(int argc, char** argv){
     // handling needed by callers — 80 chars). Non-printable → space (so matches
     // survive control bytes / the cursor-flag high bit).
     auto vramRow = [&](int row, char* out){
-        for (int c=0;c<80;++c){ uint8_t ch=m.memReadDebug((uint16_t)(0xF800+row*80+c));
+        for (int c=0;c<80;++c){ uint8_t ch=m.screenByte(row,c);
             out[c]=(ch>=0x20&&ch<0x7F)?(char)ch:' '; } out[80]=0;
     };
     // A `pat` of the form /re/ is treated as an ECMAScript regex, otherwise a
@@ -1373,6 +1423,33 @@ int main(int argc, char** argv){
     // current bus master, and the K5122 head/transfer state. `--json` for agents.
     auto whereShow = [&](bool json){
         auto k=m.k5122State();
+        if (K8){   // K8915: eine CPU, K5122 im /WAIT-Betrieb, Speicherbild A8H
+            K8915Machine& k8=*m.k8915();
+            uint16_t pc=m.cpuPC();
+            if (json){
+                fprintf(stderr,
+                  "\n{\"machine\":\"k8915\",\"pc\":\"0x%04X\",\"a8\":\"0x%02X\",\"map\":\"%s\",\"memdi\":%s,"
+                  "\"lamps\":\"0x%02X\",\"k5122\":{\"drive\":%u,\"mounted\":%s,\"cyl\":%u,\"head\":%u,"
+                  "\"transferring\":%s,\"write\":%s,\"headPos\":%zu,\"trackLen\":%zu}}\n",
+                  pc,k8.zre().reg(),dbgm::speicherbild(k8.zre()).c_str(),k8.zre().memdi()?"true":"false",
+                  k8.ats().anzeige(),(unsigned)k.drive,k.mounted?"true":"false",(unsigned)k.cylinder,
+                  (unsigned)k.head,k.transferring?"true":"false",k.writeMode?"true":"false",k.headPos,k.trackLen);
+                return;
+            }
+            char l1[120]; disasmAt(pc,l1,sizeof l1); std::string p1=prnFor(pc);
+            fprintf(stderr,"  CPU  %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
+            fprintf(stderr,"  A8H=%02X  map=%s  (R=ROM 1=Bank1 2=Bank2 .=Bus; je 4 KB ab 0000H)  /MEMDI=%s\n",
+                    k8.zre().reg(),dbgm::speicherbild(k8.zre()).c_str(),k8.zre().memdi()?"1":"0");
+            fprintf(stderr,"  K5122 (/WAIT): D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu MKE=%d"
+                    " geschrieben=%zu B, ganze Spuren=%llu\n",
+                    k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
+                    k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen,
+                    k.waitMke?1:0,k.waitSchreibBytes,(unsigned long long)k.waitSpuren);
+            fprintf(stderr,"  Anzeigefeld 61H=%02X (%s)   Takte=%llu\n",k8.ats().anzeige(),
+                    dbgm::lampen61(k8.ats().anzeige()).c_str(),(unsigned long long)m.machineCycles());
+            rst38Hint();
+            return;
+        }
         uint16_t pc1=m.cpuPC(); const Z80& z2=m.zve2Debug(); uint16_t pc2=z2.PC;
         const char* z2s = m.isZVE2InReset()?"reset":(m.isZVE2Waiting()?"wait":"run");
         if (json){
@@ -1418,6 +1495,9 @@ int main(int argc, char** argv){
         auto now = steady_clock::now();
         if (now - last < seconds(2)) return;
         last = now;
+        if (K8){ fprintf(stderr,"  … %llu cyc  PC=%04X  A8H=%02X  [Ctrl-C bricht ab]\n",
+                         (unsigned long long)(runClock()-start), m.cpuPC(), m.k8915()->zre().reg());
+                 return; }
         fprintf(stderr,"  … %llu cyc (%s)  ZVE1 PC=%04X  ZVE2 PC=%04X  busrq=%s  [Ctrl-C bricht ab]\n",
                 (unsigned long long)(runClock()-start), clock_machine?"Maschine":"ZVE1",
                 m.cpuPC(), m.zve2PC(), m.isBUSRQ()?"yes":"no");
@@ -1452,7 +1532,7 @@ int main(int argc, char** argv){
                     s.empty()?"":" <",s.c_str(),s.empty()?"":">",
                     p.empty()?"":"  ; ",p.c_str()); }
         };
-        top(hist1,"ZVE1"); top(hist2,"ZVE2");
+        top(hist1,C1); if(!K8) top(hist2,"ZVE2");
         if (em){
             if (hist16.empty()){ fprintf(stderr,"  U8001: (no samples)\n"); return; }
             std::vector<std::pair<uint32_t,uint32_t>> v; uint64_t tot=0;
@@ -1560,8 +1640,29 @@ int main(int argc, char** argv){
     // little (so the BIOS keyboard poll picks it up), released, run a little more.
     // Stops early if a breakpoint hits.
     auto keys = [&](const std::string& t){
+        if (K8){
+            // K8915: jedes Zeichen als fertiges Zeichen der K7672 (sendeZeichen) — im
+            // SCP-Modus das Zeichen selbst, im DCP-Modus (SCPX) die Taste samt Umschalt/
+            // Strg als Scancodes Satz 1.  So kommt auch ^C (\x03) an.  Eine Taste je
+            // 750 000 Takte (≈ 0,3 s), wie beim A5120 Drücken + Loslassen zusammen.
+            uint64_t ran=0; int n=0;
+            for (size_t i=0;i<t.size();++i){
+                uint32_t code=decodeKey(t,i); ++n;
+                uint8_t ch = (code==0x01000004u)? 0x0D : (uint8_t)code;
+                m.k8915()->keyboard().sendeZeichen(ch);
+                ran+=goSilent(750000);
+                if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
+            }
+            fprintf(stderr,"   keys: %d Zeichen getippt, %llu cyc (PC=%04X)\n",n,
+                    (unsigned long long)ran,m.cpuPC());
+            return;
+        }
         for (size_t i=0;i<t.size();++i){
             uint32_t code=decodeKey(t,i);
+            // Steuerzeichen (\x03 = ^C, \e = ESC, \t …) kennt K7637::translateKey nicht
+            // als Qt-Code (→ 0x00, Taste verpufft) — als Rohbyte senden (QK_RAW_BASE);
+            // das CP/A-BIOS reicht Codes < 20H unverändert durch.
+            if (code < 0x20) code |= 0x02000000u;
             m.keyPress(code,false,false); go(600000); if(hit) return;
             m.keyRelease(code);          go(150000); if(hit) return;
         }
@@ -1642,8 +1743,7 @@ int main(int argc, char** argv){
             }
 
             goSilent(per_frame);
-            scr.render([&](int r,int c){
-                return m.memReadDebug((uint16_t)(0xF800 + r*80 + c)); }, stderr, status);
+            scr.render([&](int r,int c){ return m.screenByte(r,c); }, stderr, status);
             if (hit) break;                             // Haltepunkt → zurueck in den Debugger
 
             next += std::chrono::milliseconds(20);
@@ -1735,6 +1835,7 @@ int main(int argc, char** argv){
     // ─── snapshot / reverse-step helpers ──────────────────────────────────────
     // Push the current machine state onto the reverse-ring before a forward command.
     auto pushHistory = [&]{
+        if (K8) return;                    // K8915: keine Snapshots (Savestates nur A5120)
         rev_ring.emplace_back();
         m.captureState(rev_ring.back());
         while (rev_ring.size() > rev_cap) rev_ring.pop_front();
@@ -2128,6 +2229,8 @@ int main(int argc, char** argv){
     for (auto& pf : prnfiles) loadPrnSpec(pf);    // apply -l .prn listings (also imports labels)
 
     signal(SIGINT, dbgSigInt);      // §7: Ctrl-C bricht einen laufenden `g` ab, nicht die Sitzung
+    if (K8) fprintf(stderr,"k1520dbg — Maschine K8915 (eine CPU; 'help k8915').  Disassembler: built-in.\n");
+    else
     fprintf(stderr,"k1520dbg — type 'help'.  Lauf-Uhr = %s (clock zve1|machine).  Disassembler: built-in.\n",
             clock_machine? "Maschine (beide CPUs)" : "ZVE1");
 #ifdef HAVE_ISOCLINE
@@ -2183,6 +2286,16 @@ int main(int argc, char** argv){
         if (handle16(t)) continue;
         const std::string& cmd=t[0];
 
+        // K8915: was es nur am A5120 gibt (ZVE2, /BUSRQ-/DMA-Ereignisse, Snapshots,
+        // Savestates), wird gemeldet statt ausgeführt — nie ein Absturz (§8a AP-E4d).
+        if (K8 && dbgm::nurA5120Kommando(cmd)){
+            fprintf(stderr,"  '%s' gibt es am K8915 nicht (nur A5120: ZVE2, /BUSRQ/DMA, "
+                           "Snapshots/Savestates) — nicht vorhanden\n",cmd.c_str());
+            continue;
+        }
+        auto nichtAmK8915 = [&](const char* was){
+            fprintf(stderr,"  %s gibt es am K8915 nicht — nicht vorhanden\n",was); };
+
         // §0 discoverability: when ZVE2 is the current bus master, a ZVE1-only command is
         // almost always a mistake (the DMA/read runs on ZVE2). Nudge toward the 2-variants.
         if (zve2Active() && cpu_ctx==1){
@@ -2221,6 +2334,22 @@ int main(int argc, char** argv){
               "      hist <cyc>      PC hotspots of BOTH CPUs (finds the spin loop instantly)\n"
               "    bbusrq / bxfer    stop exactly at the DMA hand-off / read-transfer edge\n"
               "    A ZVE1-only command while ZVE2 is bus master prints a [hint].\n");
+        }
+        else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="k8915"||t[1]=="K8915")){
+            fprintf(stderr,
+              "  K8915 (--machine k8915)  eine CPU, Speicherbild ueber A8H, K5122 im /WAIT-Betrieb\n"
+              "    map               A8H, /MEMDI, Quelle je 4-KB-Seite (ROM/Bank 1/Bank 2/Bus)\n"
+              "    bank <1|2> <A> [N]  Hexdump direkt aus einer DRAM-Bank (Bank 2: Viertel q = q*4000H)\n"
+              "    d/u/x/e/wp        Speicher in CPU-SICHT (mit A8H-Abbildung)\n"
+              "    screen/gscreen    Bild direkt von der K7024 (1000H), nie ueber die CPU-Sicht\n"
+              "    keys <text>       Zeichen ueber die K7672 (SCP: Zeichen, DCP: Scancodes) — \\x03 = ^C\n"
+              "    vars ; where ; dev [ctc|pio|sio|sio2] ; ivt   A8H/61H, K5122, ATS, Interruptkette\n"
+              "    --skip-selftest   Start ohne ROM-Selbsttest (JP bei 0000H/0005H wie ein Warmstart)\n"
+              "    Listings: -l k8915_zre.prn -l k8915_zre.prn@0xF000:00D0-03FF\n"
+              "              -l k8915_zre.prn@0xF000:0C00-0FFF -l scpx8915_v53_bios.prn\n"
+              "              (annotiert wird nur, solange die Bytes der Zeile im Speicher stehen)\n"
+              "    Nicht vorhanden: s2/b2/rj2/r 2 (ZVE2), bbusrq, snap/restore/rs/rc, savestate/loadstate\n"
+              "    bxfer [read|write]: Datenfluss /STR=0 bzw. /WE=0 (K5122 im /WAIT-Betrieb)\n");
         }
         else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 &&
                  (t[1]=="u8000"||t[1]=="u8001"||t[1]=="em"||t[1]=="16")){
@@ -2308,6 +2437,8 @@ int main(int argc, char** argv){
               "          keyuntil \"<key>\" \"txt\" [maxcyc]  press key until screen shows txt (poll-robust)\n"
               "          dialog <file>   drive a menu: per line  \"screen-txt\" \"keys\" [maxcyc]\n"
               "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n"
+              "  K8915   map | bank <1|2> <A> [N] | help k8915   (--machine k8915)\n"
+
               "  A5120.16 cpu [zve1|zve2|u8000] ; dev em ; fcw ; psa ; bmode ; bvi ; bint16 ; emlog\n"
               "          (help u8000 — der U8001 des Erweiterungsmoduls, Start mit --em em256)\n");
         }
@@ -2365,9 +2496,9 @@ int main(int argc, char** argv){
             auto& tbl = (cmd=="b2")? bp2 : bp1; uint16_t a=(uint16_t)parseNum(t[1]);
             // "b A if <expr…>" — the condition is all tokens after `if`, space-joined.
             Bp bp; if (t.size()>3 && t[2]=="if"){ for(size_t i=3;i<t.size();++i){ if(i>3)bp.cond+=" "; bp.cond+=t[i]; } }
-            tbl[a]=bp; fprintf(stderr,"  bp %s @%04X%s\n",cmd=="b2"?"ZVE2":"ZVE1",a, bp.cond.empty()?"":(" if "+bp.cond).c_str()); }
+            tbl[a]=bp; fprintf(stderr,"  bp %s @%04X%s\n",cmd=="b2"?"ZVE2":C1,a, bp.cond.empty()?"":(" if "+bp.cond).c_str()); }
         else if (cmd=="tb" && t.size()>1){ uint16_t a=(uint16_t)parseNum(t[1]); Bp bp; bp.temp=true; bp1[a]=bp;
-            fprintf(stderr,"  temp bp ZVE1 @%04X\n",a); }
+            fprintf(stderr,"  temp bp %s @%04X\n",C1,a); }
         else if (cmd=="bd" && t.size()>1) bp1.erase((uint16_t)parseNum(t[1]));
         else if (cmd=="bd2"&& t.size()>1) bp2.erase((uint16_t)parseNum(t[1]));
         // enable / disable (keep but inactive) — be/bdis (ZVE1), be2/bdis2 (ZVE2)
@@ -2376,14 +2507,14 @@ int main(int argc, char** argv){
             auto it=tbl.find(a);
             if(it==tbl.end()) fprintf(stderr,"  no bp @%04X\n",a);
             else { bool en=(cmd=="be"||cmd=="be2"); it->second.enabled=en;
-                fprintf(stderr,"  bp %s @%04X %s\n",(cmd=="be2"||cmd=="bdis2")?"ZVE2":"ZVE1",a,en?"enabled":"disabled"); } }
+                fprintf(stderr,"  bp %s @%04X %s\n",(cmd=="be2"||cmd=="bdis2")?"ZVE2":C1,a,en?"enabled":"disabled"); } }
         // ignore next N hits before stopping — bi/bi2 (gdb 'ignore')
         else if ((cmd=="bi"||cmd=="bi2") && t.size()>2){
             auto& tbl = (cmd=="bi2")? bp2 : bp1; uint16_t a=(uint16_t)parseNum(t[1]);
             auto it=tbl.find(a);
             if(it==tbl.end()) fprintf(stderr,"  no bp @%04X\n",a);
             else { it->second.ignore=parseNum(t[2]);
-                fprintf(stderr,"  bp %s @%04X: ignore next %ld hit(s)\n",cmd=="bi2"?"ZVE2":"ZVE1",a,it->second.ignore); } }
+                fprintf(stderr,"  bp %s @%04X: ignore next %ld hit(s)\n",cmd=="bi2"?"ZVE2":C1,a,it->second.ignore); } }
         else if (cmd=="bl"){
             auto show=[&](const std::map<uint16_t,Bp>& tbl,const char* cpu){
                 fprintf(stderr,"  %s breakpoints:\n",cpu);
@@ -2394,7 +2525,7 @@ int main(int argc, char** argv){
                         kv.second.enabled?"":" [disabled]",
                         kv.second.ignore>0?(" ignore="+std::to_string(kv.second.ignore)).c_str():"",
                         kv.second.cond.empty()?"":(" if "+kv.second.cond).c_str()); } };
-            show(bp1,"ZVE1"); show(bp2,"ZVE2");
+            show(bp1,C1); if(!K8) show(bp2,"ZVE2");
             if (em){ fprintf(stderr,"  U8001 breakpoints:\n");
                 if (bp16.empty()) fprintf(stderr,"    (none)\n");
                 for (auto& kv:bp16){ std::string sy=symAt16(kv.first);
@@ -2489,8 +2620,17 @@ int main(int argc, char** argv){
             else { rel_origin=m.cpuCycles(); rel_armed=true; fprintf(stderr,"  mark: origin=%llu (now)\n",(unsigned long long)rel_origin);} }
         // ══ INSPECT: registers, backtrace, memory dump/poke, disasm, examine, source, set ══
         else if (cmd=="r"){ snap1=grab(m.cpuDebug()); printSnap(1);
-            if(t.size()>1){ snap2=grab(m.zve2Debug()); printSnap(2); } showInsn("=>",m.cpuPC()); stateLine(); }
+            if(t.size()>1){ if(K8) nichtAmK8915("ZVE2 ('r 2')"); else { snap2=grab(m.zve2Debug()); printSnap(2); } }
+            showInsn("=>",m.cpuPC()); stateLine(); }
         // machine-readable registers (one JSON line) — for scripted/agent consumption
+        else if (cmd=="rj" && K8){ const Z80& z=m.cpuDebug(); K8915Machine& k8=*m.k8915();
+            fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
+                "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
+                "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"cyc\":%llu,\"rom\":%s,"
+                "\"machine\":\"k8915\",\"a8\":\"0x%02X\",\"lamps\":\"0x%02X\"}\n",
+                z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,z.R, z.IFF1?"true":"false",
+                (unsigned long long)m.cpuCycles(), m.isRomEnabled()?"true":"false",
+                k8.zre().reg(), k8.ats().anzeige()); }
         else if (cmd=="rj"){ const Z80& z=m.cpuDebug();
             fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
                 "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
@@ -2578,8 +2718,9 @@ int main(int argc, char** argv){
             listSrc(a,n); }
         else if (cmd=="set" && t.size()>=3){
             int cpu=1; size_t idx=1; if(t[1]=="2"){cpu=2; idx=2;}
-            if (idx+1<t.size() && setReg(cpu,t[idx],parseNum(t[idx+1])))
-                fprintf(stderr,"  ZVE%d %s := 0x%lX\n",cpu,t[idx].c_str(),parseNum(t[idx+1])&0xFFFF);
+            if (cpu==2 && K8) nichtAmK8915("ZVE2 ('set 2')");
+            else if (idx+1<t.size() && setReg(cpu,t[idx],parseNum(t[idx+1])))
+                fprintf(stderr,"  %s %s := 0x%lX\n",cpu==2?"ZVE2":C1,t[idx].c_str(),parseNum(t[idx+1])&0xFFFF);
             else fprintf(stderr,"  ? bad register\n"); }
         else if (cmd=="disp"){ if(t.size()>1){
                 std::string ex; for(size_t i=1;i<t.size();++i){ if(i>1)ex+=" "; ex+=t[i]; } // join → spaces in exprs ok
@@ -2782,17 +2923,38 @@ int main(int argc, char** argv){
                 for(auto& v: var_watch){ uint16_t a=std::get<1>(v);
                     if(std::get<2>(v)) fprintf(stderr,"  %-14s [%04X] = %04X\n",std::get<0>(v).c_str(),a,wd(a));
                     else               fprintf(stderr,"  %-14s [%04X] = %02X\n",std::get<0>(v).c_str(),a,m.memReadDebug(a)); } }
+            else if (K8){   // K8915: Speicherbild und Anzeigefeld statt Handschlag-RAM/CP/A-DPB
+                K8915Machine& k8=*m.k8915(); uint8_t a8=k8.zre().reg(), l=k8.ats().anzeige();
+                fprintf(stderr,"  A8H=%02X  map=%s  /MEMDI=%s /MEMDI1=%s  Bank-2-Viertel=%d%s\n"
+                               "  61H=%02X  Lampen an: %s\n"
+                               "  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
+                        a8, dbgm::speicherbild(k8.zre()).c_str(), k8.zre().memdi()?"aktiv":"-",
+                        k8.zre().memdi1()?"aktiv":"-", (a8>>4)&3, (a8&0x40)?" (eingeblendet)":"",
+                        l, dbgm::lampen61(l).c_str()); }
             else fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n"
                                 "  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
                     m.memReadDebug(0x03F8),wd(0xD1B2),wd(0xD1B4),wd(0xD1B8),wd(0xD1BE),wd(0xD1CD)); }
         else if (cmd=="dev"){
             std::string w = t.size()>1? t[1] : "k5122";
             auto Y=[&](bool b){ return b?"1":"0"; };
-            if (w=="ctc"){ auto c=m.ctcState();
-                fprintf(stderr,"  CTC (K2526)  vecBase=%02X  IEI=%s IEO=%s\n",c.vecBase,Y(c.iei),Y(c.ieo));
+            auto showCtc=[&](const char* name, const Z80CTC::DebugState& c){
+                fprintf(stderr,"  CTC (%s)  vecBase=%02X  IEI=%s IEO=%s\n",name,c.vecBase,Y(c.iei),Y(c.ieo));
                 for(int i=0;i<4;++i){ auto& ch=c.ch[i];
                     fprintf(stderr,"    ch%d ctl=%02X TC=%02X cnt=%-3d run=%s  INT(en=%s pend=%s ius=%s iei=%s)\n",
-                        i,ch.control,ch.timeConst,ch.counter,Y(ch.running),Y(ch.intEn),Y(ch.intPending),Y(ch.ius),Y(ch.iei)); } }
+                        i,ch.control,ch.timeConst,ch.counter,Y(ch.running),Y(ch.intEn),Y(ch.intPending),Y(ch.ius),Y(ch.iei)); } };
+            auto showSio=[&](const char* titel, const Z80SIO::DebugState& s){
+                fprintf(stderr,"  %s  IEI=%s IEO=%s\n",titel,Y(s.iei),Y(s.ieo));
+                for(int i=0;i<2;++i){ auto& ch=s.ch[i];
+                    fprintf(stderr,"    %c rr0=%02X rr1=%02X wr1=%02X vec=%02X  irq(rx=%s tx=%s ext=%s) ius=%s iei=%s  rxQ=%zu txBusy=%s\n",
+                        i?'B':'A',ch.rr0,ch.rr1,ch.wr1,ch.wr2,Y(ch.irqRx),Y(ch.irqTx),Y(ch.irqExt),Y(ch.ius),Y(ch.iei),ch.rxQueued,Y(ch.txBusy)); } };
+            if (w=="ctc" && K8){ K8915Machine& k8=*m.k8915();
+                showCtc("ZRE 045-8762, 80H-83H",k8.zre().ctc().debugState());
+                showCtc("ATS CTC1",k8.ats().ctc1().debugState());
+                showCtc("ATS CTC2",k8.ats().ctc2().debugState()); }
+            else if ((w=="sio"||w=="sio2") && K8){ K8915Machine& k8=*m.k8915();
+                if (w=="sio") showSio("SIO1 (ATS; B = Drucker V.24)",k8.ats().sio1().debugState());
+                else          showSio("SIO2 (ATS; B = Tastatur K7672)",k8.ats().sio2().debugState()); }
+            else if (w=="ctc"){ showCtc("K2526",m.a5120()->ctcState()); }
             else if (w=="pio"){
                 // §4: alle drei PIOs erreichbar — die K5122-PIOs (Steuer/Daten) waren
                 // bisher nur per C++-Instrumentierung sichtbar, obwohl genau dort der
@@ -2809,16 +2971,16 @@ int main(int argc, char** argv){
                     showPio("K5122 ctrl-PIO (Ports 10-13)", m.k5122CtrlPioState()); any=true; }
                 if (all || which=="k5122data" || which=="data"){
                     showPio("K5122 data-PIO (Ports 14-17)", m.k5122DataPioState()); any=true; }
-                if (all || which=="bs"){
-                    showPio("BS-PIO (K2526, Ports 08-0B)", m.bsPioState()); any=true; }
+                if (which=="bs" && K8){ nichtAmK8915("Die BS-PIO (K2526)"); any=true; }
+                else if (all || which=="bs"){
+                    if (!K8) showPio("BS-PIO (K2526, Ports 08-0B)", m.a5120()->bsPioState());
+                    any=true; }
                 if (!any) fprintf(stderr,"  dev pio [all|bs|k5122ctrl|k5122data]\n"); }
             else if (w=="sio" || w=="sio2"){
-                auto s = (w=="sio2")? m.dfueSioState() : m.kbdSioState();
-                fprintf(stderr,"  SIO %s (K8025 %s)  IEI=%s IEO=%s\n",
-                    w=="sio2"?"DFUE":"kbd/prn", w=="sio2"?"A33":"A32", Y(s.iei),Y(s.ieo));
-                for(int i=0;i<2;++i){ auto& ch=s.ch[i];
-                    fprintf(stderr,"    %c rr0=%02X rr1=%02X wr1=%02X vec=%02X  irq(rx=%s tx=%s ext=%s) ius=%s iei=%s  rxQ=%zu txBusy=%s\n",
-                        i?'B':'A',ch.rr0,ch.rr1,ch.wr1,ch.wr2,Y(ch.irqRx),Y(ch.irqTx),Y(ch.irqExt),Y(ch.ius),Y(ch.iei),ch.rxQueued,Y(ch.txBusy)); } }
+                auto s = (w=="sio2")? m.a5120()->dfueSioState() : m.a5120()->kbdSioState();
+                char titel[48]; snprintf(titel,sizeof titel,"SIO %s (K8025 %s)",
+                    w=="sio2"?"DFUE":"kbd/prn", w=="sio2"?"A33":"A32");
+                showSio(titel,s); }
             else if (w=="em"){
                 if (!em) fprintf(stderr,"  (kein EM — Start mit --em em256|em064)\n");
                 else {
@@ -2854,6 +3016,9 @@ int main(int argc, char** argv){
                         fprintf(stderr,"  PIO-A32 %c mode=%u out=%02X in=%02X dir=%02X vec=%02X  INT(en=%d pend=%d ius=%d)\n",
                                 i?'B':'A',pt.mode,pt.out,pt.in,pt.dir,pt.vector,pt.ie,pt.pending,pt.ius); } } }
             else { auto k=m.k5122State();
+                if (K8) fprintf(stderr,"  (K8915: K5122 im /WAIT-Betrieb — keine ZVE2, kein /BUSRQ;"
+                                        " MKE=%d, geschrieben=%zu B, ganze Spuren=%llu)\n",
+                                k.waitMke?1:0, k.waitSchreibBytes,(unsigned long long)k.waitSpuren);
                 fprintf(stderr,"  K5122: D%d %s  cyl=%u head=%u  %s%s  headPos=%zu/%zu secSize=%u  /BUSRQ-pend=%s\n",
                         k.drive, k.mounted?"mounted":"EMPTY", k.cylinder, k.head,
                         k.transferring?"READING":"idle", k.writeMode?"+WRITE":"",
@@ -2865,9 +3030,10 @@ int main(int argc, char** argv){
             // Ein Gerät mit IE=1, dessen Eintrag ins Leere zeigt, ist der klassische
             // Fremd-OS-Fehler (Interruptsturm / Sprung nach 0xFFFF).
             bool useZ2 = t.size()>1 && (t[1]=="2"||t[1]=="zve2");
+            if (useZ2 && K8){ nichtAmK8915("ZVE2 ('ivt 2')"); continue; }
             const Z80& z = useZ2? m.zve2Debug() : m.cpuDebug();
             fprintf(stderr,"  %s: I=%02X  IM %u  IFF1=%d\n",
-                    useZ2?"ZVE2":"ZVE1", z.I, z.IM, (int)z.IFF1);
+                    useZ2?"ZVE2":C1, z.I, z.IM, (int)z.IFF1);
             if (z.IM != 2)
                 fprintf(stderr,"  (Hinweis: IM != 2 — die Tabelle wird gerade nicht benutzt)\n");
             fprintf(stderr,"  Vektor Tabelle Eintrag Geraet                     Status\n");
@@ -2911,6 +3077,29 @@ int main(int argc, char** argv){
                 const char letter[2] = { (char)('A'+drv), 0 };
                 diskVerify(disks[drv], (std::string(letter)+":").c_str());
             } else fprintf(stderr,"  disk verify [A|B|C|D]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
+        // ══ K8915: Speicherbild (A8H) und DRAM-Bänke direkt ══
+        else if (cmd=="map"){
+            if (!K8) fprintf(stderr,"  map gibt es nur am K8915 (A8H-Speicherbild) — am A5120 nicht vorhanden\n");
+            else { K8915Machine& k8=*m.k8915(); K8915Zre& z=k8.zre();
+                fprintf(stderr,"  A8H=%02X  /MEMDI=%s /MEMDI1=%s  Bank-2-Viertel=%d\n",z.reg(),
+                        z.memdi()?"aktiv":"-", z.memdi1()?"aktiv":"-", (z.reg()>>4)&3);
+                static const char* qn[4]={"ROM","Bank 1","Bank 2","Bus"};
+                for (int p=0;p<16;++p){ auto o=z.ortVon((uint16_t)(p<<12));
+                    fprintf(stderr,"    %04X-%04X  %-6s",(p<<12),(p<<12)|0x0FFF,qn[(int)o.quelle]);
+                    if (o.quelle==K8915Zre::Quelle::Bus) fprintf(stderr,"%s\n", (p==1)?"  (K7024-Bildspeicher)":"");
+                    else fprintf(stderr,"  +%05X\n",(unsigned)o.offset); } } }
+        else if (cmd=="bank"){
+            if (!K8) fprintf(stderr,"  bank gibt es nur am K8915 (zwei DRAM-Baenke) — am A5120 nicht vorhanden\n");
+            else if (t.size()<3 || (t[1]!="1" && t[1]!="2"))
+                fprintf(stderr,"  bank <1|2> <A> [N]   Hexdump direkt aus Bank 1/2 (Bank 2: Viertel q ab q*4000H)\n");
+            else { int b=(t[1]=="2")?1:0; uint16_t a=(uint16_t)parseNum(t[2]);
+                int len=t.size()>3?(int)parseNum(t[3]):64;
+                for (int o=0;o<len;o+=16){ char asc[17]={0};
+                    fprintf(stderr,"  B%d:%04X: ",b+1,(uint16_t)(a+o));
+                    for (int i=0;i<16;++i){ if(o+i<len){ uint8_t v=m.k8915()->zre().bankPeek(b,(uint16_t)(a+o+i));
+                        fprintf(stderr,"%02X ",v); asc[i]=(v>=0x20&&v<0x7F)?(char)v:'.'; }
+                        else { fprintf(stderr,"   "); asc[i]=' '; } }
+                    fprintf(stderr," |%s|\n",asc); } } }
         else if (cmd=="clock"){   // §7: Uhrenwahl für Lauf-Budgets (g/gu/gscreen/hist)
             if (t.size()>1){
                 if (t[1]=="zve1") clock_machine=false;

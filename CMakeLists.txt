@@ -96,6 +96,38 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Serielle Schnittstellen nach aussen: reine Protokoll-Codecs ohne Socket (Entwurf 19, AP-S2)
+    add_library(k1520_serial_codec STATIC
+        core/serial/telnet_codec.cpp
+        core/serial/rfc2217_codec.cpp
+    )
+    target_include_directories(k1520_serial_codec PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Netzschicht der seriellen Schnittstellen (Entwurf 19): Sockets POSIX/Winsock2,
+    # Adressklassifikation, Portsuche.  Eigene Bibliothek, damit Tests und der spätere
+    # SerialHub sie ohne den Rest des Kerns binden.  ws2_32 gilt für MinGW UND MSVC.
+    add_library(k1520_serial_net STATIC
+        core/serial/net/socket.cpp
+        core/serial/net/adresse.cpp
+    )
+    target_include_directories(k1520_serial_net PUBLIC ${CMAKE_SOURCE_DIR})
+    if(WIN32)
+        target_link_libraries(k1520_serial_net PUBLIC ws2_32)
+    endif()
+
+    # Serielle Schnittstellen nach aussen (Entwurf 19, AP-S4): SerialAnschluss, Wandler,
+    # SerialHub mit I/O-Faden, Transporte Telnet/RFC2217/Datei.  Kennt keine Karte —
+    # die Karten liefern je Schnittstelle einen SerialAnschluss (AP-S5).
+    find_package(Threads REQUIRED)
+    add_library(k1520_serial STATIC
+        core/serial/anschluss.cpp
+        core/serial/wandler.cpp
+        core/serial/transport.cpp
+        core/serial/hub.cpp
+    )
+    target_include_directories(k1520_serial PUBLIC ${CMAKE_SOURCE_DIR})
+    target_link_libraries(k1520_serial PUBLIC k1520_serial_net k1520_serial_codec Threads::Threads)
+
     # Floppy peripheral: Diskettenformat-Datenmodell (DiskFormat/TrackFormat)
     add_library(k1520_floppy STATIC
         core/peripherals/floppy_drive/disk_format.cpp
@@ -224,14 +256,20 @@ if(BUILD_K1520)
 
     # K8025 ASS – Anschlußsteuerung Seriell (serial interface card)
     add_library(k1520_k8025 STATIC core/cards/k8025/k8025.cpp)
-    target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus)
+    target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus k1520_serial)
     target_include_directories(k1520_k8025 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # K5122 AFS – Anschlusssteuerung Floppy-disk Speicher (formatagnostischer
     # Streaming-Controller, TrackImage/DiskImage-basiert; bootet CP/A inkl. HFE)
-    add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp)
+    add_library(k1520_k5122 STATIC core/cards/k5122/k5122.cpp core/cards/k5122/k5122_wait.cpp)
     target_link_libraries(k1520_k5122 PUBLIC k1520_pio k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_k5122 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Laufwerksverwaltung (K5122 + vier Laufwerke + Formatkatalog) — gemeinsamer
+    # Baustein von A5120 und K8915 (doc/design/16_k8915.md §7.1)
+    add_library(k1520_laufwerke STATIC core/machines/laufwerke.cpp)
+    target_link_libraries(k1520_laufwerke PUBLIC k1520_k5122 k1520_floppy2 k1520_geometry k1520_logger)
+    target_include_directories(k1520_laufwerke PUBLIC ${CMAKE_SOURCE_DIR})
 
     # EM064/EM256 – Erweiterungsmodul des A5120.16 mit U8001/U8002 (doc/design/17_a5120_16.md)
     add_library(k1520_em STATIC core/cards/em/em.cpp)
@@ -244,17 +282,40 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_em
-        k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em
+        k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger k1520_serial
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # ZRE 045-8762 (K8915): U880, CTC, 4-KB-Boot-EPROM, 2 × 64 KB DRAM, Register A8H
+    add_library(k1520_zre8762 STATIC core/cards/zre8762/zre8762.cpp)
+    target_link_libraries(k1520_zre8762 PUBLIC k1520_z80 k1520_ctc k1520_bus k1520_logger)
+    target_include_directories(k1520_zre8762 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
+    add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
+    target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_k7028 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Tastatur K7672 (K8915): Protokollmodell, SCP-Modus
+    add_library(k1520_k7672 STATIC core/peripherals/k7672/k7672.cpp)
+    target_link_libraries(k1520_k7672 PUBLIC k1520_sio k1520_logger)
+    target_include_directories(k1520_k7672 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K8915 V3 (doc/design/16_k8915.md) — ZRE + ATS/K7672 + K7024 + K5122 (/WAIT).  Seit
+    # AP-E4b in libk1520core.so: k1520_create(K1520_MACHINE_K8915).
+    add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
+    target_link_libraries(k1520_k8915 PUBLIC
+        k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke
+        k1520_floppy2 k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library
     add_library(k1520core SHARED
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion
@@ -292,8 +353,8 @@ if(BUILD_K1520)
     target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
-    add_executable(boot_trace tools/boot_trace.cpp)
-    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp)
+    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
 
@@ -333,7 +394,7 @@ if(BUILD_K1520)
     # k1520dbg: interactive gdb-style debugger (breakpoints, marker-relative cycles,
     # memory dump/disasm, watchpoints, keystroke injection, screen view)
     add_executable(k1520dbg tools/k1520dbg.cpp)
-    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_floppy k1520_logger)
+    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
     target_include_directories(k1520dbg PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
     # Zeilenbearbeitung der interaktiven Sitzung: Pfeiltasten, History,

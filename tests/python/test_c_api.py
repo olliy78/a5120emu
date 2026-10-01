@@ -84,6 +84,113 @@ def test_create_and_destroy_roundtrip():
     _lib.k1520_destroy(K1520Handle(handle))
 
 
+def test_unbuilt_machine_type_is_refused_with_a_reason():
+    """Ein vorgesehener, aber nicht gebauter Maschinentyp (PRG710 = 1) gibt NULL
+    zurück — mit einem Grund in `k1520_last_init_error`, nicht still.
+
+    Bis AP-E4b (doc/design/16_k8915.md §8a) stand hier der K8915 (= 2); seitdem ist
+    er gebaut, und dieser Wächter hält den verbleibenden Typ und einen Wert
+    außerhalb der Aufzählung.
+    """
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for typ in (1, 7):
+        assert not _lib.k1520_create(typ), typ
+        grund = _lib.k1520_last_init_error().decode()
+        assert "nicht implementiert" in grund, grund
+        assert not _lib.k1520_create_configured(typ, None, None, None, None), typ
+        assert "nicht implementiert" in _lib.k1520_last_init_error().decode()
+
+    # Der Grund darf einen folgenden, erfolgreichen Aufruf nicht überdauern.
+    handle = _lib.k1520_create(0)
+    assert handle
+    assert _lib.k1520_last_init_error() == b""
+    _lib.k1520_destroy(K1520Handle(handle))
+
+
+def test_k8915_can_be_created_and_reports_its_type():
+    """`k1520_create(K1520_MACHINE_K8915)` liefert seit AP-E4b eine Maschine;
+    `k1520_machine_type` meldet 2, die Anzeigen haben ihren Ruhezustand."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    handle = _lib.k1520_create(2)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 2
+        assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (640, 288)
+        _lib.k1520_power_on(h)
+        assert _lib.k1520_panel_lamps(h) == 0xFF, "Latch 61H nach /RESET: alles dunkel"
+        assert _lib.k1520_bell_count(h) == 0
+        assert _lib.k1520_run(h, 100_000) > 0
+        # Vorgabebestückung des Geräts: 2 × K5601, Platz 2/3 leer.
+        assert _lib.k1520_drive_format_count(h, 0) > 0
+        assert _lib.k1520_drive_format_count(h, 2) == 0
+    finally:
+        _lib.k1520_destroy(h)
+
+    # Bestückung über create_configured, wie beim A5120.
+    handle = _lib.k1520_create_configured(2, b"K5601", b"K5600.20", None, None)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 2
+        assert _lib.k1520_drive_format_count(h, 1) > 0
+    finally:
+        _lib.k1520_destroy(h)
+
+
+def test_nmi_button_restarts_the_k8915_self_test_and_does_nothing_on_the_a5120():
+    """`k1520_nmi` (AP-UI1): am K8915 setzt die NMI-Flanke das ROM auf 0066H —
+    `OUT (61H),FFH`, dann Selbsttest von vorn; die Lampen gehen aus.  Am A5120 hat
+    die Funktion keine Wirkung (kein NMI-Taster) — der Lauf geht einfach weiter."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    handle = _lib.k1520_create(2)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        _lib.k1520_power_on(h)
+        _lib.k1520_run(h, 1_000_000)
+        # Die volle Wirkung (Selbsttest von vorn, „DIAGNOSTIC") prüft
+        # K8915Boot.NmiImRomStartetDenSelbsttestNeu; hier geht es um die ABI.
+        _lib.k1520_nmi(h)
+        _lib.k1520_run(h, 200)
+        assert _lib.k1520_panel_lamps(h) == 0xFF, "0066H: OUT (61H),FFH"
+    finally:
+        _lib.k1520_destroy(h)
+
+    handle = _lib.k1520_create(0)
+    assert handle
+    h = K1520Handle(handle)
+    try:
+        _lib.k1520_power_on(h)
+        _lib.k1520_nmi(h)
+        assert _lib.k1520_run(h, 50_000) > 0
+        assert _lib.k1520_panel_lamps(h) == 0
+    finally:
+        _lib.k1520_destroy(h)
+
+
+def test_a5120_answers_the_machine_neutral_indicators(booted):
+    """Die angehängten Anzeigefunktionen ändern am A5120 nichts: Typ 0, kein
+    Anzeigefeld, kein Summerzähler; `k1520_screen_char` liest dasselbe Bild wie
+    der bisherige Weg über den Bus (F800H) — sobald das Bild steht (vorher kann
+    der Bus bei F800H etwas anderes zeigen als die Karte)."""
+    from app.core_binding.k1520 import _lib
+
+    emulator = booted
+    h = emulator._handle
+    assert _lib.k1520_machine_type(h) == 0
+    assert _lib.k1520_panel_lamps(h) == 0
+    assert _lib.k1520_bell_count(h) == 0
+    for r in range(24):
+        for c in range(80):
+            assert _lib.k1520_screen_char(h, c, r) == emulator.mem_read(0xF800 + r * 80 + c)
+    for c, r in ((-1, 0), (80, 0), (0, 24), (0, -1)):
+        assert _lib.k1520_screen_char(h, c, r) == 0
+
+
 def test_framebuffer_geometry_matches_pointer_size(emulator):
     """`k1520_fb_width/height` und der Zeigerinhalt passen zusammen.
 
@@ -144,6 +251,73 @@ def test_formats_source_points_at_a_real_file(emulator):
     assert source, "formats_source ist leer — Katalog nicht geladen"
     assert "formats.yaml" in source
 
+
+# ─── Strukturen und Aufzählungen der seriellen Schnittstellen (Entwurf 19 §8) ──
+
+_C_TYP = {
+    "uint8_t": ctypes.c_uint8, "uint16_t": ctypes.c_uint16, "uint32_t": ctypes.c_uint32,
+    "uint64_t": ctypes.c_uint64, "int": ctypes.c_int, "bool": ctypes.c_bool,
+}
+
+
+def _header_text() -> str:
+    text = HEADER.read_text(encoding="utf-8")
+    return re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+
+
+def _c_feldtyp(typ: str, dims: list):
+    t = _C_TYP[typ] if typ != "char" else ctypes.c_char
+    for d in reversed(dims):
+        t = t * int(d)
+    return t
+
+
+def test_serial_structs_match_the_header_field_by_field():
+    """Name, Typ und Feldgröße jedes Feldes der `K1520Ser*`-Strukturen stimmen mit der
+    ctypes-Seite überein — gleiche Felderfolge heisst gleiches Layout.  Ein fehlendes
+    oder verschobenes Feld bräche sonst still (falsche Werte statt eines Fehlers)."""
+    from app.core_binding import k1520 as B
+    text = _header_text()
+    gefunden = 0
+    for m in re.finditer(r"typedef struct \{([^{}]*)\}\s*(K1520Ser(?:Info|Konfig|Status))\s*;", text, flags=re.S):
+        koerper, name = m.groups()
+        py = getattr(B, name)
+        soll = []
+        for decl in koerper.split(";"):
+            decl = decl.strip()
+            if not decl:
+                continue
+            typ, rest = decl.split(None, 1)
+            for feld in rest.split(","):
+                fm = re.fullmatch(r"\s*(\w+)((?:\[\d+\])*)\s*", feld)
+                assert fm, (name, decl)
+                soll.append((fm.group(1), _c_feldtyp(typ, re.findall(r"\[(\d+)\]", fm.group(2)))))
+        ist = [(n, t) for n, t in py._fields_]
+        assert [n for n, _ in soll] == [n for n, _ in ist], name
+        for (n, ts), (_, ti) in zip(soll, ist):
+            assert ctypes.sizeof(ts) == ctypes.sizeof(ti), (name, n)
+        gefunden += 1
+    assert gefunden == 3
+
+
+def test_serial_enum_values_match_the_binding():
+    from app.core_binding import k1520 as B
+    text = _header_text()
+    werte = {}
+    for m in re.finditer(r"typedef enum \{([^{}]*)\}\s*(K1520Ser(?:Betriebsart|Rolle|Zustand)|K1520HostArt)\s*;", text, flags=re.S):
+        n = 0
+        for eintrag in m.group(1).split(","):
+            eintrag = eintrag.strip()
+            if not eintrag:
+                continue
+            k, _, v = eintrag.partition("=")
+            n = int(v) if v.strip() else n
+            werte[k.strip()] = n
+            n += 1
+    assert len(werte) == 3 + 2 + 5 + 4
+    for k, v in werte.items():
+        pyname = k.replace("K1520_", "", 1)
+        assert getattr(B, pyname) == v, k
 
 # ─── A5120.16: Erweiterungsmodul (S5) ────────────────────────────────────────
 

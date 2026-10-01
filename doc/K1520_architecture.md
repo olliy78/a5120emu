@@ -16,7 +16,7 @@ Entwicklung eines hardwarenahen, modularen Emulators für die **K1520-Rechnerfam
 |----------|--------|-----|
 | Robotron A5120 | K2526, K3526, K7024, K8025, K5122 | CPA, SIOS, SCP, UDOS, MUTOS |
 | PRG710 / PRG710-1 | (noch zu ermitteln) | SCPX |
-| K8915 | (noch zu ermitteln) | — |
+| K8915 (5¼″ V3) | 045-8762 ZRE+128K, K7028 ATS, K7024, K5122 — s. `doc/design/16_k8915.md` | SCPX 8915 |
 | weitere | konfigurierbar | — |
 
 ### 1.2 Abgrenzung zum Vorgänger
@@ -1834,7 +1834,7 @@ Hat die K3526 außer dem 64KB DRAM irgendwelche Steuerlogik (Banking-Register, S
 
 ### 15.2 PRG710 / K8915 Hardware
 
-Für diese Maschinen fehlen noch alle Hardware-Informationen. Die Architektur unterstützt sie bereits als Konfiguration, aber die konkreten Karten und deren Verdrahtung müssen noch ermittelt werden.
+K8915: Stand und Planung in `doc/design/16_k8915.md`, Festlegungen mit Wächtern in `doc/merkposten/k8915.md`. PRG710: es fehlen noch alle Hardware-Informationen. Die Architektur unterstützt sie bereits als Konfiguration, aber die konkreten Karten und deren Verdrahtung müssen noch ermittelt werden.
 
 ---
 

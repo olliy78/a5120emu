@@ -38,7 +38,9 @@
  */
 
 #include <gtest/gtest.h>
+#include <vector>
 #include "core/cards/k8025/k8025.h"
+#include "core/serial/wandler.h"
 
 // Helper: enable RX interrupts on a SIO channel by writing WR1.
 // Writes 0x01 to ctrl port (select register 1), then 0x0C (all-receive mode).
@@ -358,6 +360,38 @@ TEST(K8025, DfueRxByte_TriggersInterrupt_WhenEnabled)
     EXPECT_TRUE(card.hasInterrupt());
 }
 
+/**
+ * @test K8025/RetiGibtDenSioWiederFrei
+ * @brief Nach Quittung (IUS gesetzt) fordert die DFÜ-SIO erst wieder an, wenn das RETI
+ *   über die Karte bei ihr ankommt — bis AP-ST5 reichte die K8025 das RETI nicht weiter,
+ *   jeder zweite Empfangsinterrupt blieb aus (SERTEST-Gegenstelle am A5120).
+ * @par Pass criterion  zweites Zeichen ohne RETI: keine Anforderung; nach
+ *   `bus.signalRETI()`: Anforderung, Vektor erneut quittierbar.
+ */
+TEST(K8025, RetiGibtDenSioWiederFrei)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    bus.setInterruptChain({&card});
+    card.ioWrite(0x51, 0x01);   // WR1: Empfangsinterrupt bei JEDEM Zeichen (D4–D3 = 10,
+    card.ioWrite(0x51, 0x10);   // wie SERTEST; enableRxInterrupts' 0CH ist „erstes Zeichen")
+    card.setIEI(true);
+
+    card.dfueRxByte(0x41);
+    ASSERT_TRUE(card.hasInterrupt());
+    (void)card.getVector();                 // Quittung: IUS
+    (void)card.ioRead(0x50);                // Zeichen abholen
+    card.dfueRxByte(0x42);
+    card.setIEI(true);
+    EXPECT_FALSE(card.hasInterrupt()) << "unter Bedienung fordert der Kanal nicht an";
+
+    bus.signalRETI();
+    card.setIEI(true);
+    EXPECT_TRUE(card.hasInterrupt()) << "RETI muss bei der SIO A33 ankommen";
+    (void)card.getVector();
+    EXPECT_EQ(card.ioRead(0x50), 0x42);
+}
+
 // ─── Sub-chip accessor ────────────────────────────────────────────────────────
 
 /**
@@ -421,7 +455,8 @@ TEST(K8025, Config_CustomDilA41_IsReturned)
 
 /**
  * @test K8025/SetDFUERxCallback_NoCrash
- * @brief setDFUERxCallback() stores a callback without crashing; dfueRxByte() calls it.
+ * @brief setDFUERxCallback() stores a callback without crashing (seit AP-S5 = Abnehmer
+ *        der DFÜ/V.24, s. K8025Seriell.AlterUnterbau).
  * @par Pass criterion  No exception; dfueRxByte(0x01) completes without error.
  */
 TEST(K8025, SetDFUERxCallback_NoCrash)
@@ -434,4 +469,228 @@ TEST(K8025, SetDFUERxCallback_NoCrash)
 
     // Callback stored; no crash on registration.
     EXPECT_NO_FATAL_FAILURE(card.dfueRxByte(0x01));
+}
+
+// ─── K8025Seriell: Anschlüsse nach außen (Entwurf 19 §3.1, AP-S5) ───────────
+
+namespace {
+
+/// Kanal @p ctrl (SIO-Steuerport) auf 8N1 ×16, Tx/Rx ein.
+void sio8N1(K8025& card, uint8_t ctrl) {
+    for (uint8_t b : {0x18, 0x04, 0x44, 0x03, 0xC1, 0x05, 0x68}) card.ioWrite(ctrl, b);
+}
+
+}  // namespace
+
+/**
+ * @test K8025Seriell.Kanalzuordnung
+ * @brief DFÜ/V.24 = A33-A (X6, mit Steuerleitungen), DFÜ/IFSS = A33-B (X5, bis AP-S5
+ *        als „unused" geführt), Drucker = A32-B (X3); die Tastatur (A32-A, X4) ist
+ *        fest und hat keinen Anschluss.  Taktquellen: W1:7 bzw. X7–X9, Drucker fest.
+ */
+TEST(K8025Seriell, Kanalzuordnung)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    auto& v24  = card.anschluss(K8025::DfueV24);
+    auto& ifss = card.anschluss(K8025::DfueIfss);
+    auto& dr   = card.anschluss(K8025::Drucker);
+    EXPECT_STREQ(v24.name(), "DFÜ/V.24");
+    EXPECT_STREQ(v24.stecker(), "X6");
+    EXPECT_TRUE(v24.v24());
+    EXPECT_STREQ(ifss.name(), "DFÜ/IFSS");
+    EXPECT_STREQ(ifss.stecker(), "X5");
+    EXPECT_FALSE(ifss.v24());
+    EXPECT_STREQ(dr.name(), "Drucker");
+    EXPECT_STREQ(dr.stecker(), "X3");
+    EXPECT_FALSE(dr.v24());
+    EXPECT_STREQ(K8025::TASTATUR_NAME, "Tastatur K7637 (X4)");
+    ASSERT_EQ(v24.taktquellen().size(), 2u);
+    EXPECT_EQ(v24.taktquellen()[0].name, "ZRE-CTC K0 (W1:7)");
+    ASSERT_EQ(ifss.taktquellen().size(), 2u);
+    EXPECT_EQ(ifss.taktquellen()[1].name, "CTC A34 K1 (X8–X9)");
+    EXPECT_TRUE(dr.taktquellen().empty());
+
+    sio8N1(card, 0x51);
+    sio8N1(card, 0x53);
+    sio8N1(card, 0x5F);
+    card.ioWrite(0x50, 0x31);
+    card.ioWrite(0x52, 0x32);
+    card.ioWrite(0x5E, 0x33);
+    EXPECT_EQ(v24.senderNimm(), 0x31);
+    EXPECT_EQ(ifss.senderNimm(), 0x32);
+    EXPECT_EQ(dr.senderNimm(), 0x33);
+    ifss.empfange(0x44);
+    EXPECT_EQ(card.ioRead(0x52), 0x44);
+    dr.empfange(0x45);
+    EXPECT_EQ(card.ioRead(0x5E), 0x45);
+    EXPECT_TRUE(card.nimmSeriellGeaendert());
+}
+
+/**
+ * @test K8025Seriell.Taktquelle
+ * @brief Gezeichnete Stellung = ZRE-CTC K0 (über `setzeZreTakt`), versetzt = CTC A34
+ *        K2 (V.24) bzw. K1 (IFSS); Drucker fest CTC A34 K0.
+ */
+TEST(K8025Seriell, Taktquelle)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    uint64_t zre = 32;   // ZRE-CTC K0: 32 Takte je Impuls → ×16 = 4800 Bd
+    card.setzeZreTakt([&] { return zre; });
+    sio8N1(card, 0x51);
+    sio8N1(card, 0x53);
+    sio8N1(card, 0x5F);
+    auto& v24  = card.anschluss(K8025::DfueV24);
+    auto& ifss = card.anschluss(K8025::DfueIfss);
+    auto& dr   = card.anschluss(K8025::Drucker);
+    EXPECT_EQ(v24.format().baud_nenn, 4800u);
+    EXPECT_EQ(ifss.format().baud_nenn, 4800u);
+    EXPECT_FALSE(dr.format().gueltig) << "CTC A34 K0 noch nicht programmiert";
+
+    // CTC A34 als Zeitgeber (Vorteiler 16): K0 ZK 1 = 9600, K1 ZK 4 = 2400, K2 ZK 8 = 1200.
+    for (auto [port, zk] : {std::pair<uint8_t, uint8_t>{0x58, 1}, {0x59, 4}, {0x5A, 8}}) {
+        card.ioWrite(port, 0x07);
+        card.ioWrite(port, zk);
+    }
+    EXPECT_EQ(dr.format().baud_nenn, 9600u);
+    v24.waehleTaktquelle(1);
+    ifss.waehleTaktquelle(1);
+    EXPECT_EQ(v24.format().baud_nenn, 1200u);
+    EXPECT_EQ(ifss.format().baud_nenn, 2400u);
+    v24.waehleTaktquelle(0);
+    zre = 16;
+    EXPECT_EQ(v24.format().baud_nenn, 9600u);
+
+    // Die CTC A34 zählt im Emulator ZC/TO0 der ZRE (Koppelbus): ihre Eingangsperiode
+    // kommt aus derselben Quelle.  Zähler (47H), ZK 2 → 2 × 16 Takte.
+    card.ioWrite(0x58, 0x47);
+    card.ioWrite(0x58, 2);
+    EXPECT_EQ(card.ctcA34().teilerTakte(0), 32u);
+}
+
+/**
+ * @test K8025Seriell.V24Verknuepfungen
+ * @brief Kartenlogik A23 (Transkription §2.3.2): /CTSA = V106 ∧ V107, /DCDA = V109 ∧
+ *        V107, V107 zusätzlich allein an DCDB; RTSA/DTRA aus WR5.  Der IFSS-Anschluss
+ *        treibt keine Leitungen.
+ */
+TEST(K8025Seriell, V24Verknuepfungen)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    auto& v24 = card.anschluss(K8025::DfueV24);
+    auto rr0 = [&](uint8_t ctrl) { card.ioWrite(ctrl, 0x00); return card.ioRead(ctrl); };
+    EXPECT_EQ(rr0(0x51) & 0x28, 0x00);
+    EXPECT_EQ(rr0(0x53) & 0x28, 0x00);
+
+    v24.setzeEingaenge(/*cts*/ true, /*dsr*/ false, /*dcd*/ true);
+    EXPECT_EQ(rr0(0x51) & 0x28, 0x00) << "ohne V107 weder CTSA noch DCDA";
+    EXPECT_EQ(rr0(0x53) & 0x08, 0x00);
+    v24.setzeEingaenge(true, true, false);
+    EXPECT_EQ(rr0(0x51) & 0x28, 0x20) << "CTSA = V106 ∧ V107";
+    EXPECT_EQ(rr0(0x53) & 0x08, 0x08) << "DCDB = V107";
+    v24.setzeEingaenge(false, true, true);
+    EXPECT_EQ(rr0(0x51) & 0x28, 0x08) << "DCDA = V109 ∧ V107";
+
+    card.anschluss(K8025::DfueIfss).setzeEingaenge(true, true, true);
+    card.anschluss(K8025::Drucker).setzeEingaenge(true, true, true);
+    EXPECT_EQ(rr0(0x53) & 0x20, 0x00) << "CTSB bleibt inaktiv";
+    EXPECT_EQ(rr0(0x5F) & 0x28, 0x00) << "A32-B ohne Steuerleitungen";
+    EXPECT_EQ(rr0(0x5D) & 0x28, 0x00) << "Tastaturkanal unberührt";
+
+    EXPECT_FALSE(v24.rts());
+    card.ioWrite(0x51, 0x05);
+    card.ioWrite(0x51, 0xEA);
+    EXPECT_TRUE(v24.rts());
+    EXPECT_TRUE(v24.dtr());
+}
+
+/**
+ * @test K8025Seriell.TastaturUnberuehrt
+ * @brief Wandler an allen drei Anschlüssen (auch mit Loop) fassen den Tastaturkanal
+ *        A32-A nie an: ein LED-Kommando des BIOS bleibt für die K7637 liegen.
+ */
+TEST(K8025Seriell, TastaturUnberuehrt)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    k1520::serial::Wandler w0(card.anschluss(K8025::DfueV24));
+    k1520::serial::Wandler w1(card.anschluss(K8025::DfueIfss));
+    k1520::serial::Wandler w2(card.anschluss(K8025::Drucker));
+    k1520::serial::WandlerEinstellung e;
+    e.loop = true;
+    w0.einstellen(e);
+    w1.einstellen(e);
+    w2.einstellen(e);
+    card.ioWrite(0x5C, 0x8F);
+    for (uint64_t z = 0; z < 200'000; z += 16) { w0.takt(z); w1.takt(z); w2.takt(z); }
+    EXPECT_TRUE(card.keyboardTxAvailable());
+    EXPECT_EQ(card.keyboardTxGet(), 0x8F);
+}
+
+/**
+ * @test K8025Seriell.AlterUnterbau
+ * @brief `setAbnehmer`/`einspeisen` (hinter `K1520Machine::setDFUECallback`/`dfueSend`,
+ *        `setPrinterCallback`/`printerSend`): das Byte kommt über den Wandler in seiner
+ *        Zeichenzeit; belegt ein Transport den Stecker, schweigen beide.
+ */
+TEST(K8025Seriell, AlterUnterbau)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    card.setzeZreTakt([] { return uint64_t{16}; });
+    sio8N1(card, 0x51);
+    std::vector<uint8_t> ab;
+    card.setDFUERxCallback([&](uint8_t b) { ab.push_back(b); });
+    k1520::serial::Wandler w(card.anschluss(K8025::DfueV24));
+    uint64_t z = 0;
+    auto laufe = [&](uint64_t n) { for (const uint64_t e = z + n; z < e; z += 16) w.takt(z); };
+    laufe(64);
+    card.ioWrite(0x50, 0x41);
+    laufe(10);
+    EXPECT_TRUE(ab.empty()) << "erst nach dem Blick des Wandlers";
+    laufe(3000);
+    EXPECT_EQ(ab, std::vector<uint8_t>{0x41});
+    card.einspeisen(K8025::DfueV24, 0x55);
+    EXPECT_EQ(card.ioRead(0x50), 0x55);
+
+    w.anbinden();
+    laufe(64);
+    card.ioWrite(0x50, 0x42);
+    laufe(3000);
+    EXPECT_EQ(ab.size(), 1u) << "Transport angebunden: Rückruf ins Leere";
+    card.einspeisen(K8025::DfueV24, 0x66);
+    EXPECT_EQ(card.ioRead(0x50), 0x55) << "Einspeisen ins Leere";
+}
+
+/**
+ * @test K8025Seriell.BreakInBeideRichtungen
+ * @brief Break des Gastes (WR5 D4) erscheint am Anschluss; ein Break vom Wandler setzt
+ *        RR0 D7 des richtigen Kanals (AP-T1b).
+ */
+TEST(K8025Seriell, BreakInBeideRichtungen)
+{
+    K1520Bus bus;
+    K8025 card(bus);
+    auto rr0 = [&](uint8_t ctrl) { card.ioWrite(ctrl, 0x10); return card.ioRead(ctrl); };
+    struct Fall { K8025::Schnittstelle k; uint8_t ctrl; };
+    for (Fall f : {Fall{K8025::DfueV24, 0x51}, Fall{K8025::DfueIfss, 0x53},
+                   Fall{K8025::Drucker, 0x5F}}) {
+        auto& an = card.anschluss(f.k);
+        EXPECT_FALSE(an.breakGesendet());
+        card.ioWrite(f.ctrl, 0x05);
+        card.ioWrite(f.ctrl, 0x78);   // WR5: Tx ein, 8 Bit, Break
+        EXPECT_TRUE(an.breakGesendet()) << int(f.ctrl);
+        card.ioWrite(f.ctrl, 0x05);
+        card.ioWrite(f.ctrl, 0x68);
+        EXPECT_FALSE(an.breakGesendet());
+
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
+        an.breakEmpfang(true);
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x80) << int(f.ctrl);
+        an.breakEmpfang(false);
+        EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
+    }
+    EXPECT_EQ(rr0(0x5D) & 0x80, 0x00) << "Tastaturkanal unberührt";
 }

@@ -158,6 +158,10 @@ verify dbg_smoke_mem.bin @0x6100
 lst
 lst list
 
+# ── K8915-Kommandos: am A5120 Meldung "nur K8915" ────────────────────────
+map
+bank 1 0x0000 16
+help k8915
 # ── A5120.16 ohne EM: jedes Kommando meldet sich, keines faellt aus der Kette ─
 # (mit EM: dbg_u8000_smoke.cli)
 cpu

@@ -132,10 +132,13 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         return;
     }
     if ((data & 0x0F) == 0x03) {
-        // Simplified interrupt control word: IE=bit7, AND/OR=bit6, H/L=bit5
-        p.ie               = (data >> 7) & 1;
-        p.int_and          = (data >> 6) & 1;
-        p.int_active_high  = (data >> 5) & 1;
+        // Interrupt-Freigabewort (Zilog Z80 PIO / U855: „Interrupt Disable Word“,
+        // D7 = EI, D6…D4 ohne Bedeutung): schaltet NUR die Freigabe.  UND/ODER und
+        // die aktive Flanke bleiben, wie das Steuerwort xx07H sie gesetzt hat.  (Bis
+        // 2026-09-28 übernahm es D6/D5 mit — ein BIOS, das erst 37H „ODER, bei high“
+        // und später 83H „frei“ schreibt, bekam dadurch „bei low“ und sofort einen
+        // falschen Interrupt; K8915-Marken-ISR, doc/design/16_k8915.md AP-E3.)
+        p.ie = (data >> 7) & 1;
         if (!p.ie) p.pending = false;   // s.o.: Sperren löscht die Anforderung
         if (p.mode == 3) checkInterrupt(p, p.input_latch);
         return;

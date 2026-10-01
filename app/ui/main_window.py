@@ -1,11 +1,16 @@
 """
-K1520 Emulator — Hauptfenster
-=============================
+K1520 Emulator — Hauptfenster (A5120 Emulator und K8915 Emulator)
+================================================================
 
 Bildschirm, Tastatur, Laufwerke und Einstellungen als Kästen um die Bildröhre,
 darüber Menü und einrichtbare Symbolleiste, darunter die Statuszeile.
 
-Drei Dinge, die man beim Ändern wissen muss:
+Vier Dinge, die man beim Ändern wissen muss:
+
+* **Ein Fenster, zwei Programme.**  Was A5120 und K8915 unterscheidet, steht im
+  Programmprofil (`app/profil.py`, ``self.profil``) — Maschine, Titel,
+  Konfigurationsdatei, Tastatur, Lampen, eigene Aktionen.  Hier wird nur das
+  Profil gefragt, nicht die Maschine verglichen.
 
 * **Jede Bedienung ist eine ``QAction``** und steht in `app/ui/actions.py` —
   Menü und Symbolleiste zeigen dieselbe.  Neue Bedienwege kommen dort hinzu,
@@ -32,6 +37,7 @@ from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QIcon
 from app.ui.screen_widget import ScreenWidget
 from app.ui.settings_widget import SettingsWidget
 from app.ui.drive_widget import DriveWidget
+from app.ui.serial_widget import SerialWidget
 from app.ui.keyboard import KeyboardWidget
 from app.ui.focus import release_focus, ScreenFocusGuard
 from app.ui.help_window import HelpWindow
@@ -46,37 +52,44 @@ from app import drive_types as dt
 from app import modell
 from app import paths
 from app import programme
+from app import profil as profile
 from app import takt
 
 
 class MainWindow(QMainWindow):
     """Main emulator window."""
     
-    def __init__(self, disks=None):
+    def __init__(self, disks=None, profil=None):
         """Initialize main window.
 
         :param disks: Diskettenabbilder von der Kommandozeile, in Laufwerks-
             reihenfolge (A:, B:, C:, D:).  Sie werden NACH der gespeicherten
             Konfiguration eingelegt und überschreiben deren Belegung nur für die
             angegebenen Laufwerke — was der Anwender beim Aufruf nennt, gewinnt.
+        :param profil: Programmprofil (`app/profil.py`) — A5120 Emulator (Vorgabe)
+            oder K8915 Emulator.
         """
         super().__init__()
-        self.setWindowTitle("K1520 A5120 Emulator")
+        self.profil = profil or profile.VORGABE
+        self.setWindowTitle(self.profil.titel)
         self.setWindowIcon(QIcon.fromTheme("computer"))
         
         # Current drive-bay configuration (one core DriveProfile name per K5122
-        # slot).  Starts from the A5120 standard (3× K5601, 4th slot empty) and is
-        # overridden by the restored config / the Einstellungen → Laufwerke tab.
-        self._drive_types = list(dt.DEFAULT_DRIVE_TYPES)
+        # slot).  Starts from the machine's standard (A5120: 3× K5601, 4th slot
+        # empty; K8915: 2× K5601) and is overridden by the restored config / the
+        # Einstellungen → Laufwerke tab.
+        self._drive_types = self.profil.standard_laufwerke()
         # Modell (A5120 / A5120.16, app/modell.py) — bestimmt den core-Parameter
         # ``em=``.  Vorgabe A5120 ohne Erweiterung, überschrieben von der
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
+        # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
         self._model = modell.DEFAULT_MODEL
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
             self.emulator = K1520Emulator(self._drive_types,
+                                          machine=self.profil.maschine,
                                           em=modell.em_for(self._model))
         except Exception as e:
             QMessageBox.critical(self, "Initialization Error", str(e))
@@ -88,7 +101,7 @@ class MainWindow(QMainWindow):
         # frame — with a 20 ms tick that is 49000 cycles, NOT the old 10000 (which ran
         # the machine at only 0.2x speed, so a boot that takes ~13.8M cycles dragged on
         # for ~28 s instead of ~5.6 s, and the CP/A clock ran 5x too slow).
-        self.CPU_HZ = takt.NENNTAKT_HZ
+        self.CPU_HZ = self.profil.nenntakt_hz
         self.frame_interval_ms = 20  # 50 Hz
         # speed_factor > 1.0 fast-forwards (e.g. to shorten the boot); 1.0 = real time;
         # 0.0 = unlimited (run_timer interval 0 → as fast as the host allows).
@@ -122,9 +135,11 @@ class MainWindow(QMainWindow):
         self.run_timer.setInterval(self.frame_interval_ms)
 
         # Alle Bedienwege einmal anlegen (Menü und Leiste zeigen dieselben).
-        aktionen.erzeuge_aktionen(self)
+        aktionen.erzeuge_aktionen(self, self.profil.maschine)
+        if self.profil.maschine != "a5120":
+            self.act_ueber.setText(f"Ü&ber {self.profil.programm}…")
         # Inhalt und Stil der Symbolleiste — aus der Konfiguration überschrieben.
-        self._leisten_inhalt = list(aktionen.STANDARD)
+        self._leisten_inhalt = aktionen.standard(self.profil.maschine)
         self._hilfe = None
 
         # Setup UI
@@ -163,6 +178,10 @@ class MainWindow(QMainWindow):
         self.settings_widget.crtChanged.connect(self._schedule_autosave)
         self.settings_widget.speedChanged.connect(self._on_speed_selected)
         self.settings_widget.driveTypesChanged.connect(self._on_drive_types_selected)
+        # Serielle Schnittstellen: jede Änderung des Anwenders gehört in die
+        # Konfiguration; die Statuszeile bekommt ihre Felder fertig aus dem Reiter.
+        self.serial_widget.changed.connect(self._schedule_autosave)
+        self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
         self.settings_widget.modelChanged.connect(self._on_model_selected)
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
@@ -270,7 +289,7 @@ class MainWindow(QMainWindow):
         # ── Statusleiste ─────────────────────────────────────────────────────
         # Rechts der Zustand (Tempo, Laufwerke), links bleibt Platz für die
         # flüchtigen Meldungen des Fensters.
-        self.status_widget = MachineStatus()
+        self.status_widget = MachineStatus(profil=self.profil)
         self.statusBar().addPermanentWidget(self.status_widget)
         self.statusBar().showMessage("Bereit")
 
@@ -289,7 +308,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.screen_dock)
 
         # ── Tastatur-Dock (in der linken Spalte UNTER den Bildschirm) ────────
-        self.keyboard_widget = KeyboardWidget()
+        self.keyboard_widget = self._tastatur_bauen()
         self.keyboard_widget.keyPressed.connect(self._on_kbd_press)
         self.keyboard_widget.keyReleased.connect(self._on_kbd_release)
         # Die echte Tastatur geht durch die Nachbildung: sie zeigt mit, welche
@@ -317,7 +336,13 @@ class MainWindow(QMainWindow):
         # ── Einstellungen-Dock (rechts, getabbt; anfangs versteckt) ──────────
         self.settings_dock = QDockWidget("Einstellungen", self)
         self.settings_dock.setObjectName("settings_dock")
-        self.settings_widget = SettingsWidget(self.screen_widget)
+        # Serielle Schnittstellen nach außen (doc/design/19 §9, AP-S10): ein Reiter
+        # IM Einstellungen-Kasten, kein eigener Kasten.  Namen und Fähigkeiten der
+        # Blöcke kommen aus dem Kern.  Das Widget (und mit ihm sein 4-Hz-Takt für
+        # die Statuszeile) lebt auch, solange der Reiter nicht obenauf liegt.
+        self.serial_widget = SerialWidget(self.emulator)
+        self.settings_widget = SettingsWidget(self.screen_widget, profil=self.profil,
+                                              schnittstellen=self.serial_widget)
         self.settings_dock.setWidget(self.settings_widget)
         self.addDockWidget(Qt.RightDockWidgetArea, self.settings_dock)
         self.tabifyDockWidget(self.drives_dock, self.settings_dock)
@@ -366,6 +391,13 @@ class MainWindow(QMainWindow):
         self.screen_widget.setFocus()
 
     # ── On-screen keyboard → emulator ────────────────────────────────────────
+
+    def _tastatur_bauen(self):
+        """Die Bildschirmtastatur des Profils: K7637 (A5120) oder K7672 (K8915)."""
+        if self.profil.tastatur == "k7672":
+            from app.ui.keyboard_k7672 import KeyboardK7672Widget
+            return KeyboardK7672Widget()
+        return KeyboardWidget()
 
     def _on_kbd_press(self, keycode: int, shift: bool, ctrl: bool):
         self.emulator.key_press(keycode, shift, ctrl)
@@ -556,6 +588,8 @@ class MainWindow(QMainWindow):
         emu_menu = menu_bar.addMenu("&Maschine")
         emu_menu.addAction(self.act_power)
         emu_menu.addAction(self.act_reset)
+        if hasattr(self, "act_nmi"):            # nur im Profil mit Frontplatte
+            emu_menu.addAction(self.act_nmi)
 
         # (Die Geschwindigkeit wird im Einstellungen-Kasten, Reiter „Allgemein",
         #  über ein Dropdown eingestellt; gemessen steht sie in der Statuszeile.)
@@ -601,6 +635,8 @@ class MainWindow(QMainWindow):
         # Programm gestartet, das neben diesem weiterläuft.
         tools_menu = menu_bar.addMenu("&Werkzeuge")
         tools_menu.addAction(self.act_disktool)
+        # Der jeweils andere Emulator (dasselbe Programm, anderes Profil).
+        tools_menu.addAction(getattr(self, f"act_{self.profil.andere}emu"))
         tools_menu.addAction(self.act_konsole)
 
         # ── Hilfe ────────────────────────────────────────────────────────────
@@ -695,13 +731,14 @@ class MainWindow(QMainWindow):
     def _leiste_einrichten(self):
         """Dialog: welche Schaltflächen die Leiste zeigt und in welcher Folge."""
         namen = {}
-        for name in aktionen.REIHENFOLGE:
+        reihenfolge = aktionen.reihenfolge(self.profil.maschine)
+        for name in reihenfolge:
             a = name and self._aktion(name)
             if a is not None:
                 namen[name] = aktionen.DIALOG_NAME.get(
                     name, a.text().replace("&", "").rstrip("…"))
-        dlg = ToolbarDialog(aktionen.REIHENFOLGE, self._leisten_inhalt, namen,
-                            aktionen.STANDARD, self)
+        dlg = ToolbarDialog(reihenfolge, self._leisten_inhalt, namen,
+                            aktionen.standard(self.profil.maschine), self)
         if dlg.exec():
             self._leiste_fuellen(dlg.auswahl())
             self._schedule_autosave()
@@ -718,7 +755,7 @@ class MainWindow(QMainWindow):
             vorhanden.raise_()
             vorhanden.activateWindow()
             return vorhanden
-        self._hilfe = HelpWindow(self)
+        self._hilfe = HelpWindow(self, titel=f"{self.profil.programm} — Handbuch")
         self._hilfe.show()
         return self._hilfe
 
@@ -777,10 +814,13 @@ class MainWindow(QMainWindow):
 
     def _gather_config(self) -> dict:
         """Build the full configuration dict from the live application state."""
-        general = {"speed": float(self.speed_factor), "model": self._model}
+        general = {"speed": float(self.speed_factor)}
+        if self.profil.modellwahl:              # nur der A5120 kennt ein Modell
+            general["model"] = self._model
         return config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
-            self._gather_window_state(), drive_types=self._drive_types)
+            self._gather_window_state(), drive_types=self._drive_types,
+            schnittstellen=self.serial_widget.zustand_lesen())
 
     def _gather_window_state(self) -> dict:
         """Fenstergeometrie + Kastenaufteilung (Sichtbarkeit, Lage, Größen).
@@ -962,7 +1002,7 @@ class MainWindow(QMainWindow):
                 continue
             if not self.drives_widget.mount_path(drive, str(path)):
                 # Kein Abbruch: die Oberflaeche laeuft, das Laufwerk bleibt leer.
-                print(f"a5120emu: '{path}' konnte nicht in Laufwerk "
+                print(f"{self.profil.programm}: '{path}' konnte nicht in Laufwerk "
                       f"{chr(ord('A') + drive)}: eingelegt werden", file=sys.stderr)
 
     def _apply_config(self, data: dict):
@@ -994,17 +1034,26 @@ class MainWindow(QMainWindow):
             # _apply_drive_types (der auch das Modell an den core-Konstruktor
             # gibt).  Ein fehlender Eintrag ist die Vorgabe A5120 (ohne EM) —
             # ältere Konfigurationen laufen damit unverändert.
-            self._model = modell.normalize(general.get("model"))
+            self._model = (modell.normalize(general.get("model"))
+                           if self.profil.modellwahl else modell.DEFAULT_MODEL)
             self.settings_widget.set_model_value(self._model)
 
             # Drive-bay configuration must be applied BEFORE the disks, so the
             # panels for the present slots exist and the machine matches.  During
             # a config restore we never cold-restart here (power-on happens later).
             self._apply_drive_types(
-                data.get("drive_types") or dt.DEFAULT_DRIVE_TYPES, cold_restart=False)
+                data.get("drive_types") or self.profil.standard_laufwerke(),
+                cold_restart=False)
 
             if "disks" in data:
                 self.drives_widget.load_mounts(data.get("disks") or [])
+
+            # Serielle Schnittstellen: Einstellung übernehmen und aktive wieder
+            # aufnehmen (doc/design/19 §7.4a).  Fehlt der Abschnitt, bleibt alles,
+            # wie es ist — die Auslieferungsvorgabe trägt keinen.
+            if "schnittstellen" in data:
+                self.serial_widget.zustand_anwenden(
+                    self.profil.schnittstellen_umbenennen(data.get("schnittstellen") or {}))
 
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})
@@ -1015,17 +1064,23 @@ class MainWindow(QMainWindow):
         """Die Konfiguration des Anwenders laden — oder die Auslieferung nehmen.
 
         Beim ersten Start (nach der Erstinstallation) gibt es noch keine
-        ``config.yaml``.  Dann kommt die **mitgelieferte**
-        Auslieferungskonfiguration zum Zug (``data/default_config.yaml``, siehe
+        Konfiguration des Anwenders (``a5120emu.yaml`` bzw. ``k8915emu.yaml``).
+        Dann kommt die **mitgelieferte** Auslieferungskonfiguration zum Zug
+        (``data/default_config_<maschine>.yaml``, siehe
         :func:`app.config_io.standard_konfiguration`) und wird gleich als die
-        neue ``config.yaml`` des Anwenders geschrieben — von da an gehört sie
+        neue Konfiguration des Anwenders geschrieben — von da an gehört sie
         ihm und wird fortgeschrieben.
+
+        Davor der **einmalige Umzug** der Altdatei ``config.yaml`` (nur A5120,
+        :func:`app.config_io.konfig_umziehen`) — sonst stünde der Anwender nach
+        dem Update mit dem Auslieferungszustand da.
 
         Findet sich auch die nicht (unvollständige Installation), bleibt es bei
         den im Programm eingebauten Vorgaben; geschrieben wird die Datei
         trotzdem, damit es ab jetzt eine gibt.
         """
-        path = config_io.default_config_path()
+        config_io.konfig_umziehen(self.profil)
+        path = self._konfig_pfad()
         if os.path.exists(path):
             try:
                 self._apply_config(config_io.load_config(path))
@@ -1034,12 +1089,16 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self, "Konfiguration",
                     f"Konnte {path} nicht laden:\n{e}\n\nStandardwerte werden verwendet.")
-        self._apply_config(config_io.standard_konfiguration())
+        self._apply_config(config_io.standard_konfiguration(self.profil))
         try:
             config_io.save_config(path, self._gather_config())
         except Exception as e:
             QMessageBox.warning(self, "Konfiguration",
                                 f"Konnte Standard-Konfiguration nicht anlegen:\n{e}")
+
+    def _konfig_pfad(self) -> str:
+        """Die Konfiguration des Anwenders für DIESES Programm (Profil)."""
+        return config_io.default_config_path(self.profil)
 
     def _standard_zuruecksetzen(self):
         """*Ansicht ▸ Standard zurücksetzen* — zurück zur Auslieferung.
@@ -1053,13 +1112,14 @@ class MainWindow(QMainWindow):
         trägt keinen ``disks``-Abschnitt (siehe :meth:`_apply_config`), und ein
         Zurücksetzen der Ansicht soll die Maschine nicht leerräumen.
         """
-        vorgabe = config_io.standard_konfiguration()
+        vorgabe = config_io.standard_konfiguration(self.profil)
         if not vorgabe:
             QMessageBox.warning(
                 self, "Standard zurücksetzen",
                 "Die mitgelieferte Standard-Konfiguration wurde nicht gefunden.\n\n"
                 "Gesucht wurde:\n" + "\n".join(
-                    str(p) for p in paths.default_config_candidates()))
+                    str(p) for p in paths.default_config_candidates(
+                        self.profil.vorgabe_datei)))
             return
         if QMessageBox.question(
                 self, "Standard zurücksetzen",
@@ -1090,14 +1150,19 @@ class MainWindow(QMainWindow):
 
     def _schedule_autosave(self):
         """Queue a debounced write of the current config to the default path."""
-        if self._loading_config or getattr(self, "_autosave_timer", None) is None:
+        # Nach closeEvent nicht mehr: das Abbauen der Kästen meldet noch
+        # Sichtbarkeitswechsel, und ein dann gestarteter Autosave schriebe den
+        # Stand eines geschlossenen Fensters — womöglich über die Datei, die
+        # inzwischen ein anderes Fenster führt.
+        if (self._loading_config or getattr(self, "_geschlossen", False)
+                or getattr(self, "_autosave_timer", None) is None):
             return
         self._autosave_timer.start()  # restarts the single-shot timer
 
     def _autosave_now(self):
         """Write the current configuration to the default config path."""
         try:
-            config_io.save_config(config_io.default_config_path(), self._gather_config())
+            config_io.save_config(self._konfig_pfad(), self._gather_config())
         except Exception as e:
             # Never let a persistence hiccup take down the UI.
             print(f"[config] Auto-Speichern fehlgeschlagen: {e}")
@@ -1170,6 +1235,20 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Ausgeschaltet.", 4000)
         # Statusanzeige sofort aktualisieren (Tempo eingefroren bzw. auf „—").
         self._update_status()
+
+    def _on_nmi(self):
+        """NMI-Taster der Frontplatte (nur K8915, `app/ui/actions.py` NUR_FUER).
+
+        Eine /NMI-Flanke, kein /RESET.  Mit eingeblendetem Boot-ROM: Lampen aus,
+        Selbsttest von vorn (ROM 0066H).  Unter SCPX liegt bei 0066H RAM — die CPU
+        springt dorthin wie am Gerät, meist in einen Absturz; das wird bewusst
+        NICHT abgefangen (doc/design/16_k8915.md §3.6, Frage §6.12).
+        """
+        if not (self._emu_started and self.act_power.isChecked()):
+            return
+        self.emulator.nmi()
+        self.statusBar().showMessage("NMI-Taster gedrückt.", 4000)
+        self._update_frontplatte()
 
     def _on_reset(self):
         """Reset emulator (Neustart vom Boot-ROM)."""
@@ -1279,6 +1358,7 @@ class MainWindow(QMainWindow):
         Im Sekundentakt abgetastet blitzte hier praktisch nie etwas auf: ein
         Sektorzugriff ist in wenigen Zehntelsekunden vorbei.
         """
+        self._update_frontplatte()
         for feld in self.status_widget.felder():
             drive = feld.drive
             lampe = self.status_widget.lampe(drive)
@@ -1293,6 +1373,23 @@ class MainWindow(QMainWindow):
             lampe.set_zustand(status_bar.ZUGRIFF if aktiv
                               else status_bar.BELEGT if belegt
                               else status_bar.LEER)
+
+    def _update_frontplatte(self):
+        """Die Lampen der K8915-Frontplatte (nur im Profil mit ``frontplatte``).
+
+        Latch 61H aus dem Kern (Spiegel des letzten ``run()``), dazu **Power**
+        (eingeschaltet) und **Run** (die Emulation läuft — am Gerät vermutlich
+        ``/HALT`` [?], doc/design/16_k8915.md §3.6).
+        """
+        platte = self.status_widget.frontplatte
+        if platte is None:
+            return
+        an = bool(self._emu_started and self.act_power.isChecked())
+        try:
+            latch = self.emulator.panel_lamps() if an else 0xFF
+        except Exception:
+            latch = 0xFF
+        platte.zeige(latch, laeuft=an and self.run_timer.isActive(), eingeschaltet=an)
 
     def _disk_path(self, drive: int) -> str:
         """Pfad der eingelegten Diskette laut Kern (leer = nichts eingelegt)."""
@@ -1364,7 +1461,7 @@ class MainWindow(QMainWindow):
 
         # Recreate the machine with the new drive bay / model.
         try:
-            new_emu = K1520Emulator(types, em=em)
+            new_emu = K1520Emulator(types, machine=self.profil.maschine, em=em)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
                                  f"Konnte Maschine nicht neu erzeugen:\n{e}")
@@ -1373,6 +1470,12 @@ class MainWindow(QMainWindow):
             self.settings_widget.set_model_value(self._model)
             return
 
+        # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
+        # Stand merken, die alten beenden (Kabel ab, Port frei), an der neuen
+        # wieder aufnehmen — ein Wechsel der Laufwerke soll keine Verbindung kosten.
+        serielle = self.serial_widget.zustand_lesen()
+        self.serial_widget.alles_beenden()
+
         try:
             self.emulator.stop()
         except Exception:
@@ -1380,6 +1483,8 @@ class MainWindow(QMainWindow):
 
         self._drive_types = types
         self.emulator = new_emu
+        self.serial_widget.set_emulator(new_emu)
+        self.serial_widget.zustand_anwenden(serielle)
         self.screen_widget.set_emulator(new_emu)
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
@@ -1421,6 +1526,18 @@ class MainWindow(QMainWindow):
         except RuntimeError as e:
             QMessageBox.warning(self, "k1520DiskTool", str(e))
 
+    def _andere_maschine_starten(self):
+        """Den jeweils ANDEREN Emulator starten (A5120 ⇄ K8915).
+
+        Dasselbe Programm mit dem anderen Profil, als eigener Prozess mit
+        eigener Konfiguration — beide laufen nebeneinander.
+        """
+        kennung = programme.EMULATOR_JE_MASCHINE[self.profil.andere]
+        try:
+            programme.programm_starten(kennung)
+        except RuntimeError as e:
+            QMessageBox.warning(self, profile.profil(self.profil.andere).titel, str(e))
+
     def _konsole_starten(self):
         """Ein Konsolenfenster mit den K1520-Kommandozeilenwerkzeugen öffnen.
 
@@ -1440,10 +1557,13 @@ class MainWindow(QMainWindow):
             fassung = _E.version()
         except Exception:
             fassung = "unbekannt"
+        rechner = ("des Bürocomputers <b>robotron A5120</b>"
+                   if self.profil.maschine == "a5120"
+                   else f"des Arbeitsplatzcomputers <b>robotron {self.profil.rechner}</b>")
         QMessageBox.about(
-            self, "Über a5120emu",
-            f"<h3>a5120emu</h3>"
-            f"<p>Emulator des Bürocomputers <b>robotron A5120</b> am K1520-Bus — "
+            self, f"Über {self.profil.programm}",
+            f"<h3>{self.profil.programm}</h3>"
+            f"<p>Emulator {rechner} am K1520-Bus — "
             f"Karten und Bus werden nachgebildet, der Z80-Code von Boot-ROM, "
             f"BIOS und Betriebssystem läuft unverändert.</p>"
             f"<p>Bibliothek: {fassung}</p>"
@@ -1456,6 +1576,9 @@ class MainWindow(QMainWindow):
         # stammen, das kein Speichern ausgelöst hat.
         self._autosave_timer.stop()
         self._autosave_now()
+        self._geschlossen = True
+        # Erst NACH dem Speichern: `aktiv` soll den Zustand beim Beenden festhalten.
+        self.serial_widget.beenden()
         self.run_timer.stop()
         self.status_timer.stop()
         self._lamp_timer.stop()

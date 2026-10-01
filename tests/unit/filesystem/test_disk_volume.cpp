@@ -20,6 +20,9 @@
 #include <vector>
 
 #include "core/filesystem/disk_volume.h"
+#include "core/peripherals/floppy_drive/disk_image.h"
+#include "core/peripherals/floppy_drive/hfe_codec.h"
+#include "core/peripherals/floppy_drive/track_codec.h"
 #include "tests/support/temp_path.h"
 
 namespace fs = std::filesystem;
@@ -316,6 +319,55 @@ TEST(DiskVolume, JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen) {
     std::error_code ec;
     fs::remove(pfad, ec);
     EXPECT_GT(geprueft, 50) << "der Katalog ist unerwartet klein";
+}
+
+/**
+ * @test DiskVolume/JedesKatalogformatHatNormspurenMitEinerUmdrehung (AP-F1)
+ *
+ * Eine vom DiskTool/Emulator angelegte `.hfe` muss so aussehen wie eine am Gerät
+ * formatierte Diskette: je Spur Lücke 2 = 22 × 4E + 12 × 00 (FM 11 + 6), und die Spur ist
+ * in der Datei genau eine Umdrehung lang (5,25″: 100 000 Zellen, aufgerundet auf 256 B
+ * je Seite; 8″ 360 U/min: FM 83 334).  Bis 2026-09-29 war eine cpa780-Spur 94 208 Zellen
+ * lang — `gw write` streckt das auf die Umdrehung, schrieb also mit −6 % Datenrate — und
+ * Lücke 2 = 11: die Diskette lief im Emulator, am echten A5120 nicht.
+ */
+TEST(DiskVolume, JedesKatalogformatHatNormspurenMitEinerUmdrehung) {
+    const std::string pfad = k1520test::tempPath("k1520_dv_norm.hfe");
+    int geprueft = 0;
+    for (const DiskFormat& f : formate().formats()) {
+        SCOPED_TRACE(f.name);
+        std::error_code ec;
+        fs::remove(pfad, ec);
+        ASSERT_NE(DiskImage::create(pfad, f, /*write_protect=*/false), nullptr);
+        DiskMedium m;
+        std::string err;
+        ASSERT_TRUE(HfeCodec::load(pfad, m, nullptr, err)) << err;
+        const bool acht_zoll = nominalRpmForDrives(f.drives) == 360;
+        for (uint8_t c = 0; c < m.numCylinders(); ++c)
+            for (uint8_t h = 0; h < m.numHeads(); ++h) {
+                const TrackImage& t = m.track(c, h);
+                if (t.empty()) continue;
+                const bool   fm  = t.encoding == Encoding::FM;
+                // Eine 8″-DD-Spur (500 kbit/s, > 6250 B) ist auch in einem Format, das der
+                // K5601 anbietet (Combo-BIOS), eine 8″-Umdrehung — 5,25″ fasst sie nicht.
+                const auto   sek = TrackCodec::parseTrack(t);
+                const bool dd8 = !fm && TrackCodec::nominalTrackBytes(sek, t.encoding) > 6250;
+                const size_t rev = dd8 ? 166667 : !acht_zoll ? 100000 : (fm ? 83334 : 166667);
+                const size_t zellen = t.bitcells * (t.cell_factor ? t.cell_factor : 1);
+                EXPECT_GE(zellen, rev) << "Spur " << int(c) << "/" << int(h) << " kürzer als eine Umdrehung";
+                EXPECT_LE(zellen, rev + 2048) << "Spur " << int(c) << "/" << int(h) << " länger als eine Umdrehung";
+                const size_t soll = fm ? 11 + 6 : 22 + 12 + 3;
+                for (const auto& s : sek) {
+                    ASSERT_NE(s.data_pos, SIZE_MAX);
+                    EXPECT_EQ(s.data_pos - (s.id_pos + 7), soll)
+                        << "Lücke 2 auf Spur " << int(c) << "/" << int(h) << " Sektor " << int(s.id);
+                }
+            }
+        ++geprueft;
+    }
+    std::error_code ec;
+    fs::remove(pfad, ec);
+    EXPECT_GT(geprueft, 50);
 }
 
 TEST(DiskVolume, UdosAlsImgWirdAbgelehnt) {
@@ -1648,4 +1700,176 @@ TEST(DiskToolFileinfo, CpmNutzerbereichKommtAusDemFileinfoZurueck) {
     EXPECT_EQ(e.user, 3);
     EXPECT_NE(e.attributes.find("RO"),  std::string::npos) << e.attributes;
     EXPECT_NE(e.attributes.find("SYS"), std::string::npos) << e.attributes;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCPX 8915 (K8915) — doc/design/16_k8915.md §8a AP-E5a
+//
+// Das BIOS des K8915 hat einen FESTEN DPB (D751H): A: 5 × 1024, SPT 80, 2 KB,
+// DSM 389, DRM 127, OFF 2 — auch ohne Systemspuren.  CP/A rechnet dagegen (`selsy`):
+// eine leere Diskette wird dort eine Datendiskette ab Zylinder 0 mit 192 Plaetzen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// @brief Leere (formatierte, 0xE5) Diskette der Geometrie @p format anlegen.
+std::string leereDiskette(const char* format, const char* temp_name) {
+    const std::string pfad = k1520test::tempPath(temp_name);
+    const DiskFormat* fmt = formate().find(format);
+    EXPECT_NE(fmt, nullptr) << format;
+    if (fmt) EXPECT_NE(DiskImage::create(pfad, *fmt, /*write_protect=*/false), nullptr);
+    return pfad;
+}
+
+struct Weg {
+    std::string p;
+    ~Weg() { std::error_code ec; fs::remove(p, ec); }
+};
+
+}  // namespace
+
+/**
+ * @test DiskVolume.Scpx8915SystemdiskettenHabenDenBiosDpb
+ * @brief Die drei Systemdisketten des Anwenders (900/901/904): die CP/A-Regel trifft den
+ *        DPB des BIOS bitgleich — Verzeichnis ab c2h0 (OFF 2), 128 Plaetze (DRM 127),
+ *        2-KB-Bloecke, 390 Bloecke (DSM 389), 20 KB Systemspuren; eindeutig.
+ */
+TEST(DiskVolume, Scpx8915SystemdiskettenHabenDenBiosDpb) {
+    for (const char* name : {"k8915scpx_boot1.hfe",
+                             "k8915scpx_cpa800_k5601_bios55k-disk900.hfe",
+                             "k8915scpx_cpa800_k5601_v24xonxoff-autodbase-disk904.hfe"}) {
+        std::string err;
+        auto dv = oeffne(fixture(name), "", err);
+        ASSERT_NE(dv, nullptr) << name << ": " << err;
+        EXPECT_EQ(dv->detection().format, "cpa800") << name;
+        EXPECT_EQ(dv->detection().filesystem, "cpa_auto") << name;
+        EXPECT_TRUE(dv->detection().unambiguous) << name;
+        EXPECT_EQ(dv->profile().data_cyl, 2) << name;
+        EXPECT_EQ(dv->profile().data_head, 0) << name;
+        EXPECT_EQ(dv->profile().dir_entries, 128) << name;
+        EXPECT_EQ(dv->profile().block_size, 2048u) << name;
+        // DSM 389 = 390 Bloecke; die Nutzkapazitaet zaehlt die zwei Verzeichnisbloecke
+        // (AL0 = C0H) nicht mit.
+        EXPECT_EQ(dv->volumeInfo(0).total_bytes, (390u - 2u) * 2048u) << name << ": DSM 389";
+        EXPECT_EQ(dv->bootAreaSize(), 20480u) << name;
+        EXPECT_FALSE(dv->list().empty()) << name;
+    }
+}
+
+/**
+ * @test DiskVolume.Scpx8915LeereDisketteBleibtCpaDatendiskette
+ * @brief Eine frisch formatierte, LEERE 5 × 1024-Diskette ist Sektor fuer Sektor dieselbe,
+ *        ob FORMAT.COM des A5120 oder des K8915 sie geschrieben hat.  Sie bleibt, was CP/A
+ *        daraus macht (`cpa800`, 192 Plaetze, am CP/A nachgewiesen), eindeutig — `scpx8915`
+ *        (`detect: false`) steht nur als Hinweis mit dem Ausweg `--fs scpx8915` dabei.
+ */
+TEST(DiskVolume, Scpx8915LeereDisketteBleibtCpaDatendiskette) {
+    Weg w{leereDiskette("cpa800", "k1520_dv_8915_leer.hfe")};
+    std::string err;
+    auto dv = oeffne(w.p, "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->detection().filesystem, "cpa800");
+    EXPECT_EQ(dv->profile().dir_entries, 192);
+    EXPECT_TRUE(dv->detection().unambiguous);
+    EXPECT_TRUE(dv->detection().alternatives.empty());
+    EXPECT_NE(dv->detection().remarks.find("--fs scpx8915"), std::string::npos)
+        << dv->detection().remarks;
+
+    auto k = oeffne(w.p, "scpx8915", err);
+    ASSERT_NE(k, nullptr) << err;
+    EXPECT_EQ(k->profile().data_cyl, 2);
+    EXPECT_EQ(k->profile().dir_entries, 128);
+    EXPECT_EQ(k->bootAreaSize(), 20480u);
+}
+
+/**
+ * @test DiskVolume.Scpx8915BeschriebenOhneSystemspurenGiltDieCpaRegel
+ * @brief Der gefaehrliche Fall: eine SCPX-8915-Diskette OHNE Systemspuren (FORMAT, kein
+ *        DISGEN), auf die der K8915 geschrieben hat — Zylinder 0–1 durchgehend 0xE5, das
+ *        Verzeichnis ab c2h0.  Vorher gewann `cpa800` (ab c0h0, leer gelesen): die
+ *        Diskette erschien leer, und das naechste `put` legte seine Bloecke ueber das
+ *        Verzeichnis des K8915.  Jetzt schlaegt das belegte Verzeichnis das leere — wie im
+ *        CP/A-BIOS selbst (`selsy`: Spur 0 leer ⇒ an der ersten Datenspur nachsehen).
+ */
+TEST(DiskVolume, Scpx8915BeschriebenOhneSystemspurenGiltDieCpaRegel) {
+    Weg w{leereDiskette("cpa800", "k1520_dv_8915_daten.hfe")};
+    Weg q{k1520test::tempPath("k1520_dv_8915_q.txt")};
+    { std::ofstream(q.p, std::ios::binary) << "VOM K8915\r\n"; }
+    std::string err;
+    {
+        auto k = oeffneSchreibbar(w.p, "scpx8915", err);
+        ASSERT_NE(k, nullptr) << err;
+        ASSERT_TRUE(k->insert(q.p, FileRef::parse("K8915.TXT"), TransferOptions{}))
+            << k->lastError();
+        ASSERT_TRUE(k->flush()) << k->lastError();
+    }
+    auto dv = oeffne(w.p, "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->detection().filesystem, "cpa_auto") << dv->detection().remarks;
+    EXPECT_EQ(dv->profile().data_cyl, 2);
+    EXPECT_EQ(dv->profile().dir_entries, 128);
+    EXPECT_TRUE(dv->detection().unambiguous);
+    ASSERT_EQ(dv->list().size(), 1u);
+    EXPECT_EQ(dv->list().front().name, "K8915.TXT");
+    EXPECT_TRUE(dv->check(FsCheckLevel::Voll, true).ohneBefund());
+
+    // Ein weiteres `put` ohne --fs landet im Verzeichnis des K8915, nicht daneben.
+    auto s = oeffneSchreibbar(w.p, "", err);
+    ASSERT_NE(s, nullptr) << err;
+    ASSERT_TRUE(s->insert(q.p, FileRef::parse("ZWEI.TXT"), TransferOptions{}))
+        << s->lastError();
+    ASSERT_TRUE(s->flush());
+    auto k = oeffne(w.p, "scpx8915", err);
+    ASSERT_NE(k, nullptr) << err;
+    EXPECT_EQ(k->list().size(), 2u);
+}
+
+/**
+ * @test DiskVolume.Scpx8915HoechstensHundertachtundzwanzigPlaetze
+ * @brief DRM 127: der 129. Eintrag wird abgelehnt statt in den ersten Datenblock des
+ *        K8915 geschrieben; die 128 Dateien liegen danach unversehrt (Vollpruefung
+ *        ohne Befund, auch automatisch erkannt).
+ */
+TEST(DiskVolume, Scpx8915HoechstensHundertachtundzwanzigPlaetze) {
+    Weg w{leereDiskette("cpa800", "k1520_dv_8915_voll.hfe")};
+    Weg q{k1520test::tempPath("k1520_dv_8915_klein.txt")};
+    { std::ofstream(q.p, std::ios::binary) << "X"; }
+    std::string err;
+    {
+        auto k = oeffneSchreibbar(w.p, "scpx8915", err);
+        ASSERT_NE(k, nullptr) << err;
+        for (int i = 0; i < 128; ++i)
+            ASSERT_TRUE(k->insert(q.p, FileRef::parse("F" + std::to_string(i) + ".TXT"),
+                                  TransferOptions{}))
+                << "Platz " << i << ": " << k->lastError();
+        EXPECT_FALSE(k->insert(q.p, FileRef::parse("ZUVIEL.TXT"), TransferOptions{}))
+            << "Platz 128 gibt es beim K8915 nicht";
+        ASSERT_TRUE(k->flush()) << k->lastError();
+    }
+    auto dv = oeffne(w.p, "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->detection().filesystem, "cpa_auto");
+    EXPECT_EQ(dv->list().size(), 128u);
+    EXPECT_TRUE(dv->check(FsCheckLevel::Voll, true).ohneBefund());
+}
+
+/**
+ * @test DiskVolume.Scpx8915SechzehnMal256HatDenBiosDpb
+ * @brief B: in 16 × 256 (DISGEN-Einstellung der Diskette 901, D774H): SPT 64, DSM 311,
+ *        DRM 127, OFF 2.  `dtrsl1` traegt ein FESTES Offset — die Erkennung trifft es
+ *        auch auf einer leeren Diskette, ohne eigenen Eintrag.
+ */
+TEST(DiskVolume, Scpx8915SechzehnMal256HatDenBiosDpb) {
+    Weg w{leereDiskette("k5601_16x256", "k1520_dv_8915_b.hfe")};
+    std::string err;
+    auto dv = oeffne(w.p, "", err);
+    ASSERT_NE(dv, nullptr) << err;
+    EXPECT_EQ(dv->profile().type, FsType::Cpm) << dv->detection().filesystem;
+    EXPECT_EQ(dv->profile().data_cyl, 2);
+    EXPECT_EQ(dv->profile().data_head, 0);
+    EXPECT_EQ(dv->profile().dir_entries, 128);
+    EXPECT_EQ(dv->profile().block_size, 2048u);
+    EXPECT_EQ(dv->volumeInfo(0).total_bytes, (312u - 2u) * 2048u)
+        << "DSM 311, ohne die zwei Verzeichnisbloecke";
+    EXPECT_TRUE(dv->detection().unambiguous);
 }

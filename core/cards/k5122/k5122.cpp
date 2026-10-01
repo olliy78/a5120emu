@@ -62,7 +62,10 @@ uint8_t K5122::ioRead(uint8_t port) {
         LOG_DEBUG("K5122", "CTRL PIO read  port=0x%02X (sub=%u) => 0x%02X",
                   port, port - 0x10, result);
     } else if (port >= 0x14 && port <= 0x17) {
-        if (port == 0x16 && transferring_ && !write_mode_) {
+        if (port == 0x16 && wait_betrieb_) {
+            // /WAIT-Betrieb (K8915): drehgekoppelt, ggf. mit Wartetakten (k5122_wait.cpp).
+            result = waitRead();
+        } else if (port == 0x16 && transferring_ && !write_mode_) {
             // Streaming-Datenpfad: Bytes des TrackImage byteweise ausgeben.
             // Der Kopf rotiert zyklisch — bei Erreichen des Spurendes wieder von vorn.
             if (cur_track_ && !cur_track_->empty()) {
@@ -146,7 +149,8 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
             ctrl_pio_.ioWrite(port - 0x10, data);
         }
         if (port == 0x10) {
-            handleCtrlPortAWrite(data);
+            if (wait_betrieb_) waitCtrlPortAWrite(data);   // K8915: eigener Weg
+            else               handleCtrlPortAWrite(data);
         }
         // (Kein OUT(13H)-Track-Ende-Hack mehr: ZVE2 verliert den Bus jetzt
         //  hardware-echt über die Per-Byte-Drossel + /STR=1-Abtastung, s. update().)
@@ -154,7 +158,8 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         LOG_DEBUG("K5122", "DATA PIO write port=0x%02X data=0x%02X", port, data);
         data_pio_.ioWrite(port - 0x14, data);
         if (port == 0x14) {
-            handleDataPortAWrite(data);
+            if (wait_betrieb_) waitWrite(data);             // K8915: /WAIT je Byte
+            else               handleDataPortAWrite(data);
         }
     } else if (port == 0x18) {
         // 8212 (A4): **high** nibble = /SE0../SE3 (Select), **low** nibble =
@@ -193,6 +198,7 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
                  data, selected_drive_,
                  drive_selected_[0], drive_selected_[1], drive_selected_[2], drive_selected_[3],
                  motor_on_[0], motor_on_[1], motor_on_[2], motor_on_[3]);
+        if (wait_betrieb_) waitMkePlanen(false);   // anderes Laufwerk ⇒ andere Spur
         updateStatusPortB();
     } else {
         LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X data=0x%02X", port, data);
@@ -375,6 +381,13 @@ void K5122::reset() {
     read_enc_overridden_ = false;
     head_loaded_ = false;
     index_cycle_acc_ = 0;
+    // /WAIT-Betrieb: Marken-FF fällt, der Daten-PIO ist leer; die Uhr läuft weiter.
+    w_scharf_ = w_mke_ = false;
+    w_mke_time_    = UINT64_MAX;
+    w_status_gilt_ = false;
+    w_strom_gilt_  = false;
+    w_schreib_fenster_.clear();
+    if (wait_betrieb_) updateStatusPortB();
     LOG_INFO("K5122", "Hardware-Reset: Transfer abgebrochen, /BUSRQ frei, PIOs zurückgesetzt");
 }
 
@@ -426,6 +439,16 @@ void K5122::releaseHeldRead() {
  * der die Port-A-Interrupt-Logik auslöst.
  */
 void K5122::update(int cycles) {
+    w_now_ += static_cast<uint64_t>(cycles);
+    // ── /WAIT-Betrieb: Marken-FF setzt, sobald die geplante Sync-Gruppe durch ist ──
+    if (wait_betrieb_ && w_scharf_ && !w_mke_) {
+        if (w_mke_time_ == UINT64_MAX && waitDreht()) waitMkePlanen(false);   // Motor jetzt auf Drehzahl
+        if (w_now_ >= w_mke_time_) {
+            w_mke_ = true;
+            updateStatusPortB();
+            LOG_TRACE("K5122", "WAIT: MKE (Marke erkannt)");
+        }
+    }
     // ── /STR=1 (gelatcht/abgetastet): Datenübertragung beenden ───────────────
     // /STR=1 unterdrückt /BUSRQ (Anschluss inaktiv).  Nur ein über mehrere
     // Byteperioden anhaltendes /STR=1 wird vom Datenseparator durchgetaktet —
@@ -822,6 +845,15 @@ void K5122::updateStatusPortB() {
         // bit6 /FW bleibt 1 (kein Laufwerksfehler modelliert)
     }
 
+    if (wait_betrieb_) {
+        // Marken-FF (MKE) gibt es nur im Wait-Betrieb; der BusRq-Weg zeigt weiter 0.
+        if (w_mke_) s |= (1u << 1);
+        // Nur Änderungen an die PIO: im Mode 3 fordert jedes portBWrite bei erfüllter
+        // Bedingung erneut einen Interrupt an — ein unverändertes MKE = 1 (etwa beim
+        // OUT (18H) im Kopf-ISR) gäbe sonst einen zweiten, falschen Marken-Interrupt.
+        if (w_status_gilt_ && s == w_status_) return;
+        w_status_ = s; w_status_gilt_ = true;
+    }
     ctrl_pio_.portBWrite(s);
 }
 
@@ -917,7 +949,8 @@ void K5122::startReadTransfer() {
     // SYL-Lader, s. buildFaithfulReadTrack).  Resync-Offset (markPos-4 MFM / -1 FM) und der
     // FM/MFM-Verfahrens-Match stecken in romReadResyncTarget/ioRead; Codierung aus eff_enc.
     auto sektoren    = TrackCodec::parseTrack(ibm_track);
-    read_stream_track_  = TrackCodec::buildFaithfulReadTrack(sektoren, eff_enc);
+    read_stream_track_  = TrackCodec::buildFaithfulReadTrack(
+        sektoren, eff_enc, /*luecke2_vom_medium=*/ibm_track.encoding == Encoding::MFM);
     cur_sector_size_ = sektoren.empty() ? 128 : sektoren.front().size;
 
     cur_track_    = &read_stream_track_;
@@ -985,6 +1018,24 @@ void K5122::resyncToNextMark() {
     // die Marke, Faithful-Layout (buildTrack) mit Offset markPos-(1+nA1) und Encoding-
     // Gate (read_enc_ vs Spur-Codierung). SIZE_MAX = kein MKE (Mismatch/keine Marke).
     size_t t = TrackCodec::romReadResyncTarget(*cur_track_, head_pos_, effReadEnc());
+    // Die Sync-Gruppe muss GANZ noch vor dem Kopf liegen, wenn MK/MK1 neu scharf macht
+    // (wie im /WAIT-Weg: MKE fällt erst, wenn nach dem Scharfmachen das erste Byte einer
+    // Sync-Gruppe ganz durch ist, §7.7).  Hat sie schon begonnen, ist diese Marke verpasst
+    // — die nächste gilt.  Vorher sprang der Strom einfach ein paar Bytes ZURÜCK, und eine
+    // Spur mit zu knapper Lücke 2 (11 × 4E) las sich, die der echte A5120 nicht liest
+    // (doc/design/16_k8915.md AP-F1).
+    if (t != SIZE_MAX) {
+        const size_t sz = cur_track_->bytes.size();
+        const size_t m  = cur_track_->nextMark(head_pos_ % sz);
+        const size_t backoff = (effReadEnc() == Encoding::MFM) ? 4 : 1;
+        // Nur MFM (s. buildFaithfulReadTrack: der FM-Weg ist nicht nachgemessen).
+        if (effReadEnc() == Encoding::MFM && m != SIZE_MAX
+            && (m + sz - head_pos_ % sz) % sz < backoff) {
+            LOG_DEBUG("K5122", "resync: Sync-Gruppe der Marke @%zu schon unter dem Kopf "
+                      "(pos=%zu) — verpasst, nächste Marke", m, head_pos_);
+            t = TrackCodec::romReadResyncTarget(*cur_track_, (m + 1) % sz, effReadEnc());
+        }
+    }
     if (t != SIZE_MAX) {
         head_pos_ = t;
         locked_   = true;
@@ -1360,7 +1411,8 @@ void K5122::commitWriteField() {
 
     // Streaming-Track aktualisieren, damit ein evtl. Verify-Read in derselben Sitzung
     // die frischen Daten sieht (Layout/Größen unverändert → head_pos_ bleibt gültig).
-    read_stream_track_ = TrackCodec::buildFaithfulReadTrack(sektoren, spur.encoding);
+    read_stream_track_ = TrackCodec::buildFaithfulReadTrack(
+        sektoren, spur.encoding, /*luecke2_vom_medium=*/spur.encoding == Encoding::MFM);
     cur_track_      = &read_stream_track_;
 
     // Gnadenfenster für den SCPX-Nachfolge-Verify-Read öffnen: verhindert, dass die

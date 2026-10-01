@@ -432,7 +432,7 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
 
 # ─── Auslieferungskonfiguration ──────────────────────────────────────────────
 #
-# `default_config.yaml` reist mit dem Programm (nicht mit dem Anwender) und wird
+# `default_config_a5120.yaml` (und `…_k8915.yaml`) reist mit dem Programm (nicht mit dem Anwender) und wird
 # an zwei Stellen gebraucht: beim ersten Start und bei *Ansicht ▸ Standard
 # zurücksetzen*.  Sie wird deshalb wie der Formatkatalog aufgelöst — mit EINEM
 # Unterschied, den der letzte Test festhält.
@@ -440,12 +440,14 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
 def test_vorgabe_konfiguration_im_quellbaum(at_root):
     at_root(PROJECT_ROOT)
     assert paths.default_config_file() == \
-        (PROJECT_ROOT / "data" / "default_config.yaml").resolve()
+        (PROJECT_ROOT / "data" / "default_config_a5120.yaml").resolve()
+    assert paths.default_config_file("default_config_k8915.yaml") == \
+        (PROJECT_ROOT / "data" / "default_config_k8915.yaml").resolve()
 
 
 def test_vorgabe_konfiguration_in_der_installation(tmp_path, at_root):
     root = _fake_install(tmp_path)
-    ziel = root / "share" / "k1520emu" / "default_config.yaml"
+    ziel = root / "share" / "k1520emu" / "default_config_a5120.yaml"
     ziel.write_text("version: 1\n")
     at_root(root)
     assert paths.default_config_file() == ziel
@@ -462,9 +464,12 @@ def test_vorgabe_konfiguration_ueber_umgebungsvariable(tmp_path, at_root,
 
     ordner = tmp_path / "vorgaben"
     ordner.mkdir()
-    (ordner / "default_config.yaml").write_text("version: 1\n")
+    (ordner / "default_config_a5120.yaml").write_text("version: 1\n")
     monkeypatch.setenv(paths.ENV_DEFAULT_CONFIG, str(ordner))
-    assert paths.default_config_file() == (ordner / "default_config.yaml").resolve()
+    assert paths.default_config_file() == \
+        (ordner / "default_config_a5120.yaml").resolve()
+    # Ein Verzeichnis gilt je Programm — ohne die K8915-Datei darin keine Vorgabe.
+    assert paths.default_config_file("default_config_k8915.yaml") is None
 
 
 def test_vorgabe_konfiguration_ignoriert_den_benutzerordner(tmp_path, at_root,
@@ -478,7 +483,7 @@ def test_vorgabe_konfiguration_ignoriert_den_benutzerordner(tmp_path, at_root,
     at_root(_fake_install(tmp_path))
     xdg = tmp_path / "xdg"
     (xdg / paths.CONFIG_DIRNAME).mkdir(parents=True)
-    (xdg / paths.CONFIG_DIRNAME / "default_config.yaml").write_text("version: 1\n")
+    (xdg / paths.CONFIG_DIRNAME / "default_config_a5120.yaml").write_text("version: 1\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     assert paths.config_dir() not in [p.parent
                                       for p in paths.default_config_candidates()]
