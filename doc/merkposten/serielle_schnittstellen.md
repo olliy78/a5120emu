@@ -39,25 +39,33 @@ Drucker; K8915: V.24, IFS 1, IFS 2.
   Sendepuffer → `senderNimm` unterbleibt → der Gast wartet. Bewusste Abweichung vom
   Gerät. Wächter `SerialWandler.LangsamerGastBekommtNieEinenUeberlauf`,
   `…RueckstauBeimSendenHaeltDenGastAn`, `…RueckstauBeimEmpfangenOhneUeberlauf`,
-  `SerielleKopplung.*` (64 KiB, Muster Byte für Byte geprüft).
+  `SerielleKopplung.*` (64 KiB, Muster Byte für Byte geprüft); bricht die Gegenseite
+  mitten im Rückstau ab (FIN), kommt trotzdem alles an, erst danach lauscht der Server
+  wieder — `SerialHubGegenseite.AbbruchImRueckstauVerliertNichtsUndDerServerLauschtWeiter`,
+  `…ResetImRueckstauTrenntSauber` (RST).
 - **Der Gast ist maßgeblich (Leitsatz 4).** Baud/Bits/Parität/Stopp stehen in SIO/CTC;
   RFC 2217 *meldet* sie, eine Anfrage der Gegenseite ändert sie **nie** und wird mit
   dem Gastwert beantwortet, ein Unterschied nur angezeigt (`baud_abweichend`). pyserial
   lehnt daraufhin ab (`ValueError: remote rejected value`) — das ist richtig so.
   Wächter `SerialHub.Rfc2217RundlaufMitNullmodemLeitungenUndBaudhinweis`,
   `SerielleKopplung.UnterschiedlicheBaudWirdAngezeigt`,
-  `py_serial_pyserial::test_baud_der_gast_ist_massgeblich`.
+  `py_serial_pyserial::test_baud_der_gast_ist_massgeblich`,
+  `SerialHubGegenseite.Rfc2217ServerBeantwortetJedenBefehlMitDemGastwert` (jeder
+  COM-PORT-Befehl einzeln über einen rohen Client, auch SUSPEND/RESUME, PURGE, Break).
 - **Kein Netz im Emulationsfaden, die Karte kennt kein Netz.** Sockets, Namensauflösung,
   Dateischreiben nur im I/O-Faden des Hubs (je Client-Versuch ein abgekoppelter Faden,
   `getaddrinfo` ist nicht abbrechbar). Der Emulationsfaden nimmt nur den Wandler-Mutex;
   Sperrreihenfolge immer Hub → Wandler. Die Kartenlogik (/CTSA = V106 ∧ V107 usw.)
-  steckt in der Karte, nicht im Wandler.
+  steckt in der Karte, nicht im Wandler. Wächter
+  `SerialHubNebenlaeufig.StatusAusDrittemFadenWaehrendAufUndAbbau` (in AP-T1b mit
+  `-fsanitize=thread` gefahren: ohne Befund).
 - **RTS-Halt erst, nachdem der Gast RTS einmal gesetzt hat.** CP/A und SCPX am A5120
   setzen RTS auf A33-A nie, SCPX 8915 schreibt WR5 = 68H — wörtlich genommen empfinge so
   ein Gast nie etwas. Zurückgesetzt bei Anbinden, Abbinden, Maschinen-Reset. Danach gilt
   der Halt **sofort** (auch für das, was schon unterwegs ist): ein Gast, der RTS
   weggenommen hat, bekommt auch das Byte nicht, mit dem man ihn bitten wollte, es
   wieder zu setzen. Wächter `SerialWandler.RtsNieGesetztHaeltNicht`,
+  `…GastResetLoestXoffUndRtsHalt`,
   `…RtsWegHaeltDenEmpfangAnNurBeiV24`, `py_serial_pyserial::test_steuerleitungen_nullmodem`.
 - **Nullmodem-Kreuzung nur in der Rolle Server.** Client-RTS → unser CTS, Client-DTR →
   DSR + DCD; unser RTS → NOTIFY CTS, unser DTR → DSR + CD. Rolle Client ist gerade
@@ -76,7 +84,9 @@ Drucker; K8915: V.24, IFS 1, IFS 2.
   `K8915Seriell.BiosLaeuftOhneLoopWeiter`, `test_button_is_locked_while_loop_is_set_and_says_why`.
 - **Datei meldet VERBUNDEN.** Die Statuszeile schließt Datei über `betriebsart` aus;
   wer neu auf `Zustand::Verbunden` prüft, muss das wissen. Beim Wiederaufnehmen wird
-  angehängt, nicht überschrieben. Wächter `SerialDatei.SchreibtUeberschreibtUndHaengtBeimWiederaufnehmenAn`.
+  angehängt, nicht überschrieben. Wächter `SerialDatei.SchreibtUeberschreibtUndHaengtBeimWiederaufnehmenAn`;
+  ein Schreibfehler beim Beenden bleibt als FEHLER stehen
+  (`SerialDatei.SchreibfehlerBeimBeendenBleibtSichtbar`).
 - **Portwahl:** Start von Hand sucht ab dem eingestellten Port aufwärts; die
   Wiederaufnahme beim Programmstart startet NUR auf dem eingestellten Port und trägt sonst
   einen Vorschlag ein (ein Gegenüber, das fest auf 5000 verbindet, soll keinen fremden
@@ -93,6 +103,12 @@ Drucker; K8915: V.24, IFS 1, IFS 2.
 - **C-ABI:** Strukturen mit `groesse` vorn, neue Felder nur hinten; `configure` weist
   Port 0 ab (Port 0 = „vom System" gibt es nur in C++-Tests). `test_c_api.py` vergleicht
   Felder und Aufzählungen mechanisch.
+- **Alter Unterbau** `k1520_serial_set_rx_cb`/`k1520_serial_send`: DFU/PRINTER → A5120
+  DFÜ/V.24 bzw. Drucker, K8915 IFS 2 bzw. IFS 1; der Rückruf ist
+  `void (*)(void* ctx, uint8_t byte)` — **Kontext zuerst** (die ctypes-Erklärung stand
+  bis AP-T1b vertauscht). Wächter `py_serial_api::test_old_callback_and_send_go_through_the_guest_and_come_back`
+  (Echo-Gast, Kontextzeiger, Belegung durch einen Transport, Abmelden),
+  `…test_k8915_old_callback_pulls_the_loop_of_its_own_channel`.
 
 ## Tests schreiben
 
@@ -103,13 +119,16 @@ Drucker; K8915: V.24, IFS 1, IFS 2.
   Kleinstassembler mit Marken; ZRE-CTC K0 = Port 0CH, Steuerwort 05H + ZK 1 → 9600 Bd bei
   SIO ×16). Python hat keinen PC-Zugriff: CP/A bis `A>` booten und CONST/CONIN der
   BIOS-Sprungleiste (`[0001H] + 3` / `+ 6`) auf das Programm biegen, eine Taste
-  drücken (`test_serial_pyserial.py`). **Achtung:** bei „Bitte Uhrzeit eingeben!" ist die
+  drücken — fertig als Echo-Gast in `tests/python/serial_gast.py`. **Achtung:** bei „Bitte Uhrzeit eingeben!" ist die
   Seite 0 noch leer (`[0001H] = 0`) — erst am Prompt patchen.
 - **1× gegen 10×** abwechselnd in einem Faden (je Runde 1 ms gegen 10 ms Maschinenzeit),
   nicht mit Uhrdrosselung — unter Last verlöre die das Verhältnis.
 - **Fenster in GUI-Tests mit `_zu()` schließen** (`test_serial_gui.py`): sonst laufen
   Laufwerks-Zeitgeber und Fokusfilter weiter und der Prozess wird mit jedem Fenster
   langsamer.
+- **Eine benehmende Gegenseite prüft wenig:** Fehlerwege (zerrissene IAC, Abbruch im
+  Rückstau, einzelne COM-PORT-Befehle) mit einem rohen `net::Socket` im Testfaden
+  (`RohClient` in `test_serial_hub.cpp`), nicht Hub gegen Hub.
 - `py_serial_pyserial` wird ohne `pyserial` übersprungen (es steht in
   `requirements-dev.txt`, ist keine Laufzeitabhängigkeit).
 
