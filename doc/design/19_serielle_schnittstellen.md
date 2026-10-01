@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, in Umsetzung — S1–S7 und T1a erledigt (§12.1).
+**Stand:** 2026-09-30, S1–S8 und T1a erledigt (§12.1); offen T1b und die Bildschirm-Checkliste.
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -690,6 +690,30 @@ Kastenschalter `dock_serial` in `actions.REIHENFOLGE` (kein Kürzel), Statuszeil
   `deleteLater()` stürzt über den Fokusfilter ab. `test_serial_gui.py::_zu()` legt beides
   still — für weitere Fensterfälle übernehmen.
 - Wächter `py_serial_gui` (81 Fälle, ~12 s, beide Programme).
+
+**AP-S8 — erledigt 2026-10-01** (`1a7a899`, `ec5e42e`). Kein Fehler in Kern/Wandler/Hub/GUI
+gefunden. `test` (1478), `test-format` (26), `win` (1449) grün; neue Fälle 5× stabil.
+- **`SerielleKopplung.*`**: zwei A5120 in einem Prozess, abwechselnd in einem Faden
+  (1 ms : 10 ms Maschinenzeit je Runde — das Verhältnis hält auch unter `ctest -j`),
+  Testgäste als Z80-Programme direkt im RAM (kleiner Assembler mit Marken im Test).
+  `TelnetXonXoff_4KiB`, `Rfc2217RtsCts_4KiB` (Auto Enables beim Sender), 
+  `UnterschiedlicheBaudWirdAngezeigt` (~0,3–1,8 s) in der Standardregression; die
+  64-KiB-Fassungen (je ~29 s) als eigenes Binary `k1520_test_serielle_kopplung_voll` unter
+  `format_integration`. Gegenprobe: falsches Muster färbt alle rot; geprüft wird auch, DASS
+  die Flusssteuerung griff. Gekoppelt wird nur A5120↔A5120 (K8915-Weg: `K8915Seriell.*`).
+- **`py_serial_pyserial`** (~4 s, übersprungen ohne `pyserial`; `pyserial>=3.5` in
+  `requirements-dev.txt`): Bytes beidseitig, Baud (pyserial-Wunsch 1200 abgelehnt, Gast
+  bleibt 9600), Nullmodem-Kreuzung beidseitig, RTS-Halt. Gast = CP/A bis `A>`, CONST/CONIN
+  der BIOS-Sprungleiste auf ein Echo umgebogen (die Bindung kann den PC nicht setzen).
+- **Handtest** (automatisiert): `telnet` → Echo, BINARY verhandelt; zwei Prozesse über die
+  Bindung (RFC 2217); zwei GUIs offscreen mit `aktiv: true` nehmen die Verbindung beim Start
+  selbst auf, ein dritter Client bekommt „belegt"; `socat` → PTY geht, zeigt aber die
+  Telnet-Verhandlung und `CR NUL` (kein Telnet — §7.4, im Merkposten als Falle).
+  `ser2net` nicht installiert, nur dokumentiert.
+- **Merkposten** `doc/merkposten/serielle_schnittstellen.md`, Absatz in `CLAUDE.md`.
+- **Offen — nur am Bildschirm prüfbar** (Anwender): Aussehen von Dock/Statuszeile/Tooltips,
+  Warnfarbe „Gegenseite … Bd", echtes Terminalprogramm (PuTTY) gegen ein Gast-Terminal-
+  programm, echtes Gerät über `ser2net`, Erreichbarkeit im LAN (Firewall, Dual-Stack).
 
 ## 13. Offene Punkte
 
