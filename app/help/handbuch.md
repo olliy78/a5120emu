@@ -241,7 +241,8 @@ woran es liegt.
 Der Reiter **Schnittstellen** im Kasten *Einstellungen* (*Ansicht ▸ Einstellungen*)
 verbindet die seriellen Anschlüsse des Rechners mit
 der Außenwelt. Je Schnittstelle ein Block; **die Namen und was sie können, kommen
-vom Rechner** (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: V.24, IFS 1, IFS 2). Die
+vom Rechner** (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: Drucker/IFSS1 an X3, V.24
+an X4, DFÜ/IFSS2 an X5 — wie am Gerät beschriftet). Die
 Tastatur steht als Zeile „fest verdrahtet" darunter — an ihr gibt es nichts zu
 stellen.
 
@@ -291,16 +292,23 @@ der üblichen Schreibweise: Datenbits, Parität, Stoppbits — `8N1`, `7E1`, `8O
 (Parität **N** keine, **E** gerade/even, **O** ungerade/odd, **M** mark, **S** space;
 anderthalb Stoppbits als `1.5`). Der Tooltip erklärt das am konkreten Format.
 
-Bei V.24 folgen die **Leitungen als Leuchten**: links die Ausgänge des Rechners (RTS,
-DTR), rechts die Eingänge (CTS, DSR, DCD). Grün leuchtend heißt aktiv, dunkel inaktiv,
-ein bloßer Umriss unbekannt; der Tooltip nennt es ausgeschrieben („CTS aktiv"). Bei
-Telnet werden die Leitungen nicht übertragen.
+Bei V.24 folgen die **Leitungen als Leuchten**: hinter **Ausgänge →** die Leitungen,
+die der Rechner treibt (RTS, DTR), hinter **Eingänge ←** die, die er empfängt (CTS,
+DSR, DCD). Die Beschriftung nennt die Richtung, nicht den Zustand. **Hellgrün
+leuchtend** heißt aktiv, **gedimmt dunkelgrün** inaktiv, ein bloßer **Umriss**
+unbekannt; der Tooltip nennt es ausgeschrieben („CTS aktiv"). Die Ausgänge leuchten
+nur, wenn das Programm im Rechner sie setzt — CP/A und SCPX tun das nicht, dort
+bleiben RTS und DTR dunkel. Die Eingänge sind unverbunden inaktiv; bei Telnet (und
+Datei) werden sie aktiv, sobald eine Verbindung steht (Leitungen selbst überträgt
+Telnet nicht), bei RFC2217 zeigen sie, was die Gegenseite meldet, mit
+**RTS/CTS-Brücke** oder **Rx/Tx-Loop** folgen sie RTS und DTR. Angezeigt wird, was
+am Rechner anliegt — er muss dafür laufen; im angehaltenen Rechner ändert sich nichts.
 
 Bei RFC2217 steht eine weitere Zeile **Gegenseite**: Baudrate und Format, mit Warnzeichen
 und Warnfarbe, wenn sie von denen des Gastes abweichen, dazu die Leitungen der Gegenseite
-als Leuchten. Was bekannt ist, hängt von der Rolle ab: ein **Server** sieht RTS und DTR des
-Clients, ein **Client** CTS, DSR, DCD und RI des Servers. Was die Gegenseite noch nicht
-gemeldet hat, bleibt Umriss.
+als Leuchten. Was bekannt ist, hängt von der Rolle ab: ein **Server** sieht die
+Ausgänge RTS und DTR des Clients, ein **Client** die Eingänge CTS, DSR, DCD und RI des
+Servers. Was die Gegenseite noch nicht gemeldet hat, bleibt Umriss.
 
 **Beispiele**
 

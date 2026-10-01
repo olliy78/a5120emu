@@ -148,7 +148,7 @@ def test_a_block_per_program_but_no_machine_specific_names_in_the_module():
     from pathlib import Path
     quelle = (Path(__file__).resolve().parents[2] / "app" / "ui" / "serial_widget.py"
               ).read_text(encoding="utf-8")
-    for name in ("DFÜ/V.24", "IFS 1", "IFS 2", "Drucker", "k8915", "a5120"):
+    for name in ("DFÜ/V.24", "IFS 1", "IFS 2", "DFÜ/IFSS2", "Drucker", "k8915", "a5120"):
         assert f'"{name}' not in quelle, name
 
 
@@ -679,7 +679,11 @@ def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
     anz = b.leitungen_reihe.anzeigen
     assert list(anz) == ["RTS", "DTR", "CTS", "DSR", "DCD"]
     assert all(isinstance(a.led, LeitungsLed) for a in anz.values())
-    assert [t.text() for t in b.leitungen_reihe.titel] == ["Aus:", "Ein:"]
+    # Beschriftung nennt die RICHTUNG, nicht den Zustand (AP-S12: „Aus:"/„Ein:" las
+    # sich wie „ausgeschaltet"/„eingeschaltet").
+    assert [t.text() for t in b.leitungen_reihe.titel] == ["Ausgänge →", "Eingänge ←"]
+    assert "vom Rechner getrieben" in b.leitungen_reihe.titel[0].toolTip()
+    assert "vom Rechner empfangen" in b.leitungen_reihe.titel[1].toolTip()
     _probe(w, b, rts=True, dtr=False, cts=True, dsr=False, dcd=True)
     assert b.leitungen_reihe.zustaende() == dict(RTS=True, DTR=False, CTS=True, DSR=False,
                                                  DCD=True)
@@ -702,6 +706,90 @@ def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
     b.aktualisieren()
     assert not sichtbar(b.leitungen_hinweis, b)
 
+
+
+# ─── LEDs: drei unterscheidbare Zustände, Ende-zu-Ende grün (AP-S12) ──────────
+
+def _led_mitte(led):
+    """Farbe in der Mitte der LED (ohne den Glanzpunkt oben links)."""
+    bild = led.grab().toImage()
+    return bild.pixelColor(bild.width() // 2 + 2, bild.height() // 2 + 2)
+
+
+def test_led_states_are_bright_green_dim_green_and_outline(qapp):
+    """Pixelprobe: aktiv = hell leuchtend grün, inaktiv = gedimmt dunkelgrün und
+    deutlich NICHT schwarz, unbekannt = nur Umriss (Mitte = Hintergrund)."""
+    from PySide6.QtWidgets import QWidget
+    from app.ui.serial_widget import LeitungsLed
+    traeger = QWidget()
+    led = LeitungsLed(traeger)
+    hintergrund = _led_mitte(led)                  # vor dem ersten Setzen: Umriss
+
+    led.setze(True)
+    an = _led_mitte(led)
+    led.setze(False)
+    aus = _led_mitte(led)
+    led.setze(None)
+    unbekannt = _led_mitte(led)
+
+    # aktiv: grün dominiert und ist hell
+    assert an.green() > 200 and an.green() > an.red() + 80 and an.green() > an.blue() + 80
+    # inaktiv: erkennbar grün (Farbton), aber gedimmt — nicht schwarz, nicht hell
+    assert aus.green() > aus.red() + 30 and aus.green() > aus.blue() + 30, aus.name()
+    assert 70 <= aus.green() <= 150, aus.name()
+    assert an.green() - aus.green() >= 80
+    # unbekannt: Mitte unausgefüllt
+    assert unbekannt == hintergrund
+    assert len({an.name(), aus.name(), unbekannt.name()}) == 3
+
+
+def test_connecting_turns_the_input_leds_green_end_to_end(w, qapp):
+    """Ein Telnet-Client verbindet sich mit dem Server der V.24-Schnittstelle: die
+    Eingänge (CTS/DSR/DCD) werden im laufenden Rechner aktiv (§6.4: Telnet =
+    „verbunden") und der Kasten zieht sie im 4-Hz-Takt nach — ohne Probestatus.
+    Die Ausgänge bleiben aus: CP/A/SCPX setzen RTS/DTR nie."""
+    b = next(x for x in w.serial_widget.bloecke() if x.info.v24)
+    server_einstellen(b)
+    b.knopf.click()
+    assert warte(qapp, lambda: w.emulator.serial_status(b.index).zustand == K.SER_LAUSCHT)
+    eing = ("CTS", "DSR", "DCD")
+    assert warte(qapp, lambda: all(
+        b.leitungen_reihe.anzeigen[n].zustand is False for n in eing))
+    port = w.emulator.serial_status(b.index).port_aktiv
+    with socket.create_connection(("127.0.0.1", port), timeout=3):
+        assert warte(qapp, lambda: all(
+            b.leitungen_reihe.anzeigen[n].zustand is True for n in eing), frist=6.0), \
+            b.leitungen_reihe.zustaende()
+        led = b.leitungen_reihe.anzeigen["CTS"].led
+        assert _led_mitte(led).green() > 200
+        z = b.leitungen_reihe.zustaende()
+        assert z["RTS"] is False and z["DTR"] is False
+    assert warte(qapp, lambda: all(
+        b.leitungen_reihe.anzeigen[n].zustand is False for n in eing), frist=6.0)
+    b.knopf.click()
+
+
+def test_k8915_old_interface_names_in_a_config_still_apply(qapp, konfig):
+    """Vor AP-S12 hießen SIO1-B/SIO2-A „IFS 1"/„IFS 2"; eine solche Konfiguration
+    wird beim Laden auf die heutigen Namen abgebildet, statt herrenlos zu bleiben."""
+    from app import profil
+    p = profil.profil("k8915")
+    alt = {"IFS 1": {"port": 4711}, "IFS 2": {"port": 4712}, "V.24": {"port": 4713}}
+    neu = p.schnittstellen_umbenennen(alt)
+    assert neu == {"Drucker/IFSS1": {"port": 4711}, "DFÜ/IFSS2": {"port": 4712},
+                   "V.24": {"port": 4713}}
+    # Der heutige Name geht vor, wenn beide da sind.
+    assert p.schnittstellen_umbenennen({"IFS 1": {"port": 1}, "Drucker/IFSS1": {"port": 2}}) \
+        == {"Drucker/IFSS1": {"port": 2}}
+    assert profil.profil("a5120").schnittstellen_umbenennen(alt) == alt
+    w = _fenster(qapp, "k8915")
+    try:
+        w.serial_widget.zustand_anwenden(p.schnittstellen_umbenennen(alt))
+        namen = {b.info.name: b.index for b in w.serial_widget.bloecke()}
+        assert w.emulator.serial_config(namen["Drucker/IFSS1"]).port == 4711
+        assert w.emulator.serial_config(namen["DFÜ/IFSS2"]).port == 4712
+    finally:
+        _zu(qapp, w)
 
 def test_the_port_field_shows_the_port_in_use_and_the_set_one_after_stopping(w, qapp):
     """Belegter eingestellter Port: der Server nimmt einen anderen, das Feld zeigt ihn;

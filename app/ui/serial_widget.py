@@ -157,12 +157,31 @@ GEGEN_SERVER = (("RTS", K.SER_L_RTS), ("DTR", K.SER_L_DTR))
 GEGEN_CLIENT = (("CTS", K.SER_L_CTS), ("DSR", K.SER_L_DSR), ("DCD", K.SER_L_DCD),
                 ("RI", K.SER_L_RI))
 
+#: Gruppenbeschriftung der LED-Reihen (AP-S12): „Aus:"/„Ein:" las sich wie ein
+#: ZUSTAND — gemeint ist die Richtung.  Der Pfeil zeigt sie, der Tooltip erklärt sie.
+TITEL_AUSGAENGE = "Ausgänge →"
+TITEL_EINGAENGE = "Eingänge ←"
+TIPP_AUSGAENGE = ("Ausgänge: vom Rechner getrieben — der Gast setzt sie über die SIO "
+                  "(WR5: RTS, DTR).")
+TIPP_EINGAENGE = ("Eingänge: vom Rechner empfangen — der Gast liest sie (RR0: CTS, DCD).\n"
+                  "Telnet und Datei: aktiv, solange verbunden; RFC 2217: was die "
+                  "Gegenseite meldet; RTS/CTS-Brücke und Rx/Tx-Loop: folgen RTS/DTR.")
+TIPP_GEGEN_AUSGAENGE = "Ausgänge der Gegenseite: von ihr getrieben (RFC 2217)."
+TIPP_GEGEN_EINGAENGE = "Eingänge der Gegenseite: von ihr empfangen und gemeldet (RFC 2217)."
+
 
 class LeitungsLed(QWidget):
-    """Kleine runde Anzeige: ``True`` = grün leuchtend, ``False`` = dunkel,
-    ``None`` = unbekannt (nur Umriss)."""
+    """Kleine runde Anzeige: ``True`` = hell leuchtend grün, ``False`` = gedimmt
+    dunkelgrün (deutlich NICHT schwarz — die LED ist da und aus), ``None`` = unbekannt
+    (nur Umriss).
 
-    AN, AUS, UNBEKANNT = "#35c43a", "#3a3d3a", None
+    AP-S12: das frühere „inaktiv" (#3a3d3a) war fast schwarz; eine Reihe inaktiver
+    Leitungen las sich als „LEDs kaputt".  Die drei Zustände müssen auf hellem wie
+    dunklem Hintergrund unterscheidbar bleiben (Wächter: Pixelprobe im GUI-Test).
+    """
+
+    AN, AUS, UNBEKANNT = "#3cf03c", "#2a6a2e", None
+    RAND_AN, RAND_AUS, RAND_UNBEKANNT = "#1d7a21", "#3f8f44", "#8a8a8a"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -185,13 +204,13 @@ class LeitungsLed(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         r = QRectF(1.5, 1.5, 11, 11)
         if self._zustand is None:
-            p.setPen(QPen(QColor("#8a8a8a"), 1.3))
+            p.setPen(QPen(QColor(self.RAND_UNBEKANNT), 1.3))
             p.setBrush(Qt.NoBrush)
         elif self._zustand:
-            p.setPen(QPen(QColor("#1d7a21"), 1))
+            p.setPen(QPen(QColor(self.RAND_AN), 1))
             p.setBrush(QColor(self.AN))
         else:
-            p.setPen(QPen(QColor("#222"), 1))
+            p.setPen(QPen(QColor(self.RAND_AUS), 1))
             p.setBrush(QColor(self.AUS))
         p.drawEllipse(r)
         if self._zustand:
@@ -234,24 +253,38 @@ class LeitungsReihe(QWidget):
     """Mehrere Leitungsanzeigen nebeneinander, nach Namen ansprechbar."""
 
     def __init__(self, gruppen, parent=None):
-        """*gruppen*: [(Gruppenbeschriftung, [(Name, Bedeutung, Richtung), …]), …]."""
+        """*gruppen*: [(Gruppenbeschriftung, Tooltip, [(Name, Bedeutung, Richtung), …]),
+        …]; eine leere Beschriftung lässt die Gruppe ohne Titel."""
         super().__init__(parent)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
         self.anzeigen: Dict[str, LeitungsAnzeige] = {}
         self.titel: List[QLabel] = []
-        for text, leitungen in gruppen:
+        self._gruppe_von: Dict[str, Optional[QLabel]] = {}
+        for text, tipp, leitungen in gruppen:
+            t = None
             if text:
                 t = QLabel(text)
                 t.setStyleSheet("color: #8a8a8a;")
+                t.setToolTip(tipp)
                 lay.addWidget(t)
                 self.titel.append(t)
             for name, bedeutung, richtung in leitungen:
                 a = LeitungsAnzeige(name, bedeutung, richtung)
                 self.anzeigen[name] = a
+                self._gruppe_von[name] = t
                 lay.addWidget(a)
         lay.addStretch()
+
+    def zeige_nur(self, namen):
+        """Nur die Leitungen *namen* zeigen; ein Gruppentitel ohne sichtbare Leitung
+        verschwindet mit."""
+        namen = set(namen)
+        for n, a in self.anzeigen.items():
+            a.setVisible(n in namen)
+        for t in self.titel:
+            t.setVisible(any(g is t and n in namen for n, g in self._gruppe_von.items()))
 
     def setze(self, zustaende: Dict[str, Optional[bool]]):
         for name, a in self.anzeigen.items():
@@ -389,8 +422,10 @@ class SerialBlock(QFrame):
         z4 = QHBoxLayout(self.leitungen)
         z4.setContentsMargins(0, 0, 0, 0)
         self.leitungen_reihe = LeitungsReihe((
-            ("Aus:", [(n, b, "Ausgang des Rechners") for n, b in GAST_AUSGAENGE]),
-            ("Ein:", [(n, b, "Eingang des Rechners") for n, b in GAST_EINGAENGE])))
+            (TITEL_AUSGAENGE, TIPP_AUSGAENGE,
+             [(n, b, "Ausgang: vom Rechner getrieben") for n, b in GAST_AUSGAENGE]),
+            (TITEL_EINGAENGE, TIPP_EINGAENGE,
+             [(n, b, "Eingang: vom Rechner empfangen") for n, b in GAST_EINGAENGE])))
         z4.addWidget(self.leitungen_reihe)
         self.leitungen_hinweis = QLabel("(bei Telnet nicht übertragen)")
         self.leitungen_hinweis.setStyleSheet("color: #8a8a8a;")
@@ -405,8 +440,9 @@ class SerialBlock(QFrame):
         z5.setContentsMargins(0, 0, 0, 0)
         self.gegenseite = QLabel()
         z5.addWidget(self.gegenseite)
-        self.gegen_leitungen = LeitungsReihe(
-            (("", [(n, "", "") for n, _b in GEGEN_SERVER + GEGEN_CLIENT]),))
+        self.gegen_leitungen = LeitungsReihe((
+            (TITEL_AUSGAENGE, TIPP_GEGEN_AUSGAENGE, [(n, "", "") for n, _b in GEGEN_SERVER]),
+            (TITEL_EINGAENGE, TIPP_GEGEN_EINGAENGE, [(n, "", "") for n, _b in GEGEN_CLIENT])))
         self.gegen_leitungen.setVisible(bool(info.v24))
         z5.addWidget(self.gegen_leitungen)
         z5.addStretch()
@@ -662,16 +698,15 @@ class SerialBlock(QFrame):
         self.gegenseite.setToolTip(tipp)
         # Nur die Leitungen, die diese Rolle überhaupt sehen kann.
         sichtbar = GEGEN_SERVER if st.rolle == K.SER_SERVER else GEGEN_CLIENT
-        namen = {n for n, _b in sichtbar}
-        for n, anzeige in self.gegen_leitungen.anzeigen.items():
-            anzeige.setVisible(n in namen)
+        self.gegen_leitungen.zeige_nur(n for n, _b in sichtbar)
         zust = {}
         for n, bit in sichtbar:
             zust[n] = st.leitung_gegenseite(bit)
             anzeige = self.gegen_leitungen.anzeigen[n]
             anzeige.bedeutung = "Leitung der Gegenseite"
-            anzeige.richtung = ("vom Client gesetzt" if st.rolle == K.SER_SERVER
-                                else "vom Server gemeldet")
+            anzeige.richtung = ("Ausgang des Clients: von ihm getrieben"
+                                if st.rolle == K.SER_SERVER
+                                else "Eingang des Servers: von ihm empfangen und gemeldet")
         self.gegen_leitungen.setze(zust)
 
     @staticmethod
