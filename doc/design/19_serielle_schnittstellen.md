@@ -1,6 +1,6 @@
 # Feinentwurf 19: Serielle Schnittstellen nach außen (Telnet / RFC 2217 / Datei)
 
-**Stand:** 2026-09-30, in Umsetzung — S1–S6 und T1a erledigt (§12.1).
+**Stand:** 2026-09-30, in Umsetzung — S1–S7 und T1a erledigt (§12.1).
 **Gilt für:** A5120 (K8025.50) und K8915 (ATS K7028.30), beide Programme (`a5120emu`, `k8915emu`).
 **Bezug:** `doc/design/06_k8025_ass.md`, `doc/design/16_k8915.md` §3.2/§6.6/§6.10,
 `doc/design/10_c_api.md`, `doc/design/11_python_app.md` §10,
@@ -670,6 +670,26 @@ Konstanten `SER_*`/`HOST_*`, `classify_host(s)`. **K8915 startet mit `loop=True`
 `serial_start` liefert dort `false`, bis der Loop aus ist (die Oberfläche muss das zeigen).
 Wächter `py_serial_api` (beide Maschinen, ~2 s), `test_c_api.py` vergleicht jetzt auch Felder
 der `K1520Ser*`-Strukturen und die Enum-Werte.
+
+**AP-S7 — erledigt 2026-10-01** (`dc36b94`). `app/ui/serial_widget.py` (`SerialWidget`,
+`SerialBlock` je Schnittstelle), Dock hinter *Einstellungen*, *Ansicht ▸ Sch&nittstellen*,
+Kastenschalter `dock_serial` in `actions.REIHENFOLGE` (kein Kürzel), Statuszeile
+`SeriellFeld` ×2 (`MachineStatus.set_seriell`, Knopfdruck zieht sofort nach), Handbuch
+„Schnittstellen", `11_python_app.md` §10.10. Festlegungen:
+- **Konfiguration:** Betriebsart/Rolle als Wörter (`telnet`/`rfc2217`/`datei`,
+  `server`/`client`), `taktquelle` als **Name** aus dem Kern; Unbrauchbares wird einzeln
+  übergangen. Speichern in `closeEvent` VOR dem Beenden (sonst wäre `aktiv` immer falsch).
+- **Maschinenwechsel** (`_apply_drive_types` baut Maschine + Hub neu): Stand und `aktiv`
+  werden gemerkt und an der neuen Maschine wieder aufgenommen — ein Laufwerkswechsel kostet
+  keine Verbindung.
+- Knopf gesperrt bei Loop, ungültigem Host (nur Client) und fehlender Datei, nie solange er
+  etwas beenden kann; K8915-Grund als Meldungszeile + Tooltip. Datei-Dialog abgebrochen →
+  Betriebsart springt zurück. „Gast nicht programmiert" statt Format vor dem BIOS-Init.
+- **Testfalle:** geschlossene `MainWindow` lassen Laufwerks-Zeitgeber und
+  `ScreenFocusGuard` weiterlaufen — bei ~70 Fenstern je Prozess scheinbarer Stillstand;
+  `deleteLater()` stürzt über den Fokusfilter ab. `test_serial_gui.py::_zu()` legt beides
+  still — für weitere Fensterfälle übernehmen.
+- Wächter `py_serial_gui` (81 Fälle, ~12 s, beide Programme).
 
 ## 13. Offene Punkte
 
