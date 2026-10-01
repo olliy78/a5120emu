@@ -91,28 +91,31 @@ ob ihr ZC/TO0 im Emulator schon über den Koppelbus zur K8025 geführt ist **[?]
 
 ### 3.2 K8915 — ATS K7028.30
 
-Belegung nach Belegungsplan und Stromlaufplan 1.45.518732 (`k8915schaltung.pdf` S. 5, 11,
-16; geklärt in AP-S5, Befund samt Quelle in `doc/design/16_k8915.md` §3.2):
+Namen und Stecker nach der **Gerätebeschriftung** (Anwender, 2026-10-01, AP-S12); die
+Kanalzuordnung nach Stromlaufplan 1.45.518732 (`k8915schaltung.pdf` S. 5, 11, 16) und BIOS
+(Drucker = SIO1-B). Reihenfolge = C-ABI-Index:
 
-| Name (UI) | Stecker | SIO / Kanal | Ports | Art | Steuerleitungen | Takt |
-|-----------|---------|-------------|-------|-----|-----------------|------|
-| **V.24** | X3 | SIO 1 / A | 40H/41H | volle V.24 (Empfänger D17, Treiber D14) | ja | über Multiplexer D13; nachgebildet CTC 1 K0 |
-| **IFS 1** | X4 | SIO 1 / B | 42H/43H | nur 103/104 — **Drucker des BIOS** („V24 XON/XOFF") | nein | CTC 1 K2 (sicher) |
-| **IFS 2** | X5 | SIO 2 / A | 50H/51H | 103/104 + die IFSS-Stromschleife der Karte | nein | CTC 2 K0 |
-| Tastatur K7672 | — | SIO 2 / B | 52H/53H | — | — | fest verdrahtet, **nicht einstellbar** |
+| Index | Name (UI) | Stecker (Gerät) | SIO / Kanal | Ports | Art | Steuerleitungen | Takt |
+|-------|-----------|-----------------|-------------|-------|-----|-----------------|------|
+| 0 | **Drucker/IFSS1** | X3 | SIO 1 / B | 42H/43H | nur 103/104 — **Drucker des BIOS** („V24 XON/XOFF") | nein | CTC 1 K2 |
+| 1 | **V.24** | X4 (Anwender: „vermutlich") | SIO 1 / A | 40H/41H | volle V.24 (Empfänger D17, Treiber D14) | ja | über Multiplexer D13; nachgebildet CTC 1 K0 |
+| 2 | **DFÜ/IFSS2** | X5 | SIO 2 / A | 50H/51H | 103/104 + die IFSS-Stromschleife der Karte | nein | CTC 2 K0 |
+| — | Tastatur K7672 | (Karte X6?) | SIO 2 / B | 52H/53H | — | — | fest verdrahtet, **nicht einstellbar** |
 
-**Abweichung vom ersten Entwurf (AP-S5):** die einzige Schnittstelle mit Steuerleitungen ist
-SIO1-A — „V.24" heißt deshalb SIO1-A, nicht SIO1-B; der BIOS-Drucker liegt auf **IFS 1**.
-CTC 1 CLK/TRG0–2 liegen auf Masse (reine Zeitgeber); CTSB/DCDB nur über Wickelbrücke X15:3/4
-(offen = inaktiv), RTSB/DTRB an keinem Treiber. Nur erschlossen, nicht ganz verfolgt:
-Kanal↔Stecker für SIO1-A/SIO2-A und der Weg CTSA/DCDA durch D13. Sollte die Rückwand anders
-beschriftet sein, sind nur die Namen in `k7028.cpp` zu tauschen.
+**Widerspruch Plan ↔ Gerät (AP-S12):** auf der *Karte* liegt die volle V.24 an X3 und
+SIO1-B (TxDB über X16:1–3, D12:02, D14:01) an X4; das Gerät beschriftet X3 als
+„Drucker/IFSS1". Wahrscheinlich nummeriert die Rückwand ihre Buchsen unabhängig von der
+Karte (X5 stimmt in beiden Zählungen). **Für die Namen gilt die Gerätebeschriftung.** SIO1-B
+hat auf der Karte keine eigene Stromschleife (die einzige liegt an Karten-X5) — „IFSS1" am
+Gerät meint daher einen externen Wandler oder nur die Verwendung **[?]**. CTC 1 CLK/TRG0–2
+liegen auf Masse (reine Zeitgeber); CTSB/DCDB nur über Wickelbrücke X15:3/4 (offen =
+inaktiv), RTSB/DTRB an keinem Treiber; alle drei Kanäle fest getaktet (keine Taktquellenwahl).
 
-Die UI-Namen **„V.24", „IFS 1", „IFS 2" sind festgelegt** (Anwender, 2026-09-30) und
-bleiben auch dann, wenn der Belegungsplan die Stecker anders beschriftet; welcher IFSS-Kanal
-„IFS 1" und welcher „IFS 2" heißt, folgt der SIO-Reihenfolge (SIO 1 vor SIO 2).
-Die alte Verdrahtung `K8915Machine` (Drucker = SIO1-B = IFS 1, DFÜ = SIO2-A = IFS 2) geht
-in diesem Modell auf; `Config::pruefstecker` ist die Vorgabe des **Rx/Tx-Loop** (§4).
+Frühere Namen „V.24"/„IFS 1"/„IFS 2" (S5, 2026-09-30): alte `k8915emu.yaml` werden beim
+Laden über `Programmprofil.alte_schnittstellen` (`app/profil.py`) abgebildet — „IFS 1" →
+„Drucker/IFSS1", „IFS 2" → „DFÜ/IFSS2". Die alte Verdrahtung `K8915Machine` (Drucker =
+SIO1-B, DFÜ = SIO2-A) geht in diesem Modell auf; `Config::pruefstecker` ist die Vorgabe des
+**Rx/Tx-Loop** (§4).
 
 ## 4. Einstellungen je Schnittstelle
 
@@ -640,7 +643,7 @@ Schnittstelle einen `SerialAnschluss`; `SerialHub` je Maschine, `libk1520core` b
 - **Maschinen-API für S6:** `K1520Machine::serialHub()` (Index = Anmeldereihenfolge =
   C-ABI-Index), `serielleAnschluesse()`, `festeSchnittstellen()` (A5120 „Tastatur K7637
   (X4)", K8915 „Tastatur K7672") für `k1520_serial_fixed_name`. Reihenfolge A5120: DFÜ/V.24,
-  DFÜ/IFSS, Drucker; K8915: V.24, IFS 1, IFS 2.
+  DFÜ/IFSS, Drucker; K8915 (seit S12): Drucker/IFSS1, V.24, DFÜ/IFSS2.
 - **Alter Unterbau:** `setDFUECallback`/`dfueSend` = A5120 DFÜ/V.24 bzw. K8915 IFS 2,
   `setPrinterCallback`/`printerSend` = A5120 Drucker (geht jetzt — war vorher leer) bzw.
   K8915 IFS 1. Bytes in ihrer Zeichenzeit; belegt Loop oder Transport den Stecker, ins Leere.
@@ -787,10 +790,21 @@ Das `SerialWidget` gehört dem Hauptfenster, sein 4-Hz-Takt läuft auch bei verd
 „Eingestellt: X, benutzt: Y"), Gegenseite-Zeile mit ⚠/Warnfarbe bei `baud_abweichend` oder
 `format_abweichend`, fehlt solange nichts bekannt ist. `py_serial_gui` 105 Fälle.
 
+**AP-S12 — erledigt 2026-10-01** (`6b10a01`, `cb84cfc`). K8915-Namen nach Gerätebeschriftung
+(§3.2), `K7028::Kanal` jetzt Sio1B=0, Sio1A=1, Sio2A=2 (Reihenfolge = Stecker = C-ABI-Index),
+alte Konfigurationsnamen werden abgebildet. **LEDs:** kein Datenfehler — „inaktiv" war
+`#3a3d3a`, praktisch schwarz, und unverbunden ist alles inaktiv (CP/A/SCPX setzen RTS/DTR nie).
+Jetzt aktiv `#3cf03c`, inaktiv gedimmtes Grün `#2a6a2e` mit grünem Rand, unbekannt grauer
+Umriss; Gruppen „Ausgänge →"/„Eingänge ←" mit Tooltip („vom Rechner getrieben/empfangen").
+Ende-zu-Ende geprüft: Telnet-Verbindung → CTS/DSR/DCD grün, nach dem Trennen wieder aus.
+**Einschränkung:** die Eingänge werden nur nachgeführt, solange die Maschine läuft — angehalten
+behalten die LEDs ihren Stand (im Handbuch vermerkt). `test` 1499, `test-format` 26 grün.
+
 ## 13. Offene Punkte
 
 Entschieden am 2026-09-30: Bindeadresse = alle Schnittstellen (§7.2), Wiederaufnahme beim
-Start (§7.4a), UI-Namen der K7028 = „V.24"/„IFS 1"/„IFS 2" (§3.2).
+Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" (X3), „V.24" (X4),
+„DFÜ/IFSS2" (X5) — 2026-10-01, §3.2.
 
 1. ~~**K7028:** Belegung, Taktkanäle, V.24-Leitungen, Brücken~~ — geklärt in AP-S5 (§3.2);
    Rest: Rückwandbeschriftung, Stecker der K7672, D13-Weg von CTSA/DCDA.
