@@ -759,6 +759,21 @@ Clientformat kommt erst nach der 100-ms-Entprellung an. Wächter
 `SerialHub.Rfc2217ZeigtFormatUndLeitungenDerGegenseite`,
 `test_rfc2217_status_shows_format_and_lines_of_the_far_side`.
 
+**AP-S9 — erledigt 2026-10-01** (`203e7a8`). Die **Tastatur K7637 entscheidet selbst**, was
+wiederholt: nur ihre bis zu 16 „Dauerfunktionstasten" je Codetabelle
+(`doc/trascripted/Serielle Tastatur K 7637.XX.md` §2.2.2; ROM
+`robotron-k7637_50-2716.bin` 650H/760H: `20 95 96 94 97 5F` = Leertaste, vier Kursortasten,
+5FH; Vergleichsschleife ab 0171H), nach ca. 500 ms alle ca. 100 ms; jede weitere Taste beendet
+die Dauerfunktion. Im Emulator wiederholte **gar nichts**: die pauschale Wiederholung des
+Modells hing an `K7637::tick()`, das nie gerufen wurde, und die Host-Wiederholung verwirft die
+Oberfläche bewusst. **Nicht** durch `216dc14` (SIO-Betriebsart 01) verursacht — der Wächter
+läuft damit grün. Behoben: Wiederholung in Maschinenzeit in `service()`, nur für
+`K7637::isRepeatCode()`. Wächter `KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot`
+(CP/A bis `A>`, Leertaste 1,5 s → 8–14 Leerzeichen, „A" 1,5 s → genau eins; ohne Fix rot),
+`K7637.Dauerfunktion_*`. Doku `doc/design/08_k7637_keyboard.md` §2.2a. Offen: welche Taste
+5FH sendet (im Modell nur der PC-Unterstrich, der jetzt wiederholt); ROM-Zeiten 480H/481H nicht
+in ms umgerechnet (Handbuchwerte benutzt).
+
 ## 13. Offene Punkte
 
 Entschieden am 2026-09-30: Bindeadresse = alle Schnittstellen (§7.2), Wiederaufnahme beim
