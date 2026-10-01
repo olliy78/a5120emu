@@ -826,7 +826,8 @@ Start (§7.4a); UI-Namen der K7028 nach Gerätebeschriftung = „Drucker/IFSS1" 
 
 ## 14. Testprogramm „Serial Test" (`SERTEST.COM`)
 
-**Stand:** 2026-10-01, **spezifiziert, nicht begonnen.** Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
+**Stand:** 2026-10-01, **AP-ST1 erledigt** (Gerüst `tools/sertest/`, V0.1); weiter mit ST2/ST3.
+Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
 ### 14.1 Ziel
 
@@ -842,6 +843,9 @@ Wächter der Schnittstellenemulation (SIO, CTC, Wandler, Steuerleitungen, Flusss
 - Zwei Rollen: **Tester (Aktiv)** und **Gegenstelle (Passiv)**.
 - Läuft unter **CP/A (A5120)** und **SCPX 8915 V5.3 (K8915)**; benutzt vom Betriebssystem
   nur das BDOS (Funktionen 0, 6, 9). Alles andere geht direkt auf die Hardware.
+  Umgesetzt (ST1): **auch die Ausgabe zeichenweise über BDOS 6**, BDOS 9 bleibt ungenutzt —
+  BDOS 9 läuft durch die Abbruchprüfung des BDOS (`conbrk`), die eine während der Ausgabe
+  gedrückte Taste in ihren eigenen Puffer holt; für BDOS 6 wäre sie (auch ein Ctrl+C) verloren.
 - Bildschirmtexte **ohne Umlaute** (ae/oe/ue/ss) — der Zeichensatz der Geräte kennt sie
   nicht sicher.
 
@@ -945,10 +949,14 @@ CPA_Workbench; SCPX 8915: BIOS-Disassemblat, `doc/design/16_k8915.md`). Beim A51
 wird **nur** das SIO-Format gesetzt; der Takt ist dort durch die Tastatur auf 9600 festgelegt.
 Die Annahme „Brücke gezeichnet" steht im README des Programms.
 
-**Maschinenerkennung [?]:** A5120 und K8915 überlappen in 50H–5FH; zu unterscheiden ist
-an einem Port, der nur auf einer Maschine belegt ist (Kandidat: SIO1 des K8915 bei 40H–43H,
-am A5120 im Emulator ohne Gerät → FFH; am Gerät ist zu prüfen, ob dort eine andere Karte
-stecken kann). Grundsatz: **die Erkennung schreibt nur in Steuerregister von Bausteinen, die
+**Maschinenerkennung** (festgelegt ST1): A5120 und K8915 überlappen in 50H–5FH; unterschieden
+wird an der SIO 1 des K8915 bei 40H–43H (am A5120 im Emulator ohne Gerät → FFH). Ablauf unter
+DI: SIO bei 40H gefunden → SIO bei 50H gefunden → **K8915**; keine SIO bei 40H → SIO bei 50H
+(A33) gefunden und RR0 bei 5DH/5FH (A32, **nur gelesen**) ≠ FFH → **A5120**; sonst „Rechner
+nicht erkannt" mit Hinweis auf `/M:`. Im Emulator auf beiden Maschinen ohne Überstimmung
+richtig (CP/A `cpa_cpa780_k5601_noclock.img`, SCPX `k8915scpx_cpa800_k5601_bios55k-disk900.hfe`).
+Am Gerät offen **[?]**: ob 40H–43H an einem A5120 in jeder Ausbaustufe frei ist, und ob die vom
+BIOS ungenutzte SIO 1 des K8915 einen Vektor ≠ FFH trägt (RR2 ist dort nicht programmiert). Grundsatz: **die Erkennung schreibt nur in Steuerregister von Bausteinen, die
 sie selbst gefunden hat** — nie in einen Port, der auf der anderen Maschine ein CTC ist
 (5CH–5FH ist am K8915 ein Spiegel von CTC2, K3 = Zeitgeber). Gefunden gilt eine SIO, wenn
 das Lesen von RR2 über Kanal B einen Wert ≠ FFH liefert bzw. ein geschriebener Vektor
@@ -1075,7 +1083,7 @@ Bauberührende APs nacheinander.
 
 | AP | Inhalt | hängt ab von | Umfang |
 |----|--------|--------------|--------|
-| **ST1** | Gerüst: `tools/sertest/` (Quelle, `build.py`, README, eingecheckte `.com`), Kopfzeile, Rollenwahl, Kommandozeile §14.3 (inkl. `/A`, `/M:`), Konsole über BDOS 6, Ctrl+C-Pfad mit Aufräumhaken, Maschinenerkennung + Schnittstellenliste §14.4 (Tastatur gekennzeichnet), Abfrage J/N je Schnittstelle, Hinweistext Gegenstelle | — | M |
+| **ST1** ✔ | Gerüst: `tools/sertest/` (Quelle, `build.py`, README, eingecheckte `.com`), Kopfzeile, Rollenwahl, Kommandozeile §14.3 (inkl. `/A`, `/M:`), Konsole über BDOS 6, Ctrl+C-Pfad mit Aufräumhaken, Maschinenerkennung + Schnittstellenliste §14.4 (Tastatur gekennzeichnet), Abfrage J/N je Schnittstelle, Hinweistext Gegenstelle | — | M |
 | **ST2** | Testgerüst im Emulator: Hilfen „Disk mit SERTEST.COM", „Ergebniszeilen lesen" für A5120 (CP/A) und K8915 (SCPX); erste Fälle: Liste und Erkennung auf beiden Maschinen, Ctrl+C hinterlässt bedienbares System; Wächter „`.com` passt zur Quelle" | ST1 | M |
 | **ST3** | SIO-/CTC-Schicht §14.4: 9600 8N1 je Tabelle, Leitungen, polled E/A mit Zeitüberlauf, Fehlerzählung, Interrupt einhängen/weiterreichen, Wiederherstellen; klärt die **[?]** zu WR1/WR2 und BIOS-Vorgaben aus den BIOS-Quellen | ST1 | M |
 | **ST4** | Prüfsteckertest §14.5 (DATEN-LOOP, LEITUNGEN-LOOP mit Erwartungstabelle je Maschine; K8915-Zeile festlegen) + Tests: alle Schnittstellen beider Maschinen mit Loop, Gegenfall ohne Loop, Drucker-A5120 lässt Tastatur intakt | ST2, ST3 | M |
@@ -1083,9 +1091,30 @@ Bauberührende APs nacheinander.
 | **ST6** | Flusssteuerung §14.7 Schritte 3–4: Rückstau der Gegenstelle, FLUSS-HW (Auto Enables), FLUSS-XON (ohne 11H/13H in den Daten), Berichtsformat mit Bremszähler + Tests (V.24 beide, IFSS nur XON) | ST5 | M |
 | **ST7** | Abschluss: README (Bedienung, Kabelbelegung vom Anwender, Annahmen Brücken), Merkposten-Absatz in `doc/merkposten/serielle_schnittstellen.md`, Checkliste für die **Geräteprüfung durch den Anwender** (A5120 ↔ K8915 per Kabel, Prüfstecker an jedem Stecker) | ST6 | S |
 
+**ST1 erledigt 2026-10-01.** `tools/sertest/` (Quelle, `build.py`, README, eingecheckte
+`sertest.com`, 2,9 KB). Abweichungen/Erkenntnisse:
+- Ausgabe über BDOS 6 statt 9 (Begründung §14.1).
+- Die Teststeps sind Platzhalter mit Ergebniszeile `FEHLER NICHT EINGEBAUT` (nicht
+  `ENTFAELLT` — das bleibt „gilt für diese Schnittstelle nicht"); `ENTFAELLT` für
+  LEITUNGEN-LOOP/LEITUNGEN/FLUSS-HW an IFSS ist schon richtig. Zusammenfassung je
+  Schnittstelle `OK`/`FEHLER`/`nicht geprueft`.
+- `/A` und `/P`/`/G` nur mit `T n`; `/P`/`/G` mit `G n` ist ein Fehler, `/A` dort erlaubt.
+  `/M:` in jeder Form. Nummer gegen die Liste geprüft („Diese Schnittstelle gibt es nicht."
+  + Kurzhilfe).
+- `build.py` bricht ab, wenn M80 nicht „No Fatal error(s)" meldet (M80 endet auch bei
+  Fehlern mit 0 und schreibt eine `.ERL`; `tools/romread/build.py` hat diese Lücke noch).
+  Ohne `ORG` gebaut — `romread.com` trägt wegen `ORG 100H` + `/p:100` 256 Byte NOPs vorn.
+- `k1520dbg keys` am A5120: Steuerzeichen (`\x03`, `\e`, `\t`) wurden von
+  `K7637::translateKey` verworfen; gehen jetzt als Rohbyte (`QK_RAW_BASE`) — damit ist
+  Ctrl+C im Stapelbetrieb prüfbar. Für ST2: im C++-Test `keyPress('c', false, true)`.
+- Im Emulator geprüft: interaktiv T/G mit J/N-Folge, `T n /A`, `G n` + Ctrl+C, Ctrl+C an der
+  T/G-Frage, `SERTEST X` und `T 4` → Kurzhilfe, `/M:K` am A5120; danach `DIR` bedienbar.
+  K8915-Kaltstart: `<ENTER>` an „Coldstart … --> <ENTER>", dann Autostart `rade` abwarten.
+
 ### 14.10 Offene Punkte
 
-1. Maschinenerkennung: ist 40H–43H an einem A5120 in jeder Ausbaustufe frei? (ST1, am Gerät)
+1. Maschinenerkennung (Verfahren seit ST1 fest, §14.4): ist 40H–43H an einem A5120 in jeder
+   Ausbaustufe frei, trägt die SIO 1 des K8915 am Gerät einen RR2 ≠ FFH? (am Gerät; Abhilfe `/M:`)
 2. WR1 D2 / WR2 der mit der Tastatur geteilten SIOs je BIOS (ST3).
 3. CTS/DCD-Weg am K8915 über D13 (§13 Punkt 1) → Erwartungstabelle §14.5 (ST4, am Gerät).
 4. Steckerbelegung Prüfstecker und Nullmodemkabel je Gerät, IFSS aktiv/passiv (Anwender, ST7).

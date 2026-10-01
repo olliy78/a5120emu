@@ -1243,6 +1243,10 @@ int main(int argc, char** argv){
         }
         for (size_t i=0;i<t.size();++i){
             uint32_t code=decodeKey(t,i);
+            // Steuerzeichen (\x03 = ^C, \e = ESC, \t …) kennt K7637::translateKey nicht
+            // als Qt-Code (→ 0x00, Taste verpufft) — als Rohbyte senden (QK_RAW_BASE);
+            // das CP/A-BIOS reicht Codes < 20H unverändert durch.
+            if (code < 0x20) code |= 0x02000000u;
             m.keyPress(code,false,false); go(600000); if(hit) return;
             m.keyRelease(code);          go(150000); if(hit) return;
         }

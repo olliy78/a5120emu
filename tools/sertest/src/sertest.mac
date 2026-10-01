@@ -1,0 +1,861 @@
+	TITLE	'Serial Test V0.1'
+	.Z80
+;
+; sertest.mac - "Serial Test": prueft die seriellen Schnittstellen eines
+;               A5120 (ASS K8025) und eines K8915 (ATS K7028) - am Geraet
+;               mit Pruefstecker/Nullmodemkabel, im Emulator gegen den
+;               Rx/Tx-Loop bzw. einen zweiten Emulator.
+;
+; Spezifikation: doc/design/19_serielle_schnittstellen.md, Kapitel 14.
+;
+; Stand V0.1 (AP-ST1): Geruest. Kopfzeile, Kommandozeile (14.3),
+; Maschinenerkennung und Schnittstellenliste (14.4), Rollenwahl, J/N-Abfrage
+; je Schnittstelle, Ctrl+C-Pfad mit Aufraeumhaken. Die Teststeps selbst
+; (SIO/CTC-Schicht, Pruefsteckertest, Protokoll) folgen in AP-ST3 ff.; bis
+; dahin melden sie "FEHLER NICHT EINGEBAUT" - ein Test, der nicht laeuft,
+; darf nicht OK melden.
+;
+; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
+;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
+;     Behandlung griffe sonst dazwischen.
+;   - Ausgabe ebenfalls zeichenweise ueber BDOS 6 statt BDOS 9: BDOS 9 geht
+;     durch die Abbruchpruefung des BDOS (conbrk), die eine waehrend der
+;     Ausgabe gedrueckte Taste in ihren eigenen Puffer holt - fuer BDOS 6
+;     waere sie dann verloren (Ctrl+C mitten in einer Ausgabe!).
+;
+; Assemblierung:
+;   python3 tools/sertest/build.py        (M80 + LINKMT via cparun)
+;
+; Lizenz: MIT
+;
+
+; =============================================================================
+; CP/M-BDOS
+; =============================================================================
+BDOS	EQU	0005H		; BDOS-Einsprung
+CMDLEN	EQU	0080H		; Laenge des Kommandozeilenrests
+CMDTXT	EQU	0081H		; Kommandozeilenrest (vom CCP in Grossbuchstaben)
+
+F_BOOT	EQU	0		; Warmstart
+F_DCIO	EQU	6		; direkte Konsol-E/A (E=FFH: Eingabe, sonst Ausgabe)
+
+CTRLC	EQU	03H
+CR	EQU	0DH
+LF	EQU	0AH
+
+; =============================================================================
+; Maschinen und Schnittstellen (Spezifikation 14.4)
+; =============================================================================
+M_A5120	EQU	1		; A5120, ASS K8025
+M_K8915	EQU	2		; K8915, ATS K7028
+
+ART_V24	EQU	0		; volle V.24 mit Steuerleitungen
+ART_IFS	EQU	1		; IFSS bzw. nur 103/104 - keine Steuerleitungen
+
+; Eintrag der Schnittstellentabelle (IF_LEN Bytes):
+;   +0 DW  Name ('$'-terminiert)
+;   +2 DB  Art (ART_V24/ART_IFS)
+;   +3 DB  Datenport
+;   +4 DB  Steuerport
+;   +5 DB  CTC-Kanalport des Baudtakts (0 = Takt nicht anfassen, A5120-Drucker)
+IF_LEN	EQU	6
+
+; Erkennung: Bausteinadressen (Datenport Kanal A; Steuer A = +1, B = +3)
+SIO_K1	EQU	40H		; K8915 SIO 1 - am A5120 frei (offener Bus = FFH)
+SIO_5X	EQU	50H		; A5120 SIO A33 / K8915 SIO 2
+SIO_A32	EQU	5CH		; A5120 SIO A32 (Tastatur) - am K8915 Spiegel der
+				; CTC 2 (K3 = Zeitgeber): dort NIE schreiben!
+
+; =============================================================================
+; Programm (relozierbar, LINKMT legt es nach 0100H)
+; =============================================================================
+START:
+	LD	SP, STAPEL
+	; Variablen loeschen (die .COM traegt sie nicht verlaesslich als 0)
+	LD	HL, VARANF
+	LD	DE, VARANF+1
+	LD	BC, VARLEN-1
+	LD	(HL), 0
+	LDIR
+
+	LD	DE, M_KOPF
+	CALL	PUTS
+
+	CALL	PARSE
+	JP	C, HILFE
+
+	CALL	ERKENN
+	JP	C, UNBEK
+
+	; --- Rechner und Schnittstellenliste ---------------------------------
+	LD	DE, M_RECH
+	CALL	PUTS
+	LD	HL, (MBESCH)
+	CALL	LDHLHL			; HL = Rechnername
+	EX	DE, HL
+	CALL	PUTS
+	LD	A, (MVORG)
+	OR	A
+	JR	Z, ST_L1
+	LD	DE, M_VORG
+	CALL	PUTS
+ST_L1:	CALL	CRLF
+	LD	HL, (MBESCH)
+	INC	HL
+	INC	HL
+	CALL	LDHLHL			; HL = Liste
+	EX	DE, HL
+	CALL	PUTS
+
+	; Schnittstellennummer der Kommandozeile gegen die Liste pruefen
+	LD	A, (IFNR)
+	OR	A
+	JR	Z, ST_ROL
+	LD	B, A
+	LD	A, (IFANZ)
+	CP	B
+	JR	NC, ST_ROL
+	LD	DE, M_NRF
+	CALL	PUTS
+	JP	HILFE
+
+	; --- Rolle ------------------------------------------------------------
+ST_ROL:	LD	A, (ROLLE)
+	OR	A
+	JR	NZ, ST_RL2
+ST_RFR:	LD	DE, M_ROLLE
+	CALL	PUTS
+	CALL	GETKEY
+	CALL	GROSS
+	CP	'T'
+	JR	Z, ST_RL1
+	CP	'G'
+	JR	Z, ST_RL1
+	CALL	CRLF
+	JR	ST_RFR
+ST_RL1:	LD	(ROLLE), A
+	CALL	PUTC
+	CALL	CRLF
+	LD	A, (ROLLE)
+ST_RL2:	CP	'G'
+	JP	Z, GEGEN
+	JP	TESTER
+
+; =============================================================================
+; Tester (Aktiv)
+; =============================================================================
+TESTER:
+	LD	A, (IFNR)
+	OR	A
+	JR	Z, TE_INT
+	; Kommandozeile: genau Schnittstelle n, Teile nach /P /G
+	DEC	A
+	CALL	IFWAHL
+	CALL	TESTIF
+	JR	TE_END
+
+	; Interaktiv: alle Schnittstellen der Reihe nach anbieten
+TE_INT:	XOR	A
+TE_LP:	LD	(IFLAUF), A
+	CALL	IFWAHL
+	LD	DE, M_TDER
+	CALL	PUTS
+	CALL	PUTNAM
+	CALL	FRAGJN
+	JR	NZ, TE_NX
+	LD	A, 1			; interaktiv: Teile werden einzeln gefragt
+	LD	(OPTP), A
+	LD	(OPTG), A
+	CALL	TESTIF
+TE_NX:	LD	A, (IFLAUF)
+	INC	A
+	LD	HL, IFANZ
+	CP	(HL)
+	JR	C, TE_LP
+
+	; --- Zusammenfassung --------------------------------------------------
+TE_END:	LD	DE, M_ZUS
+	CALL	PUTS
+	XOR	A
+TE_ZL:	LD	(IFLAUF), A
+	CALL	IFWAHL
+	LD	DE, M_EINR
+	CALL	PUTS
+	CALL	PUTNAM
+	LD	DE, M_DPKT
+	CALL	PUTS
+	LD	A, (IFLAUF)
+	LD	E, A
+	LD	D, 0
+	LD	HL, STATUS
+	ADD	HL, DE
+	LD	A, (HL)
+	LD	DE, M_NGEP
+	OR	A
+	JR	Z, TE_ZA
+	LD	DE, M_OK
+	DEC	A
+	JR	Z, TE_ZA
+	LD	DE, M_FEHL
+	LD	A, 1
+	LD	(GFEHL), A
+TE_ZA:	CALL	PUTS
+	CALL	CRLF
+	LD	A, (IFLAUF)
+	INC	A
+	LD	HL, IFANZ
+	CP	(HL)
+	JR	C, TE_ZL
+
+	LD	DE, M_ENDOK
+	LD	A, (GFEHL)
+	OR	A
+	JR	Z, TE_ZE
+	LD	DE, M_ENDFE
+TE_ZE:	CALL	PUTS
+	JP	ENDE
+
+; -----------------------------------------------------------------------------
+; TESTIF - eine Schnittstelle (IFZEIG) als Tester pruefen.
+; Interaktiv (IFNR = 0) wird je Teil gefragt, sonst entscheiden /P /G.
+; Ergebnis nach STATUS[IFLAUF]: 0 = nicht geprueft, 1 = OK, 2 = FEHLER.
+; -----------------------------------------------------------------------------
+TESTIF:
+	XOR	A
+	LD	(TFEHL), A
+	LD	(TGELAU), A
+
+	; --- Pruefstecker -----------------------------------------------------
+	LD	A, (OPTP)
+	OR	A
+	JR	Z, TI_GEG
+	LD	A, (IFNR)
+	OR	A
+	JR	NZ, TI_P1
+	LD	DE, M_FPST
+	CALL	PUTS
+	CALL	FRAGJN
+	JR	NZ, TI_GEG
+TI_P1:	CALL	PRUEFS
+
+	; --- Gegenstelle ------------------------------------------------------
+TI_GEG:	LD	A, (OPTG)
+	OR	A
+	JR	Z, TI_ERG
+	LD	A, (IFNR)
+	OR	A
+	JR	NZ, TI_G1
+	LD	DE, M_FGEG
+	CALL	PUTS
+	CALL	FRAGJN
+	JR	NZ, TI_ERG
+TI_G1:	LD	DE, M_KABEL
+	CALL	PUTS
+	CALL	PUTNAM
+	LD	DE, M_KABE2
+	CALL	PUTS
+	LD	A, (OPTA)		; /A: kein "beliebige Taste"
+	OR	A
+	JR	NZ, TI_G2
+	LD	DE, M_TASTE
+	CALL	PUTS
+	CALL	GETKEY
+	CALL	CRLF
+TI_G2:	CALL	GEGTST
+
+	; --- Ergebnis der Schnittstelle merken --------------------------------
+TI_ERG:	LD	A, (IFLAUF)
+	LD	E, A
+	LD	D, 0
+	LD	HL, STATUS
+	ADD	HL, DE
+	LD	A, (TGELAU)
+	OR	A
+	RET	Z			; nichts gelaufen: bleibt "nicht geprueft"
+	LD	A, (TFEHL)
+	OR	A
+	LD	A, 1
+	JR	Z, TI_E1
+	INC	A
+TI_E1:	LD	(HL), A
+	RET
+
+; -----------------------------------------------------------------------------
+; PRUEFS - Pruefsteckertest (14.5). V0.1: nur das Geruest der Ergebniszeilen.
+; -----------------------------------------------------------------------------
+PRUEFS:
+	LD	HL, T_DLOOP
+	CALL	ERGNE
+	LD	HL, T_LLOOP
+	JP	ERGV24
+
+; -----------------------------------------------------------------------------
+; GEGTST - Test mit Gegenstelle (14.7). V0.1: nur das Geruest.
+; -----------------------------------------------------------------------------
+GEGTST:
+	LD	HL, T_LEIT
+	CALL	ERGV24
+	LD	HL, T_ECHO
+	CALL	ERGNE
+	LD	HL, T_FLHW
+	CALL	ERGV24
+	LD	HL, T_FLXO
+	JP	ERGNE
+
+; ERGV24 - Teil HL nur auf V.24: sonst ENTFAELLT, auf V.24 (noch) nicht eingebaut.
+ERGV24:	CALL	IFART
+	CP	ART_V24
+	JP	NZ, ERGENT
+	; faellt durch
+; ERGNE - Teil HL: "FEHLER NICHT EINGEBAUT" (Platzhalter bis AP-ST4 ff.)
+ERGNE:	LD	DE, G_NEIN
+	JP	ERGFEH
+
+; =============================================================================
+; Ergebniszeilen (Spezifikation 14.3 - das Format ist ein VERTRAG)
+;   SERTEST <name> <TEIL>: OK
+;   SERTEST <name> <TEIL>: FEHLER <grund>
+;   SERTEST <name> <TEIL>: ENTFAELLT
+; HL = Teil ('$'-terminiert), DE = Grund (nur ERGFEH).
+; =============================================================================
+ERGOK:	CALL	ERGKPF
+	LD	DE, M_OK
+ERG_A:	CALL	PUTS
+	JP	CRLF
+
+ERGENT:	CALL	ERGKPF
+	LD	DE, M_ENTF
+	JR	ERG_A
+
+ERGFEH:	PUSH	DE
+	CALL	ERGKPF
+	LD	A, 1
+	LD	(TFEHL), A
+	LD	DE, M_FEHL
+	CALL	PUTS
+	LD	A, ' '
+	CALL	PUTC
+	POP	DE
+	JR	ERG_A
+
+; Zeilenanfang "SERTEST <name> <TEIL>: "; markiert die Schnittstelle als geprueft.
+ERGKPF:	PUSH	HL
+	LD	A, 1
+	LD	(TGELAU), A
+	LD	DE, M_SERT
+	CALL	PUTS
+	CALL	PUTNAM
+	LD	A, ' '
+	CALL	PUTC
+	POP	DE
+	CALL	PUTS
+	LD	DE, M_DPKT
+	JP	PUTS
+
+; =============================================================================
+; Gegenstelle (Passiv)
+; =============================================================================
+GEGEN:
+	LD	DE, M_GEGH
+	CALL	PUTS
+	LD	A, (IFNR)
+	OR	A
+	JR	Z, GE_INT
+	DEC	A
+	CALL	IFWAHL
+	JR	GE_LOS
+
+	; Interaktiv: die ERSTE mit J bestaetigte Schnittstelle gilt
+GE_INT:	XOR	A
+GE_LP:	LD	(IFLAUF), A
+	CALL	IFWAHL
+	LD	DE, M_TDER
+	CALL	PUTS
+	CALL	PUTNAM
+	CALL	FRAGJN
+	JR	Z, GE_LOS
+	LD	A, (IFLAUF)
+	INC	A
+	LD	HL, IFANZ
+	CP	(HL)
+	JR	C, GE_LP
+	LD	DE, M_KEINE
+	CALL	PUTS
+	JP	ENDE
+
+GE_LOS:	LD	DE, M_GBER
+	CALL	PUTS
+	CALL	PUTNAM
+	LD	DE, M_GBE2
+	CALL	PUTS
+	; V0.1: Ruhezustand ohne Protokoll - laeuft bis Ctrl+C (KEYPOL springt
+	; dann nach ABBRUCH). Ab AP-ST5: Leitungsspiegel + Interrupt-Empfang.
+GE_RUH:	CALL	KEYPOL
+	JR	GE_RUH
+
+; =============================================================================
+; Maschinenerkennung (14.4)
+; Grundsatz: geschrieben wird nur in das Steuerregister einer SIO, die sich
+; vorher durch reines Lesen gezeigt hat (RR0 <> FFH); 5CH-5FH wird nur
+; gelesen (am K8915 ein Spiegel der CTC 2).
+;   K8915: SIO bei 40H (SIO 1) und SIO bei 50H (SIO 2).
+;   A5120: 40H-43H offener Bus, SIO bei 50H (A33), RR0 bei 5DH/5FH (A32).
+; Ausgang: CY = nicht erkannt; sonst MASCH/MBESCH/IFTAB/IFANZ gesetzt.
+; =============================================================================
+ERKENN:
+	LD	A, (MVORG)		; /M:A bzw. /M:K ueberstimmt die Erkennung
+	OR	A
+	JR	NZ, EK_SET
+	DI				; kein BIOS-Interrupt zwischen Zeiger und RR2
+	LD	C, SIO_K1
+	CALL	SIOFND
+	JR	Z, EK_A
+	LD	C, SIO_5X
+	CALL	SIOFND
+	LD	A, M_K8915
+	JR	NZ, EK_EI
+	JR	EK_UNB
+EK_A:	LD	C, SIO_5X
+	CALL	SIOFND
+	JR	Z, EK_UNB
+	LD	C, SIO_A32		; nur lesen!
+	CALL	SIORR0
+	LD	A, M_A5120
+	JR	NZ, EK_EI
+EK_UNB:	XOR	A
+EK_EI:	EI
+	OR	A
+	SCF
+	RET	Z
+EK_SET:	LD	(MASCH), A
+	LD	HL, BES_A
+	CP	M_A5120
+	JR	Z, EK_S1
+	LD	HL, BES_K
+EK_S1:	LD	(MBESCH), HL
+	LD	DE, 4
+	ADD	HL, DE
+	LD	E, (HL)			; +4 DW Schnittstellentabelle
+	INC	HL
+	LD	D, (HL)
+	INC	HL
+	LD	(IFTAB), DE
+	LD	A, (HL)			; +6 DB Anzahl
+	LD	(IFANZ), A
+	OR	A			; CY = 0
+	RET
+
+; SIORR0 - C = Datenport Kanal A einer vermuteten SIO. Liest NUR RR0 von
+; Kanal A und B. NZ = mindestens einer <> FFH (da antwortet etwas).
+SIORR0:	INC	C
+	IN	B, (C)			; RR0 Kanal A
+	INC	C
+	INC	C
+	IN	A, (C)			; RR0 Kanal B
+	AND	B
+	INC	A			; FFH -> 0
+	RET
+
+; SIOFND - wie SIORR0, danach (nur dann) RR2 ueber Kanal B lesen.
+; NZ = SIO gefunden (RR0 antwortet und RR2 <> FFH). C zeigt auf Steuer B.
+SIOFND:	CALL	SIORR0
+	RET	Z
+	LD	A, 2			; Registerzeiger 2 (wirkt nur fuer das naechste Lesen)
+	OUT	(C), A
+	IN	A, (C)			; RR2 Kanal B = Vektor
+	INC	A
+	RET
+
+; =============================================================================
+; Kommandozeile (14.3)
+;   SERTEST                      interaktiv
+;   SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n
+;   SERTEST G n                  Gegenstelle an Schnittstelle n
+;   /M:A bzw. /M:K               Rechner vorgeben (in jeder Form)
+; Ausgang: CY = Fehler.
+; =============================================================================
+PARSE:
+	LD	HL, CMDLEN
+	LD	E, (HL)
+	LD	D, 0
+	INC	HL
+	PUSH	HL
+	ADD	HL, DE
+	LD	(HL), 0			; Ende markieren
+	POP	HL
+PA_NX:	CALL	SKIPSP
+	OR	A
+	JR	Z, PA_END
+	CP	'/'
+	JR	Z, PA_OPT
+	; Wort ohne '/': erst die Rolle, dann die Nummer
+	LD	A, (ROLLE)
+	OR	A
+	JR	NZ, PA_NUM
+	LD	A, (HL)
+	CP	'T'
+	JR	Z, PA_ROL
+	CP	'G'
+	JP	NZ, PA_ERR
+PA_ROL:	LD	(ROLLE), A
+	INC	HL
+	JR	PA_WE
+PA_NUM:	LD	A, (IFNR)
+	OR	A
+	JP	NZ, PA_ERR
+	LD	A, (HL)
+	SUB	'1'
+	CP	9
+	JP	NC, PA_ERR
+	INC	A
+	LD	(IFNR), A
+	INC	HL
+	JR	PA_WE
+
+PA_OPT:	INC	HL
+	LD	A, (HL)
+	INC	HL
+	LD	DE, OPTP
+	CP	'P'
+	JR	Z, PA_SET
+	LD	DE, OPTG
+	CP	'G'
+	JR	Z, PA_SET
+	LD	DE, OPTA
+	CP	'A'
+	JR	Z, PA_SET
+	CP	'M'
+	JP	NZ, PA_ERR
+	LD	A, (HL)
+	CP	':'
+	JP	NZ, PA_ERR
+	INC	HL
+	LD	A, (HL)
+	INC	HL
+	LD	B, M_A5120
+	CP	'A'
+	JR	Z, PA_M
+	LD	B, M_K8915
+	CP	'K'
+	JP	NZ, PA_ERR
+PA_M:	LD	A, B
+	LD	(MVORG), A
+	JR	PA_WE
+PA_SET:	LD	A, 1
+	LD	(DE), A
+	; Wort muss hier enden
+PA_WE:	LD	A, (HL)
+	OR	A
+	JR	Z, PA_NX
+	CP	' '
+	JR	Z, PA_NX
+	JP	PA_ERR
+
+	; Gesamturteil
+PA_END:	LD	A, (ROLLE)
+	OR	A
+	JR	NZ, PA_E1
+	; interaktiv: nur /M: erlaubt
+	LD	HL, IFNR
+	LD	A, (OPTP)
+	OR	(HL)
+	LD	HL, OPTG
+	OR	(HL)
+	LD	HL, OPTA
+	OR	(HL)
+	JP	NZ, PA_ERR
+	RET				; CY = 0 von OR
+PA_E1:	LD	A, (IFNR)
+	OR	A
+	JP	Z, PA_ERR
+	LD	A, (ROLLE)
+	CP	'G'
+	JR	NZ, PA_T
+	; Gegenstelle: /P /G sinnlos, /A ist mit "G n" ohnehin gegeben
+	LD	A, (OPTP)
+	LD	HL, OPTG
+	OR	(HL)
+	JP	NZ, PA_ERR
+	RET
+PA_T:	LD	A, (OPTP)		; Tester ohne /P und /G: beide Teile
+	LD	HL, OPTG
+	OR	(HL)
+	RET	NZ
+	LD	A, 1
+	LD	(OPTP), A
+	LD	(OPTG), A
+	OR	A
+	RET
+PA_ERR:	SCF
+	RET
+
+SKIPSP:	LD	A, (HL)
+	CP	' '
+	RET	NZ
+	INC	HL
+	JR	SKIPSP
+
+; =============================================================================
+; Ende, Abbruch, Fehlermeldungen
+; =============================================================================
+HILFE:	LD	DE, M_HILFE
+	CALL	PUTS
+	JP	ENDE
+
+UNBEK:	LD	DE, M_UNBEK
+	CALL	PUTS
+	JP	ENDE
+
+; ABBRUCH - Ctrl+C an einer beliebigen Stelle (aus KEYPOL). Stapel neu,
+; aufraeumen, Warmstart.
+ABBRUCH:
+	LD	SP, STAPEL
+	LD	DE, M_ABBR
+	CALL	PUTS
+	; faellt durch
+ENDE:	CALL	AUFR
+	LD	C, F_BOOT
+	JP	BDOS
+
+; -----------------------------------------------------------------------------
+; AUFR - zentraler Aufraeumhaken (14.4 "Wiederherstellen"), aufgerufen bei
+; JEDEM Ende und bei Ctrl+C. Reihenfolge ab AP-ST3: DI, Vektortabellen-
+; eintraege zurueck, Kanal auf die BIOS-Vorgabe (Format, RTS/DTR, Interrupt-
+; freigaben, CTC-Zeitkonstante - Tabelle je Maschine), EI.
+; V0.1: die Erkennung hinterlaesst nur einen verbrauchten Registerzeiger,
+; es gibt nichts wiederherzustellen. Muss mehrfach aufrufbar sein.
+; -----------------------------------------------------------------------------
+AUFR:	RET
+
+; =============================================================================
+; Schnittstellentabelle
+; =============================================================================
+; IFWAHL - A = Index (0..IFANZ-1) -> IFZEIG = Eintrag. Erhaelt nichts.
+IFWAHL:	LD	(IFLAUF), A
+	LD	HL, (IFTAB)
+	LD	DE, IF_LEN
+	OR	A
+	JR	Z, IW_1
+IW_L:	ADD	HL, DE
+	DEC	A
+	JR	NZ, IW_L
+IW_1:	LD	(IFZEIG), HL
+	RET
+
+; PUTNAM - Name der gewaehlten Schnittstelle ausgeben.
+PUTNAM:	LD	HL, (IFZEIG)
+	CALL	LDHLHL
+	EX	DE, HL
+	JP	PUTS
+
+; IFART - A = Art der gewaehlten Schnittstelle. Erhaelt HL.
+IFART:	PUSH	HL
+	LD	HL, (IFZEIG)
+	INC	HL
+	INC	HL
+	LD	A, (HL)
+	POP	HL
+	RET
+
+; LDHLHL - HL = (HL)
+LDHLHL:	LD	A, (HL)
+	INC	HL
+	LD	H, (HL)
+	LD	L, A
+	RET
+
+; =============================================================================
+; Konsole - nur BDOS 6
+; =============================================================================
+; PUTC - Zeichen A ausgeben. Erhaelt BC, DE, HL.
+PUTC:	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	E, A
+	LD	C, F_DCIO
+	CALL	BDOS
+	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+; PUTS - '$'-terminierte Zeichenkette ab DE ausgeben. Erhaelt HL.
+PUTS:	LD	A, (DE)
+	CP	'$'
+	RET	Z
+	CALL	PUTC
+	INC	DE
+	JR	PUTS
+
+CRLF:	LD	A, CR
+	CALL	PUTC
+	LD	A, LF
+	JP	PUTC
+
+; KEYPOL - Taste abfragen, ohne zu warten. A = Zeichen oder 0.
+; Ctrl+C beendet das Programm (ueber ABBRUCH, kehrt nicht zurueck).
+; Erhaelt BC, DE, HL. Jede Warteschleife muss hierueber laufen.
+KEYPOL:	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	LD	E, 0FFH
+	LD	C, F_DCIO
+	CALL	BDOS
+	POP	BC
+	POP	DE
+	POP	HL
+	CP	CTRLC
+	JP	Z, ABBRUCH
+	RET
+
+; GETKEY - auf eine Taste warten (Ctrl+C wie KEYPOL). A = Zeichen.
+GETKEY:	CALL	KEYPOL
+	OR	A
+	JR	Z, GETKEY
+	RET
+
+; GROSS - A in Grossbuchstaben.
+GROSS:	CP	'a'
+	RET	C
+	CP	'z'+1
+	RET	NC
+	SUB	20H
+	RET
+
+; FRAGJN - " J/N" anhaengen, Taste holen, als J/N quittieren.
+; Z = Ja (nur j/J), NZ = Nein (alles andere).
+FRAGJN:	LD	DE, M_JN
+	CALL	PUTS
+	CALL	GETKEY
+	CALL	GROSS
+	CP	'J'
+	LD	A, 'J'
+	JR	Z, FJ_1
+	LD	A, 'N'
+FJ_1:	PUSH	AF
+	CALL	PUTC
+	CALL	CRLF
+	POP	AF
+	CP	'J'
+	RET
+
+; =============================================================================
+; Texte (ohne Umlaute)
+; =============================================================================
+M_KOPF:	DB	'Serial Test V0.1  (c) 2026 Olaf Krieger',CR,LF,'$'
+M_RECH:	DB	'Rechner: $'
+M_VORG:	DB	' (vorgegeben)$'
+M_ROLLE: DB	'Tester (Aktiv) oder Gegenstelle (Passiv)? T/G $'
+M_TDER:	DB	'Test der $'
+M_JN:	DB	'? J/N $'
+M_FPST:	DB	'Test mit Pruefstecker$'
+M_FGEG:	DB	'Test mit Gegenstelle$'
+M_KABEL: DB	'Nullmodemkabel stecken und auf der Gegenstelle die $'
+M_KABE2: DB	' waehlen.',CR,LF,'$'
+M_TASTE: DB	'Weiter mit beliebiger Taste.$'
+M_ZUS:	DB	'Zusammenfassung:',CR,LF,'$'
+M_EINR:	DB	'  $'
+M_DPKT:	DB	': $'
+M_NGEP:	DB	'nicht geprueft$'
+M_OK:	DB	'OK$'
+M_FEHL:	DB	'FEHLER$'
+M_ENTF:	DB	'ENTFAELLT$'
+M_SERT:	DB	'SERTEST $'
+M_ENDOK: DB	'SERTEST ENDE OK',CR,LF,'$'
+M_ENDFE: DB	'SERTEST ENDE FEHLER',CR,LF,'$'
+M_GEGH:	DB	'Gegenstelle (Passiv): Dieses Geraet mit einem passenden Kabel mit einem',CR,LF
+	DB	'anderen Rechner verbinden, auf dem Serial Test als Tester (Aktiv) laeuft.',CR,LF
+	DB	'Beenden mit Ctrl+C.',CR,LF,'$'
+M_KEINE: DB	'Keine Schnittstelle gewaehlt.',CR,LF,'$'
+M_GBER:	DB	'Gegenstelle an $'
+M_GBE2:	DB	' bereit.',CR,LF,'$'
+M_ABBR:	DB	CR,LF,'Abbruch mit Ctrl+C.',CR,LF,'$'
+M_NRF:	DB	'Diese Schnittstelle gibt es nicht.',CR,LF,'$'
+M_UNBEK: DB	'Rechner nicht erkannt. Mit /M:A (A5120) oder /M:K (K8915) vorgeben.',CR,LF,'$'
+M_HILFE: DB	'Aufruf:',CR,LF
+	DB	'  SERTEST                      interaktiv',CR,LF
+	DB	'  SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n',CR,LF
+	DB	'  SERTEST G n                  Gegenstelle an Schnittstelle n',CR,LF
+	DB	'  /P nur Pruefstecker, /G nur Gegenstelle, /A ohne Rueckfragen',CR,LF
+	DB	'  /M:A bzw. /M:K  Rechner A5120 bzw. K8915 vorgeben',CR,LF,'$'
+
+; Teile der Ergebniszeilen
+T_DLOOP: DB	'DATEN-LOOP$'
+T_LLOOP: DB	'LEITUNGEN-LOOP$'
+T_LEIT:	DB	'LEITUNGEN$'
+T_ECHO:	DB	'ECHO$'
+T_FLHW:	DB	'FLUSS-HW$'
+T_FLXO:	DB	'FLUSS-XON$'
+G_NEIN:	DB	'NICHT EINGEBAUT$'
+
+; =============================================================================
+; Maschinenbeschreibungen: DW Name, DW Liste, DW Schnittstellentabelle, DB Anzahl
+; =============================================================================
+BES_A:	DW	N_A5120, L_A5120, IF_A
+	DB	3
+BES_K:	DW	N_K8915, L_K8915, IF_K
+	DB	3
+
+N_A5120: DB	'A5120 (K8025)$'
+N_K8915: DB	'K8915 (K7028)$'
+
+L_A5120: DB	'Schnittstellen:',CR,LF
+	DB	'  1  DFUE/V.24      SIO A33 Kanal A   V.24',CR,LF
+	DB	'  2  DFUE/IFSS      SIO A33 Kanal B   IFSS',CR,LF
+	DB	'  3  Drucker        SIO A32 Kanal B   IFSS',CR,LF
+	DB	'  -  Tastatur K7637 SIO A32 Kanal A   (Tastatur)',CR,LF,'$'
+L_K8915: DB	'Schnittstellen:',CR,LF
+	DB	'  1  Drucker/IFSS1  SIO1 Kanal B      IFSS',CR,LF
+	DB	'  2  V.24           SIO1 Kanal A      V.24',CR,LF
+	DB	'  3  DFUE/IFSS2     SIO2 Kanal A      IFSS',CR,LF
+	DB	'  -  Tastatur K7672 SIO2 Kanal B      (Tastatur)',CR,LF,'$'
+
+; Schnittstellentabellen (Aufbau s. IF_LEN). Ports nach Entwurf 19 Par. 3/14.4.
+; A5120: Brueckenstellung W1:7 und X7-X8 "gezeichnet" angenommen (ZRE-CTC K0).
+IF_A:	DW	S_A1
+	DB	ART_V24, 50H, 51H, 0CH	; A33 A, Takt ZRE-CTC K0
+	DW	S_A2
+	DB	ART_IFS, 52H, 53H, 0CH	; A33 B, Takt ZRE-CTC K0 (geteilt mit 1)
+	DW	S_A3
+	DB	ART_IFS, 5EH, 5FH, 0	; A32 B, Takt CTC A34 K0 = Tastatur: NICHT anfassen
+IF_K:	DW	S_K1
+	DB	ART_IFS, 42H, 43H, 4AH	; SIO1 B, CTC1 K2
+	DW	S_K2
+	DB	ART_V24, 40H, 41H, 48H	; SIO1 A, CTC1 K0 (ueber Multiplexer D13)
+	DW	S_K3
+	DB	ART_IFS, 50H, 51H, 58H	; SIO2 A, CTC2 K0
+
+S_A1:	DB	'DFUE/V.24$'
+S_A2:	DB	'DFUE/IFSS$'
+S_A3:	DB	'Drucker$'
+S_K1:	DB	'Drucker/IFSS1$'
+S_K2:	DB	'V.24$'
+S_K3:	DB	'DFUE/IFSS2$'
+
+; =============================================================================
+; Variablen (beim Start geloescht)
+; =============================================================================
+VARANF:
+ROLLE:	DS	1		; 0 = noch offen, 'T', 'G'
+IFNR:	DS	1		; Schnittstelle aus der Kommandozeile (1..), 0 = interaktiv
+OPTP:	DS	1		; /P bzw. Teil Pruefstecker
+OPTG:	DS	1		; /G bzw. Teil Gegenstelle
+OPTA:	DS	1		; /A
+MVORG:	DS	1		; /M: (M_A5120/M_K8915), 0 = erkennen
+MASCH:	DS	1		; erkannte bzw. vorgegebene Maschine
+IFANZ:	DS	1		; Anzahl Schnittstellen
+IFLAUF:	DS	1		; laufender Index
+TFEHL:	DS	1		; Teilfehler an der laufenden Schnittstelle
+TGELAU:	DS	1		; an der laufenden Schnittstelle lief ein Teil
+GFEHL:	DS	1		; Gesamtfehler
+MBESCH:	DS	2		; -> Maschinenbeschreibung
+IFTAB:	DS	2		; -> Schnittstellentabelle
+IFZEIG:	DS	2		; -> gewaehlter Eintrag
+STATUS:	DS	8		; je Schnittstelle 0/1/2
+VAREND:
+VARLEN	EQU	VAREND-VARANF
+
+	DS	128
+STAPEL:
+
+	END	START
