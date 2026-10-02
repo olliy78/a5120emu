@@ -91,6 +91,9 @@ class MainWindow(QMainWindow):
             self.emulator = K1520Emulator(self._drive_types,
                                           machine=self.profil.maschine,
                                           em=modell.em_for(self._model))
+            # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
+            # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
+            self.emulator.set_key_repeat_realtime(True)
         except Exception as e:
             QMessageBox.critical(self, "Initialization Error", str(e))
             raise
@@ -1462,6 +1465,7 @@ class MainWindow(QMainWindow):
         # Recreate the machine with the new drive bay / model.
         try:
             new_emu = K1520Emulator(types, machine=self.profil.maschine, em=em)
+            new_emu.set_key_repeat_realtime(True)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
                                  f"Konnte Maschine nicht neu erzeugen:\n{e}")

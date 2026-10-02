@@ -228,6 +228,7 @@ public:
     // Keyboard (enqueued thread-safely, consumed in run())
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
     void keyRelease(uint32_t qt_keycode) override;
+    void setKeyRepeatRealtime(bool an) override { kbd_.setRepeatRealtime(an); }
 
     /**
      * @brief Zustand der Tastaturanzeigen (K7637-Doku §2.1/§2.2.3).

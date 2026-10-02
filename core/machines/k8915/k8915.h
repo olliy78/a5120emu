@@ -94,6 +94,7 @@ public:
      */
     void keyPress(uint32_t k, bool shift, bool ctrl) override;
     void keyRelease(uint32_t k) override;
+    void setKeyRepeatRealtime(bool an) override { kbd_.setWiederholungEchtzeit(an); }
     /** @brief K7672-Register 21H (Bit 3 = Senden frei/XON, Bit 0 = `ESC [?13h`),
      *         Stand am Ende des letzten run() — fadensicher lesbar. */
     uint8_t keyboardLeds() const override { return leds_.load(std::memory_order_relaxed); }

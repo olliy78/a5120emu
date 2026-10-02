@@ -576,6 +576,62 @@ TEST(K7637, Dauerfunktion_BuchstabeWiederholtNicht) {
     }
 }
 
+// ── Zeitbasis Echtzeit (tasten_uhr.h) ──────────────────────────────────────
+// Die Oberfläche zählt die Dauerfunktion in Wirtszeit: bei 10 × Rechnertakt darf
+// die Leertaste nicht schon nach 50 ms (= 500 ms Maschinenzeit) wiederholen.
+namespace {
+uint64_t g_wirt_ns = 0;
+uint64_t falscheWirtsuhr() { return g_wirt_ns; }
+
+/// Rechner mit @p faktor × Nenntakt: je Wirts-Millisekunde faktor × kMs Takte.
+struct Zeitraffer : Leitung {
+    uint64_t faktor;
+    explicit Zeitraffer(uint64_t f) : faktor(f) {
+        g_wirt_ns = 1'000'000'000;
+        kb.setRepeatClockSource(&falscheWirtsuhr);
+        kb.setRepeatRealtime(true);
+    }
+    /// Bis Wirtszeit @p ms fahren (in Schritten von 1 ms Wirtszeit).
+    std::vector<uint8_t> wirtBis(uint64_t ms) {
+        std::vector<uint8_t> out;
+        while (g_wirt_ns < 1'000'000'000 + ms * 1'000'000) {
+            g_wirt_ns += 1'000'000;
+            for (auto b : bis(t / kMs + faktor)) out.push_back(b);
+        }
+        return out;
+    }
+};
+}  // namespace
+
+/**
+ * @test K7637/Dauerfunktion_EchtzeitUnabhaengigVomRechnertakt
+ * @brief Echtzeit-Zeitbasis bei 10 × Takt: 500/100 ms in WIRTSzeit, nicht Maschinenzeit.
+ */
+TEST(K7637, Dauerfunktion_EchtzeitUnabhaengigVomRechnertakt) {
+    Zeitraffer l(10);
+    l.kb.keyPress(' ', false, false);
+    EXPECT_EQ(l.wirtBis(10).size(), 1u);           // der Anschlag
+    EXPECT_EQ(l.wirtBis(499).size(), 0u) << "in Maschinenzeit wären das ~50 Wiederholungen";
+    EXPECT_EQ(l.wirtBis(501).size(), 1u);
+    EXPECT_EQ(l.wirtBis(599).size(), 0u);
+    EXPECT_EQ(l.wirtBis(1001).size(), 5u);         // 600, 700, … 1000 ms
+    l.kb.keyRelease(' ');
+    EXPECT_EQ(l.wirtBis(2000).size(), 0u);
+}
+
+/**
+ * @test K7637/Dauerfunktion_EchtzeitNachPauseKeinSchwall
+ * @brief Steht der Rechner (Wirtszeit läuft weiter), kommt danach EINE Wiederholung,
+ *        nicht der ganze Rückstand auf einmal.
+ */
+TEST(K7637, Dauerfunktion_EchtzeitNachPauseKeinSchwall) {
+    Zeitraffer l(1);
+    l.kb.keyPress(' ', false, false);
+    EXPECT_EQ(l.wirtBis(10).size(), 1u);
+    g_wirt_ns += 5'000'000'000;                    // 5 s ohne service()
+    EXPECT_EQ(l.bis(l.t / kMs + 5).size(), 1u);
+}
+
 /**
  * @test K7637/KeyRelease_StopsRepeat
  * @brief Loslassen beendet die Dauerfunktion.

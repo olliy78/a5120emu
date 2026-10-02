@@ -85,6 +85,16 @@ K1520_API void k1520_key_press(K1520Handle h, uint32_t keycode, bool shift, bool
 K1520_API void k1520_key_release(K1520Handle h, uint32_t keycode);
 K1520_API void k1520_console_key(K1520Handle h, char c);
 /**
+ * @brief Zeitbasis der Tastenwiederholung: Echtzeit (true) oder Maschinentakte.
+ *
+ * Die echten Tastaturen (K7637, K7672) haben ihren eigenen Quarz.  Läuft der
+ * Rechner schneller als im Nenntakt, wiederholten sie in Maschinentakten
+ * gezählt entsprechend früher und schneller — bei 10 × käme schon ein
+ * gewöhnlicher Anschlag mehrfach an.  Die Oberfläche schaltet deshalb Echtzeit
+ * ein; Vorgabe ist Maschinenzeit (wiederholbare Tests).  Fadensicher.
+ */
+K1520_API void k1520_set_key_repeat_realtime(K1520Handle h, bool realtime);
+/**
  * @brief Zustand der Tastaturanzeigen — Bitbelegung je Tastaturmodell.
  *
  * **K8915 (K7672):** Abbild des Firmware-Registers 21H, nachgebildet Bit 3 =

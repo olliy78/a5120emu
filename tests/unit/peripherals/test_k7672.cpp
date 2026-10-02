@@ -615,6 +615,39 @@ TEST(K7672, WiederholungNurDieZuletztGedrueckteTaste)
     EXPECT_FALSE(a.kbd.wiederholtGerade());
 }
 
+// Zeitbasis Echtzeit (tasten_uhr.h): die Oberfläche zählt in Wirtszeit, damit ein
+// auf 10 × gestellter Rechner nicht zehnmal so früh und schnell wiederholt.
+namespace {
+uint64_t g_wirt_ns = 0;
+uint64_t falscheWirtsuhr() { return g_wirt_ns; }
+}  // namespace
+
+TEST(K7672, WiederholungInEchtzeitUnabhaengigVomRechnertakt)
+{
+    Aufbau a;
+    g_wirt_ns = 1'000'000'000;
+    a.kbd.setWiederholungUhrQuelle(&falscheWirtsuhr);
+    a.kbd.setWiederholungEchtzeit(true);
+    a.kbd.keyPress('x', false, false);
+    // Rechner zehnfach: je 1000 Maschinentakte vergeht 1/10 so viel Wirtszeit.
+    const double   ns_je_takt = 1e9 / 2'457'600.0 / 10.0;
+    const uint64_t basis = g_wirt_ns, t0 = a.t;
+    auto fahreRaffer = [&](uint64_t wirt_takte) {
+        std::vector<int> r;
+        for (uint64_t t = 0; t < 10 * wirt_takte; t += 1000) {
+            g_wirt_ns = basis + static_cast<uint64_t>(double(a.t + 1000 - t0) * ns_je_takt);
+            a.laufe(1000);
+            for (int b; (b = a.lies()) >= 0;) r.push_back(b);
+        }
+        return r;
+    };
+    EXPECT_EQ(fahreRaffer(VERZ - 20'000), (std::vector<int>{'x'}))
+        << "in Maschinenzeit gezählt wäre die Verzögerung nach 1/10 abgelaufen";
+    EXPECT_EQ(fahreRaffer(40'000 + 2 * FOLGE), (std::vector<int>{'x', 'x', 'x'}));
+    a.kbd.keyRelease('x');
+    EXPECT_TRUE(fahreRaffer(3 * FOLGE).empty());
+}
+
 /// SCP-Modus: die Firmware wiederholt dort das letzte Zeichen (0195H, `LD SIO,0EH`).
 TEST(K7672, WiederholungScpWiederholtDasZeichen)
 {

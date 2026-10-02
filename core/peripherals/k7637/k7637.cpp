@@ -46,8 +46,11 @@ void K7637::serialize(std::vector<uint8_t>& out) const {
     putPod(out, shift_);
     putPod(out, ctrl_);
     // Früher zwei int-Zähler (ms) an dieser Stelle — gleich breit, das
-    // Snapshot-Layout bleibt damit unverändert.
-    putPod(out, repeat_due_cycle_);
+    // Snapshot-Layout bleibt damit unverändert.  Gespeichert wird weiter der
+    // Fälligkeitstakt (0 = keine Dauerfunktion), in Nenntakten ab cur_cycle_.
+    const uint64_t repeat_due_cycle = repeat_aktiv_
+        ? cur_cycle_ + static_cast<uint64_t>(std::max<int64_t>(repeat_rest_, 1)) : 0;
+    putPod(out, repeat_due_cycle);
     putPod(out, led_mask_);
     putPod(out, edge_acc_);
     putPod(out, beep_until_cycle_);
@@ -64,7 +67,8 @@ bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
     ok = ok && getPod(p, end, pressed_scancode_);
     ok = ok && getPod(p, end, shift_);
     ok = ok && getPod(p, end, ctrl_);
-    ok = ok && getPod(p, end, repeat_due_cycle_);
+    uint64_t repeat_due_cycle = 0;
+    ok = ok && getPod(p, end, repeat_due_cycle);
     ok = ok && getPod(p, end, led_mask_);
     ok = ok && getPod(p, end, edge_acc_);
     ok = ok && getPod(p, end, beep_until_cycle_);
@@ -72,6 +76,10 @@ bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
     ok = ok && getPod(p, end, next_tx_cycle_);
     uint32_t n = 0;
     ok = ok && getPod(p, end, n);
+    repeat_aktiv_ = repeat_due_cycle != 0;
+    repeat_rest_  = repeat_due_cycle > cur_cycle_
+        ? static_cast<int64_t>(repeat_due_cycle - cur_cycle_) : 0;
+    if (repeat_aktiv_) repeat_uhr_.start(cur_cycle_);
     tx_queue_.clear();
     for (uint32_t i = 0; i < n && ok; ++i) {
         uint64_t rel = 0; uint8_t byte = 0;
@@ -103,7 +111,9 @@ void K7637::keyPress(int qt_keycode, bool shift, bool ctrl) {
     pressed_scancode_ = code;
     shift_ = shift;
     ctrl_  = ctrl;
-    repeat_due_cycle_ = isRepeatCode(code) ? cur_cycle_ + REPEAT_DELAY_CYCLES : 0;
+    repeat_aktiv_ = isRepeatCode(code);
+    repeat_rest_  = static_cast<int64_t>(REPEAT_DELAY_CYCLES);
+    if (repeat_aktiv_) repeat_uhr_.start(cur_cycle_);
 
     sendByte(code);
 }
@@ -112,7 +122,7 @@ void K7637::keyRelease(int qt_keycode) {
     if (pressed_key_ == qt_keycode) {
         pressed_key_      = 0;
         pressed_scancode_ = 0;
-        repeat_due_cycle_ = 0;
+        repeat_aktiv_     = false;
     }
 }
 
@@ -293,13 +303,23 @@ bool K7637::service(uint64_t now_cycles) {
     cur_cycle_ = now_cycles;
     bool touched = false;
     // Dauerfunktion: solange die Taste gehalten ist, alle 100 ms erneut senden.
-    // Nur Dauerfunktionscodes setzen repeat_due_cycle_ (s. keyPress).
-    if (repeat_due_cycle_ != 0 && now_cycles >= repeat_due_cycle_) {
-        while (repeat_due_cycle_ <= now_cycles) {
-            // Ab dem FÄLLIGKEITStakt senden, nicht ab „jetzt" — sonst hinge
-            // die Wiederholzeit davon ab, wie oft service() gerufen wird.
-            sendByteAt(pressed_scancode_, repeat_due_cycle_);
-            repeat_due_cycle_ += REPEAT_PERIOD_CYCLES;
+    // Nur Dauerfunktionscodes setzen repeat_aktiv_ (s. keyPress).
+    if (repeat_aktiv_) {
+        repeat_rest_ -= static_cast<int64_t>(repeat_uhr_.schritt(now_cycles));
+        while (repeat_rest_ <= 0) {
+            if (repeat_uhr_.echtzeit()) {
+                // Echtzeit: genau EIN Byte, jetzt.  Wirtszeit lässt sich nicht in
+                // Maschinentakte zurückrechnen, und nach einer Pause (Rechner
+                // angehalten, Wirt ausgelastet) käme sonst ein ganzer Schwall.
+                sendByteAt(pressed_scancode_, now_cycles);
+                repeat_rest_ = static_cast<int64_t>(REPEAT_PERIOD_CYCLES);
+                break;
+            }
+            // Maschinenzeit: ab dem FÄLLIGKEITStakt senden, nicht ab „jetzt" —
+            // sonst hinge die Wiederholzeit davon ab, wie oft service() gerufen wird.
+            const uint64_t ueber = static_cast<uint64_t>(-repeat_rest_);
+            sendByteAt(pressed_scancode_, now_cycles - std::min(ueber, now_cycles));
+            repeat_rest_ += static_cast<int64_t>(REPEAT_PERIOD_CYCLES);
         }
     }
     // Deliver every byte whose serial transmission has completed.

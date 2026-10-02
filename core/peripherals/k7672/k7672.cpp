@@ -114,7 +114,6 @@ void K7672::sende(uint8_t b, uint64_t ab)
 
 bool K7672::service(uint64_t now)
 {
-    const uint64_t dt = now > jetzt_ ? now - jetzt_ : 0;
     jetzt_ = now;
     bool geaendert = false;
     if (sio_) {
@@ -131,9 +130,9 @@ bool K7672::service(uint64_t now)
             geaendert = true;
         }
     }
-    // Die Wiederholung läuft in MASCHINENZEIT, hier im ohnehin je Befehl gerufenen
-    // Pfad — nicht über einen Aufruf, den niemand macht (K7637: AP-S9).
-    wiederholungTakt(dt);
+    // Die Wiederholung läuft hier im ohnehin je Befehl gerufenen Pfad — nicht über
+    // einen Aufruf, den niemand macht (K7637: AP-S9).  Zeitbasis: wdh_uhr_.
+    wiederholungTakt();
     return geaendert;
 }
 
@@ -484,6 +483,7 @@ void K7672::wiederholungStart(uint32_t schluessel, std::string bytes)
     wdh_.schluessel = schluessel;
     wdh_.bytes      = std::move(bytes);
     wdh_.rest       = static_cast<int64_t>(WDH_VERZOEGERUNG_DURCHLAEUFE * ABTASTDURCHLAUF_TAKTE);
+    wdh_uhr_.start(jetzt_);
 }
 
 void K7672::wiederholungEnde(uint32_t schluessel)
@@ -491,9 +491,11 @@ void K7672::wiederholungEnde(uint32_t schluessel)
     if (wdh_.aktiv && wdh_.schluessel == schluessel) wiederholungStopp();
 }
 
-void K7672::wiederholungTakt(uint64_t dt)
+void K7672::wiederholungTakt()
 {
     if (!wdh_.aktiv) return;
+    // Auch unter DC3 abholen, damit die gesperrte Zeit verfällt statt nachzuzählen.
+    const uint64_t dt = wdh_uhr_.schritt(jetzt_);
     if (gesperrt_) return;            // 0168H: unter DC3 steht der Zähler still
     wdh_.rest -= static_cast<int64_t>(dt);
     if (wdh_.rest > 0) return;

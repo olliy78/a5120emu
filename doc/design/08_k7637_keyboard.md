@@ -83,6 +83,20 @@ Wächter: `KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot` (CP/A bis
 genau ein „A"; ohne die Behebung rot mit 1 Leerzeichen),
 `K7637.Dauerfunktion_*`.
 
+**Zeitbasis Echtzeit für die Oberfläche (2026-10-02).** In Maschinenzeit gezählt
+schrumpfen 500/100 ms bei 10 × Rechnertakt auf 50/10 ms — ein gewöhnlicher
+Anschlag der Leertaste kam mehrfach an. Die echte Tastatur hat ihren eigenen
+Quarz; die Oberfläche schaltet deshalb mit `k1520_set_key_repeat_realtime`
+(`K1520Machine::setKeyRepeatRealtime`) auf **Wirtszeit** um
+(`core/peripherals/tasten_uhr.h`, gemeinsam mit der K7672). Gezählt wird weiter in
+Nenntakten (`REPEAT_*_CYCLES` bleiben), die Wirtsuhr wird nur gelesen, solange eine
+Dauerfunktion läuft. In Echtzeit geht je Fälligkeit **genau ein** Byte ab „jetzt"
+auf die Leitung — nach einer Pause des Rechners kein Schwall. **Vorgabe des Kerns
+bleibt Maschinenzeit** (Tests und Werkzeuge laufen ungebremst und müssen
+wiederholbar sein). Im Snapshot steht weiter der Fälligkeitstakt (Layout
+unverändert). Wächter: `K7637.Dauerfunktion_Echtzeit*`,
+`K7672.WiederholungInEchtzeitUnabhaengigVomRechnertakt`.
+
 ### 2.3 Kommandos (K8025 → K7637) — erkannt an der **Flankenzahl**
 
 Die Tastatur wertet **nicht den Bytewert** aus. Die Impulse der empfangenen
@@ -631,7 +645,7 @@ derselben Funktion, die der Kern beim Tastendruck benutzt.
 | Was | Wo |
 |-----|----|
 | Tastencodes, Ctrl, ET1≠ENTER, Kursor, Wiederholung, LED-Kommandos, Byte-Laufzeit | `tests/unit/peripherals/test_k7637.cpp` |
-| Dauerfunktion nur für die ROM-Liste 650H, in Maschinenzeit (§2.2a) | `K7637.Dauerfunktion_*`, `KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot` |
+| Dauerfunktion nur für die ROM-Liste 650H, in Maschinenzeit — Oberfläche: Echtzeit (§2.2a) | `K7637.Dauerfunktion_*`, `KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot` |
 | Rohcode-Weg (§5.2) | `K7637.RawCode_IsSentVerbatim`, `K7637.RawCode_IgnoresCtrl` |
 | Kommandodekodierung über Flankenzählung (§2.3) | `K7637.CommandDecoding_CountsFallingEdges`, `K7637.CommandDecoding_IgnoresTheByteValue`, `K7637.PreCommand_NeedsTheSecondByte` |
 | Anzeigen und Ton (§2.4) | `K7637.LedCommands_ToggleTheirDisplay`, `K7637.ErrorDisplay_TogglesAndBeepsWhenSwitchedOn`, `K7637.BeepCommand_RunsForAboutOneSecond`, `K7637.ResetCommand_ClearsAllDisplays`, `K7637.EveryCommandByteIsAcknowledged` |
