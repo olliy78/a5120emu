@@ -107,8 +107,9 @@ public:
      *        am Ende des ERSTEN Sync-Bytes einer Gruppe, und nur, wenn dessen Bytefenster
      *        ganz nach dem Scharfmachen liegt (A5120/K8915 unverändert).  true: jedes A1
      *        bzw. C2 der Gruppe setzt es (der Markendecoder erkennt den fehlenden Takt in
-     *        jedem Sync-Byte), auch eins, das beim Scharfmachen schon halb unter dem Kopf
-     *        durch ist.  Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P1d): sein ROM
+     *        jedem Sync-Byte); ist das zuletzt FERTIGE Byte beim Scharfmachen ein
+     *        Sync-Byte, gilt die Marke sofort (nicht schon, wenn der Kopf erst IN einem
+     *        steht — dann läge noch das Lückenbyte im Daten-PIO, AP-P3).  Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P1d): sein ROM
      *        schlägt `B5H/85H` (= MK-FF rücksetzen/scharf) in einer Schleife von 54 Takten
      *        an und fragt Tor B nur 12 Takte danach ab (02DDH–02E5H) — mit nur der ersten
      *        Gruppe und ganzen Fenstern fände es nie eine Marke.

@@ -432,17 +432,24 @@ void K5122::waitMkePlanen(bool neu_scharf)
     const uint64_t p  = static_cast<uint64_t>(waitByteperiode());
     const uint64_t ph = (static_cast<uint64_t>(index_cycle_acc_) + (t - w_now_)) % P;
     const uint64_t rs = t - ph;
-    // Erstes Fenster, das NACH t beginnt — bzw. mit setMkeJedesSyncByte das, in dem t
-    // liegt (sein Ende, die Erkennung, kommt noch).
-    const uint64_t j0 = mke_jedes_sync_ ? ph / p : (ph + p - 1) / p;
+    // Erstes Fenster, das NACH t beginnt — bzw. mit setMkeJedesSyncByte schon das
+    // zuletzt FERTIG gewordene (j0 − 1, s. u.).
+    const uint64_t j_lauf = ph / p;                // Fenster, in dem t liegt
+    const uint64_t j0 = mke_jedes_sync_ ? (j_lauf > 0 ? j_lauf - 1 : 0) : (ph + p - 1) / p;
     for (size_t s0 : gruppen) {
         if (s0 >= j0 && (s0 + 1) * p <= P) {
-            // setMkeJedesSyncByte: steht der Kopf beim Scharfmachen schon IN einem
-            // Sync-Byte, gilt die Marke sofort — Ersatz für den Gleichlauf-Zufall, mit dem
-            // die Abfrageschleife des PRG-710-ROMs am Gerät früher oder später ein Sync-Byte
-            // im Abfragefenster erwischt (doc/design/20_prg710.md AP-P1d).  Ohne ihn liefe
-            // das starre Zeitraster des Emulators immer an denselben Gruppen vorbei.
-            w_mke_time_ = (mke_jedes_sync_ && s0 == j0) ? t : rs + (s0 + 1) * p;
+            // setMkeJedesSyncByte: ist das zuletzt fertig gewordene Byte (j_lauf − 1, es
+            // liegt noch im Daten-PIO) ein Sync-Byte, gilt die Marke sofort — Ersatz für den
+            // Gleichlauf-Zufall, mit dem die Abfrageschleife des PRG-710-ROMs am Gerät
+            // früher oder später ein Sync-Byte im Abfragefenster erwischt
+            // (doc/design/20_prg710.md AP-P1d).  Ohne ihn liefe das starre Zeitraster des
+            // Emulators immer an denselben Gruppen vorbei.
+            // Bis AP-P3 galt „sofort“ schon, wenn der Kopf IN einem Sync-Byte stand: beim
+            // ERSTEN Byte der Gruppe lag dann noch das Byte davor (00H) im Daten-PIO, das
+            // erste `IN (16H)` holte es als „Marke“ und das Datenfeld kam um die Sync-Bytes
+            // verschoben an — „DISKERROR C6“ am Zweitlader des PRG 710 (AP-P3).
+            w_mke_time_ = (mke_jedes_sync_ && j_lauf > 0 && s0 == j_lauf - 1)
+                        ? t : rs + (s0 + 1) * p;
             return;
         }
     }

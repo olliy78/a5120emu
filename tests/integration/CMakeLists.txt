@@ -115,3 +115,8 @@ k1520_add_test(prg710_maschine SRC test_prg710_maschine.cpp
 k1520_add_test(prg710_boot SRC test_prg710_boot.cpp
                           LIBS k1520_prg710 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 3 (AP-P3): UDOS 4.3 bis zum Prompt.
+k1520_add_test(prg710_udos SRC test_prg710_udos.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
