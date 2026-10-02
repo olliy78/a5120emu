@@ -475,8 +475,7 @@ Karten `k2521`, `prg710_speicher` (Seitenregister E8H–EBH), `atp590068`. **In
 den Seitenregistern), eigenes Programm **prg710emu** (AP-P5d), dritter Starter im Paket
 (AP-P5g), DiskTool `boot-scpx`/`--prg` (AP-P6). **Stand 2026-10-02:** Etappen 1–6 fertig
 (beide Varianten booten UDOS bis `%` und SCPX bis `A>`, FORMAT läuft); offen
-[Anwender]-Fragen (Kartenbefund, Tastenbild, Disketten), AP-P3b (Hänger an unformatierter
-Diskette/Seite, in Arbeit), EPROMmer (P7), SIF1000 (P8).
+[Anwender]-Fragen (Kartenbefund, Tastenbild, Disketten), AP-P3b (leere Spur = Rauschen im K5122-`/WAIT`-Weg, nur halb belegt — Merkposten), EPROMmer (P7), SIF1000 (P8).
 
 **Vor Arbeiten daran: `doc/merkposten/prg710.md` lesen** — die Festlegungen mit Wächter
 (Speicherverwaltung als Arbeitsmodell, Marken-FF low-aktiv am 710 + `setMkeJedesSyncByte`
