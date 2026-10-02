@@ -1,6 +1,6 @@
 /**
  * @file dbg_machine.h
- * @brief Die Maschine hinter k1520dbg — A5120 ODER K8915 (§8a AP-E4d).
+ * @brief Die Maschine hinter k1520dbg — A5120, K8915 (§8a AP-E4d) ODER PRG 710/710-1 (AP-P5c).
  *
  * Der Debugger ist über Jahre am A5120 gewachsen und spricht die Maschine an rund
  * 200 Stellen als `m.xxx()` an.  Statt jede Stelle zu verzweigen, steht hier EINE
@@ -15,7 +15,10 @@
  *    `where`/`stateLine` nicht verzweigen müssen.  Die KOMMANDOS, die es nur am A5120
  *    gibt, fängt der Debugger vorher ab und meldet „nicht vorhanden“
  *    (@ref nurA5120Kommando) — hier wird nichts davon wirklich ausgeführt;
- *  - **nur K8915**: über @ref k8915() (A8H-Speicherbild, Bänke, ATS, K7672).
+ *  - **nur K8915**: über @ref k8915() (A8H-Speicherbild, Bänke, ATS, K7672);
+ *  - **nur PRG 710/710-1**: über @ref prg() (Speicherverwaltung E8H–EBH, K2521, K8025,
+ *    8279/K7609 bzw. K7672 an A32-B).  Der PRG zählt wie der K8915 als „eine CPU“
+ *    (@ref einCpu) — ZVE2-/Snapshot-Kommandos sind dort ebenfalls „nicht vorhanden“.
  *
  * Header-only, weil nur k1520dbg sie benutzt; boot_trace fährt den K8915 in einem
  * eigenen Zweig (tools/boot_trace_k8915.cpp).
@@ -25,6 +28,7 @@
 #pragma once
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
+#include "core/machines/prg710/prg710.h"
 #include <memory>
 #include <set>
 #include <string>
@@ -36,9 +40,12 @@ namespace dbgm {
 using IntSource = A5120Machine::IntSource;
 
 /** @brief Maschinenwahl aus `--machine`; false bei unbekanntem Namen. */
-inline bool parseMachine(const std::string& s, bool& k8915) {
-    if (s == "a5120" || s == "A5120") { k8915 = false; return true; }
-    if (s == "k8915" || s == "K8915") { k8915 = true;  return true; }
+enum class Art { A5120, K8915, Prg710, Prg710_1 };
+inline bool parseMachine(const std::string& s, Art& art) {
+    if (s == "a5120" || s == "A5120")       { art = Art::A5120;    return true; }
+    if (s == "k8915" || s == "K8915")       { art = Art::K8915;    return true; }
+    if (s == "prg710" || s == "PRG710")     { art = Art::Prg710;   return true; }
+    if (s == "prg710-1" || s == "PRG710-1") { art = Art::Prg710_1; return true; }
     return false;
 }
 
@@ -73,6 +80,25 @@ inline std::string speicherbild(const K8915Zre& zre) {
     return s;
 }
 
+/**
+ * @brief Speicherbild des PRG je 4-KB-Seite: `Z` ZRE, `V` Seite F mit VRAM,
+ *        `0`–`F` physische OPS-Seite, `-` leer (wie boot_trace).
+ */
+inline std::string speicherbild(Prg710Machine& m) {
+    std::string s;
+    for (int n = 0; n < 16; ++n) {
+        const uint16_t a = static_cast<uint16_t>((n << 12) | (n == 15 ? 0x800 : 0));
+        const auto o = m.speicher().ortVon(a);
+        switch (o.quelle) {
+            case Prg710Speicher::Quelle::Zre:  s += 'Z'; break;
+            case Prg710Speicher::Quelle::Vram: s += 'V'; break;
+            case Prg710Speicher::Quelle::Ops:  s += "0123456789ABCDEF"[o.offset >> 12]; break;
+            case Prg710Speicher::Quelle::Leer: s += '-'; break;
+        }
+    }
+    return s;
+}
+
 /** @brief Die leuchtenden Lampen des Anzeigefelds 61H (aktiv low, §3.6). */
 inline std::string lampen61(uint8_t v) {
     static const char* n[4] = {"Input File", "Output File", "RUN Mode", "ERROR"};
@@ -85,27 +111,43 @@ inline std::string lampen61(uint8_t v) {
 class DbgMachine {
 public:
     /// @p cfg gilt nur für den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
-    explicit DbgMachine(bool k8915, const A5120Machine::Config& cfg = {}) {
-        if (k8915) k8_ = std::make_unique<K8915Machine>();
-        else       a5_ = std::make_unique<A5120Machine>(cfg);
+    explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}) {
+        if (art == Art::K8915) k8_ = std::make_unique<K8915Machine>();
+        else if (art == Art::Prg710 || art == Art::Prg710_1) {
+            Prg710Machine::Config pc;
+            pc.variante = art == Art::Prg710_1 ? Prg710Machine::Config::Variante::Prg710_1
+                                               : Prg710Machine::Config::Variante::Prg710;
+            p7_ = std::make_unique<Prg710Machine>(pc);
+        }
+        else a5_ = std::make_unique<A5120Machine>(cfg);
     }
 
     bool isK8915() const { return k8_ != nullptr; }
-    const char* name() const { return k8_ ? "K8915" : "A5120"; }
+    bool isPrg() const { return p7_ != nullptr; }
+    bool isPrg1() const { return p7_ && p7_->variante() == Prg710Machine::Config::Variante::Prg710_1; }
+    /// Eine CPU, keine ZVE2/BUSRQ/Snapshots (K8915 und PRG).
+    bool einCpu() const { return a5_ == nullptr; }
+    const char* name() const {
+        return k8_ ? "K8915" : p7_ ? (isPrg1() ? "PRG 710-1" : "PRG 710") : "A5120"; }
     /// Anzeigename der (Haupt-)CPU in Meldungen: am A5120 „ZVE1“ (es gibt zwei).
-    const char* cpuName() const { return k8_ ? "CPU" : "ZVE1"; }
+    const char* cpuName() const { return a5_ ? "ZVE1" : "CPU"; }
     A5120Machine* a5120() { return a5_.get(); }
     K8915Machine* k8915() { return k8_.get(); }
+    Prg710Machine* prg() { return p7_.get(); }
     /// Erweiterungsmodul (A5120.16); nullptr ohne `--em` und immer am K8915.
     EM* em() { return a5_ ? a5_->em() : nullptr; }
-    K1520Machine& base() { return k8_ ? static_cast<K1520Machine&>(*k8_) : *a5_; }
+    K1520Machine& base() {
+        if (k8_) return *k8_;
+        if (p7_) return *p7_;
+        return *a5_;
+    }
 
     // ─── Lebenslauf ──────────────────────────────────────────────────────────
     void powerOn() { base().powerOn(); }
     void reset()   { base().reset(); }
     int  run(int n) { return base().run(n); }
     void stop()    { base().stop(); }
-    void clearStop() { if (k8_) k8_->clearStop(); else a5_->clearStop(); }
+    void clearStop() { if (k8_) k8_->clearStop(); else if (p7_) p7_->clearStop(); else a5_->clearStop(); }
 
     // ─── Disketten ───────────────────────────────────────────────────────────
     bool mountDisk(int d, const std::string& p, const std::string& f, bool wp) {
@@ -131,23 +173,34 @@ public:
      */
     uint8_t screenByte(int row, int col) {
         if (k8_) return (uint8_t)(k8_->screenChar(col, row) & 0x7F);
+        if (p7_) return (uint8_t)(p7_->screenChar(col, row) & 0x7F);   // VRAM nur bei E8H[F]=FFH in CPU-Sicht
         return a5_->memReadDebug((uint16_t)(0xF800 + row * 80 + col));
     }
 
     // ─── CPU ─────────────────────────────────────────────────────────────────
-    Z80& cpuDebug() { return k8_ ? k8_->zre().cpu() : a5_->cpuDebug(); }
+    Z80& cpuDebug() {
+        if (k8_) return k8_->zre().cpu();
+        if (p7_) return p7_->zre().cpu();
+        return a5_->cpuDebug();
+    }
     uint16_t cpuPC() { return cpuDebug().PC; }
     uint16_t cpuSP() { return cpuDebug().SP; }
     uint64_t cpuCycles() { return cpuDebug().cycles; }
     /// Maschinenuhr: am A5120 beide CPUs, am K8915 = CPU-Takte samt /WAIT-Takten.
-    uint64_t machineCycles() { return k8_ ? k8_->totalCycles() : a5_->machineCycles(); }
+    uint64_t machineCycles() {
+        if (k8_) return k8_->totalCycles();
+        if (p7_) return p7_->totalCycles();
+        return a5_->machineCycles();
+    }
     bool isRomEnabled() {
         if (k8_) return k8_->zre().ortVon(0x0000).quelle == K8915Zre::Quelle::Rom;
+        if (p7_) return p7_->speicher().ortVon(0x0000).quelle == Prg710Speicher::Quelle::Zre;
         return a5_->isRomEnabled();
     }
 
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) {
         if (k8_) k8_->setCpuTraceCallback(std::move(cb));
+        else if (p7_) p7_->setCpuTraceCallback(std::move(cb));
         else     a5_->setCpuTraceCallback(std::move(cb));
     }
     void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
@@ -155,6 +208,7 @@ public:
     }
     void setBusTrace(K1520Bus::BusTrace cb) {
         if (k8_) k8_->setBusTrace(std::move(cb));
+        else if (p7_) p7_->setBusTrace(std::move(cb));
         else     a5_->setBusTrace(std::move(cb));
     }
 
@@ -174,16 +228,24 @@ public:
 
     // ─── Karten ──────────────────────────────────────────────────────────────
     K5122::DebugState k5122State() {
-        return k8_ ? k8_->afs().debugState() : a5_->k5122State();
+        if (k8_) return k8_->afs().debugState();
+        if (p7_) return p7_->afs().debugState();
+        return a5_->k5122State();
     }
     Z80PIO::DebugState k5122CtrlPioState() {
-        return k8_ ? k8_->afs().ctrlPio().debugState() : a5_->k5122CtrlPioState();
+        if (k8_) return k8_->afs().ctrlPio().debugState();
+        if (p7_) return p7_->afs().ctrlPio().debugState();
+        return a5_->k5122CtrlPioState();
     }
     Z80PIO::DebugState k5122DataPioState() {
-        return k8_ ? k8_->afs().dataPio().debugState() : a5_->k5122DataPioState();
+        if (k8_) return k8_->afs().dataPio().debugState();
+        if (p7_) return p7_->afs().dataPio().debugState();
+        return a5_->k5122DataPioState();
     }
     const K1520Bus::IntAck& lastIntAck() {
-        return k8_ ? k8_->lastIntAck() : a5_->lastIntAck();
+        if (k8_) return k8_->lastIntAck();
+        if (p7_) return p7_->lastIntAck();
+        return a5_->lastIntAck();
     }
 
     /** @brief Alle Interruptquellen in Kettenfolge (K8915: K5122 → ZRE-CTC → ATS). */
@@ -191,6 +253,48 @@ public:
         if (a5_) return a5_->interruptSources();
         std::vector<IntSource> out;
         int pos = 0;
+        if (p7_) {   // Kette K5122 → ZRE (CTC, PIO) → K8025 (SIO A33, SIO A32)
+            auto addPio = [&](const Z80PIO::DebugState& st, const char* name) {
+                for (int p = 0; p < 2; ++p) {
+                    IntSource s;
+                    s.device = std::string(name) + " " + (p ? "B" : "A");
+                    s.vector = st.port[p].vector; s.ie = st.port[p].ie;
+                    s.pending = st.port[p].pending; s.ius = st.port[p].ius;
+                    s.iei = st.port[p].iei; s.chain = pos++;
+                    out.push_back(std::move(s));
+                }
+            };
+            auto addCtc = [&](Z80CTC& ctc, const char* name) {
+                auto st = ctc.debugState();
+                for (int c = 0; c < 4; ++c) {
+                    IntSource s;
+                    s.device = std::string(name) + " ch" + char('0' + c);
+                    s.vector = (uint8_t)(st.vecBase | (c << 1));
+                    s.ie = st.ch[c].intEn; s.pending = st.ch[c].intPending;
+                    s.ius = st.ch[c].ius; s.iei = st.ch[c].iei; s.chain = pos++;
+                    out.push_back(std::move(s));
+                }
+            };
+            auto addSio = [&](Z80SIO& sio, const char* name) {
+                auto st = sio.debugState();
+                for (int c = 0; c < 2; ++c) {
+                    IntSource s;
+                    s.device = std::string(name) + " " + (c ? "B" : "A");
+                    s.vector = st.ch[1].wr2; s.exact = false;
+                    s.ie = (st.ch[c].wr1 & 0x1F) != 0;
+                    s.pending = st.ch[c].irqRx || st.ch[c].irqTx || st.ch[c].irqExt;
+                    s.ius = st.ch[c].ius; s.iei = st.ch[c].iei; s.chain = pos++;
+                    out.push_back(std::move(s));
+                }
+            };
+            addPio(p7_->afs().ctrlPio().debugState(), "K5122 ctrl-PIO");
+            addPio(p7_->afs().dataPio().debugState(), "K5122 data-PIO");
+            addCtc(p7_->zre().ctc(), "ZRE CTC");
+            addPio(p7_->zre().pio().debugState(), "ZRE PIO");
+            addSio(p7_->ass().sioA33(), "K8025 SIO A33");
+            addSio(p7_->ass().sioA32(), isPrg1() ? "K8025 SIO A32 (B=Tastatur K7672)" : "K8025 SIO A32");
+            return out;
+        }
         auto addPio = [&](const Z80PIO::DebugState& st, const char* name) {
             for (int p = 0; p < 2; ++p) {
                 IntSource s;
@@ -237,6 +341,7 @@ public:
 private:
     std::unique_ptr<A5120Machine> a5_;
     std::unique_ptr<K8915Machine> k8_;
+    std::unique_ptr<Prg710Machine> p7_;
     Z80 dummy_zve2_;   ///< K8915: Platzhalter, nie ausgeführt (Kommandos sind abgefangen)
 };
 

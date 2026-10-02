@@ -18,9 +18,12 @@
  * @license MIT
  */
 #include "tools/boot_trace_prg710.h"
+#include "tools/coverage_diff.h"
 #include "tools/event_bp.h"
 #include "tools/z80dis_min.h"
 #include "core/machines/prg710/prg710.h"
+#include "core/peripherals/k7609/k7609.h"
+#include "tools/dbg_machine.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -93,6 +96,17 @@ bool inTastaturabfrage(Prg710Machine& m, bool v1, uint16_t pc) {
     if (m.speicher().ortVon(0).quelle != Quelle::Ops) return false;
     if (v1) return (pc >= 0x0070 && pc <= 0x0077) || (pc >= 0x0163 && pc <= 0x016A);
     return (pc >= 0x007D && pc <= 0x0084) || (pc >= 0x0160 && pc <= 0x0167);
+}
+
+/// Letzte nicht leere Bildzeile (ohne Randleerzeichen).
+std::string letzteZeile(const std::string& bild) {
+    for (int r = 23; r >= 0; --r) {
+        std::string z = bild.substr(static_cast<size_t>(r) * 80, 80);
+        while (!z.empty() && z.back() == ' ') z.pop_back();
+        size_t a = z.find_first_not_of(' ');
+        if (a != std::string::npos) return z.substr(a);
+    }
+    return {};
 }
 
 }  // namespace
@@ -180,6 +194,18 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     bool until_hit = false; uint64_t until_cyc = 0; uint16_t until_pc = 0;
     eventbp::Prev prev;
     long ints = 0;
+    FILE* csv = nullptr; long csv_rows = 0;
+    if (!o.csv_path.empty()) {
+        csv = fopen(o.csv_path.c_str(), "w");
+        if (csv) fprintf(csv, "seq,cyc,cpu,pc,bytes,disasm,af,bc,de,hl,ix,iy,sp\n");
+        else fprintf(stderr, "WARN: cannot write --csv '%s'\n", o.csv_path.c_str());
+    }
+    FILE* itr = nullptr; long itr_n = 0;
+    if (!o.itrace_path.empty()) {
+        itr = fopen(o.itrace_path.c_str(), "w");
+        if (itr) fprintf(itr, "seq,cyc,kind,int_pc,isr_pc,sp,vector,device\n");
+        else fprintf(stderr, "WARN: cannot write --itrace '%s'\n", o.itrace_path.c_str());
+    }
     int win_n = 0;
     uint16_t insn_pc = 0;
 
@@ -189,6 +215,15 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
             const bool zre = m.speicher().ortVon(z.PC).quelle == Quelle::Zre;
             const uint32_t key = z.PC | (zre ? 0x10000u : 0u);
             if (hist[key]++ == 0) hist_note[key] = name(z.PC) + prnTail(z.PC);
+        }
+        if (csv && (o.win_lo < 0 || (z.PC >= o.win_lo && z.PC <= o.win_hi)) && csv_rows < 5'000'000) {
+            z80dis::Insn d = z80dis::decode(rd, z.PC);
+            char bytes[16] = {0};
+            for (int i = 0; i < d.len && i < 4; ++i) { char b[3]; snprintf(b, 3, "%02X", rd(static_cast<uint16_t>(z.PC + i))); strcat(bytes, b); }
+            fprintf(csv, "%ld,%llu,CPU,0x%04X,%s,\"%s\",%04X,%04X,%04X,%04X,%04X,%04X,%04X\n",
+                    csv_rows, (unsigned long long)z.cycles, z.PC, bytes, d.text,
+                    z.AF, z.BC, z.DE, z.HL, z.IX, z.IY, z.SP);
+            ++csv_rows;
         }
         const eventbp::Event e = eventbp::classify(z.PC, z.SP, z.IFF1, prev, true, true, false, 0, 0);
         if (e == eventbp::Event::Interrupt || e == eventbp::Event::NMI) {
@@ -201,6 +236,13 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
             else snprintf(t, sizeof t, "INT Vektor=%02X von %s → ISR %04X%s", ia.vector, dev, z.PC, name(z.PC).c_str());
             char key[48]; snprintf(key, sizeof key, "I%02X%04X", e == eventbp::Event::NMI ? 0x100 : ia.vector, z.PC);
             event(key, t, ret);
+            if (itr) {
+                char vec[8] = "-";
+                if (e == eventbp::Event::Interrupt) snprintf(vec, sizeof vec, "0x%02X", ia.vector);
+                fprintf(itr, "%ld,%llu,%s,0x%04X,0x%04X,0x%04X,%s,%s\n", itr_n, (unsigned long long)m.totalCycles(),
+                        e == eventbp::Event::NMI ? "NMI" : "INT", ret, z.PC, z.SP, vec, dev);
+                ++itr_n;
+            }
         }
         prev.have = true; prev.sp = z.SP; prev.iff1 = z.IFF1;
 
@@ -219,10 +261,19 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
         }
     });
     // Speicherzugriffe der K2521 gehen nicht über den Systembus (Speicherweg =
-    // Speicherverwaltung) — der Busbeobachter sieht hier nur E/A.
+    // Speicherverwaltung) — Prg710Machine::setBusTrace meldet sie zusätzlich (--watch).
     m.setBusTrace([&](bool isIO, bool isRead, uint16_t addr, uint8_t data) {
-        if (!isIO) return;
         const uint16_t pc = insn_pc;
+        if (!isIO) {
+            if (!isRead)
+                for (uint16_t w : o.watch)
+                    if (w == addr) {
+                        char t[64]; snprintf(t, sizeof t, "WR [%04X]=%02X", addr, data);
+                        char k[24]; snprintf(k, sizeof k, "W%04X%02X", addr, data);
+                        event(k, t, pc);
+                    }
+            return;
+        }
         const uint8_t p = static_cast<uint8_t>(addr);
         (isRead ? io_rd : io_wr)[p]++;
         bool gewuenscht = beobachtet(p, v1);
@@ -249,6 +300,31 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
         event(k, t, pc);
     });
 
+    // ── Tasten (--keys) ──────────────────────────────────────────────────────
+    // `<ET>` = ET1 (710: QK_TASTE_BASE|37H an der K7609) bzw. Return (710-1: K7672 → 0DH).
+    // Getippt wird blockweise (ein Block endet mit `<ET>`) und immer erst, wenn die Maschine
+    // steht (Stillstand: --stall Takte ohne Bildänderung/Steuerzugriff) — also am Start-
+    // taster-Warten des ROMs, an der Datumsabfrage von UDOS usw.
+    struct Taste { uint32_t code; bool et; };
+    std::vector<Taste> tasten;
+    for (size_t i = 0; i < o.keys.size(); ++i) {
+        if (o.keys.compare(i, 4, "<ET>") == 0 || o.keys.compare(i, 4, "<et>") == 0) {
+            tasten.push_back({v1 ? 0x01000004u : (K7609::QK_TASTE_BASE | 0x37u), true});
+            i += 3;
+        } else tasten.push_back({static_cast<uint8_t>(o.keys[i]), false});
+    }
+    size_t tasten_pos = 0;
+    // Nächster Block; false = Maschine während des Tippens angehalten (--until).
+    auto tippeBlock = [&]() {
+        while (tasten_pos < tasten.size()) {
+            const Taste t = tasten[tasten_pos++];
+            m.keyPress(t.code, false, false);   m.run(100000);
+            m.keyRelease(t.code);               m.run(100000);
+            if (until_hit) return;
+            if (t.et) break;
+        }
+    };
+
     // ── Lauf ─────────────────────────────────────────────────────────────────
     const int batch = 20000;
     std::string bild = bildText(m), bild_alt = bild;
@@ -263,7 +339,15 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
         if (o.until.kind == untilcond::UntilCond::SCREEN && o.until.screenMatch(bild)) {
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
         }
-        if (now - last_activity >= static_cast<uint64_t>(o.stall)) { stillstand = true; break; }
+        if (now - last_activity >= static_cast<uint64_t>(o.stall)) {
+            if (tasten_pos < tasten.size()) {   // Maschine steht: nächster Tastenblock
+                tippeBlock();
+                if (until_hit) break;
+                last_activity = m.totalCycles();
+                continue;
+            }
+            stillstand = true; break;
+        }
         if (!o.quiet && now >= next_progress) {
             fprintf(stderr, "[PROGRESS] cycles=%llu PC=%04X map=%s instr=%llu\n",
                     (unsigned long long)now, m.cpuPC(), speicherbild(m).c_str(), (unsigned long long)instr);
@@ -273,8 +357,12 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     }
     flush();
     if (ev != stderr) fclose(ev);
+    if (csv) { fclose(csv); fprintf(stderr, "--csv: %ld row(s) → %s\n", csv_rows, o.csv_path.c_str()); }
+    if (itr) { fclose(itr); fprintf(stderr, "--itrace: %ld INT/NMI → %s\n", itr_n, o.itrace_path.c_str()); }
 
     const uint64_t cycles = m.totalCycles();
+    const std::string prompt_zeile = letzteZeile(bild);
+    const bool prompt = stillstand && prompt_zeile == "%";   // UDOS-Prompt, Bild steht
     const bool taste = stillstand && inTastaturabfrage(m, v1, m.cpuPC());
     if (!o.quiet) {
         fprintf(stderr, "\n=== %s Boot Trace Complete: %llu cycles ===\n", name_m, (unsigned long long)cycles);
@@ -284,6 +372,9 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
         if (stillstand)
             fprintf(stderr, "Stillstand:  JA — %lld Takte ohne Bildaenderung und ohne Steuerzugriff (PC=%04X)\n",
                     o.stall, m.cpuPC());
+        fprintf(stderr, "Prompt:      %s\n", prompt ? "JA (\"%\")" : "nein");
+        if (!o.keys.empty())
+            fprintf(stderr, "Tasten:      %zu von %zu getippt\n", tasten_pos, tasten.size());
         fprintf(stderr, "Tastatur:    %s\n", taste ? (v1 ? "ROM wartet in der SIO-Abfrage (0163H, 5FH)"
                                                          : "ROM wartet in der 8279-Abfrage (0160H, C9H)")
                                                     : "nein");
@@ -314,6 +405,31 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
         fprintf(stderr, "\nBild (K7024):\n");
         for (int r = 0; r < 24; ++r) fprintf(stderr, "  |%s|\n", bild.substr(r * 80, 80).c_str());
     }
+    if (o.coverage) {
+        std::vector<bool> cov(0x10000, false);
+        for (auto& kv : hist) {
+            const uint16_t pc = static_cast<uint16_t>(kv.first);
+            int len = z80dis::decode(rd, pc).len;
+            for (int b = 0; b < len; ++b) cov[static_cast<uint16_t>(pc + b)] = true;
+        }
+        auto ranges = covdiff::collapseRanges(cov);
+        fprintf(stderr, "\n=== Code coverage (CPU) ===\n  %zu distinct instr addresses, %zu range(s)\n",
+                hist.size(), ranges.size());
+        for (size_t i = 0; i < ranges.size() && i < 60; ++i)
+            fprintf(stderr, "    0x%04X-0x%04X%s\n", ranges[i].first, ranges[i].second,
+                    name(static_cast<uint16_t>(ranges[i].first)).c_str());
+        if (!o.coverage_path.empty()) {
+            if (FILE* cf = fopen(o.coverage_path.c_str(), "w")) {
+                fprintf(cf, "cpu,pc,hits\n");
+                std::vector<std::pair<uint32_t, uint32_t>> v(hist.begin(), hist.end());
+                std::sort(v.begin(), v.end());
+                for (auto& kv : v) fprintf(cf, "%s,0x%04X,%u\n", (kv.first & 0x10000) ? "ZRE" : "CPU",
+                                           kv.first & 0xFFFF, kv.second);
+                fclose(cf);
+                fprintf(stderr, "  CSV written → %s (cpu,pc,hits)\n", o.coverage_path.c_str());
+            }
+        }
+    }
     if (o.dump_lo >= 0 && o.dump_hi > o.dump_lo) {
         if (FILE* df = fopen(o.dump_path.c_str(), "wb")) {
             for (int a = o.dump_lo; a < o.dump_hi; ++a) fputc(rd(static_cast<uint16_t>(a)), df);
@@ -323,9 +439,9 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     }
     if (o.json) {
         fprintf(stderr,
-            "{\"machine\":\"%s\",\"keywait\":%s,\"stall\":%s,\"cycles\":%llu,\"final_pc\":\"0x%04X\","
+            "{\"machine\":\"%s\",\"keywait\":%s,\"stall\":%s,\"prompt\":%s,\"cycles\":%llu,\"final_pc\":\"0x%04X\","
             "\"map\":\"%s\",\"instr\":%llu,\"events\":%ld,\"ints\":%ld,",
-            v1 ? "prg710-1" : "prg710", taste ? "true" : "false", stillstand ? "true" : "false",
+            v1 ? "prg710-1" : "prg710", taste ? "true" : "false", stillstand ? "true" : "false", prompt ? "true" : "false",
             (unsigned long long)cycles, m.cpuPC(), speicherbild(m).c_str(), (unsigned long long)instr,
             ev_total, ints);
         if (o.until.kind != untilcond::UntilCond::NONE)
@@ -335,5 +451,5 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
             fprintf(stderr, "\"until\":{\"set\":false}}\n");
     }
     if (o.until.kind != untilcond::UntilCond::NONE) return until_hit ? 0 : 2;
-    return taste ? 0 : 1;
+    return (taste || prompt) ? 0 : 1;
 }

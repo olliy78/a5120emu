@@ -182,13 +182,13 @@ int main(int argc, char** argv){
     // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     bool start_console = false;   // --console: sofort in den Konsolenmodus (§9)
-    bool machine_k8915 = false;   // --machine k8915 (Vorgabe a5120)
+    dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|prg710|prg710-1 (Vorgabe a5120)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
-            if (!dbgm::parseMachine(argv[++i], machine_k8915)){
-                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915)\n",argv[i]); return 2; } }
+            if (!dbgm::parseMachine(argv[++i], art)){
+                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1)\n",argv[i]); return 2; } }
         else if (!strcmp(argv[i],"--skip-selftest")) skip_selftest=true;
         else if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
@@ -218,19 +218,22 @@ int main(int argc, char** argv){
 
     A5120Machine::Config mcfg;
     if (em_opt){
-        if (machine_k8915){ fprintf(stderr,"--em gibt es nur am A5120 (A5120.16)\n"); return 2; }
+        if (art!=dbgm::Art::A5120){ fprintf(stderr,"--em gibt es nur am A5120 (A5120.16)\n"); return 2; }
         const std::string e = em_opt;
         if      (e=="em256") mcfg.em = A5120Machine::Config::Em::em256;
         else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
     }
-    dbgm::DbgMachine m(machine_k8915, mcfg);
+    dbgm::DbgMachine m(art, mcfg);
     m.powerOn();
-    const bool K8 = m.isK8915();
+    const bool K8 = m.einCpu();      // eine CPU: K8915 ODER PRG (keine ZVE2/Snapshots)
+    const bool K89 = m.isK8915();
+    const bool KP = m.isPrg();       // PRG 710 / 710-1
+    const bool KP1 = m.isPrg1();     // 710-1: Tastatur K7672 an A32-B, Return = 0DH
     EM* em = m.em();          // nullptr ohne --em (und immer am K8915)
     const char* C1 = m.cpuName();            // "ZVE1" (A5120) bzw. "CPU" (K8915) in Meldungen
     if (skip_selftest){
-        if (!K8) fprintf(stderr,"WARN: --skip-selftest gibt es nur am K8915 — ignoriert\n");
+        if (!K89) fprintf(stderr,"WARN: --skip-selftest gibt es nur am K8915 — ignoriert\n");
         else {
             // Genau der Weg eines echten Warmstarts (doc/merkposten/k8915.md): steht bei
             // 0000H/0005H im RAM ein JP, springt der Stub bei FFE0H ohne Selbsttest zur
@@ -242,8 +245,9 @@ int main(int argc, char** argv){
     }
     // Formatname ist bei .hfe/.dmk nur Platzhalter; bei .img entscheidet er.  Der K8915
     // bootet von cpa800, der A5120 zuerst cpa780 (unverändert).
-    const char* fmt1 = K8 ? "cpa800" : "cpa780";
-    const char* fmt2 = K8 ? "cpa780" : "cpa800";
+    const std::string pfmt = KP ? m.base().defaultFormatName(0) : std::string();
+    const char* fmt1 = KP ? pfmt.c_str() : K8 ? "cpa800" : "cpa780";
+    const char* fmt2 = KP ? "udos_ds77" : K8 ? "cpa780" : "cpa800";
     bool mount_failed = false;
     // COW temp copies to unlink at exit (empty unless mount_mode==MOUNT_COW).
     std::vector<std::string> cow_temps;
@@ -1185,6 +1189,13 @@ int main(int argc, char** argv){
             s.I,s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
     };
     auto stateLine = [&]{
+        if (KP){   // PRG: Speicherverwaltung (EBH Freigabe, E8H[0]/[F]) statt A8H
+            Prg710Machine& k=*m.prg();
+            fprintf(stderr,"  state: EBH=%02X map=%s E8H[0]=%02X E8H[F]=%02X  %c-cyc=%lld%s\n",
+                k.speicher().freigabe(), dbgm::speicherbild(k).c_str(), k.speicher().attr(0),
+                k.speicher().attr(15), rcpfx(), rc(m.cpuCycles()), rel_armed?" (rel)":"");
+            return;
+        }
         if (K8){   // K8915: eine CPU; was zählt, ist das Speicherbild (A8H) und /MEMDI
             K8915Machine& k=*m.k8915();
             fprintf(stderr,"  state: A8H=%02X map=%s /MEMDI=%s 61H=%02X  %c-cyc=%lld%s\n",
@@ -1423,6 +1434,32 @@ int main(int argc, char** argv){
     // current bus master, and the K5122 head/transfer state. `--json` for agents.
     auto whereShow = [&](bool json){
         auto k=m.k5122State();
+        if (KP){   // PRG: eine CPU, K5122 im /WAIT-Betrieb, Speicherverwaltung E8H-EBH
+            Prg710Machine& p=*m.prg();
+            uint16_t pc=m.cpuPC();
+            if (json){
+                fprintf(stderr,
+                  "\n{\"machine\":\"%s\",\"pc\":\"0x%04X\",\"ebh\":\"0x%02X\",\"map\":\"%s\","
+                  "\"k5122\":{\"drive\":%u,\"mounted\":%s,\"cyl\":%u,\"head\":%u,"
+                  "\"transferring\":%s,\"write\":%s,\"headPos\":%zu,\"trackLen\":%zu}}\n",
+                  KP1?"prg710-1":"prg710",pc,p.speicher().freigabe(),dbgm::speicherbild(p).c_str(),
+                  (unsigned)k.drive,k.mounted?"true":"false",(unsigned)k.cylinder,
+                  (unsigned)k.head,k.transferring?"true":"false",k.writeMode?"true":"false",k.headPos,k.trackLen);
+                return;
+            }
+            char l1[120]; disasmAt(pc,l1,sizeof l1); std::string p1=prnFor(pc);
+            fprintf(stderr,"  CPU  %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
+            fprintf(stderr,"  EBH=%02X  map=%s  (Z=ZRE V=VRAM 0-F=OPS-Seite -=leer; je 4 KB ab 0000H)\n",
+                    p.speicher().freigabe(),dbgm::speicherbild(p).c_str());
+            fprintf(stderr,"  K5122 (/WAIT): D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu MKE=%d"
+                    " geschrieben=%zu B, ganze Spuren=%llu\n",
+                    k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
+                    k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen,
+                    k.waitMke?1:0,k.waitSchreibBytes,(unsigned long long)k.waitSpuren);
+            fprintf(stderr,"  Takte=%llu\n",(unsigned long long)m.machineCycles());
+            rst38Hint();
+            return;
+        }
         if (K8){   // K8915: eine CPU, K5122 im /WAIT-Betrieb, Speicherbild A8H
             K8915Machine& k8=*m.k8915();
             uint16_t pc=m.cpuPC();
@@ -1495,6 +1532,9 @@ int main(int argc, char** argv){
         auto now = steady_clock::now();
         if (now - last < seconds(2)) return;
         last = now;
+        if (KP){ fprintf(stderr,"  … %llu cyc  PC=%04X  EBH=%02X  [Ctrl-C bricht ab]\n",
+                         (unsigned long long)(runClock()-start), m.cpuPC(), m.prg()->speicher().freigabe());
+                 return; }
         if (K8){ fprintf(stderr,"  … %llu cyc  PC=%04X  A8H=%02X  [Ctrl-C bricht ab]\n",
                          (unsigned long long)(runClock()-start), m.cpuPC(), m.k8915()->zre().reg());
                  return; }
@@ -1640,6 +1680,23 @@ int main(int argc, char** argv){
     // little (so the BIOS keyboard poll picks it up), released, run a little more.
     // Stops early if a breakpoint hits.
     auto keys = [&](const std::string& t){
+        if (KP){
+            // PRG: Taste drücken + loslassen (je 100 000 Takte, wie die Tests).  Return =
+            // ET1 (QK_TASTE_BASE|37H) am 710 (K7609), Qt-Return am 710-1 (K7672 → 0DH).
+            uint64_t ran=0; int n=0;
+            for (size_t i=0;i<t.size();++i){
+                uint32_t code=decodeKey(t,i); ++n;
+                if (code==0x01000004u && !KP1) code = K7609::QK_TASTE_BASE | 0x37u;
+                else if (code<0x20 && code!=0x0D) code = 0x0D;   // am K7609/K7672 ohne Rohcode
+                m.keyPress(code,false,false); ran+=goSilent(100000);
+                if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
+                m.keyRelease(code);           ran+=goSilent(100000);
+                if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
+            }
+            fprintf(stderr,"   keys: %d Zeichen getippt, %llu cyc (PC=%04X)\n",n,
+                    (unsigned long long)ran,m.cpuPC());
+            return;
+        }
         if (K8){
             // K8915: jedes Zeichen als fertiges Zeichen der K7672 (sendeZeichen) — im
             // SCP-Modus das Zeichen selbst, im DCP-Modus (SCPX) die Taste samt Umschalt/
@@ -2229,7 +2286,8 @@ int main(int argc, char** argv){
     for (auto& pf : prnfiles) loadPrnSpec(pf);    // apply -l .prn listings (also imports labels)
 
     signal(SIGINT, dbgSigInt);      // §7: Ctrl-C bricht einen laufenden `g` ab, nicht die Sitzung
-    if (K8) fprintf(stderr,"k1520dbg — Maschine K8915 (eine CPU; 'help k8915').  Disassembler: built-in.\n");
+    if (KP) fprintf(stderr,"k1520dbg — Maschine %s (eine CPU; 'help prg').  Disassembler: built-in.\n",m.name());
+    else if (K8) fprintf(stderr,"k1520dbg — Maschine K8915 (eine CPU; 'help k8915').  Disassembler: built-in.\n");
     else
     fprintf(stderr,"k1520dbg — type 'help'.  Lauf-Uhr = %s (clock zve1|machine).  Disassembler: built-in.\n",
             clock_machine? "Maschine (beide CPUs)" : "ZVE1");
@@ -2289,12 +2347,12 @@ int main(int argc, char** argv){
         // K8915: was es nur am A5120 gibt (ZVE2, /BUSRQ-/DMA-Ereignisse, Snapshots,
         // Savestates), wird gemeldet statt ausgeführt — nie ein Absturz (§8a AP-E4d).
         if (K8 && dbgm::nurA5120Kommando(cmd)){
-            fprintf(stderr,"  '%s' gibt es am K8915 nicht (nur A5120: ZVE2, /BUSRQ/DMA, "
-                           "Snapshots/Savestates) — nicht vorhanden\n",cmd.c_str());
+            fprintf(stderr,"  '%s' gibt es am %s nicht (nur A5120: ZVE2, /BUSRQ/DMA, "
+                           "Snapshots/Savestates) — nicht vorhanden\n",cmd.c_str(),m.name());
             continue;
         }
         auto nichtAmK8915 = [&](const char* was){
-            fprintf(stderr,"  %s gibt es am K8915 nicht — nicht vorhanden\n",was); };
+            fprintf(stderr,"  %s gibt es am %s nicht — nicht vorhanden\n",was,m.name()); };
 
         // §0 discoverability: when ZVE2 is the current bus master, a ZVE1-only command is
         // almost always a mistake (the DMA/read runs on ZVE2). Nudge toward the 2-variants.
@@ -2334,6 +2392,19 @@ int main(int argc, char** argv){
               "      hist <cyc>      PC hotspots of BOTH CPUs (finds the spin loop instantly)\n"
               "    bbusrq / bxfer    stop exactly at the DMA hand-off / read-transfer edge\n"
               "    A ZVE1-only command while ZVE2 is bus master prints a [hint].\n");
+        }
+        else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="prg"||t[1]=="prg710"||t[1]=="PRG")){
+            fprintf(stderr,
+              "  PRG 710 / 710-1 (--machine prg710|prg710-1)  eine CPU (K2521), Speicherverwaltung E8H-EBH\n"
+              "    map               EBH + die 16 Seitenregister (Herkunft E8H, Seite EAH, Quelle ZRE/VRAM/OPS)\n"
+              "    d/u/x/e/wp        Speicher in CPU-SICHT (VRAM nur bei E8H[F]=FFH)\n"
+              "    screen/gscreen    Bild direkt von der K7024, nie ueber die CPU-Sicht\n"
+              "    keys <text>       Tasten: 710 K7609 (Return = ET1, QK_TASTE_BASE|37H), 710-1 K7672 (Return = 0DH)\n"
+              "    vars ; where ; dev [ctc|pio [zre]|sio|sio2] ; ivt   Speicherbild, K5122, ZRE, K8025, Interruptkette\n"
+              "    dev sio           K8025 A32 (710: Tastatur-Port, 710-1: B = Tastatur K7672); sio2 = A33 (DFUE)\n"
+              "    Listings: -l doc/EPROMS/PRG710/prg710_zre.prn@0x0000  (ROM, @-Versatz fuer die RAM-Kopie)\n"
+              "              -l doc/prg710/resident_710.lst  (710-1: prg710-1_zre.prn, resident_710-1.lst)\n"
+              "    Nicht vorhanden: s2/b2/rj2/r 2 (ZVE2), bbusrq, snap/restore/rs/rc, savestate/loadstate, bank\n");
         }
         else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="k8915"||t[1]=="K8915")){
             fprintf(stderr,
@@ -2438,6 +2509,7 @@ int main(int argc, char** argv){
               "          dialog <file>   drive a menu: per line  \"screen-txt\" \"keys\" [maxcyc]\n"
               "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n"
               "  K8915   map | bank <1|2> <A> [N] | help k8915   (--machine k8915)\n"
+              "  PRG     map | help prg   (--machine prg710|prg710-1)\n"
 
               "  A5120.16 cpu [zve1|zve2|u8000] ; dev em ; fcw ; psa ; bmode ; bvi ; bint16 ; emlog\n"
               "          (help u8000 — der U8001 des Erweiterungsmoduls, Start mit --em em256)\n");
@@ -2623,7 +2695,15 @@ int main(int argc, char** argv){
             if(t.size()>1){ if(K8) nichtAmK8915("ZVE2 ('r 2')"); else { snap2=grab(m.zve2Debug()); printSnap(2); } }
             showInsn("=>",m.cpuPC()); stateLine(); }
         // machine-readable registers (one JSON line) — for scripted/agent consumption
-        else if (cmd=="rj" && K8){ const Z80& z=m.cpuDebug(); K8915Machine& k8=*m.k8915();
+        else if (cmd=="rj" && KP){ const Z80& z=m.cpuDebug(); Prg710Machine& p=*m.prg();
+            fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
+                "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
+                "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"cyc\":%llu,\"rom\":%s,"
+                "\"machine\":\"%s\",\"ebh\":\"0x%02X\",\"map\":\"%s\"}\n",
+                z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,z.R, z.IFF1?"true":"false",
+                (unsigned long long)m.cpuCycles(), m.isRomEnabled()?"true":"false",
+                KP1?"prg710-1":"prg710", p.speicher().freigabe(), dbgm::speicherbild(p).c_str()); }
+        else if (cmd=="rj" && K89){ const Z80& z=m.cpuDebug(); K8915Machine& k8=*m.k8915();
             fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
                 "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
                 "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"cyc\":%llu,\"rom\":%s,"
@@ -2923,7 +3003,14 @@ int main(int argc, char** argv){
                 for(auto& v: var_watch){ uint16_t a=std::get<1>(v);
                     if(std::get<2>(v)) fprintf(stderr,"  %-14s [%04X] = %04X\n",std::get<0>(v).c_str(),a,wd(a));
                     else               fprintf(stderr,"  %-14s [%04X] = %02X\n",std::get<0>(v).c_str(),a,m.memReadDebug(a)); } }
-            else if (K8){   // K8915: Speicherbild und Anzeigefeld statt Handschlag-RAM/CP/A-DPB
+            else if (KP){   // PRG: Speicherverwaltung statt Handschlag-RAM/CP/A-DPB
+                Prg710Machine& p=*m.prg();
+                fprintf(stderr,"  EBH=%02X  map=%s\n  E8H (Herkunft) [0..F]:",p.speicher().freigabe(),dbgm::speicherbild(p).c_str());
+                for (int n=0;n<16;++n) fprintf(stderr," %02X",p.speicher().attr(n));
+                fprintf(stderr,"\n  EAH (Seite)    [0..F]:");
+                for (int n=0;n<16;++n) fprintf(stderr," %X",p.speicher().seite(n));
+                fprintf(stderr,"\n  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n"); }
+            else if (K89){   // K8915: Speicherbild und Anzeigefeld statt Handschlag-RAM/CP/A-DPB
                 K8915Machine& k8=*m.k8915(); uint8_t a8=k8.zre().reg(), l=k8.ats().anzeige();
                 fprintf(stderr,"  A8H=%02X  map=%s  /MEMDI=%s /MEMDI1=%s  Bank-2-Viertel=%d%s\n"
                                "  61H=%02X  Lampen an: %s\n"
@@ -2947,11 +3034,16 @@ int main(int argc, char** argv){
                 for(int i=0;i<2;++i){ auto& ch=s.ch[i];
                     fprintf(stderr,"    %c rr0=%02X rr1=%02X wr1=%02X vec=%02X  irq(rx=%s tx=%s ext=%s) ius=%s iei=%s  rxQ=%zu txBusy=%s\n",
                         i?'B':'A',ch.rr0,ch.rr1,ch.wr1,ch.wr2,Y(ch.irqRx),Y(ch.irqTx),Y(ch.irqExt),Y(ch.ius),Y(ch.iei),ch.rxQueued,Y(ch.txBusy)); } };
-            if (w=="ctc" && K8){ K8915Machine& k8=*m.k8915();
+            if (KP && (w=="ctc"||w=="sio"||w=="sio2")){ Prg710Machine& p=*m.prg();
+                if (w=="ctc") showCtc("ZRE K2521, 80H-83H",p.zre().ctc().debugState());
+                else if (w=="sio") showSio(KP1?"K8025 SIO A32 (B = Tastatur K7672)":"K8025 SIO A32 (A = Tastatur-Port, B = Drucker)",
+                                           p.ass().sioA32().debugState());
+                else showSio("K8025 SIO A33 (DFUE)",p.ass().sioA33().debugState()); }
+            else if (w=="ctc" && K89){ K8915Machine& k8=*m.k8915();
                 showCtc("ZRE 045-8762, 80H-83H",k8.zre().ctc().debugState());
                 showCtc("ATS CTC1",k8.ats().ctc1().debugState());
                 showCtc("ATS CTC2",k8.ats().ctc2().debugState()); }
-            else if ((w=="sio"||w=="sio2") && K8){ K8915Machine& k8=*m.k8915();
+            else if ((w=="sio"||w=="sio2") && K89){ K8915Machine& k8=*m.k8915();
                 if (w=="sio") showSio("SIO1 (ATS; B = Drucker V.24)",k8.ats().sio1().debugState());
                 else          showSio("SIO2 (ATS; B = Tastatur K7672)",k8.ats().sio2().debugState()); }
             else if (w=="ctc"){ showCtc("K2526",m.a5120()->ctcState()); }
@@ -2971,11 +3063,13 @@ int main(int argc, char** argv){
                     showPio("K5122 ctrl-PIO (Ports 10-13)", m.k5122CtrlPioState()); any=true; }
                 if (all || which=="k5122data" || which=="data"){
                     showPio("K5122 data-PIO (Ports 14-17)", m.k5122DataPioState()); any=true; }
+                if (KP && (all || which=="zre")){
+                    showPio("ZRE K2521-PIO (Ports 84H-87H)", m.prg()->zre().pio().debugState()); any=true; }
                 if (which=="bs" && K8){ nichtAmK8915("Die BS-PIO (K2526)"); any=true; }
                 else if (all || which=="bs"){
                     if (!K8) showPio("BS-PIO (K2526, Ports 08-0B)", m.a5120()->bsPioState());
                     any=true; }
-                if (!any) fprintf(stderr,"  dev pio [all|bs|k5122ctrl|k5122data]\n"); }
+                if (!any) fprintf(stderr,"  dev pio [all|bs|zre|k5122ctrl|k5122data]\n"); }
             else if (w=="sio" || w=="sio2"){
                 auto s = (w=="sio2")? m.a5120()->dfueSioState() : m.a5120()->kbdSioState();
                 char titel[48]; snprintf(titel,sizeof titel,"SIO %s (K8025 %s)",
@@ -3079,7 +3173,25 @@ int main(int argc, char** argv){
             } else fprintf(stderr,"  disk verify [A|B|C|D]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
         // ══ K8915: Speicherbild (A8H) und DRAM-Bänke direkt ══
         else if (cmd=="map"){
-            if (!K8) fprintf(stderr,"  map gibt es nur am K8915 (A8H-Speicherbild) — am A5120 nicht vorhanden\n");
+            if (KP){   // PRG: die 16 Seitenregister der Speicherverwaltung E8H-EBH
+                Prg710Machine& p=*m.prg(); Prg710Speicher& sp=p.speicher();
+                fprintf(stderr,"  EBH=%02X (Freigabe: %s)  map=%s\n",sp.freigabe(),
+                        sp.freigabe()?"Register wirken":"Abbildung aus",dbgm::speicherbild(p).c_str());
+                fprintf(stderr,"    Seite  Adressen     E8H  Herkunft  EAH  Quelle\n");
+                for (int n=0;n<16;++n){
+                    const uint8_t a=sp.attr(n);
+                    const char* her = (a&0x0F)==0 ? "OPS" : n==0 ? "ZRE" : n==15 ? "VRAM/Sys" : "Sys";
+                    auto o=sp.ortVon((uint16_t)((n<<12)|(n==15?0x800:0)));
+                    char q[32];
+                    switch (o.quelle){
+                        case Prg710Speicher::Quelle::Zre:  snprintf(q,sizeof q,"ZRE +%04X",o.offset); break;
+                        case Prg710Speicher::Quelle::Vram: snprintf(q,sizeof q,"VRAM +%04X",o.offset); break;
+                        case Prg710Speicher::Quelle::Ops:  snprintf(q,sizeof q,"OPS +%04X",o.offset); break;
+                        default: snprintf(q,sizeof q,"leer"); }
+                    fprintf(stderr,"    %X      %04X-%04X    %02X   %-8s  %X    %s\n",n,(n<<12),(n<<12)|0x0FFF,a,her,sp.seite(n),q);
+                }
+            }
+            else if (!K89) fprintf(stderr,"  map gibt es nur am K8915 (A8H-Speicherbild) und am PRG (E8H-EBH) — am A5120 nicht vorhanden\n");
             else { K8915Machine& k8=*m.k8915(); K8915Zre& z=k8.zre();
                 fprintf(stderr,"  A8H=%02X  /MEMDI=%s /MEMDI1=%s  Bank-2-Viertel=%d\n",z.reg(),
                         z.memdi()?"aktiv":"-", z.memdi1()?"aktiv":"-", (z.reg()>>4)&3);
@@ -3089,7 +3201,7 @@ int main(int argc, char** argv){
                     if (o.quelle==K8915Zre::Quelle::Bus) fprintf(stderr,"%s\n", (p==1)?"  (K7024-Bildspeicher)":"");
                     else fprintf(stderr,"  +%05X\n",(unsigned)o.offset); } } }
         else if (cmd=="bank"){
-            if (!K8) fprintf(stderr,"  bank gibt es nur am K8915 (zwei DRAM-Baenke) — am A5120 nicht vorhanden\n");
+            if (!K89) fprintf(stderr,"  bank gibt es nur am K8915 (zwei DRAM-Baenke) — am %s nicht vorhanden\n",m.name());
             else if (t.size()<3 || (t[1]!="1" && t[1]!="2"))
                 fprintf(stderr,"  bank <1|2> <A> [N]   Hexdump direkt aus Bank 1/2 (Bank 2: Viertel q ab q*4000H)\n");
             else { int b=(t[1]=="2")?1:0; uint16_t a=(uint16_t)parseNum(t[2]);

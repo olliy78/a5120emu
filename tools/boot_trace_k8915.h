@@ -27,6 +27,7 @@ struct K8915TraceOpts {
     bool        skip_selftest = false;  ///< JP bei 0000H/0005H in Bank 1 (wie ein Warmstart)
     bool        auto_cr = true;         ///< nach „* Coldstart *“ einmal CR tippen
     long long   stall = 30'000'000;     ///< so lange ohne Bildänderung/Ereignis = Stillstand
+    std::string keys;                   ///< --keys (PRG): Tasten, `<ET>` = ET1/Return; je Block bei Stillstand
     std::string events_path;            ///< --events <datei> (sonst stderr)
     long        events_cap = 3000;      ///< höchstens so viele Protokollzeilen
     untilcond::UntilCond until;

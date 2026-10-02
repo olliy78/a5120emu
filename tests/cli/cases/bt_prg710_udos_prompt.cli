@@ -1,0 +1,9 @@
+# boot_trace --machine prg710 --keys (Entwurf 20 AP-P5c): Starttaste ET1, UDOS bis zur
+# Datumsabfrage, Datum + ET1 → Prompt `%`; Abbruch dort als Stillstand, Exit 0.
+# Die Diskette wird als COW-Kopie gemountet (kein Schreiben am Original).
+tool:    boot_trace
+disk:    prg710_udos43_k5601_mrs_boot.hfe
+run:     --machine prg710 --quiet --json --keys "<ET>021086<ET>" %DISK%
+timeout: 240
+exit:    0
+expect:  "machine":"prg710","keywait":false,"stall":true,"prompt":true

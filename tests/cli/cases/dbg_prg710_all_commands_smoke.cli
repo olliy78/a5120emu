@@ -1,0 +1,15 @@
+# Dispatch-Smoke am PRG 710 (AP-P5c): jedes Kommando einmal; was es nur am A5120 gibt,
+# meldet "nicht vorhanden" statt abzustuerzen.
+tool:    k1520dbg
+run:     --machine prg710 -x %CLI_DIR%/scripts/all_commands_smoke_prg710.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  's2' gibt es am PRG 710 nicht
+expect:  'snap' gibt es am PRG 710 nicht
+expect:  'savestate' gibt es am PRG 710 nicht
+expect:  ZVE2 ('r 2') gibt es am PRG 710 nicht
+expect:  Die BS-PIO (K2526) gibt es am PRG 710 nicht
+expect:  Seite  Adressen
+expect:  ZRE K2521, 80H-83H
+expect:  "machine":"prg710"

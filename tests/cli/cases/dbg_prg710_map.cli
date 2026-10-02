@@ -1,0 +1,28 @@
+# k1520dbg --machine prg710 (AP-P5c): `map` zeigt EBH und die 16 Seitenregister
+# (Herkunft E8H, Seite EAH, Quelle); nach dem Lauf ohne Diskette (ROM bis zur 8279-
+# Abfrage) liegt die RAM-Kopie vor (map=0123456789ABCDEF), `dev sio`/`dev ctc`/`ivt` gehen.
+tool:    k1520dbg
+run:     --machine prg710
+timeout: 120
+exit:    0
+stdin:
+  map
+  g 30000000
+  map
+  where
+  rj
+  dev ctc
+  dev sio
+  dev pio zre
+  ivt
+  s2
+  q
+expect:  ZRE +0000
+expect:  Abbildung aus
+expect:  Register wirken
+expect:  OPS +0000
+expect:  EBH=0F  map=0123456789ABCDEF
+expect:  "machine":"prg710"
+expect:  ZRE K2521, 80H-83H
+expect:  K8025 SIO A32
+expect:  's2' gibt es am PRG 710 nicht

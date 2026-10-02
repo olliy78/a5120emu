@@ -317,6 +317,7 @@ int main(int argc, char** argv) {
             else if (mn != "a5120" && mn != "A5120") {
                 fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1)\n", mn.c_str()); return 2; }
         }
+        else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
         else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
         else if (!strcmp(argv[i], "--stall") && i+1 < argc) { k8o.stall = atoll(argv[++i]); stall_set = true; }
@@ -467,11 +468,10 @@ int main(int argc, char** argv) {
         if (machine_prg710) {
             // PRG 710 (AP-P1d): Etappe 1 endet in der Tastaturabfrage — 2 s ohne Bild-/
             // Steuerzugriff reichen; 50 Mio. Takte ≈ 20 s Maschinenzeit.
-            if (!limit_set) k8o.limit = 50'000'000;
+            if (!limit_set) k8o.limit = k8o.keys.empty() ? 50'000'000 : 250'000'000;
             if (!stall_set) k8o.stall = 5'000'000;
-            if (coverage_on || csv_path || itrace_path || watch_n || k8o.skip_selftest || !k8o.auto_cr)
-                fprintf(stderr, "WARN: --coverage/--csv/--itrace/--watch/--skip-selftest/--no-cr gibt es "
-                                "am PRG 710 noch nicht (AP-P5c) — ignoriert\n");
+            if (k8o.skip_selftest || !k8o.auto_cr)
+                fprintf(stderr, "WARN: --skip-selftest/--no-cr gibt es am PRG 710 nicht — ignoriert\n");
         }
         k8o.coverage = coverage_on; if (coverage_path) k8o.coverage_path = coverage_path;
         if (csv_path) k8o.csv_path = csv_path;

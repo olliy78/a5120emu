@@ -224,13 +224,12 @@ final_pc, a8, lamps, cpu_addrs, instr, events, ints, until{…}`.
 Wächter: `cli_bt_k8915_prompt`, `cli_bt_k8915_events`, `cli_bt_k8915_stillstand`.
 
 
-## 8. PRG 710 / 710-1 (`--machine prg710|prg710-1`) — Grundform
+## 8. PRG 710 / 710-1 (`--machine prg710|prg710-1`)
 
 Seit AP-P1d (2026-10-02, `doc/design/20_prg710.md`) fährt `boot_trace` auch beide
 Numerik-Geräte (`tools/boot_trace_prg710.cpp`, Optionen wie beim K8915). Ziel der
 Grundform ist Etappe 1: Netz-Ein → „NKM-LOADER“ → Laufwerke → **Tastaturabfrage**.
-Eine Taste kann das Werkzeug noch nicht geben (Tastaturen: AP-P2a/P2b); voll ausgebaut
-wird es in AP-P5c.
+Seit AP-P5c gibt es `--keys` und den UDOS-Prompt als Ziel.
 
 ```sh
 tools/dev.sh trace --machine prg710                 # ohne Diskette bis zur 8279-Abfrage
@@ -250,7 +249,13 @@ tools/dev.sh trace --machine prg710 --events /tmp/ev.txt --events-cap 100000 DIS
   (710: 007DH/0160H, 710-1: 0070H/0163H, aus der RAM-Kopie) → 0, sonst 1; `--until` → 0/2;
   `-c` Vorgabe 50 Mio. `--json`: `machine, keywait, stall, cycles, final_pc, map, instr,
   events, ints, until{…}`.
-- Noch nicht (Warnung): `--coverage --csv --itrace --watch --skip-selftest --no-cr`.
+- **`--keys "<text>"`** (AP-P5c): Tasten, `<ET>` = ET1 (710: `QK_TASTE_BASE|37H` an der K7609) bzw.
+  Return (710-1: K7672 → 0DH). Der Text wird in Blöcken getippt (Block = bis einschließlich
+  `<ET>`), jeweils sobald die Maschine steht (Stillstand): z. B. `--keys "<ET>021086<ET>"` =
+  Starttaste, Datum + ET. `-c` ist mit `--keys` 250 Mio.; Abbruch: **`%` als letzte Bildzeile
+  im Stillstand** → Exit 0, JSON-Feld `"prompt"` (hinter `"stall"`).
+- `--coverage --csv --itrace --watch` (Speicher-Schreibzugriffe der CPU) wirken wie am K8915;
+  `--skip-selftest --no-cr` gibt es nicht (Warnung).
   Mit Diskette wird über `defaultFormatName` gemountet (bei `.hfe` nur Platzhalter).
 
-Wächter: `cli_bt_prg710_tastatur`, `cli_bt_prg710-1_tastatur`.
+Wächter: `cli_bt_prg710_tastatur`, `cli_bt_prg710-1_tastatur`, `cli_bt_prg710_udos_prompt`, `cli_bt_prg710-1_udos_prompt`.

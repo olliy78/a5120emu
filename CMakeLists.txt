@@ -424,7 +424,7 @@ if(BUILD_K1520)
     # k1520dbg: interactive gdb-style debugger (breakpoints, marker-relative cycles,
     # memory dump/disasm, watchpoints, keystroke injection, screen view)
     add_executable(k1520dbg tools/k1520dbg.cpp)
-    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
+    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_floppy k1520_logger)
     target_include_directories(k1520dbg PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
     # Zeilenbearbeitung der interaktiven Sitzung: Pfeiltasten, History,

@@ -155,7 +155,9 @@ public:
     void     clearStop() { stop_.store(false); }
     uint16_t cpuPC() const { return zre_.cpu().PC; }
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) { zre_.cpu().traceCallback = std::move(cb); }
-    void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
+    /// Beobachter für JEDEN Speicher- und E/A-Zugriff der CPU (Speicher: Speicherweg der K2521,
+    /// nicht der Systembus; `memReadDebug` löst ihn nicht aus).  Leer = beide aus.
+    void setBusTrace(K1520Bus::BusTrace cb) { mem_trace_ = cb; bus_.setTraceCallback(std::move(cb)); }
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
 private:
@@ -177,6 +179,7 @@ private:
     k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
     uint64_t  serial_naechst_ = 0;
 
+    K1520Bus::BusTrace mem_trace_;   ///< s. setBusTrace()
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};
     uint64_t          total_cycles_ = 0;

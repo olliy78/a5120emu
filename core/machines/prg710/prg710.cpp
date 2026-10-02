@@ -44,8 +44,17 @@ Prg710Machine::Prg710Machine(const Config& cfg)
         k7672_.connect(ass_.sioA32(), 1);
     }
     // Speicherweg der CPU: Speicherverwaltung; ZRE-Fenster und VRAM gehen an die Karten.
-    zre_.setSpeicherweg([this](uint16_t a) { return speicher_.memRead(a); },
-                        [this](uint16_t a, uint8_t d) { speicher_.memWrite(a, d); });
+    // (mem_trace_: Beobachter des Debuggers — Speicher der CPU geht nicht über den Systembus.)
+    zre_.setSpeicherweg(
+        [this](uint16_t a) {
+            const uint8_t v = speicher_.memRead(a);
+            if (mem_trace_) mem_trace_(false, true, a, v);
+            return v;
+        },
+        [this](uint16_t a, uint8_t d) {
+            speicher_.memWrite(a, d);
+            if (mem_trace_) mem_trace_(false, false, a, d);
+        });
     speicher_.setZreWeg([this](uint16_t a) { return zre_.memRead(a); },
                         [this](uint16_t a, uint8_t d) { zre_.memWrite(a, d); });
     speicher_.setVramWeg([this](uint16_t a) { return screen_.memRead(a); },
