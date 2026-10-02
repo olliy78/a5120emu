@@ -8,6 +8,9 @@ von echten Diskettenabbildern.  Als zweite Maschine ist der **robotron K8915**
 „K8915 Emulator") mit eigener Konfiguration in derselben Installation.  Eine
 K8915-Systemdiskette liegt nicht bei; eine eigene (SCPX 8915) wird wie beim
 A5120 eingelegt und mit RETURN an der Coldstart-Meldung geladen.
+Dritter im Bunde ist das Programmiergerät **PRG 710 / 710-1** (`prg710emu`,
+Startmenü „PRG710 Emulator"; die Variante wählt man in den Einstellungen unter
+„Modell"), ebenfalls mit eigener Konfiguration.  Systemdisketten liegen nicht bei.
 
 ### K8915: eine eigene Bootdiskette
 
@@ -64,12 +67,13 @@ Weitere Möglichkeiten:
 
 ## Starten
 
-Über das Startmenü („A5120 Emulator" bzw. „K8915 Emulator") oder auf der
+Über das Startmenü („A5120 Emulator", „K8915 Emulator" bzw. „PRG710 Emulator") oder auf der
 Kommandozeile:
 
 ```sh
 a5120emu
 k8915emu
+prg710emu
 ```
 
 Das Paket enthält ein zweites Programm, das **k1520DiskTool**: es tauscht Dateien
@@ -125,7 +129,7 @@ Assembler stehen als Beispielzeilen darin).
 |---|---|
 | Programm | wohin bei der Installation gewählt (Vorschlag `~/K1520emu`) |
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
-| Konfiguration | `~/.config/k1520emu/a5120emu.yaml` bzw. `k8915emu.yaml` (je Programm) |
+| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml` bzw. `prg710emu.yaml` (je Programm) |
 
 Die Beispieldisketten werden beim ersten Start in den Diskettenordner
 ausgepackt.  Der Emulator schreibt Änderungen an einer eingelegten Diskette

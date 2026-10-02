@@ -103,7 +103,7 @@ jobs:
           lib.k1520_create.argtypes = [ctypes.c_int]
           lib.k1520_create.restype = ctypes.c_void_p
           lib.k1520_destroy.argtypes = [ctypes.c_void_p]
-          for nr, name in ((0, "A5120"), (2, "K8915")):
+          for nr, name in ((0, "A5120"), (1, "PRG710"), (2, "K8915")):
               h = lib.k1520_create(nr)
               if not h:
                   sys.exit(name + ": k1520_create schlug fehl")
@@ -304,7 +304,7 @@ jobs:
             'lib.k1520_create.argtypes = [ctypes.c_int]',
             'lib.k1520_create.restype = ctypes.c_void_p',
             'lib.k1520_destroy.argtypes = [ctypes.c_void_p]',
-            'for nr, name in ((0, "A5120"), (2, "K8915")):',
+            'for nr, name in ((0, "A5120"), (1, "PRG710"), (2, "K8915")):',
             '    h = lib.k1520_create(nr)',
             '    if not h: sys.exit(name + ": k1520_create schlug fehl")',
             '    lib.k1520_destroy(h)',

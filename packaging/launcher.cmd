@@ -1,5 +1,5 @@
 @echo off
-rem K1520-Emulator - Starter des A5120 Emulators UND des K8915 Emulators (Windows).
+rem K1520-Emulator - Starter des A5120, K8915 UND PRG710 Emulators (Windows).
 rem Die Wurzel setzt der Installer.  Eine Vorlage fuer beide (bin\a5120emu.cmd,
 rem bin\k8915emu.cmd): welcher Emulator startet, sagt der Dateiname (%~n0).
 rem
@@ -42,5 +42,6 @@ if defined DATEN (
 
 set "MASCHINE="
 if /i "%~n0"=="k8915emu" set "MASCHINE=--machine k8915"
+if /i "%~n0"=="prg710emu" set "MASCHINE=--machine prg710"
 
 "%ROOT%\venv\Scripts\pythonw.exe" "%ROOT%\app\main.py" %MASCHINE% %*

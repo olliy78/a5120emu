@@ -482,8 +482,8 @@ cp "$REPO/third_party/isocline/LICENSE" \
 cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
 # Auslieferungskonfiguration: der Zustand nach der Erstinstallation und das Ziel
 # von *Ansicht > Standard zuruecksetzen* (app/config_io.py::standard_konfiguration)
-# — je Programm eine (A5120 Emulator, K8915 Emulator; app/profil.py).
-for _vorgabe in default_config_a5120.yaml default_config_k8915.yaml; do
+# — je Programm eine (A5120, K8915, PRG710 Emulator; app/profil.py).
+for _vorgabe in default_config_a5120.yaml default_config_k8915.yaml default_config_prg710.yaml; do
     cp "$REPO/data/$_vorgabe" "$STAGE/payload/share/k1520emu/$_vorgabe" \
         || die "Auslieferungskonfiguration fehlt: data/$_vorgabe"
 done
@@ -555,6 +555,7 @@ else
     cp "$SELF_DIR/k1520disktool.desktop.in" "$STAGE/k1520disktool.desktop.in"
     cp "$SELF_DIR/a5120emu.desktop.in"      "$STAGE/a5120emu.desktop.in"
     cp "$SELF_DIR/k8915emu.desktop.in"      "$STAGE/k8915emu.desktop.in"
+    cp "$SELF_DIR/prg710emu.desktop.in"     "$STAGE/prg710emu.desktop.in"
     cp "$SELF_DIR/lib/common.sh"            "$STAGE/lib/common.sh"
     chmod +x "$STAGE/install.sh"
 fi

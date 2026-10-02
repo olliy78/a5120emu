@@ -145,6 +145,7 @@ def test_lock_nagelt_mit_hashes_fest():
 @pytest.mark.parametrize("datei,starter", [
     ("a5120emu.desktop.in", "a5120emu"),
     ("k8915emu.desktop.in", "k8915emu"),
+    ("prg710emu.desktop.in", "prg710emu"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_eintrag_ist_gueltig(datei, starter):
@@ -175,6 +176,28 @@ def test_install_sh_schreibt_und_kennt_den_k8915_starter():
     assert '"$SELF_DIR/k8915emu.desktop.in"' in bp
 
 
+def test_der_prg710_emulator_ist_in_allen_paketwegen():
+    """AP-P5g: dritter Starter aus DERSELBEN Vorlage; der Name waehlt das Profil."""
+    text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r'^MASCHINEN="[^"]*\bprg710emu\b', text, re.M), \
+        "ohne Eintrag in MASCHINEN bleibt der Starter beim Deinstallieren liegen"
+    assert '> "$PREFIX/bin/prg710emu"' in text and "prg710emu.desktop.in" in text
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert '"$SELF_DIR/prg710emu.desktop.in"' in bp and "default_config_prg710.yaml" in bp
+    desk = (PACKAGING / "prg710emu.desktop.in").read_text(encoding="utf-8")
+    assert "Name=PRG710 Emulator\n" in desk
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert '#define Programm3 "PRG710 Emulator"' in iss
+    eintrag = iss[iss.index('Name: "{group}\\{#Programm3}"'):]
+    eintrag = eintrag[:eintrag.index("\nName:")]
+    assert "--machine prg710" in eintrag and "a5120emu.ico" in eintrag
+    assert "bin\\prg710emu.cmd" in iss
+    # Der Name im Starter muss ein Profil des Programms sein.
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from app import profil as _profil
+    assert _profil.profil("prg710").programm == "prg710emu"
+
+
 def test_iss_hat_den_k8915_emulator_im_startmenue():
     iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
     assert '#define Programm  "A5120 Emulator"' in iss
@@ -199,12 +222,16 @@ def test_rauchtests_pruefen_beide_maschinen():
     }
     for name, text in quellen.items():
         assert "k1520_create" in text and '(2, "K8915")' in text, name
+        assert '(1, "PRG710")' in text, name
         assert "k1520_destroy" in text, name
     # release.yml hat zwei Rauchtests (Linux, Windows): beide.
     assert quellen["release.yml"].count('(2, "K8915")') == 2
+    assert quellen["release.yml"].count('(1, "PRG710")') == 2
     # Installer und Setup bauen auch das Fenster des zweiten Profils.
     assert 'profil("k8915")' in quellen["install.sh"]
     assert 'profil("k8915")' in quellen["k1520emu.iss"]
+    assert 'profil("prg710")' in quellen["install.sh"]
+    assert 'profil("prg710")' in quellen["k1520emu.iss"]
 
 
 def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
@@ -223,6 +250,7 @@ def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
 def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
     text = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
     assert '"%~n0"=="k8915emu"' in text and "--machine k8915" in text
+    assert '"%~n0"=="prg710emu"' in text and "--machine prg710" in text
     assert "%MASCHINE% %*" in text
 
 
@@ -230,6 +258,7 @@ def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
 @pytest.mark.parametrize("name,erwartet", [
     ("a5120emu", []),
     ("k8915emu", ["--machine", "k8915"]),
+    ("prg710emu", ["--machine", "prg710"]),
 ])
 def test_launcher_sh_waehlt_die_maschine_am_namen(tmp_path, name, erwartet):
     """EINE Vorlage, zwei Starter: der Name entscheidet über das Profil."""
@@ -345,6 +374,7 @@ def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
 @pytest.mark.parametrize("datei,starter", [
     ("a5120emu.desktop.in", "a5120emu"),
     ("k8915emu.desktop.in", "k8915emu"),
+    ("prg710emu.desktop.in", "prg710emu"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_exec_ist_gequotet(datei, starter):
@@ -1191,7 +1221,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
     stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
     for pflicht in [
         "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
-        "k8915emu.desktop.in", "uv_pins.txt",
+        "k8915emu.desktop.in", "prg710emu.desktop.in", "uv_pins.txt",
         "lib/common.sh", "requirements.lock", "VERSION", "README.md",
         "payload/bin/libk1520core.so",
         "payload/app/main.py", "payload/app/paths.py",
@@ -1203,6 +1233,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         # zuruecksetzen* meldet „nicht gefunden".
         "payload/share/k1520emu/default_config_a5120.yaml",
         "payload/share/k1520emu/default_config_k8915.yaml",
+        "payload/share/k1520emu/default_config_prg710.yaml",
         "payload/share/icons/a5120emu.svg",
         # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
         # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-
@@ -1342,6 +1373,8 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert (heim / ".local" / "share" / "applications" / "a5120emu.desktop").is_file()
     assert os.access(ziel / "bin" / "k8915emu", os.X_OK)
     assert (heim / ".local" / "share" / "applications" / "k8915emu.desktop").is_file()
+    assert os.access(ziel / "bin" / "prg710emu", os.X_OK)
+    assert (heim / ".local" / "share" / "applications" / "prg710emu.desktop").is_file()
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"
