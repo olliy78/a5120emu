@@ -387,10 +387,25 @@ _lib.k1520_bell_count.restype = ctypes.c_uint32
 _lib.k1520_nmi.argtypes = [K1520Handle]
 _lib.k1520_nmi.restype = None
 
+# PRG 710/710-1 (AP-P5b): Variante und Speicherverwaltung (Diagnose)
+_lib.k1520_prg710_variant.argtypes = [K1520Handle]
+_lib.k1520_prg710_variant.restype = ctypes.c_int
+_lib.k1520_prg710_page.argtypes = [K1520Handle, ctypes.c_int,
+                                   ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8)]
+_lib.k1520_prg710_page.restype = ctypes.c_bool
+_lib.k1520_prg710_freigabe.argtypes = [K1520Handle]
+_lib.k1520_prg710_freigabe.restype = ctypes.c_int
+
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
+
+# Bildschirmtastatur: `QK_TASTE_BASE | Position` = physische Taste (K7609 am PRG 710,
+# K7672 am PRG 710-1 und K8915).  ET1 des PRG 710 (K7609): Position 37H; ET2/ST: 38H.
+# Am PRG 710-1 und K8915 gelten die Matrixpositionen der K7672 (Firmware-Tabelle).
+QK_TASTE_BASE = 0x03000000
+K7609_ET1, K7609_ET2 = 0x37, 0x38
 
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
@@ -637,8 +652,7 @@ class K1520Emulator:
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
             machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"prg710"`` oder
-                ``"prg710-1"`` (Gerüst, ohne Tastatur) — siehe
-                :data:`MACHINE_TYPES`.
+                ``"prg710-1"`` — siehe :data:`MACHINE_TYPES`.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
         """
@@ -699,8 +713,26 @@ class K1520Emulator:
         """Name der Maschine, mit der dieses Objekt erzeugt wurde (``"a5120"``/``"k8915"``)."""
         return self._machine
 
+    @property
+    def prg_variant(self) -> Optional[int]:
+        """PRG: 0 = PRG 710, 1 = PRG 710-1 (aus dem Kern); andere Maschinen ``None``."""
+        v = int(_lib.k1520_prg710_variant(self._handle))
+        return v if v >= 0 else None
+
+    def prg_page(self, n: int) -> Optional[tuple]:
+        """PRG: Speicherverwaltung Seite ``n`` (0…15) als ``(E8H, EAH)``; sonst ``None``."""
+        a, s = ctypes.c_uint8(), ctypes.c_uint8()
+        if not _lib.k1520_prg710_page(self._handle, n, ctypes.byref(a), ctypes.byref(s)):
+            return None
+        return a.value, s.value
+
+    def prg_freigabe(self) -> Optional[int]:
+        """PRG: Freigaberegister EBH (0 = Abbildung aus); sonst ``None``."""
+        v = int(_lib.k1520_prg710_freigabe(self._handle))
+        return v if v >= 0 else None
+
     def machine_type(self) -> int:
-        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 2 = K8915)."""
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915)."""
         return int(_lib.k1520_machine_type(self._handle))
 
     def panel_lamps(self) -> int:
@@ -1121,7 +1153,7 @@ class K1520Emulator:
     # ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────
 
     def serial_count(self) -> int:
-        """Zahl der einstellbaren Schnittstellen (A5120 und K8915: 3)."""
+        """Zahl der einstellbaren Schnittstellen (A5120, K8915 und PRG 710: 3; PRG 710-1: 2)."""
         return int(_lib.k1520_serial_count(self._handle))
 
     def serial_info(self, i: int) -> Optional[SerialInfo]:

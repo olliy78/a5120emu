@@ -59,7 +59,9 @@ K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
  *                   Anderes → NULL (Grund in k1520_last_init_error).
  * @param drive0..3  wie bei k1520_create_configured (Vorgabe K5601, K5601, none, none).
  * k1520_create(K1520_MACHINE_PRG710) und _configured bauen die Variante 0.
- * Tastatur und Anzeigen: noch nicht (AP-P2a/P2b/P5b); k1520_machine_type() = 1.
+ * Tastatur: keyPress/keyRelease wie bei den anderen Maschinen (710: K7609 hinter dem 8279,
+ * 710-1: K7672 an A32-B; Codes `0x03000000 | Position` = physische Taste).
+ * k1520_machine_type() = 1; Variante: k1520_prg710_variant().
  */
 K1520_API K1520Handle k1520_create_prg710(int variante,
                                           const char* drive0, const char* drive1,
@@ -455,6 +457,21 @@ K1520_API uint32_t k1520_bell_count(K1520Handle h);
  *        Thread-safe.
  */
 K1520_API void     k1520_nmi(K1520Handle h);
+
+/**
+ * @brief Variante eines PRG-Handles: 0 = PRG 710, 1 = PRG 710-1; -1 bei anderer Maschine.
+ */
+K1520_API int      k1520_prg710_variant(K1520Handle h);
+/**
+ * @brief Speicherverwaltung des PRG (Ports E8H/EAH), Diagnose für Debugger/Oberfläche.
+ * @param n      Seite 0…15 (A12–A15).
+ * @param attr   E8H dieser Seite (unteres Halbbyte 0 = OPS-RAM, sonst Systemkarte); darf NULL sein.
+ * @param seite  EAH dieser Seite (physische OPS-Seite, 4 Bit); darf NULL sein.
+ * @return false bei anderer Maschine oder n ausserhalb 0…15 (Ausgaben unberührt).
+ */
+K1520_API bool     k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite);
+/** @brief Freigabe-Register EBH (0 = Abbildung aus); -1 bei anderer Maschine. */
+K1520_API int      k1520_prg710_freigabe(K1520Handle h);
 
 #ifdef __cplusplus
 }

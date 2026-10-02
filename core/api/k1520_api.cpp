@@ -683,4 +683,28 @@ void k1520_nmi(K1520Handle h) {
     toMachine(h)->nmi();
 }
 
+// PRG 710 / 710-1: Diagnose (AP-P5b).  Andere Maschinen: -1 bzw. false.
+static Prg710Machine* prgOf(K1520Handle h) {
+    return dynamic_cast<Prg710Machine*>(toMachine(h));
+}
+
+int k1520_prg710_variant(K1520Handle h) {
+    auto* p = prgOf(h);
+    if (!p) return -1;
+    return p->variante() == Prg710Machine::Config::Variante::Prg710_1 ? 1 : 0;
+}
+
+bool k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite) {
+    auto* p = prgOf(h);
+    if (!p || n < 0 || n > 15) return false;
+    if (attr)  *attr  = p->speicher().attr(n);
+    if (seite) *seite = p->speicher().seite(n);
+    return true;
+}
+
+int k1520_prg710_freigabe(K1520Handle h) {
+    auto* p = prgOf(h);
+    return p ? p->speicher().freigabe() : -1;
+}
+
 } // extern "C"
