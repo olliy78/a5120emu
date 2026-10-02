@@ -97,8 +97,8 @@ public:
          *
          * VRAM F800H wie am A5120, aber ohne Lesesperre: die Karte antwortet nur über die
          * Speicherverwaltung (Seite F, E8H = FFH), unter F800H liegt kein weiterer Leser.
-         * Zeichengenerator **vorläufig der K8915-Satz [?]** bis der EPROM-Abzug des PRG
-         * vorliegt (§8.2.3).
+         * Zeichengenerator: die beiden 1-KB-EPROMs A103/A123 des PRG (Abzug des Anwenders,
+         * doc/EPROMS/PRG710/prg710_k7024_a1{03,23}.bin), gleiche Adressierung wie A5120.
          */
         static A5120Config forPrg710();
     };

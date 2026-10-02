@@ -358,5 +358,36 @@ TEST(Prg710Boot, SerielleAnschluesseJeVariante) {
     EXPECT_EQ(b.serielleAnschluesse().size(), 2u);
 }
 
+/**
+ * @test Prg710Boot.NkmLoaderWirdMitDemPrgZeichengeneratorGerendert
+ * @brief Pixelprobe: die Zellen von „NKM-LOADER“ im Bildspeicher (640 px breit, Zelle 8×12)
+ *        tragen Bit für Bit die Glyphen der PRG-EPROMs A103/A123 (nicht des K8915-/A5120-Satzes),
+ *        und die Zellen hinter dem Text sind leer.
+ */
+TEST_P(Prg710Boot, NkmLoaderWirdMitDemPrgZeichengeneratorGerendert) {
+    Prg710Machine m(cfgFuer(GetParam()));
+    m.powerOn();
+    ASSERT_GT(bisTastaturabfrage(m), 0);
+    ASSERT_EQ(zeile(m, 0), "NKM-LOADER");
+    const K7024::A5120Config cg = K7024::A5120Config::forPrg710();
+    const uint8_t* fb = m.framebuffer();
+    const std::string text = "NKM-LOADER";
+    int gesetzt = 0;
+    for (int col = 0; col < 12; ++col) {
+        const int code = col < 10 ? text[col] : ' ';
+        for (int pr = 0; pr < 12; ++pr) {
+            const uint8_t soll = pr < 8 ? cg.chargen_rows0_7[code * 8 + pr]
+                                        : cg.chargen_rows8_11[code * 8 + pr - 8];
+            for (int px = 0; px < 8; ++px) {
+                const bool bit = fb[pr * 640 + col * 8 + px] != 0;
+                EXPECT_EQ(bit, ((soll >> (7 - px)) & 1) != 0)
+                    << "Spalte " << col << " Zeile " << pr << " Pixel " << px;
+                gesetzt += bit;
+            }
+        }
+    }
+    EXPECT_GT(gesetzt, 100) << "Text muss sichtbar sein";
+}
+
 INSTANTIATE_TEST_SUITE_P(Varianten, Prg710Boot, ::testing::Values(V::Prg710, V::Prg710_1),
                          [](const auto& i) { return i.param == V::Prg710 ? "Prg710" : "Prg710_1"; });

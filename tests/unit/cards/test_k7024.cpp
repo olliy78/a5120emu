@@ -41,6 +41,7 @@
 // Unit tests for the K7024 ABS screen controller card.
 
 #include <gtest/gtest.h>
+#include <cstring>
 #include "core/bus/k1520_bus.h"
 #include "core/cards/k7024/k7024.h"
 
@@ -668,4 +669,40 @@ TEST(K7024Prg710, ConfigForPrg710) {
     EXPECT_TRUE(k.isReadable());
     k.memWrite(0xF800, 'X');
     EXPECT_EQ(k.memRead(0xF800), 'X');
+}
+
+/**
+ * @test K7024Prg710.ZeichengeneratorAusDenPrgEproms
+ * @brief forPrg710() rendert den Satz der beiden PRG-EPROMs A103/A123 (1 KB je Baustein,
+ *        Adressierung wie A5120: code*8+zeile, Bit 7 = linke Pixelspalte).  Der PRG-Satz ist
+ *        reines ISO-646-IRV (kein Umlaut) mit 5 px breiten Glyphen — 'A' unterscheidet sich
+ *        also vom 7 px breiten A5120-'A'.  Zusätzlich je EPROM eine FNV-1a-Prüfsumme der
+ *        eingebetteten Tabelle gegen die Datei (doc/EPROMS/PRG710/prg710_k7024_a1{03,23}.bin).
+ */
+TEST(K7024Prg710, ZeichengeneratorAusDenPrgEproms) {
+    K1520Bus bus;
+    K7024 k(bus, K7024::A5120Config::forPrg710());
+    static const uint8_t kA[12] = { 0x00,0x00,0x00,0x10,0x28,0x44,0x44,0x7C,0x44,0x44,0x00,0x00 };
+    static const uint8_t ka[12] = { 0x00,0x00,0x00,0x00,0x00,0x38,0x48,0x48,0x48,0x3C,0x00,0x00 };
+    expectGlyph(k, 0x41, kA, "PRG 'A'");
+    expectGlyph(k, 0x61, ka, "PRG 'a'");
+    expectGlyph(k, 0x20, kGlyphSpace, "PRG Leerzeichen");
+
+    uint8_t got[12], a5120[12];
+    k.vramWrite(0, 0, 0x41);
+    glyphBitmap(k.getFramebuffer(), 0, 0, got);
+    K1520Bus bus2;
+    K7024 k2(bus2);
+    k2.vramWrite(0, 0, 0x41);
+    glyphBitmap(k2.getFramebuffer(), 0, 0, a5120);
+    EXPECT_NE(std::memcmp(got, a5120, 12), 0) << "PRG- und A5120-Satz müssten sich unterscheiden";
+
+    auto fnv = [](const uint8_t* p) {
+        uint32_t h = 0x811C9DC5u;
+        for (int i = 0; i < 1024; ++i) h = (h ^ p[i]) * 0x01000193u;
+        return h;
+    };
+    const K7024::A5120Config c = K7024::A5120Config::forPrg710();
+    EXPECT_EQ(fnv(c.chargen_rows0_7),  0xAF1E731Du) << "A103";
+    EXPECT_EQ(fnv(c.chargen_rows8_11), 0x3185453Bu) << "A123";
 }
