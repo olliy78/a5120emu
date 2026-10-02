@@ -49,7 +49,6 @@ from app.ui_icons import icon
 from app.core_binding.k1520 import K1520Emulator
 from app import config_io
 from app import drive_types as dt
-from app import modell
 from app import paths
 from app import programme
 from app import profil as profile
@@ -83,14 +82,16 @@ class MainWindow(QMainWindow):
         # ``em=``.  Vorgabe A5120 ohne Erweiterung, überschrieben von der
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
         # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
-        self._model = modell.DEFAULT_MODEL
+        self._model = self.profil.standard_modell()
+        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672).
+        self._tastatur_art = self.profil.modell_tastatur(self._model)
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
             self.emulator = K1520Emulator(self._drive_types,
-                                          machine=self.profil.maschine,
-                                          em=modell.em_for(self._model))
+                                          machine=self.profil.modell_maschine(self._model),
+                                          em=self.profil.modell_em(self._model))
             # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
             # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
             self.emulator.set_key_repeat_realtime(True)
@@ -396,11 +397,32 @@ class MainWindow(QMainWindow):
     # ── On-screen keyboard → emulator ────────────────────────────────────────
 
     def _tastatur_bauen(self):
-        """Die Bildschirmtastatur des Profils: K7637 (A5120) oder K7672 (K8915)."""
-        if self.profil.tastatur == "k7672":
+        """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1)
+        oder K7609 (PRG 710)."""
+        if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
+        if self._tastatur_art == "k7609":
+            from app.ui.keyboard_k7609 import KeyboardK7609Widget
+            return KeyboardK7609Widget()
         return KeyboardWidget()
+
+    def _tastatur_tauschen(self):
+        """Nach einem Modellwechsel die Bildschirmtastatur des neuen Modells einsetzen
+        (PRG 710 ⇄ 710-1) — dasselbe Dock, dieselben Verbindungen."""
+        art = self.profil.modell_tastatur(self._model)
+        if art == self._tastatur_art:
+            return
+        self._tastatur_art = art
+        alt = self.keyboard_widget
+        self.keyboard_widget = self._tastatur_bauen()
+        self.keyboard_widget.keyPressed.connect(self._on_kbd_press)
+        self.keyboard_widget.keyReleased.connect(self._on_kbd_release)
+        self.screen_widget.key_sink = self.keyboard_widget
+        self.keyboard_dock.setWidget(self.keyboard_widget)
+        alt.deleteLater()
+        self.keyboard_widget.set_powered(bool(self.act_power.isChecked()))
+        QTimer.singleShot(0, self._shrink_keyboard)
 
     def _on_kbd_press(self, keycode: int, shift: bool, ctrl: bool):
         self.emulator.key_press(keycode, shift, ctrl)
@@ -639,7 +661,8 @@ class MainWindow(QMainWindow):
         tools_menu = menu_bar.addMenu("&Werkzeuge")
         tools_menu.addAction(self.act_disktool)
         # Der jeweils andere Emulator (dasselbe Programm, anderes Profil).
-        tools_menu.addAction(getattr(self, f"act_{self.profil.andere}emu"))
+        for maschine in (self.profil.andere,) + tuple(self.profil.weitere):
+            tools_menu.addAction(getattr(self, f"act_{maschine}emu"))
         tools_menu.addAction(self.act_konsole)
 
         # ── Hilfe ────────────────────────────────────────────────────────────
@@ -818,7 +841,7 @@ class MainWindow(QMainWindow):
     def _gather_config(self) -> dict:
         """Build the full configuration dict from the live application state."""
         general = {"speed": float(self.speed_factor)}
-        if self.profil.modellwahl:              # nur der A5120 kennt ein Modell
+        if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
             general["model"] = self._model
         return config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
@@ -1037,8 +1060,8 @@ class MainWindow(QMainWindow):
             # _apply_drive_types (der auch das Modell an den core-Konstruktor
             # gibt).  Ein fehlender Eintrag ist die Vorgabe A5120 (ohne EM) —
             # ältere Konfigurationen laufen damit unverändert.
-            self._model = (modell.normalize(general.get("model"))
-                           if self.profil.modellwahl else modell.DEFAULT_MODEL)
+            self._model = (self.profil.modell_normalisieren(general.get("model"))
+                           if self.profil.modellwahl else self.profil.standard_modell())
             self.settings_widget.set_model_value(self._model)
 
             # Drive-bay configuration must be applied BEFORE the disks, so the
@@ -1315,7 +1338,7 @@ class MainWindow(QMainWindow):
         Reine Abfrage im selben Sekundentakt wie der Rest der Statuszeile
         (``em_leds()``/``em_mode16()``, kein Rückruf) — Anschluss aus S5.
         """
-        if not modell.em_for(self._model):
+        if not self.profil.modell_em(self._model):
             return
         try:
             v1, v2 = self.emulator.em_leds()
@@ -1439,7 +1462,7 @@ class MainWindow(QMainWindow):
         Laufwerks-Auswahlfeld) fragt auch nicht nach, sondern startet direkt
         kalt neu.
         """
-        self._model = modell.normalize(model)
+        self._model = self.profil.modell_normalisieren(model)
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
@@ -1455,7 +1478,7 @@ class MainWindow(QMainWindow):
         restore it is ``False`` (power-on happens once, later).
         """
         types = dt.normalize_list(types)
-        em = modell.em_for(self._model)
+        em = self.profil.modell_em(self._model)
 
         # Disks whose slot still carries a drive survive the reconfiguration.
         surviving = [m for m in self.drives_widget.get_mounts()
@@ -1464,7 +1487,8 @@ class MainWindow(QMainWindow):
 
         # Recreate the machine with the new drive bay / model.
         try:
-            new_emu = K1520Emulator(types, machine=self.profil.maschine, em=em)
+            new_emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
+                                    em=em)
             new_emu.set_key_repeat_realtime(True)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
@@ -1487,6 +1511,7 @@ class MainWindow(QMainWindow):
 
         self._drive_types = types
         self.emulator = new_emu
+        self._tastatur_tauschen()
         self.serial_widget.set_emulator(new_emu)
         self.serial_widget.zustand_anwenden(serielle)
         self.screen_widget.set_emulator(new_emu)
@@ -1530,17 +1555,26 @@ class MainWindow(QMainWindow):
         except RuntimeError as e:
             QMessageBox.warning(self, "k1520DiskTool", str(e))
 
-    def _andere_maschine_starten(self):
-        """Den jeweils ANDEREN Emulator starten (A5120 ⇄ K8915).
+    def _emulator_starten(self, maschine: str):
+        """Einen der ANDEREN Emulatoren starten (A5120, K8915, PRG710).
 
         Dasselbe Programm mit dem anderen Profil, als eigener Prozess mit
-        eigener Konfiguration — beide laufen nebeneinander.
+        eigener Konfiguration — sie laufen nebeneinander.
         """
-        kennung = programme.EMULATOR_JE_MASCHINE[self.profil.andere]
+        kennung = programme.EMULATOR_JE_MASCHINE[maschine]
         try:
             programme.programm_starten(kennung)
         except RuntimeError as e:
-            QMessageBox.warning(self, profile.profil(self.profil.andere).titel, str(e))
+            QMessageBox.warning(self, profile.profil(maschine).titel, str(e))
+
+    def _a5120emu_starten(self):
+        self._emulator_starten("a5120")
+
+    def _k8915emu_starten(self):
+        self._emulator_starten("k8915")
+
+    def _prg710emu_starten(self):
+        self._emulator_starten("prg710")
 
     def _konsole_starten(self):
         """Ein Konsolenfenster mit den K1520-Kommandozeilenwerkzeugen öffnen.
@@ -1561,9 +1595,7 @@ class MainWindow(QMainWindow):
             fassung = _E.version()
         except Exception:
             fassung = "unbekannt"
-        rechner = ("des Bürocomputers <b>robotron A5120</b>"
-                   if self.profil.maschine == "a5120"
-                   else f"des Arbeitsplatzcomputers <b>robotron {self.profil.rechner}</b>")
+        rechner = self.profil.ueber_rechner
         QMessageBox.about(
             self, f"Über {self.profil.programm}",
             f"<h3>{self.profil.programm}</h3>"

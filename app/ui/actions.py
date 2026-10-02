@@ -93,11 +93,15 @@ _SPEC: List[Tuple] = [
     ("k8915emu", "K&8915 Emulator starten", None, None,
      "Den K8915 Emulator öffnen — ein eigenes Programm mit eigener "
      "Konfiguration; es läuft neben diesem weiter",
-     "_andere_maschine_starten", False),
+     "_k8915emu_starten", False),
     ("a5120emu", "&A5120 Emulator starten", None, None,
      "Den A5120 Emulator öffnen — ein eigenes Programm mit eigener "
      "Konfiguration; es läuft neben diesem weiter",
-     "_andere_maschine_starten", False),
+     "_a5120emu_starten", False),
+    ("prg710emu", "&PRG710 Emulator starten", None, None,
+     "Den PRG710 Emulator öffnen (PRG 710 / PRG 710-1) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_prg710emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -121,6 +125,7 @@ KURZ = {
     "nmi": "NMI",
     "k8915emu": "K8915",
     "a5120emu": "A5120",
+    "prg710emu": "PRG710",
     "vollbild": "Vollbild",
     "standard": "Standard",
     "disktool": "DiskTool",
@@ -136,12 +141,13 @@ DIALOG_NAME = {"power": "Rechner ein-/ausschalten"}
 #: das Menü sagt, was ein Klick TUT.
 POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 
-#: Aktionen, die es nur in EINEM Programm gibt (Name → Maschine des Profils,
-#: `app/profil.py`).  Alle übrigen haben beide.
+#: Aktionen, die nicht jedes Programm hat (Name → Maschinen der Profile,
+#: `app/profil.py`, die sie haben).  Alle übrigen haben alle.
 NUR_FUER = {
-    "nmi": "k8915",        # NMI-Taster der Frontplatte
-    "k8915emu": "a5120",   # der jeweils ANDERE Emulator
-    "a5120emu": "k8915",
+    "nmi": ("k8915",),                   # NMI-Taster der Frontplatte
+    "k8915emu": ("a5120", "prg710"),     # die jeweils ANDEREN Emulatoren
+    "a5120emu": ("k8915", "prg710"),
+    "prg710emu": ("a5120", "k8915"),
 }
 
 #: Was die Symbolleiste aufnehmen kann, in der Reihenfolge des Einrichtdialogs.
@@ -189,7 +195,8 @@ STANDARD_K8915: List = [
 
 def gibt_es(name: str, maschine: str = "a5120") -> bool:
     """Hat das Programm der Maschine *maschine* die Aktion *name*?"""
-    return NUR_FUER.get(name, maschine) == maschine
+    erlaubt = NUR_FUER.get(name)
+    return erlaubt is None or maschine in erlaubt
 
 
 def reihenfolge(maschine: str = "a5120") -> List:

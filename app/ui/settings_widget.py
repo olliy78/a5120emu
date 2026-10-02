@@ -28,7 +28,6 @@ from PySide6.QtGui import QColor
 from app.ui.screen_widget import CRTParams
 from app import drive_types as dt
 from app import profil as profile
-from app import modell
 from app import takt
 
 
@@ -200,15 +199,12 @@ class SettingsWidget(QWidget):
         form = QFormLayout(inner)
 
         self.model_combo = QComboBox(inner)
-        for schluessel, _em, beschriftung in modell.MODELS:
+        for schluessel, _maschine, _em, beschriftung, _tastatur in self.profil.modelle:
             self.model_combo.addItem(beschriftung, schluessel)
         self.model_combo.currentIndexChanged.connect(self._on_model_combo)
-        self.model_combo.setToolTip(
-            "A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
-            "EM256 mit dem U8001 hinzu.  Ein Wechsel erzeugt die Maschine neu "
-            "(wie ein Kaltstart).")
-        # Nur im Programm, dessen Maschine ein Erweiterungsmodul tragen kann (A5120);
-        # model_value() liefert sonst die Vorgabe.
+        self.model_combo.setToolTip(self.profil.modell_tipp)
+        # Nur im Programm mit Modellwahl (A5120, PRG); model_value() liefert sonst
+        # die Vorgabe.
         if self.profil.modellwahl:
             form.addRow("Modell:", self.model_combo)
         else:
@@ -235,12 +231,12 @@ class SettingsWidget(QWidget):
     def model_value(self) -> str:
         """Der aktuell gewählte Modellschlüssel (``app.modell.A5120``/``A5120_16``)."""
         data = self.model_combo.currentData()
-        return modell.normalize(data)
+        return self.profil.modell_normalisieren(data)
 
     def set_model_value(self, model: str):
         """Den Eintrag für *model* wählen (ohne Signal)."""
         self._model_guard = True
-        idx = self.model_combo.findData(modell.normalize(model))
+        idx = self.model_combo.findData(self.profil.modell_normalisieren(model))
         self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._model_guard = False
 
