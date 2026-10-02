@@ -14,6 +14,7 @@
  * k1520disktool create <abbild> --fs NAME [--label NAME] [--boot abbild.bin]
  * k1520disktool boot-get <abbild> <datei.bin>        # Systemspuren herausschreiben
  * k1520disktool boot-put <abbild> <datei.bin>        # Bootabbild einspielen
+ * k1520disktool boot-scpx <SYL17> <CCPBD17> <BIOS> <aus.bin> # SCPX-Systemspuren des PRG
  * k1520disktool info   <abbild> [--fs NAME]
  * k1520disktool check  <abbild>
  * k1520disktool formats
@@ -30,10 +31,13 @@
 
 #include "core/filesystem/cpm/cpa_dpb.h"
 #include "core/filesystem/disk_volume.h"
+#include "core/filesystem/prg_boot.h"
 #include "core/filesystem/geometry_probe.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -55,6 +59,7 @@ struct Optionen {
     std::string als;         ///< --as
     std::string label;       ///< --label
     std::string boot;        ///< --boot (Bootabbild fuer die Systemspuren)
+    std::string prg;         ///< --prg 710|710-1 (Geraet, fuer das das Bootabbild gebaut sein muss)
     std::string udos_typ;    ///< --type  (UDOS-Dateityp A/P/P1/B)
     std::string udos_eig;    ///< --props (UDOS-Eigenschaften, z. B. WS)
     int         udos_entry = 0;  ///< --entry (UDOS-Startadresse bei P/P1)
@@ -123,8 +128,13 @@ void gebrauch() {
         "  attr   <abbild> <datei> [--type …]       Dateiangaben zeigen/aendern\n"
         "         [--ro|--no-ro --sys|--no-sys]     … CP/M-Attribute\n"
         "         [--arc|--no-arc] [--user 3]       … und Nutzerbereich\n"
+        "         [--prg 710|710-1]                 … Bootabbild muss fuer dieses PRG-Geraet sein\n"
         "  boot-get <abbild> <datei.bin>            Systemspuren herausschreiben\n"
         "  boot-put <abbild> <datei.bin>            Bootabbild in die Systemspuren\n"
+        "         [--prg 710|710-1]                 … (wie bei create)\n"
+        "  boot-scpx <SYL17.SYS> <CCPBD17.SYS> <BIOS.SYS> <aus.bin> [--prg 710|710-1]\n"
+        "                                           SCPX-Systemspuren des PRG aus den Modulen\n"
+        "                                           bauen (Geraet wird am BIOS erkannt)\n"
         "  save-as <abbild> <ziel>                  Kopie, ggf. anderes Format\n"
         "  info   <abbild>                          Belegung und Erkennung\n"
         "  check  <abbild> [--full]                 Dateisystem pruefen (--full: jede Spur)\n"
@@ -171,6 +181,7 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--as")      { if (!wert("--as"))     return false; o.als    = argv[++i]; }
         else if (a == "--label")   { if (!wert("--label"))  return false; o.label  = argv[++i]; }
         else if (a == "--boot")    { if (!wert("--boot"))   return false; o.boot   = argv[++i]; }
+        else if (a == "--prg")     { if (!wert("--prg"))    return false; o.prg    = argv[++i]; }
         else if (a == "--type")    { if (!wert("--type"))   return false; o.udos_typ = argv[++i]; }
         else if (a == "--props")   { if (!wert("--props"))  return false; o.udos_eig = argv[++i]; }
         else if (a == "--entry")   { if (!wert("--entry"))  return false;
@@ -300,7 +311,22 @@ std::string bootZustand(const DiskVolume& v, int volume) {
     // der Kontrollblock mitkommt — dessen unbeschriebene Gap-Fuellung (0x4E).
     const bool leer = std::all_of(boot.begin(), boot.end(),
                                   [](uint8_t b) { return b == 0xE5 || b == 0x00 || b == 0x4E; });
-    return menschlich(platz) + (leer ? ", leer" : ", beschrieben");
+    std::string z = menschlich(platz) + (leer ? ", leer" : ", beschrieben");
+    // PRG 710/710-1 (AP-P6): der Ladesektor verraet System und Geraet.
+    if (!leer) {
+        prg_boot::System sys;
+        bool pruefen = true;
+        if (v.profile().type == FsType::Cpm)       sys = prg_boot::System::Scpx;
+        else if (v.profile().type == FsType::Udos) sys = prg_boot::System::Udos;
+        else pruefen = false;
+        if (pruefen) {
+            const prg_boot::Kennung k = prg_boot::erkenne(boot, sys);
+            if (k.ist_prg)
+                z += std::string(", ") + (sys == prg_boot::System::Udos ? "UDOS" : "SCPX")
+                   + " fuer " + prg_boot::name(k.variante);
+        }
+    }
+    return z;
 }
 
 std::string menschlich(uint64_t bytes) {
@@ -1076,6 +1102,37 @@ int cmd_rm(const Optionen& o) {
     return kOk;
 }
 
+/// @brief Liest eine ganze Datei; false + Meldung bei Fehler.
+bool leseAlles(const std::string& pfad, std::vector<uint8_t>& out) {
+    std::ifstream f(pfad, std::ios::binary);
+    if (!f) { std::cerr << "Fehler: nicht lesbar: " << pfad << "\n"; return false; }
+    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    return true;
+}
+
+/**
+ * @brief `--prg`: ein Bootabbild gegen das verlangte PRG-Geraet pruefen (vor jedem Schreiben).
+ * @return true = weiter; bei false ist die Meldung ausgegeben.
+ */
+bool pruefePrgWunsch(const Optionen& o, FsType typ, const std::string& bootpfad) {
+    if (o.prg.empty()) return true;
+    const prg_boot::Variante wunsch = prg_boot::ausName(o.prg);
+    if (wunsch == prg_boot::Variante::Unbekannt) {
+        std::cerr << "Fehler: --prg erwartet 710 oder 710-1\n";
+        return false;
+    }
+    prg_boot::System sys;
+    if (typ == FsType::Cpm)       sys = prg_boot::System::Scpx;
+    else if (typ == FsType::Udos) sys = prg_boot::System::Udos;
+    else { std::cerr << "Fehler: --prg gilt nur fuer CP/M-artige (SCPX) und UDOS-Disketten\n";
+           return false; }
+    std::vector<uint8_t> img;
+    if (!leseAlles(bootpfad, img)) return false;
+    const std::string p = prg_boot::problem(img, sys, wunsch, prg_boot::Variante::Unbekannt);
+    if (!p.empty()) { std::cerr << "Fehler: " << p << "\n"; return false; }
+    return true;
+}
+
 int cmd_create(const Optionen& o) {
     if (o.rest.size() < 2) { std::cerr << "Fehler: kein Abbild angegeben\n"; return kFehler; }
     if (o.fs.empty()) {
@@ -1084,6 +1141,13 @@ int cmd_create(const Optionen& o) {
         return kFehler;
     }
     std::string err;
+    if (!o.prg.empty()) {
+        const FsProfile* pr = dateisysteme().find(o.fs);
+        if (o.boot.empty()) { std::cerr << "Fehler: --prg braucht --boot\n"; return kFehler; }
+        if (!pr) { std::cerr << "Fehler: Dateisystem '" << o.fs << "' steht nicht im Katalog\n";
+                   return kFehler; }
+        if (!pruefePrgWunsch(o, pr->type, o.boot)) return kFehler;
+    }
     auto v = DiskVolume::create(o.rest[1], o.fs, o.label, formate(), dateisysteme(), err, o.boot);
     if (!v) { std::cerr << "Fehler: " << err << "\n"; return kFehler; }
 
@@ -1129,6 +1193,7 @@ int cmd_boot_put(const Optionen& o) {
     int rc = kOk;
     auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/true);
     if (!v) return rc;
+    if (!pruefePrgWunsch(o, v->profile().type, o.rest[2])) return kFehler;
 
     if (!v->writeBootImageFile(o.rest[2], o.volume) || !v->flush()) {
         std::cerr << "Fehler: " << v->lastError() << "\n";
@@ -1136,6 +1201,43 @@ int cmd_boot_put(const Optionen& o) {
     }
     std::cout << o.rest[2] << " → " << o.rest[1] << " (Systemspuren, "
               << menschlich(v->bootAreaSize(o.volume)) << " Platz)\n";
+    return kOk;
+}
+
+/**
+ * @brief `boot-scpx` — die SCPX-Systemspuren des PRG aus den drei Modulen bauen.
+ *
+ * Ergebnis ist ein Bootabbild fuer `create --fs scpx640 --boot` bzw. `boot-put`
+ * (AP-P6; Aufbau wie `SYSPRG`, prg_boot.h).  Das Geraet wird am BIOS abgelesen;
+ * `--prg` haelt es fest, ein BIOS der anderen Fassung wird abgewiesen.
+ */
+int cmd_boot_scpx(const Optionen& o) {
+    if (o.rest.size() < 5) {
+        std::cerr << "Fehler: boot-scpx <SYL17.SYS> <CCPBD17.SYS> <BIOS.SYS> <aus.bin>\n";
+        return kFehler;
+    }
+    prg_boot::Variante ziel = prg_boot::Variante::Unbekannt;
+    if (!o.prg.empty()) {
+        ziel = prg_boot::ausName(o.prg);
+        if (ziel == prg_boot::Variante::Unbekannt) {
+            std::cerr << "Fehler: --prg erwartet 710 oder 710-1\n";
+            return kFehler;
+        }
+    }
+    std::vector<uint8_t> syl, ccp, bios, band;
+    if (!leseAlles(o.rest[1], syl) || !leseAlles(o.rest[2], ccp) || !leseAlles(o.rest[3], bios))
+        return kFehler;
+    prg_boot::Variante erkannt = prg_boot::Variante::Unbekannt;
+    std::string err;
+    if (!prg_boot::scpxBand(syl, ccp, bios, ziel, band, erkannt, err)) {
+        std::cerr << "Fehler: " << err << "\n";
+        return kFehler;
+    }
+    std::ofstream f(o.rest[4], std::ios::binary | std::ios::trunc);
+    f.write(reinterpret_cast<const char*>(band.data()), static_cast<std::streamsize>(band.size()));
+    if (!f) { std::cerr << "Fehler: nicht schreibbar: " << o.rest[4] << "\n"; return kFehler; }
+    std::cout << o.rest[4] << " (" << band.size() << " Byte Systemspuren, SCPX fuer "
+              << prg_boot::name(erkannt) << ")\n";
     return kOk;
 }
 
@@ -1414,6 +1516,7 @@ int main(int argc, char** argv) {
     if (befehl == "attr")    return cmd_attr(o);
     if (befehl == "boot-get") return cmd_boot_get(o);
     if (befehl == "boot-put") return cmd_boot_put(o);
+    if (befehl == "boot-scpx") return cmd_boot_scpx(o);
     if (befehl == "info")    return cmd_info(o);
     if (befehl == "save-as") return cmd_save_as(o);
     if (befehl == "measure") return cmd_measure(o);

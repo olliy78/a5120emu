@@ -1,0 +1,10 @@
+# `boot-put --prg 710` mit dem Bootabbild einer 710-1-Diskette: abgewiesen, bevor etwas
+# geschrieben wird (Tastatur- und MKE-Treiber beider Geraete unterscheiden sich).
+tool:   k1520disktool
+disk:   prg710-1_udos43_k5601_v43_189.hfe
+tmpfile band:
+setup_run: @k1520disktool boot-get %DISK% %band%
+run:    boot-put %DISK% %band% --prg 710
+expect: fuer den PRG 710-1 gebaut
+expect: verlangt war der PRG 710
+exit:   1

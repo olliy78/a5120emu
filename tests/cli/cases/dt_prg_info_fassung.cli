@@ -1,0 +1,8 @@
+# `info` nennt zu den Systemspuren auch System und Geraet (AP-P6, doc/design/20_prg710.md):
+# der Ladesektor des PRG (`18 03 "SYL"`) und die Fassung des Zweitladers verraten es.
+# Eine A5120-Systemdiskette traegt den Zusatz NICHT (dort aendert sich nichts).
+tool:   k1520disktool
+disk:   prg710-1_udos43_k5601_v43_189.hfe
+run:    info %DISK%
+expect: UDOS fuer PRG 710-1
+exit:   0

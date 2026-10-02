@@ -1,0 +1,7 @@
+# Gegenprobe zu dt_prg_info_fassung: A5120-UDOS-Systemspuren bekommen keinen PRG-Zusatz.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+run:    info %DISK%
+expect: Systemspuren:
+forbid: fuer PRG
+exit:   0
