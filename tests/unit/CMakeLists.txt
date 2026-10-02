@@ -30,6 +30,8 @@ k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_l
 k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")
 # ZRE K2521 des PRG 710/710-1: Speicherfenster, CTC/PIO, Kaskade, 16-Bit-E/A (doc/design/20_prg710.md AP-P1a)
 k1520_add_test(k2521 SRC cards/test_k2521.cpp      LIBS k1520_k2521 LABELS "${_lbl}")
+# Speicherverwaltung E8H–EBH + OPS des PRG 710 (doc/design/20_prg710.md §4b, AP-P1b)
+k1520_add_test(prg710_speicher SRC cards/test_prg710_speicher.cpp LIBS k1520_prg710_speicher LABELS "${_lbl}")
 # ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
 k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
 

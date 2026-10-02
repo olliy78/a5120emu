@@ -297,6 +297,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k2521 PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_bus k1520_logger)
     target_include_directories(k1520_k2521 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Speicherverwaltung E8H-EBH + OPS-RAM (PRG 710/710-1), Arbeitsmodell doc/design/20_prg710.md §4b
+    add_library(k1520_prg710_speicher STATIC core/cards/prg710_speicher/prg710_speicher.cpp)
+    target_link_libraries(k1520_prg710_speicher PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_prg710_speicher PUBLIC ${CMAKE_SOURCE_DIR})
+
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
     target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
