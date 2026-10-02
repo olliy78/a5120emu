@@ -102,6 +102,19 @@ public:
      */
     void setMkeLowAktiv(bool low) { mke_low_aktiv_ = low; updateStatusPortB(); }
     bool mkeLowAktiv() const { return mke_low_aktiv_; }
+    /**
+     * @brief Marken-FF an JEDEM Sync-Byte (nur Wait-Betrieb).  Vorgabe false: das FF fällt
+     *        am Ende des ERSTEN Sync-Bytes einer Gruppe, und nur, wenn dessen Bytefenster
+     *        ganz nach dem Scharfmachen liegt (A5120/K8915 unverändert).  true: jedes A1
+     *        bzw. C2 der Gruppe setzt es (der Markendecoder erkennt den fehlenden Takt in
+     *        jedem Sync-Byte), auch eins, das beim Scharfmachen schon halb unter dem Kopf
+     *        durch ist.  Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P1d): sein ROM
+     *        schlägt `B5H/85H` (= MK-FF rücksetzen/scharf) in einer Schleife von 54 Takten
+     *        an und fragt Tor B nur 12 Takte danach ab (02DDH–02E5H) — mit nur der ersten
+     *        Gruppe und ganzen Fenstern fände es nie eine Marke.
+     */
+    void setMkeJedesSyncByte(bool an) { mke_jedes_sync_ = an; w_strom_gilt_ = false; }
+    bool mkeJedesSyncByte() const { return mke_jedes_sync_; }
 
     // ─── BusDevice (Ports 0x10–0x18) ─────────────────────────────────────────
     uint8_t     ioRead(uint8_t port) override;
@@ -352,6 +365,7 @@ private:
     uint8_t  w_latch_       = 0xFF;     ///< zuletzt übergebenes Byte (Daten-PIO)
     bool     w_scharf_      = false;    ///< /STR = 0 und MR = 0: Marken-FF sucht
     bool     mke_low_aktiv_ = false;     ///< Tor B Bit1 invertiert (PRG 710)
+    bool     mke_jedes_sync_ = false;    ///< MKE an jedem Sync-Byte, Teilfenster (PRG 710)
     bool     w_mke_         = false;    ///< Marken-FF gesetzt (Tor B Bit1)
     uint64_t w_mke_time_    = UINT64_MAX; ///< wann die nächste Sync-Gruppe durch ist
     uint8_t  w_status_      = 0x00;     ///< zuletzt an Tor B gelegter Status

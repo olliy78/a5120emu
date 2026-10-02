@@ -139,7 +139,11 @@ const TrackImage& K5122::waitStrom()
                 const uint8_t sync = (m == MarkType::Index) ? 0xC2 : 0xA1;
                 size_t k = i;
                 while (k > 0 && w_strom_.bytes[k - 1] == sync) --k;
-                (m == MarkType::Index ? w_sync_idx_ : w_sync_a1_).push_back(k);
+                auto& gruppe = (m == MarkType::Index ? w_sync_idx_ : w_sync_a1_);
+                if (mke_jedes_sync_)   // jedes Sync-Byte der Gruppe (setMkeJedesSyncByte)
+                    for (size_t j = k; j < i; ++j) gruppe.push_back(j);
+                else
+                    gruppe.push_back(k);
             }
             LOG_INFO("K5122", "WAIT: Spur D%d C=%u H=%u — %zu Kennfelder, %zu B (%s)",
                      selected_drive_, static_cast<unsigned>(zyl),
@@ -428,10 +432,17 @@ void K5122::waitMkePlanen(bool neu_scharf)
     const uint64_t p  = static_cast<uint64_t>(waitByteperiode());
     const uint64_t ph = (static_cast<uint64_t>(index_cycle_acc_) + (t - w_now_)) % P;
     const uint64_t rs = t - ph;
-    const uint64_t j0 = (ph + p - 1) / p;          // erstes Fenster, das NACH t beginnt
+    // Erstes Fenster, das NACH t beginnt — bzw. mit setMkeJedesSyncByte das, in dem t
+    // liegt (sein Ende, die Erkennung, kommt noch).
+    const uint64_t j0 = mke_jedes_sync_ ? ph / p : (ph + p - 1) / p;
     for (size_t s0 : gruppen) {
         if (s0 >= j0 && (s0 + 1) * p <= P) {
-            w_mke_time_ = rs + (s0 + 1) * p;
+            // setMkeJedesSyncByte: steht der Kopf beim Scharfmachen schon IN einem
+            // Sync-Byte, gilt die Marke sofort — Ersatz für den Gleichlauf-Zufall, mit dem
+            // die Abfrageschleife des PRG-710-ROMs am Gerät früher oder später ein Sync-Byte
+            // im Abfragefenster erwischt (doc/design/20_prg710.md AP-P1d).  Ohne ihn liefe
+            // das starre Zeitraster des Emulators immer an denselben Gruppen vorbei.
+            w_mke_time_ = (mke_jedes_sync_ && s0 == j0) ? t : rs + (s0 + 1) * p;
             return;
         }
     }

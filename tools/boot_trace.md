@@ -223,3 +223,34 @@ nicht erfüllt → 2; Stillstand oder `-c` → 1. `--json`: `machine, prompt, st
 final_pc, a8, lamps, cpu_addrs, instr, events, ints, until{…}`.
 Wächter: `cli_bt_k8915_prompt`, `cli_bt_k8915_events`, `cli_bt_k8915_stillstand`.
 
+
+## 8. PRG 710 / 710-1 (`--machine prg710|prg710-1`) — Grundform
+
+Seit AP-P1d (2026-10-02, `doc/design/20_prg710.md`) fährt `boot_trace` auch beide
+Numerik-Geräte (`tools/boot_trace_prg710.cpp`, Optionen wie beim K8915). Ziel der
+Grundform ist Etappe 1: Netz-Ein → „NKM-LOADER“ → Laufwerke → **Tastaturabfrage**.
+Eine Taste kann das Werkzeug noch nicht geben (Tastaturen: AP-P2a/P2b); voll ausgebaut
+wird es in AP-P5c.
+
+```sh
+tools/dev.sh trace --machine prg710                 # ohne Diskette bis zur 8279-Abfrage
+tools/dev.sh trace --machine prg710-1 --quiet --json
+tools/dev.sh trace --machine prg710 --events /tmp/ev.txt --events-cap 100000 DISK
+```
+
+- **Ereignisprotokoll**: K5122 (10H–18H), ZRE-CTC (80H–83H), Speicherverwaltung E8H–EBH
+  mit der Seite aus **A12–A15 der E/A-Adresse** (`[Seite F]`) und dem Speicherbild nach
+  dem Schreiben (`map=Z123456789ABCDEV`: je 4-KB-Seite `Z` ZRE, `V` Seite F mit VRAM,
+  Ziffer = physische OPS-Seite, `-` leer), Tastatur (710: 8279 C8H/C9H; 710-1: CTC 58H,
+  SIO A32-B 5EH/5FH), Interrupts. Faltung wie beim K8915.
+- **PC-Histogramm** mit Kennung `ZRE` (Befehl aus ROM/ZRE-RAM, d. h. vor der Umschaltung
+  auf die RAM-Kopie), Portstatistik, Endzustand der Speicherverwaltung, Bild der K7024.
+- **Abbruch/Exit:** Stillstand (`--stall`, Vorgabe hier 5 Mio. Takte ohne Bildänderung
+  und ohne Schreibzugriff auf einen beobachteten Port) **in der Tastaturabfrage** des ROMs
+  (710: 007DH/0160H, 710-1: 0070H/0163H, aus der RAM-Kopie) → 0, sonst 1; `--until` → 0/2;
+  `-c` Vorgabe 50 Mio. `--json`: `machine, keywait, stall, cycles, final_pc, map, instr,
+  events, ints, until{…}`.
+- Noch nicht (Warnung): `--coverage --csv --itrace --watch --skip-selftest --no-cr`.
+  Mit Diskette wird über `defaultFormatName` gemountet (bei `.hfe` nur Platzhalter).
+
+Wächter: `cli_bt_prg710_tastatur`, `cli_bt_prg710-1_tastatur`.

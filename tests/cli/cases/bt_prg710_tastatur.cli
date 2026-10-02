@@ -1,0 +1,15 @@
+# boot_trace --machine prg710 (Entwurf 20 AP-P1d): ohne Diskette läuft das echte ROM
+# bis in seine 8279-Abfrage; Abbruch als Stillstand dort = Ziel von Etappe 1, Exit 0.
+# Ereignisprotokoll: Speicherverwaltung mit Seite aus A12–A15 und Speicherbild.
+tool:    boot_trace
+run:     --machine prg710 --json
+timeout: 120
+exit:    0
+expect:  === PRG 710 Boot Trace ===
+expect:  OUT (E8H)=FF  Speicherverwaltung Herkunft [Seite F]  map=Z123456789ABCDEV
+expect:  OUT (EBH)=0F  Speicherverwaltung Freigabe  map=Z123456789ABCDEF
+expect:  OUT (E8H)=10  Speicherverwaltung Herkunft [Seite 0]  map=0123456789ABCDEF
+expect:  OUT (C9H)=C1  8279 Befehl/Status
+expect:  Tastatur:    ROM wartet in der 8279-Abfrage (0160H, C9H)
+expect:  |NKM-LOADER
+expect:  "machine":"prg710","keywait":true,"stall":true

@@ -371,8 +371,8 @@ if(BUILD_K1520)
     target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
-    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp)
-    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
+    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp tools/boot_trace_prg710.cpp)
+    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_floppy k1520_logger)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
 

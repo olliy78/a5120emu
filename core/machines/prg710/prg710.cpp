@@ -31,6 +31,9 @@ Prg710Machine::Prg710Machine(const Config& cfg)
 {
     zre_.attachToBus(bus_);          // CTC 80H, PIO 84H
     speicher_.attachToBus(bus_);     // E8H–EBH
+    // K5122 an 10H–18H.  Fehlte bis AP-P1d: das ROM las Tor B (12H) als FFH (/TO nie 0),
+    // fuhr je Laufwerk 256 Schritte ins Leere und meldete Status C0H.
+    bus_.registerIO(&afs_, 0x10, 9);
     bus_.registerIO(&ass_, 0x50, 16);
     // Speicherweg der CPU: Speicherverwaltung; ZRE-Fenster und VRAM gehen an die Karten.
     zre_.setSpeicherweg([this](uint16_t a) { return speicher_.memRead(a); },
@@ -42,6 +45,9 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // K5122 auf /WAIT (keine ZVE2); Marken-FF: PRG 710 low-aktiv, 710-1 high-aktiv (§4a.1).
     afs_.setSynchronisation(K5122::Synchronisation::Wait);
     afs_.setMkeLowAktiv(variante_ == Config::Variante::Prg710);
+    // Marken-FF an jedem Sync-Byte: das 710-ROM schlägt das FF in einer engen Schleife
+    // neu an (02DDH, AP-P1d); beide Varianten tragen dieselbe K5122.
+    afs_.setMkeJedesSyncByte(true);
     // Interruptkette (vorläufig [?], §3.1/AP-P1c): K5122 → K2521 (CTC, PIO) → K8025.
     bus_.setInterruptChain({&afs_, &zre_, &ass_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };

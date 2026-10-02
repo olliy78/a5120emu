@@ -26,6 +26,9 @@
  * --machine k8915 fährt statt des A5120 einen K8915 (eigener Zweig,
  * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
  * PC-Histogramm mit Listing-Namen, Abbruch bei `A>` oder Stillstand.
+ * --machine prg710|prg710-1 fährt einen PRG 710 / 710-1 (tools/boot_trace_prg710.cpp,
+ * Grundform AP-P1d): Ereignisprotokoll K5122/CTC/E8H–EBH/Tastatur, Abbruch an der
+ * Tastaturabfrage des ROMs oder bei Stillstand.
  *
  * Traces BOTH CPUs: ZVE1 (main, sampled at batch boundaries) and ZVE2 (DMA-CPU,
  * every instruction via a trace callback). ZVE2 runs only while /BUSRQ is held,
@@ -43,6 +46,7 @@
 #include "tools/until_cond.h"
 #include "tools/event_bp.h"
 #include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
+#include "tools/boot_trace_prg710.h"  // --machine prg710|prg710-1 (Entwurf 20 AP-P1d)
 #include "tools/em_trace.h"          // --em: EM-Transaktionen als Text
 #include "tools/dbg_u8000.h"         // --cpu u8000: Adressen <<seg>>off
 #include "tools/z8000/z8k_disasm.h"
@@ -287,6 +291,8 @@ int main(int argc, char** argv) {
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     // --machine k8915 und seine eigenen Schalter (§8a AP-E4d)
     bool        machine_k8915 = false;
+    int         machine_prg710 = 0;      // 1 = PRG 710, 2 = PRG 710-1 (gleiche Optionen wie K8915)
+    bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
     std::vector<std::string> nur_a5120;   // am K8915 wirkungslose Schalter (Meldung)
@@ -306,12 +312,14 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--machine") && i+1 < argc) {
             std::string mn = argv[++i];
             if (mn == "k8915" || mn == "K8915") machine_k8915 = true;
+            else if (mn == "prg710" || mn == "PRG710") { machine_k8915 = true; machine_prg710 = 1; }
+            else if (mn == "prg710-1" || mn == "PRG710-1") { machine_k8915 = true; machine_prg710 = 2; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
         else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
-        else if (!strcmp(argv[i], "--stall") && i+1 < argc) { k8o.stall = atoll(argv[++i]); }
+        else if (!strcmp(argv[i], "--stall") && i+1 < argc) { k8o.stall = atoll(argv[++i]); stall_set = true; }
         else if (!strcmp(argv[i], "--events") && i+1 < argc) { k8o.events_path = argv[++i]; }
         else if (!strcmp(argv[i], "--events-cap") && i+1 < argc) { k8o.events_cap = atol(argv[++i]); }
         else if (!strcmp(argv[i], "--drive") && i+1 < argc) { mount_drive = atoi(argv[++i]); }
@@ -456,6 +464,15 @@ int main(int argc, char** argv) {
         if (em_variant) fprintf(stderr, "WARN: --em/--cpu u8000 gibt es nur am A5120 (A5120.16) — ignoriert\n");
         k8o.quiet = quiet; k8o.json = json_summary; k8o.drive = mount_drive; k8o.until = until;
         if (!limit_set) k8o.limit = 250'000'000;
+        if (machine_prg710) {
+            // PRG 710 (AP-P1d): Etappe 1 endet in der Tastaturabfrage — 2 s ohne Bild-/
+            // Steuerzugriff reichen; 50 Mio. Takte ≈ 20 s Maschinenzeit.
+            if (!limit_set) k8o.limit = 50'000'000;
+            if (!stall_set) k8o.stall = 5'000'000;
+            if (coverage_on || csv_path || itrace_path || watch_n || k8o.skip_selftest || !k8o.auto_cr)
+                fprintf(stderr, "WARN: --coverage/--csv/--itrace/--watch/--skip-selftest/--no-cr gibt es "
+                                "am PRG 710 noch nicht (AP-P5c) — ignoriert\n");
+        }
         k8o.coverage = coverage_on; if (coverage_path) k8o.coverage_path = coverage_path;
         if (csv_path) k8o.csv_path = csv_path;
         if (itrace_path) k8o.itrace_path = itrace_path;
@@ -480,7 +497,8 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = bootTraceK8915(k8o, prn);
+        const int rc = machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
+                                      : bootTraceK8915(k8o, prn);
         if (!cow_temp.empty()) { std::error_code ec; std::filesystem::remove(cow_temp, ec); }
         return rc;
     }

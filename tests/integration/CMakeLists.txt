@@ -108,3 +108,10 @@ k1520_add_test(kbd_nach_reset SRC test_kbd_nach_reset.cpp LIBS ${_libs}
 k1520_add_test(prg710_maschine SRC test_prg710_maschine.cpp
                           LIBS k1520_prg710 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 1 (AP-P1d): echte Boot-ROMs bis zur Tastaturabfrage, Starttaste
+# ohne Diskette (DISKERROR C2) und ohne Laufwerke (LW0/LW1 DEF), Registerfolge der
+# Speicherverwaltung, Marken-FF-Ruhepegel je Variante, Bootsektor von der UDOS-Diskette.
+k1520_add_test(prg710_boot SRC test_prg710_boot.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
