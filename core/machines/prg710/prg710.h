@@ -121,8 +121,15 @@ public:
     // ─── Serielle Schnittstellen (K8025, Namen/Zuordnung je Variante: AP-P4) ──
     k1520::serial::SerialHub* serialHub() override { return &hub_; }
     std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
+    /// 710-1: Tastatur K7672 fest an A32-B (D-SUB, §3.9); am 710 ist die Tastatur kein serieller Kanal.
+    std::vector<std::string> festeSchnittstellen() const override {
+        if (variante_ == Config::Variante::Prg710_1) return {"Tastatur K7672 (A32-B)"};
+        return {};
+    }
     void setDFUECallback(SerialCb cb) override { ass_.setAbnehmer(K8025::DfueV24, std::move(cb)); }
     void dfueSend(uint8_t byte) override { ass_.einspeisen(K8025::DfueV24, byte); }
+    // Diagnosezugang „Drucker“ = A32-B (IFSS Hauptdrucker X6); am 710-1 liegt dort die
+    // Tastatur K7672 (`printerSend` speist deren Empfänger, kein Hub-Anschluss).
     void setPrinterCallback(SerialCb cb) override { ass_.setAbnehmer(K8025::Drucker, std::move(cb)); }
     void printerSend(uint8_t byte) override { ass_.einspeisen(K8025::Drucker, byte); }
 

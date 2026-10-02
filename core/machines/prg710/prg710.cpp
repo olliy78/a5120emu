@@ -68,17 +68,26 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     });
     ass_.setzeZreTakt([this] { return zre_.ctc().teilerTakte(0); });
     // Am 710-1 ist A32-B die Tastatur (fest verdrahtet, nicht nach außen); AP-P4 benennt neu.
-    for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
-        if (!(variante_ == Config::Variante::Prg710_1 && i == K8025::Drucker))
-            hub_.registriere(ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
+    // Namen nach der Gerätebeschriftung (DRUCK.DOK, §3.7/§3.9), Reihenfolge = C-ABI-Index.
+    // A33-B (52H/53H) ist am PRG unbelegt [?] und geht nicht nach außen; am 710-1 trägt
+    // A32-B die Tastatur K7672 (9-poliger D-SUB statt IFSS X6).
+    ass_.benenne(K8025::DfueV24,   "V.24",                    "X4");
+    ass_.benenne(K8025::Drucker,   "IFSS Hauptdrucker",       "X6");
+    ass_.benenne(K8025::ZifssA32A, "ZIFSS Zusatzdrucker",     "X5");
+    for (auto* a : serielleAnschluesse()) hub_.registriere(*a);
+    // Der V.24-Treiber taktet über CTC A34 Kanal 2 (5AH, DRUCK.DOK §1) = Taktquelle 1
+    // („CTC A34 K2“); die A5120-Vorgabe 0 (ZRE-CTC K0, W1:7) ist hier nicht die Belegung.
+    k1520::serial::SerialKonfig k = hub_.konfig(0);
+    k.taktquelle = 1;
+    hub_.konfigurieren(0, k);
 }
 
 std::vector<k1520::serial::SerialAnschluss*> Prg710Machine::serielleAnschluesse()
 {
     std::vector<k1520::serial::SerialAnschluss*> v;
-    for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
-        if (!(variante_ == Config::Variante::Prg710_1 && i == K8025::Drucker))
-            v.push_back(&ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
+    v.push_back(&ass_.anschluss(K8025::DfueV24));
+    if (variante_ == Config::Variante::Prg710) v.push_back(&ass_.anschluss(K8025::Drucker));
+    v.push_back(&ass_.anschluss(K8025::ZifssA32A));
     return v;
 }
 

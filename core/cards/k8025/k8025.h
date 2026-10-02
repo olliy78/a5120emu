@@ -52,6 +52,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 
 /**
  * @class K8025
@@ -212,7 +213,16 @@ public:
 
     /// Einstellbare Schnittstellen in der Reihenfolge, in der die Maschine sie im
     /// `SerialHub` anmeldet (= Index der C-ABI).
-    enum Schnittstelle : int { DfueV24 = 0, DfueIfss = 1, Drucker = 2, SchnittstellenAnzahl = 3 };
+    /// `SchnittstellenAnzahl` ist der A5120-Satz (A32-A trägt dort die Tastatur K7637);
+    /// `ZifssA32A` (SIO A32 Kanal A, Takt CTC A34 K0 wie der Hauptdrucker) gibt es nur
+    /// für Maschinen, die dort eine IFSS herausführen (PRG 710/710-1, AP-P4) — sie
+    /// melden den vierten Anschluss selbst an.  A5120 und `K8025.*` sehen ihn nicht.
+    enum Schnittstelle : int { DfueV24 = 0, DfueIfss = 1, Drucker = 2, SchnittstellenAnzahl = 3,
+                               ZifssA32A = 3, GesamtAnzahl = 4 };
+
+    /// Name und Steckerbezeichnung einer Schnittstelle überschreiben (die Gerätebeschriftung
+    /// gehört der Maschine, nicht der Karte; AP-P4).  Leer = Vorgabe der Karte.
+    void benenne(Schnittstelle s, std::string name, std::string stecker);
 
     /// Anschluss je Schnittstelle (lebt so lange wie die Karte).
     k1520::serial::SerialAnschluss& anschluss(Schnittstelle s);
@@ -374,7 +384,7 @@ private:
     bool           iei_in_  = false;                   ///< Last IEI from upstream chain
     Z80CTC::PeriodenQuelle zre_takt_;                  ///< ZRE-CTC K0 (W1:7, X7–X8)
     bool           seriell_geaendert_ = false;
-    std::array<std::unique_ptr<Anschluss>, SchnittstellenAnzahl> anschluesse_;
+    std::array<std::unique_ptr<Anschluss>, GesamtAnzahl> anschluesse_;
 
 public:
     ~K8025();

@@ -120,3 +120,9 @@ k1520_add_test(prg710_boot SRC test_prg710_boot.cpp
 k1520_add_test(prg710_udos SRC test_prg710_udos.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 4 (AP-P4): K8025-Kanäle über den SerialHub nach außen,
+# Namen nach Gerätebeschriftung; UDOS `SET PRI TO V24` in eine Datei.
+k1520_add_test(prg710_seriell SRC test_prg710_seriell.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
