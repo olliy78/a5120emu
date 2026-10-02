@@ -132,3 +132,8 @@ k1520_add_test(prg710_seriell SRC test_prg710_seriell.cpp
 k1520_add_test(prg710_scpx SRC test_prg710_scpx.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 (AP-P5f): FORMAT unter UDOS und SCPX auf einer Leerdiskette.
+k1520_add_test(prg710_format SRC test_prg710_format.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
