@@ -1,0 +1,65 @@
+code_hex,taste,zeichen,shift_zeichen,anmerkung
+00,Taste 1,1,:,
+01,Taste 2,2,/,
+02,Taste 3,3,*,
+03,Taste 4,4,(,
+04,Taste 5,5,),
+05,Taste 6,6,=,
+06,Taste 7,7,.,
+07,Taste 8,8,+,
+08,BS/|<-- [?],<08>,<04>,SCPX B15x: <18>/<18>
+09,Taste $,$,&,
+0A,Taste -,-,!,
+0B,Taste 0,0,',
+0C,Taste 9,9,?,
+0D,Taste >,>,<,
+0E,Taste ],],},
+0F,Taste [,[,{,
+10,Sondertaste (Merker0/Merker1; SCPX DC3) [?],<MOD:Merker0>,<MOD:Merker1>,SCPX B15x: <13>/<13>
+11,Taste %,%,_,
+12,"Taste ,",",",;,
+13,Taste P,P,p,SCPX B15x: p/P (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+14,Taste O,O,o,SCPX B15x: o/O (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+15,Taste @,@,`,
+16,Leerzeichen/unbelegt [?],SPACE,SPACE,
+17,Leerzeichen/unbelegt [?],SPACE,SPACE,
+18,Sondertaste Drucker-Umschalter (UDOS) [?],<MOD:DRUCKER>,<MOD:Merker2>,SCPX B15x: <10>/<10>
+19,Cursor hoch,<07>,^,SCPX B15x: <05>/^
+1A,Taste #,#,"""",
+1B,Taste L,L,l,SCPX B15x: l/L (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+1C,Taste K,K,k,SCPX B15x: k/K (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+1D,Leerzeichen/unbelegt [?],SPACE,SPACE,
+1E,Leerzeichen/unbelegt [?],SPACE,SPACE,
+1F,Leerzeichen/unbelegt [?],SPACE,SPACE,
+20,Taste Q,Q,q,SCPX B15x: q/Q (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+21,Taste W,W,w,SCPX B15x: w/W (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+22,Taste E,E,e,SCPX B15x: e/E (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+23,Taste R,R,r,SCPX B15x: r/R (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+24,Taste T,T,t,SCPX B15x: t/T (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+25,Taste Z,Z,z,SCPX B15x: z/Z (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+26,Taste U,U,u,SCPX B15x: u/U (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+27,Taste I,I,i,SCPX B15x: i/I (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+28,Strg-Einmaltaste/CASE-Umschalter,<MOD:CTRL1>,<MOD:CASE>,SCPX B15x: <MOD:CTRL1>/<MOD:CASE>
+29,Taste A,A,a,SCPX B15x: a/A (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+2A,Taste S,S,s,SCPX B15x: s/S (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+2B,Taste D,D,d,SCPX B15x: d/D (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+2C,Taste F,F,f,SCPX B15x: f/F (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+2D,Taste G,G,g,SCPX B15x: g/G (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+2E,Taste H,H,h,SCPX B15x: h/H (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+2F,Taste J,J,j,SCPX B15x: j/J (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+30,Taste Y,Y,y,SCPX B15x: y/Y (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+31,Taste X,X,x,SCPX B15x: x/X (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+32,Taste C,C,c,SCPX B15x: c/C (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+33,Taste V,V,v,SCPX B15x: v/V (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+34,Taste B,B,b,SCPX B15x: b/B (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+35,Taste N,N,n,SCPX B15x: n/N (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+36,Taste M,M,m,SCPX B15x: m/M (Buchstaben-Gross/Klein vertauscht gg. UDOS)
+37,ET1 (CR),<0D>,<0D>,Starttaste des Boot-ROMs (Code 37H); ET1 = ^M
+38,ET2/ST (ESC),<1B>,<MOD:Merker3>,SCPX B15x: <1B>/<03>
+39,Cursor rechts,<10>,~,SCPX B15x: <04>/~
+3A,Cursor links,<11>,\,SCPX B15x: <08>/\
+3B,Cursor runter,<0A>,|,SCPX B15x: <18>/|
+3C,TAB |-->|,<09>,<09>,
+3D,Leerzeichen/unbelegt [?],SPACE,SPACE,
+3E,Leerzeichen/unbelegt [?],SPACE,SPACE,SCPX B15x: SPACE/<FF>
+3F,Leerzeichen/unbelegt [?],SPACE,SPACE,SCPX B15x: SPACE/<18>
