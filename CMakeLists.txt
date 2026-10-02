@@ -302,6 +302,17 @@ if(BUILD_K1520)
     target_link_libraries(k1520_prg710_speicher PUBLIC k1520_bus k1520_logger)
     target_include_directories(k1520_prg710_speicher PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
+    add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
+    target_link_libraries(k1520_i8279 PUBLIC k1520_logger)
+    target_include_directories(k1520_i8279 PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_k7609 STATIC core/peripherals/k7609/k7609.cpp)
+    target_link_libraries(k1520_k7609 PUBLIC k1520_i8279)
+    target_include_directories(k1520_k7609 PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_atp590068 STATIC core/cards/atp590068/atp590068.cpp)
+    target_link_libraries(k1520_atp590068 PUBLIC k1520_i8279 k1520_bus k1520_logger)
+    target_include_directories(k1520_atp590068 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
     target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
@@ -325,6 +336,7 @@ if(BUILD_K1520)
     add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
     target_link_libraries(k1520_prg710 PUBLIC
         k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
+        k1520_atp590068 k1520_k7609 k1520_k7672
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 

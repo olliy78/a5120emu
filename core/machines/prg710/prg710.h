@@ -7,8 +7,9 @@
  * die Speicherverwaltung sichtbar), K5122 im `/WAIT`-Betrieb mit zwei K5601 und K8025
  * (50H).  **Eine** Klasse für beide Geräte: @ref Config::Variante wählt ROM und die
  * Polarität des Marken-FF der K5122 (710 low-aktiv, 710-1 high-aktiv, §4a.1).
- * Tastatur (8279/K7609 bzw. K7672 an der K8025) folgt in AP-P2a/P2b; `keyPress`
- * reiht ein, gibt aber nichts ab.
+ * Tastatur (AP-P2a): am **710** K7609 hinter dem 8279 der ATP 590068 (C8H/C9H); am 710-1
+ * folgt die K7672 an A32-B in AP-P2b.  `keyPress` reiht ein, `run()` gibt im Lauffaden ab.
+ * Host-Tastencodes: siehe k7609.h.
  *
  * **K7024 und Speicherverwaltung:** die K7024 meldet ihr VRAM im Konstruktor am
  * Systembus an.  Die CPU der K2521 greift aber über die Speicherverwaltung zu
@@ -25,6 +26,8 @@
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
+#include "core/cards/atp590068/atp590068.h"
+#include "core/peripherals/k7609/k7609.h"
 #include "core/machines/laufwerke.h"
 #include <atomic>
 #include <deque>
@@ -37,7 +40,7 @@ public:
         Variante variante = Variante::Prg710;
         /** Laufwerke an der K5122 (am Gerät: 2 × K5601, §3.6). */
         std::array<std::string, 4> laufwerke = {"K5601", "K5601", "none", "none"};
-        /** Tastatur angeschlossen (noch ohne Wirkung, AP-P2a/P2b). */
+        /** Tastatur angeschlossen (710: K7609 an der ATP, 710-1: K7672 an A32-B). */
         bool tastatur = true;
     };
 
@@ -66,8 +69,13 @@ public:
     /// Bildspeicher direkt von der Karte (die CPU sieht ihn nur bei E8H[F] = FFH).
     uint8_t screenChar(int col, int row) const override { return screen_.vramRead(col, row); }
 
-    // ─── Tastatur (Gerüst) ───────────────────────────────────────────────────
-    void keyPress(uint32_t k, bool shift, bool ctrl) override;
+    // ─── Tastatur ────────────────────────────────────────────────────────────
+    /**
+     * @brief Taste drücken.  Einreihen unter Sperre, Abgabe an die Tastatur am Anfang von
+     *        run() im Lauffaden (wie K8915/A5120).  Tastencodes: siehe K7609 (710) bzw.
+     *        K7672 (710-1) — druckbares ASCII, Qt-Sondertasten, `QK_TASTE_BASE | Position`
+     *        für die physische Taste (Bildschirmtastatur).
+     */    void keyPress(uint32_t k, bool shift, bool ctrl) override;
     void keyRelease(uint32_t k) override;
     void setKeyRepeatRealtime(bool) override {}
 
@@ -128,6 +136,8 @@ public:
     K7024&           screen()   { return screen_; }
     K5122&           afs()      { return afs_; }
     K8025&           ass()      { return ass_; }
+    Atp590068&       atp()      { return atp_; }     ///< 8279 (nur am 710 verdrahtet)
+    K7609&           k7609()    { return k7609_; }
     K1520Bus&        bus()      { return bus_; }
     uint64_t         totalCycles() const { return total_cycles_; }
 
@@ -139,6 +149,7 @@ public:
 
 private:
     void resetHardware();
+    void tastenAbgeben();     ///< Warteschlange an die Tastatur (nur im Lauffaden)
 
     const Config::Variante variante_;
     K1520Bus        bus_;
@@ -148,6 +159,8 @@ private:
     K5122           afs_;       // 10H–18H, /WAIT-Betrieb
     Laufwerke       lw_;
     K8025           ass_;       // 50H–5FH
+    Atp590068       atp_;       // 8279 C8H/C9H + EPROMmer-Attrappe D0H–D3H (nur 710)
+    K7609           k7609_;     // 710: Matrix hinter dem 8279
     /// Nach den Karten: wird zuerst zerstört (hält Verweise auf ihre Anschlüsse).
     k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
     uint64_t  serial_naechst_ = 0;
@@ -159,5 +172,5 @@ private:
 
     struct TastenEreignis { uint32_t code; bool shift, ctrl, gedrueckt; };
     std::mutex                 tasten_sperre_;
-    std::deque<TastenEreignis> tasten_;   ///< noch ohne Abnehmer (AP-P2a/P2b)
+    std::deque<TastenEreignis> tasten_;
 };

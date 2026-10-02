@@ -16,10 +16,8 @@
  * - Danach „NO SYSTEM“ und Sprung nach 0020H: das ROM programmiert die
  *   Speicherverwaltung neu und wartet wieder auf die Taste.
  *
- * Die Starttaste kommt hier ohne Tastaturmodell (AP-P2a/P2b): am 710 aus einer
- * 8279-Attrappe an C8H/C9H (nur Status „1 Zeichen“ + Code), am 710-1 als Byte in den
- * Empfänger von SIO A32 Kanal B (`printerSend` — derselbe Kanal, an dem die K7672
- * hängt, §3.9).  AP-P2a/P2b ersetzen beides durch `keyPress`.
+ * Die Starttaste kommt am 710 seit AP-P2a über `keyPress` und K7609 → 8279 der ATP
+ * (C8H/C9H); am 710-1 noch als Byte in den Empfänger von SIO A32-B (AP-P2b: K7672).
  */
 
 #include <gtest/gtest.h>
@@ -88,24 +86,18 @@ uint8_t status(Prg710Machine& m) {
     return m.memReadDebug(m.variante() == V::Prg710_1 ? 0x03E1 : 0x03DE);
 }
 
-/// 8279-Attrappe (nur, was das ROM benutzt: Status Bit 0–2 = Zeichenzahl, Daten = Code).
-class Tastatur8279Attrappe : public BusDevice {
-public:
-    std::deque<uint8_t> fifo;
-    std::vector<uint8_t> befehle;
-    uint8_t ioRead(uint8_t port) override {
-        if (port == 0xC9) return static_cast<uint8_t>(std::min<size_t>(fifo.size(), 7));
-        if (fifo.empty()) return 0xFF;
-        const uint8_t c = fifo.front(); fifo.pop_front();
-        return c;
-    }
-    void ioWrite(uint8_t port, uint8_t d) override { if (port == 0xC9) befehle.push_back(d); }
-    const char* deviceName() const override { return "8279-Attrappe"; }
-};
+constexpr uint32_t QK_RETURN = 0x01000004;   // Qt::Key_Return
 
-void starttaste(Prg710Machine& m, Tastatur8279Attrappe& kbd) {
-    if (m.variante() == V::Prg710) kbd.fifo.push_back(0x37);   // ET
-    else m.printerSend(0x0D);                                   // ENTER über SIO A32-B
+/// Starttaste über die Tastaturmodelle: 710 ET1 = 37H (K7609 → 8279), 710-1 ENTER = 0DH
+/// (K7672 → SIO A32-B) — beide über denselben `keyPress`.  Das Loslassen gehört dazu: die
+/// K7672 wiederholt eine gehaltene Taste (Firmware), der 8279 nicht.
+void starttaste(Prg710Machine& m) {
+    if (m.variante() == V::Prg710) {
+        m.keyPress(QK_RETURN, false, false);
+        m.keyRelease(QK_RETURN);
+    } else {
+        m.printerSend(0x0D);   // ENTER als Byte in A32-B, bis AP-P2b die K7672 anschließt
+    }
 }
 
 }  // namespace
@@ -156,16 +148,13 @@ TEST_P(Prg710Boot, OhneDisketteNurNkmLoaderUndTastaturabfrage) {
  */
 TEST_P(Prg710Boot, StarttasteOhneDisketteDiskerrorC2) {
     Prg710Machine m(cfgFuer(GetParam()));
-    Tastatur8279Attrappe kbd;
-    m.bus().registerIO(&kbd, 0xC8, 2);
     m.powerOn();
     ASSERT_GT(bisTastaturabfrage(m), 0);
     if (GetParam() == V::Prg710) {
-        ASSERT_GE(kbd.befehle.size(), 2u);
-        EXPECT_EQ(kbd.befehle[0], 0x02) << "8279: kodierte Abtastung, N-Tasten-Rollover";
-        EXPECT_EQ(kbd.befehle[1], 0xC1) << "8279: Clear all";
+        EXPECT_EQ(m.atp().kbc().lastMode(), 0x02) << "8279: kodierte Abtastung, N-Tasten-Rollover";
+        EXPECT_EQ(m.atp().kbc().lastCommand(), 0xC1) << "8279: Clear all (letzter Befehl)";
     }
-    starttaste(m, kbd);
+    starttaste(m);
     ASSERT_GT(bisTastaturabfrage(m), 0) << bild(m);
     EXPECT_EQ(zeile(m, 0), "NKM-LOADER");
     EXPECT_EQ(zeile(m, 1), "DISKERROR C2") << bild(m);
@@ -182,14 +171,12 @@ TEST_P(Prg710Boot, StarttasteOhneDisketteDiskerrorC2) {
  */
 TEST_P(Prg710Boot, OhneLaufwerkeLwDef) {
     Prg710Machine m(cfgFuer(GetParam(), "none"));
-    Tastatur8279Attrappe kbd;
-    m.bus().registerIO(&kbd, 0xC8, 2);
     m.powerOn();
     ASSERT_GT(bisTastaturabfrage(m), 0);
     EXPECT_EQ(zeile(m, 0), "NKM-LOADER");
     EXPECT_EQ(zeile(m, 1), "") << bild(m);
     if (GetParam() == V::Prg710) EXPECT_EQ(status(m), 0xC0) << "Spur 0 nicht gefunden";
-    starttaste(m, kbd);
+    starttaste(m);
     ASSERT_GT(bisTastaturabfrage(m), 0) << bild(m);
     EXPECT_EQ(zeile(m, 1), "LW0 DEF") << bild(m);
     EXPECT_EQ(zeile(m, 2), "LW1 DEF") << bild(m);
@@ -292,8 +279,6 @@ TEST_P(Prg710Boot, StarttasteLaedtDenBootsektor) {
     const bool v1 = GetParam() == V::Prg710_1;
     k1520test::TempDisk disk(v1 ? "prg710-1_udos_k5601_boot.hfe" : "prg710_udos43_k5601_boot01.hfe");
     Prg710Machine m(cfgFuer(GetParam()));
-    Tastatur8279Attrappe kbd;
-    m.bus().registerIO(&kbd, 0xC8, 2);
     ASSERT_TRUE(m.mountDisk(0, disk, m.defaultFormatName(0), false)) << m.lastError();
     m.powerOn();
     ASSERT_GT(bisTastaturabfrage(m), 0) << "PC=" << std::hex << m.cpuPC() << "\n" << bild(m);
@@ -306,7 +291,7 @@ TEST_P(Prg710Boot, StarttasteLaedtDenBootsektor) {
             bei0400 = true; st = status(m); m.stop();
         }
     });
-    starttaste(m, kbd);
+    starttaste(m);
     for (long long done = 0; !bei0400 && done < kFrist;) done += m.run(kSchritt);
     m.setCpuTraceCallback(nullptr);
     ASSERT_TRUE(bei0400) << "PC=" << std::hex << m.cpuPC() << "\n" << bild(m);
@@ -316,6 +301,37 @@ TEST_P(Prg710Boot, StarttasteLaedtDenBootsektor) {
     EXPECT_EQ(m.memReadDebug(0x0403), 'Y');
     EXPECT_EQ(m.memReadDebug(0x0404), 'L');
     EXPECT_EQ(zeile(m, 1), "") << "keine Fehlermeldung vor dem Sprung\n" << bild(m);
+}
+
+/**
+ * @test Prg710Boot.TastaturAmRichtigenBaustein
+ * @brief 710: ENTER kommt als 37H (ET1) im FIFO des 8279 an, das ROM liest ihn über C8H.
+ */
+TEST(Prg710Boot, TastaturAmRichtigenBaustein) {
+    Prg710Machine m(cfgFuer(V::Prg710));
+    m.powerOn();
+    ASSERT_GT(bisTastaturabfrage(m), 0);
+    starttaste(m);
+    uint8_t gelesen = 0xFF;
+    m.setBusTrace([&](bool io, bool rd, uint16_t a, uint8_t d) {
+        if (io && rd && (a & 0xFF) == 0xC8) gelesen = d;
+    });
+    for (long long done = 0; gelesen == 0xFF && done < kFrist;) done += m.run(kSchritt);
+    m.setBusTrace(nullptr);
+    EXPECT_EQ(gelesen, 0x37);
+    EXPECT_EQ(m.ioReadDebug(0xD0), 0xFF) << "EPROMmer-Attrappe liest FFH";
+}
+
+TEST(Prg710Boot, OhneTastaturKeinStart) {
+    Prg710Machine::Config c = cfgFuer(V::Prg710);
+    c.tastatur = false;
+    Prg710Machine m(c);
+    m.powerOn();
+    ASSERT_GT(bisTastaturabfrage(m), 0);
+    starttaste(m);
+    for (long long done = 0; done < 3'000'000;) done += m.run(kSchritt);
+    EXPECT_TRUE(inTastaturabfrage(m)) << bild(m);
+    EXPECT_EQ(zeile(m, 1), "");
 }
 
 INSTANTIATE_TEST_SUITE_P(Varianten, Prg710Boot, ::testing::Values(V::Prg710, V::Prg710_1),

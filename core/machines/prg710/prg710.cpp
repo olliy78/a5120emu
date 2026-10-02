@@ -35,6 +35,11 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // fuhr je Laufwerk 256 Schritte ins Leere und meldete Status C0H.
     bus_.registerIO(&afs_, 0x10, 9);
     bus_.registerIO(&ass_, 0x50, 16);
+    // Tastatur 710: K7609 am 8279 der ATP (C8H–C9H, D0H–D3H); ohne Tastatur fehlt der
+    // 8279 (ROM liest FFH).  710-1 (K7672 an A32-B): AP-P2b.
+    if (variante_ == Config::Variante::Prg710) {
+        if (cfg.tastatur) { atp_.attachToBus(bus_); k7609_.connect(&atp_.kbc()); }
+    }
     // Speicherweg der CPU: Speicherverwaltung; ZRE-Fenster und VRAM gehen an die Karten.
     zre_.setSpeicherweg([this](uint16_t a) { return speicher_.memRead(a); },
                         [this](uint16_t a, uint8_t d) { speicher_.memWrite(a, d); });
@@ -79,6 +84,7 @@ void Prg710Machine::resetHardware()
     speicher_.reset();       // E8H–EBH: Abbildung aus
     afs_.reset();
     ass_.reset();
+    atp_.reset();            // 8279: FIFO leer
     hub_.gastZurueckgesetzt();
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -93,6 +99,7 @@ void Prg710Machine::powerOn()
 {
     zre_.powerOn(0x00);
     speicher_.powerOn(0x00);
+    k7609_.powerOn();        // die Tastatur hat ihr eigenes Netz-Ein, ein /RESET trifft sie nicht
     resetHardware();
     LOG_INFO("PRG710", "Netz ein: Abbildung aus, ROM bei 0000H");
 }
@@ -115,8 +122,24 @@ void Prg710Machine::keyRelease(uint32_t k)
     tasten_.push_back({k, false, false, false});
 }
 
+void Prg710Machine::tastenAbgeben()
+{
+    // Erst unter Sperre umhängen, dann ohne Sperre abgeben (wie K8915Machine).
+    std::deque<TastenEreignis> jetzt;
+    {
+        std::lock_guard<std::mutex> lk(tasten_sperre_);
+        jetzt.swap(tasten_);
+    }
+    for (const auto& e : jetzt) {
+        if (variante_ != Config::Variante::Prg710) continue;   // 710-1: AP-P2b
+        if (e.gedrueckt) k7609_.keyPress(e.code, e.shift, e.ctrl);
+        else             k7609_.keyRelease(e.code);
+    }
+}
+
 int Prg710Machine::run(int max_cycles)
 {
+    tastenAbgeben();
     if (nmi_taster_.exchange(false, std::memory_order_relaxed)) {
         bus_.assertNMI();
         LOG_INFO("PRG710", "NMI");
@@ -157,6 +180,7 @@ int Prg710Machine::run(int max_cycles)
             serial_naechst_ = hub_.takt(total_cycles_);
             dirty |= ass_.nimmSeriellGeaendert();
         }
+        if (variante_ == Config::Variante::Prg710) k7609_.service();   // 8279 pollt das OS, kein IRQ
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
