@@ -196,6 +196,24 @@ TEST_F(K5122Wait, MkeErstNachSyncGruppeUndDannDerKopf) {
 }
 
 /**
+ * @test K5122Wait.MkeLowAktiv_InvertiertNurTorBBit1
+ * @brief PRG 710: Marken-FF an Tor B Bit1 low-aktiv (Ruhe 1, erkannt 0), AP-P1c.  Die
+ *        Vorgabe (high-aktiv) bleibt unverändert; `markeErkannt()` ist weiter logisch.
+ */
+TEST_F(K5122Wait, MkeLowAktiv_InvertiertNurTorBBit1) {
+    EXPECT_FALSE(card.mkeLowAktiv()) << "Vorgabe high-aktiv";
+    card.setMkeLowAktiv(true);
+    scharf();
+    EXPECT_FALSE(card.markeErkannt());
+    EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x02) << "Ruhepegel high";
+    ASSERT_GE(bisMke(), 0);
+    EXPECT_TRUE(card.markeErkannt());
+    EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x00) << "erkannt = low";
+    card.ioWrite(0x10, 0x8D);                      // /STR = 1: zurück
+    EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x02);
+}
+
+/**
  * @test K5122Wait.MkeLoestDenPioInterruptAus
  * @brief PIO1 B wie das BIOS (Mode 3, Richtung F3H, 37H/Maske FDH = Bit1 bei high,
  *        83H frei, Vektor F2H): MKE ⇒ Interrupt mit F2H — und erst dann.  Das

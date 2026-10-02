@@ -47,6 +47,15 @@ K7024::A5120Config K7024::A5120Config::forK8915()
     return cfg;
 }
 
+K7024::A5120Config K7024::A5120Config::forPrg710()
+{
+    A5120Config cfg;                       // vram_base_hi = F8
+    cfg.chargen_rows0_7  = CHARGEN_K8915_ZG1_LATIN;   // [?] vorläufig, §8.2.3
+    cfg.chargen_rows8_11 = CHARGEN_K8915_ZG2_LATIN;
+    cfg.read_protect     = false;
+    return cfg;
+}
+
 // ─── Character-generator lookup ───────────────────────────────────────────────
 
 /**

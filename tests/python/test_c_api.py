@@ -85,16 +85,15 @@ def test_create_and_destroy_roundtrip():
 
 
 def test_unbuilt_machine_type_is_refused_with_a_reason():
-    """Ein vorgesehener, aber nicht gebauter Maschinentyp (PRG710 = 1) gibt NULL
-    zurück — mit einem Grund in `k1520_last_init_error`, nicht still.
+    """Ein Wert außerhalb der Aufzählung gibt NULL zurück — mit einem Grund in
+    `k1520_last_init_error`, nicht still.
 
-    Bis AP-E4b (doc/design/16_k8915.md §8a) stand hier der K8915 (= 2); seitdem ist
-    er gebaut, und dieser Wächter hält den verbleibenden Typ und einen Wert
-    außerhalb der Aufzählung.
+    Bis AP-E4b stand hier der K8915 (= 2), bis AP-P1c der PRG710 (= 1); beide sind
+    gebaut, übrig bleibt ein Wert außerhalb der Aufzählung.
     """
     from app.core_binding.k1520 import _lib, K1520Handle
 
-    for typ in (1, 7):
+    for typ in (7,):
         assert not _lib.k1520_create(typ), typ
         grund = _lib.k1520_last_init_error().decode()
         assert "nicht implementiert" in grund, grund
@@ -106,6 +105,33 @@ def test_unbuilt_machine_type_is_refused_with_a_reason():
     assert handle
     assert _lib.k1520_last_init_error() == b""
     _lib.k1520_destroy(K1520Handle(handle))
+
+
+def test_prg710_variants_can_be_created_and_run():
+    """`k1520_create_prg710` (AP-P1c): beide Varianten, Typ 1, laufen nach dem
+    Netz-Ein einige Takte; `k1520_create(1)` baut die Variante 0; Variante 2 → NULL."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for variante in (0, 1):
+        handle = _lib.k1520_create_prg710(variante, None, None, None, None)
+        assert handle, _lib.k1520_last_init_error()
+        h = K1520Handle(handle)
+        try:
+            assert _lib.k1520_machine_type(h) == 1
+            assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (640, 288)
+            _lib.k1520_power_on(h)
+            assert _lib.k1520_run(h, 50_000) > 0
+            assert _lib.k1520_drive_format_count(h, 0) > 0
+            assert _lib.k1520_drive_format_count(h, 2) == 0
+        finally:
+            _lib.k1520_destroy(h)
+
+    handle = _lib.k1520_create(1)
+    assert handle, _lib.k1520_last_init_error()
+    _lib.k1520_destroy(K1520Handle(handle))
+
+    assert not _lib.k1520_create_prg710(2, None, None, None, None)
+    assert "Variante" in _lib.k1520_last_init_error().decode()
 
 
 def test_k8915_can_be_created_and_reports_its_type():

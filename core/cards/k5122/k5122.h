@@ -94,6 +94,14 @@ public:
     }
     /// @brief Marken-FF (MKE): im Wait-Betrieb seit dem Scharfmachen eine Sync-Gruppe gesehen.
     bool markeErkannt() const { return w_mke_; }
+    /**
+     * @brief Polarität des Marken-FF an Tor B Bit 1 (nur Wait-Betrieb): false = high-aktiv
+     *        (Vorgabe, A5120/K8915/PRG 710-1), true = low-aktiv (PRG 710) — belegt durch
+     *        ROM, UDOS-Resident und SCPX-BIOS beider Geräte (doc/design/20_prg710.md §4a.1).
+     *        `markeErkannt()` bleibt der logische Zustand.
+     */
+    void setMkeLowAktiv(bool low) { mke_low_aktiv_ = low; updateStatusPortB(); }
+    bool mkeLowAktiv() const { return mke_low_aktiv_; }
 
     // ─── BusDevice (Ports 0x10–0x18) ─────────────────────────────────────────
     uint8_t     ioRead(uint8_t port) override;
@@ -343,6 +351,7 @@ private:
     uint64_t w_last_done_   = 0;        ///< Ende des zuletzt abgeholten Bytefensters
     uint8_t  w_latch_       = 0xFF;     ///< zuletzt übergebenes Byte (Daten-PIO)
     bool     w_scharf_      = false;    ///< /STR = 0 und MR = 0: Marken-FF sucht
+    bool     mke_low_aktiv_ = false;     ///< Tor B Bit1 invertiert (PRG 710)
     bool     w_mke_         = false;    ///< Marken-FF gesetzt (Tor B Bit1)
     uint64_t w_mke_time_    = UINT64_MAX; ///< wann die nächste Sync-Gruppe durch ist
     uint8_t  w_status_      = 0x00;     ///< zuletzt an Tor B gelegter Status

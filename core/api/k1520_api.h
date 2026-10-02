@@ -53,6 +53,19 @@ K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
                                               const char* drive2, const char* drive3);
 
 /**
+ * @brief PRG 710 / PRG 710-1 (K1520_MACHINE_PRG710) mit gewählter Variante.
+ *
+ * @param variante   0 = PRG 710 (Marken-FF low-aktiv, 8279-Tastatur), 1 = PRG 710-1.
+ *                   Anderes → NULL (Grund in k1520_last_init_error).
+ * @param drive0..3  wie bei k1520_create_configured (Vorgabe K5601, K5601, none, none).
+ * k1520_create(K1520_MACHINE_PRG710) und _configured bauen die Variante 0.
+ * Tastatur und Anzeigen: noch nicht (AP-P2a/P2b/P5b); k1520_machine_type() = 1.
+ */
+K1520_API K1520Handle k1520_create_prg710(int variante,
+                                          const char* drive0, const char* drive1,
+                                          const char* drive2, const char* drive3);
+
+/**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
  *
  * A startup abort (e.g. missing/broken disk format catalog `formats.yaml`) yields
@@ -411,7 +424,7 @@ K1520_API const char* k1520_version(void);
  * Every machine answers these; the A5120 has no panel and no bell counter and
  * returns 0.  The K8915 mirrors its indicators at the end of each k1520_run(),
  * so they may be read from any thread. */
-/** @brief K1520MachineType of the handle (0 = A5120, 2 = K8915). */
+/** @brief K1520MachineType of the handle (0 = A5120, 1 = PRG 710/710-1, 2 = K8915). */
 K1520_API int      k1520_machine_type(K1520Handle h);
 /**
  * @brief Raw byte of the text screen memory (80 × 24, bit 7 = attribute/cursor),

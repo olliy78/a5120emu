@@ -652,3 +652,20 @@ TEST(K7024, DefaultConfig_StillUsesA5120Charset)
     for (int pr = 0; pr < 12; ++pr)
         EXPECT_EQ(got[pr], kGlyphA[pr]) << "Pixelzeile " << pr << " weicht ab";
 }
+
+/**
+ * @test K7024Prg710.ConfigForPrg710
+ * @brief forPrg710(): VRAM F800H wie am A5120, aber ohne Lesesperre (AP-P1c); die
+ *        Vorgabe-Config bleibt unverändert (Lesesperre an).
+ */
+TEST(K7024Prg710, ConfigForPrg710) {
+    const K7024::A5120Config c = K7024::A5120Config::forPrg710();
+    EXPECT_EQ(c.vram_base_hi, 0xF8);
+    EXPECT_FALSE(c.read_protect);
+    EXPECT_TRUE(K7024::A5120Config{}.read_protect) << "Vorgabe unverändert";
+    K1520Bus bus;
+    K7024 k(bus, c);
+    EXPECT_TRUE(k.isReadable());
+    k.memWrite(0xF800, 'X');
+    EXPECT_EQ(k.memRead(0xF800), 'X');
+}

@@ -102,3 +102,9 @@ k1520_add_test(em16_abl SRC test_em16_abl.cpp LIBS ${_libs} k1520_fs
 # den Prompt, Helfer k1520test::wipeVram().
 k1520_add_test(kbd_nach_reset SRC test_kbd_nach_reset.cpp LIBS ${_libs}
                               LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# PRG 710 / 710-1 (doc/design/20_prg710.md AP-P1c): beide Varianten bauen, Netz-Ein + Takte,
+# Verdrahtung der Speicherverwaltung, Marken-FF-Polarität.  Kein Diskettenlauf.
+k1520_add_test(prg710_maschine SRC test_prg710_maschine.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)

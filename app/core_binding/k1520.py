@@ -292,6 +292,12 @@ class K1520EmState(ctypes.Structure):
     ]
 
 
+# k1520_create_prg710(variante, d0..d3) -> K1520Handle   (0 = PRG 710, 1 = PRG 710-1)
+_lib.k1520_create_prg710.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_prg710.restype = K1520Handle
+
 # k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
 _lib.k1520_create_with_em.argtypes = [
     ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
@@ -382,7 +388,9 @@ _lib.k1520_nmi.argtypes = [K1520Handle]
 _lib.k1520_nmi.restype = None
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
-MACHINE_TYPES = {"a5120": 0, "k8915": 2}
+MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
+# Variante für k1520_create_prg710 (nur die PRG-Namen).
+PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
 
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
@@ -628,7 +636,8 @@ class K1520Emulator:
                 that is ``None`` or ``""`` keeps the slot default; ``"none"``
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
-            machine: ``"a5120"`` (Vorgabe) oder ``"k8915"`` — siehe
+            machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"prg710"`` oder
+                ``"prg710-1"`` (Gerüst, ohne Tastatur) — siehe
                 :data:`MACHINE_TYPES`.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
@@ -645,7 +654,14 @@ class K1520Emulator:
         if self._em and machine != "a5120":
             raise ValueError(f"ein Erweiterungsmodul gibt es nur am A5120, nicht am {machine!r}")
         try:
-            handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine], self._em)
+            if machine in PRG_VARIANTEN:
+                names = (self._drive_types or [])[:4]
+                names = names + [None] * (4 - len(names))
+                enc = lambda n: n.encode("utf-8") if n else None
+                handle = _lib.k1520_create_prg710(
+                    PRG_VARIANTEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            else:
+                handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine], self._em)
         except Exception as e:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
         if not handle:

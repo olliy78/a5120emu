@@ -2,6 +2,7 @@
 #include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
+#include "core/machines/prg710/prg710.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -73,12 +74,13 @@ K1520Handle k1520_create(K1520MachineType type) {
 K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d0, const char* d1,
                                     const char* d2, const char* d3) {
+    // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 wählt.
+    if (type == K1520_MACHINE_PRG710) return k1520_create_prg710(0, d0, d1, d2, d3);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
-        // PRG710 ist im Typ vorgesehen, aber nicht gebaut.  Kein stilles NULL: die
-        // Oberfläche soll sagen können, warum.
+        // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710)";
         return nullptr;
     }
 
@@ -100,6 +102,35 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                 if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
             m = new A5120Machine(cfg);
         }
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+K1520Handle k1520_create_prg710(int variante,
+                                const char* d0, const char* d1,
+                                const char* d2, const char* d3) {
+    g_init_error.clear();
+    if (variante != 0 && variante != 1) {
+        g_init_error = "Unbekannte PRG-Variante " + std::to_string(variante) +
+                       " (0 = PRG 710, 1 = PRG 710-1)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        Prg710Machine::Config cfg;
+        cfg.variante = variante == 1 ? Prg710Machine::Config::Variante::Prg710_1
+                                     : Prg710Machine::Config::Variante::Prg710;
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
+        K1520Machine* m = new Prg710Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
         return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();

@@ -320,12 +320,20 @@ if(BUILD_K1520)
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # PRG 710 / 710-1 (doc/design/20_prg710.md AP-P1c) — K2521 + Speicherverwaltung + K7024 +
+    # K5122 (/WAIT) + K8025.  In libk1520core.so: k1520_create(K1520_MACHINE_PRG710).
+    add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
+    target_link_libraries(k1520_prg710 PUBLIC
+        k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
+        k1520_floppy2 k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # libk1520core.so — stable C-API shared library
     add_library(k1520core SHARED
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion
