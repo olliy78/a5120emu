@@ -33,10 +33,17 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `udos1715_640k_pc1715_system.hfe` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM", 80×32×256 — dieselbe Diskette liegt als `.img` unter `tests/fixtures/disks/` | MFS 1.6 |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
-**SERTEST.COM** (Prüfprogramm der seriellen Schnittstellen, `tools/sertest/`) liegt auf
-allen `cpa_cpa780_*` und auf `k8915scpx_boot1.hfe`; nach einem Neubau nachziehen mit
-`python3 tools/sertest/disketten.py --tool build/k1520disktool` (Wächter
-`cli_sertest_auf_den_disketten`).
+**Eigene Programme auf den Bootdisketten** (Quelle und eingecheckte `.com` unter `tools/`):
+
+| Programm | Quelle | Disketten |
+|----------|--------|-----------|
+| `SERTEST.COM` — Prüfprogramm der seriellen Schnittstellen | `tools/sertest/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe` |
+| `ROMREAD.COM` — liest das Boot-EPROM der ZRE nach `ROM.BIN` | `tools/romread/` | alle `cpa_cpa780_*` |
+| `EM256ADR.COM`, `EM16ABL.COM`, `EM256FUL.COM` — Prüfprogramme der A5120.16 (EM064/EM256, U8001) | `tools/em256/` | alle `cpa_cpa780_*` |
+
+Nach einem Neubau nachziehen mit `python3 tools/disketten_beigaben.py --tool
+build/k1520disktool` (Wächter `cli_beigaben_auf_den_disketten`; er prüft auch, dass die
+Prüflinge `tests/fixtures/cpm/em*.com` dieselbe Fassung tragen).
 
 ## Bootabbilder (`boot_*.bin`) — Systemspuren zum Wiedereinspielen
 

@@ -1,0 +1,2444 @@
+	TITLE	'EM256 Full Test v2.0'
+	.Z80
+;
+; em256ful.mac - Umfassendes Testprogramm fuer die EM256 16-Bit-Erweiterung
+;
+; Testet alle Hardwarekomponenten in 5 Gruppen (A-E) mit kompakter Ausgabe.
+; U8001-Firmware-Bloecke werden als DB-Daten eingebettet und zur Laufzeit
+; in das EM-DRAM (Segment 0, Zelle 0) geladen.
+;
+; v2.0 (2026-09-29, a5120emu Plan 17 "G2b"): nach den Schaltplaenen repariert
+; (Plan Par. 7) - v1.x lief am echten Geraet nie.  Wahrheit ist Par. 7, nicht
+; die frueheren Fassungen dieses Programms:
+;   - Start: RESET16 = 0 -> A29 faellt SOFORT (PIO A6 = 8/16 = 0), der U8001
+;     holt FCW/PC aus Segment 0 (RESET16 hat A33 geloescht = Mode 0).
+;   - Rueckweg: U880 setzt /TRQ8 = 0 und wartet auf PIO A6 (8/16) = 1.  Die
+;     Firmware wartet am Ende auf uI (MBIT) und fuehrt MSET aus (TREN = not u0);
+;     ohne MSET gibt es keinen Rueckweg (v1.x: "JR T,$").
+;   - Eine Zeitgrenze dabei ist ein FEHLER.  v1.x setzte danach RESET16 und
+;     las die Mailbox, als waere nichts gewesen.  Die Mailbox wird jetzt im
+;     8-Bit-Mode bei laufendem (angehaltenem) U8001 gelesen, erst DANACH RESET16.
+;   - Segmentwahl des U8001 nur ueber A33 Bit 5..7 (Segmentweiche A42); SN
+;     wirkt nur in Mode 2.  D1 (March-C) schaltet per Wort-OUT auf Mode 2.
+;   - Zeiger im segmentierten Modus nur als Registerpaar (@RRn), nicht @R3.
+;   - Firmware mit z8kasm (a5120emu), nicht z8001asm.py (einwortige Spruenge).
+;   - kein ORG 100H mehr (legte den Code mit LINKMT /p:100 nach 0200H).
+;
+; Assemblierung:
+;   python3 tools/em256/build.py em256ful   (z8kasm: Z8KASM=... falls noetig)
+;
+; Autor:  (c) 2026 Olaf Krieger
+; Lizenz: MIT
+;
+
+; =============================================================================
+; CP/M BDOS-Konstanten
+; =============================================================================
+BDOS	EQU	0005H
+CONOUT	EQU	2
+DCIO	EQU	6
+PRINT	EQU	9
+PAGELEN	EQU	23
+
+; =============================================================================
+; EM256-Hardware-Konstanten
+; =============================================================================
+MODADR	EQU	0A8H
+PIOA	EQU	0A8H
+PIOB	EQU	0A9H
+PIOACTRL EQU	0AAH
+PIOBCTRL EQU	0ABH
+RAM16	EQU	0AFH
+EM256ADR EQU	4000H
+
+; PIO Port B Bits
+SG0P	EQU	0
+SG1B	EQU	1
+N_RAMEN	EQU	2
+N_STOP	EQU	3
+RESET16	EQU	4
+N_TRQ8	EQU	5
+PRRESET	EQU	6
+
+; PIO Port A Bits
+INT16	EQU	4
+MODE816	EQU	6		; 8/16 = A29: 1 = 8-Bit-Mode
+TREN	EQU	7
+ST16	EQU	0AEH		; Status-16 A35 (nur Diagnose)
+
+; 16*4-RAM Register Bits
+N_PAGEN	EQU	0
+N_WRITE	EQU	1
+
+; PIO Port B Zustaende
+PIOB_IDLE EQU	(1 SHL RESET16) OR (1 SHL N_RAMEN)	; 0x14
+PIOB_RAMON EQU	(1 SHL RESET16)				; 0x10
+PIOB_RUN  EQU	(1 SHL N_STOP) OR (1 SHL N_RAMEN) OR (1 SHL N_TRQ8) ; 0x2C
+PIOB_TRQ  EQU	(1 SHL N_STOP) OR (1 SHL N_RAMEN)	; 0x0C
+PIOB_MBOX EQU	(1 SHL N_STOP)		; 0x08: TRQ8 halten, RAMEN, Mailbox lesen
+
+; 16*4-RAM Seitenwerte (oberes Nibble=Adresse 0x4x, unteres=Konfig)
+RAM16_P0  EQU	0CH		; Seite 0: /A15=1,/A14=1,Write=0,Page=0
+RAM16_P1  EQU	08H		; Seite 1: /A15=1,/A14=0,Write=0,Page=0
+RAM16_P2  EQU	04H		; Seite 2: /A15=0,/A14=1,Write=0,Page=0
+RAM16_P3  EQU	00H		; Seite 3: /A15=0,/A14=0,Write=0,Page=0
+RAM16_OFF EQU	0FH		; Seite aus
+
+; Mailbox-Offsets (im EM256-Speicher ab EM256ADR)
+MB_CMD	  EQU	008H
+MB_PARAM1 EQU	00AH
+MB_PARAM2 EQU	00CH
+MB_STATUS EQU	010H
+MB_RES1	  EQU	012H
+MB_RES2	  EQU	014H
+MB_RES3	  EQU	016H
+MB_RES4	  EQU	018H
+
+; STATUS-Werte
+ST_RUNNING EQU	0000H
+ST_OK	  EQU	0001H
+ST_FAIL	  EQU	0002H
+
+; Zeitgrenze fuer den Rueckweg in den 8-Bit-Mode (je Einheit 65536 Abfragen,
+; etwa 2 s).  Gruppe C braucht Mikrosekunden, eine March-C-Phase ~1 s.
+TIMEOUT_HI  EQU 1
+TIMEOUT_LONG EQU 8
+
+; Spaltenformat
+COL_STATUS EQU	42		; Spalte fuer [OK]/[FEHLER]/[INFO]
+
+; =============================================================================
+; Kein ORG: LINKMT /p:100 legt das Programm nach 0100H (ORG 100H im CSEG
+; verschob es nach 0200H).
+; =============================================================================
+
+MAIN:
+	LD	(SAVED_SP), SP
+	LD	SP, STACK_TOP
+
+	LD	DE, MSG_BANNER
+	CALL	PUTS
+	LD	HL, ENDPRG		; Programm muss unter dem Fenster enden
+	LD	A, H
+	CP	HIGH EM256ADR
+	JP	NC, TOOBIG
+	CALL	KARTE			; Attributspeicher an AFH? sonst Ende
+	JP	NZ, NOKART
+
+; =============================================================================
+; GRUPPE A: PIO- UND BASISHARDWARE-TESTS
+; =============================================================================
+	LD	DE, MSG_GRP_A
+	CALL	PUTS
+
+; --- A1: PIO-A BIOS-Zustand [INFO] ---
+	LD	DE, MSG_A1
+	CALL	PUTS
+	LD	B, 0
+	LD	C, PIOA
+	IN	A, (C)
+	LD	(TMP_BYTE), A
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- A2: PIO-B BIOS-Zustand [INFO] ---
+	LD	DE, MSG_A2
+	CALL	PUTS
+	LD	B, 0
+	LD	C, PIOB
+	IN	A, (C)
+	LD	(TMP_BYTE), A
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- A3: PIO-B Write 0x14, Read [INFO] ---
+	LD	DE, MSG_A3
+	CALL	PUTS
+	LD	A, PIOB_IDLE
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	IN	A, (C)
+	LD	(TMP_BYTE), A		; PRINT_COLON zerstoert A (v1.x gab '$' = 24H aus)
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- A4: PIO-B Write 0x10, Read [INFO] ---
+A4_START:
+	LD	DE, MSG_A4
+	CALL	PUTS
+	LD	A, PIOB_RAMON
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	IN	A, (C)
+	LD	(TMP_BYTE), A
+	; Zurueck auf Idle
+	PUSH	AF
+	LD	A, PIOB_IDLE
+	OUT	(C), A
+	POP	AF
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- A5: PIO-B Write 0x14 erneut [INFO] ---
+A5_START:
+	LD	DE, MSG_A5
+	CALL	PUTS
+	LD	A, PIOB_IDLE
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	IN	A, (C)
+	LD	(TMP_BYTE), A		; PRINT_COLON zerstoert A (v1.x gab '$' = 24H aus)
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- A6: PIO Reinit (OTIR) ---
+A6_START:
+	LD	DE, MSG_A6
+	CALL	PUTS
+	CALL	INIT_PIO
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+
+; --- A7: PIO-B nach Reinit (erw. 0x94) ---
+	LD	DE, MSG_A7
+	CALL	PUTS
+	LD	A, PIOB_IDLE
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	IN	A, (C)
+	CP	094H
+	JP	NZ, A7_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	A8_START
+A7_FAIL:
+	LD	(TMP_BYTE), A
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_A7
+	LD	A, (TMP_BYTE)
+	LD	B, 094H
+	CALL	PRINT_DETAIL_HEX
+
+; --- A8: PIO-B Toggle (0x10->0x90, 0x14->0x94) ---
+A8_START:
+	LD	DE, MSG_A8
+	CALL	PUTS
+	LD	B, 0
+	LD	C, PIOB
+	LD	A, PIOB_RAMON
+	OUT	(C), A
+	IN	A, (C)
+	LD	(TMP_BYTE), A
+	CP	090H
+	JR	NZ, A8_FAIL
+	LD	A, PIOB_IDLE
+	OUT	(C), A
+	IN	A, (C)
+	CP	094H
+	JR	NZ, A8_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	A9_START
+A8_FAIL:
+	LD	(TMP_BYTE), A
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_A8
+
+; --- A9: Parity-Latch Reset [INFO] ---
+A9_START:
+	LD	DE, MSG_A9
+	CALL	PUTS
+	; Flanke auf PRRESET
+	LD	B, 0
+	LD	C, PIOB
+	LD	A, (1 SHL PRRESET) OR PIOB_IDLE	; 0x54
+	OUT	(C), A
+	LD	A, PIOB_IDLE		; 0x14
+	OUT	(C), A
+	; PIO-B lesen: Bit 7 = /PE (Paritaet; v1.x las PIO A - dort ist Bit 7 TREN)
+	LD	C, PIOB
+	IN	A, (C)
+	LD	(TMP_BYTE), A		; PRINT_COLON zerstoert A (v1.x gab '$' = 24H aus)
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+A_DONE:
+	CALL	PRINT_GRP_SUMMARY
+	LD	A, 'A'
+	LD	(CUR_GROUP), A
+
+; =============================================================================
+; GRUPPE B: SPEICHERFENSTER- UND PAGING-TESTS
+; =============================================================================
+	LD	DE, MSG_GRP_B
+	CALL	PUTS
+	; Gruppenzaehler zuruecksetzen
+	XOR	A
+	LD	(GRP_PASS), A
+	LD	(GRP_FAIL), A
+	LD	(GRP_TOTAL), A
+	LD	(GRP_INFO), A
+
+; --- B1: EM256-Erkennung ---
+	LD	DE, MSG_B1
+	CALL	PUTS
+	CALL	DETECT_EM256
+	JR	NC, B1_OK
+	; Nicht gefunden -> alle weiteren B-Tests ueberspringen
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B1
+	JP	B_DONE_NO_EM256
+B1_OK:
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+
+; --- B2: Seite 0 Read/Write ---
+	LD	DE, MSG_B2
+	CALL	PUTS
+	CALL	RAMON_S0
+	; Sichern, Muster schreiben, zuruecklesen
+	LD	HL, (EM256ADR + 100H)
+	LD	(SAVE_WORD), HL
+	LD	HL, 0A55AH
+	LD	(EM256ADR + 100H), HL
+	LD	HL, (EM256ADR + 100H)
+	LD	(TMP_WORD), HL
+	; Wiederherstellen
+	LD	HL, (SAVE_WORD)
+	LD	(EM256ADR + 100H), HL
+	CALL	RAMOFF
+	LD	HL, (TMP_WORD)
+	LD	DE, 0A55AH
+	OR	A
+	SBC	HL, DE
+	JR	NZ, B2_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B3_START
+B2_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B2
+
+; --- B3: Seite 0 Isolation ---
+B3_START:
+	LD	DE, MSG_B3
+	CALL	PUTS
+	; Z80-RAM sichern
+	LD	HL, (EM256ADR)
+	LD	(SAVE_WORD), HL
+	LD	HL, 0
+	LD	(EM256ADR), HL		; Z80-RAM = 0
+	; EM256 einblenden, schreiben
+	CALL	RAMON_S0
+	LD	HL, 0BEEFH
+	LD	(EM256ADR), HL
+	CALL	RAMOFF
+	; Z80-RAM pruefen (sollte noch 0 sein)
+	LD	HL, (EM256ADR)
+	LD	(TMP_WORD), HL
+	; Z80-RAM wiederherstellen
+	LD	HL, (SAVE_WORD)
+	LD	(EM256ADR), HL
+	LD	HL, (TMP_WORD)
+	LD	A, H
+	OR	L
+	JR	NZ, B3_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B4_START
+B3_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B3
+
+; --- B4: Segment 0, 4 Seiten ---
+B4_START:
+	LD	DE, MSG_B4
+	CALL	PUTS
+	; Seite 0: Muster 0x11
+	CALL	RAMON_S0
+	LD	A, 011H
+	LD	(EM256ADR + 200H), A
+	CALL	RAMOFF
+	; Seite 1
+	CALL	RAMON_S0_P1
+	LD	A, 022H
+	LD	(EM256ADR + 200H), A
+	CALL	RAMOFF
+	; Seite 2
+	CALL	RAMON_S0_P2
+	LD	A, 033H
+	LD	(EM256ADR + 200H), A
+	CALL	RAMOFF
+	; Seite 3
+	CALL	RAMON_S0_P3
+	LD	A, 044H
+	LD	(EM256ADR + 200H), A
+	CALL	RAMOFF
+	; Zuruecklesen
+	CALL	RAMON_S0
+	LD	A, (EM256ADR + 200H)
+	CP	011H
+	JR	NZ, B4_FAIL
+	CALL	RAMOFF
+	CALL	RAMON_S0_P1
+	LD	A, (EM256ADR + 200H)
+	CP	022H
+	JR	NZ, B4_FAIL
+	CALL	RAMOFF
+	CALL	RAMON_S0_P2
+	LD	A, (EM256ADR + 200H)
+	CP	033H
+	JR	NZ, B4_FAIL
+	CALL	RAMOFF
+	CALL	RAMON_S0_P3
+	LD	A, (EM256ADR + 200H)
+	CP	044H
+	JR	NZ, B4_FAIL
+	CALL	RAMOFF
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B5_START
+B4_FAIL:
+	CALL	RAMOFF
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B4
+
+; --- B5: Segment 1 Erkennung ---
+B5_START:
+	LD	DE, MSG_B5
+	CALL	PUTS
+	CALL	RAMON_S1
+	LD	HL, (EM256ADR + 100H)
+	LD	(SAVE_WORD), HL
+	LD	HL, 05A5AH
+	LD	(EM256ADR + 100H), HL
+	LD	HL, (EM256ADR + 100H)
+	LD	(TMP_WORD), HL
+	LD	HL, (SAVE_WORD)
+	LD	(EM256ADR + 100H), HL
+	CALL	RAMOFF
+	LD	HL, (TMP_WORD)
+	LD	DE, 05A5AH
+	OR	A
+	SBC	HL, DE
+	JR	NZ, B5_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B6_START
+B5_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B5
+
+; --- B6: Segment 2 Erkennung ---
+B6_START:
+	LD	DE, MSG_B6
+	CALL	PUTS
+	CALL	RAMON_S2
+	LD	HL, (EM256ADR + 100H)
+	LD	(SAVE_WORD), HL
+	LD	HL, 06666H
+	LD	(EM256ADR + 100H), HL
+	LD	HL, (EM256ADR + 100H)
+	LD	(TMP_WORD), HL
+	LD	HL, (SAVE_WORD)
+	LD	(EM256ADR + 100H), HL
+	CALL	RAMOFF
+	LD	HL, (TMP_WORD)
+	LD	DE, 06666H
+	OR	A
+	SBC	HL, DE
+	JR	NZ, B6_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B7_START
+B6_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B6
+
+; --- B7: Segment 3 Erkennung ---
+B7_START:
+	LD	DE, MSG_B7
+	CALL	PUTS
+	CALL	RAMON_S3
+	LD	HL, (EM256ADR + 100H)
+	LD	(SAVE_WORD), HL
+	LD	HL, 07777H
+	LD	(EM256ADR + 100H), HL
+	LD	HL, (EM256ADR + 100H)
+	LD	(TMP_WORD), HL
+	LD	HL, (SAVE_WORD)
+	LD	(EM256ADR + 100H), HL
+	CALL	RAMOFF
+	LD	HL, (TMP_WORD)
+	LD	DE, 07777H
+	OR	A
+	SBC	HL, DE
+	JR	NZ, B7_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B8_START
+B7_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B7
+
+; --- B8: Kapazitaetserkennung [INFO] ---
+B8_START:
+	LD	DE, MSG_B8
+	CALL	PUTS
+	CALL	DETECT_CAPACITY
+	; A = Segmente (1/2/3/4)
+	LD	(DET_SEGS), A
+	CALL	PRINT_COLON
+	LD	A, (DET_SEGS)
+	; Kapazitaet = Segmente * 64
+	LD	H, 0
+	LD	L, A
+	ADD	HL, HL		; *2
+	ADD	HL, HL		; *4
+	ADD	HL, HL		; *8
+	ADD	HL, HL		; *16
+	ADD	HL, HL		; *32
+	ADD	HL, HL		; *64
+	PUSH	HL
+	LD	A, H
+	CALL	PUTHEX
+	POP	HL
+	LD	A, L
+	CALL	PUTHEX
+	LD	DE, MSG_KB
+	CALL	PUTS
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- B9: Segment-Isolation 0<->1 ---
+B9_START:
+	LD	DE, MSG_B9
+	CALL	PUTS
+	; Seg 0: Muster 0xAAAA schreiben
+	CALL	RAMON_S0
+	LD	HL, 0AAAAH
+	LD	(EM256ADR + 300H), HL
+	CALL	RAMOFF
+	; Seg 1: anderes Muster 0x5555 schreiben
+	CALL	RAMON_S1
+	LD	HL, 05555H
+	LD	(EM256ADR + 300H), HL
+	CALL	RAMOFF
+	; Seg 0: Gegenlesen
+	CALL	RAMON_S0
+	LD	HL, (EM256ADR + 300H)
+	LD	(TMP_WORD), HL
+	CALL	RAMOFF
+	LD	HL, (TMP_WORD)
+	LD	DE, 0AAAAH
+	OR	A
+	SBC	HL, DE
+	JR	NZ, B9_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B10_START
+B9_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B9
+
+; --- B10: Walking-1 RAM-Test (Z80, Seite 0) ---
+B10_START:
+	LD	DE, MSG_B10
+	CALL	PUTS
+	CALL	RAMON_S0
+	; Test: 8 Bitmuster in EM256 schreiben/lesen
+	LD	A, 001H
+	LD	HL, EM256ADR + 400H
+B10_LOOP:
+	LD	(HL), A
+	LD	B, A		; Muster merken
+	LD	A, (HL)
+	CP	B
+	JR	NZ, B10_FAIL
+	LD	A, B
+	RLCA
+	JR	NC, B10_LOOP
+	; Alle 8 Bits OK
+	CALL	RAMOFF
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	B_DONE
+B10_FAIL:
+	CALL	RAMOFF
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_B10		; v1.x zaehlte hier an der Gruppe vorbei
+	JR	B_DONE
+
+B_DONE_NO_EM256:
+	; EM256 nicht gefunden, restliche B-Tests ueberspringen
+	LD	DE, MSG_SKIP_EM
+	CALL	PUTS
+
+B_DONE:
+	CALL	PRINT_GRP_SUMMARY
+	LD	A, 'B'
+	LD	(CUR_GROUP), A
+
+	; --- Pruefe ob EM256 vorhanden, sonst C-E ueberspringen ---
+	LD	A, (EM256_OK)
+	OR	A
+	JP	Z, SKIP_ALL
+
+; =============================================================================
+; GRUPPE C: KOOPERATIVE CPU-TESTS (U8001)
+; =============================================================================
+	LD	DE, MSG_GRP_C
+	CALL	PUTS
+	XOR	A
+	LD	(GRP_PASS), A
+	LD	(GRP_FAIL), A
+	LD	(GRP_TOTAL), A
+	LD	(GRP_INFO), A
+
+; --- C1: Addition 0x1234+0x5678=0x68AC ---
+	LD	DE, MSG_C1
+	CALL	PUTS
+	LD	HL, FW_ADD_CODE
+	LD	BC, FW_ADD_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C1_TOUT
+	; Erwarte RESULT1 = 0x68AC
+	LD	DE, 068ACH
+	CALL	CHECK_RESULT1
+	JR	NZ, C1_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C2_START
+C1_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C1
+	JR	C2_START
+C1_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C1
+	CALL	PRINT_RES1_DETAIL
+
+; --- C2: Subtraktion 0x8000-0x0001=0x7FFF ---
+C2_START:
+	LD	DE, MSG_C2
+	CALL	PUTS
+	LD	HL, FW_SUB_CODE
+	LD	BC, FW_SUB_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C2_TOUT
+	LD	DE, 07FFFH
+	CALL	CHECK_RESULT1
+	JR	NZ, C2_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C3_START
+C2_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C2
+	JR	C3_START
+C2_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C2
+	CALL	PRINT_RES1_DETAIL
+
+; --- C3: Logik AND/OR/XOR -> 0x1234 ---
+C3_START:
+	LD	DE, MSG_C3
+	CALL	PUTS
+	LD	HL, FW_LOGIC_CODE
+	LD	BC, FW_LOGIC_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C3_TOUT
+	LD	DE, 01234H
+	CALL	CHECK_RESULT1
+	JR	NZ, C3_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C4_START
+C3_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C3
+	JR	C4_START
+C3_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C3
+	CALL	PRINT_RES1_DETAIL
+
+; --- C4: Speicher R/W -> 0xA55A ---
+C4_START:
+	LD	DE, MSG_C4
+	CALL	PUTS
+	LD	HL, FW_MEMRW_CODE
+	LD	BC, FW_MEMRW_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C4_TOUT
+	; Pruefe STATUS (U8001 schreibt OK/FAIL)
+	LD	A, (MB_STATUS_HI)
+	OR	A
+	JR	NZ, C4_FAIL_S
+	LD	A, (MB_STATUS_LO)
+	CP	ST_OK AND 0FFH
+	JR	NZ, C4_FAIL_S
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C5_START
+C4_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C4
+	JR	C5_START
+C4_FAIL_S:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C4
+	CALL	PRINT_RES1_DETAIL
+
+; --- C5: Schleife (256x INC) -> 0x0100 ---
+C5_START:
+	LD	DE, MSG_C5
+	CALL	PUTS
+	LD	HL, FW_LOOP_CODE
+	LD	BC, FW_LOOP_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C5_TOUT
+	LD	DE, 00100H
+	CALL	CHECK_RESULT1
+	JR	NZ, C5_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C6_START
+C5_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C5
+	JR	C6_START
+C5_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C5
+	CALL	PRINT_RES1_DETAIL
+
+; --- C6: Stack (PUSH/POP) -> 0xBEEF ---
+C6_START:
+	LD	DE, MSG_C6
+	CALL	PUTS
+	LD	HL, FW_STACK_CODE
+	LD	BC, FW_STACK_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C6_TOUT
+	LD	DE, 0BEEFH
+	CALL	CHECK_RESULT1
+	JR	NZ, C6_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C7_START
+C6_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C6
+	JR	C7_START
+C6_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C6
+	CALL	PRINT_RES1_DETAIL
+
+; --- C7: 32-Bit Addition -> High=0x0001,Low=0xFFFF ---
+C7_START:
+	LD	DE, MSG_C7
+	CALL	PUTS
+	LD	HL, FW_ADD32_CODE
+	LD	BC, FW_ADD32_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C7_TOUT
+	LD	DE, 00001H
+	CALL	CHECK_RESULT1
+	JR	NZ, C7_FAIL
+	; Auch RESULT2 pruefen
+	LD	A, (MB_RES2_HI)
+	CP	0FFH
+	JR	NZ, C7_FAIL
+	LD	A, (MB_RES2_LO)
+	CP	0FFH
+	JR	NZ, C7_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C8_START
+C7_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C7
+	JR	C8_START
+C7_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C7
+	CALL	PRINT_RES1_DETAIL
+
+; --- C8: Byte-Operationen -> 0x7510 ---
+C8_START:
+	LD	DE, MSG_C8
+	CALL	PUTS
+	LD	HL, FW_BYTE_CODE
+	LD	BC, FW_BYTE_CODE_LEN
+	CALL	RUN_FW_TEST
+	JR	C, C8_TOUT
+	LD	DE, 07510H
+	CALL	CHECK_RESULT1
+	JR	NZ, C8_FAIL
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JR	C_DONE
+C8_TOUT:
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_C8
+	JR	C_DONE
+C8_FAIL:
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_C8
+	CALL	PRINT_RES1_DETAIL
+
+C_DONE:
+	CALL	PRINT_GRP_SUMMARY
+	LD	A, 'C'
+	LD	(CUR_GROUP), A
+
+; =============================================================================
+; GRUPPE D: AUTONOMER DRAM-TEST (U8001 March-C)
+; =============================================================================
+	LD	DE, MSG_GRP_D
+	CALL	PUTS
+	XOR	A
+	LD	(GRP_PASS), A
+	LD	(GRP_FAIL), A
+	LD	(GRP_TOTAL), A
+	LD	(GRP_INFO), A
+
+; --- D1: March-C DRAM alle 4 Segmente (256 KB), phasenweise ---
+	LD	DE, MSG_D1
+	CALL	PUTS
+	; Anfangsstatus: "  0 KB Phase 0/5"
+	LD	DE, MSG_D1_INIT
+	CALL	PUTS
+	; Defekt-Tabelle initialisieren (4 Bytes fuer RAS0-RAS3)
+	XOR	A
+	LD	(DEFECT_RAS+0), A
+	LD	(DEFECT_RAS+1), A
+	LD	(DEFECT_RAS+2), A
+	LD	(DEFECT_RAS+3), A
+	LD	(D1_HAD_ERROR), A
+	; Segment-Schleife: 0, 1, 2, 3
+	LD	(D1_SEGIDX), A
+D1_SEG_LOOP:
+	; Phasen-Schleife: 1, 2, 3, 4, 5
+	LD	A, 1
+	LD	(D1_PHASE), A
+	XOR	A
+	LD	(TO_ART), A
+D1_PH_LOOP:
+	; Firmware nach Segment 0 laden, Parameter in die Mailbox
+	CALL	RAMON_S0
+	LD	HL, FW_MARCH_CODE
+	LD	BC, FW_MARCH_CODE_LEN
+	LD	DE, EM256ADR
+	LDIR
+	; MB_PARAM1 = Segmentwort (Segment N -> N * 0100H, big-endian)
+	LD	A, (D1_SEGIDX)
+	LD	(EM256ADR + MB_PARAM1), A
+	XOR	A
+	LD	(EM256ADR + MB_PARAM1 + 1), A
+	; MB_PARAM2 = Phase
+	LD	(EM256ADR + MB_PARAM2), A
+	LD	A, (D1_PHASE)
+	LD	(EM256ADR + MB_PARAM2 + 1), A
+	XOR	A
+	LD	(EM256ADR + MB_STATUS), A
+	LD	(EM256ADR + MB_STATUS + 1), A
+	CALL	RAMOFF
+	; Starten und Rueckweg abwarten (Firmware meldet sich per MSET)
+	LD	D, TIMEOUT_LONG
+	CALL	U16LAUF
+	JP	C, D1_TOUT
+	; STATUS muss 0001 (OK) oder 0002 (Fehler gefunden) sein - alles andere
+	; (0000, A00p = Phase nicht beendet) ist ein Ablauffehler
+	LD	A, (MB_STATUS_HI)
+	OR	A
+	JP	NZ, D1_BADST
+	LD	A, (MB_STATUS_LO)
+	CP	ST_OK
+	JR	Z, D1_UPDDISP
+	CP	ST_FAIL
+	JP	NZ, D1_BADST
+D1_CHERR:
+	; Fehlerzeile je Phase: Seg/Phase, Mailbox (R1 Maske, R2 Anzahl,
+	; R3 erste Fehlerstelle, R4 letzter Offset)
+	LD	DE, MSG_CRLF
+	CALL	PUTS
+	LD	DE, MSG_D1_SEG3
+	CALL	PUTS
+	LD	A, (D1_SEGIDX)
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	LD	DE, MSG_D1P1
+	CALL	PUTS
+	LD	A, (D1_PHASE)
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	CALL	DBG_TOUT
+	; Fehlermaske aus RESULT1 in Defekt-Tabelle eintragen
+	; Mapping: Seg 0,1 -> RAS0 (lo), RAS2 (hi)
+	;          Seg 2,3 -> RAS1 (lo), RAS3 (hi)
+	LD	A, (D1_SEGIDX)
+	CP	2
+	JR	NC, D1_RASHI	; Seg >= 2 -> RAS1/RAS3
+	; Seg 0,1: Low-Byte -> DEFECT_RAS[0], High-Byte -> DEFECT_RAS[2]
+	LD	A, (MB_RES1_LO)
+	LD	HL, DEFECT_RAS+0
+	OR	(HL)
+	LD	(HL), A
+	LD	A, (MB_RES1_HI)
+	LD	HL, DEFECT_RAS+2
+	OR	(HL)
+	LD	(HL), A
+	JR	D1_MARKERR
+D1_RASHI:
+	; Seg 2,3: Low-Byte -> DEFECT_RAS[1], High-Byte -> DEFECT_RAS[3]
+	LD	A, (MB_RES1_LO)
+	LD	HL, DEFECT_RAS+1
+	OR	(HL)
+	LD	(HL), A
+	LD	A, (MB_RES1_HI)
+	LD	HL, DEFECT_RAS+3
+	OR	(HL)
+	LD	(HL), A
+D1_MARKERR:
+	LD	A, 1
+	LD	(D1_HAD_ERROR), A
+D1_UPDDISP:
+	; Fortschrittsanzeige: CR + "D1 DRAM: XXX-YYY KB Phase N/5"
+	LD	E, 0DH
+	CALL	PUTC
+	LD	DE, MSG_D1
+	CALL	PUTS
+	; KB-Bereich: Segment * 64 - (Segment+1) * 64
+	LD	A, (D1_SEGIDX)
+	ADD	A, A			; *2 (Index in Worttabelle)
+	LD	E, A
+	LD	D, 0
+	LD	HL, D1_RANGE_TAB
+	ADD	HL, DE
+	LD	E, (HL)
+	INC	HL
+	LD	D, (HL)		; DE = Adresse des Bereichs-Strings
+	CALL	PUTS
+	; " Phase "
+	LD	DE, MSG_D1_PHASE
+	CALL	PUTS
+	; Phasennummer
+	LD	A, (D1_PHASE)
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	; "/5"
+	LD	DE, MSG_D1_OF5
+	CALL	PUTS
+	; Naechste Phase
+	LD	A, (D1_PHASE)
+	INC	A
+	LD	(D1_PHASE), A
+	CP	6			; Phase 6 -> alle 5 fertig
+	JP	C, D1_PH_LOOP
+	; Alle 5 Phasen fuer dieses Segment fertig -> naechstes Segment
+	LD	A, (D1_SEGIDX)
+	INC	A
+	LD	(D1_SEGIDX), A
+	CP	4
+	JP	C, D1_SEG_LOOP
+	; Alle 4 Segmente getestet
+	; Abschlusszeile: CR + "D1 DRAM: 256 KB" + Leerzeichen
+	LD	E, 0DH
+	CALL	PUTC
+	LD	DE, MSG_D1
+	CALL	PUTS
+	LD	DE, MSG_D1_DONE
+	CALL	PUTS
+	; Fehlerergebnis pruefen
+	LD	A, (D1_HAD_ERROR)
+	OR	A
+	JR	NZ, D1_REPORT
+	; Kein Fehler
+	CALL	PRINT_OK
+	CALL	COUNT_PASS
+	JP	D_DONE
+D1_TOUT:
+	; Timeout: Segment-Info ausgeben
+	LD	E, 0DH
+	CALL	PUTC
+	LD	DE, MSG_D1
+	CALL	PUTS
+	LD	DE, MSG_D1_SEG
+	CALL	PUTS
+	LD	A, (D1_SEGIDX)
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	LD	E, ' '
+	CALL	PUTC
+	LD	DE, MSG_D1P
+	CALL	PUTS
+	LD	A, (D1_PHASE)
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	CALL	PRINT_TIMEOUT
+	CALL	DBG_TOUT
+	CALL	COUNT_FAIL_D1
+	JP	D_DONE
+D1_BADST:
+	LD	A, 3			; STATUS weder OK noch FEHLER
+	LD	(TO_ART), A
+	JP	D1_TOUT
+D1_REPORT:
+	; Fehler gefunden -> [FEHLER] + Defekt-Liste
+	CALL	PRINT_FAIL
+	CALL	COUNT_FAIL_D1
+	; Defekte DRAM-ICs auflisten
+	; Bank 0-3 (RAS0-RAS3), je 8 Datenbits (0-7)
+	LD	C, 0			; Bank-Zaehler (0-3)
+D1_BANK_LOOP:
+	LD	B, 0
+	LD	HL, DEFECT_RAS
+	ADD	HL, BC
+	LD	A, (HL)			; Defekt-Bitmask fuer diese Bank
+	OR	A
+	JR	Z, D1_NEXT_BANK	; keine Defekte in dieser Bank
+	; Bits 0-7 durchgehen
+	LD	E, A			; E = Bitmask
+	LD	D, 0			; D = Bit-Zaehler (0-7)
+D1_BIT_LOOP:
+	BIT	0, E
+	JR	Z, D1_NEXT_BIT
+	; Fehler in Bank C Bit D
+	PUSH	DE
+	PUSH	BC
+	LD	DE, MSG_D1_BANK
+	CALL	PUTS
+	POP	BC
+	PUSH	BC
+	LD	A, C
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	LD	DE, MSG_D1_BIT
+	CALL	PUTS
+	POP	BC
+	POP	DE
+	PUSH	DE
+	PUSH	BC
+	LD	A, D
+	ADD	A, '0'
+	LD	E, A
+	CALL	PUTC
+	LD	DE, MSG_CRLF
+	CALL	PUTS
+	POP	BC
+	POP	DE
+D1_NEXT_BIT:
+	SRL	E
+	INC	D
+	LD	A, D
+	CP	8
+	JR	C, D1_BIT_LOOP
+D1_NEXT_BANK:
+	INC	C
+	LD	A, C
+	CP	4
+	JR	C, D1_BANK_LOOP
+
+D_DONE:
+	CALL	PRINT_GRP_SUMMARY
+	LD	A, 'D'
+	LD	(CUR_GROUP), A
+
+; =============================================================================
+; GRUPPE E: PARITAETSTESTS
+; =============================================================================
+	LD	DE, MSG_GRP_E
+	CALL	PUTS
+	XOR	A
+	LD	(GRP_PASS), A
+	LD	(GRP_FAIL), A
+	LD	(GRP_TOTAL), A
+	LD	(GRP_INFO), A
+
+; --- E1: Parity-Latch lesen [INFO] ---
+	LD	DE, MSG_E1
+	CALL	PUTS
+	LD	B, 0
+	LD	C, PIOB
+	IN	A, (C)
+	LD	(TMP_BYTE), A		; PRINT_COLON zerstoert A (v1.x gab '$' = 24H aus)
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+; --- E2: Parity-Latch Reset + Pruefen [INFO] ---
+E2_START:
+	LD	DE, MSG_E2
+	CALL	PUTS
+	LD	B, 0
+	LD	C, PIOB
+	LD	A, (1 SHL PRRESET) OR PIOB_IDLE
+	OUT	(C), A
+	LD	A, PIOB_IDLE
+	OUT	(C), A
+	LD	C, PIOB
+	IN	A, (C)
+	LD	(TMP_BYTE), A		; PRINT_COLON zerstoert A (v1.x gab '$' = 24H aus)
+	CALL	PRINT_COLON
+	LD	A, (TMP_BYTE)
+	CALL	PUTHEX
+	CALL	PRINT_INFO
+	CALL	COUNT_INFO
+
+E_DONE:
+	CALL	PRINT_GRP_SUMMARY
+
+SKIP_ALL:
+
+; =============================================================================
+; GESAMTZUSAMMENFASSUNG
+; =============================================================================
+	LD	DE, MSG_SUMMARY_LINE
+	CALL	PUTS
+
+	LD	DE, MSG_RESULT
+	CALL	PUTS
+	LD	A, (PASS_CNT)
+	CALL	PUTDEC
+	LD	E, '/'
+	CALL	PUTC
+	LD	A, (PASS_CNT)
+	LD	B, A
+	LD	A, (FAIL_CNT)
+	ADD	A, B
+	CALL	PUTDEC
+	LD	DE, MSG_PASSED
+	CALL	PUTS
+
+	LD	A, (FAIL_CNT)
+	OR	A
+	JR	Z, ALL_OK
+
+	LD	DE, MSG_FAILLIST
+	CALL	PUTS
+	; Fehlerliste ausgeben
+	LD	HL, FAIL_LIST
+	LD	A, (FAIL_LPTR)
+	LD	B, A
+	OR	A
+	JR	Z, FLIST_DONE
+FLIST_LOOP:
+	PUSH	HL
+	PUSH	BC
+	LD	A, (HL)
+	LD	E, A
+	CALL	PUTC
+	POP	BC
+	POP	HL
+	INC	HL
+	PUSH	HL
+	PUSH	BC
+	LD	A, (HL)
+	LD	E, A
+	CALL	PUTC
+	LD	E, ' '
+	CALL	PUTC
+	POP	BC
+	POP	HL
+	INC	HL
+	DEC	B
+	DEC	B
+	JR	NZ, FLIST_LOOP
+FLIST_DONE:
+	LD	DE, MSG_CRLF
+	CALL	PUTS
+	JR	SHOW_CAP
+
+ALL_OK:
+	LD	DE, MSG_ALL_OK
+	CALL	PUTS
+
+SHOW_CAP:
+	LD	DE, MSG_CAP_LINE
+	CALL	PUTS
+	LD	A, (DET_SEGS)
+	OR	A
+	JR	Z, CAP_UNKNOWN
+	LD	H, 0
+	LD	L, A
+	ADD	HL, HL
+	ADD	HL, HL
+	ADD	HL, HL
+	ADD	HL, HL
+	ADD	HL, HL
+	ADD	HL, HL		; *64
+	LD	A, H
+	CALL	PUTHEX
+	LD	A, L
+	CALL	PUTHEX
+	LD	DE, MSG_KB
+	CALL	PUTS
+	LD	DE, MSG_CRLF
+	CALL	PUTS
+	JR	CAP_DONE
+CAP_UNKNOWN:
+	LD	DE, MSG_UNKNOWN
+	CALL	PUTS
+CAP_DONE:
+	LD	DE, MSG_SUMMARY_LINE
+	CALL	PUTS
+
+EXIT:
+	LD	SP, (SAVED_SP)
+	RET
+
+TOOBIG:	LD	DE, MSG_BIG
+	CALL	PUTS
+	JP	EXIT
+NOKART:	LD	DE, MSG_NOK
+	CALL	PUTS
+	JP	EXIT
+
+; =============================================================================
+; KARTE - Attributspeicher an AFH erkennen (wie em16abl): Seite 0 beschreiben,
+; negiert zuruecklesen (A22 = 74189).  PEN bleibt 0.  NZ = keine Karte.
+; Vor jedem anderen Zugriff auf A8H..AFH, damit ohne EM nichts Fremdes
+; beschrieben wird.
+; =============================================================================
+KARTE:	LD	BC, RAM16
+	LD	A, 0BH
+	OUT	(C), A
+	IN	A, (C)
+	AND	0FH
+	CP	04H
+	RET	NZ
+	LD	A, 07H
+	OUT	(C), A
+	IN	A, (C)
+	AND	0FH
+	CP	08H
+	RET
+
+; =============================================================================
+; INIT_PIO - PIO-A und PIO-B im Bitmodus initialisieren
+;
+; PIO-A: Alle 8 Bits als Eingang (0xFF), Interrupt-Maske 0x07
+;        Bit 7 = TREN (Bus-Freigabe), Bit 4 = INT16 (Interrupt vom U8001)
+; PIO-B: Bit 7 als Eingang (Paritaetsfehler), Rest Ausgang (0x80)
+;        Steuert U8001-Reset, RAM-Enable, Stop, TRQ8, Segment-Adresse
+;
+; Setzt anschliessend das Parity-Latch zurueck und deaktiviert alle
+; 16x4-RAM-Seiten (Speicherfenster fuer Z80-Zugriff auf EM256-DRAM).
+; =============================================================================
+INIT_PIO:
+	; PIO-B: Ausgaberegister ZUERST (wie em16abl), sonst faellt RESET16 beim
+	; Umschalten auf Ausgabe kurz auf 0 und der U8001 laeuft an (Plan 17 Par. 8)
+	LD	B, 0
+	LD	C, PIOB
+	LD	A, PIOB_IDLE
+	OUT	(C), A
+	; PIO-A: 3 Bytes Konfiguration (Modus/Maske/Interrupt)
+	LD	B, 3
+	LD	HL, PA_INIT
+	LD	C, PIOACTRL
+	OTIR
+	; PIO-B: 3 Bytes Konfiguration
+	LD	B, 3
+	LD	HL, PB_INIT
+	LD	C, PIOBCTRL
+	OTIR
+	; Parity-Latch Reset: PRRESET-Bit kurz HIGH setzen
+	LD	C, PIOB
+	LD	A, (1 SHL PRRESET) OR PIOB_IDLE
+	OUT	(C), A
+	LD	A, PIOB_IDLE
+	OUT	(C), A
+	; 16*4-RAM: alle 16 Positionen (0x0x..0xFx) deaktivieren
+	; B=Positionsadresse (oberes Nibble), Wert 0x07 = Page off
+	LD	B, 0
+	LD	C, RAM16
+INIT_LOOP:
+	LD	A, 07H		; Alle Steuerbits gesetzt = deaktiviert
+	OUT	(C), A
+	LD	A, B
+	ADD	A, 010H		; Naechste Position (+16)
+	LD	B, A
+	JR	NZ, INIT_LOOP	; 16 Positionen (0x00..0xF0)
+	; PIO-B Idle
+	LD	B, 0
+	LD	C, PIOB
+	LD	A, PIOB_IDLE
+	OUT	(C), A
+	RET
+
+PA_INIT:
+	DB	0CFH, 0FFH, 07H	; Bitmodus, alle Bits Input, Maske 0x07
+PB_INIT:
+	DB	0CFH, 80H, 07H		; Bitmodus, Bit7=Input Rest=Output, Maske 0x07
+
+; =============================================================================
+; DETECT_EM256 - EM256 erkennen (BIOS-Methode, atomar)
+;
+; Prueft ob EM256-Hardware vorhanden ist:
+;   1. Z80-RAM-Inhalt an EM256ADR (0x4000) sichern
+;   2. Z80-Adresse mit 0x0000 vorbelegen
+;   3. EM256-Seite einblenden, 0xA55A schreiben, zuruecklesen
+;   4. EM256 ausblenden, Z80-Adresse pruefen (muss wieder 0x0000 sein)
+;   5. Wenn EM256-Wert = 0xA55A und Z80-Wert = 0x0000 -> EM256 vorhanden
+;
+; CF=0 gefunden, CF=1 nicht gefunden.  Setzt EM256_OK-Flag.
+; =============================================================================
+DETECT_EM256:
+	LD	HL, (EM256ADR)	; Z80-RAM sichern
+	LD	(SAVE_WORD), HL
+	LD	HL, 0		; Referenzwert 0 ins Z80-RAM
+	LD	(EM256ADR), HL
+	CALL	RAMON_S0	; EM256 Seg 0 einblenden
+	LD	HL, 0A55AH	; Testmuster 0xA55A ins EM256-DRAM
+	LD	(EM256ADR), HL
+	LD	HL, (EM256ADR)	; Zuruecklesen aus EM256
+	LD	(TMP_WORD), HL
+	CALL	RAMOFF		; EM256 ausblenden
+	LD	HL, (EM256ADR)	; Z80-RAM pruefen (sollte 0 sein)
+	LD	(TMP_WORD2), HL
+	LD	HL, (SAVE_WORD)	; Z80-RAM restaurieren
+	LD	(EM256ADR), HL
+	; Test 1: EM256 muss 0xA55A zurueckgegeben haben
+	LD	HL, (TMP_WORD)
+	LD	DE, 0A55AH
+	OR	A
+	SBC	HL, DE
+	JR	NZ, DET_FAIL
+	; Test 2: Z80-RAM muss 0 sein (nicht durch EM256 ueberschrieben)
+	LD	HL, (TMP_WORD2)
+	LD	A, H
+	OR	L
+	JR	NZ, DET_FAIL
+	LD	A, 1
+	LD	(EM256_OK), A
+	OR	A
+	RET
+DET_FAIL:
+	XOR	A
+	LD	(EM256_OK), A
+	SCF
+	RET
+
+; =============================================================================
+; DETECT_CAPACITY - Anzahl DRAM-Segmente erkennen (1-4 x 64 KB)
+;
+; Alias-Pruefung: Schreibt 0xBEEF in Seg 0, liest andere Segmente.
+; Wenn ein Segment denselben Wert liefert, ist es ein Alias fuer Seg 0
+; (d.h. die Adressleitungen A16/A17 werden nicht dekodiert).
+; Unterschiedlicher Wert = eigenes physisches Segment vorhanden.
+;
+; Ergebnis: A = Anzahl Segmente (1-4)
+; =============================================================================
+DETECT_CAPACITY:
+	; Referenzmuster 0xBEEF in Seg 0 schreiben (Offset 0x500)
+	CALL	RAMON_S0
+	LD	HL, 0BEEFH
+	LD	(EM256ADR + 500H), HL
+	CALL	RAMOFF
+	; Seg 1 lesen: Alias oder eigener Speicher?
+	CALL	RAMON_S1
+	LD	HL, (EM256ADR + 500H)
+	CALL	RAMOFF
+	LD	DE, 0BEEFH
+	OR	A
+	SBC	HL, DE
+	JR	Z, CAP_1SEG	; Gleicher Wert = Alias = nur 1 Segment
+	; Seg 2 pruefen
+	CALL	RAMON_S2
+	LD	HL, (EM256ADR + 500H)
+	CALL	RAMOFF
+	LD	DE, 0BEEFH
+	OR	A
+	SBC	HL, DE
+	JR	Z, CAP_2SEG
+	; Seg 3 pruefen
+	CALL	RAMON_S3
+	LD	HL, (EM256ADR + 500H)
+	CALL	RAMOFF
+	LD	DE, 0BEEFH
+	OR	A
+	SBC	HL, DE
+	JR	Z, CAP_3SEG
+	LD	A, 4
+	RET
+CAP_3SEG:
+	LD	A, 3
+	RET
+CAP_2SEG:
+	LD	A, 2
+	RET
+CAP_1SEG:
+	LD	A, 1
+	RET
+
+; =============================================================================
+; RAMON-Routinen (Segment/Seite-Einblendung)
+;
+; Das EM256-DRAM (256 KB) wird ueber ein 16x4-RAM seitenweise in das
+; Z80-Adressfenster ab 0x4000 (16 KB) eingeblendet.
+;
+; 16x4-RAM Adresse:
+;   Oberes Nibble (B-Register): Seitenposition, hier immer 0x4x (0x4000)
+;   Unteres Nibble (Datenbyte): Konfiguration:
+;     Bit 3-2 = /A15,/A14 (invertiert!) = Seite innerhalb des Segments
+;     Bit 1   = /WRITE (0=schreibbar)
+;     Bit 0   = /PAGEN (0=aktiv)
+;
+; PIO-B steuert Segment-Adresse (SG0P, SG1B) und RAM-Aktivierung.
+; =============================================================================
+
+; Segment 0, Seite 0: /A15=1,/A14=1 -> Adressbereich 0x0000-0x3FFF
+RAMON_S0:
+	LD	B, 04CH		; 16x4-RAM Position 0x4x (Fenster ab 0x4000)
+	LD	C, RAM16
+	LD	A, RAM16_P0	; Seite 0: Bits=1100 (/A15=1,/A14=1,W=0,P=0)
+	OUT	(C), A
+	LD	A, PIOB_RAMON	; RESET16=1, /RAMEN=0 (RAM aktiv)
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; Segment 0, Seite 1: /A15=1,/A14=0 -> Adressbereich 0x4000-0x7FFF
+RAMON_S0_P1:
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P1	; Seite 1: Bits=1000
+	OUT	(C), A
+	LD	A, PIOB_RAMON
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; Segment 0, Seite 2: /A15=0,/A14=1 -> Adressbereich 0x8000-0xBFFF
+RAMON_S0_P2:
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P2	; Seite 2: Bits=0100
+	OUT	(C), A
+	LD	A, PIOB_RAMON
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; Segment 0, Seite 3: /A15=0,/A14=0 -> Adressbereich 0xC000-0xFFFF
+RAMON_S0_P3:
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P3	; Seite 3: Bits=0000
+	OUT	(C), A
+	LD	A, PIOB_RAMON
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; Segment 1, Seite 0: SG0P=1 (Bit 0 der Segmentadresse)
+RAMON_S1:
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P0
+	OUT	(C), A
+	LD	A, PIOB_RAMON OR (1 SHL SG0P)	; Seg-Bit 0 setzen
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; Segment 2, Seite 0: SG1B=1 (Bit 1 der Segmentadresse)
+RAMON_S2:
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P0
+	OUT	(C), A
+	LD	A, PIOB_RAMON OR (1 SHL SG1B)	; Seg-Bit 1 setzen
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; Segment 3, Seite 0: SG0P=1 + SG1B=1 (beide Seg-Bits)
+RAMON_S3:
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P0
+	OUT	(C), A
+	LD	A, PIOB_RAMON OR (1 SHL SG0P) OR (1 SHL SG1B)
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; =============================================================================
+; RAMOFF - EM256-DRAM ausblenden, Z80-Normalzustand herstellen
+;
+; Deaktiviert 16x4-RAM-Seite und setzt PIO-B auf Idle (/RAMEN=1).
+; =============================================================================
+RAMOFF:
+	LD	B, 04CH		; Position 0x4x
+	LD	C, RAM16
+	LD	A, RAM16_OFF	; Alle Steuerbits gesetzt = Seite deaktiviert
+	OUT	(C), A
+	LD	A, PIOB_IDLE	; RESET16=1, /RAMEN=1 (RAM inaktiv)
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; =============================================================================
+; START_U8000 - U8001-CPU starten
+;
+; Setzt PIO-B auf PIOB_RUN: /STOP=1 (laeuft), /RAMEN=1, /TRQ8=1 (kein TRQ)
+; Der U8001 laeuft nach Reset aus dem Code in Segment 0 ab 0x0040.
+; =============================================================================
+START_U8000:
+	LD	A, PIOB_RUN
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; =============================================================================
+; STOP_U8000 - U8001-CPU stoppen und in Reset-Zustand versetzen
+;
+; PIOB_IDLE: RESET16=1 (Reset aktiv), /RAMEN=1, /STOP=0, /TRQ8=0
+; =============================================================================
+STOP_U8000:
+	LD	A, PIOB_IDLE
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	RET
+
+; =============================================================================
+; RUN_FW_TEST - U8001-Firmware laden, starten, Rueckweg abwarten, Mailbox lesen
+;
+; Eingabe:  HL = Adresse des Firmware-Abbilds, BC = Laenge
+; Rueckgabe: CF=0 Rueckweg erreicht, Mailbox in MB_STATUS_xx/MB_RESx_xx
+;            CF=1 Fehler im Ablauf (TO_ART: 1 = A29 faellt nicht, 2 = Zeitgrenze
+;            8/16); Mailbox trotzdem gelesen (nach RESET16), PIO A in DBG_PA
+; =============================================================================
+RUN_FW_TEST:
+	PUSH	HL
+	PUSH	BC
+	CALL	RAMON_S0		; Firmware nach Segment 0, Zelle 0
+	POP	BC			; (RAMON_S0 benutzt BC)
+	POP	HL
+	LD	DE, EM256ADR
+	LDIR
+	XOR	A			; STATUS nullen
+	LD	(EM256ADR + MB_STATUS), A
+	LD	(EM256ADR + MB_STATUS + 1), A
+	CALL	RAMOFF			; RESET16 = 1
+	LD	D, TIMEOUT_HI
+	JP	U16LAUF
+
+; =============================================================================
+; U16LAUF - U8001 aus dem Reset starten und in den 8-Bit-Mode zurueckholen
+;
+; Plan 17 Par. 7.4: RESET16 = 0 -> A29 faellt sofort (16-Bit-Mode).  Dann
+; /TRQ8 = 0 (uI); die Firmware antwortet am Ende mit MSET (TREN) -> BUSRQ ->
+; BUSAK -> A29 im naechsten M1 des U880 -> PIO A6 (8/16) = 1.  Erst dann wird
+; die Mailbox gelesen (RAMEN bei gehaltenem TRQ8), danach RESET16 = 1.
+; Eingabe: D = Zeitgrenze (Einheiten zu 65536 Abfragen).  Rueckgabe wie
+; RUN_FW_TEST.
+; =============================================================================
+U16LAUF:
+	PUSH	DE
+	LD	A, PIOB_RUN		; RESET16 = 0, /STOP = 1, /TRQ8 = 1
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	LD	C, PIOA
+	IN	A, (C)
+	LD	(DBG_PA), A
+	POP	DE
+	BIT	MODE816, A		; muss sofort 0 sein
+	LD	A, 1
+	JR	NZ, U16ERR
+	LD	A, PIOB_TRQ		; /TRQ8 = 0
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	LD	HL, 0
+U16W:	LD	B, 0
+	LD	C, PIOA
+	IN	A, (C)
+	BIT	MODE816, A
+	JR	NZ, U16OK
+	DEC	HL
+	LD	A, H
+	OR	L
+	JR	NZ, U16W
+	DEC	D
+	JR	NZ, U16W
+	LD	C, PIOA			; Zeitgrenze: Zustand festhalten
+	IN	A, (C)
+	LD	(DBG_PA), A
+	LD	A, 2
+U16ERR:
+	LD	(TO_ART), A
+	LD	B, 0
+	LD	C, ST16
+	IN	A, (C)
+	LD	(DBG_A35), A
+	CALL	STOP_U8000		; RESET16 = 1 (nur, um weiterzukommen)
+	CALL	RAMON_S0
+	CALL	READ_MAILBOX
+	CALL	RAMOFF
+	SCF
+	RET
+U16OK:
+	LD	(DBG_PA), A
+	LD	B, 0
+	LD	C, ST16
+	IN	A, (C)
+	LD	(DBG_A35), A
+	; Mailbox im 8-Bit-Mode lesen, der U8001 bleibt dabei im BUSAK
+	LD	B, 04CH
+	LD	C, RAM16
+	LD	A, RAM16_P0
+	OUT	(C), A
+	LD	A, PIOB_MBOX		; /RAMEN = 0, /TRQ8 bleibt 0, RESET16 = 0
+	LD	B, 0
+	LD	C, PIOB
+	OUT	(C), A
+	CALL	READ_MAILBOX
+	CALL	RAMOFF			; jetzt erst RESET16 = 1
+	OR	A
+	RET
+
+; =============================================================================
+; READ_MAILBOX - Mailbox-Daten aus EM256-Speicher lesen
+;
+; Liest die 16-Bit-Werte STATUS, RESULT1-3 aus dem EM256-DRAM in lokale
+; Variablen.  Jeder Wert wird byteweise gelesen (Hi/Lo), weil der Z80
+; Big-Endian-Worte des Z8001 byteweise zugreifen muss.
+;
+; WICHTIG: RAM muss eingeblendet sein (RAMON_Sx vorher aufrufen)!
+; =============================================================================
+READ_MAILBOX:
+	LD	A, (EM256ADR + MB_STATUS)
+	LD	(MB_STATUS_HI), A
+	LD	A, (EM256ADR + MB_STATUS + 1)
+	LD	(MB_STATUS_LO), A
+	LD	A, (EM256ADR + MB_RES1)
+	LD	(MB_RES1_HI), A
+	LD	A, (EM256ADR + MB_RES1 + 1)
+	LD	(MB_RES1_LO), A
+	LD	A, (EM256ADR + MB_RES2)
+	LD	(MB_RES2_HI), A
+	LD	A, (EM256ADR + MB_RES2 + 1)
+	LD	(MB_RES2_LO), A
+	LD	A, (EM256ADR + MB_RES3)
+	LD	(MB_RES3_HI), A
+	LD	A, (EM256ADR + MB_RES3 + 1)
+	LD	(MB_RES3_LO), A
+	LD	A, (EM256ADR + MB_RES4)
+	LD	(MB_RES4_HI), A
+	LD	A, (EM256ADR + MB_RES4 + 1)
+	LD	(MB_RES4_LO), A
+	RET
+
+; =============================================================================
+; CHECK_RESULT1 - STATUS = 0001 und RESULT1 (Big-Endian) = DE
+; DE = erwarteter Wert, ZF=1 wenn OK
+; =============================================================================
+CHECK_RESULT1:
+	LD	A, (MB_STATUS_HI)
+	OR	A
+	RET	NZ
+	LD	A, (MB_STATUS_LO)
+	CP	ST_OK
+	RET	NZ
+	LD	A, (MB_RES1_HI)
+	CP	D
+	RET	NZ
+	LD	A, (MB_RES1_LO)
+	CP	E
+	RET
+
+; =============================================================================
+; AUSGABE-ROUTINEN
+; =============================================================================
+
+; PUTS - $-terminierten String zeichenweise ausgeben, mit Seitenpause.
+;
+; Zaehlt Zeilenumbrueche (0x0A).  Nach PAGELEN Zeilen wird auf
+; Tastendruck gewartet ("Weiter..."), damit der Bildschirm
+; nicht davonlaeuft.  DE = Adresse des Strings.
+PUTS:
+	LD	A, (DE)
+	CP	'$'
+	RET	Z
+	PUSH	DE
+	PUSH	AF
+	LD	E, A
+	LD	C, CONOUT
+	CALL	BDOS
+	POP	AF
+	POP	DE
+	INC	DE
+	CP	0AH
+	JR	NZ, PUTS
+	LD	HL, LINECNT
+	INC	(HL)
+	LD	A, (HL)
+	CP	PAGELEN
+	JR	C, PUTS
+	CALL	PAGE_PAUSE
+	JR	PUTS
+
+; PAGE_PAUSE
+PAGE_PAUSE:
+	PUSH	DE
+	LD	DE, MSG_PAUSE
+	LD	C, PRINT
+	CALL	BDOS
+PAUS_W:
+	LD	C, DCIO
+	LD	E, 0FFH
+	CALL	BDOS
+	OR	A
+	JR	Z, PAUS_W
+	LD	DE, MSG_CLRPAUSE
+	LD	C, PRINT
+	CALL	BDOS
+	XOR	A
+	LD	(LINECNT), A
+	POP	DE
+	RET
+
+; PUTC - Zeichen ausgeben (E=Zeichen)
+PUTC:
+	LD	C, CONOUT
+	CALL	BDOS
+	RET
+
+; PUTHEX - Byte als 2-stellige Hex-Zahl ausgeben (A=Wert)
+;
+; Extrahiert oberes Nibble durch 4x Rechtsrotation (RRCA),
+; gibt es als Hex-Ziffer aus, dann unteres Nibble.
+PUTHEX:
+	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	PHDIG
+	POP	AF
+PHDIG:
+	AND	0FH
+	CP	10
+	JR	C, PHN
+	ADD	A, 'A' - 10
+	JR	PHO
+PHN:
+	ADD	A, '0'
+PHO:
+	LD	E, A
+	JP	PUTC
+
+; PUTHEX16 - Wort als HEX (D=High, E=Low)
+PUTHEX16:
+	LD	A, D
+	CALL	PUTHEX
+	LD	A, E
+	JP	PUTHEX
+
+; PUTDEC - Byte als Dezimal mit unterdrueckten Vornullen (A=Wert, 0-255)
+;
+; Dividiert schrittweise durch 100 und 10 (wiederholte Subtraktion).
+; B-Flag verhindert Ausgabe fuehrender Nullen.
+PUTDEC:
+	LD	B, 0		; Fuehrende-Null-Flag
+	LD	C, 100
+	CALL	PD_DIG
+	LD	C, 10
+	CALL	PD_DIG
+	ADD	A, '0'
+	LD	E, A
+	JP	PUTC
+
+; PUTDEC3 - Byte als 3-stellige Dezimal mit fuehrenden Leerzeichen
+;
+; A=Wert (0-255), gibt z.B. " 64" oder "128" aus.
+; Wie PUTDEC, aber fuehrende Nullen werden als Leerzeichen ausgegeben
+; statt unterdrueckt (fuer rechtsbuendige Spaltenformatierung).
+PUTDEC3:
+	LD	B, 0		; Fuehrende-Null-Flag
+	LD	C, 100
+	CALL	PD3_DIG
+	LD	C, 10
+	CALL	PD3_DIG
+	ADD	A, '0'
+	LD	E, A
+	JP	PUTC
+PD3_DIG:
+	LD	D, 0
+PD3_D1:
+	CP	C
+	JR	C, PD3_D2
+	SUB	C
+	INC	D
+	JR	PD3_D1
+PD3_D2:
+	PUSH	AF
+	LD	A, D
+	OR	B
+	JR	NZ, PD3_PRINT
+	; Fuehrende Null -> Leerzeichen
+	LD	E, ' '
+	PUSH	BC
+	LD	C, CONOUT
+	CALL	BDOS
+	POP	BC
+	POP	AF
+	RET
+PD3_PRINT:
+	LD	B, 1
+	LD	A, D
+	ADD	A, '0'
+	LD	E, A
+	PUSH	BC
+	LD	C, CONOUT
+	CALL	BDOS
+	POP	BC
+	POP	AF
+	RET
+PD_DIG:
+	LD	D, 0
+PD_D1:
+	CP	C
+	JR	C, PD_D2
+	SUB	C
+	INC	D
+	JR	PD_D1
+PD_D2:
+	; D = Ziffer
+	PUSH	AF
+	LD	A, D
+	OR	B
+	JR	Z, PD_SKIP	; Fuehrende Null ueberspringen
+	LD	B, 1		; Ab jetzt nicht mehr ueberspringen
+	LD	A, D
+	ADD	A, '0'
+	LD	E, A
+	PUSH	BC
+	LD	C, CONOUT
+	CALL	BDOS
+	POP	BC
+PD_SKIP:
+	POP	AF
+	RET
+
+; PRINT_COLON - " 0x" ausgeben
+PRINT_COLON:
+	LD	DE, MSG_HEX_PFX
+	JP	PUTS
+
+; PRINT_OK - [OK] rechts ausgerichtet + CRLF
+PRINT_OK:
+	LD	DE, MSG_OK_TAG
+	JP	PUTS
+
+; PRINT_FAIL - [FEHLER] rechts ausgerichtet + CRLF
+PRINT_FAIL:
+	LD	DE, MSG_FAIL_TAG
+	JP	PUTS
+
+; PRINT_INFO - [INFO] rechts ausgerichtet + CRLF
+PRINT_INFO:
+	LD	DE, MSG_INFO_TAG
+	JP	PUTS
+
+; PRINT_TIMEOUT - [TIMEOUT] + CRLF
+PRINT_TIMEOUT:
+	LD	A, (TO_ART)
+	CP	1
+	LD	DE, MSG_NO16_TAG
+	JP	Z, PUTS
+	CP	3
+	LD	DE, MSG_BADST_TAG
+	JP	Z, PUTS
+	LD	DE, MSG_TOUT_TAG
+	JP	PUTS
+
+; PRINT_DETAIL_HEX - Detailzeile "   Soll: xxH  Ist: xxH"
+; A=Ist-Wert, B=Soll-Wert
+; BDOS zerstoert alle Register -> AF und BC auf Stack sichern
+PRINT_DETAIL_HEX:
+	PUSH	AF
+	PUSH	BC
+	LD	DE, MSG_DET_SOLL
+	CALL	PUTS
+	POP	BC
+	LD	A, B
+	CALL	PUTHEX
+	LD	DE, MSG_DET_IST
+	CALL	PUTS
+	POP	AF
+	CALL	PUTHEX
+	LD	DE, MSG_CRLF
+	JP	PUTS
+
+; PRINT_RES1_DETAIL - bei falschem Ergebnis: PIO A, A35 und ganze Mailbox
+PRINT_RES1_DETAIL:
+	JP	DBG_TOUT
+	LD	DE, MSG_DET_RES1
+	CALL	PUTS
+	LD	A, (MB_RES1_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES1_LO)
+	CALL	PUTHEX
+	LD	DE, MSG_CRLF
+	JP	PUTS
+
+; PRINT_MARCH_DETAIL - Zeigt March-Fehlerdetails
+PRINT_MARCH_DETAIL:
+	LD	DE, MSG_DET_MADDR
+	CALL	PUTS
+	LD	A, (MB_RES3_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES3_LO)
+	CALL	PUTHEX
+	LD	DE, MSG_DET_MSOLL
+	CALL	PUTS
+	LD	A, (MB_RES1_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES1_LO)
+	CALL	PUTHEX
+	LD	DE, MSG_DET_MIST
+	CALL	PUTS
+	LD	A, (MB_RES2_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES2_LO)
+	CALL	PUTHEX
+	LD	DE, MSG_CRLF
+	JP	PUTS
+
+; =============================================================================
+; DBG_TOUT - Debug-Ausgabe bei Firmware-Timeout (STATUS=0)
+;
+; Mailbox ist bereits gelesen (MB_STATUS_xx/MB_RESx_xx).
+; Gibt kompakte Info aus: STATUS + RESULT1..RESULT4.
+; =============================================================================
+DBG_TOUT:
+	; Zeile: PA=xx A35=xx ST=xxxx R1=xxxx R2=xxxx R3=xxxx R4=xxxx
+	; PA/A35 im Augenblick des Fehlers, Mailbox nach RESET16 gelesen
+	LD	DE, MD_PA
+	CALL	PUTS
+	LD	A, (DBG_PA)
+	CALL	PUTHEX
+	LD	DE, MD_A35
+	CALL	PUTS
+	LD	A, (DBG_A35)
+	CALL	PUTHEX
+	LD	DE, MD_ST
+	CALL	PUTS
+	LD	A, (MB_STATUS_HI)
+	CALL	PUTHEX
+	LD	A, (MB_STATUS_LO)
+	CALL	PUTHEX
+	LD	DE, MD_R1
+	CALL	PUTS
+	LD	A, (MB_RES1_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES1_LO)
+	CALL	PUTHEX
+	LD	DE, MD_R2
+	CALL	PUTS
+	LD	A, (MB_RES2_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES2_LO)
+	CALL	PUTHEX
+	LD	DE, MD_R3
+	CALL	PUTS
+	LD	A, (MB_RES3_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES3_LO)
+	CALL	PUTHEX
+	LD	DE, MD_R4
+	CALL	PUTS
+	LD	A, (MB_RES4_HI)
+	CALL	PUTHEX
+	LD	A, (MB_RES4_LO)
+	CALL	PUTHEX
+	LD	DE, MSG_CRLF
+	JP	PUTS
+
+; =============================================================================
+; STATISTIK-MANAGEMENT
+; =============================================================================
+
+; COUNT_PASS - Bestanden zaehlen
+COUNT_PASS:
+	LD	HL, PASS_CNT
+	INC	(HL)
+	LD	HL, GRP_PASS
+	INC	(HL)
+	LD	HL, TOTAL_CNT
+	INC	(HL)
+	LD	HL, GRP_TOTAL
+	INC	(HL)
+	RET
+
+; COUNT_INFO - Info zaehlen (kein Pass/Fail)
+COUNT_INFO:
+	LD	HL, INFO_CNT
+	INC	(HL)
+	LD	HL, TOTAL_CNT
+	INC	(HL)
+	LD	HL, GRP_INFO		; zaehlt nicht als Pruefung (v1.x: "0/2")
+	INC	(HL)
+	RET
+
+; COUNT_FAIL_xx - Fail zaehlen + Test-ID in Fehlerliste
+COUNT_FAIL_A3:
+	LD	DE, 'A3'
+	JR	CF_ADD
+COUNT_FAIL_A4:
+	LD	DE, 'A4'
+	JR	CF_ADD
+COUNT_FAIL_A5:
+	LD	DE, 'A5'
+	JR	CF_ADD
+COUNT_FAIL_A7:
+	LD	DE, 'A7'
+	JR	CF_ADD
+COUNT_FAIL_B1:
+	LD	DE, 'B1'
+	JR	CF_ADD
+COUNT_FAIL_B2:
+	LD	DE, 'B2'
+	JR	CF_ADD
+COUNT_FAIL_B3:
+	LD	DE, 'B3'
+	JR	CF_ADD
+COUNT_FAIL_B4:
+	LD	DE, 'B4'
+	JR	CF_ADD
+COUNT_FAIL_B5:
+	LD	DE, 'B5'
+	JR	CF_ADD
+COUNT_FAIL_B6:
+	LD	DE, 'B6'
+	JR	CF_ADD
+COUNT_FAIL_B7:
+	LD	DE, 'B7'
+	JR	CF_ADD
+COUNT_FAIL_B9:
+	LD	DE, 'B9'
+	JR	CF_ADD
+COUNT_FAIL_B10:
+	LD	DE, 'BA'		; B10 (zwei Zeichen: A = 10)
+	JR	CF_ADD
+COUNT_FAIL_C1:
+	LD	DE, 'C1'
+	JR	CF_ADD
+COUNT_FAIL_C2:
+	LD	DE, 'C2'
+	JR	CF_ADD
+COUNT_FAIL_C3:
+	LD	DE, 'C3'
+	JR	CF_ADD
+COUNT_FAIL_C4:
+	LD	DE, 'C4'
+	JR	CF_ADD
+COUNT_FAIL_C5:
+	LD	DE, 'C5'
+	JR	CF_ADD
+COUNT_FAIL_C6:
+	LD	DE, 'C6'
+	JR	CF_ADD
+COUNT_FAIL_C7:
+	LD	DE, 'C7'
+	JR	CF_ADD
+COUNT_FAIL_C8:
+	LD	DE, 'C8'
+	JR	CF_ADD
+COUNT_FAIL_D1:
+	LD	DE, 'D1'
+	JR	CF_ADD
+COUNT_FAIL_A8:
+	LD	DE, 'A8'
+	JR	CF_ADD
+COUNT_FAIL_A9:
+	LD	DE, 'A9'
+	JR	CF_ADD
+COUNT_FAIL_E1:
+	LD	DE, 'E1'
+	JR	CF_ADD
+COUNT_FAIL_E2:
+	LD	DE, 'E2'
+	JR	CF_ADD
+CF_ADD:
+	; DE = Test-ID (2 Zeichen)
+	PUSH	HL
+	LD	HL, FAIL_CNT
+	INC	(HL)
+	LD	HL, GRP_FAIL
+	INC	(HL)
+	LD	HL, TOTAL_CNT
+	INC	(HL)
+	LD	HL, GRP_TOTAL
+	INC	(HL)
+	; In Fehlerliste eintragen
+	LD	A, (FAIL_LPTR)
+	CP	40			; Max. 20 Eintraege a 2 Bytes
+	JR	NC, CF_FULL
+	LD	C, A
+	LD	B, 0
+	LD	HL, FAIL_LIST
+	ADD	HL, BC
+	LD	(HL), D
+	INC	HL
+	LD	(HL), E
+	LD	A, C
+	ADD	A, 2
+	LD	(FAIL_LPTR), A
+CF_FULL:
+	POP	HL
+	RET
+
+; PRINT_GRP_SUMMARY - Gruppenresultat ausgeben
+PRINT_GRP_SUMMARY:
+	LD	DE, MSG_GRP_LINE
+	CALL	PUTS
+	LD	A, (GRP_PASS)
+	CALL	PUTDEC
+	LD	E, '/'
+	CALL	PUTC
+	LD	A, (GRP_TOTAL)
+	CALL	PUTDEC
+	LD	DE, MSG_GRP_PASS
+	CALL	PUTS
+	LD	A, (GRP_FAIL)
+	CALL	PUTDEC
+	LD	DE, MSG_GRP_FAIL
+	CALL	PUTS
+	LD	A, (GRP_INFO)
+	OR	A
+	JR	Z, GS_NOINFO
+	LD	DE, MSG_GRP_KOMMA
+	CALL	PUTS
+	LD	A, (GRP_INFO)
+	CALL	PUTDEC
+	LD	DE, MSG_GRP_INFO
+	CALL	PUTS
+GS_NOINFO:
+	LD	DE, MSG_GRP_ENDE
+	JP	PUTS
+
+; =============================================================================
+; MELDUNGSTEXTE
+; =============================================================================
+MSG_BANNER:
+	DB	0DH, 0AH
+	DB	'EM256 Full Test v2.0', 0DH, 0AH
+	DB	'(c) 2026 Olaf Krieger', 0DH, 0AH
+	DB	'============================', 0DH, 0AH, '$'
+
+MSG_GRP_A:
+	DB	0DH, 0AH, '=== Gruppe A: PIO-Tests ===', 0DH, 0AH, '$'
+MSG_GRP_B:
+	DB	0DH, 0AH, '=== Gruppe B: Speicher-Tests ===', 0DH, 0AH, '$'
+MSG_GRP_C:
+	DB	0DH, 0AH, '=== Gruppe C: CPU-Tests (U8001) ===', 0DH, 0AH, '$'
+MSG_GRP_D:
+	DB	0DH, 0AH, '=== Gruppe D: DRAM-Test (March-C) ===', 0DH, 0AH, '$'
+MSG_GRP_E:
+	DB	0DH, 0AH, '=== Gruppe E: Paritaet ===', 0DH, 0AH, '$'
+
+MSG_A1:	DB	'A1 PIO-A BIOS-Zustand', '$'
+MSG_A2:	DB	'A2 PIO-B BIOS-Zustand', '$'
+MSG_A3:	DB	'A3 PIO-B Wr 0x14 Rd', '$'
+MSG_A4:	DB	'A4 PIO-B Wr 0x10 Rd', '$'
+MSG_A5:	DB	'A5 PIO-B Wr 0x14 Rd2', '$'
+MSG_A6:	DB	'A6 PIO Reinit (OTIR)', '$'
+MSG_A7:	DB	'A7 PIO-B nach Reinit', '$'
+MSG_A8:	DB	'A8 PIO-B Toggle', '$'
+MSG_A9:	DB	'A9 Parity nach Reset', '$'
+
+MSG_B1:	DB	'B1 EM256-Erkennung', '$'
+MSG_B2:	DB	'B2 Seite 0 R/W', '$'
+MSG_B3:	DB	'B3 Seite 0 Isolation', '$'
+MSG_B4:	DB	'B4 Seg 0: 4 Seiten', '$'
+MSG_B5:	DB	'B5 Segment 1 R/W', '$'
+MSG_B6:	DB	'B6 Segment 2 R/W', '$'
+MSG_B7:	DB	'B7 Segment 3 R/W', '$'
+MSG_B8:	DB	'B8 Kapazitaet', '$'
+MSG_B9:	DB	'B9 Seg-Isolation 0/1', '$'
+MSG_B10: DB	'B10 Walking-1 RAM (Z80)', '$'
+
+MSG_C1:	DB	'C1 Addition 1234+5678', '$'
+MSG_C2:	DB	'C2 Subtraktion 8000-0001', '$'
+MSG_C3:	DB	'C3 Logik AND/OR/XOR', '$'
+MSG_C4:	DB	'C4 Speicher R/W (U8001)', '$'
+MSG_C5:	DB	'C5 Schleife 256x INC', '$'
+MSG_C6:	DB	'C6 Stack PUSH/POP', '$'
+MSG_C7:	DB	'C7 32-Bit Addition', '$'
+MSG_C8:	DB	'C8 Byte-Operationen', '$'
+
+MSG_D1:	DB	'D1 DRAM: ', '$'
+MSG_D1_INIT: DB	'  0-  0 KB Phase 0/5', '$'
+MSG_D1_PHASE: DB ' KB Phase ', '$'
+MSG_D1_OF5:	DB	'/5', '$'
+MSG_D1_DONE: DB	'256 KB              ', '$'
+MSG_D1_SEG:	DB	'Seg ', '$'
+MSG_D1P:	DB	'Phase ', '$'
+MSG_D1_SEG3:	DB	'   Seg ', '$'
+MSG_D1P1:	DB	' Phase ', '$'
+MSG_D1_BANK: DB	'   Bank ', '$'
+MSG_D1_BIT:	DB	' Bit ', '$'
+MSG_D1R0:	DB	'  0- 64', '$'
+MSG_D1R1:	DB	' 64-128', '$'
+MSG_D1R2:	DB	'128-192', '$'
+MSG_D1R3:	DB	'192-256', '$'
+
+MSG_E1:	DB	'E1 Parity-Latch lesen', '$'
+MSG_E2:	DB	'E2 Parity-Latch Reset', '$'
+
+MSG_SKIP_EM:
+	DB	'   EM256 nicht gefunden, Tests uebersprungen', 0DH, 0AH, '$'
+
+MSG_OK_TAG:
+	DB	' [OK]', 0DH, 0AH, '$'
+MSG_FAIL_TAG:
+	DB	' [FEHLER]', 0DH, 0AH, '$'
+MSG_INFO_TAG:
+	DB	' [INFO]', 0DH, 0AH, '$'
+MSG_TOUT_TAG:
+	DB	' [TIMEOUT 8/16]', 0DH, 0AH, '$'
+MSG_BADST_TAG:
+	DB	' [FEHLER: STATUS]', 0DH, 0AH, '$'
+MSG_NO16_TAG:
+	DB	' [FEHLER: A29 faellt nicht]', 0DH, 0AH, '$'
+MSG_NOK:
+	DB	'ERGEBNIS: keine Karte an A8H', 0DH, 0AH, '$'
+MSG_BIG:
+	DB	'Programm zu gross (muss unter 4000H enden)', 0DH, 0AH, '$'
+MSG_GRP_INFO:
+	DB	' Info', '$'
+
+MSG_HEX_PFX:
+	DB	' 0x', '$'
+MSG_KB:
+	DB	' KB', '$'
+
+MSG_DET_SOLL:
+	DB	'   Soll: 0x', '$'
+MSG_DET_IST:
+	DB	'  Ist: 0x', '$'
+MSG_DET_RES1:
+	DB	'   Ergebnis: 0x', '$'
+
+MSG_DET_MADDR:
+	DB	'   Adresse: 0x', '$'
+MSG_DET_MSOLL:
+	DB	'  Soll: 0x', '$'
+MSG_DET_MIST:
+	DB	'  Ist: 0x', '$'
+
+MSG_GRP_LINE:
+	DB	'--- ', '$'
+MSG_GRP_PASS:
+	DB	' bestanden, ', '$'
+MSG_GRP_FAIL:
+	DB	' Fehler', '$'
+MSG_GRP_KOMMA:
+	DB	', ', '$'
+MSG_GRP_ENDE:
+	DB	' ---', 0DH, 0AH, '$'
+
+MSG_SUMMARY_LINE:
+	DB	'=========================================', 0DH, 0AH, '$'
+MSG_RESULT:
+	DB	'Ergebnis: ', '$'
+MSG_PASSED:
+	DB	' Tests bestanden', 0DH, 0AH, '$'
+MSG_ALL_OK:
+	DB	'Alle Tests bestanden!', 0DH, 0AH, '$'
+MSG_FAILLIST:
+	DB	'Fehler in: ', '$'
+MSG_CAP_LINE:
+	DB	'Kapazitaet: 0x', '$'
+MSG_UNKNOWN:
+	DB	'unbekannt', 0DH, 0AH, '$'
+
+MSG_CRLF:
+	DB	0DH, 0AH, '$'
+
+MD_PA:	DB	'   PA=', '$'
+MD_ST:	DB	' ST=', '$'
+MD_R1:	DB	' R1=', '$'
+MD_R2:	DB	' R2=', '$'
+MD_R3:	DB	' R3=', '$'
+MD_R4:	DB	' R4=', '$'
+MD_A35:	DB	' A35=', '$'
+
+MSG_PAUSE:
+	DB	'--- Taste druecken ---', '$'
+MSG_CLRPAUSE:
+	DB	0DH, '                       ', 0DH, '$'
+
+; =============================================================================
+; U8001-FIRMWARE-BLOECKE (fw_*.s, z8kasm - build.py setzt die DB-Zeilen ein)
+; Jedes Abbild beginnt bei Zelle 0 von Segment 0 (Resetvektor).
+; =============================================================================
+
+; --- C1: Addition ---
+FW_ADD_CODE:
+;%INCLUDE fw_add.inc
+FW_ADD_END:
+FW_ADD_CODE_LEN EQU FW_ADD_END-FW_ADD_CODE
+
+; --- C2: Subtraktion ---
+FW_SUB_CODE:
+;%INCLUDE fw_sub.inc
+FW_SUB_END:
+FW_SUB_CODE_LEN EQU FW_SUB_END-FW_SUB_CODE
+
+; --- C3: Logik ---
+FW_LOGIC_CODE:
+;%INCLUDE fw_logic.inc
+FW_LOGIC_END:
+FW_LOGIC_CODE_LEN EQU FW_LOGIC_END-FW_LOGIC_CODE
+
+; --- C4: Speicher R/W ---
+FW_MEMRW_CODE:
+;%INCLUDE fw_memrw.inc
+FW_MEMRW_END:
+FW_MEMRW_CODE_LEN EQU FW_MEMRW_END-FW_MEMRW_CODE
+
+; --- C5: Schleife ---
+FW_LOOP_CODE:
+;%INCLUDE fw_loop.inc
+FW_LOOP_END:
+FW_LOOP_CODE_LEN EQU FW_LOOP_END-FW_LOOP_CODE
+
+; --- C6: Stapel ---
+FW_STACK_CODE:
+;%INCLUDE fw_stack.inc
+FW_STACK_END:
+FW_STACK_CODE_LEN EQU FW_STACK_END-FW_STACK_CODE
+
+; --- C7: 32-Bit ---
+FW_ADD32_CODE:
+;%INCLUDE fw_add32.inc
+FW_ADD32_END:
+FW_ADD32_CODE_LEN EQU FW_ADD32_END-FW_ADD32_CODE
+
+; --- C8: Byte-Ops ---
+FW_BYTE_CODE:
+;%INCLUDE fw_byte.inc
+FW_BYTE_END:
+FW_BYTE_CODE_LEN EQU FW_BYTE_END-FW_BYTE_CODE
+
+; --- D1: March-C ---
+FW_MARCH_CODE:
+;%INCLUDE fw_march.inc
+FW_MARCH_END:
+FW_MARCH_CODE_LEN EQU FW_MARCH_END-FW_MARCH_CODE
+
+; =============================================================================
+; VARIABLEN
+; =============================================================================
+SAVED_SP:	DW	0
+SAVE_WORD:	DW	0
+TMP_BYTE:	DB	0
+TMP_WORD:	DW	0
+TMP_WORD2:	DW	0
+EM256_OK:	DB	0
+DET_SEGS:	DB	0
+CUR_GROUP:	DB	'A'
+
+; Mailbox-Ergebnispuffer (vom EM256-RAM gelesen)
+MB_STATUS_HI:	DB	0
+MB_STATUS_LO:	DB	0
+MB_RES1_HI:	DB	0
+MB_RES1_LO:	DB	0
+MB_RES2_HI:	DB	0
+MB_RES2_LO:	DB	0
+MB_RES3_HI:	DB	0
+MB_RES3_LO:	DB	0
+MB_RES4_HI:	DB	0
+MB_RES4_LO:	DB	0
+
+; Statistik
+PASS_CNT:	DB	0
+FAIL_CNT:	DB	0
+INFO_CNT:	DB	0
+TOTAL_CNT:	DB	0
+GRP_PASS:	DB	0
+GRP_FAIL:	DB	0
+GRP_TOTAL:	DB	0
+FAIL_LIST:	DS	40		; Max. 20 Test-IDs a 2 Bytes
+FAIL_LPTR:	DB	0
+LINECNT:	DB	0
+
+; Diagnose bei Fehlern im Ablauf (U16LAUF)
+DBG_PA:		DB	0
+DBG_A35:	DB	0
+TO_ART:		DB	0
+GRP_INFO:	DB	0
+
+; March-C Segment-Test
+D1_SEGIDX:	DB	0
+D1_PHASE:	DB	0
+D1_HAD_ERROR:	DB	0
+DEFECT_RAS:	DB	0, 0, 0, 0	; RAS0, RAS1, RAS2, RAS3
+
+; KB-Bereich Nachschlagetabelle (Wortadressen der Bereichs-Strings)
+D1_RANGE_TAB:	DW	MSG_D1R0, MSG_D1R1, MSG_D1R2, MSG_D1R3
+
+; Stack
+	DS	128
+STACK_TOP:
+ENDPRG:
+
+	END
