@@ -126,3 +126,9 @@ k1520_add_test(prg710_udos SRC test_prg710_udos.cpp
 k1520_add_test(prg710_seriell SRC test_prg710_seriell.cpp
                           LIBS k1520_prg710 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 5 (AP-P5e): SCPX 1526 V1.7 am 710-1 bis `A>`, `DIR`/`STAT`/`PIP`
+# nach B:, SCPX-Bootdiskette für den PRG 710.
+k1520_add_test(prg710_scpx SRC test_prg710_scpx.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
