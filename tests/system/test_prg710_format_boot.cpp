@@ -9,9 +9,9 @@
  * **Warum beide Seiten:** am PRG ist Laufwerkstyp 5 (DISKCON 51H) zweiseitig — Laufwerk
  * 1 und 5 sind die zwei Seiten derselben Diskette, und UDOS liest beim ersten Zugriff auf
  * die Diskette (Start, `STATUS`, `COPY`) auch die andere Seite.  Eine Seite ohne Marken
- * lässt den Resident in der Markenschleife (710: 0A5CH, 710-1: 0A85H) ohne Zeitablauf
- * warten — wie beim Einschalten mit einer unformatierten Diskette (§8.1, offene Frage an
- * den Anwender).  `FORMAT` selbst schreibt immer nur eine Seite (Laufwerk 0–3 = Seite 0,
+ * hängt seit AP-P3b nicht mehr (Rauschen, `K5122::setRauschenAufLeererSpur`), kostet aber
+ * je Zugriff die Fehlerwiederholungen des Residenten; eine Systemdiskette vom Typ 5 hat
+ * ohnehin zwei Seiten (wie `FORMAT` am Gerät).  `FORMAT` selbst schreibt immer nur eine Seite (Laufwerk 0–3 = Seite 0,
  * 4–7 = Seite 1).
  */
 

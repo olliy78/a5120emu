@@ -18,9 +18,11 @@
  *   hier `Boot01ZweitladerOhneCrcFehler`).
  * - Die Diskette `PRG710_UDOS43_Boot01` ist nur **einseitig** abgezogen (HFE-Kopf: 1 Seite,
  *   dazu Zylinder 28/46/50/51/77 leer).  Der Resident liest beim Start Spur 23 der Seite 1
- *   (Laufwerk 4 = Seite 1 von Laufwerk 0); ohne Seite 1 setzt das Marken-FF nie und der
- *   Treiber wartet ohne Zeitablauf (0A5CH).  UDOS-Läufe am 710 benutzen deshalb
- *   `PRG710_UDOS43_MRS_Boot` (beidseitig).  Am 710-1 trägt die Gerätediskette
+ *   (Laufwerk 4 = Seite 1 von Laufwerk 0); bis AP-P3b setzte das Marken-FF dort nie und der
+ *   Treiber wartete ohne Zeitablauf (0A5CH).  Seit AP-P3b liegt auf der leeren Seite
+ *   Rauschen (`K5122::setRauschenAufLeererSpur`), der Lesezugriff kehrt mit Fehler zurück
+ *   und die Diskette bootet (`Boot01EinseitigBisZumPrompt`).  Die übrigen UDOS-Läufe am
+ *   710 benutzen weiter `PRG710_UDOS43_MRS_Boot` (beidseitig, kein Umweg über das Rauschen).  Am 710-1 trägt die Gerätediskette
  *   `PRG710-1_UDOS_Boot` weder `DATE` noch `COPY` (OS.INIT endet in „NONEXISTENT
  *   COMMAND“); dort `UDOS.PRG710-1_V4.3_1_89`.
  * - Am 710-1 sind alle Dateien „geheim“ (S): `CAT` ohne `P=&` meldet „FILE NOT FOUND“,
@@ -33,6 +35,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -296,8 +299,7 @@ TEST_P(Prg710Udos, KopiertAufLaufwerk1) {
  * @brief Gerätediskette `PRG710_UDOS43_Boot01` am PRG 710: der Bootsektor liest den
  *        Zweitlader (Spur 2, 26 × 128 B, Parameterblock 0422H) mit Status 80H und ohne
  *        eine einzige CRC-Wiederholung — vor AP-P3 „DISKERROR C6“ (Marken-FF, s.
- *        Dateikopf).  Weiter kommt diese Diskette nicht: sie ist nur einseitig
- *        abgezogen, der Resident liest Seite 1.
+ *        Dateikopf).  Bis zum Prompt: `Boot01EinseitigBisZumPrompt`.
  */
 TEST(Prg710Udos, Boot01ZweitladerOhneCrcFehler) {
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
@@ -318,6 +320,94 @@ TEST(Prg710Udos, Boot01ZweitladerOhneCrcFehler) {
     EXPECT_EQ(gut, 1) << bild(m);
     EXPECT_EQ(crc, 0) << "keine einzige Wiederholung wegen der Daten-CRC";
     EXPECT_EQ(m.memReadDebug(0x1000), 0x31) << "Zweitlader (Spur 2 Sektor 1) beginnt mit 31H";
+}
+
+/**
+ * @test Prg710Udos.UnformatierteDisketteMeldetFehlerUndBootetNachWechsel
+ * @brief AP-P3b: eine UNFORMATIERTE Diskette in Laufwerk 0.  Am Gerät kommt nach der
+ *        Starttaste eine Meldung, danach bootet eine eingelegte Bootdiskette mit der
+ *        Starttaste (Anwender, 2026-10-02).  Das ROM wartet in 02DDH ohne Zeitablauf auf
+ *        eine Marke (CTC-Kanal 3 ist beim Lesen gestoppt, 0195H); beendet wird das erst
+ *        durch das Rauschen der leeren Spur (`K5122::setRauschenAufLeererSpur`): hinter
+ *        einer Scheinmarke steht irgendwann ein FEH, der Spurvergleich scheitert
+ *        (26 Köpfe × 3 Neukalibrierungen) → „DISKERROR C5“.  Vor AP-P3b hing es.
+ */
+TEST_P(Prg710Udos, UnformatierteDisketteMeldetFehlerUndBootetNachWechsel) {
+    TempPfad leer("prg710_unformatiert.hfe");
+    k1520test::TempDisk boot(diskette(GetParam()));
+    Prg710Machine::Config c;
+    c.variante = GetParam();
+    Prg710Machine m(c);
+    ASSERT_TRUE(m.createDisk(0, leer.get(), "", false)) << m.lastError();
+
+    // Tastaturabfrage des ROMs (aus der RAM-Kopie): 710 007DH, 710-1 0070H.
+    const uint16_t taste_warten = GetParam() == V::Prg710_1 ? 0x0070 : 0x007D;
+    bool wartet = false;
+    m.setCpuTraceCallback([&](const Z80& z) { if (z.PC == taste_warten) wartet = true; });
+    auto bisTastenabfrage = [&](long long frist) {
+        wartet = false;
+        for (long long d = 0; !wartet && d < frist;) d += m.run(kSchritt);
+        return wartet;
+    };
+    m.powerOn();
+    // Der 710 liest vor der Taste beide Laufwerke (0097H) — auf der leeren Diskette
+    // dauert das, bis das Rauschen den Fehler liefert.
+    ASSERT_TRUE(bisTastenabfrage(400'000'000)) << "PC=" << std::hex << m.cpuPC() << "\n" << bild(m);
+    taste(m, QK_RETURN);
+    ASSERT_TRUE(bisText(m, "DISKERROR", 400'000'000))
+        << "PC=" << std::hex << m.cpuPC() << "\n" << bild(m);
+    EXPECT_NE(bild(m).find("DISKERROR C5"), std::string::npos) << bild(m);
+
+    // Diskette wechseln (gleich nach der Meldung — der 710 liest nach „NO SYSTEM“ vor der
+    // Taste wieder beide Laufwerke), Starttaste: UDOS bootet.
+    ASSERT_TRUE(m.unmountDisk(0));
+    ASSERT_TRUE(m.mountDisk(0, boot, m.defaultFormatName(0), false)) << m.lastError();
+    ASSERT_TRUE(bisTastenabfrage(100'000'000)) << bild(m);
+    m.setCpuTraceCallback(nullptr);
+    taste(m, QK_RETURN);
+    ASSERT_TRUE(bisText(m, "Neues Datum", kBoot)) << "PC=" << std::hex << m.cpuPC() << "\n" << bild(m);
+}
+
+/**
+ * @test Prg710Udos.StatusMitEinseitigerDisketteInLaufwerk1
+ * @brief AP-P3b: in Laufwerk 1 liegt eine nur EINSEITIG formatierte UDOS-Diskette
+ *        (`PRG710_UDOS43_Boot01`, Seite 1 unformatiert).  `STATUS 1` liest auch die
+ *        Rückseite (Laufwerk 5); auf der Seite ohne Marken wartete der Resident ohne
+ *        Zeitablauf (0A5CH/0A85H).  Mit dem Rauschen der leeren Seite kommt er zurück
+ *        und zeigt die Diskette.
+ */
+TEST_P(Prg710Udos, StatusMitEinseitigerDisketteInLaufwerk1) {
+    k1520test::TempDisk disk(diskette(GetParam()));
+    k1520test::TempDisk einseitig("prg710_udos43_k5601_boot01.hfe");
+    Prg710Machine::Config c;
+    c.variante = GetParam();
+    Prg710Machine m(c);
+    ASSERT_TRUE(m.mountDisk(0, disk, m.defaultFormatName(0), false)) << m.lastError();
+    ASSERT_TRUE(m.mountDisk(1, einseitig, m.defaultFormatName(1), false)) << m.lastError();
+    booteBisPrompt(m);
+    ASSERT_TRUE(kommando(m, "STATUS 1")) << bild(m);
+    EXPECT_NE(bild(m).find("DRIVE 1"), std::string::npos) << bild(m);
+}
+
+/**
+ * @test Prg710Udos.Boot01EinseitigBisZumPrompt
+ * @brief AP-P3b: `PRG710_UDOS43_Boot01` ist nur einseitig abgezogen.  Der Resident liest
+ *        beim Start Spur 23 der Seite 1 (Laufwerk 4); seit dem Rauschen der leeren Seite
+ *        kehrt der Lesezugriff mit Fehlerstatus zurück, und UDOS bootet wie am Gerät
+ *        („die Rückseite ist egal“) bis zum `%`.
+ */
+TEST(Prg710Udos, Boot01EinseitigBisZumPrompt) {
+    k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
+    k1520test::TempDisk disk("prg710_udos43_k5601_boot01.hfe");
+    Prg710Machine m;
+    ASSERT_TRUE(m.mountDisk(0, disk, m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    lauf(m, 3'000'000);
+    taste(m, QK_RETURN);
+    ASSERT_TRUE(bisText(m, "Neues Datum", kBoot)) << "PC=" << std::hex << m.cpuPC() << "\n" << bild(m);
+    tippe(m, "021086");
+    ASSERT_TRUE(bisPrompt(m, kBefehl)) << bild(m);
+    EXPECT_NE(bild(m).find("UDOS PRG710"), std::string::npos) << bild(m);
 }
 
 INSTANTIATE_TEST_SUITE_P(Varianten, Prg710Udos, ::testing::Values(V::Prg710, V::Prg710_1),

@@ -116,6 +116,30 @@ public:
      */
     void setMkeJedesSyncByte(bool an) { mke_jedes_sync_ = an; w_strom_gilt_ = false; }
     bool mkeJedesSyncByte() const { return mke_jedes_sync_; }
+    /**
+     * @brief Rauschen auf einer UNFORMATIERTEN Spur (nur Wait-Betrieb).  Vorgabe false:
+     *        eine Spur ohne Aufzeichnung liefert Lücke (4EH) und nie ein MKE
+     *        (A5120/K8915 unverändert).  true: unter dem Kopf liegt, was ein echtes
+     *        Laufwerk dort liest — Rauschen.  Der Markendecoder der Karte (Marken-ROM
+     *        A2.2, Takt 0AH + Daten A1H, Handbuch §5.3) erkennt darin gelegentlich ein
+     *        A1 („Scheinmarke“, im Mittel eine je @ref kRauschMarkenAbstand Bytefenster),
+     *        die Bytes dahinter sind zufällig.  Pseudozufällig, aber reproduzierbar:
+     *        jedes Byte ist eine Streufunktion aus Laufwerk, Zylinder, Seite, Umdrehung
+     *        und Fenster — jede Umdrehung liest sich anders, wie am Gerät.
+     *        Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P3b): ROM und
+     *        UDOS-Resident warten ohne jeden Zeitablauf auf eine Marke (ROM 02DDH,
+     *        Resident 0A5CH/0A85H, CTC-Kanal 3 dabei gestoppt); am Gerät endet das
+     *        (Anwender), hier, weil irgendwann hinter einer Scheinmarke ein FEH steht und
+     *        der Spurvergleich scheitert — „DISKERROR C5“ bzw. Fehlerstatus statt Hänger.
+     *        [?] Die gleichverteilten Bytes sind eine ANNAHME: in den Greaseweazle-Abzügen
+     *        folgt keiner der 11 465 Scheinmarken ein FEH (AP-P3b, Befund 2).
+     */
+    void setRauschenAufLeererSpur(bool an) { rauschen_ = an; w_strom_gilt_ = false; }
+    bool rauschenAufLeererSpur() const { return rauschen_; }
+    /// Mittlerer Abstand der Scheinmarken im Rauschen (Bytefenster): ≈ 49 je Umdrehung;
+    /// Greaseweazle-Abzüge unformatierter Spuren zeigen 16 im Mittel, 41–82 auf
+    /// verrauschten Spuren (doc/design/20_prg710.md AP-P3b).
+    static constexpr uint32_t kRauschMarkenAbstand = 128;
 
     // ─── BusDevice (Ports 0x10–0x18) ─────────────────────────────────────────
     uint8_t     ioRead(uint8_t port) override;
@@ -367,6 +391,17 @@ private:
     bool     w_scharf_      = false;    ///< /STR = 0 und MR = 0: Marken-FF sucht
     bool     mke_low_aktiv_ = false;     ///< Tor B Bit1 invertiert (PRG 710)
     bool     mke_jedes_sync_ = false;    ///< MKE an jedem Sync-Byte, Teilfenster (PRG 710)
+    bool     rauschen_       = false;    ///< unformatierte Spur = Rauschen (PRG 710)
+    uint64_t w_fenster_umdr_ = 0;        ///< Umdrehung des zuletzt von waitFenster belegten Fensters
+    /// Liegt Rauschen unter dem Kopf (Einstellung an, Spur unformatiert)?
+    bool waitRauschen();
+    /// Rauschbyte des Fensters @p slot in Umdrehung @p umdr (A1 = Scheinmarke).
+    uint8_t rauschByte(uint64_t umdr, size_t slot) const;
+    /// Ist Fenster @p slot in Umdrehung @p umdr eine Scheinmarke (A1)?
+    bool rauschMarke(uint64_t umdr, size_t slot) const;
+    uint64_t rauschHash(uint64_t umdr, size_t slot) const;
+    /// MKE-Zeitpunkt der nächsten Scheinmarke im Rauschen planen (MK = 0).
+    void waitRauschMarkePlanen();
     bool     w_mke_         = false;    ///< Marken-FF gesetzt (Tor B Bit1)
     uint64_t w_mke_time_    = UINT64_MAX; ///< wann die nächste Sync-Gruppe durch ist
     uint8_t  w_status_      = 0x00;     ///< zuletzt an Tor B gelegter Status

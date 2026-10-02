@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <set>
 #include <vector>
 
 #include "core/bus/k1520_bus.h"
@@ -247,6 +248,43 @@ TEST_F(K5122Wait, MkeJedesSyncByte_ErstesInLiefertDasSyncByte) {
         card.ioWrite(0x10, 0xBB);                  // /STR = 1: Ruhe
     }
     EXPECT_EQ(treffer, 400);
+}
+
+/**
+ * @test K5122Wait.RauschenAufLeererSpur
+ * @brief PRG 710 (`setRauschenAufLeererSpur`, doc/design/20_prg710.md AP-P3b): auf einer
+ *        UNFORMATIERTEN Spur kommt ohne die Einstellung nie ein MKE (A5120/K8915: Lücke).
+ *        Mit ihr erkennt der Markendecoder im Rauschen Scheinmarken (erstes Byte A1), die
+ *        Bytes dahinter sind zufällig und jede Umdrehung anders — irgendwann auch ein
+ *        FEH, an dem ROM und Resident den Spurvergleich versuchen und scheitern.
+ */
+TEST_F(K5122Wait, RauschenAufLeererSpur) {
+    for (int i = 0; i < 4; ++i) {                  // auf Zylinder 4: dort keine Spur
+        card.ioWrite(0x10, 0xBF);
+        card.ioWrite(0x10, 0x3F);                  // /ST fallend, Richtung innen (Bit5)
+        card.ioWrite(0x10, 0xBF);
+        lauf(20'000);
+    }
+    card.ioWrite(0x10, 0xBB);
+    scharf();
+    EXPECT_EQ(bisMke(3'000'000), -1) << "ohne Rauschen: nie eine Marke";
+
+    card.setRauschenAufLeererSpur(true);
+    card.ioWrite(0x10, 0xBB);
+    std::set<uint8_t> dahinter;
+    int fe = 0;
+    for (int n = 0; n < 2000; ++n) {
+        scharf();
+        ASSERT_GE(bisMke(), 0) << "Scheinmarke " << n;
+        EXPECT_EQ(lies(), 0xA1);
+        uint8_t b = lies();
+        while (b == 0xA1) b = lies();
+        dahinter.insert(b);
+        if (b == 0xFE) ++fe;
+        card.ioWrite(0x10, 0xBB);
+    }
+    EXPECT_GT(dahinter.size(), 200u) << "zufällige Bytes hinter der Scheinmarke";
+    EXPECT_GE(fe, 1) << "irgendwann ein FEH (Kennfeldmarke) — sonst endete das Warten nie";
 }
 
 /**

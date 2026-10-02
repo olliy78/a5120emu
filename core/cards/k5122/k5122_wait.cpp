@@ -150,7 +150,7 @@ const TrackImage& K5122::waitStrom()
                      static_cast<unsigned>(current_head_), sektoren, w_strom_.size(),
                      w_strom_.encoding == Encoding::FM ? "FM" : "MFM");
         } else {
-            LOG_INFO("K5122", "WAIT: Spur D%d C=%u H=%u unformatiert (nur Lücke, kein MKE)",
+            LOG_INFO("K5122", "WAIT: Spur D%d C=%u H=%u unformatiert (Lücke ohne MKE bzw. Rauschen, setRauschenAufLeererSpur)",
                      selected_drive_, static_cast<unsigned>(zyl),
                      static_cast<unsigned>(current_head_));
         }
@@ -190,8 +190,39 @@ TrackImage K5122::waitNormspur(const TrackImage& spur) const
     return TrackCodec::buildTrack(sektoren, spur.encoding, g);
 }
 
+bool K5122::waitRauschen()
+{
+    return rauschen_ && waitStrom().empty();
+}
+
+uint64_t K5122::rauschHash(uint64_t umdr, size_t slot) const
+{
+    // splitmix64 über Laufwerk, Zylinder, Seite, Umdrehung und Fenster: reproduzierbar,
+    // aber jede Umdrehung anders (am Gerät ist Rauschen nie zweimal gleich).
+    uint64_t x = (static_cast<uint64_t>(selected_drive_) << 56)
+               ^ (static_cast<uint64_t>(drives_[selected_drive_].currentCylinder()) << 48)
+               ^ (static_cast<uint64_t>(current_head_) << 40)
+               ^ (umdr * 0x9E3779B97F4A7C15ull) ^ static_cast<uint64_t>(slot);
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+
+bool K5122::rauschMarke(uint64_t umdr, size_t slot) const
+{
+    return ((rauschHash(umdr, slot) >> 8) % kRauschMarkenAbstand) == 0;
+}
+
+uint8_t K5122::rauschByte(uint64_t umdr, size_t slot) const
+{
+    if (rauschMarke(umdr, slot)) return 0xA1;
+    return static_cast<uint8_t>(rauschHash(umdr, slot));
+}
+
 uint8_t K5122::waitByte(size_t slot)
 {
+    if (waitRauschen()) return rauschByte(w_fenster_umdr_, slot);
     const TrackImage& s = waitStrom();
     if (slot >= s.size())                          // hinter der Spur: Lücke
         return waitVerfahrenGemerkt() == Encoding::FM ? 0xFF : 0x4E;
@@ -212,12 +243,14 @@ uint64_t K5122::waitFenster(uint64_t t, size_t& slot)
     const uint64_t ende_vorher = rs + j * p;
     if (ende_vorher > w_last_done_ && ende_vorher <= t) {
         slot = static_cast<size_t>(j > 0 ? j - 1 : fenster - 1);
+        w_fenster_umdr_ = rs / P - (j > 0 ? 0 : 1);   // Fenster vor dem Index: Vorumdrehung
         w_last_done_ = ende_vorher;
         return ende_vorher;
     }
     // Sonst: /WAIT bis zum Ende des laufenden Fensters.
     const uint64_t ende = rs + std::min((j + 1) * p, P);
     slot = static_cast<size_t>(j);
+    w_fenster_umdr_ = rs / P;
     w_last_done_ = ende;
     return ende;
 }
@@ -419,6 +452,10 @@ void K5122::waitMkePlanen(bool neu_scharf)
     w_mke_time_ = UINT64_MAX;
     if (w_mke_ || !waitDreht()) return;
 
+    if (waitRauschen()) {                          // unformatiert: Scheinmarken im Rauschen
+        if (!mk) waitRauschMarkePlanen();
+        return;
+    }
     const TrackImage& s = waitStrom();
     // Welche Sync-Gruppen der Markendecoder mit diesem MK erkennt (Handbuch §4.3/§5.3).
     static const std::vector<size_t> keine;
@@ -454,6 +491,30 @@ void K5122::waitMkePlanen(bool neu_scharf)
         }
     }
     w_mke_time_ = rs + P + std::min((gruppen.front() + 1) * p, P);   // nächste Umdrehung
+}
+
+void K5122::waitRauschMarkePlanen()
+{
+    // Wie waitMkePlanen, nur sind die „Sync-Gruppen“ die Scheinmarken des Rauschens
+    // (Einzel-A1, MK = 0); gesucht wird bis zu vier Umdrehungen voraus.
+    const uint64_t t  = waitJetzt();
+    const uint64_t P  = static_cast<uint64_t>(drives_[selected_drive_].indexPeriodCycles(cpu_hz_));
+    const uint64_t p  = static_cast<uint64_t>(waitByteperiode());
+    const uint64_t ph = (static_cast<uint64_t>(index_cycle_acc_) + (t - w_now_)) % P;
+    const uint64_t rs = t - ph;
+    const uint64_t j_lauf = ph / p;
+    const size_t   fenster = static_cast<size_t>(P / p);   // nur ganze Fenster
+    // Ist das zuletzt FERTIGE Byte eine Scheinmarke (setMkeJedesSyncByte), gilt sie sofort.
+    if (mke_jedes_sync_ && j_lauf > 0 && rauschMarke(rs / P, static_cast<size_t>(j_lauf - 1))) {
+        w_mke_time_ = t;
+        return;
+    }
+    size_t j0 = static_cast<size_t>(mke_jedes_sync_ ? j_lauf : (ph + p - 1) / p);
+    for (uint64_t k = 0; k < 4; ++k, j0 = 0) {
+        const uint64_t r = rs + k * P;
+        for (size_t j = j0; j < fenster; ++j)
+            if (rauschMarke(r / P, j)) { w_mke_time_ = r + (j + 1) * p; return; }
+    }
 }
 
 void K5122::waitCtrlPortAWrite(uint8_t data)

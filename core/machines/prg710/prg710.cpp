@@ -65,6 +65,9 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // Marken-FF an jedem Sync-Byte: das 710-ROM schlägt das FF in einer engen Schleife
     // neu an (02DDH, AP-P1d); beide Varianten tragen dieselbe K5122.
     afs_.setMkeJedesSyncByte(true);
+    // Unformatierte Spur/Seite = Rauschen mit Scheinmarken (AP-P3b): ROM und Resident
+    // warten ohne Zeitablauf auf eine Marke; am Gerät beendet erst das Rauschen das Warten.
+    afs_.setRauschenAufLeererSpur(true);
     // Interruptkette (vorläufig [?], §3.1/AP-P1c): K5122 → K2521 (CTC, PIO) → K8025.
     bus_.setInterruptChain({&afs_, &zre_, &ass_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };

@@ -127,14 +127,16 @@ protected:
 /**
  * @test Prg710Format.UdosFormatiertLeerdiskette
  * @brief UDOS bootet von der Gerätediskette, danach kommt eine Leerdiskette in Laufwerk 1
- *        (vor dem Start hinge ROM bzw. Resident am Markenwarten, §8.1).  `FORMAT`
+ *        (erst nach dem Start: vorher läsen ROM bzw. Resident die leere Diskette, bis das
+ *        Rauschen einen Fehler liefert — beim 710 ≈ 80 s Maschinenzeit, AP-P3b).  `FORMAT`
  *        SYSTEMDISK? N auf Laufwerk 1 (Seite 0, ID TEST) und 5 (Seite 1, ID TEST.B)
  *        meldet keine defekte Spur, `STATUS 1` sieht den neuen Datenträger mit
  *        77 × 26 − 14 = 1988 freien Sektoren, `COPY` schreibt darauf, `CAT` sieht die
- *        Kopie, und das DiskTool liest sie bytegleich.  Beide Seiten müssen formatiert
- *        sein: UDOS liest beim ersten Zugriff auf die Diskette auch die andere Seite, und
- *        auf einer Seite ohne Marken wartet der Resident ohne Zeitablauf (710: 0A5CH,
- *        710-1: 0A85H) — wie beim Einschalten (§8.1).
+ *        Kopie, und das DiskTool liest sie bytegleich.  Beide Seiten werden formatiert
+ *        (Laufwerkstyp 5 ist zweiseitig): UDOS liest beim ersten Zugriff auf die Diskette
+ *        auch die andere Seite — eine leere Rückseite hängt seit AP-P3b nicht mehr, kostet
+ *        aber je Zugriff die Fehlerwiederholungen im Rauschen
+ *        (`Prg710Udos.StatusMitEinseitigerDisketteInLaufwerk1`).
  */
 TEST_P(Prg710Format, UdosFormatiertLeerdiskette) {
     k1520test::TempDisk disk(udosDiskette(GetParam()));
