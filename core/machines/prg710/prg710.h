@@ -7,9 +7,11 @@
  * die Speicherverwaltung sichtbar), K5122 im `/WAIT`-Betrieb mit zwei K5601 und K8025
  * (50H).  **Eine** Klasse für beide Geräte: @ref Config::Variante wählt ROM und die
  * Polarität des Marken-FF der K5122 (710 low-aktiv, 710-1 high-aktiv, §4a.1).
- * Tastatur (AP-P2a): am **710** K7609 hinter dem 8279 der ATP 590068 (C8H/C9H); am 710-1
- * folgt die K7672 an A32-B in AP-P2b.  `keyPress` reiht ein, `run()` gibt im Lauffaden ab.
- * Host-Tastencodes: siehe k7609.h.
+ * Tastatur (AP-P2a/P2b): am **710** K7609 hinter dem 8279 der ATP 590068 (C8H/C9H),
+ * am **710-1** die K7672 fest an SIO A32 Kanal B der K8025 (9-poliger D-SUB statt IFSS X6,
+ * §3.9) — dieselbe K8025 in beiden Geräten; am 710-1 gehört Kanal B damit nicht dem
+ * `SerialHub`.  `keyPress` reiht ein, `run()` gibt im Lauffaden ab.  Host-Tastencodes:
+ * K7609 (710) bzw. K7672 (710-1), siehe k7609.h/k7672.h.
  *
  * **K7024 und Speicherverwaltung:** die K7024 meldet ihr VRAM im Konstruktor am
  * Systembus an.  Die CPU der K2521 greift aber über die Speicherverwaltung zu
@@ -28,6 +30,7 @@
 #include "core/cards/k5122/k5122.h"
 #include "core/cards/atp590068/atp590068.h"
 #include "core/peripherals/k7609/k7609.h"
+#include "core/peripherals/k7672/k7672.h"
 #include "core/machines/laufwerke.h"
 #include <atomic>
 #include <deque>
@@ -77,7 +80,7 @@ public:
      *        für die physische Taste (Bildschirmtastatur).
      */    void keyPress(uint32_t k, bool shift, bool ctrl) override;
     void keyRelease(uint32_t k) override;
-    void setKeyRepeatRealtime(bool) override {}
+    void setKeyRepeatRealtime(bool an) override { k7672_.setWiederholungEchtzeit(an); }   // 710-1; der 8279 wiederholt nicht
 
     int machineType() const override { return 1; }   // K1520_MACHINE_PRG710
     Config::Variante variante() const { return variante_; }
@@ -138,6 +141,7 @@ public:
     K8025&           ass()      { return ass_; }
     Atp590068&       atp()      { return atp_; }     ///< 8279 (nur am 710 verdrahtet)
     K7609&           k7609()    { return k7609_; }
+    K7672&           k7672()    { return k7672_; }   ///< nur am 710-1 an A32-B
     K1520Bus&        bus()      { return bus_; }
     uint64_t         totalCycles() const { return total_cycles_; }
 
@@ -161,6 +165,7 @@ private:
     K8025           ass_;       // 50H–5FH
     Atp590068       atp_;       // 8279 C8H/C9H + EPROMmer-Attrappe D0H–D3H (nur 710)
     K7609           k7609_;     // 710: Matrix hinter dem 8279
+    K7672           k7672_;     // 710-1: an SIO A32-B
     /// Nach den Karten: wird zuerst zerstört (hält Verweise auf ihre Anschlüsse).
     k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
     uint64_t  serial_naechst_ = 0;

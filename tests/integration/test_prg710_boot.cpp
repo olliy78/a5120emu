@@ -16,8 +16,8 @@
  * - Danach „NO SYSTEM“ und Sprung nach 0020H: das ROM programmiert die
  *   Speicherverwaltung neu und wartet wieder auf die Taste.
  *
- * Die Starttaste kommt am 710 seit AP-P2a über `keyPress` und K7609 → 8279 der ATP
- * (C8H/C9H); am 710-1 noch als Byte in den Empfänger von SIO A32-B (AP-P2b: K7672).
+ * Die Starttaste kommt seit AP-P2a/P2b über `keyPress` und die Tastaturmodelle: am 710
+ * K7609 → 8279 der ATP (C8H/C9H), am 710-1 K7672 → SIO A32 Kanal B (§3.9).
  */
 
 #include <gtest/gtest.h>
@@ -92,12 +92,8 @@ constexpr uint32_t QK_RETURN = 0x01000004;   // Qt::Key_Return
 /// (K7672 → SIO A32-B) — beide über denselben `keyPress`.  Das Loslassen gehört dazu: die
 /// K7672 wiederholt eine gehaltene Taste (Firmware), der 8279 nicht.
 void starttaste(Prg710Machine& m) {
-    if (m.variante() == V::Prg710) {
-        m.keyPress(QK_RETURN, false, false);
-        m.keyRelease(QK_RETURN);
-    } else {
-        m.printerSend(0x0D);   // ENTER als Byte in A32-B, bis AP-P2b die K7672 anschließt
-    }
+    m.keyPress(QK_RETURN, false, false);
+    m.keyRelease(QK_RETURN);
 }
 
 }  // namespace
@@ -305,25 +301,30 @@ TEST_P(Prg710Boot, StarttasteLaedtDenBootsektor) {
 
 /**
  * @test Prg710Boot.TastaturAmRichtigenBaustein
- * @brief 710: ENTER kommt als 37H (ET1) im FIFO des 8279 an, das ROM liest ihn über C8H.
+ * @brief 710: ENTER kommt als 37H (ET1) im FIFO des 8279 an, ROM liest ihn über C8H;
+ *        710-1: 0DH im Empfänger von SIO A32-B (RR0 Bit 0), und kein 8279 an C8H/C9H.
+ *        Ohne `tastatur` (Kabel gezogen) bleibt die Abfrage hängen.
  */
-TEST(Prg710Boot, TastaturAmRichtigenBaustein) {
-    Prg710Machine m(cfgFuer(V::Prg710));
+TEST_P(Prg710Boot, TastaturAmRichtigenBaustein) {
+    const bool v1 = GetParam() == V::Prg710_1;
+    Prg710Machine m(cfgFuer(GetParam()));
     m.powerOn();
     ASSERT_GT(bisTastaturabfrage(m), 0);
     starttaste(m);
+    // Bis zum ersten Zeichen am Baustein laufen (Abfrage beobachtet das ROM selbst).
     uint8_t gelesen = 0xFF;
     m.setBusTrace([&](bool io, bool rd, uint16_t a, uint8_t d) {
-        if (io && rd && (a & 0xFF) == 0xC8) gelesen = d;
+        if (io && rd && (a & 0xFF) == (v1 ? 0x5E : 0xC8)) gelesen = d;
     });
     for (long long done = 0; gelesen == 0xFF && done < kFrist;) done += m.run(kSchritt);
     m.setBusTrace(nullptr);
-    EXPECT_EQ(gelesen, 0x37);
-    EXPECT_EQ(m.ioReadDebug(0xD0), 0xFF) << "EPROMmer-Attrappe liest FFH";
+    EXPECT_EQ(gelesen, v1 ? 0x0D : 0x37);
+    if (v1) EXPECT_EQ(m.ioReadDebug(0xC9), 0xFF) << "kein 8279 am 710-1";
+    else    EXPECT_EQ(m.ioReadDebug(0xD0), 0xFF) << "EPROMmer-Attrappe liest FFH";
 }
 
-TEST(Prg710Boot, OhneTastaturKeinStart) {
-    Prg710Machine::Config c = cfgFuer(V::Prg710);
+TEST_P(Prg710Boot, OhneTastaturKeinStart) {
+    Prg710Machine::Config c = cfgFuer(GetParam());
     c.tastatur = false;
     Prg710Machine m(c);
     m.powerOn();
@@ -332,6 +333,29 @@ TEST(Prg710Boot, OhneTastaturKeinStart) {
     for (long long done = 0; done < 3'000'000;) done += m.run(kSchritt);
     EXPECT_TRUE(inTastaturabfrage(m)) << bild(m);
     EXPECT_EQ(zeile(m, 1), "");
+}
+
+/**
+ * @test Prg710Boot.Zweitlader710_1SendetEscKlammerFragezeichen11h
+ * @brief Der Zweitlader des 710-1 sendet `ESC [ ? 1 1 h` an die K7672 (resident.md §6);
+ *        das Modell versteht die Folge (Bit 7 von Register 21H = CAPS-Lampe, Firmware 0467H).
+ */
+TEST(Prg710Boot, Zweitlader710_1SendetEscKlammerFragezeichen11h) {
+    k1520test::TempDisk disk("prg710-1_udos_k5601_boot.hfe");
+    Prg710Machine m(cfgFuer(V::Prg710_1));
+    ASSERT_TRUE(m.mountDisk(0, disk, m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_GT(bisTastaturabfrage(m), 0);
+    starttaste(m);
+    for (long long done = 0; !(m.k7672().leds() & 0x80) && done < kFrist;) done += m.run(kSchritt);
+    EXPECT_NE(m.k7672().leds() & 0x80, 0) << bild(m);
+}
+
+/// Die K8025 reicht am 710-1 nur noch zwei Anschlüsse nach außen (A32-B ist die Tastatur).
+TEST(Prg710Boot, SerielleAnschluesseJeVariante) {
+    Prg710Machine a(cfgFuer(V::Prg710)), b(cfgFuer(V::Prg710_1));
+    EXPECT_EQ(a.serielleAnschluesse().size(), 3u);
+    EXPECT_EQ(b.serielleAnschluesse().size(), 2u);
 }
 
 INSTANTIATE_TEST_SUITE_P(Varianten, Prg710Boot, ::testing::Values(V::Prg710, V::Prg710_1),

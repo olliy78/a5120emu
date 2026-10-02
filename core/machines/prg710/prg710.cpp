@@ -35,10 +35,13 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // fuhr je Laufwerk 256 Schritte ins Leere und meldete Status C0H.
     bus_.registerIO(&afs_, 0x10, 9);
     bus_.registerIO(&ass_, 0x50, 16);
-    // Tastatur 710: K7609 am 8279 der ATP (C8H–C9H, D0H–D3H); ohne Tastatur fehlt der
-    // 8279 (ROM liest FFH).  710-1 (K7672 an A32-B): AP-P2b.
+    // Tastatur: 710 = K7609 am 8279 der ATP (C8H–C9H, D0H–D3H); 710-1 = K7672 an A32-B
+    // (kein C8H/C9H, §3.9, resident.md §6).  Ohne Tastatur bleibt der Anschluss leer
+    // (710: der 8279 fehlt → ROM liest FFH; 710-1: Kabel gezogen).
     if (variante_ == Config::Variante::Prg710) {
         if (cfg.tastatur) { atp_.attachToBus(bus_); k7609_.connect(&atp_.kbc()); }
+    } else if (cfg.tastatur) {
+        k7672_.connect(ass_.sioA32(), 1);
     }
     // Speicherweg der CPU: Speicherverwaltung; ZRE-Fenster und VRAM gehen an die Karten.
     zre_.setSpeicherweg([this](uint16_t a) { return speicher_.memRead(a); },
@@ -64,15 +67,18 @@ Prg710Machine::Prg710Machine(const Config& cfg)
             for (int i = 0; i < 4; ++i) ass_.ctcA34().clkTrg(i, lvl);
     });
     ass_.setzeZreTakt([this] { return zre_.ctc().teilerTakte(0); });
+    // Am 710-1 ist A32-B die Tastatur (fest verdrahtet, nicht nach außen); AP-P4 benennt neu.
     for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
-        hub_.registriere(ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
+        if (!(variante_ == Config::Variante::Prg710_1 && i == K8025::Drucker))
+            hub_.registriere(ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
 }
 
 std::vector<k1520::serial::SerialAnschluss*> Prg710Machine::serielleAnschluesse()
 {
     std::vector<k1520::serial::SerialAnschluss*> v;
     for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
-        v.push_back(&ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
+        if (!(variante_ == Config::Variante::Prg710_1 && i == K8025::Drucker))
+            v.push_back(&ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
     return v;
 }
 
@@ -100,6 +106,7 @@ void Prg710Machine::powerOn()
     zre_.powerOn(0x00);
     speicher_.powerOn(0x00);
     k7609_.powerOn();        // die Tastatur hat ihr eigenes Netz-Ein, ein /RESET trifft sie nicht
+    k7672_.powerOn();        // Selbsttest, KEIN DC1 (wie K8915)
     resetHardware();
     LOG_INFO("PRG710", "Netz ein: Abbildung aus, ROM bei 0000H");
 }
@@ -131,9 +138,13 @@ void Prg710Machine::tastenAbgeben()
         jetzt.swap(tasten_);
     }
     for (const auto& e : jetzt) {
-        if (variante_ != Config::Variante::Prg710) continue;   // 710-1: AP-P2b
-        if (e.gedrueckt) k7609_.keyPress(e.code, e.shift, e.ctrl);
-        else             k7609_.keyRelease(e.code);
+        if (variante_ == Config::Variante::Prg710) {
+            if (e.gedrueckt) k7609_.keyPress(e.code, e.shift, e.ctrl);
+            else             k7609_.keyRelease(e.code);
+        } else {
+            if (e.gedrueckt) k7672_.keyPress(e.code, e.shift, e.ctrl);
+            else             k7672_.keyRelease(e.code);
+        }
     }
 }
 
@@ -181,6 +192,7 @@ int Prg710Machine::run(int max_cycles)
             dirty |= ass_.nimmSeriellGeaendert();
         }
         if (variante_ == Config::Variante::Prg710) k7609_.service();   // 8279 pollt das OS, kein IRQ
+        else                                       dirty |= k7672_.service(total_cycles_);
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
