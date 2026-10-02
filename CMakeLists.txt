@@ -292,6 +292,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_zre8762 PUBLIC k1520_z80 k1520_ctc k1520_bus k1520_logger)
     target_include_directories(k1520_zre8762 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # ZRE K2521 (PRG 710/710-1): U880, ROM 1 KB (U555), 1 KB RAM, CTC 80H, PIO 84H
+    add_library(k1520_k2521 STATIC core/cards/k2521/k2521.cpp)
+    target_link_libraries(k1520_k2521 PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_bus k1520_logger)
+    target_include_directories(k1520_k2521 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
     target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
