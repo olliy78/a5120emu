@@ -53,24 +53,40 @@ endforeach()
 list(LENGTH _cli_cases _cli_count)
 message(STATUS "CLI-Tests: ${_cli_count} Fälle aus cases/*.cli")
 
-# Wächter „eingecheckte tools/sertest/sertest.com passt zur Quelle" (Entwurf 19
-# §14.8): baut src/sertest.mac in ein temporäres Verzeichnis neu (M80 + LINKMT
-# über cparun aus der CPA_Workbench, CPA_TOOLS) und vergleicht bytegleich.  Ohne
-# Werkzeugkette — in der CI immer — Exit 77 = übersprungen, mit Meldung.
-add_test(NAME cli_sertest_com_passt_zur_quelle
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/sertest/build.py" --check)
-set_tests_properties(cli_sertest_com_passt_zur_quelle PROPERTIES
-    TIMEOUT 120 SKIP_RETURN_CODE 77 LABELS "cli;fast")
-
-# Wächter „die Bootdisketten in disks/ tragen die aktuelle SERTEST.COM": sie gehen
-# als Beispieldisketten ins Paket; nach einem Neubau der .com liefert es sonst eine
-# alte Fassung aus.  Nachziehen: python3 tools/sertest/disketten.py --tool <k1520disktool>
-set(_sertest_emulator "")
-foreach(_e IN LISTS CMAKE_CROSSCOMPILING_EMULATOR)   # Cross-Bau: .exe unter wine
-    list(APPEND _sertest_emulator --emulator "${_e}")
+# Wächter „eingecheckte .com passt zur Quelle" für die eigenen CP/M-Programme
+# (SERTEST, ROMREAD, A5120.16-Prüfprogramme; Entwurf 19 §14.8): baut die Quelle in
+# ein temporäres Verzeichnis neu (M80 + LINKMT über cparun aus der CPA_Workbench,
+# CPA_TOOLS; tools/cpm_bau.py) und vergleicht bytegleich.  Ohne Werkzeugkette — in
+# der CI immer — Exit 77 = übersprungen, mit Meldung.
+# em256 braucht für die U8001-Firmware das z8kasm DIESES Baus — im Cross-Bau
+# (MinGW) wäre das eine .exe, die der Bau nicht ausführen kann; dort fehlt der
+# Abgleich (der native Lauf hat ihn).
+set(_cpm_programme sertest romread)
+if(NOT CMAKE_CROSSCOMPILING)
+    list(APPEND _cpm_programme em256)
+endif()
+foreach(_prog IN LISTS _cpm_programme)
+    add_test(NAME cli_${_prog}_com_passt_zur_quelle
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/${_prog}/build.py" --check)
+    set_tests_properties(cli_${_prog}_com_passt_zur_quelle PROPERTIES
+        TIMEOUT 180 SKIP_RETURN_CODE 77 LABELS "cli;fast")
 endforeach()
-add_test(NAME cli_sertest_auf_den_disketten
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/sertest/disketten.py"
-            --check --tool "$<TARGET_FILE:k1520disktool>" ${_sertest_emulator})
-set_tests_properties(cli_sertest_auf_den_disketten PROPERTIES
-    TIMEOUT 120 LABELS "cli;fast")
+if(NOT CMAKE_CROSSCOMPILING)
+    set_tests_properties(cli_em256_com_passt_zur_quelle PROPERTIES
+        ENVIRONMENT "Z8KASM=$<TARGET_FILE:z8kasm>")
+endif()
+
+# Wächter „die Bootdisketten in disks/ tragen die aktuellen eigenen Programme"
+# (SERTEST, ROMREAD, EM256ADR/EM16ABL/EM256FUL) und die Prüflinge unter
+# tests/fixtures/cpm/ sind dieselbe Fassung: die Disketten gehen als
+# Beispieldisketten ins Paket; nach einem Neubau einer .com liefert es sonst eine
+# alte Fassung aus.  Nachziehen: python3 tools/disketten_beigaben.py --tool <k1520disktool>
+set(_beigaben_emulator "")
+foreach(_e IN LISTS CMAKE_CROSSCOMPILING_EMULATOR)   # Cross-Bau: .exe unter wine
+    list(APPEND _beigaben_emulator --emulator "${_e}")
+endforeach()
+add_test(NAME cli_beigaben_auf_den_disketten
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/disketten_beigaben.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_beigaben_auf_den_disketten PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")

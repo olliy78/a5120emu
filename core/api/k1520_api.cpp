@@ -253,6 +253,10 @@ void k1520_key_release(K1520Handle h, uint32_t kc) {
     toMachine(h)->keyRelease(kc);
 }
 
+void k1520_set_key_repeat_realtime(K1520Handle h, bool realtime) {
+    toMachine(h)->setKeyRepeatRealtime(realtime);
+}
+
 uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl) {
     return K7637::codeFor(static_cast<int>(keycode), shift, ctrl);
 }

@@ -238,20 +238,130 @@ woran es liegt.
 
 ## Serielle Schnittstellen
 
-Der Reiter **Schnittstellen** im Kasten *Einstellungen* (*Ansicht ▸ Einstellungen*)
-verbindet die seriellen Anschlüsse des Rechners mit
-der Außenwelt. Je Schnittstelle ein Block; **die Namen und was sie können, kommen
-vom Rechner** (A5120: DFÜ/V.24, DFÜ/IFSS, Drucker; K8915: Drucker/IFSS1 an X3, V.24
-an X4, DFÜ/IFSS2 an X5 — wie am Gerät beschriftet). Die
-Tastatur steht als Zeile „fest verdrahtet" darunter — an ihr gibt es nichts zu
-stellen.
+Die seriellen Anschlüsse des Rechners lassen sich mit der Außenwelt verbinden: mit
+einem Terminalprogramm, mit einem anderen Rechner im Netz, mit einem zweiten Emulator
+oder — über einen Adapter — mit einem echten seriellen Gerät wie einem Drucker. Was
+der Rechner sendet, geht über das Netz hinaus, was ankommt, landet im Empfänger seiner
+Schnittstellenkarte; das Programm im Rechner merkt davon keinen Unterschied zu einem
+Kabel.
+
+Eingestellt wird das im Reiter **Schnittstellen** im Kasten *Einstellungen*
+(*Ansicht ▸ Einstellungen*). Je Schnittstelle gibt es einen Block; **die Namen und was
+sie können, kommen vom Rechner** — so, wie sie am Gerät beschriftet sind:
+
+| Rechner | Schnittstellen |
+|---------|----------------|
+| A5120 (Anschlusssteuerung K8025) | DFÜ/V.24, DFÜ/IFSS, Drucker |
+| K8915 (Anschlusssteuerung K7028) | Drucker/IFSS1 an X3, V.24 an X4, DFÜ/IFSS2 an X5 |
+
+**V.24** ist die Spannungsschnittstelle mit Steuerleitungen (RTS, CTS, DTR, DSR, DCD),
+**IFSS** die Stromschleife des DDR-Standards — sie kennt nur Senden und Empfangen. Die
+Tastatur steht als Zeile „fest verdrahtet" darunter; an ihr gibt es nichts zu stellen.
+
+### K8915: den Prüfstecker gesteckt lassen
+
+Der Selbsttest im Boot-ROM des K8915 prüft beim Einschalten auch die drei seriellen
+Schnittstellen: er sendet auf jeder ein Zeichen und erwartet, dass **dasselbe Zeichen
+zurückkommt** — am Gerät steckt dafür ein Prüfstecker bzw. ist die Stromschleife
+geschlossen. Im Emulator übernimmt das der Schalter **Rx/Tx-Loop**, und der ist beim
+K8915 deshalb **von Anfang an gesetzt**.
+
+Fehlt das Echo, meldet der Selbsttest einen **SIO-Fehler** (Kennbuchstabe in der
+Diagnosezeile), und der Rechner **wartet auf eine Taste**:
+**RETURN** setzt den Start fort (`#` wiederholt den Selbsttest). Das ist harmlos — das
+Betriebssystem selbst braucht das Echo nicht —, kostet aber bei jedem Kaltstart einen
+Tastendruck.
+
+Empfehlung: den Loop an allen Schnittstellen gesetzt lassen, die nicht verbunden
+werden, und ihn nur an der **einen** abschalten, die man braucht. Weil der Zustand des
+Schalters gemerkt wird, kommt die Meldung dann bei jedem Kaltstart wieder; wer das nicht
+will, setzt den Loop vor dem Rückstellen wieder und schaltet ihn nach dem Start ab.
+
+### Telnet — Terminalprogramme und Rechner im Netz
+
+**Telnet** ist das einfachste Protokoll, um Zeichen über eine Netzverbindung zu
+schicken; fast jedes Terminalprogramm spricht es. Damit lässt sich zum Beispiel:
+
+* **sich mit einem Terminalprogramm in den Emulator einwählen** — der Emulator ist
+  **Server**, das Terminalprogramm verbindet sich zu ihm: unter Windows etwa
+  **PuTTY** (Verbindungsart *Telnet*) oder **Tera Term**, unter Linux und macOS
+  `telnet 127.0.0.1 5000`. Was man dort tippt, kommt am Rechner an; was ein Programm im
+  Rechner auf die Schnittstelle ausgibt, steht im Terminalfenster. Das Echo macht —
+  wie am Gerät — der Rechner, nicht das Terminalprogramm.
+* **den Emulator als Terminal an einen anderen Rechner hängen** — der Emulator ist
+  **Client** und wählt sich bei einem Telnet-Server ein, etwa einem Linux- oder
+  Unix-Rechner mit `telnetd`, einem Mailbox-System oder einem zweiten Emulator. Ein
+  Terminalprogramm im emulierten Rechner bedient dann die Gegenstelle.
+
+**Die Steuerleitungen werden bei Telnet NICHT übertragen**, ebenso wenig Baudrate und
+Zeichenformat. Was der Rechner auf RTS und DTR setzt, erfährt die Gegenseite nicht, und
+die Eingänge CTS, DSR und DCD zeigen nur „verbunden" (aktiv, solange die Verbindung
+steht). Für reinen Textaustausch ist das gleichgültig; ein Programm, das auf
+Steuerleitungen achtet oder mit ihnen den Datenfluss bremst, braucht RFC 2217.
+
+### RFC 2217 — eine echte V.24 über das Netz
+
+**RFC 2217** (eigentlich „Telnet Com Port Control Option", festgelegt 1997 in der
+gleichnamigen Norm RFC 2217 der IETF) ist eine **Erweiterung von Telnet**, die alles
+mitnimmt, was eine serielle Leitung außer den Zeichen noch hat:
+
+* die **Übertragungsparameter** — Baudrate, Datenbits, Parität, Stoppbits,
+* die **Steuerleitungen** — RTS und DTR in die eine, CTS, DSR, DCD und RI in die andere
+  Richtung —, dazu Break und das Leeren der Puffer.
+
+Damit wird über das Netz eine **vollständige V.24 nachgebildet**: ein Programm im
+Rechner, das mit RTS/CTS den Datenfluss steuert oder auf DCD wartet, verhält sich wie
+am Kabel. Das Protokoll ist kein Allgemeingut, aber verbreitet: viele Netzwerk-Adapter
+für serielle Geräte und die gängigen Werkzeuge zum Weiterreichen eines seriellen Ports
+ins Netz sprechen es.
+
+Zwei Dinge, die man dazu wissen sollte:
+
+* **Maßgeblich ist der emulierte Rechner.** Baudrate und Format stellt das Programm im
+  Rechner an seiner Schnittstellenkarte ein; der Emulator **meldet** sie der Gegenseite.
+  Verlangt die Gegenseite andere Werte, wird das nicht übernommen, sondern unter
+  *Gegenseite* mit Warnfarbe angezeigt. Ist der Emulator **Client** an einem echten
+  Port, stellt sich dieser Port damit auf die Werte des Rechners ein.
+* **Die Rolle bestimmt die Verdrahtung.** Als **Client** ist der Emulator ein Gerät an
+  einem fernen Port — die Leitungen gehen gerade durch (RTS → RTS). Als **Server**
+  spielt er selbst den Port, an den sich die Gegenseite anschließt; die Leitungen werden
+  dann **wie in einem Nullmodemkabel gekreuzt** (RTS der Gegenseite → CTS des Rechners,
+  DTR → DSR und DCD). Zwei Emulatoren, einer Server und einer Client, sind so über ein
+  richtiges Nullmodemkabel verbunden.
+
+### Echte serielle Geräte und Rechner anschließen
+
+Der Emulator spricht keinen COM-Port des PCs direkt an. Stattdessen macht ein kleines
+Programm einen **echten Port zum RFC-2217-Server**, und der Emulator verbindet sich als
+**RFC2217-Client** dorthin. So lässt sich eine am PC eingebaute serielle Schnittstelle
+ebenso anbinden wie ein **USB-Seriell-Adapter** — und daran ein echter Drucker, ein
+Modem oder ein echter A5120 bzw. K8915 als Gegenstelle. Brauchbare Programme:
+
+* **Linux:** `ser2net` (der übliche Weg, auch auf einem Raspberry Pi), `socat`
+  (Pseudo-Port, der sich zu einem Server des Emulators verbindet).
+* **Windows:** `com0com` mit `hub4com` (virtueller Port bzw. Weiterleitung eines echten
+  Ports mit RFC 2217); für eine reine Telnet-Verbindung genügen PuTTY oder Tera Term.
+* **Beide:** das Beispielprogramm `rfc2217_server.py` von **pyserial** (Python) macht
+  aus einem lokalen Port einen RFC-2217-Server.
+
+Es geht auch ohne PC dazwischen: **Netzwerk-Adapter für serielle Geräte** aus der
+Industrie (sogenannte Geräteserver) beherrschen
+RFC 2217, ebenso Bastelprojekte auf Basis von **Arduino**-Boards mit Netzanschluss
+(ESP8266/ESP32) oder eines **Raspberry Pi** mit `ser2net`. Damit steht zum Beispiel ein
+**echter serieller Drucker** irgendwo im Netz und druckt, was der emulierte Rechner
+ausgibt.
+
+Zwei Hinweise für die Hardware: eine V.24 arbeitet mit ±12 V, die Anschlüsse von
+Arduino und Raspberry Pi mit 3,3 V bzw. 5 V — dazwischen gehört ein **Pegelwandler**.
+Und eine **IFSS** ist eine Stromschleife (20 mA); für sie braucht es einen
+**IFSS-Wandler**, ein V.24-Adapter allein genügt nicht.
+
+### Der Reiter „Schnittstellen" im Einzelnen
 
 **Betriebsart**
 
-* **Telnet** — ein Terminalprogramm oder ein anderes Programm verbindet sich mit dem
-  Rechner; der Rechner macht das Echo.
-* **RFC2217** — wie Telnet, aber mit Baudrate und Steuerleitungen (RTS, CTS, DTR,
-  DSR, DCD) über das Netz: die Schnittstelle sieht aus wie ein serieller Port.
+* **Telnet** — Zeichen über das Netz, ohne Steuerleitungen (siehe oben).
+* **RFC2217** — wie Telnet, mit Baudrate, Format und Steuerleitungen.
 * **Datei** — alles, was der Rechner sendet, wird in eine Datei geschrieben (etwa
   für einen Drucker). Beim Umschalten fragt ein Dialog nach dem Namen; **Starten**
   legt die Datei neu an (und überschreibt eine vorhandene).
@@ -278,12 +388,13 @@ Betriebsart, Rolle, Host, Port und Datei gesperrt.
 **Weitere Einstellungen**
 
 * **Rx/Tx-Loop** — der Prüfstecker: was der Rechner sendet, kommt am selben Anschluss
-  wieder an. Das schließt jede Verbindung aus; der Knopf ist gesperrt, solange es
-  gesetzt ist, und eine laufende Verbindung wird beim Setzen beendet.
+  wieder an; an einer V.24 sind zugleich RTS mit CTS und DTR mit DSR/DCD verbunden. Das
+  schließt jede Verbindung aus; der Knopf ist gesperrt, solange es gesetzt ist, und
+  eine laufende Verbindung wird beim Setzen beendet.
 * **RTS/CTS-Brücke** (nur V.24) — am Stecker RTS mit CTS (und DTR mit DSR/DCD)
-  verbunden.
-* **XON/XOFF** — den Empfang anhalten, solange der Rechner XOFF gesendet hat. Bei
-  Übertragungen von Binärdaten aus.
+  verbunden: für Gegenstellen, die selbst keine Leitungen liefern (Telnet).
+* **XON/XOFF** — den Empfang anhalten, solange der Rechner XOFF gesendet hat; so geht
+  bei ungleich schnellen Enden nichts verloren. Bei Übertragungen von Binärdaten aus.
 * **Takt** — wo der Rechner eine Brücke für die Taktquelle des Anschlusses hat.
 
 Darunter zeigt der Block, womit der **Gast** (das Programm im Rechner) die
@@ -299,10 +410,10 @@ leuchtend** heißt aktiv, **gedimmt dunkelgrün** inaktiv, ein bloßer **Umriss*
 unbekannt; der Tooltip nennt es ausgeschrieben („CTS aktiv"). Die Ausgänge leuchten
 nur, wenn das Programm im Rechner sie setzt — CP/A und SCPX tun das nicht, dort
 bleiben RTS und DTR dunkel. Die Eingänge sind unverbunden inaktiv; bei Telnet (und
-Datei) werden sie aktiv, sobald eine Verbindung steht (Leitungen selbst überträgt
-Telnet nicht), bei RFC2217 zeigen sie, was die Gegenseite meldet, mit
-**RTS/CTS-Brücke** oder **Rx/Tx-Loop** folgen sie RTS und DTR. Angezeigt wird, was
-am Rechner anliegt — er muss dafür laufen; im angehaltenen Rechner ändert sich nichts.
+Datei) werden sie aktiv, sobald eine Verbindung steht, bei RFC2217 zeigen sie, was die
+Gegenseite meldet, mit **RTS/CTS-Brücke** oder **Rx/Tx-Loop** folgen sie RTS und DTR.
+Angezeigt wird, was am Rechner anliegt — er muss dafür laufen; im angehaltenen Rechner
+ändert sich nichts.
 
 Bei RFC2217 steht eine weitere Zeile **Gegenseite**: Baudrate und Format, mit Warnzeichen
 und Warnfarbe, wenn sie von denen des Gastes abweichen, dazu die Leitungen der Gegenseite
@@ -313,20 +424,21 @@ Servers. Was die Gegenseite noch nicht gemeldet hat, bleibt Umriss.
 **Beispiele**
 
 * *Ein Terminalprogramm anschließen:* Schnittstelle auf **Telnet**, **Server**,
-  **Starten**; dann `telnet 127.0.0.1 5000` (bzw. der Port aus der Anzeige).
+  **Starten**; dann in PuTTY Verbindungsart *Telnet*, Host `127.0.0.1`, Port 5000 (bzw.
+  der Port aus der Anzeige) — oder `telnet 127.0.0.1 5000`.
 * *Zwei Emulatoren koppeln:* im einen **Server**, im anderen **Client** mit
-  Host `127.0.0.1` und dem Port des Servers, beide auf RFC2217 oder beide auf Telnet.
-  Die Reihenfolge ist gleichgültig — der Client versucht, bis der Server da ist.
-* *Einen echten Port des Wirtsrechners verwenden:* der Emulator spricht kein
-  Hardware-COM direkt. Mit `ser2net` (Linux) bzw. `com0com` und `hub4com` (Windows)
-  wird ein Port zum RFC2217-Server; der Emulator verbindet sich als **RFC2217-Client**
-  dorthin. Umgekehrt öffnet `socat -d -d pty,raw,echo=0 tcp:127.0.0.1:5000` einen
-  Pseudo-Port auf den Server des Emulators.
+  Host `127.0.0.1` (oder dem Namen des anderen PCs) und dem Port des Servers, beide auf
+  RFC2217 oder beide auf Telnet. Die Reihenfolge ist gleichgültig — der Client versucht,
+  bis der Server da ist.
+* *Einen echten Port des PCs verwenden:* den Port mit `ser2net` (Linux) bzw. `com0com`
+  und `hub4com` (Windows) zum RFC-2217-Server machen; der Emulator verbindet sich als
+  **RFC2217-Client** dorthin. Umgekehrt öffnet `socat -d -d pty,raw,echo=0
+  tcp:127.0.0.1:5000` unter Linux einen Pseudo-Port auf den Server des Emulators.
 * *Aus Python:* `serial.serial_for_url("rfc2217://127.0.0.1:5000")` (pyserial)
   gegen einen RFC2217-Server des Emulators.
 
 **Sicherheit:** ein Server lauscht auf **allen Netzschnittstellen** des
-Wirtsrechners und verlangt **keine Anmeldung** — wer ihn erreicht, sitzt an der
+PCs und verlangt **keine Anmeldung** — wer ihn erreicht, sitzt an der
 Schnittstelle des Rechners. Für den Betrieb im offenen Netz gehört eine Firewall
 davor, oder man bindet den Dienst über einen Tunnel (`ssh -L`) nach außen.
 
@@ -337,10 +449,104 @@ Feld eingetragen, und man startet von Hand), ein Client versucht wieder, eine Da
 wird **angehängt** statt überschrieben. Mit gesetztem Rx/Tx-Loop wird nichts
 gestartet.
 
-**K8915:** der Selbsttest des Boot-ROMs verlangt das Echo auf allen drei Anschlüssen,
-deshalb steht der Rx/Tx-Loop dort **von Anfang an** und der Knopf ist gesperrt. Nach
-dem Kaltstart (das BIOS braucht das Echo nicht) den Loop **abschalten**, dann lässt
-sich verbinden.
+### Das Prüfprogramm SERTEST
+
+**SERTEST** (*Serial Test*, `SERTEST.COM`) prüft die seriellen Schnittstellen eines
+A5120 (unter CP/A) und eines K8915 (unter SCPX 8915) — im Emulator ebenso wie am echten
+Gerät. Es steht auf den mitgelieferten Systemdisketten (`cpa_cpa780_*` für den A5120,
+`k8915scpx_boot1.hfe` für den K8915); gestartet wird es am Prompt mit `SERTEST`. Es
+erkennt selbst, auf welchem Rechner es läuft, stellt die geprüfte Schnittstelle für die
+Dauer der Prüfung auf 9600 Bd 8N1 und hinterher wieder so ein, wie das Betriebssystem
+sie erwartet. Die Tastatur prüft es nicht (sie bleibt die Eingabe des Programms).
+
+**Bedienung.** Ohne Argumente fragt SERTEST alles ab. Nach dem Start zeigt es den
+erkannten Rechner und die Liste der Schnittstellen mit ihren Nummern:
+
+```
+Serial Test V0.1
+Rechner: A5120 (K8025)
+Schnittstellen:
+  1  DFUE/V.24      SIO A33 Kanal A   V.24
+  2  DFUE/IFSS      SIO A33 Kanal B   IFSS
+  3  Drucker        SIO A32 Kanal B   IFSS
+  -  Tastatur K7637 SIO A32 Kanal A   (Tastatur)
+Tester (Aktiv) oder Gegenstelle (Passiv)? T/G
+```
+
+Am K8915 sind es `1 Drucker/IFSS1`, `2 V.24` und `3 DFUE/IFSS2`. Mit **T** wird der
+Rechner zum **Tester**: SERTEST fragt je Schnittstelle `Test der … ? J/N` und für jede
+gewählte, ob mit **Prüfstecker** und/oder mit **Gegenstelle** geprüft werden soll; am
+Ende stehen eine Zusammenfassung und `SERTEST ENDE OK` bzw. `SERTEST ENDE FEHLER`. Mit
+**G** wird er zur **Gegenstelle** für einen anderen Rechner (siehe unten).
+**Strg+C** bricht an jeder Stelle ab; SERTEST stellt die Schnittstellen dann zurück.
+
+Dasselbe ohne Rückfragen über die Kommandozeile:
+
+```
+SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n
+SERTEST G n                  Gegenstelle an Schnittstelle n
+  /P nur Prüfsteckertest, /G nur Test mit Gegenstelle (ohne beide: beide)
+  /A automatisch: keine Rückfragen, kein Warten auf eine Taste
+  /M:A bzw. /M:K   Rechner A5120 bzw. K8915 vorgeben (falls die Erkennung irrt)
+```
+
+Jedes Ergebnis steht als eigene Zeile da, z. B. `SERTEST DFUE/V.24 ECHO: OK`, sonst
+`FEHLER` mit dem Grund oder `ENTFAELLT`, wenn ein Teil für diese Schnittstelle nicht
+gilt (Steuerleitungen gibt es an einer IFSS nicht).
+
+**Mit Prüfstecker** (`SERTEST T n /P`). Ein Prüfstecker verbindet am Anschluss den
+Ausgang mit dem Eingang — was gesendet wird, kommt sofort zurück; an einer V.24 sind
+außerdem RTS mit CTS und DTR mit DSR und DCD verbunden. Im Emulator ist das der
+Schalter **Rx/Tx-Loop** der Schnittstelle, am Gerät ein gesteckter Prüfstecker bzw.
+eine geschlossene Stromschleife. Geprüft werden:
+
+* **DATEN-LOOP** — alle 256 Zeichenwerte, jedes muss unverändert zurückkommen. Ohne
+  Prüfstecker endet das sofort mit `FEHLER KEIN ECHO BEI 00H`.
+* **LEITUNGEN-LOOP** (nur V.24) — RTS und DTR werden in allen Kombinationen gesetzt;
+  je Kombination steht eine Zeile mit dem, was an CTS und DCD gemessen wurde, und dem,
+  was erwartet war.
+
+Ein Prüfstecker sieht nicht alles: eine falsch eingestellte Baudrate fällt hier nicht
+auf, denn Sender und Empfänger laufen mit demselben Takt. Das zeigt erst der Test mit
+einer Gegenstelle.
+
+**Mit einem anderen Rechner als Gegenstelle** (`SERTEST T n /G` auf dem einen,
+`SERTEST G n` auf dem anderen). Zwei Rechner werden über ein **Nullmodemkabel**
+verbunden (an einer IFSS: Sendeschleife des einen an die Empfangsschleife des anderen),
+und zwar Schnittstelle gleicher Art — V.24 an V.24, IFSS an IFSS; die Nummern dürfen
+sich unterscheiden. **Zuerst die Gegenstelle starten**, dann den Tester. Die Gegenstelle
+schickt alles Empfangene zurück und läuft, bis man sie mit Strg+C beendet. Der Tester
+prüft:
+
+* **LEITUNGEN** (nur V.24) — schaltet RTS und DTR Schritt für Schritt und lässt sich von
+  der Gegenstelle bestätigen, dass sie drüben ankommen (ohne `/A` je Schritt nach einem
+  Tastendruck).
+* **ECHO** — 4096 Bytes hin und zurück, Byte für Byte verglichen; dazu meldet die
+  Gegenstelle ihre eigenen Empfangsfehler.
+* **FLUSS-HW** (nur V.24) und **FLUSS-XON** — wie ECHO, aber die Gegenstelle bremst
+  zwischendurch absichtlich, einmal über die Steuerleitung (RTS/CTS), einmal mit
+  XOFF/XON. Bestanden ist der Teil nur, wenn sie wirklich gebremst hat und trotzdem
+  nichts verloren ging.
+
+Als Gegenstelle taugt ein zweiter Emulator ebenso wie ein echter Rechner:
+
+* **Zwei Emulatoren:** im einen die Schnittstelle als **RFC2217-Server**, im anderen
+  als **RFC2217-Client** auf dessen Port — das ergibt ein Nullmodemkabel samt
+  Steuerleitungen. (Mit Telnet kommen nur ECHO und FLUSS-XON durch; die Leitungsteile
+  brauchen RFC 2217.) Beim K8915 vorher den **Rx/Tx-Loop** dieser Schnittstelle
+  abschalten. Für **FLUSS-XON** an der Schnittstelle der *Gegenstelle* den Schalter
+  **XON/XOFF** setzen, für ECHO und FLUSS-HW dort **aus** lassen — dort gehen alle
+  Bytewerte über die Leitung, auch das XOFF-Zeichen.
+* **Ein echter A5120 oder K8915:** über ein Nullmodemkabel an einen Port des PCs, der
+  wie oben beschrieben zum RFC-2217-Server gemacht ist; der Emulator ist
+  **RFC2217-Client**. Ebenso lassen sich zwei echte Rechner direkt mit einem Kabel
+  gegeneinander prüfen.
+
+Typische Befunde: `ZEITUEBERLAUF BESTAETIGUNG` heißt, drüben läuft keine Gegenstelle,
+das Kabel ist nicht gekreuzt oder die Baudraten passen nicht zusammen; `FEHLER RR1 …`
+oder `FALSCH …` bei bestandenem Prüfstecker deuten auf einen falschen **Baudtakt**
+einer Seite (am Gerät eine Brücke auf der Schnittstellenkarte). Ohne Gegenstelle endet
+ein Tester immer mit `SERTEST ENDE FEHLER` — das ist richtig so.
 
 ## Der Takt der Maschine
 

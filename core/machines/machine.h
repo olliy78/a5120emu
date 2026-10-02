@@ -62,6 +62,14 @@ public:
     // ─── Tastatur (fadensicher eingereiht, verbraucht in run()) ───────────────
     virtual void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) = 0;
     virtual void keyRelease(uint32_t qt_keycode) = 0;
+    /**
+     * @brief Tastenwiederholung in Echtzeit statt in Maschinentakten zählen.
+     *
+     * Für die Oberfläche: dort ist der Rechnertakt einstellbar, die Tastatur hat
+     * aber ihren eigenen Quarz.  Vorgabe aus (Tests/Werkzeuge bleiben
+     * wiederholbar).  Fadensicher.  @see core/peripherals/tasten_uhr.h
+     */
+    virtual void setKeyRepeatRealtime(bool an) = 0;
     /** @brief Anzeigen der Tastatur; Bitbelegung je Tastaturmodell (0 = keine). */
     virtual uint8_t keyboardLeds() const { return 0; }
 

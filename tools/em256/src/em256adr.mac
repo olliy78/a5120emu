@@ -1,0 +1,1318 @@
+	TITLE	'EM256ADR - Portbasis und Attributspeicher des EM256'
+	.Z80
+;
+; em256adr.mac - Arbeitspaket G1 (a5120emu doc/design/17_a5120_16.md, Par. 3)
+;
+; Zweck: am echten A5120.16 belegen, auf welcher Portbasis die Steuerkarte
+; des EM256 liegt (X10/X11, erwartet A8H..AFH), OHNE die Maschine zu oeffnen.
+; Kennung ist der Attributspeicher A22 (74189/K155RU2) an MODADR+7: er ist
+; schreib- und NEGIERT lesbar; keine andere K1520-Karte antwortet so.
+;
+; Reiner U880-Code, keine U8001-Firmware.  Wahrheit: Par. 7 des Plans,
+; Handbuch A5120.16 (1.5, 1.7.1), biosremc.mac/biosrem.mac -- NICHT
+; em256tst/em256ful (liefen nie am Geraet).
+;
+; Ablauf
+;   1. PIO der Karte wird NICHT umprogrammiert.  Port A (Basis+0) und
+;      Port B (Basis+1) werden nur gelesen und angezeigt.  Nur wenn Port B
+;      /RAMEN=1 und RESET16=1 zeigt, darf ein Muster mit Bit 0 = 0 (PEN=1)
+;      geschrieben werden -- MEN = /(8/16 & PEN & RAMEN) bleibt dann inaktiv.
+;   2. Vorher-Zustand an Basis+7 lesen (B = Seite 0..F).
+;   3. Adresstest in zwei Laeufen, NUR ungerade Kennungen (Bit 0 = 1, PEN
+;      bleibt 0): Lauf 1 Seite p <- ((p and 7) shl 1) or 1, Lauf 2
+;      Seite p <- ((p shr 3) shl 1) or 1.  Aus beiden zusammen folgt die
+;      Nummer der Seite, die beim LESEN adressiert war.
+;      Gelesen wird mit IN A,(C), B = 0..F, und zwar von einem IN-Befehl in
+;      Seite 0 (im Programm) und von 3-Byte-Stubs (ED 78 C9) bei
+;      n*1000H+0FF0H in jeder freien TPA-Seite n.  So unterscheidet das
+;      Programm die Lesarten der Leseadresse (Handbuch 1.5: A13 "haelt die
+;      Seitenadresse bis zum naechsten Speicherzugriff"):
+;        B     - Seite = B aus IN A,(C) (AB12-15), wie beim Schreiben
+;        Holen - Seite des letzten Befehlsholens (Seite des Stubs)
+;        Refr. - Seite der Refresh-Adresse (I-Register, AB8-15)
+;   4. Mustertest je Seite mit der gefundenen Lesart: F, 5 (Bit 0 = 1),
+;      danach 0, A, Seitennummer (Bit 0 = 0, nur wenn Schritt 1 es erlaubt).
+;      Verglichen wird (IN and 0FH) xor 0FH mit dem geschriebenen Wert.
+;   5. Aufraeumen: alle 16 Seiten <- 07H (PEN=0, WE=0, /A14-8,/A15-8 wie
+;      biosremc.mac mit hbemadr = 4000H).  Jede Testphase laeuft unter DI
+;      und endet mit diesem Aufraeumen, BEVOR irgendetwas ausgegeben wird --
+;      es gibt also keinen Abbruch- oder Fehlerpfad mit PEN = 1.
+;   6. Trifft A8H nicht: die uebrigen Basen x0H/x8H NUR LESEND an Basis+7
+;      abfragen (ausgenommen die vom A5120/BIOS belegten, s. BASLST);
+;      geschrieben wird dort erst nach Rueckfrage (J/N).
+;
+; Bau: python3 tools/em256/build.py em256adr  (M80 + LINKMT /p:100)
+; Kein ORG 100H: das Programm liegt im CSEG, LINKMT legt es nach 100H.
+;
+; Autor:  (c) 2026 Olaf Krieger
+; Lizenz: MIT
+; Datum:  2026-09-28
+;
+
+; =============================================================================
+; CP/M
+; =============================================================================
+BDOS	EQU	0005H		; BDOS-Einsprung
+BDOSAD	EQU	0006H		; Adresse des BDOS (Obergrenze der TPA)
+CONOUT	EQU	2
+DCIO	EQU	6
+PRINT	EQU	9
+PAGELEN	EQU	22		; Zeilen bis zur Seitenpause
+
+; =============================================================================
+; EM256 (Handbuch 1.7.1, Plan Par. 7.2)
+; =============================================================================
+DEFBAS	EQU	0A8H		; erwartete Portbasis MODADR
+ATTOFS	EQU	7		; MODADR+7 = Attributspeicher
+CLEANV	EQU	07H		; 1 shl n_pagen or 1 shl n_write or 4000H shr 12
+				; (PEN=0, WE=0 -- wie biosremc.mac)
+STUBOF	EQU	0FF0H		; Stub in Seite n liegt bei n*1000H+STUBOF
+STUBND	EQU	0FF3H		; erstes Byte hinter dem Stub
+
+; Lesarten der Leseadresse
+LES_UN	EQU	0		; unklar
+LES_B	EQU	1		; B aus IN A,(C)
+LES_F	EQU	2		; gelatchte Seite des Befehlsholens
+LES_R	EQU	3		; gelatchte Refresh-Adresse (I-Register)
+
+; =============================================================================
+; Programmanfang (CSEG, LINKMT /p:100)
+; =============================================================================
+START:	LD	(SAVSP),SP
+	LD	SP,STACK
+	JP	MAIN
+
+; RDIN0: der IN-Befehl fuer "Stub-Seite 0".  Steht am Programmanfang und
+; damit sicher in Seite 0 (0100H..0FFFH).
+RDIN0:	IN	A,(C)
+	RET
+
+; =============================================================================
+MAIN:
+	LD	DE,M_BAN
+	CALL	PUTS
+	; Das Programm muss unter dem Stub der Seite 1 (1FF0H) enden
+	LD	HL,ENDPRG
+	LD	A,H
+	CP	1FH
+	JP	NC,TOOBIG
+	; I-Register merken (Refresh legt es auf AB8-15)
+	LD	A,I
+	LD	(IREG),A
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	AND	0FH
+	LD	(IPAGE),A
+	CALL	MKSTUB
+	LD	DE,M_IREG
+	CALL	PUTS
+	LD	A,(IREG)
+	CALL	PHEX2
+	LD	DE,M_STUB
+	CALL	PUTS
+	LD	A,(MAXST)
+	CALL	PHEX1
+	CALL	CRLF
+
+	LD	A,DEFBAS
+	LD	(BASE),A
+	CALL	TESTB
+	LD	A,(FOUND)
+	OR	A
+	CALL	Z,SCAN
+
+; ---- Ergebnis ---------------------------------------------------------------
+	CALL	CRLF
+	LD	DE,M_ERG
+	CALL	PUTS
+	LD	A,(FOUND)
+	OR	A
+	JR	Z,RNONE
+	LD	DE,M_ATT
+	CALL	PUTS
+	LD	A,(BASE)
+	CALL	PHEX2
+	LD	A,(LESART)
+	CP	LES_B
+	LD	DE,M_16S
+	JR	Z,RES1
+	LD	DE,M_4B
+RES1:	CALL	PUTS
+	LD	A,(XM)
+	OR	A
+	LD	DE,M_NEG
+	JR	NZ,RES2
+	LD	DE,M_NNEG
+RES2:	CALL	PUTS
+	CALL	CRLF
+	LD	A,(SAFE)
+	OR	A
+	LD	DE,M_B0
+	CALL	Z,PUTS
+	LD	A,(LESART)
+	CP	LES_B
+	JR	Z,EXIT
+	LD	DE,M_ERGL
+	CALL	PUTS
+	CALL	PLESK
+	CALL	CRLF
+	JR	EXIT
+RNONE:	LD	DE,M_NONE
+	CALL	PUTS
+
+; Warmstart: die Stubs koennen den CCP ueberschrieben haben.
+EXIT:	EI
+	JP	0
+
+TOOBIG:	LD	DE,M_BIG
+	CALL	PUTS
+	JR	EXIT
+
+; =============================================================================
+; MKSTUB - Stubs "IN A,(C) / RET" in die Seiten 1..MAXST legen.
+; Seite n bekommt einen Stub, wenn n*1000H+STUBND <= BDOS-Adresse.
+; =============================================================================
+MKSTUB:	LD	HL,(BDOSAD)
+	LD	DE,STUBND
+	OR	A
+	SBC	HL,DE
+	LD	A,H
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	AND	0FH
+	LD	(MAXST),A
+	OR	A
+	RET	Z
+	LD	B,A
+	LD	HL,1000H+STUBOF
+MKS1:	LD	(HL),0EDH	; IN A,(C)
+	INC	HL
+	LD	(HL),78H
+	INC	HL
+	LD	(HL),0C9H	; RET
+	LD	DE,1000H-2
+	ADD	HL,DE
+	DJNZ	MKS1
+	RET
+
+; =============================================================================
+; TESTB - vollstaendige Probe an Basis (BASE).  Setzt FOUND, LESART, XM.
+; =============================================================================
+TESTB:	XOR	A
+	LD	(FOUND),A
+	LD	(FAILF),A
+	INC	A
+	LD	(ALLOK),A
+	LD	A,0FH
+	LD	(XM),A
+	LD	DE,M_BASE
+	CALL	PUTS
+	LD	A,(BASE)
+	CALL	PHEX2
+	LD	DE,M_BAS2
+	CALL	PUTS
+	; PIO nur lesen (B = 0)
+	LD	A,(BASE)
+	LD	C,A
+	LD	B,0
+	IN	A,(C)
+	LD	(PAVAL),A
+	INC	C
+	IN	A,(C)
+	LD	(PBVAL),A
+	CALL	SHOWPA
+	CALL	SHOWPB
+
+	; ---- Vorher lesen, Adresstest (Bit 0 immer 1), aufraeumen ----
+	DI
+	CALL	RDPRE
+	CALL	ADRTST
+	CALL	CLEAN
+	EI
+	CALL	SHOWPRE
+
+	; ---- Lesart bestimmen: erst negiert, dann direkt ----
+	LD	A,0FH
+	LD	(XM),A
+	CALL	CLASS
+	OR	A
+	JR	NZ,TB1
+	XOR	A
+	LD	(XM),A
+	CALL	CLASS
+	OR	A
+	JR	NZ,TB1
+	LD	A,0FH		; nichts erkannt: negiert anzeigen
+	LD	(XM),A
+	CALL	DECODE
+	XOR	A
+TB1:	LD	(LESART),A
+	CALL	SHOWADR
+	CALL	SHOWLES
+
+	; ---- Mustertest Phase A: F, 5 (PEN bleibt 0) ----
+	LD	DE,M_PATA
+	CALL	PUTS
+	LD	HL,PATA
+	CALL	PATRUN
+	CALL	SHOWPT
+	; ---- Phase B: 0, A, Seitennummer (PEN kurz 1) ----
+	LD	A,(SAFE)
+	OR	A
+	JR	Z,TB2
+	LD	DE,M_PATB
+	CALL	PUTS
+	LD	HL,PATB
+	CALL	PATRUN
+	CALL	SHOWPT
+	JR	TB3
+TB2:	LD	DE,M_NOPB
+	CALL	PUTS
+TB3:
+	; ---- Aufraeumen + Kontrolle ----
+	DI
+	CALL	CLEAN
+	CALL	POSTCK
+	EI
+	CALL	SHOWCL
+	; ---- Urteil ----
+	JP	VERDCT
+
+; =============================================================================
+; Hardwarezugriffe.  Keine dieser Routinen ruft das BDOS.
+; =============================================================================
+
+; WRPG - A in den Attributspeicher, Seite D (B = D shl 4).  Erhaelt D,E,HL.
+WRPG:	PUSH	AF
+	LD	A,D
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	AND	0F0H
+	LD	B,A
+	LD	A,(BASE)
+	ADD	A,ATTOFS
+	LD	C,A
+	POP	AF
+	OUT	(C),A
+	RET
+
+; RDVIA - Basis+7 lesen mit B = D shl 4, IN-Befehl in Seite E.
+; A = gelesenes Byte (roh).  Zerstoert B,C,HL.  Erhaelt D,E.
+RDVIA:	LD	A,D
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	AND	0F0H
+	LD	B,A
+	LD	A,(BASE)
+	ADD	A,ATTOFS
+	LD	C,A
+	LD	A,E
+	OR	A
+	JP	Z,RDIN0		; Seite 0: IN im Programm
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	OR	HIGH STUBOF	; H = n shl 4 or 0FH
+	LD	H,A
+	LD	L,LOW STUBOF
+	JP	(HL)		; Stub: IN A,(C) / RET
+
+; READPG - Seite D mit der ermittelten Lesart lesen.  A = roh.
+READPG:	LD	A,(LESART)
+	CP	LES_F
+	LD	E,D		; Holen: IN aus Seite D
+	JR	Z,RDVIA
+	LD	E,0		; sonst IN aus Seite 0
+	JR	RDVIA
+
+; CANRD - ist Seite D mit der Lesart lesbar?  NZ = ja.
+CANRD:	LD	A,(LESART)
+	CP	LES_F
+	JR	Z,CR1
+	CP	LES_R
+	JR	Z,CR2
+	OR	1		; unklar oder B: jede Seite
+	RET
+CR1:	LD	A,(MAXST)	; Holen: nur Seiten mit Stub
+	CP	D
+	JR	C,CRNO
+	OR	1
+	RET
+CR2:	LD	A,(IPAGE)	; Refresh: nur die I-Seite
+	CP	D
+	JR	NZ,CRNO
+	OR	1
+	RET
+CRNO:	XOR	A
+	RET
+
+; CLEAN - alle 16 Seiten <- CLEANV (PEN=0, WE=0)
+CLEAN:	LD	D,0
+CLN1:	LD	A,CLEANV
+	CALL	WRPG
+	INC	D
+	LD	A,D
+	CP	16
+	JR	C,CLN1
+	RET
+
+; RDPRE - Vorher-Zustand, IN aus Seite 0, B = 0..F
+RDPRE:	LD	HL,PRE
+	LD	D,0
+	LD	E,0
+RPR1:	PUSH	HL
+	CALL	RDVIA
+	POP	HL
+	LD	(HL),A
+	INC	HL
+	INC	D
+	LD	A,D
+	CP	16
+	JR	C,RPR1
+	RET
+
+; ADRTST - zwei Laeufe mit ungeraden Kennungen, je volle Lesematrix
+ADRTST:	LD	D,0
+AT1:	LD	A,D		; Lauf 1: ((p and 7) shl 1) or 1
+	AND	7
+	ADD	A,A
+	OR	1
+	CALL	WRPG
+	INC	D
+	LD	A,D
+	CP	16
+	JR	C,AT1
+	LD	HL,P1M
+	CALL	RDMAT
+	LD	D,0
+AT2:	LD	A,D		; Lauf 2: ((p shr 3) shl 1) or 1
+	RRCA
+	RRCA
+	AND	2
+	OR	1
+	CALL	WRPG
+	INC	D
+	LD	A,D
+	CP	16
+	JR	C,AT2
+	LD	HL,P2M
+	; weiter in RDMAT
+
+; RDMAT - (HL) <- Lesematrix [s = 0..MAXST][b = 0..F]
+RDMAT:	LD	E,0
+RM1:	LD	D,0
+RM2:	PUSH	HL
+	CALL	RDVIA
+	POP	HL
+	LD	(HL),A
+	INC	HL
+	INC	D
+	LD	A,D
+	CP	16
+	JR	C,RM2
+	INC	E
+	LD	A,(MAXST)
+	CP	E
+	JR	NC,RM1
+	RET
+
+; NIB - A <- (A and 0FH) xor XM
+NIB:	AND	0FH
+	PUSH	HL
+	LD	HL,XM
+	XOR	(HL)
+	POP	HL
+	RET
+
+; NCELLS - BC <- (MAXST+1)*16
+NCELLS:	LD	A,(MAXST)
+	INC	A
+	LD	L,A
+	LD	H,0
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	ADD	HL,HL
+	LD	B,H
+	LD	C,L
+	RET
+
+; DECODE - IDM <- adressierte Seite aus P1M/P2M (FFH = nicht deutbar)
+DECODE:	CALL	NCELLS
+	LD	HL,P1M
+	LD	DE,P2M
+	LD	IX,IDM
+DC1:	LD	A,(DE)
+	CALL	NIB
+	CP	1
+	JR	Z,DC2
+	CP	3
+	JR	NZ,DCBAD
+DC2:	AND	2		; 0 oder 2
+	ADD	A,A
+	ADD	A,A		; 0 oder 8
+	LD	(TMPB),A
+	LD	A,(HL)
+	CALL	NIB
+	BIT	0,A
+	JR	Z,DCBAD
+	SRL	A		; 0..7
+	PUSH	HL
+	LD	HL,TMPB
+	OR	(HL)
+	POP	HL
+	JR	DC3
+DCBAD:	LD	A,0FFH
+DC3:	LD	(IX+0),A
+	INC	IX
+	INC	HL
+	INC	DE
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,DC1
+	RET
+
+; CLASS - Lesart aus IDM (mit XM).  A = LES_x, 0 = unklar.
+CLASS:	CALL	DECODE
+	LD	A,LES_B
+	CALL	CHKM
+	RET	Z
+	LD	A,LES_F
+	CALL	CHKM
+	RET	Z
+	LD	A,LES_R
+	CALL	CHKM
+	RET	Z
+	XOR	A
+	RET
+
+; CHKM - passen alle Zellen zur Lesart A?  Z = ja, A bleibt erhalten.
+CHKM:	LD	(MODE),A
+	CALL	NCELLS
+	LD	HL,IDM
+	LD	E,0		; Zellindex = s*16 + b
+CK1:	LD	A,(MODE)
+	CP	LES_B
+	JR	NZ,CK2
+	LD	A,E		; erwartet b
+	AND	0FH
+	JR	CK4
+CK2:	CP	LES_F
+	JR	NZ,CK3
+	LD	A,E		; erwartet s
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	AND	0FH
+	JR	CK4
+CK3:	LD	A,(IPAGE)	; erwartet I shr 4
+CK4:	CP	(HL)
+	JR	NZ,CKX
+	INC	HL
+	INC	E
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,CK1
+CKX:	LD	A,(MODE)	; Flags bleiben
+	RET
+
+; PATRUN - Mustertest, Musterliste (HL), FFH = Ende, FEH = Seitennummer.
+; Laeuft ganz unter DI; jede Seite wird sofort wieder auf CLEANV gesetzt,
+; am Ende alle 16.
+PATRUN:	LD	(PATPTR),HL
+	LD	HL,PSTAT
+	LD	B,16
+PR0:	LD	(HL),0
+	INC	HL
+	DJNZ	PR0
+	DI
+	LD	D,0
+PR1:	CALL	CANRD
+	JR	NZ,PR2
+	LD	HL,PSTAT
+	CALL	IDXD
+	LD	(HL),2		; nicht pruefbar
+	JR	PR6
+PR2:	LD	HL,(PATPTR)
+PR3:	LD	A,(HL)
+	CP	0FFH
+	JR	Z,PR5
+	CP	0FEH
+	JR	NZ,PR4
+	LD	A,D		; Muster = Seitennummer
+PR4:	LD	(CURW),A
+	PUSH	HL
+	PUSH	DE
+	CALL	WRPG
+	CALL	READPG
+	POP	DE
+	LD	(CURR),A
+	CALL	NIB
+	LD	HL,CURW
+	CP	(HL)
+	CALL	NZ,PFAIL
+	POP	HL
+	INC	HL
+	JR	PR3
+PR5:	LD	A,CLEANV
+	CALL	WRPG
+PR6:	INC	D
+	LD	A,D
+	CP	16
+	JR	C,PR1
+	CALL	CLEAN
+	EI
+	RET
+
+; PFAIL - Abweichung an Seite D vermerken.  Erhaelt D.
+PFAIL:	LD	HL,PSTAT
+	CALL	IDXD
+	LD	(HL),1
+	XOR	A
+	LD	(ALLOK),A
+	LD	A,(FAILF)
+	OR	A
+	RET	NZ
+	INC	A
+	LD	(FAILF),A
+	LD	A,D
+	LD	(FAILPG),A
+	LD	A,(CURW)
+	LD	(FAILW),A
+	LD	A,(CURR)
+	LD	(FAILR),A
+	RET
+
+; IDXD - HL <- HL + D
+IDXD:	LD	A,L
+	ADD	A,D
+	LD	L,A
+	RET	NC
+	INC	H
+	RET
+
+; POSTCK - nach CLEAN pruefen, ob alle lesbaren Seiten CLEANV tragen.
+; POSTOK: 1 = ja, 0 = nein, 2 = nicht pruefbar (Lesart unklar).
+POSTCK:	LD	A,(LESART)
+	OR	A
+	LD	A,2
+	JR	Z,PC9
+	LD	A,1
+	LD	(POSTOK),A
+	LD	D,0
+PC1:	CALL	CANRD
+	JR	Z,PC2
+	PUSH	DE
+	CALL	READPG
+	POP	DE
+	CALL	NIB
+	CP	CLEANV
+	JR	Z,PC2
+	XOR	A
+	LD	(POSTOK),A
+PC2:	INC	D
+	LD	A,D
+	CP	16
+	JR	C,PC1
+	RET
+PC9:	LD	(POSTOK),A
+	RET
+
+; =============================================================================
+; SCAN - uebrige Basen nur lesend abklopfen, Schreibtest nach Rueckfrage
+; =============================================================================
+SCAN:	LD	DE,M_SCAN
+	CALL	PUTS
+	XOR	A
+	LD	(NSUSP),A
+	LD	(NCOL),A
+	LD	HL,BASLST
+SC1:	LD	A,(HL)
+	CP	0FFH
+	JR	Z,SC3
+	PUSH	HL
+	PUSH	AF
+	CALL	RD16
+	LD	B,'.'
+	JR	Z,SC2
+	LD	B,'*'
+	LD	HL,NSUSP
+	INC	(HL)
+SC2:	POP	AF
+	PUSH	BC
+	CALL	PHEX2
+	POP	BC
+	LD	A,B
+	CALL	PUTC
+	LD	A,' '
+	CALL	PUTC
+	LD	HL,NCOL
+	INC	(HL)
+	LD	A,(HL)
+	CP	13
+	JR	C,SC2A
+	LD	(HL),0
+	CALL	CRLF
+SC2A:	POP	HL
+	INC	HL
+	JR	SC1
+SC3:	CALL	CRLF
+	LD	A,(NSUSP)
+	OR	A
+	JR	NZ,SC4
+	LD	DE,M_NOSUS
+	JP	PUTS
+	; verdaechtige Basen einzeln: anzeigen, fragen, ggf. voll testen
+SC4:	LD	HL,BASLST
+SC5:	LD	A,(HL)
+	CP	0FFH
+	RET	Z
+	PUSH	HL
+	LD	(SCBAS),A
+	CALL	RD16
+	JR	Z,SC9
+	LD	A,(SCBAS)
+	CALL	PHEX2
+	LD	DE,M_P7
+	CALL	PUTS
+	LD	HL,SCBUF
+	LD	B,16
+SC6:	LD	A,(HL)
+	PUSH	HL
+	PUSH	BC
+	CALL	PHEX2
+	LD	A,' '
+	CALL	PUTC
+	POP	BC
+	POP	HL
+	INC	HL
+	DJNZ	SC6
+	CALL	CRLF
+	LD	DE,M_ASK1
+	CALL	PUTS
+	LD	A,(SCBAS)
+	CALL	PHEX2
+	LD	DE,M_ASK2
+	CALL	PUTS
+SC7:	CALL	GETKEY
+	CP	3
+	JP	Z,EXIT
+	AND	5FH
+	CP	'N'
+	JR	Z,SC8
+	CP	'J'
+	JR	NZ,SC7
+	CALL	PUTC
+	CALL	CRLF
+	LD	A,(SCBAS)
+	LD	(BASE),A
+	CALL	TESTB
+	LD	A,(FOUND)
+	OR	A
+	JR	Z,SC9
+	POP	HL
+	RET
+SC8:	CALL	PUTC
+	CALL	CRLF
+SC9:	POP	HL
+	INC	HL
+	JR	SC5
+
+; RD16 - Basis A: Basis+7 mit B = 0..F nach SCBUF.  NZ = nicht alles FFH.
+RD16:	ADD	A,ATTOFS
+	LD	C,A
+	LD	HL,SCBUF
+	LD	D,0
+R16A:	LD	A,D
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	AND	0F0H
+	LD	B,A
+	IN	A,(C)
+	LD	(HL),A
+	INC	HL
+	INC	D
+	LD	A,D
+	CP	16
+	JR	C,R16A
+	LD	HL,SCBUF
+	LD	B,16
+R16B:	LD	A,(HL)
+	CP	0FFH
+	RET	NZ
+	INC	HL
+	DJNZ	R16B
+	XOR	A
+	RET
+
+; =============================================================================
+; Anzeige
+; =============================================================================
+
+; SHOWPA - PIO Port A (Basis+0) mit Soll nach RESET16
+SHOWPA:	LD	DE,M_PA
+	CALL	PUTS
+	LD	A,(BASE)
+	CALL	PHEX2
+	LD	DE,M_EQ
+	CALL	PUTS
+	LD	A,(PAVAL)
+	CALL	PHEX2
+	LD	DE,M_PA1	; "H: PIOA2-0="
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	04H
+	CALL	P01
+	LD	A,(PAVAL)
+	AND	02H
+	CALL	P01
+	LD	A,(PAVAL)
+	AND	01H
+	CALL	P01
+	LD	DE,M_PA2	; " /VI="
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	08H
+	CALL	P01
+	LD	DE,M_PA3	; " INT16="
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	10H
+	CALL	P01
+	LD	DE,M_PA4	; " N/S="
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	20H
+	CALL	P01
+	LD	DE,M_PA5	; " 8/16="
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	40H
+	CALL	P01
+	LD	DE,M_PA6	; " TREN="
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	80H
+	CALL	P01
+	CALL	CRLF
+	LD	DE,M_PASOL
+	CALL	PUTS
+	LD	A,(PAVAL)
+	AND	0D7H		; PIOA0-2, INT16, 8/16, TREN
+	CP	40H
+	LD	DE,M_PASST
+	JR	Z,SPA1
+	LD	DE,M_WEICH
+SPA1:	JP	PUTS
+
+; SHOWPB - PIO Port B (Basis+1); setzt SAFE
+SHOWPB:	LD	DE,M_PB
+	CALL	PUTS
+	LD	A,(BASE)
+	INC	A
+	CALL	PHEX2
+	LD	DE,M_EQ
+	CALL	PUTS
+	LD	A,(PBVAL)
+	CALL	PHEX2
+	LD	DE,M_PB1	; "H: /RAMEN="
+	CALL	PUTS
+	LD	A,(PBVAL)
+	AND	04H
+	CALL	P01
+	LD	DE,M_PB2	; " RESET16="
+	CALL	PUTS
+	LD	A,(PBVAL)
+	AND	10H
+	CALL	P01
+	LD	DE,M_PB3	; " /STOP="
+	CALL	PUTS
+	LD	A,(PBVAL)
+	AND	08H
+	CALL	P01
+	LD	DE,M_PB4	; " /TRQ8="
+	CALL	PUTS
+	LD	A,(PBVAL)
+	AND	20H
+	CALL	P01
+	LD	DE,M_PB5	; " SG1,0="
+	CALL	PUTS
+	LD	A,(PBVAL)
+	AND	02H
+	CALL	P01
+	LD	A,(PBVAL)
+	AND	01H
+	CALL	P01
+	LD	DE,M_PB6	; " /PE="
+	CALL	PUTS
+	LD	A,(PBVAL)
+	AND	80H
+	CALL	P01
+	CALL	CRLF
+	LD	A,(PBVAL)
+	AND	14H
+	CP	14H
+	LD	A,0
+	LD	DE,M_UNSAF
+	JR	NZ,SPB1
+	INC	A
+	LD	DE,M_SAFE
+SPB1:	LD	(SAFE),A
+	JP	PUTS
+
+; SHOWPRE - Vorher-Zustand negiert
+SHOWPRE: LD	DE,M_PRE
+	CALL	PUTS
+	LD	A,(BASE)
+	CALL	PHEX2
+	LD	DE,M_PRE2
+	CALL	PUTS
+	LD	HL,PRE
+	LD	B,16
+SPR1:	LD	A,(HL)
+	AND	0FH
+	XOR	0FH
+	CALL	PHEX1
+	INC	HL
+	DJNZ	SPR1
+	JP	CRLF
+
+; SHOWADR - Adressmatrix: je Stub-Seite s die 16 gelesenen Seitennummern
+SHOWADR: LD	DE,M_ADR
+	CALL	PUTS
+	LD	HL,IDM
+	LD	E,0		; s
+	LD	D,0		; Zeilen in der Ausgabezeile
+SAD1:	PUSH	DE
+	LD	A,' '
+	CALL	PUTC
+	LD	A,'s'
+	CALL	PUTC
+	LD	A,E
+	CALL	PHEX1
+	LD	A,':'
+	CALL	PUTC
+	LD	B,16
+SAD2:	LD	A,(HL)
+	CP	0FFH
+	JR	NZ,SAD3
+	LD	A,'?'
+	CALL	PUTC
+	JR	SAD4
+SAD3:	CALL	PHEX1
+SAD4:	INC	HL
+	DJNZ	SAD2
+	POP	DE
+	INC	D
+	LD	A,D
+	CP	3
+	JR	C,SAD5
+	LD	D,0
+	CALL	CRLF
+SAD5:	INC	E
+	LD	A,(MAXST)
+	CP	E
+	JR	NC,SAD1
+	LD	A,D
+	OR	A
+	CALL	NZ,CRLF
+	LD	A,(LESART)
+	OR	A
+	RET	NZ
+	; unklar: rohe Bytes der Zeile s0, Lauf 1 zeigen
+	LD	DE,M_RAW
+	CALL	PUTS
+	LD	HL,P1M
+	LD	B,16
+SAD6:	LD	A,(HL)
+	PUSH	BC
+	PUSH	HL
+	CALL	PHEX2
+	LD	A,' '
+	CALL	PUTC
+	POP	HL
+	POP	BC
+	INC	HL
+	DJNZ	SAD6
+	JP	CRLF
+
+; SHOWLES - Lesart ausgeben
+SHOWLES: LD	DE,M_LES
+	CALL	PUTS
+	CALL	PLESL
+	LD	A,(LESART)
+	OR	A
+	JR	Z,SLE1
+	LD	A,(XM)
+	OR	A
+	LD	DE,M_DNEG
+	JR	Z,SLE0
+	LD	DE,M_DNG2
+SLE0:	CALL	PUTS
+SLE1:	JP	CRLF
+
+; PLESL - Langtext der Lesart
+PLESL:	LD	A,(LESART)
+	LD	DE,M_L0
+	OR	A
+	JR	Z,PLS9
+	LD	DE,M_L1
+	DEC	A
+	JR	Z,PLS9
+	LD	DE,M_L2
+	DEC	A
+	JR	Z,PLS9
+	LD	DE,M_L3
+PLS9:	JP	PUTS
+
+; PLESK - Kurztext der Lesart (fuer die Ergebniszeile)
+PLESK:	LD	A,(LESART)
+	LD	DE,M_K2
+	CP	LES_F
+	JR	Z,PLS9
+	LD	DE,M_K3
+	JR	PLS9
+
+; SHOWPT - Status je Seite: + ok, X Abweichung, - nicht pruefbar
+SHOWPT: LD	HL,PSTAT
+	LD	B,16
+SPT1:	LD	A,(HL)
+	LD	C,'+'
+	OR	A
+	JR	Z,SPT2
+	LD	C,'X'
+	DEC	A
+	JR	Z,SPT2
+	LD	C,'-'
+SPT2:	LD	A,C
+	CALL	PUTC
+	INC	HL
+	DJNZ	SPT1
+	JP	CRLF
+
+; SHOWCL - Aufraeumen melden
+SHOWCL:	LD	DE,M_CLN
+	CALL	PUTS
+	LD	A,(POSTOK)
+	LD	DE,M_CLF
+	OR	A
+	JR	Z,SCL1
+	LD	DE,M_CLOK
+	DEC	A
+	JR	Z,SCL1
+	LD	DE,M_CLNP
+SCL1:	JP	PUTS
+
+; VERDCT - Urteil fuer BASE, setzt FOUND
+VERDCT:	LD	A,(FAILF)
+	OR	A
+	JR	Z,VD1
+	LD	DE,M_FL1	; " erste Abweichung: Seite "
+	CALL	PUTS
+	LD	A,(FAILPG)
+	CALL	PHEX1
+	LD	DE,M_FL2	; ", geschrieben "
+	CALL	PUTS
+	LD	A,(FAILW)
+	CALL	PHEX1
+	LD	DE,M_FL3	; "H, gelesen "
+	CALL	PUTS
+	LD	A,(FAILR)
+	CALL	PHEX2
+	LD	DE,M_FL4	; "H -> "
+	CALL	PUTS
+	LD	A,(FAILR)
+	CALL	NIB
+	CALL	PHEX1
+	LD	A,'H'
+	CALL	PUTC
+	CALL	CRLF
+VD1:	; gepruefte Seiten zaehlen
+	LD	HL,PSTAT
+	LD	BC,1000H	; B = 16, C = Zaehler
+VD2:	LD	A,(HL)
+	CP	2
+	JR	Z,VD3
+	INC	C
+VD3:	INC	HL
+	DJNZ	VD2
+	; FOUND = Lesart bekannt, >=1 Seite geprueft, alles ok, sauber
+	LD	A,(LESART)
+	OR	A
+	JR	Z,VDNO
+	LD	A,C
+	OR	A
+	JR	Z,VDNO
+	LD	A,(ALLOK)
+	OR	A
+	JR	Z,VDNO
+	LD	A,(POSTOK)
+	CP	1
+	JR	NZ,VDNO
+	LD	(FOUND),A
+	LD	DE,M_VOK
+	CALL	PUTS
+	LD	A,(BASE)
+	CALL	PHEX2
+	LD	DE,M_VOK2
+	CALL	PUTS
+	LD	A,C
+	CALL	PDEC
+	LD	DE,M_VOK3
+	JP	PUTS
+VDNO:	LD	DE,M_VNO
+	CALL	PUTS
+	LD	A,(BASE)
+	CALL	PHEX2
+	LD	DE,M_VNO2
+	JP	PUTS
+
+; =============================================================================
+; Konsole
+; =============================================================================
+
+; PUTC - Zeichen A ausgeben, zaehlt Zeilen, erhaelt BC,DE,HL
+PUTC:	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	E,A
+	LD	C,CONOUT
+	CALL	BDOS
+	POP	AF
+	CP	0AH
+	JR	NZ,PUC9
+	LD	HL,LINES
+	INC	(HL)
+	LD	A,(HL)
+	CP	PAGELEN
+	CALL	NC,PAUSE
+PUC9:	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+; PUTS - '$'-terminierten Text (DE) ausgeben
+PUTS:	LD	A,(DE)
+	CP	'$'
+	RET	Z
+	CALL	PUTC
+	INC	DE
+	JR	PUTS
+
+CRLF:	LD	A,0DH
+	CALL	PUTC
+	LD	A,0AH
+	JP	PUTC
+
+; PHEX2 / PHEX1 - Byte bzw. unteres Halbbyte hexadezimal
+PHEX2:	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	PHEX1
+	POP	AF
+PHEX1:	AND	0FH
+	ADD	A,90H
+	DAA
+	ADC	A,40H
+	DAA
+	JP	PUTC
+
+; PDEC - A (0..99) dezimal
+PDEC:	LD	B,'0'-1
+PDC1:	INC	B
+	SUB	10
+	JR	NC,PDC1
+	ADD	A,10+'0'
+	PUSH	AF
+	LD	A,B
+	CP	'0'
+	CALL	NZ,PUTC
+	POP	AF
+	JP	PUTC
+
+; P01 - '0' bei Z, sonst '1'
+P01:	LD	A,'0'
+	JR	Z,P01A
+	INC	A
+P01A:	JP	PUTC
+
+; GETKEY - auf Taste warten (ohne Echo)
+GETKEY:	LD	C,DCIO
+	LD	E,0FFH
+	CALL	BDOS
+	OR	A
+	JR	Z,GETKEY
+	RET
+
+; PAUSE - Seitenpause; ^C beendet (alles ist dann schon aufgeraeumt)
+PAUSE:	XOR	A
+	LD	(LINES),A
+	LD	DE,M_MORE
+	LD	C,PRINT
+	CALL	BDOS
+	CALL	GETKEY
+	CP	3
+	JP	Z,EXIT
+	LD	DE,M_DELL
+	LD	C,PRINT
+	CALL	BDOS
+	RET
+
+; =============================================================================
+; Tabellen
+; =============================================================================
+
+; Musterlisten (FEH = Seitennummer, FFH = Ende)
+PATA:	DB	0FH,05H,0FFH
+PATB:	DB	00H,0AH,0FEH,0FFH
+
+; Basen, die OHNE Rueckfrage nur gelesen werden.  Ausgelassen:
+;   00-1FH  ZRE K2526, AFS K5122 (00-18H)
+;   20H     Lade-ROM-Port 24H (biosnuc.mac)
+;   40H,48H Tastatur/BAB (40-4FH, bios.mac/bioscrtc.mac)
+;   50H,58H ASS K8025 (50-5FH)
+;   88H     RAF-Karte, C0H NANOS-RAF, E8H OSS-Karte (Port EEH)
+;   A8H     Hauptprobe
+BASLST:	DB	28H,30H,38H,60H,68H,70H,78H,80H,90H,98H
+	DB	0A0H,0B0H,0B8H,0C8H,0D0H,0D8H,0E0H,0F0H,0F8H
+	DB	0FFH
+
+; =============================================================================
+; Texte (ASCII, Zeilen < 80 Zeichen)
+; =============================================================================
+M_BAN:	DB	0DH,0AH,'EM256ADR 1.0  Portbasis + Attributspeicher des EM256 '
+	DB	'(A5120.16, G1)',0DH,0AH
+	DB	'Nur U880. PIO/RESET16 werden nicht veraendert, '
+	DB	'Seiten zum Schluss PEN=0 WE=0.',0DH,0AH,'$'
+M_IREG:	DB	'I-Register $'
+M_STUB:	DB	'H, Lese-Stubs in Seite 0..$'
+M_BASE:	DB	0DH,0AH,'== Basis $'
+M_BAS2: DB	'H ==',0DH,0AH,'$'
+M_PA:	DB	'PIO A $'
+M_PB:	DB	'PIO B $'
+M_EQ:	DB	'H=$'
+M_PA1:	DB	'H: PIOA2-0=$'
+M_PA2:	DB	' /VI=$'
+M_PA3:	DB	' INT16=$'
+M_PA4:	DB	' N/S=$'
+M_PA5:	DB	' 8/16=$'
+M_PA6:	DB	' TREN=$'
+M_PASOL: DB	'  Soll nach RESET16: PIOA2-0=000 INT16=0 8/16=1 TREN=0 -> $'
+M_PASST: DB	'passt',0DH,0AH,'$'
+M_WEICH: DB	'weicht ab',0DH,0AH,'$'
+M_PB1:	DB	'H: /RAMEN=$'
+M_PB2:	DB	' RESET16=$'
+M_PB3:	DB	' /STOP=$'
+M_PB4:	DB	' /TRQ8=$'
+M_PB5:	DB	' SG1,0=$'
+M_PB6:	DB	' /PE=$'
+M_SAFE:	DB	'  /RAMEN=1, RESET16=1: Muster mit PEN=1 zulaessig',0DH,0AH,'$'
+M_UNSAF: DB	'  /RAMEN oder RESET16 nicht 1: nur Muster mit PEN=0',0DH,0AH,'$'
+M_PRE:	DB	'Vorher $'
+M_PRE2:	DB	'H+7 negiert, B=0..F: $'
+M_ADR:	DB	'Adresstest: gelesene Seite fuer B=0..F, IN-Befehl in Seite s'
+	DB	0DH,0AH,'$'
+M_RAW:	DB	' roh s0/Lauf1: $'
+M_LES:	DB	'Lesart: $'
+M_L0:	DB	'unklar (kein Attributspeicher erkannt)$'
+M_L1:	DB	'Leseadresse = B aus IN A,(C) (AB12-15)$'
+M_L2:	DB	'Leseadresse = Seite des letzten Befehlsholens$'
+M_L3:	DB	'Leseadresse = Refresh-Seite (I-Register)$'
+M_K2:	DB	'Seite des letzten Befehlsholens$'
+M_K3:	DB	'Refresh-Seite (I-Register)$'
+M_DNEG:	DB	', Daten NICHT negiert$'
+M_DNG2: DB	', Daten negiert$'
+M_PATA:	DB	'Muster F,5         je Seite 0..F: $'
+M_PATB:	DB	'Muster 0,A,Seite   je Seite 0..F: $'
+M_NOPB:	DB	'Muster 0,A,Seite   uebersprungen (PEN waere 1)',0DH,0AH,'$'
+M_CLN:	DB	'Aufraeumen: 16 Seiten <- 07H (PEN=0 WE=0), Kontrolle $'
+M_CLOK:	DB	'ok',0DH,0AH,'$'
+M_CLF:	DB	'FEHLER',0DH,0AH,'$'
+M_CLNP:	DB	'nicht moeglich',0DH,0AH,'$'
+M_FL1:	DB	' erste Abweichung: Seite $'
+M_FL2:	DB	', geschrieben $'
+M_FL3:	DB	'H, gelesen $'
+M_FL4:	DB	'H -> $'
+M_VOK:	DB	'=> Basis $'
+M_VOK2:	DB	'H: Attributspeicher erkannt, $'
+M_VOK3:	DB	' Seiten geprueft',0DH,0AH,'$'
+M_VNO:	DB	'=> Basis $'
+M_VNO2:	DB	'H: kein Attributspeicher',0DH,0AH,'$'
+M_SCAN:	DB	0DH,0AH,'Suche an anderen Basen, nur lesend (Basis+7, B=0..F;'
+	DB	' * = nicht FFH):',0DH,0AH,'$'
+M_NOSUS: DB	'keine verdaechtige Basis',0DH,0AH,'$'
+M_P7:	DB	'H+7: $'
+M_ASK1:	DB	'Schreibtest bei $'
+M_ASK2:	DB	'H (schreibt an Basis+7)? (J/N) $'
+M_ERG:	DB	'ERGEBNIS: $'
+M_ATT:	DB	'Attributspeicher bei $'
+M_16S:	DB	'H, 16 Seiten x 4 Bit, $'
+M_4B:	DB	'H, 4 Bit je Seite, $'
+M_NEG:	DB	'negiert$'
+M_NNEG:	DB	'NICHT negiert$'
+M_B0:	DB	'          (Bit 0 nur mit 1 geprueft, /RAMEN war nicht 1)'
+	DB	0DH,0AH,'$'
+M_ERGL:	DB	'          Lesen adressiert: $'
+M_NONE:	DB	'keine Karte',0DH,0AH
+	DB	'          (kein Attributspeicher bei A8H, keine andere Basis '
+	DB	'bestaetigt)',0DH,0AH,'$'
+M_BIG:	DB	'Programm zu gross (muss unter 1F00H enden)',0DH,0AH,'$'
+M_MORE:	DB	'-- weiter mit Taste, ^C Abbruch --$'
+M_DELL:	DB	0DH,'                                  ',0DH,'$'
+
+; =============================================================================
+; Variablen
+; =============================================================================
+SAVSP:	DW	0
+BASE:	DB	0
+PAVAL:	DB	0
+PBVAL:	DB	0
+SAFE:	DB	0
+IREG:	DB	0
+IPAGE:	DB	0
+MAXST:	DB	0
+XM:	DB	0FH
+LESART:	DB	0
+MODE:	DB	0
+FOUND:	DB	0
+ALLOK:	DB	0
+POSTOK:	DB	0
+FAILF:	DB	0
+FAILPG:	DB	0
+FAILW:	DB	0
+FAILR:	DB	0
+CURW:	DB	0
+CURR:	DB	0
+TMPB:	DB	0
+PATPTR:	DW	0
+LINES:	DB	0
+NSUSP:	DB	0
+NCOL:	DB	0
+SCBAS:	DB	0
+PSTAT:	DS	16
+PRE:	DS	16
+SCBUF:	DS	16
+P1M:	DS	256
+P2M:	DS	256
+IDM:	DS	256
+	DS	128
+STACK:
+ENDPRG:
+	END	START

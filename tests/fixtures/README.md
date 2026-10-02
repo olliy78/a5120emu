@@ -161,31 +161,19 @@ am EM-Teil (`biosremc.mac`/`biosrem.mac` unverändert):
 `kltbef: db 0` (statt `SUBM AUTOEXEC`).  Eingespielt mit
 `k1520disktool rm/put`.  Kaltstart am A5120 **ohne** EM meldet „RAM-Floppy ?? mit ??? kByte".
 
-## `cpm/em256adr.com`: G1-Prüfprogramm aus der CPA-Workbench
+## `cpm/em256adr.com`, `cpm/em16abl.com`, `cpm/em256ful.com`: A5120.16-Prüfprogramme
 
-Keine Diskette, sondern ein CP/A-Programm: `tools/16bitTest/build/em256adr.com` der
-CPA-Workbench (Quelle `tools/16bitTest/src/em256adr.mac`, Bau
-`python3 tools/16bitTest/build.py em256adr`; Stand Workbench `bedeb6f`).  Es misst am
-echten A5120.16 Portbasis und Attributspeicher des EM256 (doc/design/17_a5120_16.md §3 G1).
-`test_em256_adr` schreibt es mit `CpmFileSystem::write` auf eine `TempDisk` von
-`cpa_cpa780_k5601_noclock.img` und startet es — mit EM256 (beide `EM::A22Lesart`) und ohne.
-Ändert sich das Programm in der Workbench, die Datei hier ersetzen (der Pfad kommt als
-`EM256ADR_COM` aus `tests/integration/CMakeLists.txt`).
+Keine Disketten, sondern CP/A-Programme — **Kopien** der eingecheckten
+`tools/em256/*.com` (Quellen `tools/em256/src/`, Bau `python3 tools/em256/build.py`;
+bis 2026-10-02 in der CPA-Workbench `tools/16bitTest`).  Sie müssen bytegleich
+bleiben: `python3 tools/disketten_beigaben.py --tool build/k1520disktool` zieht sie mit
+den Disketten nach, der Wächter `cli_beigaben_auf_den_disketten` prüft es.
 
-## `cpm/em16abl.com`: S4-Abnahme / G2-Vorlage aus der CPA-Workbench
-
-`tools/16bitTest/build/em16abl.com` der CPA-Workbench (Quellen `tools/16bitTest/src/
-em16abl.mac` + `fw16abl.s`, U8001-Teil mit **z8kasm** aus diesem Repo; Bau
-`python3 tools/16bitTest/build.py em16abl`, braucht `build/z8kasm` bzw. `Z8KASM=`; Stand
-Workbench `e396fc6`).  Fährt die belegten Abläufe des 16-Bit-Mode (doc/design/17_a5120_16.md
-§3 S4) und ist die Vorlage für G2 am Gerät.  `test_em16_abl` schreibt es auf eine `TempDisk`
-von `cpa_cpa780_k5601_noclock.img` (Pfad `EM16ABL_COM`).
-
-## `cpm/em256ful.com`: em256ful v2.0 aus der CPA-Workbench (G2b)
-
-`additions/bc_a5120/em256ful.com` der CPA-Workbench, v2.0 (Quellen `tools/16bitTest/src/
-em256ful.mac` + `fw_*.s`, U8001-Teil mit **z8kasm**; Bau `python3 tools/16bitTest/build.py
-em256ful`; Stand Workbench `563dd21`).  Das alte Umfassend-Prüfprogramm, nach
-doc/design/17_a5120_16.md §7 repariert (Plan §3 G2b): Gruppen A–E, im Emulator 21/21.
-`test_em16_abl` (`Em256Ful.*`) schreibt es auf eine `TempDisk` von
-`cpa_cpa780_k5601_noclock.img` (Pfad `EM256FUL_COM`), mit EM256 und ohne EM.
+- **`em256adr.com`** (G1, doc/design/17_a5120_16.md §3): misst Portbasis und
+  Attributspeicher des EM256.  `test_em256_adr` schreibt es auf eine `TempDisk` von
+  `cpa_cpa780_k5601_noclock.img` und startet es — mit EM256 (beide `EM::A22Lesart`) und
+  ohne (Pfad `EM256ADR_COM` aus `tests/integration/CMakeLists.txt`).
+- **`em16abl.com`** (S4-Abnahme/G2-Vorlage): fährt die belegten Abläufe des 16-Bit-Mode;
+  `test_em16_abl` (Pfad `EM16ABL_COM`).
+- **`em256ful.com`** (v2.0, G2b): Gruppen A–E, im Emulator 21/21; `test_em16_abl`
+  (`Em256Ful.*`, Pfad `EM256FUL_COM`), mit EM256 und ohne EM.

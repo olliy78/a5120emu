@@ -34,12 +34,19 @@ BDOS-Aufrufe — der BDOS-Vektor `0005H` ist in diesem Moment verdeckt.
 ## Bauen
 
 ```sh
-python3 tools/romread/build.py          # -> tools/romread/build/romread.com
+python3 tools/romread/build.py          # -> tools/romread/romread.com (eingecheckt)
+python3 tools/romread/build.py --check  # bytegleich mit der eingecheckten .com? (= Wächter)
+python3 tools/disketten_beigaben.py --tool build/k1520disktool   # Disketten nachziehen
 ```
 
 Nutzt M80 + LINKMT aus dem Schwesterprojekt `CPA_Workbench/tools` über den
-`cparun`-Emulator (Ladeadresse `0100H`). Pfad ggf. überschreiben:
-`CPA_TOOLS=/pfad/zu/CPA_Workbench/tools python3 tools/romread/build.py`.
+`cparun`-Emulator (Ladeadresse `0100H`, gemeinsamer Teil `tools/cpm_bau.py`). Pfad ggf.
+überschreiben: `CPA_TOOLS=/pfad/zu/CPA_Workbench/tools`. Wächter:
+`cli_romread_com_passt_zur_quelle` (ohne Werkzeugkette übersprungen) und
+`cli_beigaben_auf_den_disketten`.
+
+**Auf den Disketten:** `ROMREAD.COM` liegt auf allen A5120-Bootdisketten `cpa_cpa780_*`
+in `disks/` und damit auf den Beispieldisketten der Installation.
 
 ## Auf dem echten A5120 verwenden
 
@@ -62,7 +69,7 @@ ein-/ausgeblendet, System überlebt):
 
 ```sh
 A=$(mktemp --suffix=.img); cp disks/cpa_cpa780_k5601_noclock.img "$A"
-RR=$(pwd)/tools/romread/build/romread.com
+RR=$(pwd)/tools/romread/romread.com
 printf "g 100000000\nload $RR 0x100\nset PC 0x100\nset SP 0x7F00\ng 5000000\nsave /tmp/buf.bin 0x8000 1024\nscreen\nq\n" \
   | tools/dev.sh tool k1520dbg "$A"
 cmp /tmp/buf.bin doc/EPROMS/zre.rom    # → identisch: Puffer == echtes Boot-EPROM

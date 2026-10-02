@@ -54,6 +54,9 @@
  *   vermuteten das): 03ECH/03F4H/03FDH setzen Register 2DH, das bei 0263H–0270H die
  *   Seite der Zeichentabelle wählt (r8 = 3 + 2DH).  Mit der Wiederholung hat 2DH nichts
  *   zu tun; das Modell wertet die Folgen nicht aus.
+ * - **Zeitbasis:** die Tastatur hat ihren eigenen Quarz.  Vorgabe ist Maschinenzeit
+ *   (Tests); die Oberfläche schaltet auf Echtzeit (@ref setWiederholungEchtzeit), sonst
+ *   wiederholte bei 10 × Rechnertakt schon ein gewöhnlicher Anschlag (tasten_uhr.h).
  *
  * **Tasten der Nachbildung** (Bildschirmtastatur, AP-UI1): `QK_TASTE_BASE | Matrix`
  * spricht eine PHYSISCHE Taste an (Matrixposition 00H–7FH, Firmware-Register 22H).
@@ -70,6 +73,7 @@
 
 #pragma once
 #include "core/primitives/z80_sio.h"
+#include "core/peripherals/tasten_uhr.h"
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -184,6 +188,11 @@ public:
      */
     uint8_t  leds() const           { return leds_; }
     unsigned selbsttests() const    { return selbsttests_; }
+    /// Zeitbasis der Wiederholung: Echtzeit statt Maschinenzeit (fadensicher).
+    void setWiederholungEchtzeit(bool an) { wdh_uhr_.setEchtzeit(an); }
+    bool wiederholungEchtzeit() const     { return wdh_uhr_.echtzeit(); }
+    /// Wirtsuhr austauschen (Tests der Echtzeit-Zeitbasis).
+    void setWiederholungUhrQuelle(TastenUhr::Quelle q) { wdh_uhr_.setQuelle(q); }
     /// Läuft gerade eine Tastenwiederholung?  (Tests)
     bool     wiederholtGerade() const { return wdh_.aktiv; }
     /// Liegen noch Bytes auf der Leitung zum Rechner?  (Tests: „alles getippt“)
@@ -206,7 +215,7 @@ private:
     void wiederholungStart(uint32_t schluessel, std::string bytes);
     void wiederholungEnde(uint32_t schluessel);
     void wiederholungStopp() { wdh_ = Wiederholung{}; }
-    void wiederholungTakt(uint64_t dt);
+    void wiederholungTakt();
 
     Z80SIO* sio_   = nullptr;
     int     kanal_ = 1;
@@ -237,6 +246,8 @@ private:
         std::string bytes;            ///< was je Wiederholung noch einmal gesendet wird
         int64_t     rest = 0;         ///< Takte bis zur nächsten Wiederholung
     } wdh_;
+    /// Zählt `wdh_.rest` herunter — Maschinen- oder Echtzeit, in K8915-Nenntakten.
+    TastenUhr wdh_uhr_{2'457'600.0};
 
     uint64_t jetzt_ = 0;
     uint64_t leitung_frei_ = 0;

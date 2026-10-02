@@ -1,5 +1,6 @@
 #pragma once
 #include "core/primitives/z80_sio.h"
+#include "core/peripherals/tasten_uhr.h"
 #include <cstdint>
 #include <deque>
 #include <utility>
@@ -26,10 +27,16 @@ public:
     void keyPress(int qt_keycode, bool shift, bool ctrl);
     void keyRelease(int qt_keycode);
 
-    // Die Dauerfunktion (Tastenwiederholung) läuft in MASCHINENZEIT über
-    // service() — ein eigenes tick() gibt es nicht mehr: der laufende Rechner
-    // hat es nie aufgerufen, gehaltene Tasten wiederholten deshalb gar nicht
-    // (AP-S9, doc/design/08_k7637_keyboard.md §2.2a).
+    // Die Dauerfunktion (Tastenwiederholung) läuft über service() — ein eigenes
+    // tick() gibt es nicht mehr: der laufende Rechner hat es nie aufgerufen,
+    // gehaltene Tasten wiederholten deshalb gar nicht (AP-S9,
+    // doc/design/08_k7637_keyboard.md §2.2a).  Gezählt wird in Maschinenzeit
+    // (Vorgabe, Tests) oder — für die Oberfläche — in Echtzeit, damit ein
+    // schneller eingestellter Rechner nicht schneller wiederholt (tasten_uhr.h).
+    void setRepeatRealtime(bool an) { repeat_uhr_.setEchtzeit(an); }
+    bool repeatRealtime() const     { return repeat_uhr_.echtzeit(); }
+    /// Wirtsuhr austauschen (Tests der Echtzeit-Zeitbasis).
+    void setRepeatClockSource(TastenUhr::Quelle q) { repeat_uhr_.setQuelle(q); }
 
     /**
      * @brief Ist @p code ein Dauerfunktionscode (wiederholt beim Halten)?
@@ -100,7 +107,7 @@ public:
     void reset() {
         pressed_key_ = 0; pressed_scancode_ = 0;
         shift_ = ctrl_ = false;
-        repeat_due_cycle_ = 0;
+        repeat_aktiv_ = false; repeat_rest_ = 0;
         led_mask_ = 0; edge_acc_ = 0; beep_until_cycle_ = 0;
         tx_queue_.clear();
         cur_cycle_ = 0; next_tx_cycle_ = 0;
@@ -175,9 +182,10 @@ private:
     uint8_t pressed_scancode_ = 0;
     bool    shift_ = false;
     bool    ctrl_  = false;
-    // Takt (total_cycles_), zu dem die nächste Wiederholung fällig ist;
-    // 0 = keine Dauerfunktion aktiv (Taste losgelassen oder kein Dauercode).
-    uint64_t repeat_due_cycle_ = 0;
+    // Dauerfunktion aktiv (Dauercode gehalten) und Nenntakte bis zur nächsten
+    // Wiederholung — gezählt mit repeat_uhr_ (Maschinen- oder Echtzeit).
+    bool     repeat_aktiv_ = false;
+    int64_t  repeat_rest_  = 0;
 
 public:
     // Zeitbasis: 2,5 MHz ZVE1-Takt (wie SERIAL_BYTE_CYCLES).  Die echte K7637
@@ -187,6 +195,7 @@ public:
     static constexpr uint64_t REPEAT_DELAY_CYCLES  = 500 * CYCLES_PER_MS;
     static constexpr uint64_t REPEAT_PERIOD_CYCLES = 100 * CYCLES_PER_MS;
 private:
+    TastenUhr repeat_uhr_{CYCLES_PER_MS * 1000.0};
 
     // ── Anzeigen / Kommandodekodierung ────────────────────────────────────
     uint8_t  led_mask_         = 0;   // LED_G00 … LED_ERROR

@@ -406,12 +406,14 @@ die CI hat die CPA_Workbench nicht.
 
 ```sh
 tools/dev.sh build
-python3 tools/sertest/disketten.py --tool build/k1520disktool          # aufspielen
-python3 tools/sertest/disketten.py --tool build/k1520disktool --check  # = Wächter
+python3 tools/disketten_beigaben.py --tool build/k1520disktool          # aufspielen
+python3 tools/disketten_beigaben.py --tool build/k1520disktool --check  # = Wächter
 ```
 
-Der Wächter `cli_sertest_auf_den_disketten` schlägt an, wenn eine der Disketten
+Der Wächter `cli_beigaben_auf_den_disketten` schlägt an, wenn eine der Disketten
 (Liste `DISKETTEN` im Skript) SERTEST.COM nicht oder in einer anderen Fassung trägt.
+Dasselbe Skript bringt ROMREAD und die A5120.16-Prüfprogramme auf die A5120-Disketten;
+gebaut wird über den gemeinsamen Teil `tools/cpm_bau.py`.
 
 ## Im Emulator ausprobieren
 

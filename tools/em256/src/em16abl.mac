@@ -1,0 +1,1061 @@
+	TITLE	'EM16ABL - Ablaeufe des 16-Bit-Mode am EM256'
+	.Z80
+;
+; em16abl.mac - Pruefprogramm fuer den U8001 auf dem EM256 (A5120.16).
+; Abnahme S4 in a5120emu (doc/design/17_a5120_16.md, Par. 3 S4) und Vorlage
+; fuer G2 am echten Geraet.  Faehrt genau die in Par. 7 belegten Ablaeufe:
+;
+;   A  Start aus Reset: RESET16=0 -> A29 faellt sofort, U8001 holt FCW/PC aus
+;      Segment 0 (Segmente 1..3 tragen einen FALSCHen Vektor); Rechnen, Ergebnis
+;      im EM-Speicher; A33/A35 per Wort-OUT, Status-8 per Wort-IN (oberes Byte);
+;      Rueckweg TRQ8 -> uI -> MSET -> TREN -> BUSRQ/BUSAK -> A29 beim M1.
+;   B  Segmentweiche A42, alle drei Modi (A33 Bit 5..7); dazu die G2-Messung
+;      "OUTB an %81 -> was steht in A35?".
+;   C  VI vom U880: Status-8 (ACH), Vektor (ADH); Kennung = Vektor + Status-8;
+;      PIO A3 (/VI) meldet die Abholung.
+;   D  INT-16 zum U880: A33 Bit 4 -> PIO A4 -> Interrupt (IM 2).
+;   E  Einzelbefehlszaehler A53 -> NVI: Stapelzugriffe bis NVI (Brueckenfeld
+;      X12, G3), ohne A33 Bit 3 nie.  Vorher ein Vorlauf, der den Selbsthalte-
+;      kreis A54 ueber eine NVI-Quittung in den Ladezustand bringt (sonst haengt
+;      das Ergebnis vom vorigen Lauf ab).  Am Geraet 2026-09-29: 4 (Vorlast 11 =
+;      IRET segmentiert, Handbuch 1.12) - v1.0 verlangte faelschlich 5..8.
+;      Vorlauf: 0 = kein NVI, 80nnH = NVI nach nn Stapelzugriffen (v1.1 zeigte
+;      im 1. Lauf nach Netz-Ein B020H = NVI schon beim EI, R4 aus Phase B).
+;   H  Paritaet (nur Information): /PE beim Start, nach PR, nach PR aus dem
+;      EM heraus, nach reinen EM-Lesezugriffen, nach reinen K1520-Lese-
+;      zugriffen (a5120emu G4; am Geraet 0 1 1 1 1).  v1.2 (G5): dazu PR im
+;      Ruhezustand von em256ful (dort las E2 nach PR 0), 4 KB nie beschriebene
+;      EM-Zellen lesen (Segment 3, C000H-CFFFH) und danach beschriebene -
+;      Schaltplan 9000/1: A46 ist ein bleibender Merker (Takt = RDI NAND Q),
+;      dann steht zweimal 0.
+;   F  STOP (PIO B3) haelt den U8001 an (Zaehler in A35 steht).
+;   G  RESET16 = 1: 8-Bit-Mode, A33 geloescht.
+;
+; U8001-Teil: fw16abl.s, assembliert mit z8kasm (a5120emu, tools/z8kasm) -
+; NICHT mit z8001asm.py.  build.py bettet ihn als DB-Zeilen ein (FWIMG).
+;
+; Wahrheit: Plan Par. 7 (Schaltplaene), Handbuch A5120.16 - nicht em256tst/
+; em256ful (liefen nie am Geraet).  Am Geraet: jede rote Zeile ist ein Befund
+; ueber die Hardware ODER dieses Programm - erst am Plan pruefen.
+;
+; Bau: python3 tools/em256/build.py em16abl   (Z8KASM=... falls noetig)
+;
+; Autor:  (c) 2026 Olaf Krieger
+; Lizenz: MIT
+; Datum:  2026-09-29  (v1.1: E-Pruefbereich, Vorlauf A54, INB ungerade, H;
+;                      v1.2: INB ungerade Soll 81H, Vorlauf-Marke, H2)
+;
+
+; =============================================================================
+; CP/M
+; =============================================================================
+BDOS	EQU	0005H
+CONOUT	EQU	2
+DCIO	EQU	6
+PRINT	EQU	9
+PAGELEN	EQU	22
+
+; =============================================================================
+; EM256 (Plan Par. 7.2)
+; =============================================================================
+PA	EQU	0A8H		; PIO A Daten  (Eingang: A0-2,/VI,INT16,N/S,8/16,TREN)
+PB	EQU	0A9H		; PIO B Daten
+PAC	EQU	0AAH		; PIO A Steuer
+PBC	EQU	0ABH		; PIO B Steuer
+ST8	EQU	0ACH		; Status-8 A36 (schreiben)
+VEK	EQU	0ADH		; Vektor A34 (schreiben -> VI)
+ST16	EQU	0AEH		; Status-16 A35 (lesen)
+ATT	EQU	0AFH		; Attributspeicher A22 (Seite = B bei OUT (C),A)
+
+; PIO B, Pegel an den Pins
+B_SG0	EQU	01H
+B_SG1	EQU	02H
+B_NRAM	EQU	04H		; /RAMEN
+B_NSTP	EQU	08H		; /STOP
+B_RES	EQU	10H		; RESET16
+B_NTRQ	EQU	20H		; /TRQ8
+B_PR	EQU	40H		; Paritaets-FF ruecksetzen
+PBRUHE	EQU	B_NSTP+B_RES+B_NTRQ	; RAMEN, U8001 im Reset, keine Anforderung
+
+; PIO A
+A_NVI	EQU	08H
+A_I16	EQU	10H
+A_816	EQU	40H
+A_TREN	EQU	80H
+
+; Fenster: Seite 4 (4000H..4FFFH) -> Zelle 0..0FFFH des gewaehlten Segments
+WIN	EQU	4000H
+ATTWIN	EQU	0CH		; PEN=1, WE=1 (Bits negiert), A14-8=A15-8=0
+ATTAUS	EQU	07H		; PEN=0, WE=0, /A14-8 wie biosremc (hbemadr 4000H)
+ATTLEER	EQU	02H		; PEN=1, WE=0, A14-8=A15-8=1: Zellen C000..CFFF (H, v1.2)
+
+; Mailbox (Zelle in Segment 0, wie fw16abl.s)
+MB	EQU	WIN+80H
+FALSCH	EQU	0500H		; Offset der Falle in fw16abl.s
+
+TMO	EQU	0		; Zeitgrenze: 65536 Durchlaeufe (~1 s)
+
+; =============================================================================
+START:	LD	(SAVSP),SP
+	LD	SP,STACK
+	LD	DE,M_BAN
+	CALL	PUTS
+	LD	HL,ENDPRG		; Programm muss unter dem Fenster enden
+	LD	A,H
+	CP	HIGH WIN
+	JP	NC,TOOBIG
+	CALL	KARTE
+	JP	NZ,NOKART
+	IN	A,(PB)		; /PE, wie das BIOS es hinterliess (vor jedem PR)
+	LD	(PE0),A
+	CALL	INIT
+	CALL	LADEN
+	CALL	PHASEA
+	CALL	NZ,PHASEB
+	CALL	NZ,PHASEC
+	CALL	NZ,PHASED
+	CALL	NZ,PHASEE
+	CALL	NZ,PHASEF
+	CALL	PHASEG
+	CALL	PHASEH
+	CALL	ENDE
+	LD	DE,M_ERG
+	CALL	PUTS
+	LD	A,(NFEHL)
+	OR	A
+	LD	DE,M_ALOK
+	JR	Z,ST9
+	CALL	PDEC
+	LD	DE,M_NFL
+ST9:	CALL	PUTS
+EXIT:	LD	SP,(SAVSP)
+	RET
+
+TOOBIG:	LD	DE,M_BIG
+	CALL	PUTS
+	JR	EXIT
+NOKART:	LD	DE,M_NOK
+	CALL	PUTS
+	JR	EXIT
+
+; =============================================================================
+; KARTE - Attributspeicher an AFH erkennen (Seite 0, PEN bleibt 0).  NZ = keine.
+; =============================================================================
+KARTE:	LD	BC,ATT
+	LD	A,0BH
+	OUT	(C),A
+	IN	A,(C)
+	AND	0FH
+	CP	04H		; negiert rueckgelesen
+	RET	NZ
+	LD	A,ATTAUS
+	OUT	(C),A
+	IN	A,(C)
+	AND	0FH
+	CP	08H
+	RET
+
+; =============================================================================
+; INIT - PIO wie biosremc (Ausgaberegister ZUERST, damit RESET16 beim
+; Umschalten auf Ausgabe nicht kurz auf 0 faellt), Seiten aus, Fenster an.
+; =============================================================================
+INIT:	LD	A,PBRUHE+B_PR
+	OUT	(PB),A
+	LD	A,0CFH		; B: Bitbetrieb
+	OUT	(PBC),A
+	LD	A,80H		; B7 (/PE) Eingang
+	OUT	(PBC),A
+	LD	A,07H		; B: kein Interrupt
+	OUT	(PBC),A
+	LD	A,PBRUHE
+	LD	(PBV),A
+	OUT	(PB),A
+	LD	A,0CFH		; A: Bitbetrieb, alles Eingang
+	OUT	(PAC),A
+	LD	A,0FFH
+	OUT	(PAC),A
+	LD	A,07H
+	OUT	(PAC),A
+	LD	BC,ATT		; alle Seiten aus
+INI1:	LD	A,ATTAUS
+	OUT	(C),A
+	LD	A,B
+	ADD	A,10H
+	LD	B,A
+	JR	NC,INI1
+	LD	BC,4000H+ATT	; Fenster Seite 4
+	LD	A,ATTWIN
+	OUT	(C),A
+	RET
+
+; SETSEG - Segment A (0..3) fuer das Fenster (SG0P/SG1P)
+SETSEG:	PUSH	BC
+	LD	B,A
+	LD	A,(PBV)
+	AND	0FCH
+	OR	B
+	POP	BC
+	JR	OUTPB
+; PBSET/PBRES - Bits in A setzen bzw. loeschen und ausgeben
+PBSET:	PUSH	BC
+	LD	B,A
+	LD	A,(PBV)
+	OR	B
+	POP	BC
+	JR	OUTPB
+PBRES:	PUSH	BC
+	CPL
+	LD	B,A
+	LD	A,(PBV)
+	AND	B
+	POP	BC
+OUTPB:	LD	(PBV),A
+	OUT	(PB),A
+	RET
+
+; =============================================================================
+; LADEN - Firmware in alle vier Segmente, Mailbox leeren, Marken setzen
+; =============================================================================
+LADEN:	LD	A,3
+LAD1:	LD	(SEGN),A
+	CALL	SETSEG
+	LD	HL,FWIMG
+	LD	DE,WIN
+	LD	BC,FWLEN
+	LDIR
+	LD	HL,WIN+80H	; Mailbox und Marken 0F00..0F2F leeren
+	LD	B,80H
+	CALL	NULL
+	LD	HL,WIN+0F00H
+	LD	B,30H
+	CALL	NULL
+	LD	A,(SEGN)
+	LD	HL,WIN+0F10H	; Marke %B0s0
+	LD	(HL),0B0H
+	INC	HL
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	LD	(HL),A
+	LD	A,(SEGN)
+	OR	A
+	JR	Z,LAD2
+	LD	HL,WIN+6	; Resetvektor-Offset -> FALSCH
+	LD	(HL),HIGH FALSCH
+	INC	HL
+	LD	(HL),LOW FALSCH
+LAD2:	LD	A,(SEGN)
+	DEC	A
+	JP	P,LAD1
+	XOR	A		; Segment 0 fuer die Mailbox
+	CALL	SETSEG
+	LD	A,0C3H		; Status-8 fuer Phase A
+	OUT	(ST8),A
+	RET
+
+NULL:	LD	(HL),0
+	INC	HL
+	DJNZ	NULL
+	RET
+
+; =============================================================================
+; UEBER - 8-Bit-Mode anfordern (/TRQ8 = 0) und auf PIO A6 (8/16) = 1 warten.
+; Z = erreicht.  NZ = Zeitgrenze (Diagnose ausgegeben, RESET16 gesetzt).
+; FREI - TRQ8 zuruecknehmen (-> 16-Bit-Mode, U8001 laeuft weiter).
+; =============================================================================
+UEBER:	LD	A,B_NTRQ
+	CALL	PBRES
+	LD	BC,TMO
+UEB1:	IN	A,(PA)
+	AND	A_816
+	JR	NZ,UEB9
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,UEB1
+	LD	DE,M_TMO	; Zeitgrenze
+	CALL	PUTS
+	IN	A,(PA)
+	CALL	PHEX2
+	LD	DE,M_TMO2
+	CALL	PUTS
+	IN	A,(ST16)
+	CALL	PHEX2
+	CALL	CRLF
+	LD	A,B_RES		; RESET16: zurueck in den 8-Bit-Mode
+	CALL	PBSET
+	LD	A,B_NTRQ
+	CALL	PBSET
+	LD	HL,NFEHL
+	INC	(HL)
+	OR	0FFH		; NZ
+	RET
+UEB9:	XOR	A		; Segment 0 fuer die Mailbox
+	CALL	SETSEG
+	XOR	A
+	RET
+
+FREI:	LD	A,B_NTRQ
+	JP	PBSET
+
+; =============================================================================
+; Pruefhilfen.  ZEILE: DE = Text, beginnt eine Pruefzeile.  CMPW: HL = Fenster-
+; adresse (Wort big-endian), DE = Soll.  CMPB: HL, E = Soll.  CMPA: A = Ist,
+; E = Soll.  ERGZ: OK/FEHLER ausgeben (+ erste Abweichung).  Rueckgabe NZ,
+; damit die Phasen per CALL NZ verkettet bleiben.
+; =============================================================================
+ZEILE:	CALL	PUTS
+	XOR	A
+	LD	(LFEHL),A
+	RET
+
+CMPW:	LD	B,(HL)
+	INC	HL
+	LD	C,(HL)
+	DEC	HL
+	LD	A,B
+	CP	D
+	JR	NZ,CMPF
+	LD	A,C
+	CP	E
+	RET	Z
+	JR	CMPF
+CMPB:	LD	B,0
+	LD	C,(HL)
+	LD	D,0
+	LD	A,C
+	CP	E
+	RET	Z
+	JR	CMPF
+CMPA:	LD	B,0
+	LD	C,A
+	LD	D,0
+	LD	HL,0
+	CP	E
+	RET	Z
+CMPF:	LD	A,(LFEHL)	; erste Abweichung merken
+	OR	A
+	JR	NZ,CMPF9
+	LD	(FADR),HL
+	LD	(FSOLL),DE
+	LD	(FIST),BC
+CMPF9:	LD	A,(LFEHL)
+	INC	A
+	LD	(LFEHL),A
+	RET
+
+ERGZ:	LD	A,(LFEHL)
+	OR	A
+	LD	DE,M_OK
+	JR	Z,ERG9
+	LD	HL,NFEHL
+	INC	(HL)
+	LD	DE,M_FEHL
+	CALL	PUTS
+	LD	DE,M_SOLL
+	CALL	PUTS
+	LD	HL,(FSOLL)
+	CALL	PHEX4
+	LD	DE,M_IST
+	CALL	PUTS
+	LD	HL,(FIST)
+	CALL	PHEX4
+	LD	DE,M_BEI
+	CALL	PUTS
+	LD	HL,(FADR)
+	CALL	PHEX4
+	LD	DE,M_CRLF
+ERG9:	CALL	PUTS
+	OR	0FFH
+	RET
+
+; =============================================================================
+; Phase A
+; =============================================================================
+PHASEA:	LD	DE,M_A1
+	CALL	ZEILE
+	LD	A,B_RES		; RESET16 = 0
+	CALL	PBRES
+	IN	A,(PA)		; A29 sofort (ohne M1-Takt abzuwarten)
+	AND	A_816
+	LD	E,0
+	CALL	CMPA
+	CALL	UEBER
+	JP	NZ,FAIL
+	LD	HL,MB+0CH	; Kennung "S4" (nicht DEAD aus Segment 1..3)
+	LD	DE,5334H
+	CALL	CMPW
+	LD	HL,MB+00H	; FCW aus dem Vektor
+	LD	DE,0C000H
+	CALL	CMPW
+	CALL	ERGZ
+
+	LD	DE,M_A2
+	CALL	ZEILE
+	LD	HL,MB+02H
+	LD	DE,13BAH
+	CALL	CMPW
+	LD	HL,MB+04H
+	LD	DE,000AH
+	CALL	CMPW
+	LD	HL,MB+06H
+	LD	DE,0AD1EH
+	CALL	CMPW
+	CALL	ERGZ
+
+	LD	DE,M_A3
+	CALL	ZEILE
+	IN	A,(PA)
+	AND	07H
+	LD	E,05H
+	CALL	CMPA
+	IN	A,(ST16)
+	LD	E,0A5H
+	CALL	CMPA
+	CALL	ERGZ
+
+	LD	DE,M_A4
+	CALL	ZEILE
+	LD	HL,MB+08H	; oberes Byte = Status-8
+	LD	E,0C3H
+	CALL	CMPB
+	CALL	ERGZ
+	LD	DE,M_A5		; INB: nur Information
+	CALL	PUTS
+	LD	A,(MB+0BH)
+	CALL	PHEX2
+	LD	DE,M_A5B
+	CALL	PUTS
+	LD	DE,M_A5C	; INB an UNGERADER Adresse: AD0-7 (treibt niemand)
+	CALL	PUTS
+	LD	A,(MB+27H)
+	CALL	PHEX2
+	LD	DE,M_A5D
+	CALL	PUTS
+
+	LD	DE,M_A6		; Rueckweg: bis hier gekommen = OK
+	CALL	ZEILE
+	IN	A,(PA)
+	AND	A_816+A_TREN
+	LD	E,A_816+A_TREN
+	CALL	CMPA
+	JP	ERGZ
+
+FAIL:	XOR	A		; Z: folgende Phasen auslassen
+	RET
+
+; =============================================================================
+; Phase B - Segmentweiche
+; =============================================================================
+PHASEB:	CALL	FREI
+	CALL	UEBER
+	JP	NZ,FAIL
+	LD	DE,M_B1
+	CALL	ZEILE
+	LD	A,1
+	LD	DE,0A001H
+	CALL	SEGW00
+	LD	A,2
+	LD	DE,0A002H
+	CALL	SEGW00
+	LD	A,3
+	LD	DE,0A003H
+	CALL	SEGW00
+	XOR	A
+	CALL	SETSEG
+	CALL	ERGZ
+
+	LD	DE,M_B2
+	CALL	ZEILE
+	LD	HL,MB+1AH	; System-Daten
+	LD	DE,0B000H
+	CALL	CMPW
+	LD	HL,MB+18H	; System-Befehl (LDR)
+	LD	DE,0B010H
+	CALL	CMPW
+	LD	HL,MB+1CH	; Normal-Daten
+	LD	DE,0B020H
+	CALL	CMPW
+	LD	HL,MB+1EH	; Normal-Befehl (LDR)
+	LD	DE,0B030H
+	CALL	CMPW
+	LD	A,2
+	CALL	SETSEG
+	LD	HL,WIN+0F02H
+	LD	DE,0B222H
+	CALL	CMPW
+	XOR	A
+	CALL	SETSEG
+	CALL	ERGZ
+
+	LD	DE,M_B3
+	CALL	ZEILE
+	LD	A,2
+	LD	DE,0C002H
+	CALL	SEGW04
+	LD	A,3
+	LD	DE,0C003H
+	CALL	SEGW04
+	LD	A,1
+	LD	DE,0C005H
+	CALL	SEGW04
+	XOR	A
+	CALL	SETSEG
+	CALL	ERGZ
+
+	LD	DE,M_B4		; G2-Messung
+	CALL	PUTS
+	IN	A,(ST16)
+	CALL	PHEX2
+	LD	DE,M_B4B
+	CALL	PUTS
+	IN	A,(PA)
+	AND	07H
+	CALL	PHEX1
+	CALL	CRLF
+	OR	0FFH
+	RET
+
+SEGW00:	LD	HL,WIN+0F00H
+	JR	SEGW
+SEGW04:	LD	HL,WIN+0F04H
+SEGW:	PUSH	HL
+	CALL	SETSEG
+	POP	HL
+	JP	CMPW
+
+; =============================================================================
+; Phase C - VI vom U880
+; =============================================================================
+PHASEC:	LD	DE,M_C1
+	CALL	ZEILE
+	CALL	FREI
+	LD	A,5AH
+	OUT	(ST8),A
+	LD	A,04H
+	OUT	(VEK),A
+	CALL	WVI
+	LD	A,0A5H
+	OUT	(ST8),A
+	LD	A,06H
+	OUT	(VEK),A
+	CALL	WVI
+	CALL	UEBER
+	JP	NZ,FAIL
+	LD	HL,MB+10H
+	LD	DE,2
+	CALL	CMPW
+	LD	HL,MB+12H
+	LD	DE,5A04H
+	CALL	CMPW
+	LD	HL,MB+14H
+	LD	DE,0A506H
+	CALL	CMPW
+	JP	ERGZ
+
+; WVI - auf PIO A3 (/VI) = 1 warten (Vektor abgeholt)
+WVI:	LD	BC,TMO
+WVI1:	IN	A,(PA)
+	AND	A_NVI
+	RET	NZ
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,WVI1
+	LD	E,A_NVI		; als Fehler verbuchen
+	JP	CMPA
+
+; =============================================================================
+; Phase D - INT-16 zum U880 (IM 2, freier Eintrag der CP/A-Interrupttabelle)
+; =============================================================================
+PHASED:	LD	DE,M_D1
+	CALL	ZEILE
+	CALL	FREIV		; freien Vektor suchen -> VEKT, Eintrag belegen
+	JR	NZ,PHD8
+	XOR	A
+	LD	(I16F),A
+	LD	A,(VEKT)
+	OUT	(PAC),A		; Vektor
+	LD	A,0B7H		; Interrupt frei, High aktiv, Maske folgt
+	OUT	(PAC),A
+	LD	A,0EFH		; nur A4 ueberwacht
+	OUT	(PAC),A
+	CALL	FREI
+	LD	BC,TMO
+PHD1:	LD	A,(I16F)
+	OR	A
+	JR	NZ,PHD2
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,PHD1
+PHD2:	LD	A,07H		; PIO A: Interrupt aus
+	OUT	(PAC),A
+	CALL	FREIVZ		; Eintrag zurueck
+	LD	A,(I16F)
+	LD	E,1
+	CALL	CMPA
+	LD	A,(I16A)	; PIO A in der ISR: INT-16 stand an
+	AND	A_I16
+	LD	E,A_I16
+	CALL	CMPA
+	CALL	UEBER
+	JP	NZ,FAIL
+	JP	ERGZ
+PHD8:	LD	DE,M_D8		; kein freier Vektor: nicht pruefbar
+	CALL	PUTS
+	CALL	FREI
+	CALL	UEBER
+	JP	NZ,FAIL
+	OR	0FFH
+	RET
+
+ISR16:	PUSH	AF
+	IN	A,(PA)
+	LD	(I16A),A
+	LD	A,1
+	LD	(I16F),A
+	LD	A,07H		; weitere Interrupts der PIO A aus
+	OUT	(PAC),A
+	POP	AF
+	EI
+	RETI
+
+; FREIV - freien Eintrag (0000) in der Tabelle (I*256) suchen, von oben her
+; (das BIOS nutzt nur den hinteren Teil und loescht ihn beim Kaltstart), ISR16
+; eintragen.  NZ = keiner frei.
+FREIV:	LD	A,I
+	LD	H,A
+	LD	L,0FEH
+	LD	B,128
+FRV1:	LD	A,(HL)
+	INC	HL
+	OR	(HL)
+	DEC	HL
+	JR	Z,FRV2
+	DEC	L
+	DEC	L
+	DJNZ	FRV1
+	OR	0FFH
+	RET
+FRV2:	LD	A,L
+	LD	(VEKT),A
+	LD	(VEKTAD),HL
+	DI
+	LD	DE,ISR16
+	LD	(HL),E
+	INC	HL
+	LD	(HL),D
+	EI
+	XOR	A
+	RET
+FREIVZ:	LD	HL,(VEKTAD)
+	DI
+	LD	(HL),0
+	INC	HL
+	LD	(HL),0
+	EI
+	RET
+
+; =============================================================================
+; Phase E - A53 -> NVI
+; =============================================================================
+PHASEE:	CALL	FREI
+	CALL	UEBER
+	JP	NZ,FAIL
+	LD	DE,M_E1
+	CALL	ZEILE
+	LD	HL,MB+22H	; genau ein NVI
+	LD	DE,1
+	CALL	CMPW
+	LD	HL,MB+24H	; und zwar im Teil mit A33 Bit 3
+	LD	DE,2
+	CALL	CMPW
+	LD	A,(MB+20H)	; Zaehlerstand 1..8 (Vorlast 8..15: nur A3 fest H,
+	OR	A		; A0..A2 ueber X12; am Geraet 4 = Vorlast 11)
+	JR	NZ,PHE1
+	LD	A,(MB+21H)
+	DEC	A
+	CP	8
+	JR	C,PHE2
+PHE1:	LD	E,0		; ausserhalb: als Fehler
+	CALL	CMPA
+PHE2:	CALL	ERGZ
+	LD	DE,M_E2
+	CALL	PUTS
+	LD	HL,(MB+20H)	; big-endian
+	LD	A,H
+	LD	H,L
+	LD	L,A
+	CALL	PHEX4
+	LD	DE,M_E3
+	CALL	PUTS
+	LD	DE,M_E4		; Vorlauf: 0 = A54 hielt A53 schon geladen
+	CALL	PUTS
+	LD	HL,(MB+28H)
+	LD	A,H
+	LD	H,L
+	LD	L,A
+	CALL	PHEX4
+	LD	DE,M_E5
+	CALL	PUTS
+	OR	0FFH
+	RET
+
+; =============================================================================
+; Phase F - STOP
+; =============================================================================
+PHASEF:	LD	DE,M_F1
+	CALL	ZEILE
+	CALL	FREI
+	CALL	LAEUFT		; Zaehler in A35 laeuft
+	LD	E,1
+	CALL	CMPA
+	LD	A,B_NSTP	; /STOP = 0
+	CALL	PBRES
+	CALL	WARTE
+	CALL	LAEUFT
+	LD	E,0
+	CALL	CMPA
+	LD	A,B_NSTP
+	CALL	PBSET
+	CALL	LAEUFT
+	LD	E,1
+	CALL	CMPA
+	JP	ERGZ
+
+; LAEUFT - A = 1, wenn sich A35 zwischen zwei Lesungen aendert
+LAEUFT:	IN	A,(ST16)
+	LD	D,A
+	CALL	WARTE
+	IN	A,(ST16)
+	CP	D
+	LD	A,0
+	RET	Z
+	INC	A
+	RET
+WARTE:	LD	BC,800H
+WAR1:	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,WAR1
+	RET
+
+; =============================================================================
+; Phase G - RESET16 = 1
+; =============================================================================
+PHASEG:	LD	DE,M_G1
+	CALL	ZEILE
+	LD	A,B_RES
+	CALL	PBSET
+	LD	A,B_NTRQ+B_NSTP
+	CALL	PBSET
+	IN	A,(PA)
+	AND	A_816+A_TREN+A_NVI+A_I16+07H
+	LD	E,A_816+A_NVI
+	CALL	CMPA
+	JP	ERGZ
+
+; =============================================================================
+; Phase H - Paritaet, nur Information.  Das FF A46 der Speicherkarte (7474,
+; Handbuch 2.7) wird bei JEDEM Lesezyklus mit Takt RDI neu beschrieben, /PR
+; setzt es nur (= kein Fehler).  Gemessen wird, welche Lesezyklen es schreiben:
+; die Stubs laufen dafuer IM EM-Fenster (Befehlsholen = EM-Lesezugriffe).
+; Alle Werte erst sammeln, dann ausgeben (BDOS liest K1520-RAM).
+; =============================================================================
+PHASEH:	LD	HL,HSTUB	; Stubs nach Zelle 0E00H (Segment 0, Fenster)
+	LD	DE,WIN+0E00H
+	LD	BC,HSTUBL
+	LDIR
+	LD	A,B_PR		; 1: PR-Impuls vom K1520-RAM aus
+	CALL	PBSET
+	LD	A,B_PR
+	CALL	PBRES
+	IN	A,(PB)
+	LD	(PE1),A
+	LD	A,(PBV)		; 2: PR-Impuls aus dem EM heraus
+	LD	C,A
+	OR	B_PR
+	LD	B,A
+	CALL	WIN+0E00H+HSPR-HSTUB
+	LD	(PE2),A
+	CALL	WIN+0E00H	; 3: nur EM-Lesezugriffe bis zum IN
+	LD	(PE3),A
+	LD	HL,0100H	; 4: 4096 K1520-Lesezugriffe
+	LD	BC,1000H
+PHH1:	LD	A,(HL)
+	INC	HL
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,PHH1
+	IN	A,(PB)
+	LD	(PE4),A
+	LD	A,54H		; 5: PR wie em256ful E2 (/RAMEN = 1, STOP, TRQ8, RESET16)
+	OUT	(PB),A
+	LD	A,14H
+	OUT	(PB),A
+	IN	A,(PB)
+	LD	(PE5),A
+	LD	A,(PBV)
+	OUT	(PB),A
+	LD	A,B_PR		; 6: PR, dann 4 KB nie beschriebene Zellen (Segment 3,
+	CALL	PBSET		;    C000H..CFFFH, Fenster schreibgeschuetzt)
+	LD	A,B_PR
+	CALL	PBRES
+	LD	A,3
+	CALL	SETSEG
+	LD	BC,4000H+ATT
+	LD	A,ATTLEER
+	OUT	(C),A
+	LD	HL,WIN
+	LD	BC,1000H
+PHH3:	LD	A,(HL)
+	INC	HL
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,PHH3
+	IN	A,(PB)
+	LD	(PE6),A
+	LD	BC,4000H+ATT	; 7: danach beschriebene Zellen (Firmware, Segment 0)
+	LD	A,ATTWIN
+	OUT	(C),A
+	XOR	A
+	CALL	SETSEG
+	LD	HL,WIN+0100H
+	LD	BC,0100H
+PHH4:	LD	A,(HL)
+	INC	HL
+	DEC	BC
+	LD	A,B
+	OR	C
+	JR	NZ,PHH4
+	IN	A,(PB)
+	LD	(PE7),A
+	LD	A,B_PR		; aufraeumen: kein Fehler stehen lassen
+	CALL	PBSET
+	LD	A,B_PR
+	CALL	PBRES
+	LD	DE,M_H1
+	CALL	PUTS
+	LD	HL,PE0
+	LD	B,5
+PHH2:	LD	A,(HL)
+	RLCA
+	AND	1
+	ADD	A,'0'
+	CALL	PUTC
+	LD	A,' '
+	CALL	PUTC
+	INC	HL
+	DJNZ	PHH2
+	LD	DE,M_H2
+	CALL	PUTS
+	LD	DE,M_H3
+	CALL	PUTS
+	LD	HL,PE5
+	LD	B,3
+PHH5:	LD	A,(HL)
+	RLCA
+	AND	1
+	ADD	A,'0'
+	CALL	PUTC
+	LD	A,' '
+	CALL	PUTC
+	INC	HL
+	DJNZ	PHH5
+	LD	DE,M_H4
+	JP	PUTS
+
+; im EM ausgefuehrt (Zelle 0E00H = WIN+0E00H)
+HSTUB:	DB	3AH		; LD A,(WIN+0100H)  - Firmware, beschrieben
+	DW	WIN+0100H
+	DB	0DBH,PB		; IN A,(PB)
+	DB	0C9H		; RET
+HSPR:	DB	78H		; LD A,B  (mit PR)
+	DB	0D3H,PB		; OUT (PB),A
+	DB	79H		; LD A,C  (ohne PR)
+	DB	0D3H,PB
+	DB	0DBH,PB		; IN A,(PB)
+	DB	0C9H
+HSTUBL	EQU	$-HSTUB
+
+; ENDE - Seiten aus, Ruhezustand
+ENDE:	LD	BC,ATT
+END1:	LD	A,ATTAUS
+	OUT	(C),A
+	LD	A,B
+	ADD	A,10H
+	LD	B,A
+	JR	NC,END1
+	LD	A,PBRUHE+B_NRAM
+	JP	OUTPB
+
+; =============================================================================
+; Konsole (wie em256adr)
+; =============================================================================
+PUTC:	PUSH	HL
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	LD	E,A
+	LD	C,CONOUT
+	CALL	BDOS
+	POP	AF
+	CP	0AH
+	JR	NZ,PUC9
+	LD	HL,LINES
+	INC	(HL)
+	LD	A,(HL)
+	CP	PAGELEN
+	CALL	NC,PAUSE
+PUC9:	POP	BC
+	POP	DE
+	POP	HL
+	RET
+
+PUTS:	LD	A,(DE)
+	CP	'$'
+	RET	Z
+	CALL	PUTC
+	INC	DE
+	JR	PUTS
+
+CRLF:	LD	A,0DH
+	CALL	PUTC
+	LD	A,0AH
+	JP	PUTC
+
+PHEX4:	LD	A,H
+	CALL	PHEX2
+	LD	A,L
+PHEX2:	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	PHEX1
+	POP	AF
+PHEX1:	AND	0FH
+	ADD	A,90H
+	DAA
+	ADC	A,40H
+	DAA
+	JP	PUTC
+
+PDEC:	LD	B,'0'-1
+PDC1:	INC	B
+	SUB	10
+	JR	NC,PDC1
+	ADD	A,10+'0'
+	PUSH	AF
+	LD	A,B
+	CP	'0'
+	CALL	NZ,PUTC
+	POP	AF
+	JP	PUTC
+
+GETKEY:	LD	C,DCIO
+	LD	E,0FFH
+	CALL	BDOS
+	OR	A
+	JR	Z,GETKEY
+	RET
+
+PAUSE:	XOR	A
+	LD	(LINES),A
+	LD	DE,M_MORE
+	LD	C,PRINT
+	CALL	BDOS
+	CALL	GETKEY
+	LD	DE,M_DELL
+	LD	C,PRINT
+	JP	BDOS
+
+; =============================================================================
+; Texte
+; =============================================================================
+M_BAN:	DB	0DH,0AH,'EM16ABL 1.2  Ablaeufe des 16-Bit-Mode (U8001 auf EM256)'
+	DB	0DH,0AH,'$'
+M_A1:	DB	'A Start aus Reset (A29 sofort, Vektor Segment 0) $'
+M_A2:	DB	'A Rechnen, Ergebnis im EM-Speicher               $'
+M_A3:	DB	'A Wort-OUT: A33 -> PIO A0-2, A35 -> AEH          $'
+M_A4:	DB	'A Wort-IN: Status-8 im oberen Byte               $'
+M_A5:	DB	'  INB liest untere Haelfte: $'
+M_A5B:	DB	'H (Status-8 war C3H)',0DH,0AH,'$'
+M_A5C:	DB	'  INB %81 (ungerade, AD0-7): $'
+M_A5D:	DB	'H (Soll 81H = Adressbyte)',0DH,0AH,'$'
+M_A6:	DB	'A Rueckweg TRQ8/MSET/TREN/BUSAK -> A29 beim M1   $'
+M_B1:	DB	'B Segmentweiche Mode 0 (A33 Bit 5/6)             $'
+M_B2:	DB	'B Segmentweiche Mode 1 (INSTR x N/S)             $'
+M_B3:	DB	'B Segmentweiche Mode 2 (SN0/SN1)                 $'
+M_B4:	DB	'  G2: OUTB %81,01H -> A35 = $'
+M_B4B:	DB	'H, PIO A0-2 = $'
+M_C1:	DB	'C VI vom U880 (Kennung = Vektor + Status-8)      $'
+M_D1:	DB	'D INT-16 -> PIO A4 -> Interrupt U880             $'
+M_D8:	DB	'D INT-16: kein freier Interruptvektor - uebersprungen',0DH,0AH,'$'
+M_E1:	DB	'E Einzelbefehlszaehler A53 -> NVI                $'
+M_E2:	DB	'  G3: NVI nach $'
+M_E3:	DB	'H Stapelzugriffen (X12)',0DH,0AH,'$'
+M_E4:	DB	'  Vorlauf ohne Bit 3: $'
+M_E5:	DB	'H (0 = kein NVI, 80nnH = NVI nach nn)',0DH,0AH,'$'
+M_H1:	DB	'H Paritaet /PE Start,PR,PR-EM,EM,K1520: $'
+M_H2:	DB	'(1 = ok)',0DH,0AH,'$'
+M_H3:	DB	'H PR wie em256ful, Leer-EM lesen, danach: $'
+M_H4:	DB	'(0 0 = Merker)',0DH,0AH,'$'
+M_F1:	DB	'F STOP haelt den U8001 an                        $'
+M_G1:	DB	'G RESET16: 8-Bit-Mode, A33 geloescht             $'
+M_OK:	DB	'OK',0DH,0AH,'$'
+M_FEHL:	DB	'FEHLER',0DH,0AH,'$'
+M_SOLL:	DB	'  Soll $'
+M_IST:	DB	' Ist $'
+M_BEI:	DB	' bei $'
+M_CRLF:	DB	0DH,0AH,'$'
+M_TMO:	DB	0DH,0AH,'  Zeitgrenze 8/16: PIO A = $'
+M_TMO2:	DB	'H, A35 = $'
+M_ERG:	DB	'ERGEBNIS: $'
+M_ALOK:	DB	'alle Ablaeufe OK',0DH,0AH,'$'
+M_NFL:	DB	' Fehler',0DH,0AH,'$'
+M_NOK:	DB	'ERGEBNIS: keine Karte an A8H',0DH,0AH,'$'
+M_BIG:	DB	'Programm zu gross (muss unter 4000H enden)',0DH,0AH,'$'
+M_MORE:	DB	'-- weiter mit Taste --$'
+M_DELL:	DB	0DH,'                      ',0DH,'$'
+
+; =============================================================================
+; U8001-Firmware (fw16abl.s, z8kasm) - build.py setzt die DB-Zeilen ein
+; =============================================================================
+FWIMG:
+;%INCLUDE fw16abl.inc
+FWEND:
+FWLEN	EQU	FWEND-FWIMG
+
+; =============================================================================
+; Variablen
+; =============================================================================
+SAVSP:	DW	0
+PBV:	DB	0
+SEGN:	DB	0
+NFEHL:	DB	0
+LFEHL:	DB	0
+LINES:	DB	0
+FADR:	DW	0
+FSOLL:	DW	0
+FIST:	DW	0
+VEKT:	DB	0
+VEKTAD:	DW	0
+I16F:	DB	0
+PE0:	DB	0		; /PE (PIO B7): Start, PR, PR aus EM, EM-, K1520-Lesen
+PE1:	DB	0
+PE2:	DB	0
+PE3:	DB	0
+PE4:	DB	0
+PE5:	DB	0		; v1.2: PR im em256ful-Ruhezustand, nach Leer-EM, danach
+PE6:	DB	0
+PE7:	DB	0
+I16A:	DB	0
+	DS	256
+STACK:
+ENDPRG:
+	END	START

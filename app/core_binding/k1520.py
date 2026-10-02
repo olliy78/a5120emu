@@ -142,6 +142,10 @@ _lib.k1520_key_release.restype = None
 _lib.k1520_translate_key.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_bool]
 _lib.k1520_translate_key.restype = ctypes.c_uint8
 
+# k1520_set_key_repeat_realtime(K1520Handle, realtime: bool) -> void
+_lib.k1520_set_key_repeat_realtime.argtypes = [K1520Handle, ctypes.c_bool]
+_lib.k1520_set_key_repeat_realtime.restype = None
+
 # k1520_keyboard_leds(K1520Handle) -> uint32_t
 _lib.k1520_keyboard_leds.argtypes = [K1520Handle]
 _lib.k1520_keyboard_leds.restype = ctypes.c_uint32
@@ -811,6 +815,15 @@ class K1520Emulator:
             _protokolliere_taste("losgelassen", keycode)
         _lib.k1520_key_release(self._handle, ctypes.c_uint32(keycode))
     
+    def set_key_repeat_realtime(self, realtime: bool = True):
+        """Tastenwiederholung in Echtzeit statt in Maschinentakten zählen.
+
+        Die Tastatur hat ihren eigenen Quarz: bei 10 × Rechnertakt soll eine
+        gehaltene Taste nicht zehnmal so früh und schnell wiederholen.  Für die
+        Oberfläche; Vorgabe des Kerns ist Maschinenzeit (wiederholbare Tests).
+        """
+        _lib.k1520_set_key_repeat_realtime(self._handle, ctypes.c_bool(realtime))
+
     @staticmethod
     def translate_key(keycode: int, shift: bool = False, ctrl: bool = False) -> int:
         """Physischer K7637-Code zu einem Tastencode — ohne Maschine.

@@ -420,6 +420,12 @@ und Stand: `doc/design/17_a5120_16.md`. Beim Zusammenführen mit dem Zweig K8915
   kein `setMEMDI` mehr; die ZRE 045-8762 des K8915 führt /MEMDI nur als Kartenzustand.
 - **Save-State v7** = SIO-Block mit Break/Ext-Latch (K8915-Zweig) + EM-Block; beide Zweige
   hatten unabhängig „v6“ vergeben, ältere Stände laden deshalb ohne Geräteteil.
+- **Prüfprogramme `tools/em256/`** (em256adr, em16abl, em256ful; seit 2026-10-02 hier,
+  nicht mehr in der CPA-Workbench): Quelle + eingecheckte `.com`, Bau
+  `tools/em256/build.py` (U8001-Firmware mit `z8kasm`, gemeinsamer Teil
+  `tools/cpm_bau.py` wie SERTEST/ROMREAD). Sie liegen — wie SERTEST und ROMREAD — auf
+  den A5120-Bootdisketten in `disks/` (`tools/disketten_beigaben.py`, Wächter
+  `cli_beigaben_auf_den_disketten`, prüft auch die Kopien in `tests/fixtures/cpm/`).
 - **Ein EM gibt es nur am A5120**: Modellwahl nur im Programmprofil mit `modellwahl`
   (`app/profil.py`), `K1520Emulator(machine="k8915", em=…)` → `ValueError`.
   Wächter `test_only_the_a5120_offers_the_a5120_16_model`.
