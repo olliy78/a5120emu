@@ -66,6 +66,41 @@ _SPEC: List[Tuple] = [
      "NMI-Taster der Frontplatte — solange das Boot-ROM eingeblendet ist: Lampen "
      "aus, Selbsttest von vorn.  Unter SCPX springt die CPU ins RAM bei 0066H "
      "(wie am Gerät, meist ein Absturz)", "_on_nmi", False),
+    # Lochband an der ADA K6022 (nur PRG, siehe NUR_FUER; Methoden in app/ui/lochband.py).
+    # KEIN Kürzel — die Kürzeltabelle des Handbuchs ist ein Vertrag.
+    ("band_einlegen", "Band in den Leser &legen…", None, None,
+     "Eine Banddatei (Bytes wie gestanzt) in den Lochbandleser daro 1210 legen — "
+     "UDOS liest sie mit DO TREAD.1210 <datei> F=A", "_band_einlegen", False),
+    ("band_entnehmen", "Band aus dem Leser &nehmen", None, None,
+     "Das Band aus dem Lochbandleser nehmen", "_band_entnehmen", False),
+    ("stanzband_speichern", "Stanzband &speichern…", None, None,
+     "Was der Stanzer daro 1215 gestanzt hat, als Banddatei sichern — "
+     "UDOS stanzt mit DO TWRITE.1215 <datei> F=A", "_stanzband_speichern", False),
+    ("stanzband_leeren", "Neues Stanzband &einlegen", None, None,
+     "Das Stanzband verwerfen und mit einem leeren weitermachen",
+     "_stanzband_leeren", False),
+    ("stanzer_ein", "Stanzer &eingeschaltet", None, None,
+     "Ausgeschaltet quittiert der Stanzer nicht — der Treiber meldet nach etwa "
+     "einer Sekunde ERROR C2", "_stanzer_schalten", True),
+
+    # ── EPROMmer (nur PRG 710, AP-P7c) ──────────────────────────────────────
+    # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kürzel:
+    # jedes Strg+Umschalt+… müsste in die Kürzeltabelle des Handbuchs (ein Vertrag).
+    ("eprom_einlegen", "PROM-Abbild &einlegen…", "open", None,
+     "Ein PROM-Abbild (rohes .bin; bis 1 KB = U555, bis 2 KB = U2716) in den Sockel "
+     "des EPROMmers stecken", "_eprom_einlegen", False),
+    # Das Untermenü (U555 / U2716) füllt das Fenster.
+    ("eprom_leer", "&Leeres PROM einlegen", None, None,
+     "Ein gelöschtes PROM (alle Zellen FFH, ohne Datei) in den Sockel stecken",
+     None, False),
+    ("eprom_speichern", "PROM-Abbild &speichern unter…", "config-save", None,
+     "Den Inhalt des gesteckten PROM als rohes .bin sichern", "_eprom_speichern", False),
+    ("eprom_loeschen", "PROM &UV-löschen", None, None,
+     "Alle Zellen auf FFH setzen — wie im UV-Löschgerät (die Software kann nicht löschen)",
+     "_eprom_loeschen", False),
+    ("eprom_entnehmen", "PROM e&ntnehmen", "eject", None,
+     "Das PROM aus dem Sockel nehmen (ungespeicherte Änderungen gehen verloren)",
+     "_eprom_entnehmen", False),
 
     # ── Ansicht ─────────────────────────────────────────────────────────────
     ("vollbild", "&Vollbild", "fullscreen", "F11",
@@ -93,11 +128,15 @@ _SPEC: List[Tuple] = [
     ("k8915emu", "K&8915 Emulator starten", None, None,
      "Den K8915 Emulator öffnen — ein eigenes Programm mit eigener "
      "Konfiguration; es läuft neben diesem weiter",
-     "_andere_maschine_starten", False),
+     "_k8915emu_starten", False),
     ("a5120emu", "&A5120 Emulator starten", None, None,
      "Den A5120 Emulator öffnen — ein eigenes Programm mit eigener "
      "Konfiguration; es läuft neben diesem weiter",
-     "_andere_maschine_starten", False),
+     "_a5120emu_starten", False),
+    ("prg710emu", "&PRG710 Emulator starten", None, None,
+     "Den PRG710 Emulator öffnen (PRG 710 / PRG 710-1) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_prg710emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -121,6 +160,12 @@ KURZ = {
     "nmi": "NMI",
     "k8915emu": "K8915",
     "a5120emu": "A5120",
+    "prg710emu": "PRG710",
+    "eprom_einlegen": "PROM",
+    "eprom_leer": "Leer",
+    "eprom_speichern": "Sichern",
+    "eprom_loeschen": "UV",
+    "eprom_entnehmen": "Entnehmen",
     "vollbild": "Vollbild",
     "standard": "Standard",
     "disktool": "DiskTool",
@@ -136,13 +181,31 @@ DIALOG_NAME = {"power": "Rechner ein-/ausschalten"}
 #: das Menü sagt, was ein Klick TUT.
 POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 
-#: Aktionen, die es nur in EINEM Programm gibt (Name → Maschine des Profils,
-#: `app/profil.py`).  Alle übrigen haben beide.
+#: Aktionen, die nicht jedes Programm hat (Name → Maschinen der Profile,
+#: `app/profil.py`, die sie haben).  Alle übrigen haben alle.
 NUR_FUER = {
-    "nmi": "k8915",        # NMI-Taster der Frontplatte
-    "k8915emu": "a5120",   # der jeweils ANDERE Emulator
-    "a5120emu": "k8915",
+    "nmi": ("k8915",),                   # NMI-Taster der Frontplatte
+    "k8915emu": ("a5120", "prg710"),     # die jeweils ANDEREN Emulatoren
+    "a5120emu": ("k8915", "prg710"),
+    "prg710emu": ("a5120", "k8915"),
+    # EPROMmer (Kasten und Bedienung) — nur der PRG 710 hat einen.
+    "eprom_einlegen": ("prg710",),
+    "eprom_leer": ("prg710",),
+    "eprom_speichern": ("prg710",),
+    "eprom_loeschen": ("prg710",),
+    "eprom_entnehmen": ("prg710",),
+    "dock_eprom": ("prg710",),
+    # Lochband an der ADA K6022 (AP-P8d)
+    "band_einlegen": ("prg710",),
+    "band_entnehmen": ("prg710",),
+    "stanzband_speichern": ("prg710",),
+    "stanzband_leeren": ("prg710",),
+    "stanzer_ein": ("prg710",),
 }
+
+#: Die Bedienung des EPROMmer-Sockels, in der Reihenfolge von Kasten und Menü.
+EPROM: List[str] = ["eprom_einlegen", "eprom_leer", "eprom_speichern",
+                    "eprom_loeschen", "eprom_entnehmen"]
 
 #: Was die Symbolleiste aufnehmen kann, in der Reihenfolge des Einrichtdialogs.
 #: ``None`` ist ein Trennstrich zwischen zwei Gruppen.  Die Namen der
@@ -156,7 +219,9 @@ REIHENFOLGE: List = [
     None,
     "einlegen", "auswerfen",
     None,
-    "dock_drives", "dock_settings", "dock_screen", "dock_keyboard",
+    "dock_drives", "dock_settings", "dock_screen", "dock_keyboard", "dock_eprom",
+    None,
+    "eprom_einlegen", "eprom_entnehmen",
     None,
     "vollbild", "standard", "hilfe",
 ]
@@ -189,7 +254,8 @@ STANDARD_K8915: List = [
 
 def gibt_es(name: str, maschine: str = "a5120") -> bool:
     """Hat das Programm der Maschine *maschine* die Aktion *name*?"""
-    return NUR_FUER.get(name, maschine) == maschine
+    erlaubt = NUR_FUER.get(name)
+    return erlaubt is None or maschine in erlaubt
 
 
 def reihenfolge(maschine: str = "a5120") -> List:

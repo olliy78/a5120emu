@@ -47,19 +47,24 @@ public:
     Anschluss(K8025& k, Schnittstelle s) : k_(k), s_(s) {}
 
     const char* name() const override {
+        if (!name_.empty()) return name_.c_str();
         switch (s_) {
             case DfueV24:  return "DFÜ/V.24";
             case DfueIfss: return "DFÜ/IFSS";
+            case ZifssA32A: return "ZIFSS";
             default:       return "Drucker";
         }
     }
     const char* stecker() const override {
+        if (!stecker_.empty()) return stecker_.c_str();
         switch (s_) {
             case DfueV24:  return "X6";
             case DfueIfss: return "X5";
+            case ZifssA32A: return "X4";
             default:       return "X3";
         }
     }
+    void benenne(std::string n, std::string st) { name_ = std::move(n); stecker_ = std::move(st); }
     bool v24() const override { return s_ == DfueV24; }
     std::vector<Taktquelle> taktquellen() const override {
         switch (s_) {
@@ -121,6 +126,7 @@ private:
         switch (s_) {
             case DfueV24:  return k_.sio_dfue_.channelA();
             case DfueIfss: return k_.sio_dfue_.channelB();
+            case ZifssA32A: return k_.sio_kbd_printer_.channelA();
             default:       return k_.sio_kbd_printer_.channelB();
         }
     }
@@ -129,7 +135,7 @@ private:
         switch (s_) {
             case DfueV24:  return quelle_ == 0 ? zreTakte() : k_.ctc_a34_.teilerTakte(2);
             case DfueIfss: return quelle_ == 0 ? zreTakte() : k_.ctc_a34_.teilerTakte(1);
-            default:       return k_.ctc_a34_.teilerTakte(0);
+            default:       return k_.ctc_a34_.teilerTakte(0);   // A32-A und -B: CTC A34 K0 (58H)
         }
     }
 
@@ -138,6 +144,7 @@ private:
     int            quelle_ = 0;
     bool           belegt_ = false;
     SerialCallback abnehmer_;
+    std::string    name_, stecker_;
 };
 
 K8025::~K8025() = default;
@@ -145,6 +152,11 @@ K8025::~K8025() = default;
 k1520::serial::SerialAnschluss& K8025::anschluss(Schnittstelle s)
 {
     return *anschluesse_[static_cast<size_t>(s)];
+}
+
+void K8025::benenne(Schnittstelle s, std::string name, std::string stecker)
+{
+    anschluesse_[static_cast<size_t>(s)]->benenne(std::move(name), std::move(stecker));
 }
 
 void K8025::setzeZreTakt(Z80CTC::PeriodenQuelle quelle)
@@ -178,7 +190,7 @@ void K8025::einspeisen(Schnittstelle s, uint8_t byte)
 K8025::K8025(K1520Bus& bus, const A5120Config& cfg)
     : cfg_(cfg)
 {
-    for (int i = 0; i < SchnittstellenAnzahl; ++i)
+    for (int i = 0; i < GesamtAnzahl; ++i)
         anschluesse_[static_cast<size_t>(i)] =
             std::make_unique<Anschluss>(*this, static_cast<Schnittstelle>(i));
     bus.registerIO(this, cfg_.io_base, 16);

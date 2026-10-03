@@ -847,7 +847,8 @@ void K5122::updateStatusPortB() {
 
     if (wait_betrieb_) {
         // Marken-FF (MKE) gibt es nur im Wait-Betrieb; der BusRq-Weg zeigt weiter 0.
-        if (w_mke_) s |= (1u << 1);
+        // Polarität je Gerät (setMkeLowAktiv): PRG 710 low-aktiv → Ruhepegel 1, gesetzt 0.
+        if (w_mke_ != mke_low_aktiv_) s |= (1u << 1);
         // Nur Änderungen an die PIO: im Mode 3 fordert jedes portBWrite bei erfüllter
         // Bedingung erneut einen Interrupt an — ein unverändertes MKE = 1 (etwa beim
         // OUT (18H) im Kopf-ISR) gäbe sonst einen zweiten, falschen Marken-Interrupt.

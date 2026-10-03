@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-K1520 Emulator — A5120 Emulator und K8915 Emulator
-==================================================
+K1520 Emulator — A5120 Emulator, K8915 Emulator und PRG710 Emulator
+===================================================================
 
-Main entry point for the Qt6 GUI application.  EIN Programm, zwei Gesichter:
+Main entry point for the Qt6 GUI application.  EIN Programm, drei Gesichter:
 ``--machine k8915`` wählt das Programmprofil des K8915 Emulators (eigene
-Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`);
+Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`),
+``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl);
 ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
-fest (``run_k8915emu.sh``, ``bin/k8915emu``, Startmenü „K8915 Emulator“).
+fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``bin/k8915emu``, Startmenü).
 
 Usage:
-    python3 app/main.py [--machine a5120|k8915] [DISKETTE …]
+    python3 app/main.py [--machine a5120|k8915|prg710] [DISKETTE …]
 
 Requirements:
     - PySide6 (Qt6 Python bindings)
@@ -59,7 +60,7 @@ for _arg in _args:
     if _arg == "--machine":
         _MASCHINE = next(_args, "")
         if not _MASCHINE:
-            print("--machine braucht einen Namen: a5120 oder k8915", file=sys.stderr)
+            print("--machine braucht einen Namen: a5120, k8915 oder prg710", file=sys.stderr)
             sys.exit(2)
     elif _arg.startswith("--machine="):
         _MASCHINE = _arg.split("=", 1)[1]
@@ -84,12 +85,13 @@ if "--paths" in sys.argv[1:]:
 # --help: ebenfalls vor den Qt-Importen, damit die Hilfe auch ohne PySide6 kommt.
 # Laufwerke, die das Profil ab Werk bestückt (A5120: A:–C: + leerer D:-Platz, also
 # vier Steckplätze; K8915: zwei) — so viele Disketten nimmt die Kommandozeile.
-_ANZAHL_LAUFWERKE = 4 if PROFIL.maschine == "a5120" else 2
+_ANZAHL_LAUFWERKE = 4 if PROFIL.maschine == "a5120" else 2   # K8915, PRG: zwei
 _LAUFWERKE_TEXT = ("bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:"
                    if _ANZAHL_LAUFWERKE == 4 else
                    "bis zu zwei Abbilder, in Laufwerksreihenfolge A: B:")
 _KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
-         "k8915": "Emulator des Arbeitsplatzcomputers K8915 (K1520-Bus)"}
+         "k8915": "Emulator des Arbeitsplatzcomputers K8915 (K1520-Bus)",
+         "prg710": "Emulator der Programmiergeraete PRG 710 und PRG 710-1 (K1520-Bus)"}
 _P = PROFIL.programm
 HILFE = f"""{_P} — {_KOPF[PROFIL.maschine]}
 

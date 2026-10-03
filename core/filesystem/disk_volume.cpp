@@ -13,6 +13,7 @@
 #include "core/filesystem/cpm/cpa_dpb.h"
 #include "core/filesystem/cpm/cpm_fs.h"
 #include "core/filesystem/geometry_probe.h"
+#include "core/filesystem/prg_boot.h"
 #include "core/filesystem/udos/udos1715_fs.h"
 #include "core/filesystem/udos/udos_fs.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
@@ -302,6 +303,29 @@ std::string k8915Bootabbildproblem(const FsProfile& p, const SectorSpace& raum,
                "verlangt aber " + std::to_string(n) + " Sektoren (" + std::to_string(noetig)
                + " Byte) — der Lader bliebe mitten im System stehen.";
     return {};
+}
+
+
+// ─── PRG 710 / 710-1: Fassung des Bootabbilds (AP-P6) ────────────────────────
+//
+// Tastatur- und MKE-Treiber unterscheiden sich je Geraet (prg_boot.h).  Beurteilt wird
+// nur ein Abbild MIT PRG-Lader — alles andere (A5120, K8915) bleibt unberuehrt.  Beim
+// Einspielen auf eine Diskette, die schon ein PRG-System traegt, darf die Fassung nicht
+// wechseln: das Ergebnis wuerde lesbar aussehen und am Geraet nicht starten.
+
+bool prgSystemVon(const FsProfile& p, prg_boot::System& sys) {
+    if (p.type == FsType::Cpm)  { sys = prg_boot::System::Scpx; return true; }
+    if (p.type == FsType::Udos) { sys = prg_boot::System::Udos; return true; }
+    return false;
+}
+
+std::string prgBootabbildproblem(const FsProfile& p, const std::vector<uint8_t>& img,
+                                 const std::vector<uint8_t>* vorhanden) {
+    prg_boot::System sys;
+    if (!prgSystemVon(p, sys)) return {};
+    const prg_boot::Variante alt = vorhanden
+        ? prg_boot::erkenne(*vorhanden, sys).variante : prg_boot::Variante::Unbekannt;
+    return prg_boot::problem(img, sys, prg_boot::Variante::Unbekannt, alt);
 }
 
 
@@ -2655,6 +2679,8 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
             err = k8915Bootabbildproblem(*profil, raum, boot);
             if (!err.empty()) return nullptr;
         }
+        err = prgBootabbildproblem(*profil, boot, nullptr);
+        if (!err.empty()) return nullptr;
         if (boot.size() > platz) {
             err = "Das Bootabbild ist " + std::to_string(boot.size())
                 + " Byte gross, die Systemspuren von '" + profil->name + "' fassen aber nur "
@@ -2807,6 +2833,13 @@ bool DiskVolume::writeBootImage(const std::vector<uint8_t>& img, int volume) {
     SectorSpace& raum = *volumes_[static_cast<size_t>(volume)].space;
     if (const std::string problem = k8915Bootabbildproblem(*profile_, raum, img); !problem.empty())
         return fail(problem);
+    {
+        std::vector<uint8_t> alt;
+        const bool da = readBootImage(alt, volume);
+        if (const std::string problem = prgBootabbildproblem(*profile_, img, da ? &alt : nullptr);
+            !problem.empty())
+            return fail(problem);
+    }
     const uint8_t nach = nachspannBytes(*profile_);
     size_t her = 0;
 

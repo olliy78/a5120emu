@@ -91,6 +91,16 @@ public:
          * See doc/design/16_k8915.md §3.3.
          */
         static A5120Config forK8915();
+
+        /**
+         * @brief Konfiguration der K7024 im PRG 710 / 710-1 (doc/design/20_prg710.md §3.3).
+         *
+         * VRAM F800H wie am A5120, aber ohne Lesesperre: die Karte antwortet nur über die
+         * Speicherverwaltung (Seite F, E8H = FFH), unter F800H liegt kein weiterer Leser.
+         * Zeichengenerator: die beiden 1-KB-EPROMs A103/A123 des PRG (Abzug des Anwenders,
+         * doc/EPROMS/PRG710/prg710_k7024_a1{03,23}.bin), gleiche Adressierung wie A5120.
+         */
+        static A5120Config forPrg710();
     };
 
     /**

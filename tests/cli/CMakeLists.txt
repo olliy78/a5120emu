@@ -90,3 +90,14 @@ add_test(NAME cli_beigaben_auf_den_disketten
             --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
 set_tests_properties(cli_beigaben_auf_den_disketten PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des
+# Generators" (AP-P0d, doc/design/20_prg710.md): tools/gen_prg710_zre_prn.py --check
+# erzeugt beide Listings im Speicher, prüft MD5 der ROM-Abzüge, dass JEDES der 1024 Byte
+# genau einmal und mit dem richtigen Wert dargestellt ist, dass jede benannte Routine als
+# Label vorkommt, und vergleicht bytegleich mit doc/EPROMS/PRG710/*_zre.prn.
+# Neu erzeugen: python3 tools/gen_prg710_zre_prn.py
+add_test(NAME cli_prg710_zre_prn_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/gen_prg710_zre_prn.py" --check)
+set_tests_properties(cli_prg710_zre_prn_passt_zur_quelle PROPERTIES
+    TIMEOUT 60 LABELS "cli;fast")

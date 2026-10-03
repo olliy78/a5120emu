@@ -1,10 +1,11 @@
-# a5120emu / k8915emu — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Es gibt ihn in zwei Gestalten: den **A5120 Emulator**
-(`a5120emu`) und den **K8915 Emulator** (`k8915emu`) — dasselbe Programm mit
-eigener Konfiguration, eigener Tastatur und der Frontplatte des K8915; was nur
-den K8915 betrifft, steht im Abschnitt „Der K8915 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
+Verwandten am K1520-Bus. Es gibt ihn in drei Gestalten: den **A5120 Emulator**
+(`a5120emu`), den **K8915 Emulator** (`k8915emu`) und den **PRG710 Emulator**
+(`prg710emu`) — dasselbe Programm mit eigener Konfiguration und eigener Tastatur;
+was nur den K8915 bzw. den PRG betrifft, steht in den Abschnitten „Der K8915
+Emulator" und „Der PRG710 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
@@ -783,6 +784,105 @@ heraus, dann mit `e` Return beenden und bei Schritt 3 neu anfangen: eine
 Umstellung **nach** dem Fehlschlag reicht nicht, erst der Neustart von DISGEN
 räumt den Puffer des BIOS. Wer DISGEN mit Strg+C verlässt und danach
 Steuerzeichen (`^D` …) statt Buchstaben sieht: einmal Strg drücken.
+
+## Der PRG710 Emulator
+
+`prg710emu` ist derselbe Emulator für die Programmiergeräte **robotron PRG 710**
+und **PRG 710-1** (ZRE K2521, Speicher mit Seitenverwaltung, Bildschirmkarte
+K7024, Diskettensteuerung K5122 mit zwei K5601). Was anders ist:
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: PRG 710 (Tastatur K7609 an
+  einem 8279) oder PRG 710-1 (Tastatur K7672). Ein Wechsel erzeugt die Maschine
+  neu und tauscht die Bildschirmtastatur; die Wahl wird in `prg710emu.yaml`
+  gemerkt.
+* **Takt** 2,4576 MHz, **Laufwerke** zwei K5601 wie am Gerät.
+* **Einschalten** zeigt „NKM-LOADER“ und wartet auf die **Starttaste**: am 710
+  **ET1** (die Taste `ET1` der Bildschirmtastatur oder **Return** des PCs), am
+  710-1 **ENTER**. Ohne Diskette folgt „DISKERROR C2“ und „NO SYSTEM“.
+* **UDOS 4.3** meldet sich mit der Datumsmaske „Neues Datum :__.__.19__“ — sechs
+  Ziffern eintippen (TTMMJJ), **ohne** ET. Danach steht der Prompt `%`.
+  Beispiele: `CAT D=0 P=&` (Verzeichnis; ohne `P=&` meldet das 710-1 „FILE NOT
+  FOUND“), `DATE`, `COPY OS.INIT 1/KOPIE` (auf Laufwerk 1).
+* **Großschrift:** UDOS kennt nur Großbuchstaben. Am 710 liefert die Tastatur sie von
+  selbst, am 710-1 schaltet der Systemstart die Feststellung der K7672 ein (CAPS-Lampe);
+  wer sie mit der Feststelltaste ausschaltet, bekommt Kleinbuchstaben, und `cat` ist für
+  UDOS ein unbekanntes Kommando.
+  Ein Rückstellen löscht das UDOS-Datum nicht; die Datumsabfrage kann dann entfallen.
+* **SCPX 1526** bootet am 710-1 bis `A>` (`DIR`, `STAT`, `PIP B:=…`).
+* **Die Bildschirmtastatur des 710 (K7609)** sendet je Taste den Tastencode des
+  Geräts. **ET1** und **ET2** (rot) sind Tasten wie alle anderen, ohne
+  Kürzel erreichbar; **UMSCH** und **STRG** rasten für genau eine Taste. Das
+  Tastenbild ist nach der Codetabelle gezeichnet, nicht am Gerät vermessen:
+  `S1`–`S9` und `CL` haben keine bekannten Codes, sie federn zurück und senden
+  nichts (Beschriftung „[?]“); Leertaste und `BS` sind vorläufig belegt.
+* **Schnittstellen** — am 710 drei (V.24 X4, IFSS Hauptdrucker X6, ZIFSS
+  Zusatzdrucker X5), am 710-1 zwei (V.24, ZIFSS); A32-B trägt dort die Tastatur
+  und steht als feste Schnittstelle im Reiter. Dahinter folgt in beiden der
+  **Fernschreiber** (siehe unten). `SET PRI TO V24` lädt unter UDOS
+  den Druckertreiber `DRUCK.V24`, `SET PRI ON` spiegelt die Ausgabe dorthin.
+* Die **PC-Tastatur** geht wie beim A5120 an den Rechner. Am 710-1 wiederholt die
+  K7672 eine gehaltene Taste selbst; am 710 gibt es keine Wiederholung.
+
+### Der EPROMmer
+
+Der PRG brennt U555 (1 KB, wie 2708) und U2716 (2 KB) in **einem** Sockel; das
+Programm dazu ist `PROG` (UDOS) bzw. `PROG.COM` (SCPX). Im Emulator ist der
+Sockel **virtuell**: ein PROM ist ein rohes Abbild (`.bin`). Der Kasten
+**EPROMmer** (*Ansicht ▸ EPROMmer*; die Bedienung auch unter *Maschine ▸
+EPROMmer*) zeigt, was steckt, welchen Typ das Programm eingestellt hat und ob
+Versorgung und Programmierspannung anliegen.
+
+* **PROM-Abbild einlegen…** — eine Datei bis 1 KB wird ein U555, bis 2 KB ein
+  U2716; kürzere werden mit FFH aufgefüllt.
+* **Leeres PROM einlegen** — ein gelöschtes U555 oder U2716 (alle Zellen FFH).
+* **PROM-Abbild speichern unter…** — den Inhalt sichern, etwa nach dem Brennen.
+  Ein gebranntes, noch nicht gespeichertes PROM steht als „geändert“ da.
+* **PROM UV-löschen** — wie im Löschgerät; die Software kann nicht löschen.
+* **PROM entnehmen.**
+
+**Der Sockel wird gemerkt:** ein PROM, das an einer Datei hängt (eingelegt oder
+gespeichert), steckt beim nächsten Start wieder im Sockel (`prg710emu.yaml`);
+fehlt die Datei, bleibt der Sockel leer und das Protokoll sagt warum. Ein
+**ungespeichertes** PROM wird nicht gemerkt: beim Beenden und beim Modellwechsel
+fragt das Programm *Speichern / Verwerfen / Abbrechen*.
+
+Gebrannt wird wie am Gerät nur von 1 nach 0: ein zweites Brennen ohne Löschen
+ergibt die UND-Verknüpfung. Stimmt der in `PROG` eingestellte Typ (`T`, „PROMGROESSE
+1 ODER 2 K-BYTE“) nicht mit dem gesteckten PROM überein, wird gelesen, aber nicht
+gebrannt — das Protokoll sagt es. Beispiel unter UDOS: `PROG`, `N`, dann `C`
+(kopieren): Quell-PROM einlegen, `J`; bei „COPY-PROM STECKEN“ ein leeres PROM
+einlegen, `J`, `J`. Das Brennen dauert in Maschinenzeit gut 50 ms je Byte (U2716)
+bzw. 100 Durchläufe über das ganze PROM (U555). Die Antworten in `PROG` sind
+einzelne Tasten ohne ET.
+
+### Lochband und Fernschreiber
+
+Der PRG hat einen **Lochbandleser** (daro 1210) und einen **Lochbandstanzer**
+(daro 1215) an der Karte K6022 und einen **Fernschreiber** an der Karte 590069.
+
+* **Ein Band ist eine Datei** mit den Bytes, wie sie gestanzt sind. *Maschine ▸
+  Lochband ▸ Band in den Leser legen…* legt eine ein, *Band aus dem Leser nehmen*
+  nimmt sie heraus (das Menü zeigt, wie weit gelesen ist). Der Leser gibt vorn und
+  hinten ein Stück Leerband (Nullbytes) dazu — eine Textdatei des PCs lässt sich
+  so direkt einlesen.
+* Was gestanzt wird, sammelt sich im **Stanzband**: *Stanzband speichern…* schreibt
+  es in eine Datei (das Menü zeigt die Länge), *Neues Stanzband einlegen* fängt
+  von vorn an. *Stanzer eingeschaltet* abgehakt: der Stanzer quittiert nicht, der
+  Treiber meldet nach etwa einer Sekunde `ERROR C2`. Beide Bänder überstehen ein
+  Rückstellen.
+* **Unter UDOS** stanzt `DO TWRITE.1215 DATEI F=A` eine Datei, `DO TREAD.1210 NEU
+  F=A` liest das eingelegte Band in die Datei `NEU` (sie entsteht auf der zweiten
+  Diskettenseite, `CAT` meldet „DRIVE 4“). **`F=A` gehört dazu**: der Treiber
+  `PTAPE.6022` überträgt nur Text (gerade Parität, Zeilenende NL); das
+  Vorgabeformat von `TAPE.WRITE` kommt nicht zurück (`ERROR C9`). `ERROR C2` beim
+  Lesen heisst: kein Band im Leser.
+* **Der Fernschreiber** ist ein Anschluss im Reiter *Schnittstellen* wie die
+  anderen — als **Datei** wird daraus ein Fernschreibprotokoll, über **Telnet**
+  liest ein Terminal mit. Nachgebildet ist der Fernschreiber selbst: hinaus geht
+  Text, nicht die 5-Bit-Zeichen der Leitung. Benutzt wird er von SCPX am 710-1 mit
+  einem BIOS `B17172FS`/`B17272FS` (Druckerausgabe, z. B. **^P** und `DIR`); er
+  schreibt nur Großbuchstaben, Zeichen ohne Gegenstück im Fernschreibalphabet
+  (`>` `*` `#` …) als Zwischenraum, mit 100 Baud — etwa 13 Zeichen je Sekunde.
 
 ## Tastenkürzel
 

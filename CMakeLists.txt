@@ -191,6 +191,7 @@ if(BUILD_K1520)
         core/filesystem/udos/udos_fs.cpp
         core/filesystem/udos/udos1715_fs.cpp
         core/filesystem/disk_volume.cpp
+        core/filesystem/prg_boot.cpp
         core/filesystem/check/fs_check.cpp
         core/filesystem/check/fs_recover.cpp
         core/filesystem/check/cpm_check.cpp
@@ -292,6 +293,36 @@ if(BUILD_K1520)
     target_link_libraries(k1520_zre8762 PUBLIC k1520_z80 k1520_ctc k1520_bus k1520_logger)
     target_include_directories(k1520_zre8762 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # ZRE K2521 (PRG 710/710-1): U880, ROM 1 KB (U555), 1 KB RAM, CTC 80H, PIO 84H
+    add_library(k1520_k2521 STATIC core/cards/k2521/k2521.cpp)
+    target_link_libraries(k1520_k2521 PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_bus k1520_logger)
+    target_include_directories(k1520_k2521 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # Speicherverwaltung E8H-EBH + OPS-RAM (PRG 710/710-1), Arbeitsmodell doc/design/20_prg710.md §4b
+    add_library(k1520_prg710_speicher STATIC core/cards/prg710_speicher/prg710_speicher.cpp)
+    target_link_libraries(k1520_prg710_speicher PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_prg710_speicher PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
+    add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
+    target_link_libraries(k1520_i8279 PUBLIC k1520_logger)
+    target_include_directories(k1520_i8279 PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_k7609 STATIC core/peripherals/k7609/k7609.cpp)
+    target_link_libraries(k1520_k7609 PUBLIC k1520_i8279)
+    target_include_directories(k1520_k7609 PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_atp590068 STATIC core/cards/atp590068/atp590068.cpp
+        core/cards/atp590068/eprommer590068.cpp)
+    target_link_libraries(k1520_atp590068 PUBLIC k1520_i8279 k1520_pio k1520_bus k1520_logger)
+    target_include_directories(k1520_atp590068 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # ADA K6022 (Lochband über SIF1000) und ASS 590069 (Fernschreiber) — PRG 710, AP-P8
+    add_library(k1520_k6022 STATIC core/cards/k6022/k6022.cpp)
+    target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger)
+    target_include_directories(k1520_k6022 PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_ass590069 STATIC core/cards/ass590069/ass590069.cpp)
+    target_link_libraries(k1520_ass590069 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_serial)
+    target_include_directories(k1520_ass590069 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
     target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
@@ -310,12 +341,21 @@ if(BUILD_K1520)
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # PRG 710 / 710-1 (doc/design/20_prg710.md AP-P1c) — K2521 + Speicherverwaltung + K7024 +
+    # K5122 (/WAIT) + K8025.  In libk1520core.so: k1520_create(K1520_MACHINE_PRG710).
+    add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
+    target_link_libraries(k1520_prg710 PUBLIC
+        k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
+        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_ass590069
+        k1520_floppy2 k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # libk1520core.so — stable C-API shared library
     add_library(k1520core SHARED
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion
@@ -353,8 +393,8 @@ if(BUILD_K1520)
     target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
-    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp)
-    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
+    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp tools/boot_trace_prg710.cpp)
+    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_floppy k1520_logger)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
 
@@ -394,7 +434,7 @@ if(BUILD_K1520)
     # k1520dbg: interactive gdb-style debugger (breakpoints, marker-relative cycles,
     # memory dump/disasm, watchpoints, keystroke injection, screen view)
     add_executable(k1520dbg tools/k1520dbg.cpp)
-    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_floppy k1520_logger)
+    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_floppy k1520_logger)
     target_include_directories(k1520dbg PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
     # Zeilenbearbeitung der interaktiven Sitzung: Pfeiltasten, History,

@@ -149,6 +149,26 @@ Was beim Weiterarbeiten zu wissen ist:
   `K8915Scpx.DiskToolBautBootdisketteAus*`, `.FremdeSystemspurWirdFuerDenK8915Abgelehnt`,
   `.BootPutMachtEineLeereDisketteBootfaehig`, `K8915Format.FormatDisketteGetBootPutBootetOhneDisgen`
   (langsam).  Keine C-ABI-Änderung.
+- **PRG 710 / 710-1: das Bootabbild trägt die Fassung des Geräts (2026-10-02, AP-P6,
+  `doc/design/20_prg710.md`, `core/filesystem/prg_boot.{h,cpp}`).**  Tastatur und MKE-Treiber
+  stehen im Bootabbild; die falsche Fassung bootet nicht und sieht heil aus.  Erkannt wird
+  am Ladesektor `18 03 "SYL"` (A5120: kein `18 03`) und je System an der Fassung: **UDOS**
+  `LD HL,09FFH`(710)/`0A2FH`(710-1) + `LD (0FE6H),HL` im Zweitlader; **SCPX** an der
+  Tastatur im BIOS — **8279 (C8H/C9H) → 710, sonst 5EH/5FH → 710-1**.  Die Ports 5EH/5FH
+  allein sind KEIN Merkmal (`B152IFSS` des 710 nutzt sie für IFSS).  Vier Festlegungen:
+  **(1)** Beurteilt wird nur ein Abbild MIT PRG-Lader — A5120/K8915 unberührt, keine
+  Profil-Änderung (`udos_ds77`/`scpx640` gelten für beide Maschinen).  **(2)** Ein PRG-
+  Abbild ohne BIOS (SCPX ≤ 6144 B) bzw. ohne Zweitlader (UDOS < 3 Spuren) wird abgewiesen,
+  VOR dem Formatieren; `boot-put` weist ausserdem die andere Fassung ab, wenn die Diskette
+  schon ein PRG-System trägt (`DiskVolume::writeBootImage`).  **(3)** `--prg 710|710-1`
+  (CLI `create`/`boot-put`/`boot-scpx`) verlangt eine Fassung; ohne ihn wird nicht geraten.
+  **(4)** SCPX-Systemspuren = `SYL17` + 256 × AAH + `CCPBD17` (C800H) + BIOS (DE00H),
+  `boot-scpx` baut sie bytegleich zu `SYSPRG`; für den 710 gibt es nur die V1.5-BIOSe
+  (`B151V24`/`B152V24`/`B152IFSS`).  UDOS braucht beide Seiten formatiert und auf Seite 0
+  `OS`, `ZDOS`, `OS.INIT`, `DO`, `DATE`.  Keine C-ABI-Änderung.  Wächter `DisktoolPrg710.*`
+  (bootet je Variante), `cli_dt_prg_*`.  Befund an den Abzügen: `PRG710_UDOS43_MRS_Boot`
+  hat in `PROG.DOK` (Seite 1) eine Kette auf Spur 99 → `extractAll` bricht ab, deshalb
+  kopieren die Tests Dateien einzeln.
 - **UDOS-Dateien tragen mehr als ihre Bytes (2026-08-12, `doc/udos_diskettenformat.md`
   §6/§14).**  Der Kopfsektor steuert, wie UDOS eine Datei **lädt**; am Ende (Offset
   122/124/126) stehen **LOW ADDRESS / HIGH ADDRESS / STACK SIZE** — genau das, was

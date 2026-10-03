@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PRG710 Emulator
+GenericName=K1520 Emulator
+Comment=Emulator des Programmiergeraets robotron PRG 710 / PRG 710-1 (K1520-Bus)
+Comment[en]=Emulator of the robotron PRG 710 / PRG 710-1 programming device (K1520 bus)
+Exec="@ROOT@/bin/prg710emu"
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=PRG710;PRG;K1520;robotron;Z80;UDOS;SCPX;emulator;
+StartupNotify=true
+StartupWMClass=main.py

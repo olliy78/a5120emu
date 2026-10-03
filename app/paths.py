@@ -677,6 +677,7 @@ def describe() -> str:
     fmt = formats_file()
     vorgabe = default_config_file()
     vorgabe_k8915 = default_config_file("default_config_k8915.yaml")
+    vorgabe_prg710 = default_config_file("default_config_prg710.yaml")
     bundled = bundled_disks_dir()
     dbg = debugger()
     cli = disktool_cli()
@@ -692,6 +693,7 @@ def describe() -> str:
         f"Konfiguration:     {config_dir()}",
         f"Vorgabe-Konfig.:   {vorgabe if vorgabe else 'NICHT GEFUNDEN'}",
         f"Vorgabe (K8915):   {vorgabe_k8915 if vorgabe_k8915 else 'NICHT GEFUNDEN'}",
+        f"Vorgabe (PRG710):  {vorgabe_prg710 if vorgabe_prg710 else 'NICHT GEFUNDEN'}",
         f"Debugger:          {dbg if dbg else '— (nicht mitgeliefert)'}",
         f"DiskTool (CLI):    {cli if cli else '— (nicht mitgeliefert)'}",
         f"Handbücher:        {doc_dir() if doc_dir() else '—'}",

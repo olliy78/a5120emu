@@ -51,3 +51,11 @@ def em_for(model) -> str:
 def label(model) -> str:
     """Anzeigename für die Auswahl."""
     return _LABEL_FOR.get(normalize(model), _LABEL_FOR[DEFAULT_MODEL])
+
+
+# ── PRG 710 / PRG 710-1 (prg710emu) ─────────────────────────────────────────
+# Dort ist die Modellwahl keine Erweiterung, sondern die Maschine selbst; die
+# Zuordnung Schlüssel → Kern steht im Programmprofil (`app/profil.py`), hier nur
+# die Schlüssel, damit Konfiguration und Tests dieselben Namen benutzen.
+PRG710 = "prg710"
+PRG710_1 = "prg710-1"

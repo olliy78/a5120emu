@@ -53,6 +53,21 @@ K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
                                               const char* drive2, const char* drive3);
 
 /**
+ * @brief PRG 710 / PRG 710-1 (K1520_MACHINE_PRG710) mit gewählter Variante.
+ *
+ * @param variante   0 = PRG 710 (Marken-FF low-aktiv, 8279-Tastatur), 1 = PRG 710-1.
+ *                   Anderes → NULL (Grund in k1520_last_init_error).
+ * @param drive0..3  wie bei k1520_create_configured (Vorgabe K5601, K5601, none, none).
+ * k1520_create(K1520_MACHINE_PRG710) und _configured bauen die Variante 0.
+ * Tastatur: keyPress/keyRelease wie bei den anderen Maschinen (710: K7609 hinter dem 8279,
+ * 710-1: K7672 an A32-B; Codes `0x03000000 | Position` = physische Taste).
+ * k1520_machine_type() = 1; Variante: k1520_prg710_variant().
+ */
+K1520_API K1520Handle k1520_create_prg710(int variante,
+                                          const char* drive0, const char* drive1,
+                                          const char* drive2, const char* drive3);
+
+/**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
  *
  * A startup abort (e.g. missing/broken disk format catalog `formats.yaml`) yields
@@ -411,7 +426,7 @@ K1520_API const char* k1520_version(void);
  * Every machine answers these; the A5120 has no panel and no bell counter and
  * returns 0.  The K8915 mirrors its indicators at the end of each k1520_run(),
  * so they may be read from any thread. */
-/** @brief K1520MachineType of the handle (0 = A5120, 2 = K8915). */
+/** @brief K1520MachineType of the handle (0 = A5120, 1 = PRG 710/710-1, 2 = K8915). */
 K1520_API int      k1520_machine_type(K1520Handle h);
 /**
  * @brief Raw byte of the text screen memory (80 × 24, bit 7 = attribute/cursor),
@@ -442,6 +457,87 @@ K1520_API uint32_t k1520_bell_count(K1520Handle h);
  *        Thread-safe.
  */
 K1520_API void     k1520_nmi(K1520Handle h);
+
+/**
+ * @brief Variante eines PRG-Handles: 0 = PRG 710, 1 = PRG 710-1; -1 bei anderer Maschine.
+ */
+K1520_API int      k1520_prg710_variant(K1520Handle h);
+/**
+ * @brief Speicherverwaltung des PRG (Ports E8H/EAH), Diagnose für Debugger/Oberfläche.
+ * @param n      Seite 0…15 (A12–A15).
+ * @param attr   E8H dieser Seite (unteres Halbbyte 0 = OPS-RAM, sonst Systemkarte); darf NULL sein.
+ * @param seite  EAH dieser Seite (physische OPS-Seite, 4 Bit); darf NULL sein.
+ * @return false bei anderer Maschine oder n ausserhalb 0…15 (Ausgaben unberührt).
+ */
+K1520_API bool     k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite);
+/** @brief Freigabe-Register EBH (0 = Abbildung aus); -1 bei anderer Maschine. */
+K1520_API int      k1520_prg710_freigabe(K1520Handle h);
+
+/* ─── EPROMmer des PRG (ATP 590068, virtueller Sockel; doc/prg710/eprommer.md, AP-P7b) ───
+ * Typ: 1 = U555 (1 KB, 2708-artig), 2 = U2716 (2 KB); 0 beim Einlegen = aus der Dateigröße.
+ * Andere Maschinen: false bzw. -1 bzw. "".  Thread-sicher (Sockel unter Sperre). */
+/** @brief Rohes `.bin` einlegen (kürzer = mit FFH aufgefüllt).  Fehlertext: k1520_eprom_error. */
+K1520_API bool        k1520_eprom_insert(K1520Handle h, const char* path, int type);
+/**
+ * @brief PROM aus dem Speicher einlegen (Hinübertragen auf eine neu erzeugte Maschine):
+ *        @p len ≤ Größe des Typs, @p path = gebundene Datei (NULL/""), @p modified = „geändert“.
+ */
+K1520_API bool        k1520_eprom_insert_data(K1520Handle h, const uint8_t* data, int len, int type,
+                                              const char* path, bool modified);
+/** @brief Leeres (gelöschtes) PROM des Typs einlegen, ohne Datei. */
+K1520_API bool        k1520_eprom_insert_blank(K1520Handle h, int type);
+/** @brief PROM entnehmen (ungespeicherte Änderungen gehen verloren). */
+K1520_API bool        k1520_eprom_remove(K1520Handle h);
+/** @brief Inhalt als `.bin` schreiben; NULL/"" = an die gebundene Datei.  Bindet neu. */
+K1520_API bool        k1520_eprom_save(K1520Handle h, const char* path);
+/** @brief UV-Löschen (Bedienung): alles FFH. */
+K1520_API bool        k1520_eprom_erase(K1520Handle h);
+/** @brief Gesteckter Typ: 0 = Sockel leer, 1 = U555, 2 = U2716; -1 = kein EPROMmer. */
+K1520_API int         k1520_eprom_type(K1520Handle h);
+/** @brief Eingestellter Typ (ZRE-PIO 84H Bit 0): 1 = U555, 2 = U2716; -1 = kein EPROMmer. */
+K1520_API int         k1520_eprom_selected_type(K1520Handle h);
+/** @brief Steuerregister D4H (Bit 0+1 Programmierspannung, 2 Impuls, 3/4 Versorgung, 5–7 A8–A10); -1. */
+K1520_API int         k1520_eprom_control(K1520Handle h);
+/** @brief Inhalt nach @p buf (höchstens @p len Byte); Rückgabe = Größe des PROM (0 = leer, -1). */
+K1520_API int         k1520_eprom_read(K1520Handle h, uint8_t* buf, int len);
+/** @brief Seit Einlegen/Speichern gebrannt oder gelöscht. */
+K1520_API bool        k1520_eprom_modified(K1520Handle h);
+/** @brief Gebundene Datei ("" = keine). */
+K1520_API const char* k1520_eprom_path(K1520Handle h);
+/**
+ * @brief Protokoll als Zeilen ("[  12.345 s] Text\n…").  @p only_new: nur Zeilen seit dem
+ *        letzten Aufruf mit only_new (EIN Abnehmer, die Oberfläche); sonst der ganze
+ *        Ringpuffer (≤ 1000 Zeilen).
+ */
+K1520_API const char* k1520_eprom_log(K1520Handle h, bool only_new);
+/** @brief Fehlertext des letzten fehlgeschlagenen insert/save (dieses Fadens). */
+K1520_API const char* k1520_eprom_error(K1520Handle h);
+
+/* ─── Lochband an der ADA K6022 (PRG 710/710-1, doc/design/20_prg710.md AP-P8b) ───
+ * Leser daro 1210 (E4H–E7H) und Stanzer daro 1215 (E0H–E3H).  Ein Band ist eine Datei mit
+ * den Bytes wie gestanzt.  Alle Funktionen sind thread-sicher; andere Maschinen: false/-1. */
+
+/** @brief Band (Datei, UTF-8-Pfad) in den Leser legen — ersetzt ein eingelegtes, Stellung auf Anfang. */
+K1520_API bool     k1520_ptape_load(K1520Handle h, const char* path);
+/** @brief Band aus dem Leser nehmen. */
+K1520_API bool     k1520_ptape_eject(K1520Handle h);
+/**
+ * @brief Stand des Lesers.
+ * @param inserted 1 = Band eingelegt; @param pos gelesene Bytes der Datei; @param len Länge der
+ *        Datei; @param at_end 1 = ganz durchgelaufen (STA Bandende).  Ausgaben dürfen NULL sein.
+ */
+K1520_API bool     k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos,
+                                             uint64_t* len, int* at_end);
+/** @brief Länge des Stanzbandes in Bytes; -1 bei anderer Maschine. */
+K1520_API int64_t  k1520_ptape_punch_length(K1520Handle h);
+/** @brief Stanzband in eine Datei schreiben (überschreibt); false bei Schreibfehler. */
+K1520_API bool     k1520_ptape_punch_save(K1520Handle h, const char* path);
+/** @brief Stanzband leeren (neues Band einlegen). */
+K1520_API bool     k1520_ptape_punch_clear(K1520Handle h);
+/** @brief Stanzer ein/aus (Vorgabe ein; aus = kein END, der Treiber meldet C2). */
+K1520_API bool     k1520_ptape_punch_enable(K1520Handle h, bool on);
+/** @brief 1 = Stanzer ein, 0 = aus, -1 bei anderer Maschine. */
+K1520_API int      k1520_ptape_punch_enabled(K1520Handle h);
 
 #ifdef __cplusplus
 }

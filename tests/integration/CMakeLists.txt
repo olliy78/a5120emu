@@ -102,3 +102,64 @@ k1520_add_test(em16_abl SRC test_em16_abl.cpp LIBS ${_libs} k1520_fs
 # den Prompt, Helfer k1520test::wipeVram().
 k1520_add_test(kbd_nach_reset SRC test_kbd_nach_reset.cpp LIBS ${_libs}
                               LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# PRG 710 / 710-1 (doc/design/20_prg710.md AP-P1c): beide Varianten bauen, Netz-Ein + Takte,
+# Verdrahtung der Speicherverwaltung, Marken-FF-Polarität.  Kein Diskettenlauf.
+k1520_add_test(prg710_maschine SRC test_prg710_maschine.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 1 (AP-P1d): echte Boot-ROMs bis zur Tastaturabfrage, Starttaste
+# ohne Diskette (DISKERROR C2) und ohne Laufwerke (LW0/LW1 DEF), Registerfolge der
+# Speicherverwaltung, Marken-FF-Ruhepegel je Variante, Bootsektor von der UDOS-Diskette.
+k1520_add_test(prg710_boot SRC test_prg710_boot.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 3 (AP-P3): UDOS 4.3 bis zum Prompt.
+k1520_add_test(prg710_udos SRC test_prg710_udos.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 4 (AP-P4): K8025-Kanäle über den SerialHub nach außen,
+# Namen nach Gerätebeschriftung; UDOS `SET PRI TO V24` in eine Datei.
+k1520_add_test(prg710_seriell SRC test_prg710_seriell.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 Etappe 5 (AP-P5e): SCPX 1526 V1.7 am 710-1 bis `A>`, `DIR`/`STAT`/`PIP`
+# nach B:, SCPX-Bootdiskette für den PRG 710.
+k1520_add_test(prg710_scpx SRC test_prg710_scpx.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PRG 710 / 710-1 (AP-P7b): EPROMmer — `PROG` (UDOS) kopiert ein eingelegtes Abbild
+# bytegleich in einen leeren virtuellen Sockel (U2716 und U555), falscher Typ brennt nicht.
+k1520_add_test(prg710_eprom SRC test_prg710_eprom.cpp
+                          LIBS k1520_prg710 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# PRG 710 / 710-1 (AP-P5f): FORMAT unter UDOS und SCPX auf einer Leerdiskette.
+k1520_add_test(prg710_format SRC test_prg710_format.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# DiskTool (AP-P6): bootfähige PRG-Disketten (UDOS, SCPX aus Modulen) — gebaut mit dem
+# Werkzeug, gebootet am PRG beider Varianten; Fassung des Bootabbilds erkannt/abgewiesen.
+# AP-P5h: dieselbe Datei prüft auch die ins Paket gelegten Systemdisketten aus disks/.
+k1520_add_test(disktool_prg710 SRC test_disktool_prg710.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                          "PRG710_LIEFERDISKETTEN=\"${CMAKE_SOURCE_DIR}/disks\"" TIMEOUT 150)
+
+# PRG 710 / 710-1 (AP-P8b): ADA K6022 — Lochband stanzen und lesen unter UDOS
+# (`TWRITE.1215`/`TREAD.1210` mit dem Treiber `PTAPE.6022`).
+k1520_add_test(prg710_lochband SRC test_prg710_lochband.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# PRG 710-1 (AP-P8c): ASS 590069 — SCPX mit dem Fernschreiber-BIOS B17272FS druckt über
+# den Anschluss „Fernschreiber“ in eine Datei (Systemdiskette aus den Modulen).
+k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

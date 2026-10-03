@@ -1,0 +1,7 @@
+# boot_trace --machine prg710-1 (Entwurf 20 AP-P1d): das 710-1-ROM richtet SIO A32-B
+# ein (9600 Bd 8N2) und wartet in der SIO-Abfrage auf ENTER — Exit 0.
+tool:    boot_trace
+run:     --machine prg710-1 --quiet --json
+timeout: 120
+exit:    0
+expect:  "machine":"prg710-1","keywait":true,"stall":true

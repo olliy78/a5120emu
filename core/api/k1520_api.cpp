@@ -2,11 +2,13 @@
 #include "core/api/k1520_sync_internal.h"
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
+#include "core/machines/prg710/prg710.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
 #include "core/serial/hub.h"
 #include "core/serial/net/adresse.h"
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -73,12 +75,13 @@ K1520Handle k1520_create(K1520MachineType type) {
 K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d0, const char* d1,
                                     const char* d2, const char* d3) {
+    // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 wählt.
+    if (type == K1520_MACHINE_PRG710) return k1520_create_prg710(0, d0, d1, d2, d3);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
-        // PRG710 ist im Typ vorgesehen, aber nicht gebaut.  Kein stilles NULL: die
-        // Oberfläche soll sagen können, warum.
+        // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710)";
         return nullptr;
     }
 
@@ -100,6 +103,35 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                 if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
             m = new A5120Machine(cfg);
         }
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+K1520Handle k1520_create_prg710(int variante,
+                                const char* d0, const char* d1,
+                                const char* d2, const char* d3) {
+    g_init_error.clear();
+    if (variante != 0 && variante != 1) {
+        g_init_error = "Unbekannte PRG-Variante " + std::to_string(variante) +
+                       " (0 = PRG 710, 1 = PRG 710-1)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        Prg710Machine::Config cfg;
+        cfg.variante = variante == 1 ? Prg710Machine::Config::Variante::Prg710_1
+                                     : Prg710Machine::Config::Variante::Prg710;
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
+        K1520Machine* m = new Prg710Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
         return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();
@@ -650,6 +682,197 @@ uint32_t k1520_bell_count(K1520Handle h) {
 
 void k1520_nmi(K1520Handle h) {
     toMachine(h)->nmi();
+}
+
+// PRG 710 / 710-1: Diagnose (AP-P5b).  Andere Maschinen: -1 bzw. false.
+static Prg710Machine* prgOf(K1520Handle h) {
+    return dynamic_cast<Prg710Machine*>(toMachine(h));
+}
+
+int k1520_prg710_variant(K1520Handle h) {
+    auto* p = prgOf(h);
+    if (!p) return -1;
+    return p->variante() == Prg710Machine::Config::Variante::Prg710_1 ? 1 : 0;
+}
+
+bool k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite) {
+    auto* p = prgOf(h);
+    if (!p || n < 0 || n > 15) return false;
+    if (attr)  *attr  = p->speicher().attr(n);
+    if (seite) *seite = p->speicher().seite(n);
+    return true;
+}
+
+int k1520_prg710_freigabe(K1520Handle h) {
+    auto* p = prgOf(h);
+    return p ? p->speicher().freigabe() : -1;
+}
+
+// ─── EPROMmer (AP-P7b) ───────────────────────────────────────────────────────
+namespace {
+thread_local std::string eprom_fehler;
+Eprommer590068* epromOf(K1520Handle h) {
+    auto* p = prgOf(h);
+    return p ? &p->eprommer() : nullptr;
+}
+Eprommer590068::Typ epromTyp(int t) {
+    return t == 1 ? Eprommer590068::Typ::U555 : t == 2 ? Eprommer590068::Typ::U2716
+                                                     : Eprommer590068::Typ::Keiner;
+}
+}  // namespace
+
+bool k1520_eprom_insert(K1520Handle h, const char* path, int type) {
+    auto* e = epromOf(h);
+    eprom_fehler.clear();
+    if (!e) { eprom_fehler = "kein EPROMmer"; return false; }
+    if (!path) { eprom_fehler = "kein Pfad"; return false; }
+    return e->einlegenDatei(path, epromTyp(type), &eprom_fehler);
+}
+
+bool k1520_eprom_insert_data(K1520Handle h, const uint8_t* data, int len, int type,
+                             const char* path, bool modified) {
+    auto* e = epromOf(h);
+    eprom_fehler.clear();
+    if (!e || len < 0 || (len > 0 && !data)) { eprom_fehler = "kein EPROMmer"; return false; }
+    if (!e->einlegen(std::vector<uint8_t>(data, data + len), epromTyp(type), path ? path : "",
+                     &eprom_fehler))
+        return false;
+    if (modified) e->markiereGeaendert();
+    return true;
+}
+
+bool k1520_eprom_insert_blank(K1520Handle h, int type) {
+    auto* e = epromOf(h);
+    if (!e || (type != 1 && type != 2)) return false;
+    e->einlegenLeer(epromTyp(type));
+    return true;
+}
+
+bool k1520_eprom_remove(K1520Handle h) {
+    auto* e = epromOf(h);
+    if (!e) return false;
+    e->entnehmen();
+    return true;
+}
+
+bool k1520_eprom_save(K1520Handle h, const char* path) {
+    auto* e = epromOf(h);
+    eprom_fehler.clear();
+    if (!e) { eprom_fehler = "kein EPROMmer"; return false; }
+    return e->speichern(path ? path : "", &eprom_fehler);
+}
+
+bool k1520_eprom_erase(K1520Handle h) {
+    auto* e = epromOf(h);
+    if (!e || !e->steckt()) return false;
+    e->uvLoeschen();
+    return true;
+}
+
+int k1520_eprom_type(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e ? int(e->typ()) : -1;
+}
+
+int k1520_eprom_selected_type(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e ? int(e->eingestellterTyp()) : -1;
+}
+
+int k1520_eprom_control(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e ? int(e->steuerregister()) : -1;
+}
+
+int k1520_eprom_read(K1520Handle h, uint8_t* buf, int len) {
+    auto* e = epromOf(h);
+    if (!e) return -1;
+    const auto d = e->inhalt();
+    if (buf && len > 0) std::memcpy(buf, d.data(), std::min<size_t>(d.size(), size_t(len)));
+    return int(d.size());
+}
+
+bool k1520_eprom_modified(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e && e->geaendert();
+}
+
+const char* k1520_eprom_path(K1520Handle h) {
+    static thread_local std::string buf;
+    auto* e = epromOf(h);
+    buf = e ? e->datei() : std::string();
+    return buf.c_str();
+}
+
+const char* k1520_eprom_log(K1520Handle h, bool only_new) {
+    static thread_local std::string buf;
+    buf.clear();
+    auto* e = epromOf(h);
+    if (!e) return buf.c_str();
+    for (const auto& z : only_new ? e->protokollNeu() : e->protokoll()) buf += z + "\n";
+    return buf.c_str();
+}
+
+const char* k1520_eprom_error(K1520Handle) {
+    return eprom_fehler.c_str();
+}
+
+// Lochband an der K6022 (AP-P8b).
+bool k1520_ptape_load(K1520Handle h, const char* path) {
+    auto* p = prgOf(h);
+    if (!p || !path) return false;
+    std::string fehler;
+    return p->k6022().bandEinlegenDatei(path, fehler);
+}
+
+bool k1520_ptape_eject(K1520Handle h) {
+    auto* p = prgOf(h);
+    if (!p) return false;
+    p->k6022().bandEntnehmen();
+    return true;
+}
+
+bool k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos, uint64_t* len,
+                               int* at_end) {
+    auto* p = prgOf(h);
+    if (!p) return false;
+    const K6022::LeserStand s = p->k6022().leserStand();
+    if (inserted) *inserted = s.eingelegt ? 1 : 0;
+    if (pos)      *pos = s.gelesen;
+    if (len)      *len = s.laenge;
+    if (at_end)   *at_end = s.bandende ? 1 : 0;
+    return true;
+}
+
+int64_t k1520_ptape_punch_length(K1520Handle h) {
+    auto* p = prgOf(h);
+    return p ? static_cast<int64_t>(p->k6022().stanzbandLaenge()) : -1;
+}
+
+bool k1520_ptape_punch_save(K1520Handle h, const char* path) {
+    auto* p = prgOf(h);
+    if (!p || !path) return false;
+    std::string fehler;
+    return p->k6022().stanzbandSpeichern(path, fehler);
+}
+
+bool k1520_ptape_punch_clear(K1520Handle h) {
+    auto* p = prgOf(h);
+    if (!p) return false;
+    p->k6022().stanzbandLeeren();
+    return true;
+}
+
+bool k1520_ptape_punch_enable(K1520Handle h, bool on) {
+    auto* p = prgOf(h);
+    if (!p) return false;
+    p->k6022().setStanzerEin(on);
+    return true;
+}
+
+int k1520_ptape_punch_enabled(K1520Handle h) {
+    auto* p = prgOf(h);
+    return p ? (p->k6022().stanzerEin() ? 1 : 0) : -1;
 }
 
 } // extern "C"

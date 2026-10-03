@@ -30,6 +30,8 @@
 #include "core/cards/k7024/chargen_zg2.h"      // untere Zeilen 8–11 (EPROM A123 / v172, A5120)
 #include "core/cards/k7024/chargen_k8915_zg1.h" // obere Zeilen 0–7  (EPROM Y411, K8915 012-6820)
 #include "core/cards/k7024/chargen_k8915_zg2.h" // untere Zeilen 8–11 (EPROM Y412, K8915 012-6820)
+#include "core/cards/k7024/chargen_prg710_zg1.h" // obere Zeilen 0–7  (EPROM A103, PRG 710/710-1)
+#include "core/cards/k7024/chargen_prg710_zg2.h" // untere Zeilen 8–11 (EPROM A123, PRG 710/710-1)
 #include <algorithm>
 #include <cstring>
 
@@ -43,6 +45,15 @@ K7024::A5120Config K7024::A5120Config::forK8915()
     // an Stelle der Karte antworten könnte — der Bildspeicher MUSS lesbar sein.  Das
     // Boot-ROM prüft ihn beim Selbsttest als RAM (F0EDH: 1000H, 07F0H Bytes, bei
     // A8H = 06H) und löscht das Cursorbit per `RES 7,(HL)` (doc/design/16_k8915.md §3.3).
+    cfg.read_protect     = false;
+    return cfg;
+}
+
+K7024::A5120Config K7024::A5120Config::forPrg710()
+{
+    A5120Config cfg;                       // vram_base_hi = F8
+    cfg.chargen_rows0_7  = CHARGEN_PRG710_ZG1_LATIN;
+    cfg.chargen_rows8_11 = CHARGEN_PRG710_ZG2_LATIN;
     cfg.read_protect     = false;
     return cfg;
 }

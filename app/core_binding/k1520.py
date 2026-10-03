@@ -292,6 +292,12 @@ class K1520EmState(ctypes.Structure):
     ]
 
 
+# k1520_create_prg710(variante, d0..d3) -> K1520Handle   (0 = PRG 710, 1 = PRG 710-1)
+_lib.k1520_create_prg710.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_prg710.restype = K1520Handle
+
 # k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
 _lib.k1520_create_with_em.argtypes = [
     ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
@@ -381,8 +387,77 @@ _lib.k1520_bell_count.restype = ctypes.c_uint32
 _lib.k1520_nmi.argtypes = [K1520Handle]
 _lib.k1520_nmi.restype = None
 
+# PRG 710/710-1 (AP-P5b): Variante und Speicherverwaltung (Diagnose)
+_lib.k1520_prg710_variant.argtypes = [K1520Handle]
+_lib.k1520_prg710_variant.restype = ctypes.c_int
+_lib.k1520_prg710_page.argtypes = [K1520Handle, ctypes.c_int,
+                                   ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8)]
+_lib.k1520_prg710_page.restype = ctypes.c_bool
+_lib.k1520_prg710_freigabe.argtypes = [K1520Handle]
+_lib.k1520_prg710_freigabe.restype = ctypes.c_int
+
+# EPROMmer des PRG (ATP 590068, virtueller Sockel; doc/prg710/eprommer.md, AP-P7b)
+_lib.k1520_eprom_insert.argtypes = [K1520Handle, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_eprom_insert.restype = ctypes.c_bool
+_lib.k1520_eprom_insert_data.argtypes = [K1520Handle, ctypes.POINTER(ctypes.c_uint8),
+                                         ctypes.c_int, ctypes.c_int, ctypes.c_char_p,
+                                         ctypes.c_bool]
+_lib.k1520_eprom_insert_data.restype = ctypes.c_bool
+_lib.k1520_eprom_insert_blank.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_eprom_insert_blank.restype = ctypes.c_bool
+_lib.k1520_eprom_remove.argtypes = [K1520Handle]
+_lib.k1520_eprom_remove.restype = ctypes.c_bool
+_lib.k1520_eprom_save.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_eprom_save.restype = ctypes.c_bool
+_lib.k1520_eprom_erase.argtypes = [K1520Handle]
+_lib.k1520_eprom_erase.restype = ctypes.c_bool
+_lib.k1520_eprom_type.argtypes = [K1520Handle]
+_lib.k1520_eprom_type.restype = ctypes.c_int
+_lib.k1520_eprom_selected_type.argtypes = [K1520Handle]
+_lib.k1520_eprom_selected_type.restype = ctypes.c_int
+_lib.k1520_eprom_control.argtypes = [K1520Handle]
+_lib.k1520_eprom_control.restype = ctypes.c_int
+_lib.k1520_eprom_read.argtypes = [K1520Handle, ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520_eprom_read.restype = ctypes.c_int
+_lib.k1520_eprom_modified.argtypes = [K1520Handle]
+_lib.k1520_eprom_modified.restype = ctypes.c_bool
+_lib.k1520_eprom_path.argtypes = [K1520Handle]
+_lib.k1520_eprom_path.restype = ctypes.c_char_p
+_lib.k1520_eprom_log.argtypes = [K1520Handle, ctypes.c_bool]
+_lib.k1520_eprom_log.restype = ctypes.c_char_p
+_lib.k1520_eprom_error.argtypes = [K1520Handle]
+_lib.k1520_eprom_error.restype = ctypes.c_char_p
+
+# Lochband an der ADA K6022 (PRG, AP-P8b)
+_lib.k1520_ptape_load.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_ptape_load.restype = ctypes.c_bool
+_lib.k1520_ptape_eject.argtypes = [K1520Handle]
+_lib.k1520_ptape_eject.restype = ctypes.c_bool
+_lib.k1520_ptape_reader_status.argtypes = [
+    K1520Handle, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+    ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_int)]
+_lib.k1520_ptape_reader_status.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_length.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_length.restype = ctypes.c_int64
+_lib.k1520_ptape_punch_save.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_ptape_punch_save.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_clear.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_clear.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_enable.argtypes = [K1520Handle, ctypes.c_bool]
+_lib.k1520_ptape_punch_enable.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_enabled.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_enabled.restype = ctypes.c_int
+
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
-MACHINE_TYPES = {"a5120": 0, "k8915": 2}
+MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
+# Variante für k1520_create_prg710 (nur die PRG-Namen).
+PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
+
+# Bildschirmtastatur: `QK_TASTE_BASE | Position` = physische Taste (K7609 am PRG 710,
+# K7672 am PRG 710-1 und K8915).  ET1 des PRG 710 (K7609): Position 37H; ET2/ST: 38H.
+# Am PRG 710-1 und K8915 gelten die Matrixpositionen der K7672 (Firmware-Tabelle).
+QK_TASTE_BASE = 0x03000000
+K7609_ET1, K7609_ET2 = 0x37, 0x38
 
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
@@ -628,8 +703,8 @@ class K1520Emulator:
                 that is ``None`` or ``""`` keeps the slot default; ``"none"``
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
-            machine: ``"a5120"`` (Vorgabe) oder ``"k8915"`` — siehe
-                :data:`MACHINE_TYPES`.
+            machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"prg710"`` oder
+                ``"prg710-1"`` — siehe :data:`MACHINE_TYPES`.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
         """
@@ -645,7 +720,14 @@ class K1520Emulator:
         if self._em and machine != "a5120":
             raise ValueError(f"ein Erweiterungsmodul gibt es nur am A5120, nicht am {machine!r}")
         try:
-            handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine], self._em)
+            if machine in PRG_VARIANTEN:
+                names = (self._drive_types or [])[:4]
+                names = names + [None] * (4 - len(names))
+                enc = lambda n: n.encode("utf-8") if n else None
+                handle = _lib.k1520_create_prg710(
+                    PRG_VARIANTEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            else:
+                handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine], self._em)
         except Exception as e:
             raise RuntimeError(f"Failed to create K1520 emulator: {e}")
         if not handle:
@@ -683,8 +765,151 @@ class K1520Emulator:
         """Name der Maschine, mit der dieses Objekt erzeugt wurde (``"a5120"``/``"k8915"``)."""
         return self._machine
 
+    @property
+    def prg_variant(self) -> Optional[int]:
+        """PRG: 0 = PRG 710, 1 = PRG 710-1 (aus dem Kern); andere Maschinen ``None``."""
+        v = int(_lib.k1520_prg710_variant(self._handle))
+        return v if v >= 0 else None
+
+    def prg_page(self, n: int) -> Optional[tuple]:
+        """PRG: Speicherverwaltung Seite ``n`` (0…15) als ``(E8H, EAH)``; sonst ``None``."""
+        a, s = ctypes.c_uint8(), ctypes.c_uint8()
+        if not _lib.k1520_prg710_page(self._handle, n, ctypes.byref(a), ctypes.byref(s)):
+            return None
+        return a.value, s.value
+
+    def prg_freigabe(self) -> Optional[int]:
+        """PRG: Freigaberegister EBH (0 = Abbildung aus); sonst ``None``."""
+        v = int(_lib.k1520_prg710_freigabe(self._handle))
+        return v if v >= 0 else None
+
+    # ─── EPROMmer des PRG (virtueller Sockel, AP-P7b) ─────────────────────────
+    #: Typnamen des Sockels (0 = leer); Schlüssel wie k1520_eprom_type.
+    EPROM_TYPEN = {0: "", 1: "U555", 2: "U2716"}
+    #: Größe je Typ in Byte.
+    EPROM_GROESSE = {1: 1024, 2: 2048}
+
+    def has_eprommer(self) -> bool:
+        """True, wenn die Maschine einen EPROMmer hat (PRG 710 / 710-1)."""
+        return int(_lib.k1520_eprom_type(self._handle)) >= 0
+
+    def eprom_insert(self, path: str, typ: int = 0) -> None:
+        """Rohes ``.bin`` einlegen (``typ`` 0 = aus der Größe, 1 = U555, 2 = U2716).
+
+        Raises:
+            OSError: mit dem Fehlertext des Kerns.
+        """
+        if not _lib.k1520_eprom_insert(self._handle, os.fsencode(path), int(typ)):
+            raise OSError((_lib.k1520_eprom_error(self._handle) or b"").decode("utf-8", "replace"))
+
+    def eprom_insert_data(self, daten: bytes, typ: int, path: str = "",
+                          modified: bool = False) -> None:
+        """PROM aus dem Speicher einlegen (Sockel auf eine neue Maschine tragen).
+
+        Raises:
+            OSError: mit dem Fehlertext des Kerns.
+        """
+        buf = (ctypes.c_uint8 * max(len(daten), 1)).from_buffer_copy(bytes(daten) or b"\0")
+        if not _lib.k1520_eprom_insert_data(self._handle, buf, len(daten), int(typ),
+                                            os.fsencode(path) if path else None,
+                                            bool(modified)):
+            raise OSError((_lib.k1520_eprom_error(self._handle) or b"").decode("utf-8", "replace"))
+
+    def eprom_insert_blank(self, typ: int) -> bool:
+        """Leeres (gelöschtes) PROM einlegen: 1 = U555, 2 = U2716."""
+        return bool(_lib.k1520_eprom_insert_blank(self._handle, int(typ)))
+
+    def eprom_remove(self) -> bool:
+        return bool(_lib.k1520_eprom_remove(self._handle))
+
+    def eprom_save(self, path: Optional[str] = None) -> None:
+        """Inhalt als ``.bin`` schreiben (``None`` = an die gebundene Datei).
+
+        Raises:
+            OSError: mit dem Fehlertext des Kerns.
+        """
+        p = os.fsencode(path) if path else None
+        if not _lib.k1520_eprom_save(self._handle, p):
+            raise OSError((_lib.k1520_eprom_error(self._handle) or b"").decode("utf-8", "replace"))
+
+    def eprom_erase(self) -> bool:
+        """UV-Löschen: alles FFH."""
+        return bool(_lib.k1520_eprom_erase(self._handle))
+
+    def eprom_type(self) -> int:
+        """Gesteckter Typ: 0 = leer, 1 = U555, 2 = U2716, -1 = kein EPROMmer."""
+        return int(_lib.k1520_eprom_type(self._handle))
+
+    def eprom_selected_type(self) -> int:
+        """Eingestellter Typ (ZRE-PIO 84H Bit 0): 1 = U555, 2 = U2716, -1."""
+        return int(_lib.k1520_eprom_selected_type(self._handle))
+
+    def eprom_control(self) -> int:
+        """Steuerregister D4H (Bit 0+1 Programmierspannung, 2 Impuls, 3/4 Versorgung)."""
+        return int(_lib.k1520_eprom_control(self._handle))
+
+    def eprom_read(self) -> bytes:
+        """Inhalt des gesteckten PROM (leer: ``b""``)."""
+        buf = (ctypes.c_uint8 * 2048)()
+        n = int(_lib.k1520_eprom_read(self._handle, buf, 2048))
+        return bytes(buf[:max(n, 0)])
+
+    def eprom_modified(self) -> bool:
+        return bool(_lib.k1520_eprom_modified(self._handle))
+
+    def eprom_path(self) -> str:
+        return (_lib.k1520_eprom_path(self._handle) or b"").decode("utf-8", "replace")
+
+    def eprom_log(self, only_new: bool = False) -> list:
+        """Protokollzeilen; ``only_new`` = nur seit dem letzten solchen Aufruf."""
+        s = (_lib.k1520_eprom_log(self._handle, bool(only_new)) or b"").decode("utf-8", "replace")
+        return [z for z in s.split("\n") if z]
+
+    # ── Lochband an der ADA K6022 (PRG, AP-P8b) ──────────────────────────────
+
+    def ptape_load(self, path: str) -> bool:
+        """Band (Datei, Bytes wie gestanzt) in den Leser legen; False bei Lesefehler
+        oder anderer Maschine."""
+        return bool(_lib.k1520_ptape_load(self._handle, str(path).encode("utf-8")))
+
+    def ptape_eject(self) -> bool:
+        """Band aus dem Leser nehmen."""
+        return bool(_lib.k1520_ptape_eject(self._handle))
+
+    def ptape_reader_status(self) -> Optional[dict]:
+        """Leser: ``{"inserted", "pos", "len", "at_end"}``; andere Maschine ``None``."""
+        ins, end = ctypes.c_int(), ctypes.c_int()
+        pos, ln = ctypes.c_uint64(), ctypes.c_uint64()
+        if not _lib.k1520_ptape_reader_status(self._handle, ctypes.byref(ins), ctypes.byref(pos),
+                                              ctypes.byref(ln), ctypes.byref(end)):
+            return None
+        return {"inserted": bool(ins.value), "pos": int(pos.value), "len": int(ln.value),
+                "at_end": bool(end.value)}
+
+    def ptape_punch_length(self) -> Optional[int]:
+        """Länge des Stanzbandes; andere Maschine ``None``."""
+        n = int(_lib.k1520_ptape_punch_length(self._handle))
+        return n if n >= 0 else None
+
+    def ptape_punch_save(self, path: str) -> bool:
+        """Stanzband in eine Datei schreiben (überschreibt)."""
+        return bool(_lib.k1520_ptape_punch_save(self._handle, str(path).encode("utf-8")))
+
+    def ptape_punch_clear(self) -> bool:
+        """Stanzband leeren."""
+        return bool(_lib.k1520_ptape_punch_clear(self._handle))
+
+    def ptape_punch_enable(self, on: bool) -> bool:
+        """Stanzer ein/aus (aus: der Treiber meldet nach seiner Frist C2)."""
+        return bool(_lib.k1520_ptape_punch_enable(self._handle, bool(on)))
+
+    def ptape_punch_enabled(self) -> Optional[bool]:
+        """Stanzer ein?; andere Maschine ``None``."""
+        v = int(_lib.k1520_ptape_punch_enabled(self._handle))
+        return None if v < 0 else bool(v)
+
     def machine_type(self) -> int:
-        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 2 = K8915)."""
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915)."""
         return int(_lib.k1520_machine_type(self._handle))
 
     def panel_lamps(self) -> int:
@@ -1105,7 +1330,7 @@ class K1520Emulator:
     # ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────
 
     def serial_count(self) -> int:
-        """Zahl der einstellbaren Schnittstellen (A5120 und K8915: 3)."""
+        """Zahl der einstellbaren Schnittstellen (A5120, K8915 und PRG 710: 3; PRG 710-1: 2)."""
         return int(_lib.k1520_serial_count(self._handle))
 
     def serial_info(self, i: int) -> Optional[SerialInfo]:

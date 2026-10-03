@@ -18,7 +18,9 @@ schon, bevor PySide6 geladen ist (``--paths``, ``--help``).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
+
+from app import modell as _modell
 
 
 @dataclass(frozen=True)
@@ -46,9 +48,22 @@ class Programmprofil:
     tastatur: str
     #: Frontplatte mit Lampen in der Statuszeile (K8915: Run … Power).
     frontplatte: bool = False
-    #: Modellwahl A5120 / A5120.16 (Erweiterungsmodul, `app/modell.py`) unter
-    #: *Einstellungen ▸ Allgemein* — nur der A5120 kann eins tragen.
+    #: Kasten „EPROMmer“ mit virtuellem Sockel (PRG 710, doc/design/20_prg710.md AP-P7c).
+    eprommer: bool = False
+    #: Modellwahl unter *Einstellungen ▸ Allgemein*: A5120 / A5120.16 (Erweiterungs-
+    #: modul) bzw. PRG 710 / PRG 710-1 (`app/modell.py`) — der K8915 hat keine.
     modellwahl: bool = False
+    #: Die wählbaren Modelle: ``(Schlüssel, Kern-Maschine, Kern-``em``, Anzeigename,
+    #: Tastatur)``.  Leer = ein Modell, die Maschine des Profils.  Der Schlüssel steht
+    #: in der Konfiguration (``general.model``); ein unbekannter wird zum ersten.
+    modelle: Tuple[Tuple[str, str, Optional[str], str, str], ...] = ()
+    #: Hinweistext am Auswahlfeld des Modells.
+    modell_tipp: str = ""
+    #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
+    ueber_rechner: str = ""
+    #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname
+    #: des Profils.
+    weitere: Tuple[str, ...] = ()
     #: Aktionen, die nur dieses Programm hat (Namen aus `app/ui/actions.py`).
     eigene_aktionen: Tuple[str, ...] = field(default_factory=tuple)
     #: Die jeweils ANDERE Maschine (für *Werkzeuge ▸ … starten*).
@@ -57,6 +72,42 @@ class Programmprofil:
     #: Konfiguration ist über den NAMEN verschlüsselt; ohne diese Abbildung wären
     #: Einstellungen unter einem alten Namen herrenlos (K8915: AP-S12).
     alte_schnittstellen: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
+
+    # ── Modellwahl: Schlüssel → Kern-Maschine / EM / Tastatur ───────────────
+    # Ein Profil ohne `modelle` hat genau ein Modell: seine Maschine.
+
+    def standard_modell(self) -> str:
+        """Schlüssel des Modells ab Werk (das erste; ohne Modellwahl ``a5120``,
+        der Schlüssel „kein Erweiterungsmodul“ aus `app/modell.py`)."""
+        return self.modelle[0][0] if self.modelle else _modell.DEFAULT_MODEL
+
+    def modell_normalisieren(self, modell) -> str:
+        """Ein bekannter Modellschlüssel — Unbekanntes/Fehlendes wird die Vorgabe."""
+        modell = str(modell).strip().lower() if modell else ""
+        return modell if any(m[0] == modell for m in self.modelle) \
+            else self.standard_modell()
+
+    def _modell_zeile(self, modell):
+        schluessel = self.modell_normalisieren(modell)
+        for m in self.modelle:
+            if m[0] == schluessel:
+                return m
+        return None
+
+    def modell_maschine(self, modell) -> str:
+        """Maschinenname für ``K1520Emulator(machine=…)``."""
+        z = self._modell_zeile(modell)
+        return z[1] if z else self.maschine
+
+    def modell_em(self, modell) -> Optional[str]:
+        """``em=``-Parameter des Kerns (``None`` = ohne Erweiterungsmodul)."""
+        z = self._modell_zeile(modell)
+        return z[2] if z else None
+
+    def modell_tastatur(self, modell) -> str:
+        """Bildschirmtastatur des Modells (``"k7637"``/``"k7672"``/``"k7609"``)."""
+        z = self._modell_zeile(modell)
+        return z[4] if z else self.tastatur
 
     def schnittstellen_umbenennen(self, daten: dict) -> dict:
         """Abschnitt ``schnittstellen`` mit alten Namen auf die heutigen abbilden.
@@ -99,7 +150,13 @@ A5120 = Programmprofil(
     nenntakt_text="2,45 MHz",
     tastatur="k7637",
     modellwahl=True,
+    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS),
+    modell_tipp=("A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
+                 "EM256 mit dem U8001 hinzu.  Ein Wechsel erzeugt die Maschine neu "
+                 "(wie ein Kaltstart)."),
+    ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
+    weitere=("prg710",),
 )
 
 K8915 = Programmprofil(
@@ -116,14 +173,42 @@ K8915 = Programmprofil(
     tastatur="k7672",
     frontplatte=True,
     eigene_aktionen=("nmi",),
+    ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
+    weitere=("prg710",),
     # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
     # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
 )
 
+PRG710 = Programmprofil(
+    maschine="prg710",
+    programm="prg710emu",
+    titel="PRG710 Emulator",
+    rechner="PRG 710",
+    beschreibung="Emulator der Programmiergeräte robotron PRG 710 und PRG 710-1 (K1520-Bus)",
+    konfig_datei="prg710emu.yaml",
+    vorgabe_datei="default_config_prg710.yaml",
+    # 2,4576 MHz (Prg710Machine::CPU_HZ, wie der K8915).
+    nenntakt_hz=2_457_600,
+    nenntakt_text="2,4576 MHz",
+    tastatur="k7609",
+    eprommer=True,
+    modellwahl=True,
+    # Beide Geräte laufen auf derselben ZRE/ABS/AFS; das 710 hat die Tastatur
+    # K7609 an einem 8279 (ATP), das 710-1 die K7672 an der K8025 (§3.9/§3.10).
+    modelle=(("prg710", "prg710", None, "PRG 710 (Tastatur K7609)", "k7609"),
+             ("prg710-1", "prg710-1", None, "PRG 710-1 (Tastatur K7672)", "k7672")),
+    modell_tipp=("PRG 710 oder PRG 710-1: andere ZRE-Fassung, andere Tastatur und "
+                 "andere Schnittstellen.  Ein Wechsel erzeugt die Maschine neu "
+                 "(wie ein Kaltstart)."),
+    ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
+    andere="a5120",
+    weitere=("k8915",),
+)
+
 #: Alle Profile nach Maschinenname.
-PROFILE = {p.maschine: p for p in (A5120, K8915)}
+PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710)}
 
 #: Das Profil ohne Angabe — ältere Starter, Tests, ``app/main.py`` ohne Schalter.
 VORGABE = A5120

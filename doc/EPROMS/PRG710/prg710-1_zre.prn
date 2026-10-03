@@ -1,0 +1,671 @@
+; ============================================================================
+; prg710-1_zre.prn  -  PRG 710-1  Boot-ROM "NKM-LOADER" (ZRE K2521, 1 x U555), 1 KB, 0000H-03FFH
+;
+; Quelle : doc/EPROMS/PRG710/prg710-1_k2521_nkm_loader.bin
+;          MD5 6f551b3db369134564db02f4e55e0144, ausgelesen 2026-10-02 vom Anwender
+; Erzeugt: tools/gen_prg710_zre_prn.py (rohes Disassemblat tools/z80_disasm2.py + Handkommentare)
+; Plan   : doc/design/20_prg710.md Par. 4a / 4a.1 / 4b; Resident-Software: doc/prg710/resident.md
+;
+; STATISCHE Analyse -- es gibt noch keinen Emulator des PRG 710, also keine Laufzeitbestaetigung.
+; [?] = Deutung nach Datenblatt oder Vermutung; alles andere steht im Code.  Tastatur dieser
+; Fassung: K8025 SIO A32 Kanal B an 5EH/5FH (Taste ENTER = 0DH), 9600 Bd 8N2.
+;
+; ---- Wo was laeuft ------------------------------------------------------------------
+;   0000-0052  laeuft aus dem ROM (nach dem Einschalten ist Seite 0 = ZRE-ROM)
+;   0055-006A  laeuft NUR aus der RAM-Kopie bei 1055H (RAM_TEIL): schaltet Seite 0 auf RAM
+;              und holt die Kopie zurueck
+;   ab 006DH   laeuft ALLES aus dem RAM an der Sollage (HAUPT bis zur Sprungleiste); das ROM
+;              ist nicht mehr sichtbar.  Der Lader VERAENDERT SICH SELBST (02D6H und
+;              0303H, s. unten) und fuehrt Zustand in 03FBH/03FCH und im Parameterblock
+;   0C00-0FFF  ZRE-RAM beim Start (Stapel 0D00H, Cursor 0FDEH, IM-2-Tabelle I = 0FH); nach dem Umschalten
+;              OPS-RAM (Zellen 0FCAH-0FD1H, 0E50H-0E9FH, 0EDDH: Floppytreiber)
+;   0400-...   hierhin laedt der Lader den Bootsektor (512 Byte, Spur 0 Sektor 1); er startet, wenn
+;              bei 0402H 'SY' steht (Bootsektor beginnt 18 03 'SYL')
+;
+; ---- Ablauf (Plan 4a) --------------------------------------------------------------------
+;   1 Stapel, I/IM 2, Bildschirm loeschen, Kopfzeile 'NKM-LOADER'
+;   2 steht bei 4000H ein JR (18H): Sprung nach 4000H
+;   3 Tastatur einrichten; Speicherverwaltung E8H-EBH programmieren (Par. 4b); ROM nach 1000H
+;     kopieren, dort Seite 0 auf RAM schalten, zurueckkopieren, nach HAUPT
+;   4 K5122/CTC einrichten (FLOPPY_INIT); auf Taste ENTER warten
+;   5 je Laufwerk 0, 1: LADEN (512 Byte Spur 0 Sektor 1 nach 0400H); 'SY' -> JP 0400H; sonst
+;     'LW0 DEF'/'LW1 DEF' (Status C0H) bzw. 'DISKERROR ' + Status; kein Laufwerk gut: 'NO SYSTEM'
+;     und von vorn (NEUSTART_SPEICHER)
+;
+; ---- Schnittstelle fuer den Bootsektor (Sprungleiste 03E8H-03FFH) ------------------------
+;   03E8 Tastatur   03EB Zeichen   03EE Text   03F1 Hexbyte   03F4 DISKERROR   03FD Sektoren lesen
+;   03FBH Sektorlaengen-Zustand, 03FCH Bootlaufwerk (0/1), 03F9H leerer Haken (NOP/RET)
+;   Parameterblock 03D7H (IY): +0 ?, +1 Flags (0AH = lesen), +2/+3 Ladeadresse, +4/+5 Laenge in
+;   Byte, +10 Status, +11 Laufwerk (Bit 5-6) | Kopf (Bit 7) | Sektor-1 (Bit 0-4), +12 Spur
+;   Status: 80H gut | C0H Schrittzaehler (256 Schritte) abgelaufen, Laufwerk fehlt | C2H nicht
+;   bereit (/RDYL 65536 Abfragen lang) | C4H Sektornummer nicht gefunden (256 Koepfe) |
+;   C5H Spurbyte falsch (26 Koepfe, dreimal nach Neukalibrierung) | C6H Datenfeld-CRC falsch (16 Lesungen)
+;
+; ---- K5122-Bits, wie hier benutzt (design/07 Par. 4/5) -------------------------------------
+;   10H Tor A (Ausgabe): Bit0 /WE, Bit1 MK (0 = Marke A1), Bit2 /FR = Seitenwahl (1 = Kopf 0),
+;     Bit3 /STR, Bit4 MK1, Bit5 MR/SD = Schrittrichtung (1 = innen), Bit6 /HL, Bit7 /ST
+;   12H Tor B: Bit0 /RDYL, Bit1 MKE (Marken-FF), Bit2 /HF und Bit3 PRE (Ausgaenge), Bit7 /TO (Spur 0)
+;   14H Schreibdaten, 16H Lesedaten (/WAIT-Betrieb), 18H 8212: hohes Halbbyte /SE, tiefes /LCK
+;   Lesesteuerworte B5H -> 85H (Kopf 0) und B1H -> 81H (Kopf 1): /STR faellt, MR 1 -> 0 macht den
+;   Marken-FF scharf.  NICHT FM/MFM: der Lader liest ausschliesslich MFM (Sync A1)
+;
+; ---- Speicherverwaltung E8H-EBH (Arbeitsmodell Par. 4b) ----------------------------------
+;   Registeradresse = A12-A15 der E/A-Adresse (OUT (C),r mit B = Seite*10H); EAH[n] = physische
+;   Seite, E8H[n] = Herkunft (Seite 0: 0FH = ZRE, 10H = RAM; Seite F: FFH = VRAM sichtbar,
+;   F0H = RAM), EBH = Freigabe (0 = Abbildung aus, 0FH ein)
+;
+; ---- Selbstveraenderung -------------------------------------------------------------------
+;   02D6H  Operand von 'LD A,00H' (bei 02D5H): Zahl der 128-Byte-Bloecke je Sektor
+;   0303H  Operand von 'CP 00H': Laengencode des Sektorkopfes (0 = 128 ... 3 = 1024 Byte)
+;   03FBH  RLCA bei Laengenfehler (11H -> 22H -> 44H -> 88H); das hohe Halbbyte wertet das ROM
+;          nicht aus [?]
+;   03FCH  Bootlaufwerk, 03D8H/03DBH (Laenge) und Parameterblock werden von LADEN beschrieben
+;
+; ---- Fassungsvergleich PRG 710 <-> PRG 710-1 (Plan Par. 4a.1) ----------------------------
+;   Dieselbe Lader-Fassung (Texte, Aufbau, Speicherverwaltung, Bildschirmtreiber, Leseroutine);
+;   857 der 1024 Byte weichen ab, fast alle nur durch Verschiebung.  Inhaltlich verschieden:
+;   1 Tastatur: 710 8279 an C8H/C9H (Status AND 07H); 710-1 K8025-SIO A32-B an 5EH/5FH
+;     (CTC K0 58H: 07H,01H; SIO WR4 4CH, WR3 C1H, WR5 68H = 9600 Bd 8N2; Abfrage RR0 Bit 0)
+;   2 Start: 710 liest beide Laufwerke VORHER (ohne Auswertung), wartet auf ET (37H);
+;     710-1 wartet auf ENTER (0DH), die Laufwerke erscheinen erst danach
+;   3 Marken-FF (12H Bit 1): 710 wiederholt den Lesestrobe, SOLANGE Bit 1 = 1 (JR NZ; MKE
+;     low-aktiv); 710-1 strobt einmal und wartet, BIS Bit 1 = 1 (JR Z; MKE high-aktiv, wie das
+;     Modell im /WAIT-Zweig).  Alle Treiber halten sich daran (Resident, SCPX-BIOS).
+;   Gemeinsam: Sprungleiste mit denselben Adressen, 4000H-Haken, Parameterblock-Aufbau.
+;
+; ---- Befunde dieser Auswertung (Abweichungen/Zusaetze zum Plan) --------------------------
+;   B1 Die Steuerworte B5H/85H und B1H/81H waehlen den KOPF (Bit 2 /FR), nicht FM/MFM
+;   B2 Status C0H = Schrittzaehler abgelaufen (Laufwerk fehlt), C2H = /RDYL-Zeitablauf; das ROM
+;      meldet 'LW0 DEF' nur fuer C0H
+;   B3 Die Kopien nach 1000H bzw. zurueck laufen ueber 04EBH/04E8H Byte, nicht 0400H
+;   B4 Weder Sektorkopf-CRC noch Datenmarke noch Kopfbyte werden geprueft; nur Spur, Sektor,
+;      Laenge und die Daten-CRC; kein Zeitablauf in den Markenwartekreisen (ID_STROBE/ID_SYNC)
+;   B5 Der Haken 03F9H (NOP/RET) wird vor jedem Spuranfahren gerufen
+;   B6 Bei vollem Bild (Zeile 24) wird geloescht statt gescrollt
+; ============================================================================
+
+	ORG	0000H
+
+; ---- Kaltstart aus dem ROM, Speicherverwaltung programmieren, ROM-Bild nach 1000H (0000H-0052H) 
+0000  31 00 0D      	LD SP,0D00H		;[RESET-EINSPRUNG] SP = 0D00H (ZRE-RAM 0C00-0FFF, Stapel waechst nach unten)
+0003  3E 0F         	LD A,0FH		;I = 0FH + IM 2: Vektortabelle bei 0F00H; belegt wird nur CTC-Kanal 3, Vektor E6H -> (0FE6H) (FLOPPY_INIT).  Vor deren Aufruf kommt kein Interrupt.
+0005  ED 47         	LD I,A
+0007  ED 5E         	IM 2
+0009  FB            	EI		;EI
+000A  3E 1F         	LD A,1FH		;Zeichen 1FH = Bildschirm loeschen
+000C  CD DB 00      	CALL ZEICHEN_AUS		;ZEICHEN_AUS: der erste E8H[F]-Zugriff (F0E8H) blendet das VRAM F800-FFFF ein; die Speicherverwaltung steht noch im Grundzustand (EBH = 0, Arbeitsmodell Par. 4b)
+000F  21 A7 03      	LD HL,TXT_KOPF		;Kopfzeile: Text 'NKM-LOADER' bei 03A7H (Laenge vorangestellt) + CR/LF
+0012  CD B3 00      	CALL TEXT_ZEILE
+0015  3A 00 40      	LD A,(4000H)		;Haken fuer weiteren Programmspeicher (Plan 4a Schritt 2): steht bei 4000H ein JR (18H), Sprung dorthin, noch VOR dem Floppystart.  Der BOOT-Modul der UDOS-Disketten beginnt mit 18H (resident.md Par. 1), er wird so auch bei erhaltenem RAM ohne Diskette gefunden [?]
+0018  FE 18         	CP 18H
+001A  CA 00 40      	JP Z,4000H
+001D  CD 4B 01      	CALL TASTATUR_INIT		;Tastatur initialisieren (TASTATUR_INIT: K8025 SIO A32 Kanal B + CTC K0)
+NEUSTART_SPEICHER:
+0020  2A DE 0F      	LD HL,(0FDEH)		;[NEUSTART_SPEICHER] Hierher kehrt der Lader nach 'NO SYSTEM' zurueck (JR am Ende von HAUPT).  Speicherverwaltung neu programmieren (Plan Par. 4b): zuerst den Cursorzeiger (0FDEH) retten, denn 0C00-0FFF wechselt mit Seite 0 die Herkunft (ZRE-RAM <-> OPS-RAM)
+0023  3E 00         	LD A,00H		;OUT (EBH),00H: Abbildung AUS -- die Register E8H/EAH wirken nicht, Seite 0 = ZRE (ROM 0000-03FF, RAM 0C00-0FFF) [Arbeitsmodell]
+0025  D3 EB         	OUT (EBH),A
+0027  22 DE 0F      	LD (0FDEH),HL		;Cursorzeiger ins (jetzt sichtbare) ZRE-RAM zurueck
+002A  06 00         	LD B,00H		;B = 0: die Seitennummer geht bei OUT (C),r als B = n*10H auf A12-A15 (E/A-Adresse A8-A15 = B)
+002C  11 10 00      	LD DE,0010H		;D = Seite n (0..15), E = Schleifenzaehler 16
+SEITEN_SCHLEIFE:
+002F  0E EA         	LD C,EAH		;[SEITEN_SCHLEIFE] je Seite n = 0..15: EAH[n] <- n (physische Seite = Identitaet), E8H[n] <- 10H (Herkunft RAM)
+0031  ED 51         	OUT (C),D		;EAH[n] <- n
+0033  0E E8         	LD C,E8H
+0035  3E 10         	LD A,10H
+0037  ED 79         	OUT (C),A		;E8H[n] <- 10H.  Bei n = 0 geschieht das, waehrend der Code noch aus Seite 0 (ROM) laeuft: das geht nur, weil EBH = 0 die Register unwirksam laesst [Arbeitsmodell]
+0039  80            	ADD A,B		;A = 10H + B, B = A: B waechst je Seite um 10H
+003A  47            	LD B,A
+003B  14            	INC D
+003C  1D            	DEC E
+003D  20 F0         	JR NZ,SEITEN_SCHLEIFE
+003F  3E 0F         	LD A,0FH		;danach (B = 0, C = E8H von oben): E8H[0] <- 0FH = Seite 0 wieder Systemkarte ZRE (ROM sichtbar)
+0041  06 00         	LD B,00H
+0043  ED 79         	OUT (C),A
+0045  0E EB         	LD C,EBH		;OUT (EBH),0FH: Abbildung EIN (A12-A15 = 0 -> EBH[0]); der Wert 0FH hat sonst keine bekannte Wirkung [?]
+0047  ED 79         	OUT (C),A
+0049  11 00 10      	LD DE,1000H		;ROM-Bild retten: DE = 1000H (Ziel), HL = 0000H (Quelle: LD H,E / LD L,E)
+004C  63            	LD H,E
+004D  6B            	LD L,E
+004E  06 04         	LD B,04H		;B = 04H, C = EBH (Rest des OUT) -> BC = 04EBH = 1259 Byte, NICHT 0400H: die Kopie reicht 235 Byte ueber das ROM hinaus (lesen FFH/RAM, harmlos) [Befund]
+0050  ED B0         	LDIR		;LDIR: ROM (0000H..) -> RAM 1000H..
+0052  C3 55 10      	JP 1055H		;JP 1055H: weiter in der KOPIE (OPS-RAM).  Gleich wird Seite 0 auf RAM geschaltet, das ROM verschwindet
+RAM_TEIL:
+0055  01 E8 00      	LD BC,00E8H		;[RAM_TEIL] laeuft NUR aus der Kopie bei 1055H.  BC = 00E8H: B = 0 = Seite 0, C = E8H
+0058  2A DE 0F      	LD HL,(0FDEH)		;Cursorzeiger aus dem ZRE-RAM lesen (Seite 0 ist hier noch 0FH) ...
+005B  3E 10         	LD A,10H		;A = 10H
+005D  ED 79         	OUT (C),A		;E8H[0] <- 10H: Seite 0 = RAM.  Ab jetzt zeigt 0000-0FFF auf OPS-RAM, das ROM ist unsichtbar
+005F  22 DE 0F      	LD (0FDEH),HL		;... und ins neue RAM (0FDEH) zurueckschreiben
+0062  50            	LD D,B		;DE = 0000H (B = 0), HL = 1000H (L = B = 0, H = A = 10H)
+0063  58            	LD E,B
+0064  68            	LD L,B
+0065  67            	LD H,A
+0066  06 04         	LD B,04H		;B = 04H, C = E8H: BC = 04E8H = 1256 Byte.  [NMI-Einsprung 0066H faellt in diese Folge (LD B,04H / LDIR / JP HAUPT): kein eigener NMI-Handler [?]]
+0068  ED B0         	LDIR		;LDIR: die Kopie 1000H.. -> 0000H..: das Laderbild liegt jetzt im RAM an seiner Sollage; Zustandszellen (03FBH, 03FCH, Parameterblock) und die selbstveraendernden Operanden (02D6H, 0303H) sind ab hier beschreibbar
+006A  C3 6D 00      	JP HAUPT		;JP HAUPT: Rueckkehr nach 006DH -- jetzt an der Sollage im RAM
+HAUPT:
+006D  CD 6B 01      	CALL FLOPPY_INIT		;[HAUPT] Ab hier laeuft der Lader aus dem RAM.  FLOPPY_INIT: K5122-PIOs, CTC, IM-2-Vektor.  Im Unterschied zum 710 KEIN Vorablesen: die Laufwerke werden erst nach der Starttaste angesprochen
+TASTE_WARTEN:
+0070  CD 63 01      	CALL TASTE_HOLEN		;[TASTE_WARTEN] TASTE_HOLEN: Z = keine Taste, sonst A = Zeichen der K7672
+0073  28 FB         	JR Z,TASTE_WARTEN
+0075  FE 0D         	CP 0DH		;0DH = ENTER startet den Ladevorgang (der 710 wartet auf ET = 37H, Plan 4a.1); jede andere Taste wird verworfen
+0077  20 F7         	JR NZ,TASTE_WARTEN
+0079  FD 21 D7 03   	LD IY,PARAMETER		;IY = Parameterblock 03D7H (Floppyauftrag, Aufbau s. dort)
+007D  AF            	XOR A		;Laufwerk 0
+007E  CD 8E 00      	CALL LADEN		;LADEN -- kehrt nur bei Fehler/ohne 'SY' zurueck (sonst JP 0400H)
+0081  3E 01         	LD A,01H		;Laufwerk 1, ebenso
+0083  CD 8E 00      	CALL LADEN
+0086  21 CD 03      	LD HL,TXT_NOSYSTEM		;beide ohne Erfolg: Text 'NO SYSTEM' (03CDH)
+0089  CD B3 00      	CALL TEXT_ZEILE
+008C  18 92         	JR NEUSTART_SPEICHER		;JR NEUSTART_SPEICHER: Speicherverwaltung und Kopie werden WIEDERHOLT, danach wieder auf ENTER warten
+LADEN:
+008E  32 FC 03      	LD (03FCH),A		;[LADEN] A = Laufwerk 0/1.  (03FCH) <- A: das Bootlaufwerk, fuer den Bootsektor (Sprungleiste, Zelle 03FCH)
+0091  21 00 02      	LD HL,0200H		;Laenge (IY+4/+5) = 0200H = 512 Byte = 4 Sektoren zu 128 Byte (Spur 0, Sektor 1 -> 0400H)
+0094  22 DB 03      	LD (03DBH),HL
+0097  0F            	RRCA		;RRCA x3 (1 -> 20H): Laufwerk in Bit 5-6 von (IY+11); Seite 0, Sektor 1
+0098  0F            	RRCA
+0099  0F            	RRCA
+009A  FD 77 0B      	LD (IY+11),A
+009D  CD 98 01      	CALL SEKTOREN_LESEN		;SEKTOREN_LESEN (Aufruf; der 710 geht hier ueber LESE_PROBE)
+00A0  FD 7E 0A      	LD A,(IY+10)		;Status nach dem Lesen: 80H gut, C0H Laufwerk fehlt, sonst Fehlertext.  (Alle Codes: Kopf.)
+00A3  FE C0         	CP C0H		;C0H = Schrittzaehler abgelaufen (Spur 0 nie erreicht, Laufwerk fehlt) -> 'LW0 DEF'/'LW1 DEF'
+00A5  20 11         	JR NZ,STATUS_AUSWERTEN
+00A7  21 B2 03      	LD HL,TXT_LW0		;Text 'LW0 DEF' (03B2H)
+00AA  3A FC 03      	LD A,(03FCH)		;(03FCH) = Laufwerk: 0 -> 'LW0 DEF', sonst 'LW1 DEF' (03BAH)
+00AD  B7            	OR A
+00AE  28 03         	JR Z,TEXT_ZEILE		;JR Z auf TEXT_ZEILE
+00B0  21 BA 03      	LD HL,TXT_LW1
+TEXT_ZEILE:
+00B3  CD 2D 01      	CALL TEXT_AUS		;[TEXT_ZEILE] HL = Text: ausgeben + CR/LF (JR ZEILENENDE).  Auch Sprungziel von LADEN (JR Z) mit HL = 'LW0 DEF'.  Rueckkehr zum Aufrufer von ZEICHEN_AUS aus
+00B6  18 1C         	JR ZEILENENDE
+STATUS_AUSWERTEN:
+00B8  FE 80         	CP 80H		;[STATUS_AUSWERTEN] Status ist nicht C0H: 80H = gut -> 'SY'-Pruefung, sonst DISKERROR
+00BA  20 0C         	JR NZ,DISKERROR
+00BC  11 53 59      	LD DE,5953H		;'SY' = 53H 59H: das Wort (0402H) soll 5953H sein (Bootsektor beginnt 18 03 'SYL')
+00BF  2A 02 04      	LD HL,(0402H)		;HL = (0402H) = Bytes 2/3 des geladenen Bootsektors
+00C2  ED 52         	SBC HL,DE		;Carry ist hier 0 (CP 80H war gleich): SBC HL,DE = reiner Vergleich
+00C4  C0            	RET NZ		;kein 'SY': zurueck zum Aufrufer (naechstes Laufwerk bzw. 'NO SYSTEM')
+00C5  C3 00 04      	JP 0400H		;JP 0400H: Bootsektor starten.  Der Rueckkehrstapel von HAUPT bleibt liegen
+DISKERROR:
+00C8  21 C2 03      	LD HL,TXT_DISKERROR		;[DISKERROR = Sprungleiste 03F4H] Text 'DISKERROR ' (03C2H), dann Status (IY+10) als zwei Hexziffern, CR/LF.  Auch vom Bootsektor aufrufbar (Status in (IY+10))
+00CB  CD 2D 01      	CALL TEXT_AUS
+00CE  FD 7E 0A      	LD A,(IY+10)		;Status (IY+10)
+00D1  CD 36 01      	CALL HEX_AUS		;HEX_AUS
+ZEILENENDE:
+00D4  3E 0D         	LD A,0DH		;[ZEILENENDE] CR (0DH) ausgeben ...
+00D6  CD DB 00      	CALL ZEICHEN_AUS
+00D9  3E 0A         	LD A,0AH		;... A = LF (0AH) und direkt in ZEICHEN_AUS weiter (Rueckkehr von dort)
+ZEICHEN_AUS:
+00DB  C5            	PUSH BC		;[ZEICHEN_AUS = Sprungleiste 03EBH] Zeichen in A auf den Bildschirm.  1FH: Bild loeschen, Cursor F800H.  0AH: Cursor eine Zeile (80 Zeichen) tiefer.  0DH: Cursor an den Zeilenanfang.  Sonst Zeichen ablegen, Cursor + 1.  BC/HL bleiben erhalten, AF/DE werden zerstoert
+00DC  E5            	PUSH HL
+00DD  16 FF         	LD D,FFH		;E8H[Seite F] <- FFH: VRAM K7024 F800-FFFF sichtbar (BC = F0E8H: B = F0H = Seite F in A12-A15)
+00DF  01 E8 F0      	LD BC,F0E8H
+00E2  ED 51         	OUT (C),D
+00E4  F3            	DI		;DI: solange das VRAM eingeblendet ist, darf keine Unterbrechung laufen
+00E5  FE 1F         	CP 1FH		;1FH = Bild loeschen?
+00E7  20 0F         	JR NZ,ZEICHEN_STEUER
+SCHIRM_LOESCHEN:
+00E9  21 FF FF      	LD HL,FFFFH		;[SCHIRM_LOESCHEN] HL = FFFFH, DE = FFFEH, BC = 07FFH, (HL) = 00H, LDDR: F800-FFFF (2 KB) mit 00H fuellen; HL = F800H = Cursor home
+00EC  11 FE FF      	LD DE,FFFEH
+00EF  01 FF 07      	LD BC,07FFH
+00F2  36 00         	LD (HL),00H
+00F4  ED B8         	LDDR
+00F6  18 29         	JR CURSOR_SICHERN		;JR CURSOR_SICHERN
+ZEICHEN_STEUER:
+00F8  2A DE 0F      	LD HL,(0FDEH)		;[ZEICHEN_STEUER] HL = Cursor (0FDEH), BC = 0050H = 80 Zeichen je Zeile; A = 0AH (LF)?
+00FB  FE 0A         	CP 0AH
+00FD  01 50 00      	LD BC,0050H
+0100  20 03         	JR NZ,CR_PRUEFEN
+0102  09            	ADD HL,BC		;LF: Cursor + 80 (kein Ueberlaufschutz: erst das naechste Zeichen loest ggf. das Loeschen aus)
+0103  18 1C         	JR CURSOR_SICHERN
+CR_PRUEFEN:
+0105  FE 0D         	CP 0DH		;[CR_PRUEFEN] A = 0DH (CR)?
+0107  20 0C         	JR NZ,ZEICHEN_ABLEGEN
+0109  EB            	EX DE,HL		;DE = Cursor; HL = FF7FH = F800H + 77FH (Spalte 79 der Zeile 23)
+010A  21 7F FF      	LD HL,FF7FH
+ZEILENANFANG_SUCHEN:
+010D  ED 42         	SBC HL,BC		;[ZEILENANFANG_SUCHEN] HL -= 80, bis HL < Cursor: HL ist dann die LETZTE Zelle der Vorzeile (Spalte 79); die Schleife benutzt SBC ohne Carry-Vorbereitung (Carry ist nach CP = 0)
+010F  E5            	PUSH HL
+0110  ED 52         	SBC HL,DE
+0112  E1            	POP HL
+0113  30 F8         	JR NC,ZEILENANFANG_SUCHEN
+ZEICHEN_ABLEGEN:
+0115  77            	LD (HL),A		;[ZEICHEN_ABLEGEN] (HL) <- A, HL + 1.  Bei CR landet 0DH in der letzten Zelle der Vorzeile (Zeile 0: in F7FFH = RAM ausserhalb des VRAM) und der Cursor am Zeilenanfang [?]
+0116  23            	INC HL
+0117  EB            	EX DE,HL		;Cursor hinter FF7FH (unterste Zeile, ab FF80H)?  Dann kein Scrollen, sondern Bild loeschen (JR C auf SCHIRM_LOESCHEN)
+0118  21 7F FF      	LD HL,FF7FH
+011B  B7            	OR A
+011C  ED 52         	SBC HL,DE
+011E  EB            	EX DE,HL
+011F  38 C8         	JR C,SCHIRM_LOESCHEN
+CURSOR_SICHERN:
+0121  22 DE 0F      	LD (0FDEH),HL		;[CURSOR_SICHERN] Cursor -> (0FDEH)
+0124  01 E8 F0      	LD BC,F0E8H		;BC = F0E8H, OUT (C),B: E8H[Seite F] <- F0H = VRAM aus, F800-FFFF wieder RAM
+0127  ED 41         	OUT (C),B
+0129  FB            	EI		;EI; BC und HL zurueck; RET
+012A  E1            	POP HL
+012B  C1            	POP BC
+012C  C9            	RET
+TEXT_AUS:
+012D  46            	LD B,(HL)		;[TEXT_AUS = Sprungleiste 03EEH] HL = Text: erstes Byte = Anzahl n, dann n Zeichen, jedes ueber ZEICHEN_AUS (B = n; ZEICHEN_AUS rettet BC)
+TEXT_SCHLEIFE:
+012E  23            	INC HL
+012F  7E            	LD A,(HL)
+0130  CD DB 00      	CALL ZEICHEN_AUS
+0133  10 F9         	DJNZ TEXT_SCHLEIFE
+0135  C9            	RET
+HEX_AUS:
+0136  F5            	PUSH AF		;[HEX_AUS = Sprungleiste 03F1H] A als zwei Hexziffern (hoeherwertige zuerst)
+0137  0F            	RRCA
+0138  0F            	RRCA
+0139  0F            	RRCA
+013A  0F            	RRCA
+013B  CD 3F 01      	CALL HEX_NIBBLE		;obere Tetrade nach unten (RRCA x4), ausgeben ...
+013E  F1            	POP AF
+HEX_NIBBLE:
+013F  E6 0F         	AND 0FH		;[HEX_NIBBLE] untere Tetrade als Hexziffer: + 30H, ab 0AH zusaetzlich + 07H ('A'-'F')
+0141  FE 0A         	CP 0AH
+0143  38 02         	JR C,HEX_ZIFFER
+0145  C6 07         	ADD A,07H
+HEX_ZIFFER:
+0147  C6 30         	ADD A,30H
+0149  18 90         	JR ZEICHEN_AUS		;JR ZEICHEN_AUS (Sprung statt Aufruf: Rueckkehr direkt)
+TASTATUR_INIT:
+014B  21 59 01      	LD HL,0159H		;[TASTATUR_INIT] Tastatur K7672 an K8025 SIO A32 Kanal B (5EH Daten / 5FH Steuerung) und CTC K0 (58H) programmieren: zuerst 2 Byte (07H, 01H) an 58H -- CTC-Kanal 0: Zeitgeber, Zeitkonstante 01H (-> 153,6 kHz Takt)
+014E  01 58 02      	LD BC,0258H		;BC = 0258H: B = 2 Byte, C = 58H (CTC K0)
+0151  ED B3         	OTIR		;OTIR: 07H, 01H nach 58H (Tabelle SIO_TABELLE bei 0159H)
+0153  01 5F 08      	LD BC,085FH		;BC = 085FH: B = 8 Byte, C = 5FH (SIO-Kanal B Steuerung)
+0156  ED B3         	OTIR		;OTIR: die 8 Byte ab 015BH: 00H 18H (Kanal-Reset), 04H 4CH (WR4: x16, 2 Stoppbit, keine Paritaet), 03H C1H (WR3: Empfaenger 8 Bit, ein), 05H 68H (WR5: Sender 8 Bit, ein) = 9600 Bd, 8 Bit, 2 Stoppbit
+0158  C9            	RET
+
+SIO_TABELLE:
+0159  07 01         	DB	07H,01H		;CTC K0 (58H): Steuerwort 07H (Zeitgeber), Zeitkonstante 01H
+015B  00 18 04 4C 03 C1 05 68	DB	00H,18H,04H,4CH,03H,0C1H,05H,68H		;SIO Kanal B (5FH): WR0 18H Kanalreset, WR4 4CH (x16, 2 Stoppbit), WR3 C1H (Rx 8 Bit, ein), WR5 68H (Tx 8 Bit, ein)
+TASTE_HOLEN:
+0163  DB 5F         	IN A,(5FH)		;[TASTE_HOLEN = Sprungleiste 03E8H] Z = keine Taste.  Sonst A = Zeichen
+0165  CB 47         	BIT 0,A		;RR0 Bit 0 = Empfangszeichen verfuegbar
+0167  C8            	RET Z
+0168  DB 5E         	IN A,(5EH)		;IN (5EH): Zeichen (IN aendert die Flags nicht: NZ)
+016A  C9            	RET
+FLOPPY_INIT:
+016B  3E FF         	LD A,FFH		;[FLOPPY_INIT] K5122-PIOs und CTC einrichten.  PIO-Steuerwoerter: xxxx1111 = Betriebsart (Bit 7-6: 00 Ausgabe, 01 Eingabe, 11 Bitbetrieb)
+016D  D3 13         	OUT (13H),A		;OUT (13H),FFH: Steuer-PIO Tor B (Status 12H) auf Bitbetrieb ...
+016F  3E F3         	LD A,F3H
+0171  D3 13         	OUT (13H),A		;... OUT (13H),F3H: Eingaberegister: 1 = Eingang; Ausgaenge sind nur Bit 2 (/HF) und Bit 3 (PRE)
+0173  3E 7F         	LD A,7FH		;OUT (17H),7FH: Daten-PIO Tor B (Lesedaten 16H) auf Betriebsart 1 (Eingabe mit Quittung)
+0175  D3 17         	OUT (17H),A
+0177  D3 11         	OUT (11H),A		;OUT (11H),7FH: Steuer-PIO Tor A (10H) zunaechst Betriebsart 1 ...
+0179  3E FD         	LD A,FDH		;... damit der Ausgangsspeicher vor dem Umschalten auf Ausgabe mit dem Ruhewert FDH belegt werden kann (keine Flanke an /STR) [?]
+017B  D3 10         	OUT (10H),A
+017D  3E 3F         	LD A,3FH
+017F  D3 11         	OUT (11H),A		;OUT (11H),3FH: Tor A Betriebsart 0 (Ausgabe), Ruhewert FDH -> /STR = 1, /HL = 1 (Kopf abgehoben), /ST = 1 -- keine Aktion
+0181  D3 15         	OUT (15H),A		;OUT (15H),3FH: Daten-PIO Tor A (Schreibdaten 14H) Betriebsart 0 (Ausgabe)
+0183  3E E0         	LD A,E0H		;CTC 80H (Kanal 0): Interruptvektor E0H (Kanal 3 -> E6H)
+0185  D3 80         	OUT (80H),A
+0187  3E 37         	LD A,37H		;CTC Kanal 2 (82H): 37H = Zeitgeber, Vorteiler 256, Zeitkonstante folgt ...
+0189  D3 82         	OUT (82H),A
+018B  3E C0         	LD A,C0H		;... TC = C0H = 192: Periode 256 x 192 Takte (resident.md Par. 7); der Ausgang speist Kanal 3 (Lese-Zeitablauf / Motornachlauf)
+018D  D3 82         	OUT (82H),A
+018F  21 9A 03      	LD HL,039AH		;IM-2-Vektor: (0FE6H) <- 039AH = MOTOR_AUS_ISR (liegt im ZRE-/OPS-RAM der Seite 0 -- darum erst nach der Umschaltung in RAM_TEIL)
+0192  22 E6 0F      	LD (0FE6H),HL
+0195  DB 16         	IN A,(16H)		;Lesedatenport leerlesen
+0197  C9            	RET
+SEKTOREN_LESEN:
+0198  3E 03         	LD A,03H		;[SEKTOREN_LESEN = Sprungleiste 03FDH] Lesen mit Parameterblock an IY: (IY+2/3) Ladeadresse, (IY+4/5) Laenge in Byte, (IY+10) Status (Rueckgabe), (IY+11) Laufwerk (Bit 5-6), Kopf (Bit 7), Sektor-1 (Bit 0-4), (IY+12) Spur.  Die CPU liest selbst (IN (16H)/INI im /WAIT-Betrieb der K5122).  OUT (83H),03H: CTC-Kanal 3 stoppen (Motornachlauf ab)
+019A  D3 83         	OUT (83H),A
+019C  FD 66 03      	LD H,(IY+3)		;Zielzeiger (0E96H) <- (IY+2/3)
+019F  FD 6E 02      	LD L,(IY+2)
+01A2  22 96 0E      	LD (0E96H),HL
+01A5  32 CB 0F      	LD (0FCBH),A		;(0FCBH) <- 03H: Neukalibrierungsversuche
+01A8  21 10 00      	LD HL,0010H		;(0FCCH) <- 10H: CRC-Wiederholungen (16); (0FCDH) <- 00H: Schrittzaehler (laeuft 256 Schritte)
+01AB  22 CC 0F      	LD (0FCCH),HL
+01AE  FD 46 0B      	LD B,(IY+11)		;B = (IY+11);  (0E98H) <- (B AND 1FH) + 1 = gesuchte Sektornummer (1-basiert)
+01B1  3E 1F         	LD A,1FH
+01B3  A0            	AND B
+01B4  3C            	INC A
+01B5  32 98 0E      	LD (0E98H),A
+01B8  78            	LD A,B		;RLCA x3, AND 03H: Laufwerk = Bit 5-6 -> (0EDDH), C = Laufwerk
+01B9  07            	RLCA
+01BA  07            	RLCA
+01BB  07            	RLCA
+01BC  E6 03         	AND 03H
+01BE  32 DD 0E      	LD (0EDDH),A
+01C1  4F            	LD C,A		;B = Laufwerk + 1; A = 77H; Schleife dreht A so oft nach links: EEH/DDH/BBH/77H ...
+01C2  3C            	INC A
+01C3  47            	LD B,A
+01C4  3E 77         	LD A,77H
+LW_WAHL_SCHLEIFE:
+01C6  07            	RLCA		;[LW_WAHL_SCHLEIFE] RLCA, DJNZ
+01C7  10 FD         	DJNZ LW_WAHL_SCHLEIFE
+01C9  E6 F0         	AND F0H		;... AND F0H: oberes Halbbyte = /SE (Laufwerkswahl, 0 = gewaehlt), unteres = /LCK = 0 (Motor an), OUT (18H) = 8212
+01CB  D3 18         	OUT (18H),A
+01CD  3E BB         	LD A,BBH		;OUT (10H),BBH: /HL = 0 (Kopf aufgesetzt), /STR = 1 (kein Lesen), Richtung nach innen
+01CF  D3 10         	OUT (10H),A
+SPUR_ANFAHREN:
+01D1  FD 7E 0C      	LD A,(IY+12)		;[SPUR_ANFAHREN] (0E9DH) <- Zielspur (IY+12)
+01D4  32 9D 0E      	LD (0E9DH),A
+01D7  21 CE 0F      	LD HL,0FCEH		;HL = 0FCEH + Laufwerk: Zelle 'aktuelle Spur' je Laufwerk (0FCEH..0FD1H), A = Zielspur - aktuelle Spur = Schrittzahl (mit Vorzeichen)
+01DA  09            	ADD HL,BC
+01DB  96            	SUB (HL)
+01DC  CD F9 03      	CALL HAKEN		;CALL HAKEN (NOP/RET im ROM: leere Einhaengestelle, dort ueberschreibbar) [?]
+01DF  32 CA 0F      	LD (0FCAH),A		;(0FCAH) <- Schrittzaehler
+SCHRITT_SCHLEIFE:
+01E2  3E 04         	LD A,04H		;[SCHRITT_SCHLEIFE] OUT (12H),04H: /HF = 1 (FM-/5-Zoll-Datenrate), PRE = 0 [?]
+01E4  D3 12         	OUT (12H),A
+01E6  01 10 9F      	LD BC,9F10H		;BC = 9F10H: C = 10H (Steuer-PIO Tor A), B = 9FH = Schrittwort: /ST = 1, /HL = 0, MR = 0 (Richtung nach aussen, Spur 0)
+01E9  3A 9D 0E      	LD A,(0E9DH)		;A = (0E9DH): Zielspur; 0 -> Spur 0 anlaufen (nach /TO)
+01EC  A7            	AND A
+01ED  28 2C         	JR Z,SPUR0_SUCHEN
+01EF  21 CA 0F      	LD HL,0FCAH		;Schrittzaehler (0FCAH): 0 -> kein Schritt noetig
+01F2  7E            	LD A,(HL)
+01F3  B7            	OR A
+01F4  28 2A         	JR Z,EINSCHWINGEN
+01F6  CB 7F         	BIT 7,A		;Vorzeichen: negativ = nach aussen (B = 9FH, Zaehler hoch); positiv = nach innen (B = BFH: MR = 1)
+01F8  20 04         	JR NZ,SCHRITT_ZAEHLEN
+01FA  06 BF         	LD B,BFH		;B = BFH (nach innen); (HL) zweimal -1, dann [SCHRITT_ZAEHLEN] +1: netto -1
+01FC  35            	DEC (HL)
+01FD  35            	DEC (HL)
+SCHRITT_ZAEHLEN:
+01FE  34            	INC (HL)		;[SCHRITT_ZAEHLEN]
+SCHRITT_IMPULS:
+01FF  ED 41         	OUT (C),B		;[SCHRITT_IMPULS] /ST: 1 -> 0 -> 1: der Schritt geschieht an der fallenden Flanke
+0201  CB B8         	RES 7,B
+0203  ED 41         	OUT (C),B
+0205  CB F8         	SET 7,B
+0207  ED 41         	OUT (C),B
+0209  21 CD 0F      	LD HL,0FCDH		;(0FCDH) - 1: 256 Schritte sind die Grenze; C = C0H = Status bei Ablauf ('Laufwerk fehlt')
+020C  35            	DEC (HL)
+020D  0E C0         	LD C,C0H
+020F  28 32         	JR Z,BEREIT_ZEITABLAUF
+0211  11 90 01      	LD DE,0190H		;Schrittpause: 0190H = 400 Schleifen
+SCHRITT_PAUSE:
+0214  1B            	DEC DE
+0215  7B            	LD A,E
+0216  B2            	OR D
+0217  20 FB         	JR NZ,SCHRITT_PAUSE
+0219  18 C7         	JR SCHRITT_SCHLEIFE		;JR SCHRITT_SCHLEIFE
+SPUR0_SUCHEN:
+021B  DB 12         	IN A,(12H)		;[SPUR0_SUCHEN] IN (12H): Bit 7 = /TO (Spur 00): 1 = nicht auf Spur 0 -> weiter schrittweise nach aussen
+021D  07            	RLCA
+021E  38 DF         	JR C,SCHRITT_IMPULS
+EINSCHWINGEN:
+0220  11 B4 14      	LD DE,14B4H		;[EINSCHWINGEN] Pause DE = 14B4H (5300 Schleifen = Kopfberuhigung)
+EINSCHWING_PAUSE:
+0223  1B            	DEC DE
+0224  7B            	LD A,E
+0225  B2            	OR D
+0226  20 FB         	JR NZ,EINSCHWING_PAUSE
+0228  3A DD 0E      	LD A,(0EDDH)		;(0EDDH) = Laufwerk -> HL = 0FCEH + Laufwerk: aktuelle Spur <- (0E9DH)
+022B  4F            	LD C,A
+022C  06 00         	LD B,00H
+022E  21 CE 0F      	LD HL,0FCEH
+0231  09            	ADD HL,BC
+0232  3A 9D 0E      	LD A,(0E9DH)
+0235  77            	LD (HL),A
+0236  FD BE 0C      	CP (IY+12)		;CP (IY+12): Zielspur erreicht?  Nein (nach Neukalibrierung stand (0E9DH) = 0) -> SPUR_ANFAHREN erneut
+0239  20 96         	JR NZ,SPUR_ANFAHREN
+023B  0E C2         	LD C,C2H		;C = C2H (Status 'nicht bereit'); DE = 0000H: 65536 Abfragen
+023D  11 00 00      	LD DE,0000H
+BEREIT_WARTEN:
+0240  1B            	DEC DE		;[BEREIT_WARTEN] IN (12H) Bit 0 = /RDYL: 1 = nicht bereit -> weiter warten; sonst weiter.  Ablauf: Status C2H
+0241  7A            	LD A,D
+0242  B3            	OR E
+BEREIT_ZEITABLAUF:
+0243  28 7B         	JR Z,FEHLER_SPRUNG		;[BEREIT_ZEITABLAUF] Z = Zeitablauf: FEHLER_SPRUNG mit dem Status in C (C2H aus der Schleife davor; auch Sprungziel von SCHRITT_IMPULS mit C0H, dessen DEC (HL) das Z liefert)
+0245  DB 12         	IN A,(12H)
+0247  0F            	RRCA
+0248  38 F6         	JR C,BEREIT_WARTEN
+SEKTORZAHL:
+024A  FD 7E 04      	LD A,(IY+4)		;[SEKTORZAHL] Anzahl der Sektoren: (IY+4/5) / 128, aufgerundet (SLA/RL E)
+024D  CB 27         	SLA A
+024F  FD 5E 05      	LD E,(IY+5)
+0252  CB 13         	RL E
+0254  B7            	OR A
+0255  28 01         	JR Z,L0258
+0257  1C            	INC E
+L0258:
+0258  3A FB 03      	LD A,(03FBH)		;Sektorlaenge: (03FBH) Low-Nibble (1/2/4/8 = Vielfache von 128 Byte) ...
+025B  E6 0F         	AND 0FH
+025D  32 D6 02      	LD (02D6H),A		;... SELBSTVERAENDERUNG: nach 02D6H (Operand des 'LD A,00H' bei 02D5H) = Zahl der 128-Byte-Bloecke je Sektor
+0260  3D            	DEC A		;A - 1; CP 3: Laengencode IBM (0 = 128, 1 = 256, 2 = 512, 3 = 1024 Byte): 1 -> 0, 2 -> 1, 4 -> 2, 8 -> 3
+0261  FE 03         	CP 03H
+0263  38 05         	JR C,L026A
+0265  3E 02         	LD A,02H
+0267  28 01         	JR Z,L026A
+0269  3C            	INC A
+L026A:
+026A  32 03 03      	LD (0303H),A		;SELBSTVERAENDERUNG: Laengencode nach 0303H (Operand des 'CP 00H' beim Vergleich mit dem Laengenbyte des Sektorkopfes)
+L026D:
+026D  D6 01         	SUB 01H		;E = E / 2 (aufgerundet), Laengencode-mal: E = Zahl der Sektoren
+026F  38 07         	JR C,SEKTORZAHL_FERTIG
+0271  CB 3B         	SRL E
+0273  30 F8         	JR NC,L026D
+0275  1C            	INC E
+0276  18 F5         	JR L026D
+SEKTORZAHL_FERTIG:
+0278  7B            	LD A,E		;[SEKTORZAHL_FERTIG] (0E99H) <- E
+0279  32 99 0E      	LD (0E99H),A
+LESELAUF:
+027C  21 98 0E      	LD HL,0E98H		;[LESELAUF] Zaehler und Zeiger fuer den Durchlauf setzen: (0E9EH) <- (0E98H) gesuchter Sektor, (0E9FH) <- (0E99H) Restzahl; (0E9AH) <- 1AH (26 Sektorkoepfe), (0E9BH) <- 08H, (0E9CH) <- 00H
+027F  11 9E 0E      	LD DE,0E9EH
+0282  ED A0         	LDI
+0284  ED A0         	LDI
+0286  36 1A         	LD (HL),1AH
+0288  23            	INC HL
+0289  36 08         	LD (HL),08H
+028B  23            	INC HL
+028C  36 00         	LD (HL),00H
+028E  11 50 0E      	LD DE,0E50H		;DE = 0E50H (CRC-Tabelle der gelesenen Sektoren, 2 Byte je Sektor), HL = Zielzeiger (0E96H), C = 16H (Datenport); EXX: diese Register liegen danach im Schattensatz
+0291  2A 96 0E      	LD HL,(0E96H)
+0294  0E 16         	LD C,16H
+0296  D9            	EXX
+0297  11 85 B5      	LD DE,B585H		;DE = B585H: Lesesteuerworte Kopf 0: B5H = /STR = 0, MR = 1 (Marken-FF zuruecksetzen), dann 85H = MR = 0, MK = 0 (Marke A1), MK1 = 0: Marken-FF scharf (design/07 Par. 7.7).  B1H/81H = dasselbe fuer KOPF 1 (/FR = 0) -- NICHT FM/MFM: das ROM liest nur MFM [Befund]
+029A  FD CB 0B 7E   	BIT 7,(IY+11)		;(IY+11) Bit 7 = Kopf: 0 -> B585H; 1 -> B181H
+029E  28 32         	JR Z,ID_SUCHEN
+02A0  11 81 B1      	LD DE,B181H
+02A3  18 2D         	JR ID_SUCHEN
+LAENGE_FALSCH:
+02A5  21 9B 0E      	LD HL,0E9BH		;[LAENGE_FALSCH] Laengenbyte des Sektorkopfes weicht ab: (0E9BH) - 1; erst nach 8 Fehlversuchen naechste Sektorlaenge: (03FBH) RLCA 11H -> 22H -> 44H -> 88H -> 11H, dann SEKTORZAHL neu
+02A8  35            	DEC (HL)
+02A9  20 27         	JR NZ,ID_SUCHEN
+02AB  3A FB 03      	LD A,(03FBH)
+02AE  07            	RLCA
+02AF  32 FB 03      	LD (03FBH),A
+02B2  18 96         	JR SEKTORZAHL
+SPUR_FALSCH:
+02B4  0E C5         	LD C,C5H		;[SPUR_FALSCH] Spurbyte des Sektorkopfes falsch: C = C5H; (0E9AH) - 1 (26 Koepfe); danach (0FCBH) - 1 (Neukalibrierung); bei 0: Status C5H
+02B6  21 9A 0E      	LD HL,0E9AH
+02B9  35            	DEC (HL)
+02BA  20 16         	JR NZ,ID_SUCHEN
+02BC  21 CB 0F      	LD HL,0FCBH		;(0FCBH) - 1: noch Versuche uebrig?  (Z -> FEHLER_SPRUNG, Status C5H)
+02BF  35            	DEC (HL)
+FEHLER_SPRUNG:
+02C0  CA 97 03      	JP Z,STATUS_AUS		;[FEHLER_SPRUNG] JP Z auf STATUS_AUS (Status in C).  Sonst Neukalibrierung: (0E9DH) <- 0 und SCHRITT_SCHLEIFE: Spur 0 suchen, dann SPUR_ANFAHREN erneut
+02C3  AF            	XOR A
+02C4  32 9D 0E      	LD (0E9DH),A
+02C7  C3 E2 01      	JP SCHRITT_SCHLEIFE
+SEKTOR_FALSCH:
+02CA  0E C4         	LD C,C4H		;[SEKTOR_FALSCH] Sektornummer des Sektorkopfes falsch: C = C4H; (0E9CH) - 1 (256 Versuche); bei 0: Status C4H
+02CC  21 9C 0E      	LD HL,0E9CH
+02CF  35            	DEC (HL)
+02D0  28 EE         	JR Z,FEHLER_SPRUNG
+ID_SUCHEN:
+02D2  21 9D 0E      	LD HL,0E9DH		;[ID_SUCHEN] HL = 0E9DH (Zielspur); 'LD A,00H' (02D6H selbstveraendert) ins Schattenregister A (EX AF,AF'), A = 0, OUT (14H),A: Schreibdatenlatch loeschen [?]; IN (16H): Datenport leerlesen; BC = A110H: B = A1H (Sync-Byte), C = 10H
+02D5  3E 00         	LD A,00H
+02D7  08            	EX AF,AF'
+02D8  AF            	XOR A
+02D9  D3 14         	OUT (14H),A
+02DB  DB 16         	IN A,(16H)
+02DD  01 10 A1      	LD BC,A110H
+ID_STROBE:
+02E0  ED 51         	OUT (C),D		;[ID_STROBE] OUT (10H),D (B5H) / OUT (10H),E (85H): Lesen starten + Marken-FF scharf; IN (12H) Bit 1 = MKE (Marken-FF).  Strobt einmal, wartet dann BIS Bit 1 = 1 (JR Z): MKE high-aktiv
+02E2  ED 59         	OUT (C),E
+L02E4:
+02E4  DB 12         	IN A,(12H)
+02E6  E6 02         	AND 02H
+02E8  28 FA         	JR Z,L02E4
+ID_SYNC:
+02EA  DB 16         	IN A,(16H)		;[ID_SYNC] IN (16H): A1-Bytes (Sync) ueberlesen; dann CP FEH = Adressmarke des Sektorkopfes; (IN (16H) holt schon das Spurbyte; IN aendert die Flags nicht)
+02EC  B8            	CP B
+02ED  28 FB         	JR Z,ID_SYNC
+02EF  FE FE         	CP FEH
+02F1  DB 16         	IN A,(16H)
+02F3  20 DD         	JR NZ,ID_SUCHEN		;kein FEH (z. B. Datenmarke): von vorn, ID_SUCHEN.  Es gibt hier KEINEN Zeitablauf [?]
+02F5  BE            	CP (HL)		;Spurbyte = Zielspur (HL = 0E9DH)?  Nein: SPUR_FALSCH
+02F6  20 BC         	JR NZ,SPUR_FALSCH
+02F8  DB 16         	IN A,(16H)		;Kopfbyte (wird NICHT verglichen); HL + 1 = 0E9EH (gesuchter Sektor)
+02FA  23            	INC HL
+02FB  DB 16         	IN A,(16H)		;Sektorbyte = (0E9EH)?  Nein: SEKTOR_FALSCH
+02FD  BE            	CP (HL)
+02FE  20 CA         	JR NZ,SEKTOR_FALSCH
+0300  DB 16         	IN A,(16H)		;Laengenbyte; 'CP 00H' bei 0303H ist selbstveraendert (Laengencode); Abweichung: LAENGE_FALSCH.  Die ID-CRC (2 Byte) wird NICHT gelesen und nicht geprueft
+0302  FE 00         	CP 00H
+0304  20 9F         	JR NZ,LAENGE_FALSCH
+0306  34            	INC (HL)		;INC (HL): (0E9EH) + 1 = naechster Sektor fuer den naechsten Durchlauf
+DATEN_STROBE:
+0307  ED 51         	OUT (C),D		;[DATEN_STROBE] wie ID_STROBE: Strobe, Marken-FF abwarten (ebenso: wartet, bis Bit 1 = 1)
+0309  ED 59         	OUT (C),E
+L030B:
+030B  DB 12         	IN A,(12H)
+030D  E6 02         	AND 02H
+030F  28 FA         	JR Z,L030B
+DATEN_SYNC:
+0311  DB 16         	IN A,(16H)		;[DATEN_SYNC] A1-Bytes ueberlesen; das erste andere Byte (Datenmarke FBH) wird gelesen und NICHT geprueft (geloeschte Datenmarke F8H geht durch)
+0313  B8            	CP B
+0314  28 FB         	JR Z,DATEN_SYNC
+0316  08            	EX AF,AF'		;Schattensatz zurueck: A = Zahl der 128-Byte-Bloecke, HL' = Zielzeiger, DE' = CRC-Tabelle, C' = 16H
+0317  D9            	EXX
+BLOCK_SCHLEIFE:
+0318  06 80         	LD B,80H		;[BLOCK_SCHLEIFE] B = 80H = 128 Byte je Block
+BYTE_SCHLEIFE:
+031A  ED A2         	INI		;[BYTE_SCHLEIFE] INI: (HL) <- IN (C=16H), HL + 1, B - 1
+031C  20 FC         	JR NZ,BYTE_SCHLEIFE
+031E  3D            	DEC A		;naechster Block (Sektor = 1/2/4/8 Bloecke)
+031F  20 F7         	JR NZ,BLOCK_SCHLEIFE
+0321  EB            	EX DE,HL		;2 CRC-Byte hinter dem Datenfeld in die CRC-Tabelle (DE')
+0322  ED A2         	INI
+0324  ED A2         	INI
+0326  EB            	EX DE,HL
+0327  D9            	EXX
+0328  23            	INC HL		;HL = 0E9FH (aus 0E9EH + 1), (0E9FH) - 1: noch Sektoren?  Ja: ID_SUCHEN
+0329  35            	DEC (HL)
+032A  20 A6         	JR NZ,ID_SUCHEN
+032C  3A 99 0E      	LD A,(0E99H)		;alle Sektoren gelesen: (0E9FH) <- (0E99H); HL = Zielzeiger (0E96H) = Anfang; IX = 0E50H
+032F  32 9F 0E      	LD (0E9FH),A
+0332  2A 96 0E      	LD HL,(0E96H)
+0335  DD 21 50 0E   	LD IX,0E50H
+CRC_SEKTOR:
+0339  11 95 E2      	LD DE,E295H		;[CRC_SEKTOR] CRC-CCITT je Sektor, Startwert E295H (= nach A1 A1 A1 FBH), Zeichen fuer Zeichen ueber das Datenfeld: D/E = CRC, Folge XOR/RRCA ohne Tabelle
+033C  3A D6 02      	LD A,(02D6H)
+CRC_BLOCK:
+033F  F5            	PUSH AF		;[CRC_BLOCK] Anzahl der Bloecke je Sektor aus 02D6H (selbstveraendert); je Block 128 Byte
+0340  06 80         	LD B,80H
+CRC_BYTE:
+0342  7E            	LD A,(HL)		;[CRC_BYTE]
+0343  AA            	XOR D
+0344  57            	LD D,A
+0345  0F            	RRCA
+0346  0F            	RRCA
+0347  0F            	RRCA
+0348  0F            	RRCA
+0349  E6 0F         	AND 0FH
+034B  AA            	XOR D
+034C  57            	LD D,A
+034D  0F            	RRCA
+034E  0F            	RRCA
+034F  0F            	RRCA
+0350  4F            	LD C,A
+0351  E6 1F         	AND 1FH
+0353  AB            	XOR E
+0354  5F            	LD E,A
+0355  79            	LD A,C
+0356  0F            	RRCA
+0357  E6 F0         	AND F0H
+0359  AB            	XOR E
+035A  5F            	LD E,A
+035B  79            	LD A,C
+035C  E6 E0         	AND E0H
+035E  AA            	XOR D
+035F  53            	LD D,E
+0360  5F            	LD E,A
+0361  23            	INC HL
+0362  10 DE         	DJNZ CRC_BYTE
+0364  F1            	POP AF
+0365  3D            	DEC A
+0366  20 D7         	JR NZ,CRC_BLOCK
+0368  DD 7E 00      	LD A,(IX+0)		;CRC mit der gelesenen Tabelle (IX) vergleichen: High-Byte ...
+036B  DD 23         	INC IX
+036D  BA            	CP D
+036E  20 1E         	JR NZ,CRC_FALSCH
+0370  DD 7E 00      	LD A,(IX+0)		;... Low-Byte
+0373  DD 23         	INC IX
+0375  BB            	CP E
+0376  20 16         	JR NZ,CRC_FALSCH
+0378  3A 9F 0E      	LD A,(0E9FH)		;Restzahl der Sektoren (0E9FH) - 1; Z -> alle Sektoren geprueft
+037B  3D            	DEC A
+037C  32 9F 0E      	LD (0E9FH),A
+037F  20 B8         	JR NZ,CRC_SEKTOR
+0381  FD 36 0A 80   	LD (IY+10),80H		;Erfolg: Status (IY+10) <- 80H
+0385  3E C7         	LD A,C7H		;CTC Kanal 3 (83H): C7H = Zaehler mit Interrupt, Zeitkonstante folgt ...
+0387  D3 83         	OUT (83H),A
+0389  3E 64         	LD A,64H		;... TC = 64H = 100: nach 100 Perioden von Kanal 2 kommt der Interrupt -> MOTOR_AUS_ISR (Motornachlauf)
+038B  D3 83         	OUT (83H),A
+038D  C9            	RET		;RET
+CRC_FALSCH:
+038E  21 CC 0F      	LD HL,0FCCH		;[CRC_FALSCH] (0FCCH) - 1: noch Wiederholungen?  Ja: von LESELAUF an (ganze Lesung wiederholt)
+0391  35            	DEC (HL)
+0392  C2 7C 02      	JP NZ,LESELAUF
+0395  0E C6         	LD C,C6H		;C = C6H: Status 'CRC-Fehler'
+STATUS_AUS:
+0397  FD 71 0A      	LD (IY+10),C		;[STATUS_AUS] (IY+10) <- C (Fehlerstatus).  Der Fehlerausgang FAELLT in den Interrupt-Code durch: Kanal 3 stoppen, Laufwerke abwaehlen (Motor sofort aus), dann EI/RETI statt RET -- die Rueckkehradresse des Aufrufers liegt noch oben auf dem Stapel
+MOTOR_AUS_ISR:
+039A  F5            	PUSH AF		;[MOTOR_AUS_ISR = IM-2-Einsprung CTC-Kanal 3, Vektor E6H] AF retten, OUT (83H),03H: Kanal 3 stoppen; OUT (18H),FFH: alle Laufwerke abwaehlen, Motoren aus; AF zurueck, EI, RETI
+039B  3E 03         	LD A,03H
+039D  D3 83         	OUT (83H),A
+039F  3E FF         	LD A,FFH
+03A1  D3 18         	OUT (18H),A
+03A3  F1            	POP AF
+03A4  FB            	EI
+03A5  ED 4D         	RETI
+
+TXT_KOPF:
+03A7  0A            	DB	10		;Text: Laenge 10, danach die Zeichen
+03A8  4E 4B 4D 2D 4C 4F 41 44 45 52	DB	'NKM-LOADER'		;Kopfzeile, nach dem Bildschirmloeschen ausgegeben
+
+TXT_LW0:
+03B2  07            	DB	7		;Text: Laenge 7, danach die Zeichen
+03B3  4C 57 30 20 44 45 46	DB	'LW0 DEF'		;Laufwerk 0 fehlt/Spur 0 nicht erreicht (Status C0H)
+
+TXT_LW1:
+03BA  07            	DB	7		;Text: Laenge 7, danach die Zeichen
+03BB  4C 57 31 20 44 45 46	DB	'LW1 DEF'		;Laufwerk 1 fehlt/Spur 0 nicht erreicht (Status C0H)
+
+TXT_DISKERROR:
+03C2  0A            	DB	10		;Text: Laenge 10, danach die Zeichen
+03C3  44 49 53 4B 45 52 52 4F 52 20	DB	'DISKERROR '		;Text VOR dem Status in Hex (Status != 80H/C0H); endet mit einem Leerzeichen
+
+TXT_NOSYSTEM:
+03CD  09            	DB	9		;Text: Laenge 9, danach die Zeichen
+03CE  4E 4F 20 53 59 53 54 45 4D	DB	'NO SYSTEM'		;beide Laufwerke ohne 'SY' im Bootsektor
+
+PARAMETER:
+03D7  00 0A 00 04   	DB	00H,0AH,00H,04H		;Parameterblock (IY): +0 00H [?], +1 0AH Flags (lesen), +2/+3 0400H Ladeadresse
+03DB  00 02         	DB	00H,02H		;+4/+5 0200H Laenge in Byte (LADEN schreibt sie nochmals nach 03DBH)
+03DD  00 00 00 00   	DB	00H,00H,00H,00H		;+6..+9 (Fertig-/Fehlerroutine des Resident-Treibers, hier ungenutzt)
+03E1  00            	DB	00H		;+10 Status (Rueckgabe: 80H gut, C0H-C6H Fehler)
+03E2  00            	DB	00H		;+11 Laufwerk (Bit 5-6), Kopf (Bit 7), Sektor-1 (Bit 0-4); LADEN setzt das Laufwerk
+03E3  00            	DB	00H		;+12 Spur 0
+03E4  FF FF FF FF   	DB	FFH,FFH,FFH,FFH		;unbelegt (FFH)
+03E8  C3 63 01      	JP TASTE_HOLEN		;[Sprungleiste] Tastatur abfragen (TASTE_HOLEN): Z = keine Taste, sonst A
+03EB  C3 DB 00      	JP ZEICHEN_AUS		;Zeichen ausgeben (ZEICHEN_AUS)
+03EE  C3 2D 01      	JP TEXT_AUS		;Text mit vorangestellter Laenge ausgeben (TEXT_AUS)
+03F1  C3 36 01      	JP HEX_AUS		;A als zwei Hexziffern ausgeben (HEX_AUS)
+03F4  C3 C8 00      	JP DISKERROR		;DISKERROR + Status (IY+10) (DISKERROR)
+03F7  FF FF         	DB	FFH,FFH		;unbelegt (FFH)
+HAKEN:
+03F9  00            	NOP		;[HAKEN] NOP / RET: leere Einhaengestelle, vom Bootsektor ueberschreibbar (RAM) [?]
+03FA  C9            	RET
+03FB  11            	DB	11H		;ZUSTAND Sektorlaenge: Low-Nibble 1/2/4/8 = 128/256/512/1024 Byte; RLCA bei Laengenfehler (11H, 22H, 44H, 88H)
+03FC  FF            	DB	0FFH		;ZUSTAND Bootlaufwerk (0/1), FFH bis LADEN es setzt
+03FD  C3 98 01      	JP SEKTOREN_LESEN		;Sektoren lesen (SEKTOREN_LESEN); Parameterblock an IY, Aufbau s. 03D7H.  Der Bootsektor und die SCPX-/UDOS-Lader benutzen genau diese Einsprungstelle
+
+	END

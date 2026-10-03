@@ -1,0 +1,10 @@
+# `boot-scpx`: SCPX-Systemspuren des PRG aus den Modulen; das Geraet wird am BIOS erkannt,
+# ein BIOS der anderen Fassung als mit --prg verlangt wird abgewiesen.
+tool:   k1520disktool
+disk:   prg710-1_scpx17_cpa640_boot.hfe
+tmpfile module:
+tmpfile band:
+setup_run: @k1520disktool get %DISK% SYL17.SYS CCPBD17.SYS B152V24.SYS B17272V2.SYS --to %module%
+run:    boot-scpx %module%/SYL17.SYS %module%/CCPBD17.SYS %module%/B152V24.SYS %band% --prg 710-1
+expect: gebaut, verlangt war der PRG 710-1
+exit:   1

@@ -10,6 +10,8 @@ k1520_add_test(z8000 SRC primitives/test_z8000.cpp LIBS k1520_z8000 LABELS "${_l
 k1520_add_test(pio   SRC primitives/test_pio.cpp   LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl}")
 k1520_add_test(sio   SRC primitives/test_sio.cpp   LIBS k1520_sio LABELS "${_lbl}")
+# 8279-Tastaturteil (PRG 710, doc/design/20_prg710.md AP-P2a)
+k1520_add_test(i8279 SRC primitives/test_i8279.cpp LIBS k1520_i8279 LABELS "${_lbl}")
 # RETI/IUS-Verhalten über alle drei Bausteine hinweg (braucht daher den Bus).
 k1520_add_test(reti  SRC primitives/test_reti.cpp
                      LIBS k1520_ctc k1520_pio k1520_sio k1520_bus LABELS "${_lbl}")
@@ -28,6 +30,15 @@ k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LA
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
 # ZRE 045-8762 des K8915: Speicherbild je A8H-Wert (doc/design/16_k8915.md §4.2a)
 k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")
+# ZRE K2521 des PRG 710/710-1: Speicherfenster, CTC/PIO, Kaskade, 16-Bit-E/A (doc/design/20_prg710.md AP-P1a)
+k1520_add_test(k2521 SRC cards/test_k2521.cpp      LIBS k1520_k2521 LABELS "${_lbl}")
+# EPROMmer der ATP 590068 mit virtuellem Sockel (doc/design/20_prg710.md AP-P7b)
+k1520_add_test(eprommer590068 SRC cards/test_eprommer590068.cpp LIBS k1520_atp590068 k1520_testsupport LABELS "${_lbl}")
+# Speicherverwaltung E8H–EBH + OPS des PRG 710 (doc/design/20_prg710.md §4b, AP-P1b)
+k1520_add_test(prg710_speicher SRC cards/test_prg710_speicher.cpp LIBS k1520_prg710_speicher LABELS "${_lbl}")
+# ADA K6022 (Lochband, SIF1000) und ASS 590069 (Fernschreiber) des PRG 710 (AP-P8b/c)
+k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
+k1520_add_test(ass590069 SRC cards/test_ass590069.cpp LIBS k1520_ass590069 LABELS "${_lbl}")
 # ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
 k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
 
@@ -38,6 +49,9 @@ k1520_add_test(em16  SRC cards/test_em16.cpp       LIBS k1520_em k1520_k3526 LAB
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
+# Tastatur K7609 des PRG 710: Host-Taste → 8279-Code (doc/prg710/k7609_codes.csv, AP-P2a)
+k1520_add_test(k7609          SRC peripherals/test_k7609.cpp
+                              LIBS k1520_k7609 LABELS "${_lbl}")
 # Tastatur K7672 des K8915: Protokollmodell (§3.5, AP-E2)
 k1520_add_test(k7672          SRC peripherals/test_k7672.cpp
                               LIBS k1520_k7672 LABELS "${_lbl}")

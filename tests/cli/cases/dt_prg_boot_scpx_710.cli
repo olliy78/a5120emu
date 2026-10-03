@@ -1,0 +1,9 @@
+# `boot-scpx` mit dem V1.5-BIOS: SCPX fuer PRG 710, 6400 Byte Band bis zum BIOS-Ende.
+tool:   k1520disktool
+disk:   prg710-1_scpx17_cpa640_boot.hfe
+tmpfile module:
+tmpfile band:
+setup_run: @k1520disktool get %DISK% SYL17.SYS CCPBD17.SYS B152V24.SYS B17272V2.SYS --to %module%
+run:    boot-scpx %module%/SYL17.SYS %module%/CCPBD17.SYS %module%/B152V24.SYS %band% --prg 710
+expect: 9472 Byte Systemspuren, SCPX fuer PRG 710
+exit:   0

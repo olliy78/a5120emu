@@ -1,0 +1,8 @@
+# `--prg` verlangt einen PRG-Lader: das Bootabbild einer A5120-Diskette wird abgewiesen.
+tool:   k1520disktool
+disk:   udos_boot_scp.hfe
+tmpfile band:
+setup_run: @k1520disktool boot-get %DISK% %band%
+run:    boot-put %DISK% %band% --prg 710-1
+expect: keinen PRG-Lader
+exit:   1

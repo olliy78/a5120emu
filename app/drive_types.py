@@ -72,12 +72,15 @@ NUM_SLOTS = 4
 _STANDARD_JE_MASCHINE = {
     "a5120": DEFAULT_DRIVE_TYPES,
     "k8915": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
+    # PRG 710/710-1: zwei K5601 an der AFS K5122 (doc/design/20_prg710.md §3.6).
+    "prg710": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
 }
 #: Wählbare Typen.  K8915 nur 5¼″: 8″-Laufwerke sind dort nicht belegt [?] — die
 #: Karte (K5122) wäre dieselbe, aber weder Gerät noch BIOS geben Anlass dazu.
 _TYPEN_JE_MASCHINE = {
     "a5120": [core for _s, core, _d in DRIVE_TYPES],
     "k8915": ["K5601", "K5600.10", "K5600.20"],
+    "prg710": ["K5601", "K5600.10", "K5600.20"],
 }
 
 

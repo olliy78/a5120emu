@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <set>
 #include <vector>
 
 #include "core/bus/k1520_bus.h"
@@ -193,6 +194,97 @@ TEST_F(K5122Wait, MkeErstNachSyncGruppeUndDannDerKopf) {
 
     card.ioWrite(0x10, 0x8D);                      // /STR = 1
     EXPECT_FALSE(card.markeErkannt()) << "/STR = 1 setzt das Marken-FF zurück";
+}
+
+/**
+ * @test K5122Wait.MkeLowAktiv_InvertiertNurTorBBit1
+ * @brief PRG 710: Marken-FF an Tor B Bit1 low-aktiv (Ruhe 1, erkannt 0), AP-P1c.  Die
+ *        Vorgabe (high-aktiv) bleibt unverändert; `markeErkannt()` ist weiter logisch.
+ */
+TEST_F(K5122Wait, MkeLowAktiv_InvertiertNurTorBBit1) {
+    EXPECT_FALSE(card.mkeLowAktiv()) << "Vorgabe high-aktiv";
+    card.setMkeLowAktiv(true);
+    scharf();
+    EXPECT_FALSE(card.markeErkannt());
+    EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x02) << "Ruhepegel high";
+    ASSERT_GE(bisMke(), 0);
+    EXPECT_TRUE(card.markeErkannt());
+    EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x00) << "erkannt = low";
+    card.ioWrite(0x10, 0x8D);                      // /STR = 1: zurück
+    EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x02);
+}
+
+/**
+ * @test K5122Wait.MkeJedesSyncByte_ErstesInLiefertDasSyncByte
+ * @brief PRG 710 (`setMkeJedesSyncByte`, doc/design/20_prg710.md AP-P1d/AP-P3): das ROM
+ *        schlägt das Marken-FF in einer Schleife an (B5H/85H) und fragt ≈ 12 Takte später
+ *        ab.  Gilt die Marke „sofort“, muss das erste `IN (16H)` danach ein Sync-Byte
+ *        liefern (bzw. die Marke, wenn der Kopf schon hinter der Gruppe ist) — gleich, an welcher Stelle der Gruppe der Kopf beim Scharfmachen stand.
+ *        Bis AP-P3 galt die Marke schon IM ersten A1; im Daten-PIO lag dann noch das 00H
+ *        davor, das ROM las es als Datenmarke und das Datenfeld kam um die Sync-Bytes
+ *        verschoben an („DISKERROR C6“ am Zweitlader des PRG 710).  Geprüft über
+ *        alle Phasen eines Bytefensters an vielen Stellen der Umdrehung.
+ */
+TEST_F(K5122Wait, MkeJedesSyncByte_ErstesInLiefertDasSyncByte) {
+    card.setMkeJedesSyncByte(true);
+    int treffer = 0;
+    for (int versuch = 0; versuch < 400; ++versuch) {
+        lauf(1000 + versuch * 7);                  // Phase quer über Fenster und Spur
+        long t = 0;
+        for (; t < 600'000 && !card.markeErkannt(); t += 54) {
+            scharf();                              // B5H/85H wie 02DDH
+            lauf(12);                              // Abfrage ≈ 12 Takte danach
+        }
+        ASSERT_TRUE(card.markeErkannt()) << "Versuch " << versuch;
+        // Ein Sync-Byte — oder, kam die Abfrage erst nach dem letzten A1, schon die Marke
+        // selbst (so auch am Gerät).  Nie das Lückenbyte VOR der Gruppe.
+        const uint8_t erst = lies();
+        ASSERT_TRUE(erst == 0xA1 || erst == 0xFE || erst == 0xFB)
+            << "Versuch " << versuch << ": erstes Byte nach MKE " << int(erst);
+        uint8_t b = erst;
+        while (b == 0xA1) b = lies();
+        ASSERT_TRUE(b == 0xFE || b == 0xFB) << "Versuch " << versuch << ": Marke " << int(b);
+        ++treffer;
+        card.ioWrite(0x10, 0xBB);                  // /STR = 1: Ruhe
+    }
+    EXPECT_EQ(treffer, 400);
+}
+
+/**
+ * @test K5122Wait.RauschenAufLeererSpur
+ * @brief PRG 710 (`setRauschenAufLeererSpur`, doc/design/20_prg710.md AP-P3b): auf einer
+ *        UNFORMATIERTEN Spur kommt ohne die Einstellung nie ein MKE (A5120/K8915: Lücke).
+ *        Mit ihr erkennt der Markendecoder im Rauschen Scheinmarken (erstes Byte A1), die
+ *        Bytes dahinter sind zufällig und jede Umdrehung anders — irgendwann auch ein
+ *        FEH, an dem ROM und Resident den Spurvergleich versuchen und scheitern.
+ */
+TEST_F(K5122Wait, RauschenAufLeererSpur) {
+    for (int i = 0; i < 4; ++i) {                  // auf Zylinder 4: dort keine Spur
+        card.ioWrite(0x10, 0xBF);
+        card.ioWrite(0x10, 0x3F);                  // /ST fallend, Richtung innen (Bit5)
+        card.ioWrite(0x10, 0xBF);
+        lauf(20'000);
+    }
+    card.ioWrite(0x10, 0xBB);
+    scharf();
+    EXPECT_EQ(bisMke(3'000'000), -1) << "ohne Rauschen: nie eine Marke";
+
+    card.setRauschenAufLeererSpur(true);
+    card.ioWrite(0x10, 0xBB);
+    std::set<uint8_t> dahinter;
+    int fe = 0;
+    for (int n = 0; n < 2000; ++n) {
+        scharf();
+        ASSERT_GE(bisMke(), 0) << "Scheinmarke " << n;
+        EXPECT_EQ(lies(), 0xA1);
+        uint8_t b = lies();
+        while (b == 0xA1) b = lies();
+        dahinter.insert(b);
+        if (b == 0xFE) ++fe;
+        card.ioWrite(0x10, 0xBB);
+    }
+    EXPECT_GT(dahinter.size(), 200u) << "zufällige Bytes hinter der Scheinmarke";
+    EXPECT_GE(fe, 1) << "irgendwann ein FEH (Kennfeldmarke) — sonst endete das Warten nie";
 }
 
 /**

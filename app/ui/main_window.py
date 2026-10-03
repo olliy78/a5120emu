@@ -38,9 +38,11 @@ from app.ui.screen_widget import ScreenWidget
 from app.ui.settings_widget import SettingsWidget
 from app.ui.drive_widget import DriveWidget
 from app.ui.serial_widget import SerialWidget
+from app.ui.eprom_widget import EpromWidget
 from app.ui.keyboard import KeyboardWidget
 from app.ui.focus import release_focus, ScreenFocusGuard
 from app.ui.help_window import HelpWindow
+from app.ui.lochband import LochbandMixin
 from app.ui import status_bar
 from app.ui.status_bar import MachineStatus
 from app.ui.toolbar_config import ToolbarDialog
@@ -49,14 +51,13 @@ from app.ui_icons import icon
 from app.core_binding.k1520 import K1520Emulator
 from app import config_io
 from app import drive_types as dt
-from app import modell
 from app import paths
 from app import programme
 from app import profil as profile
 from app import takt
 
 
-class MainWindow(QMainWindow):
+class MainWindow(LochbandMixin, QMainWindow):
     """Main emulator window."""
     
     def __init__(self, disks=None, profil=None):
@@ -83,14 +84,16 @@ class MainWindow(QMainWindow):
         # ``em=``.  Vorgabe A5120 ohne Erweiterung, überschrieben von der
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
         # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
-        self._model = modell.DEFAULT_MODEL
+        self._model = self.profil.standard_modell()
+        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672).
+        self._tastatur_art = self.profil.modell_tastatur(self._model)
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
             self.emulator = K1520Emulator(self._drive_types,
-                                          machine=self.profil.maschine,
-                                          em=modell.em_for(self._model))
+                                          machine=self.profil.modell_maschine(self._model),
+                                          em=self.profil.modell_em(self._model))
             # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
             # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
             self.emulator.set_key_repeat_realtime(True)
@@ -203,7 +206,9 @@ class MainWindow(QMainWindow):
         # Sammeln im Autosave-Timer sorgt dafür, dass ein Ziehen EINE Schreibung
         # ergibt und nicht fünfzig.
         for dock in (self.screen_dock, self.keyboard_dock,
-                     self.drives_dock, self.settings_dock):
+                     self.drives_dock, self.settings_dock, self.eprom_dock):
+            if dock is None:
+                continue
             dock.visibilityChanged.connect(lambda *_: self._kasten_sichtbarkeit())
             dock.dockLocationChanged.connect(lambda *_: self._schedule_autosave())
             dock.installEventFilter(self)
@@ -350,6 +355,26 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.settings_dock)
         self.tabifyDockWidget(self.drives_dock, self.settings_dock)
 
+        # ── EPROMmer-Dock (nur PRG 710, AP-P7c; rechts, getabbt) ─────────────
+        # Der virtuelle Sockel der ATP 590068.  Die Knöpfe im Kasten sind die
+        # Aktionen aus `app/ui/actions.py` (EPROM), dieselben wie im Menü.
+        self.eprom_dock = None
+        self.eprom_widget = None
+        if self.profil.eprommer:
+            leer = QMenu(self)
+            for typ, text in ((1, "U555 (&1 KB)"), (2, "U2716 (&2 KB)")):
+                a = leer.addAction(text)
+                a.setStatusTip(f"Ein gelöschtes {text.replace('&', '')} in den Sockel stecken")
+                a.triggered.connect(lambda *_, ty=typ: self._eprom_leer(ty))
+            self.act_eprom_leer.setMenu(leer)
+            self.eprom_widget = EpromWidget(
+                self.emulator, [getattr(self, f"act_{n}") for n in aktionen.EPROM])
+            self.eprom_dock = QDockWidget("EPROMmer", self)
+            self.eprom_dock.setObjectName("eprom_dock")
+            self.eprom_dock.setWidget(self.eprom_widget)
+            self.addDockWidget(Qt.RightDockWidgetArea, self.eprom_dock)
+            self.tabifyDockWidget(self.drives_dock, self.eprom_dock)
+
         # ── Kastenschalter ───────────────────────────────────────────────────
         # Sie kommen von Qt (``toggleViewAction``) und sind damit immer richtig
         # herum angehakt.  Beschriftung, Symbol und Kurzwort bekommen sie hier —
@@ -359,7 +384,10 @@ class MainWindow(QMainWindow):
                 ("keyboard", self.keyboard_dock, "&Tastatur", "keyboard", "Tastatur"),
                 ("drives", self.drives_dock, "&Laufwerke", "drives", "Laufwerke"),
                 ("settings", self.settings_dock, "&Einstellungen", "settings",
-                 "Einstellungen")):
+                 "Einstellungen"),
+                ("eprom", self.eprom_dock, "E&PROMmer", "eprom", "EPROMmer")):
+            if dock is None:
+                continue
             a = dock.toggleViewAction()
             a.setText(text)
             a.setIcon(icon(bild))
@@ -396,11 +424,32 @@ class MainWindow(QMainWindow):
     # ── On-screen keyboard → emulator ────────────────────────────────────────
 
     def _tastatur_bauen(self):
-        """Die Bildschirmtastatur des Profils: K7637 (A5120) oder K7672 (K8915)."""
-        if self.profil.tastatur == "k7672":
+        """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1)
+        oder K7609 (PRG 710)."""
+        if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
+        if self._tastatur_art == "k7609":
+            from app.ui.keyboard_k7609 import KeyboardK7609Widget
+            return KeyboardK7609Widget()
         return KeyboardWidget()
+
+    def _tastatur_tauschen(self):
+        """Nach einem Modellwechsel die Bildschirmtastatur des neuen Modells einsetzen
+        (PRG 710 ⇄ 710-1) — dasselbe Dock, dieselben Verbindungen."""
+        art = self.profil.modell_tastatur(self._model)
+        if art == self._tastatur_art:
+            return
+        self._tastatur_art = art
+        alt = self.keyboard_widget
+        self.keyboard_widget = self._tastatur_bauen()
+        self.keyboard_widget.keyPressed.connect(self._on_kbd_press)
+        self.keyboard_widget.keyReleased.connect(self._on_kbd_release)
+        self.screen_widget.key_sink = self.keyboard_widget
+        self.keyboard_dock.setWidget(self.keyboard_widget)
+        alt.deleteLater()
+        self.keyboard_widget.set_powered(bool(self.act_power.isChecked()))
+        QTimer.singleShot(0, self._shrink_keyboard)
 
     def _on_kbd_press(self, keycode: int, shift: bool, ctrl: bool):
         self.emulator.key_press(keycode, shift, ctrl)
@@ -593,6 +642,12 @@ class MainWindow(QMainWindow):
         emu_menu.addAction(self.act_reset)
         if hasattr(self, "act_nmi"):            # nur im Profil mit Frontplatte
             emu_menu.addAction(self.act_nmi)
+        if self.eprom_dock is not None:          # nur im Profil mit EPROMmer
+            emu_menu.addSeparator()
+            eprom_menu = emu_menu.addMenu("E&PROMmer")
+            for name in aktionen.EPROM:
+                eprom_menu.addAction(getattr(self, f"act_{name}"))
+        self._lochband_menue(emu_menu)          # nur PRG (app/ui/lochband.py)
 
         # (Die Geschwindigkeit wird im Einstellungen-Kasten, Reiter „Allgemein",
         #  über ein Dropdown eingestellt; gemessen steht sie in der Statuszeile.)
@@ -601,8 +656,9 @@ class MainWindow(QMainWindow):
         view_menu = menu_bar.addMenu("&Ansicht")
         view_menu.addAction(self.act_vollbild)
         view_menu.addSeparator()
-        for name in ("screen", "keyboard", "drives", "settings"):
-            view_menu.addAction(getattr(self, f"act_dock_{name}"))
+        for name in ("screen", "keyboard", "drives", "settings", "eprom"):
+            if hasattr(self, f"act_dock_{name}"):
+                view_menu.addAction(getattr(self, f"act_dock_{name}"))
         view_menu.addSeparator()
 
         # Die Symbolleiste ein- und ausblenden — der Schalter kommt von ihr selbst.
@@ -639,7 +695,8 @@ class MainWindow(QMainWindow):
         tools_menu = menu_bar.addMenu("&Werkzeuge")
         tools_menu.addAction(self.act_disktool)
         # Der jeweils andere Emulator (dasselbe Programm, anderes Profil).
-        tools_menu.addAction(getattr(self, f"act_{self.profil.andere}emu"))
+        for maschine in (self.profil.andere,) + tuple(self.profil.weitere):
+            tools_menu.addAction(getattr(self, f"act_{maschine}emu"))
         tools_menu.addAction(self.act_konsole)
 
         # ── Hilfe ────────────────────────────────────────────────────────────
@@ -818,12 +875,15 @@ class MainWindow(QMainWindow):
     def _gather_config(self) -> dict:
         """Build the full configuration dict from the live application state."""
         general = {"speed": float(self.speed_factor)}
-        if self.profil.modellwahl:              # nur der A5120 kennt ein Modell
+        if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
             general["model"] = self._model
-        return config_io.build_config(
+        data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
             schnittstellen=self.serial_widget.zustand_lesen())
+        if self.eprom_widget is not None:
+            data["eprom"] = self._eprom_zustand()
+        return data
 
     def _gather_window_state(self) -> dict:
         """Fenstergeometrie + Kastenaufteilung (Sichtbarkeit, Lage, Größen).
@@ -1037,8 +1097,8 @@ class MainWindow(QMainWindow):
             # _apply_drive_types (der auch das Modell an den core-Konstruktor
             # gibt).  Ein fehlender Eintrag ist die Vorgabe A5120 (ohne EM) —
             # ältere Konfigurationen laufen damit unverändert.
-            self._model = (modell.normalize(general.get("model"))
-                           if self.profil.modellwahl else modell.DEFAULT_MODEL)
+            self._model = (self.profil.modell_normalisieren(general.get("model"))
+                           if self.profil.modellwahl else self.profil.standard_modell())
             self.settings_widget.set_model_value(self._model)
 
             # Drive-bay configuration must be applied BEFORE the disks, so the
@@ -1057,6 +1117,11 @@ class MainWindow(QMainWindow):
             if "schnittstellen" in data:
                 self.serial_widget.zustand_anwenden(
                     self.profil.schnittstellen_umbenennen(data.get("schnittstellen") or {}))
+
+            # EPROM-Sockel (AP-P9): Datei + Typ; fehlt der Abschnitt, bleibt der
+            # Sockel, wie er ist (Auslieferungsvorgabe und ältere Dateien).
+            if "eprom" in data and self.eprom_widget is not None:
+                self._eprom_zustand_anwenden(data.get("eprom"))
 
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})
@@ -1315,7 +1380,7 @@ class MainWindow(QMainWindow):
         Reine Abfrage im selben Sekundentakt wie der Rest der Statuszeile
         (``em_leds()``/``em_mode16()``, kein Rückruf) — Anschluss aus S5.
         """
-        if not modell.em_for(self._model):
+        if not self.profil.modell_em(self._model):
             return
         try:
             v1, v2 = self.emulator.em_leds()
@@ -1439,7 +1504,12 @@ class MainWindow(QMainWindow):
         Laufwerks-Auswahlfeld) fragt auch nicht nach, sondern startet direkt
         kalt neu.
         """
-        self._model = modell.normalize(model)
+        neu = self.profil.modell_normalisieren(model)
+        if neu != self._model and not self._eprom_rueckfrage("Modellwechsel"):
+            # Abgebrochen: das Auswahlfeld zeigt wieder das Modell, das läuft.
+            self.settings_widget.set_model_value(self._model)
+            return
+        self._model = neu
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
@@ -1455,7 +1525,7 @@ class MainWindow(QMainWindow):
         restore it is ``False`` (power-on happens once, later).
         """
         types = dt.normalize_list(types)
-        em = modell.em_for(self._model)
+        em = self.profil.modell_em(self._model)
 
         # Disks whose slot still carries a drive survive the reconfiguration.
         surviving = [m for m in self.drives_widget.get_mounts()
@@ -1464,7 +1534,8 @@ class MainWindow(QMainWindow):
 
         # Recreate the machine with the new drive bay / model.
         try:
-            new_emu = K1520Emulator(types, machine=self.profil.maschine, em=em)
+            new_emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
+                                    em=em)
             new_emu.set_key_repeat_realtime(True)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
@@ -1479,6 +1550,9 @@ class MainWindow(QMainWindow):
         # wieder aufnehmen — ein Wechsel der Laufwerke soll keine Verbindung kosten.
         serielle = self.serial_widget.zustand_lesen()
         self.serial_widget.alles_beenden()
+        # Der EPROMmer-Sockel gehört zur Maschine — das gesteckte PROM samt Inhalt
+        # und „geändert“ wandert mit (wie eine eingelegte Diskette).
+        eprom = self.eprom_widget.sockel_lesen() if self.eprom_widget else None
 
         try:
             self.emulator.stop()
@@ -1487,9 +1561,13 @@ class MainWindow(QMainWindow):
 
         self._drive_types = types
         self.emulator = new_emu
+        self._tastatur_tauschen()
         self.serial_widget.set_emulator(new_emu)
         self.serial_widget.zustand_anwenden(serielle)
         self.screen_widget.set_emulator(new_emu)
+        if self.eprom_widget is not None:
+            self.eprom_widget.set_emulator(new_emu)
+            self.eprom_widget.sockel_anwenden(eprom)
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
@@ -1530,17 +1608,146 @@ class MainWindow(QMainWindow):
         except RuntimeError as e:
             QMessageBox.warning(self, "k1520DiskTool", str(e))
 
-    def _andere_maschine_starten(self):
-        """Den jeweils ANDEREN Emulator starten (A5120 ⇄ K8915).
+    def _emulator_starten(self, maschine: str):
+        """Einen der ANDEREN Emulatoren starten (A5120, K8915, PRG710).
 
         Dasselbe Programm mit dem anderen Profil, als eigener Prozess mit
-        eigener Konfiguration — beide laufen nebeneinander.
+        eigener Konfiguration — sie laufen nebeneinander.
         """
-        kennung = programme.EMULATOR_JE_MASCHINE[self.profil.andere]
+        kennung = programme.EMULATOR_JE_MASCHINE[maschine]
         try:
             programme.programm_starten(kennung)
         except RuntimeError as e:
-            QMessageBox.warning(self, profile.profil(self.profil.andere).titel, str(e))
+            QMessageBox.warning(self, profile.profil(maschine).titel, str(e))
+
+    def _a5120emu_starten(self):
+        self._emulator_starten("a5120")
+
+    def _k8915emu_starten(self):
+        self._emulator_starten("k8915")
+
+    def _prg710emu_starten(self):
+        self._emulator_starten("prg710")
+
+    # ── EPROMmer (nur PRG 710, AP-P7c) ───────────────────────────────────────
+
+    def _eprom_ordner(self) -> str:
+        pfad = self.emulator.eprom_path()
+        return os.path.dirname(pfad) if pfad else str(paths.user_disks_dir())
+
+    def _eprom_zustand(self) -> dict:
+        """Der Sockel für die Konfiguration: nur, was eine DATEI hat (``path`` + ``type``).
+
+        Ein PROM ohne Datei (frisch angelegt, nie gespeichert) hat nichts, wohin
+        man zurückfinden könnte — er wird nicht gemerkt, deshalb die Rückfrage beim
+        Beenden.  Leerer Sockel = ``{}`` (beim Laden: leeren).
+        """
+        emu = self.emulator
+        pfad = emu.eprom_path()
+        typ = emu.eprom_type()
+        if typ <= 0 or not pfad:
+            return {}
+        return {"path": pfad, "type": int(typ)}
+
+    def _eprom_zustand_anwenden(self, z) -> None:
+        """Den gemerkten Sockel wieder stecken; eine fehlende Datei = still leer
+        (eine Protokollzeile, keine Meldung — das Programm soll starten)."""
+        if self.emulator.eprom_type() > 0:
+            self.emulator.eprom_remove()
+        pfad = (z or {}).get("path") if isinstance(z, dict) else None
+        if not pfad:
+            self.eprom_widget.aktualisieren()
+            return
+        try:
+            self.emulator.eprom_insert(str(pfad), int(z.get("type") or 0))
+        except (OSError, ValueError) as e:
+            self.eprom_widget.meldung(
+                f"Gemerktes PROM {pfad} nicht eingelegt, Sockel bleibt leer: {e}")
+        self.eprom_widget.aktualisieren()
+
+    def _eprom_rueckfrage(self, anlass: str) -> bool:
+        """Ungespeicherter PROM-Inhalt: Speichern / Verwerfen / Abbrechen.
+
+        True = weitermachen (gespeichert oder verworfen), False = der Anwender will
+        nicht weiter (Abbrechen oder die Speicherauswahl abgebrochen).  Verworfen
+        heißt: zurück auf den Stand der Datei, an die das PROM gebunden ist — ohne
+        Datei wird der Sockel leer (ein ungespeichertes PROM wandert nicht
+        stillschweigend in die nächste Maschine).
+        """
+        emu = self.emulator
+        if self.eprom_widget is None or emu.eprom_type() <= 0 or not emu.eprom_modified():
+            return True
+        antwort = QMessageBox.question(
+            self, "EPROMmer",
+            f"Das PROM im Sockel hat Änderungen, die nicht gespeichert sind.\n"
+            f"Vor dem {anlass} speichern?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save)
+        if antwort == QMessageBox.Save:
+            return self._eprom_speichern()
+        if antwort == QMessageBox.Discard:
+            pfad, typ = emu.eprom_path(), emu.eprom_type()
+            emu.eprom_remove()
+            if pfad:
+                try:
+                    emu.eprom_insert(pfad, typ)
+                except OSError as e:
+                    self.eprom_widget.meldung(f"PROM {pfad} nicht neu eingelegt: {e}")
+            self.eprom_widget.aktualisieren()
+            return True
+        return False
+
+    def _eprom_einlegen(self):
+        """Ein rohes ``.bin`` in den Sockel stecken; der Typ folgt aus der Größe."""
+        pfad, _ = QFileDialog.getOpenFileName(
+            self, "PROM-Abbild einlegen", self._eprom_ordner(),
+            "PROM-Abbild (*.bin *.rom);;Alle Dateien (*)")
+        if not pfad:
+            return
+        try:
+            self.emulator.eprom_insert(pfad)
+        except OSError as e:
+            QMessageBox.warning(self, "EPROMmer", f"Abbild nicht eingelegt:\n{e}")
+        self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
+
+    def _eprom_leer(self, typ: int):
+        self.emulator.eprom_insert_blank(typ)
+        self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
+
+    def _eprom_speichern(self) -> bool:
+        """Inhalt als ``.bin`` sichern; der Sockel bleibt danach an diese Datei gebunden.
+
+        True, wenn gespeichert wurde (oder nichts zu speichern war)."""
+        if self.emulator.eprom_type() <= 0:
+            self.statusBar().showMessage("EPROMmer: der Sockel ist leer", 4000)
+            return True
+        vorschlag = self.emulator.eprom_path() or os.path.join(self._eprom_ordner(), "prom.bin")
+        pfad, _ = QFileDialog.getSaveFileName(
+            self, "PROM-Abbild speichern", vorschlag,
+            "PROM-Abbild (*.bin);;Alle Dateien (*)")
+        if not pfad:
+            return False
+        try:
+            self.emulator.eprom_save(pfad)
+        except OSError as e:
+            QMessageBox.warning(self, "EPROMmer", f"Abbild nicht gespeichert:\n{e}")
+            self.eprom_widget.aktualisieren()
+            return False
+        self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
+        return True
+
+    def _eprom_loeschen(self):
+        if not self.emulator.eprom_erase():
+            self.statusBar().showMessage("EPROMmer: der Sockel ist leer", 4000)
+        self.eprom_widget.aktualisieren()
+
+    def _eprom_entnehmen(self):
+        self.emulator.eprom_remove()
+        self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
 
     def _konsole_starten(self):
         """Ein Konsolenfenster mit den K1520-Kommandozeilenwerkzeugen öffnen.
@@ -1561,9 +1768,7 @@ class MainWindow(QMainWindow):
             fassung = _E.version()
         except Exception:
             fassung = "unbekannt"
-        rechner = ("des Bürocomputers <b>robotron A5120</b>"
-                   if self.profil.maschine == "a5120"
-                   else f"des Arbeitsplatzcomputers <b>robotron {self.profil.rechner}</b>")
+        rechner = self.profil.ueber_rechner
         QMessageBox.about(
             self, f"Über {self.profil.programm}",
             f"<h3>{self.profil.programm}</h3>"
@@ -1575,6 +1780,10 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Cleanup on close."""
+        # Ungespeichertes PROM: erst fragen — Abbrechen hält das Fenster offen.
+        if not self._eprom_rueckfrage("Beenden"):
+            event.ignore()
+            return
         # Den Stand beim Beenden IMMER wegschreiben, nicht nur eine anstehende
         # Änderung: die letzte Aufteilung der Kästen kann von einem Ereignis
         # stammen, das kein Speichern ausgelöst hat.

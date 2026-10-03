@@ -138,3 +138,11 @@ k1520_add_test(sertest_kopplung_lang SRC test_sertest_kopplung.cpp
                        LIBS k1520_a5120 k1520_k8915 k1520_fs k1520_logger k1520_testsupport
                        LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 SERTEST_KOPPLUNG_LANG=1
                        K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com" TIMEOUT 300)
+
+# ─── PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): FORMAT → bootfähige Diskette ──
+# Die TIEFE: UDOS-FORMAT beider Seiten mit SYSTEMDISK? Y, Systemdateien kopieren, Kaltstart
+# von der neuen Diskette; SCPX-FORMAT.COM 5 × 1024.  Die schnellen Fälle:
+# tests/integration/test_prg710_format.cpp.
+k1520_add_test(prg710_format_boot SRC test_prg710_format_boot.cpp
+                            LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 300)

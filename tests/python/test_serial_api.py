@@ -73,6 +73,25 @@ def test_list_names_connectors_v24_and_clock_sources(emu):
     assert emu.serial_status(3) is None and emu.serial_config(3) is None
 
 
+@pytest.mark.parametrize("maschine, namen, stecker, fest", [
+    ("prg710", ["V.24", "IFSS Hauptdrucker", "ZIFSS Zusatzdrucker", "Fernschreiber"],
+     ["X4", "X6", "X5", "590069"], []),
+    ("prg710-1", ["V.24", "ZIFSS Zusatzdrucker", "Fernschreiber"], ["X4", "X5", "590069"],
+     ["Tastatur K7672 (A32-B)"]),
+])
+def test_prg_lists_names_by_variant(maschine, namen, stecker, fest):
+    """PRG 710/710-1 (AP-P4): Namen nach Gerätebeschriftung, 710-1 ohne IFSS X6 (dort die Tastatur)."""
+    e = B.K1520Emulator(machine=maschine)
+    assert e.serial_count() == len(namen)
+    infos = [e.serial_info(i) for i in range(len(namen))]
+    assert [x.name for x in infos] == namen
+    assert [x.stecker for x in infos] == stecker
+    assert [x.v24 for x in infos] == [True] + [False] * (len(namen) - 1)
+    assert e.serial_fixed_names() == fest
+    assert e.serial_info(len(namen)) is None
+    del e
+
+
 def test_fixed_name_is_cut_at_a_character_boundary(emu):
     import ctypes
     buf = ctypes.create_string_buffer(8)

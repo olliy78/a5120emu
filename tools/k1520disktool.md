@@ -17,10 +17,12 @@ k1520disktool get    <abbild> [muster…] --to <ordner>  Dateien herausholen
 k1520disktool put    <abbild> <datei|ordner…>          Dateien einfügen
 k1520disktool rm     <abbild> <muster…>                Dateien löschen
 k1520disktool create <abbild> --fs NAME [--label N]    leere Diskette anlegen
-       [--boot abbild.bin]                             … bootfähig (Systemspuren)
+       [--boot abbild.bin] [--prg 710|710-1]           … bootfähig (Systemspuren)
 k1520disktool attr   <abbild> <datei> [schalter…]      Dateiangaben zeigen/ändern
 k1520disktool boot-get <abbild> <datei.bin>            Systemspuren herausschreiben
 k1520disktool boot-put <abbild> <datei.bin>            Bootabbild einspielen
+       [--prg 710|710-1]                               … muss für dieses PRG-Gerät sein
+k1520disktool boot-scpx <SYL17> <CCPBD17> <BIOS> <aus.bin>  SCPX-Systemspuren des PRG bauen
 k1520disktool info   <abbild>                          Belegung und Erkennung
 k1520disktool check  <abbild> [--full]                 Dateisystem prüfen
 k1520disktool fsck   <abbild> [--full] [--repair[=…]]  prüfen UND reparieren
@@ -426,6 +428,44 @@ bootfähige Diskette ist Systemspuren + `OS` + `ZDOS`.
 Die **Angaben aus `get` müssen dabei sein** (s. u.) — das `.fileinfo` neben jeder
 Datei und das Sammelbeiblatt: ohne die Kopfsektorangaben wird aus einer Systemdatei
 eine gewöhnliche Binärdatei, und die Diskette bootet nicht.
+
+### PRG 710 / PRG 710-1
+
+Systemdisketten des Robotron PRG 710 und 710-1 (`doc/design/20_prg710.md` §5, AP-P6):
+UDOS 4.3 (`udos_ds77`, 77 Spuren MFM beidseitig) und SCPX 1526 (`scpx640`, 16×256).
+Das Werkzeug unterscheidet **beide Geräte**, denn Tastatur- und MKE-Treiber stehen im
+Bootabbild (710: 8279 an C8H/C9H, 710-1: K7672 an der K8025 5CH–5FH) — ein Abbild der
+falschen Fassung liest sich fehlerfrei und startet am Gerät nicht.  Erkannt wird am
+Ladesektor (`18 03 "SYL"`; der A5120-Lader trägt ihn nicht) und je System an der Fassung:
+bei UDOS am IM-2-Vektor des Zweitladers (`LD HL,09FFH` / `0A2FH`), bei SCPX an der
+Tastatur im BIOS (8279 → 710, sonst K7672 → 710-1).  `info` zeigt es an:
+`Systemspuren: 13 KB, beschrieben, UDOS fuer PRG 710-1`.
+
+**UDOS** geht wie oben: Bootabbild und Dateien aus einer PRG-Diskette holen (`boot-get`,
+`get`), `create --fs udos_ds77 --boot …`, `put`.  Beide Seiten werden angelegt (UDOS liest
+beim ersten Zugriff auch Seite 1; eine unformatierte Seite hängt den Resident).  Mindestens
+nötig auf Seite 0: `OS`, `ZDOS`, `OS.INIT`, `DO`, `DATE`.
+
+**SCPX** entsteht aus den **Modulen** der Systemdiskette — wie `SYSPRG`, nur ohne Emulator:
+
+```sh
+k1520disktool get prg710-1_scpx.hfe SYL17.SYS CCPBD17.SYS B152V24.SYS --to module
+# BIOS: B15x (V1.5) und B17x09 = PRG 710, B17x72 = PRG 710-1; das Gerät wird am BIOS erkannt
+k1520disktool boot-scpx module/SYL17.SYS module/CCPBD17.SYS module/B152V24.SYS band.bin --prg 710
+k1520disktool create neu.hfe --fs scpx640 --boot band.bin --prg 710
+k1520disktool put neu.hfe auszug                     # STAT.COM, PIP.COM, …
+```
+
+`boot-scpx` setzt `SYL17` (256 B) + 256 × AAH + `CCPBD17` (ab C800H) + BIOS (ab DE00H)
+zusammen und prüft vorher Länge und Lader der Module; `--prg` verlangt ein Gerät, ein BIOS
+der anderen Fassung wird abgewiesen.
+
+**Abweisung:** `--prg 710|710-1` (bei `create`/`boot-put`/`boot-scpx`) verlangt ein Abbild
+dieser Fassung — ohne PRG-Lader, mit anderer Fassung oder zu kurz (SCPX endet vor dem BIOS,
+UDOS vor dem Zweitlader) kommt `Fehler:` und nichts wird geschrieben.  Auch ohne `--prg`
+weist `boot-put` ein PRG-Abbild ab, wenn die Diskette schon ein System der **anderen**
+Fassung trägt (Systeme nicht mischen; neue Diskette anlegen).  A5120-/K8915-Abbilder werden
+nicht beurteilt.  Wächter `DisktoolPrg710.*`, `cli_dt_prg_*`.
 
 ## UDOS: was eine Datei ausser ihren Bytes hat
 
