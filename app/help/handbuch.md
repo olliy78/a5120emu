@@ -812,7 +812,8 @@ K7024, Diskettensteuerung K5122 mit zwei K5601). Was anders ist:
   nichts (Beschriftung „[?]“); Leertaste und `BS` sind vorläufig belegt.
 * **Schnittstellen** — am 710 drei (V.24 X4, IFSS Hauptdrucker X6, ZIFSS
   Zusatzdrucker X5), am 710-1 zwei (V.24, ZIFSS); A32-B trägt dort die Tastatur
-  und steht als feste Schnittstelle im Reiter. `SET PRI TO V24` lädt unter UDOS
+  und steht als feste Schnittstelle im Reiter. Dahinter folgt in beiden der
+  **Fernschreiber** (siehe unten). `SET PRI TO V24` lädt unter UDOS
   den Druckertreiber `DRUCK.V24`, `SET PRI ON` spiegelt die Ausgabe dorthin.
 * Die **PC-Tastatur** geht wie beim A5120 an den Rechner. Am 710-1 wiederholt die
   K7672 eine gehaltene Taste selbst; am 710 gibt es keine Wiederholung.
@@ -842,6 +843,35 @@ gebrannt — das Protokoll sagt es. Beispiel unter UDOS: `PROG`, `N`, dann `C`
 einlegen, `J`, `J`. Das Brennen dauert in Maschinenzeit gut 50 ms je Byte (U2716)
 bzw. 100 Durchläufe über das ganze PROM (U555). Die Antworten in `PROG` sind
 einzelne Tasten ohne ET.
+
+### Lochband und Fernschreiber
+
+Der PRG hat einen **Lochbandleser** (daro 1210) und einen **Lochbandstanzer**
+(daro 1215) an der Karte K6022 und einen **Fernschreiber** an der Karte 590069.
+
+* **Ein Band ist eine Datei** mit den Bytes, wie sie gestanzt sind. *Maschine ▸
+  Lochband ▸ Band in den Leser legen…* legt eine ein, *Band aus dem Leser nehmen*
+  nimmt sie heraus (das Menü zeigt, wie weit gelesen ist). Der Leser gibt vorn und
+  hinten ein Stück Leerband (Nullbytes) dazu — eine Textdatei des PCs lässt sich
+  so direkt einlesen.
+* Was gestanzt wird, sammelt sich im **Stanzband**: *Stanzband speichern…* schreibt
+  es in eine Datei (das Menü zeigt die Länge), *Neues Stanzband einlegen* fängt
+  von vorn an. *Stanzer eingeschaltet* abgehakt: der Stanzer quittiert nicht, der
+  Treiber meldet nach etwa einer Sekunde `ERROR C2`. Beide Bänder überstehen ein
+  Rückstellen.
+* **Unter UDOS** stanzt `DO TWRITE.1215 DATEI F=A` eine Datei, `DO TREAD.1210 NEU
+  F=A` liest das eingelegte Band in die Datei `NEU` (sie entsteht auf der zweiten
+  Diskettenseite, `CAT` meldet „DRIVE 4“). **`F=A` gehört dazu**: der Treiber
+  `PTAPE.6022` überträgt nur Text (gerade Parität, Zeilenende NL); das
+  Vorgabeformat von `TAPE.WRITE` kommt nicht zurück (`ERROR C9`). `ERROR C2` beim
+  Lesen heisst: kein Band im Leser.
+* **Der Fernschreiber** ist ein Anschluss im Reiter *Schnittstellen* wie die
+  anderen — als **Datei** wird daraus ein Fernschreibprotokoll, über **Telnet**
+  liest ein Terminal mit. Nachgebildet ist der Fernschreiber selbst: hinaus geht
+  Text, nicht die 5-Bit-Zeichen der Leitung. Benutzt wird er von SCPX am 710-1 mit
+  einem BIOS `B17172FS`/`B17272FS` (Druckerausgabe, z. B. **^P** und `DIR`); er
+  schreibt nur Großbuchstaben, Zeichen ohne Gegenstück im Fernschreibalphabet
+  (`>` `*` `#` …) als Zwischenraum, mit 100 Baud — etwa 13 Zeichen je Sekunde.
 
 ## Tastenkürzel
 

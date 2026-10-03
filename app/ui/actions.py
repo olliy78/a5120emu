@@ -66,6 +66,22 @@ _SPEC: List[Tuple] = [
      "NMI-Taster der Frontplatte — solange das Boot-ROM eingeblendet ist: Lampen "
      "aus, Selbsttest von vorn.  Unter SCPX springt die CPU ins RAM bei 0066H "
      "(wie am Gerät, meist ein Absturz)", "_on_nmi", False),
+    # Lochband an der ADA K6022 (nur PRG, siehe NUR_FUER; Methoden in app/ui/lochband.py).
+    # KEIN Kürzel — die Kürzeltabelle des Handbuchs ist ein Vertrag.
+    ("band_einlegen", "Band in den Leser &legen…", None, None,
+     "Eine Banddatei (Bytes wie gestanzt) in den Lochbandleser daro 1210 legen — "
+     "UDOS liest sie mit DO TREAD.1210 <datei> F=A", "_band_einlegen", False),
+    ("band_entnehmen", "Band aus dem Leser &nehmen", None, None,
+     "Das Band aus dem Lochbandleser nehmen", "_band_entnehmen", False),
+    ("stanzband_speichern", "Stanzband &speichern…", None, None,
+     "Was der Stanzer daro 1215 gestanzt hat, als Banddatei sichern — "
+     "UDOS stanzt mit DO TWRITE.1215 <datei> F=A", "_stanzband_speichern", False),
+    ("stanzband_leeren", "Neues Stanzband &einlegen", None, None,
+     "Das Stanzband verwerfen und mit einem leeren weitermachen",
+     "_stanzband_leeren", False),
+    ("stanzer_ein", "Stanzer &eingeschaltet", None, None,
+     "Ausgeschaltet quittiert der Stanzer nicht — der Treiber meldet nach etwa "
+     "einer Sekunde ERROR C2", "_stanzer_schalten", True),
 
     # ── EPROMmer (nur PRG 710, AP-P7c) ──────────────────────────────────────
     # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kürzel:
@@ -179,6 +195,12 @@ NUR_FUER = {
     "eprom_loeschen": ("prg710",),
     "eprom_entnehmen": ("prg710",),
     "dock_eprom": ("prg710",),
+    # Lochband an der ADA K6022 (AP-P8d)
+    "band_einlegen": ("prg710",),
+    "band_entnehmen": ("prg710",),
+    "stanzband_speichern": ("prg710",),
+    "stanzband_leeren": ("prg710",),
+    "stanzer_ein": ("prg710",),
 }
 
 #: Die Bedienung des EPROMmer-Sockels, in der Reihenfolge von Kasten und Menü.

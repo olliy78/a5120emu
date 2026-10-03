@@ -42,6 +42,7 @@ from app.ui.eprom_widget import EpromWidget
 from app.ui.keyboard import KeyboardWidget
 from app.ui.focus import release_focus, ScreenFocusGuard
 from app.ui.help_window import HelpWindow
+from app.ui.lochband import LochbandMixin
 from app.ui import status_bar
 from app.ui.status_bar import MachineStatus
 from app.ui.toolbar_config import ToolbarDialog
@@ -56,7 +57,7 @@ from app import profil as profile
 from app import takt
 
 
-class MainWindow(QMainWindow):
+class MainWindow(LochbandMixin, QMainWindow):
     """Main emulator window."""
     
     def __init__(self, disks=None, profil=None):
@@ -646,6 +647,7 @@ class MainWindow(QMainWindow):
             eprom_menu = emu_menu.addMenu("E&PROMmer")
             for name in aktionen.EPROM:
                 eprom_menu.addAction(getattr(self, f"act_{name}"))
+        self._lochband_menue(emu_menu)          # nur PRG (app/ui/lochband.py)
 
         # (Die Geschwindigkeit wird im Einstellungen-Kasten, Reiter „Allgemein",
         #  über ein Dropdown eingestellt; gemessen steht sie in der Statuszeile.)
