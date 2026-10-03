@@ -1,0 +1,1123 @@
+; ============================================================================
+; s502.prn  -  PC 1715  Urlader-ROM S502 (A25.3), 2 KB, 0000H-07FFH
+;
+; Quelle : doc/EPROMS/PC1715/pc1715_s502_urlader.bin  (== r1715bt.bin, bytegleich;
+;          Kennung "121715 031285" ab 000BH)
+; Grundlage: kommentiertes Disassemblat von Christian Corti (Computermuseum der Fakultaet
+;          Informatik Stuttgart, 2002; r1715bt.html), hier neu gegen die Binaerdatei geprueft,
+;          berichtigt (siehe "Berichtigungen") und um Portbedeutungen ergaenzt.
+;          Belege: [SH] = Servicehandbuch pc_serv.pdf (Abschnitt in Klammern),
+;          [LAUF] = Lauf des ROMs auf dem Z80-Kern des Repos mit gestellter Hardware
+;          (kein PC1715-Modell vorhanden; nur Portfolge der Kaltstart-Pfade belegt),
+;          [CRC] = CRC-Pruefroutine mit echten CCITT-Feldern am Kern ausgefuehrt.
+;          [?] = Deutung ohne unmittelbaren Beleg.
+; Statische Analyse + Lauf des Ablaufs ohne Laufwerk; der Erfolgspfad (Laufwerk liefert Spur)
+; ist aus dem Code gelesen, nicht gelaufen.
+;
+; ---- Auffaelligste Befunde ------------------------------------------------------------
+;  * Der Urlader gibt NICHTS auf den Bildschirm aus und beruehrt weder den 8275 (18H-1BH)
+;    noch 34H-37H: keine Meldung, kein Bildspeicher, keine Zeichengeneratorwahl.  Das Bild
+;    bleibt bis zum geladenen Programm dunkel/leer.  (Alle benutzten Ports: OUT 00-07,09,0D,
+;    0F,20,21,28 und IN 02,06,0D,0F -- Port 00H/01H/02H/03H/07H/21H fehlen in der Kurzliste
+;    des Plans.)
+;  * Es liest NIE den Sektor "so wie er liegt": jede Spur wird in einem Zug in den
+;    Spurpuffer 0DCBH-2ECAH gelesen (alle Sektoren der Umdrehung, in Plattenreihenfolge) und
+;    erst dann der gewuenschte Sektor im Puffer gesucht.
+;  * CRC wird GEPRUEFT (ID- und Datenfeld, CCITT; MFM mit A1A1A1-Praeambel) [CRC]; bei
+;    Fehler in den Einzelsektor-Pfad 0422H, nach 96 Fehlversuchen: FDC aus und Halt (007EH).
+;
+; ---- Speicher beim Start ---------------------------------------------------------------
+;  0000-07FFH  ROM nur LESEN / RAM nur SCHREIBEN [SH 1.2.5]; "LDIR HL=DE=0" kopiert das ROM in
+;              das RAM darunter; "OUT (28H)" blendet das ROM aus; ab da laeuft der Urlader aus
+;              der RAM-Kopie (und veraendert sich: ReadField/SetDiskFormat patchen 0487H und
+;              049BH, BootFloppy schreibt den Laengencode in die Parametersaetze 05B7H-05D6H).
+;  0800-2ECAH  wird sofort mit 00H geloescht (26CBH+1 Bytes); Stapel 0995H (waechst nach unten).
+;  Die Variablen (alle RAM):
+;    0800 Zaehler PIO-Interrupts (Index-Impulse) fuer WaitRDY   0801 Hilfszaehler ReadField
+;    0803 aktuelle Spur (SeekTrack)      0804 gesuchter Sektor   0805 gesuchte Spur   0806 Seite 0/1
+;    0807 Seitenmodus: Bit0 = zweiseitig/Seitenwechsel, Bit7 = aktuell Seite 1
+;    0808-080C ID-Puffer ReadID: Marke(FE) Spur Seite Sektor Laengencode
+;    0812 Laufwerk (Bit2-0) + Bit7 = Seite            0813 Zeiger auf das Ende der Sektordaten
+;    0815-0894 Kopie des Steuerrecords (128 B): 081EH = Startadresse, 0820H = Ladeliste
+;    0995 Kennung F002/F003 minus F002          0997-09B2 Parametersaetze (3 x 8 + 4 Byte)
+;    09B5 Sektorgroesse (Wort)   09B7 Sektorgroesse + 0103H   09B9-.. Einzelsektorpuffer
+;    0DC7 Zeiger "naechster Sektor" im Spurpuffer   0DC9 Schluessel der gepufferten Spur
+;    0DCB-2ECA Spurpuffer: je Sektor 0DH + Sektorgroesse Byte: +0 ID-Marke, +1 Spur, +2 Seite,
+;              +3 Sektor, +4 Laengencode, +5/+6 CRC, +7 Datenmarke [?], +8.. Daten (dann CRC)
+;
+; ---- Ablauf ---------------------------------------------------------------------------
+;   1 ROM -> RAM, ROM aus, IM 1, 0800-2ECAH loeschen, 0DC9H := FFFFH (kein Spurpuffer)
+;   2 3 x Delay (2ECBH, 65536, 65536 Durchlaeufe) = 3,72 Mio Takte; bis zum ersten FDC-Zugriff
+;     3,97 Mio Takte = 1,6 s bei 2,458 MHz [LAUF]
+;   3 BootFloppy fuer Laufwerk (0812H & 3): Steuer-/Daten-PIO einrichten, Laufwerk waehlen,
+;     WaitRDY (3 Index-Interrupts abwarten), 8 Spuren hinein, bis /T0 hinaus, dann die vier
+;     Parametersaetze (5,25" MFM 26x128 / 5,25" FM / 8" MFM 26x256 / 8" FM 26x128) mit
+;     ReadID durchprobieren (je 16 Versuche).  Ergebnis A=0: Laufwerk + Format erkannt.
+;   4 ReadBootSector (0083H): Spur 0, Sektor 1, Seite 0.  Der Sektor liefert einen
+;     Steuerrecord:  Byte 0/1 = F002H/F003H (Kennung; 0995 := Version 0/1) oder ein Wort < F000H
+;     (= keine Kennung: dann gilt der gerade erkannte Parametersatz); Byte 4/5 = Nummer
+;     (1-basiert, 128-B-Records) des Steuerrecords; ab Byte 64H 28 Byte Parametersaetze.
+;     Steuerrecord: +9/+10 = START-ADRESSE; ab +0CH Ladeliste:
+;        <Zieladresse W> <Anzahl 128-B-Records W> <Marke B>    (Marke 00 = naechster Eintrag,
+;        FFH = fertig, FEH = neuer Abschnitt mit neuem Record-Bezug/Format)
+;     Die Records folgen DEM STEUERRECORD (logische Folge, 128-B-Records, ueber Sektor-,
+;     Seiten- und Spurgrenzen).
+;   5 BootFin: FDC aus (20H/21H := FFH), DI, IM 2, JP (081EH).  Nur der V.24-Lader prueft die
+;     Ladeadresse (>= 0800H); die Ladeliste der Diskette wird nicht geprueft.
+;   6 Alle vier Laufwerke ohne Erfolg: FDC aus, BootV24 (V.24, SIO B, 9600 Bd, 8 Bit,
+;     ungerade Paritaet, 1,5 Stop): erwartet 11H 11H, antwortet 12H 12H, dann Pakete
+;     0AH <Adr W> <Anz W> <Daten>  bzw.  AAH <Adr W> = Sprung.  Bleibt das ERSTE Zeichen
+;     5000 Abfragen lang (ca. 0,14 s) aus, kehrt BootV24 sofort zurueck (nur ein FALSCHES
+;     Zeichen loest die 16 Wiederholungen aus) -> wieder bei 3 (Laufwerk 0).  Ohne Laufwerke
+;     und ohne V.24-Gegenstelle ergibt das einen Umlauf von 9,6 Mio Takten = 3,9 s [LAUF]:
+;     je Laufwerk 2,31 Mio Takte (WaitRDY-Zeitgrenze), BootV24 0,35 Mio Takte.
+;
+; ---- Berichtigungen gegenueber der Vorlage (Corti) -----------------------------------
+;   * 05A5H: Index 0/1/2/3 = FM 8" / MFM 8" / FM 5,25" / MFM 5,25" (nicht "Low/High Density":
+;     Zweitbyte = Steuer-PIO-B-Wert, Bit4 = F0 (1 = 8"), Bit2 = /MFM (1 = MFM)).
+;   * Parametersatz Byte +2 ist der LAENGENCODE N (Sektor = 128 << N), nicht "Seiten".
+;   * fdc_init "07H,E3H": CF = Mode 3, E3 = E/A-Maske (1 = Eingang: B0,B1,B5,B6,B7; Ausgang:
+;     B2 /MFM, B3 PRE, B4 F0), KEIN Interruptwort.
+;   * Steuer-PIO A (04H): die Bits 1 (MK), 4 (MK1) und 5 (SD-MR) wirken INVERTIERT gegenueber den
+;     Namen /MK, /MK1, /SD im Handbuch [SH 1.5.2.2]: Bit1 = 1 (Wort 87H, FM) -> FM-Marken
+;     und C2-Synchronmarke, Bit1 = 0 (Wort 85H, MFM) -> MFM-A1-Synchronmarke (== Lese-ROM 068,
+;     dessen Adresse A8 /MK ist, s. doc/pc1715/fdc_roms.md); Bit4 = 0 -> Lesedaten ins
+;     Schieberegister, Bit4 = 1 -> staendig 1 einlesen; Bit5 = 1 -> Schritt "nach hoeherer Spur"
+;     UND Marken-FF gesperrt/zurueckgesetzt, Bit5 = 0 -> Marken-FF scharf.
+;     Lesen einer Marke = A5H, BBH, IN 02H, dann 85H/87H (+Seite), dann IN 06H bis Bit1 (MKE).
+;   * Kopfwahl: /FR (Bit2 des Wortes 85H/87H) = 1 Seite 0, 0 Seite 1; sie gilt mit dem ABFALL von
+;     /STR (Bit3) des letzten OUT 04H (BBH hat /FR=0 mit steigendem /STR und waehlt NICHT Seite 1).
+; ============================================================================
+
+	ORG	0000H
+
+
+0000  21 00 00    	LD HL,0000H		;[RESET] HL=0 (Quelle: ROM) ...
+0003  11 00 00    	LD DE,0000H		;... DE=0 (Ziel: RAM unter dem ROM) ...
+0006  01 00 08    	LD BC,0800H		;... BC=0800H: das ganze ROM
+0009  18 0D       	JR COPY_ROM		;Sprung ueber die Kennung
+000B  31 32 31 37 31 35 20 30 33 31 32 38 35 	DB	'121715 031285'		;Kennung '121715' + '031285' (Datum 03.12.85 [?])
+
+0018  ED B0       COPY_ROM:	LDIR		;LDIR: Lesen = ROM, Schreiben = RAM [SH 1.2.5] -> ROM-Abbild liegt jetzt im RAM
+001A  D3 28       	OUT (28H),A		;OUT 28H: ROM aus (/MEMCS1); A beliebig; ab hier laeuft der Code aus dem RAM ; Port 28H = /MEMCS1: ROM aus
+001C  ED 56       	IM 1		;IM 1: alle Interrupts (PIO-Index) -> RST 38H = 0038H
+001E  31 95 09    	LD SP,0995H		;Stapel 0995H (waechst abwaerts, 0995H/0997H... bleiben frei)
+0021  21 00 08    	LD HL,0800H		;0800H-2ECAH (26CCH Byte) mit 00H fuellen
+0024  11 01 08    	LD DE,0801H
+0027  01 CB 26    	LD BC,26CBH
+002A  36 00       	LD (HL),00H
+002C  ED B0       	LDIR
+002E  21 FF FF    	LD HL,FFFFH		;0DC9H := FFFFH: kein Spurpuffer gueltig (nie gleich Spur/Seite)
+0031  22 C9 0D    	LD (0DC9H),HL
+0034  18 0D       	JR BOOT_START
+0036  00          	DB	00H
+0037  00          	DB	00H
+
+0038  E5          ISR_IM1:	PUSH HL		;IM-1-Handler: INC (0800H) -- zaehlt Index-Impulse (PIO A /STB) fuer WaitRDY
+0039  F5          	PUSH AF
+003A  21 00 08    	LD HL,0800H
+003D  34          	INC (HL)
+003E  F1          	POP AF
+003F  E1          	POP HL
+0040  FB          	EI
+0041  ED 4D       	RETI		;RETI (PIO-IEO-Kette)
+
+0043  06 03       BOOT_START:	LD B,03H		;3 x Delay (DE = 2ECBH, dann 2 x 65536 Durchlaeufe zu 26 Takten) = 3,72 Mio Takte; bis zum ersten FDC-Zugriff 3,97 Mio Takte = 1,6 s bei 2,458 MHz [LAUF]
+
+0045  CD E3 03    L0045:	CALL Delay
+0048  10 FB       	DJNZ L0045
+
+004A  CD 01 03    TRY_DRIVE:	CALL BootFloppy		;Laufwerk (0812H & 3) probieren; A=0 -> Format erkannt (BootFloppy), sonst A=FFH
+004D  B7          	OR A
+004E  28 33       	JR Z,BOOT_SECTOR		;A=0: Urladen von Diskette
+0050  21 12 08    	LD HL,0812H		;naechstes Laufwerk: 0812H++ ; Bit7 (Seite) loeschen
+0053  34          	INC (HL)
+0054  CB BE       	RES 7,(HL)
+0056  7E          	LD A,(HL)
+0057  E6 03       	AND 03H
+0059  20 EF       	JR NZ,TRY_DRIVE		;nach LW3 wieder 0 -> alle vier durch
+005B  CD 61 05    	CALL FDC_off		;FDC aus (20H/21H := FFH)
+005E  CD D7 05    	CALL BootV24		;V.24-Urlader (kehrt bei Erfolg nicht zurueck -- Sprung ins geladene Programm)
+0061  18 E7       	JR TRY_DRIVE		;Endlosschleife: wieder bei Laufwerk 0 (Index 0812H & 3 = 0)
+0063  00          	DB	00H
+0064  00          	DB	00H
+0065  00          	DB	00H
+
+0066  ED 45       NMI_RETN:	RETN		;NMI: nur RETN
+
+0068  D5          NO_BOOTHDR:	PUSH DE		;[Kein F00x-Kennwort im Sektor 1] Parametersatz IX (gerade erkannt) -> 0997H und 099FH;
+0069  DD E5       	PUSH IX
+006B  E1          	POP HL		;das Wort DE (Bytes 0/1 des Sektors) bleibt als Nr. des Steuerrecords auf dem Stapel
+006C  11 97 09    	LD DE,0997H
+006F  01 08 00    	LD BC,0008H
+0072  ED B0       	LDIR
+0074  21 97 09    	LD HL,0997H
+0077  01 08 00    	LD BC,0008H
+007A  ED B0       	LDIR
+007C  18 3F       	JR STAGE_INIT
+
+007E  CD 61 05    SHUTDOWN:	CALL FDC_off		;SHUTDOWN: FDC aus, dann Endlos-Halt (JR $)
+
+0081  18 FE       HALT_LOOP:	JR HALT_LOOP
+
+0083  3E 00       BOOT_SECTOR:	LD A,00H		;[Boot-Sektor lesen] A=0: Seite 0 ; B=0 Spur 0, C=1 Sektor 1
+0085  01 01 00    	LD BC,0001H
+0088  CD 05 02    	CALL ReadSector		;ReadSector liefert HL = Zeiger auf die Sektordaten
+008B  5E          	LD E,(HL)		;DE = Wort in Bytes 0/1 des Sektors (E zuerst)
+008C  23          	INC HL
+008D  56          	LD D,(HL)
+008E  23          	INC HL
+008F  7A          	LD A,D
+0090  FE F0       	CP F0H		;D < F0H -> keine Kennung -> 0068H
+0092  38 D4       	JR C,NO_BOOTHDR
+0094  4E          	LD C,(HL)		;BC := Bytes 2/3 (spaeter ueberschrieben, ohne Wirkung)
+0095  23          	INC HL
+0096  46          	LD B,(HL)
+0097  E5          	PUSH HL
+0098  EB          	EX DE,HL
+0099  11 02 F0    	LD DE,F002H		;Kennung muss F002H oder F003H sein (sonst Shutdown)
+009C  A7          	AND A
+009D  ED 52       	SBC HL,DE
+009F  38 DD       	JR C,SHUTDOWN
+00A1  22 95 09    	LD (0995H),HL		;(0995H) := 0/1 (F002H/F003H) -- nicht weiter ausgewertet
+00A4  11 02 00    	LD DE,0002H
+00A7  ED 52       	SBC HL,DE
+00A9  30 D3       	JR NC,SHUTDOWN
+00AB  E1          	POP HL
+00AC  23          	INC HL
+00AD  5E          	LD E,(HL)		;DE := Bytes 4/5 = Nummer (1-basiert) des 128-B-Steuerrecords
+00AE  23          	INC HL
+00AF  56          	LD D,(HL)
+00B0  D5          	PUSH DE
+00B1  11 5F 00    	LD DE,005FH		;HL := Byte 64H des Sektors
+00B4  19          	ADD HL,DE
+00B5  11 97 09    	LD DE,0997H		;28 Byte (Offset 64H-7FH) -> 0997H: drei Parametersaetze zu je 8 Byte + 4
+00B8  01 1C 00    	LD BC,001CH
+00BB  ED B0       	LDIR
+
+00BD  DD 21 9F 09 STAGE_INIT:	LD IX,099FH		;[Abschnitt beginnen] IX := zweiter Parametersatz (099FH): in diesem Format wird die Nummer des Steuerrecords gerechnet
+00C1  CD 5F 03    	CALL SetDiskFormat		;Format einstellen (PIO B, Leseroutine patchen, Sektorgroesse)
+00C4  DD 7E 06    	LD A,(IX+6)		;(IX+6) Seitenmodus -> 0807H (ohne Bit7)
+00C7  CB BF       	RES 7,A
+00C9  32 07 08    	LD (0807H),A
+00CC  01 00 00    	LD BC,0000H
+00CF  CD EA 02    	CALL CalcRecsPerTrack		;DE := Records (128 B) je Spur (Seiten nicht eingerechnet)
+00D2  EB          	EX DE,HL
+00D3  E1          	POP HL		;HL := Nummer des Steuerrecords - 1; liegt er auf der ersten Spur -> 013DH
+00D4  2B          	DEC HL
+00D5  A7          	AND A
+00D6  ED 52       	SBC HL,DE
+00D8  38 63       	JR C,CALC_POS
+00DA  DD 7E 05    	LD A,(IX+5)
+00DD  A7          	AND A
+00DE  28 20       	JR Z,FMT_A
+00E0  3A 07 08    	LD A,(0807H)
+00E3  CB 47       	BIT 0,A
+00E5  28 19       	JR Z,FMT_A
+
+00E7  DD 21 A7 09 FMT_B:	LD IX,09A7H
+00EB  CD 5F 03    	CALL SetDiskFormat
+00EE  EB          	EX DE,HL
+00EF  CD EA 02    	CALL CalcRecsPerTrack
+00F2  EB          	EX DE,HL
+00F3  3A 07 08    	LD A,(0807H)
+00F6  CB FF       	SET 7,A
+00F8  32 07 08    	LD (0807H),A
+00FB  A7          	AND A
+00FC  ED 52       	SBC HL,DE
+00FE  38 3D       	JR C,CALC_POS
+
+0100  DD 21 97 09 FMT_A:	LD IX,0997H
+0104  CD 5F 03    	CALL SetDiskFormat
+0107  EB          	EX DE,HL
+0108  CD EA 02    	CALL CalcRecsPerTrack
+010B  EB          	EX DE,HL
+010C  3A 07 08    	LD A,(0807H)
+
+010F  CB 47       FMT_LOOP:	BIT 0,A
+0111  28 02       	JR Z,FMT_NEXT
+0113  CB BF       	RES 7,A
+
+0115  04          FMT_NEXT:	INC B
+0116  F5          	PUSH AF
+0117  78          	LD A,B
+0118  DD 96 00    	SUB (IX+0)
+011B  38 10       	JR C,FMT_SIDE
+011D  F1          	POP AF
+011E  A7          	AND A
+011F  C2 7E 00    	JP NZ,SHUTDOWN
+0122  DD 7E 05    	LD A,(IX+5)
+0125  A7          	AND A
+0126  CA 7E 00    	JP Z,SHUTDOWN
+0129  06 00       	LD B,00H
+012B  18 BA       	JR FMT_B
+
+012D  F1          FMT_SIDE:	POP AF
+012E  A7          	AND A
+012F  ED 52       	SBC HL,DE
+0131  38 0A       	JR C,CALC_POS
+0133  CB 47       	BIT 0,A
+0135  28 D8       	JR Z,FMT_LOOP
+0137  CB FF       	SET 7,A
+0139  ED 52       	SBC HL,DE
+013B  30 D2       	JR NC,FMT_LOOP
+
+013D  32 07 08    CALC_POS:	LD (0807H),A		;Position des Steuerrecords berechnen: HL = Record*128 -> Sektor C, Rest = Offset
+0140  19          	ADD HL,DE
+0141  C5          	PUSH BC
+0142  06 07       	LD B,07H
+
+0144  29          L0144:	ADD HL,HL
+0145  10 FD       	DJNZ L0144
+0147  ED 5B B5 09 	LD DE,(09B5H)
+014B  C1          	POP BC
+
+014C  A7          CALC_SEC:	AND A
+014D  0C          	INC C
+014E  ED 52       	SBC HL,DE
+0150  30 FA       	JR NC,CALC_SEC
+0152  19          	ADD HL,DE
+0153  E5          	PUSH HL
+0154  3A 07 08    	LD A,(0807H)
+0157  CD 05 02    	CALL ReadSector		;Steuerrecord (128 B) -> 0815H: Ladeliste + Startadresse
+015A  D1          	POP DE
+015B  19          	ADD HL,DE
+015C  01 80 00    	LD BC,0080H
+015F  11 15 08    	LD DE,0815H
+0162  ED B0       	LDIR
+0164  D9          	EXX		;HL' := 0820H, Ladeliste (Eintrag: Ziel W, Anzahl W, Marke B)
+0165  21 20 08    	LD HL,0820H
+
+0168  23          LOAD_ENTRY:	INC HL
+0169  5E          	LD E,(HL)
+016A  23          	INC HL
+016B  56          	LD D,(HL)
+016C  23          	INC HL
+016D  4E          	LD C,(HL)
+016E  23          	INC HL
+016F  46          	LD B,(HL)
+0170  23          	INC HL
+0171  D5          	PUSH DE
+
+0172  D9          LOAD_REC:	EXX		;naechsten 128-B-Record holen (aus dem Puffer oder naechster Sektor/Seite/Spur)
+0173  EB          	EX DE,HL
+0174  2A 13 08    	LD HL,(0813H)
+0177  A7          	AND A
+0178  ED 52       	SBC HL,DE
+017A  EB          	EX DE,HL
+017B  30 61       	JR NC,LOAD_COPY
+017D  ED 4B 04 08 	LD BC,(0804H)
+0181  0C          	INC C
+0182  DD 7E 01    	LD A,(IX+1)
+0185  B9          	CP C
+0186  30 50       	JR NC,LOAD_READ
+0188  DD 7E 05    	LD A,(IX+5)
+018B  A7          	AND A
+018C  28 18       	JR Z,LOAD_NEXTSEC
+018E  DD 7E 06    	LD A,(IX+6)
+0191  A7          	AND A
+0192  28 12       	JR Z,LOAD_NEXTSEC
+0194  3A 12 08    	LD A,(0812H)
+0197  EE 80       	XOR 80H
+0199  32 12 08    	LD (0812H),A
+019C  CB 7F       	BIT 7,A
+019E  28 06       	JR Z,LOAD_NEXTSEC
+01A0  78          	LD A,B
+01A1  A7          	AND A
+01A2  28 2B       	JR Z,LOAD_FMT
+01A4  18 2D       	JR LOAD_FMT2
+
+01A6  04          LOAD_NEXTSEC:	INC B
+01A7  DD 21 97 09 	LD IX,0997H
+01AB  DD 7E 00    	LD A,(IX+0)
+01AE  3D          	DEC A
+01AF  B8          	CP B
+01B0  30 21       	JR NC,LOAD_FMT2
+01B2  DD 7E 05    	LD A,(IX+5)
+01B5  A7          	AND A
+01B6  CA 7E 00    	JP Z,SHUTDOWN
+01B9  DD 7E 06    	LD A,(IX+6)
+01BC  A7          	AND A
+01BD  C2 7E 00    	JP NZ,SHUTDOWN
+01C0  3A 12 08    	LD A,(0812H)
+01C3  CB 7F       	BIT 7,A
+01C5  C2 7E 00    	JP NZ,SHUTDOWN
+01C8  CB FF       	SET 7,A
+01CA  32 12 08    	LD (0812H),A
+01CD  06 00       	LD B,00H
+
+01CF  DD 21 A7 09 LOAD_FMT:	LD IX,09A7H
+
+01D3  CD 5F 03    LOAD_FMT2:	CALL SetDiskFormat
+01D6  0E 01       	LD C,01H
+
+01D8  3A 12 08    LOAD_READ:	LD A,(0812H)
+01DB  CD 05 02    	CALL ReadSector
+
+01DE  D1          LOAD_COPY:	POP DE		;128 Byte nach (Ziel); Ziel wird fortgeschrieben
+01DF  01 80 00    	LD BC,0080H
+01E2  ED B0       	LDIR
+01E4  D5          	PUSH DE
+01E5  D9          	EXX
+01E6  0B          	DEC BC		;Anzahl Records herunterzaehlen
+01E7  78          	LD A,B
+01E8  B1          	OR C
+01E9  20 87       	JR NZ,LOAD_REC
+01EB  D1          	POP DE
+01EC  34          	INC (HL)		;Marke des Eintrags: FFH -> BootFin; FEH -> neuer Abschnitt (BC) ; 00H -> naechster Eintrag
+01ED  28 0C       	JR Z,BOOT_FIN
+01EF  34          	INC (HL)
+01F0  C2 68 01    	JP NZ,LOAD_ENTRY
+01F3  23          	INC HL
+01F4  5E          	LD E,(HL)
+01F5  23          	INC HL
+01F6  56          	LD D,(HL)
+01F7  D5          	PUSH DE
+01F8  C3 BD 00    	JP STAGE_INIT
+
+01FB  CD 61 05    BOOT_FIN:	CALL FDC_off		;[BootFin] FDC aus, Startadresse (081EH), DI, IM 2, Sprung ins geladene System
+01FE  2A 1E 08    	LD HL,(081EH)
+0201  F3          	DI
+0202  ED 5E       	IM 2
+0204  E9          	JP (HL)
+
+0205  ED 43 04 08 ReadSector:	LD (0804H),BC		;[ReadSector(A=Seite/Bit7, B=Spur, C=Sektor) -> HL=Zeiger Daten, BC=Sektorgroesse]; Spurpuffer-Prinzip:
+0209  21 12 08    	LD HL,0812H
+020C  07          	RLCA		;A Bit7 -> Carry -> (0812H) Bit7 (Seite)
+020D  7E          	LD A,(HL)
+020E  17          	RLA
+020F  0F          	RRCA
+0210  77          	LD (HL),A
+0211  2A C9 0D    	LD HL,(0DC9H)		;Schluessel der gepufferten Spur (0DC9H) mit E=0812H, D=Spur vergleichen
+0214  5F          	LD E,A
+0215  50          	LD D,B
+0216  A7          	AND A
+0217  ED 52       	SBC HL,DE
+0219  C4 55 02    	CALL NZ,ReadTrack		;andere Spur/Seite -> ganze Spur neu lesen
+021C  21 CE 0D    	LD HL,0DCEH		;Sektor 0DCEH.. im Puffer suchen
+
+021F  C5          L021F:	PUSH BC
+0220  E5          	PUSH HL
+0221  CD C9 02    	CALL TestSectorFound
+0224  E1          	POP HL
+0225  C1          	POP BC
+0226  28 22       	JR Z,SectorFound
+0228  CD 40 02    	CALL NextSector
+022B  11 AB 2A    	LD DE,2AABH		;Pufferende (2AABH)
+022E  EB          	EX DE,HL
+022F  A7          	AND A
+0230  ED 52       	SBC HL,DE
+0232  EB          	EX DE,HL
+0233  30 EA       	JR NC,L021F
+0235  CD F4 03    	CALL ReadSectorSlow		;nicht gefunden: Einzelsektor-Pfad (03F4H)
+
+0238  E5          L0238:	PUSH HL
+0239  09          	ADD HL,BC
+023A  2B          	DEC HL
+023B  22 13 08    	LD (0813H),HL
+023E  E1          	POP HL
+023F  C9          	RET
+
+0240  11 0D 00    NextSector:	LD DE,000DH		;+0DH + Sektorgroesse = naechster Sektorkopf im Spurpuffer
+0243  19          	ADD HL,DE
+0244  ED 5B B5 09 	LD DE,(09B5H)
+0248  19          	ADD HL,DE
+0249  C9          	RET
+
+024A  2A C7 0D    SectorFound:	LD HL,(0DC7H)
+024D  23          	INC HL
+024E  23          	INC HL
+024F  ED 4B B5 09 	LD BC,(09B5H)
+0253  18 E3       	JR L0238
+
+0255  ED 53 C9 0D ReadTrack:	LD (0DC9H),DE		;[ReadTrack] Schluessel merken; Spurpuffer 0DCBH-2ECAH mit FFH fuellen
+0259  21 CB 0D    	LD HL,0DCBH
+025C  22 C7 0D    	LD (0DC7H),HL
+025F  11 CC 0D    	LD DE,0DCCH
+0262  01 00 21    	LD BC,2100H
+0265  36 FF       	LD (HL),FFH
+0267  ED B0       	LDIR
+0269  3A 12 08    	LD A,(0812H)		;Seite aus 0812H Bit7 -> 0806H; Kopfwahl in den OUT-Wert (0487H): /FR (Bit2) = 1 Seite 0, 0 Seite 1
+026C  07          	RLCA
+026D  E6 01       	AND 01H
+026F  32 06 08    	LD (0806H),A
+0272  07          	RLCA
+0273  07          	RLCA
+0274  47          	LD B,A
+0275  3A 87 04    	LD A,(0487H)
+0278  CB D7       	SET 2,A
+027A  A8          	XOR B
+027B  32 87 04    	LD (0487H),A
+027E  CD A9 03    	CALL SeekTrack		;Spur anfahren
+0281  DD 46 01    	LD B,(IX+1)		;B := Sektoren je Spur; E := 60H Fehlversuche; C := 2 (Port der Daten-PIO B fuer IN (C))
+0284  1E 60       	LD E,60H
+0286  0E 02       	LD C,02H
+0288  F3          	DI		;DI: das Lesen laeuft ohne Unterbrechung (WAIT-Synchronisation)
+
+0289  C5          ReadTrack_Next:	PUSH BC
+028A  D5          	PUSH DE
+028B  2A C7 0D    	LD HL,(0DC7H)
+028E  CD 76 04    	CALL FindID2		;FindID2: ID-Feld suchen und lesen (bei Fehler -> 02BFH)
+0291  20 2C       	JR NZ,ReadTrack_NoID
+0293  ED 5B B7 09 	LD DE,(09B7H)		;Datenfeld lesen: Laenge = Sektorgroesse + 0103H (ReadField: A = Hi+1, B = Lo, DE = Zeitgrenze 0250H)
+0297  7A          	LD A,D
+0298  43          	LD B,E
+0299  11 50 02    	LD DE,0250H
+029C  CD 7E 04    	CALL ReadField
+029F  2A C7 0D    	LD HL,(0DC7H)
+02A2  11 0D 00    	LD DE,000DH
+02A5  19          	ADD HL,DE
+02A6  ED 5B B5 09 	LD DE,(09B5H)
+02AA  19          	ADD HL,DE
+02AB  22 C7 0D    	LD (0DC7H),HL
+02AE  A7          	AND A
+02AF  11 99 26    	LD DE,2699H
+02B2  ED 52       	SBC HL,DE
+02B4  D1          	POP DE
+02B5  FB          	EI
+02B6  C1          	POP BC
+02B7  30 02       	JR NC,ReadTrack_End		;Pufferende? sonst naechster Sektor (DJNZ = Sektoren je Spur)
+02B9  10 CE       	DJNZ ReadTrack_Next
+
+02BB  CD E9 03    ReadTrack_End:	CALL DetectMark		;Lesen beenden: Marke ruecksetzen (A5H/BBH)
+02BE  C9          	RET
+
+02BF  D1          ReadTrack_NoID:	POP DE
+02C0  CD E9 03    	CALL DetectMark
+02C3  FB          	EI
+02C4  C1          	POP BC
+02C5  1D          	DEC E
+02C6  20 C1       	JR NZ,ReadTrack_Next
+02C8  C9          	RET
+
+02C9  3A 04 08    TestSectorFound:	LD A,(0804H)		;[TestSectorFound] Sektor/Seite/Spur im Puffer vergleichen, ID-CRC, Daten-CRC pruefen
+02CC  BE          	CP (HL)
+02CD  C0          	RET NZ
+02CE  2B          	DEC HL
+02CF  3A 06 08    	LD A,(0806H)
+02D2  BE          	CP (HL)
+02D3  C0          	RET NZ
+02D4  2B          	DEC HL
+02D5  3A 05 08    	LD A,(0805H)
+02D8  BE          	CP (HL)
+02D9  C0          	RET NZ
+02DA  2B          	DEC HL
+02DB  2B          	DEC HL
+02DC  CD 24 05    	CALL Check_ID_CRC
+02DF  C0          	RET NZ
+02E0  23          	INC HL
+02E1  22 C7 0D    	LD (0DC7H),HL
+02E4  CD 1B 05    	CALL Check_Data_CRC
+02E7  3E 00       	LD A,00H
+02E9  C9          	RET
+
+02EA  DD 7E 02    CalcRecsPerTrack:	LD A,(IX+2)		;[CalcRecsPerTrack] HL := Sektoren/Spur << Laengencode = Anzahl 128-B-Records je Spur
+02ED  26 00       	LD H,00H
+02EF  DD 6E 01    	LD L,(IX+1)
+02F2  3C          	INC A
+
+02F3  3D          L02F3:	DEC A
+02F4  C8          	RET Z
+02F5  29          	ADD HL,HL
+02F6  18 FB       	JR L02F3
+
+02F8  21 A0 05    DriveNotReady:	LD HL,init_data_4		;[DriveNotReady] init_data_4: OUT 04H=FFH, 06H=FFH; A := FFH
+02FB  CD 64 05    	CALL Out_FDC
+02FE  3E FF       	LD A,FFH
+0300  C9          	RET
+
+0301  21 73 05    BootFloppy:	LD HL,fdc_init		;[BootFloppy] PIOs einrichten (fdc_init) -- Reihenfolge s. Tabelle 0573H
+0304  CD 64 05    	CALL Out_FDC
+0307  3E BF       	LD A,BFH		;Kopf anlegen: OUT 04H,BFH = nur /HL (Bit6) = 0; alle anderen Bits 1
+0309  D3 04       	OUT (04H),A		;Port 04H = Steuer-PIO A Daten (/WE MK /FR /STR MK1 SD-MR /HL /ST)
+030B  21 6F 05    	LD HL,drvsel_tab		;drvsel_tab: EEH,DDH,BBH,77H -> /SE n und /LCK n zugleich aktiv (Tuerverriegelung)
+030E  16 00       	LD D,00H
+0310  3A 12 08    	LD A,(0812H)		;LW-Nummer (0812H & 3)
+0313  E6 03       	AND 03H
+0315  5F          	LD E,A
+0316  19          	ADD HL,DE
+0317  7E          	LD A,(HL)
+0318  D3 20       	OUT (20H),A		;OUT 20H: Laufwerk waehlen (Motor lief schon: fdc_init hat 21H nach 20H=00H geschrieben) ; Port 20H = SE-Register (DB4-7 /SE, DB0-3 /LCK)
+031A  CD 02 04    	CALL WaitRDY		;WaitRDY: 3 Index-Impulse (Interrupts) in ca. 0,94 s abwarten; nicht bereit -> DriveNotReady
+031D  30 D9       	JR NC,DriveNotReady
+031F  06 08       	LD B,08H		;8 Spuren nach innen (StepIn)
+0321  CD C5 03    	CALL SeekIn
+0324  06 50       	LD B,50H		;bis /T0 (B7=0) nach aussen, max. 80 Schritte
+0326  CD CB 03    	CALL SeekOut
+0329  20 CD       	JR NZ,DriveNotReady
+032B  11 00 10    	LD DE,1000H		;Delay DE=1000H = 4096 x 26 Takte = 43 ms (Kopf beruhigen)
+032E  CD E3 03    	CALL Delay
+0331  21 AD 05    	LD HL,disk_param_tab		;vier Parametersaetze der Reihe nach (disk_param_tab) bis ReadID gelingt
+
+0334  5E          BF_NextParm:	LD E,(HL)
+0335  23          	INC HL
+0336  56          	LD D,(HL)
+0337  D5          	PUSH DE
+0338  DD E1       	POP IX
+033A  14          	INC D
+033B  28 BB       	JR Z,DriveNotReady
+033D  E5          	PUSH HL
+033E  CD 87 03    	CALL ReadID		;ReadID: ID-Feld lesen und CRC pruefen; sonst A=FFH
+0341  E1          	POP HL
+0342  23          	INC HL
+0343  3C          	INC A
+0344  28 EE       	JR Z,BF_NextParm
+0346  3A 0C 08    	LD A,(080CH)		;(80CH) = Laengencode aus dem ID-Feld -> (IX+2); faellt in GetSectorSize durch, A=0 am Ende = ERFOLG
+0349  DD 77 02    	LD (IX+2),A
+
+034C  3C          GetSectorSize:	INC A		;[GetSectorSize] 128 << N -> (09B5H); +0103H -> (09B7H)
+034D  21 40 00    	LD HL,0040H
+
+0350  29          L0350:	ADD HL,HL
+0351  3D          	DEC A
+0352  20 FC       	JR NZ,L0350
+0354  22 B5 09    	LD (09B5H),HL
+0357  2C          	INC L
+0358  2C          	INC L
+0359  2C          	INC L
+035A  24          	INC H
+035B  22 B7 09    	LD (09B7H),HL
+035E  C9          	RET
+
+035F  E5          SetDiskFormat:	PUSH HL		;[SetDiskFormat(IX)] (IX+4) Bit0 = 1 (MFM): Steuerwort 85H = MK-Bit 0 = MFM-A1-Synchronmarke; Bit0 = 0 (FM): 87H = MK-Bit 1 = FM-Marken/C2 -> 0487H [Bit invertiert gegen Handbuchname /MK]
+0360  C5          	PUSH BC
+0361  21 A5 05    	LD HL,disk_formats		;disk_formats + 2*(IX+4): Byte 0 = Sprungziel-Offset fuer 049AH (FM 12H / MFM_High 46H / MFM_Low 00H), Byte 1 = PIO-B-Wert
+0364  DD 4E 04    	LD C,(IX+4)
+0367  CB 41       	BIT 0,C
+0369  3E 85       	LD A,85H
+036B  20 02       	JR NZ,L036F
+036D  3E 87       	LD A,87H
+
+036F  32 87 04    L036F:	LD (0487H),A
+0372  06 00       	LD B,00H
+0374  09          	ADD HL,BC
+0375  09          	ADD HL,BC
+0376  7E          	LD A,(HL)
+0377  32 9B 04    	LD (049BH),A
+037A  23          	INC HL
+037B  7E          	LD A,(HL)
+037C  D3 06       	OUT (06H),A		;OUT 06H: Steuer-PIO B: Bit4 F0 (8"), Bit2 /MFM (Aufzeichnungsverfahren), Bit3 PRE=0 ; Port 06H = Steuer-PIO B Daten (/RDYL MKE /MFM PRE F0 /WP /FW /T0)
+037E  DD 7E 02    	LD A,(IX+2)
+0381  CD 4C 03    	CALL GetSectorSize
+0384  C1          	POP BC
+0385  E1          	POP HL
+0386  C9          	RET
+
+0387  1E 10       ReadID:	LD E,10H		;[ReadID] bis 16 Versuche, ein ID-Feld zu lesen; 0808H = Marke FE, Spur, Seite, Sektor, N
+0389  CD 5F 03    	CALL SetDiskFormat
+
+038C  D5          ReadID_Loop:	PUSH DE
+038D  21 08 08    	LD HL,0808H
+0390  CD 74 04    	CALL FindID
+0393  D1          	POP DE
+0394  F5          	PUSH AF
+0395  CD E9 03    	CALL DetectMark
+0398  F1          	POP AF
+0399  FB          	EI
+039A  20 07       	JR NZ,ReadID_Fail
+039C  21 07 08    	LD HL,0807H
+039F  CD 24 05    	CALL Check_ID_CRC
+03A2  C8          	RET Z
+
+03A3  1D          ReadID_Fail:	DEC E
+03A4  20 E6       	JR NZ,ReadID_Loop
+03A6  3E FF       	LD A,FFH
+03A8  C9          	RET
+
+03A9  21 05 08    SeekTrack:	LD HL,0805H		;[SeekTrack] von 0803H nach 0805H
+03AC  46          	LD B,(HL)
+03AD  21 03 08    	LD HL,0803H
+03B0  7E          	LD A,(HL)
+03B1  70          	LD (HL),B
+03B2  90          	SUB B
+03B3  28 06       	JR Z,SeekTrack_End
+03B5  38 06       	JR C,SeekTrack_In
+03B7  47          	LD B,A
+03B8  CD CB 03    	CALL SeekOut
+
+03BB  18 30       SeekTrack_End:	JR DetectMark2
+
+03BD  ED 44       SeekTrack_In:	NEG
+03BF  47          	LD B,A
+03C0  CD C5 03    	CALL SeekIn
+03C3  18 F6       	JR SeekTrack_End
+
+03C5  CD DA 03    SeekIn:	CALL StepIn		;[SeekIn]  B Schritte nach innen
+03C8  10 FB       	DJNZ SeekIn
+03CA  C9          	RET
+
+03CB  DB 06       SeekOut:	IN A,(06H)		;[SeekOut] bis /T0 oder B Schritte nach aussen: IN 06H, Bit7 = 0 -> Spur 0
+03CD  CB 7F       	BIT 7,A
+03CF  C8          	RET Z
+03D0  21 95 05    	LD HL,fdc_step_out
+03D3  CD DD 03    	CALL Out_FDC_Delay
+03D6  10 F3       	DJNZ SeekOut
+03D8  04          	INC B
+03D9  C9          	RET
+
+03DA  21 8E 05    StepIn:	LD HL,fdc_step_in		;Schritt: OUT 04H = BFH, 3FH, BFH (/ST = Bit7 als Impuls, Bit5 = 1: Richtung hoehere Spur)
+
+03DD  CD 64 05    Out_FDC_Delay:	CALL Out_FDC		;Out_FDC, danach Delay DE=0600H = 1536 x 26 Takte = 16 ms Schrittzeit
+03E0  11 00 06    	LD DE,0600H
+
+03E3  1B          Delay:	DEC DE		;Warteschleife: DE Durchlaeufe zu 26 Takten
+03E4  7A          	LD A,D
+03E5  B3          	OR E
+03E6  20 FB       	JR NZ,Delay
+03E8  C9          	RET
+
+03E9  3E A5       DetectMark:	LD A,A5H		;[DetectMark] OUT 04H = A5H = 1010 0101: /ST=1 /HL=0 SD-MR=1 (Marken-FF zuruecksetzen) MK1=0 /STR=0 /FR=1 MK=0 /WE=1 ...
+03EB  D3 04       	OUT (04H),A		;Port 04H = Steuer-PIO A Daten (/WE MK /FR /STR MK1 SD-MR /HL /ST)
+
+03ED  3E BB       DetectMark2:	LD A,BBH		;... dann BBH = 1011 1011: /STR=1 (Abfall fehlt -> /FR=0 wird NICHT als Seite uebernommen), MK1=1 (Schieberegister mit Einsen fuellen), SD-MR=1, MK=1 ...
+03EF  D3 04       	OUT (04H),A		;Port 04H = Steuer-PIO A Daten (/WE MK /FR /STR MK1 SD-MR /HL /ST)
+03F1  DB 02       	IN A,(02H)		;IN A,(02H): Daten-PIO B leerlesen -- haelt die CPU per /WAIT, solange seit dem letzten IN kein Byte uebernommen wurde [SH 1.5.3.6] ; Port 02H = Daten-PIO B Daten (Lesedaten, Mode 1, /WAIT)
+03F3  C9          	RET
+
+03F4  CD A9 03    ReadSectorSlow:	CALL SeekTrack		;[ReadSectorSlow] Einzelsektor-Pfad: Spur anfahren, bis 96 Versuche 0422H, HL=09C2H, BC=Groesse
+03F7  CD 22 04    	CALL ReadSectorDirect
+03FA  21 C2 09    	LD HL,09C2H
+03FD  ED 4B B5 09 	LD BC,(09B5H)
+0401  C9          	RET
+
+0402  CD 1B 04    WaitRDY:	CALL DisablePIOIRQ		;[WaitRDY] PIO-1 Kanal A: Interrupt sperren (03H), (0800H):=0, Interrupt freigeben (83H)
+0405  21 00 08    	LD HL,0800H
+0408  36 00       	LD (HL),00H
+040A  3E 83       	LD A,83H		;OUT 05H,83H: Steuer-PIO A ist Mode 0; /ASTB = INDEX [SH 1.5.2.2]: jeder Index-Impuls loest INT aus
+040C  D3 05       	OUT (05H),A		;Port 05H = Steuer-PIO A Steuer
+040E  11 00 C0    	LD DE,C000H		;Zeitgrenze DE=C000H Durchlaeufe zu 47 Takten = 2,31 Mio Takte = 0,94 s [LAUF]
+
+0411  3E 02       WaitRDY_Loop:	LD A,02H		;CP (HL): (0800H) > 2, d.h. mindestens 3 Index-Impulse -> Carry=1 = bereit
+0413  BE          	CP (HL)
+0414  38 05       	JR C,DisablePIOIRQ
+0416  1B          	DEC DE
+0417  7A          	LD A,D
+0418  B3          	OR E
+0419  20 F6       	JR NZ,WaitRDY_Loop
+
+041B  F3          DisablePIOIRQ:	DI		;[DisablePIOIRQ] DI; OUT 05H,03H; EI
+041C  3E 03       	LD A,03H
+041E  D3 05       	OUT (05H),A		;Port 05H = Steuer-PIO A Steuer
+0420  FB          	EI
+0421  C9          	RET
+
+0422  1E 60       ReadSectorDirect:	LD E,60H		;[ReadSectorDirect] Einzelsektor mit ID-/Daten-CRC-Pruefung, bis 60H Versuche, dann FDC aus + Halt
+
+0424  21 B9 09    RSD_Try:	LD HL,09B9H
+0427  D5          	PUSH DE
+0428  CD 74 04    	CALL FindID
+042B  20 39       	JR NZ,RSD_NoID
+042D  21 C1 09    	LD HL,09C1H
+0430  ED 5B B7 09 	LD DE,(09B7H)
+0434  7A          	LD A,D
+0435  43          	LD B,E
+0436  11 50 02    	LD DE,0250H
+0439  CD 7E 04    	CALL ReadField
+043C  D1          	POP DE
+043D  CD E9 03    	CALL DetectMark
+0440  FB          	EI
+0441  21 BC 09    	LD HL,09BCH
+0444  3A 04 08    	LD A,(0804H)
+0447  BE          	CP (HL)
+0448  20 20       	JR NZ,RSD_Fail
+044A  2B          	DEC HL
+044B  3A 06 08    	LD A,(0806H)
+044E  BE          	CP (HL)
+044F  20 19       	JR NZ,RSD_Fail
+0451  2B          	DEC HL
+0452  3A 05 08    	LD A,(0805H)
+0455  BE          	CP (HL)
+0456  20 12       	JR NZ,RSD_Fail
+0458  2B          	DEC HL
+0459  2B          	DEC HL
+045A  CD 24 05    	CALL Check_ID_CRC
+045D  20 0B       	JR NZ,RSD_Fail
+045F  23          	INC HL
+0460  CD 1B 05    	CALL Check_Data_CRC
+0463  20 05       	JR NZ,RSD_Fail
+0465  C9          	RET
+
+0466  D1          RSD_NoID:	POP DE
+0467  CD E9 03    	CALL DetectMark
+
+046A  FB          RSD_Fail:	EI
+046B  1D          	DEC E
+046C  20 B6       	JR NZ,RSD_Try
+046E  CD 61 05    	CALL FDC_off
+0471  CD 7E 00    	CALL SHUTDOWN
+
+0474  0E 02       FindID:	LD C,02H		;[FindID] C=2 (Port der Daten-PIO B fuer IN (C)); FindID2: DI, B=5, A=1, DE=0900H
+
+0476  F3          FindID2:	DI
+0477  06 05       	LD B,05H
+0479  3E 01       	LD A,01H
+047B  11 00 09    	LD DE,0900H
+
+047E  32 01 08    ReadField:	LD (0801H),A		;[ReadField(HL=Ziel, A=Hi-Zaehler, B=Lo-Zaehler, DE=Zeitgrenze)] liest EIN Feld (Marke + Daten)
+0481  36 00       	LD (HL),00H		;Marke-Puffer loeschen
+0483  CD E9 03    	CALL DetectMark		;DetectMark (A5H, BBH, IN 02H)
+
+0486  3E FF       RF_Patched_OUT:	LD A,FFH		;gepatchter Wert: 85H/87H (+/FR-Seite): OUT 04H gibt die Markenerkennung frei: /STR=0, MK1=0 (Daten schieben), SD-MR=0 (Marken-FF scharf)
+0488  D3 04       	OUT (04H),A		;Port 04H = Steuer-PIO A Daten (/WE MK /FR /STR MK1 SD-MR /HL /ST)
+
+048A  15          RF_WaitMark:	DEC D		;Zeitgrenze (E laeuft ohne Nachladen weiter): DE=0900H -> 8 Runden zu 255 Abfragen = 2040 Abfragen x 41 Takte = 34 ms (ID-Suche); DE=0250H -> nur 79 Abfragen = 3,2 Tausend Takte = 1,3 ms (Datenmarke muss gleich nach der Luecke kommen); D=0 -> Abbruch
+048B  28 51       	JR Z,RF_Exit
+
+048D  1D          RF_Poll:	DEC E
+048E  28 FA       	JR Z,RF_WaitMark
+0490  DB 06       	IN A,(06H)		;IN A,(06H); Bit1 = MKE (Marke erkannt) ; Port 06H = Steuer-PIO B Daten (/RDYL MKE /MFM PRE F0 /WP /FW /T0)
+0492  E6 02       	AND 02H
+0494  28 F7       	JR Z,RF_Poll
+0496  ED 78       	IN A,(C)		;IN A,(C): Markenbyte aus der Daten-PIO B (hier C=02H); wartet per /WAIT, bis das Byte da ist
+0498  16 00       	LD D,00H
+
+049A  18 12       RF_Patched_JR:	JR FM_HighLow		;gepatchtes JR: fm_high_low_dens / mfm_low_dens / mfm_high_dens je nach Format (SetDiskFormat)
+
+049C  FE A1       MFM_Low:	CP A1H		;[MFM 250 kbit/s] das von MKE gemeldete Markenbyte muss A1H sein (sonst Abbruch, D=0 -> NZ); es folgen bis zu zwei weitere A1H; das erste Byte ungleich A1H ist das Kennbyte (FEH ID-Feld, FBH/F8H Datenfeld)
+049E  20 3E       	JR NZ,RF_Exit
+04A0  ED 78       	IN A,(C)
+04A2  FE A1       	CP A1H
+04A4  20 08       	JR NZ,FM_HighLow
+04A6  ED 78       	IN A,(C)
+04A8  FE A1       	CP A1H
+04AA  20 02       	JR NZ,FM_HighLow
+04AC  ED 78       	IN A,(C)
+
+04AE  57          FM_HighLow:	LD D,A		;Kennbyte -> (HL) -> D; danach zwei INI, dann Schleife INI + 7 NOP (Byte jeweils nach /WAIT)
+04AF  77          	LD (HL),A
+04B0  23          	INC HL
+04B1  ED A2       	INI		;INI = IN (C) (Port 02H), (HL++), B--  -- Lesedaten der PIO B
+04B3  ED A2       	INI
+04B5  3A 01 08    	LD A,(0801H)
+04B8  5F          	LD E,A
+
+04B9  ED A2       RF_Data:	INI
+04BB  00          	NOP
+04BC  00          	NOP
+04BD  00          	NOP
+04BE  00          	NOP
+04BF  00          	NOP
+04C0  00          	NOP
+04C1  00          	NOP
+04C2  20 F5       	JR NZ,RF_Data		;alle weiteren Bytes (Anzahl in B, E = Hi-Zaehler (0801H))
+04C4  ED A2       	INI
+04C6  1D          	DEC E
+04C7  20 F0       	JR NZ,RF_Data
+04C9  ED A2       	INI
+04CB  7A          	LD A,D		;war es ein ID-Feld (FEH)?  Dann (IX+3) GAP-Bytes ueberlesen (IN A,(C)); Luecke2 (Fuellbytes + Sync 00) muss also >= (IX+3)+1 Byte lang sein, sonst frisst das Ueberlesen das A1/FB des Datenfelds
+04CC  FE FE       	CP FEH
+04CE  C0          	RET NZ
+04CF  DD 46 03    	LD B,(IX+3)
+
+04D2  ED 78       RF_Gap:	IN A,(C)
+04D4  00          	NOP
+04D5  00          	NOP
+04D6  00          	NOP
+04D7  00          	NOP
+04D8  00          	NOP
+04D9  00          	NOP
+04DA  00          	NOP
+04DB  00          	NOP
+04DC  10 F4       	DJNZ RF_Gap
+
+04DE  7A          RF_Exit:	LD A,D		;Z = ID-Marke FEH gefunden (D=Kennbyte)
+04DF  FE FE       	CP FEH
+04E1  C9          	RET
+
+04E2  FE A1       MFM_High:	CP A1H		;[MFM 500 kbit/s (8")] wie 049CH ohne NOPs (Byte alle 16 us)
+04E4  20 33       	JR NZ,RF_MFM_Exit
+04E6  ED 78       	IN A,(C)
+04E8  FE A1       	CP A1H
+04EA  20 08       	JR NZ,L04F4
+04EC  ED 78       	IN A,(C)
+04EE  FE A1       	CP A1H
+04F0  20 02       	JR NZ,L04F4
+04F2  ED 78       	IN A,(C)
+
+04F4  77          L04F4:	LD (HL),A
+04F5  ED 58       	IN E,(C)
+04F7  23          	INC HL
+04F8  73          	LD (HL),E
+04F9  23          	INC HL
+04FA  57          	LD D,A
+04FB  ED A2       	INI
+04FD  3A 01 08    	LD A,(0801H)
+0500  5F          	LD E,A
+
+0501  ED A2       RF_MFM_Data:	INI
+0503  20 FC       	JR NZ,RF_MFM_Data
+0505  ED A2       	INI
+0507  1D          	DEC E
+0508  20 F7       	JR NZ,RF_MFM_Data
+050A  ED 78       	IN A,(C)
+050C  7A          	LD A,D
+050D  FE FE       	CP FEH
+050F  C0          	RET NZ
+0510  ED 78       	IN A,(C)
+0512  DD 46 03    	LD B,(IX+3)
+
+0515  ED 78       RF_MFM_Gap:	IN A,(C)
+0517  10 FC       	DJNZ RF_MFM_Gap
+
+0519  18 C3       RF_MFM_Exit:	JR RF_Exit
+
+051B  D5          Check_Data_CRC:	PUSH DE		;[Check_Data_CRC] Anzahl = (09B7H): Marke + Daten + 2 CRC-Byte [CRC]
+051C  ED 5B B7 09 	LD DE,(09B7H)
+0520  7A          	LD A,D
+0521  43          	LD B,E
+0522  18 05       	JR CRC_Check
+
+0524  06 07       Check_ID_CRC:	LD B,07H		;[Check_ID_CRC] 7 Byte ab (HL)+1: Marke FE, Spur, Seite, Sektor, N, CRC1, CRC2; Ergebnis Z=CRC ok
+0526  3E 01       	LD A,01H
+0528  D5          	PUSH DE
+
+0529  0E 9A       CRC_Check:	LD C,9AH		;CRC-16-CCITT (1021H) nach Nibble-Verfahren, Anfangswert MFM 9AE5H / FM CF84H in der Registerdarstellung C:E; fuer MFM wird die A1A1A1-Praeambel eingerechnet: Standard-IBM-CRC ist Pflicht [CRC]
+052B  1E E5       	LD E,E5H
+052D  DD CB 04 46 	BIT 0,(IX+4)
+0531  20 04       	JR NZ,L0537
+0533  0E CF       	LD C,CFH
+0535  1E 84       	LD E,84H
+
+0537  F5          L0537:	PUSH AF
+0538  7B          	LD A,E
+
+0539  23          CRC_Loop:	INC HL
+053A  07          	RLCA
+053B  07          	RLCA
+053C  07          	RLCA
+053D  07          	RLCA
+053E  E6 0F       	AND 0FH
+0540  AB          	XOR E
+0541  5F          	LD E,A
+0542  0F          	RRCA
+0543  0F          	RRCA
+0544  0F          	RRCA
+0545  57          	LD D,A
+0546  E6 E0       	AND E0H
+0548  AE          	XOR (HL)
+0549  AB          	XOR E
+054A  5F          	LD E,A
+054B  7A          	LD A,D
+054C  E6 1F       	AND 1FH
+054E  A9          	XOR C
+054F  4F          	LD C,A
+0550  7A          	LD A,D
+0551  0F          	RRCA
+0552  E6 F0       	AND F0H
+0554  A9          	XOR C
+0555  4B          	LD C,E
+0556  5F          	LD E,A
+0557  10 E0       	DJNZ CRC_Loop
+0559  F1          	POP AF
+055A  3D          	DEC A
+055B  20 DA       	JR NZ,L0537
+055D  7B          	LD A,E
+055E  B1          	OR C
+055F  D1          	POP DE
+0560  C9          	RET
+
+0561  21 9C 05    FDC_off:	LD HL,fdc_deselect		;[FDC_off] fdc_deselect: OUT 20H=FFH, OUT 21H=FFH (alles abwaehlen, Motoren aus)
+
+0564  7E          Out_FDC:	LD A,(HL)		;[Out_FDC] Tabelle <Port, Wert> ... bis Port FFH
+0565  4F          	LD C,A
+0566  3C          	INC A
+0567  C8          	RET Z
+0568  23          	INC HL
+0569  7E          	LD A,(HL)
+056A  ED 79       	OUT (C),A
+056C  23          	INC HL
+056D  18 F5       	JR Out_FDC
+
+056F  EE          drvsel_tab:	DB	EEH
+0570  DD          	DB	DDH
+0571  BB          	DB	BBH
+0572  77          	DB	77H
+
+0573  01 0F       fdc_init:	DB	01H,0FH		;Daten-PIO A: Mode 0 (Ausgang)
+0575  03 4F       	DB	03H,4FH		;Daten-PIO B: Mode 1 (Eingang)
+0577  05 0F       	DB	05H,0FH		;Steuer-PIO A: Mode 0 (Ausgang)
+0579  04 FF       	DB	04H,FFH		;Steuer-PIO A Daten: FFH (/WE=1 MK=1 /FR=1 /STR=1 MK1=1 SD-MR=1 /HL=1 /ST=1)
+057B  07 CF       	DB	07H,CFH		;Steuer-PIO B: Mode 3 (Bit-Steuerung)
+057D  07 E3       	DB	07H,E3H		;Steuer-PIO B: E/A-Maske E3H (1=Eingang: B0 /RDYL, B1 MKE, B5 /WP, B6 /FW, B7 /T0; Ausgang: B2 /MFM, B3 PRE, B4 F0)
+057F  06 00       	DB	06H,00H		;Steuer-PIO B Daten: 00H (/MFM=0 FM, PRE=0, F0=0 5,25")
+0581  20 00       	DB	20H,00H		;SE-Register 20H := 00H: alle /SE und /LCK aktiv ...
+0583  21 00       	DB	21H,00H		;... MO-Register 21H: Schreibzugriff uebernimmt /SE in /MO (alle Motoren an) -- Datenbyte egal [SH 1.5.2.2, Register A13:2]
+0585  04 BF       	DB	04H,BFH		;Kopf anlegen /HL=0 (BFH)
+0587  20 FF       	DB	20H,FFH		;SE-Register 20H := FFH: alle abwaehlen (Motoren laufen weiter)
+0589  02 FF       	DB	02H,FFH		;Daten-PIO B Datenregister := FFH (Mode 1: ohne Wirkung; BRDY/ARDY-Anfangszustand [SH 1.5.3.6])
+058B  00 00       	DB	00H,00H		;Daten-PIO A Datenregister := 00H (Mode 0: setzt ARDY)
+058D  FF          	DB	FFH		;Tabellenende
+
+058E  04 BF       fdc_step_in:	DB	04H,BFH		;Schritt nach innen: BFH (/HL=0, Bit5=1) / 3FH (/ST=0, Impuls) / BFH
+0590  04 3F       	DB	04H,3FH		;/ST aktiv
+0592  04 BF       	DB	04H,BFH		;/ST inaktiv
+0594  FF          	DB	FFH		;Tabellenende
+
+0595  04 9F       fdc_step_out:	DB	04H,9FH		;Schritt nach aussen: 9FH (Bit5=0) / 1FH (/ST=0) / 9FH
+0597  04 1F       	DB	04H,1FH		;/ST aktiv
+0599  04 9F       	DB	04H,9FH		;/ST inaktiv
+059B  FF          	DB	FFH		;Tabellenende
+
+059C  20 FF       fdc_deselect:	DB	20H,FFH		;alles abwaehlen: OUT 20H=FFH, OUT 21H=FFH (Motoren aus)
+059E  21 FF       	DB	21H,FFH
+
+05A0  04 FF       init_data_4:	DB	04H,FFH		;DriveNotReady: Steuer-PIO A Daten := FFH (Kopf abgehoben)
+05A2  06 FF       	DB	06H,FFH		;Steuer-PIO B Daten := FFH
+05A4  FF          	DB	FFH		;Tabellenende
+
+05A5  12 10       disk_formats:	DB	12H,10H		;Index 0: 8" FM   (Sprung 12H = FM, PIO B 10H: F0=1)
+05A7  46 14       	DB	46H,14H		;Index 1: 8" MFM  (Sprung 46H = mfm_high, PIO B 14H: F0=1 /MFM=1)
+05A9  12 00       	DB	12H,00H		;Index 2: 5,25" FM (Sprung 12H, PIO B 00H)
+05AB  00 04       	DB	00H,04H		;Index 3: 5,25" MFM (Sprung 00H = mfm_low, PIO B 04H: /MFM=1)
+
+05AD  C7 05       disk_param_tab:	DW	05C7H
+05AF  CF 05       	DW	05CFH
+05B1  B7 05       	DW	05B7H
+05B3  BF 05       	DW	05BFH
+05B5  FF FF       	DW	FFFFH
+
+05B7  4C 1A 01 10 01 00 00 00 diskparm_8MFM:	DB	4CH,1AH,01H,10H,01H,00H,00H,00H		;8" MFM  500 kbit/s: 77 Spuren, 26 Sektoren, N=1 (256 B), GAP 16, Format 1, einseitig, Seitenmodus 0
+
+05BF  4C 1A 00 0A 00 00 00 00 diskparm_8FM:	DB	4CH,1AH,00H,0AH,00H,00H,00H,00H		;8" FM   250 kbit/s: 77 Spuren, 26 Sektoren, N=0 (128 B), GAP 10, Format 0
+
+05C7  27 1A 00 1B 03 00 00 00 diskparm_5MFM:	DB	27H,1AH,00H,1BH,03H,00H,00H,00H		;5,25" MFM 250 kbit/s: 40 Spuren, 26 Sektoren, N=0 (128 B), GAP 27, Format 3
+
+05CF  27 09 01 0A 02 00 00 00 diskparm_5FM:	DB	27H,09H,01H,0AH,02H,00H,00H,00H		;5,25" FM  125 kbit/s: 40 Spuren, 9 Sektoren, N=1 (256 B), GAP 10, Format 2, (IX+5)=0
+
+05D7  E5          BootV24:	PUSH HL		;[BootV24] Boot ueber V.24 / SIO Kanal B
+05D8  D5          	PUSH DE
+05D9  C5          	PUSH BC
+05DA  F5          	PUSH AF
+05DB  16 10       	LD D,10H		;D = 10H Versuche
+05DD  3E 05       	LD A,05H		;CTC Kanal 1: Steuerwort 05H (Timer, Vorteiler 16, Zeitkonstante folgt), Zeitkonstante 01H -> 2,458 MHz / 16 = 153,6 kHz = 9600 Bd x16
+05DF  D3 09       	OUT (09H),A		;Port 09H = CTC Kanal 1
+05E1  3E 01       	LD A,01H
+05E3  D3 09       	OUT (09H),A		;Port 09H = CTC Kanal 1
+
+05E5  0E 0F       BV_Retry:	LD C,0FH		;SIO B initialisieren: 9 Byte (otir) nach 0FH -- siehe sio_init
+05E7  06 09       	LD B,09H
+05E9  21 77 06    	LD HL,sio_init
+05EC  ED B3       	OTIR
+05EE  CD 4E 06    	CALL RecvChar_Timed		;RecvChar_Timed: Zeichen 11H (DC1) erwartet (5000 Abfragen)
+05F1  FE 11       	CP 11H
+05F3  28 09       	JR Z,BV_Ok1
+
+05F5  42          BV_Fail:	LD B,D
+
+05F6  10 FE       L05F6:	DJNZ L05F6
+05F8  15          	DEC D
+05F9  20 EA       	JR NZ,BV_Retry
+05FB  C3 1C 06    	JP BV_Exit
+
+05FE  CD 4E 06    BV_Ok1:	CALL RecvChar_Timed
+0601  FE 11       	CP 11H
+0603  20 F0       	JR NZ,BV_Fail
+0605  06 12       	LD B,12H		;Antwort 12H 12H (DC2)
+0607  CD 73 06    	CALL SendChar
+060A  CD 73 06    	CALL SendChar
+060D  06 0A       	LD B,0AH
+
+060F  CD 67 06    BV_Cmd:	CALL RecvChar		;Befehlsbyte: 0AH = Block laden, AAH = Sprung; B=0AH Versuche
+0612  FE 0A       	CP 0AH
+0614  28 0B       	JR Z,BV_Load
+0616  FE AA       	CP AAH
+0618  28 27       	JR Z,BV_Jump
+061A  10 F3       	DJNZ BV_Cmd
+
+061C  F1          BV_Exit:	POP AF
+061D  C1          	POP BC
+061E  D1          	POP DE
+061F  E1          	POP HL
+0620  C9          	RET
+
+0621  CD 45 06    BV_Load:	CALL Recv_HL_Word		;Ladeadresse W; < 0800H -> Abbruch (ROM/RAM-Kopie schuetzen)
+0624  54          	LD D,H
+0625  5D          	LD E,L
+0626  01 00 08    	LD BC,0800H
+0629  ED 42       	SBC HL,BC
+062B  38 EF       	JR C,BV_Exit
+062D  CD 45 06    	CALL Recv_HL_Word		;Anzahl W; Bytes empfangen und ablegen
+0630  44          	LD B,H
+0631  4D          	LD C,L
+0632  EB          	EX DE,HL
+
+0633  CD 67 06    BV_Copy:	CALL RecvChar
+0636  77          	LD (HL),A
+0637  23          	INC HL
+0638  0B          	DEC BC
+0639  78          	LD A,B
+063A  B1          	OR C
+063B  20 F6       	JR NZ,BV_Copy
+063D  06 01       	LD B,01H
+063F  18 CE       	JR BV_Cmd
+
+0641  CD 45 06    BV_Jump:	CALL Recv_HL_Word		;AAH: Adresse W, JP (HL)
+0644  E9          	JP (HL)
+
+0645  CD 67 06    Recv_HL_Word:	CALL RecvChar
+0648  6F          	LD L,A
+0649  CD 67 06    	CALL RecvChar
+064C  67          	LD H,A
+064D  C9          	RET
+
+064E  01 88 13    RecvChar_Timed:	LD BC,1388H		;[RecvChar_Timed] 5000 Abfragen von RR0 Bit0 (0FH) -> Zeichen aus 0DH, sonst Abbruch (kehrt zum Aufrufer von BootV24 zurueck)
+
+0651  3E 00       RC_Poll:	LD A,00H
+0653  D3 0F       	OUT (0FH),A		;Port 0FH = SIO B Steuer (V.24)
+0655  DB 0F       	IN A,(0FH)		;Port 0FH = SIO B Steuer (V.24)
+0657  CB 47       	BIT 0,A
+0659  20 09       	JR NZ,RC_Got
+065B  0B          	DEC BC
+065C  78          	LD A,B
+065D  B1          	OR C
+065E  20 F1       	JR NZ,RC_Poll
+0660  E1          	POP HL
+0661  C3 1C 06    	JP BV_Exit
+
+0664  DB 0D       RC_Got:	IN A,(0DH)		;Port 0DH = SIO B Daten (V.24)
+0666  C9          	RET
+
+0667  3E 00       RecvChar:	LD A,00H		;[RecvChar] wartet endlos auf RR0 Bit0
+0669  D3 0F       	OUT (0FH),A		;Port 0FH = SIO B Steuer (V.24)
+066B  DB 0F       	IN A,(0FH)		;Port 0FH = SIO B Steuer (V.24)
+066D  CB 47       	BIT 0,A
+066F  28 F6       	JR Z,RecvChar
+0671  18 F1       	JR RC_Got
+
+0673  78          SendChar:	LD A,B		;[SendChar] B -> OUT 0DH
+0674  D3 0D       	OUT (0DH),A		;Port 0DH = SIO B Daten (V.24)
+0676  C9          	RET
+
+0677  1C          sio_init:	DB	1CH		;SIO B: 1CH = WR0 Kanal-Reset (Zeigerbits 4!) [?: bei 'Zeiger gilt ab dem naechsten Zugriff' ginge 04H nach WR4 -- dann stimmt die Folge nicht]; 04H,49H = WR4 x16 ungerade Parit. 1,5 Stop; 03H,C1H = WR3 8 Bit, Rx ein; 01H,00H = WR1; 05H,68H = WR5 8 Bit, Tx ein
+0678  04          	DB	04H
+0679  49          	DB	49H
+067A  03          	DB	03H
+067B  C1          	DB	C1H
+067C  01          	DB	01H
+067D  00          	DB	00H
+067E  05          	DB	05H
+067F  68          	DB	68H
+0680  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H		;unbenutzt (00H) bis 07FFH
+0690  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+06A0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+06B0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+06C0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+06D0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+06E0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+06F0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0700  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0710  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0720  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0730  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0740  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0750  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0760  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0770  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0780  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+0790  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+07A0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+07B0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+07C0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+07D0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+07E0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
+07F0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 	DB	00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H,00H
