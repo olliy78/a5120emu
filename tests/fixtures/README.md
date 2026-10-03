@@ -183,3 +183,20 @@ den Disketten nach, der Wächter `cli_beigaben_auf_den_disketten` prüft es.
   `test_em16_abl` (Pfad `EM16ABL_COM`).
 - **`em256ful.com`** (v2.0, G2b): Gruppen A–E, im Emulator 21/21; `test_em16_abl`
   (`Em256Ful.*`, Pfad `EM256FUL_COM`), mit EM256 und ohne EM.
+
+## PC 1715 / PC 1715W (AP-0c, 2026-10-03)
+
+Sechs Abzüge für die Etappen des PC 1715 (`doc/design/21_pc1715.md`); Auswahl und Begründung,
+Bestand aller übrigen Abzüge: `doc/pc1715/disketten.md`.  Alle `.hfe`, je ~2 MB, nur über
+`TempDisk`.  **Bootfähig** heisst hier: Spur 0 Sektor 1 beginnt mit dem Kopf `03 F0`, den der
+Urlader S502 prüft (`r1715bt.lst` 008F–0092).  Noch von **keinem Test benutzt** — die
+Spalte nennt die Etappe, die sie braucht.
+
+| Datei | Inhalt | gebraucht für |
+|-------|--------|---------------|
+| `pc1715_scp1715_v0006_boot.hfe` | **SCP 1715 V0006** (03/08/87, 48 KB), Systemdiskette `cpa800` 5×1024, 4 Systemspuren, 9 Dateien (`INIT`, `INSTSCP`, `SGEN`, `PIP`, `POWER` …) | Etappe 2 (Boot bis `A>`) |
+| `pc1715_scp1715_v0007_cpa640_boot.hfe` | **SCP 1715 V0007** (01/11/88, 50 KB, nachladbarer `CCP.SPR`), `cpa640` 16×256, 4 Dateien; aus `.scp` gewandelt (`gw convert … ::bitrate=250`) | Etappe 2 (zweites Format, Doppelschritt/16×256) |
+| `pc1715_cpa1715_boot_4lw.hfe` | **CP/A 1715** Bootdiskette (`BOOT_CPA_4LW`): `cpa800`, **keine** Systemspuren, `03F0`-Kopf **in Verzeichnisplatz 0**, `@OS.COM` + Quellen/M80 (57 Einträge). Das DiskTool erkennt **kein** Dateisystem (Verzeichnisplatz 0 ungültig) — Prüfstein für AP-D | Etappe 3, AP-D |
+| `pc1715_udos1715_system.hfe` | **UDOS 1715 / NDOS**, Systemdiskette „SYSTEM", 80×32×256, 67 Dateien; gleiche Diskette wie `udos1715_640k_pc1715_system.img` (Abzug nicht bytegleich), aber spurgenau | AP-5b |
+| `pc1715_cpz22_boot.hfe` | **CP/Z 2.2** („BDOS PC/BC 3/88"), `cpa640` 16×256, 4 Systemspuren, 35 Dateien (Dienstprogramme, TURBO, WS) | Etappe 3 (drittes Betriebssystem) |
+| `pc1715w_scp30_system.hfe` | **SCP 3.0 des PC 1715W** („SCP 3.0 – LOADER PC 1715W V0001 25/05/87"): `cpa800`, 4 Systemspuren, 42 Dateien (`SCP3.SYS`, `SC6xx.ZGF`); aus `PC1715W_SCP30.scp` gewandelt, 80 Zylinder (81/82 unformatiert) | AP-W3 |
