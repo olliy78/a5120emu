@@ -57,6 +57,9 @@ k1520_add_test(k7609          SRC peripherals/test_k7609.cpp
 # Tastatur K7672 des K8915: Protokollmodell (§3.5, AP-E2)
 k1520_add_test(k7672          SRC peripherals/test_k7672.cpp
                               LIBS k1520_k7672 LABELS "${_lbl}")
+# Tastatur des PC 1715: U880 + S600, Matrix, Bitstrom → Byte (doc/design/21_pc1715.md AP-3a)
+k1520_add_test(tastatur1715   SRC peripherals/test_tastatur1715.cpp
+                              LIBS k1520_tastatur1715 LABELS "${_lbl}")
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Zeichenbare Sicht auf eine Spur (Diskeditor, §19)

@@ -354,6 +354,11 @@ if(BUILD_K1520)
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Tastatur des PC 1715: U880 + EPROM S600 auf dem Z80-Kern (doc/design/21_pc1715.md AP-3a)
+    add_library(k1520_tastatur1715 STATIC core/peripherals/tastatur1715/tastatur1715.cpp)
+    target_link_libraries(k1520_tastatur1715 PUBLIC k1520_z80)
+    target_include_directories(k1520_tastatur1715 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # PC 1715 (doc/design/21_pc1715.md AP-1b): ZRE mit ROM-Overlay, CTC0/SIO0, 8275 + Rastern
     add_library(k1520_pc1715_zre STATIC core/cards/pc1715_zre/pc1715_zre.cpp)
     target_link_libraries(k1520_pc1715_zre PUBLIC k1520_z80 k1520_ctc k1520_sio k1520_i8275 k1520_bus k1520_logger)
