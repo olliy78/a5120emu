@@ -14,6 +14,8 @@ k1520_add_test(sio   SRC primitives/test_sio.cpp   LIBS k1520_sio LABELS "${_lbl
 k1520_add_test(i8279 SRC primitives/test_i8279.cpp LIBS k1520_i8279 LABELS "${_lbl}")
 # 8275-CRT-Controller (PC 1715, doc/design/21_pc1715.md AP-1a)
 k1520_add_test(i8275 SRC primitives/test_i8275.cpp LIBS k1520_i8275 LABELS "${_lbl}")
+# U8272/µPD765-Floppy-Controller (PC 1715W, doc/design/21_pc1715.md AP-W2)
+k1520_add_test(upd765 SRC primitives/test_upd765.cpp LIBS k1520_upd765 k1520_testsupport LABELS "${_lbl}")
 # RETI/IUS-Verhalten über alle drei Bausteine hinweg (braucht daher den Bus).
 k1520_add_test(reti  SRC primitives/test_reti.cpp
                      LIBS k1520_ctc k1520_pio k1520_sio k1520_bus LABELS "${_lbl}")
