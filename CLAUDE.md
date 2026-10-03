@@ -484,6 +484,26 @@ samt Berichtigung, `keyRelease` Pflicht am 710-1, K8025-Belegung mit `taktquelle
 Zeichensatz, Fixtures/beschädigte Abzüge, Bedienung von UDOS/SCPX/FORMAT im Test). Plan:
 `doc/design/20_prg710.md`.
 
+## Vierte Maschine: PC 1715 / PC 1715W
+
+Bürocomputer robotron PC 1715 (Z80, 64 KB, 8275-Bild aus dem Haupt-RAM, eigener Tastatur-U880
+mit S600, Floppy in K5122-Bauart `/WAIT`) und PC 1715W (256 KB mit Bankregister, U8272 + Z80-DMA,
+Bild-RAM + ladbarer Zeichensatz; **noch nicht lauffähig**). Eine Klasse `Pc1715Machine` unter
+`core/machines/pc1715/` (Variante `PC1715` | `PC1715W`); Karten `pc1715_zre` (ROM-Overlay,
+CTC/SIO, 8275, BWS 34H), Primitive `i8275`, `z80_dma`, `upd765`, `core/peripherals/tastatur1715/`;
+wiederverwendet `K5122` mit `Portlage::Pc1715` (Vorgabe unverändert). **In `libk1520core.so`**
+(`K1520_MACHINE_PC1715 = 3`, `k1520_create_pc1715(variante, …)`, Python
+`K1520Emulator(machine="pc1715")`; Bild nur über `k1520_screen_char`, nie `mem_read`).
+**`boot_trace --machine pc1715`** (Grundform). **Stand 2026-10-03:** Etappen 1–3 fertig (SCP 1715,
+CP/A 1715, CP/Z 2.2, UDOS 1715 booten bis zum Prompt; `dir`/`STAT`/`cat` über die Tastatur);
+offen Schnittstellen/V.24-Boot (Etappe 4), Programm `pc1715emu`, 1715W, DiskTool, [Anwender]-Fragen.
+
+**Vor Arbeiten daran: `doc/merkposten/pc1715.md` lesen** — die Festlegungen mit Wächter
+(ROM-Overlay lesen ROM/schreiben RAM, BWS 34H = Adresse >> 10, SIO-Adressierung AB0 = Kanal,
+MO-Register 21H = DB4–7, Index als Interrupt, 8275-Sondercodes F0–F3, Tastatur gedrückt = 1 und
+Shift/CTRL einzeln vorweg, Return = 9EH, Berichtigungen zum 1715W, Testhilfe `pc1715_input.h`).
+Plan: `doc/design/21_pc1715.md`.
+
 ## Boot-ROM debugging workflow
 
 Der volle CP/A-Kaltstart läuft (Boot-ROM → SYL-Lader → Zweitlader → CP/A-Bootsystem →
