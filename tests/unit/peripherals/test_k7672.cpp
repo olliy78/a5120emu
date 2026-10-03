@@ -335,6 +335,31 @@ TEST(K7672, MatrixFeststellSchaltetCapsLampe)
 }
 
 /**
+ * @test K7672.ScpHostzeichenBeachtenDieFeststellung
+ * @brief Firmware 0223H gilt auch für Zeichen vom Host: nach `ESC [?11h` (Zweitlader
+ *        PRG 710-1 schaltet so die Feststellung ein) wird ein Kleinbuchstabe groß,
+ *        Ziffern/Steuerzeichen bleiben; nach `ESC [?11l` wieder klein. Sonst lehnt
+ *        UDOS am PRG 710-1 jede klein getippte Eingabe ab („NONEXISTENT COMMAND“).
+ */
+TEST(K7672, ScpHostzeichenBeachtenDieFeststellung)
+{
+    Aufbau a;
+    a.sende({DC1});
+    a.sende({ESC, '[', '?', '1', '1', 'h'});
+    a.kbd.keyPress('c', false, false);
+    a.kbd.keyPress('1', false, false);
+    a.kbd.keyPress('c', false, true);                // Strg+C bleibt 03H
+    a.laufe(3 * K7672::ZEICHEN_TAKTE);
+    EXPECT_EQ(a.lies(), 'C');
+    EXPECT_EQ(a.lies(), '1');
+    EXPECT_EQ(a.lies(), 0x03);
+    a.sende({ESC, '[', '?', '1', '1', 'l'});
+    a.kbd.keyPress('c', false, false);
+    a.laufe(K7672::ZEICHEN_TAKTE);
+    EXPECT_EQ(a.lies(), 'c');
+}
+
+/**
  * @test K7672.MatrixScpZeichenAusDerFirmware
  * @brief SCP-Modus (Boot-ROM): Zeichen aus D3 0400H/0480H — A = 'a', mit Umschalt 'A',
  *        ß = E1H, RETURN = CR; die Feststellung macht nur Buchstaben groß; eine

@@ -248,8 +248,12 @@ void K7672::keyPress(uint32_t k, bool shift, bool ctrl)
 {
     if ((k & ~0xFFu) == QK_TASTE_BASE) { tasteMatrix(static_cast<uint8_t>(k & 0x7F), true, shift, ctrl); return; }
     if (modus_ == Modus::Dcp) { tasteDcp(k, true, shift, ctrl); return; }
-    const uint8_t z = zeichenFuer(k, shift, ctrl);
+    uint8_t z = zeichenFuer(k, shift, ctrl);
     if (!z) return;
+    // 0223H wie in tasteMatrix(): Feststellung (LED 21H Bit 7, auch per `ESC [ ? 1 1 h`
+    // vom Rechner gesetzt — Zweitlader PRG 710-1) macht Buchstaben gross. Ein Kleinbuchstabe
+    // vom Host entspricht der Buchstabentaste ohne Umschalt.
+    if ((leds_ & LED_CAPS) && z >= 'a' && z <= 'z') z = static_cast<uint8_t>(z - 0x20);
     sendeZeichen(z);
     if (wiederholbarZeichen(z)) wiederholungStart(k, std::string(1, static_cast<char>(z)));
     else                        wiederholungStopp();

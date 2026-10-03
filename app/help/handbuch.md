@@ -803,9 +803,10 @@ K7024, Diskettensteuerung K5122 mit zwei K5601). Was anders ist:
   Ziffern eintippen (TTMMJJ), **ohne** ET. Danach steht der Prompt `%`.
   Beispiele: `CAT D=0 P=&` (Verzeichnis; ohne `P=&` meldet das 710-1 „FILE NOT
   FOUND“), `DATE`, `COPY OS.INIT 1/KOPIE` (auf Laufwerk 1).
-* **Am 710-1 gilt für UDOS Großschrift:** die K7672 sendet ohne **Feststelltaste**
-  (CAPS) bzw. Umschalt Kleinbuchstaben, und `cat` ist für UDOS ein unbekanntes
-  Kommando. Am 710 liefert die Tastatur ohne Umschalt von selbst Großbuchstaben.
+* **Großschrift:** UDOS kennt nur Großbuchstaben. Am 710 liefert die Tastatur sie von
+  selbst, am 710-1 schaltet der Systemstart die Feststellung der K7672 ein (CAPS-Lampe);
+  wer sie mit der Feststelltaste ausschaltet, bekommt Kleinbuchstaben, und `cat` ist für
+  UDOS ein unbekanntes Kommando.
   Ein Rückstellen löscht das UDOS-Datum nicht; die Datumsabfrage kann dann entfallen.
 * **SCPX 1526** bootet am 710-1 bis `A>` (`DIR`, `STAT`, `PIP B:=…`).
 * **Die Bildschirmtastatur des 710 (K7609)** sendet je Taste den Tastencode des
