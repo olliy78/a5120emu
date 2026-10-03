@@ -316,14 +316,15 @@ def test_eprom_bedienung_ueber_die_aktionen(qapp, konfig_ordner, tmp_path, monke
         _zu(w, qapp)
 
 
-def test_eprom_sockel_ueberlebt_den_modellwechsel(qapp, konfig_ordner):
-    """Ein Modellwechsel erzeugt die Maschine neu — das PROM wandert mit, samt „geändert“."""
+def test_eprom_sockel_ueberlebt_den_neubau_der_maschine(qapp, konfig_ordner):
+    """Ein Neubau der Maschine (Laufwerkswechsel; beim Modellwechsel fragt AP-P9 erst
+    nach) — das PROM wandert mit, samt „geändert“."""
     w = _fenster(qapp)
     try:
         w.emulator.eprom_insert_data(b"\x01\x02\x03", 1, "", True)
-        w._on_model_selected("prg710-1")
+        w._apply_drive_types(["K5601", "K5601", "none", "none"], cold_restart=True)
         qapp.processEvents()
-        assert w.emulator.prg_variant == 1
+        assert w.emulator.prg_variant == 0
         assert w.emulator.eprom_type() == 1 and w.emulator.eprom_modified()
         assert w.emulator.eprom_read()[:4] == b"\x01\x02\x03\xff"
         assert w.eprom_widget.emulator is w.emulator

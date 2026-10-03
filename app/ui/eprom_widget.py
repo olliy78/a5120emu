@@ -128,5 +128,10 @@ class EpromWidget(QWidget):
         if neu:
             self.protokoll.appendPlainText("\n".join(neu))
 
+    def meldung(self, text: str) -> None:
+        """Eine Zeile der Oberfläche ins Protokoll (nicht vom Kern) und auf stdout."""
+        print(f"[eprom] {text}")
+        self.protokoll.appendPlainText(text)
+
     def protokoll_text(self) -> str:
         return self.protokoll.toPlainText()

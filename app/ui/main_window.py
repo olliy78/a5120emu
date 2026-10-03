@@ -877,10 +877,13 @@ class MainWindow(LochbandMixin, QMainWindow):
         general = {"speed": float(self.speed_factor)}
         if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
             general["model"] = self._model
-        return config_io.build_config(
+        data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
             schnittstellen=self.serial_widget.zustand_lesen())
+        if self.eprom_widget is not None:
+            data["eprom"] = self._eprom_zustand()
+        return data
 
     def _gather_window_state(self) -> dict:
         """Fenstergeometrie + Kastenaufteilung (Sichtbarkeit, Lage, Größen).
@@ -1114,6 +1117,11 @@ class MainWindow(LochbandMixin, QMainWindow):
             if "schnittstellen" in data:
                 self.serial_widget.zustand_anwenden(
                     self.profil.schnittstellen_umbenennen(data.get("schnittstellen") or {}))
+
+            # EPROM-Sockel (AP-P9): Datei + Typ; fehlt der Abschnitt, bleibt der
+            # Sockel, wie er ist (Auslieferungsvorgabe und ältere Dateien).
+            if "eprom" in data and self.eprom_widget is not None:
+                self._eprom_zustand_anwenden(data.get("eprom"))
 
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})
@@ -1496,7 +1504,12 @@ class MainWindow(LochbandMixin, QMainWindow):
         Laufwerks-Auswahlfeld) fragt auch nicht nach, sondern startet direkt
         kalt neu.
         """
-        self._model = self.profil.modell_normalisieren(model)
+        neu = self.profil.modell_normalisieren(model)
+        if neu != self._model and not self._eprom_rueckfrage("Modellwechsel"):
+            # Abgebrochen: das Auswahlfeld zeigt wieder das Modell, das läuft.
+            self.settings_widget.set_model_value(self._model)
+            return
+        self._model = neu
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
@@ -1622,6 +1635,68 @@ class MainWindow(LochbandMixin, QMainWindow):
         pfad = self.emulator.eprom_path()
         return os.path.dirname(pfad) if pfad else str(paths.user_disks_dir())
 
+    def _eprom_zustand(self) -> dict:
+        """Der Sockel für die Konfiguration: nur, was eine DATEI hat (``path`` + ``type``).
+
+        Ein PROM ohne Datei (frisch angelegt, nie gespeichert) hat nichts, wohin
+        man zurückfinden könnte — er wird nicht gemerkt, deshalb die Rückfrage beim
+        Beenden.  Leerer Sockel = ``{}`` (beim Laden: leeren).
+        """
+        emu = self.emulator
+        pfad = emu.eprom_path()
+        typ = emu.eprom_type()
+        if typ <= 0 or not pfad:
+            return {}
+        return {"path": pfad, "type": int(typ)}
+
+    def _eprom_zustand_anwenden(self, z) -> None:
+        """Den gemerkten Sockel wieder stecken; eine fehlende Datei = still leer
+        (eine Protokollzeile, keine Meldung — das Programm soll starten)."""
+        if self.emulator.eprom_type() > 0:
+            self.emulator.eprom_remove()
+        pfad = (z or {}).get("path") if isinstance(z, dict) else None
+        if not pfad:
+            self.eprom_widget.aktualisieren()
+            return
+        try:
+            self.emulator.eprom_insert(str(pfad), int(z.get("type") or 0))
+        except (OSError, ValueError) as e:
+            self.eprom_widget.meldung(
+                f"Gemerktes PROM {pfad} nicht eingelegt, Sockel bleibt leer: {e}")
+        self.eprom_widget.aktualisieren()
+
+    def _eprom_rueckfrage(self, anlass: str) -> bool:
+        """Ungespeicherter PROM-Inhalt: Speichern / Verwerfen / Abbrechen.
+
+        True = weitermachen (gespeichert oder verworfen), False = der Anwender will
+        nicht weiter (Abbrechen oder die Speicherauswahl abgebrochen).  Verworfen
+        heißt: zurück auf den Stand der Datei, an die das PROM gebunden ist — ohne
+        Datei wird der Sockel leer (ein ungespeichertes PROM wandert nicht
+        stillschweigend in die nächste Maschine).
+        """
+        emu = self.emulator
+        if self.eprom_widget is None or emu.eprom_type() <= 0 or not emu.eprom_modified():
+            return True
+        antwort = QMessageBox.question(
+            self, "EPROMmer",
+            f"Das PROM im Sockel hat Änderungen, die nicht gespeichert sind.\n"
+            f"Vor dem {anlass} speichern?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save)
+        if antwort == QMessageBox.Save:
+            return self._eprom_speichern()
+        if antwort == QMessageBox.Discard:
+            pfad, typ = emu.eprom_path(), emu.eprom_type()
+            emu.eprom_remove()
+            if pfad:
+                try:
+                    emu.eprom_insert(pfad, typ)
+                except OSError as e:
+                    self.eprom_widget.meldung(f"PROM {pfad} nicht neu eingelegt: {e}")
+            self.eprom_widget.aktualisieren()
+            return True
+        return False
+
     def _eprom_einlegen(self):
         """Ein rohes ``.bin`` in den Sockel stecken; der Typ folgt aus der Größe."""
         pfad, _ = QFileDialog.getOpenFileName(
@@ -1634,27 +1709,35 @@ class MainWindow(LochbandMixin, QMainWindow):
         except OSError as e:
             QMessageBox.warning(self, "EPROMmer", f"Abbild nicht eingelegt:\n{e}")
         self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
 
     def _eprom_leer(self, typ: int):
         self.emulator.eprom_insert_blank(typ)
         self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
 
-    def _eprom_speichern(self):
-        """Inhalt als ``.bin`` sichern; der Sockel bleibt danach an diese Datei gebunden."""
+    def _eprom_speichern(self) -> bool:
+        """Inhalt als ``.bin`` sichern; der Sockel bleibt danach an diese Datei gebunden.
+
+        True, wenn gespeichert wurde (oder nichts zu speichern war)."""
         if self.emulator.eprom_type() <= 0:
             self.statusBar().showMessage("EPROMmer: der Sockel ist leer", 4000)
-            return
+            return True
         vorschlag = self.emulator.eprom_path() or os.path.join(self._eprom_ordner(), "prom.bin")
         pfad, _ = QFileDialog.getSaveFileName(
             self, "PROM-Abbild speichern", vorschlag,
             "PROM-Abbild (*.bin);;Alle Dateien (*)")
         if not pfad:
-            return
+            return False
         try:
             self.emulator.eprom_save(pfad)
         except OSError as e:
             QMessageBox.warning(self, "EPROMmer", f"Abbild nicht gespeichert:\n{e}")
+            self.eprom_widget.aktualisieren()
+            return False
         self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
+        return True
 
     def _eprom_loeschen(self):
         if not self.emulator.eprom_erase():
@@ -1664,6 +1747,7 @@ class MainWindow(LochbandMixin, QMainWindow):
     def _eprom_entnehmen(self):
         self.emulator.eprom_remove()
         self.eprom_widget.aktualisieren()
+        self._schedule_autosave()
 
     def _konsole_starten(self):
         """Ein Konsolenfenster mit den K1520-Kommandozeilenwerkzeugen öffnen.
@@ -1696,6 +1780,10 @@ class MainWindow(LochbandMixin, QMainWindow):
     
     def closeEvent(self, event):
         """Cleanup on close."""
+        # Ungespeichertes PROM: erst fragen — Abbrechen hält das Fenster offen.
+        if not self._eprom_rueckfrage("Beenden"):
+            event.ignore()
+            return
         # Den Stand beim Beenden IMMER wegschreiben, nicht nur eine anstehende
         # Änderung: die letzte Aufteilung der Kästen kann von einem Ereignis
         # stammen, das kein Speichern ausgelöst hat.
