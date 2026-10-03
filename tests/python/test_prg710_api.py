@@ -57,20 +57,23 @@ def test_andere_maschinen_haben_keine_prg_diagnose():
 
 
 def test_schnittstellen_je_variante():
-    """AP-P4: 710 = 3 Anschlüsse, 710-1 = 2 (Kanal B trägt die Tastatur K7672)."""
+    """AP-P4: 710 = 3 Anschlüsse, 710-1 = 2 (Kanal B trägt die Tastatur K7672); AP-P8c:
+    dahinter je der Fernschreiber (ASS 590069)."""
     from app.core_binding.k1520 import K1520Emulator
 
     e710 = K1520Emulator(machine="prg710")
-    assert e710.serial_count() == 3
+    assert e710.serial_count() == 4
     assert e710.serial_fixed_names() == []
-    assert all(e710.serial_info(i) is not None for i in range(3))
-    assert e710.serial_info(3) is None
+    assert all(e710.serial_info(i) is not None for i in range(4))
+    assert e710.serial_info(3).name == "Fernschreiber"
+    assert e710.serial_info(4) is None
 
     e1 = K1520Emulator(machine="prg710-1")
-    assert e1.serial_count() == 2
+    assert e1.serial_count() == 3
     assert e1.serial_fixed_names() == ["Tastatur K7672 (A32-B)"]
-    assert all(e1.serial_info(i) is not None for i in range(2))
-    assert e1.serial_info(2) is None
+    assert all(e1.serial_info(i) is not None for i in range(3))
+    assert e1.serial_info(2).name == "Fernschreiber"
+    assert e1.serial_info(3) is None
 
 
 @pytest.mark.parametrize("name,variante", VARIANTEN)

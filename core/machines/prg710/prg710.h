@@ -30,6 +30,7 @@
 #include "core/cards/k5122/k5122.h"
 #include "core/cards/atp590068/atp590068.h"
 #include "core/cards/k6022/k6022.h"
+#include "core/cards/ass590069/ass590069.h"
 #include "core/peripherals/k7609/k7609.h"
 #include "core/peripherals/k7672/k7672.h"
 #include "core/machines/laufwerke.h"
@@ -157,6 +158,7 @@ public:
     K7609&           k7609()    { return k7609_; }
     K7672&           k7672()    { return k7672_; }   ///< nur am 710-1 an A32-B
     K6022&           k6022()    { return k6022_; }   ///< Lochbandleser/-stanzer E0H–E7H (AP-P8b)
+    Ass590069&       ass590069() { return fs_; }     ///< Fernschreiber C4H–C7H (AP-P8c)
     K1520Bus&        bus()      { return bus_; }
     uint64_t         totalCycles() const { return total_cycles_; }
 
@@ -184,6 +186,7 @@ private:
     K7609           k7609_;     // 710: Matrix hinter dem 8279
     K7672           k7672_;     // 710-1: an SIO A32-B
     K6022           k6022_{CPU_HZ};   // E0H–E7H: SIF1000 Stanzer + Leser (AP-P8b)
+    Ass590069       fs_;        // C4H–C7H SIO, CCH–CFH CTC [?]: Fernschreiber (AP-P8c)
     /// Nach den Karten: wird zuerst zerstört (hält Verweise auf ihre Anschlüsse).
     k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
     uint64_t  serial_naechst_ = 0;

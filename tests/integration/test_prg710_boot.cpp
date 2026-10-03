@@ -354,8 +354,9 @@ TEST(Prg710Boot, Zweitlader710_1SendetEscKlammerFragezeichen11h) {
 /// Die K8025 reicht am 710-1 nur noch zwei Anschlüsse nach außen (A32-B ist die Tastatur).
 TEST(Prg710Boot, SerielleAnschluesseJeVariante) {
     Prg710Machine a(cfgFuer(V::Prg710)), b(cfgFuer(V::Prg710_1));
-    EXPECT_EQ(a.serielleAnschluesse().size(), 3u);
-    EXPECT_EQ(b.serielleAnschluesse().size(), 2u);
+    // K8025 (AP-P4) + Fernschreiber der ASS 590069 dahinter (AP-P8c).
+    EXPECT_EQ(a.serielleAnschluesse().size(), 4u);
+    EXPECT_EQ(b.serielleAnschluesse().size(), 3u);
 }
 
 /**

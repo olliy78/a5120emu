@@ -79,14 +79,14 @@ def test_modellwahl_tauscht_maschine_und_tastatur(qapp, konfig_ordner):
     try:
         assert not w.settings_widget.model_combo.isHidden()
         assert isinstance(w.keyboard_widget, KeyboardK7609Widget)
-        assert w.emulator.serial_count() == 3
+        assert w.emulator.serial_count() == 4   # K8025 ×3 + Fernschreiber (AP-P8c)
         w._on_model_selected("prg710-1")
         qapp.processEvents()
         assert w.emulator.machine == "prg710-1" and w.emulator.prg_variant == 1
         assert isinstance(w.keyboard_widget, KeyboardK7672Widget)
         assert w.screen_widget.key_sink is w.keyboard_widget
-        # Schnittstellen je Variante: das 710-1 hat zwei (A32-B trägt die Tastatur).
-        assert w.emulator.serial_count() == 2
+        # Schnittstellen je Variante: das 710-1 hat eine weniger (A32-B trägt die Tastatur).
+        assert w.emulator.serial_count() == 3
         w._autosave_now()
         cfg = config_io.load_config(str(konfig_ordner / "prg710emu.yaml"))
         assert cfg["general"]["model"] == "prg710-1"
@@ -99,7 +99,7 @@ def test_modellwahl_tauscht_maschine_und_tastatur(qapp, konfig_ordner):
         assert w._model == "prg710-1"
         assert isinstance(w.keyboard_widget, KeyboardK7672Widget)
         w._on_model_selected("prg710")
-        assert w.emulator.serial_count() == 3
+        assert w.emulator.serial_count() == 4
         assert isinstance(w.keyboard_widget, KeyboardK7609Widget)
     finally:
         _zu(w, qapp)

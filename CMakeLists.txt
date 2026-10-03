@@ -315,10 +315,13 @@ if(BUILD_K1520)
     target_link_libraries(k1520_atp590068 PUBLIC k1520_i8279 k1520_pio k1520_bus k1520_logger)
     target_include_directories(k1520_atp590068 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # ADA K6022 (Lochband über SIF1000) — PRG 710, AP-P8b
+    # ADA K6022 (Lochband über SIF1000) und ASS 590069 (Fernschreiber) — PRG 710, AP-P8
     add_library(k1520_k6022 STATIC core/cards/k6022/k6022.cpp)
     target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger)
     target_include_directories(k1520_k6022 PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_ass590069 STATIC core/cards/ass590069/ass590069.cpp)
+    target_link_libraries(k1520_ass590069 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_serial)
+    target_include_directories(k1520_ass590069 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
@@ -343,7 +346,7 @@ if(BUILD_K1520)
     add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
     target_link_libraries(k1520_prg710 PUBLIC
         k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
-        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022
+        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_ass590069
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 

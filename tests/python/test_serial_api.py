@@ -74,8 +74,10 @@ def test_list_names_connectors_v24_and_clock_sources(emu):
 
 
 @pytest.mark.parametrize("maschine, namen, stecker, fest", [
-    ("prg710", ["V.24", "IFSS Hauptdrucker", "ZIFSS Zusatzdrucker"], ["X4", "X6", "X5"], []),
-    ("prg710-1", ["V.24", "ZIFSS Zusatzdrucker"], ["X4", "X5"], ["Tastatur K7672 (A32-B)"]),
+    ("prg710", ["V.24", "IFSS Hauptdrucker", "ZIFSS Zusatzdrucker", "Fernschreiber"],
+     ["X4", "X6", "X5", "590069"], []),
+    ("prg710-1", ["V.24", "ZIFSS Zusatzdrucker", "Fernschreiber"], ["X4", "X5", "590069"],
+     ["Tastatur K7672 (A32-B)"]),
 ])
 def test_prg_lists_names_by_variant(maschine, namen, stecker, fest):
     """PRG 710/710-1 (AP-P4): Namen nach Gerätebeschriftung, 710-1 ohne IFSS X6 (dort die Tastatur)."""

@@ -35,10 +35,11 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // fuhr je Laufwerk 256 Schritte ins Leere und meldete Status C0H.
     bus_.registerIO(&afs_, 0x10, 9);
     bus_.registerIO(&ass_, 0x50, 16);
-    // ADA K6022 (E0H–E7H, Lochband über SIF1000): in beiden Varianten — der Treiber
-    // `PTAPE.6022` liegt auf den Disketten beider Geräte (AP-P8b).  Kein Treiber und kein
-    // ROM fragt die Ports beim Start ab.
+    // ADA K6022 (E0H–E7H, Lochband über SIF1000) und ASS 590069 (C4H–C7H, Fernschreiber):
+    // in beiden Varianten — die Treiber (`PTAPE.6022`, `B17x72FS`) liegen auf den Disketten
+    // beider Geräte (AP-P8).  Kein Treiber und kein ROM fragt die Ports beim Start ab.
     k6022_.attachToBus(bus_);
+    fs_.attachToBus(bus_);
     // Tastatur: 710 = K7609 am 8279 der ATP (C8H–C9H, D0H–D3H); 710-1 = K7672 an A32-B
     // (kein C8H/C9H, §3.9, resident.md §6).  Ohne Tastatur bleibt der Anschluss leer
     // (710: der 8279 fehlt → ROM liest FFH; 710-1: Kabel gezogen).
@@ -80,8 +81,9 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // warten ohne Zeitablauf auf eine Marke; am Gerät beendet erst das Rauschen das Warten.
     afs_.setRauschenAufLeererSpur(true);
     // Interruptkette (vorläufig [?], §3.1/AP-P1c): K5122 → K2521 (CTC, PIO) → K8025.
-    // AP-P8b: K6022 (Stanzer vor Leser) hinter der K8025 — Stellung in der Kette [?].
-    bus_.setInterruptChain({&afs_, &zre_, &ass_, &k6022_.pioStanzer(), &k6022_.pioLeser()});
+    // AP-P8: K6022 (Stanzer vor Leser) und 590069 dahinter — Stellung in der Kette [?].
+    bus_.setInterruptChain({&afs_, &zre_, &ass_, &k6022_.pioStanzer(), &k6022_.pioLeser(),
+                            &fs_.sio(), &fs_.ctc()});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
 
     // ZC/TO0 der K2521-CTC als Baudtakt der K8025-CTC wie am A5120 (Koppelbus X2 [?]);
@@ -112,6 +114,7 @@ std::vector<k1520::serial::SerialAnschluss*> Prg710Machine::serielleAnschluesse(
     v.push_back(&ass_.anschluss(K8025::DfueV24));
     if (variante_ == Config::Variante::Prg710) v.push_back(&ass_.anschluss(K8025::Drucker));
     v.push_back(&ass_.anschluss(K8025::ZifssA32A));
+    v.push_back(&fs_.anschluss());   // AP-P8c: hinten, die K8025-Indizes bleiben
     return v;
 }
 
@@ -125,6 +128,7 @@ void Prg710Machine::resetHardware()
     ass_.reset();
     atp_.reset();            // 8279: FIFO leer
     k6022_.reset();          // PIOs; Band im Leser und Stanzband bleiben
+    fs_.reset();
     hub_.gastZurueckgesetzt();
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -222,6 +226,7 @@ int Prg710Machine::run(int max_cycles)
         bool dirty = zre_.clockTick(used);
         dirty |= ass_.clockTick(used);
         dirty |= k6022_.clockTick(used);
+        dirty |= fs_.clockTick(used);
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
             dirty |= ass_.nimmSeriellGeaendert();

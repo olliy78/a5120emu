@@ -8,6 +8,7 @@
  * - PRG 710:   0 „V.24“ X4 (A33-A, 50H/51H) · 1 „IFSS Hauptdrucker“ X6 (A32-B, 5EH/5FH) ·
  *              2 „ZIFSS Zusatzdrucker“ X5 (A32-A, 5CH/5DH)
  * - PRG 710-1: 0 „V.24“ · 1 „ZIFSS Zusatzdrucker“ (A32-B trägt die Tastatur K7672: fest)
+ * - dahinter in beiden Varianten „Fernschreiber“ (ASS 590069, AP-P8c)
  *
  * Wie UDOS den Drucker anschaltet: `SET PRI TO V24` lädt `DRUCK.V24` (der Treiber heisst
  * `DRUCK.<Typ>`, `NOTE.TO.UDOS.4.3`), `SET PRI ON` spiegelt die Bildschirmausgabe dorthin.
@@ -129,14 +130,15 @@ TEST_P(Prg710Seriell, HubNamenUndAnzahl) {
     }
     EXPECT_EQ(hub->anzahl(), static_cast<int>(namen.size()));
     if (GetParam() == V::Prg710) {
-        EXPECT_EQ(namen, (std::vector<std::string>{"V.24", "IFSS Hauptdrucker", "ZIFSS Zusatzdrucker"}));
-        EXPECT_EQ(stecker, (std::vector<std::string>{"X4", "X6", "X5"}));
-        EXPECT_EQ(v24, (std::vector<bool>{true, false, false}));
+        EXPECT_EQ(namen, (std::vector<std::string>{"V.24", "IFSS Hauptdrucker", "ZIFSS Zusatzdrucker",
+                                                   "Fernschreiber"}));
+        EXPECT_EQ(stecker, (std::vector<std::string>{"X4", "X6", "X5", "590069"}));
+        EXPECT_EQ(v24, (std::vector<bool>{true, false, false, false}));
         EXPECT_TRUE(m.festeSchnittstellen().empty());
     } else {
-        EXPECT_EQ(namen, (std::vector<std::string>{"V.24", "ZIFSS Zusatzdrucker"}));
-        EXPECT_EQ(stecker, (std::vector<std::string>{"X4", "X5"}));
-        EXPECT_EQ(v24, (std::vector<bool>{true, false}));
+        EXPECT_EQ(namen, (std::vector<std::string>{"V.24", "ZIFSS Zusatzdrucker", "Fernschreiber"}));
+        EXPECT_EQ(stecker, (std::vector<std::string>{"X4", "X5", "590069"}));
+        EXPECT_EQ(v24, (std::vector<bool>{true, false, false}));
         EXPECT_EQ(m.festeSchnittstellen().size(), 1u);
     }
 }
