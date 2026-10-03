@@ -817,6 +817,32 @@ K7024, Diskettensteuerung K5122 mit zwei K5601). Was anders ist:
 * Die **PC-Tastatur** geht wie beim A5120 an den Rechner. Am 710-1 wiederholt die
   K7672 eine gehaltene Taste selbst; am 710 gibt es keine Wiederholung.
 
+### Der EPROMmer
+
+Der PRG brennt U555 (1 KB, wie 2708) und U2716 (2 KB) in **einem** Sockel; das
+Programm dazu ist `PROG` (UDOS) bzw. `PROG.COM` (SCPX). Im Emulator ist der
+Sockel **virtuell**: ein PROM ist ein rohes Abbild (`.bin`). Der Kasten
+**EPROMmer** (*Ansicht ▸ EPROMmer*; die Bedienung auch unter *Maschine ▸
+EPROMmer*) zeigt, was steckt, welchen Typ das Programm eingestellt hat und ob
+Versorgung und Programmierspannung anliegen.
+
+* **PROM-Abbild einlegen…** — eine Datei bis 1 KB wird ein U555, bis 2 KB ein
+  U2716; kürzere werden mit FFH aufgefüllt.
+* **Leeres PROM einlegen** — ein gelöschtes U555 oder U2716 (alle Zellen FFH).
+* **PROM-Abbild speichern unter…** — den Inhalt sichern, etwa nach dem Brennen.
+  Ein gebranntes, noch nicht gespeichertes PROM steht als „geändert“ da.
+* **PROM UV-löschen** — wie im Löschgerät; die Software kann nicht löschen.
+* **PROM entnehmen.**
+
+Gebrannt wird wie am Gerät nur von 1 nach 0: ein zweites Brennen ohne Löschen
+ergibt die UND-Verknüpfung. Stimmt der in `PROG` eingestellte Typ (`T`, „PROMGROESSE
+1 ODER 2 K-BYTE“) nicht mit dem gesteckten PROM überein, wird gelesen, aber nicht
+gebrannt — das Protokoll sagt es. Beispiel unter UDOS: `PROG`, `N`, dann `C`
+(kopieren): Quell-PROM einlegen, `J`; bei „COPY-PROM STECKEN“ ein leeres PROM
+einlegen, `J`, `J`. Das Brennen dauert in Maschinenzeit gut 50 ms je Byte (U2716)
+bzw. 100 Durchläufe über das ganze PROM (U555). Die Antworten in `PROG` sind
+einzelne Tasten ohne ET.
+
 ## Tastenkürzel
 
 | Kürzel | Wirkung |

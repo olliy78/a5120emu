@@ -48,6 +48,8 @@ class Programmprofil:
     tastatur: str
     #: Frontplatte mit Lampen in der Statuszeile (K8915: Run … Power).
     frontplatte: bool = False
+    #: Kasten „EPROMmer“ mit virtuellem Sockel (PRG 710, doc/design/20_prg710.md AP-P7c).
+    eprommer: bool = False
     #: Modellwahl unter *Einstellungen ▸ Allgemein*: A5120 / A5120.16 (Erweiterungs-
     #: modul) bzw. PRG 710 / PRG 710-1 (`app/modell.py`) — der K8915 hat keine.
     modellwahl: bool = False
@@ -191,6 +193,7 @@ PRG710 = Programmprofil(
     nenntakt_hz=2_457_600,
     nenntakt_text="2,4576 MHz",
     tastatur="k7609",
+    eprommer=True,
     modellwahl=True,
     # Beide Geräte laufen auf derselben ZRE/ABS/AFS; das 710 hat die Tastatur
     # K7609 an einem 8279 (ATP), das 710-1 die K7672 an der K8025 (§3.9/§3.10).

@@ -245,3 +245,87 @@ def test_starter_und_handbuch():
     assert "--machine prg710" in starter
     hb = (PROJECT_ROOT / "app" / "help" / "handbuch.md").read_text(encoding="utf-8")
     assert "## Der PRG710 Emulator" in hb and "ET1" in hb
+
+
+# ─── EPROMmer (AP-P7c) ───────────────────────────────────────────────────────
+
+EPROM_AKTIONEN = ("eprom_einlegen", "eprom_leer", "eprom_speichern", "eprom_loeschen",
+                  "eprom_entnehmen")
+
+
+def test_eprom_kasten_nur_im_prg_und_ohne_kuerzel(qapp, konfig_ordner):
+    from app.ui import actions
+    w = _fenster(qapp)
+    try:
+        assert w.eprom_dock is not None and w.eprom_dock.windowTitle() == "EPROMmer"
+        assert w._aktion("dock_eprom") is not None
+        for name in EPROM_AKTIONEN:
+            a = getattr(w, f"act_{name}")
+            assert a.shortcut().isEmpty(), name          # Kürzeltabelle = Vertrag
+        # Im Menü steht alles: Maschine ▸ EPROMmer und Ansicht ▸ EPROMmer.
+        from PySide6.QtWidgets import QMenu
+        unter = [m for m in w.menuBar().findChildren(QMenu) if m.title() == "E&PROMmer"]
+        assert len(unter) == 1
+        assert unter[0].actions() == [getattr(w, f"act_{n}") for n in EPROM_AKTIONEN]
+        assert w.act_dock_eprom in _menue(w, "&Ansicht")
+        # Die Knöpfe des Kastens sind die Aktionen selbst.
+        assert [k.defaultAction() for k in w.eprom_widget.knoepfe] == \
+            [getattr(w, f"act_{n}") for n in EPROM_AKTIONEN]
+        assert "dock_eprom" in actions.reihenfolge("prg710")
+    finally:
+        _zu(w, qapp)
+    w = _fenster(qapp, "a5120")
+    try:
+        assert w.eprom_dock is None and not hasattr(w, "act_eprom_einlegen")
+        assert "dock_eprom" not in actions.reihenfolge("a5120")
+    finally:
+        _zu(w, qapp)
+
+
+def test_eprom_bedienung_ueber_die_aktionen(qapp, konfig_ordner, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    abbild = tmp_path / "quelle.bin"
+    abbild.write_bytes(bytes(range(256)) * 8)                     # 2 KB → U2716
+    ziel = tmp_path / "gebrannt.bin"
+    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+                        staticmethod(lambda *a, **k: (str(abbild), "")))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (str(ziel), "")))
+    w = _fenster(qapp)
+    try:
+        assert "leer" in w.eprom_widget.sockel.text()
+        w.act_eprom_einlegen.trigger()
+        assert w.emulator.eprom_type() == 2
+        assert "U2716" in w.eprom_widget.sockel.text()
+        assert "quelle.bin" in w.eprom_widget.sockel.text()
+        w.act_eprom_loeschen.trigger()
+        assert "geändert" in w.eprom_widget.sockel.text()
+        w.act_eprom_speichern.trigger()
+        assert ziel.read_bytes() == b"\xff" * 2048
+        assert "geändert" not in w.eprom_widget.sockel.text()
+        u555 = [a for a in w.act_eprom_leer.menu().actions() if "U555" in a.text()][0]
+        u555.trigger()
+        assert w.emulator.eprom_type() == 1
+        w.act_eprom_entnehmen.trigger()
+        assert w.emulator.eprom_type() == 0
+        text = w.eprom_widget.protokoll_text()
+        for teil in ("U2716 eingelegt", "UV-gelöscht", "gespeichert nach", "U555 eingelegt",
+                     "entnommen"):
+            assert teil in text, (teil, text)
+    finally:
+        _zu(w, qapp)
+
+
+def test_eprom_sockel_ueberlebt_den_modellwechsel(qapp, konfig_ordner):
+    """Ein Modellwechsel erzeugt die Maschine neu — das PROM wandert mit, samt „geändert“."""
+    w = _fenster(qapp)
+    try:
+        w.emulator.eprom_insert_data(b"\x01\x02\x03", 1, "", True)
+        w._on_model_selected("prg710-1")
+        qapp.processEvents()
+        assert w.emulator.prg_variant == 1
+        assert w.emulator.eprom_type() == 1 and w.emulator.eprom_modified()
+        assert w.emulator.eprom_read()[:4] == b"\x01\x02\x03\xff"
+        assert w.eprom_widget.emulator is w.emulator
+    finally:
+        _zu(w, qapp)
