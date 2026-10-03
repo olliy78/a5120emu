@@ -151,3 +151,9 @@ k1520_add_test(disktool_prg710 SRC test_disktool_prg710.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2
                           "PRG710_LIEFERDISKETTEN=\"${CMAKE_SOURCE_DIR}/disks\"" TIMEOUT 150)
+
+# PRG 710 / 710-1 (AP-P8b): ADA K6022 — Lochband stanzen und lesen unter UDOS
+# (`TWRITE.1215`/`TREAD.1210` mit dem Treiber `PTAPE.6022`).
+k1520_add_test(prg710_lochband SRC test_prg710_lochband.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)

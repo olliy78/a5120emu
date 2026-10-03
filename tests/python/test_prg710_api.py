@@ -208,3 +208,37 @@ def test_andere_maschinen_haben_keinen_eprommer():
     assert not emu.eprom_insert_blank(2)
     with pytest.raises(OSError, match="kein EPROMmer"):
         emu.eprom_save("/tmp/x.bin")
+
+@pytest.mark.parametrize("name,variante", VARIANTEN)
+def test_lochband_ueber_die_c_abi(name, variante, tmp_path):
+    """AP-P8b: Band einlegen/entnehmen, Stand, Stanzband leer speichern, Stanzer aus/ein.
+    Das Stanzen selbst prüft `Prg710Lochband.*` (UDOS); hier nur der Weg durch die C-ABI."""
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine=name)
+    band = tmp_path / "band ä.ptp"           # Umlaut: UTF-8-Pfad bis in den Kern
+    band.write_bytes(b"HALLO\r\n")
+    assert emu.ptape_reader_status() == {"inserted": False, "pos": 0, "len": 0, "at_end": False}
+    assert emu.ptape_load(str(band))
+    assert emu.ptape_reader_status() == {"inserted": True, "pos": 0, "len": 7, "at_end": False}
+    assert not emu.ptape_load(str(tmp_path / "fehlt.ptp"))
+    assert emu.ptape_eject()
+    assert emu.ptape_reader_status()["inserted"] is False
+
+    assert emu.ptape_punch_length() == 0
+    ziel = tmp_path / "stanz.ptp"
+    assert emu.ptape_punch_save(str(ziel))
+    assert ziel.read_bytes() == b""
+    assert emu.ptape_punch_enabled() is True
+    assert emu.ptape_punch_enable(False) and emu.ptape_punch_enabled() is False
+    assert emu.ptape_punch_enable(True) and emu.ptape_punch_clear()
+
+
+def test_lochband_gibt_es_nur_am_prg():
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine="a5120")
+    assert emu.ptape_reader_status() is None
+    assert emu.ptape_punch_length() is None
+    assert emu.ptape_punch_enabled() is None
+    assert not emu.ptape_load("egal")

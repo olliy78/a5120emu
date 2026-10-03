@@ -428,6 +428,26 @@ _lib.k1520_eprom_log.restype = ctypes.c_char_p
 _lib.k1520_eprom_error.argtypes = [K1520Handle]
 _lib.k1520_eprom_error.restype = ctypes.c_char_p
 
+# Lochband an der ADA K6022 (PRG, AP-P8b)
+_lib.k1520_ptape_load.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_ptape_load.restype = ctypes.c_bool
+_lib.k1520_ptape_eject.argtypes = [K1520Handle]
+_lib.k1520_ptape_eject.restype = ctypes.c_bool
+_lib.k1520_ptape_reader_status.argtypes = [
+    K1520Handle, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint64),
+    ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(ctypes.c_int)]
+_lib.k1520_ptape_reader_status.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_length.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_length.restype = ctypes.c_int64
+_lib.k1520_ptape_punch_save.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_ptape_punch_save.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_clear.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_clear.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_enable.argtypes = [K1520Handle, ctypes.c_bool]
+_lib.k1520_ptape_punch_enable.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_enabled.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_enabled.restype = ctypes.c_int
+
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
@@ -844,6 +864,49 @@ class K1520Emulator:
         """Protokollzeilen; ``only_new`` = nur seit dem letzten solchen Aufruf."""
         s = (_lib.k1520_eprom_log(self._handle, bool(only_new)) or b"").decode("utf-8", "replace")
         return [z for z in s.split("\n") if z]
+
+    # ── Lochband an der ADA K6022 (PRG, AP-P8b) ──────────────────────────────
+
+    def ptape_load(self, path: str) -> bool:
+        """Band (Datei, Bytes wie gestanzt) in den Leser legen; False bei Lesefehler
+        oder anderer Maschine."""
+        return bool(_lib.k1520_ptape_load(self._handle, str(path).encode("utf-8")))
+
+    def ptape_eject(self) -> bool:
+        """Band aus dem Leser nehmen."""
+        return bool(_lib.k1520_ptape_eject(self._handle))
+
+    def ptape_reader_status(self) -> Optional[dict]:
+        """Leser: ``{"inserted", "pos", "len", "at_end"}``; andere Maschine ``None``."""
+        ins, end = ctypes.c_int(), ctypes.c_int()
+        pos, ln = ctypes.c_uint64(), ctypes.c_uint64()
+        if not _lib.k1520_ptape_reader_status(self._handle, ctypes.byref(ins), ctypes.byref(pos),
+                                              ctypes.byref(ln), ctypes.byref(end)):
+            return None
+        return {"inserted": bool(ins.value), "pos": int(pos.value), "len": int(ln.value),
+                "at_end": bool(end.value)}
+
+    def ptape_punch_length(self) -> Optional[int]:
+        """Länge des Stanzbandes; andere Maschine ``None``."""
+        n = int(_lib.k1520_ptape_punch_length(self._handle))
+        return n if n >= 0 else None
+
+    def ptape_punch_save(self, path: str) -> bool:
+        """Stanzband in eine Datei schreiben (überschreibt)."""
+        return bool(_lib.k1520_ptape_punch_save(self._handle, str(path).encode("utf-8")))
+
+    def ptape_punch_clear(self) -> bool:
+        """Stanzband leeren."""
+        return bool(_lib.k1520_ptape_punch_clear(self._handle))
+
+    def ptape_punch_enable(self, on: bool) -> bool:
+        """Stanzer ein/aus (aus: der Treiber meldet nach seiner Frist C2)."""
+        return bool(_lib.k1520_ptape_punch_enable(self._handle, bool(on)))
+
+    def ptape_punch_enabled(self) -> Optional[bool]:
+        """Stanzer ein?; andere Maschine ``None``."""
+        v = int(_lib.k1520_ptape_punch_enabled(self._handle))
+        return None if v < 0 else bool(v)
 
     def machine_type(self) -> int:
         """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915)."""

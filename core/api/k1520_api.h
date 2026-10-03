@@ -513,6 +513,32 @@ K1520_API const char* k1520_eprom_log(K1520Handle h, bool only_new);
 /** @brief Fehlertext des letzten fehlgeschlagenen insert/save (dieses Fadens). */
 K1520_API const char* k1520_eprom_error(K1520Handle h);
 
+/* ─── Lochband an der ADA K6022 (PRG 710/710-1, doc/design/20_prg710.md AP-P8b) ───
+ * Leser daro 1210 (E4H–E7H) und Stanzer daro 1215 (E0H–E3H).  Ein Band ist eine Datei mit
+ * den Bytes wie gestanzt.  Alle Funktionen sind thread-sicher; andere Maschinen: false/-1. */
+
+/** @brief Band (Datei, UTF-8-Pfad) in den Leser legen — ersetzt ein eingelegtes, Stellung auf Anfang. */
+K1520_API bool     k1520_ptape_load(K1520Handle h, const char* path);
+/** @brief Band aus dem Leser nehmen. */
+K1520_API bool     k1520_ptape_eject(K1520Handle h);
+/**
+ * @brief Stand des Lesers.
+ * @param inserted 1 = Band eingelegt; @param pos gelesene Bytes der Datei; @param len Länge der
+ *        Datei; @param at_end 1 = ganz durchgelaufen (STA Bandende).  Ausgaben dürfen NULL sein.
+ */
+K1520_API bool     k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos,
+                                             uint64_t* len, int* at_end);
+/** @brief Länge des Stanzbandes in Bytes; -1 bei anderer Maschine. */
+K1520_API int64_t  k1520_ptape_punch_length(K1520Handle h);
+/** @brief Stanzband in eine Datei schreiben (überschreibt); false bei Schreibfehler. */
+K1520_API bool     k1520_ptape_punch_save(K1520Handle h, const char* path);
+/** @brief Stanzband leeren (neues Band einlegen). */
+K1520_API bool     k1520_ptape_punch_clear(K1520Handle h);
+/** @brief Stanzer ein/aus (Vorgabe ein; aus = kein END, der Treiber meldet C2). */
+K1520_API bool     k1520_ptape_punch_enable(K1520Handle h, bool on);
+/** @brief 1 = Stanzer ein, 0 = aus, -1 bei anderer Maschine. */
+K1520_API int      k1520_ptape_punch_enabled(K1520Handle h);
+
 #ifdef __cplusplus
 }
 #endif
