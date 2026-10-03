@@ -117,7 +117,7 @@ K1520Handle k1520_create_configured(K1520MachineType type,
 }
 
 K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
-                                const char*, const char*, const char*, const char*) {
+                                const char* d0, const char* d1, const char* d2, const char* d3) {
     g_init_error.clear();
     if (variante != 0 && variante != 1) {
         g_init_error = "Unbekannte PC1715-Variante " + std::to_string(variante) +
@@ -141,6 +141,9 @@ K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
                                      : Pc1715Machine::Config::Variante::Pc1715;
         cfg.bild = bildschirm == 1 ? Pc1715Zre::Bildschirm::K7221 : Pc1715Zre::Bildschirm::K7222;
         cfg.zeichensatz = zeichensatz == 1 ? Pc1715Zre::Zeichensatz::S602 : Pc1715Zre::Zeichensatz::S619;
+        const char* names[4] = { d0, d1, d2, d3 };   // leer/NULL = Vorgabe (2 × K5601)
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
         K1520Machine* m = new Pc1715Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
         return m;
     } catch (const std::exception& e) {

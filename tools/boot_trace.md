@@ -259,3 +259,24 @@ tools/dev.sh trace --machine prg710 --events /tmp/ev.txt --events-cap 100000 DIS
   Mit Diskette wird über `defaultFormatName` gemountet (bei `.hfe` nur Platzhalter).
 
 Wächter: `cli_bt_prg710_tastatur`, `cli_bt_prg710-1_tastatur`, `cli_bt_prg710_udos_prompt`, `cli_bt_prg710-1_udos_prompt`.
+
+## 9. PC 1715 (`--machine pc1715`)
+
+Grundform aus AP-2 (`doc/design/21_pc1715.md`), ausgebaut in AP-4b. Eine CPU, Floppy =
+K5122 in der Konfiguration „1715“ (`/WAIT`), Bild über den 8275 aus dem Haupt-RAM.
+
+```sh
+tools/dev.sh tool boot_trace --machine pc1715 tests/fixtures/disks/pc1715_scp1715_v0006_boot.hfe
+tools/dev.sh tool boot_trace --machine pc1715 --quiet --json <abbild>   # {"prompt":true,…}
+```
+
+- Diskette in Laufwerk 0 (`--drive n` für ein anderes), COW-Mount wie üblich.
+- Protokolliert: FD-PIOs 00H–07H (Datenport 00H/02H ohne Wert gefaltet), SE-/MO-Register
+  20H/21H, 8275 18H/19H, ROM ein/aus 24H–2BH, BWS-Register 34H, Interrupts (mit IM).
+- Abbruch bei Stillstand (Vorgabe 10 Mio. Takte ohne Bildänderung/Steuerzugriff), `-c`
+  (Vorgabe 60 Mio.) oder `--until`. Exit 0, wenn beim Stillstand eine Zeile `A>`…`P>`
+  bzw. `%` im Bild steht. Das Bild zeigt 25 Zeilen (CP/A-Statuszeile).
+- Ein CP/A 1715 hat eine laufende Uhr in der Statuszeile — dort gibt es keinen
+  Stillstand (Exit 1 an der Taktgrenze, Prompt im Bild ablesen). Vorsicht mit
+  `--until 'screen ~ "A>"'`: die Statuszeile („A0\A> …“) trifft schon vorher.
+- Noch nicht: `--keys` (Tastatur AP-3), Savestates, ZVE2-Schalter (gibt es nicht).

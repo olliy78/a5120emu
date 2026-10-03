@@ -74,8 +74,8 @@ K1520_API K1520Handle k1520_create_prg710(int variante,
  * @param variante    0 = PC 1715, 1 = PC 1715W (noch nicht gebaut: NULL mit Grund)
  * @param bildschirm  0 = K7222 (80x24, Vorgabe), 1 = K7221 (64x16); Framebuffer 640x288 bzw. 512x240
  * @param zeichensatz Zeichengenerator bei BWS-Register DB6 = 0: 0 = S619 (Vorgabe), 1 = S602
- * @param drive0..3   Laufwerke der Floppy-Ansteuerung — bis AP-2 ohne Wirkung (NULL/"" = Vorgabe)
- * k1520_machine_type() = 3.  Tastatur und Disketten folgen mit AP-3 bzw. AP-2.
+ * @param drive0..3   Laufwerke der Floppy-Ansteuerung (Profilnamen wie "K5601"; NULL/"" = Vorgabe 2 × K5601)
+ * k1520_machine_type() = 3.  Disketten seit AP-2 (K5122 „1715“); Tastatur folgt mit AP-3.
  */
 K1520_API K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
                                           const char* drive0, const char* drive1,

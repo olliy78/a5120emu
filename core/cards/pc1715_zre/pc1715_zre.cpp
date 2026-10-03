@@ -189,7 +189,7 @@ const uint8_t* Pc1715Zre::zgRom(bool zweiter_satz) const
 void Pc1715Zre::rastern()
 {
     std::fill(fb_.begin(), fb_.end(), 0);
-    const int rows = std::min(crt_.rows(), textRows());
+    const int rows = std::min(bildZeilen(), textRows());   // Statuszeile: s. maxZeilen()
     const int cols = std::min(crt_.cols(), textCols());
     for (int r = 0; r < rows; ++r)
         for (int c = 0; c < cols; ++c) zeichneZelle(r, c, crt_.cells(r, c));

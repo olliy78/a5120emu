@@ -56,6 +56,12 @@ K5122::K5122(K1520Bus& bus,
  */
 uint8_t K5122::ioRead(uint8_t port) {
     uint8_t result = 0xFF;
+    // PC 1715 (setPortlage): Daten-PIO 00H–03H → 14H–17H, Steuer-PIO 04H–07H → 10H–13H;
+    // SE-/MO-Register (20H/21H) sind nur beschreibbar.
+    if (portlage_ == Portlage::Pc1715) {
+        if (port > 0x07) return 0xFF;
+        port = static_cast<uint8_t>(port < 0x04 ? 0x14 + port : 0x10 + (port - 0x04));
+    }
 
     if (port >= 0x10 && port <= 0x13) {
         result = ctrl_pio_.ioRead(port - 0x10);
@@ -120,6 +126,18 @@ uint8_t K5122::ioRead(uint8_t port) {
  * (0x18).  Ctrl-Port-A (0x10) und Data-Port-A (0x14) lösen zusätzliche Handler aus.
  */
 void K5122::ioWrite(uint8_t port, uint8_t data) {
+    // PC 1715 (setPortlage): auf die K1520-Lage umsetzen; 20H = SE-Register wie 18H (aber
+    // ohne Motor), 21H = MO-Register (DB4–7 = /MO).
+    if (portlage_ == Portlage::Pc1715) {
+        // /KRFD 20H–23H: nur AB0 ausgewertet (Servicehandbuch §1.5.2.1, „X = beliebig“).
+        if ((port & 0xFC) == 0x20) {
+            if (port & 0x01) { moRegisterSchreiben(data); return; }
+            port = 0x18;
+        }
+        else if (port < 0x04)  port = static_cast<uint8_t>(0x14 + port);
+        else if (port < 0x08)  port = static_cast<uint8_t>(0x10 + (port - 0x04));
+        else { LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X (PC 1715)", port); return; }
+    }
     if (port >= 0x10 && port <= 0x13) {
         if (port == 0x10) {
             LOG_DEBUG("K5122",
@@ -187,6 +205,12 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
         // Motor läuft, solange /LCK=0; die LED folgt „selektiert ODER Motor an".
         for (int d = 0; d < 4; ++d) {
             const size_t di  = static_cast<size_t>(d);
+            if (portlage_ == Portlage::Pc1715) {
+                // PC 1715: das low Nibble ist /LCK = Türverriegelung; den Motor schaltet
+                // erst das MO-Register (21H, moRegisterSchreiben).
+                drive_selected_[di] = ((data >> (4 + d)) & 1) == 0;
+                continue;
+            }
             const bool   mot = ((data >> d) & 1) == 0;
             // Motor-Anlaufflanke (aus→an): Spin-up armieren.  Ein bereits laufender
             // Motor (an→an) läuft weiter, kein Neu-Anlauf.
@@ -203,6 +227,25 @@ void K5122::ioWrite(uint8_t port, uint8_t data) {
     } else {
         LOG_WARN("K5122", "ioWrite unbekannter port=0x%02X data=0x%02X", port, data);
     }
+}
+
+void K5122::moRegisterSchreiben(uint8_t data) {
+    // PC 1715, MO-Register A13:2 (Servicehandbuch §1.5.2.2): **DB4–DB7 = /MO0../MO3**
+    // (low-aktiv), die Bitlage des /SE im SE-Register.  Beleg: CP/A-BIOS `biopdskt.mac`
+    // („flmot equ 21h ;Bit 7..4:/Mot on“, `out (flsel),a / out (flmot),a` mit demselben
+    // Byte) und UDOS 1715, das `20H := FFH, 21H := 00H` schreibt und danach ohne weiteres
+    // 21H auf den Index wartet — mit „/SE übernehmen“ (Lesart der Handbuchtabelle,
+    // Eingang /SE n) liefe dort kein Motor.  S502: `21H := 00H` alle an, `FFH` alle aus.
+    for (int d = 0; d < 4; ++d) {
+        const size_t di  = static_cast<size_t>(d);
+        const bool   mot = ((data >> (4 + d)) & 1) == 0;
+        if (mot && !motor_on_[di]) motor_spinup_cycles_[di] = motorSpinupCycles();
+        motor_on_[di] = mot;
+    }
+    LOG_INFO("K5122", "MO-Register (21H)=%02X: Motor=%d%d%d%d", data,
+             motor_on_[0], motor_on_[1], motor_on_[2], motor_on_[3]);
+    if (wait_betrieb_) waitMkePlanen(false);
+    updateStatusPortB();
 }
 
 // ─── InterruptSlave ───────────────────────────────────────────────────────────

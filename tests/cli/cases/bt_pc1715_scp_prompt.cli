@@ -1,0 +1,8 @@
+# boot_trace --machine pc1715 (Entwurf 21 AP-2): Urlader S502 → SCP 1715 V0006 bis `A>`;
+# Abbruch dort als Stillstand, Exit 0.  Die Diskette wird als COW-Kopie gemountet.
+tool:    boot_trace
+disk:    pc1715_scp1715_v0006_boot.hfe
+run:     --machine pc1715 --quiet --json %DISK%
+timeout: 120
+exit:    0
+expect:  "machine":"pc1715","stall":true,"prompt":true

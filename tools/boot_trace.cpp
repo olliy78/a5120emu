@@ -47,6 +47,7 @@
 #include "tools/event_bp.h"
 #include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
 #include "tools/boot_trace_prg710.h"  // --machine prg710|prg710-1 (Entwurf 20 AP-P1d)
+#include "tools/boot_trace_pc1715.h"  // --machine pc1715 (Entwurf 21 AP-2)
 #include "tools/em_trace.h"          // --em: EM-Transaktionen als Text
 #include "tools/dbg_u8000.h"         // --cpu u8000: Adressen <<seg>>off
 #include "tools/z8000/z8k_disasm.h"
@@ -292,6 +293,7 @@ int main(int argc, char** argv) {
     // --machine k8915 und seine eigenen Schalter (§8a AP-E4d)
     bool        machine_k8915 = false;
     int         machine_prg710 = 0;      // 1 = PRG 710, 2 = PRG 710-1 (gleiche Optionen wie K8915)
+    bool        machine_pc1715 = false;  // PC 1715 (gleiche Optionen wie K8915)
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
@@ -314,8 +316,9 @@ int main(int argc, char** argv) {
             if (mn == "k8915" || mn == "K8915") machine_k8915 = true;
             else if (mn == "prg710" || mn == "PRG710") { machine_k8915 = true; machine_prg710 = 1; }
             else if (mn == "prg710-1" || mn == "PRG710-1") { machine_k8915 = true; machine_prg710 = 2; }
+            else if (mn == "pc1715" || mn == "PC1715") { machine_k8915 = true; machine_pc1715 = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1 | pc1715)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
@@ -473,6 +476,11 @@ int main(int argc, char** argv) {
             if (k8o.skip_selftest || !k8o.auto_cr)
                 fprintf(stderr, "WARN: --skip-selftest/--no-cr gibt es am PRG 710 nicht — ignoriert\n");
         }
+        if (machine_pc1715) {
+            // PC 1715 (AP-2): Urlader ab 1,6 s, Systemstart einige Sekunden; 60 Mio. ≈ 24 s.
+            if (!limit_set) k8o.limit = 60'000'000;
+            if (!stall_set) k8o.stall = 10'000'000;
+        }
         k8o.coverage = coverage_on; if (coverage_path) k8o.coverage_path = coverage_path;
         if (csv_path) k8o.csv_path = csv_path;
         if (itrace_path) k8o.itrace_path = itrace_path;
@@ -497,7 +505,8 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
+        const int rc = machine_pc1715 ? bootTracePc1715(k8o, prn)
+                     : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);
         if (!cow_temp.empty()) { std::error_code ec; std::filesystem::remove(cow_temp, ec); }
         return rc;

@@ -368,7 +368,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_pc1715_zre PUBLIC k1520_z80 k1520_ctc k1520_sio k1520_i8275 k1520_bus k1520_logger)
     target_include_directories(k1520_pc1715_zre PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_pc1715 STATIC core/machines/pc1715/pc1715.cpp)
-    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_floppy2 k1520_bus k1520_logger)
+    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library
@@ -414,8 +414,8 @@ if(BUILD_K1520)
     target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
-    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp tools/boot_trace_prg710.cpp)
-    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_floppy k1520_logger)
+    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp tools/boot_trace_prg710.cpp tools/boot_trace_pc1715.cpp)
+    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_floppy k1520_logger)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
 

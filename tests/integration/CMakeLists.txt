@@ -169,3 +169,9 @@ k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
 k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp
                           LIBS k1520_pc1715 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PC 1715 Etappe 2 (doc/design/21_pc1715.md AP-2): K5122 „1715" im /WAIT-Betrieb, S502 lädt
+# Spur 0 Sektor 1, Betriebssysteme bis zum Prompt (ohne Tastatur).
+k1520_add_test(pc1715_boot SRC test_pc1715_boot.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
