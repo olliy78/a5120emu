@@ -31,6 +31,12 @@ Pc1715Machine::Pc1715Machine(const Config& cfg)
     , lw_(afs_, profile(cfg))
 {
     zre_.attachToBus(bus_);
+    // Tastatur → SIO0 Kanal A (§3.7): fertiges Zeichen am Stoppbit; der Empfänger nimmt es in
+    // seinen 3-Byte-FIFO, der Empfangsinterrupt wird neu bewertet.  Aufruf nur im Lauffaden.
+    kbd_.byteOut = [this](uint8_t b) {
+        zre_.sio().channelA().rxByte(b);
+        bus_.markIntDirty();
+    };
     // Floppy-Ansteuerung 20-330-0102 (Servicehandbuch §1.5.2.1): Daten-PIO 00H–03H,
     // Steuer-PIO 04H–07H, /KRFD 20H–23H (AB0 = 0 SE-Register, AB0 = 1 MO-Register; AB1
     // ist nicht ausgewertet — 22H/23H spiegeln 20H/21H).
@@ -52,6 +58,17 @@ void Pc1715Machine::resetHardware()
 {
     stop_.store(false);
     afs_.flushDisks();
+    gehalten_.clear();
+    kbd_.releaseAll();
+    kbd_.reset();            // Tastatur-CPU wie beim Einschalten (Finger weg)
+    kbd_rest_ = 0;
+    tasten_frei_ab_ = 0;
+    umschalter_gesetzt_ = false;
+    {
+        std::lock_guard<std::mutex> lk(tasten_sperre_);
+        tasten_.clear();
+    }
+    arbeit_.clear();
     zre_.reset();            // CPU, CTC, SIO, 8275, ROM-Overlay ein
     afs_.reset();
     bus_.clearNMI();
@@ -75,8 +92,113 @@ void Pc1715Machine::reset()
     LOG_INFO("PC1715", "Reset");
 }
 
+// ─── Tastatur ────────────────────────────────────────────────────────────────
+namespace {
+// Umschalter der Matrix (doc/pc1715/tastatur.md §4): CTRL (8,0), Shift links (8,1).
+constexpr int CTRL_SP = 8, CTRL_ZE = 0, SHIFT_SP = 8, SHIFT_ZE = 1;
+// Abfragedurchläufe der Tastatur-CPU in Rechnertakten (5865 Takte bei ≈ 700 kHz je Durchlauf).
+constexpr uint64_t durchlaeufe(uint64_t n)
+{
+    return n * Tastatur1715::DURCHLAUF_TAKTE * Tastatur1715::TAKT_RECHNER_HZ / Tastatur1715::TAKT_TASTATUR_HZ;
+}
+// Vorlauf, bis das ROM einen einzeln gedrückten Umschalter erkannt hat.
+constexpr uint64_t UMSCHALT_VORLAUF = durchlaeufe(4);
+// Mindestzeit, die eine Taste unten bleibt (Entprellung = 3 Durchläufe + Phase), und die Pause
+// danach, in der das ROM sie als losgelassen verbucht.  Gilt für die Warteschlange, nicht für den
+// Anwender: ein kurzer Anschlag der Oberfläche wird so gestreckt statt verschluckt.
+constexpr uint64_t HALTE_MIN  = durchlaeufe(6);
+constexpr uint64_t PAUSE_MIN  = durchlaeufe(3);
+
+/// Hostcode → Zeichen (0 = keins); Ctrl-Codes 1…26 werden zum Kleinbuchstaben.
+char zeichenFuer(uint32_t k, bool ctrl)
+{
+    switch (k) {
+        case 0x01000004: case 0x01000005: return '\r';   // Return, Enter
+        case 0x01000000: return '\x1b';                  // Escape
+        case 0x01000001: case '\t': return '\x8d';        // Tab → Taste -> (8DH; CP/A macht Tab 09H daraus)
+        case 0x01000003: return '\x7f';                  // Backspace → DEL-Taste
+        default: break;
+    }
+    if (k >= 0x80) return 0;
+    if (ctrl && k >= 1 && k <= 26 && k != 13) return char('a' + k - 1);
+    return static_cast<char>(k);
+}
+}  // namespace
+
+void Pc1715Machine::keyPress(uint32_t k, bool, bool ctrl)
+{
+    std::lock_guard<std::mutex> lk(tasten_sperre_);
+    tasten_.push_back({k, ctrl, true});
+}
+
+void Pc1715Machine::keyRelease(uint32_t k)
+{
+    std::lock_guard<std::mutex> lk(tasten_sperre_);
+    tasten_.push_back({k, false, false});
+}
+
+void Pc1715Machine::tastenAbgeben()
+{
+    std::lock_guard<std::mutex> lk(tasten_sperre_);
+    for (const auto& e : tasten_) arbeit_.push_back(e);
+    tasten_.clear();
+}
+
+void Pc1715Machine::tastenVerarbeiten()
+{
+    while (!arbeit_.empty() && total_cycles_ >= tasten_frei_ab_) {
+        const TastenEreignis e = arbeit_.front();
+        const bool physisch = (e.code & ~0x7Fu) == QK_TASTE_BASE;
+        const int pos = int(e.code & 0x7F);
+
+        if (!e.gedrueckt) {
+            arbeit_.pop_front();
+            tasten_frei_ab_ = total_cycles_ + PAUSE_MIN;
+            if (physisch) {
+                if (pos < Tastatur1715::SPALTEN * Tastatur1715::ZEILEN)
+                    kbd_.release(pos / Tastatur1715::ZEILEN, pos % Tastatur1715::ZEILEN);
+            } else if (auto it = gehalten_.find(e.code); it != gehalten_.end()) {
+                const Gehalten g = it->second;
+                kbd_.release(g.sp, g.ze);
+                if (g.shift) kbd_.release(SHIFT_SP, SHIFT_ZE);
+                if (g.ctrl)  kbd_.release(CTRL_SP, CTRL_ZE);
+                gehalten_.erase(it);
+            }
+            continue;
+        }
+        if (physisch) {
+            arbeit_.pop_front();
+            if (pos < Tastatur1715::SPALTEN * Tastatur1715::ZEILEN)
+                kbd_.press(pos / Tastatur1715::ZEILEN, pos % Tastatur1715::ZEILEN);
+            tasten_frei_ab_ = total_cycles_ + HALTE_MIN;
+            continue;
+        }
+        Tastatur1715::Taste t;
+        const char c = zeichenFuer(e.code, e.ctrl);
+        if (!c || !Tastatur1715::tasteFuer(c, t) || gehalten_.count(e.code)) {
+            arbeit_.pop_front();     // keine Taste dafür / schon gedrückt (Wiederholung der Oberfläche)
+            continue;
+        }
+        const bool umschalten = t.shift || e.ctrl;
+        if (umschalten && !umschalter_gesetzt_) {
+            // Erst die Umschalter allein; die Zeichentaste folgt nach dem Vorlauf.
+            if (t.shift) kbd_.press(SHIFT_SP, SHIFT_ZE);
+            if (e.ctrl)  kbd_.press(CTRL_SP, CTRL_ZE);
+            umschalter_gesetzt_ = true;
+            tasten_frei_ab_ = total_cycles_ + UMSCHALT_VORLAUF;
+            return;
+        }
+        umschalter_gesetzt_ = false;
+        kbd_.press(t.spalte, t.zeile);
+        gehalten_[e.code] = {t.spalte, t.zeile, t.shift, e.ctrl};
+        arbeit_.pop_front();
+        tasten_frei_ab_ = total_cycles_ + HALTE_MIN;
+    }
+}
+
 int Pc1715Machine::run(int max_cycles)
 {
+    tastenAbgeben();
     if (nmi_taster_.exchange(false, std::memory_order_relaxed)) {
         bus_.assertNMI();
         LOG_INFO("PC1715", "NMI");
@@ -111,6 +233,10 @@ int Pc1715Machine::run(int max_cycles)
         total_cycles_ += used;
 
         afs_.update(used);
+        if (!arbeit_.empty()) tastenVerarbeiten();
+        // Tastatur-CPU in Paketen von ≥ 32 Takten nachführen (Rahmenende ≤ 32 Takte verspätet).
+        kbd_rest_ += used;
+        if (kbd_rest_ >= 32) { kbd_.run(kbd_rest_); kbd_rest_ = 0; }
         bool dirty = zre_.clockTick(used);
         // Bildwechsel alle 20 ms Maschinenzeit: 8275-DMA + Rastern.
         while (total_cycles_ >= bild_naechst_) {

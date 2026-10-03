@@ -118,7 +118,10 @@ void Tastatur1715::run(uint64_t hostTakte) {
 }
 
 bool Tastatur1715::tasteFuer(char c, Taste& out) {
-    const uint8_t code = (c == '\r') ? 0x9D : uint8_t(c);  // <-' = Wagenrücklauf
+    // ET (Eingabetaste, 3/4): CP/A biopkbd.mac macht 9EH zu CR; 9DH ist die Cursortaste <-'.
+    // (3,1) trägt im ROM ebenfalls ET, hat aber keine Taste (tastatur.md §6) — deshalb fest (3,4).
+    if (c == '\r') { out = {3, 4, false}; return true; }
+    const uint8_t code = uint8_t(c);
     for (int pass = 0; pass < 2; pass++)  // erst unverschoben, dann mit Shift
         for (int sp = 0; sp < SPALTEN; sp++)
             for (int ze = 0; ze < ZEILEN; ze++) {

@@ -59,7 +59,7 @@ public:
 
     // ── Zeichen → Taste ───────────────────────────────────────────────────
     /// Position der Taste, die @p c erzeugt (S600-Tabelle); false, wenn es keine gibt.
-    /// Zeichen ohne Umschaltung werden bevorzugt.  '\r' = Taste <-', '\x1b' = ESC, '\x7f' = DEL.
+    /// Zeichen ohne Umschaltung werden bevorzugt.  '\r' = Taste ET (9EH, CP/A macht daraus CR; <-' ist eine Cursortaste), '\x1b' = ESC, '\x7f' = DEL.
     static bool tasteFuer(char c, Taste& out);
     /// Drückt die Taste für @p c (bei Shift erst Shift, einzeln, mit Entprellzeit);
     /// gehalten wird sie bis zu releaseAll().  false, wenn es keine Taste gibt.

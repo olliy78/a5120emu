@@ -175,3 +175,9 @@ k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp
 k1520_add_test(pc1715_boot SRC test_pc1715_boot.cpp
                           LIBS k1520_pc1715 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# PC 1715 Etappe 3 (doc/design/21_pc1715.md AP-3): Tastatur1715 an SIO0-A, DIR/STAT/PIP unter
+# SCP 1715, DIR unter CP/A 1715, ein Kommando unter UDOS 1715.
+k1520_add_test(pc1715_tastatur SRC test_pc1715_tastatur.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)

@@ -13,8 +13,11 @@
  * gemeinsamen Baustein `Laufwerke` (Vorgabe 2 × K5601).  Interruptkette: Steuer-PIO vorn
  * (Servicehandbuch §1.2.3), dann CTC → SIO der ZRE.
  *
+ * Tastatur (AP-3): `Tastatur1715` (eigener U880 + S600) läuft im Takt der Maschine, ihr
+ * `byteOut` füllt den Empfänger von SIO0 Kanal A (Rahmen 8N1 an der Stoppbitgrenze, kein
+ * Bitmodell der SIO; der 3-Byte-FIFO fängt Statusbyte + Code im Abstand von ≈ 0,7 ms).
+ *
  * Freie Stellen (nicht vergessen):
- *  - **Tastatur (AP-3):** `keyPress`/`keyRelease` verwerfen die Taste.
  *  - **Schnittstellen (AP-4):** kein SerialHub, SIO0 steht ohne Gegenstelle.
  *  - Save-State: wie PRG 710 / K8915 gibt es keinen (die Grundlage wäre hier ohnehin nur
  *    CPU + RAM + Kartenregister).
@@ -26,8 +29,12 @@
 #include "core/cards/pc1715_zre/pc1715_zre.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/machines/laufwerke.h"
+#include "core/peripherals/tastatur1715/tastatur1715.h"
 #include <array>
 #include <atomic>
+#include <deque>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
@@ -69,9 +76,21 @@ public:
     uint8_t screenChar(int col, int row) const override { return zre_.screenChar(col, row); }
 
     // ─── Tastatur (AP-3) ─────────────────────────────────────────────────────
-    void keyPress(uint32_t, bool, bool) override {}
-    void keyRelease(uint32_t) override {}
-    void setKeyRepeatRealtime(bool) override {}
+    /// Kennung einer physischen Taste: `QK_TASTE_BASE | (Spalte * 8 + Zeile)` (Matrix 13 × 8,
+    /// wie K7672/K7609 für ihre Matrizen) — für die Bildschirmtastatur.
+    static constexpr uint32_t QK_TASTE_BASE = 0x03000000;
+    /**
+     * @brief Taste drücken.  Codes: druckbares ASCII (das Zeichen, das die Taste erzeugen soll —
+     *        die Umschaltung sucht sich der Rechner über @ref Tastatur1715::tasteFuer; `shift`
+     *        wird ignoriert), Qt-Return/Enter/Escape/Backspace, `QK_TASTE_BASE | Position`.
+     *        `ctrl` drückt zusätzlich CTRL (ein Code 1…26 gilt als Ctrl-Buchstabe).  Die
+     *        Ereignisse werden eingereiht und im Lauffaden abgegeben; eine Umschalttaste wird
+     *        EINZELN vorausgedrückt (das ROM sendet nichts, wenn zwei Tasten im selben
+     *        Abfragedurchlauf neu erkannt werden).
+     */
+    void keyPress(uint32_t k, bool shift, bool ctrl) override;
+    void keyRelease(uint32_t k) override;
+    void setKeyRepeatRealtime(bool) override {}   ///< Autorepeat nur über die REP-Taste (ROM)
 
     int machineType() const override { return 3; }   // K1520_MACHINE_PC1715
     Config::Variante variante() const { return variante_; }
@@ -123,6 +142,7 @@ public:
     // ─── Pc1715-eigen (Tests, Werkzeuge) ─────────────────────────────────────
     Pc1715Zre&  zre() { return zre_; }
     K5122&      afs() { return afs_; }
+    Tastatur1715& tastatur() { return kbd_; }
     K1520Bus&   bus() { return bus_; }
     uint64_t    totalCycles() const { return total_cycles_; }
     void        clearStop() { stop_.store(false); }
@@ -132,6 +152,8 @@ public:
 
 private:
     void resetHardware();
+    void tastenAbgeben();                  ///< Oberflächen-Ereignisse in den Lauffaden holen
+    void tastenVerarbeiten();              ///< fällige Ereignisse in die Matrix (nur im Lauffaden)
     static Config pruefe(const Config& cfg);
 
     const Config::Variante variante_;
@@ -139,6 +161,17 @@ private:
     Pc1715Zre  zre_;
     K5122      afs_;       ///< Floppy-Ansteuerung 20-330-0102: Portlage „1715", /WAIT
     Laufwerke  lw_;
+    Tastatur1715 kbd_;     ///< Tastatur mit eigenem U880 (S600); byteOut → SIO0 Kanal A
+
+    struct TastenEreignis { uint32_t code; bool ctrl; bool gedrueckt; };
+    struct Gehalten { int sp, ze; bool shift, ctrl; };
+    std::mutex tasten_sperre_;
+    std::deque<TastenEreignis> tasten_;    ///< vom Oberflächenfaden eingereiht
+    std::deque<TastenEreignis> arbeit_;    ///< im Lauffaden abzuarbeiten
+    std::map<uint32_t, Gehalten> gehalten_;///< gedrückte Zeichentasten → Matrixplatz samt Umschaltern
+    bool     umschalter_gesetzt_ = false;  ///< Vorspann des vordersten Drucks ist erledigt
+    uint64_t tasten_frei_ab_ = 0;          ///< frühester Takt für das nächste Ereignis
+    uint64_t kbd_rest_ = 0;                ///< noch nicht an die Tastatur-CPU abgegebene Takte
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};
