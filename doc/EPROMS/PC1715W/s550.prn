@@ -1,0 +1,1399 @@
+; ============================================================================
+; s550.prn  -  PC 1715W  Urlader-ROM S550 (A6, U2716), 2 KB, Bank 0 0000H-07FFH (gespiegelt bis 0FFFH)
+;
+; Quelle : doc/EPROMS/PC1715W/pc1715w_s550_urlader.bin  (CRC32 0a96c754, MD5 f172cb0d1b6dc56692ee6d3d7dfb1691,
+;          bytegleich mit S550.BIN aus xepb.org/robotron docs/1715w.zip); Kennung "111715W070887" ab 000BH
+; Erzeugt: rohes Disassemblat tools/z80_disasm2.py + Handkommentare (AP-W0, 2026-10-03)
+; Belege : [Bl. A..E] = Stromlaufplan 1715W (1.93.310411.8/04, Scans aus 1715w.zip),
+;          [CRT A/B] = Stromlauf CRT-Steuerung 1715W, [LDR] = SCP-3.0-Lader in den Systemspuren
+;          von tests/fixtures/disks/pc1715w_scp30_system.hfe (derselbe Treiber, erweitert),
+;          [BIOS] = SCP3.SYS derselben Diskette.  [?] = Deutung ohne unmittelbaren Beleg.
+; STATISCHE Analyse - kein Emulator des 1715W, keine Laufzeitbestaetigung.
+; Hardwarebeschreibung: doc/pc1715/pc1715w_hardware.md
+;
+; ---- Auffaelligste Befunde ------------------------------------------------------------
+;  * KEINE Bildschirmausgabe: der Urlader beruehrt weder den 8275 (18H/19H) noch 1AH/1BH,
+;    weder ZG- noch Bild-RAM.  Bild bleibt dunkel, bis der geladene Lader den Zeichensatz
+;    nach 2000H schreibt und den 8275 startet.  Kein Fehlertext, kein V.24-Boot.
+;  * Benutzte Ports (vollstaendig, aus den Opcodes): OUT 00H (DMA), 20H (KRFD), 24H (BR),
+;    28H (MOS); IN 00H (DMA-Register, INIR), 1CH (FDC-MSR), 1DH (FDC-Daten), 34H (KON).
+;    Die in Plan 21 Par. 4 genannten "IN 04/3A/3B" sind Fehlgriffe einer Bytesuche
+;    (DB 04/DB 3A/DB 3B stehen dort als Operanden von JR/LD-Befehlen).
+;  * Laeuft nur die ersten 50 Befehle aus dem ROM: kopiert sich nach 4000H (Bank 0, RAM-Block
+;    B1), schaltet BR = 11H und kopiert sich zurueck nach 0000H - ab 003FH laeuft alles aus dem
+;    RAM in Bank 1.  Arbeitszellen IM ROM-BEREICH (074BH-0763H, 02C5H, Selbstaenderung 0046H)
+;    gehen nur, weil das RAM ist.
+;  * Interruptbetrieb IM 2, I = 12H, einziger Vektor: DMA (Vektor 14H, Tabelle 1214H).  Der
+;    U8272 wird gepollt (MSR, SENSE INTERRUPT STATUS); sein INT wird nicht benutzt.
+;  * Floppy nur ueber DMA: READ DATA (06H|MFM) mit DMA Port B = 41H, Byte-Betrieb, /RDY
+;    low-aktiv, Interrupt bei Blockende; KRFD Bit 7 gibt TC frei (TC = DMA-Blockende), die
+;    ISR nimmt Bit 7 zurueck.  Benutzte U8272-Befehle: SPECIFY 03, RECALIBRATE 07, SEEK 0F,
+;    SENSE INTERRUPT STATUS 08, READ ID 0A, SENSE DRIVE STATUS 04, READ DATA 06.
+;
+; ---- Speicher waehrend des Laufs (alles Bank 1 = Block B1) -------------------------------
+;   0000-07FF Kopie des Urladers (Code + Arbeitszellen)   1000-100D Parameterblock (IX)
+;   1012-1091 Ladeliste (erster Satz)   1192 Stapel   1214 Vektor DMA   1392-13B1 Formatbeschreibungen
+;   13B2-3BB1 Spurpuffer (DMA-Ziel, bis 10 KB)   3BB4-3BF9 Treiberzellen   4000-... Ziel des SCP-3.0-Laders
+;
+; ---- Ablauf ------------------------------------------------------------------------------
+;   1 DI, KRFD 30H (FDC im Reset), IM 2/I 12H, EI; ROM -> 4000H; BR 11H; zurueck nach 0000H
+;   2 NEUSTART: Laufwerk weiterzaehlen (0,1,2,3,0,... endlos), FDC-Grundzustand (Reset-Puls
+;     KRFD 30H/70H, DMA-Blindlauf an Port 40H), Motor an (MOS 11H/22H/44H/88H), ~1,4 s
+;     (spaeter ~2,8 s) warten
+;   3 FORMAT_SUCHEN: READ ID mit vier Beschreibungen (8" MFM 26x256, 8" FM 26x128, 5,25"
+;     MFM/FM); die Sektorlaenge N nimmt er aus dem gelesenen ID-Feld.  Nichts -> naechstes LW
+;   4 BOOT: Spur 0, Kopf 0, Sektor 1 nach 13B2H.  Beginnt er mit 03H F0H, folgen ab Offset 64H
+;     drei Formatbeschreibungen (SCP 3.0: 50H Spuren, 5 Sektoren, N = 3, ...), Wort bei Offset 4
+;     = Satznummer der Ladeliste + 1, Wort bei Offset 9 = Startadresse, ab Offset 0CH die
+;     Ladeliste (Adresse, Zahl der 128-Byte-Saetze; FFH Ende).  SCP 3.0: 79 Saetze ab Satz 1
+;     nach 4000H, Start 4000H
+;   5 Laden spurweise (Rest der Spur in EINEM READ DATA per DMA), Seiten-/Spurwechsel nach den
+;     Formatbeschreibungen
+;   6 FDC-Grundzustand, Motoren aus, DI, Sprung zur Startadresse; H = Bootlaufwerk, BR = 11H
+;   Fehlerweg: jeder Treiberfehler -> NEUSTART mit dem naechsten Laufwerk (keine Meldung).
+;   Treiber-Fehlercodes (IX+14): 20H Lesefehler, 52H nicht bereit, 53H Schreibschutz,
+;   61H FDC-Ergebnisphase haengt, 62H SPECIFY, 63H SEEK/RECALIBRATE, 64H Suchen dauert,
+;   F1H 8"-Format, aber DIP S8 Bit 0 = 0, F2H READ ID fehlerhaft, 01H Blockende nicht erreicht
+;   mit ST2 = 40H [?]
+;
+
+; --- Symbolic labels (user-supplied) ---
+START           EQU	0018H
+IM_RAM          EQU	0032H
+NEUSTART        EQU	003FH
+NAECHSTES_LW    EQU	005BH
+NAECHSTE_SPUR   EQU	0067H
+BOOT            EQU	0082H
+LADESCHLEIFE    EQU	00ACH
+EINTRAG         EQU	0124H
+SATZ            EQU	012EH
+STARTEN         EQU	0199H
+WARTEN          EQU	01B2H
+SEKTORLAENGE    EQU	01BBH
+SPURLAENGE      EQU	01CBH
+REST_DER_SPUR   EQU	01D2H
+LESEN_N         EQU	01D9H
+PUFFERENDE      EQU	01F7H
+FMT_UEBERN      EQU	0214H
+PB_INIT         EQU	0239H
+TREIBER_RUF     EQU	0248H
+FORMAT_SUCHEN   EQU	0250H
+FMT_TABELLE     EQU	029AH
+PB_VORLAGE      EQU	02C4H
+LW_PARAM_8      EQU	02D2H
+LW_PARAM_5      EQU	02DDH
+TREIBER         EQU	02E8H
+TREIBER_ENDE    EQU	032AH
+FEHLER_ENDE     EQU	0344H
+INIT_CMD        EQU	0347H
+FDC_GRUNDZUSTANDEQU	034DH
+FDC_RESET       EQU	035DH
+KRFD_OUT        EQU	0363H
+DIP_PRUEFEN     EQU	0369H
+LW_EINRICHTEN   EQU	0379H
+DMA_LADEN       EQU	047CH
+ERGEBNIS_LESEN  EQU	04ACH
+FDC_BEREIT      EQU	04E4H
+ERGEBNIS_UND_DMAEQU	04F8H
+ZEITUEBERLAUF   EQU	0501H
+DMA_STATUS      EQU	0527H
+AUSWERTEN       EQU	0539H
+DMA_DUMMY       EQU	056BH
+SPECIFY         EQU	0583H
+SENSE_DRIVE     EQU	058FH
+RECAL_UND_SEEK  EQU	05A2H
+RECALIBRATE     EQU	05B0H
+SEEK            EQU	05C7H
+READ_ID         EQU	05D9H
+SENSE_INT       EQU	05FAH
+READ_ID_CMD     EQU	060CH
+BEREIT_UND_SEEK EQU	062BH
+WARTE_SEEK_ENDE EQU	0667H
+DMA_TAB_LESEN   EQU	0689H
+DMA_TAB_DUMMY   EQU	06A4H
+CMD_SPECIFY     EQU	06BBH
+CMD_RECAL       EQU	06BFH
+CMD_SEEK        EQU	06C2H
+CMD_SENSEINT    EQU	06C6H
+CMD_READID      EQU	06C8H
+CMD_SENSEDRV    EQU	06CBH
+BEFEHL_UND_WARTENEQU	06D0H
+DMA_ISR         EQU	06E7H
+FDC_BEFEHL      EQU	070EH
+ISR_MERKER      EQU	074BH
+KRFD_KOPIE      EQU	074CH
+CMD_RW          EQU	074DH
+
+	ORG	0000H
+
+0000  18 16      	JR START		;JR START.  Ab 0000H steht der Urlader nach RESET in Bank 0 (BR = 00H, A62/A63 von /RESET geloescht; /CEPROM = Lesebank 0, Bl. A A40)
+0002  00         	DB	00H
+sub_0003:
+0003  C3 E8 02   	JP TREIBER		;Einsprung des Floppytreibers (CALL 0003H aus TREIBER_RUF): IX = Parameterblock
+0006  00         	DB	00H
+0007  00         	DB	00H
+0008  00         	DB	00H
+0009  00         	DB	00H
+000A  00         	DB	00H
+000B              	DB	'111715W070887'		;Kennung "111715W070887" (PC 1715W, 07.08.87)
+START:
+0018  F3         	DI		;Kaltstart
+0019  3E 30      	LD A,30H		;KRFD (20H) <- 30H: Bit 6 = 0 haelt den U8272 im RESET, Bit 4 UESEL = 1, Bit 5 = 1, Bit 7 TC-Freigabe = 0
+001B  D3 20      	OUT (20H),A
+001D  ED 5E      	IM 2		;IM 2, I = 12H: einziger Vektor ist der DMA-Vektor 14H -> Tabelle 1214H (wird in DMA_LADEN gesetzt)
+001F  3E 12      	LD A,12H
+0021  ED 47      	LD I,A
+0023  FB         	EI		;EI (ab hier kann nur die DMA unterbrechen, und die ist noch nicht programmiert)
+0024  21 00 00   	LD HL,0000H		;ROM 0000-07FF (Lesebank 0 = EPROM) nach 4000-47FF kopieren; Schreibbank 0 bei 4000H = RAM-Block B1 (/CAS1, 74S287)
+0027  11 00 40   	LD DE,4000H
+002A  01 00 08   	LD BC,0800H
+002D  ED B0      	LDIR
+002F  C3 32 40   	JP 4032H		;weiter in der RAM-Kopie: 4032H
+IM_RAM:
+0032  3E 11      	LD A,11H		;--- laeuft bei 4032H (RAM, Block B1) ---  BR (24H) <- 11H: Lese- und Schreibbank 1.  Bank 1 = Block B1 ganz, also bleibt 4000H dieselbe Zelle
+0034  D3 24      	OUT (24H),A
+0036  EB         	EX DE,HL		;HL = 4800H, DE = 0800H nach dem LDIR
+0037  01 00 08   	LD BC,0800H
+003A  ED B8      	LDDR		;LDDR 4800..4001 -> 0800..0001: die Kopie zurueck an die Sollage, jetzt RAM in Bank 1 (Byte 0000H wird nicht kopiert)
+003C  C3 3F 00   	JP NEUSTART		;ab hier laeuft alles aus dem RAM bei 0000-07FF (Bank 1); das ROM ist nicht mehr sichtbar
+NEUSTART:
+003F  31 92 11   	LD SP,1192H		;NEUSTART (auch Fehlerweg): Stapel 1192H
+0042  CD 5B 00   	CALL NAECHSTES_LW		;Parameterblock neu, Treiber mit Befehl 80H (FDC-Grundzustand), Laufwerk weiterzaehlen (02C5H: 3 -> 0 beim ersten Mal)
+0045  06 05      	LD B,05H		;B = 05H, nach dem ersten Durchlauf 0AH (Selbstaenderung in 004CH): Wartezeit Motoranlauf
+L0047:
+0047  CD B2 01   	CALL WARTEN		;je ~0,3 s warten (WARTEN, 47250 x 24 T bei 4 MHz) [?]
+004A  10 FB      	DJNZ L0047
+004C  3E 0A      	LD A,0AH		;Operand von 0045H auf 0AH setzen (SELBSTAENDERND)
+004E  32 46 00   	LD (0046H),A
+L0051:
+0051  CD 50 02   	CALL FORMAT_SUCHEN		;FORMAT_SUCHEN: Read ID mit vier Formatbeschreibungen; Z = Laufwerk antwortet
+0054  28 2C      	JR Z,BOOT		;gefunden -> BOOT
+0056  CD 5B 00   	CALL NAECHSTES_LW		;sonst naechstes Laufwerk (0..3 reihum, endlos) - KEINE Meldung
+0059  18 F6      	JR L0051
+NAECHSTES_LW:
+005B  CD 39 02   	CALL PB_INIT		;Parameterblock 1000H aus der Vorlage, Befehl 80H ausfuehren
+005E  21 C5 02   	LD HL,02C5H		;Bootlaufwerk 02C5H := (02C5H + 1) AND 3
+0061  7E         	LD A,(HL)
+0062  3C         	INC A
+0063  E6 03      	AND 03H
+0065  77         	LD (HL),A
+0066  C9         	RET
+NAECHSTE_SPUR:
+0067  0C         	INC C		;naechste Spur/Seite waehrend des Ladens (C = Spur, B Bit 0 = Kopf)
+0068  79         	LD A,C
+0069  FD 96 00   	SUB (IY+0)
+006C  D8         	RET C
+006D  CB 40      	BIT 0,B
+006F  20 CE      	JR NZ,NEUSTART
+0071  FD CB 06 46	BIT 0,(IY+6)
+0075  20 C8      	JR NZ,NEUSTART
+0077  FD 7E 05   	LD A,(IY+5)
+007A  A7         	AND A
+007B  28 C2      	JR Z,NEUSTART
+007D  01 00 01   	LD BC,L0100
+0080  A7         	AND A
+0081  C9         	RET
+BOOT:
+0082  3E 01      	LD A,01H		;BOOT: 1 Sektor (C=0, H=0, R=1 aus der Vorlage) nach 13B2H lesen
+0084  CD D9 01   	CALL LESEN_N
+0087  2A B2 13   	LD HL,(13B2H)		;HL = erstes Wort des Sektors.  Pruefung: nur F003H (Bytes 03 F0 = Kopf "03F0") gilt als Kopf mit Formattabelle
+008A  E5         	PUSH HL
+008B  11 00 10   	LD DE,1000H
+008E  19         	ADD HL,DE
+008F  30 1B      	JR NC,LADESCHLEIFE		;Wort < F000H -> ohne Formattabelle laden: Satznummer der Ladeliste = dieses Wort (LADESCHLEIFE)
+0091  11 FE FF   	LD DE,FFFEH
+0094  19         	ADD HL,DE
+0095  30 A8      	JR NC,NEUSTART		;F000H/F001H/F002H -> NEUSTART
+0097  11 FE FF   	LD DE,FFFEH
+009A  19         	ADD HL,DE
+009B  38 A2      	JR C,NEUSTART		;>= F004H -> NEUSTART
+009D  2A B6 13   	LD HL,(13B6H)		;Kopf F003H: Satznummer der Ladeliste = Wort bei Offset 4 (SCP 3.0: 0001H -> Satz 0 = der Kopfsatz selbst)
+00A0  E3         	EX (SP),HL
+00A1  21 16 14   	LD HL,1416H		;Kopf ab Offset 64H (1416H): 3 x 8 + 4 Byte Formatbeschreibungen fuer Spur 0 / Rest / Seite 1 nach 1392H
+00A4  11 92 13   	LD DE,1392H
+00A7  01 1C 00   	LD BC,001CH
+00AA  ED B0      	LDIR
+LADESCHLEIFE:
+00AC  E1         	POP HL		;LADESCHLEIFE: HL = Satznummer + 1 (DEC folgt); daraus Spur, Kopf und Sektor ausrechnen (Spur 0 zuerst nach Beschreibung 1392H, dann 13A2H/139AH)
+00AD  2B         	DEC HL
+00AE  FD 21 9A 13	LD IY,139AH
+00B2  CD CB 01   	CALL SPURLAENGE
+00B5  01 00 00   	LD BC,0000H
+00B8  A7         	AND A
+00B9  ED 52      	SBC HL,DE
+00BB  38 3C      	JR C,L00F9
+00BD  FD 7E 05   	LD A,(IY+5)
+00C0  FD B6 06   	OR (IY+6)
+00C3  28 0E      	JR Z,L00D3
+L00C5:
+00C5  FD 21 A2 13	LD IY,13A2H
+00C9  CD CB 01   	CALL SPURLAENGE
+00CC  06 01      	LD B,01H
+00CE  A7         	AND A
+00CF  ED 52      	SBC HL,DE
+00D1  38 26      	JR C,L00F9
+L00D3:
+00D3  FD 21 92 13	LD IY,1392H
+00D7  CD CB 01   	CALL SPURLAENGE
+00DA  FD CB 06 46	BIT 0,(IY+6)
+00DE  28 02      	JR Z,L00E2
+L00E0:
+00E0  06 00      	LD B,00H
+L00E2:
+00E2  CD 67 00   	CALL NAECHSTE_SPUR
+00E5  30 DE      	JR NC,L00C5
+00E7  A7         	AND A
+00E8  ED 52      	SBC HL,DE
+00EA  38 0D      	JR C,L00F9
+00EC  FD CB 06 46	BIT 0,(IY+6)
+00F0  28 F0      	JR Z,L00E2
+00F2  06 01      	LD B,01H
+00F4  A7         	AND A
+00F5  ED 52      	SBC HL,DE
+00F7  30 E7      	JR NC,L00E0
+L00F9:
+00F9  19         	ADD HL,DE		;(1002H) = Spur/Kopf (BC), dann Satznummer -> Byteoffset (x128)
+00FA  ED 43 02 10	LD (1002H),BC
+00FE  06 07      	LD B,07H
+L0100:
+0100  29         	ADD HL,HL
+0101  10 FD      	DJNZ L0100
+0103  CD BB 01   	CALL SEKTORLAENGE
+0106  0E 00      	LD C,00H
+L0108:
+0108  0C         	INC C
+0109  A7         	AND A
+010A  ED 52      	SBC HL,DE
+010C  30 FA      	JR NC,L0108
+010E  19         	ADD HL,DE
+010F  DD 71 04   	LD (IX+4),C		;IX+4 = Sektor (R)
+0112  E5         	PUSH HL
+0113  CD D2 01   	CALL REST_DER_SPUR		;Rest der Spur lesen (REST_DER_SPUR: von R bis Spurende in EINEM Read Data, DMA in den Puffer 13B2H)
+0116  D1         	POP DE
+0117  19         	ADD HL,DE
+0118  01 80 00   	LD BC,0080H		;ersten 128-Byte-Satz des Puffers nach 1012H: das ist die Ladeliste
+011B  11 12 10   	LD DE,1012H
+011E  ED B0      	LDIR
+0120  D9         	EXX		;Ladeliste ab 101EH: je Eintrag Zieladresse (2), Satzzahl (2); Endmarke FFH, FEH + Wort = neue Satznummer
+0121  21 1D 10   	LD HL,101DH
+EINTRAG:
+0124  23         	INC HL		;naechster Eintrag: DE = Zieladresse, BC = Zahl der 128-Byte-Saetze
+0125  5E         	LD E,(HL)
+0126  23         	INC HL
+0127  56         	LD D,(HL)
+0128  23         	INC HL
+0129  4E         	LD C,(HL)
+012A  23         	INC HL
+012B  46         	LD B,(HL)
+012C  23         	INC HL
+012D  D5         	PUSH DE
+SATZ:
+012E  D9         	EXX		;je Satz: Puffer erschoepft? (Pufferende 1010H)
+012F  EB         	EX DE,HL
+0130  2A 10 10   	LD HL,(1010H)
+0133  A7         	AND A
+0134  ED 52      	SBC HL,DE
+0136  EB         	EX DE,HL
+0137  30 42      	JR NC,L017B
+0139  DD 7E 04   	LD A,(IX+4)		;ja: naechster Sektor; ueber das Spurende hinaus -> naechste Seite/Spur
+013C  DD 86 07   	ADD A,(IX+7)
+013F  DD 77 04   	LD (IX+4),A
+0142  3D         	DEC A
+0143  FD BE 01   	CP (IY+1)
+0146  38 30      	JR C,L0178
+0148  DD 36 04 01	LD (IX+4),01H
+014C  ED 4B 02 10	LD BC,(1002H)
+0150  FD 7E 05   	LD A,(IY+5)
+0153  FD B6 06   	OR (IY+6)
+0156  28 0C      	JR Z,L0164
+0158  78         	LD A,B
+0159  EE 01      	XOR 01H
+015B  47         	LD B,A
+015C  28 06      	JR Z,L0164
+015E  79         	LD A,C
+015F  A7         	AND A
+0160  28 0B      	JR Z,L016D
+0162  18 0D      	JR L0171
+L0164:
+0164  FD 21 92 13	LD IY,1392H
+0168  CD 67 00   	CALL NAECHSTE_SPUR
+016B  38 04      	JR C,L0171
+L016D:
+016D  FD 21 A2 13	LD IY,13A2H
+L0171:
+0171  CD CB 01   	CALL SPURLAENGE
+0174  ED 43 02 10	LD (1002H),BC
+L0178:
+0178  CD D2 01   	CALL REST_DER_SPUR		;Rest der naechsten Spur nach 13B2H lesen
+L017B:
+017B  D1         	POP DE		;128 Byte aus dem Puffer an die Zieladresse kopieren (Schreibbank = 1)
+017C  01 80 00   	LD BC,0080H
+017F  ED B0      	LDIR
+0181  D5         	PUSH DE
+0182  D9         	EXX
+0183  0B         	DEC BC
+0184  78         	LD A,B
+0185  B1         	OR C
+0186  C2 2E 01   	JP NZ,SATZ
+0189  D1         	POP DE
+018A  34         	INC (HL)		;Endmarke FFH -> STARTEN; FEH -> neue Satznummer folgt
+018B  28 0C      	JR Z,STARTEN
+018D  34         	INC (HL)
+018E  C2 24 01   	JP NZ,EINTRAG
+0191  23         	INC HL
+0192  5E         	LD E,(HL)
+0193  23         	INC HL
+0194  56         	LD D,(HL)
+0195  D5         	PUSH DE
+0196  C3 AC 00   	JP LADESCHLEIFE
+STARTEN:
+0199  CD 39 02   	CALL PB_INIT		;STARTEN: Treiber mit Befehl 80H (FDC-Reset, Motoren aus, UESEL = 1)
+019C  2A 1B 10   	LD HL,(101BH)		;Startadresse = Kopfwort bei 1012H+9 (101BH); SCP 3.0: 4000H
+019F  F3         	DI		;DI - das geladene Programm uebernimmt mit gesperrten Interrupts, IM 2, I = 12H, BR = 11H
+01A0  E5         	PUSH HL
+01A1  FD 21 AA 13	LD IY,13AAH		;Uebergabe: IY = 13AAH, DE = (13AAH), BC = (13ACH) [Formatbeschreibung Seite 1?], H = Bootlaufwerk (0..3)
+01A5  ED 4B AC 13	LD BC,(13ACH)
+01A9  ED 5B AA 13	LD DE,(13AAH)
+01AD  3A C5 02   	LD A,(02C5H)
+01B0  67         	LD H,A
+01B1  C9         	RET		;RET = Sprung zur Startadresse
+WARTEN:
+01B2  11 92 B8   	LD DE,B892H		;Warteschleife ~0,28 s
+L01B5:
+01B5  1B         	DEC DE
+01B6  7A         	LD A,D
+01B7  B3         	OR E
+01B8  20 FB      	JR NZ,L01B5
+01BA  C9         	RET
+SEKTORLAENGE:
+01BB  11 80 00   	LD DE,0080H		;DE = Sektorlaenge 128 << N (N = IY+2)
+L01BE:
+01BE  EB         	EX DE,HL
+01BF  FD 7E 02   	LD A,(IY+2)
+01C2  3C         	INC A
+L01C3:
+01C3  3D         	DEC A
+01C4  28 03      	JR Z,L01C9
+01C6  29         	ADD HL,HL
+01C7  18 FA      	JR L01C3
+L01C9:
+01C9  EB         	EX DE,HL
+01CA  C9         	RET
+SPURLAENGE:
+01CB  16 00      	LD D,00H		;DE = Spurlaenge in Byte (IY+1 Sektoren x Sektorlaenge)
+01CD  FD 5E 01   	LD E,(IY+1)
+01D0  18 EC      	JR L01BE
+REST_DER_SPUR:
+01D2  FD 7E 01   	LD A,(IY+1)		;A = Sektoren bis Spurende (IY+1 + 1 - R)
+01D5  3C         	INC A
+01D6  DD 96 04   	SUB (IX+4)
+LESEN_N:
+01D9  DD 77 07   	LD (IX+7),A		;IX+7 := Sektorzahl; Format setzen; Befehl 70H = Lesen
+01DC  CD 14 02   	CALL FMT_UEBERN
+01DF  DD 36 00 70	LD (IX+0),70H
+01E3  CD F7 01   	CALL PUFFERENDE		;passt das in den Puffer 13B2H-3BB2H (10 KB)?
+01E6  38 05      	JR C,L01ED
+01E8  CD 48 02   	CALL TREIBER_RUF
+01EB  28 0A      	JR Z,PUFFERENDE
+L01ED:
+01ED  DD 36 07 01	LD (IX+7),01H		;nein: nur 1 Sektor lesen
+01F1  CD 48 02   	CALL TREIBER_RUF
+01F4  C2 3F 00   	JP NZ,NEUSTART		;Lesefehler -> NEUSTART (naechstes Laufwerk)
+PUFFERENDE:
+01F7  DD 46 07   	LD B,(IX+7)		;(1010H) = 13B2H + Zahl x Laenge - 1 = letztes Pufferbyte; CY = passt nicht
+01FA  CD BB 01   	CALL SEKTORLAENGE
+01FD  21 B2 13   	LD HL,13B2H
+L0200:
+0200  19         	ADD HL,DE
+0201  38 0D      	JR C,L0210
+0203  10 FB      	DJNZ L0200
+0205  2B         	DEC HL
+0206  22 10 10   	LD (1010H),HL
+0209  11 B2 3B   	LD DE,3BB2H
+020C  A7         	AND A
+020D  EB         	EX DE,HL
+020E  ED 52      	SBC HL,DE
+L0210:
+0210  21 B2 13   	LD HL,13B2H
+0213  C9         	RET
+FMT_UEBERN:
+0214  FD 7E 04   	LD A,(IY+4)		;Formatbeschreibung (IY) in den Parameterblock: IX+8 = Flags, IX+6 = GPL (16H MFM / 0BH FM), IX+12 = Laufwerksparameter, IX+5 = N
+0217  32 08 10   	LD (1008H),A
+021A  CB 47      	BIT 0,A
+021C  06 16      	LD B,16H
+021E  20 02      	JR NZ,L0222
+0220  06 0B      	LD B,0BH
+L0222:
+0222  DD 70 06   	LD (IX+6),B
+0225  21 D2 02   	LD HL,LW_PARAM_8		;Flags Bit 1 = 1: 02D2H, sonst 02DDH (Specify-Werte, Bit 1 = 1 heisst 5,25" [?], s. DIP_PRUEFEN)
+0228  CB 4F      	BIT 1,A
+022A  20 03      	JR NZ,L022F
+022C  21 DD 02   	LD HL,LW_PARAM_5
+L022F:
+022F  22 0C 10   	LD (100CH),HL
+0232  FD 7E 02   	LD A,(IY+2)
+0235  DD 77 05   	LD (IX+5),A
+0238  C9         	RET
+PB_INIT:
+0239  21 C4 02   	LD HL,PB_VORLAGE		;Parameterblock 1000H (14 Byte) aus der Vorlage 02C4H
+023C  11 00 10   	LD DE,1000H
+023F  01 0E 00   	LD BC,000EH
+0242  ED B0      	LDIR
+0244  DD 21 00 10	LD IX,1000H
+TREIBER_RUF:
+0248  CD 03 00   	CALL sub_0003		;Treiber rufen, A = Ergebnis (IX+14), Z = gut
+024B  DD 7E 0E   	LD A,(IX+14)
+024E  A7         	AND A
+024F  C9         	RET
+FORMAT_SUCHEN:
+0250  21 9A 02   	LD HL,FMT_TABELLE		;FORMAT_SUCHEN: vier Beschreibungen (Tabelle 029AH) nacheinander mit Read ID (Befehl 71H)
+L0253:
+0253  5E         	LD E,(HL)
+0254  23         	INC HL
+0255  56         	LD D,(HL)
+0256  23         	INC HL
+0257  7B         	LD A,E
+0258  A2         	AND D
+0259  3C         	INC A
+025A  28 3B      	JR Z,L0297
+025C  E5         	PUSH HL
+025D  D5         	PUSH DE
+025E  FD E1      	POP IY
+0260  CD 39 02   	CALL PB_INIT
+0263  CD 14 02   	CALL FMT_UEBERN
+0266  DD 36 00 71	LD (IX+0),71H		;Befehl 71H = Read ID
+026A  CD 48 02   	CALL TREIBER_RUF
+026D  E1         	POP HL
+026E  FE 52      	CP 52H		;Ergebnis 52H (Laufwerk nicht bereit) -> aufgeben (NZ)
+0270  28 25      	JR Z,L0297
+0272  A7         	AND A
+0273  20 DE      	JR NZ,L0253
+0275  3A B5 13   	LD A,(13B5H)		;gut: N aus dem gelesenen ID-Feld (13B5H) uebernehmen - die Sektorlaenge kommt vom Medium, nicht aus der Tabelle
+0278  FD 77 02   	LD (IY+2),A
+027B  FD E5      	PUSH IY
+027D  E1         	POP HL
+027E  E5         	PUSH HL		;Beschreibung zweimal nach 1392H/139AH, 13A2H-13A9H := 0 (einseitig, bis der Kopf etwas anderes sagt)
+027F  11 92 13   	LD DE,1392H
+0282  01 08 00   	LD BC,0008H
+0285  ED B0      	LDIR
+0287  E1         	POP HL
+0288  01 08 00   	LD BC,0008H
+028B  ED B0      	LDIR
+028D  EB         	EX DE,HL
+028E  06 08      	LD B,08H
+L0290:
+0290  36 00      	LD (HL),00H
+0292  23         	INC HL
+0293  10 FB      	DJNZ L0290
+0295  AF         	XOR A
+0296  C9         	RET
+L0297:
+0297  EE FF      	XOR FFH
+0299  C9         	RET
+FMT_TABELLE:
+029A  B4         	DB	B4H		;Zeiger auf 4 Formatbeschreibungen, Ende FFFFH
+029B  02         	DB	02H
+029C  BC         	DB	BCH
+029D  02         	DB	02H
+029E  A4         	DB	A4H
+029F  02         	DB	02H
+02A0  AC         	DB	ACH
+02A1  02         	DB	02H
+02A2  FF         	DB	FFH
+02A3  FF         	DB	FFH
+02A4  4D         	DB	4DH		;Beschreibung (8 Byte): Spuren-1?, Sektoren/Spur, N, GPL, Flags (Bit0 MFM, Bit1 5,25" [?]), Kopf-Flags. 02A4: 77 / 26 x 256 MFM (8")
+02A5  1A         	DB	1AH
+02A6  01         	DB	01H
+02A7  10         	DB	10H
+02A8  01         	DB	01H
+02A9  00         	DB	00H
+02AA  00         	DB	00H
+02AB  00         	DB	00H
+02AC  4D         	DB	4DH		;77 / 26 x 128 FM (8" IBM)
+02AD  1A         	DB	1AH
+02AE  00         	DB	00H
+02AF  0A         	DB	0AH
+02B0  00         	DB	00H
+02B1  00         	DB	00H
+02B2  00         	DB	00H
+02B3  00         	DB	00H
+02B4  28         	DB	28H		;40? / 26 x 128, Flags 03 (MFM, 5,25") [?]
+02B5  1A         	DB	1AH
+02B6  00         	DB	00H
+02B7  1B         	DB	1BH
+02B8  03         	DB	03H
+02B9  00         	DB	00H
+02BA  00         	DB	00H
+02BB  00         	DB	00H
+02BC  28         	DB	28H		;40? / 9 x 256, Flags 02 (FM, 5,25") [?]
+02BD  09         	DB	09H
+02BE  01         	DB	01H
+02BF  0A         	DB	0AH
+02C0  02         	DB	02H
+02C1  00         	DB	00H
+02C2  00         	DB	00H
+02C3  00         	DB	00H
+PB_VORLAGE:
+02C4  80         	DB	80H		;VORLAGE Parameterblock (14 Byte): +0 Befehl 80H, +1 Laufwerk 03H, +2 C, +3 H, +4 R=1, +5 N, +6 GPL 16H, +7 Zahl 1, +8 Flags 03H, +9 ?, +10/11 Puffer 13B2H, +12/13 -> 02D2H, (+14 Ergebnis)
+02C5  03         	DB	03H		;zugleich Bootlaufwerk-Zaehler (wird in NAECHSTES_LW erhoeht)
+02C6  00         	DB	00H
+02C7  00         	DB	00H
+02C8  01         	DB	01H
+02C9  01         	DB	01H
+02CA  16         	DB	16H
+02CB  01         	DB	01H
+02CC  03         	DB	03H
+02CD  01         	DB	01H
+02CE  B2         	DB	B2H
+02CF  13         	DB	13H
+02D0  D2         	DB	D2H
+02D1  02         	DB	02H
+LW_PARAM_8:
+02D2              	DB	'HY',0AH,'((Y'		;Laufwerksparameter (10 Byte, nach 3BE9H): Specify-Grundwerte u. a. [?]
+02D8  00         	DB	00H
+02D9  00         	DB	00H
+02DA  00         	DB	00H
+02DB  00         	DB	00H
+02DC  00         	DB	00H
+LW_PARAM_5:
+02DD  02         	DB	02H
+02DE              	DB	'Y',0AH,'((Y'
+02E3  00         	DB	00H
+02E4  00         	DB	00H
+02E5  00         	DB	00H
+02E6  00         	DB	00H
+02E7  00         	DB	00H
+TREIBER:
+02E8  DD E5      	PUSH IX		;TREIBER: Parameterblock (IX) nach 3BDDH kopieren (12 Byte), Laufwerksparameter (10 Byte) dahinter
+02EA  E1         	POP HL
+02EB  ED 73 F7 3B	LD (3BF7H),SP
+02EF  22 F5 3B   	LD (3BF5H),HL
+02F2  11 DD 3B   	LD DE,3BDDH
+02F5  01 0C 00   	LD BC,000CH
+02F8  ED B0      	LDIR
+02FA  4E         	LD C,(HL)
+02FB  23         	INC HL
+02FC  46         	LD B,(HL)
+02FD  C5         	PUSH BC
+02FE  E1         	POP HL
+02FF  01 0A 00   	LD BC,000AH
+0302  ED B0      	LDIR
+0304  3E 00      	LD A,00H		;Ergebnis 3BF4H := 0
+0306  32 F4 3B   	LD (3BF4H),A
+0309  DD 7E 00   	LD A,(IX+0)		;Befehl 80H: nur Grundzustand (INIT_CMD)
+030C  FE 80      	CP 80H
+030E  CA 47 03   	JP Z,INIT_CMD
+0311  CD 69 03   	CALL DIP_PRUEFEN		;DIP S8 pruefen (8"-Format nur, wenn erlaubt)
+0314  21 06 06   	LD HL,0606H		;3BC6H/3BC7H = 6 Wiederholungen
+0317  22 C6 3B   	LD (3BC6H),HL
+031A  DD 21 DD 3B	LD IX,3BDDH
+031E  AF         	XOR A
+031F  32 4B 07   	LD (ISR_MERKER),A		;ISR-Merker loeschen, Laufwerk einrichten und Befehl ausfuehren (LW_EINRICHTEN)
+0322  CD 79 03   	CALL LW_EINRICHTEN
+0325  18 03      	JR TREIBER_ENDE
+L0327:
+0327  32 F4 3B   	LD (3BF4H),A
+TREIBER_ENDE:
+032A  21 4C 07   	LD HL,KRFD_KOPIE		;Ende: KRFD Bit 4 (UESEL) setzen, Motoren aus (28H <- 0), Ergebnis nach IX+14
+032D  CB E6      	SET 4,(HL)
+032F  7E         	LD A,(HL)
+0330  D3 20      	OUT (20H),A
+0332  AF         	XOR A
+0333  D3 28      	OUT (28H),A
+0335  3A F4 3B   	LD A,(3BF4H)
+0338  DD 2A F5 3B	LD IX,(3BF5H)
+033C  DD 77 0E   	LD (IX+14),A
+033F  ED 7B F7 3B	LD SP,(3BF7H)
+0343  C9         	RET
+FEHLER_ENDE:
+0344  32 F4 3B   	LD (3BF4H),A		;Fehlerende mit Code A
+INIT_CMD:
+0347  CD 4D 03   	CALL FDC_GRUNDZUSTAND		;Befehl 80H
+034A  C3 2A 03   	JP TREIBER_ENDE
+FDC_GRUNDZUSTAND:
+034D  06 04      	LD B,04H		;FDC-Grundzustand: Spurtabelle 3BC2H-3BC5H := FFH (Lage unbekannt), FDC-Reset, DMA-Blindlauf, nochmals FDC-Reset
+034F  21 C2 3B   	LD HL,3BC2H
+L0352:
+0352  36 FF      	LD (HL),FFH
+0354  23         	INC HL
+0355  10 FB      	DJNZ L0352
+0357  CD 5D 03   	CALL FDC_RESET
+035A  CD 6B 05   	CALL DMA_DUMMY
+FDC_RESET:
+035D  3E 30      	LD A,30H		;FDC_RESET: KRFD <- 30H (Bit 6 = 0: RESET), dann 70H (Bit 6 = 1: laeuft)
+035F  D3 20      	OUT (20H),A
+0361  3E 70      	LD A,70H
+KRFD_OUT:
+0363  32 4C 07   	LD (KRFD_KOPIE),A		;KRFD-Kopie 074CH fuehren und nach 20H schreiben
+0366  D3 20      	OUT (20H),A
+0368  C9         	RET
+DIP_PRUEFEN:
+0369  3A E5 3B   	LD A,(3BE5H)		;Flags (3BE5H) >= 2 (Bit 1, 5,25") -> nichts pruefen
+036C  FE 02      	CP 02H
+036E  D0         	RET NC
+036F  DB 34      	IN A,(34H)		;sonst (8"-Format): KON 34H Bit 0 muss 1 sein (DIP S8: 8"-Laufwerke vorhanden [?]), sonst Fehler F1H
+0371  CB 47      	BIT 0,A
+0373  3E F1      	LD A,F1H
+0375  CA 27 03   	JP Z,L0327
+0378  C9         	RET
+LW_EINRICHTEN:
+0379  DD 7E 01   	LD A,(IX+1)		;LW_EINRICHTEN: Laufwerk US = IX+1 AND 3
+037C  E6 03      	AND 03H
+037E  47         	LD B,A
+037F  4F         	LD C,A
+0380  04         	INC B
+0381  3E 88      	LD A,88H		;MOS (28H) <- 88H um US+1 Bit nach links rotiert: LW0 11H, LW1 22H, LW2 44H, LW3 88H (Bit 4+US = Motor; Bl. D A120 D1-D4 = DB4-DB7)
+L0383:
+0383  07         	RLCA
+0384  10 FD      	DJNZ L0383
+0386  D3 28      	OUT (28H),A
+0388  21 C2 3B   	LD HL,3BC2H		;3BC0H = Zeiger auf die Spurlage dieses Laufwerks
+038B  09         	ADD HL,BC
+038C  22 C0 3B   	LD (3BC0H),HL
+038F  DD 7E 03   	LD A,(IX+3)		;HD/US-Byte (H << 2 | US) in alle Befehle: 074FH, 06CDH, 06C4H, 06CAH
+0392  B7         	OR A
+0393  07         	RLCA
+0394  07         	RLCA
+0395  B1         	OR C
+0396  32 4F 07   	LD (074FH),A
+0399  32 CD 06   	LD (06CDH),A
+039C  32 C4 06   	LD (06C4H),A
+039F  32 CA 06   	LD (06CAH),A
+03A2  21 4C 07   	LD HL,KRFD_KOPIE		;KRFD <- E0H | Bit 0: Bit 7 TC-Freigabe, Bit 6 kein RESET, Bit 5, Bit 4 UESEL = 0 (Laufwerkswahl frei [?]); Bit 0 = 1 bei 8" (Flags Bit 1 = 0)
+03A5  36 E0      	LD (HL),E0H
+03A7  3A E5 3B   	LD A,(3BE5H)
+03AA  CB 4F      	BIT 1,A
+03AC  CB C6      	SET 0,(HL)
+03AE  28 02      	JR Z,L03B2
+03B0  CB 86      	RES 0,(HL)
+L03B2:
+03B2  7E         	LD A,(HL)
+03B3  D3 20      	OUT (20H),A
+03B5  AF         	XOR A		;MFM-Bit 40H fuer die Lese-/Read-ID-Befehle (074EH) aus Flags Bit 0
+03B6  DD CB 08 46	BIT 0,(IX+8)
+03BA  28 02      	JR Z,L03BE
+03BC  3E 40      	LD A,40H
+L03BE:
+03BE  32 4E 07   	LD (074EH),A
+03C1  DD 56 0E   	LD D,(IX+14)		;Specify ausrechnen: SRT = 16 - D (3BEBH), HLT, ND = 0 (DMA-Betrieb!); Flags Bit 1 halbiert die Werte (8" [?])
+03C4  0E 01      	LD C,01H
+03C6  DD CB 08 4E	BIT 1,(IX+8)
+03CA  28 0C      	JR Z,L03D8
+03CC  79         	LD A,C
+03CD  B7         	OR A
+03CE  1F         	RRA
+03CF  CE 00      	ADC A,00H
+03D1  4F         	LD C,A
+03D2  7A         	LD A,D
+03D3  B7         	OR A
+03D4  1F         	RRA
+03D5  CE 00      	ADC A,00H
+03D7  57         	LD D,A
+L03D8:
+03D8  79         	LD A,C
+03D9  B7         	OR A
+03DA  17         	RLA
+03DB  32 BE 06   	LD (06BEH),A
+03DE  7A         	LD A,D
+03DF  ED 44      	NEG
+03E1  E6 0F      	AND 0FH
+03E3  07         	RLCA
+03E4  07         	RLCA
+03E5  07         	RLCA
+03E6  07         	RLCA
+03E7  32 BD 06   	LD (06BDH),A
+03EA  CD 83 05   	CALL SPECIFY		;SPECIFY senden, dann bereit/rekalibrieren/suchen
+03ED  CD 2B 06   	CALL BEREIT_UND_SEEK
+03F0  DD 7E 00   	LD A,(IX+0)		;Befehl 71H -> READ_ID_CMD
+03F3  FE 71      	CP 71H
+03F5  CA 0C 06   	JP Z,READ_ID_CMD
+03F8  21 DF 3B   	LD HL,3BDFH		;READ DATA aufbauen: C, H, R, N (3BDFH..) -> 0750H
+03FB  11 50 07   	LD DE,0750H
+03FE  01 04 00   	LD BC,0004H
+0401  ED B0      	LDIR
+0403  3A E1 3B   	LD A,(3BE1H)		;EOT = R + Zahl - 1
+0406  DD 86 07   	ADD A,(IX+7)
+0409  3D         	DEC A
+040A  32 54 07   	LD (0754H),A
+040D  DD 7E 06   	LD A,(IX+6)		;GPL
+0410  32 55 07   	LD (0755H),A
+0413  3E 80      	LD A,80H		;DTL = 80H
+0415  32 56 07   	LD (0756H),A
+0418  06 06      	LD B,06H		;Befehlsbyte = MFM | 06H (READ DATA, MT = 0, SK = 0)
+041A  3E 01      	LD A,01H
+041C  32 9F 06   	LD (069FH),A
+041F  3A 4E 07   	LD A,(074EH)
+0422  E6 E0      	AND E0H
+0424  B0         	OR B
+0425  32 4E 07   	LD (074EH),A
+0428  DD 7E 00   	LD A,(IX+0)		;Befehl 50H (Schreiben): Schreibschutz pruefen (im Urlader nie benutzt)
+042B  E6 70      	AND 70H
+042D  FE 50      	CP 50H
+042F  20 08      	JR NZ,L0439
+0431  CD 8F 05   	CALL SENSE_DRIVE
+0434  CB 77      	BIT 6,A
+0436  C2 77 04   	JP NZ,L0477
+L0439:
+0439  2A E7 3B   	LD HL,(3BE7H)		;DMA-Puffer = IX+10/11 -> 0693H
+043C  22 93 06   	LD (0693H),HL
+043F  DD 46 05   	LD B,(IX+5)		;Laenge = Zahl x (128 << N); Blocklaenge = Laenge - 1 -> 0695H (Z80-DMA uebertraegt Blocklaenge + 1 Byte)
+0442  21 40 00   	LD HL,0040H
+0445  04         	INC B
+L0446:
+0446  29         	ADD HL,HL
+0447  10 FD      	DJNZ L0446
+0449  22 BE 3B   	LD (3BBEH),HL
+044C  EB         	EX DE,HL
+044D  21 00 00   	LD HL,0000H
+0450  DD 46 07   	LD B,(IX+7)
+L0453:
+0453  19         	ADD HL,DE
+0454  10 FD      	DJNZ L0453
+0456  2B         	DEC HL
+0457  22 95 06   	LD (0695H),HL
+045A  CD 7C 04   	CALL DMA_LADEN		;DMA_LADEN, Befehl senden und auf DMA-Interrupt warten, Ergebnis + DMA-Status lesen, auswerten
+045D  CD D0 06   	CALL BEFEHL_UND_WARTEN
+0460  CD F8 04   	CALL ERGEBNIS_UND_DMA
+0463  CD 39 05   	CALL AUSWERTEN
+0466  32 F4 3B   	LD (3BF4H),A		;Ergebnis 0 -> fertig; sonst bis zu 6 x wiederholen (ab LW_EINRICHTEN)
+0469  FE 00      	CP 00H
+046B  C8         	RET Z
+046C  21 C7 3B   	LD HL,3BC7H
+046F  35         	DEC (HL)
+0470  C8         	RET Z
+0471  00         	NOP
+0472  00         	NOP
+0473  00         	NOP
+0474  C3 79 03   	JP LW_EINRICHTEN
+L0477:
+0477  3E 53      	LD A,53H		;Fehler 53H: Schreibschutz
+0479  C3 27 03   	JP L0327
+DMA_LADEN:
+047C  F3         	DI		;DMA_LADEN: Vektor (I*256 + 14H) := DMA_ISR
+047D  ED 57      	LD A,I
+047F  67         	LD H,A
+0480  2E 14      	LD L,14H
+0482  11 E7 06   	LD DE,DMA_ISR
+0485  73         	LD (HL),E
+0486  23         	INC HL
+0487  72         	LD (HL),D
+0488  F3         	DI
+0489  21 4B 07   	LD HL,ISR_MERKER		;ISR-Merker loeschen; 26 Byte DMA-Programm DMA_TAB_LESEN nach Port 00H (OTIR)
+048C  CB 86      	RES 0,(HL)
+048E  06 1A      	LD B,1AH
+0490  21 89 06   	LD HL,DMA_TAB_LESEN
+0493  0E 00      	LD C,00H
+0495  ED B3      	OTIR
+0497  FB         	EI
+0498  3A E1 3B   	LD A,(3BE1H)		;KRFD: Bit 7 := 1 (TC-Freigabe), Bit 5 := 0 wenn R = 1, sonst 1 [? Bedeutung von Bit 5 "FIX"]
+049B  FE 01      	CP 01H
+049D  3A 4C 07   	LD A,(KRFD_KOPIE)
+04A0  CB FF      	SET 7,A
+04A2  CB AF      	RES 5,A
+04A4  28 02      	JR Z,L04A8
+04A6  CB EF      	SET 5,A
+L04A8:
+04A8  CD 63 03   	CALL KRFD_OUT
+04AB  C9         	RET
+ERGEBNIS_LESEN:
+04AC  21 D1 3B   	LD HL,3BD1H		;ERGEBNIS_LESEN: 7 Ergebnisbytes ueber 1CH/1DH nach 3BD1H (RQM Bit 7, DIO Bit 6, CB Bit 4)
+L04AF:
+04AF  3E 07      	LD A,07H
+04B1  32 DB 3B   	LD (3BDBH),A
+04B4  11 00 C0   	LD DE,C000H
+L04B7:
+04B7  DB 1C      	IN A,(1CH)
+04B9  CB 7F      	BIT 7,A
+04BB  CA DB 04   	JP Z,L04DB
+04BE  DB 1C      	IN A,(1CH)
+04C0  CB 77      	BIT 6,A
+04C2  CA DB 04   	JP Z,L04DB
+04C5  DB 1D      	IN A,(1DH)
+04C7  77         	LD (HL),A
+04C8  23         	INC HL
+04C9  3A DB 3B   	LD A,(3BDBH)
+04CC  3D         	DEC A
+04CD  32 DB 3B   	LD (3BDBH),A
+04D0  C8         	RET Z
+04D1  DB 1C      	IN A,(1CH)
+04D3  CB 67      	BIT 4,A
+04D5  3E 00      	LD A,00H
+04D7  C8         	RET Z
+04D8  C3 B7 04   	JP L04B7
+L04DB:
+04DB  1B         	DEC DE
+04DC  7A         	LD A,D
+04DD  B3         	OR E
+04DE  C2 B7 04   	JP NZ,L04B7
+04E1  F6 02      	OR 02H
+04E3  C9         	RET
+FDC_BEREIT:
+04E4  DB 1C      	IN A,(1CH)		;MSR muss RQM+DIO zeigen (Ergebnisphase haengt), sonst Fehler 61H
+04E6  E6 C0      	AND C0H
+04E8  FE C0      	CP C0H
+04EA  3E 61      	LD A,61H
+04EC  C2 44 03   	JP NZ,FEHLER_ENDE
+04EF  CD AC 04   	CALL ERGEBNIS_LESEN
+04F2  00         	NOP
+04F3  00         	NOP
+04F4  00         	NOP
+04F5  F6 01      	OR 01H
+04F7  C9         	RET
+ERGEBNIS_UND_DMA:
+04F8  CD AC 04   	CALL ERGEBNIS_LESEN		;7 Ergebnisbytes (ST0 ST1 ST2 C H R N -> 3BD1H), dann DMA-Status
+04FB  00         	NOP
+04FC  00         	NOP
+04FD  00         	NOP
+04FE  00         	NOP
+04FF  18 26      	JR DMA_STATUS
+ZEITUEBERLAUF:
+0501  3A 4C 07   	LD A,(KRFD_KOPIE)		;Zeitueberlauf ohne DMA-Interrupt: KRFD Bit 5 setzen, auf DIO warten, dann TC-Freigabe weg und Ergebnis holen
+0504  CB EF      	SET 5,A
+0506  CD 63 03   	CALL KRFD_OUT
+0509  11 00 C0   	LD DE,C000H
+L050C:
+050C  1B         	DEC DE
+050D  7A         	LD A,D
+050E  B3         	OR E
+050F  28 0C      	JR Z,L051D
+0511  DB 1C      	IN A,(1CH)
+0513  CB 77      	BIT 6,A
+0515  20 06      	JR NZ,L051D
+0517  CB 46      	BIT 0,(HL)
+0519  28 F1      	JR Z,L050C
+051B  18 DB      	JR ERGEBNIS_UND_DMA
+L051D:
+051D  3A 4C 07   	LD A,(KRFD_KOPIE)
+0520  CB BF      	RES 7,A
+0522  CD 63 03   	CALL KRFD_OUT
+0525  18 D1      	JR ERGEBNIS_UND_DMA
+DMA_STATUS:
+0527  21 CA 3B   	LD HL,3BCAH		;DMA: WR6 BBH (Read Mask folgt), 7FH (alle 7 Register), dann 7 x IN (00H): Status, Bytezaehler, Adresse A, Adresse B -> 3BCAH
+052A  3E BB      	LD A,BBH
+052C  D3 00      	OUT (00H),A
+052E  3E 7F      	LD A,7FH
+0530  D3 00      	OUT (00H),A
+0532  0E 00      	LD C,00H
+0534  06 07      	LD B,07H
+0536  ED B2      	INIR
+0538  C9         	RET
+AUSWERTEN:
+0539  3A CA 3B   	LD A,(3BCAH)		;Auswertung: DMA-Status Bit 1 = 0 (RDY noch aktiv?) -> FDC-Grundzustand; Bit 5 = 0 (Blockende erreicht) -> Ergebnis = ST0 AND C0H
+053C  CB 4F      	BIT 1,A
+053E  28 26      	JR Z,L0566
+0540  CB 6F      	BIT 5,A
+0542  28 1C      	JR Z,sub_0560
+0544  3E 8B      	LD A,8BH		;Blockende nicht erreicht: WR6 8BH (Status neu); ST0 normal und ST1/ST2 = 00H/40H? sonst Fehler 20H
+0546  D3 00      	OUT (00H),A
+L0548:
+0548  CD 60 05   	CALL sub_0560
+054B  3E 20      	LD A,20H
+054D  C0         	RET NZ
+054E  11 00 40   	LD DE,4000H
+0551  2A D2 3B   	LD HL,(3BD2H)
+0554  ED 52      	SBC HL,DE
+0556  C0         	RET NZ
+0557  3E 01      	LD A,01H
+0559  ED 4B CD 3B	LD BC,(3BCDH)
+055D  C3 27 03   	JP L0327
+sub_0560:
+0560  3A D1 3B   	LD A,(3BD1H)
+0563  E6 C0      	AND C0H
+0565  C9         	RET
+L0566:
+0566  CD 4D 03   	CALL FDC_GRUNDZUSTAND
+0569  18 DD      	JR L0548
+DMA_DUMMY:
+056B  21 A4 06   	LD HL,DMA_TAB_DUMMY		;DMA_DUMMY: 22 Byte DMA_TAB_DUMMY nach 00H: 2 Byte aus 06BAH (fest) nach Port 40H, Force Ready (B3H) [Zweck: DACK-Folge im FDC-Grundzustand ?]
+056E  0E 00      	LD C,00H
+0570  06 16      	LD B,16H
+0572  F3         	DI
+0573  ED B3      	OTIR
+0575  FB         	EI
+0576  C9         	RET
+0577  3E         	DB	3EH
+0578  01         	DB	01H
+0579  06         	DB	06H
+057A  AE         	DB	AEH
+057B  B7         	DB	B7H
+057C  05         	DB	05H
+057D  20         	DB	20H
+057E  FC         	DB	FCH
+057F  3D         	DB	3DH
+0580  20         	DB	20H
+0581  F7         	DB	F7H
+0582  C9         	DB	C9H
+SPECIFY:
+0583  21 BB 06   	LD HL,CMD_SPECIFY		;SPECIFY senden, Fehler 62H
+0586  CD 0E 07   	CALL FDC_BEFEHL
+0589  C8         	RET Z
+058A  3E 62      	LD A,62H
+058C  C3 44 03   	JP FEHLER_ENDE
+SENSE_DRIVE:
+058F  21 CB 06   	LD HL,CMD_SENSEDRV		;SENSE DRIVE STATUS, Ergebnis ST3 nach 3BC9H
+0592  CD 0E 07   	CALL FDC_BEFEHL
+0595  3E 00      	LD A,00H
+0597  C0         	RET NZ
+0598  CD AC 04   	CALL ERGEBNIS_LESEN
+059B  3A D1 3B   	LD A,(3BD1H)
+059E  32 C9 3B   	LD (3BC9H),A
+05A1  C9         	RET
+RECAL_UND_SEEK:
+05A2  CD B0 05   	CALL RECALIBRATE		;unbekannte Lage: Recalibrate, Seek auf Spur 10H, nochmals Recalibrate
+05A5  CD 67 06   	CALL WARTE_SEEK_ENDE
+05A8  3E 10      	LD A,10H
+05AA  32 B3 3B   	LD (3BB3H),A
+05AD  CD C7 05   	CALL SEEK
+RECALIBRATE:
+05B0  DD 7E 01   	LD A,(IX+1)		;RECALIBRATE senden; Spurlage := 0
+05B3  32 C1 06   	LD (06C1H),A
+05B6  CD 67 06   	CALL WARTE_SEEK_ENDE
+05B9  21 BF 06   	LD HL,CMD_RECAL
+05BC  CD 0E 07   	CALL FDC_BEFEHL
+05BF  20 13      	JR NZ,L05D4
+05C1  2A C0 3B   	LD HL,(3BC0H)
+05C4  36 00      	LD (HL),00H
+05C6  C9         	RET
+SEEK:
+05C7  3A B3 3B   	LD A,(3BB3H)		;SEEK auf (3BB3H) senden, Fehler 63H
+05CA  32 C5 06   	LD (06C5H),A
+05CD  21 C2 06   	LD HL,CMD_SEEK
+05D0  CD 0E 07   	CALL FDC_BEFEHL
+05D3  C8         	RET Z
+L05D4:
+05D4  3E 63      	LD A,63H
+05D6  C3 44 03   	JP FEHLER_ENDE
+READ_ID:
+05D9  21 B4 3B   	LD HL,3BB4H		;READ ID (MFM-Bit aus Flags), 7 Ergebnisbytes nach 3BB4H
+05DC  06 07      	LD B,07H
+L05DE:
+05DE  36 EE      	LD (HL),EEH
+05E0  23         	INC HL
+05E1  10 FB      	DJNZ L05DE
+05E3  21 C9 06   	LD HL,06C9H
+05E6  CB B6      	RES 6,(HL)
+05E8  DD CB 08 46	BIT 0,(IX+8)
+05EC  28 02      	JR Z,L05F0
+05EE  CB F6      	SET 6,(HL)
+L05F0:
+05F0  2B         	DEC HL
+05F1  CD 0E 07   	CALL FDC_BEFEHL
+05F4  21 B4 3B   	LD HL,3BB4H
+05F7  C3 AF 04   	JP L04AF
+SENSE_INT:
+05FA  21 C6 06   	LD HL,CMD_SENSEINT		;SENSE INTERRUPT STATUS, ST0/PCN nach 3BF9H
+05FD  CD 0E 07   	CALL FDC_BEFEHL
+0600  C0         	RET NZ
+0601  CD AC 04   	CALL ERGEBNIS_LESEN
+0604  AF         	XOR A
+0605  2A D1 3B   	LD HL,(3BD1H)
+0608  22 F9 3B   	LD (3BF9H),HL
+060B  C9         	RET
+READ_ID_CMD:
+060C  CD D9 05   	CALL READ_ID		;Befehl 71H: READ ID; C,H,R,N in den Puffer (IX+10/11); ST0 abnormal -> Fehler F2H
+060F  21 B7 3B   	LD HL,3BB7H
+0612  DD 56 0B   	LD D,(IX+11)
+0615  DD 5E 0A   	LD E,(IX+10)
+0618  01 04 00   	LD BC,0004H
+061B  ED B0      	LDIR
+061D  21 B4 3B   	LD HL,3BB4H
+0620  7E         	LD A,(HL)
+0621  E6 C0      	AND C0H
+0623  CA 2A 03   	JP Z,TREIBER_ENDE
+0626  3E F2      	LD A,F2H
+0628  C3 27 03   	JP L0327
+BEREIT_UND_SEEK:
+062B  21 00 14   	LD HL,1400H		;bis 1400H x SENSE DRIVE STATUS, bis ST3 Bit 5 (READY); sonst Fehler 52H
+L062E:
+062E  E5         	PUSH HL
+062F  CD 8F 05   	CALL SENSE_DRIVE
+0632  E1         	POP HL
+0633  CB 6F      	BIT 5,A
+0635  20 0A      	JR NZ,L0641
+0637  2B         	DEC HL
+0638  7C         	LD A,H
+0639  B5         	OR L
+063A  20 F2      	JR NZ,L062E
+063C  3E 52      	LD A,52H
+063E  C3 5F 06   	JP L065F
+L0641:
+0641  DD 7E 00   	LD A,(IX+0)		;Befehl 73H: kein Seek [?]
+0644  FE 73      	CP 73H
+0646  C8         	RET Z
+0647  2A C0 3B   	LD HL,(3BC0H)		;Spurlage FFH -> erst rekalibrieren
+064A  7E         	LD A,(HL)
+064B  FE FF      	CP FFH
+064D  CC A2 05   	CALL Z,RECAL_UND_SEEK
+0650  DD 7E 02   	LD A,(IX+2)		;SEEK auf IX+2, warten
+0653  32 B3 3B   	LD (3BB3H),A
+0656  CD 67 06   	CALL WARTE_SEEK_ENDE
+0659  CD C7 05   	CALL SEEK
+065C  C3 67 06   	JP WARTE_SEEK_ENDE
+L065F:
+065F  2A C0 3B   	LD HL,(3BC0H)
+0662  36 FF      	LD (HL),FFH
+0664  C3 44 03   	JP FEHLER_ENDE
+WARTE_SEEK_ENDE:
+0667  F5         	PUSH AF		;warten, bis MSR Bit 0-4 = 0 (kein Laufwerk sucht, FDC frei); dabei SENSE INTERRUPT STATUS; Zeitueberlauf -> 64H
+0668  E5         	PUSH HL
+0669  21 00 C0   	LD HL,C000H
+L066C:
+066C  2B         	DEC HL
+066D  7D         	LD A,L
+066E  B4         	OR H
+066F  3E 64      	LD A,64H
+0671  CA 44 03   	JP Z,FEHLER_ENDE
+0674  DB 1C      	IN A,(1CH)
+0676  E6 1F      	AND 1FH
+0678  28 0C      	JR Z,L0686
+067A  E5         	PUSH HL
+067B  CD FA 05   	CALL SENSE_INT
+067E  3E 64      	LD A,64H
+0680  C2 44 03   	JP NZ,FEHLER_ENDE
+0683  E1         	POP HL
+0684  18 E6      	JR L066C
+L0686:
+0686  E1         	POP HL
+0687  F1         	POP AF
+0688  C9         	RET
+DMA_TAB_LESEN:
+0689  C3         	DB	C3H		;DMA-Programm LESEN (26 Byte): 6 x C3H Reset, C7H/CBH Port-A/B-Timing reset, 83H Disable
+068A  C3         	DB	C3H
+068B  C3         	DB	C3H
+068C  C3         	DB	C3H
+068D  C3         	DB	C3H
+068E  C3         	DB	C3H
+068F  C7         	DB	C7H
+0690  CB         	DB	CBH
+0691  83         	DB	83H
+0692  7D         	DB	7DH		;WR0 7DH: A->B, Adresse A + Blocklaenge folgen: 0693H/0694H Adresse A (Puffer), 0695H/0696H Laenge - 1
+0693  00         	DB	00H
+0694  00         	DB	00H
+0695  00         	DB	00H
+0696  00         	DB	00H
+0697  14         	DB	14H		;WR1 14H: Port A = Speicher, Adresse +1
+0698  28         	DB	28H		;WR2 28H: Port B = E/A, Adresse fest
+0699  95         	DB	95H		;WR4 95H: Byte-Betrieb, Port-B-Adresse 41H (FDC-Daten ueber DACK), Interrupt-Steuerbyte 12H (Interrupt bei Blockende, Vektor folgt), Vektor 14H
+069A  41         	DB	41H
+069B  12         	DB	12H
+069C  14         	DB	14H
+069D  82         	DB	82H		;WR5 82H: /RDY low-aktiv (RDY = /FDDRQ), Stopp bei Blockende
+069E  CF         	DB	CFH		;CFH LOAD, dann WR0 01H (Richtung B->A: FDC -> Speicher), CFH LOAD nochmals
+069F  01         	DB	01H
+06A0  CF         	DB	CFH
+06A1  AB         	DB	ABH		;ABH Enable Interrupts, 87H Enable DMA
+06A2  87         	DB	87H
+06A3  87         	DB	87H
+DMA_TAB_DUMMY:
+06A4  C3         	DB	C3H		;DMA-Programm BLINDLAUF (22 Byte): 6 x Reset, WR0 7DH Adresse 06BAH Laenge 0001H, WR1 24H (Speicher fest), WR2 28H, WR3 80H, WR4 85H Port B 40H, WR5 82H, LOAD, B3H Force Ready, 87H Enable
+06A5  C3         	DB	C3H
+06A6  C3         	DB	C3H
+06A7  C3         	DB	C3H
+06A8  C3         	DB	C3H
+06A9  C3         	DB	C3H
+06AA  7D         	DB	7DH
+06AB  BA         	DB	BAH
+06AC  06         	DB	06H
+06AD  01         	DB	01H
+06AE  00         	DB	00H
+06AF  24         	DB	24H
+06B0  28         	DB	28H
+06B1  80         	DB	80H
+06B2  85         	DB	85H
+06B3  40         	DB	40H
+06B4  82         	DB	82H
+06B5  CF         	DB	CFH
+06B6  01         	DB	01H
+06B7  CF         	DB	CFH
+06B8  B3         	DB	B3H
+06B9  87         	DB	87H
+06BA  00         	DB	00H
+CMD_SPECIFY:
+06BB  03         	DB	03H		;FDC-Befehle (Laenge, Bytes): SPECIFY 03 xx xx
+06BC  03         	DB	03H
+06BD  00         	DB	00H
+06BE  00         	DB	00H
+CMD_RECAL:
+06BF  02         	DB	02H		;RECALIBRATE 07 US
+06C0  07         	DB	07H
+06C1  00         	DB	00H
+CMD_SEEK:
+06C2  03         	DB	03H		;SEEK 0F US NCN
+06C3  0F         	DB	0FH
+06C4  00         	DB	00H
+06C5  00         	DB	00H
+CMD_SENSEINT:
+06C6  01         	DB	01H		;SENSE INTERRUPT STATUS 08
+06C7  08         	DB	08H
+CMD_READID:
+06C8  02         	DB	02H		;READ ID 0A(|40H) US
+06C9  0A         	DB	0AH
+06CA  00         	DB	00H
+CMD_SENSEDRV:
+06CB  02         	DB	02H		;SENSE DRIVE STATUS 04 US
+06CC  04         	DB	04H
+06CD  00         	DB	00H
+06CE  00         	DB	00H
+06CF  FF         	DB	FFH
+BEFEHL_UND_WARTEN:
+06D0  21 4D 07   	LD HL,CMD_RW		;READ DATA (074DH, 9 Byte) senden, dann bis C000H x auf den DMA-Interrupt (ISR-Merker Bit 0) warten
+06D3  CD 0E 07   	CALL FDC_BEFEHL
+06D6  11 00 C0   	LD DE,C000H
+06D9  21 4B 07   	LD HL,ISR_MERKER
+L06DC:
+06DC  1B         	DEC DE
+06DD  7A         	LD A,D
+06DE  B3         	OR E
+06DF  CA 01 05   	JP Z,ZEITUEBERLAUF
+06E2  CB 46      	BIT 0,(HL)
+06E4  28 F6      	JR Z,L06DC
+06E6  C9         	RET
+DMA_ISR:
+06E7  ED 73 57 07	LD (0757H),SP		;DMA_ISR (Vektor 14H): eigener Stapel 0763H
+06EB  31 63 07   	LD SP,0763H
+06EE  F5         	PUSH AF
+06EF  E5         	PUSH HL
+06F0  3A 4C 07   	LD A,(KRFD_KOPIE)		;KRFD: Bit 7 (TC-Freigabe) := 0, Bit 5 := 1
+06F3  CB BF      	RES 7,A
+06F5  CB EF      	SET 5,A
+06F7  32 4C 07   	LD (KRFD_KOPIE),A
+06FA  D3 20      	OUT (20H),A
+06FC  21 4B 07   	LD HL,ISR_MERKER		;ISR-Merker Bit 0 := 1
+06FF  CB C6      	SET 0,(HL)
+0701  E1         	POP HL
+0702  3E A3      	LD A,A3H		;DMA WR6 A3H: Reset and disable interrupts
+0704  D3 00      	OUT (00H),A
+0706  F1         	POP AF
+0707  FB         	EI
+0708  ED 7B 57 07	LD SP,(0757H)
+070C  ED 4D      	RETI
+FDC_BEFEHL:
+070E  E5         	PUSH HL		;FDC_BEFEHL: Befehlsbytes (HL: Laenge, Bytes) an 1DH, je Byte auf MSR RQM (Bit 7) warten; steht DIO (Bit 6) schon, erst das alte Ergebnis abholen
+070F  21 4B 07   	LD HL,ISR_MERKER
+0712  CB 86      	RES 0,(HL)
+0714  E1         	POP HL
+0715  0E 1D      	LD C,1DH
+0717  46         	LD B,(HL)
+0718  23         	INC HL
+0719  11 00 00   	LD DE,0000H
+071C  DB 1C      	IN A,(1CH)
+071E  CB 77      	BIT 6,A
+0720  20 19      	JR NZ,L073B
+L0722:
+0722  DB 1C      	IN A,(1CH)
+0724  CB 7F      	BIT 7,A
+0726  28 03      	JR Z,L072B
+0728  ED A3      	OUTI
+072A  C8         	RET Z
+L072B:
+072B  78         	LD A,B
+072C  06 03      	LD B,03H
+L072E:
+072E  10 FE      	DJNZ L072E
+0730  47         	LD B,A
+0731  1B         	DEC DE
+0732  7A         	LD A,D
+0733  B3         	OR E
+0734  00         	NOP
+0735  20 EB      	JR NZ,L0722
+0737  00         	NOP
+0738  F6 01      	OR 01H
+073A  C9         	RET
+L073B:
+073B  E5         	PUSH HL
+073C  D5         	PUSH DE
+073D  C5         	PUSH BC
+073E  CD E4 04   	CALL FDC_BEREIT
+0741  C1         	POP BC
+0742  D1         	POP DE
+0743  E1         	POP HL
+0744  DB 1C      	IN A,(1CH)
+0746  CB 77      	BIT 6,A
+0748  C0         	RET NZ
+0749  18 D7      	JR L0722
+ISR_MERKER:
+074B  00         	DB	00H		;ISR-Merker (Bit 0 = DMA fertig)
+KRFD_KOPIE:
+074C  00         	DB	00H		;Kopie KRFD (20H)
+CMD_RW:
+074D  09         	DB	09H		;READ-DATA-Befehl: Laenge 09, Befehl, HD/US, C, H, R, N, EOT, GPL, DTL
+074E  00         	DB	00H
+074F  00         	DB	00H
+0750  00         	DB	00H
+0751  00         	DB	00H
+0752  00         	DB	00H
+0753  00         	DB	00H
+0754  00         	DB	00H
+0755  00         	DB	00H
+0756  00         	DB	00H
+0757  00         	DB	00H		;Arbeitszellen der DMA_ISR (SP-Sicherung, Stapel bis 0763H)
+0758  00         	DB	00H
+0759  00         	DB	00H
+075A  00         	DB	00H
+075B  00         	DB	00H
+075C  00         	DB	00H
+075D  00         	DB	00H
+075E  00         	DB	00H
+075F  00         	DB	00H
+0760  00         	DB	00H
+0761  00         	DB	00H
+0762  00         	DB	00H
+0763  00         	DB	00H
+0764  00         	DB	00H
+0765  00         	DB	00H
+0766  00         	DB	00H
+0767  00         	DB	00H
+0768  00         	DB	00H
+0769  00         	DB	00H
+076A  00         	DB	00H
+076B  00         	DB	00H
+076C  00         	DB	00H
+076D  00         	DB	00H
+076E  00         	DB	00H
+076F  00         	DB	00H
+0770  00         	DB	00H
+0771  00         	DB	00H
+0772  00         	DB	00H
+0773  00         	DB	00H
+0774  00         	DB	00H
+0775  00         	DB	00H
+0776  00         	DB	00H
+0777  00         	DB	00H
+0778  00         	DB	00H
+0779  00         	DB	00H
+077A  00         	DB	00H
+077B  00         	DB	00H
+077C  00         	DB	00H
+077D  00         	DB	00H
+077E  00         	DB	00H
+077F  00         	DB	00H
+0780  00         	DB	00H
+0781  00         	DB	00H
+0782  00         	DB	00H
+0783  00         	DB	00H
+0784  00         	DB	00H
+0785  00         	DB	00H
+0786  00         	DB	00H
+0787  00         	DB	00H
+0788  00         	DB	00H
+0789  00         	DB	00H
+078A  00         	DB	00H
+078B  00         	DB	00H
+078C  00         	DB	00H
+078D  00         	DB	00H
+078E  00         	DB	00H
+078F  00         	DB	00H
+0790  00         	DB	00H
+0791  00         	DB	00H
+0792  00         	DB	00H
+0793  00         	DB	00H
+0794  00         	DB	00H
+0795  00         	DB	00H
+0796  00         	DB	00H
+0797  00         	DB	00H
+0798  00         	DB	00H
+0799  00         	DB	00H
+079A  00         	DB	00H
+079B  00         	DB	00H
+079C  00         	DB	00H
+079D  00         	DB	00H
+079E  00         	DB	00H
+079F  00         	DB	00H
+07A0  00         	DB	00H
+07A1  00         	DB	00H
+07A2  00         	DB	00H
+07A3  00         	DB	00H
+07A4  00         	DB	00H
+07A5  00         	DB	00H
+07A6  00         	DB	00H
+07A7  00         	DB	00H
+07A8  00         	DB	00H
+07A9  00         	DB	00H
+07AA  00         	DB	00H
+07AB  00         	DB	00H
+07AC  00         	DB	00H
+07AD  00         	DB	00H
+07AE  00         	DB	00H
+07AF  00         	DB	00H
+07B0  00         	DB	00H
+07B1  00         	DB	00H
+07B2  00         	DB	00H
+07B3  00         	DB	00H
+07B4  00         	DB	00H
+07B5  00         	DB	00H
+07B6  00         	DB	00H
+07B7  00         	DB	00H
+07B8  00         	DB	00H
+07B9  00         	DB	00H
+07BA  00         	DB	00H
+07BB  00         	DB	00H
+07BC  00         	DB	00H
+07BD  00         	DB	00H
+07BE  00         	DB	00H
+07BF  00         	DB	00H
+07C0  00         	DB	00H
+07C1  00         	DB	00H
+07C2  00         	DB	00H
+07C3  00         	DB	00H
+07C4  00         	DB	00H
+07C5  00         	DB	00H
+07C6  00         	DB	00H
+07C7  00         	DB	00H
+07C8  00         	DB	00H
+07C9  00         	DB	00H
+07CA  00         	DB	00H
+07CB  00         	DB	00H
+07CC  00         	DB	00H
+07CD  00         	DB	00H
+07CE  00         	DB	00H
+07CF  00         	DB	00H
+07D0  00         	DB	00H
+07D1  00         	DB	00H
+07D2  00         	DB	00H
+07D3  00         	DB	00H
+07D4  00         	DB	00H
+07D5  00         	DB	00H
+07D6  00         	DB	00H
+07D7  00         	DB	00H
+07D8  00         	DB	00H
+07D9  00         	DB	00H
+07DA  00         	DB	00H
+07DB  00         	DB	00H
+07DC  00         	DB	00H
+07DD  00         	DB	00H
+07DE  00         	DB	00H
+07DF  00         	DB	00H
+07E0  00         	DB	00H
+07E1  00         	DB	00H
+07E2  00         	DB	00H
+07E3  00         	DB	00H
+07E4  00         	DB	00H
+07E5  00         	DB	00H
+07E6  00         	DB	00H
+07E7  00         	DB	00H
+07E8  00         	DB	00H
+07E9  00         	DB	00H
+07EA  00         	DB	00H
+07EB  00         	DB	00H
+07EC  00         	DB	00H
+07ED  00         	DB	00H
+07EE  00         	DB	00H
+07EF  00         	DB	00H
+07F0  00         	DB	00H
+07F1  00         	DB	00H
+07F2  00         	DB	00H
+07F3  00         	DB	00H
+07F4  00         	DB	00H
+07F5  00         	DB	00H
+07F6  00         	DB	00H
+07F7  00         	DB	00H
+07F8  00         	DB	00H
+07F9  00         	DB	00H
+07FA  00         	DB	00H
+07FB  00         	DB	00H
+07FC  00         	DB	00H
+07FD  00         	DB	00H
+07FE  00         	DB	00H
+07FF  00         	DB	00H
+
+	END
