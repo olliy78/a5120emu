@@ -8,6 +8,7 @@
 #include "core/logger.h"
 #include "core/serial/hub.h"
 #include "core/serial/net/adresse.h"
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -705,6 +706,115 @@ bool k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite) {
 int k1520_prg710_freigabe(K1520Handle h) {
     auto* p = prgOf(h);
     return p ? p->speicher().freigabe() : -1;
+}
+
+// ─── EPROMmer (AP-P7b) ───────────────────────────────────────────────────────
+namespace {
+thread_local std::string eprom_fehler;
+Eprommer590068* epromOf(K1520Handle h) {
+    auto* p = prgOf(h);
+    return p ? &p->eprommer() : nullptr;
+}
+Eprommer590068::Typ epromTyp(int t) {
+    return t == 1 ? Eprommer590068::Typ::U555 : t == 2 ? Eprommer590068::Typ::U2716
+                                                     : Eprommer590068::Typ::Keiner;
+}
+}  // namespace
+
+bool k1520_eprom_insert(K1520Handle h, const char* path, int type) {
+    auto* e = epromOf(h);
+    eprom_fehler.clear();
+    if (!e) { eprom_fehler = "kein EPROMmer"; return false; }
+    if (!path) { eprom_fehler = "kein Pfad"; return false; }
+    return e->einlegenDatei(path, epromTyp(type), &eprom_fehler);
+}
+
+bool k1520_eprom_insert_data(K1520Handle h, const uint8_t* data, int len, int type,
+                             const char* path, bool modified) {
+    auto* e = epromOf(h);
+    eprom_fehler.clear();
+    if (!e || len < 0 || (len > 0 && !data)) { eprom_fehler = "kein EPROMmer"; return false; }
+    if (!e->einlegen(std::vector<uint8_t>(data, data + len), epromTyp(type), path ? path : "",
+                     &eprom_fehler))
+        return false;
+    if (modified) e->markiereGeaendert();
+    return true;
+}
+
+bool k1520_eprom_insert_blank(K1520Handle h, int type) {
+    auto* e = epromOf(h);
+    if (!e || (type != 1 && type != 2)) return false;
+    e->einlegenLeer(epromTyp(type));
+    return true;
+}
+
+bool k1520_eprom_remove(K1520Handle h) {
+    auto* e = epromOf(h);
+    if (!e) return false;
+    e->entnehmen();
+    return true;
+}
+
+bool k1520_eprom_save(K1520Handle h, const char* path) {
+    auto* e = epromOf(h);
+    eprom_fehler.clear();
+    if (!e) { eprom_fehler = "kein EPROMmer"; return false; }
+    return e->speichern(path ? path : "", &eprom_fehler);
+}
+
+bool k1520_eprom_erase(K1520Handle h) {
+    auto* e = epromOf(h);
+    if (!e || !e->steckt()) return false;
+    e->uvLoeschen();
+    return true;
+}
+
+int k1520_eprom_type(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e ? int(e->typ()) : -1;
+}
+
+int k1520_eprom_selected_type(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e ? int(e->eingestellterTyp()) : -1;
+}
+
+int k1520_eprom_control(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e ? int(e->steuerregister()) : -1;
+}
+
+int k1520_eprom_read(K1520Handle h, uint8_t* buf, int len) {
+    auto* e = epromOf(h);
+    if (!e) return -1;
+    const auto d = e->inhalt();
+    if (buf && len > 0) std::memcpy(buf, d.data(), std::min<size_t>(d.size(), size_t(len)));
+    return int(d.size());
+}
+
+bool k1520_eprom_modified(K1520Handle h) {
+    auto* e = epromOf(h);
+    return e && e->geaendert();
+}
+
+const char* k1520_eprom_path(K1520Handle h) {
+    static thread_local std::string buf;
+    auto* e = epromOf(h);
+    buf = e ? e->datei() : std::string();
+    return buf.c_str();
+}
+
+const char* k1520_eprom_log(K1520Handle h, bool only_new) {
+    static thread_local std::string buf;
+    buf.clear();
+    auto* e = epromOf(h);
+    if (!e) return buf.c_str();
+    for (const auto& z : only_new ? e->protokollNeu() : e->protokoll()) buf += z + "\n";
+    return buf.c_str();
+}
+
+const char* k1520_eprom_error(K1520Handle) {
+    return eprom_fehler.c_str();
 }
 
 } // extern "C"

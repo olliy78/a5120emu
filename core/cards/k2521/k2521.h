@@ -32,8 +32,9 @@
  * **PIO-Adressierung [?]:** die Kartenbeschreibung nennt „A = 84H, B = 85H, Steuer
  * 86H/87H" (B/A = AB0, C/D = AB1).  Der Baustein @ref Z80PIO ist wie am K2526 mit
  * 0 = A-Daten, 1 = A-Steuer, 2 = B-Daten, 3 = B-Steuer nummeriert; die Karte
- * übersetzt die Busadresse entsprechend (Config::pio_ab_an_a0).  Das ROM des PRG
- * spricht die PIO nicht an, der Befund ist also noch durch keinen Lauf belegt.
+ * übersetzt die Busadresse entsprechend (Config::pio_ab_an_a0).  Das ROM spricht die
+ * PIO nicht an; **belegt durch `PROG`** (EPROMmer, AP-P7a): Steuerwort `FFH, 00H` an
+ * 86H, danach `IN/OUT (84H)` Bit 0 = PROM-Typ (doc/prg710/eprommer.md §1).
  */
 
 #pragma once
@@ -64,7 +65,7 @@ public:
         bool kaskade_to1_clk2 = false;      ///< X10–X11: ZC/TO1 → CLK/TRG2
         bool kaskade_to2_clk3 = true;       ///< X10–X11: ZC/TO2 → CLK/TRG3 (PRG: gesteckt [ROM])
         IeiQuelle iei_quelle  = IeiQuelle::HoechstePrioritaet;
-        bool pio_ab_an_a0     = true;       ///< PIO: B/A = AB0, C/D = AB1 (s. Kopf) [?]
+        bool pio_ab_an_a0     = true;       ///< PIO: B/A = AB0, C/D = AB1 (s. Kopf; belegt durch PROG)
 
         /// ROM PRG 710 (1 KB, 0000–03FF), Kaskade TO2→CLK3, IEI höchste Priorität.
         static Config prg710();

@@ -396,6 +396,38 @@ _lib.k1520_prg710_page.restype = ctypes.c_bool
 _lib.k1520_prg710_freigabe.argtypes = [K1520Handle]
 _lib.k1520_prg710_freigabe.restype = ctypes.c_int
 
+# EPROMmer des PRG (ATP 590068, virtueller Sockel; doc/prg710/eprommer.md, AP-P7b)
+_lib.k1520_eprom_insert.argtypes = [K1520Handle, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_eprom_insert.restype = ctypes.c_bool
+_lib.k1520_eprom_insert_data.argtypes = [K1520Handle, ctypes.POINTER(ctypes.c_uint8),
+                                         ctypes.c_int, ctypes.c_int, ctypes.c_char_p,
+                                         ctypes.c_bool]
+_lib.k1520_eprom_insert_data.restype = ctypes.c_bool
+_lib.k1520_eprom_insert_blank.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_eprom_insert_blank.restype = ctypes.c_bool
+_lib.k1520_eprom_remove.argtypes = [K1520Handle]
+_lib.k1520_eprom_remove.restype = ctypes.c_bool
+_lib.k1520_eprom_save.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_eprom_save.restype = ctypes.c_bool
+_lib.k1520_eprom_erase.argtypes = [K1520Handle]
+_lib.k1520_eprom_erase.restype = ctypes.c_bool
+_lib.k1520_eprom_type.argtypes = [K1520Handle]
+_lib.k1520_eprom_type.restype = ctypes.c_int
+_lib.k1520_eprom_selected_type.argtypes = [K1520Handle]
+_lib.k1520_eprom_selected_type.restype = ctypes.c_int
+_lib.k1520_eprom_control.argtypes = [K1520Handle]
+_lib.k1520_eprom_control.restype = ctypes.c_int
+_lib.k1520_eprom_read.argtypes = [K1520Handle, ctypes.POINTER(ctypes.c_uint8), ctypes.c_int]
+_lib.k1520_eprom_read.restype = ctypes.c_int
+_lib.k1520_eprom_modified.argtypes = [K1520Handle]
+_lib.k1520_eprom_modified.restype = ctypes.c_bool
+_lib.k1520_eprom_path.argtypes = [K1520Handle]
+_lib.k1520_eprom_path.restype = ctypes.c_char_p
+_lib.k1520_eprom_log.argtypes = [K1520Handle, ctypes.c_bool]
+_lib.k1520_eprom_log.restype = ctypes.c_char_p
+_lib.k1520_eprom_error.argtypes = [K1520Handle]
+_lib.k1520_eprom_error.restype = ctypes.c_char_p
+
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
@@ -730,6 +762,88 @@ class K1520Emulator:
         """PRG: Freigaberegister EBH (0 = Abbildung aus); sonst ``None``."""
         v = int(_lib.k1520_prg710_freigabe(self._handle))
         return v if v >= 0 else None
+
+    # ─── EPROMmer des PRG (virtueller Sockel, AP-P7b) ─────────────────────────
+    #: Typnamen des Sockels (0 = leer); Schlüssel wie k1520_eprom_type.
+    EPROM_TYPEN = {0: "", 1: "U555", 2: "U2716"}
+    #: Größe je Typ in Byte.
+    EPROM_GROESSE = {1: 1024, 2: 2048}
+
+    def has_eprommer(self) -> bool:
+        """True, wenn die Maschine einen EPROMmer hat (PRG 710 / 710-1)."""
+        return int(_lib.k1520_eprom_type(self._handle)) >= 0
+
+    def eprom_insert(self, path: str, typ: int = 0) -> None:
+        """Rohes ``.bin`` einlegen (``typ`` 0 = aus der Größe, 1 = U555, 2 = U2716).
+
+        Raises:
+            OSError: mit dem Fehlertext des Kerns.
+        """
+        if not _lib.k1520_eprom_insert(self._handle, os.fsencode(path), int(typ)):
+            raise OSError((_lib.k1520_eprom_error(self._handle) or b"").decode("utf-8", "replace"))
+
+    def eprom_insert_data(self, daten: bytes, typ: int, path: str = "",
+                          modified: bool = False) -> None:
+        """PROM aus dem Speicher einlegen (Sockel auf eine neue Maschine tragen).
+
+        Raises:
+            OSError: mit dem Fehlertext des Kerns.
+        """
+        buf = (ctypes.c_uint8 * max(len(daten), 1)).from_buffer_copy(bytes(daten) or b"\0")
+        if not _lib.k1520_eprom_insert_data(self._handle, buf, len(daten), int(typ),
+                                            os.fsencode(path) if path else None,
+                                            bool(modified)):
+            raise OSError((_lib.k1520_eprom_error(self._handle) or b"").decode("utf-8", "replace"))
+
+    def eprom_insert_blank(self, typ: int) -> bool:
+        """Leeres (gelöschtes) PROM einlegen: 1 = U555, 2 = U2716."""
+        return bool(_lib.k1520_eprom_insert_blank(self._handle, int(typ)))
+
+    def eprom_remove(self) -> bool:
+        return bool(_lib.k1520_eprom_remove(self._handle))
+
+    def eprom_save(self, path: Optional[str] = None) -> None:
+        """Inhalt als ``.bin`` schreiben (``None`` = an die gebundene Datei).
+
+        Raises:
+            OSError: mit dem Fehlertext des Kerns.
+        """
+        p = os.fsencode(path) if path else None
+        if not _lib.k1520_eprom_save(self._handle, p):
+            raise OSError((_lib.k1520_eprom_error(self._handle) or b"").decode("utf-8", "replace"))
+
+    def eprom_erase(self) -> bool:
+        """UV-Löschen: alles FFH."""
+        return bool(_lib.k1520_eprom_erase(self._handle))
+
+    def eprom_type(self) -> int:
+        """Gesteckter Typ: 0 = leer, 1 = U555, 2 = U2716, -1 = kein EPROMmer."""
+        return int(_lib.k1520_eprom_type(self._handle))
+
+    def eprom_selected_type(self) -> int:
+        """Eingestellter Typ (ZRE-PIO 84H Bit 0): 1 = U555, 2 = U2716, -1."""
+        return int(_lib.k1520_eprom_selected_type(self._handle))
+
+    def eprom_control(self) -> int:
+        """Steuerregister D4H (Bit 0+1 Programmierspannung, 2 Impuls, 3/4 Versorgung)."""
+        return int(_lib.k1520_eprom_control(self._handle))
+
+    def eprom_read(self) -> bytes:
+        """Inhalt des gesteckten PROM (leer: ``b""``)."""
+        buf = (ctypes.c_uint8 * 2048)()
+        n = int(_lib.k1520_eprom_read(self._handle, buf, 2048))
+        return bytes(buf[:max(n, 0)])
+
+    def eprom_modified(self) -> bool:
+        return bool(_lib.k1520_eprom_modified(self._handle))
+
+    def eprom_path(self) -> str:
+        return (_lib.k1520_eprom_path(self._handle) or b"").decode("utf-8", "replace")
+
+    def eprom_log(self, only_new: bool = False) -> list:
+        """Protokollzeilen; ``only_new`` = nur seit dem letzten solchen Aufruf."""
+        s = (_lib.k1520_eprom_log(self._handle, bool(only_new)) or b"").decode("utf-8", "replace")
+        return [z for z in s.split("\n") if z]
 
     def machine_type(self) -> int:
         """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915)."""

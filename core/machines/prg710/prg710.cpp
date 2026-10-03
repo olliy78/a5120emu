@@ -39,9 +39,16 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // (kein C8H/C9H, §3.9, resident.md §6).  Ohne Tastatur bleibt der Anschluss leer
     // (710: der 8279 fehlt → ROM liest FFH; 710-1: Kabel gezogen).
     if (variante_ == Config::Variante::Prg710) {
-        if (cfg.tastatur) { atp_.attachToBus(bus_); k7609_.connect(&atp_.kbc()); }
+        if (cfg.tastatur) { atp_.attachTastatur(bus_); k7609_.connect(&atp_.kbc()); }
     } else if (cfg.tastatur) {
         k7672_.connect(ass_.sioA32(), 1);
+    }
+    // EPROMmer (AP-P7b, doc/prg710/eprommer.md): PIO D0H–D3H + Steuerregister D4H; der Typ
+    // (1 KB U555 / 2 KB U2716) kommt von ZRE-PIO Port A Bit 0 (PROG 60E7).
+    if (cfg.eprommer) {
+        atp_.attachEprommer(bus_);
+        atp_.eprommer().setTypwahl([this] { return zre_.pio().portARead(); });
+        atp_.eprommer().setZeit([this] { return total_cycles_; });
     }
     // Speicherweg der CPU: Speicherverwaltung; ZRE-Fenster und VRAM gehen an die Karten.
     // (mem_trace_: Beobachter des Debuggers — Speicher der CPU geht nicht über den Systembus.)

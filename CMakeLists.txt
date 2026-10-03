@@ -310,8 +310,9 @@ if(BUILD_K1520)
     add_library(k1520_k7609 STATIC core/peripherals/k7609/k7609.cpp)
     target_link_libraries(k1520_k7609 PUBLIC k1520_i8279)
     target_include_directories(k1520_k7609 PUBLIC ${CMAKE_SOURCE_DIR})
-    add_library(k1520_atp590068 STATIC core/cards/atp590068/atp590068.cpp)
-    target_link_libraries(k1520_atp590068 PUBLIC k1520_i8279 k1520_bus k1520_logger)
+    add_library(k1520_atp590068 STATIC core/cards/atp590068/atp590068.cpp
+        core/cards/atp590068/eprommer590068.cpp)
+    target_link_libraries(k1520_atp590068 PUBLIC k1520_i8279 k1520_pio k1520_bus k1520_logger)
     target_include_directories(k1520_atp590068 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option

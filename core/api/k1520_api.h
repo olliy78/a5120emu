@@ -473,6 +473,46 @@ K1520_API bool     k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_
 /** @brief Freigabe-Register EBH (0 = Abbildung aus); -1 bei anderer Maschine. */
 K1520_API int      k1520_prg710_freigabe(K1520Handle h);
 
+/* ─── EPROMmer des PRG (ATP 590068, virtueller Sockel; doc/prg710/eprommer.md, AP-P7b) ───
+ * Typ: 1 = U555 (1 KB, 2708-artig), 2 = U2716 (2 KB); 0 beim Einlegen = aus der Dateigröße.
+ * Andere Maschinen: false bzw. -1 bzw. "".  Thread-sicher (Sockel unter Sperre). */
+/** @brief Rohes `.bin` einlegen (kürzer = mit FFH aufgefüllt).  Fehlertext: k1520_eprom_error. */
+K1520_API bool        k1520_eprom_insert(K1520Handle h, const char* path, int type);
+/**
+ * @brief PROM aus dem Speicher einlegen (Hinübertragen auf eine neu erzeugte Maschine):
+ *        @p len ≤ Größe des Typs, @p path = gebundene Datei (NULL/""), @p modified = „geändert“.
+ */
+K1520_API bool        k1520_eprom_insert_data(K1520Handle h, const uint8_t* data, int len, int type,
+                                              const char* path, bool modified);
+/** @brief Leeres (gelöschtes) PROM des Typs einlegen, ohne Datei. */
+K1520_API bool        k1520_eprom_insert_blank(K1520Handle h, int type);
+/** @brief PROM entnehmen (ungespeicherte Änderungen gehen verloren). */
+K1520_API bool        k1520_eprom_remove(K1520Handle h);
+/** @brief Inhalt als `.bin` schreiben; NULL/"" = an die gebundene Datei.  Bindet neu. */
+K1520_API bool        k1520_eprom_save(K1520Handle h, const char* path);
+/** @brief UV-Löschen (Bedienung): alles FFH. */
+K1520_API bool        k1520_eprom_erase(K1520Handle h);
+/** @brief Gesteckter Typ: 0 = Sockel leer, 1 = U555, 2 = U2716; -1 = kein EPROMmer. */
+K1520_API int         k1520_eprom_type(K1520Handle h);
+/** @brief Eingestellter Typ (ZRE-PIO 84H Bit 0): 1 = U555, 2 = U2716; -1 = kein EPROMmer. */
+K1520_API int         k1520_eprom_selected_type(K1520Handle h);
+/** @brief Steuerregister D4H (Bit 0+1 Programmierspannung, 2 Impuls, 3/4 Versorgung, 5–7 A8–A10); -1. */
+K1520_API int         k1520_eprom_control(K1520Handle h);
+/** @brief Inhalt nach @p buf (höchstens @p len Byte); Rückgabe = Größe des PROM (0 = leer, -1). */
+K1520_API int         k1520_eprom_read(K1520Handle h, uint8_t* buf, int len);
+/** @brief Seit Einlegen/Speichern gebrannt oder gelöscht. */
+K1520_API bool        k1520_eprom_modified(K1520Handle h);
+/** @brief Gebundene Datei ("" = keine). */
+K1520_API const char* k1520_eprom_path(K1520Handle h);
+/**
+ * @brief Protokoll als Zeilen ("[  12.345 s] Text\n…").  @p only_new: nur Zeilen seit dem
+ *        letzten Aufruf mit only_new (EIN Abnehmer, die Oberfläche); sonst der ganze
+ *        Ringpuffer (≤ 1000 Zeilen).
+ */
+K1520_API const char* k1520_eprom_log(K1520Handle h, bool only_new);
+/** @brief Fehlertext des letzten fehlgeschlagenen insert/save (dieses Fadens). */
+K1520_API const char* k1520_eprom_error(K1520Handle h);
+
 #ifdef __cplusplus
 }
 #endif

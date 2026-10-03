@@ -146,3 +146,65 @@ def test_wiederholung_in_echtzeit_ist_am_prg_ansprechbar(name, variante):
     # Kein Absturz an beiden Varianten (710-1: K7672, 710: 8279 wiederholt nicht).
     _lib.k1520_set_key_repeat_realtime(emu._handle, True)
     _lib.k1520_set_key_repeat_realtime(emu._handle, False)
+
+
+# ─── EPROMmer (AP-P7b): virtueller Sockel über die C-ABI ─────────────────────
+
+@pytest.mark.parametrize("name,variante", VARIANTEN)
+def test_eprom_sockel_ueber_die_bindung(name, variante, tmp_path):
+    """Einlegen (Datei, leer), Inhalt, Speichern, UV-Löschen, Entnehmen, Protokoll."""
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine=name)
+    assert emu.has_eprommer()
+    assert emu.eprom_type() == 0                      # Sockel leer
+    abbild = tmp_path / "quelle.bin"
+    abbild.write_bytes(bytes(range(256)) * 3)          # 768 B → U555, aufgefüllt
+    emu.eprom_insert(str(abbild))
+    assert emu.eprom_type() == 1
+    inhalt = emu.eprom_read()
+    assert len(inhalt) == 1024 and inhalt[:768] == bytes(range(256)) * 3
+    assert inhalt[768:] == b"\xff" * 256
+    assert emu.eprom_path() == str(abbild) and not emu.eprom_modified()
+
+    assert emu.eprom_erase() and emu.eprom_modified()
+    ziel = tmp_path / "geloescht.bin"
+    emu.eprom_save(str(ziel))
+    assert ziel.read_bytes() == b"\xff" * 1024 and not emu.eprom_modified()
+    assert emu.eprom_path() == str(ziel)
+
+    # Aus dem Speicher (die Oberfläche trägt so den Sockel auf eine neue Maschine).
+    emu.eprom_insert_data(b"\x12\x34", 2, "x.bin", True)
+    assert emu.eprom_type() == 2 and emu.eprom_modified() and emu.eprom_path() == "x.bin"
+    assert emu.eprom_read()[:3] == b"\x12\x34\xff"
+
+    assert emu.eprom_insert_blank(2) and emu.eprom_type() == 2
+    assert emu.eprom_read() == b"\xff" * 2048
+    with pytest.raises(OSError, match="2048"):
+        zu_gross = tmp_path / "gross.bin"
+        zu_gross.write_bytes(b"\0" * 4096)
+        emu.eprom_insert(str(zu_gross))
+    assert emu.eprom_remove() and emu.eprom_type() == 0
+
+    neu = emu.eprom_log(only_new=True)
+    assert any("U555 eingelegt" in z for z in neu)
+    assert any("entnommen" in z for z in neu)
+    assert emu.eprom_log(only_new=True) == []         # jede Zeile nur einmal
+    assert len(emu.eprom_log()) == len(neu)           # Ringpuffer bleibt
+
+    # Vor dem ersten Zugriff des Programms: Steuerregister 00H, Typ aus 84H (nach
+    # /RESET offen = 1 → 2 KB).
+    emu.power_on()
+    assert emu.eprom_control() == 0
+    assert emu.eprom_selected_type() == 2
+
+
+def test_andere_maschinen_haben_keinen_eprommer():
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine="a5120")
+    assert not emu.has_eprommer()
+    assert emu.eprom_type() == -1 and emu.eprom_read() == b""
+    assert not emu.eprom_insert_blank(2)
+    with pytest.raises(OSError, match="kein EPROMmer"):
+        emu.eprom_save("/tmp/x.bin")

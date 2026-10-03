@@ -45,6 +45,10 @@ public:
         std::array<std::string, 4> laufwerke = {"K5601", "K5601", "none", "none"};
         /** Tastatur angeschlossen (710: K7609 an der ATP, 710-1: K7672 an A32-B). */
         bool tastatur = true;
+        /** EPROMmer der ATP 590068 (D0H–D4H + ZRE-PIO 84H Bit 0, AP-P7b).  In beiden
+         *  Varianten gesteckt: `PROG`/`PROG.COM` liegen auch auf den 710-1-Disketten [?]
+         *  (Plan §8.6). */
+        bool eprommer = true;
     };
 
     /// Takt der ZRE K2521 (2,4576 MHz).
@@ -147,6 +151,8 @@ public:
     K5122&           afs()      { return afs_; }
     K8025&           ass()      { return ass_; }
     Atp590068&       atp()      { return atp_; }     ///< 8279 (nur am 710 verdrahtet)
+    /// EPROMmer mit virtuellem Sockel (Config::eprommer, beide Varianten).
+    Eprommer590068&  eprommer() { return atp_.eprommer(); }
     K7609&           k7609()    { return k7609_; }
     K7672&           k7672()    { return k7672_; }   ///< nur am 710-1 an A32-B
     K1520Bus&        bus()      { return bus_; }
@@ -172,7 +178,7 @@ private:
     K5122           afs_;       // 10H–18H, /WAIT-Betrieb
     Laufwerke       lw_;
     K8025           ass_;       // 50H–5FH
-    Atp590068       atp_;       // 8279 C8H/C9H + EPROMmer-Attrappe D0H–D3H (nur 710)
+    Atp590068       atp_;       // 8279 C8H/C9H (nur 710) + EPROMmer D0H–D4H (beide)
     K7609           k7609_;     // 710: Matrix hinter dem 8279
     K7672           k7672_;     // 710-1: an SIO A32-B
     /// Nach den Karten: wird zuerst zerstört (hält Verweise auf ihre Anschlüsse).
