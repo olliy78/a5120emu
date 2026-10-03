@@ -354,12 +354,20 @@ if(BUILD_K1520)
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # PC 1715 (doc/design/21_pc1715.md AP-1b): ZRE mit ROM-Overlay, CTC0/SIO0, 8275 + Rastern
+    add_library(k1520_pc1715_zre STATIC core/cards/pc1715_zre/pc1715_zre.cpp)
+    target_link_libraries(k1520_pc1715_zre PUBLIC k1520_z80 k1520_ctc k1520_sio k1520_i8275 k1520_bus k1520_logger)
+    target_include_directories(k1520_pc1715_zre PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_pc1715 STATIC core/machines/pc1715/pc1715.cpp)
+    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_floppy2 k1520_bus k1520_logger)
+    target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # libk1520core.so — stable C-API shared library
     add_library(k1520core SHARED
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion

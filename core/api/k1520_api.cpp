@@ -3,6 +3,7 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
 #include "core/machines/prg710/prg710.h"
+#include "core/machines/pc1715/pc1715.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -77,11 +78,12 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d2, const char* d3) {
     // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 wählt.
     if (type == K1520_MACHINE_PRG710) return k1520_create_prg710(0, d0, d1, d2, d3);
+    if (type == K1520_MACHINE_PC1715) return k1520_create_pc1715(0, 0, 0, d0, d1, d2, d3);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
         // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915, PRG710)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715)";
         return nullptr;
     }
 
@@ -103,6 +105,43 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                 if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
             m = new A5120Machine(cfg);
         }
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
+                                const char*, const char*, const char*, const char*) {
+    g_init_error.clear();
+    if (variante != 0 && variante != 1) {
+        g_init_error = "Unbekannte PC1715-Variante " + std::to_string(variante) +
+                       " (0 = PC 1715, 1 = PC 1715W)";
+        return nullptr;
+    }
+    if (bildschirm != 0 && bildschirm != 1) {
+        g_init_error = "Unbekannter Bildschirm " + std::to_string(bildschirm) +
+                       " (0 = K7222 80x24, 1 = K7221 64x16)";
+        return nullptr;
+    }
+    if (zeichensatz != 0 && zeichensatz != 1) {
+        g_init_error = "Unbekannter Zeichensatz " + std::to_string(zeichensatz) +
+                       " (0 = S619, 1 = S602)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        Pc1715Machine::Config cfg;
+        cfg.variante = variante == 1 ? Pc1715Machine::Config::Variante::Pc1715W
+                                     : Pc1715Machine::Config::Variante::Pc1715;
+        cfg.bild = bildschirm == 1 ? Pc1715Zre::Bildschirm::K7221 : Pc1715Zre::Bildschirm::K7222;
+        cfg.zeichensatz = zeichensatz == 1 ? Pc1715Zre::Zeichensatz::S602 : Pc1715Zre::Zeichensatz::S619;
+        K1520Machine* m = new Pc1715Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
         return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();

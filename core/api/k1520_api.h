@@ -15,6 +15,7 @@ typedef enum {
     K1520_MACHINE_A5120  = 0,
     K1520_MACHINE_PRG710 = 1,
     K1520_MACHINE_K8915  = 2,
+    K1520_MACHINE_PC1715 = 3,
 } K1520MachineType;
 
 typedef struct {
@@ -64,6 +65,19 @@ K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
  * k1520_machine_type() = 1; Variante: k1520_prg710_variant().
  */
 K1520_API K1520Handle k1520_create_prg710(int variante,
+                                          const char* drive0, const char* drive1,
+                                          const char* drive2, const char* drive3);
+
+/**
+ * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
+ *
+ * @param variante    0 = PC 1715, 1 = PC 1715W (noch nicht gebaut: NULL mit Grund)
+ * @param bildschirm  0 = K7222 (80x24, Vorgabe), 1 = K7221 (64x16); Framebuffer 640x288 bzw. 512x240
+ * @param zeichensatz Zeichengenerator bei BWS-Register DB6 = 0: 0 = S619 (Vorgabe), 1 = S602
+ * @param drive0..3   Laufwerke der Floppy-Ansteuerung — bis AP-2 ohne Wirkung (NULL/"" = Vorgabe)
+ * k1520_machine_type() = 3.  Tastatur und Disketten folgen mit AP-3 bzw. AP-2.
+ */
+K1520_API K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
                                           const char* drive0, const char* drive1,
                                           const char* drive2, const char* drive3);
 
