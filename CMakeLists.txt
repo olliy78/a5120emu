@@ -216,6 +216,11 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_ctc PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Z80-DMA (UA858, PC 1715W, doc/design/21_pc1715.md AP-W2a)
+    add_library(k1520_z80dma STATIC core/primitives/z80_dma.cpp)
+    target_link_libraries(k1520_z80dma PUBLIC k1520_bus)
+    target_include_directories(k1520_z80dma PUBLIC ${CMAKE_SOURCE_DIR})
+
     # SIO primitive
     add_library(k1520_sio STATIC
         core/primitives/z80_sio.cpp
