@@ -86,8 +86,9 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   **Seit AP-P5g (2026-10-02) gibt es den dritten: den PRG710 Emulator** (`prg710emu`,
   `--machine prg710`, Modellwahl 710/710-1 im Programm): dieselbe Vorlage, `prg710emu.desktop.in`,
   `{#Programm3}` im .iss, `default_config_prg710.yaml` nach `share/k1520emu/`, Eintrag in
-  `MASCHINEN` — Wächter `test_der_prg710_emulator_ist_in_allen_paketwegen`. Keine Disketten in
-  der Vorgabeauswahl (Rechte an PRG-Systemdisketten ungeklärt, Entscheid beim Anwender).
+  `MASCHINEN` — Wächter `test_der_prg710_emulator_ist_in_allen_paketwegen`. Seit AP-P5h
+  (2026-10-03, Entscheid des Anwenders) gehören vier PRG-Systemdisketten (UDOS und SCPX, je 710/710-1)
+  zur Vorgabeauswahl; Wächter `test_prg710_systemdisketten_sind_in_der_vorgabeauswahl`.
   **Alle Rauchtests (install.sh, .iss, beide release.yml-Jobs) erzeugen ALLE Maschinen**
   (`k1520_create(0)`, `(1)` und `(2)`) — Wächter `test_rauchtests_pruefen_beide_maschinen`. Wächter `py_packaging`
   (`test_launcher_sh_waehlt_die_maschine_am_namen`, `test_iss_hat_den_k8915_emulator_im_startmenue`,

@@ -146,6 +146,8 @@ k1520_add_test(prg710_format SRC test_prg710_format.cpp
 
 # DiskTool (AP-P6): bootfähige PRG-Disketten (UDOS, SCPX aus Modulen) — gebaut mit dem
 # Werkzeug, gebootet am PRG beider Varianten; Fassung des Bootabbilds erkannt/abgewiesen.
+# AP-P5h: dieselbe Datei prüft auch die ins Paket gelegten Systemdisketten aus disks/.
 k1520_add_test(disktool_prg710 SRC test_disktool_prg710.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
-                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                          "PRG710_LIEFERDISKETTEN=\"${CMAKE_SOURCE_DIR}/disks\"" TIMEOUT 150)

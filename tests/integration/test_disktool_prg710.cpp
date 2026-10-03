@@ -318,6 +318,43 @@ TEST_P(DisktoolPrg710, ScpxBootdisketteAusModulenBootetBisA) {
     EXPECT_TRUE(bisText(*m, "Space:", kBefehl)) << "STAT.COM lud nicht:\n" << bild(*m);
 }
 
+/**
+ * @test DisktoolPrg710.LieferdisketteBootet
+ * @brief AP-P5h: die vier PRG-Systemdisketten, die ins Paket kommen (`disks/`, Liste
+ *        `DISKS_DEFAULT` in `packaging/build_payload.sh`), starten je am passenden Gerät bis
+ *        `%` bzw. `A>`.  Gemountet wird eine TEMP-KOPIE (der Emulator öffnet r/w).
+ */
+TEST(DisktoolPrg710, LieferdisketteBootet) {
+    struct Fall { V v; bool udos; const char* disk; };
+    const Fall faelle[] = {
+        {V::Prg710,   true,  "prg710_udos43_k5601_system.hfe"},
+        {V::Prg710_1, true,  "prg710-1_udos43_k5601_v43_189.hfe"},
+        {V::Prg710,   false, "prg710_scpx15_cpa640_sysprg.hfe"},
+        {V::Prg710_1, false, "prg710-1_scpx17_cpa640_boot.hfe"},
+    };
+    for (const Fall& f : faelle) {
+        SCOPED_TRACE(f.disk);
+        const fs::path quelle = fs::path(PRG710_LIEFERDISKETTEN) / f.disk;
+        ASSERT_TRUE(fs::is_regular_file(quelle)) << quelle;
+        TempPfad kopie("k1520_prg_lieferdiskette.hfe");
+        fs::copy_file(quelle, kopie.get(), fs::copy_options::overwrite_existing);
+        auto m = maschine(f.v);
+        ASSERT_TRUE(m->mountDisk(0, kopie.get(), m->defaultFormatName(0), false)) << m->lastError();
+        if (f.udos) {
+            ASSERT_TRUE(udosBisDatum(*m)) << bild(*m);
+            tippe(*m, "021086");
+            ASSERT_TRUE(bisUdosPrompt(*m, kBefehl)) << bild(*m);
+            EXPECT_TRUE(enthaelt(*m, udosSystemzeile(f.v))) << bild(*m);
+        } else {
+            m->powerOn();
+            lauf(*m, 3'000'000);
+            taste(*m, QK_RETURN);
+            ASSERT_TRUE(bisText(*m, scpxGruss(f.v), kBoot)) << bild(*m);
+            ASSERT_TRUE(bisScpxPrompt(*m, kBefehl)) << bild(*m);
+        }
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(Varianten, DisktoolPrg710, ::testing::Values(V::Prg710, V::Prg710_1),
                          [](const auto& i) { return name(i.param); });
 

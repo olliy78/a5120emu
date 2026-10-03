@@ -247,6 +247,24 @@ def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
         assert (PACKAGING.parent / "disks" / name).is_file(), name
 
 
+def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
+    """AP-P5h, Entscheid des Anwenders 2026-10-03: UDOS (710, 710-1) und SCPX
+    (710-1 original, 710 aus SYSPRG) liegen im Paket.  Das Setzen von ``disks:`` in
+    der Auslieferungskonfiguration bleibt aus (Pfade sind rechnerspezifisch, die
+    Abbilder kommen als Arbeitskopien in den Dokumentenordner)."""
+    text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    block = text[text.index('DISKS_DEFAULT="'):]
+    block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
+    soll = {"prg710_udos43_k5601_system.hfe", "prg710-1_udos43_k5601_v43_189.hfe",
+            "prg710_scpx15_cpa640_sysprg.hfe", "prg710-1_scpx17_cpa640_boot.hfe"}
+    assert soll <= set(block)
+    for name in soll:
+        assert (PACKAGING.parent / "disks" / name).is_file(), name
+    # Die Disketten gehoeren dem Anwender nach dem ersten Start: kein Pfad in der Vorgabe.
+    vorgabe = (PACKAGING.parent / "data" / "default_config_prg710.yaml").read_text(encoding="utf-8")
+    assert not re.search(r"^disks:", vorgabe, re.M)
+
+
 def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
     text = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
     assert '"%~n0"=="k8915emu"' in text and "--machine k8915" in text

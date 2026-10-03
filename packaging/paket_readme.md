@@ -10,7 +10,9 @@ K8915-Systemdiskette liegt nicht bei; eine eigene (SCPX 8915) wird wie beim
 A5120 eingelegt und mit RETURN an der Coldstart-Meldung geladen.
 Dritter im Bunde ist das Programmiergerät **PRG 710 / 710-1** (`prg710emu`,
 Startmenü „PRG710 Emulator"; die Variante wählt man in den Einstellungen unter
-„Modell"), ebenfalls mit eigener Konfiguration.  Systemdisketten liegen nicht bei.
+„Modell"), ebenfalls mit eigener Konfiguration.  Je Modell liegen eine UDOS- und eine
+SCPX-Systemdiskette bei (`prg710_*` bzw. `prg710-1_*` im Diskettenordner); der
+Emulator startet ohne eingelegte Diskette, man wählt eine im Laufwerkskasten.
 
 ### K8915: eine eigene Bootdiskette
 

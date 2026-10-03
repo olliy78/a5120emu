@@ -35,14 +35,19 @@ GW=yes
 # damit ein Anwender alle drei Betriebssysteme und die Fremdlaufwerkstypen
 # ausprobieren kann, ohne dass das Paket aufgeht — dazu die Systemdiskette des
 # K8915 Emulators (901, SCPX 8915 V5.3; vom Anwender freigegeben 2026-10-01,
-# 16_k8915.md §6.23).  Alles aus disks/: --disks all.
+# 16_k8915.md §6.23) und die vier PRG-Systemdisketten (UDOS 710/710-1, SCPX 710/710-1;
+# Entscheid des Anwenders 2026-10-03, 20_prg710.md AP-P5h).  Alles aus disks/: --disks all.
 DISKS_DEFAULT="cpa_cpa780_k5601_clock.hfe
 cpa_cpa780_k5601_noclock.hfe
 cpa_cpa780_combo5zoll_noclock.hfe
 cpa_cpa780_combo8zoll_noclock.hfe
 scpx17_cpa780_k5601.hfe
 udos_boot_k5600_20.hfe
-k8915scpx_boot1.hfe"
+k8915scpx_boot1.hfe
+prg710_udos43_k5601_system.hfe
+prg710-1_udos43_k5601_v43_189.hfe
+prg710_scpx15_cpa640_sysprg.hfe
+prg710-1_scpx17_cpa640_boot.hfe"
 
 usage() {
     cat <<EOF
