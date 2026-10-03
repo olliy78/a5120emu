@@ -1,0 +1,49 @@
+/******************************************************************************
+*
+*  XCPLD Version 1.0, PROM to PLD conversion program.
+*
+*  PLD Design File: 287.PLD
+*  Date and time created: 02/28/2007  18:12:00
+*
+*  Created from PROM File: 287.HEX
+*  File date and time: 02/24/2007  11:27:48
+*  Size of PROM: 8 address lines, 256 bytes.
+*
+******************************************************************************/
+
+ ! D0 = A2 & ! A5 & ! A6 & A7 
+        # A3 & ! A5 & ! A6 & A7 
+        # A4 & ! A5 & ! A6 & A7 
+        # A2 & A3 & ! A6 & A7 
+        # A2 & A3 & ! A5 & A7 
+        ; 
+
+ ! D1 = ! A3 & ! A4 & A5 & ! A6 & A7 
+        # ! A2 & ! A4 & A5 & ! A6 & A7 
+        # ! A2 & ! A3 & A4 & ! A5 & A6 & A7 
+        ; 
+
+ ! D2 = ! A3 & A4 & A5 & ! A6 & A7 
+        # ! A2 & A4 & A5 & ! A6 & A7 
+        # A2 & ! A3 & A4 & ! A5 & A6 & A7 
+        ; 
+
+ ! D3 = ! A3 & ! A4 & ! A5 & A6 & A7 
+        # ! A2 & ! A4 & ! A5 & A6 & A7 
+        # ! A2 & A3 & ! A5 & A6 & A7 
+        ; 
+
+   D4 = 'b'0 
+        ; 
+
+   D5 = 'b'0 
+        ; 
+
+   D6 = 'b'0 
+        ; 
+
+   D7 = 'b'0 
+        ; 
+
+
+/*************************  End of Logic Description.  ***********************/

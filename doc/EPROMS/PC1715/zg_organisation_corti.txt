@@ -1,0 +1,40 @@
+Organisation der Character-ROMs beim PC 1715.
+
+Aus nicht ganz nachvollziehbaren Gruenden liegen nicht alle
+Einzelzeilen eines Zeichens dirket nacheinander im ROM, sondern
+es kommen erst die obersten Zeilen aller 128 Zeichen, dann die
+zweitobersten usw.
+Eventuell hat dieses Layout das Platinenlayout vereinfacht.
+
+Um also das Bitmuster eines bestimmten Zeichens zu finden, startet
+man bei der ROM-Adresse, die dem ASCII_Code des Zeichens entspricht.
+Die naechste Zeile des Zeichens ist dann diese Adresse + 80h usw.
+
+Selbstverstaendlich ist es sinnvoll, hierbei das Hex-Zahlensystem
+zu verwenden.
+
+
+0030 00   ........
+00B0 3C   ..####..
+0130 42   .#....#.
+01B0 46   .#...##.
+0230 4A   .#..#.#.
+02B0 52   .#.#..#.
+0330 62   .##...#.
+03B0 42   .#....#.
+0430 42   .#....#.
+04B0 3C   ..####..
+0530 00   ........
+
+0067 00   ........
+00E7 00   ........
+0167 00   ........
+01E7 00   ........
+0267 3A   ..###.#.
+02E7 46   .#...##.
+0367 42   .#....#.
+03E7 46   .#...##.
+0467 3A   ..###.#.
+04E7 02   ......#.
+0567 3C   ..####..
+
