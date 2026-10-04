@@ -532,7 +532,13 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
                 break;
         }
 
-        if (reg_sel != 0)
+        // Channel Reset (Befehl 3) setzt auch den Registerzeiger zurück: die Zeigerbits
+        // D2–D0 DESSELBEN Bytes gelten danach nicht mehr.  Beleg (AP-4a): der Urlader S502
+        // des PC 1715 initialisiert SIO-B mit 1CH,04H,49H,03H,C1H,01H,00H,05H,68H — nur mit
+        // Zeiger 0 nach 1CH ergibt das WR4=49H, WR3=C1H, WR1=00H, WR5=68H (sonst ginge 04H
+        // selbst nach WR4, WR3 bliebe unprogrammiert und die Empfangsfreigabe fehlte; das
+        // Gerät bootet über V.24).  Alle anderen Gäste schreiben 18H (Zeigerbits 0).
+        if (reg_sel != 0 && cmd != 3)
             ch.reg_ptr = reg_sel;
 
     } else {

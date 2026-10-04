@@ -181,3 +181,9 @@ k1520_add_test(pc1715_boot SRC test_pc1715_boot.cpp
 k1520_add_test(pc1715_tastatur SRC test_pc1715_tastatur.cpp
                           LIBS k1520_pc1715 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# PC 1715 Etappe 4 (AP-4a): Drucker X4 / V.24 X5 am SerialHub, Leitung 107, Drucken unter CP/A,
+# V.24-Boot des Urladers S502 ueber Telnet.
+k1520_add_test(pc1715_seriell SRC test_pc1715_seriell.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)

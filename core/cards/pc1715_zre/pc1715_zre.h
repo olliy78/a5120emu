@@ -41,9 +41,15 @@
  * 0xFF hell).  80×24: 640 × 288, 64×16: 512 × 240.  Die Maschine ruft frame() alle 20 ms
  * Maschinenzeit.  Der IRQ-Ausgang des 8275 ist im Grundgerät nicht in der Interruptkette [?].
  *
+ * **Schnittstellen nach außen (AP-4a, Entwurf 19).**  Zwei `SerialAnschluss`, Namen nach der
+ * Gerätebeschriftung: „Drucker X4" = SIO0-A **nur Sender** (der Empfänger von SIO-A ist die
+ * Tastatur und bleibt fest verdrahtet), Sendetakt CTC0 K0, CTSA = Leitung 106; „V.24 X5" =
+ * SIO0-B (Senden + Empfangen), Takt CTC0 K1, CTSB/DCDB = 106/109.  Leitung 107 (DSR) des
+ * Steckers X5 steht lesend an 2DH/2FH (DB2); Leitung 111 (2CH/2EH/30H–33H) ist ein Ausgang des
+ * Gastes, den der Hub nicht kennt — sie bleibt als Latch (`lt111`).
+ *
  * **Nicht in dieser Karte:** Floppy (PIOs 00H–07H, KRFD 20H–23H: AP-2, vorn in der
- * Interruptkette), Tastatur (AP-3), SerialHub-Anbindung der SIO (AP-4).  Unbelegte Ports lesen
- * FFH, Schreiben wird verschluckt.
+ * Interruptkette), Tastatur (AP-3).  Unbelegte Ports lesen FFH, Schreiben wird verschluckt.
  */
 
 #pragma once
@@ -52,9 +58,12 @@
 #include "core/primitives/z80.h"
 #include "core/primitives/z80_ctc.h"
 #include "core/primitives/z80_sio.h"
+#include "core/serial/anschluss.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <vector>
 
 class Pc1715Zre : public BusDevice, public InterruptSlave {
@@ -79,6 +88,22 @@ public:
 
     explicit Pc1715Zre(K1520Bus& bus);
     Pc1715Zre(K1520Bus& bus, const Config& cfg);
+    ~Pc1715Zre() override;
+
+    /// Serielle Kanäle, die nach außen gehen; zugleich Hub-Reihenfolge (= C-ABI-Index).
+    enum Kanal : int { Drucker = 0, V24 = 1, KanalAnzahl = 2 };
+    k1520::serial::SerialAnschluss& anschluss(Kanal k);
+    /// Ein Anschluss hat SIO-Zustand geändert — Interruptkette neu bewerten.  Liest und löscht.
+    bool nimmSeriellGeaendert() { const bool g = seriell_geaendert_; seriell_geaendert_ = false; return g; }
+    /// Alter Unterbau (`K1520Machine::setPrinterCallback`/`setDFUECallback`): Abnehmer der Bytes,
+    /// die der Gast an Kanal @p k SENDET, solange kein Transport/Loop den Stecker belegt.
+    using Abnehmer = std::function<void(uint8_t)>;
+    void setAbnehmer(Kanal k, Abnehmer cb);
+    /// Ein Byte von außen in den Empfänger (nur V.24; am Drucker gibt es keinen); ins Leere,
+    /// wenn ein Transport/Loop den Stecker belegt.
+    void einspeisen(Kanal k, uint8_t byte);
+    /// Leitung 107 (DSR) des Steckers X5, wie vom Hub gemeldet.
+    bool lt107V24() const { return dsr_v24_; }
 
     // ─── BusDevice: alle Ports der Karte (absolute Portnummer) ───────────────
     uint8_t     ioRead(uint8_t port) override;
@@ -163,6 +188,12 @@ private:
     uint8_t  bws_ = 0;
     uint16_t dma_zaehler_ = 0;
     bool     lt111_[2] = {false, false};
+
+    class Anschluss;   // pc1715_zre.cpp
+    friend class Anschluss;
+    std::array<std::unique_ptr<Anschluss>, KanalAnzahl> anschluesse_;
+    bool seriell_geaendert_ = false;
+    bool dsr_v24_ = false;   ///< Leitung 107 am Stecker X5 (vom Hub; EIN = Bit 2 an 2DH/2FH = 0)
 
     std::vector<uint8_t> fb_;
     int  fb_w_ = 0, fb_h_ = 0;

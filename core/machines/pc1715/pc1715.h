@@ -18,7 +18,8 @@
  * Bitmodell der SIO; der 3-Byte-FIFO fängt Statusbyte + Code im Abstand von ≈ 0,7 ms).
  *
  * Freie Stellen (nicht vergessen):
- *  - **Schnittstellen (AP-4):** kein SerialHub, SIO0 steht ohne Gegenstelle.
+ *  - **Schnittstellen (AP-4a):** „Drucker X4" (SIO0-A Sender) und „V.24 X5" (SIO0-B) am
+ *    SerialHub; der Empfänger von SIO0-A bleibt die Tastatur.  LT111 (Leitung 111) bleibt ein Latch.
  *  - Save-State: wie PRG 710 / K8915 gibt es keinen (die Grundlage wäre hier ohnehin nur
  *    CPU + RAM + Kartenregister).
  */
@@ -30,6 +31,7 @@
 #include "core/cards/k5122/k5122.h"
 #include "core/machines/laufwerke.h"
 #include "core/peripherals/tastatur1715/tastatur1715.h"
+#include "core/serial/hub.h"
 #include <array>
 #include <atomic>
 #include <deque>
@@ -128,9 +130,15 @@ public:
     bool isHeadLoaded() const override              { return lw_.isHeadLoaded(); }
     void setDiskWriteProtect(int d, bool wp) override { lw_.setDiskWriteProtect(d, wp); }
 
-    // ─── Serielle Schnittstellen (AP-4) ──────────────────────────────────────
-    void setDFUECallback(SerialCb) override {}
-    void dfueSend(uint8_t) override {}
+    // ─── Serielle Schnittstellen (AP-4a): 0 „Drucker" X4, 1 „V.24" X5 ───────
+    k1520::serial::SerialHub* serialHub() override { return &hub_; }
+    std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
+    /// Die Tastatur hängt fest an SIO0-A (Empfänger) und geht nicht nach außen.
+    std::vector<std::string> festeSchnittstellen() const override { return {"Tastatur S600 (SIO-A)"}; }
+    // Alter Unterbau: DFÜ = V.24 X5, Drucker = Drucker X4 (nur Senden).
+    void setDFUECallback(SerialCb cb) override { zre_.setAbnehmer(Pc1715Zre::V24, std::move(cb)); }
+    void dfueSend(uint8_t b) override { zre_.einspeisen(Pc1715Zre::V24, b); }
+    void setPrinterCallback(SerialCb cb) override { zre_.setAbnehmer(Pc1715Zre::Drucker, std::move(cb)); }
 
     // ─── Diagnose ────────────────────────────────────────────────────────────
     /// Speicher aus Sicht der CPU (mit ROM-Overlay).
@@ -172,6 +180,9 @@ private:
     bool     umschalter_gesetzt_ = false;  ///< Vorspann des vordersten Drucks ist erledigt
     uint64_t tasten_frei_ab_ = 0;          ///< frühester Takt für das nächste Ereignis
     uint64_t kbd_rest_ = 0;                ///< noch nicht an die Tastatur-CPU abgegebene Takte
+
+    k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
+    uint64_t  serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};

@@ -9,8 +9,10 @@
 #include "core/cards/pc1715_zre/chargen_s619.h"
 #include "core/cards/pc1715_zre/chargen_s602.h"
 #include "core/logger.h"
+#include "core/serial/sio_format.h"
 #include <algorithm>
 #include <cstring>
+#include <optional>
 
 namespace {
 constexpr uint8_t PORT_CTC   = 0x08;   // 08H–0BH
@@ -26,6 +28,109 @@ constexpr uint8_t PIXEL_NORMAL = 0xB0;   // [?] zwei Helligkeitsstufen (HLGT), Z
 constexpr uint8_t PIXEL_HELL   = 0xFF;
 }  // namespace
 
+// ─── Anschluss je Kanal (Entwurf 19, AP-4a) ──────────────────────────────────
+//
+// „Drucker X4" (EFS10, nur Ausgabe 102/103/106): SIO0-A, nur der SENDER — der Empfänger von
+//   SIO-A gehört der Tastatur und wird nie aus dem Hub gespeist.  Takt CTC0 K0 (BIOS 08H).
+//   /CTSA = Leitung 106.  Der CP/A-Druckertreiber im Verfahren „DTR" fragt CTS (RR0 D5) vor
+//   jedem Zeichen: ohne Gegenstelle (Kabel ab) gilt der Drucker als besetzt — wie am Gerät.
+// „V.24 X5" (EFS26): SIO0-B, Senden + Empfangen, Takt CTC0 K1 (09H).  CTSB = 106, DCDB = 109,
+//   DTR/RTS gehen an den Hub, DSR (107) steht lesend an 2DH/2FH.
+
+class Pc1715Zre::Anschluss : public k1520::serial::SerialAnschluss {
+public:
+    Anschluss(Pc1715Zre& z, Kanal k) : z_(z), k_(k) {}
+
+    const char* name() const override { return k_ == Drucker ? "Drucker" : "V.24"; }
+    const char* stecker() const override { return k_ == Drucker ? "X4" : "X5"; }
+    bool v24() const override { return true; }   // 102/103/106 bzw. alle Leitungen
+
+    k1520::serial::SerialFormat format() const override {
+        return k1520::serial::serialFormatAusSio(ch(), z_.ctc_.teilerTakte(k_ == Drucker ? 0 : 1));
+    }
+    bool senderHatZeichen() const override { return schieb_.has_value() || ch().senderHatZeichen(); }
+    // Schieberegister vor dem Tx-Puffer: die echte SIO nimmt das erste Zeichen sofort aus dem
+    // Puffer ins Schieberegister, ein zweites Schreiben direkt danach geht verlustfrei in den
+    // Puffer (S502 `SendChar` ruft zweimal hintereinander ohne Tx-Empty-Prüfung: 12H 12H).
+    // `Z80SIO` hat nur den Puffer; die Karte merkt sich das verdrängte Zeichen hier.
+    void vorDatenSchreiben() {
+        if (!schieb_ && ch().tx_buf.has_value()) { schieb_ = *ch().tx_buf; ch().tx_buf.reset(); }
+    }
+    uint8_t senderNimm() override {
+        uint8_t b;
+        if (schieb_) { b = *schieb_; schieb_.reset(); }
+        else         b = ch().txGet();
+        // Die Leitung trägt nur die programmierten Datenbits; Parität bleibt unnachgebildet.
+        const uint8_t bits = ch().format().tx_bits;
+        if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
+        z_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt möglich
+        if (!belegt_ && abnehmer_) abnehmer_(b);
+        return b;
+    }
+    // Am Drucker nimmt der Empfänger nie etwas: er hängt an der Tastatur.
+    bool empfaengerFrei() const override { return k_ == V24 && ch().empfaengerFrei(); }
+    void empfange(uint8_t b) override {
+        if (k_ != V24) return;
+        ch().rxByte(b);
+        z_.seriell_geaendert_ = true;
+    }
+    bool rts() const override { return ch().rts(); }
+    bool dtr() const override { return ch().dtr(); }
+    void setzeEingaenge(bool cts, bool dsr, bool dcd) override {
+        cts_ = cts;
+        wirke();
+        if (k_ == V24) {
+            ch().setzeDCD(dcd);   // Leitung 109
+            z_.dsr_v24_ = dsr;    // Leitung 107 → 2DH/2FH
+        }
+        z_.seriell_geaendert_ = true;
+    }
+    bool breakGesendet() const override { return ch().breakSenden(); }
+    void breakEmpfang(bool aktiv) override {
+        if (k_ != V24) return;
+        ch().setzeBreakEmpfang(aktiv);
+        z_.seriell_geaendert_ = true;
+    }
+    void leitungBelegt(bool belegt) override { belegt_ = belegt; wirke(); }
+
+    void setAbnehmer(Abnehmer cb) { abnehmer_ = std::move(cb); wirke(); }
+    void einspeisen(uint8_t b) {
+        if (belegt_) return;   // Transport/Loop am Stecker: ins Leere (Entwurf 19 §8)
+        empfange(b);
+    }
+
+private:
+    Z80SIO::Channel& ch() const { return k_ == Drucker ? z_.sio_.channelA() : z_.sio_.channelB(); }
+    // Alter Unterbau am Drucker: ein Abnehmer ohne Transport ersetzt den Drucker und meldet
+    // „bereit" (106), sonst bliebe der DTR-Treiber an der fehlenden Leitung hängen.
+    void wirke() {
+        ch().setzeCTS(cts_ || (k_ == Drucker && !belegt_ && abnehmer_));
+        z_.seriell_geaendert_ = true;
+    }
+
+    Pc1715Zre& z_;
+    Kanal      k_;
+    bool       cts_ = false;
+    bool       belegt_ = false;
+    std::optional<uint8_t> schieb_;   ///< Zeichen im Schieberegister (verdrängt aus dem Tx-Puffer)
+    Abnehmer   abnehmer_;
+};
+
+Pc1715Zre::~Pc1715Zre() = default;
+
+k1520::serial::SerialAnschluss& Pc1715Zre::anschluss(Kanal k)
+{
+    return *anschluesse_[static_cast<size_t>(k)];
+}
+void Pc1715Zre::setAbnehmer(Kanal k, Abnehmer cb)
+{
+    anschluesse_[static_cast<size_t>(k)]->setAbnehmer(std::move(cb));
+}
+void Pc1715Zre::einspeisen(Kanal k, uint8_t byte)
+{
+    anschluesse_[static_cast<size_t>(k)]->einspeisen(byte);
+}
+
 Pc1715Zre::Pc1715Zre(K1520Bus& bus) : Pc1715Zre(bus, Config{}) {}
 
 Pc1715Zre::Pc1715Zre(K1520Bus& bus, const Config& cfg)
@@ -34,6 +139,8 @@ Pc1715Zre::Pc1715Zre(K1520Bus& bus, const Config& cfg)
     fb_w_ = textCols() * 8;
     fb_h_ = textRows() * zeichenLinien();
     fb_.assign(static_cast<size_t>(fb_w_) * fb_h_, 0);
+    for (int i = 0; i < KanalAnzahl; ++i)
+        anschluesse_[static_cast<size_t>(i)] = std::make_unique<Anschluss>(*this, static_cast<Kanal>(i));
 
     // Speicherweg der CPU: die Karte selbst (64 KB + Overlay).  Eine Zusatzkarte im
     // Steckplatz mit eigenem Speicher (/MEMDI) ist nicht vorgesehen.
@@ -87,6 +194,7 @@ void Pc1715Zre::reset()
     bws_ = 0;
     dma_zaehler_ = 0;
     lt111_[0] = lt111_[1] = false;
+    seriell_geaendert_ = true;
     std::fill(fb_.begin(), fb_.end(), 0);
     fb_dirty_ = true;
 }
@@ -104,14 +212,20 @@ uint8_t Pc1715Zre::ioRead(uint8_t port)
     if (uint8_t(port - PORT_CTC) < 4) return ctc_.ioRead(port & 0x03);
     if (uint8_t(port - PORT_SIO) < 4) return sio_.ioRead(sioPort(port));
     if (uint8_t(port - PORT_CRT) < 4) return crt_.read((port & 1) != 0);
-    if (port == 0x2D || port == 0x2F) return 0xFF;   // 107 AUS (keine DÜE, §1.2.8: AUS = 1) [?: DB1/3–7]
+    // Leitung 107 (§1.2.8: EIN = 0, AUS = 1): DB2 = V.24 X5 aus dem Hub; DB0 = Drucker X4
+    // kennt keine 107 (nur 102/103/106) → AUS [?: DB1/3–7]
+    if (port == 0x2D || port == 0x2F) return dsr_v24_ ? 0xFB : 0xFF;
     return 0xFF;                                      // unbelegt (auch BWS lesend [?])
 }
 
 void Pc1715Zre::ioWrite(uint8_t port, uint8_t data)
 {
     if (uint8_t(port - PORT_CTC) < 4) { ctc_.ioWrite(port & 0x03, data); return; }
-    if (uint8_t(port - PORT_SIO) < 4) { sio_.ioWrite(sioPort(port), data); return; }
+    if (uint8_t(port - PORT_SIO) < 4) {
+        if ((port & 2) == 0) anschluesse_[(port & 1) ? V24 : Drucker]->vorDatenSchreiben();   // 0CH/0DH = Daten
+        sio_.ioWrite(sioPort(port), data);
+        return;
+    }
     if (uint8_t(port - PORT_CRT) < 4) { crt_.write((port & 1) != 0, data); return; }
     if (uint8_t(port - PORT_ROMEIN) < 4) { rom_ein_ = true;  return; }
     if (uint8_t(port - PORT_ROMAUS) < 4) {

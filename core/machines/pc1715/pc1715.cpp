@@ -52,6 +52,17 @@ Pc1715Machine::Pc1715Machine(const Config& cfg)
     // Steuer-PIO und meldet nie (S502/BIOS geben ihr kein Interruptwort) [?].
     bus_.setInterruptChain({&afs_, &zre_});
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
+    // Schnittstellen nach außen (Entwurf 19): Drucker X4 (SIO0-A Sender), V.24 X5 (SIO0-B);
+    // Reihenfolge = C-ABI-Index.
+    for (auto* a : serielleAnschluesse()) hub_.registriere(*a);
+}
+
+std::vector<k1520::serial::SerialAnschluss*> Pc1715Machine::serielleAnschluesse()
+{
+    std::vector<k1520::serial::SerialAnschluss*> v;
+    for (int k = 0; k < Pc1715Zre::KanalAnzahl; ++k)
+        v.push_back(&zre_.anschluss(static_cast<Pc1715Zre::Kanal>(k)));
+    return v;
 }
 
 void Pc1715Machine::resetHardware()
@@ -71,6 +82,8 @@ void Pc1715Machine::resetHardware()
     arbeit_.clear();
     zre_.reset();            // CPU, CTC, SIO, 8275, ROM-Overlay ein
     afs_.reset();
+    hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
+    serial_naechst_ = 0;
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -238,6 +251,11 @@ int Pc1715Machine::run(int max_cycles)
         kbd_rest_ += used;
         if (kbd_rest_ >= 32) { kbd_.run(kbd_rest_); kbd_rest_ = 0; }
         bool dirty = zre_.clockTick(used);
+        // Schnittstellen nach außen: der Wandler arbeitet nur alle 1/16 Zeichenzeit.
+        if (total_cycles_ >= serial_naechst_) {
+            serial_naechst_ = hub_.takt(total_cycles_);
+            dirty |= zre_.nimmSeriellGeaendert();
+        }
         // Bildwechsel alle 20 ms Maschinenzeit: 8275-DMA + Rastern.
         while (total_cycles_ >= bild_naechst_) {
             zre_.frame();

@@ -92,6 +92,25 @@ def test_prg_lists_names_by_variant(maschine, namen, stecker, fest):
     del e
 
 
+def test_pc1715_lists_printer_x4_and_v24_x5():
+    """PC 1715 (AP-4a): zwei Schnittstellen nach der Gerätebeschriftung, beide mit
+    Steuerleitungen (Drucker: 102/103/106); die Tastatur bleibt fest an SIO-A."""
+    e = B.K1520Emulator(machine="pc1715")
+    assert e.serial_count() == 2
+    infos = [e.serial_info(i) for i in range(2)]
+    assert [x.name for x in infos] == ["Drucker", "V.24"]
+    assert [x.stecker for x in infos] == ["X4", "X5"]
+    assert [x.v24 for x in infos] == [True, True]
+    assert e.serial_fixed_names() == ["Tastatur S600 (SIO-A)"]
+    assert e.serial_info(2) is None
+    assert e.serial_configure(1, betriebsart=B.SER_TELNET, rolle=B.SER_SERVER,
+                              port=freier_port(), loop=False)
+    assert e.serial_start(1)
+    assert warte(lambda: e.serial_status(1).port_aktiv != 0)
+    e.serial_stop(1)
+    del e
+
+
 def test_fixed_name_is_cut_at_a_character_boundary(emu):
     import ctypes
     buf = ctypes.create_string_buffer(8)

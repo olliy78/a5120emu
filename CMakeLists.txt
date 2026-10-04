@@ -370,7 +370,7 @@ if(BUILD_K1520)
 
     # PC 1715 (doc/design/21_pc1715.md AP-1b): ZRE mit ROM-Overlay, CTC0/SIO0, 8275 + Rastern
     add_library(k1520_pc1715_zre STATIC core/cards/pc1715_zre/pc1715_zre.cpp)
-    target_link_libraries(k1520_pc1715_zre PUBLIC k1520_z80 k1520_ctc k1520_sio k1520_i8275 k1520_bus k1520_logger)
+    target_link_libraries(k1520_pc1715_zre PUBLIC k1520_z80 k1520_ctc k1520_sio k1520_i8275 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_pc1715_zre PUBLIC ${CMAKE_SOURCE_DIR})
     # Speicher des PC 1715W: BR 24H + 74S287 + Bank 0 (S550/ZG-RAM/Bild-RAM) + Bildquelle (AP-W1)
     add_library(k1520_pc1715w_speicher STATIC core/cards/pc1715w_speicher/pc1715w_speicher.cpp
@@ -378,7 +378,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_pc1715w_speicher PUBLIC k1520_i8275 k1520_bus k1520_logger)
     target_include_directories(k1520_pc1715w_speicher PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_pc1715 STATIC core/machines/pc1715/pc1715.cpp)
-    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_tastatur1715 k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger)
+    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_tastatur1715 k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library
