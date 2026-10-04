@@ -1797,6 +1797,10 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._lamp_timer.stop()
         self.screen_widget.stop_display()
         self.emulator.stop()
+        # Der Fokuswächter filtert ANWENDUNGSWEIT jedes Ereignis; ein geschlossenes
+        # Fenster darf ihn nicht hängen lassen (mehrere Fenster nacheinander, z. B.
+        # in den GUI-Tests: jeder weitere Aufbau wurde sonst merklich teurer).
+        self._focus_guard.abhaengen()
         # Echte Laufwerke abmelden: ausstehende Spuren zurückschreiben und den
         # Arbeitsfaden anhalten.  Ohne das bliebe eine Änderung im Abbild liegen,
         # die auf der eingelegten Diskette nie ankäme
