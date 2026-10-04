@@ -51,7 +51,7 @@ Taste die echte Tastatur gerade anspricht, und trägt die Anzeigen des Rechners
 Schreibschutz, das erkannte Format, und die Knöpfe zum Einlegen, Anlegen,
 Speichern unter und für die echte Diskette.
 
-**Einstellungen** — vier Reiter: *Allgemein* (Takt), *Laufwerke*
+**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk), *Laufwerke*
 (welcher Laufwerkstyp in welchem Steckplatz steckt), *Schnittstellen* (die seriellen
 Anschlüsse des Rechners nach außen, ein Block je Schnittstelle — siehe *Serielle
 Schnittstellen* unten) und *CRT* (das Aussehen der Bildröhre).
@@ -585,6 +585,44 @@ dafür Platz hätte — nach dem Schaltplan hängt sie an RAMEN. Daneben steht
 `Modus: 8-Bit` oder `Modus: 16-Bit`, je nachdem, welcher Prozessor gerade den
 Bus hat. Beim schlichten A5120 fehlen beide Leuchten.
 
+## RAM-Floppy RAF
+
+*Einstellungen ▸ Allgemein ▸ RAM-Disk* steckt eine RAM-Floppy des ZWG der AdW
+auf die E/A-Adressen 88H/89H — in allen drei Programmen: **keine** (die Vorgabe),
+**RAF 128** (128 KByte), **RAF 512** (512 KByte) oder **RAF-2M** (2 MByte).
+
+Ein Wechsel schaltet die Maschine aus und baut sie neu auf, wie beim Modell —
+eine Karte steckt man nicht im Betrieb.
+
+Das Betriebssystem braucht einen Treiber:
+
+* **CP/A und SCPX:** `RAF512.COM` legt die RAM-Disk als Laufwerk **P:** an,
+  `RAFCPM.COM` als **M:**. Am K8915 ist M: oft schon belegt — dort `RAF512`.
+* Ein **CP/A mit eingebautem RAF-Treiber** legt M: beim Kaltstart selbst an.
+* Beim ersten Mal meldet der Treiber „undefiniert" und legt ein leeres
+  Verzeichnis an; danach „noch wie bei letzter Benutzung geladen".
+
+Was den Inhalt überlebt:
+
+| Ereignis | Inhalt |
+|----------|--------|
+| *Rückstellen* (RESET) | bleibt |
+| Aus- und Einschalten, Wechsel von Modell/Laufwerken/RAM-Disk, Beenden | weg — außer mit Stand-by |
+| dasselbe mit **Stand-by** | bleibt |
+
+**Inhalt beim Beenden behalten (Stand-by 5PG)** — das Kästchen darunter, nur
+wählbar, wenn eine RAF gesteckt ist; ab Werk aus. Gesetzt, schreibt das Programm
+den Inhalt beim Beenden, beim Ausschalten und vor jedem Neuaufbau der Maschine in
+den Konfigurationsordner (`raf_a5120emu.bin`, `raf_k8915emu.bin` bzw.
+`raf_prg710emu.bin` — je Programm eine eigene Datei) und lädt ihn beim
+Einschalten wieder. Passt die Datei nicht zum gewählten Typ (etwa eine
+512-KByte-Ablage bei RAF-2M), wird sie nicht geladen — die Statuszeile sagt es —
+und beim nächsten Sichern ersetzt. Ohne Häkchen wird keine Datei gelesen oder
+geschrieben; eine vorhandene bleibt liegen.
+
+**A5120.16 und RAF** gehen zusammen: das Erweiterungsmodul belegt M: (CP/A mit
+EM256-BIOS), `RAF512.COM` legt die RAF daneben als P: an.
+
 ## Die Bildröhre einstellen
 
 *Einstellungen ▸ CRT*: Leuchtfarbe, Helligkeit, Kontrast, Wölbung, Rundung der
@@ -618,7 +656,7 @@ Alles, was man einstellt, landet fortlaufend in
 `%APPDATA%\K1520emu`) — jedes der beiden Programme hat seine eigene Datei, man
 kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
 zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
-Takt, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
+Takt, Modell, RAM-Disk (samt Stand-by), Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
 (samt dem, was lief), Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.

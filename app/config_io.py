@@ -9,6 +9,11 @@ added over time.  Sections carried today:
 * ``general`` — general emulator settings: emulation ``speed`` and the machine
   ``model`` (``"a5120"``/``"a5120.16"``, ``app/modell.py``; missing = ``"a5120"``,
   so older configurations keep running unchanged)
+* ``machine`` — Bestückung jenseits von Modell und Laufwerken: ``raf``
+  (``none``/``raf128``/``raf512``/``raf2m``, RAM-Floppy, `app/raf.py`) und
+  ``raf_standby`` (Inhalt in ``raf_<programm>.bin`` im Konfigurationsordner
+  behalten, doc/design/22_raf512.md §7).  Fehlend/unbekannt = keine RAF, kein
+  Stand-by.
 * ``drive_types`` — the drive-bay configuration: one core ``DriveProfile`` name
   per K5122 slot (``"none"`` = empty slot), restored on the next start
 * ``disks``   — the mounted disk images, so they are restored on the next start
@@ -127,7 +132,7 @@ def konfig_umziehen(profil: "profile.Programmprofil" = None) -> str:
 
 def build_config(crt: CRTParams, general: dict, disks: list,
                  window: dict = None, drive_types: list = None,
-                 schnittstellen: dict = None) -> dict:
+                 schnittstellen: dict = None, machine: dict = None) -> dict:
     """Assemble the full configuration dict from the live application state.
 
     ``drive_types`` is the per-slot list of core ``DriveProfile`` names (one per
@@ -137,6 +142,9 @@ def build_config(crt: CRTParams, general: dict, disks: list,
     ``schnittstellen`` (AP-S7): Einstellung der seriellen Schnittstellen je Name aus
     dem Kern samt ``aktiv``.  ``None`` = Abschnitt weglassen (fehlend heisst beim
     Laden „nicht anfassen"); ein leeres Verzeichnis wird geschrieben.
+
+    ``machine`` (doc/design/22_raf512.md §7.2): ``{"raf": …, "raf_standby": …}``;
+    ``None`` = Abschnitt weglassen (beim Laden heisst das: keine RAF).
     """
     data = {
         "version": CONFIG_VERSION,
@@ -146,6 +154,8 @@ def build_config(crt: CRTParams, general: dict, disks: list,
         "disks": list(disks or []),
         "window": dict(window or {}),
     }
+    if machine is not None:
+        data["machine"] = dict(machine)
     if schnittstellen is not None:
         data["schnittstellen"] = dict(schnittstellen)
     return data

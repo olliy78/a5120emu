@@ -59,6 +59,10 @@ class Programmprofil:
     modelle: Tuple[Tuple[str, str, Optional[str], str, str], ...] = ()
     #: Hinweistext am Auswahlfeld des Modells.
     modell_tipp: str = ""
+    #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kästchen
+    #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
+    #: Programme bieten sie an; ohne sie läuft die Maschine stets ohne RAF.
+    raf_wahl: bool = True
     #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
     ueber_rechner: str = ""
     #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname
