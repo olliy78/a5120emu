@@ -305,6 +305,18 @@ _lib.k1520_create_with_em.argtypes = [
 ]
 _lib.k1520_create_with_em.restype = K1520Handle
 
+# RAM-Floppy RAF (doc/design/22_raf512.md §6)
+_lib.k1520_raf_install.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_raf_install.restype = ctypes.c_bool
+_lib.k1520_raf_variant.argtypes = [K1520Handle]
+_lib.k1520_raf_variant.restype = ctypes.c_char_p
+_lib.k1520_raf_peek.argtypes = [K1520Handle, ctypes.c_uint32]
+_lib.k1520_raf_peek.restype = ctypes.c_uint8
+_lib.k1520_raf_load.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_raf_load.restype = ctypes.c_bool
+_lib.k1520_raf_save.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_raf_save.restype = ctypes.c_bool
+
 # k1520_em_variant(K1520Handle) -> const char*   ("" | "em064" | "em256")
 _lib.k1520_em_variant.argtypes = [K1520Handle]
 _lib.k1520_em_variant.restype = ctypes.c_char_p
@@ -694,7 +706,7 @@ class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
-                 em: Optional[str] = None):
+                 em: Optional[str] = None, raf: Optional[str] = None):
         """Initialize emulator instance.
 
         Args:
@@ -707,6 +719,9 @@ class K1520Emulator:
                 ``"prg710-1"`` — siehe :data:`MACHINE_TYPES`.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
+            raf: RAM-Floppy — ``None``/``"none"`` = ohne, ``"raf128"``, ``"raf512"``
+                oder ``"raf2m"``; an jeder Maschine.  Wird direkt nach dem Anlegen
+                gesteckt (vor dem ersten Lauf); Fehler → ValueError.
         """
         # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
         # darf nicht über ein fehlendes Attribut stolpern.
@@ -738,6 +753,13 @@ class K1520Emulator:
             reason = reason.decode("utf-8", "replace") if reason else ""
             raise RuntimeError(reason or "k1520_create lieferte NULL (unbekannter Grund)")
         self._handle = handle
+        if raf and raf != "none":
+            if not _lib.k1520_raf_install(handle, raf.encode("ascii", "replace")):
+                reason = _lib.k1520_last_init_error()
+                reason = reason.decode("utf-8", "replace") if reason else ""
+                _lib.k1520_destroy(handle)
+                self._handle = None
+                raise ValueError(reason or f"RAF {raf!r} nicht steckbar")
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -1274,6 +1296,25 @@ class K1520Emulator:
         return _lib.k1520_head_loaded(self._handle)
 
     # ─── Speicher-/Portzugriff (Diagnose, Tests) ─────────────────────────────
+
+    # ─── RAM-Floppy RAF ────────────────────────────────────────────────────
+    @property
+    def raf_variant(self) -> str:
+        """Bestückung: "" (keine RAF), "raf128", "raf512" oder "raf2m"."""
+        v = _lib.k1520_raf_variant(self._handle)
+        return v.decode("ascii") if v else ""
+
+    def raf_peek(self, adr: int) -> int:
+        """Byte des RAF-Inhalts an linearer Adresse (0xFF ohne RAF/außerhalb)."""
+        return int(_lib.k1520_raf_peek(self._handle, adr))
+
+    def raf_load(self, pfad) -> bool:
+        """Inhalt aus Rohdatei laden; False ohne RAF oder bei falscher Größe."""
+        return bool(_lib.k1520_raf_load(self._handle, os.fsencode(pfad)))
+
+    def raf_save(self, pfad) -> bool:
+        """Inhalt als Rohdatei sichern; False ohne RAF."""
+        return bool(_lib.k1520_raf_save(self._handle, os.fsencode(pfad)))
 
     # ─── A5120.16 ──────────────────────────────────────────────────────────
     def em_variant(self) -> str:
