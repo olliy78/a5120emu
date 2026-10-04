@@ -157,6 +157,8 @@ static const Abzug kAbzuege[] = {
     {"pc1715_scp1715_v0007_cpa640_boot.hfe", "cpa640", "scpx640", 4},
     // CP/A 1715: KEINE Systemspuren, Bootkopf im Verzeichnis — vorher „nicht erkannt"
     {"pc1715_cpa1715_boot_4lw.hfe", "cpa800", "cpa1715", 49},
+    // CP/A 1715 aus der CPA-Workbench gebaut (AP-3b, Bootkopf F003H, PCTEST.COM dabei)
+    {"pc1715_cpa1715_workbench.hfe", "cpa800", "cpa1715", 22},
     // UDOS 1715
     {"pc1715_udos1715_system.hfe", "k5601_16x256", "udos1715", 67},
     // CP/Z 2.2
