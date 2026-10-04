@@ -60,13 +60,16 @@ std::vector<uint8_t> holeDatei(const std::string& abbild, const std::string& nam
     EXPECT_NE(dv, nullptr) << err;
     if (!dv) return {};
     const std::string ziel = k1520test::tempPath("k1520_lochband_datei.bin");
+    // extract überschreibt nicht; unter wine ist getpid() je Lauf gleich, ein Rest eines
+    // abgebrochenen Laufs bliebe sonst liegen und ließe jeden weiteren scheitern.
+    std::error_code ec;
+    fs::remove(ziel, ec);
     FileRef ref;
     ref.volume = seite;
     ref.name = name;
     EXPECT_TRUE(dv->extract(ref, ziel, TransferOptions{})) << dv->lastError();
     std::ifstream f(ziel, std::ios::binary);
     std::vector<uint8_t> d{std::istreambuf_iterator<char>(f), {}};
-    std::error_code ec;
     fs::remove(ziel, ec);
     return d;
 }

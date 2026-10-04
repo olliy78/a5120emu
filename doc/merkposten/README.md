@@ -13,6 +13,7 @@ sind nur nicht mehr in jeder einzelnen Anfrage geladen.
 | `k8915.md` | `core/machines/k8915/` + Karten `zre8762`/`k7028`, Peripherie `k7672` — zweite Maschine (nicht ausgelagert, sondern direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Zweite Maschine: K8915“) |
 | `serielle_schnittstellen.md` | `core/serial/` + Anschlüsse in `k8025`/`k7028` + Dock „Schnittstellen" — Telnet/RFC 2217/Datei nach außen (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz) |
 | `prg710.md` | `core/machines/prg710/` + Karten `k2521`/`prg710_speicher`/`atp590068`, `i8279`/`k7609` — dritte Maschine PRG 710 / 710-1 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Dritte Maschine: PRG 710 / PRG 710-1“) |
+| `raf.md` | `core/cards/raf/` + `installRaf` in allen Maschinen, `k1520_raf_*`, `app/raf.py` — RAM-Floppy RAF 128/512/2M (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „RAM-Floppy RAF“) |
 
 ## Warum ausgelagert
 
