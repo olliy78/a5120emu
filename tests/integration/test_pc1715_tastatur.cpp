@@ -176,3 +176,61 @@ TEST(Pc1715Tastatur, Udos1715Cat) {
     ASSERT_TRUE(laufeBisText(m, "ZLINK2", 60'000'000)) << bild(m);
     EXPECT_TRUE(enthaelt(m, "IMAGER")) << bild(m);
 }
+
+// ─── AP-4e: zwei Befunde ─────────────────────────────────────────────────────────────────────
+
+/// CP/Z 2.2 nimmt die Tastatur an.  Es programmiert SIO-B (WR2 = C0H, WR1 = 04H „Status affects
+/// Vector"), setzt Kanal B danach für die V.24-Parameter erneut zurück (Channel Reset) und
+/// erwartet Vektor und Vektorbit unverändert — seine Tabelle liegt auf F7CCH (Rx von Kanal A).
+/// Ein Kanalreset, der WR2/WR1 D2 löschte, schickte jeden Tasteninterrupt in die Leere.
+TEST(Pc1715Tastatur, Cpz22NimmtTastaturAn) {
+    stumm();
+    Pc1715Machine m;
+    k1520test::TempDisk d("pc1715_cpz22_boot.hfe");
+    ASSERT_TRUE(m.mountDisk(0, d.path(), m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_TRUE(laufeBisPrompt(m, "A>", 40'000'000)) << bild(m);
+    tippe(m, "ab");
+    EXPECT_TRUE(laufeBisText(m, "A>ab", 5'000'000)) << bild(m);
+}
+
+/// SCP 1715: die jeweils erste Taste nach einer langen Pause am Prompt geht nicht verloren.
+TEST(Pc1715Tastatur, Scp1715ErsteTasteNachPause) {
+    stumm();
+    Pc1715Machine m;
+    k1520test::TempDisk d("pc1715_scp1715_v0006_boot.hfe");
+    ASSERT_TRUE(m.mountDisk(0, d.path(), m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_TRUE(laufeBisPrompt(m, "A>", 40'000'000)) << bild(m);
+    std::string soll = "A>";
+    for (long long pause : {500'000LL, 3'000'000LL, 20'000'000LL, 700'000LL}) {
+        laufe(m, pause);
+        tippe(m, "x");
+        soll += "x";
+        laufe(m, 300'000);
+        const bool ok = enthaelt(m, "\n" + soll + "\n");
+        EXPECT_TRUE(ok) << "Pause " << pause << "\n" << bild(m);
+        if (!ok) break;
+    }
+}
+
+/// Wie oben, aber wie die Oberfläche: Taste sofort wieder loslassen, Pausen mit wechselnder Phase
+/// zum Abfragedurchlauf des Tastatur-ROMs.
+TEST(Pc1715Tastatur, Scp1715ErsteTasteNachPausePhasen) {
+    stumm();
+    Pc1715Machine m;
+    k1520test::TempDisk d("pc1715_scp1715_v0006_boot.hfe");
+    ASSERT_TRUE(m.mountDisk(0, d.path(), m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_TRUE(laufeBisPrompt(m, "A>", 40'000'000)) << bild(m);
+    std::string soll = "A>";
+    for (int i = 0; i < 16; ++i) {
+        laufe(m, 2'000'000 + 7'000LL * i * i);
+        m.keyPress('x', false, false);
+        m.keyRelease('x');
+        laufe(m, 700'000);
+        soll += "x";
+        const bool ok = enthaelt(m, "\n" + soll + "\n");
+        ASSERT_TRUE(ok) << "Durchlauf " << i << "\n" << bild(m);
+    }
+}

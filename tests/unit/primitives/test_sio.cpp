@@ -322,6 +322,26 @@ TEST(Z80SIO, KanalResetMitZeigerbitsLaesstDenZeigerBeiNull) {
 }
 
 /**
+ * @test Z80SIO/KanalResetBehaeltVektorUndStatusAffectsVector
+ * @brief CP/Z 2.2 (PC 1715, AP-4e): Kanal B bekommt WR2 = C0H und WR1 = 04H, wird danach für die
+ *        V.24-Parameter erneut zurückgesetzt (18H) — Vektor und „Status affects Vector" bleiben,
+ *        sonst liefert die Quittung für Rx von Kanal A 00H statt CCH (Tabelle F7CCH).  Alle
+ *        übrigen WR1-Bits und die Kanalzustände gehen mit dem Reset.
+ */
+TEST(Z80SIO, KanalResetBehaeltVektorUndStatusAffectsVector) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    for (uint8_t b : {0x02, 0xC0, 0x01, 0x04}) sio.ioWrite(3, b);   // B: WR2 = C0H, WR1 = 04H
+    sio.ioWrite(3, 0x18);                                           // Kanal B: Channel Reset
+    for (uint8_t b : {0x04, 0x49, 0x03, 0x81}) sio.ioWrite(3, b);
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x18);                                           // A: Rx-Interrupt jedes Zeichen
+    sio.channelA().rxByte(0x41);
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xCC);
+}
+
+/**
  * @test Z80SIO/RX_Interrupt_GestauteZeichenUnterbrechenEinzeln
  * @brief „Jedes Zeichen": stehen nach einer Quittung noch Zeichen im FIFO (gestaut
  *        während eines langen DI), fordert jedes weitere nach dem Abholen erneut an.
