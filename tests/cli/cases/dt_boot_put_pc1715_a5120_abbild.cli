@@ -1,0 +1,9 @@
+# Der Urlader S502 des PC 1715 prueft das Wort F002H/F003H; ein A5120-Bootabbild (SYL-Lader)
+# besteht das nicht und wird VOR dem Schreiben abgewiesen.
+tool:   k1520disktool
+disk:   pc1715_scp1715_v0006_boot.hfe
+file syl.bin:
+  SYL-Lader des A5120, kein PC-1715-Bootkopf
+run:    boot-put %DISK% %syl.bin%
+expect: PC-1715-Bootkopf
+exit:   1

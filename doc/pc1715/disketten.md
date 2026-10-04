@@ -117,6 +117,10 @@ Auf SCP-Disketten tritt es nicht auf, weil dort Kopf+Parameter in den Systemspur
 beim Schreiben unangetastet lassen); die erzeugte Diskette bleibt dann bootfähig. Gleichzeitig
 ist es die einzige **bootfähige 1715-Diskette ohne Systemspuren** — wichtig für `create --boot`.
 
+**Umgesetzt in AP-D (2026-10-04):** Profil `cpa1715` (`dir_boot`), `ls`/`get`/`check` gehen,
+`put`/`rm` lassen Platz 0/3 unangetastet, `create --fs cpa1715 --boot` — siehe
+`doc/merkposten/disktool.md`.
+
 ## 4. Wandlung `.scp` → `.hfe`
 
 `gw` ist installiert (Host Tools 1.23, kein Gerät nötig). **`gw convert in.scp out.hfe` allein

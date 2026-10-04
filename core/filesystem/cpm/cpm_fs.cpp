@@ -207,6 +207,7 @@ std::vector<CpmDirEntry> CpmFileSystem::directory() const {
         e.index = i;
         e.user  = p[0];
         if (e.user == 0xE5) { result.push_back(e); continue; }
+        if (bootPlatz(i, p)) { e.user = 0xF0; e.boot = true; result.push_back(e); continue; }
 
         e.name      = entryName(p);
         e.extent    = (p[12] & 0x1F) + (p[14] & 0x3F) * 32;
@@ -224,6 +225,42 @@ std::vector<CpmDirEntry> CpmFileSystem::directory() const {
         result.push_back(e);
     }
     return result;
+}
+
+bool CpmFileSystem::bootKopf(const uint8_t* p, size_t n) {
+    return n >= 2 && (p[0] == 0x02 || p[0] == 0x03) && p[1] == 0xF0;
+}
+
+bool CpmFileSystem::bootPlatz(int index, const uint8_t* p) const {
+    if (!prof_.dir_boot) return false;
+    if (index == 0) return bootKopf(p, 32);
+    return index >= 1 && index <= 3 && p[0] == 0xF0;
+}
+
+bool CpmFileSystem::readBootSlots(std::vector<uint8_t>& out) const {
+    out.assign(128, 0xE5);
+    return readAt(0, out.data(), out.size());
+}
+
+bool CpmFileSystem::writeBootSlots(const std::vector<uint8_t>& img) {
+    if (!prof_.dir_boot) return fail("Das Profil '" + prof_.name + "' hat keinen Bootbereich im Verzeichnis");
+    if (img.size() < 128 || !bootKopf(img.data(), img.size()))
+        return fail("Das Bootabbild traegt keinen PC-1715-Bootkopf (Wort F002H/F003H, Bytes 02|03 F0)");
+
+    std::vector<uint8_t> alt;
+    if (!readBootSlots(alt)) return false;
+    // Zielplaetze: 0 immer, 1…3 nur die Parametersaetze (Nutzerbyte F0) des Abbilds.
+    std::vector<int> ziele{0};
+    for (int i = 1; i <= 3; ++i) if (img[static_cast<size_t>(i) * 32] == 0xF0) ziele.push_back(i);
+    for (int i : ziele) {
+        const uint8_t* a = alt.data() + static_cast<size_t>(i) * 32;
+        if (a[0] != 0xE5 && !bootPlatz(i, a))
+            return fail("Verzeichnisplatz " + std::to_string(i) + " traegt einen Dateieintrag — "
+                        "der Bootbereich wuerde ihn ueberschreiben");
+    }
+    for (int i : ziele)
+        if (!writeDirEntry(i, img.data() + static_cast<size_t>(i) * 32)) return false;
+    return true;
 }
 
 bool CpmFileSystem::directoryRaw(std::vector<uint8_t>& out) const {
@@ -477,7 +514,7 @@ bool CpmFileSystem::erase(const std::string& name) {
     bool etwas = false;
     for (int i = 0; i < prof_.dir_entries; ++i) {
         uint8_t* p = roh.data() + static_cast<size_t>(i) * 32;
-        if (p[0] == 0xE5 || p[0] > 15) continue;
+        if (p[0] == 0xE5 || p[0] > 15 || bootPlatz(i, p)) continue;
         if (p[0] != gesucht_user || upper(entryName(p)) != gesucht_name) continue;
 
         // CP/M loescht nur das Nutzerbyte — die Blockliste bleibt stehen und wird
@@ -509,7 +546,7 @@ bool CpmFileSystem::setAttributes(const std::string& name, const CpmAttrs& a) {
     bool gefunden = false;
     for (int i = 0; i < prof_.dir_entries; ++i) {
         const uint8_t* p = roh.data() + static_cast<size_t>(i) * 32;
-        if (p[0] == 0xE5 || p[0] > 15) continue;
+        if (p[0] == 0xE5 || p[0] > 15 || bootPlatz(i, p)) continue;
         if (upper(entryName(p)) != gesucht_name) continue;
         if (p[0] == gesucht_user) { gefunden = true; continue; }
         if (zieht_um && p[0] == a.user)
@@ -521,7 +558,7 @@ bool CpmFileSystem::setAttributes(const std::string& name, const CpmAttrs& a) {
     // Alle Extents tragen die Attributbits erneut — sie muessen alle mitgehen.
     for (int i = 0; i < prof_.dir_entries; ++i) {
         uint8_t* p = roh.data() + static_cast<size_t>(i) * 32;
-        if (p[0] == 0xE5 || p[0] > 15) continue;
+        if (p[0] == 0xE5 || p[0] > 15 || bootPlatz(i, p)) continue;
         if (p[0] != gesucht_user || upper(entryName(p)) != gesucht_name) continue;
 
         if (a.set_read_only) p[ 9] = static_cast<uint8_t>((p[ 9] & 0x7F) | (a.read_only ? 0x80 : 0));

@@ -1,0 +1,11 @@
+# CP/A-1715-Bootdiskette ohne Systemspuren: der Bootkopf (F003H) steht in Verzeichnisplatz 0,
+# die Parametersaetze in einem Platz mit Nutzerbyte F0 (doc/pc1715/disketten.md §3).  Frueher
+# „Verzeichnisplatz 0 ist kein gueltiger Eintrag"; jetzt erkannt, gelistet, ohne Befund.
+tool:   k1520disktool
+disk:   pc1715_cpa1715_boot_4lw.hfe
+run:    ls %DISK%
+expect: cpa1715
+expect: @OS.COM
+expect: BDOS.ERL
+forbid: ungueltig
+exit:   0

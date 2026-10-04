@@ -698,6 +698,39 @@ filesystems:
     # ein A5120-CP/A-Abbild wird abgewiesen statt still geschrieben (AP-E5c).
     boot_header: k8915
 
+  # ══ PC 1715 / PC 1715W (AP-D, doc/pc1715/disketten.md §3) ══════════════════
+  # Der Urlader S502 prueft von Spur 0 Sektor 1 nur das Wort F002H/F003H (Bytes 02|03 F0).
+  #
+  # `cpa1715` — CP/A 1715 OHNE Systemspuren: das Verzeichnis beginnt auf c0h0, und der
+  # Bootkopf steht IM Verzeichnis (Platz 0 = Kopf, Platz 3 = Laufwerks-Parametersaetze mit
+  # Nutzerbyte F0).  EIGENER GRUND fuer den Eintrag: ohne ihn faellt jede solche Diskette
+  # an „Verzeichnisplatz 0 ist kein gueltiger Eintrag" durch — und `dir_boot` ist ein
+  # Verhalten (Plaetze unangetastet, Kopf als positiver Nachweis), kein Zahlenwert, den die
+  # CP/A-Regel ausrechnen koennte.  Erkannt wird NUR mit Bootkopf; eine Datendiskette
+  # bleibt `cpa800`.
+  - name:        cpa1715
+    description: "CP/A 1715 (PC 1715) — 800K ohne Systemspuren, Bootkopf im Verzeichnis"
+    format:      cpa800
+    type:        cpm
+    block_size:  2048
+    dir_entries: 192
+    dir_boot:    true
+    boot_header: pc1715
+
+  # `scp1715` — SCP 1715 und SCP 3.0 (1715W): vier Systemspuren (Urlader, CCP, BDOS, BIOS),
+  # Verzeichnis ab c2h0 (die CP/A-Regel liest solche Disketten schon als `cpa_auto`; der
+  # Eintrag ist der NAME fuer `create --fs scp1715 --boot` und der Ladekopf-Pruefer).
+  # `detect: false`: in der Erkennung braeuchte er keinen Platz — wie `scpx8915`.
+  - name:        scp1715
+    description: "SCP 1715 / SCP 3.0 (PC 1715, 1715W) 780K — Systemzylinder 0-1, Dateisystem ab Zylinder 2"
+    format:      cpa800
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  2048
+    dir_entries: 128
+    detect:      false
+    boot_header: pc1715
+
   # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
   # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,
   # 128-B-Sätze.  Nachgemessen am Referenzdatenträger (Verzeichnis bei c2h0,

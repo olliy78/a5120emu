@@ -149,6 +149,30 @@ Was beim Weiterarbeiten zu wissen ist:
   `K8915Scpx.DiskToolBautBootdisketteAus*`, `.FremdeSystemspurWirdFuerDenK8915Abgelehnt`,
   `.BootPutMachtEineLeereDisketteBootfaehig`, `K8915Format.FormatDisketteGetBootPutBootetOhneDisgen`
   (langsam).  Keine C-ABI-Änderung.
+- **PC 1715 / 1715W: der Bootkopf kann IM VERZEICHNIS stehen (2026-10-04, AP-D,
+  `doc/design/21_pc1715.md`, `doc/pc1715/disketten.md` §3).**  Der Urlader S502 prüft von Spur 0
+  Sektor 1 nur das Wort `F002H`/`F003H` (Bytes `02|03 F0`).  Zwei Profile (`boot_header: pc1715`):
+  **`scp1715`** (4 Systemspuren, `detect: false`, nur der Name für `create --fs … --boot`; SCP 3.0
+  des 1715W geht denselben Weg) und **`cpa1715`** (CP/A 1715 ohne Systemspuren, `dir_boot: true`).
+  Fünf Festlegungen: **(1)** Bei `dir_boot` gehören Platz 0 (Kopf) und Plätze 1…3 mit Nutzerbyte
+  `F0` (Parametersätze ab 0x64) dem Urlader: `CpmFileSystem::directory()` liefert sie als
+  `CpmDirEntry::boot` mit `user = 0xF0` — jede Stelle, die `user > 15` übergeht, übergeht sie mit
+  (`list`, `read`, `allocationMap`, Rettung); `erase`/`setAttributes` und die Prüfung überspringen sie
+  ausdrücklich, `write` nimmt nur `0xE5`-Plätze.  **(2)** Die Erkennung verlangt für `cpa1715` den
+  Bootkopf als POSITIVEN Nachweis (`cpmVerzeichnisPlausibel`) — sonst wäre jede 800K-Datendiskette
+  zugleich `cpa800` und `cpa1715` (`FsCheckGegenprobe.DerAusgelieferteKatalogIstEindeutig`).  **(3)**
+  Das „Bootabbild" von `cpa1715` sind die ersten **128 Byte** des Verzeichnisses; geschrieben werden
+  nur Platz 0 und die `F0`-Plätze des Abbilds (`CpmFileSystem::writeBootSlots`), ein Dateieintrag auf
+  dem Zielplatz wird verweigert.  `@OS.COM` muss die erste Datei sein (Block 3, dort lädt der Kopf).
+  **(4)** Der Ladekopf wird VOR dem Schreiben geprüft (`pc1715Bootabbildproblem`): bei
+  `boot_header: pc1715` oder wenn Sektor 1 der Diskette schon einen 1715-Kopf trägt; ein
+  A5120-SYL-Abbild wird abgewiesen, `create` legt dann nichts an.  Der Hinweis „leer — ebenso gut
+  scpx8915/scp1715“ entfällt bei den 1715-Profilen.  **(5)** CP/M-3-Sonderplätze (SCP 3.0): die
+  Erkennung nimmt Zeitstempel (21H nur als 4. Platz einer Vierergruppe), Etikett (20H) und
+  Kennwortsätze (16…31, druckbarer Name) an — vorher fiel eine mit INITDIR initialisierte Diskette
+  durch („Verzeichnis nicht angelegt“); sie zählen nicht als belegt, die Prüfung nennt sie weiter nur
+  als Info.  Wächter `DisktoolPc1715.*` (bootet CP/A 1715, SCP 1715 und SCP 3.0 aus gebauten
+  Disketten; alle sechs `pc1715*.hfe` gegen die Tabelle in `disketten.md`), `cli_dt_*cpa1715*`.
 - **PRG 710 / 710-1: das Bootabbild trägt die Fassung des Geräts (2026-10-02, AP-P6,
   `doc/design/20_prg710.md`, `core/filesystem/prg_boot.{h,cpp}`).**  Tastatur und MKE-Treiber
   stehen im Bootabbild; die falsche Fassung bootet nicht und sieht heil aus.  Erkannt wird
