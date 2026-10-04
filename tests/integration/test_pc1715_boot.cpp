@@ -14,6 +14,7 @@
 #include "core/logger.h"
 #include "core/machines/pc1715/pc1715.h"
 #include "tests/support/fixtures.h"
+#include "tests/support/pc1715_input.h"
 
 namespace {
 void stumm() { k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR); }
@@ -113,4 +114,19 @@ TEST(Pc1715Boot, Udos1715BisPrompt) {
     Gebootet g("pc1715_udos1715_system.hfe");
     ASSERT_TRUE(laufeBisPrompt(g.m, "%", 100000000)) << bild(g.m);
     EXPECT_NE(zeile(g.m, 0).find("Betriebssystem UDOS1715"), std::string::npos) << bild(g.m);
+}
+
+/// CP/A 1715, gebaut von der CPA_Workbench (Variante `pc_1715`, M80/LINKMT, Diskette `cpa800`
+/// mit dem Bootkopf `F003H` aus `prebuilt/pc_1715`).  Wächter für AP-3b: die Workbench nahm für
+/// den Diskettenbau früher immer den SYL-Kopf des A5120 — eine so gebaute Diskette bootet am
+/// 1715 nicht (der Urlader S502 prüft das Wort F003H).  Zugleich trägt die Diskette `PCTEST.COM`.
+TEST(Pc1715Boot, CpaWorkbenchBisPrompt) {
+    Gebootet g("pc1715_cpa1715_workbench.hfe");
+    // Die Vorgabe der Workbench fragt nach der Uhrzeit (unser BC-Boot-Fixture tut es nicht).
+    ASSERT_TRUE(k1520test::pc1715::laufeBisText(g.m, "Uhrzeit in der Form HH:MM", 40'000'000)) << bild(g.m);
+    EXPECT_NE(zeile(g.m, 0).find("CP/A, Version"), std::string::npos) << bild(g.m);
+    k1520test::pc1715::tippeZeile(g.m, "12:00");
+    ASSERT_TRUE(laufeBisPrompt(g.m, "A>", 40'000'000)) << bild(g.m);
+    EXPECT_EQ(g.m.zre().crt().rows(), 25);
+    EXPECT_NE(zeile(g.m, 24).find("**CP/A**"), std::string::npos) << bild(g.m);
 }
