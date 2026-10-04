@@ -424,11 +424,14 @@ class MainWindow(LochbandMixin, QMainWindow):
     # ── On-screen keyboard → emulator ────────────────────────────────────────
 
     def _tastatur_bauen(self):
-        """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1)
-        oder K7609 (PRG 710)."""
+        """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1),
+        K7609 (PRG 710) oder die 1715-Tastatur (PC 1715)."""
         if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
+        if self._tastatur_art == "pc1715":
+            from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
+            return KeyboardPc1715Widget()
         if self._tastatur_art == "k7609":
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
@@ -1628,6 +1631,9 @@ class MainWindow(LochbandMixin, QMainWindow):
 
     def _prg710emu_starten(self):
         self._emulator_starten("prg710")
+
+    def _pc1715emu_starten(self):
+        self._emulator_starten("pc1715")
 
     # ── EPROMmer (nur PRG 710, AP-P7c) ───────────────────────────────────────
 

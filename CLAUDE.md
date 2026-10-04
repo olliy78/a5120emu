@@ -145,11 +145,15 @@ bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
 
-> **Drei Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d,
+> **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a,
 > `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
 > **A5120 Emulator** (`a5120emu`), **K8915 Emulator** (`k8915emu`, `app/main.py
 > --machine k8915`) und **PRG710 Emulator** (`prg710emu`, `--machine prg710`, Modellwahl PRG 710 /
-> 710-1 über `general.model`, `prg710emu.yaml`, `data/default_config_prg710.yaml`).  Alles Maschinenspezifische steht im **Programmprofil
+> 710-1 über `general.model`, `prg710emu.yaml`, `data/default_config_prg710.yaml`) und **PC1715 Emulator** (`pc1715emu`, `--machine pc1715`,
+> Modellwahl = Bildschirm K7222/K7221 über `general.model`, **PC 1715W** ausgegraut bis der Kern ihn kann
+> (`Programmprofil.gesperrte_modelle`), `pc1715emu.yaml`, `data/default_config_pc1715.yaml`, Bildschirmtastatur
+> `app/ui/keyboard_pc1715.py`: physische Matrixtasten, SHIFT/CTRL/REP gemerkt und vor der Taste gedrückt,
+> LOCK/SI/SO rasten im ROM).  Alles Maschinenspezifische steht im **Programmprofil
 > `app/profil.py`** (Titel, Konfig-/Vorgabedatei, Takt, Tastatur K7637/K7672,
 > Frontplatte, eigene Aktionen wie `nmi` via `actions.NUR_FUER`) — kein
 > `if machine == …` in der Oberfläche.  Konfiguration je Programm im selben
@@ -496,7 +500,7 @@ wiederverwendet `K5122` mit `Portlage::Pc1715` (Vorgabe unverändert). **In `lib
 `K1520Emulator(machine="pc1715")`; Bild nur über `k1520_screen_char`, nie `mem_read`).
 **`boot_trace --machine pc1715`** (Grundform). **Stand 2026-10-03:** Etappen 1–3 fertig (SCP 1715,
 CP/A 1715, CP/Z 2.2, UDOS 1715 booten bis zum Prompt; `dir`/`STAT`/`cat` über die Tastatur);
-offen Schnittstellen/V.24-Boot (Etappe 4), Programm `pc1715emu`, 1715W, DiskTool, [Anwender]-Fragen.
+Etappe 4 (Schnittstellen/V.24-Boot) und AP-5a (Programm `pc1715emu`, Framebuffer 640 × 300 mit CP/A-Statuszeile) stehen; offen 1715W, Paket (AP-5c), DiskTool, [Anwender]-Fragen.
 
 **Vor Arbeiten daran: `doc/merkposten/pc1715.md` lesen** — die Festlegungen mit Wächter
 (ROM-Overlay lesen ROM/schreiben RAM, BWS 34H = Adresse >> 10, SIO-Adressierung AB0 = Kanal,

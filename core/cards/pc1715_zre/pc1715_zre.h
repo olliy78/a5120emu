@@ -153,9 +153,8 @@ public:
     int  zeichenLinien() const { return cfg_.bild == Bildschirm::K7222 ? 12 : 15; }
     /// Höchstens auswertbare Zeilen: Textzeilen + 1 Statuszeile.  CP/A programmiert den 8275 auf
     /// 25 bzw. 17 Zeilen (`biopcrt.mac`, `cpastz = 1`: inverse Statuszeile, doc/pc1715/cpa_bios.md
-    /// §2).  screenChar() liefert sie (Zeile textRows()); der Framebuffer bleibt bei
-    /// textRows() Zeilen (640 × 288 ist ein Vertrag der Oberfläche) — die Statuszeile wird
-    /// noch NICHT gerastert [offen, AP-5a].
+    /// §2).  screenChar() liefert sie (Zeile textRows()); der Framebuffer hat seit AP-5a
+    /// maxZeilen() Zeilen (640 × 300 bzw. 512 × 255), die Statuszeile wird mitgerastert.
     int  maxZeilen() const { return textRows() + 1; }
     /// Vom 8275 programmierte Zeilenzahl, begrenzt auf maxZeilen() (vor dem Programmieren 0).
     int  bildZeilen() const { return std::min(crt_.rows(), maxZeilen()); }

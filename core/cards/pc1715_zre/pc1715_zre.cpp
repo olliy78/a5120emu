@@ -137,7 +137,7 @@ Pc1715Zre::Pc1715Zre(K1520Bus& bus, const Config& cfg)
     : bus_(bus), cfg_(cfg), rom_(PC1715_S502_URLADER)
 {
     fb_w_ = textCols() * 8;
-    fb_h_ = textRows() * zeichenLinien();
+    fb_h_ = maxZeilen() * zeichenLinien();   // inkl. CP/A-Statuszeile (AP-5a)
     fb_.assign(static_cast<size_t>(fb_w_) * fb_h_, 0);
     for (int i = 0; i < KanalAnzahl; ++i)
         anschluesse_[static_cast<size_t>(i)] = std::make_unique<Anschluss>(*this, static_cast<Kanal>(i));
@@ -303,7 +303,7 @@ const uint8_t* Pc1715Zre::zgRom(bool zweiter_satz) const
 void Pc1715Zre::rastern()
 {
     std::fill(fb_.begin(), fb_.end(), 0);
-    const int rows = std::min(bildZeilen(), textRows());   // Statuszeile: s. maxZeilen()
+    const int rows = bildZeilen();   // bis maxZeilen(): Textzeilen + Statuszeile
     const int cols = std::min(crt_.cols(), textCols());
     for (int r = 0; r < rows; ++r)
         for (int c = 0; c < cols; ++c) zeichneZelle(r, c, crt_.cells(r, c));

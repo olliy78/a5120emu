@@ -6,12 +6,13 @@ K1520 Emulator — A5120 Emulator, K8915 Emulator und PRG710 Emulator
 Main entry point for the Qt6 GUI application.  EIN Programm, drei Gesichter:
 ``--machine k8915`` wählt das Programmprofil des K8915 Emulators (eigene
 Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`),
-``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl);
+``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl),
+``--machine pc1715`` das des PC1715 Emulators (PC 1715, Modellwahl);
 ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
-fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``bin/k8915emu``, Startmenü).
+fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``run_pc1715emu.sh``, ``bin/k8915emu``, Startmenü).
 
 Usage:
-    python3 app/main.py [--machine a5120|k8915|prg710] [DISKETTE …]
+    python3 app/main.py [--machine a5120|k8915|prg710|pc1715] [DISKETTE …]
 
 Requirements:
     - PySide6 (Qt6 Python bindings)
@@ -60,7 +61,7 @@ for _arg in _args:
     if _arg == "--machine":
         _MASCHINE = next(_args, "")
         if not _MASCHINE:
-            print("--machine braucht einen Namen: a5120, k8915 oder prg710", file=sys.stderr)
+            print("--machine braucht einen Namen: a5120, k8915, prg710 oder pc1715", file=sys.stderr)
             sys.exit(2)
     elif _arg.startswith("--machine="):
         _MASCHINE = _arg.split("=", 1)[1]
@@ -91,7 +92,8 @@ _LAUFWERKE_TEXT = ("bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:"
                    "bis zu zwei Abbilder, in Laufwerksreihenfolge A: B:")
 _KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
          "k8915": "Emulator des Arbeitsplatzcomputers K8915 (K1520-Bus)",
-         "prg710": "Emulator der Programmiergeraete PRG 710 und PRG 710-1 (K1520-Bus)"}
+         "prg710": "Emulator der Programmiergeraete PRG 710 und PRG 710-1 (K1520-Bus)",
+         "pc1715": "Emulator der Buerocomputer PC 1715 und PC 1715W"}
 _P = PROFIL.programm
 HILFE = f"""{_P} — {_KOPF[PROFIL.maschine]}
 

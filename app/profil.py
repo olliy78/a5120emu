@@ -59,6 +59,12 @@ class Programmprofil:
     modelle: Tuple[Tuple[str, str, Optional[str], str, str], ...] = ()
     #: Hinweistext am Auswahlfeld des Modells.
     modell_tipp: str = ""
+    #: Modelle, die das Profil kennt, der Kern aber noch nicht fährt:
+    #: ``(Schlüssel, Anzeigename, Begründung)``.  Sie stehen ausgegraut im
+    #: Auswahlfeld (mit der Begründung als Hinweis), sind nicht wählbar und gelten
+    #: in einer Konfiguration als unbekannt.  Wer das Modell im Kern freischaltet,
+    #: verschiebt die Zeile nach :attr:`modelle`.
+    gesperrte_modelle: Tuple[Tuple[str, str, str], ...] = ()
     #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
     ueber_rechner: str = ""
     #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname
@@ -156,7 +162,7 @@ A5120 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
-    weitere=("prg710",),
+    weitere=("prg710", "pc1715"),
 )
 
 K8915 = Programmprofil(
@@ -175,7 +181,7 @@ K8915 = Programmprofil(
     eigene_aktionen=("nmi",),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
-    weitere=("prg710",),
+    weitere=("prg710", "pc1715"),
     # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
     # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
@@ -204,11 +210,40 @@ PRG710 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
     andere="a5120",
-    weitere=("k8915",),
+    weitere=("k8915", "pc1715"),
+)
+
+PC1715 = Programmprofil(
+    maschine="pc1715",
+    programm="pc1715emu",
+    titel="PC1715 Emulator",
+    rechner="PC 1715",
+    beschreibung="Emulator der Bürocomputer robotron PC 1715 und PC 1715W",
+    konfig_datei="pc1715emu.yaml",
+    vorgabe_datei="default_config_pc1715.yaml",
+    # 2,458 MHz (Pc1715Zre::CPU_HZ); der 1715W läuft mit 3,99 MHz [?] (AP-W*).
+    nenntakt_hz=2_458_000,
+    nenntakt_text="2,458 MHz",
+    tastatur="pc1715",
+    modellwahl=True,
+    # Der Bildschirm (K7222 80 × 24 / K7221 64 × 16) ist eine Hardwarevariante der
+    # ZRE-Bestückung, im Kern ein Konstruktorparameter (`bild`) → ein Wechsel ist ein
+    # Kaltstart wie der Modellwechsel; er steht deshalb als Modell in der Auswahl.
+    modelle=(("pc1715", "pc1715", None, "PC 1715 (Bildschirm K7222, 80 × 24)", "pc1715"),
+             ("pc1715-k7221", "pc1715-k7221", None,
+              "PC 1715 (Bildschirm K7221, 64 × 16)", "pc1715")),
+    gesperrte_modelle=(("pc1715w", "PC 1715W (noch nicht verfügbar)",
+                        "Der PC 1715W (Bankumschaltung, UA858/U8272) ist im Kern noch "
+                        "nicht gebaut (doc/design/21_pc1715.md, Etappen 6–8)."),),
+    modell_tipp=("PC 1715 mit dem Bildschirm K7222 (80 × 24) oder K7221 (64 × 16).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
+    ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
+    andere="a5120",
+    weitere=("k8915", "prg710"),
 )
 
 #: Alle Profile nach Maschinenname.
-PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710)}
+PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715)}
 
 #: Das Profil ohne Angabe — ältere Starter, Tests, ``app/main.py`` ohne Schalter.
 VORGABE = A5120

@@ -158,7 +158,7 @@ def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
 
     emu = K1520Emulator(machine="pc1715")
     assert emu.machine_type() == 3
-    assert (_lib.k1520_fb_width(emu._handle), _lib.k1520_fb_height(emu._handle)) == (640, 288)
+    assert (_lib.k1520_fb_width(emu._handle), _lib.k1520_fb_height(emu._handle)) == (640, 300)
     path = temp_disk("pc1715_scp1715_v0006_boot.hfe")
     assert emu.mount_disk(0, path, "cpa800"), emu.last_error()
     assert emu.detected_format(0) != ""

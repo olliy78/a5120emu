@@ -24,12 +24,12 @@ TEST(Pc1715Maschine, BautMitBeidenBildschirmen) {
     Pc1715Machine a;
     EXPECT_EQ(a.machineType(), 3);
     EXPECT_EQ(a.fbWidth(), 640);
-    EXPECT_EQ(a.fbHeight(), 288);
+    EXPECT_EQ(a.fbHeight(), 300);
     Pc1715Machine::Config c;
     c.bild = Pc1715Zre::Bildschirm::K7221;
     Pc1715Machine b(c);
     EXPECT_EQ(b.fbWidth(), 512);
-    EXPECT_EQ(b.fbHeight(), 240);
+    EXPECT_EQ(b.fbHeight(), 255);
 }
 
 TEST(Pc1715Maschine, Pc1715WWirdMitKlarerMeldungAbgelehnt) {

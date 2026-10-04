@@ -201,6 +201,12 @@ class SettingsWidget(QWidget):
         self.model_combo = QComboBox(inner)
         for schluessel, _maschine, _em, beschriftung, _tastatur in self.profil.modelle:
             self.model_combo.addItem(beschriftung, schluessel)
+        # Modelle, die der Kern noch nicht fährt: sichtbar, aber nicht wählbar.
+        for schluessel, beschriftung, grund in self.profil.gesperrte_modelle:
+            self.model_combo.addItem(beschriftung, schluessel)
+            i = self.model_combo.count() - 1
+            self.model_combo.model().item(i).setEnabled(False)
+            self.model_combo.setItemData(i, grund, Qt.ToolTipRole)
         self.model_combo.currentIndexChanged.connect(self._on_model_combo)
         self.model_combo.setToolTip(self.profil.modell_tipp)
         # Nur im Programm mit Modellwahl (A5120, PRG); model_value() liefert sonst

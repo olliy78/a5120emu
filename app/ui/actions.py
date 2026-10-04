@@ -137,6 +137,10 @@ _SPEC: List[Tuple] = [
      "Den PRG710 Emulator öffnen (PRG 710 / PRG 710-1) — ein eigenes Programm "
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_prg710emu_starten", False),
+    ("pc1715emu", "PC&1715 Emulator starten", None, None,
+     "Den PC1715 Emulator öffnen (PC 1715) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_pc1715emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -161,6 +165,7 @@ KURZ = {
     "k8915emu": "K8915",
     "a5120emu": "A5120",
     "prg710emu": "PRG710",
+    "pc1715emu": "PC1715",
     "eprom_einlegen": "PROM",
     "eprom_leer": "Leer",
     "eprom_speichern": "Sichern",
@@ -185,9 +190,10 @@ POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 #: `app/profil.py`, die sie haben).  Alle übrigen haben alle.
 NUR_FUER = {
     "nmi": ("k8915",),                   # NMI-Taster der Frontplatte
-    "k8915emu": ("a5120", "prg710"),     # die jeweils ANDEREN Emulatoren
-    "a5120emu": ("k8915", "prg710"),
-    "prg710emu": ("a5120", "k8915"),
+    "k8915emu": ("a5120", "prg710", "pc1715"),     # die jeweils ANDEREN Emulatoren
+    "a5120emu": ("k8915", "prg710", "pc1715"),
+    "prg710emu": ("a5120", "k8915", "pc1715"),
+    "pc1715emu": ("a5120", "k8915", "prg710"),
     # EPROMmer (Kasten und Bedienung) — nur der PRG 710 hat einen.
     "eprom_einlegen": ("prg710",),
     "eprom_leer": ("prg710",),

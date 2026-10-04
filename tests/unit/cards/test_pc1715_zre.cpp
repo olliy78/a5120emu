@@ -199,7 +199,7 @@ TEST(Pc1715Zre, Bild80x24TextAusRamMitBasisAus34H) {
     f.bus.ioWrite(0x34, 0x3E);
     f.crtStart();
     EXPECT_EQ(f.zre.fbWidth(), 640);
-    EXPECT_EQ(f.zre.fbHeight(), 288);
+    EXPECT_EQ(f.zre.fbHeight(), 300);
     f.zre.frame();
 
     EXPECT_EQ(f.zre.crt().cols(), 80);
@@ -220,6 +220,24 @@ TEST(Pc1715Zre, Bild80x24TextAusRamMitBasisAus34H) {
     EXPECT_EQ(f.px(8 + 0, 2 * 12 + 5), 0) << "linkes Pixel dunkel";
     // Ein Leerzeichen bleibt dunkel (der Cursor sitzt bei 0/0 und ist hier egal).
     for (int l = 0; l < 12; ++l) EXPECT_EQ(f.zeile(5, 5, l), 0);
+}
+
+TEST(Pc1715Zre, Statuszeile25IstImFramebufferGerastert) {
+    // CP/A programmiert 25 Zeilen (Parameter 0x58 statt 0x57): die 25. ist die Statuszeile und
+    // liegt unterhalb der 24 Textzeilen im Framebuffer (AP-5a: 640 × 300).
+    ZreFixture f;
+    f.bildLoeschen(0xF800);
+    f.text(0xF800, 24, 0, "H");
+    f.bus.ioWrite(0x34, 0x3E);
+    f.bus.ioWrite(0x19, 0x00);
+    for (uint8_t p : {0x4F, 0x58, 0x6B, 0x6D}) f.bus.ioWrite(0x18, p);
+    f.bus.ioWrite(0x19, 0x20);
+    f.zre.frame();
+    EXPECT_EQ(f.zre.crt().rows(), 25);
+    EXPECT_EQ(f.zre.screenChar(0, 24), 'H');
+    EXPECT_EQ(f.zre.fbHeight(), 25 * 12);
+    for (int l = 0; l < 12; ++l)
+        EXPECT_EQ(f.zeile(24, 0, l), PC1715_S619_ZG1[l * 0x80 + 'H']) << "Linie " << l;
 }
 
 TEST(Pc1715Zre, DmaAdresseIstBasisPlusZaehlerZaehlerBeiVrtcNull) {
@@ -248,7 +266,7 @@ TEST(Pc1715Zre, Bild64x16Mit15LinienUndDunklenLinien12bis14) {
     f.bus.ioWrite(0x34, 0x3F);
     f.crtStart();
     EXPECT_EQ(f.zre.fbWidth(), 512);
-    EXPECT_EQ(f.zre.fbHeight(), 240);
+    EXPECT_EQ(f.zre.fbHeight(), 255);
     f.zre.frame();
     EXPECT_EQ(f.zre.crt().cols(), 64);
     EXPECT_EQ(f.zre.crt().rows(), 16);

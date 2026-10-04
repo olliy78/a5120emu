@@ -135,12 +135,12 @@ def test_prg710_variants_can_be_created_and_run():
 
 
 def test_pc1715_can_be_created_and_run():
-    """`k1520_create_pc1715` (AP-1b): Typ 3, beide Bildschirme (640x288 / 512x240), laufen
+    """`k1520_create_pc1715` (AP-1b): Typ 3, beide Bildschirme (640x300 / 512x255, je mit Statuszeile), laufen
     einige Takte; `k1520_create(3)` baut die Vorgabe; Variante 1 (PC 1715W) und
     unbekannte Werte → NULL mit Grund."""
     from app.core_binding.k1520 import _lib, K1520Handle
 
-    for bild, groesse in ((0, (640, 288)), (1, (512, 240))):
+    for bild, groesse in ((0, (640, 300)), (1, (512, 255))):
         handle = _lib.k1520_create_pc1715(0, bild, 0, None, None, None, None)
         assert handle, _lib.k1520_last_init_error()
         h = K1520Handle(handle)

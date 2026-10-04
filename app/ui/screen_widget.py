@@ -436,6 +436,12 @@ class ScreenWidget(QOpenGLWidget):
 
         # Latest framebuffer bytes waiting to be uploaded to the GL texture.
         self._fb_bytes: Optional[bytes] = None
+        # Bildgröße aus dem Kern (A5120/K8915/PRG: 640x288; PC 1715: 640x300 mit
+        # Statuszeile bzw. 512x255 am K7221).  Ändert sie sich, wird die Textur
+        # im GL-Kontext neu angelegt (paintGL).
+        self._fb_w = FB_WIDTH
+        self._fb_h = FB_HEIGHT
+        self._texture_stale = False
         self._pending_upload = False
 
         # GL objects (created in initializeGL, recreated on context loss).
@@ -579,6 +585,11 @@ class ScreenWidget(QOpenGLWidget):
             return
         if not self.emulator.is_framebuffer_dirty():
             return
+        # Bildgröße kann sich mit der Maschine ändern (PC 1715: K7221/K7222).
+        groesse = self.emulator.framebuffer_size()
+        if groesse and groesse != (self._fb_w, self._fb_h):
+            self._fb_w, self._fb_h = groesse
+            self._texture_stale = True
         # Copy the framebuffer out of the core and stage it for upload.
         self._fb_bytes = bytes(self.emulator.get_framebuffer())
         self.emulator.clear_framebuffer_dirty_flag()
@@ -681,7 +692,7 @@ class ScreenWidget(QOpenGLWidget):
     def _build_texture(self):
         tex = QOpenGLTexture(QOpenGLTexture.Target2D)
         tex.setFormat(QOpenGLTexture.R8_UNorm)
-        tex.setSize(FB_WIDTH, FB_HEIGHT)
+        tex.setSize(self._fb_w, self._fb_h)
         # Full mip chain so minification (small/scaled-down window) samples an
         # averaged level instead of dropping thin glyph strokes.  Trilinear
         # (LinearMipMapLinear) min filter, plain Linear when magnifying.
@@ -708,7 +719,7 @@ class ScreenWidget(QOpenGLWidget):
             # Fallback: rebuild the texture from a grayscale QImage.  QImage is
             # top-row-first while QOpenGLTexture uploads bottom-first, so mirror.
             # The QImage ctor generates a full mip chain by default.
-            img = QImage(self._fb_bytes, FB_WIDTH, FB_HEIGHT, FB_WIDTH,
+            img = QImage(self._fb_bytes, self._fb_w, self._fb_h, self._fb_w,
                          QImage.Format_Grayscale8).mirrored(False, True)
             if self._texture is not None:
                 self._texture.destroy()
@@ -737,6 +748,11 @@ class ScreenWidget(QOpenGLWidget):
         if self._program is None or self._texture is None:
             return
 
+        if self._texture_stale:
+            self._texture.destroy()
+            self._build_texture()
+            self._texture_stale = False
+            self._pending_upload = self._fb_bytes is not None
         if self._pending_upload:
             self._upload_texture()
             self._pending_upload = False
@@ -785,7 +801,7 @@ class ScreenWidget(QOpenGLWidget):
         def u(name):
             return prog.uniformLocation(name)
 
-        f.glUniform2f(u("uResolution"), float(FB_WIDTH), float(FB_HEIGHT))
+        f.glUniform2f(u("uResolution"), float(self._fb_w), float(self._fb_h))
         f.glUniform3f(u("uPhosphorOn"), *[float(c) for c in p.phosphor_on])
         f.glUniform3f(u("uPhosphorOff"), *[float(c) for c in p.phosphor_off])
         f.glUniform1f(u("uBrightness"), float(p.brightness))
@@ -793,7 +809,9 @@ class ScreenWidget(QOpenGLWidget):
         f.glUniform1f(u("uContrastSmallFactor"),
                       float(p.contrast_small_factor))
         f.glUniform1f(u("uScanline"), float(p.scanline_strength))
-        f.glUniform1f(u("uScanlineCount"), float(p.scanline_count))
+        # Rasterzeilen folgen der Bildhöhe (288 = Vorgabe der Konfiguration).
+        f.glUniform1f(u("uScanlineCount"),
+                      float(p.scanline_count) * self._fb_h / FB_HEIGHT)
         f.glUniform1f(u("uScanlineMinHeight"), float(p.scanline_min_height))
         f.glUniform1f(u("uGlow"), float(p.glow_strength))
         f.glUniform1f(u("uGlowRadius"), float(p.glow_radius))

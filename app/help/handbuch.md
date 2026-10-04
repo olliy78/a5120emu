@@ -1,11 +1,12 @@
-# a5120emu / k8915emu / prg710emu — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu / pc1715emu — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Es gibt ihn in drei Gestalten: den **A5120 Emulator**
-(`a5120emu`), den **K8915 Emulator** (`k8915emu`) und den **PRG710 Emulator**
-(`prg710emu`) — dasselbe Programm mit eigener Konfiguration und eigener Tastatur;
-was nur den K8915 bzw. den PRG betrifft, steht in den Abschnitten „Der K8915
-Emulator" und „Der PRG710 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
+Verwandten am K1520-Bus. Es gibt ihn in vier Gestalten: den **A5120 Emulator**
+(`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
+(`prg710emu`) und den **PC1715 Emulator** (`pc1715emu`) — dasselbe Programm mit
+eigener Konfiguration und eigener Tastatur; was nur den K8915, den PRG bzw. den
+PC 1715 betrifft, steht in den Abschnitten „Der K8915 Emulator", „Der PRG710
+Emulator" und „Der PC1715 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
@@ -680,8 +681,8 @@ Skriptbetrieb); `k1520dbg DISKETTE --console` ist die Konsolenfassung.
 Im Menü **Werkzeuge** stehen die Programme, die zur selben Installation
 gehören und dieselben Disketten anfassen:
 
-* **K8915 Emulator starten** bzw. **A5120 Emulator starten** — der jeweils
-  andere Emulator, als eigenes Programm mit eigener Konfiguration.
+* **K8915 Emulator starten**, **A5120 Emulator starten** usw. — die jeweils
+  anderen Emulatoren, als eigenes Programm mit eigener Konfiguration.
 
 * **k1520DiskTool starten** — das Diskettenwerkzeug: Dateien von einer Diskette
   in einen Ordner holen und wieder zurückschreiben, Disketten anlegen, prüfen,
@@ -883,6 +884,39 @@ Der PRG hat einen **Lochbandleser** (daro 1210) und einen **Lochbandstanzer**
   einem BIOS `B17172FS`/`B17272FS` (Druckerausgabe, z. B. **^P** und `DIR`); er
   schreibt nur Großbuchstaben, Zeichen ohne Gegenstück im Fernschreibalphabet
   (`>` `*` `#` …) als Zwischenraum, mit 100 Baud — etwa 13 Zeichen je Sekunde.
+
+## Der PC1715 Emulator
+
+`pc1715emu` ist derselbe Emulator für den Bürocomputer **robotron PC 1715**
+(U880 mit Urlader-ROM, Bildschirmsteuerung 8275, Diskettensteuerung K5122 mit zwei
+K5601, Tastatur mit eigenem Prozessor). Was anders ist:
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: PC 1715 mit dem Bildschirm
+  **K7222** (80 × 24, Vorgabe) oder **K7221** (64 × 16). Der Bildschirm ist eine
+  Bestückungsvariante der Zentraleinheit: ein Wechsel erzeugt die Maschine neu
+  (Kaltstart) und wird in `pc1715emu.yaml` gemerkt. Der **PC 1715W** steht
+  ausgegraut in der Auswahl, ist aber noch nicht nachgebaut.
+* **Takt** 2,458 MHz, **Laufwerke** zwei K5601.
+* **Bildschirm** — die unterste Zeile ist die **Statuszeile** von CP/A (inverse
+  Anzeige von Laufwerk, Zeichensatz und Feststellung); sie gehört zum Bild.
+* **Booten** geht vom Urlader: er sucht Spur 0 Sektor 1 der Laufwerke 0 bis 3 und
+  startet SCP 1715, CP/A 1715 oder UDOS 1715 von der eingelegten Diskette; ohne
+  Diskette versucht er nach einigen Sekunden den Ladevorgang über **V.24** (X5).
+* **Die Bildschirmtastatur** zeichnet die Matrix der Tastatur. **SHIFT**, **CTRL**
+  und **REP** wirken nur, solange sie gehalten werden: ein Klick merkt sie
+  (gelber Rand), sie werden beim nächsten Tastenklick **vor** der Taste gedrückt
+  und danach gelöst. **LOCK** (Buchstaben groß) und **SI/SO** (zweiter
+  Zeichensatz) rasten im Tastaturprozessor selbst; ihr Rand zeigt den Stand, den
+  die Nachbildung mitgezählt hat. **ET** ist Return. Dazu Funktionstasten
+  F1–F15, Cursor- und Ziffernblock mit `CE` und `00`. Das Tastenbild ist nach der
+  Codetabelle gezeichnet, nicht am Gerät vermessen.
+* Die **PC-Tastatur** geht wie beim A5120 an den Rechner: Zeichen als Zeichen
+  (die Umschaltung sucht sich der Rechner selbst), Pfeile, Entf, Einfg und F1–F12
+  als die entsprechenden Tasten. Eine **gehaltene** Taste wiederholt nur, wenn
+  zugleich **REP** gedrückt ist — so will es der Tastaturprozessor.
+* **Schnittstellen** — **Drucker (X4)** und **V.24 (X5)**; die Tastatur hängt
+  fest an SIO-A und steht nicht im Reiter. Ein Drucker ohne Verbindung gilt als
+  besetzt.
 
 ## Tastenkürzel
 
