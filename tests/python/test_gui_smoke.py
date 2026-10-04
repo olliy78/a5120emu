@@ -116,6 +116,40 @@ def test_window_survives_event_processing(window, qapp):
         qapp.processEvents()
 
 
+def test_a_closed_window_no_longer_filters_application_events(qapp, monkeypatch):
+    """Der Fokuswächter hängt sich beim Schließen vom ANWENDUNGSWEITEN Filter ab.
+
+    Vorher blieb er an der QApplication hängen: jedes je gebaute Fenster sah
+    weiter jedes Ereignis.  In diesem Modul (ein Fenster je Test) wurde dadurch
+    jeder Aufbau teurer als der vorige — 142 s statt 14 s, nahe am ctest-Limit.
+    """
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QWidget
+
+    from app.ui.focus import ScreenFocusGuard
+    from app.ui.main_window import MainWindow
+
+    gesehen = []
+    original = ScreenFocusGuard.eventFilter
+
+    def zaehlen(self, obj, event):
+        gesehen.append(self)
+        return original(self, obj, event)
+
+    monkeypatch.setattr(ScreenFocusGuard, "eventFilter", zaehlen)
+    w = MainWindow()
+    w.show()
+    qapp.processEvents()
+    waechter = w._focus_guard
+    w.close()
+    qapp.processEvents()
+    gesehen.clear()
+
+    fremd = QWidget()
+    qapp.sendEvent(fremd, QEvent(QEvent.User))
+    assert waechter not in gesehen
+
+
 def test_mounting_a_disk_updates_the_drive_panel(window, qapp, temp_disk):
     """Diskette mounten → die Laufwerksanzeige meldet das Laufwerk als belegt."""
     path = temp_disk("cpa_cpa780_k5601_clock.img")
