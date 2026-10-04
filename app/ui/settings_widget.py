@@ -45,6 +45,8 @@ class SettingsWidget(QWidget):
     # Emitted when the model dropdown changes; carries the model key
     # (app.modell.A5120 / app.modell.A5120_16).
     modelChanged = Signal(str)
+    # Hardwarevariante (Profil.hardware) geändert: Schlüssel, Wert.
+    hardwareChanged = Signal(str, str)
 
     #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
@@ -216,6 +218,20 @@ class SettingsWidget(QWidget):
         else:
             self.model_combo.setVisible(False)
 
+        # Hardwarevarianten des Programms (Profil.hardware, z. B. PC 1715: Zeichensatz, Tastatur)
+        self.hardware_combos = {}
+        for schluessel, beschriftung, tipp, werte, _modelle in self.profil.hardware:
+            box = QComboBox(inner)
+            for wert, anzeige in werte:
+                box.addItem(anzeige, wert)
+            box.setToolTip(tipp)
+            box.currentIndexChanged.connect(
+                lambda _i, s=schluessel: self._on_hardware_combo(s))
+            self.hardware_combos[schluessel] = box
+            form.addRow(beschriftung, box)
+        self._hardware_guard = False
+        self._hardware_gesperrt_nach_modell()
+
         self.speed_combo = QComboBox()
         for label, factor in self.SPEED_OPTIONS:
             self.speed_combo.addItem(label, float(factor))
@@ -225,7 +241,33 @@ class SettingsWidget(QWidget):
 
         return inner
 
+    def _on_hardware_combo(self, schluessel: str):
+        if self._hardware_guard:
+            return
+        self.hardwareChanged.emit(schluessel, self.hardware_combos[schluessel].currentData())
+
+    def hardware_value(self) -> dict:
+        """Gewählte Hardwarevarianten ``{Schlüssel: Wert}`` (leer ohne Profil.hardware)."""
+        return {k: b.currentData() for k, b in self.hardware_combos.items()}
+
+    def set_hardware_value(self, daten: dict):
+        """Hardwarevarianten setzen (ohne Signal)."""
+        self._hardware_guard = True
+        try:
+            for k, box in self.hardware_combos.items():
+                i = box.findData((daten or {}).get(k))
+                box.setCurrentIndex(i if i >= 0 else 0)
+        finally:
+            self._hardware_guard = False
+
+    def _hardware_gesperrt_nach_modell(self):
+        """Felder ausgrauen, die am gewählten Modell nichts bewirken (PC 1715W: Zeichensatz)."""
+        modell = self.model_value()
+        for k, box in self.hardware_combos.items():
+            box.setEnabled(self.profil.hardware_wirkt(k, modell))
+
     def _on_model_combo(self, _idx: int):
+        self._hardware_gesperrt_nach_modell()
         if self._model_guard:
             return
         self.modelChanged.emit(self.model_value())
@@ -241,6 +283,7 @@ class SettingsWidget(QWidget):
         idx = self.model_combo.findData(self.profil.modell_normalisieren(model))
         self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._model_guard = False
+        self._hardware_gesperrt_nach_modell()
 
     def set_nenntakt(self, text: str) -> None:
         """Beschriftung der Taktstufen nach dem Nenntakt des Modells (ohne Signal)."""

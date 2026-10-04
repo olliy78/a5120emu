@@ -75,7 +75,12 @@ public:
         K7222,   ///< 80 × 24, Zeichenfeld 8 × 12, 11-Bit-Adresszähler (Vorgabe)
         K7221,   ///< 64 × 16, Zeichenfeld 8 × 15, 10-Bit-Adresszähler
     };
+    /// Baustein-Platz: S619 = ZG1 (A25.2), S602 = ZG2 (A25.1) im deutschen Satz; welcher Inhalt
+    /// dort steckt, bestimmt @ref ZgSatz.  Dieser Wert wählt nur, welcher Platz bei DB6 = 0 gilt.
     enum class Zeichensatz : uint8_t { S619, S602 };
+    /// Bestückung der beiden ZG-EPROMs (AP-6): Deutsch = S619 + S602, Polnisch = S641 + S619 [?],
+    /// Kyrillisch = S643 + S605 (so MAME `rt1715lc`).
+    enum class ZgSatz : uint8_t { Deutsch, Polnisch, Kyrillisch };
 
     struct Config {
         Bildschirm  bild = Bildschirm::K7222;
@@ -89,6 +94,8 @@ public:
          * Bild der Karte sind dann unbenutzt (die Maschine biegt den Speicherweg der CPU um).
          */
         bool w = false;
+        /// Zeichengenerator-Bestückung (AP-6); Vorgabe Deutsch = bisheriges Verhalten.
+        ZgSatz zg_satz = ZgSatz::Deutsch;
     };
 
     /// Systemtakt: Quarz 9,832 MHz / 4 (§3.1).

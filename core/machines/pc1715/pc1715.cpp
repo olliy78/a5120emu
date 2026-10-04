@@ -87,6 +87,7 @@ namespace {
 Pc1715Zre::Config zreConfig(const Pc1715Machine::Config& cfg)
 {
     Pc1715Zre::Config z{cfg.bild, cfg.zeichensatz};
+    z.zg_satz = cfg.zg_satz;
     z.w = cfg.variante == Pc1715Machine::Config::Variante::Pc1715W;
     return z;
 }
@@ -97,7 +98,7 @@ Pc1715Machine::Pc1715Machine(const Config& cfg)
     , zre_(bus_, zreConfig(cfg))
     , afs_(bus_, profile(cfg), cpuHz())
     , lw_(afs_, profile(cfg))
-    , kbd_(nullptr, Tastatur1715::TAKT_TASTATUR_HZ,
+    , kbd_(cfg.tastatur, Tastatur1715::TAKT_TASTATUR_HZ,
            cfg.variante == Config::Variante::Pc1715W ? CPU_HZ_W : Tastatur1715::TAKT_RECHNER_HZ)
     , hub_(cfg.variante == Config::Variante::Pc1715W ? uint64_t(CPU_HZ_W) : k1520::serial::PHI_NENN)
 {
@@ -369,7 +370,7 @@ void Pc1715Machine::tastenVerarbeiten()
         }
         Tastatur1715::Taste t;
         const char c = zeichenFuer(e.code, e.ctrl);
-        if (!c || !Tastatur1715::tasteFuer(c, t) || gehalten_.count(e.code)) {
+        if (!c || !kbd_.tasteFuerDiese(c, t) || gehalten_.count(e.code)) {
             arbeit_.pop_front();     // keine Taste dafür / schon gedrückt (Wiederholung der Oberfläche)
             continue;
         }

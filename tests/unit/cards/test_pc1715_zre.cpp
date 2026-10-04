@@ -11,6 +11,9 @@
 #include "core/cards/pc1715_zre/rom_s502.h"
 #include "core/cards/pc1715_zre/chargen_s619.h"
 #include "core/cards/pc1715_zre/chargen_s602.h"
+#include "core/cards/pc1715_zre/chargen_s641.h"
+#include "core/cards/pc1715_zre/chargen_s643.h"
+#include "core/cards/pc1715_zre/chargen_s605.h"
 
 namespace {
 
@@ -19,8 +22,14 @@ using B = Pc1715Zre::Bildschirm;
 struct ZreFixture {
     K1520Bus bus;
     Pc1715Zre zre;
-    explicit ZreFixture(B bild = B::K7222, Pc1715Zre::Zeichensatz zg = Pc1715Zre::Zeichensatz::S619)
-        : zre(bus, Pc1715Zre::Config{bild, zg}) {
+    static Pc1715Zre::Config konfig(B bild, Pc1715Zre::Zeichensatz zg, Pc1715Zre::ZgSatz satz) {
+        Pc1715Zre::Config c{bild, zg};
+        c.zg_satz = satz;
+        return c;
+    }
+    explicit ZreFixture(B bild = B::K7222, Pc1715Zre::Zeichensatz zg = Pc1715Zre::Zeichensatz::S619,
+                        Pc1715Zre::ZgSatz satz = Pc1715Zre::ZgSatz::Deutsch)
+        : zre(bus, konfig(bild, zg, satz)) {
         zre.attachToBus(bus);
         bus.setInterruptChain({&zre});
         zre.powerOn(0x00);
@@ -327,6 +336,51 @@ TEST(Pc1715Zre, ConfigZeichensatzVorgabeS602) {
     f.zre.frame();
     for (int l = 0; l < 12; ++l)
         EXPECT_EQ(f.zeile(3, 1, l), PC1715_S602_ZG2[l * 0x80 + 0x24]) << l;
+}
+
+// AP-6: die Bestückung der ZG-EPROMs.  Je Satz wird ein Zeichen gerastert, das sich zwischen den
+// Bausteinen unterscheidet, und gegen den richtigen Abzug geprüft; der Vorgabesatz bleibt
+// bitgleich zum bisherigen Verhalten (S619 bei DB6 = 0, S602 bei GPA0).
+namespace {
+struct ZgFall { Pc1715Zre::ZgSatz satz; const uint8_t* zg1; const uint8_t* zg2; int code; };
+void pruefeZgSatz(const ZgFall& f) {
+    ZreFixture z(B::K7222, Pc1715Zre::Zeichensatz::S619, f.satz);
+    z.bildLoeschen(0xF800);
+    z.zre.ramPoke(0xF800 + 3 * 80 + 1, uint8_t(f.code));
+    z.zre.ramPoke(0xF800 + 4 * 80 + 0, 0x84);               // GPA0 → anderer Baustein
+    z.zre.ramPoke(0xF800 + 4 * 80 + 1, uint8_t(f.code));
+    z.bus.ioWrite(0x34, 0x3E);                               // DB6 = 0: ZG1
+    z.crtStart();
+    z.zre.frame();
+    bool anders = false;
+    for (int l = 0; l < 12; ++l) {
+        EXPECT_EQ(z.zeile(3, 1, l), f.zg1[l * 0x80 + f.code]) << "ZG1, Linie " << l;
+        EXPECT_EQ(z.zeile(4, 1, l), f.zg2[l * 0x80 + f.code]) << "ZG2, Linie " << l;
+        anders |= f.zg1[l * 0x80 + f.code] != f.zg2[l * 0x80 + f.code];
+    }
+    EXPECT_TRUE(anders) << "Prüfzeichen muss sich zwischen den Bausteinen unterscheiden";
+}
+}  // namespace
+
+TEST(Pc1715Zre, ZgSatzDeutschIstS619UndS602) {
+    pruefeZgSatz({Pc1715Zre::ZgSatz::Deutsch, PC1715_S619_ZG1, PC1715_S602_ZG2, 0x5B});   // [ / Ä
+}
+TEST(Pc1715Zre, ZgSatzPolnischIstS641UndS619) {
+    pruefeZgSatz({Pc1715Zre::ZgSatz::Polnisch, PC1715_S641_ZG1, PC1715_S619_ZG1, 0x5B});
+}
+TEST(Pc1715Zre, ZgSatzKyrillischIstS643UndS605) {
+    pruefeZgSatz({Pc1715Zre::ZgSatz::Kyrillisch, PC1715_S643_ZG1, PC1715_S605_ZG2, 0x41});  // A: ZG1 und ZG2 verschieden
+}
+TEST(Pc1715Zre, ZgSatzKyrillischBeiDb6Eins) {
+    // Zeichen 61H ist in S643 kyrillisch, in S619 lateinisch: DB6 = 1 wählt den anderen Baustein
+    ZreFixture z(B::K7222, Pc1715Zre::Zeichensatz::S619, Pc1715Zre::ZgSatz::Kyrillisch);
+    z.bildLoeschen(0xF800);
+    z.zre.ramPoke(0xF800 + 3 * 80 + 1, 0x61);
+    z.bus.ioWrite(0x34, 0x3E | 0x40);
+    z.crtStart();
+    z.zre.frame();
+    for (int l = 0; l < 12; ++l)
+        EXPECT_EQ(z.zeile(3, 1, l), PC1715_S605_ZG2[l * 0x80 + 0x61]) << l;
 }
 
 TEST(Pc1715Zre, FeldattributeInversUnterstrichenHellBlinken) {

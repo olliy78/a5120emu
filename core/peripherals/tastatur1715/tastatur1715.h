@@ -27,9 +27,18 @@ public:
     /// @param rom        2-KB-EPROM (nullptr = S600); wird über den ganzen Adressraum gespiegelt
     /// @param tastaturHz Takt der Tastatur-CPU
     /// @param rechnerHz  Takt, in dem run() aufgerufen wird (Rechnertakt)
+    /// Tastatur-ROM-Fassung (AP-6): S600 = QWERTY (Vorgabe), TAST_618 = QWERTZ.
+    enum class Rom : uint8_t { S600, Tast618 };
+    /// Abzug der Fassung (2 KB).
+    static const uint8_t* romFuer(Rom r);
+
     explicit Tastatur1715(const uint8_t* rom = nullptr,
                           uint32_t tastaturHz = TAKT_TASTATUR_HZ,
                           uint32_t rechnerHz = TAKT_RECHNER_HZ);
+
+    /// Wie oben, aber für eine bestimmte ROM-Fassung.
+    Tastatur1715(Rom art, uint32_t tastaturHz = TAKT_TASTATUR_HZ, uint32_t rechnerHz = TAKT_RECHNER_HZ);
+    Rom art() const { return art_; }
 
     /// Fertiges Zeichen (Statusbyte E0H..EFH bzw. Code); aufgerufen, sobald das
     /// Stoppbit gesendet wurde.  Der Zeitpunkt steht in zeitLetztesByte().
@@ -60,7 +69,13 @@ public:
     // ── Zeichen → Taste ───────────────────────────────────────────────────
     /// Position der Taste, die @p c erzeugt (S600-Tabelle); false, wenn es keine gibt.
     /// Zeichen ohne Umschaltung werden bevorzugt.  '\r' = Taste ET (9EH, CP/A macht daraus CR; <-' ist eine Cursortaste), '\x1b' = ESC, '\x7f' = DEL.
-    static bool tasteFuer(char c, Taste& out);
+    static bool tasteFuer(char c, Taste& out) { return tasteFuer(c, out, Rom::S600); }
+    /// Dasselbe für eine ROM-Fassung.  S600: feste Tabelle; TAST_618: einmal aus dem ROM
+    /// abgeleitet (jede Taste unverschoben und mit Shift durch das ROM gefahren), so bleibt die
+    /// Tabelle nie hinter dem Abzug zurück.
+    static bool tasteFuer(char c, Taste& out, Rom art);
+    /// Die Taste dieser Instanz (ihre ROM-Fassung).
+    bool tasteFuerDiese(char c, Taste& out) const { return tasteFuer(c, out, art_); }
     /// Drückt die Taste für @p c (bei Shift erst Shift, einzeln, mit Entprellzeit);
     /// gehalten wird sie bis zu releaseAll().  false, wenn es keine Taste gibt.
     bool pressKeyFor(char c);
@@ -80,6 +95,7 @@ private:
 
     Z80 cpu_;
     const uint8_t* rom_;
+    Rom art_ = Rom::S600;
     uint32_t tastaturHz_, rechnerHz_;
     uint8_t matrix_[SPALTEN] = {};   ///< je Spalte ein Zeilenbyte, gedrückt = 1
     bool ledSiSo_ = false, ledLock_ = false;

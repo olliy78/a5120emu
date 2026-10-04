@@ -296,3 +296,82 @@ TEST(Tastatur1715, SaveStateRoundtrip) {
     const uint8_t* q = blob.data();
     EXPECT_FALSE(b.t.deserialize(q, blob.data() + 10));
 }
+
+// ── TAST_618 (QWERTZ, AP-6) ──────────────────────────────────────────────────
+namespace {
+struct Prueffeld618 {
+    Tastatur1715 t{Tastatur1715::Rom::Tast618};
+    std::vector<uint8_t> bytes;
+    Prueffeld618() { t.byteOut = [this](uint8_t b) { bytes.push_back(b); }; t.runTastaturTakte(4 * D); }
+};
+}  // namespace
+
+TEST(Tastatur1715, Tast618WaehltDasQwertzRom) {
+    EXPECT_EQ(Tastatur1715().art(), Tastatur1715::Rom::S600);
+    EXPECT_EQ(Tastatur1715(Tastatur1715::Rom::Tast618).art(), Tastatur1715::Rom::Tast618);
+    EXPECT_EQ(Tastatur1715::romFuer(Tastatur1715::Rom::S600)[0], 0xAF);
+    EXPECT_NE(Tastatur1715::romFuer(Tastatur1715::Rom::S600), Tastatur1715::romFuer(Tastatur1715::Rom::Tast618));
+}
+
+// Y und Z sind vertauscht: dieselbe Position, anderes Zeichen — und tasteFuer folgt dem ROM.
+TEST(Tastatur1715, Tast618YUndZSindVertauscht) {
+    Tastatur1715::Taste k;
+    ASSERT_TRUE(Tastatur1715::tasteFuer('z', k));                      // S600: (5,4)
+    EXPECT_EQ(k.spalte, 5); EXPECT_EQ(k.zeile, 4);
+    ASSERT_TRUE(Tastatur1715::tasteFuer('z', k, Tastatur1715::Rom::Tast618));
+    EXPECT_EQ(k.spalte, 12); EXPECT_EQ(k.zeile, 0); EXPECT_FALSE(k.shift);
+    ASSERT_TRUE(Tastatur1715::tasteFuer('Y', k, Tastatur1715::Rom::Tast618));
+    EXPECT_EQ(k.spalte, 5); EXPECT_EQ(k.zeile, 4); EXPECT_TRUE(k.shift);
+}
+
+// Jede Zeichentaste, durch das TAST_618 gefahren, liefert den Code der Tabelle; und jedes
+// druckbare Zeichen, das die Tabelle kennt, erzeugt durch das ROM wieder genau dieses Zeichen
+// (wie ZeichentabelleStimmtMitDemRomUeberein für S600).
+TEST(Tastatur1715, Tast618ZeichentabelleStimmtMitDemRomUeberein) {
+    int geprueft = 0;
+    for (int sp = 0; sp < 13; sp++)
+        for (int ze = 0; ze < 8; ze++) {
+            if (sp == 8 && ze != 2) continue;
+            for (int shift = 0; shift < 2; shift++) {
+                Prueffeld618 f;
+                if (shift) { f.t.press(8, 1); f.t.runTastaturTakte(4 * D); }
+                f.t.press(sp, ze);
+                f.t.runTastaturTakte(8 * D);
+                if (f.bytes.size() != 2) continue;
+                const uint8_t code = f.bytes[1];
+                if (code < 0x20 || code >= 0x7F) continue;
+                Tastatur1715::Taste k;
+                ASSERT_TRUE(Tastatur1715::tasteFuer(char(code), k, Tastatur1715::Rom::Tast618))
+                    << sp << "," << ze << " code " << int(code);
+                Tastatur1715 g(Tastatur1715::Rom::Tast618);
+                std::vector<uint8_t> b;
+                g.byteOut = [&b](uint8_t x) { b.push_back(x); };
+                g.runTastaturTakte(4 * D);
+                g.tippe(std::string(1, char(code)));
+                ASSERT_EQ(b.size() >= 2 ? b[1] : 0, code) << sp << "," << ze;
+                geprueft++;
+            }
+        }
+    EXPECT_GT(geprueft, 90);
+}
+
+// Die Abweichungen gegen S600 (doc/pc1715/tastatur.md §6): Position → {unverschoben, Shift}.
+// Dieselbe Liste steht als ZEICHEN_618_ABWEICHUNG in app/ui/keyboard_pc1715.py.
+TEST(Tastatur1715, Tast618AbweichungenGegenS600) {
+    struct E { int sp, ze; char n, s; };
+    const E erwartet[] = {
+        {1, 2, '3', '@'}, {3, 0, '}', ']'}, {3, 2, '~', '+'}, {3, 5, '{', '['}, {4, 2, '0', '='},
+        {4, 4, '-', '_'}, {4, 5, '|', '\\'}, {5, 0, '?', '^'}, {5, 2, '*', '`'}, {5, 4, 'y', 'Y'},
+        {5, 5, '#', '\''}, {6, 2, '7', '/'}, {7, 4, '<', '>'}, {9, 4, ',', ';'}, {10, 4, '.', ':'},
+        {12, 0, 'z', 'Z'},
+    };
+    for (const E& e : erwartet)
+        for (int shift = 0; shift < 2; shift++) {
+            Prueffeld618 f;
+            if (shift) { f.t.press(8, 1); f.t.runTastaturTakte(4 * D); }
+            f.t.press(e.sp, e.ze);
+            f.t.runTastaturTakte(8 * D);
+            ASSERT_EQ(f.bytes.size(), 2u) << e.sp << "," << e.ze;
+            EXPECT_EQ(f.bytes[1], uint8_t(shift ? e.s : e.n)) << e.sp << "," << e.ze << " shift " << shift;
+        }
+}

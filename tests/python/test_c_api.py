@@ -173,6 +173,30 @@ def test_pc1715_can_be_created_and_run():
     assert not _lib.k1520_create_pc1715(0, 0, 2, None, None, None, None)
 
 
+def test_pc1715_ex_waehlt_rom_fassungen():
+    """`k1520_create_pc1715_ex` (AP-6): ZG-Bestückung und Tastatur-ROM wählbar; mit 0/0 gleich der
+    alten Funktion; unbekannte Werte → NULL mit Grund; der 1715W nimmt die Tastatur, ignoriert den ZG-Satz."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for variante, zg_satz, zg_db6, tastatur in ((0, 0, 0, 0), (0, 1, 0, 0), (0, 2, 1, 1),
+                                                (0, 0, 0, 1), (1, 0, 0, 1)):
+        handle = _lib.k1520_create_pc1715_ex(variante, 0, zg_satz, zg_db6, tastatur,
+                                             None, None, None, None)
+        assert handle, _lib.k1520_last_init_error()
+        h = K1520Handle(handle)
+        try:
+            assert _lib.k1520_machine_type(h) == 3
+            _lib.k1520_power_on(h)
+            assert _lib.k1520_run(h, 50_000) > 0
+        finally:
+            _lib.k1520_destroy(h)
+    assert not _lib.k1520_create_pc1715_ex(0, 0, 3, 0, 0, None, None, None, None)
+    assert "Zeichengenerator" in _lib.k1520_last_init_error().decode()
+    assert not _lib.k1520_create_pc1715_ex(0, 0, 0, 0, 2, None, None, None, None)
+    assert "Tastatur" in _lib.k1520_last_init_error().decode()
+    assert not _lib.k1520_create_pc1715_ex(0, 0, 0, 2, 0, None, None, None, None)
+
+
 def test_k8915_can_be_created_and_reports_its_type():
     """`k1520_create(K1520_MACHINE_K8915)` liefert seit AP-E4b eine Maschine;
     `k1520_machine_type` meldet 2, die Anzeigen haben ihren Ruhezustand."""

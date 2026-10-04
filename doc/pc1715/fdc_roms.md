@@ -3,7 +3,7 @@
 Stand 2026-10-03, AP-0d. Belege: **[SH]** Servicehandbuch §1.5.3.3–1.5.3.6 (Tabelle des Lese-ROMs
 A2:2), **[ROM]** die Abzüge `doc/EPROMS/PC1715/pc1715_068_fdc_lese.bin` /
 `…069_fdc_schreib.bin` (je 1024 Byte, bytegleich zu `eprom/068.bin`/`069.bin`; die Abzüge der
-Steckeinheit-Fassung A301 `098`/`099` sind **leer, 0 Byte**), **[S502]** wie der Urlader die
+andere Kartenfassung `098`/`099` sind **leer, 0 Byte**; „A301/A302“ sind Bauteilbezeichnungen, keine Kartenfassungen, s. `doc/EPROMS/PC1715/README.md`), **[S502]** wie der Urlader die
 Steuerbits benutzt (`doc/EPROMS/PC1715/s502.prn`), **[LAUF]** am Z80-Kern geprüft.
 
 ## 1. Lese-ROM 068 (A2:2) — Markenerkennung

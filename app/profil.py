@@ -68,6 +68,12 @@ class Programmprofil:
     #: in einer Konfiguration als unbekannt.  Wer das Modell im Kern freischaltet,
     #: verschiebt die Zeile nach :attr:`modelle`.
     gesperrte_modelle: Tuple[Tuple[str, str, str], ...] = ()
+    #: Wählbare Hardwarevarianten unter *Einstellungen ▸ Allgemein* (Kaltstart nötig, wie die
+    #: Modellwahl): ``(Schlüssel, Beschriftung, Hinweis, ((Wert, Anzeige), …), Modelle)``.
+    #: Der erste Wert ist die Vorgabe (fehlender Schlüssel in der Konfiguration = Vorgabe).
+    #: ``Modelle`` = die Modellschlüssel, an denen die Wahl wirkt; sonst ist das Feld
+    #: ausgegraut (PC 1715W: der Zeichensatz kommt von Diskette).  ``()`` = alle.
+    hardware: Tuple[Tuple[str, str, str, Tuple[Tuple[str, str], ...], Tuple[str, ...]], ...] = ()
     #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
     ueber_rechner: str = ""
     #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname
@@ -120,6 +126,36 @@ class Programmprofil:
             if k == schluessel:
                 return hz, text
         return self.nenntakt_hz, self.nenntakt_text
+
+    def hardware_standard(self) -> dict:
+        """Vorgabe jeder Hardwarevariante (``{}`` ohne :attr:`hardware`)."""
+        return {k: werte[0][0] for k, _b, _t, werte, _m in self.hardware}
+
+    def hardware_normalisieren(self, daten) -> dict:
+        """Hardwarewahl aus einem Konfigurationsabschnitt: fehlende oder unbekannte
+        Werte werden zur Vorgabe (ältere Konfigurationen)."""
+        daten = daten if isinstance(daten, dict) else {}
+        aus = self.hardware_standard()
+        for k, _b, _t, werte, _m in self.hardware:
+            v = str(daten.get(k, "")).strip().lower()
+            if any(v == w for w, _a in werte):
+                aus[k] = v
+        return aus
+
+    def hardware_wirkt(self, schluessel: str, modell) -> bool:
+        """Wirkt die Wahl *schluessel* am Modell?  (Sonst im Feld ausgegraut.)"""
+        for k, _b, _t, _w, modelle in self.hardware:
+            if k == schluessel:
+                return not modelle or self.modell_normalisieren(modell) in modelle
+        return False
+
+    def tastatur_bauart(self, modell, hardware=None) -> str:
+        """Bauart der Bildschirmtastatur: :meth:`modell_tastatur`, beim PC 1715 mit dem
+        QWERTZ-ROM ``"pc1715-tast618"``."""
+        art = self.modell_tastatur(modell)
+        if art == "pc1715" and (hardware or {}).get("tastatur") == "tast618":
+            return "pc1715-tast618"
+        return art
 
     def modell_tastatur(self, modell) -> str:
         """Bildschirmtastatur des Modells (``"k7637"``/``"k7672"``/``"k7609"``)."""
@@ -248,6 +284,22 @@ PC1715 = Programmprofil(
              ("pc1715w", "pc1715w", None, "PC 1715W (SCP 3.0, 256 KB, 80 × 24)",
               "pc1715")),
     modell_takte=(("pc1715w", 3_993_600, "3,9936 MHz"),),
+    # ROM-Varianten, die technisch etwas ändern (AP-6): die ZG-EPROMs der ZRE (nur PC 1715;
+    # der 1715W lädt seinen Satz von Diskette) und das Tastatur-ROM (beide).
+    hardware=(
+        ("zeichensatz", "Zeichensatz:",
+         "Bestückung der Zeichengenerator-EPROMs A25.2/A25.1 der ZRE.  Wirkt nur am PC 1715 — "
+         "der PC 1715W bekommt seinen Satz von Diskette.  Ein Wechsel startet die Maschine kalt.",
+         (("deutsch", "Deutsch (S619 + S602)"),
+          ("polnisch", "Polnisch (S641 + S619)"),
+          ("kyrillisch", "Kyrillisch (S643 + S605)")),
+         ("pc1715", "pc1715-k7221")),
+        ("tastatur", "Tastatur:",
+         "ROM der Tastatur-CPU: S600 (QWERTY) oder TAST_618 (QWERTZ, Y und Z vertauscht, "
+         "andere Zeichensetzung).  Ein Wechsel startet die Maschine kalt.",
+         (("s600", "S600 (QWERTY)"), ("tast618", "TAST_618 (QWERTZ)")),
+         ()),
+    ),
     modell_tipp=("PC 1715 mit dem Bildschirm K7222 (80 × 24) oder K7221 (64 × 16), oder "
                  "PC 1715W (4 MHz, 256 KB, U8272).  "
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),

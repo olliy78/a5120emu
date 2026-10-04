@@ -8,6 +8,9 @@
 #include "core/cards/pc1715_zre/rom_s502.h"
 #include "core/cards/pc1715_zre/chargen_s619.h"
 #include "core/cards/pc1715_zre/chargen_s602.h"
+#include "core/cards/pc1715_zre/chargen_s641.h"
+#include "core/cards/pc1715_zre/chargen_s643.h"
+#include "core/cards/pc1715_zre/chargen_s605.h"
 #include "core/logger.h"
 #include "core/serial/sio_format.h"
 #include <algorithm>
@@ -340,7 +343,12 @@ const uint8_t* Pc1715Zre::zgRom(bool zweiter_satz) const
 {
     // zweiter_satz = false: der bei DB6 = 0 gewählte Baustein
     const bool s619 = (cfg_.zg_bei_db6_low == Zeichensatz::S619) != zweiter_satz;
-    return s619 ? PC1715_S619_ZG1 : PC1715_S602_ZG2;
+    // s619 = Platz ZG1 (A25.2), sonst Platz ZG2 (A25.1) — Inhalt je nach Bestückung
+    switch (cfg_.zg_satz) {
+        case ZgSatz::Polnisch:   return s619 ? PC1715_S641_ZG1 : PC1715_S619_ZG1;
+        case ZgSatz::Kyrillisch: return s619 ? PC1715_S643_ZG1 : PC1715_S605_ZG2;
+        default:                 return s619 ? PC1715_S619_ZG1 : PC1715_S602_ZG2;
+    }
 }
 
 void Pc1715Zre::rastern()

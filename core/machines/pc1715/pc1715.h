@@ -61,6 +61,11 @@ public:
         Pc1715Zre::Bildschirm bild = Pc1715Zre::Bildschirm::K7222;
         /// Zeichengenerator, der bei BWS-Register DB6 = 0 gilt (S619 = A25.2, S602 = A25.1).
         Pc1715Zre::Zeichensatz zeichensatz = Pc1715Zre::Zeichensatz::S619;
+        /// Bestückung der Zeichengenerator-EPROMs (nur PC 1715; der 1715W lädt den Satz von
+        /// Diskette) — Hardwarevariante, Kaltstart nötig (AP-6).
+        Pc1715Zre::ZgSatz zg_satz = Pc1715Zre::ZgSatz::Deutsch;
+        /// Tastatur-ROM: S600 (QWERTY, Vorgabe) oder TAST_618 (QWERTZ) — beide Varianten.
+        Tastatur1715::Rom tastatur = Tastatur1715::Rom::S600;
         /// Laufwerke an der Floppy-Ansteuerung (Vorgabe 2 × K5601 intern, AP-0a/§9).
         std::array<std::string, 4> laufwerke = {"K5601", "K5601", "none", "none"};
     };

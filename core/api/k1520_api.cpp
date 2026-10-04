@@ -118,7 +118,23 @@ K1520Handle k1520_create_configured(K1520MachineType type,
 
 K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
                                 const char* d0, const char* d1, const char* d2, const char* d3) {
+    return k1520_create_pc1715_ex(variante, bildschirm, 0, zeichensatz, 0, d0, d1, d2, d3);
+}
+
+K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int zg_satz, int zg_db6, int tastatur,
+                                   const char* d0, const char* d1, const char* d2, const char* d3) {
+    const int zeichensatz = zg_db6;
     g_init_error.clear();
+    if (zg_satz < 0 || zg_satz > 2) {
+        g_init_error = "Unbekannter Zeichengenerator-Satz " + std::to_string(zg_satz) +
+                       " (0 = deutsch, 1 = polnisch, 2 = kyrillisch)";
+        return nullptr;
+    }
+    if (tastatur != 0 && tastatur != 1) {
+        g_init_error = "Unbekanntes Tastatur-ROM " + std::to_string(tastatur) +
+                       " (0 = S600 QWERTY, 1 = TAST_618 QWERTZ)";
+        return nullptr;
+    }
     if (variante != 0 && variante != 1) {
         g_init_error = "Unbekannte PC1715-Variante " + std::to_string(variante) +
                        " (0 = PC 1715, 1 = PC 1715W)";
@@ -140,6 +156,9 @@ K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
         cfg.variante = variante == 1 ? Pc1715Machine::Config::Variante::Pc1715W
                                      : Pc1715Machine::Config::Variante::Pc1715;
         cfg.bild = bildschirm == 1 ? Pc1715Zre::Bildschirm::K7221 : Pc1715Zre::Bildschirm::K7222;
+        cfg.zg_satz = zg_satz == 1 ? Pc1715Zre::ZgSatz::Polnisch
+                    : zg_satz == 2 ? Pc1715Zre::ZgSatz::Kyrillisch : Pc1715Zre::ZgSatz::Deutsch;
+        cfg.tastatur = tastatur == 1 ? Tastatur1715::Rom::Tast618 : Tastatur1715::Rom::S600;
         cfg.zeichensatz = zeichensatz == 1 ? Pc1715Zre::Zeichensatz::S602 : Pc1715Zre::Zeichensatz::S619;
         const char* names[4] = { d0, d1, d2, d3 };   // leer/NULL = Vorgabe (2 × K5601)
         for (int i = 0; i < 4; ++i)

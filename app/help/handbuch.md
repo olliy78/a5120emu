@@ -897,6 +897,15 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
   (Kaltstart) und wird in `pc1715emu.yaml` gemerkt. Der **PC 1715W**
   (1987: 256 KB mit Bankumschaltung, U8272 mit DMA, 4 MHz) ist ein eigenes Modell der
   Auswahl; den Bildschirm K7221 gibt es dort nicht.
+* **Zeichensatz und Tastatur** — *Einstellungen ▸ Allgemein*: die **Zeichengenerator-
+  EPROMs** der Zentraleinheit (**Deutsch** S619 + S602, Vorgabe; **Polnisch**
+  S641 + S619; **Kyrillisch** S643 + S605) und das **Tastatur-ROM** (**S600**
+  QWERTY, Vorgabe, oder **TAST_618**, QWERTZ mit vertauschtem Y/Z und anderer
+  Zeichensetzung — die Bildschirmtastatur beschriftet sich danach). Beides sind
+  Bestückungsvarianten: ein Wechsel startet die Maschine kalt und wird in
+  `pc1715emu.yaml` gemerkt. Beim **PC 1715W** ist der Zeichensatz ausgegraut (er kommt
+  von Diskette), die Tastatur bleibt wählbar. Die Fassung der Floppy-Karte und der
+  Urlader haben keine Auswahl.
 * **Takt** 2,458 MHz (1715W: 3,9936 MHz), **Laufwerke** zwei K5601.
 * **PC 1715W** — bootet **SCP 3.0** (CP/M 3; die Diskette `pc1715w_scp30_system.hfe`
   liegt dem Paket bei). Der Zeichensatz liegt im RAM: der Lader füllt ihn, danach

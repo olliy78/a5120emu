@@ -1,5 +1,8 @@
 #include "core/peripherals/tastatur1715/tastatur1715.h"
 #include "core/peripherals/tastatur1715/rom_s600.h"
+#include "core/peripherals/tastatur1715/rom_tast618.h"
+
+#include <mutex>
 
 namespace {
 // Codetabelle des S600 je Position {unverschoben, Shift}; Spalte 8 (Sondertasten)
@@ -28,8 +31,16 @@ const Paar kTabelle[Tastatur1715::SPALTEN][Tastatur1715::ZEILEN] = {
 constexpr int SHIFT_L_SP = 8, SHIFT_L_ZE = 1;
 }  // namespace
 
+const uint8_t* Tastatur1715::romFuer(Rom r) {
+    return r == Rom::Tast618 ? PC1715_TAST618_TASTATUR : PC1715_S600_TASTATUR;
+}
+
+Tastatur1715::Tastatur1715(Rom art, uint32_t tastaturHz, uint32_t rechnerHz)
+    : Tastatur1715(romFuer(art), tastaturHz, rechnerHz) {}
+
 Tastatur1715::Tastatur1715(const uint8_t* rom, uint32_t tastaturHz, uint32_t rechnerHz)
-    : rom_(rom ? rom : PC1715_S600_TASTATUR), tastaturHz_(tastaturHz), rechnerHz_(rechnerHz) {
+    : rom_(rom ? rom : PC1715_S600_TASTATUR),
+      art_(rom == PC1715_TAST618_TASTATUR ? Rom::Tast618 : Rom::S600), tastaturHz_(tastaturHz), rechnerHz_(rechnerHz) {
     // ROM über den ganzen Adressraum gespiegelt, kein RAM (Schreiben findet nicht statt)
     cpu_.readByte  = [this](uint16_t a) -> uint8_t { return rom_[a & 0x7FF]; };
     cpu_.writeByte = [](uint16_t, uint8_t) {};
@@ -117,7 +128,44 @@ void Tastatur1715::run(uint64_t hostTakte) {
     hostTakte_ = hostSumme_;
 }
 
-bool Tastatur1715::tasteFuer(char c, Taste& out) {
+namespace {
+// Codetabelle einer ROM-Fassung aus dem ROM selbst: je Position (unverschoben / Shift) die Taste
+// durch eine frische Tastatur fahren und den Code des Rahmens lesen.  Spalte 8 (Sondertasten)
+// trägt nur ESC; (4,3) schaltet im ROM einen Zustand um (tastatur.md §6) und bleibt aus.
+struct Abgeleitet { Paar t[Tastatur1715::SPALTEN][Tastatur1715::ZEILEN]; };
+Abgeleitet ableiten(Tastatur1715::Rom art) {
+    Abgeleitet a{};
+    constexpr uint64_t D = Tastatur1715::DURCHLAUF_TAKTE;
+    for (int sp = 0; sp < Tastatur1715::SPALTEN; sp++)
+        for (int ze = 0; ze < Tastatur1715::ZEILEN; ze++) {
+            if (sp == 8 && ze != 2) continue;
+            if (sp == 4 && ze == 3) continue;
+            uint8_t code[2] = {0, 0};
+            for (int shift = 0; shift < (sp == 8 ? 1 : 2); shift++) {
+                Tastatur1715 t(art);
+                std::vector<uint8_t> bytes;
+                t.byteOut = [&bytes](uint8_t b) { bytes.push_back(b); };
+                t.runTastaturTakte(4 * D);
+                if (shift) { t.press(SHIFT_L_SP, SHIFT_L_ZE); t.runTastaturTakte(4 * D); }
+                t.press(sp, ze);
+                t.runTastaturTakte(8 * D);
+                if (bytes.size() == 2) code[shift] = bytes[1];
+            }
+            a.t[sp][ze] = {code[0], sp == 8 ? code[0] : code[1]};
+        }
+    return a;
+}
+const Paar (&tabelleFuer(Tastatur1715::Rom art))[Tastatur1715::SPALTEN][Tastatur1715::ZEILEN] {
+    if (art == Tastatur1715::Rom::S600) return kTabelle;
+    static Abgeleitet a;
+    static std::once_flag einmal;
+    std::call_once(einmal, [] { a = ableiten(Tastatur1715::Rom::Tast618); });
+    return a.t;
+}
+}  // namespace
+
+bool Tastatur1715::tasteFuer(char c, Taste& out, Rom art) {
+    const auto& tabelle = tabelleFuer(art);
     // ET (Eingabetaste, 3/4): CP/A biopkbd.mac macht 9EH zu CR; 9DH ist die Cursortaste <-'.
     // (3,1) trägt im ROM ebenfalls ET, hat aber keine Taste (tastatur.md §6) — deshalb fest (3,4).
     if (c == '\r') { out = {3, 4, false}; return true; }
@@ -125,7 +173,7 @@ bool Tastatur1715::tasteFuer(char c, Taste& out) {
     for (int pass = 0; pass < 2; pass++)  // erst unverschoben, dann mit Shift
         for (int sp = 0; sp < SPALTEN; sp++)
             for (int ze = 0; ze < ZEILEN; ze++) {
-                const Paar& p = kTabelle[sp][ze];
+                const Paar& p = tabelle[sp][ze];
                 const uint8_t w = pass ? p.s : p.n;
                 if (w == 0 || w != code) continue;
                 out = {sp, ze, pass == 1};
@@ -136,7 +184,7 @@ bool Tastatur1715::tasteFuer(char c, Taste& out) {
 
 bool Tastatur1715::pressKeyFor(char c) {
     Taste t;
-    if (!tasteFuer(c, t)) return false;
+    if (!tasteFuerDiese(c, t)) return false;
     // Shift zuerst und einzeln: zwei im selben Durchlauf neu erkannte Tasten
     // sendet das ROM nicht (Fehlbedienungsunterdrückung).
     if (t.shift) {

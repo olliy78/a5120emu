@@ -234,3 +234,55 @@ TEST(Pc1715Tastatur, Scp1715ErsteTasteNachPausePhasen) {
         ASSERT_TRUE(ok) << "Durchlauf " << i << "\n" << bild(m);
     }
 }
+
+// ─── AP-6: wählbares Tastatur-ROM ───────────────────────────────────────────────────────────
+
+/// TAST_618 (QWERTZ): `keyPress('z')` liefert durch DAS ROM wieder z, `'y'` y — wie beim S600, nur an
+/// anderen Matrixpositionen (z auf (12,0), y auf (5,4)).  Bei beiden Varianten, beide Schreibweisen.
+TEST(Pc1715Tastatur, Tast618LiefertDieGetipptenZeichen) {
+    stumm();
+    for (auto art : {Tastatur1715::Rom::S600, Tastatur1715::Rom::Tast618}) {
+        for (const auto& fall : {std::pair<char, std::vector<uint8_t>>{'z', {0xE0, 0x7A}},
+                                 {'y', {0xE0, 0x79}}, {'Z', {0xE2, 0x5A}}, {'Y', {0xE2, 0x59}}}) {
+            Pc1715Machine::Config cfg;
+            cfg.tastatur = art;
+            Pc1715Machine m(cfg);
+            m.powerOn();
+            laufe(m, 1'000'000);
+            m.keyPress(fall.first, false, false);
+            laufe(m, 600'000);
+            EXPECT_EQ(fifo(m), fall.second) << "ROM " << int(art) << " Zeichen " << fall.first;
+        }
+    }
+}
+
+/// Dasselbe als physische Taste: Position (12,0) ist beim TAST_618 das z, beim S600 das y.
+TEST(Pc1715Tastatur, Tast618PhysischePositionTragtAndereZeichen) {
+    stumm();
+    for (auto art : {Tastatur1715::Rom::S600, Tastatur1715::Rom::Tast618}) {
+        Pc1715Machine::Config cfg;
+        cfg.tastatur = art;
+        Pc1715Machine m(cfg);
+        m.powerOn();
+        laufe(m, 1'000'000);
+        m.keyPress(Pc1715Machine::QK_TASTE_BASE | (12 * 8 + 0), false, false);
+        laufe(m, 400'000);
+        EXPECT_EQ(fifo(m), (std::vector<uint8_t>{0xE0, uint8_t(art == Tastatur1715::Rom::Tast618 ? 0x7A : 0x79)}));
+    }
+}
+
+/// Konfiguration kommt an: ZG-Bestückung an der ZRE, Tastatur-ROM an der Tastatur (auch am 1715W).
+TEST(Pc1715Tastatur, KonfigurationWirdUebernommen) {
+    Pc1715Machine::Config cfg;
+    cfg.zg_satz = Pc1715Zre::ZgSatz::Kyrillisch;
+    cfg.tastatur = Tastatur1715::Rom::Tast618;
+    Pc1715Machine m(cfg);
+    EXPECT_EQ(m.zre().config().zg_satz, Pc1715Zre::ZgSatz::Kyrillisch);
+    EXPECT_EQ(m.tastatur().art(), Tastatur1715::Rom::Tast618);
+    cfg.variante = Pc1715Machine::Config::Variante::Pc1715W;
+    Pc1715Machine w(cfg);
+    EXPECT_EQ(w.tastatur().art(), Tastatur1715::Rom::Tast618);
+    Pc1715Machine vorgabe;
+    EXPECT_EQ(vorgabe.zre().config().zg_satz, Pc1715Zre::ZgSatz::Deutsch);
+    EXPECT_EQ(vorgabe.tastatur().art(), Tastatur1715::Rom::S600);
+}

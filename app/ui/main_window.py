@@ -85,15 +85,20 @@ class MainWindow(LochbandMixin, QMainWindow):
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
         # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
         self._model = self.profil.standard_modell()
-        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672).
-        self._tastatur_art = self.profil.modell_tastatur(self._model)
+        # Hardwarevarianten des Programms (PC 1715: Zeichensatz, Tastatur-ROM; AP-6) —
+        # Konstruktorparameter des Kerns wie das Modell, ein Wechsel ist ein Kaltstart.
+        self._hardware = self.profil.hardware_standard()
+        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672;
+        # PC 1715 mit QWERTZ-ROM eigene Beschriftung).
+        self._tastatur_art = self.profil.tastatur_bauart(self._model, self._hardware)
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
             self.emulator = K1520Emulator(self._drive_types,
                                           machine=self.profil.modell_maschine(self._model),
-                                          em=self.profil.modell_em(self._model))
+                                          em=self.profil.modell_em(self._model),
+                                          **self._hardware)
             # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
             # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
             self.emulator.set_key_repeat_realtime(True)
@@ -189,6 +194,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.serial_widget.changed.connect(self._schedule_autosave)
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
         self.settings_widget.modelChanged.connect(self._on_model_selected)
+        self.settings_widget.hardwareChanged.connect(self._on_hardware_selected)
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
         # Die Statuszeile nennt die eingelegten Abbilder — sie darf nicht bis zum
@@ -429,9 +435,9 @@ class MainWindow(LochbandMixin, QMainWindow):
         if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
-        if self._tastatur_art == "pc1715":
+        if self._tastatur_art in ("pc1715", "pc1715-tast618"):
             from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
-            return KeyboardPc1715Widget()
+            return KeyboardPc1715Widget(qwertz=self._tastatur_art == "pc1715-tast618")
         if self._tastatur_art == "k7609":
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
@@ -440,7 +446,7 @@ class MainWindow(LochbandMixin, QMainWindow):
     def _tastatur_tauschen(self):
         """Nach einem Modellwechsel die Bildschirmtastatur des neuen Modells einsetzen
         (PRG 710 ⇄ 710-1) — dasselbe Dock, dieselben Verbindungen."""
-        art = self.profil.modell_tastatur(self._model)
+        art = self.profil.tastatur_bauart(self._model, self._hardware)
         if art == self._tastatur_art:
             return
         self._tastatur_art = art
@@ -880,6 +886,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         general = {"speed": float(self.speed_factor)}
         if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
             general["model"] = self._model
+        general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
         data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
@@ -1103,6 +1110,9 @@ class MainWindow(LochbandMixin, QMainWindow):
             self._model = (self.profil.modell_normalisieren(general.get("model"))
                            if self.profil.modellwahl else self.profil.standard_modell())
             self.settings_widget.set_model_value(self._model)
+            # Hardwarevarianten: fehlender Schlüssel = Vorgabe (ältere Konfigurationen).
+            self._hardware = self.profil.hardware_normalisieren(general)
+            self.settings_widget.set_hardware_value(self._hardware)
 
             # Drive-bay configuration must be applied BEFORE the disks, so the
             # panels for the present slots exist and the machine matches.  During
@@ -1204,6 +1214,7 @@ class MainWindow(LochbandMixin, QMainWindow):
             return
         vorher = list(self._drive_types)
         modell_vorher = self._model
+        hardware_vorher = dict(self._hardware)
         self._apply_config(vorgabe)
         # Ein geänderter Laufwerksschacht ODER ein geändertes Modell bedeutet
         # eine NEUE Maschine (:meth:`_apply_drive_types`), und die ist noch
@@ -1211,7 +1222,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         # sonst später von selbst, hier läuft die alte schon.  Ohne
         # Bestückungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
         # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
-        if self._drive_types != vorher or self._model != modell_vorher:
+        if (self._drive_types != vorher or self._model != modell_vorher
+                or self._hardware != hardware_vorher):
             self._cold_restart()
         # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
         # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
@@ -1516,7 +1528,25 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
-    def _apply_drive_types(self, types: list, cold_restart: bool):
+    def _on_hardware_selected(self, schluessel: str, wert: str):
+        """Eine Hardwarevariante (Zeichensatz, Tastatur-ROM) geändert → neue Maschine, wie
+        beim Modellwechsel (die ROMs sind am Kern Konstruktorparameter)."""
+        neu = self.profil.hardware_normalisieren({**self._hardware, schluessel: wert})
+        if neu == self._hardware:
+            return
+        if not self._eprom_rueckfrage("Wechsel der Hardwarevariante"):
+            self.settings_widget.set_hardware_value(self._hardware)
+            return
+        vorher = self._hardware
+        self._hardware = neu
+        if not self._apply_drive_types(self._drive_types, cold_restart=True):
+            # Neubau fehlgeschlagen: die alte Maschine läuft weiter, das Feld zeigt sie.
+            self._hardware = vorher
+            self.settings_widget.set_hardware_value(vorher)
+            return
+        self._schedule_autosave()
+
+    def _apply_drive_types(self, types: list, cold_restart: bool) -> bool:
         """Adopt a new drive-bay configuration (and/or a changed model).
 
         The core sets the per-slot ``DriveProfile`` **and** the Erweiterungsmodul
@@ -1538,7 +1568,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         # Recreate the machine with the new drive bay / model.
         try:
             new_emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
-                                    em=em)
+                                    em=em, **self._hardware)
             new_emu.set_key_repeat_realtime(True)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
@@ -1546,7 +1576,7 @@ class MainWindow(LochbandMixin, QMainWindow):
             # Keep the settings dropdowns consistent with the machine still in use.
             self.settings_widget.set_drive_types(self._drive_types)
             self.settings_widget.set_model_value(self._model)
-            return
+            return False
 
         # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
         # Stand merken, die alten beenden (Kabel ab, Port frei), an der neuen
@@ -1575,6 +1605,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
+        self.settings_widget.set_hardware_value(self._hardware)
         # Der Takt hängt am Modell (PC 1715W: 3,9936 MHz).
         self.CPU_HZ, nenntakt = self.profil.modell_nenntakt(self._model)
         self.settings_widget.set_nenntakt(nenntakt)
@@ -1592,6 +1623,7 @@ class MainWindow(LochbandMixin, QMainWindow):
             self.frame_count = 0
             self.run_timer.start()
             self.screen_widget.set_powered(True)
+        return True
 
     def _on_error(self, message: str):
         """Handle error."""

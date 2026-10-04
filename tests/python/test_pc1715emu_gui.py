@@ -133,6 +133,78 @@ def test_modellwahl_bildschirm_und_1715w(qapp, konfig_ordner):
         _zu(w, qapp)
 
 
+def test_rom_varianten_zeichensatz_und_tastatur(qapp, konfig_ordner):
+    """AP-6: Zeichensatz (nur PC 1715) und Tastatur-ROM sind Einstellungen mit Kaltstart; sie stehen in
+    der Konfiguration, ein fehlender Schlüssel ist die Vorgabe, der 1715W graut den Zeichensatz aus
+    und die Bildschirmtastatur beschriftet bei QWERTZ Y/Z entsprechend."""
+    from app import config_io, profil
+    from app.ui import keyboard_pc1715 as k
+
+    p = profil.profil("pc1715")
+    assert p.hardware_standard() == {"zeichensatz": "deutsch", "tastatur": "s600"}
+    # Alte Konfiguration ohne die Schlüssel / mit Unsinn → Vorgabe.
+    assert p.hardware_normalisieren({}) == p.hardware_standard()
+    assert p.hardware_normalisieren({"zeichensatz": "klingonisch", "tastatur": "tast618"}) == {
+        "zeichensatz": "deutsch", "tastatur": "tast618"}
+    assert profil.profil("a5120").hardware_standard() == {}
+
+    w = _fenster(qapp)
+    try:
+        sw = w.settings_widget
+        assert set(sw.hardware_combos) == {"zeichensatz", "tastatur"}
+        assert (w.emulator.zeichensatz, w.emulator.tastatur) == ("deutsch", "s600")
+        assert w.keyboard_widget._by_pos[k.pos(5, 4)].low == "Z"
+
+        sw.hardware_combos["zeichensatz"].setCurrentIndex(
+            sw.hardware_combos["zeichensatz"].findData("kyrillisch"))
+        qapp.processEvents()
+        assert w.emulator.zeichensatz == "kyrillisch" and w._hardware["zeichensatz"] == "kyrillisch"
+
+        sw.hardware_combos["tastatur"].setCurrentIndex(sw.hardware_combos["tastatur"].findData("tast618"))
+        qapp.processEvents()
+        assert w.emulator.tastatur == "tast618"
+        kw = w.keyboard_widget            # neu gebaut: Y und Z vertauscht
+        assert kw._by_pos[k.pos(5, 4)].low == "Y" and kw._by_pos[k.pos(12, 0)].low == "Z"
+        assert kw._by_pos[k.pos(3, 0)].low == "}" and kw.map_host_key is not None
+        assert w.screen_widget.key_sink is kw
+
+        # 1715W: der Zeichensatz kommt von Diskette → ausgegraut; die Tastatur bleibt wählbar.
+        w._on_model_selected("pc1715w")
+        qapp.processEvents()
+        assert not sw.hardware_combos["zeichensatz"].isEnabled()
+        assert sw.hardware_combos["tastatur"].isEnabled()
+        assert w.emulator.machine == "pc1715w" and w.emulator.tastatur == "tast618"
+        w._on_model_selected("pc1715")
+        qapp.processEvents()
+        assert sw.hardware_combos["zeichensatz"].isEnabled()
+
+        w._autosave_now()
+        cfg = config_io.load_config(str(konfig_ordner / "pc1715emu.yaml"))
+        assert cfg["general"]["zeichensatz"] == "kyrillisch"
+        assert cfg["general"]["tastatur"] == "tast618"
+    finally:
+        _zu(w, qapp)
+
+    # Neustart: Wahl kommt aus der Konfiguration zurück, im Kern wie im Feld.
+    w = _fenster(qapp)
+    try:
+        assert w._hardware == {"zeichensatz": "kyrillisch", "tastatur": "tast618"}
+        assert (w.emulator.zeichensatz, w.emulator.tastatur) == ("kyrillisch", "tast618")
+        assert w.settings_widget.hardware_value() == w._hardware
+        assert w.keyboard_widget._by_pos[k.pos(12, 0)].low == "Z"
+    finally:
+        _zu(w, qapp)
+
+    # Konfiguration ohne die Schlüssel (älterer Stand) → Vorgabe.
+    (konfig_ordner / "pc1715emu.yaml").write_text("version: 1\ngeneral: {speed: 5.0}\n", encoding="utf-8")
+    w = _fenster(qapp)
+    try:
+        assert w._hardware == {"zeichensatz": "deutsch", "tastatur": "s600"}
+        assert w.emulator.tastatur == "s600"
+    finally:
+        _zu(w, qapp)
+
+
 def test_unbekanntes_modell_wird_die_vorgabe(qapp, konfig_ordner):
     (konfig_ordner / "pc1715emu.yaml").write_text(
         "version: 1\ngeneral: {model: pc1715x}\n", encoding="utf-8")

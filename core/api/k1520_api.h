@@ -82,6 +82,22 @@ K1520_API K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeic
                                           const char* drive2, const char* drive3);
 
 /**
+ * @brief PC 1715 mit wählbaren ROM-Fassungen (AP-6) — Obermenge von k1520_create_pc1715, das
+ *        mit zg_satz = 0, tastatur = 0 gleich bleibt (bitgleich).
+ *
+ * @param zg_satz   Bestückung der Zeichengenerator-EPROMs (nur PC 1715; beim 1715W ohne Wirkung,
+ *                  der Satz kommt von Diskette): 0 = deutsch (S619 + S602), 1 = polnisch
+ *                  (S641 + S619), 2 = kyrillisch (S643 + S605)
+ * @param zg_db6    Platz, der bei BWS-Register DB6 = 0 gilt: 0 = ZG1 (A25.2), 1 = ZG2 (A25.1)
+ * @param tastatur  Tastatur-ROM (beide Varianten): 0 = S600 (QWERTY), 1 = TAST_618 (QWERTZ)
+ * Übrige Parameter wie k1520_create_pc1715.  Unbekannte Werte → NULL mit Grund.
+ */
+K1520_API K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int zg_satz, int zg_db6,
+                                             int tastatur,
+                                             const char* drive0, const char* drive1,
+                                             const char* drive2, const char* drive3);
+
+/**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
  *
  * A startup abort (e.g. missing/broken disk format catalog `formats.yaml`) yields

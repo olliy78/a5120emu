@@ -74,6 +74,20 @@ ZEICHEN = (
 )
 _ZEICHEN: Dict[int, Tuple[str, str]] = {pos(c, z): (lo, up) for c, z, lo, up in ZEICHEN}
 
+#: TAST_618 (QWERTZ, AP-6): die Positionen, an denen sich das ROM vom S600 unterscheidet —
+#: Position → (unverschoben, Shift).  Gegen das ROM geprüft von
+#: ``Tastatur1715.Tast618ZeichentabelleStimmtMitDemRomUeberein`` (C++, dieselbe Liste) und
+#: `doc/pc1715/tastatur.md` §6.  Alle übrigen Tasten sind wie beim S600.
+ZEICHEN_618_ABWEICHUNG: Dict[int, Tuple[str, str]] = {
+    pos(1, 2): ("3", "@"), pos(3, 0): ("}", "]"), pos(3, 2): ("~", "+"),
+    pos(3, 5): ("{", "["), pos(4, 2): ("0", "="), pos(4, 4): ("-", "_"),
+    pos(4, 5): ("|", "\\"), pos(5, 0): ("?", "^"), pos(5, 2): ("*", "`"),
+    pos(5, 4): ("y", "Y"), pos(5, 5): ("#", "'"), pos(6, 2): ("7", "/"),
+    pos(7, 4): ("<", ">"), pos(9, 4): (",", ";"), pos(10, 4): (".", ":"),
+    pos(12, 0): ("z", "Z"),
+}
+_ZEICHEN_618: Dict[int, Tuple[str, str]] = {**_ZEICHEN, **ZEICHEN_618_ABWEICHUNG}
+
 #: Sondertasten ohne Zeichen: Position → (Beschriftung, Name für den Hinweis).
 #: Namen der Codes ≥ 80H nach `kbdcpt` im CP/A-BIOS (Befund §6).
 SONDER = {
@@ -126,7 +140,7 @@ def _k(x, y, p, low, up="", w=1.0, name="", style="dark", kind="normal",
                   style=style, shape=shape, kind=kind, name=name or low, pos=p)
 
 
-def _build_layout_pc1715() -> List[_Taste]:
+def _build_layout_pc1715(zeichen: Optional[Dict[int, Tuple[str, str]]] = None) -> List[_Taste]:
     r"""Tastenfeld (Raster, 1.0 = eine Taste) — Lage geschätzt, Positionen belegt.
 
     ```
@@ -138,6 +152,7 @@ def _build_layout_pc1715() -> List[_Taste]:
     y 5   LOCK SI/SO REP        Leertaste                              0
     ```
     """
+    _Z = zeichen or _ZEICHEN
     k: List[_Taste] = []
     for n in range(1, 16):
         k.append(_k(n - 1, 0.0, FTASTEN[n], f"F{n}", style="light", name=f"F{n}"))
@@ -146,7 +161,7 @@ def _build_layout_pc1715() -> List[_Taste]:
               pos(6, 2), pos(9, 2), pos(10, 2), pos(4, 2), pos(3, 2), pos(5, 2))
     k.append(_k(0.0, 1.5, pos(8, 2), "ESC", name=SONDER[pos(8, 2)][1]))
     for i, p in enumerate(reihe1):
-        lo, up = _ZEICHEN[p]
+        lo, up = _Z[p]
         k.append(_k(1.0 + i, 1.5, p, lo, up))
     k.append(_k(13.0, 1.5, pos(6, 6), "DEL", name=SONDER[pos(6, 6)][1]))
     k.append(_k(14.0, 1.5, pos(5, 6), "INS", name=SONDER[pos(5, 6)][1]))
@@ -155,7 +170,7 @@ def _build_layout_pc1715() -> List[_Taste]:
     reihe2 = (pos(7, 0), pos(2, 0), pos(1, 0), pos(0, 0), pos(11, 0), pos(12, 0),
               pos(6, 0), pos(9, 0), pos(10, 0), pos(4, 0), pos(3, 0), pos(5, 0))
     for i, p in enumerate(reihe2):
-        lo, up = _ZEICHEN[p]
+        lo, up = _Z[p]
         k.append(_k(1.5 + i, 2.5, p, lo.upper() if lo.isalpha() else lo,
                     "" if lo.isalpha() else up))
 
@@ -164,7 +179,7 @@ def _build_layout_pc1715() -> List[_Taste]:
     reihe3 = (pos(7, 5), pos(2, 5), pos(1, 5), pos(0, 5), pos(11, 5), pos(12, 5),
               pos(6, 5), pos(9, 5), pos(10, 5), pos(4, 5), pos(3, 5), pos(5, 5))
     for i, p in enumerate(reihe3):
-        lo, up = _ZEICHEN[p]
+        lo, up = _Z[p]
         k.append(_k(1.5 + i, 3.5, p, lo.upper() if lo.isalpha() else lo,
                     "" if lo.isalpha() else up))
     k.append(_k(13.5, 3.5, ET, "ET", w=1.5, style="red", name=SONDER[ET][1]))
@@ -174,7 +189,7 @@ def _build_layout_pc1715() -> List[_Taste]:
     reihe4 = (pos(7, 4), pos(5, 4), pos(2, 4), pos(1, 4), pos(0, 4), pos(11, 4),
               pos(12, 4), pos(6, 4), pos(9, 4), pos(10, 4), pos(4, 4))
     for i, p in enumerate(reihe4):
-        lo, up = _ZEICHEN[p]
+        lo, up = _Z[p]
         k.append(_k(1.5 + i, 4.5, p, lo.upper() if lo.isalpha() else lo,
                     "" if lo.isalpha() else up))
     k.append(_k(12.5, 4.5, SHIFT_R, "SHIFT", w=1.5, kind="shift", style="light",
@@ -231,8 +246,14 @@ class KeyboardPc1715Widget(KeyboardWidget):
 
     PAD = (0.35, 0.35, 0.35, 0.35)
 
+    def __init__(self, parent=None, qwertz: bool = False):
+        # Vor dem Oberklassen-Konstruktor: der ruft _layout().
+        self._qwertz = bool(qwertz)
+        self._zeichen = _ZEICHEN_618 if qwertz else _ZEICHEN
+        super().__init__(parent)
+
     def _layout(self) -> List[_Key]:
-        return _build_layout_pc1715()
+        return _build_layout_pc1715(self._zeichen)
 
     def _anzeigen_verankern(self):
         self._by_pos = {k.pos: k for k in self._keys if isinstance(k, _Taste)}
@@ -352,7 +373,7 @@ class KeyboardPc1715Widget(KeyboardWidget):
             return [t] if t else []
         text = event.text()
         if len(text) == 1:
-            for position, (lo, up) in _ZEICHEN.items():
+            for position, (lo, up) in self._zeichen.items():
                 if text in (lo, up):
                     return [self._by_pos[position]]
         return []

@@ -15,12 +15,20 @@ Stand 2026-10-03 (AP-0b, `doc/design/21_pc1715.md` §6). Alle CRC32 stimmen mit 
 | `pc1715_s643_zg1_kyrillisch.bin` | S643, A25.2 | 2 K | ea37f0e6 | sax `s643.bin` | ZG 1 kyrillisch |
 | `pc1715_s605_zg2_kyrillisch.bin` | S605, A25.1 | 2 K | 38062024 | sax `s605.bin` | ZG 2 kyrillisch |
 | `pc1715_s600_tastatur.bin` | S600, IC8 der Tastaturplatine | 2 K | b7070122 | sax `s600.bin` = `TAST_600.EPR` | Programm der Tastatur-U880 |
-| `pc1715_tast618_tastatur.bin` | TAST_618 | 2 K | 6052a81e | tiffe `ROMs-PC1715.zip` | zweites Tastatur-ROM, Zugehörigkeit unbekannt [?] |
-| `pc1715_068_fdc_lese.bin` | 068, A8.2 (Karte A302) | 1 K | 5306d57b | sax `068.bin` = tiffe `r1715lr.bin` | FDC Lese-ROM (Markenerkennung) |
-| `pc1715_069_fdc_schreib.bin` | 069, A8.1 (Karte A302) | 1 K | 319fa72c | sax `069.bin` = tiffe `r1715sr.bin` | FDC Schreib-ROM |
+| `pc1715_tast618_tastatur.bin` | TAST_618 | 2 K | 6052a81e | tiffe `ROMs-PC1715.zip` | QWERTZ-Tastatur-ROM; seit AP-6 wählbar, Zugehörigkeit zu einem Gerät unbekannt [?] |
+| `pc1715_068_fdc_lese.bin` | 068, A8.2 (Karte „FDC mit 4×A302“) | 1 K | 5306d57b | sax `068.bin` = tiffe `r1715lr.bin` | FDC Lese-ROM (Markenerkennung) |
+| `pc1715_069_fdc_schreib.bin` | 069, A8.1 (Karte „FDC mit 4×A302“) | 1 K | 319fa72c | sax `069.bin` = tiffe `r1715sr.bin` | FDC Schreib-ROM |
 | `zg_organisation_corti.txt` | — | — | — | tiffe `r1715cg.txt` | Beschreibung der ZG-Anordnung (Corti) |
 
-Nicht vorhanden: **098/099** (FDC-Karte A301) — die sax-Dateien haben 0 Byte. Nichts fehlte sonst.
+Nicht vorhanden: **098/099** (die andere Kartenfassung der Floppy-Ansteuerung) — die sax-Dateien haben
+0 Byte. Nichts fehlte sonst. **Berichtigt (AP-6):** „A301“/„A302“ sind keine Kartennamen — **A302D ist ein
+Bauteil** (TCA345A, Schmitt-Trigger; Bauelementeliste `pc_serv.pdf`), sax nennt die Karte mit 068/069 „FDC
+mit 4×A302“. Beide Fassungen fahren dieselben BIOSe; im Emulator gibt es keine Auswahl.
+
+**Im Emulator wählbar (AP-6):** ZG-Satz `deutsch` = S619 (A25.2) + S602 (A25.1, Vorgabe), `polnisch` = S641 +
+S619 [?: A25.1 des polnischen Geräts nicht belegt; S602 trüge Umlaute, S619 ist der ASCII-Satz],
+`kyrillisch` = S643 + S605 (MAME `rt1715lc`); Tastatur S600 (QWERTY, Vorgabe) oder TAST_618 (QWERTZ).
+Der Urlader S502 ist der einzige und hat keine Auswahl.
 
 ## Zeichengenerator (S619, S602 und die übrigen ZG)
 
@@ -60,11 +68,13 @@ zu S619; welcher Satz an A25.1 bzw. A25.2 in welcher Gerätefassung steckt, ist 
 
 ## C-Arrays
 
-Erzeugt mit `tools/eprom_to_h.py <bin> <Symbol> <Header>`; von keinem Code eingebunden:
+Erzeugt mit `tools/eprom_to_h.py <bin> <Symbol> <Header>`:
 
 - `core/cards/pc1715_zre/rom_s502.h` (`PC1715_S502_URLADER`), `chargen_s619.h` (`PC1715_S619_ZG1`),
   `chargen_s602.h` (`PC1715_S602_ZG2`), `rom_068.h`, `rom_069.h`
 - `core/peripherals/tastatur1715/rom_s600.h` (`PC1715_S600_TASTATUR`)
+- seit AP-6 eingebunden: `chargen_s641.h`, `chargen_s643.h`, `chargen_s605.h` (`PC1715_S641_ZG1`, `PC1715_S643_ZG1`,
+  `PC1715_S605_ZG2`) und `core/peripherals/tastatur1715/rom_tast618.h` (`PC1715_TAST618_TASTATUR`)
 
 Ablage nach Vorbild PRG710 (`core/cards/k2521/rom_prg710.h`: ROM-Header beim besitzenden
 Kartenordner) und dem Plan §7: ZRE-Karte, Tastatur-Peripherie, 1715W-Speicherkarte.
