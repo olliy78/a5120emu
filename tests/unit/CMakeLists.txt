@@ -139,3 +139,5 @@ k1520_add_test(fs_recover    SRC filesystem/test_fs_recover.cpp
                              DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 # ZRE des PC 1715: ROM-Overlay, Portdekodierung, BWS-Register 34H, 8275-DMA + Rastern (doc/design/21_pc1715.md AP-1b)
 k1520_add_test(pc1715_zre SRC cards/test_pc1715_zre.cpp LIBS k1520_pc1715_zre LABELS "${_lbl}")
+# Speicher des PC 1715W: BR 24H, 74S287, Bank 0, Bildquelle (doc/design/21_pc1715.md AP-W1)
+k1520_add_test(pc1715w_speicher SRC cards/test_pc1715w_speicher.cpp LIBS k1520_pc1715w_speicher LABELS "${_lbl}")
