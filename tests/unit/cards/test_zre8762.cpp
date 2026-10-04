@@ -248,3 +248,45 @@ TEST(ZRE8762Config, OffeneKlemmeLiestH)
     EXPECT_EQ(zre.ortVon(0x8000).quelle, K8915Zre::Quelle::Bank1);
     EXPECT_EQ(zre.ortVon(0xC000).quelle, K8915Zre::Quelle::Bus) << "Seite 3 unberührt";
 }
+
+/**
+ * @test ZRE8762.VolleEaAdresseKommtAmBusAn
+ * @brief Die CPU legt bei E/A die volle Adresse an den Systembus (A8–A15 = B bzw. A),
+ *        wie an der K2521/K2526.  Vorher schnitt die ZRE sie auf 8 Bit ab — die RAF
+ *        (Sektor und Bytezeiger über B, doc/design/22_raf512.md §3.2) sah am K8915 nur
+ *        B = 0 und meldete sich bei `RAF512.COM` als „Keine RAF-Karte vorhanden!".
+ */
+TEST_F(Fixture, VolleEaAdresseKommtAmBusAn)
+{
+    struct Lauscher : BusDevice {
+        K1520Bus& b;
+        uint16_t  adr = 0;
+        explicit Lauscher(K1520Bus& bus) : b(bus) {}
+        uint8_t ioRead(uint8_t) override { adr = b.ioAddress(); return 0x5A; }
+        void    ioWrite(uint8_t, uint8_t) override { adr = b.ioAddress(); }
+        const char* deviceName() const override { return "Lauscher"; }
+    } l(bus);
+    bus.registerIO(&l, 0x88, 2);
+
+    const uint8_t prog[] = {
+        0x01, 0x89, 0x12,   // LD BC,1289H
+        0xED, 0x69,         // OUT (C),L
+        0x3E, 0x34,         // LD A,34H
+        0xD3, 0x88,         // OUT (88H),A
+        0x06, 0x7F,         // LD B,7FH
+        0x0E, 0x88,         // LD C,88H
+        0xED, 0x78,         // IN A,(C)
+        0x76                // HALT
+    };
+    out(0x87);                                   // Bank 1 überall
+    for (uint16_t a = 0; a < sizeof prog; ++a) zre.bankPoke(0, a, prog[a]);
+    zre.cpu().reset();
+
+    for (int i = 0; i < 2; ++i) zre.cpu().step();
+    EXPECT_EQ(l.adr, 0x1289) << "OUT (C),r legt BC auf AB0–15";
+    for (int i = 0; i < 2; ++i) zre.cpu().step();
+    EXPECT_EQ(l.adr, 0x3488) << "OUT (n),A legt A auf AB8–15";
+    for (int i = 0; i < 3; ++i) zre.cpu().step();
+    EXPECT_EQ(l.adr, 0x7F88);
+    EXPECT_EQ(zre.cpu().A, 0x5A);
+}

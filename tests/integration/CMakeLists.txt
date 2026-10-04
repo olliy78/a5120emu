@@ -169,3 +169,16 @@ k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
 k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp
                              LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
                              LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# RAM-Floppy RAF, Gastnachweis mit den Original-Treibern (doc/design/22_raf512.md §8 AP-R5):
+# RAFCPM.COM (M:) / RAF512.COM (P:) unter CP/A, SCPX 8915 und SCPX 1526 am PRG 710-1 —
+# Kapazitätstest, Kennung RAFvalid.SYS, PIP/DIR, RESET erhält, Netz-Ein verwirft.
+set(_raf_dir "RAF_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/raf\"")
+k1520_add_test(raf_a5120 SRC test_raf_a5120.cpp LIBS ${_libs} k1520_fs
+                         LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
+k1520_add_test(raf_k8915 SRC test_raf_k8915.cpp
+                         LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                         LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
+k1520_add_test(raf_prg710 SRC test_raf_prg710.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
