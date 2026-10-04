@@ -199,3 +199,8 @@ k1520_add_test(disktool_pc1715 SRC test_disktool_pc1715.cpp
 k1520_add_test(pc1715w_boot SRC test_pc1715w_boot.cpp
                           LIBS k1520_pc1715 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# PC 1715 AP-4d: Werkstest PCTEST.COM unter CP/A 1715 aus der Workbench.
+k1520_add_test(pc1715_pctest SRC test_pc1715_pctest.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
