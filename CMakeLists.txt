@@ -277,6 +277,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_em PUBLIC k1520_pio k1520_z8000 k1520_bus k1520_logger)
     target_include_directories(k1520_em PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # RAM-Floppy RAF 128/512/2M (doc/design/22_raf512.md)
+    add_library(k1520_raf STATIC core/cards/raf/raf.cpp)
+    target_link_libraries(k1520_raf PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_raf PUBLIC ${CMAKE_SOURCE_DIR})
+
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
         core/machines/a5120/a5120.cpp
