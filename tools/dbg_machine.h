@@ -221,10 +221,13 @@ public:
     bool busMasterIsZVE2() { return a5_ ? a5_->busMasterIsZVE2() : false; }
     uint16_t busMasterPC() { return a5_ ? a5_->busMasterPC() : cpuPC(); }
 
-    void captureState(A5120Machine::MachineSnapshot& s) { if (a5_) a5_->captureState(s); }
+    void captureState(A5120Machine::MachineSnapshot& s, bool raf_inhalt = true) {
+        if (a5_) a5_->captureState(s, raf_inhalt);
+    }
     bool restoreState(const A5120Machine::MachineSnapshot& s) { return a5_ && a5_->restoreState(s); }
     bool saveState(const std::string& p) { return a5_ && a5_->saveState(p); }
     bool loadState(const std::string& p) { return a5_ && a5_->loadState(p); }
+    std::string stateError() const { return a5_ ? a5_->stateError() : std::string(); }
 
     // ─── Karten ──────────────────────────────────────────────────────────────
     K5122::DebugState k5122State() {

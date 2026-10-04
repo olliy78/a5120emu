@@ -163,3 +163,9 @@ k1520_add_test(prg710_lochband SRC test_prg710_lochband.cpp
 k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# RAM-Floppy RAF in allen drei Maschinen (doc/design/22_raf512.md §5.2, AP-R2): Bestückung,
+# 88H/89H über den Systembus, Reset erhält / Netz-Ein verwirft, Save-State v8, A5120.16 + RAF.
+k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp
+                             LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
+                             LABELS "${_lbl}" DEFS LOG_LEVEL=2)

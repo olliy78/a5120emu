@@ -170,6 +170,9 @@ public:
     void setBusTrace(K1520Bus::BusTrace cb) { mem_trace_ = cb; bus_.setTraceCallback(std::move(cb)); }
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
+protected:
+    K1520Bus& systemBus() override { return bus_; }
+
 private:
     void resetHardware();
     void tastenAbgeben();     ///< Warteschlange an die Tastatur (nur im Lauffaden)

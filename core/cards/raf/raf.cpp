@@ -62,15 +62,15 @@ void RAF::ioWrite(uint8_t port, uint8_t d) {
 uint8_t RAF::peek(uint32_t adr) const { return adr < mem_.size() ? mem_[adr] : 0xFF; }
 void RAF::poke(uint32_t adr, uint8_t v) { if (adr < mem_.size()) mem_[adr] = v; }
 
-void RAF::saveState(std::vector<uint8_t>& o) const {
+void RAF::saveState(std::vector<uint8_t>& o, bool mit_inhalt) const {
     o.push_back(kRafStateVersion);
     o.push_back(uint8_t(cfg_.typ));
     o.push_back(uint8_t(latch_ & 0xFF));
     o.push_back(uint8_t(latch_ >> 8));
-    const uint32_t n = uint32_t(mem_.size());
+    const uint32_t n = mit_inhalt ? uint32_t(mem_.size()) : 0;
     const auto* b = reinterpret_cast<const uint8_t*>(&n);
     o.insert(o.end(), b, b + sizeof n);
-    o.insert(o.end(), mem_.begin(), mem_.end());
+    if (mit_inhalt) o.insert(o.end(), mem_.begin(), mem_.end());
 }
 
 bool RAF::loadState(const uint8_t*& p, const uint8_t* end) {
@@ -81,8 +81,8 @@ bool RAF::loadState(const uint8_t*& p, const uint8_t* end) {
     uint32_t n;
     std::memcpy(&n, q + 4, sizeof n);
     q += 8;
-    if (n != mem_.size() || size_t(end - q) < n) return false;
-    std::memcpy(mem_.data(), q, n);
+    if ((n != 0 && n != mem_.size()) || size_t(end - q) < n) return false;
+    if (n) std::memcpy(mem_.data(), q, n);                    // 0 = nur Latch (Historie)
     latch_ = latch;
     p = q + n;
     return true;

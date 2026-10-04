@@ -324,3 +324,22 @@ TEST(Raf, SaveStateUndRohdatei) {
     EXPECT_FALSE(u.raf.ladeInhalt(pfad + ".fehlt"));
     std::remove(pfad.c_str());
 }
+
+TEST(Raf, SaveStateOhneInhaltSetztNurDasLatch) {
+    // Für die Rückwärts-Historie des Debuggers (AP-R2): Typ + Latch, Inhaltslänge 0.
+    Rig r;
+    r.sektorSchreiben(0x0007, muster(0x10));
+    std::vector<uint8_t> blob;
+    r.raf.saveState(blob, false);
+    EXPECT_EQ(blob.size(), 8u);
+
+    r.raf.poke(0, 0xAB);
+    r.raf.reset();
+    ASSERT_TRUE(r.raf.gesperrt());
+    const uint8_t* p = blob.data();
+    ASSERT_TRUE(r.raf.loadState(p, blob.data() + blob.size()));
+    EXPECT_EQ(p, blob.data() + blob.size());
+    EXPECT_EQ(r.raf.latch(), 0x0007);
+    EXPECT_EQ(r.raf.peek(0), 0xAB);                      // Inhalt bleibt, wie er ist
+    EXPECT_EQ(r.sektorLesen(0x0007), muster(0x10));
+}

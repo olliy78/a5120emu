@@ -71,6 +71,7 @@ void K8915Machine::resetHardware()
     zre_.reset();            // A8H := 00H, CTC, CPU
     afs_.reset();            // K5122: PIOs, Marken-FF; Disketten und Kopfposition bleiben
     ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
+    rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -85,6 +86,7 @@ void K8915Machine::powerOn()
 {
     zre_.powerOn(0x00);
     kbd_.powerOn();          // Selbsttest der Tastatur, KEIN DC1 (Firmware 000CH)
+    rafPowerOn();            // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
     anzeigenSpiegeln();
     LOG_INFO("K8915", "Netz ein: A8H=00H, Boot-ROM bei 0000H");
@@ -92,6 +94,7 @@ void K8915Machine::powerOn()
 
 void K8915Machine::reset()
 {
+    bestueckungAbschliessen();
     resetHardware();
     anzeigenSpiegeln();
     LOG_INFO("K8915", "Reset");
@@ -133,6 +136,7 @@ void K8915Machine::anzeigenSpiegeln()
 
 int K8915Machine::run(int max_cycles)
 {
+    bestueckungAbschliessen();
     tastenAbgeben();
     // NMI-Taster: eine Flanke je Druck, zugestellt vor dem ersten Befehl.
     if (nmi_taster_.exchange(false, std::memory_order_relaxed)) {

@@ -1325,7 +1325,7 @@ int main(int argc, char** argv){
             if (!origin.empty()) fprintf(stderr,"   ausgeloest: %s\n",origin.c_str());
             printRegs16(); showInsn16("=>",pcKey16(em->u8001())); showDisplays(); emLine(); stateLine();
             if (stop_reason.rfind("bp",0)==0){
-                bphit_ring.emplace_back(); m.captureState(bphit_ring.back());
+                bphit_ring.emplace_back(); m.captureState(bphit_ring.back(), false);
                 while (bphit_ring.size()>bphit_cap) bphit_ring.pop_front(); }
             return;
         }
@@ -1341,7 +1341,7 @@ int main(int argc, char** argv){
         // §17: remember the full state at each PC-breakpoint stop so `rc` can jump back
         // to the previous hit (the snapshot ring only holds coarse pre-command states).
         if (!K8 && stop_reason.rfind("bp",0)==0){   // K8915: keine Snapshots
-            bphit_ring.emplace_back(); m.captureState(bphit_ring.back());
+            bphit_ring.emplace_back(); m.captureState(bphit_ring.back(), false);
             while (bphit_ring.size()>bphit_cap) bphit_ring.pop_front();
         }
     };
@@ -1894,12 +1894,16 @@ int main(int argc, char** argv){
     auto pushHistory = [&]{
         if (K8) return;                    // K8915: keine Snapshots (Savestates nur A5120)
         rev_ring.emplace_back();
-        m.captureState(rev_ring.back());
+        // RAF-Inhalt (bis 2 MB) NICHT je Schritt — 200 Stände wären bis 400 MB.  `rs`/`rc`
+        // stellen daher nur das RAF-Latch zurück; benannte Snapshots nehmen den Inhalt mit.
+        m.captureState(rev_ring.back(), false);
         while (rev_ring.size() > rev_cap) rev_ring.pop_front();
     };
     // Restore a snapshot and re-sync the debugger's view (call-stack history is reset).
     auto applySnapshot = [&](const A5120Machine::MachineSnapshot& s,const char* what){
         bool ok = m.restoreState(s);
+        if (!ok && !m.stateError().empty()){   // unpassende RAF: nichts übernommen
+            fprintf(stderr,"  restore abgelehnt: %s\n",m.stateError().c_str()); return; }
         callstack.clear();                 // call history can't be reconstructed
         cs16.clear();
         snap1=grab(m.cpuDebug()); snap2=Snap{};
@@ -2927,6 +2931,7 @@ int main(int argc, char** argv){
         else if (cmd=="loadstate" && t.size()>1){
             if(m.loadState(t[1])){ snap1=grab(m.cpuDebug()); callstack.clear(); cs16.clear(); rev_ring.clear();
                 fprintf(stderr,"  state loaded ← %s\n",t[1].c_str()); showInsn("=>",m.cpuPC()); stateLine(); }
+            else if (!m.stateError().empty()) fprintf(stderr,"  cannot load state %s: %s\n",t[1].c_str(),m.stateError().c_str());
             else fprintf(stderr,"  cannot load state %s (missing/invalid)\n",t[1].c_str()); }
         // ══ MISC: machine I/O — keystrokes, screen, named RAM vars, chip state, reset ══
         else if (cmd=="keys" && t.size()>1){ pushHistory(); std::string s=line.substr(line.find("keys")+5); keys(s); }

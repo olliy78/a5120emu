@@ -67,9 +67,12 @@ public:
     uint8_t peek(uint32_t adr) const;
     void    poke(uint32_t adr, uint8_t v);
 
-    // ─── Save-State (Kartenseite; die Maschinen binden es in AP-R2 ein) ──────
-    void saveState(std::vector<uint8_t>& out) const;
-    /// false bei zu kurzem/falschem Block (dann ist nichts verändert).
+    // ─── Save-State (Kartenseite; die Maschinen binden es seit AP-R2 ein) ────
+    /// @param mit_inhalt false = nur Typ + Latch (Inhaltslänge 0) — für die Rückwärts-
+    ///        Historie des Debuggers, die je Schritt einen Stand zieht (bis 2 MB je Stück).
+    void saveState(std::vector<uint8_t>& out, bool mit_inhalt = true) const;
+    /// false bei zu kurzem/falschem Block (dann ist nichts verändert).  Ein Block ohne
+    /// Inhalt (Länge 0) setzt nur das Latch, der Inhalt bleibt.
     bool loadState(const uint8_t*& p, const uint8_t* end);
 
     // ─── Stand-by-Ablage (§7.1): Rohdatei, Größe muss exakt zur Kapazität passen ─

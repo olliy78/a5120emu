@@ -898,8 +898,9 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Loaded state ← %s (resuming at PC=0x%04X)\n",
                     load_state_path, machine.cpuPC());
         else
-            fprintf(stderr, "WARN: could not load state '%s' (missing/invalid) — booting normally\n",
-                    load_state_path);
+            fprintf(stderr, "WARN: could not load state '%s' (%s) — booting normally\n",
+                    load_state_path, machine.stateError().empty() ? "missing/invalid"
+                                                                   : machine.stateError().c_str());
     }
 
     // ── Run loop ──────────────────────────────────────────────────────────────
