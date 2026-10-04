@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PC1715 Emulator
+GenericName=K1520 Emulator
+Comment=Emulator des Personalcomputers robotron PC 1715 (K1520-Bus)
+Comment[en]=Emulator of the robotron PC 1715 personal computer (K1520 bus)
+Exec="@ROOT@/bin/pc1715emu"
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=PC1715;1715;K1520;robotron;Z80;SCP;CPA;UDOS;emulator;
+StartupNotify=true
+StartupWMClass=main.py
