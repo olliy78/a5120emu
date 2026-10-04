@@ -203,6 +203,9 @@ public:
     /** @brief Letzte Interrupt-Quittung des Busses (Vektor + Quellgerät). */
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
+protected:
+    K1520Bus& systemBus() override { return bus_; }
+
 private:
     void resetHardware();
     void altRueckruf(K7028::Kanal k, SerialCb cb);

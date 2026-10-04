@@ -17,8 +17,10 @@ K8915Zre::K8915Zre(K1520Bus& bus, const Config& cfg)
     // Adressen gehen auf den Systembus (D12 → D28, s. Kopf von zre8762.h).
     cpu_.readByte     = [this](uint16_t a)            { return memRead(a); };
     cpu_.writeByte    = [this](uint16_t a, uint8_t d) { memWrite(a, d); };
-    cpu_.readPort     = [this](uint16_t p)            { return bus_.ioRead(p & 0xFF); };
-    cpu_.writePort    = [this](uint16_t p, uint8_t d) { bus_.ioWrite(p & 0xFF, d); };
+    // Volle E/A-Adresse an den Bus: A8–A15 (B bei `OUT (C),r`/`INIR`/`OTIR`, A bei
+    // `OUT (n),A`) werten Karten wie die RAF aus (doc/design/22_raf512.md §3.2).
+    cpu_.readPort     = [this](uint16_t p)            { return bus_.ioRead(p); };
+    cpu_.writePort    = [this](uint16_t p, uint8_t d) { bus_.ioWrite(p, d); };
     cpu_.retiCallback = [this]()                      { bus_.signalRETI(); };
     rebuildMap();
 }

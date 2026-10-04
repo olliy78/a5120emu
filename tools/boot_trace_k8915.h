@@ -17,6 +17,7 @@
 #include <vector>
 
 struct K8915TraceOpts {
+    std::string raf;             ///< --raf: RAM-Floppy stecken (leer = keine)
     std::string disk;            ///< Diskettenpfad (leer = keine)
     std::string mount_path;      ///< tatsächlich zu mountender Pfad (COW-Kopie o. ä.)
     bool        write_protect = false;

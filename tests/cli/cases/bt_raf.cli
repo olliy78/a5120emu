@@ -1,0 +1,6 @@
+# boot_trace --raf: Karte vor dem ersten Lauf stecken; kurzer Lauf (der Boot-ROM
+# kennt die RAF nicht), keine Fehlermeldung zur Karte.
+tool:    boot_trace
+disk:    cpa_cpa780_k5601_clock.img
+run:     -L /dev/null --raf raf512 -c 2000000 --quiet --json %DISK%
+forbid:  --raf:

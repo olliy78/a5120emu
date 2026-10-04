@@ -57,6 +57,13 @@ crt:
 general:
   speed: 10.0
 
+# RAM-Floppy RAF auf E/A 88H/89H (app/raf.py, doc/design/22_raf512.md §7):
+# raf = none | raf128 | raf512 | raf2m; raf_standby = Inhalt beim Beenden behalten.
+# Ab Werk keine Karte und kein Stand-by.
+machine:
+  raf: none
+  raf_standby: false
+
 # Laufwerksschacht wie am Gerät: zwei K5601, Steckplatz 2/3 leer.
 drive_types:
 - K5601

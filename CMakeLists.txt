@@ -277,13 +277,18 @@ if(BUILD_K1520)
     target_link_libraries(k1520_em PUBLIC k1520_pio k1520_z8000 k1520_bus k1520_logger)
     target_include_directories(k1520_em PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # RAM-Floppy RAF 128/512/2M (doc/design/22_raf512.md)
+    add_library(k1520_raf STATIC core/cards/raf/raf.cpp)
+    target_link_libraries(k1520_raf PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_raf PUBLIC ${CMAKE_SOURCE_DIR})
+
     # A5120 machine (wires all cards + Z80 CPU)
     add_library(k1520_a5120 STATIC
         core/machines/a5120/a5120.cpp
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em k1520_raf
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger k1520_serial
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -337,7 +342,7 @@ if(BUILD_K1520)
     # AP-E4b in libk1520core.so: k1520_create(K1520_MACHINE_K8915).
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
-        k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke
+        k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -346,7 +351,7 @@ if(BUILD_K1520)
     add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
     target_link_libraries(k1520_prg710 PUBLIC
         k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
-        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_ass590069
+        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_ass590069 k1520_raf
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 

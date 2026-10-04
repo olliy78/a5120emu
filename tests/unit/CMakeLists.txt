@@ -46,6 +46,9 @@ k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_l
 k1520_add_test(em    SRC cards/test_em.cpp         LIBS k1520_em k1520_k3526 k1520_z80 LABELS "${_lbl}")
 k1520_add_test(em16  SRC cards/test_em16.cpp       LIBS k1520_em k1520_k3526 LABELS "${_lbl}")
 
+# RAM-Floppy RAF 128/512/2M mit echtem Z80 (doc/design/22_raf512.md AP-R1)
+k1520_add_test(raf   SRC cards/test_raf.cpp        LIBS k1520_raf k1520_z80 LABELS "${_lbl}")
+
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")

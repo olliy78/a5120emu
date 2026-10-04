@@ -190,6 +190,7 @@ void A5120Machine::resetHardware() {
     serial_naechst_ = 0;
     kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
     if (em_) em_->reset();  // EM: PIO hochohmig ⇒ RESET16/Pull-ups; DRAM + A22 bleiben
+    rafReset();             // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -216,6 +217,7 @@ void A5120Machine::powerOn() {
     // weiter — inklusive der Reste des vorherigen OS.
     ops_.fill(0xFF);
     if (em_) em_->powerOn();
+    rafPowerOn();       // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
     LOG_INFO("A5120", "Power on: ZVE1 Reset, Lade-ROM aktiv");
 
@@ -231,6 +233,7 @@ void A5120Machine::powerOn() {
 void A5120Machine::reset() {
     // Reset-Taste: wie /RESET auf echter Hardware — CPU + alle Bausteine, aber
     // der RAM-Inhalt bleibt stehen (nur Netz-Aus verliert ihn, s. powerOn()).
+    bestueckungAbschliessen();
     resetHardware();
     LOG_INFO("A5120", "Reset: ZVE1 Reset, Lade-ROM reaktiviert");
 }
@@ -315,7 +318,7 @@ static void loadZ80(Z80& z, const A5120Machine::MachineSnapshot::Z80Regs& r) {
     z.halted=r.halted; z.cycles=r.cycles;
 }
 
-void A5120Machine::captureState(MachineSnapshot& s) const {
+void A5120Machine::captureState(MachineSnapshot& s, bool raf_inhalt) const {
     std::memcpy(s.ram.data(), ops_.rawPtr(), s.ram.size());
     saveZ80(zre_.cpu(),  s.zve1);
     saveZ80(zre_.zve2(), s.zve2);
@@ -345,9 +348,54 @@ void A5120Machine::captureState(MachineSnapshot& s) const {
     // (DRAM, Attributspeicher, PIO, Register, U8001 mit Ablaufzustand).
     s.device_state.push_back(em_ ? 1 : 0);
     if (em_) em_->serialize(s.device_state);
+    // v8: RAF — eigenes Feld, s. MachineSnapshot::raf_state.
+    s.raf_state.assign(1, raf_ ? 1 : 0);
+    if (raf_) raf_->saveState(s.raf_state, raf_inhalt);
+}
+
+namespace {
+const char* rafName(uint8_t typ) {
+    switch (static_cast<RAF::Typ>(typ)) {
+        case RAF::Typ::RAF128: return "RAF 128";
+        case RAF::Typ::RAF512: return "RAF 512";
+        case RAF::Typ::RAF2M:  return "RAF-2M";
+    }
+    return "RAF unbekannter Bauart";
+}
+}  // namespace
+
+bool A5120Machine::rafZustandLaden(const std::vector<uint8_t>& st) {
+    // Leer: Stand älter als v8 — die RAF bleibt, wie sie ist.  Kennbyte 0: der Stand
+    // kennt keine RAF; eine gesteckte behält ihren Inhalt (wie ein älterer Stand).
+    if (st.empty() || st[0] == 0) return true;
+    // Aufbau des Blocks: Kennbyte, dann RAF::saveState (Version, Typ, Latch, Länge, Inhalt).
+    if (st.size() < 3) { state_error_ = "Zustand: RAF-Block beschaedigt"; return false; }
+    if (!raf_) {
+        state_error_ = std::string("Zustand enthaelt eine ") + rafName(st[2]) +
+                       ", die Maschine hat keine RAF gesteckt";
+        return false;
+    }
+    if (st[2] != static_cast<uint8_t>(raf_->config().typ)) {
+        state_error_ = std::string("Zustand enthaelt eine ") + rafName(st[2]) +
+                       ", gesteckt ist eine " + rafName(static_cast<uint8_t>(raf_->config().typ));
+        return false;
+    }
+    const uint8_t* p = st.data() + 1;
+    if (!raf_->loadState(p, st.data() + st.size())) {
+        state_error_ = "Zustand: RAF-Block beschaedigt";
+        return false;
+    }
+    return true;
 }
 
 bool A5120Machine::restoreState(const MachineSnapshot& s) {
+    state_error_.clear();
+    // Zuerst die RAF: passt sie nicht zur Bestückung, wird NICHTS übernommen
+    // (RAF::loadState ändert bei false auch an der Karte nichts).
+    if (!rafZustandLaden(s.raf_state)) {
+        LOG_WARN("A5120", "Zustand abgelehnt: %s", state_error_.c_str());
+        return false;
+    }
     ops_.restore(s.ram.data());
     loadZ80(zre_.cpu(),  s.zve1);
     loadZ80(zre_.zve2(), s.zve2);
@@ -400,9 +448,13 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
 //   7 = beides zusammen: neuer SIO-Block UND Kennbyte + EM-Block am Ende des
 //       Geräteteils (A5120.16, doc/design/17_a5120_16.md S4).  Ältere Stände (≤ v6)
 //       werden ohne Geräteteil geladen.
+//   8 = + RAF-Block (doc/design/22_raf512.md §5.2) als eigener längenpräfixierter Teil
+//       HINTER dem Geräteteil (MachineSnapshot::raf_state, immer mit Inhalt).  Ein
+//       v7-Stand lädt ohne RAF-Angabe (die RAF bleibt); ein Stand mit RAF in eine
+//       Maschine ohne bzw. mit anderer RAF wird abgelehnt (stateError()).
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
-constexpr uint8_t kStateVersion    = 7;
+constexpr uint8_t kStateVersion    = 8;
 }
 
 uint8_t A5120Machine::keyboardLeds() const {
@@ -430,12 +482,17 @@ bool A5120Machine::saveState(const std::string& path) const {
     uint32_t dev_len = (uint32_t)s.device_state.size();
     f.write(reinterpret_cast<const char*>(&dev_len), sizeof dev_len);
     if (dev_len) f.write(reinterpret_cast<const char*>(s.device_state.data()), dev_len);
+    // v8 tail: RAF-Block (Kennbyte + RAF::saveState samt Inhalt).
+    uint32_t raf_len = (uint32_t)s.raf_state.size();
+    f.write(reinterpret_cast<const char*>(&raf_len), sizeof raf_len);
+    if (raf_len) f.write(reinterpret_cast<const char*>(s.raf_state.data()), raf_len);
     return (bool)f;
 }
 
 bool A5120Machine::loadState(const std::string& path) {
+    state_error_.clear();
     std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
+    if (!f) { state_error_ = "Zustandsdatei nicht lesbar: " + path; return false; }
     char magic[7]; f.read(magic, sizeof magic);
     if (!f || std::memcmp(magic, kStateMagicPrefix, sizeof magic) != 0) return false;
     uint8_t version = 0; f.read(reinterpret_cast<char*>(&version), 1);
@@ -460,11 +517,19 @@ bool A5120Machine::loadState(const std::string& path) {
         // folgenden Chip.  Lieber ohne Geräteteil laden.
         if (version < 7) s.device_state.clear();
     }
+    if (version >= 8) {
+        uint32_t raf_len = 0; f.read(reinterpret_cast<char*>(&raf_len), sizeof raf_len);
+        if (!f) return false;
+        s.raf_state.resize(raf_len);
+        if (raf_len) f.read(reinterpret_cast<char*>(s.raf_state.data()), raf_len);
+        if (!f) { state_error_ = "Zustandsdatei: RAF-Teil unvollstaendig"; return false; }
+    }
     s.rom_enabled=flags[0]; s.busrq_active=flags[1]; s.dma_progress=flags[2]; s.bus_master_zve2=flags[3];
     return restoreState(s);
 }
 
 int A5120Machine::run(int max_cycles) {
+    bestueckungAbschliessen();
     // Drain key queue
     {
         std::lock_guard<std::mutex> lk(key_mutex_);

@@ -1,0 +1,6 @@
+# boot_trace --raf an K8915 (eigener Zweig): Karte vor dem Lauf.
+tool:    boot_trace
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915 --raf raf512 --skip-selftest -c 3000000 --quiet --json %DISK%
+expect:  "machine":"k8915"
+forbid:  --raf:

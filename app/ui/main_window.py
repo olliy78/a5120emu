@@ -55,6 +55,7 @@ from app import paths
 from app import programme
 from app import profil as profile
 from app import takt
+from app import raf
 
 
 class MainWindow(LochbandMixin, QMainWindow):
@@ -87,16 +88,15 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._model = self.profil.standard_modell()
         # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672).
         self._tastatur_art = self.profil.modell_tastatur(self._model)
+        # RAM-Floppy RAF (doc/design/22_raf512.md §7, `app/raf.py`) — wie das Modell
+        # ein Konstruktorparameter des Kerns; Vorgabe keine, kein Stand-by.
+        self._raf = raf.KEINE
+        self._raf_standby = False
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
-            self.emulator = K1520Emulator(self._drive_types,
-                                          machine=self.profil.modell_maschine(self._model),
-                                          em=self.profil.modell_em(self._model))
-            # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
-            # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
-            self.emulator.set_key_repeat_realtime(True)
+            self.emulator = self._maschine_erzeugen(self._drive_types)
         except Exception as e:
             QMessageBox.critical(self, "Initialization Error", str(e))
             raise
@@ -189,6 +189,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.serial_widget.changed.connect(self._schedule_autosave)
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
         self.settings_widget.modelChanged.connect(self._on_model_selected)
+        self.settings_widget.rafChanged.connect(self._on_raf_selected)
+        self.settings_widget.rafStandbyChanged.connect(self._on_raf_standby_changed)
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
         # Die Statuszeile nennt die eingelegten Abbilder — sie darf nicht bis zum
@@ -239,7 +241,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._update_drive_status()
 
         # Cold start with the restored disks present, then begin running.
-        self.emulator.power_on()
+        self._einschalten()
         self._emu_started = True
         self.run_timer.start()
         self.screen_widget.start_display()
@@ -880,7 +882,9 @@ class MainWindow(LochbandMixin, QMainWindow):
         data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
-            schnittstellen=self.serial_widget.zustand_lesen())
+            schnittstellen=self.serial_widget.zustand_lesen(),
+            machine=({"raf": self._raf, "raf_standby": bool(self._raf_standby)}
+                     if self.profil.raf_wahl else None))
         if self.eprom_widget is not None:
             data["eprom"] = self._eprom_zustand()
         return data
@@ -1101,12 +1105,29 @@ class MainWindow(LochbandMixin, QMainWindow):
                            if self.profil.modellwahl else self.profil.standard_modell())
             self.settings_widget.set_model_value(self._model)
 
+            # RAM-Disk (doc/design/22_raf512.md §7.2): fehlender Abschnitt/Schlüssel
+            # oder unbekannter Wert = keine RAF bzw. kein Stand-by — anders als bei
+            # den Disketten heisst „fehlt" hier „aus" (ältere Konfigurationen
+            # kannten keine RAF).  Die Ablage der LAUFENDEN Maschine wird noch mit
+            # der alten Einstellung geschrieben, bevor die neue gilt.
+            self._raf_sichern()
+            machine = data.get("machine") or {}
+            if not isinstance(machine, dict):
+                machine = {}
+            if self.profil.raf_wahl:
+                self._raf = raf.normalize(machine.get("raf"))
+                self._raf_standby = raf.standby_normalize(machine.get("raf_standby"))
+            else:
+                self._raf, self._raf_standby = raf.KEINE, False
+            self.settings_widget.set_raf_value(self._raf)
+            self.settings_widget.set_raf_standby_value(self._raf_standby)
+
             # Drive-bay configuration must be applied BEFORE the disks, so the
             # panels for the present slots exist and the machine matches.  During
             # a config restore we never cold-restart here (power-on happens later).
             self._apply_drive_types(
                 data.get("drive_types") or self.profil.standard_laufwerke(),
-                cold_restart=False)
+                cold_restart=False, sichern=False)
 
             if "disks" in data:
                 self.drives_widget.load_mounts(data.get("disks") or [])
@@ -1201,6 +1222,7 @@ class MainWindow(LochbandMixin, QMainWindow):
             return
         vorher = list(self._drive_types)
         modell_vorher = self._model
+        raf_vorher = self._raf
         self._apply_config(vorgabe)
         # Ein geänderter Laufwerksschacht ODER ein geändertes Modell bedeutet
         # eine NEUE Maschine (:meth:`_apply_drive_types`), und die ist noch
@@ -1208,7 +1230,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         # sonst später von selbst, hier läuft die alte schon.  Ohne
         # Bestückungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
         # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
-        if self._drive_types != vorher or self._model != modell_vorher:
+        if (self._drive_types != vorher or self._model != modell_vorher
+                or self._raf != raf_vorher):
             self._cold_restart()
         # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
         # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
@@ -1269,7 +1292,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         if not self._emu_started or not self.act_power.isChecked():
             return
         self.drives_widget.remount_all()
-        self.emulator.power_on()
+        self._einschalten()
         self.cycles = 0
         self.frame_count = 0
 
@@ -1287,7 +1310,7 @@ class MainWindow(LochbandMixin, QMainWindow):
             # Kaltstart: Images neu mounten (setzt den K5122-Laufwerkszustand
             # zurück — sonst bootet das Boot-ROM nicht neu), dann power_on().
             self.drives_widget.remount_all()
-            self.emulator.power_on()
+            self._einschalten()
             self.cycles = 0
             self.frame_count = 0
             self.run_timer.start()
@@ -1513,7 +1536,114 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
-    def _apply_drive_types(self, types: list, cold_restart: bool):
+    def _maschine_erzeugen(self, types: list) -> K1520Emulator:
+        """Eine neue Maschine mit Laufwerksschacht *types*, Modell und RAM-Disk.
+
+        Der EINE Ort, an dem die Oberfläche ``K1520Emulator`` anlegt (Start und
+        jeder Neuaufbau).  Mit Stand-by wird die Ablage gleich hier geladen
+        (:meth:`_raf_laden`) — beim Einschalten noch einmal, denn ``power_on``
+        verwirft den Inhalt wie ein Netz-Ein ohne Pufferung.
+        """
+        emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
+                            em=self.profil.modell_em(self._model),
+                            raf=raf.core_param(self._raf) if self.profil.raf_wahl else None)
+        # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
+        # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
+        emu.set_key_repeat_realtime(True)
+        # Frisch = noch nie eingeschaltet: die RAF trägt die Ablage selbst oder gar
+        # nichts (_raf_sichern schreibt dann nicht).
+        self._raf_frisch = True
+        self._raf_laden(emu)
+        return emu
+
+    # ── RAM-Disk RAF: Auswahl und Stand-by (doc/design/22_raf512.md §7) ──────
+
+    def _raf_ablage(self) -> str:
+        """Stand-by-Ablage dieses Programms (`app/raf.py::ablage_pfad`)."""
+        return raf.ablage_pfad(self.profil.programm)
+
+    def _raf_standby_wirkt(self, emu=None) -> bool:
+        emu = emu if emu is not None else getattr(self, "emulator", None)
+        return bool(self._raf_standby and emu is not None and emu.raf_variant)
+
+    def _raf_laden(self, emu=None) -> bool:
+        """Stand-by: die Ablage in die RAF von *emu* laden.
+
+        Keine Datei ist kein Fehler (erster Start).  Passt ihre Größe nicht zum
+        gewählten Typ, wird sie NICHT geladen — Hinweis in der Statuszeile, kein
+        Meldungsfenster —, und das nächste Schreiben ersetzt sie.
+        """
+        emu = emu if emu is not None else self.emulator
+        if not self._raf_standby_wirkt(emu):
+            return False
+        pfad = self._raf_ablage()
+        if not os.path.isfile(pfad):
+            return False
+        if emu.raf_load(pfad):
+            return True
+        groesse = os.path.getsize(pfad)
+        self._raf_hinweis = (f"RAM-Disk: die gesicherte Ablage ({groesse} Byte) passt "
+                             f"nicht zu {emu.raf_variant.upper()} — nicht geladen, "
+                             f"sie wird beim nächsten Sichern ersetzt.")
+        self.statusBar().showMessage(self._raf_hinweis, 10000)
+        return False
+
+    def _raf_sichern(self) -> bool:
+        """Stand-by: den Inhalt der laufenden RAF in die Ablage schreiben.
+
+        Ohne Stand-by (oder ohne RAF) wird nichts geschrieben — eine vorhandene
+        Ablage bleibt unangetastet.  Ebenso bei einer FRISCHEN, nie eingeschalteten
+        Maschine: deren RAF hält die Ablage selbst oder nichts — eine eben wegen
+        falscher Größe abgelehnte Ablage würde sonst schon beim ersten Einschalten
+        durch Nullen ersetzt, nicht erst, wenn es etwas zu sichern gibt.
+        """
+        if getattr(self, "_raf_frisch", False) or not self._raf_standby_wirkt():
+            return False
+        pfad = self._raf_ablage()
+        try:
+            os.makedirs(os.path.dirname(pfad), exist_ok=True)
+        except OSError:
+            pass
+        ok = self.emulator.raf_save(pfad)
+        if not ok:
+            print(f"[raf] Ablage {pfad} nicht geschrieben")
+        return ok
+
+    def _einschalten(self):
+        """Netz-Ein der Maschine — mit Stand-by bleibt der RAF-Inhalt erhalten.
+
+        ``power_on`` verwirft den Inhalt (Netz-Ein ohne Pufferung, §3.4).  Mit
+        Stand-by wird er deshalb vorher gesichert und danach zurückgeladen; das ist
+        zugleich die Sicherung „beim Ausschalten".
+        """
+        self._raf_sichern()
+        self._raf_frisch = False
+        self.emulator.power_on()
+        self._raf_laden()
+
+    def _on_raf_selected(self, typ: str):
+        """Das Auswahlfeld „RAM-Disk" geändert → neue Maschine (wie beim Modell).
+
+        Eine Karte steckt man nicht im Betrieb: ``raf=`` ist ein
+        Konstruktorparameter.  Dieselbe Rückfrage wie beim Modellwechsel (ein
+        ungespeichertes PROM im EPROMmer-Sockel).
+        """
+        neu = raf.normalize(typ)
+        if neu == self._raf:
+            return
+        if not self._eprom_rueckfrage("Wechsel der RAM-Disk"):
+            self.settings_widget.set_raf_value(self._raf)
+            return
+        self._raf = neu
+        self._apply_drive_types(self._drive_types, cold_restart=True)
+        self._schedule_autosave()
+
+    def _on_raf_standby_changed(self, an: bool):
+        """Stand-by-Kästchen: nur die Einstellung, die Maschine bleibt, wie sie ist."""
+        self._raf_standby = bool(an)
+        self._schedule_autosave()
+
+    def _apply_drive_types(self, types: list, cold_restart: bool, sichern: bool = True):
         """Adopt a new drive-bay configuration (and/or a changed model).
 
         The core sets the per-slot ``DriveProfile`` **and** the Erweiterungsmodul
@@ -1526,6 +1656,11 @@ class MainWindow(LochbandMixin, QMainWindow):
         """
         types = dt.normalize_list(types)
         em = self.profil.modell_em(self._model)
+        # Stand-by: der Inhalt der ALTEN Maschine geht in die Ablage, bevor die neue
+        # sie lädt (*sichern* = False, wenn der Aufrufer das schon mit der alten
+        # Einstellung getan hat — _apply_config).
+        if sichern:
+            self._raf_sichern()
 
         # Disks whose slot still carries a drive survive the reconfiguration.
         surviving = [m for m in self.drives_widget.get_mounts()
@@ -1534,15 +1669,14 @@ class MainWindow(LochbandMixin, QMainWindow):
 
         # Recreate the machine with the new drive bay / model.
         try:
-            new_emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
-                                    em=em)
-            new_emu.set_key_repeat_realtime(True)
+            new_emu = self._maschine_erzeugen(types)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
                                  f"Konnte Maschine nicht neu erzeugen:\n{e}")
             # Keep the settings dropdowns consistent with the machine still in use.
             self.settings_widget.set_drive_types(self._drive_types)
             self.settings_widget.set_model_value(self._model)
+            self.settings_widget.set_raf_value(self._raf)
             return
 
         # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
@@ -1572,6 +1706,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
+        self.settings_widget.set_raf_value(self._raf)       # dito
         # Die Statuszeile führt je bestücktem Steckplatz ein Feld — ein
         # abgemeldetes Laufwerk muss auch dort verschwinden.  Die EM-Leuchten
         # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.
@@ -1580,7 +1715,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._update_drive_status()
 
         if cold_restart and self._emu_started and self.act_power.isChecked():
-            self.emulator.power_on()
+            self._einschalten()
             self.cycles = 0
             self.frame_count = 0
             self.run_timer.start()
@@ -1789,6 +1924,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         # stammen, das kein Speichern ausgelöst hat.
         self._autosave_timer.stop()
         self._autosave_now()
+        # Stand-by: RAF-Inhalt in die Ablage (doc/design/22_raf512.md §7.1).
+        self._raf_sichern()
         self._geschlossen = True
         # Erst NACH dem Speichern: `aktiv` soll den Zustand beim Beenden festhalten.
         self.serial_widget.beenden()
@@ -1797,6 +1934,10 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._lamp_timer.stop()
         self.screen_widget.stop_display()
         self.emulator.stop()
+        # Der Fokuswächter filtert ANWENDUNGSWEIT jedes Ereignis; ein geschlossenes
+        # Fenster darf ihn nicht hängen lassen (mehrere Fenster nacheinander, z. B.
+        # in den GUI-Tests: jeder weitere Aufbau wurde sonst merklich teurer).
+        self._focus_guard.abhaengen()
         # Echte Laufwerke abmelden: ausstehende Spuren zurückschreiben und den
         # Arbeitsfaden anhalten.  Ohne das bliebe eine Änderung im Abbild liegen,
         # die auf der eingelegten Diskette nie ankäme

@@ -278,6 +278,8 @@ public:
     void memWriteDebug(uint16_t addr, uint8_t data) override { bus_.memWrite(addr, data); }
     /** @brief Read I/O port through the machine bus for diagnostics. */
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
+    /** @brief Systembus (Tests: E/A mit vollem A0–A15, z. B. für die RAF). */
+    K1520Bus& bus() { return bus_; }
     /** @brief Install a bus trace callback (io, is_read, addr, data). */
     void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
     /** @brief Current PC of the ZVE1 (main Z80). */
@@ -401,9 +403,20 @@ public:
         // restored. Captured so a loadstate resumes with a working keyboard, disk
         // access and a correct screen. See captureState().
         std::vector<uint8_t> device_state;
+        // v8: RAM-Floppy RAF (doc/design/22_raf512.md §5.2).  Leer = Stand älter als v8
+        // (die RAF behält ihren Zustand); sonst Kennbyte 0 = keine RAF gesteckt,
+        // 1 = RAF::saveState-Block folgt (Typ, Latch, Inhalt — bzw. Inhaltslänge 0,
+        // wenn ohne Inhalt erfasst).  Eigenes Feld statt Teil von device_state: es
+        // wird VOR allem anderen geprüft, ein unpassender Stand ändert nichts.
+        std::vector<uint8_t> raf_state;
     };
-    /** @brief Capture the current machine state into @p s. */
-    void captureState(MachineSnapshot& s) const;
+    /**
+     * @brief Capture the current machine state into @p s.
+     * @param raf_inhalt false = von der RAF nur Typ + Latch, nicht der Inhalt (bis 2 MB).
+     *        Für die Rückwärts-Historie des Debuggers, die vor JEDEM Vorwärtsbefehl einen
+     *        Stand zieht (`rs`, 200 Stück); benannte Snapshots und Savestates nehmen ihn mit.
+     */
+    void captureState(MachineSnapshot& s, bool raf_inhalt = true) const;
     /**
      * @brief Restore a previously captured snapshot (RAM + both CPUs + ROM mapping).
      *
@@ -413,7 +426,9 @@ public:
      * controller (K5122 PIOs + per-drive head position) plus the K7024 screen VRAM
      * ARE captured/restored, so keyboard input, disk access AND the screen work
      * after a loadstate. Not captured: the mounted disk images (mounted separately).
-     * @return always true (the snapshot is fully applied).
+     * @return false (Grund in @ref stateError), wenn der Stand eine RAF trägt, die
+     *         Maschine aber keine oder eine andere — dann ist NICHTS verändert.
+     *         Sonst true (the snapshot is fully applied).
      */
     bool restoreState(const MachineSnapshot& s);
 
@@ -429,13 +444,21 @@ public:
     bool saveState(const std::string& path) const;
     /**
      * @brief Load a machine state previously written by saveState().
-     * @return true if applied; false if the file is missing or not a valid state file
-     *         (then the machine is unchanged).
+     * @return true if applied; false if the file is missing or not a valid state file,
+     *         or its RAF does not match the machine (then the machine is unchanged;
+     *         Grund in @ref stateError).
      */
     bool loadState(const std::string& path);
+    /** @brief Grund des letzten gescheiterten loadState()/restoreState() ("" = keiner). */
+    const std::string& stateError() const { return state_error_; }
+
+protected:
+    K1520Bus& systemBus() override { return bus_; }
 
 private:
     void wireBackplane();
+    /// RAF-Teil eines Stands prüfen und übernehmen (false + state_error_ bei Unpassendem).
+    bool rafZustandLaden(const std::vector<uint8_t>& raf_state);
 
     /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
     void resetHardware();
@@ -511,5 +534,7 @@ private:
     // Monotonic cycle counter across all run() calls, fed to the Logger's gate
     // evaluation (cycle windows) once per instruction.
     uint64_t total_cycles_ = 0;
+
+    std::string state_error_;   ///< s. stateError()
 
 };

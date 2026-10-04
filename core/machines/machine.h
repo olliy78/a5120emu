@@ -14,10 +14,13 @@
  */
 
 #pragma once
+#include "core/bus/k1520_bus.h"
+#include "core/cards/raf/raf.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
 #include "core/serial/hub.h"
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <string>
@@ -142,4 +145,61 @@ public:
     virtual void    memWriteDebug(uint16_t addr, uint8_t data) = 0;
     virtual uint8_t ioReadDebug(uint8_t port) = 0;
     virtual std::string lastError() const = 0;
+
+    // ─── RAM-Floppy RAF 128/512/2M (doc/design/22_raf512.md §5.2, AP-R2) ──────
+    // In allen drei Maschinen dieselbe Karte auf 88H/89H.  Gesteckt wird NACH dem
+    // Anlegen und VOR dem ersten run()/reset() — so braucht die C-ABI keine weitere
+    // `k1520_create_*`-Variante je Kombination (EM × RAF × PRG-Variante, §6).  Ein
+    // powerOn() davor ist erlaubt: die frische Karte ist im Netz-Ein-Zustand.
+    /**
+     * @brief Steckt eine RAF der Bauart @p typ auf 88H/89H.
+     * @return false (Grund in @ref rafFehler) nach dem ersten run()/reset(), wenn
+     *         schon eine RAF steckt oder 88H/89H belegt ist.
+     */
+    bool installRaf(RAF::Typ typ) {
+        raf_fehler_.clear();
+        if (!bestueckbar_) {
+            raf_fehler_ = "RAF nur vor dem ersten Lauf/Reset steckbar";
+            return false;
+        }
+        if (raf_) {
+            raf_fehler_ = "Es steckt bereits eine RAF";
+            return false;
+        }
+        RAF::Config c;
+        c.typ = typ;
+        auto karte = std::make_unique<RAF>(c);
+        try {
+            karte->attachToBus(systemBus());   // wirft bei belegtem Port
+        } catch (const std::exception& e) {
+            raf_fehler_ = e.what();
+            return false;
+        }
+        karte->powerOn();
+        raf_ = std::move(karte);
+        return true;
+    }
+    /** @brief Die gesteckte RAF (nullptr = keine). */
+    RAF*       raf()       { return raf_.get(); }
+    const RAF* raf() const { return raf_.get(); }
+    /** @brief Grund des letzten gescheiterten @ref installRaf ("" = keiner). */
+    const std::string& rafFehler() const { return raf_fehler_; }
+
+protected:
+    /** @brief Der Systembus, auf dem Zusatzkarten (RAF) ihre E/A-Tore anmelden. */
+    virtual K1520Bus& systemBus() = 0;
+    /** @brief Aus run() und reset(): ab hier ist die Bestückung fest. */
+    void bestueckungAbschliessen() { bestueckbar_ = false; }
+    /** @brief Netz-Ein der RAF: Inhalt verworfen (ohne Stand-by-Pufferung, §3.4). */
+    void rafPowerOn() { if (raf_) raf_->powerOn(); }
+    /** @brief Systemweiter /RESET: nur das Latch sperrt, der Inhalt bleibt (§3.4). */
+    void rafReset() { if (raf_) raf_->reset(); }
+
+    /// Erst NACH Bus und Karten der abgeleiteten Klasse zerstört — unschädlich, die
+    /// RAF fasst den Bus in ihrem Destruktor nicht an.
+    std::unique_ptr<RAF> raf_;
+
+private:
+    bool        bestueckbar_ = true;
+    std::string raf_fehler_;
 };

@@ -21,6 +21,7 @@ Zwei Maßnahmen verhindern das:
 """
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from shiboken6 import isValid
 from PySide6.QtWidgets import (
     QAbstractButton, QAbstractScrollArea, QAbstractSpinBox, QApplication,
     QComboBox, QLineEdit, QPlainTextEdit, QSlider, QTabBar, QTextEdit, QWidget
@@ -96,10 +97,23 @@ class ScreenFocusGuard(QObject):
         if app is not None:
             app.installEventFilter(self)
 
+    def abhaengen(self) -> None:
+        """Den anwendungsweiten Filter wieder entfernen.
+
+        Pflicht, bevor das Fenster freigegeben wird: der Filter hängt an der
+        QApplication, nicht am Fenster, und würde sonst noch Ereignisse aus dem
+        Abbau des Fensters sehen (Absturz in ``eventFilter``).
+        """
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+
     def focus_screen(self) -> None:
         """Fokus (zurück) auf das Bildschirm-Widget, falls es sichtbar ist."""
         screen = self._screen
-        if screen is not None and screen.isVisible():
+        # Ein verzögerter Aufruf kann nach dem Freigeben des Fensters eintreffen
+        # (Tests geben ihre Fenster frei); dann ist die C++-Seite schon weg.
+        if screen is not None and isValid(screen) and screen.isVisible():
             screen.setFocus(Qt.OtherFocusReason)
 
     def _belongs_to_window(self, obj) -> bool:

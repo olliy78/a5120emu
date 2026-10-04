@@ -1,0 +1,9 @@
+# --raf am K8915.
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915 --raf raf2m %DISK%
+stdin:
+  raf
+  q
+expect:  RAF-2M  2048 KByte (16384 Sektoren)
+expect:  gesperrt: ja

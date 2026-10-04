@@ -1,0 +1,2024 @@
+;.cw10
+;.hå					file   RAFTEST.maã  13-2-87    PAGÅ  #
+	.PRINTX ` `			; = RFT.mac 09-02-87 + MacLib + TTBDOS
+    if1
+	.PRINTX  :	=== RAF Test. VERSION 09-02-87 ===	:
+    endIF
+
+	LogAnlzTrig equ 1	; 1 = Trigger. Set 0 when CPU-PIO not free !
+	DefChkLen   equ	3d	; default MAXSEC to be tested
+	CCTRL	    equ	21h	; ****  Daily changed Ctrl Bit Pattern
+	DefCtlIO    equ	8fh  ;21h	; Loadable Ctrl-I/O Addr
+	DefDatIO    equ	8eh  ;20h	; ___,,___ Data-I/O Addr
+;
+YARLEN	equ	10d	; length of area indexed by IY. 
+; . . . . . . . . . . . . . ; YAREA offsets
+ProtY	equ	4	; Offset (IY):	Access Protection Bit Pattern
+RFDtY	equ	3	; 		variable Ctrl-I/O Addr
+RFCY	equ	2	; 	       	___,,___ Dat-I/O Addr
+RAFType	equ	1	; 		set to 5="512",  1="128",  2="2M"
+CTLPAT	equ	0	; 		Error_ctrl bit pattern
+BytDnCt	equ	5	;		Byte DownCount on Error
+			;
+;
+WBLEN	equ	528d	; bytes in WBUFF = 33 (+2) Lines to dump
+	PIO	equ	84h	; PIO.A.Dat
+	PIOAC	equ	86h	; PIO.A.Ctrl
+;ext	CI, CO, SCI, CILC, DECINW, HEXINW, SAVREG, SAVRNA
+;ext	INPBYT, INPWRD
+;
+; # # # # # # # # # # # # # # # # # # # # # # # # # #
+;						MCBLIB.mac  24-Nov-86
+ .z80
+;==	Foll'g EXTERNals deleted. File TTBDOS.mac (normally linked) is here
+;==ext	STROUT, TYP8HX, TYP16H, TYP16U, TYP16S, TYP8U, TYP8S
+;==ext	CI, CO, SCI, CILC, DECINW, HEXINW, SAVREG, SAVRNA
+;==ext	INPBYT, INPWRD
+;==ext	TABLOK, TYPvH, TYPvS, TYPvU, CALDE, CALHL
+; Macroes :
+ .Xlist
+	BDOS	equ	05h
+	FCB	equ	5Ch
+;
+PUT macro DAT, PORT
+	ld	A, DAT
+	OUT	(PORT), A
+endM PUT
+;
+;
+ .PSH macro AA		;; multiple push
+  .Xlist
+   IRP X,<AA>
+	push X
+   endM ; irpt
+  .List
+  endM ; .PSH
+;
+ .POP macro AA		;; multiple pop
+  .Xlist
+   IRP X,<AA>
+	pop X
+   endM ; irpt
+ .List
+ endM ; .POP
+;
+ .PRT macro TEXT
+   .Xlist
+	call STROUT		;; TTY-Outp In-line String
+	dB	TEXT
+	dB	0
+   .List
+endm ; .PRT
+ .List
+;
+TBLOOK	macro	CHRTAB, ADDRTB		;; Call by Table 
+	ld	BC, ADDRTB - CHRTAB	;; Length of Char Table
+	ld	HL, ADDRTB -1		;; addr of LAST char
+	call TABLOK			;; returns with NZ when not found
+endM TBLOOK
+;
+;	ADDRTB  M_U_S_T follow CHRTAB ! 
+	;; CHRTAB:
+	;; 	dB 'cioxrkt'		; 7 command abbreviations for ..
+	;; ADDRTB:			; .. 7 JUMP destination Addresses :
+	;;	dW COMINP, INPUT, OUTPUT, eXit, RESET, KILL, TYPE
+	;
+	; NOTE : TABLOK returns with NZ-Flag when content of A was NOT..
+	; .. found in CHRTB.
+	; When FOUND --> Z-Flag and ADDRTB Entry in DE
+	;
+; # # # # # # # # # # # # # # # # # # # # # # # # # #
+;
+RFR::			; Start of Program 
+	jp RFCODE	; ================
+			; ~~~~~~~~~~~~~~~~
+	dB ' (C) Riedel 87.  PATCH AREA ='
+MAXBank: dB	8	; Default upper Bank
+CTRLDF:	dB CCTRL	; default Ctrl Byte
+RFCtl:	dB DefCtlIO
+RFDat:	dB DefDatIO
+MINSEC:	dW	00	; Starting sector		1st
+MAXSEC:	dW DefChkLen	; Ending   __,,__		2nd
+	;
+SECT:	dW 	00	; Current sector		3rd of ONE Block !!
+SAVMinS: dW 	00	; save Minsec in rewrite	  4th
+SAVMxS:	dW 	00	; save Maxsec in rewrite	    5th
+SAVSEC:	dW 	00	; save crrt sect during Bank rewrite  6th
+ERRSEC:	dW 	9FFFh	; last Erroneous sector (print cntrl) faked here.
+SecPerBank: dW 00	; Sectors per RAM-Bank
+InBankSec:  dW 00	; Local Sector in Bank
+;
+
+RFCODE:
+	ld	SP, STKEND
+	ld	IY, YAREA
+	ld	(IY + ProtY), 00	; Default protection pattern
+	ld	A, (RFCtl)
+	ld	(IY + RFCY), A		; Ctrl_I/O
+	ld	A, (RFDat)
+	ld	(IY + RFDtY), A		; Dat_I/O
+	ld	A, (CTRLDF)
+	ld	(IY + CTLPAT), A	; Default Ctrl pattern
+  if LogAnlzTrig 		
+	PUT	11001111b, PIOAC	; CPU-PIO bit mode
+	PUT	0, PIOAC		; all outp
+	PUT	0, PIO			; all Zeroes
+    if1
+     .PRINTX  ! System-PIO K1520 (84h, 86h)  used for Log_Analyzer Trigger !
+    endIF
+  endIF
+
+	call FILLBF			; with random Pattern
+	call RESEC			; current Sect := 0
+;-----
+ .PRT '\n\n =====  Real Time RAF Test, DESTRUCTIVE (09.Feb.87)  ====='
+	;
+	call GetRAFLen
+	;
+LTYCOM:
+	.PRT '\n  *******     I/O-Addr  =  $'
+	ld	A, (IY+RFCY)
+	call TYP8HX
+	.PRT ' (ctrlIO),     $'
+	ld	A, (IY+RFDtY)
+	call TYP8HX
+	.PRT ' (datIO)     ******'
+	;
+	call TYPAR
+	call STROUT		; in line STRING outp until Char(0)
+  dB '\n\n   . . . . . . . . . . .  Special Command Set :'
+  dB '\nW =  dump Write Data Buffer (actual writing index varies)'
+  dB '\nD =  DUMP the Sector last recently read by "R"-command'
+  dB '\nL =  LOOP One address read or write (Oscilloscope)'
+  dB '\nV =  One Sector read or write, VARIABLE Timing loop '
+  dB '\nS =  Running SECTOR address loading (Oscilloscope)'
+  dB '\nP =  PROTECTION bit pattern set up ........press any key :'
+  dB 0
+	call CilC		; Char in
+TYCOM:
+	call STROUT
+  dB '\n\n   . . . . . . . . . . .  Main Command Set :'
+  dB '\nQ =  Quick Test : Fill Buffer with Random Bytes, write to RAF'
+  dB '\n     ^^^^^^^^^^   and check it repeatedly by read and compare'
+  dB '\nO =  Old RAF content Test again, without Writing before'
+  dB '\nC =  Control Byte set up for error action'
+  dB '\nF =  Fill write buffer with secial byte pattern, not writing'
+  dB '\nT =  Test as "Quick" but with special byte pattern from "Fill"'
+  dB '\nR =  Read one sector and dump it. Hitting <SP> reads next'
+  dB 00
+;       *2 4 6 8 . 2 4 6 8 ! 2 4 6 8 . 2 4 6 8 ! 2 4 6 8 . 2 4 6 8 ! 2 *<<64
+TERMI1:
+	.PRT '\n\n     ( ? W D L V S P )   C  R  Q  F  T  O  : '
+	call CILCO		; char in lower case + ECHO
+KNOWNC:				; command acquired during an execution routine
+RESTK:			; RESET STACK
+	ld	SP, STKEND	;  !!!! brute force breaking nested Calls
+	TBLOOK	COMTAB, JPTAB	;  Calling Addr(JPTAB)  from   Char(COMTAB)
+	jp NZ, TYCOM		; not found
+	call CALDE		; found --> call (DE)
+	jr TERMI1
+COMTAB:
+	dB '?wdfqt corlvsp'
+JPTAB:	dW LTYCOM,	WDUMP,	RDUMP,	FILLSP,	QUICK,	CNOFIL, TYCOM
+	dW	SETCTL,	OLDTST, RDDPLS
+	dW	LOPONA,	VARLOP, SECLOP,	PROTEC
+;
+; # # # # # # # # # # # # # # # # # # # # # # # # # #
+;
+GetRAFLen:
+ .PRT '\n\t RAF-Type: '
+ .PRT '\nRAF-128="1",   RAF-512="5",   RAF-2M="2",  <RET> = "512" : '
+	call Cilc			; no Echo
+	;--
+	TBLOOK	SizTab, SJpTab	;  Calling Addr(JPTAB)  from   Char(COMTAB)
+	jp NZ, GetRafLen	; not found
+	call CALDE		; found --> call (DE)
+	ld	(IY + RAFType), A	; 1, 5, 2 == "RAF-128,512,2M"
+	add	A, '0'
+	call CO
+	ld	(SecPerBank), HL	; SecPerBank := 128 when 16K-RAMs
+	RET; fr RAFType set up
+	;
+SizTab:
+	dB '152 ', 0Dh
+SJpTab:	dW Raf128, Raf512, Raf_2M, Raf512, Raf512
+
+Raf512:	ld	HL, 512d		; SecPerBank RAF-512
+	ld	A, 5
+	RET
+Raf128:	ld	HL, 128d
+	ld	A, 1
+	RET
+Raf_2M:	ld	HL, 2048d		; SecPerBank RAF-2M
+	ld	A, 2
+	RET
+;
+;---------
+;
+Test_Msg:
+	.PRT '\n Test until Keyboard input.'
+	ld	A, LogAnlzTrig
+	or	A
+	jr NZ, No_Ty_Anal
+	.PRT '\n K1520 CPU-PIO A0:7 = Logic Analyzer Trigger on Error'
+  No_Ty_Anal:
+	.PRT '\n'
+	RET
+;
+Show_Sec_Banks:			; Help message for Sector Calculation
+	.PRT '\n '
+	call ChipSzType
+	.PRT 'K-Chips, 1..8 Banks with '
+	ld	HL, (SecPerBank)
+	call TYPvU
+	.PRT ' Sectors ( 0..'
+	dec	HL			; SecPerBank is 128, 512, 2048
+	call TYPvU
+	.PRT ') per Bank =\n '
+	ld	D, H
+	ld	E, L			; HL := 2^n - 1
+	INC	DE			; DE := 2^n
+    REPT 8
+	.PRT ' '
+	call TYP16U
+	add	HL, DE
+    ENDM
+	.PRT ' Sectors (decimal)' 
+;
+	.PRT '\n '
+	ld	H, D
+	ld	L, E
+	DEC	HL			; HL := 2^n - 1
+    REPT 8
+	.PRT ' $'
+	call TYP16H
+	add	HL, DE
+    ENDM
+	.PRT ' Sectors (HEX)' 
+	RET
+;
+; ------------------------------------
+;
+OLDTST:		; ------- "O"		; NO write before test
+	.PRT '\n\n Re-Check  Old  RAF Content'
+	jp CKNOWR
+; ------------------
+;
+QUICK:		; ------- "Q" - Command
+	.PRT '\n\n "QUICK" : Write Random Bytes'
+	call FILLBF		; with pseudo random bit pattern
+	jr Chk_Wrt
+	;
+CNOFIL:		; ------- "T"	; Entry w.o. FILLBF
+	.PRT '\n\n "TEST" Write (special) Buffer content'
+ Chk_Wrt:
+	.PRT ' WAIT (writing):'
+	call QWRALL		; Quiet until MAXSEC
+	;
+CKNOWR:		; NO Write test Entry ( OLD )
+	call Test_Msg
+;
+; # = # = # = # = # = # = # = # = # =
+;
+RDACHK:			; read and check
+	call MINSC1		; SECT := MINSEC -1   for Pre-Incr
+	call CKallS		; all Sects until SECT Overflow on MAXSEC
+	.PRT '*'		; 'another full chk is over'
+	call BREAK		; TTY Inp Test
+	jr RDACHK		; no break --> more checks
+	; -----
+CKallS:				; all Sectors <= MAXSEC
+	call INCSEC		; SECT == -1 prior
+	RET C			; Cy from INCSEC when > MAXSEC
+	call SETPTR		; HL := Random Ptr into Buff
+	call CHKSPO		; Special Check ONE Sector
+	jr CKallS		; NEXT Sector
+	; ------
+	;
+CHKSPO:			; Special Check One sector. Logic Analyzer trigg on err
+			; HL points to random starting addr in WBUFF
+	call BREAK
+	call LDSECT		; RAF preparation  &   C := Data I/O Addr
+	ld	B, 127d		; running High Outp Addr
+	ld	E, 128d		; loop count bytes this sect
+	;
+CHKLOP:			; inner loop ONE sect
+	IN	A, (C)
+	cp	(HL)		; = ^Reference  for comparison
+			; ****  JUMP : 
+	jP NZ, RDERR	; there 1st saving Inp_Byte then PIO Toggle for ..
+				; .. triggering the Logic Analyzer if enabled
+ERRGON:			; here Re-entry after Err
+	inc	HL		; to next ref patrn
+	DEC	B		; B is lower I/O addr  OTIR _D_E_C_rements
+	DEC	E		; E is loop count  128 (-1) 0
+	jp NZ, CHKLOP
+	RET			; from CHKSPO, sector over
+; -------------------
+;
+	INPAT:	dB 0
+RDERR:		; ...... Z80 JUMPed here (not a SubRoutine) !!
+	;
+	ld	(INPAT), A
+		; *** REMOVE the Foll'g Output by LogAnlzTrig = 0 ..
+			; .. when conflicting with System-PIO usage
+	     if LogAnlzTrig 		; if <> 0
+		ld	A, 0FFh		; all bits high
+		OUT	(PIO), A
+		Xor	A		; and low
+		OUT	(PIO), A
+	     ELSE
+		if1
+    		   .PRINTX  ' Log_Analyzer Trigger from System-PIO DISabled '
+		endIF
+	     endIF
+
+			; CTRLPattern = (8xh) = INFINITE LOOP on ERROR'
+	ld	(IY + BytDnCt), E
+	ld	A, (IY + CTLPAT)
+	biT	7, A
+	jp NZ, INFLOP		; mainly for CRT measurements on wrong byte
+	or	A		; bits 6..0
+	jp Z, ERRGON		; .. == 0 --> no special action NO Rewrite !!
+	;
+	.PSH <BC,DE,HL>
+	; --------
+			; (0xh) = NO Terminal outp on ERROR'
+	ld	A, (IY + CTLPAT)
+	and	70h
+	call NZ, ERRTYP		; Error messages
+	; --------
+			; (x0h) = NO Rewrite on Err '
+	ld	A, (IY + CTLPAT)
+	and	07h
+	jr Z, No_Rewr
+	call ERROR_ReWrite
+  No_Rewr:
+	call BREAK
+	.POP <HL,DE,BC>
+	; --------
+			; testing THIS byte again ?
+	biT	3, (IY + CTLPAT)	; testing THIS byte again ?
+	JP NZ, CHKLOP		; Yes, skip index incr
+	JP ERRGON		; Else index advances
+	; -------------
+	;
+; (x0h) = NO Rewrite on Err '
+; (x1h) = Rewrite 1 BYTE on Err '
+; (x2h) = Rewrite 1 SECT on Err '
+; (x4h) = Rewrite 1 BANK on Err '
+; (x8h) = Test faulty byte AGAIN'
+	;
+		; Error Rewriting 
+ERROR_ReWrite:
+	ld	A, (IY + CTLPAT)
+	bit	2, A		; 4h
+	jr NZ, BNKWRE
+	bit	1, A		; 2h
+	jr NZ, SCTWRE
+BYTWRE:				; else single byte rewrite
+	ld	A, (HL)		; HL points to correct Ref.pattrn
+	OUT	(C), A
+	RET		; from BYTWRE
+	;
+SCTWRE:			; Sect reWrite on ERR
+	.PRT ' SecWr '
+	call SaveCtrl
+	call WRSECT
+	call UnSaveCtrl
+	RET	; from 1 sect rewrite
+	;
+BNKWRE:			; Bank reWrite on Error
+	.PRT ' BankWr '
+	call SaveCtrl
+	BIT 0, (IY+RAFType)
+	jr NZ, Bank_Wr128
+				; temp Params for "512" :
+	ld	A, (SECT+1)	; Hi( erroneous sector )
+	and	0FEh		; SECT :=  SECT.and.FE00  == even mult of 512
+	ld	H, A		; HL == 1st sect this bank
+	ld	L, 0
+	ld	(MINSEC), HL
+	ld	DE, 512d	; Sectors one bank
+	add	HL, DE		; temp maxsec this bank := bankbeg + 512
+	ld	(MAXSEC), HL
+	jr Bank_Wr
+	;
+Bank_Wr128:
+	ld	HL, (SECT)
+	ld	A, L		; Lo( err Sec )
+	and	80h		; SECT :=  SECT.and.FF80  == even mult of 128
+	ld	L, A		; HL == 1st sect this bank
+	ld	(MINSEC), HL
+	ld	DE, 128d
+	add	HL, DE		; temp maxsec this bank := bankbeg + 128
+	ld	(MAXSEC), HL
+	;
+   Bank_Wr:
+	call QWRALL		; Write with temporary MinSec, MaxSec
+	call UnSaveCtrl
+	RET	; from Bank rewrite
+	;
+SaveCtrl:
+	ld	HL, MINSEC	; save CtrlParams
+	ld	DE, SAVMinS	; .. for temp overwrite
+	ld	BC, 0006	; 3 words
+	ldIR	
+	RET
+	;
+UnSaveCtrl:
+	ld	HL, SAVMinS	; restore overwritten CtrlParams
+	ld	DE, MINSEC	; .. after BankReWrite
+	ld	BC, 00006	; 3 words
+	ldIR	
+	RET
+;
+; (0xh) = NO Terminal outp on ERROR'
+; (1xh) = Type "?" only on Err'
+; (2xh) = Type 1ST Error of Sector, then "?" only'
+; (4xh) = Type ALL ERRORs'
+	;
+ERRTYP:
+	.PSH <AF,BC,DE,HL>		; ++++:
+	;
+	BIT	6, (IY + CTLPAT)	; all errs to be typed ?
+	jr Z, noaler
+	ld	A, E
+	cp	128d
+	jr NZ, Lert_NoCr
+	;
+	.PRT '\n     Absolute Sector = $'	; New Sector begins
+	ld	HL, (SECT)
+	call TYPVH
+	.PRT ' = '
+	call TYP16U
+	.PRT '(d)'
+  Lert_NoCr:
+	Call LERTYP
+	jr Tyret
+	;
+   noaler:
+	BIT	5, (IY + CTLPAT)	; only 1st error in each sect ?
+	jr Z, Tyret
+	.PSH	<BC,HL>		; +++:
+	ld	HL, (SECT)
+	ld	BC, (ERRSEC)
+	or	A
+	sbC	HL, BC
+	.POP	<HL,BC>		; :---
+	Call NZ, LERTYP
+  Tyret:
+	.PRT '?'
+	ld	HL, (SECT)
+	ld	(ERRSEC), HL
+	.POP <HL,DE,BC,AF>		; :----
+	RET
+	;
+LERTYP:				; long err type, register killing
+	ld	A, (INPAT)
+	.PRT '\nRaf='
+	ld	D, (HL)		» D :½ ref
+	call TYP8HX
+	;
+	call RELATY		; '> ' or ' <'
+	;
+	.PRT 'Buf='
+	lä	A¬ Ä
+	call TYP8HX
+	;
+	.PRT ', Xor='
+	ld	A, (INPAT)
+	xor	D	; D == ref
+	call TYBIN
+	;
+	.PRT ' Bank:Sct '
+	ld	HL, (SECT)	; write "b:$sss"
+	call TyB_S
+	.PRT '  ASct=$'
+	call TYP16H
+	.PRT '  Byte $'
+	ld	A, (IY + BytDnCt)	; 128..1
+	sub	128d
+	NEG
+	call TYP8HX
+	.PRT ' '
+	RET
+	;
+; ---------
+;
+TyB_S:		; Type Bank:Sector  "m:$nnn"    HL == Abs Sect
+	.PSH <AF,DE,HL>
+;----	ld	HL, (SECT)	; callers duty
+	push	HL					; >>>>>
+	call Sec2Bank		; HL := Sector in THIS Bank
+	cp	10		; single digit Bank-#
+	jr C, Bk_Ok
+	call Typ8U
+	ld	A, '?' - '0'
+  Bk_Ok:
+	add	A, '0'		; ASCII Bank No
+	call CO
+	.PRT ':$'
+	call Ty3HX
+	pop	HL				; Sector  <<<<<
+	.POP <HL,DE,AF>
+	RET
+Ty3HX:			; 3 Digit Hex Outp for In-Bank Sect-#
+	ld	A, H
+	and	7
+	add	A, '0'
+	call CO
+	ld	A, L
+	call Typ8HX
+	RET
+;
+; ---------
+;
+RELATY:
+	cp	D		; A == RAFBYTE		D == Refrnc
+	jr C, aless
+	.PRT ' >'
+	RET
+   aless:
+	.PRT '< '
+	RET
+;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+WRITE:				; fill whole RAF
+	.PRT '\n Write '
+QWRALL:				; Quiet write all RAF [ SECT .. MAXSEC ]
+	call MINSC1	; min SECT := -1
+  WRLOP:
+	call INCSEC
+	RET C		; all written
+	call SETPTR	; HL into WBUFF
+	call WRSECT	; ONE sector
+	jr WRLOP	; NEXT Sect
+;
+;==================================
+;
+SETPTR:		; set HL to "random" starting addr in WBUFF to avoid writing ..
+			; .. regular RAM content
+	push	DE	; >>>>
+	ld	DE, WBUFF
+	ld	HL, (SECT)
+	ld	A, H
+	add	A, L	; A := ( SECT.MOD.256d  +  SECT.DIV.256 ) .MOD. 256  ..
+	ld	H, 0		;	.. = Pseudo Random Index
+	ld	L, A
+	add	HL, DE		; HL := WBUFF + (PseudoRandomIndex)
+	pop	DE	; <<<<
+	RET
+; - - - - - - - - - -
+;
+INFLOP:				; B == Byte #
+	IN	A, (C)
+	dec	D		; B = const !
+	jr NZ, INFLOP
+	call BREAK
+	ld	C, (IY+RFDtY)
+	jr INFLOP		; NO ret w.o. Break
+	;
+;
+; - - - - - - - - - - - -
+;
+SECLOP:
+	.PRT '\n\nSector loading loop, including Protection Bits (Oscill)'
+	.PRT '\nABus.8:15 fast decrementing  255..0, DBus.0:7 =  slow incr'
+	call RUNMSG
+	ld	C, (IY + RFCY)
+  SClop:
+	OUT	(C), A		; sector Load 
+	djNZ SClop		; fast DownCount on ABus.8..15
+	call BREAK
+	inc	A		; slow count on DataBus
+	jr SClop
+;
+;
+VARLOP:
+	.PRT '\n\n Variable timing loop, r/w one Addr.  Abs Sect No = $'
+	call HEXINW
+	ld	(SECT), HL
+	.PRT '  = $'
+	call TYPvH
+	.PRÔ § Read/Writå ¿ (r/w© :'
+	call CILCO
+	cp	'r'
+	jr Z, RVARLP
+	cp	'w'
+	jr Z, WVARLP
+	jp KNOWNC		; command interpreter
+RVARLP:
+	call VARLopSET	; A:=djNZ-Offset,   RAFctrl set up,   C := RFD
+	lä	(RSCLC± - 1)¬ Á	» #####£  djNÚ becomes modifieä  !!!
+	call RUNMSG
+  RVrlp:
+  .XList
+	REPT	68d		; # of NOPs in loop varies for timing
+	NOP
+	ENDM
+  .List
+	IN	A, (C)		; Byte-# from djNZ =: 0..127,0..127
+	djNZ RVrlp		; ###### offset modified at entry
+  RSCLC1:
+	call BREAK
+	JP RVrlp
+;
+WVARLP:
+	call VARLopSET	; A:=djNZ-Offset,   RAFctrl set up,   C := RFD
+	ld	(WSCLC1 - 1), A
+	.PRT '\n   Write Data = $'
+	call GetHexByte
+	ld	(W_Dat_1 - 1), A
+	call RUNMSG
+  WVrlp:
+  .XList
+	REPT	68d
+	NOP
+	ENDM
+  .List
+	OUT	(C), A
+	djNZ WVrlp
+  WSCLC1:		; djNZ Range overwritten
+	call BREAK
+	ld	A, 123	; 123 overwritten
+W_Dat_1:
+	JP WVrlp
+	;
+VARLopSET:		; Set up Variable loop
+	call LDSECT
+	;
+	.PRT '\n Loop Delay (0..63) NOPs = '
+	call GetUsgByte
+	add	A, 4	; min loop length ( 0 NOPs ) is 4 bytes
+	cp	68d	; <= 64
+	jr NC, VARLopSET
+	NEG		; djNZ is backwd
+	;
+	ld	C, (IY+RFDtY)
+	RET	; fr loop length =: A
+	;
+RUNMSG:
+  .PRT '\n\n LOOP Running.  Ctrl/S or <SP> for Pause, other Chars Stop\n'
+	RET
+;
+; ---------------
+;
+LOPONA:
+	.PRT '\n\n FAST Loop r/w ONE Address.(Oscilloscope) '
+	call SETONA
+	;
+	.PRT '\n Read/Write ? (r/w) :'
+	call CILCO
+	cp	'r'
+	jr Z, RLONAD
+	cp	'w'
+	jp NZ, KNOWNC
+	;
+WLONAD:		; ---- Write Loop One ADdr
+	.PRT '\n   Write Data = $'
+	call GetHexByte
+	ld	(W_Dat2_1 - 1), A
+	call RUNMSG
+   wlona1:
+	OUT	(C), A
+	dec	D
+	jr NZ, wlona1
+	call BREAK
+	ld	C, (IY+RFDtY)
+	ld	A, 123		; 123 changed
+   W_Dat2_1:
+	jr wlona1
+	;
+;
+RLONAD:			; ---- Read Loop One ADdr
+	call RUNMSG
+   Rlona1:
+	IN	A, (C)
+	dec	D
+	jr NZ, Rlona1
+	call BREAK
+	ld	C, (IY+RFDtY)
+	jr Rlona1
+	;
+SETONA:			; ---- SET up looping One Addr
+	.PRT '\n  Const ADDR :=  Absolute SECT = $'
+	call HEXINW
+	ld	(SECT), HL
+	call LDSECT		; I/O Preparation ( C = RafDat )
+	.PRT '  Byte_No = $'
+	call GetHexByte
+	and	7Fh
+	ld	B, A
+	ld	A, 127d		; INIR goes downward
+	sub	B
+	ld	B, A		; ABus8:15
+	.PRT '\n  In-Sector Byte Index = '
+	call TYP8U
+	.PRT '(d)  RAF[i] = $'
+	in	A, (C)
+	call Typ8HX
+	RET
+; - - - - - - - - - - - - - - -
+;
+RDDPLS:		;     ( Read,   Dump,   Sect+1,  again.. )
+	.PRT '\n\nSECTOR READ. NEXT sector by <Space>. Starting Abs Sect = $'
+	call HEXINW
+	ld	(SECT), HL
+  rddpl:
+	.PRT '\n       Abs Sector = $'
+	ld	HL, (SECT)
+	call TYPvH
+	.PRT '   Bank:RelSect = '
+	call TyB_S
+	ld	HL, RBUFF
+	call RDSECT
+	call RDUMP
+	;
+	call CILC	; no echo here
+	cp	' '
+	jr Z, rdgo_on
+	cp	0dh
+	RET NZ		; KeyBoard Break in Dump
+  rdgo_on:
+	call INCSEC
+	RET C		; from IncSec Overflow
+	jr rddpl
+;
+; ---------------------------
+;
+SETCTL:
+	.PRT '\n\n'
+	call TyRange
+	.PRT '\n\n  Other Range (y) : '
+	call CILCO
+	cp	'y'
+	jp NZ, _SetCtl
+	;
+	.PRT '\n Lower Sector : $'
+	call HEXINW
+	ld	(MINSEC), HL
+	.PRT '        Upper : $'
+	call HEXINW
+	ld	(MAXSEC), HL
+	;
+  _SetCtl:
+	.PRT '\n\n Function Ctrl Byte :'
+	.PRT '\n\n (0xh) = NO Terminal outp on Error'
+	.PRT   '\n (1xh) = Type "?" on all Errs'
+	.PRT   '\n (2xh) = Type 1st Err of a Sect long, then "?" only'
+	.PRT   '\n (4xh) = Type ALL Errors in long format'
+	.PRT   '\n (8xh) = Const Addr LOOP after one Error (Osc)'
+	;
+	.PRT '\n\n (x0h) = NO Rewrite on Err '
+	.PRT   '\n (x1h) = Rewrite 1 BYTE on Err '
+	.PRT   '\n (x2h) = Rewrite 1 SECT on Err '
+	.PRT   '\n (x4h) = Rewrite 1 BANK on Err '
+	.PRT   '\n (x8h) = Test faulty byte AGAIN'
+	;
+	.PRT '\n\n Function Ctrl Byte = $'
+	ld	A, (IY + CTLPAT)
+	call TYP8HX
+	.PRT '    Other (y) : '
+	call CILCO
+	cp	'y'
+	jp NZ, Ctl_Ret
+	;
+	.PRT '  NEW (hex) : $'
+	call GetHexByte
+	ld	(IY + CTLPAT), A
+   Ctl_Ret:
+	call TYPAR
+	RET
+;
+; --------------
+;
+TYPAR:
+	.PSH <AF,HL>
+	call TyRange
+	;
+TyCtl:
+	.PRT '\n    CTRL-Byte (Hi=Msg, Lo=ReWr) = $'
+	ld	A, (IY + CTLPAT)
+	call TYP8HX
+	.PRT 'h\n    Protection Pattern = $'
+	ld	A, (IY + ProtY)
+	call TYP8HX
+
+	call PROTYPE    ;--------------------------
+
+	.POP <HL,AF>
+	RET	; from tto disk params
+	;
+TyRange:
+	call Show_Sec_Banks
+	.PRT '\n Absolute Sectors to be tested'
+	.PRT '\n         from '
+	ld	HL, (MINSEC)
+	call TySecBank
+	.PRT '\n           to '
+	ld	HL, (MAXSEC)
+	call TySecBank
+	RET
+	;
+TYPARSect:
+	.PRT   '\n Absol SECTOR = '
+	ld	HL, (SECT)
+	;
+TySecBank:	; Sector Number in HL
+	call TYP16U
+	.PRT '(dec) = $'
+	call TYP16H		; sector #
+	.PRT '  --> Bank:RelSect = '
+	call TyB_S
+	RET
+;
+; ------------------
+;
+SizTabPr:	dB 	1, 5, 2
+SJpTPr:		dW 	Pro_128, Pro_512, Pro_2M
+;
+PROTYPE:
+	ld	A, (IY + ProtY)
+	.PRT '  '
+	call TyBin
+	.PRT '(bin) '
+	ld	A, (IY + RAFType)	; 1, 5, 2 == "RAF-128,512,2M"
+	;--
+	TBLOOK SizTabPr, SJpTPr	;  Calls Addr(JPTAB)  from   Char(COMTAB)
+	JP NZ, 0000		; ??? not found
+	call CALDE		; found --> set up  B and C
+	ld	A, (IY + ProtY)
+	and	C		; Cy := 0
+	jr Z, Pro_Ck	
+	.PRT '\n ?? Pattern contains valid Addr_bits '
+	SCF
+   Pro_Ck:
+	push	AF		; Cy == Wrong Pattern
+	ld	A, (IY + ProtY)
+	and	B
+	jp NZ, ProtMsg
+	.PRT ' NOT'
+  ProtMsg:
+	.PRT ' Protected '
+	pop	AF
+	RET	; from Protection pattern TypeOut Cy=1 when wrong
+	; ---
+Pro_128:
+	ld	BC, 847Bh	; (Prot_Pattern.SHL.8) .OR. WrongBitPat_128
+	RET
+Pro_512:
+	ld	BC, 906Fh	; (Prot_Pattern.SHL.8) .OR. WrongBitPat_512
+	RET
+Pro_2M:
+	ld	BC, 0C03Fh	; (Prot_Pattern.SHL.8) .OR. WrongBitPat_2M
+	RET
+	;
+; ----------------
+;
+PROTEC: 
+	ld	A, (IY + RAFType)
+	.PRT '\n RAF Access Protection Valid Bit Pattern = '
+	call TyLegalPat
+	.PRT '\n Pattern = '
+	ld	A, (IY + ProtY)
+	call TYP8HX
+	.PRT 'h.  NEW(hex) = '
+	call GetHexByte
+	ld	(IY + ProtY), A
+	call PROTYPE		; Message and Cy:=1 when wrong
+	RET NC
+	;
+	.PRT '\nWRONG Pattern. '
+	JP PROTEC
+	;
+TyLegalPat:
+	ld	A, (IY+RAFType)
+	cp	5		; RAF-2M Prot_Test still not implemented
+	jr NZ, Not512P
+	.PRT ' 0 or 90h, 80h, 10h '
+	RET
+Not512P:
+	cp	2
+	jr NZ, Not2MP
+	.PRT ' 0 or 84h, 80h, 04 '
+	RET
+Not2MP:
+	.PRT ' 0 or C0h, 80h, 40 '
+	RET
+;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+FILLSP:			; Fill Buffer with Special Pattern
+  	.PRT '\n\n Non-Random Buffer Fill (RAF writing later)'
+	.PRT '\n\n      Incrementing or Const content ? (i/c) : '
+	call CILCO
+	cp	'c'
+	jP Z, filcon
+	cp	'i'
+	jp NZ, FILLSP
+	;
+	.PRT '\n\n Repeating Counts. Length of one Run (1..256) : '
+	call DECINW
+	ld	A, H
+	or	A
+	ld	A, 0	; > 255d --> 256d ( ==0 )
+	jr NZ, _Fill
+	or	L
+	jr NZ, _Fill
+	inc	A	; 0 --> 1
+   _Fill:
+	.PRT ' =$'
+	call TYP8HX
+	ld	B, A
+	ld	C, A
+	.PRT '  Starting with : $'
+	call GetHexByte
+	ld	HL, WBUFF
+	ld	D, H
+	ld	E, L
+   filp1:
+	ld	(HL), A
+	inc	HL
+	inc	A
+	djNZ filp1
+			; B = 0,    C = Period
+	ex	DE, HL		; DE := start of 2nd period
+	push	HL		; BufBeg
+	ld	HL, WBLEN
+	or	A
+	sbC	HL, BC		; WBufLen - Period
+	ex	(SP), HL	; HL := BufBeg
+	pop	BC		; BC := remaining Length
+	ldIR
+	call WDUMP
+	ret		; from buf fill with counts
+	;
+  filcon:
+	.PRT '\n\n Const Bytes to be loaded into whole Buffer = $'
+	call GetHexByte
+	ld	HL, WBUFF
+	ld	(HL), A
+	ld	D, H
+	ld	E, L
+	inc	DE
+	ld	BC, WBLEN - 1
+	LDIR
+	RET	; from fill with const
+	;
+FILLBF:			; WBUFF := irregular pattern
+	ld	HL, WBUFF
+	ld	B, WBLEN / 4	; BufferLen / 4   ( 4 bytes per loop )
+	Xor	A
+	ld	DE, 0001h	; D==Right shift Signature;  E==left..
+  Filop:
+	call SIGNAT		; 2 bytes ..
+	call SIGNAT		; .. 4 bytes per loop into buff
+	djNZ Filop
+	RET		; from filling WBUFF with random Pattern
+	;
+SIGNAT:			; D==right shft signature,  E==left sh sg
+	xor	D
+	sRL	A		; A.7 := 0;  Cy := A.0
+	jr NC, Sig1
+	  XOR	10010101b
+   Sig1:
+	ld	D, A		; right shft sgnt
+	ld	(HL), A
+	inc	HL
+	;
+	xor	E
+	sLA	A		; A.0 := 0;  Cy := A.7
+	jr NC, Sig2
+	  XOR	01100101b
+   Sig2:
+	ld	E, A
+	ld	(HL), A
+	inc	HL
+	RET		; from filling two bytes into buffer
+	;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+WRSECT::			; HL MUST contain Buffer Address !!
+	call LDSECT
+	inc	B	; B := 128d
+	OTIR
+	RET
+;
+RDSECT::			; HL contains Buffer Address  !!
+	call LDSECT
+	INIR		; B == 127d
+	INI
+	RET
+;
+LDSECT:				; load hi addr, load BC for Xfer, HL == old
+	.PSH <AF,HL>
+	ld	HL, (SECT)
+	ld	C, (IY+RFCY)
+	ld	A, (IY + ProtY)	; protection bit pattern ..
+	or	H
+	ld	B, A		; .. to B
+	OUT (C), L
+	ld	B, 127d		; 127 for read  for write to be incr
+	ld	C, (IY+RFDtY)
+	.POP <HL,AF>
+	RET
+	;
+MINSC1:			; SECT := MINSEC - 1
+	.PSH	<BC,HL>
+	ld	HL, (MINSEC)
+	dec	HL
+	jr incs1
+	;
+SECTM1:			; SECT := -1
+	call RESEC
+	jr DECSEC
+RESEC:			; SECT := 0
+	xor 	A
+	ld	(SECT), A
+	ld	(SECT+1), A
+	RET
+	;
+DECSEC:
+	.PSH	<BC,HL>
+	ld	HL, (SECT)
+	dec	HL
+	jr incs1
+INCSEC:
+	.PSH	<BC,HL>
+	ld	HL, (SECT)
+	inc	HL
+   incs1:
+	ld	(SECT), HL
+	ld	BC, (MAXSEC)
+	inc	BC		; include last sec
+	or	A
+	sbC	HL, BC
+	.POP <HL,BC>
+	CCF
+	RET	; C-Flag == Bank overflow
+;
+; # # # # # # # # # # # # # # # # # # # # #
+;
+ChipSzType:
+	ld	A, (IY + RAFType)
+	cp	5
+	jr NZ, ChN64
+	.PRT '64'
+	RET
+ChN64:
+	cp	1
+	jr NZ, ChN16
+	.PRT '16'
+	RET
+ChN16:
+	.PRT '256'
+	RET
+;
+; ------------------
+;
+Sec2Bank:	; HL == Sector(0..);  A:=Bank(1..);  HL:=Local_sect in Bank
+	.PSH	<BC,DE>
+	ld	A, (IY + RAFType)
+	cp	1
+	jr Z, Bank_16
+	cp	2
+	jr Z, Bank_2M
+	ld	A, H
+	RRA			; Sector DIV 512
+	;
+FindInBankSec:		; HL=Abs_Sec, A := Bank  HL := InBankSec
+	ld	B, A
+	inc	A	; --> natural Bank-#
+	ld	DE, (SecPerBank)
+   InBankLoop:	
+	or	A
+	sbC	HL, DE
+	djNZ InBankLoop
+	.POP	<DE,BC>
+	RET
+	;
+ Bank_16:
+	push	HL
+	add	HL, HL		; H := Bank
+	ld	A, H		; Sector DIV 128
+	pop	HL
+	jr FindInBankSec
+	;
+ Bank_2M:
+	ld	A, H
+	SRA	A
+	SRA	A
+	SRA	A		; Sector DIV 2048d
+	jr FindInBankSec
+; ------------------
+;
+TIM16:
+	call TIM08
+TIM08:
+	call TIM04
+TIM04:			; with NOP   250  milliseconds
+	.PSH <AF,BC>	; with push / pop   0.5 sec
+	.PRT ' '
+   aa:	 djnZ aa		; BC := 0
+   bb:	  push	BC
+   cc:	  NOP			; 1 nop  -->  0.25 sec
+	  push	BC		; nop + push / pop  --> 0.5 sec
+	  pop	BC
+	  djnZ cc
+	  pop	BC
+	djnZ bb
+	.POP <BC,AF>
+	RET
+; - - - - - - - - - - - - - -
+;
+TYBIN:				; Type A Binary  e.g. o1oo_11o1
+	.PSH	<AF,BC>		; >>>>
+	.PRT ' '
+	call TYUPNB
+;;	.PRT '_'
+	call TYUPNB
+	.PRT ' '
+	.POP	<BC,AF>		; <<<<
+	RET	; from Typing Binary
+	;
+TYUPNB:		; Type Upper Nibble and shift 4 left
+	ld	B, 4		; 4 bits
+  tunlp:
+	rlCA	; Cy:=A.7   A.0:=A.7
+	jr NC, tnbzro
+	.PRT 'I'
+	djNZ tunlp
+	RET
+  tnbzro:
+	.PRT 'o'
+	djNZ tunlp
+	RET
+; - - - - - - - - - - - - - -
+;
+CILCO:
+	call CILC		; Char inp lower case
+	call CO
+	ret
+; - - - - - - - - - - - - - -
+;
+BREAK:		; Keyboard Status test : No Key --> Return, ..
+	push	AF		; >>>
+	call SCI	;.. <SP> --> Pause,   other Keys BREAK to comd interpr
+	jr Z, brkoff		; no key
+	cp	' '		; Space for pausing
+	jp Z, WaitSpace		; wait for another <SP>
+	cp	13h		; Ctrl/S
+	JP NZ, RESTK		; No space, no ^S   --> STACK RESET 
+				;		     	+ command interp
+	call CILC		; any char continues Ctrl/S
+	jr brkoff
+  WaitSpace:
+	.PRT ' - PAUSE :'
+	call CILC		; wait for the NEXT key pressed
+	cp	' '
+	jp NZ, RESTK		; <SP> continues, others break
+	.PRT ' RUNNING - '
+   brkoff:
+	pop	AF		; <<<
+	RET
+;
+GetUsgByte:
+	push	HL
+	call DECINW
+	ld	A, L
+	pop	HL
+	RET
+	;
+GetHexByte:
+	push	HL
+	call HEXINW
+	ld	A, L
+	pop	HL
+	RET
+	;
+
+RDUMP:
+	ld	HL, RBUFF
+	ld	A, 8
+	JP DUMP
+WDUMP:
+	.PRT '\n\n Write Buffer content (Writing is randomly indexed) :\n'
+	ld	HL, WBUFF
+	ld	A, 35d
+	JP DUMP
+; - - - - - - - - - - - - - -
+;
+WBUFF0:	dB 'WRITE BUFFER :  '
+WBUFF:	dS 	WBLEN, '%'
+	dB '__WBUFF___end___'
+;
+RBUFF0:	dB 'READ Data Follow'
+RBUFF:	dS 	128d, '%'
+	dB '==RBUFF===end==='
+;
+
+STK::	dS	100, 0
+STKEND::
+;
+	dB	'---YAREA---YAREA:::'
+YAREA:	dS	YARLEN, 0
+	dB	':::YAREA---YAREA---'
+
+; - - - - - - - - - - - - - - - - - - -
+;
+DUMP1:	ld	A, 1	; ONE Line of buffer (HL) in DUMP Format
+	jr DUMP
+	;
+DUMP4:	ld	A, 4	; FOUR Lines
+	jr DUMP
+	; - - - - - - - - - - - - - - - - - - -
+DUMPN:	xor	A	; 256 lines
+	;
+DUMP:			; type <A> Lines
+	.PSH	<BC,DE,HL>
+	ld	(LINCNT), A
+	ld	A, ' '
+	ld	(DUMBRK), A	; for external use when normal return
+	push	HL		; char pointer
+	pop	DE		; for line numbers
+;*'86	.PRT '\n\t\t DUMP from $'
+;*'86	call TYP16H
+  LTolp:		; *****  Outer Loop := ONE Line HEX & ASCII
+	.PRT '\n'
+	ld	B, 16d		; one line in hex outp
+	push	HL
+	or	A
+	sbC	HL, DE		; Nosub --> addr,   sub --> current index
+;;;	call TYP16U		; decimal better when INDEX
+	call TYP16H		; HEX when abs ADDR
+	pop	HL
+	push	HL		; same index needed for later ASCII outp
+	.PRT ':'
+  LtilpH:		; Loop Hex outp one line
+	ld	A, B		; position in line
+	and	3h		; grouping 4 colums
+	jr NZ, ltil1
+	.PRT ' '
+   ltil1:
+	ld	A, (HL)
+	inc	HL
+	.PRT ' '
+	call TYP8HX
+	djNZ LtilpH
+	pop	HL		; saved at start of HEX outp
+	ld	B, 16
+	.PRT ' = '
+  LtilpC:		; loop characters
+	; Chr < 20h or > 7F =: '.'
+	ld	A, (HL)		; dump format                      
+	biT	7, A		; chr (0..1Fh, 80h..9Fh) --> '.'
+	jr NZ, parit                    ; -ld	A, (HL)
+	and	01100000b               ; -and	01100000b
+	ld	A, (HL)                 ; -ld	A, (HL)
+	jr NZ, noreps                   ; -inc	HL
+    parit:                              ; -jr NZ, noreps
+	ld	A, '.'                  ; -ld	A, '.' ; CTRL or CTL+80h
+    noreps:                           ; -noreps:
+	cp	7Fh		; some Terminals deny DEL
+	jr NZ, no_RubOut
+	ld	A, '.'
+    no_RubOut:
+	inc	HL
+	call CO			; char outp to TTy
+	djNZ LtilpC
+	;
+	call SCI		; special char inp ( 0 when no key )
+	or	A		; <> 0  ---> any key stroken
+	call NZ, LTSTOP		; there test Ctrl/C or break
+	jr NZ, Ltexit 		; NZ from LTSTOP when KBDinp <> <SP>	
+	;
+	ld	A, (LINCNT)
+	dec	A
+	ld	(LINCNT), A
+	jr NZ, LTolp		; not all lines yet
+	;
+   Ltexit:
+	.POP <HL,DE,BC>
+	ld	A, (DUMBRK)
+	ret ; from DUMP outp
+	;
+LTSTOP:
+	ld	(DUMBRK), A	; global for user prog
+	cp	13h		; Ctrl/S allows continue others break dump
+	RET NZ
+	call CILC		; wait for comntinue
+	ld	(DUMBRK), A
+	XOR	A
+	RET ;	Z-Flag evaluated by loop ctrl
+
+LINCNT:
+	dB	1		; # of lines to be typed
+DUMBRK::
+	dB	0		; KBD char from Break, ' ' on no break
+;- - - - - - - - - - - - - - - - - - -
+;.he. . . . .  . . . . . . . . . . .    ttBDOS.mac   24-Nov-86  PAGE #
+;		ALL-BDos TT-I/O
+;
+entry	HEXINW, DECINW, INPWRD, INPBYT, SCI, CILC
+ENTRY	STROUT, TYP16H, TYP16U, TYP16S
+ENTRY	TYP8HX, TYP8U, TYP8S, CO, CI, SAVREG, SAVRNA, SVRNAH
+ENTRY	CALHL, CALDE, FREMEM
+ENTRY	QTINI			 ; ****   Jan  86 :  JPCOM, SJPCOM deleted
+ENTRY	TYPvH, TYPvS, TYPvU,	TABLOK ; < Aug '85
+ .Xlist
+;
+BDOS	equ	0005
+
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+; ************************************
+; **********  All-BDOS TTIO **********
+; **********    24-OCT-86   **********
+; ************************************
+; 
+SCI:	; No Echo NO Wait. Zero Return when no char
+	call SAVRNA                                     
+	ld	C, 06		; direct TTY I/O        
+	ld	E, 0FFh		; == input              
+	call BDOS                                       
+	OR	A                                       
+	RET ; from direct TTY char inp  		
+;
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+; BDOS CI WITH WAIT and ECHO 
+;
+CI:			; get one char from Keyboard to A
+	call SAVRNA		; only AF changed,  UNsave invisible
+	ld	C, 1
+	call BDOS			; char --> A
+	RET	; from char inp thru <unsave>	NON-SUMO
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;	
+; ttin without wait for line end, NO ECHO. All inp to LOWer case
+;  < using SCI >
+CILC:
+	call SCI
+	or	A	; A == 0 if no input available
+	jr Z, CILC
+	cp	03	; CTRL/C ?
+	jp Z, 0000	; if so, WBOOT
+	BIT	6, A		; UPPER case ?
+	jr Z, ttilc		; no
+	or	20h		; yes .. make lower
+   ttilc:		; all alpha char's are lower case now 
+	RET	; from char inp w.o. echo
+;
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;	__B__D__O__S__  CO	; Nov 86
+;
+CO:	call SAVREG		; UNsave occurs invisible !!
+	ld	C, 2		; BDOS  CHR_OUTP
+	ld	E, A		; .. from E
+	call BDOS
+	RET	; from char outp
+;
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+; I N P B Y T		// general TT-Inp HEX or +/- DECimal  B_Y_T_E
+INPBYT:
+	push	HL		; not used at 8 bit inp
+	call INPINI
+	ld	(IX+WDIN), -1d		; flags byte input for error retry
+  Btrynx:
+	call NWINPW		; result is 16 bit
+	;. . . . . . . .  Valid byte ?
+	push	AF		; A == delimiter
+	push	HL		; HL == Input (here 16bit)	
+	ld	A, H
+	or	A
+	jr NZ, hineq		; goto hi byte <> 0
+	; . . . . . . . HI byte is EMPTY here :
+	ld	A, (IX+SGN)	; hex Flag ?
+	cp	16d		; .. then all numbers in L allowed
+	jr Z, bytok
+	ld	A, L
+	or	A
+	jp P, bytok		; positive low byte is o.k. when hi == 0
+   hineq:		; hi byte is <> 0 here :
+	ld	A, 16d		; hex_inp Flag ?
+	cp	(IX+SGN)
+	jr Z, bytwrg		; no high_inp allowed at all when hex
+	ld	A, 0FFh		; -1 is only allowed SIGN EXT'NSN in H
+	cð	H
+	jr NZ, bytwrg
+	; . . . . . . .  HI byte is -1 here :
+	ld	A, L
+	or	A
+	jp M, bytok
+	; . . . . . . .  H<0  L>0 is wrong
+   bytwrg:		; something wrong at 16 --> 8 bit conv'rsn
+	call UNDINP
+	pop	HL
+	pop	AF		; STK, (NO echo for delimiter on inp err)
+	jr Btrynx
+   bytok:
+	pop	HL
+	pop	AF		; A := Dlimtr, now to be echoed
+	call TTECHO
+	pop	AF		; from INPINI
+	ld	A, L
+	.POP <BC,DE,IX>
+	pop	HL
+	RET	; from Byte input
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+; I N P W R D		// general TT-Inp HEX or +/- DECimal  W_O_R_D
+INPWRD:
+	call INPINI
+	ld	(IX+WDIN), 1	; foll'g inp-routines entered via INPWRD
+	call NWINPW
+	call TTECHO		; delimiter in A
+	.POP <AF,BC,DE,IX>
+	RET	; from INP WORD
+;
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+NWINPW:		; !!!  IMPLICIT RETURN by Conversion routines
+	call ININI1		; re_init when retry after inp err
+	push HL			; all foll'g calls behind "PUSH HL" in INP
+	call CILC
+	call TTECHO		; even when invalid char (RUBbed later if so)
+	; * * * * *  some chars are not part of the number ( h + - etc. ) :
+	cp	'-'
+	jr NZ, noneg
+	ld	(IX+SGN), -1d	; decimal minus sign given
+	jp DDIN1		; neg dec inp, NO numeric char in advance
+  noneg:
+	cp	'+'
+	jp Z, DDIN1		; dito positive
+	cp	'h'
+	jp Z, XXIN1		; hex with no leading numeric char
+	cp	'0'
+	jp Z, XXIN1		; unix-like hex inp starting with '0'
+	; * * * * * *  foll'g cases treated as numeric 1st chars of the ..
+		; .. number to be input and will be echoed there, so ..
+	call UNDINP	; .. Un_do local echo 
+	cp	'a'
+	jp C, DDIN2	; <'a'  is 1st decimal char or wrong at all  
+	cp	'f'+1
+	jp C, XXIN2	; 'a' ... 'f' is 1st hex char 
+	jp DDIN2	; >'f' given as 1st decimal for RUBbing there
+	;
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+; H E X I N W	// HEX INput a Word
+	; table controlled HEX TTY inp for commands formatted as :
+	;	nnnnX,	with  nnnn == hex number (16 bit)
+	;		X == any char not in nnnn.
+	;		Hex according to variable BASE == 16d
+	;		valid X (DelimChr), (1 or more) from table.
+	;	TABLE == <DelimChr1>,..,<Delimchrn>,'fedcba9876543210'
+	;		Upper Case is set to lower 
+	;	HBASE == 16d here
+	;	TBLCNT == # of TABLE entries incl delimiters
+	; RESULT :
+	;	nnnn --> HL,	'X' --> A,    AF and HL killed
+	HTBCNT	equ 19d		; # of Table entries
+	HBASE	equ 16d		; number system is hex
+HEXINW:
+	call INPINI
+	ld	(IX+WDIN), 0	; HEXINW called directly, (not per INPWRD)
+	call HEXINC
+	call TTECHO
+	.POP <AF,BC,DE,IX>	; from INPINI,  HL == result
+	RET	; from HEX inp word
+
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+HEXINC:		; local HEX INput Conversion. No register saving here.
+			; Re_enter here when valid ..
+	push	HL	; .. numeric inp goes on or inp error + retry
+	; * * * * * *  Entries for INPWRD & INPBYT :
+XXIN1:		; re_enter here if invalid char was input
+	call CILC	; CP/M's direct TTYinp, NO echo, LOWer Case
+XXIN2:	; entry for EXT Hex inp when 1st digit was input already
+	ld	HL, HEXTBL	; Table of valid chars
+	ld	BC, HTBCNT	; # of Table entries
+	CPIR			; search a matching Table entry
+	jr Z, xfnd		; Zero_flag == valid input
+	call RUBCHK		; rubout (DEL) and Bkspc in A ?
+	jr NC, XXIN1		; Cy == RUB or BSP typed, if not ..
+	; .. do NOT Echo invalid char but try input again, else ..
+  Xrub:		; error handling depends on entry point ( INPWRD or HEXINW )..
+	ld	A, (IX+WDIN)	; .. WDIN <> 0 flags INPWRD-entry
+	or	A
+	jr Z, hxnowd		; 0 ---> entry HEXINW
+	pop	HL		; general INPWRD retry
+	jp NWINPW		; HL := 00 there
+  hxnowd:			; special HEXINP retry
+	ex	(SP), HL	; .. numeric input cleared (HL:=0 by RUBCHK)
+	jr XXIN1		; new input
+  xfnd:
+	pop	HL	; for updating numeric inp !! HERE, not @ RET
+	ld	B, A		; B := curr't inp saved when delimiter
+	ld	A, C		; A := Count_remainder from CPIR
+	cp	HBASE	; base for number system >= Char ?
+	jr NC, xdlim		; char >= numb_base --> no numbr but delimtr
+    REPT 4
+	add	HL, HL		; (numeric inp goes on) add this ..
+	jr C, xOvfl		;   .. digit to (16 * former_inp )
+    ENDM ; (rept 4)
+	add	A, L		; CY == 0 here
+	ld	L, A
+	ld	A, B
+	call TTECHO		; only numeric char's echoed here
+	jr HEXINC			; input goes on
+  xOvfl:
+	call UNDINP		; clear typed chars
+	ld	A, (IX+WDIN)	; INPWRD called ?
+	or	A		; retry according to entry point (see Xrub)
+	jr Z, HEXINC		; local retry when (IX+WDIN)==0  or ..
+	jp NWINPW		; .. general INP retry when +1(word) -1(byte)
+  xdlim:			; delimiting char ( in table >= BASE ) found
+	ld	(IX+SGN), 16d	; flags hex input for valid byte test
+	ld	A, B		; delimiting char
+	RET	; from HEX INP
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+HEXTBL:	dB 15q, ', fedcba9876543210'
+	» <CR>,comma,<SP¾ ½ valiä delimiters
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;
+; D E C I N W	// DECimal INput one Word
+		; copy of HEXINW (above) changed to DECINW
+;
+	DTBCNT	equ 13d		; # of Table entries (not incl + - )
+	DBASE	equ 10d		; number system is decimal
+DECINW:
+	call INPINI
+	ld	(IX+WDIN), 0	; flags LOCAL entry (not INP{WRD/BYT})
+	call DECINC
+	call TTECHO
+	.POP <AF,BC,DE,IX>
+	RET ; from DECimal INput a Word
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+DECINC:			; conversion w.o. register saving
+	push	HL
+  DDIN1:		; re_enter here if invalid char was input
+	call CILC
+  DDIN2:	; (ext) entry for more inp when 1st digit is in already
+	ld	HL, DECTBL
+	ld	BC, DTBCNT
+	CPIR
+	jr Z, dfnd
+	call RUBCHK
+	jr NC, DDIN1
+  Drub:		; error handling depends on entry point ( INPWRD or DECINW )..
+	ld	A, (IX+WDIN)	; .. WDIN <> 0 flags INPWRD-entry
+	or	A
+	jr Z, dcnowd		; 0 ---> entry DECINW
+	pop	HL		; general INPWRD retry
+	jp NWINPW		; HL := 00 there
+  dcnowd:			; special DECINW retry
+	ex	(SP), HL
+	jr DDIN1
+  dfnd:
+	pop	HL
+	ld	B, A
+	ld	A, C
+	cp	DBASE
+	jr NC, ddlim		; delimiter ---> sign conversion
+;* * * * *  Mult old number by 10 and add input :
+	ld	D, H		; DE := 1*HL
+	ld	E, L
+	or	A		; Cy := 0
+   REPT 2			; *2,  *4
+	adC	HL, HL
+	jp PE, Derr		; PE is overflow
+	jr  C, Derr
+   ENDM ; (rept 2)
+	adC	HL, DE		; * 5
+	jp PE, Derr
+	jr  C, Derr
+	adC	HL, HL		; * 10
+	jp PE, Derr
+	jr  C, Derr
+	ld	D, 0		; DE := NEW_inp
+	ld	E, A
+	adC	HL, DE		; + inp
+	jp PE, Derr
+	jr  C, Derr
+;* * * * *  end of decimal conversion
+	ld	A, B
+	call TTECHO		; NON numeric echo in .MAIN. if error free
+	jr DECINC			; input goes on
+  Derr:			; decimal conv'sn err ( Overfl or Carry )
+	call UNDINP		; clear typed chars
+	ld	A, (IX+WDIN)	; INPWRD called ?
+	or	A		; retry according to entry point (see Drub)
+	jr Z, DECINC		; local retry or ..
+	jp NWINPW		; .. general INP retry
+  ddlim:			; Sign_Flag possible when external used :
+	ld	A, (IX+SGN)
+	or	A		; 0 or -1
+	jr Z, dnosg		; no sign
+	ld	DE, 0000
+	ex	DE, HL
+	sbC	HL, DE		; HL := - HL;  Cy == 0 (or A)
+  dnosg:
+	ld	A, B
+	RET	; from DECimal INP
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+DECTBL:	dB 15q, ', 9876543210'	; DTBCNT=13d  DBASE=10d, (decimal number inp)
+	» <CR>,comma,<SP¾ ½ valiä delimiters,  Sign is treated elsewhere
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+INPINI:		; common init of numeric inp routines
+	pop	HL		; ret addr
+	.PSH <IX,DE,BC,AF>
+	push	HL		; return addr
+ININI1:			; init for retried inp after RUBout or conv'sn err  
+	ld	HL, 0000	; initial numeric input
+	ld	IX, INPAR	; parameter table
+	ld	(IX+SGN), 0	; no minus sign at init
+	ld	(IX+NCHR), 0	; # of echoes
+	RET	; from input initialization
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TTECHO:			; Echo for direct TTY I/O from A
+	call CO
+	cp	15q		; <CR> will not be followed by <LF> in CP/M
+	jr NZ, ncrech
+	push	AF
+	ld	A, 12q		; so here added
+	call CO
+	inc	(IX+NCHR)
+	pop	AF
+   ncrech:
+	inc	(IX+NCHR)	; # of char echoed, for RUB OUT
+	RET	; from ECHO outp (for later expansion )
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+RUBCHK:			; chk for any DEL char in A --> Cy:=1, HL:=0
+	cp	177q	; DEL ?
+	jr Z, rub1
+	cp	10q	; BSP ?
+	jr Z, rub1
+	or	A	; Cy := 0
+	RET	; no DEL char in A
+   rub1:
+	call UNDINP		; clears recent input  HL:=0
+	scf		; Cy := 1
+	RET	; from DEL handling
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+UNDINP:			; un_do recent input
+	ld	HL, 0000	; number to be input := 0 for a new try
+	inc	(IX+NCHR)		; echo counter
+  undolp:
+	dec	(IX+NCHR)
+	RET Z			; after erasing all previous echo
+	call STROUT
+	dB	8h, 20h, 8h, 0	; Backspace Space Bksp
+	jr undolp
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+	; offsets from IX during input
+SGN	equ	0	; Sign flag ( 0 or -1 ) or HEX_inp Flag (16d)
+NCHR	equ	1	; # of characters echoed for DELeting 
+WDIN	equ	2	; 0 when HEXINW or DECINW called, 1 on INPWRD
+INPAR:			; input params and flags pointed to by IX
+	dS	4	; sign_flag [0], Nchar [1], WDIN [3]
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;
+STROUT:		; String output IN-LINE text ending with 00h
+	ex	(SP), HL
+	push	AF
+   stronx:			; next char in loop
+	ld	A,(HL)
+	inc	HL		; points to NEXT char yet
+	or	A
+	jr Z, strort		; 00h == End of String
+	cp	'\'		; '\' == escape to ..
+	jr Z, strosp		;  ..  special outp
+   strotp:		; normal char outp
+	call CO
+	jr stronx
+   strosp:		; sp'cl char outp after '\', HL is incr'mtd
+	ld	A, (HL)
+	inc	HL		; HL points here always to NEXT char
+	or	A		; ' xxxx\' would crash
+	jr Z, strort		; .. elsewhere
+	BIT	6, A		; UPPER case ?
+	jr Z, strolc		; no
+	or	20h		; yes .. make lower
+   strolc:		; all char's are lower case now :
+	cp	'\'		; '\\' ---> '\'
+	jr Z, strotp
+	cp	'%'		; '\%' ---> '%'
+	jr Z, strotp
+	cp	'n'		; '\n' or '\N'  --->  <CR><LF>
+	jr NZ, stroS1		; no newline
+	ld	A, 15q		; <CR>
+	call CO
+	ld	A, 12q		; <LF>
+	jr strotp
+   stroS1:
+	cp	't'		; '\t' or '\T'  --->  TAB
+	jr NZ, stroS2
+	ld	A, 11q		; <TAB>
+	jr STROTP
+   stroS2:
+	cp	'b'		; '\b' or '\B'  --->  BEL
+	jr NZ, stroS3
+	ld	A, 07		; <BEL>
+	jr STROTP
+   stroS3:
+ ; <<<*******  HERE insert future '\_' print ctrl sequ tests
+   stroer:			; unknown char X in '\X' sequency :
+	push AF			; save it ..
+	ld	A, '\'		; .. and type 
+	call CO
+	pop AF			; .. wrong sequ
+	call CO
+	ld	A, '?'		; .. plus question mark
+	jr strotp
+strort:			; return
+	pop AF
+	ex	(SP), HL
+	RET  ; from STROUT
+; - - - - - - - - - - - - - -
+;
+TYPvU:			; type HL unsigned,  if H==0 only L typed
+	push	AF	; trailing SPACE padded
+	call TVEnt
+	jr Z, tvu8
+	call TYP16U
+	jr TVEx
+   tvu8:
+	ld	A, L
+	call TYP8U
+  TVEx:				; common exit for all TYPv*
+	ld	A, ' '
+	call	CO
+	pop	AF
+	RET
+; ---------------
+TVEnt:
+	ld	A, ' '
+	call CO
+	ld	A, H
+	or	A
+	RET	; to TYPv{ U S H }
+; --------------
+TYPvS:			; type HL signed,  if H==0 only L typed
+	push	AF	; if H==-1 AND L<0  only L typed
+	call TVEnt	; tests H
+	jr Z, tvu8	; 8 bits --> Unsigned !
+	inc	A	; H == -1 ?
+	jr NZ, tvs16	; no --> 16 bits
+	ld	A, '-'
+	call CO
+	jr tvu8		; 8 bits unsigned with '-' 
+   tvs16:
+	call TYP16S
+	jr TVEx
+; --------------
+TYPvH:			; type HL HEX,  if H==0 only L typed
+	push	AF
+	call TVEnt
+	jr Z, tvh8
+	call TYP16H
+	jr TVEx
+   tvh8:
+	ld	A, L
+	call TYP8HX
+	jr TVEx
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;
+TYP16H:			; type HL hex
+	.PSH <AF,HL>
+	ld	A, H
+	call TYP8HX	; upper byte
+	ld	A, L
+	call TYP8HX	; lower byte
+	.POP <HL,AF>
+	RET	; from HEX TTY Outp of HL
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP8HX:			; type A hex
+	push AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	call TYP4HX	; upper nibble
+	pop AF
+	call TYP4HX	; lower nibble
+	RET	; from TTY outp of A
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP4HX:			; type A.low hex
+	push AF
+	and	0Fh	; mask off upper nibble
+	add	A, 90h
+	DAA
+	adC	A, 40h
+	DAA
+	call CO
+	pop AF
+	RET	; from one nibble hex outp
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP16S:			; SIGNED 16 bit TTYoutp from HL
+	.PSH <HL,DE,AF>
+	ld	A, H		; sign ?
+	or	A
+	jp M, t16mi
+	ld	A, ' '		; positive
+	jr t16srt
+   t16mi:			; HL := - HL :
+	ld	DE, 0000
+	ex	DE, HL
+	sbC	HL, DE		; CY=0  from   or A
+	ld	A, '-'
+   t16srt:
+	call CO
+	call T16ENT		; ttyo HL unsigned
+	.POP <AF,DE,HL>
+	RET	; from ttyo HL signed decimal
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP16U:			; TTYoutp HL Decimal Unsigned
+	.PSH <AF,DE,HL>
+	call T16ENT
+	.POP <Hl,DE,AF>
+	RET	; from ttyo HL Unsigned decimal
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP8S:			; TTYoutp A Signed Decimal
+	push	AF
+	or	A
+	jp M, t8neg
+	ld	A, ' '	; positive
+	call CO
+	pop AF
+	jp TYP8U
+   t8neg:		; A < 0,  AF on STK
+	ld	A, '-'
+	call CO
+	pop AF
+	push AF		; must be made ..
+	NEG		; ..  positive !
+	call TYP8U
+	pop AF
+	RET	; TYPe 8 bit Signed
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP8U:			; TTYoutp 8 bit Unsigned decimal
+	.PSH <AF,DE,HL>
+	ld	H, 0
+	ld	L, A	; HL := 0.A
+	call TY8ENT	; in T16ENT last half of 16 bit TTYo
+	.POP <HL,DE,AF>
+	RET	; TYPe 8 bit Unsigned
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+T16ENT:		; entry for 16 bit TTYo after push's
+	ld	DE, 10000d	; highest decimal. Sign is ok.
+	call DIGOUT		; decimal number outp
+	ld	DE, 1000d
+	call DIGOUT
+TY8ENT:				; 16 bit outp 1/2 complete, here entry ..
+	ld	DE, 100d	; .. for 8 bit
+	call DIGOUT
+	ld	DE, 10d
+	call DIGOUT
+	ld	DE, 1
+	call DIGOUT
+	RET	; from  16/8  bit TTYo kernel 
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+DIGOUT:		; decimal digit outp for TYP{8|16}{S|U}
+	xor	A
+   digo1:
+	sbC	HL, DE		; DE is 10000, 1000, 100, 10, 1 d
+	jp C, digo2
+	inc	A		; counts up the current decimal. NO CY !
+	jr digo1
+   digo2:
+	add HL, DE		; one count was subtracted in excess
+	add	A, '0'		; makes ASCII number
+	call CO
+	RET	; from single decimal outp
+;
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+	; Isolation of BDOS calls from hampering user environment
+	; by pushing all Reg's, EXCEPT Interrupt Vector & IFF.
+	; Input Functions must return results in RAM
+	; or use saved Reg's carefully :
+; Stack content from LOW :
+;  AF', BC', DE',HL', IY, IX, DE, BC, AF, HL, < ret_Addr >
+;
+SAVREG:			; saves all reg's with automatic UNsave
+	ex	(SP), HL	; HL:=ret_addr to caller & is pushed
+	ex	AF, AF'	;  **** H_e_b_l_i_k uses them all
+	exX
+	.PSH <AF,BC,DE,HL>	; AF'...
+	exX
+	ex	AF, AF'
+	.PSH <IY,IX,DE,BC,AF>
+	call CALHL	; foll'g code MUST follow immediately
+; - - - - - - - - - -  caller returns to here :
+	.POP <AF,BC,DE,IX,IY>
+  	ex	AF, AF'
+  	exX
+  	.POP <HL,DE,BC,AF>	; HL'...
+  	exX
+  	ex	AF, AF'
+	pop	HL		; was exchanged with (SP) atop
+	RET	; via the caller's return address !
+; - - - - - - - - - - 
+SAVRNA:			; like SAVREG without saving AF
+	ex	(SP), HL
+	ex	AF, AF'
+	exX
+	.PSH <AF,BC,DE,HL>	; AF'...
+	exX
+	ex	AF, AF'
+	.PSH <IY,IX,DE,BC>	; NOT AF !
+	call CALHL	; foll'g code MUST be placed immediately behind
+	.POP <BC,DE,IX,IY>	; not AF
+  	ex	AF, AF'
+  	exX
+  	.POP <HL,DE,BC,AF>	; HL'...
+  	exX
+  	ex	AF, AF'
+	pop	HL
+	RET	; via the caller's return address !
+; - - - - - - - - - - - - - - - - - - -
+SVRNAH:			; like SAVREG withOUT saving AF & HL
+	pop	HL		; return to caller
+	ex	AF, AF'
+	exX
+	.PSH <AF,BC,DE,HL>	; AF'...
+	exX
+	ex	AF, AF'
+	.PSH <IY,IX,DE,BC>	; NOT AF !  NOT HL
+	call CALHL	; NO gap to following code !
+	.POP <BC,DE,IX,IY>	; not AF nor HL
+  	ex	AF, AF'
+  	exX
+  	.POP <HL,DE,BC,AF>	; HL'...
+  	exX
+  	ex	AF, AF'
+	ex	(SP), HL	; caller has something in HL
+	pop	HL
+	RET	; via the caller's return address !
+; - - - - - - - - - - - - - - - - - - - - - - - -
+CALHL:
+	jp (HL)		; auxiliary function for  "call (HL)"
+;
+CALDE:			; call (DE)
+	push	DE
+	RET	; == JP (DE)
+;
+; - - - - - - - - - - - - - - - - - - - 
+;
+; //JP ON CHAR in A according to table:
+;	one-byte "command" in A,
+;	LENGTH of command table <CHRTAB> in BC,
+;	addr of LAST Command byte in HL 
+;	ADDRTB  M_U_S_T follow CHRTAB ! 
+	;; CHRTAB:
+	;; 	dB 'cioxrkt'		; 7 command abbreviations for ..
+	;; ADDRTB:			; .. 7 JUMP destination Addresses :
+	;;	dW COMINP, INPUT, OUTPUT, eXit, RESET, KILL, TYPE
+	;
+	; NOTE : TABLOK returns with NZ-Flag when content of A was NOT..
+	; .. found in CHRTB.
+	; When FOUND --> Z-Flag and ADDRTB Entry in DE
+	;
+; - - - - - - - - - - - - - - - - - - - 
+;
+TABLOK:
+	ld	D, B
+	ld	E, C		; BC := Tab Len
+	cpDR			; search Backwd
+	RET NZ			; NOT FOUND
+; . . .  foll'g code does NOT change Z-Flag ! 
+	inc	HL		; cpDR decrements one too much
+	add	HL, BC		; add remaining byte count 
+	add	HL, DE		; + original length  -->  HL points into ADDRTB
+	ld	E, (HL)
+	inc	HL
+	ld	D, (HL)		; DE:=ADDRTB Entry
+	RET	; from Table Look up with   Z-flag,  DE == ADDRTB-Entry 
+;- - - - - - - - - - - - - - - - - - - 
+	;
+QTINI:			; QUIET Peripheral Init'lzg
+	ld	B, (HL)
+	inc	HL
+  qtlop:
+	push	BC
+	ld	C, (HL)
+	inc	HL
+	ld	B, (HL)		; inner loop == ONE outp addr in OTIR
+	inc	HL		; pointer for OTIR now
+	OTIR
+	pop	BC
+	djNZ qtlop
+	RET	; from QUIET Periph Init
+; - - - - - - - - - - - - - - - - - - - 
+;
+FREMEM:	dS 1		; FREE MEMORY pointer when correct linked
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;***	END ; Of TTY I/O Pkg  TTBDOS.mac
+;
+;- - - - - - - - - - - - - - - - - - -
+;
+    if2
+	.PRINTX ` `
+	.PRINTX `  	LINKage:    L80 /p:100,RAFTEST,RAFTEST/n/e	    `
+	.printX ` `
+    endIF
+
+END RFR
+

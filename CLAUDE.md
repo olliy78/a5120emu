@@ -484,6 +484,19 @@ samt Berichtigung, `keyRelease` Pflicht am 710-1, K8025-Belegung mit `taktquelle
 Zeichensatz, Fixtures/beschädigte Abzüge, Bedienung von UDOS/SCPX/FORMAT im Test). Plan:
 `doc/design/20_prg710.md`.
 
+## RAM-Floppy RAF 128/512/2M (alle drei Maschinen)
+
+Steckbare K-1520-RAM-Floppy des ZWG der AdW auf **E/A 88H/89H** (fest), Karte
+`core/cards/raf/`, gesteckt über `K1520Machine::installRaf` **nach dem Anlegen, vor dem
+ersten Lauf** (C-ABI `k1520_raf_*`, Python `K1520Emulator(raf="raf512")`, Oberfläche
+*Einstellungen ▸ Allgemein ▸ RAM-Disk* mit Stand-by-Ablage `raf_<programm>.bin`,
+`k1520dbg`/`boot_trace --raf`).  Gast: `RAFCPM.COM` (M:) / `RAF512.COM` (P:) unter CP/A,
+SCPX 8915 und SCPX 1.7, dazu die CP/A-Diskette mit eingebautem Treiber
+`disks/cpa_cpa780_k5601_noclock-raf.hfe`.  Kern der Sache: A8–A15 (Register B) tragen
+Sektor bzw. Bytezeiger, Sperrbits und Spiegelung sind **so** nachgebildet, RESET erhält den
+Inhalt.  **Vor Arbeiten daran: `doc/merkposten/raf.md` lesen**; Entwurf
+`doc/design/22_raf512.md`, Originale `doc/raf512/`.
+
 ## Boot-ROM debugging workflow
 
 Der volle CP/A-Kaltstart läuft (Boot-ROM → SYL-Lader → Zweitlader → CP/A-Bootsystem →

@@ -875,4 +875,51 @@ int k1520_ptape_punch_enabled(K1520Handle h) {
     return p ? (p->k6022().stanzerEin() ? 1 : 0) : -1;
 }
 
+// ─── RAM-Floppy RAF (doc/design/22_raf512.md §6) ───────────────────────────────
+bool k1520_raf_install(K1520Handle h, const char* typ) {
+    if (!h) return false;
+    const std::string t = typ ? typ : "";
+    if (t.empty() || t == "none") return true;
+    RAF::Typ ty;
+    if (t == "raf128")      ty = RAF::Typ::RAF128;
+    else if (t == "raf512") ty = RAF::Typ::RAF512;
+    else if (t == "raf2m")  ty = RAF::Typ::RAF2M;
+    else {
+        g_init_error = "Unbekannte RAF '" + t + "' (none|raf128|raf512|raf2m)";
+        return false;
+    }
+    g_init_error.clear();
+    K1520Machine* m = toMachine(h);
+    if (!m->installRaf(ty)) {
+        g_init_error = m->rafFehler();
+        return false;
+    }
+    return true;
+}
+
+const char* k1520_raf_variant(K1520Handle h) {
+    const RAF* r = h ? toMachine(h)->raf() : nullptr;
+    if (!r) return "";
+    switch (r->config().typ) {
+        case RAF::Typ::RAF128: return "raf128";
+        case RAF::Typ::RAF2M:  return "raf2m";
+        default:               return "raf512";
+    }
+}
+
+uint8_t k1520_raf_peek(K1520Handle h, uint32_t adr) {
+    const RAF* r = h ? toMachine(h)->raf() : nullptr;
+    return r ? r->peek(adr) : 0xFF;
+}
+
+bool k1520_raf_load(K1520Handle h, const char* pfad) {
+    RAF* r = (h && pfad) ? toMachine(h)->raf() : nullptr;
+    return r && r->ladeInhalt(pfad);
+}
+
+bool k1520_raf_save(K1520Handle h, const char* pfad) {
+    const RAF* r = (h && pfad) ? toMachine(h)->raf() : nullptr;
+    return r && r->speichereInhalt(pfad);
+}
+
 } // extern "C"

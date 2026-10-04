@@ -129,6 +129,7 @@ void Prg710Machine::resetHardware()
     atp_.reset();            // 8279: FIFO leer
     k6022_.reset();          // PIOs; Band im Leser und Stanzband bleiben
     fs_.reset();
+    rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -145,12 +146,14 @@ void Prg710Machine::powerOn()
     speicher_.powerOn(0x00);
     k7609_.powerOn();        // die Tastatur hat ihr eigenes Netz-Ein, ein /RESET trifft sie nicht
     k7672_.powerOn();        // Selbsttest, KEIN DC1 (wie K8915)
+    rafPowerOn();            // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
     LOG_INFO("PRG710", "Netz ein: Abbildung aus, ROM bei 0000H");
 }
 
 void Prg710Machine::reset()
 {
+    bestueckungAbschliessen();
     resetHardware();
     LOG_INFO("PRG710", "Reset");
 }
@@ -188,6 +191,7 @@ void Prg710Machine::tastenAbgeben()
 
 int Prg710Machine::run(int max_cycles)
 {
+    bestueckungAbschliessen();
     tastenAbgeben();
     if (nmi_taster_.exchange(false, std::memory_order_relaxed)) {
         bus_.assertNMI();

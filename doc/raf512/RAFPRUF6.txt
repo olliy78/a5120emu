@@ -1,0 +1,698 @@
+..! ...........................................................R
+..23.7./20.1.87/12.12./14b.11./24b./12.10./10.10.86
+.. .wi-edited
+..1  
+...d Datum =23.7.86
+...d A =0/
+...d Bemerkung =Vorläufige Ausgabe (6LPI, SD1152, Z01)
+.. Ausgabe-# und Datum für Deckblatt 
+.mt3
+.hm2
+.mb9
+.fm3
+.. 60 lines text, 
+..lh10
+.. 1,25-zeilig 
+.. 48 lines text
+.cw12
+.op
+.he
+.fo
+..
+.. SD1152 Z01 - deutscher Zeichensatz - ^ = mü
+.. Variable 
+...d RAFQUICK =RAFQUICK
+..                  (Gauger-Test Programmname)
+...d RAFTEST  =RAFTEST
+..                  (Riedel-Test Programmname)
+..Abschnitts-Variablen:
+..
+..
+...sk30
+...st1
+.. Variable:
+...d cw0 =cw10
+..               für engen Text
+...d cw1 =cw12
+..               für normalen Text
+...d cw2 =cw14
+..               für Ctrl-A
+...d cw3 =cw14
+..               für Deckblatt
+..define
+.. ctrl-A = cw14 :
+
+.cw14
+
+
+
+
+
+
+
+
+              AKADEMIE DER WISSENSCHAFTEN DER DDR
+            Zentrum für wissenschaftlichen Gerätebau
+                         Fachbereich V
+
+
+
+.cw14
+
+                 K-1520-RAM-FLOPPY
+
+                      RAF 512
+
+
+
+                      E 1474b
+                   PRÜFANLEITUNG
+.cw12
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+0/. Ausgabe (12.12.86)
+Vorläufige Ausgabe (6LPI, SD1152, Z01)
+(c) ZWG, Berlin, 1986
+
+Rudower Chausse 6
+Berlin
+1199
+Tel. (002) 674 3291
+.pa
+.he 
+.fo RAF-512-Prüfanleitung                   INHALTSVERZEICHNIS   S.#
+..
+..************
+..insert RAFPRUV.TOC (1 pages) here
+               I N H A L T S V E R Z E I C H N I S
+               -----------------------------------
+
+
+1.    KURZANLEITUNG. . . . . . . . . . . . . . . . . . . . .    3
+ 1.1    Sichtprüfung . . . . . . . . . . . . . . . . . . . .    3
+ 1.2    Meßtechnische Prüfung ohne Programm. . . . . . . . .    3
+ 1.3    Meßtechnische Prüfung mit Programm . . . . . . . . .    3
+ 1.4    Häufige Fehler . . . . . . . . . . . . . . . . . . .    3
+
+.Cp4
+2.    HARDWARE-PRÜFUNG . . . . . . . . . . . . . . . . . . .    3
+ 2.1    Prüfung der unbestückten Leiterplatte. . . . . . . .    3
+ 2.2    Prüfung der bestückten Leiterplatte. . . . . . . . .    4
+ 2.2.1    Sichtprüfung . . . . . . . . . . . . . . . . . . .    4
+ 2.2.2    Elektrische Vorprüfung . . . . . . . . . . . . . .    4
+ 2.2.2.1    Stromaufnahme und Kurzschluß von +5 und +5PG . .    4
+ 2.2.2.2    Schaltschwelle von POFF. . . . . . . . . . . . .    5
+ 2.2.2.3    POFF durch RESET . . . . . . . . . . . . . . . .    5
+ 2.2.3    Oszillografische Prüfung . . . . . . . . . . . . .    5
+ 2.2.3.1    Prüfung ohne K1520-Bussignale. . . . . . . . . .    5
+ 2.2.3.2    Prüfen mit Bussignalen . . . . . . . . . . . . .    6
+
+.Cp4
+3.    SOFTWARE-PRÜFUNG . . . . . . . . . . . . . . . . . . .    6
+ 3.1    Test mit RAFQUICK. . . . . . . . . . . . . . . . . .    7
+ 3.2    Test mit RAFTEST . . . . . . . . . . . . . . . . . .    8
+
+
+.Cp6
+Anhänge
+-------
+
+.Cp4
+A.    ANHANG . . . . . . . . . . . . . . . . . . . . . . . .    9
+ A.1    Test von RAF128 . . . . . . . . . . . . . . . . . .    9
+ A.2    Stütz-Kondensator-Bestückung . . . . . . . . . . . .    9
+ A.3    Signalbilder . . . . . . . . . . . . . . . . . . . .    9
+ A.3.1    Signale am ASM-PROM. . . . . . . . . . . . . . . .    9
+ A.3.2    Signale an den RAMs. . . . . . . . . . . . . . . .    9
+
+.Cp4
+B.    SACHWORTVERZEICHNIS. . . . . . . . . . . . . . . . . .   10
+
+
+
+
+
+..Pa
+      V E R Z E I C H N I S   D E R   A B B I L D U N G E N
+      -----------------------------------------------------
+
+
+
+.Cp3
+A-1   Oszillogramme am ASM-PROM. . . . . . . . . . . . . . .    9
+A-2   Oszillogramme an den RAMs. . . . . . . . . . . . . . .    9
+..***********
+..
+.pa
+.pn3
+.he                                           @head             @Sec
+.fo RAF-512-Prüfanleitung                        Chapter        S.@p
+.. .sho                                           @head             @Sec
+.. .sfo RAF-512-Prüfanleitung                        Chapter         S.@p
+.. .she @Sec        @head                                               
+.. .sfe S.@p  Chapter                              RAF-512-Prüfanleitung
+...+h
+..
+..
+...1  +d
+.He                                         KURZANLEITUNG          1
+.Fo RAF-512-Prüfanleitung                 SACHWORTVERZEICHNIS   S.3 
+                        1.  KURZANLEITUNG
+...d Chapter =KURZANLEITUNG
+.Fo RAF-512-Prüfanleitung                       KURZANLEITUNG   S.3 
+...k Prüfübersicht
+
+...2 ,KSP
+.He                                          Sichtprüfung        1.1
+1.1  Sichtprüfung
+...d KSPTEXT =Sichtprüfung, 1.1
+
+- Lötbrücken
+- vergessene Lötstellen (bes. im Matrix-Bereich!, bis auf Pin 1)
+- Bestückungsfehler
+- Bestückung beider PROMs
+- (Prüf-)Adreß-PROM richtig?
+- Adreßeinstellung (3 Wickelbrücken)
+- Wahl der RAM-Versorgungsspannung (5P bzw. 5PG)
+- Richtige Bestückung nur einer POFF-Variante
+
+...2
+.He                   Meßtechnische Prüfung ohne Programm        1.2
+1.2  Meßtechnische Prüfung ohne Programm
+
+- alle RAM-Pins auf +5V-Kurzschluß 
+- Signal POFF
+- Zeiten der Kette RASX - /RAS - AMUX - /CASX - DT1 - /DT2
+- RAS-Signal, auch Rückflanke!
+- MON15-Refresh (Hard-RESET oder X401=!_, 16 ^s)
+- MON6-Refresh (etwa 8...14 ^s)
+- /RTRG (Spikes)
+- Refreshzähler
+
+...2
+.He                    Meßtechnische Prüfung mit Programm        1.3
+1.3  Meßtechnische Prüfung mit Programm
+
+- RAM-Signal-Timing /RAS - /CAS - A0...A7
+- RAS-Adressen-Einschwingzeit (tASR min. 0)
+
+...2
+.He                                        Häufige Fehler        1.4
+1.4  Häufige Fehler
+
+Bei Fehlern sollte folgendes überprüft werden:
+
+- Leiterplattenfehler
+  - Kurzschluß RAM-Pins 1...8 gegen 5
+
+- Bestückungsfehler (siehe Sichtprüfung, 1.1)
+
+- Bauelementefehler
+  - RAMs
+  - PROM D311, Spike im Signal /RTRG
+
+- Lötfehler (Kurzschlüsse, vergessene Lötaugen)
+  - besonders  der Leitungen 5P,  5PG und Masse im  Bereich  der 
+     TTL-IC's gegen benachbarte Signalleitungen 
+  - RAM-Matrix (RAM-Pin 1 können frei sein)
+  - Kurzschluß 5P gegen 5PG auf der Platine
+
+.cp7
+...1 
+.He                                      HARDWARE-PRÜFUNG          2
+                      2.  HARDWARE-PRÜFUNG
+...d Chapter = HARDWARE-PRÜFUNG
+.Fo RAF-512-Prüfanleitung                    HARDWARE-PRÜFUNG   S.3 
+
+
+...2 
+.He                 Prüfung der unbestückten Leiterplatte        2.1
+2.1  Prüfung der unbestückten Leiterplatte
+...k Prüfung, der unbestückten Leiterplatte
+
+Eine Prüfung der unbestückten Leiterplatte kann sich nach gegen
+wärtigem  Erfahrungsstand  auf  eine  Sichtprüfung  beschränken, 
+bisher aufgetretende Fehler waren fast alle durch die Bestückung 
+(Lötbrücken, Zinnspritzer) hervorgerufen.
+Da  nach  Auflöten  der RAMs einige für  Fehlätzungen  anfällige 
+Stellen nicht mehr zugänglich sind,  sollte jedoch folgendes auf 
+Kurzschluß geprüft werden:
+.Fo RAF-512-Prüfanleitung                    HARDWARE-PRÜFUNG   S.4 
+...k Kurzschlußprüfung
+
+- X5 gegen Masse (RAM-Betriebsspannung)
+- RAM-D10:Pin 14 (Data D0) gegen Pins 9, 10, 11, 12, 13, 15, 16
+                                   (D10, D30, D50, D70)
+-  "       "   1 ( n.c.  ) gegen Pins 2, 3, 4, 5, 6, 7, 8
+                                   (D20, D40, D60, D80)
+
+...2
+.He                   Prüfung der bestückten Leiterplatte        2.2
+2.2  Prüfung der bestückten Leiterplatte
+...k Prüfung, der bestückten Leiterplatte
+
+Die  Bestückung und Prüfung erfolgt mit Stand-By-Schaltung  (Po
+wer-Off-Signal  durch internen Komparator und RESET) und zweiter 
+Busbetriebsspannung +5PG.
+...k Power-Off
+...k Stand-By
+Beim  späteren  Einsatz der Karte wird die  endgültige  Variante 
+entschieden.
+
+
+.cp5
+...3  +d-b
+.He                                          Sichtprüfung      2.2.1
+2.2.1  Sichtprüfung
+...k Prüfung, -Sicht
+
+Zumächst sollte folgendes geprüft werden:
+...k Spannungsversorgung
+- ist die RAM-Matrix an 5PG angeschlossen? (Drahtbrücke X5PG--X5 
+  (5PG ist XS1:A/B3))
+- sind beide PROMs (ASM und AD) bestückt?
+- ist der richtige Prüfadreß-PROM bestückt?
+- sind alle 3 Wickelbrücken (Adresse) vorhanden und richtig?
+
+Dann  ist die Leiterplatte aufmerksam auf  Bestückungsfehler  zu 
+untersuchen.
+Alle Bestückungslötaugen sind eckig,  die der Durchkontaktierun
+gen rund.
+...k Power-Off
+Es darf nur eine Power-Off-Variante (1 oder 2) bestückt sein. 
+
+Es  schließt sich eine Kontrolle auf Lötbrücken an (besonders im 
+Bereich der RAM-Matrix).
+
+
+.cp5
+...3
+.He                                Elektrische Vorprüfung      2.2.2
+2.2.2  Elektrische Vorprüfung
+...k Prüfung, elekt. Vor-
+
+Wird  die  Leiterplatte  mit bestückten RAMs oder nach  der  Be
+stückung  mit RAMs in Betrieb genommen,  sollte,  um eine  Über
+lastung  der RAM-Matrix-Treiber zu vermeiden,  nach Anlegen  der 
+Betriebsspannungen sofort der Pegel an den RAM-Anschlüssen  grob 
+auf  Kurzschluß gegen +5V geprüft werden (Pin 1:  frei,  Pin  8: 
++5V).  Um im Kurzschlußfall die treibenden ICs zu schützen, kann 
+dies  mit  geringer  Spannung  durchgeführt  werden.  Dies  wird 
+empfohlen,  da  häufig  mit Lötbrücken im Bereich der Matrix  zu 
+rechnen ist.
+
+Die  weitere  Vorprüfung  kann mit oder  ohne  aufgelötete  RAMs 
+erfolgen.
+
+
+.cp7
+...4 -b+d
+.He          Stromaufnahme und Kurzschluß von +5 und +5PG    2.2.2.1
+2.2.2.1  Stromaufnahme und Kurzschluß von +5 und +5PG
+
+Die  Prüfung erfolgt auch,  wenn vorerst  kein  Stand-By-Betrieb 
+vorgesehen ist:
+Anschlüsse:
+- Masse an Busstecker XB1:A/B28/29
+- Variable Spannung +4,4...+5,0 V an XB1:A/B3 ("5PG")
+- +5,0 V an Bus-Stecker XB1:A/B29 ("5P") 
+
+.Fo RAF-512-Prüfanleitung                    HARDWARE-PRÜFUNG   S.5 
+Durch  Verändern von 5PG und Kontrolle der  Stromaufnahmen  läßt 
+sich ein Kurzschluß zwischen beiden Spannungen feststellen.
+
+Die Stromaufnahmen liegen typisch bei (im Notrefresh):
+...k Stromaufnahme
+.cp5
+ ----------------------------------------
+!               ! mit RAMs  ohne RAMs    !    Abweichungen bis
+!----------------------------------------!    etwa +-20%
+!  5P   (+5.0 V)!   220       220     mA !    sind möglich
+!  5PG  (+5.0 V)!   400               mA !
+
+
+.cp5
+...4
+.He                               Schaltschwelle von POFF    2.2.2.2
+2.2.2.2  Schaltschwelle von POFF
+...k POFF
+...k Power-Off
+
+Das korrekte Schalten des internen Komparators (N401,  N402) der 
+Stand-By-Option (Bestückungsvariante 1) wird  geprüft:
+
+.cp8
+- mit Digitalvoltmeter (DVM) 5P nachmessen, 
+          ggf. einstellen (Soll: 5,0 V)
+- DVM an 5PG
+- Logikprüfstift (oder Oszi) an X401
+- 5PG von 5,0 V langsam verringern, 
+     X401 High-Low bei min. 4,5 V.
+- 5PG wieder erhöhen, 
+     X401 Low-High bei max. 4,8 V.
+
+Falls  erforderlich,  ist  ein geringfügiges  Korrigieren  durch 
+Wechsel von R401 (min. 100 Ohm) möglich.
+
+- Überprüfen des Signals POFF (Power Off) an D311:14  (ASM-PROM) 
+  (= neg. X401, verzögert)
+
+
+...4
+.He                                      POFF durch RESET    2.2.2.3
+2.2.2.3  POFF durch RESET
+(Bestückungsvariante 1a, 2)
+
+Wird  auf dem Mikrorechner ein /RESET erzeugt,  muß  POFF  (X401 
+ebenfalls aktiv werden.
+
+
+...3
+.He                             Oszillografische Prüfung       2.2.3
+2.2.3  Oszillografische Prüfung 
+
+...4 ,POB
+.He                         Prüfung ohne K1520-Bussignale    2.2.3.1
+2.2.3.1  Prüfung ohne K1520-Bussignale
+
+Als  Oszillograf  wird ein 50- oder  100-MHz-Typ  benötigt,  die 
+Beschreibung bezieht sich auf den Typ TR-4653.
+Es wird zunächst kein Bus, sondern nur eine Stromversorgung +5V, 
+1A benötigt.
+Die Prüfung kann auch mit einem laufenden Rechner (steht in  der 
+Tastaturabfrage) durchgeführt werden,  das Prüfen des 16-^s-Not-
+Refreshs  kann  dann  z.B.  durch ein längeres  Hard-Reset  oder 
+Kurzschluß von X401 (wenn bestückt) ausgelöst werden.
+
+- Oszi-Trigger-Kanal Ch2 an XM2 (RASX), 2V/cm, pos. Trigger
+    : RASX-Impulse alle 16 (+-2) ^s, 600 ns lang (Not-Refresh)
+  Wenn Impulse fehlen: Kette RASX-DT1-/DT2 offen, 
+                       ASM fehlt/defekt,
+                       ASM-Eingangssignale prüfen
+
+- Überprüfen des Timings der RC-Glieder R301/C301...R305/C305
+  Fehlerquellen: C301...305, VD2, VD3
+.Fo RAF-512-Prüfanleitung                    HARDWARE-PRÜFUNG   S.6 
+
+- Prüfen der Eingangssignale am ASM-PROM (D311) (s. Abb. A-1 )
+  - Impulse an MON15
+  - MON6 = Impulse, unsynchron
+
+- auf Spike-Freiheit prüfen:
+  - REFEN an CAS-Decoder (D309:4) 
+  - REFEN an ASM-PROM (D311:15)
+  - /RTRG an ASM-PROM (D311:11)
+  - /RAS an XM3 (auch Rückflanke!- D313=DS8287?)
+  Fehlerquellen: entsprechende RC-Glieder, defekter PROM
+     manche (Import-)8287 neigen zum Schwingen (RAS!)
+
+- Zählen des Refresh-Counters prüfen (8 bit binär, an R90...97)
+     (ein /RTRG-Impuls darf nur +1 zählen)
+
+- an den RAMs messen:
+  - /CAS  (Pin 15) = High
+  - /WE   (Pin  3) = High
+  - DI/DO (2, 14)  = undefiniert
+  - /RAS  (Pin  4) = XM3 = verzögertes und negiertes Ch2-Signal
+  - VDD   (Pin  8 HF-maßig kurz gegen Masse  (=Pin  16)  messen, 
+     Spannung  der RAMs sollte im Betriebsbereich (5 bzw.  10 %) 
+     liegen  - Kontrolle  nur bei nicht  vollständiger  Stütz-C-
+     Bestückung notwendig.
+  - A0...A7 = zur Zeit von /RAS stabile Refresh-Adressen (s. 
+               Timing, Abb. A-2  )
+
+.. @@ wann/wie WAIT prüfen??
+
+
+.cp4
+...4 ,PMB
+.He                                Prüfen mit Bussignalen    2.2.3.2
+2.2.3.2  Prüfen mit Bussignalen
+
+Wenn  am  Rechner die Busspannung 5PG nicht mit +5,0 V  versorgt 
+wird,  ist die RAM-Versorgung auf der zu prüfenden Plattine  auf 
+5P (X5-X5P) gelötet werden.
+
+Der  (K1520-)  Test-Mikrorechner kann z.B.  in einer  Tastatur-
+Abfrage-Routine  stehen und in unterschiedlichen  Abständen  M1-
+Zyklen abarbeiten.
+Der Refresh ist jetzt an /M1 gekoppelt,  d.h.,  die RASX-Impulse 
+entstehen  nach  Ablauf von MON6 mit aktiv  werdenden  /M1,  die 
+Abstände schwanken etwa zwischen 6 und 14 ^s. 
+
+Prüfen:
+
+- MON15 (ASM, D311:7) = High
+- MON6  ( "     " :4) = Impulse (nicht synchron zu RASX)
+- Timing der RC-Glieder (wenn nicht unter 2.2.3.1)
+- Not-Refresh kontrollieren (/RESET = Low oder X401 = Low)
+- RASX regelmäßig alle 16 ^s
+- WAIT kurz.... (je nach ASM-Version)
+
+
+.cp7
+...1
+.He                                      SOFTWARE-PRÜFUNG          3
+                      3.  SOFTWARE-PRÜFUNG
+...d Chapter = SOFTWARE-PRÜFUNG
+.Fo RAF-512-Prüfanleitung                    SOFTWARE-PRÜFUNG   S.6 
+
+Die  Beschreibung  und  die Programme beziehen  sich  auf  einen 
+K1520-OEM-Rechner  mit CP/M-Betriebssystem,  andere Betriebssys
+teme oder spezielle Prüfrechner erfordern ein Anpassen der Test
+programme!
+
+.Fo RAF-512-Prüfanleitung                    SOFTWARE-PRÜFUNG   S.7 
+
+...2
+.He                                     Test mit RAFQUICK        3.1
+3.1  Test mit RAFQUICK
+
+Ist die erste oszillografische Prüfung o.k.,  kann das  Schnell-
+Test-Programm RAFQUICK.COM gestartet werden. Das Programm ist in 
+TURBO-PASCAL geschrieben,  es ist bildschirmorientiert und wird, 
+wenn  nicht im Quellcode,  für die Steuersequenzen des Terminals 
+ADM31 (Invers,  Delete to end of line,  Delete/Insert  line,...) 
+geliefert, andere Schirmsteuerungen erfordern Anpassung!
+Das Programm wird mit Ctrl-C abgebrochen,  mit RETURN angehalten 
+bzw. wieder gestartet.
+
+..Fehler-Reset....
+
+Es  wird  jetzt das gesamte RAM-Timing,  auch  das  rechtzeitige 
+Einschwingen der RAS-Adressen vor dem RAS-Signal geprüft  (siehe 
+A-2  ).
+
+Läuft  das Programm mit angeschlossenem RAF512 nicht oder  lief 
+der Rechner beim Prüfen mit Bussignalen (2.2.3.2 ) nicht, ist zu 
+prüfen:
+- WAIT (ASM, D311:12) = Low
+- /WAIT (Bus, XS1:A24) = High
+- alle Bussignale, Datenbustreiber (D317)
+
+Das  Programm bildet das RAF 512 schematisch auf dem  Bildschirm 
+ab, möglicherweise defekte IC's werden ausgeixt.
+
+Getestet wird datenerhaltend, d.h., der alte Inhalt wird jeweils 
+für die Zeit des Testes gespeichert, er bleibt erhalten. Mit 00h 
+und FFh wird der Read-/Write-Test (RW-Test)) und mit Zufallszah
+len der Adressen-Test (AD-Test) durchgeführt.
+
+Erkannt werden:  
+  Grob-defekte Speicher,  kurzgeschlossene Adreß- und  Datenlei
+  tungen (auch untereinander kurzgeschlossene Adreßleitungen)
+
+Nicht oder schwer erkannt werden:  
+  Fehlende RAMs, Kurzschlüsse /CAS-DI/DO
+
+
+Folgende Fälle lassen sich unterscheiden:
+
+- RW-Test o.k.: Adressentest wird durchgeführt
+- AD-Test auch o.k.: RAFTEST.COM kann gestartet werden.
+
+- RW-Test o.k., AD-Test zeigt fehlerhafte Adressen an:
+  (Adressen zählen von 0/ bis 14)  
+  Eine   Unterscheidung  vor/nach  RAS-CAS-Muxer  (D305..8)  ist 
+  möglich. Beispiel:
+   Anzeige:
+     ADRESSEN:   1               9
+   Fehler: RAM-Adresse 1 = Pin 7 (RAS) und
+           RAM-Adresse 9 = Pin 7 (CAS)
+   vermutete  Ursache:  Matrix-Leitung  für Pin 7 hat  Schluß 
+          (mit Masse/+5V)  
+
+.cp6
+.Fo RAF-512-Prüfanleitung                    SOFTWARE-PRÜFUNG   S.8 
+   Anzeige:
+     ADRESSEN: 0 1
+   Fehler: RAM-Adresse 0 = Pin 5 (RAS)
+           RAM-Adresse 1 = Pin 7 (RAS)
+   vermutete  Ursache:  Leitungen  für Adresse 0 und 1  vor  den 
+          Muxern D305, D308, z.B. an D301:19/18 Kurzschluß 
+
+
+Ein  angezeigter  Fehler  sollte in jedem  Fall  oszillografisch 
+und/oder mit dem Programm RAFTEST  verifiziert werden.
+
+
+.cp5
+...2 
+.He                                      Test mit RAFTEST        3.2
+3.2  Test mit RAFTEST
+
+Zur detaillierten Prüfung unter den verschiedensten  Bedingungen 
+wurde     das    dialogorientierte    M80-Assembler-Prüfprogramm 
+RAFTEST.COM geschrieben.  Es gestattet verschiedene RAM-Bereiche 
+mit  konstanten,  bestimmten  oder zufälligen Daten  mit  unter
+schiedlichem Timing zu schreiben oder zu lesen und im Fehlerfall 
+die Ausgabe des Fehlers, einen Test, ob Lese- oder Schreibfehler 
+vorliegen sowie Triggerung eines Logikanalysators.
+Nach  Aufruf  wird ein Default-Test für  512KB  (voll  bestückte 
+Platte)  mit  Fehlerausschrift gestartet.  
+
+Der  (Default-)Lauf des Programmes RAFTEST  ist auch  notwendig, 
+wenn RAFQUICK keine Fehler zeigt!
+
+
+.pa
+.Fo RAF-512-Prüfanleitung                    SOFTWARE-PRÜFUNG   S.9 
+...X dbu
+...1
+.He                                                ANHANG          A
+                           A.  ANHANG
+...d Chapter = ANHANG
+.Fo RAF-512-Prüfanleitung                              ANHANG   S.9 
+
+...2
+.He                                      Test von RAF128        A.1
+A.1  Test von RAF128
+Die  Prüfanleitung gilt auch für RAF128 und RAF128/5.  Zu  den 
+Unterschieden zu RAF512 siehe Beschreibung RAF 512. 
+Beachtet  werden sollten besonders Kurzschlüsse der  TTL-fremden 
+Spannungen +12V und -5V gegen andere TTL-Signale,  da dies even
+tuell  eine  Zerstörung des betroffenen Bauelementes  zur  Folge 
+hat, es sollte vorsorglich in jedem Fall gewechselt werden.
+Das  Programm RAFTEST  eignet sich auch zum Testen von  RAF128, 
+das  Programm  RAFQUICK muß mit einer geänderten  Konstante  neu 
+kompiliert werden.
+
+
+.cp4
+...2
+.He                          Stütz-Kondensator-Bestückung        A.2
+A.2  Stütz-Kondensator-Bestückung
+
+Günstige  Bedingungen  für den Betrieb einer  großen  RAM-Matrix 
+bietet  eine Vermaschung der Stromzuführungen.  Da nur  2-Lagen-
+Leiterplatten zur Verfügung standen,  wurde dies vollständig nur 
+bei dem Typ RAF512 durchgeführt.
+Die  Hersteller der 3-Spannungs-RAMs empfehlen für +12V und  -5V 
+je einen und für +5V je 8 IC einen Stützkondensator.  Dies würde 
+für die Karte RAF128 etwa 150 Kondensatoren erfordern.
+Untersuchungen  unter normalen Betriebsbedingungen  zeigten  je
+doch,  daß  die RAMs wesentlich schlechtere  Betriebsbedingungen 
+tolerieren.  Bei einigen Typen reichten kein oder einige kerami
+sche Stützkondensatoren neben dem üblichen Elektrolytkondensator 
+für ein fehlerfreies Arbeiten unter normalen, aber außerhalb der 
+garantierten Betriebsbedingungen.
+
+Für das RAF 512 und das RAF 128/5 (5-V-RAM-Typen) wird empfohlen 
+das Bestücken mindestens aller Stützkondensatoren mit  ungerader 
+Bauelementenummer (C11...C87)
+Für das RAF 128 mit 3 Spannungen kann eine optimierte Bestückung 
+im Entwicklungslabor erfragt werden.
+
+
+..pa
+...2
+.He                                          Signalbilder        A.3
+A.3  Signalbilder
+
+...3
+.He                                   Signale am ASM-PROM      A.3.1
+A.3.1  Signale am ASM-PROM
+siehe Schaltbild und Beschreibung
+...f ,AS
+Abbildung A-1: Oszillogramme am ASM-PROM
+...k Oszillogramme, am ASM-PROM
+
+...3 
+.He                                   Signale an den RAMs      A.3.2
+A.3.2  Signale an den RAMs
+siehe Schaltbild und Beschreibung
+...f ,TIM
+Abbildung A-2: Oszillogramme an den RAMs
+...k Oszillogramme, an den RAMs
+.pa
+.Fo RAF-512-Prüfanleitung                              ANHANG   S.10
+.pn 10
+.he
+.He
+.fo RAF-512-Prüfanleitung                        Chapter        S.#
+.Fo RAF-512-Prüfanleitung                               ANHANG  S.#
+.. .sfo RAF-512-Prüfanleitung                          Chapter        S.#
+.. .sfe S.#   Chapter                               RAF-512-Prüfanleitung
+...1
+                     B.  SACHWORTVERZEICHNIS
+...d Chapter = SACHWORTVERZEICHNIS
+.Fo RAF-512-Prüfanleitung                  SACHWORTVERZEICHNIS  S.#
+
+
+
+
+E
+Elektrische Vorprüfung,  4
+
+
+K
+Kurzschlußprüfung,  4
+
+
+O
+Oszillografische Prüfung,  5
+Oszillogramme
+   am ASM-PROM,  9
+   an den RAMs,  9
+
+
+P
+POFF,  5
+POFF durch RESET,  5
+Power-Off,  4,  5
+Prüfen mit Bussignalen,  6
+Prüfung ohne K1520-Bussignale,
+ 5
+Prüfung
+   -Sicht,  4
+   der bestückten
+    Leiterplatte,  4
+   der unbestückten
+    Leiterplatte,  3
+   elekt. Vor-,  4
+Prüfübersicht,  3
+
+
+S
+Schaltschwelle von POFF,  5
+Sichtprüfung,  4
+Signale am ASM-PROM,  9
+Signale an den RAMs,  9
+Spannungsversorgung,  4
+Stand-By,  4
+Stromaufnahme,  5
+Stromaufnahme und Kurzschluß
+ von +5 und +5PG,  4

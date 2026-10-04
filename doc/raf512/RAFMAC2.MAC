@@ -1,0 +1,1249 @@
+;.cw10.he					 RF**.mac   18-11-86    PAGE #
+; RAF Install + A/B Exchange. Automatic ERAse
+;
+;  RAF-128  and  RAF-512  Installation Overlay.  
+;.cw10.he					RFEQ087.mac   08-07-86  PAGE  #
+; 
+;BiosVersion	equ 0	;  0 = INVALID.  Use one of the foll'g equates :
+BiosVersion	equ 57	; BIOS 57 ( IRF ) 
+;;; BiosVersion	equ 59	; BIOS 59
+;
+;	_R_A_F_  == RAm Floppy	 >>>>>>>>  Disk Param Blk  here equated <<<<<<
+; I/O Board with TWO Port Addresses: 
+; Raf.C = RAF.Ctrl Port  for loading the upper (Track & Sector) Address HIAdr
+;    via  D-bus.0:7,  A-bus.8:14 ( B-Reg ).  Raf.C = Raf0C..RafnC,  n = NRAF.
+; Raf.D = RAF.Data-I/O Port for reading/writing 128 consecutive bytes with 
+;    INIR / OTIR Instruction, with Byte-index LOAdr on A-bus.8:14 (B-Reg)
+;
+;                                 ---->      7   6   5   4   3   2   1   0
+;                               /          +---+---+---+---+---+---+---+---+
+;                         LOAdr ----->     !///!           B               !
+;                                          +---+---+---+---+---+---+---+---+
+; 17       15   14      12      10       8       6       4       2       0
+;----+---+---+ +---+---+---+---+---+---+---+---+
+;   B        ! !   !           A               !    <------ HIAdr
+;----+---+---+ +---+---+---+---+---+---+---+---+          /
+; 10   9   8     7   6   5   4   3   2   1   0      <----
+;
+; HIAdr.0:7  --> ByteAddr.7:14 loaded into Raf.C from A-reg
+; HIAdr.8:9.15	loaded to Raf.C  from B-reg  via  OUT (C), A	<-- RAF-128
+; HIAdr.8:11.15	loaded to Raf.C					<-- RAF-512
+;   HiAdr.15	== Write Protection when 1  (both RAF 128 and 512)
+; LAadr.0:6   from B-reg at OTIR/INIR when B starts with 128d, so
+;	bytes in sector are stored in Reverse Order
+; 
+; Track and Sector allocation arbitrary.  In BIOS-57 Patch as follows :
+; One RAF-Track == 16KB == 128 Sectors.   ( Also for 64K chips )
+;  --> HIAdr.0:6 is Sector Number (0:127).   Tracks are allocated to the 
+;	physical available 16K Banks in increasing Board Numbers. One Board
+;	carries the Tracks 0..7 / 0..31  ( RAF-128/512 ).
+; At Boot time every board is checked for its actually Number of Banks
+;	beginning at the bank-# zero. The highest writeable bank is assumed
+;	being the topmost bank on this board available.
+;	--> RAM Chips must be applicated on Bank 0 first when
+;	partially filled boards are used. 
+;
+;
+
+ .z80	; BIOS Declarations, RAF dependent :
+
+GrpSiz	equ	2	; Allocation Group Size = 2K
+NDirE	equ	128d	; # of directory entries
+CSVLen	equ	0 	; or ( N.DirE +1 ) / 4, Here No ..
+			; .. Media Change --> Length( CSVRAF) := 0
+
+NGrouð	eqõ	1024ä	» MAX 2 MByte Disk¬ 2K-Groups® = Maø foò ALV.Lengtè ..
+			; ..calcul'tî only. Actual disksize checked at 
+			; .. boot time
+
+ALVLen	equ	( NGroup / 8 ) + 1	; Allocation Bit Map Size
+	; DPBlk Constants :
+SPT..	equ	128d	; Sectors per 16K-Track
+BSH.	equ	4	; Block Shift for 2K-Allocation_Groups
+BLM.	equ	15d	; Block Mask  	  2K   ____,,____
+EXM.	equ	1; @@@@	; Extend Mask for DKSize > 255K  and  2K Groups
+DSM..	equ	00	; Max Group Number : depends on DiskSize, set in Boot
+DRM..	equ	NDirE-1	; Max DirEntry Number 
+AL0.	equ	11000000b ; 1 Group = 2K = 64 DirEntries
+AL1.	equ	00000000b
+DCkL..	equ	00	; no Media Change --> no DIR check
+OFS..	equ	00	; SYS_Tracks before Dir
+        	
+
+;
+;RAFDPH:		; CP/M Disk param header RAM Floppy
+;	dW	0, 0,0,0	; NO Sectranslation,  3 * Scratch
+;	dW	DIRBF		; BIOS-57  @ F80Eh
+;	dW	DPBLRF		; Disk Param Block RAM Flpy (here)
+;	dw	CSVRAF, ALVRAF	; ChkSum Vect, AllocVect RAF   Addresses
+;	;
+;CSVRAF:	dS	CSVLen	; CheckSum( Dir ) for Dk change detection
+;ALVRAF:	dS	ALVLen	; Allocation BitMap
+;
+;DPBLRF:		; CP/M Disk param Block RAM Flpy
+;SPT:	dW	SPT..	; #0	; # of Sects per Trk
+;BSH:	dB	BSH.	; #2	; (1K =: 3	2K =: 4)
+;BLM:	dB	BLM.	; #3	; (1K =: 7	2K =: 15)
+;EXM:	dB	EXM.	; #4	; .. < 256K in 1K Blks
+;DSM:	dW	DSM..	; #5	; DiskSize-1 = # of Blks, Set by RAFALC
+;DRM:	dW	DRM..	; #7	; # of DirEntries - 1. NOT  BLKSize dependent
+;AL0:	dB	AL0.	; #9	; (1K=:0C0h == TWO 1K-Blks.)
+;AL1:	dB	AL1.	; #10	; AL1
+;DChkL:	dW	DCkL..	; #11	; NO DirChk needed
+;OFS:	dW	OFS..	; #13	; no SYStem Track reserved
+;
+; = = = = = = = = = = = = = = = = = = = = = =
+
+
+;		_R_A_F_  _E_Q_U_A_T_E_S_ :
+;
+	RAFDVN	equ	1	; RAF's CP/M BIOS Device Number  "1" == "B:"
+				;    14 == "O:"  (Overlay Drive)
+	NRAF	equ	4	; # of RAF-128 and RAF-512 Boards for ..
+				; ..  Allocation
+	;
+; Ctrl-Port Addresses of RAF Boards 0..3,   Hardware dependent :
+	Raf0C	equ	89h
+	Raf1C	equ	8Bh
+	Raf2C	equ	8Dh
+	Raf3C	equ	8Fh
+; Data-I/O Port Addresses of RAF Boards 0..3,   Hardware dependent :
+	Raf0D	equ	88h
+	Raf1D	equ	8Ah
+	Raf2D	equ	8Ch
+	Raf3D	equ	8Eh  ; 27-02-86
+
+DDMA	equ	80h	; default DMA
+
+; BIOS Declarations, BIOS-Version dependent :
+;
+IF BiosVersion    NE 57	;
+  IF BiosVersion    NE 59
+	.printX  ' '
+	.printX  '	_E_R_R_O_R_ in RAFEQU.mac  INVALID BIOS Number ' 
+  ENDIF
+ENDIF
+
+IF BiosVersion	EQ 57	;
+
+; BIOS 57 location used here :
+; CHECK Carefully for matching the current BIOS Version !!
+; !!
+; Three Words + one Byte in THIS ORDER required :
+; 
+	ADMA	equ	0F800h		; Loc with Addr of CP/M's DMA Buffer
+	TRK	equ	ADMA + 2	; CP/M  Track-#  ( 0, 1, 2, .. )
+	SEC	equ	ADMA + 4	; Sector-#  ( 1, 2, .. )
+	DEV	equ	ADMA + 6	; Drive-#  ( A=0, B=1,..) ONE LESS ..
+					; .. than BDOS numbering !!
+	;
+	READ 	equ	0D627h		;(BIOS) active after Installat'n
+	WRITE	equ	0d62ah
+	;
+	DIRBF	equ	0F80Eh		; BDOS Directory buffer
+	SETIX	equ	0DA54h		; Device driver select routine
+	DPHA	equ	0E63Bh		; Addr Table of Disk Param Headers
+	IXTAB	equ	0E61Bh	; Bios Device pointer table for loading IX..
+		; .. IX pointing to device driver area then.  (Page 1-56) 
+	;
+  DPHRF	equ	DPHA  + 2*RAFDVN	; Addr of pointer to DiskParamHeader
+  IXTRF	equ	IXTAB + 2*RAFDVN	; RAF's IXTAB Entry. RAFDVN here above
+					; Bios Drive B: when RAFDVN == 1
+	;
+	RWPHAS	equ	0E2C8h	; BIOS-57 KMB Area, now RAF test range
+	KilPhs	equ	0D6FFh	; _,,__ KMB-Boot call to be killed
+	LoePch	equ	0E01Fh	; _,,_  Patch in "md.loe" ( OPF-ERAse Key )
+	; 27-02-86 Cassette Tape Init Keys discarded
+KMbPhs	equ	0D821h	; BIOS-57 pp 1-10  < c06:: > Start of "L/E KMB" code
+KMbOff	equ	0D860h	; 	  pp 1-11  < c11:: >   End of __,,__
+;
+DPHMD	equ	0E122h	; OPF DPH-Addr for check if already swapped A <-> B
+MD.DKS	equ	0e137h	; OPF DK.Size Addr in DkParBlk
+
+ENDIF ; Bios-57
+; - - - - - - - - - - - - - - - - - - - - -
+
+IF   BiosVersion eq 59
+
+	ADMA	equ	0E498h	
+	TRK	equ	ADMA + 2
+	SEC	equ	ADMA + 4
+	DEV	equ	ADMA + 6
+	;
+	READ 	equ	0D686h
+	WRITE	equ	0D696h
+	;
+	DIRBF	equ	0fac2h
+	SETIX	equ	0d668h
+	DPHA	equ	0e478h
+	IXTAB	equ	0e458h
+	;
+  DPHRF	equ	DPHA  + 2*RAFDVN
+  IXTRF	equ	IXTAB + 2*RAFDVN
+	;
+	RWPHAS	equ	0e900h
+	KilPhs	equ	0e4f8h
+KMbPhs	equ	0d382h
+KMbOff	equ	0d396h
+;
+DPHMD	equ	0e218h
+MD.DKS	equ	0e22dh
+
+ENDIF ; Bios-59
+;
+ESC	equ 1Bh
+BDOS	equ 0005
+
+ .PRNT macro TEXT
+   .Xlist
+	call STROT		;; TTY-Outp In-line String
+	dB	TEXT
+	dB	0
+   .List
+endm ; .PRNT
+;
+ .PSH macro AA		;; multiple push
+ .Xlist
+  IRP X,<AA>
+	push X
+  endM ; irpt
+ .List
+endM ; .PSH
+;
+ .POP macro AA		;; multiple pop
+ .Xlist
+  IRP X,<AA>
+	pop X
+  endM ; irpt
+ .List
+endM ; .POP
+; - - - - - - - - - - - - - -
+;
+PHLOAD	macro	LOCSTA, PH.BEG, LOCEA, LOCJMP
+		;; LOC*** = local Addr's, out of Phase
+ .Xlist		;; LOCSTA, PH.BEG == Addr before .phase and .Phase_Addr
+	ld	HL, LOCSTA		;; LOCal STarting Addr of Source
+	ld	BC, LOCEA - LOCSTA	;; length to LOCal Ending Addr
+	ld	DE, PH.BEG		;; In-Phase Addr == Destination
+ .List
+	ldIR
+	JP LOCJMP		;; jump to local (not in-phase) continuation
+ENDM ;; Phase load,  .Dephase is prior LOCEA
+;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+RAFABX::
+	Jp RAFGo	; Patch AREA :
+XCHFLG:	dB 0			; <>0 : automatic swapping to RAF == A:
+NumOPS:	dB 4 			; # of OPS in OPS-Flpy (no TPA)
+	dS 11d, 0
+	;
+FlagFl:			; Flag File's   FCB
+	dB	20h			; impossible USER
+	dB	'RafValid'
+	dB	's'+80h, 'y'+80h, 's'		; ".sys" with RDO & SYS
+	dB	0,0,0,0, 0,0,0,0,  0,0,0,0, 0,0,0,0,  0,0,0,0
+	; - - - - - - - - - -
+
+RAFGo::
+	ld	SP, STKEND
+
+;  =============== 
+if BIOSVersion eq 57
+	iDPHTAB	equ	0E63Bh	;BIOS57: orig.
+	iDPHA	equ	0E33Dh  ;E63B : E122  A: E122(OPS)/E33D(RAF)
+	iDPHB	equ	0E122h	;	0000  B: E122(OPS)/E33D(RAF)/....(KASS)
+		;for testing OPS!;	0000  C: ....(KASS)
+	iDPHD	equ	0DDBCh	;	DDBC  D:
+	.printx 'BIOS57'
+endif
+
+if BIOSVersion eq 59
+	iDPHTAB	equ	0E478h	;BIOS59: orig.
+	iDPHA	equ	0E218h	;E478 :	E218  A:
+	iDPHB	equ	0DAC2h	;	0000  B: DAC2(KASS)
+				;	0000  C: ....(KASS)
+	iDPHD	equ	0DB53h  ;	DB53  D:
+	.printx 'BIOS59'
+endif
+
+	ld hl, iDPHTAB+7		;is right BIOS version - Test with DPHD: ?
+	ld de, iDPHD		;iDPHD:
+	ld bc, iDPHB		;Kassetten-DPH
+	ld a, d			;test via DPH D:
+	cp (hl)
+	JR NZ, IWRONGBIOS	; D: is unknown
+	dec hl
+	ld a, e
+	cp (hl)
+	JR NZ, IWRONGBIOS
+	xor a			;Kass C: un-logged?
+	dec hl			;hl => C:
+	cp (hl)			; DPHC.Hi <> 0 should be Cassette MT "C:"
+	JR NZ, KASSGELADE	;Kass C: is not un-logged
+	dec hl
+	cp (hl)			; A == 0
+	JR NZ, KASSGELADE	;Kass C: is not un-logged
+	dec  hl			;hl => B:
+	cp (hl)
+	JR Z, OK1		;B: presumed being un-logged ( see <OK1> )
+	ld a, b			;is KASS B: logged?
+	cp (hl)
+	JR NZ, KASSMSG		;is o.k. assumed !
+	dec hl
+M1::	ld a, c
+	cp (hl)
+	JR Z, KASSGELADE	;
+	JR KASSMSG	
+
+OK1::	dec hl			;
+	cp (hl)			; A == 0
+	JR Z, KASSMSG		;B: is un-logged
+	JR M1			;if high-byte was 0
+
+IWRONGBIOS::
+	ld de, ERRTXT
+	CALL TXTOUT
+	ld de, BIOSTXT
+	CALL TXTOUT
+	JR HELPTEXT
+KASSGELADE::
+	ld de, ERRTXT
+	CALL TXTOUT
+	ld de, KAERRTXT
+	CALL TXTOUT
+	JR HELPTEXT 
+HELPTEXT::
+	ld de, HLPTXT
+	CALL TXTOUT
+	JP 0
+KASSMSG::
+	ld de, KASSTXT
+	call TXTOUT
+	JP EOIhl
+
+
+TXTOUT::ld c,9
+	CALL BDOS
+	RET
+
+ERRTXT::defb 07
+	'Diese RAM-Floppy Installation "RAF"','$'
+BIOSTXT::defb ' laeuft nur unter BIOS59 !',0Dh,0Ah,0Ah,'$'
+KAERRTXT::defb ' wuerde den Kassetten-Treiber ueberschreiben!',0Dh,0Ah
+	'Erst Kassette(n) entladen !',0Dh,0Ah,0Ah,'$'
+KASSTXT::defb 'HARD RESET nach "RAF" wenn Kassetten benoetigt werden!'
+		0Dh,0Ah,'$'
+HLPTXT::defb 0Dh,0Ah
+	'Fuer Hilfe : 002/674.3291 Ihlenfeld ',0Dh,0Ah,'$'
+
+
+; 
+
+EOIhl:
+
+IF IXTAB  eq  0E61Bh ; 57
+	.printX * *
+	.printX *RAF Overlay. Version 08-07-86  BIOS-57  ( IRF )*
+	.PRNT '\t\tVersion  08-07-86.57\t\t\tDIO Discharge'
+	ld	HL, ( 0d601h )	; Addr of "JP Boot"
+	ld	DE, 0d69fh
+	xor	A
+	sbC	HL, DE
+	jr Z, BIOSOK
+ENDIF
+
+IF IXTAB  eq  0E458h ; 59
+	.printX * *
+	.printX *RAF Overlay Version 08-07-86  BIOS-59  *
+	.PRNT '      Version  08-07-86 BIOS-59          DIO Discharge'
+
+;+++	ld	HL, ( 0d204h )	; Addr of "JP WBOOT" : "JP Boot" differs !!
+	ld	HL, ( 0d213h )	; Addr of "JP PUNCH": TP changes WBOOT Vect !!
+	ld	DE, 0d5d0h
+	xor	A
+	sbC	HL, DE
+	jr Z, BIOSOK
+ENDIF
+
+IF IXTAB  ne  0E458h
+  IF IXTAB  ne 0E61Bh
+	jr WrongBIOS
+ 	.printX  * *
+	.printX *		_E_R_R_O_R_ *
+	.printX *		in RAF <IXTAB> Definition *
+	.printX *		Neither Bios-57 nor Bios-59 *
+	ESC	equ 	0
+  ENDIF
+ENDIF
+
+WrongBIOS:
+	.PRNT '\n\n     Wrong RAF Overlay this BIOS. Install ABORTED'
+	jp 0000
+
+BIOSOK:
+			; Check for prior swapped   A: <---> B:
+	ld	HL, (DPHA)	; is 1st Entry of DPHi-Addr Table == OPF_DPH ?
+	ld	DE, DPHMD
+	xor	A
+	sbC	HL, DE
+	jp Z, OPFisA		; Yes : still not swapped
+	;
+	ld	HL, (DPHA)	;is 1st Entry RAF already ?  If RAF=="A:" it
+	ld	DE, RAFDPH	;  must have been swapped with THIS Progr :
+	xor	A		;  ( RAFDPH-Addr is Version dependent )
+ 	sbC	HL, DE
+	jr NZ, StrgDk		; Strange Disk in A:
+	.PRNT '\n\n "A:" is RAF already ( RAF Install aborted )'
+	call TIXRAF			; Hardw. Param Outp
+	JP 0000
+StrgDk:
+	.PRNT '\n\n ? ? ?   "A:" is neither  OPS RAM  nor RAF   ? ? ?'
+	.PRNT   '\n *** Progr works under BIOS-57 ONLY *** !!'
+	.PRNT   '\n     RAF Install aborted'
+	.PRNT   '\n HardReset strongly recommended\n\n' 
+	JP 0000		; Wboot
+	;
+OPFisA:
+	ld	HL, RAFDPH	; Pointer to RAF DskParmtable (here) to ..Š	ld	(DPHRF),  HL	; .. Bios-57 addr table
+	; -----
+	ld	HL, RAFIX	; change Device Vector in Bios-57 IXTAB ..
+	ld	(IXTRF), HL	; .. to Device_B:_Executive ( former KMB.0 )
+	; -----
+	ld	HL, 0000	; delete 2nd KMB from ..
+	ld	(IXTAB + 4), HL	; .. IXTAB --> making it unknown
+	;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+	PHLOAD	KilBeg, KilPhs, KilEnd, KilEnd		; discard KMB Boot
+   Kilbeg:
+	.phase KilPhs
+	dB	0,0,0, 0,0,0, 0		; 7 NOP's
+	.DEphase
+   KilEnd:
+;
+; - - - - - - - - - - - - - - - - - - - - -
+	PHLOAD  KMbLbg,  KMbPhs,  KMbLnd, KMbLnd	; L/E Keys KMB Off
+   KMbLbg:
+	.phase	KMbPhs		; discard KMB "L/E" Keys
+	; !!! 09-07-86 : JR xxh for comp'tblty with "TP9" 
+IF IXTAB  eq  0E61Bh ; 57
+	dB 18h, 61d
+ENDIF
+
+IF IXTAB  eq  0E458h ; 59
+	dB 18h, 12h
+ENDIF
+
+;old  09-08: JP	KMbOff		; .. by jumping around to "HardCopy" Key
+	.DEphase
+   KMbLnd:
+;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+	PHLOAD	LClbeg, RWPHAS, LClend, LClcnt	; relocate ERAseCode + Rd/Wr
+		; no code here, JP to :
+   LClcnt:
+;
+; - - - - - - - - - - - - - - - - - - - - -
+	; 
+	ld	HL, 0000
+	ld	(TRK), HL
+	inc	HL
+	ld	(SEC), HL	; 1st Sect == # 1 ( not 0 )
+	ld	A, RAFDVN	; Drive # in RAFEQU
+	ld	(DEV), A	; 1 = B:
+	ld	HL, DDMA	; default DMA
+	ld	(ADMA), HL
+
+	.PRNT '\n    RAM Floppy '
+	add	A, 'A'
+	call BDCO
+	.PRNT ': '
+	;
+	call RAFALC		; there call SETIX  --> Z-flag on Err
+	jr NZ, Ixok
+	;
+	.PRNT '\n\n ? ? ? ? ERROR : RAM Floppy Allocation.   ABORTED\n\n'
+	;
+	JP 0000	  ; Boot on Error
+	; 
+   Ixok:
+	.PRNT ' with '
+	ld	HL, (DSM)	; Number of Groups-1
+	inc	HL
+	ld	A, (BSH)     ; Block Shift factor = 3 when 1K Groups  4 when 2K
+	CP	3
+	jr Z, Gr1K
+	add	HL, HL
+  Gr1K:
+	call TYP16U
+	.PRNT ' KB installed'
+	.PRNT ' EXM='
+	ld	A, ( EXM )	; Extend Mask was fit in <RAFALC>
+	add	A, '0'Š	call BDCO 
+	;
+	call CHKERA		; Check and Erase.  Cy == 1 when ERAsed
+	;
+	jr NC, nerase
+	call STROT
+	dB ESC,')  and  ERASED !! ', ESC,'(\n          ', 00
+	call TIXRAF		; there REDOPS called
+	call ABEX
+	JP 0000
+
+   nerase:
+	.PRNT '.      NOT ERAsed'
+   Clabx:
+	Call ABEX	; Drive A & B exchanged
+	call REDOPS	; Reduce # of OPS
+	JP 0000		; all o.k.
+;
+; -------------------------
+;
+CHKERA:: ;CP/Í can'ô ERAså invaliä directorieó causeä bù  power-on-contenô 
+         ;  oæ  RAM®  CHKERÁ checkó 1sô DIÒ Entrù foò pointinç tï á  speciaì
+         ;  "file¢  20:RAFVALID.SYS¬  seô uð aô PowerOnReset®  Correcô  namå
+         ;  flagó  valiä RAÆ content¬  strangå Entrù indicates power-oî condi-
+         ;  tion®  --¾ RAÆ Directorù becomeó eraseä anä filå
+         ;        "RAFVALID.SYÓ"  ¨ USEÒ 20h¬  SYÓ, RDO attributås © ió forceä 
+         ;  intï 1sô Entrù foò preventinç ERAseinç aô thå nexô boot.
+
+	call FFCOMP	; Flag File compare
+	;
+	or	A	; Cy := 0
+	RET Z	; old RAF content remains
+RAFINI:
+	.PRNT ' '
+	call TYP8U	; # of different bytes
+	call RAFCLR	; reclaimable ERAse
+	call FFLOAD	; set Flag File
+	SCF		; Cy := 1
+	RET                                               
+	; - - - - - - - - - -
+	
+FFCOMP:		; comparison of 1st DIR Entry with Flag File. NZ when not equal
+	call FFPrep
+CMPENT:			; entry point with B = byteNo  HL and DE Pointers
+	ld	C, 0		; byte error counter
+ffclop:
+	ld	A, (DE)
+	inc	DE
+	cp	(HL)
+	inc	HL
+	jr Z, ffcl1
+	inc	C		; # of different bytes
+  ffcl1:
+	djNZ ffclop
+	ld	A, C
+	or	A
+	RET
+	; - - - - - - - - - -
+FFLOAD: 		; loads 1st DIR Entry with Flag File
+	call FFPrep		; Get 1st Sector of DIR
+	ld	BC, 0032d
+	ldIR			; insert Flag File
+	call RAFWR		; write back changed 1st DIR Sector
+	RET
+	; - - - - - - - - - -
+
+FFPrep:		; set up for FFCOMP, FFLOAD Routines
+	ld	DE, ADMA	; = BIOS-57 @ 0F800  Disk Param AreaŠ	ld	HL, CLRTAB	; private params for DIRectory I/O ..
+	ld	BC, 7		; .. copied into CP/M's area (TRK=0, SEC=1)
+	ldIR
+	call RAFRD
+	;
+	ld	DE, DDMA	; 1st sector of DIRectory is in Default DMABuf
+	ld	HL, FlagFl	; pointer to Flag File Descriptor (Patch Area)
+	ld	B, 32d		; # of bytes in FCB to compare
+	RET ; to FFLOAD or FFCOMP
+;
+; -------------------------
+;
+ABEX::
+	ld	A, (XCHFLG)	; in Patch Area.  0 == NO Exchange
+	or	A
+	jr NZ, SWAP
+	.PRNT '\n             OPS-Floppy is A:' 
+	RET
+SWAP:
+	lä	HL¬ ¨ DPHÁ ©	» BIOÓ Tablå À E63Â	
+	push	HL
+	ld	HL, ( DPHRF )
+	ld	( DPHA ), HL
+	pop	HL
+	ld	( DPHRF ), HL
+	;
+	lä	HL¬ ¨ IXTAB ©	» BIOÓ Tablå À E61Â	
+	push	HL
+	ld	HL, ( IXTRF )
+	ld	( IXTAB ), HL	; "A:" := RAF
+	pop	HL
+	ld	( IXTRF ), HL	; "B:" := OPF
+	;
+	.PRNT '\n  A: = RAF,   B: = OPS-Floppy'
+	RET	; after Xchnge
+;
+; -------------------------
+;
+REDOPS::
+	ld	A, (NumOPS)	; # of EXTERNAL OPS,  in Patch Area
+	.PRNT '   '
+	add	A, '0'
+	call BDCO
+	sub	'0'
+	.PRNT ' ext OPS = '
+	cp	5
+	jr C, NMok
+	.PRNT '   ? ? ? WRONG Patch ? ? ?'
+	JP 0000
+NMok:	
+	ld	HL, 64d
+	ld	DE, 64d
+	;
+	dec	A
+	jr Z,	NMdcx		; NumOPS = 1
+	add	HL, DE 		; 128K
+	;
+	dec	A
+	jr Z,	NMdcx		; = 2
+	add	HL, DE 		; 192K
+	;
+	dec	A
+	jr Z,	NMdcx		; = 3
+	add	HL, DE 		; 256K 	  !! Also When 0 OPS Boards !!
+NMdcx:	
+	ld	DE, 9
+	xor	A
+	sbC	HL, DEŠ	ld	(MD.DKS), HL
+	inc	HL
+	call TYPvU
+	.PRNT 'K Bytes'
+	RET ; from OPS Reduction
+; -------------------
+;
+TIXRAF::				; RAF Parameters Outp on Dsp
+	.PSH	<AF,BC,HL>
+	call REDOPS			; for tty outp
+	ld	HL, RAFIX		; Dev descr table
+	.PRNT '\n                      RAF Size '
+	;
+IXTOUT:
+	ld	B, 4		; 4 lines 	i := 0 to 3
+   tixolp:
+	.PRNT '\n                      # '
+	ld	A, 4
+	sub	B
+	call TYP8U
+	.PRNT ' : '
+	ld	A, (HL)		; LRaf.i
+	inc	HL
+		push	HL
+		ld	H, 0	; HL := 16 * (HL)
+		ld	L, A
+		add	Hl, HL
+		add	HL, HL
+		add	Hl, HL
+		add	HL, HL
+		call TYP16U
+		pop	HL
+	.PRNT 'K Bytes at I/O Addr '
+	push	BC
+	ld	B, 2		; Two I/O-Addr
+   tixilp:
+	ld	A, (HL)
+	inc	HL
+	call TYP8HX
+	.PRNT 'h  '
+	djNZ tixilp
+	;
+	pop	BC
+	djNZ tixolp
+	.POP	<HL,BC,AF>
+	RET
+
+
+TYPEX::			; *********   for TESTing only
+	.PSH <AF,HL>
+	.PRNT '\nOPSix=e146 CT/RFix=e5Ca/'
+	ld	HL, RAFIX
+	call TYPvH
+	.PRNT ' IXTB= '
+	ld	HL, (IXTAB)
+	call TYPvH
+	ld	HL, (IXTAB+2)
+	call TYPvH
+	;
+	.PRNT '  DPH.AB= '
+	ld	HL, (DPHA)
+	call TYPvH
+	;
+	ld	HL, (DPHA + 2)
+	call TYPvH
+	;
+	.PRNT '"'
+	ld	A, (DEV)Š	add	A, 'A'
+	call BDCO
+	.PRNT ':"'
+	;
+	.POP <HL,AF>
+	RET
+
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;
+STROT:		; String output IN-LINE text ending with 00h
+	ex	(SP), HL
+	push	AF
+   stronx:			; next char in loop
+	ld	A,(HL)
+	inc	HL		; points to NEXT char yet
+	or	A
+	jr Z, strort		; 00h == End of String
+	cp	'\'		; '\' == escape to ..
+	jr Z, strosp		;  ..  special outp
+   strotp:		; normal char outp
+	call BDCO
+	jr stronx
+   strosp:		; sp'cl char outp after '\', HL is incr'mtd
+	ld	A, (HL)
+	inc	HL		; HL points here always to NEXT char
+	or	A		; ' xxxx\' would crash
+	jr Z, strort		; .. elsewhere
+	BIT	6, A		; UPPER case ?
+	jr Z, strolc		; no
+	or	20h		; yes .. make lower
+   strolc:		; all char's are lower case now :
+	cp	'\'		; '\\' ---> '\'
+	jr Z, strotp
+	cp	'%'		; '\%' ---> '%'
+	jr Z, strotp
+	cp	'n'		; '\n' or '\N'  --->  <CR><LF>
+	jr NZ, stroS1		; no newline
+	ld	A, 15q		; <CR>
+	call BDCO
+	ld	A, 12q		; <LF>
+	jr strotp
+   stroS1:
+	cp	't'		; '\t' or '\T'  --->  TAB
+	jr NZ, stroS2
+	ld	A, 11q		; <TAB>
+	jr STROTP
+   stroS2:
+	cp	'b'		; '\b' or '\B'  --->  BEL
+	jr NZ, stroS3
+	ld	A, 07		; <BEL>
+	jr STROTP
+   stroS3:
+ ; <<<*******  HERE insert future '\_' print ctrl sequ tests
+   stroer:			; unknown char X in '\X' sequency :
+	push AF			; save it ..
+	ld	A, '\'		; .. and type 
+	call BDCO
+	pop AF			; .. wrong sequ
+	call BDCO
+	ld	A, '?'		; .. plus question mark
+	jr strotp
+strort:			; return
+	pop AF
+	ex	(SP), HL
+	RET  ; from STROT
+; - - - - - - - - - - - - - -
+BDCO:		; bDos Char Out
+	.PSH <Af,BC,DE,HL>
+	ld	C, 6h
+	ld	E, A
+	call 0005
+	.POP <HL,DE,BC,AF>
+	RET
+; - - - - - - - - - - - - - -
+;
+TYPvU:			; type HL unsigned,  if H==0 only L typed
+	push	AF	; trailing SPACE padded
+	call TVEnt
+	jr Z, tvu8
+	call TYP16U
+	jr TVEx
+   tvu8:
+	ld	A, L
+	call TYP8U
+  TVEx:				; common exit for all TYPv*
+	ld	A, ' '
+	call BDCO
+	pop	AF
+	RET
+; ---------------
+TVEnt:
+	ld	A, ' '
+	call BDCO
+	ld	A, H
+	or	A
+	RET	; to TYPv{ U S H }
+; --------------
+TYPvS:			; type HL signed,  if H==0 only L typed
+	push	AF	; if H==-1 AND L<0  only L typed
+	call TVEnt	; tests H
+	jr Z, tvu8	; 8 bits --> Unsigned !
+	inc	A	; H == -1 ?
+	jr NZ, tvs16	; no --> 16 bits
+	ld	A, '-'
+	call BDCO
+	jr tvu8		; 8 bits unsigned with '-' 
+   tvs16:
+	call TYP16S
+	jr TVEx
+; --------------
+TYPvH:			; type HL HEX,  if H==0 only L typed
+	push	AF
+	call TVEnt
+	jr Z, tvh8
+	call TYP16H
+	jr TVEx
+   tvh8:
+	ld	A, L
+	call TYP8HX
+	jr TVEx
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+;
+TYP16H:			; type HL hex
+	.PSH <AF,HL>
+	ld	A, H
+	call TYP8HX	; upper byte
+	ld	A, L
+	call TYP8HX	; lower byte
+	.POP <HL,AF>
+	RET	; from HEX TTY Outp of HL
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP8HX:			; type A hex
+	push AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	call TYP4HX	; upper nibble
+	pop AF
+	call TYP4HX	; lower nibble
+	RET	; from TTY outp of A
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP4HX:			; type A.low hex
+	push AF
+	and	0Fh	; mask off upper nibble
+	add	A, 90h
+	DAA
+	adC	A, 40h
+	DAA
+	call BDCO
+	pop AF
+	RET	; from one nibble hex outp
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP16S:			; SIGNED 16 bit TTYoutp from HL
+	.PSH <HL,DE,AF>
+	ld	A, H		; sign ?
+	or	A
+	jp M, t16mi
+	ld	A, ' '		; positive
+	jr t16srt
+   t16mi:			; HL := - HL :
+	ld	DE, 0000
+	ex	DE, HL
+	sbC	HL, DE		; CY=0  from   or A
+	ld	A, '-'
+   t16srt:
+	call BDCO
+	call T16ENT		; ttyo HL unsigned
+	.POP <AF,DE,HL>
+	RET	; from ttyo HL signed decimal
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP16U:			; TTYoutp HL Decimal Unsigned
+	.PSH <AF,DE,HL>
+	call T16ENT
+	.POP <Hl,DE,AF>
+	RET	; from ttyo HL Unsigned decimal
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP8S:			; TTYoutp A Signed Decimal
+	push	AF
+	or	A
+	jp M, t8neg
+	ld	A, ' '	; positive
+	call BDCO
+	pop AF
+	jp TYP8U
+   t8neg:		; A < 0,  AF on STK
+	ld	A, '-'
+	call BDCO
+	pop AF
+	push AF		; must be made ..
+	NEG		; ..  positive !
+	call TYP8U
+	pop AF
+	RET	; TYPe 8 bit Signed
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+TYP8U:			; TTYoutp 8 bit Unsigned decimal
+	.PSH <AF,DE,HL>
+	ld	H, 0
+	ld	L, A	; HL := 0.A
+	call TY8ENT	; in T16ENT last half of 16 bit TTYo
+	.POP <HL,DE,AF>
+	RET	; TYPe 8 bit Unsigned
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+T16ENT:		; entry for 16 bit TTYo after push's
+	ld	DE, 10000d	; highest decimal. Sign is ok.
+	call DIGOUT		; decimal number outp
+	ld	DE, 1000d
+	call DIGOUT
+TY8ENT:				; 16 bit outp 1/2 complete, here entry ..
+	ld	DE, 100d	; .. for 8 bit
+	call DIGOUT
+	ld	DE, 10d
+	call DIGOUT
+	ld	DE, 1
+	call DIGOUT
+	RET	; from  16/8  bit TTYo kernel 
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+DIGOUT:		; decimal digit outp for TYP{8|16}{S|U}
+	xor	A
+   digo1:
+	sbC	HL, DE		; DE is 10000, 1000, 100, 10, 1 d
+	jp C, digo2
+	inc	A		; counts up the current decimal. NO CY !
+	jr digo1
+   digo2:
+	add HL, DE		; one count was subtracted in excess
+	add	A, '0'		; makes ASCII number
+	call BDCO
+	RET	; from single decimal outp
+; - - - - - - - - - - - - - - - - - - - - - - - - 
+
+;
+STK::	dS	100
+STKEND::
+;
+; = = = = = = = = = = = = = = = = = = = = = =
+;
+;  Code <RAFALC> is needed ONCE at BOOT Time only.
+;  --> It may be OVERWRITTEN after ONE CALL, e.g. RE-Used for a Buffer.
+;
+; = = = = = = = = = = = = = = = = = = = = = =
+;
+;	RAF Allocation : <RAFIX> Table's Entries <LRAF.i> ( i=0..3 ) declare 
+; the Number of 16-KByte-Units (Banks) contained by that RAF PCB. 
+;	RAFSize is counted in units of 16K Bytes, regardless of chip size.
+;		16K is recommended as 1 Track here.
+; The LRAF.i are initially 0.  The ACTUAL Number of Banks depends :
+; Boards may be partially equipped with Chips. Partially filled
+; boards MUST contiguously occupy the lower banks from zeroth upward.
+; The actual number of banks is found in <RAFALC> by Checking ONE Byte each
+; 16K Bank, starting at the zeroth  Bank until there is no response at the bank
+; address. The highest Bank responding correctly is presumed being the highest
+; available Bank of a continuously Block of 16K bytes starting from Bank # 0.
+; The <LRAF.i> and DiskSize in <DPBLRF+5> are changed to actual values.
+; -->  RAFALC should be run at every boot. RAF content is NOT disturbed.
+;
+;	T H I S   IS   _N_O_T_  a  R A M  T e s t  !!
+;
+RAFALC::	; generates DPBLRF and RAFIX from actually available RAM Flpy
+
+	ld	HL, RAFDVN	; RAF Disk-No  ( A: = 0  B: = 1 .. )
+	ld	(DEV), HL	; BIOS-57  @ F860h
+	call SETIX		; BIOS-57  @ DA54h,  IX := Ptr to RAFIX
+	ld	B, NRAF		; MAX # of Boards
+	ld	E, 00		; Total # of 16K banks, all RAF Boards
+  RFolp:		; outer loop : RAF(i), i := 0 .. NRAF-1
+	push	BC							; >>>>>
+	ld	D, -1		; D := Actual_NBank(i)  pre-incr
+  RFilp:		; inner loop : D := 0 step 1 until LRAF.i
+	inc	D
+	ld	B, D		; for setting the Upper_RAF_Addr_Reg ..
+	SRL	B
+	RRA			; B.A := ( B.A ) / 2  -->  A.7 := RAFTRK.0
+	ld	C, (IX + 1)	; CTRL Port RAF.i
+	RES	7, B		; Write ENAble when AB.15 == 0 
+	OUT	(C), A		; ABus15:8:=B.A -> RFTRK:=B.A[7]  RFSEC:=A[6:0]
+	;
+	ld	C, (IX + 2)	; DATA Port RAF.i
+
+		; 07-07-86 : Discharging RAF On-Board DatIO Lines by writing 
+		; complementary Test Pattern into adjacent Byte ( *** JWG ) :
+
+		push	DE						; >>>>>
+; *********
+	ld	B, 111d		; 1st ChkByte Addr
+	IN	H, (C)		; C == DatIO.  Save 1st Chk Byte
+	ld	A, 0A5h		; 1st Test pattern
+	OUT	(C), A
+	dec	B		; next lower Byte Addr
+	IN	L, (C)		; L := 2nd Addr to be overwritten for discharg
+	cpl			; .. with a 2nd pattern := NOT A5h
+	OUT	(C), A		; .. for D-IO Discharge only ( no test )Š	inc	B		; 1st Addr Ag'n
+	IN	D, (C)		; read TestPattern 1st Addr
+	OUT	(C), H		; Restore 1st Data Byte
+	dec	B
+	OUT	(C), L		; .. and 2nd Byte
+	cpl			; 1st test pattern ag'n
+	xor	D		; must result Z-Flag  <----  _F_l_a_g_ !!
+; ***************
+		pop	DE						; <<<<<
+	jr Z, RFilp		; this Bank was still writeable --> search on
+	;
+  RFilx:		; inner loop exit : highest available bank found (D)
+	ld	(IX + 0), D	; set LRAF.i in <RAFIX>
+	ld	A, D
+	add	A, E		; Total_Nbank + Lraf.i
+	ld	E, A
+	;
+	ld	C, (IX+1) 	; CTRL Addr RAF(i)
+	SET	7, B		; Write_Prot_Bit := 1 --> WRITE DISable
+	OUT	(C), A
+	inc	IX
+	inc	IX
+	inc	IX		; pointing to LRAF(i+1)
+	pop	BC		; outer loop ctrl			; <<<<<
+	djNZ RFolp		; next RAF Board
+		; ************   all boards allocated. Update CP/M :
+	ld	H, 0
+	ld	L, E		; HL := Total_Nbank  ( 16K Banks )
+	add	HL,HL
+	add	HL,HL
+	add	HL,HL		; HL := # of 2K Blocks
+	;
+	ld	A, (DPBLRF + 2)	; BLKSHift Factor
+	cp	4		; 2K Blocks ?
+	jr Z, Rafal1
+	add	HL, HL		; HL := # of 1K Blocks
+   Rafal1:
+	ld	A, H		; ( DiskSize - 1 ) may become -1 when ..
+	or	L		; .. NO RAF available (-1 is CP/M incompatible)
+	jr NZ, Rafal2		; NZ == at least 1 Bank.    If not ..
+	;++ ld	HL, 0000	; .. delete Drive B: from ..
+		; .. Bios-table of DPHBlk-Addrs  and from IXTAB in Bios-57
+	ld	(DPHRF), HL	; Device Dependent by RAFDVN declaration
+	ld	(IXTRF), HL	;    __,,__
+   Rafal2:
+	dec	HL 	; DiskParamBLock := NGroup - 1 : actual DiskSize ..
+	ld	(DPBLRF + 5), HL  ;  RAM Flpy to DiskParamBlk( RAF )
+		; ____ fit Extend Mask to NGroup ( ALWAYS  2K AllocGroups !!! )
+	ld	A, H
+	ld	B, 1	; Extend Mask for <256 Groups 
+	or	A
+	jr Z, Lt256
+	ld	B, 0	; Ext Mask for >255 Groups
+  Lt256:
+	ld	A, B
+	ld	( EXM ), A	; 1 when 1..255 Groups,  0 for >255
+	;
+	call SETIX	; (Bios-57) IX to RAFIX + Z-Flag when no Dev ..
+			; ..( IXTAB [ dev ] == 0 ). "No Device" results also ..
+		; .. from ALLOCATing ZERO Banks RAF. (IXTAB was cleared before)
+	RET	; from RAF Allocation with  SETIX's NZ-Flag when o.k.
+	;
+RALEND::
+	;
+; = = = = = = = = = = = = = = = = = = = = = =
+;
+;	END of <RAF Allocation> OVERWRITEable Code
+;Š; = = = = = = = = = = = = = = = = = = = = = =
+;
+;	START of Code PHASED into BIOS-57 :
+;
+; = = = = = = = = = = = = = = = = = = = = = =
+;
+LClbeg::
+	.Phase	RWPHAS
+;
+;  _B_I_O_S__C_o_d_e_ :
+;
+; - - - - - - - - - - - - - - - - - - - - -
+;
+;
+; R A F R D  /	R A F W R	CP/M's Disk Executives for RAM Floppy
+;				according to BIOS 57 :
+; IX was set onto a device specific table ( "RAFIX" here ) containing pointers
+; to Rd/Wr code (RAFRD/WR) and some special entries (see RAFIX).
+; The I/O Addr for the Data-I/O are calculated from BIOS  TRK, SEC per RAFIXs
+; allocation table by "RAFTRS". Upper Data-I/O Addr is loaded to RAF there.
+; So Read, Write are only Block-I/O.
+; RAFTRS sets RAF(i) Write/Read-Enable
+;
+RAFRD::
+	call RAFTRS		; Track, sect set up into RAFs High_Addr_Reg.
+	jr Z, RD.ok		; ret on ERR.   Else A:=0, B:=127d, HL:=DMA
+RFIOER:				
+	call IODSBL
+	ld	A, 1		; A==1 is Message to BDOS
+	or	A
+	RET	; to BIOS with Error Message A == 1
+   RD.ok:
+	INIR			; DATA Inp.  B was 127
+	INI
+IODSBL:			; RAF Disable for Write_Protection :
+	ld	A, (CIO)	; Ctrl-I/O Addr saved by RAFTRS
+	ld	C, A		; *** 10-Jan-86
+	SET	7, B		; WriteProt ON
+	OUÔ	(C)¬ Á		» I/Ï Disableä wheî ABus.1µ =½ B.· =½ 1
+  	xor	A		; NO-Error Messg BIOS
+	RET     ; to BIOS	; 128 bytes read
+	;
+CIO:	dB	0	; current CtrlIO Addr for setting WrtProtect
+;
+RAFWR::
+	call RAFTRS
+	jr NZ, RFIOER	; in <RAFRD>
+	;
+	inc	B		; was 127d ( set for READ )
+	OTIR			; DATA Outp 128 bytes
+	jr IODSBL		; with "no Err" to BIOS,  128 Bytes written
+	;
+;
+RAFTRS::	; find RAF_Hi_Addr from BIOS TRK, SEC and load RAF-AddrReg
+		; accordingly for subsequent Read or Write. BIOS 57 "SETIX"
+		; was called prior. CPU prepared for OTIR / INIR
+		; RAF(i) ENAbled
+		;
+	call SETIX		; IX := RAFIX ( DEV was set @ entry )
+	;
+	ld	HL, (TRK)	; 1 Track == 128 Sects == 16 KB
+	xor	A
+	or	H	; TRK.hi 
+	jr Z, RFner
+		; else ERROR: much too high a track-#,  RAF has < 256 Tracks
+RAFERR::
+	ld	A, 1		; BIOS-57 Err == NZ-Flag
+	or	AŠ	RET	; on Error with NZ to RAFRD/WR
+	;
+   RFner:			; Trk < 256
+	ld	A, L		; Trk: 1 Trk = 128 sects = 16kB
+	push	IX		; points to RAFIX
+	pop	HL		; HL index to 1st LRAF-Entry
+	ld	DE, 0003	; distance to next  __,,__
+	ld	B, NRAF		; # of existing boards
+   RFtrsl:
+	sub	(HL)		; Trk  minus  #_of_trks_this_RAF  ..
+	jp M, RFfnd		; .. until RAF(i) with proper trk found
+	add	HL, DE		; (HL+3)^ to next LRAF in <RAFIX>
+	djNZ RFtrsl		; try RAF(i+1)
+	;
+	jr RAFERR	; ERROR: Trk much too high
+	;
+   RFfnd:			; RAF(i) with wanted sector found
+	add	A, (HL)		; search loop overshoot. A := TRK on THIS Board
+	ld	B, A		; for Outp TRK on AB.7:9  or AB.7:11
+	ld	A, (SEC)	; LOW(SEC) == 1..128.  BIOS-57 @ 0F804h
+				; __________________________________________
+	dec	A		; RAF counts sectors 0..127;  BIOS 1..128  =
+				; ~~~~~~~~~~~~~~~~~~~~~~~~~~ \===========/~~
+	jp M, RAFERR		; ERROR :  > 128 Sectors per Track
+	add	A, A		; == SLA  A  for later RRA
+	srl	B		; B.7 := 0;  Cy := B.0
+	RRA			; A.7 := Cy; ->
+				; B[3:0].A[7.6:0] == RAF.TRK.SEC
+	inc	HL		; HL := pointer to RAFi.CTRL Addr in <RAFIX>
+	ld	C, (HL)		; RAF.Ctrl Addr
+	; WrEn
+	RES	7, B		; ENAble, Write_PROTECTION OFF
+	OUT	(C), A		; set RAFSEC, RAFTRK in HiAddrRegister
+	ld	A, C		; Current I/O Addr ..
+	ld	(CIO), A 	; .. saved for later I/O-DISable after Rd/Wr
+	;
+	inc	HL		; to RAFi.DAT Addr in <RAFIX>
+	ld	C, (HL)		; for data I/O
+	ld	HL, (ADMA)	; CP/M's DMA-Addr for Block-I/O
+	ld	B, 127d		; for 128 bytes INIR + INI ! B:=B+1 before OTIR
+	xor	A		; "NO_Error"-Flag to BIOS-RD/WR
+	RET		; from RAF Preparation for RD/WR
+;
+	;
+; = = = = = = = = = = = = = = = = = = = = = =
+;
+; Foll'g Table is needed by BIOS-57: Bios RD/WR-Calls cause pointing IX to a
+; device specific addr ( here RAFIX ). The Addrs of Read/Write Code for that
+; device are below (!) [IX] at IX-4, IX-2.  Foll'g addrs may contain more
+; device dependent data.
+; Bios-57 <READ>(DA81h,pp1-20) and <WRITE>(DA69h,pp1-20) call
+; <SETIX> (DA54h,pp1-18). <SETIX> calculates with <DEV> (F806h,pp1-57)
+; (A: == 0..) the proper entry in <IXTAB> (E61Bh,pp1-56) to be loaded into IX.
+; Then Bios <READ>,<WRITE> call DevExecutive via IX-4, IX-2.  Executive then
+; may use more info pointed to by IX + nn  (e.g. LRAF.i here).
+; 
+
+	dW	RAFRD	; .. Must be located BEFORE ..
+	dW	RAFWR	; .. RAFIX
+RAFIX::	    ;  LRAF    CtrlI/O  DatI/O
+	dB	0,	RAF0C,	RAF0D	; Board # 0
+	dB	0,	RAF1C,	RAF1D	; Board # 1
+	dB	0,	RAF2C,	RAF2D	; Board # 2
+	dB	0,	RAF3C,	RAF3D	; Board # 3
+; LRAFi == Allocated Length of Board i in 16KB Blocks ( "Tracks" ) == 8 or 32d
+; RAFiC == Control Port I/O Addr Board i
+; RAFiD	== Data I/O Port Addr
+;Š; = = = = = = = = = = = = = = = = = = = = = =
+;
+RAFDPH::	; CP/M Disk param header RAM Floppy
+	dW	0, 0,0,0	; NO Sectranslation,  3 * Scratch
+	dW	DIRBF		; BIOS-57  @ F80Eh
+	dW	DPBLRF		; Disk Param Block RAM Flpy (here)
+	dw	CSVRAF, ALVRAF	; ChkSum Vect, AllocVect RAF   Addresses
+	;
+CSVRAF:	dS	CSVLen	; CheckSum( Dir ) for Dk change detection
+ALVRAF:	dS	ALVLen	; Allocation BitMap
+	;
+DPBLRF::	; CP/M DiskParamBlock RAM Flpy,  see <RAFEQU.mac>
+SPT:	dW	SPT..	; #0	
+BSH:	dB	BSH.	; #2	
+BLM:	dB	BLM.	; #3	
+EXM:	dB	EXM.	; #4	
+DSM:	dW	DSM..	; #5	
+DRM:	dW	DRM..	; #7	
+AL0:	dB	AL0.	; #9	
+AL1:	dB	AL1.	; #10	
+DChkL:	dW	DCkL..	; #11	
+OFS:	dW	OFS..	; #13		
+;
+; = = = = = = = = = = = = = = = = = = = = = =
+	;
+CLRTAB::	; Temporary DMAddr TRK SEC DEV  during RAF Clearing
+	dW	DDMA	; default DMA
+	dW	OFS..	; 1st non-sys TRK
+	dW	1	; SEC.  1st is # 1
+	dB	RAFDVN	; 1 == B: in BIOS, ( in bDos 1 == A: )
+	;
+; - - - - - - - - - - - - - - -
+; 	RAF ERAse DIRectory  Default DMA (80h) used.
+;	Normal Disk I/O with sp'cl temporary params. 
+;	"RAFALC" MUST run prior !! ( or call it here !)
+;	1986 : 	when RAF and OPS-Flpy swapped, there is no need to have RAFCLR
+;		in BIOS --> put it into HOST Buffer for overwriting after boot.
+RAFCLR::
+;++++	call RAFALC		; active later when in Bios and not a Patch
+	ld	DE, ADMA	; = BIOS-57 @ 0F800  Disk Param Area
+	ld	HL, CLRTAB	; private params for DIR I/O ..
+	ld	BC, 7		; 3 words, 1 byte
+	ldIR			; .. OVERWRITE CP/M's area
+	;
+	ld	A, (DPBLRF + 7)	; # of DIR-Entries - 1
+	add	A, 1		; INC A  with Carry 
+	RRA
+	SRL	A		; #_of_Entries / 4 =: #_of_Sectors
+	ld	B, A		; loop ctrl all sectors :
+   Lopsec:
+	push	BC		; ++++
+	call RAFRD		; local read
+	ld	HL, DDMA		; DMA Buffer
+	ld	B, 4
+	ld	DE, 32d		; # of bytes to be skipped per DIR Entry
+  DIRlop:
+	ld	(HL), 0E5h	; "User"-# := E5  --> ERAsed DIR Entry
+	add	HL, DE		; skip remaining Entry
+	djNZ DIRlop
+	call RAFWR		; local
+	ld	HL, SEC
+	inc	(HL)		; SEC.low is enough
+	pop	BC		; ----
+	djNZ Lopsec		; next sector next 4 Entries
+	RET ; from RAF ERASE
+; - - - - - - - - - - - - - - -
+EOPHAS::
+;Š	.DEPhase
+LClend::
+;
+	END RAFABX
+
+

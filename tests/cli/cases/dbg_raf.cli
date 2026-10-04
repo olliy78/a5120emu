@@ -1,0 +1,22 @@
+# k1520dbg --raf raf512: ein Z80-Schnipsel schreibt ueber OUT (C),A in die RAF
+# (B = Bytezeiger A8-A14, Latch = Sektor 5 ueber Port 89H); `raf 5` liest in
+# Treiber-Lesart zurueck (B=7FH -> Byte 0, B=7EH -> Byte 1; in der Karte rueckwaerts).
+tool:    k1520dbg
+disk:    cpa_cpa780_k5601_clock.img
+run:     --raf raf512 %DISK%
+stdin:
+  raf
+  e 0x6000 F3 06 00 0E 89 3E 05 ED 79 0E 88 06 7F 3E AB ED 79 06 7E 3E CD ED 79 18 FE
+  set pc 0x6000
+  g 5000
+  raf
+  raf 5
+  raf 6
+  q
+expect:  RAF 512  512 KByte (4096 Sektoren)
+expect:  Latch=FFFF  Sperrmaske=9000  gesperrt: ja
+expect:  Latch=0005  Sperrmaske=9000  gesperrt: nein
+expect:  Sektor aus dem Latch: 5 (0005H)
+expect:  RAF Sektor 5 (5H), Byte 0 zuerst (Treiber-Lesart):
+expect_re: 00: AB CD 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+forbid:  keine RAF gesteckt

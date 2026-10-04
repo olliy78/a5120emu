@@ -412,6 +412,24 @@ K1520_API int  k1520_em_state_size(void);
 /** @brief Zustand lesen; false ohne EM (dann bleibt @p out unverändert). */
 K1520_API bool k1520_em_state(K1520Handle h, K1520EmState* out);
 
+/* ─── RAM-Floppy RAF 128/512/2M (doc/design/22_raf512.md §6) ────────────────
+ * Bestückung nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset; A5120
+ * (auch A5120.16), K8915 und PRG 710/710-1.  Ohne RAF: Variante "", peek 0xFF,
+ * load/save false. */
+
+/** @brief Steckt eine RAF auf 88H/89H.  @p typ "raf128"/"raf512"/"raf2m";
+ *  NULL/""/"none" = keine (true, ohne Karte).  Unbekannter Typ oder zu spät:
+ *  false, Grund in k1520_last_init_error. */
+K1520_API bool        k1520_raf_install(K1520Handle h, const char* typ);
+/** @brief "" = keine RAF, sonst "raf128"/"raf512"/"raf2m". */
+K1520_API const char* k1520_raf_variant(K1520Handle h);
+/** @brief Byte an linearer Adresse des RAF-Inhalts (Test/Debug). */
+K1520_API uint8_t     k1520_raf_peek(K1520Handle h, uint32_t adr);
+/** @brief Stand-by-Ablage laden; false ohne RAF oder bei Größe != Kapazität. */
+K1520_API bool        k1520_raf_load(K1520Handle h, const char* pfad);
+/** @brief Inhalt als Rohdatei sichern; false ohne RAF. */
+K1520_API bool        k1520_raf_save(K1520Handle h, const char* pfad);
+
 /* ─── Debug ──────────────────────────────────────────────────────────────── */
 /** @brief Read memory through the machine bus for diagnostics. */
 K1520_API uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);
