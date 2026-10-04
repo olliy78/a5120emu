@@ -33,6 +33,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_combo5zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: K5600.10** · **C: K5600.20** | `make_bootdisk` (Presets k5600_10_fmt1, k5600_20_fmt1) |
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `cpa_cpa780_k5601_noclock-em256.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `em256 equ 1`** (A5120.16, RAM-Floppy M: im EM256) | `Em256RamFloppy.*` |
+| `cpa_cpa780_k5601_noclock-raf.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `raf equ 1`, `rafpar equ 1`** (RAM-Floppy M: auf der RAF an 88H, Software-Parität) | `RafCpaBios.*`, `RafCpaBiosKapazitaet.*` |
 | `cpa_cpa780_k5601_noclock.img` + **`../cpm/em256adr.com`** | G1-Prüfprogramm (A5120.16) — wird im Test auf die Temp-Kopie geschrieben | `Em256Adr.*` |
 | `cpa_cpa780_k5601_noclock.img` + **`../cpm/em16abl.com`** | S4-Abnahme/G2-Vorlage (A5120.16, U8001) — ebenso | `Em16Abl.*` |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
@@ -167,6 +168,21 @@ am EM-Teil (`biosremc.mac`/`biosrem.mac` unverändert):
 `diskA equ 11580` (statt 10877, 8″), `uhrvar equ 0` (keine Uhrzeitabfrage),
 `kltbef: db 0` (statt `SUBM AUTOEXEC`).  Eingespielt mit
 `k1520disktool rm/put`.  Kaltstart am A5120 **ohne** EM meldet „RAM-Floppy ?? mit ??? kByte".
+
+## Die RAF-Diskette: CP/A-BIOS mit eingebautem RAF-Treiber
+
+`cpa_cpa780_k5601_noclock-raf.img` ist `cpa_cpa780_k5601_noclock.img` mit ausgetauschtem
+`@OS.COM` (15616 B, sha256 `297378a354a5275f6caea765a1ddee03a359040fbe524ebfa6a93ef06e16a034`).
+Gebaut aus `~/projects/CPA_Workbench/src/bc_a5120/bios_org.mac` (Workbench `2c287b5`) wie die
+EM256-Diskette (M80/LINKMT unter `tools/cparun`, `linkmt @os=cpabas,ccp,bdos,x:bios/p:B980`,
+BIOS D000H–F6B7H).  Geändert gegenüber `bios_org.mac`: `em256 equ 0` (statt 1), `raf equ 1`
+(statt 0) mit `rafpar equ 1`, `raf_d equ 88h`, `raf_nb equ 4` (Treiber `biosraf*.mac`
+unverändert), `uhrvar equ 0`, `diskA equ 11580` (statt 10877), `kltbef: db 0`.  Eingespielt
+mit `k1520disktool rm/put`.  Das Listing liegt als `disks/cpa_cpa780_k5601_noclock-raf.prn`
+bei.  Kaltstart mit RAF512: „- RAF mit Parity als RAM-Floppy M:" / „  508 kByte (   32
+Spuren zu 127 Sektoren)", beim ersten Mal „M: ist undefiniert, es folgt nichtzerstoerende
+Formatierung ...", nach RESET „M: ist noch wie bei letzter Benutzung geladen!"; ohne Karte
+„- RAF mit Parity als RAM-Floppy ??" und kein M:.
 
 ## `cpm/em256adr.com`, `cpm/em16abl.com`, `cpm/em256ful.com`: A5120.16-Prüfprogramme
 

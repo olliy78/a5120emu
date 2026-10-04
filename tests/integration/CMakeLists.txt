@@ -182,3 +182,13 @@ k1520_add_test(raf_k8915 SRC test_raf_k8915.cpp
 k1520_add_test(raf_prg710 SRC test_raf_prg710.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
+
+# CP/A-BIOS mit eingebautem RAF-Treiber (AP-R7, raf = 1, rafpar = 1): M: nach dem Kaltstart,
+# RESET erhält, ohne Karte kein M:, DPB-Wahl für RAF128/RAF512/RAF-2M.
+k1520_add_test(raf_cpa_bios SRC test_raf_cpa_bios.cpp LIBS ${_libs}
+                            LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# ZWG-Prüfprogramm RAFTEST.COM (AP-R6) gegen die RAF512 am A5120: Vollauf 512 KByte,
+# Sperrmuster 90H/10H/00H.  Kartenadresse 88H/89H im Patchbereich der Testkopie.
+k1520_add_test(raf_zwg SRC test_raf_zwg.cpp LIBS ${_libs} k1520_fs
+                       LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 300)
