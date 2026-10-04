@@ -146,9 +146,11 @@ TEST(Pc1715Zre, UnbelegtLiestFFSchreibenWirdVerschluckt) {
     EXPECT_TRUE(f.zre.romEin());
 }
 
+/// Servicehandbuch §1.2.8.5 (Grundgerät) und §1.3.3 (Zusatzkarte 2 × V.24): 2CH–2FH sind
+/// LT107/LT111 der Zusatzkarte (DB0 = Kanal A, DB2 = B), 30H–33H DB1 die 111 am X5.
 TEST(Pc1715Zre, Leitungen107Und111) {
     ZreFixture f;
-    EXPECT_EQ(f.bus.ioRead(0x2D), 0xFF) << "107 AUS = 1, keine DÜE";
+    EXPECT_EQ(f.bus.ioRead(0x2D), 0xFF) << "Zusatzkarte nicht bestückt: 107 AUS = 1";
     EXPECT_EQ(f.bus.ioRead(0x2F), 0xFF);
     f.bus.ioWrite(0x2C, 0x01);
     EXPECT_TRUE(f.zre.lt111(0));
@@ -156,10 +158,12 @@ TEST(Pc1715Zre, Leitungen107Und111) {
     f.bus.ioWrite(0x2E, 0x04);
     EXPECT_FALSE(f.zre.lt111(0));
     EXPECT_TRUE(f.zre.lt111(1));
+    EXPECT_FALSE(f.zre.lt111X5()) << "2CH/2EH berühren X5 nicht";
     f.bus.ioWrite(0x30, 0x02);
-    EXPECT_TRUE(f.zre.lt111(0));
+    EXPECT_TRUE(f.zre.lt111X5());
+    EXPECT_TRUE(f.zre.lt111(1)) << "30H berührt die Zusatzkarte nicht";
     f.bus.ioWrite(0x33, 0x00);
-    EXPECT_FALSE(f.zre.lt111(0));
+    EXPECT_FALSE(f.zre.lt111X5());
 }
 
 // ── BWS-Register ─────────────────────────────────────────────────────────────

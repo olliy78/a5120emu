@@ -81,6 +81,11 @@ uint64_t Wandler::takt(uint64_t zyklus) {
         a_.leitungBelegt(belegt != 0);
         belegtGemeldet_ = belegt;
     }
+    const int stecker = einst_.loop ? 1 : 0;
+    if (stecker != steckerGemeldet_) {
+        a_.pruefstecker(stecker != 0);
+        steckerGemeldet_ = stecker;
+    }
 
     // ── Eingänge am Stecker (§6.4/§6.5) ─────────────────────────────────────
     bool cts, dsr, dcd;

@@ -87,19 +87,48 @@ TEST(Pc1715Seriell, V24LoopSendenUndEmpfangenSamtLeitung107) {
     ASSERT_TRUE(hub->konfigurieren(1, k));
     Takter t{m};
     t.lauf(20'000);
-    EXPECT_EQ(m.bus().ioRead(0x2D) & 0x04, 0x04) << "107 AUS vor DTR";
+    EXPECT_EQ(m.bus().ioRead(0x0E) & 0x08, 0x00) << "107 (an /DCDA) AUS vor DTR";
     sioInit(m, 0x0F);                      // WR5 = EAH: DTR + RTS + Tx 8 Bit
     const auto f = m.serielleAnschluesse()[1]->format();
     EXPECT_TRUE(f.gueltig);
     EXPECT_EQ(f.baud_nenn, 9600u);
+    // Prüfstecker 320-032: 108 → 107 liegt an /DCDA (§1.2.8.5) — sofort, ohne Wandlerblick.
+    EXPECT_EQ(m.bus().ioRead(0x0E) & 0x08, 0x08) << "Loop: DTR-B → 107 → RR0 D3 von Kanal A";
+    EXPECT_EQ(m.bus().ioRead(0x0F) & 0x20, 0x20) << "Loop: RTS-B → CTS-B";
+    EXPECT_EQ(m.bus().ioRead(0x0F) & 0x08, 0x00) << "109 AUS, solange 111 AUS";
+    m.bus().ioWrite(0x30, 0x02);
+    EXPECT_EQ(m.bus().ioRead(0x0F) & 0x08, 0x08) << "Loop: 111 (30H DB1) → 109 → RR0 D3 von Kanal B";
+    m.bus().ioWrite(0x30, 0x00);
+    EXPECT_EQ(m.bus().ioRead(0x2D), 0xFF) << "2DH = Zusatzkarte, nicht bestückt";
     t.lauf(20'000);
-    EXPECT_EQ(m.bus().ioRead(0x2D) & 0x04, 0x00) << "Loop: DTR → DSR (107 EIN = 0)";
-    EXPECT_EQ(m.bus().ioRead(0x2F) & 0x04, 0x00);
 
     m.bus().ioWrite(0x0D, 0x5A);           // SIO-B Daten
     t.lauf(200'000);
     EXPECT_EQ(m.bus().ioRead(0x0F) & 1, 1) << "RR0 D0: Zeichen da";
     EXPECT_EQ(m.bus().ioRead(0x0D), 0x5A);
+}
+
+/// Prüfstecker 330-042 am Drucker X4 (EFS10 hat nur 102/103/106): 103 → 106, d. h. CTS-A folgt
+/// dem Break (Sendedaten dauernd „0"), nicht RTS — so prüft PCTEST „PRINTER Ltg.103---106".
+/// Sofort nach dem Steuerwort, ohne Wandlerblick.
+TEST(Pc1715Seriell, DruckerPruefsteckerBruecktSendedatenAufCts) {
+    stumm();
+    Pc1715Machine m;
+    auto* hub = m.serialHub();
+    SerialKonfig k = hub->konfig(0);
+    k.loop = true;
+    ASSERT_TRUE(hub->konfigurieren(0, k));
+    Takter t{m};
+    t.lauf(20'000);
+    m.bus().ioWrite(0x0E, 0x05);
+    m.bus().ioWrite(0x0E, 0xEA);           // DTR + RTS, kein Break
+    EXPECT_EQ(m.bus().ioRead(0x0E) & 0x20, 0x00) << "RTS allein: CTS-A AUS";
+    m.bus().ioWrite(0x0E, 0x05);
+    m.bus().ioWrite(0x0E, 0xFA);           // + Break
+    EXPECT_EQ(m.bus().ioRead(0x0E) & 0x20, 0x20) << "Break: CTS-A EIN";
+    m.bus().ioWrite(0x0E, 0x05);
+    m.bus().ioWrite(0x0E, 0xEA);
+    EXPECT_EQ(m.bus().ioRead(0x0E) & 0x20, 0x00);
 }
 
 /// Drucker X4: was der Gast an SIO-A sendet, geht in die Datei; der Empfänger von SIO-A (Tastatur)

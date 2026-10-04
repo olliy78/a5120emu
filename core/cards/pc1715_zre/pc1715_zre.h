@@ -14,8 +14,9 @@
  *   SIO0  0CH Daten A, 0DH Daten B, 0EH Steuer A, 0FH Steuer B       [Doku §1.2.4, Tabelle
  *         „I/O-Toradressen"]: AB0 = Kanal (A = 0, B = 1), AB1 = Steuer/Daten
  *   8275  18H/1AH Parameter, 19H/1BH Befehl/Status (AB0 = Befehl)
- *   LT107 2DH/2FH lesen: Leitung 107 je Kanal (DB0 = A, DB2 = B; EIN = 0, AUS = 1, §1.2.8)
- *   LT111 2CH/2EH und 30H–33H schreiben: Leitung 111 (DB0 = A, DB2 = B bzw. DB1; EIN = 1)
+ *   LT107 2DH/2FH lesen, LT111 2CH/2EH schreiben: Leitungen 107/111 der ZUSATZKARTE (§1.3.3,
+ *         DB0 = Kanal A, DB2 = B) — nicht bestückt, 2DH liest FFH, 2CH ist nur ein Latch
+ *   LT111 30H–33H schreiben: Leitung 111 am Stecker X5, DB1 = EIN (§1.2.8.5)
  *   BWS   34H–37H: Bildspeicher-Anfangsadresse (höherwertiger Teil) + DB6 = Zeichengenerator
  * @endcode
  *
@@ -45,8 +46,9 @@
  * Gerätebeschriftung: „Drucker X4" = SIO0-A **nur Sender** (der Empfänger von SIO-A ist die
  * Tastatur und bleibt fest verdrahtet), Sendetakt CTC0 K0, CTSA = Leitung 106; „V.24 X5" =
  * SIO0-B (Senden + Empfangen), Takt CTC0 K1, CTSB/DCDB = 106/109.  Leitung 107 (DSR) des
- * Steckers X5 steht lesend an 2DH/2FH (DB2); Leitung 111 (2CH/2EH/30H–33H) ist ein Ausgang des
- * Gastes, den der Hub nicht kennt — sie bleibt als Latch (`lt111`).
+ * Steckers X5 liegt an `/DCDA` (§1.2.8.5, AP-4f — vorher fälschlich an 2DH); Leitung 111
+ * (30H–33H) ist ein Ausgang des Gastes, den der Hub nicht kennt (`lt111X5`).  Prüfstecker
+ * (Loop am Hub): die Karte bildet die Brücken von 330-042/320-032 selbst und sofort nach.
  *
  * **Nicht in dieser Karte:** Floppy (PIOs 00H–07H, KRFD 20H–23H: AP-2, vorn in der
  * Interruptkette), Tastatur (AP-3).  Unbelegte Ports lesen FFH, Schreiben wird verschluckt.
@@ -112,8 +114,8 @@ public:
     /// Ein Byte von außen in den Empfänger (nur V.24; am Drucker gibt es keinen); ins Leere,
     /// wenn ein Transport/Loop den Stecker belegt.
     void einspeisen(Kanal k, uint8_t byte);
-    /// Leitung 107 (DSR) des Steckers X5, wie vom Hub gemeldet.
-    bool lt107V24() const { return dsr_v24_; }
+    /// Leitung 107 (DSR) des Steckers X5, wie vom Hub gemeldet (liegt an /DCDA, §1.2.8.5).
+    bool lt107V24() const;
 
     // ─── BusDevice: alle Ports der Karte (absolute Portnummer) ───────────────
     uint8_t     ioRead(uint8_t port) override;
@@ -173,7 +175,10 @@ public:
     uint8_t  bwsRegister() const { return bws_; }
     uint16_t bildBasis() const;
     bool     bwsZg2() const { return (bws_ & 0x40) != 0; }
+    /// LT111 der Zusatzkarte (2CH/2EH, DB0 = Kanal A, DB2 = B; §1.3.3) — nur Latch.
     bool     lt111(int kanal) const { return lt111_[kanal & 1]; }
+    /// Leitung 111 am Stecker X5 (/LT111CS 30H–33H, DB1; §1.2.8.5).
+    bool     lt111X5() const { return lt111_x5_; }
 
     const Config& config() const { return cfg_; }
 
@@ -199,12 +204,14 @@ private:
     uint8_t  bws_ = 0;
     uint16_t dma_zaehler_ = 0;
     bool     lt111_[2] = {false, false};
+    bool     lt111_x5_ = false;
+    /// Prüfstecker: Brücken der gesteckten Stecker sofort an die SIO legen.
+    void     leitungenAnlegen();
 
     class Anschluss;   // pc1715_zre.cpp
     friend class Anschluss;
     std::array<std::unique_ptr<Anschluss>, KanalAnzahl> anschluesse_;
     bool seriell_geaendert_ = false;
-    bool dsr_v24_ = false;   ///< Leitung 107 am Stecker X5 (vom Hub; EIN = Bit 2 an 2DH/2FH = 0)
 
     std::vector<uint8_t> fb_;
     int  fb_w_ = 0, fb_h_ = 0;

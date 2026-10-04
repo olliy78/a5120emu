@@ -35,7 +35,13 @@ constexpr uint8_t PIXEL_HELL   = 0xFF;
 //   /CTSA = Leitung 106.  Der CP/A-Druckertreiber im Verfahren „DTR" fragt CTS (RR0 D5) vor
 //   jedem Zeichen: ohne Gegenstelle (Kabel ab) gilt der Drucker als besetzt — wie am Gerät.
 // „V.24 X5" (EFS26): SIO0-B, Senden + Empfangen, Takt CTC0 K1 (09H).  CTSB = 106, DCDB = 109,
-//   DTR/RTS gehen an den Hub, DSR (107) steht lesend an 2DH/2FH.
+//   DTR/RTS gehen an den Hub, **107 (DSR) liegt an /DCDA** (Servicehandbuch §1.2.8.5/§1.2.8.6;
+//   PCTEST prüft „Ltg 107-108" über RR0 D3 von Kanal A), 111 setzt /LT111CS 30H–33H DB1.
+//   LT107/LT111 an 2CH–2FH gehören zur Zusatzkarte (§1.3.3, DB0 = Kanal A, DB2 = B).
+// Prüfstecker (Loop am Hub, AP-4f): 330-042 am X4 brückt 103→106 (EFS10 hat nur 102/103/106),
+//   CTS-A folgt also dem Break (Sendedaten dauernd „0"); 320-032 am X5 brückt 103→104,
+//   105→106, 108→107, 111→109.  Die Karte bildet das SOFORT nach (`leitungenAnlegen`) — PCTEST
+//   liest eine Leitung ≈ 40 Takte nach dem Setzen, der Wandler blickt nur alle 1/16 Zeichenzeit.
 
 class Pc1715Zre::Anschluss : public k1520::serial::SerialAnschluss {
 public:
@@ -80,12 +86,9 @@ public:
     bool dtr() const override { return ch().dtr(); }
     void setzeEingaenge(bool cts, bool dsr, bool dcd) override {
         cts_ = cts;
+        dsr_ = dsr;
+        dcd_ = dcd;
         wirke();
-        if (k_ == V24) {
-            ch().setzeDCD(dcd);   // Leitung 109
-            z_.dsr_v24_ = dsr;    // Leitung 107 → 2DH/2FH
-        }
-        z_.seriell_geaendert_ = true;
     }
     bool breakGesendet() const override { return ch().breakSenden(); }
     void breakEmpfang(bool aktiv) override {
@@ -94,6 +97,7 @@ public:
         z_.seriell_geaendert_ = true;
     }
     void leitungBelegt(bool belegt) override { belegt_ = belegt; wirke(); }
+    void pruefstecker(bool gesteckt) override { stecker_ = gesteckt; wirke(); }
 
     void setAbnehmer(Abnehmer cb) { abnehmer_ = std::move(cb); wirke(); }
     void einspeisen(uint8_t b) {
@@ -103,16 +107,36 @@ public:
 
 private:
     Z80SIO::Channel& ch() const { return k_ == Drucker ? z_.sio_.channelA() : z_.sio_.channelB(); }
-    // Alter Unterbau am Drucker: ein Abnehmer ohne Transport ersetzt den Drucker und meldet
-    // „bereit" (106), sonst bliebe der DTR-Treiber an der fehlenden Leitung hängen.
+public:
+    /// Eingänge an die SIO-Pins legen.  Alter Unterbau am Drucker: ein Abnehmer ohne Transport
+    /// ersetzt den Drucker und meldet „bereit" (106), sonst bliebe der DTR-Treiber an der
+    /// fehlenden Leitung hängen.  Mit Prüfstecker gelten die Brücken des Steckers (s. oben),
+    /// die Eingänge des Hubs nicht.
     void wirke() {
-        ch().setzeCTS(cts_ || (k_ == Drucker && !belegt_ && abnehmer_));
+        Z80SIO::Channel& a = z_.sio_.channelA();
+        Z80SIO::Channel& b = z_.sio_.channelB();
+        if (k_ == Drucker) {
+            a.setzeCTS(stecker_ ? a.breakSenden()                     // 330-042: 103 → 106
+                                : (cts_ || (!belegt_ && abnehmer_)));
+        } else if (stecker_) {                                         // 320-032
+            b.setzeCTS(b.rts());                                       // 105 → 106
+            a.setzeDCD(b.dtr());                                       // 108 → 107 (/DCDA)
+            b.setzeDCD(z_.lt111_x5_);                                  // 111 → 109
+        } else {
+            b.setzeCTS(cts_);
+            a.setzeDCD(dsr_);                                          // 107 → /DCDA
+            b.setzeDCD(dcd_);                                          // 109 → /DCDB
+        }
         z_.seriell_geaendert_ = true;
     }
+    bool gesteckt() const { return stecker_; }
+    bool dsr() const { return dsr_; }
 
+private:
     Pc1715Zre& z_;
     Kanal      k_;
-    bool       cts_ = false;
+    bool       cts_ = false, dsr_ = false, dcd_ = false;
+    bool       stecker_ = false;   ///< Prüfstecker (Loop am Hub)
     bool       belegt_ = false;
     std::optional<uint8_t> schieb_;   ///< Zeichen im Schieberegister (verdrängt aus dem Tx-Puffer)
     Abnehmer   abnehmer_;
@@ -131,6 +155,13 @@ void Pc1715Zre::setAbnehmer(Kanal k, Abnehmer cb)
 void Pc1715Zre::einspeisen(Kanal k, uint8_t byte)
 {
     anschluesse_[static_cast<size_t>(k)]->einspeisen(byte);
+}
+bool Pc1715Zre::lt107V24() const { return anschluesse_[V24]->dsr(); }
+void Pc1715Zre::leitungenAnlegen()
+{
+    // Nur mit Prüfstecker hängen SIO-Eingänge von Ausgängen des Gastes ab.
+    for (auto& a : anschluesse_)
+        if (a && a->gesteckt()) a->wirke();
 }
 
 Pc1715Zre::Pc1715Zre(K1520Bus& bus) : Pc1715Zre(bus, Config{}) {}
@@ -200,7 +231,9 @@ void Pc1715Zre::reset()
     bws_ = 0;
     dma_zaehler_ = 0;
     lt111_[0] = lt111_[1] = false;
+    lt111_x5_ = false;
     seriell_geaendert_ = true;
+    leitungenAnlegen();
     std::fill(fb_.begin(), fb_.end(), 0);
     fb_dirty_ = true;
 }
@@ -220,7 +253,9 @@ uint8_t Pc1715Zre::ioRead(uint8_t port)
     if (uint8_t(port - PORT_CRT) < 4) return crt_.read((port & 1) != 0);
     // Leitung 107 (§1.2.8: EIN = 0, AUS = 1): DB2 = V.24 X5 aus dem Hub; DB0 = Drucker X4
     // kennt keine 107 (nur 102/103/106) → AUS [?: DB1/3–7]
-    if (port == 0x2D || port == 0x2F) return dsr_v24_ ? 0xFB : 0xFF;
+    // 2DH/2FH: LT107 der Zusatzkarte (§1.3.3, DB0 = Kanal A, DB2 = B) — nicht bestückt → AUS.
+    // Die 107 des Grundgeräts (X5) liegt an /DCDA (§1.2.8.5).
+    if (port == 0x2D || port == 0x2F) return 0xFF;
     return 0xFF;                                      // unbelegt (auch BWS lesend [?])
 }
 
@@ -230,6 +265,7 @@ void Pc1715Zre::ioWrite(uint8_t port, uint8_t data)
     if (uint8_t(port - PORT_SIO) < 4) {
         if ((port & 2) == 0) anschluesse_[(port & 1) ? V24 : Drucker]->vorDatenSchreiben();   // 0CH/0DH = Daten
         sio_.ioWrite(sioPort(port), data);
+        leitungenAnlegen();   // WR5 (RTS/DTR/Break) wirkt am Prüfstecker sofort
         return;
     }
     if (uint8_t(port - PORT_CRT) < 4) { crt_.write((port & 1) != 0, data); return; }
@@ -239,13 +275,14 @@ void Pc1715Zre::ioWrite(uint8_t port, uint8_t data)
         rom_ein_ = false;
         return;
     }
-    if (port == 0x2C || port == 0x2E) {              // Leitung 111 setzen: DB0 = Kanal A, DB2 = Kanal B
+    if (port == 0x2C || port == 0x2E) {              // LT111 der Zusatzkarte: DB0 = Kanal A, DB2 = B
         lt111_[0] = (data & 0x01) != 0;
         lt111_[1] = (data & 0x04) != 0;
         return;
     }
-    if (uint8_t(port - PORT_LT111) < 4) {            // 30H–33H: DB1 = 111 EIN
-        lt111_[0] = lt111_[1] = (data & 0x02) != 0;  // [?: Kanalzuordnung dieser Tore]
+    if (uint8_t(port - PORT_LT111) < 4) {            // 30H–33H: 111 an X5, DB1 = EIN (§1.2.8.5)
+        lt111_x5_ = (data & 0x02) != 0;
+        leitungenAnlegen();
         return;
     }
     if (uint8_t(port - PORT_BWS) < 4) {

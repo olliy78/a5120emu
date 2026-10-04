@@ -85,6 +85,12 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
   Echo, das BIOS nicht) — `serial_start` liefert dort `false`, bis der Loop aus ist.
   Wächter `SerialHub.LoopBeendetDieVerbindungUndSperrtDenStart`,
   `K8915Seriell.BiosLaeuftOhneLoopWeiter`, `test_button_is_locked_while_loop_is_set_and_says_why`.
+- **Loop = Prüfstecker; eine Karte darf ihn selbst nachbilden** (`SerialAnschluss::pruefstecker`,
+  AP-4f PC 1715).  Vorgabe leer: der Wandler legt RTS→CTS, DTR→DSR/DCD im Blickabstand
+  (1/16 Zeichenzeit).  Ist der Stecker anders gebrückt oder liest der Gast schneller (PCTEST:
+  ≈ 40 Takte), brückt die Karte sofort selbst und übergeht die Eingänge aus `setzeEingaenge`.
+  Daten (TxD→RxD) laufen weiter über den Wandler.  Wächter `Pc1715Seriell.V24LoopSendenUndEmpfangenSamtLeitung107`,
+  `Pc1715Pctest.Scp*`.
 - **Datei meldet VERBUNDEN.** Die Statuszeile schließt Datei über `betriebsart` aus;
   wer neu auf `Zustand::Verbunden` prüft, muss das wissen. Beim Wiederaufnehmen wird
   angehängt, nicht überschrieben. Wächter `SerialDatei.SchreibtUeberschreibtUndHaengtBeimWiederaufnehmenAn`;
