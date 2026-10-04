@@ -1,0 +1,168 @@
+k1520DiskTool — Inhaltsverzeichnis einer K1520-Diskette
+======================================================================
+
+Beschriftung  PRG710-1_RAF
+Herkunft      Echtes Laufwerk A am Greaseweazle  (nur lesen)
+Format        cpa800
+Dateisystem   cpa_auto
+Medium        nach der CP/A-Regel abgeleitet — 4 Systemspuren, 2048-B-Bloecke, 128 Verzeichnisplaetze; Systemspuren leer, Verzeichnis ab c2h0
+Archiviert    2026-10-02 15:56
+
+Datentraeger   762 KB belegt, 14 KB frei  (von 776 KB)
+
+Name                              Typ   Groesse  Eigensch. Datum   
+----------------------------------------------------------------------
+KONVERT.COM                               11648                    
+LC802.BIN                                  4096                    
+LIESMICH                                    896                    
+LINK.COM                                  15744                    
+M80.COM                                   20096                    
+MAKE.CMD                                    256                    
+PASCAL.COM                                30848                    
+PASCAL.RES                                 1152                    
+PASCAL.TXT                                 1536                    
+PASINST.COM                               12288                    
+PASSAVE.COM                                9600                    
+PLUS.COM                                  33920                    
+PRL2COM.COM                                 640                    
+PRL2COM.MAC                                8576                    
+PRL2COM.PRN                               22016                    
+RAF2X20P.COM                               2432                    
+RAF2X24O.COM                               2432                    
+RAF2X24O.MAC                              24704                    
+RAF2X24O.PRN                              59136                    
+RAF2X88O.COM                               2432                    
+RAF2X88P.COM                               2432                    
+RAF2X89O.COM                               2432                    
+RAF2X8AO.COM                               2432                    
+RAF2X8BO.COM                               2432                    
+RAF2X8CO.COM                               2432                    
+RAF2X8DO.COM                               2432                    
+RAF2X8EO.COM                               2432                    
+RAF2X8FO.COM                               2432                    
+RAF2X90O.COM                               2432                    
+RAF2X90O.MAC                              24704                    
+RAF2X90O.PRN                              59136                    
+RAF2X91O.COM                               2432                    
+RAF2X92O.COM                               2432                    
+RAF2X93O.COM                               2432                    
+RAF2X94O.COM                               2432                    
+RAF2X95O.COM                               2432                    
+RAF2X96O.COM                               2432                    
+RAF2X97O.COM                               2432                    
+RAF2X98O.COM                               2432                    
+RAF512.COM                                 2432                    
+RAFAD12                                     512                    
+RAFASM7                                     512                    
+RAFCPM.COM                                 2432                    
+RAFCPMP.COM                                2432                    
+RAFCPMP.MAC                               25600                    
+RAFCPMP.PRN                               60928                    
+RAFMAC1.MAC                               12160                    
+RAFMAC2.MAC                               34816                    
+RAFPRUF6.DOK                              22656                    
+RAFQUICK.COM                              13952                    
+RAFQUICK.INC                               8704                    
+RAFQUICK.PAS                              11648                    
+RAFSCAN.COM                               13568                    
+RAFSCAN.PAS                               11392                    
+RAFTEST.COM                                7552                    
+RAFTEST.MAC                               49152                    
+RAFTEST.REL                                9088                    
+TURBO.COM                                 30464                    
+TURBO.MSG                                  1536                    
+----------------------------------------------------------------------
+59 Dateien
+
+DATEIANGABEN IM EINZELNEN
+
+Name                 Nutzer   Groesse   R/O  SYS  ARC
+-----------------------------------------------------
+KONVERT.COM               0     11648   -    -    -
+LC802.BIN                 0      4096   -    -    -
+LIESMICH                  0       896   -    -    -
+LINK.COM                  0     15744   -    -    -
+M80.COM                   0     20096   -    -    -
+MAKE.CMD                  0       256   -    -    -
+PASCAL.COM                0     30848   -    -    -
+PASCAL.RES                0      1152   -    -    -
+PASCAL.TXT                0      1536   -    -    -
+PASINST.COM               0     12288   -    -    -
+PASSAVE.COM               0      9600   -    -    -
+PLUS.COM                  0     33920   -    -    -
+PRL2COM.COM               0       640   -    -    -
+PRL2COM.MAC               0      8576   -    -    -
+PRL2COM.PRN               0     22016   -    -    -
+RAF2X20P.COM              0      2432   -    -    -
+RAF2X24O.COM              0      2432   -    -    -
+RAF2X24O.MAC              0     24704   -    -    -
+RAF2X24O.PRN              0     59136   -    -    -
+RAF2X88O.COM              0      2432   -    -    -
+RAF2X88P.COM              0      2432   -    -    -
+RAF2X89O.COM              0      2432   -    -    -
+RAF2X8AO.COM              0      2432   -    -    -
+RAF2X8BO.COM              0      2432   -    -    -
+RAF2X8CO.COM              0      2432   -    -    -
+RAF2X8DO.COM              0      2432   -    -    -
+RAF2X8EO.COM              0      2432   -    -    -
+RAF2X8FO.COM              0      2432   -    -    -
+RAF2X90O.COM              0      2432   -    -    -
+RAF2X90O.MAC              0     24704   -    -    -
+RAF2X90O.PRN              0     59136   -    -    -
+RAF2X91O.COM              0      2432   -    -    -
+RAF2X92O.COM              0      2432   -    -    -
+RAF2X93O.COM              0      2432   -    -    -
+RAF2X94O.COM              0      2432   -    -    -
+RAF2X95O.COM              0      2432   -    -    -
+RAF2X96O.COM              0      2432   -    -    -
+RAF2X97O.COM              0      2432   -    -    -
+RAF2X98O.COM              0      2432   -    -    -
+RAF512.COM                0      2432   -    -    -
+RAFAD12                   0       512   -    -    -
+RAFASM7                   0       512   -    -    -
+RAFCPM.COM                0      2432   -    -    -
+RAFCPMP.COM               0      2432   -    -    -
+RAFCPMP.MAC               0     25600   -    -    -
+RAFCPMP.PRN               0     60928   -    -    -
+RAFMAC1.MAC               0     12160   -    -    -
+RAFMAC2.MAC               0     34816   -    -    -
+RAFPRUF6.DOK              0     22656   -    -    -
+RAFQUICK.COM              0     13952   -    -    -
+RAFQUICK.INC              0      8704   -    -    -
+RAFQUICK.PAS              0     11648   -    -    -
+RAFSCAN.COM               0     13568   -    -    -
+RAFSCAN.PAS               0     11392   -    -    -
+RAFTEST.COM               0      7552   -    -    -
+RAFTEST.MAC               0     49152   -    -    -
+RAFTEST.REL               0      9088   -    -    -
+TURBO.COM                 0     30464   -    -    -
+TURBO.MSG                 0      1536   -    -    -
+-----------------------------------------------------
+
+LEGENDE
+
+  CP/M-Attribute    RO = nur lesen · SYS = Systemdatei (in DIR unsichtbar)
+                    ARC = archiviert
+  Nutzerbereich     0-15; im Namen als Praefix, z. B. 3:NAME.TYP
+  Groesse            Nutzbytes laut Verzeichnis.  CP/M rundet Dateien auf
+                     128-B-Saetze auf; die extrahierte Datei kann deshalb
+                     etwas laenger sein als die urspruengliche Nutzlaenge.
+  [DEFEKT]           die Datei war nicht vollstaendig lesbar (CRC-Fehler
+                     oder Kettenbruch) — sie liegt trotzdem bei.
+
+SPALTEN DER DATEIANGABEN (CP/M)
+
+  Mehr als diese fuehrt CP/M 2.2 nicht: keine Ladeadresse, keine Satzlaenge,
+  kein Datum.  Der Nutzerbereich gehoert zur IDENTITAET der Datei — dieselbe
+  Datei kann in mehreren Bereichen liegen; im Namen steht er als Praefix.
+
+Der Unterordner `dateien/` enthaelt dieselben Dateien als
+gewoehnliche Dateien; das beiliegende .hfe-Abbild ist die verlustfreie
+Fassung, aus der sich alles Uebrige wiederherstellen laesst.
+
+Zum Wiederherstellen der DATEIEN (ohne das Abbild): den Ordner `dateien/`
+auf eine leere Diskette einfuegen.  Die Angaben oben gehen dabei nicht
+verloren — sie stehen im Ordner nochmals maschinenlesbar als Beiblatt
+(`udos-dateiangaben.txt` bzw. `cpm-dateiangaben.txt`), und das Werkzeug
+liest es beim Einfuegen von selbst.  Ohne Beiblatt stellt man sie ueber
+„Eigenschaften…“ im Diskettenfenster ein.

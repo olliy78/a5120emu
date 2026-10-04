@@ -37,6 +37,7 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | `cpa_cpa780_k5601_noclock.img` + **`../cpm/em16abl.com`** | S4-Abnahme/G2-Vorlage (A5120.16, U8001) — ebenso | `Em16Abl.*` |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, System im **16×256**-Datenformat | `ScpxIntegration.*`, `ScpxInit.*` |
 | `scpx17_5x1024_k5601_hardy_norm.hfe` | SCPX 1526 V1.7, System im **5×1024**-Datenformat, mit `HARDY.COM` — mit Normlücken neu aufgebaut (`save-as` → `.img` → `.hfe`, 80 Zylinder); ersetzt seit AP-F1 die frühere, vom Emulator gespeicherte Fassung mit Lücke 2 = 11 (am Gerät nicht lesbar) | `test_hardy`, DiskTool-Tests |
+| **`raf/`** `RAFCPM.COM`, `RAFCPMP.COM`, `RAF512.COM`, `RAF2X88O.COM`, `RAFQUICK.COM`, `RAFTEST.COM` | RAM-Floppy-Treiber und ZWG-Prüfprogramme (Herkunft + Prüfsummen `doc/raf512/README.md`) — werden im Test auf die Temp-Kopie einer Bootdiskette geschrieben | `test_raf_*` (Entwurf 22, AP-R5/R6) |
 | `udos_boot_scp.hfe` | UDOS 4.3, bootfähig (SCP-Laufwerkstyp) | `UdosIntegration.*`, `test_udos_format` |
 | `bootsec_cpa780.bin` | erwarteter Inhalt des Bootsektors einer cpa780-Diskette | `test_boot_integration` (Bootsektor-Vergleich) |
 | `mixed_udos_ss40_over_cpa800.hfe` | **gemischtes Layout**: cpa800, darüber UDOS ss40 im Doppelschritt — Kopf 0 gerade Zylinder 26×128 (UDOS), ungerade 5×1024 (Altbestand), Kopf 1 ganz 5×1024 | `test_disktool_gui` (roh öffnen, Schnitte), `test_gw_physical` |

@@ -1,0 +1,1075 @@
+	MACRO-80 3.44	09-Dec-81	PAGE	1
+
+
+                                ;------------------------------------------------------------------------------
+                                ; RAM-Floppy-Treiber
+                                ; RAF der Akademie der Wissenschaften, Speicherkapazitdt von 128, 512 o. 2048 KByte
+                                ; http://www.robotrontechnik.de/html/eigenbau/raf2008.htm
+                                ;------------------------------------------------------------------------------
+                                ; Treiber reassembliert V. Pohlers 2009
+                                ; letzte Dnderung: 20.02.2012 Kommentare
+                                ;------------------------------------------------------------------------------
+                                ;
+                                ; Eigenschaften / Zustand des orig. Treibers RAFCPM.COM
+                                ; -----------------------------------------------------
+                                ; Laufwerksbuchstabe: Es wird Laufwerk M: als RAM-Floppy installiert.
+                                ; Ports: Der Treiber sucht eine RAMFloppy auf den I/O-Ports 88/89 8A/8B 8C/8D 8E/8F.
+                                ; Anzahl: Da eine RAMFloppy-Karte im Original bis zu 2 MB Kapazitdt hat, kvnnen somit
+                                ; 	bei vier RAF-Karten maximal 8 MB RAM-Floppy betrieben werden.
+                                ; Bug:	Wird nach der Neuinitialisierung der RAM-Floppy die erste Datei geschrieben,
+                                ; 	werden nach Neueinlesen des Directory bei einem DIR eine Anzahl Phantom-
+                                ; 	Dateinamen ausgegeben.
+                                ;
+                                ; Anpassungen
+                                ; -----------
+                                ; Alle Anpassungen wurden durch Suchen des passenden Bytes bzw. der passenden
+                                ; Byte-Sequenz und direktes Patchen der Bytes vorgenommen. Komplexere Dnderungen
+                                ; erforderten die Disassemblierung des Treibers. Die entstehenden Quelltext-Teile
+                                ; dienten nicht der erneuten Assemblierung, sondern dem Verstdndnis der
+                                ; Funktionsweise. Bindr gepatcht wurde trotzdem.
+                                ;
+                                ; Laufwerksbuchstaben: Der Treiber mit dem Laufwerksbuchstaben M: ldsst sich auf
+                                ;	dem K8915(neu) nicht verwenden, da das Betriebssystem des Rechners Laufwerk M:
+                                ;	schon als Festplattenlaufwerk reserviert. Gleiches gilt auf dem A5105 (BIC)
+                                ; 	bei Installation der VDISK.COM. Als neue Laufwerksbuchstaben werden P:
+                                ; 	und O: festgelegt.
+                                ;
+                                ; Ports: Um die RAM-Floppy auf dem KC87 zu betreiben, muss eine andere Port-Range
+                                ; 	her. Der originale Bereich von 88 bis 8F ist auf diesem Rechner nicht
+                                ; 	verf|gbar. Statt dessen wurden hier die Ports 20 bis 27 vorgesehen.
+                                ; 	Diese Ports sind ebenfalls auf dem BIC verf|gbar, so dass die mechanisch
+                                ; 	gleiche Hardware auf dem KC87 und dem BIC verwendet werden kann.
+                                ;
+                                ; Anzahl: Der Originaltreiber sucht nach vier RAMFloppy-Karten und baut daraus ein
+                                ; 	Laufwerk von 8 MB maximum. Der Treiber wurde gesplittet und einmal f|r
+                                ; 	die Ports ab 88 bzw 20 als Laufwerk P: und zum anderen f|r die Ports 8C
+                                ; 	bzw 24 als Laufwerk O: angepasst. Zwei entsprechend konfigurierte Karten
+                                ; 	vorausgesetzt bedeutet dies: Man kann beide Treiber nacheinander laden
+                                ; 	und hat zwei Laufwerke P: und O: mit je max. 4 MB zur Verf|gung.
+                                ;
+                                ; Bug:	Die Phantom-Eintrdge im Directory waren auf einen falschen Eintrag im
+                                ; 	Disk Parameter Block (DPB) zur|ckzuf|hren. Im Treiber sind mehrere Byte-
+                                ; 	Sequenzen vorhanden, die man mit der "Methode des scharfen Hinschauens"
+                                ; 	als DPB erkennt. Der f|r eine 512k-RAF zustdndige DPB war noch korrekt.
+                                ; 	Bei dem f|r grv_ere RAFs zustdndigen DPB haben sich Directory und
+                                ; 	Datenbereich |berschnitten. Daher r|hren die Phantom-Eintrdge. Der
+                                ; 	Fehler wurde korrigiert.
+                                ;
+                                ; Besonderheit des A5105 (BIC)
+                                ; 	Auf dem BIC trat das Phdnomen auf, dass POWER beim Kopieren von Dateien
+	MACRO-80 3.44	09-Dec-81	PAGE	1-1
+
+
+                                ; 	auf die RAM-Floppy ab immer gleichem Offset fehlerhafte Datenblvcke in
+                                ; 	die Zieldatei eingelagert wurden. Oftmals fand sich im "schlechten
+                                ; 	Block" das SCPX-ROM des BIC wieder. Der Grund daf|r lag in der Speicher-
+                                ; 	Architektur des BIC. Dieser kann 256 KByte Speicher adressieren, indem
+                                ; 	er 4 Speicherebenen zu je 64 KByte verwendet. Jede Ebene zu 64 KB ist in
+                                ; 	vier Segmente zu je 16 KB aufgeteilt, die separat geschaltet werden
+                                ; 	kvnnen. Der TPA des BIC liegt auf einer dieser Ebenen. Dummerweise sind
+                                ; 	diese nicht immer korrekt geschaltet. Leider auch nicht, wenn gerade ein
+                                ; 	Sektor auf die RAF geschrieben werden soll. Somit gelangt der Inhalt
+                                ; 	einer falschen Speicherseite mitten in die zu schreibende Datei. Die
+                                ; 	BIOS-Routinen zum Lesen und Schreiben eines RAF-Sektors auf dem BIC
+                                ; 	m|ssen demzufolge vorher die alte Speicherkonfiguration sichern die
+                                ; 	Speicherebene, die den TPA enthdlt, einschalten. die eigentliche Arbeit
+                                ; 	tun .zum Schluss die gesicherte Speicherkonfiguration wiederherstellen.
+                                ; 	Hierf|r werden nun zum Patchen der BIOS-Routinen zusdtzliche Bytes im
+                                ; 	Treiber benvtigt. Diese m|ssen freigerdumt werden.
+                                ;
+                                ;------------------------------------------------------------------------------
+                                ; assemblieren:
+                                ; 	m80.com =treiber
+                                ; 	link.com treiber[op]
+                                ; 	prl2com treiber.prl
+                                ;------------------------------------------------------------------------------
+                                
+                                		.Z80
+  0000'                         		cseg
+                                
+                                ; Original RAFCPM
+                                ;
+                                ;lw		equ	'M'			; Laufwerksbuchstabe
+                                ;rafport	equ	88h
+                                ;anz_raf	equ	4
+                                ;in aNachladbareRaf andere erste Info-Zeile
+                                ;in DPB f|r 1024 x 4K AL0 als db 0C0h (das ist in Original falsch. richtig ist 0F0h)
+                                
+                                
+                                ; Variante KC87
+  004F                          lw		equ	'O'			; Laufwerksbuchstabe
+  0024                          rafport		equ	24h			; Port
+  0002                          anz_raf		equ	2			; max. Anzahl unterst|tzter RAF
+                                
+                                
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Hilfsmakros fuer 2 stellige Hexadezimal-Aufbereitung
+                                ; Aufruf: <Tab>hexout<Tab>Wert
+                                ;------------------------------------------------------------------------------
+                                
+                                hexout	MACRO	hv
+                                	.RADIX	16
+                                	hexdb	%(hv)
+                                	.RADIX	10
+                                	ENDM
+                                
+                                hexdb	MACRO	hv
+                                	db	'&hv','H'
+	MACRO-80 3.44	09-Dec-81	PAGE	1-2
+
+
+                                	ENDM
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Initialisierung
+                                ;------------------------------------------------------------------------------
+                                
+  0000'   E1                    init:		pop	hl
+  0001'   22 056A'              init1:		ld	(rwboot1+1), hl
+  0004'   ED 73 0555'           init2:		ld	(rwboot+1), sp
+  0008'   E5                    		push	hl
+  0009'   31 0000'              		ld	sp, init
+  000C'   11 0180'              		ld	de, aNachladbareRaf 	; "\r\nNachladbare RAF-Installation, (DKt) v"...
+  000F'   0E 09                 		ld	c, 9
+  0011'   CD 0005               		call	5
+  0014'   0E 0E                 		ld	c, lw-'A'		; Laufwerkscode
+  0016'   2A 0001               		ld	hl, (1)			; Adresse von WBOOT
+  0019'   11 0018               		ld	de, 24			; 3*8
+  001C'   19                    		add	hl, de			; Adresse von SELDSK
+  001D'   CD 032A'              		call	jphl			; aufrufen
+  0020'   7C                    		ld	a, h
+  0021'   B5                    		or	l
+  0022'   11 0287'              		ld	de, aLaufwerkOIstSc 	; "Laufwerk	O: ist schon installiert!\a\r\n$"
+  0025'   20 08                 		jr	nz, init3		; wenn Laufwerk	'O' schon vorhanden
+  0027'   CD 0371'              		call	raftst			; Testen auf RAM-Floppies
+  002A'   20 0B                 		jr	nz, init4
+  002C'   11 020C'              		ld	de, aKeineRafKarteV 	; "Keine RAF-Karte vorhanden!\a\r\n$"
+  002F'   0E 09                 init3:		ld	c, 9
+  0031'   CD 0005               		call	5
+  0034'   C3 0000               		jp	0
+                                
+  0037'   F5                    init4:		push	af			; Cy sichern
+  0038'   E5                    		push	hl			; Gesamtkapazitdt in Records
+  0039'   D5                    		push	de			; Gesamtkapazitdt in kByte
+  003A'   11 024C'              init5:		ld	de, aRafGesamtkapaz 	; "RAF-Gesamtkapazitaet $"
+  003D'   0E 09                 		ld	c, 9
+  003F'   CD 0005               		call	5
+  0042'   E1                    		pop	hl
+  0043'   CD 0333'              		call	hldez			; HL dezimal ausgeben
+  0046'   11 0262'              		ld	de, aKBytes		; "K Bytes"
+  0049'   0E 09                 		ld	c, 9
+  004B'   CD 0005               init6:		call	5
+  004E'   E1                    		pop	hl
+  004F'   E5                    		push	hl
+  0050'   CD 0333'              init7:		call	hldez			; HL dezimal ausgeben
+  0053'   11 026C'              		ld	de, aSpurenZu128Sek 	; "	Spuren zu 128 Sektoren)\r\n$"
+  0056'   0E 09                 		ld	c, 9
+  0058'   CD 0005               		call	5
+  005B'   E1                    		pop	hl
+  005C'   F1                    		pop	af			; Cy von raftst restaurieren
+  005D'   11 02AD'              init8:		ld	de, aRafIstNochWieB 	; "RAF ist noch wie bei letzter Benutzung "...
+  0060'   D2 00EB'              		jp	nc, init10		; wenn initialisiert
+  0063'   11 02DF'              		ld	de, aRafIstUndefini 	; "RAF ist undefiniert, es folgt Loeschen "...
+  0066'   0E 09                 		ld	c, 9
+  0068'   CD 0005               		call	5
+                                ;RAF lvschen
+  006B'   21 0653'              		ld	hl, rafdirbuf		; Dir-Puffer
+	MACRO-80 3.44	09-Dec-81	PAGE	1-3
+
+
+  006E'   22 06D3'              		ld	(dbdma), hl
+  0071'   ED 5B 05CB'           		ld	de, (rafdpb_drm)
+  0075'   13                    		inc	de
+  0076'   21 0000               		ld	hl, 0
+  0079'   22 06D5'              eras1:		ld	(dtrack), hl
+  007C'   AF                    		xor	a 			; A=0 = 1.Sektor-1.  CP/A zaehlt ab Spur 1!
+  007D'   D5                    eras2:		push	de
+  007E'   3C                    		inc	a
+  007F'   32 06D7'              		ld	(dsectr), a
+  0082'   11 0312'              		ld	de, aGspur		; "Spur $"
+  0085'   0E 09                 		ld	c, 9
+  0087'   CD 0005               		call	5
+  008A'   2A 06D5'              		ld	hl, (dtrack)
+  008D'   CD 0333'              		call	hldez			; HL dezimal ausgeben
+  0090'   11 0319'              		ld	de, aSektor		; ", Sektor \x16$"
+  0093'   0E 09                 		ld	c, 9
+  0095'   CD 0005               		call	5
+  0098'   2A 06D7'              		ld	hl, (dsectr)
+  009B'   26 00                 		ld	h, 0
+  009D'   CD 0333'              		call	hldez			; HL dezimal ausgeben
+  00A0'   CD 06E1'              		call	p_rread
+  00A3'   D1                    		pop	de
+  00A4'   7A                    		ld	a, d
+  00A5'   B3                    		or	e
+  00A6'   28 0F                 		jr	z, eras4
+  00A8'   21 0653'              		ld	hl, rafdirbuf		; Dir-Puffer
+  00AB'   3E 04                 		ld	a, 4			; 4 Entries in einem Sektor
+  00AD'   01 0020               		ld	bc, 20h			; Anzahl der Bytes, die zu |berspringen sind
+  00B0'   36 E5                 eras3:		ld	(hl), 0E5h 		; "User"-Nummer = E5  = Gelvschter Eintrag
+  00B2'   09                    		add	hl, bc			; Rest des Dir.-Eintrages |berspringen
+  00B3'   1B                    		dec	de
+  00B4'   3D                    		dec	a
+  00B5'   20 F9                 		jr	nz, eras3
+  00B7'   D5                    eras4:		push	de
+  00B8'   CD 06EE'              		call	p_rwrite
+  00BB'   11 0324'              		ld	de, aCR			; "\r$"
+  00BE'   0E 09                 		ld	c, 9
+  00C0'   CD 0005               		call	5
+  00C3'   D1                    		pop	de
+  00C4'   7A                    		ld	a, d
+  00C5'   B3                    		or	e
+  00C6'   28 0F                 		jr	z, init9		; Ende
+  00C8'   3A 06D7'              		ld	a, (dsectr)
+  00CB'   21 05C4'              		ld	hl, rafdpb
+  00CE'   BE                    		cp	(hl)			; letzter Sektor erreicht?
+  00CF'   20 AC                 		jr	nz, eras2		; nein
+  00D1'   2A 06D5'              		ld	hl, (dtrack)
+  00D4'   23                    		inc	hl
+  00D5'   18 A2                 		jr	eras1
+                                
+                                ; Directory-Eintrag 'RAFvalid.SYS' f|r initialisierte RAM-Floppy
+  00D7'   CD 0416'              init9:		call	rafrdsc0
+  00DA'   11 0653'              		ld	de, rafdirbuf		; Dir-Puffer
+  00DD'   21 0429'              		ld	hl, rafdirinit
+  00E0'   01 0020               		ld	bc, 20h
+  00E3'   ED B0                 		ldir
+	MACRO-80 3.44	09-Dec-81	PAGE	1-4
+
+
+  00E5'   CD 06EE'              		call	p_rwrite
+                                ;
+  00E8'   11 0326'              		ld	de, aV			; "\r\n$"
+  00EB'   0E 09                 init10:		ld	c, 9
+  00ED'   CD 0005               		call	5
+                                ;BIOS patchen
+  00F0'   2A 0001               		ld	hl, (1)
+  00F3'   2B                    		dec	hl
+  00F4'   2B                    		dec	hl
+  00F5'   2B                    		dec	hl
+  00F6'   E5                    		push	hl			; Adresse BOOT (Beginn BIOS)
+                                ; BIOS-Einspr|nge sichern
+  00F7'   11 0521'              		ld	de, biosv
+  00FA'   01 0033               		ld	bc, 33h
+  00FD'   ED B0                 		ldir				; ab WBOOT-3 33 Bytes nach biosv kopieren
+                                ; BIOS-Funktionen patchen
+  00FF'   DD E1                 		pop	ix			; hl -> ix Adresse BOOT (Beginn BIOS)
+  0101'   F3                    		di
+  0102'   11 0554'              		ld	de, rwboot
+  0105'   DD 73 04              		ld	(ix+4),	e
+  0108'   DD 72 05              		ld	(ix+5),	d
+  010B'   11 056C'              		ld	de, rhome
+  010E'   DD 73 19              		ld	(ix+19h), e
+  0111'   DD 72 1A              		ld	(ix+1Ah), d
+  0114'   11 0575'              		ld	de, rseldsk
+  0117'   DD 73 1C              		ld	(ix+1Ch), e
+  011A'   DD 72 1D              		ld	(ix+1Dh), d
+  011D'   11 0582'              		ld	de, rsettrk
+  0120'   DD 73 1F              		ld	(ix+1Fh), e
+  0123'   DD 72 20              		ld	(ix+20h), d
+  0126'   11 0589'              		ld	de, rsetsec
+  0129'   DD 73 22              		ld	(ix+22h), e
+  012C'   DD 72 23              		ld	(ix+23h), d
+  012F'   11 0590'              		ld	de, rsetdma
+  0132'   DD 73 25              		ld	(ix+25h), e
+  0135'   DD 72 26              		ld	(ix+26h), d
+  0138'   11 0597'              		ld	de, rread
+  013B'   DD 73 28              		ld	(ix+28h), e
+  013E'   DD 72 29              		ld	(ix+29h), d
+  0141'   11 05A0'              		ld	de, rwrite
+  0144'   DD 73 2B              		ld	(ix+2Bh), e
+  0147'   DD 72 2C              		ld	(ix+2Ch), d
+  014A'   11 05AA'              		ld	de, rsectran
+  014D'   DD 73 31              		ld	(ix+31h), e
+  0150'   DD 72 32              		ld	(ix+32h), d
+  0153'   FB                    		ei
+                                ;
+  0154'   2A 0006               		ld	hl, (6)			; orig. BDOS-Einsprung
+  0157'   22 0507'              		ld	(rbdos+1), hl		; in RBDOS patchen
+  015A'   7D                    		ld	a, l
+  015B'   FE 06                 		cp	6			; bdos steht auf Adr xx06h
+  015D'   20 15                 		jr	nz, init12
+  015F'   23                    		inc	hl
+  0160'   23                    		inc	hl
+  0161'   23                    		inc	hl
+  0162'   E5                    		push	hl
+	MACRO-80 3.44	09-Dec-81	PAGE	1-5
+
+
+  0163'   11 0509'              		ld	de, tab1		; BDOS-Error-Adr. sichern
+  0166'   01 0008               		ld	bc, 8
+  0169'   ED B0                 		ldir
+  016B'   21 032B'              		ld	hl, tab2		; BDOS-Error-Spr|nge
+  016E'   D1                    		pop	de
+  016F'   01 0008               		ld	bc, 8
+  0172'   ED B0                 		ldir
+  0174'   21 0506'              init12:		ld	hl, rbdos
+  0177'   22 0006               		ld	(6), hl
+  017A'   11 022A'              		ld	de, aRafAlsLaufwerk 	; "RAF als Laufwerk	O: installiert\r\n$"
+  017D'   C3 002F'              		jp	init3
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Texte
+                                ;------------------------------------------------------------------------------
+                                
+  0180'   0D 0A                 aNachladbareRaf:db 0Dh,0Ah
+                                ;;		db 'Nachladbare RAF-Installation, Version 11.10.87 ohne Parity',0Dh
+  0182'   4E 61 63 68           		db 'Nachladbare RAF-Installation, (DKt) v.26.07.08 ohne Parity',0Dh
+  0186'   6C 61 64 62           
+  018A'   61 72 65 20           
+  018E'   52 41 46 2D           
+  0192'   49 6E 73 74           
+  0196'   61 6C 6C 61           
+  019A'   74 69 6F 6E           
+  019E'   2C 20 28 44           
+  01A2'   4B 74 29 20           
+  01A6'   76 2E 32 36           
+  01AA'   2E 30 37 2E           
+  01AE'   30 38 20 6F           
+  01B2'   68 6E 65 20           
+  01B6'   50 61 72 69           
+  01BA'   74 79 0D              
+  01BD'   0A                    		db 0Ah
+  01BE'   4D 61 78 69           		db 'Maximal werden '
+  01C2'   6D 61 6C 20           
+  01C6'   77 65 72 64           
+  01CA'   65 6E 20              
+  01CD'   32                    		db 30h+anz_raf
+  01CE'   20 52 41 46           		db ' RAF-Karten ab E/A-Adresse '
+  01D2'   2D 4B 61 72           
+  01D6'   74 65 6E 20           
+  01DA'   61 62 20 45           
+  01DE'   2F 41 2D 41           
+  01E2'   64 72 65 73           
+  01E6'   73 65 20              
+                                		hexout rafport
+  0010                    +     	.RADIX	16
+  01E9'   32 34 48        +     	db	'24','H'
+  000A                    +     	.RADIX	10
+  01EC'   20 61 75 66           		db ' auf Verfuegbarkeit getestet.',0Dh,0Ah,'$'
+  01F0'   20 56 65 72           
+  01F4'   66 75 65 67           
+  01F8'   62 61 72 6B           
+  01FC'   65 69 74 20           
+  0200'   67 65 74 65           
+	MACRO-80 3.44	09-Dec-81	PAGE	1-6
+
+
+  0204'   73 74 65 74           
+  0208'   2E 0D 0A 24           
+  020C'   4B 65 69 6E           aKeineRafKarteV:db 'Keine RAF-Karte vorhanden!',7,0Dh,0Ah,'$'
+  0210'   65 20 52 41           
+  0214'   46 2D 4B 61           
+  0218'   72 74 65 20           
+  021C'   76 6F 72 68           
+  0220'   61 6E 64 65           
+  0224'   6E 21 07 0D           
+  0228'   0A 24                 
+  022A'   52 41 46 20           aRafAlsLaufwerk:db 'RAF als Laufwerk ',lw,': installiert',0Dh,0Ah,'$'
+  022E'   61 6C 73 20           
+  0232'   4C 61 75 66           
+  0236'   77 65 72 6B           
+  023A'   20 4F 3A 20           
+  023E'   69 6E 73 74           
+  0242'   61 6C 6C 69           
+  0246'   65 72 74 0D           
+  024A'   0A 24                 
+  024C'   52 41 46 2D           aRafGesamtkapaz:db 'RAF-Gesamtkapazitaet $'
+  0250'   47 65 73 61           
+  0254'   6D 74 6B 61           
+  0258'   70 61 7A 69           
+  025C'   74 61 65 74           
+  0260'   20 24                 
+  0262'   4B 20 42 79           aKBytes:	db 'K Bytes ($'
+  0266'   74 65 73 20           
+  026A'   28 24                 
+  026C'   20 53 70 75           aSpurenZu128Sek:db ' Spuren zu 128 Sektoren)',0Dh,0Ah,'$'
+  0270'   72 65 6E 20           
+  0274'   7A 75 20 31           
+  0278'   32 38 20 53           
+  027C'   65 6B 74 6F           
+  0280'   72 65 6E 29           
+  0284'   0D 0A 24              
+  0287'   4C 61 75 66           aLaufwerkOIstSc:db 'Laufwerk ',lw,': ist schon installiert!',7,0Dh,0Ah,'$'
+  028B'   77 65 72 6B           
+  028F'   20 4F 3A 20           
+  0293'   69 73 74 20           
+  0297'   73 63 68 6F           
+  029B'   6E 20 69 6E           
+  029F'   73 74 61 6C           
+  02A3'   6C 69 65 72           
+  02A7'   74 21 07 0D           
+  02AB'   0A 24                 
+  02AD'   52 41 46 20           aRafIstNochWieB:db 'RAF ist noch wie bei letzter Benutzung geladen!',0Dh,0Ah,'$'
+  02B1'   69 73 74 20           
+  02B5'   6E 6F 63 68           
+  02B9'   20 77 69 65           
+  02BD'   20 62 65 69           
+  02C1'   20 6C 65 74           
+  02C5'   7A 74 65 72           
+  02C9'   20 42 65 6E           
+  02CD'   75 74 7A 75           
+  02D1'   6E 67 20 67           
+  02D5'   65 6C 61 64           
+	MACRO-80 3.44	09-Dec-81	PAGE	1-7
+
+
+  02D9'   65 6E 21 0D           
+  02DD'   0A 24                 
+  02DF'   52 41 46 20           aRafIstUndefini:db 'RAF ist undefiniert, es folgt Loeschen Directory',0Dh,0Ah,'$'
+  02E3'   69 73 74 20           
+  02E7'   75 6E 64 65           
+  02EB'   66 69 6E 69           
+  02EF'   65 72 74 2C           
+  02F3'   20 65 73 20           
+  02F7'   66 6F 6C 67           
+  02FB'   74 20 4C 6F           
+  02FF'   65 73 63 68           
+  0303'   65 6E 20 44           
+  0307'   69 72 65 63           
+  030B'   74 6F 72 79           
+  030F'   0D 0A 24              
+                                ;83h cursor aus
+  0312'   83 53 70 75           aGspur:		db 83h,'Spur $'
+  0316'   72 20 24              
+  0319'   2C 20 53 65           aSektor:	db ', Sektor ',16h,'$'
+  031D'   6B 74 6F 72           
+  0321'   20 16 24              
+  0324'   0D 24                 aCR:		db 0Dh,'$'
+                                ;82h cursor an
+  0326'   82 0D 0A 24           aV:		db 82h,0Dh,0Ah,'$'
+                                
+                                ;------------------------------------------------------------------------------
+                                ; BDOS-Sicherung
+                                ;------------------------------------------------------------------------------
+                                
+  032A'   E9                    jphl:		jp	(hl)
+                                
+                                
+                                ;------------------------------------------------------------------------------
+                                ; BDOS-Sicherung
+                                ;------------------------------------------------------------------------------
+                                
+                                ;relative locations error routines
+  032B'   0511'                 tab2:		dw 	PERSUB
+  032D'   0515'                 		dw 	SELSUB
+  032F'   0519'                 		dw 	RODSUB
+  0331'   051D'                 		dw 	ROFSUB
+                                
+                                ;------------------------------------------------------------------------------
+                                ; HL dezimal ausgeben
+                                ;------------------------------------------------------------------------------
+                                
+  0333'   E5                    hldez:		push	hl
+  0334'   0E 00                 		ld	c, 0
+  0336'   11 D8F0               		ld	de, -10000
+  0339'   CD 0354'              		call	hldez1
+  033C'   11 FC18               		ld	de, -1000
+  033F'   CD 0354'              		call	hldez1
+  0342'   11 FF9C               		ld	de, -100
+  0345'   CD 0354'              		call	hldez1
+  0348'   11 FFF6               		ld	de, -10
+  034B'   CD 0354'              		call	hldez1
+	MACRO-80 3.44	09-Dec-81	PAGE	1-8
+
+
+  034E'   7D                    		ld	a, l
+  034F'   F6 30                 		or	30h 			; '0'
+  0351'   E1                    		pop	hl
+  0352'   18 04                 		jr	hldez2
+  0354'   CD 0363'              hldez1:		call	hldez3
+  0357'   C8                    		ret	z
+  0358'   C5                    hldez2:		push	bc
+  0359'   E5                    		push	hl
+  035A'   5F                    		ld	e, a
+  035B'   0E 02                 		ld	c, 2
+  035D'   CD 0005               		call	5
+  0360'   E1                    		pop	hl
+  0361'   C1                    		pop	bc
+  0362'   C9                    		ret
+                                ;
+  0363'   3E 2F                 hldez3:		ld	a, 2Fh			; "0'-1
+  0365'   3C                    hldez4:		inc	a
+  0366'   19                    		add	hl, de
+  0367'   38 FC                 		jr	c, hldez4
+  0369'   ED 52                 		sbc	hl, de
+  036B'   0C                    		inc	c
+  036C'   FE 30                 		cp	'0'
+  036E'   C0                    		ret	nz
+  036F'   0D                    		dec	c
+  0370'   C9                    		ret
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Testen auf RAM-Floppies
+                                ; Ermitteln der Einzel- und Gesamtkapazitdt
+                                ; Test, ob initialisiert
+                                ; ret: z=1 keine RAF
+                                ;      cy=1 RAF nicht init
+                                ;      de=Gesamtkapazitdt in kByte
+                                ;      hl=Gesamtkapazitdt in Records
+                                ;------------------------------------------------------------------------------
+                                
+  0371'   21 06D9'              raftst:		ld	hl, rafsztab		; Tabelle der Speicherkapazitdten
+  0374'   11 0000               		ld	de, 0			; de = Gesamtkapazitdt aller RAFs
+  0377'   01 0224               		ld	bc, anz_raf*100h+rafport; C=RAF-Port, B=anz_raf
+  037A'   C5                    raftst1:	push	bc
+  037B'   E5                    		push	hl
+  037C'   06 00                 		ld	b, 0
+                                		; Test auf Speicher
+  037E'   C5                    raftst2:	push	bc			
+  037F'   AF                    		xor	a
+  0380'   CD 0712'              		call	raftrs2
+  0383'   3E 5A                 		ld	a, 5Ah
+  0385'   ED 68                 		in	l, (c)			; orig. Wert sichern
+  0387'   ED 79                 		out	(c), a			; B = RAF-Adr. Bit 21..14
+  0389'   05                    		dec	b
+  038A'   2F                    		cpl
+  038B'   ED 60                 		in	h, (c)			; orig. Wert sichern
+  038D'   ED 79                 		out	(c), a			; CPL
+  038F'   04                    		inc	b
+  0390'   ED 78                 		in	a, (c)
+  0392'   FE 5A                 		cp	5Ah
+	MACRO-80 3.44	09-Dec-81	PAGE	1-9
+
+
+  0394'   ED 69                 		out	(c), l			; orig. Wert restaurieren
+  0396'   20 0E                 		jr	nz, raftst3
+  0398'   05                    		dec	b
+  0399'   ED 78                 		in	a, (c)
+  039B'   FE A5                 		cp	0A5h			; == cpl 5A
+  039D'   ED 61                 		out	(c), h			; orig. Wert restaurieren
+  039F'   20 05                 		jr	nz, raftst3
+  03A1'   C1                    		pop	bc
+  03A2'   04                    		inc	b			; ndchste 16k-Einheit
+  03A3'   20 D9                 		jr	nz, raftst2		; max bis B=FFh
+  03A5'   C5                    		push	bc
+                                		;
+  03A6'   C1                    raftst3:	pop	bc
+  03A7'   78                    		ld	a, b			; a = b = Speicherkapazitdt in 16k-Einheiten
+  03A8'   06 FF                 		ld	b, 0FFh			; Schreibschutz ein
+  03AA'   0C                    		inc	c
+  03AB'   ED 41                 		out	(c), b
+                                		;
+  03AD'   E1                    		pop	hl
+  03AE'   77                    		ld	(hl), a
+  03AF'   83                    		add	a, e
+  03B0'   5F                    		ld	e, a
+  03B1'   3E 00                 		ld	a, 0
+  03B3'   8A                    		adc	a, d
+  03B4'   57                    		ld	d, a			; de = Gesamtkapazitdt aller RAFs in 32K
+  03B5'   C1                    		pop	bc
+  03B6'   23                    		inc	hl			; ndchste Merkzelle f|r Kapazitdt
+  03B7'   0C                    		inc	c
+  03B8'   0C                    		inc	c			; ndchste RAF testen
+  03B9'   10 BF                 		djnz	raftst1			; bis anz_raf RAFs getestet
+                                		;
+  03BB'   7A                    		ld	a, d
+  03BC'   B3                    		or	e
+  03BD'   CA 04C0'              		jp	z, locret_5C0		; wenn Gesamtkapazitdt = 0, d.h. keine RAF
+                                
+  03C0'   D5                    		push	de			; Gesamtkapzitdt
+  03C1'   F5                    		push	af			; Z-Flag sichern
+                                
+  03C2'   EB                    		ex	de, hl			; Gesamtkapazitdt in 16k-Einheiten
+  03C3'   29                    		add	hl, hl			; * 2
+  03C4'   29                    		add	hl, hl			; * 4
+  03C5'   29                    		add	hl, hl			; * 8
+  03C6'   29                    		add	hl, hl			; * 16
+  03C7'   EB                    		ex	de, hl			; de = de * 16 = Gesamtkapazitdt in KByte
+  03C8'   D5                    		push	de			; Gesamtkapzitdt
+                                		;
+  03C9'   21 0449'              		ld	hl, dbplist
+  03CC'   01 000F               		ld	bc, 0Fh			; Ldnge pro Eintrag in dbplist
+  03CF'   7E                    raftst4:	ld	a, (hl)
+  03D0'   23                    		inc	hl
+  03D1'   93                    		sub	e
+  03D2'   7E                    		ld	a, (hl)
+  03D3'   23                    		inc	hl
+  03D4'   9A                    		sbc	a, d			; Kapazitdt >= de?
+  03D5'   30 03                 		jr	nc, raftst5		; ja: gefundener Eintrag ist gro_ genug
+  03D7'   09                    		add	hl, bc
+	MACRO-80 3.44	09-Dec-81	PAGE	1-10
+
+
+  03D8'   18 F5                 		jr	raftst4
+                                		;
+  03DA'   D5                    raftst5:	push	de
+  03DB'   11 05C4'              		ld	de, rafdpb
+  03DE'   ED B0                 		ldir				; gefundenen Eintrag nach rafdpb kopieren
+                                		;Anpassen des DPB
+  03E0'   E1                    		pop	hl
+  03E1'   22 0447'              		ld	(word_547), hl		; Gesamt-Kapazitdt in KB
+  03E4'   3A 05C6'              		ld	a, (rafdpb_bsh)
+  03E7'   D6 03                 		sub	3
+  03E9'   28 07                 		jr	z, raftst7
+  03EB'   47                    		ld	b, a
+  03EC'   CB 3C                 raftst6:	srl	h
+  03EE'   CB 1D                 		rr	l
+  03F0'   10 FA                 		djnz	raftst6
+  03F2'   2B                    raftst7:	dec	hl
+  03F3'   22 05C9'              		ld	(rafdpb_dsm), hl	; DSM anpassen
+                                		;Test, ob RAF initialisiert
+  03F6'   CD 0416'              		call	rafrdsc0		; ersten Sektor lesen
+  03F9'   21 0653'              		ld	hl, rafdirbuf		; Dir-Puffer
+  03FC'   11 0429'              		ld	de, rafdirinit		; Vergleich auf "RAFvalid.SYS"
+  03FF'   06 20                 		ld	b, 20h
+  0401'   1A                    raftst8:	ld	a, (de)
+  0402'   BE                    		cp	(hl)
+  0403'   20 06                 		jr	nz, raftst9
+  0405'   13                    		inc	de
+  0406'   23                    		inc	hl
+  0407'   10 F8                 		djnz	raftst8
+  0409'   18 05                 		jr	raftst10
+  040B'   D1                    raftst9:	pop	de
+  040C'   F1                    		pop	af			; Flags
+  040D'   37                    		scf				; nicht init.
+  040E'   F5                    		push	af			; Flags
+  040F'   D5                    		push	de
+  0410'   D1                    raftst10:	pop	de			
+  0411'   F1                    		pop	af			; Flags
+  0412'   E1                    		pop	hl			; Gesamtkapzitdt
+  0413'   C3 04C0'              		jp	locret_5C0
+                                
+                                ; ersten Sektor lesen
+  0416'   21 0653'              rafrdsc0:	ld	hl, rafdirbuf		; Dir-Puffer
+  0419'   22 06D3'              		ld	(dbdma), hl
+  041C'   21 0000               		ld	hl, 0
+  041F'   22 06D5'              		ld	(dtrack), hl
+  0422'   23                    		inc	hl			; CP/A Sektoren ab 1
+  0423'   22 06D7'              		ld	(dsectr), hl
+  0426'   C3 06E1'              		jp	p_rread
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Directory-Eintrag f|r initialisierte RAM-Floppy
+                                ;------------------------------------------------------------------------------
+                                
+  0429'   20                    rafdirinit:	db  	20h		; user 32 - wird nie angezeigt!
+  042A'   52                    		db  	'R'
+  042B'   41                    		db  	'A'
+  042C'   46                    		db  	'F'
+	MACRO-80 3.44	09-Dec-81	PAGE	1-11
+
+
+  042D'   76                    		db  	'v'
+  042E'   61                    		db  	'a'
+  042F'   6C                    		db  	'l'
+  0430'   69                    		db  	'i'
+  0431'   64                    		db  	'd'
+  0432'   D3                    		db  	'S' + 80h	; FILE R/O
+  0433'   D9                    		db  	'Y' + 80h	; Systemfile
+  0434'   53                    		db  	'S'
+  0435'   00                    		db    	0
+  0436'   00                    		db    	0
+  0437'   00                    		db    	0
+  0438'   00                    		db    	0
+  0439'   00                    		db    	0
+  043A'   00                    		db    	0
+  043B'   00                    		db    	0
+  043C'   00                    		db    	0
+  043D'   00                    		db    	0
+  043E'   00                    		db    	0
+  043F'   00                    		db    	0
+  0440'   00                    		db    	0
+  0441'   00                    		db    	0
+  0442'   00                    		db    	0
+  0443'   00                    		db    	0
+  0444'   00                    		db    	0
+  0445'   00                    		db    	0
+  0446'   00                    		db    	0
+                                ;
+                                
+  0447'   0000                  word_547:	dw 	0
+                                
+                                ;------------------------------------------------------------------------------
+                                ; dbp-Liste, im Vergleich zu normalen DPB steht hier am Anfang noch die Grv_e
+                                ;------------------------------------------------------------------------------
+                                
+                                
+  0449'                         dbplist:
+                                ; 64 x 1K (DSM x BLS = Kapazizdt)
+  0449'   0040                  		dw  0040h	; Grv_e in KByte
+  044B'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  044D'   03                    		db    3		; BSH	= log2(blocksize/128)
+  044E'   07                    		db    7		; BLM	= 2^BSH-1
+  044F'   00                    		db    0		; EXM
+  0450'   003F                  		dw  3Fh		; DSM	max. Blockanzahl-1
+  0452'   001F                  		dw  1Fh		; DRM	max. Dir. Eintrdge-1
+  0454'   80                    		db  80h		; AL0
+  0455'   00                    		db    0		; AL1
+  0456'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  0458'   0000                  		dw    0		; OFF	reservierte Spuren
+                                ; 128 x 1K
+  045A'   0080                  		dw  0080h	; Grv_e in KByte
+  045C'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  045E'   03                    		db    3		; BSH	= log2(blocksize/128)
+  045F'   07                    		db    7		; BLM	= 2^BSH-1
+  0460'   00                    		db    0		; EXM
+  0461'   007F                  		dw  7Fh		; DSM	max. Blockanzahl-1
+  0463'   003F                  		dw  3Fh		; DRM	max. Dir. Eintrdge-1
+	MACRO-80 3.44	09-Dec-81	PAGE	1-12
+
+
+  0465'   C0                    		db 0C0h		; AL0
+  0466'   00                    		db    0		; AL1
+  0467'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  0469'   0000                  		dw    0		; OFF	reservierte Spuren
+                                ; 128 x 2K
+  046B'   0100                  		dw  0100h	; Grv_e in KByte
+  046D'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  046F'   04                    		db    4		; BSH	= log2(blocksize/128)
+  0470'   0F                    		db  0Fh		; BLM	= 2^BSH-1
+  0471'   01                    		db    1		; EXM
+  0472'   007F                  		dw  7Fh		; DSM	max. Blockanzahl-1
+  0474'   007F                  		dw  7Fh		; DRM	max. Dir. Eintrdge-1
+  0476'   C0                    		db 0C0h		; AL0
+  0477'   00                    		db    0		; AL1
+  0478'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  047A'   0000                  		dw    0		; OFF	reservierte Spuren
+                                ; 256 x 2K
+  047C'   0200                  		dw  0200h	; Grv_e in KByte
+  047E'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  0480'   04                    		db    4		; BSH	= log2(blocksize/128)
+  0481'   0F                    		db  0Fh		; BLM	= 2^BSH-1
+  0482'   01                    		db    1		; EXM
+  0483'   00FF                  		dw 0FFh		; DSM	max. Blockanzahl-1
+  0485'   007F                  		dw  7Fh		; DRM	max. Dir. Eintrdge-1
+  0487'   C0                    		db 0C0h		; AL0
+  0488'   00                    		db    0		; AL1
+  0489'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  048B'   0000                  		dw    0		; OFF	reservierte Spuren
+                                ; 512 x 2K
+  048D'   0400                  		dw  0400h	; Grv_e in KByte
+  048F'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  0491'   04                    		db    4		; BSH	= log2(blocksize/128)
+  0492'   0F                    		db  0Fh		; BLM	= 2^BSH-1
+  0493'   00                    		db    0		; EXM
+  0494'   01FF                  		dw 01FFh	; DSM	max. Blockanzahl-1    h
+  0496'   00FF                  		dw 0FFh		; DRM	max. Dir. Eintrdge-1
+  0498'   F0                    		db 0F0h		; AL0
+  0499'   00                    		db    0		; AL1
+  049A'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  049C'   0000                  		dw    0		; OFF	reservierte Spuren
+                                ; 1024 x 4K
+  049E'   1000                  		dw  1000h	; Grv_e in KByte
+  04A0'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  04A2'   05                    		db    5		; BSH	= log2(blocksize/128)
+  04A3'   1F                    		db  1Fh		; BLM	= 2^BSH-1
+  04A4'   01                    		db    1		; EXM
+  04A5'   03FF                  		dw 03FFh	; DSM	max. Blockanzahl-1    h
+  04A7'   01FF                  		dw 01FFh	; DRM	max. Dir. Eintrdge-1  h
+  04A9'   F0                    		db 0F0h		; AL0
+  04AA'   00                    		db    0		; AL1
+  04AB'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  04AD'   0000                  		dw    0		; OFF	reservierte Spuren
+                                ; 1024 x 8K
+  04AF'   2000                  		dw  2000h	; Grv_e in KByte
+  04B1'   0080                  		dw  80h		; SPT	Sektoren/Spur
+  04B3'   06                    		db    6		; BSH	= log2(blocksize/128)
+	MACRO-80 3.44	09-Dec-81	PAGE	1-13
+
+
+  04B4'   3F                    		db  3Fh		; BLM	= 2^BSH-1
+  04B5'   03                    		db    3		; EXM
+  04B6'   03FF                  		dw 03FFh	; DSM	max. Blockanzahl-1    h
+  04B8'   01FF                  		dw 01FFh	; DRM	max. Dir. Eintrdge-1  h
+  04BA'   80                    		db  80h		; AL0
+  04BB'   00                    		db    0		; AL1
+  04BC'   0000                  		dw    0		; CKS	= (DRM+1)/4
+  04BE'   0000                  		dw    0		; OFF	reservierte Spuren
+                                
+                                
+                                ;
+  04C0'   C9                    locret_5C0:	ret
+                                
+                                ;------------------------------------------------------------------------------
+                                ; BDOS replacement
+                                ; der Treiber wird vor das CCP geladen (s. prl2com.mac)
+                                ; der nachfolgende Teil landet dabei auf einer xx00h-Adresse 
+                                ; es wird der Beginn des BDOS emuliert (wichtig f|r SID u.a.)
+                                ;------------------------------------------------------------------------------
+                                
+                                		ORG	($+255)/256*256	; xx00h-Adresse
+                                
+  0500'   FE                    		db 	0FEh
+  0501'   FE                    		db 	0FEh
+  0502'   FE                    		db 	0FEh
+  0503'   FE                    		db 	0FEh
+  0504'   FE                    		db 	0FEh
+  0505'   FE                    		db 	0FEh
+                                
+                                ; hier Adr xxx06, wird in init getestet
+                                
+                                ; JP	BDOSE
+  0506'   C3 0005               rbdos:		jp	5
+                                
+                                ; relative locations error subroutines
+  0509'   0000                  tab1:		dw	0
+  050B'   0000                  		dw	0
+  050D'   0000                  		dw	0
+  050F'   0000                  		dw	0
+                                ;
+  0511'   2A 0509'              PERSUB:		ld	hl, (tab1)
+  0514'   E9                    		jp	(hl)
+  0515'   2A 050B'              SELSUB:		ld	hl, (tab1+2)
+  0518'   E9                    		jp	(hl)
+  0519'   2A 050D'              RODSUB:		ld	hl, (tab1+4)
+  051C'   E9                    		jp	(hl)
+  051D'   2A 050F'              ROFSUB:		ld	hl, (tab1+6)
+  0520'   E9                    		jp	(hl)
+                                
+                                ;------------------------------------------------------------------------------
+                                ;der BIOS-Sprungverteiler
+                                ;wird mit dem originalen Sprungverteiler des BIOS gef|llt
+                                ;dann werden im originalen Sprungverteiler des BIOS die RAF-spezifischen Einspr|nge gepatcht
+                                ;------------------------------------------------------------------------------
+                                
+  0521'   FF FF FF              biosv:		db 0FFh, 0FFh, 0FFh	; BOOT
+	MACRO-80 3.44	09-Dec-81	PAGE	1-14
+
+
+  0524'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; WBOOT
+  0527'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; CONST
+  052A'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; CONIN
+  052D'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; CONOUT
+  0530'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; LIST
+  0533'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; PUNCH
+  0536'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; READER
+  0539'   FF FF FF              jhome:		db 0FFh, 0FFh, 0FFh	; HOME
+  053C'   FF FF FF              jseldsk:	db 0FFh, 0FFh, 0FFh	; SELDSK
+  053F'   FF FF FF              jsettrk:	db 0FFh, 0FFh, 0FFh	; SETTRK
+  0542'   FF FF FF              jsetsec:	db 0FFh, 0FFh, 0FFh	; SETSEC
+  0545'   FF FF FF              jsetdma:	db 0FFh, 0FFh, 0FFh	; SETDMA
+  0548'   FF FF FF              jread:		db 0FFh, 0FFh, 0FFh	; READ
+  054B'   FF FF FF              jwrite:		db 0FFh, 0FFh, 0FFh	; WRITE
+  054E'   FF FF FF              		db 0FFh, 0FFh, 0FFh	; LISTST
+  0551'   FF FF FF              jsectran:	db 0FFh, 0FFh, 0FFh	; SECTRAN
+                                
+                                ; bis hierher sieht das BDOS wie im Original aus. Wichtig f|r Debugger u.a. Programme!
+                                
+                                ;------------------------------------------------------------------------------
+                                ;selektive BIOS-Routinen
+                                ;bezieht sich der Aufruf auf die RAF, werden deren Routinen (jxxx) angesprungen
+                                ;andernfalls gehts ins originale BIOS
+                                ;------------------------------------------------------------------------------
+                                
+                                ; BOOT
+  0554'   31 FFFF               rwboot:		ld	sp, 0FFFFh
+  0557'   21 0506'              		ld	hl, rbdos
+  055A'   22 0006               		ld	(6), hl
+  055D'   1E 82                 		ld	e, 82h 			; Zeichen 82h
+  055F'   0E 02                 		ld	c, 2			; Konsolenausgabe
+  0561'   CD 0005               		call	5
+  0564'   0E 0D                 		ld	c, 0Dh			; Diskettensystem zur|cksetzen
+  0566'   CD 0005               		call	5
+  0569'   C3 0000               rwboot1:	jp	0
+                                
+                                ; HOME
+  056C'   21 0000               rhome:		ld	hl, 0
+  056F'   22 06D5'              		ld	(dtrack), hl
+  0572'   C3 0539'              		jp	jhome
+                                
+                                ; SELDSK
+  0575'   79                    rseldsk:	ld	a, c
+  0576'   D6 0E                 		sub	lw-'A'			; Laufwerk
+  0578'   32 0598'              		ld	(rread+1), a
+  057B'   C2 053C'              		jp	nz, jseldsk
+  057E'   21 05B4'              		ld	hl, rafdph
+  0581'   C9                    		ret
+                                
+                                ; SETTRK
+  0582'   ED 43 06D5'           rsettrk:	ld	(dtrack), bc
+  0586'   C3 053F'              		jp	jsettrk
+                                
+                                ; SETSEC
+  0589'   ED 43 06D7'           rsetsec:	ld	(dsectr), bc
+  058D'   C3 0542'              		jp	jsetsec
+	MACRO-80 3.44	09-Dec-81	PAGE	1-15
+
+
+                                
+                                ; SETDMA
+  0590'   ED 43 06D3'           rsetdma:	ld	(dbdma), bc
+  0594'   C3 0545'              		jp	jsetdma
+                                
+                                ; READ
+  0597'   3E FF                 rread:		ld	a, 0FFh			; hier wird der	Laufwerksbuchstabe reingepatcht
+  0599'   B7                    		or	a
+  059A'   CA 06E1'              		jp	z, p_rread
+  059D'   C3 0548'              		jp	jread
+                                
+                                ; WRITE
+  05A0'   3A 0598'              rwrite:		ld	a, (rread+1)
+  05A3'   B7                    		or	a
+  05A4'   CA 06EE'              		jp	z, p_rwrite
+  05A7'   C3 054B'              		jp	jwrite
+                                
+                                ; SECTRAN
+  05AA'   3A 0598'              rsectran:	ld	a, (rread+1)
+  05AD'   B7                    		or	a
+  05AE'   CA 06DD'              		jp	z, p_rsectran
+  05B1'   C3 0551'              		jp	jsectran
+                                
+                                ;------------------------------------------------------------------------------
+                                ; DBH und DPB RAM-Floppy
+                                ;------------------------------------------------------------------------------
+                                
+                                ; aktueller DPH
+  05B4'   0000                  rafdph:		dw 	0
+  05B6'   0000                  		dw 	0
+  05B8'   0000                  		dw 	0
+  05BA'   0000                  		dw 	0
+  05BC'   0653'                 		dw 	rafdirbuf		; Dir-Puffer
+  05BE'   05C4'                 		dw 	rafdpb
+  05C0'   0000                  		dw 	0
+  05C2'   05D3'                 		dw 	rafalv
+                                
+                                ; aktueller DPB
+  05C4'   0080                  rafdpb:		dw 	80h			; SPT	Sektoren/Spur
+  05C6'   04                    rafdpb_bsh:	db 	4            		; BSH	= log2(blocksize/128)
+  05C7'   0F                    		db 	0Fh          		; BLM	= 2^BSH-1
+  05C8'   01                    		db 	1            		; EXM
+  05C9'   00FF                  rafdpb_dsm:	dw 	0FFh         		; DSM	max. Blockanzahl-1
+  05CB'   007F                  rafdpb_drm:	dw 	7Fh          		; DRM	max. Dir. Eintrdge-1
+  05CD'   C0                    		db 	0C0h     			; AL0
+  05CE'   00                    		db 	0            		; AL1
+  05CF'   0000                  		dw 	0            		; CKS	= (DRM+1)/4
+  05D1'   0000                  		dw 	0            		; OFF	reservierte Spuren
+                                
+                                ;------------------------------------------------------------------------------
+                                ; BIOS-Speicherbereiche f|r Disk
+                                ;------------------------------------------------------------------------------
+                                
+  05D3'                         rafalv:		ds  	128,0			; Allocation Bit Map
+                                
+  0653'                         rafdirbuf:	ds  	128,0FAh		; Dir-Puffer
+	MACRO-80 3.44	09-Dec-81	PAGE	1-16
+
+
+                                
+                                ;------------------------------------------------------------------------------
+                                ; RAM-Zellen
+                                ;------------------------------------------------------------------------------
+                                
+  06D3'   0000                  dbdma:		dw 	0
+  06D5'   0000                  dtrack:		dw 	0
+  06D7'   0000                  dsectr:		dw 	0
+                                
+                                ; Merkzellen f|r Vorhandensein von max. 4 RAM-Floppies
+  06D9'   00                    rafsztab:	db    	0			; Speicherkapazitdt RAF 0 in 16K-Einheiten
+  06DA'   00                    		db    	0			; Speicherkapazitdt RAF 1 in 16K-Einheiten
+  06DB'   00                    		db    	0			; Speicherkapazitdt RAF 2 in 16K-Einheiten
+  06DC'   00                    		db    	0			; Speicherkapazitdt RAF 3 in 16K-Einheiten
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Patches und RAF-Ansteuerung
+                                ;------------------------------------------------------------------------------
+                                
+                                ; SECTRAN
+  06DD'   60                    p_rsectran:	ld	h, b
+  06DE'   69                    		ld	l, c
+  06DF'   23                    		inc	hl 			; CP/A Sektoren ab 1
+  06E0'   C9                    		ret
+                                
+                                ; READ	Lesen eines Sektors
+  06E1'   CD 06F6'              p_rread:	call	raftrs			; Track und Sektorregister laden
+  06E4'   ED B2                 		inir				; Daten-Input,  B war 7fh
+  06E6'   ED A2                 		ini				; 128. Byte lesen
+  06E8'   0C                    p_rread1:	inc	c			; c=ctrl-Port
+  06E9'   06 FF                 		ld	b, 0FFh			; Zugriffsschutz-Bit 7 = 1
+  06EB'   ED 41                 		out	(c), b			; Zugriffsschutz wieder setzen (I/O-Disable)
+  06ED'   C9                    		ret
+                                
+                                ; WRITE	Schreiben eines Sektors
+  06EE'   CD 06F6'              p_rwrite:	call	raftrs
+  06F1'   04                    		inc	b			; war 127 fuer READ, WRITE braucht 128 !
+  06F2'   ED B3                 		otir				; 128 Byte ausgeben
+  06F4'   18 F2                 		jr	p_rread1
+                                
+                                ; RAF-Addresse berechnen
+                                ; RAFTRS initialisiert die Track- und Sektor-Register zum Datenzugriff und
+                                ; setzt den Zugriffsschutz zurueck.
+                                ; Die Read- und Write-Routinen sind dann einfache Block-I/O-Uebertragungen,
+                                ; mit anschliessendem Setzen des Zugriffsschutzes.
+                                
+  06F6'   21 06D8'              raftrs:		ld	hl, rafsztab-1
+  06F9'   ED 5B 06D5'           		ld	de, (dtrack)
+  06FD'   0E 22                 		ld	c, rafport-2
+  06FF'   7B                    		ld	a, e
+  0700'   0C                    raftrs1:	inc	c
+  0701'   0C                    		inc	c
+  0702'   23                    		inc	hl
+  0703'   96                    		sub	(hl)
+  0704'   30 FA                 		jr	nc, raftrs1
+  0706'   15                    		dec	d
+	MACRO-80 3.44	09-Dec-81	PAGE	1-17
+
+
+  0707'   28 F7                 		jr	z, raftrs1
+  0709'   86                    		add	a, (hl)
+  070A'   47                    		ld	b, a
+                                		;
+  070B'   3A 06D7'              		ld	a, (dsectr)		; a=(SECTOR)
+  070E'   3D                    		dec	a			; RAF zdhlt Sektoren 0..255;  BIOS 1..256
+  070F'   2A 06D3'              		ld	hl, (dbdma)		; hl=DMA-Adresse f. Block IO
+                                ;
+  0712'   87                    raftrs2:	add	a, a			; SECTOR Shift left, D0 = 0, evtl set carry
+  0713'   CB 38                 		srl	b			; shift right, 0->D7 , D0->carry
+  0715'   1F                    		rra				; SECTOR shift right, carry->D7, D0->carry
+  0716'   0C                    		inc	c			; Setzen Control Port
+  0717'   ED 79                 		out	(c), a			; Zugriff auf Control Port, a=Sektornummer
+  0719'   0D                    		dec	c			; Setzen Daten Port
+  071A'   06 7F                 		ld	b, 127			; fuer 128 Bytes Lesen (INIR + 1 x INI,
+                                						; bei OTIR B:=B+1 vor Schreiben notwendig)
+  071C'   AF                    		xor	a			; a = 00, Z = "No-Error"-Flag zu BIOS-RD/WR
+  071D'   C9                    		ret
+                                
+                                		end
+	MACRO-80 3.44	09-Dec-81	PAGE	S
+
+
+Macros:
+HEXDB           HEXOUT          
+
+Symbols:
+0324'	ACR             0312'	AGSPUR          0262'	AKBYTES         
+020C'	AKEINERAFKARTEV 0287'	ALAUFWERKOISTSC 0180'	ANACHLADBARERAF 
+0002 	ANZ_RAF         022A'	ARAFALSLAUFWERK 024C'	ARAFGESAMTKAPAZ 
+02AD'	ARAFISTNOCHWIEB 02DF'	ARAFISTUNDEFINI 0319'	ASEKTOR         
+026C'	ASPURENZU128SEK 0326'	AV              0521'	BIOSV           
+06D3'	DBDMA           0449'	DBPLIST         06D7'	DSECTR          
+06D5'	DTRACK          0079'	ERAS1           007D'	ERAS2           
+00B0'	ERAS3           00B7'	ERAS4           0333'	HLDEZ           
+0354'	HLDEZ1          0358'	HLDEZ2          0363'	HLDEZ3          
+0365'	HLDEZ4          0000'	INIT            0001'	INIT1           
+00EB'	INIT10          0174'	INIT12          0004'	INIT2           
+002F'	INIT3           0037'	INIT4           003A'	INIT5           
+004B'	INIT6           0050'	INIT7           005D'	INIT8           
+00D7'	INIT9           0539'	JHOME           032A'	JPHL            
+0548'	JREAD           0551'	JSECTRAN        053C'	JSELDSK         
+0545'	JSETDMA         0542'	JSETSEC         053F'	JSETTRK         
+054B'	JWRITE          04C0'	LOCRET_5C0      004F 	LW              
+0511'	PERSUB          06E1'	P_RREAD         06E8'	P_RREAD1        
+06DD'	P_RSECTRAN      06EE'	P_RWRITE        05D3'	RAFALV          
+0653'	RAFDIRBUF       0429'	RAFDIRINIT      05C4'	RAFDPB          
+05C6'	RAFDPB_BSH      05CB'	RAFDPB_DRM      05C9'	RAFDPB_DSM      
+05B4'	RAFDPH          0024 	RAFPORT         0416'	RAFRDSC0        
+06D9'	RAFSZTAB        06F6'	RAFTRS          0700'	RAFTRS1         
+0712'	RAFTRS2         0371'	RAFTST          037A'	RAFTST1         
+0410'	RAFTST10        037E'	RAFTST2         03A6'	RAFTST3         
+03CF'	RAFTST4         03DA'	RAFTST5         03EC'	RAFTST6         
+03F2'	RAFTST7         0401'	RAFTST8         040B'	RAFTST9         
+0506'	RBDOS           056C'	RHOME           0519'	RODSUB          
+051D'	ROFSUB          0597'	RREAD           05AA'	RSECTRAN        
+0575'	RSELDSK         0590'	RSETDMA         0589'	RSETSEC         
+0582'	RSETTRK         0554'	RWBOOT          0569'	RWBOOT1         
+05A0'	RWRITE          0515'	SELSUB          0509'	TAB1            
+032B'	TAB2            0447'	WORD_547        
+
+
+
+No Fatal error(s)
+
+
+    03EC'	RAFTST6         
+03F2'	RAFTST7         0401'	RAFTST8         040B'	RAFTST9         
+0506'	RBDOS           056C'	

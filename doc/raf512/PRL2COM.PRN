@@ -1,0 +1,424 @@
+	MACRO-80 3.44	09-Dec-81	PAGE	1
+
+
+                                ;------------------------------------------------------------------------------
+                                ; Universeller Patcher f|r PRL-Dateien
+                                ; Loader: reass. V. Pohlers 2009 aus Raf2x24O.com
+                                ; Patchroutine: V. Pohlers 2009
+                                ;------------------------------------------------------------------------------
+                                ; der eigentliche Treiber wird mit REL-Informationen assembliert
+                                ; kein ASEG im Treiber, kein ORG, nur CSEG
+                                ; 	m80.com =treiber
+                                ; 	link.com treiber[op]
+                                ; erzeugt treiber.prl
+                                ; dann kann dieser Treiber mit prl2com gepatcht werden.
+                                ; 	prl2com treiber.prl
+                                ; erzeugt treiber.com
+                                ; Dieses Programm enthdlt nun den Loaderm, den Treiber und Relokations-Informationen
+                                ; und verschiebt sich selbststdndig ans obere Speicherende und startet
+                                ;------------------------------------------------------------------------------
+                                ; assemblieren des Patchers:
+                                ; m80 =prlldr
+                                ; link prlldr
+                                ;------------------------------------------------------------------------------
+                                
+                                ; PRL header
+                                ; The PRL file starts with a 256-byte header: 
+                                ; 
+                                ; 	DB	0	;Always 0
+                                ; 	DW	bytes	;Number of bytes in program image. This includes the
+                                ; 			;code and initialised data groups.
+                                ; 	DB	0	;Always 0
+                                ; 	DW	bss	;Number of bytes reserved for uninitialised data. 
+                                ; 			;Always 0 in an OVL file.
+                                ; 	DB	0
+                                ; 	DW	loadadd	;Load address. Always 0 except in OVL files, because
+                                ; 			;the other files are relocatable.
+                                ; 	DB	0
+                                ; 	DW	csbase	;BIOS link. Always zero unless Link-80 was used with
+                                ; 			;the [B] option, in which case it is the base address
+                                ; 			;of the code group.
+                                ; 	DS	0F4h	;Unused
+                                ; 
+                                ;------------------------------------------------------------------------------
+                                ; Programmablauf:
+                                ; datei treiber.prl vffnen
+                                ; den ersten Sektor lesen
+                                ; 	bytes 1+2	- bytes Treiberldnge
+                                ; 	bytes 4+5	- bss Reserved
+                                ; Speicher patchen: 0003: Treiberldnge, 0005: bss Reserved
+                                ; Speicher als 1. Sektor zur|ckschreiben
+                                ; datei in treiber.com umbenennen
+                                ;------------------------------------------------------------------------------
+                                
+                                		.Z80
+                                
+  0000'                         		aseg
+                                
+                                		org	100h
+                                
+	MACRO-80 3.44	09-Dec-81	PAGE	1-1
+
+
+  0100    C3 0103               	JP	START
+                                
+  0005                          BDOS	EQU	0005H		; DOS entry point
+  005C                          FCB	EQU	005CH		; File control block
+  0002                          TYPEF	EQU	2		; Type character to console
+  0009                          PRINTF	EQU	9		; Print string terminated by '$'
+  000A                          RDBUFF	EQU	10		; Read console buffer
+  000F                          OPENF	EQU	15		; Open file
+  0010                          CLOSEF	EQU	16		; Close file
+  0021                          READF	EQU	33		; wahlfreies Lesen
+  0022                          WRITEF	EQU	34		; wahlfreies Schreiben
+  001A                          DMAF	EQU	26		; Set DMA
+  000D                          CR	EQU	0DH		; Carriage return
+  000A                          LF	EQU	0AH		; Line feed
+  0009                          TAB	EQU	9		; Tab character
+                                
+                                
+                                ; Initialize local stack
+                                
+  0103    21 0000               START:	LD	HL,0		; Clear HL
+  0106    39                    	ADD	HL,SP		; Add in old stack
+  0107    22 0344               	LD	(OLDSP),HL	; Save it
+  010A    31 0344               	LD	SP,STACK	; Set up new stack
+                                
+                                ; Check for command line file name
+                                
+  010D    3A 005D               	LD	A,(FCB+1)	; Get first character
+  0110    FE 20                 	CP	' '		; If it's not a space
+  0112    20 06                 	JR	NZ,OPEN		; Then use that name
+  0114    11 01DB               	LD	DE,HOWDY	; Sign on
+  0117    CD 01C2               	CALL	ERROR		; Textausgabe und Ende
+                                
+                                ; Open the file
+                                
+  011A    AF                    OPEN:	xor	a
+  011B    32 0068               	ld	(fcb+12),a	; fcb.ex := 0
+  011E    11 005C               	LD	DE,FCB		; Point to FCB
+  0121    0E 0F                 	LD	C,OPENF		; Open the file
+  0123    CD 0005               	CALL	BDOS
+  0126    11 0218               	LD	DE,NOFILE	; Error message
+  0129    3C                    	INC	A		; FF-->0 if no file
+  012A    CA 01C2               	JP	Z,ERROR		; So bail out
+                                
+                                ; Initialize the pointer to the DMA
+                                
+  012D    11 0400               	LD	DE,BUFFER	; Point to data area
+  0130    ED 53 034A            	LD	(BDMA),DE	; Store current pointer
+  0134    0E 1A                 	LD	C,DMAF		; Set the DMA
+  0136    CD 0005               	CALL	BDOS
+  0139    AF                    	XOR	A		; Zero a
+  013A    32 007C               	LD	(FCB+32),A	; Clear CR in DMA
+  013D    32 007D               	ld	(fcb+33),a	; fcb.r1 := 0
+  0140    32 007E               	ld	(fcb+34),a	; fcb.r2 := 0
+  0143    32 007F               	ld	(fcb+35),a	; fcb.r3 := 0
+                                
+                                
+	MACRO-80 3.44	09-Dec-81	PAGE	1-2
+
+
+                                ; Read first block into memory
+                                
+  0146    11 005C               READ:	LD	DE,FCB		; Get record
+  0149    0E 21                 	LD	C,READF
+  014B    CD 0005               	CALL	BDOS
+  014E    B7                    	OR	A		; Zero if read ok
+  014F    11 0237               	ld	de,NOLOAD
+  0152    20 6E                 	jr	nz,error
+                                	
+                                
+                                ; Buffer modifizieren: Loader patchen und in Buffer kopieren
+                                
+  0154    2A 0401               	ld	hl,(BUFFER+1)	; bytes 1+2 Treiberldnge
+  0157    22 0299               	ld	(trbstart+3),hl
+                                
+  015A    2A 0404               	ld	hl,(BUFFER+4)	; bytes 4+5 bss Reserved
+  015D    22 029B               	ld	(trbstart+5),hl
+                                
+  0160    21 0296               	ld	hl,trbstart	; copy loader
+  0163    11 0400               	ld	de,BUFFER
+  0166    01 006E               	ld	bc,trbend-trbstart
+  0169    ED B0                 	ldir
+                                
+                                ; Block schreiben
+                                
+  016B    11 005C               	LD	DE,FCB		; Get record
+  016E    0E 22                 	LD	C,WRITEF
+  0170    CD 0005               	CALL	BDOS
+  0173    B7                    	OR	A		; Zero if read ok
+  0174    11 0254               	ld	de,NOWRIT
+  0177    20 49                 	jr	nz,error
+                                	
+                                
+                                ; Datei schlie_en
+                                
+  0179    11 005C               	LD	DE,FCB		; Get record
+  017C    0E 10                 	LD	C,CLOSEF
+  017E    CD 0005               	CALL	BDOS
+  0181    11 0254               	LD	DE,NOWRIT	; Error message
+  0184    3C                    	INC	A		; FF-->0 if no file
+  0185    28 3B                 	Jr	Z,ERROR		; So bail out
+                                
+                                ; Datei umbenennen
+                                	
+  0187    21 005C               	ld	hl,fcb
+  018A    11 006C               	ld	de,fcb+16
+  018D    01 0010               	ld	bc,16
+  0190    ED B0                 	ldir			; copy filename
+                                
+  0192    3E 43                 	ld	a,'C'
+  0194    32 0075               	ld	(fcb+16+9),a
+  0197    21 4D4F               	ld	hl,'MO'
+  019A    22 0076               	ld	(fcb+16+10),hl	; Endung 'COM'
+                                
+                                ; evtl. vorhandene Datei lvschen
+                                	
+	MACRO-80 3.44	09-Dec-81	PAGE	1-3
+
+
+  019D    21 006C               	ld	hl, fcb+16
+  01A0    11 034C               	ld	de, erafcb
+  01A3    01 0010               	ld	bc,16
+  01A6    ED B0                 	ldir
+  01A8    11 034C               	ld	de, erafcb
+  01AB    0E 13                 	ld	c,19		; ERASE FILE
+  01AD    CD 0005               	call	BDOS		; blind erase
+                                
+                                ; dann umbenennen
+                                
+  01B0    11 005C               	ld	de,fcb
+  01B3    0E 17                 	ld	c,23		; RENAME
+  01B5    CD 0005               	call	BDOS
+  01B8    11 0254               	LD	DE,NOWRIT	; Error message
+  01BB    3C                    	INC	A		; FF-->0 if no file
+  01BC    CA 01C2               	JP	Z,ERROR		; So bail out
+                                
+  01BF    11 0279               exit:	ld	de, ok
+                                
+                                ; Fehlerausgabe und Exit
+                                
+  01C2    CD 01CA               ERROR:	CALL	PRINT		; Print message
+  01C5    2A 0344               	LD	HL,(OLDSP)	; Get old stack pointer
+  01C8    F9                    	LD	SP,HL		; Put it in place
+  01C9    C9                    	RET			; Return to CCP
+                                
+                                ;-----------------------------------------------------------------------
+                                ;			  subroutines
+                                
+                                ; Print a string terminated by '$'
+                                
+  01CA    F5                    PRINT:	PUSH	AF		; Save the registers
+  01CB    C5                    	PUSH	BC
+  01CC    D5                    	PUSH	DE
+  01CD    E5                    	PUSH	HL
+  01CE    0E 09                 	LD	C,PRINTF	; Print function
+  01D0    CD 0005               	CALL	BDOS
+  01D3    E1                    	POP	HL		; Restore the registers
+  01D4    D1                    	POP	DE
+  01D5    C1                    	POP	BC
+  01D6    F1                    	POP	AF
+  01D7    C9                    	RET
+                                
+                                
+                                ; Messages
+                                
+  01D8    0D 0A 24              CRLF:	DEFB	CR,LF,'$'
+  01DB    0D 0A 09 2A           HOWDY:	DEFB	CR,LF,TAB,'*** PATCH PRL FILE WITH LOADER (c) V. POHLERS 2009 ***',CR,LF,LF,'$'
+  01DF    2A 2A 20 50           
+  01E3    41 54 43 48           
+  01E7    20 50 52 4C           
+  01EB    20 46 49 4C           
+  01EF    45 20 57 49           
+  01F3    54 48 20 4C           
+  01F7    4F 41 44 45           
+  01FB    52 20 28 63           
+	MACRO-80 3.44	09-Dec-81	PAGE	1-4
+
+
+  01FF    29 20 56 2E           
+  0203    20 50 4F 48           
+  0207    4C 45 52 53           
+  020B    20 32 30 30           
+  020F    39 20 2A 2A           
+  0213    2A 0D 0A 0A           
+  0217    24                    
+  0218    0D 0A 2B 2B           NOFILE:	DEFB	CR,LF,'++ Cannot find the file ++',CR,LF,'$'
+  021C    20 43 61 6E           
+  0220    6E 6F 74 20           
+  0224    66 69 6E 64           
+  0228    20 74 68 65           
+  022C    20 66 69 6C           
+  0230    65 20 2B 2B           
+  0234    0D 0A 24              
+  0237    0D 0A 2B 2B           NOLOAD:	DEFB	CR,LF,'++ error reading file ++',CR,LF,'$'
+  023B    20 65 72 72           
+  023F    6F 72 20 72           
+  0243    65 61 64 69           
+  0247    6E 67 20 66           
+  024B    69 6C 65 20           
+  024F    2B 2B 0D 0A           
+  0253    24                    
+  0254    0D 0A 2B 2B           NOWRIT:	DEFB	CR,LF,'++ error writing patched file ++',CR,LF,'$'
+  0258    20 65 72 72           
+  025C    6F 72 20 77           
+  0260    72 69 74 69           
+  0264    6E 67 20 70           
+  0268    61 74 63 68           
+  026C    65 64 20 66           
+  0270    69 6C 65 20           
+  0274    2B 2B 0D 0A           
+  0278    24                    
+  0279    0D 0A 66 69           OK:	DEFB	CR,LF,'file patched and renamed',CR,LF,'$'
+  027D    6C 65 20 70           
+  0281    61 74 63 68           
+  0285    65 64 20 61           
+  0289    6E 64 20 72           
+  028D    65 6E 61 6D           
+  0291    65 64 0D 0A           
+  0295    24                    
+                                
+                                
+                                ;------------------------------------------------------------------------------
+                                ; Universeller Loader f|r PRL-Dateien
+                                ; reass. V. Pohlers 2009 aus Raf2x24O.com
+                                ;------------------------------------------------------------------------------
+                                
+  0296                          trbstart	equ	$
+                                
+                                		.phase 	100h
+                                
+  0100    C3 0107               		jp	inst
+                                ;------------------------------------------------------------------------------
+                                ; wird gepatcht
+  0103    0000                  trblen:		dw 0			; Ldnge	Treiber
+	MACRO-80 3.44	09-Dec-81	PAGE	1-5
+
+
+  0105    0000                  trbrsvd:	dw 0			; Ldnge	RAM-Bereich vor	Treiber
+                                ;------------------------------------------------------------------------------
+                                
+  0107    2A 0006               inst:		ld	hl, (6)		; Adresse BDOS
+  010A    D1                    		pop	de		; Return-Adresse
+  010B    D5                    		push	de
+  010C    E5                    		push	hl
+  010D    EB                    		ex	de, hl
+  010E    B7                    		or	a
+  010F    ED 52                 		sbc	hl, de		; Ret-Adr - BDOS-Adr
+  0111    30 08                 		jr	nc, inst1	; wenn Ret-Adr. hinter BDOS liegt, also Treiber schon geladen wurde
+  0113    EB                    		ex	de, hl
+  0114    11 0806               		ld	de, 806h	; Ldnge	CCP
+  0117    B7                    		or	a
+  0118    ED 52                 		sbc	hl, de		; BDOS-Adr - 806h = Anfang CCP
+  011A    E3                    		ex	(sp), hl	; in Stack
+                                
+  011B    E1                    inst1:		pop	hl		; Adresse Treiber-BDOS bzw. CCP
+  011C    ED 5B 0103            		ld	de, (trblen)	; Ldnge	Treiber
+  0120    AF                    		xor	a
+  0121    ED 52                 		sbc	hl, de
+  0123    ED 5B 0105            		ld	de, (trbrsvd)	; Ldnge	RAM-Bereich vor	Treiber
+  0127    ED 52                 		sbc	hl, de
+  0129    2E 00                 		ld	l, 0		; auf ..00h-Adresse abrunden
+                                ; HL = Zieladresse im Speicher
+                                
+                                ; Loader patchen
+  012B    22 014B               		ld	(inst4+1), hl	; Startadresse Treiber = Zieladresse im Speicher
+  012E    22 015F               		ld	(inst6+1), hl	; Startadresse zu patchende Adresse
+  0131    54                    		ld	d, h		
+  0132    15                    		dec	d		; d-1 (100h) = Adress-Offset
+  0133    2A 0103               		ld	hl, (trblen)	; Ldnge	Treiber
+  0136    24                    		inc	h
+  0137    24                    		inc	h		; HL+200h(Offset Treiber)
+  0138    22 013C               		ld	(inst2+1), hl	; HL = trbend
+                                
+                                ; Treiber verschieben
+  013B    21 0000               inst2:		ld	hl, 0		; Adresse in Tabelle mit Relokations-Informationen
+  013E    46                    		ld	b, (hl)		; ndchstes Reloc-Byte lesen
+  013F    23                    		inc	hl		; ndchste Adresse
+  0140    22 013C               		ld	(inst2+1), hl	; einstellen
+  0143    0E 00                 		ld	c, 0		; Bit-Zdhler
+  0145    2A 0103               inst3:		ld	hl, (trblen)	; Ldnge	Treiber
+  0148    7D                    		ld	a, l
+  0149    B4                    		or	h		; alle Bytes kopiert (HL=0)? 
+  014A    CA 0000               inst4:		jp	z, 0		; dann Treiber starten (auf Startadresse) 
+  014D    2B                    		dec	hl		; sonst ein Byte weniger abzuarbeiten
+  014E    22 0103               		ld	(trblen), hl	; Ldnge	Treiber
+  0151    21 0200               inst5:		ld	hl, trbanf	; zu kopierende Adresse (Ausgangsadresse)
+  0154    7E                    		ld	a, (hl)		; Byte holen
+  0155    23                    		inc	hl		; ndchste Adresse
+  0156    22 0152               		ld	(inst5+1), hl	; einstellen
+  0159    CB 00                 		rlc	b		; nachstes Bit testen
+  015B    30 01                 		jr	nc, inst6	; wenn 0, dann nicht patchen
+  015D    82                    		add	a, d		; sonst Adress-Offset addieren
+  015E    21 0000               inst6:		ld	hl, 0		; zu patchende Adresse (Zieladresse)
+	MACRO-80 3.44	09-Dec-81	PAGE	1-6
+
+
+  0161    77                    		ld	(hl), a		; und Byte speichern
+  0162    23                    		inc	hl		; ndchste Adresse
+  0163    22 015F               		ld	(inst6+1), hl	; einstellen
+  0166    0C                    		inc	c		; Bit-Zdhler erhvhen
+  0167    79                    		ld	a, c
+  0168    E6 07                 		and	7		; sind 8 Bit abgearbeitet?
+  016A    20 D9                 		jr	nz, inst3	; nein
+  016C    18 CD                 		jr	inst2		; ja
+                                
+                                
+                                ;------------------------------------------------------------------------------
+                                ; ab 200h steht der auf 100h assemblierte Treiber incl. REL-Informationen
+                                ;------------------------------------------------------------------------------
+                                
+  0200                          trbanf		equ	200h
+                                
+                                		.dephase
+                                
+  0304                          trbend	equ	$
+                                
+                                
+                                
+                                ; Storage
+                                
+  0304                          	DEFS	64		; Stack area
+  0344                          STACK	EQU	$		; Reserved
+  0344    0000                  OLDSP:	DEFW	0		; Old stack pointer
+  0346    0000                  TOP:	DEFW	0		; Top of memory
+  0348    0000                  BUFLEN:	DEFW	0		; Length of data buffer
+  034A    0000                  BDMA:	DEFW	0		; Current DMA pointer
+  034C                          erafcb:	defs	35		; FCB zum Lvschen
+                                
+                                	ORG	($+255)/256*256
+                                
+  0400                          BUFFER	EQU	$		; Begin data buffer here
+                                
+                                		end
+	MACRO-80 3.44	09-Dec-81	PAGE	S
+
+
+Macros:
+
+Symbols:
+034A 	BDMA            0005 	BDOS            0400 	BUFFER          
+0348 	BUFLEN          0010 	CLOSEF          000D 	CR              
+01D8 	CRLF            001A 	DMAF            034C 	ERAFCB          
+01C2 	ERROR           01BF 	EXIT            005C 	FCB             
+01DB 	HOWDY           0107 	INST            011B 	INST1           
+013B 	INST2           0145 	INST3           014A 	INST4           
+0151 	INST5           015E 	INST6           000A 	LF              
+0218 	NOFILE          0237 	NOLOAD          0254 	NOWRIT          
+0279 	OK              0344 	OLDSP           011A 	OPEN            
+000F 	OPENF           01CA 	PRINT           0009 	PRINTF          
+000A 	RDBUFF          0146 	READ            0021 	READF           
+0344 	STACK           0103 	START           0009 	TAB             
+0346 	TOP             0200 	TRBANF          0304 	TRBEND          
+0103 	TRBLEN          0105 	TRBRSVD         0296 	TRBSTART        
+0002 	TYPEF           0022 	WRITEF          
+
+
+
+No Fatal error(s)
+
+
+    0254 	NOWRIT          
+0279 	OK              0344 	OLDSP           011A 	OPEN            
+000F 	OPENF         

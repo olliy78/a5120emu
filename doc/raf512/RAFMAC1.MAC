@@ -1,0 +1,287 @@
+;.. ****************************************************************
+;..21b/14.11./ 30./ba24. + 22./21./13./10.10.86 edit
+;	RAF 512 = RAm Floppy 512 Kilo Bytes	 		( AdW ZWG )
+;.. 14b.11.86 deutsch }bersetzt
+;14.11./27./22.10.86 edited 
+;21b/19./14.11. deutsch
+;Teil von "RAF 512 Dokumentation"
+;	
+; - - - - - - - - - - - - - - - - - - - -
+;
+; H A R D W A R E :
+;
+; K1520	I/O Platine mit zwei Port-Adressen: 
+;
+; Raf_C = RAF-Control Port  zum Laden der Track- & Sector- 
+;	Adresse "HiAdr" via  D-bus 0...7 und A-bus 8...14 (B-Reg).
+;
+; Raf_D = RAF-Data-I/O Port zum Schreiben/Lesen von max. 128 zusammen-
+;       h{ngenden Bytes mit einem INIR-/OTIR-Befehl
+;       mit einem 7-bit Byte-Index "LoAdr" auf dem A-bus 8...14 (B-Reg)
+
+;*************************************************************************
+;             :-----  Vollst{ndige 19 bit RAM-Adresse (1 RAF 512)  ------:
+;  22 21 20 19:18 17 16 15   14 13 12 11 10  9  8  7: 6  5  4  3  2  1  0:
+;             :                                     :                    :
+;  15 14 13 12:11 10  9  8    7  6  5  4  3  2  1  0:                    :
+; +--+--+--+--+--+--+--+--+ +--+--+--+--+--+--+--+--+                    :
+; !       B-Register      ! !       r-Register      !                    :
+; +--+--+--+--+--+--+--+--+_+--+--+--+--+--+--+--+--+                    :
+;   ! !!!!!  !    _________!_________              7: 6  5  4  3  2  1  0:
+;   ! nicht  !    ! OUT(C),r-Befehl !            +--+--+--+--+--+--+--+--+ 
+;   ! benutzt!    !__auf_Ctrl-Adr___!            !//:  B-Reg (INIR/OTIR) ! 
+;   !        !                                   +--+--+--+--+--+--+--+--+ 
+;   !        AOV                                   __________!__________
+;   !        Adress}berlauf-Bit (RAF 512)          ! oberer Adr.bus in !
+;   !              (Bit 10 bei RAF 128)            ! INIR-/OTIR-Befehl !
+;   PROT                                           !______(7_bit)______!
+;   Zugriffsschutz-Bit (1=gesch}tzt) 
+;*************************************************************************
+
+;Beachte:  
+;Die In-Sektor-Adressen (LoAdr 6...0) entsprechen dem B-Registers 
+;  bei OTIR/INIR, so da~ die Bytes innerhalb eines Sectors in fallender 
+;  Reihenfolge gespeichert werden (B beginnt mit 128 bzw. 127)!
+ 
+; - - - - - - - - - - - - - - - - - - - - -
+;
+; S O F T W A R E :
+;
+;Das folgende Beispiel ist eine einfache Implementierung eines RAF 512 
+; in ein CP/M-80 BIOS (M80-Code)
+
+RAF_C	equ 89h  ;RAF-Ctrl Port.     (89h, 8Bh, 8Dh, 8Fh Vorzugsadressen)
+RAF_D	equ 88h  ;RAF-Data-I/O Port. (88h, 8Ah, 8Ch, 8Eh   "       "    )
+
+	;Einige BIOS-abh{ngige Adressen m}ssen bekannt sein:
+ADMA	equ 0000 ;Adresse des Pointers auf den DMA-Puffer 
+TRACK	equ 0000 ;Wort-Adr. von Track-Nummer f}r n{chsten Transfer =0,1,2,...
+SECTOR	equ 0000 ;  "   "    " Sector-Nummer  "     "        "     =1,2,3,...
+DISK    equ 0000 ;Byte-Adr. des 'logged disk' "A:"=0, "B:"=1,...
+DIRBUF	equ 0000 ;Start-Adr. des 128-Byte-"Directory Buffers" f}r BDOS
+                 ; (Pointer hierauf im DPH)
+
+NDirEnt	equ 128d ;Directory mit 128 Eintr{gen f}r 512 KB 
+
+; R A F R D  /	R A F W R    CP/M's Lese- und Schreibroutinen f}r RAF
+;
+;    RAFRD : BIOS Funktion 27h " Read one Sector "
+;    RAFWR : BIOS Funktion 2Ah " Write one Sector "
+;
+;RAFTRS initialisiert die Track- und Sektor-Register zum Datenzugriff und 
+;  setzt den Zugriffsschutz zur}ck.
+;  Die Read- und Write-Routinen sind dann einfache Block-I/O-]bertragungen,
+;  mit anschlie~endem Setzen des Zugriffsschutzes.
+;
+                         ;(RAF-Read) 128 Bytes lesen
+RAFRD::	CALL RAFTRS		;Track- und Sektor-Register laden
+	JR NZ, RFIOER           ;Return bei Fehler
+			        ;CPU: B = 127d, C = RAF_D, HL = DMA-buffer
+	INIR			;Daten-Input,  B war 127 !
+	INI			;128. Byte lesen
+IODSBL:	ld	C, RAF_C	;Zugriffsschutz wieder setzen (I/O-Disable)
+	set 	7, B		;= Zugriffsschutz-Bit
+	OUT	(C), A		;}ber Adre~-Bus15 zum RAF
+  	xor	A		;Mit No-Error-Message zum BIOS
+	RET     ; zum BIOS	;128 Bytes gelesen
+				
+RAFWR::				;(RAF-Write) 128 Bytes schreiben
+	CALL RAFTRS     	;Track- und Sektor-Register laden
+	JR NZ, RFIOER		;Fehler in Track oder Sektor !
+	inc	B		;war 127 f}r READ, WRITE braucht 128 !
+	OTIR			;DATA Outp 128 bytes
+	JR IODSBL		;weiter wie beim Lesen
+;..
+RFIOER:			        ;RAF-Fehlerbehandlung
+	CALL IODSBL		;Zugriffsschutz EIN
+	ld	A, 1		;A=1 ist Fehlermitteilung an das BDOS
+	or	A               ;NZ Flag dito
+	RET		        ;zum BIOS mit Fehler (A = 1)
+
+
+; RAFTRS wird von von RAFRD / RAFWR gecalled
+	;errechnet RAF-High-Addresse aus BIOS-Calls "SET-TRACK", "SET-SECTOR"
+	;und l{dt Track- und Sector-Register auf dem RAF entsprechend
+        ;HL := CP/M-DMA-Buffer-Adresse aus BIOS-Call "SET-DMA"
+	;CPU-Register werden f}r OTIR/INIR vorbereitet
+	;Zugriffsschutz wird r}ckgesetzt
+	;F}r die Track-und Sektor-Aufteilung wird hier angenommen:
+	; 256 Sektoren pro Track, 16 Tracks  (= 4096 Sektoren)
+
+        ;Pr}fung von TRACK- und SECTOR-Nummer. Nur in der Testphase f}r neuen
+        ; Disk-Parameter-Block (DPB) n|tig. BDOS braucht nicht mehr 
+        ; }berpr}ft zu werden, wenn DPB stimmt.
+RAFTRS::ld 	A, (TRACK + 1)  ;TRACK hat 2 Bytes
+	or	A		;TRACK.high = 0 ?
+	JR NZ, RAFERR		;Error: TRACK gr|~er 255
+	ld	A, (TRACK)	;TRACK.low kleiner 16 ?
+	cp	15d + 1		;TRACK = 0..15
+	JR NC, RAFERR
+	ld	B,  A		;TRACK o.k., Error check sector :
+	ld	HL, (SECTOR)	;CP/M hat 16 bit Sektornummern
+	dec	HL		;RAF z{hlt Sektoren 0..255;  BIOS 1..256
+	ld	A, H
+	or	A
+	JR NZ, RAFERR           ;Error : (Sektor - 1) gr|~er 255
+				;Sector o.k.
+	ld	C, RAF_C	;Control-Port-Adresse 
+	res	7, B		;Zugriffsschutz AUS = MSB von RAFTRK
+	OUT	(C), L		;schreibt RAFSEC, RAFTRK in die RAF-Register
+	ld	C, RAF_D	;Data I/O Port f}r Data-Transfer
+	ld	HL, (ADMA)	;CP/M's DMA-Adresse f}r Block-I/O
+	ld	B, 127d		;f}r 128 Bytes Lesen (INIR + 1 x INI, 
+				;  bei OTIR B:=B+1 vor Schreiben notwendig)
+	xor	A		;Z = "No-Error"-Flag zu BIOS-RD/WR
+	RET			;von RAFTRS (Vorbereitung von RAFRD/RAFWR)
+
+;Die Z80-Register sind jetzt bereit f}r INIR/OTIR in RAFRD / RAFWR :
+; 	B = 127 		; = o.k. f}r READ.  WRITE braucht 128 
+;	C = RAF_D 	        ;Data-I/O-Port-Adresse 
+;      HL = DMA Buffer Pointer
+;
+;.pa
+RAFERR::ld	A, 1	        ;BIOS-Error = NZ-Flag
+	or	A
+	RET		        ;mit NZ zu RAFRD/RAFWR, dort RET zum BIOS
+
+
+
+;Disk Parameter Header ("DPH", Nomenklatur der DIGITAL RESEARCH Inc.)
+;  Jedes Laufwerk ben|tigt einen DPH, der im wesentlichen Pointer enth{lt
+;Disk Parameter Block  ("DPB") 
+;  Im DPH zeigt ein Pointer auf den DPB. Laufwerke mit gleichen 
+;     Eigenschaften k|nnen einen DPB gemeinsam benutzen. 
+;Allocation Vector     ("ALV")
+;  Bit-Bereich zum Eintragen der belegten Gruppen durch das BDOS 
+;     Ein Bit pro Group + 1 Byte Aufrundung 
+;
+;	Die Verbindung zu CP/M ist die BIOS-Funktion "Select Disk" 
+;	( BIOS + 1Bh ), sie liefert die DPH-Adresse in HL zur}ck.
+
+;Wenn das gesamte verf}gbare RAF unter einer Laufwerksnummer organisiert ist,
+; kann f}r verschiedene Ausbaustufen ein DPH und ein DPB eingestzt werden. 
+; Nur der DPB und die L{nge von ALV sind an die Gr|~e des RAF anzupassen.
+;Die folgenden Beispiele sind nicht getestet ! 
+; (Bei den RAF-I/O-Routinen sind hierzu einige zus{tzliche Tests angegeben).
+
+
+;-- Beispiel 512 KBytes, 128 Directory Entries, 2KB je Group
+;
+ALVLen	equ 256d/8+1    ;256 Allocation Groups 
+RAFDPB:		;Disk Parameter Block f}r ein RAF 512 voll best}ckt
+	dW 256d		;Sektors pro Track
+	dB 04		;Block Shift (2K Groups)
+	dB 15d		;Block Mask  ( "   "   )
+	dB 00		;Extend Mask 256 Groups ( unter 256 Groups, jede 2KB)
+	dW 256d - 1	;Max Group-Nummer ( Z{hlung von 0 )
+	dW 128d - 1	;Max Directory-Entry-Nummer ( ben|tigen 4KB )
+	dB 0C0h		;Directory Entry Bit Map (2 Bits = 2 Groups)
+	dB 00		;    "     upper byte
+	dW 0000		;L{nge der Check-Area=0 (kein Disk-Wechsel zu pr}fen)
+	dW 0000		;Keine System-Spuren reserviert
+
+RAFDPH:			;Disk Parameter Header f}r RAM Floppy
+	dW 0000		;Keinen Versatz = Keine Skew Table
+	dW 0,0,0	;CP/M Scratch Area
+	dW DIRBUF	;ein 128 Byte Block im BIOS, f}r alle Ger{te gleich
+	dW RAFDPB	;Pointer zum Disk Parameter Block 
+	dW 0000		;Kein Disk-Wechsel m|glich, kein Dir-Check n|tig
+	dW RAFAllocVect	;Pointer zur Allocation Bit Map
+RAFAllocVect: dS ALVLen, 00   ; (ALVLen am jeweiligen DPB-Beispiel gesetzt)		                 
+   .COMMENT @
+
+;-- Beispiel 256 KB, 64 Directory Eintr{ge, 2KB je Group, 128 groups
+;
+ALVLen	equ 128d/8+1
+RAFDPB:		; f}r ein RAF 512 halb best}ckt oder zwei RAF 128
+	dW 256d		;SPT
+	dB 04		;Block Shift (2K Groups)
+	dB 15d		;Block Mask  ( "   "   )
+	dB 01		;EXM 128 Groups (max 255 Groups, jede 2KB)
+	dW 128d - 1	;Max Group
+	dW 64d - 1	;Max Directory-Entry-Nummer (zusammen 2KB)
+	dB 80h		;Directory Entry Bit Map 
+	dB 00		;    "     upper byte
+	dW 0000		;keine Check-Area
+	dW 0000		;Keine System-Spuren
+
+;-- Beispiel 128 KB, 64 Directory Eintr{ge, 1KB je Group
+;
+ALVLen	equ 128d/8+1
+RAFDPB:		; f}r ein RAF 128 voll best}ckt oder RAF 512 mit 2 B{nken
+	dW 256d		;SPT
+	dB 03		;Block Shift (1K Groups)
+	dB 07		;Block Mask  ( "   "   )
+	dB 00		;EXM 128 Groups (max 255 Groups, jede 1KB)
+	dW 128d - 1	;Max Group
+	dW 64d - 1	;Max Directory-Entry-Nummer (zusammen 2KB)
+	dB 0C0h		;Directory Entry Bit Map 
+	dB 00		;    "     upper byte
+	dW 0000		;keine Check-Area
+	dW 0000		;Keine System-Spuren
+
+;-- Beispiel 64 KB, 32 Directory Eintr{ge, 1KB je Group
+;
+ALVLen	equ 64d/8+1
+RAFDPB:		; RAF 128 halb best}ckt, RAF 512, 1 Bank
+	dW 256d		;SPT
+	dB 03		;Block Shift 
+	dB 07		;Block Mask
+	dB 00		;EXM 64 Groups (max 255 Groups, 1KB)
+	dW 128d - 1	;Max Group
+	dW 32d - 1	;Max Dir-Entry (zusammen 1KB)
+	dB 080h		;Dir Entry Map 
+	dB 00		;    "     upper byte
+	dW 0000		;kein Check
+	dW 0000		;Kein System
+   @    ;Ende von COMMENT @
+;.pa
+;Beim Spannungszuschalten ist der RAF-Inhalt zuf{llig. Dies sieht CP/M als
+; ein volles Directory an, das auch mit  ERA *.*  nicht l|schbar ist. 
+; Zum Benutzen des RAM-Floppies mu~ das Directory initialisiert werden. 
+; Das kann durch F}llen mit E5h geschehen, besser ist es, so zu l|schen, wie 
+; CP/M (d.h. nur 1.Byte im Eintrag = E5h), so da~ nach einem versehentlichen 
+; L|schen eines initialisierten RAF ein Zur}ckholen der Files m|glich ist 
+; (POWER, DISK-DOCTOR, ZAP,...).
+;Die folgende Routine f}llt E5h in die ersten 4 KB (=Directory) an die 
+; Positionen 00h, 20h, 40h, 60,..., der Aufruf kann z.B. }ber eine USER-Funk-
+; tion von POWER erfolgen oder es kann ein .COM-File daraus erzeugt werden.
+
+; - - - - - - - - - - - - - - -
+;Die Routine benutzt den Default DMA (0080h) und schreibt direkt ins RAF, 
+; sie benutzt die BIOS-Funktionen SETTRK und SETSEC nicht, um vor der 
+; RAF-Installation in das CP/M laufen zu k|nnen. Die BIOS-Variablen TRACK,
+; SECTOR und logged DISK werden ver{ndert!
+;
+	DDMA	equ 80h		;default DMA Buffer Address
+        RAFDEF  equ 0           ;=Disk "A:" als RAF
+RAFCLR::ld	HL, DDMA	;Default DMA Address
+	ld	(ADMA), HL	; in den BIOS-Pointer
+	ld	HL, 0
+	ld	(TRACK), HL	;  direkt in BIOS-Track-Nummer
+	inc	HL		;1. Sektor
+	ld	(SECTOR), HL	;  direkt in BIOS-Sektor-Nummer
+	ld	A, RAFDEF	;die installierte RAF-Laufwerksnummer
+	ld	(DISK), A	; in BIOS-Disk-Nummer laden
+	ld	B, NDirEnt/4	;Anzahl der Dir.-Eintr{ge/4 = Anzahl der Sekt.
+Lopsec:				; Schleife }ber alle Sektoren
+	push	BC
+	CALL RAFRD		;Sektor lesen
+	ld	HL, DDMA	;default DMA Buffer
+	ld	B, 4		;4 Entries in einem Sektor
+	ld	DE, 32d		;Anzahl der Bytes, die zu }berspringen sind
+DIRlop:				; Schleife }ber einen Sektor
+	ld	(HL), 0E5h	;"User"-Nummer = E5  = Gel|schter Eintrag
+	add	HL, DE		;Rest des Dir.-Eintrages }berspringen
+	DJNZ DIRlop
+	CALL RAFWR		;Sektor wieder schreiben 
+	ld	HL, (SECTOR)	;
+	inc	HL		;n{chster Sektor f}r RAFRD, RAFWR
+	ld	(SECTOR), HL	;
+	pop	BC
+	DJNZ Lopsec		;im n{chsten Sektor wieder 4 Eintr{ge l|schen
+	RET		        ;vom Directory-L|schen (RAFCLR)
+; - - - - - - - - - - - - - - -
+
+END
+

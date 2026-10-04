@@ -1,0 +1,329 @@
+;------------------------------------------------------------------------------
+; Universeller Patcher für PRL-Dateien
+; Loader: reass. V. Pohlers 2009 aus Raf2x24O.com
+; Patchroutine: V. Pohlers 2009
+;------------------------------------------------------------------------------
+; der eigentliche Treiber wird mit REL-Informationen assembliert
+; kein ASEG im Treiber, kein ORG, nur CSEG
+; 	m80.com =treiber
+; 	link.com treiber[op]
+; erzeugt treiber.prl
+; dann kann dieser Treiber mit prl2com gepatcht werden.
+; 	prl2com treiber.prl
+; erzeugt treiber.com
+; Dieses Programm enthält nun den Loaderm, den Treiber und Relokations-Informationen
+; und verschiebt sich selbstständig ans obere Speicherende und startet
+;------------------------------------------------------------------------------
+; assemblieren des Patchers:
+; m80 =prlldr
+; link prlldr
+;------------------------------------------------------------------------------
+
+; PRL header
+; The PRL file starts with a 256-byte header: 
+; 
+; 	DB	0	;Always 0
+; 	DW	bytes	;Number of bytes in program image. This includes the
+; 			;code and initialised data groups.
+; 	DB	0	;Always 0
+; 	DW	bss	;Number of bytes reserved for uninitialised data. 
+; 			;Always 0 in an OVL file.
+; 	DB	0
+; 	DW	loadadd	;Load address. Always 0 except in OVL files, because
+; 			;the other files are relocatable.
+; 	DB	0
+; 	DW	csbase	;BIOS link. Always zero unless Link-80 was used with
+; 			;the [B] option, in which case it is the base address
+; 			;of the code group.
+; 	DS	0F4h	;Unused
+; 
+;------------------------------------------------------------------------------
+; Programmablauf:
+; datei treiber.prl öffnen
+; den ersten Sektor lesen
+; 	bytes 1+2	- bytes Treiberlänge
+; 	bytes 4+5	- bss Reserved
+; Speicher patchen: 0003: Treiberlänge, 0005: bss Reserved
+; Speicher als 1. Sektor zurückschreiben
+; datei in treiber.com umbenennen
+;------------------------------------------------------------------------------
+
+		.Z80
+
+		aseg
+
+		org	100h
+
+	JP	START
+
+BDOS	EQU	0005H		; DOS entry point
+FCB	EQU	005CH		; File control block
+TYPEF	EQU	2		; Type character to console
+PRINTF	EQU	9		; Print string terminated by '$'
+RDBUFF	EQU	10		; Read console buffer
+OPENF	EQU	15		; Open file
+CLOSEF	EQU	16		; Close file
+READF	EQU	33		; wahlfreies Lesen
+WRITEF	EQU	34		; wahlfreies Schreiben
+DMAF	EQU	26		; Set DMA
+CR	EQU	0DH		; Carriage return
+LF	EQU	0AH		; Line feed
+TAB	EQU	9		; Tab character
+
+
+; Initialize local stack
+
+START:	LD	HL,0		; Clear HL
+	ADD	HL,SP		; Add in old stack
+	LD	(OLDSP),HL	; Save it
+	LD	SP,STACK	; Set up new stack
+
+; Check for command line file name
+
+	LD	A,(FCB+1)	; Get first character
+	CP	' '		; If it's not a space
+	JR	NZ,OPEN		; Then use that name
+	LD	DE,HOWDY	; Sign on
+	CALL	ERROR		; Textausgabe und Ende
+
+; Open the file
+
+OPEN:	xor	a
+	ld	(fcb+12),a	; fcb.ex := 0
+	LD	DE,FCB		; Point to FCB
+	LD	C,OPENF		; Open the file
+	CALL	BDOS
+	LD	DE,NOFILE	; Error message
+	INC	A		; FF-->0 if no file
+	JP	Z,ERROR		; So bail out
+
+; Initialize the pointer to the DMA
+
+	LD	DE,BUFFER	; Point to data area
+	LD	(BDMA),DE	; Store current pointer
+	LD	C,DMAF		; Set the DMA
+	CALL	BDOS
+	XOR	A		; Zero a
+	LD	(FCB+32),A	; Clear CR in DMA
+	ld	(fcb+33),a	; fcb.r1 := 0
+	ld	(fcb+34),a	; fcb.r2 := 0
+	ld	(fcb+35),a	; fcb.r3 := 0
+
+
+; Read first block into memory
+
+READ:	LD	DE,FCB		; Get record
+	LD	C,READF
+	CALL	BDOS
+	OR	A		; Zero if read ok
+	ld	de,NOLOAD
+	jr	nz,error
+	
+
+; Buffer modifizieren: Loader patchen und in Buffer kopieren
+
+	ld	hl,(BUFFER+1)	; bytes 1+2 Treiberlänge
+	ld	(trbstart+3),hl
+
+	ld	hl,(BUFFER+4)	; bytes 4+5 bss Reserved
+	ld	(trbstart+5),hl
+
+	ld	hl,trbstart	; copy loader
+	ld	de,BUFFER
+	ld	bc,trbend-trbstart
+	ldir
+
+; Block schreiben
+
+	LD	DE,FCB		; Get record
+	LD	C,WRITEF
+	CALL	BDOS
+	OR	A		; Zero if read ok
+	ld	de,NOWRIT
+	jr	nz,error
+	
+
+; Datei schließen
+
+	LD	DE,FCB		; Get record
+	LD	C,CLOSEF
+	CALL	BDOS
+	LD	DE,NOWRIT	; Error message
+	INC	A		; FF-->0 if no file
+	Jr	Z,ERROR		; So bail out
+
+; Datei umbenennen
+	
+	ld	hl,fcb
+	ld	de,fcb+16
+	ld	bc,16
+	ldir			; copy filename
+
+	ld	a,'C'
+	ld	(fcb+16+9),a
+	ld	hl,'MO'
+	ld	(fcb+16+10),hl	; Endung 'COM'
+
+; evtl. vorhandene Datei löschen
+	
+	ld	hl, fcb+16
+	ld	de, erafcb
+	ld	bc,16
+	ldir
+	ld	de, erafcb
+	ld	c,19		; ERASE FILE
+	call	BDOS		; blind erase
+
+; dann umbenennen
+
+	ld	de,fcb
+	ld	c,23		; RENAME
+	call	BDOS
+	LD	DE,NOWRIT	; Error message
+	INC	A		; FF-->0 if no file
+	JP	Z,ERROR		; So bail out
+
+exit:	ld	de, ok
+
+; Fehlerausgabe und Exit
+
+ERROR:	CALL	PRINT		; Print message
+	LD	HL,(OLDSP)	; Get old stack pointer
+	LD	SP,HL		; Put it in place
+	RET			; Return to CCP
+
+;-----------------------------------------------------------------------
+;			  subroutines
+
+; Print a string terminated by '$'
+
+PRINT:	PUSH	AF		; Save the registers
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	C,PRINTF	; Print function
+	CALL	BDOS
+	POP	HL		; Restore the registers
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+
+
+; Messages
+
+CRLF:	DEFB	CR,LF,'$'
+HOWDY:	DEFB	CR,LF,TAB,'*** PATCH PRL FILE WITH LOADER (c) V. POHLERS 2009 ***',CR,LF,LF,'$'
+NOFILE:	DEFB	CR,LF,'++ Cannot find the file ++',CR,LF,'$'
+NOLOAD:	DEFB	CR,LF,'++ error reading file ++',CR,LF,'$'
+NOWRIT:	DEFB	CR,LF,'++ error writing patched file ++',CR,LF,'$'
+OK:	DEFB	CR,LF,'file patched and renamed',CR,LF,'$'
+
+
+;------------------------------------------------------------------------------
+; Universeller Loader für PRL-Dateien
+; reass. V. Pohlers 2009 aus Raf2x24O.com
+;------------------------------------------------------------------------------
+
+trbstart	equ	$
+
+		.phase 	100h
+
+		jp	inst
+;------------------------------------------------------------------------------
+; wird gepatcht
+trblen:		dw 0			; Länge	Treiber
+trbrsvd:	dw 0			; Länge	RAM-Bereich vor	Treiber
+;------------------------------------------------------------------------------
+
+inst:		ld	hl, (6)		; Adresse BDOS
+		pop	de		; Return-Adresse
+		push	de
+		push	hl
+		ex	de, hl
+		or	a
+		sbc	hl, de		; Ret-Adr - BDOS-Adr
+		jr	nc, inst1	; wenn Ret-Adr. hinter BDOS liegt, also Treiber schon geladen wurde
+		ex	de, hl
+		ld	de, 806h	; Länge	CCP
+		or	a
+		sbc	hl, de		; BDOS-Adr - 806h = Anfang CCP
+		ex	(sp), hl	; in Stack
+
+inst1:		pop	hl		; Adresse Treiber-BDOS bzw. CCP
+		ld	de, (trblen)	; Länge	Treiber
+		xor	a
+		sbc	hl, de
+		ld	de, (trbrsvd)	; Länge	RAM-Bereich vor	Treiber
+		sbc	hl, de
+		ld	l, 0		; auf ..00h-Adresse abrunden
+; HL = Zieladresse im Speicher
+
+; Loader patchen
+		ld	(inst4+1), hl	; Startadresse Treiber = Zieladresse im Speicher
+		ld	(inst6+1), hl	; Startadresse zu patchende Adresse
+		ld	d, h		
+		dec	d		; d-1 (100h) = Adress-Offset
+		ld	hl, (trblen)	; Länge	Treiber
+		inc	h
+		inc	h		; HL+200h(Offset Treiber)
+		ld	(inst2+1), hl	; HL = trbend
+
+; Treiber verschieben
+inst2:		ld	hl, 0		; Adresse in Tabelle mit Relokations-Informationen
+		ld	b, (hl)		; nächstes Reloc-Byte lesen
+		inc	hl		; nächste Adresse
+		ld	(inst2+1), hl	; einstellen
+		ld	c, 0		; Bit-Zähler
+inst3:		ld	hl, (trblen)	; Länge	Treiber
+		ld	a, l
+		or	h		; alle Bytes kopiert (HL=0)? 
+inst4:		jp	z, 0		; dann Treiber starten (auf Startadresse) 
+		dec	hl		; sonst ein Byte weniger abzuarbeiten
+		ld	(trblen), hl	; Länge	Treiber
+inst5:		ld	hl, trbanf	; zu kopierende Adresse (Ausgangsadresse)
+		ld	a, (hl)		; Byte holen
+		inc	hl		; nächste Adresse
+		ld	(inst5+1), hl	; einstellen
+		rlc	b		; nachstes Bit testen
+		jr	nc, inst6	; wenn 0, dann nicht patchen
+		add	a, d		; sonst Adress-Offset addieren
+inst6:		ld	hl, 0		; zu patchende Adresse (Zieladresse)
+		ld	(hl), a		; und Byte speichern
+		inc	hl		; nächste Adresse
+		ld	(inst6+1), hl	; einstellen
+		inc	c		; Bit-Zähler erhöhen
+		ld	a, c
+		and	7		; sind 8 Bit abgearbeitet?
+		jr	nz, inst3	; nein
+		jr	inst2		; ja
+
+
+;------------------------------------------------------------------------------
+; ab 200h steht der auf 100h assemblierte Treiber incl. REL-Informationen
+;------------------------------------------------------------------------------
+
+trbanf		equ	200h
+
+		.dephase
+
+trbend	equ	$
+
+
+
+; Storage
+
+	DEFS	64		; Stack area
+STACK	EQU	$		; Reserved
+OLDSP:	DEFW	0		; Old stack pointer
+TOP:	DEFW	0		; Top of memory
+BUFLEN:	DEFW	0		; Length of data buffer
+BDMA:	DEFW	0		; Current DMA pointer
+erafcb:	defs	35		; FCB zum Löschen
+
+	ORG	($+255)/256*256
+
+BUFFER	EQU	$		; Begin data buffer here
+
+		end
+                                                                   
