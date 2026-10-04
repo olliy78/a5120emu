@@ -458,10 +458,10 @@ _lib.k1520_ptape_punch_enabled.restype = ctypes.c_int
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "pc1715": 3,
-                 "pc1715-k7221": 3}
-# Bildschirm für k1520_create_pc1715 (0 = K7222 80×24, 1 = K7221 64×16).  Der PC 1715W
-# fehlt hier absichtlich: ihn gibt es im Kern noch nicht (k1520_create_pc1715(1, …) = NULL).
-PC1715_BILD = {"pc1715": 0, "pc1715-k7221": 1}
+                 "pc1715-k7221": 3, "pc1715w": 3}
+# (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
+# Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
+PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
 
@@ -716,8 +716,8 @@ class K1520Emulator:
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
             machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"prg710"`` oder
-                ``"prg710-1"``, ``"pc1715"`` oder ``"pc1715-k7221"`` (PC 1715 mit dem
-                Bildschirm K7221, 64×16) — siehe :data:`MACHINE_TYPES`.
+                ``"prg710-1"``, ``"pc1715"``, ``"pc1715-k7221"`` (PC 1715 mit dem
+                Bildschirm K7221, 64×16) oder ``"pc1715w"`` — siehe :data:`MACHINE_TYPES`.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
         """
@@ -739,12 +739,12 @@ class K1520Emulator:
                 enc = lambda n: n.encode("utf-8") if n else None
                 handle = _lib.k1520_create_prg710(
                     PRG_VARIANTEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
-            elif machine in PC1715_BILD:
+            elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
                 enc = lambda n: n.encode("utf-8") if n else None
                 handle = _lib.k1520_create_pc1715(
-                    0, PC1715_BILD[machine], 0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+                    *PC1715_MODELLE[machine], 0, enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
             else:
                 handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine], self._em)
         except Exception as e:

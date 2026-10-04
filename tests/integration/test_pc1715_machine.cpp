@@ -32,13 +32,19 @@ TEST(Pc1715Maschine, BautMitBeidenBildschirmen) {
     EXPECT_EQ(b.fbHeight(), 255);
 }
 
-TEST(Pc1715Maschine, Pc1715WWirdMitKlarerMeldungAbgelehnt) {
+/// Seit AP-W3 baut die Variante PC 1715W; abgelehnt wird nur ein Bildschirm, den es dort nicht gibt.
+TEST(Pc1715Maschine, Pc1715WBautUndLehntNurK7221Ab) {
     stumm();
     Pc1715Machine::Config c;
     c.variante = Pc1715Machine::Config::Variante::Pc1715W;
+    Pc1715Machine m(c);
+    EXPECT_TRUE(m.istW());
+    EXPECT_EQ(m.fbWidth(), 640);
+    EXPECT_EQ(m.fbHeight(), 288);
+    c.bild = Pc1715Zre::Bildschirm::K7221;
     try {
-        Pc1715Machine m(c);
-        FAIL() << "PC 1715W hätte abgelehnt werden müssen";
+        Pc1715Machine k(c);
+        FAIL() << "PC 1715W mit K7221 hätte abgelehnt werden müssen";
     } catch (const std::runtime_error& e) {
         EXPECT_NE(std::string(e.what()).find("PC 1715W"), std::string::npos) << e.what();
     }

@@ -41,13 +41,14 @@ namespace dbgm {
 using IntSource = A5120Machine::IntSource;
 
 /** @brief Maschinenwahl aus `--machine`; false bei unbekanntem Namen. */
-enum class Art { A5120, K8915, Prg710, Prg710_1, Pc1715 };
+enum class Art { A5120, K8915, Prg710, Prg710_1, Pc1715, Pc1715W };
 inline bool parseMachine(const std::string& s, Art& art) {
     if (s == "a5120" || s == "A5120")       { art = Art::A5120;    return true; }
     if (s == "k8915" || s == "K8915")       { art = Art::K8915;    return true; }
     if (s == "prg710" || s == "PRG710")     { art = Art::Prg710;   return true; }
     if (s == "prg710-1" || s == "PRG710-1") { art = Art::Prg710_1; return true; }
     if (s == "pc1715" || s == "PC1715")     { art = Art::Pc1715;   return true; }
+    if (s == "pc1715w" || s == "PC1715W")   { art = Art::Pc1715W;  return true; }   // AP-W3
     return false;
 }
 
@@ -116,6 +117,11 @@ public:
     explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}) {
         if (art == Art::K8915) k8_ = std::make_unique<K8915Machine>();
         else if (art == Art::Pc1715) pc_ = std::make_unique<Pc1715Machine>();
+        else if (art == Art::Pc1715W) {   // dieselbe Klasse, Variante 1715W (AP-W3)
+            Pc1715Machine::Config c;
+            c.variante = Pc1715Machine::Config::Variante::Pc1715W;
+            pc_ = std::make_unique<Pc1715Machine>(c);
+        }
         else if (art == Art::Prg710 || art == Art::Prg710_1) {
             Prg710Machine::Config pc;
             pc.variante = art == Art::Prg710_1 ? Prg710Machine::Config::Variante::Prg710_1

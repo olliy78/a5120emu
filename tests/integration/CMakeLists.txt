@@ -187,3 +187,9 @@ k1520_add_test(pc1715_tastatur SRC test_pc1715_tastatur.cpp
 k1520_add_test(pc1715_seriell SRC test_pc1715_seriell.cpp
                           LIBS k1520_pc1715 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# PC 1715W Etappe 6+7 (AP-W3): S550 → SCP-3.0-Lader → SCP3.SYS → A>, Zeichensatz aus dem
+# ZG-RAM, DIR über die Tastatur, INIT.COM formatiert B:.
+k1520_add_test(pc1715w_boot SRC test_pc1715w_boot.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)

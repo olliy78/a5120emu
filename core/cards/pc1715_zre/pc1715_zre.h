@@ -79,10 +79,20 @@ public:
         Bildschirm  bild = Bildschirm::K7222;
         /// Welcher Zeichengenerator bei BWS-Register DB6 = 0 (und GPA0 = 0) gilt.
         Zeichensatz zg_bei_db6_low = Zeichensatz::S619;
+        /**
+         * PC 1715W (AP-W3, doc/pc1715/pc1715w_hardware.md §1): dieselbe CPU mit CTC0 08H und
+         * SIO0 0CH (Tastatur, Drucker X4, V.24 X5) und LT107/LT111 — aber Takt 3,9936 MHz,
+         * CTC0 **ohne Interrupt** (nur Baudtakte), und 18H–1BH (8275), 24H–2BH (BR/MOS),
+         * 34H (KON) gehören anderen Bausteinen der Maschine.  Speicher, ROM-Overlay, BWS und
+         * Bild der Karte sind dann unbenutzt (die Maschine biegt den Speicherweg der CPU um).
+         */
+        bool w = false;
     };
 
     /// Systemtakt: Quarz 9,832 MHz / 4 (§3.1).
     static constexpr uint32_t CPU_HZ = 2'458'000;
+    /// Systemtakt des PC 1715W: 15,9744 MHz / 4 (doc/pc1715/pc1715w_hardware.md §5).
+    static constexpr uint32_t CPU_HZ_W = 3'993'600;
     /// Bildwechsel alle 20 ms Maschinenzeit (50 Hz) [?: Bildfrequenz aus den Parametersätzen nicht gerechnet].
     static constexpr uint32_t FRAME_TAKTE = CPU_HZ / 50;
 
@@ -113,7 +123,7 @@ public:
     // ─── InterruptSlave: IEI → CTC → SIO → IEO ───────────────────────────────
     void        setIEI(bool iei) override;
     bool        getIEO() const override       { return sio_.getIEO(); }
-    bool        hasInterrupt() const override { return ctc_.hasInterrupt() || sio_.hasInterrupt(); }
+    bool        hasInterrupt() const override { return ctcMitInt() || sio_.hasInterrupt(); }
     uint8_t     getVector() const override;
     void        onRETI() override;
     const char* intDeviceName() const override;
@@ -168,6 +178,8 @@ public:
     const Config& config() const { return cfg_; }
 
 private:
+    /// CTC0 meldet einen Interrupt (am 1715W liegt sie nicht in der Kette).
+    bool ctcMitInt() const { return !cfg_.w && ctc_.hasInterrupt(); }
     void rastern();
     void zeichneZelle(int row, int col, const I8275::Cell& c);
     const uint8_t* zgRom(bool zweiter_satz) const;

@@ -282,3 +282,27 @@ TEST(Z80Dma, SaveStateRundreise) {
 }
 
 } // namespace
+
+/**
+ * @test Statusbyte D1/D3 sind Leitungszustände (AP-W3, Datenblatt RR0: D1 = 0 „RDY aktiv",
+ *       D3 = 0 „Interrupt anstehend").  S550 0539H prüft nach dem Lesen D1: steht RDY noch
+ *       (= der U8272 will weitere Bytes), gilt der Auftrag als gescheitert.  Vorher stand D1
+ *       fest auf 0 — der Urlader verwarf jeden gelesenen Sektor und versuchte es endlos neu.
+ */
+TEST(Z80Dma, StatusD1FolgtRdyD3FolgtInterrupt) {
+    Rig r;
+    r.fdc.assign(4, 0x55);
+    r.dma.setIEI(true);
+    r.floppy(0x7D, 0x2000, 4, 0x01);
+    r.lauf();
+    r.dma.setReady(true);                     // DRQ weg → /RDY = 1 = inaktiv (WR5 82H)
+    r.w({0xBB, 0x01});
+    uint8_t st = r.dma.ioRead(0);
+    EXPECT_EQ(st & 0x20, 0);                  // Blockende
+    EXPECT_NE(st & 0x02, 0);                  // RDY inaktiv
+    EXPECT_EQ(st & 0x08, 0);                  // Interrupt steht an
+    r.dma.setReady(false);                    // RDY aktiv
+    EXPECT_EQ(r.dma.ioRead(0) & 0x02, 0);
+    r.dma.getVector();                        // Quittung
+    EXPECT_NE(r.dma.ioRead(0) & 0x08, 0);
+}

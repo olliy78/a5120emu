@@ -294,6 +294,7 @@ int main(int argc, char** argv) {
     bool        machine_k8915 = false;
     int         machine_prg710 = 0;      // 1 = PRG 710, 2 = PRG 710-1 (gleiche Optionen wie K8915)
     bool        machine_pc1715 = false;  // PC 1715 (gleiche Optionen wie K8915)
+    bool        machine_pc1715w = false; // … in der Variante PC 1715W (AP-W3)
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
@@ -317,8 +318,9 @@ int main(int argc, char** argv) {
             else if (mn == "prg710" || mn == "PRG710") { machine_k8915 = true; machine_prg710 = 1; }
             else if (mn == "prg710-1" || mn == "PRG710-1") { machine_k8915 = true; machine_prg710 = 2; }
             else if (mn == "pc1715" || mn == "PC1715") { machine_k8915 = true; machine_pc1715 = true; }
+            else if (mn == "pc1715w" || mn == "PC1715W") { machine_k8915 = true; machine_pc1715 = machine_pc1715w = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1 | pc1715)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1 | pc1715 | pc1715w)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
@@ -505,7 +507,7 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = machine_pc1715 ? bootTracePc1715(k8o, prn)
+        const int rc = machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
                      : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);
         if (!cow_temp.empty()) { std::error_code ec; std::filesystem::remove(cow_temp, ec); }

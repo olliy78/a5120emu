@@ -149,6 +149,38 @@ def test_screen_text_shape(emulator):
     assert all(len(line) == 80 for line in lines)
 
 
+def test_pc1715w_bootet_scp30_bis_prompt(temp_disk):
+    """PC 1715W (AP-W3): ``machine="pc1715w"`` — S550 → SCP-3.0-Lader → SCP3.SYS → ``A>``,
+    Bild über ``k1520_screen_char`` (Bild-RAM der CRT-Karte), ``dir`` über die Tastatur."""
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine="pc1715w")
+    assert emu.machine_type() == 3
+    assert emu.mount_disk(0, temp_disk("pc1715w_scp30_system.hfe"), "cpa800"), emu.last_error()
+    emu.power_on()
+    for _ in range(1500):
+        emu.run(100_000)
+        if "A>modcs sc619.zgf[1]" in emu.screen_text() and emu.screen_text().count("A>") >= 2:
+            break
+    text = emu.screen_text()
+    assert "PC 1715W" in text and "SCP 3.0" in text, text
+    for _ in range(50):
+        emu.run(100_000)
+    for ch in "dir\r":
+        code = 0x01000004 if ch == "\r" else ord(ch)
+        emu.key_press(code)
+        for _ in range(30):
+            emu.run(5_000)
+        emu.key_release(code)
+        for _ in range(20):
+            emu.run(5_000)
+    for _ in range(200):
+        emu.run(50_000)
+        if "PROFILE  SUB" in emu.screen_text():
+            break
+    assert "SCP3     SYS" in emu.screen_text(), emu.screen_text()
+
+
 def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
     """PC 1715 (AP-4b): jede maschinenneutrale C-ABI-Funktion wirkt am Gerät oder meldet
     ihren Ruhewert — Boot von der SCP-Diskette bis `A>`, Format erkannt, Lampen, Tastatur

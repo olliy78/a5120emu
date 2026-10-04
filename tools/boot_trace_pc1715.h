@@ -15,4 +15,5 @@
 /** @brief Fährt einen PC 1715 und berichtet.
  *  Rückgabe = Exit-Code: 0 = Prompt (`A>`) bei Stillstand bzw. `--until` erfüllt,
  *  1 = nicht erreicht (Stillstand woanders, Taktgrenze), 2 = `--until` nicht erfüllt. */
-int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn);
+/// @param w true = PC 1715W (`--machine pc1715w`, AP-W3): Urlader S550, U8272 + UA858, Bänke.
+int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn, bool w = false);

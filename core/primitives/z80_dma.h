@@ -66,7 +66,10 @@ public:
     // ─── Abfragen (Tests/Debugger) ──────────────────────────────────────────
     bool     enabled() const { return s_.enabled; }
     bool     blockEndeErreicht() const { return s_.endLevel; }
-    uint8_t  status() const { return s_.status; }
+    /// Statusbyte (RR0): D0 = 1 Transfer erfolgt, **D1 = 0 RDY aktiv**, D3 = 0 Interrupt
+    /// anstehend, D4 = 0 Treffer, D5 = 0 Blockende.  D1/D3 werden beim Lesen aus dem Zustand
+    /// gebildet (S550 0539H wertet D1 aus: „RDY noch aktiv" → FDC-Grundzustand).
+    uint8_t  status() const;
     uint16_t adresseA() const { return s_.aCur; }
     uint16_t adresseB() const { return s_.bCur; }
     uint16_t bytezaehler() const { return static_cast<uint16_t>(s_.counter); }

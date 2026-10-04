@@ -20,6 +20,9 @@
 #include "tools/event_bp.h"
 #include "tools/z80dis_min.h"
 #include "core/machines/pc1715/pc1715.h"
+#include "core/cards/pc1715w_speicher/pc1715w_speicher.h"
+#include "core/primitives/upd765.h"
+#include "core/primitives/z80_dma.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -52,6 +55,33 @@ const char* portName(uint8_t p) {
         default:   return "";
     }
 }
+/// PC 1715W (doc/pc1715/pc1715w_hardware.md §1): andere Belegung derselben Adressen.
+const char* portNameW(uint8_t p) {
+    if (p <= 0x03) return "UA858 DMA";
+    if (p <= 0x07) return "CTC2";
+    if (p <= 0x0B) return "CTC0";
+    if (p == 0x0C || p == 0x0D) return p == 0x0C ? "SIO A Daten" : "SIO B Daten";
+    if (p == 0x0E || p == 0x0F) return p == 0x0E ? "SIO A Steuer" : "SIO B Steuer";
+    switch (p) {
+        case 0x18: return "8275 Parameter";
+        case 0x19: return "8275 Befehl/Status";
+        case 0x1A: return "ZG-Wahl (Bit 4)";
+        case 0x1B: return "/ZRES";
+        case 0x1C: case 0x1E: return "U8272 MSR";
+        case 0x1D: case 0x1F: return "U8272 Daten";
+        default: break;
+    }
+    if (p >= 0x20 && p <= 0x23) return "KRFD (Bit 6 FDC-Reset, Bit 7 TC)";
+    if (p >= 0x24 && p <= 0x27) return "BR (Lese-/Schreibbank)";
+    if (p >= 0x28 && p <= 0x2B) return "MOS (Motor Bit 4+n)";
+    if (p >= 0x34 && p <= 0x37) return "KON (DIP S8)";
+    return "";
+}
+/// Ereignis-Ports.  Am 1715W schaltet das BIOS das Bankregister 24H bei JEDEM Aufruf (auch im
+/// Leerlauf der Konsolenabfrage) — es zählt deshalb nicht als Steuerzugriff.
+bool beobachtetW(uint8_t p) {
+    return p <= 0x07 || (p >= 0x18 && p <= 0x23) || (p >= 0x28 && p <= 0x2B) || (p >= 0x34 && p <= 0x37);
+}
 bool beobachtet(uint8_t p) {
     return p <= 0x07 || (p >= 0x18 && p <= 0x2B) || (p >= 0x34 && p <= 0x37);
 }
@@ -78,9 +108,11 @@ bool promptZeile(const std::string& bild, int cols, int rows) {
 
 }  // namespace
 
-int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
+int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn, bool w)
 {
-    Pc1715Machine m;
+    Pc1715Machine::Config cfg;
+    if (w) cfg.variante = Pc1715Machine::Config::Variante::Pc1715W;
+    Pc1715Machine m(cfg);
     const int cols = m.zre().textCols(), rows = m.zre().maxZeilen();   // + CP/A-Statuszeile
     auto rd = [&](uint16_t a) { return m.memReadDebug(a); };
     auto prnTail = [&](uint16_t a) -> std::string {
@@ -101,7 +133,7 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
     }
     m.powerOn();
     if (!o.quiet) {
-        fprintf(stderr, "=== PC 1715 Boot Trace ===\n");
+        fprintf(stderr, w ? "=== PC 1715W Boot Trace ===\n" : "=== PC 1715 Boot Trace ===\n");
         fprintf(stderr, "Disk:       %s%s\n", o.disk.empty() ? "(keine)" : o.disk.c_str(),
                 mounted ? "" : (o.disk.empty() ? "" : "  [NICHT gemountet]"));
         fprintf(stderr, "Max cycles: %lld   Stillstand nach %lld\n", o.limit, o.stall);
@@ -232,13 +264,13 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
         }
         const uint8_t p = static_cast<uint8_t>(addr);
         (isRead ? io_rd : io_wr)[p]++;
-        bool gewuenscht = beobachtet(p);
+        bool gewuenscht = w ? beobachtetW(p) : beobachtet(p);
         for (uint16_t w : o.watchio) if ((w & 0xFF) == p) gewuenscht = true;
         if (!gewuenscht) return;
         if (!isRead) last_activity = m.totalCycles();
         char t[200], k[24];
         if (datenport(p)) {
-            snprintf(t, sizeof t, "%s (%02XH)  %s", isRead ? "IN " : "OUT", p, portName(p));
+            snprintf(t, sizeof t, "%s (%02XH)  %s", isRead ? "IN " : "OUT", p, (w ? portNameW(p) : portName(p)));
             snprintf(k, sizeof k, "D%c%02X", isRead ? 'r' : 'w', p);
         } else {
             std::string zusatz;
@@ -246,7 +278,7 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
                 char z[48]; snprintf(z, sizeof z, "  Basis %04X ZG%d", (data << 10) & 0xFC00, (data & 0x40) ? 2 : 1);
                 zusatz = z;
             } else if (!isRead && p >= 0x24 && p <= 0x2B) zusatz = p < 0x28 ? "  (Overlay an)" : "  (Overlay aus)";
-            snprintf(t, sizeof t, "%s (%02XH)=%02X  %s%s", isRead ? "IN " : "OUT", p, data, portName(p), zusatz.c_str());
+            snprintf(t, sizeof t, "%s (%02XH)=%02X  %s%s", isRead ? "IN " : "OUT", p, data, (w ? portNameW(p) : portName(p)), zusatz.c_str());
             snprintf(k, sizeof k, "P%c%02X%02X%04X", isRead ? 'r' : 'w', p, data, pc);
         }
         event(k, t, pc);
@@ -324,8 +356,13 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
         fprintf(stderr, "Prompt:      %s\n", prompt ? "JA" : "nein");
         if (!o.keys.empty())
             fprintf(stderr, "Tasten:      %zu von %zu getippt\n", tasten_pos, tasten.size());
-        fprintf(stderr, "ROM:         %s   BWS=%02X (Basis %04X)\n", m.zre().romEin() ? "ein" : "aus",
-                m.zre().bwsRegister(), m.zre().bildBasis());
+        if (w)
+            fprintf(stderr, "1715W:       BR=%02X  KRFD=%02X  MOS=%02X  U8272-MSR=%02X  DMA %s\n",
+                    m.speicherW()->bankRegister(), m.krfdW(), m.mosW(), m.fdcW()->readMsr(),
+                    m.dmaW()->enabled() ? "frei" : "gesperrt");
+        else
+            fprintf(stderr, "ROM:         %s   BWS=%02X (Basis %04X)\n", m.zre().romEin() ? "ein" : "aus",
+                    m.zre().bwsRegister(), m.zre().bildBasis());
         fprintf(stderr, "Ereignisse:  %ld (%ld Zeilen), Interrupts: %ld, Befehle: %llu\n",
                 ev_total, ev_lines, ints, (unsigned long long)instr);
         const Z80& z = m.zre().cpu();
@@ -336,7 +373,7 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
         for (int p = 0; p < 256; ++p)
             if (io_rd[p] || io_wr[p])
                 fprintf(stderr, "  port 0x%02X : rd=%-9llu wr=%-9llu %s\n", p,
-                        (unsigned long long)io_rd[p], (unsigned long long)io_wr[p], portName(static_cast<uint8_t>(p)));
+                        (unsigned long long)io_rd[p], (unsigned long long)io_wr[p], (w ? portNameW(static_cast<uint8_t>(p)) : portName(static_cast<uint8_t>(p))));
 
         std::vector<std::pair<uint32_t, uint16_t>> hs;
         for (auto& kv : hist) hs.push_back({kv.second, kv.first});
@@ -382,9 +419,9 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
     }
     if (o.json) {
         fprintf(stderr,
-            "{\"machine\":\"pc1715\",\"stall\":%s,\"prompt\":%s,\"cycles\":%llu,\"final_pc\":\"0x%04X\","
+            "{\"machine\":\"%s\",\"stall\":%s,\"prompt\":%s,\"cycles\":%llu,\"final_pc\":\"0x%04X\","
             "\"rom\":%s,\"instr\":%llu,\"events\":%ld,\"ints\":%ld,",
-            stillstand ? "true" : "false", prompt ? "true" : "false",
+            w ? "pc1715w" : "pc1715", stillstand ? "true" : "false", prompt ? "true" : "false",
             (unsigned long long)cycles, m.cpuPC(), m.zre().romEin() ? "true" : "false",
             (unsigned long long)instr, ev_total, ints);
         if (o.until.kind != untilcond::UntilCond::NONE)

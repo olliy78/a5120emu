@@ -136,8 +136,8 @@ def test_prg710_variants_can_be_created_and_run():
 
 def test_pc1715_can_be_created_and_run():
     """`k1520_create_pc1715` (AP-1b): Typ 3, beide Bildschirme (640x300 / 512x255, je mit Statuszeile), laufen
-    einige Takte; `k1520_create(3)` baut die Vorgabe; Variante 1 (PC 1715W) und
-    unbekannte Werte → NULL mit Grund."""
+    einige Takte; `k1520_create(3)` baut die Vorgabe; Variante 1 (PC 1715W, seit AP-W3)
+    baut 640x288 und lehnt den K7221 ab; unbekannte Werte → NULL mit Grund."""
     from app.core_binding.k1520 import _lib, K1520Handle
 
     for bild, groesse in ((0, (640, 300)), (1, (512, 255))):
@@ -156,7 +156,17 @@ def test_pc1715_can_be_created_and_run():
     assert handle, _lib.k1520_last_init_error()
     _lib.k1520_destroy(K1520Handle(handle))
 
-    assert not _lib.k1520_create_pc1715(1, 0, 0, None, None, None, None)
+    handle = _lib.k1520_create_pc1715(1, 0, 0, None, None, None, None)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 3
+        assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (640, 288)
+        _lib.k1520_power_on(h)
+        assert _lib.k1520_run(h, 50_000) > 0
+    finally:
+        _lib.k1520_destroy(h)
+    assert not _lib.k1520_create_pc1715(1, 1, 0, None, None, None, None)
     assert "1715W" in _lib.k1520_last_init_error().decode()
     assert not _lib.k1520_create_pc1715(2, 0, 0, None, None, None, None)
     assert not _lib.k1520_create_pc1715(0, 2, 0, None, None, None, None)

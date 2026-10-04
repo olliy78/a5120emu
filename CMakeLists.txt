@@ -378,7 +378,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_pc1715w_speicher PUBLIC k1520_i8275 k1520_bus k1520_logger)
     target_include_directories(k1520_pc1715w_speicher PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_pc1715 STATIC core/machines/pc1715/pc1715.cpp)
-    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_tastatur1715 k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger k1520_serial)
+    target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_pc1715w_speicher k1520_z80dma k1520_upd765 k1520_tastatur1715 k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library

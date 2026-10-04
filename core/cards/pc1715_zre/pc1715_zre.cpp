@@ -46,7 +46,9 @@ public:
     bool v24() const override { return true; }   // 102/103/106 bzw. alle Leitungen
 
     k1520::serial::SerialFormat format() const override {
-        return k1520::serial::serialFormatAusSio(ch(), z_.ctc_.teilerTakte(k_ == Drucker ? 0 : 1));
+        // φ = Systemtakt der Variante (1715W: 3,9936 MHz, sonst die Vorgabe des Hubs).
+        return k1520::serial::serialFormatAusSio(ch(), z_.ctc_.teilerTakte(k_ == Drucker ? 0 : 1),
+                                                 z_.cfg_.w ? CPU_HZ_W : k1520::serial::PHI_NENN);
     }
     bool senderHatZeichen() const override { return schieb_.has_value() || ch().senderHatZeichen(); }
     // Schieberegister vor dem Tx-Puffer: die echte SIO nimmt das erste Zeichen sofort aus dem
@@ -172,6 +174,10 @@ void Pc1715Zre::attachToBus(K1520Bus& bus)
 {
     bus.registerIO(this, PORT_CTC, 4);
     bus.registerIO(this, PORT_SIO, 4);
+    if (cfg_.w) {                            // 1715W: 18H/24H/28H/34H gehören der Maschine
+        bus.registerIO(this, PORT_LT107, 8);
+        return;
+    }
     bus.registerIO(this, PORT_CRT, 4);
     bus.registerIO(this, PORT_ROMEIN, 8);   // 24H–2BH
     bus.registerIO(this, PORT_LT107, 8);    // 2CH–33H
@@ -255,26 +261,26 @@ void Pc1715Zre::ioWrite(uint8_t port, uint8_t data)
 void Pc1715Zre::setIEI(bool iei)
 {
     ctc_.setIEI(iei);
-    sio_.setIEI(ctc_.getIEO());
+    sio_.setIEI(cfg_.w ? iei : ctc_.getIEO());   // 1715W: CTC0 nicht in der Kette
 }
 
 uint8_t Pc1715Zre::getVector() const
 {
-    if (ctc_.hasInterrupt()) return ctc_.getVector();
+    if (ctcMitInt()) return ctc_.getVector();
     if (sio_.hasInterrupt()) return sio_.getVector();
     return 0xFF;
 }
 
 const char* Pc1715Zre::intDeviceName() const
 {
-    if (ctc_.hasInterrupt()) return "PC1715 CTC0";
+    if (ctcMitInt()) return "PC1715 CTC0";
     if (sio_.hasInterrupt()) return "PC1715 SIO0";
     return "PC1715 ZRE";
 }
 
 void Pc1715Zre::onRETI()
 {
-    ctc_.onRETI();
+    if (!cfg_.w) ctc_.onRETI();
     sio_.onRETI();
 }
 

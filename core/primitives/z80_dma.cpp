@@ -141,7 +141,7 @@ uint8_t Z80Dma::ioRead(uint8_t) {
         if (!(s_.readMask & (1 << pos))) continue;
         s_.readPos = (pos + 1) % 7;
         switch (pos) {
-        case 0: return s_.status;
+        case 0: return status();
         case 1: return s_.counter & 0xFF;
         case 2: return (s_.counter >> 8) & 0xFF;
         case 3: return s_.aCur & 0xFF;
@@ -150,7 +150,17 @@ uint8_t Z80Dma::ioRead(uint8_t) {
         default: return s_.bCur >> 8;
         }
     }
-    return s_.status;
+    return status();
+}
+
+uint8_t Z80Dma::status() const {
+    // D1 folgt dem RDY-Pin (aktiv nach WR5-Polarität; Force Ready zählt nicht), D3 dem
+    // anstehenden Interrupt — beides Leitungszustände, kein gespeichertes Bit.
+    const bool pinAktiv = s_.readyPin == ((s_.wr5 & 0x08) != 0);
+    uint8_t st = static_cast<uint8_t>(s_.status & ~0x0A);
+    if (!pinAktiv) st |= 0x02;
+    if (!s_.intPending) st |= 0x08;
+    return st;
 }
 
 // ─── Ausführung ──────────────────────────────────────────────────────────────

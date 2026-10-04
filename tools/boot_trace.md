@@ -288,3 +288,10 @@ tools/dev.sh tool boot_trace --machine pc1715 --quiet --json <abbild>   # {"prom
   ZG, 24H–2BH „Overlay an/aus“; das Schlussbild zeigt ROM/BWS (das PRG-`map`).
 - Wächter: `bt_pc1715_scp_prompt.cli`, `bt_pc1715_tastatur.cli` (`dir` → INSTSCP).
 - Nicht vorhanden: Savestates, ZVE2-Schalter.
+
+**`--machine pc1715w`** (AP-W3): dieselbe Grundform für den PC 1715W — Urlader S550, U8272 +
+UA858, Bankregister. Portnamen nach `doc/pc1715/pc1715w_hardware.md` §1 (DMA 00H, CTC2 04H,
+U8272 1CH/1DH, KRFD 20H, BR 24H, MOS 28H, KON 34H); **24H zählt nicht als Steuerzugriff** (das
+BIOS schaltet die Bank bei jedem Aufruf, auch im Leerlauf — sonst gäbe es keinen Stillstand).
+Das Schlussbild zeigt `BR`/`KRFD`/`MOS`/U8272-MSR/DMA statt ROM/BWS; JSON `"machine":"pc1715w"`.
+Wächter `bt_pc1715w_scp30_prompt.cli` (SCP 3.0 bis `A>`).

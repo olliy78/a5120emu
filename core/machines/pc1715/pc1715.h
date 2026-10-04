@@ -2,11 +2,17 @@
  * @file pc1715.h
  * @brief PC 1715 / PC 1715W — vierte Maschine des Kerns.
  *
- * Stand AP-1b (doc/design/21_pc1715.md §8, §10/§11): nur die ZRE (`Pc1715Zre`: U880, 64 KB,
+ * Stand AP-1b (doc/design/21_pc1715.md §8, §10/§11): die ZRE (`Pc1715Zre`: U880, 64 KB,
  * ROM-Overlay S502, CTC0, SIO0, 8275 mit Rastern) und die Laufschleife.  **Eine** Klasse
- * für beide Geräte; die Variante PC 1715W (256 KB mit Bänken, U8272 + Z80-DMA, Zeichengenerator
- * im RAM) ist vorgesehen, aber noch nicht gebaut — der Konstruktor lehnt sie mit klarer
- * Meldung ab (`std::runtime_error`).
+ * für beide Geräte.
+ *
+ * **PC 1715W (AP-W3, doc/pc1715/pc1715w_hardware.md):** dieselbe ZRE-Karte in der Betriebsart
+ * `Pc1715Zre::Config::w` (CPU 3,9936 MHz, CTC0 08H ohne Interrupt, SIO0 0CH, LT107/111), dazu
+ * `Pc1715wSpeicher` (256 KB, BR 24H, 74S287, S550/ZG-RAM/Bild-RAM in Bank 0) als Speicherweg
+ * der CPU und der DMA, `Pc1715wBild` (8275 18H–1BH aus dem Bild-RAM), `Z80Dma` 00H–03H,
+ * CTC2 04H–07H (K1 → C/TRG2), `Upd765` 1CH–1FH (und 40H/41H nur für die DMA), KRFD 20H,
+ * MOS 28H, KON 34H.  Interruptkette DMA → CTC2 → SIO0.  Die K5122 ist dort nicht am Bus; sie
+ * bleibt nur als Halter der vier `FloppyDriveV2` für den gemeinsamen Baustein `Laufwerke`.
  *
  * Floppy (AP-2): die K5122 in der Konfiguration „1715" (`K5122::Portlage::Pc1715`: Daten-PIO
  * 00H–03H, Steuer-PIO 04H–07H, SE-Register 20H, MO-Register 21H) im `/WAIT`-Betrieb, mit dem
@@ -37,8 +43,14 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <memory>
 #include <stdexcept>
 #include <string>
+
+class Pc1715wSpeicher;
+class Pc1715wBild;
+class Z80Dma;
+class Upd765;
 
 class Pc1715Machine : public K1520Machine {
 public:
@@ -55,9 +67,12 @@ public:
 
     static constexpr uint32_t CPU_HZ = Pc1715Zre::CPU_HZ;
 
+    /// Systemtakt des PC 1715W (15,9744 MHz / 4).
+    static constexpr uint32_t CPU_HZ_W = Pc1715Zre::CPU_HZ_W;
+
     Pc1715Machine();
-    explicit Pc1715Machine(const Config& cfg);   ///< @throws std::runtime_error bei Variante PC 1715W
-    ~Pc1715Machine() override = default;
+    explicit Pc1715Machine(const Config& cfg);
+    ~Pc1715Machine() override;
 
     // ─── Lebenslauf ──────────────────────────────────────────────────────────
     void powerOn() override;
@@ -67,15 +82,15 @@ public:
     void nmi() override { nmi_taster_.store(true, std::memory_order_relaxed); }
 
     // ─── Bild ────────────────────────────────────────────────────────────────
-    const uint8_t* framebuffer() const override { return zre_.framebuffer(); }
-    int  fbWidth()  const override { return zre_.fbWidth(); }
-    int  fbHeight() const override { return zre_.fbHeight(); }
-    bool fbDirty()  const override { return zre_.fbDirty(); }
-    void fbClearDirty() override   { zre_.fbClearDirty(); }
+    const uint8_t* framebuffer() const override;
+    int  fbWidth()  const override;
+    int  fbHeight() const override;
+    bool fbDirty()  const override;
+    void fbClearDirty() override;
     void setConsoleMode(bool) override {}
     bool consolePoll(int&, int&, char&) override { return false; }
     /// Zeichencode der Zelle des letzten Bildes (von der Karte, nie über `mem_read`).
-    uint8_t screenChar(int col, int row) const override { return zre_.screenChar(col, row); }
+    uint8_t screenChar(int col, int row) const override;
 
     // ─── Tastatur (AP-3) ─────────────────────────────────────────────────────
     /// Kennung einer physischen Taste: `QK_TASTE_BASE | (Spalte * 8 + Zeile)` (Matrix 13 × 8,
@@ -96,6 +111,9 @@ public:
 
     int machineType() const override { return 3; }   // K1520_MACHINE_PC1715
     Config::Variante variante() const { return variante_; }
+    bool istW() const { return w_ != nullptr; }
+    /// Systemtakt der Variante (2,458 MHz bzw. 3,9936 MHz).
+    uint32_t cpuHz() const { return variante_ == Config::Variante::Pc1715W ? CPU_HZ_W : CPU_HZ; }
 
     // ─── Disketten (gemeinsamer Laufwerksbaustein) ───────────────────────────
     bool mountDisk(int d, const std::string& p, const std::string& f, bool wp) override {
@@ -141,9 +159,9 @@ public:
     void setPrinterCallback(SerialCb cb) override { zre_.setAbnehmer(Pc1715Zre::Drucker, std::move(cb)); }
 
     // ─── Diagnose ────────────────────────────────────────────────────────────
-    /// Speicher aus Sicht der CPU (mit ROM-Overlay).
-    uint8_t memReadDebug(uint16_t addr) override { return zre_.memRead(addr); }
-    void    memWriteDebug(uint16_t addr, uint8_t d) override { zre_.memWrite(addr, d); }
+    /// Speicher aus Sicht der CPU (1715: mit ROM-Overlay; 1715W: Lese-/Schreibbank aus BR).
+    uint8_t memReadDebug(uint16_t addr) override;
+    void    memWriteDebug(uint16_t addr, uint8_t d) override;
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     std::string lastError() const override { return lw_.lastError(); }
 
@@ -158,11 +176,24 @@ public:
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) { zre_.cpu().traceCallback = std::move(cb); }
     void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
 
+    // ─── PC 1715W (nullptr am PC 1715) ───────────────────────────────────────
+    Pc1715wSpeicher* speicherW();
+    Pc1715wBild*     bildW();
+    Z80Dma*          dmaW();
+    Upd765*          fdcW();
+    Z80CTC*          ctc2W();
+    uint8_t          krfdW() const;   ///< KRFD 20H (zuletzt geschrieben)
+    uint8_t          mosW() const;    ///< MOS 28H (zuletzt geschrieben)
+
 private:
     void resetHardware();
     void tastenAbgeben();                  ///< Oberflächen-Ereignisse in den Lauffaden holen
     void tastenVerarbeiten();              ///< fällige Ereignisse in die Matrix (nur im Lauffaden)
     static Config pruefe(const Config& cfg);
+    void bauW();                           ///< Bausteine des 1715W anlegen und verdrahten
+    int  runW(int max_cycles);             ///< Laufschleife des PC 1715W (DMA hält die CPU an)
+    uint64_t durchlaeufe(uint64_t n) const;   ///< n Tastatur-Abfragedurchläufe in Rechnertakten
+    uint32_t frameTakte() const { return cpuHz() / 50; }
 
     const Config::Variante variante_;
     K1520Bus   bus_;
@@ -181,7 +212,9 @@ private:
     uint64_t tasten_frei_ab_ = 0;          ///< frühester Takt für das nächste Ereignis
     uint64_t kbd_rest_ = 0;                ///< noch nicht an die Tastatur-CPU abgegebene Takte
 
-    k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
+    k1520::serial::SerialHub hub_;
+    struct W;                              ///< Bausteine des PC 1715W (pc1715.cpp)
+    std::unique_ptr<W> w_;
     uint64_t  serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
 
     std::atomic<bool> stop_{false};

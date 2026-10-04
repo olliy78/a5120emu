@@ -71,7 +71,7 @@ K1520_API K1520Handle k1520_create_prg710(int variante,
 /**
  * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
  *
- * @param variante    0 = PC 1715, 1 = PC 1715W (noch nicht gebaut: NULL mit Grund)
+ * @param variante    0 = PC 1715, 1 = PC 1715W (seit AP-W3; nur mit bildschirm 0, sonst NULL mit Grund)
  * @param bildschirm  0 = K7222 (80x24, Vorgabe), 1 = K7221 (64x16); Framebuffer 640x288 bzw. 512x240
  * @param zeichensatz Zeichengenerator bei BWS-Register DB6 = 0: 0 = S619 (Vorgabe), 1 = S602
  * @param drive0..3   Laufwerke der Floppy-Ansteuerung (Profilnamen wie "K5601"; NULL/"" = Vorgabe 2 × K5601)

@@ -1,0 +1,8 @@
+# boot_trace --machine pc1715w (Entwurf 21 AP-W3): Urlader S550 → SCP-3.0-Lader → SCP3.SYS →
+# PROFILE.SUB (modcs) → `A>`; Abbruch dort als Stillstand, Exit 0.  COW-Mount.
+tool:    boot_trace
+disk:    pc1715w_scp30_system.hfe
+run:     --machine pc1715w --quiet --json %DISK%
+timeout: 120
+exit:    0
+expect:  "machine":"pc1715w","stall":true,"prompt":true
