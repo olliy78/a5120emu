@@ -13,10 +13,13 @@ Emulator wie am Geraet ohne eigenen Kopierschritt bereitstehen:
   EM256ADR.COM  tools/em256/     A5120.16 — Pruefprogramme der EM064/EM256
   EM16ABL.COM   tools/em256/
   EM256FUL.COM  tools/em256/
+  RAFCPM.COM    doc/raf512/      RAM-Floppy RAF (Entwurf 22): Original-Treiber, Laufwerk M:
+  RAF512.COM    doc/raf512/      dieselbe Karte, DKt-Fassung 2008, Laufwerk P: (alle drei Maschinen)
 
 Nach jedem Neubau einer .com muessen diese Kopien nachgezogen werden — sonst
 liefert das Paket eine alte Fassung aus.  Ebenso die Prueflinge der Tests unter
-``tests/fixtures/cpm/`` (EM*.COM), die bytegleich bleiben muessen.
+``tests/fixtures/cpm/`` (EM*.COM) und ``tests/fixtures/raf/`` (RAF*.COM), die
+bytegleich bleiben muessen.
 
 Aufruf:
   python3 tools/disketten_beigaben.py --tool <k1520disktool>            # aufspielen
@@ -37,6 +40,8 @@ import tempfile
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 FIXTURES = os.path.join(REPO, 'tests', 'fixtures', 'cpm')
+RAF = os.path.join(REPO, 'doc', 'raf512')
+RAF_FIXTURES = os.path.join(REPO, 'tests', 'fixtures', 'raf')
 
 # Name auf der Diskette (8.3, CP/A erwartet Grossbuchstaben) -> eingecheckte .com
 PROGRAMME = {
@@ -45,9 +50,13 @@ PROGRAMME = {
     'EM256ADR.COM': os.path.join(TOOLS, 'em256', 'em256adr.com'),
     'EM16ABL.COM':  os.path.join(TOOLS, 'em256', 'em16abl.com'),
     'EM256FUL.COM': os.path.join(TOOLS, 'em256', 'em256ful.com'),
+    'RAFCPM.COM':   os.path.join(RAF, 'RAFCPM.COM'),
+    'RAF512.COM':   os.path.join(RAF, 'RAF512.COM'),
 }
 A5120 = list(PROGRAMME)
-K8915 = ['SERTEST.COM']      # ROMREAD/EM* sprechen A5120-Hardware an
+RAF_TREIBER = ['RAFCPM.COM', 'RAF512.COM']   # E/A 88H/89H — an allen drei Maschinen
+K8915 = ['SERTEST.COM', *RAF_TREIBER]        # ROMREAD/EM* sprechen A5120-Hardware an
+PRG710_1 = RAF_TREIBER                       # SCPX 1.7: RAF512 im Gast nachgewiesen (AP-R5)
 
 # Bootdisketten und was sie tragen.  SCPX 1526 am A5120 ist nicht geprueft und
 # fehlt deshalb.
@@ -60,7 +69,10 @@ DISKETTEN = {
     'cpa_cpa780_combo5zoll_noclock.img': A5120,
     'cpa_cpa780_combo8zoll_noclock.hfe': A5120,
     'cpa_cpa780_combo8zoll_noclock.img': A5120,
+    'cpa_cpa780_k5601_noclock-raf.hfe': A5120,
+    'cpa_cpa780_k5601_noclock-raf.img': A5120,
     'k8915scpx_boot1.hfe': K8915,
+    'prg710-1_scpx17_cpa640_boot.hfe': PRG710_1,
 }
 
 # Prueflinge der Tests, die dieselbe Fassung tragen muessen.
@@ -68,6 +80,8 @@ KOPIEN = {
     os.path.join(FIXTURES, 'em256adr.com'): PROGRAMME['EM256ADR.COM'],
     os.path.join(FIXTURES, 'em16abl.com'): PROGRAMME['EM16ABL.COM'],
     os.path.join(FIXTURES, 'em256ful.com'): PROGRAMME['EM256FUL.COM'],
+    os.path.join(RAF_FIXTURES, 'RAFCPM.COM'): PROGRAMME['RAFCPM.COM'],
+    os.path.join(RAF_FIXTURES, 'RAF512.COM'): PROGRAMME['RAF512.COM'],
 }
 
 

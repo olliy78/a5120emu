@@ -26,6 +26,7 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 |-------|--------|------------------------|
 | `cpa_cpa780_k5601_clock` | CP/A **mit Uhr** | K5601 / K5601 / K5601 |
 | `cpa_cpa780_k5601_noclock` | CP/A ohne Uhr | K5601 / K5601 / K5601 |
+| `cpa_cpa780_k5601_noclock-raf` | CP/A ohne Uhr, **BIOS mit eingebautem RAF-Treiber** (`raf=1`, `rafpar=1`, 88H): mit gesteckter RAM-Floppy (Einstellungen ▸ RAM-Disk) steht nach dem Kaltstart **M:** bereit (RAF 128/512/2M: 127/508/2032 KByte), Inhalt übersteht RESET; ohne Karte kein M:.  Bau: `tests/fixtures/README.md` | K5601 / K5601 / K5601 |
 | `cpa_cpa780_combo5zoll_noclock` | CP/A ohne Uhr | K5601 / **K5600.10** / **K5600.20** |
 | `cpa_cpa780_combo8zoll_noclock` | CP/A ohne Uhr | K5601 / **MF3200** / **K5602.10 · MF6400** |
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, 16×256-System | K5601 |
@@ -44,10 +45,12 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `SERTEST.COM` — Prüfprogramm der seriellen Schnittstellen | `tools/sertest/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe` |
 | `ROMREAD.COM` — liest das Boot-EPROM der ZRE nach `ROM.BIN` | `tools/romread/` | alle `cpa_cpa780_*` |
 | `EM256ADR.COM`, `EM16ABL.COM`, `EM256FUL.COM` — Prüfprogramme der A5120.16 (EM064/EM256, U8001) | `tools/em256/` | alle `cpa_cpa780_*` |
+| `RAFCPM.COM` (Laufwerk M:), `RAF512.COM` (Laufwerk P:) — nachladbare Treiber der RAM-Floppy RAF (ZWG der AdW, Fremdsoftware, freigegeben; Entwurf 22) | `doc/raf512/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe`, `prg710-1_scpx17_cpa640_boot.hfe` |
 
 Nach einem Neubau nachziehen mit `python3 tools/disketten_beigaben.py --tool
 build/k1520disktool` (Wächter `cli_beigaben_auf_den_disketten`; er prüft auch, dass die
-Prüflinge `tests/fixtures/cpm/em*.com` dieselbe Fassung tragen).
+Prüflinge `tests/fixtures/cpm/em*.com` und `tests/fixtures/raf/RAF{CPM,512}.COM` dieselbe
+Fassung tragen).
 
 ## Bootabbilder (`boot_*.bin`) — Systemspuren zum Wiedereinspielen
 
