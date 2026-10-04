@@ -27,6 +27,8 @@
  * `--machine k8915` fährt statt des A5120 einen K8915 (eine CPU, A8H-Speicherbild,
  * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
  *
+ * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
+ *
  * @license MIT
  */
 #include "core/machines/a5120/a5120.h"
@@ -185,6 +187,7 @@ int main(int argc, char** argv){
     dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|prg710|prg710-1 (Vorgabe a5120)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
+    const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
             if (!dbgm::parseMachine(argv[++i], art)){
@@ -198,6 +201,7 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"-d") && i+1<argc) disks[3]=argv[++i];
         else if (!strcmp(argv[i],"--console")) start_console=true;
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
+        else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -225,6 +229,13 @@ int main(int argc, char** argv){
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
     }
     dbgm::DbgMachine m(art, mcfg);
+    if (raf_opt){   // vor dem ersten Lauf stecken (installRaf verlangt das)
+        RAF::Typ rt = RAF::Typ::RAF512; bool keine = false;
+        if (!dbgm::parseRaf(raf_opt, rt, keine)){
+            fprintf(stderr,"--raf: unbekannte Karte '%s' (none|raf128|raf512|raf2m)\n",raf_opt); return 2; }
+        if (!keine && !m.base().installRaf(rt)){
+            fprintf(stderr,"--raf: %s\n",m.base().rafFehler().c_str()); return 2; }
+    }
     m.powerOn();
     const bool K8 = m.einCpu();      // eine CPU: K8915 ODER PRG (keine ZVE2/Snapshots)
     const bool K89 = m.isK8915();
@@ -2463,6 +2474,9 @@ int main(int argc, char** argv){
             fprintf(stderr,
               "  RUN     g/c [N]   run to breakpoint (or N MASCHINEN-Takte; Ctrl-C bricht ab)\n"
               "          clock [zve1|machine]   welche Uhr die Lauf-Budgets zaehlt\n"
+              "  RAF     raf       (mit --raf) Typ, Kapazitaet, Latch, gesperrt, Sektor aus dem Latch\n"
+              "          raf <S>   Hexdump des 128-B-Sektors S in TREIBER-Lesart: Byte 0 zuerst, also\n"
+              "                    rueckwaerts aus der Karte gelesen (INIR/OTIR ohne Autoinkrement)\n"
               "          gu <A>    run until ZVE1 reaches A (temp bp)\n"
               "          s [N]     step INTO N ZVE1 instrs ;  s2 [N] step ZVE2\n"
               "          n [N]     step OVER N ZVE1 instrs (skip CALL/blockrepeat)\n"
@@ -3217,6 +3231,30 @@ int main(int argc, char** argv){
                         fprintf(stderr,"%02X ",v); asc[i]=(v>=0x20&&v<0x7F)?(char)v:'.'; }
                         else { fprintf(stderr,"   "); asc[i]=' '; } }
                     fprintf(stderr," |%s|\n",asc); } } }
+        else if (cmd=="raf"){   // RAM-Floppy: Zustand bzw. ein 128-B-Sektor in Treiber-Lesart
+            const RAF* r = m.base().raf();
+            if (!r){ fprintf(stderr,"  keine RAF gesteckt (--raf raf128|raf512|raf2m)\n"); }
+            else if (t.size()<2){
+                const uint16_t l=r->latch();
+                fprintf(stderr,"  %s  %u KByte (%u Sektoren)  Port 88H/89H\n",dbgm::rafName(r->config().typ),
+                        (unsigned)(r->kapazitaet()/1024),(unsigned)r->sektoren());
+                fprintf(stderr,"  Latch=%04X  Sperrmaske=%04X  gesperrt: %s\n",l,r->sperrmaske(),r->gesperrt()?"ja":"nein");
+                if (r->gesperrt()) fprintf(stderr,"  Sektor aus dem Latch: - (gesperrt)\n");
+                else fprintf(stderr,"  Sektor aus dem Latch: %u (%04XH)\n",
+                             (unsigned)(l&r->sektormaske()),(unsigned)(l&r->sektormaske())); }
+            else {
+                const long sek=parseNum(t[1]);
+                if (sek<0 || (uint32_t)sek>=r->sektoren())
+                    fprintf(stderr,"  ? Sektor 0..%u (RAF hat %u Sektoren)\n",(unsigned)(r->sektoren()-1),(unsigned)r->sektoren());
+                else {
+                    // Treiber-Lesart: INIR/OTIR laufen rueckwaerts, Byte i des Sektors liegt in der Karte
+                    // bei Sektor*128 + 127 - i (siehe `help raf`).
+                    fprintf(stderr,"  RAF Sektor %ld (%lXH), Byte 0 zuerst (Treiber-Lesart):\n",sek,sek);
+                    for (int o=0;o<128;o+=16){
+                        char asc[17]; fprintf(stderr,"  %02X: ",o);
+                        for (int i=0;i<16;++i){ uint8_t v=r->peek((uint32_t)sek*128u+127u-(uint32_t)(o+i));
+                            fprintf(stderr,"%02X ",v); asc[i]=(v>=0x20&&v<0x7F)?(char)v:'.'; }
+                        asc[16]=0; fprintf(stderr," |%s|\n",asc); } } } }
         else if (cmd=="clock"){   // §7: Uhrenwahl für Lauf-Budgets (g/gu/gscreen/hist)
             if (t.size()>1){
                 if (t[1]=="zve1") clock_machine=false;

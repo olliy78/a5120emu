@@ -111,6 +111,8 @@ disk verify
 clock
 clock zve1
 clock machine
+raf
+raf 0
 mark
 s
 s 2

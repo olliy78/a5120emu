@@ -36,6 +36,7 @@ boot_trace [DISK] [optionen]
 |--------|---------|
 | `-c <zyklen>` | Boot-Zyklenlimit |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-/Loaded-code-Histogramm, VRAM-Schreibzähler, 80-Spalten-VRAM-Textdump) |
+| `--raf <typ>` | RAM-Floppy (`raf128`\|`raf512`\|`raf2m`\|`none`) vor dem ersten Lauf stecken, an allen Maschinen (§9) |
 | `--until <cond>` | **anhalten, sobald `<cond>` gilt** (läuft über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann Report (§3) |
 | `--coverage [file]` | **Code-Coverage**: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl; mit `file` zusätzlich CSV `cpu,pc,hits` (§4) |
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |
@@ -259,3 +260,11 @@ tools/dev.sh trace --machine prg710 --events /tmp/ev.txt --events-cap 100000 DIS
   Mit Diskette wird über `defaultFormatName` gemountet (bei `.hfe` nur Platzhalter).
 
 Wächter: `cli_bt_prg710_tastatur`, `cli_bt_prg710-1_tastatur`, `cli_bt_prg710_udos_prompt`, `cli_bt_prg710-1_udos_prompt`.
+
+## 9. RAM-Floppy (`--raf`)
+
+`--raf raf512` (auch `raf128`, `raf2m`) steckt die Karte auf 88H/89H, bevor die Maschine
+läuft — gleichermaßen am A5120 (auch mit `--em`), `--machine k8915` und `--machine prg710[-1]`.
+So lässt sich ein Treiber-/Boot-Lauf mit RAM-Floppe verfolgen (`--watchio 0x88,0x89`);
+Inhalt ansehen nach dem Lauf im Debugger (`k1520dbg --raf …`, Befehl `raf`, §11b dort).
+Unbekannter Typ → Exit 2. Wächter: `cli_bt_raf`, `cli_bt_raf_k8915`, `cli_bt_raf_typ`.

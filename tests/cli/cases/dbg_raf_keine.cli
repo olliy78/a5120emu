@@ -1,0 +1,9 @@
+# Ohne --raf: der Befehl `raf` meldet das, statt zu stuerzen.
+tool:    k1520dbg
+disk:    cpa_cpa780_k5601_clock.img
+run:     %DISK%
+stdin:
+  raf
+  raf 5
+  q
+expect:  keine RAF gesteckt

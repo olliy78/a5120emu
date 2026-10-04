@@ -49,6 +49,30 @@ inline bool parseMachine(const std::string& s, Art& art) {
     return false;
 }
 
+/** @brief RAF-Bauart aus `--raf`; false bei unbekanntem Namen (`none` = keine Karte, @p keine). */
+inline bool parseRaf(const std::string& s, RAF::Typ& typ, bool& keine) {
+    keine = false;
+    if (s == "none")        { keine = true; return true; }
+    if (s == "raf128")      { typ = RAF::Typ::RAF128; return true; }
+    if (s == "raf512")      { typ = RAF::Typ::RAF512; return true; }
+    if (s == "raf2m")       { typ = RAF::Typ::RAF2M;  return true; }
+    return false;
+}
+
+/** @brief Steckt die RAF @p name (leer/`none` = nichts) in @p m; false + @p err bei Fehler. */
+inline bool steckeRaf(K1520Machine& m, const std::string& name, std::string& err) {
+    if (name.empty()) return true;
+    RAF::Typ t = RAF::Typ::RAF512; bool keine = false;
+    if (!parseRaf(name, t, keine)) { err = "unbekannte Karte '" + name + "' (none|raf128|raf512|raf2m)"; return false; }
+    if (keine) return true;
+    if (!m.installRaf(t)) { err = m.rafFehler(); return false; }
+    return true;
+}
+
+inline const char* rafName(RAF::Typ t) {
+    return t == RAF::Typ::RAF128 ? "RAF 128" : t == RAF::Typ::RAF2M ? "RAF-2M" : "RAF 512";
+}
+
 /**
  * @brief Kommandos, die es am K8915 nicht gibt (ZVE2, /BUSRQ-/DMA-Ereignisse,
  *        Snapshots/Reverse/Savestates).  Unit-getestet über tests/cli.

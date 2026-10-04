@@ -462,6 +462,12 @@ g 60000000 ; dev            # K5122-Zustand
 
 ---
 
+## 6b. RAM-Floppy (RAF) ansehen
+
+`k1520dbg --raf raf512 …` steckt die Karte; `raf` zeigt Latch/Sperre, `raf <sektor>` den
+128-B-Sektor in Treiber-Lesart (Byte 0 zuerst — in der Karte liegt er rückwärts). Siehe
+`tools/k1520dbg.md` §11b; `boot_trace --raf` für Läufe mit gesteckter Karte.
+
 ## 7. „Einen Schritt zu weit" / „Wie kam ich hierher?"
 
 Der Emulator macht Reverse-Debugging billig:
