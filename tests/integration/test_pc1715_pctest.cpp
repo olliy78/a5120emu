@@ -8,6 +8,11 @@
  * die eigentlichen Prüfungen (Speicher, V.24, Drucker, Floppy) laufen **nicht an**, und das ist
  * Gastverhalten, kein Emulatorfehler — der Befund steht im zweiten Fall und in
  * `doc/merkposten/pc1715.md` („PCTEST.COM").  Disketten nur über `TempDisk`.
+ *
+ * Die Workbench trägt PCTEST **V 0.1** (10 496 B) — dieser Abzug ist **beschädigt**: Satz 56
+ * (1D00–1D7FH) ist ganz E5H, der Kern des Speichertests fehlt (AP-4f).  Der vollständige
+ * Werkstest läuft deshalb mit der heilen Fassung aus `SOFT1715.img` unter SCP:
+ * `tests/system/test_pc1715_pctest_scp.cpp`.
  */
 
 #include <gtest/gtest.h>

@@ -153,6 +153,8 @@ struct Abzug {
 static const Abzug kAbzuege[] = {
     // SCP 1715 V0006 (5×1024): Systemspuren, CP/A-Regel → `cpa_auto`
     {"pc1715_scp1715_v0006_boot.hfe", "cpa800", "cpa_auto", 9},
+    // dieselbe + PCTEST.COM (AP-4f, Werkstest unter SCP)
+    {"pc1715_scp1715_v0006_pctest.hfe", "cpa800", "cpa_auto", 10},
     // SCP 1715 V0007 (16×256): zweites Format, Katalogprofil
     {"pc1715_scp1715_v0007_cpa640_boot.hfe", "cpa640", "scpx640", 4},
     // CP/A 1715: KEINE Systemspuren, Bootkopf im Verzeichnis — vorher „nicht erkannt"

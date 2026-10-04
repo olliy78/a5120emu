@@ -154,9 +154,10 @@ Wandlung nimmt die erste Umdrehung — die Sektoren dekodieren fehlerfrei
 | Fixture | Begründung |
 |---|---|
 | `pc1715_scp1715_v0006_boot.hfe` | kleinste bootfähige SCP-1715-Systemdiskette (9 Dateien), 5×1024 — Etappe 2 bis `A>` |
+| `pc1715_scp1715_v0006_pctest.hfe` | dieselbe SCP-V0006-Systemdiskette + `PCTEST.COM` (heile Fassung aus `1715_floppyImages/SOFT1715.img`, 8 960 B), 10 Dateien — Werkstest unter SCP (AP-4f, `Pc1715Pctest.Scp*`) |
 | `pc1715_scp1715_v0007_cpa640_boot.hfe` | zweites Format (16×256, SCP V0007, nachladbarer CCP) — deckt die Parametersätze für die zweite Geometrie |
 | `pc1715_cpa1715_boot_4lw.hfe` | **die** CP/A-1715-Bootdiskette (ohne Systemspuren, Boot-Kopf im Verzeichnis); Prüfstein für AP-D und Etappe 3 (Quelltext des BIOS auf der Diskette) |
-| `pc1715_cpa1715_workbench.hfe` | CP/A 1715 aus der CPA-Workbench gebaut (AP-3b, nach Behebung des Bootkopf-Fehlers dort), `cpa1715`, 22 Dateien, trägt `PCTEST.COM` (AP-4d) |
+| `pc1715_cpa1715_workbench.hfe` | CP/A 1715 aus der CPA-Workbench gebaut (AP-3b, nach Behebung des Bootkopf-Fehlers dort), `cpa1715`, 22 Dateien, trägt `PCTEST.COM` (AP-4d) — **V 0.1, beschädigt** (Satz 56 = 1D00–1D7FH ganz E5H, Kern des Speichertests fehlt; gleich in `scp60_new.img` und `CPA_Workbench/additions/pc_1715/pctest.com`, AP-4f) |
 | `pc1715_udos1715_system.hfe` | UDOS 1715 spurgenau (als `.img` existiert sie schon); Boot bis Prompt (AP-5b) |
 | `pc1715_cpz22_boot.hfe` | drittes 1715-Betriebssystem CP/Z 2.2 (cpa640), billig und bootfähig |
 | `pc1715w_scp30_system.hfe` | SCP 3.0 des 1715W (aus `.scp` gewandelt) — AP-W3 |
