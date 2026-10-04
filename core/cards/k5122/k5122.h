@@ -402,6 +402,7 @@ private:
     Encoding waitVerfahrenGemerkt() const;
     /// Byteperiode im Wait-Betrieb (aus dem Verfahren der Spur, NICHT aus dem MK-Bit).
     int waitByteperiode();
+    int waitByteperiodeFuer(Encoding enc) const;   ///< 1715: aufgerundet, s. k5122_wait.cpp
 
     bool     wait_betrieb_  = false;
     uint64_t w_now_         = 0;        ///< Takte seit dem Einschalten (update())

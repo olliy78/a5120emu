@@ -86,7 +86,23 @@ Encoding K5122::waitVerfahrenGemerkt() const
 int K5122::waitByteperiode()
 {
     (void)waitStrom();
-    return drives_[selected_drive_].profile().bytePeriodCycles(waitVerfahrenGemerkt(), cpu_hz_);
+    return waitByteperiodeFuer(waitVerfahrenGemerkt());
+}
+
+// PC 1715: Datenrate/Takt ist keine ganze Zahl (2,458 MHz / 31 250 B/s = 78,66).  Die
+// Schreibschleife von FORMATP/SCP-INIT (OUTI + CALL + 6 NOP + RET + JR = 79 Takte) ist auf
+// die ECHTE Bytezeit abgestimmt; auf 78 abgerundet läuft sie je Byte 1 Takt zu langsam und
+// verliert pro 128-Byte-Block ein Fenster (Daten-CRC dann 8 Byte zu spät → 'C' SPUR DEFEKT).
+// Daher am 1715 AUFgerundet; andere Maschinen bleiben bitgleich.
+int K5122::waitByteperiodeFuer(Encoding enc) const
+{
+    const DriveProfile& pr = drives_[selected_drive_].profile();
+    int p = pr.bytePeriodCycles(enc, cpu_hz_);
+    if (portlage_ == Portlage::Pc1715) {
+        const uint32_t bps = (enc == Encoding::FM) ? 15625u : 31250u;
+        p = static_cast<int>((cpu_hz_ + bps - 1) / bps);
+    }
+    return p;
 }
 
 const TrackImage& K5122::waitStrom()
@@ -317,7 +333,7 @@ void K5122::waitSpurSchreiben(Encoding enc, size_t kennfelder)
     // Byte liegt in SEINEM Fenster — was nach dem Index weitergeschrieben wurde,
     // überschreibt den Anfang der Spur (bei FORMAT.COM: Lücke über Lücke).
     const uint64_t P = static_cast<uint64_t>(drv.indexPeriodCycles(cpu_hz_));
-    const uint64_t p = static_cast<uint64_t>(drv.profile().bytePeriodCycles(enc, cpu_hz_));
+    const uint64_t p = static_cast<uint64_t>(waitByteperiodeFuer(enc));
     const size_t   n = static_cast<size_t>((P + p - 1) / p);
     const uint8_t  luecke = (enc == Encoding::FM) ? 0xFF : 0x4E;
 
