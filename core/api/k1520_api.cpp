@@ -710,7 +710,10 @@ int k1520_machine_type(K1520Handle h) {
 }
 
 uint8_t k1520_screen_char(K1520Handle h, int col, int row) {
-    if (col < 0 || col >= 80 || row < 0 || row >= 24) return 0;
+    // PC 1715: CP/A fährt 25 bzw. 17 Zeilen — die 25. (Index 24) ist die Statuszeile.
+    // Die Karte begrenzt selbst auf ihr Format (K7221: 64 Spalten) und liefert sonst 20H.
+    const int zeilen = toMachine(h)->machineType() == K1520_MACHINE_PC1715 ? 25 : 24;
+    if (col < 0 || col >= 80 || row < 0 || row >= zeilen) return 0;
     return toMachine(h)->screenChar(col, row);
 }
 

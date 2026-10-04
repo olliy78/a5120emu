@@ -1,0 +1,9 @@
+# boot_trace --machine pc1715 --keys (AP-4b): am Prompt wird `dir<ET>` getippt, --until
+# beendet den Lauf, sobald INSTSCP im Bild steht.
+tool:    boot_trace
+disk:    pc1715_scp1715_v0006_boot.hfe
+run:     --machine pc1715 --quiet --json --keys dir<ET> --until "screen ~ \"INSTSCP\"" %DISK%
+timeout: 240
+exit:    0
+expect:  "machine":"pc1715"
+expect:  "until":{"set":true,"met":true

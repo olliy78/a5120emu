@@ -923,7 +923,7 @@ class K1520Emulator:
         return None if v < 0 else bool(v)
 
     def machine_type(self) -> int:
-        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915)."""
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715)."""
         return int(_lib.k1520_machine_type(self._handle))
 
     def panel_lamps(self) -> int:

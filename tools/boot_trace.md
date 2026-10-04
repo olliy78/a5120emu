@@ -279,4 +279,12 @@ tools/dev.sh tool boot_trace --machine pc1715 --quiet --json <abbild>   # {"prom
 - Ein CP/A 1715 hat eine laufende Uhr in der Statuszeile — dort gibt es keinen
   Stillstand (Exit 1 an der Taktgrenze, Prompt im Bild ablesen). Vorsicht mit
   `--until 'screen ~ "A>"'`: die Statuszeile („A0\A> …“) trifft schon vorher.
-- Noch nicht: `--keys` (Tastatur AP-3), Savestates, ZVE2-Schalter (gibt es nicht).
+- **`--keys 'dir<ET>'`** (AP-4b): tippt über die Tastatur1715 (U880 + S600); `<ET>` = Return.
+  Blockweise wie beim PRG: ein Block endet mit `<ET>` und wird getippt, sobald die Maschine
+  steht. Je Taste 150 000 Takte halten + 100 000 Pause (5 000-Takt-Pakete, Entprellung des
+  Tastatur-ROMs). Zusammenfassung: `Tasten: n von m getippt`.
+- Weiter wie beim PRG: `--csv`, `--itrace`, `--coverage [--coverage-csv]`, `-w/-W`, `--watch`,
+  `--watchio`, `-d`, `--events[-cap]`, `-l …/s502.prn`. Das 34H-Ereignis nennt Bildbasis und
+  ZG, 24H–2BH „Overlay an/aus“; das Schlussbild zeigt ROM/BWS (das PRG-`map`).
+- Wächter: `bt_pc1715_scp_prompt.cli`, `bt_pc1715_tastatur.cli` (`dir` → INSTSCP).
+- Nicht vorhanden: Savestates, ZVE2-Schalter.

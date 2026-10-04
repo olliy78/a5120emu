@@ -147,3 +147,56 @@ def test_screen_text_shape(emulator):
     lines = emulator.screen_text().split("\n")
     assert len(lines) == 24
     assert all(len(line) == 80 for line in lines)
+
+
+def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
+    """PC 1715 (AP-4b): jede maschinenneutrale C-ABI-Funktion wirkt am Gerät oder meldet
+    ihren Ruhewert — Boot von der SCP-Diskette bis `A>`, Format erkannt, Lampen, Tastatur
+    (`dir` + Return), Zeile 24 (CP/A-Statuszeile) lesbar, Reset, NMI, Leerdiskette,
+    save_as und PRG/EPROM-Funktionen am falschen Gerät."""
+    from app.core_binding.k1520 import K1520Emulator, _lib
+
+    emu = K1520Emulator(machine="pc1715")
+    assert emu.machine_type() == 3
+    assert (_lib.k1520_fb_width(emu._handle), _lib.k1520_fb_height(emu._handle)) == (640, 288)
+    path = temp_disk("pc1715_scp1715_v0006_boot.hfe")
+    assert emu.mount_disk(0, path, "cpa800"), emu.last_error()
+    assert emu.detected_format(0) != ""
+    assert emu.disk_notice(0) == ""
+    emu.power_on()
+    for _ in range(400):
+        emu.run(100_000)
+        if "A>" in emu.screen_text():
+            break
+    assert "A>" in emu.screen_text()
+    # Tastatur: eine Taste braucht Entprellung (150 000 halten, 100 000 Pause)
+    for ch in "dir\r":
+        code = 0x01000004 if ch == "\r" else ord(ch)
+        emu.key_press(code)
+        for _ in range(30):
+            emu.run(5_000)
+        emu.key_release(code)
+        for _ in range(20):
+            emu.run(5_000)
+    for _ in range(100):
+        emu.run(50_000)
+    assert "INSTSCP" in emu.screen_text()
+    # Statuszeile (Zeile 24) ist erreichbar, ausserhalb liefert 0
+    assert _lib.k1520_screen_char(emu._handle, 0, 24) in range(256)
+    assert _lib.k1520_screen_char(emu._handle, 0, 25) == 0
+    assert _lib.k1520_screen_char(emu._handle, 80, 0) == 0
+    assert isinstance(emu.is_disk_led_on(0), bool) and isinstance(emu.is_motor_on(0), bool)
+    assert emu.panel_lamps() == 0 and emu.bell_count() == 0
+    emu.nmi()
+    emu.run(50_000)
+    assert emu.mem_read(0x0000) in range(256) and emu.io_read(0x20) in range(256)
+    # Leerdiskette in Laufwerk B, als .hfe weggeschrieben
+    assert emu.create_disk(1, str(tmp_path / "leer.hfe"), ""), emu.last_error()
+    assert emu.save_disk_as(1, str(tmp_path / "leer2.hfe")), emu.last_error()
+    assert emu.disk_path(1).endswith("leer2.hfe")
+    # Reset: Urlader läuft wieder an
+    emu.reset()
+    assert emu.run(100_000) > 0
+    # Funktionen fremder Maschinen melden Ruhewerte
+    assert _lib.k1520_prg710_variant(emu._handle) == -1
+    assert _lib.k1520_eprom_type(emu._handle) == -1

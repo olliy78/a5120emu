@@ -1,0 +1,29 @@
+# k1520dbg --machine pc1715 (AP-4b): `map` zeigt ROM-Overlay + BWS 34H; nach dem Boot von
+# der SCP-Diskette ist das Overlay aus und die Bildbasis F800H; Tastatur ueber `keys`.
+tool:    k1520dbg
+disk:    pc1715_scp1715_v0006_boot.hfe
+run:     --machine pc1715 -l doc/EPROMS/PC1715/s502.prn %DISK%
+timeout: 240
+exit:    0
+stdin:
+  map
+  g 30000000
+  map
+  where
+  rj
+  dev ctc
+  dev sio
+  dev crt
+  ivt
+  keys dir\r
+  g 3000000
+  screen find "INSTSCP"
+  s2
+  q
+expect:  Overlay 0000-07FF: EIN
+expect:  Overlay 0000-07FF: aus
+expect:  Bildbasis F800
+expect:  ZRE SIO0
+expect:  "machine":"pc1715"
+expect:  's2' gibt es am PC 1715 nicht
+expect:  found at row

@@ -107,8 +107,6 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
         fprintf(stderr, "Max cycles: %lld   Stillstand nach %lld\n", o.limit, o.stall);
         if (o.until.kind != untilcond::UntilCond::NONE)
             fprintf(stderr, "Until:      %s\n", o.until.text.c_str());
-        if (!o.keys.empty())
-            fprintf(stderr, "WARN: --keys gibt es am PC 1715 noch nicht (Tastatur: AP-3) — ignoriert\n");
         fprintf(stderr, "\n");
     }
 
@@ -157,12 +155,33 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
     bool until_hit = false; uint64_t until_cyc = 0; uint16_t until_pc = 0;
     eventbp::Prev prev;
     long ints = 0;
+    FILE* csv = nullptr; long csv_rows = 0;
+    if (!o.csv_path.empty()) {
+        csv = fopen(o.csv_path.c_str(), "w");
+        if (csv) fprintf(csv, "seq,cyc,cpu,pc,bytes,disasm,af,bc,de,hl,ix,iy,sp\n");
+        else fprintf(stderr, "WARN: cannot write --csv '%s'\n", o.csv_path.c_str());
+    }
+    FILE* itr = nullptr; long itr_n = 0;
+    if (!o.itrace_path.empty()) {
+        itr = fopen(o.itrace_path.c_str(), "w");
+        if (itr) fprintf(itr, "seq,cyc,kind,int_pc,isr_pc,sp,vector,device\n");
+        else fprintf(stderr, "WARN: cannot write --itrace '%s'\n", o.itrace_path.c_str());
+    }
     int win_n = 0;
     uint16_t insn_pc = 0;
 
     m.setCpuTraceCallback([&](const Z80& z) {
         ++instr; insn_pc = z.PC;
         if (hist[z.PC]++ == 0) hist_note[z.PC] = name(z.PC) + prnTail(z.PC);
+        if (csv && (o.win_lo < 0 || (z.PC >= o.win_lo && z.PC <= o.win_hi)) && csv_rows < 5'000'000) {
+            z80dis::Insn d = z80dis::decode(rd, z.PC);
+            char bytes[16] = {0};
+            for (int i = 0; i < d.len && i < 4; ++i) { char b[3]; snprintf(b, 3, "%02X", rd(static_cast<uint16_t>(z.PC + i))); strcat(bytes, b); }
+            fprintf(csv, "%ld,%llu,CPU,0x%04X,%s,\"%s\",%04X,%04X,%04X,%04X,%04X,%04X,%04X\n",
+                    csv_rows, (unsigned long long)z.cycles, z.PC, bytes, d.text,
+                    z.AF, z.BC, z.DE, z.HL, z.IX, z.IY, z.SP);
+            ++csv_rows;
+        }
         const eventbp::Event e = eventbp::classify(z.PC, z.SP, z.IFF1, prev, true, true, false, 0, 0);
         if (e == eventbp::Event::Interrupt || e == eventbp::Event::NMI) {
             ++ints;
@@ -175,6 +194,13 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
                           z.PC, name(z.PC).c_str());
             char key[48]; snprintf(key, sizeof key, "I%02X%04X", e == eventbp::Event::NMI ? 0x100 : ia.vector, z.PC);
             event(key, t, ret);
+            if (itr) {
+                char vec[8] = "-";
+                if (e == eventbp::Event::Interrupt) snprintf(vec, sizeof vec, "0x%02X", ia.vector);
+                fprintf(itr, "%ld,%llu,%s,0x%04X,0x%04X,0x%04X,%s,%s\n", itr_n, (unsigned long long)m.totalCycles(),
+                        e == eventbp::Event::NMI ? "NMI" : "INT", ret, z.PC, z.SP, vec, dev);
+                ++itr_n;
+            }
         }
         prev.have = true; prev.sp = z.SP; prev.iff1 = z.IFF1;
 
@@ -215,11 +241,40 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
             snprintf(t, sizeof t, "%s (%02XH)  %s", isRead ? "IN " : "OUT", p, portName(p));
             snprintf(k, sizeof k, "D%c%02X", isRead ? 'r' : 'w', p);
         } else {
-            snprintf(t, sizeof t, "%s (%02XH)=%02X  %s", isRead ? "IN " : "OUT", p, data, portName(p));
+            std::string zusatz;
+            if (!isRead && p >= 0x34 && p <= 0x37) {   // BWS-Register: Basis = Wert << 10 (DB0 maskiert), DB6 = ZG2
+                char z[48]; snprintf(z, sizeof z, "  Basis %04X ZG%d", (data << 10) & 0xFC00, (data & 0x40) ? 2 : 1);
+                zusatz = z;
+            } else if (!isRead && p >= 0x24 && p <= 0x2B) zusatz = p < 0x28 ? "  (Overlay an)" : "  (Overlay aus)";
+            snprintf(t, sizeof t, "%s (%02XH)=%02X  %s%s", isRead ? "IN " : "OUT", p, data, portName(p), zusatz.c_str());
             snprintf(k, sizeof k, "P%c%02X%02X%04X", isRead ? 'r' : 'w', p, data, pc);
         }
         event(k, t, pc);
     });
+
+    // ── Tasten (--keys) ──────────────────────────────────────────────────────
+    // `<ET>` = Return (ET-Taste).  Getippt wird blockweise (ein Block endet mit `<ET>`) und
+    // erst, wenn die Maschine steht (Stillstand) — also am Prompt, nicht mitten im Laden.
+    // Die Tastatur-CPU braucht Entprellung: 5 000-Takt-Pakete, 150 000 halten, 100 000 Pause.
+    struct Taste { uint32_t code; bool et; };
+    std::vector<Taste> tasten;
+    for (size_t i = 0; i < o.keys.size(); ++i) {
+        if (o.keys.compare(i, 4, "<ET>") == 0 || o.keys.compare(i, 4, "<et>") == 0) {
+            tasten.push_back({0x01000004u, true});
+            i += 3;
+        } else tasten.push_back({static_cast<uint8_t>(o.keys[i]), false});
+    }
+    size_t tasten_pos = 0;
+    auto laufe = [&](long long t) { for (long long k = 0; k < t && !until_hit; k += 5000) m.run(5000); };
+    auto tippeBlock = [&]() {
+        while (tasten_pos < tasten.size()) {
+            const Taste t = tasten[tasten_pos++];
+            m.keyPress(t.code, false, false);  laufe(150000);
+            m.keyRelease(t.code);              laufe(100000);
+            if (until_hit) return;
+            if (t.et) break;
+        }
+    };
 
     // ── Lauf ─────────────────────────────────────────────────────────────────
     const int batch = 20000;
@@ -235,7 +290,15 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
         if (o.until.kind == untilcond::UntilCond::SCREEN && o.until.screenMatch(bild)) {
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
         }
-        if (now - last_activity >= static_cast<uint64_t>(o.stall)) { stillstand = true; break; }
+        if (now - last_activity >= static_cast<uint64_t>(o.stall)) {
+            if (tasten_pos < tasten.size()) {   // Maschine steht: nächster Tastenblock
+                tippeBlock();
+                if (until_hit) break;
+                last_activity = m.totalCycles();
+                continue;
+            }
+            stillstand = true; break;
+        }
         if (!o.quiet && now >= next_progress) {
             fprintf(stderr, "[PROGRESS] cycles=%llu PC=%04X instr=%llu\n",
                     (unsigned long long)now, m.cpuPC(), (unsigned long long)instr);
@@ -245,6 +308,8 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
     }
     flush();
     if (ev != stderr) fclose(ev);
+    if (csv) { fclose(csv); fprintf(stderr, "--csv: %ld row(s) → %s\n", csv_rows, o.csv_path.c_str()); }
+    if (itr) { fclose(itr); fprintf(stderr, "--itrace: %ld INT/NMI → %s\n", itr_n, o.itrace_path.c_str()); }
 
     const uint64_t cycles = m.totalCycles();
     const bool prompt = stillstand && promptZeile(bild, cols, rows);
@@ -257,6 +322,8 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
             fprintf(stderr, "Stillstand:  JA — %lld Takte ohne Bildaenderung und ohne Steuerzugriff (PC=%04X)\n",
                     o.stall, m.cpuPC());
         fprintf(stderr, "Prompt:      %s\n", prompt ? "JA" : "nein");
+        if (!o.keys.empty())
+            fprintf(stderr, "Tasten:      %zu von %zu getippt\n", tasten_pos, tasten.size());
         fprintf(stderr, "ROM:         %s   BWS=%02X (Basis %04X)\n", m.zre().romEin() ? "ein" : "aus",
                 m.zre().bwsRegister(), m.zre().bildBasis());
         fprintf(stderr, "Ereignisse:  %ld (%ld Zeilen), Interrupts: %ld, Befehle: %llu\n",
@@ -295,6 +362,16 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn)
         for (size_t i = 0; i < ranges.size() && i < 60; ++i)
             fprintf(stderr, "    0x%04X-0x%04X%s\n", ranges[i].first, ranges[i].second,
                     name(static_cast<uint16_t>(ranges[i].first)).c_str());
+        if (!o.coverage_path.empty()) {
+            if (FILE* cf = fopen(o.coverage_path.c_str(), "w")) {
+                fprintf(cf, "cpu,pc,hits\n");
+                std::vector<std::pair<uint16_t, uint32_t>> v(hist.begin(), hist.end());
+                std::sort(v.begin(), v.end());
+                for (auto& kv : v) fprintf(cf, "CPU,0x%04X,%u\n", kv.first, kv.second);
+                fclose(cf);
+                fprintf(stderr, "  CSV written → %s (cpu,pc,hits)\n", o.coverage_path.c_str());
+            }
+        }
     }
     if (o.dump_lo >= 0 && o.dump_hi > o.dump_lo) {
         if (FILE* df = fopen(o.dump_path.c_str(), "wb")) {

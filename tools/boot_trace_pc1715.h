@@ -5,7 +5,7 @@
  *
  * Wie beim PRG 710 ein eigener Zweig: eine CPU, K5122 im `/WAIT`-Betrieb (Portlage „1715"),
  * Bild über den 8275 aus dem Haupt-RAM.  Optionen wie beim K8915 (@ref K8915TraceOpts);
- * `--keys`, `--skip-selftest`, `--no-cr` sind wirkungslos (Tastatur erst AP-3).
+ * `--keys` (`<ET>` = Return) tippt blockweise bei Stillstand; `--skip-selftest`, `--no-cr` sind wirkungslos.
  *
  * @license MIT
  */

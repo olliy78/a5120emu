@@ -440,7 +440,7 @@ K1520_API const char* k1520_version(void);
  * Every machine answers these; the A5120 has no panel and no bell counter and
  * returns 0.  The K8915 mirrors its indicators at the end of each k1520_run(),
  * so they may be read from any thread. */
-/** @brief K1520MachineType of the handle (0 = A5120, 1 = PRG 710/710-1, 2 = K8915). */
+/** @brief K1520MachineType of the handle (0 = A5120, 1 = PRG 710/710-1, 2 = K8915, 3 = PC 1715). */
 K1520_API int      k1520_machine_type(K1520Handle h);
 /**
  * @brief Raw byte of the text screen memory (80 × 24, bit 7 = attribute/cursor),
@@ -448,7 +448,7 @@ K1520_API int      k1520_machine_type(K1520Handle h);
  *
  * On the K8915 the CPU view (k1520_mem_read) of the screen memory at 1000H is
  * covered by ZRE RAM as soon as port A8H bit0 is set; use this function to read
- * the screen.  0 for col/row outside 0…79 / 0…23.  Not thread-safe (like mem_read).
+ * the screen.  0 for col/row outside 0…79 / 0…23 (PC 1715: 0…24, row 24 = CP/A status line).  Not thread-safe (like mem_read).
  */
 K1520_API uint8_t  k1520_screen_char(K1520Handle h, int col, int row);
 /**
