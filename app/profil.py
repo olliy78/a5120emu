@@ -59,6 +59,9 @@ class Programmprofil:
     modelle: Tuple[Tuple[str, str, Optional[str], str, str], ...] = ()
     #: Hinweistext am Auswahlfeld des Modells.
     modell_tipp: str = ""
+    #: Abweichender Nenntakt einzelner Modelle: ``(Schlüssel, Hertz, Text)``.  Alle
+    #: anderen Modelle laufen mit :attr:`nenntakt_hz` (PC 1715W: 3,9936 MHz).
+    modell_takte: Tuple[Tuple[str, int, str], ...] = ()
     #: Modelle, die das Profil kennt, der Kern aber noch nicht fährt:
     #: ``(Schlüssel, Anzeigename, Begründung)``.  Sie stehen ausgegraut im
     #: Auswahlfeld (mit der Begründung als Hinweis), sind nicht wählbar und gelten
@@ -109,6 +112,14 @@ class Programmprofil:
         """``em=``-Parameter des Kerns (``None`` = ohne Erweiterungsmodul)."""
         z = self._modell_zeile(modell)
         return z[2] if z else None
+
+    def modell_nenntakt(self, modell) -> Tuple[int, str]:
+        """``(Hertz, Text)`` des Nenntakts des Modells."""
+        schluessel = self.modell_normalisieren(modell)
+        for k, hz, text in self.modell_takte:
+            if k == schluessel:
+                return hz, text
+        return self.nenntakt_hz, self.nenntakt_text
 
     def modell_tastatur(self, modell) -> str:
         """Bildschirmtastatur des Modells (``"k7637"``/``"k7672"``/``"k7609"``)."""
@@ -221,7 +232,7 @@ PC1715 = Programmprofil(
     beschreibung="Emulator der Bürocomputer robotron PC 1715 und PC 1715W",
     konfig_datei="pc1715emu.yaml",
     vorgabe_datei="default_config_pc1715.yaml",
-    # 2,458 MHz (Pc1715Zre::CPU_HZ); der 1715W läuft mit 3,99 MHz [?] (AP-W*).
+    # 2,458 MHz (Pc1715Zre::CPU_HZ); der 1715W läuft mit 3,9936 MHz (`modell_takte`).
     nenntakt_hz=2_458_000,
     nenntakt_text="2,458 MHz",
     tastatur="pc1715",
@@ -231,11 +242,14 @@ PC1715 = Programmprofil(
     # Kaltstart wie der Modellwechsel; er steht deshalb als Modell in der Auswahl.
     modelle=(("pc1715", "pc1715", None, "PC 1715 (Bildschirm K7222, 80 × 24)", "pc1715"),
              ("pc1715-k7221", "pc1715-k7221", None,
-              "PC 1715 (Bildschirm K7221, 64 × 16)", "pc1715")),
-    gesperrte_modelle=(("pc1715w", "PC 1715W (noch nicht verfügbar)",
-                        "Der PC 1715W (Bankumschaltung, UA858/U8272) ist im Kern noch "
-                        "nicht gebaut (doc/design/21_pc1715.md, Etappen 6–8)."),),
-    modell_tipp=("PC 1715 mit dem Bildschirm K7222 (80 × 24) oder K7221 (64 × 16).  "
+              "PC 1715 (Bildschirm K7221, 64 × 16)", "pc1715"),
+             # Der 1715W hat nur den 8275-Bildschirm mit ladbarem Zeichensatz (kein
+             # K7221) — als eigenes Modell ist die Kombination gar nicht wählbar.
+             ("pc1715w", "pc1715w", None, "PC 1715W (SCP 3.0, 256 KB, 80 × 24)",
+              "pc1715")),
+    modell_takte=(("pc1715w", 3_993_600, "3,9936 MHz"),),
+    modell_tipp=("PC 1715 mit dem Bildschirm K7222 (80 × 24) oder K7221 (64 × 16), oder "
+                 "PC 1715W (4 MHz, 256 KB, U8272).  "
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
     andere="a5120",

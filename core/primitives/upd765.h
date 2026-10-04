@@ -97,6 +97,11 @@ public:
     uint8_t pcn(int unit) const { return pcn_[unit & 3]; }
     bool    nonDma() const { return nd_; }
     bool    seekBusy(int unit) const { return seek_left_[unit & 3] >= 0; }
+    /// @brief Laufwerk @p unit wird gerade angesprochen (Kommando läuft/Ergebnis steht an
+    ///        oder Positionierung) — Quelle der Laufwerkslampe am 1715W.
+    bool    unitBusy(int unit) const {
+        return !reset_ && (seekBusy(unit) || (phase_ != Phase::Idle && unit_ == (unit & 3)));
+    }
 
     // ── Save-State (Verdrahtung/Rückrufe nicht) ──────────────────────────────
     void serialize(std::vector<uint8_t>& out) const;

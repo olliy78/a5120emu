@@ -361,6 +361,8 @@ class MachineStatus(QWidget):
         super().__init__(parent)
         self.setFocusPolicy(Qt.NoFocus)
         self.profil = profil or profile.VORGABE
+        #: Nenntakt des laufenden Modells (Modellwechsel: `set_nenntakt`).
+        self.nenntakt_text = self.profil.nenntakt_text
 
         self.takt = QLabel()
         self.takt.setMargin(2)
@@ -422,6 +424,11 @@ class MachineStatus(QWidget):
 
     # ── Takt ─────────────────────────────────────────────────────────────────
 
+    def set_nenntakt(self, text: str) -> None:
+        """Nenntakt des Modells (PC 1715W: 3,9936 MHz) und Anzeige nachziehen."""
+        self.nenntakt_text = text
+        self.set_takt(self._faktor, self._gemessen)
+
     def set_takt(self, faktor: Optional[float],
                  gemessen: Optional[float] = None) -> None:
         """Den EINGESTELLTEN Takt anzeigen; ``None`` = die Maschine steht.
@@ -436,9 +443,9 @@ class MachineStatus(QWidget):
             self.takt.setText("Takt: —")
             self.takt.setToolTip("Die Maschine läuft nicht.")
             return
-        self.takt.setText(f"Takt: {takt.beschriftung(faktor, self.profil.nenntakt_text)}")
+        self.takt.setText(f"Takt: {takt.beschriftung(faktor, self.nenntakt_text)}")
 
-        nenntakt = self.profil.nenntakt_text
+        nenntakt = self.nenntakt_text
         tipp = [f"Eingestellt unter Einstellungen ▸ Allgemein.  Der "
                 f"{self.profil.rechner} läuft mit {nenntakt}."]
         if gemessen is not None:

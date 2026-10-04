@@ -107,7 +107,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         # frame — with a 20 ms tick that is 49000 cycles, NOT the old 10000 (which ran
         # the machine at only 0.2x speed, so a boot that takes ~13.8M cycles dragged on
         # for ~28 s instead of ~5.6 s, and the CP/A clock ran 5x too slow).
-        self.CPU_HZ = self.profil.nenntakt_hz
+        self.CPU_HZ = self.profil.modell_nenntakt(self._model)[0]
         self.frame_interval_ms = 20  # 50 Hz
         # speed_factor > 1.0 fast-forwards (e.g. to shorten the boot); 1.0 = real time;
         # 0.0 = unlimited (run_timer interval 0 → as fast as the host allows).
@@ -1575,6 +1575,10 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
+        # Der Takt hängt am Modell (PC 1715W: 3,9936 MHz).
+        self.CPU_HZ, nenntakt = self.profil.modell_nenntakt(self._model)
+        self.settings_widget.set_nenntakt(nenntakt)
+        self.status_widget.set_nenntakt(nenntakt)
         # Die Statuszeile führt je bestücktem Steckplatz ein Feld — ein
         # abgemeldetes Laufwerk muss auch dort verschwinden.  Die EM-Leuchten
         # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.

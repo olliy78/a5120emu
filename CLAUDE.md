@@ -150,8 +150,8 @@ bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 > **A5120 Emulator** (`a5120emu`), **K8915 Emulator** (`k8915emu`, `app/main.py
 > --machine k8915`) und **PRG710 Emulator** (`prg710emu`, `--machine prg710`, Modellwahl PRG 710 /
 > 710-1 über `general.model`, `prg710emu.yaml`, `data/default_config_prg710.yaml`) und **PC1715 Emulator** (`pc1715emu`, `--machine pc1715`,
-> Modellwahl = Bildschirm K7222/K7221 über `general.model`, **PC 1715W** ausgegraut bis der Kern ihn kann
-> (`Programmprofil.gesperrte_modelle`), `pc1715emu.yaml`, `data/default_config_pc1715.yaml`, Bildschirmtastatur
+> Modellwahl = Bildschirm K7222/K7221 über `general.model`, **PC 1715W** als drittes Modell (3,9936 MHz über
+> `Programmprofil.modell_takte`, kein K7221 dort), `pc1715emu.yaml`, `data/default_config_pc1715.yaml`, Bildschirmtastatur
 > `app/ui/keyboard_pc1715.py`: physische Matrixtasten, SHIFT/CTRL/REP gemerkt und vor der Taste gedrückt,
 > LOCK/SI/SO rasten im ROM).  Alles Maschinenspezifische steht im **Programmprofil
 > `app/profil.py`** (Titel, Konfig-/Vorgabedatei, Takt, Tastatur K7637/K7672,
@@ -492,7 +492,7 @@ Zeichensatz, Fixtures/beschädigte Abzüge, Bedienung von UDOS/SCPX/FORMAT im Te
 
 Bürocomputer robotron PC 1715 (Z80, 64 KB, 8275-Bild aus dem Haupt-RAM, eigener Tastatur-U880
 mit S600, Floppy in K5122-Bauart `/WAIT`) und PC 1715W (256 KB mit Bankregister, U8272 + Z80-DMA,
-Bild-RAM + ladbarer Zeichensatz; **noch nicht lauffähig**). Eine Klasse `Pc1715Machine` unter
+Bild-RAM + ladbarer Zeichensatz; SCP 3.0 bootet, `K1520Emulator(machine="pc1715w")`, in `pc1715emu` wählbar, Lampen/Motor aus MOS 28H/U8272). Eine Klasse `Pc1715Machine` unter
 `core/machines/pc1715/` (Variante `PC1715` | `PC1715W`); Karten `pc1715_zre` (ROM-Overlay,
 CTC/SIO, 8275, BWS 34H), Primitive `i8275`, `z80_dma`, `upd765`, `core/peripherals/tastatur1715/`;
 wiederverwendet `K5122` mit `Portlage::Pc1715` (Vorgabe unverändert). **In `libk1520core.so`**
@@ -500,7 +500,7 @@ wiederverwendet `K5122` mit `Portlage::Pc1715` (Vorgabe unverändert). **In `lib
 `K1520Emulator(machine="pc1715")`; Bild nur über `k1520_screen_char`, nie `mem_read`).
 **`boot_trace --machine pc1715`** (Grundform). **Stand 2026-10-03:** Etappen 1–3 fertig (SCP 1715,
 CP/A 1715, CP/Z 2.2, UDOS 1715 booten bis zum Prompt; `dir`/`STAT`/`cat` über die Tastatur);
-Etappe 4 (Schnittstellen/V.24-Boot) und AP-5a (Programm `pc1715emu`, Framebuffer 640 × 300 mit CP/A-Statuszeile) stehen; offen 1715W, Paket (AP-5c), DiskTool, [Anwender]-Fragen.
+Etappe 4 (Schnittstellen/V.24-Boot) und AP-5a (Programm `pc1715emu`, Framebuffer 640 × 300 mit CP/A-Statuszeile) stehen; Paket (AP-5c) und 1715W (AP-W3/W4: Kern, Programm, Lieferdiskette) stehen; offen DiskTool, RAM-Disk-Prüfung, [Anwender]-Fragen.
 
 **Vor Arbeiten daran: `doc/merkposten/pc1715.md` lesen** — die Festlegungen mit Wächter
 (ROM-Overlay lesen ROM/schreiben RAM, BWS 34H = Adresse >> 10, SIO-Adressierung AB0 = Kanal,

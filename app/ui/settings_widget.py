@@ -220,11 +220,7 @@ class SettingsWidget(QWidget):
         for label, factor in self.SPEED_OPTIONS:
             self.speed_combo.addItem(label, float(factor))
         self.speed_combo.currentIndexChanged.connect(self._on_speed_combo)
-        self.speed_combo.setToolTip(
-            f"Der {self.profil.rechner} läuft mit {self.profil.nenntakt_text}.  "
-            "Ein Vielfaches davon "
-            "kürzt einen Kaltstart ab — die Uhr des Gastsystems zählt aber "
-            "Taktzyklen und geht dann entsprechend falsch.")
+        self.set_nenntakt(self.profil.nenntakt_text)
         form.addRow("Takt:", self.speed_combo)
 
         return inner
@@ -245,6 +241,21 @@ class SettingsWidget(QWidget):
         idx = self.model_combo.findData(self.profil.modell_normalisieren(model))
         self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._model_guard = False
+
+    def set_nenntakt(self, text: str) -> None:
+        """Beschriftung der Taktstufen nach dem Nenntakt des Modells (ohne Signal)."""
+        self.SPEED_OPTIONS = takt.auswahl(text)
+        self._speed_guard = True
+        try:
+            for i, (label, _f) in enumerate(self.SPEED_OPTIONS):
+                self.speed_combo.setItemText(i, label)
+        finally:
+            self._speed_guard = False
+        self.speed_combo.setToolTip(
+            f"Der {self.profil.rechner} läuft mit {text}.  "
+            "Ein Vielfaches davon "
+            "kürzt einen Kaltstart ab — die Uhr des Gastsystems zählt aber "
+            "Taktzyklen und geht dann entsprechend falsch.")
 
     def _on_speed_combo(self, _idx: int):
         if self._speed_guard:

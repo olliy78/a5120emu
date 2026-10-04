@@ -143,8 +143,10 @@ public:
 
     bool isDiskActive(int d) const override         { return lw_.isDiskActive(d); }
     bool isDiskWriteProtected(int d) const override { return lw_.isDiskWriteProtected(d); }
-    bool isDiskLedOn(int d) const override          { return lw_.isDiskLedOn(d); }
-    bool isMotorOn(int d) const override            { return lw_.isMotorOn(d); }
+    // 1715W: die K5122 ist nicht am Bus — Motor aus MOS 28H (Bit 4+n), Lampe = Motor oder
+    // Zugriff des U8272 auf das Laufwerk (`Upd765::unitBusy`); 1715: wie bisher die K5122.
+    bool isDiskLedOn(int d) const override;
+    bool isMotorOn(int d) const override;
     bool isHeadLoaded() const override              { return lw_.isHeadLoaded(); }
     void setDiskWriteProtect(int d, bool wp) override { lw_.setDiskWriteProtect(d, wp); }
 

@@ -193,6 +193,18 @@ Z80CTC*          Pc1715Machine::ctc2W()     { return w_ ? &w_->ctc2 : nullptr; }
 uint8_t          Pc1715Machine::krfdW() const { return w_ ? w_->krfd : 0xFF; }
 uint8_t          Pc1715Machine::mosW() const  { return w_ ? w_->mos : 0x00; }
 
+bool Pc1715Machine::isMotorOn(int d) const
+{
+    if (!w_) return lw_.isMotorOn(d);
+    return d >= 0 && d < 4 && ((w_->mos >> (4 + d)) & 1);
+}
+
+bool Pc1715Machine::isDiskLedOn(int d) const
+{
+    if (!w_) return lw_.isDiskLedOn(d);
+    return d >= 0 && d < 4 && (isMotorOn(d) || w_->fdc.unitBusy(d));
+}
+
 // ─── Bild und Speicher je Variante ───────────────────────────────────────────
 
 const uint8_t* Pc1715Machine::framebuffer() const { return w_ ? w_->bild.framebuffer() : zre_.framebuffer(); }

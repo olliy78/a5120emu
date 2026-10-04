@@ -80,28 +80,36 @@ def test_profil_und_titel(qapp, konfig_ordner):
         _zu(w, qapp)
 
 
-def test_modellwahl_bildschirm_und_gesperrter_1715w(qapp, konfig_ordner):
+def test_modellwahl_bildschirm_und_1715w(qapp, konfig_ordner):
     from app import config_io, profil
     from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
 
     p = profil.profil("pc1715")
-    # PC 1715W: sichtbar, aber nicht wählbar und in einer Konfiguration unbekannt.
-    assert [g[0] for g in p.gesperrte_modelle] == ["pc1715w"]
-    assert p.modell_normalisieren("pc1715w") == "pc1715"
-    with pytest.raises(ValueError):
-        from app.core_binding.k1520 import K1520Emulator
-        K1520Emulator(machine="pc1715w")
+    # PC 1715W: wählbar; K7221 am 1715W gibt es nicht (eigenes Modell, keine Kombination).
+    assert not p.gesperrte_modelle
+    assert p.modell_normalisieren("pc1715w") == "pc1715w"
+    assert p.modell_maschine("pc1715w") == "pc1715w"
+    assert p.modell_nenntakt("pc1715w") == (3_993_600, "3,9936 MHz")
+    assert p.modell_nenntakt("pc1715") == (2_458_000, "2,458 MHz")
+    assert [m[0] for m in p.modelle] == ["pc1715", "pc1715-k7221", "pc1715w"]
 
     w = _fenster(qapp)
     try:
         combo = w.settings_widget.model_combo
         assert not combo.isHidden()
         i1715w = combo.findData("pc1715w")
-        assert i1715w >= 0 and not combo.model().item(i1715w).isEnabled()
-        assert combo.itemData(i1715w, 3)          # Qt.ToolTipRole: die Begründung
+        assert i1715w >= 0 and combo.model().item(i1715w).isEnabled()
         assert isinstance(w.keyboard_widget, KeyboardPc1715Widget)
+        w._on_model_selected("pc1715w")
+        qapp.processEvents()
+        assert w.emulator.machine == "pc1715w"
+        assert w.emulator.framebuffer_size() == (640, 288)
+        assert w.CPU_HZ == 3_993_600
+        assert "3,9936 MHz" in w.status_widget.takt.text()
+        assert w.settings_widget.speed_combo.itemText(0) == "3,9936 MHz"
         w._on_model_selected("pc1715-k7221")
         qapp.processEvents()
+        assert w.CPU_HZ == 2_458_000
         assert w.emulator.machine == "pc1715-k7221"
         assert w.emulator.framebuffer_size() == (512, 255)
         assert w.screen_widget.key_sink is w.keyboard_widget
@@ -127,7 +135,7 @@ def test_modellwahl_bildschirm_und_gesperrter_1715w(qapp, konfig_ordner):
 
 def test_unbekanntes_modell_wird_die_vorgabe(qapp, konfig_ordner):
     (konfig_ordner / "pc1715emu.yaml").write_text(
-        "version: 1\ngeneral: {model: pc1715w}\n", encoding="utf-8")
+        "version: 1\ngeneral: {model: pc1715x}\n", encoding="utf-8")
     w = _fenster(qapp)
     try:
         assert w._model == "pc1715" and w.emulator.machine == "pc1715"
@@ -281,6 +289,31 @@ def test_scp_bootet_in_der_oberflaeche_und_nimmt_die_bildschirmtastatur_an(
         laufe(3_000_000)
         text = emu.screen_text()
         assert "A>DIR" in text and "INSTSCP" in text, text
+    finally:
+        _zu(w, qapp)
+
+
+def test_scp30_bootet_in_der_oberflaeche(qapp, konfig_ordner, temp_disk):
+    """PC 1715W im Fenster: Modellwechsel = Kaltstart, SCP 3.0 bis `A>`, Lampe von LW 0."""
+    w = _fenster(qapp)
+    try:
+        w._on_model_selected("pc1715w")
+        qapp.processEvents()
+        emu = w.emulator
+        assert emu.machine == "pc1715w"
+        assert emu.mount_disk(0, temp_disk("pc1715w_scp30_system.hfe"), "cpa800", False), \
+            emu.last_error()
+        emu.power_on()
+        lampe = False
+        for _ in range(4000):
+            emu.run(50_000)
+            lampe |= emu.is_disk_led_on(0)
+            if "SCP 3.0" in emu.screen_text() and lampe:
+                break
+        assert run_until_text(emu, "A>", 400_000_000), emu.screen_text()
+        assert "SCP 3.0" in emu.screen_text()
+        assert lampe and not emu.is_disk_led_on(1)
+        assert emu.framebuffer_size() == (640, 288)
     finally:
         _zu(w, qapp)
 

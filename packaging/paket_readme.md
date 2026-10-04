@@ -14,8 +14,9 @@ Startmenü „PRG710 Emulator"; die Variante wählt man in den Einstellungen unt
 SCPX-Systemdiskette bei (`prg710_*` bzw. `prg710-1_*` im Diskettenordner); der
 Emulator startet ohne eingelegte Diskette, man wählt eine im Laufwerkskasten.
 Vierter ist der Personalcomputer **PC 1715** (`pc1715emu`, Startmenü „PC1715 Emulator";
-die Bildschirmvariante K7222/K7221 wählt man unter „Modell").  Beigelegt sind SCP 1715
-(V0006 und V0007), CP/A 1715 und UDOS1715 (`pc1715_*`, `udos1715_*` im Diskettenordner).
+die Bildschirmvariante K7222/K7221 oder den **PC 1715W** wählt man unter „Modell").
+Beigelegt sind SCP 1715 (V0006 und V0007), CP/A 1715, UDOS1715 und SCP 3.0 für den
+1715W (`pc1715_*`, `pc1715w_*`, `udos1715_*` im Diskettenordner).
 
 ### K8915: eine eigene Bootdiskette
 

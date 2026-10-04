@@ -223,13 +223,14 @@ def test_der_pc1715_emulator_ist_in_allen_paketwegen():
 
 
 def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
-    """AP-5c: SCP 1715 (V0006, V0007), CP/A 1715 und UDOS1715 liegen im Paket;
+    """AP-5c/W4: SCP 1715 (V0006, V0007), CP/A 1715, UDOS1715 und SCP 3.0 des 1715W liegen im Paket;
     die Auslieferungskonfiguration mountet keine (kein ``disks:``)."""
     text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     block = text[text.index('DISKS_DEFAULT="'):]
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
     soll = {"pc1715_scp1715_v0006_boot.hfe", "pc1715_scp1715_v0007_cpa640_boot.hfe",
-            "pc1715_cpa1715_boot_4lw.hfe", "udos1715_640k_pc1715_system.hfe"}
+            "pc1715_cpa1715_boot_4lw.hfe", "udos1715_640k_pc1715_system.hfe",
+            "pc1715w_scp30_system.hfe"}
     assert soll <= set(block)
     for name in soll:
         assert (PACKAGING.parent / "disks" / name).is_file(), name

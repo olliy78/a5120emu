@@ -894,9 +894,16 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
 * **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: PC 1715 mit dem Bildschirm
   **K7222** (80 × 24, Vorgabe) oder **K7221** (64 × 16). Der Bildschirm ist eine
   Bestückungsvariante der Zentraleinheit: ein Wechsel erzeugt die Maschine neu
-  (Kaltstart) und wird in `pc1715emu.yaml` gemerkt. Der **PC 1715W** steht
-  ausgegraut in der Auswahl, ist aber noch nicht nachgebaut.
-* **Takt** 2,458 MHz, **Laufwerke** zwei K5601.
+  (Kaltstart) und wird in `pc1715emu.yaml` gemerkt. Der **PC 1715W**
+  (1987: 256 KB mit Bankumschaltung, U8272 mit DMA, 4 MHz) ist ein eigenes Modell der
+  Auswahl; den Bildschirm K7221 gibt es dort nicht.
+* **Takt** 2,458 MHz (1715W: 3,9936 MHz), **Laufwerke** zwei K5601.
+* **PC 1715W** — bootet **SCP 3.0** (CP/M 3; die Diskette `pc1715w_scp30_system.hfe`
+  liegt dem Paket bei). Der Zeichensatz liegt im RAM: der Lader füllt ihn, danach
+  tauscht `MODCS name.ZGF[1]` bzw. `[2]` den Satz (die `SC6xx.ZGF` stehen auf der
+  Diskette). Motor und Lampe der Laufwerke folgen dem Motorregister bzw. dem
+  Zugriff der Diskettensteuerung. Die RAM-Disk (Bänke 3–5) ist ungeprüft; Quasi-Grafik
+  und Zusatzkarten sind nicht nachgebaut.
 * **Bildschirm** — die unterste Zeile ist die **Statuszeile** von CP/A (inverse
   Anzeige von Laufwerk, Zeichensatz und Feststellung); sie gehört zum Bild.
 * **Booten** geht vom Urlader: er sucht Spur 0 Sektor 1 der Laufwerke 0 bis 3 und
