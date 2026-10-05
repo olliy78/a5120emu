@@ -468,15 +468,14 @@ Markenerkennung, `Z80PIO`/`Z80SIO`-Korrekturen, K7672 SCP/DCP, vorläufige Prüf
 Numerik-Programmiergeräte (K2521-ZRE, 1 CPU, `/WAIT`-K5122, UDOS 4.3 und SCPX 1526), eine
 Klasse `Prg710Machine` unter `core/machines/prg710/` (Variante 710 | 710-1 wählt ROM,
 Tastaturweg — 8279/K7609 bzw. K7672 an K8025 A32-B —, K8025-Belegung und Marken-FF-Polarität);
-Karten `k2521`, `prg710_speicher` (Seitenregister E8H–EBH), `atp590068`, `k6022` (Lochband,
-SIF1000, C-ABI `k1520_ptape_*`), `ass590069` (Fernschreiber → `SerialHub`, Text). **In
+Karten `k2521`, `prg710_speicher` (Seitenregister E8H–EBH), `atp590068`, `ass590069` (Fernschreiber → `SerialHub`, Text). **In
 `libk1520core.so`** (`k1520_create_prg710(variante, …)`, Python
 `K1520Emulator(machine="prg710"|"prg710-1")`; Bild nur über `k1520_screen_char`, nie
 `mem_read`). **`boot_trace`/`k1520dbg` mit `--machine prg710[-1]`** (`--keys`, `map` mit
 den Seitenregistern), eigenes Programm **prg710emu** (AP-P5d), dritter Starter im Paket
 (AP-P5g), DiskTool `boot-scpx`/`--prg` (AP-P6). **Stand 2026-10-02:** Etappen 1–6 fertig
 (beide Varianten booten UDOS bis `%` und SCPX bis `A>`, FORMAT läuft); offen
-[Anwender]-Fragen (Kartenbefund, Tastenbild, Disketten), AP-P3b (leere Spur = Rauschen im K5122-`/WAIT`-Weg, nur halb belegt — Merkposten). **EPROMmer (AP-P7, 2026-10-03):** virtueller Sockel der ATP 590068 (`eprommer590068.*`, D0H–D4H + ZRE-PIO 84H Bit 0, Befund `doc/prg710/eprommer.md`), `k1520_eprom_*`, Kasten in `prg710emu`; nur Belegtes wirkt (Brennen nur 1→0, Impulsbreite nur protokolliert). **Lochband + Fernschreiber (AP-P8, 2026-10-03):** K6022 und 590069, unter UDOS **`F=A`** — Merkposten.
+[Anwender]-Fragen (Kartenbefund, Tastenbild, Disketten), AP-P3b (leere Spur = Rauschen im K5122-`/WAIT`-Weg, nur halb belegt — Merkposten). **EPROMmer (AP-P7, 2026-10-03):** virtueller Sockel der ATP 590068 (`eprommer590068.*`, D0H–D4H + ZRE-PIO 84H Bit 0, Befund `doc/prg710/eprommer.md`), `k1520_eprom_*`, Kasten in `prg710emu`; nur Belegtes wirkt (Brennen nur 1→0, Impulsbreite nur protokolliert). **Lochband + Fernschreiber (AP-P8, 2026-10-03):** K6022 (seit Entwurf 23 Option, s. u.) und 590069, unter UDOS **`F=A`** — Merkposten.
 
 **Vor Arbeiten daran: `doc/merkposten/prg710.md` lesen** — die Festlegungen mit Wächter
 (Speicherverwaltung als Arbeitsmodell, Marken-FF low-aktiv am 710 + `setMkeJedesSyncByte`
@@ -496,6 +495,17 @@ SCPX 8915 und SCPX 1.7, dazu die CP/A-Diskette mit eingebautem Treiber
 Sektor bzw. Bytezeiger, Sperrbits und Spiegelung sind **so** nachgebildet, RESET erhält den
 Inhalt.  **Vor Arbeiten daran: `doc/merkposten/raf.md` lesen**; Entwurf
 `doc/design/22_raf512.md`, Originale `doc/raf512/`.
+
+## Lochstreifen K6022/SIF1000 (alle drei Maschinen)
+
+ADA K6022 (Leser daro 1210, Stanzer daro 1215) als steckbare Option auf **E/A E0H–E7H**
+(fest), gesteckt über `K1520Machine::installK6022` **nach dem Anlegen, vor dem ersten Lauf**
+(C-ABI `k1520_ptape_*`, Python `K1520Emulator(ptape=True)`, `--ptape` in
+`boot_trace`/`k1520dbg`), Vorgabe überall aus (`general.ptape`).  Bandformate Roh/Intel HEX
+(Adresse = Bandposition)/ASCII-Art (Lochbild maßgeblich) im Kern, Kennungen 0/1/2 sind
+Vertrag; der Stanzer wird an seine Datei **gebunden** und schreibt nach 0,5 s Stanzpause
+Maschinenzeit zurück.  Kasten „Lochstreifen“ nur mit Karte, kein Kürzel, nicht im Save-State.
+**Vor Arbeiten daran: `doc/merkposten/lochstreifen.md` lesen**; Entwurf `doc/design/23_lochstreifen.md`.
 
 ## Boot-ROM debugging workflow
 

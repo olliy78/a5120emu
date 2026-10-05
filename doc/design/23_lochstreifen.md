@@ -1,6 +1,7 @@
 # 23 — Lochstreifen: SIF1000-Karte K6022 als Option in allen drei Maschinen
 
-Stand: 2026-10-05, Zweig `SIF1000`.  Entscheidungen des Anwenders vom 2026-10-05 in §2.
+Stand: 2026-10-05, Zweig `SIF1000` — **abgeschlossen** (AP-L1–L5, §9).  Entscheidungen des
+Anwenders vom 2026-10-05 in §2.  Festlegungen mit Wächtern: `doc/merkposten/lochstreifen.md`.
 
 ## 1. Ziel
 
@@ -200,3 +201,12 @@ sind **nicht** vorgesehen — es gibt eine Umsetzung, im Kern.
   Stanzband geht beim Neuaufbau verloren.  Kein Eintrag in der Symbolleisten-Auswahl.
   Wächter `py_lochstreifen_gui` (ersetzt `py_prg710_lochband_gui`), dazu
   `test_lochstreifen_einlegen_und_entnehmen_ueber_den_kasten` in `py_prg710emu_bedienung`.
+- **AP-L5 erledigt (2026-10-05) — Entwurf abgeschlossen.** Merkposten
+  `doc/merkposten/lochstreifen.md` (13 Festlegungen mit Wächtern), Kurzabsatz in `CLAUDE.md`,
+  Lochband-Abschnitt in `doc/merkposten/prg710.md` berichtigt (Karte Option, Kasten statt
+  *Maschine ▸ Lochband*, `py_lochstreifen_gui`); vier Lanes (`test`, `test-format`,
+  `test-matrix`, `win`) gefahren.  **Offen:** (1) Stellung der K6022 in der Interruptkette am
+  A5120/K8915 [?] — hinten angehängt, ohne Gasttreiber unbelegt; (2) kein Gasttreiber für
+  A5120 (CP/A) und K8915 (SCPX), das Band ist nur am PRG (UDOS `PTAPE.6022`) im Gast belegt;
+  (3) nicht im Save-State (gewollt, §2) — ein eigener Teil bräuchte eine neue Fassung;
+  (4) Anwenderfragen zur K6022 (KOM/STA, Geschwindigkeiten) wie in Entwurf 20 §8.8.
