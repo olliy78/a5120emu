@@ -1,0 +1,21 @@
+MON16_1L_2.1       - 0405 - 889 383-3			15.04.1987	U8000-Softwaremonitor Version 2.0
+MON16_1H_2.1       - 6E69 - 889 384-3			15.04.1987	U8000-Softwaremonitor Version 2.0
+MON16_2L_2.1       - BA14 - 889 385-3			15.04.1987	U8000-Softwaremonitor Version 2.0
+MON16_2H_2.1       - 026D - 889 386-3			15.04.1987	U8000-Softwaremonitor Version 2.0
+                            
+MON16_1L_3.0       - 63A4 - UDOS 3.0 Systemfloppy	22.01.1988	U8000-Softwaremonitor Version 3.0
+MON16_1H_3.0       - 07CE - UDOS 3.0 Systemfloppy	22.01.1988	U8000-Softwaremonitor Version 3.0
+MON16_2L_3.0       - 4FC1 - UDOS 3.0 Systemfloppy	22.01.1988	U8000-Softwaremonitor Version 3.0
+MON16_2H_3.0       - E6EE - UDOS 3.0 Systemfloppy	22.01.1988	U8000-Softwaremonitor Version 3.0
+
+MON16_1L_3.1       - 9E74 - WEGA 3.0 -> 3.1 Floppy	14.04.1989	U8000-Softwaremonitor Version 3.1
+MON16_1H_3.1       - 6D61 - WEGA 3.0 -> 3.1 Floppy	14.04.1989	U8000-Softwaremonitor Version 3.1
+MON16_2L_3.1       - CBC9 - WEGA 3.0 -> 3.1 Floppy	14.04.1989	U8000-Softwaremonitor Version 3.1
+MON16_2H_3.1       - 566B - WEGA 3.0 -> 3.1 Floppy	14.04.1989	U8000-Softwaremonitor Version 3.1
+
+MON16_1L_3.3       - 8C11 - G.S. Meyer			01.11.1988	U8000-Softwaremonitor Version 3.3 - SKS/V2
+MON16_1H_3.3       - DEC3 - G.S. Meyer			01.11.1988	U8000-Softwaremonitor Version 3.3 - SKS/V2
+MON16_2L_3.3       - D9C6 - G.S. Meyer			01.11.1988	U8000-Softwaremonitor Version 3.3 - SKS/V2
+MON16_2H_3.3       - D211 - G.S. Meyer			01.11.1988	U8000-Softwaremonitor Version 3.3 - SKS/V2
+
+Die _64KB files bestehen aus MON16_x_3.0 und MON16_x_3.1 (konkateniert)

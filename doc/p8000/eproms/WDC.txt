@@ -1,0 +1,44 @@
+WDC_2_2.4_04 - 8E81
+WDC_2_2.4_04 - B0DA
+
+WDC_1_3.0_01 - 2DA7 - UDOS Systemfloppy 3.0
+WDC_2_3.0_01 - 0B08 - UDOS Systemfloppy 3.0
+
+WDC_1_3.0_02 - 1DD5 - UDOS Systemfloppy 3.0
+WDC_2_3.0_02 - DFDF - UDOS Systemfloppy 3.0
+
+WDC_1_3.0_04 - 29B2 - UDOS Systemfloppy 3.0
+WDC_2_3.0_04 - 6B15 - UDOS Systemfloppy 3.0
+
+WDC_1_3.2_04 - 7CA9 - 
+WDC_2_3.2_04 - 4FAB - 
+
+WDC_1_3.2_05 - 6DD3 - 
+WDC_2_3.2_05 - 46EF - 
+
+WDC_1_3.3_04 - FBB3 - Enrico Graemer
+WDC_2_3.3_04 - EF92 - Enrico Graemer
+
+WDC_1_3.3_05 - EB29
+WDC_2_3.3_05 - C74A
+
+WDC_1_3.4_04 - F066 - War auf einer EPROM Floppy von R. Kurth - 2. EPROM wird nicht benoetigt
+
+WDC_1_3.4_05 - 1505 - War auf einer EPROM Floppy von R. Kurth - 2. EPROM wird nicht benoetigt
+
+WDC_1_4.0_05 - 070F
+WDC_2_4.0_05 - ADA8
+
+WDC_1_4.2    - 2C43 - WEGA 3.0 -> 3.1 Floppy
+WDC_2_4.2    - 5D66 - WEGA 3.0 -> 3.1 Floppy
+
+
+selfmade:
+
+WDC_1_4.0_04 -      - selbst gestrickt aus der _05 Version+hexedit - kann nicht getestet werden da kein sa.format was mit 4.0 laeuft
+WDC_2_4.0_04 -      - selbst gestrickt aus der _05 Version+hexedit - kann nicht getestet werden da kein sa.format was mit 4.0 laeuft
+
+nonworking:
+
+WDC_1_3.6_05 - E779 - laeuft nicht, eproms haben eine andere Checksummee als sie haben sollten? fehler im Orginaleprom?
+WDC_2_3.6_05 - 22BB - laeuft nicht, eproms haben eine andere Checksummee als sie haben sollten? fehler im Orginaleprom?

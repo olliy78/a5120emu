@@ -1,0 +1,47 @@
+	GLE Terminal:
+
+P8T_1_3.1 - 2FE5 - GLE Terminal
+
+
+
+	Typ 1 Terminal:
+
+P8T_1_4.1 - 66D7 - UDOS Systemfloppy 3.0
+                   (4 kByte-Variante mit VT100 und ADM31)
+                   Kennzeichen: Kursor ist ein ausgefuelltes Rechteck
+P8TCVB    - 4650 - UDOS Systemfloppy 3.1
+                   Variante von P8T_1_4.1
+                   Kennzeichen:  Kursor  ist  ein  ausgefuelltes  und
+                   blinkendes Rechteck
+P8TCU     - FE84 - UDOS Systemfloppy 3.1
+                   Variante von P8T_1_4.1
+                   Kennzeichen: Kursor ist ein Unterstrich
+P8TCUB    - DE03 - UDOS Systemfloppy 3.1
+                   Variante von P8T_1_4.1
+                   Kennzeichen: Kursor ist ein blinkender Unterstrich
+
+
+
+	Typ2 Terminal:
+
+P8T_1_5.0 -      - Typ2 Terminal
+
+
+
+	Zeichensatze:
+
+P8TDZS    - D5BC - UDOS Systemfloppy 3.1
+                   deutscher Zeichensatz
+                   
+P8TEZS    - F794?- Typ2 Terminal - U2616D39 PROM
+                   englischer Zeichensatz
+
+
+
+	WDOS Terminal:
+
+P8T_1_6.0     - 55F2?- WDOS Terminal
+
+P8T_1_6.0_ZG1 - A78C?- WDOS Terminal Zeichensatz 1
+
+P8T_1_6.0_ZG2 - D557?- WDOS Terminal Zeichensatz 2

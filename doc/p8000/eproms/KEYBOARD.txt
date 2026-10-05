@@ -1,0 +1,3 @@
+K7673.01 - 9738 - Keyboard fuer das Typ2 Terminal
+K7673.09 -      - Keyboard fuer das Typ2 Terminal
+K801.02  - A761 - Keyboard fuer das GLE u. Typ1 Terminal

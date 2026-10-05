@@ -1,0 +1,4 @@
+SEAGATE ST251 MLC-1
+platine: FAB 20938-300 REV D
+label auf EPROM:   ST 251 FA
+                     F18F
