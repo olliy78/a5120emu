@@ -845,6 +845,22 @@ umgeschrieben (Name bleibt).
 `test_only_the_a5120_offers_the_a5120_16_model`, Kürzel-Wächter unverändert grün.
 **Fertig, wenn:** `tools/dev.sh test` grün, Nachtrag hier, ein Commit.
 
+**AP-V7b erledigt 2026-10-05.** K8915-Profil in `app/profil.py`: `modellwahl=True`, `modelle`
+`k8915` „K8915 V3 (ZRE 045-8762, 128 KB)“ / `k8915-g2` „K8915 Gen 2 (ZRE K2521, 64 KB)“ (beide
+`k7672`, `em` = None), `gesperrte_modelle` `k8915-g1` „K8915 Gen 1 (Tastatur K7634)“ mit Grund
+„kein Urlader-Baustein für 0400H (F11)“, `modell_tipp` mit „Ein Wechsel erzeugt die Maschine neu
+(wie ein Kaltstart)“. `data/default_config_k8915.yaml` unverändert ohne `general.model`.
+Handbuch: Punkt *Modell* im Abschnitt „Der K8915 Emulator“ (Gen 2, „ROM C“ + RETURN, Abzug/F9)
+und ein Satz unter Fehlersuche; kein Tastenkürzel. Wächter in `tests/python/test_k8915emu_gui.py`
+wie benannt, `test_only_the_a5120_offers_the_a5120_16_model` umgeschrieben (K8915 hat Modellwahl,
+`a5120.16` → `k8915`, `em_variant() == ""`, gespeichert `model: k8915`); voller `tools/dev.sh test` grün.
+Befunde:
+- **Kein Eingriff in `main_window.py`/`settings_widget.py` nötig** (nur zwei Kommentare): Modellwahl,
+  Neubau, Speicherung und gesperrte Einträge waren über das Profil schon generisch (PRG/PC 1715).
+  Takt, Frontplatte, NMI und Laufwerke hängen am Profil, nicht am Modell — für Gen 2 gleich.
+- Ein gesperrter Schlüssel in der Konfiguration (`model: k8915-g1`) wird wie jeder unbekannte zum V3.
+- Die K7634-Bildschirmtastatur bleibt uneingehängt (Gen 1 gesperrt). Keine neuen offenen Fragen.
+
 #### K7634-Bildschirmtastatur erledigt 2026-10-05
 
 `app/ui/keyboard_k7634.py` (`KeyboardK7634Widget`, Muster K7637/K7672): Layout und

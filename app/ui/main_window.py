@@ -910,7 +910,7 @@ class MainWindow(QMainWindow):
     def _gather_config(self) -> dict:
         """Build the full configuration dict from the live application state."""
         general = {"speed": float(self.speed_factor)}
-        if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
+        if self.profil.modellwahl:              # alle Profile mit Modellwahl
             general["model"] = self._model
         general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
         general["ptape"] = bool(self._ptape)

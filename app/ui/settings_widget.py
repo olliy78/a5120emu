@@ -225,7 +225,7 @@ class SettingsWidget(QWidget):
             self.model_combo.setItemData(i, grund, Qt.ToolTipRole)
         self.model_combo.currentIndexChanged.connect(self._on_model_combo)
         self.model_combo.setToolTip(self.profil.modell_tipp)
-        # Nur im Programm mit Modellwahl (A5120, PRG); model_value() liefert sonst
+        # Nur im Programm mit Modellwahl; model_value() liefert sonst
         # die Vorgabe.
         if self.profil.modellwahl:
             form.addRow("Modell:", self.model_combo)
