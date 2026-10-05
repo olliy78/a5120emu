@@ -151,25 +151,209 @@ niemand je gesehen hat, nachzuerfinden wäre kein Nachbau.
 
 ## 7. Arbeitspakete
 
-Reihenfolge nach Abhängigkeit. **Gen 2 zuerst** (Hardware am Gerät, Abzüge kommen), Gen 1
-danach (blockiert auf Beschaffung).
+Jedes AP ist für die Umsetzung durch **einen Agenten** geschnitten (Vorgabe des Anwenders,
+Merkposten `feedback_ap_koordination_agenten`): Ziel, Eingaben, Ergebnis, Wächter,
+Abhängigkeiten, Modell. **[Anwender]** = Schritt am Gerät, nicht delegierbar.
 
-| AP | Inhalt | Braucht | Fertig, wenn |
-|---|---|---|---|
-| **V0** | Dieses Dokument; Fragen F1–F6 an den Anwender | — | Antworten da |
-| **V1** | Unterlagen lesen: `OPS_K3528`, `K7634-36.pdf`, K2521-Schaltplan (Blätter 1–3); Ergebnis als Merkposten-Entwurf | Netz | RAM-Karte, Tastatur, Brücken beschrieben, Widerspruch PIO 84H/08H geklärt |
-| **V2** | Entwurf der Maschinenform (`generation`, `Config`), Steckplatzplan, Port-/Speicherkarte Gen 2; Entscheidung eine Klasse vs. zwei | V1, F1 | Plan im Dokument, ohne Code |
-| **V3** | **EPROM-Abzüge Gen 2** auswerten: Disassembler `tools/`, `.prn` mit Kommentar (Muster `doc/EPROMS/PRG710/*.prn`); ROM-Zweck, Port-/Speicherzugriffe, Boot-Ablauf | Abzüge | Boot-Ablauf dokumentiert; Port-Liste mit [ROM]-Belegen |
-| **V4** | Speicherverwaltung Gen 2 (RAM-Karte + ZRE-ROM-Abblendung) als eigene Karte unter `core/cards/`; Unit-Tests | V2, V3 | Tests grün; `/MEMDI`-Muster belegt |
-| **V5** | 2708-Karte (16 KB) als **optionale** Karte, nur wenn V3 ihre Rolle klärt | V3 | Rolle belegt; Wächter |
-| **V6** | `K8915Machine`-Zweig Gen 2: Verdrahtung, Boot bis Prompt von einer Gen-2-Diskette; `boot_trace`/`k1520dbg --machine k8915 --generation 2` | V4 | Boot bis Prompt, Integrationstest |
-| **V7** | C-ABI/Python (`K1520Emulator(machine="k8915", generation=…)`), Programmprofil `k8915emu` (Modellwahl wie `general.model`), Konfiguration, Handbuch; `test_c_api.py` gleicht ab | V6 | `py_k8915emu_gui` + `py_c_api` grün |
-| **V8** | DiskTool: Disketten der Gen 2 (Format, Profil) — falls vom V3 abweichend | Disketten | `ls`/`check` ohne Befund |
-| **V9** | Gen 1: Tastatur K7634 (`core/peripherals/`, wie K7672), K3528-Speicher | V1, Abzug/Diskette | Boot bis Prompt **oder** begründet zurückgestellt |
-| **V10** | Abschluss: Merkposten `doc/merkposten/k8915_varianten.md`, CLAUDE.md, Verweis in 16 | alle | Doku-Wächter grün |
+**Ehrlicher Stand der Schärfe:** Nur **V1a, V1b, V3a, V3b** sind heute vollständig
+spezifiziert — sie hängen an vorhandenen Unterlagen. **V2 und alle Kern-APs (V4–V9)** hängen am
+Ergebnis von V3b (Portbelegung, Speicherumschaltung der Gen-2-ZRE) und an Anwenderantworten
+(F1–F4); ihre Zeilen unten sind ein **Rahmen**, den V2 zu vollständigen Aufträgen schärft. Wer
+V4 ff. vorher startet, rät.
 
-Jedes AP: eigener Commit auf dem Zweig (nicht pushen), `tools/dev.sh test` vor dem Commit, vor
-dem Merge alle vier Läufe (`test`, `test-format`, `test-matrix`, `win`).
+### Übersicht
+
+| AP | Inhalt | hängt ab von | Agent / Modell | Baut? |
+|----|--------|--------------|----------------|-------|
+| V0 | ✔ Planungsdokument, Quellensuche, Abzüge abgelegt | — | — | — |
+| **V1a** | Unterlagen RAM-Karte K3528 + K2521-Schaltplan + K3820 lesen → `doc/k8915g2/karten.md` | — | general-purpose / Sonnet (Bilder lesen) | nein |
+| **V1b** | Unterlagen Tastatur K7634/36 lesen → `doc/k8915g2/k7634.md` | — | general-purpose / Sonnet | nein |
+| **V3a** | Kommentierte Listings der fünf Abzüge + Wächter | — | boot-disasm-analyst / Sonnet | nur `dev.sh test` |
+| **V3b** | Analyse: Portkarte, Speicherumschaltung, Bootablauf, Hardware-Liste → `doc/k8915g2/zre_rom.md` | V3a | boot-disasm-analyst / **Opus** | nein |
+| **V2** | Entwurf Maschinenform + Auftragsschärfung V4–V9 | V1a, V1b, V3b, F1–F3 | Plan / Opus | nein |
+| V4 | Karten: Speicherverwaltung/RAM der Gen 2 | V2 | cpp-coder / Sonnet, Opus für die Umschaltung | ja |
+| V5 | 2708-Karte als Beigabe (nur Abzug) oder optionale Karte | V3b | Entscheidung in V2 | ja |
+| V6 | `K8915Machine`-Zweig Gen 2, Boot bis Meldung | V4 | Opus | ja |
+| V7 | C-ABI, Python, Programmprofil, Handbuch | V6 | cpp-coder + Sonnet | ja |
+| V8 | DiskTool: Diskettenformat Gen 2 | V6, F4 (Diskette) | cpp-coder / Sonnet | ja |
+| V9 | Gen 1 | Abzug/Diskette (F5) | — | **blockiert** |
+| V10 | Merkposten, `CLAUDE.md`, Verweis in 16 | alle | Sonnet | nein |
+| VT | Alle vier Lanes vor dem Merge | V10 | test-runner / Haiku | ja |
+
+**Parallel:** V1a, V1b, V3a laufen gefahrlos nebeneinander (nur lesen/Python); V3b nach V3a.
+Alles mit „Baut? ja" **nacheinander** oder je Agent mit `isolation: "worktree"` (CLAUDE.md,
+Bau-Kollision `build/`).
+
+### Gemeinsame Regeln für alle APs (jeder Agent liest das zuerst)
+
+- **Vorher lesen:** `CLAUDE.md` (Bauen/Testen nur über `tools/dev.sh`, knappe Testausgabe,
+  Läufe > 60 s im Hintergrund), dieses Dokument komplett, `doc/EPROMS/K8915G2/README.md`,
+  `doc/merkposten/k8915.md` und `doc/merkposten/prg710.md` (K2521 + `/WAIT`-K5122 gelten
+  sinngemäß), `doc/design/16_k8915.md` §3–§4 (V3-Hardware als Vergleich).
+- **Nicht anfassen:** A5120-, V3-K8915-, PRG-710- und PC-1715-Pfade. Änderungen an gemeinsamen
+  Bausteinen (`K5122`, `K7024`, `K7028`, `K2521`, `K1520Bus`) nur über **neue Konfiguration mit
+  unveränderter Vorgabe**; die acht Boot-Invarianten und alle bestehenden Wächter bleiben grün.
+  Die Vorgabe von `K8915Machine` bleibt **V3**.
+- **Fertig heißt:** `tools/dev.sh test` grün (voll, nicht nur neue Fälle; nie ein Binary aus
+  `build*/` von Hand); neue Wächter über `k1520_add_test()`; **dieses Dokument nachgetragen**
+  (Zeile im AP-Abschnitt: „erledigt JJJJ-MM-TT“, Befunde, Abweichungen vom Plan, neue offene
+  Fragen in §9); **ein Commit** auf `K8915Varianten` (nicht pushen) mit dem Attributions-Trailer.
+  Dateien des Anwenders im Arbeitsbaum (`app/ui/serial_widget.py`, `disks/a5120_cpm.hfe`,
+  `doc/PRG710/`) **nicht** committen: nur die eigenen Dateien mit `git add <Pfad>`.
+- **Befunde sind Belege:** jede Port-/Bit-/Adressdeutung mit Fundstelle (Datei + Adresse im
+  Abzug, Seite in der Unterlage). Was Hypothese ist, trägt **[?]**, was aus dem Abzug folgt
+  **[ROM]**, aus dem Schaltplan **[SLP]**, aus einer Fremdquelle **[Web]**.
+- **Quellen:** Abzüge nur lesend (`doc/EPROMS/K8915G2/`, MD5SUMS prüfen). Unterlagen von
+  tiffe.de dürfen heruntergeladen werden, **nur in das Scratchpad**, nicht ins Repo (die
+  K3528-Scans haben 150+ MB). Nichts in Foren posten, keine Anfragen an Dritte.
+- Kommentare, Logtexte, Doku **deutsch**, Stil wie `core/cards/zre8762/`, `core/cards/k2521/`.
+- **Stoppregel:** Fehlt eine Anwenderangabe (F1–F4), arbeitet der Agent mit der im AP genannten
+  Annahme weiter, kennzeichnet sie **[?]** und trägt die Frage in §9 ein — er hält nicht an, es
+  sei denn, das AP nennt es als Blocker.
+
+### AP-V1a — Karten lesen: K3528 (RAM), K2521-Schaltplan, K3820
+
+**Ziel:** Wissen über die Karten, die V2/V4 brauchen, ohne Raten.
+**Agent:** general-purpose (Sonnet). **Abhängig:** —. **Baut:** nein.
+
+Eingaben (alles Scans ohne Textebene, kein OCR installiert: Seiten mit `pdftoppm -r 110 -png`
+rendern und als Bild lesen; große PDFs seitenweise, Inhaltsverzeichnis zuerst):
+- `https://www.tiffe.de/Robotron/K1520/K3528/OPS_K3528-1.pdf` und `-2.pdf` (168/154 MB).
+- `https://www.tiffe.de/Robotron/K1520/K2521/` — `K2521_sch/Schaltplan_1..3.jpg`,
+  `K2521_Schaltplan_1..3.jpg`, `BSPlan_CPU.jpg` (Belegungsplan, Brücken X6–X15).
+- `https://www.tiffe.de/Robotron/K1520/K3820/Speichersteckeinheiten_K3520_3521_3525_K3820_Betriebsdokumentation.pdf`
+  — §6 (PFS K3820) **Seiten 22–26 sind gelesen** (siehe unten), der Rest (§3 K3520, §5 K3525,
+  Programmierfelder, Wait-Bildung) ist für die RAM-Frage lesenswert.
+- Bereits gesichert: K3820 = 16 × 1 KB (Q260), Startadresse über `X8:1–4/X9:1–4` in 4-KB-Schritten,
+  MEMDI über `X6/X7` (MEMDI = X1:B09, MEMDI1 = X2:A21, MEMDI2 = X2:B21), WAIT-Bildung über
+  `X10–X11` (offen = WAIT im M1-Zyklus), Chip-Raster Abb. 7. Das **nicht** erneut lesen,
+  nur in `karten.md` übernehmen.
+
+Ergebnis `doc/k8915g2/karten.md` mit je Karte: Größe, Organisation, Adressdekodierung, Brücken
+(mit Tabelle der Stellungen), /MEMDI-Verhalten, WAIT, Speicherumschaltung falls vorhanden, und
+die **Antwort auf: welche dieser Karten kann zusammen mit einer ZRE, die per A8H umschaltet,
+ein 64-KB-System bilden?** Außerdem: **Widerspruch PIO 84H–87H (K2521-Beschreibung) ↔ 08H–0FH
+(Forum 5713)** entscheiden anhand des Schaltplans der K2521 (Adressdekoder).
+**Wächter:** keiner (Doku). **Fertig, wenn:** jede Aussage eine Seite/Blatt-Fundstelle hat und
+offene Punkte als Fragen in §9 stehen.
+
+### AP-V1b — Tastatur K7634/36
+
+**Ziel:** Anschluss und Protokoll der parallelen Tastatur (Gen 1; bei Gen 2 zu prüfen, ob
+K7672 oder K7634).
+**Agent:** general-purpose (Sonnet). **Abhängig:** —. **Baut:** nein.
+
+Eingabe: `https://www.tiffe.de/Robotron/K1520/K7634_36/K7634-36.pdf` (5,1 MB, Scan), dazu
+`doc/design/08_k7637_keyboard.md` und `core/peripherals/k7672/` als Vorbild des Zuschnitts.
+Ergebnis `doc/k8915g2/k7634.md`: Steckerbelegung, Datenformat (Bitbelegung, Strobe/Ack),
+Tastenmatrix → Code (Tabelle), Sondertasten, Anschluss an PIO der K7028/K2521 (welcher Port,
+welche Handshake-Leitungen), Taktung. **Fertig, wenn:** die Tabelle Taste → Code vollständig
+ist oder die Lücken benannt sind; Hinweis, ob die ROMs aus V3 (`KEY`-Test) dazu passen.
+
+### AP-V3a — Kommentierte Listings der Gen-2-Abzüge
+
+**Ziel:** Lesbare, wächtergesicherte Listings als Grundlage für V3b und den Debugger.
+**Agent:** boot-disasm-analyst (Sonnet). **Abhängig:** —. **Baut:** nur `dev.sh test`.
+
+Eingaben: `doc/EPROMS/K8915G2/k8915g2_zre_0000-0BFF.bin` (3 KB, Platzfolge 175/176/177 **aus dem
+Inhalt erschlossen [?]**), `k8915g2_pfs3820_3C00.bin` und `…_3000.bin`, Disassembler
+`tools/z80_disasm2.py` (Einsprünge per `--entry`; Werkzeugwahl `tools/README.md`).
+**Muster (nachbauen, nicht neu erfinden):** `tools/gen_prg710_zre_prn.py`,
+`doc/EPROMS/PRG710/prg710_zre.prn`, Wächter `cli_prg710_zre_prn_passt_zur_quelle`
+(`tests/cli/CMakeLists.txt` Z. 95–105).
+
+Auftrag:
+1. **Reihenfolge der drei ZRE-Bausteine prüfen** (Sprungziele, Tabellen, Meldungstexte,
+   relativ zueinander) und das Ergebnis mit Beleg im Listing-Kopf festhalten. Abweichung von
+   175/176/177 = 0000/0400/0800 **melden und im README korrigieren**.
+2. Die ZRE ist **nicht** flach zu lesen: `175` kopiert 1 KB nach **FC00** und läuft dort
+   (`LD SP,FC00 / LD DE,FC00 / LD HL,0 / LD BC,0400 / LDIR`), `177` läuft nach der Kopie bei
+   **04xx** (Sprungziele 03xx–09xx). Das Listing zeigt deshalb **beide Sichten**: Lade-Adresse
+   (ROM) und Lauf-Adresse (nach Kopie), mit Umrechnung je Abschnitt.
+3. Ausgabe: `doc/EPROMS/K8915G2/k8915g2_zre.prn` (3 KB, Lade- und Lauf-Adresse) und
+   `k8915g2_pfs3820.prn` (die zwei belegten Karten-Chips; die 14 leeren knapp vermerken),
+   Handkommentare nur wo belegbar; Generator **`tools/gen_k8915g2_prn.py`** mit `--check`.
+4. **Gegenüberstellung** der drei Paare (ZRE 175 ↔ Karte 3C00, ZRE 177 ↔ Karte 3000, jeweils
+   Byte-Diff) als Anhang im Listing: welche Bytes unterscheiden sich, welche davon sind
+   Adress-Operanden (F7xx ↔ 0Cxx), welche Port-/Textänderungen.
+**Wächter:** `cli_k8915g2_prn_passt_zur_quelle` (Muster oben): bytegleich zum eingecheckten
+`.prn`, jedes ROM-Byte genau einmal. **Fertig, wenn:** `tools/dev.sh test` grün und der Wächter
+rot wird, sobald man einen Abzug ändert.
+
+### AP-V3b — Analyse der Gen-2-ROMs (Kopf der Planung)
+
+**Ziel:** Alles, was V2/V4/V6 an Hardware-Wissen brauchen, **belegt**.
+**Agent:** boot-disasm-analyst (**Opus**: Speicherumschaltung und Boot sind subtil).
+**Abhängig:** V3a (Listings), V1a (Karten, wenn schon fertig; sonst mit Annahme **[?]**).
+**Baut:** nein; Läufe im Emulator **nicht möglich** (es gibt noch keine Gen-2-Maschine) — nur
+statische Analyse, ggf. kurze Z80-Probeläufe mit `tools/` ohne Maschine.
+
+Ergebnis `doc/k8915g2/zre_rom.md`:
+1. **Speicherkarte nach der Kopie:** welcher Teil liegt wo (ROM, RAM, FC00-Kopie, Arbeitszellen
+   F7xx/F9xx), welche Speicherbereiche werden sichtbar/unsichtbar.
+2. **`OUT (A8H)`:** Bitbedeutung des Registers (Werte `06H`, `0EH`, … aus den Fundstellen
+   ableiten), Vergleich mit dem V3-Register (`doc/merkposten/k8915.md`, A8H-Brückenfeld,
+   `core/cards/zre8762/`). Entscheidung: **gleiches Register, anderes Register, oder anderer
+   Mechanismus?** mit Belegen.
+3. **Portkarte:** jede in den ROMs angesprochene Adresse (80H–83H CTC, 52H, 61H, 10H–19H K5122,
+   E0H–E4H ATS, B1H/B3H, FBH–FEH, … — vollständig, nicht nur die Beispiele) → Baustein, mit
+   Fundstelle; Abgleich mit der V3-Portkarte (`doc/design/16_k8915.md`). Unbekannte Adressen
+   als Fragen.
+4. **Selbsttest** („MROM RAM SIO KEY CTC DIAGNOSTIC“): je Test, was er prüft, **welche Hardware
+   vorhanden sein muss**, Fehlermeldung bei Fehlen, Abbruchverhalten (damit V6 weiß, was zum
+   Start nötig ist; vgl. `Config::pruefstecker` bei V3).
+5. **Bootablauf:** Reihenfolge, Laufwerksauswahl, Lade-Adresse/-Länge der Bootspuren, Übergabe
+   an das System (Sprungziel, Registerzustand), Meldungen mit Bedingung („No system disk“ usw.).
+   Prüfen, ob das Verfahren zu den vorhandenen Disketten passt (`disks/k8915scpx_boot1.hfe`,
+   Entwurf 16): Ladekopf-Format, K5122-Betriebsart (`/WAIT` oder ZVE2-Weg).
+6. **Interruptmodus** (IM 2, I-Register, Tabelle), CTC-/SIO-Initialisierung (Baudraten →
+   Takt 2,4576 MHz?).
+7. **Die Karte (3C00/3000) vs. ZRE:** was ist anders, **läuft die Karte als Ersatz oder als
+   Ergänzung**, an welcher Adresse wird sie benutzt; welche Hardware-Annahme steckt hinter 0Cxx
+   gegenüber F7xx (1-KB-RAM der K2521 bei 0C00–0FFF?).
+8. **Anforderungsliste für V4/V6** („die Maschine braucht: …“) und **offene Fragen** an den
+   Anwender, nummeriert F7ff. in §9.
+**Wächter:** keiner (Doku), aber jede Zeile der Portkarte mit Fundstelle. **Fertig, wenn:** die
+Anforderungsliste so vollständig ist, dass V2 daraus ohne Rückfrage einen Maschinenentwurf schreibt.
+
+### AP-V2 — Entwurf und Schärfung der Kern-APs
+
+**Agent:** Plan (Opus). **Abhängig:** V1a, V1b, V3b, Antworten F1–F3. **Baut:** nein.
+Ergebnis in diesem Dokument: (1) **Entscheidung eine Klasse** (`K8915Machine::Config::generation`)
+**oder** eigene Klasse — Empfehlung bleibt eine Klasse, bei Abweichung begründen; (2) Steckplatz-
+und Kartenliste je Variante; (3) Port-/Speicherkarte; (4) **V4–V9 als vollständige Aufträge** im
+Muster von V3a (Ziel, Eingaben mit Dateipfaden, Ergebnis, Wächtern mit Namen, Fertig-Kriterium),
+V5 entschieden (Beigabe oder Karte); (5) Namen in Oberfläche/Konfiguration (F6). **Fertig,
+wenn** ein Agent V4 ohne Rückfrage beginnen kann.
+
+### V4–V9 (Rahmen — wird in V2 geschärft)
+
+| AP | Rahmen | Vorläufiges Fertig-Kriterium (Wächter-Familie) |
+|---|---|---|
+| V4 | Karte(n) für Speicher/RAM der Gen 2 unter `core/cards/` (Vorbild `prg710_speicher`, `zre8762`); Konfiguration als Config-Struct, **nicht** zur Laufzeit; Unit-Tests | `K8915Gen2Speicher.*` — Umschaltung A8H gegen die Belege aus V3b |
+| V5 | Entweder Abzug bleibt Beigabe (ROM-Abbilder im Repo, Wächter auf MD5), oder steckbare Karte PFS K3820 (`installXxx` nach dem Anlegen, Vorgabe aus, wie RAF/K6022) | Entscheidung V2 |
+| V6 | Maschinenzweig Gen 2 in `core/machines/k8915/`; Verdrahtung nach V3b; Boot der ROMs 175–177 bis zur Meldung („Coldstart“ / „No system disk, change disk“, **ohne Diskette prüfbar**) und danach mit Diskette bis zum Prompt, sobald F4 beantwortet ist; `boot_trace`/`k1520dbg --machine k8915 --generation 2` | `K8915Gen2Boot.*` (Integration), V3-Wächter bleiben grün |
+| V7 | `k1520_create…` für die Variante, Python `K1520Emulator(machine="k8915", generation=…)`, Profil `k8915emu` (Modellwahl wie `general.model`, `modellwahl` in `app/profil.py`), Konfigurationsdatei, Handbuch; **`test_c_api.py` gleicht Header, Bibliothek und ctypes mechanisch ab** | `py_c_api`, `py_k8915emu_gui` |
+| V8 | DiskTool: nur wenn die Gen-2-Diskette von V3-Profilen abweicht; sonst gestrichen | `DisktoolK8915Gen2.*` |
+| V9 | Gen 1: **blockiert** bis Abzug/Diskette (F5); vorher nichts bauen | — |
+
+### AP-V10 / VT
+
+**V10 (Sonnet):** `doc/merkposten/k8915_varianten.md` (Festlegungen mit Wächter, Muster
+`prg710.md`), Absatz in `CLAUDE.md`, Zeile in `doc/merkposten/README.md`, Verweis aus Entwurf 16.
+**VT (test-runner/Haiku):** vor dem Merge **alle vier Läufe** — `tools/dev.sh test`,
+`test-format`, `test-matrix`, `win` (die langen im Hintergrund, nicht pollen); Ergebnis mit
+bekannten Zeitüberläufen abgrenzen (`doc/merkposten`/Erfahrung: Last-Timeouts), roter Fall →
+volle Ausgabe.
+
+### Was nur der Anwender liefern kann (Blocker je AP)
+
+| Blockiert | Braucht | Frage |
+|---|---|---|
+| V2 (Namen, Klasse) | Zuordnung Gen 1/2 ↔ V1/V2 | F1 |
+| V4 (Speicherkarte) | Typ der RAM-Karte, Brücken, Brückenstand X8/X9 der Karte | F2, F3 |
+| V6 (Boot mit Diskette), V8 | Systemdiskette der Gen 2 (Image) | F4 |
+| V9 | EPROM-Abzug/Diskette Gen 1 | F5 |
 
 ---
 
