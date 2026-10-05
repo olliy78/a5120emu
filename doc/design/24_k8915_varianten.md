@@ -997,6 +997,8 @@ voller `tools/dev.sh test` grün (2187/2187). Befunde/Abweichungen:
 | **F9** | Der Abzug **177** hat eine falsche 24-Bit-Summe (Byte 0A33H = 04H statt 00H, s. V3a). Bitte den Baustein 177 am Gerät **ein zweites Mal lesen** (MD5 vergleichen) und notieren, ob der „MROM“-Selbsttest des Geräts einen Fehler meldet. |
 | **F20** | (V1a) Aufdruck/Platinen-Nr. der „zusätzlichen RAM-Karte“ (K3528? 32 Chips, 8212 „D8“?), Stand des Wickelfeldes **X3** (insb. D2:01/D2:02 → Register-Adresse A8H; Bank-Brücken X3:64–71). |
 | **F21** | (V1a) Die handschriftliche „88“ im K3528-Plan: gilt sie für Ihr Gerät oder ein anderes (ROM schreibt A8H)? |
+| **F21 — beantwortet 2026-10-05** | Das Gerät wurde funktionierend ausgeliefert, sein ROM schreibt **A8H** — damit gilt A8H; die handschriftliche „88“ im Plan ist ein Fremdeintrag unbekannter Herkunft (Anwender: Handbuch aus dem Internet) und bleibt unbeachtet. F4-Frage 1 (K5122 `/WAIT`) ebenso: das Gerät läuft mit dem ROM, also gilt, was das ROM voraussetzt. |
+| **F3 (Teil) — beantwortet** | EPROM-Plätze: 175 = 0000, 176 = 0400, 177 = 0800 (bestätigt vom Anwender). |
 | **F22** | (V1a) Brückenstand am Gerät: ZRE X6–X9, X14/X15; PFS K3820 X6/X7 (welches MEMDI), X8/X9 (Startadresse), X10–X11 (WAIT). |
 | **F23** | (V1a) Wie ist das Feld X3:23–X3:45 (Registerbit → /MEMDI…/MEMDI3) gebrückt? Foto der RAM-Karte genügt. |
 | **F24** | (V1a) Woher stammt „PIO 08–0FH“ (Forum 5713)? Gibt es ein Gerät mit anderer K2521-Dekodierung? |
