@@ -1,0 +1,1482 @@
+; ============================================================================
+; k8915g2_zre.prn  -  K8915 'Generation 2': ZRE-Boot-ROM, 3 x U555 (2708), 0000H-0BFFH
+;
+; Quellen: doc/EPROMS/K8915G2/k8915g2_zre_0000_175.bin   MD5 5c4101519ad70c4c2363852080c141b9
+;          doc/EPROMS/K8915G2/k8915g2_zre_0400_176.bin   MD5 3a1d25b689b9a2762e0ec925bf73a52f
+;          doc/EPROMS/K8915G2/k8915g2_zre_0800_177.bin   MD5 3c778fadb68add83be61e5d5b61aaa9a
+; Erzeugt: tools/gen_k8915g2_prn.py (rohes Disassemblat tools/z80_disasm2.py + Handkommentare)
+; Plan   : doc/design/24_k8915_varianten.md (AP-V3a); Abzuege: doc/EPROMS/K8915G2/README.md
+;
+; STATISCHE Analyse -- es gibt keine Gen-2-Maschine, also keine Laufzeitbestaetigung.
+; [?] = Deutung nach Vermutung; alles andere steht im Code.  Jede Zeile traegt zwei
+; Adressen:  LADE  (Lage im Abzug = ROM-Adresse)   LAUF  (Adresse nach den Operanden des
+; Codes selbst).  Gleich, ausser beim 175-Block hinter dem Kopierer (Lauf = Lade + FC00)
+; und beim Haeppchen 098FH-09A5H (Lauf FFE0H-FFF6H).
+;
+; ---- Reihenfolge der drei Bausteine (BEFUND 1) --------------------------------------
+;   Ergebnis: 175 = 0000H, 176 = 0400H, 177 = 0800H -- aus dem Inhalt BESTAETIGT
+;   (die Reihenfolge der Aufschriften 175/176/177 ist aufsteigend, nicht abgelesen).
+;   Belege (alles [ROM]):
+;   a) 175 springt bei 000EH mit JP 0400H und bei 02D6H/020BH mit JP 0403H; bei 0400H steht
+;      in 176 die Sprungtabelle 'C3 1A 04 / C3 2B 04' (Ziele 041AH/042BH liegen in 176).
+;   b) 176 ruft 6x CALL 0907H (Text-Ausgabe, steht in 177) und kopiert mit LD HL,098FH
+;      23 Byte aus 177 nach FFE0H; 177 springt mit JP 03F3H zurueck zu 175 (dort 'C3 00 04').
+;   c) Ziele der absoluten Spruenge (JP/CALL) nach Seite der Lauf-Adresse, je Baustein:
+;        175: 00xx:1, 04xx:4, FCxx:6, FDxx:3, FExx:17, FFxx:7
+;        176: 03xx:1, 04xx:12, 05xx:4, 06xx:5, 07xx:5, 08xx:13, 09xx:4, FFxx:1
+;        177: 03xx:2, 04xx:4, 05xx:3, 08xx:1, 09xx:2
+;      176 springt in 04xx-07xx (eigene Lage) und 08xx-09xx (177); 177 in 08xx-09xx (eigene
+;      Lage) und 03xx-05xx (175/176): die Lagen 0400H und 0800H stehen im Code selbst.
+;   d) Der Selbsttest 'MROM' (175, Schleife bei 0047H-0096H) summiert IX = 0000H, 0400H, 0800H
+;      je 3FDH Byte und vergleicht mit den letzten 3 Bytes jedes Bausteins: drei lueckenlos
+;      aufeinanderfolgende 1-KB-Bloecke ab 0000H.
+;   KORREKTUR zu Entwurf 24 (AP-V3a, Punkt 2): 177 laeuft NICHT 'bei 04xx nach der Kopie';
+;   nur 175 wird nach FC00H kopiert (und das 23-Byte-Haeppchen nach FFE0H).  176 und 177
+;   laufen unverschoben aus dem ROM bei 0400H bzw. 0800H.  'Sprungziele 03xx-09xx' heisst:
+;   JP 03F3H (Vektor in 175) bis 09xx (Text-Routine in 177).
+;
+; ---- Wo was laeuft ----------------------------------------------------------------
+;   0000-0020  laeuft aus dem ROM (Reset; Kopierer 0011H: HL=0000H -> DE=FC00H, BC=0400H, LDIR)
+;   FC21-FFFF  laeuft aus der RAM-Kopie von 175 (Lade 0021H-03FFH, Lauf FC21H-FFFFH): der Selbst-
+;              test; die Tabellen am Ende (FF77H.., FF88H.., FFC4H.., FFF3H-FFFFH) sind Daten UND
+;              Arbeitszellen (FFF9H = Merker, FF8CH = Meldungszelle)
+;   0400-0BFF  Lader 176/177 aus dem ROM; I = FFH gesetzt (Vektorwort FFF6H -> FF3DH; Zuordnung CTC/SIO: V3b)
+;   F700-F7FF  Arbeitszellen des Laders (176/177: F700H.. F719H, F784H.., F786H ...; SP=F7E0H)
+;   1000-177F  Bildspeicher 80 x 24 (Bild loeschen = 20H ab 1000H, 077FH Byte nachkopiert)
+;
+; ---- Pruefsummen (BEFUND 2) -----------------------------------------------------------
+;   Jeder Baustein traegt in den letzten drei Bytes (03FDH-03FFH, hoeherwertiges zuerst) die
+;   24-Bit-Summe seiner ersten 3FDH Byte (so rechnet der Selbsttest 'MROM' bei 0047H-0068H).
+;   Nachgerechnet (diese Auswertung):
+;     175: berechnet 01AE2BH = gespeichert 01AE2BH  ok
+;     176: berechnet 018EF9H = gespeichert 018EF9H  ok
+;     177: berechnet 00A680H, gespeichert 00A67CH  ** STIMMT NICHT ** (Differenz 4)
+;   177 ist der einzige Abzug mit falscher Summe: die Summe waere erfuellt, wenn Byte 0A33H
+;   (Lade 0233H) 00H statt 04H waere -- ein einzelnes Bit in sonst ungenutztem 00H-Bereich.
+;   Die Karten-Chips (siehe k8915g2_pfs3820.prn) stimmen beide.  Der Code laeuft in diesem
+;   Bereich nicht; ein Lesefehler des Anwenders ODER ein Bitfehler im 2708 ist moeglich [?].
+;   Folge: der Selbsttest 'MROM' meldet am echten Geraet fuer 177 vermutlich einen Fehler, falls
+;   der Abzug die Hardware treu wiedergibt.  Empfehlung: 177 am Geraet ein zweites Mal lesen.
+;
+; ---- Befunde zur Hardware (aus dem Code, [ROM]; ausfuehrlich: AP-V3b) ----------------
+;   A8H (Port) wird mit 06H, 0EH, 87H, 8FH beschrieben: Speicherumschaltung (Gegenstueck zu
+;   A8H der ZRE 045-8762 [?]).  Port 61H wird mit 00H/FFH/E0H/7FH/B0H beschrieben [?].
+;   Bildspeicher 1000H-177FH (80 x 24); SIO-Kanal 52H/53H: 53H Bit 0 = Zeichen da, 52H = Zeichen
+;   (Tasteneingabe ENTER/'#'); SIO-Init ueber 5AH/53H, weitere Tore 45H/47H/55H.  K5122: Ports 10H-19H (16H Daten,
+;   12H Status, 10H/18H Steuerung), Meldungen 'Coldstart * Disk on A: ready', 'Drive A: not
+;   ready, check disk', 'Disk-error, change disk', 'No system disk, change disk',
+;   'Loading complete, replace disk by previous disk' / '... replace system disk'.
+; ============================================================================
+
+	ORG	0000H
+
+; ============================================================================
+; Baustein 175  (k8915g2_zre_0000_175.bin)   Lade 0000H-03FFH
+; ============================================================================
+
+;-- Lade 0000H-0010H  Lauf 0000H-0010H  [code]  Reset-Einsprung (laeuft aus dem ROM): DI, IM 2, A8H, Port 61H, dann nach 0400H
+RESET:
+0000 0000  F3         	DI
+0001 0001  ED 5E      	IM 2
+0003 0003  3E 06      	LD A,06H	; A8H=06H: Speicherumschaltung (Bedeutung der Bits: V3b)
+0005 0005  D3 A8      	OUT (A8H),A
+0007 0007  AF         	XOR A
+0008 0008  32 F9 FF   	LD (FFF9H),A	; FFF9H = Merkerzelle (Lade 03F9H)
+000B 000B  2F         	CPL
+000C 000C  D3 61      	OUT (61H),A	; Port 61H = FFH [?]
+000E 000E  C3 00 04   	JP SPRUNG_LADER
+
+;-- Lade 0011H-0020H  Lauf 0011H-0020H  [code]  Kopierer (laeuft aus dem ROM): ROM 0000H-03FFH -> RAM FC00H-FFFFH, weiter bei FC21H
+KOPIERER:
+0011 0011  31 00 FC   	LD SP,FC00H
+0014 0014  11 00 FC   	LD DE,FC00H
+0017 0017  63         	LD H,E
+0018 0018  6B         	LD L,E
+0019 0019  01 00 04   	LD BC,0400H
+001C 001C  ED B0      	LDIR
+001E 001E  C3 21 FC   	JP SELBSTTEST
+
+;-- Lade 0021H-0065H  Lauf FC21H-FC65H  [code]  Selbsttest Teil 1 (laeuft aus der RAM-Kopie): MROM - 24-Bit-Pruefsumme je 1-KB-Baustein
+SELBSTTEST:
+0021 FC21  21 00 10   	LD HL,1000H
+0024 FC24  36 0A      	LD (HL),0AH
+0026 FC26  CD 1F FF   	CALL SIO_INIT
+LFC29:
+0029 FC29  3E 13      	LD A,13H
+002B FC2B  D3 52      	OUT (52H),A
+002D FC2D  CD E2 FE   	CALL BILD_LOESCHEN
+0030 FC30  21 41 FF   	LD HL,FF41H
+0033 FC33  CD F0 FE   	CALL TESTNAME_AUSGEBEN
+0036 FC36  08         	EX AF,AF'
+0037 FC37  3E 41      	LD A,41H
+0039 FC39  08         	EX AF,AF'
+003A FC3A  FD 21 FD 03	LD IY,03FDH
+003E FC3E  DD 21 00 00	LD IX,0000H
+0042 FC42  21 F9 FF   	LD HL,FFF9H
+0045 FC45  CB 86      	RES 0,(HL)
+PRUEFSUMME_BLOCK:
+0047 FC47  01 FD 03   	LD BC,03FDH	; BC=03FDH = Laenge ohne die drei Pruefsummenbytes
+004A FC4A  DD E5      	PUSH IX
+004C FC4C  E1         	POP HL
+004D FC4D  AF         	XOR A
+004E FC4E  11 00 00   	LD DE,0000H
+LFC51:
+0051 FC51  86         	ADD A,(HL)
+0052 FC52  30 01      	JR NC,LFC55
+0054 FC54  13         	INC DE
+LFC55:
+0055 FC55  ED A1      	CPI
+0057 FC57  EA 51 FC   	JP PE,LFC51
+005A FC5A  FD 96 02   	SUB (IY+2)	; A - (IY+2) - ... : Vergleich mit der 24-Bit-Summe in den letzten drei Bytes
+005D FC5D  FD 8E 01   	ADC A,(IY+1)
+0060 FC60  9B         	SBC A,E
+0061 FC61  FD 8E 00   	ADC A,(IY+0)
+0064 FC64  18 02      	JR LFC68
+
+;-- Lade 0066H-0067H  Lauf 0066H-0067H  [code]  NMI-Vektor: RETN (laeuft aus ROM/RAM bei 0066H; der RAM-Test schreibt ED 45 selbst dorthin)
+0066 0066  ED 45      	RETN
+
+;-- Lade 0068H-00E2H  Lauf FC68H-FCE2H  [code]  Selbsttest Teil 1 (Fortsetzung), Teilprogramm bei FCCCH (= 00CCH)
+LFC68:
+0068 FC68  9A         	SBC A,D
+0069 FC69  28 16      	JR Z,LFC81
+006B FC6B  21 F9 FF   	LD HL,FFF9H
+006E FC6E  CB 46      	BIT 0,(HL)
+0070 FC70  28 04      	JR Z,LFC76
+0072 FC72  08         	EX AF,AF'
+0073 FC73  3E 5A      	LD A,5AH
+0075 FC75  08         	EX AF,AF'
+LFC76:
+0076 FC76  2A 8C FF   	LD HL,(FF8CH)
+0079 FC79  08         	EX AF,AF'
+007A FC7A  77         	LD (HL),A
+007B FC7B  08         	EX AF,AF'
+007C FC7C  21 F9 FF   	LD HL,FFF9H
+007F FC7F  CB C6      	SET 0,(HL)
+LFC81:
+0081 FC81  21 00 08   	LD HL,0800H	; Schleife ueber die Bausteine IX = 0000H, 0400H, 0800H (drei 1-KB-Bloecke)
+0084 FC84  DD E5      	PUSH IX
+0086 FC86  D1         	POP DE
+0087 FC87  A7         	AND A
+0088 FC88  ED 52      	SBC HL,DE
+008A FC8A  28 0C      	JR Z,LFC98
+008C FC8C  11 00 04   	LD DE,0400H
+008F FC8F  DD 19      	ADD IX,DE
+0091 FC91  FD 19      	ADD IY,DE
+0093 FC93  08         	EX AF,AF'
+0094 FC94  3C         	INC A
+0095 FC95  08         	EX AF,AF'
+0096 FC96  18 AF      	JR PRUEFSUMME_BLOCK
+LFC98:
+0098 FC98  21 F9 FF   	LD HL,FFF9H
+009B FC9B  CB 46      	BIT 0,(HL)
+009D FC9D  20 44      	JR NZ,LFCE3
+009F FC9F  CD E2 FE   	CALL BILD_LOESCHEN
+00A2 FCA2  21 4A FF   	LD HL,FF4AH
+00A5 FCA5  CD F0 FE   	CALL TESTNAME_AUSGEBEN
+00A8 FCA8  1E 41      	LD E,41H
+00AA FCAA  CD 2F FF   	CALL TERMINAL_ESC
+00AD FCAD  CD CC FC   	CALL WARTE_ZEICHEN
+00B0 FCB0  1C         	INC E
+00B1 FCB1  21 82 FF   	LD HL,FF82H
+00B4 FCB4  06 06      	LD B,06H
+LFCB6:
+00B6 FCB6  7E         	LD A,(HL)
+00B7 FCB7  23         	INC HL
+00B8 FCB8  D3 52      	OUT (52H),A
+00BA FCBA  0E 40      	LD C,40H
+00BC FCBC  C5         	PUSH BC
+00BD FCBD  CD 05 FF   	CALL WARTEN_C
+00C0 FCC0  C1         	POP BC
+00C1 FCC1  10 F3      	DJNZ LFCB6
+00C3 FCC3  CD CC FC   	CALL WARTE_ZEICHEN
+00C6 FCC6  3E 11      	LD A,11H
+00C8 FCC8  D3 52      	OUT (52H),A
+00CA FCCA  18 1E      	JR LFCEA
+WARTE_ZEICHEN:
+00CC FCCC  0E FF      	LD C,FFH
+00CE FCCE  06 00      	LD B,00H
+LFCD0:
+00D0 FCD0  10 FE      	DJNZ LFCD0
+00D2 FCD2  DB 52      	IN A,(52H)
+00D4 FCD4  FE 11      	CP 11H
+00D6 FCD6  C8         	RET Z
+00D7 FCD7  FE 7F      	CP 7FH
+00D9 FCD9  CA 11 FE   	JP Z,LFE11
+00DC FCDC  0D         	DEC C
+00DD FCDD  20 F1      	JR NZ,LFCD0
+00DF FCDF  2A 8C FF   	LD HL,(FF8CH)
+00E2 FCE2  73         	LD (HL),E
+
+;-- Lade 00E3H-02D8H  Lauf FCE3H-FED8H  [code]  Selbsttest Teil 2: SIO/KEY/CTC, RAM-Test, Warteschleife auf ENTER bzw. '#'
+LFCE3:
+00E3 FCE3  3E 11      	LD A,11H
+00E5 FCE5  D3 52      	OUT (52H),A
+00E7 FCE7  C3 EB FD   	JP LFDEB
+LFCEA:
+00EA FCEA  CD E2 FE   	CALL BILD_LOESCHEN
+00ED FCED  21 4D FF   	LD HL,FF4DH
+00F0 FCF0  CD F0 FE   	CALL TESTNAME_AUSGEBEN
+00F3 FCF3  3E FF      	LD A,FFH
+00F5 FCF5  ED 47      	LD I,A	; I = FFH (Interrupttabellen-Seite FFxxH; Vektorwort FFF6H = FF3DH)
+00F7 FCF7  3E F0      	LD A,F0H
+00F9 FCF9  D3 80      	OUT (80H),A	; Steuerwort F0H an Port 80H (CTC), 48H und 58H
+00FB FCFB  D3 48      	OUT (48H),A
+00FD FCFD  D3 58      	OUT (58H),A
+00FF FCFF  3E A7      	LD A,A7H
+0101 FD01  D3 83      	OUT (83H),A
+0103 FD03  D3 4B      	OUT (4BH),A
+0105 FD05  D3 5B      	OUT (5BH),A
+0107 FD07  3E 0C      	LD A,0CH
+0109 FD09  D3 83      	OUT (83H),A
+010B FD0B  87         	ADD A,A
+010C FD0C  D3 4B      	OUT (4BH),A
+010E FD0E  C6 0C      	ADD A,0CH
+0110 FD10  D3 5B      	OUT (5BH),A
+0112 FD12  AF         	XOR A
+0113 FD13  ED 5E      	IM 2
+0115 FD15  FB         	EI
+0116 FD16  47         	LD B,A
+LFD17:
+0117 FD17  10 FE      	DJNZ LFD17
+0119 FD19  08         	EX AF,AF'
+011A FD1A  3E 03      	LD A,03H
+011C FD1C  D3 83      	OUT (83H),A
+011E FD1E  08         	EX AF,AF'
+011F FD1F  87         	ADD A,A
+LFD20:
+0120 FD20  10 FE      	DJNZ LFD20
+0122 FD22  08         	EX AF,AF'
+0123 FD23  D3 4B      	OUT (4BH),A
+0125 FD25  08         	EX AF,AF'
+LFD26:
+0126 FD26  10 FE      	DJNZ LFD26
+0128 FD28  F3         	DI
+0129 FD29  08         	EX AF,AF'
+012A FD2A  D3 5B      	OUT (5BH),A
+012C FD2C  08         	EX AF,AF'
+012D FD2D  A7         	AND A
+012E FD2E  28 02      	JR Z,LFD32
+0130 FD30  C6 03      	ADD A,03H
+LFD32:
+0132 FD32  F6 40      	OR 40H
+0134 FD34  FE 47      	CP 47H
+0136 FD36  28 07      	JR Z,LFD3F
+0138 FD38  2A 8C FF   	LD HL,(FF8CH)
+013B FD3B  77         	LD (HL),A
+013C FD3C  C3 EB FD   	JP LFDEB
+LFD3F:
+013F FD3F  CD E2 FE   	CALL BILD_LOESCHEN
+0142 FD42  21 47 FF   	LD HL,FF47H
+0145 FD45  CD F0 FE   	CALL TESTNAME_AUSGEBEN
+0148 FD48  3E 17      	LD A,17H
+014A FD4A  D3 4C      	OUT (4CH),A
+014C FD4C  D3 4D      	OUT (4DH),A
+014E FD4E  D3 4E      	OUT (4EH),A
+0150 FD50  D3 5C      	OUT (5CH),A
+0152 FD52  3E 01      	LD A,01H
+0154 FD54  D3 4C      	OUT (4CH),A
+0156 FD56  D3 4D      	OUT (4DH),A
+0158 FD58  D3 4E      	OUT (4EH),A
+015A FD5A  D3 5C      	OUT (5CH),A
+015C FD5C  01 45 08   	LD BC,0845H
+015F FD5F  21 CC FF   	LD HL,FFCCH
+0162 FD62  ED B3      	OTIR
+0164 FD64  01 47 08   	LD BC,0847H
+0167 FD67  21 CC FF   	LD HL,FFCCH
+016A FD6A  ED B3      	OTIR
+016C FD6C  01 55 08   	LD BC,0855H
+016F FD6F  21 CC FF   	LD HL,FFCCH
+0172 FD72  ED B3      	OTIR
+0174 FD74  11 00 03   	LD DE,0300H
+0177 FD77  3E AA      	LD A,AAH
+LFD79:
+0179 FD79  4F         	LD C,A
+017A FD7A  D3 44      	OUT (44H),A
+017C FD7C  D3 46      	OUT (46H),A
+017E FD7E  D3 54      	OUT (54H),A
+0180 FD80  CD 0D FF   	CALL WARTEN_LANG
+0183 FD83  DB 44      	IN A,(44H)
+0185 FD85  B9         	CP C
+0186 FD86  28 02      	JR Z,LFD8A
+0188 FD88  CB C3      	SET 0,E
+LFD8A:
+018A FD8A  DB 46      	IN A,(46H)
+018C FD8C  B9         	CP C
+018D FD8D  28 02      	JR Z,LFD91
+018F FD8F  CB CB      	SET 1,E
+LFD91:
+0191 FD91  DB 54      	IN A,(54H)
+0193 FD93  B9         	CP C
+0194 FD94  28 02      	JR Z,LFD98
+0196 FD96  CB D3      	SET 2,E
+LFD98:
+0198 FD98  AF         	XOR A
+0199 FD99  15         	DEC D
+019A FD9A  82         	ADD A,D
+019B FD9B  28 04      	JR Z,LFDA1
+019D FD9D  3E 55      	LD A,55H
+019F FD9F  18 D8      	JR LFD79
+LFDA1:
+01A1 FDA1  83         	ADD A,E
+01A2 FDA2  28 09      	JR Z,LFDAD
+01A4 FDA4  2A 8C FF   	LD HL,(FF8CH)
+01A7 FDA7  F6 40      	OR 40H
+01A9 FDA9  77         	LD (HL),A
+01AA FDAA  C3 EB FD   	JP LFDEB
+LFDAD:
+01AD FDAD  CD 1F FF   	CALL SIO_INIT
+01B0 FDB0  CD E2 FE   	CALL BILD_LOESCHEN
+01B3 FDB3  21 44 FF   	LD HL,FF44H
+01B6 FDB6  CD F0 FE   	CALL TESTNAME_AUSGEBEN
+01B9 FDB9  3E 87      	LD A,87H
+01BB FDBB  D3 A8      	OUT (A8H),A	; A8H=87H: RAM-Test ueber den ganzen Speicher (0066H wird mit ED 45 vorbelegt)
+01BD FDBD  21 66 00   	LD HL,0066H
+01C0 FDC0  36 ED      	LD (HL),EDH
+01C2 FDC2  2C         	INC L
+01C3 FDC3  36 45      	LD (HL),45H
+01C5 FDC5  11 C8 FD   	LD DE,FDC8H
+LFDC8:
+01C8 FDC8  23         	INC HL
+01C9 FDC9  4E         	LD C,(HL)
+01CA FDCA  3E 55      	LD A,55H
+LFDCC:
+01CC FDCC  77         	LD (HL),A
+01CD FDCD  BE         	CP (HL)
+01CE FDCE  20 12      	JR NZ,LFDE2
+01D0 FDD0  07         	RLCA
+01D1 FDD1  30 F9      	JR NC,LFDCC
+01D3 FDD3  71         	LD (HL),C
+01D4 FDD4  7A         	LD A,D
+01D5 FDD5  94         	SUB H
+01D6 FDD6  20 F0      	JR NZ,LFDC8
+01D8 FDD8  7B         	LD A,E
+01D9 FDD9  95         	SUB L
+01DA FDDA  20 EC      	JR NZ,LFDC8
+01DC FDDC  3E 06      	LD A,06H
+01DE FDDE  D3 A8      	OUT (A8H),A	; A8H=06H zurueck
+01E0 FDE0  18 1E      	JR LFE00
+LFDE2:
+01E2 FDE2  3E 06      	LD A,06H
+01E4 FDE4  D3 A8      	OUT (A8H),A
+01E6 FDE6  2A 8C FF   	LD HL,(FF8CH)
+01E9 FDE9  36 41      	LD (HL),41H
+LFDEB:
+01EB FDEB  3E 7F      	LD A,7FH
+01ED FDED  D3 61      	OUT (61H),A
+01EF FDEF  01 40 10   	LD BC,1040H
+LFDF2:
+01F2 FDF2  3E 07      	LD A,07H
+01F4 FDF4  D3 52      	OUT (52H),A
+01F6 FDF6  C5         	PUSH BC
+01F7 FDF7  CD 05 FF   	CALL WARTEN_C
+01FA FDFA  C1         	POP BC
+01FB FDFB  10 F5      	DJNZ LFDF2
+01FD FDFD  C3 AF FE   	JP LFEAF
+LFE00:
+0200 FE00  DB 52      	IN A,(52H)	; Port 52H lesen: 7FH -> Neustart ab L0211, sonst Zweig ueber Merker FFF9H Bit 2 (0403H bzw. FC29H)
+0202 FE02  FE 7F      	CP 7FH
+0204 FE04  28 0B      	JR Z,LFE11
+0206 FE06  3A F9 FF   	LD A,(FFF9H)
+0209 FE09  CB 57      	BIT 2,A
+020B FE0B  CA 03 04   	JP Z,SPRUNG_KALTSTART
+020E FE0E  C3 29 FC   	JP LFC29
+LFE11:
+0211 FE11  31 00 FC   	LD SP,FC00H
+0214 FE14  F3         	DI
+0215 FE15  CD E2 FE   	CALL BILD_LOESCHEN
+0218 FE18  CD D9 FE   	CALL PORT61_NULL
+021B FE1B  3A F8 FF   	LD A,(FFF8H)
+021E FE1E  11 00 10   	LD DE,1000H
+LFE21:
+0221 FE21  21 8E FF   	LD HL,FF8EH
+0224 FE24  ED 4B 98 FF	LD BC,(FF98H)
+0228 FE28  ED B0      	LDIR
+022A FE2A  3D         	DEC A
+022B FE2B  20 F4      	JR NZ,LFE21
+022D FE2D  21 00 10   	LD HL,1000H
+0230 FE30  ED 5B 9A FF	LD DE,(FF9AH)
+0234 FE34  0E 00      	LD C,00H
+LFE36:
+0236 FE36  3E 04      	LD A,04H
+LFE38:
+0238 FE38  08         	EX AF,AF'
+0239 FE39  3A 9C FF   	LD A,(FF9CH)
+023C FE3C  47         	LD B,A
+023D FE3D  08         	EX AF,AF'
+LFE3E:
+023E FE3E  36 48      	LD (HL),48H
+0240 FE40  23         	INC HL
+0241 FE41  10 FB      	DJNZ LFE3E
+0243 FE43  19         	ADD HL,DE
+0244 FE44  3D         	DEC A
+0245 FE45  20 F1      	JR NZ,LFE38
+0247 FE47  CB 49      	BIT 1,C
+0249 FE49  20 08      	JR NZ,LFE53
+024B FE4B  CB C9      	SET 1,C
+024D FE4D  21 00 10   	LD HL,1000H
+0250 FE50  19         	ADD HL,DE
+0251 FE51  18 E3      	JR LFE36
+LFE53:
+0253 FE53  21 00 10   	LD HL,1000H
+0256 FE56  DD 21 9D FF	LD IX,FF9DH
+LFE5A:
+025A FE5A  36 1F      	LD (HL),1FH
+025C FE5C  DD 7E 00   	LD A,(IX+0)
+025F FE5F  D6 FF      	SUB FFH
+0261 FE61  28 0D      	JR Z,LFE70
+0263 FE63  DD 56 00   	LD D,(IX+0)
+0266 FE66  DD 5E 01   	LD E,(IX+1)
+0269 FE69  19         	ADD HL,DE
+026A FE6A  DD 23      	INC IX
+026C FE6C  DD 23      	INC IX
+026E FE6E  18 EA      	JR LFE5A
+LFE70:
+0270 FE70  3E 0A      	LD A,0AH
+0272 FE72  ED 5B C8 FF	LD DE,(FFC8H)
+0276 FE76  2A CA FF   	LD HL,(FFCAH)
+0279 FE79  0E 20      	LD C,20H
+LFE7B:
+027B FE7B  06 12      	LD B,12H
+LFE7D:
+027D FE7D  71         	LD (HL),C
+027E FE7E  23         	INC HL
+027F FE7F  10 FC      	DJNZ LFE7D
+0281 FE81  3D         	DEC A
+0282 FE82  28 03      	JR Z,LFE87
+0284 FE84  19         	ADD HL,DE
+0285 FE85  18 F4      	JR LFE7B
+LFE87:
+0287 FE87  3E 06      	LD A,06H
+0289 FE89  ED 5B C6 FF	LD DE,(FFC6H)
+028D FE8D  2A C4 FF   	LD HL,(FFC4H)
+0290 FE90  0E 20      	LD C,20H
+LFE92:
+0292 FE92  06 10      	LD B,10H
+0294 FE94  36 08      	LD (HL),08H
+0296 FE96  23         	INC HL
+LFE97:
+0297 FE97  71         	LD (HL),C
+0298 FE98  0C         	INC C
+0299 FE99  23         	INC HL
+029A FE9A  10 FB      	DJNZ LFE97
+029C FE9C  3D         	DEC A
+029D FE9D  36 0A      	LD (HL),0AH
+029F FE9F  28 03      	JR Z,LFEA4
+02A1 FEA1  19         	ADD HL,DE
+02A2 FEA2  18 EE      	JR LFE92
+LFEA4:
+02A4 FEA4  21 5A FF   	LD HL,FF5AH
+02A7 FEA7  11 34 17   	LD DE,1734H
+02AA FEAA  01 1D 00   	LD BC,001DH
+02AD FEAD  ED B0      	LDIR
+LFEAF:
+02AF FEAF  DB 53      	IN A,(53H)	; Port 53H Bit 0 = Zeichen da; Port 52H = Zeichen; '#' (23H) = Zyklusbetrieb, CR (0DH) = Lader (0403H)
+02B1 FEB1  CB 47      	BIT 0,A
+02B3 FEB3  28 FA      	JR Z,LFEAF
+02B5 FEB5  DB 52      	IN A,(52H)
+02B7 FEB7  57         	LD D,A
+02B8 FEB8  21 F9 FF   	LD HL,FFF9H
+02BB FEBB  FE 23      	CP 23H
+02BD FEBD  20 08      	JR NZ,LFEC7
+02BF FEBF  CB D6      	SET 2,(HL)
+02C1 FEC1  CD DD FE   	CALL PORT61_FF
+02C4 FEC4  C3 21 FC   	JP SELBSTTEST
+LFEC7:
+02C7 FEC7  CB 96      	RES 2,(HL)
+02C9 FEC9  7A         	LD A,D
+02CA FECA  FE 0D      	CP 0DH
+02CC FECC  28 02      	JR Z,LFED0
+02CE FECE  18 DF      	JR LFEAF
+LFED0:
+02D0 FED0  CD E2 FE   	CALL BILD_LOESCHEN
+02D3 FED3  CD DD FE   	CALL PORT61_FF
+02D6 FED6  C3 03 04   	JP SPRUNG_KALTSTART
+
+;-- Lade 02D9H-033CH  Lauf FED9H-FF3CH  [code]  Unterprogramme (FED9H, FEDDH, FEE2H, FEF0H, FF05H, FF0DH, FF1FH, FF2FH)
+PORT61_NULL:
+02D9 FED9  AF         	XOR A
+02DA FEDA  D3 61      	OUT (61H),A
+02DC FEDC  C9         	RET
+PORT61_FF:
+02DD FEDD  3E FF      	LD A,FFH
+02DF FEDF  D3 61      	OUT (61H),A
+02E1 FEE1  C9         	RET
+BILD_LOESCHEN:
+02E2 FEE2  21 00 10   	LD HL,1000H
+02E5 FEE5  E5         	PUSH HL
+02E6 FEE6  D1         	POP DE
+02E7 FEE7  13         	INC DE
+02E8 FEE8  01 7F 07   	LD BC,077FH
+02EB FEEB  36 20      	LD (HL),20H
+02ED FEED  ED B0      	LDIR
+02EF FEEF  C9         	RET
+TESTNAME_AUSGEBEN:
+02F0 FEF0  ED 5B 8A FF	LD DE,(FF8AH)
+02F4 FEF4  01 03 00   	LD BC,0003H
+02F7 FEF7  ED B0      	LDIR
+02F9 FEF9  21 50 FF   	LD HL,FF50H
+02FC FEFC  ED 5B 88 FF	LD DE,(FF88H)
+0300 FF00  0E 0A      	LD C,0AH
+0302 FF02  ED B0      	LDIR
+0304 FF04  C9         	RET
+WARTEN_C:
+0305 FF05  06 00      	LD B,00H
+LFF07:
+0307 FF07  10 FE      	DJNZ LFF07
+0309 FF09  0D         	DEC C
+030A FF0A  20 FB      	JR NZ,LFF07
+030C FF0C  C9         	RET
+WARTEN_LANG:
+030D FF0D  D9         	EXX
+030E FF0E  21 E0 01   	LD HL,01E0H
+0311 FF11  01 00 00   	LD BC,0000H
+LFF14:
+0314 FF14  10 FE      	DJNZ LFF14
+0316 FF16  2B         	DEC HL
+0317 FF17  E5         	PUSH HL
+0318 FF18  ED 42      	SBC HL,BC
+031A FF1A  E1         	POP HL
+031B FF1B  20 F7      	JR NZ,LFF14
+031D FF1D  D9         	EXX
+031E FF1E  C9         	RET
+SIO_INIT:
+031F FF1F  21 77 FF   	LD HL,FF77H
+0322 FF22  06 02      	LD B,02H
+0324 FF24  0E 5A      	LD C,5AH
+0326 FF26  ED B3      	OTIR
+0328 FF28  06 09      	LD B,09H
+032A FF2A  0E 53      	LD C,53H
+032C FF2C  ED B3      	OTIR
+032E FF2E  C9         	RET
+TERMINAL_ESC:
+032F FF2F  3E 1B      	LD A,1BH
+0331 FF31  D3 52      	OUT (52H),A
+0333 FF33  0E 40      	LD C,40H
+0335 FF35  CD 05 FF   	CALL WARTEN_C
+0338 FF38  3E 63      	LD A,63H
+033A FF3A  D3 52      	OUT (52H),A
+033C FF3C  C9         	RET
+
+;-- Lade 033DH-0340H  Lauf FF3DH-FF40H  [code]  Interrupt-Dienst (Vektor in FFF6H): INC A / EI / RETI
+ISR:
+033D FF3D  3C         	INC A
+033E FF3E  FB         	EI
+033F FF3F  ED 4D      	RETI
+
+;-- Lade 0341H-034FH  Lauf FF41H-FF4FH  [text]  Pruefnamen zu je 3 Zeichen: ROM RAM SIO KEY CTC (je einzeln per HL = FF41H, FF44H, ...)
+0341 FF41  52 4F 4D   	DB	"ROM"
+0344 FF44  52 41 4D   	DB	"RAM"
+0347 FF47  53 49 4F   	DB	"SIO"
+034A FF4A  4B 45 59   	DB	"KEY"
+034D FF4D  43 54 43   	DB	"CTC"
+
+;-- Lade 0350H-0359H  Lauf FF50H-FF59H  [text]  Text 'DIAGNOSTIC' (10 Byte; FF50H)
+0350 FF50  44 49 41 47 4E 4F 53 54 49 43	DB	"DIAGNOSTIC"
+
+;-- Lade 035AH-0376H  Lauf FF5AH-FF76H  [text]  Text ' ENTER: LADER  /  "#": ZYKL. ' (29 Byte; FF5AH -> Bild 1734H)
+035A FF5A  20 45 4E 54 45 52 3A 20 4C 41 44 45 52 20 20 2F	DB	" ENTER: LADER  /"
+036A FF6A  20 20 22 23 22 3A 20 5A 59 4B 4C 2E 20	DB	"  ",22H,"#",22H,": ZYKL. "
+
+;-- Lade 0377H-0378H  Lauf FF77H-FF78H  [data]  SIO-Folge 1: 07 01 -> Port 5AH (2 Byte, OTIR in FF1FH)
+0377 FF77  07 01      	DB	07H,01H
+
+;-- Lade 0379H-0381H  Lauf FF79H-FF81H  [data]  SIO-Folge 2: 18 04 44 03 C1 05 EA 01 00 -> Port 53H (9 Byte; WR0=18H Reset, WR4=44H, WR3=C1H, WR5=EAH, WR1=00H)
+0379 FF79  18 04 44 03 C1 05 EA 01	DB	18H,04H,44H,03H,C1H,05H,EAH,01H
+0381 FF81  00         	DB	00H
+
+;-- Lade 0382H-0387H  Lauf FF82H-FF87H  [text]  Zeichenfolge ESC [ 2 ; 1 y (6 Byte; geht als Bildschirmsteuerung an Port 52H [?])
+0382 FF82  1B 5B 32 3B 31 79	DB	1BH,"[2;1y"
+
+;-- Lade 0388H-038DH  Lauf FF88H-FF8DH  [words]  Bildadressen 1740H (FF88H), 1770H (FF8AH), 1776H (FF8CH = Meldungszelle fuer den Pruefstatus)
+0388 FF88  40 17      	DW	1740H
+038A FF8A  70 17      	DW	1770H
+038C FF8C  76 17      	DW	1776H
+
+;-- Lade 038EH-0397H  Lauf FF8EH-FF97H  [text]  Muster 'H', 8 Blanks, 'H' (10 Byte, FF8EH; wird FFF8H x (FF98H) Byte lang ins Bild kopiert)
+038E FF8E  48 20 20 20 20 20 20 20 20 48	DB	"H        H"
+
+;-- Lade 0398H-0399H  Lauf FF98H-FF99H  [words]  FF98H: Laenge des Musters = 000AH
+0398 FF98  0A 00      	DW	000AH
+
+;-- Lade 039AH-039BH  Lauf FF9AH-FF9BH  [words]  FF9AH: 0190H (Zeilenabstand des Rahmens [?])
+039A FF9A  90 01      	DW	0190H
+
+;-- Lade 039CH-039CH  Lauf FF9CH-FF9CH  [data]  FF9CH: 50H = 80 Spalten
+039C FF9C  50         	DB	50H
+
+;-- Lade 039DH-03C3H  Lauf FF9DH-FFC3H  [data]  Rahmentabelle (FF9DH): Paare (hoch, tief) als 16-Bit-Schritte, Ende bei erstem Byte FFH (03C3H)
+039D FF9D  00 27 00 01 00 27 01 54	DB	00H,27H,00H,01H,00H,27H,01H,54H
+03A5 FFA5  00 29 00 28 00 27 01 55	DB	00H,29H,00H,28H,00H,27H,01H,55H
+03AD FFAD  00 4F 00 01 00 4F 01 55	DB	00H,4FH,00H,01H,00H,4FH,01H,55H
+03B5 FFB5  00 27 00 28 00 29 01 54	DB	00H,27H,00H,28H,00H,29H,01H,54H
+03BD FFBD  00 27 00 01 00 27 FF	DB	00H,27H,00H,01H,00H,27H,FFH
+
+;-- Lade 03C4H-03CBH  Lauf FFC4H-FFCBH  [words]  Bildadressen des Rahmens: FFC4H=12EFH, FFC6H=003FH, FFC8H=003EH, FFCAH=124FH
+03C4 FFC4  EF 12      	DW	12EFH
+03C6 FFC6  3F 00      	DW	003FH
+03C8 FFC8  3E 00      	DW	003EH
+03CA FFCA  4F 12      	DW	124FH
+
+;-- Lade 03CCH-03D3H  Lauf FFCCH-FFD3H  [data]  SIO-Initialisierung (FFCCH, je 8 Byte an 45H, 47H und 55H per OTIR): 00 18 03 C1 04 45 05 68
+03CC FFCC  00 18 03 C1 04 45 05 68	DB	00H,18H,03H,C1H,04H,45H,05H,68H
+
+;-- Lade 03D4H-03F2H  Lauf FFD4H-FFF2H  [auto]  ungenutzt (00H)
+03D4 FFD4  --          	DS	31,00H   ; Lade 03D4H-03F2H
+
+;-- Lade 03F3H-03F5H  Lauf 03F3H-03F5H  [code]  Sprungvektor JP 0400H (Ziel von JP 03F3H aus 177: zurueck in den Lader 176)
+VEKTOR_0400:
+03F3 03F3  C3 00 04   	JP SPRUNG_LADER
+
+;-- Lade 03F6H-03F7H  Lauf FFF6H-FFF7H  [words]  Interruptvektor FFF6H -> FF3DH (der Dienst bei 033DH)
+03F6 FFF6  3D FF      	DW	FF3DH
+
+;-- Lade 03F8H-03F8H  Lauf FFF8H-FFF8H  [data]  FFF8H: C0H = 192 (Wiederholungszahl des Bildmusters: 192 x 10 = 1920 = 80 x 24 Zeichen)
+03F8 FFF8  C0         	DB	C0H
+
+;-- Lade 03F9H-03F9H  Lauf FFF9H-FFF9H  [data]  FFF9H: Merker (Bit 0 = Fehler gemeldet, Bit 2 = '#'-Zyklusbetrieb)
+03F9 FFF9  00         	DB	00H
+
+;-- Lade 03FAH-03FCH  Lauf 03FAH-03FCH  [code]  Sprungvektor JP 0011H (Wiederholung des Selbsttests ab Kopierer)
+VEKTOR_0011:
+03FA 03FA  C3 11 00   	JP KOPIERER
+
+;-- Lade 03FDH-03FFH  Lauf 03FDH-03FFH  [sum]  24-Bit-Pruefsumme der Bytes 0000H-03FCH
+03FD 03FD  01 AE 2B   	DB	01H,AEH,2BH   ; 24 Bit, hoeherwertiges Byte zuerst
+
+; ============================================================================
+; Baustein 176  (k8915g2_zre_0400_176.bin)   Lade 0400H-07FFH
+; ============================================================================
+
+;-- Lade 0400H-0402H  Lauf 0400H-0402H  [code]  Sprungtabelle 1: Lader/Warmstart -> 041AH (Einsprung von 175 mit JP 0400H)
+SPRUNG_LADER:
+0400 0400  C3 1A 04   	JP HAEPPCHEN_KOPIEREN
+
+;-- Lade 0403H-0405H  Lauf 0403H-0405H  [code]  Sprungtabelle 2: Kaltstart -> 042BH (Ziel von JP 0403H aus 175)
+SPRUNG_KALTSTART:
+0403 0403  C3 2B 04   	JP KALTSTART
+
+;-- Lade 0406H-0419H  Lauf 0406H-0419H  [code]  nicht angesprungen: Bildspeicher 1000H-177FH Bit 7 loeschen, dann A=1, nach 0484H [?]
+0406 0406  F3         	DI
+0407 0407  21 00 10   	LD HL,1000H
+040A 040A  01 80 07   	LD BC,0780H
+L040D:
+040D 040D  CB BE      	RES 7,(HL)
+040F 040F  23         	INC HL
+0410 0410  0B         	DEC BC
+0411 0411  78         	LD A,B
+0412 0412  B1         	OR C
+0413 0413  20 F8      	JR NZ,L040D
+0415 0415  3E 01      	LD A,01H
+0417 0417  C3 84 04   	JP LW_INIT
+
+;-- Lade 041AH-042AH  Lauf 041AH-042AH  [code]  Haeppchen 098FH.. (23 Byte) nach FFE0H kopieren und dort anspringen
+HAEPPCHEN_KOPIEREN:
+041A 041A  21 8F 09   	LD HL,098FH	; Quelle 098FH (177), Ziel FFE0H, 23 Byte
+041D 041D  11 E0 FF   	LD DE,FFE0H
+0420 0420  01 17 00   	LD BC,0017H
+0423 0423  ED B0      	LDIR
+0425 0425  C3 E0 FF   	JP HAEPPCHEN
+L0428:
+0428 0428  C2 FA 03   	JP NZ,VEKTOR_0011
+
+;-- Lade 042BH-0440H  Lauf 042BH-0440H  [code]  Kaltstart: SP=F7E0H, Bild loeschen (20H), Text ausgeben (Aufruf 0907H, Text folgt inline)
+KALTSTART:
+042B 042B  F3         	DI
+042C 042C  31 E0 F7   	LD SP,F7E0H
+042F 042F  21 00 10   	LD HL,1000H
+0432 0432  36 20      	LD (HL),20H
+0434 0434  54         	LD D,H
+0435 0435  5D         	LD E,L
+0436 0436  13         	INC DE
+0437 0437  01 7F 07   	LD BC,077FH
+043A 043A  ED B0      	LDIR
+043C 043C  3E B0      	LD A,B0H
+043E 043E  CD 07 09   	CALL TEXT_INLINE
+
+;-- Lade 0441H-0461H  Lauf 0441H-0461H  [text]  Inline-Text '* Coldstart *  Disk on A: ready ?' (Textende: Bit 7 im letzten Zeichen)
+0441 0441  2A 20 43 6F 6C 64 73 74 61 72 74 20 2A 20 20 44	DB	"* Coldstart *  D"
+0451 0451  69 73 6B 20 6F 6E 20 41 3A 20 72 65 61 64 79 20	DB	"isk on A: ready "
+0461 0461  BF         	DB	BFH
+
+;-- Lade 0462H-04E6H  Lauf 0462H-04E6H  [code]  Laufwerk A: ansprechen (0484H), Leseversuch; Unterprogramme 0467H/047BH/0484H
+0462 0462  AF         	XOR A
+0463 0463  CD 84 04   	CALL LW_INIT
+0466 0466  E9         	JP (HL)
+LW_STEUERIMPULS:
+0467 0467  D3 10      	OUT (10H),A
+0469 0469  CB BF      	RES 7,A
+046B 046B  D3 10      	OUT (10H),A
+046D 046D  CB FF      	SET 7,A
+046F 046F  D3 10      	OUT (10H),A
+0471 0471  3E 0D      	LD A,0DH
+L0473:
+0473 0473  06 BC      	LD B,BCH
+L0475:
+0475 0475  10 FE      	DJNZ L0475
+0477 0477  3D         	DEC A
+0478 0478  20 F9      	JR NZ,L0473
+047A 047A  C9         	RET
+LW_AUS:
+047B 047B  3E FB      	LD A,FBH
+047D 047D  D3 10      	OUT (10H),A
+047F 047F  3E FF      	LD A,FFH
+0481 0481  D3 18      	OUT (18H),A
+0483 0483  C9         	RET
+LW_INIT:
+0484 0484  32 10 F7   	LD (F710H),A
+0487 0487  AF         	XOR A
+0488 0488  32 11 F7   	LD (F711H),A
+048B 048B  32 12 F7   	LD (F712H),A
+L048E:
+048E 048E  3E 04      	LD A,04H
+0490 0490  32 13 F7   	LD (F713H),A
+0493 0493  32 15 F7   	LD (F715H),A
+L0496:
+0496 0496  3E E0      	LD A,E0H
+0498 0498  D3 61      	OUT (61H),A	; Port 61H = E0H; Port 18H = FFH (K5122-Auswahl, hohes Halbbyte /SE)
+049A 049A  3E FF      	LD A,FFH
+049C 049C  D3 18      	OUT (18H),A
+049E 049E  D3 13      	OUT (13H),A
+04A0 04A0  3E F7      	LD A,F7H
+04A2 04A2  D3 13      	OUT (13H),A
+04A4 04A4  D9         	EXX
+04A5 04A5  01 00 00   	LD BC,0000H
+04A8 04A8  D9         	EXX
+04A9 04A9  DB 12      	IN A,(12H)
+04AB 04AB  CB 4F      	BIT 1,A
+04AD 04AD  20 11      	JR NZ,L04C0
+04AF 04AF  3E CF      	LD A,CFH
+04B1 04B1  D3 13      	OUT (13H),A
+04B3 04B3  3E F3      	LD A,F3H
+04B5 04B5  D3 13      	OUT (13H),A
+04B7 04B7  3E 04      	LD A,04H
+04B9 04B9  D3 12      	OUT (12H),A
+04BB 04BB  D9         	EXX
+04BC 04BC  01 04 02   	LD BC,0204H
+04BF 04BF  D9         	EXX
+L04C0:
+04C0 04C0  3E 7F      	LD A,7FH
+04C2 04C2  D3 17      	OUT (17H),A
+04C4 04C4  3E 3F      	LD A,3FH
+04C6 04C6  D3 15      	OUT (15H),A
+04C8 04C8  D3 11      	OUT (11H),A
+04CA 04CA  3E FB      	LD A,FBH
+04CC 04CC  D3 10      	OUT (10H),A
+04CE 04CE  3E EE      	LD A,EEH
+04D0 04D0  D3 18      	OUT (18H),A
+04D2 04D2  06 50      	LD B,50H
+L04D4:
+04D4 04D4  C5         	PUSH BC
+04D5 04D5  3E DF      	LD A,DFH
+04D7 04D7  CD 67 04   	CALL LW_STEUERIMPULS
+04DA 04DA  C1         	POP BC
+04DB 04DB  DB 12      	IN A,(12H)
+04DD 04DD  07         	RLCA
+04DE 04DE  30 25      	JR NC,L0505
+04E0 04E0  10 F2      	DJNZ L04D4
+L04E2:
+04E2 04E2  CD 7B 04   	CALL LW_AUS
+04E5 04E5  3E 60      	LD A,60H
+
+;-- Lade 04E7H-04E9H  Lauf 04E7H-04E9H  [code]  Text ausgeben (CALL 0907H)
+04E7 04E7  CD 07 09   	CALL TEXT_INLINE
+
+;-- Lade 04EAH-0502H  Lauf 04EAH-0502H  [text]  Inline-Text 'Drive A: not ready, check'
+04EA 04EA  44 72 69 76 65 20 41 3A 20 6E 6F 74 20 72 65 61	DB	"Drive A: not rea"
+04FA 04FA  64 79 2C 20 63 68 65 63 EB	DB	"dy, chec",EBH
+
+;-- Lade 0503H-0570H  Lauf 0503H-0570H  [code]  Spur-/Sektorsuche, Lesen
+0503 0503  18 89      	JR L048E
+L0505:
+0505 0505  3E 9F      	LD A,9FH
+0507 0507  CD 67 04   	CALL LW_STEUERIMPULS
+050A 050A  3E DF      	LD A,DFH
+050C 050C  CD 67 04   	CALL LW_STEUERIMPULS
+050F 050F  AF         	XOR A
+0510 0510  32 17 F7   	LD (F717H),A
+0513 0513  32 88 F7   	LD (F788H),A
+0516 0516  32 8B F7   	LD (F78BH),A
+0519 0519  3C         	INC A
+051A 051A  32 18 F7   	LD (F718H),A
+051D 051D  32 16 F7   	LD (F716H),A
+0520 0520  21 85 B5   	LD HL,B585H
+0523 0523  22 89 F7   	LD (F789H),HL
+0526 0526  21 1C F7   	LD HL,F71CH
+0529 0529  22 84 F7   	LD (F784H),HL
+052C 052C  3E BB      	LD A,BBH
+052E 052E  D3 10      	OUT (10H),A
+0530 0530  3E 28      	LD A,28H
+0532 0532  CD 73 04   	CALL L0473
+0535 0535  D9         	EXX
+0536 0536  79         	LD A,C
+0537 0537  D9         	EXX
+0538 0538  D3 12      	OUT (12H),A
+053A 053A  06 C8      	LD B,C8H
+L053C:
+053C 053C  DB 12      	IN A,(12H)
+053E 053E  1F         	RRA
+053F 053F  30 07      	JR NC,L0548
+0541 0541  0D         	DEC C
+0542 0542  20 F8      	JR NZ,L053C
+0544 0544  10 F6      	DJNZ L053C
+0546 0546  18 9A      	JR L04E2
+L0548:
+0548 0548  21 14 F7   	LD HL,F714H
+054B 054B  36 00      	LD (HL),00H
+L054D:
+054D 054D  DB 16      	IN A,(16H)
+054F 054F  AF         	XOR A
+0550 0550  D3 14      	OUT (14H),A
+0552 0552  0E 10      	LD C,10H
+0554 0554  ED 5B 89 F7	LD DE,(F789H)
+0558 0558  ED 51      	OUT (C),D
+055A 055A  ED 59      	OUT (C),E
+055C 055C  06 00      	LD B,00H
+L055E:
+055E 055E  DB 12      	IN A,(12H)
+0560 0560  E6 02      	AND 02H
+0562 0562  D9         	EXX
+0563 0563  A8         	XOR B
+0564 0564  D9         	EXX
+0565 0565  28 2C      	JR Z,L0593
+0567 0567  0D         	DEC C
+0568 0568  20 F4      	JR NZ,L055E
+056A 056A  10 F2      	DJNZ L055E
+L056C:
+056C 056C  CD 7B 04   	CALL LW_AUS
+056F 056F  3E 60      	LD A,60H
+
+;-- Lade 0571H-0573H  Lauf 0571H-0573H  [code]  Text ausgeben (CALL 0907H)
+0571 0571  CD 07 09   	CALL TEXT_INLINE
+
+;-- Lade 0574H-058AH  Lauf 0574H-058AH  [text]  Inline-Text 'Disk-error, change disk'
+0574 0574  44 69 73 6B 2D 65 72 72 6F 72 2C 20 63 68 61 6E	DB	"Disk-error, chan"
+0584 0584  67 65 20 64 69 73 EB	DB	"ge dis",EBH
+
+;-- Lade 058BH-06C7H  Lauf 058BH-06C7H  [code]  Lesen, Sektorkopf-/Datenfeldauswertung
+L058B:
+058B 058B  3E 01      	LD A,01H
+058D 058D  32 11 F7   	LD (F711H),A
+0590 0590  C3 8E 04   	JP L048E
+L0593:
+0593 0593  DB 16      	IN A,(16H)
+0595 0595  FE A1      	CP A1H
+0597 0597  28 FA      	JR Z,L0593
+0599 0599  FE FE      	CP FEH
+059B 059B  28 07      	JR Z,L05A4
+059D 059D  FE FB      	CP FBH
+059F 059F  28 AC      	JR Z,L054D
+05A1 05A1  C3 C0 08   	JP L08C0
+L05A4:
+05A4 05A4  DB 16      	IN A,(16H)
+05A6 05A6  21 17 F7   	LD HL,F717H
+05A9 05A9  BE         	CP (HL)
+05AA 05AA  C2 C0 08   	JP NZ,L08C0
+05AD 05AD  DB 16      	IN A,(16H)
+05AF 05AF  21 88 F7   	LD HL,F788H
+05B2 05B2  BE         	CP (HL)
+05B3 05B3  C2 C0 08   	JP NZ,L08C0
+05B6 05B6  DB 16      	IN A,(16H)
+05B8 05B8  21 18 F7   	LD HL,F718H
+05BB 05BB  0E 16      	LD C,16H
+05BD 05BD  BE         	CP (HL)
+05BE 05BE  C2 C0 08   	JP NZ,L08C0
+05C1 05C1  DB 16      	IN A,(16H)
+05C3 05C3  A7         	AND A
+05C4 05C4  20 02      	JR NZ,L05C8
+05C6 05C6  06 01      	LD B,01H
+L05C8:
+05C8 05C8  ED 60      	IN H,(C)
+05CA 05CA  3D         	DEC A
+05CB 05CB  20 02      	JR NZ,L05CF
+05CD 05CD  06 02      	LD B,02H
+L05CF:
+05CF 05CF  ED 60      	IN H,(C)
+05D1 05D1  3D         	DEC A
+05D2 05D2  20 02      	JR NZ,L05D6
+05D4 05D4  06 04      	LD B,04H
+L05D6:
+05D6 05D6  ED 60      	IN H,(C)
+05D8 05D8  3D         	DEC A
+05D9 05D9  20 02      	JR NZ,L05DD
+05DB 05DB  06 08      	LD B,08H
+L05DD:
+05DD 05DD  ED 60      	IN H,(C)
+05DF 05DF  21 19 F7   	LD HL,F719H
+05E2 05E2  70         	LD (HL),B
+05E3 05E3  01 10 0E   	LD BC,0E10H
+L05E6:
+05E6 05E6  DB 16      	IN A,(16H)
+05E8 05E8  00         	NOP
+05E9 05E9  00         	NOP
+05EA 05EA  00         	NOP
+05EB 05EB  00         	NOP
+05EC 05EC  10 F8      	DJNZ L05E6
+05EE 05EE  DB 16      	IN A,(16H)
+05F0 05F0  3A 17 F7   	LD A,(F717H)
+05F3 05F3  A7         	AND A
+05F4 05F4  DB 16      	IN A,(16H)
+05F6 05F6  C2 E9 06   	JP NZ,L06E9
+05F9 05F9  3A 8B F7   	LD A,(F78BH)
+05FC 05FC  A7         	AND A
+05FD 05FD  DB 16      	IN A,(16H)
+05FF 05FF  C2 F0 06   	JP NZ,L06F0
+0602 0602  3A 16 F7   	LD A,(F716H)
+0605 0605  A7         	AND A
+0606 0606  DB 16      	IN A,(16H)
+0608 0608  21 00 F7   	LD HL,F700H
+060B 060B  20 6A      	JR NZ,L0677
+060D 060D  2A 00 F7   	LD HL,(F700H)
+0610 0610  DB 16      	IN A,(16H)
+0612 0612  ED 51      	OUT (C),D
+0614 0614  ED 59      	OUT (C),E
+0616 0616  06 00      	LD B,00H
+L0618:
+0618 0618  DB 12      	IN A,(12H)
+061A 061A  E6 02      	AND 02H
+061C 061C  D9         	EXX
+061D 061D  A8         	XOR B
+061E 061E  D9         	EXX
+061F 061F  28 08      	JR Z,L0629
+0621 0621  0D         	DEC C
+0622 0622  20 F4      	JR NZ,L0618
+0624 0624  10 F2      	DJNZ L0618
+0626 0626  C3 C0 08   	JP L08C0
+L0629:
+0629 0629  0E 16      	LD C,16H
+L062B:
+062B 062B  DB 16      	IN A,(16H)
+062D 062D  FE A1      	CP A1H
+062F 062F  C2 36 06   	JP NZ,L0636
+0632 0632  00         	NOP
+0633 0633  00         	NOP
+0634 0634  18 F5      	JR L062B
+L0636:
+0636 0636  FE FB      	CP FBH
+0638 0638  C2 C0 08   	JP NZ,L08C0
+063B 063B  3A 19 F7   	LD A,(F719H)
+063E 063E  57         	LD D,A
+063F 063F  06 0F      	LD B,0FH
+L0641:
+0641 0641  DB 16      	IN A,(16H)
+0643 0643  00         	NOP
+0644 0644  00         	NOP
+0645 0645  00         	NOP
+0646 0646  00         	NOP
+0647 0647  00         	NOP
+0648 0648  00         	NOP
+0649 0649  10 F6      	DJNZ L0641
+064B 064B  DB 16      	IN A,(16H)
+064D 064D  00         	NOP
+064E 064E  00         	NOP
+064F 064F  00         	NOP
+0650 0650  06 6E      	LD B,6EH
+0652 0652  DB 16      	IN A,(16H)
+0654 0654  18 04      	JR L065A
+L0656:
+0656 0656  DB 16      	IN A,(16H)
+0658 0658  06 7E      	LD B,7EH
+L065A:
+065A 065A  77         	LD (HL),A
+065B 065B  23         	INC HL
+L065C:
+065C 065C  ED A2      	INI
+065E 065E  00         	NOP
+065F 065F  00         	NOP
+0660 0660  00         	NOP
+0661 0661  00         	NOP
+0662 0662  00         	NOP
+0663 0663  00         	NOP
+0664 0664  20 F6      	JR NZ,L065C
+0666 0666  ED A2      	INI
+0668 0668  15         	DEC D
+0669 0669  C2 56 06   	JP NZ,L0656
+066C 066C  DB 16      	IN A,(16H)
+066E 066E  22 00 F7   	LD (F700H),HL
+0671 0671  22 86 F7   	LD (F786H),HL
+0674 0674  C3 55 07   	JP L0755
+L0677:
+0677 0677  DB 16      	IN A,(16H)
+0679 0679  ED 51      	OUT (C),D
+067B 067B  ED 59      	OUT (C),E
+067D 067D  06 00      	LD B,00H
+L067F:
+067F 067F  DB 12      	IN A,(12H)
+0681 0681  E6 02      	AND 02H
+0683 0683  D9         	EXX
+0684 0684  A8         	XOR B
+0685 0685  D9         	EXX
+0686 0686  28 08      	JR Z,L0690
+0688 0688  0D         	DEC C
+0689 0689  20 F4      	JR NZ,L067F
+068B 068B  10 F2      	DJNZ L067F
+068D 068D  C3 C0 08   	JP L08C0
+L0690:
+0690 0690  0E 16      	LD C,16H
+L0692:
+0692 0692  DB 16      	IN A,(16H)
+0694 0694  FE A1      	CP A1H
+0696 0696  C2 9D 06   	JP NZ,L069D
+0699 0699  00         	NOP
+069A 069A  00         	NOP
+069B 069B  18 F5      	JR L0692
+L069D:
+069D 069D  FE FB      	CP FBH
+069F 069F  C2 C0 08   	JP NZ,L08C0
+06A2 06A2  06 10      	LD B,10H
+L06A4:
+06A4 06A4  ED A2      	INI
+06A6 06A6  00         	NOP
+06A7 06A7  00         	NOP
+06A8 06A8  00         	NOP
+06A9 06A9  00         	NOP
+06AA 06AA  00         	NOP
+06AB 06AB  00         	NOP
+06AC 06AC  20 F6      	JR NZ,L06A4
+06AE 06AE  AF         	XOR A
+06AF 06AF  32 16 F7   	LD (F716H),A
+06B2 06B2  21 00 F7   	LD HL,F700H
+06B5 06B5  01 01 10   	LD BC,1001H
+06B8 06B8  11 FF FF   	LD DE,FFFFH
+06BB 06BB  CD E0 08   	CALL HASH_FOLGE	; DE=FFFFH, B=10H Byte, C=1: Pruefwert ueber den Sektorkopf (Unterprogramm 08E0H) [?]
+06BE 06BE  7A         	LD A,D
+06BF 06BF  B3         	OR E
+06C0 06C0  CA 5D 07   	JP Z,L075D
+06C3 06C3  CD 7B 04   	CALL LW_AUS
+06C6 06C6  3E 60      	LD A,60H
+
+;-- Lade 06C8H-06CAH  Lauf 06C8H-06CAH  [code]  Text ausgeben (CALL 0907H)
+06C8 06C8  CD 07 09   	CALL TEXT_INLINE
+
+;-- Lade 06CBH-06E5H  Lauf 06CBH-06E5H  [text]  Inline-Text 'No system disk, change disk'
+06CB 06CB  4E 6F 20 73 79 73 74 65 6D 20 64 69 73 6B 2C 20	DB	"No system disk, "
+06DB 06DB  63 68 61 6E 67 65 20 64 69 73 EB	DB	"change dis",EBH
+
+;-- Lade 06E6H-07CBH  Lauf 06E6H-07CBH  [code]  Sektorfolge einlesen, Pruefung
+06E6 06E6  C3 8B 05   	JP L058B
+L06E9:
+06E9 06E9  DB 16      	IN A,(16H)
+06EB 06EB  00         	NOP
+06EC 06EC  00         	NOP
+06ED 06ED  00         	NOP
+06EE 06EE  00         	NOP
+06EF 06EF  00         	NOP
+L06F0:
+06F0 06F0  DB 16      	IN A,(16H)
+06F2 06F2  2A 00 F7   	LD HL,(F700H)
+06F5 06F5  00         	NOP
+06F6 06F6  00         	NOP
+06F7 06F7  00         	NOP
+06F8 06F8  DB 16      	IN A,(16H)
+06FA 06FA  ED 51      	OUT (C),D
+06FC 06FC  ED 59      	OUT (C),E
+06FE 06FE  ED 5B 84 F7	LD DE,(F784H)
+0702 0702  06 00      	LD B,00H
+L0704:
+0704 0704  DB 12      	IN A,(12H)
+0706 0706  E6 02      	AND 02H
+0708 0708  D9         	EXX
+0709 0709  A8         	XOR B
+070A 070A  D9         	EXX
+070B 070B  28 08      	JR Z,L0715
+070D 070D  0D         	DEC C
+070E 070E  20 F4      	JR NZ,L0704
+0710 0710  10 F2      	DJNZ L0704
+0712 0712  C3 C0 08   	JP L08C0
+L0715:
+0715 0715  0E 16      	LD C,16H
+L0717:
+0717 0717  DB 16      	IN A,(16H)
+0719 0719  FE A1      	CP A1H
+071B 071B  C2 22 07   	JP NZ,L0722
+071E 071E  00         	NOP
+071F 071F  00         	NOP
+0720 0720  18 F5      	JR L0717
+L0722:
+0722 0722  FE FB      	CP FBH
+0724 0724  C2 C0 08   	JP NZ,L08C0
+0727 0727  D5         	PUSH DE
+0728 0728  3A 19 F7   	LD A,(F719H)
+072B 072B  57         	LD D,A
+L072C:
+072C 072C  DB 16      	IN A,(16H)
+072E 072E  77         	LD (HL),A
+072F 072F  23         	INC HL
+0730 0730  06 7E      	LD B,7EH
+L0732:
+0732 0732  ED A2      	INI
+0734 0734  00         	NOP
+0735 0735  00         	NOP
+0736 0736  00         	NOP
+0737 0737  00         	NOP
+0738 0738  00         	NOP
+0739 0739  00         	NOP
+073A 073A  20 F6      	JR NZ,L0732
+073C 073C  ED A2      	INI
+073E 073E  15         	DEC D
+073F 073F  C2 2C 07   	JP NZ,L072C
+0742 0742  E3         	EX (SP),HL
+0743 0743  37         	SCF
+L0744:
+0744 0744  DB 16      	IN A,(16H)
+0746 0746  77         	LD (HL),A
+0747 0747  00         	NOP
+0748 0748  23         	INC HL
+0749 0749  3F         	CCF
+074A 074A  30 F8      	JR NC,L0744
+074C 074C  DB 16      	IN A,(16H)
+074E 074E  22 84 F7   	LD (F784H),HL
+0751 0751  E1         	POP HL
+0752 0752  22 00 F7   	LD (F700H),HL
+L0755:
+0755 0755  21 18 F7   	LD HL,F718H
+0758 0758  34         	INC (HL)
+0759 0759  21 8B F7   	LD HL,F78BH
+075C 075C  34         	INC (HL)
+L075D:
+075D 075D  21 04 F7   	LD HL,F704H
+0760 0760  3A 10 F7   	LD A,(F710H)
+0763 0763  4F         	LD C,A
+0764 0764  87         	ADD A,A
+0765 0765  81         	ADD A,C
+0766 0766  4F         	LD C,A
+0767 0767  3A 17 F7   	LD A,(F717H)
+076A 076A  81         	ADD A,C
+076B 076B  4F         	LD C,A
+076C 076C  06 00      	LD B,00H
+076E 076E  09         	ADD HL,BC
+076F 076F  22 1A F7   	LD (F71AH),HL
+0772 0772  3A 8B F7   	LD A,(F78BH)
+0775 0775  BE         	CP (HL)
+0776 0776  D2 9E 07   	JP NC,L079E
+0779 0779  21 0B F7   	LD HL,F70BH
+077C 077C  3A 17 F7   	LD A,(F717H)
+077F 077F  4F         	LD C,A
+0780 0780  09         	ADD HL,BC
+0781 0781  7E         	LD A,(HL)
+0782 0782  A7         	AND A
+0783 0783  CA 48 05   	JP Z,L0548
+0786 0786  21 8B F7   	LD HL,F78BH
+0789 0789  BE         	CP (HL)
+078A 078A  C2 48 05   	JP NZ,L0548
+078D 078D  3E 01      	LD A,01H
+078F 078F  32 18 F7   	LD (F718H),A
+0792 0792  32 88 F7   	LD (F788H),A
+0795 0795  21 81 B1   	LD HL,B181H
+0798 0798  22 89 F7   	LD (F789H),HL
+079B 079B  C3 48 05   	JP L0548
+L079E:
+079E 079E  46         	LD B,(HL)
+079F 079F  3A 17 F7   	LD A,(F717H)
+07A2 07A2  A7         	AND A
+07A3 07A3  20 01      	JR NZ,L07A6
+07A5 07A5  05         	DEC B
+L07A6:
+07A6 07A6  21 1C F7   	LD HL,F71CH
+07A9 07A9  22 84 F7   	LD (F784H),HL
+L07AC:
+07AC 07AC  2A 86 F7   	LD HL,(F786H)
+07AF 07AF  C5         	PUSH BC
+07B0 07B0  CD D7 08   	CALL HASH_BLOCK	; CALL 08D7H: Pruefwert des gelesenen Datenfeldes; Vergleich D/E mit den 2 Byte bei (F784H) [?]
+07B3 07B3  C1         	POP BC
+07B4 07B4  22 86 F7   	LD (F786H),HL
+07B7 07B7  2A 84 F7   	LD HL,(F784H)
+07BA 07BA  7E         	LD A,(HL)
+07BB 07BB  BA         	CP D
+07BC 07BC  20 03      	JR NZ,L07C1
+07BE 07BE  23         	INC HL
+07BF 07BF  7E         	LD A,(HL)
+07C0 07C0  BB         	CP E
+L07C1:
+07C1 07C1  C2 CE 08   	JP NZ,L08CE
+07C4 07C4  23         	INC HL
+07C5 07C5  22 84 F7   	LD (F784H),HL
+07C8 07C8  10 E2      	DJNZ L07AC
+07CA 07CA  18 34      	JR L0800
+
+;-- Lade 07CCH-07FCH  Lauf 07CCH-07FCH  [auto]  ungenutzt (00H)
+07CC 07CC  --          	DS	49,00H   ; Lade 07CCH-07FCH
+
+;-- Lade 07FDH-07FFH  Lauf 07FDH-07FFH  [sum]  24-Bit-Pruefsumme der Bytes 0400H-07FCH
+07FD 07FD  01 8E F9   	DB	01H,8EH,F9H   ; 24 Bit, hoeherwertiges Byte zuerst
+
+; ============================================================================
+; Baustein 177  (k8915g2_zre_0800_177.bin)   Lade 0800H-0BFFH
+; ============================================================================
+
+;-- Lade 0800H-0836H  Lauf 0800H-0836H  [code]  Ende des Ladevorgangs: Kopf-/Sektorfolge-Auswertung, dann Meldung oder Abschluss
+L0800:
+0800 0800  21 1C F7   	LD HL,F71CH
+0803 0803  22 84 F7   	LD (F784H),HL
+0806 0806  2A 1A F7   	LD HL,(F71AH)
+0809 0809  3A 17 F7   	LD A,(F717H)
+080C 080C  EE 03      	XOR 03H
+080E 080E  3D         	DEC A
+080F 080F  28 14      	JR Z,L0825
+0811 0811  47         	LD B,A
+0812 0812  0E 01      	LD C,01H
+L0814:
+0814 0814  23         	INC HL
+0815 0815  7E         	LD A,(HL)
+0816 0816  A7         	AND A
+0817 0817  20 03      	JR NZ,L081C
+0819 0819  0C         	INC C
+081A 081A  10 F8      	DJNZ L0814
+L081C:
+081C 081C  3A 17 F7   	LD A,(F717H)
+081F 081F  81         	ADD A,C
+0820 0820  FE 03      	CP 03H
+0822 0822  DA 9F 08   	JP C,L089F
+L0825:
+0825 0825  3E B0      	LD A,B0H
+0827 0827  D3 61      	OUT (61H),A
+0829 0829  CD 7B 04   	CALL LW_AUS
+082C 082C  3A 11 F7   	LD A,(F711H)
+082F 082F  A7         	AND A
+0830 0830  28 36      	JR Z,L0868
+0832 0832  3E B0      	LD A,B0H
+0834 0834  CD 07 09   	CALL TEXT_INLINE
+
+;-- Lade 0837H-0865H  Lauf 0837H-0865H  [text]  Inline-Text 'Loading complete, replace disk by previous disk'
+0837 0837  4C 6F 61 64 69 6E 67 20 63 6F 6D 70 6C 65 74 65	DB	"Loading complete"
+0847 0847  2C 20 72 65 70 6C 61 63 65 20 64 69 73 6B 20 62	DB	", replace disk b"
+0857 0857  79 20 70 72 65 76 69 6F 75 73 20 64 69 73 EB	DB	"y previous dis",EBH
+
+;-- Lade 0866H-0872H  Lauf 0866H-0872H  [code]  Sprung hinter den Text, naechste Meldung
+0866 0866  18 30      	JR L0898
+L0868:
+0868 0868  3A 0A F7   	LD A,(F70AH)
+086B 086B  A7         	AND A
+086C 086C  28 2A      	JR Z,L0898
+086E 086E  3E B0      	LD A,B0H
+0870 0870  CD 07 09   	CALL TEXT_INLINE
+
+;-- Lade 0873H-0897H  Lauf 0873H-0897H  [text]  Inline-Text 'Loading complete, replace system disk'
+0873 0873  4C 6F 61 64 69 6E 67 20 63 6F 6D 70 6C 65 74 65	DB	"Loading complete"
+0883 0883  2C 20 72 65 70 6C 61 63 65 20 73 79 73 74 65 6D	DB	", replace system"
+0893 0893  20 64 69 73 EB	DB	" dis",EBH
+
+;-- Lade 0898H-0906H  Lauf 0898H-0906H  [code]  Unterprogramme (RET-Wert aus F702H/F712H) / Pruefsummenfolge 08D7H, 08E0H
+L0898:
+0898 0898  2A 02 F7   	LD HL,(F702H)
+089B 089B  3A 12 F7   	LD A,(F712H)
+089E 089E  C9         	RET
+L089F:
+089F 089F  21 17 F7   	LD HL,F717H
+08A2 08A2  3E BF      	LD A,BFH
+08A4 08A4  CD 67 04   	CALL LW_STEUERIMPULS
+08A7 08A7  34         	INC (HL)
+08A8 08A8  0D         	DEC C
+08A9 08A9  20 F4      	JR NZ,L089F
+08AB 08AB  21 18 F7   	LD HL,F718H
+08AE 08AE  36 01      	LD (HL),01H
+08B0 08B0  AF         	XOR A
+08B1 08B1  32 8B F7   	LD (F78BH),A
+08B4 08B4  32 88 F7   	LD (F788H),A
+08B7 08B7  21 85 B5   	LD HL,B585H
+08BA 08BA  22 89 F7   	LD (F789H),HL
+08BD 08BD  C3 48 05   	JP L0548
+L08C0:
+08C0 08C0  21 14 F7   	LD HL,F714H
+08C3 08C3  35         	DEC (HL)
+08C4 08C4  C2 4D 05   	JP NZ,L054D
+08C7 08C7  23         	INC HL
+08C8 08C8  35         	DEC (HL)
+L08C9:
+08C9 08C9  CA 6C 05   	JP Z,L056C
+08CC 08CC  18 06      	JR L08D4
+L08CE:
+08CE 08CE  21 13 F7   	LD HL,F713H
+08D1 08D1  35         	DEC (HL)
+08D2 08D2  28 F5      	JR Z,L08C9
+L08D4:
+08D4 08D4  C3 96 04   	JP L0496
+HASH_BLOCK:
+08D7 08D7  3A 19 F7   	LD A,(F719H)	; DE=E295H Startwert, B=80H Byte je Durchlauf, C=(F719H) Durchlaeufe: CRC-artige Rechnung [?]
+08DA 08DA  4F         	LD C,A
+08DB 08DB  11 95 E2   	LD DE,E295H
+L08DE:
+08DE 08DE  06 80      	LD B,80H
+HASH_FOLGE:
+08E0 08E0  7E         	LD A,(HL)	; Rechenschleife (XOR/Rotation) ueber B Byte ab HL, Ergebnis in DE
+08E1 08E1  AA         	XOR D
+08E2 08E2  57         	LD D,A
+08E3 08E3  0F         	RRCA
+08E4 08E4  0F         	RRCA
+08E5 08E5  0F         	RRCA
+08E6 08E6  0F         	RRCA
+08E7 08E7  E6 0F      	AND 0FH
+08E9 08E9  AA         	XOR D
+08EA 08EA  57         	LD D,A
+08EB 08EB  0F         	RRCA
+08EC 08EC  0F         	RRCA
+08ED 08ED  0F         	RRCA
+08EE 08EE  F5         	PUSH AF
+08EF 08EF  E6 1F      	AND 1FH
+08F1 08F1  AB         	XOR E
+08F2 08F2  5F         	LD E,A
+08F3 08F3  F1         	POP AF
+08F4 08F4  F5         	PUSH AF
+08F5 08F5  0F         	RRCA
+08F6 08F6  E6 F0      	AND F0H
+08F8 08F8  AB         	XOR E
+08F9 08F9  5F         	LD E,A
+08FA 08FA  F1         	POP AF
+08FB 08FB  E6 E0      	AND E0H
+08FD 08FD  AA         	XOR D
+08FE 08FE  53         	LD D,E
+08FF 08FF  5F         	LD E,A
+0900 0900  23         	INC HL
+0901 0901  10 DD      	DJNZ HASH_FOLGE
+0903 0903  0D         	DEC C
+0904 0904  20 D8      	JR NZ,L08DE
+0906 0906  C9         	RET
+
+;-- Lade 0907H-0976H  Lauf 0907H-0976H  [code]  Inline-Text-Ausgabe 0907H: Port 61H, SIO-Init (OTIR 5AH/53H), Bild, Text, Warten auf Taste (Port 52H/53H)
+TEXT_INLINE:
+0907 0907  D3 61      	OUT (61H),A	; Port 61H = A (der Aufrufer legt A vor)
+0909 0909  21 77 09   	LD HL,0977H	; OTIR 2 + 10 Byte an Port 5AH / 53H (Tabelle 0977H)
+090C 090C  01 5A 02   	LD BC,025AH
+090F 090F  ED B3      	OTIR
+0911 0911  01 53 0A   	LD BC,0A53H
+0914 0914  ED B3      	OTIR
+0916 0916  11 00 10   	LD DE,1000H
+0919 0919  21 50 10   	LD HL,1050H
+091C 091C  01 30 07   	LD BC,0730H
+091F 091F  ED B0      	LDIR
+0921 0921  62         	LD H,D
+0922 0922  6B         	LD L,E
+0923 0923  3E 20      	LD A,20H
+0925 0925  32 12 F7   	LD (F712H),A
+0928 0928  06 50      	LD B,50H
+L092A:
+092A 092A  77         	LD (HL),A
+092B 092B  23         	INC HL
+092C 092C  10 FC      	DJNZ L092A
+092E 092E  E1         	POP HL
+L092F:
+092F 092F  7E         	LD A,(HL)	; Text in Bild bei DE kopieren, Bit 7 des letzten Zeichens beendet
+0930 0930  07         	RLCA
+0931 0931  CB 3F      	SRL A
+0933 0933  12         	LD (DE),A
+0934 0934  23         	INC HL
+0935 0935  13         	INC DE
+0936 0936  30 F7      	JR NC,L092F
+0938 0938  E5         	PUSH HL
+0939 0939  D5         	PUSH DE
+093A 093A  21 83 09   	LD HL,0983H
+093D 093D  01 0C 00   	LD BC,000CH
+0940 0940  ED B0      	LDIR
+L0942:
+0942 0942  DB 53      	IN A,(53H)
+0944 0944  CB 47      	BIT 0,A
+0946 0946  28 FA      	JR Z,L0942
+0948 0948  DB 52      	IN A,(52H)
+094A 094A  FE 0D      	CP 0DH
+094C 094C  28 20      	JR Z,L096E
+094E 094E  FE 7C      	CP 7CH
+0950 0950  28 1C      	JR Z,L096E
+0952 0952  FE 1C      	CP 1CH
+0954 0954  28 18      	JR Z,L096E
+0956 0956  FE 45      	CP 45H
+0958 0958  CA F3 03   	JP Z,VEKTOR_0400	; 'E' (45H) -> JP 03F3H (= 175: JP 0400H)
+095B 095B  FE 1B      	CP 1BH
+095D 095D  20 E3      	JR NZ,L0942
+L095F:
+095F 095F  DB 53      	IN A,(53H)
+0961 0961  CB 47      	BIT 0,A
+0963 0963  28 FA      	JR Z,L095F
+0965 0965  DB 52      	IN A,(52H)
+0967 0967  FE 63      	CP 63H
+0969 0969  20 D7      	JR NZ,L0942
+096B 096B  C3 F3 03   	JP VEKTOR_0400
+L096E:
+096E 096E  E1         	POP HL
+096F 096F  06 0C      	LD B,0CH
+L0971:
+0971 0971  36 20      	LD (HL),20H
+0973 0973  23         	INC HL
+0974 0974  10 FB      	DJNZ L0971
+0976 0976  C9         	RET
+
+;-- Lade 0977H-0978H  Lauf 0977H-0978H  [data]  SIO-Folge 1 (OTIR an Port 5AH, 2 Byte): 07 01
+0977 0977  07 01      	DB	07H,01H
+
+;-- Lade 0979H-0982H  Lauf 0979H-0982H  [data]  SIO-Folge 2 (OTIR an Port 53H, 10 Byte): 00 18 04 44 03 C1 05 EA 01 00
+0979 0979  00 18 04 44 03 C1 05 EA	DB	00H,18H,04H,44H,03H,C1H,05H,EAH
+0981 0981  01 00      	DB	01H,00H
+
+;-- Lade 0983H-098EH  Lauf 0983H-098EH  [text]  Text ' --> <ENTER>' (12 Byte, nach Bild kopiert)
+0983 0983  20 2D 2D 3E 20 3C 45 4E 54 45 52 3E	DB	" --> <ENTER>"
+
+;-- Lade 098FH-09A5H  Lauf FFE0H-FFF6H  [code]  Haeppchen (wird von 176 nach FFE0H kopiert): A8H=8FH, Systemkennung 0000H/0005H=C3H pruefen, A8H=0EH, JP 0428H
+HAEPPCHEN:
+098F FFE0  3E 8F      	LD A,8FH
+0991 FFE2  D3 A8      	OUT (A8H),A
+0993 FFE4  3A 00 00   	LD A,(0000H)
+0996 FFE7  FE C3      	CP C3H
+0998 FFE9  20 05      	JR NZ,LFFF0
+099A FFEB  3A 05 00   	LD A,(0005H)
+099D FFEE  FE C3      	CP C3H
+LFFF0:
+099F FFF0  3E 0E      	LD A,0EH
+09A1 FFF2  D3 A8      	OUT (A8H),A
+09A3 FFF4  C3 28 04   	JP L0428
+
+;-- Lade 09A6H-0BFCH  Lauf 09A6H-0BFCH  [auto]  ungenutzt (00H); EINZELNES Byte 0A33H = 04H (Pruefsummenabweichung, siehe Kopf)
+09A6 09A6  --          	DS	141,00H   ; Lade 09A6H-0A32H
+0A33 0A33  04         	DB	04H
+0A34 0A34  --          	DS	457,00H   ; Lade 0A34H-0BFCH
+
+;-- Lade 0BFDH-0BFFH  Lauf 0BFDH-0BFFH  [sum]  24-Bit-Pruefsumme der Bytes 0800H-0BFCH (gespeichert 00A67CH)
+0BFD 0BFD  00 A6 7C   	DB	00H,A6H,7CH   ; 24 Bit, hoeherwertiges Byte zuerst
+
+; ============================================================================
+; ANHANG: Gegenueberstellung ZRE <-> Karten-Chips (Byte-Diff, difflib-Ausrichtung)
+; ============================================================================
+; (ZRE-Seite hier; die Karten-Seite steht gespiegelt in k8915g2_pfs3820.prn)
+;   175 <-> 3C00: 684 von 1024 Byte stehen in der Ausrichtung (difflib) gleich beieinander;
+;   340 Byte weichen ab bzw. sind eingefuegt/entfernt.
+;   Einzelbyte 06H -> 0EH an 3 Stellen: 0004, 01DD, 01E3
+;   Zusammenhaengende Abweichungsbereiche (175-Lade <-> 3C00-Lade, Laenge je Seite):
+;     0008-000D <-> 0008-003B  (6/52 Byte, verschieden lang)
+;     001F-0039 <-> 004D-0067  (27/27 Byte, gleich lang)
+;     0058-0058 <-> 0086-0086  (1/1 Byte, gleich lang)
+;     0064-006A <-> 0092-0094  (7/3 Byte, verschieden lang)
+;     0076-0078 <-> 00A0-00A6  (3/7 Byte, verschieden lang)
+;     009D-00F2 <-> 00CB-00FA  (86/48 Byte, verschieden lang)
+;     00FC-0111 <-> 0104-0111  (22/14 Byte, verschieden lang)
+;     011B-0197 <-> 011B-0181  (125/103 Byte, verschieden lang)
+;     01A0-01BA <-> 018A-01EE  (27/101 Byte, verschieden lang)
+;     01C6-01C6 <-> 01FA-01FA  (1/1 Byte, gleich lang)
+;     01E1-0205 <-> 0215-022F  (37/27 Byte, verschieden lang)
+;     020E-023A <-> 0238-0269  (45/50 Byte, verschieden lang)
+;     024D-0258 <-> 027C-0287  (12/12 Byte, gleich lang)
+;     0274-0277 <-> 02A3-02A6  (4/4 Byte, gleich lang)
+;     028B-028E <-> 02BA-02BD  (4/4 Byte, gleich lang)
+;     02A5-02E4 <-> 02D4-031D  (64/74 Byte, verschieden lang)
+;     02F2-030B <-> 032B-033C  (26/18 Byte, verschieden lang)
+;     031F-033C <-> 0350-0350  (30/0 Byte, nur in 175)
+;     0347-0348 <-> 035A-035B  (2/2 Byte, gleich lang)
+;     0368-036E <-> 037B-037F  (7/5 Byte, verschieden lang)
+;     0377-038C <-> 0388-0390  (22/9 Byte, verschieden lang)
+;     03EF-03FF <-> 03F3-03FF  (17/13 Byte, verschieden lang)
+;   177 <-> 3000: 801 von 1024 Byte stehen in der Ausrichtung (difflib) gleich beieinander;
+;   223 Byte weichen ab bzw. sind eingefuegt/entfernt.
+;   Einzelbyte F7H -> 0CH an 18 Stellen: 0002, 0005, 0008, 000B, 001E, 002E, 006A, 009A, 009D, 00A1, 00AD, 00B3, 00B6, 00BC, 00C2, 00D0, 00D9, 0127
+;   Zusammenhaengende Abweichungsbereiche (177-Lade <-> 3000-Lade, Laenge je Seite):
+;     0028-0028 <-> 0028-0028  (1/1 Byte, gleich lang)
+;     0108-0115 <-> 0108-0108  (14/1 Byte, verschieden lang)
+;     013B-016D <-> 012E-0145  (51/24 Byte, verschieden lang)
+;     0177-0182 <-> 014F-014F  (12/0 Byte, nur in 177)
+;     01A7-0233 <-> 0173-017F  (141/13 Byte, verschieden lang)
+;     03FE-03FF <-> 034A-03FF  (2/182 Byte, verschieden lang)
+;   Deutung (Beleg: die Listings): 3C00 = 175 mit anderem Anfang (Ports E0H-E4H, B1H/B3H,
+;   A8H = 0EH statt 06H an allen drei Stellen (Einzelbyte 06H -> 0EH oben),
+;   Signaturpruefung D001H, eigener Kopierer 003FH) und 'I/O' statt 'SIO'; die Tabellen am
+;   Ende sind um 3 bzw. 4 Byte verschoben.  3000 = 177 mit Zellen bei 0Cxx statt F7xx
+;   (Einzelbyte F7H -> 0CH an den Adress-Operanden), Port 61H -> E4H und einer kuerzeren
+;   Text-Routine (kein SIO-Init, Taste ueber E1H/E0H); sonst identisch.
+
+	END

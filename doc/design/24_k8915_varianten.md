@@ -314,6 +314,8 @@ diese Tastatur abfragt.
 
 ### AP-V3a — Kommentierte Listings der Gen-2-Abzüge
 
+**Erledigt 2026-10-05** (Befunde unten am Ende des Abschnitts).
+
 **Ziel:** Lesbare, wächtergesicherte Listings als Grundlage für V3b und den Debugger.
 **Agent:** boot-disasm-analyst (Sonnet). **Abhängig:** —. **Baut:** nur `dev.sh test`.
 
@@ -341,6 +343,39 @@ Auftrag:
 **Wächter:** `cli_k8915g2_prn_passt_zur_quelle` (Muster oben): bytegleich zum eingecheckten
 `.prn`, jedes ROM-Byte genau einmal. **Fertig, wenn:** `tools/dev.sh test` grün und der Wächter
 rot wird, sobald man einen Abzug ändert.
+
+**Ergebnis V3a (erledigt 2026-10-05):** `tools/gen_k8915g2_prn.py` (+ `--check`), Listings
+`doc/EPROMS/K8915G2/k8915g2_zre.prn` (3 KB, Lade- und Lauf-Adresse je Zeile, Anhang mit
+der Gegenüberstellung) und `k8915g2_pfs3820.prn` (die zwei belegten Chips; die 14 leeren
+knapp vermerkt), Wächter `cli_k8915g2_prn_passt_zur_quelle` (`tests/cli/CMakeLists.txt`):
+prüft MD5 aller Abzüge samt Verkettungen, jedes ROM-Byte genau einmal, die Prüfsummen, jede
+benannte Routine als Label, Byte-Gleichheit zum `.prn`. Gegenversuch: Abzug 176 in einer
+Kopie (`K8915G2_DIR=…`) um ein Bit verändert → Wächter rot (MD5), Abzug 177 mit angepasster
+MD5SUMS → rot (Verkettung); Abzüge im Repo unverändert (`md5sum -c MD5SUMS` ok).
+Befunde:
+1. **Reihenfolge 175/176/177 = 0000/0400/0800 bestätigt, keine README-Korrektur der Reihenfolge
+   nötig** (nur Ergänzung der Belege): 175 `JP 0400H` ↔ Sprungtabelle `C3 1A 04 / C3 2B 04` in
+   176; 176 `CALL 0907H` ×6 und Kopie `098FH → FFE0H` ↔ Textroutine/Haeppchen in 177; 177
+   `JP 03F3H` ↔ Vektor `C3 00 04` in 175; der Selbsttest „MROM“ summiert IX = 0000/0400/0800.
+2. **Korrektur zu Punkt 2 des Auftrags:** nur **175** wird nach FC00H kopiert (Lauf = Lade +
+   FC00H ab 0021H); **176 und 177 laufen unverschoben aus dem ROM** (bei 0400H/0800H, ihre
+   absoluten Sprungziele sind ihre Ladeadressen). „03xx–09xx“ = `JP 03F3H` (Vektor in 175) bis
+   09xx (Text in 177). Zweite Lauf-Sicht nur noch beim 23-Byte-Haeppchen `098FH → FFE0H`
+   (A8H = 8FH, prüft `[0000]`/`[0005]` = `C3`, A8H = 0EH, `JP 0428H`).
+3. **Prüfsummen:** letzte 3 Bytes jedes 1-KB-Bausteins = 24-Bit-Summe der ersten 3FDH Byte
+   (so rechnet der Selbsttest). **177 stimmt nicht** (berechnet 00A680H, gespeichert 00A67CH);
+   Byte 0A33H = 04H im Füllbereich erklärt die Differenz genau → Lesefehler oder Bitfehler im
+   2708 [?]. Neue Frage **F9** (§9). 175, 176 und beide Karten-Chips stimmen.
+4. **Karten-Chips:** „3C00“ = Fassung des 175 (A8H = 0EH statt 06H, Ports E0H–E4H/B1H/B3H, prüft
+   `F3 ED 5E` bei D001H–D003H, eigener Kopierer 003FH, Selbsttest „I/O“); „3000“ = Fassung des
+   177 (Zellen 0Cxx, Port E4H, **Taste über `IN E1H`/`IN E0H`**, kein SIO-Init). Passt zu
+   einer anderen E/A-Karte als die ZRE-Fassung (Gen 1 = K7634 + K7028 [?], für V3b/V9).
+   Deckt sich mit F7/V1b: das Chip-„3000“ wertet `1FH` (RESET → `JP 03F3H`) und `9DH` (ENTER) aus, also
+   die K7634-Codes; die ZRE-Fassung 177 fragt dagegen `45H`/`1BH 63H`/`0DH`/`7CH`/`1CH` an der SIO ab.
+5. Die ZRE-Listings enthalten gesicherte Strukturen, die V3b übernehmen kann: SIO-Tore
+   5AH/53H/52H (Tastatur/Konsole), 45H/47H/55H, Bildspeicher 1000H–177FH, Rahmen-/Muster-
+   tabellen bei FF77H.., Vektorwort `FFF6H → FF3DH`, Inline-Text-Konvention (Bit 7 = Textende,
+   Aufruf `CALL 0907H`).
 
 ### AP-V3b — Analyse der Gen-2-ROMs (Kopf der Planung)
 
@@ -446,6 +481,7 @@ volle Ausgabe.
 | **F7** | Welche **K7634-Fassung** hängt am Gerät (Aufdruck `K7634.xx`, ROM-Nummer `Y708-I…` auf der Tastaturplatine)? Die Fremdquellen (BIOS Krzikalla, Kartenchip „3C00") erwarten TYP `A0H`, ENTER `9DH`, RESET `1FH`, PF1 `91H`; die gedruckten Tabellen (K7634.04/.05/.10/.13) haben das nicht. Steckt ein Bedienelement (BES, Sonderleitungen SL) an der Tastatur? (ohne: nur TYP, kein Einfluss auf den Emulator) |
 | **F8** | Gibt es einen **Schaltplan der K7028.10/.20** (Portbereich `E0H–FFH`, Bedeutung von `E3H`/`E4H`, Frontplatte)? Steckt in der ZRE der Gen 1 der **Kartenchip „3C00"** (Urlader `MROM RAM I/O KEY CTC`, ENTER: LADER / OFF: ZYKL.) oder die Bausteine 175–177? Welche Platinennummer trägt die K7028 des Geräts? |
 | **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. |
+| **F9** | Der Abzug **177** hat eine falsche 24-Bit-Summe (Byte 0A33H = 04H statt 00H, s. V3a). Bitte den Baustein 177 am Gerät **ein zweites Mal lesen** (MD5 vergleichen) und notieren, ob der „MROM“-Selbsttest des Geräts einen Fehler meldet. |
 | **F20** | (V1a) Aufdruck/Platinen-Nr. der „zusätzlichen RAM-Karte“ (K3528? 32 Chips, 8212 „D8“?), Stand des Wickelfeldes **X3** (insb. D2:01/D2:02 → Register-Adresse A8H; Bank-Brücken X3:64–71). |
 | **F21** | (V1a) Die handschriftliche „88“ im K3528-Plan: gilt sie für Ihr Gerät oder ein anderes (ROM schreibt A8H)? |
 | **F22** | (V1a) Brückenstand am Gerät: ZRE X6–X9, X14/X15; PFS K3820 X6/X7 (welches MEMDI), X8/X9 (Startadresse), X10–X11 (WAIT). |
