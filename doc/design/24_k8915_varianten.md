@@ -1,9 +1,12 @@
 # 24 — K8915-Varianten: „Generation 2“ (Gerät des Anwenders) und „Generation 1“ (Planung)
 
-Stand: 2026-10-05, Zweig `K8915Varianten` (von `main` @ 5190c9c). **Planungsdokument** —
-noch kein Kerncode. **Abzüge der Gen-2-ZRE, der K7024 und der 2708-Karte liegen vor**
-(`doc/EPROMS/K8915G2/`, §10 am Ende); Auswertung = AP-V3. Der Emulator bildet bisher nur die **V3** ab (`doc/design/16_k8915.md`,
-ZRE 045-8762 mit 128 KB, `core/machines/k8915/`).
+Stand: 2026-10-05, Zweig `K8915Varianten` (von `main` @ 5190c9c). **Stand der APs:**
+V0, V1a, V1b, V3a, V3b, V2, V4, V6a, V6b, V7a, V7b **erledigt**, K7634-Bildschirmtastatur
+**erledigt**, V10 (Merkposten `doc/merkposten/k8915_varianten.md`) **erledigt**; V5 **entfallen**,
+V8 **gestrichen**, V9 (Gen 1) **zurückgestellt** (F11); **VT läuft**. Die Gen 2 läuft im Kern
+(`K8915Machine::Config::generation = Gen2`) vom Netz-Ein bis `A>` der V3-Diskette 901; die
+**Vorgabe bleibt V3** (`doc/design/16_k8915.md`, ZRE 045-8762 mit 128 KB).
+Abzüge der Gen-2-ZRE, der K7024 und der 2708-Karte: `doc/EPROMS/K8915G2/` (§10 am Ende).
 
 Legende wie in Entwurf 16: **[ROM]** aus einem Abzug, **[SLP]** Stromlaufplan, **[Web]**
 Sekundärquelle, **[Gerät]** am Original des Anwenders, **[?]** Vermutung/offen.
@@ -195,7 +198,7 @@ V4 ff. vorher startet, rät.
 | **V7b** | Programmprofil (Modellwahl), Handbuch | V7a | Sonnet | ja |
 | V8 | **gestrichen** (Ladekopf/Format wie V3); wieder öffnen nur bei F4 | — | — | — |
 | V9 | **zurückgestellt**: Gen 1 ohne 0400-Lader nicht startfähig (F11) | F11 / F5 / F8 | — | — |
-| V10 | Merkposten, `CLAUDE.md`, Verweis in 16 | alle | Sonnet | nein |
+| V10 | ✔ Merkposten `k8915_varianten.md`, `CLAUDE.md`, Verweis in 16 (erledigt 2026-10-05) | alle | Sonnet | nein |
 | VT | Alle vier Lanes vor dem Merge | V10 | test-runner / Haiku | ja |
 
 **Parallel:** V1a, V1b, V3a laufen gefahrlos nebeneinander (nur lesen/Python); V3b nach V3a.

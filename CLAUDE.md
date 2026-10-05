@@ -468,6 +468,8 @@ nicht den nachgebauten 4×A1-Strom des A5120-Wegs.
 `machine="k8915-g2"`, Werkzeuge `--machine k8915-g2`, im `k8915emu` Modellwahl V3/Gen 2
 (`general.model`, fehlend = V3, Gen 1 ausgegraut über `gesperrte_modelle`; EM nie).
 Gen 1 (K7634) ist gesperrt (F11); `app/ui/keyboard_k7634.py` liegt bereit, nicht eingehängt.
+**Vor Arbeiten daran: `doc/merkposten/k8915_varianten.md` lesen** (Abzug 177 nie flicken, A8H
+an der K3528, `zre()` nur am V3).
 
 **Vor Arbeiten daran: `doc/merkposten/k8915.md` lesen** — die Festlegungen mit ihrem
 Wächter (A8H-Brückenfeld, `/WAIT`-Zweig der K5122 samt Spur-wie-sie-liegt und MK = nur
