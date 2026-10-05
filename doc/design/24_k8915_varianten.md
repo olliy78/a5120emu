@@ -708,6 +708,31 @@ Auftrag:
 **Fertig, wenn:** `tools/dev.sh test` grün, `tools/dev.sh test-format` grün (wegen
 `K8915Format.*`, im Hintergrund), Nachtrag hier, ein Commit.
 
+**AP-V6a erledigt 2026-10-05.** `K8915Machine::Config::generation` (`V3` Vorgabe | `Gen2`) +
+`Config::gen2_rom` (nur Tests); Umbau nach R1 (`zre8762_`/`k2521_`/`ops_` als `unique_ptr`,
+Weichen `cpuRef`/`zreTakt`/`zreInt`/`memCpu(W)`, `zre()` mit `assert` nur V3, neu `generation()`,
+`k2521()`, `ops()`); `k1520_k8915` linkt `k1520_k2521`/`k1520_k3528`. Wächter
+`tests/integration/test_k8915g2_boot.cpp` (`k1520_test_k8915g2_boot`, fast, 9 Fälle ≈ 1,5 s)
+wie benannt, alle grün **ohne** Änderung an K2521/K3528/K7024/K5122/K7028; V3-Wächter
+unverändert grün; voller `tools/dev.sh test` grün, `test-format` grün.
+Befunde/Abweichungen:
+- **Die Gen 2 läuft mit dem Abzug auf Anhieb**: ROM-Fehler `C` → 16 × BEL, 61H = 7FH → `CR` →
+  Kaltstartmeldung → `CR` → der V3-Lader liest 901 → SCPX 8915 V5.3 meldet sich → `A>`, `dir`
+  listet die Diskette, BIOS bei A8H = 87H. Mit geflickter Summe: ROM → KEY → CTC → SIO → RAM
+  fehlerfrei ≈ 17 Mio. Takte (wie V3b §4 gerechnet), A8H am Ende 06H, `ED 45` bei 0066H im
+  K3528-RAM. Ohne Prüfstecker `G` unter SIO, ohne Tastatur `A` unter KEY (wie V3).
+- **Abweichung vom Plan (Wächter `RomFehlerC…`):** nach dem ROM-Fehler und `CR` steht A8H auf
+  **0EH**, nicht 06H — der Stub (0400H) setzt 0EH vor dem Kopierer, 06H kommt erst nach dem
+  RAM-Test, und den überspringt der erste Fehler. Folge von zre_rom.md §4/§5, kein
+  Emulatorbefund; der Wächter prüft 0EH. Mit dem Abzug übergibt der Lader also mit 0EH, mit
+  korrigiertem 177 mit 06H (beides vom BIOS vertragen, es schaltet selbst auf 87H).
+- **F13 beobachtet:** der Autostart `rade` meldet „no RAM-device configurated or fatal
+  RAM-error !!!“ (keine Bank 2), danach steht der Prompt stabil. Der Wächter prüft das bewusst
+  nicht (F13 bleibt offen: was zeigt das Gerät?).
+- `NmiImRomWirkungslos`: NMI unter „KEY“ (ROM bei 0000H) läuft einmal durch 0066H (`RETN`),
+  Lampen und Selbsttest bleiben unberührt.
+- `test-format`: keine Gen-2-Fälle darin; gelaufen wegen `K8915Format.*` (V3-Regression).
+
 #### AP-V6b — Werkzeuge: `boot_trace`/`k1520dbg --machine k8915-g2`
 
 **Ziel:** Gen 2 im Debugger und im Trace wie der V3. **Agent:** cpp-coder (Sonnet).
@@ -856,7 +881,7 @@ volle Ausgabe.
 | **F10** | (V3b) Kartenchip „3C00“ spricht **B1H/B3H** (`0FH`, `40H`) und **E3H Bit 2** (RAM-Test 64 K oder nur 8000H ff.) an und prüft D001–D003H auf `F3 ED 5E` (sonst `76H` nach D000H). Welche Karten/Brücken der Gen 1 sind das? |
 | **F11** | (V3b) Zu den Kartenchips „3C00“/„3000“ gehört ein **zweiter Lader-Baustein für 0400H** mit Arbeitszellen bei 0C00H und Stub bei 095BH (Platz 0400 der Karte ist leer, das ZRE-176 passt nicht). Gibt es diesen Baustein (z. B. in einem Gen-1-Gerät)? |
 | **F12** | (V3b) Braucht der Selbsttest der Gen 2 am Gerät einen **Prüfstecker** an den drei Schnittstellen (Test „SIO“ wie beim V3, Entwurf 16 §6.10), und in welcher Reihenfolge zeigt das Gerät die Tests (erwartet ROM, KEY, CTC, SIO, RAM)? |
-| **F13** | (V3b) Läuft auf dem Gen-2-Gerät `RADE` (RAM-Disk)? Ohne Bank 2 erwartet: nein; RADE erkennt die Maschine an 0C00H, dort liegt in der Gen 2 das K2521-RAM. |
+| **F13** | (V3b) Läuft auf dem Gen-2-Gerät `RADE` (RAM-Disk)? Ohne Bank 2 erwartet: nein; RADE erkennt die Maschine an 0C00H, dort liegt in der Gen 2 das K2521-RAM. *Emulator (V6a): „no RAM-device configurated or fatal RAM-error !!!“, danach `A>` — stimmt das mit dem Gerät überein?* |
 
 ---
 

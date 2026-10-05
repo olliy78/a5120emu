@@ -360,10 +360,11 @@ if(BUILD_K1520)
     target_include_directories(k1520_k7672 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # K8915 V3 (doc/design/16_k8915.md) — ZRE + ATS/K7672 + K7024 + K5122 (/WAIT).  Seit
-    # AP-E4b in libk1520core.so: k1520_create(K1520_MACHINE_K8915).
+    # AP-E4b in libk1520core.so: k1520_create(K1520_MACHINE_K8915).  Gen 2 (Entwurf 24,
+    # AP-V6a): K2521 + K3528 statt der ZRE 045-8762, Config::generation.
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
-        k1520_zre8762 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf k1520_k6022
+        k1520_zre8762 k1520_k2521 k1520_k3528 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf k1520_k6022
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 

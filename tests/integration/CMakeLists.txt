@@ -43,6 +43,13 @@ k1520_add_test(k8915_boot SRC test_k8915_boot.cpp
 
 # K8915Machine ohne Boot (AP-T1a): DFÜ/Drucker-Kanal, Fehlerwege von `Laufwerke`,
 # Durchreichungen, Konsolenmodus.  Kein CPU-Lauf, < 1 s.
+# K8915 Generation 2 (doc/design/24_k8915_varianten.md AP-V6a): K2521 + K3528 statt der
+# ZRE 045-8762 — Selbsttest (ROM-Fehler C des Abzugs, geflickte Summe im Test), Kaltstart-
+# meldung, V3-Systemdiskette 901 bis zum Prompt.
+k1520_add_test(k8915g2_boot SRC test_k8915g2_boot.cpp
+                          LIBS k1520_k8915 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
 k1520_add_test(k8915_maschine SRC test_k8915_maschine.cpp
                           LIBS k1520_k8915 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)

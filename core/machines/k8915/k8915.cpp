@@ -1,7 +1,8 @@
 /**
  * @file k8915.cpp
- * @brief K8915 V3 — Verdrahtung und Laufschleife (eine CPU, keine ZVE2).
- * @see k8915.h, doc/design/16_k8915.md §7.1, §8a AP-E1
+ * @brief K8915 V3 und Gen 2 — Verdrahtung und Laufschleife (eine CPU, keine ZVE2).
+ * @see k8915.h, doc/design/16_k8915.md §7.1, §8a AP-E1,
+ *      doc/design/24_k8915_varianten.md R1–R3, AP-V6a
  */
 
 #include "core/machines/k8915/k8915.h"
@@ -14,25 +15,52 @@ std::array<DriveProfile, 4> profile(const K8915Machine::Config& cfg) {
     return { builtinDriveProfile(cfg.laufwerke[0]), builtinDriveProfile(cfg.laufwerke[1]),
              builtinDriveProfile(cfg.laufwerke[2]), builtinDriveProfile(cfg.laufwerke[3]) };
 }
+bool gen2(const K8915Machine::Config& cfg) {
+    return cfg.generation == K8915Machine::Generation::Gen2;
+}
+
+K2521::Config k2521Config(const K8915Machine::Config& cfg) {
+    K2521::Config c = K2521::Config::k8915g2();
+    if (cfg.gen2_rom) c.rom = cfg.gen2_rom;   // nur Tests (F9), Länge wie der Abzug
+    return c;
+}
 }  // namespace
 
 K8915Machine::K8915Machine(const Config& cfg)
-    : zre_(bus_)
+    : generation_(cfg.generation)
+    , zre8762_(gen2(cfg) ? nullptr : std::make_unique<K8915Zre>(bus_))
+    , k2521_(gen2(cfg) ? std::make_unique<K2521>(bus_, k2521Config(cfg)) : nullptr)
+    , ops_(gen2(cfg) ? std::make_unique<K3528>(bus_) : nullptr)
     , ats_()
-    , screen_(bus_, K7024::A5120Config::forK8915())   // registriert VRAM 1000H–17FFH
+    // registriert VRAM 1000H–17FFH; Gen 2 mit dem A5120-Zeichensatz v171/v172
+    , screen_(bus_, gen2(cfg) ? K7024::A5120Config::forK8915Gen2()
+                              : K7024::A5120Config::forK8915())
     , afs_(bus_, profile(cfg), CPU_HZ)
     , lw_(afs_, profile(cfg))
     , pruefstecker_(cfg.pruefstecker)
 {
-    zre_.attachToBus(bus_);
+    if (zre8762_) {
+        zre8762_->attachToBus(bus_);
+    } else {
+        // Gen 2: K2521 (CTC 80H, PIO 84H) + K3528 (A8H–ABH).  Die CPU der K2521 greift über
+        // die K3528 zu; die bedient 0000–0FFF bei Bedarf über den Rückweg zur K2521
+        // (Vorrang R3), alles nicht Gewählte geht an den Systembus (K7024 bei 1000H).
+        k2521_->attachToBus(bus_);
+        ops_->attachToBus(bus_);
+        k2521_->setSpeicherweg([this](uint16_t a) { return ops_->memRead(a); },
+                               [this](uint16_t a, uint8_t d) { ops_->memWrite(a, d); });
+        ops_->setZreWeg([this](uint16_t a) { return k2521_->memRead(a); },
+                        [this](uint16_t a, uint8_t d) { k2521_->memWrite(a, d); });
+    }
     ats_.attachToBus(bus_);
     // K5122 062-8390 auf /WAIT gebrückt (am Gerät abgelesen, §3.4): keine ZVE2.
     afs_.setSynchronisation(K5122::Synchronisation::Wait);
     bus_.registerIO(&afs_, 0x10, 9);
     if (cfg.tastatur) kbd_.connect(ats_.sio2(), 1);   // sonst: Kabel gezogen
-    // Interruptkette nach der Platzfolge (§6.4 [?]): K5122 → ZRE-CTC → ATS.
-    bus_.setInterruptChain({&afs_, &zre_, &ats_});
-    zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
+    // Interruptkette nach der Platzfolge (§6.4 [?]): K5122 → ZRE-CTC → ATS.  Gen 2: dieselbe
+    // Folge mit der K2521 (CTC → PIO) an der Stelle der ZRE [?, F2/F22].
+    bus_.setInterruptChain({&afs_, &zreInt(), &ats_});
+    cpuRef().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
     // Schnittstellen nach außen (Entwurf 19 §3.2): Reihenfolge = Stecker X3, X4, X5
     // (= Wert von K7028::Kanal, AP-S12).
     for (int k = 0; k < K7028::KanalAnzahl; ++k) {
@@ -68,7 +96,12 @@ void K8915Machine::resetHardware()
 {
     stop_.store(false);
     afs_.flushDisks();       // das interne Abbild überlebt den Reset, die Datei folgt ihm
-    zre_.reset();            // A8H := 00H, CTC, CPU
+    if (zre8762_) {
+        zre8762_->reset();   // A8H := 00H, CTC, CPU
+    } else {
+        k2521_->reset();     // CTC, PIO, CPU; RAM bleibt
+        ops_->reset();       // A8H := 00H (CLR des 8212 an /RESET), RAM bleibt
+    }
     afs_.reset();            // K5122: PIOs, Marken-FF; Disketten und Kopfposition bleiben
     ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
@@ -85,12 +118,19 @@ void K8915Machine::resetHardware()
 
 void K8915Machine::powerOn()
 {
-    zre_.powerOn(0x00);
+    // DRAM mit 00H, sonst meldet der Stub bei FFE0H womöglich zufällig „System im RAM".
+    if (zre8762_) {
+        zre8762_->powerOn(0x00);
+    } else {
+        k2521_->powerOn(0x00);
+        ops_->powerOn(0x00);
+    }
     kbd_.powerOn();          // Selbsttest der Tastatur, KEIN DC1 (Firmware 000CH)
     rafPowerOn();            // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
     anzeigenSpiegeln();
-    LOG_INFO("K8915", "Netz ein: A8H=00H, Boot-ROM bei 0000H");
+    LOG_INFO("K8915", "Netz ein (%s): A8H=00H, Boot-ROM bei 0000H",
+             zre8762_ ? "V3" : "Gen 2");
 }
 
 void K8915Machine::reset()
@@ -144,7 +184,7 @@ int K8915Machine::run(int max_cycles)
         bus_.assertNMI();
         LOG_INFO("K8915", "NMI-Taster");
     }
-    Z80& cpu = zre_.cpu();
+    Z80& cpu = cpuRef();
     int remaining = max_cycles;
     while (remaining > 0 && !stop_.load(std::memory_order_relaxed)) {
         k1520::logging::Logger::instance().update(total_cycles_, cpu.PC, 0);
@@ -177,7 +217,7 @@ int K8915Machine::run(int max_cycles)
         total_cycles_ += used;
 
         afs_.update(used);
-        bool dirty = zre_.clockTick(used);
+        bool dirty = zreTakt(used);
         dirty |= ats_.clockTick(used);
         dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
         // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
