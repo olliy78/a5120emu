@@ -180,3 +180,23 @@ sind **nicht** vorgesehen — es gibt eine Umsetzung, im Kern.
   bleibt Roh.  Wächter `py_ptape_api` (alle drei Maschinen mit/ohne Karte, Erkennung je
   Format, Leser Intel HEX/ASCII-Art, Stanzer binden/neues Band/lösen/flush, Fehler mit
   Zeile), `py_c_api`.  Gestanzt wird dort nicht (kein Gast) — das deckt `K6022Maschine.*`.
+- **AP-L4 erledigt (2026-10-05).** *Einstellungen ▸ Allgemein*: Kästchen „Lochstreifen
+  (SIF1000, K6022)“ in allen drei Programmen, `general.ptape` (Vorgabe aus, auch in den drei
+  `data/default_config_*.yaml` ausdrücklich `false`); ein Wechsel baut die Maschine neu
+  (`MainWindow._on_ptape_selected` → `_apply_drive_types`, wie die RAF).  Der Übergang aus
+  AP-L1 (PRG steckt immer) ist weg.  Kasten „Lochstreifen“ (`app/ui/lochstreifen_widget.py`)
+  wird in jedem Programm angelegt, an die Laufwerke getabbt, und nur bei gesteckter Karte
+  gezeigt — sonst samt *Ansicht*-Eintrag ausgeblendet (`_lochstreifen_kasten`, auch nach dem
+  Wiederherstellen eines gespeicherten Kastenlayouts).  Stand im Sekundentakt der Statuszeile
+  und beim Obenauflegen.  Formatdialog `app/ui/lochstreifen_format_dialog.py` (`frage()`,
+  Vorauswahl `vorauswahl()`: Inhalt einer vorhandenen, nicht leeren Datei, sonst Endung —
+  für Leser und Stanzer gleich).  Konfiguration: Abschnitt `lochstreifen: {leser: {datei,
+  format}, stanzer: {datei, format}}`; fehlt er, bleibt alles; fehlende Datei beim Start →
+  Statuszeile.  Ohne Karte bleibt der letzte Stand gemerkt (Aus- und Wiederanstecken bindet
+  die Dateien neu); bei jedem Neuaufbau wird das Stanzband vorher zurückgeschrieben, ebenso
+  beim Beenden.  *Maschine ▸ Lochband*, die fünf Aktionen und `app/ui/lochband.py` sind
+  entfallen.  Abweichungen: „Neues Band“ fragt nach, wenn das Band etwas trägt (es leert
+  eine gebundene Datei); der Leser fängt nach einem Neuaufbau von vorn an; ein **ungebundenes**
+  Stanzband geht beim Neuaufbau verloren.  Kein Eintrag in der Symbolleisten-Auswahl.
+  Wächter `py_lochstreifen_gui` (ersetzt `py_prg710_lochband_gui`), dazu
+  `test_lochstreifen_einlegen_und_entnehmen_ueber_den_kasten` in `py_prg710emu_bedienung`.

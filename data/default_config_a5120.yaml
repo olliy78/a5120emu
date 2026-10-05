@@ -57,6 +57,8 @@ crt:
 general:
   speed: 10.0
   model: a5120
+  # Lochstreifen (ADA K6022, SIF1000) gesteckt? doc/design/23_lochstreifen.md §7.
+  ptape: false
 
 # RAM-Floppy RAF auf E/A 88H/89H (app/raf.py, doc/design/22_raf512.md §7):
 # raf = none | raf128 | raf512 | raf2m; raf_standby = Inhalt beim Beenden behalten.

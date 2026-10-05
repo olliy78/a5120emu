@@ -5,7 +5,8 @@ K1520 Emulator - Settings Widget
 Dockable settings panel with tabbed categories:
 
 * **Allgemein** — general emulator settings (model, emulation speed dropdown,
-  RAM-Disk RAF + Stand-by, doc/design/22_raf512.md §7.1).
+  RAM-Disk RAF + Stand-by, doc/design/22_raf512.md §7.1; Lochstreifen K6022,
+  doc/design/23_lochstreifen.md §7).
 * **Schnittstellen** — die seriellen Schnittstellen nach außen (AP-S10; das
   Widget kommt vom Hauptfenster, damit sein Takt auch ohne sichtbaren Reiter läuft).
 * **CRT** — every :class:`~app.ui.screen_widget.CRTParams` field as a live
@@ -52,6 +53,9 @@ class SettingsWidget(QWidget):
     rafChanged = Signal(str)
     # Stand-by-Kästchen der RAF umgeschaltet (kein Neuaufbau).
     rafStandbyChanged = Signal(bool)
+    # Kästchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
+    # wie bei der RAF (doc/design/23_lochstreifen.md §7).
+    ptapeChanged = Signal(bool)
 
     #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
@@ -76,6 +80,7 @@ class SettingsWidget(QWidget):
         self._model_guard = False
         # Dito für RAM-Disk-Auswahl und Stand-by-Kästchen.
         self._raf_guard = False
+        self._ptape_guard = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -248,7 +253,33 @@ class SettingsWidget(QWidget):
             self.raf_combo.setVisible(False)
             self.raf_standby_box.setVisible(False)
 
+        # Lochstreifen: ADA K6022 mit Leser daro 1210 und Stanzer daro 1215 (SIF1000) —
+        # in allen Programmen eine Option, Vorgabe aus (Anwenderentscheid E3).
+        self.ptape_box = QCheckBox("Lochstreifen (SIF1000, K6022)", inner)
+        self.ptape_box.setToolTip(
+            "Steckt die ADA K6022 mit Lochstreifenleser und -stanzer (E/A E0H–E7H).  "
+            "Bedient werden beide im Kasten „Lochstreifen“.  Ein Wechsel schaltet die "
+            "Maschine aus und neu ein.")
+        self.ptape_box.toggled.connect(self._on_ptape_box)
+        form.addRow("Peripherie:", self.ptape_box)
+
         return inner
+
+    # ── Lochstreifen (K6022) ─────────────────────────────────────────────────
+
+    def _on_ptape_box(self, an: bool):
+        if self._ptape_guard:
+            return
+        self.ptapeChanged.emit(bool(an))
+
+    def ptape_value(self) -> bool:
+        return self.ptape_box.isChecked()
+
+    def set_ptape_value(self, an: bool):
+        """Kästchen setzen, ohne ``ptapeChanged`` auszulösen."""
+        self._ptape_guard = True
+        self.ptape_box.setChecked(bool(an))
+        self._ptape_guard = False
 
     # ── RAM-Disk (RAF) ───────────────────────────────────────────────────────
 

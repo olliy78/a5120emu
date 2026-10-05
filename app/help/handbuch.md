@@ -51,7 +51,10 @@ Taste die echte Tastatur gerade anspricht, und trägt die Anzeigen des Rechners
 Schreibschutz, das erkannte Format, und die Knöpfe zum Einlegen, Anlegen,
 Speichern unter und für die echte Diskette.
 
-**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk), *Laufwerke*
+**Lochstreifen** — Leser und Stanzer, nur solange die Lochstreifen-Karte steckt
+(siehe *Lochstreifen* unten).
+
+**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk, Lochstreifen), *Laufwerke*
 (welcher Laufwerkstyp in welchem Steckplatz steckt), *Schnittstellen* (die seriellen
 Anschlüsse des Rechners nach außen, ein Block je Schnittstelle — siehe *Serielle
 Schnittstellen* unten) und *CRT* (das Aussehen der Bildröhre).
@@ -623,6 +626,64 @@ geschrieben; eine vorhandene bleibt liegen.
 **A5120.16 und RAF** gehen zusammen: das Erweiterungsmodul belegt M: (CP/A mit
 EM256-BIOS), `RAF512.COM` legt die RAF daneben als P: an.
 
+## Lochstreifen
+
+*Einstellungen ▸ Allgemein ▸ Lochstreifen (SIF1000, K6022)* steckt die
+Anschlusskarte ADA K6022 mit einem **Lochstreifenleser** (daro 1210) und einem
+**Lochstreifenstanzer** (daro 1215) — in allen drei Programmen, ab Werk aus. Ein
+Wechsel schaltet die Maschine aus und baut sie neu auf, wie bei der RAM-Disk.
+
+Mit gesteckter Karte erscheint der Kasten **Lochstreifen** (neben *Laufwerke*,
+*Ansicht ▸ Lochstreifen* holt ihn zurück). Er hat zwei Blöcke:
+
+* **Lochstreifenleser** — *Öffnen…* legt eine Banddatei ein, *Entnehmen* nimmt sie
+  heraus. Darunter steht, wie weit gelesen ist (`120 von 480 Byte gelesen`) und
+  wann das Bandende erreicht ist. Der Leser gibt vorn und hinten ein Stück
+  Leerband (Nullbytes) dazu. Die Datei selbst wird nie verändert.
+* **Lochstreifenstanzer** — *Öffnen…* **bindet** den Stanzer an eine Datei: was
+  gestanzt wird, schreibt das Programm nach jeder Stanzpause dorthin, wie bei einer
+  Diskette. Eine vorhandene Datei ist der Anfang des Bandes, es wird angehängt.
+  *Lösen* beendet die Bindung (das Band bleibt im Stanzer), *Neues Band* fängt
+  von vorn an und leert eine gebundene Datei sofort. Ohne Datei bleibt das Band
+  nur im Speicher. *Stanzer ein* abgehakt: der Stanzer quittiert nicht, der
+  Treiber meldet nach etwa einer Sekunde einen Fehler (UDOS: `ERROR C2`).
+
+Beide Dateien samt Format werden gemerkt und beim nächsten Start wieder
+eingelegt bzw. gebunden; fehlt eine, sagt es die Statuszeile, und das Gerät
+bleibt leer. Beide Bänder überstehen ein Rückstellen.
+
+**Nach jeder Dateiwahl wird das Format erfragt** — vorgeschlagen nach dem Inhalt
+der Datei, bei einer neuen Datei nach ihrer Endung:
+
+| Format | Endung | Inhalt |
+|--------|--------|--------|
+| Roh | `.ptp`, `.bin` | ein Byte je Sprosse, wie gestanzt — eine Textdatei des PCs lässt sich so direkt einlesen |
+| Intel HEX | `.hex`, `.ihx` | Adresse = Stelle auf dem Band, Lücken = 00H |
+| ASCII-Art | `.txt`, `.tape` | das Lochbild zum Ansehen und Bearbeiten |
+
+ASCII-Art zeigt den Streifen von oben nach unten, Spur 8 links, das
+Transportloch zwischen Spur 3 und 4; rechts stehen Wert und Zeichen. Zeilen mit
+`;` sind Kommentar. Beim Einlesen zählt das Lochbild — steht rechts ein Wert,
+der nicht dazu passt, wird die Datei mit Zeilennummer abgewiesen:
+
+```
+;    8 7 6 5 4   3 2 1
+;  +-------------------+
+   | . . . . . o . . . |  00
+   | . O . . . o . . O |  41  A
+   | O . . O . o . O O |  93
+;  +-------------------+
+```
+
+**Gasttreiber:** am **PRG 710** hat UDOS ihn dabei: `DO TWRITE.1215 DATEI F=A`
+stanzt eine Datei, `DO TREAD.1210 NEU F=A` liest das eingelegte Band in die
+Datei `NEU` (sie entsteht auf der zweiten Diskettenseite, `CAT` meldet
+„DRIVE 4“). **`F=A` gehört dazu**: der Treiber `PTAPE.6022` überträgt nur Text
+(gerade Parität, Zeilenende NL); das Vorgabeformat von `TAPE.WRITE` kommt nicht
+zurück (`ERROR C9`). `ERROR C2` beim Lesen heisst: kein Band im Leser. Für
+**A5120** und **K8915** liegt kein Treiber bei — die Karte steckt (E/A E0H–E7H),
+ein Programm muss sie selbst bedienen.
+
 ## Die Bildröhre einstellen
 
 *Einstellungen ▸ CRT*: Leuchtfarbe, Helligkeit, Kontrast, Wölbung, Rundung der
@@ -656,7 +717,8 @@ Alles, was man einstellt, landet fortlaufend in
 `%APPDATA%\K1520emu`) — jedes der beiden Programme hat seine eigene Datei, man
 kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
 zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
-Takt, Modell, RAM-Disk (samt Stand-by), Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
+Takt, Modell, RAM-Disk (samt Stand-by), Lochstreifen-Karte samt Leser- und
+Stanzerdatei, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
 (samt dem, was lief), Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.
@@ -893,27 +955,12 @@ einlegen, `J`, `J`. Das Brennen dauert in Maschinenzeit gut 50 ms je Byte (U2716
 bzw. 100 Durchläufe über das ganze PROM (U555). Die Antworten in `PROG` sind
 einzelne Tasten ohne ET.
 
-### Lochband und Fernschreiber
+### Lochstreifen und Fernschreiber
 
-Der PRG hat einen **Lochbandleser** (daro 1210) und einen **Lochbandstanzer**
-(daro 1215) an der Karte K6022 und einen **Fernschreiber** an der Karte 590069.
+Leser und Stanzer an der K6022 sind eine Option wie an den anderen Rechnern —
+siehe *Lochstreifen* oben (dort auch die Bedienung unter UDOS). Der PRG hat
+dazu einen **Fernschreiber** an der Karte 590069:
 
-* **Ein Band ist eine Datei** mit den Bytes, wie sie gestanzt sind. *Maschine ▸
-  Lochband ▸ Band in den Leser legen…* legt eine ein, *Band aus dem Leser nehmen*
-  nimmt sie heraus (das Menü zeigt, wie weit gelesen ist). Der Leser gibt vorn und
-  hinten ein Stück Leerband (Nullbytes) dazu — eine Textdatei des PCs lässt sich
-  so direkt einlesen.
-* Was gestanzt wird, sammelt sich im **Stanzband**: *Stanzband speichern…* schreibt
-  es in eine Datei (das Menü zeigt die Länge), *Neues Stanzband einlegen* fängt
-  von vorn an. *Stanzer eingeschaltet* abgehakt: der Stanzer quittiert nicht, der
-  Treiber meldet nach etwa einer Sekunde `ERROR C2`. Beide Bänder überstehen ein
-  Rückstellen.
-* **Unter UDOS** stanzt `DO TWRITE.1215 DATEI F=A` eine Datei, `DO TREAD.1210 NEU
-  F=A` liest das eingelegte Band in die Datei `NEU` (sie entsteht auf der zweiten
-  Diskettenseite, `CAT` meldet „DRIVE 4“). **`F=A` gehört dazu**: der Treiber
-  `PTAPE.6022` überträgt nur Text (gerade Parität, Zeilenende NL); das
-  Vorgabeformat von `TAPE.WRITE` kommt nicht zurück (`ERROR C9`). `ERROR C2` beim
-  Lesen heisst: kein Band im Leser.
 * **Der Fernschreiber** ist ein Anschluss im Reiter *Schnittstellen* wie die
   anderen — als **Datei** wird daraus ein Fernschreibprotokoll, über **Telnet**
   liest ein Terminal mit. Nachgebildet ist der Fernschreiber selbst: hinaus geht
