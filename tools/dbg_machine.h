@@ -41,10 +41,11 @@ namespace dbgm {
 using IntSource = A5120Machine::IntSource;
 
 /** @brief Maschinenwahl aus `--machine`; false bei unbekanntem Namen. */
-enum class Art { A5120, K8915, Prg710, Prg710_1, Pc1715, Pc1715W };
+enum class Art { A5120, K8915, K8915G2, Prg710, Prg710_1, Pc1715, Pc1715W };
 inline bool parseMachine(const std::string& s, Art& art) {
     if (s == "a5120" || s == "A5120")       { art = Art::A5120;    return true; }
     if (s == "k8915" || s == "K8915")       { art = Art::K8915;    return true; }
+    if (s == "k8915-g2" || s == "K8915-G2") { art = Art::K8915G2;  return true; }   // AP-V6b
     if (s == "prg710" || s == "PRG710")     { art = Art::Prg710;   return true; }
     if (s == "prg710-1" || s == "PRG710-1") { art = Art::Prg710_1; return true; }
     if (s == "pc1715" || s == "PC1715")     { art = Art::Pc1715;   return true; }
@@ -115,6 +116,39 @@ inline std::string speicherbild(const K8915Zre& zre) {
 }
 
 /**
+ * @brief Gen 2 (AP-V6b): je 4-KB-Seite `Z` ZRE K2521 (ROM 0000-0BFFH + 1 KB RAM), `M` RAM der
+ *        K3528, `.` Systembus (K7024-Bildspeicher u. a.).
+ */
+inline std::string speicherbild(const K3528& ops) {
+    std::string s;
+    for (int p = 0; p < 16; ++p) {
+        switch (ops.ortVon((uint16_t)(p << 12))) {
+            case K3528::Quelle::Zre: s += 'Z'; break;
+            case K3528::Quelle::Ram: s += 'M'; break;
+            case K3528::Quelle::Bus: s += '.'; break;
+        }
+    }
+    return s;
+}
+
+// ─── K8915 beider Bauformen (V3: ZRE 045-8762, Gen 2: K2521 + K3528) ─────────
+// `K8915Machine::zre()` gilt nur am V3 (assert) — jede Stelle der Werkzeuge geht über diese Weichen.
+inline bool gen2(const K8915Machine& k) { return k.generation() == K8915Machine::Generation::Gen2; }
+inline uint8_t k8A8(K8915Machine& k)    { return gen2(k) ? k.ops().reg()    : k.zre().reg(); }
+inline bool k8Memdi(K8915Machine& k)    { return gen2(k) ? k.ops().memdi()  : k.zre().memdi(); }
+inline bool k8Memdi1(K8915Machine& k)   { return gen2(k) ? k.ops().memdi1() : k.zre().memdi1(); }
+inline Z80& k8Cpu(K8915Machine& k)      { return gen2(k) ? k.k2521().cpu()  : k.zre().cpu(); }
+inline Z80CTC& k8ZreCtc(K8915Machine& k){ return gen2(k) ? k.k2521().ctc()  : k.zre().ctc(); }
+/// Antwortet an @p addr das ROM der ZRE (V3: Boot-ROM, Gen 2: K2521-Seite)?
+inline bool k8RomEin(K8915Machine& k, uint16_t addr) {
+    return gen2(k) ? k.ops().ortVon(addr) == K3528::Quelle::Zre
+                   : k.zre().ortVon(addr).quelle == K8915Zre::Quelle::Rom;
+}
+inline std::string speicherbild(K8915Machine& k) {
+    return gen2(k) ? speicherbild(static_cast<const K3528&>(k.ops())) : speicherbild(static_cast<const K8915Zre&>(k.zre()));
+}
+
+/**
  * @brief Speicherbild des PRG je 4-KB-Seite: `Z` ZRE, `V` Seite F mit VRAM,
  *        `0`–`F` physische OPS-Seite, `-` leer (wie boot_trace).
  */
@@ -147,6 +181,11 @@ public:
     /// @p cfg gilt nur für den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
     explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}) {
         if (art == Art::K8915) k8_ = std::make_unique<K8915Machine>();
+        else if (art == Art::K8915G2) {
+            K8915Machine::Config c;
+            c.generation = K8915Machine::Generation::Gen2;
+            k8_ = std::make_unique<K8915Machine>(c);
+        }
         else if (art == Art::Pc1715) pc_ = std::make_unique<Pc1715Machine>();
         else if (art == Art::Pc1715W) {   // dieselbe Klasse, Variante 1715W (AP-W3)
             Pc1715Machine::Config c;
@@ -169,7 +208,7 @@ public:
     /// Eine CPU, keine ZVE2/BUSRQ/Snapshots (K8915 und PRG).
     bool einCpu() const { return a5_ == nullptr; }
     const char* name() const {
-        return k8_ ? "K8915" : pc_ ? "PC 1715" : p7_ ? (isPrg1() ? "PRG 710-1" : "PRG 710") : "A5120"; }
+        return k8_ ? (gen2(*k8_) ? "K8915 Gen 2" : "K8915") : pc_ ? "PC 1715" : p7_ ? (isPrg1() ? "PRG 710-1" : "PRG 710") : "A5120"; }
     /// Anzeigename der (Haupt-)CPU in Meldungen: am A5120 „ZVE1“ (es gibt zwei).
     const char* cpuName() const { return a5_ ? "ZVE1" : "CPU"; }
     A5120Machine* a5120() { return a5_.get(); }
@@ -223,7 +262,7 @@ public:
 
     // ─── CPU ─────────────────────────────────────────────────────────────────
     Z80& cpuDebug() {
-        if (k8_) return k8_->zre().cpu();
+        if (k8_) return k8Cpu(*k8_);
         if (p7_) return p7_->zre().cpu();
         if (pc_) return pc_->zre().cpu();
         return a5_->cpuDebug();
@@ -239,7 +278,7 @@ public:
         return a5_->machineCycles();
     }
     bool isRomEnabled() {
-        if (k8_) return k8_->zre().ortVon(0x0000).quelle == K8915Zre::Quelle::Rom;
+        if (k8_) return k8RomEin(*k8_, 0x0000);
         if (p7_) return p7_->speicher().ortVon(0x0000).quelle == Prg710Speicher::Quelle::Zre;
         if (pc_) return pc_->zre().romEin();
         return a5_->isRomEnabled();
@@ -420,7 +459,10 @@ public:
         };
         addPio(k8_->afs().ctrlPio().debugState(), "K5122 ctrl-PIO");
         addPio(k8_->afs().dataPio().debugState(), "K5122 data-PIO");
-        addCtc(k8_->zre().ctc(), "ZRE CTC");
+        if (gen2(*k8_)) {   // K2521: IEI → CTC → PIO → IEO
+            addCtc(k8_->k2521().ctc(), "ZRE K2521 CTC");
+            addPio(k8_->k2521().pio().debugState(), "ZRE K2521 PIO");
+        } else addCtc(k8_->zre().ctc(), "ZRE CTC");
         addSio(k8_->ats().sio1(), "ATS SIO1");
         addSio(k8_->ats().sio2(), "ATS SIO2 (B=Tastatur)");
         addCtc(k8_->ats().ctc1(), "ATS CTC1");

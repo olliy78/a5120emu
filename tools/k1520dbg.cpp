@@ -185,7 +185,7 @@ int main(int argc, char** argv){
     // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     bool start_console = false;   // --console: sofort in den Konsolenmodus (§9)
-    dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|prg710|prg710-1|pc1715|pc1715w (Vorgabe a5120)
+    dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|k8915-g2|prg710|prg710-1|pc1715|pc1715w (Vorgabe a5120)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
@@ -193,7 +193,7 @@ int main(int argc, char** argv){
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
             if (!dbgm::parseMachine(argv[++i], art)){
-                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1 | pc1715 | pc1715w)\n",argv[i]); return 2; } }
+                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w)\n",argv[i]); return 2; } }
         else if (!strcmp(argv[i],"--skip-selftest")) skip_selftest=true;
         else if (!strcmp(argv[i],"-x") && i+1<argc) script=argv[++i];
         else if (!strcmp(argv[i],"-s") && i+1<argc) symfiles.push_back(argv[++i]);
@@ -251,6 +251,8 @@ int main(int argc, char** argv){
     const char* C1 = m.cpuName();            // "ZVE1" (A5120) bzw. "CPU" (K8915) in Meldungen
     if (skip_selftest){
         if (!K89) fprintf(stderr,"WARN: --skip-selftest gibt es nur am K8915 — ignoriert\n");
+        else if (dbgm::gen2(*m.k8915()))   // Gen 2: der Stub bei 0400H ist ein anderer; Weg ungeprüft
+            fprintf(stderr,"WARN: --skip-selftest gibt es an der Gen 2 nicht — ignoriert\n");
         else {
             // Genau der Weg eines echten Warmstarts (doc/merkposten/k8915.md): steht bei
             // 0000H/0005H im RAM ein JP, springt der Stub bei FFE0H ohne Selbsttest zur
@@ -1223,7 +1225,7 @@ int main(int argc, char** argv){
         if (K8){   // K8915: eine CPU; was zählt, ist das Speicherbild (A8H) und /MEMDI
             K8915Machine& k=*m.k8915();
             fprintf(stderr,"  state: A8H=%02X map=%s /MEMDI=%s 61H=%02X  %c-cyc=%lld%s\n",
-                k.zre().reg(), dbgm::speicherbild(k.zre()).c_str(), k.zre().memdi()?"1":"0",
+                dbgm::k8A8(k), dbgm::speicherbild(k).c_str(), dbgm::k8Memdi(k)?"1":"0",
                 k.ats().anzeige(), rcpfx(), rc(m.cpuCycles()), rel_armed?" (rel)":"");
             return;
         }
@@ -1515,10 +1517,10 @@ int main(int argc, char** argv){
             uint16_t pc=m.cpuPC();
             if (json){
                 fprintf(stderr,
-                  "\n{\"machine\":\"k8915\",\"pc\":\"0x%04X\",\"a8\":\"0x%02X\",\"map\":\"%s\",\"memdi\":%s,"
+                  "\n{\"machine\":\"%s\",\"pc\":\"0x%04X\",\"a8\":\"0x%02X\",\"map\":\"%s\",\"memdi\":%s,"
                   "\"lamps\":\"0x%02X\",\"k5122\":{\"drive\":%u,\"mounted\":%s,\"cyl\":%u,\"head\":%u,"
                   "\"transferring\":%s,\"write\":%s,\"headPos\":%zu,\"trackLen\":%zu}}\n",
-                  pc,k8.zre().reg(),dbgm::speicherbild(k8.zre()).c_str(),k8.zre().memdi()?"true":"false",
+                  dbgm::gen2(k8)?"k8915-g2":"k8915",pc,dbgm::k8A8(k8),dbgm::speicherbild(k8).c_str(),dbgm::k8Memdi(k8)?"true":"false",
                   k8.ats().anzeige(),(unsigned)k.drive,k.mounted?"true":"false",(unsigned)k.cylinder,
                   (unsigned)k.head,k.transferring?"true":"false",k.writeMode?"true":"false",k.headPos,k.trackLen);
                 return;
@@ -1526,7 +1528,7 @@ int main(int argc, char** argv){
             char l1[120]; disasmAt(pc,l1,sizeof l1); std::string p1=prnFor(pc);
             fprintf(stderr,"  CPU  %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
             fprintf(stderr,"  A8H=%02X  map=%s  (R=ROM 1=Bank1 2=Bank2 .=Bus; je 4 KB ab 0000H)  /MEMDI=%s\n",
-                    k8.zre().reg(),dbgm::speicherbild(k8.zre()).c_str(),k8.zre().memdi()?"1":"0");
+                    dbgm::k8A8(k8),dbgm::speicherbild(k8).c_str(),dbgm::k8Memdi(k8)?"1":"0");
             fprintf(stderr,"  K5122 (/WAIT): D%d %s cyl=%u head=%u %s%s headPos=%zu/%zu MKE=%d"
                     " geschrieben=%zu B, ganze Spuren=%llu\n",
                     k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
@@ -1589,7 +1591,7 @@ int main(int argc, char** argv){
                          (unsigned long long)(runClock()-start), m.cpuPC(), m.pc1715()->zre().bwsRegister());
                  return; }
         if (K8){ fprintf(stderr,"  … %llu cyc  PC=%04X  A8H=%02X  [Ctrl-C bricht ab]\n",
-                         (unsigned long long)(runClock()-start), m.cpuPC(), m.k8915()->zre().reg());
+                         (unsigned long long)(runClock()-start), m.cpuPC(), dbgm::k8A8(*m.k8915()));
                  return; }
         fprintf(stderr,"  … %llu cyc (%s)  ZVE1 PC=%04X  ZVE2 PC=%04X  busrq=%s  [Ctrl-C bricht ab]\n",
                 (unsigned long long)(runClock()-start), clock_machine?"Maschine":"ZVE1",
@@ -2361,7 +2363,7 @@ int main(int argc, char** argv){
     signal(SIGINT, dbgSigInt);      // §7: Ctrl-C bricht einen laufenden `g` ab, nicht die Sitzung
     if (KC) fprintf(stderr,"k1520dbg — Maschine PC 1715 (eine CPU; 'help pc1715').  Disassembler: built-in.\n");
     else if (KP) fprintf(stderr,"k1520dbg — Maschine %s (eine CPU; 'help prg').  Disassembler: built-in.\n",m.name());
-    else if (K8) fprintf(stderr,"k1520dbg — Maschine K8915 (eine CPU; 'help k8915').  Disassembler: built-in.\n");
+    else if (K8) fprintf(stderr,"k1520dbg — Maschine %s (eine CPU; 'help k8915').  Disassembler: built-in.\n",m.name());
     else
     fprintf(stderr,"k1520dbg — type 'help'.  Lauf-Uhr = %s (clock zve1|machine).  Disassembler: built-in.\n",
             clock_machine? "Maschine (beide CPUs)" : "ZVE1");
@@ -2493,14 +2495,16 @@ int main(int argc, char** argv){
         }
         else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="k8915"||t[1]=="K8915")){
             fprintf(stderr,
-              "  K8915 (--machine k8915)  eine CPU, Speicherbild ueber A8H, K5122 im /WAIT-Betrieb\n"
-              "    map               A8H, /MEMDI, Quelle je 4-KB-Seite (ROM/Bank 1/Bank 2/Bus)\n"
+              "  K8915 (--machine k8915 | k8915-g2)  eine CPU, Speicherbild ueber A8H, K5122 im /WAIT-Betrieb\n"
+              "    map               A8H, /MEMDI, Quelle je 4-KB-Seite (ROM/Bank 1/Bank 2/Bus; Gen 2: ZRE/K3528/Bus)\n"
               "    bank <1|2> <A> [N]  Hexdump direkt aus einer DRAM-Bank (Bank 2: Viertel q = q*4000H)\n"
               "    d/u/x/e/wp        Speicher in CPU-SICHT (mit A8H-Abbildung)\n"
               "    screen/gscreen    Bild direkt von der K7024 (1000H), nie ueber die CPU-Sicht\n"
               "    keys <text>       Zeichen ueber die K7672 (SCP: Zeichen, DCP: Scancodes) — \\x03 = ^C\n"
               "    vars ; where ; dev [ctc|pio|sio|sio2] ; ivt   A8H/61H, K5122, ATS, Interruptkette\n"
-              "    --skip-selftest   Start ohne ROM-Selbsttest (JP bei 0000H/0005H wie ein Warmstart)\n"
+              "    --skip-selftest   Start ohne ROM-Selbsttest (JP bei 0000H/0005H wie ein Warmstart; nicht Gen 2)\n"
+              "    Gen 2: bank nicht vorhanden; dev ctc = ZRE K2521; Listing -l k8915g2_zre.prn@0xFC00:0021-03FF\n"
+              "           -l k8915g2_zre.prn@0xFC00:0400-0BFF (Kopierer; Stub 0400H unverschoben)\n"
               "    Listings: -l k8915_zre.prn -l k8915_zre.prn@0xF000:00D0-03FF\n"
               "              -l k8915_zre.prn@0xF000:0C00-0FFF -l scpx8915_v53_bios.prn\n"
               "              (annotiert wird nur, solange die Bytes der Zeile im Speicher stehen)\n"
@@ -2596,7 +2600,7 @@ int main(int argc, char** argv){
               "          keyuntil \"<key>\" \"txt\" [maxcyc]  press key until screen shows txt (poll-robust)\n"
               "          dialog <file>   drive a menu: per line  \"screen-txt\" \"keys\" [maxcyc]\n"
               "          alias <name> <expansion..> | unalias <name> | alias ; source <file>\n"
-              "  K8915   map | bank <1|2> <A> [N] | help k8915   (--machine k8915)\n"
+              "  K8915   map | bank <1|2> <A> [N] | help k8915   (--machine k8915 | k8915-g2)\n"
               "  PRG     map | help prg   (--machine prg710|prg710-1)\n"
               "  PC1715  map | help pc1715   (--machine pc1715)\n"
 
@@ -2804,10 +2808,10 @@ int main(int argc, char** argv){
             fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
                 "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
                 "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"cyc\":%llu,\"rom\":%s,"
-                "\"machine\":\"k8915\",\"a8\":\"0x%02X\",\"lamps\":\"0x%02X\"}\n",
+                "\"machine\":\"%s\",\"a8\":\"0x%02X\",\"lamps\":\"0x%02X\"}\n",
                 z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,z.R, z.IFF1?"true":"false",
                 (unsigned long long)m.cpuCycles(), m.isRomEnabled()?"true":"false",
-                k8.zre().reg(), k8.ats().anzeige()); }
+                dbgm::gen2(k8)?"k8915-g2":"k8915", dbgm::k8A8(k8), k8.ats().anzeige()); }
         else if (cmd=="rj"){ const Z80& z=m.cpuDebug();
             fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
                 "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
@@ -3115,12 +3119,13 @@ int main(int argc, char** argv){
                         z.romEin()?"ein":"aus", z.bwsRegister(), z.bildBasis(), z.bwsZg2()?2:1,
                         z.textCols(), z.textRows()); }
             else if (K89){   // K8915: Speicherbild und Anzeigefeld statt Handschlag-RAM/CP/A-DPB
-                K8915Machine& k8=*m.k8915(); uint8_t a8=k8.zre().reg(), l=k8.ats().anzeige();
-                fprintf(stderr,"  A8H=%02X  map=%s  /MEMDI=%s /MEMDI1=%s  Bank-2-Viertel=%d%s\n"
+                K8915Machine& k8=*m.k8915(); uint8_t a8=dbgm::k8A8(k8), l=k8.ats().anzeige();
+                char b2[48]=""; if (!dbgm::gen2(k8)) snprintf(b2,sizeof b2,"  Bank-2-Viertel=%d%s",(a8>>4)&3,(a8&0x40)?" (eingeblendet)":"");
+                fprintf(stderr,"  A8H=%02X  map=%s  /MEMDI=%s /MEMDI1=%s%s\n"
                                "  61H=%02X  Lampen an: %s\n"
                                "  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
-                        a8, dbgm::speicherbild(k8.zre()).c_str(), k8.zre().memdi()?"aktiv":"-",
-                        k8.zre().memdi1()?"aktiv":"-", (a8>>4)&3, (a8&0x40)?" (eingeblendet)":"",
+                        a8, dbgm::speicherbild(k8).c_str(), dbgm::k8Memdi(k8)?"aktiv":"-",
+                        dbgm::k8Memdi1(k8)?"aktiv":"-", b2,
                         l, dbgm::lampen61(l).c_str()); }
             else fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n"
                                 "  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
@@ -3150,7 +3155,7 @@ int main(int argc, char** argv){
                             z.textCols(),z.textRows(),z.zeichenLinien(),z.bildZeilen(),z.bwsRegister(),z.bildBasis(),z.bwsZg2()?2:1);
                 else showSio("ZRE SIO0 (A = Tastatur 1715, B = V.24)",z.sio().debugState()); }
             else if (w=="ctc" && K89){ K8915Machine& k8=*m.k8915();
-                showCtc("ZRE 045-8762, 80H-83H",k8.zre().ctc().debugState());
+                showCtc(dbgm::gen2(k8)?"ZRE K2521, 80H-83H":"ZRE 045-8762, 80H-83H",dbgm::k8ZreCtc(k8).debugState());
                 showCtc("ATS CTC1",k8.ats().ctc1().debugState());
                 showCtc("ATS CTC2",k8.ats().ctc2().debugState()); }
             else if ((w=="sio"||w=="sio2") && K89){ K8915Machine& k8=*m.k8915();
@@ -3313,6 +3318,15 @@ int main(int argc, char** argv){
                         z.textCols(), z.textRows(), z.bildZeilen());
             }
             else if (!K89) fprintf(stderr,"  map gibt es nur am K8915 (A8H-Speicherbild), am PRG (E8H-EBH) und am PC 1715 (Overlay/BWS) — am A5120 nicht vorhanden\n");
+            else if (dbgm::gen2(*m.k8915())){   // Gen 2: K3528 (A8H–ABH) statt Bank 1/2
+                K8915Machine& k8=*m.k8915(); K3528& o=k8.ops();
+                fprintf(stderr,"  A8H=%02X  map=%s  /MEMDI=%s /MEMDI1=%s  (Z=ZRE K2521 M=RAM K3528 .=Bus; je 4 KB ab 0000H)\n",
+                        o.reg(),dbgm::speicherbild(o).c_str(),o.memdi()?"aktiv":"-",o.memdi1()?"aktiv":"-");
+                static const char* qn[3]={"K3528","ZRE","Bus"};
+                for (int p=0;p<16;++p){ auto q=o.ortVon((uint16_t)(p<<12));
+                    fprintf(stderr,"    %04X-%04X  %-6s",(p<<12),(p<<12)|0x0FFF,qn[(int)q]);
+                    if (q==K3528::Quelle::Bus) fprintf(stderr,"%s\n", (p==1)?"  (K7024-Bildspeicher)":"");
+                    else fprintf(stderr,"  +%04X\n",(unsigned)(p<<12)); } }
             else { K8915Machine& k8=*m.k8915(); K8915Zre& z=k8.zre();
                 fprintf(stderr,"  A8H=%02X  /MEMDI=%s /MEMDI1=%s  Bank-2-Viertel=%d\n",z.reg(),
                         z.memdi()?"aktiv":"-", z.memdi1()?"aktiv":"-", (z.reg()>>4)&3);
@@ -3323,6 +3337,7 @@ int main(int argc, char** argv){
                     else fprintf(stderr,"  +%05X\n",(unsigned)o.offset); } } }
         else if (cmd=="bank"){
             if (!K89) fprintf(stderr,"  bank gibt es nur am K8915 (zwei DRAM-Baenke) — am %s nicht vorhanden\n",m.name());
+            else if (dbgm::gen2(*m.k8915())) fprintf(stderr,"  bank: nicht vorhanden (Gen 2 ohne Bank 2; Bank 1 = RAM der K3528, 'd' liest es in CPU-Sicht)\n");
             else if (t.size()<3 || (t[1]!="1" && t[1]!="2"))
                 fprintf(stderr,"  bank <1|2> <A> [N]   Hexdump direkt aus Bank 1/2 (Bank 2: Viertel q ab q*4000H)\n");
             else { int b=(t[1]=="2")?1:0; uint16_t a=(uint16_t)parseNum(t[2]);

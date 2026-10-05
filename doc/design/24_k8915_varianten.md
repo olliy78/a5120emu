@@ -759,6 +759,26 @@ Beispiele in die beiden `.md`.
 dann Kaltstartmeldung), `cli_bt_k8915g2_prompt` (901 bis stabiles `A>`), alle `cli_*_k8915_*` grün.
 **Fertig, wenn:** `tools/dev.sh test` grün, Referenzen nachgetragen, Nachtrag hier, ein Commit.
 
+**AP-V6b erledigt 2026-10-05.** `--machine k8915-g2` in `boot_trace` und `k1520dbg`
+(`dbg_machine.h`: `Art::K8915G2`, `speicherbild(const K3528&)`, Weichen `gen2`/`k8A8`/`k8Memdi`/
+`k8Memdi1`/`k8Cpu`/`k8ZreCtc`/`k8RomEin`; alle `zre()`-Stellen der Werkzeuge laufen darüber, nur noch
+`bank` und der `--skip-selftest`-Zweig fassen `zre()` an — beide am V3 gewählt). Wächter wie benannt:
+`cli_dbg_k8915g2_all_commands_smoke`, `cli_bt_k8915g2_coldstart`, `cli_bt_k8915g2_prompt`; alle
+`cli_*_k8915_*` und voller `tools/dev.sh test` grün. Befunde/Abweichungen:
+- **`prn_listing.h` konnte das Gen-2-Listing nicht lesen** (0 Zeilen): die zwei Adressspalten
+  „LADE LAUF“ ließen die Byte-Erkennung scheitern. `parseLine` überspringt jetzt eine 4-stellige
+  zweite Spalte, wenn ein 2-stelliges Byte-Token folgt (andere Listings unverändert); maßgeblich ist
+  LADE, `@0xFC00:0021-03FF` legt den 175-Block hinter dem Kopierer auf die Laufadresse (432 Zeilen),
+  `@:0400-0BFF` (635 Zeilen) den Rest. Das Häppchen 098FH–09A5H (Lauf FFE0H) ist nicht eingehängt
+  (`@0xF651:098F-09A5` wäre der Weg); 0000–0020 nur mit eigenem `@:0000-0020`.
+- Speicherbild-Zeichen der Gen 2: `Z` ZRE, `M` K3528-RAM, `.` Bus (V3: `R`/`1`/`2`/`.`).
+- Selbsttestfehler-Erkennung in `boot_trace` wie im Wächter `test_k8915g2_boot.cpp`: Buchstabe bei
+  Zeile 23/Spalte 70, ERROR-Lampe, `bellCount() >= 16`; erst dann `CR`. Kaltstart ohne Diskette:
+  Fehler `ROM C` bei ≈ 3,4 Mio. Takten, Kaltstartmeldung ≈ 3,76 Mio.; ohne `--until` läuft der
+  Lauf danach bis zum Stillstand (30 Mio.), Exit 1.
+- `--skip-selftest` an der Gen 2: Warnung, ignoriert (Stub bei 0400H ist ein anderer; ungeprüft).
+- Keine neuen offenen Fragen.
+
 #### AP-V7a — C-ABI und Python-Bindung
 
 **Ziel:** Gen 2 aus Python erzeugbar. **Agent:** cpp-coder (Sonnet). **Abhängig:** V6a.

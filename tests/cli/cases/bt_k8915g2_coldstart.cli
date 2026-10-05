@@ -1,0 +1,14 @@
+# boot_trace --machine k8915-g2 (AP-V6b), OHNE Diskette: der Abzug 175/176/177 meldet
+# Selbsttestfehler "ROM C" (Summe von 177, F9) mit ERROR-Lampe und 16 x BEL; das Werkzeug
+# tippt CR (--no-cr schaltet es ab) und der Lauf endet an der Kaltstartmeldung.
+tool:    boot_trace
+run:     --machine k8915-g2 --until 'screen ~ "Coldstart"' -l %CLI_DIR%/../../doc/EPROMS/K8915G2/k8915g2_zre.prn@0xFC00:0021-03FF -l %CLI_DIR%/../../doc/EPROMS/K8915G2/k8915g2_zre.prn@:0400-0BFF
+timeout: 120
+exit:    0
+expect:  === K8915 Gen 2 Boot Trace ===
+expect:  Selbsttestfehler ROM C → CR getippt
+expect:  OUT (61H)=7F  Anzeigefeld  Lampen: ERROR
+expect:  OUT (A8H)=0E  ZRE Speicherregister  map=Z...MMMMMMMMMMMM
+expect:  --until (screen ~ "Coldstart"): MET
+expect:  432 line(s), offset +64512
+expect_re: 0x[0-9A-F]{4} ROM : +[0-9]+ +\( *[0-9.]+%\) <KALTSTART\+[0-9]+>  ; 

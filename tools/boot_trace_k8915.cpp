@@ -74,7 +74,9 @@ std::string letzteZeile(const std::string& bild) {
 
 int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
 {
-    K8915Machine m;
+    K8915Machine::Config cfg;
+    if (o.gen2) cfg.generation = K8915Machine::Generation::Gen2;
+    K8915Machine m(cfg);
     { std::string err;
       if (!dbgm::steckeRaf(m, o.raf, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
       if (!dbgm::steckeK6022(m, o.ptape, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
@@ -103,7 +105,7 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
             fprintf(stderr, "ERROR: Could not mount disk '%s': %s\n", o.disk.c_str(), m.lastError().c_str());
     }
     if (!o.quiet) {
-        fprintf(stderr, "=== K8915 Boot Trace ===\n");
+        fprintf(stderr, "=== %s Boot Trace ===\n", o.gen2 ? "K8915 Gen 2" : "K8915");
         fprintf(stderr, "Disk:       %s%s\n", o.disk.empty() ? "(keine)" : o.disk.c_str(),
                 mounted ? "" : (o.disk.empty() ? "" : "  [NICHT gemountet]"));
         fprintf(stderr, "Max cycles: %lld   Stillstand nach %lld   Selbsttest: %s   CR nach Coldstart: %s\n",
@@ -182,7 +184,7 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
     m.setCpuTraceCallback([&](const Z80& z) {
         ++instr; insn_pc = z.PC;
         {
-            const bool rom = m.zre().ortVon(z.PC).quelle == K8915Zre::Quelle::Rom;
+            const bool rom = dbgm::k8RomEin(m, z.PC);
             const uint32_t key = z.PC | (rom ? 0x10000u : 0u);
             if (hist[key]++ == 0) hist_note[key] = name(z.PC) + prnTail(z.PC);
         }
@@ -255,7 +257,7 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
         } else {
             std::string zusatz;
             if (!isRead && (p & 0xFC) == 0xA8)
-                zusatz = "  map=" + dbgm::speicherbild(m.zre()) + (m.zre().memdi() ? " /MEMDI" : "");
+                zusatz = "  map=" + dbgm::speicherbild(m) + (dbgm::k8Memdi(m) ? " /MEMDI" : "");
             if (!isRead && p == 0x61) zusatz = "  Lampen: " + dbgm::lampen61(data);
             snprintf(t, sizeof t, "%s (%02XH)=%02X  %s%s", isRead ? "IN " : "OUT", p, data, portName(p), zusatz.c_str());
             snprintf(k, sizeof k, "P%c%02X%02X%04X", isRead ? 'r' : 'w', p, data, pc);
@@ -267,7 +269,7 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
     const int batch = 20000;
     std::string bild = bildText(m), bild_alt = bild;
     uint64_t bild_seit = 0;             // Takt der letzten Bildänderung
-    bool cr_gesendet = false, prompt = false, stillstand = false;
+    bool cr_gesendet = false, fehler_cr = false, prompt = false, stillstand = false;
     std::string prompt_zeile;
     uint64_t next_progress = 10'000'000;
     while ((long long)m.totalCycles() < o.limit) {
@@ -278,6 +280,17 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
         if (bild != bild_alt) { bild_alt = bild; bild_seit = now; last_activity = now; }
         if (o.until.kind == untilcond::UntilCond::SCREEN && o.until.screenMatch(bild)) {
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
+        }
+        // Gen 2: ein Selbsttestfehler (Buchstabe in 1776H unter dem Testnamen bei 1770H, 61H = ERROR-
+        // Lampe) wartet mit 16 × BEL auf `CR` (doc/k8915g2/zre_rom.md §4) — wie ein Bediener tippen.
+        if (o.gen2 && o.auto_cr && !fehler_cr && m.bellCount() >= 16 && !(m.panelLamps() & 0x80)) {
+            const char f = bild[23 * 80 + 70];
+            if (f >= 'A' && f <= 'Z') {
+                const std::string tn = bild.substr(23 * 80 + 64, 3);
+                m.keyboard().sendeZeichen(0x0D); fehler_cr = true;
+                if (!o.quiet) fprintf(stderr, "  [c%llu] Selbsttestfehler %s %c → CR getippt\n",
+                                      (unsigned long long)now, tn.c_str(), f);
+            }
         }
         if (o.auto_cr && !cr_gesendet && bild.find("* Coldstart *") != std::string::npos) {
             m.keyboard().sendeZeichen(0x0D); cr_gesendet = true;
@@ -290,7 +303,7 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
         if (now - last_activity >= (uint64_t)o.stall) { stillstand = true; break; }
         if (!o.quiet && now >= next_progress) {
             fprintf(stderr, "[PROGRESS] cycles=%llu PC=%04X A8H=%02X 61H=%02X instr=%llu\n",
-                    (unsigned long long)now, m.cpuPC(), m.zre().reg(), m.ats().anzeige(),
+                    (unsigned long long)now, m.cpuPC(), dbgm::k8A8(m), m.ats().anzeige(),
                     (unsigned long long)instr);
             next_progress = now + 10'000'000;
         }
@@ -312,11 +325,11 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
             fprintf(stderr, "Stillstand:  JA — %lld Takte ohne Bildaenderung und ohne Steuerzugriff "
                             "(PC=%04X)\n", o.stall, m.cpuPC());
         fprintf(stderr, "Speicher:    A8H=%02X map=%s /MEMDI=%s   Anzeigefeld 61H=%02X (%s)\n",
-                m.zre().reg(), dbgm::speicherbild(m.zre()).c_str(), m.zre().memdi() ? "1" : "0",
+                dbgm::k8A8(m), dbgm::speicherbild(m).c_str(), dbgm::k8Memdi(m) ? "1" : "0",
                 m.ats().anzeige(), dbgm::lampen61(m.ats().anzeige()).c_str());
         fprintf(stderr, "Ereignisse:  %ld (%ld Zeilen), Interrupts: %ld, Befehle: %llu\n",
                 ev_total, ev_lines, ints, (unsigned long long)instr);
-        const Z80& z = m.zre().cpu();
+        const Z80& z = dbgm::k8Cpu(m);
         fprintf(stderr, "Final CPU:   PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X%s\n",
                 z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, prnTail(z.PC).c_str());
 
@@ -374,10 +387,10 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
     }
     if (o.json) {
         fprintf(stderr,
-            "{\"machine\":\"k8915\",\"prompt\":%s,\"stall\":%s,\"cycles\":%llu,\"final_pc\":\"0x%04X\","
+            "{\"machine\":\"%s\",\"prompt\":%s,\"stall\":%s,\"cycles\":%llu,\"final_pc\":\"0x%04X\","
             "\"a8\":\"0x%02X\",\"lamps\":\"0x%02X\",\"cpu_addrs\":%zu,\"instr\":%llu,\"events\":%ld,\"ints\":%ld,",
-            prompt ? "true" : "false", stillstand ? "true" : "false", (unsigned long long)cycles, m.cpuPC(),
-            m.zre().reg(), m.ats().anzeige(), hist.size(), (unsigned long long)instr, ev_total, ints);
+            o.gen2 ? "k8915-g2" : "k8915", prompt ? "true" : "false", stillstand ? "true" : "false", (unsigned long long)cycles, m.cpuPC(),
+            dbgm::k8A8(m), m.ats().anzeige(), hist.size(), (unsigned long long)instr, ev_total, ints);
         if (o.until.kind != untilcond::UntilCond::NONE)
             fprintf(stderr, "\"until\":{\"set\":true,\"met\":%s,\"cycle\":%llu,\"pc\":\"0x%04X\"}}\n",
                     until_hit ? "true" : "false", (unsigned long long)until_cyc, until_pc);

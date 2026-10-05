@@ -93,6 +93,22 @@ inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
     if (i<n && line[i]!=' ' && line[i]!='\t') return false;  // Token muss enden
     uint16_t a = (uint16_t)strtol(line.substr(a0, alen).c_str(), nullptr, 16);
 
+    // --- Gen-2-Listings (k8915g2_*.prn, AP-V3a/V6b): zweite Adressspalte „LAUF“ überspringen ---
+    // „0055 FC55  ED A1 <Tab>CPI“: erst LADE-, dann LAUF-Adresse (4 Hexziffern), dann die Bytes.
+    // Maßgeblich bleibt die erste (LADE); `@0xFC00:0021-03FF` legt sie auf die Laufadresse.
+    // Nur wenn auf das 4-stellige Token ein 2-stelliges Byte-Token folgt — sonst unverändert.
+    skipSp();
+    {
+        size_t k = i, s0 = k;
+        while (k<n && isHexDigit(line[k])) ++k;
+        if (k - s0 == 4 && k<n && (line[k]==' ' || line[k]=='\t')) {
+            size_t k2 = k;
+            while (k2<n && line[k2]==' ') ++k2;
+            size_t b1 = k2;
+            while (k2<n && isHexDigit(line[k2])) ++k2;
+            if (k2 - b1 == 2 && (k2>=n || line[k2]==' ' || line[k2]=='\t')) i = k;
+        }
+    }
     // --- Es muss ein emittiertes Objektbyte folgen (Token = exakt 2 Hexziffern) ---
     skipSp();
     size_t b0 = i;

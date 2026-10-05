@@ -26,7 +26,7 @@
  *     --ptape        Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken, alle Maschinen
  *     --cpu u8000    jeden Befehl des U8001 als Zeile "U8 …" (Deckel -W); impliziert --em
  *
- * --machine k8915 fährt statt des A5120 einen K8915 (eigener Zweig,
+ * --machine k8915 (| k8915-g2, Generation 2) fährt statt des A5120 einen K8915 (eigener Zweig,
  * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
  * PC-Histogramm mit Listing-Namen, Abbruch bei `A>` oder Stillstand.
  * --machine prg710|prg710-1 fährt einen PRG 710 / 710-1 (tools/boot_trace_prg710.cpp,
@@ -321,12 +321,13 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--machine") && i+1 < argc) {
             std::string mn = argv[++i];
             if (mn == "k8915" || mn == "K8915") machine_k8915 = true;
+            else if (mn == "k8915-g2" || mn == "K8915-G2") { machine_k8915 = true; k8o.gen2 = true; }
             else if (mn == "prg710" || mn == "PRG710") { machine_k8915 = true; machine_prg710 = 1; }
             else if (mn == "prg710-1" || mn == "PRG710-1") { machine_k8915 = true; machine_prg710 = 2; }
             else if (mn == "pc1715" || mn == "PC1715") { machine_k8915 = true; machine_pc1715 = true; }
             else if (mn == "pc1715w" || mn == "PC1715W") { machine_k8915 = true; machine_pc1715 = machine_pc1715w = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1 | pc1715 | pc1715w)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
@@ -478,6 +479,10 @@ int main(int argc, char** argv) {
         if (em_variant) fprintf(stderr, "WARN: --em/--cpu u8000 gibt es nur am A5120 (A5120.16) — ignoriert\n");
         k8o.quiet = quiet; k8o.json = json_summary; k8o.drive = mount_drive; k8o.until = until;
         if (!limit_set) k8o.limit = 250'000'000;
+        if (k8o.gen2 && k8o.skip_selftest) {
+            fprintf(stderr, "WARN: --skip-selftest gibt es an der Gen 2 nicht — ignoriert\n");
+            k8o.skip_selftest = false;
+        }
         if (machine_prg710) {
             // PRG 710 (AP-P1d): Etappe 1 endet in der Tastaturabfrage — 2 s ohne Bild-/
             // Steuerzugriff reichen; 50 Mio. Takte ≈ 20 s Maschinenzeit.

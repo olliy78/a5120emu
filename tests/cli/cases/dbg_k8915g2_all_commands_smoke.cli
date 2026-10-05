@@ -1,0 +1,37 @@
+# Dispatch-Smoke an der K8915 Gen 2 (AP-V6b, Gegenstueck zu dbg_k8915_all_commands_smoke): jedes Kommando einmal; was es nur am A5120
+# gibt (ZVE2, /BUSRQ-/DMA-Flanken, Snapshots, Savestates), meldet "nicht vorhanden"
+# statt abzustuerzen.  Neue Kommandos gehoeren in dieses Skript UND in das A5120-Skript.
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915-g2 %DISK% -x %CLI_DIR%/scripts/all_commands_smoke_k8915g2.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+# AP-T1a: JEDES Kommando aus dbgm::nurA5120Kommando einzeln — mit nur drei
+# Stichproben blieb der Fall gruen, als "snap" aus der Liste fiel (lief dann am
+# K8915 auf dem Platzhalter-Z80 statt "nicht vorhanden" zu melden).
+expect:  's2' gibt es am K8915 Gen 2 nicht
+expect:  'b2' gibt es am K8915 Gen 2 nicht
+expect:  'bd2' gibt es am K8915 Gen 2 nicht
+expect:  'be2' gibt es am K8915 Gen 2 nicht
+expect:  'bdis2' gibt es am K8915 Gen 2 nicht
+expect:  'bi2' gibt es am K8915 Gen 2 nicht
+expect:  'rj2' gibt es am K8915 Gen 2 nicht
+expect:  'bbusrq' gibt es am K8915 Gen 2 nicht
+expect:  'snap' gibt es am K8915 Gen 2 nicht
+expect:  'restore' gibt es am K8915 Gen 2 nicht
+expect:  'rs' gibt es am K8915 Gen 2 nicht
+expect:  'bs' gibt es am K8915 Gen 2 nicht
+expect:  'rc' gibt es am K8915 Gen 2 nicht
+expect:  'savestate' gibt es am K8915 Gen 2 nicht
+expect:  'loadstate' gibt es am K8915 Gen 2 nicht
+expect:  ZVE2 ('r 2') gibt es am K8915 Gen 2 nicht
+expect:  Die BS-PIO (K2526) gibt es am K8915 Gen 2 nicht
+expect:  0000-0FFF  ZRE
+expect:  (K7024-Bildspeicher)
+expect:  map=Z...............
+expect:  bank: nicht vorhanden (Gen 2 ohne Bank 2
+expect:  CTC (ZRE K2521, 80H-83H)
+expect:  ZRE K2521 CTC ch3
+expect:  SIO2 (ATS; B = Tastatur K7672)
+expect:  "machine":"k8915-g2"
