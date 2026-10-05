@@ -669,6 +669,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.act_konfig_laden)
         file_menu.addAction(self.act_konfig_speichern)
+        file_menu.addAction(self.act_standard)      # auch unter Ansicht
         file_menu.addSeparator()
         file_menu.addAction(self.act_beenden)
 

@@ -31,20 +31,14 @@ version: 1
 crt:
   phosphor_on: '#78D41D'
   phosphor_off: '#050F05'
-  brightness: 2.47
-  contrast: 2.0
-  contrast_small_factor: 0.7
-  scanline_strength: 1.4
-  scanline_count: 288.0
-  scanline_min_height: 768.0
-  glow_strength: 1.0
-  glow_radius: 2.5
+  brightness: 2.5
+  contrast: 1.1
   mask_strength: 0.0
   mask_pitch: 1.0
   curvature:
   - 0.1
   - 0.1
-  corner_radius: 0.0
+  corner_radius: 0.05
   vignette_strength: 0.35
   flicker_strength: 0.0
   scale_x: 0.98
@@ -74,14 +68,14 @@ drive_types:
 - none
 
 window:
-  width: 1262
-  height: 768
+  width: 1646
+  height: 894
   maximized: false
   # QMainWindow.saveState(), base64.  Die Tastatur ist AUS (am K8915 tippt man
   # meist auf der PC-Tastatur), Einstellungen und Laufwerke rechts.  Aufgenommen
   # offscreen mit einem K8915-Fenster in 1262×768 (neu aufzunehmen wie beim A5120:
   # Fenster einrichten, den `window`-Abschnitt der eigenen k8915emu.yaml kopieren).
-  dock_state: AAAA/wAAAAD9AAAAAgAAAAAAAANBAAACnfwCAAAAAvsAAAAWAHMAYwByAGUAZQBuAF8AZABvAGMAawEAAABMAAACnQAAAQAA////+wAAABoAawBlAHkAYgBvAGEAcgBkAF8AZABvAGMAawAAAAAA/////wAAAK4A////AAAAAQAAAacAAAKd/AIAAAAB/AAAAEwAAAKdAAAAzAEAABn6AAAAAQIAAAAC+wAAABYAZAByAGkAdgBlAHMAXwBkAG8AYwBrAQAAAAD/////AAAAVgD////7AAAAGgBzAGUAdAB0AGkAbgBnAHMAXwBkAG8AYwBrAQAAAAD/////AAAAsgD///8AAAAAAAACnQAAAAEAAAACAAAAAQAAAAL8AAAAAQAAAAIAAAABAAAAIABjAG8AbgB0AHIAbwBsAHMAXwB0AG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAA=
+  dock_state: AAAA/wAAAAD9AAAAAgAAAAAAAAPUAAADD/wCAAAAAfsAAAAWAHMAYwByAGUAZQBuAF8AZABvAGMAawEAAABUAAADDwAAAQQA////AAAAAQAAApQAAAMP/AIAAAAC/AAAAFQAAAJgAAABQgEAAB36AAAAAQIAAAAD+wAAABYAZAByAGkAdgBlAHMAXwBkAG8AYwBrAQAAAAD/////AAAAWgD////7AAAAGgBzAGUAdAB0AGkAbgBnAHMAXwBkAG8AYwBrAQAAAAD/////AAABJAD////7AAAAIgBsAG8AYwBoAHMAdAByAGUAaQBmAGUAbgBfAGQAbwBjAGsAAAAAAP////8AAAF3AP////sAAAAaAGsAZQB5AGIAbwBhAHIAZABfAGQAbwBjAGsBAAACugAAAKkAAACMAP///wAAAAAAAAMPAAAAAQAAAAIAAAABAAAAAvwAAAABAAAAAgAAAAEAAAAgAGMAbwBuAHQAcgBvAGwAcwBfAHQAbwBvAGwAYgBhAHIBAAAAAP////8AAAAAAAAAAA==
   # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
   # `nmi` ist der NMI-Taster der Frontplatte — neben Reset, wie am Gerät.
   toolbar:
