@@ -190,6 +190,7 @@ int K8915Machine::run(int max_cycles)
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
+    k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
     anzeigenSpiegeln();
     return max_cycles - remaining;
 }

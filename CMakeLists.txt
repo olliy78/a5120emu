@@ -321,8 +321,11 @@ if(BUILD_K1520)
     target_include_directories(k1520_atp590068 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # ADA K6022 (Lochband über SIF1000) und ASS 590069 (Fernschreiber) — PRG 710, AP-P8
+    # Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4)
+    add_library(k1520_lochstreifen STATIC core/peripherals/lochstreifen/band_format.cpp)
+    target_include_directories(k1520_lochstreifen PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_k6022 STATIC core/cards/k6022/k6022.cpp)
-    target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger)
+    target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger k1520_lochstreifen)
     target_include_directories(k1520_k6022 PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_ass590069 STATIC core/cards/ass590069/ass590069.cpp)
     target_link_libraries(k1520_ass590069 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_serial)

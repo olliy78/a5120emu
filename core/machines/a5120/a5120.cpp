@@ -787,6 +787,7 @@ int A5120Machine::run(int max_cycles) {
     // Verzoegertes Zurueckschreiben geaenderter Spuren (Laufwerksbaustein, §6.1 des
     // Floppy-Entwurfs; prüft nur alle 100 000 Takte).
     lw_.autoFlush(total_cycles_);
+    k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
 
     return max_cycles - remaining;
 }

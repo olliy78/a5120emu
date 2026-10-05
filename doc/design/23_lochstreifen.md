@@ -58,21 +58,30 @@ und `erkennen(Dateiinhalt)` für die Vorauswahl im Dialog:
   `:00000001FF`.  Erkannt, wenn jede nichtleere Zeile mit `:` beginnt.
 - **ASCII-Art** (`.txt`, `.tape`): der Streifen läuft von oben nach unten, Spur 8 links,
   die **Transportspur zwischen Spur 3 und 4** (ISO 1154 / DIN 66016-Anordnung).
+  Endgültige Form (Goldwert `Lochstreifenformat.AsciiArtGoldwert`):
   ```
   ; K1520-Lochstreifen, 8 Spuren, ASCII-Art (doc/design/23_lochstreifen.md)
-  ; Eine Zeile = eine Sprosse.  O = Loch, o = Transportloch.
+  ; Eine Zeile = eine Sprosse, der Streifen laeuft von oben nach unten.
+  ; O = Loch, . = kein Loch, o = Transportloch; rechts Wert (hex) und Zeichen.
   ;
-  ;   8 7 6 5 4   3 2 1
+  ;    8 7 6 5 4   3 2 1
+  ;  +-------------------+
      | . . . . . o . . . |  00
      | . O . . . o . . O |  41  A
      | O . . O . o . O O |  93
+  ;  +-------------------+
   ```
-  Kommentarzeilen beginnen mit `;`.  Datenzeile: zwischen den beiden `|` stehen die acht
-  Spuren und das Transportloch in festen Spalten; `O`/`X`/`*`/`#` = Loch, `.`/Leerzeichen
-  = kein Loch.  Rechts daneben der Wert hexadezimal, bei druckbarem 7-Bit-Zeichen dazu
-  das Zeichen.  **Beim Lesen zählt das Lochbild**; ein danebenstehender Hexwert, der nicht
-  passt, ist ein Fehler mit Zeilennummer (schützt Handbearbeitung vor stillen Fehlern).
-  Erkannt an einer Datenzeile der Form `|…|` vor der ersten Nicht-Kommentarzeile.
+  Kommentarzeilen beginnen mit `;` (auch die beiden Bandkanten `+---+`).  Datenzeile:
+  zwischen den beiden `|` stehen **genau 19 Zeichen** in festen Spalten — an den
+  ungeraden Stellen die Spuren 8 7 6 5 4, das Transportloch, die Spuren 3 2 1, an den
+  geraden Leerzeichen (ein Zeichen dort = verrutschte Spalte = Fehler); `O`/`X`/`*`/`#`
+  = Loch, `.`/Leerzeichen = kein Loch, an der Transportstelle zählt nichts.  Rechts
+  daneben der Wert hexadezimal, bei druckbarem 7-Bit-Zeichen (21H–7EH) dazu das Zeichen.
+  **Beim Lesen zählt das Lochbild**; ein danebenstehender Hexwert, der nicht passt, ist
+  ein Fehler mit Zeilennummer (schützt Handbearbeitung vor stillen Fehlern); fehlt er,
+  ist das recht.  Erkannt an einer Datenzeile der Form `|…|` vor der ersten
+  Nicht-Kommentarzeile — oder an einer Datei aus lauter Kommentaren (leeres Band).
+  Die Datei ist reines ASCII (Kopf ohne Umlaute), geschrieben mit LF, gelesen auch CRLF.
 
 ## 5. Dateibindung
 
@@ -141,3 +150,15 @@ sind **nicht** vorgesehen — es gibt eine Umsetzung, im Kern.
   `K6022Maschine.*` (Bestückung je Maschine; Z80-Gastcode stanzt über E0H und liest über E4H,
   END als IM-2-Interrupt, an A5120, A5120.16, K8915, PRG 710-1), `Prg710Lochband.*` steckt
   ausdrücklich; `boot_trace`/`k1520dbg` `--ptape`.
+- **AP-L2 erledigt (2026-10-05).** Bandformate in `core/peripherals/lochstreifen/band_format.{h,cpp}`
+  (Bibliothek `k1520_lochstreifen`, Namensraum `lochstreifen`, Kennung Roh = 0, Intel HEX = 1,
+  ASCII-Art = 2); ASCII-Art in der endgültigen Form von §4 (Kopf mit Spurnummern über den
+  Löchern und Bandkanten — gegenüber dem ersten Entwurf um eine Spalte berichtigt).  Intel HEX
+  liest ohne Satz 01 nachsichtig und weist Bänder über 16 MiB ab.  K6022: `bandEinlegenDatei(pfad,
+  Format, fehler)`, `stanzerBinden`/`stanzerLoesen`/`neuesBand`/`stanzerZurueckschreiben`,
+  Abfragen `leserDatei/-Format`, `stanzerDatei/-Format/-Fehler`; `stanzbandLeeren()` ist jetzt
+  `neuesBand()` (leert also auch eine gebundene Datei).  Zurückgeschrieben wird wie bei den
+  Disketten **im Lauffaden**: `clockTick` stellt nur das Ende der Stanzpause fest, die neue
+  `K6022::autoFlush()` schreibt am Ende jeder `run()`-Scheibe (`k6022AutoFlush()` in allen drei
+  Maschinen, Vorbild `Laufwerke::autoFlush`) — ein Band ist wenige KiB groß.  Lösen behält das
+  Band im Speicher.  Wächter `Lochstreifenformat.*`, `K6022Bindung.*`.

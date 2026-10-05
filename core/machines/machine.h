@@ -259,6 +259,9 @@ protected:
     bool k6022Takt(int takte) { return k6022_ && k6022_->clockTick(takte); }
     /** @brief Systemweiter /RESET: PIOs zurück; Band und Stanzband bleiben. */
     void k6022Reset() { if (k6022_) k6022_->reset(); }
+    /** @brief Ende jeder run()-Scheibe: gebundene Stanzdatei nach der Stanzpause
+     *         zurückschreiben (Entwurf 23 §5, wie `Laufwerke::autoFlush`). */
+    void k6022AutoFlush() { if (k6022_) k6022_->autoFlush(); }
 
     /// Erst NACH Bus und Karten der abgeleiteten Klasse zerstört — unschädlich, die
     /// RAF fasst den Bus in ihrem Destruktor nicht an.
