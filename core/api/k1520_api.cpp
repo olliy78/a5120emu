@@ -207,6 +207,38 @@ K1520Handle k1520_create_prg710(int variante,
     }
 }
 
+K1520Handle k1520_create_k8915(int generation,
+                               const char* d0, const char* d1,
+                               const char* d2, const char* d3) {
+    g_init_error.clear();
+    if (generation != 0 && generation != 1) {
+        // doc/design/24_k8915_varianten.md R5: Gen 1 (2) hat keinen startfähigen Urlader.
+        g_init_error = generation == 2
+            ? "Gen 1: kein startfaehiger Urlader (F11)"
+            : "Unbekannte K8915-Generation " + std::to_string(generation) +
+              " (0 = V3, 1 = Gen 2)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        K8915Machine::Config cfg;
+        cfg.generation = generation == 1 ? K8915Machine::Config::Generation::Gen2
+                                         : K8915Machine::Config::Generation::V3;
+        const char* names[4] = { d0, d1, d2, d3 };   // leer/NULL = Vorgabe (K5601/K5601/none/none)
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
+        K1520Machine* m = new K8915Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
 K1520Handle k1520_create_with_em(K1520MachineType type,
                                  const char* d0, const char* d1,
                                  const char* d2, const char* d3, const char* em) {
@@ -760,6 +792,12 @@ int k1520_prg710_variant(K1520Handle h) {
     auto* p = prgOf(h);
     if (!p) return -1;
     return p->variante() == Prg710Machine::Config::Variante::Prg710_1 ? 1 : 0;
+}
+
+int k1520_k8915_generation(K1520Handle h) {
+    auto* k = dynamic_cast<K8915Machine*>(toMachine(h));
+    if (!k) return -1;
+    return k->generation() == K8915Machine::Config::Generation::Gen2 ? 1 : 0;
 }
 
 bool k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite) {

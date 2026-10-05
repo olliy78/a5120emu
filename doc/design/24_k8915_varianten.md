@@ -804,6 +804,20 @@ muss `"k8915-g2"` mitnehmen oder über `machine_type() == 2` gehen.
 (Wert 2 → `ValueError`/NULL mit Text). **Fertig, wenn:** `tools/dev.sh test` grün (inkl.
 Python-Ebene), Nachtrag hier, ein Commit.
 
+**AP-V7a erledigt 2026-10-05.** `k1520_create_k8915(generation, d0..d3)` (0 = V3, 1 = Gen 2;
+2 = Gen 1 → NULL, Grund „Gen 1: kein startfaehiger Urlader (F11)“; sonst „Unbekannte
+K8915-Generation“) und `k1520_k8915_generation(h)` (0/1, −1 bei anderen Maschinen) in
+`k1520_api.{h,cpp}`; `k1520_create(K1520_MACHINE_K8915)` unverändert V3. Python:
+`MACHINE_TYPES["k8915-g2"] = 2`, `K8915_GENERATIONEN`, Konstruktorzweig,
+`K1520Emulator.k8915_generation()`. Wächter: `py_c_api` (mechanischer Abgleich deckt die neuen
+Funktionen), in `test_k8915_smoke.py` `test_gen2_reaches_the_coldstart_message_after_rom_error_c`,
+`test_generation_two_of_the_k8915_is_refused_with_a_reason`, dazu
+`test_k8915_generation_is_reported_per_machine`; voller `tools/dev.sh test` grün (2175).
+Befunde: Die Suche in `app/` nach `== "k8915"` ergab **keine** Stelle in Emulator/Bindung, die
+`"k8915-g2"` mitnehmen müsste; die übrigen `"k8915"`-Treffer sind Profil-/Programmschlüssel
+(`profil.py`, `programme.py`, `actions.py`, `drive_types.py`) und gehören zu V7b (Modellwahl).
+`k1520_create_k8915` existierte vorher nicht (R5 nannte es als Bestand) — neu angelegt.
+
 #### AP-V7b — Programmprofil, Oberfläche, Handbuch
 
 **Ziel:** Modellwahl im `k8915emu`. **Agent:** Sonnet (general-purpose; Python/Qt).

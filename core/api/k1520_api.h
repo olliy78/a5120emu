@@ -69,6 +69,19 @@ K1520_API K1520Handle k1520_create_prg710(int variante,
                                           const char* drive2, const char* drive3);
 
 /**
+ * @brief K8915 mit gewählter Bauform (doc/design/24_k8915_varianten.md R5, AP-V7a).
+ *
+ * @param generation 0 = V3 (ZRE 045-8762, 128 KB; wie k1520_create(K1520_MACHINE_K8915)),
+ *                   1 = Gen 2 (K2521 + K3528, 64 KB).  2 (Gen 1) und alles andere → NULL,
+ *                   Grund in k1520_last_init_error (Gen 1: kein startfähiger Urlader, F11).
+ * @param drive0..3  wie bei k1520_create_configured (Vorgabe K5601, K5601, none, none).
+ * k1520_machine_type() = 2; Bauform: k1520_k8915_generation().
+ */
+K1520_API K1520Handle k1520_create_k8915(int generation,
+                                         const char* drive0, const char* drive1,
+                                         const char* drive2, const char* drive3);
+
+/**
  * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
  *
  * @param variante    0 = PC 1715, 1 = PC 1715W (seit AP-W3; nur mit bildschirm 0, sonst NULL mit Grund)
@@ -510,6 +523,10 @@ K1520_API void     k1520_nmi(K1520Handle h);
  * @brief Variante eines PRG-Handles: 0 = PRG 710, 1 = PRG 710-1; -1 bei anderer Maschine.
  */
 K1520_API int      k1520_prg710_variant(K1520Handle h);
+/**
+ * @brief Bauform eines K8915-Handles: 0 = V3, 1 = Gen 2; -1 bei anderer Maschine.
+ */
+K1520_API int      k1520_k8915_generation(K1520Handle h);
 /**
  * @brief Speicherverwaltung des PRG (Ports E8H/EAH), Diagnose für Debugger/Oberfläche.
  * @param n      Seite 0…15 (A12–A15).
