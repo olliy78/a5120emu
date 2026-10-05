@@ -173,6 +173,24 @@ class SettingsWidget(QWidget):
         rl.addWidget(spin)
         form.addRow(label, row)
 
+    def _add_stufe(self, form: QFormLayout, label: str, attr: str):
+        """Checkbox, die eine Filterstufe (``CRTParams.<attr>``) ein-/ausschaltet."""
+        box = QCheckBox(label)
+
+        def refresh():
+            box.blockSignals(True)
+            box.setChecked(bool(getattr(self.screen.params, attr)))
+            box.blockSignals(False)
+
+        def on_toggled(on):
+            setattr(self.screen.params, attr, bool(on))
+            self._apply()
+
+        box.toggled.connect(on_toggled)
+        refresh()
+        self._refreshers.append(refresh)
+        form.addRow(box)
+
     def _add_color(self, form: QFormLayout, label: str,
                    getter: Callable[[], tuple],
                    setter: Callable[[tuple], None]):
@@ -458,6 +476,10 @@ class SettingsWidget(QWidget):
 
         inner = QWidget()
         form = QFormLayout(inner)
+
+        # Filterstufen (einzeln abschaltbar)
+        for text, attr in (("Vignette", "vignette_on"),):
+            self._add_stufe(form, text, attr)
 
         # Colours
         self._add_color(form, "Farbe aktiv",

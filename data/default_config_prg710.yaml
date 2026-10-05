@@ -31,20 +31,14 @@ version: 1
 crt:
   phosphor_on: '#78D41D'
   phosphor_off: '#050F05'
-  brightness: 2.47
-  contrast: 2.0
-  contrast_small_factor: 0.7
-  scanline_strength: 1.4
-  scanline_count: 288.0
-  scanline_min_height: 768.0
-  glow_strength: 1.0
-  glow_radius: 2.5
+  brightness: 2.5
+  contrast: 1.1
   mask_strength: 0.0
   mask_pitch: 1.0
   curvature:
   - 0.1
   - 0.1
-  corner_radius: 0.0
+  corner_radius: 0.05
   vignette_strength: 0.35
   flicker_strength: 0.0
   scale_x: 0.98
@@ -76,9 +70,12 @@ drive_types:
 - none
 
 window:
-  width: 1262
-  height: 768
+  width: 1646
+  height: 894
   maximized: false
+  # Kastenaufteilung (QMainWindow.saveState): Bildschirm links, Laufwerke/Einstellungen
+  # rechts, Tastatur darunter.
+  dock_state: AAAA/wAAAAD9AAAAAgAAAAAAAAPUAAADD/wCAAAAAfsAAAAWAHMAYwByAGUAZQBuAF8AZABvAGMAawEAAABUAAADDwAAAQQA////AAAAAQAAApQAAAMP/AIAAAAC/AAAAFQAAAJgAAABQgEAAB36AAAAAQIAAAAD+wAAABYAZAByAGkAdgBlAHMAXwBkAG8AYwBrAQAAAAD/////AAAAWgD////7AAAAGgBzAGUAdAB0AGkAbgBnAHMAXwBkAG8AYwBrAQAAAAD/////AAABJAD////7AAAAIgBsAG8AYwBoAHMAdAByAGUAaQBmAGUAbgBfAGQAbwBjAGsAAAAAAP////8AAAF3AP////sAAAAaAGsAZQB5AGIAbwBhAHIAZABfAGQAbwBjAGsBAAACugAAAKkAAACMAP///wAAAAAAAAMPAAAAAQAAAAIAAAABAAAAAvwAAAABAAAAAgAAAAEAAAAgAGMAbwBuAHQAcgBvAGwAcwBfAHQAbwBvAGwAYgBhAHIBAAAAAP////8AAAAAAAAAAA==
   # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
   toolbar:
   - konfig_laden

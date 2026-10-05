@@ -250,32 +250,37 @@ class LeitungsAnzeige(QWidget):
 
 
 class LeitungsReihe(QWidget):
-    """Mehrere Leitungsanzeigen nebeneinander, nach Namen ansprechbar."""
+    """Leitungsanzeigen, nach Namen ansprechbar — je Gruppe eine Zeile
+    (Ausgänge / Eingänge übereinander statt nebeneinander: schmal genug für
+    kleine Bildschirme)."""
 
     def __init__(self, gruppen, parent=None):
         """*gruppen*: [(Gruppenbeschriftung, Tooltip, [(Name, Bedeutung, Richtung), …]),
         …]; eine leere Beschriftung lässt die Gruppe ohne Titel."""
         super().__init__(parent)
-        lay = QHBoxLayout(self)
+        lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(2)
         self.anzeigen: Dict[str, LeitungsAnzeige] = {}
         self.titel: List[QLabel] = []
         self._gruppe_von: Dict[str, Optional[QLabel]] = {}
         for text, tipp, leitungen in gruppen:
             t = None
+            zeile = QHBoxLayout()
+            zeile.setSpacing(6)
             if text:
                 t = QLabel(text)
                 t.setStyleSheet("color: #8a8a8a;")
                 t.setToolTip(tipp)
-                lay.addWidget(t)
+                zeile.addWidget(t)
                 self.titel.append(t)
             for name, bedeutung, richtung in leitungen:
                 a = LeitungsAnzeige(name, bedeutung, richtung)
                 self.anzeigen[name] = a
                 self._gruppe_von[name] = t
-                lay.addWidget(a)
-        lay.addStretch()
+                zeile.addWidget(a)
+            zeile.addStretch()
+            lay.addLayout(zeile)
 
     def zeige_nur(self, namen):
         """Nur die Leitungen *namen* zeigen; ein Gruppentitel ohne sichtbare Leitung
@@ -341,7 +346,8 @@ class SerialBlock(QFrame):
         kopf.addWidget(self.zustand_label)
         lay.addLayout(kopf)
 
-        # Zeile 1: Betriebsart, Rolle, Host + Etikett, Port, Knopf.
+        # Zeile 1: Betriebsart, Rolle, Knopf.  Zeile 1b: Host + Etikett, Port —
+        # getrennt, damit der Block auch auf einem kleinen Bildschirm passt.
         z1 = QHBoxLayout()
         self.betriebsart = QComboBox()
         for _wert, text, _w in BETRIEBSARTEN:
@@ -351,22 +357,25 @@ class SerialBlock(QFrame):
         for _wert, text, _w in ROLLEN:
             self.rolle.addItem(text)
         z1.addWidget(self.rolle)
-        self.host_label = QLabel("Host")
-        z1.addWidget(self.host_label)
-        self.host = QLineEdit()
-        self.host.setMinimumWidth(90)
-        z1.addWidget(self.host, 1)
-        self.host_art = QLabel()
-        z1.addWidget(self.host_art)
-        self.port_label = QLabel("Port")
-        z1.addWidget(self.port_label)
-        self.port = QSpinBox()
-        self.port.setRange(1, 65535)
-        self.port.setKeyboardTracking(False)
-        z1.addWidget(self.port)
         self.knopf = QPushButton()
         z1.addWidget(self.knopf)
         lay.addLayout(z1)
+
+        z1b = QHBoxLayout()
+        self.host_label = QLabel("Host")
+        z1b.addWidget(self.host_label)
+        self.host = QLineEdit()
+        self.host.setMinimumWidth(90)
+        z1b.addWidget(self.host, 1)
+        self.host_art = QLabel()
+        z1b.addWidget(self.host_art)
+        self.port_label = QLabel("Port")
+        z1b.addWidget(self.port_label)
+        self.port = QSpinBox()
+        self.port.setRange(1, 65535)
+        self.port.setKeyboardTracking(False)
+        z1b.addWidget(self.port)
+        lay.addLayout(z1b)
 
         # Datei-Zeile (nur Betriebsart Datei): Name + „…".
         zd = QHBoxLayout()
@@ -419,8 +428,9 @@ class SerialBlock(QFrame):
         # Zeile 4 (nur V.24): die Leitungen des Gastes als LEDs — Ausgänge RTS/DTR
         # (der Gast setzt sie), Eingänge CTS/DSR/DCD (der Gast liest sie).
         self.leitungen = QWidget()
-        z4 = QHBoxLayout(self.leitungen)
+        z4 = QVBoxLayout(self.leitungen)
         z4.setContentsMargins(0, 0, 0, 0)
+        z4.setSpacing(2)
         self.leitungen_reihe = LeitungsReihe((
             (TITEL_AUSGAENGE, TIPP_AUSGAENGE,
              [(n, b, "Ausgang: vom Rechner getrieben") for n, b in GAST_AUSGAENGE]),
@@ -430,14 +440,14 @@ class SerialBlock(QFrame):
         self.leitungen_hinweis = QLabel("(bei Telnet nicht übertragen)")
         self.leitungen_hinweis.setStyleSheet("color: #8a8a8a;")
         z4.addWidget(self.leitungen_hinweis)
-        z4.addStretch()
         self.leitungen.setVisible(bool(info.v24))
         lay.addWidget(self.leitungen)
 
         # Zeile 5: Gegenseite (RFC 2217) — Baud, Format, Leitungen als LEDs.
         self.gegenseite_zeile = QWidget()
-        z5 = QHBoxLayout(self.gegenseite_zeile)
+        z5 = QVBoxLayout(self.gegenseite_zeile)
         z5.setContentsMargins(0, 0, 0, 0)
+        z5.setSpacing(2)
         self.gegenseite = QLabel()
         z5.addWidget(self.gegenseite)
         self.gegen_leitungen = LeitungsReihe((
@@ -445,7 +455,6 @@ class SerialBlock(QFrame):
             (TITEL_EINGAENGE, TIPP_GEGEN_EINGAENGE, [(n, "", "") for n, _b in GEGEN_CLIENT])))
         self.gegen_leitungen.setVisible(bool(info.v24))
         z5.addWidget(self.gegen_leitungen)
-        z5.addStretch()
         self.gegenseite_zeile.setVisible(False)
         lay.addWidget(self.gegenseite_zeile)
 

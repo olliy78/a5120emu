@@ -10,8 +10,6 @@ texture once per changed frame and renders it through a GLSL fragment shader
 that reproduces the *look* of a real picture tube:
 
   - green-phosphor tint (on/off colours)
-  - horizontal scanlines
-  - phosphor glow / bloom
   - subtle barrel (tube) curvature + rounded corners
   - vignette and optional flicker
   - aperture-grille style mask
@@ -92,32 +90,7 @@ class CRTParams:
 
     # Overall image (adjustable).
     brightness: float = 2.5
-    contrast: float = 2.0
-    # Dämpfung des Kontrasts auf dem verkleinerten Schirm — ein FAKTOR auf
-    # ``contrast``, kein Ersatzwert: der Regler muss in jeder Fenstergrösse
-    # wirken, nur eben sanfter.  Grund: der Kontrast-Term rechnet (i-1)*c+1,
-    # dreht Teildeckung also ins Negative — bei c=2,0 wird ein zur Hälfte
-    # gedeckter Bildpunkt SCHWARZ.  Teildeckung gibt es überall, sobald 640
-    # Rasterspalten auf weniger Ausgabepixel abgebildet werden, und dann frisst
-    # genau dieser Term die dünnen Striche der Glyphen weg.  0,7 × 2,0 = 1,4 ist
-    # der am Bildschirmabzug ausgemessene Wert (s. Fragment-Shader).
-    contrast_small_factor: float = 0.7
-
-    # Scanlines: strength, count = number of horizontal lines (image rows).
-    # Fixed (no GUI control).
-    scanline_strength: float = 1.4
-    scanline_count: float = float(FB_HEIGHT)   # 288
-    # Ab welcher DARSTELLUNGSHÖHE (Ausgabepixel) die Streifen überhaupt gezeichnet
-    # werden.  288 Rasterzeilen brauchen Platz: unterhalb von ~2,7 Ausgabepixeln je
-    # Zeile frisst die dunkle Hälfte jedes Streifens die Glyphen auf, statt sie zu
-    # strukturieren (kleines Fenster = unleserlich).  Voll ab diesem Wert,
-    # ausgeblendet bei 0,8 davon (s. Fragment-Shader).
-    scanline_min_height: float = 768.0
-
-    # Phosphor glow / bloom: strength and blur radius in framebuffer texels.
-    # Fixed (no GUI control).
-    glow_strength: float = 1.0
-    glow_radius: float = 2.5
+    contrast: float = 1.1
 
     # Aperture-grille style vertical mask.  A monochrome green tube has NO shadow
     # mask, so this is fixed off (no GUI control).
@@ -127,7 +100,7 @@ class CRTParams:
     # Tube curvature (barrel distortion) amount per axis, and rounded corners
     # (adjustable).
     curvature: Tuple[float, float] = (0.1, 0.1)
-    corner_radius: float = 0.1        # 0 = square
+    corner_radius: float = 0.05       # 0 = square
 
     # Edge darkening — fixed (no GUI control).
     vignette_strength: float = 0.35
@@ -143,6 +116,13 @@ class CRTParams:
     offset_x: float = 0.0
     offset_y: float = 0.0
 
+    # Filterstufen einzeln abschaltbar (Checkboxen im CRT-Reiter).  Aus heisst:
+    # die Stufe wird neutral geschaltet (Shader-Uniform), die Reglerwerte bleiben
+    # erhalten.  (Kontrast, Krümmung und Ecken-Rundung haben dafür ihren Regler.)
+    vignette_on: bool = True
+
+    STUFEN = ("vignette_on",)
+
     # ── (de)serialisation for config files ───────────────────────────────────
 
     def to_dict(self) -> dict:
@@ -152,12 +132,6 @@ class CRTParams:
             "phosphor_off": rgb_to_hex(self.phosphor_off),
             "brightness": self.brightness,
             "contrast": self.contrast,
-            "contrast_small_factor": self.contrast_small_factor,
-            "scanline_strength": self.scanline_strength,
-            "scanline_count": self.scanline_count,
-            "scanline_min_height": self.scanline_min_height,
-            "glow_strength": self.glow_strength,
-            "glow_radius": self.glow_radius,
             "mask_strength": self.mask_strength,
             "mask_pitch": self.mask_pitch,
             "curvature": list(self.curvature),
@@ -168,6 +142,7 @@ class CRTParams:
             "scale_y": self.scale_y,
             "offset_x": self.offset_x,
             "offset_y": self.offset_y,
+            **{k: bool(getattr(self, k)) for k in self.STUFEN},
         }
 
     def update_from_dict(self, d: dict):
@@ -180,15 +155,15 @@ class CRTParams:
                 setattr(self, key, hex_to_rgb(v) if isinstance(v, str) else tuple(v))
         if "curvature" in d and d["curvature"] is not None:
             self.curvature = tuple(d["curvature"])
-        for key in ("brightness", "contrast", "contrast_small_factor",
-                    "scanline_strength",
-                    "scanline_count", "scanline_min_height",
-                    "glow_strength", "glow_radius",
+        for key in ("brightness", "contrast",
                     "mask_strength", "mask_pitch", "corner_radius",
                     "vignette_strength", "flicker_strength", "scale_x",
                     "scale_y", "offset_x", "offset_y"):
             if key in d and d[key] is not None:
                 setattr(self, key, float(d[key]))
+        for key in self.STUFEN:
+            if key in d and d[key] is not None:
+                setattr(self, key, bool(d[key]))
 
 
 # ── GLSL shaders (GLSL 1.20 - broadly compatible desktop profile) ─────────────
@@ -212,12 +187,6 @@ uniform vec3  uPhosphorOn;
 uniform vec3  uPhosphorOff;
 uniform float uBrightness;
 uniform float uContrast;
-uniform float uContrastSmallFactor;
-uniform float uScanline;
-uniform float uScanlineCount;
-uniform float uScanlineMinHeight;
-uniform float uGlow;
-uniform float uGlowRadius;
 uniform float uMask;
 uniform float uMaskPitch;
 uniform vec2  uCurvature;
@@ -245,10 +214,17 @@ vec2 curve(vec2 uv) {
 // selection — stay well-defined when the widget is minified.  Without mipmaps a
 // downscaled tube drops thin glyph strokes (parts of letters "swallowed"); the
 // trilinear mip chain averages them down instead.
+// Mipmap-Stufe aus der UNGEKRÜMMTEN Abbildung (s. main): die Krümmung dehnt die
+// Ableitungen zu den Ecken hin stark, die automatische Stufenwahl nähme dort
+// eine viel zu grobe Stufe und mittelte das Raster zu einem hellen Grauschleier
+// (helle Ränder/Ecken, ändert sich mit der Fenstergrösse).  Der Bias holt die
+// Stufe auf den Wert zurück, den die ebene Abbildung hätte.
+float gLodBias = 0.0;
+
 float sampleOn(vec2 uv) {
     float inside = (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
                    ? 0.0 : 1.0;
-    return texture2D(uScreen, clamp(uv, 0.0, 1.0)).r * inside;
+    return texture2D(uScreen, clamp(uv, 0.0, 1.0), gLodBias).r * inside;
 }
 
 void main() {
@@ -262,12 +238,13 @@ void main() {
 
     // Map tube coordinates into the (scaled + shifted) raster coordinates.
     vec2 uv = (tube - 0.5 - uOffset) / uScale + 0.5;
+    vec2 uvFlat = (vUv - 0.5 - uOffset) / uScale + 0.5;
+    float gCurved = length(fwidth(uv * uResolution));
+    float gFlat = length(fwidth(uvFlat * uResolution));
+    gLodBias = min(log2(max(gFlat, 1e-4) / max(gCurved, 1e-4)), 0.0);
     float inR = (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0)
                 ? 1.0 : 0.0;
 
-    // Sharp pixel core plus a normalised gaussian halo (soft phosphor aura).
-    // sigma = uGlowRadius in texels; ±3 sigma window.  A monochrome tube has no
-    // shadow mask, so this halo — not a mask — is what softens the pixels.
     // How hard the brightness knob is pushed past the "normal" full-scale range.
     // 0 for brightness <= 2.0 (the well-behaved region), growing to 2.0 at the
     // slider max (4.0).  Above 2.0 the tube is "overdriven": whiter/blooming
@@ -275,49 +252,20 @@ void main() {
     // keyed off this is exactly 0 at 2.0, so the <=2.0 look is bit-identical.
     float drive = max(uBrightness - 2.0, 0.0);
     // 0 at brightness 2.0, ramps to 1.0 at the slider max (4.0).  Drives the
-    // fade-out of the darkening filters (scanlines / vignette) so cranking the
+    // fade-out of the darkening filter (vignette) so cranking the
     // brightness removes the "grey veil" instead of adding to it.
     float od = clamp(drive * 0.5, 0.0, 1.0);
     // Fade for the darkening filters: 0 at brightness 2.0, fully 1.0 at 3.0, so
-    // scanlines and the vignette are completely gone from 3.0 upward.
+    // the vignette is completely gone from 3.0 upward.
     float veilFade = clamp(drive, 0.0, 1.0);
-    // Glow overdrive only kicks in above brightness 3.0.
-    float glowDrive = max(uBrightness - 3.0, 0.0);
-
     float base = sampleOn(uv);
     float lit = base;
-    if (uGlow > 0.0) {
-        float sigma = max(uGlowRadius, 0.001);
-        vec2 texel = 1.0 / uResolution;
-        float acc = 0.0;
-        float wsum = 0.0;
-        for (int dx = -3; dx <= 3; ++dx) {
-            for (int dy = -3; dy <= 3; ++dy) {
-                float w = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma));
-                acc += w * sampleOn(uv + vec2(float(dx), float(dy)) * texel);
-                wsum += w;
-            }
-        }
-        // Overdrive slightly widens the phosphor aura (subtle bloom / over-steer),
-        // but only above brightness 3.0.
-        lit = base + (acc / wsum) * uGlow * (1.0 + glowDrive * 0.18);
-    }
 
     // Brightness / contrast operate on the *intensity* (not RGB).  Up to full
     // scale the output stays on the phosphor off<->on line; the overdrive terms
     // below take over once the beam is driven past that point.
     // Contrast pivots around the "on" level: contrast=0 -> whole screen "on".
-    // Waagerechte Verkleinerung: Texel je Ausgabepixel.  <=1 heisst, jede
-    // Rasterspalte hat mindestens einen eigenen Bildpunkt (der Kontrast darf voll
-    // wirken); >1 heisst, ein Strich von einem Texel Breite trägt nur noch
-    // Teildeckung — und die würde der volle Kontrast-Term auslöschen.  Deshalb
-    // wird der Kontrast zwischen 1,0 und 1,2 Texel/Pixel auf das
-    // uContrastSmallFactor-fache gedämpft — ein FAKTOR, damit der Regler auch im
-    // kleinen Fenster durchschlägt.  (Der Nenner steckt in uv, also zählt die
-    // wirkliche Rasterbreite inkl. uScale, nicht die Fensterbreite.)
-    float shrinkX = fwidth(uv.x * uResolution.x);
-    float contrast = uContrast * mix(1.0, uContrastSmallFactor,
-                                     smoothstep(1.0, 1.2, shrinkX));
+    float contrast = uContrast;   // Regler wirkt in jeder Fenstergrösse gleich
     lit = (lit - 1.0) * contrast + 1.0;
     float inten = lit * uBrightness;         // may exceed 1.0 (overdrive headroom)
     float litC = clamp(inten, 0.0, 1.0);
@@ -336,30 +284,14 @@ void main() {
     float ambient = clamp((uBrightness - 3.5) / 0.5, 0.0, 1.0) * 0.18;
     col = max(col, uPhosphorOn * ambient);
 
-    // Outside the raster (but inside the tube) is unlit -> black.
-    col *= inR;
-
-    // Scanlines: one bright hump per image row (locked to the raster rows).
-    // Faded out with overdrive (veilFade) so high brightness lifts the "grey
-    // veil" instead of banding the image darker.
-    //
-    // Größenabhängige Ausblendung: die uScanlineCount Streifen hängen am Raster,
-    // nicht am Fenster — wird das Widget kleiner, deckt ein Ausgabepixel bald eine
-    // ganze Streifenperiode ab.  Dann lässt sich das Muster nicht mehr treu
-    // zeichnen: es schwebt gegen die Pixelzeilen des Wirtsbildschirms (Moiré) und
-    // legt schwarze Balken über die Glyphen, statt sie zu strukturieren — genau
-    // der unleserliche Kleinfenster-Fall.  fwidth(sp) ist die Zahl der
-    // Streifenperioden je Ausgabepixel, also uScanlineCount/Darstellungshöhe;
-    // daraus wird die Schwelle direkt in Ausgabepixeln ausgedrückt.  Voll ab
-    // uScanlineMinHeight, ganz weg bei 0,8 davon (ein weicher Übergang statt
-    // eines Sprungs beim Ziehen am Fensterrand).
-    float sp = uv.y * uScanlineCount;
-    float needed = uScanlineCount / max(uScanlineMinHeight, 1.0);
-    float scanVis = 1.0 - smoothstep(needed, needed / 0.8, fwidth(sp));
-    float scanStr = uScanline * (1.0 - veilFade) * scanVis;
-    float f = fract(sp);
-    float scan = 1.0 - scanStr * (1.0 - sin(f * PI));
-    col *= scan;
+    // Ausserhalb des Rasters (aber innerhalb der Röhre) leuchtet die Röhre wie ein
+    // UNBELEUCHTETER Bildpunkt: derselbe Weg wie oben mit lit = 0, also je nach
+    // Helligkeit/Kontrast der dunklere Farbton (nicht schwarz).
+    float litB = clamp((1.0 - contrast) * uBrightness, 0.0, 1.0);
+    vec3 bg = mix(uPhosphorOff, uPhosphorOn, litB);
+    bg = mix(bg, vec3(1.0), od * litB * 0.5);
+    bg = max(bg, uPhosphorOn * ambient);
+    col = mix(bg, col, inR);
 
     // Aperture-grille style vertical mask (subtle for a monochrome tube).
     float mphase = fract(gl_FragCoord.x / uMaskPitch);
@@ -806,20 +738,11 @@ class ScreenWidget(QOpenGLWidget):
         f.glUniform3f(u("uPhosphorOff"), *[float(c) for c in p.phosphor_off])
         f.glUniform1f(u("uBrightness"), float(p.brightness))
         f.glUniform1f(u("uContrast"), float(p.contrast))
-        f.glUniform1f(u("uContrastSmallFactor"),
-                      float(p.contrast_small_factor))
-        f.glUniform1f(u("uScanline"), float(p.scanline_strength))
-        # Rasterzeilen folgen der Bildhöhe (288 = Vorgabe der Konfiguration).
-        f.glUniform1f(u("uScanlineCount"),
-                      float(p.scanline_count) * self._fb_h / FB_HEIGHT)
-        f.glUniform1f(u("uScanlineMinHeight"), float(p.scanline_min_height))
-        f.glUniform1f(u("uGlow"), float(p.glow_strength))
-        f.glUniform1f(u("uGlowRadius"), float(p.glow_radius))
         f.glUniform1f(u("uMask"), float(p.mask_strength))
         f.glUniform1f(u("uMaskPitch"), float(p.mask_pitch))
         f.glUniform2f(u("uCurvature"), float(p.curvature[0]), float(p.curvature[1]))
         f.glUniform1f(u("uCorner"), float(p.corner_radius))
-        f.glUniform1f(u("uVignette"), float(p.vignette_strength))
+        f.glUniform1f(u("uVignette"), float(p.vignette_strength if p.vignette_on else 0.0))
         f.glUniform1f(u("uFlicker"), float(p.flicker_strength))
         f.glUniform1f(u("uTime"), float(self._clock.elapsed() / 1000.0))
         f.glUniform2f(u("uScale"), float(p.scale_x), float(p.scale_y))
