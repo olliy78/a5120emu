@@ -143,7 +143,7 @@ BIOS 4.x, zwei 5¼″-Laufwerke extern. Daraus folgt:
 **Was Gen 1 von Gen 2 unterscheidet (und nur das):**
 1. **Tastatur K7634** (parallel, an eine PIO) statt K7672 (seriell an SIO der K7028.30/045-8732).
    Neu im Kern: `core/peripherals/` K7634 (Vorbild `k7672`, `k7637`), AP-V1b liefert die Spezifikation.
-2. **K7028 statt 045-8732:** welche K7028-Fassung (.10/.20 mit 2 × SIO + 2 × CTC + PIO?) und
+2. **K7028 statt 045-8732** *(AP-V1b 2026-10-05: Fassung **.10, Ports `E0H–FFH`**, Tastatur an `E0H–E2H`, siehe `doc/k8915g2/k7634.md` §4)*: welche K7028-Fassung (.10/.20 mit 2 × SIO + 2 × CTC + PIO?) und
    was sich gegenüber der im Kern vorhandenen `K7028` (= 045-8732, K7028.30) ändert — Ports,
    PIO-Anschluss für die Tastatur, Bestückung, Baudraten-Taktung. **Noch nicht belegt [?]**:
    Unterlagen im Forum erwähnt (K7028-Servicedokumentation, siehe §3.1), nicht beschafft.
@@ -249,6 +249,28 @@ ein 64-KB-System bilden?** Außerdem: **Widerspruch PIO 84H–87H (K2521-Beschre
 **Wächter:** keiner (Doku). **Fertig, wenn:** jede Aussage eine Seite/Blatt-Fundstelle hat und
 offene Punkte als Fragen in §9 stehen.
 
+**Erledigt 2026-10-05** → `doc/k8915g2/karten.md`. Befunde:
+- **PIO der K2521 = 84H–87H, CTC 80H–83H** (Text S.6/S.10, Dekoder A34 = 8205 im Schaltplan Blatt 2:
+  AB7 = 1, AB6/AB5 = 0, AB4:2 wählt; nur Ausgang 00/01 belegt, 02–07 offen). **08H–0FH aus dem Forum
+  ist auf der K2521 nicht erreichbar.** Die Gen-2-ROMs sprechen weder 84H–87H noch 08H–0FH
+  unmittelbar an (statisch, V3b prüft).
+- **Die K2521 schaltet nicht selbst um** (kein Register); ROM/RAM 0000–0FFF werden über /MEMDI/1/2
+  (X8/X9) von außen gesperrt.
+- **Die K3528 ist die Umschaltkarte**: 64/48/32 KB dynamisches RAM (32 Chips „Q281“, 4 Banken je
+  16 KB nach AB14/AB15), mit eigenem **8212-Register (OUT)**, das **/MEMDI, /MEMDI1, /MEMDI2, /MEMDI3**
+  treibt und eine programmierbare 1-KB-Ausblendadresse hat. Register-Adresse über zwei 8205-Dekoder
+  (AB2–4, AB5–7, /IORQ, /IODI) per Wickelfeld X3 wählbar: im Plan handverdrahtet auf **88H–8BH**;
+  **A8H** (Wert des ROM) ist derselbe Dekoder mit einem Draht weiter (D2:02-Ausgang 05 statt 04)
+  [?, F20]. Welches Registerbit welche /MEMDI-Leitung treibt: im Plan nicht eindeutig [?].
+- **64-KB-Antwort:** nur **K2521 + K3528 (64 KB) (+ K3820)** bildet das A8H-umgeschaltete 64-KB-System;
+  K3520/K3525/K3521/K3820 haben kein Register (Raster 4 KB, nur über X6/X7 von fremd erzeugtem MEMDI1/2
+  gesperrt).
+- K3820: Daten wie gesichert; Abb. 7 der Doku ist in der vierten Spalte verdruckt (gemeint 3C00/2C00/1C00/0C00),
+  WAIT X10–X11 offen = M1-WAIT bestätigt; Hypothese „Start C000“ (Chip 3C00 = FC00) passt zur Brückentabelle.
+- Lücken: `K3520_K3820_Heft2.pdf` ist keine PDF (218 B); K3820-Serviceschaltpläne nicht gelesen; Leiterbahn
+  A34 → CS von CTC/PIO nicht verfolgt; Brücken-Polarität der Ausblendadresse unklar. Zu K3528 gibt es **keinen
+  Text**, nur den (handschriftlich ergänzten) Plan.
+
 ### AP-V1b — Tastatur K7634/36
 
 **Ziel:** Anschluss und Protokoll der parallelen Tastatur K7634 (Gen 1; **Anwenderangabe:
@@ -266,6 +288,29 @@ Verzeichnis; das Forum erwähnt K7028-Servicedokumente (classic-computing Thread
 `k8915schaltung.pdf` ist 045-8732 = K7028.30. **Fertig, wenn:** die Tabelle Taste → Code
 vollständig ist oder die Lücken benannt sind; Hinweis, ob der `KEY`-Test der Gen-2-ROMs (V3b)
 diese Tastatur abfragt.
+
+> **AP-V1b erledigt 2026-10-05** — Ergebnis `doc/k8915g2/k7634.md`. Befunde:
+> - **K7634 = intelligente Tastatur** (eigener U880 + 2708-ROM + 8212), parallele Schnittstelle X1
+>   (`UB0–7`, `/UCS1` Daten, `/UCS2` Gültigkeit, `/UCS4` Kommando, `/UINT`), Codetabelle **je
+>   Variante** im Tastatur-ROM. Neben den Serviceschaltplänen gibt es auf tiffe.de die
+>   **Betriebsdokumentation** (`K1520/Tastaturen/Tastatur_K7634_K7636_Betriebsdokumentation.pdf`,
+>   33 Seiten Scan, bisher nicht im Entwurf verzeichnet) mit Protokoll, Kommandos und Steckerbelegung.
+> - Tabelle Taste → Code der **K7634.04 vollständig** (16 Matrixgruppen × 8, a/b, Dauerfunktion,
+>   TYP `80H`); Varianten .05/.10 teilweise, .06/.13 nur identifiziert. Großschreibung =
+>   Grundstellung, SHIFT liefert Kleinbuchstaben.
+> - **An der K7028.10 (Ports `E0H–FFH`) belegt die Tastatur `E0H` (Daten), `E1H` (Status, Bit 3 =
+>   Gültigkeit), `E2H` (Kommando)**, Interrupt `UINT` → ZRE-CTC Kanal 3; SIO `F0–F7H`, CTC
+>   `F8–FFH`. Belege: 2708-Karten-ROM „3C00" und das CP/M-BIOS von Krzikalla (tiffe `CPM-KRZ`).
+>   Die **K7028.30 (im Kern) trägt die K7634 nicht** (dort K7672 an SIO2-B) — Gen 1 braucht ein
+>   anderes Portbild, nicht nur eine Tastatur.
+> - **`KEY`-Test der Gen-2-ROMs 175–177 fragt die K7634 NICHT ab** (Ports `52H/53H` = SIO2-B,
+>   K7672; Portbild der K7028.30). Der Chip „3C00" der 2708-Karte fragt dagegen `E0H/E1H` ab und
+>   wertet `10H` (OFF → „ZYKL.") und `9DH` (ENTER → „LADER") aus. Folge für V3b/V9: Gen 1 =
+>   **anderer Urlader** (der Kartenchip), nicht ROM 175.
+> - **Abweichung vom Plan:** Die Fremdquellen erwarten TYP `A0H`, ENTER=`9DH`, RESET=`1FH`,
+>   PF1=`91H` — keine der gedruckten Tabellen enthält diese Fassung. **Lücken:** kein Schaltplan
+>   K7028.10/.20 (tiffe 404, felgentreu 403); `E3H`/`E4H`, Frontplatte der Gen 1, Bitbilder der
+>   Kommandos `1xxYYYY` vs `1YYxxxx`, Druckfehler `E02` b=`33H` (K7634.04) — alles **[?]**.
 
 ### AP-V3a — Kommentierte Listings der Gen-2-Abzüge
 
@@ -398,7 +443,14 @@ volle Ausgabe.
 | **F3** | Wickelbrücken-Stand der ZRE (X6–X15) und der RAM-Karte; Aufschriften der drei ZRE-EPROMs und ihre Plätze. |
 | **F4** | Laufwerke und Controller (K5122 oder anderer); eine Systemdiskette (Image) falls vorhanden. |
 | **F5** | Gen 1 = Gen 2 + K7634 + K7028 (Ihre Angabe 2026-10-05): **Wissen Sie, welche K7028-Fassung** (.10/.20/.30, Platinennummer) und welches ROM dort steckt — gleiche Aufschriften 175–177? Darf der Betriebsnachweis bis zur Beschaffung einer Diskette/eines Abzugs warten (Empfehlung: ja)? Soll ich in den Foren (robotrontechnik.de, VzEkC) und beim Rechenwerk Halle anfragen? **Das ginge nur mit Ihrer Freigabe — ich schreibe nichts ohne Rückfrage in ein Forum.** |
+| **F7** | Welche **K7634-Fassung** hängt am Gerät (Aufdruck `K7634.xx`, ROM-Nummer `Y708-I…` auf der Tastaturplatine)? Die Fremdquellen (BIOS Krzikalla, Kartenchip „3C00") erwarten TYP `A0H`, ENTER `9DH`, RESET `1FH`, PF1 `91H`; die gedruckten Tabellen (K7634.04/.05/.10/.13) haben das nicht. Steckt ein Bedienelement (BES, Sonderleitungen SL) an der Tastatur? (ohne: nur TYP, kein Einfluss auf den Emulator) |
+| **F8** | Gibt es einen **Schaltplan der K7028.10/.20** (Portbereich `E0H–FFH`, Bedeutung von `E3H`/`E4H`, Frontplatte)? Steckt in der ZRE der Gen 1 der **Kartenchip „3C00"** (Urlader `MROM RAM I/O KEY CTC`, ENTER: LADER / OFF: ZYKL.) oder die Bausteine 175–177? Welche Platinennummer trägt die K7028 des Geräts? |
 | **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. |
+| **F20** | (V1a) Aufdruck/Platinen-Nr. der „zusätzlichen RAM-Karte“ (K3528? 32 Chips, 8212 „D8“?), Stand des Wickelfeldes **X3** (insb. D2:01/D2:02 → Register-Adresse A8H; Bank-Brücken X3:64–71). |
+| **F21** | (V1a) Die handschriftliche „88“ im K3528-Plan: gilt sie für Ihr Gerät oder ein anderes (ROM schreibt A8H)? |
+| **F22** | (V1a) Brückenstand am Gerät: ZRE X6–X9, X14/X15; PFS K3820 X6/X7 (welches MEMDI), X8/X9 (Startadresse), X10–X11 (WAIT). |
+| **F23** | (V1a) Wie ist das Feld X3:23–X3:45 (Registerbit → /MEMDI…/MEMDI3) gebrückt? Foto der RAM-Karte genügt. |
+| **F24** | (V1a) Woher stammt „PIO 08–0FH“ (Forum 5713)? Gibt es ein Gerät mit anderer K2521-Dekodierung? |
 
 ---
 
