@@ -1,7 +1,8 @@
 # 24 — K8915-Varianten: „Generation 2“ (Gerät des Anwenders) und „Generation 1“ (Planung)
 
 Stand: 2026-10-05, Zweig `K8915Varianten` (von `main` @ 5190c9c). **Planungsdokument** —
-noch kein Kerncode. Der Emulator bildet bisher nur die **V3** ab (`doc/design/16_k8915.md`,
+noch kein Kerncode. **Abzüge der Gen-2-ZRE, der K7024 und der 2708-Karte liegen vor**
+(`doc/EPROMS/K8915G2/`, §10 am Ende); Auswertung = AP-V3. Der Emulator bildet bisher nur die **V3** ab (`doc/design/16_k8915.md`,
 ZRE 045-8762 mit 128 KB, `core/machines/k8915/`).
 
 Legende wie in Entwurf 16: **[ROM]** aus einem Abzug, **[SLP]** Stromlaufplan, **[Web]**
@@ -101,15 +102,17 @@ CTC vor PIO, Koppelbus-Brücken X10/X11, IEI-Wahl X14/X15. Das ist die schon mod
 
 ### 5.2 Unbekannt (alles [?], bis Abzüge/Gerätebefund da sind)
 
-1. **Inhalt der drei EPROMs.** Wahrscheinlich Boot-Lader + Selbsttest + CCP (vgl. „CCP in ZVE-ROM“
-   im Forum-Thread zu K2521/K5122 [Web]) — ob das K8915-spezifisch ist, zeigt erst der Abzug.
+1. **Inhalt der drei EPROMs** — liegt vor (§10): Urlader mit Selbsttest und Floppy-Boot, **kein**
+   CCP. Offen bleibt die genaue Hardware-Zuordnung der Ports.
 2. **Die RAM-Karte:** K3528 (64 KB) oder K3526 + K3525? Adressierung, /MEMDI-Nutzung,
    Bankumschaltung. Der Anwender nennt eine einzelne „extra RAM-Karte“; bei 64 KB ergäben
    ZRE-RAM (1 KB) + Karte kein vollständiges 64-KB-System ohne Umschaltung der ZRE-ROM.
-3. **Die 2708-Karte (16 × 1 KB = 16 KB EPROM):** Platinentyp und Adresslage unbekannt.
-   Mögliche Rollen: Zeichengenerator-/Bild-EPROMs, CCP/BIOS im ROM („ROM-CCP“ nach
-   CPM-KRZ), ROM-Disk, Selbsttestdaten. Der Anwender hält sie nicht für Standard — deshalb
-   **optional** modellieren (wie RAF/K6022: steckbare Karte, Vorgabe aus).
+3. **Die 2708-Karte (16 × 1 KB = 16 KB EPROM):** ist die **PFS K3820** (Platine 012-7040/-7041,
+   Handbuch `Speichersteckeinheiten_K3520…K3820_Betriebsdokumentation.pdf` §6, Chips Abb. 7,
+   Startadresse über X8/X9 in 4-KB-Schritten, MEMDI über X6/X7). Inhalt: **nur 2 von 16 Chips
+   programmiert** (§10) — eine abweichende Fassung des Urladers. Der Anwender hält sie nicht
+   für Standard — deshalb **optional** modellieren (wie RAF/K6022: steckbare Karte, Vorgabe aus),
+   und nur, wenn AP-V3 zeigt, dass der Gast sie benutzt.
 4. **Speicherumschaltung** der ZRE per PIO-Port B (→ /MEMDI, /MEMDI1, /MEMDI2) und welche
    Bitmuster welche Karte freigeben (Forum nennt 8 Muster [Web]); die Wickelbrücken-Stellung
    X8–X9 am Gerät ablesen.
@@ -195,3 +198,28 @@ dem Merge alle vier Läufe (`test`, `test-format`, `test-matrix`, `win`).
 | **F4** | Laufwerke und Controller (K5122 oder anderer); eine Systemdiskette (Image) falls vorhanden. |
 | **F5** | Darf Gen 1 bis zur Beschaffung eines Abzugs warten (Empfehlung: ja)? Soll ich in den Foren (robotrontechnik.de, VzEkC) und beim Rechenwerk Halle anfragen? **Das ginge nur mit Ihrer Freigabe — ich schreibe nichts ohne Rückfrage in ein Forum.** |
 | **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. |
+
+---
+
+## 10. Abzüge der Gen-2-Hardware (2026-10-05, AP-V3 vorbereitet)
+
+Ablage, Prüfsummen und Einzelbefunde: **`doc/EPROMS/K8915G2/README.md`**. Kurzfassung:
+
+- **ZRE: drei Bausteine 175/176/177 (0000/0400/0800, Reihenfolge aus dem Inhalt [?])** =
+  Urlader: Einstieg DI/IM 2, `OUT (A8H)`, **kopiert sich nach FC00** und läuft dort; Selbsttest
+  „MROM RAM SIO KEY CTC“; Floppy-Boot über Ports 10H–19H; Meldungen „Coldstart * Disk on A: ready“,
+  „No system disk“. **Nicht** das V3-Boot-ROM (1007 von 1024 Bytes verschieden) und **nicht** die
+  PRG-710-Lader — aber im Aufbau verwandt (A8H, 61H, Meldungen). Folgerung: die Gen-2-ZRE ist
+  keine K2521 pur, sondern hat mindestens Speicherumschaltung über **A8H** wie die V3-ZRE
+  [?, Port-/Bankbelegung in AP-V3 klären].
+- **K7024: 171/172 sind byteidentisch mit `v171`/`v172`** (A5120-Zeichensatz) — nichts Neues,
+  der vorhandene Zeichengenerator genügt.
+- **2708-Karte PFS K3820: 14 von 16 Chips leer (FFH)**, zwei programmiert: „3C00“ = andere
+  Fassung des Urladers (Selbsttest „I/O“, Code bei FC00), „3000“ = Lader-Meldungen wie ZRE 177,
+  aber Arbeitszellen bei 0Cxx. Vermutung: eine **ältere/andere Urladerfassung** auf der Karte;
+  Lage vermutlich ab C000 (Chip „3C00“ = FC00–FFFF) — **vom Brückenstand X8/X9 abhängig, am Gerät
+  abzulesen** (Frage F3).
+- Folge für den Plan: **V5 (2708-Karte)** schrumpft auf „Abzug als Beigabe, keine eigene
+  Karte“, solange kein Gast sie anspricht; V3 bekommt als erste Aufgabe, die drei ZRE-Bausteine
+  und die zwei Kartenchips zu vergleichen (Disassembly mit `tools/`, Muster
+  `doc/EPROMS/PRG710/*.prn`).
