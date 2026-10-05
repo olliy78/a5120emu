@@ -171,3 +171,8 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
 | F22 | Brückenstand ZRE X6–X9/X14/X15 (Interruptkette), K3820 X6–X11 |
 | F23 | Feld X3:23–45 (Registerbit → /MEMDI…/MEMDI3) |
 | F24 | Herkunft „PIO 08–0FH“ (Forum) — andere K2521-Dekodierung? |
+
+
+## Namen (2026-10-05, Antwort auf F1)
+
+Anzeige/Handbuch: **K8915 V3** und **K8915 V2** (Gerät des Anwenders, 64 KB, K7672); **V1** (K7634) gesperrt. Interne Schlüssel `k8915-g2`/`Gen2` bleiben, nur Anzeigetexte tragen V2. Die K7634 stammt von einem K8912, nicht von einer V1 — „V1 = K7634 + K7028“ ist unbelegt.

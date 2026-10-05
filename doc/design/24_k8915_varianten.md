@@ -936,6 +936,7 @@ volle Ausgabe.
 | # | Frage |
 |---|---|
 | **F1** | Entspricht „Generation 2“ der „5¼″ V2“ (K7672, K2521, K3528, 045-8778?) und „Generation 1“ der „5¼″ V1“ (K7634)? Oder sind es andere Bezeichnungen (z. B. Aufschrift am Gerät)? |
+| **F1 — beantwortet 2026-10-05** | Der Anwender besitzt zwei K8915: einen **V3** (128 KB, läuft im Emulator) und einen **V2** (64 KB, gleiche Tastatur K7672 wie der V3), von dem die Gen-2-Abzüge stammen. Ein V1 ist nicht vorhanden; die K7634 hängt an einem **K8912**. **Folge:** „Gen 2“ heißt in Anzeige und Handbuch **V2**, „Gen 1“ heißt **V1** (gesperrt); die technischen Schlüssel (`k8915-g2`, `Config::generation`, Dateinamen `k8915g2_*`) bleiben. „Gen 1 = Gen 2 + K7634 + K7028“ war eine Annahme aus den Quellen, **nicht** am Gerät belegt; F5/F7/F8 beziehen sich damit auf einen K8912 oder eine künftige V1, nicht auf ein Gerät des Anwenders. |
 | **F2** | Kartenliste des Gen-2-Geräts mit **Platinennummern** (012-/045-…), Steckplätzen und Tastaturtyp (K7634 PIO oder K7672 flach); Fotos beider Seiten der RAM- und der 2708-Karte. |
 | **F3** | Wickelbrücken-Stand der ZRE (X6–X15) und der RAM-Karte; Aufschriften der drei ZRE-EPROMs und ihre Plätze. |
 | **F4** | Laufwerke und Controller (K5122 oder anderer); eine Systemdiskette (Image) falls vorhanden. |

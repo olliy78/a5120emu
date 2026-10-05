@@ -814,13 +814,13 @@ mit zwei K5601. Was anders ist:
   `* Coldstart *  Disk on A: ready ? --> <ENTER>` — **RETURN** lädt das System
   von A:. SCPX 8915 richtet beim Start die RAM-Disk E: ein und meldet sich mit `A>`.
 * **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **K8915 V3** (ZRE 045-8762,
-  128 KB; die Vorgabe) oder **K8915 Gen 2** (ZRE K2521 mit der RAM-Karte K3528,
+  128 KB; die Vorgabe) oder **K8915 V2** (ZRE K2521 mit der RAM-Karte K3528,
   64 KB, ohne die zweite Speicherbank — der Autostart `rade` meldet dort „no
   RAM-device“, danach steht `A>` wie gewohnt). Beide mit Tastatur K7672 und
   demselben SCPX 8915. Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart).
-  **K8915 Gen 1** (Tastatur K7634) steht ausgegraut darin: ohne den Urlader-Baustein
-  für 0400H ist sie nicht startfähig. Die Namen der Generationen sind vorläufig.
-* **Gen 2: der Selbsttest endet mit „ROM C“** und 16 Pieptönen — das liegt am
+  **K8915 V1** (Tastatur K7634) steht ausgegraut darin: ohne den Urlader-Baustein
+  für 0400H ist sie nicht startfähig.
+* **V2: der Selbsttest endet mit „ROM C“** und 16 Pieptönen — das liegt am
   vorhandenen Abzug des dritten ROM-Bausteins, dessen gespeicherte Prüfsumme nicht
   zum Inhalt passt, nicht am Emulator. **RETURN** quittiert den Fehler; es folgt
   die Meldung `* Coldstart *`, ein zweites RETURN lädt das System von A:.
@@ -1075,7 +1075,7 @@ hineinklicken. (Normalerweise holt das Fenster ihn von selbst zurück.)
 
 **Der K8915 bleibt nach dem Selbsttest mit einem Buchstaben stehen.** Der
 Buchstabe hinter dem Testnamen ist die Fehlerkennung des Boot-ROMs; RETURN
-lädt trotzdem. Bei der **Gen 2** ist „ROM C“ der Normalfall (siehe „Der K8915
+lädt trotzdem. Beim **V2** ist „ROM C“ der Normalfall (siehe „Der K8915
 Emulator“, *Modell*).
 
 **Gar nichts startet.** `a5120emu --paths` (bzw. `k8915emu --paths`) sagt, wo das Programm die
