@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'ZDOS'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=ZDOS
+typ=P1
+eig=WS
+start=2600
+satz=1024
+block=1024
+rest=512
+segment=2600:5521
+mem=2600:3FD4:0080
+zusatz=0
+erst=780813
+geaend=880429

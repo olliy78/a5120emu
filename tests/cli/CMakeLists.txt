@@ -91,6 +91,16 @@ add_test(NAME cli_beigaben_auf_den_disketten
 set_tests_properties(cli_beigaben_auf_den_disketten PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Wächter „die beiden PRG-UDOS-Lieferdisketten in disks/ sind der Inhalt von
+# tools/prg_disketten/“ (doc/udos_programme.md): Dateiliste, Seite, Inhalt und Systemspuren
+# beider Disketten gegen den gemeinsamen Ordner.  Neu bauen:
+#   python3 tools/prg_disketten/build.py --tool build/k1520disktool
+add_test(NAME cli_prg_disketten
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/prg_disketten/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_prg_disketten PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
 # Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des
 # Generators" (AP-P0d, doc/design/20_prg710.md): tools/gen_prg710_zre_prn.py --check
 # erzeugt beide Listings im Speicher, prüft MD5 der ROM-Abzüge, dass JEDES der 1024 Byte

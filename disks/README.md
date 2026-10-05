@@ -32,8 +32,8 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, 16×256-System | K5601 |
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, 5×1024-System, mit HARDY.COM | K5601 |
 | `udos1715_640k_pc1715_system.hfe` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM", 80×32×256 — dieselbe Diskette liegt als `.img` unter `tests/fixtures/disks/` | MFS 1.6 |
-| `prg710_udos43_k5601_system.hfe` | **UDOS 4.3 für den PRG 710**, beidseitig, Seite 0 mit allen Kommandos (aus der MRS-Diskette, ohne das beschädigte `PROG.DOK` der Seite 1), im DiskTool gebaut (`create --boot --prg 710` + `put`), `check --full` ohne Befund | PRG 710 (K5601) |
-| `prg710-1_udos43_k5601_v43_189.hfe` | **UDOS.PRG710-1 V4.3 1/89**, Abzug des Anwenders, `check --full` ohne Befund | PRG 710-1 (K5601) |
+| `prg710_udos43_k5601_system.hfe` | **UDOS 4.3 für den PRG 710**, beidseitig: Seite 0 Kommandos, Treiber, Assembler, Editor `SCREEN`, `PROG`; Seite 1 MRS-700-Umgebung (`MRS`, `MPSS`, `EDI`, `PROM`, E/A-Treiber) und Dokumente. Gebaut aus `tools/prg_disketten/`, `check --full` ohne Befund | PRG 710 (K5601) |
+| `prg710-1_udos43_k5601_v43_189.hfe` | **UDOS 4.3 für den PRG 710-1**, **derselbe Inhalt** wie die 710-Diskette; verschieden nur Systemspuren und `OS`-Kennung (`UDOS PG710-1`). Gebaut aus `tools/prg_disketten/`, `check --full` ohne Befund | PRG 710-1 (K5601) |
 | `prg710_scpx15_cpa640_sysprg.hfe` | **SCPX V1.5 für den PRG 710** (im Emulator mit `SYSPRG` erzeugt) | PRG 710 (K5601) |
 | `prg710-1_scpx17_cpa640_boot.hfe` | **SCPX 1526 V1.7 für den PRG 710-1**, Abzug des Anwenders | PRG 710-1 (K5601) |
 | `pc1715_scp1715_v0006_boot.hfe` | **SCP 1715 V0006** (cpa800, 5×1024), bootfähig nach S502 | PC 1715 (K5601) |
