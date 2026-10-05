@@ -18,7 +18,11 @@ Zwei weitere K8915-Ausführungen als Varianten derselben Maschine (wie PRG 710 /
   ZRE **wie im PRG 710 (K2521-Familie), aber mit 3 EPROMs**, eine **zusätzliche RAM-Karte**
   und eine **Karte mit 16 × 2708 (je 1 KB)**. Die 2708-Karte hält der Anwender nicht für
   Standardbestückung. EPROM-Abzüge liefert der Anwender nach.
-- **„Generation 1“** — kein Gerät, **kein Abzug**; nur über Dokumentation und Fremdquellen.
+- **„Generation 1“** — kein Gerät, **kein Abzug**. **Angabe des Anwenders (2026-10-05):** Gen 1
+  hat eine **parallele Tastatur K7634** und eine **Schnittstellenkarte K7028** (statt der
+  045-8732 der Gen 2/V3); **der Rest entspricht scheinbar der Gen 2** (ZRE, RAM, K7024, K5122).
+  Gen 1 ist damit **keine eigene Maschine, sondern Gen 2 mit anderer Tastatur und anderer
+  Schnittstellenkarte** — der Aufwand sinkt erheblich (§6).
 
 **Nicht Ziel:** Magnetkassetten-Version (KOKOS/KOBRA, „ausgestorben“ [Web]), Harddisk-Version.
 
@@ -53,7 +57,7 @@ Gen 2 = K7672. Der Anwender liest am Gerät ab: Tastaturtyp, Kartenbezeichnungen
 |---|---|---|
 | [tiffe.de K1520/K2521/](https://www.tiffe.de/Robotron/K1520/K2521/) `K2521_Beschreibung.pdf` | Kartenbeschreibung: **3 × U555 (2708) bei 0000–0BFFH, 1 KB RAM 0C00–0FFFH**, CTC 80H–83H, PIO 84H–87H, /MEMDI-Brücken X8–X9, Takt 9,8304 MHz : 4 | Hardware der Gen-2-ZRE; bereits im Kern (`core/cards/k2521/`, PRG 710) |
 | [tiffe.de K1520/K3528/](https://www.tiffe.de/Robotron/K1520/K3528/) `OPS_K3528-1/-2.pdf` | **Scans 168/154 MB** der 64-KB-RAM-Karte | Adressierung/Brücken der RAM-Karte — **noch nicht gelesen** (AP-V1) |
-| [tiffe.de K1520/K7634_36/](https://www.tiffe.de/Robotron/K1520/K7634_36/) `K7634-36.pdf` | Parallele Tastatur K7634/36 (5,1 MB) | Tastatur Gen 1 [?] — **noch nicht gelesen** (AP-V1) |
+| [tiffe.de K1520/K7634_36/](https://www.tiffe.de/Robotron/K1520/K7634_36/) `K7634-36.pdf` | Parallele Tastatur K7634/36 (5,1 MB) | Tastatur Gen 1 (Anwenderangabe: K7634 + K7028) — **noch nicht gelesen** (AP-V1b) |
 | [tiffe.de CPM-KRZ/](https://www.tiffe.de/Robotron/CPM-KRZ/) | CP/M-3-Quellen (BIOS2710, FL, KM, LFLO…), Lader, `ccp.bin` | **Nur für K2521 + K5122 + K3528/K3526 + K7634**, also Gen-1-nahe Hardware; Quelle für Speicherumschaltung und Boot [?]; Teile (KMB/Kassette) irrelevant |
 | Forum [CP/M auf K2521/K5122](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=12101) | System aus K2521, K3526 64K, K3525 16K, K7028, K5122, K7024; Speicherumschaltung über **PIO Port B → /MEMDI** | Bestätigt, dass die K2521 die Bankumschaltung per PIO macht |
 | Forum [SCP auf K2521 + AMF im Wait-Betrieb](https://www.robotrontechnik.de/html/forum/thwb/showtopic.php?threadid=5713) | ROM „V.09“ (1 KB) lädt Bootspuren nach 0400H; /MEMDI1+2 aus PIO in 8 Bitmustern; genannte Ports: PIO **08–0FH**, CTC 80–83H, ATS E0–FFH, AMF 10–2FH | **Widerspruch zur Kartenbeschreibung (PIO 84H–87H)** — vor Verwendung klären (AP-V1/V3) |
@@ -132,20 +136,28 @@ Ablage:** `doc/EPROMS/K8915G2/<karte>_<platz>_<aufschrift>.bin` + `README.md` (M
 
 ## 6. Gen 1 — Bestand und Unbekannte
 
-Nur belegt über [Web]: K2521 + K3528 (64 KB) + K7024 + K7028 + K5122, Tastatur **K7634 (PIO)**,
-SCPX 0/2 BIOS 4.x, zwei 5¼″-Laufwerke extern. Alles Weitere ist offen:
+Belegt: **Anwender (2026-10-05):** Gen 1 = Gen 2, aber **parallele Tastatur K7634** und
+**Schnittstellenkarte K7028**; [Web] zusätzlich: K2521 + K3528 (64 KB) + K7024 + K5122, SCPX 0/2
+BIOS 4.x, zwei 5¼″-Laufwerke extern. Daraus folgt:
 
-1. Boot-ROM (Inhalt, Selbsttest, Lader) — **kein Abzug** (§3.2).
-2. K3528: Adressierung/Umschaltung — Datenblatt im Netz (OPS_K3528, Scans), **nicht gelesen**.
-3. K7634: Tastenmatrix, PIO-Anbindung an die K7028 (ATS) — K7634-36.pdf, **nicht gelesen**.
-4. Ob die Gen-1-ATS eine K7028.10/.20 ist (andere Bestückung als 045-8732) [?].
-5. BIOS/System: SCPX 0/2 4.x. Aus dem CPM-KRZ-Archiv (CP/M 3, BIOS2710.MAC) ließe sich ein
-   **lauffähiges Testsystem** bauen [?], aber das ist **nicht** das Original und beweist die
-   Nachbildung nur bedingt.
+**Was Gen 1 von Gen 2 unterscheidet (und nur das):**
+1. **Tastatur K7634** (parallel, an eine PIO) statt K7672 (seriell an SIO der K7028.30/045-8732).
+   Neu im Kern: `core/peripherals/` K7634 (Vorbild `k7672`, `k7637`), AP-V1b liefert die Spezifikation.
+2. **K7028 statt 045-8732:** welche K7028-Fassung (.10/.20 mit 2 × SIO + 2 × CTC + PIO?) und
+   was sich gegenüber der im Kern vorhandenen `K7028` (= 045-8732, K7028.30) ändert — Ports,
+   PIO-Anschluss für die Tastatur, Bestückung, Baudraten-Taktung. **Noch nicht belegt [?]**:
+   Unterlagen im Forum erwähnt (K7028-Servicedokumentation, siehe §3.1), nicht beschafft.
+3. **Das ROM** ist die offene Größe: Wenn das Gen-2-ROM (175–177) beide Tastaturen beherrscht
+   (Selbsttest „KEY“ → V3b prüft, **welche** Tastatur er abfragt), läuft Gen 1 mit **demselben
+   ROM** und braucht keinen eigenen Abzug. Sonst fehlt ein Gen-1-ROM weiterhin (§3.2).
+4. **System/Diskette:** SCPX 0/2 BIOS 4.x ist **nicht** vorhanden. Das Gen-2-System
+   (`Disk on A: ready`-Urlader) lädt wohl dasselbe Bootformat — V3b prüft das; eine Gen-1-Diskette
+   braucht es für den Beweis des Betriebs trotzdem.
 
-**Empfehlung:** Gen 1 erst bauen, wenn ein Abzug oder eine Diskette beschafft ist. Bis dahin
-nur Vorarbeiten: K7634-Tastatur, K3528-Karte, Gen-1-Bootpfad **auf dem Papier**. Ein ROM, das
-niemand je gesehen hat, nachzuerfinden wäre kein Nachbau.
+**Empfehlung (geändert):** Gen 1 **nach** Gen 2 als **Konfigurationsvariante** (`generation`
+= Gen1: Tastatur K7634 + K7028-Fassung) einbauen, **wenn** V1b die Tastatur und V3b die ROM-Frage
+beantworten. Ohne ROM-/Diskettenbeleg bleibt der Betriebsnachweis offen, **die Maschine selbst
+ist aber lauffähig (Selbsttest, Tastaturtest, Meldung)**. Kein ROM nachzuerfinden.
 
 ---
 
@@ -176,7 +188,7 @@ V4 ff. vorher startet, rät.
 | V6 | `K8915Machine`-Zweig Gen 2, Boot bis Meldung | V4 | Opus | ja |
 | V7 | C-ABI, Python, Programmprofil, Handbuch | V6 | cpp-coder + Sonnet | ja |
 | V8 | DiskTool: Diskettenformat Gen 2 | V6, F4 (Diskette) | cpp-coder / Sonnet | ja |
-| V9 | Gen 1 | Abzug/Diskette (F5) | — | **blockiert** |
+| V9 | Gen 1 als Konfigurationsvariante: K7634 + K7028-Fassung auf Gen 2 | V6, V1b, V3b (ROM-Frage) | cpp-coder / Sonnet | ja |
 | V10 | Merkposten, `CLAUDE.md`, Verweis in 16 | alle | Sonnet | nein |
 | VT | Alle vier Lanes vor dem Merge | V10 | test-runner / Haiku | ja |
 
@@ -239,16 +251,21 @@ offene Punkte als Fragen in §9 stehen.
 
 ### AP-V1b — Tastatur K7634/36
 
-**Ziel:** Anschluss und Protokoll der parallelen Tastatur (Gen 1; bei Gen 2 zu prüfen, ob
-K7672 oder K7634).
+**Ziel:** Anschluss und Protokoll der parallelen Tastatur K7634 (Gen 1; **Anwenderangabe:
+Gen 1 = K7634 + K7028**) **und** der K7028-Schnittstellenkarte, an der sie hängt.
 **Agent:** general-purpose (Sonnet). **Abhängig:** —. **Baut:** nein.
 
 Eingabe: `https://www.tiffe.de/Robotron/K1520/K7634_36/K7634-36.pdf` (5,1 MB, Scan), dazu
 `doc/design/08_k7637_keyboard.md` und `core/peripherals/k7672/` als Vorbild des Zuschnitts.
 Ergebnis `doc/k8915g2/k7634.md`: Steckerbelegung, Datenformat (Bitbelegung, Strobe/Ack),
 Tastenmatrix → Code (Tabelle), Sondertasten, Anschluss an PIO der K7028/K2521 (welcher Port,
-welche Handshake-Leitungen), Taktung. **Fertig, wenn:** die Tabelle Taste → Code vollständig
-ist oder die Lücken benannt sind; Hinweis, ob die ROMs aus V3 (`KEY`-Test) dazu passen.
+welche Handshake-Leitungen), Taktung. **Zusätzlich:** welche Fassung der **K7028** (.10/.20/.30
+bzw. 045-8732) die K7634 trägt — Port-Adressen, PIO-Beschaltung, Unterschiede zur vorhandenen
+Karte `core/cards/k7028/` (Tabelle). Unterlagen dazu suchen: tiffe.de hat **kein** K7028-
+Verzeichnis; das Forum erwähnt K7028-Servicedokumente (classic-computing Thread 22043), in
+`k8915schaltung.pdf` ist 045-8732 = K7028.30. **Fertig, wenn:** die Tabelle Taste → Code
+vollständig ist oder die Lücken benannt sind; Hinweis, ob der `KEY`-Test der Gen-2-ROMs (V3b)
+diese Tastatur abfragt.
 
 ### AP-V3a — Kommentierte Listings der Gen-2-Abzüge
 
@@ -335,7 +352,7 @@ wenn** ein Agent V4 ohne Rückfrage beginnen kann.
 | V6 | Maschinenzweig Gen 2 in `core/machines/k8915/`; Verdrahtung nach V3b; Boot der ROMs 175–177 bis zur Meldung („Coldstart“ / „No system disk, change disk“, **ohne Diskette prüfbar**) und danach mit Diskette bis zum Prompt, sobald F4 beantwortet ist; `boot_trace`/`k1520dbg --machine k8915 --generation 2` | `K8915Gen2Boot.*` (Integration), V3-Wächter bleiben grün |
 | V7 | `k1520_create…` für die Variante, Python `K1520Emulator(machine="k8915", generation=…)`, Profil `k8915emu` (Modellwahl wie `general.model`, `modellwahl` in `app/profil.py`), Konfigurationsdatei, Handbuch; **`test_c_api.py` gleicht Header, Bibliothek und ctypes mechanisch ab** | `py_c_api`, `py_k8915emu_gui` |
 | V8 | DiskTool: nur wenn die Gen-2-Diskette von V3-Profilen abweicht; sonst gestrichen | `DisktoolK8915Gen2.*` |
-| V9 | Gen 1: **blockiert** bis Abzug/Diskette (F5); vorher nichts bauen | — |
+| V9 | Gen 1 = Gen 2 + **Tastatur K7634** (neu, `core/peripherals/`, nach V1b) + **K7028-Fassung** (V1b; Konfiguration an `core/cards/k7028/` bei unveränderter Vorgabe) ; ROM: **dasselbe Gen-2-ROM, wenn V3b zeigt, dass es die K7634 abfragt**, sonst bleibt der Betrieb ohne Gen-1-ROM offen | `K7634.*` (Unit), `K8915Gen1Tastatur.*` (Integration: Taste → Code im Gast, soweit das ROM sie liest) |
 
 ### AP-V10 / VT
 
@@ -353,14 +370,14 @@ volle Ausgabe.
 | V2 (Namen, Klasse) | Zuordnung Gen 1/2 ↔ V1/V2 | F1 |
 | V4 (Speicherkarte) | Typ der RAM-Karte, Brücken, Brückenstand X8/X9 der Karte | F2, F3 |
 | V6 (Boot mit Diskette), V8 | Systemdiskette der Gen 2 (Image) | F4 |
-| V9 | EPROM-Abzug/Diskette Gen 1 | F5 |
+| V9 (Betriebsnachweis) | Gen-1-ROM, falls das Gen-2-ROM die K7634 nicht abfragt; SCPX-0/2-4.x-Diskette; Angabe der K7028-Fassung am Gerät (Platinennummer), falls Unterlagen fehlen | F5 |
 
 ---
 
 ## 8. Risiken
 
-- **Hardware-Nachbau ohne ROM:** Gen 1 ist ohne Abzug nicht zu verifizieren (§3.2). Kein
-  Nachbau aus der Phantasie.
+- **Gen 1 ohne eigenes ROM:** läuft das Gen-2-ROM die K7634 nicht an, bleibt der Betriebsnachweis
+  offen (§3.2, §6). Kein ROM aus der Phantasie.
 - **K2521 ≠ PRG-710-Speicherverwaltung:** die K2521 selbst kennt keine Seitenregister (E8H–EBH
   sind **PRG-spezifisch**, Karte `prg710_speicher`); Gen 2 braucht eine eigene Lösung.
 - **Zwei Quellen, zwei PIO-Adressen:** K2521-Beschreibung 84H–87H, Forum 08H–0FH (§3.1) —
@@ -380,7 +397,7 @@ volle Ausgabe.
 | **F2** | Kartenliste des Gen-2-Geräts mit **Platinennummern** (012-/045-…), Steckplätzen und Tastaturtyp (K7634 PIO oder K7672 flach); Fotos beider Seiten der RAM- und der 2708-Karte. |
 | **F3** | Wickelbrücken-Stand der ZRE (X6–X15) und der RAM-Karte; Aufschriften der drei ZRE-EPROMs und ihre Plätze. |
 | **F4** | Laufwerke und Controller (K5122 oder anderer); eine Systemdiskette (Image) falls vorhanden. |
-| **F5** | Darf Gen 1 bis zur Beschaffung eines Abzugs warten (Empfehlung: ja)? Soll ich in den Foren (robotrontechnik.de, VzEkC) und beim Rechenwerk Halle anfragen? **Das ginge nur mit Ihrer Freigabe — ich schreibe nichts ohne Rückfrage in ein Forum.** |
+| **F5** | Gen 1 = Gen 2 + K7634 + K7028 (Ihre Angabe 2026-10-05): **Wissen Sie, welche K7028-Fassung** (.10/.20/.30, Platinennummer) und welches ROM dort steckt — gleiche Aufschriften 175–177? Darf der Betriebsnachweis bis zur Beschaffung einer Diskette/eines Abzugs warten (Empfehlung: ja)? Soll ich in den Foren (robotrontechnik.de, VzEkC) und beim Rechenwerk Halle anfragen? **Das ginge nur mit Ihrer Freigabe — ich schreibe nichts ohne Rückfrage in ein Forum.** |
 | **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. |
 
 ---
