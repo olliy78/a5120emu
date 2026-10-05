@@ -78,3 +78,14 @@ passend zum 1-KB-RAM der K2521 bei 0C00–0FFF). Da der Code bei FC00 läuft und
 Handbuch auf 4-KB-Grenzen startet, liegt die Karte vermutlich bei **C000** (der Chip „3C00“
 dann bei FC00–FFFF). Ob das die Lage am Gerät ist, zeigen nur die Brücken X8/X9 und die
 Beschriftung der Chips.
+
+## 177 repariert (2026-10-05, F9)
+
+Zwei weitere Lesungen des Bausteins 177 am Gerät (`k8915gen1_zre177_2.bin`, `_3.bin`, MD5
+`3c778fadb68add83be61e5d5b61aaa9a`) sind **byteidentisch zum Abzug** — das Lesen ist also nicht die
+Fehlerquelle, der Baustein selbst trägt das Byte `0A33H = 04H` (Offset 0x233). Setzt man es auf `00H`,
+stimmt die gespeicherte 24-Bit-Summe (`00A67CH`) **exakt** (Differenz war genau 4): ein einzelnes
+gekipptes Bit (Bit 2) in einem sonst mit 00H gefüllten Bereich — typisch für Ladungsverlust einer
+2708-Zelle [?]. Die Reparatur liegt als **`k8915g2_zre_0800_177_repariert.bin`** (MD5
+`b1fe61ce16ec8d87e099f3fb2676e861`) neben dem unveränderten Abzug; **der Abzug bleibt unangetastet**
+(Wächter `cli_k8915g2_prn_passt_zur_quelle`).
