@@ -71,6 +71,9 @@ public:
         static Config prg710();
         /// ROM PRG 710-1 (1 KB); Brücken wie PRG 710.
         static Config prg710_1();
+        /// ROM der K8915 Gen 2 (3 × 1 KB, 175/176/177, 0000–0BFF), Kaskaden alle offen,
+        /// IEI vom Systembus (Kette wie der V3, doc/design/24_k8915_varianten.md R2) [?, F22].
+        static Config k8915g2();
     };
 
     explicit K2521(K1520Bus& bus);

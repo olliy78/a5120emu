@@ -68,23 +68,27 @@ def test_titles_and_machines_of_the_two_programs(qapp, konfig_ordner):
 def test_only_the_a5120_offers_the_a5120_16_model(qapp, konfig_ordner):
     """Die Modellwahl A5120/A5120.16 (Erweiterungsmodul) gehört dem A5120 Emulator.
 
-    Der K8915 Emulator zeigt sie nicht, schreibt kein ``general.model`` und
-    übernimmt auch keins aus seiner Konfiguration — ein EM gibt es nur am A5120.
+    Der K8915 Emulator hat seit AP-V7b eine EIGENE Modellwahl (V3 / Gen 2,
+    doc/design/24_k8915_varianten.md R5), aber ``a5120.16`` gibt es darin nicht:
+    aus seiner Konfiguration wird es zum V3, die Maschine läuft ohne EM und
+    gespeichert wird ``model: k8915`` — ein EM gibt es nur am A5120.
     """
-    from app import config_io, modell
+    from app import config_io
 
     (konfig_ordner / "k8915emu.yaml").write_text(
         "version: 1\ngeneral: {model: a5120.16}\n", encoding="utf-8")
     w = _fenster(qapp, "k8915")
     try:
-        assert not w.profil.modellwahl
-        assert w.settings_widget.model_combo.isHidden()
-        assert w._model == modell.A5120
+        assert w.profil.modellwahl
+        assert all(em is None for _k, _m, em, _a, _t in w.profil.modelle)
+        assert w.settings_widget.model_combo.findData("a5120.16") < 0
+        assert w._model == "k8915"
+        assert w.emulator.k8915_generation() == 0
         assert not w.status_widget.em_sichtbar()
         assert w.emulator.em_variant() == ""
         w._autosave_now()
-        assert "model" not in config_io.load_config(
-            str(konfig_ordner / "k8915emu.yaml"))["general"]
+        assert config_io.load_config(
+            str(konfig_ordner / "k8915emu.yaml"))["general"]["model"] == "k8915"
     finally:
         _zu(w, qapp)
 
@@ -92,8 +96,85 @@ def test_only_the_a5120_offers_the_a5120_16_model(qapp, konfig_ordner):
     try:
         assert w.profil.modellwahl
         assert not w.settings_widget.model_combo.isHidden()
+        assert w.settings_widget.model_combo.findData("a5120.16") >= 0
     finally:
         _zu(w, qapp)
+
+
+# ─── Modellwahl V3 / Gen 2 (doc/design/24_k8915_varianten.md AP-V7b) ─────────
+
+def test_the_k8915_offers_v3_and_gen2_and_shows_gen1_locked(qapp, konfig_ordner):
+    """Auswahlfeld: V3 (Vorgabe) und Gen 2 wählbar, Gen 1 ausgegraut mit Grund."""
+    from PySide6.QtCore import Qt
+
+    w = _fenster(qapp, "k8915")
+    try:
+        p = w.profil
+        assert [m[0] for m in p.modelle] == ["k8915", "k8915-g2"]
+        assert all(m[4] == "k7672" for m in p.modelle)
+        assert p.standard_modell() == "k8915"
+        assert [g[0] for g in p.gesperrte_modelle] == ["k8915-g1"]
+        # gesperrt = in einer Konfiguration unbekannt
+        assert p.modell_normalisieren("k8915-g1") == "k8915"
+        box = w.settings_widget.model_combo
+        assert not box.isHidden()
+        assert [box.itemData(i) for i in range(box.count())] == [
+            "k8915", "k8915-g2", "k8915-g1"]
+        assert box.model().item(0).isEnabled() and box.model().item(1).isEnabled()
+        assert not box.model().item(2).isEnabled()
+        assert "F11" in box.itemData(2, Qt.ToolTipRole)
+        assert "Kaltstart" in box.toolTip()
+        # Ohne Konfiguration (Vorgabedatei trägt kein general.model) läuft der V3.
+        assert box.currentData() == "k8915"
+        assert w.emulator.machine == "k8915" and w.emulator.k8915_generation() == 0
+    finally:
+        _zu(w, qapp)
+
+
+def test_switching_the_k8915_model_rebuilds_the_machine(qapp, konfig_ordner):
+    from app import config_io
+    from app.ui.keyboard_k7672 import KeyboardK7672Widget
+
+    w = _fenster(qapp, "k8915")
+    try:
+        vorher = w.emulator
+        assert vorher.k8915_generation() == 0
+        w._on_model_selected("k8915-g2")
+        qapp.processEvents()
+        assert w.emulator is not vorher
+        assert w.emulator.machine == "k8915-g2"
+        assert w.emulator.k8915_generation() == 1
+        assert isinstance(w.keyboard_widget, KeyboardK7672Widget)
+        assert w.CPU_HZ == 2_457_600
+        w._autosave_now()
+        cfg = config_io.load_config(str(konfig_ordner / "k8915emu.yaml"))
+        assert cfg["general"]["model"] == "k8915-g2"
+    finally:
+        _zu(w, qapp)
+
+    # Neustart: das gemerkte Modell kommt wieder; zurück zum V3.
+    w = _fenster(qapp, "k8915")
+    try:
+        assert w._model == "k8915-g2" and w.emulator.k8915_generation() == 1
+        assert w.settings_widget.model_value() == "k8915-g2"
+        w._on_model_selected("k8915")
+        qapp.processEvents()
+        assert w.emulator.k8915_generation() == 0
+    finally:
+        _zu(w, qapp)
+
+
+def test_an_unknown_k8915_model_falls_back_to_v3(qapp, konfig_ordner):
+    for unbekannt in ("k8915-g1", "prg710", "quatsch"):
+        (konfig_ordner / "k8915emu.yaml").write_text(
+            f"version: 1\ngeneral: {{model: {unbekannt}}}\n", encoding="utf-8")
+        w = _fenster(qapp, "k8915")
+        try:
+            assert w._model == "k8915", unbekannt
+            assert w.emulator.k8915_generation() == 0
+            assert w.settings_widget.model_value() == "k8915"
+        finally:
+            _zu(w, qapp)
 
 
 def test_k8915_refuses_an_extension_module():

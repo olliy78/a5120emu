@@ -17,6 +17,7 @@
 #include <vector>
 
 struct K8915TraceOpts {
+    bool        gen2 = false;    ///< --machine k8915-g2: K8915 Generation 2 (K2521 + K3528, AP-V6b)
     std::string raf;             ///< --raf: RAM-Floppy stecken (leer = keine)
     bool        ptape = false;   ///< --ptape: Lochstreifen-Karte K6022 stecken (E0H–E7H)
     std::string disk;            ///< Diskettenpfad (leer = keine)

@@ -51,7 +51,7 @@ class Programmprofil:
     #: Kasten „EPROMmer“ mit virtuellem Sockel (PRG 710, doc/design/20_prg710.md AP-P7c).
     eprommer: bool = False
     #: Modellwahl unter *Einstellungen ▸ Allgemein*: A5120 / A5120.16 (Erweiterungs-
-    #: modul) bzw. PRG 710 / PRG 710-1 (`app/modell.py`) — der K8915 hat keine.
+    #: modul, `app/modell.py`), K8915 V3 / V2, PRG 710 / PRG 710-1, PC 1715 / 1715W.
     modellwahl: bool = False
     #: Die wählbaren Modelle: ``(Schlüssel, Kern-Maschine, Kern-``em``, Anzeigename,
     #: Tastatur)``.  Leer = ein Modell, die Maschine des Profils.  Der Schlüssel steht
@@ -230,6 +230,20 @@ K8915 = Programmprofil(
     tastatur="k7672",
     frontplatte=True,
     eigene_aktionen=("nmi",),
+    modellwahl=True,
+    # doc/design/24_k8915_varianten.md R5: die Schlüssel sind technisch und bleiben,
+    # nur die Anzeigetexte tragen die Gerätenamen V3/V2 (F1, 2026-10-05: „Gen 2“ = V2).  Fehlt ``general.model`` (Vorgabe-
+    # datei, ältere Konfigurationen), ist es der V3.  Ein EM gibt es hier nicht
+    # (``em`` = None in jeder Zeile) — ``a5120.16`` ist am K8915 unbekannt → V3.
+    modelle=(("k8915", "k8915", None, "K8915 V3 (ZRE 045-8762, 128 KB)", "k7672"),
+             ("k8915-g2", "k8915-g2", None, "K8915 V2 (ZRE K2521, 64 KB)", "k7672")),
+    # V1 (Tastatur K7634) fährt der Kern nicht: kein Urlader-Baustein für 0400H
+    # (F11, AP-V9 zurückgestellt).  Die Bildschirmtastatur K7634 liegt bereit
+    # (`app/ui/keyboard_k7634.py`), ist aber bewusst nicht eingehängt.
+    gesperrte_modelle=(("k8915-g1", "K8915 V1 (Tastatur K7634)",
+                        "Nicht wählbar: kein Urlader-Baustein für 0400H (F11)."),),
+    modell_tipp=("K8915 V3 (ZRE 045-8762, 128 KB) oder V2 (ZRE K2521 mit RAM-Karte "
+                 "K3528, 64 KB).  Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
     weitere=("prg710", "pc1715"),

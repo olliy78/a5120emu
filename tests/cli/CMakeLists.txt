@@ -101,3 +101,16 @@ add_test(NAME cli_prg710_zre_prn_passt_zur_quelle
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/gen_prg710_zre_prn.py" --check)
 set_tests_properties(cli_prg710_zre_prn_passt_zur_quelle PROPERTIES
     TIMEOUT 60 LABELS "cli;fast")
+
+# Wächter „die kommentierten Listings der K8915-Gen-2-Abzüge (ZRE 175/176/177 und die zwei
+# belegten Chips der 2708-Karte PFS K3820) sind die Ausgabe des Generators" (AP-V3a,
+# doc/design/24_k8915_varianten.md): tools/gen_k8915g2_prn.py --check prüft die MD5 aller
+# Abzüge gegen doc/EPROMS/K8915G2/MD5SUMS (auch die abgeleiteten Verkettungen), dass JEDES
+# der 1024 Byte je Baustein genau einmal und mit dem richtigen Wert dargestellt ist, die
+# 24-Bit-Prüfsummen der Chips, dass jede benannte Routine als Label vorkommt, und vergleicht
+# bytegleich mit doc/EPROMS/K8915G2/k8915g2_{zre,pfs3820}.prn.  Wird ein Abzug verändert, wird
+# der Wächter rot.  Neu erzeugen: python3 tools/gen_k8915g2_prn.py
+add_test(NAME cli_k8915g2_prn_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/gen_k8915g2_prn.py" --check)
+set_tests_properties(cli_k8915g2_prn_passt_zur_quelle PROPERTIES
+    TIMEOUT 60 LABELS "cli;fast")

@@ -813,7 +813,19 @@ mit zwei K5601. Was anders ist:
   Maschinenzeit, bei der Vorgabe 10 × Takt also gut eine Sekunde. Danach steht
   `* Coldstart *  Disk on A: ready ? --> <ENTER>` — **RETURN** lädt das System
   von A:. SCPX 8915 richtet beim Start die RAM-Disk E: ein und meldet sich mit `A>`.
-* **Takt** 2,4576 MHz (`10 × 2,4576 MHz` usw.).
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **K8915 V3** (ZRE 045-8762,
+  128 KB; die Vorgabe) oder **K8915 V2** (ZRE K2521 mit der RAM-Karte K3528,
+  64 KB, ohne die zweite Speicherbank — der Autostart `rade` meldet dort „no
+  RAM-device“, danach steht `A>` wie gewohnt). Beide mit Tastatur K7672 und
+  demselben SCPX 8915. Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart).
+  **K8915 V1** (Tastatur K7634) steht ausgegraut darin: ohne den Urlader-Baustein
+  für 0400H ist sie nicht startfähig.
+* **V2: der Selbsttest läuft durch** (ROM, KEY, CTC, SIO, RAM) bis zur Meldung
+  `* Coldstart *`; RETURN lädt das System von A:. Der Emulator benutzt dafür die
+  **reparierte Fassung** des dritten ROM-Bausteins (177): der Abzug vom Gerät
+  trägt ein gekipptes Bit, mit ihm endete der Selbsttest mit „ROM C“ und
+  16 Pieptönen. Der Abzug selbst liegt unverändert bei den Quellen.
+* **Takt** 2,4576 MHz (`10 × 2,4576 MHz` usw.), bei beiden Modellen.
 * **Laufwerke:** zwei K5601 wie am Gerät; wählbar sind nur 5¼″-Laufwerke.
 * **Die Frontplatte in der Statuszeile** — sechs Lampen, von links nach rechts
   wie am Gerät von oben nach unten, jede mit ihrem Schild daneben (`Run`, `Input`,

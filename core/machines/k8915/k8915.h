@@ -1,6 +1,6 @@
 /**
  * @file k8915.h
- * @brief K8915 V3 (5¼″, 1989) — zweite Maschine des Kerns.
+ * @brief K8915 V3 (5¼″, 1989) und Generation 2 — zweite Maschine des Kerns.
  *
  * Stand Etappe 4 (doc/design/16_k8915.md §8, AP-E1…AP-E4c): ZRE 045-8762, ATS
  * K7028.30 mit Tastatur K7672, K7024 (012-6820) und K5122 im `/WAIT`-Betrieb mit
@@ -13,25 +13,51 @@
  * `libk1520core` (`k1520_create(K1520_MACHINE_K8915)`).
  *
  * Steckplätze am Gerät (§6.4): 3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024.
+ *
+ * **Generation 2** (doc/design/24_k8915_varianten.md R1–R3, AP-V6a): dieselbe Klasse mit
+ * `Config::generation = Gen2`.  Statt der ZRE 045-8762 steckt eine **K2521** (ROM 175/176/177
+ * bei 0000–0BFFH, 1 KB RAM 0C00–0FFFH, CTC 80H, PIO 84H) und eine **K3528** (64 KB RAM,
+ * Register A8H–ABH); die K7024 trägt den A5120-Zeichensatz v171/v172.  ATS, K7672, K5122
+ * (`/WAIT`), Laufwerke, `SerialHub`, Anzeigelatch, NMI-Weg und die RAF/K6022-Haken sind
+ * dieselben Objekte mit derselben Verdrahtung.  Steckplätze der Gen 2 unbekannt [?, F2];
+ * die Interruptkette folgt dem V3 (K5122 → K2521 → ATS).  **Vorgabe bleibt V3.**
+ * Die austauschbare CPU-Karte steht hinter privaten Weichen (`cpuRef`, `zreTakt`,
+ * `memCpu`); `zre()` ist nur am V3 gültig, `k2521()`/`ops()` nur an der Gen 2.
  */
 
 #pragma once
 #include "core/machines/machine.h"
 #include "core/bus/k1520_bus.h"
 #include "core/cards/zre8762/zre8762.h"
+#include "core/cards/k2521/k2521.h"
+#include "core/cards/k3528/k3528.h"
 #include "core/cards/k7024/k7024.h"
 #include "core/cards/k7028/k7028.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/machines/laufwerke.h"
 #include "core/peripherals/k7672/k7672.h"
 #include <atomic>
+#include <cassert>
 #include <deque>
+#include <memory>
 #include <mutex>
 
 class K8915Machine : public K1520Machine {
 public:
     /** @brief Ausstattung, die nicht auf den Karten steht. */
     struct Config {
+        /** Bauform (doc/design/24_k8915_varianten.md R1).  Gen 1 fehlt mit Absicht:
+         *  ohne Urlader-Baustein für 0400H nicht startfähig (F11, R4). */
+        enum class Generation : uint8_t { V3, Gen2 };
+        Generation generation = Generation::V3;
+        /**
+         * Nur Gen 2, **nur für Tests**: ROM-Inhalt 0000–0BFFH (0x0C00 Byte) statt der
+         * Vorgabe 175/176/**repariertes** 177 (F9, 2026-10-05: 0A33H = 00H, Summe stimmt).
+         * Ein Test setzt hier den unveränderten Abzug (`K8915G2_ZRE_ROM`, 0A33H = 04H), um
+         * den Selbsttestfehler „ROM C“ des Originals nachzustellen.  nullptr = Vorgabe.
+         * Der Speicher muss die Maschine überleben.
+         */
+        const uint8_t* gen2_rom = nullptr;
         /**
          * Prüfstecker an SIO1-A, SIO1-B und SIO2-A (§6.10) = Einstellung **Rx/Tx-Loop**
          * der drei Schnittstellen im `SerialHub` (Entwurf 19 §6.5, AP-S5).  Ohne sie
@@ -48,6 +74,8 @@ public:
          *  Am Gerät des Anwenders: 2 × K5601 (§6.4). */
         std::array<std::string, 4> laufwerke = {"K5601", "K5601", "none", "none"};
     };
+
+    using Generation = Config::Generation;
 
     /// Takt der K8915-CPU (2,4576 MHz) — Index- und Byteperiode der K5122 daraus.
     static constexpr uint32_t CPU_HZ = 2'457'600;
@@ -164,13 +192,19 @@ public:
 
     // ─── Diagnose ────────────────────────────────────────────────────────────
     /** @brief Speicher aus Sicht der CPU (A8H-Abbildung, sonst Systembus). */
-    uint8_t memReadDebug(uint16_t addr) override { return zre_.memRead(addr); }
-    void    memWriteDebug(uint16_t addr, uint8_t d) override { zre_.memWrite(addr, d); }
+    uint8_t memReadDebug(uint16_t addr) override { return memCpu(addr); }
+    void    memWriteDebug(uint16_t addr, uint8_t d) override { memCpuW(addr, d); }
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     std::string lastError() const override { return lw_.lastError(); }
 
     // ─── K8915-eigen (Tests, Werkzeuge) ──────────────────────────────────────
-    K8915Zre&  zre()    { return zre_; }
+    Generation generation() const { return generation_; }
+    /// ZRE 045-8762 — **nur am V3** (Vorbedingung; alle heutigen Aufrufer sind V3).
+    K8915Zre&  zre()    { assert(zre8762_); return *zre8762_; }
+    /// ZRE K2521 — nur an der Gen 2.
+    K2521&     k2521()  { assert(k2521_); return *k2521_; }
+    /// Speicherkarte K3528 (Register A8H) — nur an der Gen 2.
+    K3528&     ops()    { assert(ops_); return *ops_; }
     K7028&     ats()    { return ats_; }
     K7672&     keyboard() { return kbd_; }
     K7024&     screen() { return screen_; }
@@ -181,7 +215,7 @@ public:
     // ─── Werkzeuge (k1520dbg, boot_trace; §8a AP-E4d) ────────────────────────
     /** @brief Einen mit stop() angeforderten Halt zurücknehmen (vor dem nächsten run()). */
     void clearStop() { stop_.store(false); }
-    uint16_t cpuPC() const { return zre_.cpu().PC; }
+    uint16_t cpuPC() const { return cpuRef().PC; }
     /**
      * @brief Beobachter vor JEDEM Befehl der CPU.  Zusammen mit dem im Konstruktor
      *        gesetzten `abortBeforeExecute` (= stop_) hält ein stop() aus dem Rückruf
@@ -189,7 +223,7 @@ public:
      *        dieselbe Einzelschrittschnittstelle wie beim A5120.
      */
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) {
-        zre_.cpu().traceCallback = std::move(cb);
+        cpuRef().traceCallback = std::move(cb);
     }
     /**
      * @brief Beobachter für JEDEN Speicher- und E/A-Zugriff der CPU: der Busbeobachter
@@ -197,7 +231,8 @@ public:
      *        K8915Zre::setMemTrace).  Leer = beide aus.
      */
     void setBusTrace(K1520Bus::BusTrace cb) {
-        zre_.setMemTrace(cb);
+        if (zre8762_) zre8762_->setMemTrace(cb);
+        if (ops_)     ops_->setMemTrace(cb);
         bus_.setTraceCallback(std::move(cb));
     }
     /** @brief Letzte Interrupt-Quittung des Busses (Vektor + Quellgerät). */
@@ -212,8 +247,26 @@ private:
     void tastenAbgeben();     ///< Warteschlange an die K7672 (nur im Lauffaden)
     void anzeigenSpiegeln();  ///< Anzeigen für fremde Fäden spiegeln (nur im Lauffaden)
 
+    // Weichen zur CPU-Karte der jeweiligen Generation (R1, „Umbau-Muster“).
+    Z80&       cpuRef()       { return zre8762_ ? zre8762_->cpu() : k2521_->cpu(); }
+    const Z80& cpuRef() const { return zre8762_ ? zre8762_->cpu() : k2521_->cpu(); }
+    /// CTC der ZRE weiterzählen; true bei ZC/TO-Flanke.
+    bool zreTakt(int t) { return zre8762_ ? zre8762_->clockTick(t) : k2521_->clockTick(t); }
+    InterruptSlave& zreInt() {
+        return zre8762_ ? static_cast<InterruptSlave&>(*zre8762_)
+                        : static_cast<InterruptSlave&>(*k2521_);
+    }
+    /// Speicher aus Sicht der CPU (V3: A8H der 045-8762; Gen 2: A8H der K3528).
+    uint8_t memCpu(uint16_t a) { return zre8762_ ? zre8762_->memRead(a) : ops_->memRead(a); }
+    void memCpuW(uint16_t a, uint8_t d) {
+        if (zre8762_) zre8762_->memWrite(a, d); else ops_->memWrite(a, d);
+    }
+
+    const Generation generation_;
     K1520Bus  bus_;
-    K8915Zre  zre_;       // Platz 4
+    std::unique_ptr<K8915Zre> zre8762_;   // Platz 4 (nur V3)
+    std::unique_ptr<K2521>    k2521_;     // ZRE (nur Gen 2, Platz [?, F2])
+    std::unique_ptr<K3528>    ops_;       // Speicher + A8H (nur Gen 2)
     K7028     ats_;       // Platz 6, 40H–5FH + Anzeigelatch 60H–67H
     K7024     screen_;    // Platz 7, VRAM 1000H
     K7672     kbd_;       // an SIO2-B

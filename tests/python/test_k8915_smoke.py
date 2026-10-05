@@ -80,3 +80,59 @@ def test_k8915_boots_to_the_prompt_with_a_key_from_another_thread(temp_disk):
     assert emu.panel_lamps() == 0xB0
     assert isinstance(emu.bell_count(), int)
     assert isinstance(emu.keyboard_leds(), int)
+
+
+def test_gen2_runs_the_self_test_through_to_the_coldstart_message():
+    """AP-V7a: `machine="k8915-g2"` (K2521 + K3528).  Mit der Vorgabe (repariertes 177,
+    F9 gelöst 2026-10-05) läuft der Selbsttest ohne Fehler und OHNE Tastendruck bis zur
+    Kaltstartmeldung (≈ 14,5 Mio. Takte); `CR` — wie aus der Oberfläche aus einem
+    ANDEREN Faden — startet danach den Lader.  Bild über `k1520_screen_char`, nie
+    `mem_read`."""
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine="k8915-g2")
+    assert emu.machine == "k8915-g2"
+    assert emu.machine_type() == 2
+    assert emu.k8915_generation() == 1
+
+    emu.power_on()
+    assert run_until_text(emu, "* Coldstart *  Disk on A: ready", 30_000_000), (
+        "Kaltstartmeldung nie erschienen:\n" + emu.screen_text())
+    assert "DIAGNOSTIC" not in emu.screen_text()
+    assert emu.panel_lamps() == 0xB0, "kein ERROR, RUN Mode"
+
+    fertig = threading.Event()
+
+    def taste():
+        emu.key_press(QT_KEY_RETURN)
+        emu.key_release(QT_KEY_RETURN)
+        fertig.set()
+
+    faden = threading.Thread(target=taste, daemon=True)
+    faden.start()
+    for _ in range(100):
+        emu.run(100_000)
+        if fertig.is_set():
+            break
+    faden.join(10)
+    assert fertig.is_set(), "Tastenfaden kam nicht zum Zug"
+
+
+def test_k8915_generation_is_reported_per_machine():
+    from app.core_binding.k1520 import K1520Emulator
+
+    assert K1520Emulator(machine="k8915").k8915_generation() == 0
+    assert K1520Emulator(machine="a5120").k8915_generation() is None
+
+
+def test_generation_two_of_the_k8915_is_refused_with_a_reason():
+    """Wert 2 (= Gen 1) und Unbekanntes: NULL mit Grund (R5); Wert 0 = V3."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    assert not _lib.k1520_create_k8915(2, None, None, None, None)
+    assert "Gen 1" in _lib.k1520_last_init_error().decode()
+    assert not _lib.k1520_create_k8915(7, None, None, None, None)
+    assert "Generation" in _lib.k1520_last_init_error().decode()
+    h = _lib.k1520_create_k8915(0, None, None, None, None)
+    assert h, _lib.k1520_last_init_error()
+    _lib.k1520_destroy(K1520Handle(h))

@@ -40,6 +40,11 @@ k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_l
 k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")
 # ZRE K2521 des PRG 710/710-1: Speicherfenster, CTC/PIO, Kaskade, 16-Bit-E/A (doc/design/20_prg710.md AP-P1a)
 k1520_add_test(k2521 SRC cards/test_k2521.cpp      LIBS k1520_k2521 LABELS "${_lbl}")
+# K3528 der K8915 Gen 2: Speicherbild je A8H-Wert, /MEMDI (doc/design/24_k8915_varianten.md R3, AP-V4)
+k1520_add_test(k3528 SRC cards/test_k3528.cpp      LIBS k1520_k3528 LABELS "${_lbl}")
+# PFS K3820 (16 × 2708), von keiner Maschine benutzt (doc/design/24_k8915_varianten.md AP-V11)
+k1520_add_test(k3820 SRC cards/test_k3820.cpp      LIBS k1520_k3820 LABELS "${_lbl}"
+               DEFS "K3820_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/EPROMS/K8915G2\"")
 # EPROMmer der ATP 590068 mit virtuellem Sockel (doc/design/20_prg710.md AP-P7b)
 k1520_add_test(eprommer590068 SRC cards/test_eprommer590068.cpp LIBS k1520_atp590068 k1520_testsupport LABELS "${_lbl}")
 # Speicherverwaltung E8H–EBH + OPS des PRG 710 (doc/design/20_prg710.md §4b, AP-P1b)

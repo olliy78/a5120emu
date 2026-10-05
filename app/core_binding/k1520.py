@@ -298,6 +298,12 @@ _lib.k1520_create_prg710.argtypes = [
 ]
 _lib.k1520_create_prg710.restype = K1520Handle
 
+# k1520_create_k8915(generation, d0..d3) -> K1520Handle   (0 = V3, 1 = Gen 2; 2 = Gen 1 → NULL)
+_lib.k1520_create_k8915.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_k8915.restype = K1520Handle
+
 # k1520_create_pc1715(variante, bildschirm, zeichensatz, d0..d3) -> K1520Handle
 #   variante 0 = PC 1715; bildschirm 0 = K7222 (80x24), 1 = K7221 (64x16); zeichensatz 0 = S619, 1 = S602
 _lib.k1520_create_pc1715.argtypes = [
@@ -418,6 +424,8 @@ _lib.k1520_nmi.restype = None
 # PRG 710/710-1 (AP-P5b): Variante und Speicherverwaltung (Diagnose)
 _lib.k1520_prg710_variant.argtypes = [K1520Handle]
 _lib.k1520_prg710_variant.restype = ctypes.c_int
+_lib.k1520_k8915_generation.argtypes = [K1520Handle]
+_lib.k1520_k8915_generation.restype = ctypes.c_int
 _lib.k1520_prg710_page.argtypes = [K1520Handle, ctypes.c_int,
                                    ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8)]
 _lib.k1520_prg710_page.restype = ctypes.c_bool
@@ -516,7 +524,7 @@ def _utf8(path) -> bytes:
     return os.fspath(path).encode("utf-8")
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
-MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "pc1715": 3,
+MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
                  "pc1715-k7221": 3, "pc1715w": 3}
 # (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
@@ -526,6 +534,8 @@ PC1715_TASTATUREN = {"s600": 0, "tast618": 1}
 PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
+# Bauform für k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
+K8915_GENERATIONEN = {"k8915": 0, "k8915-g2": 1}
 
 # Bildschirmtastatur: `QK_TASTE_BASE | Position` = physische Taste (K7609 am PRG 710,
 # K7672 am PRG 710-1 und K8915).  ET1 des PRG 710 (K7609): Position 37H; ET2/ST: 38H.
@@ -779,7 +789,7 @@ class K1520Emulator:
                 that is ``None`` or ``""`` keeps the slot default; ``"none"``
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
-            machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"prg710"`` oder
+            machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"k8915-g2"`` (K8915 Gen 2), ``"prg710"`` oder
                 ``"prg710-1"``, ``"pc1715"``, ``"pc1715-k7221"`` (PC 1715 mit dem
                 Bildschirm K7221, 64×16) oder ``"pc1715w"`` — siehe :data:`MACHINE_TYPES`.
             zeichensatz: nur PC 1715 — Bestückung der ZG-EPROMs, ``"deutsch"``
@@ -821,6 +831,12 @@ class K1520Emulator:
                 enc = lambda n: n.encode("utf-8") if n else None
                 handle = _lib.k1520_create_prg710(
                     PRG_VARIANTEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            elif machine == "k8915-g2":
+                names = (self._drive_types or [])[:4]
+                names = names + [None] * (4 - len(names))
+                enc = lambda n: n.encode("utf-8") if n else None
+                handle = _lib.k1520_create_k8915(
+                    K8915_GENERATIONEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
             elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
@@ -891,6 +907,11 @@ class K1520Emulator:
     def tastatur(self) -> str:
         """PC 1715/1715W: Tastatur-ROM (``"s600"``/``"tast618"``)."""
         return self._tastatur
+
+    def k8915_generation(self) -> Optional[int]:
+        """K8915: 0 = V3, 1 = Gen 2 (aus dem Kern); andere Maschinen ``None``."""
+        v = int(_lib.k1520_k8915_generation(self._handle))
+        return v if v >= 0 else None
 
     @property
     def prg_variant(self) -> Optional[int]:
