@@ -313,6 +313,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k3528 PUBLIC k1520_bus k1520_logger)
     target_include_directories(k1520_k3528 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # PFS K3820 (012-7040): 16 x 2708, X8/X9 Start, X6/X7 MEMDI — von keiner Maschine benutzt (Entwurf 24 AP-V11)
+    add_library(k1520_k3820 STATIC core/cards/k3820/k3820.cpp)
+    target_link_libraries(k1520_k3820 PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_k3820 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # Speicherverwaltung E8H-EBH + OPS-RAM (PRG 710/710-1), Arbeitsmodell doc/design/20_prg710.md §4b
     add_library(k1520_prg710_speicher STATIC core/cards/prg710_speicher/prg710_speicher.cpp)
     target_link_libraries(k1520_prg710_speicher PUBLIC k1520_bus k1520_logger)

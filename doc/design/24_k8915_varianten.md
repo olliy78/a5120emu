@@ -191,7 +191,7 @@ V4 ff. vorher startet, rät.
 | **V3b** | Analyse: Portkarte, Speicherumschaltung, Bootablauf, Hardware-Liste → `doc/k8915g2/zre_rom.md` | V3a | boot-disasm-analyst / **Opus** | nein |
 | **V2** | ✔ Entwurf Maschinenform + Auftragsschärfung V4–V9 („AP-V2 — Ergebnis“) | V1a, V1b, V3b | Plan / Opus | nein |
 | **V4** | Karte `K3528` + `K2521::Config::k8915g2()` + ROM 175–177 + `forK8915Gen2()` | V2 | cpp-coder / Sonnet | ja |
-| V5 | **entfällt** — Beigabe, durch V3a erledigt | — | — | — |
+| V5 | **entfällt** — Beigabe, durch V3a erledigt (abgelöst durch V11) | — | — | — |
 | **V6a** | `K8915Machine::Config::generation`, Gen 2 bis Kaltstartmeldung + Diskette 901 | V4 | **Opus** | ja |
 | **V6b** | `boot_trace`/`k1520dbg --machine k8915-g2` | V6a | cpp-coder / Sonnet | ja |
 | **V7a** | C-ABI `k1520_create_k8915`, Python `machine="k8915-g2"` | V6a | cpp-coder / Sonnet | ja |
@@ -200,6 +200,7 @@ V4 ff. vorher startet, rät.
 | V9 | **zurückgestellt**: Gen 1 ohne 0400-Lader nicht startfähig (F11) | F11 / F5 / F8 | — | — |
 | V10 | ✔ Merkposten `k8915_varianten.md`, `CLAUDE.md`, Verweis in 16 (erledigt 2026-10-05) | alle | Sonnet | nein |
 | VT | Alle vier Lanes vor dem Merge | V10 | test-runner / Haiku | ja |
+| **V11** | Karte `K3820` (PFS, 16 × 2708) im Kern, **von keiner Maschine benutzt** (Anwenderwunsch) | V1a | cpp-coder / Sonnet | ja |
 
 **Parallel:** V1a, V1b, V3a laufen gefahrlos nebeneinander (nur lesen/Python); V3b nach V3a.
 Alles mit „Baut? ja" **nacheinander** oder je Agent mit `isolation: "worktree"` (CLAUDE.md,
@@ -507,7 +508,7 @@ Begründung:
 | Tastatur | K7672 an SIO2-B | **unverändert** | K7634 parallel an E0H–E2H, neu |
 | Bild | K7024 012-6820, ZG y411/y412 | **K7024 mit A5120-ZG `v171`/`v172`** (`forK8915Gen2()`) | [?] |
 | Floppy | K5122 `/WAIT`, 2 × K5601 | **unverändert** [?, F4: Laufwerke] | unverändert [Web] |
-| PFS K3820 | — | **nicht modelliert** (V5 = Beigabe) | Träger des Gen-1-Urladers [?] |
+| PFS K3820 | — | **steckt am Gerät, ungenutzt** (F2); Karte `K3820` im Kern (V11), **nicht eingebaut** | Träger des Gen-1-Urladers [?] |
 | Optionen | RAF 88H, K6022 E0H | RAF 88H, K6022 E0H (beide frei) | K6022 **kollidiert** mit E0H–E7H |
 
 **Steckplätze:** V3 nach Gerät (3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024). Gen 2: **unbekannt
@@ -559,7 +560,7 @@ unklar). Ausbau .10/.20 (48/32 KB): nicht modelliert.
 | AP | Entscheidung | Grund |
 |---|---|---|
 | **V4** | **jetzt** | Verhalten aus dem ROM vollständig belegt (V3b §1/§2); die offenen Brücken (F20/F23) sind Konfiguration mit V3-kompatibler Vorgabe |
-| V5 | **entfällt — durch V3a erledigt** | Kartenchips sind Gen-1-Urlader, im Gen-2-Ablauf nie angesprochen, neben 64 KB RAM nicht betreibbar (V3b §7). Abzüge + MD5 + Listing liegen im Repo, Wächter `cli_k8915g2_prn_passt_zur_quelle` existiert. Keine Karte K3820 |
+| V5 | **entfällt — durch V3a erledigt** | Kartenchips sind Gen-1-Urlader, im Gen-2-Ablauf nie angesprochen, neben 64 KB RAM nicht betreibbar (V3b §7). Abzüge + MD5 + Listing liegen im Repo, Wächter `cli_k8915g2_prn_passt_zur_quelle` existiert. Keine Karte K3820 — **abgelöst durch V11** (Anwenderwunsch 2026-10-05: Karte im Kern, ungenutzt) |
 | **V6a** | **jetzt** (nach V4) | Netz-Ein → Selbsttest → „ROM C“ → `CR` → Kaltstartmeldung ist ohne Diskette prüfbar; Laden der V3-Systemdiskette 901 ist mit byteidentischem Lader belegt |
 | **V6b** | **jetzt** (nach V6a) | Werkzeuge; reine Fleißarbeit an `--machine` |
 | **V7a/V7b** | **jetzt** (nach V6a) | Bedienbarkeit; Namen mit Annahme [?] (R5), nur Anzeigetexte hängen an F1/F6 |
@@ -905,6 +906,54 @@ jede Taste ein Code, keine Doppelbelegung, die drei ergänzten Kappen).
 bekannten Zeitüberläufen abgrenzen (`doc/merkposten`/Erfahrung: Last-Timeouts), roter Fall →
 volle Ausgabe.
 
+### AP-V11 — Karte K3820 als ungenutzte K1520-Karte
+
+**Anlass:** Anwenderwunsch 2026-10-05 (mit F2): die PFS K3820 (Platine 012-7040) steckt im V2,
+wird dort nicht benutzt, soll aber **als Karte im Kern** stehen — später evtl. für K8911/K8912.
+Damit ist **V5 „entfallen“ durch den Anwenderwunsch abgelöst**; die Begründung von V5 (im
+Gen-2-Ablauf nie angesprochen) bleibt richtig, deshalb baut **keine** Maschine die Karte ein.
+**Agent:** cpp-coder (Sonnet). **Abhängig:** V1a. **Baut:** ja (`tools/dev.sh test`).
+
+**Ziel:** `K3820` als eigenständige, gegen die Betriebsdokumentation bewachte Speicherkarte;
+keine C-ABI, keine GUI, kein Einbau.
+
+**Eingaben:** `doc/k8915g2/karten.md` §3 (Chip-Raster Abb. 7, X8/X9, X6/X7, X10–X11);
+Muster `core/cards/k3528/`, `core/cards/k2521/` (Brücken als Config-Struct), `core/cards/k3526/`
+(MEMDI-Hörer); `K1520Bus::MemdiDriver`/`memdiActive`/`registerMem`/`unregisterMem`;
+Abzüge `doc/EPROMS/K8915G2/k8915g2_pfs3820_*.bin` (nur lesend, Beispielinhalt in Tests).
+
+**Ergebnis:**
+- `core/cards/k3820/k3820.{h,cpp}`, Bibliothek `k1520_k3820`, Klasse `K3820 : public MemDevice`.
+- `Config`: `startadresse` (Vielfaches von 4 KB, X8/X9; Fabrik `ausBruecken(nibble)` mit
+  :1…:4 = 4/8/16/32 KB), `memdi` = Brücke X6/X7 (`Memdi` Vorgabe | `Memdi1` | `Memdi2` | `Keine`),
+  `wait_m1` = X10–X11 offen (Vorgabe `true`).
+- 16 Chip-Plätze à 1 KB, Index = relative Adresse >> 10 (Abb. 7); leerer Platz liest FFH;
+  `setChip`/`leereChip`/`ladeAbbild` (16-KB-Gesamtabzug).
+- Speicher über `registerMem` (16 KB ab Startadresse; jenseits FFFFH läuft der 4-Bit-Subtrahierer
+  über → Rest ab 0000H [?]). Schreibzugriffe wirkungslos (`isWritable() = false`).
+- Sperre: Bus-/MEMDI übernimmt der Bus je Zugriff (`MemdiDriver`); /MEMDI1, /MEMDI2 als
+  statische Pegel über `setMemdi1/2` — ist die gebrückte Leitung aktiv, meldet sich die Karte
+  vom Bus ab (Ausgänge hochohmig) und beim Lösen wieder an.
+
+**Wächter:** `K3820.ChipRasterNachAbb7`, `.StartadresseIn4KbSchritten`, `.BrueckenX8X9`,
+`.UeberlaufHinterFFFF`, `.LeereChipsLesenFF`, `.SchreibzugriffeWirkungslos`,
+`.BusMemdiSperrt`, `.Memdi1Memdi2NachBruecke`, `.WaitBruecke`,
+`.BeispielabzuegeAnRichtigerAdresse`, `.GesamtabzugGleichEinzelchips`
+(`k1520_test_k3820`, Label `unit`).
+
+**Fertig, wenn:** `tools/dev.sh test` grün (voll), keine Maschine, C-ABI oder Oberfläche
+berührt, Merkposten `k8915_varianten.md` knapp nachgetragen, ein Commit.
+
+**AP-V11 erledigt 2026-10-05.** `core/cards/k3820/`, `k1520_k3820`, `test_k3820.cpp` (11 Fälle),
+voller `tools/dev.sh test` grün (2187/2187). Befunde/Abweichungen:
+- Bus-/MEMDI kann der Kern nur **je Zugriff über einen `MemdiDriver`** ziehen, und der Bus
+  verdrängt dann **jede** Karte des Fensters — die Brückenwahl X6/X7 wirkt deshalb nur für
+  /MEMDI1/2 (statisch, `setMemdi1/2`). Keine Änderung am `K1520Bus` (Regel oben).
+- Abmelden/Wiederanmelden bei /MEMDI1/2 setzt die Karte ans Ende der Regionenliste (höchster
+  Lesevorrang); zwei gleichzeitig antwortende Karten sind am Gerät ohnehin ein Fehler.
+- Offen [?]: Polarität X8/X9 (gebrückt = 1, aus der Tabelle S.23), Überlauf des Subtrahierers
+  hinter FFFFH, Zahl der M1-Wartetakte — alles unter F22.
+
 ### Was nur der Anwender liefern kann (Blocker je AP)
 
 | Blockiert | Braucht | Frage |
@@ -938,6 +987,7 @@ volle Ausgabe.
 | **F1** | Entspricht „Generation 2“ der „5¼″ V2“ (K7672, K2521, K3528, 045-8778?) und „Generation 1“ der „5¼″ V1“ (K7634)? Oder sind es andere Bezeichnungen (z. B. Aufschrift am Gerät)? |
 | **F1 — beantwortet 2026-10-05** | Der Anwender besitzt zwei K8915: einen **V3** (128 KB, läuft im Emulator) und einen **V2** (64 KB, gleiche Tastatur K7672 wie der V3), von dem die Gen-2-Abzüge stammen. Ein V1 ist nicht vorhanden; die K7634 hängt an einem **K8912**. **Folge:** „Gen 2“ heißt in Anzeige und Handbuch **V2**, „Gen 1“ heißt **V1** (gesperrt); die technischen Schlüssel (`k8915-g2`, `Config::generation`, Dateinamen `k8915g2_*`) bleiben. „Gen 1 = Gen 2 + K7634 + K7028“ war eine Annahme aus den Quellen, **nicht** am Gerät belegt; F5/F7/F8 beziehen sich damit auf einen K8912 oder eine künftige V1, nicht auf ein Gerät des Anwenders. |
 | **F2** | Kartenliste des Gen-2-Geräts mit **Platinennummern** (012-/045-…), Steckplätzen und Tastaturtyp (K7634 PIO oder K7672 flach); Fotos beider Seiten der RAM- und der 2708-Karte. |
+| **F2 — beantwortet 2026-10-05** | RAM-Karte = **K3528 045-8530** (wie robotrontechnik.de); zusätzlich steckt die **EPROM-Karte 012-7040 (PFS K3820)** im V2, wird dort aber **nicht benutzt**. Steckplätze nicht angegeben (Interruptkette bleibt wie R2). **Folge:** AP-V11 (Karte im Kern, in keine Maschine eingebaut). |
 | **F3** | Wickelbrücken-Stand der ZRE (X6–X15) und der RAM-Karte; Aufschriften der drei ZRE-EPROMs und ihre Plätze. |
 | **F4** | Laufwerke und Controller (K5122 oder anderer); eine Systemdiskette (Image) falls vorhanden. |
 | **F5** | Gen 1 = Gen 2 + K7634 + K7028 (Ihre Angabe 2026-10-05): **Wissen Sie, welche K7028-Fassung** (.10/.20/.30, Platinennummer) und welches ROM dort steckt — gleiche Aufschriften 175–177? Darf der Betriebsnachweis bis zur Beschaffung einer Diskette/eines Abzugs warten (Empfehlung: ja)? Soll ich in den Foren (robotrontechnik.de, VzEkC) und beim Rechenwerk Halle anfragen? **Das ginge nur mit Ihrer Freigabe — ich schreibe nichts ohne Rückfrage in ein Forum.** |

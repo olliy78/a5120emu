@@ -121,11 +121,18 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
 - Wächter: `py_keyboard_k7634` (Tabelle ≙ Doku, jede Taste ein Code, keine
   Doppelbelegung, die drei ergänzten Kappen).
 
-### PFS K3820 (2708-Karte) ist nur Beigabe
-- 14 von 16 Chips leer, zwei belegt (Gen-1-Urlader, s. o.). Im Gen-2-Ablauf **nie
-  angesprochen**, neben 64 KB RAM nicht betreibbar ⇒ **keine Karte im Kern** (V5 entfallen).
-  Abzüge, MD5 und Listing liegen im Repo, bewacht von `cli_k8915g2_prn_passt_zur_quelle`.
-  Erst als steckbare Option (Muster RAF/K6022) modellieren, wenn ein Gast sie benutzt.
+### PFS K3820 (2708-Karte): Karte im Kern, von KEINER Maschine benutzt
+- Steckt im V2 des Anwenders (F2: 012-7040), wird dort nie angesprochen; 14 von 16 Chips
+  leer, zwei belegt (Gen-1-Urlader, s. o.). Auf Anwenderwunsch (AP-V11, löst V5 ab) steht
+  sie als `core/cards/k3820/` (`k1520_k3820`) im Kern — **nicht eingebaut**, keine C-ABI,
+  keine Oberfläche; ein Einbau (K8911/K8912) wäre eine steckbare Option (Muster RAF/K6022).
+- Brücken nur als `Config`: Start X8/X9 in 4-KB-Schritten (`ausBruecken`, gebrückt = Bit
+  [?, F22]), 16 KB jenseits FFFFH laufen auf 0000H über [?], X6/X7 = `Memdi`/`Memdi1`/
+  `Memdi2`/`Keine`, X10–X11 = `wait_m1` (nur Angabe). Leere Sockel lesen FFH, Schreiben
+  wirkungslos. Bus-/MEMDI sperrt über den Bus je Zugriff (`MemdiDriver`, unterscheidet
+  keine Brücke); /MEMDI1/2 statisch über `setMemdi1/2` → Karte meldet sich ab/an.
+- Wächter: `K3820.*` (`k1520_test_k3820`, liest die Abzüge in `doc/EPROMS/K8915G2/`),
+  Listing weiter `cli_k8915g2_prn_passt_zur_quelle`.
 
 ### Namen und Werkzeuge
 - Schlüssel sind technisch und werden **nicht** umbenannt; nur Anzeigetexte folgen F1/F6:
@@ -154,7 +161,7 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
 | # | Kurz |
 |---|---|
 | F1 | Gen 2 = robotrontechnik „5¼″ V2“, Gen 1 = „V1“? (nur Anzeigenamen hängen daran) |
-| F2 | Kartenliste mit Platinennummern und Steckplätzen der Gen 2 |
+| F2 | ✔ K3528 045-8530 + PFS K3820 012-7040 (ungenutzt); Steckplätze offen |
 | F3 | Brücken ZRE X6–X15 und RAM-Karte; Aufschriften/Plätze der ZRE-EPROMs |
 | F4 | Laufwerke; Gen-2-Systemdiskette (sonst V8 bleibt gestrichen) |
 | F5 | K7028-Fassung und ROM der Gen 1; Freigabe für Forenanfragen |
