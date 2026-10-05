@@ -77,13 +77,18 @@ _STANDARD_JE_MASCHINE = {
     # PC 1715: zwei K5601 an der K5122 (doc/design/21_pc1715.md §8.3).
     "pc1715": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
 }
-#: Wählbare Typen.  K8915 nur 5¼″: 8″-Laufwerke sind dort nicht belegt [?] — die
-#: Karte (K5122) wäre dieselbe, aber weder Gerät noch BIOS geben Anlass dazu.
+#: Wählbare Typen.  Alle Maschinen bekommen alle Typen: die Laufwerke sind reine
+#: `DriveProfile`-Daten im Kern (`builtinDriveProfile`), den Rest (Drehzahl,
+#: Zellrate) richtet `laufwerke.cpp` danach aus — es gibt keine maschinenspezifische
+#: Sperre.  Ein 8″-Beistellgerät ist an K8915 (K5122 im /WAIT-Zweig), PRG 710 und
+#: PC 1715 (DIP S8 „8″ erlaubt") anschliessbar.  Die Tabelle bleibt, damit eine
+#: Maschine bei Bedarf wieder eingeschränkt werden kann.
+_ALLE_TYPEN = [core for _s, core, _d in DRIVE_TYPES]
 _TYPEN_JE_MASCHINE = {
-    "a5120": [core for _s, core, _d in DRIVE_TYPES],
-    "k8915": ["K5601", "K5600.10", "K5600.20"],
-    "prg710": ["K5601", "K5600.10", "K5600.20"],
-    "pc1715": ["K5601", "K5600.10", "K5600.20"],
+    "a5120": _ALLE_TYPEN,
+    "k8915": _ALLE_TYPEN,
+    "prg710": _ALLE_TYPEN,
+    "pc1715": _ALLE_TYPEN,
 }
 
 

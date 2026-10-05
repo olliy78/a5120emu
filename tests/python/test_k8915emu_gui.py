@@ -194,7 +194,9 @@ def test_drive_count_follows_the_profile(qapp, konfig_ordner):
             assert len(w.status_widget.felder()) == zahl
             erlaubt = {w.settings_widget._drive_combos[0].itemData(i)
                        for i in range(w.settings_widget._drive_combos[0].count())}
-            assert ("MF6400" in erlaubt) == (maschine == "a5120")
+            # 8″-Beistellgeräte sind an jeder Maschine wählbar (kein technischer Grund
+            # dagegen, s. app/drive_types.py).
+            assert {"MF3200", "MF6400"} <= erlaubt
         finally:
             _zu(w, qapp)
 
