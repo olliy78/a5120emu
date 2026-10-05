@@ -222,9 +222,13 @@ def test_lochband_ueber_die_c_abi(name, variante, tmp_path):
     assert emu.ptape_installed()
     band = tmp_path / "band ä.ptp"           # Umlaut: UTF-8-Pfad bis in den Kern
     band.write_bytes(b"HALLO\r\n")
-    assert emu.ptape_reader_status() == {"inserted": False, "pos": 0, "len": 0, "at_end": False}
+    st = emu.ptape_reader_status()      # seit AP-L3 zusätzlich "file"/"format"
+    assert {k: st[k] for k in ("inserted", "pos", "len", "at_end")} == \
+        {"inserted": False, "pos": 0, "len": 0, "at_end": False}
     assert emu.ptape_load(str(band))
-    assert emu.ptape_reader_status() == {"inserted": True, "pos": 0, "len": 7, "at_end": False}
+    st = emu.ptape_reader_status()
+    assert {k: st[k] for k in ("inserted", "pos", "len", "at_end")} == \
+        {"inserted": True, "pos": 0, "len": 7, "at_end": False}
     assert not emu.ptape_load(str(tmp_path / "fehlt.ptp"))
     assert emu.ptape_eject()
     assert emu.ptape_reader_status()["inserted"] is False

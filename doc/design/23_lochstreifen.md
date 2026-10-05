@@ -162,3 +162,21 @@ sind **nicht** vorgesehen — es gibt eine Umsetzung, im Kern.
   `K6022::autoFlush()` schreibt am Ende jeder `run()`-Scheibe (`k6022AutoFlush()` in allen drei
   Maschinen, Vorbild `Laufwerke::autoFlush`) — ein Band ist wenige KiB groß.  Lösen behält das
   Band im Speicher.  Wächter `Lochstreifenformat.*`, `K6022Bindung.*`.
+- **AP-L3 erledigt (2026-10-05).** C-ABI (`core/api/k1520_api.h`): Kennungen
+  `K1520_PTAPE_FMT_RAW/IHEX/ASCII` (0/1/2 = `lochstreifen::Format`), `k1520_ptape_error`
+  (Grund des letzten gescheiterten install/load/bind/unbind/new_tape/flush/save, je Faden,
+  „" nach Erfolg), ohne Handle `k1520_ptape_detect_format` (Inhalt, -1 = unlesbar) und
+  `k1520_ptape_format_from_ext`; Leser `k1520_ptape_load_fmt`, `k1520_ptape_reader_file`,
+  `k1520_ptape_reader_format`; Stanzer `k1520_ptape_punch_bind`/`_unbind`/`_new_tape`/
+  `_flush`/`_file`/`_format`.  `k1520_ptape_load` = `load_fmt(…, RAW)`, `k1520_ptape_punch_clear`
+  = `new_tape`.  Python (`app/core_binding/k1520.py`): `PTAPE_FMT_*`, `PTAPE_FORMAT_NAMEN`,
+  `ptape_error()`, statisch `ptape_detect_format(path)` (None = unlesbar) und
+  `ptape_format_from_ext(path)`, `ptape_load(path, fmt=RAW)`, `ptape_reader_status()` mit
+  zusätzlich `file`/`format`, neu `ptape_punch_status()` → `{file, format, len, enabled}`,
+  `ptape_punch_bind/unbind/new_tape/flush`.  Abweichungen: Datei-Rückgaben als
+  `const char*` aus einem faden-lokalen Puffer (wie `k1520_eprom_path` und die meisten
+  String-Rückgaben), nicht über Puffer+Länge; Status über eigene Abfragen statt einer
+  erweiterten `k1520_ptape_reader_status` (die bleibt ABI-gleich); `k1520_ptape_punch_save`
+  bleibt Roh.  Wächter `py_ptape_api` (alle drei Maschinen mit/ohne Karte, Erkennung je
+  Format, Leser Intel HEX/ASCII-Art, Stanzer binden/neues Band/lösen/flush, Fehler mit
+  Zeile), `py_c_api`.  Gestanzt wird dort nicht (kein Gast) — das deckt `K6022Maschine.*`.
