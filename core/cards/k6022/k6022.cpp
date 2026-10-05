@@ -14,12 +14,49 @@ namespace {
 uint64_t takteJeZeichen(uint32_t cpu_hz, uint32_t zeichen_s) {
     return zeichen_s ? (cpu_hz + zeichen_s - 1) / zeichen_s : cpu_hz;
 }
+
+std::filesystem::path dateiPfad(const std::string& pfad) {
+    return std::filesystem::u8path(pfad);   // UTF-8 (Windows)
+}
+
+/// Ganze Datei lesen; false + @p fehler, wenn sie fehlt oder nicht lesbar ist.
+bool dateiLesen(const std::string& pfad, std::vector<uint8_t>& d, std::string& fehler) {
+    std::ifstream f(dateiPfad(pfad), std::ios::binary);
+    if (!f) {
+        fehler = "Band nicht lesbar: " + pfad;
+        return false;
+    }
+    d.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    if (f.bad()) {
+        fehler = "Lesefehler: " + pfad;
+        return false;
+    }
+    return true;
+}
+
+/// Datei ersetzen; false + @p fehler bei Schreibfehler.
+bool dateiSchreiben(const std::string& pfad, const std::vector<uint8_t>& d, std::string& fehler) {
+    std::ofstream f(dateiPfad(pfad), std::ios::binary | std::ios::trunc);
+    if (f) f.write(reinterpret_cast<const char*>(d.data()), static_cast<std::streamsize>(d.size()));
+    if (f) f.close();
+    if (!f) {
+        fehler = "Stanzband nicht schreibbar: " + pfad;
+        return false;
+    }
+    return true;
+}
 }  // namespace
 
 K6022::K6022(const Config& cfg, uint32_t cpu_hz)
     : cfg_(cfg)
     , leser_takte_(takteJeZeichen(cpu_hz, cfg.leser_zeichen_s))
-    , stanzer_takte_(takteJeZeichen(cpu_hz, cfg.stanzer_zeichen_s)) {}
+    , stanzer_takte_(takteJeZeichen(cpu_hz, cfg.stanzer_zeichen_s))
+    , pause_takte_(static_cast<uint64_t>(cpu_hz * kStanzpauseS)) {}
+
+K6022::~K6022() {
+    // Wie das Aushängen einer Diskette: was gestanzt wurde, gehört in die Datei.
+    stanzerZurueckschreiben();
+}
 
 void K6022::attachToBus(K1520Bus& bus) {
     bus.registerIO(&tor_st_, cfg_.basis, 4);
@@ -92,6 +129,11 @@ void K6022::leserStatusSetzen() {
 
 bool K6022::clockTick(int takte) {
     zeit_ += static_cast<uint64_t>(takte);
+    // Stanzpause abgelaufen?  Nur feststellen — geschrieben wird in autoFlush().
+    if (flush_ab_ != 0 && zeit_ >= flush_ab_) {
+        flush_ab_ = 0;
+        flush_faellig_.store(true, std::memory_order_release);
+    }
     // Schneller Weg je Instruktion: nichts unterwegs, kein neuer Zustand von außen.
     if (!arbeit_.load(std::memory_order_acquire)) return false;
     bool geaendert = false;
@@ -114,6 +156,12 @@ bool K6022::clockTick(int takte) {
     if (stanz_ruf_ && zeit_ >= stanz_faellig_) {
         stanz_ruf_ = false;
         stanz_.push_back(stanz_byte_);
+        if (!stanz_pfad_.empty()) {
+            // Jede Sprosse schiebt die Frist vor sich her: geschrieben wird in der Pause.
+            stanz_dirty_ = true;
+            flush_ab_    = zeit_ + pause_takte_;
+            if (flush_ab_ == 0) flush_ab_ = 1;
+        }
         pio_st_.setASTB(true);                    // END-Impuls: fallende Flanke → Interrupt
         pio_st_.setASTB(false);
         geaendert = true;
@@ -130,22 +178,35 @@ void K6022::bandEinlegen(std::vector<uint8_t> inhalt) {
     band_drin_ = true;
     pos_       = 0;
     bandende_  = false;
+    leser_pfad_.clear();
+    leser_format_ = Format::Roh;
     arbeit_.store(true, std::memory_order_release);   // STA im Lauffaden neu anlegen
 }
 
-bool K6022::bandEinlegenDatei(const std::string& pfad, std::string& fehler) {
-    std::ifstream f(std::filesystem::u8path(pfad), std::ios::binary);   // UTF-8 (Windows)
-    if (!f) {
-        fehler = "Band nicht lesbar: " + pfad;
+bool K6022::bandEinlegenDatei(const std::string& pfad, Format fmt, std::string& fehler) {
+    std::vector<uint8_t> d;
+    if (!dateiLesen(pfad, d, fehler)) return false;
+    std::string grund;
+    std::optional<std::vector<uint8_t>> band = lochstreifen::lesen(d, fmt, grund);
+    if (!band) {
+        fehler = pfad + " (" + lochstreifen::formatName(fmt) + "): " + grund;
         return false;
     }
-    std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    if (f.bad()) {
-        fehler = "Lesefehler: " + pfad;
-        return false;
-    }
-    bandEinlegen(std::move(d));
+    bandEinlegen(std::move(*band));
+    std::lock_guard<std::mutex> l(m_);
+    leser_pfad_   = pfad;
+    leser_format_ = fmt;
     return true;
+}
+
+std::string K6022::leserDatei() const {
+    std::lock_guard<std::mutex> l(m_);
+    return leser_pfad_;
+}
+
+K6022::Format K6022::leserFormat() const {
+    std::lock_guard<std::mutex> l(m_);
+    return leser_format_;
 }
 
 void K6022::bandEntnehmen() {
@@ -154,6 +215,8 @@ void K6022::bandEntnehmen() {
     band_drin_ = false;
     pos_       = 0;
     bandende_  = false;
+    leser_pfad_.clear();
+    leser_format_ = Format::Roh;
     arbeit_.store(true, std::memory_order_release);   // STA im Lauffaden neu anlegen
 }
 
@@ -179,20 +242,119 @@ uint64_t K6022::stanzbandLaenge() const {
     return stanz_.size();
 }
 
-void K6022::stanzbandLeeren() {
-    std::lock_guard<std::mutex> l(m_);
-    stanz_.clear();
+bool K6022::stanzbandSpeichern(const std::string& pfad, std::string& fehler, Format fmt) const {
+    return dateiSchreiben(pfad, lochstreifen::schreiben(stanzband(), fmt), fehler);
 }
 
-bool K6022::stanzbandSpeichern(const std::string& pfad, std::string& fehler) const {
-    const std::vector<uint8_t> b = stanzband();
-    std::ofstream f(std::filesystem::u8path(pfad), std::ios::binary | std::ios::trunc);
-    if (f) f.write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
-    if (!f) {
-        fehler = "Stanzband nicht schreibbar: " + pfad;
+// ─── Stanzer: Dateibindung (Entwurf 23 §5) ───────────────────────────────────
+
+bool K6022::zurueckschreibenGesperrt(bool loesen) {
+    // Schnappschuss und Freigabe in EINEM Griff unter m_; geschrieben wird außerhalb
+    // von m_ (der Lauffaden stanzt derweil weiter), aber unter datei_m_ — so kann kein
+    // zweiter Schreiber mit älterem Stand den neueren überholen.
+    std::vector<uint8_t> band;
+    std::string pfad;
+    Format fmt;
+    {
+        std::lock_guard<std::mutex> l(m_);
+        if (stanz_pfad_.empty()) return true;
+        pfad = stanz_pfad_;
+        fmt  = stanz_format_;
+        const bool noetig = stanz_dirty_;
+        if (noetig) band = stanz_;
+        stanz_dirty_ = false;
+        if (loesen) stanz_pfad_.clear();
+        if (!noetig) return true;
+    }
+    std::string fehler;
+    if (dateiSchreiben(pfad, lochstreifen::schreiben(band, fmt), fehler)) {
+        std::lock_guard<std::mutex> l(m_);
+        stanz_fehler_.clear();
+        return true;
+    }
+    LOG_WARN("K6022", "%s", fehler.c_str());
+    std::lock_guard<std::mutex> l(m_);
+    stanz_fehler_ = fehler;
+    if (!loesen && stanz_pfad_ == pfad) stanz_dirty_ = true;   // beim nächsten Anlass erneut
+    return false;
+}
+
+bool K6022::stanzerZurueckschreiben() {
+    std::lock_guard<std::mutex> dl(datei_m_);
+    return zurueckschreibenGesperrt(false);
+}
+
+bool K6022::autoFlush() {
+    if (!flush_faellig_.exchange(false, std::memory_order_acq_rel)) return false;
+    return stanzerZurueckschreiben();
+}
+
+bool K6022::stanzerBinden(const std::string& pfad, Format fmt, std::string& fehler) {
+    std::lock_guard<std::mutex> dl(datei_m_);
+    // Wechsel der Datei: die alte bekommt zuerst, was für sie gestanzt wurde.
+    if (!zurueckschreibenGesperrt(false)) {
+        fehler = stanzerFehler();
         return false;
     }
+    std::vector<uint8_t> band;
+    std::error_code ec;
+    if (std::filesystem::exists(dateiPfad(pfad), ec)) {
+        std::vector<uint8_t> d;
+        if (!dateiLesen(pfad, d, fehler)) return false;
+        std::string grund;
+        std::optional<std::vector<uint8_t>> b = lochstreifen::lesen(d, fmt, grund);
+        if (!b) {
+            fehler = pfad + " (" + lochstreifen::formatName(fmt) + "): " + grund;
+            return false;
+        }
+        band = std::move(*b);
+        // Schreibbar?  Anhängend öffnen ändert nichts am Inhalt.
+        std::ofstream probe(dateiPfad(pfad), std::ios::binary | std::ios::app);
+        if (!probe) {
+            fehler = "Stanzband nicht schreibbar: " + pfad;
+            return false;
+        }
+    } else if (!dateiSchreiben(pfad, lochstreifen::schreiben({}, fmt), fehler)) {
+        return false;
+    }
+    std::lock_guard<std::mutex> l(m_);
+    stanz_        = std::move(band);
+    stanz_pfad_   = pfad;
+    stanz_format_ = fmt;
+    stanz_dirty_  = false;
+    stanz_fehler_.clear();
     return true;
+}
+
+bool K6022::stanzerLoesen() {
+    std::lock_guard<std::mutex> dl(datei_m_);
+    return zurueckschreibenGesperrt(true);
+}
+
+bool K6022::neuesBand() {
+    std::lock_guard<std::mutex> dl(datei_m_);
+    {
+        std::lock_guard<std::mutex> l(m_);
+        stanz_.clear();
+        if (stanz_pfad_.empty()) return true;
+        stanz_dirty_ = true;          // leeres Band gegen volle Datei: sofort schreiben
+    }
+    return zurueckschreibenGesperrt(false);
+}
+
+std::string K6022::stanzerDatei() const {
+    std::lock_guard<std::mutex> l(m_);
+    return stanz_pfad_;
+}
+
+K6022::Format K6022::stanzerFormat() const {
+    std::lock_guard<std::mutex> l(m_);
+    return stanz_format_;
+}
+
+std::string K6022::stanzerFehler() const {
+    std::lock_guard<std::mutex> l(m_);
+    return stanz_fehler_;
 }
 
 void K6022::setStanzerEin(bool ein) {

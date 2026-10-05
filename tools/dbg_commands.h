@@ -35,6 +35,8 @@ inline const std::vector<std::string>& names() {
         "reset","disk","alias","unalias","source","help","q","quit",
         // K8915 (--machine k8915): A8H-Speicherbild, DRAM-Bänke direkt
         "map","bank",
+        // RAM-Floppy (--raf)
+        "raf",
         // A5120.16 (U8001-Kontext)
         "cpu","a","fcw","psa","bmode","bvi","bint16","emlog",
     };

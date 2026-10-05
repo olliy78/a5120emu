@@ -266,6 +266,16 @@ public:
      * @param chain List of devices in priority order (highest first)
      */
     void setInterruptChain(std::initializer_list<InterruptSlave*> chain);
+    /**
+     * @brief Ein Gerät HINTEN an die Kette hängen (niedrigste Priorität) — für
+     *        nachträglich gesteckte Zusatzkarten (K6022, Entwurf 23 §3).
+     */
+    void appendInterruptChain(InterruptSlave* dev) {
+        int_chain_.push_back(dev);
+        int_dirty_ = true;
+    }
+    /** @brief Inhaber des E/A-Tors @p port (nullptr = frei). */
+    const BusDevice* ioOwner(uint8_t port) const { return io_map_[port]; }
 
     // ─── Bus operations (called by Z80CPU) ────────────────────────────────
     

@@ -17,6 +17,8 @@
 #include <vector>
 
 struct K8915TraceOpts {
+    std::string raf;             ///< --raf: RAM-Floppy stecken (leer = keine)
+    bool        ptape = false;   ///< --ptape: Lochstreifen-Karte K6022 stecken (E0H–E7H)
     std::string disk;            ///< Diskettenpfad (leer = keine)
     std::string mount_path;      ///< tatsächlich zu mountender Pfad (COW-Kopie o. ä.)
     bool        write_protect = false;

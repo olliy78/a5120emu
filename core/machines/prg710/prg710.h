@@ -157,7 +157,6 @@ public:
     Eprommer590068&  eprommer() { return atp_.eprommer(); }
     K7609&           k7609()    { return k7609_; }
     K7672&           k7672()    { return k7672_; }   ///< nur am 710-1 an A32-B
-    K6022&           k6022()    { return k6022_; }   ///< Lochbandleser/-stanzer E0H–E7H (AP-P8b)
     Ass590069&       ass590069() { return fs_; }     ///< Fernschreiber C4H–C7H (AP-P8c)
     K1520Bus&        bus()      { return bus_; }
     uint64_t         totalCycles() const { return total_cycles_; }
@@ -170,8 +169,15 @@ public:
     void setBusTrace(K1520Bus::BusTrace cb) { mem_trace_ = cb; bus_.setTraceCallback(std::move(cb)); }
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
+protected:
+    K1520Bus& systemBus() override { return bus_; }
+    uint32_t  k6022TaktHz() const override { return CPU_HZ; }
+    /// K6022 vor den Fernschreiber stellen (Stellung wie bis AP-L1), nicht hinten anhängen.
+    void      k6022Einketten(K6022&) override { interruptKetteSetzen(); }
+
 private:
     void resetHardware();
+    void interruptKetteSetzen();   ///< Kette samt K6022, falls gesteckt
     void tastenAbgeben();     ///< Warteschlange an die Tastatur (nur im Lauffaden)
 
     const Config::Variante variante_;
@@ -185,7 +191,6 @@ private:
     Atp590068       atp_;       // 8279 C8H/C9H (nur 710) + EPROMmer D0H–D4H (beide)
     K7609           k7609_;     // 710: Matrix hinter dem 8279
     K7672           k7672_;     // 710-1: an SIO A32-B
-    K6022           k6022_{CPU_HZ};   // E0H–E7H: SIF1000 Stanzer + Leser (AP-P8b)
     Ass590069       fs_;        // C4H–C7H SIO, CCH–CFH CTC [?]: Fernschreiber (AP-P8c)
     /// Nach den Karten: wird zuerst zerstört (hält Verweise auf ihre Anschlüsse).
     k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};

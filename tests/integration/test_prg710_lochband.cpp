@@ -60,6 +60,10 @@ std::vector<uint8_t> holeDatei(const std::string& abbild, const std::string& nam
     EXPECT_NE(dv, nullptr) << err;
     if (!dv) return {};
     const std::string ziel = k1520test::tempPath("k1520_lochband_datei.bin");
+    // extract überschreibt nicht; unter wine ist getpid() je Lauf gleich, ein Rest eines
+    // abgebrochenen Laufs bliebe sonst liegen und ließe jeden weiteren scheitern.
+    std::error_code ec;
+    fs::remove(ziel, ec);
     FileRef ref;
     ref.volume = seite;
     ref.name = name;
@@ -71,7 +75,6 @@ std::vector<uint8_t> holeDatei(const std::string& abbild, const std::string& nam
         std::ifstream f(ziel, std::ios::binary);
         d.assign(std::istreambuf_iterator<char>(f), {});
     }
-    std::error_code ec;
     fs::remove(ziel, ec);
     return d;
 }
@@ -136,19 +139,20 @@ TEST_P(Prg710Lochband, StanztEineDateiBytegleichUndLiestSieZurueck) {
     ASSERT_EQ(quelle.size(), 125u);
 
     Prg710Machine m(cfg(GetParam()));
+    ASSERT_TRUE(m.installK6022()) << m.k6022Fehler();   // seit AP-L1 eine Option (Entwurf 23)
     ASSERT_NO_FATAL_FAILURE(starte(m, disk));
     ASSERT_TRUE(udos(m, "DO TWRITE.1215 TREAD.1210 F=A", kBand)) << bild(m);
     EXPECT_EQ(bild(m).find("ERROR"), std::string::npos) << bild(m);
 
-    const std::vector<uint8_t> band = m.k6022().stanzband();
+    const std::vector<uint8_t> band = m.k6022()->stanzband();
     EXPECT_EQ(ohneVorUndNachlauf(band), gestanzt(quelle));
     ASSERT_EQ(band.size(), 150 + quelle.size() + 150);   // Vor- und Nachlauf je 150 Nullbytes
     for (int i = 0; i < 150; ++i) ASSERT_EQ(band[static_cast<size_t>(i)], 0) << i;   // Vorlauf (150)
 
-    m.k6022().bandEinlegen(band);
+    m.k6022()->bandEinlegen(band);
     ASSERT_TRUE(udos(m, "DO TREAD.1210 X1 F=A", kBand)) << bild(m);
     EXPECT_EQ(bild(m).find("ERROR"), std::string::npos) << bild(m);
-    EXPECT_GE(m.k6022().leserStand().gelesen, 160u + quelle.size());
+    EXPECT_GE(m.k6022()->leserStand().gelesen, 160u + quelle.size());
     ASSERT_TRUE(m.flushDisks());
     EXPECT_EQ(ohneFuellung(holeDatei(disk, "X1", 1)), quelle);
 }
@@ -161,14 +165,15 @@ TEST_P(Prg710Lochband, StanztEineDateiBytegleichUndLiestSieZurueck) {
 TEST_P(Prg710Lochband, LiestEinFremdesTextband) {
     k1520test::TempDisk disk(udosDiskette(GetParam()));
     Prg710Machine m(cfg(GetParam()));
+    ASSERT_TRUE(m.installK6022()) << m.k6022Fehler();   // seit AP-L1 eine Option (Entwurf 23)
     ASSERT_NO_FATAL_FAILURE(starte(m, disk));
     const std::string text = "ZEILE EINS\r\nZEILE ZWEI\r\n";
-    m.k6022().bandEinlegen({text.begin(), text.end()});
+    m.k6022()->bandEinlegen({text.begin(), text.end()});
     ASSERT_TRUE(udos(m, "DO TREAD.1210 X2 F=A", kBand)) << bild(m);
     EXPECT_EQ(bild(m).find("ERROR"), std::string::npos) << bild(m);
     // Der Treiber hört nach 100 Nullbytes des Nachlaufs auf — ganz durch ist das Band nicht.
-    EXPECT_EQ(m.k6022().leserStand().gelesen, text.size());
-    EXPECT_FALSE(m.k6022().leserStand().bandende);
+    EXPECT_EQ(m.k6022()->leserStand().gelesen, text.size());
+    EXPECT_FALSE(m.k6022()->leserStand().bandende);
     ASSERT_TRUE(m.flushDisks());
     const std::vector<uint8_t> x2 = ohneFuellung(holeDatei(disk, "X2", 1));
     EXPECT_EQ(std::string(x2.begin(), x2.end()), "ZEILE EINS\rZEILE ZWEI\r");
@@ -182,14 +187,15 @@ TEST_P(Prg710Lochband, LiestEinFremdesTextband) {
 TEST_P(Prg710Lochband, OhneBandUndOhneStanzerMeldetDerTreiberC2) {
     k1520test::TempDisk disk(udosDiskette(GetParam()));
     Prg710Machine m(cfg(GetParam()));
+    ASSERT_TRUE(m.installK6022()) << m.k6022Fehler();   // seit AP-L1 eine Option (Entwurf 23)
     ASSERT_NO_FATAL_FAILURE(starte(m, disk));
     ASSERT_TRUE(udos(m, "DO TREAD.1210 X3 F=A", kBand)) << bild(m);
     EXPECT_NE(bild(m).find("ERROR C2"), std::string::npos) << bild(m);
 
-    m.k6022().setStanzerEin(false);
+    m.k6022()->setStanzerEin(false);
     ASSERT_TRUE(udos(m, "DO TWRITE.1215 TREAD.1210 F=A", kBand)) << bild(m);
     EXPECT_EQ(vorletzteZeile(m), "ERROR C2") << bild(m);
-    EXPECT_EQ(m.k6022().stanzbandLaenge(), 0u);
+    EXPECT_EQ(m.k6022()->stanzbandLaenge(), 0u);
 }
 
 INSTANTIATE_TEST_SUITE_P(Varianten, Prg710Lochband, ::testing::Values(V::Prg710, V::Prg710_1),

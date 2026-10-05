@@ -33,12 +33,23 @@
  *   Ohne eingeschalteten Stanzer kommt kein END — der Treiber läuft in seine Frist
  *   (≈ 0,9 s, „C2“), wie am Gerät mit ausgeschaltetem Stanzer.
  *
- * **Faden:** `clockTick`, die Busseite und die PIO-Interrupts nur aus dem Lauffaden.
- * `bandEinlegen`/`bandEntnehmen`/`stanzband*`/`leserStand` aus jedem Faden (Sperre).
+ * **Dateien** (doc/design/23_lochstreifen.md §4/§5, AP-L2) in einem der Bandformate
+ * (`core/peripherals/lochstreifen/band_format.h`: Roh, Intel HEX, ASCII-Art):
+ * - Der **Leser** liest die Datei einmal ganz und legt ihren Inhalt als Band ein.
+ * - Der **Stanzer** wird an eine Datei **gebunden** wie ein Laufwerk an ein Abbild: eine
+ *   vorhandene Datei ist der Anfang des Bandes (weiterstanzen hängt an), eine fehlende
+ *   wird leer angelegt.  Zurückgeschrieben wird **verzögert** nach einer Stanzpause von
+ *   @ref kStanzpauseS Maschinenzeit, sofort beim Lösen, beim Wechsel der Datei, bei
+ *   „Neues Band“ und im Destruktor.  Ohne Bindung sammelt der Stanzer im Speicher.
+ *
+ * **Faden:** `clockTick`, `autoFlush`, die Busseite und die PIO-Interrupts nur aus dem
+ * Lauffaden.  Alles andere aus jedem Faden (Sperre m_; Datei-E/A zusätzlich unter
+ * datei_m_, damit sich zwei Schreiber nicht mit veraltetem Stand überholen).
  */
 
 #pragma once
 #include "core/bus/k1520_bus.h"
+#include "core/peripherals/lochstreifen/band_format.h"
 #include "core/primitives/z80_pio.h"
 #include <atomic>
 #include <cstdint>
@@ -61,8 +72,17 @@ public:
     /// STA-Bits an Tor B (Eingänge D4–D7).
     static constexpr uint8_t STA_BANDENDE = 0x40;   ///< Leser D6 [Disk: PTAPE F191H]
 
+    /// Bandformat einer Datei (stabile Kennung Roh = 0, IntelHex = 1, AsciiArt = 2).
+    using Format = lochstreifen::Format;
+    /// Stanzpause, nach der ein gebundener Stanzer seine Datei zurückschreibt.
+    static constexpr double kStanzpauseS = 0.5;
+
     explicit K6022(uint32_t cpu_hz) : K6022(Config{}, cpu_hz) {}
     K6022(const Config& cfg, uint32_t cpu_hz);
+    /// Schreibt ein gebundenes Stanzband zurück (Fehler nur ins Protokoll).
+    ~K6022();
+    K6022(const K6022&) = delete;
+    K6022& operator=(const K6022&) = delete;
 
     void attachToBus(K1520Bus& bus);
     /// /RESET: beide PIOs in den Einschaltzustand, laufende Übertragung verworfen.
@@ -70,7 +90,17 @@ public:
     void reset();
 
     /// Maschinentakte fortschreiben; true, wenn sich ein Interruptzustand geändert haben kann.
+    /// Stellt auch fest, ob die Stanzpause abgelaufen ist — geschrieben wird erst in
+    /// @ref autoFlush (Datei-E/A gehört nicht in den Pfad je Instruktion).
     bool clockTick(int takte);
+    /**
+     * @brief Laufweg, einmal je run()-Scheibe: fällige Stanzdatei zurückschreiben.
+     *
+     * Wie `Laufwerke::autoFlush` für die Disketten im Lauffaden — ein Lochstreifen ist
+     * höchstens einige KiB groß, und das Schreiben fällt nur nach einer Stanzpause an.
+     * @return true, wenn geschrieben wurde.
+     */
+    bool autoFlush();
 
     // ── Interruptkette: die Maschine hängt beide PIOs ein (Stanzer vor Leser [?]) ──
     Z80PIO& pioStanzer() { return pio_st_; }
@@ -79,9 +109,17 @@ public:
     // ── Leser (jeder Faden) ──────────────────────────────────────────────────
     /// Band einlegen (ersetzt ein eingelegtes, Stellung auf Bandanfang).
     void bandEinlegen(std::vector<uint8_t> inhalt);
-    /// Band aus einer Datei einlegen; false (+ @p fehler), wenn sie nicht lesbar ist.
-    bool bandEinlegenDatei(const std::string& pfad, std::string& fehler);
+    /// Band aus einer Datei im Format @p fmt einlegen; false (+ @p fehler, beim
+    /// Inhalt mit Zeilennummer), wenn sie nicht lesbar ist oder nicht zum Format passt.
+    bool bandEinlegenDatei(const std::string& pfad, Format fmt, std::string& fehler);
+    /// Dasselbe im Format Roh (alte C-ABI `k1520_ptape_load`).
+    bool bandEinlegenDatei(const std::string& pfad, std::string& fehler) {
+        return bandEinlegenDatei(pfad, Format::Roh, fehler);
+    }
     void bandEntnehmen();
+    /// Datei des eingelegten Bandes ("" = keins oder aus dem Speicher eingelegt).
+    std::string leserDatei() const;
+    Format leserFormat() const;
     struct LeserStand {
         bool     eingelegt = false;
         uint64_t laenge    = 0;     ///< Bytes der Datei (ohne Vor-/Nachlauf)
@@ -93,9 +131,32 @@ public:
     // ── Stanzer (jeder Faden) ────────────────────────────────────────────────
     std::vector<uint8_t> stanzband() const;
     uint64_t stanzbandLaenge() const;
-    void stanzbandLeeren();
-    /// Stanzband in eine Datei schreiben (überschreibt); false + @p fehler bei Schreibfehler.
-    bool stanzbandSpeichern(const std::string& pfad, std::string& fehler) const;
+    /// Wie @ref neuesBand (ist der Stanzer gebunden, wird auch die Datei geleert).
+    void stanzbandLeeren() { neuesBand(); }
+    /// Stanzband in eine Datei schreiben (überschreibt, ohne zu binden); false + @p fehler.
+    bool stanzbandSpeichern(const std::string& pfad, std::string& fehler,
+                            Format fmt = Format::Roh) const;
+
+    /**
+     * @brief Stanzer an eine Datei im Format @p fmt binden (§5).
+     *
+     * Eine bestehende Bindung wird vorher zurückgeschrieben.  Eine vorhandene Datei wird
+     * gelesen und ersetzt das Stanzband (weiterstanzen hängt an); eine fehlende wird mit
+     * leerem Band angelegt.  false + @p fehler (alte Bindung bleibt dann bestehen), wenn
+     * die Datei nicht lesbar, nicht im Format oder nicht schreibbar ist.
+     */
+    bool stanzerBinden(const std::string& pfad, Format fmt, std::string& fehler);
+    /// Bindung lösen: zuerst zurückschreiben; das Band bleibt im Speicher.  false, wenn
+    /// das Zurückschreiben scheiterte (Grund in @ref stanzerFehler; gelöst wird trotzdem).
+    bool stanzerLoesen();
+    /// „Neues Band“: Stanzband leeren und eine gebundene Datei SOFORT leer schreiben.
+    bool neuesBand();
+    /// Zurückschreiben, falls gebunden und geändert (aus jedem Faden).
+    bool stanzerZurueckschreiben();
+    std::string stanzerDatei() const;     ///< "" = nicht gebunden
+    Format stanzerFormat() const;
+    /// Letzter Schreibfehler der Bindung ("" = keiner seit dem letzten Erfolg).
+    std::string stanzerFehler() const;
     /// Stanzer ein/aus (Vorgabe ein).  Aus: kein END, der Treiber meldet nach seiner Frist C2.
     void setStanzerEin(bool ein);
     bool stanzerEin() const;
@@ -119,16 +180,23 @@ private:
     void stanzerRuf(uint8_t byte);   ///< CPU hat Tor A des Stanzers beschrieben (Betriebsart 0)
     void leserStatusSetzen();        ///< STA an Tor B beider PIOs (unter m_)
     uint64_t bandGesamt() const { return cfg_.vorlauf + band_.size() + cfg_.nachlauf; }
+    /// Schnappschuss der Bindung nehmen (optional dabei lösen) und schreiben; unter datei_m_.
+    bool zurueckschreibenGesperrt(bool loesen);
 
     const Config   cfg_;
     const uint64_t leser_takte_;
     const uint64_t stanzer_takte_;
+    const uint64_t pause_takte_;     ///< @ref kStanzpauseS in Maschinentakten
     Z80PIO pio_st_{"K6022 Stanzer"};
     Z80PIO pio_le_{"K6022 Leser"};
     Tor    tor_st_{*this, false};
     Tor    tor_le_{*this, true};
 
     uint64_t zeit_ = 0;              ///< Maschinentakte seit Netz-Ein (nur Lauffaden)
+    uint64_t flush_ab_ = 0;          ///< Ende der Stanzpause (0 = nichts; nur Lauffaden)
+    /// Stanzpause abgelaufen — @ref autoFlush schreibt.
+    std::atomic<bool> flush_faellig_{false};
+    std::mutex datei_m_;             ///< reiht Dateischreiber; immer VOR m_ nehmen
     /// Etwas unterwegs oder von außen geändert — sonst kehrt clockTick ohne Sperre zurück.
     std::atomic<bool> arbeit_{true};
 
@@ -147,4 +215,10 @@ private:
     bool     stanz_ruf_ = false;
     uint8_t  stanz_byte_ = 0;
     uint64_t stanz_faellig_ = 0;
+    std::string leser_pfad_;
+    Format      leser_format_ = Format::Roh;
+    std::string stanz_pfad_;         ///< gebundene Datei ("" = keine)
+    Format      stanz_format_ = Format::Roh;
+    bool        stanz_dirty_ = false;   ///< Stanzband weicht von der Datei ab
+    std::string stanz_fehler_;
 };

@@ -1,0 +1,6 @@
+# boot_trace --raf mit unbekanntem Typ: Meldung, Exit 2.
+tool:    boot_trace
+disk:    cpa_cpa780_k5601_clock.img
+run:     --raf quatsch -c 1000 %DISK%
+exit:    2
+expect:  --raf: unbekannte Karte 'quatsch'

@@ -261,6 +261,8 @@ void Pc1715Machine::resetHardware()
         w.fdc.setTC(false);
         w.dma.setReady(!w.fdc.drq());
     }
+    k6022Reset();            // K6022 (gesteckt?): PIOs; Band und Stanzband bleiben
+    rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -275,6 +277,7 @@ void Pc1715Machine::powerOn()
 {
     zre_.powerOn(0x00);
     if (w_) w_->spk.powerOn(0x00);
+    rafPowerOn();            // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
     LOG_INFO("PC1715", w_ ? "Netz ein (1715W): BR = 00H, S550 bei 0000H"
                           : "Netz ein: ROM-Overlay S502 bei 0000H");
@@ -282,6 +285,7 @@ void Pc1715Machine::powerOn()
 
 void Pc1715Machine::reset()
 {
+    bestueckungAbschliessen();
     resetHardware();
     LOG_INFO("PC1715", "Reset");
 }
@@ -393,6 +397,7 @@ void Pc1715Machine::tastenVerarbeiten()
 
 int Pc1715Machine::run(int max_cycles)
 {
+    bestueckungAbschliessen();
     if (w_) return runW(max_cycles);
     tastenAbgeben();
     if (nmi_taster_.exchange(false, std::memory_order_relaxed)) {
@@ -434,6 +439,7 @@ int Pc1715Machine::run(int max_cycles)
         kbd_rest_ += used;
         if (kbd_rest_ >= 32) { kbd_.run(kbd_rest_); kbd_rest_ = 0; }
         bool dirty = zre_.clockTick(used);
+        dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
         // Schnittstellen nach außen: der Wandler arbeitet nur alle 1/16 Zeichenzeit.
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
@@ -447,6 +453,7 @@ int Pc1715Machine::run(int max_cycles)
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
+    k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
     return max_cycles - remaining;
 }
 
@@ -496,6 +503,7 @@ int Pc1715Machine::runW(int max_cycles)
         if (kbd_rest_ >= 32) { kbd_.run(kbd_rest_); kbd_rest_ = 0; }
         bool dirty = zre_.clockTick(used);
         dirty |= w.ctc2.clockTick(used);
+        dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
             dirty |= zre_.nimmSeriellGeaendert();
@@ -507,5 +515,6 @@ int Pc1715Machine::runW(int max_cycles)
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
+    k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
     return max_cycles - remaining;
 }

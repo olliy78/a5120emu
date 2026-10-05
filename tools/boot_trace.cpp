@@ -21,6 +21,9 @@
  *                    Kommunikationstransaktion der Karte (PIO A32, A33–A36, A22,
  *                    Quittungen, Moduswechsel, TREN/BUSRQ/BUSAK, RESET16, NVI) wird
  *                    eine Zeile "EM …" (Vorgabe em256)
+ *     --raf <typ>    RAM-Floppy stecken (raf128|raf512|raf2m|none), vor dem ersten Lauf;
+ *                    gilt für alle Maschinen (A5120, --em, --machine k8915|prg710[-1])
+ *     --ptape        Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken, alle Maschinen
  *     --cpu u8000    jeden Befehl des U8001 als Zeile "U8 …" (Deckel -W); impliziert --em
  *
  * --machine k8915 fährt statt des A5120 einen K8915 (eigener Zweig,
@@ -45,6 +48,7 @@
 #include "tools/coverage_diff.h"
 #include "tools/until_cond.h"
 #include "tools/event_bp.h"
+#include "tools/dbg_machine.h"        // steckeRaf (--raf)
 #include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
 #include "tools/boot_trace_prg710.h"  // --machine prg710|prg710-1 (Entwurf 20 AP-P1d)
 #include "tools/boot_trace_pc1715.h"  // --machine pc1715 (Entwurf 21 AP-2)
@@ -298,6 +302,8 @@ int main(int argc, char** argv) {
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
+    std::string raf_opt;                 // --raf none|raf128|raf512|raf2m: RAM-Floppy vor dem ersten Lauf stecken
+    bool        ptape_opt = false;       // --ptape: Lochstreifen-Karte K6022 vor dem ersten Lauf stecken
     std::vector<std::string> nur_a5120;   // am K8915 wirkungslose Schalter (Meldung)
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
@@ -322,6 +328,8 @@ int main(int argc, char** argv) {
             else if (mn != "a5120" && mn != "A5120") {
                 fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | prg710 | prg710-1 | pc1715 | pc1715w)\n", mn.c_str()); return 2; }
         }
+        else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
+        else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
         else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
@@ -530,6 +538,9 @@ int main(int argc, char** argv) {
     if (em_variant) mcfg.em = !strcmp(em_variant,"em064") ? A5120Machine::Config::Em::em064
                                                           : A5120Machine::Config::Em::em256;
     A5120Machine machine(mcfg);
+    { std::string err;
+      if (!dbgm::steckeRaf(machine, raf_opt, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
+      if (!dbgm::steckeK6022(machine, ptape_opt, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
     machine.powerOn();
 
     // ── A5120.16 (S5): EM-Transaktionen (--em) und U8001-Befehle (--cpu u8000) ──
@@ -909,8 +920,9 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Loaded state ← %s (resuming at PC=0x%04X)\n",
                     load_state_path, machine.cpuPC());
         else
-            fprintf(stderr, "WARN: could not load state '%s' (missing/invalid) — booting normally\n",
-                    load_state_path);
+            fprintf(stderr, "WARN: could not load state '%s' (%s) — booting normally\n",
+                    load_state_path, machine.stateError().empty() ? "missing/invalid"
+                                                                   : machine.stateError().c_str());
     }
 
     // ── Run loop ──────────────────────────────────────────────────────────────

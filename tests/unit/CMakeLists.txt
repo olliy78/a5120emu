@@ -46,6 +46,8 @@ k1520_add_test(eprommer590068 SRC cards/test_eprommer590068.cpp LIBS k1520_atp59
 k1520_add_test(prg710_speicher SRC cards/test_prg710_speicher.cpp LIBS k1520_prg710_speicher LABELS "${_lbl}")
 # ADA K6022 (Lochband, SIF1000) und ASS 590069 (Fernschreiber) des PRG 710 (AP-P8b/c)
 k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
+# K6022 an Dateien: Leser im Bandformat, Stanzer gebunden (doc/design/23_lochstreifen.md §5, AP-L2)
+k1520_add_test(k6022_bindung SRC cards/test_k6022_bindung.cpp LIBS k1520_k6022 LABELS "${_lbl}")
 k1520_add_test(ass590069 SRC cards/test_ass590069.cpp LIBS k1520_ass590069 LABELS "${_lbl}")
 # ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
 k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
@@ -53,6 +55,9 @@ k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_l
 # Erweiterungsmodul EM064/EM256 (A5120.16), 8-Bit-Seite — doc/design/17_a5120_16.md §3 S1
 k1520_add_test(em    SRC cards/test_em.cpp         LIBS k1520_em k1520_k3526 k1520_z80 LABELS "${_lbl}")
 k1520_add_test(em16  SRC cards/test_em16.cpp       LIBS k1520_em k1520_k3526 LABELS "${_lbl}")
+
+# RAM-Floppy RAF 128/512/2M mit echtem Z80 (doc/design/22_raf512.md AP-R1)
+k1520_add_test(raf   SRC cards/test_raf.cpp        LIBS k1520_raf k1520_z80 LABELS "${_lbl}")
 
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
@@ -66,6 +71,10 @@ k1520_add_test(k7672          SRC peripherals/test_k7672.cpp
 # Tastatur des PC 1715: U880 + S600, Matrix, Bitstrom → Byte (doc/design/21_pc1715.md AP-3a)
 k1520_add_test(tastatur1715   SRC peripherals/test_tastatur1715.cpp
                               LIBS k1520_tastatur1715 LABELS "${_lbl}")
+
+# Lochstreifen-Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4, AP-L2)
+k1520_add_test(band_format    SRC peripherals/test_band_format.cpp
+                              LIBS k1520_lochstreifen LABELS "${_lbl}")
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Zeichenbare Sicht auf eine Spur (Diskeditor, §19)

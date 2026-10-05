@@ -74,6 +74,10 @@ class Programmprofil:
     #: ``Modelle`` = die Modellschlüssel, an denen die Wahl wirkt; sonst ist das Feld
     #: ausgegraut (PC 1715W: der Zeichensatz kommt von Diskette).  ``()`` = alle.
     hardware: Tuple[Tuple[str, str, str, Tuple[Tuple[str, str], ...], Tuple[str, ...]], ...] = ()
+    #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kästchen
+    #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
+    #: Programme bieten sie an; ohne sie läuft die Maschine stets ohne RAF.
+    raf_wahl: bool = True
     #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
     ueber_rechner: str = ""
     #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname

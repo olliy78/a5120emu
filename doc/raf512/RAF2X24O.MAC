@@ -1,0 +1,877 @@
+;------------------------------------------------------------------------------
+; RAM-Floppy-Treiber
+; RAF der Akademie der Wissenschaften, Speicherkapazität von 128, 512 o. 2048 KByte
+; http://www.robotrontechnik.de/html/eigenbau/raf2008.htm
+;------------------------------------------------------------------------------
+; Treiber reassembliert V. Pohlers 2009
+; letzte Änderung: 20.02.2012 Kommentare
+;------------------------------------------------------------------------------
+;
+; Eigenschaften / Zustand des orig. Treibers RAFCPM.COM
+; -----------------------------------------------------
+; Laufwerksbuchstabe: Es wird Laufwerk M: als RAM-Floppy installiert.
+; Ports: Der Treiber sucht eine RAMFloppy auf den I/O-Ports 88/89 8A/8B 8C/8D 8E/8F.
+; Anzahl: Da eine RAMFloppy-Karte im Original bis zu 2 MB Kapazität hat, können somit
+; 	bei vier RAF-Karten maximal 8 MB RAM-Floppy betrieben werden.
+; Bug:	Wird nach der Neuinitialisierung der RAM-Floppy die erste Datei geschrieben,
+; 	werden nach Neueinlesen des Directory bei einem DIR eine Anzahl Phantom-
+; 	Dateinamen ausgegeben.
+;
+; Anpassungen
+; -----------
+; Alle Anpassungen wurden durch Suchen des passenden Bytes bzw. der passenden
+; Byte-Sequenz und direktes Patchen der Bytes vorgenommen. Komplexere Änderungen
+; erforderten die Disassemblierung des Treibers. Die entstehenden Quelltext-Teile
+; dienten nicht der erneuten Assemblierung, sondern dem Verständnis der
+; Funktionsweise. Binär gepatcht wurde trotzdem.
+;
+; Laufwerksbuchstaben: Der Treiber mit dem Laufwerksbuchstaben M: lässt sich auf
+;	dem K8915(neu) nicht verwenden, da das Betriebssystem des Rechners Laufwerk M:
+;	schon als Festplattenlaufwerk reserviert. Gleiches gilt auf dem A5105 (BIC)
+; 	bei Installation der VDISK.COM. Als neue Laufwerksbuchstaben werden P:
+; 	und O: festgelegt.
+;
+; Ports: Um die RAM-Floppy auf dem KC87 zu betreiben, muss eine andere Port-Range
+; 	her. Der originale Bereich von 88 bis 8F ist auf diesem Rechner nicht
+; 	verfügbar. Statt dessen wurden hier die Ports 20 bis 27 vorgesehen.
+; 	Diese Ports sind ebenfalls auf dem BIC verfügbar, so dass die mechanisch
+; 	gleiche Hardware auf dem KC87 und dem BIC verwendet werden kann.
+;
+; Anzahl: Der Originaltreiber sucht nach vier RAMFloppy-Karten und baut daraus ein
+; 	Laufwerk von 8 MB maximum. Der Treiber wurde gesplittet und einmal für
+; 	die Ports ab 88 bzw 20 als Laufwerk P: und zum anderen für die Ports 8C
+; 	bzw 24 als Laufwerk O: angepasst. Zwei entsprechend konfigurierte Karten
+; 	vorausgesetzt bedeutet dies: Man kann beide Treiber nacheinander laden
+; 	und hat zwei Laufwerke P: und O: mit je max. 4 MB zur Verfügung.
+;
+; Bug:	Die Phantom-Einträge im Directory waren auf einen falschen Eintrag im
+; 	Disk Parameter Block (DPB) zurückzuführen. Im Treiber sind mehrere Byte-
+; 	Sequenzen vorhanden, die man mit der "Methode des scharfen Hinschauens"
+; 	als DPB erkennt. Der für eine 512k-RAF zuständige DPB war noch korrekt.
+; 	Bei dem für größere RAFs zuständigen DPB haben sich Directory und
+; 	Datenbereich überschnitten. Daher rühren die Phantom-Einträge. Der
+; 	Fehler wurde korrigiert.
+;
+; Besonderheit des A5105 (BIC)
+; 	Auf dem BIC trat das Phänomen auf, dass POWER beim Kopieren von Dateien
+; 	auf die RAM-Floppy ab immer gleichem Offset fehlerhafte Datenblöcke in
+; 	die Zieldatei eingelagert wurden. Oftmals fand sich im "schlechten
+; 	Block" das SCPX-ROM des BIC wieder. Der Grund dafür lag in der Speicher-
+; 	Architektur des BIC. Dieser kann 256 KByte Speicher adressieren, indem
+; 	er 4 Speicherebenen zu je 64 KByte verwendet. Jede Ebene zu 64 KB ist in
+; 	vier Segmente zu je 16 KB aufgeteilt, die separat geschaltet werden
+; 	können. Der TPA des BIC liegt auf einer dieser Ebenen. Dummerweise sind
+; 	diese nicht immer korrekt geschaltet. Leider auch nicht, wenn gerade ein
+; 	Sektor auf die RAF geschrieben werden soll. Somit gelangt der Inhalt
+; 	einer falschen Speicherseite mitten in die zu schreibende Datei. Die
+; 	BIOS-Routinen zum Lesen und Schreiben eines RAF-Sektors auf dem BIC
+; 	müssen demzufolge vorher die alte Speicherkonfiguration sichern die
+; 	Speicherebene, die den TPA enthält, einschalten. die eigentliche Arbeit
+; 	tun .zum Schluss die gesicherte Speicherkonfiguration wiederherstellen.
+; 	Hierfür werden nun zum Patchen der BIOS-Routinen zusätzliche Bytes im
+; 	Treiber benötigt. Diese müssen freigeräumt werden.
+;
+;------------------------------------------------------------------------------
+; assemblieren:
+; 	m80.com =treiber
+; 	link.com treiber[op]
+; 	prl2com treiber.prl
+;------------------------------------------------------------------------------
+
+		.Z80
+		cseg
+
+; Original RAFCPM
+;
+;lw		equ	'M'			; Laufwerksbuchstabe
+;rafport	equ	88h
+;anz_raf	equ	4
+;in aNachladbareRaf andere erste Info-Zeile
+;in DPB für 1024 x 4K AL0 als db 0C0h (das ist in Original falsch. richtig ist 0F0h)
+
+
+; Variante KC87
+lw		equ	'O'			; Laufwerksbuchstabe
+rafport		equ	24h			; Port
+anz_raf		equ	2			; max. Anzahl unterstützter RAF
+
+
+
+;------------------------------------------------------------------------------
+; Hilfsmakros fuer 2 stellige Hexadezimal-Aufbereitung
+; Aufruf: <Tab>hexout<Tab>Wert
+;------------------------------------------------------------------------------
+
+hexout	MACRO	hv
+	.RADIX	16
+	hexdb	%(hv)
+	.RADIX	10
+	ENDM
+
+hexdb	MACRO	hv
+	db	'&hv','H'
+	ENDM
+
+;------------------------------------------------------------------------------
+; Initialisierung
+;------------------------------------------------------------------------------
+
+init:		pop	hl
+init1:		ld	(rwboot1+1), hl
+init2:		ld	(rwboot+1), sp
+		push	hl
+		ld	sp, init
+		ld	de, aNachladbareRaf 	; "\r\nNachladbare RAF-Installation, (DKt) v"...
+		ld	c, 9
+		call	5
+		ld	c, lw-'A'		; Laufwerkscode
+		ld	hl, (1)			; Adresse von WBOOT
+		ld	de, 24			; 3*8
+		add	hl, de			; Adresse von SELDSK
+		call	jphl			; aufrufen
+		ld	a, h
+		or	l
+		ld	de, aLaufwerkOIstSc 	; "Laufwerk	O: ist schon installiert!\a\r\n$"
+		jr	nz, init3		; wenn Laufwerk	'O' schon vorhanden
+		call	raftst			; Testen auf RAM-Floppies
+		jr	nz, init4
+		ld	de, aKeineRafKarteV 	; "Keine RAF-Karte vorhanden!\a\r\n$"
+init3:		ld	c, 9
+		call	5
+		jp	0
+
+init4:		push	af			; Cy sichern
+		push	hl			; Gesamtkapazität in Records
+		push	de			; Gesamtkapazität in kByte
+init5:		ld	de, aRafGesamtkapaz 	; "RAF-Gesamtkapazitaet $"
+		ld	c, 9
+		call	5
+		pop	hl
+		call	hldez			; HL dezimal ausgeben
+		ld	de, aKBytes		; "K Bytes"
+		ld	c, 9
+init6:		call	5
+		pop	hl
+		push	hl
+init7:		call	hldez			; HL dezimal ausgeben
+		ld	de, aSpurenZu128Sek 	; "	Spuren zu 128 Sektoren)\r\n$"
+		ld	c, 9
+		call	5
+		pop	hl
+		pop	af			; Cy von raftst restaurieren
+init8:		ld	de, aRafIstNochWieB 	; "RAF ist noch wie bei letzter Benutzung "...
+		jp	nc, init10		; wenn initialisiert
+		ld	de, aRafIstUndefini 	; "RAF ist undefiniert, es folgt Loeschen "...
+		ld	c, 9
+		call	5
+;RAF löschen
+		ld	hl, rafdirbuf		; Dir-Puffer
+		ld	(dbdma), hl
+		ld	de, (rafdpb_drm)
+		inc	de
+		ld	hl, 0
+eras1:		ld	(dtrack), hl
+		xor	a 			; A=0 = 1.Sektor-1.  CP/A zaehlt ab Spur 1!
+eras2:		push	de
+		inc	a
+		ld	(dsectr), a
+		ld	de, aGspur		; "ƒSpur $"
+		ld	c, 9
+		call	5
+		ld	hl, (dtrack)
+		call	hldez			; HL dezimal ausgeben
+		ld	de, aSektor		; ", Sektor \x16$"
+		ld	c, 9
+		call	5
+		ld	hl, (dsectr)
+		ld	h, 0
+		call	hldez			; HL dezimal ausgeben
+		call	p_rread
+		pop	de
+		ld	a, d
+		or	e
+		jr	z, eras4
+		ld	hl, rafdirbuf		; Dir-Puffer
+		ld	a, 4			; 4 Entries in einem Sektor
+		ld	bc, 20h			; Anzahl der Bytes, die zu überspringen sind
+eras3:		ld	(hl), 0E5h 		; "User"-Nummer = E5  = Gelöschter Eintrag
+		add	hl, bc			; Rest des Dir.-Eintrages überspringen
+		dec	de
+		dec	a
+		jr	nz, eras3
+eras4:		push	de
+		call	p_rwrite
+		ld	de, aCR			; "\r$"
+		ld	c, 9
+		call	5
+		pop	de
+		ld	a, d
+		or	e
+		jr	z, init9		; Ende
+		ld	a, (dsectr)
+		ld	hl, rafdpb
+		cp	(hl)			; letzter Sektor erreicht?
+		jr	nz, eras2		; nein
+		ld	hl, (dtrack)
+		inc	hl
+		jr	eras1
+
+; Directory-Eintrag 'RAFvalid.SYS' für initialisierte RAM-Floppy
+init9:		call	rafrdsc0
+		ld	de, rafdirbuf		; Dir-Puffer
+		ld	hl, rafdirinit
+		ld	bc, 20h
+		ldir
+		call	p_rwrite
+;
+		ld	de, aV			; "‚\r\n$"
+init10:		ld	c, 9
+		call	5
+;BIOS patchen
+		ld	hl, (1)
+		dec	hl
+		dec	hl
+		dec	hl
+		push	hl			; Adresse BOOT (Beginn BIOS)
+; BIOS-Einsprünge sichern
+		ld	de, biosv
+		ld	bc, 33h
+		ldir				; ab WBOOT-3 33 Bytes nach biosv kopieren
+; BIOS-Funktionen patchen
+		pop	ix			; hl -> ix Adresse BOOT (Beginn BIOS)
+		di
+		ld	de, rwboot
+		ld	(ix+4),	e
+		ld	(ix+5),	d
+		ld	de, rhome
+		ld	(ix+19h), e
+		ld	(ix+1Ah), d
+		ld	de, rseldsk
+		ld	(ix+1Ch), e
+		ld	(ix+1Dh), d
+		ld	de, rsettrk
+		ld	(ix+1Fh), e
+		ld	(ix+20h), d
+		ld	de, rsetsec
+		ld	(ix+22h), e
+		ld	(ix+23h), d
+		ld	de, rsetdma
+		ld	(ix+25h), e
+		ld	(ix+26h), d
+		ld	de, rread
+		ld	(ix+28h), e
+		ld	(ix+29h), d
+		ld	de, rwrite
+		ld	(ix+2Bh), e
+		ld	(ix+2Ch), d
+		ld	de, rsectran
+		ld	(ix+31h), e
+		ld	(ix+32h), d
+		ei
+;
+		ld	hl, (6)			; orig. BDOS-Einsprung
+		ld	(rbdos+1), hl		; in RBDOS patchen
+		ld	a, l
+		cp	6			; bdos steht auf Adr xx06h
+		jr	nz, init12
+		inc	hl
+		inc	hl
+		inc	hl
+		push	hl
+		ld	de, tab1		; BDOS-Error-Adr. sichern
+		ld	bc, 8
+		ldir
+		ld	hl, tab2		; BDOS-Error-Sprünge
+		pop	de
+		ld	bc, 8
+		ldir
+init12:		ld	hl, rbdos
+		ld	(6), hl
+		ld	de, aRafAlsLaufwerk 	; "RAF als Laufwerk	O: installiert\r\n$"
+		jp	init3
+
+;------------------------------------------------------------------------------
+; Texte
+;------------------------------------------------------------------------------
+
+aNachladbareRaf:db 0Dh,0Ah
+;;		db 'Nachladbare RAF-Installation, Version 11.10.87 ohne Parity',0Dh
+		db 'Nachladbare RAF-Installation, (DKt) v.26.07.08 ohne Parity',0Dh
+		db 0Ah
+		db 'Maximal werden '
+		db 30h+anz_raf
+		db ' RAF-Karten ab E/A-Adresse '
+		hexout rafport
+		db ' auf Verfuegbarkeit getestet.',0Dh,0Ah,'$'
+aKeineRafKarteV:db 'Keine RAF-Karte vorhanden!',7,0Dh,0Ah,'$'
+aRafAlsLaufwerk:db 'RAF als Laufwerk ',lw,': installiert',0Dh,0Ah,'$'
+aRafGesamtkapaz:db 'RAF-Gesamtkapazitaet $'
+aKBytes:	db 'K Bytes ($'
+aSpurenZu128Sek:db ' Spuren zu 128 Sektoren)',0Dh,0Ah,'$'
+aLaufwerkOIstSc:db 'Laufwerk ',lw,': ist schon installiert!',7,0Dh,0Ah,'$'
+aRafIstNochWieB:db 'RAF ist noch wie bei letzter Benutzung geladen!',0Dh,0Ah,'$'
+aRafIstUndefini:db 'RAF ist undefiniert, es folgt Loeschen Directory',0Dh,0Ah,'$'
+;83h cursor aus
+aGspur:		db 83h,'Spur $'
+aSektor:	db ', Sektor ',16h,'$'
+aCR:		db 0Dh,'$'
+;82h cursor an
+aV:		db 82h,0Dh,0Ah,'$'
+
+;------------------------------------------------------------------------------
+; BDOS-Sicherung
+;------------------------------------------------------------------------------
+
+jphl:		jp	(hl)
+
+
+;------------------------------------------------------------------------------
+; BDOS-Sicherung
+;------------------------------------------------------------------------------
+
+;relative locations error routines
+tab2:		dw 	PERSUB
+		dw 	SELSUB
+		dw 	RODSUB
+		dw 	ROFSUB
+
+;------------------------------------------------------------------------------
+; HL dezimal ausgeben
+;------------------------------------------------------------------------------
+
+hldez:		push	hl
+		ld	c, 0
+		ld	de, -10000
+		call	hldez1
+		ld	de, -1000
+		call	hldez1
+		ld	de, -100
+		call	hldez1
+		ld	de, -10
+		call	hldez1
+		ld	a, l
+		or	30h 			; '0'
+		pop	hl
+		jr	hldez2
+hldez1:		call	hldez3
+		ret	z
+hldez2:		push	bc
+		push	hl
+		ld	e, a
+		ld	c, 2
+		call	5
+		pop	hl
+		pop	bc
+		ret
+;
+hldez3:		ld	a, 2Fh			; "0'-1
+hldez4:		inc	a
+		add	hl, de
+		jr	c, hldez4
+		sbc	hl, de
+		inc	c
+		cp	'0'
+		ret	nz
+		dec	c
+		ret
+
+;------------------------------------------------------------------------------
+; Testen auf RAM-Floppies
+; Ermitteln der Einzel- und Gesamtkapazität
+; Test, ob initialisiert
+; ret: z=1 keine RAF
+;      cy=1 RAF nicht init
+;      de=Gesamtkapazität in kByte
+;      hl=Gesamtkapazität in Records
+;------------------------------------------------------------------------------
+
+raftst:		ld	hl, rafsztab		; Tabelle der Speicherkapazitäten
+		ld	de, 0			; de = Gesamtkapazität aller RAFs
+		ld	bc, anz_raf*100h+rafport; C=RAF-Port, B=anz_raf
+raftst1:	push	bc
+		push	hl
+		ld	b, 0
+		; Test auf Speicher
+raftst2:	push	bc			
+		xor	a
+		call	raftrs2
+		ld	a, 5Ah
+		in	l, (c)			; orig. Wert sichern
+		out	(c), a			; B = RAF-Adr. Bit 21..14
+		dec	b
+		cpl
+		in	h, (c)			; orig. Wert sichern
+		out	(c), a			; CPL
+		inc	b
+		in	a, (c)
+		cp	5Ah
+		out	(c), l			; orig. Wert restaurieren
+		jr	nz, raftst3
+		dec	b
+		in	a, (c)
+		cp	0A5h			; == cpl 5A
+		out	(c), h			; orig. Wert restaurieren
+		jr	nz, raftst3
+		pop	bc
+		inc	b			; nächste 16k-Einheit
+		jr	nz, raftst2		; max bis B=FFh
+		push	bc
+		;
+raftst3:	pop	bc
+		ld	a, b			; a = b = Speicherkapazität in 16k-Einheiten
+		ld	b, 0FFh			; Schreibschutz ein
+		inc	c
+		out	(c), b
+		;
+		pop	hl
+		ld	(hl), a
+		add	a, e
+		ld	e, a
+		ld	a, 0
+		adc	a, d
+		ld	d, a			; de = Gesamtkapazität aller RAFs in 32K
+		pop	bc
+		inc	hl			; nächste Merkzelle für Kapazität
+		inc	c
+		inc	c			; nächste RAF testen
+		djnz	raftst1			; bis anz_raf RAFs getestet
+		;
+		ld	a, d
+		or	e
+		jp	z, locret_5C0		; wenn Gesamtkapazität = 0, d.h. keine RAF
+
+		push	de			; Gesamtkapzität
+		push	af			; Z-Flag sichern
+
+		ex	de, hl			; Gesamtkapazität in 16k-Einheiten
+		add	hl, hl			; * 2
+		add	hl, hl			; * 4
+		add	hl, hl			; * 8
+		add	hl, hl			; * 16
+		ex	de, hl			; de = de * 16 = Gesamtkapazität in KByte
+		push	de			; Gesamtkapzität
+		;
+		ld	hl, dbplist
+		ld	bc, 0Fh			; Länge pro Eintrag in dbplist
+raftst4:	ld	a, (hl)
+		inc	hl
+		sub	e
+		ld	a, (hl)
+		inc	hl
+		sbc	a, d			; Kapazität >= de?
+		jr	nc, raftst5		; ja: gefundener Eintrag ist groß genug
+		add	hl, bc
+		jr	raftst4
+		;
+raftst5:	push	de
+		ld	de, rafdpb
+		ldir				; gefundenen Eintrag nach rafdpb kopieren
+		;Anpassen des DPB
+		pop	hl
+		ld	(word_547), hl		; Gesamt-Kapazität in KB
+		ld	a, (rafdpb_bsh)
+		sub	3
+		jr	z, raftst7
+		ld	b, a
+raftst6:	srl	h
+		rr	l
+		djnz	raftst6
+raftst7:	dec	hl
+		ld	(rafdpb_dsm), hl	; DSM anpassen
+		;Test, ob RAF initialisiert
+		call	rafrdsc0		; ersten Sektor lesen
+		ld	hl, rafdirbuf		; Dir-Puffer
+		ld	de, rafdirinit		; Vergleich auf "RAFvalid.SYS"
+		ld	b, 20h
+raftst8:	ld	a, (de)
+		cp	(hl)
+		jr	nz, raftst9
+		inc	de
+		inc	hl
+		djnz	raftst8
+		jr	raftst10
+raftst9:	pop	de
+		pop	af			; Flags
+		scf				; nicht init.
+		push	af			; Flags
+		push	de
+raftst10:	pop	de			
+		pop	af			; Flags
+		pop	hl			; Gesamtkapzität
+		jp	locret_5C0
+
+; ersten Sektor lesen
+rafrdsc0:	ld	hl, rafdirbuf		; Dir-Puffer
+		ld	(dbdma), hl
+		ld	hl, 0
+		ld	(dtrack), hl
+		inc	hl			; CP/A Sektoren ab 1
+		ld	(dsectr), hl
+		jp	p_rread
+
+;------------------------------------------------------------------------------
+; Directory-Eintrag für initialisierte RAM-Floppy
+;------------------------------------------------------------------------------
+
+rafdirinit:	db  	20h		; user 32 - wird nie angezeigt!
+		db  	'R'
+		db  	'A'
+		db  	'F'
+		db  	'v'
+		db  	'a'
+		db  	'l'
+		db  	'i'
+		db  	'd'
+		db  	'S' + 80h	; FILE R/O
+		db  	'Y' + 80h	; Systemfile
+		db  	'S'
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+		db    	0
+;
+
+word_547:	dw 	0
+
+;------------------------------------------------------------------------------
+; dbp-Liste, im Vergleich zu normalen DPB steht hier am Anfang noch die Größe
+;------------------------------------------------------------------------------
+
+
+dbplist:
+; 64 x 1K (DSM x BLS = Kapazizät)
+		dw  0040h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    3		; BSH	= log2(blocksize/128)
+		db    7		; BLM	= 2^BSH-1
+		db    0		; EXM
+		dw  3Fh		; DSM	max. Blockanzahl-1
+		dw  1Fh		; DRM	max. Dir. Einträge-1
+		db  80h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+; 128 x 1K
+		dw  0080h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    3		; BSH	= log2(blocksize/128)
+		db    7		; BLM	= 2^BSH-1
+		db    0		; EXM
+		dw  7Fh		; DSM	max. Blockanzahl-1
+		dw  3Fh		; DRM	max. Dir. Einträge-1
+		db 0C0h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+; 128 x 2K
+		dw  0100h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    4		; BSH	= log2(blocksize/128)
+		db  0Fh		; BLM	= 2^BSH-1
+		db    1		; EXM
+		dw  7Fh		; DSM	max. Blockanzahl-1
+		dw  7Fh		; DRM	max. Dir. Einträge-1
+		db 0C0h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+; 256 x 2K
+		dw  0200h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    4		; BSH	= log2(blocksize/128)
+		db  0Fh		; BLM	= 2^BSH-1
+		db    1		; EXM
+		dw 0FFh		; DSM	max. Blockanzahl-1
+		dw  7Fh		; DRM	max. Dir. Einträge-1
+		db 0C0h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+; 512 x 2K
+		dw  0400h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    4		; BSH	= log2(blocksize/128)
+		db  0Fh		; BLM	= 2^BSH-1
+		db    0		; EXM
+		dw 01FFh	; DSM	max. Blockanzahl-1    h
+		dw 0FFh		; DRM	max. Dir. Einträge-1
+		db 0F0h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+; 1024 x 4K
+		dw  1000h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    5		; BSH	= log2(blocksize/128)
+		db  1Fh		; BLM	= 2^BSH-1
+		db    1		; EXM
+		dw 03FFh	; DSM	max. Blockanzahl-1    h
+		dw 01FFh	; DRM	max. Dir. Einträge-1  h
+		db 0F0h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+; 1024 x 8K
+		dw  2000h	; Größe in KByte
+		dw  80h		; SPT	Sektoren/Spur
+		db    6		; BSH	= log2(blocksize/128)
+		db  3Fh		; BLM	= 2^BSH-1
+		db    3		; EXM
+		dw 03FFh	; DSM	max. Blockanzahl-1    h
+		dw 01FFh	; DRM	max. Dir. Einträge-1  h
+		db  80h		; AL0
+		db    0		; AL1
+		dw    0		; CKS	= (DRM+1)/4
+		dw    0		; OFF	reservierte Spuren
+
+
+;
+locret_5C0:	ret
+
+;------------------------------------------------------------------------------
+; BDOS replacement
+; der Treiber wird vor das CCP geladen (s. prl2com.mac)
+; der nachfolgende Teil landet dabei auf einer xx00h-Adresse 
+; es wird der Beginn des BDOS emuliert (wichtig für SID u.a.)
+;------------------------------------------------------------------------------
+
+		ORG	($+255)/256*256	; xx00h-Adresse
+
+		db 	0FEh
+		db 	0FEh
+		db 	0FEh
+		db 	0FEh
+		db 	0FEh
+		db 	0FEh
+
+; hier Adr xxx06, wird in init getestet
+
+; JP	BDOSE
+rbdos:		jp	5
+
+; relative locations error subroutines
+tab1:		dw	0
+		dw	0
+		dw	0
+		dw	0
+;
+PERSUB:		ld	hl, (tab1)
+		jp	(hl)
+SELSUB:		ld	hl, (tab1+2)
+		jp	(hl)
+RODSUB:		ld	hl, (tab1+4)
+		jp	(hl)
+ROFSUB:		ld	hl, (tab1+6)
+		jp	(hl)
+
+;------------------------------------------------------------------------------
+;der BIOS-Sprungverteiler
+;wird mit dem originalen Sprungverteiler des BIOS gefüllt
+;dann werden im originalen Sprungverteiler des BIOS die RAF-spezifischen Einsprünge gepatcht
+;------------------------------------------------------------------------------
+
+biosv:		db 0FFh, 0FFh, 0FFh	; BOOT
+		db 0FFh, 0FFh, 0FFh	; WBOOT
+		db 0FFh, 0FFh, 0FFh	; CONST
+		db 0FFh, 0FFh, 0FFh	; CONIN
+		db 0FFh, 0FFh, 0FFh	; CONOUT
+		db 0FFh, 0FFh, 0FFh	; LIST
+		db 0FFh, 0FFh, 0FFh	; PUNCH
+		db 0FFh, 0FFh, 0FFh	; READER
+jhome:		db 0FFh, 0FFh, 0FFh	; HOME
+jseldsk:	db 0FFh, 0FFh, 0FFh	; SELDSK
+jsettrk:	db 0FFh, 0FFh, 0FFh	; SETTRK
+jsetsec:	db 0FFh, 0FFh, 0FFh	; SETSEC
+jsetdma:	db 0FFh, 0FFh, 0FFh	; SETDMA
+jread:		db 0FFh, 0FFh, 0FFh	; READ
+jwrite:		db 0FFh, 0FFh, 0FFh	; WRITE
+		db 0FFh, 0FFh, 0FFh	; LISTST
+jsectran:	db 0FFh, 0FFh, 0FFh	; SECTRAN
+
+; bis hierher sieht das BDOS wie im Original aus. Wichtig für Debugger u.a. Programme!
+
+;------------------------------------------------------------------------------
+;selektive BIOS-Routinen
+;bezieht sich der Aufruf auf die RAF, werden deren Routinen (jxxx) angesprungen
+;andernfalls gehts ins originale BIOS
+;------------------------------------------------------------------------------
+
+; BOOT
+rwboot:		ld	sp, 0FFFFh
+		ld	hl, rbdos
+		ld	(6), hl
+		ld	e, 82h 			; Zeichen 82h
+		ld	c, 2			; Konsolenausgabe
+		call	5
+		ld	c, 0Dh			; Diskettensystem zurücksetzen
+		call	5
+rwboot1:	jp	0
+
+; HOME
+rhome:		ld	hl, 0
+		ld	(dtrack), hl
+		jp	jhome
+
+; SELDSK
+rseldsk:	ld	a, c
+		sub	lw-'A'			; Laufwerk
+		ld	(rread+1), a
+		jp	nz, jseldsk
+		ld	hl, rafdph
+		ret
+
+; SETTRK
+rsettrk:	ld	(dtrack), bc
+		jp	jsettrk
+
+; SETSEC
+rsetsec:	ld	(dsectr), bc
+		jp	jsetsec
+
+; SETDMA
+rsetdma:	ld	(dbdma), bc
+		jp	jsetdma
+
+; READ
+rread:		ld	a, 0FFh			; hier wird der	Laufwerksbuchstabe reingepatcht
+		or	a
+		jp	z, p_rread
+		jp	jread
+
+; WRITE
+rwrite:		ld	a, (rread+1)
+		or	a
+		jp	z, p_rwrite
+		jp	jwrite
+
+; SECTRAN
+rsectran:	ld	a, (rread+1)
+		or	a
+		jp	z, p_rsectran
+		jp	jsectran
+
+;------------------------------------------------------------------------------
+; DBH und DPB RAM-Floppy
+;------------------------------------------------------------------------------
+
+; aktueller DPH
+rafdph:		dw 	0
+		dw 	0
+		dw 	0
+		dw 	0
+		dw 	rafdirbuf		; Dir-Puffer
+		dw 	rafdpb
+		dw 	0
+		dw 	rafalv
+
+; aktueller DPB
+rafdpb:		dw 	80h			; SPT	Sektoren/Spur
+rafdpb_bsh:	db 	4            		; BSH	= log2(blocksize/128)
+		db 	0Fh          		; BLM	= 2^BSH-1
+		db 	1            		; EXM
+rafdpb_dsm:	dw 	0FFh         		; DSM	max. Blockanzahl-1
+rafdpb_drm:	dw 	7Fh          		; DRM	max. Dir. Einträge-1
+		db 	0C0h     			; AL0
+		db 	0            		; AL1
+		dw 	0            		; CKS	= (DRM+1)/4
+		dw 	0            		; OFF	reservierte Spuren
+
+;------------------------------------------------------------------------------
+; BIOS-Speicherbereiche für Disk
+;------------------------------------------------------------------------------
+
+rafalv:		ds  	128,0			; Allocation Bit Map
+
+rafdirbuf:	ds  	128,0FAh		; Dir-Puffer
+
+;------------------------------------------------------------------------------
+; RAM-Zellen
+;------------------------------------------------------------------------------
+
+dbdma:		dw 	0
+dtrack:		dw 	0
+dsectr:		dw 	0
+
+; Merkzellen für Vorhandensein von max. 4 RAM-Floppies
+rafsztab:	db    	0			; Speicherkapazität RAF 0 in 16K-Einheiten
+		db    	0			; Speicherkapazität RAF 1 in 16K-Einheiten
+		db    	0			; Speicherkapazität RAF 2 in 16K-Einheiten
+		db    	0			; Speicherkapazität RAF 3 in 16K-Einheiten
+
+;------------------------------------------------------------------------------
+; Patches und RAF-Ansteuerung
+;------------------------------------------------------------------------------
+
+; SECTRAN
+p_rsectran:	ld	h, b
+		ld	l, c
+		inc	hl 			; CP/A Sektoren ab 1
+		ret
+
+; READ	Lesen eines Sektors
+p_rread:	call	raftrs			; Track und Sektorregister laden
+		inir				; Daten-Input,  B war 7fh
+		ini				; 128. Byte lesen
+p_rread1:	inc	c			; c=ctrl-Port
+		ld	b, 0FFh			; Zugriffsschutz-Bit 7 = 1
+		out	(c), b			; Zugriffsschutz wieder setzen (I/O-Disable)
+		ret
+
+; WRITE	Schreiben eines Sektors
+p_rwrite:	call	raftrs
+		inc	b			; war 127 fuer READ, WRITE braucht 128 !
+		otir				; 128 Byte ausgeben
+		jr	p_rread1
+
+; RAF-Addresse berechnen
+; RAFTRS initialisiert die Track- und Sektor-Register zum Datenzugriff und
+; setzt den Zugriffsschutz zurueck.
+; Die Read- und Write-Routinen sind dann einfache Block-I/O-Uebertragungen,
+; mit anschliessendem Setzen des Zugriffsschutzes.
+
+raftrs:		ld	hl, rafsztab-1
+		ld	de, (dtrack)
+		ld	c, rafport-2
+		ld	a, e
+raftrs1:	inc	c
+		inc	c
+		inc	hl
+		sub	(hl)
+		jr	nc, raftrs1
+		dec	d
+		jr	z, raftrs1
+		add	a, (hl)
+		ld	b, a
+		;
+		ld	a, (dsectr)		; a=(SECTOR)
+		dec	a			; RAF zählt Sektoren 0..255;  BIOS 1..256
+		ld	hl, (dbdma)		; hl=DMA-Adresse f. Block IO
+;
+raftrs2:	add	a, a			; SECTOR Shift left, D0 = 0, evtl set carry
+		srl	b			; shift right, 0->D7 , D0->carry
+		rra				; SECTOR shift right, carry->D7, D0->carry
+		inc	c			; Setzen Control Port
+		out	(c), a			; Zugriff auf Control Port, a=Sektornummer
+		dec	c			; Setzen Daten Port
+		ld	b, 127			; fuer 128 Bytes Lesen (INIR + 1 x INI,
+						; bei OTIR B:=B+1 vor Schreiben notwendig)
+		xor	a			; a = 00, Z = "No-Error"-Flag zu BIOS-RD/WR
+		ret
+
+		end
+
+                                                                                           

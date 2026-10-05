@@ -42,7 +42,7 @@ from app.ui.eprom_widget import EpromWidget
 from app.ui.keyboard import KeyboardWidget
 from app.ui.focus import release_focus, ScreenFocusGuard
 from app.ui.help_window import HelpWindow
-from app.ui.lochband import LochbandMixin
+from app.ui.lochstreifen_widget import LochstreifenWidget
 from app.ui import status_bar
 from app.ui.status_bar import MachineStatus
 from app.ui.toolbar_config import ToolbarDialog
@@ -55,9 +55,10 @@ from app import paths
 from app import programme
 from app import profil as profile
 from app import takt
+from app import raf
 
 
-class MainWindow(LochbandMixin, QMainWindow):
+class MainWindow(QMainWindow):
     """Main emulator window."""
     
     def __init__(self, disks=None, profil=None):
@@ -91,17 +92,20 @@ class MainWindow(LochbandMixin, QMainWindow):
         # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672;
         # PC 1715 mit QWERTZ-ROM eigene Beschriftung).
         self._tastatur_art = self.profil.tastatur_bauart(self._model, self._hardware)
+        # RAM-Floppy RAF (doc/design/22_raf512.md §7, `app/raf.py`) — wie das Modell
+        # ein Konstruktorparameter des Kerns; Vorgabe keine, kein Stand-by.
+        self._raf = raf.KEINE
+        self._raf_standby = False
+        # Lochstreifen K6022 (doc/design/23_lochstreifen.md §7) — ebenfalls ein
+        # Konstruktorparameter; Vorgabe aus.  ``_ptape_zustand`` = zuletzt bekannte
+        # Leser-/Stanzer-Dateien, auch solange die Karte nicht steckt.
+        self._ptape = False
+        self._ptape_zustand = {}
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
         try:
-            self.emulator = K1520Emulator(self._drive_types,
-                                          machine=self.profil.modell_maschine(self._model),
-                                          em=self.profil.modell_em(self._model),
-                                          **self._hardware)
-            # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
-            # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
-            self.emulator.set_key_repeat_realtime(True)
+            self.emulator = self._maschine_erzeugen(self._drive_types)
         except Exception as e:
             QMessageBox.critical(self, "Initialization Error", str(e))
             raise
@@ -195,6 +199,12 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
         self.settings_widget.modelChanged.connect(self._on_model_selected)
         self.settings_widget.hardwareChanged.connect(self._on_hardware_selected)
+        self.settings_widget.rafChanged.connect(self._on_raf_selected)
+        self.settings_widget.rafStandbyChanged.connect(self._on_raf_standby_changed)
+        self.settings_widget.ptapeChanged.connect(self._on_ptape_selected)
+        self.lochstreifen_widget.geaendert.connect(self._schedule_autosave)
+        self.lochstreifen_widget.meldung.connect(
+            lambda text: self.statusBar().showMessage(text, 5000))
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
         # Die Statuszeile nennt die eingelegten Abbilder — sie darf nicht bis zum
@@ -212,7 +222,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         # Sammeln im Autosave-Timer sorgt dafür, dass ein Ziehen EINE Schreibung
         # ergibt und nicht fünfzig.
         for dock in (self.screen_dock, self.keyboard_dock,
-                     self.drives_dock, self.settings_dock, self.eprom_dock):
+                     self.drives_dock, self.settings_dock, self.eprom_dock,
+                     self.lochstreifen_dock):
             if dock is None:
                 continue
             dock.visibilityChanged.connect(lambda *_: self._kasten_sichtbarkeit())
@@ -245,7 +256,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._update_drive_status()
 
         # Cold start with the restored disks present, then begin running.
-        self.emulator.power_on()
+        self._einschalten()
         self._emu_started = True
         self.run_timer.start()
         self.screen_widget.start_display()
@@ -381,6 +392,19 @@ class MainWindow(LochbandMixin, QMainWindow):
             self.addDockWidget(Qt.RightDockWidgetArea, self.eprom_dock)
             self.tabifyDockWidget(self.drives_dock, self.eprom_dock)
 
+        # ── Lochstreifen-Dock (K6022, doc/design/23_lochstreifen.md §7) ───────
+        # In jedem Programm angelegt, aber nur bei gesteckter Karte sichtbar und
+        # im Menü (:meth:`_lochstreifen_kasten`) — die Karte ist eine Option.
+        self.lochstreifen_widget = LochstreifenWidget(self.emulator)
+        self.lochstreifen_dock = QDockWidget("Lochstreifen", self)
+        self.lochstreifen_dock.setObjectName("lochstreifen_dock")
+        self.lochstreifen_dock.setWidget(self.lochstreifen_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.lochstreifen_dock)
+        self.tabifyDockWidget(self.drives_dock, self.lochstreifen_dock)
+        # Obenauf gelegt → sofort den Stand zeigen, nicht erst beim nächsten Sekundentakt.
+        self.lochstreifen_dock.visibilityChanged.connect(
+            lambda sichtbar: sichtbar and self.lochstreifen_widget.aktualisieren())
+
         # ── Kastenschalter ───────────────────────────────────────────────────
         # Sie kommen von Qt (``toggleViewAction``) und sind damit immer richtig
         # herum angehakt.  Beschriftung, Symbol und Kurzwort bekommen sie hier —
@@ -391,7 +415,9 @@ class MainWindow(LochbandMixin, QMainWindow):
                 ("drives", self.drives_dock, "&Laufwerke", "drives", "Laufwerke"),
                 ("settings", self.settings_dock, "&Einstellungen", "settings",
                  "Einstellungen"),
-                ("eprom", self.eprom_dock, "E&PROMmer", "eprom", "EPROMmer")):
+                ("eprom", self.eprom_dock, "E&PROMmer", "eprom", "EPROMmer"),
+                ("lochstreifen", self.lochstreifen_dock, "L&ochstreifen", "lochstreifen",
+                 "Lochstreifen")):
             if dock is None:
                 continue
             a = dock.toggleViewAction()
@@ -408,6 +434,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.keyboard_dock.hide()
         self.settings_dock.show()
         self.settings_dock.raise_()
+        self._lochstreifen_kasten()
 
         # Startaufteilung: rechte Spalte (Laufwerke) so schmal wie möglich, ohne
         # horizontales Scrollen; Bildschirm breit.  Tastatur auf Minimalhöhe.
@@ -656,7 +683,6 @@ class MainWindow(LochbandMixin, QMainWindow):
             eprom_menu = emu_menu.addMenu("E&PROMmer")
             for name in aktionen.EPROM:
                 eprom_menu.addAction(getattr(self, f"act_{name}"))
-        self._lochband_menue(emu_menu)          # nur PRG (app/ui/lochband.py)
 
         # (Die Geschwindigkeit wird im Einstellungen-Kasten, Reiter „Allgemein",
         #  über ein Dropdown eingestellt; gemessen steht sie in der Statuszeile.)
@@ -665,7 +691,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         view_menu = menu_bar.addMenu("&Ansicht")
         view_menu.addAction(self.act_vollbild)
         view_menu.addSeparator()
-        for name in ("screen", "keyboard", "drives", "settings", "eprom"):
+        for name in ("screen", "keyboard", "drives", "settings", "eprom", "lochstreifen"):
             if hasattr(self, f"act_dock_{name}"):
                 view_menu.addAction(getattr(self, f"act_dock_{name}"))
         view_menu.addSeparator()
@@ -887,12 +913,16 @@ class MainWindow(LochbandMixin, QMainWindow):
         if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
             general["model"] = self._model
         general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
+        general["ptape"] = bool(self._ptape)
         data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
-            schnittstellen=self.serial_widget.zustand_lesen())
+            schnittstellen=self.serial_widget.zustand_lesen(),
+            machine=({"raf": self._raf, "raf_standby": bool(self._raf_standby)}
+                     if self.profil.raf_wahl else None))
         if self.eprom_widget is not None:
             data["eprom"] = self._eprom_zustand()
+        data["lochstreifen"] = self._ptape_zustand_lesen()
         return data
 
     def _gather_window_state(self) -> dict:
@@ -1114,12 +1144,34 @@ class MainWindow(LochbandMixin, QMainWindow):
             self._hardware = self.profil.hardware_normalisieren(general)
             self.settings_widget.set_hardware_value(self._hardware)
 
+            # RAM-Disk (doc/design/22_raf512.md §7.2): fehlender Abschnitt/Schlüssel
+            # oder unbekannter Wert = keine RAF bzw. kein Stand-by — anders als bei
+            # den Disketten heisst „fehlt" hier „aus" (ältere Konfigurationen
+            # kannten keine RAF).  Die Ablage der LAUFENDEN Maschine wird noch mit
+            # der alten Einstellung geschrieben, bevor die neue gilt.
+            self._raf_sichern()
+            machine = data.get("machine") or {}
+            if not isinstance(machine, dict):
+                machine = {}
+            if self.profil.raf_wahl:
+                self._raf = raf.normalize(machine.get("raf"))
+                self._raf_standby = raf.standby_normalize(machine.get("raf_standby"))
+            else:
+                self._raf, self._raf_standby = raf.KEINE, False
+            self.settings_widget.set_raf_value(self._raf)
+            self.settings_widget.set_raf_standby_value(self._raf_standby)
+
+            # Lochstreifen K6022 (doc/design/23_lochstreifen.md §7): wie die RAF heisst
+            # „fehlt" hier „aus" — der Neuaufbau unten in _apply_drive_types steckt sie.
+            self._ptape = general.get("ptape") is True
+            self.settings_widget.set_ptape_value(self._ptape)
+
             # Drive-bay configuration must be applied BEFORE the disks, so the
             # panels for the present slots exist and the machine matches.  During
             # a config restore we never cold-restart here (power-on happens later).
             self._apply_drive_types(
                 data.get("drive_types") or self.profil.standard_laufwerke(),
-                cold_restart=False)
+                cold_restart=False, sichern=False)
 
             if "disks" in data:
                 self.drives_widget.load_mounts(data.get("disks") or [])
@@ -1136,8 +1188,16 @@ class MainWindow(LochbandMixin, QMainWindow):
             if "eprom" in data and self.eprom_widget is not None:
                 self._eprom_zustand_anwenden(data.get("eprom"))
 
+            # Leser-/Stanzer-Dateien (wie ``disks``): fehlt der Abschnitt, bleibt
+            # alles, wie es ist.  Eine fehlende Datei → Statuszeile, kein Fenster.
+            if "lochstreifen" in data:
+                self._ptape_zustand_anwenden(data.get("lochstreifen") or {})
+
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})
+            # Ein gespeichertes Kastenlayout kann den Lochstreifen-Kasten zeigen,
+            # obwohl die Karte nicht (mehr) steckt.
+            self._lochstreifen_kasten()
         finally:
             self._loading_config = False
 
@@ -1215,6 +1275,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         vorher = list(self._drive_types)
         modell_vorher = self._model
         hardware_vorher = dict(self._hardware)
+        raf_vorher = self._raf
+        ptape_vorher = self._ptape
         self._apply_config(vorgabe)
         # Ein geänderter Laufwerksschacht ODER ein geändertes Modell bedeutet
         # eine NEUE Maschine (:meth:`_apply_drive_types`), und die ist noch
@@ -1223,7 +1285,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         # Bestückungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
         # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
         if (self._drive_types != vorher or self._model != modell_vorher
-                or self._hardware != hardware_vorher):
+                or self._hardware != hardware_vorher
+                or self._raf != raf_vorher or self._ptape != ptape_vorher):
             self._cold_restart()
         # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
         # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
@@ -1284,7 +1347,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         if not self._emu_started or not self.act_power.isChecked():
             return
         self.drives_widget.remount_all()
-        self.emulator.power_on()
+        self._einschalten()
         self.cycles = 0
         self.frame_count = 0
 
@@ -1302,7 +1365,7 @@ class MainWindow(LochbandMixin, QMainWindow):
             # Kaltstart: Images neu mounten (setzt den K5122-Laufwerkszustand
             # zurück — sonst bootet das Boot-ROM nicht neu), dann power_on().
             self.drives_widget.remount_all()
-            self.emulator.power_on()
+            self._einschalten()
             self.cycles = 0
             self.frame_count = 0
             self.run_timer.start()
@@ -1388,6 +1451,9 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.status_widget.set_takt(self.speed_factor if laeuft else None, gemessen)
         self._update_drive_status()
         self._update_em_status()
+        # Stand von Leser/Stanzer im selben Takt (kein eigener Zeitgeber).
+        if self.lochstreifen_dock.isVisible():
+            self.lochstreifen_widget.aktualisieren()
 
     def _update_em_status(self):
         """Die EM-Leuchten (V1/V2) und den Modus — nur wenn das Modell eins hat.
@@ -1546,7 +1612,157 @@ class MainWindow(LochbandMixin, QMainWindow):
             return
         self._schedule_autosave()
 
-    def _apply_drive_types(self, types: list, cold_restart: bool) -> bool:
+    def _maschine_erzeugen(self, types: list) -> K1520Emulator:
+        """Eine neue Maschine mit Laufwerksschacht *types*, Modell und RAM-Disk.
+
+        Der EINE Ort, an dem die Oberfläche ``K1520Emulator`` anlegt (Start und
+        jeder Neuaufbau).  Mit Stand-by wird die Ablage gleich hier geladen
+        (:meth:`_raf_laden`) — beim Einschalten noch einmal, denn ``power_on``
+        verwirft den Inhalt wie ein Netz-Ein ohne Pufferung.
+        """
+        emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
+                            em=self.profil.modell_em(self._model),
+                            raf=raf.core_param(self._raf) if self.profil.raf_wahl else None,
+                            ptape=bool(self._ptape), **self._hardware)
+        # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
+        # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
+        emu.set_key_repeat_realtime(True)
+        # Frisch = noch nie eingeschaltet: die RAF trägt die Ablage selbst oder gar
+        # nichts (_raf_sichern schreibt dann nicht).
+        self._raf_frisch = True
+        self._raf_laden(emu)
+        return emu
+
+    # ── RAM-Disk RAF: Auswahl und Stand-by (doc/design/22_raf512.md §7) ──────
+
+    def _raf_ablage(self) -> str:
+        """Stand-by-Ablage dieses Programms (`app/raf.py::ablage_pfad`)."""
+        return raf.ablage_pfad(self.profil.programm)
+
+    def _raf_standby_wirkt(self, emu=None) -> bool:
+        emu = emu if emu is not None else getattr(self, "emulator", None)
+        return bool(self._raf_standby and emu is not None and emu.raf_variant)
+
+    def _raf_laden(self, emu=None) -> bool:
+        """Stand-by: die Ablage in die RAF von *emu* laden.
+
+        Keine Datei ist kein Fehler (erster Start).  Passt ihre Größe nicht zum
+        gewählten Typ, wird sie NICHT geladen — Hinweis in der Statuszeile, kein
+        Meldungsfenster —, und das nächste Schreiben ersetzt sie.
+        """
+        emu = emu if emu is not None else self.emulator
+        if not self._raf_standby_wirkt(emu):
+            return False
+        pfad = self._raf_ablage()
+        if not os.path.isfile(pfad):
+            return False
+        if emu.raf_load(pfad):
+            return True
+        groesse = os.path.getsize(pfad)
+        self._raf_hinweis = (f"RAM-Disk: die gesicherte Ablage ({groesse} Byte) passt "
+                             f"nicht zu {emu.raf_variant.upper()} — nicht geladen, "
+                             f"sie wird beim nächsten Sichern ersetzt.")
+        self.statusBar().showMessage(self._raf_hinweis, 10000)
+        return False
+
+    def _raf_sichern(self) -> bool:
+        """Stand-by: den Inhalt der laufenden RAF in die Ablage schreiben.
+
+        Ohne Stand-by (oder ohne RAF) wird nichts geschrieben — eine vorhandene
+        Ablage bleibt unangetastet.  Ebenso bei einer FRISCHEN, nie eingeschalteten
+        Maschine: deren RAF hält die Ablage selbst oder nichts — eine eben wegen
+        falscher Größe abgelehnte Ablage würde sonst schon beim ersten Einschalten
+        durch Nullen ersetzt, nicht erst, wenn es etwas zu sichern gibt.
+        """
+        if getattr(self, "_raf_frisch", False) or not self._raf_standby_wirkt():
+            return False
+        pfad = self._raf_ablage()
+        try:
+            os.makedirs(os.path.dirname(pfad), exist_ok=True)
+        except OSError:
+            pass
+        ok = self.emulator.raf_save(pfad)
+        if not ok:
+            print(f"[raf] Ablage {pfad} nicht geschrieben")
+        return ok
+
+    def _einschalten(self):
+        """Netz-Ein der Maschine — mit Stand-by bleibt der RAF-Inhalt erhalten.
+
+        ``power_on`` verwirft den Inhalt (Netz-Ein ohne Pufferung, §3.4).  Mit
+        Stand-by wird er deshalb vorher gesichert und danach zurückgeladen; das ist
+        zugleich die Sicherung „beim Ausschalten".
+        """
+        self._raf_sichern()
+        self._raf_frisch = False
+        self.emulator.power_on()
+        self._raf_laden()
+
+    def _on_raf_selected(self, typ: str):
+        """Das Auswahlfeld „RAM-Disk" geändert → neue Maschine (wie beim Modell).
+
+        Eine Karte steckt man nicht im Betrieb: ``raf=`` ist ein
+        Konstruktorparameter.  Dieselbe Rückfrage wie beim Modellwechsel (ein
+        ungespeichertes PROM im EPROMmer-Sockel).
+        """
+        neu = raf.normalize(typ)
+        if neu == self._raf:
+            return
+        if not self._eprom_rueckfrage("Wechsel der RAM-Disk"):
+            self.settings_widget.set_raf_value(self._raf)
+            return
+        self._raf = neu
+        self._apply_drive_types(self._drive_types, cold_restart=True)
+        self._schedule_autosave()
+
+    def _on_raf_standby_changed(self, an: bool):
+        """Stand-by-Kästchen: nur die Einstellung, die Maschine bleibt, wie sie ist."""
+        self._raf_standby = bool(an)
+        self._schedule_autosave()
+
+    # ── Lochstreifen K6022 (doc/design/23_lochstreifen.md §7) ────────────────
+
+    def _on_ptape_selected(self, an: bool):
+        """Kästchen „Lochstreifen" → neue Maschine (wie bei der RAF)."""
+        an = bool(an)
+        if an == self._ptape:
+            return
+        if not self._eprom_rueckfrage("Wechsel der Lochstreifen-Karte"):
+            self.settings_widget.set_ptape_value(self._ptape)
+            return
+        self._ptape = an
+        self._apply_drive_types(self._drive_types, cold_restart=True)
+        self._lochstreifen_kasten(zeigen=an)
+        self._schedule_autosave()
+
+    def _lochstreifen_kasten(self, zeigen: bool = False):
+        """Kasten und Menüeintrag nur bei gesteckter Karte; *zeigen* holt ihn nach vorn."""
+        dock = getattr(self, "lochstreifen_dock", None)
+        if dock is None:
+            return
+        gesteckt = bool(self.emulator.ptape_installed())
+        dock.toggleViewAction().setVisible(gesteckt)
+        if not gesteckt:
+            dock.hide()
+        elif zeigen:
+            dock.show()
+            dock.raise_()
+        self.lochstreifen_widget.aktualisieren()
+
+    def _ptape_zustand_lesen(self) -> dict:
+        """Leser/Stanzer für die Konfiguration — ohne Karte der zuletzt bekannte Stand."""
+        if self.emulator.ptape_installed():
+            self._ptape_zustand = self.lochstreifen_widget.zustand_lesen()
+        return dict(self._ptape_zustand or {})
+
+    def _ptape_zustand_anwenden(self, z) -> None:
+        self._ptape_zustand = dict(z) if isinstance(z, dict) else {}
+        hinweise = self.lochstreifen_widget.zustand_anwenden(self._ptape_zustand)
+        if hinweise:
+            print("[lochstreifen] " + " ".join(hinweise))
+            self.statusBar().showMessage(" ".join(hinweise), 10000)
+
+    def _apply_drive_types(self, types: list, cold_restart: bool, sichern: bool = True):
         """Adopt a new drive-bay configuration (and/or a changed model).
 
         The core sets the per-slot ``DriveProfile`` **and** the Erweiterungsmodul
@@ -1559,6 +1775,11 @@ class MainWindow(LochbandMixin, QMainWindow):
         """
         types = dt.normalize_list(types)
         em = self.profil.modell_em(self._model)
+        # Stand-by: der Inhalt der ALTEN Maschine geht in die Ablage, bevor die neue
+        # sie lädt (*sichern* = False, wenn der Aufrufer das schon mit der alten
+        # Einstellung getan hat — _apply_config).
+        if sichern:
+            self._raf_sichern()
 
         # Disks whose slot still carries a drive survive the reconfiguration.
         surviving = [m for m in self.drives_widget.get_mounts()
@@ -1567,15 +1788,16 @@ class MainWindow(LochbandMixin, QMainWindow):
 
         # Recreate the machine with the new drive bay / model.
         try:
-            new_emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
-                                    em=em, **self._hardware)
-            new_emu.set_key_repeat_realtime(True)
+            new_emu = self._maschine_erzeugen(types)
         except Exception as e:
             QMessageBox.critical(self, "Laufwerke",
                                  f"Konnte Maschine nicht neu erzeugen:\n{e}")
             # Keep the settings dropdowns consistent with the machine still in use.
             self.settings_widget.set_drive_types(self._drive_types)
             self.settings_widget.set_model_value(self._model)
+            self.settings_widget.set_raf_value(self._raf)
+            self._ptape = bool(self.emulator.ptape_installed())
+            self.settings_widget.set_ptape_value(self._ptape)
             return False
 
         # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
@@ -1586,6 +1808,10 @@ class MainWindow(LochbandMixin, QMainWindow):
         # Der EPROMmer-Sockel gehört zur Maschine — das gesteckte PROM samt Inhalt
         # und „geändert“ wandert mit (wie eine eingelegte Diskette).
         eprom = self.eprom_widget.sockel_lesen() if self.eprom_widget else None
+        # Lochstreifen: Stanzband in die gebundene Datei, Dateien merken — die neue
+        # Maschine bindet sie wieder (Leser von vorn, Stanzer setzt die Datei fort).
+        self._ptape_zustand_lesen()
+        self.emulator.ptape_punch_flush()
 
         try:
             self.emulator.stop()
@@ -1601,6 +1827,8 @@ class MainWindow(LochbandMixin, QMainWindow):
         if self.eprom_widget is not None:
             self.eprom_widget.set_emulator(new_emu)
             self.eprom_widget.sockel_anwenden(eprom)
+        self.lochstreifen_widget.set_emulator(new_emu)
+        self._ptape_zustand_anwenden(self._ptape_zustand)
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
@@ -1610,6 +1838,9 @@ class MainWindow(LochbandMixin, QMainWindow):
         self.CPU_HZ, nenntakt = self.profil.modell_nenntakt(self._model)
         self.settings_widget.set_nenntakt(nenntakt)
         self.status_widget.set_nenntakt(nenntakt)
+        self.settings_widget.set_raf_value(self._raf)       # dito
+        self.settings_widget.set_ptape_value(self._ptape)   # dito
+        self._lochstreifen_kasten()
         # Die Statuszeile führt je bestücktem Steckplatz ein Feld — ein
         # abgemeldetes Laufwerk muss auch dort verschwinden.  Die EM-Leuchten
         # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.
@@ -1618,7 +1849,7 @@ class MainWindow(LochbandMixin, QMainWindow):
         self._update_drive_status()
 
         if cold_restart and self._emu_started and self.act_power.isChecked():
-            self.emulator.power_on()
+            self._einschalten()
             self.cycles = 0
             self.frame_count = 0
             self.run_timer.start()
@@ -1831,6 +2062,10 @@ class MainWindow(LochbandMixin, QMainWindow):
         # stammen, das kein Speichern ausgelöst hat.
         self._autosave_timer.stop()
         self._autosave_now()
+        # Stand-by: RAF-Inhalt in die Ablage (doc/design/22_raf512.md §7.1).
+        self._raf_sichern()
+        # Lochstreifen: was gestanzt ist, gehört jetzt in die gebundene Datei.
+        self.emulator.ptape_punch_flush()
         self._geschlossen = True
         # Erst NACH dem Speichern: `aktiv` soll den Zustand beim Beenden festhalten.
         self.serial_widget.beenden()

@@ -16,6 +16,9 @@
 #include <ctime>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <vector>
 #include <system_error>
 
 #include "core/version.h"
@@ -881,26 +884,89 @@ const char* k1520_eprom_error(K1520Handle) {
     return eprom_fehler.c_str();
 }
 
-// Lochband an der K6022 (AP-P8b).
+// Lochband an der K6022 (AP-P8b; seit Entwurf 23 AP-L1 steckbar in jeder Maschine,
+// Bandformate und Stanzer-Bindung seit AP-L3).
+namespace {
+thread_local std::string ptape_fehler;
+K6022* ptapeOf(K1520Handle h) {
+    return h ? toMachine(h)->k6022() : nullptr;
+}
+/// Ergebnis einer Operation festhalten: Erfolg leert den Fehlertext.
+bool ptapeErgebnis(bool ok, const std::string& fehler) {
+    ptape_fehler = ok ? std::string() : fehler;
+    return ok;
+}
+K6022* ptapeOderFehler(K1520Handle h) {
+    K6022* k = ptapeOf(h);
+    if (!k) ptape_fehler = "keine Lochstreifen-Karte (K6022) gesteckt";
+    return k;
+}
+const char* ptapeText(const std::string& s) {
+    static thread_local std::string buf;
+    buf = s;
+    return buf.c_str();
+}
+}  // namespace
+
+bool k1520_ptape_install(K1520Handle h) {
+    if (!h) return ptapeErgebnis(false, "kein Handle");
+    g_init_error.clear();
+    K1520Machine* m = toMachine(h);
+    if (!m->installK6022()) {
+        g_init_error = m->k6022Fehler();
+        return ptapeErgebnis(false, g_init_error);
+    }
+    return ptapeErgebnis(true, {});
+}
+
+bool k1520_ptape_installed(K1520Handle h) {
+    return ptapeOf(h) != nullptr;
+}
+
+const char* k1520_ptape_error(K1520Handle) {
+    return ptape_fehler.c_str();
+}
+
+int k1520_ptape_detect_format(const char* path) {
+    if (!path) return -1;
+    std::ifstream f(std::filesystem::u8path(path), std::ios::binary);
+    if (!f) return -1;
+    std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (f.bad()) return -1;
+    return static_cast<int>(lochstreifen::erkennen(d));
+}
+
+int k1520_ptape_format_from_ext(const char* path) {
+    return static_cast<int>(lochstreifen::formatAusEndung(path ? path : ""));
+}
+
 bool k1520_ptape_load(K1520Handle h, const char* path) {
-    auto* p = prgOf(h);
-    if (!p || !path) return false;
+    return k1520_ptape_load_fmt(h, path, K1520_PTAPE_FMT_RAW);
+}
+
+bool k1520_ptape_load_fmt(K1520Handle h, const char* path, int fmt) {
+    auto* k = ptapeOderFehler(h);
+    if (!k) return false;
+    if (!path) return ptapeErgebnis(false, "kein Pfad");
+    const auto f = lochstreifen::formatAusZahl(fmt);
+    if (!f) return ptapeErgebnis(false, "unbekanntes Bandformat " + std::to_string(fmt));
     std::string fehler;
-    return p->k6022().bandEinlegenDatei(path, fehler);
+    const bool ok = k->bandEinlegenDatei(path, *f, fehler);
+    return ptapeErgebnis(ok, fehler);
 }
 
 bool k1520_ptape_eject(K1520Handle h) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    p->k6022().bandEntnehmen();
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    k->bandEntnehmen();
     return true;
 }
 
 bool k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos, uint64_t* len,
                                int* at_end) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    const K6022::LeserStand s = p->k6022().leserStand();
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    const K6022::LeserStand s = k->leserStand();
     if (inserted) *inserted = s.eingelegt ? 1 : 0;
     if (pos)      *pos = s.gelesen;
     if (len)      *len = s.laenge;
@@ -908,35 +974,133 @@ bool k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos, uint
     return true;
 }
 
+const char* k1520_ptape_reader_file(K1520Handle h) {
+    auto* k = ptapeOf(h);
+    return ptapeText(k ? k->leserDatei() : std::string());
+}
+
+int k1520_ptape_reader_format(K1520Handle h) {
+    auto* k = ptapeOf(h);
+    return k ? static_cast<int>(k->leserFormat()) : -1;
+}
+
 int64_t k1520_ptape_punch_length(K1520Handle h) {
-    auto* p = prgOf(h);
-    return p ? static_cast<int64_t>(p->k6022().stanzbandLaenge()) : -1;
+    auto* k = ptapeOf(h);
+    return k ? static_cast<int64_t>(k->stanzbandLaenge()) : -1;
 }
 
 bool k1520_ptape_punch_save(K1520Handle h, const char* path) {
-    auto* p = prgOf(h);
-    if (!p || !path) return false;
+    auto* k = ptapeOderFehler(h);
+    if (!k) return false;
+    if (!path) return ptapeErgebnis(false, "kein Pfad");
     std::string fehler;
-    return p->k6022().stanzbandSpeichern(path, fehler);
+    const bool ok = k->stanzbandSpeichern(path, fehler);
+    return ptapeErgebnis(ok, fehler);
 }
 
 bool k1520_ptape_punch_clear(K1520Handle h) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    p->k6022().stanzbandLeeren();
-    return true;
+    return k1520_ptape_punch_new_tape(h);
+}
+
+bool k1520_ptape_punch_new_tape(K1520Handle h) {
+    auto* k = ptapeOderFehler(h);
+    if (!k) return false;
+    const bool ok = k->neuesBand();
+    return ptapeErgebnis(ok, k->stanzerFehler());
+}
+
+bool k1520_ptape_punch_bind(K1520Handle h, const char* path, int fmt) {
+    auto* k = ptapeOderFehler(h);
+    if (!k) return false;
+    if (!path || !*path) return ptapeErgebnis(false, "kein Pfad");
+    const auto f = lochstreifen::formatAusZahl(fmt);
+    if (!f) return ptapeErgebnis(false, "unbekanntes Bandformat " + std::to_string(fmt));
+    std::string fehler;
+    const bool ok = k->stanzerBinden(path, *f, fehler);
+    return ptapeErgebnis(ok, fehler);
+}
+
+bool k1520_ptape_punch_unbind(K1520Handle h) {
+    auto* k = ptapeOderFehler(h);
+    if (!k) return false;
+    const bool ok = k->stanzerLoesen();
+    return ptapeErgebnis(ok, k->stanzerFehler());
+}
+
+bool k1520_ptape_punch_flush(K1520Handle h) {
+    auto* k = ptapeOderFehler(h);
+    if (!k) return false;
+    const bool ok = k->stanzerZurueckschreiben();
+    return ptapeErgebnis(ok, k->stanzerFehler());
+}
+
+const char* k1520_ptape_punch_file(K1520Handle h) {
+    auto* k = ptapeOf(h);
+    return ptapeText(k ? k->stanzerDatei() : std::string());
+}
+
+int k1520_ptape_punch_format(K1520Handle h) {
+    auto* k = ptapeOf(h);
+    return k ? static_cast<int>(k->stanzerFormat()) : -1;
 }
 
 bool k1520_ptape_punch_enable(K1520Handle h, bool on) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    p->k6022().setStanzerEin(on);
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    k->setStanzerEin(on);
     return true;
 }
 
 int k1520_ptape_punch_enabled(K1520Handle h) {
-    auto* p = prgOf(h);
-    return p ? (p->k6022().stanzerEin() ? 1 : 0) : -1;
+    auto* k = ptapeOf(h);
+    return k ? (k->stanzerEin() ? 1 : 0) : -1;
+}
+
+// ─── RAM-Floppy RAF (doc/design/22_raf512.md §6) ───────────────────────────────
+bool k1520_raf_install(K1520Handle h, const char* typ) {
+    if (!h) return false;
+    const std::string t = typ ? typ : "";
+    if (t.empty() || t == "none") return true;
+    RAF::Typ ty;
+    if (t == "raf128")      ty = RAF::Typ::RAF128;
+    else if (t == "raf512") ty = RAF::Typ::RAF512;
+    else if (t == "raf2m")  ty = RAF::Typ::RAF2M;
+    else {
+        g_init_error = "Unbekannte RAF '" + t + "' (none|raf128|raf512|raf2m)";
+        return false;
+    }
+    g_init_error.clear();
+    K1520Machine* m = toMachine(h);
+    if (!m->installRaf(ty)) {
+        g_init_error = m->rafFehler();
+        return false;
+    }
+    return true;
+}
+
+const char* k1520_raf_variant(K1520Handle h) {
+    const RAF* r = h ? toMachine(h)->raf() : nullptr;
+    if (!r) return "";
+    switch (r->config().typ) {
+        case RAF::Typ::RAF128: return "raf128";
+        case RAF::Typ::RAF2M:  return "raf2m";
+        default:               return "raf512";
+    }
+}
+
+uint8_t k1520_raf_peek(K1520Handle h, uint32_t adr) {
+    const RAF* r = h ? toMachine(h)->raf() : nullptr;
+    return r ? r->peek(adr) : 0xFF;
+}
+
+bool k1520_raf_load(K1520Handle h, const char* pfad) {
+    RAF* r = (h && pfad) ? toMachine(h)->raf() : nullptr;
+    return r && r->ladeInhalt(pfad);
+}
+
+bool k1520_raf_save(K1520Handle h, const char* pfad) {
+    const RAF* r = (h && pfad) ? toMachine(h)->raf() : nullptr;
+    return r && r->speichereInhalt(pfad);
 }
 
 } // extern "C"

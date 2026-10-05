@@ -1,0 +1,6 @@
+# Unbekannter RAF-Typ: klare Meldung, Exit 2.
+tool:    k1520dbg
+disk:    cpa_cpa780_k5601_clock.img
+run:     --raf raf999 %DISK%
+exit:    2
+expect:  --raf: unbekannte Karte 'raf999'

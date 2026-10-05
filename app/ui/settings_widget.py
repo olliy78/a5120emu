@@ -4,7 +4,9 @@ K1520 Emulator - Settings Widget
 
 Dockable settings panel with tabbed categories:
 
-* **Allgemein** — general emulator settings (emulation speed dropdown).
+* **Allgemein** — general emulator settings (model, emulation speed dropdown,
+  RAM-Disk RAF + Stand-by, doc/design/22_raf512.md §7.1; Lochstreifen K6022,
+  doc/design/23_lochstreifen.md §7).
 * **Schnittstellen** — die seriellen Schnittstellen nach außen (AP-S10; das
   Widget kommt vom Hauptfenster, damit sein Takt auch ohne sichtbaren Reiter läuft).
 * **CRT** — every :class:`~app.ui.screen_widget.CRTParams` field as a live
@@ -20,7 +22,7 @@ from typing import Callable, List
 
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QScrollArea,
-    QSlider, QDoubleSpinBox, QComboBox, QPushButton, QLabel, QColorDialog, QFrame,
+    QSlider, QDoubleSpinBox, QComboBox, QCheckBox, QPushButton, QLabel, QColorDialog, QFrame,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -29,6 +31,7 @@ from app.ui.screen_widget import CRTParams
 from app import drive_types as dt
 from app import profil as profile
 from app import takt
+from app import raf
 
 
 class SettingsWidget(QWidget):
@@ -47,6 +50,14 @@ class SettingsWidget(QWidget):
     modelChanged = Signal(str)
     # Hardwarevariante (Profil.hardware) geändert: Schlüssel, Wert.
     hardwareChanged = Signal(str, str)
+    # RAM-Disk-Auswahl geändert (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``,
+    # `app/raf.py`) — wie der Modellwechsel ein Neuaufbau der Maschine.
+    rafChanged = Signal(str)
+    # Stand-by-Kästchen der RAF umgeschaltet (kein Neuaufbau).
+    rafStandbyChanged = Signal(bool)
+    # Kästchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
+    # wie bei der RAF (doc/design/23_lochstreifen.md §7).
+    ptapeChanged = Signal(bool)
 
     #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
@@ -69,6 +80,9 @@ class SettingsWidget(QWidget):
         self._drive_combos: List[QComboBox] = []
         # Guards the model combo against emitting while set programmatically.
         self._model_guard = False
+        # Dito für RAM-Disk-Auswahl und Stand-by-Kästchen.
+        self._raf_guard = False
+        self._ptape_guard = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -239,6 +253,34 @@ class SettingsWidget(QWidget):
         self.set_nenntakt(self.profil.nenntakt_text)
         form.addRow("Takt:", self.speed_combo)
 
+        # RAM-Floppy RAF (doc/design/22_raf512.md §7.1) — in jedem Programm, dessen
+        # Profil sie anbietet.  Ein Wechsel erzeugt die Maschine neu (rafChanged).
+        self.raf_combo = QComboBox(inner)
+        for schluessel, beschriftung in raf.TYPEN:
+            self.raf_combo.addItem(beschriftung, schluessel)
+        self.raf_combo.setToolTip(raf.TIPP)
+        self.raf_combo.currentIndexChanged.connect(self._on_raf_combo)
+        self.raf_standby_box = QCheckBox("Inhalt beim Beenden behalten (Stand-by 5PG)", inner)
+        self.raf_standby_box.setToolTip(raf.STANDBY_TIPP)
+        self.raf_standby_box.toggled.connect(self._on_raf_standby_box)
+        self.raf_standby_box.setEnabled(False)          # erst mit gewählter RAF
+        if self.profil.raf_wahl:
+            form.addRow("RAM-Disk:", self.raf_combo)
+            form.addRow("", self.raf_standby_box)
+        else:
+            self.raf_combo.setVisible(False)
+            self.raf_standby_box.setVisible(False)
+
+        # Lochstreifen: ADA K6022 mit Leser daro 1210 und Stanzer daro 1215 (SIF1000) —
+        # in allen Programmen eine Option, Vorgabe aus (Anwenderentscheid E3).
+        self.ptape_box = QCheckBox("Lochstreifen (SIF1000, K6022)", inner)
+        self.ptape_box.setToolTip(
+            "Steckt die ADA K6022 mit Lochstreifenleser und -stanzer (E/A E0H–E7H).  "
+            "Bedient werden beide im Kasten „Lochstreifen“.  Ein Wechsel schaltet die "
+            "Maschine aus und neu ein.")
+        self.ptape_box.toggled.connect(self._on_ptape_box)
+        form.addRow("Peripherie:", self.ptape_box)
+
         return inner
 
     def _on_hardware_combo(self, schluessel: str):
@@ -265,6 +307,55 @@ class SettingsWidget(QWidget):
         modell = self.model_value()
         for k, box in self.hardware_combos.items():
             box.setEnabled(self.profil.hardware_wirkt(k, modell))
+
+    # ── Lochstreifen (K6022) ─────────────────────────────────────────────────
+
+    def _on_ptape_box(self, an: bool):
+        if self._ptape_guard:
+            return
+        self.ptapeChanged.emit(bool(an))
+
+    def ptape_value(self) -> bool:
+        return self.ptape_box.isChecked()
+
+    def set_ptape_value(self, an: bool):
+        """Kästchen setzen, ohne ``ptapeChanged`` auszulösen."""
+        self._ptape_guard = True
+        self.ptape_box.setChecked(bool(an))
+        self._ptape_guard = False
+
+    # ── RAM-Disk (RAF) ───────────────────────────────────────────────────────
+
+    def _on_raf_combo(self, _idx: int):
+        self.raf_standby_box.setEnabled(self.raf_value() != raf.KEINE)
+        if self._raf_guard:
+            return
+        self.rafChanged.emit(self.raf_value())
+
+    def _on_raf_standby_box(self, checked: bool):
+        if self._raf_guard:
+            return
+        self.rafStandbyChanged.emit(bool(checked))
+
+    def raf_value(self) -> str:
+        """Der gewählte RAF-Schlüssel (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``)."""
+        return raf.normalize(self.raf_combo.currentData())
+
+    def set_raf_value(self, typ: str):
+        """Den Eintrag für *typ* wählen (ohne Signal)."""
+        self._raf_guard = True
+        idx = self.raf_combo.findData(raf.normalize(typ))
+        self.raf_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._raf_guard = False
+
+    def raf_standby_value(self) -> bool:
+        return self.raf_standby_box.isChecked()
+
+    def set_raf_standby_value(self, an: bool):
+        """Das Stand-by-Kästchen setzen (ohne Signal)."""
+        self._raf_guard = True
+        self.raf_standby_box.setChecked(bool(an))
+        self._raf_guard = False
 
     def _on_model_combo(self, _idx: int):
         self._hardware_gesperrt_nach_modell()

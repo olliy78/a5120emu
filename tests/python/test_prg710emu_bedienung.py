@@ -3,7 +3,7 @@
 Alles läuft über die Wege der Oberfläche: Diskette über den Laufwerkskasten
 (``DriveWidget.toggle_mount``, Dateiauswahl ersetzt), Starttaste als Qt-Tastenereignis an
 das Bildschirm-Widget bzw. Klick auf ET der Bildschirmtastatur, Modellwechsel über das
-Auswahlfeld der Einstellungen, Sockel/Lochband über die ``QAction``s.  Gelaufen wird mit
+Auswahlfeld der Einstellungen, Sockel über die ``QAction``s, Lochstreifen über seinen Kasten.  Gelaufen wird mit
 dem Takt des Fensters (``_run_emulator``); geprüft wird der **Text** des Bildschirms
 (``screen_text()``) — der ``QOpenGLWidget`` hat offscreen keinen FBO.
 
@@ -347,23 +347,28 @@ def test_eprom_rueckfrage_beim_modellwechsel(qapp, konfig_ordner, monkeypatch):
         _zu(w, qapp)
 
 
-# ─── Lochband über die Aktionen ──────────────────────────────────────────────
+# ─── Lochstreifen über den Kasten (Entwurf 23 AP-L4) ─────────────────────────
 
-def test_lochband_einlegen_und_entnehmen_ueber_die_aktionen(qapp, konfig_ordner, tmp_path,
-                                                            monkeypatch):
+def test_lochstreifen_einlegen_und_entnehmen_ueber_den_kasten(qapp, konfig_ordner, tmp_path,
+                                                              monkeypatch):
+    from app.core_binding.k1520 import PTAPE_FMT_RAW
+    from app.ui import lochstreifen_format_dialog
     band = tmp_path / "band.ptp"
     band.write_bytes(b"HALLO\r\n")
     _dialoge(monkeypatch, oeffnen=band)
+    monkeypatch.setattr(lochstreifen_format_dialog, "frage", lambda *a, **k: PTAPE_FMT_RAW)
     w = _fenster(qapp)
     try:
-        w.act_band_einlegen.trigger()
+        w.settings_widget.ptape_box.setChecked(True)          # Karte stecken
+        lw = w.lochstreifen_widget
+        lw.leser_oeffnen_knopf.click()
         assert w.emulator.ptape_reader_status()["inserted"]
-        w.act_band_entnehmen.trigger()
+        lw.leser_entnehmen_knopf.click()
         assert not w.emulator.ptape_reader_status()["inserted"]
         # Modellwechsel: auch das 710-1 hat den Leser (K6022, Plan §3.8).
         w.settings_widget.model_combo.setCurrentIndex(
             w.settings_widget.model_combo.findData("prg710-1"))
-        w.act_band_einlegen.trigger()
+        lw.leser_oeffnen_knopf.click()
         assert w.emulator.ptape_reader_status()["inserted"]
     finally:
         _zu(w, qapp)

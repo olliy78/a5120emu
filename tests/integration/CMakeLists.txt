@@ -204,3 +204,38 @@ k1520_add_test(pc1715w_boot SRC test_pc1715w_boot.cpp
 k1520_add_test(pc1715_pctest SRC test_pc1715_pctest.cpp
                           LIBS k1520_pc1715 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# RAM-Floppy RAF in allen drei Maschinen (doc/design/22_raf512.md §5.2, AP-R2): Bestückung,
+# 88H/89H über den Systembus, Reset erhält / Netz-Ein verwirft, Save-State v8, A5120.16 + RAF.
+k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp
+                             LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
+                             LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# Lochstreifen-Karte K6022 als Option in allen Maschinen (doc/design/23_lochstreifen.md AP-L1):
+# stecken, zu spät, doppelt, Tor belegt; Z80-Gastcode stanzt über E0H und liest über E4H.
+k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
+                               LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
+                               LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# RAM-Floppy RAF, Gastnachweis mit den Original-Treibern (doc/design/22_raf512.md §8 AP-R5):
+# RAFCPM.COM (M:) / RAF512.COM (P:) unter CP/A, SCPX 8915 und SCPX 1526 am PRG 710-1 —
+# Kapazitätstest, Kennung RAFvalid.SYS, PIP/DIR, RESET erhält, Netz-Ein verwirft.
+set(_raf_dir "RAF_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/raf\"")
+k1520_add_test(raf_a5120 SRC test_raf_a5120.cpp LIBS ${_libs} k1520_fs
+                         LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
+k1520_add_test(raf_k8915 SRC test_raf_k8915.cpp
+                         LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
+                         LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
+k1520_add_test(raf_prg710 SRC test_raf_prg710.cpp
+                          LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 180)
+
+# CP/A-BIOS mit eingebautem RAF-Treiber (AP-R7, raf = 1, rafpar = 1): M: nach dem Kaltstart,
+# RESET erhält, ohne Karte kein M:, DPB-Wahl für RAF128/RAF512/RAF-2M.
+k1520_add_test(raf_cpa_bios SRC test_raf_cpa_bios.cpp LIBS ${_libs}
+                            LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# ZWG-Prüfprogramm RAFTEST.COM (AP-R6) gegen die RAF512 am A5120: Vollauf 512 KByte,
+# Sperrmuster 90H/10H/00H.  Kartenadresse 88H/89H im Patchbereich der Testkopie.
+k1520_add_test(raf_zwg SRC test_raf_zwg.cpp LIBS ${_libs} k1520_fs
+                       LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 300)

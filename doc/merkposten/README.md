@@ -14,6 +14,8 @@ sind nur nicht mehr in jeder einzelnen Anfrage geladen.
 | `serielle_schnittstellen.md` | `core/serial/` + Anschlüsse in `k8025`/`k7028` + Dock „Schnittstellen" — Telnet/RFC 2217/Datei nach außen (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz) |
 | `prg710.md` | `core/machines/prg710/` + Karten `k2521`/`prg710_speicher`/`atp590068`, `i8279`/`k7609` — dritte Maschine PRG 710 / 710-1 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Dritte Maschine: PRG 710 / PRG 710-1“) |
 | `pc1715.md` | `core/machines/pc1715/` + `pc1715_zre`, `i8275`, `tastatur1715`, K5122-`Portlage::Pc1715`, Primitive `z80_dma`/`upd765` — vierte Maschine PC 1715 / PC 1715W (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Vierte Maschine: PC 1715 / PC 1715W“) |
+| `raf.md` | `core/cards/raf/` + `installRaf` in allen Maschinen, `k1520_raf_*`, `app/raf.py` — RAM-Floppy RAF 128/512/2M (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „RAM-Floppy RAF“) |
+| `lochstreifen.md` | `core/cards/k6022/` + `core/peripherals/lochstreifen/` + `installK6022` in allen Maschinen, `k1520_ptape_*`, Kasten „Lochstreifen“ — Lochstreifen K6022/SIF1000 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz) |
 
 ## Warum ausgelagert
 

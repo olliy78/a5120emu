@@ -1,0 +1,690 @@
+..! ...........................................................R
+..23.7./20.1.87/12.12./14b.11./24b./12.10./10.10.86
+.. .wi-edited
+..1  
+...d Datum =23.7.86
+...d A =0/
+...d Bemerkung =Vorl{ufige Ausgabe (6LPI, SD1152, Z01)
+.. Ausgabe-# und Datum f}r Deckblatt 
+.mt3
+.hm2
+.mb9
+.fm3
+.. 60 lines text, 
+..lh10
+.. 1,25-zeilig 
+.. 48 lines text
+.cw12
+.op
+.he
+.fo
+..
+.. SD1152 Z01 - deutscher Zeichensatz - ^ = m}
+.. Variable 
+...d RAFQUICK =RAFQUICK
+..                  (Gauger-Test Programmname)
+...d RAFTEST  =RAFTEST
+..                  (Riedel-Test Programmname)
+..Abschnitts-Variablen:
+..
+..
+...sk30
+...st1
+.. Variable:
+...d cw0 =cw10
+..               f}r engen Text
+...d cw1 =cw12
+..               f}r normalen Text
+...d cw2 =cw14
+..               f}r Ctrl-A
+...d cw3 =cw14
+..               f}r Deckblatt
+..define
+.. ctrl-A = cw14 :
+
+.cw14
+
+
+
+
+
+
+
+
+              AKADEMIÅ DEÒ WISSENSCHAFTEÎ DEÒ DDR
+            Zentruí f}ò wissenschaftlicheî Ger{tebau
+                         Fachbereich V
+
+
+
+.cw14
+
+                 K-1520-RAM-FLOPPY
+
+                      RAÆ 512
+
+
+
+                      E 1474b
+                   PR]FANLEITUNG
+.cw12
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+0/® Ausgabå (12.12.86)
+Vorl{ufige Ausgabe (6LPI, SD1152, Z01)
+(c) ZWG, Berlin, 1986
+
+Rudoweò Chausså 6
+Berlin
+1199
+Tel® (002) 67´ 3291
+.paŠ.hå 
+.fï RAF-512-Pr}fanleitung                   INHALTSVERZEICHNIÓ   S®#
+..
+..************
+..insert RAFPRUV.TOC (1 pages) here
+               I N H A L T S V E R Z E I C H N I S
+               -----------------------------------
+
+
+1.    KURZANLEITUNG. . . . . . . . . . . . . . . . . . . . .    3
+ 1.1    Sichtpr}fung . . . . . . . . . . . . . . . . . . . .    3
+ 1.2    Me~technische Pr}fung ohne Programm. . . . . . . . .    3
+ 1.3    Me~technische Pr}fung mit Programm . . . . . . . . .    3
+ 1.4    H{ufige Fehler . . . . . . . . . . . . . . . . . . .    3
+
+.Cp4
+2.    HARDWARE-PR]FUNG . . . . . . . . . . . . . . . . . . .    3
+ 2.1    Pr}fung der unbest}ckten Leiterplatte. . . . . . . .    3
+ 2.2    Pr}fung der best}ckten Leiterplatte. . . . . . . . .    4
+ 2.2.1    Sichtpr}fung . . . . . . . . . . . . . . . . . . .    4
+ 2.2.2    Elektrische Vorpr}fung . . . . . . . . . . . . . .    4
+ 2.2.2.1    Stromaufnahme und Kurzschlu~ von +5 und +5PG . .    4
+ 2.2.2.2    Schaltschwelle von POFF. . . . . . . . . . . . .    5
+ 2.2.2.3    POFF durch RESET . . . . . . . . . . . . . . . .    5
+ 2.2.3    Oszillografische Pr}fung . . . . . . . . . . . . .    5
+ 2.2.3.1    Pr}fung ohne K1520-Bussignale. . . . . . . . . .    5
+ 2.2.3.2    Pr}fen mit Bussignalen . . . . . . . . . . . . .    6
+
+.Cp4
+3.    SOFTWARE-PR]FUNG . . . . . . . . . . . . . . . . . . .    6
+ 3.1    Test mit RAFQUICK. . . . . . . . . . . . . . . . . .    7
+ 3.2    Test mit RAFTEST . . . . . . . . . . . . . . . . . .    8
+
+
+.Cp6
+Anh{nge
+-------
+
+.Cp4
+A.    ANHANG . . . . . . . . . . . . . . . . . . . . . . . .    9
+ A.1    Test von RAF128 . . . . . . . . . . . . . . . . . .    9
+ A.2    St}tz-Kondensator-Best}ckung . . . . . . . . . . . .    9
+ A.3    Signalbilder . . . . . . . . . . . . . . . . . . . .    9
+ A.3.1    Signale am ASM-PROM. . . . . . . . . . . . . . . .    9
+ A.3.2    Signale an den RAMs. . . . . . . . . . . . . . . .    9
+
+.Cp4
+B.    SACHWORTVERZEICHNIS. . . . . . . . . . . . . . . . . .   10
+
+
+
+
+
+..Pa
+      V E R Z E I C H N I S   D E R   A B B I L D U N G E N
+      -----------------------------------------------------
+
+
+
+.Cp3
+A-1   Oszillogramme am ASM-PROM. . . . . . . . . . . . . . .    9
+A-2   Oszillogramme an den RAMs. . . . . . . . . . . . . . .    9
+..***********
+..
+.paŠ.pn3
+.he                                           @head             @Sec
+.fo RAF-512-Pr}fanleitung                        Chapter        S.@p
+.. .sho                                           @head             @Sec
+.. .sfo RAF-512-Pr}fanleitung                        Chapter         S.@p
+.. .she @Sec        @head                                               
+.. .sfe S.@p  Chapter                              RAF-512-Pr}fanleitung
+...+h
+..
+..
+...1  +d
+.He                                         KURZANLEITUNG          1
+.Fo RAF-512-Pr}fanleitung                 SACHWORTVERZEICHNIS   S.3 
+                        1.  KURZANLEITUNG
+...d Chapter =KURZANLEITUNG
+.Fo RAF-512-Pr}fanleitung                       KURZANLEITUNG   S.3 
+...k Pr}f}bersicht
+
+...2 ,KSP
+.He                                          Sichtpr}fung        1.1
+1.1  Sichtpr}fung
+...d KSPTEXT =Sichtpr}fung, 1.1
+
+- L|tbr}cken
+- vergessene L|tstellen (bes. im Matrix-Bereich!, bis auf Pin 1)
+- Best}ckungsfehler
+- Best}ckung beider PROMs
+- (Pr}f-)Adre~-PROM richtig?
+- Adre~einstellung (3 Wickelbr}cken)
+- Wahl der RAM-Versorgungsspannung (5P bzw. 5PG)
+- Richtige Best}ckung nur einer POFF-Variante
+
+...2
+.He                   Me~technische Pr}fung ohne Programm        1.2
+1.2  Me~technische Pr}fung ohne Programm
+
+- alle RAM-Pins auf +5V-Kurzschlu~ 
+- Signal POFF
+- Zeiten der Kette RASX - /RAS - AMUX - /CASX - DT1 - /DT2
+- RAS-Signal, auch R}ckflanke!
+- MON15-Refresh (Hard-RESET oder X401=!_, 16 ^s)
+- MON6-Refresh (etwa 8...14 ^s)
+- /RTRG (Spikes)
+- Refreshz{hler
+
+...2
+.He                    Me~technische Pr}fung mit Programm        1.3
+1.3  Me~technische Pr}fung mit Programm
+
+- RAM-Signal-Timing /RAS - /CAS - A0...A7
+- RAS-Adressen-Einschwingzeit (tASR min. 0)
+
+...2
+.He                                        H{ufige Fehler        1.4
+1.4  H{ufige Fehler
+
+Bei Fehlern sollte folgendes }berpr}ft werden:
+
+- Leiterplattenfehler
+  - Kurzschlu~ RAM-Pins 1...8 gegen 5
+
+- Best}ckungsfehler (siehe Sichtpr}fung, 1.1)
+
+- Bauelementefehler
+  - RAMs
+  - PROM D311, Spike im Signal /RTRG
+
+- L|tfehler (Kurzschl}sse, vergessene L|taugen)
+  - besonderó  deò Leitungeî 5P¬  5PÇ unä Masså ií  Bereicè  deò 
+     TTL-IC'ó gegeî benachbarte Signalleitungen 
+  - RAM-Matrix (RAM-Pin 1 k|nnen frei sein)
+  - Kurzschlu~ 5P gegen 5PG auf der Platine
+
+.cp7
+...1 
+.He                                      HARDWARE-PR]FUNG          2
+                      2.  HARDWARE-PR]FUNG
+...d Chapter = HARDWARE-PR]FUNG
+.Fo RAF-512-Pr}fanleitung                    HARDWARE-PR]FUNG   S.3 
+
+
+...2 
+.He                 Pr}fung der unbest}ckten Leiterplatte        2.1
+2.1  Pr}fung der unbest}ckten Leiterplatte
+...k Pr}fung, der unbest}ckten Leiterplatte
+
+Einå Pr}funç deò unbest}ckteî Leiterplattå kanî sicè nacè gegen
+w{rtigeí  Erfahrungsstanä  auæ  einå  Sichtpr}funç  beschr{nken¬ 
+bisheò aufgetretendå Fehleò wareî fasô allå durcè diå Best}ckunç 
+(L|tbr}cken¬ Zinnspritzer© hervorgerufen.
+Dá  nacè  Aufl|teî  deò RAMó einigå f}ò  Fehl{tzungeî  anf{lligå 
+Stelleî nichô mehò zug{nglicè sind¬  solltå jedocè folgendeó auæ 
+Kurzschluş gepr}fô werden:Š.Fo RAF-512-Pr}fanleitung                    HARDWARE-PR]FUNG   S.4 
+...k Kurzschlu~pr}fung
+
+- X5 gegen Masse (RAM-Betriebsspannung)
+- RAM-D10:Pin 14 (Data D0) gegen Pins 9, 10, 11, 12, 13, 15, 16
+                                   (D10, D30, D50, D70)
+-  "       "   1 ( n.c.  ) gegen Pins 2, 3, 4, 5, 6, 7, 8
+                                   (D20, D40, D60, D80)
+
+...2
+.He                   Pr}fung der best}ckten Leiterplatte        2.2
+2.2  Pr}fung der best}ckten Leiterplatte
+...k Pr}fung, der best}ckten Leiterplatte
+
+Diå  Best}ckunç unä Pr}funç erfolgô miô Stand-By-Schaltunç  (Po
+wer-Off-Signaì  durcè interneî Komparatoò unä RESET© unä zweiteò 
+Busbetriebsspannunç +5PG.
+...ë Power-Off
+...k Stand-By
+Beií  sp{tereî  Einsatú deò Kartå wirä diå  endg}ltigå  Variantå 
+entschieden.
+
+
+.cp5
+...3  +d-b
+.He                                          Sichtpr}fung      2.2.1
+2.2.1  Sichtpr}fung
+...k Pr}fung, -Sicht
+
+Zum{chst sollte folgendes gepr}ft werden:
+...k Spannungsversorgung
+- isô diå RAM-Matriø aî 5PÇ angeschlossen¿ (Drahtbr}ckå X5PG--Xµ 
+  (5PÇ isô XS1:A/B3))
+- sind beide PROMs (ASM und AD) best}ckt?
+- isô deò richtige Pr}fadre~-PROÍ best}ckt?
+- sinä allå ³ Wickelbr}ckeî (Adresse) vorhanden und richtig?
+
+Danî  isô diå Leiterplattå aufmerksaí auæ  Best}ckungsfehleò  zõ 
+untersuchen.
+Allå Best}ckungsl|taugeî sinä eckig¬  diå deò Durchkontaktierun
+geî rund.
+...k Power-Off
+Eó daræ nuò einå Power-Off-Variantå (± odeò 2© best}ckô sein® 
+
+Eó  schlie~ô sicè einå Kontrollå auæ L|tbr}ckeî aî (besonderó ií 
+Bereicè deò RAM-Matrix).
+
+
+.cp5
+...3
+.He                                Elektrische Vorpr}fung      2.2.2
+2.2.2  Elektrische Vorpr}fung
+...k Pr}fung, elekt. Vor-
+
+Wirä  diå  Leiterplattå  miô best}ckteî RAMó odeò nacè  deò  Be
+st}ckunç  miô RAMó iî Betrieâ genommen¬  sollte¬  uí einå  ]ber
+lastunç  deò RAM-Matrix-Treibeò zõ vermeiden¬  nacè Anlegeî  deò 
+Betriebsspannungeî soforô deò Pegeì aî deî RAM-Anschl}sseî  groâ 
+auæ  Kurzschluş gegeî +5Ö gepr}fô werdeî (Piî 1º  frei¬  Piî  8º 
++5V)®  Uí ií Kurzschlu~falì diå treibendeî ICó zõ sch}tzen¬ kanî 
+dieó  miô  geringeò  Spannunç  durchgef}hrô  werden®  Dieó  wirä 
+empfohlen¬  dá  h{ufiç  miô L|tbr}ckeî ií Bereicè deò Matriø  zõ 
+rechneî ist.
+
+Diå  weiterå  Vorpr}funç  kanî miô odeò  ohnå  aufgel|tetå  RAMó 
+erfolgen.
+
+
+.cp7
+...4 -b+d
+.He          Stromaufnahme und Kurzschlu~ von +5 und +5PG    2.2.2.1
+2.2.2.1  Stromaufnahme und Kurzschlu~ von +5 und +5PG
+
+Diå  Pr}funç erfolgô auch¬  wenî vorersô  keiî  Stand-By-Betrieâ 
+vorgeseheî ist:
+Anschl}sse:
+- Masse an Busstecker XB1:A/B28/29
+- Variable Spannung +4,4...+5,0 V an XB1:A/B3 ("5PG")
+- +5,0 V an Bus-Stecker XB1:A/B29 ("5P") 
+Š.Fo RAF-512-Pr}fanleitung                    HARDWARE-PR]FUNG   S.5 
+Durcè  Ver{nderî voî 5PÇ unä Kontrollå deò  Stromaufnahmeî  l{~ô 
+sich ein Kurzschlu~ zwischen beiden Spannungen feststellen.
+
+Die Stromaufnahmen liegen typisch bei (im Notrefresh):
+...k Stromaufnahme
+.cp5
+ ----------------------------------------
+!               ! mit RAMs  ohne RAMs    !    Abweichungen bis
+!----------------------------------------!    etwa +-20%
+!  5P   (+5.0 V)!   220       220     mA !    sind m|glich
+!  5PG  (+5.0 V)!   400               mA !
+
+
+.cp5
+...4
+.He                               Schaltschwelle von POFF    2.2.2.2
+2.2.2.2  Schaltschwelle von POFF
+...k POFF
+...k Power-Off
+
+Daó korrektå Schalteî deó interneî Komparatoró (N401¬  N402© deò 
+Stand-By-Optioî (Best}ckungsvariantå 1© wirä  gepr}ft:
+
+.cp8
+- mit Digitalvoltmeter (DVM) 5P nachmessen, 
+          ggf. einstellen (Soll: 5,0 V)
+- DVM an 5PG
+- Logikpr}fstift (oder Oszi) an X401
+- 5PÇ voî 5,° Ö langsaí verringern¬ 
+     X40± High-Lo÷ beé min® 4,5 V.
+- 5PG wieder erh|hen, 
+     X401 Low-High bei max. 4,8 V.
+
+Falló  erforderlich¬  isô  eiî geringf}gigeó  Korrigiereî  durcè 
+Wechseì voî R40± (min® 10° Ohm© m|glich.
+
+- ]berpr}feî deó Signaló POFÆ (Poweò Off© aî D311:1´  (ASM-PROM© 
+  (½ neg® X401, verz|gert)
+
+
+...4
+.He                                      POFF durch RESET    2.2.2.3
+2.2.2.3  POFF durch RESET
+(Best}ckungsvariante 1a, 2)
+
+Wirä  auæ deí Mikrorechneò eiî /RESEÔ erzeugt¬  muş  POFÆ  (X40± 
+ebenfalls aktiv werden.
+
+
+...3
+.He                             Oszillografische Pr}fung       2.2.3
+2.2.3  Oszillografische Pr}fung 
+
+...4 ,POB
+.He                         Pr}fung ohne K1520-Bussignale    2.2.3.1
+2.2.3.1  Pr}fung ohne K1520-Bussignale
+
+Aló  Oszillograæ  wirä eiî 50- odeò  100-MHz-Tyğ  ben|tigt¬  diå 
+Beschreibunç beziehô sicè auæ deî Tyğ TR-4653.
+Eó wirä zun{chsô keiî Bus¬ sonderî nuò einå Stromversorgunç +5V¬ 
+1Á ben|tigt.
+Diå Pr}funç kanî aucè miô eineí laufendeî Rechneò (stehô iî  deò 
+Tastaturabfrage© durchgef}hrô werden¬  daó Pr}feî deó 16-^s-Not-
+Refreshó  kanî  danî  z.B®  durcè eiî l{ngereó  Hard-Reseô  odeò 
+Kurzschluş voî X40± (wenî best}ckt© ausgel|sô werden.
+
+- Oszi-Trigger-Kanaì Ch2 aî XM² (RASX)¬ 2V/cm¬ pos® Trigger
+    : RASX-Impulse alle 16 (+-2) ^s, 600 ns lang (Not-Refresh)
+  Wenn Impulse fehlen: Kette RASX-DT1-/DT2 offen, 
+                       ASM fehlt/defekt,
+                       ASM-Eingangssignale pr}fen
+
+- ]berpr}fen des Timings der RC-Glieder R301/C301...R305/C305
+  Fehlerquellen: C301...305, VD2, VD3Š.Fo RAF-512-Pr}fanleitung                    HARDWARE-PR]FUNG   S.6 
+
+- Pr}feî deò Eingangssignalå aí ASM-PROÍ (D311© (s® Abb® A-1 )
+  - Impulse an MON15
+  - MON6 = Impulse, unsynchron
+
+- auf Spike-Freiheit pr}fen:
+  - REFEN an CAS-Decoder (D309:4) 
+  - REFEN an ASM-PROM (D311:15)
+  - /RTRG an ASM-PROM (D311:11)
+  - /RAS an XM3 (auch R}ckflanke!- D313=DS8287?)
+  Fehlerquellen: entsprechende RC-Glieder, defekter PROM
+     manche (Import-)8287 neigen zum Schwingen (RAS!)
+
+- Z{hlen des Refresh-Counters pr}fen (8 bit bin{r, an R90...97)
+     (ein /RTRG-Impuls darf nur +1 z{hlen)
+
+- an den RAMs messen:
+  - /CAS  (Pin 15) = High
+  - /WE   (Pin  3) = High
+  - DI/DO (2, 14)  = undefiniert
+  - /RAS  (Pin  4) = XM3 = verz|gertes und negiertes Ch2-Signal
+  - VDD–   (Piî  ¸ HF-ma~iç kurú gegeî Masså  (=Piî  16©  messen¬ 
+     Spannunç  deò RAMó solltå ií Betriebsbereicè (µ bzw®  1° %© 
+     liegeî  - Kontrollå  nuò beé nichô  vollst{ndigeò  St}tz-C-
+     Best}ckunç notwendig.
+  - A0...A· ½ zuò Zeiô voî /RAÓ stabilå Refresh-Adresseî (s® 
+               Timing¬ Abb. A-2  )
+
+.. @@ wann/wie WAIT pr}fen??
+
+
+.cp4
+...4 ,PMB
+.He                                Pr}fen mit Bussignalen    2.2.3.2
+2.2.3.2  Pr}fen mit Bussignalen
+
+Wenî  aí  Rechneò diå Busspannunç 5PÇ nichô miô +5,° Ö  versorgô 
+wird¬  isô diå RAM-Versorgunç auæ deò zõ pr}fendeî Plattinå  auæ 
+5Ğ (X5-X5P© gel|teô werden.
+
+Deò  (K1520-©  Test-Mikrorechneò kanî z.B®  iî eineò  Tastatur-
+Abfrage-Routinå  steheî unä iî unterschiedlicheî  Abst{ndeî  M1-
+Zykleî abarbeiten.
+Deò Refresè isô jetzô aî /M± gekoppelt¬  d.h.¬  diå RASX-Impulså 
+entsteheî  nacè  Ablauæ voî MON¶ miô aktiö  werdendeî  /M1¬  diå 
+Abst{ndå schwankeî etwá zwischeî ¶ unä 1´ ^s® 
+
+Pr}fen:
+
+- MON15 (ASM, D311:7) = High
+- MON6  ( "     " :4) = Impulse (nicht synchron zu RASX)
+- Timing der RC-Glieder (wenn nicht unter 2.2.3.1)
+- Not-Refresh kontrollieren (/RESET = Low oder X401 = Low)
+- RASX regelm{~ig alle 16 ^s
+- WAIT kurz.... (je nach ASM-Version)
+
+
+.cp7
+...1
+.He                                      SOFTWARE-PR]FUNG          3
+                      3.  SOFTWARE-PR]FUNG
+...d Chapter = SOFTWARE-PR]FUNG
+.Fo RAF-512-Pr}fanleitung                    SOFTWARE-PR]FUNG   S.6 
+
+Diå  Beschreibunç  unä  diå Programmå bezieheî  sicè  auæ  eineî 
+K1520-OEM-Rechneò  miô CP/M-Betriebssystem¬  anderå Betriebssys
+temå odeò speziellå Pr}frechneò erforderî eiî Anpasseî deò Test
+programme!
+Š.Fo RAF-512-Pr}fanleitung                    SOFTWARE-PR]FUNG   S.7 
+
+...2
+.He                                     Test mit RAFQUICK        3.1
+3.1  Test mit RAFQUICK
+
+Isô diå erstå oszillografischå Pr}funç o.k.¬  kanî daó  Schnell-
+Test-Programí RAFQUICK.COÍ gestarteô werden® Daó Programí isô iî 
+TURBO-PASCAÌ geschrieben¬  eó isô bildschirmorientierô unä wird¬ 
+wenî  nichô ií Quellcode¬  f}ò diå Steuersequenzeî deó Terminaló 
+ADM3± (Invers¬  Deletå tï enä oæ line¬  Delete/Inserô  line,...© 
+geliefert¬ anderå Schirmsteuerungeî erforderî Anpassung!
+Daó Programí wirä miô Ctrl-Ã abgebrochen¬  miô RETURÎ angehalteî 
+bzw. wieder gestartet.
+
+..Fehler-Reset....
+
+Eó  wirä  jetzô daó gesamtå RAM-Timing¬  aucè  daó  rechtzeitigå 
+Einschwingeî deò RAS-Adresseî voò deí RAS-Signaì gepr}fô  (siehå 
+A-2  ).
+
+L{ufô  daó Programí miô angeschlosseneí RAF51² nichô odeò  lieæ 
+deò Rechneò beií Pr}feî miô Bussignaleî (2.2.3.2 © nicht¬ isô zõ 
+pr}fen:
+- WAIT (ASM, D311:12) = Low
+- /WAIT (Bus, XS1:A24) = High
+- alle Bussignale, Datenbustreiber (D317)
+
+Daó  Programí bildeô daó RAF 51² schematiscè auæ deí  Bildschirí 
+ab¬ m|glicherweiså defektå IC'ó werdeî ausgeixô.
+
+Getesteô wirä datenerhaltend¬ d.h.¬ deò altå Inhalô wirä jeweiló 
+f}ò diå Zeiô deó Testeó gespeichert¬ eò bleibô erhalten® Miô 00è 
+unä FFè wirä deò Read-/Write-Tesô (RW-Test)© unä miô Zufallszah
+leî deò Adressen-Tesô (AD-Test© durchgef}hrt.
+
+Erkannô werdenº  
+  Grob-defektå Speicher¬  kurzgeschlossenå Adre~- unä  Datenlei
+  tungeî (aucè untereinandeò kurzgeschlossenå Adre~leitungen)
+
+Nicht odeò schweò erkannô werdenº  
+  Fehlendå RAMs¬ Kurzschl}sså /CAS-DI/DO
+
+
+Folgende F{lle lassen sich unterscheiden:
+
+- RW-Test o.k.: Adressentest wird durchgef}hrt
+- AD-Test auch o.k.: RAFTEST.COM kann gestartet werden.
+
+- RW-Test o.k., AD-Test zeigt fehlerhafte Adressen an:
+  (Adressen z{hlen von 0/ bis 14)  
+  Einå   Unterscheidunç  vor/nacè  RAS-CAS-Muxeò  (D305..8©  isô 
+  m|glich. Beispiel:
+   Anzeige:
+     ADRESSEN:   1               9
+   Fehler: RAM-Adresse 1 = Pin 7 (RAS) und
+           RAM-Adresse 9 = Pin 7 (CAS)
+   vermutetå  Ursacheº  Matrix-Leitunç  f}ò Piî · haô  Schluş 
+          (miô Masse/+5V©  
+
+.cp6Š.Fo RAF-512-Pr}fanleitung                    SOFTWARE-PR]FUNG   S.8 
+   Anzeige:
+     ADRESSEN: 0 1
+   Fehler: RAM-Adresse 0 = Pin 5 (RAS)
+           RAM-Adresse 1 = Pin 7 (RAS)
+   vermutetå  Ursacheº  Leitungeî  f}ò Adresså ° unä ±  voò  deî 
+          Muxerî D305¬ D308¬ z.B® aî D301:19/1¸ Kurzschluş 
+
+
+Eiî  angezeigteò  Fehleò  solltå iî jedeí  Falì  oszillografiscè 
+und/odeò miô deí Programí RAFTEST  verifizierô werden.
+
+
+.cp5
+...2 
+.He                                      Test mit RAFTEST        3.2
+3.2  Test mit RAFTEST
+
+Zuò detaillierteî Pr}funç unteò deî verschiedensteî  Bedingungeî 
+wurdå     daó    dialogorientiertå    M80-Assembler-Pr}fprogramí 
+RAFTEST.COÍ geschrieben®  Eó gestatteô verschiedenå RAM-Bereichå 
+miô  konstanten¬  bestimmteî  odeò zuf{lligeî Dateî  miô  unter
+schiedlicheí Timinç zõ schreibeî odeò zõ leseî unä ií Fehlerfalì 
+diå Ausgabå deó Fehlers¬ eineî Test¬ oâ Lese- odeò Schreibfehleò 
+vorliegeî sowiå Triggerunç eineó Logikanalysators.
+Nacè  Aufruæ  wirä eiî Default-Tesô f}ò  512KÂ  (volì  best}cktå 
+Platte©  miô  Fehlerausschrifô gestartet®  
+
+Deò  (Default-)Lauæ deó Programmeó RAFTEST  isô aucè  notwendig¬ 
+wenî RAFQUICK keinå Fehleò zeigt!
+
+
+.paŠ.Fo RAF-512-Pr}fanleitung                    SOFTWARE-PR]FUNG   S.9 
+...X dbu
+...1
+.He                                                ANHANG          A
+                           A.  ANHANG
+...d Chapter = ANHANG
+.Fo RAF-512-Pr}fanleitung                              ANHANG   S.9 
+
+...2
+.He                                      Test von RAF128        A.1
+A.1  Test von RAF128
+Diå  Pr}fanleitunç gilô aucè f}ò RAF12¸ unä RAF128/5®  Zõ  deî 
+Unterschiedeî zõ RAF51² siehå Beschreibunç RAÆ 512® 
+Beachteô  werdeî sollteî besonderó Kurzschl}sså deò  TTL-fremdeî 
+Spannungeî +12Ö unä -5Ö gegeî anderå TTL-Signale¬  dá dieó even
+tuelì  einå  Zerst|runç deó betroffeneî Bauelementeó  zuò  Folgå 
+hat¬ eó solltå vorsorglicè iî jedeí Falì gewechselô werden.
+Daó  Programí RAFTEST  eigneô sicè aucè zuí Testeî voî  RAF128¬ 
+daó  Programí  RAFQUICK muş miô eineò ge{nderteî  Konstantå  neõ 
+kompilierô werden.
+
+
+.cp4
+...2
+.He                          St}tz-Kondensator-Best}ckung        A.2
+A.2  St}tz-Kondensator-Best}ckung
+
+G}nstigå  Bedingungeî  f}ò deî Betrieâ eineò  gro~eî  RAM-Matriø 
+bieteô  einå Vermaschunç deò Stromzuf}hrungen®  Dá nuò  2-Lagen-
+Leiterplatteî zuò Verf}gunç standen¬  wurdå dieó vollst{ndiç nuò 
+beé deí Tyğ RAF51² durchgef}hrt.
+Diå  Herstelleò deò 3-Spannungs-RAMó empfehleî f}ò +12Ö unä  -5Ö 
+jå eineî unä f}ò +5Ö jå ¸ IÃ eineî St}tzkondensator®  Dieó w}rdå 
+f}ò diå Kartå RAF12¸ etwá 15° Kondensatoreî erfordern.
+Untersuchungeî  unteò normaleî Betriebsbedingungeî  zeigteî  je
+doch¬  daş  diå RAMó wesentlicè schlechterå  Betriebsbedingungeî 
+tolerieren®  Beé einigeî Typeî reichteî keiî odeò einigå kerami
+schå St}tzkondensatoreî nebeî deí }blicheî Elektrolytkondensatoò 
+f}ò eiî fehlerfreieó Arbeiteî unteò normalen¬ abeò au~erhalâ deò 
+garantierten Betriebsbedingungen.
+
+F}ò daó RAF 51² unä daó RAF 128/5 (5-V-RAM-Typen© wirä empfohleî 
+daó Best}ckeî mindestenó alleò St}tzkondensatoreî miô  ungeradeò 
+Bauelementenummer (C11...C87)
+F}ò daó RAÆ 12¸ miô ³ Spannungeî kanî einå optimiertå Best}ckunç 
+ií Entwicklungslaboò erfragô werden.
+
+
+..pa
+...2
+.He                                          Signalbilder        A.3
+A.3  Signalbilder
+
+...3
+.He                                   Signale am ASM-PROM      A.3.1
+A.3.1  Signale am ASM-PROM
+siehe Schaltbild und Beschreibung
+...f ,AS
+Abbildung A-1: Oszillogramme am ASM-PROM
+...k Oszillogramme, am ASM-PROM
+
+...3 
+.He                                   Signale an den RAMs      A.3.2
+A.3.2  Signale an den RAMs
+siehe Schaltbild und Beschreibung
+...f ,TIM
+Abbildung A-2: Oszillogramme an den RAMs
+...k Oszillogramme, an den RAMs
+.paŠ.Fo RAF-512-Pr}fanleitung                              ANHANG   S.10
+.pn 10
+.he
+.He
+.fo RAF-512-Pr}fanleitung                        Chapter        S.#
+.Fo RAF-512-Pr}fanleitung                               ANHANG  S.#
+.. .sfo RAF-512-Pr}fanleitung                          Chapter        S.#
+.. .sfe S.#   Chapter                               RAF-512-Pr}fanleitung
+...1
+                     B.  SACHWORTVERZEICHNIS
+...d Chapter = SACHWORTVERZEICHNIS
+.Fo RAF-512-Pr}fanleitung                  SACHWORTVERZEICHNIS  S.#
+
+
+
+
+E
+Elektrische Vorpr}fung,  4
+
+
+K
+Kurzschlu~pr}fung,  4
+
+
+O
+Oszillografische Pr}fung,  5
+Oszillogramme
+   am ASM-PROM,  9
+   an den RAMs,  9
+
+
+P
+POFF,  5
+POFF durch RESET,  5
+Power-Off,  4,  5
+Pr}fen mit Bussignalen,  6
+Pr}fung ohne K1520-Bussignale,
+ 5
+Pr}fung
+   -Sicht,  4
+   der best}ckten
+    Leiterplatte,  4
+   der unbest}ckten
+    Leiterplatte,  3
+   elekt. Vor-,  4
+Pr}f}bersicht,  3
+
+
+S
+Schaltschwelle von POFF,  5
+Sichtpr}fung,  4
+Signale am ASM-PROM,  9
+Signale an den RAMs,  9
+Spannungsversorgung,  4
+Stand-By,  4
+Stromaufnahme,  5
+Stromaufnahme und Kurzschlu~
+ von +5 und +5PG,  4
+

@@ -36,6 +36,8 @@ boot_trace [DISK] [optionen]
 |--------|---------|
 | `-c <zyklen>` | Boot-Zyklenlimit |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-/Loaded-code-Histogramm, VRAM-Schreibzähler, 80-Spalten-VRAM-Textdump) |
+| `--raf <typ>` | RAM-Floppy (`raf128`\|`raf512`\|`raf2m`\|`none`) vor dem ersten Lauf stecken, an allen Maschinen (§10) |
+| `--ptape` | Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) vor dem ersten Lauf stecken, an allen Maschinen (§10a) |
 | `--until <cond>` | **anhalten, sobald `<cond>` gilt** (läuft über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann Report (§3) |
 | `--coverage [file]` | **Code-Coverage**: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl; mit `file` zusätzlich CSV `cpu,pc,hits` (§4) |
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |
@@ -295,3 +297,19 @@ U8272 1CH/1DH, KRFD 20H, BR 24H, MOS 28H, KON 34H); **24H zählt nicht als Steue
 BIOS schaltet die Bank bei jedem Aufruf, auch im Leerlauf — sonst gäbe es keinen Stillstand).
 Das Schlussbild zeigt `BR`/`KRFD`/`MOS`/U8272-MSR/DMA statt ROM/BWS; JSON `"machine":"pc1715w"`.
 Wächter `bt_pc1715w_scp30_prompt.cli` (SCP 3.0 bis `A>`).
+
+## 10. RAM-Floppy (`--raf`)
+
+`--raf raf512` (auch `raf128`, `raf2m`) steckt die Karte auf 88H/89H, bevor die Maschine
+läuft — gleichermaßen am A5120 (auch mit `--em`), `--machine k8915` und `--machine prg710[-1]`.
+So lässt sich ein Treiber-/Boot-Lauf mit RAM-Floppe verfolgen (`--watchio 0x88,0x89`);
+Inhalt ansehen nach dem Lauf im Debugger (`k1520dbg --raf …`, Befehl `raf`, §11c dort).
+Unbekannter Typ → Exit 2. Wächter: `cli_bt_raf`, `cli_bt_raf_k8915`, `cli_bt_raf_typ`.
+
+## 10a. Lochstreifen (`--ptape`)
+
+`--ptape` steckt die ADA K6022 (Lochbandstanzer E0H–E3H, -leser E4H–E7H;
+`doc/design/23_lochstreifen.md`) vor dem ersten Lauf — an jeder Maschine, auch am
+PRG 710/710-1, der sie seit AP-L1 **nicht mehr fest** trägt.  Ohne `--ptape` antwortet
+auf E0H–E7H niemand (FFH).  Ein Band einlegen kann `boot_trace` nicht; zum Verfolgen
+eines Treibers `--watchio 0xE0,0xE4`.

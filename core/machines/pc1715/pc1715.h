@@ -192,6 +192,12 @@ public:
     uint8_t          krfdW() const;   ///< KRFD 20H (zuletzt geschrieben)
     uint8_t          mosW() const;    ///< MOS 28H (zuletzt geschrieben)
 
+protected:
+    // Zusatzkarten am Systembus (RAF 88H/89H, K6022 E0H–E7H; Entwurf 22/23): wie in den
+    // anderen Maschinen nach dem Anlegen, vor dem ersten Lauf gesteckt, hinten in der Kette.
+    K1520Bus& systemBus() override { return bus_; }
+    uint32_t  k6022TaktHz() const override { return cpuHz(); }
+
 private:
     void resetHardware();
     void tastenAbgeben();                  ///< Oberflächen-Ereignisse in den Lauffaden holen

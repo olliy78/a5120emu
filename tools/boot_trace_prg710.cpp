@@ -17,13 +17,13 @@
  *
  * @license MIT
  */
+#include "tools/dbg_machine.h"
 #include "tools/boot_trace_prg710.h"
 #include "tools/coverage_diff.h"
 #include "tools/event_bp.h"
 #include "tools/z80dis_min.h"
 #include "core/machines/prg710/prg710.h"
 #include "core/peripherals/k7609/k7609.h"
-#include "tools/dbg_machine.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -117,6 +117,9 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     cfg.variante = v1 ? Prg710Machine::Config::Variante::Prg710_1
                       : Prg710Machine::Config::Variante::Prg710;
     Prg710Machine m(cfg);
+    { std::string err;
+      if (!dbgm::steckeRaf(m, o.raf, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
+      if (!dbgm::steckeK6022(m, o.ptape, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
     m.powerOn();
     const char* name_m = v1 ? "PRG 710-1" : "PRG 710";
     auto rd = [&](uint16_t a) { return m.memReadDebug(a); };
