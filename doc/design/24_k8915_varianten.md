@@ -167,6 +167,10 @@ Jedes AP ist für die Umsetzung durch **einen Agenten** geschnitten (Vorgabe des
 Merkposten `feedback_ap_koordination_agenten`): Ziel, Eingaben, Ergebnis, Wächter,
 Abhängigkeiten, Modell. **[Anwender]** = Schritt am Gerät, nicht delegierbar.
 
+**Nachtrag 2026-10-05 (AP-V2):** V4, V6a, V6b, V7a, V7b sind jetzt vollständige Aufträge
+(Abschnitt „AP-V2 — Ergebnis“); V5 entfällt, V8 gestrichen, V9 zurückgestellt. Der folgende
+Absatz beschreibt den Stand davor.
+
 **Ehrlicher Stand der Schärfe:** Nur **V1a, V1b, V3a, V3b** sind heute vollständig
 spezifiziert — sie hängen an vorhandenen Unterlagen. **V2 und alle Kern-APs (V4–V9)** hängen am
 Ergebnis von V3b (Portbelegung, Speicherumschaltung der Gen-2-ZRE) und an Anwenderantworten
@@ -182,13 +186,15 @@ V4 ff. vorher startet, rät.
 | **V1b** | Unterlagen Tastatur K7634/36 lesen → `doc/k8915g2/k7634.md` | — | general-purpose / Sonnet | nein |
 | **V3a** | Kommentierte Listings der fünf Abzüge + Wächter | — | boot-disasm-analyst / Sonnet | nur `dev.sh test` |
 | **V3b** | Analyse: Portkarte, Speicherumschaltung, Bootablauf, Hardware-Liste → `doc/k8915g2/zre_rom.md` | V3a | boot-disasm-analyst / **Opus** | nein |
-| **V2** | Entwurf Maschinenform + Auftragsschärfung V4–V9 | V1a, V1b, V3b, F1–F3 | Plan / Opus | nein |
-| V4 | Karten: Speicherverwaltung/RAM der Gen 2 | V2 | cpp-coder / Sonnet, Opus für die Umschaltung | ja |
-| V5 | 2708-Karte als Beigabe (nur Abzug) oder optionale Karte | V3b | Entscheidung in V2 | ja |
-| V6 | `K8915Machine`-Zweig Gen 2, Boot bis Meldung | V4 | Opus | ja |
-| V7 | C-ABI, Python, Programmprofil, Handbuch | V6 | cpp-coder + Sonnet | ja |
-| V8 | DiskTool: Diskettenformat Gen 2 | V6, F4 (Diskette) | cpp-coder / Sonnet | ja |
-| V9 | Gen 1 als Konfigurationsvariante: K7634 + K7028-Fassung auf Gen 2 | V6, V1b, V3b (ROM-Frage) | cpp-coder / Sonnet | ja |
+| **V2** | ✔ Entwurf Maschinenform + Auftragsschärfung V4–V9 („AP-V2 — Ergebnis“) | V1a, V1b, V3b | Plan / Opus | nein |
+| **V4** | Karte `K3528` + `K2521::Config::k8915g2()` + ROM 175–177 + `forK8915Gen2()` | V2 | cpp-coder / Sonnet | ja |
+| V5 | **entfällt** — Beigabe, durch V3a erledigt | — | — | — |
+| **V6a** | `K8915Machine::Config::generation`, Gen 2 bis Kaltstartmeldung + Diskette 901 | V4 | **Opus** | ja |
+| **V6b** | `boot_trace`/`k1520dbg --machine k8915-g2` | V6a | cpp-coder / Sonnet | ja |
+| **V7a** | C-ABI `k1520_create_k8915`, Python `machine="k8915-g2"` | V6a | cpp-coder / Sonnet | ja |
+| **V7b** | Programmprofil (Modellwahl), Handbuch | V7a | Sonnet | ja |
+| V8 | **gestrichen** (Ladekopf/Format wie V3); wieder öffnen nur bei F4 | — | — | — |
+| V9 | **zurückgestellt**: Gen 1 ohne 0400-Lader nicht startfähig (F11) | F11 / F5 / F8 | — | — |
 | V10 | Merkposten, `CLAUDE.md`, Verweis in 16 | alle | Sonnet | nein |
 | VT | Alle vier Lanes vor dem Merge | V10 | test-runner / Haiku | ja |
 
@@ -448,7 +454,327 @@ Muster von V3a (Ziel, Eingaben mit Dateipfaden, Ergebnis, Wächtern mit Namen, F
 V5 entschieden (Beigabe oder Karte); (5) Namen in Oberfläche/Konfiguration (F6). **Fertig,
 wenn** ein Agent V4 ohne Rückfrage beginnen kann.
 
-### V4–V9 (Rahmen — wird in V2 geschärft)
+> **AP-V2 erledigt 2026-10-05** — Ergebnis im folgenden Abschnitt. Ohne Antworten auf F1–F4
+> gearbeitet; jede davon abhängige Festlegung trägt **[?]** und nennt die Frage.
+
+### AP-V2 — Ergebnis
+
+Grundlage: `doc/k8915g2/zre_rom.md` (V3b, insb. §8 Anforderungsliste), `karten.md` (V1a),
+`k7634.md` (V1b), der Kern (`core/machines/k8915/`, `core/cards/zre8762/`, `core/cards/k2521/`,
+Vorbild `core/machines/prg710/` + `core/cards/prg710_speicher/`), `app/profil.py`.
+
+#### R1. Klassenentscheidung: **eine Klasse `K8915Machine`, `Config::generation`**
+
+**Entscheidung:** `K8915Machine::Config` bekommt
+`enum class Generation : uint8_t { V3, Gen2 }` und `Generation generation = Generation::V3`.
+**Gen 1 kommt NICHT in die Aufzählung**, solange V9 zurückgestellt ist (R4) — kein toter Pfad.
+
+Begründung:
+1. Die Gen 2 unterscheidet sich vom V3 **nur in CPU-Karte und Speicher** (V3b §0/§3.1: Lader
+   0400–0906H byteidentisch, Portmenge identisch). ATS K7028.30 + K7672, K5122 im `/WAIT`-Zweig,
+   `Laufwerke`, `SerialHub`, Anzeigelatch 61H, NMI-Weg, RAF/K6022-Haken bleiben **dieselben
+   Objekte mit derselben Verdrahtung**. Eine zweite Klasse kopierte ~400 Zeilen
+   (`k8915.{h,cpp}`) samt Laufschleife und Hub-Anmeldung.
+2. Maschinentyp 2, `k8915emu`, `k8915emu.yaml`, Starter, Paket, `dbgm::DbgMachine` und alle
+   Werkzeuge bleiben eine Maschine — genau wie `Prg710Machine::Config::Variante`.
+3. Risiko (V3-Regression durch den Umbau) ist beherrschbar: Vorgabe bleibt V3, alle
+   `K8915*`-Wächter laufen unverändert mit.
+
+**Umbau-Muster (für V6a verbindlich):** die CPU-Karte wird austauschbar, alles andere bleibt Wert-Member.
+- `K8915Zre zre_` → `std::unique_ptr<K8915Zre> zre8762_` (nur V3); neu
+  `std::unique_ptr<K2521> k2521_` und `std::unique_ptr<K3528> ops_` (nur Gen 2). Die übrigen
+  Member (`bus_`, `ats_`, `screen_`, `afs_`, `lw_`, `kbd_`, `hub_`) bleiben unverändert in
+  derselben Reihenfolge (Zerstörungsreihenfolge des Hubs!).
+- Private Weichen statt verstreuter `if`: `Z80& cpuRef()`, `bool zreTakt(int)` (CTC der
+  jeweiligen ZRE), `InterruptSlave& zreInt()`, `uint8_t memCpu(uint16_t)`/`memCpuW(…)`.
+- Öffentlich: `generation()`; `zre()` bleibt `K8915Zre&` und ist **nur am V3** gültig
+  (Vorbedingung per `assert` + Kommentar; alle heutigen Aufrufer sind V3); neu `k2521()`,
+  `ops()` (nur Gen 2); `cpuPC()`, `setCpuTraceCallback`, `setBusTrace`, `memReadDebug`
+  dispatchen über die Weichen.
+- `K2521::Config::k8915g2()` + `K7024::A5120Config::forK8915Gen2()` als neue Fabriken; die
+  Vorgaben von `K2521`, `K7024`, `K7028`, `K5122` bleiben unberührt.
+
+#### R2. Karten und Steckplätze je Variante
+
+| Funktion | V3 (Vorgabe, im Kern) | **Gen 2** (V4/V6) | Gen 1 (zurückgestellt, V9) |
+|---|---|---|---|
+| ZRE | 045-8762 (`K8915Zre`): U880, CTC 80H, 4-KB-ROM, 2 × 64 KB, A8H | **K2521** (`K2521`, `Config::k8915g2()`): U880 2,4576 MHz, ROM 175/176/177 = 3 KB 0000–0BFFH, 1 KB RAM 0C00–0FFFH, CTC 80H, PIO 84H (unbenutzt) | K2521 + Gen-1-Urlader (Kartenchips „3C00“/„3000“ + **fehlender 0400-Baustein**, F11) |
+| Speicher | auf der ZRE | **K3528** [?, F2/F20] (`K3528`, neu): 64 KB DRAM, 8212-Register A8H–ABH → /MEMDI, /MEMDI1 | wie Gen 2 [Web] |
+| ATS | 045-8732 = K7028.30 (`K7028`) | **unverändert** | K7028.10 (E0H–FFH), neu [?, F8] |
+| Tastatur | K7672 an SIO2-B | **unverändert** | K7634 parallel an E0H–E2H, neu |
+| Bild | K7024 012-6820, ZG y411/y412 | **K7024 mit A5120-ZG `v171`/`v172`** (`forK8915Gen2()`) | [?] |
+| Floppy | K5122 `/WAIT`, 2 × K5601 | **unverändert** [?, F4: Laufwerke] | unverändert [Web] |
+| PFS K3820 | — | **nicht modelliert** (V5 = Beigabe) | Träger des Gen-1-Urladers [?] |
+| Optionen | RAF 88H, K6022 E0H | RAF 88H, K6022 E0H (beide frei) | K6022 **kollidiert** mit E0H–E7H |
+
+**Steckplätze:** V3 nach Gerät (3 = K5122, 4 = ZRE, 6 = ATS, 7 = K7024). Gen 2: **unbekannt
+[?, F2]**; als Ersatz gilt die **Interruptkette des V3**: K5122 → K2521 (CTC → PIO) → ATS.
+Dafür steht die K2521 auf `IeiQuelle::System` (in der Kette, nicht an der Spitze) — damit
+verhält sich die Gen 2 bei Interrupts **wie der erprobte V3** mit demselben BIOS. Die
+„Normalfall“-Stellung der K2521-Beschreibung (X14:1 = höchste Priorität) wäre ebenso
+denkbar [?, F22]; das ROM pollt die K5122, der CTC-Test braucht nur, dass alle drei CTCs
+überhaupt quittiert werden. CTC-Kaskade X10/X11 der K2521: **alle offen** (wie die
+045-8762, die keine hat; K3 läuft im ROM und BIOS als Zeitgeber) [?, F22].
+
+#### R3. Port- und Speicherkarte
+
+**Ports** (Gen 2 = V3 bis auf die Träger; Belege `zre_rom.md` §3.1):
+
+| Port | V3 | Gen 2 | Bemerkung |
+|---|---|---|---|
+| 10H–18H | K5122 `/WAIT` | gleich | |
+| 40H–5FH | ATS K7028.30 (SIO1 44H–47H, CTC1 48H–4BH, SIO2 52H–55H, CTC2 58H–5BH, Spiegel) | gleich | K7672 an 52H/53H |
+| 60H–67H | Anzeigelatch 61H (ATS) | gleich | |
+| 80H–83H | CTC der 045-8762 | **CTC der K2521** | IM-2-Vektor F0H |
+| 84H–87H | (PIO D35 nicht nachgebildet) | **PIO der K2521**, vorhanden, unbenutzt | |
+| 88H–89H | RAF (Option) | RAF (Option) | K3528 **nicht** auf 88H (Handeintrag im Plan, F21) |
+| A8H–ABH | Register der 045-8762 | **Register der K3528** [?, F20], nur schreibbar | Lesen: nicht dekodiert → Bus (FFH) [?] |
+| E0H–E7H | K6022 (Option) | K6022 (Option) | |
+
+**Speicherbild Gen 2** je A8H-Wert (4-KB-Schritte; „Bus“ = nicht von K2521/K3528 bedient,
+geht an den Systembus, dort antwortet nur die K7024 bei 1000–17FFH, sonst FFH):
+
+| A8H | 0000–0BFF | 0C00–0FFF | 1000–17FF | 1800–3FFF | 4000–7FFF | 8000–FFFF |
+|---|---|---|---|---|---|---|
+| 00H (Reset) | K2521-ROM | K2521-RAM | Bus (K7024) | Bus | Bus | Bus |
+| 06H / 0EH | K2521-ROM | K2521-RAM | Bus (K7024) | Bus | K3528 | K3528 |
+| 87H / 8FH | K3528 | K3528 | K3528 | K3528 | K3528 | K3528 |
+
+Regeln dahinter (Vorgabe „V3-kompatibel“, Konfigurationsstruktur `K3528::Belegung`):
+Seite 0 (0000–3FFF) = Bit 0, Seite 1 (4000–7FFF) = Bit 1, Seiten 2 + 3 (8000–FFFF) = Bit 2;
+`/MEMDI` = Bit 7 (aktiv bei 1) sperrt die K2521 (ROM + RAM); `/MEMDI1` = Bit 3 (aktiv bei 0),
+**ohne Verbraucher**; Bit 4–6 wirkungslos (keine Bank 2). Ein gewählter K3528-Zugriff geht
+**nicht** an den Systembus (Annahme wie V3, `zre8762.h` Kopf). Vorrang: K3528-Seite gewählt →
+K3528; sonst 0000–0FFF und kein /MEMDI → K2521; sonst Bus. Für alle bekannten Werte (06H,
+0EH, 87H, 8FH, BIOS 87H/06H) ist Bit 0 = Bit 7; die Alternative „/MEMDI an Bit 0“ (Handdraht
+X3:37→38, `karten.md` §2.2) ergibt dasselbe Bild und ist als Konfiguration bewacht (V4).
+1-KB-Ausblendadresse der K3528: **nicht modelliert** (kein ROM- oder BIOS-Zugriff, Polarität
+unklar). Ausbau .10/.20 (48/32 KB): nicht modelliert.
+
+#### R4. Was ohne Anwenderantwort sinnvoll ist — und was nicht
+
+| AP | Entscheidung | Grund |
+|---|---|---|
+| **V4** | **jetzt** | Verhalten aus dem ROM vollständig belegt (V3b §1/§2); die offenen Brücken (F20/F23) sind Konfiguration mit V3-kompatibler Vorgabe |
+| V5 | **entfällt — durch V3a erledigt** | Kartenchips sind Gen-1-Urlader, im Gen-2-Ablauf nie angesprochen, neben 64 KB RAM nicht betreibbar (V3b §7). Abzüge + MD5 + Listing liegen im Repo, Wächter `cli_k8915g2_prn_passt_zur_quelle` existiert. Keine Karte K3820 |
+| **V6a** | **jetzt** (nach V4) | Netz-Ein → Selbsttest → „ROM C“ → `CR` → Kaltstartmeldung ist ohne Diskette prüfbar; Laden der V3-Systemdiskette 901 ist mit byteidentischem Lader belegt |
+| **V6b** | **jetzt** (nach V6a) | Werkzeuge; reine Fleißarbeit an `--machine` |
+| **V7a/V7b** | **jetzt** (nach V6a) | Bedienbarkeit; Namen mit Annahme [?] (R5), nur Anzeigetexte hängen an F1/F6 |
+| V8 | **gestrichen** | Ladekopf und Format wie V3 (V3b §5); das DiskTool kann schon bootfähige K8915-Disketten (AP-E5c). Wieder öffnen nur, wenn eine Gen-2-Diskette (F4) davon abweicht |
+| V9 | **zurückgestellt** (ganz) | Gen 1 ohne den Lader-Baustein für 0400H **nicht startfähig** (F11), kein Nachbau aus 176. Eine K7634/K7028.10 ohne Gast, der sie anspricht, hätte keinen belastbaren Wächter. Wiedervorlage bei Antwort auf F11 oder F5/F8 |
+| V10, VT | nach V7b | wie geplant |
+
+Reihenfolge (alle bauen, also **nacheinander**): V4 → V6a → V6b → V7a → V7b → V10 → VT.
+
+#### R5. Namen in Kern, Schnittstelle, Oberfläche und Konfiguration
+
+Annahme **[?, F1]**: „Generation 2“ ≈ robotrontechnik „5¼″ V2“ (K2521, K3528, 045-8732, K7672
+stimmen; nur dort genannte 045-8778 ABS 2K ≠ K7024 des Geräts). Weil F1 offen ist, tragen
+**Schlüssel** nur technische, nicht umzubenennende Namen; nur die **Anzeigetexte** folgen F1/F6
+und dürfen später ohne Konfigurationsumzug geändert werden.
+
+| Ebene | V3 | Gen 2 |
+|---|---|---|
+| Kern | `Generation::V3` (Vorgabe) | `Generation::Gen2` |
+| C-ABI | `k1520_create(K1520_MACHINE_K8915)` / `k1520_create_k8915(0, …)` | `k1520_create_k8915(1, d0..d3)`; 2 (= Gen 1) → NULL mit Grund „Gen 1: kein startfähiger Urlader (F11)“ |
+| Abfrage | `k1520_k8915_generation(h)` = 0 | = 1; andere Maschinen −1 |
+| `k1520_machine_type` | 2 | 2 |
+| Python | `K1520Emulator(machine="k8915")` | `machine="k8915-g2"` (wie `"prg710-1"`, `"pc1715w"`) |
+| Werkzeuge | `--machine k8915` | `--machine k8915-g2` |
+| Konfiguration (`k8915emu.yaml`) | `general.model` fehlt oder `k8915` | `general.model: k8915-g2` |
+| Anzeige (Modellwahl) | „K8915 V3 (ZRE 045-8762, 128 KB)“ | „K8915 Gen 2 (ZRE K2521, 64 KB)“ **[?, F6]** |
+| Gesperrt angezeigt | — | „K8915 Gen 1 (Tastatur K7634)“, Grund „kein Urlader-Baustein für 0400H (F11)“ über `gesperrte_modelle` |
+
+**Abweichung vom Rahmen:** nicht `K1520Emulator(…, generation=…)`, sondern ein Maschinenname
+— so verlangt es die Modelltabelle von `app/profil.py` (Spalte „Kern-Maschine“), und PRG 710-1
+und PC 1715W machen es ebenso.
+
+#### AP-V4 — Karte K3528 und K2521-Fassung der Gen 2
+
+**Ziel:** Speicher der Gen 2 als Karte, gegen die ROM-Belege bewacht; ROM 175–177 im Kern.
+**Agent:** cpp-coder (Sonnet; Speicherlogik klein, Muster vorhanden). **Abhängig:** —.
+**Baut:** ja (`tools/dev.sh test`).
+
+Eingaben: R1–R3 oben; `doc/k8915g2/zre_rom.md` §1, §2, §8 Punkt 1–2; `doc/k8915g2/karten.md`
+§2; Muster `core/cards/zre8762/zre8762.{h,cpp}` (A8H-Abbildung, `Brueckenfeld`, `setMemTrace`,
+kein `registerMem`) und `core/cards/prg710_speicher/prg710_speicher.{h,cpp}` (Zugriffswege
+`setZreWeg`, `ortVon`); `core/cards/k2521/k2521.{h,cpp}` + `rom_prg710.h` (Fabrik + ROM-Kopf);
+Abzug `doc/EPROMS/K8915G2/k8915g2_zre_0000-0BFF.bin` (MD5 aus `MD5SUMS` prüfen), Generator
+`tools/eprom_to_h.py`; Tests `tests/unit/cards/test_zre8762.cpp`, `test_k2521.cpp`;
+Anmeldung `tests/unit/CMakeLists.txt` Z. 40–46, Bibliotheken `CMakeLists.txt` Z. 302–315.
+
+Auftrag:
+1. **`core/cards/k3528/k3528.{h,cpp}`**, Klasse `K3528 : public BusDevice`, Bibliothek
+   `k1520_k3528`. Kopf: Herkunft (`karten.md` §2), **Hypothese [?] F2/F20** (welche Karte das
+   Gerät trägt). Inhalt:
+   - `struct Belegung { uint8_t seite0 = 0, seite1 = 1, seite23 = 2; uint8_t memdi_bit = 7; bool memdi_aktiv_h = true; uint8_t memdi1_bit = 3; bool memdi1_aktiv_h = false; static Belegung v3kompatibel(); static Belegung memdiAnBit0(); }`
+     (Bitnummern; 0xFF = „nicht verdrahtet“).
+   - `struct Config { uint8_t reg_base = 0xA8; Belegung belegung{}; }` — belegt 4 Ports
+     (AB0/AB1 nicht dekodiert).
+   - `ioWrite` setzt das Register und baut die Abbildung neu (16 × 4-KB-Slots wie `K8915Zre`);
+     `ioRead` → `0xFF` (Ausgaberegister, nicht lesbar [?]).
+   - Zugriffswege: `setZreWeg(LeseFn, SchreibFn)` (K2521 0000–0FFF); alles nicht Gewählte über
+     `K1520Bus::memRead/memWrite`. `memRead/memWrite` = CPU-Sicht mit Vorrang aus R3.
+   - `enum class Quelle { Ram, Zre, Bus }`, `ortVon(addr)`, `reg()`, `setReg()`, `memdi()`,
+     `memdi1()`, `reset()` (Register 00H, RAM bleibt), `powerOn(fill)`, `ramPeek/ramPoke`,
+     `setMemTrace(K1520Bus::BusTrace)` (feuert für RAM- und ZRE-Zugriffe, nicht für Bus).
+   - `attachToBus(bus)`: nur `registerIO(this, reg_base, 4)`, **kein** `registerMem`.
+2. **ROM:** `core/cards/k2521/rom_k8915g2.h` (`K8915G2_ZRE_ROM[3072]`, Kopfzeile „Generated
+   from: doc/EPROMS/K8915G2/k8915g2_zre_0000-0BFF.bin“, mit `tools/eprom_to_h.py`), **Abzug
+   unverändert** (Byte 0A33H = 04H bleibt, F9). `K2521::Config::k8915g2()`: ROM 0x0C00,
+   CTC 80H, PIO 84H, Kaskaden alle `false`, `iei_quelle = System` (R2).
+3. **K7024:** `K7024::A5120Config::forK8915Gen2()` = `forK8915()` mit `chargen_* = nullptr`
+   (eingebauter A5120-Satz v171/v172; Abzüge 171/172 sind byteidentisch, §10).
+4. Tests `tests/unit/cards/test_k3528.cpp` (`k1520_add_test(k3528 …)`), Erweiterung
+   `test_k2521.cpp`, ein Fall in einem bestehenden K7024-Test.
+
+**Wächter:**
+- `K3528.SpeicherbildJeRegisterwert` — 00H/06H/0EH/87H/8FH, jeder 4-KB-Slot gegen die Tabelle R3.
+- `K3528.ResetLoeschtRegisterRamBleibt`, `K3528.RegisterHatVierPorts` (A8H–ABH gleichwertig),
+  `K3528.RegisterIstNichtLesbar`.
+- `K3528.GewaehlterSpeicherErscheintNichtAmBus` (Bus-Gerät an 1000H sieht bei 87H keinen Schreibzyklus).
+- `K3528.MemdiSperrtDieZre`, `K3528.Memdi1OhneWirkungAufDasBild`, `K3528.Bits4Bis6Wirkungslos`.
+- `K3528Config.MemdiAnBit0ErgibtDasselbeBildFuerAlleBekanntenWerte`, `K3528Config.BelegungIstKonfiguration`.
+- `K2521Rom.K8915Gen2AbzugUnveraendert` — `rom_len` = 0x0C00; 24-Bit-Summe der ersten 3FDH Byte
+  je Baustein: 175/176 = gespeicherte Summe, **177 = 00A680H ≠ 00A67CH**, Byte 0A33H = 04H.
+- `K7024.Gen2HatDenA5120Zeichensatz`.
+
+**Fertig, wenn:** `tools/dev.sh test` grün (voll), V3-, PRG-710- und K7024-Wächter unverändert,
+Abschnitt „AP-V4 erledigt“ hier nachgetragen, ein Commit (Regeln oben).
+
+#### AP-V6a — `K8915Machine` Gen 2: Verdrahtung und Boot
+
+**Ziel:** Die Gen 2 läuft vom Netz-Ein bis zur Kaltstartmeldung und lädt die V3-Systemdiskette.
+**Agent:** **Opus** (Umbau der laufenden V3-Maschine, Interruptkette, Laufschleife).
+**Abhängig:** V4. **Baut:** ja.
+
+Eingaben: R1–R3; `zre_rom.md` §4–§6, §8 Punkte 3–13; `core/machines/k8915/k8915.{h,cpp}`;
+Vorbild Speicherweg `core/machines/prg710/prg710.cpp` Z. 55–70 (`setSpeicherweg` +
+`mem_trace_`); Wächter-Muster `tests/integration/test_k8915_boot.cpp`, `test_k8915_scpx.cpp`,
+`tests/support/` (`TempDisk`, `vramText`, Losgröße 5 000 bei Tastatur), Fixture
+`tests/fixtures/disks/k8915scpx_boot1.hfe` (Diskette 901, **nur über `TempDisk`**);
+`doc/merkposten/k8915.md` (alle Festlegungen gelten für Gen 2 sinngemäß).
+
+Auftrag:
+1. Umbau nach R1 („Umbau-Muster“). Gen-2-Verdrahtung im Konstruktor: `K2521(bus_,
+   cfg.gen2_rom ? … : K2521::Config::k8915g2())`, `K3528`, `k2521_->setSpeicherweg(→ ops_)`,
+   `ops_->setZreWeg(→ k2521_->memRead/memWrite)`, `K7024` mit `forK8915Gen2()`, ATS/K7672/
+   K5122/Hub/Prüfstecker **wie V3**, Interruptkette `{&afs_, k2521_.get(), &ats_}`
+   (RAF/K6022 hängen sich wie heute an).
+2. `Config::gen2_rom` (`const uint8_t*`, 0x0C00 Byte, Vorgabe `nullptr` = Abzug) — **nur für
+   Tests**: der volle Selbsttest braucht ein ROM mit stimmender Summe (F9); der Test legt eine
+   Kopie an und setzt Byte 0A33H := 00H. Nie im Repo-Abzug flicken.
+3. `powerOn()`: K2521-RAM und K3528-RAM mit 00H (sonst „System im RAM“ zufällig, wie V3),
+   dann /RESET; `resetHardware()`: `k2521_->reset()`, `ops_->reset()` (A8H := 00H).
+4. Laufschleife: unverändert bis auf die Weichen (`cpuRef()`, `zreTakt()`).
+5. Doku: Kopf von `k8915.h` (Gen 2, Steckplätze [?]), Absatz in `doc/merkposten/k8915.md`
+   (Gen 2: Umbau-Muster, `zre()` nur V3, ROM C bis F9).
+
+**Wächter** (`tests/integration/test_k8915g2_boot.cpp`, `k1520_add_test(k8915g2_boot …)`):
+- `K8915Gen2Boot.RomFehlerCDannCrZurKaltstartmeldung` — Abzug wie geliefert: Bild zeigt
+  „ROM“ + Kennbuchstabe `C` (1770H/1776H), 61H = 7FH, `bellCount` ≥ 16; `CR` ⇒
+  „\* Coldstart \*“ + „Disk on A: ready“. **An F9 gebunden:** liefert der Anwender einen
+  korrigierten 177, wird dieser Wächter durch den vollen Selbsttest ersetzt.
+- `K8915Gen2Boot.GeflickteSummeSelbsttestFehlerfreiBisColdstart` — `gen2_rom` mit 0A33H = 00H:
+  ROM → KEY → CTC → SIO → RAM ohne Fehler, ohne `CR` zur Kaltstartmeldung, A8H am Ende 06H.
+- `K8915Gen2Boot.OhnePruefsteckerScheitertSio` (Kennbuchstabe notieren), `.OhneTastaturScheitertKeyMitA`.
+- `K8915Gen2Boot.SystemImRamFuehrtZumLader` — `C3` bei 0000H/0005H im K3528-RAM, Reset ⇒
+  Kaltstartmeldung **ohne** Selbsttest, A8H = 0EH.
+- `K8915Gen2Boot.EOderEscCStartetNeu` — `E` an der Kaltstartmeldung ⇒ Selbsttest erscheint wieder.
+- `K8915Gen2Boot.NmiImRomWirkungslos` — NMI während des Selbsttests ändert nichts (`RETN`).
+- `K8915Gen2Boot.RamTestSiehtUnterRomUndBild` — nach bestandenem RAM-Test liegt `ED 45` bei 0066H im K3528-RAM.
+- `K8915Gen2Scpx.LaedtDieV3SystemdisketteBisZumPrompt` — 901 über `TempDisk`, `CR`, stabiles
+  `A>`, danach `dir` zeigt Dateien. **[?]** Der Autostart `rade` darf scheitern (F13, keine
+  Bank 2) — der Wächter prüft den Prompt nach dem Autostart, nicht RADE. Scheitert der Boot
+  an etwas anderem, ist das ein Befund für §9, kein Grund, das ROM zu biegen.
+- **Alle** `K8915Boot.*`, `K8915Scpx.*`, `K8915Physical.*`, `RafK8915.*`, `K6022Maschine.K8915`
+  unverändert grün (V3-Vorgabe).
+
+**Fertig, wenn:** `tools/dev.sh test` grün, `tools/dev.sh test-format` grün (wegen
+`K8915Format.*`, im Hintergrund), Nachtrag hier, ein Commit.
+
+#### AP-V6b — Werkzeuge: `boot_trace`/`k1520dbg --machine k8915-g2`
+
+**Ziel:** Gen 2 im Debugger und im Trace wie der V3. **Agent:** cpp-coder (Sonnet).
+**Abhängig:** V6a. **Baut:** ja.
+
+Eingaben: `tools/dbg_machine.h` (Z. 43–50 Maschinenwahl, Z. 104 `speicherbild(const K8915Zre&)`,
+Z. 149 Erzeugung), `tools/k1520dbg.cpp` (alle `zre()`-Stellen: Z. 1224–1529, 2803–2810,
+3118–3156, 3316), `tools/boot_trace_k8915.cpp`, `tools/boot_trace.cpp` Z. 321–329,
+Referenzen `tools/k1520dbg.md` §11, `tools/boot_trace.md` §7; Wächter-Muster
+`tests/cli/CMakeLists.txt` (`cli_dbg_k8915_*`, `cli_bt_k8915_*`), Listing
+`doc/EPROMS/K8915G2/k8915g2_zre.prn`.
+
+Auftrag: `--machine k8915-g2` in beiden Werkzeugen; `speicherbild(const K3528&)`; `map` zeigt A8H,
+Bild, /MEMDI/MEMDI1; `bank` meldet „nicht vorhanden (Gen 2 ohne Bank 2)“; `ctc` beschriftet
+„ZRE K2521, 80H-83H“; jede `zre()`-Stelle auf die Generation prüfen (sonst trifft die
+`assert`-Vorbedingung aus V6a). `boot_trace --machine k8915-g2` tippt `CR` bei
+Selbsttestfehler (61H = 7FH, Meldung „Selbsttestfehler <Test> <Buchstabe> → CR“) **und** nach
+„\* Coldstart \*“ (`--no-cr` schaltet beides ab). Listing-Annotation:
+`k8915g2_zre.prn@0xFC00:0021-03FF` (Kopie von 175) und `…:0400-0BFF` (unverschoben),
+Beispiele in die beiden `.md`.
+
+**Wächter:** `cli_dbg_k8915g2_all_commands_smoke` (Dispatch über alle Kommandos, Muster
+`tests/cli/scripts/all_commands_smoke_k8915.dbg` + `tests/cli/cases/dbg_k8915_all_commands_smoke.cli`), `cli_bt_k8915g2_coldstart` (ohne Diskette: Meldung „ROM C“,
+dann Kaltstartmeldung), `cli_bt_k8915g2_prompt` (901 bis stabiles `A>`), alle `cli_*_k8915_*` grün.
+**Fertig, wenn:** `tools/dev.sh test` grün, Referenzen nachgetragen, Nachtrag hier, ein Commit.
+
+#### AP-V7a — C-ABI und Python-Bindung
+
+**Ziel:** Gen 2 aus Python erzeugbar. **Agent:** cpp-coder (Sonnet). **Abhängig:** V6a.
+**Baut:** ja.
+
+Eingaben: `core/api/k1520_api.{h,cpp}` (Muster `k1520_create_prg710` Z. 58–69 bzw.
+`k1520_prg710_variant` Z. 759), `core/api/k1520_export.h` (`K1520_API`!),
+`app/core_binding/k1520.py` (Z. 295–310 ctypes, Z. 519–528 `MACHINE_TYPES`/`PRG_VARIANTEN`,
+Z. 770–830 Konstruktor), `tests/python/test_c_api.py` (gleicht Header ↔ Bibliothek ↔ ctypes
+mechanisch ab), `tests/python/test_k8915_smoke.py`.
+
+Auftrag: `k1520_create_k8915(int generation, d0..d3)` (0 = V3, 1 = Gen 2, sonst NULL + Grund
+in `k1520_last_init_error`, Wert 2 mit dem Gen-1-Text aus R5); `k1520_k8915_generation(h)`;
+`k1520_create(K1520_MACHINE_K8915)` bleibt V3. Python: `MACHINE_TYPES["k8915-g2"] = 2`,
+`K8915_GENERATIONEN = {"k8915": 0, "k8915-g2": 1}`, Konstruktorzweig,
+`K1520Emulator.k8915_generation()`. Danach in `app/` nach `== "k8915"` suchen: jede Stelle
+muss `"k8915-g2"` mitnehmen oder über `machine_type() == 2` gehen.
+
+**Wächter:** `py_c_api` (neue Funktionen in allen drei Schichten), neuer Fall in
+`test_k8915_smoke.py`: `test_gen2_reaches_the_coldstart_message_after_rom_error_c`
+(`K1520Emulator(machine="k8915-g2")`, `CR` aus zweitem Faden, Kaltstartmeldung über
+`k1520_screen_char`, **nie** `mem_read`); `test_generation_two_of_the_k8915_is_refused_with_a_reason`
+(Wert 2 → `ValueError`/NULL mit Text). **Fertig, wenn:** `tools/dev.sh test` grün (inkl.
+Python-Ebene), Nachtrag hier, ein Commit.
+
+#### AP-V7b — Programmprofil, Oberfläche, Handbuch
+
+**Ziel:** Modellwahl im `k8915emu`. **Agent:** Sonnet (general-purpose; Python/Qt).
+**Abhängig:** V7a. **Baut:** ja (Python-Ebene).
+
+Eingaben: `app/profil.py` (K8915-Profil Z. 219–238, Vorbild PRG710 Z. 241–265, Felder
+`modellwahl`/`modelle`/`modell_tipp`/`gesperrte_modelle` Z. 53–70), `app/ui/settings_widget.py`
+Z. 221, `data/default_config_k8915.yaml`, `app/help/handbuch.md` (K8915-Teil),
+`tests/python/test_k8915emu_gui.py`, `doc/design/18_k8915emu_oberflaeche.md`.
+
+Auftrag: K8915-Profil `modellwahl=True`, `modelle` und `gesperrte_modelle` nach R5 (Tastatur
+beider Modelle `k7672`), `modell_tipp` („Ein Wechsel erzeugt die Maschine neu (wie ein
+Kaltstart)“). `default_config_k8915.yaml` bleibt **ohne** `general.model` (fehlend = V3).
+Handbuch: Abschnitt Modellwahl K8915 (Gen 2: Selbsttest endet mit „ROM C“, weiter mit ⏎ —
+Hinweis auf den Abzug, F9). **Kein Tastenkürzel.**
+**Achtung, bestehender Wächter ändert seine Aussage:** `test_only_the_a5120_offers_the_a5120_16_model`
+prüft heute `not w.profil.modellwahl` am K8915. Neu: der K8915 hat eine Modellwahl, aber
+`a5120.16` in `k8915emu.yaml` wird zu `k8915`, `em_variant() == ""`, gespeichert wird
+`model: k8915` — die Festlegung „EM nur am A5120“ bleibt, der Test wird entsprechend
+umgeschrieben (Name bleibt).
+
+**Wächter:** `test_the_k8915_offers_v3_and_gen2_and_shows_gen1_locked`,
+`test_switching_the_k8915_model_rebuilds_the_machine` (`k1520_k8915_generation` 0 → 1),
+`test_an_unknown_k8915_model_falls_back_to_v3`, angepasster
+`test_only_the_a5120_offers_the_a5120_16_model`, Kürzel-Wächter unverändert grün.
+**Fertig, wenn:** `tools/dev.sh test` grün, Nachtrag hier, ein Commit.
+
+**V10/VT** wie unten; V10 nimmt zusätzlich die Festlegungen von R1/R3/R5 in
+`doc/merkposten/k8915_varianten.md` auf (Wächter je Festlegung).
+
+### V4–V9 (Rahmen — **ersetzt durch „AP-V2 — Ergebnis“**, nur noch zur Nachverfolgung)
 
 | AP | Rahmen | Vorläufiges Fertig-Kriterium (Wächter-Familie) |
 |---|---|---|
@@ -505,7 +831,7 @@ volle Ausgabe.
 | **F5** | Gen 1 = Gen 2 + K7634 + K7028 (Ihre Angabe 2026-10-05): **Wissen Sie, welche K7028-Fassung** (.10/.20/.30, Platinennummer) und welches ROM dort steckt — gleiche Aufschriften 175–177? Darf der Betriebsnachweis bis zur Beschaffung einer Diskette/eines Abzugs warten (Empfehlung: ja)? Soll ich in den Foren (robotrontechnik.de, VzEkC) und beim Rechenwerk Halle anfragen? **Das ginge nur mit Ihrer Freigabe — ich schreibe nichts ohne Rückfrage in ein Forum.** |
 | **F7** | Welche **K7634-Fassung** hängt am Gerät (Aufdruck `K7634.xx`, ROM-Nummer `Y708-I…` auf der Tastaturplatine)? Die Fremdquellen (BIOS Krzikalla, Kartenchip „3C00") erwarten TYP `A0H`, ENTER `9DH`, RESET `1FH`, PF1 `91H`; die gedruckten Tabellen (K7634.04/.05/.10/.13) haben das nicht. Steckt ein Bedienelement (BES, Sonderleitungen SL) an der Tastatur? (ohne: nur TYP, kein Einfluss auf den Emulator) |
 | **F8** | Gibt es einen **Schaltplan der K7028.10/.20** (Portbereich `E0H–FFH`, Bedeutung von `E3H`/`E4H`, Frontplatte)? Steckt in der ZRE der Gen 1 der **Kartenchip „3C00"** (Urlader `MROM RAM I/O KEY CTC`, ENTER: LADER / OFF: ZYKL.) oder die Bausteine 175–177? Welche Platinennummer trägt die K7028 des Geräts? |
-| **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. |
+| **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. *(AP-V2 arbeitet mit der Annahme [?]: Modellwahl ja, Anzeige „K8915 V3 (ZRE 045-8762, 128 KB)“ / „K8915 Gen 2 (ZRE K2521, 64 KB)“, Schlüssel `k8915` / `k8915-g2` — eine Umbenennung ändert nur Anzeigetexte, R5.)* |
 | **F9** | Der Abzug **177** hat eine falsche 24-Bit-Summe (Byte 0A33H = 04H statt 00H, s. V3a). Bitte den Baustein 177 am Gerät **ein zweites Mal lesen** (MD5 vergleichen) und notieren, ob der „MROM“-Selbsttest des Geräts einen Fehler meldet. |
 | **F20** | (V1a) Aufdruck/Platinen-Nr. der „zusätzlichen RAM-Karte“ (K3528? 32 Chips, 8212 „D8“?), Stand des Wickelfeldes **X3** (insb. D2:01/D2:02 → Register-Adresse A8H; Bank-Brücken X3:64–71). |
 | **F21** | (V1a) Die handschriftliche „88“ im K3528-Plan: gilt sie für Ihr Gerät oder ein anderes (ROM schreibt A8H)? |
