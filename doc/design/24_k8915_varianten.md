@@ -642,6 +642,21 @@ Auftrag:
 **Fertig, wenn:** `tools/dev.sh test` grün (voll), V3-, PRG-710- und K7024-Wächter unverändert,
 Abschnitt „AP-V4 erledigt“ hier nachgetragen, ein Commit (Regeln oben).
 
+**AP-V4 erledigt 2026-10-05.** `core/cards/k3528/` (Bibliothek `k1520_k3528`, nur `registerIO`,
+Speicherpfad wie `K8915Zre`), `core/cards/k2521/rom_k8915g2.h` + `K2521::Config::k8915g2()`,
+`K7024::A5120Config::forK8915Gen2()`; Wächter wie benannt (`test_k3528.cpp`, je ein Fall in
+`test_k2521.cpp`/`test_k7024.cpp`) und voller `tools/dev.sh test` grün (2163/2163).
+Befunde/Abweichungen:
+- Die 24-Bit-Prüfsumme steht **hoch..tief** (Byte 3FDH = Bits 23..16): 175 = 01AE2BH, 176 = 018EF9H,
+  177 gespeichert 00A67CH, errechnet 00A680H — wie im Plan.
+- `K3528::ioWrite/ioRead` bekommen wie bei der 045-8762 die **absolute** Portnummer (Bus reicht
+  `port` durch, obwohl `registerIO` „relativ“ dokumentiert); dem 4-Port-Register ist das gleich.
+- `K3528::Quelle` hat `Ram/Zre/Bus`; die ZRE-Seite ist ein Rückruf (`setZreWeg`), die Karte kennt
+  `K2521` nicht (Schichtung). `memRead` auf einen Slot `Zre` ohne gesetzten Weg liefert FFH.
+- Der Wächter `K2521Rom.K8915Gen2AbzugUnveraendert` vergleicht den ROM-**Inhalt** (das
+  `static constexpr`-Array hat je Übersetzungseinheit eine eigene Adresse, Zeigervergleich scheitert).
+- Keine neuen offenen Fragen; F2/F20/F22/F23 bleiben als [?] im Kopf von `k3528.h`/`k2521.cpp`.
+
 #### AP-V6a — `K8915Machine` Gen 2: Verdrahtung und Boot
 
 **Ziel:** Die Gen 2 läuft vom Netz-Ein bis zur Kaltstartmeldung und lädt die V3-Systemdiskette.

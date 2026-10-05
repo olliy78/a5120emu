@@ -7,6 +7,7 @@
 #include "core/cards/k2521/k2521.h"
 #include "core/cards/k2521/rom_prg710.h"
 #include "core/cards/k2521/rom_prg710_1.h"
+#include "core/cards/k2521/rom_k8915g2.h"
 #include "core/logger.h"
 
 K2521::Config K2521::Config::prg710()
@@ -22,6 +23,18 @@ K2521::Config K2521::Config::prg710_1()
     Config c;
     c.rom     = PRG710_1_ZRE_ROM;
     c.rom_len = sizeof(PRG710_1_ZRE_ROM);
+    return c;
+}
+
+K2521::Config K2521::Config::k8915g2()
+{
+    Config c;
+    c.rom     = K8915G2_ZRE_ROM;       // Abzug unverändert, Byte 0A33H = 04H (F9)
+    c.rom_len = sizeof(K8915G2_ZRE_ROM);
+    c.kaskade_to0_clk1 = false;        // X10/X11 am Gerät offen [?, F22]
+    c.kaskade_to1_clk2 = false;
+    c.kaskade_to2_clk3 = false;
+    c.iei_quelle       = IeiQuelle::System;
     return c;
 }
 

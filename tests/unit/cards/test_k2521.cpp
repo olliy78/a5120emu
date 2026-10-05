@@ -11,6 +11,7 @@
 #include "core/cards/k2521/k2521.h"
 #include "core/cards/k2521/rom_prg710.h"
 #include "core/cards/k2521/rom_prg710_1.h"
+#include "core/cards/k2521/rom_k8915g2.h"
 
 namespace {
 
@@ -243,4 +244,38 @@ TEST_F(K2521Test, SpeicherwegVorgabeIstDerSystembus) {
     EXPECT_EQ(zre.cpu().readByte(0x0000), PRG710_ZRE_ROM[0]);
     zre.cpu().writeByte(0x0C10, 0x99);
     EXPECT_EQ(zre.memRead(0x0C10), 0x99);
+}
+
+// ─── K8915 Gen 2: ROM 175/176/177 (doc/design/24_k8915_varianten.md, AP-V4) ──
+
+TEST(K2521Rom, K8915Gen2AbzugUnveraendert) {
+    const auto cfg = K2521::Config::k8915g2();
+    ASSERT_NE(cfg.rom, nullptr);
+    EXPECT_EQ(std::memcmp(cfg.rom, K8915G2_ZRE_ROM, sizeof(K8915G2_ZRE_ROM)), 0);
+    EXPECT_EQ(cfg.rom_len, 0x0C00u);
+    EXPECT_FALSE(cfg.kaskade_to0_clk1);
+    EXPECT_FALSE(cfg.kaskade_to1_clk2);
+    EXPECT_FALSE(cfg.kaskade_to2_clk3);
+    EXPECT_EQ(cfg.iei_quelle, K2521::IeiQuelle::System);
+
+    // 24-Bit-Summe der ersten 3FDH Byte je Baustein gegen die letzten 3 Byte (hoch..tief).
+    uint32_t summe[3], gespeichert[3];
+    for (int i = 0; i < 3; ++i) {
+        const uint8_t* b = K8915G2_ZRE_ROM + i * 0x400;
+        summe[i] = 0;
+        for (int k = 0; k < 0x3FD; ++k) summe[i] += b[k];
+        summe[i] &= 0xFFFFFF;
+        gespeichert[i] = (uint32_t(b[0x3FD]) << 16) | (uint32_t(b[0x3FE]) << 8) | b[0x3FF];
+    }
+    EXPECT_EQ(summe[0], gespeichert[0]);        // 175
+    EXPECT_EQ(summe[1], gespeichert[1]);        // 176
+    EXPECT_EQ(summe[2], 0x00A680u);             // 177: Prüfsummenfehler im Abzug
+    EXPECT_EQ(gespeichert[2], 0x00A67Cu);
+    EXPECT_NE(summe[2], gespeichert[2]);
+    EXPECT_EQ(K8915G2_ZRE_ROM[0x0A33], 0x04);   // F9: Byte bleibt unverändert
+
+    K1520Bus bus;
+    K2521 zre(bus, cfg);
+    EXPECT_EQ(zre.memRead(0x0000), 0xF3);       // DI
+    EXPECT_EQ(zre.memRead(0x0A33), 0x04);
 }

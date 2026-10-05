@@ -49,6 +49,14 @@ K7024::A5120Config K7024::A5120Config::forK8915()
     return cfg;
 }
 
+K7024::A5120Config K7024::A5120Config::forK8915Gen2()
+{
+    A5120Config cfg = forK8915();
+    cfg.chargen_rows0_7  = nullptr;    // eingebauter A5120-Satz (v171/v172)
+    cfg.chargen_rows8_11 = nullptr;
+    return cfg;
+}
+
 K7024::A5120Config K7024::A5120Config::forPrg710()
 {
     A5120Config cfg;                       // vram_base_hi = F8

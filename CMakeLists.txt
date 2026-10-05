@@ -308,6 +308,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k2521 PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_bus k1520_logger)
     target_include_directories(k1520_k2521 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # K3528 (K8915 Gen 2): 64 KB DRAM, Register A8H-ABH -> /MEMDI, doc/design/24_k8915_varianten.md R3
+    add_library(k1520_k3528 STATIC core/cards/k3528/k3528.cpp)
+    target_link_libraries(k1520_k3528 PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_k3528 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # Speicherverwaltung E8H-EBH + OPS-RAM (PRG 710/710-1), Arbeitsmodell doc/design/20_prg710.md §4b
     add_library(k1520_prg710_speicher STATIC core/cards/prg710_speicher/prg710_speicher.cpp)
     target_link_libraries(k1520_prg710_speicher PUBLIC k1520_bus k1520_logger)

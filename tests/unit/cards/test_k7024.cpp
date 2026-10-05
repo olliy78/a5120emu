@@ -633,6 +633,32 @@ TEST(K7024, ForK8915_SetsVramBaseAndOwnCharset)
 }
 
 /**
+ * @test K7024, Gen2HatDenA5120Zeichensatz
+ * @brief forK8915Gen2(): VRAM 1000H, keine Lesesperre, eingebauter A5120-Satz (nullptr).
+ * @par Pass criterion  Bitmap von '$' und 'A' identisch zur Standardkonfiguration.
+ */
+TEST(K7024, Gen2HatDenA5120Zeichensatz)
+{
+    K7024::A5120Config cfg = K7024::A5120Config::forK8915Gen2();
+    EXPECT_EQ(cfg.vram_base_hi, 0x10);
+    EXPECT_FALSE(cfg.read_protect);
+    EXPECT_EQ(cfg.chargen_rows0_7,  nullptr);
+    EXPECT_EQ(cfg.chargen_rows8_11, nullptr);
+
+    K1520Bus b1, b2;
+    K7024 gen2(b1, cfg), a5120(b2);
+    for (uint8_t c : {uint8_t(0x24), uint8_t(0x41)}) {
+        uint8_t g[12], a[12];
+        gen2.vramWrite(0, 0, c);
+        a5120.vramWrite(0, 0, c);
+        glyphBitmap(gen2.getFramebuffer(), 0, 0, g);
+        glyphBitmap(a5120.getFramebuffer(), 0, 0, a);
+        for (int pr = 0; pr < 12; ++pr)
+            EXPECT_EQ(g[pr], a[pr]) << "Zeichen " << int(c) << " Zeile " << pr;
+    }
+}
+
+/**
  * @test K7024, DefaultConfig_StillUsesA5120Charset
  * @brief Ohne cfg.chargen_rows0_7/8_11 (nullptr) faellt K7024 weiter auf den eingebauten A5120-Satz zurueck.
  * @details Regressionswaechter fuer den Umbau auf konfigurierbare Zeichengeneratoren
