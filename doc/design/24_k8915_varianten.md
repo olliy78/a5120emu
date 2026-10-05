@@ -845,6 +845,24 @@ umgeschrieben (Name bleibt).
 `test_only_the_a5120_offers_the_a5120_16_model`, Kürzel-Wächter unverändert grün.
 **Fertig, wenn:** `tools/dev.sh test` grün, Nachtrag hier, ein Commit.
 
+#### K7634-Bildschirmtastatur erledigt 2026-10-05
+
+`app/ui/keyboard_k7634.py` (`KeyboardK7634Widget`, Muster K7637/K7672): Layout und
+Beschriftung nach dem Foto des Anwenders, Codetabelle K7634.04 aus `doc/k8915g2/k7634.md` §5
+(Berichtigung `E02` b = `22H` [?]).  Eine Taste sendet ihre **Position**
+(`0x03000000 | Rechenadresse`, [?] noch ohne Kerngegenstück), a/b-Code nur im Kurzhinweis.
+**Nicht** im Programmprofil eingehängt (Gen 1 wartet auf das Kernmodell, V9).  Befunde:
+die Kappen der Funktionsreihe folgen lückenlos G01…G17, G51…G53 — `CLEAR` = G02 und
+`PF2` = G06 stimmen mit der Tabelle, also sind die zwei fehlenden Kappen **G04 REC (`FDH`)**
+und **G05 PF1 (`C1H`)**; `CLEAR TAB` sitzt auf G03 = **CNCL (`FEH`)**.  Im Cursorblock
+(B15–B17/A15–A17) fehlt **A15 ↵ (`0AH`)**; ← (A16, `06H`) ist am Foto vorhanden.
+Beschriftungen ohne Tabelleneintrag (STRG CHOI PICK LOC, UPDATE ⇑ ⇓) sitzen auf den
+unbestückten Positionen G17/G51–G53 bzw. E51–E53 [?]; TAB←/TAB→/HOLD/NEXT PAGE/CR/LF/ESC/DEL
+tragen die Codes ihrer Position (ERASE INP, ERASE EOF, INS MODE, PA3, PA1, PA2, INS LINE,
+DEL LINE) — die gelieferte Tastatur ist eine andere Fassung als .04 (F7).  CTRL hat in
+der .04 keine Position und sendet nichts.  Wächter `py_keyboard_k7634` (Tabelle ≙ Doku,
+jede Taste ein Code, keine Doppelbelegung, die drei ergänzten Kappen).
+
 **V10/VT** wie unten; V10 nimmt zusätzlich die Festlegungen von R1/R3/R5 in
 `doc/merkposten/k8915_varianten.md` auf (Wächter je Festlegung).
 
