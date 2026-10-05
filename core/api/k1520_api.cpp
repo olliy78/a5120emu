@@ -817,26 +817,45 @@ const char* k1520_eprom_error(K1520Handle) {
     return eprom_fehler.c_str();
 }
 
-// Lochband an der K6022 (AP-P8b).
+// Lochband an der K6022 (AP-P8b; seit Entwurf 23 AP-L1 steckbar in jeder Maschine).
+static K6022* ptapeOf(K1520Handle h) {
+    return h ? toMachine(h)->k6022() : nullptr;
+}
+
+bool k1520_ptape_install(K1520Handle h) {
+    if (!h) return false;
+    g_init_error.clear();
+    K1520Machine* m = toMachine(h);
+    if (!m->installK6022()) {
+        g_init_error = m->k6022Fehler();
+        return false;
+    }
+    return true;
+}
+
+bool k1520_ptape_installed(K1520Handle h) {
+    return ptapeOf(h) != nullptr;
+}
+
 bool k1520_ptape_load(K1520Handle h, const char* path) {
-    auto* p = prgOf(h);
-    if (!p || !path) return false;
+    auto* k = ptapeOf(h);
+    if (!k || !path) return false;
     std::string fehler;
-    return p->k6022().bandEinlegenDatei(path, fehler);
+    return k->bandEinlegenDatei(path, fehler);
 }
 
 bool k1520_ptape_eject(K1520Handle h) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    p->k6022().bandEntnehmen();
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    k->bandEntnehmen();
     return true;
 }
 
 bool k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos, uint64_t* len,
                                int* at_end) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    const K6022::LeserStand s = p->k6022().leserStand();
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    const K6022::LeserStand s = k->leserStand();
     if (inserted) *inserted = s.eingelegt ? 1 : 0;
     if (pos)      *pos = s.gelesen;
     if (len)      *len = s.laenge;
@@ -845,34 +864,34 @@ bool k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos, uint
 }
 
 int64_t k1520_ptape_punch_length(K1520Handle h) {
-    auto* p = prgOf(h);
-    return p ? static_cast<int64_t>(p->k6022().stanzbandLaenge()) : -1;
+    auto* k = ptapeOf(h);
+    return k ? static_cast<int64_t>(k->stanzbandLaenge()) : -1;
 }
 
 bool k1520_ptape_punch_save(K1520Handle h, const char* path) {
-    auto* p = prgOf(h);
-    if (!p || !path) return false;
+    auto* k = ptapeOf(h);
+    if (!k || !path) return false;
     std::string fehler;
-    return p->k6022().stanzbandSpeichern(path, fehler);
+    return k->stanzbandSpeichern(path, fehler);
 }
 
 bool k1520_ptape_punch_clear(K1520Handle h) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    p->k6022().stanzbandLeeren();
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    k->stanzbandLeeren();
     return true;
 }
 
 bool k1520_ptape_punch_enable(K1520Handle h, bool on) {
-    auto* p = prgOf(h);
-    if (!p) return false;
-    p->k6022().setStanzerEin(on);
+    auto* k = ptapeOf(h);
+    if (!k) return false;
+    k->setStanzerEin(on);
     return true;
 }
 
 int k1520_ptape_punch_enabled(K1520Handle h) {
-    auto* p = prgOf(h);
-    return p ? (p->k6022().stanzerEin() ? 1 : 0) : -1;
+    auto* k = ptapeOf(h);
+    return k ? (k->stanzerEin() ? 1 : 0) : -1;
 }
 
 // ─── RAM-Floppy RAF (doc/design/22_raf512.md §6) ───────────────────────────────

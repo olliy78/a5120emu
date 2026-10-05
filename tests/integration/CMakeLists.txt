@@ -170,6 +170,12 @@ k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp
                              LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
                              LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 
+# Lochstreifen-Karte K6022 als Option in allen Maschinen (doc/design/23_lochstreifen.md AP-L1):
+# stecken, zu spät, doppelt, Tor belegt; Z80-Gastcode stanzt über E0H und liest über E4H.
+k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
+                               LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
+                               LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 # RAM-Floppy RAF, Gastnachweis mit den Original-Treibern (doc/design/22_raf512.md §8 AP-R5):
 # RAFCPM.COM (M:) / RAF512.COM (P:) unter CP/A, SCPX 8915 und SCPX 1526 am PRG 710-1 —
 # Kapazitätstest, Kennung RAFvalid.SYS, PIP/DIR, RESET erhält, Netz-Ein verwirft.

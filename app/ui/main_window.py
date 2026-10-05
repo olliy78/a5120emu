@@ -1546,7 +1546,11 @@ class MainWindow(LochbandMixin, QMainWindow):
         """
         emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
                             em=self.profil.modell_em(self._model),
-                            raf=raf.core_param(self._raf) if self.profil.raf_wahl else None)
+                            raf=raf.core_param(self._raf) if self.profil.raf_wahl else None,
+                            # Übergang bis AP-L4 (doc/design/23_lochstreifen.md): die K6022
+                            # ist seit AP-L1 eine Option; bis zum Kästchen in *Einstellungen*
+                            # steckt der PRG sie wie früher immer (Menü *Maschine ▸ Lochband*).
+                            ptape=self.profil.maschine == "prg710")
         # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
         # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
         emu.set_key_repeat_realtime(True)

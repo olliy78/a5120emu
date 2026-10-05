@@ -440,7 +440,11 @@ _lib.k1520_eprom_log.restype = ctypes.c_char_p
 _lib.k1520_eprom_error.argtypes = [K1520Handle]
 _lib.k1520_eprom_error.restype = ctypes.c_char_p
 
-# Lochband an der ADA K6022 (PRG, AP-P8b)
+# Lochband an der ADA K6022 (AP-P8b; steckbar in jeder Maschine seit Entwurf 23 AP-L1)
+_lib.k1520_ptape_install.argtypes = [K1520Handle]
+_lib.k1520_ptape_install.restype = ctypes.c_bool
+_lib.k1520_ptape_installed.argtypes = [K1520Handle]
+_lib.k1520_ptape_installed.restype = ctypes.c_bool
 _lib.k1520_ptape_load.argtypes = [K1520Handle, ctypes.c_char_p]
 _lib.k1520_ptape_load.restype = ctypes.c_bool
 _lib.k1520_ptape_eject.argtypes = [K1520Handle]
@@ -706,7 +710,8 @@ class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
-                 em: Optional[str] = None, raf: Optional[str] = None):
+                 em: Optional[str] = None, raf: Optional[str] = None,
+                 ptape: bool = False):
         """Initialize emulator instance.
 
         Args:
@@ -722,6 +727,8 @@ class K1520Emulator:
             raf: RAM-Floppy — ``None``/``"none"`` = ohne, ``"raf128"``, ``"raf512"``
                 oder ``"raf2m"``; an jeder Maschine.  Wird direkt nach dem Anlegen
                 gesteckt (vor dem ersten Lauf); Fehler → ValueError.
+            ptape: Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken; an jeder
+                Maschine, wie ``raf`` direkt nach dem Anlegen.  Fehler → ValueError.
         """
         # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
         # darf nicht über ein fehlendes Attribut stolpern.
@@ -760,6 +767,12 @@ class K1520Emulator:
                 _lib.k1520_destroy(handle)
                 self._handle = None
                 raise ValueError(reason or f"RAF {raf!r} nicht steckbar")
+        if ptape and not _lib.k1520_ptape_install(handle):
+            reason = _lib.k1520_last_init_error()
+            reason = reason.decode("utf-8", "replace") if reason else ""
+            _lib.k1520_destroy(handle)
+            self._handle = None
+            raise ValueError(reason or "K6022 nicht steckbar")
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -887,7 +900,11 @@ class K1520Emulator:
         s = (_lib.k1520_eprom_log(self._handle, bool(only_new)) or b"").decode("utf-8", "replace")
         return [z for z in s.split("\n") if z]
 
-    # ── Lochband an der ADA K6022 (PRG, AP-P8b) ──────────────────────────────
+    # ── Lochband an der ADA K6022 (AP-P8b; steckbar seit Entwurf 23 AP-L1) ───
+
+    def ptape_installed(self) -> bool:
+        """True, wenn die K6022 gesteckt ist (``K1520Emulator(ptape=True)``)."""
+        return bool(_lib.k1520_ptape_installed(self._handle))
 
     def ptape_load(self, path: str) -> bool:
         """Band (Datei, Bytes wie gestanzt) in den Leser legen; False bei Lesefehler

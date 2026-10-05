@@ -37,6 +37,7 @@ boot_trace [DISK] [optionen]
 | `-c <zyklen>` | Boot-Zyklenlimit |
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-/Loaded-code-Histogramm, VRAM-Schreibzähler, 80-Spalten-VRAM-Textdump) |
 | `--raf <typ>` | RAM-Floppy (`raf128`\|`raf512`\|`raf2m`\|`none`) vor dem ersten Lauf stecken, an allen Maschinen (§9) |
+| `--ptape` | Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) vor dem ersten Lauf stecken, an allen Maschinen (§9a) |
 | `--until <cond>` | **anhalten, sobald `<cond>` gilt** (läuft über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann Report (§3) |
 | `--coverage [file]` | **Code-Coverage**: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl; mit `file` zusätzlich CSV `cpu,pc,hits` (§4) |
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |
@@ -268,3 +269,11 @@ läuft — gleichermaßen am A5120 (auch mit `--em`), `--machine k8915` und `--m
 So lässt sich ein Treiber-/Boot-Lauf mit RAM-Floppe verfolgen (`--watchio 0x88,0x89`);
 Inhalt ansehen nach dem Lauf im Debugger (`k1520dbg --raf …`, Befehl `raf`, §11b dort).
 Unbekannter Typ → Exit 2. Wächter: `cli_bt_raf`, `cli_bt_raf_k8915`, `cli_bt_raf_typ`.
+
+## 9a. Lochstreifen (`--ptape`)
+
+`--ptape` steckt die ADA K6022 (Lochbandstanzer E0H–E3H, -leser E4H–E7H;
+`doc/design/23_lochstreifen.md`) vor dem ersten Lauf — an jeder Maschine, auch am
+PRG 710/710-1, der sie seit AP-L1 **nicht mehr fest** trägt.  Ohne `--ptape` antwortet
+auf E0H–E7H niemand (FFH).  Ein Band einlegen kann `boot_trace` nicht; zum Verfolgen
+eines Treibers `--watchio 0xE0,0xE4`.

@@ -126,3 +126,18 @@ sind **nicht** vorgesehen — es gibt eine Umsetzung, im Kern.
 ## 9. Stand
 
 (je AP nachgetragen)
+
+- **AP-L1 erledigt (2026-10-05).** `K1520Machine::installK6022()`/`k6022()`/`k6022Fehler()`
+  in `core/machines/machine.h`; die Basisklasse prüft E0H–E7H **vor** dem Anmelden
+  (`K1520Bus::ioOwner`, sonst blieben bei belegtem Tor halb angemeldete Ports zurück) und
+  kettet über die virtuelle `k6022Einketten()` ein — Vorgabe hinten anhängen
+  (`K1520Bus::appendInterruptChain`), der PRG 710 überschreibt sie und setzt seine Kette neu
+  mit der K6022 **vor** dem Fernschreiber 590069 (Stellung wie bisher, abweichend von „hinten“).
+  Takt/Reset über `k6022Takt()`/`k6022Reset()` in allen drei Laufwegen.  Abweichung von §6/§8:
+  `k1520_ptape_install`/`k1520_ptape_installed` und `K1520Emulator(ptape=…)` kamen schon hier
+  (sonst wären `py_prg710_api`/`py_prg710_lochband_gui` rot); `k1520_ptape_error` fehlt noch
+  (Grund steht in `k1520_last_init_error`).  Die Oberfläche steckt die Karte am PRG bis AP-L4
+  weiter immer (`MainWindow._maschine_erzeugen`, „Übergang bis AP-L4“).  Wächter
+  `K6022Maschine.*` (Bestückung je Maschine; Z80-Gastcode stanzt über E0H und liest über E4H,
+  END als IM-2-Interrupt, an A5120, A5120.16, K8915, PRG 710-1), `Prg710Lochband.*` steckt
+  ausdrücklich; `boot_trace`/`k1520dbg` `--ptape`.

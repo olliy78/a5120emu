@@ -191,6 +191,7 @@ void A5120Machine::resetHardware() {
     kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
     if (em_) em_->reset();  // EM: PIO hochohmig ⇒ RESET16/Pull-ups; DRAM + A22 bleiben
     rafReset();             // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
+    k6022Reset();           // K6022 (gesteckt?): PIOs zurück, Band und Stanzband bleiben
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -763,6 +764,7 @@ int A5120Machine::run(int max_cycles) {
         // Interrupt-Chain neu berechnet werden.
         bool ctc_fired = zre_.clockTick(used);
         ctc_fired      = ass_.clockTick(used) || ctc_fired;
+        ctc_fired      = k6022Takt(used) || ctc_fired;   // Lochstreifen (gesteckt?)
         if (ctc_fired) bus_.markIntDirty();
 
         // Service the keyboard: advance the 9600-baud serial-transmit timing

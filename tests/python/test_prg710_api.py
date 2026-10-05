@@ -218,7 +218,8 @@ def test_lochband_ueber_die_c_abi(name, variante, tmp_path):
     Das Stanzen selbst prüft `Prg710Lochband.*` (UDOS); hier nur der Weg durch die C-ABI."""
     from app.core_binding.k1520 import K1520Emulator
 
-    emu = K1520Emulator(machine=name)
+    emu = K1520Emulator(machine=name, ptape=True)   # seit AP-L1 eine Option (Entwurf 23)
+    assert emu.ptape_installed()
     band = tmp_path / "band ä.ptp"           # Umlaut: UTF-8-Pfad bis in den Kern
     band.write_bytes(b"HALLO\r\n")
     assert emu.ptape_reader_status() == {"inserted": False, "pos": 0, "len": 0, "at_end": False}
@@ -237,11 +238,26 @@ def test_lochband_ueber_die_c_abi(name, variante, tmp_path):
     assert emu.ptape_punch_enable(True) and emu.ptape_punch_clear()
 
 
-def test_lochband_gibt_es_nur_am_prg():
+@pytest.mark.parametrize("name", ["a5120", "k8915", "prg710", "prg710-1"])
+def test_lochband_gibt_es_nur_gesteckt(name):
+    """Entwurf 23 AP-L1: ohne ``ptape=True`` keine K6022 — auch nicht am PRG."""
     from app.core_binding.k1520 import K1520Emulator
 
-    emu = K1520Emulator(machine="a5120")
+    emu = K1520Emulator(machine=name)
+    assert not emu.ptape_installed()
     assert emu.ptape_reader_status() is None
     assert emu.ptape_punch_length() is None
     assert emu.ptape_punch_enabled() is None
     assert not emu.ptape_load("egal")
+
+
+@pytest.mark.parametrize("name", ["a5120", "k8915"])
+def test_lochband_auch_an_a5120_und_k8915(name):
+    """Entwurf 23 AP-L1: die K6022 steckt in jeder Maschine; ein zweites Stecken scheitert."""
+    from app.core_binding.k1520 import K1520Emulator, _lib
+
+    emu = K1520Emulator(machine=name, ptape=True)
+    assert emu.ptape_installed()
+    assert emu.ptape_punch_length() == 0
+    assert not _lib.k1520_ptape_install(emu._handle)
+    assert b"bereits" in _lib.k1520_last_init_error()

@@ -69,6 +69,13 @@ inline bool steckeRaf(K1520Machine& m, const std::string& name, std::string& err
     return true;
 }
 
+/** @brief Steckt die K6022 (`--ptape`, Entwurf 23 AP-L1) in @p m, wenn @p an; false + @p err bei Fehler. */
+inline bool steckeK6022(K1520Machine& m, bool an, std::string& err) {
+    if (!an) return true;
+    if (!m.installK6022()) { err = m.k6022Fehler(); return false; }
+    return true;
+}
+
 inline const char* rafName(RAF::Typ t) {
     return t == RAF::Typ::RAF128 ? "RAF 128" : t == RAF::Typ::RAF2M ? "RAF-2M" : "RAF 512";
 }
