@@ -440,7 +440,11 @@ _lib.k1520_eprom_log.restype = ctypes.c_char_p
 _lib.k1520_eprom_error.argtypes = [K1520Handle]
 _lib.k1520_eprom_error.restype = ctypes.c_char_p
 
-# Lochband an der ADA K6022 (PRG, AP-P8b)
+# Lochband an der ADA K6022 (AP-P8b; steckbar in jeder Maschine seit Entwurf 23 AP-L1)
+_lib.k1520_ptape_install.argtypes = [K1520Handle]
+_lib.k1520_ptape_install.restype = ctypes.c_bool
+_lib.k1520_ptape_installed.argtypes = [K1520Handle]
+_lib.k1520_ptape_installed.restype = ctypes.c_bool
 _lib.k1520_ptape_load.argtypes = [K1520Handle, ctypes.c_char_p]
 _lib.k1520_ptape_load.restype = ctypes.c_bool
 _lib.k1520_ptape_eject.argtypes = [K1520Handle]
@@ -459,6 +463,41 @@ _lib.k1520_ptape_punch_enable.argtypes = [K1520Handle, ctypes.c_bool]
 _lib.k1520_ptape_punch_enable.restype = ctypes.c_bool
 _lib.k1520_ptape_punch_enabled.argtypes = [K1520Handle]
 _lib.k1520_ptape_punch_enabled.restype = ctypes.c_int
+# Bandformate + Stanzer-Bindung (Entwurf 23 AP-L3)
+_lib.k1520_ptape_error.argtypes = [K1520Handle]
+_lib.k1520_ptape_error.restype = ctypes.c_char_p
+_lib.k1520_ptape_detect_format.argtypes = [ctypes.c_char_p]
+_lib.k1520_ptape_detect_format.restype = ctypes.c_int
+_lib.k1520_ptape_format_from_ext.argtypes = [ctypes.c_char_p]
+_lib.k1520_ptape_format_from_ext.restype = ctypes.c_int
+_lib.k1520_ptape_load_fmt.argtypes = [K1520Handle, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_ptape_load_fmt.restype = ctypes.c_bool
+_lib.k1520_ptape_reader_file.argtypes = [K1520Handle]
+_lib.k1520_ptape_reader_file.restype = ctypes.c_char_p
+_lib.k1520_ptape_reader_format.argtypes = [K1520Handle]
+_lib.k1520_ptape_reader_format.restype = ctypes.c_int
+_lib.k1520_ptape_punch_bind.argtypes = [K1520Handle, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_ptape_punch_bind.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_unbind.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_unbind.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_new_tape.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_new_tape.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_flush.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_flush.restype = ctypes.c_bool
+_lib.k1520_ptape_punch_file.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_file.restype = ctypes.c_char_p
+_lib.k1520_ptape_punch_format.argtypes = [K1520Handle]
+_lib.k1520_ptape_punch_format.restype = ctypes.c_int
+
+# Bandformate (K1520_PTAPE_FMT_* in core/api/k1520_api.h) — stabile Kennungen.
+PTAPE_FMT_RAW, PTAPE_FMT_IHEX, PTAPE_FMT_ASCII = 0, 1, 2
+PTAPE_FORMAT_NAMEN = {PTAPE_FMT_RAW: "Roh", PTAPE_FMT_IHEX: "Intel HEX",
+                      PTAPE_FMT_ASCII: "ASCII-Art"}
+
+
+def _utf8(path) -> bytes:
+    """Pfad für die Lochstreifen-Funktionen (der Kern erwartet UTF-8, auch unter Windows)."""
+    return os.fspath(path).encode("utf-8")
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
@@ -706,7 +745,8 @@ class K1520Emulator:
     """Python wrapper for K1520 A5120 emulator."""
     
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
-                 em: Optional[str] = None, raf: Optional[str] = None):
+                 em: Optional[str] = None, raf: Optional[str] = None,
+                 ptape: bool = False):
         """Initialize emulator instance.
 
         Args:
@@ -722,6 +762,8 @@ class K1520Emulator:
             raf: RAM-Floppy — ``None``/``"none"`` = ohne, ``"raf128"``, ``"raf512"``
                 oder ``"raf2m"``; an jeder Maschine.  Wird direkt nach dem Anlegen
                 gesteckt (vor dem ersten Lauf); Fehler → ValueError.
+            ptape: Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken; an jeder
+                Maschine, wie ``raf`` direkt nach dem Anlegen.  Fehler → ValueError.
         """
         # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
         # darf nicht über ein fehlendes Attribut stolpern.
@@ -760,6 +802,12 @@ class K1520Emulator:
                 _lib.k1520_destroy(handle)
                 self._handle = None
                 raise ValueError(reason or f"RAF {raf!r} nicht steckbar")
+        if ptape and not _lib.k1520_ptape_install(handle):
+            reason = _lib.k1520_last_init_error()
+            reason = reason.decode("utf-8", "replace") if reason else ""
+            _lib.k1520_destroy(handle)
+            self._handle = None
+            raise ValueError(reason or "K6022 nicht steckbar")
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -887,38 +935,88 @@ class K1520Emulator:
         s = (_lib.k1520_eprom_log(self._handle, bool(only_new)) or b"").decode("utf-8", "replace")
         return [z for z in s.split("\n") if z]
 
-    # ── Lochband an der ADA K6022 (PRG, AP-P8b) ──────────────────────────────
+    # ── Lochband an der ADA K6022 (AP-P8b; steckbar seit Entwurf 23 AP-L1) ───
 
-    def ptape_load(self, path: str) -> bool:
-        """Band (Datei, Bytes wie gestanzt) in den Leser legen; False bei Lesefehler
-        oder anderer Maschine."""
-        return bool(_lib.k1520_ptape_load(self._handle, str(path).encode("utf-8")))
+    def ptape_installed(self) -> bool:
+        """True, wenn die K6022 gesteckt ist (``K1520Emulator(ptape=True)``)."""
+        return bool(_lib.k1520_ptape_installed(self._handle))
+
+    def ptape_error(self) -> str:
+        """Grund des letzten gescheiterten Lochstreifen-Aufrufs (install/load/bind/…);
+        "" nach einem Erfolg."""
+        return (_lib.k1520_ptape_error(self._handle) or b"").decode("utf-8", "replace")
+
+    @staticmethod
+    def ptape_detect_format(path) -> Optional[int]:
+        """Format (``PTAPE_FMT_*``) aus dem Dateiinhalt erraten; ``None`` = unlesbar."""
+        v = int(_lib.k1520_ptape_detect_format(_utf8(path)))
+        return v if v >= 0 else None
+
+    @staticmethod
+    def ptape_format_from_ext(path) -> int:
+        """Format (``PTAPE_FMT_*``) nach der Dateiendung; sonst ``PTAPE_FMT_RAW``."""
+        return int(_lib.k1520_ptape_format_from_ext(_utf8(path)))
+
+    def ptape_load(self, path, fmt: int = PTAPE_FMT_RAW) -> bool:
+        """Band aus einer Datei im Format ``fmt`` in den Leser legen; False (Grund in
+        :meth:`ptape_error`) bei Lesefehler, unpassendem Inhalt oder ohne Karte."""
+        return bool(_lib.k1520_ptape_load_fmt(self._handle, _utf8(path), int(fmt)))
 
     def ptape_eject(self) -> bool:
         """Band aus dem Leser nehmen."""
         return bool(_lib.k1520_ptape_eject(self._handle))
 
     def ptape_reader_status(self) -> Optional[dict]:
-        """Leser: ``{"inserted", "pos", "len", "at_end"}``; andere Maschine ``None``."""
+        """Leser: ``{"inserted", "pos", "len", "at_end", "file", "format"}``; ohne Karte
+        ``None``.  ``file`` = "" ohne Band."""
         ins, end = ctypes.c_int(), ctypes.c_int()
         pos, ln = ctypes.c_uint64(), ctypes.c_uint64()
         if not _lib.k1520_ptape_reader_status(self._handle, ctypes.byref(ins), ctypes.byref(pos),
                                               ctypes.byref(ln), ctypes.byref(end)):
             return None
+        datei = (_lib.k1520_ptape_reader_file(self._handle) or b"").decode("utf-8", "replace")
         return {"inserted": bool(ins.value), "pos": int(pos.value), "len": int(ln.value),
-                "at_end": bool(end.value)}
+                "at_end": bool(end.value), "file": datei,
+                "format": int(_lib.k1520_ptape_reader_format(self._handle))}
 
     def ptape_punch_length(self) -> Optional[int]:
-        """Länge des Stanzbandes; andere Maschine ``None``."""
+        """Länge des Stanzbandes; ohne Karte ``None``."""
         n = int(_lib.k1520_ptape_punch_length(self._handle))
         return n if n >= 0 else None
 
-    def ptape_punch_save(self, path: str) -> bool:
-        """Stanzband in eine Datei schreiben (überschreibt)."""
-        return bool(_lib.k1520_ptape_punch_save(self._handle, str(path).encode("utf-8")))
+    def ptape_punch_status(self) -> Optional[dict]:
+        """Stanzer: ``{"file", "format", "len", "enabled"}``; ohne Karte ``None``.
+        ``file`` = "" ohne Bindung."""
+        n = int(_lib.k1520_ptape_punch_length(self._handle))
+        if n < 0:
+            return None
+        datei = (_lib.k1520_ptape_punch_file(self._handle) or b"").decode("utf-8", "replace")
+        return {"file": datei, "format": int(_lib.k1520_ptape_punch_format(self._handle)),
+                "len": n, "enabled": bool(_lib.k1520_ptape_punch_enabled(self._handle) > 0)}
+
+    def ptape_punch_bind(self, path, fmt: int = PTAPE_FMT_RAW) -> bool:
+        """Stanzer an eine Datei binden (laufend mitgeschrieben); eine vorhandene Datei ist
+        der Anfang des Bandes.  False → :meth:`ptape_error`."""
+        return bool(_lib.k1520_ptape_punch_bind(self._handle, _utf8(path), int(fmt)))
+
+    def ptape_punch_unbind(self) -> bool:
+        """Bindung lösen (zuvor zurückschreiben; das Band bleibt im Speicher)."""
+        return bool(_lib.k1520_ptape_punch_unbind(self._handle))
+
+    def ptape_punch_new_tape(self) -> bool:
+        """„Neues Band": Stanzband leeren, gebundene Datei sofort leer schreiben."""
+        return bool(_lib.k1520_ptape_punch_new_tape(self._handle))
+
+    def ptape_punch_flush(self) -> bool:
+        """Gebundene Datei sofort zurückschreiben (sonst nach der Stanzpause)."""
+        return bool(_lib.k1520_ptape_punch_flush(self._handle))
+
+    def ptape_punch_save(self, path) -> bool:
+        """Stanzband (Roh) in eine Datei schreiben (überschreibt, ohne zu binden)."""
+        return bool(_lib.k1520_ptape_punch_save(self._handle, _utf8(path)))
 
     def ptape_punch_clear(self) -> bool:
-        """Stanzband leeren."""
+        """Wie :meth:`ptape_punch_new_tape` (alter Name)."""
         return bool(_lib.k1520_ptape_punch_clear(self._handle))
 
     def ptape_punch_enable(self, on: bool) -> bool:
@@ -926,7 +1024,7 @@ class K1520Emulator:
         return bool(_lib.k1520_ptape_punch_enable(self._handle, bool(on)))
 
     def ptape_punch_enabled(self) -> Optional[bool]:
-        """Stanzer ein?; andere Maschine ``None``."""
+        """Stanzer ein?; ohne Karte ``None``."""
         v = int(_lib.k1520_ptape_punch_enabled(self._handle))
         return None if v < 0 else bool(v)
 

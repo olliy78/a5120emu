@@ -15,11 +15,13 @@
 
 #pragma once
 #include "core/bus/k1520_bus.h"
+#include "core/cards/k6022/k6022.h"
 #include "core/cards/raf/raf.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
 #include "core/serial/hub.h"
 #include <cstdint>
+#include <cstdio>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -185,6 +187,53 @@ public:
     /** @brief Grund des letzten gescheiterten @ref installRaf ("" = keiner). */
     const std::string& rafFehler() const { return raf_fehler_; }
 
+    // ─── Lochstreifen: ADA K6022 / SIF1000 (doc/design/23_lochstreifen.md §3, AP-L1) ──
+    // In allen drei Maschinen dieselbe Karte, fest auf E0H–E7H (Stanzer E0H–E3H, Leser
+    // E4H–E7H).  Gesteckt wird wie die RAF NACH dem Anlegen und VOR dem ersten
+    // run()/reset().  Die Maschine hängt beide PIOs in ihre Interruptkette
+    // (@ref k6022Einketten), taktet die Karte im Laufweg (@ref k6022Takt) und setzt sie
+    // beim systemweiten /RESET zurück (@ref k6022Reset).  Kein Teil des Save-State (§2).
+    /**
+     * @brief Steckt die K6022 auf E0H–E7H.
+     * @return false (Grund in @ref k6022Fehler) nach dem ersten run()/reset(), wenn
+     *         schon eine K6022 steckt oder eines der Tore E0H–E7H belegt ist.
+     */
+    bool installK6022() {
+        k6022_fehler_.clear();
+        if (!bestueckbar_) {
+            k6022_fehler_ = "K6022 nur vor dem ersten Lauf/Reset steckbar";
+            return false;
+        }
+        if (k6022_) {
+            k6022_fehler_ = "Es steckt bereits eine K6022";
+            return false;
+        }
+        // Erst prüfen, dann anmelden: registerIO wirft erst am belegten Tor und ließe
+        // die davor angemeldeten auf eine Karte zeigen, die es gleich nicht mehr gibt.
+        K1520Bus& bus = systemBus();
+        for (int p = K6022_BASIS; p < K6022_BASIS + 8; ++p) {
+            if (const BusDevice* d = bus.ioOwner(static_cast<uint8_t>(p))) {
+                char buf[96];
+                std::snprintf(buf, sizeof buf, "E/A-Tor %02XH belegt (%s)", p, d->deviceName());
+                k6022_fehler_ = buf;
+                return false;
+            }
+        }
+        auto karte = std::make_unique<K6022>(k6022TaktHz());
+        karte->attachToBus(bus);
+        k6022_ = std::move(karte);
+        k6022Einketten(*k6022_);
+        bus.markIntDirty();
+        return true;
+    }
+    /** @brief Die gesteckte K6022 (nullptr = keine). */
+    K6022*       k6022()       { return k6022_.get(); }
+    const K6022* k6022() const { return k6022_.get(); }
+    /** @brief Grund des letzten gescheiterten @ref installK6022 ("" = keiner). */
+    const std::string& k6022Fehler() const { return k6022_fehler_; }
+    /// Feste Basis der K6022 in allen Maschinen (Entwurf 23 §2).
+    static constexpr uint8_t K6022_BASIS = 0xE0;
+
 protected:
     /** @brief Der Systembus, auf dem Zusatzkarten (RAF) ihre E/A-Tore anmelden. */
     virtual K1520Bus& systemBus() = 0;
@@ -195,11 +244,34 @@ protected:
     /** @brief Systemweiter /RESET: nur das Latch sperrt, der Inhalt bleibt (§3.4). */
     void rafReset() { if (raf_) raf_->reset(); }
 
+    /** @brief CPU-Takt für die Zeichenzeiten der K6022 (alle drei Maschinen: 2,4576 MHz). */
+    virtual uint32_t k6022TaktHz() const { return 2'457'600; }
+    /**
+     * @brief Die PIOs der frisch gesteckten K6022 in die Interruptkette aufnehmen.
+     *        Vorgabe: HINTEN anhängen, Stanzer vor Leser (Entwurf 23 §2).  Eine Maschine
+     *        mit eigener Stellung (PRG 710: vor dem Fernschreiber) setzt ihre Kette neu.
+     */
+    virtual void k6022Einketten(K6022& k) {
+        systemBus().appendInterruptChain(&k.pioStanzer());
+        systemBus().appendInterruptChain(&k.pioLeser());
+    }
+    /** @brief Laufweg: Karte fortschreiben; true = Interruptzustand evtl. geändert. */
+    bool k6022Takt(int takte) { return k6022_ && k6022_->clockTick(takte); }
+    /** @brief Systemweiter /RESET: PIOs zurück; Band und Stanzband bleiben. */
+    void k6022Reset() { if (k6022_) k6022_->reset(); }
+    /** @brief Ende jeder run()-Scheibe: gebundene Stanzdatei nach der Stanzpause
+     *         zurückschreiben (Entwurf 23 §5, wie `Laufwerke::autoFlush`). */
+    void k6022AutoFlush() { if (k6022_) k6022_->autoFlush(); }
+
     /// Erst NACH Bus und Karten der abgeleiteten Klasse zerstört — unschädlich, die
     /// RAF fasst den Bus in ihrem Destruktor nicht an.
     std::unique_ptr<RAF> raf_;
+    /// Wie raf_: nach Bus und Karten der abgeleiteten Klasse zerstört; die K6022 fasst
+    /// den Bus im Destruktor nicht an (Bus samt Kette sind dann schon fort).
+    std::unique_ptr<K6022> k6022_;
 
 private:
     bool        bestueckbar_ = true;
     std::string raf_fehler_;
+    std::string k6022_fehler_;
 };

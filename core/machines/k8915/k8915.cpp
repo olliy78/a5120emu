@@ -72,6 +72,7 @@ void K8915Machine::resetHardware()
     afs_.reset();            // K5122: PIOs, Marken-FF; Disketten und Kopfposition bleiben
     ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
+    k6022Reset();            // K6022 (gesteckt?): PIOs zurück, Band und Stanzband bleiben
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -178,6 +179,7 @@ int K8915Machine::run(int max_cycles)
         afs_.update(used);
         bool dirty = zre_.clockTick(used);
         dirty |= ats_.clockTick(used);
+        dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
         // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
         // 1/16 Zeichenzeit — dazwischen kostet es nur diesen Vergleich.
         if (total_cycles_ >= serial_naechst_) {
@@ -188,6 +190,7 @@ int K8915Machine::run(int max_cycles)
         if (dirty) bus_.markIntDirty();
     }
     lw_.autoFlush(total_cycles_);
+    k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
     anzeigenSpiegeln();
     return max_cycles - remaining;
 }

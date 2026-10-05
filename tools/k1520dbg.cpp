@@ -28,6 +28,7 @@
  * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
  *
  * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
+ * `--ptape` steckt die Lochstreifen-Karte K6022 (SIF1000, E0H–E7H; alle Maschinen).
  *
  * @license MIT
  */
@@ -188,6 +189,7 @@ int main(int argc, char** argv){
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
+    bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
             if (!dbgm::parseMachine(argv[++i], art)){
@@ -202,6 +204,7 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--console")) start_console=true;
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
+        else if (!strcmp(argv[i],"--ptape")) ptape_opt=true;
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -236,6 +239,8 @@ int main(int argc, char** argv){
         if (!keine && !m.base().installRaf(rt)){
             fprintf(stderr,"--raf: %s\n",m.base().rafFehler().c_str()); return 2; }
     }
+    { std::string err;   // ebenfalls vor dem ersten Lauf
+      if (!dbgm::steckeK6022(m.base(), ptape_opt, err)){ fprintf(stderr,"--ptape: %s\n",err.c_str()); return 2; } }
     m.powerOn();
     const bool K8 = m.einCpu();      // eine CPU: K8915 ODER PRG (keine ZVE2/Snapshots)
     const bool K89 = m.isK8915();

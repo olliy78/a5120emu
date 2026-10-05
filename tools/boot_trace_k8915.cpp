@@ -76,7 +76,8 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
 {
     K8915Machine m;
     { std::string err;
-      if (!dbgm::steckeRaf(m, o.raf, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; } }
+      if (!dbgm::steckeRaf(m, o.raf, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
+      if (!dbgm::steckeK6022(m, o.ptape, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
     m.powerOn();
     auto rd = [&](uint16_t a) { return m.memReadDebug(a); };
     // Annotation nur, solange die Bytes der Listingzeile gerade dort stehen (ROM vs. RAM).

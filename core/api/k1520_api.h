@@ -531,9 +531,17 @@ K1520_API const char* k1520_eprom_log(K1520Handle h, bool only_new);
 /** @brief Fehlertext des letzten fehlgeschlagenen insert/save (dieses Fadens). */
 K1520_API const char* k1520_eprom_error(K1520Handle h);
 
-/* ─── Lochband an der ADA K6022 (PRG 710/710-1, doc/design/20_prg710.md AP-P8b) ───
+/* ─── Lochband an der ADA K6022 (doc/design/23_lochstreifen.md, AP-P8b/AP-L1) ───
  * Leser daro 1210 (E4H–E7H) und Stanzer daro 1215 (E0H–E3H).  Ein Band ist eine Datei mit
- * den Bytes wie gestanzt.  Alle Funktionen sind thread-sicher; andere Maschinen: false/-1. */
+ * den Bytes wie gestanzt.  Die Karte ist eine Option in jeder Maschine, gesteckt mit
+ * k1520_ptape_install nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset.  Alle
+ * Funktionen sind thread-sicher; ohne gesteckte Karte: false/-1. */
+
+/** @brief Steckt die K6022 auf E0H–E7H.  Zu spät, doppelt oder Tor belegt: false,
+ *  Grund in k1520_last_init_error. */
+K1520_API bool     k1520_ptape_install(K1520Handle h);
+/** @brief true = K6022 gesteckt. */
+K1520_API bool     k1520_ptape_installed(K1520Handle h);
 
 /** @brief Band (Datei, UTF-8-Pfad) in den Leser legen — ersetzt ein eingelegtes, Stellung auf Anfang. */
 K1520_API bool     k1520_ptape_load(K1520Handle h, const char* path);
@@ -546,16 +554,59 @@ K1520_API bool     k1520_ptape_eject(K1520Handle h);
  */
 K1520_API bool     k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos,
                                              uint64_t* len, int* at_end);
-/** @brief Länge des Stanzbandes in Bytes; -1 bei anderer Maschine. */
+/** @brief Länge des Stanzbandes in Bytes; -1 ohne Karte. */
 K1520_API int64_t  k1520_ptape_punch_length(K1520Handle h);
 /** @brief Stanzband in eine Datei schreiben (überschreibt); false bei Schreibfehler. */
 K1520_API bool     k1520_ptape_punch_save(K1520Handle h, const char* path);
-/** @brief Stanzband leeren (neues Band einlegen). */
+/** @brief Stanzband leeren — wie k1520_ptape_punch_new_tape (leert auch eine gebundene Datei). */
 K1520_API bool     k1520_ptape_punch_clear(K1520Handle h);
 /** @brief Stanzer ein/aus (Vorgabe ein; aus = kein END, der Treiber meldet C2). */
 K1520_API bool     k1520_ptape_punch_enable(K1520Handle h, bool on);
-/** @brief 1 = Stanzer ein, 0 = aus, -1 bei anderer Maschine. */
+/** @brief 1 = Stanzer ein, 0 = aus, -1 ohne Karte. */
 K1520_API int      k1520_ptape_punch_enabled(K1520Handle h);
+
+/* Bandformate (doc/design/23_lochstreifen.md §4, AP-L3).  Stabile Kennungen — nicht
+ * umnummerieren (= lochstreifen::Format im Kern).  Die alten Funktionen oben arbeiten
+ * im Format Roh. */
+#define K1520_PTAPE_FMT_RAW   0   /* ein Byte je Sprosse (.ptp, .bin) */
+#define K1520_PTAPE_FMT_IHEX  1   /* Intel HEX, Adresse = Bandposition (.hex, .ihx) */
+#define K1520_PTAPE_FMT_ASCII 2   /* ASCII-Art, eine Zeile je Sprosse (.txt, .tape) */
+
+/** @brief Grund des letzten gescheiterten install/load/bind/unbind/new_tape/flush/save
+ *  (dieses Fadens); "" nach einem Erfolg.  Mit Zeilennummer, wenn der Inhalt nicht zum
+ *  Format passt.  Braucht keine Karte. */
+K1520_API const char* k1520_ptape_error(K1520Handle h);
+/** @brief Format einer Datei aus ihrem INHALT erraten (Vorauswahl des Leser-Dialogs);
+ *  -1, wenn sie nicht lesbar ist.  Ohne Handle. */
+K1520_API int      k1520_ptape_detect_format(const char* path);
+/** @brief Format nach der Endung von @p path (Vorauswahl des Stanzer-Dialogs); sonst
+ *  K1520_PTAPE_FMT_RAW.  Ohne Handle, die Datei muss nicht existieren. */
+K1520_API int      k1520_ptape_format_from_ext(const char* path);
+
+/** @brief Band aus einer Datei im Format @p fmt in den Leser legen; false (+ k1520_ptape_error)
+ *  bei unlesbarer Datei, unpassendem Inhalt, unbekanntem Format oder ohne Karte. */
+K1520_API bool     k1520_ptape_load_fmt(K1520Handle h, const char* path, int fmt);
+/** @brief Datei des eingelegten Bandes ("" = keins, ohne Karte ebenfalls ""). */
+K1520_API const char* k1520_ptape_reader_file(K1520Handle h);
+/** @brief Format des eingelegten Bandes; -1 ohne Karte. */
+K1520_API int      k1520_ptape_reader_format(K1520Handle h);
+
+/** @brief Stanzer an eine Datei im Format @p fmt binden (laufend mitgeschrieben, §5): eine
+ *  vorhandene Datei ist der Anfang des Bandes, eine fehlende wird leer angelegt.  false
+ *  (+ k1520_ptape_error; eine alte Bindung bleibt dann bestehen). */
+K1520_API bool     k1520_ptape_punch_bind(K1520Handle h, const char* path, int fmt);
+/** @brief Bindung lösen (zuvor zurückschreiben; das Band bleibt im Speicher).  false ohne
+ *  Karte oder wenn das Zurückschreiben scheiterte (gelöst wird trotzdem). */
+K1520_API bool     k1520_ptape_punch_unbind(K1520Handle h);
+/** @brief „Neues Band": Stanzband leeren, eine gebundene Datei sofort leer schreiben. */
+K1520_API bool     k1520_ptape_punch_new_tape(K1520Handle h);
+/** @brief Gebundene Datei sofort zurückschreiben (sonst nach ≈ 0,5 s Stanzpause).  true
+ *  auch ohne Bindung oder ohne Änderung; false ohne Karte oder bei Schreibfehler. */
+K1520_API bool     k1520_ptape_punch_flush(K1520Handle h);
+/** @brief Gebundene Datei des Stanzers ("" = nicht gebunden, ohne Karte ebenfalls ""). */
+K1520_API const char* k1520_ptape_punch_file(K1520Handle h);
+/** @brief Format der Bindung; -1 ohne Karte. */
+K1520_API int      k1520_ptape_punch_format(K1520Handle h);
 
 #ifdef __cplusplus
 }
