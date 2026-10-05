@@ -502,9 +502,23 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
                 ch.ext_latch_ = false;   // RR0 D3/D5/D7 zeigen wieder die Eingänge
                 ch.updateRR0();
                 break;
-            case 3: // Channel Reset (full initialization)
+            case 3: { // Channel Reset (full initialization)
+                // WR2 (Interruptvektor) und „Status affects Vector" (WR1 D2) gehören beiden
+                // Kanälen (nur Kanal B trägt sie) und überleben den Kanalreset von B.
+                // Beleg (AP-4e): CP/Z 2.2 (PC 1715) programmiert WR2 = C0H + WR1 = 04H
+                // und setzt Kanal B danach für die V.24-Parameter (18H, WR4, WR3, WR5)
+                // erneut zurück; seine Vektortabelle liegt auf F7CCH (C0H | 110b<<1 =
+                // Rx von Kanal A).  Ohne das Beibehalten ginge jeder Tasteninterrupt
+                // ins Leere.  Kein Handbuchzitat im Haus; die Entscheidung stützt sich
+                // auf das lauffähige Gastsystem (wie beim Zeigerbit-Befund AP-4a).
+                const uint8_t wr2 = ch.wr[2];
+                const bool    sav = ch.status_affects_vector;
                 ch.reset();
+                ch.wr[2] = wr2;
+                ch.status_affects_vector = sav;
+                if (sav) ch.wr[1] |= 0x04;
                 break;
+            }
             case 4: // Enable Int on Next Rx Character
                 ch.rx_int_first_only = true;
                 break;
@@ -532,7 +546,13 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
                 break;
         }
 
-        if (reg_sel != 0)
+        // Channel Reset (Befehl 3) setzt auch den Registerzeiger zurück: die Zeigerbits
+        // D2–D0 DESSELBEN Bytes gelten danach nicht mehr.  Beleg (AP-4a): der Urlader S502
+        // des PC 1715 initialisiert SIO-B mit 1CH,04H,49H,03H,C1H,01H,00H,05H,68H — nur mit
+        // Zeiger 0 nach 1CH ergibt das WR4=49H, WR3=C1H, WR1=00H, WR5=68H (sonst ginge 04H
+        // selbst nach WR4, WR3 bliebe unprogrammiert und die Empfangsfreigabe fehlte; das
+        // Gerät bootet über V.24).  Alle anderen Gäste schreiben 18H (Zeigerbits 0).
+        if (reg_sel != 0 && cmd != 3)
             ch.reg_ptr = reg_sel;
 
     } else {

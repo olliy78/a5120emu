@@ -85,10 +85,31 @@ bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsPr
         }
     }
 
+    // `dir_boot`: der Bootkopf ist hier der POSITIVE Nachweis.  Ohne ihn waere jede
+    // Datendiskette zugleich `cpa800` und `cpa1715` — und damit „nicht eindeutig".
+    if (p.dir_boot) {
+        std::vector<uint8_t> kopf;
+        if (!cpm->readBootSlots(kopf) || !CpmFileSystem::bootKopf(kopf.data(), kopf.size()))
+            return nein("Verzeichnisplatz 0 traegt keinen PC-1715-Bootkopf (Wort F002H/F003H)");
+    }
+
     int gut = 0;
     for (const CpmDirEntry& d : cpm->directory()) {
         if (d.free()) { ++gut; continue; }
         const std::string wo = "Verzeichnisplatz " + std::to_string(d.index);
+        if (d.boot) { ++gut; continue; }            // Bootbereich des Urladers (dir_boot)
+        // CP/M-3-Sonderplaetze (SCP 3.0 des 1715W; INITDIR legt sie an): Zeitstempel (21H) nur
+        // als VIERTER Platz einer Vierergruppe, Etikett (20H) und Kennwortsaetze (16…31) nur
+        // mit druckbarem Namen — sonst liesse sich jeder Datenmuell als Verzeichnis lesen.
+        // Sie zaehlen nicht als belegt: `list()` zeigt sie nicht, ein Verzeichnis nur aus
+        // Zeitstempeln ist leer.
+        if (d.user > 15 && d.user <= 0x21) {
+            bool ok = (d.user == 0x21) ? (d.index % 4 == 3) : true;
+            if (d.user != 0x21)
+                for (char c : d.name)
+                    if (c < 0x20 || c > 0x7E || (c >= 'a' && c <= 'z')) ok = false;
+            if (ok) { ++gut; continue; }
+        }
         if (d.user > 15) {
             // Kein fester Puffer: seit Ebene 0 (§11) wird dieser Satz AUSGEGEBEN, und
             // 80 Byte schnitten ihn mitten im Wort ab (der Gedankenstrich allein
@@ -246,6 +267,7 @@ std::vector<SectorSpace::TrackRef> systemspuren(const SectorSpace& raum, const F
 
 /// @brief Fassungsvermoegen der Systemspuren; 0 = es gibt keine.
 uint64_t systemspurBytes(const SectorSpace& raum, const FsProfile& p) {
+    if (p.dir_boot) return 128;          // Bootbereich im Verzeichnis: vier Plaetze
     uint64_t n = 0;
     for (const SectorSpace::TrackRef& t : systemspuren(raum, p))
         n += static_cast<uint64_t>(t.sectors) * (t.sector_size + nachspannBytes(p));
@@ -302,6 +324,40 @@ std::string k8915Bootabbildproblem(const FsProfile& p, const SectorSpace& raum,
         return "Das Bootabbild ist " + std::to_string(img.size()) + " Byte gross, der Ladekopf "
                "verlangt aber " + std::to_string(n) + " Sektoren (" + std::to_string(noetig)
                + " Byte) — der Lader bliebe mitten im System stehen.";
+    return {};
+}
+
+
+// ─── PC 1715: Bootkopf des Urladers S502 (AP-D, doc/pc1715/disketten.md §1) ──
+//
+// Der Urlader liest Spur 0 Sektor 1 und akzeptiert sie nur, wenn das Wort in Byte 0/1
+// F002H oder F003H ist (`s502.prn`).  Ein A5120-Lader (`SYL`) besteht das nicht; auf eine
+// 1715-Diskette geschrieben, sieht das Ergebnis heil aus und bootet nicht.  Geprueft wird,
+// wenn das Profil es verlangt (`boot_header: pc1715`) ODER die Diskette schon einen
+// solchen Kopf traegt (SCP-Diskette, die die CP/A-Regel als `cpa_auto` fuehrt).
+
+/// @brief Der Bootkopf einer 1715-Diskette steht in Sektor 1 der ersten Systemspur bzw.
+///        (dir_boot) im ersten Verzeichnisplatz — beides sind die ersten Bytes von c0h0.
+bool pc1715HatKopf(const SectorSpace& raum) {
+    if (raum.trackCount() == 0) return false;
+    const SectorSpace::TrackRef t = raum.trackAt(0);
+    SectorData s;
+    return raum.readSector(t.cyl, t.head, t.first_id, s)
+        && CpmFileSystem::bootKopf(s.data.data(), s.data.size());
+}
+
+std::string pc1715Bootabbildproblem(const FsProfile& p, const SectorSpace& raum,
+                                    const std::vector<uint8_t>& img) {
+    if (p.type != FsType::Cpm) return {};
+    if (p.boot_header != "pc1715" && !pc1715HatKopf(raum)) return {};
+
+    if (!CpmFileSystem::bootKopf(img.data(), img.size()))
+        return "Das Bootabbild traegt keinen PC-1715-Bootkopf (Wort F002H/F003H in Byte 0/1) — "
+               "es stammt nicht von einer 1715-Systemdiskette.  Ein A5120-Bootabbild (SYL-Lader) "
+               "startet am PC 1715 nicht.";
+    if (p.dir_boot && img.size() < 128)
+        return "Das Bootabbild ist nur " + std::to_string(img.size()) + " Byte gross; der "
+               "Bootbereich im Verzeichnis umfasst die ersten 128 Byte (vier Plaetze).";
     return {};
 }
 
@@ -1207,10 +1263,13 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
         // und einem `detect: false`-Profil derselben Geometrie (leere CP/A-Datendiskette
         // ≡ leere SCPX-8915-Diskette).  Kein Befund, aber ein Hinweis mit dem Ausweg —
         // wer die Diskette fuer den K8915 fuellen will, muss es jetzt sagen.
-        if (dv->profile_->type == FsType::Cpm && !dv->abgeleitet_
+        // Nicht bei den 1715-Profilen: ihr Ladekopf (F002H/F003H) ist ein Nachweis, und
+        // `scp1715` ist keine Lesart einer leeren Datendiskette, sondern eine Systemdiskette.
+        if (dv->profile_->type == FsType::Cpm && !dv->abgeleitet_ && !dv->profile_->dir_boot
             && belegte_plaetze[dv->profile_] == 0) {
             for (const FsProfile* p : fs_cat.forFormat(dv->format_->name))
-                if (!p->detect && p->type == FsType::Cpm && p->allowsContainer(ext))
+                if (!p->detect && p->type == FsType::Cpm && p->allowsContainer(ext)
+                    && p->boot_header != "pc1715")
                     dv->detection_.remarks = zusammen(
                         dv->detection_.remarks,
                         "Verzeichnis leer — ebenso gut " + p->name + " (" + p->description
@@ -2678,6 +2737,8 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
             const SectorSpace raum(leer, *fmt, SectorSpace::kAllHeads);
             err = k8915Bootabbildproblem(*profil, raum, boot);
             if (!err.empty()) return nullptr;
+            err = pc1715Bootabbildproblem(*profil, raum, boot);
+            if (!err.empty()) return nullptr;
         }
         err = prgBootabbildproblem(*profil, boot, nullptr);
         if (!err.empty()) return nullptr;
@@ -2787,6 +2848,16 @@ bool DiskVolume::readBootImage(std::vector<uint8_t>& out, int volume) const {
     if (bootAreaSize(volume) == 0) return fail(keineSystemspuren(*profile_));
 
     out.clear();
+    if (profile_->dir_boot) {
+        // PC 1715 ohne Systemspuren: der Bootbereich sind die ersten vier Verzeichnisplaetze.
+        const auto* cpm = dynamic_cast<const CpmFileSystem*>(
+            volumes_[static_cast<size_t>(volume)].fs.get());
+        if (!cpm || !cpm->readBootSlots(out)) {
+            out.clear();
+            return fail("Bootbereich im Verzeichnis nicht lesbar");
+        }
+        return true;
+    }
     SectorSpace& raum = *volumes_[static_cast<size_t>(volume)].space;
     const uint8_t nach = nachspannBytes(*profile_);
 
@@ -2833,6 +2904,15 @@ bool DiskVolume::writeBootImage(const std::vector<uint8_t>& img, int volume) {
     SectorSpace& raum = *volumes_[static_cast<size_t>(volume)].space;
     if (const std::string problem = k8915Bootabbildproblem(*profile_, raum, img); !problem.empty())
         return fail(problem);
+    if (const std::string problem = pc1715Bootabbildproblem(*profile_, raum, img);
+        !problem.empty())
+        return fail(problem);
+    if (profile_->dir_boot) {
+        auto* cpm = dynamic_cast<CpmFileSystem*>(volumes_[static_cast<size_t>(volume)].fs.get());
+        if (!cpm) return fail("Bootbereich im Verzeichnis: kein CP/M-Dateisystem");
+        if (!cpm->writeBootSlots(img)) return fail(cpm->lastError());
+        return true;
+    }
     {
         std::vector<uint8_t> alt;
         const bool da = readBootImage(alt, volume);

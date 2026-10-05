@@ -1,6 +1,6 @@
 /**
  * @file dbg_machine.h
- * @brief Die Maschine hinter k1520dbg — A5120, K8915 (§8a AP-E4d) ODER PRG 710/710-1 (AP-P5c).
+ * @brief Die Maschine hinter k1520dbg — A5120, K8915 (§8a AP-E4d), PRG 710/710-1 (AP-P5c) ODER PC 1715 (AP-4b).
  *
  * Der Debugger ist über Jahre am A5120 gewachsen und spricht die Maschine an rund
  * 200 Stellen als `m.xxx()` an.  Statt jede Stelle zu verzweigen, steht hier EINE
@@ -29,6 +29,7 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
 #include "core/machines/prg710/prg710.h"
+#include "core/machines/pc1715/pc1715.h"
 #include <memory>
 #include <set>
 #include <string>
@@ -40,12 +41,14 @@ namespace dbgm {
 using IntSource = A5120Machine::IntSource;
 
 /** @brief Maschinenwahl aus `--machine`; false bei unbekanntem Namen. */
-enum class Art { A5120, K8915, Prg710, Prg710_1 };
+enum class Art { A5120, K8915, Prg710, Prg710_1, Pc1715, Pc1715W };
 inline bool parseMachine(const std::string& s, Art& art) {
     if (s == "a5120" || s == "A5120")       { art = Art::A5120;    return true; }
     if (s == "k8915" || s == "K8915")       { art = Art::K8915;    return true; }
     if (s == "prg710" || s == "PRG710")     { art = Art::Prg710;   return true; }
     if (s == "prg710-1" || s == "PRG710-1") { art = Art::Prg710_1; return true; }
+    if (s == "pc1715" || s == "PC1715")     { art = Art::Pc1715;   return true; }
+    if (s == "pc1715w" || s == "PC1715W")   { art = Art::Pc1715W;  return true; }   // AP-W3
     return false;
 }
 
@@ -144,6 +147,12 @@ public:
     /// @p cfg gilt nur für den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
     explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}) {
         if (art == Art::K8915) k8_ = std::make_unique<K8915Machine>();
+        else if (art == Art::Pc1715) pc_ = std::make_unique<Pc1715Machine>();
+        else if (art == Art::Pc1715W) {   // dieselbe Klasse, Variante 1715W (AP-W3)
+            Pc1715Machine::Config c;
+            c.variante = Pc1715Machine::Config::Variante::Pc1715W;
+            pc_ = std::make_unique<Pc1715Machine>(c);
+        }
         else if (art == Art::Prg710 || art == Art::Prg710_1) {
             Prg710Machine::Config pc;
             pc.variante = art == Art::Prg710_1 ? Prg710Machine::Config::Variante::Prg710_1
@@ -155,21 +164,24 @@ public:
 
     bool isK8915() const { return k8_ != nullptr; }
     bool isPrg() const { return p7_ != nullptr; }
+    bool isPc1715() const { return pc_ != nullptr; }
     bool isPrg1() const { return p7_ && p7_->variante() == Prg710Machine::Config::Variante::Prg710_1; }
     /// Eine CPU, keine ZVE2/BUSRQ/Snapshots (K8915 und PRG).
     bool einCpu() const { return a5_ == nullptr; }
     const char* name() const {
-        return k8_ ? "K8915" : p7_ ? (isPrg1() ? "PRG 710-1" : "PRG 710") : "A5120"; }
+        return k8_ ? "K8915" : pc_ ? "PC 1715" : p7_ ? (isPrg1() ? "PRG 710-1" : "PRG 710") : "A5120"; }
     /// Anzeigename der (Haupt-)CPU in Meldungen: am A5120 „ZVE1“ (es gibt zwei).
     const char* cpuName() const { return a5_ ? "ZVE1" : "CPU"; }
     A5120Machine* a5120() { return a5_.get(); }
     K8915Machine* k8915() { return k8_.get(); }
     Prg710Machine* prg() { return p7_.get(); }
+    Pc1715Machine* pc1715() { return pc_.get(); }
     /// Erweiterungsmodul (A5120.16); nullptr ohne `--em` und immer am K8915.
     EM* em() { return a5_ ? a5_->em() : nullptr; }
     K1520Machine& base() {
         if (k8_) return *k8_;
         if (p7_) return *p7_;
+        if (pc_) return *pc_;
         return *a5_;
     }
 
@@ -178,7 +190,7 @@ public:
     void reset()   { base().reset(); }
     int  run(int n) { return base().run(n); }
     void stop()    { base().stop(); }
-    void clearStop() { if (k8_) k8_->clearStop(); else if (p7_) p7_->clearStop(); else a5_->clearStop(); }
+    void clearStop() { if (k8_) k8_->clearStop(); else if (p7_) p7_->clearStop(); else if (pc_) pc_->clearStop(); else a5_->clearStop(); }
 
     // ─── Disketten ───────────────────────────────────────────────────────────
     bool mountDisk(int d, const std::string& p, const std::string& f, bool wp) {
@@ -205,6 +217,7 @@ public:
     uint8_t screenByte(int row, int col) {
         if (k8_) return (uint8_t)(k8_->screenChar(col, row) & 0x7F);
         if (p7_) return (uint8_t)(p7_->screenChar(col, row) & 0x7F);   // VRAM nur bei E8H[F]=FFH in CPU-Sicht
+        if (pc_) return (uint8_t)(pc_->screenChar(col, row) & 0x7F);   // Bild kommt per DMA, nie über mem_read
         return a5_->memReadDebug((uint16_t)(0xF800 + row * 80 + col));
     }
 
@@ -212,6 +225,7 @@ public:
     Z80& cpuDebug() {
         if (k8_) return k8_->zre().cpu();
         if (p7_) return p7_->zre().cpu();
+        if (pc_) return pc_->zre().cpu();
         return a5_->cpuDebug();
     }
     uint16_t cpuPC() { return cpuDebug().PC; }
@@ -221,17 +235,20 @@ public:
     uint64_t machineCycles() {
         if (k8_) return k8_->totalCycles();
         if (p7_) return p7_->totalCycles();
+        if (pc_) return pc_->totalCycles();
         return a5_->machineCycles();
     }
     bool isRomEnabled() {
         if (k8_) return k8_->zre().ortVon(0x0000).quelle == K8915Zre::Quelle::Rom;
         if (p7_) return p7_->speicher().ortVon(0x0000).quelle == Prg710Speicher::Quelle::Zre;
+        if (pc_) return pc_->zre().romEin();
         return a5_->isRomEnabled();
     }
 
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) {
         if (k8_) k8_->setCpuTraceCallback(std::move(cb));
         else if (p7_) p7_->setCpuTraceCallback(std::move(cb));
+        else if (pc_) pc_->setCpuTraceCallback(std::move(cb));
         else     a5_->setCpuTraceCallback(std::move(cb));
     }
     void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
@@ -240,6 +257,7 @@ public:
     void setBusTrace(K1520Bus::BusTrace cb) {
         if (k8_) k8_->setBusTrace(std::move(cb));
         else if (p7_) p7_->setBusTrace(std::move(cb));
+        else if (pc_) pc_->setBusTrace(std::move(cb));
         else     a5_->setBusTrace(std::move(cb));
     }
 
@@ -264,21 +282,25 @@ public:
     K5122::DebugState k5122State() {
         if (k8_) return k8_->afs().debugState();
         if (p7_) return p7_->afs().debugState();
+        if (pc_) return pc_->afs().debugState();
         return a5_->k5122State();
     }
     Z80PIO::DebugState k5122CtrlPioState() {
         if (k8_) return k8_->afs().ctrlPio().debugState();
         if (p7_) return p7_->afs().ctrlPio().debugState();
+        if (pc_) return pc_->afs().ctrlPio().debugState();
         return a5_->k5122CtrlPioState();
     }
     Z80PIO::DebugState k5122DataPioState() {
         if (k8_) return k8_->afs().dataPio().debugState();
         if (p7_) return p7_->afs().dataPio().debugState();
+        if (pc_) return pc_->afs().dataPio().debugState();
         return a5_->k5122DataPioState();
     }
     const K1520Bus::IntAck& lastIntAck() {
         if (k8_) return k8_->lastIntAck();
         if (p7_) return p7_->lastIntAck();
+        if (pc_) return pc_->bus().lastIntAck();
         return a5_->lastIntAck();
     }
 
@@ -287,6 +309,40 @@ public:
         if (a5_) return a5_->interruptSources();
         std::vector<IntSource> out;
         int pos = 0;
+        if (pc_) {   // Kette Steuer-PIO → Daten-PIO → CTC0 → SIO0 (Plan §3.5, Merkposten)
+            auto addPio = [&](const Z80PIO::DebugState& st, const char* name) {
+                for (int p = 0; p < 2; ++p) {
+                    IntSource s;
+                    s.device = std::string(name) + " " + (p ? "B" : "A");
+                    s.vector = st.port[p].vector; s.ie = st.port[p].ie;
+                    s.pending = st.port[p].pending; s.ius = st.port[p].ius;
+                    s.iei = st.port[p].iei; s.chain = pos++;
+                    out.push_back(std::move(s));
+                }
+            };
+            auto st = pc_->zre().ctc().debugState();
+            addPio(pc_->afs().ctrlPio().debugState(), "FD Steuer-PIO");
+            addPio(pc_->afs().dataPio().debugState(), "FD Daten-PIO");
+            for (int c = 0; c < 4; ++c) {
+                IntSource s;
+                s.device = std::string("ZRE CTC0 ch") + char('0' + c);
+                s.vector = (uint8_t)(st.vecBase | (c << 1));
+                s.ie = st.ch[c].intEn; s.pending = st.ch[c].intPending;
+                s.ius = st.ch[c].ius; s.iei = st.ch[c].iei; s.chain = pos++;
+                out.push_back(std::move(s));
+            }
+            auto ss = pc_->zre().sio().debugState();
+            for (int c = 0; c < 2; ++c) {
+                IntSource s;
+                s.device = std::string("ZRE SIO0 ") + (c ? "B" : "A (Tastatur)");
+                s.vector = ss.ch[1].wr2; s.exact = false;
+                s.ie = (ss.ch[c].wr1 & 0x1F) != 0;
+                s.pending = ss.ch[c].irqRx || ss.ch[c].irqTx || ss.ch[c].irqExt;
+                s.ius = ss.ch[c].ius; s.iei = ss.ch[c].iei; s.chain = pos++;
+                out.push_back(std::move(s));
+            }
+            return out;
+        }
         if (p7_) {   // Kette K5122 → ZRE (CTC, PIO) → K8025 (SIO A33, SIO A32)
             auto addPio = [&](const Z80PIO::DebugState& st, const char* name) {
                 for (int p = 0; p < 2; ++p) {
@@ -376,6 +432,7 @@ private:
     std::unique_ptr<A5120Machine> a5_;
     std::unique_ptr<K8915Machine> k8_;
     std::unique_ptr<Prg710Machine> p7_;
+    std::unique_ptr<Pc1715Machine> pc_;
     Z80 dummy_zve2_;   ///< K8915: Platzhalter, nie ausgeführt (Kommandos sind abgefangen)
 };
 

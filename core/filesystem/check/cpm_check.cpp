@@ -297,6 +297,10 @@ FsCheckReport CpmFileSystem::check(FsCheckLevel level, bool nachladen) const {
             continue;
         }
 
+        // Bootbereich des Urladers (PC 1715): gehoert nicht zum Dateisystem, ist weder
+        // Datei noch Muell — und darf nie angeklagt werden (Falschmeldung, E10).
+        if (d.boot) continue;
+
         if (d.user > 15) {
             const char* art = sonderplatz(d.user);
             if (*art) { ++sonder; if (sonder_art.empty()) sonder_art = art; continue; }

@@ -1,0 +1,14 @@
+# Dispatch-Smoke am PC 1715 (AP-4b): jedes Kommando einmal; was es nur am A5120 gibt,
+# meldet "nicht vorhanden" statt abzustuerzen.
+tool:    k1520dbg
+run:     --machine pc1715 -x %CLI_DIR%/scripts/all_commands_smoke_pc1715.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  's2' gibt es am PC 1715 nicht
+expect:  'snap' gibt es am PC 1715 nicht
+expect:  'savestate' gibt es am PC 1715 nicht
+expect:  ZVE2 ('r 2') gibt es am PC 1715 nicht
+expect:  Die BS-PIO (K2526) gibt es am PC 1715 nicht
+expect:  Overlay 0000-07FF
+expect:  "machine":"pc1715"

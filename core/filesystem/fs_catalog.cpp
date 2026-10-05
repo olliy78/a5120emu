@@ -78,7 +78,7 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     const std::string where = file + ":" + std::to_string(node.line);
     collectUnknownKeys(node,
                        {"name", "description", "format", "type", "data_start",
-                        "containers", "detect_rank", "detect", "boot_header",
+                        "containers", "detect_rank", "detect", "boot_header", "dir_boot",
                         "block_size", "dir_entries", "skew", "os",
                         "sides_separate", "boot_track", "directory_track",
                         "bitmap_track", "usable_tracks"},
@@ -157,9 +157,20 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
         out.detect = b;
     }
     if (const yaml::Node* n = node.find("boot_header")) {
-        if (!n->isScalar() || (n->scalar != "k8915" && !n->scalar.empty()))
-            { why = "'boot_header' muss k8915 sein (oder fehlen)"; return false; }
+        if (!n->isScalar() || (n->scalar != "k8915" && n->scalar != "pc1715"
+                               && !n->scalar.empty()))
+            { why = "'boot_header' muss k8915 oder pc1715 sein (oder fehlen)"; return false; }
         out.boot_header = n->scalar;
+    }
+    if (const yaml::Node* n = node.find("dir_boot")) {
+        bool b = false;
+        if (!n->isScalar() || !yaml::toBool(n->scalar, b))
+            { why = "'dir_boot' muss true/false sein"; return false; }
+        out.dir_boot = b;
+        if (b && out.type != FsType::Cpm)
+            { why = "'dir_boot' gilt nur fuer CP/M"; return false; }
+        if (b && out.boot_header != "pc1715")
+            { why = "'dir_boot' verlangt 'boot_header: pc1715'"; return false; }
     }
 
     // ── typabhaengige Felder ─────────────────────────────────────────────────

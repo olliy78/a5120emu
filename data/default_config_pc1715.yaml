@@ -1,0 +1,92 @@
+# PC1715 Emulator — AUSLIEFERUNGSKONFIGURATION
+# ============================================
+#
+# Das ist der Zustand, in dem der PC1715 Emulator nach der Erstinstallation aufgeht
+# (A5120, K8915 und PRG710 haben ihre eigenen Dateien):
+# Bildröhre, Tempo, Laufwerksbestückung, Fenstergröße, Kastenaufteilung und
+# Symbolleiste.  Gelesen wird sie an genau zwei Stellen (`app/config_io.py`,
+# `standard_konfiguration()`):
+#
+#   * beim ERSTEN Start, solange es noch keine `pc1715emu.yaml` des Anwenders gibt
+#     (`MainWindow._load_or_create_default_config`), und
+#   * bei *Ansicht ▸ Standard zurücksetzen* — dort überschreibt sie die
+#     Konfiguration des Anwenders.
+#
+# Der Aufbau ist derselbe wie in der gespeicherten `pc1715emu.yaml`
+# (`app/config_io.py`), eine gesicherte Konfiguration lässt sich also
+# unverändert hierher kopieren.  ZWEI Abschnitte gehören aber bewusst NICHT
+# hinein:
+#
+#   * `disks:` — Diskettenabbilder stehen mit absolutem Pfad darin, und der
+#     Pfad des Baurechners ist auf keinem anderen Rechner gültig.  Ohne den
+#     Abschnitt lässt das Zurücksetzen die eingelegten Disketten in Ruhe (siehe
+#     `MainWindow._apply_config`) — das Zurücksetzen der ANSICHT soll die
+#     Maschine nicht leerräumen.
+#   * `window.geometry` — darin steckt die Bildschirmposition des Fensters.
+#     `width`/`height` reichen; wo das Fenster aufgeht, entscheidet der
+#     Fensterverwalter.
+version: 1
+
+# Bildröhre — der Standardlook (siehe app/ui/screen_widget.py::CRTParams).
+crt:
+  phosphor_on: '#78D41D'
+  phosphor_off: '#050F05'
+  brightness: 2.47
+  contrast: 2.0
+  contrast_small_factor: 0.7
+  scanline_strength: 1.4
+  scanline_count: 288.0
+  scanline_min_height: 768.0
+  glow_strength: 1.0
+  glow_radius: 2.5
+  mask_strength: 0.0
+  mask_pitch: 1.0
+  curvature:
+  - 0.1
+  - 0.1
+  corner_radius: 0.0
+  vignette_strength: 0.35
+  flicker_strength: 0.0
+  scale_x: 0.98
+  scale_y: 0.98
+  offset_x: 0.0
+  offset_y: 0.0
+
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,458 MHz, 0,0 = unbegrenzt).
+# Zehnfach: der Kaltstart (Urlader, Laufwerkssuche, Laden des Betriebssystems) dauert sonst mehrere Sekunden.
+general:
+  speed: 10.0
+  # Modell: pc1715 (Bildschirm K7222, 80 x 24) oder pc1715-k7221 (K7221, 64 x 16).
+  model: pc1715
+  # ROM-Varianten (AP-6, Kaltstart nötig; ein fehlender Schluessel = Vorgabe):
+  # Zeichensatz (nur PC 1715): deutsch (S619 + S602) | polnisch | kyrillisch;
+  # Tastatur: s600 (QWERTY) | tast618 (QWERTZ).
+  zeichensatz: deutsch
+  tastatur: s600
+
+# Laufwerksschacht (doc/design/21_pc1715.md §8.3): zwei K5601, Steckplatz 2/3 leer.
+drive_types:
+- K5601
+- K5601
+- none
+- none
+
+window:
+  width: 1262
+  height: 768
+  maximized: false
+  # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
+  toolbar:
+  - konfig_laden
+  - konfig_speichern
+  - ''
+  - power
+  - reset
+  - ''
+  - dock_settings
+  - dock_drives
+  - dock_keyboard
+  - ''
+  - hilfe
+  # Qt.ToolButtonStyle: 3 = Symbol mit Text darunter.
+  toolbar_style: 3

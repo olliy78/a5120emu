@@ -59,6 +59,21 @@ class Programmprofil:
     modelle: Tuple[Tuple[str, str, Optional[str], str, str], ...] = ()
     #: Hinweistext am Auswahlfeld des Modells.
     modell_tipp: str = ""
+    #: Abweichender Nenntakt einzelner Modelle: ``(Schlüssel, Hertz, Text)``.  Alle
+    #: anderen Modelle laufen mit :attr:`nenntakt_hz` (PC 1715W: 3,9936 MHz).
+    modell_takte: Tuple[Tuple[str, int, str], ...] = ()
+    #: Modelle, die das Profil kennt, der Kern aber noch nicht fährt:
+    #: ``(Schlüssel, Anzeigename, Begründung)``.  Sie stehen ausgegraut im
+    #: Auswahlfeld (mit der Begründung als Hinweis), sind nicht wählbar und gelten
+    #: in einer Konfiguration als unbekannt.  Wer das Modell im Kern freischaltet,
+    #: verschiebt die Zeile nach :attr:`modelle`.
+    gesperrte_modelle: Tuple[Tuple[str, str, str], ...] = ()
+    #: Wählbare Hardwarevarianten unter *Einstellungen ▸ Allgemein* (Kaltstart nötig, wie die
+    #: Modellwahl): ``(Schlüssel, Beschriftung, Hinweis, ((Wert, Anzeige), …), Modelle)``.
+    #: Der erste Wert ist die Vorgabe (fehlender Schlüssel in der Konfiguration = Vorgabe).
+    #: ``Modelle`` = die Modellschlüssel, an denen die Wahl wirkt; sonst ist das Feld
+    #: ausgegraut (PC 1715W: der Zeichensatz kommt von Diskette).  ``()`` = alle.
+    hardware: Tuple[Tuple[str, str, str, Tuple[Tuple[str, str], ...], Tuple[str, ...]], ...] = ()
     #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kästchen
     #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
     #: Programme bieten sie an; ohne sie läuft die Maschine stets ohne RAF.
@@ -107,6 +122,44 @@ class Programmprofil:
         """``em=``-Parameter des Kerns (``None`` = ohne Erweiterungsmodul)."""
         z = self._modell_zeile(modell)
         return z[2] if z else None
+
+    def modell_nenntakt(self, modell) -> Tuple[int, str]:
+        """``(Hertz, Text)`` des Nenntakts des Modells."""
+        schluessel = self.modell_normalisieren(modell)
+        for k, hz, text in self.modell_takte:
+            if k == schluessel:
+                return hz, text
+        return self.nenntakt_hz, self.nenntakt_text
+
+    def hardware_standard(self) -> dict:
+        """Vorgabe jeder Hardwarevariante (``{}`` ohne :attr:`hardware`)."""
+        return {k: werte[0][0] for k, _b, _t, werte, _m in self.hardware}
+
+    def hardware_normalisieren(self, daten) -> dict:
+        """Hardwarewahl aus einem Konfigurationsabschnitt: fehlende oder unbekannte
+        Werte werden zur Vorgabe (ältere Konfigurationen)."""
+        daten = daten if isinstance(daten, dict) else {}
+        aus = self.hardware_standard()
+        for k, _b, _t, werte, _m in self.hardware:
+            v = str(daten.get(k, "")).strip().lower()
+            if any(v == w for w, _a in werte):
+                aus[k] = v
+        return aus
+
+    def hardware_wirkt(self, schluessel: str, modell) -> bool:
+        """Wirkt die Wahl *schluessel* am Modell?  (Sonst im Feld ausgegraut.)"""
+        for k, _b, _t, _w, modelle in self.hardware:
+            if k == schluessel:
+                return not modelle or self.modell_normalisieren(modell) in modelle
+        return False
+
+    def tastatur_bauart(self, modell, hardware=None) -> str:
+        """Bauart der Bildschirmtastatur: :meth:`modell_tastatur`, beim PC 1715 mit dem
+        QWERTZ-ROM ``"pc1715-tast618"``."""
+        art = self.modell_tastatur(modell)
+        if art == "pc1715" and (hardware or {}).get("tastatur") == "tast618":
+            return "pc1715-tast618"
+        return art
 
     def modell_tastatur(self, modell) -> str:
         """Bildschirmtastatur des Modells (``"k7637"``/``"k7672"``/``"k7609"``)."""
@@ -160,7 +213,7 @@ A5120 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
-    weitere=("prg710",),
+    weitere=("prg710", "pc1715"),
 )
 
 K8915 = Programmprofil(
@@ -179,7 +232,7 @@ K8915 = Programmprofil(
     eigene_aktionen=("nmi",),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
-    weitere=("prg710",),
+    weitere=("prg710", "pc1715"),
     # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
     # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
@@ -208,11 +261,59 @@ PRG710 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
     andere="a5120",
-    weitere=("k8915",),
+    weitere=("k8915", "pc1715"),
+)
+
+PC1715 = Programmprofil(
+    maschine="pc1715",
+    programm="pc1715emu",
+    titel="PC1715 Emulator",
+    rechner="PC 1715",
+    beschreibung="Emulator der Bürocomputer robotron PC 1715 und PC 1715W",
+    konfig_datei="pc1715emu.yaml",
+    vorgabe_datei="default_config_pc1715.yaml",
+    # 2,458 MHz (Pc1715Zre::CPU_HZ); der 1715W läuft mit 3,9936 MHz (`modell_takte`).
+    nenntakt_hz=2_458_000,
+    nenntakt_text="2,458 MHz",
+    tastatur="pc1715",
+    modellwahl=True,
+    # Der Bildschirm (K7222 80 × 24 / K7221 64 × 16) ist eine Hardwarevariante der
+    # ZRE-Bestückung, im Kern ein Konstruktorparameter (`bild`) → ein Wechsel ist ein
+    # Kaltstart wie der Modellwechsel; er steht deshalb als Modell in der Auswahl.
+    modelle=(("pc1715", "pc1715", None, "PC 1715 (Bildschirm K7222, 80 × 24)", "pc1715"),
+             ("pc1715-k7221", "pc1715-k7221", None,
+              "PC 1715 (Bildschirm K7221, 64 × 16)", "pc1715"),
+             # Der 1715W hat nur den 8275-Bildschirm mit ladbarem Zeichensatz (kein
+             # K7221) — als eigenes Modell ist die Kombination gar nicht wählbar.
+             ("pc1715w", "pc1715w", None, "PC 1715W (SCP 3.0, 256 KB, 80 × 24)",
+              "pc1715")),
+    modell_takte=(("pc1715w", 3_993_600, "3,9936 MHz"),),
+    # ROM-Varianten, die technisch etwas ändern (AP-6): die ZG-EPROMs der ZRE (nur PC 1715;
+    # der 1715W lädt seinen Satz von Diskette) und das Tastatur-ROM (beide).
+    hardware=(
+        ("zeichensatz", "Zeichensatz:",
+         "Bestückung der Zeichengenerator-EPROMs A25.2/A25.1 der ZRE.  Wirkt nur am PC 1715 — "
+         "der PC 1715W bekommt seinen Satz von Diskette.  Ein Wechsel startet die Maschine kalt.",
+         (("deutsch", "Deutsch (S619 + S602)"),
+          ("polnisch", "Polnisch (S641 + S619)"),
+          ("kyrillisch", "Kyrillisch (S643 + S605)")),
+         ("pc1715", "pc1715-k7221")),
+        ("tastatur", "Tastatur:",
+         "ROM der Tastatur-CPU: S600 (QWERTY) oder TAST_618 (QWERTZ, Y und Z vertauscht, "
+         "andere Zeichensetzung).  Ein Wechsel startet die Maschine kalt.",
+         (("s600", "S600 (QWERTY)"), ("tast618", "TAST_618 (QWERTZ)")),
+         ()),
+    ),
+    modell_tipp=("PC 1715 mit dem Bildschirm K7222 (80 × 24) oder K7221 (64 × 16), oder "
+                 "PC 1715W (4 MHz, 256 KB, U8272).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
+    ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
+    andere="a5120",
+    weitere=("k8915", "prg710"),
 )
 
 #: Alle Profile nach Maschinenname.
-PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710)}
+PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715)}
 
 #: Das Profil ohne Angabe — ältere Starter, Tests, ``app/main.py`` ohne Schalter.
 VORGABE = A5120

@@ -51,6 +51,10 @@ struct CpmDirEntry {
     bool     system   = false;
     bool     archived = false;
     std::vector<uint16_t> blocks;   ///< AL, 0 = nicht belegt
+    /// @brief Bootbereich des Urladers (@ref FsProfile::dir_boot) — kein Dateieintrag.
+    ///        `user` ist dann 0xF0 (ausserhalb 0…15), `name` leer: jede Stelle, die
+    ///        `user > 15` uebergeht, uebergeht ihn mit.
+    bool boot = false;
 
     bool free() const { return user == 0xE5; }
 };
@@ -117,6 +121,27 @@ public:
     bool recoverRead(const FsRecoverFind& f, std::vector<uint8_t>& out) const override;
     /// @brief Nutzerbyte zuruecksetzen (und ggf. umbenennen) — mehr ist es nicht.
     bool recoverRestore(const FsRecoverFind& f, const std::string& name) override;
+
+    /// @name Bootbereich im Verzeichnis (`FsProfile::dir_boot`, PC 1715, AP-D)
+    /// @{
+    /// @brief Traegt @p p den Bootkopf des Urladers S502 (Wort `F002H`/`F003H` = Bytes
+    ///        `02|03 F0`)?
+    static bool bootKopf(const uint8_t* p, size_t n);
+    /// @brief Ist Verzeichnisplatz @p index (Rohbytes @p p) Bootbereich?  Platz 0 mit
+    ///        Bootkopf, oder Platz 1…3 mit Nutzerbyte `F0` (Parametersaetze ab Byte
+    ///        0x64 des ersten Sektors).  Immer false, wenn das Profil `dir_boot` nicht traegt.
+    bool bootPlatz(int index, const uint8_t* p) const;
+    /// @brief Die ersten 128 Byte des Verzeichnisses (4 Plaetze) — das „Bootabbild".
+    bool readBootSlots(std::vector<uint8_t>& out) const;
+    /**
+     * @brief Bootkopf (Platz 0) und Parametersaetze (Plaetze 1…3 mit Nutzerbyte `F0` im
+     *        Abbild) schreiben; die uebrigen Plaetze des ersten Sektors bleiben, wie sie sind.
+     *
+     * Verweigert, wenn ein Zielplatz einen Dateieintrag traegt (weder frei noch
+     * Bootbereich) — der Eintrag ginge sonst still verloren.
+     */
+    bool writeBootSlots(const std::vector<uint8_t>& img);
+    /// @}
 
     /// @brief Ist @p name ein gueltiger CP/M-Name (8.3, Grossschrift, ohne Sonderzeichen)?
     ///        Liefert bei false den Grund in @p why.

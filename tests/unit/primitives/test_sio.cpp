@@ -306,6 +306,42 @@ TEST(Z80SIO, RX_Interrupt_KanalResetLoeschtDieFreigabe) {
 }
 
 /**
+ * @test Z80SIO/KanalResetMitZeigerbitsLaesstDenZeigerBeiNull
+ * @brief WR0 = 1CH (Channel Reset + Zeigerbits 4, so im Urlader S502 des PC 1715): der Zeiger
+ *        ist danach 0 — die Folge 04H,49H,03H,C1H,01H,00H,05H,68H programmiert WR4/WR3/WR1/WR5
+ *        (AP-4a; nur so bootet das Gerät über V.24).
+ */
+TEST(Z80SIO, KanalResetMitZeigerbitsLaesstDenZeigerBeiNull) {
+    Z80SIO sio;
+    for (uint8_t b : {0x1C, 0x04, 0x49, 0x03, 0xC1, 0x01, 0x00, 0x05, 0x68}) sio.ioWrite(3, b);
+    const auto& ch = sio.channelB();
+    EXPECT_EQ(ch.wr[4], 0x49);
+    EXPECT_EQ(ch.wr[3], 0xC1);
+    EXPECT_EQ(ch.wr[1], 0x00);
+    EXPECT_EQ(ch.wr[5], 0x68);
+}
+
+/**
+ * @test Z80SIO/KanalResetBehaeltVektorUndStatusAffectsVector
+ * @brief CP/Z 2.2 (PC 1715, AP-4e): Kanal B bekommt WR2 = C0H und WR1 = 04H, wird danach für die
+ *        V.24-Parameter erneut zurückgesetzt (18H) — Vektor und „Status affects Vector" bleiben,
+ *        sonst liefert die Quittung für Rx von Kanal A 00H statt CCH (Tabelle F7CCH).  Alle
+ *        übrigen WR1-Bits und die Kanalzustände gehen mit dem Reset.
+ */
+TEST(Z80SIO, KanalResetBehaeltVektorUndStatusAffectsVector) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    for (uint8_t b : {0x02, 0xC0, 0x01, 0x04}) sio.ioWrite(3, b);   // B: WR2 = C0H, WR1 = 04H
+    sio.ioWrite(3, 0x18);                                           // Kanal B: Channel Reset
+    for (uint8_t b : {0x04, 0x49, 0x03, 0x81}) sio.ioWrite(3, b);
+    sio.ioWrite(1, 0x01);
+    sio.ioWrite(1, 0x18);                                           // A: Rx-Interrupt jedes Zeichen
+    sio.channelA().rxByte(0x41);
+    ASSERT_TRUE(sio.hasInterrupt());
+    EXPECT_EQ(sio.getVector(), 0xCC);
+}
+
+/**
  * @test Z80SIO/RX_Interrupt_GestauteZeichenUnterbrechenEinzeln
  * @brief „Jedes Zeichen": stehen nach einer Quittung noch Zeichen im FIFO (gestaut
  *        während eines langen DI), fordert jedes weitere nach dem Abholen erneut an.

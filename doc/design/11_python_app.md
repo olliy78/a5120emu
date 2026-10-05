@@ -729,6 +729,15 @@ statt kommentarlos nichts zu tun.
 
 ### 10.9 Zwei Programme: A5120 Emulator und K8915 Emulator (2026-09-30, AP-UI1)
 
+> **Nachtrag 2026-10-04 (AP-5a):** vierter Eintrag `pc1715emu` (`--machine pc1715`, `run_pc1715emu.sh`,
+> `data/default_config_pc1715.yaml`, 2,458 MHz, zwei K5601). Modellwahl = Bildschirm
+> K7222 (80 × 24) / K7221 (64 × 16) als Modellschlüssel `pc1715` / `pc1715-k7221`; der PC 1715W
+> steht in `Programmprofil.gesperrte_modelle` (ausgegraut, mit Begründung, in der Konfiguration unbekannt).
+> Die Bildschirmtastatur `app/ui/keyboard_pc1715.py` sendet physische Matrixtasten
+> (`QK_TASTE_BASE | Spalte·8+Zeile`); SHIFT/CTRL/REP merkt sie und drückt sie beim nächsten Klick VOR der
+> Taste. `ScreenWidget` folgt jetzt der Bildgröße des Kerns (`K1520Emulator.framebuffer_size()`; PC 1715: 640 × 300
+> bzw. 512 × 255 inkl. CP/A-Statuszeile, übrige Maschinen 640 × 288 unverändert). Wächter `py_pc1715emu_gui`.
+
 Der K8915 bekommt kein Menü im A5120-Emulator, sondern ist ein **eigenes Programm
 mit derselben Codebasis** (`doc/design/18_k8915emu_oberflaeche.md`). Getragen wird das
 vom **Programmprofil** `app/profil.py`: Maschine, Titel, Konfigurations- und

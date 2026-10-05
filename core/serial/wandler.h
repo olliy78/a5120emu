@@ -157,6 +157,7 @@ private:
     /// gilt der RTS-Halt (§6.4; Befund AP-S5: SCPX 8915 und CP/A setzen RTS nie).
     bool     rtsBenutzt_ = false;
     int      belegtGemeldet_ = -1;   ///< zuletzt an `leitungBelegt` gemeldet (-1 = nie)
+    int      steckerGemeldet_ = -1;  ///< zuletzt an `pruefstecker` gemeldet (-1 = nie)
     uint64_t naechstesSenden_ = 0, naechsteZustellung_ = 0;
     SerialFormat format_, wirksam_, kandidat_, gemeldet_;
     uint64_t kandidatSeit_ = 0;

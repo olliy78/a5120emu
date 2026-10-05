@@ -89,6 +89,13 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   `MASCHINEN` — Wächter `test_der_prg710_emulator_ist_in_allen_paketwegen`. Seit AP-P5h
   (2026-10-03, Entscheid des Anwenders) gehören vier PRG-Systemdisketten (UDOS und SCPX, je 710/710-1)
   zur Vorgabeauswahl; Wächter `test_prg710_systemdisketten_sind_in_der_vorgabeauswahl`.
+  **Seit AP-5c (2026-10-04) gibt es den vierten: den PC1715 Emulator** (`pc1715emu`,
+  `--machine pc1715`, Modellwahl = Bildschirm K7222/K7221): dieselbe Vorlage, `pc1715emu.desktop.in`,
+  `{#Programm4}` im .iss, `default_config_pc1715.yaml`, Eintrag in `MASCHINEN`; Wächter
+  `test_der_pc1715_emulator_ist_in_allen_paketwegen`.  Vorgabeauswahl um vier Disketten
+  (SCP 1715 V0006/V0007, CP/A 1715, UDOS1715; Wächter
+  `test_pc1715_disketten_sind_in_der_vorgabeauswahl`); die Vorgabe mountet keine (kein `disks:`).
+  Rauchtests erzeugen jetzt auch `k1520_create(3)` und das PC1715-Fenster.
   **Alle Rauchtests (install.sh, .iss, beide release.yml-Jobs) erzeugen ALLE Maschinen**
   (`k1520_create(0)`, `(1)` und `(2)`) — Wächter `test_rauchtests_pruefen_beide_maschinen`. Wächter `py_packaging`
   (`test_launcher_sh_waehlt_die_maschine_am_namen`, `test_iss_hat_den_k8915_emulator_im_startmenue`,

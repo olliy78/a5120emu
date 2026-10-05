@@ -86,8 +86,12 @@ class MainWindow(QMainWindow):
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
         # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
         self._model = self.profil.standard_modell()
-        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672).
-        self._tastatur_art = self.profil.modell_tastatur(self._model)
+        # Hardwarevarianten des Programms (PC 1715: Zeichensatz, Tastatur-ROM; AP-6) —
+        # Konstruktorparameter des Kerns wie das Modell, ein Wechsel ist ein Kaltstart.
+        self._hardware = self.profil.hardware_standard()
+        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672;
+        # PC 1715 mit QWERTZ-ROM eigene Beschriftung).
+        self._tastatur_art = self.profil.tastatur_bauart(self._model, self._hardware)
         # RAM-Floppy RAF (doc/design/22_raf512.md §7, `app/raf.py`) — wie das Modell
         # ein Konstruktorparameter des Kerns; Vorgabe keine, kein Stand-by.
         self._raf = raf.KEINE
@@ -112,7 +116,7 @@ class MainWindow(QMainWindow):
         # frame — with a 20 ms tick that is 49000 cycles, NOT the old 10000 (which ran
         # the machine at only 0.2x speed, so a boot that takes ~13.8M cycles dragged on
         # for ~28 s instead of ~5.6 s, and the CP/A clock ran 5x too slow).
-        self.CPU_HZ = self.profil.nenntakt_hz
+        self.CPU_HZ = self.profil.modell_nenntakt(self._model)[0]
         self.frame_interval_ms = 20  # 50 Hz
         # speed_factor > 1.0 fast-forwards (e.g. to shorten the boot); 1.0 = real time;
         # 0.0 = unlimited (run_timer interval 0 → as fast as the host allows).
@@ -194,6 +198,7 @@ class MainWindow(QMainWindow):
         self.serial_widget.changed.connect(self._schedule_autosave)
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
         self.settings_widget.modelChanged.connect(self._on_model_selected)
+        self.settings_widget.hardwareChanged.connect(self._on_hardware_selected)
         self.settings_widget.rafChanged.connect(self._on_raf_selected)
         self.settings_widget.rafStandbyChanged.connect(self._on_raf_standby_changed)
         self.settings_widget.ptapeChanged.connect(self._on_ptape_selected)
@@ -452,11 +457,14 @@ class MainWindow(QMainWindow):
     # ── On-screen keyboard → emulator ────────────────────────────────────────
 
     def _tastatur_bauen(self):
-        """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1)
-        oder K7609 (PRG 710)."""
+        """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1),
+        K7609 (PRG 710) oder die 1715-Tastatur (PC 1715)."""
         if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
+        if self._tastatur_art in ("pc1715", "pc1715-tast618"):
+            from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
+            return KeyboardPc1715Widget(qwertz=self._tastatur_art == "pc1715-tast618")
         if self._tastatur_art == "k7609":
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
@@ -465,7 +473,7 @@ class MainWindow(QMainWindow):
     def _tastatur_tauschen(self):
         """Nach einem Modellwechsel die Bildschirmtastatur des neuen Modells einsetzen
         (PRG 710 ⇄ 710-1) — dasselbe Dock, dieselben Verbindungen."""
-        art = self.profil.modell_tastatur(self._model)
+        art = self.profil.tastatur_bauart(self._model, self._hardware)
         if art == self._tastatur_art:
             return
         self._tastatur_art = art
@@ -904,6 +912,7 @@ class MainWindow(QMainWindow):
         general = {"speed": float(self.speed_factor)}
         if self.profil.modellwahl:              # A5120 und PRG kennen ein Modell
             general["model"] = self._model
+        general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
         general["ptape"] = bool(self._ptape)
         data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
@@ -1131,6 +1140,9 @@ class MainWindow(QMainWindow):
             self._model = (self.profil.modell_normalisieren(general.get("model"))
                            if self.profil.modellwahl else self.profil.standard_modell())
             self.settings_widget.set_model_value(self._model)
+            # Hardwarevarianten: fehlender Schlüssel = Vorgabe (ältere Konfigurationen).
+            self._hardware = self.profil.hardware_normalisieren(general)
+            self.settings_widget.set_hardware_value(self._hardware)
 
             # RAM-Disk (doc/design/22_raf512.md §7.2): fehlender Abschnitt/Schlüssel
             # oder unbekannter Wert = keine RAF bzw. kein Stand-by — anders als bei
@@ -1262,6 +1274,7 @@ class MainWindow(QMainWindow):
             return
         vorher = list(self._drive_types)
         modell_vorher = self._model
+        hardware_vorher = dict(self._hardware)
         raf_vorher = self._raf
         ptape_vorher = self._ptape
         self._apply_config(vorgabe)
@@ -1272,6 +1285,7 @@ class MainWindow(QMainWindow):
         # Bestückungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
         # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
         if (self._drive_types != vorher or self._model != modell_vorher
+                or self._hardware != hardware_vorher
                 or self._raf != raf_vorher or self._ptape != ptape_vorher):
             self._cold_restart()
         # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
@@ -1580,6 +1594,24 @@ class MainWindow(QMainWindow):
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
+    def _on_hardware_selected(self, schluessel: str, wert: str):
+        """Eine Hardwarevariante (Zeichensatz, Tastatur-ROM) geändert → neue Maschine, wie
+        beim Modellwechsel (die ROMs sind am Kern Konstruktorparameter)."""
+        neu = self.profil.hardware_normalisieren({**self._hardware, schluessel: wert})
+        if neu == self._hardware:
+            return
+        if not self._eprom_rueckfrage("Wechsel der Hardwarevariante"):
+            self.settings_widget.set_hardware_value(self._hardware)
+            return
+        vorher = self._hardware
+        self._hardware = neu
+        if not self._apply_drive_types(self._drive_types, cold_restart=True):
+            # Neubau fehlgeschlagen: die alte Maschine läuft weiter, das Feld zeigt sie.
+            self._hardware = vorher
+            self.settings_widget.set_hardware_value(vorher)
+            return
+        self._schedule_autosave()
+
     def _maschine_erzeugen(self, types: list) -> K1520Emulator:
         """Eine neue Maschine mit Laufwerksschacht *types*, Modell und RAM-Disk.
 
@@ -1591,7 +1623,7 @@ class MainWindow(QMainWindow):
         emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
                             em=self.profil.modell_em(self._model),
                             raf=raf.core_param(self._raf) if self.profil.raf_wahl else None,
-                            ptape=bool(self._ptape))
+                            ptape=bool(self._ptape), **self._hardware)
         # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
         # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
         emu.set_key_repeat_realtime(True)
@@ -1766,7 +1798,7 @@ class MainWindow(QMainWindow):
             self.settings_widget.set_raf_value(self._raf)
             self._ptape = bool(self.emulator.ptape_installed())
             self.settings_widget.set_ptape_value(self._ptape)
-            return
+            return False
 
         # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
         # Stand merken, die alten beenden (Kabel ab, Port frei), an der neuen
@@ -1801,6 +1833,11 @@ class MainWindow(QMainWindow):
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
+        self.settings_widget.set_hardware_value(self._hardware)
+        # Der Takt hängt am Modell (PC 1715W: 3,9936 MHz).
+        self.CPU_HZ, nenntakt = self.profil.modell_nenntakt(self._model)
+        self.settings_widget.set_nenntakt(nenntakt)
+        self.status_widget.set_nenntakt(nenntakt)
         self.settings_widget.set_raf_value(self._raf)       # dito
         self.settings_widget.set_ptape_value(self._ptape)   # dito
         self._lochstreifen_kasten()
@@ -1817,6 +1854,7 @@ class MainWindow(QMainWindow):
             self.frame_count = 0
             self.run_timer.start()
             self.screen_widget.set_powered(True)
+        return True
 
     def _on_error(self, message: str):
         """Handle error."""
@@ -1860,6 +1898,9 @@ class MainWindow(QMainWindow):
 
     def _prg710emu_starten(self):
         self._emulator_starten("prg710")
+
+    def _pc1715emu_starten(self):
+        self._emulator_starten("pc1715")
 
     # ── EPROMmer (nur PRG 710, AP-P7c) ───────────────────────────────────────
 

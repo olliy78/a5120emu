@@ -226,6 +226,11 @@ Für den **K8915** (SCPX 8915) heißt das Dateisystem `scpx8915`; das Bootabbild
 Ladekopf einer K8915-Systemdiskette tragen — ein A5120-Abbild wird abgewiesen, bevor
 etwas angelegt wird. Fertige Abbilder liegen im Ordner `disks/` des Quellbaums.
 
+Für den **PC 1715** und den **1715W** (SCP 3.0) heißt es `scp1715`; **CP/A 1715** hat keine
+Systemspuren, sein Bootkopf steht in den ersten Verzeichnisplätzen (`cpa1715`, Bootabbild =
+128 Byte) — dort muss `@OS.COM` die erste Datei sein. Ein Abbild ohne den 1715-Kopf
+(A5120-Lader) wird abgewiesen.
+
 Eine bootfähige Diskette braucht danach noch die Systemdateien: bei CP/A `@OS.COM`
 und die Dienstprogramme, bei UDOS mindestens `OS` und `ZDOS`.
 

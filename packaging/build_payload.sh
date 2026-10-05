@@ -36,7 +36,9 @@ GW=yes
 # ausprobieren kann, ohne dass das Paket aufgeht — dazu die Systemdiskette des
 # K8915 Emulators (901, SCPX 8915 V5.3; vom Anwender freigegeben 2026-10-01,
 # 16_k8915.md §6.23) und die vier PRG-Systemdisketten (UDOS 710/710-1, SCPX 710/710-1;
-# Entscheid des Anwenders 2026-10-03, 20_prg710.md AP-P5h).  Alles aus disks/: --disks all.
+# Entscheid des Anwenders 2026-10-03, 20_prg710.md AP-P5h).  Dazu vier PC-1715-Disketten (SCP 1715 V0006 und V0007, CP/A 1715, UDOS1715; 21_pc1715.md
+# AP-5c — gleiche Herkunftslage wie die PRG-Abzüge: Abzüge aus dem Bestand des Anwenders).
+# Alles aus disks/: --disks all.
 DISKS_DEFAULT="cpa_cpa780_k5601_clock.hfe
 cpa_cpa780_k5601_noclock.hfe
 cpa_cpa780_combo5zoll_noclock.hfe
@@ -47,7 +49,13 @@ k8915scpx_boot1.hfe
 prg710_udos43_k5601_system.hfe
 prg710-1_udos43_k5601_v43_189.hfe
 prg710_scpx15_cpa640_sysprg.hfe
-prg710-1_scpx17_cpa640_boot.hfe"
+prg710-1_scpx17_cpa640_boot.hfe
+pc1715_scp1715_v0006_boot.hfe
+pc1715_scp1715_v0007_cpa640_boot.hfe
+pc1715_cpa1715_boot_4lw.hfe
+pc1715_cpz22_boot.hfe
+pc1715w_scp30_system.hfe
+udos1715_640k_pc1715_system.hfe"
 
 usage() {
     cat <<EOF
@@ -487,8 +495,8 @@ cp "$REPO/third_party/isocline/LICENSE" \
 cp "$REPO/data/formats.yaml" "$STAGE/payload/share/k1520emu/formats.yaml"
 # Auslieferungskonfiguration: der Zustand nach der Erstinstallation und das Ziel
 # von *Ansicht > Standard zuruecksetzen* (app/config_io.py::standard_konfiguration)
-# — je Programm eine (A5120, K8915, PRG710 Emulator; app/profil.py).
-for _vorgabe in default_config_a5120.yaml default_config_k8915.yaml default_config_prg710.yaml; do
+# — je Programm eine (A5120, K8915, PRG710, PC1715 Emulator; app/profil.py).
+for _vorgabe in default_config_a5120.yaml default_config_k8915.yaml default_config_prg710.yaml default_config_pc1715.yaml; do
     cp "$REPO/data/$_vorgabe" "$STAGE/payload/share/k1520emu/$_vorgabe" \
         || die "Auslieferungskonfiguration fehlt: data/$_vorgabe"
 done
@@ -561,6 +569,7 @@ else
     cp "$SELF_DIR/a5120emu.desktop.in"      "$STAGE/a5120emu.desktop.in"
     cp "$SELF_DIR/k8915emu.desktop.in"      "$STAGE/k8915emu.desktop.in"
     cp "$SELF_DIR/prg710emu.desktop.in"     "$STAGE/prg710emu.desktop.in"
+    cp "$SELF_DIR/pc1715emu.desktop.in"     "$STAGE/pc1715emu.desktop.in"
     cp "$SELF_DIR/lib/common.sh"            "$STAGE/lib/common.sh"
     chmod +x "$STAGE/install.sh"
 fi

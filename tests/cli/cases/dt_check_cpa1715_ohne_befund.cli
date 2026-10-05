@@ -1,0 +1,15 @@
+# Bootbereich im Verzeichnis (cpa1715) wird von der Pruefung weder angeklagt noch gemeldet:
+# keine Befunde zu Platz 0/3, keine „Nutzerbyte F0"-Meldung (Falschmeldungen sind schlimmer
+# als fehlende).  Uebrig bleibt allein der Hinweis auf drei GELOESCHTE Plaetze der Quelldiskette
+# (Info, Exit 1 wie bei jedem Befund).
+tool:   k1520disktool
+disk:   pc1715_cpa1715_boot_4lw.hfe
+run:    check %DISK% --full
+expect: cpm.dir.geloescht
+expect: 1 Hinweis
+forbid: cpm.dir.user
+forbid: cpm.dir.name
+forbid: cpm.block.
+forbid: Platz 0
+forbid: Platz 3
+exit:   1

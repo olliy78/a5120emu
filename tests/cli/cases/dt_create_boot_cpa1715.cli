@@ -1,0 +1,14 @@
+# Bootfaehige CP/A-1715-Diskette bauen: Bootkopf (128 B, die ersten vier Verzeichnisplaetze)
+# aus einer Quelldiskette, dann @OS.COM als ERSTE Datei (Block 3, dort sucht der Kopf es).
+tool:   k1520disktool
+disk:   pc1715_cpa1715_boot_4lw.hfe
+tmpfile kopf.bin:
+tmpfile neu.hfe:
+setup_run: boot-get %DISK% %kopf.bin%
+setup_run: get %DISK% @OS.COM --to q
+setup_run: create %neu.hfe% --fs cpa1715 --boot %kopf.bin%
+setup_run: put %neu.hfe% q/@OS.COM
+run:    ls %neu.hfe%
+expect: cpa1715
+expect: @OS.COM
+exit:   0

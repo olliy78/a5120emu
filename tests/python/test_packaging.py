@@ -146,6 +146,7 @@ def test_lock_nagelt_mit_hashes_fest():
     ("a5120emu.desktop.in", "a5120emu"),
     ("k8915emu.desktop.in", "k8915emu"),
     ("prg710emu.desktop.in", "prg710emu"),
+    ("pc1715emu.desktop.in", "pc1715emu"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_eintrag_ist_gueltig(datei, starter):
@@ -198,6 +199,47 @@ def test_der_prg710_emulator_ist_in_allen_paketwegen():
     assert _profil.profil("prg710").programm == "prg710emu"
 
 
+def test_der_pc1715_emulator_ist_in_allen_paketwegen():
+    """AP-5c: vierter Starter aus DERSELBEN Vorlage; der Name waehlt das Profil."""
+    text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r'^MASCHINEN="[^"]*\bpc1715emu\b', text, re.M), \
+        "ohne Eintrag in MASCHINEN bleibt der Starter beim Deinstallieren liegen"
+    assert '> "$PREFIX/bin/pc1715emu"' in text and "pc1715emu.desktop.in" in text
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert '"$SELF_DIR/pc1715emu.desktop.in"' in bp and "default_config_pc1715.yaml" in bp
+    desk = (PACKAGING / "pc1715emu.desktop.in").read_text(encoding="utf-8")
+    assert "Name=PC1715 Emulator\n" in desk
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert '#define Programm4 "PC1715 Emulator"' in iss
+    eintrag = iss[iss.index('Name: "{group}\\{#Programm4}"'):]
+    eintrag = eintrag[:eintrag.index("\nName:")] if "\nName:" in eintrag else eintrag
+    assert "--machine pc1715" in eintrag and "a5120emu.ico" in eintrag
+    assert "bin\\pc1715emu.cmd" in iss
+    assert '"%~n0"=="pc1715emu"' in (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
+    assert "pc1715emu*)" in (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from app import profil as _profil
+    assert _profil.profil("pc1715").programm == "pc1715emu"
+
+
+def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
+    """AP-5c/W4: SCP 1715 (V0006, V0007), CP/A 1715, CP/Z 2.2 (seit der Freigabe des
+    Anwenders 2026-10-04), UDOS1715 und SCP 3.0 des 1715W liegen im Paket;
+    die Auslieferungskonfiguration mountet keine (kein ``disks:``)."""
+    text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    block = text[text.index('DISKS_DEFAULT="'):]
+    block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
+    soll = {"pc1715_scp1715_v0006_boot.hfe", "pc1715_scp1715_v0007_cpa640_boot.hfe",
+            "pc1715_cpa1715_boot_4lw.hfe", "pc1715_cpz22_boot.hfe",
+            "udos1715_640k_pc1715_system.hfe",
+            "pc1715w_scp30_system.hfe"}
+    assert soll <= set(block)
+    for name in soll:
+        assert (PACKAGING.parent / "disks" / name).is_file(), name
+    vorgabe = (PACKAGING.parent / "data" / "default_config_pc1715.yaml").read_text(encoding="utf-8")
+    assert not re.search(r"^disks:", vorgabe, re.M)
+
+
 def test_iss_hat_den_k8915_emulator_im_startmenue():
     iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
     assert '#define Programm  "A5120 Emulator"' in iss
@@ -223,15 +265,19 @@ def test_rauchtests_pruefen_beide_maschinen():
     for name, text in quellen.items():
         assert "k1520_create" in text and '(2, "K8915")' in text, name
         assert '(1, "PRG710")' in text, name
+        assert '(3, "PC1715")' in text, name
         assert "k1520_destroy" in text, name
     # release.yml hat zwei Rauchtests (Linux, Windows): beide.
     assert quellen["release.yml"].count('(2, "K8915")') == 2
     assert quellen["release.yml"].count('(1, "PRG710")') == 2
+    assert quellen["release.yml"].count('(3, "PC1715")') == 2
     # Installer und Setup bauen auch das Fenster des zweiten Profils.
     assert 'profil("k8915")' in quellen["install.sh"]
     assert 'profil("k8915")' in quellen["k1520emu.iss"]
     assert 'profil("prg710")' in quellen["install.sh"]
     assert 'profil("prg710")' in quellen["k1520emu.iss"]
+    assert 'profil("pc1715")' in quellen["install.sh"]
+    assert 'profil("pc1715")' in quellen["k1520emu.iss"]
 
 
 def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
@@ -1239,7 +1285,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
     stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
     for pflicht in [
         "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
-        "k8915emu.desktop.in", "prg710emu.desktop.in", "uv_pins.txt",
+        "k8915emu.desktop.in", "prg710emu.desktop.in", "pc1715emu.desktop.in", "uv_pins.txt",
         "lib/common.sh", "requirements.lock", "VERSION", "README.md",
         "payload/bin/libk1520core.so",
         "payload/app/main.py", "payload/app/paths.py",
@@ -1252,6 +1298,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         "payload/share/k1520emu/default_config_a5120.yaml",
         "payload/share/k1520emu/default_config_k8915.yaml",
         "payload/share/k1520emu/default_config_prg710.yaml",
+        "payload/share/k1520emu/default_config_pc1715.yaml",
         "payload/share/icons/a5120emu.svg",
         # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
         # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-
@@ -1393,6 +1440,8 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert (heim / ".local" / "share" / "applications" / "k8915emu.desktop").is_file()
     assert os.access(ziel / "bin" / "prg710emu", os.X_OK)
     assert (heim / ".local" / "share" / "applications" / "prg710emu.desktop").is_file()
+    assert os.access(ziel / "bin" / "pc1715emu", os.X_OK)
+    assert (heim / ".local" / "share" / "applications" / "pc1715emu.desktop").is_file()
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"

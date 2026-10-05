@@ -48,6 +48,8 @@ class SettingsWidget(QWidget):
     # Emitted when the model dropdown changes; carries the model key
     # (app.modell.A5120 / app.modell.A5120_16).
     modelChanged = Signal(str)
+    # Hardwarevariante (Profil.hardware) geändert: Schlüssel, Wert.
+    hardwareChanged = Signal(str, str)
     # RAM-Disk-Auswahl geändert (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``,
     # `app/raf.py`) — wie der Modellwechsel ein Neuaufbau der Maschine.
     rafChanged = Signal(str)
@@ -215,6 +217,12 @@ class SettingsWidget(QWidget):
         self.model_combo = QComboBox(inner)
         for schluessel, _maschine, _em, beschriftung, _tastatur in self.profil.modelle:
             self.model_combo.addItem(beschriftung, schluessel)
+        # Modelle, die der Kern noch nicht fährt: sichtbar, aber nicht wählbar.
+        for schluessel, beschriftung, grund in self.profil.gesperrte_modelle:
+            self.model_combo.addItem(beschriftung, schluessel)
+            i = self.model_combo.count() - 1
+            self.model_combo.model().item(i).setEnabled(False)
+            self.model_combo.setItemData(i, grund, Qt.ToolTipRole)
         self.model_combo.currentIndexChanged.connect(self._on_model_combo)
         self.model_combo.setToolTip(self.profil.modell_tipp)
         # Nur im Programm mit Modellwahl (A5120, PRG); model_value() liefert sonst
@@ -224,15 +232,25 @@ class SettingsWidget(QWidget):
         else:
             self.model_combo.setVisible(False)
 
+        # Hardwarevarianten des Programms (Profil.hardware, z. B. PC 1715: Zeichensatz, Tastatur)
+        self.hardware_combos = {}
+        for schluessel, beschriftung, tipp, werte, _modelle in self.profil.hardware:
+            box = QComboBox(inner)
+            for wert, anzeige in werte:
+                box.addItem(anzeige, wert)
+            box.setToolTip(tipp)
+            box.currentIndexChanged.connect(
+                lambda _i, s=schluessel: self._on_hardware_combo(s))
+            self.hardware_combos[schluessel] = box
+            form.addRow(beschriftung, box)
+        self._hardware_guard = False
+        self._hardware_gesperrt_nach_modell()
+
         self.speed_combo = QComboBox()
         for label, factor in self.SPEED_OPTIONS:
             self.speed_combo.addItem(label, float(factor))
         self.speed_combo.currentIndexChanged.connect(self._on_speed_combo)
-        self.speed_combo.setToolTip(
-            f"Der {self.profil.rechner} läuft mit {self.profil.nenntakt_text}.  "
-            "Ein Vielfaches davon "
-            "kürzt einen Kaltstart ab — die Uhr des Gastsystems zählt aber "
-            "Taktzyklen und geht dann entsprechend falsch.")
+        self.set_nenntakt(self.profil.nenntakt_text)
         form.addRow("Takt:", self.speed_combo)
 
         # RAM-Floppy RAF (doc/design/22_raf512.md §7.1) — in jedem Programm, dessen
@@ -264,6 +282,31 @@ class SettingsWidget(QWidget):
         form.addRow("Peripherie:", self.ptape_box)
 
         return inner
+
+    def _on_hardware_combo(self, schluessel: str):
+        if self._hardware_guard:
+            return
+        self.hardwareChanged.emit(schluessel, self.hardware_combos[schluessel].currentData())
+
+    def hardware_value(self) -> dict:
+        """Gewählte Hardwarevarianten ``{Schlüssel: Wert}`` (leer ohne Profil.hardware)."""
+        return {k: b.currentData() for k, b in self.hardware_combos.items()}
+
+    def set_hardware_value(self, daten: dict):
+        """Hardwarevarianten setzen (ohne Signal)."""
+        self._hardware_guard = True
+        try:
+            for k, box in self.hardware_combos.items():
+                i = box.findData((daten or {}).get(k))
+                box.setCurrentIndex(i if i >= 0 else 0)
+        finally:
+            self._hardware_guard = False
+
+    def _hardware_gesperrt_nach_modell(self):
+        """Felder ausgrauen, die am gewählten Modell nichts bewirken (PC 1715W: Zeichensatz)."""
+        modell = self.model_value()
+        for k, box in self.hardware_combos.items():
+            box.setEnabled(self.profil.hardware_wirkt(k, modell))
 
     # ── Lochstreifen (K6022) ─────────────────────────────────────────────────
 
@@ -315,6 +358,7 @@ class SettingsWidget(QWidget):
         self._raf_guard = False
 
     def _on_model_combo(self, _idx: int):
+        self._hardware_gesperrt_nach_modell()
         if self._model_guard:
             return
         self.modelChanged.emit(self.model_value())
@@ -330,6 +374,22 @@ class SettingsWidget(QWidget):
         idx = self.model_combo.findData(self.profil.modell_normalisieren(model))
         self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._model_guard = False
+        self._hardware_gesperrt_nach_modell()
+
+    def set_nenntakt(self, text: str) -> None:
+        """Beschriftung der Taktstufen nach dem Nenntakt des Modells (ohne Signal)."""
+        self.SPEED_OPTIONS = takt.auswahl(text)
+        self._speed_guard = True
+        try:
+            for i, (label, _f) in enumerate(self.SPEED_OPTIONS):
+                self.speed_combo.setItemText(i, label)
+        finally:
+            self._speed_guard = False
+        self.speed_combo.setToolTip(
+            f"Der {self.profil.rechner} läuft mit {text}.  "
+            "Ein Vielfaches davon "
+            "kürzt einen Kaltstart ab — die Uhr des Gastsystems zählt aber "
+            "Taktzyklen und geht dann entsprechend falsch.")
 
     def _on_speed_combo(self, _idx: int):
         if self._speed_guard:

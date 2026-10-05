@@ -68,8 +68,13 @@ std::vector<uint8_t> holeDatei(const std::string& abbild, const std::string& nam
     ref.volume = seite;
     ref.name = name;
     EXPECT_TRUE(dv->extract(ref, ziel, TransferOptions{})) << dv->lastError();
-    std::ifstream f(ziel, std::ios::binary);
-    std::vector<uint8_t> d{std::istreambuf_iterator<char>(f), {}};
+    std::vector<uint8_t> d;
+    {
+        // Erst schliessen, dann loeschen: unter Windows laesst sich eine offene
+        // Datei nicht entfernen, und der naechste Aufruf faende sie noch vor.
+        std::ifstream f(ziel, std::ios::binary);
+        d.assign(std::istreambuf_iterator<char>(f), {});
+    }
     fs::remove(ziel, ec);
     return d;
 }

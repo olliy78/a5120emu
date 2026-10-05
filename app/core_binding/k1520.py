@@ -298,6 +298,22 @@ _lib.k1520_create_prg710.argtypes = [
 ]
 _lib.k1520_create_prg710.restype = K1520Handle
 
+# k1520_create_pc1715(variante, bildschirm, zeichensatz, d0..d3) -> K1520Handle
+#   variante 0 = PC 1715; bildschirm 0 = K7222 (80x24), 1 = K7221 (64x16); zeichensatz 0 = S619, 1 = S602
+_lib.k1520_create_pc1715.argtypes = [
+    ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_pc1715.restype = K1520Handle
+
+# k1520_create_pc1715_ex(variante, bildschirm, zg_satz, zg_db6, tastatur, d0..d3) -> K1520Handle  (AP-6)
+#   zg_satz 0 = deutsch, 1 = polnisch, 2 = kyrillisch; zg_db6 wie zeichensatz oben; tastatur 0 = S600, 1 = TAST_618
+_lib.k1520_create_pc1715_ex.argtypes = [
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_pc1715_ex.restype = K1520Handle
+
 # k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
 _lib.k1520_create_with_em.argtypes = [
     ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
@@ -500,7 +516,14 @@ def _utf8(path) -> bytes:
     return os.fspath(path).encode("utf-8")
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
-MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2}
+MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "pc1715": 3,
+                 "pc1715-k7221": 3, "pc1715w": 3}
+# (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
+# Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
+# AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
+PC1715_ZEICHENSAETZE = {"deutsch": 0, "polnisch": 1, "kyrillisch": 2}
+PC1715_TASTATUREN = {"s600": 0, "tast618": 1}
+PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
 
@@ -746,7 +769,8 @@ class K1520Emulator:
     
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
                  em: Optional[str] = None, raf: Optional[str] = None,
-                 ptape: bool = False):
+                 ptape: bool = False, zeichensatz: str = "deutsch",
+                 tastatur: str = "s600"):
         """Initialize emulator instance.
 
         Args:
@@ -756,7 +780,13 @@ class K1520Emulator:
                 marks an empty slot ("kein Laufwerk").  ``None`` (the default) builds
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
             machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"prg710"`` oder
-                ``"prg710-1"`` — siehe :data:`MACHINE_TYPES`.
+                ``"prg710-1"``, ``"pc1715"``, ``"pc1715-k7221"`` (PC 1715 mit dem
+                Bildschirm K7221, 64×16) oder ``"pc1715w"`` — siehe :data:`MACHINE_TYPES`.
+            zeichensatz: nur PC 1715 — Bestückung der ZG-EPROMs, ``"deutsch"``
+                (S619 + S602, Vorgabe), ``"polnisch"`` oder ``"kyrillisch"``; beim
+                ``"pc1715w"`` ohne Wirkung (der Satz kommt von Diskette).
+            tastatur: nur PC 1715/1715W — Tastatur-ROM ``"s600"`` (QWERTY, Vorgabe)
+                oder ``"tast618"`` (QWERTZ).
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
             raf: RAM-Floppy — ``None``/``"none"`` = ohne, ``"raf128"``, ``"raf512"``
@@ -773,6 +803,14 @@ class K1520Emulator:
             raise ValueError(f"unbekannte Maschine {machine!r} "
                              f"(bekannt: {', '.join(MACHINE_TYPES)})")
         self._machine = machine
+        if zeichensatz not in PC1715_ZEICHENSAETZE:
+            raise ValueError(f"unbekannter Zeichensatz {zeichensatz!r} "
+                             f"(bekannt: {', '.join(PC1715_ZEICHENSAETZE)})")
+        if tastatur not in PC1715_TASTATUREN:
+            raise ValueError(f"unbekanntes Tastatur-ROM {tastatur!r} "
+                             f"(bekannt: {', '.join(PC1715_TASTATUREN)})")
+        self._zeichensatz = zeichensatz
+        self._tastatur = tastatur
         self._em = em if em and em != "none" else None
         if self._em and machine != "a5120":
             raise ValueError(f"ein Erweiterungsmodul gibt es nur am A5120, nicht am {machine!r}")
@@ -783,6 +821,15 @@ class K1520Emulator:
                 enc = lambda n: n.encode("utf-8") if n else None
                 handle = _lib.k1520_create_prg710(
                     PRG_VARIANTEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            elif machine in PC1715_MODELLE:
+                names = (self._drive_types or [])[:4]
+                names = names + [None] * (4 - len(names))
+                enc = lambda n: n.encode("utf-8") if n else None
+                variante, bildschirm = PC1715_MODELLE[machine]
+                handle = _lib.k1520_create_pc1715_ex(
+                    variante, bildschirm, PC1715_ZEICHENSAETZE[zeichensatz], 0,
+                    PC1715_TASTATUREN[tastatur],
+                    enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
             else:
                 handle = self._create_handle(self._drive_types, MACHINE_TYPES[machine], self._em)
         except Exception as e:
@@ -834,6 +881,16 @@ class K1520Emulator:
     def machine(self) -> str:
         """Name der Maschine, mit der dieses Objekt erzeugt wurde (``"a5120"``/``"k8915"``)."""
         return self._machine
+
+    @property
+    def zeichensatz(self) -> str:
+        """PC 1715: Bestückung der ZG-EPROMs (``"deutsch"``/``"polnisch"``/``"kyrillisch"``)."""
+        return self._zeichensatz
+
+    @property
+    def tastatur(self) -> str:
+        """PC 1715/1715W: Tastatur-ROM (``"s600"``/``"tast618"``)."""
+        return self._tastatur
 
     @property
     def prg_variant(self) -> Optional[int]:
@@ -1029,7 +1086,7 @@ class K1520Emulator:
         return None if v < 0 else bool(v)
 
     def machine_type(self) -> int:
-        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915)."""
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715)."""
         return int(_lib.k1520_machine_type(self._handle))
 
     def panel_lamps(self) -> int:
@@ -1110,6 +1167,11 @@ class K1520Emulator:
             self._thread.join(timeout=1.0)
             self._thread = None
     
+    def framebuffer_size(self) -> tuple:
+        """Bildgröße ``(Breite, Höhe)`` in Pixeln, wie der Kern sie meldet."""
+        return (int(_lib.k1520_fb_width(self._handle)),
+                int(_lib.k1520_fb_height(self._handle)))
+
     def get_framebuffer(self) -> bytearray:
         """
         Get current framebuffer content.

@@ -12,6 +12,12 @@ k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl
 k1520_add_test(sio   SRC primitives/test_sio.cpp   LIBS k1520_sio LABELS "${_lbl}")
 # 8279-Tastaturteil (PRG 710, doc/design/20_prg710.md AP-P2a)
 k1520_add_test(i8279 SRC primitives/test_i8279.cpp LIBS k1520_i8279 LABELS "${_lbl}")
+# 8275-CRT-Controller (PC 1715, doc/design/21_pc1715.md AP-1a)
+k1520_add_test(i8275 SRC primitives/test_i8275.cpp LIBS k1520_i8275 LABELS "${_lbl}")
+# U8272/µPD765-Floppy-Controller (PC 1715W, doc/design/21_pc1715.md AP-W2)
+k1520_add_test(upd765 SRC primitives/test_upd765.cpp LIBS k1520_upd765 k1520_testsupport LABELS "${_lbl}")
+# Z80-DMA UA858 (PC 1715W, doc/design/21_pc1715.md AP-W2a)
+k1520_add_test(z80_dma SRC primitives/test_z80_dma.cpp LIBS k1520_z80dma LABELS "${_lbl}")
 # RETI/IUS-Verhalten über alle drei Bausteine hinweg (braucht daher den Bus).
 k1520_add_test(reti  SRC primitives/test_reti.cpp
                      LIBS k1520_ctc k1520_pio k1520_sio k1520_bus LABELS "${_lbl}")
@@ -26,6 +32,8 @@ k1520_add_test(k3526 SRC cards/test_k3526.cpp      LIBS k1520_k3526 k1520_bus LA
 k1520_add_test(k5122 SRC cards/test_k5122.cpp      LIBS k1520_k5122 LABELS "${_lbl}")
 # K5122 im /WAIT-Betrieb (K8915, doc/design/16_k8915.md AP-E3a)
 k1520_add_test(k5122_wait SRC cards/test_k5122_wait.cpp LIBS k1520_k5122 LABELS "${_lbl}")
+# K5122 in der Konfiguration „1715“ (PC 1715, doc/design/21_pc1715.md AP-2)
+k1520_add_test(k5122_pc1715 SRC cards/test_k5122_pc1715.cpp LIBS k1520_k5122 LABELS "${_lbl}")
 k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
 # ZRE 045-8762 des K8915: Speicherbild je A8H-Wert (doc/design/16_k8915.md §4.2a)
@@ -60,6 +68,10 @@ k1520_add_test(k7609          SRC peripherals/test_k7609.cpp
 # Tastatur K7672 des K8915: Protokollmodell (§3.5, AP-E2)
 k1520_add_test(k7672          SRC peripherals/test_k7672.cpp
                               LIBS k1520_k7672 LABELS "${_lbl}")
+# Tastatur des PC 1715: U880 + S600, Matrix, Bitstrom → Byte (doc/design/21_pc1715.md AP-3a)
+k1520_add_test(tastatur1715   SRC peripherals/test_tastatur1715.cpp
+                              LIBS k1520_tastatur1715 LABELS "${_lbl}")
+
 # Lochstreifen-Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4, AP-L2)
 k1520_add_test(band_format    SRC peripherals/test_band_format.cpp
                               LIBS k1520_lochstreifen LABELS "${_lbl}")
@@ -134,3 +146,7 @@ k1520_add_test(fs_check      SRC filesystem/test_fs_check.cpp
 k1520_add_test(fs_recover    SRC filesystem/test_fs_recover.cpp
                              LIBS k1520_fs LABELS "${_lbl}"
                              DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
+# ZRE des PC 1715: ROM-Overlay, Portdekodierung, BWS-Register 34H, 8275-DMA + Rastern (doc/design/21_pc1715.md AP-1b)
+k1520_add_test(pc1715_zre SRC cards/test_pc1715_zre.cpp LIBS k1520_pc1715_zre LABELS "${_lbl}")
+# Speicher des PC 1715W: BR 24H, 74S287, Bank 0, Bildquelle (doc/design/21_pc1715.md AP-W1)
+k1520_add_test(pc1715w_speicher SRC cards/test_pc1715w_speicher.cpp LIBS k1520_pc1715w_speicher LABELS "${_lbl}")

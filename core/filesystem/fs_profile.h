@@ -74,11 +74,22 @@ struct FsProfile {
     bool detect = true;
 
     /// @brief Bauart des **Ladekopfs** in Sektor 1 der Systemspuren, den ein Bootabbild
-    ///        tragen muss; "" = keine Pruefung.  Bisher nur `k8915` (AP-E5c): die ersten
+    ///        tragen muss; "" = keine Pruefung.  `k8915` (AP-E5c): die ersten
     ///        16 Byte mit CRC-CCITT (Startwert FFFFH, Ergebnis 0) — ein CP/A-Bootabbild
     ///        des A5120 traegt keinen und wuerde sonst still auf eine Diskette
-    ///        geschrieben, die der K8915-Lader mit `C` abweist.
+    ///        geschrieben, die der K8915-Lader mit `C` abweist.  `pc1715` (AP-D): das
+    ///        Wort `F002H`/`F003H` (Bytes `02|03 F0`), das der Urlader S502 des PC 1715
+    ///        als Einziges prueft — ein A5120-Lader (`SYL`) besteht es nicht.
     std::string boot_header;
+
+    /// @brief Nur CP/M: der **Bootbereich steht im Verzeichnis** (CP/A 1715 ohne
+    ///        Systemspuren, `doc/pc1715/disketten.md` §3).  Verzeichnisplatz 0 traegt den
+    ///        Bootkopf (`02|03 F0 …`), ein Platz mit Nutzerbyte `F0` unter den ersten
+    ///        vier die Laufwerks-Parametersaetze; beide gehoeren dem Urlader, nicht dem
+    ///        Dateisystem — `list`/`check`/`erase` uebergehen sie, `write` vergibt sie nie,
+    ///        und die Erkennung dieses Profils verlangt den Bootkopf ausdruecklich
+    ///        (sonst waere jede Datendiskette zugleich `cpa800` und `cpa1715`).
+    bool dir_boot = false;
 
     // ── nur FsType::Cpm ──────────────────────────────────────────────────────
     uint32_t block_size  = 2048;   ///< Zuordnungseinheit

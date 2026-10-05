@@ -146,3 +146,14 @@ k1520_add_test(sertest_kopplung_lang SRC test_sertest_kopplung.cpp
 k1520_add_test(prg710_format_boot SRC test_prg710_format_boot.cpp
                             LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# ─── PC 1715 (doc/design/21_pc1715.md AP-4f): Werkstest PCTEST.COM unter SCP 1715 mit
+# Prüfsteckern (Loop am Hub), wie HARDY — Testzeit 1 min Maschinenzeit.
+k1520_add_test(pc1715_pctest_scp SRC test_pc1715_pctest_scp.cpp
+                            LIBS k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# ─── PC 1715 (doc/design/21_pc1715.md AP-5b): FORMAT unter SCP 1715 / CP/A 1715 ──
+k1520_add_test(pc1715_format SRC test_pc1715_format.cpp
+                            LIBS k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)

@@ -3,6 +3,7 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
 #include "core/machines/prg710/prg710.h"
+#include "core/machines/pc1715/pc1715.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -80,11 +81,12 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d2, const char* d3) {
     // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 wählt.
     if (type == K1520_MACHINE_PRG710) return k1520_create_prg710(0, d0, d1, d2, d3);
+    if (type == K1520_MACHINE_PC1715) return k1520_create_pc1715(0, 0, 0, d0, d1, d2, d3);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
         // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915, PRG710)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715)";
         return nullptr;
     }
 
@@ -106,6 +108,65 @@ K1520Handle k1520_create_configured(K1520MachineType type,
                 if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
             m = new A5120Machine(cfg);
         }
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
+                                const char* d0, const char* d1, const char* d2, const char* d3) {
+    return k1520_create_pc1715_ex(variante, bildschirm, 0, zeichensatz, 0, d0, d1, d2, d3);
+}
+
+K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int zg_satz, int zg_db6, int tastatur,
+                                   const char* d0, const char* d1, const char* d2, const char* d3) {
+    const int zeichensatz = zg_db6;
+    g_init_error.clear();
+    if (zg_satz < 0 || zg_satz > 2) {
+        g_init_error = "Unbekannter Zeichengenerator-Satz " + std::to_string(zg_satz) +
+                       " (0 = deutsch, 1 = polnisch, 2 = kyrillisch)";
+        return nullptr;
+    }
+    if (tastatur != 0 && tastatur != 1) {
+        g_init_error = "Unbekanntes Tastatur-ROM " + std::to_string(tastatur) +
+                       " (0 = S600 QWERTY, 1 = TAST_618 QWERTZ)";
+        return nullptr;
+    }
+    if (variante != 0 && variante != 1) {
+        g_init_error = "Unbekannte PC1715-Variante " + std::to_string(variante) +
+                       " (0 = PC 1715, 1 = PC 1715W)";
+        return nullptr;
+    }
+    if (bildschirm != 0 && bildschirm != 1) {
+        g_init_error = "Unbekannter Bildschirm " + std::to_string(bildschirm) +
+                       " (0 = K7222 80x24, 1 = K7221 64x16)";
+        return nullptr;
+    }
+    if (zeichensatz != 0 && zeichensatz != 1) {
+        g_init_error = "Unbekannter Zeichensatz " + std::to_string(zeichensatz) +
+                       " (0 = S619, 1 = S602)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        Pc1715Machine::Config cfg;
+        cfg.variante = variante == 1 ? Pc1715Machine::Config::Variante::Pc1715W
+                                     : Pc1715Machine::Config::Variante::Pc1715;
+        cfg.bild = bildschirm == 1 ? Pc1715Zre::Bildschirm::K7221 : Pc1715Zre::Bildschirm::K7222;
+        cfg.zg_satz = zg_satz == 1 ? Pc1715Zre::ZgSatz::Polnisch
+                    : zg_satz == 2 ? Pc1715Zre::ZgSatz::Kyrillisch : Pc1715Zre::ZgSatz::Deutsch;
+        cfg.tastatur = tastatur == 1 ? Tastatur1715::Rom::Tast618 : Tastatur1715::Rom::S600;
+        cfg.zeichensatz = zeichensatz == 1 ? Pc1715Zre::Zeichensatz::S602 : Pc1715Zre::Zeichensatz::S619;
+        const char* names[4] = { d0, d1, d2, d3 };   // leer/NULL = Vorgabe (2 × K5601)
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
+        K1520Machine* m = new Pc1715Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
         return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();
@@ -671,7 +732,10 @@ int k1520_machine_type(K1520Handle h) {
 }
 
 uint8_t k1520_screen_char(K1520Handle h, int col, int row) {
-    if (col < 0 || col >= 80 || row < 0 || row >= 24) return 0;
+    // PC 1715: CP/A fährt 25 bzw. 17 Zeilen — die 25. (Index 24) ist die Statuszeile.
+    // Die Karte begrenzt selbst auf ihr Format (K7221: 64 Spalten) und liefert sonst 20H.
+    const int zeilen = toMachine(h)->machineType() == K1520_MACHINE_PC1715 ? 25 : 24;
+    if (col < 0 || col >= 80 || row < 0 || row >= zeilen) return 0;
     return toMachine(h)->screenChar(col, row);
 }
 

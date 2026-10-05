@@ -164,6 +164,47 @@ k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
+# PC 1715 (doc/design/21_pc1715.md AP-1b): Maschine bauen, echter Urlader S502 (kopiert sich,
+# blendet das ROM aus), Bildwechsel.  Ohne Floppy; das Verhalten danach ist AP-1c.
+k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# PC 1715 Etappe 2 (doc/design/21_pc1715.md AP-2): K5122 „1715" im /WAIT-Betrieb, S502 lädt
+# Spur 0 Sektor 1, Betriebssysteme bis zum Prompt (ohne Tastatur).
+k1520_add_test(pc1715_boot SRC test_pc1715_boot.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# PC 1715 Etappe 3 (doc/design/21_pc1715.md AP-3): Tastatur1715 an SIO0-A, DIR/STAT/PIP unter
+# SCP 1715, DIR unter CP/A 1715, ein Kommando unter UDOS 1715.
+k1520_add_test(pc1715_tastatur SRC test_pc1715_tastatur.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# PC 1715 Etappe 4 (AP-4a): Drucker X4 / V.24 X5 am SerialHub, Leitung 107, Drucken unter CP/A,
+# V.24-Boot des Urladers S502 ueber Telnet.
+k1520_add_test(pc1715_seriell SRC test_pc1715_seriell.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# DiskTool (AP-D): CP/A-1715-Disketten ohne Systemspuren (Bootkopf im Verzeichnis), bootfähige
+# 1715-/SCP-3.0-Disketten aus Systemspuren, alle pc1715*-Abzüge gegen doc/pc1715/disketten.md.
+k1520_add_test(disktool_pc1715 SRC test_disktool_pc1715.cpp
+                          LIBS k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# PC 1715W Etappe 6+7 (AP-W3): S550 → SCP-3.0-Lader → SCP3.SYS → A>, Zeichensatz aus dem
+# ZG-RAM, DIR über die Tastatur, INIT.COM formatiert B:.
+k1520_add_test(pc1715w_boot SRC test_pc1715w_boot.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# PC 1715 AP-4d: Werkstest PCTEST.COM unter CP/A 1715 aus der Workbench.
+k1520_add_test(pc1715_pctest SRC test_pc1715_pctest.cpp
+                          LIBS k1520_pc1715 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
 # RAM-Floppy RAF in allen drei Maschinen (doc/design/22_raf512.md §5.2, AP-R2): Bestückung,
 # 88H/89H über den Systembus, Reset erhält / Netz-Ein verwirft, Save-State v8, A5120.16 + RAF.
 k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp

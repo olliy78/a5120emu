@@ -1,11 +1,12 @@
-# a5120emu / k8915emu / prg710emu — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu / pc1715emu — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Es gibt ihn in drei Gestalten: den **A5120 Emulator**
-(`a5120emu`), den **K8915 Emulator** (`k8915emu`) und den **PRG710 Emulator**
-(`prg710emu`) — dasselbe Programm mit eigener Konfiguration und eigener Tastatur;
-was nur den K8915 bzw. den PRG betrifft, steht in den Abschnitten „Der K8915
-Emulator" und „Der PRG710 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
+Verwandten am K1520-Bus. Es gibt ihn in vier Gestalten: den **A5120 Emulator**
+(`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
+(`prg710emu`) und den **PC1715 Emulator** (`pc1715emu`) — dasselbe Programm mit
+eigener Konfiguration und eigener Tastatur; was nur den K8915, den PRG bzw. den
+PC 1715 betrifft, steht in den Abschnitten „Der K8915 Emulator", „Der PRG710
+Emulator" und „Der PC1715 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
@@ -780,8 +781,8 @@ Skriptbetrieb); `k1520dbg DISKETTE --console` ist die Konsolenfassung.
 Im Menü **Werkzeuge** stehen die Programme, die zur selben Installation
 gehören und dieselben Disketten anfassen:
 
-* **K8915 Emulator starten** bzw. **A5120 Emulator starten** — der jeweils
-  andere Emulator, als eigenes Programm mit eigener Konfiguration.
+* **K8915 Emulator starten**, **A5120 Emulator starten** usw. — die jeweils
+  anderen Emulatoren, als eigenes Programm mit eigener Konfiguration.
 
 * **k1520DiskTool starten** — das Diskettenwerkzeug: Dateien von einer Diskette
   in einen Ordner holen und wieder zurückschreiben, Disketten anlegen, prüfen,
@@ -909,12 +910,17 @@ K7024, Diskettensteuerung K5122 mit zwei K5601). Was anders ist:
   UDOS ein unbekanntes Kommando.
   Ein Rückstellen löscht das UDOS-Datum nicht; die Datumsabfrage kann dann entfallen.
 * **SCPX 1526** bootet am 710-1 bis `A>` (`DIR`, `STAT`, `PIP B:=…`).
-* **Die Bildschirmtastatur des 710 (K7609)** sendet je Taste den Tastencode des
-  Geräts. **ET1** und **ET2** (rot) sind Tasten wie alle anderen, ohne
-  Kürzel erreichbar; **UMSCH** und **STRG** rasten für genau eine Taste. Das
-  Tastenbild ist nach der Codetabelle gezeichnet, nicht am Gerät vermessen:
-  `S1`–`S9` und `CL` haben keine bekannten Codes, sie federn zurück und senden
-  nichts (Beschriftung „[?]“); Leertaste und `BS` sind vorläufig belegt.
+* **Die Bildschirmtastatur des 710 (K7609)** ist dem Foto des Geräts
+  nachgebaut und sendet je Taste den Tastencode des Geräts. **`↵`** ist ET1
+  (Return, Starttaste), **`ST`** ist ET2, **`TB`** der Tabulator — Tasten wie
+  alle anderen, ohne Kürzel erreichbar. Der Ziffernblock sendet dieselben Codes
+  wie die Ziffernreihe. Die **unbeschrifteten** Kappen tragen eine angenommene
+  Belegung (der Kurzhinweis nennt sie): die Ovale neben der Leertaste sind die
+  Umschaltung, die Kappe links von `Q` ist STRG (beide rasten für genau eine
+  Taste), neben `-` liegt `BS`, neben `#` der Drucker-Umschalter, links von `Y`
+  der Merker. `+1`, `-1`, `FC`, `BA`, `FW` und `CL` gehören dem PRG-Betrieb und
+  haben unter UDOS/SCPX keinen Code: sie federn zurück und senden nichts. `$`
+  und `%` haben keine Kappe — über die PC-Tastatur gehen sie.
 * **Schnittstellen** — am 710 drei (V.24 X4, IFSS Hauptdrucker X6, ZIFSS
   Zusatzdrucker X5), am 710-1 zwei (V.24, ZIFSS); A32-B trägt dort die Tastatur
   und steht als feste Schnittstelle im Reiter. Dahinter folgt in beiden der
@@ -968,6 +974,57 @@ dazu einen **Fernschreiber** an der Karte 590069:
   einem BIOS `B17172FS`/`B17272FS` (Druckerausgabe, z. B. **^P** und `DIR`); er
   schreibt nur Großbuchstaben, Zeichen ohne Gegenstück im Fernschreibalphabet
   (`>` `*` `#` …) als Zwischenraum, mit 100 Baud — etwa 13 Zeichen je Sekunde.
+
+## Der PC1715 Emulator
+
+`pc1715emu` ist derselbe Emulator für den Bürocomputer **robotron PC 1715**
+(U880 mit Urlader-ROM, Bildschirmsteuerung 8275, Diskettensteuerung K5122 mit zwei
+K5601, Tastatur mit eigenem Prozessor). Was anders ist:
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: PC 1715 mit dem Bildschirm
+  **K7222** (80 × 24, Vorgabe) oder **K7221** (64 × 16). Der Bildschirm ist eine
+  Bestückungsvariante der Zentraleinheit: ein Wechsel erzeugt die Maschine neu
+  (Kaltstart) und wird in `pc1715emu.yaml` gemerkt. Der **PC 1715W**
+  (1987: 256 KB mit Bankumschaltung, U8272 mit DMA, 4 MHz) ist ein eigenes Modell der
+  Auswahl; den Bildschirm K7221 gibt es dort nicht.
+* **Zeichensatz und Tastatur** — *Einstellungen ▸ Allgemein*: die **Zeichengenerator-
+  EPROMs** der Zentraleinheit (**Deutsch** S619 + S602, Vorgabe; **Polnisch**
+  S641 + S619; **Kyrillisch** S643 + S605) und das **Tastatur-ROM** (**S600**
+  QWERTY, Vorgabe, oder **TAST_618**, QWERTZ mit vertauschtem Y/Z und anderer
+  Zeichensetzung — die Bildschirmtastatur beschriftet sich danach). Beides sind
+  Bestückungsvarianten: ein Wechsel startet die Maschine kalt und wird in
+  `pc1715emu.yaml` gemerkt. Beim **PC 1715W** ist der Zeichensatz ausgegraut (er kommt
+  von Diskette), die Tastatur bleibt wählbar. Die Fassung der Floppy-Karte und der
+  Urlader haben keine Auswahl.
+* **Takt** 2,458 MHz (1715W: 3,9936 MHz), **Laufwerke** zwei K5601.
+* **PC 1715W** — bootet **SCP 3.0** (CP/M 3; die Diskette `pc1715w_scp30_system.hfe`
+  liegt dem Paket bei). Der Zeichensatz liegt im RAM: der Lader füllt ihn, danach
+  tauscht `MODCS name.ZGF[1]` bzw. `[2]` den Satz (die `SC6xx.ZGF` stehen auf der
+  Diskette). Motor und Lampe der Laufwerke folgen dem Motorregister bzw. dem
+  Zugriff der Diskettensteuerung. Die RAM-Disk (Bänke 3–5) ist ungeprüft; Quasi-Grafik
+  und Zusatzkarten sind nicht nachgebaut.
+* **Bildschirm** — die unterste Zeile ist die **Statuszeile** von CP/A (inverse
+  Anzeige von Laufwerk, Zeichensatz und Feststellung); sie gehört zum Bild.
+* **Booten** geht vom Urlader: er sucht Spur 0 Sektor 1 der Laufwerke 0 bis 3 und
+  startet SCP 1715, CP/A 1715 oder UDOS 1715 von der eingelegten Diskette; ohne
+  Diskette versucht er nach einigen Sekunden den Ladevorgang über **V.24** (X5).
+* **Die Bildschirmtastatur** zeichnet die Matrix der Tastatur. **SHIFT**, **CTRL**
+  und **REP** wirken nur, solange sie gehalten werden: ein Klick merkt sie
+  (gelber Rand), sie werden beim nächsten Tastenklick **vor** der Taste gedrückt
+  und danach gelöst. **LOCK** (Buchstaben groß) und **SI/SO** (zweiter
+  Zeichensatz) rasten im Tastaturprozessor selbst; ihr Rand zeigt den Stand, den
+  die Nachbildung mitgezählt hat. **ET** ist Return. Dazu Funktionstasten
+  F1–F15, Cursor- und Ziffernblock mit `CE` und `00`. Das Tastenbild ist dem Foto
+  der Tastatur nachgebaut: `®` ist **REP**, die unbeschrifteten Ovale sind
+  **LOCK** (mit Leuchte) und die beiden **SHIFT**; die zweite Leuchte neben SI/SO
+  zeigt dessen Stand.
+* Die **PC-Tastatur** geht wie beim A5120 an den Rechner: Zeichen als Zeichen
+  (die Umschaltung sucht sich der Rechner selbst), Pfeile, Entf, Einfg und F1–F12
+  als die entsprechenden Tasten. Eine **gehaltene** Taste wiederholt nur, wenn
+  zugleich **REP** gedrückt ist — so will es der Tastaturprozessor.
+* **Schnittstellen** — **Drucker (X4)** und **V.24 (X5)**; die Tastatur hängt
+  fest an SIO-A und steht nicht im Reiter. Ein Drucker ohne Verbindung gilt als
+  besetzt.
 
 ## Tastenkürzel
 

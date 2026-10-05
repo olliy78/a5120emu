@@ -15,6 +15,7 @@ typedef enum {
     K1520_MACHINE_A5120  = 0,
     K1520_MACHINE_PRG710 = 1,
     K1520_MACHINE_K8915  = 2,
+    K1520_MACHINE_PC1715 = 3,
 } K1520MachineType;
 
 typedef struct {
@@ -66,6 +67,35 @@ K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
 K1520_API K1520Handle k1520_create_prg710(int variante,
                                           const char* drive0, const char* drive1,
                                           const char* drive2, const char* drive3);
+
+/**
+ * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
+ *
+ * @param variante    0 = PC 1715, 1 = PC 1715W (seit AP-W3; nur mit bildschirm 0, sonst NULL mit Grund)
+ * @param bildschirm  0 = K7222 (80x24, Vorgabe), 1 = K7221 (64x16); Framebuffer 640x288 bzw. 512x240
+ * @param zeichensatz Zeichengenerator bei BWS-Register DB6 = 0: 0 = S619 (Vorgabe), 1 = S602
+ * @param drive0..3   Laufwerke der Floppy-Ansteuerung (Profilnamen wie "K5601"; NULL/"" = Vorgabe 2 × K5601)
+ * k1520_machine_type() = 3.  Disketten seit AP-2 (K5122 „1715“); Tastatur folgt mit AP-3.
+ */
+K1520_API K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeichensatz,
+                                          const char* drive0, const char* drive1,
+                                          const char* drive2, const char* drive3);
+
+/**
+ * @brief PC 1715 mit wählbaren ROM-Fassungen (AP-6) — Obermenge von k1520_create_pc1715, das
+ *        mit zg_satz = 0, tastatur = 0 gleich bleibt (bitgleich).
+ *
+ * @param zg_satz   Bestückung der Zeichengenerator-EPROMs (nur PC 1715; beim 1715W ohne Wirkung,
+ *                  der Satz kommt von Diskette): 0 = deutsch (S619 + S602), 1 = polnisch
+ *                  (S641 + S619), 2 = kyrillisch (S643 + S605)
+ * @param zg_db6    Platz, der bei BWS-Register DB6 = 0 gilt: 0 = ZG1 (A25.2), 1 = ZG2 (A25.1)
+ * @param tastatur  Tastatur-ROM (beide Varianten): 0 = S600 (QWERTY), 1 = TAST_618 (QWERTZ)
+ * Übrige Parameter wie k1520_create_pc1715.  Unbekannte Werte → NULL mit Grund.
+ */
+K1520_API K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int zg_satz, int zg_db6,
+                                             int tastatur,
+                                             const char* drive0, const char* drive1,
+                                             const char* drive2, const char* drive3);
 
 /**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
@@ -444,7 +474,7 @@ K1520_API const char* k1520_version(void);
  * Every machine answers these; the A5120 has no panel and no bell counter and
  * returns 0.  The K8915 mirrors its indicators at the end of each k1520_run(),
  * so they may be read from any thread. */
-/** @brief K1520MachineType of the handle (0 = A5120, 1 = PRG 710/710-1, 2 = K8915). */
+/** @brief K1520MachineType of the handle (0 = A5120, 1 = PRG 710/710-1, 2 = K8915, 3 = PC 1715). */
 K1520_API int      k1520_machine_type(K1520Handle h);
 /**
  * @brief Raw byte of the text screen memory (80 × 24, bit 7 = attribute/cursor),
@@ -452,7 +482,7 @@ K1520_API int      k1520_machine_type(K1520Handle h);
  *
  * On the K8915 the CPU view (k1520_mem_read) of the screen memory at 1000H is
  * covered by ZRE RAM as soon as port A8H bit0 is set; use this function to read
- * the screen.  0 for col/row outside 0…79 / 0…23.  Not thread-safe (like mem_read).
+ * the screen.  0 for col/row outside 0…79 / 0…23 (PC 1715: 0…24, row 24 = CP/A status line).  Not thread-safe (like mem_read).
  */
 K1520_API uint8_t  k1520_screen_char(K1520Handle h, int col, int row);
 /**

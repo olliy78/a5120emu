@@ -124,6 +124,16 @@ public:
     /// Test-Unterbau (Rückruf/Einspeisen, `K1520Machine::setDFUECallback` …) stumm:
     /// „ist ein Transport aktiv, geht er ins Leere" (Entwurf 19 §8).
     virtual void leitungBelegt(bool /*belegt*/) {}
+
+    /// Prüfstecker (Rx/Tx-Loop, §6.5) gesteckt bzw. gezogen; der Wandler meldet jeden
+    /// Wechsel (und einmal beim ersten `takt`).  Vorgabe: nichts — der Wandler bildet im
+    /// Loop RTS→CTS und DTR→DSR/DCD nach, mit seinem Blickabstand (1/16 Zeichenzeit).
+    /// Eine Karte, deren Stecker ANDERS gebrückt ist (PC 1715: Drucker X4 hat nur
+    /// 102/103/106 → 103→106; V.24 X5 brückt 111→109 und 108→107, und 107 liegt an der
+    /// SIO von Kanal A) oder deren Gast die Leitungen schneller nachliest, als der Wandler
+    /// blickt (PCTEST: ein Lesezugriff ≈ 40 Takte nach dem Setzen), bildet die Brücken
+    /// selbst und SOFORT nach und übergeht dann die Eingänge aus `setzeEingaenge`.
+    virtual void pruefstecker(bool /*gesteckt*/) {}
 };
 
 }  // namespace k1520::serial

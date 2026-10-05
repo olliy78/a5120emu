@@ -145,11 +145,15 @@ bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
 
-> **Drei Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d,
+> **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a,
 > `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
 > **A5120 Emulator** (`a5120emu`), **K8915 Emulator** (`k8915emu`, `app/main.py
 > --machine k8915`) und **PRG710 Emulator** (`prg710emu`, `--machine prg710`, Modellwahl PRG 710 /
-> 710-1 über `general.model`, `prg710emu.yaml`, `data/default_config_prg710.yaml`).  Alles Maschinenspezifische steht im **Programmprofil
+> 710-1 über `general.model`, `prg710emu.yaml`, `data/default_config_prg710.yaml`) und **PC1715 Emulator** (`pc1715emu`, `--machine pc1715`,
+> Modellwahl = Bildschirm K7222/K7221 über `general.model`, **PC 1715W** als drittes Modell (3,9936 MHz über
+> `Programmprofil.modell_takte`, kein K7221 dort), `pc1715emu.yaml`, `data/default_config_pc1715.yaml`, Bildschirmtastatur
+> `app/ui/keyboard_pc1715.py`: physische Matrixtasten, SHIFT/CTRL/REP gemerkt und vor der Taste gedrückt,
+> LOCK/SI/SO rasten im ROM).  Alles Maschinenspezifische steht im **Programmprofil
 > `app/profil.py`** (Titel, Konfig-/Vorgabedatei, Takt, Tastatur K7637/K7672,
 > Frontplatte, eigene Aktionen wie `nmi` via `actions.NUR_FUER`) — kein
 > `if machine == …` in der Oberfläche.  Konfiguration je Programm im selben
@@ -483,7 +487,27 @@ samt Berichtigung, `keyRelease` Pflicht am 710-1, K8025-Belegung mit `taktquelle
 Zeichensatz, Fixtures/beschädigte Abzüge, Bedienung von UDOS/SCPX/FORMAT im Test). Plan:
 `doc/design/20_prg710.md`.
 
-## RAM-Floppy RAF 128/512/2M (alle drei Maschinen)
+## Vierte Maschine: PC 1715 / PC 1715W
+
+Bürocomputer robotron PC 1715 (Z80, 64 KB, 8275-Bild aus dem Haupt-RAM, eigener Tastatur-U880
+mit S600, Floppy in K5122-Bauart `/WAIT`) und PC 1715W (256 KB mit Bankregister, U8272 + Z80-DMA,
+Bild-RAM + ladbarer Zeichensatz; SCP 3.0 bootet, `K1520Emulator(machine="pc1715w")`, in `pc1715emu` wählbar, Lampen/Motor aus MOS 28H/U8272). Eine Klasse `Pc1715Machine` unter
+`core/machines/pc1715/` (Variante `PC1715` | `PC1715W`); Karten `pc1715_zre` (ROM-Overlay,
+CTC/SIO, 8275, BWS 34H), Primitive `i8275`, `z80_dma`, `upd765`, `core/peripherals/tastatur1715/`;
+wiederverwendet `K5122` mit `Portlage::Pc1715` (Vorgabe unverändert). **In `libk1520core.so`**
+(`K1520_MACHINE_PC1715 = 3`, `k1520_create_pc1715(variante, …)`, Python
+`K1520Emulator(machine="pc1715")`; Bild nur über `k1520_screen_char`, nie `mem_read`).
+**`boot_trace --machine pc1715`** (Grundform). **Stand 2026-10-03:** Etappen 1–3 fertig (SCP 1715,
+CP/A 1715, CP/Z 2.2, UDOS 1715 booten bis zum Prompt; `dir`/`STAT`/`cat` über die Tastatur);
+Etappe 4 (Schnittstellen/V.24-Boot) und AP-5a (Programm `pc1715emu`, Framebuffer 640 × 300 mit CP/A-Statuszeile) stehen; Paket (AP-5c) und 1715W (AP-W3/W4: Kern, Programm, Lieferdiskette) stehen; offen DiskTool, RAM-Disk-Prüfung, [Anwender]-Fragen.
+
+**Vor Arbeiten daran: `doc/merkposten/pc1715.md` lesen** — die Festlegungen mit Wächter
+(ROM-Overlay lesen ROM/schreiben RAM, BWS 34H = Adresse >> 10, SIO-Adressierung AB0 = Kanal,
+MO-Register 21H = DB4–7, Index als Interrupt, 8275-Sondercodes F0–F3, Tastatur gedrückt = 1 und
+Shift/CTRL einzeln vorweg, Return = 9EH, Berichtigungen zum 1715W, Testhilfe `pc1715_input.h`).
+Plan: `doc/design/21_pc1715.md`.
+
+## RAM-Floppy RAF 128/512/2M (alle Maschinen; PC 1715 nur mechanisch, s. Merkposten pc1715)
 
 Steckbare K-1520-RAM-Floppy des ZWG der AdW auf **E/A 88H/89H** (fest), Karte
 `core/cards/raf/`, gesteckt über `K1520Machine::installRaf` **nach dem Anlegen, vor dem
@@ -496,7 +520,7 @@ Sektor bzw. Bytezeiger, Sperrbits und Spiegelung sind **so** nachgebildet, RESET
 Inhalt.  **Vor Arbeiten daran: `doc/merkposten/raf.md` lesen**; Entwurf
 `doc/design/22_raf512.md`, Originale `doc/raf512/`.
 
-## Lochstreifen K6022/SIF1000 (alle drei Maschinen)
+## Lochstreifen K6022/SIF1000 (alle Maschinen; PC 1715 nur mechanisch)
 
 ADA K6022 (Leser daro 1210, Stanzer daro 1215) als steckbare Option auf **E/A E0H–E7H**
 (fest), gesteckt über `K1520Machine::installK6022` **nach dem Anlegen, vor dem ersten Lauf**

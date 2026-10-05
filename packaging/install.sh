@@ -49,7 +49,7 @@ CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 # erste Maschine, weitere K1520-Rechner bekommen ein eigenes Programm in
 # derselben Installation.  Eine neue gehört hier hinein UND braucht eine
 # <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
-MASCHINEN="a5120emu k8915emu prg710emu"
+MASCHINEN="a5120emu k8915emu prg710emu pc1715emu"
 
 # Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
 # Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
@@ -447,6 +447,10 @@ chmod +x "$PREFIX/bin/k8915emu"
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/prg710emu"
 chmod +x "$PREFIX/bin/prg710emu"
 
+# Der PC1715 Emulator: ebenso, `pc1715emu*` => `--machine pc1715`.
+ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/pc1715emu"
+chmod +x "$PREFIX/bin/pc1715emu"
+
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
 # entsteht der Starter der Oberflaeche.
@@ -467,6 +471,9 @@ if [ "$SHORTCUTS" = yes ]; then
     ln -sf "$PREFIX/bin/prg710emu" "$BINDIR/prg710emu"
     ersetze_platzhalter "$SELF_DIR/prg710emu.desktop.in" "$PREFIX" > "$APPDIR/prg710emu.desktop"
 
+    ln -sf "$PREFIX/bin/pc1715emu" "$BINDIR/pc1715emu"
+    ersetze_platzhalter "$SELF_DIR/pc1715emu.desktop.in" "$PREFIX" > "$APPDIR/pc1715emu.desktop"
+
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
         > "$APPDIR/k1520disktool.desktop"
@@ -481,7 +488,7 @@ if [ "$SHORTCUTS" = yes ]; then
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,k1520disktool}"
+    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
         *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
@@ -521,12 +528,12 @@ print("     Kern:      ", lib.k1520_version().decode())
 lib.k1520_create.argtypes = [ctypes.c_int]
 lib.k1520_create.restype = ctypes.c_void_p
 lib.k1520_destroy.argtypes = [ctypes.c_void_p]
-for _nr, _name in ((0, "A5120"), (1, "PRG710"), (2, "K8915")):
+for _nr, _name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715")):
     _h = lib.k1520_create(_nr)
     if not _h:
         sys.exit(_name + ": k1520_create schlug fehl")
     lib.k1520_destroy(_h)
-print("     Maschinen:  A5120, PRG710, K8915")
+print("     Maschinen:  A5120, PRG710, K8915, PC1715")
 
 import PySide6
 print("     PySide6:   ", PySide6.__version__)
@@ -555,7 +562,9 @@ fenster = MainWindow(profil=_profil.profil("k8915"))
 fenster.close()
 fenster = MainWindow(profil=_profil.profil("prg710"))
 fenster.close()
-print("     Oberfläche: baut auf (A5120, K8915, PRG710)")
+fenster = MainWindow(profil=_profil.profil("pc1715"))
+fenster.close()
+print("     Oberfläche: baut auf (A5120, K8915, PRG710, PC1715)")
 PYEOF
 # Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
 # ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.
@@ -581,11 +590,11 @@ printf "\n"
 info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
-printf "     Starten:      %s  (K8915: %s, PRG710: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu"
+printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu"
 printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
     "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
-    printf "     oder einfach: a5120emu / k8915emu / prg710emu   (bzw. über das Startmenü)\n"
+    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu   (bzw. über das Startmenü)\n"
 fi
 
 # Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im

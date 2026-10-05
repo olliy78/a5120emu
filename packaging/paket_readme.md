@@ -13,6 +13,10 @@ Startmenü „PRG710 Emulator"; die Variante wählt man in den Einstellungen unt
 „Modell"), ebenfalls mit eigener Konfiguration.  Je Modell liegen eine UDOS- und eine
 SCPX-Systemdiskette bei (`prg710_*` bzw. `prg710-1_*` im Diskettenordner); der
 Emulator startet ohne eingelegte Diskette, man wählt eine im Laufwerkskasten.
+Vierter ist der Personalcomputer **PC 1715** (`pc1715emu`, Startmenü „PC1715 Emulator";
+die Bildschirmvariante K7222/K7221 oder den **PC 1715W** wählt man unter „Modell").
+Beigelegt sind SCP 1715 (V0006 und V0007), CP/A 1715, UDOS1715 und SCP 3.0 für den
+1715W (`pc1715_*`, `pc1715w_*`, `udos1715_*` im Diskettenordner).
 
 ### K8915: eine eigene Bootdiskette
 
@@ -69,13 +73,14 @@ Weitere Möglichkeiten:
 
 ## Starten
 
-Über das Startmenü („A5120 Emulator", „K8915 Emulator" bzw. „PRG710 Emulator") oder auf der
+Über das Startmenü („A5120 Emulator", „K8915 Emulator", „PRG710 Emulator" bzw. „PC1715 Emulator") oder auf der
 Kommandozeile:
 
 ```sh
 a5120emu
 k8915emu
 prg710emu
+pc1715emu
 ```
 
 Das Paket enthält ein zweites Programm, das **k1520DiskTool**: es tauscht Dateien
@@ -131,7 +136,7 @@ Assembler stehen als Beispielzeilen darin).
 |---|---|
 | Programm | wohin bei der Installation gewählt (Vorschlag `~/K1520emu`) |
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
-| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml` bzw. `prg710emu.yaml` (je Programm) |
+| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml` bzw. `pc1715emu.yaml` (je Programm) |
 
 Die Beispieldisketten werden beim ersten Start in den Diskettenordner
 ausgepackt.  Der Emulator schreibt Änderungen an einer eingelegten Diskette

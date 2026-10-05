@@ -36,6 +36,11 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `prg710-1_udos43_k5601_v43_189.hfe` | **UDOS.PRG710-1 V4.3 1/89**, Abzug des Anwenders, `check --full` ohne Befund | PRG 710-1 (K5601) |
 | `prg710_scpx15_cpa640_sysprg.hfe` | **SCPX V1.5 für den PRG 710** (im Emulator mit `SYSPRG` erzeugt) | PRG 710 (K5601) |
 | `prg710-1_scpx17_cpa640_boot.hfe` | **SCPX 1526 V1.7 für den PRG 710-1**, Abzug des Anwenders | PRG 710-1 (K5601) |
+| `pc1715_scp1715_v0006_boot.hfe` | **SCP 1715 V0006** (cpa800, 5×1024), bootfähig nach S502 | PC 1715 (K5601) |
+| `pc1715_scp1715_v0007_cpa640_boot.hfe` | **SCP 1715 V0007** (cpa640, 16×256) | PC 1715 (K5601) |
+| `pc1715_cpa1715_boot_4lw.hfe` | **CP/A 1715**, Bootdiskette mit Werkzeugen | PC 1715 (K5601) |
+| `pc1715_cpz22_boot.hfe` | **CP/Z 2.2** (cpa640, „52K CP/Z 2.2“), bootfähig, Tastatur per SIO-Interrupt | PC 1715 (K5601) |
+| `pc1715w_scp30_system.hfe` | **SCP 3.0** (CP/M 3, cpa800, 5×1024), „LOADER PC 1715W V0001", mit den `SC6xx.ZGF`-Zeichensätzen | PC 1715W (U8272) |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
 **Eigene Programme auf den Bootdisketten** (Quelle und eingecheckte `.com` unter `tools/`):

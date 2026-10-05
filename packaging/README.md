@@ -101,13 +101,14 @@ Datei im Zielordner überlebt.
 | `k1520emu.iss` | Windows-Installationsprogramm (Inno Setup ≥ 6.5). Es **installiert selbst** — laden, auspacken, Laufzeitumgebung, Schlankmachen, Starter, Rauchtest, Deinstallieren; kein PowerShell beteiligt (Guards in `tests/python/test_packaging.py`) |
 | `python_pins.txt` | gepinnter Python für das Windows-Setup: Fassung, Größe, SHA256 (`build_payload.sh --refresh-python`) |
 | `launcher.cmd`, `disktool_launcher.cmd` | Windows-Starter; die Startmenü-Verknüpfung zeigt dagegen direkt auf `pythonw.exe`, sonst öffnet sich ein Konsolenfenster |
-| `launcher.sh` | Startskript-Vorlage; `@ROOT@` wird beim Installieren ersetzt. EINE Vorlage für alle drei Emulatoren (`bin/a5120emu`, `bin/k8915emu`, `bin/prg710emu`): der Name, unter dem der Starter aufgerufen wird, wählt das Programmprofil (`k8915emu*` ⇒ `--machine k8915`, `prg710emu*` ⇒ `--machine prg710`); `launcher.cmd` ebenso über `%~n0` |
+| `launcher.sh` | Startskript-Vorlage; `@ROOT@` wird beim Installieren ersetzt. EINE Vorlage für alle vier Emulatoren (`bin/a5120emu`, `bin/k8915emu`, `bin/prg710emu`, `bin/pc1715emu`): der Name, unter dem der Starter aufgerufen wird, wählt das Programmprofil (`k8915emu*` ⇒ `--machine k8915`, `prg710emu*` ⇒ `--machine prg710`, `pc1715emu*` ⇒ `--machine pc1715`); `launcher.cmd` ebenso über `%~n0` |
 | `slim.py` | wirft nach dem Installieren heraus, was nie geladen wird (~400 → ~146 MB) |
 | `lib/common.sh` | gemeinsame Bausteine: Meldungen, Plattform, Download, `ensure_uv` |
 | `uv_pins.txt` | gepinnte uv-Fassung + Prüfsummen für die **Unix**-Installer (`build_payload.sh --refresh-uv`) |
 | `a5120emu.desktop.in` | Startmenü-Eintrag „A5120 Emulator" |
 | `k8915emu.desktop.in` | Startmenü-Eintrag „K8915 Emulator" (gleiches Symbol) |
 | `prg710emu.desktop.in` | Startmenü-Eintrag „PRG710 Emulator" (gleiches Symbol) |
+| `pc1715emu.desktop.in` | Startmenü-Eintrag „PC1715 Emulator" (gleiches Symbol) |
 | `icon.svg` | Symbol |
 | `paket_readme.md` | wird als `README.md` **ins Paket** gelegt (Anwendertext) |
 

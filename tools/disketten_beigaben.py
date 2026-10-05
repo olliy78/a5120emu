@@ -13,6 +13,8 @@ Emulator wie am Geraet ohne eigenen Kopierschritt bereitstehen:
   EM256ADR.COM  tools/em256/     A5120.16 — Pruefprogramme der EM064/EM256
   EM16ABL.COM   tools/em256/
   EM256FUL.COM  tools/em256/
+  PCTEST.COM    tests/fixtures/cpm/  PC 1715 — Werkstest von Robotron (kein eigener Quelltext;
+                Fassung aus SOFT1715.img, die Workbench-Fassung V 0.1 ist beschaedigt)
   RAFCPM.COM    doc/raf512/      RAM-Floppy RAF (Entwurf 22): Original-Treiber, Laufwerk M:
   RAF512.COM    doc/raf512/      dieselbe Karte, DKt-Fassung 2008, Laufwerk P: (alle drei Maschinen)
 
@@ -50,10 +52,12 @@ PROGRAMME = {
     'EM256ADR.COM': os.path.join(TOOLS, 'em256', 'em256adr.com'),
     'EM16ABL.COM':  os.path.join(TOOLS, 'em256', 'em16abl.com'),
     'EM256FUL.COM': os.path.join(TOOLS, 'em256', 'em256ful.com'),
+    'PCTEST.COM':   os.path.join(FIXTURES, 'PCTEST.COM'),
     'RAFCPM.COM':   os.path.join(RAF, 'RAFCPM.COM'),
     'RAF512.COM':   os.path.join(RAF, 'RAF512.COM'),
 }
-A5120 = list(PROGRAMME)
+PC1715 = ['PCTEST.COM']      # SERTEST kennt die 1715-Ports nicht
+A5120 = [n for n in PROGRAMME if n not in PC1715]
 RAF_TREIBER = ['RAFCPM.COM', 'RAF512.COM']   # E/A 88H/89H — an allen drei Maschinen
 K8915 = ['SERTEST.COM', *RAF_TREIBER]        # ROMREAD/EM* sprechen A5120-Hardware an
 PRG710_1 = RAF_TREIBER                       # SCPX 1.7: RAF512 im Gast nachgewiesen (AP-R5)
@@ -72,6 +76,13 @@ DISKETTEN = {
     'cpa_cpa780_k5601_noclock-raf.hfe': A5120,
     'cpa_cpa780_k5601_noclock-raf.img': A5120,
     'k8915scpx_boot1.hfe': K8915,
+    # PC 1715: PCTEST nur dort, wo es nachweislich durchlaeuft (Pc1715Pctest.Scp*, AP-4f).
+    # NICHT auf pc1715_scp1715_v0007_cpa640_boot.hfe: PCTEST setzt keinen Stapel, der
+    # geerbte CCP-Stapel von V0007 (SP ~CAF0) liegt im Speichertestbereich (bis BDOS-16)
+    # → „Speicherfehler auf Adresse: CAEC".  NICHT auf pc1715_cpa1715_boot_4lw.hfe: PCTEST
+    # legt die CTC-Vektorbasis auf 08H, der CP/A-Takt auf Kanal 3 springt ins Leere
+    # (wie AP-4d).  Nicht UDOS 1715, nicht SCP 3.0 des 1715W.  Beides Gastverhalten.
+    'pc1715_scp1715_v0006_boot.hfe': PC1715,
     'prg710-1_scpx17_cpa640_boot.hfe': PRG710_1,
 }
 

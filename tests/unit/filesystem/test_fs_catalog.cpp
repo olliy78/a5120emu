@@ -85,6 +85,9 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         // (`detect: false`) — eine LEERE Diskette ist sonst von `cpa800` nicht zu
         // unterscheiden (doc/design/16_k8915.md §8a AP-E5a).
         "scpx8915",
+        // PC 1715 (AP-D): CP/A 1715 mit Bootkopf IM Verzeichnis (erkannt nur mit Kopf) und
+        // der Name fuer die SCP-1715-/SCP-3.0-Systemdiskette (`detect: false`).
+        "cpa1715", "scp1715",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";

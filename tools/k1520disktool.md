@@ -379,6 +379,8 @@ Wie gross die Systemspuren sind, hängt am Dateisystem — `info` sagt es:
 | `udos_*`  | 13312 B | Spuren 0–2 (Urlader + Nukleus) **+ Bootspur 21**, je Seite |
 | `cpa800`  | — | keine: das Dateisystem beginnt auf Zylinder 0 |
 | `scpx8915` | 20480 B | Zylinder 0–1 beidseitig (5×1024) — K8915 |
+| `scp1715` | 20480 B | Zylinder 0–1 beidseitig (5×1024) — SCP 1715 und SCP 3.0 (PC 1715W) |
+| `cpa1715` | 128 B | **keine Spuren**: die ersten vier Verzeichnisplätze (CP/A 1715) |
 
 ### K8915 (SCPX 8915)
 
@@ -428,6 +430,36 @@ bootfähige Diskette ist Systemspuren + `OS` + `ZDOS`.
 Die **Angaben aus `get` müssen dabei sein** (s. u.) — das `.fileinfo` neben jeder
 Datei und das Sammelbeiblatt: ohne die Kopfsektorangaben wird aus einer Systemdatei
 eine gewöhnliche Binärdatei, und die Diskette bootet nicht.
+
+### PC 1715 / PC 1715W (`scp1715`, `cpa1715`)
+
+`doc/design/21_pc1715.md` AP-D, Befund `doc/pc1715/disketten.md`.  Der Urlader S502 prüft von
+Spur 0 Sektor 1 **nur das Wort `F002H`/`F003H`** (Bytes `02|03 F0`); beide Profile haben
+`boot_header: pc1715` — ein A5120-Abbild (SYL-Lader) wird VOR dem Schreiben abgewiesen
+(`create` legt dann nichts an), ebenso bei `boot-put` auf eine Diskette, deren Sektor 1 schon
+einen 1715-Kopf trägt (auch unter dem abgeleiteten Profil `cpa_auto`).
+
+* **SCP 1715 / SCP 3.0** — vier Systemspuren (20480 B), wie bei den anderen CP/M-Systemen:
+  `boot-get` holt sie, `create neu.hfe --fs scp1715 --boot band.bin` legt die Diskette an,
+  dann die Dateien hinein (`insertAll`/`put`).  SCP 3.0 des 1715W geht denselben Weg
+  (Wächter bootet beide Maschinen bis `A>`).  `scp1715` wird nie erkannt (`detect: false`);
+  bestehende Disketten liest die CP/A-Regel als `cpa_auto`.  Zweites Format (SCP V0007,
+  16×256): `scpx640` — dort gibt es keinen `boot_header`, geprüft wird erst auf einer
+  Diskette, die schon einen 1715-Kopf trägt.
+* **CP/A 1715 ohne Systemspuren** (`CPA_MAXI`, `BOOT_CPA_4LW`) — der Bootkopf steht im
+  **Verzeichnis**: Platz 0 = Kopf, ein Platz mit Nutzerbyte `F0` (Platz 3) = Parametersätze
+  ab Byte 0x64.  `cpa1715` (`dir_boot: true`) erkennt die Diskette (nur mit dem Kopf; ohne
+  ihn bleibt es `cpa800`), `ls`/`get`/`check` übergehen beide Plätze, `put`/`rm`/`attr`
+  fassen sie nie an.  Bootabbild = **128 B** (`boot-get`): beim Einspielen werden nur Platz 0
+  und die `F0`-Plätze übernommen; steht dort ein Dateieintrag, wird verweigert.  Bootfähige
+  Diskette: `boot-get` → `create --fs cpa1715 --boot kopf.bin` → **`@OS.COM` als erste
+  Datei** (der Kopf lädt es ab Block 3) → weitere Dateien.
+* **CP/M-3-Sonderplätze** (SCP 3.0): Zeitstempel (21H, vierter Platz einer Vierergruppe),
+  Etikett (20H), Kennwortsätze (16…31) sind keine Dateien, `put` vergibt sie nie, die
+  Erkennung nimmt sie an; die Prüfung nennt sie als **Hinweis** (`cpm.dir.sonderplatz`,
+  Schwere Info), nicht als Befund.
+
+Wächter: `DisktoolPc1715.*` (8), `cli_dt_*cpa1715*`, `cli_dt_boot_put_pc1715_a5120_abbild`.
 
 ### PRG 710 / PRG 710-1
 

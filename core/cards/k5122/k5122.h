@@ -141,6 +141,23 @@ public:
     /// verrauschten Spuren (doc/design/20_prg710.md AP-P3b).
     static constexpr uint32_t kRauschMarkenAbstand = 128;
 
+    /**
+     * @brief Portlage und Laufwerksregister (Konfiguration; Vorgabe @ref Portlage::K1520).
+     *
+     * - **K1520** (A5120, K8915, PRG 710): Steuer-PIO 10H–13H, Daten-PIO 14H–17H, 8212 auf
+     *   18H — high Nibble /SE, low Nibble /LCK = Motor (K5122-Doku §4.2).
+     * - **Pc1715** (Floppy-Ansteuerung 20-330-0102 des PC 1715, Servicehandbuch §1.5.2.1/
+     *   §1.5.2.2): **Daten-PIO 00H–03H, Steuer-PIO 04H–07H** (AB0 = Daten/Steuerwort,
+     *   AB1 = Kanal — dieselbe Unteradressierung wie an der K5122), **SE-Register 20H**
+     *   (A13:1: DB4–7 /SE, DB0–3 /LCK = Türverriegelung, KEIN Motor) und **MO-Register 21H**
+     *   (A13:2: DB4–7 = /MO0../MO3, low-aktiv — CP/A-BIOS `biopdskt.mac` „flmot equ 21h
+     *   ;Bit 7..4:/Mot on“; UDOS 1715 schreibt 21H = 00H bei abgewähltem SE-Register).  20H/21H sind nur beschreibbar (Lesen: FFH).  Der Rest der
+     *   Karte (Bitbelegung der PIOs, Marken-FF, `/WAIT`-Weg) ist gleich.
+     */
+    enum class Portlage : uint8_t { K1520, Pc1715 };
+    void setPortlage(Portlage p) { portlage_ = p; }
+    Portlage portlage() const { return portlage_; }
+
     // ─── BusDevice (Ports 0x10–0x18) ─────────────────────────────────────────
     uint8_t     ioRead(uint8_t port) override;
     void        ioWrite(uint8_t port, uint8_t data) override;
@@ -355,6 +372,8 @@ private:
     // ─── /WAIT-Betrieb (K8915, k5122_wait.cpp) ───────────────────────────────
     /// Steuerport A im Wait-Betrieb (eigener Handler, BusRq-Weg bleibt unberührt).
     void waitCtrlPortAWrite(uint8_t data);
+    /// PC 1715: Schreibzugriff auf das MO-Register 21H (DB4–7 = /MO0../MO3).
+    void moRegisterSchreiben(uint8_t data);
     /// `IN (16H)`: nächstes Byte unter dem Kopf, ggf. mit Wartetakten.
     uint8_t waitRead();
     /// `OUT (14H)`: Schreibbyte im nächsten Bytefenster (Wartetakte), sammeln.
@@ -383,6 +402,7 @@ private:
     Encoding waitVerfahrenGemerkt() const;
     /// Byteperiode im Wait-Betrieb (aus dem Verfahren der Spur, NICHT aus dem MK-Bit).
     int waitByteperiode();
+    int waitByteperiodeFuer(Encoding enc) const;   ///< 1715: aufgerundet, s. k5122_wait.cpp
 
     bool     wait_betrieb_  = false;
     uint64_t w_now_         = 0;        ///< Takte seit dem Einschalten (update())
@@ -638,6 +658,7 @@ private:
     // ist.  Beide werden allein aus dem letzten OUT(18H) abgeleitet (keine Wanduhr).
     std::array<bool, 4> drive_selected_{};   ///< /SE0../SE3 (low nibble, 0 = selektiert)
     std::array<bool, 4> motor_on_{};         ///< /LCK0../LCK3 (high nibble, 0 = Motor an)
+    Portlage            portlage_ = Portlage::K1520;   ///< s. setPortlage()
     std::array<int, 4>  motor_spinup_cycles_{};  ///< Restlaufzeit bis „auf Drehzahl" (>0 = läuft an)
     bool                head_loaded_ = false;    ///< /HL (Port A Bit 6, active-low): Kopf aufgesetzt
 
