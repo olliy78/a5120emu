@@ -82,10 +82,12 @@ def test_k8915_boots_to_the_prompt_with_a_key_from_another_thread(temp_disk):
     assert isinstance(emu.keyboard_leds(), int)
 
 
-def test_gen2_reaches_the_coldstart_message_after_rom_error_c():
-    """AP-V7a: `machine="k8915-g2"` (K2521 + K3528).  Der Abzug meldet im Selbsttest
-    „ROM C“ (doc/design/24 §6a); `CR` — wie aus der Oberfläche aus einem ANDEREN Faden —
-    führt zur Kaltstartmeldung.  Bild über `k1520_screen_char`, nie `mem_read`."""
+def test_gen2_runs_the_self_test_through_to_the_coldstart_message():
+    """AP-V7a: `machine="k8915-g2"` (K2521 + K3528).  Mit der Vorgabe (repariertes 177,
+    F9 gelöst 2026-10-05) läuft der Selbsttest ohne Fehler und OHNE Tastendruck bis zur
+    Kaltstartmeldung (≈ 14,5 Mio. Takte); `CR` — wie aus der Oberfläche aus einem
+    ANDEREN Faden — startet danach den Lader.  Bild über `k1520_screen_char`, nie
+    `mem_read`."""
     from app.core_binding.k1520 import K1520Emulator
 
     emu = K1520Emulator(machine="k8915-g2")
@@ -94,9 +96,10 @@ def test_gen2_reaches_the_coldstart_message_after_rom_error_c():
     assert emu.k8915_generation() == 1
 
     emu.power_on()
-    # ROM-Fehler C bei ≈ 3,4 Mio. Takten, danach 16 × BEL und Tastenschleife.
-    emu.run(8_000_000)
-    assert "Coldstart" not in emu.screen_text()
+    assert run_until_text(emu, "* Coldstart *  Disk on A: ready", 30_000_000), (
+        "Kaltstartmeldung nie erschienen:\n" + emu.screen_text())
+    assert "DIAGNOSTIC" not in emu.screen_text()
+    assert emu.panel_lamps() == 0xB0, "kein ERROR, RUN Mode"
 
     fertig = threading.Event()
 
@@ -113,8 +116,6 @@ def test_gen2_reaches_the_coldstart_message_after_rom_error_c():
             break
     faden.join(10)
     assert fertig.is_set(), "Tastenfaden kam nicht zum Zug"
-    assert run_until_text(emu, "* Coldstart *  Disk on A: ready", 10_000_000), (
-        "Kaltstartmeldung nie erschienen:\n" + emu.screen_text())
 
 
 def test_k8915_generation_is_reported_per_machine():

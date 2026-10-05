@@ -228,7 +228,8 @@ Wächter: `cli_bt_k8915_prompt`, `cli_bt_k8915_events`, `cli_bt_k8915_stillstand
 **Generation 2 (`--machine k8915-g2`, AP-V6b):** gleicher Zweig, Kopf „K8915 Gen 2 Boot Trace“,
 `--json` mit `"machine":"k8915-g2"`, `map=` mit `Z`/`M`/`.` (ZRE/K3528-RAM/Bus). Zusätzlich tippt
 das Werkzeug `CR` **bei einem Selbsttestfehler** (ERROR-Lampe 61H, ≥ 16 × BEL, Buchstabe in 1776H;
-Meldung „Selbsttestfehler <Test> <Buchstabe> → CR getippt“ — mit dem Abzug stets `ROM C`, F9) und
+Meldung „Selbsttestfehler <Test> <Buchstabe> → CR getippt“; mit der Vorgabe — repariertes 177, F9 —
+läuft der Selbsttest fehlerfrei durch, das Tippen bleibt dann untätig) und
 wie am V3 nach „\* Coldstart \*“; `--no-cr` schaltet beides ab. `--skip-selftest` gibt es nicht
 (Warnung). Annotation: `-l k8915g2_zre.prn@0xFC00:0021-03FF -l k8915g2_zre.prn@:0400-0BFF`.
 Ohne Diskette: `--until 'screen ~ "Coldstart"'` (sonst Stillstand nach dem Lader-Versuch).

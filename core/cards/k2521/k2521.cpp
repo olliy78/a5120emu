@@ -7,7 +7,7 @@
 #include "core/cards/k2521/k2521.h"
 #include "core/cards/k2521/rom_prg710.h"
 #include "core/cards/k2521/rom_prg710_1.h"
-#include "core/cards/k2521/rom_k8915g2.h"
+#include "core/cards/k2521/rom_k8915g2_repariert.h"
 #include "core/logger.h"
 
 K2521::Config K2521::Config::prg710()
@@ -29,8 +29,12 @@ K2521::Config K2521::Config::prg710_1()
 K2521::Config K2521::Config::k8915g2()
 {
     Config c;
-    c.rom     = K8915G2_ZRE_ROM;       // Abzug unverändert, Byte 0A33H = 04H (F9)
-    c.rom_len = sizeof(K8915G2_ZRE_ROM);
+    // Vorgabe = 175 + 176 + REPARIERTES 177 (F9, Entscheidung 2026-10-05): der Abzug von
+    // 177 trägt bei 0A33H ein gekipptes Bit (04H statt 00H), mit ihm endet der Selbsttest
+    // mit „ROM C“.  Der Abzug selbst (rom_k8915g2.h) bleibt unverändert; Tests setzen ihn
+    // über K8915Machine::Config::gen2_rom.
+    c.rom     = K8915G2_ZRE_ROM_REPARIERT;
+    c.rom_len = sizeof(K8915G2_ZRE_ROM_REPARIERT);
     // X10:1–4 / X11:1–4 am Gerät des Anwenders alle geschlossen (2026-10-05, F22):
     // die CTC-Kaskade ZC/TO0→CLK1, TO1→TRG2, TO2→TRG3 steht.  Der vierte Draht
     // ist in der Beschreibung S.6 nicht erklärt [?] und hier nicht abgebildet.

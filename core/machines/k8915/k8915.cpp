@@ -21,7 +21,7 @@ bool gen2(const K8915Machine::Config& cfg) {
 
 K2521::Config k2521Config(const K8915Machine::Config& cfg) {
     K2521::Config c = K2521::Config::k8915g2();
-    if (cfg.gen2_rom) c.rom = cfg.gen2_rom;   // nur Tests (F9), Länge wie der Abzug
+    if (cfg.gen2_rom) c.rom = cfg.gen2_rom;   // nur Tests (F9: Abzug), Länge 0C00H
     return c;
 }
 }  // namespace

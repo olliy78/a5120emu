@@ -6,10 +6,14 @@ import argparse
 import pathlib
 
 
-def convert(bin_path: str, symbol: str, out_path: str) -> None:
-    data = pathlib.Path(bin_path).read_bytes()
+def convert(bin_path: str, symbol: str, out_path: str,
+            weitere: list[str] | None = None) -> None:
+    # Mehrere Bausteine hintereinander (z. B. ROM 175 + 176 + 177 der K8915-V2-ZRE):
+    # bin_path zuerst, dann jede --weitere in der angegebenen Reihenfolge.
+    quellen = [bin_path] + list(weitere or [])
+    data = b"".join(pathlib.Path(q).read_bytes() for q in quellen)
     lines = [
-        f"// Generated from: {bin_path}",
+        f"// Generated from: {' + '.join(quellen)}",
         f"// Size: {len(data)} bytes",
         "#pragma once",
         "#include <cstdint>",
@@ -33,8 +37,10 @@ def main() -> None:
     parser.add_argument("bin_path", help="Input .bin file")
     parser.add_argument("symbol", help="C++ symbol name (e.g. ZRE_BOOT_ROM)")
     parser.add_argument("out_path", help="Output .h file path")
+    parser.add_argument("--weitere", action="append", default=[], metavar="BIN",
+                        help="weitere .bin, hinter bin_path angehängt (mehrfach, in Reihenfolge)")
     args = parser.parse_args()
-    convert(args.bin_path, args.symbol, args.out_path)
+    convert(args.bin_path, args.symbol, args.out_path, args.weitere)
 
 
 if __name__ == "__main__":

@@ -58,29 +58,34 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
 - `K3528` meldet nur `registerIO`, **kein `registerMem`** (Speicherpfad wie `K8915Zre`);
   `ioWrite` bekommt die **absolute** Portnummer. Die ZRE-Seite ist ein Rückruf
   (`setZreWeg`) — die Karte kennt `K2521` nicht (Schichtung).
-- Nach ROM-Fehler + `CR` übergibt der Lader mit **0EH**, nicht 06H (der Stub setzt 0EH,
-  06H erst nach dem RAM-Test, den der erste Fehler überspringt) — Gastverhalten, kein Befund.
+- Nach ROM-Fehler + `CR` (nur noch mit dem Abzug, s. u.) übergibt der Lader mit **0EH**, nicht
+  06H (der Stub setzt 0EH, 06H erst nach dem RAM-Test, den der erste Fehler überspringt) —
+  Gastverhalten, kein Befund. Mit der Vorgabe steht am Ende 06H.
 - Wächter: `K3528Test.SpeicherbildJeRegisterwert`, `.ResetLoeschtRegisterRamBleibt`,
   `.RegisterHatVierPorts`, `.RegisterIstNichtLesbar`, `.GewaehlterSpeicherErscheintNichtAmBus`,
   `.MemdiSperrtDieZre`, `.Memdi1OhneWirkungAufDasBild`, `.Bits4Bis6Wirkungslos`,
   `.TraceSiehtRamUndZreAberNichtDenBus`, `K3528Config.MemdiAnBit0ErgibtDasselbeBildFuerAlleBekanntenWerte`,
   `K3528Config.BelegungIstKonfiguration`; am ROM `K8915Gen2Boot.RamTestSiehtUnterRomUndBild`.
 
-### ROM 177: Prüfsummenfehler, Selbsttest endet mit „ROM C“ — den Abzug NIE ändern
+### ROM 177: Vorgabe ist die REPARIERTE Fassung — den Abzug NIE ändern (F9 gelöst 2026-10-05)
 - Je 1-KB-Baustein stehen in den letzten 3 Byte die 24-Bit-Summe (hoch..tief) der ersten
-  3FDH Byte. **177 stimmt nicht**: errechnet 00A680H, gespeichert 00A67CH; Byte 0A33H = 04H
-  im Füllbereich erklärt die Differenz genau (Lese- oder Bitfehler im 2708, **F9**).
-- Folge: der Selbsttest bleibt bei „ROM“ mit Kennbuchstabe **`C`** stehen (ERROR-Lampe,
-  61H = 7FH, 16 × BEL), KEY…RAM ungeprüft; **`CR` führt trotzdem zum Lader**. Das ist das
-  Verhalten des gelieferten Abzugs, kein Emulatorfehler.
-- **`doc/EPROMS/K8915G2/*.bin` und `rom_k8915g2.h` bleiben unverändert.** Für den vollen
-  Selbsttest legt ein Test eine **Kopie** an und setzt 0A33H := 00H (`Config::gen2_rom`,
-  nur für Tests, Vorgabe `nullptr` = Abzug). Liefert der Anwender einen neu gelesenen 177,
-  ersetzt der volle Selbsttest den Wächter `RomFehlerC…`.
-- Wächter: `K2521Rom.K8915Gen2AbzugUnveraendert` (Inhalt + Summen, 0A33H = 04H),
-  `cli_k8915g2_prn_passt_zur_quelle` (MD5 aller Abzüge, jedes Byte genau einmal im Listing),
-  `K8915Gen2Boot.RomFehlerCDannCrZurKaltstartmeldung`,
-  `K8915Gen2Boot.GeflickteSummeSelbsttestFehlerfreiBisColdstart`.
+  3FDH Byte. **Im Abzug 177 stimmt sie nicht**: errechnet 00A680H, gespeichert 00A67CH; Byte
+  0A33H = 04H im Füllbereich erklärt die Differenz genau. Zwei weitere Lesungen am Gerät sind
+  byteidentisch ⇒ gekipptes Bit **im Baustein** (`doc/EPROMS/K8915G2/README.md` „177 repariert“).
+- **Vorgabe des Kerns** (`K2521::Config::k8915g2()`) = `rom_k8915g2_repariert.h`
+  (`K8915G2_ZRE_ROM_REPARIERT`, erzeugt mit `tools/eprom_to_h.py … --weitere …` aus 175 + 176 +
+  `k8915g2_zre_0800_177_repariert.bin`): Selbsttest ROM → KEY → CTC → SIO → RAM läuft durch,
+  ohne Tastendruck zur Kaltstartmeldung, A8H am Ende 06H.
+- **`doc/EPROMS/K8915G2/*.bin` und `rom_k8915g2.h` (`K8915G2_ZRE_ROM` = Abzug) bleiben
+  unverändert.** Den Abzug setzt nur ein Test über `Config::gen2_rom` (nur für Tests,
+  `nullptr` = Vorgabe): dann bleibt der Selbsttest bei „ROM“ mit **`C`** stehen (ERROR-Lampe,
+  61H = 7FH, 16 × BEL), **`CR` führt trotzdem zum Lader**.
+- Wächter: `K2521Rom.K8915Gen2AbzugUnveraendert` (Abzug: Summen, 0A33H = 04H),
+  `K2521Rom.K8915Gen2VorgabeIstRepariertesRom` (Vorgabe = Abzug bis auf genau 0A33H = 00H, alle
+  drei Summen stimmen), `cli_k8915g2_prn_passt_zur_quelle` (MD5 aller Abzüge, jedes Byte genau
+  einmal im Listing), `K8915Gen2Boot.VorgabeSelbsttestFehlerfreiBisColdstart`,
+  `K8915Gen2Boot.AbzugRomFehlerCDannCrZurKaltstartmeldung`, `cli_bt_k8915g2_coldstart`
+  (verbietet „Selbsttestfehler“).
 - Selbsttest-Reihenfolge **ROM → KEY → CTC → SIO → RAM** (≈ 17 Mio. Takte); Prüfstecker
   und Tastatur wie V3 (ohne Stecker `G` unter SIO, ohne Tastatur `A` unter KEY). NMI im ROM
   = `RETN`. „System im RAM“ (`C3` bei 0000H/0005H) überspringt den Selbsttest. Wächter
@@ -168,7 +173,7 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
 | F6 | Anzeigename der Variante |
 | F7 | Fassung der K7634 (`K7634.xx`, ROM `Y708-I…`) — Foto weicht von .04 ab |
 | F8 | Schaltplan K7028.10/.20 (E3H/E4H, Frontplatte); steckt „3C00“ in der Gen-1-ZRE? |
-| F9 | Baustein 177 ein zweites Mal lesen; meldet das Gerät „ROM“-Fehler? |
+| F9 | **gelöst 2026-10-05:** zwei weitere Lesungen identisch, Bitkipp 0A33H; Vorgabe = repariertes 177 |
 | F10 | Gen-1-Chip „3C00“: B1H/B3H, E3H Bit 2, Prüfung D001–D003H — welche Karten? |
 | F11 | Gibt es den Gen-1-Lader-Baustein für 0400H? (**Blocker für Gen 1**) |
 | F12 | Braucht der Gen-2-Selbsttest am Gerät einen Prüfstecker; Testreihenfolge? |

@@ -329,6 +329,8 @@ den „A0H“-Weg (Entwurf 16 §4.4) — für den Bootnachweis unerheblich, Erge
    Diskette**. Mit Diskette 901 nach `CR` bis `A>` (Ladekopf wie V3).
 10. Den vollen Selbsttest (KEY/CTC/SIO/RAM) erreicht man nur mit fehlerfreiem ROM: Wächter dafür
    mit einer **im Test** geflickten Summe (Kopie, nicht im Repo-Abzug) oder erst nach F9.
+   *Nachtrag 2026-10-05: F9 gelöst — der Kern benutzt als Vorgabe das reparierte 177
+   (Entwurf 24, Nachtrag „F9 gelöst“); der Abzugsfall ist nur noch ein Test.*
 11. Warmstart-Abkürzung wie V3: `JP` bei 0000H/0005H im RAM ⇒ Stub (8FH) ⇒ Kaltstartmeldung ohne
    Selbsttest.
 12. `E`/`ESC c` an der Kaltstartmeldung ⇒ Neubeginn bei 0400H; NMI im ROM wirkungslos (`RETN`).

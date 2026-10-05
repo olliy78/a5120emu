@@ -820,10 +820,11 @@ mit zwei K5601. Was anders ist:
   demselben SCPX 8915. Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart).
   **K8915 V1** (Tastatur K7634) steht ausgegraut darin: ohne den Urlader-Baustein
   für 0400H ist sie nicht startfähig.
-* **V2: der Selbsttest endet mit „ROM C“** und 16 Pieptönen — das liegt am
-  vorhandenen Abzug des dritten ROM-Bausteins, dessen gespeicherte Prüfsumme nicht
-  zum Inhalt passt, nicht am Emulator. **RETURN** quittiert den Fehler; es folgt
-  die Meldung `* Coldstart *`, ein zweites RETURN lädt das System von A:.
+* **V2: der Selbsttest läuft durch** (ROM, KEY, CTC, SIO, RAM) bis zur Meldung
+  `* Coldstart *`; RETURN lädt das System von A:. Der Emulator benutzt dafür die
+  **reparierte Fassung** des dritten ROM-Bausteins (177): der Abzug vom Gerät
+  trägt ein gekipptes Bit, mit ihm endete der Selbsttest mit „ROM C“ und
+  16 Pieptönen. Der Abzug selbst liegt unverändert bei den Quellen.
 * **Takt** 2,4576 MHz (`10 × 2,4576 MHz` usw.), bei beiden Modellen.
 * **Laufwerke:** zwei K5601 wie am Gerät; wählbar sind nur 5¼″-Laufwerke.
 * **Die Frontplatte in der Statuszeile** — sechs Lampen, von links nach rechts
@@ -1075,8 +1076,7 @@ hineinklicken. (Normalerweise holt das Fenster ihn von selbst zurück.)
 
 **Der K8915 bleibt nach dem Selbsttest mit einem Buchstaben stehen.** Der
 Buchstabe hinter dem Testnamen ist die Fehlerkennung des Boot-ROMs; RETURN
-lädt trotzdem. Beim **V2** ist „ROM C“ der Normalfall (siehe „Der K8915
-Emulator“, *Modell*).
+lädt trotzdem.
 
 **Gar nichts startet.** `a5120emu --paths` (bzw. `k8915emu --paths`) sagt, wo das Programm die
 Kernbibliothek und den Formatkatalog sucht — das ist die erste Frage, wenn

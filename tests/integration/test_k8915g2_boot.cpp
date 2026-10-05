@@ -7,16 +7,15 @@
  *
  * Ablauf und Belege: doc/k8915g2/zre_rom.md §4 (Selbsttest ROM → KEY → CTC → SIO → RAM,
  * Statuszeile wie V3: „DIAGNOSTIC“ bei 1740H, Testname 1770H, Kennbuchstabe 1776H) und §5
- * (Bootablauf).  **F9:** der Abzug 177 trägt die Summe 00A67CH, errechnet wird 00A680H —
- * mit dem Abzug, wie er ist, endet der Selbsttest bei „ROM“ mit `C`.  Den vollen Selbsttest
- * prüfen die Fälle mit einer IM TEST geflickten Kopie (Byte 0A33H := 00H, Summe stimmt);
- * der Repo-Abzug bleibt unverändert.
+ * (Bootablauf).  **F9 (gelöst 2026-10-05):** der Abzug 177 trägt die Summe 00A67CH,
+ * errechnet wird 00A680H (gekipptes Bit bei 0A33H).  Die Vorgabe des Kerns ist die
+ * REPARIERTE Fassung (0A33H = 00H) — der Selbsttest läuft durch.  Den Abzug, wie er ist
+ * (Selbsttestfehler „ROM“ mit `C`), setzt nur der Fall AbzugRomFehlerC… über
+ * `Config::gen2_rom`; der Repo-Abzug bleibt unverändert.
  */
 
 #include <gtest/gtest.h>
 
-#include <array>
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -38,22 +37,11 @@ constexpr int kSpalteFehler = 0x776 - kZeile * 80;  // 1776H → Spalte 70
 constexpr long long kFrist  = 60'000'000;
 constexpr int kSchritt      = 20'000;
 
-/// ROM mit stimmender Summe von 177 (F9): Kopie, Byte 0A33H 04H → 00H.  Statisch, weil
-/// `Config::gen2_rom` nur einen Zeiger hält, der die Maschine überleben muss.
-const uint8_t* geflicktesRom() {
-    static const std::array<uint8_t, 0x0C00> rom = [] {
-        std::array<uint8_t, 0x0C00> r{};
-        std::memcpy(r.data(), K8915G2_ZRE_ROM, r.size());
-        r[0x0A33] = 0x00;
-        return r;
-    }();
-    return rom.data();
-}
-
-K8915Machine::Config gen2(bool geflickt = false) {
+/// @p abzug: statt der Vorgabe (repariertes 177) den unveränderten Abzug (F9, 0A33H = 04H).
+K8915Machine::Config gen2(bool abzug = false) {
     K8915Machine::Config c;
     c.generation = K8915Machine::Generation::Gen2;
-    if (geflickt) c.gen2_rom = geflicktesRom();
+    if (abzug) c.gen2_rom = K8915G2_ZRE_ROM;
     return c;
 }
 
@@ -129,28 +117,25 @@ std::string letzteZeile(K8915Machine& m) {
     return letzte;
 }
 
-/// Abzug wie geliefert: ROM-Fehler `C`, 16 × BEL, dann `CR` ⇒ Kaltstartmeldung.
-void ueberRomFehlerZurKaltstartmeldung(K8915Machine& m) {
+/// Vorgabe-ROM: Selbsttest ohne Fehler, ohne Tastendruck zur Kaltstartmeldung.
+void selbsttestZurKaltstartmeldung(K8915Machine& m) {
     const Verlauf v = selbsttest(m);
-    ASSERT_EQ(v.fehlerBei, "ROM") << folge(v.namen) << "\n" << vramLines(m);
-    ASSERT_EQ(v.fehler, 'C') << vramLines(m);
-    m.run(4'000'000);   // 16 × BEL (BC = 1040H), dann Tastenschleife FEAFH
-    m.keyboard().sendeZeichen(0x0D);
-    ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 3'000'000, 5'000)) << vramLines(m);
+    ASSERT_EQ(v.fehler, ' ') << "Fehler '" << v.fehler << "' unter " << v.fehlerBei << "\n"
+                             << vramLines(m);
+    ASSERT_TRUE(coldstart(m)) << folge(v.namen) << "\n" << vramLines(m);
 }
 
 }  // namespace
 
 /**
- * @test K8915Gen2Boot.RomFehlerCDannCrZurKaltstartmeldung
- * @brief Abzug wie geliefert (F9): der Selbsttest endet bei „ROM“ mit `C` (Baustein 3 =
- *        177), ERROR-Lampe (61H = 7FH), 16 × BEL; `CR` ⇒ „\* Coldstart \*“ + „Disk on A:
- *        ready“.  **An F9 gebunden:** kommt ein korrigierter 177, ersetzt der volle
- *        Selbsttest (GeflickteSumme…) diesen Fall.
+ * @test K8915Gen2Boot.AbzugRomFehlerCDannCrZurKaltstartmeldung
+ * @brief Der Abzug, wie gelesen (F9, per `Config::gen2_rom` gesetzt — NICHT die Vorgabe):
+ *        der Selbsttest endet bei „ROM“ mit `C` (Baustein 3 = 177), ERROR-Lampe
+ *        (61H = 7FH), 16 × BEL; `CR` ⇒ „\* Coldstart \*“ + „Disk on A: ready“.
  */
-TEST(K8915Gen2Boot, RomFehlerCDannCrZurKaltstartmeldung)
+TEST(K8915Gen2Boot, AbzugRomFehlerCDannCrZurKaltstartmeldung)
 {
-    K8915Machine m(gen2());
+    K8915Machine m(gen2(true));
     ASSERT_EQ(m.generation(), K8915Machine::Generation::Gen2);
     m.powerOn();
     const Verlauf v = selbsttest(m);
@@ -175,16 +160,16 @@ TEST(K8915Gen2Boot, RomFehlerCDannCrZurKaltstartmeldung)
 }
 
 /**
- * @test K8915Gen2Boot.GeflickteSummeSelbsttestFehlerfreiBisColdstart
- * @brief Mit einer im Test geflickten Summe (0A33H = 00H): ROM → KEY → CTC → SIO → RAM
+ * @test K8915Gen2Boot.VorgabeSelbsttestFehlerfreiBisColdstart
+ * @brief Vorgabe-ROM (repariertes 177, 0A33H = 00H, F9 gelöst): ROM → KEY → CTC → SIO → RAM
  *        ohne Fehlerbuchstaben, ohne Tastendruck zur Kaltstartmeldung; A8H am Ende 06H
  *        (FDDC/FDE2 nach dem RAM-Test).  KEY: zwei `DC1` der K7672; CTC: drei CTCs (K2521,
  *        ATS-CTC1, ATS-CTC2) quittiert, A = 4; SIO: Echo auf drei Kanälen, drei Runden;
  *        RAM: 64 KB durchgehend (87H), auch unter ROM, K2521-RAM und Bild.
  */
-TEST(K8915Gen2Boot, GeflickteSummeSelbsttestFehlerfreiBisColdstart)
+TEST(K8915Gen2Boot, VorgabeSelbsttestFehlerfreiBisColdstart)
 {
-    K8915Machine m(gen2(true));
+    K8915Machine m(gen2());
     m.powerOn();
     const Verlauf v = selbsttest(m);
     ASSERT_GE(v.takte, 0) << "PC=" << std::hex << m.cpuPC() << " Folge: " << folge(v.namen)
@@ -207,7 +192,7 @@ TEST(K8915Gen2Boot, GeflickteSummeSelbsttestFehlerfreiBisColdstart)
  */
 TEST(K8915Gen2Boot, OhnePruefsteckerScheitertSio)
 {
-    K8915Machine::Config c = gen2(true);
+    K8915Machine::Config c = gen2();
     c.pruefstecker = false;
     K8915Machine m(c);
     m.powerOn();
@@ -229,7 +214,7 @@ TEST(K8915Gen2Boot, OhnePruefsteckerScheitertSio)
  */
 TEST(K8915Gen2Boot, OhneTastaturScheitertKeyMitA)
 {
-    K8915Machine::Config c = gen2(true);
+    K8915Machine::Config c = gen2();
     c.tastatur = false;
     K8915Machine m(c);
     m.powerOn();
@@ -273,7 +258,7 @@ TEST(K8915Gen2Boot, EOderEscCStartetNeu)
         SCOPED_TRACE(tasten.size() == 1 ? "E" : "ESC c");
         K8915Machine m(gen2());
         m.powerOn();
-        ueberRomFehlerZurKaltstartmeldung(m);
+        selbsttestZurKaltstartmeldung(m);
         ASSERT_FALSE(enthaelt(m, "DIAGNOSTIC")) << "Kaltstart löscht das Bild";
         for (uint8_t t : tasten) m.keyboard().sendeZeichen(t);
         EXPECT_TRUE(bis(m, "DIAGNOSTIC", 5'000'000, 5'000)) << vramLines(m);
@@ -288,7 +273,7 @@ TEST(K8915Gen2Boot, EOderEscCStartetNeu)
  */
 TEST(K8915Gen2Boot, NmiImRomWirkungslos)
 {
-    K8915Machine m(gen2(true));
+    K8915Machine m(gen2());
     m.powerOn();
     int nmi_einsprung = 0;
     m.setCpuTraceCallback([&](const Z80& c) { if (c.PC == 0x0066) ++nmi_einsprung; });
@@ -316,7 +301,7 @@ TEST(K8915Gen2Boot, NmiImRomWirkungslos)
  */
 TEST(K8915Gen2Boot, RamTestSiehtUnterRomUndBild)
 {
-    K8915Machine m(gen2(true));
+    K8915Machine m(gen2());
     m.powerOn();
     const Verlauf v = selbsttest(m);
     ASSERT_TRUE(coldstart(m)) << "Fehler '" << v.fehler << "' unter " << v.fehlerBei << "\n"
@@ -330,7 +315,7 @@ TEST(K8915Gen2Boot, RamTestSiehtUnterRomUndBild)
 
 /**
  * @test K8915Gen2Scpx.LaedtDieV3SystemdisketteBisZumPrompt
- * @brief Diskette 901 (V3-System SCPX 8915 V5.3, `TempDisk`): ROM-Fehler `C` → `CR` →
+ * @brief Diskette 901 (V3-System SCPX 8915 V5.3, `TempDisk`): Selbsttest ohne Fehler →
  *        Kaltstartmeldung → `CR` → der mit dem V3 byteidentische Lader liest C000–EFEFH
  *        und springt nach D600H → stabiles `A>`; danach listet `dir` die Diskette.
  *        **[?] F13:** der Autostart `rade` (Bank 2) darf scheitern — geprüft wird der
@@ -342,7 +327,7 @@ TEST(K8915Gen2Scpx, LaedtDieV3SystemdisketteBisZumPrompt)
     K8915Machine m(gen2());
     ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa800", false)) << m.lastError();
     m.powerOn();
-    ueberRomFehlerZurKaltstartmeldung(m);
+    selbsttestZurKaltstartmeldung(m);
     if (HasFatalFailure()) return;
 
     m.keyboard().sendeZeichen(0x0D);

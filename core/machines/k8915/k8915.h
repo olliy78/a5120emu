@@ -51,11 +51,11 @@ public:
         enum class Generation : uint8_t { V3, Gen2 };
         Generation generation = Generation::V3;
         /**
-         * Nur Gen 2, **nur für Tests**: ROM-Inhalt 0000–0BFFH (0x0C00 Byte) statt des Abzugs
-         * 175/176/177.  Der volle Selbsttest braucht ein ROM mit stimmender Summe (F9:
-         * 177 trägt 00A67CH, errechnet 00A680H); der Test legt eine Kopie an und flickt sie.
-         * Der Repo-Abzug wird nie geändert.  nullptr = Abzug.  Die Kopie muss die Maschine
-         * überleben.
+         * Nur Gen 2, **nur für Tests**: ROM-Inhalt 0000–0BFFH (0x0C00 Byte) statt der
+         * Vorgabe 175/176/**repariertes** 177 (F9, 2026-10-05: 0A33H = 00H, Summe stimmt).
+         * Ein Test setzt hier den unveränderten Abzug (`K8915G2_ZRE_ROM`, 0A33H = 04H), um
+         * den Selbsttestfehler „ROM C“ des Originals nachzustellen.  nullptr = Vorgabe.
+         * Der Speicher muss die Maschine überleben.
          */
         const uint8_t* gen2_rom = nullptr;
         /**

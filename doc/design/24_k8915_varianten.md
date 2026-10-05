@@ -886,6 +886,33 @@ jede Taste ein Code, keine Doppelbelegung, die drei ergänzten Kappen).
 **V10/VT** wie unten; V10 nimmt zusätzlich die Festlegungen von R1/R3/R5 in
 `doc/merkposten/k8915_varianten.md` auf (Wächter je Festlegung).
 
+#### Nachtrag: F9 gelöst — repariertes 177 als Vorgabe (2026-10-05)
+
+Zwei weitere Lesungen des 177 sind byteidentisch zum Abzug; das gekippte Bit (0A33H: 04H statt
+00H) sitzt im Baustein. Entscheidung des Anwenders: der V2-Kern benutzt **als Vorgabe die
+reparierte Fassung**.
+- Neues eingebettetes ROM `core/cards/k2521/rom_k8915g2_repariert.h`
+  (`K8915G2_ZRE_ROM_REPARIERT` = 175 + 176 + `k8915g2_zre_0800_177_repariert.bin`, erzeugt mit
+  `tools/eprom_to_h.py` — das kann dafür jetzt mehrere `.bin` hintereinanderhängen,
+  `--weitere`). `K2521::Config::k8915g2()` nimmt es. `rom_k8915g2.h` (`K8915G2_ZRE_ROM`, der
+  Abzug) bleibt unverändert und eingebettet — für den Wächter und für den Abzugsfall im Test.
+- `K8915Machine::Config::gen2_rom` heisst jetzt „statt der Vorgabe“; nur der Test
+  `K8915Gen2Boot.AbzugRomFehlerCDannCrZurKaltstartmeldung` setzt den Abzug (ROM C → CR →
+  Kaltstartmeldung, A8H 0EH). Der frühere Fall mit der im Test geflickten Kopie ist zum
+  Vorgabefall `K8915Gen2Boot.VorgabeSelbsttestFehlerfreiBisColdstart` geworden; alle übrigen
+  `K8915Gen2Boot.*`/`K8915Gen2Scpx.*` laufen auf der Vorgabe.
+- Am Kern beobachtet: ROM → KEY → CTC → SIO → RAM ohne Fehlerbuchstaben, RAM-Test (A8H = 87H)
+  ab ≈ 6,9 Mio. Takten, danach 06H, 61H = B0H und Kaltstartmeldung bei ≈ 14,5 Mio. Takten —
+  A8H am Ende **06H** wie im V6a-Befund.
+- Wächter: neu `K2521Rom.K8915Gen2VorgabeIstRepariertesRom` (Vorgabe = Abzug bis auf genau
+  0A33H = 00H; 24-Bit-Summe jedes Bausteins stimmt); `K2521Rom.K8915Gen2AbzugUnveraendert` prüft
+  nur noch den Abzug. `cli_bt_k8915g2_coldstart` erwartet jetzt RAM-Test + RUN-Lampe und
+  **verbietet** „Selbsttestfehler“ (boot_trace tippt CR bei einem Selbsttestfehler weiterhin,
+  ist mit der Vorgabe aber untätig); `py_k8915_smoke`: Kaltstartmeldung ohne Tastendruck.
+  `cli_k8915g2_prn_passt_zur_quelle` unverändert.
+- Handbuch („V2: der Selbsttest läuft durch“, Hinweis auf die reparierte Fassung), CLAUDE.md,
+  Merkposten nachgezogen.
+
 ### V4–V9 (Rahmen — **ersetzt durch „AP-V2 — Ergebnis“**, nur noch zur Nachverfolgung)
 
 | AP | Rahmen | Vorläufiges Fertig-Kriterium (Wächter-Familie) |
@@ -995,6 +1022,7 @@ voller `tools/dev.sh test` grün (2187/2187). Befunde/Abweichungen:
 | **F8** | Gibt es einen **Schaltplan der K7028.10/.20** (Portbereich `E0H–FFH`, Bedeutung von `E3H`/`E4H`, Frontplatte)? Steckt in der ZRE der Gen 1 der **Kartenchip „3C00"** (Urlader `MROM RAM I/O KEY CTC`, ENTER: LADER / OFF: ZYKL.) oder die Bausteine 175–177? Welche Platinennummer trägt die K7028 des Geräts? |
 | **F6** | Der Name der Variante in der Oberfläche (z. B. „K8915 (Gen 2)“) und ob `k8915emu` die Modellwahl wie der A5120 erhält. *(AP-V2 arbeitet mit der Annahme [?]: Modellwahl ja, Anzeige „K8915 V3 (ZRE 045-8762, 128 KB)“ / „K8915 Gen 2 (ZRE K2521, 64 KB)“, Schlüssel `k8915` / `k8915-g2` — eine Umbenennung ändert nur Anzeigetexte, R5.)* |
 | **F9** | Der Abzug **177** hat eine falsche 24-Bit-Summe (Byte 0A33H = 04H statt 00H, s. V3a). Bitte den Baustein 177 am Gerät **ein zweites Mal lesen** (MD5 vergleichen) und notieren, ob der „MROM“-Selbsttest des Geräts einen Fehler meldet. |
+| **F9 — gelöst 2026-10-05** | Zwei weitere Lesungen byteidentisch zum Abzug ⇒ das Bit ist im Baustein gekippt. Entscheidung des Anwenders: **Vorgabe des Kerns = repariertes 177** (0A33H = 00H, `k8915g2_zre_0800_177_repariert.bin`); der Abzug bleibt unverändert. Nachtrag „F9 gelöst“ in §7. |
 | **F20** | (V1a) Aufdruck/Platinen-Nr. der „zusätzlichen RAM-Karte“ (K3528? 32 Chips, 8212 „D8“?), Stand des Wickelfeldes **X3** (insb. D2:01/D2:02 → Register-Adresse A8H; Bank-Brücken X3:64–71). |
 | **F21** | (V1a) Die handschriftliche „88“ im K3528-Plan: gilt sie für Ihr Gerät oder ein anderes (ROM schreibt A8H)? |
 | **F21 — beantwortet 2026-10-05** | Das Gerät wurde funktionierend ausgeliefert, sein ROM schreibt **A8H** — damit gilt A8H; die handschriftliche „88“ im Plan ist ein Fremdeintrag unbekannter Herkunft (Anwender: Handbuch aus dem Internet) und bleibt unbeachtet. F4-Frage 1 (K5122 `/WAIT`) ebenso: das Gerät läuft mit dem ROM, also gilt, was das ROM voraussetzt. |

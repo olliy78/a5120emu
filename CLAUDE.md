@@ -463,12 +463,13 @@ der Scheibe liegt** (FORMAT.COM prüft Byte für Byte nach), `.img`-Spuren mit N
 nicht den nachgebauten 4×A1-Strom des A5120-Wegs.
 
 **Varianten (Zweig `K8915Varianten`, `doc/design/24_k8915_varianten.md`):** `K8915Machine::Config::generation`
-= `V3` (Vorgabe) | `Gen2` = Gerät **V2** (ZRE K2521 + RAM-Karte K3528, 64 KB; Abzug endet mit Selbsttestfehler
-„ROM C“, `CR` lädt). C-ABI `k1520_create_k8915(gen, …)`/`k1520_k8915_generation`, Python
+= `V3` (Vorgabe) | `Gen2` = Gerät **V2** (ZRE K2521 + RAM-Karte K3528, 64 KB; Vorgabe-ROM = 175/176 + **repariertes 177**
+(0A33H = 00H, F9) — der Selbsttest läuft durch; der Abzug selbst (Selbsttestfehler „ROM C“) bleibt
+unverändert und dient nur Tests über `Config::gen2_rom`). C-ABI `k1520_create_k8915(gen, …)`/`k1520_k8915_generation`, Python
 `machine="k8915-g2"`, Werkzeuge `--machine k8915-g2`, im `k8915emu` Modellwahl V3/V2
 (`general.model`, fehlend = V3, V1 ausgegraut über `gesperrte_modelle`; EM nie).
 V1 (K7634) ist gesperrt (F11); `app/ui/keyboard_k7634.py` liegt bereit, nicht eingehängt.
-**Vor Arbeiten daran: `doc/merkposten/k8915_varianten.md` lesen** (Abzug 177 nie flicken, A8H
+**Vor Arbeiten daran: `doc/merkposten/k8915_varianten.md` lesen** (Abzug 177 nie flicken — die Reparatur ist eine eigene Datei, A8H
 an der K3528, `zre()` nur am V3).
 
 **Vor Arbeiten daran: `doc/merkposten/k8915.md` lesen** — die Festlegungen mit ihrem

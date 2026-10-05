@@ -1,5 +1,5 @@
-# boot_trace --machine k8915-g2 (AP-V6b): V3-Systemdiskette 901 an der Gen 2 — Selbsttestfehler
-# "ROM C" -> CR -> Kaltstartmeldung -> CR -> Lader -> SCPX 8915 V5.3 bis zum stabilen Prompt.
+# boot_trace --machine k8915-g2 (AP-V6b): V3-Systemdiskette 901 an der Gen 2 — Selbsttest ohne
+# Fehler (repariertes 177, F9) -> Kaltstartmeldung -> CR -> Lader -> SCPX 8915 V5.3 bis zum stabilen Prompt.
 tool:    boot_trace
 disk:    k8915scpx_boot1.hfe
 run:     --machine k8915-g2 --quiet --json %DISK%
