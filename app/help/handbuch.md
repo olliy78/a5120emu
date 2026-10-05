@@ -810,12 +810,17 @@ K7024, Diskettensteuerung K5122 mit zwei K5601). Was anders ist:
   UDOS ein unbekanntes Kommando.
   Ein Rückstellen löscht das UDOS-Datum nicht; die Datumsabfrage kann dann entfallen.
 * **SCPX 1526** bootet am 710-1 bis `A>` (`DIR`, `STAT`, `PIP B:=…`).
-* **Die Bildschirmtastatur des 710 (K7609)** sendet je Taste den Tastencode des
-  Geräts. **ET1** und **ET2** (rot) sind Tasten wie alle anderen, ohne
-  Kürzel erreichbar; **UMSCH** und **STRG** rasten für genau eine Taste. Das
-  Tastenbild ist nach der Codetabelle gezeichnet, nicht am Gerät vermessen:
-  `S1`–`S9` und `CL` haben keine bekannten Codes, sie federn zurück und senden
-  nichts (Beschriftung „[?]“); Leertaste und `BS` sind vorläufig belegt.
+* **Die Bildschirmtastatur des 710 (K7609)** ist dem Foto des Geräts
+  nachgebaut und sendet je Taste den Tastencode des Geräts. **`↵`** ist ET1
+  (Return, Starttaste), **`ST`** ist ET2, **`TB`** der Tabulator — Tasten wie
+  alle anderen, ohne Kürzel erreichbar. Der Ziffernblock sendet dieselben Codes
+  wie die Ziffernreihe. Die **unbeschrifteten** Kappen tragen eine angenommene
+  Belegung (der Kurzhinweis nennt sie): die Ovale neben der Leertaste sind die
+  Umschaltung, die Kappe links von `Q` ist STRG (beide rasten für genau eine
+  Taste), neben `-` liegt `BS`, neben `#` der Drucker-Umschalter, links von `Y`
+  der Merker. `+1`, `-1`, `FC`, `BA`, `FW` und `CL` gehören dem PRG-Betrieb und
+  haben unter UDOS/SCPX keinen Code: sie federn zurück und senden nichts. `$`
+  und `%` haben keine Kappe — über die PC-Tastatur gehen sie.
 * **Schnittstellen** — am 710 drei (V.24 X4, IFSS Hauptdrucker X6, ZIFSS
   Zusatzdrucker X5), am 710-1 zwei (V.24, ZIFSS); A32-B trägt dort die Tastatur
   und steht als feste Schnittstelle im Reiter. Dahinter folgt in beiden der
@@ -924,8 +929,10 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
   und danach gelöst. **LOCK** (Buchstaben groß) und **SI/SO** (zweiter
   Zeichensatz) rasten im Tastaturprozessor selbst; ihr Rand zeigt den Stand, den
   die Nachbildung mitgezählt hat. **ET** ist Return. Dazu Funktionstasten
-  F1–F15, Cursor- und Ziffernblock mit `CE` und `00`. Das Tastenbild ist nach der
-  Codetabelle gezeichnet, nicht am Gerät vermessen.
+  F1–F15, Cursor- und Ziffernblock mit `CE` und `00`. Das Tastenbild ist dem Foto
+  der Tastatur nachgebaut: `®` ist **REP**, die unbeschrifteten Ovale sind
+  **LOCK** (mit Leuchte) und die beiden **SHIFT**; die zweite Leuchte neben SI/SO
+  zeigt dessen Stand.
 * Die **PC-Tastatur** geht wie beim A5120 an den Rechner: Zeichen als Zeichen
   (die Umschaltung sucht sich der Rechner selbst), Pfeile, Entf, Einfg und F1–F12
   als die entsprechenden Tasten. Eine **gehaltene** Taste wiederholt nur, wenn

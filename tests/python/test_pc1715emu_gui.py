@@ -236,7 +236,7 @@ def test_tastenbild_ist_die_matrix():
     for t in tasten:
         assert t.code == QK_TASTE_BASE | t.pos
     # 13 × 8 = 104 Positionen, davon sieben ohne Taste im Schaltbild und die zweite
-    # Ziffernblock-Taste S (zweimal in der Matrix, hier zwei Kappen).
+    # Ziffernblock-Taste S (zweimal in der Matrix, auf dem Foto nur EINE Kappe: (0,1)).
     assert len(positionen) >= 90
     # Return = ET (3,4); SI/SO (8,7); LOCK (8,5); REP (8,6); F1 (4,7); Leertaste (12,1).
     assert (k.ET, k.SISO, k.LOCK, k.REP) == (28, 71, 69, 70)

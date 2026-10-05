@@ -20,10 +20,13 @@ Drei Arten von Umschalttasten, so wie sie am Gerät wirken:
   Tastatur nicht zurück — wer ihn kennt, sieht ihn an der Statuszeile von CP/A).
 * Alle übrigen sind gewöhnliche Tasten.
 
-**Das Tastenbild ist NICHT vermessen**: Matrixpositionen und Codes stimmen (Tabelle
-§6 des Befunds), die Lage der Kappen ist eine plausible Anordnung nach der Beschriftung
-der Codes.  Ziffernblock-Tasten ``S`` (zweimal in der Matrix) und ``CE``/``00`` tragen
-ihre Beschriftung nach dem CP/A-BIOS.
+**Das Tastenbild folgt dem Foto des Geräts** (2026-10-05, Tastatur mit S600/QWERTY):
+Lage, Größe und Form der Kappen (runde Kappen im Hauptfeld, eckige graue im Cursor-,
+Ziffern- und F-Block, unbeschriftete Ovale für LOCK und beide SHIFT, ® = REP, rote CE,
+anderthalb Reihen hohe ``−``/``S``) sind dort abgemessen; die Matrixpositionen stammen
+aus Tabelle §6 des Befunds.  Die Zuordnung Kappe → Position folgt der Beschriftung;
+offen **[?]** bleibt nur, was das Foto nicht zeigt: die zweite ``S``-Position (0,3) hat
+keine eigene Kappe, und die Leuchte neben SI/SO gilt als dessen Anzeige.
 
 Die Host-Tastatur geht den Weg des Kerns: druckbares ASCII, Return/Escape/Tab/Rücktaste
 als Zeichen (das ROM-Verhalten ergibt sich daraus), Pfeile, Entf, Einfg und F1…F12 als
@@ -33,8 +36,20 @@ physische Tasten — der Kern kennt für sie keine Zeichen.
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 
 from app.ui.keyboard import KeyboardWidget, _Key, qt_event_to_core_key
+
+#: Farben nach dem Foto: schwarzes Gehäuse, graue eckige Kappen der Blöcke rechts.
+_C_WANNE = QColor(0x24, 0x24, 0x24)
+_C_GRAU_SOCKEL = QColor(0x3a, 0x3a, 0x3a)
+_C_GRAU = QColor(0x52, 0x52, 0x50)
+_C_GRAU_TXT = QColor(0xef, 0xe6, 0xc4)
+_C_SCHWARZ_SOCKEL = QColor(0x34, 0x34, 0x34)
+_C_SCHWARZ = QColor(0x22, 0x22, 0x22)
+#: Die Leuchten sind gelb.
+_C_LED_GELB = QColor(0xf0, 0xb0, 0x20)
+_C_LED_AUS = QColor(0x6a, 0x5a, 0x30)
 
 #: Muss ``Pc1715Machine::QK_TASTE_BASE`` entsprechen (core/machines/pc1715/pc1715.h).
 TASTE_BASE = 0x03000000
@@ -134,95 +149,138 @@ class _Taste(_Key):
         self.pos = pos
 
 
-def _k(x, y, p, low, up="", w=1.0, name="", style="dark", kind="normal",
-       shape="rect") -> _Taste:
-    return _Taste(x=x, y=y, low=low, up=up, code=taste(p), shift_code=taste(p), w=w,
+def _k(x, y, p, low, up="", w=1.0, h=1.0, name="", style="dark", kind="normal",
+       shape="round") -> _Taste:
+    return _Taste(x=x, y=y, low=low, up=up, code=taste(p), shift_code=taste(p), w=w, h=h,
                   style=style, shape=shape, kind=kind, name=name or low, pos=p)
 
 
+def _blind(x, y, w=0.5, led="") -> _Taste:
+    """Blindmodul ohne Kappe (sendet nichts, reagiert nicht) — ggf. mit Leuchtdiode."""
+    return _Taste(x=x, y=y, w=w, style="filler", kind="dead", name="Blindmodul", led=led)
+
+
+#: Aufschriften der Kappen, wo das Foto vom ASCII-Zeichen des S600 abweicht (ISO 646:
+#: ``¤`` auf der 4, Überstrich auf der ``^``-Taste) — nur Beschriftung, gesendet wird die
+#: Matrixposition; das Zeichen entscheidet das ROM.
+_KAPPE_S600 = {pos(0, 2): ("4", "¤"), pos(5, 2): ("^", "‾")}
+
+
 def _build_layout_pc1715(zeichen: Optional[Dict[int, Tuple[str, str]]] = None) -> List[_Taste]:
-    r"""Tastenfeld (Raster, 1.0 = eine Taste) — Lage geschätzt, Positionen belegt.
+    r"""Tastenfeld nach dem Foto der Tastatur (S600, QWERTY) — Lage aus den Pixelkoordinaten
+    abgemessen (Raster 1.0 ≈ 60 px im 1600-px-Foto), Matrixpositionen nach §6 des Befunds.
 
     ```
-    y 0   F1 … F15
-    y 1   ESC 1 2 3 4 5 6 7 8 9 0 - ^ DEL INS        cursor block      S S CE -
-    y 2   →| q w e r t y u i o p @ [                  |<- ^ ->|        7 8 9 ,
-    y 3   CTRL a s d f g h j k l ; : ] ET             <- ↵ ->          4 5 6 00
-    y 4   SHIFT \ z x c v b n m , . / SHIFT           '\ v             1 2 3
-    y 5   LOCK SI/SO REP        Leertaste                              0
+    y 0  ESC 1 2 3 4 5 6 7 8 9 0 - ^  (R)  SI/SO ●▯     F1 F2 F3   F4    F5 F10
+    y 1  CTRL  Q W E R T Y U I O P @ [  →  INS DEL      7  8  9    CE    F6 F11
+    y 2  ●LOCK  A S D F G H J K L ; : ]   |← ↑ →|       4  5  6    −     F7 F12
+    y 3  SHIFT \ Z X C V B N M , . / SHIFT ← ↰ →        1  2  3    (1,5) F8 F13
+    y 4        ═══ Leertaste ═══  ET ▯▯ ↵ ↓ F15         0  00 ,    S     F9 F14
     ```
+    (R) ist REP, die Leuchte neben LOCK dessen Anzeige, die neben SI/SO die von SI/SO.
+    Die ``−``- und ``S``-Taste der mittleren Spalte sind anderthalb Reihen hoch.
     """
     _Z = zeichen or _ZEICHEN
+    kappe = _KAPPE_S600 if _Z is _ZEICHEN else {}
     k: List[_Taste] = []
-    for n in range(1, 16):
-        k.append(_k(n - 1, 0.0, FTASTEN[n], f"F{n}", style="light", name=f"F{n}"))
 
-    reihe1 = (pos(7, 2), pos(2, 2), pos(1, 2), pos(0, 2), pos(11, 2), pos(12, 2),
-              pos(6, 2), pos(9, 2), pos(10, 2), pos(4, 2), pos(3, 2), pos(5, 2))
-    k.append(_k(0.0, 1.5, pos(8, 2), "ESC", name=SONDER[pos(8, 2)][1]))
-    for i, p in enumerate(reihe1):
-        lo, up = _Z[p]
-        k.append(_k(1.0 + i, 1.5, p, lo, up))
-    k.append(_k(13.0, 1.5, pos(6, 6), "DEL", name=SONDER[pos(6, 6)][1]))
-    k.append(_k(14.0, 1.5, pos(5, 6), "INS", name=SONDER[pos(5, 6)][1]))
+    def zt(x, y, p):
+        """Zeichentaste: Buchstaben einfach, sonst Umschalt- über Grundzeichen."""
+        lo, up = kappe.get(p, _Z[p])
+        if lo.isalpha():
+            k.append(_k(x, y, p, lo.upper()))
+        else:
+            k.append(_k(x, y, p, lo, up))
 
-    k.append(_k(0.0, 2.5, pos(12, 6), "→|", w=1.5, name=SONDER[pos(12, 6)][1]))
-    reihe2 = (pos(7, 0), pos(2, 0), pos(1, 0), pos(0, 0), pos(11, 0), pos(12, 0),
-              pos(6, 0), pos(9, 0), pos(10, 0), pos(4, 0), pos(3, 0), pos(5, 0))
-    for i, p in enumerate(reihe2):
-        lo, up = _Z[p]
-        k.append(_k(1.5 + i, 2.5, p, lo.upper() if lo.isalpha() else lo,
-                    "" if lo.isalpha() else up))
-
-    k.append(_k(0.0, 3.5, CTRL, "CTRL", w=1.5, kind="ctrl", style="light",
-                name="CTRL (gehalten; gemerkt bis zur nächsten Taste)"))
-    reihe3 = (pos(7, 5), pos(2, 5), pos(1, 5), pos(0, 5), pos(11, 5), pos(12, 5),
-              pos(6, 5), pos(9, 5), pos(10, 5), pos(4, 5), pos(3, 5), pos(5, 5))
-    for i, p in enumerate(reihe3):
-        lo, up = _Z[p]
-        k.append(_k(1.5 + i, 3.5, p, lo.upper() if lo.isalpha() else lo,
-                    "" if lo.isalpha() else up))
-    k.append(_k(13.5, 3.5, ET, "ET", w=1.5, style="red", name=SONDER[ET][1]))
-
-    k.append(_k(0.0, 4.5, SHIFT_L, "SHIFT", w=1.5, kind="shift", style="light",
-                name="SHIFT links (gehalten; gemerkt bis zur nächsten Taste)"))
-    reihe4 = (pos(7, 4), pos(5, 4), pos(2, 4), pos(1, 4), pos(0, 4), pos(11, 4),
-              pos(12, 4), pos(6, 4), pos(9, 4), pos(10, 4), pos(4, 4))
-    for i, p in enumerate(reihe4):
-        lo, up = _Z[p]
-        k.append(_k(1.5 + i, 4.5, p, lo.upper() if lo.isalpha() else lo,
-                    "" if lo.isalpha() else up))
-    k.append(_k(12.5, 4.5, SHIFT_R, "SHIFT", w=1.5, kind="shift", style="light",
-                name="SHIFT rechts (gehalten; gemerkt bis zur nächsten Taste)"))
-
-    k.append(_k(0.0, 5.5, LOCK, "LOCK", w=1.5, kind="toggle", style="light",
-                name="LOCK (rastend im ROM: Buchstaben groß)"))
-    k.append(_k(1.5, 5.5, SISO, "SI/SO", w=1.5, kind="toggle", style="light",
+    # Reihe 0: ESC, Ziffern, REP ®, SI/SO, Leuchte.
+    k.append(_k(0.0, 0.0, pos(8, 2), "ESC", name=SONDER[pos(8, 2)][1]))
+    for i, p in enumerate((pos(7, 2), pos(2, 2), pos(1, 2), pos(0, 2), pos(11, 2), pos(12, 2),
+                           pos(6, 2), pos(9, 2), pos(10, 2), pos(4, 2), pos(3, 2), pos(5, 2))):
+        zt(1.0 + i, 0.0, p)
+    k.append(_k(13.0, 0.0, REP, "®", w=1.25, kind="rep", shape="rect", style="grau",
+                name="REP ® (gehalten; gemerkt — erlaubt Wiederholung einer gehaltenen Taste)"))
+    k.append(_k(14.25, 0.0, SISO, "SO", "SI", kind="toggle", shape="rect", style="grau",
                 name="SI/SO (rastend im ROM: zweiter Zeichensatz)"))
-    k.append(_k(3.0, 5.5, REP, "REP", kind="rep", style="light",
-                name="REP (gehalten; gemerkt — erlaubt Wiederholung einer gehaltenen Taste)"))
-    k.append(_k(4.5, 5.5, pos(12, 1), "", w=7.0, name=SONDER[pos(12, 1)][1]))
+    k.append(_blind(15.25, 0.0, led="SI/SO-Anzeige [?]"))
+    k.append(_blind(15.75, 0.0))
 
-    # Cursorblock.
-    CB = 15.75
-    for dx, dy, p in ((0, 2.5, pos(12, 7)), (1, 2.5, pos(5, 7)), (2, 2.5, pos(6, 7)),
-                      (0, 3.5, pos(12, 3)), (1, 3.5, pos(3, 3)), (2, 3.5, pos(6, 3)),
-                      (0, 4.5, pos(5, 3)), (1, 4.5, pos(3, 7))):
-        k.append(_k(CB + dx, dy, p, SONDER[p][0], name=SONDER[p][1]))
+    # Reihe 1: CTRL, QWERTY, Tab →, INS, DEL.
+    k.append(_k(0.0, 1.0, CTRL, "CTRL", w=1.4, kind="ctrl", shape="oval",
+                name="CTRL (gehalten; gemerkt bis zur nächsten Taste)"))
+    for i, p in enumerate((pos(7, 0), pos(2, 0), pos(1, 0), pos(0, 0), pos(11, 0), pos(12, 0),
+                           pos(6, 0), pos(9, 0), pos(10, 0), pos(4, 0), pos(3, 0), pos(5, 0))):
+        zt(1.4 + i, 1.0, p)
+    for x, p, lo in ((13.4, pos(12, 6), "→"), (14.4, pos(5, 6), "INS"),
+                     (15.4, pos(6, 6), "DEL")):
+        k.append(_k(x, 1.0, p, lo, shape="rect", style="grau", name=SONDER[p][1]))
 
-    # Ziffernblock.
-    ZB = 19.5
-    for dx, dy, p in ((0, 1.5, pos(0, 1)), (1, 1.5, pos(0, 3)), (2, 1.5, pos(0, 6))):
-        k.append(_k(ZB + dx, dy, p, SONDER[p][0], name=SONDER[p][1]))
-    k.append(_k(ZB + 3, 1.5, pos(0, 7), "-", name="Ziffernblock - (BDH)"))
-    for dy, reihe in ((2.5, (pos(7, 6), pos(2, 6), pos(1, 6), pos(1, 1))),
-                      (3.5, (pos(7, 7), pos(2, 7), pos(1, 7), pos(2, 1))),
-                      (4.5, (pos(7, 3), pos(2, 3), pos(1, 3)))):
+    # Reihe 2: Leuchte + LOCK, ASDF…, Cursorblock oben.
+    k.append(_blind(0.0, 2.0, w=0.4, led="LOCK-Anzeige"))
+    k.append(_k(0.4, 2.0, LOCK, "", w=1.25, kind="toggle", shape="oval",
+                name="LOCK (unbeschriftet; rastend im ROM: Buchstaben groß)"))
+    for i, p in enumerate((pos(7, 5), pos(2, 5), pos(1, 5), pos(0, 5), pos(11, 5), pos(12, 5),
+                           pos(6, 5), pos(9, 5), pos(10, 5), pos(4, 5), pos(3, 5), pos(5, 5))):
+        zt(1.65 + i, 2.0, p)
+
+    # Reihe 3: SHIFT, \ ZXCV…, SHIFT.
+    k.append(_k(0.0, 3.0, SHIFT_L, "", w=1.05, kind="shift", shape="oval",
+                name="SHIFT links (unbeschriftet; gehalten; gemerkt bis zur nächsten Taste)"))
+    for i, p in enumerate((pos(7, 4), pos(5, 4), pos(2, 4), pos(1, 4), pos(0, 4), pos(11, 4),
+                           pos(12, 4), pos(6, 4), pos(9, 4), pos(10, 4), pos(4, 4))):
+        zt(1.05 + i, 3.0, p)
+    k.append(_k(12.05, 3.0, SHIFT_R, "", w=1.6, kind="shift", shape="oval",
+                name="SHIFT rechts (unbeschriftet; gehalten; gemerkt bis zur nächsten Taste)"))
+
+    # Reihe 4: Leertaste, ET, zwei Blindmodule.
+    k.append(_k(3.35, 4.0, pos(12, 1), "", w=7.8, shape="oval", name=SONDER[pos(12, 1)][1]))
+    k.append(_k(11.15, 4.0, ET, "ET", w=1.5, shape="oval", name=SONDER[ET][1]))
+    k.append(_blind(12.65, 4.0))
+    k.append(_blind(13.15, 4.0))
+
+    # Cursorblock (eine Viertelreihe weiter rechts als INS/DEL — Stufe im Ausschnitt).
+    CB = 13.65
+    for dx, dy, p, lo in ((0, 2, pos(12, 7), "|←"), (1, 2, pos(5, 7), "↑"),
+                          (2, 2, pos(6, 7), "→|"),
+                          (0, 3, pos(12, 3), "←"), (1, 3, pos(5, 3), "↰"),
+                          (2, 3, pos(6, 3), "→"),
+                          (0, 4, pos(3, 3), "↵"), (1, 4, pos(3, 7), "↓"),
+                          (2, 4, pos(6, 1), "F15")):
+        k.append(_k(CB + dx, float(dy), p, lo, shape="rect", style="grau", name=SONDER[p][1]))
+
+    # Ziffernblock mit F1–F3.
+    ZB = 17.15
+    for dy, reihe in ((0, (pos(4, 7), pos(4, 6), pos(10, 1))),
+                      (1, (pos(7, 6), pos(2, 6), pos(1, 6))),
+                      (2, (pos(7, 7), pos(2, 7), pos(1, 7))),
+                      (3, (pos(7, 3), pos(2, 3), pos(1, 3))),
+                      (4, (pos(7, 1), pos(2, 1), pos(1, 1)))):
         for dx, p in enumerate(reihe):
-            name = SONDER[p][1] if p in SONDER else f"Ziffernblock {ZIFFERNBLOCK[p]}"
-            lo = SONDER[p][0] if p in SONDER else ZIFFERNBLOCK[p]
-            k.append(_k(ZB + dx, dy, p, lo, name=name))
-    k.append(_k(ZB, 5.5, pos(7, 1), "0", w=2.0, name="Ziffernblock 0 (B0H)"))
+            if p in SONDER:
+                lo, name = SONDER[p]
+            elif p in FTASTEN.values():
+                n = next(n for n, q in FTASTEN.items() if q == p)
+                lo, name = f"F{n}", f"F{n}"
+            else:
+                lo = ZIFFERNBLOCK[p]
+                name = f"Ziffernblock {lo}"
+            k.append(_k(ZB + dx, float(dy), p, lo, shape="rect", style="grau", name=name))
+
+    # Mittlere Spalte: F4, CE (rot), − und S (je anderthalb Reihen hoch).
+    MS = 20.75
+    k.append(_k(MS, 0.0, FTASTEN[4], "F4", shape="rect", style="grau", name="F4"))
+    k.append(_k(MS, 1.0, pos(0, 6), "CE", shape="rect", style="red", name=SONDER[pos(0, 6)][1]))
+    k.append(_k(MS, 2.0, pos(0, 7), "−", h=1.5, shape="oval", style="grau",
+                name="Ziffernblock - (BDH)"))
+    k.append(_k(MS, 3.5, pos(0, 1), "S", h=1.5, shape="oval", style="grau",
+                name="Ziffernblock S (D0H) — die zweite S-Position der Matrix (0,3) "
+                     "hat auf dem Foto keine eigene Kappe [?]"))
+
+    # Rechter Block: F5–F9 und F10–F14.
+    FB = 22.6
+    for i in range(5):
+        for dx, n in ((0, 5 + i), (1, 10 + i)):
+            k.append(_k(FB + dx, float(i), FTASTEN[n], f"F{n}", shape="rect", style="grau",
+                        name=f"F{n}"))
     return k
 
 
@@ -245,6 +303,7 @@ class KeyboardPc1715Widget(KeyboardWidget):
     """Anklickbare Nachbildung der Tastatur des PC 1715 — Schnittstelle wie die K7637."""
 
     PAD = (0.35, 0.35, 0.35, 0.35)
+    WANNE = _C_WANNE
 
     def __init__(self, parent=None, qwertz: bool = False):
         # Vor dem Oberklassen-Konstruktor: der ruft _layout().
@@ -256,7 +315,7 @@ class KeyboardPc1715Widget(KeyboardWidget):
         return _build_layout_pc1715(self._zeichen)
 
     def _anzeigen_verankern(self):
-        self._by_pos = {k.pos: k for k in self._keys if isinstance(k, _Taste)}
+        self._by_pos = {k.pos: k for k in self._keys if isinstance(k, _Taste) and k.pos >= 0}
         # Zustand der Nachbildung; vor dem ersten Zeichnen angelegt (der Konstruktor der
         # Oberklasse ruft diese Methode, bevor er fertig ist).
         self._rep = False
@@ -264,11 +323,32 @@ class KeyboardPc1715Widget(KeyboardWidget):
         self._gehalten: List[int] = []     # beim Druck mitgedrückte Umschalter (Positionen)
         self._zeichen_pos: Optional[int] = None
 
-    # ── Anzeigen: das Gerät hat keine Leuchten an der Tastatur (sie stehen in der
-    # Statuszeile von CP/A) ──────────────────────────────────────────────────
+    # ── Anzeigen: zwei gelbe Leuchten (LOCK, SI/SO) — sie zeigen den MITGEZEICHNETEN
+    # Zustand der Nachbildung; maßgeblich ist das ROM (Statuszeile von CP/A) ──────
 
     def _led_spots(self, unit, ox, oy):
-        return []
+        spots = []
+        for key in self._keys:
+            if key.led:
+                r = self._rect_of(key, unit, ox, oy)
+                an = self._rastend.get(LOCK if key.led.startswith("LOCK") else SISO, False)
+                spots.append((r.center().x(), r.center().y(), an, key.led))
+        return spots
+
+    def _draw_led(self, p, cx, cy, r, lit=False):
+        from PySide6.QtCore import QPointF
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(0x10, 0x10, 0x10))
+        p.drawEllipse(QPointF(cx, cy), r * 1.2, r * 1.2)
+        p.setBrush(_C_LED_GELB if lit else _C_LED_AUS)
+        p.drawEllipse(QPointF(cx, cy), r, r)
+
+    def _cap_colors(self, key: _Key):
+        if key.style == "grau":
+            return _C_GRAU_SOCKEL, _C_GRAU, _C_GRAU_TXT
+        if key.style == "dark":
+            return _C_SCHWARZ_SOCKEL, _C_SCHWARZ, _C_GRAU_TXT
+        return super()._cap_colors(key)
 
     def set_leds(self, mask: int):
         return
@@ -293,8 +373,8 @@ class KeyboardPc1715Widget(KeyboardWidget):
             super().mousePressEvent(event)
             return
         key = self._key_at(event.position() if hasattr(event, "position") else event.pos())
-        if not isinstance(key, _Taste):
-            return
+        if not isinstance(key, _Taste) or key.pos < 0:
+            return                      # Blindmodul
         if key.kind in ("shift", "ctrl", "rep"):
             # Umschalter: nur merken; gedrückt wird beim nächsten Tastenklick.
             if key.kind == "rep":

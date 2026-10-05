@@ -9,13 +9,13 @@ einen Code 00H–3FH, Bit 6 ist die Umschaltung (`doc/prg710/k7609_codes.csv`,
 bei der K7672); die Umschaltung der Nachbildung wird als ``shift`` mitgegeben, die
 rastende Strg-Taste als ``ctrl`` (der Kern stellt dann die Strg-Einmaltaste 28H vor).
 
-**Das Tastenbild ist NICHT vermessen** (§8.7 [Gerät]): die Codes stimmen, die
-Lage der Kappen ist eine plausible Anordnung nach der Codetabelle.  Offen **[?]**:
-
-* **S1–S9 und CL** haben keine eigenen Codes (die Codes 17H/1DH–1FH/3DH–3FH liefern
-  alle 20H) — die Kappen sind da, **senden aber nichts** und tragen ein „[?]“.
-* **Leertaste = 16H** nur als vorläufige Wahl, **BS = 08H** ebenso.
-* Polarität der Umschaltung (Bit 6) ist Abmachung („ohne Shift Bit 6 = 0“).
+**Das Tastenbild folgt dem Foto des Geräts** (2026-10-05): Lage, Größe und Form der
+Kappen, Blindmodule und Beschriftung sind dort abgemessen (Einzelheiten und die
+Annahmen **[?]** zur Belegung der unbeschrifteten Kappen: :func:`_build_layout_k7609`).
+Die früher vermuteten S1–S9 hat diese Tastatur nicht; ihre Funktionstasten
+``+1 -1 FC BA FW CL`` haben in UDOS/SCPX keinen Code und **senden nichts**.
+**Leertaste = 16H** bleibt vorläufige Wahl (alle 20H-Codes wirken gleich); die
+Polarität der Umschaltung (Bit 6) ist Abmachung („ohne Shift Bit 6 = 0“).
 
 **ET1 (37H) und ET2/ST (38H) sind Tasten wie jede andere** — ohne Kürzel erreichbar,
 und die Hosttaste Return liefert ET1 (Starttaste des Boot-ROMs), Esc ET2.
@@ -74,75 +74,125 @@ class _Taste(_Key):
 
 
 def _k(x, y, pos, low, up="", w=1.0, name="", style="dark", kind="normal",
-       dead=False, hinweis="") -> _Taste:
+       dead=False, hinweis="", shape="round") -> _Taste:
     code = None if (dead or kind != "normal") else taste(pos)
     t = _Taste(x=x, y=y, low=low, up=up, code=code, shift_code=code, w=w,
-               style=style, shape="rect", kind="dead" if dead else kind,
+               style=style, shape=shape, kind="dead" if dead else kind,
                name=name or (f"{up} / {low}" if up else low), pos=pos,
                hinweis=hinweis)
     return t
 
 
+def _blind(x, y, w=0.5) -> _Taste:
+    """Blindmodul ohne Kappe — reagiert nicht."""
+    return _Taste(x=x, y=y, w=w, style="filler", kind="dead", name="Blindmodul")
+
+
+#: Die ungeklärte Belegung beschrifteter Funktionstasten (Foto 2026-10-05).
+_NICHT = ("sendet nichts — Funktionstaste des PRG-Betriebs (BS610), in UDOS/SCPX "
+          "ohne Code; welche Matrixposition sie hat, ist offen [?]")
+
+
 def _build_layout_k7609() -> List[_Taste]:
-    r"""Tastenfeld nach der Codetabelle (Raster, 1.0 = eine Taste) — Lage geschätzt [?].
+    r"""Tastenfeld nach dem Foto des Geräts (2026-10-05) — Lage aus den Pixelkoordinaten
+    abgemessen (Raster 1.0 ≈ 57 px im 1600-px-Foto).
 
     ```
-    y 0    S1 … S9 CL                      (sendet nichts, [?])
-    y 1.5  1 2 3 4 5 6 7 8 9 0 - $ % ,  BS            MRK DRUCK
-    y 2.5  →| Q W E R T Z U I O P @ [ ]               ET2
-    y 3.5  STRG A S D F G H J K L # >  ET1              ↑
-    y 4.5  UMSCH Y X C V B N M                        ← ↓ →
-    y 5.5       Leertaste [?]
+    y 0  ▯ 1 2 3 4 5 6 7 8 9 0 -  ■   +1 FC
+    y 1  ■  Q W E R T Z U I O P ,  ▯   -1 BA        7 8 9 [
+    y 2  CL A S D F G H J K L #  ■ ▯   ↑  FW        4 5 6 ]
+    y 3  ▯■  Y X C V B N M ↵ TB  ■ ▯  ←  →  ▯       1 2 3 >
+    y 4  ⬭  ▯ ════ Leertaste ════ ▯ ⬭ ▯ ↓  ST       ══0══ @
     ```
+    ``■`` = unbeschriftete Kappe, ``▯`` = Blindmodul, ``⬭`` = unbeschriftete ovale Kappe.
+
+    **Gesichert** ist, was beschriftet ist und einen Code der Tabelle trägt: Zeichen,
+    Pfeile, ``↵`` = ET1 (37H), ``ST`` = ET2/ST (38H), ``TB`` = Tabulator (3CH).  Der
+    Ziffernblock ist der Matrix parallel geschaltet (eine Ziffer, ein Code); ``[ ] > @``
+    gibt es nur dort.  **Angenommen [?]**: die beiden Ovale unten sind die Umschaltung
+    (Bit 6), die unbeschrifteten Kappen tragen die Codes ohne Aufschrift — STRG 28H
+    links von Q (wie beim PC 1715), BS 08H neben ``-``, DRUCK 18H neben ``#``, MRK 10H
+    links von Y; die neben TB sendet nichts.  ``+1 -1 FC BA FW CL`` sind Funktionstasten
+    des PRG-Betriebs ohne Code in UDOS/SCPX (§8.7: die früher vermuteten S1–S9 hat
+    diese Tastatur nicht) und senden nichts.  ``$`` (09H) und ``%`` (11H) haben auf dem
+    Foto keine Kappe; die Host-Tastatur erreicht sie weiter.
     """
     k: List[_Taste] = []
-    nicht = "sendet nichts — Lage und Code nicht bekannt [?]"
-    for i in range(9):
-        k.append(_k(i, 0.0, -1, f"S{i + 1}", dead=True, style="light",
-                    name=f"S{i + 1} [?] — {nicht}", hinweis=nicht))
-    k.append(_k(9.5, 0.0, -1, "CL", dead=True, style="light",
-                name=f"CL [?] — {nicht}", hinweis=nicht))
 
-    reihe1 = (0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0C, 0x0B, 0x0A,
-              0x09, 0x11, 0x12)
-    for i, c in enumerate(reihe1):
+    def zt(x, y, c, nur_grund=False):
         lo, up = _ZEICHEN[c]
-        k.append(_k(float(i), 1.5, c, lo, up))
-    k.append(_k(14.0, 1.5, BACKSPACE, "BS", w=1.5, name="BS |←| (08H, vorläufig [?])"))
+        if lo.isalpha() or nur_grund:
+            k.append(_k(x, y, c, lo, name=f"{lo} / {up}"))
+        else:
+            k.append(_k(x, y, c, lo, up))
 
-    k.append(_k(0.0, 2.5, 0x3C, "→|", w=1.5, name="Tabulator →|"))
-    for i, c in enumerate((0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x14, 0x13,
-                           0x15, 0x0F, 0x0E)):
-        lo, up = _ZEICHEN[c]
-        k.append(_k(1.5 + i, 2.5, c, lo, up))
+    def tot(x, y, lo):
+        k.append(_k(x, y, -1, lo, dead=True, name=f"{lo} [?] — {_NICHT}", hinweis=_NICHT))
 
-    k.append(_k(0.0, 3.5, 0x28, "STRG", w=1.75, kind="ctrl",
-                name="STRG (Strg-Einmaltaste 28H, rastet für eine Taste)"))
-    for i, c in enumerate((0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x1C, 0x1B,
-                           0x1A, 0x0D)):
-        lo, up = _ZEICHEN[c]
-        k.append(_k(1.75 + i, 3.5, c, lo, up))
-    k.append(_k(12.75, 3.5, ET1, "ET1", w=1.75, style="red",
-                name="ET1 (CR, 37H) — Starttaste des Boot-ROMs"))
+    # Reihe 0.
+    k.append(_blind(0.0, 0.0, 0.4))
+    for i, c in enumerate((0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0C, 0x0B, 0x0A)):
+        zt(0.4 + i, 0.0, c)
+    k.append(_k(11.4, 0.0, BACKSPACE, "", w=0.9, shape="rect",
+                name="unbeschriftet — BS |←| (08H) [?]"))
+    tot(12.3, 0.0, "+1")
+    tot(13.3, 0.0, "FC")
 
-    k.append(_k(0.0, 4.5, -1, "UMSCH", w=2.25, kind="shift",
-                name="UMSCH (Umschaltung, Bit 6; rastet für eine Taste)"))
+    # Reihe 1.
+    k.append(_k(0.0, 1.0, 0x28, "", w=0.85, kind="ctrl", shape="rect",
+                name="unbeschriftet — STRG (Strg-Einmaltaste 28H, rastet für eine Taste) [?]"))
+    for i, c in enumerate((0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x14, 0x13, 0x12)):
+        zt(0.85 + i, 1.0, c)
+    k.append(_blind(11.85, 1.0, 0.45))
+    tot(12.3, 1.0, "-1")
+    tot(13.3, 1.0, "BA")
+
+    # Reihe 2.
+    tot(0.1, 2.0, "CL")
+    for i, c in enumerate((0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x1C, 0x1B, 0x1A)):
+        zt(1.1 + i, 2.0, c)
+    k.append(_k(11.1, 2.0, 0x18, "", shape="rect",
+                name="unbeschriftet — Drucker-Umschalter (18H, UDOS) [?]"))
+    k.append(_blind(12.1, 2.0, 0.4))
+    k.append(_k(12.5, 2.0, 0x19, "↑", name="Cursor hoch (19H)"))
+    tot(13.5, 2.0, "FW")
+
+    # Reihe 3.
+    k.append(_blind(0.0, 3.0))
+    k.append(_k(0.5, 3.0, 0x10, "", shape="rect",
+                name="unbeschriftet — Sondertaste Merker (10H) [?]"))
     for i, c in enumerate((0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36)):
-        lo, up = _ZEICHEN[c]
-        k.append(_k(2.25 + i, 4.5, c, lo, up))
+        zt(1.5 + i, 3.0, c)
+    k.append(_k(8.5, 3.0, ET1, "↵", name="↵ = ET1 (CR, 37H) — Starttaste des Boot-ROMs"))
+    k.append(_k(9.5, 3.0, 0x3C, "TB", name="TB = Tabulator →| (3CH)"))
+    k.append(_k(10.5, 3.0, -1, "", shape="rect", dead=True,
+                name="unbeschriftet [?] — sendet nichts", hinweis="Belegung offen [?]"))
+    k.append(_blind(11.5, 3.0))
+    k.append(_k(12.0, 3.0, 0x3A, "←", name="Cursor links (3AH)"))
+    k.append(_k(13.0, 3.0, 0x39, "→", name="Cursor rechts (39H)"))
+    k.append(_blind(14.0, 3.0))
 
-    k.append(_k(3.0, 5.5, LEERTASTE, "Leertaste [?]", w=6.0,
+    # Reihe 4: Umschaltung links und rechts der Leertaste.
+    k.append(_k(0.0, 4.0, -1, "", w=1.5, kind="shift", shape="oval",
+                name="unbeschriftet — Umschaltung (Bit 6; rastet für eine Taste) [?]"))
+    k.append(_blind(1.5, 4.0))
+    k.append(_k(2.0, 4.0, LEERTASTE, "", w=8.0, shape="oval",
                 name="Leertaste (16H, vorläufig [?])"))
+    k.append(_blind(10.0, 4.0))
+    k.append(_k(10.5, 4.0, -1, "", w=1.5, kind="shift", shape="oval",
+                name="unbeschriftet — Umschaltung (Bit 6; rastet für eine Taste) [?]"))
+    k.append(_blind(12.0, 4.0))
+    k.append(_k(12.5, 4.0, 0x3B, "↓", name="Cursor runter (3BH)"))
+    k.append(_k(13.5, 4.0, ET2, "ST", name="ST = ET2/ST (ESC, 38H)"))
 
-    # Rechter Block: Sonder-/Umschaltertasten, ET2, Cursor.
-    RB = 16.5
-    k.append(_k(RB, 1.5, 0x10, "MRK", name="Sondertaste Merker (10H) [?]"))
-    k.append(_k(RB + 1, 1.5, 0x18, "DRUCK", name="Drucker-Umschalter (18H, UDOS) [?]"))
-    k.append(_k(RB + 1, 2.5, ET2, "ET2", style="red", name="ET2/ST (ESC, 38H)"))
-    k.append(_k(RB + 1, 3.5, 0x19, "↑", name="Cursor hoch (19H)"))
-    k.append(_k(RB, 4.5, 0x3A, "←", name="Cursor links (3AH)"))
-    k.append(_k(RB + 1, 4.5, 0x3B, "↓", name="Cursor runter (3BH)"))
-    k.append(_k(RB + 2, 4.5, 0x39, "→", name="Cursor rechts (39H)"))
+    # Ziffernblock (der Matrix parallel: dieselben Codes wie die Ziffernreihe).
+    ZB = 15.8
+    for dy, reihe in ((1, (0x06, 0x07, 0x0C, 0x0F)), (2, (0x03, 0x04, 0x05, 0x0E)),
+                      (3, (0x00, 0x01, 0x02, 0x0D))):
+        for dx, c in enumerate(reihe):
+            zt(ZB + dx, float(dy), c, nur_grund=dx < 3)   # Ziffern einfach beschriftet
+    k.append(_k(ZB, 4.0, 0x0B, "0", w=3.0, shape="oval", name="0 (Ziffernblock, 0BH)"))
+    zt(ZB + 3, 4.0, 0x15)
     return k
 
 
@@ -165,8 +215,12 @@ class KeyboardK7609Widget(KeyboardWidget):
         return _build_layout_k7609()
 
     def _anzeigen_verankern(self):
-        self._by_pos = {k.pos: k for k in self._keys
-                        if isinstance(k, _Taste) and k.pos >= 0}
+        # Erste Kappe je Code: die Ziffern des Ziffernblocks sind der Ziffernreihe
+        # parallel geschaltet, hervorgehoben wird die Ziffernreihe.
+        self._by_pos = {}
+        for k in self._keys:
+            if isinstance(k, _Taste) and k.pos >= 0:
+                self._by_pos.setdefault(k.pos, k)
 
     def _led_spots(self, unit, ox, oy):
         return []                       # die K7609 hat keine Anzeigen

@@ -128,9 +128,17 @@ def test_k7609_tabelle_stimmt_mit_der_csv(qapp):
     for t in w._keys:
         if t.code is not None:
             assert t.code == QK_TASTE_BASE | t.pos and 0 <= t.pos <= 0x3F
-    assert w._by_pos[0x37].low == "ET1" and w._by_pos[0x38].low == "ET2"
-    offen = [t for t in w._keys if t.kind == "dead"]
-    assert len(offen) == 10 and all("[?]" in t.name for t in offen)
+    # Tastenbild nach dem Foto (2026-10-05): ↵ = ET1, ST = ET2, TB = Tabulator.
+    assert w._by_pos[0x37].low == "↵" and w._by_pos[0x38].low == "ST"
+    assert w._by_pos[0x3C].low == "TB"
+    # Beschriftete Funktionstasten ohne Code + die unbeschriftete neben TB senden nichts.
+    offen = [t for t in w._keys if t.kind == "dead" and t.style != "filler"]
+    assert sorted(t.low for t in offen) == sorted(["+1", "-1", "FC", "BA", "FW", "CL", ""])
+    assert all("[?]" in t.name for t in offen)
+    # Der Ziffernblock ist der Ziffernreihe parallel: dieselben Codes, je Ziffer zwei Kappen.
+    for c in (0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0C, 0x0B):
+        assert len([t for t in w._keys if t.code == QK_TASTE_BASE | c]) == 2, hex(c)
+    assert len([t for t in w._keys if t.kind == "shift"]) == 2
 
 
 def test_et_ohne_kuerzel_und_keyrelease(qapp, konfig_ordner):
@@ -155,7 +163,7 @@ def test_et_ohne_kuerzel_und_keyrelease(qapp, konfig_ordner):
         assert gedrueckt == [QK_TASTE_BASE | 0x37]
         assert losgelassen == [QK_TASTE_BASE | 0x37]
         # Offene Taste: federt zurück, sendet nichts.
-        tot = next(t for t in kw._keys if t.low == "S1")
+        tot = next(t for t in kw._keys if t.low == "FC")
         QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, _mitte(kw, tot))
         assert gedrueckt == [QK_TASTE_BASE | 0x37]
     finally:

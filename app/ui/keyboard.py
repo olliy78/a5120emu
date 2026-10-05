@@ -428,6 +428,8 @@ class KeyboardWidget(QWidget):
     #: Ränder in Rastern (links, oben, rechts, unten): oben mehr, dort sitzt die
     #: LED-Leiste der echten Tastatur.
     PAD = (0.35, 0.75, 0.35, 0.35)
+    #: Farbe der Tastaturwanne — eine andere Tastatur (PC 1715: schwarz) setzt ihre eigene.
+    WANNE = _C_BEZEL
 
     # ── Einstiegspunkte für eine andere Tastatur (K7672, keyboard_k7672.py) ──
 
@@ -572,7 +574,7 @@ class KeyboardWidget(QWidget):
 
         # Tastaturwanne.
         p.setPen(Qt.NoPen)
-        p.setBrush(_C_BEZEL)
+        p.setBrush(self.WANNE)
         p.drawRoundedRect(QRectF(ox, oy, self._units_w * unit,
                                  self._units_h * unit),
                           0.25 * unit, 0.25 * unit)
