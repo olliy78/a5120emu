@@ -413,6 +413,31 @@ Ergebnis `doc/k8915g2/zre_rom.md`:
 **Wächter:** keiner (Doku), aber jede Zeile der Portkarte mit Fundstelle. **Fertig, wenn:** die
 Anforderungsliste so vollständig ist, dass V2 daraus ohne Rückfrage einen Maschinenentwurf schreibt.
 
+> **AP-V3b erledigt 2026-10-05** — Ergebnis `doc/k8915g2/zre_rom.md` (statisch, Byte-Vergleich mit dem
+> V3-ROM, Probelauf `tools/k8915_sysload.py`). Befunde:
+> - **Der Lader ist der V3-Lader:** 0400–0906H sind mit `k8915_boot_2732.bin` **byteidentisch** bis auf
+>   041BH (Stub-Quelle 098FH) und 042AH (`JP NZ,03FAH`). Ladekopf, `/WAIT`-K5122, Software-CRC,
+>   Warmstart-Einsprung 0406H gelten unverändert; `disks/k8915scpx_boot1.hfe` wird gelesen wie am V3
+>   (12 272 B nach C000–EFEFH, Einsprung D600H). Eigen sind nur 175 (Selbsttest) und die
+>   Meldungsroutine (`E`/`ESC c` ⇒ Neubeginn) samt Stub-Werten.
+> - **A8H = gleiches Register, bitkompatibel für Bit 0/1/2/7, anderer Träger (K3528 [?]).** Gen-2-Werte
+>   nur 06H/0EH/87H/8FH — Bit0 und Bit7 immer gleich; der V3-Resetwert 8EH fehlt (würde bei `/MEMDI`
+>   an Bit7 die steckbare K2521 abschalten [?]). RAM-Test bei 87H über 0068–FDC7H ⇒ 64 KB RAM durchgehend;
+>   keine Bank 2, Bit3 ohne beobachtbare Wirkung.
+> - **Portkarte = V3** (gleiche ATS 045-8732, K5122 10H–18H, Latch 61H, K2521-CTC 80H/83H); PIO
+>   84H–87H unbenutzt. Selbsttest **ROM → KEY → CTC → SIO → RAM** (SIO drei Runden, Rückschleife auf
+>   drei Kanälen wie V3); erster Fehler ⇒ ERROR, 16 × BEL, `CR` ⇒ Kaltstartmeldung. NMI = `RETN`.
+> - **Abzug 177 (F9):** der Emulator bliebe mit dem Abzug bei „ROM“ Kennbuchstabe `C` stehen, KEY…RAM
+>   ungeprüft; `CR` führt trotzdem zum Lader — für V6 prüfbar ohne Diskette.
+> - **Kartenchips = Gen-1-Urlader (Ersatz, keine Ergänzung):** 3C00 für Platz 0000H, 3000 für 0800H;
+>   sie passen **nicht** zum ZRE-176 (Zellen 0Cxx statt F7xx, Stub 095BH statt 098FH) — das passende
+>   176-Gegenstück fehlt (F11). Im Gen-2-Ablauf nie angesprochen, neben 64 KB RAM nicht betreibbar ⇒
+>   **V5 = Beigabe**. Die K7634 fragt nur die Karte ab (E0H/E1H), nicht 175–177.
+> - **Berichtigung zu Entwurf 16 §4.4:** Ladekopf-Byte 7–9 werden benutzt — vom Warmstart 0406H
+>   (F710H = 1), auch am V3.
+> - **Abweichung vom Plan:** keine Z80-Probeläufe nötig; die Selbsttestdauer (≈ 17 Mio. Takte) ist nur
+>   gerechnet. Anforderungsliste für V4/V6: `zre_rom.md` §8.
+
 ### AP-V2 — Entwurf und Schärfung der Kern-APs
 
 **Agent:** Plan (Opus). **Abhängig:** V1a, V1b, V3b, Antworten F1–F3. **Baut:** nein.
@@ -487,6 +512,10 @@ volle Ausgabe.
 | **F22** | (V1a) Brückenstand am Gerät: ZRE X6–X9, X14/X15; PFS K3820 X6/X7 (welches MEMDI), X8/X9 (Startadresse), X10–X11 (WAIT). |
 | **F23** | (V1a) Wie ist das Feld X3:23–X3:45 (Registerbit → /MEMDI…/MEMDI3) gebrückt? Foto der RAM-Karte genügt. |
 | **F24** | (V1a) Woher stammt „PIO 08–0FH“ (Forum 5713)? Gibt es ein Gerät mit anderer K2521-Dekodierung? |
+| **F10** | (V3b) Kartenchip „3C00“ spricht **B1H/B3H** (`0FH`, `40H`) und **E3H Bit 2** (RAM-Test 64 K oder nur 8000H ff.) an und prüft D001–D003H auf `F3 ED 5E` (sonst `76H` nach D000H). Welche Karten/Brücken der Gen 1 sind das? |
+| **F11** | (V3b) Zu den Kartenchips „3C00“/„3000“ gehört ein **zweiter Lader-Baustein für 0400H** mit Arbeitszellen bei 0C00H und Stub bei 095BH (Platz 0400 der Karte ist leer, das ZRE-176 passt nicht). Gibt es diesen Baustein (z. B. in einem Gen-1-Gerät)? |
+| **F12** | (V3b) Braucht der Selbsttest der Gen 2 am Gerät einen **Prüfstecker** an den drei Schnittstellen (Test „SIO“ wie beim V3, Entwurf 16 §6.10), und in welcher Reihenfolge zeigt das Gerät die Tests (erwartet ROM, KEY, CTC, SIO, RAM)? |
+| **F13** | (V3b) Läuft auf dem Gen-2-Gerät `RADE` (RAM-Disk)? Ohne Bank 2 erwartet: nein; RADE erkennt die Maschine an 0C00H, dort liegt in der Gen 2 das K2521-RAM. |
 
 ---
 
