@@ -92,13 +92,17 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
   `K8915Gen2Boot.OhnePruefsteckerScheitertSio`, `.OhneTastaturScheitertKeyMitA`,
   `.SystemImRamFuehrtZumLader`, `.EOderEscCStartetNeu`, `.NmiImRomWirkungslos`.
 - `RADE` (Autostart der 901) meldet „no RAM-device configurated or fatal RAM-error !!!“
-  (keine Bank 2) — **erwartet**, der Wächter prüft den Prompt danach, nicht RADE (F13).
+  — **zwingend** (F13, statisch): seine Maschinenprobe (A8H = 0EH, 00H nach 0C00H schreiben
+  und zurücklesen) findet am V2 das K2521-RAM, wählt deshalb Port **A0H** (RAM-Karte am Bus)
+  statt A8H, und dort antwortet nichts. Der Wächter prüft den Prompt danach, nicht RADE.
 
 ### Gen 1 ist gesperrt (F11) — kein ROM nacherfinden
 - Die Kartenchips „3C00“/„3000“ der PFS K3820 sind ein **Gen-1-Urlader** (Arbeitszellen
   0Cxx, Stub 095BH, Tastatur über `IN E1H`/`IN E0H`, Codes `1FH`/`9DH` der K7634). Der dazu
   gehörige **Lader-Baustein für 0400H fehlt** (Platz 0400 der Karte leer, ZRE-176 passt
   nicht). Ohne ihn ist Gen 1 **nicht startfähig**; aus 176 wird nichts zusammengebaut.
+  Er **existiert** (F11): `anflad.rom` (3 KB, Forum 5713 Beitrag 007/028) enthält ein 176
+  mit Zellen 0Cxx, dazu eine weitere Fassung von „3C00“ und „3000“ — nicht öffentlich.
 - Das Gen-2-ROM fragt die K7634 **nicht** ab (`KEY` liest SIO2-B 52H/53H = K7672).
   Gen 1 brauchte außerdem eine **andere ATS** (K7028.10, E0H–FFH; Tastatur E0H Daten,
   E1H Status Bit 3, E2H Kommando) — die K7028.30 im Kern trägt die K7634 nicht, und die
@@ -122,7 +126,10 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
   (STRG CHOI PICK LOC, UPDATE ⇑ ⇓) liegen auf unbestückten Positionen [?]; TAB←/TAB→/HOLD/
   NEXT PAGE/CR/LF/ESC/DEL tragen die Codes ihrer Position. **Die gelieferte Tastatur ist
   eine andere Fassung als .04 (F7)** — die Fremdquellen erwarten TYP `A0H`, ENTER `9DH`,
-  RESET `1FH`, PF1 `91H`, keine gedruckte Tabelle hat das. CTRL hat in .04 keine Position.
+  RESET `1FH`, PF1 `91H`: das ist die **K7634.01** (ROM Y708-I 27, Tabelle in
+  tiffe `misc/Tastaturen/Tastaturen_K_7632_34_35_36_Betriebsdokumentation_.pdf` S. 21–23,
+  CTRL A99). Umstellen der Widget-Tabelle auf .01 = eigenes AP, erst nach Aufdruck/ROM der
+  Anwendertastatur.
 - Wächter: `py_keyboard_k7634` (Tabelle ≙ Doku, jede Taste ein Code, keine
   Doppelbelegung, die drei ergänzten Kappen).
 
@@ -169,20 +176,20 @@ K2521/K3528/K7024/K5122/K7028 aus (nur neue Fabriken). Die Vorgabe von `K8915Mac
 | F2 | ✔ K3528 045-8530 + PFS K3820 012-7040 (ungenutzt); Steckplätze offen |
 | F3 | Brücken ZRE X6–X15 und RAM-Karte; Aufschriften/Plätze der ZRE-EPROMs |
 | F4 | Laufwerke; Gen-2-Systemdiskette (sonst V8 bleibt gestrichen) |
-| F5 | K7028-Fassung und ROM der Gen 1; Freigabe für Forenanfragen |
+| F5 | teilweise: Belege zeigen auf K7028.10; ROM = `anflad.rom` (F11), nicht 175–177; Diskette + Freigabe für Anfragen offen |
 | F6 | Anzeigename der Variante |
-| F7 | Fassung der K7634 (`K7634.xx`, ROM `Y708-I…`) — Foto weicht von .04 ab |
-| F8 | Schaltplan K7028.10/.20 (E3H/E4H, Frontplatte); steckt „3C00“ in der Gen-1-ZRE? |
+| F7 | teilweise: **K7634.01** (ROM Y708-I 27, TYP A0H, RESET 1FH, ENTER 9DH, PF1 91H) gefunden (tiffe `misc/Tastaturen/…7632_34_35_36…pdf` S. 21–23); ob die Anwendertastatur eine .01 ist, nur am Aufdruck |
+| F8 | teilweise: Schaltplan nicht gefunden (felgentreu „Heft13_K7028.20_30.pdf“ 404); Gen-1-ZRE = Satz wie `anflad.rom` (0000 ≈ Chip „3C00“, 0800 = Chip „3000“) |
 | F9 | **gelöst 2026-10-05:** zwei weitere Lesungen identisch, Bitkipp 0A33H; Vorgabe = repariertes 177 |
-| F10 | Gen-1-Chip „3C00“: B1H/B3H, E3H Bit 2, Prüfung D001–D003H — welche Karten? |
-| F11 | Gibt es den Gen-1-Lader-Baustein für 0400H? (**Blocker für Gen 1**) |
-| F12 | Braucht der Gen-2-Selbsttest am Gerät einen Prüfstecker; Testreihenfolge? |
-| F13 | Läuft `RADE` am Gen-2-Gerät? (Emulator: Fehlermeldung, dann `A>`) |
+| F10 | offen: B1H/B3H, E3H Bit 2, D001–D003H — keine Unterlage (schon 2010 im Forum ungeklärt) |
+| F11 | teilweise: **existiert** als `anflad.rom` (3 KB, Forum 5713 Beitr. 007/028; 176 mit Zellen 0Cxx), nicht öffentlich — nur über Dritte (**Blocker für Gen 1** bleibt) |
+| F12 | ROM-Teil geklärt: Reihenfolge ROM→KEY→CTC→SIO→RAM; SIO verlangt Echo auf SIO1-A/-B, SIO2-A (sonst `G`); Stecker oder ATS-Brücke = offen wie Entwurf 16 §6.10 |
+| F13 | ✔ geklärt (statisch): RAM bei 0C00H ⇒ RADE wählt Port A0H (RAM-Karte am Bus) ⇒ Meldung auf jedem Weg, dann `A>` |
 | F20 | Aufdruck der RAM-Karte; Wickelfeld X3 (Registeradresse A8H, Bank-Brücken) |
 | F21 | Gilt die handschriftliche „88“ im K3528-Plan für dieses Gerät? |
 | F22 | Brückenstand ZRE X6–X9/X14/X15 (Interruptkette), K3820 X6–X11 |
 | F23 | Feld X3:23–45 (Registerbit → /MEMDI…/MEMDI3) |
-| F24 | Herkunft „PIO 08–0FH“ (Forum) — andere K2521-Dekodierung? |
+| F24 | ✔ geklärt: 08H–0FH = ZVE-PIO/-CTC der **K2526** (Forum 5713 Beitr. 046, `cpabas.erl`); keine andere K2521-Dekodierung |
 
 
 ## Namen (2026-10-05, Antwort auf F1)
