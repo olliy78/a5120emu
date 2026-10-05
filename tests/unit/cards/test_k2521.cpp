@@ -253,9 +253,9 @@ TEST(K2521Rom, K8915Gen2AbzugUnveraendert) {
     ASSERT_NE(cfg.rom, nullptr);
     EXPECT_EQ(std::memcmp(cfg.rom, K8915G2_ZRE_ROM, sizeof(K8915G2_ZRE_ROM)), 0);
     EXPECT_EQ(cfg.rom_len, 0x0C00u);
-    EXPECT_FALSE(cfg.kaskade_to0_clk1);
-    EXPECT_FALSE(cfg.kaskade_to1_clk2);
-    EXPECT_FALSE(cfg.kaskade_to2_clk3);
+    EXPECT_TRUE(cfg.kaskade_to0_clk1);
+    EXPECT_TRUE(cfg.kaskade_to1_clk2);
+    EXPECT_TRUE(cfg.kaskade_to2_clk3);
     EXPECT_EQ(cfg.iei_quelle, K2521::IeiQuelle::System);
 
     // 24-Bit-Summe der ersten 3FDH Byte je Baustein gegen die letzten 3 Byte (hoch..tief).

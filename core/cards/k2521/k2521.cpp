@@ -31,9 +31,12 @@ K2521::Config K2521::Config::k8915g2()
     Config c;
     c.rom     = K8915G2_ZRE_ROM;       // Abzug unverändert, Byte 0A33H = 04H (F9)
     c.rom_len = sizeof(K8915G2_ZRE_ROM);
-    c.kaskade_to0_clk1 = false;        // X10/X11 am Gerät offen [?, F22]
-    c.kaskade_to1_clk2 = false;
-    c.kaskade_to2_clk3 = false;
+    // X10:1–4 / X11:1–4 am Gerät des Anwenders alle geschlossen (2026-10-05, F22):
+    // die CTC-Kaskade ZC/TO0→CLK1, TO1→TRG2, TO2→TRG3 steht.  Der vierte Draht
+    // ist in der Beschreibung S.6 nicht erklärt [?] und hier nicht abgebildet.
+    c.kaskade_to0_clk1 = true;
+    c.kaskade_to1_clk2 = true;
+    c.kaskade_to2_clk3 = true;
     c.iei_quelle       = IeiQuelle::System;
     return c;
 }
