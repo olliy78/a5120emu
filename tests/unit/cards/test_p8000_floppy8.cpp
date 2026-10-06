@@ -50,6 +50,7 @@ struct P8000Floppy8_ : ::testing::Test {
         for (int t = 0; t < takte;) {
             int n = 4;
             if (f.dma().busRequest()) n = k.schritt();
+            else f.dma().cpuZyklus();   // an Stelle der CPU: Byte-Betrieb fordert erst nach einem M1 wieder (P9c)
             f.takt(n);
             t += n;
         }

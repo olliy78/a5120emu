@@ -124,9 +124,12 @@ public:
     /// Echte DMA statt des Platzhalters in die Interruptkette (vorderstes Glied) einsetzen.
     void setzeDmaKettenglied(InterruptSlave* dma);
     /// DMA als Busmaster: fordert @p anfrage den Bus (/BUSRQ), steht die CPU still und
-    /// @p schritt bewegt ein Byte (Rückgabe Takte, 0 = Bus gehalten ohne RDY ⇒ 4 Takte).
-    void setzeBusmaster(std::function<bool()> anfrage, std::function<int()> schritt) {
+    /// @p schritt bewegt ein Byte (Rückgabe Takte, 0 = Bus gehalten ohne RDY ⇒ 4 Takte);
+    /// @p cpu_zyklus meldet jeden CPU-Befehl (Byte-Betrieb der DMA: Bus erst nach einem M1).
+    void setzeBusmaster(std::function<bool()> anfrage, std::function<int()> schritt,
+                        std::function<void()> cpu_zyklus = {}) {
         bm_anfrage_ = std::move(anfrage); bm_schritt_ = std::move(schritt);
+        bm_cpu_ = std::move(cpu_zyklus);
     }
     /// Nach jedem /RES der Karte (Netz-Ein und Taste), nachdem die PIOs zurückgesetzt sind.
     void setzeResetHaken(std::function<void()> h) { reset_haken_ = std::move(h); }
@@ -169,6 +172,7 @@ private:
     std::function<void()> nmi16_cb_;
     std::function<bool()> bm_anfrage_;
     std::function<int()>  bm_schritt_;
+    std::function<void()> bm_cpu_;
     std::function<void()> reset_haken_;
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];

@@ -39,6 +39,7 @@ struct Rig {
             if (!dma.busRequest()) break;
             if (dma.step() == 0) break;
             dma.setReady(true);
+            dma.cpuZyklus();                    // Byte-Betrieb: die CPU kommt zwischen zwei Bytes dran
             ++n;
         }
         return n;
@@ -178,14 +179,17 @@ TEST(Z80Dma, ForceReadyOhneRdy) {
     for (int i = 0; i < 4; i++) r.ram[0x0600 + i] = uint8_t(i + 1);
     // Blindlauf in der Form von Lader/BIOS/INIT (mit 01 CF vor B3): Speicher fest -> 40H, Force Ready.
     // Die S550-Form ohne `01 CF` lädt nur A; Port B bliebe nach Datenblatt bei 0 [?].
-    r.w({0xC3, 0x7D, 0xBA, 0x06, 0x01, 0x00, 0x24, 0x28, 0x80, 0x85, 0x40, 0x82, 0xCF, 0x01, 0xCF, 0xB3, 0x87});
-    r.w({0x05});
+    // P9c: die Richtung (05) muss VOR 87 stehen — jedes Steuerbyte sperrt die DMA (Datenblatt).
+    r.w({0xC3, 0x7D, 0xBA, 0x06, 0x01, 0x00, 0x24, 0x28, 0x80, 0x85, 0x40, 0x82, 0xCF, 0x01, 0xCF, 0x05, 0xB3, 0x87});
     r.dma.setReady(true);                    // RDY inaktiv (low-aktiv)
     EXPECT_TRUE(r.dma.busRequest());
     EXPECT_EQ(r.dma.step(), 8);
-    EXPECT_EQ(r.dma.step(), 8);
+    // P9c: im Byte-Betrieb setzt die Busfreigabe nach dem Byte Force Ready zurück (UA858 §10.1
+    // B3: „so erfolgt lediglich die Übertragung eines Bytes“) — das zweite Byte wartet auf RDY.
+    r.dma.cpuZyklus();
+    EXPECT_FALSE(r.dma.busRequest());
     EXPECT_EQ(r.dma.step(), 0);
-    ASSERT_EQ(r.fdcGot.size(), 2u);
+    ASSERT_EQ(r.fdcGot.size(), 1u);
     EXPECT_EQ(r.ports[0], 0x40);
     EXPECT_EQ(r.dma.adresseA(), 0x06BA);     // A fest
 }
@@ -197,7 +201,7 @@ TEST(Z80Dma, RdyPolaritaet) {
     EXPECT_FALSE(r.dma.busRequest());        // WR5 82: low-aktiv, Pegel 1 = nicht bereit
     r.dma.setReady(false);
     EXPECT_TRUE(r.dma.busRequest());
-    r.w({0x8A});                             // WR5 mit D3 = 1: aktiv hoch
+    r.w({0x8A, 0x87});                       // WR5 mit D3 = 1: aktiv hoch (jedes Steuerbyte sperrt → 87)
     r.dma.setReady(false);
     EXPECT_FALSE(r.dma.busRequest());
     r.dma.setReady(true);
@@ -249,12 +253,19 @@ TEST(Z80Dma, FolgebytesNachWR4MitIntCtlPulseVektor) {
     EXPECT_EQ(r.dma.getVector(), 0x66);
 }
 
+// P9c: B7 gibt NICHT frei, sondern hält die Busanforderung bis zum RETI zurück (Zilog S. 53:
+// ISR gibt B7, 87, RETI).  Vorher gab B7 + RETI frei — kein Gastsystem benutzt B7.
 TEST(Z80Dma, EnableNachRETI) {
     Rig r;
-    r.w({0xC3, 0xB7});
+    r.dma.setIEI(true);
+    r.w({0xC3, 0x82, 0xB7});
+    r.dma.setReady(false);                   // RDY aktiv
     EXPECT_FALSE(r.dma.enabled());
-    r.dma.onRETI();
+    r.w({0x87});
     EXPECT_TRUE(r.dma.enabled());
+    EXPECT_FALSE(r.dma.busRequest());
+    r.dma.onRETI();
+    EXPECT_TRUE(r.dma.busRequest());
 }
 
 TEST(Z80Dma, SaveStateRundreise) {
@@ -262,7 +273,7 @@ TEST(Z80Dma, SaveStateRundreise) {
     r.fdc.assign(64, 9);
     r.dma.setIEI(true);
     r.floppy(0x7D, 0x2000, 8, 0x01);
-    for (int i = 0; i < 3; i++) { r.dma.setReady(false); r.dma.step(); }
+    for (int i = 0; i < 3; i++) { r.dma.setReady(false); r.dma.step(); r.dma.cpuZyklus(); }
     std::vector<uint8_t> buf;
     r.dma.serialize(buf);
 

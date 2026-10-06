@@ -245,6 +245,7 @@ int P8000Karte8::schritt()
     }
     int used = cpu_.step();
     if (used == 0) return 0;
+    if (bm_cpu_) bm_cpu_();
     // EPROM-Zugriffe (auch M1) kosten zwei Wartetakte (Schaltplan §1.1).
     if (const uint32_t w = sp_.nimmWartetakte(); w > 0) {
         used += static_cast<int>(w);

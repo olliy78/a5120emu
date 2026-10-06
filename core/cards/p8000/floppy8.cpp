@@ -33,7 +33,8 @@ P8000Floppy8::P8000Floppy8(P8000Karte8& karte, const Config& cfg)
     dma_.setZaehlerLiestBlocklaenge(true);   // MON8-Hardwaretest 26 (UA858: Zähler = N nach Blockende)
     dma_.setIEI(true);   // IEI fest High (Schaltplan §6.3): vorderstes Glied der Kette
     karte_.setzeDmaKettenglied(&dma_);
-    karte_.setzeBusmaster([this] { return dma_.busRequest(); }, [this] { return dma_.step(); });
+    karte_.setzeBusmaster([this] { return dma_.busRequest(); }, [this] { return dma_.step(); },
+                          [this] { dma_.cpuZyklus(); });
     karte_.setzeResetHaken([this] { reset(); });
 
     // UA858-Zyklen über den Bus; DACK = Portadresse 20H–23H (der Dekoder läuft im DMA-Zyklus mit)

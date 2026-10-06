@@ -493,6 +493,7 @@ int Pc1715Machine::runW(int max_cycles)
             }
             used = cpu.step();
             if (used == 0 && stop_.load(std::memory_order_relaxed)) break;   // Debugger-Halt
+            w.dma.cpuZyklus();                       // Byte-Betrieb: Bus erst nach einem M1 wieder
         }
         remaining     -= used;
         total_cycles_ += used;
