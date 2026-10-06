@@ -246,3 +246,9 @@ k1520_add_test(raf_cpa_bios SRC test_raf_cpa_bios.cpp LIBS ${_libs}
 # Sperrmuster 90H/10H/00H.  Kartenadresse 88H/89H im Patchbereich der Testkopie.
 k1520_add_test(raf_zwg SRC test_raf_zwg.cpp LIBS ${_libs} k1520_fs
                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 ${_raf_dir} TIMEOUT 300)
+
+# P8000 8-Bit-Seite (doc/design/25_p8000.md §10.11 AP P7a): Laufschleife, MON8 am Kern-Terminal,
+# RESI, NMI-Weiche, DMA hält die CPU, keine Zusatzkarten.
+k1520_add_test(p8000_maschine SRC test_p8000_machine.cpp
+                          LIBS k1520_p8000 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)

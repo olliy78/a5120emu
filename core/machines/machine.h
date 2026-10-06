@@ -148,6 +148,13 @@ public:
     virtual uint8_t ioReadDebug(uint8_t port) = 0;
     virtual std::string lastError() const = 0;
 
+    /**
+     * @brief Hat die Maschine einen K1520-Bus für Zusatzkarten (RAF, K6022)?  Vorgabe ja;
+     *        der P8000 hat keinen (Dekoder nur 00H–3FH, Entwurf 25 §10.1) und liefert false —
+     *        dann scheitern @ref installRaf / @ref installK6022 mit Grund.
+     */
+    virtual bool zusatzkartenSteckbar() const { return true; }
+
     // ─── RAM-Floppy RAF 128/512/2M (doc/design/22_raf512.md §5.2, AP-R2) ──────
     // In allen drei Maschinen dieselbe Karte auf 88H/89H.  Gesteckt wird NACH dem
     // Anlegen und VOR dem ersten run()/reset() — so braucht die C-ABI keine weitere
@@ -160,6 +167,10 @@ public:
      */
     bool installRaf(RAF::Typ typ) {
         raf_fehler_.clear();
+        if (!zusatzkartenSteckbar()) {
+            raf_fehler_ = "Diese Maschine hat keinen K1520-Steckplatz fuer eine RAF";
+            return false;
+        }
         if (!bestueckbar_) {
             raf_fehler_ = "RAF nur vor dem ersten Lauf/Reset steckbar";
             return false;
@@ -200,6 +211,10 @@ public:
      */
     bool installK6022() {
         k6022_fehler_.clear();
+        if (!zusatzkartenSteckbar()) {
+            k6022_fehler_ = "Diese Maschine hat keinen K1520-Steckplatz fuer eine K6022";
+            return false;
+        }
         if (!bestueckbar_) {
             k6022_fehler_ = "K6022 nur vor dem ersten Lauf/Reset steckbar";
             return false;
