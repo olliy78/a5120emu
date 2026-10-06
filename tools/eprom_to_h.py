@@ -7,7 +7,7 @@ import pathlib
 
 
 def convert(bin_path: str, symbol: str, out_path: str,
-            weitere: list[str] | None = None) -> None:
+            weitere: list[str] | None = None, anhaengen: bool = False) -> None:
     # Mehrere Bausteine hintereinander (z. B. ROM 175 + 176 + 177 der K8915-V2-ZRE):
     # bin_path zuerst, dann jede --weitere in der angegebenen Reihenfolge.
     quellen = [bin_path] + list(weitere or [])
@@ -15,8 +15,10 @@ def convert(bin_path: str, symbol: str, out_path: str,
     lines = [
         f"// Generated from: {' + '.join(quellen)}",
         f"// Size: {len(data)} bytes",
-        "#pragma once",
-        "#include <cstdint>",
+    ]
+    if not anhaengen:
+        lines += ["#pragma once", "#include <cstdint>"]
+    lines += [
         f"static constexpr uint8_t {symbol}[{len(data)}] = {{",
     ]
     for i in range(0, len(data), 16):
@@ -26,7 +28,13 @@ def convert(bin_path: str, symbol: str, out_path: str,
     lines.append("};")
     out = pathlib.Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n")
+    text = "\n".join(lines) + "\n"
+    if anhaengen:
+        # weiteres Symbol in dieselbe Datei (mehrere Felder je Header, z. B. rom_mon8.h)
+        with out.open("a") as f:
+            f.write(text)
+    else:
+        out.write_text(text)
     print(f"Written {len(data)} bytes → {out_path} (symbol: {symbol})")
 
 
@@ -39,8 +47,10 @@ def main() -> None:
     parser.add_argument("out_path", help="Output .h file path")
     parser.add_argument("--weitere", action="append", default=[], metavar="BIN",
                         help="weitere .bin, hinter bin_path angehängt (mehrfach, in Reihenfolge)")
+    parser.add_argument("--anhaengen", action="store_true",
+                        help="an eine bestehende Ausgabedatei anhängen (ohne #pragma once/#include)")
     args = parser.parse_args()
-    convert(args.bin_path, args.symbol, args.out_path, args.weitere)
+    convert(args.bin_path, args.symbol, args.out_path, args.weitere, args.anhaengen)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,11 @@ k1520_add_test(k3820 SRC cards/test_k3820.cpp      LIBS k1520_k3820 LABELS "${_l
 k1520_add_test(eprommer590068 SRC cards/test_eprommer590068.cpp LIBS k1520_atp590068 k1520_testsupport LABELS "${_lbl}")
 # Speicherverwaltung E8H–EBH + OPS des PRG 710 (doc/design/20_prg710.md §4b, AP-P1b)
 k1520_add_test(prg710_speicher SRC cards/test_prg710_speicher.cpp LIBS k1520_prg710_speicher LABELS "${_lbl}")
+# P8000 8-Bit-Karte: ADP-Speicher, RFF, EPROM-Spiegelung (doc/design/25_p8000.md §10.11 AP P5a)
+k1520_add_test(p8000_speicher8 SRC cards/test_p8000_speicher8.cpp LIBS k1520_p8000_speicher8 LABELS "${_lbl}")
+# P8000: erzeugte ROM-Header gegen die Binärabzüge (AP P5b)
+k1520_add_test(p8000_rom SRC cards/test_p8000_rom.cpp LIBS k1520_p8000_speicher8 LABELS "${_lbl}"
+               DEFS "P8000_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
 # ADA K6022 (Lochband, SIF1000) und ASS 590069 (Fernschreiber) des PRG 710 (AP-P8b/c)
 k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
 # K6022 an Dateien: Leser im Bandformat, Stanzer gebunden (doc/design/23_lochstreifen.md §5, AP-L2)

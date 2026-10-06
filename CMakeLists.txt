@@ -323,6 +323,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_prg710_speicher PUBLIC k1520_bus k1520_logger)
     target_include_directories(k1520_prg710_speicher PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, 8-Bit-Karte: ADP-gebankter Speicher + RFF + EPROM/SRAM/DRAM (doc/design/25_p8000.md §10.1, AP P5a)
+    add_library(k1520_p8000_speicher8 STATIC core/cards/p8000/speicher8.cpp)
+    target_link_libraries(k1520_p8000_speicher8 PUBLIC k1520_bus k1520_logger)
+    target_include_directories(k1520_p8000_speicher8 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
     add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
     target_link_libraries(k1520_i8279 PUBLIC k1520_logger)
