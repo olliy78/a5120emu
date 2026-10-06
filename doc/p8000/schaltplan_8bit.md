@@ -309,7 +309,7 @@ aber **TC kommt hier aus dem DMA-INT, nicht aus dem DMA-Endsignal des 1715W**. V
 | PIO0 B (0EH) | B0 | **INT_8** (Pull-up 1N1) | X2 A6 | 16→8 |
 | | B1…B4 | **V1…V4/16-8** | X2 A5, A4, A3, A2 | 16→8 |
 | | B5 | **Rücklesen von DD_8/EO_16** (an /ASTB angeschlossen) | X2 B5 | Ein |
-| | B6 | **EO_8/DD_16** | X1 A3 | 8→16 |
+| | B6 | **EO_8/DD_16** | X1 A3 | **Ein** (berichtigt nach P2b: X3:A3 wird von PIO1-ARDY der 16-Bit-Karte getrieben; ein Ausgang stünde dort im Konflikt) |
 | | B7 | **/RESET_U8000 und zugleich /NMI-UM** | X1 B1 | 8→16 |
 | /NMI-U8000 | — | aus NMI-Logik (§4) | X1 B5 | 8→16 |
 | | BRDY, /BSTB | unbeschaltet | — | |
@@ -319,7 +319,7 @@ Befunde, die das Handbuch nicht sagt:
    NMI-Umschaltung. Nach Reset (Eingang, Pull-up 5R18) ist B7 = 1: NMI geht an den U880, die
    16-Bit-Karte ist (vermutlich) im Reset. Gibt der U880 B7 = 0 aus, gibt er die 16-Bit-Karte frei
    und lenkt die NMI-Taste dorthin. So erklärt sich der Handbuchsatz „mit Freigabe des 16-Bit-Rechners
-   … /NMI_UM = Low". Welche Polarität /RESET_U8000 auf der 16-Bit-Seite hat, klärt AP P2b.
+   … /NMI_UM = Low". Polarität laut P2b gelesen: X3:B1 RESET ist **high-aktiv** mit Pull-up, B7 = 1 hält die 16-Bit-Karte also im Reset.
    *gelesen (Knoten), Polarität 16-Bit-Seite abgeleitet.*
 2. **Kein Hardware-Strobe beim OUT 10H/14H:** die DS8282 übernehmen mit `STB = NOR(/CE-Lx, /WR)` und
    geben sofort aus (/OE fest Low). RDY/8-16 (14H Bit 7) und EO_8/DD_16 (PIO0-B6) setzt **die
