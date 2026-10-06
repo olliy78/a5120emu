@@ -115,6 +115,14 @@ public:
         s.psapSeg = this->m_psapseg; s.psapOff = this->m_psapoff;
         return s;
     }
+    /// Ausnahme mit Quittung anfordern und annehmen (0 NMI, 1 SEGT, 2 VI, 3 NVI).
+    void raise(int kind, uint16_t id) {
+        static const uint8_t bit[4] = {Base::Z8000_NMI, Base::Z8000_SEGTRAP, Base::Z8000_VI, Base::Z8000_NVI};
+        static const int line[4] = {1, 0, 3, 2};                // m_iack_in: 0 SEGT, 1 NMI, 2 NVI, 3 VI
+        this->m_iack_in[line[kind]].fn = [id](offs_t) -> u16 { return id; };
+        this->m_irq_req |= bit[kind];
+        this->Interrupt();
+    }
     void step() {
         this->m_icount = 1;
         this->execute_run();
@@ -128,8 +136,15 @@ public:
 struct Ours {
     Z8000 cpu;
     HashMem* mem = nullptr;
+    uint16_t ack = 0;                                   ///< Kennung der Quittungszyklen
     explicit Ours(bool is8001) : cpu(cfg(is8001)) {
         cpu.read = [this](const Z8kBusCycle& c) -> uint16_t {
+            if (uint8_t(c.st) >= 4 && uint8_t(c.st) <= 7) {     // Quittung: Pin fällt mit ihr
+                if (c.st == Z8kStatus::SegTrapAck) cpu.setSEGT(false);
+                if (c.st == Z8kStatus::ViAck) cpu.setVI(false);
+                if (c.st == Z8kStatus::NviAck) cpu.setNVI(false);
+                return ack;
+            }
             if (c.st == Z8kStatus::Io || c.st == Z8kStatus::SpecialIo) {
                 uint16_t v = mem->io(c.st == Z8kStatus::SpecialIo, c.addr);
                 // MAMEs Wort an ungerader Adresse kommt vertauscht (s. Schreiben)
@@ -299,8 +314,12 @@ struct RowStat { int cases = 0, diffs = 0; std::string first; };
 std::string hex(uint32_t v, int n = 4) { char b[16]; std::snprintf(b, sizeof b, "%0*X", n, v); return b; }
 
 /// Ein Modus: Z8001 seg System/Normal oder Z8002 System/Normal.
-void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, RowStat>& stats) {
-    std::mt19937 rng(0xC0FFEE ^ modeFcw ^ (is8001 ? 1u : 2u));
+/// @p flagSweep: statt zufälliger Flags jede der 64 Belegungen C Z S V D H genau einmal
+/// (Matrix Befehl × Adressierungsart (= Tabellenzeile) × Flagzustand, AP P8).
+void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, RowStat>& stats,
+             bool flagSweep = false) {
+    std::mt19937 rng(0xC0FFEE ^ modeFcw ^ (is8001 ? 1u : 2u) ^ (flagSweep ? 0x5A5A5A5Au : 0u));
+    if (flagSweep) perRow = 64;
     const auto& t = z8k::Table::get();
     const bool seg = is8001 && (modeFcw & 0x8000);
     for (const z8k::Insn& in : t.insns()) {
@@ -336,7 +355,7 @@ void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, Ro
             }
             if (std::string(in.mn).rfind("SD", 0) == 0 && d.op[1].reg >= 14) continue;
             // Zählregister der Blockbefehle klein halten wäre egal: ein Schritt = ein Durchlauf.
-            s.fcw = uint16_t(modeFcw | (rng() & 0x00FC));
+            s.fcw = uint16_t(modeFcw | (flagSweep ? uint16_t(k << 2) : (rng() & 0x00FC)));
             s.pcSeg = is8001 ? uint8_t(rng() & 0x7F) : 0;
             s.pc = uint16_t(rng() & 0xFEFE);   // kein Offsetüberlauf im Befehl: MAME trägt ins Segment (README)
             s.psapSeg = is8001 ? uint16_t(rng() & 0x7F00) : 0;
@@ -425,16 +444,8 @@ void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, Ro
     }
 }
 
-} // namespace
-
-TEST(Z8000MameOrakel, JederBefehlWieMame) {
-    std::map<std::string, RowStat> stats;
-    const int perRow = 200;
-    runMode(true, 0xC000, perRow, stats);
-    runMode(true, 0x8000, perRow, stats);
-    runMode(false, 0x4000, perRow, stats);
-    runMode(false, 0x0000, perRow, stats);
-
+/// Bericht über alle Zeilen; Rückgabe = unerwartete Abweichungen.
+int report(const std::map<std::string, RowStat>& stats, const char* what) {
     int cases = 0, diffs = 0, known = 0;
     std::map<std::string, std::vector<std::string>> byMn;
     for (auto& kv : stats) {
@@ -446,8 +457,114 @@ TEST(Z8000MameOrakel, JederBefehlWieMame) {
         std::printf("%s %-22s %4d/%-4d  %s\n", isKnown ? "bekannt" : "ABWEICH", kv.first.c_str(),
                     kv.second.diffs, kv.second.cases, kv.second.first.c_str());
     }
-    std::printf("Orakel: %d Faelle, %d Abweichungen, %d bekannte (begruendet), %d PC-Segmentworte mit MAME-Bit-15 angeglichen\n",
-                cases, diffs, known, g_segBit15);
+    std::printf("Orakel (%s): %d Faelle, %d Abweichungen, %d bekannte (begruendet), %d PC-Segmentworte mit MAME-Bit-15 angeglichen\n",
+                what, cases, diffs, known, g_segBit15);
     for (auto& kv : kBekannteAbweichungen()) std::printf("  bekannt %s: %s\n", kv.first.c_str(), kv.second);
+    return diffs;
+}
+
+} // namespace
+
+TEST(Z8000MameOrakel, JederBefehlWieMame) {
+    std::map<std::string, RowStat> stats;
+    const int perRow = 200;
+    runMode(true, 0xC000, perRow, stats);
+    runMode(true, 0x8000, perRow, stats);
+    runMode(false, 0x4000, perRow, stats);
+    runMode(false, 0x0000, perRow, stats);
+    EXPECT_EQ(report(stats, "Zufall"), 0);
+}
+
+// Matrix: jede Tabellenzeile (= Befehl × Adressierungsart × Breite) mit jeder der 64
+// Flagbelegungen, in allen vier Modi.  Bedingte Befehle (JP/JR/RET/CALR … cc, TCC,
+// CPIR …) laufen so sicher durch jede Bedingung, ADC/SBC/DAB durch jedes C/H/D.
+TEST(Z8000MameOrakel, JedeZeileJedeFlagbelegung) {
+    std::map<std::string, RowStat> stats;
+    runMode(true, 0xC000, 64, stats, true);
+    runMode(true, 0x8000, 64, stats, true);
+    runMode(false, 0x4000, 64, stats, true);
+    runMode(false, 0x0000, 64, stats, true);
+    EXPECT_EQ(report(stats, "Flagmatrix"), 0);
+}
+
+// Ausnahmen mit Quittung: NMI, SEGT (Z8001), VI, NVI aus zufälligem Zustand.  MAME:
+// Anforderungsbit setzen und Interrupt() — bei uns der Pin und ein Schritt.  Verglichen
+// wie oben: Register beider Bänke, FCW, PC, Stapelrahmen (Kennung, FCW, PC), PSA-Lesen.
+// Nicht verglichen (MAME modelliert es nicht): Scheinholen, Statusfolge, Takte.
+TEST(Z8000MameOrakel, AusnahmenMitQuittungWieMame) {
+    std::mt19937 rng(0xE7C0DE);
+    int cases = 0, diffs = 0;
+    std::string first;
+    for (int model = 0; model < 2; ++model) {
+        const bool is8001 = model == 0;
+        for (uint16_t modeFcw : {uint16_t(is8001 ? 0xC000 : 0x4000), uint16_t(is8001 ? 0x8000 : 0x0000)}) {
+            for (int kind = 0; kind < 4; ++kind) {           // 0 NMI, 1 SEGT, 2 VI, 3 NVI
+                if (kind == 1 && !is8001) continue;
+                for (int k = 0; k < 500; ++k) {
+                    HashMem memA, memB;
+                    memA.seed = memB.seed = rng();
+                    State s{};
+                    for (auto& r : s.R) r = uint16_t(rng());
+                    for (int i = 0; i < 2; ++i) { s.R14[i] = uint16_t(rng()); s.R15[i] = uint16_t(rng()); }
+                    if (!is8001) s.R14[1] = 0;
+                    s.fcw = uint16_t(modeFcw | (rng() & 0x18FC));      // VIE/NVIE zufällig
+                    if (kind == 2) s.fcw |= 0x1000;
+                    if (kind == 3) s.fcw |= 0x0800;
+                    s.pcSeg = is8001 ? uint8_t(rng() & 0x7F) : 0;
+                    s.pc = uint16_t(rng() & 0xFFFE);
+                    s.psapSeg = is8001 ? uint16_t(rng() & 0x7F00) : 0;
+                    s.psapOff = uint16_t(rng() & 0xFF00);
+                    // Vektortabelle über %FFFF hinaus: wir rechnen ohne Übertrag ins Segment
+                    // (README „PC-Offset läuft im Segment über"), MAME trägt — nicht vergleichen.
+                    if (kind == 2 && s.psapOff > 0xFC00) s.psapOff = 0xFC00;
+                    uint16_t id = uint16_t(rng());
+                    if (kind == 2 && is8001) id &= 0xFFFE;             // Z8001: Vektoren gerade (§7.6.3)
+                    State ma, oa;
+                    Ours ours(is8001);
+                    ours.mem = &memB;
+                    ours.set(s);
+                    ours.ack = id;
+                    if (is8001) {
+                        MameCpu<z8001_device> mame(true);
+                        mame.mem = &memA; mame.set(s); mame.raise(kind, id); ma = mame.get();
+                    } else {
+                        MameCpu<z8002_device> mame(false);
+                        mame.mem = &memA; mame.set(s); mame.raise(kind, id); ma = mame.get();
+                    }
+                    if (kind == 0) ours.cpu.setNMI(true);
+                    if (kind == 1) ours.cpu.setSEGT(true);
+                    if (kind == 2) ours.cpu.setVI(true);
+                    if (kind == 3) ours.cpu.setNVI(true);
+                    ours.cpu.step();
+                    oa = ours.get();
+                    if (is8001)                                         // MAME-Bit 15 im PC-Segmentwort
+                        for (int bank = 0; bank < 2; ++bank) {
+                            uint32_t a = lin(uint8_t(oa.R14[bank] >> 8 & 0x7F), uint16_t(oa.R15[bank] + 4));
+                            auto ia = memA.over.find(a), ib = memB.over.find(a);
+                            if (ia != memA.over.end() && ib != memB.over.end() && ia->second == uint8_t(ib->second | 0x80) &&
+                                ia->second != ib->second) { ia->second = ib->second; ++g_segBit15; }
+                        }
+                    std::string why;
+                    auto chk = [&](const char* name, uint32_t a, uint32_t b, uint32_t mask) {
+                        if (((a ^ b) & mask) && why.empty()) why = std::string(name) + " MAME=" + hex(a & mask) + " wir=" + hex(b & mask);
+                    };
+                    chk("FCW", ma.fcw, oa.fcw, 0xF8FC);
+                    chk("PC", ma.pc, oa.pc, 0xFFFF);
+                    chk("PCSEG", ma.pcSeg, oa.pcSeg, 0x7F);
+                    for (int i = 0; i < 14; ++i) chk("R", ma.R[i], oa.R[i], 0xFFFF);
+                    for (int b = 0; b < 2; ++b) { chk("R14", ma.R14[b], oa.R14[b], 0xFFFF); chk("R15", ma.R15[b], oa.R15[b], 0xFFFF); }
+                    if (why.empty() && memA.over != memB.over) why = "Stapelrahmen verschieden";
+                    ++cases;
+                    if (!why.empty()) {
+                        ++diffs;
+                        if (first.empty()) first = std::string(is8001 ? "Z8001" : "Z8002") + " Art " + std::to_string(kind) +
+                                                   " fcw=" + hex(s.fcw) + ": " + why;
+                    }
+                }
+            }
+        }
+    }
+    std::printf("Orakel (Ausnahmen): %d Faelle, %d Abweichungen%s%s\n", cases, diffs,
+                first.empty() ? "" : ", erste: ", first.c_str());
     EXPECT_EQ(diffs, 0);
 }
