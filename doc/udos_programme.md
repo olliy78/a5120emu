@@ -244,3 +244,45 @@ Offen vor dem Bau: Lauftest von `BASIC`, `EDIT`, `PROM`, `EPROM43`, `LW`, `REORG
 - Dass NDOS-Programme (PC 1715, P8000) unter ZDOS nicht laufen, ist eine Vorsicht, kein Messergebnis.
 - Die Dateizählungen beziehen sich auf die extrahierten Abbilder; Dateien mit Namen, die das DiskTool in
   UDOS-Unterverzeichnisse (`Side0`/`Side1`) legt, wurden unter ihrem Basisnamen zusammengefasst.
+
+## 6. UDOS-Entwicklerdiskette (`disks/udos_entwickler_k5601.hfe`)
+
+Gebaut aus `tools/udos_entwickler/` (`build.py`, Wächter `cli_udos_entwickler`; gleiches Schema wie die PRG-Disketten, §4).
+Eine **nicht startfähige Datendiskette** (UDOS 4.3, `udos_ds77`, beidseitig) für das **zweite Laufwerk** jeder Maschine mit
+ZDOS und K5601-Diskette: **A5120, PRG 710/710-1, USAR**. UDOS findet Programme auf allen aktiven Laufwerken (kein
+Laufwerkszusatz nötig). Nicht für PC 1715 und P8000: dort liegt NDOS auf anderem Diskettenformat (§1); eine
+UDOS1715-Entwicklerdiskette wäre ein eigener Schritt.
+Die Software gilt laut Anwender (2026-10-06) als gemeinfrei und darf so verwendet werden.
+
+**Seite 0 — Werkzeuge** (201 KB)
+
+| Datei | Zweck |
+|---|---|
+| `ASM`, `ASM2`, `ASM3` | Z80-Assembler 5.9 (Durchläufe, Querverweisliste); Aufruf `ASM quelle (NOL)` |
+| `LINK` | Binder 1.7; Aufruf `LINK modul… (NOM ST=0 N=name)` |
+| `EDIT` 2.1, `SEDIT` 2.87 | Editoren (`SEDIT` = „SDL-Editor“, Bildschirmeditor) |
+| `EDI` + `ADM_O2` | Editor (IfR Berlin 1982); **braucht den Bildschirmtreiber `ADM_O2`**, den er selbst nachlädt — ohne ihn „ADM_O2 ERROR C7“ |
+| `SYD` | Symbolischer Debugger („extended by S&T“), Speicherbelegungsanzeige |
+| `BASIC` | BASIC-Interpreter (UDOS BASIC, BCD-Arithmetik, 30 KB, 1978) |
+| `PLZSYS`, `PLZCG`, `PLZCG.OVLY1.DS`, `PLZCG.OVLY2.DS`, `PLINK` | Zilog-PL/Z-Compiler 3.0 mit Überlagerungen und Binder |
+| `TRANSFER` | Übertragen zwischen UDOS- und CP/M-Disketten (ASCII, Hex; Burkhardt/Schütz 1986) |
+| `REORG` | Diskettenbelegung reorganisieren |
+| `LW` | Laufwerkskonfiguration anzeigen/ändern |
+
+**Seite 1 — Systemgenerierung und Dokumente** (103 KB): `SG` (baut den physischen Systemkern `POS` für Tastatur, Bildschirm,
+Drucker und Laufwerke), seine Quellen und Objekte (`POS.INIT.S/.OBJ`, `POS.TYP.S`, `BAB.S/.OBJ`, `CTRL.S`, `DEBUG.OBJ`,
+`FLOPPY.OBJ`, `ENTRYS.OBJ`, `DRUCK.*.OBJ`, `PRINTER.OBJ`, `TAST.76xx.OBJ`, `SYL0`, `SYL1`, `BOOT`, `LINK.PRINTER`), **neun
+fertige Kerne** `POS_*` (Tastatur/Drucker/Bildschirmkombinationen, z. B. `POS_34_V24_F800H8024_3330`), `NOTE.TO.SG`,
+`NOTE.TO.UDOS.4`, `NOTE.TO.UDOS.4.2`, `UDOS4.1.DOK`.
+
+**Geprüft (2026-10-06, Emulator, Systemdiskette in LW 0, Entwicklerdiskette in LW 1):**
+alle Werkzeuge starten auf **A5120, PRG 710 und PRG 710-1** mit ihrer Meldung bzw. Eingabeaufforderung (`ASM`/`LINK`/`PLINK`
+verlangen einen Dateinamen, `EDIT`/`SEDIT` fragen `NAME?`, `SG` zeigt das Auswahlmenü, `LW` zeigt beide Laufwerke zweiseitig mit je 80
+Spuren), die Ausgabe ist auf PRG 710 und 710-1 gleich. `BASIC` rechnet `PRINT 2+3` → `5` (A5120 und beide PRG). `ASM`→`LINK` mit
+eigenem Quelltext lief mit denselben Dateien am PRG 710 (§4). **Nicht geprüft:** ein echter Übersetzungslauf von `PLZSYS`/`PLZCG`,
+`SG` bis zum fertigen Kern, `SYD` im Einsatz, `TRANSFER` mit CP/M-Diskette, `REORG` über die Abfrage hinaus; `SEDIT` mit
+den Tastaturtypen der verschiedenen Geräte.
+
+**Bewusst nicht aufgenommen:** `GCL`, `LZP`, `ZOCS`, `TZOCS` (Zweck nicht ermittelt), `UPRO`/`ESPRO` (EPROM-Programmierer, andere
+Hardware), `COPYSD`, `RAMFL`/`RFA`/`RAMTEST`/`DZR.ARAM.OBJ` (RAM-Disketten-Treiber, gerätegebunden), die Anwendungen
+`KDE`/`KDP`/`NEBS`/`URGAN`, und alles aus NDOS-Familien.

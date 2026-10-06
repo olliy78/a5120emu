@@ -101,6 +101,15 @@ add_test(NAME cli_prg_disketten
 set_tests_properties(cli_prg_disketten PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Wächter „die UDOS-Entwicklerdiskette in disks/ ist der Inhalt von tools/udos_entwickler/“
+# (doc/udos_programme.md §6).  Neu bauen:
+#   python3 tools/udos_entwickler/build.py --tool build/k1520disktool
+add_test(NAME cli_udos_entwickler
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/udos_entwickler/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_udos_entwickler PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
 # Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des
 # Generators" (AP-P0d, doc/design/20_prg710.md): tools/gen_prg710_zre_prn.py --check
 # erzeugt beide Listings im Speicher, prüft MD5 der ROM-Abzüge, dass JEDES der 1024 Byte

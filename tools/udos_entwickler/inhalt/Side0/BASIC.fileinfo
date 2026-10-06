@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'BASIC'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=BASIC
+typ=P
+eig=-
+start=4000
+satz=1024
+block=1024
+rest=1024
+segment=4000:30720
+mem=4000:B7FF:0000
+zusatz=0
+erst=780501
+geaend=780501

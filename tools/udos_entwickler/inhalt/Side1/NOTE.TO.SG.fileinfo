@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'NOTE.TO.SG'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=NOTE.TO.SG
+typ=A
+eig=WES
+start=4600
+satz=128
+block=128
+rest=62
+segment=4C48:26499
+mem=0574:36FD:C20A
+zusatz=2B03
+erst=850328
+geaend=891031
