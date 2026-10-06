@@ -241,6 +241,13 @@ public:
      */
     void setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz);
 
+    /**
+     * @brief Software-Reset (Steuerwort D1 = 1) lädt den Abwärtszähler mit der Zeitkonstante
+     *        statt ihn zu löschen (Vorgabe aus: Zähler = 0, wie bisher).  Der MON8-Hardwaretest des
+     *        P8000 schreibt TC = AAH, Reset 03H und erwartet beim Lesen AAH (Fehler 16 sonst).
+     */
+    void setResetLaedtZeitkonstante(bool an) { reset_laedt_tc_ = an; }
+
     /// Wie teilerTakte(), aber in Q16 (Maschinentakte × 65536) — für Bruchtakte;
     /// bei ganzzahligen Teilern exakt `teilerTakte() << 16`.
     uint64_t teilerTakteQ16(int kanal) const;
@@ -335,6 +342,7 @@ private:
     uint64_t takt_hz_[4]  = {0, 0, 0, 0};  ///< Bruchtakt-Quelle (0 = keine), s. setzeEingangsTakt
     uint64_t takt_phi_[4] = {0, 0, 0, 0};
     uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
+    bool     reset_laedt_tc_ = false;   ///< s. setResetLaedtZeitkonstante
     bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)
 
     /// Ein Zählimpuls am Eingang eines laufenden Zähler-Kanals (Bruchtakt-Weg).

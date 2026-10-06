@@ -675,6 +675,21 @@ TEST(Z80CTC, ControlWord_ResetClearsCounter) {
     EXPECT_FALSE(ctc.isTimerMode(0) && ctc.getCount(0) > 0);        // not counting
 }
 
+/// Opt-in (P8000): der Software-Reset lädt den Zähler mit der Zeitkonstante; ohne TC bleibt es 0.
+TEST(Z80CTC, ControlWord_ResetLaedtZeitkonstante_NurAufWunsch) {
+    Z80CTC ctc;
+    ctc.setResetLaedtZeitkonstante(true);
+    configChannel(ctc, 0, 0x05, 0xAA);
+    for (int i = 0; i < 80; ++i) ctc.clockTick();
+    EXPECT_LT(ctc.ioRead(0), 0xAA);
+    ctc.ioWrite(0, 0x03);
+    EXPECT_EQ(ctc.ioRead(0), 0xAA);
+    for (int i = 0; i < 160; ++i) ctc.clockTick();   // steht still
+    EXPECT_EQ(ctc.ioRead(0), 0xAA);
+    ctc.ioWrite(1, 0x03);                            // Kanal 1 nie geladen
+    EXPECT_EQ(ctc.ioRead(1), 0);
+}
+
 /**
  * @brief After a software reset, further clock ticks do not advance the counter.
  *

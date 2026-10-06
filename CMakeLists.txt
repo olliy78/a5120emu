@@ -328,6 +328,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_p8000_speicher8 PUBLIC k1520_bus k1520_logger)
     target_include_directories(k1520_p8000_speicher8 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, 8-Bit-Rechnerkarte: U880, E/A-Dekoder, CTC/SIO/PIO, Kette, Reset/NMI (doc/design/25_p8000.md, AP P5e)
+    add_library(k1520_p8000_karte8 STATIC core/cards/p8000/karte8.cpp)
+    target_link_libraries(k1520_p8000_karte8 PUBLIC k1520_p8000_speicher8 k1520_z80 k1520_ctc k1520_sio k1520_pio k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_p8000_karte8 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
     add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
     target_link_libraries(k1520_i8279 PUBLIC k1520_logger)

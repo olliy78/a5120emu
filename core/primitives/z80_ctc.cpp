@@ -118,7 +118,9 @@ void Z80CTC::ioWrite(uint8_t port, uint8_t data) {
 
     if (data & CTRL_RESET) {
         c.running     = false;
-        c.counter     = 0;
+        // Vorgabe: Zähler 0.  Mit setResetLaedtZeitkonstante() steht er wieder auf der
+        // Zeitkonstante (P8000, MON8-Hardwaretest Fehler 16); ohne geladene TC bleibt es 0.
+        c.counter     = (reset_laedt_tc_ && c.timeConst != 0) ? static_cast<int>(c.timeConst) : 0;
         c.prescaleCnt = 0;
         c.int_pending = false;
         c.zcto_active = false;
