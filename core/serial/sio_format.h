@@ -35,4 +35,12 @@ inline SerialFormat serialFormatAusSio(const ::Z80SIO::Channel& kanal, const ::Z
     return serialFormatAusSio(kanal, ctc.teilerTakte(ctcKanal), phiNenn);
 }
 
+/// Wie oben mit gebrochener CTC-Periode (Z80CTC::teilerTakteQ16, Bruchtakt-Eingang, P5d).
+inline SerialFormat serialFormatAusSioQ16(const ::Z80SIO::Channel& kanal, const ::Z80CTC& ctc,
+                                          int ctcKanal, uint64_t phiNenn = PHI_NENN) {
+    const ::Z80SIO::Channel::Format f = kanal.format();
+    return serialFormatRechnenQ16(f.teiler, f.tx_bits, f.paritaet, f.stopp_halbe,
+                                  ctc.teilerTakteQ16(ctcKanal), phiNenn);
+}
+
 }  // namespace k1520::serial

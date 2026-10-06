@@ -161,6 +161,15 @@ void Z80CTC::clockTick() {
             if (zcto_cb_) zcto_cb_(i, true);
         }
 
+        if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
+            // Bruchtakt-Zähleingang: ganzzahliger Phasenakkumulator (s. setzeEingangsTakt)
+            takt_acc_[i] += takt_hz_[i];
+            if (takt_acc_[i] >= takt_phi_[i]) {
+                takt_acc_[i] -= takt_phi_[i];
+                zaehleImpuls(i);
+            }
+            continue;
+        }
         if (!c.running || (c.control & CTRL_COUNTER)) continue;
 
         int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
@@ -188,11 +197,60 @@ uint64_t Z80CTC::teilerTakte(int kanal) const {
     // Quellen darf nicht endlos rekursieren — ab einer Tiefe, die keine echte
     // Kaskade erreicht, gilt der Eingang als unbekannt.
     static thread_local int tiefe = 0;
+    if (takt_hz_[kanal]) return (teilerTakteQ16(kanal) + 0x8000u) >> 16;   // Bruchtakt gerundet
+    if (!eingang_[kanal] && eingangQ16_[kanal] && tiefe <= 16)
+        return (teilerTakteQ16(kanal) + 0x8000u) >> 16;
     if (!eingang_[kanal] || tiefe > 16) return 0;
     ++tiefe;
     const uint64_t periode = eingang_[kanal]();
     --tiefe;
     return periode * tc;
+}
+
+uint64_t Z80CTC::teilerTakteQ16(int kanal) const {
+    if (kanal < 0 || kanal > 3) return 0;
+    const Channel& c = ch_[kanal];
+    if (!c.running) return 0;
+    const uint64_t tc = (c.timeConst == 0) ? 256u : c.timeConst;
+    if (!(c.control & CTRL_COUNTER))
+        return (((c.control & CTRL_PRESCALE256) ? 256u : 16u) * tc) << 16;
+    // Bruchtakt: Takte je Impuls = phi/hz, in EINER Division gerechnet (gerundet).
+    if (takt_hz_[kanal])
+        return (takt_phi_[kanal] * 65536u * tc + takt_hz_[kanal] / 2) / takt_hz_[kanal];
+    static thread_local int tiefe = 0;
+    if (tiefe > 16) return 0;
+    ++tiefe;
+    uint64_t q = 0;
+    if (eingangQ16_[kanal])    q = eingangQ16_[kanal]();
+    else if (eingang_[kanal])  q = eingang_[kanal]() << 16;
+    --tiefe;
+    return q * tc;
+}
+
+void Z80CTC::setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz) {
+    if (kanal < 0 || kanal > 3) return;
+    if (zaehler_hz == 0 || phi_hz == 0) {
+        takt_hz_[kanal] = takt_phi_[kanal] = takt_acc_[kanal] = 0;
+    } else {
+        takt_hz_[kanal]  = zaehler_hz;
+        takt_phi_[kanal] = phi_hz;
+        takt_acc_[kanal] = 0;
+    }
+    takt_any_ = false;
+    for (int i = 0; i < 4; ++i) if (takt_hz_[i]) takt_any_ = true;
+}
+
+void Z80CTC::setzeEingangsQuelleQ16(int kanal, PeriodenQuelleQ16 quelle) {
+    if (kanal < 0 || kanal > 3) return;
+    eingangQ16_[kanal] = std::move(quelle);
+}
+
+void Z80CTC::zaehleImpuls(int ch) {
+    Channel& c = ch_[ch];
+    if (--c.counter <= 0) {
+        c.counter = (c.timeConst == 0) ? 256 : static_cast<int>(c.timeConst);
+        fireZCTO(ch);
+    }
 }
 
 void Z80CTC::setzeEingangsQuelle(int kanal, PeriodenQuelle quelle) {
@@ -207,6 +265,7 @@ void Z80CTC::setzeEingangsPeriode(int kanal, uint64_t takte) {
 
 void Z80CTC::reset() {
     for (auto& c : ch_) c = Channel{};
+    for (auto& a : takt_acc_) a = 0;   // Quelle bleibt verdrahtet, die Phase beginnt neu
     vec_base_ = 0;
 }
 
@@ -221,6 +280,13 @@ bool Z80CTC::clockTick(int ticks) {
     for (int i = 0; i < 4 && !event_in_window; i++) {
         const Channel& c = ch_[i];
         if (c.zcto_active) { event_in_window = true; break; }
+        if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
+            // Bruchtakt-Zähler: so viele Impulse fallen im Fenster; erreicht der
+            // Zähler dabei die 0, exakte Schleife.
+            const uint64_t n = (takt_acc_[i] + (uint64_t)ticks * takt_hz_[i]) / takt_phi_[i];
+            if (n >= (uint64_t)(c.counter > 0 ? c.counter : 1)) event_in_window = true;
+            continue;
+        }
         if (!c.running || (c.control & CTRL_COUNTER)) continue;
         const int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
         // T-States bis zur nächsten 0: erst den Prescaler auffüllen, dann
@@ -246,6 +312,12 @@ bool Z80CTC::clockTick(int ticks) {
     // fortschreiben, ohne Callback (semantisch identisch zu `ticks` Einzeltakten).
     for (int i = 0; i < 4; i++) {
         Channel& c = ch_[i];
+        if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
+            const uint64_t sum = takt_acc_[i] + (uint64_t)ticks * takt_hz_[i];
+            c.counter    -= (int)(sum / takt_phi_[i]);   // bleibt > 0 (s. Fensterprüfung)
+            takt_acc_[i]  = sum % takt_phi_[i];
+            continue;
+        }
         if (!c.running || (c.control & CTRL_COUNTER)) continue;
         const int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
         const long long total = (long long)c.prescaleCnt + ticks;

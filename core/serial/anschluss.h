@@ -77,6 +77,12 @@ SerialFormat serialFormatRechnen(uint8_t sioTeiler, uint8_t daten, uint8_t parit
                                  uint8_t stopp_halbe, uint64_t ctcTakte,
                                  uint64_t phiNenn = PHI_NENN);
 
+/// Wie serialFormatRechnen, aber mit gebrochener CTC-Periode in Q16 (Takte × 65536,
+/// `Z80CTC::teilerTakteQ16`); `zeichen_takte` ist auf < 1 Takt genau (P8000 P5d).
+SerialFormat serialFormatRechnenQ16(uint8_t sioTeiler, uint8_t daten, uint8_t paritaet,
+                                    uint8_t stopp_halbe, uint64_t ctcTakteQ16,
+                                    uint64_t phiNenn = PHI_NENN);
+
 /// Eine wählbare Taktquelle (Brücke auf der Karte), z. B. "ZRE-CTC K0 (W1:7)".
 struct Taktquelle {
     std::string name;

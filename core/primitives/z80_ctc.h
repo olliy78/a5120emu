@@ -224,6 +224,32 @@ public:
     /// 0 = unbekannt) — z. B. ein Quarzteiler auf der Karte.
     void setzeEingangsPeriode(int kanal, uint64_t takte);
 
+    // ─── Bruchtakt am Zähleingang (P8000 P5d, doc/design/25_p8000.md §10.6) ───
+
+    /**
+     * @brief Periodische Zählquelle mit gebrochener Periode am CLK/TRG-Eingang.
+     *
+     * @p zaehler_hz Frequenz der Quelle (z. B. 1 229 000 Hz = 9,832 MHz ÷ 8),
+     * @p phi_hz Systemtakt, mit dem clockTick() gerufen wird (z. B. 4 000 000).
+     * Ein ganzzahliger Phasenakkumulator addiert je Systemtakt @p zaehler_hz und
+     * zieht bei Überlauf über @p phi_hz einen Zählimpuls ab — keine Fließkomma-
+     * Drift, im Mittel exakt zaehler_hz/phi_hz Impulse je Takt (Zähler-Kanäle,
+     * laufend).  @p zaehler_hz == 0 schaltet die Quelle ab (Vorgabe: aus; dann
+     * zählt der Kanal nur über clkTrg() wie bisher).  Setzt zugleich die
+     * Perioden-Auskünfte (teilerTakte/teilerTakteQ16).  Der Akkumulator wird nicht
+     * im Save-State geführt (die Phase beginnt nach loadstate neu).
+     */
+    void setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz);
+
+    /// Wie teilerTakte(), aber in Q16 (Maschinentakte × 65536) — für Bruchtakte;
+    /// bei ganzzahligen Teilern exakt `teilerTakte() << 16`.
+    uint64_t teilerTakteQ16(int kanal) const;
+
+    using PeriodenQuelleQ16 = std::function<uint64_t()>;
+    /// Eingangsquelle in Q16 (Kaskade aus einem Bruchtakt-Kanal:
+    /// `[&]{ return ctc.teilerTakteQ16(2); }`).
+    void setzeEingangsQuelleQ16(int kanal, PeriodenQuelleQ16 quelle);
+
     /**
      * @brief Return the name of this device.
      * @return Device name for debugging.
@@ -305,4 +331,12 @@ private:
     std::string name_;                 ///< Device name
     ZCTOCallback zcto_cb_;             ///< Output pulse callback
     PeriodenQuelle eingang_[4];        ///< CLK/TRG-Quellen (Verdrahtung, nicht im Savestate)
+    PeriodenQuelleQ16 eingangQ16_[4];  ///< dasselbe in Q16 (Bruchtakt-Kaskaden)
+    uint64_t takt_hz_[4]  = {0, 0, 0, 0};  ///< Bruchtakt-Quelle (0 = keine), s. setzeEingangsTakt
+    uint64_t takt_phi_[4] = {0, 0, 0, 0};
+    uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
+    bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)
+
+    /// Ein Zählimpuls am Eingang eines laufenden Zähler-Kanals (Bruchtakt-Weg).
+    void zaehleImpuls(int ch);
 };

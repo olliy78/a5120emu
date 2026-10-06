@@ -123,7 +123,7 @@ public:
      * gesperrt, keine anstehende/bediente Anforderung).  Ausgangs-Callbacks und
      * Name bleiben erhalten — die Karte bleibt also verdrahtet.
      */
-    void    reset() { porta_ = Port{}; portb_ = Port{}; }
+    void    reset() { porta_ = Port{}; portb_ = Port{}; resetHandshake(); }
 
     /**
      * @brief Read-only snapshot of both ports + daisy-chain state (debugger `dev pio`).
@@ -292,7 +292,74 @@ public:
      */
     void    setPortBOutputCallback(PortCallback cb);
 
+    // ─── Handshake (RDY/STB) und Pinpegel-Modell (P8000 P5c, Entwurf 25 §10.3) ──
+    //
+    // ADDITIV: Wer diese Methoden nie ruft, sieht exakt das bisherige Verhalten
+    // (setASTB/setBSTB/portAWrite bleiben unverändert).  Die RDY-Pegel werden
+    // zwar stets mitgeführt, haben aber ohne Rückruf/Abfrage keine Wirkung.
+    //
+    // RDY nach Zilog-Datenblatt: Modus 0 — nach Moduswort L, CPU-Schreiben ⇒ H,
+    // steigende /STB-Flanke (bei RDY = H) ⇒ RDY L + Interrupt.  Modus 1 — nach
+    // Moduswort H ("Register leer"); steigende /STB-Flanke bei RDY = H übernimmt
+    // die Pins ins Eingaberegister, RDY ⇒ L + Interrupt; CPU-Lesen ⇒ RDY H.
+    // Modus 2 — Port A gibt aus (ARDY/ASTB wie Modus 0, Pins nur bei /ASTB = L
+    // getrieben), Eingabe über BRDY/BSTB (wie Modus 1, Interrupt über Port B).
+    // Modus 3 — RDY L, /STB ohne Wirkung.  Reset: RDY L, /STB H.
+
+    using RdyCallback = std::function<void(bool pegel)>;
+    /// Rückruf bei JEDER Änderung des RDY-Pegels von Port A/B (true = H).
+    void    setARdyCallback(RdyCallback cb) { rdy_cb_[0] = std::move(cb); }
+    void    setBRdyCallback(RdyCallback cb) { rdy_cb_[1] = std::move(cb); }
+    bool    ardy() const { return hs_[0].rdy; }
+    bool    brdy() const { return hs_[1].rdy; }
+
+    /// /STB-Eingang als Pegel (true = H).  Flanken nach obiger Beschreibung.
+    void    setStbA(bool pegel) { stbEdge(0, pegel); }
+    void    setStbB(bool pegel) { stbEdge(1, pegel); }
+
+    /// Externe Treiber an den Port-Pins: Bits in @p treibMask liegen auf @p pegel,
+    /// alle übrigen sind offen.  Im Modus 3 folgen die Eingabebits sofort
+    /// (Interruptprüfung wie portAWrite), in Modus 1/2 wirkt der Pegel erst beim
+    /// /STB-Übernehmen.  Vorgabe: nichts getrieben.
+    void    setExternA(uint8_t pegel, uint8_t treibMask = 0xFF) { setExtern(0, pegel, treibMask); }
+    void    setExternB(uint8_t pegel, uint8_t treibMask = 0xFF) { setExtern(1, pegel, treibMask); }
+
+    /// Pull-up-Maske der offenen Eingänge (1 = Pull-up; Vorgabe 0xFF, wie ein TTL-/
+    /// NMOS-Eingang ohne Treiber).  Offene Pins ohne Pull-up lesen 0.
+    void    setPullupsA(uint8_t m) { hs_[0].pullups = m; }
+    void    setPullupsB(uint8_t m) { hs_[1].pullups = m; }
+
+    /// Pinpegel, wie er an der Leitung steht (Rücklesen): vom PIO getriebene Bits aus
+    /// dem Ausgaberegister, sonst externer Treiber, sonst Pull-up/0.  (portARead()
+    /// liefert dagegen wie bisher 0xFF für nicht getriebene Bits.)
+    uint8_t pinsA(uint8_t pullups) const { return pins(0, pullups); }
+    uint8_t pinsB(uint8_t pullups) const { return pins(1, pullups); }
+    uint8_t pinsA() const { return pins(0, hs_[0].pullups); }
+    uint8_t pinsB() const { return pins(1, hs_[1].pullups); }
+
+    /// Handshake-Zustand (RDY, /STB, externe Treiber) für den Save-State der Karte —
+    /// bewusst NICHT in serialize() (Zeilenformat der Karten bleibt unverändert).
+    void    serializeHandshake(std::vector<uint8_t>& out) const;
+    bool    deserializeHandshake(const uint8_t*& p, const uint8_t* end);
+
 private:
+    struct Handshake {
+        bool    rdy      = false;
+        bool    stb      = true;    ///< /STB-Pegel (H = inaktiv)
+        uint8_t ext_pegel = 0, ext_mask = 0;
+        uint8_t pullups  = 0xFF;
+    };
+    Handshake  hs_[2];
+    RdyCallback rdy_cb_[2];
+
+    void    setRdy(int i, bool v);
+    void    resetHandshake();
+    void    modusRdy(int i);
+    void    stbEdge(int i, bool pegel);
+    void    setExtern(int i, uint8_t pegel, uint8_t mask);
+    uint8_t pins(int i, uint8_t pullups) const;
+    uint8_t treiber(int i) const;   ///< Maske der vom PIO getriebenen Pins
+
     /**
      * @brief State machine for control register programming.
      * 

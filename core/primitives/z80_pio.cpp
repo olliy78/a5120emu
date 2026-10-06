@@ -116,6 +116,7 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
     }
     if ((data & 0x0F) == 0x0F) {
         p.mode = (data >> 6) & 0x03;
+        modusRdy(&p == &porta_ ? 0 : 1);
         if (p.mode == 3)
             p.ctrl_state = CtrlState::EXPECT_DIRECTION;
         return;
@@ -228,6 +229,8 @@ uint8_t Z80PIO::readPins(const Port& p) const {
  */
 void Z80PIO::writeDataCPU(Port& p, uint8_t data, PortCallback& cb) {
     p.output_latch = data;
+    // RDY (Handshake-Modell): Schreiben in Modus 0 bzw. Port A Modus 2 ⇒ Datum steht bereit
+    if (p.mode == 0 || p.mode == 2) setRdy(&p == &porta_ ? 0 : 1, true);
     if (p.mode == 1) return;   // input mode: latch updated but outputs not driven
     if (cb) cb(data);
 }
@@ -303,9 +306,19 @@ void Z80PIO::checkInterrupt(Port& p, uint8_t new_input) {
  */
 uint8_t Z80PIO::ioRead(uint8_t port) {
     switch (port & 0x03) {
-        case 0: return readDataCPU(porta_);
+        case 0: {
+            const uint8_t v = readDataCPU(porta_);
+            // Handshake: Lesen leert das Eingaberegister ⇒ RDY H (Modus 1: ARDY, Modus 2: BRDY)
+            if (porta_.mode == 1) setRdy(0, true);
+            else if (porta_.mode == 2) setRdy(1, true);
+            return v;
+        }
         case 1: return 0xFF;   // control port read: status not implemented
-        case 2: return readDataCPU(portb_);
+        case 2: {
+            const uint8_t v = readDataCPU(portb_);
+            if (portb_.mode == 1 && porta_.mode != 2) setRdy(1, true);
+            return v;
+        }
         case 3: return 0xFF;
         default: return 0xFF;
     }
@@ -335,6 +348,7 @@ void Z80PIO::ioWrite(uint8_t port, uint8_t data) {
             // Mode 2 restriction: when Port A is set to Mode 2, Port B must be in Mode 3
             if (porta_.mode == 2 && portb_.mode != 3) {
                 portb_.mode = 3;  // Force Port B to Mode 3
+                modusRdy(1);
             }
             break;
         case 2: writeDataCPU(portb_, data, cb_b_); break;
@@ -343,6 +357,7 @@ void Z80PIO::ioWrite(uint8_t port, uint8_t data) {
             // Mode 2 restriction: when Port A is in Mode 2, Port B must be in Mode 3
             if (porta_.mode == 2 && portb_.mode != 3) {
                 portb_.mode = 3;  // Force Port B to Mode 3
+                modusRdy(1);
             }
             break;
     }
@@ -656,3 +671,117 @@ void Z80PIO::setPortAOutputCallback(PortCallback cb) { cb_a_ = std::move(cb); }
  * @see setPortAOutputCallback
  */
 void Z80PIO::setPortBOutputCallback(PortCallback cb) { cb_b_ = std::move(cb); }
+
+// =============================================================================
+/// @name Handshake (RDY/STB) und Pinpegel — additives Modell (P8000 P5c)
+// =============================================================================
+
+void Z80PIO::setRdy(int i, bool v) {
+    if (hs_[i].rdy == v) return;
+    hs_[i].rdy = v;
+    if (rdy_cb_[i]) rdy_cb_[i](v);
+}
+
+void Z80PIO::resetHandshake() {
+    for (int i = 0; i < 2; ++i) {
+        hs_[i].stb = true;
+        hs_[i].ext_pegel = hs_[i].ext_mask = 0;
+        setRdy(i, false);
+    }
+}
+
+/// RDY-Ausgangszustand nach einem Moduswort (Zilog: Modus 1 ⇒ H, sonst L).
+void Z80PIO::modusRdy(int i) {
+    const Port& p = (i == 0) ? porta_ : portb_;
+    bool h = (p.mode == 1);
+    // Port A in Modus 2: BRDY gehört der Eingabeseite des Port-A-Betriebs (leer ⇒ H)
+    if (i == 1 && porta_.mode == 2) h = true;
+    setRdy(i, h);
+    if (i == 0 && porta_.mode == 2) setRdy(1, true);   // Eingabeseite (BRDY) leer
+}
+
+uint8_t Z80PIO::treiber(int i) const {
+    const Port& p = (i == 0) ? porta_ : portb_;
+    switch (p.mode) {
+        case 0:  return 0xFF;
+        case 2:  return (i == 0 && !hs_[0].stb) ? 0xFF : 0x00;   // Ausgabe nur bei /ASTB = L
+        case 3:  return static_cast<uint8_t>(~p.direction);
+        default: return 0x00;
+    }
+}
+
+uint8_t Z80PIO::pins(int i, uint8_t pullups) const {
+    const Port& p = (i == 0) ? porta_ : portb_;
+    const Handshake& h = hs_[i];
+    const uint8_t t = treiber(i);
+    const uint8_t offen = static_cast<uint8_t>(~t & ~h.ext_mask);
+    return static_cast<uint8_t>((p.output_latch & t) | (h.ext_pegel & h.ext_mask & ~t) |
+                                (pullups & offen));
+}
+
+void Z80PIO::setExtern(int i, uint8_t pegel, uint8_t mask) {
+    Port& p = (i == 0) ? porta_ : portb_;
+    Handshake& h = hs_[i];
+    h.ext_pegel = pegel;
+    h.ext_mask  = mask;
+    if (p.mode == 3) {
+        // Eingabebits folgen den Pins; offene Bits nehmen den Pull-up-Pegel an
+        const uint8_t sicht = pins(i, h.pullups);
+        const uint8_t neu = static_cast<uint8_t>((p.input_latch & ~p.direction) | (sicht & p.direction));
+        if (neu != p.input_latch) {
+            p.input_latch = neu;
+            checkInterrupt(p, neu);
+        }
+    }
+}
+
+void Z80PIO::stbEdge(int i, bool pegel) {
+    Handshake& h = hs_[i];
+    const bool steigend = !h.stb && pegel;
+    h.stb = pegel;
+    if (!steigend) return;
+    Port& p = (i == 0) ? porta_ : portb_;
+    // Ausgabeseite: Modus 0, Port A Modus 2 — Peripherie hat das Datum übernommen
+    if (p.mode == 0 || (i == 0 && p.mode == 2)) {
+        if (h.rdy) {
+            setRdy(i, false);
+            if (p.ie) p.pending = true;
+        }
+        return;
+    }
+    // Eingabeseite: Modus 1 bzw. (BSTB) bei Port A Modus 2
+    const bool eingabe = (p.mode == 1 && !(i == 1 && porta_.mode == 2)) || (i == 1 && porta_.mode == 2);
+    if (eingabe && h.rdy) {
+        // Pegel der Pins ins Eingaberegister (offen ⇒ Pull-up)
+        // Modus 2: Daten kommen über die Port-A-Pins in das Port-A-Datenregister
+        const Handshake& q = porta_.mode == 2 ? hs_[0] : h;
+        const uint8_t sicht = static_cast<uint8_t>((q.ext_pegel & q.ext_mask) |
+                                                   (q.pullups & ~q.ext_mask));
+        Port& ziel = porta_.mode == 2 ? porta_ : p;
+        ziel.input_latch = sicht;
+        setRdy(i, false);
+        if (p.ie) p.pending = true;
+    }
+}
+
+void Z80PIO::serializeHandshake(std::vector<uint8_t>& out) const {
+    for (int i = 0; i < 2; ++i) {
+        out.push_back(hs_[i].rdy ? 1 : 0);
+        out.push_back(hs_[i].stb ? 1 : 0);
+        out.push_back(hs_[i].ext_pegel);
+        out.push_back(hs_[i].ext_mask);
+        out.push_back(hs_[i].pullups);
+    }
+}
+
+bool Z80PIO::deserializeHandshake(const uint8_t*& p, const uint8_t* end) {
+    if (end - p < 10) return false;
+    for (int i = 0; i < 2; ++i) {
+        hs_[i].rdy = *p++ != 0;
+        hs_[i].stb = *p++ != 0;
+        hs_[i].ext_pegel = *p++;
+        hs_[i].ext_mask  = *p++;
+        hs_[i].pullups   = *p++;
+    }
+    return true;
+}
