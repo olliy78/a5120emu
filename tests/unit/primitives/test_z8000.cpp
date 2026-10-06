@@ -1242,3 +1242,417 @@ TEST(Z8000Zustand, AblaufzustandMittenImLdirUebertragbar) {
     for (int i = 0; i < 4; ++i) EXPECT_EQ(b.w(2, uint16_t(0x200 + 2 * i)), 0xA0 + i);
     EXPECT_EQ(b.count(Z8kStatus::MemInstrFirst), 1);   // nur HALT neu geholt
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AP P8 (P8000): Segmenttrap, Rangfolge der Ausnahmen, Ausnahmeprotokoll,
+// Statusausgabe, Z8001 nichtsegmentiert.  Abdeckungsliste: doc/p8000/z8000_abdeckung.md
+// ═════════════════════════════════════════════════════════════════════════════
+
+namespace {
+/// Z8001 segmentiert, PSA <<0>>%1000, Systemstapel <<0>>%F000; Behandlung je Ausnahme
+/// an <<0>>%3000 (FCW `hfcw`).
+void segtRig(Rig& r, const std::string& main, uint16_t fcw, uint16_t hfcw = SEGSYS,
+             const std::string& handler = "  INC R9\n  IRET") {
+    r.load("  SEG\n  ORG <<0>>%0100\n" + main + "\n  HALT\n  ORG <<0>>%3000\n" + handler + "\n", true);
+    r.boot(SEGSYS, 0, 0x100);
+    r.cpu.psapSeg = 0; r.cpu.psapOff = 0x1000;
+    r.cpu.R14[1] = 0; r.cpu.R15[1] = 0xF000;
+    r.cpu.R14[0] = 0; r.cpu.R15[0] = 0x8000;
+    for (uint16_t e : {Z8000::PSA_EPA, Z8000::PSA_PRIV, Z8000::PSA_SC, Z8000::PSA_SEGT, Z8000::PSA_NMI,
+                       Z8000::PSA_NVI})
+        r.psa(0, 0x1000, e, hfcw, 0, 0x3000);
+    r.cpu.fcw = fcw;
+}
+} // namespace
+
+TEST(Z8000Segt, RahmenQuittung0100PsaUndIret) {
+    Rig r;
+    segtRig(r, "  NOP\n  NOP", SEGSYS);                  // VIE = NVIE = 0: SEGT ist nicht maskierbar
+    r.ackValue = 0x0102;                                 // Kennwort der MMU(s)
+    r.cpu.setSEGT(true);
+    int c = r.cpu.step();
+    EXPECT_FALSE(r.cpu.segtLine());                      // MMU nahm die Anforderung mit der Quittung zurück
+    EXPECT_EQ(r.cpu.pc, 0x3000);
+    EXPECT_EQ(r.cpu.fcw, SEGSYS);
+    EXPECT_EQ(r.w(0, 0xEFF8), 0x0102);                   // Kennung = Quittungswort
+    EXPECT_EQ(r.w(0, 0xEFFA), SEGSYS);                   // alte FCW
+    EXPECT_EQ(r.w(0, 0xEFFC), 0x0000);                   // PC-Segment
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0100);                   // nächster Befehl (§7.6.2)
+    EXPECT_EQ(c, 39 - 3 + 3 + 8);                        // Eintritt + Scheinholen + Quittung
+    // Bus: Scheinholen, Quittung (Status 0100, System, Wort, Lesen), 4 Stapel, PSA %1022..%1026
+    ASSERT_GE(r.log.size(), 9u);
+    EXPECT_EQ(r.log[0].first.st, Z8kStatus::MemInstrFirst);
+    EXPECT_EQ(r.log[0].first.addr, 0x0100);
+    EXPECT_EQ(r.log[1].first.st, Z8kStatus::SegTrapAck);
+    EXPECT_TRUE(r.log[1].first.system);
+    EXPECT_TRUE(r.log[1].first.word);
+    EXPECT_TRUE(r.log[1].first.read);
+    for (size_t i = 2; i < 6; ++i) {
+        EXPECT_EQ(r.log[i].first.st, Z8kStatus::MemStack);
+        EXPECT_FALSE(r.log[i].first.read);
+    }
+    for (size_t i = 6; i < 9; ++i) {
+        EXPECT_EQ(r.log[i].first.st, Z8kStatus::MemInstr);
+        EXPECT_EQ(r.log[i].first.addr, uint16_t(0x1022 + 2 * (i - 6)));
+    }
+    EXPECT_EQ(r.cpu.statusCount(Z8kStatus::SegTrapAck), 1u);
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.r(9), 1);
+    EXPECT_EQ(r.cpu.R15[1], 0xF000);
+}
+
+TEST(Z8000Segt, WirdErstAmBefehlsendeAngenommen) {
+    // Die MMU zieht /SEGT im Datenzyklus; der Z8001 bricht nicht ab (das kann erst der
+    // Z8003): der Befehl läuft zu Ende (Schreiben unterdrückt die KARTE über SUP, nicht
+    // die CPU), gesichert wird der PC des NÄCHSTEN Befehls.
+    Rig r;
+    segtRig(r, "  LD @RR2,R1\n  LD R5,#7", SEGSYS);
+    r.cpu.setRR(2, 0x05000400); r.cpu.setR(1, 0xBEEF);
+    bool einmal = false;
+    r.vorZyklus = [&](const Z8kBusCycle& c) {
+        if (!einmal && c.st == Z8kStatus::MemData && !c.read) { einmal = true; r.cpu.setSEGT(true); }
+    };
+    r.cpu.step();                                        // LD @RR2,R1 ganz
+    EXPECT_TRUE(r.cpu.segtLine());
+    EXPECT_EQ(r.w(5, 0x0400), 0xBEEF);
+    EXPECT_EQ(r.cpu.pc, 0x0102);
+    r.cpu.step();                                        // jetzt der Trap
+    EXPECT_EQ(r.cpu.pc, 0x3000);
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);
+    EXPECT_EQ(r.cpu.r(5), 0);
+    EXPECT_EQ(r.cpu.lastException().kind, Z8kException::SegmentTrap);
+    EXPECT_EQ(r.cpu.lastException().atPc, 0x0100);       // im LD @RR2,R1 entstanden
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.r(5), 7);
+}
+
+TEST(Z8000Segt, UnterbrichtWiederholungsbefehlZwischenDurchlaeufen) {
+    // Tabelle §7.6.2, Fussnote †: läuft ein unterbrechbarer Befehl noch, ist der
+    // gesicherte PC der Befehl selbst — seine Register stehen nach dem letzten GANZEN
+    // Durchlauf (der verletzende Durchlauf ist am Z8001 vollständig ausgeführt).
+    Rig r;
+    for (int i = 0; i < 4; ++i) r.setW(1, uint16_t(0x100 + 2 * i), uint16_t(0xA0 + i));
+    segtRig(r, "  LDIR @RR2,@RR4,R6", SEGSYS);
+    r.cpu.setRR(2, 0x02000200); r.cpu.setRR(4, 0x01000100); r.cpu.setR(6, 4);
+    int writes = 0;
+    r.vorZyklus = [&](const Z8kBusCycle& c) {
+        if (c.st == Z8kStatus::MemData && !c.read && ++writes == 2) r.cpu.setSEGT(true);
+    };
+    r.cpu.step(); r.cpu.step();                          // Durchlauf 1 und 2 (verletzt)
+    EXPECT_TRUE(r.cpu.inRepeat());
+    int c = r.cpu.step();                                // Trap statt Durchlauf 3
+    EXPECT_FALSE(r.cpu.inRepeat());
+    EXPECT_EQ(r.cpu.pc, 0x3000);
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0100);                   // gesichert: der LDIR selbst
+    EXPECT_EQ(r.cpu.r(6), 2);
+    EXPECT_EQ(r.cpu.rr(2), 0x02000204u);
+    EXPECT_TRUE(r.cpu.lastException().leftRepeat);
+    EXPECT_EQ(c, 7 + 39 - 3 + 3 + 8);
+    r.runToHalt();                                       // IRET → LDIR neu geholt, läuft fertig
+    for (int i = 0; i < 4; ++i) EXPECT_EQ(r.w(2, uint16_t(0x200 + 2 * i)), 0xA0 + i);
+    EXPECT_EQ(r.cpu.r(6), 0);
+    EXPECT_EQ(r.cpu.r(9), 1);
+}
+
+TEST(Z8000Segt, ImLetztenDurchlaufIstDerGesicherteDerNaechsteBefehl) {
+    Rig r;
+    r.setW(1, 0x100, 0x1111); r.setW(1, 0x102, 0x2222);
+    segtRig(r, "  LDIR @RR2,@RR4,R6", SEGSYS);
+    r.cpu.setRR(2, 0x02000200); r.cpu.setRR(4, 0x01000100); r.cpu.setR(6, 2);
+    int writes = 0;
+    r.vorZyklus = [&](const Z8kBusCycle& c) {
+        if (c.st == Z8kStatus::MemData && !c.read && ++writes == 2) r.cpu.setSEGT(true);
+    };
+    r.cpu.step(); r.cpu.step();
+    EXPECT_FALSE(r.cpu.inRepeat());
+    r.cpu.step();
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0104);                   // hinter dem (zweiwortigen) LDIR
+    EXPECT_FALSE(r.cpu.lastException().leftRepeat);
+}
+
+TEST(Z8000Segt, WecktAusHalt) {
+    Rig r;
+    segtRig(r, "  HALT\n  LD R3,#3", SEGSYS);
+    r.cpu.step();
+    ASSERT_TRUE(r.cpu.halted());
+    r.cpu.setSEGT(true);
+    r.cpu.step();
+    EXPECT_FALSE(r.cpu.halted());
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);                   // Befehl hinter HALT
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.r(3), 3);
+}
+
+TEST(Z8000Segt, Z8002HatKeinenSegtEingang) {
+    Rig r(M::Z8002);
+    r.load("  NONSEG\n  ORG %0100\n  NOP\n  HALT\n", false);
+    r.boot(SYS, 0, 0x100);
+    r.cpu.R15[1] = 0xF000;
+    r.cpu.setSEGT(true);
+    r.runToHalt();
+    EXPECT_EQ(r.count(Z8kStatus::SegTrapAck), 0);
+    EXPECT_EQ(r.cpu.pc, 0x0104);
+}
+
+TEST(Z8000Segt, AusNichtsegmentiertemNormalmodusUndZurueck) {
+    // „regardless of the state of the SEG bit" (§7.3.4); Eintritt segmentiert/System
+    // (§7.6.1), Rahmen auf dem SYSTEMstapel, IRET stellt Normal/nichtsegmentiert wieder her.
+    Rig r;
+    r.load("  NONSEG\n  ORG %0100\n  NOP\n  LD R4,#4\n  HALT\n", false);
+    for (uint16_t a = 0x100; a < 0x110; a += 2) r.setW(3, a, r.w(0, a));
+    r.load("  SEG\n  ORG <<0>>%3000\n  INC R9\n  IRET\n", true);
+    r.boot(SEGSYS, 3, 0x100);
+    r.cpu.psapOff = 0x1000;
+    r.psa(0, 0x1000, Z8000::PSA_SEGT, SEGSYS, 0, 0x3000);
+    r.cpu.R14[1] = 0; r.cpu.R15[1] = 0xF000; r.cpu.R14[0] = 0x1234; r.cpu.R15[0] = 0x8000;
+    r.cpu.fcw = 0x0000;                                  // Normal, nichtsegmentiert
+    r.cpu.step();                                        // NOP (Segment 3)
+    r.log.clear();
+    r.cpu.setSEGT(true);
+    r.cpu.step();
+    EXPECT_FALSE(r.log[0].first.system);                 // Scheinholen noch im alten Modus
+    EXPECT_EQ(r.log[0].first.seg, 3);
+    EXPECT_TRUE(r.log[1].first.system);                  // Quittung schon System
+    EXPECT_EQ(r.cpu.R15[1], 0xF000 - 8);
+    EXPECT_EQ(r.cpu.R15[0], 0x8000);                     // Normalstapel unberührt
+    EXPECT_EQ(r.w(0, 0xEFFA), 0x0000);
+    EXPECT_EQ(r.w(0, 0xEFFC), 0x0300);                   // PC-Segment auch aus dem nichtseg. Modus
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);
+    r.cpu.step(); r.cpu.step();                          // INC R9, IRET
+    EXPECT_EQ(r.cpu.fcw, 0x0000);
+    EXPECT_EQ(r.cpu.pcSeg, 3);
+    EXPECT_EQ(r.cpu.pc, 0x0102);
+    r.cpu.step();                                        // LD R4,#4 (HALT wäre hier privilegiert)
+    EXPECT_EQ(r.cpu.r(4), 4);
+    EXPECT_EQ(r.cpu.r(9), 1);
+}
+
+TEST(Z8000Rangfolge, NmiVorSegtVorViVorNvi) {
+    // §7.7: alle vier stehen an; je Schritt wird die ranghöchste angenommen, die nächste
+    // kellert dann den Status der vorigen Behandlung — ausgeführt wird in umgekehrter Folge.
+    Rig r;
+    const char* h =
+        "  ORG <<0>>%3000\n  LD R1,R0\n  INC R0\n  IRET\n"      // NMI
+        "  ORG <<0>>%3100\n  LD R2,R0\n  INC R0\n  IRET\n"      // SEGT
+        "  ORG <<0>>%3200\n  LD R3,R0\n  INC R0\n  IRET\n"      // VI
+        "  ORG <<0>>%3300\n  LD R4,R0\n  INC R0\n  IRET\n";     // NVI
+    r.load(std::string("  SEG\n  ORG <<0>>%0100\n  NOP\n  HALT\n") + h, true);
+    r.boot(0xD800, 0, 0x100);
+    r.cpu.psapOff = 0x1000; r.cpu.R14[1] = 0; r.cpu.R15[1] = 0xF000;
+    r.psa(0, 0x1000, Z8000::PSA_NMI, 0xD800, 0, 0x3000);
+    r.psa(0, 0x1000, Z8000::PSA_SEGT, 0xD800, 0, 0x3100);
+    r.setW(0, 0x103A, 0xD800); r.setW(0, 0x103C, 0x0000); r.setW(0, 0x103E, 0x3200);   // VI, Vektor 0
+    r.psa(0, 0x1000, Z8000::PSA_NVI, 0xD800, 0, 0x3300);
+    r.cpu.setR(0, 1);
+    r.ackValue = 0;
+    r.vorZyklus = [&](const Z8kBusCycle& c) {             // VI/NVI fallen mit der Quittung
+        if (c.st == Z8kStatus::ViAck) r.cpu.setVI(false);
+        if (c.st == Z8kStatus::NviAck) r.cpu.setNVI(false);
+    };
+    r.cpu.setNMI(true); r.cpu.setSEGT(true); r.cpu.setVI(true); r.cpu.setNVI(true);
+    std::vector<Z8kStatus> acks;
+    for (int i = 0; i < 4; ++i) {
+        r.log.clear();
+        r.cpu.step();
+        for (auto& e : r.log)
+            if (uint8_t(e.first.st) >= 4 && uint8_t(e.first.st) <= 7) acks.push_back(e.first.st);
+    }
+    ASSERT_EQ(acks.size(), 4u);
+    EXPECT_EQ(acks[0], Z8kStatus::NmiAck);
+    EXPECT_EQ(acks[1], Z8kStatus::SegTrapAck);
+    EXPECT_EQ(acks[2], Z8kStatus::ViAck);
+    EXPECT_EQ(acks[3], Z8kStatus::NviAck);
+    EXPECT_EQ(r.cpu.pc, 0x3300);
+    EXPECT_EQ(r.cpu.R15[1], 0xF000 - 4 * 8);
+    // gesicherte PCs: NMI ← main, SEGT ← NMI-Behandlung, VI ← SEGT-, NVI ← VI-Behandlung
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0100);
+    EXPECT_EQ(r.w(0, 0xEFF6), 0x3000);
+    EXPECT_EQ(r.w(0, 0xEFEE), 0x3100);
+    EXPECT_EQ(r.w(0, 0xEFE6), 0x3200);
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.r(4), 1);                            // NVI zuerst ausgeführt …
+    EXPECT_EQ(r.cpu.r(3), 2);
+    EXPECT_EQ(r.cpu.r(2), 3);
+    EXPECT_EQ(r.cpu.r(1), 4);                            // … NMI zuletzt
+    EXPECT_EQ(r.cpu.R15[1], 0xF000);
+}
+
+TEST(Z8000Rangfolge, InternerTrapVorNmi) {
+    // NMI-Flanke während des SC: der SC-Trap gehört zum Befehl, die NMI folgt mit dem
+    // Status der SC-Behandlung (§7.7 „Internal Trap" vor „Non-Maskable Interrupt").
+    Rig r;
+    segtRig(r, "  SC #%11", 0x8000);                     // Normalmodus
+    r.psa(0, 0x1000, Z8000::PSA_NMI, SEGSYS, 0, 0x3400);
+    r.load("  SEG\n  ORG <<0>>%3400\n  INC R8\n  IRET\n", true);
+    r.vorZyklus = [&](const Z8kBusCycle& c) {
+        if (c.st == Z8kStatus::MemInstrFirst && c.addr == 0x0100) r.cpu.setNMI(true);
+    };
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.lastException().kind, Z8kException::SystemCall);
+    EXPECT_TRUE(r.cpu.nmiPending());
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.lastException().kind, Z8kException::Nmi);
+    EXPECT_EQ(r.cpu.pc, 0x3400);
+    EXPECT_EQ(r.w(0, 0xEFF6), 0x3000);                   // NMI kellert die SC-Behandlung
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);                   // SC kellert den Folgebefehl
+    EXPECT_EQ(r.w(0, 0xEFF8), 0x7F11);
+}
+
+TEST(Z8000Rangfolge, PrivilegTrapUndSegtAusDemselbenBefehl) {
+    // Ein Stapelzugriff des Trapeintritts verletzt (MMU: Schreibwarnung) → nach dem
+    // Eintritt folgt sofort der Segmenttrap, gekellert wird der Beginn der Behandlung.
+    Rig r;
+    segtRig(r, "  OUT @R2,R1", 0x8000);
+    r.psa(0, 0x1000, Z8000::PSA_SEGT, SEGSYS, 0, 0x3400);
+    r.load("  SEG\n  ORG <<0>>%3400\n  INC R8\n  IRET\n", true);
+    r.vorZyklus = [&](const Z8kBusCycle& c) {
+        if (c.st == Z8kStatus::MemStack && !c.read && c.addr == 0xEFFE) r.cpu.setSEGT(true);
+    };
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.lastException().kind, Z8kException::Privileged);
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.lastException().kind, Z8kException::SegmentTrap);
+    EXPECT_EQ(r.w(0, 0xEFF6), 0x3000);
+    EXPECT_EQ(r.cpu.lastException().savedPc, 0x3000);
+}
+
+TEST(Z8000Ausnahme, ProtokollJeArt) {
+    Rig r;
+    segtRig(r, "  SC #%22\n  NOP\n  NOP\n  NOP\n  NOP\n  DW %8E12,%3456\n  IN R1,@R2", SEGSYS, 0xD800, "  IRET");
+    r.setW(0, 0x103A, 0xD800); r.setW(0, uint16_t(0x103C + 2 * 8), 0); r.setW(0, uint16_t(0x103E + 2 * 8), 0x3000);
+    std::vector<Z8kExceptionInfo> log;
+    r.cpu.onException = [&](const Z8kExceptionInfo& x) { log.push_back(x); };
+    r.cpu.step();                                        // SC
+    r.cpu.step();                                        // IRET
+    r.cpu.fcw = 0xD800;
+    r.cpu.setNMI(true); r.cpu.step(); r.cpu.step();      // NMI + IRET
+    r.ackValue = 0x0008; r.cpu.setVI(true); r.cpu.step(); r.cpu.setVI(false); r.cpu.step();
+    r.ackValue = 0x5555; r.cpu.setNVI(true); r.cpu.step(); r.cpu.setNVI(false); r.cpu.step();
+    r.ackValue = 0x0400; r.cpu.setSEGT(true); r.cpu.step(); r.cpu.step();
+    for (int i = 0; i < 4; ++i) r.cpu.step();            // NOP ×4
+    r.cpu.step();                                        // EPA-Trap (gekellert: 2. Wort)
+    r.cpu.pc = 0x010E;                                   // die Behandlung „emuliert" und springt weiter
+    r.cpu.fcw = 0x9800;                                  // Normalmodus: IN trapt
+    r.cpu.step();
+    ASSERT_EQ(log.size(), 7u);
+    const Z8kException want[7] = {Z8kException::SystemCall, Z8kException::Nmi, Z8kException::Vi,
+                                  Z8kException::Nvi, Z8kException::SegmentTrap,
+                                  Z8kException::ExtendedInstruction, Z8kException::Privileged};
+    for (int i = 0; i < 7; ++i) EXPECT_EQ(log[size_t(i)].kind, want[i]) << i;
+    EXPECT_EQ(log[0].id, 0x7F22); EXPECT_EQ(log[0].atPc, 0x0100); EXPECT_EQ(log[0].savedPc, 0x0102);
+    EXPECT_EQ(log[0].oldFcw, 0xC000); EXPECT_EQ(log[0].newFcw, 0xD800); EXPECT_EQ(log[0].newPc, 0x3000);
+    EXPECT_EQ(log[2].id, 0x0008); EXPECT_EQ(log[3].id, 0x5555); EXPECT_EQ(log[4].id, 0x0400);
+    EXPECT_EQ(log[5].id, 0x8E12); EXPECT_EQ(log[5].savedPc, uint16_t(log[5].atPc + 2));
+    EXPECT_EQ(log[6].oldFcw, 0x9800); EXPECT_EQ(log[6].savedPc, uint16_t(log[6].atPc + 2));
+    EXPECT_STREQ(z8kExceptionName(log[4].kind), "SEGT");
+    // Reset wird ebenso gemeldet
+    r.cpu.reset(); r.cpu.step();
+    ASSERT_EQ(log.size(), 8u);
+    EXPECT_EQ(log[7].kind, Z8kException::Reset);
+    EXPECT_EQ(log[7].newFcw, SEGSYS);
+}
+
+TEST(Z8000Bus, JederStatuscodeDenDerKernAusgibt) {
+    // Tabelle 2.1: was der Kern ausgibt, und was nicht (0000 interne Operation, EPU-Zyklen
+    // 1010/1011/1110 — Annahmen in doc/p8000/z8000_abdeckung.md).
+    Rig r;
+    segtRig(r, "  LD R1,<<1>>%0020\n  PUSH @RR14,R1\n  IN R2,@R3\n  SIN R2,%0040\n  LDR R4,<<0>>%0200\n"
+               "  LDCTL REFRESH,R5\n  NOP\n  NOP", 0xD800, 0xD800, "  IRET");
+    r.setW(0, 0x103A, 0xD800); r.setW(0, 0x103C, 0); r.setW(0, 0x103E, 0x3000);
+    r.cpu.setR(5, 0x8202);                               // RE, RATE 1 → alle 4 Takte
+    r.cpu.clearStatusCounts();
+    r.runToHalt();
+    r.cpu.refresh = 0;                                   // ab hier ohne Refresh: lastCycle unten
+    r.cpu.setNMI(true); r.cpu.step();
+    r.cpu.setVI(true); r.cpu.step(); r.cpu.setVI(false);
+    r.cpu.setNVI(true); r.cpu.step(); r.cpu.setNVI(false);
+    r.cpu.setSEGT(true); r.cpu.step();
+    for (Z8kStatus st : {Z8kStatus::Refresh, Z8kStatus::Io, Z8kStatus::SpecialIo, Z8kStatus::SegTrapAck,
+                         Z8kStatus::NmiAck, Z8kStatus::NviAck, Z8kStatus::ViAck, Z8kStatus::MemData,
+                         Z8kStatus::MemStack, Z8kStatus::MemInstr, Z8kStatus::MemInstrFirst})
+        EXPECT_GT(r.cpu.statusCount(st), 0u) << z8kStatusName(st);
+    for (Z8kStatus st : {Z8kStatus::Internal, Z8kStatus::MemDataEpu, Z8kStatus::MemStackEpu,
+                         Z8kStatus::EpuTransfer, Z8kStatus::Reserved})
+        EXPECT_EQ(r.cpu.statusCount(st), 0u) << z8kStatusName(st);
+    // lastCycle = der letzte Zyklus auf dem Bus (PSA-Lesen des Segmenttraps)
+    EXPECT_EQ(r.cpu.lastCycle().st, Z8kStatus::MemInstr);
+    EXPECT_EQ(r.cpu.lastCycle().addr, 0x1026);
+    EXPECT_EQ(r.cpu.lastCycleData(), 0x3000);
+    // Zählerstände = Busprotokoll des Prüfstands
+    for (int s = 0; s < 16; ++s)
+        EXPECT_EQ(r.cpu.statusCount(Z8kStatus(s)), uint64_t(r.count(Z8kStatus(s)))) << s;
+}
+
+TEST(Z8000Bus, SegmentnummerUndNsJeZyklus) {
+    // SN0..6 = Segment der Adresse (segmentiert) bzw. des PC (Z8001 nichtsegmentiert);
+    // E/A ohne Segment; N/S = Modus des Zyklus.
+    Rig r;
+    r.load("  SEG\n  ORG <<9>>%0100\n  LD R1,<<42>>%0020\n  LD @RR2,R1\n  IN R5,@R6\n  HALT\n", true);
+    r.boot(SEGSYS, 9, 0x100);
+    r.cpu.setRR(2, 0x7F000010);
+    r.runToHalt();
+    for (auto& e : r.log) {
+        EXPECT_TRUE(e.first.system);
+        if (e.first.isInstructionFetch()) EXPECT_EQ(e.first.seg, 9);
+        if (e.first.st == Z8kStatus::Io) EXPECT_EQ(e.first.seg, 0);
+    }
+    bool s42 = false, s127 = false;
+    for (auto& e : r.log) {
+        if (e.first.st == Z8kStatus::MemData && e.first.read) s42 |= e.first.seg == 42;
+        if (e.first.st == Z8kStatus::MemData && !e.first.read) s127 |= e.first.seg == 127;
+    }
+    EXPECT_TRUE(s42);
+    EXPECT_TRUE(s127);
+}
+
+// ── Z8001 nichtsegmentiert (vom MAME-Orakel nicht abgedeckt: dort „TODO") ───────
+
+TEST(Z8000Unseg, Z8001CallKellertNurDenOffset) {
+    Rig r;
+    r.load("  NONSEG\n  ORG %0100\n  CALL %0200\n  HALT\n  ORG %0200\n  LD R3,@R15\n  RET\n", false);
+    for (uint16_t a = 0x100; a < 0x210; a += 2) r.setW(4, a, r.w(0, a));
+    r.boot(SEGSYS, 4, 0x100);
+    r.cpu.fcw = SYS;                                     // System, nichtsegmentiert
+    r.cpu.R15[1] = 0x8000;
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.r(3), 0x0104);                       // ein Wort Rückkehradresse
+    EXPECT_EQ(r.cpu.pcSeg, 4);
+    EXPECT_EQ(r.cpu.R15[1], 0x8000);
+    for (auto& e : r.log) if (e.first.isMemory()) EXPECT_EQ(e.first.seg, 4);
+}
+
+TEST(Z8000Unseg, Z8001TrapRahmenIstSegmentiert) {
+    // Auch aus dem nichtsegmentierten Modus kellert der Z8001 PC-Segment + Offset
+    // (Bild 7-1); der Stapel ist RR14 des Systems (R14 System!), nicht R15 allein.
+    Rig r;
+    r.load("  NONSEG\n  ORG %0100\n  SC #5\n  HALT\n", false);
+    for (uint16_t a = 0x100; a < 0x110; a += 2) r.setW(2, a, r.w(0, a));
+    r.load("  SEG\n  ORG <<0>>%3000\n  IRET\n", true);
+    r.boot(SEGSYS, 2, 0x100);
+    r.cpu.psapOff = 0x1000;
+    r.psa(0, 0x1000, Z8000::PSA_SC, SEGSYS, 0, 0x3000);
+    r.cpu.R14[1] = 0x0600; r.cpu.R15[1] = 0x9000;        // Systemstapel <<6>>%9000
+    r.cpu.R14[0] = 0x0000;
+    r.cpu.fcw = SYS;
+    r.cpu.step();
+    EXPECT_EQ(r.cpu.R15[1], 0x9000 - 8);
+    EXPECT_EQ(r.w(6, 0x8FF8), 0x7F05);
+    EXPECT_EQ(r.w(6, 0x8FFA), SYS);
+    EXPECT_EQ(r.w(6, 0x8FFC), 0x0200);
+    EXPECT_EQ(r.w(6, 0x8FFE), 0x0102);
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.fcw, SYS);
+    EXPECT_EQ(r.cpu.pcSeg, 2);
+}
+
+TEST(Z8000Unseg, Z8001LdaUndZeigerSind16Bit) {
+    Rig r;
+    r.load("  NONSEG\n  ORG %0100\n  LDA R2,%0040(R3)\n  LD R4,@R2\n  HALT\n", false);
+    for (uint16_t a = 0x100; a < 0x110; a += 2) r.setW(7, a, r.w(0, a));
+    r.setW(7, 0x0044, 0x4242);
+    r.boot(SYS, 7, 0x100);
+    r.cpu.setR(3, 4);
+    r.runToHalt();
+    EXPECT_EQ(r.cpu.r(2), 0x0044);
+    EXPECT_EQ(r.cpu.r(4), 0x4242);
+}

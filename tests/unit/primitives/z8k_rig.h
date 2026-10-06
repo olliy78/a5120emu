@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -18,11 +19,17 @@ struct Rig {
     std::map<uint16_t, uint16_t> io, sio;          ///< was E/A-Lesen liefert (AD0..15)
     std::vector<std::pair<Z8kBusCycle, uint16_t>> log;   ///< alle Zyklen (Lesen: gelieferter Wert)
     std::vector<std::pair<Z8kBusCycle, uint16_t>> ioWrites;
-    uint16_t ackValue = 0;                          ///< Kennung für Interruptquittungen
+    uint16_t ackValue = 0;                          ///< Kennung für Interrupt-/Segmenttrapquittungen
     bool logging = true;
+    /// Wie die MMU: /SEGT fällt mit der Segmenttrap-Quittung (Status 0100).
+    bool segtFaelltBeiQuittung = true;
+    /// Wird VOR jedem Zyklus gerufen (Lesen und Schreiben) — um Pins mitten im Befehl zu
+    /// setzen, wie es eine MMU oder ein Peripheriebaustein täte.
+    std::function<void(const Z8kBusCycle&)> vorZyklus;
 
     explicit Rig(Z8000::Model m = Z8000::Model::Z8001) : cpu(cfg(m)) {
         cpu.read = [this](const Z8kBusCycle& c) -> uint16_t {
+            if (vorZyklus) vorZyklus(c);
             uint16_t v = 0xFFFF;
             if (c.isMemory()) {
                 uint32_t a = lin(c.seg, uint16_t(c.addr & ~1u));
@@ -33,11 +40,15 @@ struct Rig {
                 auto it = sio.find(c.addr); v = it == sio.end() ? 0xFFFF : it->second;
             } else if (c.st == Z8kStatus::ViAck || c.st == Z8kStatus::NviAck || c.st == Z8kStatus::NmiAck) {
                 v = ackValue;
+            } else if (c.st == Z8kStatus::SegTrapAck) {
+                v = ackValue;
+                if (segtFaelltBeiQuittung) cpu.setSEGT(false);
             }
             if (logging) log.push_back({c, v});
             return v;
         };
         cpu.write = [this](const Z8kBusCycle& c, uint16_t v) {
+            if (vorZyklus) vorZyklus(c);
             if (logging) log.push_back({c, v});
             if (c.isMemory()) {
                 uint32_t a = lin(c.seg, c.addr);

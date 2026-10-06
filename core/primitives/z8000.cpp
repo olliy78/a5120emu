@@ -16,12 +16,6 @@ using z8k::Operand;
 using z8k::Decoded;
 using z8k::Insn;
 
-const char* z8kStatusName(Z8kStatus st) {
-    static const char* const k[16] = {"INT", "REFR", "IO", "SIO", "SEGTA", "NMIA", "NVIA", "VIA",
-                                      "DATA", "STACK", "EDATA", "ESTACK", "INSTR", "IF1", "EPU", "RSV"};
-    return k[uint8_t(st) & 15];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Befehlsgruppen: aus der Mnemonik der Tabellenzeile, einmal je Prozess.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -269,7 +263,10 @@ uint16_t Z8000::bus(Z8kStatus st, uint8_t seg, uint16_t addr, bool word, bool rd
     c.read = rd;
     c.seg = z8001() ? uint8_t(seg & 0x7F) : 0;
     c.addr = addr;
-    if (rd) return read ? read(c) : 0xFFFF;
+    ++statusCount_[uint8_t(st) & 15];
+    lastCycle_ = c;
+    if (rd) { lastCycleData_ = read ? read(c) : 0xFFFF; return lastCycleData_; }
+    lastCycleData_ = data;
     if (write) write(c, data);
     return 0;
 }
@@ -527,11 +524,16 @@ void Z8000::doReset() {
         pc = bus(Z8kStatus::MemInstr, 0, 0x0004, true, true);
     }
     setFcw(f);
+    lastExc_ = Z8kExceptionInfo{};
+    lastExc_.newFcw = fcw; lastExc_.newSeg = pcSeg; lastExc_.newPc = pc; lastExc_.cycle = cycles;
+    if (onException) onException(lastExc_);
 }
 
-int Z8000::takeException(Z8kStatus ack, uint16_t entry, uint16_t id, uint16_t savedPc, bool external) {
+int Z8000::takeException(Z8kException kind, Z8kStatus ack, uint16_t entry, uint16_t id, uint16_t savedPc,
+                         bool external, bool leftRepeat) {
     int c = 0;
     const uint16_t old = fcw;
+    const uint8_t savedSeg = pcSeg;
     if (external && cfg_.spuriousFetchBeforeAck) {
         bus(Z8kStatus::MemInstrFirst, pcSeg, pc, true, true);   // verworfen, PC bleibt
         c += 3;
@@ -570,21 +572,38 @@ int Z8000::takeException(Z8kStatus ack, uint16_t entry, uint16_t id, uint16_t sa
     setFcw(nf);
     halted_ = false;
     inRepeat_ = false;
+    Z8kExceptionInfo& x = lastExc_;
+    x.kind = kind; x.id = id; x.atSeg = lastPcSeg_; x.atPc = lastPc_;
+    x.savedSeg = z8001() ? savedSeg : 0; x.savedPc = savedPc;
+    x.oldFcw = old; x.newFcw = fcw; x.newSeg = pcSeg; x.newPc = pc;
+    x.leftRepeat = leftRepeat; x.cycle = cycles;
+    if (onException) onException(x);
     return c;
 }
 
+// Rangfolge §7.7: NMI vor Segmenttrap vor VI vor NVI (die internen Traps entstehen im
+// Befehl selbst und sind dann schon genommen).  Abgetastet am Befehlsende (§9.6.1) — hier
+// vor dem Holen des nächsten Befehls, bei einem unterbrechbaren Befehl zwischen zwei
+// Durchläufen.  Je Schritt EINE Ausnahme; stehen weitere an, folgt die nächste im nächsten
+// Schritt, bevor die Behandlungsroutine einen Befehl ausführt — so wie §7.7 es beschreibt
+// („the old status is the PC and FCW of the previous exception's service routine").
 int Z8000::checkInterrupts() {
     Z8kStatus ack;
     uint16_t entry;
-    if (nmiPending_) { nmiPending_ = false; ack = Z8kStatus::NmiAck; entry = PSA_NMI; }
-    else if (vi_ && (fcw & FCW_VIE)) { ack = Z8kStatus::ViAck; entry = PSA_VI; }
-    else if (nvi_ && (fcw & FCW_NVIE)) { ack = Z8kStatus::NviAck; entry = PSA_NVI; }
+    Z8kException kind;
+    if (nmiPending_) { nmiPending_ = false; ack = Z8kStatus::NmiAck; entry = PSA_NMI; kind = Z8kException::Nmi; }
+    else if (segt_ && z8001()) { ack = Z8kStatus::SegTrapAck; entry = PSA_SEGT; kind = Z8kException::SegmentTrap; }
+    else if (vi_ && (fcw & FCW_VIE)) { ack = Z8kStatus::ViAck; entry = PSA_VI; kind = Z8kException::Vi; }
+    else if (nvi_ && (fcw & FCW_NVIE)) { ack = Z8kStatus::NviAck; entry = PSA_NVI; kind = Z8kException::Nvi; }
     else return 0;
     int c = 0;
+    // Laufender Wiederholungsbefehl: gesicherter PC = der Befehl selbst (Tabelle §7.6.2,
+    // Fussnote †); seine Register stehen auf dem Stand nach dem letzten ganzen Durchlauf.
+    const bool left = inRepeat_;
     if (inRepeat_) { inRepeat_ = false; pc = lastPc_; pcSeg = lastPcSeg_; c += 7; }  // §6.7 LDIR: +7
     // Eintritt wie SC (33/39 Takte, hier ohne das Holen des SC) + Quittung + Scheinholen.
     c += (z8001() ? 39 : 33) - 3;
-    c += takeException(ack, entry, 0, pc, true);
+    c += takeException(kind, ack, entry, 0, pc, true, left);
     return c;
 }
 
@@ -632,12 +651,14 @@ int Z8000::step() {
             }
             if (allEpa && !(fcw & FCW_EPA)) {       // Extended Instruction Trap
                 c += z8001() ? 39 : 33;
-                c += takeException(Z8kStatus::Internal, PSA_EPA, w0_, uint16_t(start + 2), false);
+                c += takeException(Z8kException::ExtendedInstruction, Z8kStatus::Internal, PSA_EPA, w0_,
+                                   uint16_t(start + 2), false);
                 return finish(c);
             }
             if (allPriv && !systemMode()) {          // Privileged Instruction Trap
                 c += z8001() ? 39 : 33;
-                c += takeException(Z8kStatus::Internal, PSA_PRIV, w0_, uint16_t(start + 2), false);
+                c += takeException(Z8kException::Privileged, Z8kStatus::Internal, PSA_PRIV, w0_,
+                                   uint16_t(start + 2), false);
                 return finish(c);
             }
         }
@@ -1040,7 +1061,8 @@ int Z8000::execute(const Decoded& d, uint16_t pcNext) {
         if (taken) popPc();
         break;
     case Op::Sc:
-        return d.cycles() + takeException(Z8kStatus::Internal, PSA_SC, d.w[0], pcNext, false);
+        return d.cycles() + takeException(Z8kException::SystemCall, Z8kStatus::Internal, PSA_SC, d.w[0],
+                                          pcNext, false);
     case Op::Tcc:
         if (cond(o[0].value, fcw)) {
             if (isB) setRB(o[1].reg, uint8_t(rb(o[1].reg) | 1));

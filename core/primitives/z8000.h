@@ -41,7 +41,7 @@ enum class Z8kStatus : uint8_t {
     Refresh       = 0x1,   ///< Speicherauffrischung (AD1..8 = Zeile)
     Io            = 0x2,   ///< Standard-E/A
     SpecialIo     = 0x3,   ///< Spezial-E/A (MMU …)
-    SegTrapAck    = 0x4,   ///< Segment-Trap-Quittung (am A5120.16 nie: SEGT fest H)
+    SegTrapAck    = 0x4,   ///< Segment-Trap-Quittung (Z8001, setSEGT; am A5120.16 nie: SEGT fest H)
     NmiAck        = 0x5,   ///< NMI-Quittung
     NviAck        = 0x6,   ///< NVI-Quittung
     ViAck         = 0x7,   ///< VI-Quittung
@@ -56,7 +56,37 @@ enum class Z8kStatus : uint8_t {
 };
 
 /// Kurzname für Protokolle/Debugger ("IF1", "DATA", "STACK", "IO", …).
-const char* z8kStatusName(Z8kStatus st);
+inline const char* z8kStatusName(Z8kStatus st) {
+    static const char* const k[16] = {"INT", "REFR", "IO", "SIO", "SEGTA", "NMIA", "NVIA", "VIA",
+                                      "DATA", "STACK", "EDATA", "ESTACK", "INSTR", "IF1", "EPU", "RSV"};
+    return k[uint8_t(st) & 15];
+}
+
+/// Art einer Ausnahme (Zilog Kap. 7).  Reihenfolge = Rangfolge §7.7 (Reset zuerst; die
+/// drei internen Traps schliessen einander aus).
+enum class Z8kException : uint8_t {
+    Reset, ExtendedInstruction, Privileged, SystemCall, Nmi, SegmentTrap, Vi, Nvi,
+};
+inline const char* z8kExceptionName(Z8kException e) {
+    static const char* const k[8] = {"RESET", "EPA", "PRIV", "SC", "NMI", "SEGT", "VI", "NVI"};
+    return k[uint8_t(e) & 7];
+}
+
+/// Eine angenommene Ausnahme, wie sie der Debugger protokolliert (Z8000::onException).
+struct Z8kExceptionInfo {
+    Z8kException kind = Z8kException::Reset;
+    uint16_t id = 0;            ///< gekellerte Kennung (intern: erstes Befehlswort; extern: Quittung)
+    uint8_t  atSeg = 0;         ///< Befehl, nach bzw. in dem sie angenommen wurde (lastPc)
+    uint16_t atPc = 0;
+    uint8_t  savedSeg = 0;      ///< gekellerter PC (Tabelle §7.6.2)
+    uint16_t savedPc = 0;
+    uint16_t oldFcw = 0;        ///< gekellerte FCW
+    uint16_t newFcw = 0;        ///< aus der PSA geladen
+    uint8_t  newSeg = 0;
+    uint16_t newPc = 0;
+    bool     leftRepeat = false;   ///< ein unterbrechbarer Befehl wurde verlassen (PC = der Befehl)
+    uint64_t cycle = 0;         ///< `cycles` beim Eintritt
+};
 
 /// Ein Buszyklus, so wie er an den Pins erscheint.
 struct Z8kBusCycle {
@@ -135,6 +165,9 @@ public:
     std::function<void(bool active)> onBusAck;
     /// Eine Kodierung ohne Tabellenzeile wurde ausgeführt (als NOP, README §8).
     std::function<void(uint8_t seg, uint16_t pc, uint16_t w0)> onIllegal;
+    /// Eine Ausnahme (Reset, Trap, Interrupt) ist angenommen und der neue Programmstatus
+    /// geladen — für Debugger/Trace; ohne Rückruf kostet es nichts.
+    std::function<void(const Z8kExceptionInfo&)> onException;
 
     /// Aus einem Busrückruf heraus: der laufende Zyklus bekommt n WAIT-Takte.
     void addWaitCycles(int n) { waits_ += n; }
@@ -148,6 +181,11 @@ public:
     void setNMI(bool active);            ///< flankengetriggert (H→L)
     void setVI(bool active) { vi_ = active; }    ///< pegelgetriggert
     void setNVI(bool active) { nvi_ = active; }  ///< pegelgetriggert
+    /// /SEGT (nur Z8001): pegelgetriggert, nicht maskierbar, wie VI/NVI am Befehlsende
+    /// abgetastet (§9.6.1).  Die MMU hält die Anforderung bis zur Quittung (Status 0100).
+    /// Am Z8002 ohne Wirkung (kein Pin).  Nicht in Z8kRunState (dessen Aufbau trägt den
+    /// A5120-Save-State v7) — die Karte stellt den Pegel beim Laden selbst wieder her.
+    void setSEGT(bool active) { segt_ = active; }
     void setStop(bool active) { stopLine_ = active; }
     void setBusReq(bool active) { busReq_ = active; }
     void setMI(bool active) { mi_ = active; }    ///< µI, aktiv = L
@@ -159,6 +197,23 @@ public:
     bool stopped() const { return stopped_; }    ///< im Stop/Refresh-Zustand
     bool inReset() const { return resetLine_ || resetPending_; }
     bool inRepeat() const { return inRepeat_; }  ///< Wiederholungsbefehl läuft
+    // Eingangspegel und Merker (Debugger)
+    bool nmiLine() const { return nmiLine_; }
+    bool nmiPending() const { return nmiPending_; }  ///< NMI-Flanke gemerkt, noch nicht angenommen
+    bool segtLine() const { return segt_; }
+    bool viLine() const { return vi_; }
+    bool nviLine() const { return nvi_; }
+    bool miLine() const { return mi_; }
+    bool stopLine() const { return stopLine_; }
+    bool busReqLine() const { return busReq_; }
+    /// Der zuletzt ausgegebene Buszyklus (Status, N/S, B/W, R/W, SN, AD) und sein Datum.
+    const Z8kBusCycle& lastCycle() const { return lastCycle_; }
+    uint16_t lastCycleData() const { return lastCycleData_; }
+    /// Ausgegebene Buszyklen je Statuscode seit dem Einschalten bzw. clearStatusCounts().
+    uint64_t statusCount(Z8kStatus st) const { return statusCount_[uint8_t(st) & 15]; }
+    void clearStatusCounts() { for (auto& n : statusCount_) n = 0; }
+    /// Die zuletzt angenommene Ausnahme (kind = Reset und cycle = 0, solange keine).
+    const Z8kExceptionInfo& lastException() const { return lastExc_; }
     uint64_t illegalCount() const { return illegal_; }
     Model model() const { return cfg_.model; }
     bool isZ8001() const { return cfg_.model == Model::Z8001; }
@@ -210,7 +265,7 @@ private:
     // Pins
     bool resetLine_ = false, resetPending_ = true;
     bool nmiLine_ = false, nmiPending_ = false;
-    bool vi_ = false, nvi_ = false;
+    bool vi_ = false, nvi_ = false, segt_ = false;
     bool stopLine_ = false, busReq_ = false, mi_ = false;
     bool mo_ = false, busAck_ = false;
     // Ablauf
@@ -223,6 +278,11 @@ private:
     uint64_t illegal_ = 0;
     uint16_t lastPc_ = 0;
     uint8_t  lastPcSeg_ = 0;
+    // Beobachtung (Debugger)
+    Z8kBusCycle lastCycle_;
+    uint16_t lastCycleData_ = 0;
+    uint64_t statusCount_[16] = {};
+    Z8kExceptionInfo lastExc_;
 
     uint16_t& rw(unsigned n);
     const uint16_t& rwc(unsigned n) const;
@@ -274,7 +334,8 @@ private:
     void doReset();
     int  refreshCycle();
     int  finish(int c);
-    int  takeException(Z8kStatus ack, uint16_t entry, uint16_t id, uint16_t savedPc, bool external);
+    int  takeException(Z8kException kind, Z8kStatus ack, uint16_t entry, uint16_t id, uint16_t savedPc,
+                       bool external, bool leftRepeat = false);
     int  checkInterrupts();
     int  execute(const z8k::Decoded& d, uint16_t pcNext);
     int  blockStep(const z8k::Decoded& d, uint16_t pcNext, bool first);
