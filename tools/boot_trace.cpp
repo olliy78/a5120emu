@@ -51,6 +51,7 @@
 #include "tools/dbg_machine.h"        // steckeRaf (--raf)
 #include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
 #include "tools/boot_trace_prg710.h"  // --machine prg710|prg710-1 (Entwurf 20 AP-P1d)
+#include "tools/boot_trace_p8000.h"   // --machine p8000 (Entwurf 25 AP P7c)
 #include "tools/boot_trace_pc1715.h"  // --machine pc1715 (Entwurf 21 AP-2)
 #include "tools/em_trace.h"          // --em: EM-Transaktionen als Text
 #include "tools/dbg_u8000.h"         // --cpu u8000: Adressen <<seg>>off
@@ -299,6 +300,7 @@ int main(int argc, char** argv) {
     int         machine_prg710 = 0;      // 1 = PRG 710, 2 = PRG 710-1 (gleiche Optionen wie K8915)
     bool        machine_pc1715 = false;  // PC 1715 (gleiche Optionen wie K8915)
     bool        machine_pc1715w = false; // … in der Variante PC 1715W (AP-W3)
+    bool        machine_p8000 = false;   // P8000, 8-Bit-Seite (AP P7c; gleiche Optionen wie K8915)
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
@@ -326,8 +328,9 @@ int main(int argc, char** argv) {
             else if (mn == "prg710-1" || mn == "PRG710-1") { machine_k8915 = true; machine_prg710 = 2; }
             else if (mn == "pc1715" || mn == "PC1715") { machine_k8915 = true; machine_pc1715 = true; }
             else if (mn == "pc1715w" || mn == "PC1715W") { machine_k8915 = true; machine_pc1715 = machine_pc1715w = true; }
+            else if (mn == "p8000" || mn == "P8000") { machine_k8915 = true; machine_p8000 = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
@@ -496,6 +499,12 @@ int main(int argc, char** argv) {
             if (!limit_set) k8o.limit = 60'000'000;
             if (!stall_set) k8o.stall = 10'000'000;
         }
+        if (machine_p8000) {
+            // P8000 (AP P7c): Hardwaretest ≈ 64 Mio. Takte (16 s), danach „Press RETURN"; mit
+            // `--keys "<CR><CR>"` weiter über `>` in den BOOT (UDOS bis `%` ≈ 100 Mio. Takte).
+            if (!limit_set) k8o.limit = 400'000'000;
+            if (!stall_set) k8o.stall = 20'000'000;
+        }
         k8o.coverage = coverage_on; if (coverage_path) k8o.coverage_path = coverage_path;
         if (csv_path) k8o.csv_path = csv_path;
         if (itrace_path) k8o.itrace_path = itrace_path;
@@ -520,7 +529,8 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
+        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn)
+                     : machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
                      : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);
         if (!cow_temp.empty()) { std::error_code ec; std::filesystem::remove(cow_temp, ec); }

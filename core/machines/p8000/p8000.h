@@ -150,6 +150,7 @@ public:
     void     clearStop() { stop_.store(false); }
     uint16_t cpuPC() { return karte_.cpu().PC; }
     const Config& config() const { return cfg_; }
+    void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) { karte_.cpu().traceCallback = std::move(cb); }
 
     static constexpr int FB_BREITE = 640, FB_HOEHE = 288;   ///< Zelle 8 × 12 (Entwurf §10.6)

@@ -1,0 +1,8 @@
+# boot_trace --machine p8000 (Entwurf 25 AP P7c, Grundform): Netz-Ein → MON8-Hardwaretest →
+# „U880-Softwaremonitor Version 3.1 - Press RETURN"; Abbruch dort als Stillstand, Exit 0.
+tool:    boot_trace
+disk:    udosP8000_640k_wega.hfe
+run:     --machine p8000 --quiet --json %DISK%
+timeout: 120
+exit:    0
+expect:  "machine":"p8000","stall":true,"prompt":true

@@ -308,6 +308,33 @@ BIOS schaltet die Bank bei jedem Aufruf, auch im Leerlauf — sonst gäbe es kei
 Das Schlussbild zeigt `BR`/`KRFD`/`MOS`/U8272-MSR/DMA statt ROM/BWS; JSON `"machine":"pc1715w"`.
 Wächter `bt_pc1715w_scp30_prompt.cli` (SCP 3.0 bis `A>`).
 
+## 9a. P8000 (`--machine p8000`)
+
+Grundform aus AP P7c (`doc/design/25_p8000.md`): **nur die 8-Bit-Seite** (U880, MON8 3.1, Floppy
+X8/X9, Kern-Terminal an tty1); 16-Bit-Teil und WDC folgen mit P10/P13.
+
+```sh
+tools/dev.sh tool boot_trace --machine p8000 tests/fixtures/disks/udosP8000_640k_wega.hfe
+tools/dev.sh tool boot_trace --machine p8000 --quiet --json --keys '<CR><CR>' \
+    --until 'screen ~ "Hardware Error in Connection"' <abbild>
+```
+
+- Ohne `--keys` läuft die Maschine durch den Hardwaretest (≈ 64 Mio. Takte = 16 s Maschinenzeit)
+  bis „U880-Softwaremonitor Version 3.1 - Press RETURN" und steht dann (Stillstand, Exit 0).
+  `--keys '<CR><CR>'`: erstes Return ⇒ `>`, zweites ⇒ BOOT (UDOS bis `%`, ≈ 110 Mio. Takte).
+  `<CR>` und `<ET>` sind gleichwertig; blockweise wie beim PRG, bei Stillstand getippt, der Block
+  wird auf einmal eingereiht (der Terminal-Anschluss liefert im Zeichentakt).
+- Protokolliert: ADP/RFF 00H–07H, Latches 10H–17H, PIO2 (Floppy-Port) 1CH–1FH, U8272 20H/21H
+  (Datentor 21H ohne Wert gefaltet), UA858-DMA 3CH–3FH, Interrupts. Das Schlussbild ist das
+  Terminal (80 × 24).
+- Abbruch: Stillstand (Vorgabe **20 Mio.** Takte ohne Terminaländerung/Steuerzugriff), `-c`
+  (Vorgabe **400 Mio.**), `--until`. Exit 0, wenn beim Stillstand die Cursorzeile `>`/`%` lautet
+  oder „Press RETURN" im Bild steht.
+- Weiter wie beim PC 1715: `--csv`, `--itrace`, `--coverage`, `-w/-W`, `--watch`, `--watchio`,
+  `-d`, `--events[-cap]`, `-l`. `--raf`/`--ptape` werden mit Warnung ignoriert.
+- Noch nicht: `--p8000 <konfig>`, `--hd`, Wahl der aktiven CPU (Entwurf §10.10, mit P12).
+- Wächter: `bt_p8000_banner.cli`, `bt_p8000_tastatur.cli`.
+
 ## 10. RAM-Floppy (`--raf`)
 
 `--raf raf512` (auch `raf128`, `raf2m`) steckt die Karte auf 88H/89H, bevor die Maschine
