@@ -123,6 +123,12 @@ P8000Karte8::P8000Karte8(K1520Bus& bus, const Config& cfg)
 
     ctc0_.setResetLaedtZeitkonstante(true);   // MON8-Hardwaretest Fehler 16: Reset ⇒ Zähler = TC
     ctc1_.setResetLaedtZeitkonstante(true);
+    // Modus 3 nach Datenblatt flankengetriggert (U855 §6.4): KINIT (OS.INIT der WEGA-
+    // Startdiskette) gibt PIO0-B mit Maske FEH „aktiv high" frei, während INT_8 über den
+    // Pull-up auf 1 liegt — pegelbasiert sofort ein Interrupt auf den leeren Vektor 0F12H.
+    pio0_.setModus3Flanke(true);
+    pio1_.setModus3Flanke(true);
+    pio2_.setModus3Flanke(true);
 
     // Baudtakt CPBAUD = Quarz ÷ 8 (exakt 1,229 MHz): CTC0 K0, CTC1 K0–K2 (§5).
     const uint64_t cpbaud = cfg.baudquarz_hz / 8;

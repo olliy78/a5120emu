@@ -252,3 +252,8 @@ k1520_add_test(raf_zwg SRC test_raf_zwg.cpp LIBS ${_libs} k1520_fs
 k1520_add_test(p8000_maschine SRC test_p8000_machine.cpp
                           LIBS k1520_p8000 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# P8000 Meilenstein M1 (doc/design/25_p8000.md §10.11 AP P7d): UDOS von der WEGA-Startdiskette.
+k1520_add_test(p8000_boot SRC test_p8000_boot.cpp
+                          LIBS k1520_p8000 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)

@@ -196,3 +196,49 @@ TEST(PioHandshake, HandshakeZustandSichertUndLaedt) {
     EXPECT_TRUE(g.pio.ardy());
     EXPECT_EQ(g.pio.pinsB(0x0F), f.pio.pinsB(0x0F));
 }
+
+// ─── Modus 3 flankengetriggert (setModus3Flanke, P8000 P7d; U855 §6.4) ──────────
+namespace {
+/// Port B: Modus 3, alle Eingänge, Vektor 12H, „ODER, aktiv high", Maske FEH (nur B0).
+void kinit(Z80PIO& p) {
+    p.ioWrite(B_CTL, 0x12);
+    p.ioWrite(B_CTL, 0xCF);
+    p.ioWrite(B_CTL, 0x7F);
+    p.ioWrite(B_CTL, 0xB7);
+    p.ioWrite(B_CTL, 0xFE);
+}
+}  // namespace
+
+TEST(PioModus3Flanke, VorgabeLoestBeimLadenDerMaskeAus) {
+    Fix f;
+    f.pio.setExternB(0x01, 0x01);   // B0 = 1: Bedingung schon erfüllt
+    kinit(f.pio);
+    EXPECT_TRUE(f.pio.hasInterrupt()) << "Vorgabe pegelbasiert (HARDY am A5120)";
+}
+
+TEST(PioModus3Flanke, ErfuellteBedingungBeimFreigebenLoestNichtAus_ErstDerWechsel) {
+    Fix f;
+    f.pio.setModus3Flanke(true);
+    f.pio.setExternB(0x01, 0x01);
+    kinit(f.pio);                   // KINIT der WEGA-Startdiskette: INT_8 liegt auf 1
+    EXPECT_FALSE(f.pio.hasInterrupt());
+    f.pio.setExternB(0x00, 0x01);   // Bedingung fällt weg …
+    EXPECT_FALSE(f.pio.hasInterrupt());
+    f.pio.setExternB(0x01, 0x01);   // … und tritt wieder ein ⇒ Übergang ⇒ Interrupt
+    EXPECT_TRUE(f.pio.hasInterrupt());
+    EXPECT_EQ(f.pio.getVector(), 0x12);
+    f.pio.setExternB(0x01, 0x01);   // unverändert ⇒ kein weiterer
+    f.pio.onRETI();
+    EXPECT_FALSE(f.pio.hasInterrupt());
+}
+
+TEST(PioModus3Flanke, WechselBeiGesperrtemInterruptLoestSpaeterNichtAus) {
+    Fix f;
+    f.pio.setModus3Flanke(true);
+    f.pio.setExternB(0x00, 0x01);
+    kinit(f.pio);
+    f.pio.ioWrite(B_CTL, 0x03);     // Interrupt sperren
+    f.pio.setExternB(0x01, 0x01);   // Übergang, aber gesperrt
+    f.pio.ioWrite(B_CTL, 0x83);     // freigeben: Bedingung steht, kein neuer Übergang
+    EXPECT_FALSE(f.pio.hasInterrupt());
+}

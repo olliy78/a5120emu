@@ -106,7 +106,10 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         // Bedingung erfüllt, wird SOFORT ein Interrupt angefordert — auch ohne
         // dass sich ein Eingangspin danach noch ändert. (HARDYs System-PIO- und
         // MEMDI-RDY-Test verlassen sich genau darauf.)
-        if (p.mode == 3) checkInterrupt(p, p.input_latch);
+        if (p.mode == 3) {
+            if (modus3_flanke_) p.match = bedingung(p, p.input_latch);   // nur merken
+            else checkInterrupt(p, p.input_latch);
+        }
         return;
     }
 
@@ -128,6 +131,8 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         if (!p.ie) p.pending = false;   // Sperren löscht eine anstehende Anforderung
         if ((data >> 4) & 1)
             p.ctrl_state = CtrlState::EXPECT_MASK;   // Neubewertung erst nach Maske
+        else if (p.mode == 3 && modus3_flanke_)
+            p.match = bedingung(p, p.input_latch);   // flankengetriggert: nur merken
         else if (p.mode == 3)
             checkInterrupt(p, p.input_latch);        // sonst sofort pegelbasiert prüfen
         return;
@@ -141,7 +146,8 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         // falschen Interrupt; K8915-Marken-ISR, doc/design/16_k8915.md AP-E3.)
         p.ie = (data >> 7) & 1;
         if (!p.ie) p.pending = false;   // s.o.: Sperren löscht die Anforderung
-        if (p.mode == 3) checkInterrupt(p, p.input_latch);
+        if (p.mode == 3 && modus3_flanke_) p.match = bedingung(p, p.input_latch);
+        else if (p.mode == 3) checkInterrupt(p, p.input_latch);
         return;
     }
 }
@@ -264,7 +270,22 @@ void Z80PIO::writeDataCPU(Port& p, uint8_t data, PortCallback& cb) {
  * @param p Port to check (porta_ or portb_)
  * @param new_input Current input state from external device
  */
+bool Z80PIO::bedingung(const Port& p, uint8_t input) {
+    const uint8_t unmasked_bits = static_cast<uint8_t>(~p.int_mask);
+    const uint8_t active_input = input & unmasked_bits;
+    if (p.int_and) return active_input == (p.int_active_high ? unmasked_bits : 0);
+    return p.int_active_high ? (active_input != 0) : (active_input != unmasked_bits);
+}
+
 void Z80PIO::checkInterrupt(Port& p, uint8_t new_input) {
+    if (p.mode == 3 && modus3_flanke_) {
+        // Übergang Nichterfüllung → Erfüllung (U855 §6.4); der Zustand wird auch bei
+        // gesperrtem Interrupt nachgeführt, damit eine spätere Freigabe nicht auslöst.
+        const bool m = bedingung(p, new_input);
+        if (m && !p.match && p.ie) p.pending = true;
+        p.match = m;
+        return;
+    }
     if (!p.ie) return;
     if (p.mode == 1 || p.mode == 2) {
         p.pending = true;

@@ -339,6 +339,19 @@ public:
 
     /// Handshake-Zustand (RDY, /STB, externe Treiber) für den Save-State der Karte —
     /// bewusst NICHT in serialize() (Zeilenformat der Karten bleibt unverändert).
+    /**
+     * @brief Modus 3 flankengetriggert (U855-Beschreibung §6.4: „der Übergang von
+     *        Nichterfüllung in Erfüllung der logischen Konfiguration löst den Interrupt
+     *        aus").  Vorgabe AUS = bisheriges Verhalten (Bedingung beim Laden der Maske
+     *        und bei jeder Eingangsänderung pegelbasiert geprüft — HARDY auf dem A5120
+     *        braucht das, weil dort /M1 als Dauerpegel statt als Impulsfolge nachgebildet
+     *        ist).  EIN: das Laden von Maske/Steuerwort merkt sich nur den Ist-Zustand,
+     *        angefordert wird erst beim Wechsel falsch → wahr (P8000: KINIT gibt PIO0-B
+     *        mit erfüllter Bedingung frei, INT_8 liegt über den Pull-up auf 1).
+     */
+    void    setModus3Flanke(bool an) { modus3_flanke_ = an; }
+    bool    modus3Flanke() const { return modus3_flanke_; }
+
     void    serializeHandshake(std::vector<uint8_t>& out) const;
     bool    deserializeHandshake(const uint8_t*& p, const uint8_t* end);
 
@@ -393,6 +406,7 @@ private:
         bool      pending       = false;   ///< Interrupt pending
         bool      iei           = false;   ///< Interrupt Enable Input (daisy-chain)
         bool      ius           = false;   ///< Interrupt Under Service flag
+        bool      match         = false;   ///< Modus 3 flankengetriggert: letzter Stand der Bedingung
         CtrlState ctrl_state    = CtrlState::IDLE;
     };
 
@@ -440,6 +454,9 @@ private:
      * @param new_input New external input value (for edge detection)
      */
     void    checkInterrupt(Port& p, uint8_t new_input);
+    /// Modus-3-Bedingung (Maske, UND/ODER, aktiver Pegel) für @p input.
+    static bool bedingung(const Port& p, uint8_t input);
+    bool    modus3_flanke_ = false;
 
     // State
     mutable Port porta_;        ///< Port A configuration and state (mutable for getVector)
