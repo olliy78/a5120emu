@@ -383,6 +383,13 @@ if(BUILD_K1520)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # Tastatur des PC 1715: U880 + EPROM S600 auf dem Z80-Kern (doc/design/21_pc1715.md AP-3a)
+    # P8000-Terminal (ADM31/VT100-Textschicht + Anbindung an einen SerialAnschluss), Entwurf 25 §10.6
+    add_library(k1520_p8000_terminal STATIC
+        core/peripherals/p8000_terminal/terminal.cpp
+        core/peripherals/p8000_terminal/terminal_anschluss.cpp)
+    target_link_libraries(k1520_p8000_terminal PUBLIC k1520_serial)
+    target_include_directories(k1520_p8000_terminal PUBLIC ${CMAKE_SOURCE_DIR})
+
     add_library(k1520_tastatur1715 STATIC core/peripherals/tastatur1715/tastatur1715.cpp)
     target_link_libraries(k1520_tastatur1715 PUBLIC k1520_z80)
     target_include_directories(k1520_tastatur1715 PUBLIC ${CMAKE_SOURCE_DIR})

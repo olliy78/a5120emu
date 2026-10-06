@@ -77,6 +77,10 @@ k1520_add_test(k7672          SRC peripherals/test_k7672.cpp
 k1520_add_test(tastatur1715   SRC peripherals/test_tastatur1715.cpp
                               LIBS k1520_tastatur1715 LABELS "${_lbl}")
 
+# P8000-Terminal: ADM31/VT100, Tastatur, Anschluss (doc/p8000/hw_terminal.md, Entwurf 25 P6)
+k1520_add_test(p8000_terminal SRC peripherals/test_p8000_terminal.cpp
+                              LIBS k1520_p8000_terminal LABELS "${_lbl}")
+
 # Lochstreifen-Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4, AP-L2)
 k1520_add_test(band_format    SRC peripherals/test_band_format.cpp
                               LIBS k1520_lochstreifen LABELS "${_lbl}")
