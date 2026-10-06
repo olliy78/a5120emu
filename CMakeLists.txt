@@ -432,7 +432,7 @@ if(BUILD_K1520)
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion

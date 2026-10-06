@@ -181,6 +181,35 @@ def test_pc1715w_bootet_scp30_bis_prompt(temp_disk):
     assert "SCP3     SYS" in emu.screen_text(), emu.screen_text()
 
 
+def test_p8000_zeigt_banner_am_terminal_und_nimmt_tasten(temp_disk):
+    """P8000 (AP P7b): ``machine="p8000"`` — MON8 3.1 meldet sich am Kern-Terminal (tty1) mit
+    dem Hardwaretest-Banner, danach „Press RETURN"; ein Return über die Terminal-Tastenwege
+    führt zum Prompt `>`.  Bild sowohl über ``screen_text`` (k1520_screen_char) als auch
+    über ``term_text``/``term_char``/``term_cursor``."""
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine="p8000", p8000={"mon8": "3.1"})
+    assert emu.machine_type() == 4 and emu.machine == "p8000"
+    assert emu.mount_disk(0, temp_disk("udosP8000_640k_wega.hfe"), emu.drive_default_format(0), False), emu.last_error()
+    emu.power_on()
+    done = 0
+    while done < 200_000_000 and "Press RETURN" not in emu.screen_text():
+        done += emu.run(500_000)
+    text = emu.screen_text()
+    assert "P8000 Hardwaretest U880 - Version 3.1" in text, text
+    assert "Press RETURN" in text and "ERROR" not in text, text
+    assert text == emu.term_text(0)
+    zeile = next(r for r, z in enumerate(text.split("\n")) if "Press RETURN" in z)
+    assert emu.term_char(0, 0, zeile) == "U"
+    assert emu.term_cursor(0) is not None and emu.term_mode(0) == 0
+    assert emu.term_send(0, "\r")
+    for _ in range(1000):                       # höchstens 5 Mio. Takte (C++-Wächter: 4 Mio.)
+        emu.run(5_000)
+        if any(z.rstrip() == ">" for z in emu.term_text(0).split("\n")):
+            break
+    assert any(z.rstrip() == ">" for z in emu.term_text(0).split("\n")), emu.term_text(0)
+
+
 def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
     """PC 1715 (AP-4b): jede maschinenneutrale C-ABI-Funktion wirkt am Gerät oder meldet
     ihren Ruhewert — Boot von der SCP-Diskette bis `A>`, Format erkannt, Lampen, Tastatur

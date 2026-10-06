@@ -16,6 +16,7 @@ typedef enum {
     K1520_MACHINE_PRG710 = 1,
     K1520_MACHINE_K8915  = 2,
     K1520_MACHINE_PC1715 = 3,
+    K1520_MACHINE_P8000  = 4,
 } K1520MachineType;
 
 typedef struct {
@@ -109,6 +110,19 @@ K1520_API K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int z
                                              int tastatur,
                                              const char* drive0, const char* drive1,
                                              const char* drive2, const char* drive3);
+
+/**
+ * @brief P8000 (K1520_MACHINE_P8000), doc/design/25_p8000.md §10.9 — Stand AP P7b: nur die
+ *        8-Bit-Seite (U880-Karte + Floppy + Kern-Terminal an tty1).
+ *
+ * @param konfig  Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel:
+ *                `index8` (1|3), `mon8` (3.0|3.1|3.1n = nur 8 Bit|2.1n), `lw0`..`lw3`
+ *                (Laufwerksprofil, "none" = leer), `terminals` (nur "1"), `karte16` (nur "0").
+ *                Schlüssel der noch nicht gebauten Teile (`index16`, `mon16`, `dram`, `wdc`,
+ *                `platte`) und unbekannte Schlüssel/Werte → NULL, Grund in k1520_last_init_error.
+ * k1520_machine_type() = 4.  `k1520_create(K1520_MACHINE_P8000)` = Vorgabe-Konfiguration.
+ */
+K1520_API K1520Handle k1520_create_p8000(const char* konfig);
 
 /**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
@@ -654,6 +668,29 @@ K1520_API bool     k1520_ptape_punch_flush(K1520Handle h);
 K1520_API const char* k1520_ptape_punch_file(K1520Handle h);
 /** @brief Format der Bindung; -1 ohne Karte. */
 K1520_API int      k1520_ptape_punch_format(K1520Handle h);
+
+/* ─── Terminals des P8000 (Entwurf 25 §10.9; andere Maschinen: 0 / -1 / false) ───────────
+ * Index i zählt die Kern-Terminals (derzeit eins: tty1).  80 × 24 Zellen, Zeilen/Spalten 0-basiert. */
+
+/** @brief Zahl der Kern-Terminals (0 an Maschinen ohne). */
+K1520_API int      k1520_term_count(K1520Handle h);
+/** @brief Kanalnummer (ttyN) des Terminals i; -1 bei ungültigem i. */
+K1520_API int      k1520_term_tty(K1520Handle h, int i);
+/** @brief Zeichen der Zelle (Attributfeld = Leerzeichen); 0 außerhalb oder bei ungültigem i. */
+K1520_API uint8_t  k1520_term_char(K1520Handle h, int i, int col, int row);
+/** @brief Wirksames Attribut der Zelle (Bit 0 blink, 1 invers, 2 leer, 3 hell, 4 unterstrichen). */
+K1520_API uint8_t  k1520_term_attr(K1520Handle h, int i, int col, int row);
+/** @brief Zeile @p row als Text (80 Zeichen) nach @p buf (höchstens @p cap-1 Zeichen + NUL);
+ *  Rückgabe = Länge, 0 bei ungültigem i/row. */
+K1520_API int      k1520_term_text(K1520Handle h, int i, int row, char* buf, int cap);
+/** @brief Cursor des Terminals; false bei ungültigem i. */
+K1520_API bool     k1520_term_cursor(K1520Handle h, int i, int* col, int* row);
+/** @brief Betriebsart: 0 ADM31, 1 VT100, -1 bei ungültigem i. */
+K1520_API int      k1520_term_mode(K1520Handle h, int i);
+/** @brief Taste des Terminals (Qt-Code oder ASCII wie k1520_key_press); false bei ungültigem i. */
+K1520_API bool     k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctrl);
+/** @brief @p len Zeichen wie getippt senden ('\r'/'\n' = Return); false bei ungültigem i. */
+K1520_API bool     k1520_term_send(K1520Handle h, int i, const char* text, int len);
 
 #ifdef __cplusplus
 }

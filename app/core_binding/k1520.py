@@ -320,6 +320,31 @@ _lib.k1520_create_pc1715_ex.argtypes = [
 ]
 _lib.k1520_create_pc1715_ex.restype = K1520Handle
 
+# k1520_create_p8000(konfig: const char*) -> K1520Handle   (Entwurf 25 §10.9; "schluessel=wert,…")
+_lib.k1520_create_p8000.argtypes = [ctypes.c_char_p]
+_lib.k1520_create_p8000.restype = K1520Handle
+
+# P8000-Terminals (k1520_term_*; andere Maschinen: 0 / -1 / False)
+_lib.k1520_term_count.argtypes = [K1520Handle]
+_lib.k1520_term_count.restype = ctypes.c_int
+_lib.k1520_term_tty.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_tty.restype = ctypes.c_int
+_lib.k1520_term_char.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+_lib.k1520_term_char.restype = ctypes.c_uint8
+_lib.k1520_term_attr.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+_lib.k1520_term_attr.restype = ctypes.c_uint8
+_lib.k1520_term_text.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_term_text.restype = ctypes.c_int
+_lib.k1520_term_cursor.argtypes = [K1520Handle, ctypes.c_int, ctypes.POINTER(ctypes.c_int),
+                                   ctypes.POINTER(ctypes.c_int)]
+_lib.k1520_term_cursor.restype = ctypes.c_bool
+_lib.k1520_term_mode.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_mode.restype = ctypes.c_int
+_lib.k1520_term_key.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_uint32, ctypes.c_bool, ctypes.c_bool]
+_lib.k1520_term_key.restype = ctypes.c_bool
+_lib.k1520_term_send.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_term_send.restype = ctypes.c_bool
+
 # k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
 _lib.k1520_create_with_em.argtypes = [
     ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
@@ -525,7 +550,7 @@ def _utf8(path) -> bytes:
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
-                 "pc1715-k7221": 3, "pc1715w": 3}
+                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4}
 # (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
 # AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
@@ -780,7 +805,7 @@ class K1520Emulator:
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
                  em: Optional[str] = None, raf: Optional[str] = None,
                  ptape: bool = False, zeichensatz: str = "deutsch",
-                 tastatur: str = "s600"):
+                 tastatur: str = "s600", p8000: Optional[dict] = None):
         """Initialize emulator instance.
 
         Args:
@@ -797,6 +822,9 @@ class K1520Emulator:
                 ``"pc1715w"`` ohne Wirkung (der Satz kommt von Diskette).
             tastatur: nur PC 1715/1715W — Tastatur-ROM ``"s600"`` (QWERTY, Vorgabe)
                 oder ``"tast618"`` (QWERTZ).
+            p8000: nur ``machine="p8000"`` — Konfiguration als Wörterbuch (Schlüssel wie im
+                Konfigurationstext von ``k1520_create_p8000``, z. B. ``{"mon8": "3.1"}``);
+                die Laufwerksnamen aus ``drive_types`` werden als ``lw0``..``lw3`` ergänzt.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
             raf: RAM-Floppy — ``None``/``"none"`` = ohne, ``"raf128"``, ``"raf512"``
@@ -837,6 +865,12 @@ class K1520Emulator:
                 enc = lambda n: n.encode("utf-8") if n else None
                 handle = _lib.k1520_create_k8915(
                     K8915_GENERATIONEN[machine], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            elif machine == "p8000":
+                teile = [f"{k}={v}" for k, v in (p8000 or {}).items()]
+                for i, n in enumerate((self._drive_types or [])[:4]):
+                    if n:
+                        teile.append(f"lw{i}={n}")
+                handle = _lib.k1520_create_p8000(",".join(teile).encode("utf-8"))
             elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
@@ -1107,8 +1141,58 @@ class K1520Emulator:
         return None if v < 0 else bool(v)
 
     def machine_type(self) -> int:
-        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715)."""
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715, 4 = P8000)."""
         return int(_lib.k1520_machine_type(self._handle))
+
+    # ─── Terminals des P8000 (k1520_term_*) ──────────────────────────────────
+
+    def term_count(self) -> int:
+        """Zahl der Kern-Terminals (P8000: 1 = tty1; sonst 0)."""
+        return int(_lib.k1520_term_count(self._handle))
+
+    def term_tty(self, i: int = 0) -> int:
+        """Kanalnummer (ttyN) des Terminals ``i``; -1 bei ungültigem Index."""
+        return int(_lib.k1520_term_tty(self._handle, i))
+
+    def term_char(self, i: int, col: int, row: int) -> str:
+        """Zeichen einer Terminalzelle (80 × 24); ``""`` außerhalb."""
+        c = int(_lib.k1520_term_char(self._handle, i, col, row))
+        return chr(c) if c else ""
+
+    def term_attr(self, i: int, col: int, row: int) -> int:
+        """Wirksames Attribut der Zelle (Bit 0 blink, 1 invers, 2 leer, 3 hell, 4 unterstrichen)."""
+        return int(_lib.k1520_term_attr(self._handle, i, col, row))
+
+    def term_text(self, i: int = 0) -> str:
+        """Terminalbild als 24 Zeilen à 80 Zeichen; ``""`` bei ungültigem Index."""
+        if self.term_count() <= i:
+            return ""
+        buf = ctypes.create_string_buffer(96)
+        zeilen = []
+        for r in range(24):
+            n = _lib.k1520_term_text(self._handle, i, r, buf, len(buf))
+            zeilen.append(buf.raw[:n].decode("latin-1"))
+        return "\n".join(zeilen)
+
+    def term_cursor(self, i: int = 0) -> Optional[tuple]:
+        """Cursor ``(Spalte, Zeile)`` oder ``None`` bei ungültigem Index."""
+        c, r = ctypes.c_int(), ctypes.c_int()
+        if not _lib.k1520_term_cursor(self._handle, i, ctypes.byref(c), ctypes.byref(r)):
+            return None
+        return c.value, r.value
+
+    def term_mode(self, i: int = 0) -> int:
+        """0 = ADM31, 1 = VT100, -1 bei ungültigem Index."""
+        return int(_lib.k1520_term_mode(self._handle, i))
+
+    def term_key(self, i: int, keycode: int, shift: bool = False, ctrl: bool = False) -> bool:
+        """Taste am Terminal ``i`` (Qt-Code oder ASCII)."""
+        return bool(_lib.k1520_term_key(self._handle, i, keycode, shift, ctrl))
+
+    def term_send(self, i: int, text: str) -> bool:
+        """Text wie getippt senden (``\\r``/``\\n`` = Return)."""
+        data = text.encode("latin-1", "replace")
+        return bool(_lib.k1520_term_send(self._handle, i, data, len(data)))
 
     def panel_lamps(self) -> int:
         """Anzeigefeld: Rohbyte des K8915-Latches 61H, **aktiv low** (FFH = alles

@@ -107,6 +107,45 @@ def test_unbuilt_machine_type_is_refused_with_a_reason():
     _lib.k1520_destroy(K1520Handle(handle))
 
 
+def test_p8000_can_be_created_configured_and_refused():
+    """`k1520_create_p8000` (AP P7b): Typ 4, Terminal-Funktionen, Konfigurationstext;
+    unbekannte/noch nicht gebaute Schlüssel → NULL mit Grund."""
+    import ctypes
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for konfig in (None, b"", b"index8=1,mon8=3.1,lw0=K5601,lw1=none,terminals=1,karte16=0"):
+        handle = _lib.k1520_create_p8000(konfig)
+        assert handle, _lib.k1520_last_init_error()
+        assert _lib.k1520_machine_type(handle) == 4
+        assert _lib.k1520_term_count(handle) == 1
+        assert _lib.k1520_term_tty(handle, 0) == 1 and _lib.k1520_term_tty(handle, 1) == -1
+        assert _lib.k1520_term_mode(handle, 0) == 0          # ADM31 nach dem Einschalten
+        col, row = ctypes.c_int(), ctypes.c_int()
+        assert _lib.k1520_term_cursor(handle, 0, ctypes.byref(col), ctypes.byref(row))
+        assert not _lib.k1520_term_key(handle, 1, ord("a"), False, False)
+        assert _lib.k1520_term_char(handle, 0, 80, 0) == 0
+        _lib.k1520_power_on(handle)
+        assert _lib.k1520_run(handle, 100_000) > 0
+        assert not _lib.k1520_raf_install(handle, b"raf512")      # kein K1520-Steckplatz
+        _lib.k1520_destroy(K1520Handle(handle))
+
+    # k1520_create(4) = Vorgabekonfiguration
+    handle = _lib.k1520_create(4)
+    assert handle and _lib.k1520_machine_type(handle) == 4
+    _lib.k1520_destroy(K1520Handle(handle))
+
+    for schlecht in (b"quatsch=1", b"index8=2", b"mon8=9", b"index16=4", b"dram=1M@0",
+                     b"karte16=1", b"terminals=2", b"lw0", b"lw5=K5601"):
+        assert not _lib.k1520_create_p8000(schlecht), schlecht
+        assert _lib.k1520_last_init_error().decode().startswith("P8000"), schlecht
+
+    # Terminal-API an einer anderen Maschine: Ruhewerte
+    a5120 = _lib.k1520_create(0)
+    assert _lib.k1520_term_count(a5120) == 0 and _lib.k1520_term_tty(a5120, 0) == -1
+    assert _lib.k1520_term_mode(a5120, 0) == -1
+    _lib.k1520_destroy(K1520Handle(a5120))
+
+
 def test_prg710_variants_can_be_created_and_run():
     """`k1520_create_prg710` (AP-P1c): beide Varianten, Typ 1, laufen nach dem
     Netz-Ein einige Takte; `k1520_create(1)` baut die Variante 0; Variante 2 → NULL."""

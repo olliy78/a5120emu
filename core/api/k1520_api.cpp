@@ -4,6 +4,7 @@
 #include "core/machines/k8915/k8915.h"
 #include "core/machines/prg710/prg710.h"
 #include "core/machines/pc1715/pc1715.h"
+#include "core/machines/p8000/p8000.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -82,11 +83,19 @@ K1520Handle k1520_create_configured(K1520MachineType type,
     // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 wählt.
     if (type == K1520_MACHINE_PRG710) return k1520_create_prg710(0, d0, d1, d2, d3);
     if (type == K1520_MACHINE_PC1715) return k1520_create_pc1715(0, 0, 0, d0, d1, d2, d3);
+    if (type == K1520_MACHINE_P8000) {
+        // Laufwerksnamen (falls gegeben) als lwN-Schlüssel an die Konfiguration des P8000.
+        std::string k;
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) k += (k.empty() ? "" : ",") + ("lw" + std::to_string(i)) + "=" + names[i];
+        return k1520_create_p8000(k.c_str());
+    }
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
         // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000)";
         return nullptr;
     }
 
@@ -167,6 +176,71 @@ K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int zg_satz, in
         for (int i = 0; i < 4; ++i)
             if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
         K1520Machine* m = new Pc1715Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+// Konfigurationstext des P8000 (Entwurf 25 §10.9): "schluessel=wert,…".  Fehler → false + Grund.
+static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string& fehler) {
+    using Cfg = P8000Machine::Config;
+    const std::string alles = text ? text : "";
+    size_t pos = 0;
+    while (pos < alles.size()) {
+        size_t ende = alles.find(',', pos);
+        if (ende == std::string::npos) ende = alles.size();
+        std::string eintrag = alles.substr(pos, ende - pos);
+        pos = ende + 1;
+        const auto trim = [](std::string& t) {
+            while (!t.empty() && t.front() == ' ') t.erase(t.begin());
+            while (!t.empty() && t.back() == ' ') t.pop_back();
+        };
+        trim(eintrag);
+        if (eintrag.empty()) continue;
+        const size_t gl = eintrag.find('=');
+        std::string key = eintrag.substr(0, gl), val = gl == std::string::npos ? "" : eintrag.substr(gl + 1);
+        trim(key); trim(val);
+        if (gl == std::string::npos || val.empty()) { fehler = "P8000-Konfiguration: '" + eintrag + "' ist kein schluessel=wert"; return false; }
+        if (key == "index8") {
+            if (val == "1") cfg.index8 = Cfg::Index8::I1;
+            else if (val == "3") cfg.index8 = Cfg::Index8::I3;
+            else { fehler = "P8000: index8 = " + val + " unbekannt (1 | 3)"; return false; }
+        } else if (key == "mon8") {
+            if (val == "3.0") cfg.mon8 = Cfg::Mon8::V3_0;
+            else if (val == "3.1") cfg.mon8 = Cfg::Mon8::V3_1;
+            else if (val == "3.1n") cfg.mon8 = Cfg::Mon8::V3_1_Nur8Bit;
+            else if (val == "2.1n") cfg.mon8 = Cfg::Mon8::V2_1_Nur8Bit;
+            else { fehler = "P8000: mon8 = " + val + " unbekannt (3.0 | 3.1 | 3.1n | 2.1n)"; return false; }
+        } else if (key.size() == 3 && key.compare(0, 2, "lw") == 0 && key[2] >= '0' && key[2] <= '3') {
+            cfg.laufwerke[key[2] - '0'] = val;
+        } else if (key == "terminals") {
+            if (val != "1") { fehler = "P8000: terminals = " + val + " noch nicht moeglich (nur 1 = tty1)"; return false; }
+        } else if (key == "karte16") {
+            if (val != "0") { fehler = "P8000: karte16 = " + val + " noch nicht gebaut (nur 0 = nur 8-Bit-Teil)"; return false; }
+        } else if (key == "index16" || key == "mon16" || key == "dram" || key == "wdc" || key == "platte") {
+            fehler = "P8000: '" + key + "' noch nicht implementiert (16-Bit-Teil/WDC folgen)";
+            return false;
+        } else {
+            fehler = "P8000: unbekannter Schluessel '" + key + "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+K1520Handle k1520_create_p8000(const char* konfig) {
+    g_init_error.clear();
+    P8000Machine::Config cfg;
+    if (!p8000Konfig(konfig, cfg, g_init_error)) return nullptr;
+    setup_logging();
+    try {
+        K1520Machine* m = new P8000Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
         return m;
     } catch (const std::exception& e) {
         g_init_error = e.what();
@@ -1139,6 +1213,75 @@ bool k1520_raf_load(K1520Handle h, const char* pfad) {
 bool k1520_raf_save(K1520Handle h, const char* pfad) {
     const RAF* r = (h && pfad) ? toMachine(h)->raf() : nullptr;
     return r && r->speichereInhalt(pfad);
+}
+
+// ─── Terminals des P8000 (Entwurf 25 §10.9) ─────────────────────────────────
+// Derzeit genau ein Kern-Terminal (tty1); Index i ≠ 0 und andere Maschinen → Ruhewerte.
+static P8000Machine* p8000Of(K1520Handle h, int i) {
+    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
+    return (p && i == 0) ? p : nullptr;
+}
+static bool termZelleOk(int col, int row) {
+    return col >= 0 && col < k1520::p8000::Terminal::SPALTEN && row >= 0 && row < k1520::p8000::Terminal::ZEILEN;
+}
+
+int k1520_term_count(K1520Handle h) {
+    return h && dynamic_cast<P8000Machine*>(toMachine(h)) ? 1 : 0;
+}
+
+int k1520_term_tty(K1520Handle h, int i) {
+    return p8000Of(h, i) ? P8000Machine::KONSOLE_TTY : -1;
+}
+
+uint8_t k1520_term_char(K1520Handle h, int i, int col, int row) {
+    auto* p = p8000Of(h, i);
+    return (p && termZelleOk(col, row)) ? p->screenChar(col, row) : 0;
+}
+
+uint8_t k1520_term_attr(K1520Handle h, int i, int col, int row) {
+    auto* p = p8000Of(h, i);
+    return (p && termZelleOk(col, row)) ? p->terminal().wirksamesAttribut(row, col) : 0;
+}
+
+int k1520_term_text(K1520Handle h, int i, int row, char* buf, int cap) {
+    auto* p = p8000Of(h, i);
+    if (!p || !buf || cap <= 0 || row < 0 || row >= k1520::p8000::Terminal::ZEILEN) return 0;
+    const std::string t = p->terminalZeile(row);
+    const int n = std::min<int>(static_cast<int>(t.size()), cap - 1);
+    std::memcpy(buf, t.data(), static_cast<size_t>(n));
+    buf[n] = 0;
+    return n;
+}
+
+bool k1520_term_cursor(K1520Handle h, int i, int* col, int* row) {
+    auto* p = p8000Of(h, i);
+    if (!p) return false;
+    if (col) *col = p->terminal().spalte();
+    if (row) *row = p->terminal().zeile();
+    return true;
+}
+
+int k1520_term_mode(K1520Handle h, int i) {
+    auto* p = p8000Of(h, i);
+    if (!p) return -1;
+    return p->terminal().modus() == k1520::p8000::TerminalModus::VT100 ? 1 : 0;
+}
+
+bool k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctrl) {
+    auto* p = p8000Of(h, i);
+    if (!p) return false;
+    p->keyPress(keycode, shift, ctrl);
+    return true;
+}
+
+bool k1520_term_send(K1520Handle h, int i, const char* text, int len) {
+    auto* p = p8000Of(h, i);
+    if (!p) return false;
+    for (int k = 0; text && k < len; ++k) {
+        const unsigned char c = static_cast<unsigned char>(text[k]);
+        p->keyPress((c == '\r' || c == '\n') ? 0x01000004u : c, false, false);
+    }
+    return true;
 }
 
 } // extern "C"
