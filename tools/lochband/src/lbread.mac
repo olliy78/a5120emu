@@ -7,7 +7,8 @@
 ;
 ;   LBREAD datei [/A] [/K] [/O]
 ;
-;     /A   ASCII-Band: Bit 7 (Paritaet) wird geloescht, 1AH beendet das Lesen
+;     /A   ASCII-Band: gerade Paritaet wird geprueft (Fehler werden
+;          gezaehlt und gemeldet), Bit 7 wird geloescht, 1AH beendet das Lesen
 ;     /K   alle Bytes behalten (sonst werden Vor- und Nachlauf aus 00H entfernt)
 ;     /O   vorhandene Datei ueberschreiben
 ;
@@ -202,6 +203,13 @@ FIN2:
 	CALL	PRDEC
 	LD	DE, M_OK2
 	CALL	PUTS
+	LD	A, (FLAGS)
+	AND	OPT_A
+	JP	Z, EXIT
+	LD	HL, (PERR)
+	CALL	PRDEC
+	LD	DE, M_PERR
+	CALL	PUTS
 	JP	EXIT
 
 USAGE:
@@ -280,7 +288,12 @@ PUTB:
 	AND	OPT_A
 	LD	A, C
 	JR	Z, PB1
-	AND	7FH			; ASCII: Paritaetsbit weg
+	OR	A			; gerade Paritaet erwartet (PE), sonst Fehler zaehlen
+	JP	PE, PBPOK
+	LD	HL, (PERR)
+	INC	HL
+	LD	(PERR), HL
+PBPOK:	AND	7FH			; ASCII: Paritaetsbit weg
 	CP	1AH
 	JR	NZ, PB1
 	LD	(EOFF), A		; ^Z beendet das Lesen
@@ -444,6 +457,7 @@ M_NOTAPE:
 	DB	'FEHLER: Kein Band im Leser (STA D6).', 0DH, 0AH, '$'
 M_NOREAD:
 	DB	'FEHLER: Leser antwortet nicht (K6022 gesteckt? Leser an?).', 0DH, 0AH, '$'
+M_PERR:	DB	' Paritaetsfehler.', 0DH, 0AH, '$'
 M_OK2:	DB	' Byte gelesen.', 0DH, 0AH, '$'
 
 ; =============================================================================
@@ -463,6 +477,7 @@ STARTED: DB	0
 CUR:	DB	0
 NULLS:	DW	0
 CNT:	DW	0
+PERR:	DW	0
 BUFN:	DB	0
 BUF:	DS	128
 	DS	96

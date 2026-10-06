@@ -54,6 +54,6 @@ Entwurf und Stand je AP: **`doc/design/23_lochstreifen.md`**; SIF1000-Handschlag
   `lbread datei [/A /K /O]`, `lbpunch datei [/A /K]`; auf den SCPX-/CP/A-Bootdisketten (`tools/disketten_beigaben.py`).
   Geprüft im Emulator (`k1520dbg --ptape-in/--ptape-out`): A5120 SCPX und CP/A, PRG 710 und 710-1 (SCPX), K8915.
   Grenzen: Datei ist ein Vielfaches von 128 B (Rest ^Z), `lbpunch` stanzt daher ganze Sätze (ohne `/A`);
-  `lbread /o` löscht eine vorhandene Datei, bevor es das Band prüft; Zählerausgabe 16 Bit.
+  `lbread /o` löscht eine vorhandene Datei, bevor es das Band prüft; Zählerausgabe 16 Bit.  `lbread /A` prüft gerade Parität, zählt Fehler und meldet sie am Ende (Bytes bleiben erhalten); geprüft mit Band ohne und mit 2 Fehlern (A5120 SCPX/CP/A).
 - Save-State ohne Karte (Festlegung 5) — bei Bedarf eigener Teil mit neuer Fassung.
 - Anwenderfragen zur K6022 (KOM/STA, Geschwindigkeiten daro 1210/1215): Plan PRG 710 §8.8.
