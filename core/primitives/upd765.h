@@ -72,6 +72,15 @@ public:
     void setDrive(int unit, FloppyDriveV2* d) { if (unit >= 0 && unit < kUnits) drive_[unit] = d; }
     /// @brief Optional: READY-Leitung je Laufwerk.  Leer = „Diskette eingelegt".
     std::function<bool(int unit)> ready;
+    /// @brief Optional: Laufwerkswahl VON AUSSEN (P8000: US0/US1 unbeschaltet, die Mechanik
+    ///        wählt allein die PIO).  Liefert zum Befehls-Unit @p unit den Anschluss
+    ///        (0..kUnits-1) des tatsächlich angesprochenen Laufwerks, -1 = keines gewählt.
+    ///        Leer (Vorgabe) = die Unit aus dem Befehl.  Die Unit-Nummer in ST0/ST3/PCN
+    ///        bleibt die des Befehls.
+    std::function<int(int unit)> unitAuswahl;
+    /// @brief Datenrate MFM in kbit/s umschalten (P8000: PIO2-A4, 4/8 MHz Takt); FM halb so schnell.
+    void setDatenrate(uint32_t mfm_kbit) { if (mfm_kbit) cfg_.mfm_kbit = mfm_kbit; }
+    uint32_t datenrate() const { return cfg_.mfm_kbit; }
     /// @brief Optional: Flankenmeldungen der Ausgänge DRQ und INT.
     std::function<void(bool)> onDrq, onIrq;
 
@@ -140,7 +149,11 @@ private:
     void abortByTc();
 
     int64_t bytePeriod() const;
-    FloppyDriveV2* drv() const { return drive_[unit_]; }
+    FloppyDriveV2* laufwerk(int u) const {
+        const int p = unitAuswahl ? unitAuswahl(u) : (u & 3);
+        return (p >= 0 && p < kUnits) ? drive_[p] : nullptr;
+    }
+    FloppyDriveV2* drv() const { return laufwerk(unit_); }
     bool unitReady(int u) const;
     void setDrq(bool v);
     void setIrq(bool v);

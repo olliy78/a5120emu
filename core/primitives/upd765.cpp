@@ -87,8 +87,9 @@ int64_t Upd765::bytePeriod() const
 
 bool Upd765::unitReady(int u) const
 {
-    if (!drive_[u]) return false;
-    return ready ? ready(u) : drive_[u]->isMounted();
+    FloppyDriveV2* d = laufwerk(u);
+    if (!d) return false;
+    return ready ? ready(u) : d->isMounted();
 }
 
 void Upd765::setDrq(bool v)
@@ -270,7 +271,7 @@ void Upd765::senseDrive()
 {
     const int u = cmd_[1] & 3;
     const uint8_t hd = (cmd_[1] >> 2) & 1;
-    FloppyDriveV2* d = drive_[u];
+    FloppyDriveV2* d = laufwerk(u);
     uint8_t st3 = static_cast<uint8_t>(u | (hd << 2));
     if (d) {
         if (d->headReachable(1)) st3 |= 0x08;               // TS
@@ -298,7 +299,7 @@ void Upd765::senseInterrupt()
 void Upd765::startSeek(bool recal)
 {
     const int u = cmd_[1] & 3;
-    FloppyDriveV2* d = drive_[u];
+    FloppyDriveV2* d = laufwerk(u);
     const int cur = d ? d->currentCylinder() : pcn_[u];
     const int target = recal ? 0 : cmd_[2];
     const int steps = std::max(1, std::abs(target - cur));
@@ -312,7 +313,7 @@ void Upd765::startSeek(bool recal)
 void Upd765::completeSeek(int u)
 {
     seek_left_[u] = -1;
-    FloppyDriveV2* d = drive_[u];
+    FloppyDriveV2* d = laufwerk(u);
     const bool ok = d && d->seek(seek_target_[u]);
     pcn_[u] = seek_target_[u];
     // RECALIBRATE ohne Laufwerk findet nie Spur 0: EC (Equipment Check) + IC = 01
@@ -633,10 +634,10 @@ bool Upd765::deserialize(const uint8_t*& p, const uint8_t* end)
     for (int u = 0; u < kUnits; ++u) d[u] = drive_[u];
     const bool drq = tmp.drq_, irq = tmp.irq_;
     tmp.drq_ = drq_; tmp.irq_ = irq_;
-    auto rdy = ready; auto od = onDrq; auto oi = onIrq;
+    auto rdy = ready; auto od = onDrq; auto oi = onIrq; auto ua = unitAuswahl;
     *this = std::move(tmp);
     for (int u = 0; u < kUnits; ++u) drive_[u] = d[u];
-    ready = rdy; onDrq = od; onIrq = oi;
+    ready = rdy; onDrq = od; onIrq = oi; unitAuswahl = ua;
     setDrq(drq);
     setIrq(irq);
     return true;

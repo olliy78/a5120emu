@@ -142,8 +142,8 @@ uint8_t Z80Dma::ioRead(uint8_t) {
         s_.readPos = (pos + 1) % 7;
         switch (pos) {
         case 0: return status();
-        case 1: return s_.counter & 0xFF;
-        case 2: return (s_.counter >> 8) & 0xFF;
+        case 1: return zaehlerLesen() & 0xFF;
+        case 2: return (zaehlerLesen() >> 8) & 0xFF;
         case 3: return s_.aCur & 0xFF;
         case 4: return s_.aCur >> 8;
         case 5: return s_.bCur & 0xFF;
@@ -151,6 +151,10 @@ uint8_t Z80Dma::ioRead(uint8_t) {
         }
     }
     return status();
+}
+
+int32_t Z80Dma::zaehlerLesen() const {
+    return (zaehler_blocklaenge_ && s_.counter > s_.blockLen) ? s_.blockLen : s_.counter;
 }
 
 uint8_t Z80Dma::status() const {

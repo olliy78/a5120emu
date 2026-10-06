@@ -92,6 +92,7 @@ public:
     Z80PIO&           pio1()     { return pio1_; }   ///< EPROMmer, unbeschaltet
     Z80PIO&           pio2()     { return pio2_; }   ///< Floppy-Port (P5f)
     const Config&     config() const { return cfg_; }
+    K1520Bus&         bus()      { return bus_; }
 
     // ─── Leitungen ───────────────────────────────────────────────────────────
     /// RESI (Q von 6D11) an PIO2-A7: 1 = Power-on, 0 = Taste.
@@ -115,6 +116,20 @@ public:
     /// FDC-Tore 20H–23H (P5f hängt hier ein; ohne Handler: Lesen FFH, Schreiben verschluckt).
     std::function<uint8_t(uint8_t reg /*0..1*/)>       fdcLesen;
     std::function<void(uint8_t reg, uint8_t wert)>     fdcSchreiben;
+
+    // ─── Haken für die Floppy-Seite (floppy8, P5f) ───────────────────────────
+    /// DMA UA858 (3CH–3FH, 4-fach gespiegelt): Steuerport.  Ohne Handler: Lesen FFH.
+    std::function<uint8_t()>        dmaLesen;
+    std::function<void(uint8_t)>    dmaSchreiben;
+    /// Echte DMA statt des Platzhalters in die Interruptkette (vorderstes Glied) einsetzen.
+    void setzeDmaKettenglied(InterruptSlave* dma);
+    /// DMA als Busmaster: fordert @p anfrage den Bus (/BUSRQ), steht die CPU still und
+    /// @p schritt bewegt ein Byte (Rückgabe Takte, 0 = Bus gehalten ohne RDY ⇒ 4 Takte).
+    void setzeBusmaster(std::function<bool()> anfrage, std::function<int()> schritt) {
+        bm_anfrage_ = std::move(anfrage); bm_schritt_ = std::move(schritt);
+    }
+    /// Nach jedem /RES der Karte (Netz-Ein und Taste), nachdem die PIOs zurückgesetzt sind.
+    void setzeResetHaken(std::function<void()> h) { reset_haken_ = std::move(h); }
 
     // ─── BusDevice: alle Tore der Karte außer 00H–07H (absolute Portnummer) ──
     uint8_t     ioRead(uint8_t port) override;
@@ -145,6 +160,9 @@ private:
     std::array<uint8_t, 2> latch_{};
     LatchRueckruf latch_cb_;
     std::function<void()> nmi16_cb_;
+    std::function<bool()> bm_anfrage_;
+    std::function<int()>  bm_schritt_;
+    std::function<void()> reset_haken_;
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];
     bool wait_gewarnt_ = false;

@@ -54,6 +54,10 @@ public:
     int  step();
     /// Hardware-Reset (/RESET): wie C3.
     void reset();
+    /// Lesesequenz: nach Blockende meldet der Bytezähler die programmierte Blocklänge N statt
+    /// N + 1 (der MON8-Hardwaretest des P8000 prüft das an der UA858: Zähler = 0100H nach
+    /// Blocklänge 0100H).  Vorgabe aus ⇒ das bisherige Verhalten bleibt bitgleich.
+    void setZaehlerLiestBlocklaenge(bool an) { zaehler_blocklaenge_ = an; }
 
     // ─── Interrupt (Daisy-Chain wie Z80CTC) ─────────────────────────────────
     void    setIEI(bool iei) override { iei_ = iei; }
@@ -95,6 +99,7 @@ private:
         bool     endLevel = false;
     } s_;
     bool        iei_ = false;
+    bool        zaehler_blocklaenge_ = false;   ///< Konfiguration (nicht im Save-State)
     std::string name_;
 
     void  schreibeWR(uint8_t d);
@@ -104,6 +109,7 @@ private:
     bool  ready() const;
     bool  quelleIstA() const { return s_.wr0 & 0x04; }
     void  load();
+    int32_t zaehlerLesen() const;
     void  blockEndeBehandeln();
     void  setEndLevel(bool l);
     bool  modeCont() const { return ((s_.wr4 >> 5) & 3) == 1; }

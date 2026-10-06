@@ -333,6 +333,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_p8000_karte8 PUBLIC k1520_p8000_speicher8 k1520_z80 k1520_ctc k1520_sio k1520_pio k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_p8000_karte8 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, Floppy-Seite der 8-Bit-Karte: U8272 + UA858 + PIO2-Glue + Laufwerke (AP P5f)
+    add_library(k1520_p8000_floppy8 STATIC core/cards/p8000/floppy8.cpp)
+    target_link_libraries(k1520_p8000_floppy8 PUBLIC k1520_p8000_karte8 k1520_upd765 k1520_z80dma k1520_laufwerke k1520_k5122)
+    target_include_directories(k1520_p8000_floppy8 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
     add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
     target_link_libraries(k1520_i8279 PUBLIC k1520_logger)

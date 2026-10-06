@@ -21,6 +21,7 @@ constexpr uint8_t PORT_FDC   = 0x20;   // 20H–23H
 constexpr uint8_t PORT_SIO0  = 0x24;   // 24H–27H
 constexpr uint8_t PORT_SIO1  = 0x28;   // 28H–2BH
 constexpr uint8_t PORT_CTC1  = 0x2C;   // 2CH–2FH
+constexpr uint8_t PORT_DMA   = 0x3C;   // 3CH–3FH
 constexpr uint8_t PORT_ENDE  = 0x40;   // 30H–3FH: RES1..3 (nur X13) und DMA
 
 inline bool in4(uint8_t port, uint8_t basis) { return uint8_t(port - basis) < 4; }
@@ -141,6 +142,11 @@ P8000Karte8::P8000Karte8(K1520Bus& bus, const Config& cfg)
     latch_.fill(cfg_.latch_start);
 }
 
+void P8000Karte8::setzeDmaKettenglied(InterruptSlave* dma)
+{
+    bus_.setInterruptChain({dma, &pio2_, &ctc0_, &sio0_, &sio1_, &pio0_, &pio1_, &ctc1_});
+}
+
 void P8000Karte8::ketteAnlegen()
 {
     // Schaltplan §3: DMA – PIO2 – CTC0 – SIO0 – SIO1 – (XP6) – PIO0 – PIO1 – CTC1.
@@ -180,6 +186,7 @@ void P8000Karte8::resetBausteine()
     cpu_.reset();
     for (auto& a : anschluesse_) a->wirke();
     seriell_geaendert_ = true;
+    if (reset_haken_) reset_haken_();
     bus_.markIntDirty();
 }
 
@@ -211,6 +218,14 @@ void P8000Karte8::nmiTaste()
 
 int P8000Karte8::schritt()
 {
+    if (bm_anfrage_ && bm_anfrage_()) {   // DMA hält die CPU (/BUSRQ → /BUSAK)
+        int used = bm_schritt_();
+        if (used == 0) used = 4;          // Bus gehalten, kein RDY
+        if (const uint32_t w = sp_.nimmWartetakte(); w > 0) used += static_cast<int>(w);
+        cpu_.cycles += static_cast<uint64_t>(used);
+        bus_.markIntDirty();              // Blockende kann einen Interrupt melden
+        return used;
+    }
     bus_.updateInterruptChain();
     if (bus_.isINT() && cpu_.IFF1) {
         const uint8_t vec = bus_.interruptAcknowledge();
@@ -250,8 +265,9 @@ uint8_t P8000Karte8::ioRead(uint8_t port)
     if (in4(port, PORT_SIO1)) return sio1_.ioRead(port & 3);
     if (in4(port, PORT_CTC1)) return ctc1_.ioRead(port & 3);
     if (in4(port, PORT_FDC))  return fdcLesen ? fdcLesen(port & 1) : 0xFF;
+    if (uint8_t(port - PORT_DMA) < 4) return dmaLesen ? dmaLesen() : 0xFF;
     // 10H–17H: DS8282 hat /OE fest Low und nur Ausgänge zur 16-Bit-Seite — nicht lesbar;
-    // 30H–3FH: RES1..3 (nur X13) bzw. DMA (Platzhalter) ⇒ offener Bus
+    // 30H–3FH: RES1..3 (nur X13) ⇒ offener Bus; 3CH–3FH = DMA (Haken)
     return 0xFF;
 }
 
@@ -282,5 +298,6 @@ void P8000Karte8::ioWrite(uint8_t port, uint8_t data)
         return;
     }
     if (in4(port, PORT_FDC)) { if (fdcSchreiben) fdcSchreiben(port & 1, data); return; }
-    // 30H–3FH: nichts auf der Karte
+    if (uint8_t(port - PORT_DMA) < 4) { if (dmaSchreiben) dmaSchreiben(data); return; }
+    // 30H–3BH: nichts auf der Karte
 }
