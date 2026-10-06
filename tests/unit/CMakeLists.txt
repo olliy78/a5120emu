@@ -7,6 +7,8 @@ set(_lbl "unit;fast")
 k1520_add_test(z80   SRC primitives/test_z80.cpp   LIBS k1520_z80 LABELS "${_lbl}")
 # U8001/U8002 (S3): Testprogramme mit z8kasm (tools/z8000/, header-only)
 k1520_add_test(z8000 SRC primitives/test_z8000.cpp LIBS k1520_z8000 LABELS "${_lbl}")
+# UB8010/Z8010-MMU (P8000 AP P9a)
+k1520_add_test(z8010 SRC primitives/test_z8010.cpp LIBS k1520_z8010 LABELS "${_lbl}")
 k1520_add_test(pio   SRC primitives/test_pio.cpp   LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl}")
 # P8000 P5c/P5d: Handshake-/Pinpegel-Erweiterung PIO, Bruchtakt-Zähleingang CTC

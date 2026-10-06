@@ -235,6 +235,11 @@ if(BUILD_K1520)
             core/primitives/z8000.cpp
         )
         target_include_directories(k1520_z8000 PUBLIC ${CMAKE_SOURCE_DIR})
+        # UB8010/Z8010-MMU (P8000 AP P9a, doc/p8000/z8010_mmu.md)
+        add_library(k1520_z8010 STATIC
+            core/primitives/z8010.cpp
+        )
+        target_include_directories(k1520_z8010 PUBLIC ${CMAKE_SOURCE_DIR})
 
     target_link_libraries(k1520_sio PUBLIC k1520_bus)
     target_include_directories(k1520_sio PUBLIC ${CMAKE_SOURCE_DIR})
