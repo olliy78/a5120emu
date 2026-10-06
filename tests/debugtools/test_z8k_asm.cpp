@@ -9,6 +9,7 @@
 
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -323,4 +324,67 @@ TEST(Z8kAsm, SymboldateiNurMarkenMitSegment) {
     AsmResult n = assemble("        ORG %0200\nHIER:   NOP\n", AsmOptions{});
     ASSERT_TRUE(n.ok());
     EXPECT_NE(formatSymbols(n, 5).find("<<5>>%0200 HIER\n"), std::string::npos);
+}
+
+// ── AP P8: Rundlauf über den GANZEN Befehlssatz (jedes erste Wort, beide Modi) ──
+//
+// Für jedes der 65 536 ersten Worte, das eine Tabellenzeile trifft, mit zufälligen
+// Folgeworten: dekodieren → Disassembler-Text → Assembler → wieder dekodieren.  Verlangt
+// wird dieselbe Zeile und derselbe Operandeninhalt (Register, Segment, Kurzform, Wert,
+// Abstand) und derselbe Text.  Bitgleichheit der Worte wird gezählt, aber nicht verlangt:
+// Felder, die die CPU nicht auswertet (unteres Byte des ersten Worts einer langen
+// Segmentadresse, oberes Byte einer Byte-Direktgrösse in der Langform `LDB.L`), schreibt
+// der Assembler als 0 bzw. verdoppelt.
+namespace {
+bool sameOperand(const Operand& a, const Operand& b) {
+    return a.kind == b.kind && a.reg == b.reg && a.reg2 == b.reg2 && a.seg == b.seg &&
+           a.shortSeg == b.shortSeg && a.value == b.value && a.disp == b.disp;
+}
+} // namespace
+
+TEST_P(Z8kRoundTrip, JedesErsteWortMitZufallsfolgeworten) {
+    const bool seg = GetParam();
+    const uint8_t pcSeg = seg ? 3 : 0;
+    const uint16_t pc = 0x4000;
+    uint32_t rnd = 0x1234567u;
+    auto next = [&] { rnd = rnd * 1103515245u + 12345u; return uint16_t(rnd >> 8); };
+    int decoded = 0, bitgleich = 0, fails = 0;
+    std::set<std::string> shown;                         // je Fehlerart ein Beispiel
+    for (uint32_t w0 = 0; w0 < 0x10000; ++w0) {
+        for (int k = 0; k < 3; ++k) {
+            uint16_t words[6] = {uint16_t(w0), next(), next(), next(), next(), next()};
+            if (k == 1) words[1] = 0;                    // Feldwert 0 (Basis-/Indexregister 0 …)
+            Decoded d;
+            if (!decodeWords(words, 6, seg, d)) continue;
+            ++decoded;
+            const std::string text = formatDecoded(d, pcSeg, uint16_t(pc + d.bytes()));
+            std::vector<uint16_t> back;
+            std::string err;
+            const Insn* chosen = nullptr;
+            // Ungerade Registerpaare (README Lücke 9) nimmt nur --lax an.
+            bool ok = assembleLine(text, seg, pcSeg, pc, back, err, nullptr, &chosen);
+            if (!ok) ok = assembleLine(text, seg, pcSeg, pc, back, err, nullptr, &chosen, true);
+            Decoded e;
+            bool same = ok && decodeWords(back.data(), int(back.size()), seg, e) && e.insn == d.insn &&
+                        e.nwords == d.nwords && e.nops == d.nops;
+            for (int i = 0; same && i < d.nops; ++i) same = sameOperand(d.op[i], e.op[i]);
+            if (same) same = formatDecoded(e, pcSeg, uint16_t(pc + e.bytes())) == text;
+            if (!same) {
+                ++fails;
+                const std::string cat = std::string(d.insn->mn) + " " + d.insn->src->ops + (ok ? "" : " " + err.substr(0, 20));
+                if (shown.insert(cat).second && shown.size() <= 40)
+                    ADD_FAILURE() << (seg ? "seg " : "nonseg ") << hexWords(std::vector<uint16_t>(words, words + d.nwords))
+                                  << "'" << text << "' (" << d.insn->mn << " " << d.insn->src->ops << ") → "
+                                  << (ok ? hexWords(back) : "Fehler: " + err);
+                continue;
+            }
+            bool eq = true;
+            for (int i = 0; i < d.nwords; ++i) eq &= back[size_t(i)] == words[i];
+            bitgleich += eq;
+        }
+    }
+    EXPECT_EQ(fails, 0);
+    EXPECT_GT(decoded, 150000);
+    std::printf("Rundlauf %s: %d Befehle dekodiert, %d bitgleich zurueck\n", seg ? "segmentiert" : "nichtsegmentiert",
+                decoded, bitgleich);
 }

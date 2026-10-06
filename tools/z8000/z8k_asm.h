@@ -94,7 +94,9 @@ inline bool identStart(char c) { return std::isalpha(static_cast<unsigned char>(
 inline bool identChar(char c)  { return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '?'; }
 
 /// Registername → Klasse ('B','W','L','Q') und Kodierung; false = kein Register.
-inline bool parseReg(const std::string& up, char& cls, int& num, std::string* err = nullptr) {
+/// @p lax (AsmOptions::laxPointers): auch ungerade RRn/RQn — der Disassembler zeigt das
+/// Feld so, wie es kodiert ist (README Lücke 9), und der Rundlauf muss es zurücknehmen.
+inline bool parseReg(const std::string& up, char& cls, int& num, std::string* err = nullptr, bool lax = false) {
     auto digits = [&](size_t from, int& v) {
         if (from >= up.size()) return false;
         v = 0;
@@ -107,11 +109,11 @@ inline bool parseReg(const std::string& up, char& cls, int& num, std::string* er
     };
     int v = 0;
     if (up.size() >= 3 && up[0] == 'R' && up[1] == 'Q' && digits(2, v)) {
-        if (v > 12 || (v & 3)) { if (err) *err = "ungueltiges Quadregister " + up; return false; }
+        if (v > (lax ? 15 : 12) || (!lax && (v & 3))) { if (err) *err = "ungueltiges Quadregister " + up; return false; }
         cls = 'Q'; num = v; return true;
     }
     if (up.size() >= 3 && up[0] == 'R' && up[1] == 'R' && digits(2, v)) {
-        if (v > 14 || (v & 1)) { if (err) *err = "ungueltiges Registerpaar " + up + " (nur gerade RR0..RR14)"; return false; }
+        if (v > (lax ? 15 : 14) || (!lax && (v & 1))) { if (err) *err = "ungueltiges Registerpaar " + up + " (nur gerade RR0..RR14)"; return false; }
         cls = 'L'; num = v; return true;
     }
     if (up.size() >= 3 && up[0] == 'R' && (up[1] == 'H' || up[1] == 'L') && digits(2, v)) {
@@ -310,7 +312,7 @@ struct PArg {
 };
 
 /// Operandentext zerlegen.  false + err bei Syntaxfehler.
-inline bool parseArg(const std::string& raw, PArg& a, std::string& err) {
+inline bool parseArg(const std::string& raw, PArg& a, std::string& err, bool lax = false) {
     std::string s = trim(raw);
     a = PArg{};
     a.text = upper(s);
@@ -320,11 +322,11 @@ inline bool parseArg(const std::string& raw, PArg& a, std::string& err) {
     if (s[0] == '#') { a.t = PArg::Imm; a.expr = s.substr(1); return true; }
     if (s[0] == '@') {
         std::string r = upper(trim(s.substr(1)));
-        if (!parseReg(r, cls, num, &rerr)) { err = rerr.empty() ? "Register nach @ erwartet" : rerr; return false; }
+        if (!parseReg(r, cls, num, &rerr, lax)) { err = rerr.empty() ? "Register nach @ erwartet" : rerr; return false; }
         if (cls != 'W' && cls != 'L') { err = "@ braucht Rn oder RRn"; return false; }
         a.t = PArg::Ind; a.cls = cls; a.reg = num; return true;
     }
-    if (parseReg(a.text, cls, num, &rerr)) { a.t = PArg::Reg; a.cls = cls; a.reg = num; return true; }
+    if (parseReg(a.text, cls, num, &rerr, lax)) { a.t = PArg::Reg; a.cls = cls; a.reg = num; return true; }
     if (!rerr.empty()) { err = rerr; return false; }
     // Rn(…) / RRn(…) — Basis
     size_t lp = s.find('(');
@@ -332,7 +334,7 @@ inline bool parseArg(const std::string& raw, PArg& a, std::string& err) {
         std::string head = upper(trim(s.substr(0, lp)));
         std::string inner = trim(s.substr(lp + 1, s.size() - lp - 2));
         std::string herr;
-        if (parseReg(head, cls, num, &herr)) {
+        if (parseReg(head, cls, num, &herr, lax)) {
             if (cls != 'W' && cls != 'L') { err = "Basis muss Rn oder RRn sein"; return false; }
             a.cls = cls; a.reg = num;
             if (!inner.empty() && inner[0] == '#') { a.t = PArg::Base; a.expr = inner.substr(1); return true; }
@@ -572,9 +574,13 @@ inline bool bindRow(const Insn& in, std::vector<PArg> args, const BindCtx& cx,
             case Kind::IML: if (!range(-2147483648LL, 4294967295LL, "Langwort-Direktwert")) return false; o.value = uint32_t(v); break;
             case Kind::IM4: if (!range(0, 15, "Konstante")) return false; o.value = uint32_t(v); break;
             case Kind::N16: case Kind::LDMN: if (!range(1, 16, "Anzahl")) return false; o.value = uint32_t(v); break;
-            case Kind::BIT: if (!range(0, B ? 7 : 15, "Bitnummer")) return false; o.value = uint32_t(v); break;
+            // --lax: auch, was das Handbuch verbietet, die CPU aber ausführt (Bytebit 8..15,
+            // Schiebeweite über die Breite) — damit der Disassemblertext jeder Kodierung
+            // zurück assembliert (Rundlauf über den ganzen Befehlssatz, AP P8).
+            case Kind::BIT: if (!range(0, (B && !cx.laxPtr) ? 7 : 15, "Bitnummer")) return false; o.value = uint32_t(v); break;
             case Kind::SHL: case Kind::SHR: {
                 int64_t mx = B ? 8 : Lw ? 32 : 16;
+                if (cx.laxPtr) mx = s.kind == Kind::SHR ? (int64_t(1) << s.f.width) : (int64_t(1) << s.f.width) - 1;
                 if (!range(s.kind == Kind::SHR ? 1 : 0, mx, "Schiebeweite")) return false;
                 o.value = uint32_t(v);
                 o.disp = s.kind == Kind::SHR ? -int32_t(v) : int32_t(v);
@@ -625,7 +631,7 @@ inline bool matchInstr(const std::string& mnemonic, const std::vector<std::strin
     std::vector<PArg> args;
     for (auto& t : argTexts) {
         PArg a; std::string perr;
-        if (!parseArg(t, a, perr)) { err = perr; return false; }
+        if (!parseArg(t, a, perr, cx.laxPtr)) { err = perr; return false; }
         args.push_back(a);
     }
     std::string firstErr;
@@ -669,7 +675,8 @@ inline std::string stripComment(const std::string& line) {
  */
 inline bool assembleLine(const std::string& text, bool seg, uint8_t pcSeg, uint16_t pc,
                          std::vector<uint16_t>& words, std::string& err,
-                         const asmdetail::SymFn* sym = nullptr, const Insn** chosen = nullptr) {
+                         const asmdetail::SymFn* sym = nullptr, const Insn** chosen = nullptr,
+                         bool laxPointers = false) {
     using namespace asmdetail;
     std::string s = trim(stripComment(text));
     size_t sp = 0;
@@ -678,6 +685,7 @@ inline bool assembleLine(const std::string& text, bool seg, uint8_t pcSeg, uint1
     std::string rest = trim(s.substr(sp));
     std::vector<std::string> args = rest.empty() ? std::vector<std::string>{} : splitArgs(rest);
     BindCtx cx; cx.seg = seg; cx.pcSeg = pcSeg; cx.pc = pc; cx.sym = sym; cx.final = true;
+    cx.laxPtr = laxPointers;
     const Insn* in = nullptr;
     Operand ops[4];
     if (!matchInstr(mn, args, cx, in, ops, err)) return false;
