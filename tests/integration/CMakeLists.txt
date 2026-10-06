@@ -257,3 +257,9 @@ k1520_add_test(p8000_maschine SRC test_p8000_machine.cpp
 k1520_add_test(p8000_boot SRC test_p8000_boot.cpp
                           LIBS k1520_p8000 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
+# P8000 Save-State P8KS v1 (doc/design/25_p8000.md §10.2, AP P7e): Rundreise mitten im Laden von
+# Diskette (FDC + DMA aktiv), Konfigurationsfingerabdruck, defekter Zustand lässt alles stehen.
+k1520_add_test(p8000_stand SRC test_p8000_stand.cpp
+                          LIBS k1520_p8000 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)

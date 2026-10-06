@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "core/peripherals/p8000_terminal/terminal.h"
 #include "core/serial/anschluss.h"
@@ -29,6 +30,10 @@ public:
 
     /// Gastformat weicht von 9600 Bd / 8 Datenbits ab (Anzeige; Zeichen werden trotzdem gezeigt).
     bool baudAbweichend() const;
+
+    /// Save-State (P8KS): Zeichenzeit-Reste und BREAK-Zustand.
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
     uint64_t zeichenTakte() const;

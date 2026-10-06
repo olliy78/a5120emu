@@ -1,5 +1,7 @@
 #include "core/peripherals/p8000_terminal/terminal_anschluss.h"
 
+#include "core/util/zustand.h"
+
 namespace k1520::p8000 {
 
 uint64_t TerminalAnschluss::zeichenTakte() const {
@@ -37,6 +39,24 @@ void TerminalAnschluss::takt(uint64_t takte) {
         karte_.breakEmpfang(false);
         breakAktiv_ = false;
     }
+}
+
+void TerminalAnschluss::serialize(std::vector<uint8_t>& out) const
+{
+    auto a = ZAr::schreiber(out);
+    auto* self = const_cast<TerminalAnschluss*>(this);
+    a.num(self->rxRest_); a.num(self->txRest_); a.num(self->breakRest_); a.flag(self->breakAktiv_);
+}
+
+bool TerminalAnschluss::deserialize(const uint8_t*& p, const uint8_t* end)
+{
+    auto a = ZAr::leser(p, end);
+    uint64_t rx = 0, tx = 0, br = 0; bool ba = false;
+    a.num(rx); a.num(tx); a.num(br); a.flag(ba);
+    if (!a.ok) return false;
+    rxRest_ = rx; txRest_ = tx; breakRest_ = br; breakAktiv_ = ba;
+    p = a.p;
+    return true;
 }
 
 }  // namespace k1520::p8000

@@ -602,6 +602,20 @@ void Z80CTC::serialize(std::vector<uint8_t>& out) const {
     out.push_back(iei_ ? 1 : 0);
 }
 
+void Z80CTC::serializeTakt(std::vector<uint8_t>& out) const {
+    for (uint64_t a : takt_acc_)
+        for (int i = 0; i < 8; ++i) out.push_back(static_cast<uint8_t>((a >> (8 * i)) & 0xFF));
+}
+
+bool Z80CTC::deserializeTakt(const uint8_t*& p, const uint8_t* end) {
+    if (end - p < 32) return false;
+    for (uint64_t& a : takt_acc_) {
+        a = 0;
+        for (int i = 0; i < 8; ++i) a |= static_cast<uint64_t>(*p++) << (8 * i);
+    }
+    return true;
+}
+
 bool Z80CTC::deserialize(const uint8_t*& p, const uint8_t* end) {
     if (static_cast<size_t>(end - p) < sizeof(ch_) + 2) return false;
     std::memcpy(&ch_[0], p, sizeof(ch_)); p += sizeof(ch_);

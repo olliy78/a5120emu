@@ -33,6 +33,7 @@
 
 #pragma once
 #include "core/bus/k1520_bus.h"
+#include "core/util/zustand.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -87,7 +88,12 @@ public:
     uint8_t& dram(uint16_t a)             { return dram_[a]; }
     uint8_t& sram(uint16_t a)             { return sram_[a & 0x7FF]; }
 
+    // ─── Save-State (P8KS, Entwurf 25 §10.2): ADP, RFF, SRAM, DRAM, Wartezähler; das EPROM nicht ──
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
+
 private:
+    void visit(k1520::ZAr& a);
     Config cfg_;
     K1520Bus* bus_ = nullptr;   ///< für ioAddress() (A12–A15 beim ADP-Schreiben)
     std::array<uint8_t, EPROM_GROESSE> rom_;

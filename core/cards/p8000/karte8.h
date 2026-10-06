@@ -131,6 +131,13 @@ public:
     /// Nach jedem /RES der Karte (Netz-Ein und Taste), nachdem die PIOs zurückgesetzt sind.
     void setzeResetHaken(std::function<void()> h) { reset_haken_ = std::move(h); }
 
+    // ─── Save-State (P8KS, Entwurf 25 §10.2) ─────────────────────────────────
+    /// U880, Speicher8, CTC0/1 (samt Bruchtakt-Phase), SIO0/1, PIO0–2 (samt Handshake/Pins),
+    /// Latches, RESI, DCD-Pegel, anstehender NMI.  Nicht: EPROM, Rückrufe, Verdrahtung.
+    void serialize(std::vector<uint8_t>& out) const;
+    /// Teilweise angewandt, wenn @c false — der Aufrufer (Maschine) sichert vorher.
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
+
     // ─── BusDevice: alle Tore der Karte außer 00H–07H (absolute Portnummer) ──
     uint8_t     ioRead(uint8_t port) override;
     void        ioWrite(uint8_t port, uint8_t data) override;

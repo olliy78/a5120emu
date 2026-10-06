@@ -65,6 +65,13 @@ public:
     bool tcPegel() const { return dma_ende_ || ((karte_.pio2().pinsA() & 0x40) != 0); }
     bool fdcIntPegel() const { return fdc_.irq(); }
 
+    // ─── Save-State (P8KS): U8272, UA858, Leitungs-Flags, Kopfposition je Laufwerk ──
+    // Medieninhalt NICHT (der Aufrufer mountet dieselben Abbilder neu, wie beim A5120).
+    // Beim Laden zuerst DIESEN Block anwenden, danach die Karte: die Rückrufe des FDC (INT → PIO2-B4)
+    // schreiben in die PIO2, die der Kartenblock anschließend endgültig setzt.
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
+
 private:
     void pinsAuswerten();
     void reset();

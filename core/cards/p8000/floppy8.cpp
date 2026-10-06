@@ -6,6 +6,7 @@
 
 #include "core/cards/p8000/floppy8.h"
 #include "core/logger.h"
+#include "core/util/zustand.h"
 
 namespace {
 std::array<DriveProfile, 4> profile(const P8000Floppy8::Config& cfg) {
@@ -128,4 +129,40 @@ void P8000Floppy8::takt(int n)
     if (rdy_ != drq_pin_) { rdy_ = drq_pin_; dma_.setReady(rdy_); }  // ein Takt Verzug
     pinsAuswerten();
     if (n > 0) fdc_.tick(static_cast<uint32_t>(n));
+}
+
+// ─── Save-State ──────────────────────────────────────────────────────────────
+
+void P8000Floppy8::serialize(std::vector<uint8_t>& out) const
+{
+    fdc_.serialize(out);
+    dma_.serialize(out);
+    out.push_back(dma_ende_ ? 1 : 0);
+    out.push_back(drq_pin_ ? 1 : 0);
+    out.push_back(rdy_ ? 1 : 0);
+    out.push_back(fdc_resetet_ ? 1 : 0);
+    auto& afs = const_cast<K5122&>(afs_);
+    for (int i = 0; i < 4; ++i) {
+        const bool m = afs.drive(i).isMounted();
+        out.push_back(m ? 1 : 0);
+        out.push_back(m ? afs.drive(i).currentCylinder() : 0);
+    }
+}
+
+bool P8000Floppy8::deserialize(const uint8_t*& p, const uint8_t* end)
+{
+    if (!fdc_.deserialize(p, end) || !dma_.deserialize(p, end)) return false;
+    if (end - p < 4 + 8) return false;
+    dma_ende_ = *p++ != 0;
+    drq_pin_ = *p++ != 0;
+    rdy_ = *p++ != 0;
+    fdc_resetet_ = *p++ != 0;
+    for (int i = 0; i < 4; ++i) {
+        const bool m = *p++ != 0;
+        const uint8_t cyl = *p++;
+        // Nur wenn auch jetzt ein Abbild steckt (das Abbild mountet der Aufrufer neu).
+        if (m && afs_.drive(i).isMounted()) afs_.drive(i).restoreHeadPosition(cyl);
+    }
+    karte_.bus().markIntDirty();
+    return true;
 }

@@ -35,6 +35,8 @@
 #include <string>
 #include <vector>
 
+namespace k1520 { struct ZAr; }
+
 namespace k1520::p8000 {
 
 enum class TerminalModus { ADM31, VT100 };
@@ -106,6 +108,10 @@ public:
     /// Einschaltzustand herstellen (wie <MODE>/<VIDEO>): Meldung, Cursor Zeile 2.
     void neuInitialisieren();
 
+    /// Save-State (P8KS): Bild, Cursor, Modi, Parser-Zustand, unabgeholte Ausgabe.
+    void serialize(std::vector<uint8_t>& out) const;
+    bool deserialize(const uint8_t*& p, const uint8_t* end);
+
 private:
     using Zeile = std::array<TerminalZelle, SPALTEN>;
 
@@ -128,6 +134,7 @@ private:
     int  par(size_t i, int vorgabe) const;   ///< Parameter, 0/fehlt → vorgabe
     void aus(const std::string& s) { for (unsigned char c : s) aus_.push_back(c); }
     void meldung();
+    void visit(k1520::ZAr& a);
 
     enum class Zustand { Boden, Esc, EscY, EscX, EscG, Csi };
 

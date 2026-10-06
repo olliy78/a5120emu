@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "core/util/zustand.h"
+
 namespace k1520::p8000 {
 
 namespace {
@@ -341,3 +343,45 @@ void Terminal::taste(TerminalTaste t) {
 }
 
 }  // namespace k1520::p8000
+
+// ─── Save-State ──────────────────────────────────────────────────────────────
+
+void k1520::p8000::Terminal::visit(k1520::ZAr& a)
+{
+    for (auto& zeile : bild_)
+        for (TerminalZelle& c : zeile) { a.num(c.zeichen); a.num(c.attr); a.flag(c.feld); a.flag(c.zg2); }
+    a.num(z_); a.num(s_); a.num(gz_); a.num(gs_);
+    a.en(modus_);
+    a.flag(video_); a.flag(online_); a.flag(programm_); a.flag(zg2_); a.flag(caps_); a.flag(break_);
+    a.num(klingel_); a.num(sgr_);
+    a.en(zu_);
+    a.num(escY_);
+    uint32_t n = static_cast<uint32_t>(par_.size());
+    a.num(n);
+    if (!a.save) { if (!a.ok || n > 64) { a.ok = false; return; } par_.assign(n, 0); }
+    for (int& v : par_) a.num(v);
+    a.flag(csiPrivat_);
+    uint32_t m = static_cast<uint32_t>(aus_.size());
+    a.num(m);
+    if (a.save) { for (uint8_t b : aus_) a.num(b); return; }
+    if (!a.ok || m > 65536) { a.ok = false; return; }
+    aus_.clear();
+    for (uint32_t i = 0; i < m && a.ok; ++i) { uint8_t b = 0; a.num(b); aus_.push_back(b); }
+}
+
+void k1520::p8000::Terminal::serialize(std::vector<uint8_t>& out) const
+{
+    auto a = k1520::ZAr::schreiber(out);
+    const_cast<Terminal*>(this)->visit(a);
+}
+
+bool k1520::p8000::Terminal::deserialize(const uint8_t*& p, const uint8_t* end)
+{
+    auto a = k1520::ZAr::leser(p, end);
+    Terminal tmp;
+    tmp.visit(a);
+    if (!a.ok) return false;
+    *this = std::move(tmp);
+    p = a.p;
+    return true;
+}

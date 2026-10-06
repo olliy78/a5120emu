@@ -75,3 +75,28 @@ void P8000Speicher8::ioWrite(uint8_t port, uint8_t data) {
     const int zelle = bus_ ? (bus_->ioAddress() >> 12) & 0x0F : 0;
     adp_[zelle] = data & 7;
 }
+
+void P8000Speicher8::visit(k1520::ZAr& a) {
+    a.raw(adp_.data(), adp_.size());
+    a.flag(rff_);
+    a.num(warte_);
+    a.num(eprom_zugriffe_);
+    a.raw(sram_.data(), sram_.size());
+    a.raw(dram_.data(), dram_.size());
+}
+
+void P8000Speicher8::serialize(std::vector<uint8_t>& out) const {
+    auto a = k1520::ZAr::schreiber(out);
+    const_cast<P8000Speicher8*>(this)->visit(a);
+}
+
+bool P8000Speicher8::deserialize(const uint8_t*& p, const uint8_t* end) {
+    auto a = k1520::ZAr::leser(p, end);
+    P8000Speicher8 tmp(cfg_);
+    tmp.visit(a);
+    if (!a.ok) return false;
+    adp_ = tmp.adp_; rff_ = tmp.rff_; warte_ = tmp.warte_; eprom_zugriffe_ = tmp.eprom_zugriffe_;
+    sram_ = tmp.sram_; dram_ = tmp.dram_;
+    p = a.p;
+    return true;
+}

@@ -18,8 +18,12 @@
  *
  * **Ohne 16-Bit-Karte** sind die Kopplungseingänge offen (Pull-ups, §10.4 `karte16 = false`).
  *
- * Nicht hier (spätere APs): C-ABI (P7b), boot_trace (P7c), Save-State (P7e), Rahmenpuffer mit
- * dem Terminal-Zeichensatz (P16; bis dahin liefert `framebuffer()` ein leeres Bild).
+ * **Save-State P8KS v1 (P7e, Entwurf §10.2):** `saveState/loadState` (Datei) und
+ * `stateBytes/restoreStateBytes` (Speicher).  Nicht: Medieninhalt, EPROM, Hub-Verbindungen und
+ * der Zustand der Hub-Wandler (Zeichen in Flug an tty0/2/3).
+ *
+ * Nicht hier (spätere APs): Rahmenpuffer mit dem Terminal-Zeichensatz (P16; bis dahin liefert
+ * `framebuffer()` ein leeres Bild).
  */
 
 #pragma once
@@ -138,6 +142,20 @@ public:
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     std::string lastError() const override { return lw().lastError(); }
 
+    // ─── Save-State P8KS v1 (Entwurf 25 §10.2) ───────────────────────────────
+    /// Kennung „P8KS“, dann `P8000_STAND`, dann Abschnitte `[Kennung u8][Länge u32][Bytes]`
+    /// (unbekannte Abschnitte werden übersprungen).  Die Disketten werden NICHT gesichert — der
+    /// Aufrufer mountet vor dem Laden dieselben Abbilder (nur die Kopfposition wird gesetzt).
+    static constexpr uint8_t P8000_STAND = 1;
+    std::vector<uint8_t> stateBytes() const;
+    /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke) übereinstimmt;
+    /// scheitert das Laden mittendrin, wird der alte Zustand wiederhergestellt.
+    bool restoreStateBytes(const std::vector<uint8_t>& b);
+    bool saveState(const std::string& path) const;
+    bool loadState(const std::string& path);
+    /// Grund des letzten gescheiterten Ladens ("" = keiner).
+    const std::string& stateError() const { return state_error_; }
+
     // ─── P8000-eigen (Tests, Werkzeuge) ──────────────────────────────────────
     P8000Karte8&  karte8()  { return karte_; }
     P8000Floppy8& floppy8() { return floppy_; }
@@ -165,6 +183,8 @@ private:
     const Laufwerke& lw() const { return const_cast<P8000Floppy8&>(floppy_).laufwerke(); }
     void nachReset();
     void tastenAbgeben();
+    bool wendeAbschnitteAn(const std::vector<uint8_t>& b);
+    void configAbschnitt(std::vector<uint8_t>& out) const;
 
     const Config cfg_;
     K1520Bus     bus_;
@@ -183,4 +203,5 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};
     uint64_t total_cycles_ = 0;
+    std::string state_error_;
 };

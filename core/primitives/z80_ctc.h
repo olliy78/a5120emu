@@ -236,8 +236,8 @@ public:
      * Drift, im Mittel exakt zaehler_hz/phi_hz Impulse je Takt (Zähler-Kanäle,
      * laufend).  @p zaehler_hz == 0 schaltet die Quelle ab (Vorgabe: aus; dann
      * zählt der Kanal nur über clkTrg() wie bisher).  Setzt zugleich die
-     * Perioden-Auskünfte (teilerTakte/teilerTakteQ16).  Der Akkumulator wird nicht
-     * im Save-State geführt (die Phase beginnt nach loadstate neu).
+     * Perioden-Auskünfte (teilerTakte/teilerTakteQ16).  Der Akkumulator steht
+     * nicht in serialize(), sondern in serializeTakt() (P8000-Save-State).
      */
     void setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz);
 
@@ -285,6 +285,12 @@ public:
     // system timer (and thus the timer-driven keyboard scan) running.
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
+
+    /// Phasenakkumulatoren der Bruchtakt-Eingänge (@ref setzeEingangsTakt) für den Save-State
+    /// der P8000-Karte — bewusst NICHT in serialize() (Zeilenformat der übrigen Karten bleibt);
+    /// ohne sie begänne die Phase nach dem Laden neu und der Lauf wäre nicht bitgleich.
+    void serializeTakt(std::vector<uint8_t>& out) const;
+    bool deserializeTakt(const uint8_t*& p, const uint8_t* end);
 
 private:
     // Control Word Bit Masks (U857D manual page 612-613, Bild 3)

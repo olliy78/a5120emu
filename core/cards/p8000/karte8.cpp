@@ -8,6 +8,7 @@
 #include "core/cards/p8000/rom_mon8.h"
 #include "core/logger.h"
 #include "core/serial/sio_format.h"
+#include "core/util/zustand.h"
 #include <optional>
 
 namespace {
@@ -77,6 +78,7 @@ public:
         dcd_ = dcd;
         wirke();
     }
+    bool& dcdRef() { return dcd_; }   // Save-State
     bool breakGesendet() const override { return ch().breakSenden(); }
     void breakEmpfang(bool aktiv) override { ch().setzeBreakEmpfang(aktiv); k_.seriell_geaendert_ = true; }
 
@@ -306,4 +308,62 @@ void P8000Karte8::ioWrite(uint8_t port, uint8_t data)
     if (in4(port, PORT_FDC)) { if (fdcSchreiben) fdcSchreiben(port & 1, data); return; }
     if (uint8_t(port - PORT_DMA) < 4) { if (dmaSchreiben) dmaSchreiben(data); return; }
     // 30H–3BH: nichts auf der Karte
+}
+
+// ─── Save-State ──────────────────────────────────────────────────────────────
+
+namespace {
+void visitZ80(k1520::ZAr& a, Z80& z) {
+    a.num(z.AF); a.num(z.BC); a.num(z.DE); a.num(z.HL);
+    a.num(z.AF_); a.num(z.BC_); a.num(z.DE_); a.num(z.HL_);
+    a.num(z.IX); a.num(z.IY); a.num(z.PC); a.num(z.SP);
+    a.num(z.I); a.num(z.R); a.flag(z.IFF1); a.flag(z.IFF2); a.num(z.IM); a.flag(z.halted);
+    a.num(z.cycles);
+}
+}  // namespace
+
+void P8000Karte8::serialize(std::vector<uint8_t>& out) const
+{
+    auto* self = const_cast<P8000Karte8*>(this);
+    auto a = k1520::ZAr::schreiber(out);
+    visitZ80(a, self->cpu_);
+    sp_.serialize(out);
+    for (const Z80CTC* c : {&ctc0_, &ctc1_}) { c->serialize(out); c->serializeTakt(out); }
+    sio0_.serialize(out);
+    sio1_.serialize(out);
+    for (const Z80PIO* q : {&pio0_, &pio1_, &pio2_}) { q->serialize(out); q->serializeHandshake(out); }
+    for (uint8_t l : latch_) out.push_back(l);
+    out.push_back(resi_ ? 1 : 0);
+    for (auto& po : pins_) for (const Pins& pn : po) { out.push_back(pn.pegel); out.push_back(pn.maske); }
+    out.push_back(wait_gewarnt_ ? 1 : 0);
+    for (auto& an : self->anschluesse_) out.push_back(an->dcdRef() ? 1 : 0);
+    out.push_back(bus_.isNMI() ? 1 : 0);
+}
+
+bool P8000Karte8::deserialize(const uint8_t*& p, const uint8_t* end)
+{
+    {
+        auto a = k1520::ZAr::leser(p, end);
+        visitZ80(a, cpu_);
+        if (!a.ok) return false;
+        p = a.p;
+    }
+    if (!sp_.deserialize(p, end)) return false;
+    for (Z80CTC* c : {&ctc0_, &ctc1_})
+        if (!c->deserialize(p, end) || !c->deserializeTakt(p, end)) return false;
+    if (!sio0_.deserialize(p, end) || !sio1_.deserialize(p, end)) return false;
+    for (Z80PIO* q : {&pio0_, &pio1_, &pio2_})
+        if (!q->deserialize(p, end) || !q->deserializeHandshake(p, end)) return false;
+    const size_t rest = 2 + 1 + 12 + 1 + TTY_ANZAHL + 1;
+    if (static_cast<size_t>(end - p) < rest) return false;
+    for (uint8_t& l : latch_) l = *p++;
+    resi_ = *p++ != 0;
+    for (auto& po : pins_) for (Pins& pn : po) { pn.pegel = *p++; pn.maske = *p++; }
+    wait_gewarnt_ = *p++ != 0;
+    for (auto& an : anschluesse_) an->dcdRef() = *p++ != 0;
+    const bool nmi = *p++ != 0;
+    if (nmi) bus_.assertNMI(); else bus_.clearNMI();
+    seriell_geaendert_ = true;
+    bus_.markIntDirty();
+    return true;
 }
