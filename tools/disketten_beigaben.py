@@ -55,12 +55,15 @@ PROGRAMME = {
     'PCTEST.COM':   os.path.join(FIXTURES, 'PCTEST.COM'),
     'RAFCPM.COM':   os.path.join(RAF, 'RAFCPM.COM'),
     'RAF512.COM':   os.path.join(RAF, 'RAF512.COM'),
+    'LBREAD.COM':   os.path.join(TOOLS, 'lochband', 'lbread.com'),
+    'LBPUNCH.COM':  os.path.join(TOOLS, 'lochband', 'lbpunch.com'),
 }
-PC1715 = ['PCTEST.COM']      # SERTEST kennt die 1715-Ports nicht
+LOCHBAND = ['LBREAD.COM', 'LBPUNCH.COM']   # K6022/SIF1000 auf E0H-E7H; A5120, K8915, PRG (SCPX und CP/A getestet)
+PC1715 = ['PCTEST.COM']      # SERTEST kennt die 1715-Ports nicht; LB* nur mechanisch am PC 1715
 A5120 = [n for n in PROGRAMME if n not in PC1715]
 RAF_TREIBER = ['RAFCPM.COM', 'RAF512.COM']   # E/A 88H/89H — an allen drei Maschinen
-K8915 = ['SERTEST.COM', *RAF_TREIBER]        # ROMREAD/EM* sprechen A5120-Hardware an
-PRG710_1 = RAF_TREIBER                       # SCPX 1.7: RAF512 im Gast nachgewiesen (AP-R5)
+K8915 = ['SERTEST.COM', *RAF_TREIBER, *LOCHBAND]        # ROMREAD/EM* sprechen A5120-Hardware an
+PRG710_1 = RAF_TREIBER + LOCHBAND                       # SCPX 1.7: RAF512 im Gast nachgewiesen (AP-R5)
 
 # Bootdisketten und was sie tragen.  SCPX 1526 am A5120 ist nicht geprueft und
 # fehlt deshalb.
@@ -84,6 +87,8 @@ DISKETTEN = {
     # (wie AP-4d).  Nicht UDOS 1715, nicht SCP 3.0 des 1715W.  Beides Gastverhalten.
     'pc1715_scp1715_v0006_boot.hfe': PC1715,
     'prg710-1_scpx17_cpa640_boot.hfe': PRG710_1,
+    'prg710_scpx15_cpa640_sysprg.hfe': LOCHBAND,
+    'scpx17_cpa780_k5601.hfe': LOCHBAND,
 }
 
 # Prueflinge der Tests, die dieselbe Fassung tragen muessen.

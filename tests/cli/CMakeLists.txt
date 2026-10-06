@@ -101,6 +101,12 @@ add_test(NAME cli_prg_disketten
 set_tests_properties(cli_prg_disketten PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Wächter „LBREAD.COM/LBPUNCH.COM sind aus tools/lochband/src gebaut“ (nur mit CP/M-Werkzeugkette,
+# sonst übersprungen, Rückgabe 77).  Neu bauen: python3 tools/lochband/build.py
+add_test(NAME cli_lochband_com
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/lochband/build.py" --check)
+set_tests_properties(cli_lochband_com PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77 LABELS "cli;fast")
+
 # Wächter „die UDOS-Entwicklerdiskette in disks/ ist der Inhalt von tools/udos_entwickler/“
 # (doc/udos_programme.md §6).  Neu bauen:
 #   python3 tools/udos_entwickler/build.py --tool build/k1520disktool

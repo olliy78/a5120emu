@@ -86,12 +86,12 @@ using k1520::logging::Level;
 // machine-wide A5120Machine::MachineSnapshot used by snap/restore/reverse-step.)
 struct Snap {
     uint16_t PC=0,SP=0,AF=0,BC=0,DE=0,HL=0,IX=0,IY=0,AF_=0,BC_=0,DE_=0,HL_=0;
-    uint8_t  I=0,R=0; uint64_t cyc=0; bool halted=false; bool valid=false;
+    uint8_t  I=0,R=0,IM=0; bool IFF1=false; uint64_t cyc=0; bool halted=false; bool valid=false;
 };
 static inline Snap grab(const Z80& z){
     Snap s; s.PC=z.PC; s.SP=z.SP; s.AF=z.AF; s.BC=z.BC; s.DE=z.DE; s.HL=z.HL;
     s.IX=z.IX; s.IY=z.IY; s.AF_=z.AF_; s.BC_=z.BC_; s.DE_=z.DE_; s.HL_=z.HL_;
-    s.I=z.I; s.R=z.R; s.cyc=z.cycles; s.halted=z.halted; s.valid=true; return s;
+    s.I=z.I; s.R=z.R; s.IM=z.IM; s.IFF1=z.IFF1; s.cyc=z.cycles; s.halted=z.halted; s.valid=true; return s;
 }
 
 // ─── Ctrl-C während eines langen Laufs (§7) ───────────────────────────────────
@@ -189,6 +189,7 @@ int main(int argc, char** argv){
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
+    std::string ptape_in, ptape_out;   // --ptape-in/-out: Band einlegen / Stanzer an Datei binden
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
@@ -205,6 +206,8 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
         else if (!strcmp(argv[i],"--ptape")) ptape_opt=true;
+        else if (!strcmp(argv[i],"--ptape-in") && i+1<argc) { ptape_opt=true; ptape_in=argv[++i]; }
+        else if (!strcmp(argv[i],"--ptape-out") && i+1<argc) { ptape_opt=true; ptape_out=argv[++i]; }
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -240,7 +243,10 @@ int main(int argc, char** argv){
             fprintf(stderr,"--raf: %s\n",m.base().rafFehler().c_str()); return 2; }
     }
     { std::string err;   // ebenfalls vor dem ersten Lauf
-      if (!dbgm::steckeK6022(m.base(), ptape_opt, err)){ fprintf(stderr,"--ptape: %s\n",err.c_str()); return 2; } }
+      if (!dbgm::steckeK6022(m.base(), ptape_opt, err)){ fprintf(stderr,"--ptape: %s\n",err.c_str()); return 2; }
+      if (m.base().k6022()) {
+          if (!ptape_in.empty() && !m.base().k6022()->bandEinlegenDatei(ptape_in, err)){ fprintf(stderr,"--ptape-in: %s\n",err.c_str()); return 2; }
+          if (!ptape_out.empty() && !m.base().k6022()->stanzerBinden(ptape_out, K6022::Format::Roh, err)){ fprintf(stderr,"--ptape-out: %s\n",err.c_str()); return 2; } } }
     m.powerOn();
     const bool K8 = m.einCpu();      // eine CPU: K8915 ODER PRG (keine ZVE2/Snapshots)
     const bool K89 = m.isK8915();
@@ -1203,9 +1209,9 @@ int main(int argc, char** argv){
         char fl[12]; flagsStr(s.AF,fl);
         fprintf(stderr,
             "  %s PC=%04X SP=%04X(->%04X) AF=%04X[%s] BC=%04X DE=%04X HL=%04X "
-            "IX=%04X IY=%04X  AF'=%04X BC'=%04X DE'=%04X HL'=%04X I=%02X R=%02X%s cyc=%llu\n",
+            "IX=%04X IY=%04X  AF'=%04X BC'=%04X DE'=%04X HL'=%04X I=%02X IM=%u%s R=%02X%s cyc=%llu\n",
             who.c_str(),s.PC,s.SP,ret,s.AF,fl,s.BC,s.DE,s.HL,s.IX,s.IY,s.AF_,s.BC_,s.DE_,s.HL_,
-            s.I,s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
+            s.I,(unsigned)s.IM,s.IFF1?" EI":" DI",s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
     };
     auto stateLine = [&]{
         if (KP){   // PRG: Speicherverwaltung (EBH Freigabe, E8H[0]/[F]) statt A8H
