@@ -798,6 +798,20 @@ TEST(P8000TerminalAnschluss, ZeichenKommenImZeichentaktAnDerAn)
     EXPECT_FALSE(a.baudAbweichend());
 }
 
+/// Firmware `p8t.init.s` (serielle Eingabe): 00H/7FH verworfen, Bit 7 ausgeblendet — WEGA-getty
+/// sendet „login:" mit Software-Parität in Bit 7 (P15).
+TEST(P8000TerminalAnschluss, Bit7WirdAusgeblendetNulUndDelVerworfen)
+{
+    KarteStub k;
+    k.fmt.gueltig = true; k.fmt.zeichen_takte = 10; k.fmt.baud_nenn = 9600; k.fmt.daten = 8;
+    Terminal t = frisch();
+    TerminalAnschluss a(k, t);
+    for (uint8_t b : {uint8_t(0xEC), uint8_t(0x00), uint8_t(0x6F), uint8_t(0x7F), uint8_t(0xE7), uint8_t(0x69)})
+        k.gast.push_back(b);
+    for (int i = 0; i < 6; ++i) a.takt(10);
+    EXPECT_EQ(zl(t, 0), "logi");
+}
+
 TEST(P8000TerminalAnschluss, TastenbytesNurBeiFreiemEmpfaengerKeinUeberlauf)
 {
     KarteStub k;

@@ -20,8 +20,12 @@ void TerminalAnschluss::takt(uint64_t takte) {
     ab(rxRest_); ab(txRest_); ab(breakRest_);
 
     // Host → Terminal: Zeichen aus dem SIO-Sender im Zeichentakt übernehmen.
+    // Firmware des Terminals (`p8t.init.s`, serielle Eingabe-Routine): 00H und 7FH werden
+    // verworfen, von allen anderen Zeichen wird Bit 7 ausgeblendet.  WEGA-getty sendet die
+    // Anmeldung mit Software-Parität in Bit 7 (8 Datenbits) — am Gerät lesbar, nur deshalb.
     if (rxRest_ == 0 && karte_.senderHatZeichen()) {
-        term_.eingabe(karte_.senderNimm());
+        const uint8_t b = karte_.senderNimm();
+        if (b != 0x00 && b != 0x7F) term_.eingabe(uint8_t(b & 0x7F));
         rxRest_ = zeichenTakte();
     }
     // Terminal → Host: nur bei freiem Empfänger.

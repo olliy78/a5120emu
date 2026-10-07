@@ -199,11 +199,19 @@ void stufeNewInstall(WegaLauf& l) {
     tippeZeile(m, "/etc/new.install");
     ASSERT_TRUE(frage(m, "neu angelegt werden ? (j/n) :", "j", 2'000'000'000LL));
     ASSERT_TRUE(frage(m, "/dev/tmp (Standard 4000) :", "4000"));
-    ASSERT_TRUE(frage(m, "/dev/z (Standard 60732) :", "60732"));
+    ASSERT_TRUE(frage(m, "/dev/z (Standard 60732) :", "60732"));   // WEGA 3.0: ein Leerzeichen
     ASSERT_TRUE(langBisText(m, "Damit ist das System vollstaendig eingerichtet.", 40'000'000'000LL)) << bild(m);
-    ASSERT_TRUE(frage(m, "#2", "init 2", 2'000'000'000LL));
+    ASSERT_GE(warteAufFrage(m, {"#2"}, 2'000'000'000LL), 0) << bild(m);
+    laufe(m, 2'000'000);
+}
+
+/// Stufe 6: `init 2` — Prüfläufe, Datum/Uhrzeit, Mehrbenutzerbetrieb bis `login:` (Z. 1666–1724).
+void stufeMehrbenutzer(WegaLauf& l) {
+    P8000Machine& m = *l.m;
+    tippeZeile(m, "init 2");
     ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY or <cr>):", "05/30/89", 40'000'000'000LL));
     ASSERT_TRUE(frage(m, "Enter Time (HH:MM):", "20:55"));
+    ASSERT_TRUE(langBisText(m, "Going multi-user", 4'000'000'000LL)) << bild(m);
     ASSERT_GE(warteAufFrage(m, {"login:"}, 4'000'000'000LL), 0) << bild(m);
 }
 
@@ -236,7 +244,23 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
         }))
         return;
     if (!stufe(l, "p15_4_kern", [&] { stufeKern(l); })) return;
-    if (!stufe(l, "p15_5_login", [&] { stufeNewInstall(l); })) return;
+    if (!stufe(l, "p15_5_newinst", [&] { stufeNewInstall(l); })) return;
+    if (!stufe(l, "p15_6_login", [&] { stufeMehrbenutzer(l); })) return;
+    // Abnahme M3: Anmeldung als Superuser (Systemhandbuch: Name „wega", Passwort bei Auslieferung
+    // „root"), einfache Kommandos am Terminal.
+    P8000Machine& m = *l.m;
+    tippeZeile(m, "wega");
+    ASSERT_TRUE(frage(m, "Password:", "root", 400'000'000));
+    ASSERT_GE(warteAufFrage(m, {"#1"}, 2'000'000'000LL), 0) << bild(m);
+    for (const char* k : {"date", "who", "ls /"}) {
+        tippeZeile(m, k);
+        laufe(m, 200'000'000);
+    }
+    const std::string b = bild(m);
+    EXPECT_NE(b.find("MES 1989"), std::string::npos) << b;          // date
+    EXPECT_NE(b.find("wega     console"), std::string::npos) << b;  // who
+    EXPECT_NE(b.find("pb.image"), std::string::npos) << b;          // ls /
+    std::fprintf(stderr, "%s", b.c_str());
 }
 
 /// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe
@@ -291,4 +315,23 @@ TEST(P8000WegaInstall, DISABLED_DiagKommandos) {
         warteAufFrage(*l.m, {"#" + std::to_string(n++)}, 400'000'000);
     }
     std::fprintf(stderr, "%s", bild(*l.m).c_str());
+}
+
+TEST(P8000WegaInstall, DISABLED_DiagLogin) {
+    stumm();
+    WegaLauf l;
+    std::string fehler;
+    ASSERT_TRUE(stufeLaden(l, "p15_5_newinst", &fehler)) << fehler;
+    P8000Machine& m = *l.m;
+    tippeZeile(m, "init 2");
+    ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY or <cr>):", "05/30/89", 40'000'000'000LL));
+    ASSERT_TRUE(frage(m, "Enter Time (HH:MM):", "20:55"));
+    ASSERT_TRUE(langBisText(m, "Going multi-user", 4'000'000'000LL)) << bild(m);
+    laufe(m, 400'000'000);
+    auto& b = m.karte8().sio0().channelB();
+    std::fprintf(stderr, "wr3=%02X wr4=%02X wr5=%02X tx=%d rx=%d par=%d\n", b.wr[3], b.wr[4], b.wr[5], b.tx_bits_per_char,
+                 b.rx_bits_per_char, b.parity_enable);
+    std::fprintf(stderr, "%s", bild(m).c_str());
+    std::string fehler2;
+    stufeSichern(l, "p15_6x_vorlogin", &fehler2);
 }
