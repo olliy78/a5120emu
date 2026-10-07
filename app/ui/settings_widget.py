@@ -297,7 +297,10 @@ class SettingsWidget(QWidget):
             "Bedient werden beide im Kasten „Lochstreifen“.  Ein Wechsel schaltet die "
             "Maschine aus und neu ein.")
         self.ptape_box.toggled.connect(self._on_ptape_box)
-        form.addRow("Peripherie:", self.ptape_box)
+        if self.profil.ptape_wahl:
+            form.addRow("Peripherie:", self.ptape_box)
+        else:
+            self.ptape_box.setVisible(False)       # P8000: gibt es die Karte nicht
 
         return inner
 

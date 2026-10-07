@@ -74,6 +74,19 @@ class Programmprofil:
     #: ``Modelle`` = die Modellschlüssel, an denen die Wahl wirkt; sonst ist das Feld
     #: ausgegraut (PC 1715W: der Zeichensatz kommt von Diskette).  ``()`` = alle.
     hardware: Tuple[Tuple[str, str, str, Tuple[Tuple[str, str], ...], Tuple[str, ...]], ...] = ()
+    #: Terminal-Maschine (P8000): statt der Bildröhre ein Textbildschirm je Kern-Terminal
+    #: (`app/ui/p8000_terminal.py`), Funktionstastenleiste statt Bildschirmtastatur.
+    terminal: bool = False
+    #: Kasten „Winchester" mit Plattenabbild (P8000, `app/ui/platten_widget.py`).
+    platte: bool = False
+    #: Kästchen „Lochstreifen" unter *Allgemein* (K6022): am P8000 gibt es die Karte nicht.
+    ptape_wahl: bool = True
+    #: Lampen der Frontplatte: ``"k8915"`` (Latch 61H, aktiv low) oder ``"p8000"``
+    #: (Run/Unit16/Platte, aktiv high) — nur mit :attr:`frontplatte`.
+    frontplatte_art: str = "k8915"
+    #: Kernparameter je Modell: ``(Schlüssel, ((Name, Wert), …))`` — Einträge des
+    #: Konfigurationstextes (P8000: ``karte16``, ``wdc``).  Leer = keine.
+    modell_kern: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = ()
     #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kästchen
     #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
     #: Programme bieten sie an; ohne sie läuft die Maschine stets ohne RAF.
@@ -142,8 +155,10 @@ class Programmprofil:
         aus = self.hardware_standard()
         for k, _b, _t, werte, _m in self.hardware:
             v = str(daten.get(k, "")).strip().lower()
-            if any(v == w for w, _a in werte):
-                aus[k] = v
+            for w, _a in werte:        # Groß-/Kleinschreibung egal ("1M@0"), Wert wie im Profil
+                if v == w.lower():
+                    aus[k] = w
+                    break
         return aus
 
     def hardware_wirkt(self, schluessel: str, modell) -> bool:
@@ -160,6 +175,45 @@ class Programmprofil:
         if art == "pc1715" and (hardware or {}).get("tastatur") == "tast618":
             return "pc1715-tast618"
         return art
+
+    def kern_parameter(self, modell, hardware=None) -> dict:
+        """Zusatzargumente für ``K1520Emulator(…)`` aus Modell und Hardwarewahl.
+
+        Ohne :attr:`modell_kern` (alle Maschinen außer dem P8000) sind es die
+        Hardwarevarianten selbst (PC 1715: ``zeichensatz``, ``tastatur``).  Der P8000
+        übersetzt beides in EIN Wörterbuch ``p8000={…}`` mit den Schlüsseln von
+        ``k1520_create_p8000`` (Entwurf 25 §10.9): das Modell setzt ``karte16``/``wdc``,
+        die Hardwarewahl ROM-Fassungen, Platinenindex und DRAM.
+        """
+        hardware = self.hardware_normalisieren(hardware or {})
+        if not self.modell_kern:
+            return dict(hardware)
+        schluessel = self.modell_normalisieren(modell)
+        kern = {}
+        for k, paare in self.modell_kern:
+            if k == schluessel:
+                kern.update(dict(paare))
+        mit16 = kern.get("karte16") == "1"
+        mit_wdc = kern.get("wdc", "aus") != "aus"
+        # Platinenindex: ein Schalter für beide Karten (nur 1/1 oder 3/4 sind zulässig).
+        index = hardware.get("index", "34")
+        kern["index8"] = index[0]
+        if mit16:
+            kern["index16"] = index[1]
+            kern["mon16"] = hardware.get("mon16", "3.1")
+            kern["dram"] = hardware.get("dram", "1M@0")
+        kern["mon8"] = hardware.get("mon8", "3.1")
+        if mit_wdc:
+            kern["wdc"] = hardware.get("wdc", "4.2")
+        return {"p8000": kern}
+
+    def modell_hat_wdc(self, modell) -> bool:
+        """Hat das Modell einen Winchesterkontroller (nur Profile mit :attr:`platte`)?"""
+        schluessel = self.modell_normalisieren(modell)
+        for k, paare in self.modell_kern:
+            if k == schluessel:
+                return dict(paare).get("wdc", "aus") != "aus"
+        return False
 
     def modell_tastatur(self, modell) -> str:
         """Bildschirmtastatur des Modells (``"k7637"``/``"k7672"``/``"k7609"``)."""
@@ -213,7 +267,7 @@ A5120 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
-    weitere=("prg710", "pc1715"),
+    weitere=("prg710", "pc1715", "p8000"),
 )
 
 K8915 = Programmprofil(
@@ -246,7 +300,7 @@ K8915 = Programmprofil(
                  "K3528, 64 KB).  Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
-    weitere=("prg710", "pc1715"),
+    weitere=("prg710", "pc1715", "p8000"),
     # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
     # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
@@ -275,7 +329,7 @@ PRG710 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
     andere="a5120",
-    weitere=("k8915", "pc1715"),
+    weitere=("k8915", "pc1715", "p8000"),
 )
 
 PC1715 = Programmprofil(
@@ -323,11 +377,73 @@ PC1715 = Programmprofil(
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
     andere="a5120",
-    weitere=("k8915", "prg710"),
+    weitere=("k8915", "prg710", "p8000"),
+)
+
+P8000 = Programmprofil(
+    maschine="p8000",
+    programm="p8000emu",
+    titel="P8000 Emulator",
+    rechner="P8000",
+    beschreibung="Emulator des 16-Bit-Arbeitsplatzcomputers robotron P8000 (U880 + U8001, UDOS und WEGA)",
+    konfig_datei="p8000emu.yaml",
+    vorgabe_datei="default_config_p8000.yaml",
+    # 4 MHz (P8000Machine::Config::takt8_hz); 16-Bit-Karte und WDC laufen ebenfalls mit 4 MHz.
+    nenntakt_hz=4_000_000,
+    nenntakt_text="4 MHz",
+    tastatur="p8000",
+    frontplatte=True,
+    frontplatte_art="p8000",
+    eigene_aktionen=("nmi", "stand_speichern", "stand_laden"),
+    terminal=True,
+    platte=True,
+    ptape_wahl=False,
+    modellwahl=True,
+    # Das Vollgerät (16-Bit-Teil + Winchester) steht vorn und ist damit die Vorgabe.  Alle drei
+    # sind dieselbe Kernmaschine; sie unterscheiden sich in `karte16`/`wdc` (`modell_kern`).
+    modelle=(("p8000", "p8000", None, "P8000 mit 16-Bit-Teil und Winchester (Vollgerät)", "p8000"),
+             ("p8000-16", "p8000", None, "P8000 mit 16-Bit-Teil, ohne Winchester", "p8000"),
+             ("p8000-8", "p8000", None, "P8000 (nur 8-Bit-Teil, UDOS)", "p8000")),
+    modell_kern=(("p8000", (("karte16", "1"), ("wdc", "4.2"))),
+                 ("p8000-16", (("karte16", "1"),)),
+                 ("p8000-8", (("karte16", "0"),))),
+    modell_tipp=("Vollgerät: 8-Bit-Karte, 16-Bit-Karte mit U8001 und Winchesterkontroller "
+                 "(WEGA); ohne Winchester: nur UDOS und Monitor; nur 8-Bit-Teil: wie die "
+                 "erste Baustufe des Geräts (die Koppelsoftware meldet „Hardware Error in "
+                 "Connection“).  Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
+    # ROM-Fassungen und Platinenindex (Entwurf 25 §10.4); jeder Wechsel ist ein Kaltstart.
+    # Wo eine Wahl am Modell nichts bewirkt (16-Bit-Karte, WDC), steht das Feld ausgegraut.
+    hardware=(
+        ("index", "Platinenindex:",
+         "Ausgabestand der Karten: 8-Bit-Karte Index 3 mit 16-Bit-Karte Index 4 (Vorgabe) oder "
+         "beide Index 1.  Wirkt auf Rücksetzweg, Kopplung und Laufwerksstecker.",
+         (("34", "8-Bit 3 / 16-Bit 4 (Vorgabe)"), ("11", "8-Bit 1 / 16-Bit 1")),
+         ()),
+        ("mon8", "MON8 (U880-Monitor):",
+         "ROM-Fassung des Monitors der 8-Bit-Karte.",
+         (("3.1", "MON8 3.1"), ("3.0", "MON8 3.0")),
+         ()),
+        ("mon16", "MON16 (U8000-Monitor):",
+         "ROM-Fassung des Monitors der 16-Bit-Karte.",
+         (("3.1", "MON16 3.1"), ("3.0", "MON16 3.0"), ("3.3", "MON16 3.3")),
+         ("p8000", "p8000-16")),
+        ("dram", "Hauptspeicher (16-Bit):",
+         "DRAM-Karten der 16-Bit-Seite.  Der Monitor errechnet MAXSEG aus dem Speichertest.",
+         (("1M@0", "1 MB (eine Karte 1M)"), ("256K@0", "256 KB (eine Karte 256K)"),
+          ("1M@0+1M@1", "2 MB (zwei Karten 1M)")),
+         ("p8000", "p8000-16")),
+        ("wdc", "WDC-Firmware:",
+         "Firmware des Winchesterkontrollers (Z80 mit eigener ROM).",
+         (("4.2", "WDC 4.2"), ("4.0.05", "WDC 4.0.05"), ("3.4.05", "WDC 3.4.05")),
+         ("p8000",)),
+    ),
+    ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>robotron P8000</b>",
+    andere="a5120",
+    weitere=("k8915", "prg710", "pc1715"),
 )
 
 #: Alle Profile nach Maschinenname.
-PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715)}
+PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715, P8000)}
 
 #: Das Profil ohne Angabe — ältere Starter, Tests, ``app/main.py`` ohne Schalter.
 VORGABE = A5120

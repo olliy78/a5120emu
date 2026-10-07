@@ -527,7 +527,18 @@ werden wiederverwendet. Eine Klasse `P8000Machine` unter `core/machines/p8000/`,
 Terminal `core/peripherals/p8000_terminal/` (ADM31/VT100 im Kern), Platte `core/peripherals/winchester/`.
 C-ABI `K1520_MACHINE_P8000 = 4`, `k1520_create_p8000(konfig)`; `boot_trace`/`k1520dbg --machine p8000|p8000-16`.
 **Stand:** M1 (UDOS bootet) und M2 (`x` → U8000-Monitor, `O U` → `boot`) erreicht, WDC läuft mit Firmware 4.2,
-`sa.format` (M3) in Arbeit; Oberfläche `p8000emu`, DiskTool-WEGA-Dateisystem und Paket offen.
+`sa.format` (M3) in Arbeit; DiskTool-WEGA-Dateisystem und Paket offen.
+**Oberfläche `p8000emu` (AP P16, 2026-10-07; `--machine p8000`, `run_p8000emu.sh`, `p8000emu.yaml`,
+`data/default_config_p8000.yaml`, `doc/design/26_p8000emu_oberflaeche.md`):** fünftes Programmprofil im gemeinsamen
+Hauptfenster — `profil.terminal` ersetzt die Bildröhre durch `TerminalTabs` (`app/ui/p8000_terminal.py`: je Kern-Terminal
+ein Reiter, **Zeichensatz aus den EPROM-Abzügen** `P8TEZS`/`P8TDZS` → `app/ui/p8000_zeichensatz.py`, erzeugt von
+`tools/p8000/zeichensatz_zu_py.py`), Funktionstastenleiste statt Bildschirmtastatur, Plattenkasten unter den Disketten
+(`app/ui/platten_widget.py`; **Standardplatte `p8000_platte.img` beim ersten Start**, `platte.path: ""` = bewusst keine),
+Modellwahl Vollgerät/ohne Winchester/nur 8-Bit, ROM-Fassung und Platinenindex als `hardware`-Wahl
+(`Programmprofil.kern_parameter` → `p8000={…}`), Frontplatte Run/16-Bit/Platte/Power (aktiv high), Zwischenstand
+(*Maschine ▸ Zwischenstand*, ohne Kürzel). Zusätzliche C-ABI (additiv): `k1520_term_snapshot/_flags/_bell_count`,
+`k1520_state_save/_load/_error`; Tasten ohne Qt-Gegenstück gehen als `0x02000000 + TerminalTaste` an
+`P8000Machine::keyPress`. Wächter `py_p8000emu_gui`. Offen: weitere Kern-Terminals (tty4–7), UDOS-Laufwerksnamen 0/1.
 **Grundsatz:** Chips werden vollständig + systematisch getestet, Debugger unterstützen sie vollständig
 (Plan §10.11a). **Vor Arbeiten daran: `doc/merkposten/p8000.md` lesen**; Plan und Stand
 `doc/design/25_p8000.md` (§9/§9a), Quellen/Referenzen `doc/p8000/` (EPROM-Abzüge in `doc/p8000/eproms/`).

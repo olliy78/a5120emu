@@ -76,6 +76,9 @@ _STANDARD_JE_MASCHINE = {
     "prg710": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
     # PC 1715: zwei K5601 an der K5122 (doc/design/21_pc1715.md §8.3).
     "pc1715": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
+    # P8000: zwei interne Laufwerke X8/X9, der externe Stecker X10 bleibt leer
+    # (doc/design/25_p8000.md §10.4 `laufwerke`).
+    "p8000": ["K5601", "K5601", NO_DRIVE, NO_DRIVE],
 }
 #: Wählbare Typen.  Alle Maschinen bekommen alle Typen: die Laufwerke sind reine
 #: `DriveProfile`-Daten im Kern (`builtinDriveProfile`), den Rest (Drehzahl,
@@ -89,6 +92,7 @@ _TYPEN_JE_MASCHINE = {
     "k8915": _ALLE_TYPEN,
     "prg710": _ALLE_TYPEN,
     "pc1715": _ALLE_TYPEN,
+    "p8000": _ALLE_TYPEN,
 }
 
 

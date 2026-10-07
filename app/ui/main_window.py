@@ -29,7 +29,7 @@ import time
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QMessageBox, QDockWidget, QMenu, QFileDialog,
-    QScrollArea, QToolBar, QToolButton
+    QScrollArea, QToolBar, QToolButton, QVBoxLayout
 )
 from PySide6.QtCore import Qt, QTimer, QSize, QByteArray, QEvent
 from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QIcon
@@ -37,6 +37,7 @@ from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QIcon
 from app.ui.screen_widget import ScreenWidget
 from app.ui.settings_widget import SettingsWidget
 from app.ui.drive_widget import DriveWidget
+from app.ui.platten_widget import PlattenWidget
 from app.ui.serial_widget import SerialWidget
 from app.ui.eprom_widget import EpromWidget
 from app.ui.keyboard import KeyboardWidget
@@ -242,6 +243,7 @@ class MainWindow(QMainWindow):
         # this applies CRT/speed, mounts the stored disks and restores the
         # window size + dock layout.
         self._load_or_create_default_config()
+        self._platte_vorbereiten()
 
         # Disketten von der Kommandozeile — NACH der Konfiguration, damit sie
         # deren Belegung schlagen, und VOR power_on(), damit der Kaltstart schon
@@ -319,7 +321,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Bereit")
 
         # ── Bildschirm-Dock (links) ──────────────────────────────────────────
-        self.screen_widget = ScreenWidget()
+        if self.profil.terminal:
+            # P8000: Textterminal je Kern-Terminal (Reiter) statt Bildröhre.
+            from app.ui.p8000_terminal import TerminalTabs
+            self.screen_widget = TerminalTabs()
+        else:
+            self.screen_widget = ScreenWidget()
         self.screen_widget.set_emulator(self.emulator)
         # Fullscreen is owned by the window (see enter/exit_fullscreen); the
         # screen only requests it via signals.  Dock-/Undock-Reparenting des
@@ -339,6 +346,9 @@ class MainWindow(QMainWindow):
         # Die echte Tastatur geht durch die Nachbildung: sie zeigt mit, welche
         # Taste angesprochen wird, und bringt ihren Feststeller zur Geltung.
         self.screen_widget.key_sink = self.keyboard_widget
+        if self.profil.terminal:
+            # Rasttasten der Funktionstastenleiste folgen dem Zustand des Terminals.
+            self.screen_widget.flagsChanged.connect(self.keyboard_widget.zeige_flags)
 
         self.keyboard_dock = QDockWidget("Tastatur", self)
         self.keyboard_dock.setObjectName("keyboard_dock")
@@ -354,7 +364,21 @@ class MainWindow(QMainWindow):
         self.drives_widget = DriveWidget(self.emulator, self._drive_types)
         drives_scroll = QScrollArea()
         drives_scroll.setWidgetResizable(True)
-        drives_scroll.setWidget(self.drives_widget)
+        self.platten_widget = None
+        if self.profil.platte:
+            # P8000: unter den Disketten der Kasten für die Winchesterplatte.
+            kasten = QWidget()
+            kl = QVBoxLayout(kasten)
+            kl.setContentsMargins(0, 0, 0, 0)
+            kl.addWidget(self.drives_widget)
+            self.platten_widget = PlattenWidget(self.emulator)
+            self.platten_widget.set_verfuegbar(self.profil.modell_hat_wdc(self._model))
+            self.platten_widget.meldung.connect(
+                lambda text: self.statusBar().showMessage(text, 8000))
+            kl.addWidget(self.platten_widget)
+            drives_scroll.setWidget(kasten)
+        else:
+            drives_scroll.setWidget(self.drives_widget)
         self.drives_dock.setWidget(drives_scroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.drives_dock)
 
@@ -459,6 +483,9 @@ class MainWindow(QMainWindow):
     def _tastatur_bauen(self):
         """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1),
         K7609 (PRG 710) oder die 1715-Tastatur (PC 1715)."""
+        if self._tastatur_art == "p8000":
+            from app.ui.p8000_terminal import KeyboardP8000Widget
+            return KeyboardP8000Widget()
         if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
@@ -488,6 +515,10 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._shrink_keyboard)
 
     def _on_kbd_press(self, keycode: int, shift: bool, ctrl: bool):
+        if self.profil.terminal:
+            # Funktionstastenleiste → Terminal des aktuellen Reiters.
+            self.screen_widget.sende_taste(keycode, shift, ctrl)
+            return
         self.emulator.key_press(keycode, shift, ctrl)
 
     def _on_kbd_release(self, keycode: int):
@@ -679,6 +710,10 @@ class MainWindow(QMainWindow):
         emu_menu.addAction(self.act_reset)
         if hasattr(self, "act_nmi"):            # nur im Profil mit Frontplatte
             emu_menu.addAction(self.act_nmi)
+        if hasattr(self, "act_stand_speichern"):    # nur P8000 (P8KS)
+            emu_menu.addSeparator()
+            emu_menu.addAction(self.act_stand_speichern)
+            emu_menu.addAction(self.act_stand_laden)
         if self.eprom_dock is not None:          # nur im Profil mit EPROMmer
             emu_menu.addSeparator()
             eprom_menu = emu_menu.addMenu("E&PROMmer")
@@ -923,6 +958,8 @@ class MainWindow(QMainWindow):
                      if self.profil.raf_wahl else None))
         if self.eprom_widget is not None:
             data["eprom"] = self._eprom_zustand()
+        if self.platten_widget is not None:
+            data["platte"] = self.platten_widget.zustand_lesen()
         data["lochstreifen"] = self._ptape_zustand_lesen()
         return data
 
@@ -1176,6 +1213,12 @@ class MainWindow(QMainWindow):
 
             if "disks" in data:
                 self.drives_widget.load_mounts(data.get("disks") or [])
+
+            # Winchesterplatte (P8000): fehlender Abschnitt = noch nicht entschieden
+            # (das Programm legt beim ERSTEN Start die Standardplatte an, s. `_platte_vorbereiten`),
+            # vorhandener Abschnitt mit leerem Pfad = ausdrücklich keine Platte.
+            if "platte" in data and self.platten_widget is not None:
+                self.platten_widget.zustand_anwenden(data.get("platte"))
 
             # Serielle Schnittstellen: Einstellung übernehmen und aktive wieder
             # aufnehmen (doc/design/19 §7.4a).  Fehlt der Abschnitt, bleibt alles,
@@ -1593,7 +1636,27 @@ class MainWindow(QMainWindow):
             return
         self._model = neu
         self._apply_drive_types(self._drive_types, cold_restart=True)
+        self._platte_vorbereiten()
         self._schedule_autosave()
+
+    def _platte_vorbereiten(self):
+        """Beim ERSTEN Start (oder nach Wechsel auf ein Modell mit WDC) die Standardplatte besorgen.
+
+        Nur, solange über die Platte noch nicht entschieden ist (kein ``platte``-Abschnitt in der
+        Konfiguration, nie angeschlossen/abgetrennt): eine vorhandene Datei am Standardort wird
+        angeschlossen (NIE überschrieben), sonst entsteht eine neue K5504.50 mit PAR-Sektor.
+        Wer die Platte abtrennt, hat entschieden — dann bleibt das Laufwerk leer.
+        """
+        pw = self.platten_widget
+        if pw is None or not pw.verfuegbar() or pw.entschieden:
+            return
+        pfad = pw.standard_pfad()
+        # Vor dem ersten Einschalten (Start) ist die Platte beim Hochlauf schon da: kein Rückstell-Hinweis.
+        hinweis = bool(self._emu_started)
+        if os.path.isfile(pfad):
+            pw.anschliessen(pfad, hinweis)
+        else:
+            pw.neu_anlegen(pfad, hinweis=hinweis)
 
     def _on_hardware_selected(self, schluessel: str, wert: str):
         """Eine Hardwarevariante (Zeichensatz, Tastatur-ROM) geändert → neue Maschine, wie
@@ -1624,7 +1687,8 @@ class MainWindow(QMainWindow):
         emu = K1520Emulator(types, machine=self.profil.modell_maschine(self._model),
                             em=self.profil.modell_em(self._model),
                             raf=raf.core_param(self._raf) if self.profil.raf_wahl else None,
-                            ptape=bool(self._ptape), **self._hardware)
+                            ptape=bool(self._ptape),
+                            **self.profil.kern_parameter(self._model, self._hardware))
         # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
         # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
         emu.set_key_repeat_realtime(True)
@@ -1832,6 +1896,11 @@ class MainWindow(QMainWindow):
         self._ptape_zustand_anwenden(self._ptape_zustand)
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
+        if self.platten_widget is not None:
+            # Die Platte gehört der Maschine: die neue bekommt dieselbe Datei (wenn das Modell
+            # einen WDC hat — sonst bleibt der Kasten gesperrt, die Wahl aber gemerkt).
+            self.platten_widget.set_verfuegbar(self.profil.modell_hat_wdc(self._model))
+            self.platten_widget.set_emulator(new_emu)
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
         self.settings_widget.set_hardware_value(self._hardware)
@@ -1902,6 +1971,64 @@ class MainWindow(QMainWindow):
 
     def _pc1715emu_starten(self):
         self._emulator_starten("pc1715")
+
+    def _p8000emu_starten(self):
+        self._emulator_starten("p8000")
+
+    # ── Zwischenstand (nur P8000, P8KS) ──────────────────────────────────────
+
+    def _stand_ordner(self) -> str:
+        return str(paths.user_disks_dir())
+
+    def _stand_speichern(self):
+        """Den Zustand der Maschine in eine P8KS-Datei sichern.
+
+        Zuverlässig NUR am Prompt (Merkposten p8000 Nr. 16): Hub-Wandler und Zeichen im Flug an
+        den seriellen Schnittstellen stehen nicht im Stand.  Die Platte wird vorher
+        zurückgeschrieben, damit Datei und Zwischenstand zusammenpassen; Disketten und Platte
+        selbst stehen NICHT im Stand — beim Laden müssen dieselben Abbilder liegen.
+        """
+        pfad, _ = QFileDialog.getSaveFileName(
+            self, "Zwischenstand sichern",
+            os.path.join(self._stand_ordner(), "p8000.p8ks"),
+            "P8000-Zwischenstand (*.p8ks);;Alle Dateien (*)")
+        if not pfad:
+            return False
+        if "." not in os.path.basename(pfad):
+            pfad += ".p8ks"
+        return self.stand_sichern(pfad)
+
+    def stand_sichern(self, pfad: str) -> bool:
+        if self.platten_widget is not None:
+            self.platten_widget.sichern()
+        self.emulator.flush_disks()
+        ok = self.emulator.state_save(pfad)
+        self.statusBar().showMessage(
+            f"Zwischenstand gesichert: {os.path.basename(pfad)}" if ok
+            else f"Zwischenstand nicht gesichert: {pfad}", 6000)
+        return ok
+
+    def _stand_laden(self):
+        pfad, _ = QFileDialog.getOpenFileName(
+            self, "Zwischenstand laden", self._stand_ordner(),
+            "P8000-Zwischenstand (*.p8ks);;Alle Dateien (*)")
+        if pfad:
+            self.stand_laden(pfad)
+
+    def stand_laden(self, pfad: str) -> bool:
+        """Einen Zwischenstand laden; bei abweichender Konfiguration bleibt die Maschine, wie sie ist."""
+        ok = self.emulator.state_load(pfad)
+        if ok:
+            self.statusBar().showMessage(
+                f"Zwischenstand geladen: {os.path.basename(pfad)}", 6000)
+        else:
+            QMessageBox.warning(
+                self, "Zwischenstand laden",
+                f"Der Zwischenstand passt nicht zu dieser Maschine:\n"
+                f"{self.emulator.state_error()}\n\nDie Maschine läuft unverändert weiter.  "
+                f"Modell, ROM-Fassungen, Hauptspeicher und Laufwerke müssen mit denen "
+                f"übereinstimmen, mit denen er gesichert wurde.")
+        return ok
 
     # ── EPROMmer (nur PRG 710, AP-P7c) ───────────────────────────────────────
 
@@ -2067,6 +2194,9 @@ class MainWindow(QMainWindow):
         self._raf_sichern()
         # Lochstreifen: was gestanzt ist, gehört jetzt in die gebundene Datei.
         self.emulator.ptape_punch_flush()
+        # Winchester: geänderte Spuren zurückschreiben (der Kern tut es verzögert).
+        if self.platten_widget is not None:
+            self.platten_widget.sichern()
         self._geschlossen = True
         # Erst NACH dem Speichern: `aktiv` soll den Zustand beim Beenden festhalten.
         self.serial_widget.beenden()

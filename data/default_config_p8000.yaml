@@ -1,0 +1,73 @@
+# P8000 Emulator — AUSLIEFERUNGSKONFIGURATION
+# ============================================
+#
+# Der Zustand, in dem der P8000 Emulator nach der Erstinstallation aufgeht (A5120, K8915,
+# PRG710 und PC1715 haben ihre eigenen Dateien).  Gelesen wird sie an genau zwei Stellen
+# (`app/config_io.py`, `standard_konfiguration()`): beim ERSTEN Start, solange es noch keine
+# `p8000emu.yaml` des Anwenders gibt, und bei *Ansicht ▸ Standard zurücksetzen*.
+#
+# Gleicher Aufbau wie die gespeicherte `p8000emu.yaml`.  Bewusst NICHT hinein gehören:
+#
+#   * `disks:` und `platte:` — Pfade des Baurechners gelten auf keinem anderen Rechner; ohne
+#     den Abschnitt lässt das Zurücksetzen Disketten und Platte in Ruhe.  Fehlt `platte:`
+#     beim ersten Start ganz, legt das Programm die Platte selbst an
+#     (`<Diskettenordner>/p8000_platte.img`, Typ K5504.50, mit PAR-Sektor).
+#   * `window.geometry` — die Bildschirmposition des Baurechners.  `width`/`height` reichen;
+#     ein `dock_state` fehlt, die Startaufteilung ordnet die Kästen selbst.
+version: 1
+
+# Bildröhre des Terminals: nur die Farben und die Helligkeit gelten für den Textbildschirm
+# (app/ui/screen_widget.py::CRTParams); Krümmung und Rand gibt es am Terminal nicht.
+crt:
+  phosphor_on: '#78D41D'
+  phosphor_off: '#050F05'
+  brightness: 2.5
+  contrast: 1.1
+
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 4 MHz, 0,0 = unbegrenzt).
+# Fünffach: der Hardwaretest (Speichertest, ≈ 16 s Maschinenzeit) und der Kaltstart von der
+# Diskette dauern sonst sehr lange; die Uhr des Gastes zählt aber Taktzyklen und geht dann vor.
+general:
+  speed: 5.0
+  # Modell: p8000 (16-Bit-Teil + Winchester, Vollgerät) | p8000-16 (ohne Winchester) |
+  # p8000-8 (nur 8-Bit-Teil, UDOS).
+  model: p8000
+  # Hardwarevarianten (Kaltstart nötig; ein fehlender Schlüssel = Vorgabe):
+  # Platinenindex 34 (8-Bit 3 / 16-Bit 4) | 11; MON8 3.1 | 3.0; MON16 3.1 | 3.0 | 3.3;
+  # Hauptspeicher 1M@0 | 256K@0 | 1M@0+1M@1; WDC-Firmware 4.2 | 4.0.05 | 3.4.05.
+  index: '34'
+  mon8: '3.1'
+  mon16: '3.1'
+  dram: 1M@0
+  wdc: '4.2'
+
+# Laufwerksschacht: zwei interne K5601 (X8/X9), der externe Stecker X10 bleibt leer.
+drive_types:
+- K5601
+- K5601
+- none
+- none
+
+window:
+  width: 1280
+  height: 760
+  maximized: false
+  # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
+  toolbar:
+  - konfig_laden
+  - konfig_speichern
+  - ''
+  - power
+  - reset
+  - nmi
+  - ''
+  - stand_speichern
+  - stand_laden
+  - ''
+  - dock_settings
+  - dock_drives
+  - dock_keyboard
+  - ''
+  - hilfe
+  # Qt.ToolButtonStyle: 3 = Symbol mit Text darunter.
+  toolbar_style: 3
