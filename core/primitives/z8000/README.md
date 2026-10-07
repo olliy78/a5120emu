@@ -129,7 +129,17 @@ std::function<void(const Z8kBusCycle&, uint16_t)> write;   // bekommt AD0..15
 - **IRET auf der Z8001 unsegmentiert** (laut Handbuch undefiniert): segmentierter Rahmen.
 - **LDCTL:** FCW nur Bit 2..7 und 11..15; Z8002 ohne NSPSEG/PSAPSEG (Schreiben wirkungslos,
   Lesen 0); REFRESH Bit 1..15.
-- **Segment-Trap:** nicht verdrahtet (am A5120.16 SEGT fest H).
+- **Segment-Trap (AP P8, P8000):** `setSEGT` (nur Z8001; am A5120.16 nie benutzt, dort SEGT
+  fest H). Pegel, nicht maskierbar, am Befehlsende abgetastet; Rangfolge NMI > SEGT > VI > NVI
+  (§7.7), Scheinholen, Quittung Status 0100 (Kennung von den MMUs), PSA-Eintrag %10·2.
+  Gekellert wird der nächste Befehl bzw. ein unterbrochener Wiederholungsbefehl selbst. Der
+  Z8001 bricht **nicht** ab: der verletzende Befehl (bzw. Durchlauf) läuft zu Ende, das
+  Unterdrücken von Schreibzugriffen ist SUP an der Karte. Der Pegel steht **nicht** in
+  `Z8kRunState` (Aufbau = A5120-Save-State v7); die Karte stellt ihn beim Laden wieder her.
+- **Beobachtung (AP P8):** `onException`/`lastException` (Art, Kennung, Ort, gekellerter und
+  neuer Status, auch Reset), `lastCycle`/`lastCycleData`, `statusCount(st)` je Statuscode,
+  Pegel-/Merkerabfragen (`nmiPending`, `segtLine`, …). Abdeckungsliste Handbuch → Test:
+  `doc/p8000/z8000_abdeckung.md`.
 
 ## MAME-Orakel
 
@@ -141,7 +151,9 @@ segmentiert System/Normal, Z8002 System/Normal): gleicher Zustand (beide Registe
 Flags, PC, Speicher als Hashfunktion der Adresse) → ein Schritt → Vergleich von Registern,
 FCW (ohne reservierte Bits), PC, allen geschriebenen Bytes, E/A-Schreibzugriffen.
 
-Stand 2026-09-28: **309 264 Fälle, 0 Abweichungen**; bekannt und gemeldet: DAB (s. o.,
+Seit AP P8 (2026-10-07) zusätzlich **Flagmatrix** (jede Zeile × 64 Flagbelegungen × 4 Modi,
+98 993 Fälle) und **Ausnahmen mit Quittung** (NMI/SEGT/VI/NVI, 7000 Fälle), beide ohne
+Abweichung. Stand 2026-09-28: **309 264 Fälle, 0 Abweichungen**; bekannt und gemeldet: DAB (s. o.,
 19 Fälle); angeglichen und gezählt: Bit 15 im gesicherten PC-Segmentwort (~10 500 Fälle).
-Vom Orakel **nicht** abgedeckt: Z8001 unsegmentiert (MAME: „TODO"), Interrupts/Quittung,
+Vom Orakel **nicht** abgedeckt: Z8001 unsegmentiert (MAME: „TODO"), Statusfolge/Scheinholen der Quittung,
 Takte (MAME grob), µI/µ0-Befehle, LDCTL REFRESH, EPA — dafür die Unit-Tests.
