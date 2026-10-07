@@ -261,6 +261,58 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
     EXPECT_NE(b.find("wega     console"), std::string::npos) << b;  // who
     EXPECT_NE(b.find("pb.image"), std::string::npos) << b;          // ls /
     std::fprintf(stderr, "%s", b.c_str());
+    // Für den Kaltstart: Puffer zurückschreiben (wie `sync;sync` im Protokoll Z. 1851) und die Platte
+    // als Zwischenstand ablegen — ohne sync findet fsck beim Start „BAD FREE LIST" und verlangt
+    // „BOOT WEGA (NO SYNC!)".
+    tippeZeile(m, "sync;sync");
+    ASSERT_GE(warteAufFrage(m, {"#5"}, 400'000'000), 0) << bild(m);
+    laufe(m, 400'000'000);
+    std::string fehler;
+    EXPECT_TRUE(stufeSichern(l, "p15_7_sync", &fehler)) << fehler;
+}
+
+/// Kaltstart von der installierten Platte (Protokoll Z. 1852–1941): Netz ein, MON8 → RETURN → UDOS
+/// mit der Koppelsoftware → MON16 → NMI → Hardwaretest → AUTOBOOT lädt Block 0 (`pb.image` =
+/// boot0.md, von `/etc/new.install` geschrieben) → `> boot` → `:` → `md(0,16000)wega` →
+/// Mehrbenutzerbetrieb → `login:`.  Kein Save-State: nur Platte + Startdiskette aus p15_7_sync.
+TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
+    stumm();
+    if (!stufeDa("p15_7_sync")) GTEST_SKIP() << "kein Zwischenstand p15_7_sync";
+    WegaLauf l;
+    ASSERT_TRUE(kopiere(stufenPfad("p15_7_sync", "platte.img"), l.platte));
+    ASSERT_TRUE(kopiere(stufenPfad("p15_7_sync", "start.hfe"), l.start));
+    l.m = std::make_unique<P8000Machine>(wegaConfig(l.platte, false));
+    P8000Machine& m = *l.m;
+    ASSERT_TRUE(m.mountDisk(0, l.start, m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_TRUE(laufeBisText(m, "U880-Softwaremonitor Version 3.1 - Press RETURN", 200'000'000)) << bild(m);
+    tippe(m, "\r");
+    ASSERT_TRUE(laufeBisPrompt(m, ">", 4'000'000)) << bild(m);
+    tippe(m, "\r");
+    ASSERT_TRUE(laufeBisText(m, "U8000-Softwaremonitor Version 3.1 - Press NMI", 80'000'000)) << bild(m);
+    laufe(m, 2'000'000);
+    m.nmi();
+    ASSERT_TRUE(laufeBisText(m, "MAXSEG=<0F>", 400'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisPrompt(m, ">", 400'000'000)) << bild(m);   // boot0.md aus Block 0
+    tippeZeile(m, "boot");
+    ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
+    tippeZeile(m, "md(0,16000)wega");
+    ASSERT_TRUE(langBisText(m, "WEGA Kernel -- Release 3.2", 2'000'000'000LL)) << bild(m);
+    for (;;) {
+        const int i = warteAufFrage(m, {"Enter Date (MM/DD/YY or <cr>):", "Enter Time (HH:MM):", "login:", "#1"},
+                                    8'000'000'000LL);
+        ASSERT_GE(i, 0) << bild(m);
+        if (i == 2) break;
+        laufe(m, 200'000);
+        if (i == 3) { tippeZeile(m, "init 2"); continue; }   // falls der Kern im Einbenutzerbetrieb steht
+        tippeZeile(m, i == 0 ? "" : "21:10");
+    }
+    tippeZeile(m, "wega");
+    ASSERT_TRUE(frage(m, "Password:", "root", 400'000'000));
+    ASSERT_GE(warteAufFrage(m, {"#1"}, 2'000'000'000LL), 0) << bild(m);
+    tippeZeile(m, "who");
+    EXPECT_TRUE(laufeBisText(m, "wega     console", 400'000'000)) << bild(m);
+    std::fprintf(stderr, "%s", bild(m).c_str());
 }
 
 /// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe
@@ -298,7 +350,10 @@ TEST(P8000WegaInstall, KernNimmtKommandosAmTerminalAn) {
     EXPECT_GE(warteAufFrage(*l.m, {"#2"}, 80'000'000), 0) << bild(*l.m);
 }
 
-TEST(P8000WegaInstall, DISABLED_DiagKommandos) {
+/// Werkzeug (kein Wächter): Kommandos am `#`-Prompt des Zwischenstands p15_4_kern ausführen und
+/// das Bild drucken — `K1520_P8000_KOMMANDOS='date;ls /bin' … --gtest_also_run_disabled_tests
+/// --gtest_filter='*Kommandos*'`.
+TEST(P8000WegaInstall, DISABLED_Kommandos) {
     stumm();
     WegaLauf l;
     std::string fehler;
@@ -315,23 +370,4 @@ TEST(P8000WegaInstall, DISABLED_DiagKommandos) {
         warteAufFrage(*l.m, {"#" + std::to_string(n++)}, 400'000'000);
     }
     std::fprintf(stderr, "%s", bild(*l.m).c_str());
-}
-
-TEST(P8000WegaInstall, DISABLED_DiagLogin) {
-    stumm();
-    WegaLauf l;
-    std::string fehler;
-    ASSERT_TRUE(stufeLaden(l, "p15_5_newinst", &fehler)) << fehler;
-    P8000Machine& m = *l.m;
-    tippeZeile(m, "init 2");
-    ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY or <cr>):", "05/30/89", 40'000'000'000LL));
-    ASSERT_TRUE(frage(m, "Enter Time (HH:MM):", "20:55"));
-    ASSERT_TRUE(langBisText(m, "Going multi-user", 4'000'000'000LL)) << bild(m);
-    laufe(m, 400'000'000);
-    auto& b = m.karte8().sio0().channelB();
-    std::fprintf(stderr, "wr3=%02X wr4=%02X wr5=%02X tx=%d rx=%d par=%d\n", b.wr[3], b.wr[4], b.wr[5], b.tx_bits_per_char,
-                 b.rx_bits_per_char, b.parity_enable);
-    std::fprintf(stderr, "%s", bild(m).c_str());
-    std::string fehler2;
-    stufeSichern(l, "p15_6x_vorlogin", &fehler2);
 }
