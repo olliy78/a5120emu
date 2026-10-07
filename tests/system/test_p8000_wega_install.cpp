@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -63,6 +64,17 @@ bool letzteStufe(const char* name) {
     }
     if (!vol->flush()) return ::testing::AssertionFailure() << vol->lastError();
     return ::testing::AssertionSuccess();
+}
+
+/// Auf Text im Bild warten, Fortschrittszeile je 400 Mio. Takte.
+bool langBisText(P8000Machine& m, const std::string& nadel, long long grenze) {
+    for (long long t = 0; t < grenze; t += 400'000'000) {
+        if (laufeBisText(m, nadel, std::min<long long>(400'000'000, grenze - t), 1'000'000)) return true;
+        std::string z = cursorZeile(m);
+        while (!z.empty() && z.front() == ' ') z.erase(z.begin());
+        std::fprintf(stderr, "  [%6.0f Mio. Takte] %s\n", double(m.totalCycles()) / 1e6, z.c_str());
+    }
+    return false;
 }
 
 /// Frage abwarten (Cursorzeile endet darauf), dann @p antwort tippen.
@@ -170,6 +182,26 @@ void saInstall(WegaLauf& l, const std::string& ziel, const std::vector<std::stri
     l.diskAuswerfen();
 }
 
+/// Stufe 4: Kern von der Platte starten (`md(0,16000)wega`, Protokoll Z. 1559–1584), Einbenutzer-
+/// betrieb, `/etc/new.install` (Z. 1584–1666), `init 2` bis `login:` (Z. 1666–1724).
+void stufeNewInstall(WegaLauf& l) {
+    P8000Machine& m = *l.m;
+    tippeZeile(m, "md(0,16000)wega");
+    ASSERT_TRUE(langBisText(m, "WEGA Kernel", 2'000'000'000LL)) << bild(m);
+    ASSERT_TRUE(langBisText(m, "Single-User Mode", 4'000'000'000LL)) << bild(m);
+    ASSERT_GE(warteAufFrage(m, {"#1"}, 2'000'000'000LL), 0) << bild(m);
+    laufe(m, 200'000);
+    tippeZeile(m, "/etc/new.install");
+    ASSERT_TRUE(frage(m, "neu angelegt werden ? (j/n) :", "j", 2'000'000'000LL));
+    ASSERT_TRUE(frage(m, "/dev/tmp (Standard 4000) :", "4000"));
+    ASSERT_TRUE(frage(m, "/dev/z  (Standard 60732) :", "60732"));
+    ASSERT_TRUE(langBisText(m, "Damit ist das System vollstaendig eingerichtet.", 40'000'000'000LL)) << bild(m);
+    ASSERT_TRUE(frage(m, "#2", "init 2", 2'000'000'000LL));
+    ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY or <cr>):", "05/30/89", 40'000'000'000LL));
+    ASSERT_TRUE(frage(m, "Enter Time (HH:MM):", "20:55"));
+    ASSERT_GE(warteAufFrage(m, {"login:"}, 4'000'000'000LL), 0) << bild(m);
+}
+
 /// Eine Stufe: aus der Ablage laden oder rechnen und ablegen.  Liefert false, wenn danach Schluss ist.
 template <typename F>
 bool stufe(WegaLauf& l, const char* name, F&& rechnen) {
@@ -198,6 +230,7 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
             saInstall(l, "md(0,0)", {"usr1", "usr2", "usr3", "usr4", "usr5", "usr6", "usr7", "usr8", "usr9"});
         }))
         return;
+    if (!stufe(l, "p15_4_login", [&] { stufeNewInstall(l); })) return;
 }
 
 /// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe
