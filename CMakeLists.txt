@@ -357,6 +357,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_p8000_karte16 PUBLIC k1520_p8000_mmu_logik16 k1520_p8000_dram16 k1520_z8000 k1520_ctc k1520_sio k1520_pio k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_p8000_karte16 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, Winchesterlaufwerk am WDC: LBA-Abbild, Spursynthese/-zerlegung, Mechanik (AP P13b)
+    add_library(k1520_winchester STATIC core/peripherals/winchester/platte.cpp)
+    target_link_libraries(k1520_winchester PUBLIC k1520_logger)
+    target_include_directories(k1520_winchester PUBLIC ${CMAKE_SOURCE_DIR})
+
     # P8000, Kopplung 8-Bit ↔ 16-Bit als Leitungsmodell K1–K15 (doc/design/25_p8000.md §10.3, AP P11)
     add_library(k1520_p8000_kopplung STATIC core/cards/p8000/kopplung.cpp)
     target_link_libraries(k1520_p8000_kopplung PUBLIC k1520_p8000_karte8 k1520_p8000_karte16)

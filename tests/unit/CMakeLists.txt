@@ -103,6 +103,10 @@ k1520_add_test(tastatur1715   SRC peripherals/test_tastatur1715.cpp
 k1520_add_test(p8000_terminal SRC peripherals/test_p8000_terminal.cpp
                               LIBS k1520_p8000_terminal LABELS "${_lbl}")
 
+# P8000-Winchesterplatte: Geometrie, PAR, Spursynthese/-zerlegung, Mechanik (Entwurf 25 AP P13b)
+k1520_add_test(platte         SRC peripherals/test_platte.cpp
+                              LIBS k1520_winchester LABELS "${_lbl}")
+
 # Lochstreifen-Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4, AP-L2)
 k1520_add_test(band_format    SRC peripherals/test_band_format.cpp
                               LIBS k1520_lochstreifen LABELS "${_lbl}")
