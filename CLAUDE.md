@@ -517,6 +517,21 @@ MO-Register 21H = DB4–7, Index als Interrupt, 8275-Sondercodes F0–F3, Tastat
 Shift/CTRL einzeln vorweg, Return = 9EH, Berichtigungen zum 1715W, Testhilfe `pc1715_input.h`).
 Plan: `doc/design/21_pc1715.md`.
 
+## Fünfte Maschine: P8000 (Branch `P8000`, Stand 2026-10-07)
+
+Robotron P8000 mit 8-Bit-Teil (U880, UDOS) und 16-Bit-Teil (UB8001 + 3×UB8010-MMU, WEGA/UNIX),
+Winchester-Controller WDC mit Original-Firmware. **Kein K1520-Rechner** — eigener Bus; nur Bausteine
+werden wiederverwendet. Eine Klasse `P8000Machine` unter `core/machines/p8000/`, Karten unter
+`core/cards/p8000/` (`speicher8`, `karte8`, `floppy8`, `karte16`, `mmu_logik16`, `dram16`, `kopplung`,
+`wdc`), neue Primitive `z8010` (UB8010) und ein vollständig überarbeiteter `z80_dma`/`z8000`,
+Terminal `core/peripherals/p8000_terminal/` (ADM31/VT100 im Kern), Platte `core/peripherals/winchester/`.
+C-ABI `K1520_MACHINE_P8000 = 4`, `k1520_create_p8000(konfig)`; `boot_trace`/`k1520dbg --machine p8000|p8000-16`.
+**Stand:** M1 (UDOS bootet) und M2 (`x` → U8000-Monitor, `O U` → `boot`) erreicht, WDC läuft mit Firmware 4.2,
+`sa.format` (M3) in Arbeit; Oberfläche `p8000emu`, DiskTool-WEGA-Dateisystem und Paket offen.
+**Grundsatz:** Chips werden vollständig + systematisch getestet, Debugger unterstützen sie vollständig
+(Plan §10.11a). **Vor Arbeiten daran: `doc/merkposten/p8000.md` lesen**; Plan und Stand
+`doc/design/25_p8000.md` (§9/§9a), Quellen/Referenzen `doc/p8000/` (EPROM-Abzüge in `doc/p8000/eproms/`).
+
 ## RAM-Floppy RAF 128/512/2M (alle Maschinen; PC 1715 nur mechanisch, s. Merkposten pc1715)
 
 Steckbare K-1520-RAM-Floppy des ZWG der AdW auf **E/A 88H/89H** (fest), Karte
