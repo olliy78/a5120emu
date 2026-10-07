@@ -1,0 +1,15 @@
+# k1520DiskTool — Angaben zu 'sa.format' (WEGA 3.1, aus dem Root-Dateisystem des
+# WEGA-3.1-Plattenabbilds geholt; Angaben nach dem Muster der WEGA-3.0-Startdiskette).
+fs=udos
+name=sa.format
+typ=B
+eig=-
+start=0000
+satz=512
+block=0
+rest=476
+segment=0000:10204
+mem=0000:27DB:0000
+zusatz=0
+erst=890530
+geaend=890530

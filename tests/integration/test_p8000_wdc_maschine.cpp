@@ -145,6 +145,26 @@ TEST(P8000WdcMaschine, KonfigurationUndPlattenschnittstelle) {
     EXPECT_FALSE(m.hdUnmount(1));
     EXPECT_FALSE(m.hdLed(0));
 
+    // v2-Stand einer Maschine mit 16-Bit-Karte ohne WDC: im Konfigurationsabschnitt fehlen WDC-Byte und
+    // WDC-Takt (5 Byte) — er lädt weiter.
+    {
+        P8000Machine::Config k;
+        k.karte16 = true;
+        P8000Machine q(k), z(k);
+        q.powerOn();
+        laufe(q, 500'000);
+        std::vector<uint8_t> v = q.stateBytes();
+        ASSERT_EQ(v[4], 3);
+        uint32_t n = uint32_t(v[6]) | uint32_t(v[7]) << 8 | uint32_t(v[8]) << 16 | uint32_t(v[9]) << 24;
+        ASSERT_EQ(v[10 + n - 5], 0);                          // wdc = Aus
+        v.erase(v.begin() + 10 + n - 5, v.begin() + 10 + n);
+        n -= 5;
+        for (int i = 0; i < 4; ++i) v[size_t(6 + i)] = uint8_t(n >> (8 * i));
+        v[4] = 2;
+        ASSERT_TRUE(z.restoreStateBytes(v)) << z.stateError();
+        EXPECT_EQ(z.stateBytes(), q.stateBytes());
+    }
+
     // Ein v2-Stand (ohne WDC-Abschnitt) lädt nicht in eine Maschine mit WDC.
     std::vector<uint8_t> s = m.stateBytes();
     s[4] = 2;
