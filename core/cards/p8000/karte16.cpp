@@ -162,6 +162,7 @@ void P8000Karte16::pinsAnlegen(int i) {
 void P8000Karte16::piosZuruecksetzen() {
     pio0_.reset(); pio1_.reset(); pio2_.reset();
     for (int i = 0; i < 3; ++i) pinsAnlegen(i);
+    if (pio_haken_) for (int i = 0; i < 3; ++i) pio_haken_(i);
 }
 
 void P8000Karte16::mresetBausteine() {
@@ -367,6 +368,7 @@ void P8000Karte16::ioSchreibenByte(uint16_t port, uint8_t d) {
             const int i = b - PIO0;
             pio(i).ioWrite(z80Reg(port), d);
             pinsAnlegen(i);   // Moduswechsel lädt die Eingabebits nicht aus den Pins nach
+            if (pio_haken_) pio_haken_(i);
             break;
         }
         case CTC0: ctc0_.ioWrite(ctcKanal(port), d); break;

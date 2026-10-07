@@ -222,8 +222,42 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
         } else if (key == "terminals") {
             if (val != "1") { fehler = "P8000: terminals = " + val + " noch nicht moeglich (nur 1 = tty1)"; return false; }
         } else if (key == "karte16") {
-            if (val != "0") { fehler = "P8000: karte16 = " + val + " noch nicht gebaut (nur 0 = nur 8-Bit-Teil)"; return false; }
-        } else if (key == "index16" || key == "mon16" || key == "dram" || key == "wdc" || key == "platte") {
+            if (val == "0") cfg.karte16 = false;
+            else if (val == "1") cfg.karte16 = true;
+            else { fehler = "P8000: karte16 = " + val + " unbekannt (0 | 1)"; return false; }
+        } else if (key == "index16") {
+            if (val == "1") cfg.index16 = Cfg::Index16::I1;
+            else if (val == "4") cfg.index16 = Cfg::Index16::I4;
+            else { fehler = "P8000: index16 = " + val + " unbekannt (1 | 4)"; return false; }
+        } else if (key == "mon16") {
+            if (val == "3.0") cfg.mon16 = Cfg::Mon16::V3_0;
+            else if (val == "3.1") cfg.mon16 = Cfg::Mon16::V3_1;
+            else if (val == "3.3") cfg.mon16 = Cfg::Mon16::V3_3;
+            else { fehler = "P8000: mon16 = " + val + " unbekannt (3.0 | 3.1 | 3.3)"; return false; }
+        } else if (key == "dram") {
+            // Karten mit '+' getrennt: 1M@<modul 0–15> bzw. 256K@<modul 0–63>, z. B. "1M@0+256K@4"
+            std::vector<P8000Dram16::Karte> karten;
+            size_t q = 0;
+            while (q <= val.size()) {
+                size_t e = val.find('+', q);
+                if (e == std::string::npos) e = val.size();
+                const std::string k = val.substr(q, e - q);
+                q = e + 1;
+                const size_t at = k.find('@');
+                P8000Dram16::Karte kk;
+                int maxmod = 0;
+                if (at != std::string::npos && k.substr(0, at) == "1M") { kk.typ = P8000Dram16::Karte::Typ::M1; maxmod = 15; }
+                else if (at != std::string::npos && k.substr(0, at) == "256K") { kk.typ = P8000Dram16::Karte::Typ::K256; maxmod = 63; }
+                else { fehler = "P8000: dram-Karte '" + k + "' unbekannt (1M@n | 256K@n)"; return false; }
+                const std::string m = k.substr(at + 1);
+                if (m.empty() || m.size() > 2 || m.find_first_not_of("0123456789") != std::string::npos ||
+                    std::stoi(m) > maxmod) { fehler = "P8000: dram-Moduladresse '" + m + "' ungueltig"; return false; }
+                kk.modul = static_cast<uint8_t>(std::stoi(m));
+                karten.push_back(kk);
+            }
+            if (karten.empty() || karten.size() > size_t(P8000Dram16::MAX_KARTEN)) { fehler = "P8000: dram = 1 bis 4 Karten"; return false; }
+            cfg.dram = karten;
+        } else if (key == "wdc" || key == "platte") {
             fehler = "P8000: '" + key + "' noch nicht implementiert (16-Bit-Teil/WDC folgen)";
             return false;
         } else {

@@ -154,6 +154,8 @@ public:
     /// Externe Treiber an PIO-Pins (Kopplung, WDC) — Muster `P8000Karte8::setzePinTreiber`.
     /// @p pio 0..2, @p port 0 = A, 1 = B.  Vorgabe [K1].
     void setzePinTreiber(int pio, int port, uint8_t pegel, uint8_t treibMask);
+    /// Nach jedem CPU-Schreiben auf eine PIO und nach jedem PIO-Reset (Kopplung, P11).
+    void setzePioHaken(std::function<void(int pio)> h) { pio_haken_ = std::move(h); }
 
     // ─── Bus von außen (Debugger/Tests; ohne Wartetakt, mit allen Nebenwirkungen) ──
     uint16_t busLesen(const Z8kBusCycle& c);
@@ -203,6 +205,7 @@ private:
     uint64_t zeit_ = 0;
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];
+    std::function<void(int)> pio_haken_;
 
     std::array<std::unique_ptr<Anschluss>, TTY_ANZAHL> anschluesse_;
     bool seriell_geaendert_ = false;

@@ -4,7 +4,8 @@
  *        PIO0/1/2, DS8282-Latches, DMA-Platzhalter, Interruptkette, RESET/RESI/NMI-Weiche.
  *
  * Quelle: doc/p8000/schaltplan_8bit.md §2–§5, §7, §8 (Rang 1), doc/design/25_p8000.md §10.1–§10.4,
- * AP P5e.  **Ohne** Floppy (FDC/DMA/PIO2-Verdrahtung: P5f) und ohne Kopplungsgegenseite (P11).
+ * AP P5e.  Floppy (FDC/DMA/PIO2-Verdrahtung) hängt `floppy8` (P5f) ein, die Kopplungsgegenseite
+ * `P8000Kopplung` (P11) über `setzePioHaken`, `setLatchRueckruf`, `setNmiU8000Rueckruf`.
  *
  * @code
  *   E/A (nur IORQ ohne M1; A8–A15 egal)       00H–07H  Speicher8 (ADP/RES_RFF, eigenes Gerät)
@@ -133,6 +134,9 @@ public:
     }
     /// Nach jedem /RES der Karte (Netz-Ein und Taste), nachdem die PIOs zurückgesetzt sind.
     void setzeResetHaken(std::function<void()> h) { reset_haken_ = std::move(h); }
+    /// Nach jedem CPU-Schreiben auf eine PIO (Daten oder Steuerwort) und nach dem PIO-Reset:
+    /// die Pinpegel können sich geändert haben (Kopplung, P11).  @p pio 0..2.
+    void setzePioHaken(std::function<void(int pio)> h) { pio_haken_ = std::move(h); }
 
     // ─── Save-State (P8KS, Entwurf 25 §10.2) ─────────────────────────────────
     /// U880, Speicher8, CTC0/1 (samt Bruchtakt-Phase), SIO0/1, PIO0–2 (samt Handshake/Pins),
@@ -174,6 +178,7 @@ private:
     std::function<int()>  bm_schritt_;
     std::function<void()> bm_cpu_;
     std::function<void()> reset_haken_;
+    std::function<void(int)> pio_haken_;
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];
     bool wait_gewarnt_ = false;

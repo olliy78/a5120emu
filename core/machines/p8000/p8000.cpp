@@ -9,6 +9,7 @@
 #include "core/util/zustand.h"
 #include <cstring>
 #include <fstream>
+#include <stdexcept>
 
 P8000Karte8::Config P8000Machine::karteConfig(const Config& c)
 {
@@ -29,6 +30,27 @@ P8000Floppy8::Config P8000Machine::floppyConfig(const Config& c)
     return f;
 }
 
+P8000Karte16::Config P8000Machine::karte16Config(const Config& c)
+{
+    P8000Karte16::Config k;
+    k.index = c.index16;
+    k.mon16 = c.mon16;
+    k.dram.karten = c.dram;
+    k.dram.fuellwert = c.ram_fuellwert;
+    k.takt_hz = c.takt16_hz;
+    k.sram_fuellwert = c.ram_fuellwert;
+    k.nbr_start = c.latch_start;
+    return k;
+}
+
+/// Soll-Zeit der 16-Bit-Karte zur 8-Bit-Zeit @p t8 (Entwurf §10.2, ganzzahlig ohne Überlauf).
+uint64_t P8000Machine::zeit16(uint64_t t8) const
+{
+    const uint64_t f8 = cfg_.takt8_hz, f16 = cfg_.takt16_hz;
+    if (f8 == f16) return t8;
+    return (t8 / f8) * f16 + (t8 % f8) * f16 / f8;
+}
+
 P8000Machine::P8000Machine() : P8000Machine(Config{}) {}
 P8000Machine::~P8000Machine() = default;
 
@@ -40,7 +62,23 @@ P8000Machine::P8000Machine(const Config& cfg)
     , hub_(cfg.takt8_hz)
 {
     karte_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
-    // tty0, tty2, tty3 nach außen (Reihenfolge = C-ABI-Index); tty1 hängt am Kern-Terminal.
+    if (cfg.karte16) {
+        // Handbuch S. 3-33/3-87: nur die Paare 8-Bit Index 1 / 16-Bit Index 1 bzw. 3 / 4.
+        const bool paar1 = cfg.index8 == Config::Index8::I1 && cfg.index16 == Config::Index16::I1;
+        const bool paar34 = cfg.index8 == Config::Index8::I3 && cfg.index16 == Config::Index16::I4;
+        if (!paar1 && !paar34)
+            throw std::invalid_argument("P8000: Leiterplattenindex 8-Bit/16-Bit nur 1/1 oder 3/4");
+        if (cfg.takt8_hz == 0 || cfg.takt16_hz == 0)
+            throw std::invalid_argument("P8000: Takt 0");
+        k16_ = std::make_unique<P8000Karte16>(karte16Config(cfg));
+        if (!k16_->dram().fehler().empty())
+            throw std::invalid_argument("P8000: DRAM — " + k16_->dram().fehler());
+        P8000Kopplung::Config kc;
+        kc.rueckfuehrung = cfg.index16 == Config::Index16::I4 || cfg.bruecken_4xr1_5xr1;
+        kopplung_ = std::make_unique<P8000Kopplung>(karte_, *k16_, kc);
+    }
+    // tty0, tty2, tty3 (und tty4–tty7) nach außen (Reihenfolge = C-ABI-Index); tty1 hängt am
+    // Kern-Terminal.
     for (auto* a : serielleAnschluesse()) hub_.registriere(*a);
 }
 
@@ -49,6 +87,8 @@ std::vector<k1520::serial::SerialAnschluss*> P8000Machine::serielleAnschluesse()
     std::vector<k1520::serial::SerialAnschluss*> v;
     for (int t = 0; t < P8000Karte8::TTY_ANZAHL; ++t)
         if (t != KONSOLE_TTY) v.push_back(&karte_.anschluss(t));
+    if (k16_)
+        for (int i = 0; i < P8000Karte16::TTY_ANZAHL; ++i) v.push_back(&k16_->anschluss(i));
     return v;
 }
 
@@ -68,6 +108,10 @@ void P8000Machine::powerOn()
 {
     lw().flushDisks();
     karte_.powerOn();        // RAM/ADP/Latches vorbelegen, RESI = 1, /RES (Floppy über Reset-Haken)
+    if (k16_) {
+        k16_->powerOn();     // PRES−: MRESET− und PIORESET−; RESET (K11) hält den U8001
+        kopplung_->rechne();
+    }
     nachReset();
     LOG_INFO("P8000", "Netz ein (8-Bit-Teil)");
 }
@@ -79,6 +123,12 @@ void P8000Machine::reset()
     karte_.reset();          // Taste /RESP: RESI = 0
     nachReset();
     LOG_INFO("P8000", "Reset-Taste");
+}
+
+uint8_t P8000Machine::panelLamps() const
+{
+    if (!k16_) return 0;
+    return static_cast<uint8_t>((k16_->runLed() ? 1 : 0) | (k16_->inReset() ? 0 : 2));
 }
 
 // ─── Terminal ────────────────────────────────────────────────────────────────
@@ -163,6 +213,7 @@ int P8000Machine::run(int max_cycles)
         floppy_.takt(n);
         remaining     -= n;
         total_cycles_ += static_cast<uint64_t>(n);
+        if (k16_) k16_->laufeBis(zeit16(total_cycles_));   // U8001 nachziehen (im Reset ohne Schritt)
 
         term_anschluss_.takt(static_cast<uint64_t>(n));
         if (total_cycles_ >= serial_naechst_) serial_naechst_ = hub_.takt(total_cycles_);
@@ -175,7 +226,8 @@ int P8000Machine::run(int max_cycles)
 
 namespace {
 constexpr char     MAGIC[4] = {'P', '8', 'K', 'S'};
-constexpr uint8_t  ABS_CONFIG = 1, ABS_FLOPPY = 2, ABS_KARTE = 3, ABS_TERMINAL = 4, ABS_MASCHINE = 5;
+constexpr uint8_t  ABS_CONFIG = 1, ABS_FLOPPY = 2, ABS_KARTE = 3, ABS_TERMINAL = 4, ABS_MASCHINE = 5,
+                   ABS_KARTE16 = 6, ABS_KOPPLUNG = 7, ABS_ANZAHL = 8;
 
 void abschnitt(std::vector<uint8_t>& out, uint8_t id, const std::vector<uint8_t>& inhalt)
 {
@@ -186,8 +238,9 @@ void abschnitt(std::vector<uint8_t>& out, uint8_t id, const std::vector<uint8_t>
 }
 }  // namespace
 
-/// Fingerabdruck der Bauzeit-Konfiguration: weicht er ab, wird das Laden abgelehnt.
-void P8000Machine::configAbschnitt(std::vector<uint8_t>& out) const
+/// Fingerabdruck der Bauzeit-Konfiguration: weicht er ab, wird das Laden abgelehnt.  @p stand 1
+/// = Aufbau von P8KS v1 (ohne 16-Bit-Teil), sonst mit den Angaben des 16-Bit-Teils.
+void P8000Machine::configAbschnitt(std::vector<uint8_t>& out, uint8_t stand) const
 {
     auto a = k1520::ZAr::schreiber(out);
     uint8_t i8 = static_cast<uint8_t>(cfg_.index8), m8 = static_cast<uint8_t>(cfg_.mon8);
@@ -198,6 +251,19 @@ void P8000Machine::configAbschnitt(std::vector<uint8_t>& out) const
         a.num(n);
         a.raw(reinterpret_cast<uint8_t*>(const_cast<char*>(l.data())), l.size());
     }
+    if (stand < 2) return;
+    bool k16 = cfg_.karte16;
+    a.flag(k16);
+    if (!k16) return;
+    uint8_t i16 = static_cast<uint8_t>(cfg_.index16), m16 = static_cast<uint8_t>(cfg_.mon16);
+    uint32_t t16 = cfg_.takt16_hz;
+    bool br = cfg_.bruecken_4xr1_5xr1;
+    uint8_t nk = static_cast<uint8_t>(cfg_.dram.size());
+    a.num(i16); a.num(m16); a.num(t16); a.flag(br); a.num(nk);
+    for (const P8000Dram16::Karte& k : cfg_.dram) {
+        uint8_t typ = static_cast<uint8_t>(k.typ), mod = k.modul;
+        a.num(typ); a.num(mod);
+    }
 }
 
 std::vector<uint8_t> P8000Machine::stateBytes() const
@@ -206,7 +272,7 @@ std::vector<uint8_t> P8000Machine::stateBytes() const
     out.push_back(P8000_STAND);
 
     std::vector<uint8_t> b;
-    configAbschnitt(b);
+    configAbschnitt(b, P8000_STAND);
     abschnitt(out, ABS_CONFIG, b);
 
     b.clear(); floppy_.serialize(b);  abschnitt(out, ABS_FLOPPY, b);
@@ -215,6 +281,10 @@ std::vector<uint8_t> P8000Machine::stateBytes() const
     term_.serialize(b);
     term_anschluss_.serialize(b);
     abschnitt(out, ABS_TERMINAL, b);
+    if (k16_) {
+        b.clear(); k16_->serialize(b);      abschnitt(out, ABS_KARTE16, b);
+        b.clear(); kopplung_->serialize(b); abschnitt(out, ABS_KOPPLUNG, b);
+    }
 
     b.clear();
     {
@@ -241,7 +311,7 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     if (b.size() < 5 || std::memcmp(b.data(), MAGIC, 4) != 0) { state_error_ = "Kein P8KS-Zustand"; return false; }
     if (b[4] < 1 || b[4] > P8000_STAND) { state_error_ = "P8KS-Version " + std::to_string(b[4]) + " unbekannt"; return false; }
     struct Teil { bool da = false; const uint8_t* p = nullptr; const uint8_t* e = nullptr; };
-    Teil t[ABS_MASCHINE + 1];
+    Teil t[ABS_ANZAHL];
     size_t pos = 5;
     while (pos < b.size()) {
         if (b.size() - pos < 5) { state_error_ = "P8KS: Abschnittskopf abgeschnitten"; return false; }
@@ -250,17 +320,20 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
         for (int i = 0; i < 4; ++i) n |= static_cast<uint32_t>(b[pos + 1 + i]) << (8 * i);
         pos += 5;
         if (b.size() - pos < n) { state_error_ = "P8KS: Abschnitt abgeschnitten"; return false; }
-        if (id >= 1 && id <= ABS_MASCHINE) t[id] = {true, b.data() + pos, b.data() + pos + n};
+        if (id >= 1 && id < ABS_ANZAHL) t[id] = {true, b.data() + pos, b.data() + pos + n};
         pos += n;   // unbekannte Abschnitte überspringen
     }
+    const uint8_t stand = b[4];
+    if (stand < 2 && k16_) { state_error_ = "P8KS v1 kennt keinen 16-Bit-Teil"; return false; }
     std::vector<uint8_t> cfg;
-    configAbschnitt(cfg);
+    configAbschnitt(cfg, stand);
     if (!t[ABS_CONFIG].da || cfg.size() != static_cast<size_t>(t[ABS_CONFIG].e - t[ABS_CONFIG].p) ||
         std::memcmp(cfg.data(), t[ABS_CONFIG].p, cfg.size()) != 0) {
-        state_error_ = "P8KS: Konfiguration (Index, ROM-Satz, Takt, Laufwerke) stimmt nicht überein";
+        state_error_ = "P8KS: Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) stimmt nicht überein";
         return false;
     }
     if (!t[ABS_KARTE].da) { state_error_ = "P8KS: Abschnitt Karte fehlt"; return false; }
+    if (k16_ && !t[ABS_KARTE16].da) { state_error_ = "P8KS: Abschnitt 16-Bit-Karte fehlt"; return false; }
 
     // Fehlende Abschnitte (außer der Karte) lassen den Ist-Zustand stehen.
     auto lade = [&](uint8_t id, const char* name, auto&& f) {
@@ -272,7 +345,17 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     // Reihenfolge: Floppy vor Karte (die FDC-Rückrufe schreiben in die PIO2, die die Karte danach
     // endgültig setzt).
     if (!lade(ABS_FLOPPY, "Floppy", [&](const uint8_t*& p, const uint8_t* e) { return floppy_.deserialize(p, e); })) return false;
+    // Die Kopplung rechnet während des Ladens nicht: die Karten stellen ihre Pins selbst her.
+    struct Ruhig {
+        P8000Kopplung* k;
+        explicit Ruhig(P8000Kopplung* kk) : k(kk) { if (k) k->setRuhig(true); }
+        ~Ruhig() { if (k) k->setRuhig(false); }
+    } ruhig(kopplung_.get());
     if (!lade(ABS_KARTE, "Karte", [&](const uint8_t*& p, const uint8_t* e) { return karte_.deserialize(p, e); })) return false;
+    if (k16_) {
+        if (!lade(ABS_KARTE16, "16-Bit-Karte", [&](const uint8_t*& p, const uint8_t* e) { return k16_->deserialize(p, e); })) return false;
+        if (!lade(ABS_KOPPLUNG, "Kopplung", [&](const uint8_t*& p, const uint8_t* e) { return kopplung_->deserialize(p, e); })) return false;
+    }
     if (!lade(ABS_TERMINAL, "Terminal", [&](const uint8_t*& p, const uint8_t* e) {
             return term_.deserialize(p, e) && term_anschluss_.deserialize(p, e); })) return false;
     if (!lade(ABS_MASCHINE, "Maschine", [&](const uint8_t*& p, const uint8_t* e) {

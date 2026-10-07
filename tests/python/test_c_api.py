@@ -109,11 +109,14 @@ def test_unbuilt_machine_type_is_refused_with_a_reason():
 
 def test_p8000_can_be_created_configured_and_refused():
     """`k1520_create_p8000` (AP P7b): Typ 4, Terminal-Funktionen, Konfigurationstext;
-    unbekannte/noch nicht gebaute Schlüssel → NULL mit Grund."""
+    unbekannte/noch nicht gebaute Schlüssel und unzulässige Bestückung → NULL mit Grund
+    (16-Bit-Teil seit AP P11)."""
     import ctypes
     from app.core_binding.k1520 import _lib, K1520Handle
 
-    for konfig in (None, b"", b"index8=1,mon8=3.1,lw0=K5601,lw1=none,terminals=1,karte16=0"):
+    for konfig in (None, b"", b"index8=1,mon8=3.1,lw0=K5601,lw1=none,terminals=1,karte16=0",
+                   b"karte16=1,index16=4,mon16=3.1,dram=1M@0",
+                   b"index8=1,index16=1,karte16=1,mon16=3.0,dram=256K@0+256K@1"):
         handle = _lib.k1520_create_p8000(konfig)
         assert handle, _lib.k1520_last_init_error()
         assert _lib.k1520_machine_type(handle) == 4
@@ -134,8 +137,9 @@ def test_p8000_can_be_created_configured_and_refused():
     assert handle and _lib.k1520_machine_type(handle) == 4
     _lib.k1520_destroy(K1520Handle(handle))
 
-    for schlecht in (b"quatsch=1", b"index8=2", b"mon8=9", b"index16=4", b"dram=1M@0",
-                     b"karte16=1", b"terminals=2", b"lw0", b"lw5=K5601"):
+    for schlecht in (b"quatsch=1", b"index8=2", b"mon8=9", b"index16=2", b"dram=2M@0",
+                     b"dram=1M@16", b"mon16=9", b"karte16=2", b"karte16=1,index8=1",
+                     b"karte16=1,dram=1M@0+1M@0", b"wdc=4.2", b"terminals=2", b"lw0", b"lw5=K5601"):
         assert not _lib.k1520_create_p8000(schlecht), schlecht
         assert _lib.k1520_last_init_error().decode().startswith("P8000"), schlecht
 

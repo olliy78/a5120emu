@@ -191,6 +191,7 @@ void P8000Karte8::resetBausteine()
     sio0_.reset(); sio1_.reset();
     pio0_.reset(); pio1_.reset(); pio2_.reset();   // /PM1 = /M1 ∧ /RES (§2)
     for (int i = 0; i < 3; ++i) pinsAnlegen(i);
+    if (pio_haken_) for (int i = 0; i < 3; ++i) pio_haken_(i);
     cpu_.reset();
     for (auto& a : anschluesse_) a->wirke();
     seriell_geaendert_ = true;
@@ -288,6 +289,7 @@ void P8000Karte8::ioWrite(uint8_t port, uint8_t data)
         const int i = in4(port, PORT_PIO0) ? 0 : (in4(port, PORT_PIO1) ? 1 : 2);
         pio(i).ioWrite(port & 3, data);
         pinsAnlegen(i);   // Moduswechsel lädt die Eingabebits nicht aus den Pins nach
+        if (pio_haken_) pio_haken_(i);
         return;
     }
     if (in4(port, PORT_SIO0) || in4(port, PORT_SIO1)) {

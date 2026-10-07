@@ -1,8 +1,8 @@
 /**
  * @file p8000.h
- * @brief Robotron P8000 — fünfte Maschine des Kerns.  Stand AP P7a: **nur die 8-Bit-Seite**
- *        (U880-Rechnerkarte + Floppy + Kern-Terminal an tty1); 16-Bit-Karte, Kopplung und WDC
- *        folgen (P10/P11/P13).
+ * @brief Robotron P8000 — fünfte Maschine des Kerns: 8-Bit-Seite (U880-Rechnerkarte + Floppy +
+ *        Kern-Terminal an tty1) und — mit `Config::karte16` — die 16-Bit-Karte samt Kopplung
+ *        (AP P11).  WDC folgt (P13).
  *
  * Quelle: doc/design/25_p8000.md §10.1–§10.7 (Entwurf), Karten `P8000Karte8` (P5e) und
  * `P8000Floppy8` (P5f), Terminal `k1520::p8000::Terminal` (P6).
@@ -10,15 +10,22 @@
  * **Zeitbasis** = Φ der 8-Bit-Karte (4 MHz, §10.2).  Laufschleife je Befehl:
  * `karte.schritt()` (DMA hält die CPU über /BUSRQ; EPROM-Wartetakte eingerechnet) →
  * `karte.takt(n)` (CTCs) → `floppy.takt(n)` (U8272, DRQ→RDY) → Terminal-Anschluss →
- * SerialHub.  Kein ZVE1/ZVE2-Mechanismus (§7 Risiko 5).
+ * SerialHub.  Kein ZVE1/ZVE2-Mechanismus (§7 Risiko 5).  Mit 16-Bit-Karte wird sie nach jedem
+ * 8-Bit-Befehl bis zur selben Maschinenzeit nachgezogen (`laufeBis`, Umrechnung f16/f8, im Reset
+ * ohne Schritt) — feste Reihenfolge 8 → 16, deterministisch; Kopplungsflanken wirken sofort beim
+ * schreibenden Zugriff (Leitungsmodell `P8000Kopplung`).
  *
  * **Serielle Kanäle (§10.6):** tty1 (SIO0-B) = Konsole, fest am Kern-Terminal
  * (`festeSchnittstellen()`); tty0/tty2/tty3 hängen am `SerialHub` — ohne Verbindung verfallen
  * ihre Zeichen in Zeichenzeit (sonst staut sich der Sender: MON8-Hardwaretest ERROR 21).
  *
  * **Ohne 16-Bit-Karte** sind die Kopplungseingänge offen (Pull-ups, §10.4 `karte16 = false`).
+ * **Mit 16-Bit-Karte** hängen tty4–tty7 am `SerialHub` (nach tty0/2/3); die Konsole des
+ * U8000-Monitors läuft über die Kopplung an tty1.  Reset: 8-PIO0-B7 (Pull-up) hält den U8001 im
+ * Reset (K11); die NMI-Taste geht bei B7 = 0 an den U8001 (K12).
  *
- * **Save-State P8KS v1 (P7e, Entwurf §10.2):** `saveState/loadState` (Datei) und
+ * **Save-State P8KS v2 (P7e/P11, Entwurf §10.2):** v1 + Abschnitte 16-Bit-Karte und Kopplung;
+ * ein v1-Stand lädt in eine Maschine ohne 16-Bit-Karte. `saveState/loadState` (Datei) und
  * `stateBytes/restoreStateBytes` (Speicher).  Nicht: Medieninhalt, EPROM, Hub-Verbindungen und
  * der Zustand der Hub-Wandler (Zeichen in Flug an tty0/2/3).
  *
@@ -29,7 +36,9 @@
 #pragma once
 #include "core/bus/k1520_bus.h"
 #include "core/cards/p8000/floppy8.h"
+#include "core/cards/p8000/karte16.h"
 #include "core/cards/p8000/karte8.h"
+#include "core/cards/p8000/kopplung.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/p8000_terminal/terminal.h"
 #include "core/peripherals/p8000_terminal/terminal_anschluss.h"
@@ -53,6 +62,18 @@ public:
         /// Bestückung der Floppy-Anschlüsse (X8 = 0, X9 = 1, X10 extern = 2/3).
         std::array<std::string, 4> laufwerke = {"K5601", "K5601", "none", "none"};
         uint8_t  latch_start = 0x00, adp_start = 0x00, ram_fuellwert = 0x00;
+
+        // ── 16-Bit-Teil (AP P11) ──
+        using Index16 = P8000Karte16::Config::Index;
+        using Mon16   = P8000Karte16::Config::Mon16;
+        /// 16-Bit-Karte gesteckt.  Vorgabe vorerst AUS (Entwurf §10.4 sieht EIN vor; umgestellt
+        /// wird mit der Oberfläche, damit die M1-Wächter den reinen 8-Bit-Teil behalten).
+        bool     karte16 = false;
+        Index16  index16 = Index16::I4;   ///< nur Paare (8: 1, 16: 1) oder (3, 4) — sonst Fehler
+        Mon16    mon16   = Mon16::V3_1;
+        std::vector<P8000Dram16::Karte> dram = {P8000Dram16::Karte{P8000Dram16::Karte::Typ::M1, 0}};
+        bool     bruecken_4xr1_5xr1 = true;   ///< nur Index16 = I1 (Kopplung [KP1])
+        uint32_t takt16_hz = 4'000'000;
     };
 
     /// Kanal des Kern-Terminals (Konsole des U880-Monitors und von UDOS).
@@ -90,6 +111,8 @@ public:
     void setKeyRepeatRealtime(bool) override {}
 
     int machineType() const override { return 4; }   // K1520_MACHINE_P8000 (Entwurf §10.9)
+    /// Bit 0 RUN-LED (K14), Bit 1 UNIT16 = U8001 läuft (nicht im Reset); ohne 16-Bit-Karte 0.
+    uint8_t panelLamps() const override;
     /// Kein K1520-Bus: RAF und K6022 sind nicht steckbar (Entwurf §10.1).
     bool zusatzkartenSteckbar() const override { return false; }
 
@@ -131,6 +154,7 @@ public:
     k1520::serial::SerialHub* serialHub() override { return &hub_; }
     std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
     std::vector<std::string> festeSchnittstellen() const override { return {"Terminal P8000 (tty1)"}; }
+    // (mit 16-Bit-Karte zusätzlich tty4–tty7 am Hub)
     /// Alter Unterbau (Rückruf/Einspeisen) gibt es am P8000 nicht — alle tty gehen über den
     /// Hub bzw. das Kern-Terminal.
     void setDFUECallback(SerialCb) override {}
@@ -146,9 +170,9 @@ public:
     /// Kennung „P8KS“, dann `P8000_STAND`, dann Abschnitte `[Kennung u8][Länge u32][Bytes]`
     /// (unbekannte Abschnitte werden übersprungen).  Die Disketten werden NICHT gesichert — der
     /// Aufrufer mountet vor dem Laden dieselben Abbilder (nur die Kopfposition wird gesetzt).
-    static constexpr uint8_t P8000_STAND = 1;
+    static constexpr uint8_t P8000_STAND = 2;
     std::vector<uint8_t> stateBytes() const;
-    /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke) übereinstimmt;
+    /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) übereinstimmt;
     /// scheitert das Laden mittendrin, wird der alte Zustand wiederhergestellt.
     bool restoreStateBytes(const std::vector<uint8_t>& b);
     bool saveState(const std::string& path) const;
@@ -159,6 +183,9 @@ public:
     // ─── P8000-eigen (Tests, Werkzeuge) ──────────────────────────────────────
     P8000Karte8&  karte8()  { return karte_; }
     P8000Floppy8& floppy8() { return floppy_; }
+    /// 16-Bit-Karte bzw. Kopplung; nullptr ohne `Config::karte16`.
+    P8000Karte16*  karte16()  { return k16_.get(); }
+    P8000Kopplung* kopplung() { return kopplung_.get(); }
     K1520Bus&     bus()     { return bus_; }
     k1520::p8000::Terminal&       terminal()       { return term_; }
     const k1520::p8000::Terminal& terminal() const { return term_; }
@@ -184,12 +211,16 @@ private:
     void nachReset();
     void tastenAbgeben();
     bool wendeAbschnitteAn(const std::vector<uint8_t>& b);
-    void configAbschnitt(std::vector<uint8_t>& out) const;
+    void configAbschnitt(std::vector<uint8_t>& out, uint8_t stand) const;
+    static P8000Karte16::Config karte16Config(const Config& c);
+    uint64_t zeit16(uint64_t t8) const;
 
     const Config cfg_;
     K1520Bus     bus_;
     P8000Karte8  karte_;
     P8000Floppy8 floppy_;
+    std::unique_ptr<P8000Karte16>  k16_;
+    std::unique_ptr<P8000Kopplung> kopplung_;
     k1520::p8000::Terminal          term_;
     k1520::p8000::TerminalAnschluss term_anschluss_;
     k1520::serial::SerialHub        hub_;
