@@ -113,8 +113,18 @@ Platte K5504.50 (WDC 4.2). Reihenfolge:
    (`/usr/sys/conf`), danach `> boot` von Platte, Mehrbenutzer.
 Anforderung für den Emulator (P15): zweites Floppy-Laufwerk (Quelle) neben dem UDOS-Start-Laufwerk,
 WDC/Platte mit der obigen Aufteilung, Diskettenwechsel im Quelllaufwerk während des Laufs.
-Nicht ausgewertet: WEGA-Systemhandbuch (PDF) — die Reihenfolge stammt allein aus dem Log; ob es
-Abweichungen (z. B. 3.0 vs. 3.1) gibt, ist offen.
+WEGA-Systemhandbuch nur für Anmeldung/Passwort ausgewertet; Abweichungen 3.0 ↔ 3.1 s. §5a.
+
+### 5a. Nachtrag P15 (2026-10-07): im Emulator nachvollzogen
+
+Ablauf wie §5, mit `tests/system/test_p8000_wega_install.cpp` (Zwischenstände in
+`~/.cache/k1520emu/p8000_wega`).  Abweichungen der Fassung 3.0 vom 3.1-Protokoll: `sa.format`/`sa.verify`
+4.1 aus dem 3.1-Abbild (die Startdiskette hat V1.4 für Firmware 3.x); Quelldiskette erst NACH dem
+Laden von `sa.install` in Laufwerk 1 legen (UDOS sucht die Datei sonst auch dort: „Error C4"); Format
+der Quelldisketten im Emulator `k5601_9x512`; Kern meldet nach `md(0,16000)wega` gleich `#1` (kein
+„Single-User Mode"); `/etc/new.install` fragt `/dev/z (Standard 60732)` und listet die Plattentypen;
+`/etc/inittab` startet im Zustand 2 getty an console, tty0, tty2, tty4–7 (tty3 aus).  Superuser:
+`wega` (uid 0), Passwort bei Auslieferung `root` (Systemhandbuch).  `/etc/passwd` kennt kein `root`.
 
 ## 6. Offen
 
