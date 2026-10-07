@@ -127,8 +127,15 @@ P8000Karte16::P8000Karte16(const Config& cfg)
 
     peri_.setInterruptChain({&ctc0_, &ctc1_, &sio0_, &sio1_, &pio0_, &pio1_, &pio2_});
 
-    cpu_.read = [this](const Z8kBusCycle& c) { return busLesen(c); };
-    cpu_.write = [this](const Z8kBusCycle& c, uint16_t d) { busSchreiben(c, d); };
+    cpu_.read = [this](const Z8kBusCycle& c) {
+        const uint16_t v = busLesen(c);
+        if (zyklusHaken) zyklusHaken(c, v, true);
+        return v;
+    };
+    cpu_.write = [this](const Z8kBusCycle& c, uint16_t d) {
+        busSchreiben(c, d);
+        if (zyklusHaken) zyklusHaken(c, d, false);
+    };
     mmu_.onSegt = [this](bool aktiv) { cpu_.setSEGT(aktiv); };
     mmu_.onReti = [this] { peri_.signalRETI(); };
     mmu_.onSoftreset = [this] {
@@ -270,6 +277,7 @@ int P8000Karte16::schritt() {
         ++zeit_;
         return 1;
     }
+    if (schrittHaken && schrittHaken(cpu_)) return 0;   // Debugger-Halt VOR dem Befehl
     peri_.updateInterruptChain();
     cpu_.setVI(peri_.isINT());
     const int n = cpu_.step();
@@ -281,7 +289,7 @@ int P8000Karte16::schritt() {
 void P8000Karte16::laufeBis(uint64_t ziel) {
     while (zeit_ < ziel) {
         if (mreset_) { zeit_ = ziel; break; }
-        schritt();
+        if (schritt() == 0) break;   // Debugger-Halt: die Zeit bleibt als Guthaben stehen
     }
 }
 

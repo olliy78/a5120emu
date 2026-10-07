@@ -1,0 +1,184 @@
+# Dispatch-Smoke am P8000 (--machine p8000, AP P12a): JEDES k1520dbg-Kommando einmal — auch
+# die A5120-eigenen (ZVE2, /BUSRQ, Snapshots, Savestates), die "nicht vorhanden" melden.
+# Wie beim A5120-Gegenstueck darf das Suchwort des Tests hier nicht woertlich stehen.
+
+help
+help floppy
+help dualcpu
+help p8000
+h
+?
+
+sym add MARKE 0x6000
+sym list
+alias zeigen u 0x6000 1
+alias
+unalias zeigen
+vars add zaehler 0x6002
+vars
+vars clear
+vars
+
+e 0x6000 3E 05 C9
+d 0x6000 16
+dump 0x6000 16
+u 0x6000 2
+x/4xb 0x6000
+x 0x6000 4
+list 0x6000
+l 0x6000
+set A 0x12
+set 2 A 0x34
+r
+r 2
+rj
+rj2
+where
+w
+where --json
+disp 2*3+4
+disp
+undisp 0
+map
+bank 1 0x0000 16
+bank 2 0xC000 16
+bank
+
+b 0x0400
+b2 0x0269
+tb 0x0402
+b 0x0404 if A==0
+bi 0x0400 2
+bdis 0x0400
+be 0x0400
+bl
+bd 0x0404
+bd2 0x0269
+be2 0x0269
+bdis2 0x0269
+bi2 0x0269 1
+bd 0x0402
+bd 0x0400
+bl
+
+bint on
+bint off
+bnmi on
+bnmi off
+breti on
+breti off
+bbusrq assert
+bbusrq off
+bxfer read start
+bxfer off
+bscreen "A>"
+bscreen off
+
+wp 0x6005 == 99
+wpr 0x6006
+wb 0x6007..0x6008 changed
+wl
+wd 0x6005
+wd all
+iow 0xE8
+iob 0xEB
+iol
+iod 0xEB
+iol
+
+logpoint 0x0400 A
+lpl
+lpd 0x0400
+trace dbg_p8_trace.txt 0x0000 0x0100
+trace off
+itrace dbg_p8_itrace.txt
+itrace off
+
+dev
+dev ctc
+dev pio
+dev pio bs
+dev pio zre
+dev pio k5122ctrl
+dev pio k5122data
+dev sio
+dev sio2
+dev ctc
+dev pio
+dev dma
+dev fdc
+dev ctc16
+dev sio16
+dev pio16
+ivt
+ivt all
+ivt 2
+disk verify
+
+clock
+clock zve1
+clock machine
+mark
+s
+s 2
+s2
+n
+gu 0x0003
+g 20000
+fin
+hist 20000
+bt
+bt scan
+screen
+screen find "x"
+console
+keys \s
+
+snap vorher
+snap list
+snap diff vorher nachher
+restore vorher
+rs 1
+bs 1
+rc
+savestate dbg_p8_state.bin
+loadstate dbg_p8_state.bin
+save dbg_p8_mem.bin 0x6000 16
+load dbg_p8_mem.bin 0x6100
+verify dbg_p8_mem.bin @0x6100
+
+lst
+lst list
+
+# ── P8000-eigene Kommandos (AP P12a/P12b) ──
+adp
+dma
+dma rr
+dma log on
+dma log
+dma log clear
+dma log off
+kopp
+kopp log
+kopp clear
+term
+wdc
+bsegt on
+bsegt off
+segt
+segt clear
+mmu
+mmu code
+mmu data 0 3
+xlat 0x1234
+ml 0x0100 16
+mp 0 16
+cpu u8000
+cpu u880
+cpu wdc
+fcw
+psa
+help p8000
+
+reset
+q

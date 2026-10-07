@@ -1,0 +1,32 @@
+# k1520dbg --machine p8000 (AP P12a): UA858-Zustand und Statusprotokoll beim BOOT von der WEGA-Startdiskette,
+# dazu ADP-Speicherbild (RFF gesetzt, DRAM) und Interruptkette.
+tool:    k1520dbg
+disk:    udosP8000_640k_wega.hfe
+run:     --machine p8000 %DISK%
+timeout: 300
+exit:    0
+stdin:
+  map
+  gscreen "Press RETURN" 200000000
+  dma log on
+  keys \r
+  gscreen ">" 100000000
+  keys \r
+  g 30000000
+  dma log 12
+  dma
+  dma rr
+  map
+  ivt all
+  dev fdc
+  term
+  q
+expect:  RFF=0 (EPROM ueberall selektiert)
+expect:  RFF=1 (ADP wirkt)
+expect:  dma log ON
+expect:  OUT 3xH
+expect:  WR0=
+expect:  UA858 DMA
+expect:  U8272 (20H/21H)
+expect:  Terminal tty1
+forbid:  unknown command

@@ -335,8 +335,9 @@ tools/dev.sh tool boot_trace --machine p8000 --quiet --json --keys '<CR><CR>' \
 - **`--machine p8000-16`** (AP P11): dasselbe mit 16-Bit-Karte und Kopplung (`karte16`);
   das Schlussbild nennt zusätzlich den U8001 (Reset/läuft, PC, FCW, Uhr).  Beispiel:
   `--machine p8000-16 --keys '<CR>x<CR>'` ⇒ „U8000-Softwaremonitor Version 3.1 - Press NMI".
-- Noch nicht: `--p8000 <konfig>`, `--hd`, Wahl der aktiven CPU, Ereignisse des 16-Bit-Teils
-  (Entwurf §10.10, mit P12).
+- Noch nicht: `--p8000 <konfig>`, `--hd`, Ereignisse des 16-Bit-Teils.  Für alles Interaktive
+  (aktive CPU, MMU-Sicht, DMA-/Kopplungsprotokoll) gibt es seit P12 `k1520dbg --machine p8000|p8000-16`
+  (`tools/k1520dbg.md` §11d) — `boot_trace` lokalisiert, `k1520dbg` seziert.
 - Wächter: `bt_p8000_banner.cli`, `bt_p8000_tastatur.cli`, `bt_p8000_16_monitor.cli`.
 
 ## 10. RAM-Floppy (`--raf`)

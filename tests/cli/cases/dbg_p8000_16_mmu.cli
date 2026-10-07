@@ -1,0 +1,45 @@
+# k1520dbg --machine p8000-16 (AP P12a/P12b): bis zum U8000-Monitor laufen (U880 `x`), dann die
+# U8001-Seite: Kontext, Haltepunkt je CPU, MMU-Sicht (mmu/xlat/ml/mp), Kopplungsprotokoll, Save-State.
+# Zwischen den Tasten laufen lassen (gscreen): MON8 liest erst nach dem Echo wieder.
+tool:    k1520dbg
+run:     --machine p8000-16
+timeout: 300
+exit:    0
+stdin:
+  gscreen "Press RETURN" 200000000
+  keys \r
+  gscreen ">" 100000000
+  keys x\r
+  gscreen "Press NMI" 100000000
+  kopp log w 6
+  kopp
+  cpu u8000
+  r
+  b <<0>>%0872
+  g 200000
+  mmu
+  mmu code 0 1
+  xlat <<0>>%0100 code system
+  ml <<0>>%0000 32 code system
+  mp 0x0 16
+  status
+  segt
+  savestate p8_16_stand.bin
+  s
+  loadstate p8_16_stand.bin
+  where --json
+  q
+expect:  U8000-Softwaremonitor Version 3.1 - Press NMI
+expect:  16-PIO0 wr A-Daten
+expect:  K11 RESET16     =0
+expect:  CPU-Kontext: U8001
+expect:  ** bp U8001 : U8001 PC=<<0>>%0872
+expect:  UB8010 Code  MR=00 [ID=0]
+expect:  <<0>>%0100  INSTR System (lesen)  -> EPROM  Baustein+000100
+expect:  gewaehlte MMU: - (On-Board)
+expect:  <<0>>%0000 00 00 C0 00 80 00 01 D0 28 43 29 20 5A 46 54 2F
+expect:  (keine SEGT-Flanke bisher)
+expect:  state saved
+expect:  state loaded
+expect:  "u8001_pc":"<<0>>%0872"
+forbid:  unknown command

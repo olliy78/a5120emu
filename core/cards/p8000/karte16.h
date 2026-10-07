@@ -166,6 +166,13 @@ public:
     /// On-Board-SRAM (Byte 000–7FF), Debugger/Tests.
     uint8_t& sram(uint16_t i) { return sram_[i & 0x7FF]; }
 
+    // ─── Debugger (P12; leer = kein Aufwand) ─────────────────────────────────
+    /// Vor jedem Befehl des U8001 (nicht im Reset): `true` = nicht ausführen, `schritt()` liefert 0
+    /// (Debugger-Halt, die Zeit bleibt als Guthaben stehen — Muster `EM::setStepHook`).
+    std::function<bool(const Z8000&)> schrittHaken;
+    /// Nach jedem Buszyklus des U8001 (Lesen/Schreiben, mit Datum) — Beobachtung, keine Wirkung.
+    std::function<void(const Z8kBusCycle&, uint16_t daten, bool lesen)> zyklusHaken;
+
     // ─── Save-State ──────────────────────────────────────────────────────────
     void serialize(std::vector<uint8_t>& out) const;
     /// Teilweise angewandt, wenn @c false — der Aufrufer (Maschine) sichert vorher.
