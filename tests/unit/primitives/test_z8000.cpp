@@ -421,6 +421,19 @@ TEST(Z8000Shift, RechtsArithmetischUndLogisch) {
     EXPECT_FALSE(F(r, Z8000::F_C));    // zuletzt hinausgeschoben: Bit 6 von %81 = 0
 }
 
+/// Statisches Byte-Schieben: nur das LOW-Byte des Anzahlworts zählt (MAME `GET_IMM8(OP1)`).
+/// Beleg Gastsoftware: der WEGA-Kern 3.2 (`koppel.s` _kint, `srlb rl4,#3`) steht als
+/// B2C1 FFFD im Speicher; vorher kannte der Kern das Wort nicht, schob gar nicht und _kint
+/// sprang für jedes Empfangszeichen in `_xint` statt `_rint` (P15: keine Eingabe an WEGA).
+TEST(Z8000Shift, ByteSchiebenWertetNurDasLowByteDerAnzahlAus) {
+    Rig r(M::Z8002);
+    runNonseg(r, "  LDB RL4,#%85\n  DW %B2C1,%FFFD\n  LDB RH4,#%04\n  DW %B241,%7F03\n"
+                 "  LDB RL5,#%81\n  DW %B2D9,%12FF");
+    EXPECT_EQ(r.cpu.rb(12), 0x10);   // RL4: %85 >> 3 (SRLB, High-Byte FF)
+    EXPECT_EQ(r.cpu.rb(4), 0x20);    // RH4: %04 << 3 (SLLB, High-Byte 7F)
+    EXPECT_EQ(r.cpu.rb(13), 0xC0);   // RL5: SRAB #1 (High-Byte 12)
+}
+
 TEST(Z8000Shift, DynamischRichtungAusVorzeichen) {
     Rig r(M::Z8002);
     runNonseg(r, "  LD R1,#%00F0\n  LD R2,#-4\n  SDL R1,R2\n  LD R3,#%0001\n  LD R4,#15\n  SDA R3,R4\n"

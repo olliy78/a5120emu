@@ -14,7 +14,8 @@
  *   mn     Mnemonik in Zilog-Schreibweise
  *   w0/w1  Bitmuster des ersten/zweiten Befehlsworts, Bit 15 links, Leerzeichen
  *          sind Zierde.  '0'/'1' = fest, Kleinbuchstabe = Feld (zusammenhängend;
- *          ein Buchstabe gehört genau einem Wort).  w1 = "" → kein festes
+ *          ein Buchstabe gehört genau einem Wort), 'X' = beliebig (vom Kern nicht
+ *          ausgewertet, der Assembler schreibt 0).  w1 = "" → kein festes
  *          zweites Wort.
  *   ops    Operanden in Syntax-Reihenfolge, Komma-getrennt:  ART[:feld[:feld2]]
  *          (Arten siehe enum Kind).  Operanden mit Erweiterungsworten (DA, X,
@@ -364,14 +365,16 @@ inline constexpr RowSrc kRows[] = {
     {"RRC",   "10110011 dddd 1100",  "",                      "RW:d,#1",               6,  6,  6,   0,  0,  0,  0, 0},
     {"RRC",   "10110011 dddd 1110",  "",                      "RW:d,#2",               7,  7,  7,   0,  0,  0,  0, 0},
     // ---- Statisches Schieben (Anzahl im 2. Wort, rechts = negativ; Takte 13 + 3n)
-    {"SLLB",  "10110010 dddd 0001",  "0000 0000 0ccc cccc",   "RB:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
-    {"SRLB",  "10110010 dddd 0001",  "0000 0000 1ccc cccc",   "RB:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
+    //      Byte-Schieben: nur das LOW-Byte des 2. Worts zählt (MAME `GET_IMM8(OP1)`); der WEGA-
+    //      Kern 3.2 (`koppel.s` _kint: `srlb rl4,#3` = B2C1 FFFD) setzt das High-Byte auf FFH.
+    {"SLLB",  "10110010 dddd 0001",  "XXXX XXXX 0ccc cccc",   "RB:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
+    {"SRLB",  "10110010 dddd 0001",  "XXXX XXXX 1ccc cccc",   "RB:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
     {"SLL",   "10110011 dddd 0001",  "0ccc cccc cccc cccc",   "RW:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, 0},
     {"SRL",   "10110011 dddd 0001",  "1ccc cccc cccc cccc",   "RW:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, 0},
     {"SLLL",  "10110011 dddd 0101",  "0ccc cccc cccc cccc",   "RL:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_L},
     {"SRLL",  "10110011 dddd 0101",  "1ccc cccc cccc cccc",   "RL:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, Z8K_L},
-    {"SLAB",  "10110010 dddd 1001",  "0000 0000 0ccc cccc",   "RB:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
-    {"SRAB",  "10110010 dddd 1001",  "0000 0000 1ccc cccc",   "RB:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
+    {"SLAB",  "10110010 dddd 1001",  "XXXX XXXX 0ccc cccc",   "RB:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
+    {"SRAB",  "10110010 dddd 1001",  "XXXX XXXX 1ccc cccc",   "RB:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
     {"SLA",   "10110011 dddd 1001",  "0ccc cccc cccc cccc",   "RW:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, 0},
     {"SRA",   "10110011 dddd 1001",  "1ccc cccc cccc cccc",   "RW:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, 0},
     {"SLAL",  "10110011 dddd 1101",  "0ccc cccc cccc cccc",   "RL:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_L},
@@ -647,6 +650,8 @@ inline void parsePattern(const char* pat, uint8_t word, uint16_t& mask, uint16_t
         if (c == '0' || c == '1') {
             mask |= uint16_t(1u << bit);
             if (c == '1') match |= uint16_t(1u << bit);
+        } else if (c == 'X') {
+            // beliebig: der Kern wertet das Bit nicht aus (Assembler schreibt 0)
         } else if (isField(c)) {
             Field& f = fields[size_t(c - 'a')];
             if (!f.valid()) { f.word = word; f.lsb = uint8_t(bit); f.width = 1; }

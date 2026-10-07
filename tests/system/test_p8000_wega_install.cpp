@@ -184,13 +184,18 @@ void saInstall(WegaLauf& l, const std::string& ziel, const std::vector<std::stri
 
 /// Stufe 4: Kern von der Platte starten (`md(0,16000)wega`, Protokoll Z. 1559–1584), Einbenutzer-
 /// betrieb, `/etc/new.install` (Z. 1584–1666), `init 2` bis `login:` (Z. 1666–1724).
-void stufeNewInstall(WegaLauf& l) {
+/// WEGA 3.0 meldet — anders als das 3.1-Protokoll — kein „Single-User Mode", nur den Prompt `#1`.
+void stufeKern(WegaLauf& l) {
     P8000Machine& m = *l.m;
     tippeZeile(m, "md(0,16000)wega");
-    ASSERT_TRUE(langBisText(m, "WEGA Kernel", 2'000'000'000LL)) << bild(m);
-    ASSERT_TRUE(langBisText(m, "Single-User Mode", 4'000'000'000LL)) << bild(m);
+    ASSERT_TRUE(langBisText(m, "WEGA Kernel -- Release 3.2", 2'000'000'000LL)) << bild(m);
+    ASSERT_TRUE(langBisText(m, "file system /z          = offset 27000, 60732 blocks", 400'000'000)) << bild(m);
     ASSERT_GE(warteAufFrage(m, {"#1"}, 2'000'000'000LL), 0) << bild(m);
-    laufe(m, 200'000);
+    laufe(m, 2'000'000);
+}
+
+void stufeNewInstall(WegaLauf& l) {
+    P8000Machine& m = *l.m;
     tippeZeile(m, "/etc/new.install");
     ASSERT_TRUE(frage(m, "neu angelegt werden ? (j/n) :", "j", 2'000'000'000LL));
     ASSERT_TRUE(frage(m, "/dev/tmp (Standard 4000) :", "4000"));
@@ -230,7 +235,8 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
             saInstall(l, "md(0,0)", {"usr1", "usr2", "usr3", "usr4", "usr5", "usr6", "usr7", "usr8", "usr9"});
         }))
         return;
-    if (!stufe(l, "p15_4_login", [&] { stufeNewInstall(l); })) return;
+    if (!stufe(l, "p15_4_kern", [&] { stufeKern(l); })) return;
+    if (!stufe(l, "p15_5_login", [&] { stufeNewInstall(l); })) return;
 }
 
 /// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe
@@ -252,4 +258,18 @@ TEST(P8000WegaInstall, UdosSuchtAufLaufwerkEinsMitWegaDisketteC4) {
         else
             EXPECT_GE(warteAufFrage(*l.m, {"Enter Date (MM/DD/YY) :"}, 400'000'000), 0) << bild(*l.m);
     }
+}
+
+/// Wächter P15: Eingabe an den laufenden WEGA-Kern (Zeichen über SIO0-B des 8-Bit-Teils →
+/// Koppelsoftware → 16-PIO1 → `_kint` → `_rint`).  Rot war: `srlb rl4,#3` als B2C1 FFFD kannte
+/// der U8001-Kern nicht ⇒ `_kint` sprang nach `_xint`, kein Echo, keine Kommandos.
+TEST(P8000WegaInstall, KernNimmtKommandosAmTerminalAn) {
+    stumm();
+    if (!stufeDa("p15_4_kern")) GTEST_SKIP() << "kein Zwischenstand p15_4_kern";
+    WegaLauf l;
+    std::string fehler;
+    ASSERT_TRUE(stufeLaden(l, "p15_4_kern", &fehler)) << fehler;
+    tippeZeile(*l.m, "ls");
+    EXPECT_TRUE(laufeBisText(*l.m, "sa.install", 80'000'000)) << bild(*l.m);
+    EXPECT_GE(warteAufFrage(*l.m, {"#2"}, 80'000'000), 0) << bild(*l.m);
 }
