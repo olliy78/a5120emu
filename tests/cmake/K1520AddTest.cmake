@@ -10,7 +10,8 @@
 #       LIBS    <lib> [...]               # ohne GTest::gtest_main (kommt automatisch)
 #       LABELS  <label> [...]             # ctest -L / -LE
 #       DEFS    <NAME=wert> [...]         # zusätzliche Compile-Definitionen
-#       TIMEOUT <sekunden>)               # Vorgabe 60
+#       TIMEOUT <sekunden>                # Vorgabe 60
+#       [RUN_SERIAL])                     # Fälle nie parallel (gemeinsame Dateien)
 #
 # Feste Zusagen für jeden so erzeugten Test:
 #   * Zielname          k1520_test_<name>
@@ -21,7 +22,7 @@
 #   * Fixture-Pfade als Compile-Definition (siehe unten)
 
 function(k1520_add_test name)
-    cmake_parse_arguments(T "" "TIMEOUT" "SRC;LIBS;LABELS;DEFS" ${ARGN})
+    cmake_parse_arguments(T "RUN_SERIAL" "TIMEOUT" "SRC;LIBS;LABELS;DEFS" ${ARGN})
 
     if(NOT T_SRC)
         message(FATAL_ERROR "k1520_add_test(${name}): SRC fehlt")
@@ -79,6 +80,12 @@ function(k1520_add_test name)
         set(_discovery DISCOVERY_MODE PRE_TEST)
     endif()
 
+    # RUN_SERIAL: die Fälle laufen nie neben anderen (gemeinsame Zwischenstände
+    # außerhalb des Baums, z. B. p8000_wega_install).
+    set(_serial "")
+    if (T_RUN_SERIAL)
+        set(_serial RUN_SERIAL TRUE)
+    endif()
     gtest_discover_tests(${target} ${_discovery}
-        PROPERTIES TIMEOUT ${T_TIMEOUT} LABELS "${_labels}")
+        PROPERTIES TIMEOUT ${T_TIMEOUT} LABELS "${_labels}" ${_serial})
 endfunction()

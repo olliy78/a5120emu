@@ -21,10 +21,13 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <thread>
 
 #include "core/filesystem/disk_volume.h"
 #include "core/logger.h"
 #include "core/machines/p8000/p8000.h"
+#include "core/serial/hub.h"
+#include "core/serial/net/socket.h"
 #include "tests/support/fixtures.h"
 #include "tests/support/p8000_input.h"
 #include "tests/support/p8000_wega.h"
@@ -313,6 +316,84 @@ TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
     tippeZeile(m, "who");
     EXPECT_TRUE(laufeBisText(m, "wega     console", 400'000'000)) << bild(m);
     std::fprintf(stderr, "%s", bild(m).c_str());
+}
+
+/// Zweitziel P15 — Mehrbenutzerbetrieb: im Zustand 2 startet `/etc/inittab` getty auch an tty4–7
+/// (SIO0/1 der 16-Bit-Karte, am `SerialHub`).  Ein Telnet-Client auf tty4 meldet sich als `wega`
+/// an, während die Konsole (Kern-Terminal, tty1) angemeldet ist; `who` zeigt beide.
+TEST(P8000WegaInstall, ZweitesTerminalAnTty4UeberTelnet) {
+    stumm();
+    if (!stufeDa("p15_6_login")) GTEST_SKIP() << "kein Zwischenstand p15_6_login";
+    using namespace k1520::serial;
+    WegaLauf l;
+    std::string fehler;
+    ASSERT_TRUE(stufeLaden(l, "p15_6_login", &fehler)) << fehler;
+    P8000Machine& m = *l.m;
+    SerialHub* hub = m.serialHub();
+    int tty4 = -1;
+    for (int i = 0; i < hub->anzahl(); ++i)
+        if (hub->info(i).name == "tty4") tty4 = i;
+    ASSERT_GE(tty4, 0);
+    SerialKonfig k = hub->konfig(tty4);
+    k.betriebsart = Betriebsart::Telnet;
+    k.rolle = Rolle::Server;
+    k.port = 0;
+    k.loop = false;
+    ASSERT_TRUE(hub->konfigurieren(tty4, k));
+    ASSERT_TRUE(hub->start(tty4));
+    const uint16_t port = hub->status(tty4).port_aktiv;
+    ASSERT_NE(port, 0);
+    net::Fehler fe;
+    auto ziele = net::aufloesen("127.0.0.1", port, &fe);
+    ASSERT_FALSE(ziele.empty());
+    net::Socket s = net::verbindenAlle(ziele, 2000, &fe);
+    ASSERT_TRUE(s.gueltig());
+
+    std::string empfangen;
+    auto sammle = [&] {
+        char buf[512];
+        for (;;) {
+            const auto e = net::empfangen(s.fd(), buf, sizeof buf);
+            if (e.status != net::IoStatus::Ok || e.n == 0) break;
+            for (size_t j = 0; j < e.n; ++j) {
+                const uint8_t c = uint8_t(buf[j]) & 0x7F;   // getty: Software-Parität in Bit 7
+                if (c) empfangen += char(c);
+            }
+        }
+    };
+    auto warte = [&](const std::string& nadel, long long grenze) {
+        const size_t ab = empfangen.size();
+        for (long long t = 0; t < grenze; t += 100'000) {
+            m.run(100'000);
+            sammle();
+            if (empfangen.find(nadel, ab) != std::string::npos) return true;
+        }
+        for (int i = 0; i < 20; ++i) {   // der I/O-Faden liefert nach
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            sammle();
+        }
+        return empfangen.find(nadel, ab) != std::string::npos;
+    };
+    auto sende = [&](const std::string& z) {
+        ASSERT_GT(net::senden(s.fd(), z.data(), z.size()).n, 0u);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    };
+    // Konsole anmelden, dann tty4 (getty hat seine Meldung ggf. schon ins Leere geschickt: RETURN).
+    tippeZeile(m, "wega");
+    ASSERT_TRUE(frage(m, "Password:", "root", 400'000'000));
+    ASSERT_GE(warteAufFrage(m, {"#1"}, 2'000'000'000LL), 0) << bild(m);
+    sende("\r");
+    ASSERT_TRUE(warte("login:", 400'000'000)) << empfangen;
+    sende("wega\r");
+    ASSERT_TRUE(warte("Password:", 400'000'000)) << empfangen;
+    sende("root\r");
+    ASSERT_TRUE(warte("#1", 2'000'000'000LL)) << empfangen;
+    sende("who\r");
+    ASSERT_TRUE(warte("#2", 400'000'000)) << empfangen;
+    EXPECT_NE(empfangen.find("wega     tty4"), std::string::npos) << empfangen;
+    EXPECT_NE(empfangen.find("wega     console"), std::string::npos) << empfangen;
+    std::fprintf(stderr, "%s\n", empfangen.c_str());
+    hub->stop(tty4);
 }
 
 /// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe

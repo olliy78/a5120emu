@@ -172,4 +172,4 @@ k1520_add_test(p8000_sa_format SRC test_p8000_sa_format.cpp
 # Zwischenstände in ~/.cache/k1520emu/p8000_wega (tests/support/p8000_wega.h).
 k1520_add_test(p8000_wega_install SRC test_p8000_wega_install.cpp
                             LIBS k1520_p8000 k1520_fs k1520_logger k1520_testsupport
-                            LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 14400)
+                            LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 14400 RUN_SERIAL)
