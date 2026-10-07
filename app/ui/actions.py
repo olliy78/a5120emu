@@ -63,9 +63,18 @@ _SPEC: List[Tuple] = [
     # KEIN Kürzel: selten gebraucht, und jedes Strg+Umschalt+… müsste in die
     # Kürzeltabelle des Handbuchs (ein Vertrag).
     ("nmi", "&NMI-Taster", "nmi", None,
-     "NMI-Taster der Frontplatte — solange das Boot-ROM eingeblendet ist: Lampen "
+     "NMI-Taster der Frontplatte — K8915: solange das Boot-ROM eingeblendet ist: Lampen "
      "aus, Selbsttest von vorn.  Unter SCPX springt die CPU ins RAM bei 0066H "
-     "(wie am Gerät, meist ein Absturz)", "_on_nmi", False),
+     "(wie am Gerät, meist ein Absturz).  P8000: NMI-Taste (U880 bzw. — bei "
+     "angeschalteter 16-Bit-Karte — U8001, dort „Press NMI“)", "_on_nmi", False),
+    # Zwischenstand der Maschine (nur P8000, P8KS).  KEIN Kürzel (die Kürzeltabelle des
+    # Handbuchs ist ein Vertrag); zuverlässig nur am Prompt, siehe Handbuch.
+    ("stand_speichern", "Zwischenstand &sichern…", "config-save", None,
+     "Den Zustand der laufenden Maschine in eine Datei sichern (P8KS) — zuverlässig nur am "
+     "Prompt; Disketten und Platte müssen beim Laden dieselben sein", "_stand_speichern", False),
+    ("stand_laden", "Zwischenstand &laden…", "config-open", None,
+     "Einen gesicherten Zwischenstand laden — nur bei gleicher Konfiguration und mit "
+     "denselben Disketten/derselben Platte", "_stand_laden", False),
 
     # ── EPROMmer (nur PRG 710, AP-P7c) ──────────────────────────────────────
     # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kürzel:
@@ -125,6 +134,10 @@ _SPEC: List[Tuple] = [
      "Den PC1715 Emulator öffnen (PC 1715) — ein eigenes Programm "
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_pc1715emu_starten", False),
+    ("p8000emu", "P&8000 Emulator starten", None, None,
+     "Den P8000 Emulator öffnen (P8000) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_p8000emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -150,6 +163,9 @@ KURZ = {
     "a5120emu": "A5120",
     "prg710emu": "PRG710",
     "pc1715emu": "PC1715",
+    "p8000emu": "P8000",
+    "stand_speichern": "Stand sichern",
+    "stand_laden": "Stand laden",
     "eprom_einlegen": "PROM",
     "eprom_leer": "Leer",
     "eprom_speichern": "Sichern",
@@ -173,11 +189,14 @@ POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 #: Aktionen, die nicht jedes Programm hat (Name → Maschinen der Profile,
 #: `app/profil.py`, die sie haben).  Alle übrigen haben alle.
 NUR_FUER = {
-    "nmi": ("k8915",),                   # NMI-Taster der Frontplatte
-    "k8915emu": ("a5120", "prg710", "pc1715"),     # die jeweils ANDEREN Emulatoren
-    "a5120emu": ("k8915", "prg710", "pc1715"),
-    "prg710emu": ("a5120", "k8915", "pc1715"),
-    "pc1715emu": ("a5120", "k8915", "prg710"),
+    "nmi": ("k8915", "p8000"),           # NMI-Taster der Frontplatte
+    "stand_speichern": ("p8000",),       # Zwischenstand (P8KS)
+    "stand_laden": ("p8000",),
+    "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),     # die jeweils ANDEREN Emulatoren
+    "a5120emu": ("k8915", "prg710", "pc1715", "p8000"),
+    "prg710emu": ("a5120", "k8915", "pc1715", "p8000"),
+    "pc1715emu": ("a5120", "k8915", "prg710", "p8000"),
+    "p8000emu": ("a5120", "k8915", "prg710", "pc1715"),
     # EPROMmer (Kasten und Bedienung) — nur der PRG 710 hat einen.
     "eprom_einlegen": ("prg710",),
     "eprom_leer": ("prg710",),
@@ -202,6 +221,8 @@ REIHENFOLGE: List = [
     "power", "reset", "nmi",
     None,
     "einlegen", "auswerfen",
+    None,
+    "stand_speichern", "stand_laden",
     None,
     "dock_drives", "dock_settings", "dock_screen", "dock_keyboard", "dock_eprom",
     None,
@@ -249,7 +270,7 @@ def reihenfolge(maschine: str = "a5120") -> List:
 
 def standard(maschine: str = "a5120") -> List:
     """Inhalt der Symbolleiste beim ersten Start (Programmprofil *maschine*)."""
-    return list(STANDARD_K8915 if maschine == "k8915" else STANDARD)
+    return list(STANDARD_K8915 if maschine in ("k8915", "p8000") else STANDARD)
 
 
 def erzeuge_aktionen(fenster, maschine: str = "a5120") -> None:

@@ -230,10 +230,28 @@ FRONTPLATTE = (
 )
 
 
+#: Frontplatte des P8000 (``k1520_panel_lamps``, AKTIV HIGH): Bit 0 = RUN-LED der 16-Bit-Karte,
+#: Bit 1 = UNIT16 (der U8001 läuft, nicht im Reset), Bit 2 = Plattenzugriff am WDC.  Ohne
+#: 16-Bit-Karte liefert der Kern 0 — dann bleiben Run/Unit16/Platte dunkel, ehrlich.
+FRONTPLATTE_P8000 = (
+    ("Run", FARBE_GRUEN, 0,
+     "RUN-LED der 16-Bit-Karte (K14): leuchtet, solange der U8001 Befehle ausführt."),
+    ("Unit16", FARBE_GELB, 1,
+     "UNIT16: die 16-Bit-Karte ist aus dem Reset genommen (der U8001 läuft, WEGA-Betrieb)."),
+    ("Platte", FARBE_GELB, 2,
+     "Winchester: Zugriff des WDC auf die Platte in den letzten 0,1 s."),
+    ("Power", FARBE_ROT, None,
+     "Netzanzeige — leuchtet, solange der Rechner eingeschaltet ist."),
+)
+
+#: Lampenreihen je Frontplattenart: (Lampen, aktiv low?).
+FRONTPLATTEN = {"k8915": (FRONTPLATTE, True), "p8000": (FRONTPLATTE_P8000, False)}
+
 #: Beschriftung neben der Lampe — kurz, damit die Statuszeile nicht überläuft,
 #: aber eindeutig; der volle Name steht im Tooltip.
 BESCHRIFTUNG = {"Run": "Run", "Input File": "Input", "Output File": "Output",
-                "RUN Mode": "Mode", "ERROR": "Error", "Power": "Power"}
+                "RUN Mode": "Mode", "ERROR": "Error", "Power": "Power",
+                "Unit16": "16-Bit", "Platte": "Platte"}
 
 
 class PanelLamp(QWidget):
@@ -283,7 +301,7 @@ class Frontplatte(QWidget):
     """Die sechs Lampen des K8915 nebeneinander, jede mit ihrer Beschriftung
     (Quelle: :meth:`zeige`)."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, art: str = "k8915"):
         super().__init__(parent)
         self.setFocusPolicy(Qt.NoFocus)
         lay = QHBoxLayout(self)
@@ -292,7 +310,8 @@ class Frontplatte(QWidget):
         self._lampen: List[PanelLamp] = []
         self._schilder: List[QLabel] = []
         self._bits = []
-        for i, (name, farbe, bit, bedeutung) in enumerate(FRONTPLATTE):
+        self._spec, self._aktiv_low = FRONTPLATTEN[art]
+        for i, (name, farbe, bit, bedeutung) in enumerate(self._spec):
             if i:
                 lay.addSpacing(6)
             lampe = PanelLamp(name, farbe, bedeutung)
@@ -318,12 +337,13 @@ class Frontplatte(QWidget):
         return self._schilder[[l.name for l in self._lampen].index(name)]
 
     def zeige(self, latch: int, laeuft: bool, eingeschaltet: bool) -> None:
-        """*latch* = Rohbyte von ``k1520_panel_lamps`` (aktiv low)."""
-        for lampe, bit, (name, *_rest) in zip(self._lampen, self._bits, FRONTPLATTE):
+        """*latch* = Rohbyte von ``k1520_panel_lamps`` (K8915: aktiv low, P8000: aktiv high)."""
+        for lampe, bit, (name, *_rest) in zip(self._lampen, self._bits, self._spec):
             if bit is None:
                 lampe.set_an(eingeschaltet if name == "Power" else laeuft)
             else:
-                lampe.set_an(eingeschaltet and not (int(latch) >> bit) & 1)
+                gesetzt = bool((int(latch) >> bit) & 1)
+                lampe.set_an(eingeschaltet and (gesetzt != self._aktiv_low))
 
     def zustand(self) -> dict:
         """{Name: an?} — für Tests und Abfragen."""
@@ -377,7 +397,7 @@ class MachineStatus(QWidget):
         # set_drive_types räumt nur, was dahinter kommt.
         self.frontplatte: Optional[Frontplatte] = None
         if self.profil.frontplatte:
-            self.frontplatte = Frontplatte()
+            self.frontplatte = Frontplatte(art=self.profil.frontplatte_art)
             self._lay.addWidget(self.frontplatte)
             self._lay.addWidget(_trennstrich())
         self._lay.addWidget(self.takt)

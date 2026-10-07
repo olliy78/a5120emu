@@ -1,7 +1,7 @@
 """Die Nachbarprogramme starten — DiskTool, Emulator, Werkzeugkonsole.
 
 Die Installation bringt sechs Programme mit, die dieselben Disketten anfassen:
-die fünf Oberflächen (``a5120emu``, ``k8915emu``, ``prg710emu``, ``pc1715emu`` und ``k1520DiskTool``) und die
+die sechs Oberflächen (``a5120emu``, ``k8915emu``, ``prg710emu``, ``pc1715emu``, ``p8000emu`` und ``k1520DiskTool``) und die
 beiden Konsolenwerkzeuge (``k1520dbg``, ``k1520disktool-cli``).  Wer eines davon offen
 hat, braucht regelmässig ein zweites — deshalb kann jede Oberfläche die andere
 aufrufen, und der Emulator zusätzlich eine **Eingabeaufforderung**, in der die
@@ -46,6 +46,7 @@ EMULATOR = "emulator"
 K8915EMU = "k8915emu"
 PRG710EMU = "prg710emu"
 PC1715EMU = "pc1715emu"
+P8000EMU = "p8000emu"
 DISKTOOL = "disktool"
 
 #: (Skript unterhalb der Wurzel, Anzeigename, feste Argumente) je Kennung.  Der
@@ -56,12 +57,13 @@ _PROGRAMME = {
     K8915EMU: ("app/main.py", "k8915emu", ("--machine", "k8915")),
     PRG710EMU: ("app/main.py", "prg710emu", ("--machine", "prg710")),
     PC1715EMU: ("app/main.py", "pc1715emu", ("--machine", "pc1715")),
+    P8000EMU: ("app/main.py", "p8000emu", ("--machine", "p8000")),
     DISKTOOL: ("app/disktool/main.py", "k1520DiskTool", ()),
 }
 
 #: Kennung des Emulators je Maschinenname des Programmprofils.
 EMULATOR_JE_MASCHINE = {"a5120": EMULATOR, "k8915": K8915EMU, "prg710": PRG710EMU,
-                       "pc1715": PC1715EMU}
+                       "pc1715": PC1715EMU, "p8000": P8000EMU}
 
 #: Name des Debugger-Handbuchs in :func:`app.paths.doc_dir`.
 HANDBUCH_DBG = "handbuch_k1520dbg.md"

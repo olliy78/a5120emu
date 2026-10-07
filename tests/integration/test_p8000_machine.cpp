@@ -110,3 +110,32 @@ TEST(P8000Machine, DmaHaeltDieCpu_UrladerLiegtNachReturnBei0C00) {
     for (int i = 0; i < 8; ++i) kenn += char(m.memReadDebug(uint16_t(0x0C80 + i)));
     EXPECT_EQ(kenn, "P8000SYS");
 }
+
+// P16: Tasten ohne Qt-Gegenstück gehen über 0x02000000 + TerminalTaste (SI/SO, Caps lock) und die
+// Pfeiltasten über ihre Qt-Kodes — die Oberfläche hat keinen anderen Weg an die Terminaltasten.
+TEST(P8000Machine, TerminalTastenUeberPrivateKodesUndPfeiltasten) {
+    stumm();
+    P8000Machine m;
+    m.powerOn();
+    m.run(1000);
+    using k1520::p8000::TerminalTaste;
+    EXPECT_FALSE(m.terminal().zeichensatz2());
+    m.keyPress(0x02000000u + static_cast<uint32_t>(TerminalTaste::SI_SO), false, false);
+    m.run(1000);
+    EXPECT_TRUE(m.terminal().zeichensatz2());
+    m.keyPress(0x02000000u + static_cast<uint32_t>(TerminalTaste::SI_SO), false, false);
+    m.run(1000);
+    EXPECT_FALSE(m.terminal().zeichensatz2());
+    m.keyPress(0x02000100u, false, false);
+    m.run(1000);
+    EXPECT_TRUE(m.terminal().capsLock());
+    m.keyPress(0x02000101u, false, false);
+    m.run(1000);
+    EXPECT_FALSE(m.terminal().capsLock());
+    // Pfeil hoch (<VT>) erzeugt das Byte 0BH zum Host: die Taste kommt im Terminal an
+    // (am Prompt ohne Wirkung am Bild, aber nicht als Zeichen eingeschrieben).
+    const std::string vorher = m.terminal().text(m.terminal().zeile());
+    m.keyPress(0x01000013u, false, false);
+    m.run(1000);
+    EXPECT_EQ(m.terminal().text(m.terminal().zeile()), vorher);
+}

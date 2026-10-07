@@ -345,6 +345,21 @@ _lib.k1520_term_key.restype = ctypes.c_bool
 _lib.k1520_term_send.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
 _lib.k1520_term_send.restype = ctypes.c_bool
 
+
+# Terminal-Bild auf einmal, Terminalzustand, Save-State (P16)
+_lib.k1520_term_snapshot.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_term_snapshot.restype = ctypes.c_int
+_lib.k1520_term_flags.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_flags.restype = ctypes.c_int
+_lib.k1520_term_bell_count.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_bell_count.restype = ctypes.c_uint32
+_lib.k1520_state_save.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_state_save.restype = ctypes.c_bool
+_lib.k1520_state_load.argtypes = [K1520Handle, ctypes.c_char_p]
+_lib.k1520_state_load.restype = ctypes.c_bool
+_lib.k1520_state_error.argtypes = [K1520Handle]
+_lib.k1520_state_error.restype = ctypes.c_char_p
+
 # Winchesterplatten am WDC des P8000 (Entwurf 25 §10.9; andere Maschinen: False / "")
 _lib.k1520_hd_mount.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_bool]
 _lib.k1520_hd_mount.restype = ctypes.c_bool
@@ -1209,6 +1224,38 @@ class K1520Emulator:
         """Text wie getippt senden (``\\r``/``\\n`` = Return)."""
         data = text.encode("latin-1", "replace")
         return bool(_lib.k1520_term_send(self._handle, i, data, len(data)))
+
+    #: Zellen × Bytes des Terminalbildes (``term_snapshot``).
+    TERM_ZEILEN, TERM_SPALTEN = 24, 80
+
+    def term_snapshot(self, i: int = 0) -> bytes:
+        """Das ganze Terminalbild: 24 × 80 Zellen zeilenweise, je Zelle (Zeichen, Attribut,
+        Flags — Bit 0 Zeichensatz 2, Bit 1 Attributfeld); ``b""`` bei ungültigem ``i``."""
+        n = self.TERM_ZEILEN * self.TERM_SPALTEN * 3
+        buf = ctypes.create_string_buffer(n)
+        got = _lib.k1520_term_snapshot(self._handle, i, buf, n)
+        return bytes(buf.raw[:got]) if got == n else b""
+
+    def term_flags(self, i: int = 0) -> int:
+        """Bit 0 On-Line, 1 Video-Attribute, 2 Programm-Mode, 3 Zeichensatz 2, 4 Caps lock; -1 ungültig."""
+        return int(_lib.k1520_term_flags(self._handle, i))
+
+    def term_bell_count(self, i: int = 0) -> int:
+        """Zahl der BEL des Terminals seit dem Einschalten."""
+        return int(_lib.k1520_term_bell_count(self._handle, i))
+
+    # ─── Save-State des P8000 ────────────────────────────────────────────────
+
+    def state_save(self, path: str) -> bool:
+        """Maschinenzustand (P8KS) in eine Datei; False an anderen Maschinen."""
+        return bool(_lib.k1520_state_save(self._handle, path.encode("utf-8")))
+
+    def state_load(self, path: str) -> bool:
+        """Zustand laden (Medien vorher anschließen); False = Grund in :meth:`state_error`."""
+        return bool(_lib.k1520_state_load(self._handle, path.encode("utf-8")))
+
+    def state_error(self) -> str:
+        return (_lib.k1520_state_error(self._handle) or b"").decode("utf-8", "replace")
 
     # ─── Winchesterplatten am WDC des P8000 (k1520_hd_*) ─────────────────────
 
