@@ -169,3 +169,59 @@ TEST(DbgU8000Snap, DiffZeigtRegisterKarteUndDramBereiche) {
     EXPECT_NE(all.find("em:00010..em:00011 (2 B)"), std::string::npos) << all;
     EXPECT_NE(all.find("3 EM-DRAM-Byte(s) in 2 Bereich(en)"), std::string::npos) << all;
 }
+
+// ── AP P8: Pins, Buszyklus, Ausnahmeprotokoll, Statuszählung ─────────────────
+
+TEST(DbgU8000P8, BuszyklusAlsText) {
+    Z8kBusCycle c;
+    c.st = Z8kStatus::MemInstrFirst; c.system = true; c.word = true; c.read = true; c.seg = 3; c.addr = 0x0100;
+    EXPECT_EQ(dbg16::cycleText(c, 0x7A00), "IF1   (1101) S W R <<3>>%0100 =%7A00");
+    c.st = Z8kStatus::SegTrapAck; c.seg = 0; c.addr = 0;
+    EXPECT_EQ(dbg16::cycleText(c, 0x0102), "SEGTA (0100) S W R Quittung =%0102");
+    c.st = Z8kStatus::SpecialIo; c.system = true; c.word = false; c.read = false; c.addr = 0x00F0;
+    EXPECT_EQ(dbg16::cycleText(c, 0x1515), "SIO   (0011) S B W Port %00F0 <-%1515");
+    c.st = Z8kStatus::MemStack; c.system = false; c.word = true; c.read = false; c.seg = 127; c.addr = 0xEFFE;
+    EXPECT_EQ(dbg16::cycleText(c, 0x0102), "STACK (1001) N W W <<127>>%EFFE <-%0102");
+}
+
+TEST(DbgU8000P8, AusnahmeAlsTextUndProtokoll) {
+    Z8kExceptionInfo x;
+    x.kind = Z8kException::SegmentTrap; x.id = 0x0400; x.atSeg = 0; x.atPc = 0x0100;
+    x.savedSeg = 0; x.savedPc = 0x0102; x.oldFcw = 0xC000; x.newFcw = 0x5800; x.newSeg = 0; x.newPc = 0x3000;
+    EXPECT_EQ(dbg16::exceptionText(x),
+              "SEGT  Kennung=%0400 bei <<0>>%0100 gekellert <<0>>%0102 FCW %C000->%5800 Behandlung <<0>>%3000");
+    x.leftRepeat = true;
+    EXPECT_NE(dbg16::exceptionText(x).find("[Blockbefehl verlassen]"), std::string::npos);
+    dbg16::ExcLog16 log(3);
+    for (int i = 0; i < 5; ++i) { x.id = uint16_t(i); log.add(x); }
+    x.kind = Z8kException::SystemCall; log.add(x);
+    ASSERT_EQ(log.entries().size(), 3u);                 // Ring: die letzten drei
+    EXPECT_EQ(log.entries()[0].id, 3);
+    EXPECT_EQ(log.total(), 6u);
+    EXPECT_EQ(log.count(Z8kException::SegmentTrap), 5u);
+    EXPECT_EQ(log.countsText(), "RESET 0 EPA 0 PRIV 0 SC 1 NMI 0 SEGT 5 VI 0 NVI 0");
+}
+
+TEST(DbgU8000P8, PinsUndStatuszaehlungEinerLaufendenCpu) {
+    Z8000 z;
+    z.read = [](const Z8kBusCycle& c) -> uint16_t {
+        if (c.addr == 0x0002) return 0xC000;              // Reset-FCW
+        if (c.addr == 0x0004 || c.addr == 0x0006) return c.addr == 0x0004 ? 0x0000 : 0x0100;
+        return 0x8D07;                                    // NOP
+    };
+    z.write = [](const Z8kBusCycle&, uint16_t) {};
+    z.reset();
+    z.step();
+    for (int i = 0; i < 5; ++i) z.step();
+    EXPECT_EQ(z.statusCount(Z8kStatus::MemInstrFirst), 5u);
+    EXPECT_EQ(z.statusCount(Z8kStatus::MemInstr), 3u);   // Resetvektor
+    auto lines = dbg16::statusCountLines(z);
+    ASSERT_EQ(lines.size(), 3u);
+    EXPECT_EQ(lines[0], "INSTR (1100)            3");
+    EXPECT_EQ(lines[1], "IF1   (1101)            5");
+    EXPECT_EQ(lines[2], "Summe                   8");
+    EXPECT_EQ(dbg16::statusCountLines(z, true).size(), 17u);
+    z.setSEGT(true); z.setNMI(true);
+    EXPECT_EQ(dbg16::pinsText(z), "NMI=L(Merker) SEGT - - - - - - - maskiert: VI NVI");
+    EXPECT_EQ(dbg16::cycleText(z.lastCycle(), z.lastCycleData()), "IF1   (1101) S W R <<0>>%0108 =%8D07");
+}

@@ -13,7 +13,7 @@ k1520_add_test(coverage_diff     SRC test_coverage_diff.cpp     LABELS "${_lbl}"
 k1520_add_test(callstack_tracker SRC test_callstack_tracker.cpp LABELS "${_lbl}")  # tools/callstack_tracker.h
 k1520_add_test(prn_listing       SRC test_prn_listing.cpp       LABELS "${_lbl}")  # tools/prn_listing.h
 k1520_add_test(mac_listing       SRC test_mac_listing.cpp       LABELS "")  # tools/mac_listing.h
-k1520_add_test(dbg_u8000         SRC test_dbg_u8000.cpp         LABELS "${_lbl}")  # tools/dbg_u8000.h
+k1520_add_test(dbg_u8000         SRC test_dbg_u8000.cpp         LIBS k1520_z8000 LABELS "${_lbl}")  # tools/dbg_u8000.h
 
 # U8001/U8002 (Z8000): Befehlstabelle, Disassembler, Assembler — tools/z8000/
 k1520_add_test(z8k_table         SRC test_z8k_table.cpp         LABELS "${_lbl}")  # core/primitives/z8000/z8k_table.h + z8k_codec.h

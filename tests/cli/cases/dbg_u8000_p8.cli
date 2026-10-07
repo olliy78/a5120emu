@@ -1,0 +1,16 @@
+# AP P8: neue Kommandos des U8001-Kontexts (btrap, trap, status) und die Pins-/Buszeile
+# in `r`/`rj` — Dispatch am stehenden U8001 (RESET16); am laufenden: dbg_u8000_em16abl.
+tool:    k1520dbg
+run:     --em em256 -x %CLI_DIR%/scripts/u8000_p8.dbg
+timeout: 120
+exit:    0
+forbid:  unknown command
+expect:  Pins: NMI=H - - - - - - - - maskiert: VI NVI
+expect:  Bus:  INT   (0000) S W R - =%0000
+expect:  break-on-Trap (EPA/PRIV/SC/SEGT) U8001 ON
+expect:  break-on-Trap (EPA/PRIV/SC/SEGT) U8001 off
+expect:  U8001-Ausnahmen: RESET 0 EPA 0 PRIV 0 SC 0 NMI 0 SEGT 0 VI 0 NVI 0 (gesamt 0)
+expect:  SEGTA (0100)            0
+expect:  Statuszaehler geleert
+expect:  "segt":false,"vi":false,"nvi":false,"st":0,"st_name":"INT","ns":"S","sn":0
+expect:  Ausnahmeprotokoll geleert

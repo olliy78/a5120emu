@@ -13,11 +13,17 @@
  *   Watchpoints, Symbole mit Segment (Symboldatei aus `z8kasm --sym`) und der
  *   Vergleich zweier EM-Zustände für `snap diff`.
  *
+ * - (P8) Zustand der CPU-Pins und der Ausnahmelogik als Text, der letzte Buszyklus
+ *   (Status ST3..0, N/S, B/W, R/W, SN0..6, AD), das Ausnahmeprotokoll (`trap`) und die
+ *   Zyklenzählung je Statuscode (`status`).
+ *
  * Ohne Emulator unit-getestet (tests/debugtools/test_dbg_u8000.cpp).
  *
  * @license MIT
  */
 #pragma once
+#include "core/primitives/z8000.h"   // nur Typen und Inline-Abfragen, kein Binden nötig
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -436,6 +442,111 @@ inline std::vector<std::string> diffEm(const EmSnap& a, const EmSnap& b, int max
                       runs > maxRanges ? "  (nur die ersten gelistet)" : "");
         out.push_back(buf);
     }
+    return out;
+}
+
+// ─── P8: Pins, Buszyklus, Ausnahmen ──────────────────────────────────────────
+
+/// Ein Buszyklus wie an den Pins: "IF1  S W R <<3>>%0100 =%7A00" (Status, N/S, B/W, R/W,
+/// SN + AD, Datum).  E/A und Quittungen ohne Segment, Refresh mit Zeile.
+inline std::string cycleText(const Z8kBusCycle& c, uint16_t data) {
+    char b[96];
+    const uint8_t st = uint8_t(c.st) & 15;
+    const bool io = c.st == Z8kStatus::Io || c.st == Z8kStatus::SpecialIo;
+    const bool ack = st >= 4 && st <= 7;
+    std::string where;
+    if (c.isMemory()) where = addrText(c.seg, c.addr, true);
+    else if (io) { char p[16]; std::snprintf(p, sizeof p, "Port %%%04X", c.addr); where = p; }
+    else if (c.st == Z8kStatus::Refresh) { char p[16]; std::snprintf(p, sizeof p, "Zeile %%%03X", c.addr & 0x1FF); where = p; }
+    else where = ack ? "Quittung" : "-";
+    std::snprintf(b, sizeof b, "%-6s(%X%X%X%X) %s %s %s %s %s%%%04X", z8kStatusName(c.st), (st >> 3) & 1, (st >> 2) & 1,
+                  (st >> 1) & 1, st & 1, c.system ? "S" : "N", c.word ? "W" : "B", c.read ? "R" : "W",
+                  where.c_str(), c.read ? "=" : "<-", data);
+    return b;
+}
+
+/// Pins und Merker: "NMI(Merker) SEGT VI NVI µI µ0 STOP BUSREQ BUSAK"; "-" = inaktiv.
+inline std::string pinsText(const Z8000& z) {
+    std::string s;
+    auto pin = [&](const char* n, bool on) { s += on ? n : "-"; s += ' '; };
+    s += "NMI="; s += z.nmiLine() ? "L" : "H"; if (z.nmiPending()) s += "(Merker)"; s += ' ';
+    pin("SEGT", z.segtLine());
+    pin("VI", z.viLine());
+    pin("NVI", z.nviLine());
+    pin("µI", z.miLine());
+    pin("µ0", z.moActive());
+    pin("STOP", z.stopLine());
+    pin("BUSREQ", z.busReqLine());
+    pin("BUSAK", z.busAck());
+    s += "maskiert:";
+    s += (z.fcw & 0x1000) ? "" : " VI";
+    s += (z.fcw & 0x0800) ? "" : " NVI";
+    if ((z.fcw & 0x1800) == 0x1800) s += " -";
+    return s;
+}
+
+/// Eine angenommene Ausnahme: "SEGT Kennung=%0400 bei <<0>>%0100 gekellert <<0>>%0102
+/// FCW %C000→%5800 Behandlung <<0>>%3000" (+ " [Blockbefehl verlassen]").
+inline std::string exceptionText(const Z8kExceptionInfo& x, bool z8001 = true) {
+    char b[200];
+    if (x.kind == Z8kException::Reset) {
+        std::snprintf(b, sizeof b, "RESET  FCW %%%04X PC %s", x.newFcw, addrText(x.newSeg, x.newPc, z8001).c_str());
+        return b;
+    }
+    std::snprintf(b, sizeof b, "%-5s Kennung=%%%04X bei %s gekellert %s FCW %%%04X->%%%04X Behandlung %s%s",
+                  z8kExceptionName(x.kind), x.id, addrText(x.atSeg, x.atPc, z8001).c_str(),
+                  addrText(x.savedSeg, x.savedPc, z8001).c_str(), x.oldFcw, x.newFcw,
+                  addrText(x.newSeg, x.newPc, z8001).c_str(), x.leftRepeat ? " [Blockbefehl verlassen]" : "");
+    return b;
+}
+
+/// Ausnahmeprotokoll des Debuggers (`trap`): die letzten @p cap Ausnahmen mit Zeitstempel.
+class ExcLog16 {
+public:
+    explicit ExcLog16(size_t cap = 64) : cap_(cap) {}
+    void add(const Z8kExceptionInfo& x) {
+        if (log_.size() == cap_) log_.erase(log_.begin());
+        log_.push_back(x);
+        ++total_;
+        ++perKind_[uint8_t(x.kind) & 7];
+    }
+    void clear() { log_.clear(); total_ = 0; for (auto& n : perKind_) n = 0; }
+    const std::vector<Z8kExceptionInfo>& entries() const { return log_; }
+    uint64_t total() const { return total_; }
+    uint64_t count(Z8kException k) const { return perKind_[uint8_t(k) & 7]; }
+    /// Zählzeile "RESET 1 EPA 0 PRIV 2 SC 5 NMI 0 SEGT 1 VI 7 NVI 0".
+    std::string countsText() const {
+        std::string s;
+        for (int k = 0; k < 8; ++k) {
+            char b[24]; std::snprintf(b, sizeof b, "%s%s %llu", k ? " " : "", z8kExceptionName(Z8kException(k)),
+                                      (unsigned long long)perKind_[k]);
+            s += b;
+        }
+        return s;
+    }
+private:
+    size_t cap_;
+    std::vector<Z8kExceptionInfo> log_;
+    uint64_t total_ = 0;
+    uint64_t perKind_[8] = {};
+};
+
+/// Zählung je Statuscode als Zeilen "IF1   (1101)  1234" — nur Codes mit Zyklen, dazu
+/// die Summe; @p all = auch die Nullen.
+inline std::vector<std::string> statusCountLines(const Z8000& z, bool all = false) {
+    std::vector<std::string> out;
+    uint64_t sum = 0;
+    for (int s = 0; s < 16; ++s) {
+        uint64_t n = z.statusCount(Z8kStatus(s));
+        sum += n;
+        if (!n && !all) continue;
+        char b[64];
+        std::snprintf(b, sizeof b, "%-6s(%d%d%d%d) %12llu", z8kStatusName(Z8kStatus(s)), (s >> 3) & 1, (s >> 2) & 1,
+                      (s >> 1) & 1, s & 1, (unsigned long long)n);
+        out.push_back(b);
+    }
+    char b[48]; std::snprintf(b, sizeof b, "Summe        %12llu", (unsigned long long)sum);
+    out.push_back(b);
     return out;
 }
 

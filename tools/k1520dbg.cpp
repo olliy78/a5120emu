@@ -430,6 +430,8 @@ int main(int argc, char** argv){
     std::vector<Watch16> mwatch16;
     std::set<uint16_t> io16_w, io16_b;          // U8001-E/A-Ports: drucken / anhalten
     bool brk16_int=false, brk16_nmi=false, brk16_iret=false;    // bint/bnmi/breti im U8001-Kontext
+    bool brk16_trap=false;                      // btrap: interner Trap / Segmenttrap angenommen (P8)
+    dbg16::ExcLog16 exc16;                      // `trap`: Ausnahmeprotokoll des U8001 (P8)
     long mark16=-1;                             // `mark <A>` im U8001-Kontext (Schlüssel)
     std::map<std::string,dbg16::EmSnap> named_em;               // EM-Teil benannter Snapshots
     uint16_t last_pc1=0;                        // ZVE1: Beginn der laufenden Instruktion
@@ -983,6 +985,11 @@ int main(int argc, char** argv){
         const int other = z.systemMode()? 0 : 1;
         fprintf(stderr,"\n    %s: R14'=%04X R15'=%04X\n", other? "System-SP":"Normal-SP",
                 z.R14[other], z.R15[other]);
+        // P8: Pins/Merker, letzter Buszyklus, letzte Ausnahme
+        fprintf(stderr,"    Pins: %s\n", dbg16::pinsText(z).c_str());
+        fprintf(stderr,"    Bus:  %s\n", dbg16::cycleText(z.lastCycle(), z.lastCycleData()).c_str());
+        if (exc16.total())
+            fprintf(stderr,"    Ausnahme: %s\n", dbg16::exceptionText(z.lastException(), z.isZ8001()).c_str());
     };
     auto emLine = [&]{
         fprintf(stderr,"  EM: %s-Bit-Mode  A33=%02X (SegMode %u) A35=%02X Status8=%02X Vektor8=%02X%s  "
@@ -1192,6 +1199,15 @@ int main(int argc, char** argv){
             else if (brk_vi && e.kind==E::Vektor8)
                 fprintf(stderr,"  [vi] U880 OUT ADH=%02X → VI am U8001 (Halt bei der Quittung)\n",e.value&0xFF);
         });
+        // P8: jede angenommene Ausnahme des U8001 ins Protokoll (`trap`); `btrap` hält vor
+        // dem ersten Befehl der Behandlung eines internen Traps (EPA/PRIV/SC) bzw. SEGT.
+        z16().onException = [&](const Z8kExceptionInfo& x){
+            exc16.add(x);
+            if (hist_on || hit || !brk16_trap) return;
+            if (x.kind==Z8kException::ExtendedInstruction || x.kind==Z8kException::Privileged ||
+                x.kind==Z8kException::SystemCall || x.kind==Z8kException::SegmentTrap)
+                ev16_why = std::string("Trap angenommen: ") + dbg16::exceptionText(x);
+        };
     }
 
     // ─── helpers ───────────────────────────────────────────────────────────────
@@ -2098,9 +2114,33 @@ int main(int argc, char** argv){
             fprintf(stderr,"\n{\"cpu\":\"u8001\",\"pc\":\"%s\",\"pcseg\":%u,\"pcoff\":\"0x%04X\",\"fcw\":\"0x%04X\",\"r\":[",
                     dbg16::addrText(z.pcSeg,z.pc,true).c_str(), z.pcSeg, z.pc, z.fcw);
             for (int i=0;i<16;++i) fprintf(stderr,"%s\"0x%04X\"", i?",":"", z.r(i));
-            fprintf(stderr,"],\"state\":\"%s\",\"mode\":%d,\"a33\":\"0x%02X\",\"a53\":%u,\"a54\":%s,\"pe\":%s,\"sym\":\"%s\",\"cyc\":%llu}\n",
+            fprintf(stderr,"],\"state\":\"%s\",\"mode\":%d,\"a33\":\"0x%02X\",\"a53\":%u,\"a54\":%s,\"pe\":%s,\"sym\":\"%s\",\"cyc\":%llu,",
                     state16(z), em->mode8()?8:16, em->steuer16(), em->a53(), em->a54Freigabe()?"true":"false",
                     em->parityError()?"true":"false", symNear16(pcKey16(z)).c_str(), (unsigned long long)z.cycles);
+            // P8: Pins und letzter Buszyklus (Status-Code, N/S, SN)
+            const Z8kBusCycle& lc = z.lastCycle();
+            fprintf(stderr,"\"nmi_merker\":%s,\"segt\":%s,\"vi\":%s,\"nvi\":%s,\"st\":%u,\"st_name\":\"%s\",\"ns\":\"%s\",\"sn\":%u,\"ad\":\"0x%04X\",\"ausnahmen\":%llu,\"letzte_ausnahme\":\"%s\"}\n",
+                    z.nmiPending()?"true":"false", z.segtLine()?"true":"false", z.viLine()?"true":"false",
+                    z.nviLine()?"true":"false", unsigned(lc.st), z8kStatusName(lc.st), lc.system?"S":"N", lc.seg, lc.addr,
+                    (unsigned long long)exc16.total(), exc16.total()? z8kExceptionName(z.lastException().kind) : "");
+            return true; }
+        // P8: Ausnahmeprotokoll, Halt bei Traps, Buszyklen je Statuscode
+        if (cmd=="trap"){
+            if (t.size()>1 && t[1]=="clear"){ exc16.clear(); fprintf(stderr,"  Ausnahmeprotokoll geleert\n"); return true; }
+            long n = t.size()>1? parseNum(t[1]) : 16;
+            const auto& e = exc16.entries();
+            fprintf(stderr,"  U8001-Ausnahmen: %s (gesamt %llu)\n", exc16.countsText().c_str(), (unsigned long long)exc16.total());
+            size_t from = e.size() > size_t(n)? e.size()-size_t(n) : 0;
+            for (size_t i=from;i<e.size();++i)
+                fprintf(stderr,"  #%-3zu cyc=%-10llu %s\n", i, (unsigned long long)e[i].cycle,
+                        dbg16::exceptionText(e[i], z.isZ8001()).c_str());
+            return true; }
+        if (cmd=="btrap"){ brk16_trap = (t.size()>1)? (t[1]!="off") : !brk16_trap;
+            fprintf(stderr,"  break-on-Trap (EPA/PRIV/SC/SEGT) U8001 %s\n", brk16_trap?"ON":"off"); return true; }
+        if (cmd=="status"){
+            if (t.size()>1 && t[1]=="clear"){ z.clearStatusCounts(); fprintf(stderr,"  Statuszaehler geleert\n"); return true; }
+            for (auto& l : dbg16::statusCountLines(z, t.size()>1 && t[1]=="all")) fprintf(stderr,"  %s\n", l.c_str());
+            fprintf(stderr,"  letzter Zyklus: %s\n", dbg16::cycleText(z.lastCycle(), z.lastCycleData()).c_str());
             return true; }
         if (cmd=="s"){ pushHistory(); step16(t.size()>1?parseNum(t[1]):1); return true; }
         if (cmd=="n"){ if (parked16()) return true;
@@ -2523,6 +2563,9 @@ int main(int argc, char** argv){
               "      lp <A> [expr..] / lpd <A>   Logpoint: drucken und weiterlaufen\n"
               "      bt [N] | bt scan   Aufrufstapel (mit Symbolen) ;  mark <A> ; hist <cyc> [lo hi]\n"
               "      bint | bnmi | breti [on|off]   Halt bei VI/NVI-, NMI-Annahme bzw. vor IRET\n"
+              "      btrap [on|off]   Halt bei EPA-/PRIV-/SC-Trap oder Segmenttrap (vor dem 1. Befehl)\n"
+              "      trap [N|clear]   Ausnahmeprotokoll (Art, Kennung, gekellert, FCW alt->neu, Ziel)\n"
+              "      status [all|clear]   Buszyklen je Statuscode ST3..0 + letzter Zyklus (N/S, SN, AD)\n"
               "      iow/iob/iod <port>   E/A-Port des U8001 beobachten / anhalten / loeschen\n"
               "      disp <expr>   Ausdruck in der U8001-Sicht an jedem Halt\n"
               "      d/e/x <A>   Speicher DURCH DIE SEGMENTWEICHE (wie ein Datenzugriff jetzt)\n"

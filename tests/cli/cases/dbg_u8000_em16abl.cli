@@ -16,3 +16,8 @@ expect:    Moduswechsel       8-Bit-Mode
 expect:    #1 <<0>>%0174 (call → <<0>>%030E, ret <<0>>%017A)
 expect:    ** VI angenommen, Kennung=5A04 : U8001
 expect_re: U8001 <<0>>%[0-9A-F]{4}: .*16-Bit-Mode  <- Kontext
+# AP P8: Ausnahmeprotokoll und Statuszählung am laufenden U8001 (Reset, SC, VI der Firmware)
+expect:  U8001-Ausnahmen: RESET 1 EPA 0 PRIV 0 SC 1 NMI 0 SEGT 0 VI 1 NVI 0 (gesamt 3)
+expect:  SC    Kennung=%7F01 bei <<0>>%01F2 gekellert <<0>>%01F4 FCW %8000->%C000 Behandlung <<0>>%0460
+expect:  VI    Kennung=%5A04 bei <<0>>%0244 gekellert <<0>>%0246 FCW %D020->%C000 Behandlung <<0>>%046A
+expect:  VIA   (0111)            1

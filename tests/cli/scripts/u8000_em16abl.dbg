@@ -20,4 +20,6 @@ bmode off
 bvi
 g 400000000
 where
+trap 4
+status
 q
