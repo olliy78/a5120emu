@@ -81,6 +81,7 @@ inline P8000Machine::Config wegaConfig(const std::string& platte, bool par_ergae
     c.karte16 = true;
     c.wdc = P8000Machine::Config::Wdc::V4_2;
     c.platte = platte;
+    if (const char* e = std::getenv("K1520_P8000_NBR_STACK"); e && *e) c.nbr_gleichheit_stack = (*e != '0');
     return c;
 }
 

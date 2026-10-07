@@ -40,6 +40,7 @@ P8000Karte16::Config P8000Machine::karte16Config(const Config& c)
     k.takt_hz = c.takt16_hz;
     k.sram_fuellwert = c.ram_fuellwert;
     k.nbr_start = c.latch_start;
+    k.nbr_gleichheit_stack = c.nbr_gleichheit_stack;
     return k;
 }
 

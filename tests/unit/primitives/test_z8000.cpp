@@ -660,6 +660,25 @@ TEST(Z8000Block, LddHandbuch) {
     EXPECT_FALSE(F(r, Z8000::F_PV));
 }
 
+/// LD/IN/OUT-Blockbefehle setzen Z gemeinsam mit V (Zähler = 0) — MAME und WEGA-Kern 3.2
+/// (`_copyout`: `LDIB @RR4,@RR6,R3` + `JR Z`; ohne Z folgte ein LDIR mit Zähler 0, P15
+/// „/bin/csh: Bad address").  Vergleichsbefehle (CPI …) behalten ihre eigene Z-Bedeutung.
+TEST(Z8000Block, LdIndOutSetzenZWieV) {
+    Rig r(M::Z8002);
+    r.setB(0, 0x4001, 0x5A);
+    runNonseg(r, "  LD R1,#%2001\n  LD R2,#%4001\n  LD R3,#1\n  LDIB @R1,@R2,R3");
+    EXPECT_TRUE(F(r, Z8000::F_PV));
+    EXPECT_TRUE(F(r, Z8000::F_Z));
+    EXPECT_EQ(r.b(0, 0x2001), 0x5A);
+    Rig r2(M::Z8002);
+    runNonseg(r2, "  LD R1,#%2000\n  LD R2,#%4000\n  LD R3,#2\n  LDI @R1,@R2,R3");
+    EXPECT_FALSE(F(r2, Z8000::F_PV));
+    EXPECT_FALSE(F(r2, Z8000::F_Z));
+    Rig r3(M::Z8002);
+    runNonseg(r3, "  LD R1,#%2000\n  LD R2,#%0010\n  LD R3,#1\n  INIB @R1,@R2,R3");
+    EXPECT_TRUE(F(r3, Z8000::F_Z));
+}
+
 TEST(Z8000Block, LdirKopiertUndTakte) {
     Rig r;
     for (int i = 0; i < 8; ++i) r.setB(1, uint16_t(0x100 + i), uint8_t(i + 1));

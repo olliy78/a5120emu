@@ -273,3 +273,22 @@ TEST(P8000WegaInstall, KernNimmtKommandosAmTerminalAn) {
     EXPECT_TRUE(laufeBisText(*l.m, "sa.install", 80'000'000)) << bild(*l.m);
     EXPECT_GE(warteAufFrage(*l.m, {"#2"}, 80'000'000), 0) << bild(*l.m);
 }
+
+TEST(P8000WegaInstall, DISABLED_DiagKommandos) {
+    stumm();
+    WegaLauf l;
+    std::string fehler;
+    ASSERT_TRUE(stufeLaden(l, "p15_4_kern", &fehler)) << fehler;
+    const char* k = std::getenv("K1520_P8000_KOMMANDOS");
+    std::string alle = k ? k : "date;sh -c ls";
+    size_t pos = 0;
+    int n = 2;
+    while (pos <= alle.size()) {
+        size_t e = alle.find(';', pos);
+        std::string cmd = alle.substr(pos, e == std::string::npos ? std::string::npos : e - pos);
+        pos = e == std::string::npos ? alle.size() + 1 : e + 1;
+        tippeZeile(*l.m, cmd);
+        warteAufFrage(*l.m, {"#" + std::to_string(n++)}, 400'000'000);
+    }
+    std::fprintf(stderr, "%s", bild(*l.m).c_str());
+}

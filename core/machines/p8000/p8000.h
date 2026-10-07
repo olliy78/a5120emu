@@ -83,6 +83,9 @@ public:
         std::vector<P8000Dram16::Karte> dram = {P8000Dram16::Karte{P8000Dram16::Karte::Typ::M1, 0}};
         bool     bruecken_4xr1_5xr1 = true;   ///< nur Index16 = I1 (Kopplung [KP1])
         uint32_t takt16_hz = 4'000'000;
+        /// MMU-Steuerlogik [L1]: Adresse-High = NBR wählt die Stack-MMU (Plan) bzw. die Data-MMU
+        /// (WEGA `nsseg`).  Siehe `P8000Karte16::Config::nbr_gleichheit_stack`.
+        bool     nbr_gleichheit_stack = true;
 
         // ── WDC (AP P13d) — nur mit 16-Bit-Karte ──
         /// Firmware des WDC bzw. kein WDC.  Vorgabe vorerst AUS (Entwurf §10.4: 4.2), wie `karte16`.

@@ -765,6 +765,10 @@ int Z8000::blockStep(const Decoded& d, uint16_t pcNext, bool first) {
     uint16_t cnt = uint16_t(r(cntReg) - 1);
     setR(cntReg, cnt);
     setFlag(F_PV, cnt == 0);
+    // LD/IN/OUT-Blockbefehle setzen Z wie V (Zähler = 0).  Das Handbuch nennt nur V; MAME
+    // (`CLR_V; CLR_Z … SET_V; SET_Z`) und der WEGA-Kern 3.2 (`_copyout`: `LDIB` + `JR Z`, sonst
+    // folgt ein LDIR mit Zähler 0 = 64 K und zerschießt den Anwenderstapel) verlangen es.
+    if (s.t == BlkType::Load || s.t == BlkType::In || s.t == BlkType::Out) setFlag(F_Z, cnt == 0);
     int cyc = s.rep ? (first ? d.cycles() : 0) + in.perN : d.cycles();
     if (s.rep && !stop && cnt != 0) {
         inRepeat_ = true;                       // unterbrechbar: PC bleibt am Befehl
