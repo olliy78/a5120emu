@@ -1,0 +1,8 @@
+# boot_trace --machine p8000-16 (AP P11): mit 16-Bit-Karte und Kopplung.  RETURN am „Press RETURN",
+# dann `x` im U880-Monitor ⇒ U8000-Softwaremonitor meldet sich über die Kopplung an tty1.
+tool:    boot_trace
+run:     --machine p8000-16 --quiet --json --keys <CR>x<CR> --until "screen ~ \"U8000-Softwaremonitor Version 3.1 - Press NMI\""
+timeout: 240
+exit:    0
+expect:  "machine":"p8000"
+expect:  "until":{"set":true,"met":true

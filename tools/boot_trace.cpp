@@ -301,6 +301,7 @@ int main(int argc, char** argv) {
     bool        machine_pc1715 = false;  // PC 1715 (gleiche Optionen wie K8915)
     bool        machine_pc1715w = false; // … in der Variante PC 1715W (AP-W3)
     bool        machine_p8000 = false;   // P8000, 8-Bit-Seite (AP P7c; gleiche Optionen wie K8915)
+    bool        machine_p8000_16 = false;   // --machine p8000-16: mit 16-Bit-Karte (AP P11)
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
@@ -329,8 +330,9 @@ int main(int argc, char** argv) {
             else if (mn == "pc1715" || mn == "PC1715") { machine_k8915 = true; machine_pc1715 = true; }
             else if (mn == "pc1715w" || mn == "PC1715W") { machine_k8915 = true; machine_pc1715 = machine_pc1715w = true; }
             else if (mn == "p8000" || mn == "P8000") { machine_k8915 = true; machine_p8000 = true; }
+            else if (mn == "p8000-16" || mn == "P8000-16") { machine_k8915 = true; machine_p8000 = machine_p8000_16 = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
@@ -529,7 +531,7 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn)
+        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn, machine_p8000_16)
                      : machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
                      : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);

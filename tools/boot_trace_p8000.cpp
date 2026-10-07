@@ -67,10 +67,11 @@ bool promptZeile(const P8000Machine& m, const std::string& bild) {
 
 }  // namespace
 
-int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn)
+int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16)
 {
     using T = k1520::p8000::Terminal;
     P8000Machine::Config cfg;
+    cfg.karte16 = karte16;
     P8000Machine m(cfg);
     if ((!o.raf.empty() && o.raf != "none") || o.ptape)
         fprintf(stderr, "WARN: --raf/--ptape gibt es am P8000 nicht (kein K1520-Steckplatz) — ignoriert\n");
@@ -321,6 +322,10 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn)
         const Z80& z = m.karte8().cpu();
         fprintf(stderr, "Final CPU:   PC=%04X SP=%04X AF=%04X BC=%04X DE=%04X HL=%04X IM=%d IFF1=%d%s\n",
                 z.PC, z.SP, z.AF, z.BC, z.DE, z.HL, z.IM, z.IFF1, prnTail(z.PC).c_str());
+        if (P8000Karte16* k16 = m.karte16())
+            fprintf(stderr, "U8001:       %s, PC=%02X:%04X FCW=%04X, Zeit=%llu\n",
+                    k16->inReset() ? "im Reset" : "laeuft", k16->cpu().pcSeg, k16->cpu().pc, k16->cpu().fcw,
+                    (unsigned long long)k16->zeit());
 
         fprintf(stderr, "\nI/O-Ports (rd/wr):\n");
         for (int p = 0; p < 256; ++p)

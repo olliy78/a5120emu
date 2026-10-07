@@ -332,8 +332,12 @@ tools/dev.sh tool boot_trace --machine p8000 --quiet --json --keys '<CR><CR>' \
   oder „Press RETURN" im Bild steht.
 - Weiter wie beim PC 1715: `--csv`, `--itrace`, `--coverage`, `-w/-W`, `--watch`, `--watchio`,
   `-d`, `--events[-cap]`, `-l`. `--raf`/`--ptape` werden mit Warnung ignoriert.
-- Noch nicht: `--p8000 <konfig>`, `--hd`, Wahl der aktiven CPU (Entwurf §10.10, mit P12).
-- Wächter: `bt_p8000_banner.cli`, `bt_p8000_tastatur.cli`.
+- **`--machine p8000-16`** (AP P11): dasselbe mit 16-Bit-Karte und Kopplung (`karte16`);
+  das Schlussbild nennt zusätzlich den U8001 (Reset/läuft, PC, FCW, Uhr).  Beispiel:
+  `--machine p8000-16 --keys '<CR>x<CR>'` ⇒ „U8000-Softwaremonitor Version 3.1 - Press NMI".
+- Noch nicht: `--p8000 <konfig>`, `--hd`, Wahl der aktiven CPU, Ereignisse des 16-Bit-Teils
+  (Entwurf §10.10, mit P12).
+- Wächter: `bt_p8000_banner.cli`, `bt_p8000_tastatur.cli`, `bt_p8000_16_monitor.cli`.
 
 ## 10. RAM-Floppy (`--raf`)
 
