@@ -196,7 +196,22 @@ void P8000Machine::tastenAbgeben()
             case 0x01000003: term_.taste(TerminalTaste::BS);  continue;                    // Backspace
             case 0x01000001: term_.taste(TerminalTaste::HT);  continue;                    // Tab
             case 0x01000007: term_.taste(TerminalTaste::DEL); continue;                    // Delete
+            // Cursortasten des Terminals (<BS> <VT> <FF> <LF>) und <HOME> (Tab. 4.3-6) sowie Shift+Tab
+            case 0x01000012: term_.taste(TerminalTaste::BS);  continue;                    // Pfeil links
+            case 0x01000013: term_.taste(TerminalTaste::VT);  continue;                    // Pfeil hoch
+            case 0x01000014: term_.taste(TerminalTaste::FF);  continue;                    // Pfeil rechts
+            case 0x01000015: term_.taste(TerminalTaste::LF);  continue;                    // Pfeil runter
+            case 0x01000010: term_.taste(TerminalTaste::HOME); continue;                   // Pos1
+            case 0x01000002: term_.taste(TerminalTaste::BACKTAB); continue;                // Shift+Tab
+            // Eigene Kodes für Tasten ohne Qt-Gegenstück: 0x02000000 + TerminalTaste (Funktionstasten,
+            // BREAK, MODE, VIDEO, ON/OFF, SI/SO); 0x02000100/0x02000101 = Caps lock an/aus (Rasttaste).
+            case 0x02000100: term_.setzeCapsLock(true);  continue;
+            case 0x02000101: term_.setzeCapsLock(false); continue;
             default: break;
+        }
+        if (e.code >= 0x02000000 && e.code <= 0x02000000 + uint32_t(TerminalTaste::SI_SO)) {
+            term_.taste(static_cast<TerminalTaste>(e.code - 0x02000000));
+            continue;
         }
         if (e.code == '\r' || e.code == '\n') { term_.taste(TerminalTaste::CR); continue; }
         if (e.code < 0x80) term_.zeichenTaste(static_cast<uint8_t>(e.code), e.ctrl);

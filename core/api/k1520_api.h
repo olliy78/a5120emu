@@ -692,6 +692,29 @@ K1520_API bool     k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool s
 /** @brief @p len Zeichen wie getippt senden ('\r'/'\n' = Return); false bei ungültigem i. */
 K1520_API bool     k1520_term_send(K1520Handle h, int i, const char* text, int len);
 
+/** @brief Das ganze Bild des Terminals auf einmal (P16): 80 × 24 Zellen, zeilenweise, je Zelle 3 Byte —
+ *  Zeichen (Attributfeld = Leerzeichen), wirksames Attribut (wie k1520_term_attr) und Flags
+ *  (Bit 0 = mit Zeichensatz 2 geschrieben, Bit 1 = Attributfeld).  Ein Aufruf statt 3840, damit die
+ *  Oberfläche im Bildtakt abfragen kann.  Rückgabe = 5760 bei ausreichendem @p cap, sonst 0
+ *  (auch bei ungültigem i). */
+K1520_API int      k1520_term_snapshot(K1520Handle h, int i, uint8_t* buf, int cap);
+/** @brief Zustand des Terminals: Bit 0 On-Line, 1 Video-Attribute an, 2 Programm-Mode, 3 Zeichensatz 2
+ *  (SI/SO), 4 Caps lock; -1 bei ungültigem i. */
+K1520_API int      k1520_term_flags(K1520Handle h, int i);
+/** @brief Anzahl BEL des Terminals seit dem Einschalten (Piezophon); 0 bei ungültigem i. */
+K1520_API uint32_t k1520_term_bell_count(K1520Handle h, int i);
+
+/* ─── Save-State des P8000 (P8KS, Entwurf 25 §10.2; andere Maschinen: false).  Gesichert wird der
+ * Maschinenzustand, nicht der Medieninhalt (Disketten und Platten vor dem Laden anschließen). */
+
+/** @brief Zustand in eine Datei schreiben; false bei Schreibfehler oder an anderen Maschinen. */
+K1520_API bool        k1520_state_save(K1520Handle h, const char* path);
+/** @brief Zustand laden — nur bei übereinstimmender Konfiguration; sonst false, die Maschine
+ *  bleibt unverändert.  Grund: k1520_state_error. */
+K1520_API bool        k1520_state_load(K1520Handle h, const char* path);
+/** @brief Grund des letzten gescheiterten k1520_state_load ("" = keiner). */
+K1520_API const char* k1520_state_error(K1520Handle h);
+
 /* ─── Winchesterplatten am WDC (P8000, Entwurf 25 §10.9; andere Maschinen bzw. ohne WDC:
  * false / "") — Laufwerk 0–2, Abbild roh/LBA (Sektor Z/K/S bei ((Z·K+K)·S+S−1)·512). */
 

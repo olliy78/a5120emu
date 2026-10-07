@@ -1316,6 +1316,53 @@ bool k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctr
     return true;
 }
 
+int k1520_term_snapshot(K1520Handle h, int i, uint8_t* buf, int cap) {
+    using k1520::p8000::Terminal;
+    auto* p = p8000Of(h, i);
+    constexpr int N = Terminal::ZEILEN * Terminal::SPALTEN * 3;
+    if (!p || !buf || cap < N) return 0;
+    const Terminal& t = p->terminal();
+    uint8_t* o = buf;
+    for (int z = 0; z < Terminal::ZEILEN; ++z)
+        for (int s = 0; s < Terminal::SPALTEN; ++s) {
+            const auto& c = t.zelle(z, s);
+            *o++ = c.feld ? uint8_t(' ') : c.zeichen;
+            *o++ = t.wirksamesAttribut(z, s);
+            *o++ = uint8_t((c.zg2 ? 1 : 0) | (c.feld ? 2 : 0));
+        }
+    return N;
+}
+
+int k1520_term_flags(K1520Handle h, int i) {
+    auto* p = p8000Of(h, i);
+    if (!p) return -1;
+    const auto& t = p->terminal();
+    return (t.onLine() ? 1 : 0) | (t.videoAttribute() ? 2 : 0) | (t.programmMode() ? 4 : 0) |
+           (t.zeichensatz2() ? 8 : 0) | (t.capsLock() ? 16 : 0);
+}
+
+uint32_t k1520_term_bell_count(K1520Handle h, int i) {
+    auto* p = p8000Of(h, i);
+    return p ? p->terminal().klingel() : 0;
+}
+
+bool k1520_state_save(K1520Handle h, const char* path) {
+    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
+    return p && path && p->saveState(path);
+}
+
+bool k1520_state_load(K1520Handle h, const char* path) {
+    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
+    return p && path && p->loadState(path);
+}
+
+const char* k1520_state_error(K1520Handle h) {
+    static thread_local std::string s;
+    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
+    s = p ? p->stateError() : std::string("kein Save-State an dieser Maschine");
+    return s.c_str();
+}
+
 // ─── Winchester (P8000-WDC, Entwurf 25 §10.9; andere Maschinen: false / "") ──────────────
 
 static P8000Machine* p8000Hd(K1520Handle h) {

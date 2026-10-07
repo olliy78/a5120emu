@@ -130,7 +130,10 @@ public:
 
     // ─── Tastatur des Terminals (fadensicher eingereiht) ────────────────────
     /// Druckbares ASCII (das Zeichen selbst), Steuerzeichen 01H–1FH, Qt-Return/Enter/Escape/
-    /// Backspace/Tab/Delete.  `ctrl` macht aus einem Buchstaben das Steuerzeichen.
+    /// Backspace/Tab/Delete, die Pfeiltasten (<BS> <VT> <FF> <LF>), Pos1 und Shift+Tab (BACKTAB)
+    /// sowie `0x02000000 + TerminalTaste` für alle Tasten ohne Qt-Gegenstück (Funktionstasten,
+    /// BREAK, MODE, VIDEO, ON/OFF, SI/SO) und 0x02000100/0x02000101 = Caps lock an/aus.
+    /// `ctrl` macht aus einem Buchstaben das Steuerzeichen.
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
     void keyRelease(uint32_t) override {}
     void setKeyRepeatRealtime(bool) override {}
