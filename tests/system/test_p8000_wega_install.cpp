@@ -136,19 +136,21 @@ void stufeMkfs(WegaLauf& l) {
 /// `sa.install` mit den Disketten @p disks nach @p ziel (Protokoll Z. 106–439 bzw. 444–1555).
 void saInstall(WegaLauf& l, const std::string& ziel, const std::vector<std::string>& disks) {
     P8000Machine& m = *l.m;
-    ASSERT_TRUE(l.diskettenwechsel(disks.front()));
     tippeZeile(m, "ud(0,0)sa.install");
     ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY) :", "05/30/89"));
+    // Quelldiskette erst NACH dem Laden von sa.install einlegen: liegt die 9×512-Diskette schon
+    // vorher in Laufwerk 1, scheitert das Laden von ud(0,0) mit UDOS-Fehler C4 (SECTOR ADDRESS
+    // ERROR) — Befund P15, s. doc/design/25_p8000.md §9 P15.
+    ASSERT_TRUE(l.diskettenwechsel(disks.front()));
     ASSERT_TRUE(frage(m, "input file system :", "fd(1,0)"));
     ASSERT_TRUE(frage(m, "output file system :", ziel));
     size_t naechste = 1;
     for (;;) {
         const int i = warteAufFrage(m, {"(n/y/a/A/q/Q) ? :", "next input disk ? (y/n) :",
-                                        "overwrite (y/n/q) ? :", "repeat (y/n/q) ? :", "Exit called"},
+                                        "overwrite (y/n/q) ? :", "repeat (y/n/q) ? :"},
                                     4'000'000'000LL);
         ASSERT_GE(i, 0) << "sa.install haengt\n" << bild(m);
         ASSERT_NE(i, 3) << "Lesefehler\n" << bild(m);
-        if (i == 4) break;
         laufe(m, 200'000);
         if (i == 0) { tippeZeile(m, "A"); continue; }
         if (i == 2) { tippeZeile(m, "y"); continue; }
@@ -159,11 +161,13 @@ void saInstall(WegaLauf& l, const std::string& ziel, const std::vector<std::stri
             tippeZeile(m, "y");
         } else {
             tippeZeile(m, "n");
+            break;
         }
     }
     EXPECT_EQ(naechste, disks.size());
-    l.diskAuswerfen();
+    ASSERT_TRUE(laufeBisText(m, "Exit called", 400'000'000)) << bild(m);
     ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
+    l.diskAuswerfen();
 }
 
 /// Eine Stufe: aus der Ablage laden oder rechnen und ablegen.  Liefert false, wenn danach Schluss ist.
@@ -194,4 +198,25 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
             saInstall(l, "md(0,0)", {"usr1", "usr2", "usr3", "usr4", "usr5", "usr6", "usr7", "usr8", "usr9"});
         }))
         return;
+}
+
+/// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe
+/// auch auf Laufwerk 1 — SENSE DRIVE STATUS meldet dort READY, also liest es Spur 22 mit 256-B-
+/// Sektoren; eine WEGA-Diskette (9 × 512) hat keine ⇒ ST1 = 04 (No Data) ⇒ „File … Error C4"
+/// (SECTOR ADDRESS ERROR).  Mit leerem Laufwerk 1 (ST3 = 19H, nicht bereit) lädt dasselbe.
+/// Prüft nebenbei, dass ein Zwischenstand nach dem Laden wieder von der Startdiskette liest.
+TEST(P8000WegaInstall, UdosSuchtAufLaufwerkEinsMitWegaDisketteC4) {
+    stumm();
+    if (!stufeDa("p15_1_mkfs") || !dateiDa(wegaDiskette("root1"))) GTEST_SKIP() << "kein Zwischenstand";
+    for (bool lw1 : {false, true}) {
+        WegaLauf l;
+        std::string fehler;
+        ASSERT_TRUE(stufeLaden(l, "p15_1_mkfs", &fehler)) << fehler;
+        if (lw1) ASSERT_TRUE(l.diskettenwechsel("root1"));
+        tippeZeile(*l.m, "ud(0,0)sa.install");
+        if (lw1)
+            EXPECT_TRUE(laufeBisText(*l.m, "File sa.install Error C4", 400'000'000)) << bild(*l.m);
+        else
+            EXPECT_GE(warteAufFrage(*l.m, {"Enter Date (MM/DD/YY) :"}, 400'000'000), 0) << bild(*l.m);
+    }
 }
