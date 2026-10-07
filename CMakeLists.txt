@@ -362,6 +362,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_winchester PUBLIC k1520_logger)
     target_include_directories(k1520_winchester PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, Winchester-Disk-Controller: UA880 + CTC + Original-Firmware, Host-/Disk-Logik (AP P13c)
+    add_library(k1520_p8000_wdc STATIC core/cards/p8000/wdc.cpp)
+    target_link_libraries(k1520_p8000_wdc PUBLIC k1520_winchester k1520_z80 k1520_ctc k1520_bus k1520_logger)
+    target_include_directories(k1520_p8000_wdc PUBLIC ${CMAKE_SOURCE_DIR})
+
     # P8000, Kopplung 8-Bit ↔ 16-Bit als Leitungsmodell K1–K15 (doc/design/25_p8000.md §10.3, AP P11)
     add_library(k1520_p8000_kopplung STATIC core/cards/p8000/kopplung.cpp)
     target_link_libraries(k1520_p8000_kopplung PUBLIC k1520_p8000_karte8 k1520_p8000_karte16)

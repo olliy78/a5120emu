@@ -280,7 +280,7 @@ TEST(Platte, AvrAbbildUeberlagerungEndetWennDieFirmwareSektorEinsSchreibt)
     auto neu = parSektor(*typNachName("WEGA31-AVR"));
     neu[300] = 0x42;
     // Datenfeld von Sektor 1 (Kopf 0: Slot 0) überschreiben
-    datenfeldSchreiben(p, 0, 41, neu);
+    datenfeldSchreiben(p, 0, 45, neu);
     p.flush();
     EXPECT_FALSE(p.parErgaenzt());
     std::array<uint8_t, 512> d{};
@@ -313,17 +313,17 @@ TEST(Platte, SyntheseLegtKennfelderUndDatenfelderAnDieFestenStellen)
         std::vector<uint8_t> id;
         for (int j = 18; j < 28; ++j) id.push_back(static_cast<uint8_t>(s[size_t(b + j)]));
         EXPECT_EQ(crc(id), 0) << "Kennfeld " << sek;
-        EXPECT_EQ(s[size_t(b + 52)], 0xA1 | M);
-        EXPECT_EQ(s[size_t(b + 53)], 0xFB);
+        EXPECT_EQ(s[size_t(b + 56)], 0xA1 | M);
+        EXPECT_EQ(s[size_t(b + 57)], 0xFB);
         std::vector<uint8_t> df;
-        for (int j = 52; j < 568; ++j) df.push_back(static_cast<uint8_t>(s[size_t(b + j)]));
+        for (int j = 56; j < 572; ++j) df.push_back(static_cast<uint8_t>(s[size_t(b + j)]));
         EXPECT_EQ(crc(df), 0) << "Datenfeld " << sek;
         if (sek == 10)
-            for (int j = 0; j < 512; ++j) ASSERT_EQ(s[size_t(b + 54 + j)], d[size_t(j)]);
+            for (int j = 0; j < 512; ++j) ASSERT_EQ(s[size_t(b + 58 + j)], d[size_t(j)]);
         else if (sek == 1)
-            EXPECT_EQ(s[size_t(b + 54)], 'D');   // Z0/K0/S1 = PAR/BTT („DEFEKT")
+            EXPECT_EQ(s[size_t(b + 58)], 'D');   // Z0/K0/S1 = PAR/BTT („DEFEKT")
         else
-            EXPECT_EQ(s[size_t(b + 54)], 0xE5);
+            EXPECT_EQ(s[size_t(b + 58)], 0xE5);
     }
     // Ende hinter dem letzten Slot: Löschbyte
     for (int j = 18 * Platte::SLOT; j < N; ++j) EXPECT_EQ(s[size_t(j)], 0);
@@ -397,7 +397,7 @@ TEST(Platte, GeschriebenesDatenfeldLandetNachFlushImAbbild)
     Platte p;
     ASSERT_TRUE(p.oeffnen(tp));
     const auto d = muster(0, 1, 18);   // Kopf 1, Slot 0 = Sektor 18
-    datenfeldSchreiben(p, 1, 41, d);
+    datenfeldSchreiben(p, 1, 45, d);
     EXPECT_TRUE(p.schmutzig());
     std::array<uint8_t, 512> r{};
     ASSERT_TRUE(p.sektorLesen(0, 1, 18, r.data()));
@@ -409,7 +409,7 @@ TEST(Platte, GeschriebenesDatenfeldLandetNachFlushImAbbild)
     ASSERT_TRUE(p.sektorLesen(0, 1, 1, r.data()));   // Nachbar unberührt
     EXPECT_EQ(r[0], 0xE5);
     // der Strom bleibt (eigen) und wird nicht neu synthetisiert
-    EXPECT_EQ(p.spur(0, 1)[52], 0xA1 | M);
+    EXPECT_EQ(p.spur(0, 1)[56], 0xA1 | M);
 }
 
 TEST(Platte, DatenfeldMitFalscherCrcLaesstDenAltenInhalt)
@@ -418,8 +418,8 @@ TEST(Platte, DatenfeldMitFalscherCrcLaesstDenAltenInhalt)
     Platte p;
     ASSERT_TRUE(p.oeffnen(tp));
     const auto d = muster(0, 0, 1);
-    datenfeldSchreiben(p, 0, 41, d);
-    p.schreibe(0, 41 + 11 + 2 + 100, 0x00, 2);   // ein Datenbyte verfälschen
+    datenfeldSchreiben(p, 0, 45, d);
+    p.schreibe(0, 45 + 11 + 2 + 100, 0x00, 2);   // ein Datenbyte verfälschen
     p.flush();
     std::array<uint8_t, 512> r{};
     ASSERT_TRUE(p.sektorLesen(0, 0, 1, r.data()));
@@ -462,7 +462,7 @@ TEST(Platte, FormatierenEinerUnformatiertenSpurInEigenerLage)
         kennfeldSchreiben(s, lage[size_t(i)], 9, 0, SC_TAB[i]);
     }
     for (int i = 0; i < N; ++i) p.schreibe(0, i, s[size_t(i)], 100);
-    for (int i = 0; i < 18; ++i) datenfeldSchreiben(p, 0, lage[size_t(i)] + 41, muster(9, 0, SC_TAB[i]), 100);
+    for (int i = 0; i < 18; ++i) datenfeldSchreiben(p, 0, lage[size_t(i)] + 45, muster(9, 0, SC_TAB[i]), 100);
     p.flush();
     EXPECT_TRUE(p.formatiert(9, 0));
     std::array<uint8_t, 512> r{};
@@ -546,8 +546,8 @@ TEST(Platte, ZylinderwechselSchreibtGeaenderteSpurenZurueck)
     TempPlatte tp;
     Platte p;
     ASSERT_TRUE(p.oeffnen(tp));
-    datenfeldSchreiben(p, 0, 41, muster(0, 0, 1));
-    datenfeldSchreiben(p, 2, 41 + 578, muster(0, 2, 18));   // Kopf 2 Slot 1 = SC_TAB[17] = 18
+    datenfeldSchreiben(p, 0, 45, muster(0, 0, 1));
+    datenfeldSchreiben(p, 2, 45 + 578, muster(0, 2, 18));   // Kopf 2 Slot 1 = SC_TAB[17] = 18
     p.schritt(true, 50);
     EXPECT_FALSE(p.schmutzig());
     std::array<uint8_t, 512> r{};
@@ -564,7 +564,7 @@ TEST(Platte, AutoFlushErstNachDerSchreibpause)
     cfg.flush_pause = 1000;
     Platte p;
     ASSERT_TRUE(p.oeffnen(tp, cfg));
-    datenfeldSchreiben(p, 0, 41 + 578, muster(0, 0, 10), 5000);
+    datenfeldSchreiben(p, 0, 45 + 578, muster(0, 0, 10), 5000);
     EXPECT_FALSE(p.autoFlush(5999));
     EXPECT_TRUE(p.schmutzig());
     EXPECT_TRUE(p.autoFlush(6000));
@@ -581,7 +581,7 @@ TEST(Platte, SchliessenSchreibtZurueck)
     {
         Platte p;
         ASSERT_TRUE(p.oeffnen(tp));
-        datenfeldSchreiben(p, 4, 41, muster(0, 4, SC_TAB[(0 - 4 + 18) % 18]));
+        datenfeldSchreiben(p, 4, 45, muster(0, 4, SC_TAB[(0 - 4 + 18) % 18]));
     }
     Platte q;
     ASSERT_TRUE(q.oeffnen(tp));
@@ -602,7 +602,7 @@ TEST(Platte, SaveStateRundreise)
     ASSERT_TRUE(a.oeffnen(tp, cfg));
     for (int i = 0; i < 3; ++i) a.schritt(true, 100);
     a.setzeFormatiert(500, 1, false);
-    datenfeldSchreiben(a, 1, 41, muster(3, 1, 18), 200);   // eigen + schmutzig
+    datenfeldSchreiben(a, 1, 45, muster(3, 1, 18), 200);   // eigen + schmutzig
     std::vector<uint8_t> st;
     a.serialize(st);
 

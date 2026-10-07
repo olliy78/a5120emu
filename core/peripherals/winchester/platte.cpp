@@ -263,7 +263,7 @@ std::vector<uint16_t> Platte::synthetisiere(int zyl, int kopf)
         w.daten(static_cast<uint8_t>(kopf)); w.daten(static_cast<uint8_t>(sek));
         w.crcAus();
         w.fuell(0xFF, 10);
-        w.fuell(0x00, 3);
+        w.fuell(0x00, 7);
         w.fuell(0xFF, 11);
         if (!sektorSicht(zyl, kopf, sek, d.data())) d.fill(0xE5);
         w.crc = 0xFFFF;
@@ -271,7 +271,7 @@ std::vector<uint16_t> Platte::synthetisiere(int zyl, int kopf)
         w.daten(0xFB);
         for (uint8_t b : d) w.daten(b);
         w.crcAus();
-        w.fuell(0xFF, 10);
+        w.fuell(0xFF, 6);
     }
     return s;
 }

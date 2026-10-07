@@ -17,12 +17,15 @@
  * **Spursynthese** (je formatierte Spur, Lage je Kennfeld `SLOT` Byte ab Index, Reihenfolge
  * `sc_tab` der Firmware um den Kopf rotiert, wie `ft_trk` sie schreibt):
  * @code
- *   +0  FF×18   +18 A1* A1* A1*  +21 FE CL CH HD SC CRC CRC   +28 FF×10  +38 00×3
- *   +41 FF×11   +52 A1*  +53 FB  +54 512 Daten  +566 CRC CRC  +568 FF×10        (SLOT = 578)
+ *   +0  FF×18   +18 A1* A1* A1*  +21 FE CL CH HD SC CRC CRC   +28 FF×10  +38 00×7
+ *   +45 FF×11   +56 A1*  +57 FB  +58 512 Daten  +570 CRC CRC  +572 FF×6         (SLOT = 578)
  * @endcode
  * CRC-CCITT (0x1021, Start FFFF) über Marken + Kennzeichen + Inhalt.  Unformatierte Spur = 00 ohne
- * Marke.  Die Lücke vor dem Datenfeld ist so lang, dass die Firmware beim Schreiben (Datenfeld
- * ≈ 21 Byte hinter der letzten Kennfeldmarke) nicht in das nächste Kennfeld schreibt.
+ * Marke.  Lage des Datenfelds = wie die Firmware es schreibt: Datenmarke ≈ 35 Byte hinter der
+ * letzten Kennfeldmarke (`isr_m2` ≈ 213 Takte + Schreibverzögerung der Karte); die Lese-ISR
+ * `isr_m1` braucht ≈ 217 Takte (34 Byte), bis sie auf die Datenmarke wartet.  Der Slot ist so
+ * lang, dass ein von der Firmware geschriebenes Datenfeld (≈ 533 Byte) das nächste Kennfeld nicht
+ * erreicht.
  *
  * **Zerlegung** (beim Rückschreiben): Kennfeld = Markenfolge + FE + 4 Byte + CRC, gültig mit CRC,
  * passendem Zylinder/Kopf und Sektor 1…n; Datenfeld = Marke + FB + 512 + CRC bis zum nächsten

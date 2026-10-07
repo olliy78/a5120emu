@@ -423,6 +423,30 @@ Formatieren mit zeitgesteuertem Kennfeldabstand, Schrittsteuerung, Bereitschafts
    Zeitüberwachung (CTC K3 ≈ 2–3 ms), Umdrehungsmessung (Formatieren, Fehler 15!) und Kennfeldabstand
    daran hängen. `zmn/zmx` verlangen eine Umdrehung von 16,5–16,8 ms @4 MHz.
 
+## 9a. Kartenmodell der Emulation (P13c, `core/cards/p8000/wdc.h`) — Regeln mit Beleg
+
+Die Gatterebene der Pläne (SP1/3, SP1/6, SP3/7) ist nicht ausgewertet; das Modell ist aus der
+Benutzung durch die Firmware erschlossen und durch die echte Firmware 4.2 bestätigt (Init, Lesen,
+Schreiben, Formatieren 04/14/24/44/84, Wächter `P8000Wdc_.*`, `P8000WdcHw.*`) [abgeleitet]:
+
+| Regel | Inhalt | Beleg |
+|---|---|---|
+| W2 | 1 Wartetakt je M1 | `time1` = 3995 Takte ≈ 1 ms, `time2` ≈ 9,7 ms nur mit Wartetakt (ohne: 0,85/8,4 ms) |
+| W3 | Lesen: läuft mit DEN oder /MEN = 0; Synchronisation nach (DSKEA & 7) + 1 Marken = BM_D; die letzte Marke **belegt die Zähleradresse, wird aber nicht geschrieben**; Schreiben: Zähler nur mit DEN | Kennfeld bei `kf_br+1`, FB bei `dt_br+12`; `sav_fb` rettet nur Byte 511 — eine geschriebene Datenmarke zerstörte Byte 510 des Vorsektors; `isr_m2` schaltet erst auf Schreiben, dann DEN |
+| W4 | /DEND = Byte an Adresse mit Low-Byte = DSKEA; Lesen: CRC-Prüfung bei CRCEN nach dem Byte; Schreiben: Ersatz durch Marken (scharf) oder CRC (CRCEN) | DSKEA `kf+7` = CRC2, `dt+526` = CRC2, `dt+11` = Datenmarke, `dt+525` = CRC1, Format 12H/1AH |
+| W5 | Markeneinblendung scharf durch DSKC2 mit /MEN = 0 bei DR/W = 1, bis zur nächsten /DEND | `isr_m2` und `f_nsec` nehmen /MEN 2–5 Byte VOR der Endadresse zurück |
+| W6 | CRC-CCITT ab der ersten Marke einer Folge | Kennfeld-CRC über A1 A1 A1 FE …, Daten über A1 FB … |
+| W7 | IMPAUS löscht Synchronisation/Einblendungen | jede Abschaltung `st_ina` + IMPAUS |
+| W11 | Schreibverzögerung 2 Byte (RAM-Byte → Kopf) | `isr_m2` legt die Datenmarke ≈ 213 Takte hinter die Kennfeldmarke, `isr_m1` wartet erst nach ≈ 217 Takten wieder — ohne Verzögerung liest die Firmware nicht, was sie schreibt |
+| H1 | HEN setzt das Übertragungs-FF, Nulldurchgang K2 bei HEN = 0 setzt es zurück | `p_h_1` gibt HEN nur als Impuls (≤ 256 Flanken), `isr_h1` nimmt HEN erst vor dem letzten Block zurück |
+| H3 | Host → WDC nur bei TE inaktiv, WDC → Host nur bei TE aktiv; ein Byte je ARDY-Aktivierung | AVR `wdc_if_p8000.c` |
+
+Gemessen an der emulierten Firmware 4.2: Init bis Status 1 ≈ 17,9 Mio. Takte (4,5 s; davon 2 × 2 s
+Bereitschaftswarten auf LW 1/2), Kennfeldabstand beim Formatieren ≈ 566 Byte (16·203 + 377 Takte),
+Datenmarke 35–37 Byte hinter der letzten Kennfeldmarke, Umdrehungsmessung 251/252 (40 MHz) bzw.
+241–243 (41,4 MHz). Hostseitig: die Firmware braucht zwischen den Bytes Zeit für `isr_h1` — ein
+Host, der > 256 Flanken ohne Pause abholt, hängt die Übertragung auf (realer Host: INIR ≈ 5 µs/Byte).
+
 ## 10. Zeitverhalten [gelesen/abgeleitet wie angegeben]
 
 - **Schritt:** gepuffert („Ramp"), wenn Schrittzahl > `rp_mod` (K5504.50: ab 2 Schritten), Schrittimpulse
@@ -474,4 +498,14 @@ nicht für die echte Karte:
    oder Messung.
 7. **Index-1-Zusatzleiterkarte:** liegt dort der MFM-Codec/Datenseparator (Plan fehlt)? Für die
    Emulation gleichwertig, nur zur Dokumentation.
-8. **Ist der Kommando-Suchfehler** (`com_ts`, §4.3 Code 00) im Abzug 4.2 vorhanden? Klärt P13c am Abzug.
+8. ~~Ist der Kommando-Suchfehler im Abzug 4.2 vorhanden?~~ **Ja** (P13c): `com_ts` steht im Abzug bei
+   0786H unverändert (`BE 28 08 FE FF 23 20 F8`); Code 00 wird über das Tabellenende hinaus in
+   `id_df` gefunden und läuft als Ready-Test, FF gibt Fehler 01 (Wächter
+   `P8000WdcRom.KommandosucheLaeuftImAbzugUeberDasTabellenende`, `P8000Wdc_.ReadyTestCode00UndUnbekannteCodes`).
+9. **Gatterebene der Disk-Schnittstelle** (SP1/3, SP1/6, SP3/7): bestätigt sie W3–W5 (Marke belegt die
+   Adresse ohne RAM-Schreiben; Schärfung der Markeneinblendung; Zähler beim Schreiben nur mit DEN)?
+10. **Schreibverzögerung** (W11, 2 Byte angenommen) und Lesezeitpunkt von MAERK — Logikanalysator an
+   WRITE DATA/READ DATA gegen /DEND.
+11. **Firmware 3.x** (Abzug 3.4.05 des Anwendergeräts): startet bis Status 1, meldet beim ersten
+   Kommando Fehler 05 und liest auf einer 4.2-formatierten Spur nicht jeden Block (Fehler 09) —
+   Spurformat und Fehlercodes der 3.x sind nicht untersucht.
