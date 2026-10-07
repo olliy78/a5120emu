@@ -487,3 +487,65 @@ TEST_F(P8000Karte16_, Rundreise_IstBitgleich_UndStelltSegtWieder) {
     ASSERT_TRUE(c.deserialize(p, s2.data() + s2.size()));
     EXPECT_TRUE(c.cpu().segtLine());
 }
+
+// ─── Rig mit MON16 3.1 (P10c) ────────────────────────────────────────────────
+//
+// Ohne 8-Bit-Seite: PIO0-B5 („Daten da", DD-16) bleibt über den Pull-up 1, der Koppeltest in
+// ENTRY_ läuft in die Wartezeit ⇒ PTYPORT = 0 ⇒ Konsole = SIO0-B des 16-Bit-Teils = tty5
+// (MON16 p.init.s KP_INAKTIV).  Mit der Kopplung (P11) ginge sie über PIO0/PIO1 an tty1.
+
+TEST_F(P8000Karte16_, Mon16_3_1_MeldetSichOhneKopplungAufTty5) {
+    freigeben();
+    ASSERT_TRUE(laufeBisText(1, "U8000-Softwaremonitor Version 3.1 - Press NMI", 20'000'000)) << tty[1];
+    EXPECT_TRUE(tty[0].empty() && tty[2].empty() && tty[3].empty());
+    EXPECT_TRUE(k.runLed());
+}
+
+TEST_F(P8000Karte16_, Mon16_3_1_HardwaretestNachNmi_MaxSeg0F_NurWdcFehlt) {
+    freigeben();
+    ASSERT_TRUE(laufeBisText(1, "Press NMI", 20'000'000));
+    k.nmiTaste();   // AUTOBOOT: TEST_ (Hardwareeigentest), dann Boot bzw. Prompt
+    ASSERT_TRUE(laufeBisText(1, "MAXSEG=<0F>", 600'000'000)) << tty[1];
+    ASSERT_TRUE(laufeBisText(1, "* ", 50'000'000)) << "Prompt nach Testfehler (WDC fehlt)";
+    EXPECT_NE(tty[1].find("P8000 Hardwaretest U8001 - Version 3.1"), std::string::npos);
+    // Ohne WDC (P13) melden 52/53/54 Fehler C1 (keine Antwort); alles andere ist in Ordnung —
+    // EPROM-Prüfsummen, SRAM, PIO2, CTC, SIO, Speicher 16 Segmente, MMU 80–97.
+    const std::string& t = tty[1];
+    for (size_t p = t.find("ERROR "); p != std::string::npos; p = t.find("ERROR ", p + 1)) {
+        const std::string nr = t.substr(p + 6, 2);
+        EXPECT_TRUE(nr == "52" || nr == "53" || nr == "54") << "ERROR " << nr;
+    }
+    EXPECT_EQ(t.find("FATAL"), std::string::npos);
+    for (const char* schritt : {"76", "85", "90", "97"}) EXPECT_NE(t.find(schritt), std::string::npos) << schritt;
+}
+
+TEST(P8000Karte16, Mon16_3_0_LaeuftDenHardwaretestEbenso) {
+    // MON16 3.0 (Fassung des Anwendergeräts).  3.3 gibt die Konsole fest auf SIO1-A (tty6) aus
+    // und ist hier nicht geprüft (Entwurf §9 P10c).
+    P8000Karte16::Config c;
+    c.mon16 = P8000Karte16::Config::Mon16::V3_0;
+    P8000Karte16 k(c);
+    k.setResetEingang(false);
+    std::string t;
+    auto bis = [&](const std::string& text, uint64_t max) {
+        const uint64_t ende = k.zeit() + max;
+        while (k.zeit() < ende) {
+            k.schritt();
+            // ALLE Kanäle abholen: der SIO-Test 61 wartet auf „Sendepuffer leer" (merkposten 2)
+            for (int i = 0; i < 4; ++i)
+                while (k.anschluss(i).senderHatZeichen()) {
+                    const char ch = char(k.anschluss(i).senderNimm());
+                    if (i == 1) t += ch;
+                }
+            if (t.find(text) != std::string::npos) return true;
+        }
+        return false;
+    };
+    ASSERT_TRUE(bis("U8000-Softwaremonitor Version 3.0 - Press NMI", 20'000'000)) << t;
+    k.nmiTaste();
+    ASSERT_TRUE(bis("MAXSEG=<0F>", 600'000'000)) << t;
+    for (size_t p = t.find("ERROR "); p != std::string::npos; p = t.find("ERROR ", p + 1)) {
+        const std::string nr = t.substr(p + 6, 2);
+        EXPECT_TRUE(nr == "52" || nr == "53" || nr == "54") << t.substr(p, 40);
+    }
+}
