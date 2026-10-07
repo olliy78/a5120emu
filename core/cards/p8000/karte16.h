@@ -6,8 +6,9 @@
  *        Single-Step-Zähler, Reset-Bildung MRESET−/PIORESET−.
  *
  * Quelle: doc/p8000/schaltplan_16bit.md (Rang 1, Index 4 Bl. 1–14), doc/p8000/hw_16bit.md,
- * doc/design/25_p8000.md §10.1–§10.6, AP P10b.  **Ohne** Kopplungsgegenseite (P11) und ohne WDC
- * (P13): PIO0/1 und PIO2 sind nur Leitungsanschlüsse (`setzePinTreiber`, `pio0()`…).
+ * doc/design/25_p8000.md §10.1–§10.6, AP P10b.  Ohne WDC (P13).  PIO0/1 und PIO2 sind nur
+ * Leitungsanschlüsse (`setzePinTreiber`, `pio0()`…, `setzePioHaken`); die Kopplungsgegenseite
+ * legt `P8000Kopplung` (P11) an.
  *
  * @code
  *   Speicher (über P8000MmuLogik16): Segment 0, 0000–7FFF bei SCR.0 = 0 On-Board (+1 Wartetakt):
