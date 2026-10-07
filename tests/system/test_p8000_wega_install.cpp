@@ -199,7 +199,7 @@ void stufeNewInstall(WegaLauf& l) {
     tippeZeile(m, "/etc/new.install");
     ASSERT_TRUE(frage(m, "neu angelegt werden ? (j/n) :", "j", 2'000'000'000LL));
     ASSERT_TRUE(frage(m, "/dev/tmp (Standard 4000) :", "4000"));
-    ASSERT_TRUE(frage(m, "/dev/z  (Standard 60732) :", "60732"));
+    ASSERT_TRUE(frage(m, "/dev/z (Standard 60732) :", "60732"));
     ASSERT_TRUE(langBisText(m, "Damit ist das System vollstaendig eingerichtet.", 40'000'000'000LL)) << bild(m);
     ASSERT_TRUE(frage(m, "#2", "init 2", 2'000'000'000LL));
     ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY or <cr>):", "05/30/89", 40'000'000'000LL));
