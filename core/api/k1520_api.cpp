@@ -257,9 +257,17 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
             }
             if (karten.empty() || karten.size() > size_t(P8000Dram16::MAX_KARTEN)) { fehler = "P8000: dram = 1 bis 4 Karten"; return false; }
             cfg.dram = karten;
-        } else if (key == "wdc" || key == "platte") {
-            fehler = "P8000: '" + key + "' noch nicht implementiert (16-Bit-Teil/WDC folgen)";
-            return false;
+        } else if (key == "wdc") {
+            if (val == "4.2") cfg.wdc = Cfg::Wdc::V4_2;
+            else if (val == "4.0.05") cfg.wdc = Cfg::Wdc::V4_0_05;
+            else if (val == "3.4.05") cfg.wdc = Cfg::Wdc::V3_4_05;
+            else if (val == "aus") cfg.wdc = Cfg::Wdc::Aus;
+            else { fehler = "P8000: wdc = " + val + " unbekannt (4.2 | 4.0.05 | 3.4.05 | aus)"; return false; }
+        } else if (key == "platte") {
+            cfg.platte = val;          // Pfad des Abbilds an Laufwerk 0 (roh/LBA)
+        } else if (key == "plattentyp") {
+            if (!k1520::winchester::typNachName(val)) { fehler = "P8000: plattentyp = " + val + " unbekannt"; return false; }
+            cfg.platte_typ = val;
         } else {
             fehler = "P8000: unbekannter Schluessel '" + key + "'";
             return false;
@@ -1306,6 +1314,52 @@ bool k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctr
     if (!p) return false;
     p->keyPress(keycode, shift, ctrl);
     return true;
+}
+
+// ─── Winchester (P8000-WDC, Entwurf 25 §10.9; andere Maschinen: false / "") ──────────────
+
+static P8000Machine* p8000Hd(K1520Handle h) {
+    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
+    return (p && p->wdc()) ? p : nullptr;
+}
+
+bool k1520_hd_mount(K1520Handle h, int unit, const char* path, bool wp) {
+    auto* p = p8000Hd(h);
+    return p && path && p->hdMount(unit, path, wp);
+}
+
+bool k1520_hd_create(K1520Handle h, int unit, const char* path, const char* typ) {
+    auto* p = p8000Hd(h);
+    return p && path && p->hdCreate(unit, path, typ ? typ : "");
+}
+
+bool k1520_hd_unmount(K1520Handle h, int unit) {
+    auto* p = p8000Hd(h);
+    return p && p->hdUnmount(unit);
+}
+
+bool k1520_hd_flush(K1520Handle h) {
+    auto* p = p8000Hd(h);
+    return p && p->hdFlush();
+}
+
+const char* k1520_hd_path(K1520Handle h, int unit) {
+    static thread_local std::string s;
+    auto* p = p8000Hd(h);
+    s = p ? p->hdPath(unit) : "";
+    return s.c_str();
+}
+
+bool k1520_hd_led(K1520Handle h, int unit) {
+    auto* p = p8000Hd(h);
+    return p && p->hdLed(unit);
+}
+
+const char* k1520_hd_error(K1520Handle h) {
+    static thread_local std::string s;
+    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
+    s = p ? (p->wdc() ? p->hdError() : std::string("kein WDC")) : std::string("keine Winchester an dieser Maschine");
+    return s.c_str();
 }
 
 bool k1520_term_send(K1520Handle h, int i, const char* text, int len) {

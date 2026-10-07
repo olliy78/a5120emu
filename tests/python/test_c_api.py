@@ -139,12 +139,45 @@ def test_p8000_can_be_created_configured_and_refused():
 
     for schlecht in (b"quatsch=1", b"index8=2", b"mon8=9", b"index16=2", b"dram=2M@0",
                      b"dram=1M@16", b"mon16=9", b"karte16=2", b"karte16=1,index8=1",
-                     b"karte16=1,dram=1M@0+1M@0", b"wdc=4.2", b"terminals=2", b"lw0", b"lw5=K5601"):
+                     b"karte16=1,dram=1M@0+1M@0", b"wdc=4.2", b"terminals=2", b"lw0", b"lw5=K5601",
+                     b"karte16=1,wdc=9", b"plattentyp=XY", b"karte16=1,wdc=4.2,platte=/gibt/es/nicht.img",
+                     b"platte=/tmp/x.img"):
         assert not _lib.k1520_create_p8000(schlecht), schlecht
         assert _lib.k1520_last_init_error().decode().startswith("P8000"), schlecht
 
+    # WDC (AP P13d): Platte anlegen, anschließen, lösen; ohne WDC bzw. an anderen Maschinen Ruhewerte
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        pfad = os.path.join(d, "platte.img")
+        handle = _lib.k1520_create_p8000(b"karte16=1,wdc=4.2")
+        assert handle, _lib.k1520_last_init_error()
+        assert _lib.k1520_hd_path(handle, 0) == b""
+        assert _lib.k1520_hd_create(handle, 0, pfad.encode(), b"D5126"), _lib.k1520_hd_error(handle)
+        assert os.path.getsize(pfad) == 615 * 4 * 18 * 512
+        assert _lib.k1520_hd_path(handle, 0) == pfad.encode()
+        assert not _lib.k1520_hd_mount(handle, 1, pfad.encode(), True)   # kein Schreibschutz
+        assert _lib.k1520_hd_error(handle)
+        assert not _lib.k1520_hd_create(handle, 0, pfad.encode(), b"quatsch")
+        _lib.k1520_power_on(handle)
+        assert _lib.k1520_run(handle, 100_000) > 0
+        assert not _lib.k1520_hd_led(handle, 0)                          # WDC noch im Reset
+        assert _lib.k1520_hd_flush(handle)
+        assert _lib.k1520_hd_unmount(handle, 0) and _lib.k1520_hd_path(handle, 0) == b""
+        assert not _lib.k1520_hd_unmount(handle, 0)
+        _lib.k1520_destroy(K1520Handle(handle))
+        handle = _lib.k1520_create_p8000(f"karte16=1,wdc=4.2,platte={pfad}".encode())
+        assert handle and _lib.k1520_hd_path(handle, 0) == pfad.encode()
+        _lib.k1520_destroy(K1520Handle(handle))
+    handle = _lib.k1520_create_p8000(b"karte16=1")
+    assert not _lib.k1520_hd_create(handle, 0, b"/tmp/egal.img", None)
+    assert _lib.k1520_hd_error(handle) == "kein WDC".encode()
+    _lib.k1520_destroy(K1520Handle(handle))
+
     # Terminal-API an einer anderen Maschine: Ruhewerte
     a5120 = _lib.k1520_create(0)
+    assert not _lib.k1520_hd_mount(a5120, 0, b"/tmp/x.img", False) and _lib.k1520_hd_path(a5120, 0) == b""
+    assert not _lib.k1520_hd_flush(a5120) and not _lib.k1520_hd_led(a5120, 0)
     assert _lib.k1520_term_count(a5120) == 0 and _lib.k1520_term_tty(a5120, 0) == -1
     assert _lib.k1520_term_mode(a5120, 0) == -1
     _lib.k1520_destroy(K1520Handle(a5120))

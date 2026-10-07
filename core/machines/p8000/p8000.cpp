@@ -51,6 +51,13 @@ uint64_t P8000Machine::zeit16(uint64_t t8) const
     return (t8 / f8) * f16 + (t8 % f8) * f16 / f8;
 }
 
+uint64_t P8000Machine::zeitWdc(uint64_t t8) const
+{
+    const uint64_t f8 = cfg_.takt8_hz, fw = cfg_.taktwdc_hz;
+    if (f8 == fw) return t8;
+    return (t8 / f8) * fw + (t8 % f8) * fw / f8;
+}
+
 P8000Machine::P8000Machine() : P8000Machine(Config{}) {}
 P8000Machine::~P8000Machine() = default;
 
@@ -76,6 +83,26 @@ P8000Machine::P8000Machine(const Config& cfg)
         P8000Kopplung::Config kc;
         kc.rueckfuehrung = cfg.index16 == Config::Index16::I4 || cfg.bruecken_4xr1_5xr1;
         kopplung_ = std::make_unique<P8000Kopplung>(karte_, *k16_, kc);
+    }
+    if (cfg.wdc != Config::Wdc::Aus) {
+        if (!k16_) throw std::invalid_argument("P8000: WDC nur mit 16-Bit-Karte (karte16=1)");
+        if (cfg.taktwdc_hz == 0) throw std::invalid_argument("P8000: WDC-Takt 0");
+        if (!cfg.platte_typ.empty() && !k1520::winchester::typNachName(cfg.platte_typ))
+            throw std::invalid_argument("P8000: Plattentyp '" + cfg.platte_typ + "' unbekannt");
+        P8000Wdc::Config wc;
+        switch (cfg.wdc) {
+            case Config::Wdc::V4_0_05: wc.firmware = P8000Wdc::Config::Firmware::V4_0_05; break;
+            case Config::Wdc::V3_4_05: wc.firmware = P8000Wdc::Config::Firmware::V3_4_05; break;
+            default:                   wc.firmware = P8000Wdc::Config::Firmware::V4_2; break;
+        }
+        wc.takt_hz = cfg.taktwdc_hz;
+        wc.ram_fuellwert = cfg.ram_fuellwert;
+        wdc_ = std::make_unique<P8000Wdc>(wc);
+        wdc_an_ = std::make_unique<P8000WdcAnschluss>(*k16_, *wdc_);
+        if (!cfg.platte.empty() && !hdMount(0, cfg.platte))
+            throw std::invalid_argument("P8000: Platte — " + hd_fehler_);
+    } else if (!cfg.platte.empty()) {
+        throw std::invalid_argument("P8000: Platte ohne WDC (wdc=aus)");
     }
     // tty0, tty2, tty3 (und tty4–tty7) nach außen (Reihenfolge = C-ABI-Index); tty1 hängt am
     // Kern-Terminal.
@@ -108,10 +135,13 @@ void P8000Machine::powerOn()
 {
     lw().flushDisks();
     karte_.powerOn();        // RAM/ADP/Latches vorbelegen, RESI = 1, /RES (Floppy über Reset-Haken)
+    if (wdc_) wdc_->powerOn();   // Netz-Ein des WDC; danach hält PIO2-B5 (Pull-up) ihn im Reset
     if (k16_) {
         k16_->powerOn();     // PRES−: MRESET− und PIORESET−; RESET (K11) hält den U8001
         kopplung_->rechne();
     }
+    if (wdc_an_) wdc_an_->rechne();
+    hd_zugriff_lw_ = -1;
     nachReset();
     LOG_INFO("P8000", "Netz ein (8-Bit-Teil)");
 }
@@ -128,7 +158,9 @@ void P8000Machine::reset()
 uint8_t P8000Machine::panelLamps() const
 {
     if (!k16_) return 0;
-    return static_cast<uint8_t>((k16_->runLed() ? 1 : 0) | (k16_->inReset() ? 0 : 2));
+    bool hd = false;
+    for (int u = 0; u < P8000Wdc::LAUFWERKE; ++u) hd = hd || hdLed(u);
+    return static_cast<uint8_t>((k16_->runLed() ? 1 : 0) | (k16_->inReset() ? 0 : 2) | (hd ? 4 : 0));
 }
 
 // ─── Terminal ────────────────────────────────────────────────────────────────
@@ -183,6 +215,68 @@ bool P8000Machine::isDiskLedOn(int d) const
     return d >= 0 && d < 4 && (f.motorAn(d) || f.fdc().unitBusy(d));
 }
 
+// ─── Winchester (AP P13d) ────────────────────────────────────────────────────
+
+bool P8000Machine::hdMount(int unit, const std::string& path, bool wp)
+{
+    hd_fehler_.clear();
+    if (!wdc_) { hd_fehler_ = "kein WDC (wdc=aus)"; return false; }
+    if (unit < 0 || unit >= P8000Wdc::LAUFWERKE) { hd_fehler_ = "Laufwerk 0–2"; return false; }
+    if (wp) { hd_fehler_ = "ein Winchesterlaufwerk hat keinen Schreibschutz"; return false; }
+    k1520::winchester::Platte::Config pc;
+    pc.par_ergaenzen = cfg_.platte_par_ergaenzen;
+    if (!cfg_.platte_typ.empty()) pc.geometrie = k1520::winchester::typNachName(cfg_.platte_typ)->g;
+    auto p = std::make_unique<k1520::winchester::Platte>();
+    if (!p->oeffnen(path, pc)) { hd_fehler_ = p->fehler(); return false; }
+    hdUnmount(unit);
+    platten_[size_t(unit)] = std::move(p);
+    wdc_->anschliessen(unit, platten_[size_t(unit)].get());
+    LOG_INFO("P8000", "Platte %d: %s (%u/%u/%u)", unit, path.c_str(),
+             unsigned(platten_[size_t(unit)]->geometrie().zylinder), unsigned(platten_[size_t(unit)]->geometrie().koepfe),
+             unsigned(platten_[size_t(unit)]->geometrie().sektoren));
+    return true;
+}
+
+bool P8000Machine::hdCreate(int unit, const std::string& path, const std::string& typ)
+{
+    hd_fehler_.clear();
+    const k1520::winchester::Typ* t = k1520::winchester::typNachName(typ.empty() ? "K5504.50" : typ);
+    if (!t) { hd_fehler_ = "Plattentyp '" + typ + "' unbekannt"; return false; }
+    if (!wdc_) { hd_fehler_ = "kein WDC (wdc=aus)"; return false; }
+    if (!k1520::winchester::Platte::neu(path, *t, &hd_fehler_)) return false;
+    return hdMount(unit, path);
+}
+
+bool P8000Machine::hdUnmount(int unit)
+{
+    if (unit < 0 || unit >= P8000Wdc::LAUFWERKE || !platten_[size_t(unit)]) return false;
+    if (wdc_) wdc_->anschliessen(unit, nullptr);
+    platten_[size_t(unit)]->schliessen();   // zerlegt und schreibt geänderte Spuren zurück
+    platten_[size_t(unit)].reset();
+    return true;
+}
+
+bool P8000Machine::hdFlush()
+{
+    bool any = false;
+    for (auto& p : platten_)
+        if (p) { p->flush(); any = true; }
+    return any;
+}
+
+std::string P8000Machine::hdPath(int unit) const
+{
+    if (unit < 0 || unit >= P8000Wdc::LAUFWERKE || !platten_[size_t(unit)]) return "";
+    return platten_[size_t(unit)]->pfad();
+}
+
+bool P8000Machine::hdLed(int unit) const
+{
+    if (!wdc_ || unit < 0 || unit >= P8000Wdc::LAUFWERKE || unit != hd_zugriff_lw_ || !platten_[size_t(unit)])
+        return false;
+    return total_cycles_ - hd_zugriff_t_ < cfg_.takt8_hz / 10;   // 0,1 s Nachleuchten
+}
+
 // ─── Diagnose ────────────────────────────────────────────────────────────────
 
 uint8_t P8000Machine::memReadDebug(uint16_t a)
@@ -214,20 +308,26 @@ int P8000Machine::run(int max_cycles)
         remaining     -= n;
         total_cycles_ += static_cast<uint64_t>(n);
         if (k16_) k16_->laufeBis(zeit16(total_cycles_));   // U8001 nachziehen (im Reset ohne Schritt)
+        if (wdc_) {                                          // dann der WDC (§10.2: 8 → 16 → WDC)
+            wdc_->laufeBis(zeitWdc(total_cycles_));
+            if (wdc_->zugriffAktiv()) { hd_zugriff_t_ = total_cycles_; hd_zugriff_lw_ = wdc_->gewaehltesLaufwerk(); }
+        }
 
         term_anschluss_.takt(static_cast<uint64_t>(n));
         if (total_cycles_ >= serial_naechst_) serial_naechst_ = hub_.takt(total_cycles_);
     }
     lw().autoFlush(total_cycles_);
+    if (wdc_)
+        for (auto& p : platten_) if (p) p->autoFlush(wdc_->takte());
     return max_cycles - remaining;
 }
 
-// ─── Save-State P8KS v1 (Entwurf §10.2) ──────────────────────────────────────
+// ─── Save-State P8KS v3 (Entwurf §10.2) ──────────────────────────────────────
 
 namespace {
 constexpr char     MAGIC[4] = {'P', '8', 'K', 'S'};
 constexpr uint8_t  ABS_CONFIG = 1, ABS_FLOPPY = 2, ABS_KARTE = 3, ABS_TERMINAL = 4, ABS_MASCHINE = 5,
-                   ABS_KARTE16 = 6, ABS_KOPPLUNG = 7, ABS_ANZAHL = 8;
+                   ABS_KARTE16 = 6, ABS_KOPPLUNG = 7, ABS_WDC = 8, ABS_ANZAHL = 9;
 
 void abschnitt(std::vector<uint8_t>& out, uint8_t id, const std::vector<uint8_t>& inhalt)
 {
@@ -264,6 +364,10 @@ void P8000Machine::configAbschnitt(std::vector<uint8_t>& out, uint8_t stand) con
         uint8_t typ = static_cast<uint8_t>(k.typ), mod = k.modul;
         a.num(typ); a.num(mod);
     }
+    if (stand < 3) return;
+    uint8_t w = static_cast<uint8_t>(cfg_.wdc);
+    uint32_t tw = cfg_.taktwdc_hz;
+    a.num(w); a.num(tw);
 }
 
 std::vector<uint8_t> P8000Machine::stateBytes() const
@@ -285,6 +389,7 @@ std::vector<uint8_t> P8000Machine::stateBytes() const
         b.clear(); k16_->serialize(b);      abschnitt(out, ABS_KARTE16, b);
         b.clear(); kopplung_->serialize(b); abschnitt(out, ABS_KOPPLUNG, b);
     }
+    if (wdc_) { b.clear(); wdc_->serialize(b); abschnitt(out, ABS_WDC, b); }
 
     b.clear();
     {
@@ -325,6 +430,7 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     }
     const uint8_t stand = b[4];
     if (stand < 2 && k16_) { state_error_ = "P8KS v1 kennt keinen 16-Bit-Teil"; return false; }
+    if (stand < 3 && wdc_) { state_error_ = "P8KS v" + std::to_string(stand) + " kennt keinen WDC"; return false; }
     std::vector<uint8_t> cfg;
     configAbschnitt(cfg, stand);
     if (!t[ABS_CONFIG].da || cfg.size() != static_cast<size_t>(t[ABS_CONFIG].e - t[ABS_CONFIG].p) ||
@@ -334,6 +440,7 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     }
     if (!t[ABS_KARTE].da) { state_error_ = "P8KS: Abschnitt Karte fehlt"; return false; }
     if (k16_ && !t[ABS_KARTE16].da) { state_error_ = "P8KS: Abschnitt 16-Bit-Karte fehlt"; return false; }
+    if (wdc_ && !t[ABS_WDC].da) { state_error_ = "P8KS: Abschnitt WDC fehlt"; return false; }
 
     // Fehlende Abschnitte (außer der Karte) lassen den Ist-Zustand stehen.
     auto lade = [&](uint8_t id, const char* name, auto&& f) {
@@ -351,11 +458,19 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
         explicit Ruhig(P8000Kopplung* kk) : k(kk) { if (k) k->setRuhig(true); }
         ~Ruhig() { if (k) k->setRuhig(false); }
     } ruhig(kopplung_.get());
+    struct RuhigWdc {
+        P8000WdcAnschluss* k;
+        explicit RuhigWdc(P8000WdcAnschluss* kk) : k(kk) { if (k) k->setRuhig(true); }
+        ~RuhigWdc() { if (k) k->setRuhig(false); }
+    } ruhigWdc(wdc_an_.get());
     if (!lade(ABS_KARTE, "Karte", [&](const uint8_t*& p, const uint8_t* e) { return karte_.deserialize(p, e); })) return false;
     if (k16_) {
         if (!lade(ABS_KARTE16, "16-Bit-Karte", [&](const uint8_t*& p, const uint8_t* e) { return k16_->deserialize(p, e); })) return false;
         if (!lade(ABS_KOPPLUNG, "Kopplung", [&](const uint8_t*& p, const uint8_t* e) { return kopplung_->deserialize(p, e); })) return false;
     }
+    // WDC samt Plattenmechanik; die Abbilder selbst mountet der Aufrufer vorher (wie Disketten).
+    if (wdc_ && !lade(ABS_WDC, "WDC (Platten wie beim Speichern angeschlossen?)",
+                      [&](const uint8_t*& p, const uint8_t* e) { return wdc_->deserialize(p, e); })) return false;
     if (!lade(ABS_TERMINAL, "Terminal", [&](const uint8_t*& p, const uint8_t* e) {
             return term_.deserialize(p, e) && term_anschluss_.deserialize(p, e); })) return false;
     if (!lade(ABS_MASCHINE, "Maschine", [&](const uint8_t*& p, const uint8_t* e) {

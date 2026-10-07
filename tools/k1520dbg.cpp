@@ -28,6 +28,9 @@
  * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
  *
  * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
+ * `--wdc 4.2|4.0.05|3.4.05` und `--hd <abbild>` (nur `--machine p8000-16`, P13d): WDC an der
+ * 16-Bit-PIO2 bzw. Winchester an Laufwerk 0 (Kopie wie die Disketten, `--rw` = Original);
+ * Befehle `wdc [r|u|d|log]`, `cpu wdc` (nur Ansicht).
  * `--ptape` steckt die Lochstreifen-Karte K6022 (SIF1000, E0H–E7H; alle Maschinen).
  *
  * @license MIT
@@ -190,6 +193,8 @@ int main(int argc, char** argv){
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
+    const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
+    const char* hd_opt  = nullptr; // --hd <abbild>: Winchester an WDC-Laufwerk 0 (setzt --wdc 4.2)
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
@@ -205,6 +210,8 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--console")) start_console=true;
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
+        else if (!strcmp(argv[i],"--wdc") && i+1<argc) wdc_opt=argv[++i];
+        else if (!strcmp(argv[i],"--hd") && i+1<argc) hd_opt=argv[++i];
         else if (!strcmp(argv[i],"--ptape")) ptape_opt=true;
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
@@ -232,7 +239,38 @@ int main(int argc, char** argv){
         else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
     }
-    dbgm::DbgMachine m(art, mcfg);
+    // P8000-WDC (P13d): --wdc/--hd nur mit p8000-16.  Die Platte wird wie die Disketten im
+    // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende gelöscht), mit --rw direkt.
+    P8000Machine::Config p8cfg;
+    static std::string hd_kopie;
+    struct HdKopieWeg { ~HdKopieWeg(){ if(!hd_kopie.empty()) std::remove(hd_kopie.c_str()); } };
+    static HdKopieWeg hd_kopie_weg;
+    if (wdc_opt || hd_opt){
+        if (art!=dbgm::Art::P8000_16){ fprintf(stderr,"--wdc/--hd gibt es nur am P8000 mit 16-Bit-Karte (--machine p8000-16)\n"); return 2; }
+        const std::string w = wdc_opt? wdc_opt : "4.2";
+        using W = P8000Machine::Config::Wdc;
+        if      (w=="4.2")    p8cfg.wdc = W::V4_2;
+        else if (w=="4.0.05") p8cfg.wdc = W::V4_0_05;
+        else if (w=="3.4.05") p8cfg.wdc = W::V3_4_05;
+        else if (w!="aus"){ fprintf(stderr,"--wdc: unbekannte Firmware '%s' (4.2|4.0.05|3.4.05|aus)\n",wdc_opt); return 2; }
+        if (hd_opt){
+            if (p8cfg.wdc==W::Aus){ fprintf(stderr,"--hd braucht einen WDC\n"); return 2; }
+            std::string pfad = hd_opt;
+            if (mount_mode!=MOUNT_RW){
+                hd_kopie = (std::filesystem::temp_directory_path() / ("k1520dbg_hd_" + std::to_string(k1520::os::processId()) + ".img")).string();
+                std::error_code ec;
+                std::filesystem::copy_file(pfad, hd_kopie, std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec){ fprintf(stderr,"--hd: Kopie von %s scheitert: %s\n",hd_opt,ec.message().c_str()); hd_kopie.clear(); return 2; }
+                pfad = hd_kopie;
+                fprintf(stderr,"Platte (Kopie, --rw schreibt ins Original): %s\n",hd_opt);
+            }
+            p8cfg.platte = pfad;
+        }
+    }
+    std::unique_ptr<dbgm::DbgMachine> m_halter;
+    try { m_halter = std::make_unique<dbgm::DbgMachine>(art, mcfg, &p8cfg); }
+    catch (const std::exception& e){ fprintf(stderr,"%s\n",e.what()); return 2; }
+    dbgm::DbgMachine& m = *m_halter;
     if (raf_opt){   // vor dem ersten Lauf stecken (installRaf verlangt das)
         RAF::Typ rt = RAF::Typ::RAF512; bool keine = false;
         if (!dbgm::parseRaf(raf_opt, rt, keine)){
@@ -253,6 +291,16 @@ int main(int argc, char** argv){
     // 16-Bit-Karte des P8000 (U8001-Kontext wie beim EM, aber MMU statt Segmentweiche); nullptr ohne `p8000-16`.
     P8000Karte16* p16 = KQ ? m.p8000()->karte16() : nullptr;
     const bool has16 = em || p16;   // es gibt einen U8001 (`cpu u8000`)
+    // WDC des P8000 (P13d): Kommando-/Statusprotokoll über `P8000Wdc::statusBeobachter`.
+    P8000Wdc* wdcK = KQ ? m.p8000()->wdc() : nullptr;
+    struct WdcEreignis { uint64_t t8; uint8_t alt, neu; std::array<uint8_t,9> kmd; uint8_t fehler; };
+    std::deque<WdcEreignis> wdc_prot; uint64_t wdc_prot_n = 0;
+    if (wdcK) wdcK->statusBeobachter = [&](uint8_t alt, uint8_t neu){
+        WdcEreignis e{m.p8000()->totalCycles(), alt, neu, {}, 0};
+        for (int i=0;i<9;++i) e.kmd[size_t(i)] = wdcK->lesen(uint16_t(0x30B7+i));
+        e.fehler = wdcK->lesen(0x30C7);
+        wdc_prot.push_back(e); ++wdc_prot_n;
+        if (wdc_prot.size()>4096) wdc_prot.pop_front(); };
     const char* C1 = m.cpuName();            // "ZVE1" (A5120) bzw. "CPU" (K8915) in Meldungen
     if (skip_selftest){
         if (!K89) fprintf(stderr,"WARN: --skip-selftest gibt es nur am K8915 — ignoriert\n");
@@ -2555,7 +2603,61 @@ int main(int argc, char** argv){
             fprintf(stderr,"  %zu Zeilen (%llu Ereignisse insgesamt%s):\n",z.size(),(unsigned long long)pr.gesamt(),nurW?", nur Schreiben":"");
             zeilen(z); };
         if (cmd=="adp"){ zeilen(dbgp8::adpZeilen(pm.karte8().speicher())); return true; }
-        if (cmd=="wdc"){ fprintf(stderr,"  WDC-Karte (Winchester) ist noch nicht nachgebildet (P13) — nichts zu zeigen\n"); return true; }
+        if (cmd=="wdc"){
+            if (!wdcK){ fprintf(stderr,"  kein WDC (--machine p8000-16 --wdc 4.2 bzw. --hd <abbild>)\n"); return true; }
+            P8000Wdc& w=*wdcK; Z80& z=w.cpu();
+            const std::string sub = t.size()>1? t[1] : "";
+            auto rdw=[&](uint16_t a)->uint8_t{ return w.lesen(a); };
+            auto regs=[&](){
+                char fl[12]; flagsStr(z.AF,fl);
+                fprintf(stderr,"  WDC-Z80 PC=%04X SP=%04X AF=%04X[%s] BC=%04X DE=%04X HL=%04X IX=%04X IY=%04X I=%02X IM%d IFF=%d%s%s  Takte=%llu\n",
+                        z.PC,z.SP,z.AF,fl,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,(int)z.IM,(int)z.IFF1,z.halted?" HALT":"",
+                        w.imReset()?" RESET":"",(unsigned long long)w.takte()); };
+            auto dis=[&](uint16_t a, int n){
+                for (int i=0;i<n;++i){ z80dis::Insn d=z80dis::decode(rdw,a);
+                    char hex[16]={0}; for(int k=0;k<d.len && k<5;++k){ char b[4]; snprintf(b,4,"%02X ",rdw(uint16_t(a+k))); strcat(hex,b);}
+                    fprintf(stderr,"  %s%04X: %-14s %s\n", a==z.PC?"=>":"  ", a, hex, d.text); a=uint16_t(a+d.len); } };
+            if (sub=="r"){ regs(); dis(z.PC,1); return true; }
+            if (sub=="u"){ dis(t.size()>2? (uint16_t)parseNum(t[2]) : z.PC, t.size()>3? (int)parseNum(t[3]) : 12); return true; }
+            if (sub=="d"){
+                uint16_t a = t.size()>2? (uint16_t)parseNum(t[2]) : 0x30B7; int n = t.size()>3? (int)parseNum(t[3]) : 64;
+                for (int o=0;o<n;o+=16){ fprintf(stderr,"  %04X:",uint16_t(a+o));
+                    for (int k=0;k<16 && o+k<n;++k) fprintf(stderr," %02X",rdw(uint16_t(a+o+k))); fprintf(stderr,"\n"); }
+                return true; }
+            static const char* stName[8]={"besetzt","bereit fuer Kommando","bereit fuer Daten (Host->WDC)","sendet Daten (WDC->Host)","?4","?5","EPROM-Pruefsummenfehler","Fehler (1 Byte folgt)"};
+            if (sub=="log"){
+                if (t.size()>2 && t[2]=="clear"){ wdc_prot.clear(); fprintf(stderr,"  Protokoll geleert\n"); return true; }
+                const size_t n = t.size()>2? (size_t)parseNum(t[2]) : 32;
+                if (wdc_prot.empty()){ fprintf(stderr,"  (noch kein Statuswechsel des WDC)\n"); return true; }
+                fprintf(stderr,"  %llu Statuswechsel insgesamt, die letzten %zu:\n",(unsigned long long)wdc_prot_n, std::min(n,wdc_prot.size()));
+                for (size_t i = wdc_prot.size()>n? wdc_prot.size()-n : 0; i<wdc_prot.size(); ++i){
+                    const auto& e=wdc_prot[i];
+                    fprintf(stderr,"  t8=%-12llu ST %d->%d %s%s",(unsigned long long)e.t8,e.alt&7,e.neu&7,stName[e.neu&7],(e.neu&0x20)?" TR":"");
+                    if ((e.alt&7)==1 && (e.neu&7)!=1){   // Kommandoblock übernommen (FW 30B7–30BF)
+                        fprintf(stderr,"  Kmd %02X LW %02X:",e.kmd[0],e.kmd[1]);
+                        for (int k=2;k<9;++k) fprintf(stderr," %02X",e.kmd[size_t(k)]); }
+                    if ((e.neu&7)==7) fprintf(stderr,"  Fehler %02X",e.fehler);
+                    fprintf(stderr,"\n"); }
+                return true; }
+            if (!sub.empty()){ fprintf(stderr,"  wdc [r | u [adr] [n] | d [adr] [n] | log [n|clear]]\n"); return true; }
+            const uint8_t c=w.cntst(), d1=w.dskc1(), d2=w.dskc2();
+            regs(); dis(z.PC,1);
+            fprintf(stderr,"  Host:  ST=%d (%s)  HEN=%d HA12=%d HR/W=%d(TR)  Uebertragung %s  Host-Zaehler %03X\n",
+                    c&7, stName[c&7], (c>>3)&1, (c>>4)&1, (c>>5)&1, w.uebertragungAktiv()?"aktiv":"aus", w.hostZaehler());
+            fprintf(stderr,"  Disk:  DSKEA=%02X  DSKC1=%02X (Kopf %d, Richtung %s)  DSKC2=%02X (DEN=%d /MEN=%d CRCEN=%d WG=%d LW=%d FR=%d)  DA12=%d DR/W=%d  Disk-Zaehler %03X\n",
+                    w.dskea(), d1, d1>>4, (d1&8)?"innen":"aussen", d2, d2&1,(d2>>1)&1,(d2>>2)&1,(d2>>3)&1, w.gewaehltesLaufwerk(), (d2>>7)&1,
+                    (c>>6)&1, (c>>7)&1, w.diskZaehler());
+            fprintf(stderr,"  Platte: Byte %d von %d seit Index, Zugriff %s\n", w.plattenPosition(),
+                    k1520::winchester::Platte::BYTES_JE_SPUR, w.zugriffAktiv()?"aktiv":"ruht");
+            for (int u=0;u<P8000Wdc::LAUFWERKE;++u){ auto* pl=w.platte(u);
+                if (!pl){ fprintf(stderr,"  LW %d: -\n",u); continue; }
+                const auto& g=pl->geometrie();
+                fprintf(stderr,"  LW %d: %s  %u/%u/%u  Zylinder %d%s%s\n",u,pl->pfad().c_str(),unsigned(g.zylinder),unsigned(g.koepfe),
+                        unsigned(g.sektoren),pl->zylinder(),pl->schmutzig()?"  (ungeschrieben)":"",pl->parErgaenzt()?"  (PAR ergaenzt)":""); }
+            fprintf(stderr,"  Letzter Kommandoblock (30B7):");
+            for (int k=0;k<9;++k) fprintf(stderr," %02X",rdw(uint16_t(0x30B7+k)));
+            fprintf(stderr,"   Fehlerbyte (30C7) %02X   -> 'wdc log' fuer das Protokoll\n",rdw(0x30C7));
+            return true; }
         if (cmd=="term"){
             auto& tm=pm.terminal();
             fprintf(stderr,"  Terminal tty1 (Kern-Terminal): Cursor Zeile %d Spalte %d\n",tm.zeile(),tm.spalte());
@@ -2825,7 +2927,7 @@ int main(int argc, char** argv){
               "    segt [n|clear] | bsegt [on|off]   SEGT-Protokoll (Zyklus, MMU, TRPL/IF1L) / Halt vor der Behandlung\n"
               "    trap | btrap | status | fcw | psa   Ausnahmen des U8001 (im Kontext u8000)\n"
               "    savestate <f> | loadstate <f>   P8KS (nicht: Medieninhalt) ; snap/rs/bbusrq: nicht vorhanden\n"
-              "    wdc                 WDC-Karte folgt (P13)\n"
+              "    wdc [r|u|d|log]     WDC (--wdc 4.2 / --hd abbild): Zustand, Register, Disassembler, Speicher, Kommando-Protokoll\n"
               "    Adressen der 16-Bit-Seite: <<seg>>off; `em:ADR` = physischer Hauptspeicher A0-A23 (roh)\n");
         }
         else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="pc1715"||t[1]=="PC1715"||t[1]=="1715")){
@@ -3795,7 +3897,11 @@ int main(int argc, char** argv){
                 std::string c=t[1]; for(auto&ch:c) ch=(char)tolower((unsigned char)ch);
                 if (c=="zve1"||c=="1"||(KQ && (c=="u880"||c=="z80"))) cpu_ctx=1;
                 else if ((c=="zve2"||c=="2") && !KQ) cpu_ctx=2;
-                else if (KQ && c=="wdc") fprintf(stderr,"  (WDC-Karte noch nicht nachgebildet — P13)\n");
+                else if (KQ && c=="wdc"){
+                    // Nur Ansicht: Haltepunkte/Schritte bleiben beim U880 bzw. U8001; der WDC läuft mit.
+                    if (!wdcK) fprintf(stderr,"  kein WDC (--machine p8000-16 --wdc 4.2 bzw. --hd <abbild>)\n");
+                    else { std::vector<std::string> tw={"wdc","r"}; p8Kommando(tw);
+                           fprintf(stderr,"  (WDC-Z80 nur zur Ansicht: wdc r | wdc u | wdc d | wdc log — Haltepunkte/Schritte bleiben beim U880/U8001)\n"); } }
                 else if (c=="u8000"||c=="u8001"||c=="u8002"||c=="16"||c=="3"){
                     if (!has16) fprintf(stderr,"  (kein U8001 in dieser Maschine — A5120: --em em256, P8000: --machine p8000-16)\n");
                     else cpu_ctx=3; }

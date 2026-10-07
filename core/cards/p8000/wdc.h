@@ -115,6 +115,17 @@ public:
     bool    uebertragungAktiv() const { return host_aktiv_; }
     /// Ein /ASTB-Impuls an die Host-PIO (Byte übernommen bzw. Byte liegt an).
     void    setzeAstbRueckruf(std::function<void()> cb) { astb_cb_ = std::move(cb); }
+    /// Rückruf, sobald sich ST2–ST0 oder TR ändern (CNTST-Schreiben, Reset) — P13d legt damit
+    /// die Pegel an die Host-PIO, ohne nach jedem Befehl zu fragen.
+    void    setzeStatusRueckruf(std::function<void()> cb) { status_cb_ = std::move(cb); }
+    /// Disk-Schnittstelle läuft gerade an einem gewählten Laufwerk (Plattenzugriffslampe).
+    bool    zugriffAktiv() const { return !rst_ && gewaehlt() != nullptr && dssLaeuft(); }
+    /// Gewähltes Laufwerk 0–2 (DSKC2 Bit 5–4), −1 = keins.
+    int     gewaehltesLaufwerk() const { const int lw = (dskc2_ >> 4) & 3; return lw ? lw - 1 : -1; }
+
+    /// Debugger (P13d): nach jeder Änderung von ST2–ST0/TR mit altem und neuem Wert (CNTST & 27H).
+    /// Nur Beobachtung — leer = kein Aufwand.
+    std::function<void(uint8_t alt, uint8_t neu)> statusBeobachter;
 
     // ─── Einsicht (Tests, Debugger) ──────────────────────────────────────────
     Z80&    cpu() { return cpu_; }
@@ -182,5 +193,7 @@ private:
     bool    rst_ = false, te_ = false, ardy_ = false, ardy_verbraucht_ = false, host_aktiv_ = false;
     uint8_t hostbus_ = 0xFF, zum_host_ = 0xFF;
     bool    im_handshake_ = false, nochmal_ = false;
-    std::function<void()> astb_cb_;
+    std::function<void()> astb_cb_, status_cb_;
+    uint8_t status_gemeldet_ = 0;
+    void    statusMelden();
 };

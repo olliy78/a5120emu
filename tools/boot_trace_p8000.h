@@ -17,4 +17,7 @@
  *  Rückgabe = Exit-Code: 0 = Prompt (`>`/`%`) oder „Press RETURN" bei Stillstand bzw. `--until`
  *  erfüllt, 1 = nicht erreicht (Stillstand woanders, Taktgrenze), 2 = `--until` nicht erfüllt. */
 /// @p karte16: 16-Bit-Karte samt Kopplung stecken (`--machine p8000-16`, AP P11; Weiteres P12).
-int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16 = false);
+/// @p wdc/@p hd (nur mit @p karte16, AP P13d): WDC-Firmware ("" = aus, mit @p hd 4.2) bzw.
+/// Winchesterabbild an Laufwerk 0 (wird direkt beschrieben — eine Kopie übergeben).
+int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16 = false,
+                   const std::string& wdc = "", const std::string& hd = "");

@@ -692,6 +692,26 @@ K1520_API bool     k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool s
 /** @brief @p len Zeichen wie getippt senden ('\r'/'\n' = Return); false bei ungültigem i. */
 K1520_API bool     k1520_term_send(K1520Handle h, int i, const char* text, int len);
 
+/* ─── Winchesterplatten am WDC (P8000, Entwurf 25 §10.9; andere Maschinen bzw. ohne WDC:
+ * false / "") — Laufwerk 0–2, Abbild roh/LBA (Sektor Z/K/S bei ((Z·K+K)·S+S−1)·512). */
+
+/** @brief Abbild an Laufwerk @p unit anschließen.  @p wp = true wird abgewiesen (ein
+ *  Winchesterlaufwerk hat keinen Schreibschutz).  Grund: k1520_hd_error. */
+K1520_API bool        k1520_hd_mount(K1520Handle h, int unit, const char* path, bool wp);
+/** @brief Neues Abbild des Typs @p typ ("K5504.50", "D5126", …; NULL/"" = K5504.50) anlegen
+ *  — Datenbytes E5, Z0/K0/S1 = gültiger PAR/BTT-Sektor — und anschließen. */
+K1520_API bool        k1520_hd_create(K1520Handle h, int unit, const char* path, const char* typ);
+/** @brief Laufwerk lösen; geänderte Spuren werden vorher zurückgeschrieben. */
+K1520_API bool        k1520_hd_unmount(K1520Handle h, int unit);
+/** @brief Alle geänderten Spuren sofort zurückschreiben; false ohne Platte. */
+K1520_API bool        k1520_hd_flush(K1520Handle h);
+/** @brief Pfad des Abbilds an @p unit ("" = keins). */
+K1520_API const char* k1520_hd_path(K1520Handle h, int unit);
+/** @brief Zugriffslampe des Laufwerks (gewählt und in den letzten 0,1 s Maschinenzeit aktiv). */
+K1520_API bool        k1520_hd_led(K1520Handle h, int unit);
+/** @brief Grund des letzten gescheiterten k1520_hd_mount/k1520_hd_create. */
+K1520_API const char* k1520_hd_error(K1520Handle h);
+
 #ifdef __cplusplus
 }
 #endif

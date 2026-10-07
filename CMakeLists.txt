@@ -371,6 +371,10 @@ if(BUILD_K1520)
     add_library(k1520_p8000_kopplung STATIC core/cards/p8000/kopplung.cpp)
     target_link_libraries(k1520_p8000_kopplung PUBLIC k1520_p8000_karte8 k1520_p8000_karte16)
     target_include_directories(k1520_p8000_kopplung PUBLIC ${CMAKE_SOURCE_DIR})
+    # P8000, WDC ↔ 16-Bit-PIO2 als Leitungsmodell (doc/design/25_p8000.md §10, AP P13d)
+    add_library(k1520_p8000_wdc_anschluss STATIC core/cards/p8000/wdc_anschluss.cpp)
+    target_link_libraries(k1520_p8000_wdc_anschluss PUBLIC k1520_p8000_karte16 k1520_p8000_wdc)
+    target_include_directories(k1520_p8000_wdc_anschluss PUBLIC ${CMAKE_SOURCE_DIR})
 
     # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
     add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
@@ -458,7 +462,7 @@ if(BUILD_K1520)
 
     # P8000 (doc/design/25_p8000.md §10, AP P7a): 8-Bit-Seite (Karte8 + Floppy8 + Kern-Terminal)
     add_library(k1520_p8000 STATIC core/machines/p8000/p8000.cpp)
-    target_link_libraries(k1520_p8000 PUBLIC k1520_p8000_floppy8 k1520_p8000_karte8 k1520_p8000_karte16 k1520_p8000_kopplung k1520_p8000_terminal k1520_laufwerke k1520_bus k1520_logger k1520_serial)
+    target_link_libraries(k1520_p8000 PUBLIC k1520_p8000_floppy8 k1520_p8000_karte8 k1520_p8000_karte16 k1520_p8000_kopplung k1520_p8000_wdc_anschluss k1520_p8000_terminal k1520_laufwerke k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_p8000 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library

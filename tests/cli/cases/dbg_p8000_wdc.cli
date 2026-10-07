@@ -1,0 +1,14 @@
+# WDC am P8000 (AP P13d): `--wdc`, Kommandos `wdc [r|u|d|log]` und `cpu wdc` (nur Ansicht).
+tool:    k1520dbg
+run:     --machine p8000-16 --wdc 4.2 -x %CLI_DIR%/scripts/p8000_wdc.dbg
+timeout: 120
+exit:    0
+forbid:  unknown command
+forbid:  noch nicht nachgebildet
+expect:  WDC-Z80 PC=0000
+expect:  RESET
+expect:  Host:  ST=0 (besetzt)
+expect:  LW 0: -
+expect:  1FF8: 2C 43 D3 BC 2C 03 D3 FC
+expect:  noch kein Statuswechsel
+expect:  WDC-Z80 nur zur Ansicht

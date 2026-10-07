@@ -73,6 +73,17 @@ void P8000Wdc::hardwareReset()
     marken_ = marken_rest_ = crc_rest_ = 0;
     ei_sperre_ = false;
     kette_.markIntDirty();
+    statusMelden();
+}
+
+void P8000Wdc::statusMelden()
+{
+    const uint8_t s = static_cast<uint8_t>(cntst_ & 0x27);   // ST2–ST0, TR
+    if (s == status_gemeldet_) return;
+    const uint8_t alt = status_gemeldet_;
+    status_gemeldet_ = s;
+    if (statusBeobachter) statusBeobachter(alt, s);
+    if (status_cb_) status_cb_();
 }
 
 void P8000Wdc::powerOn()
@@ -210,6 +221,7 @@ void P8000Wdc::ioSchreiben(uint8_t port, uint8_t v)
             cntst_ = v;
             if (v & 0x08) host_aktiv_ = true;   // [H1]
             hostHandshake();
+            statusMelden();
             break;
         case PORT_BM_T: bm_t_ = v; break;
         case PORT_BM_D: bm_d_ = v; break;
@@ -424,6 +436,7 @@ bool P8000Wdc::deserialize(const uint8_t*& p, const uint8_t* end)
     a.flag(rst_); a.flag(te_); a.flag(ardy_); a.flag(ardy_verbraucht_); a.flag(host_aktiv_);
     a.num(hostbus_); a.num(zum_host_);
     if (!a.ok) return false;
+    status_gemeldet_ = static_cast<uint8_t>(cntst_ & 0x27);
     const uint8_t* q = a.p;
     if (!ctc_.deserialize(q, end) || !ctc_.deserializeTakt(q, end)) return false;
     for (Platte* pl : platten_) {

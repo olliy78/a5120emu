@@ -302,6 +302,7 @@ int main(int argc, char** argv) {
     bool        machine_pc1715w = false; // … in der Variante PC 1715W (AP-W3)
     bool        machine_p8000 = false;   // P8000, 8-Bit-Seite (AP P7c; gleiche Optionen wie K8915)
     bool        machine_p8000_16 = false;   // --machine p8000-16: mit 16-Bit-Karte (AP P11)
+    std::string p8000_wdc, p8000_hd;         // --wdc <fw> / --hd <abbild> (P8000-16, AP P13d)
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
@@ -335,6 +336,8 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
+        else if (!strcmp(argv[i], "--wdc") && i+1 < argc) p8000_wdc = argv[++i];
+        else if (!strcmp(argv[i], "--hd") && i+1 < argc) p8000_hd = argv[++i];
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
@@ -531,7 +534,7 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn, machine_p8000_16)
+        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn, machine_p8000_16, p8000_wdc, p8000_hd)
                      : machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
                      : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);

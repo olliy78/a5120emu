@@ -116,6 +116,10 @@ P8000Karte16::P8000Karte16(const Config& cfg)
     pio0_.setModus3Flanke(true);
     pio1_.setModus3Flanke(true);
     pio2_.setModus3Flanke(true);
+    // U855 §5: im Modus 1 wird RDY erst durch das erste Lesen aktiv (WDC-Treiber: „Scheineingabe").
+    pio0_.setModus1ReadyNachLesen(true);
+    pio1_.setModus1ReadyNachLesen(true);
+    pio2_.setModus1ReadyNachLesen(true);
 
     // BUS BAUD CLK (Bl. 10, 14): CTC0 K0–K2, CTC1 K0 und K2; CTC1 ZC/TO2 → CLK/TRG3.
     const uint64_t baud = cfg.baudquarz_hz / 8;
@@ -170,6 +174,7 @@ void P8000Karte16::piosZuruecksetzen() {
     pio0_.reset(); pio1_.reset(); pio2_.reset();
     for (int i = 0; i < 3; ++i) pinsAnlegen(i);
     if (pio_haken_) for (int i = 0; i < 3; ++i) pio_haken_(i);
+    if (wdc_haken_) wdc_haken_();
 }
 
 void P8000Karte16::mresetBausteine() {
@@ -377,6 +382,7 @@ void P8000Karte16::ioSchreibenByte(uint16_t port, uint8_t d) {
             pio(i).ioWrite(z80Reg(port), d);
             pinsAnlegen(i);   // Moduswechsel lädt die Eingabebits nicht aus den Pins nach
             if (pio_haken_) pio_haken_(i);
+            if (i == 2 && wdc_haken_) wdc_haken_();
             break;
         }
         case CTC0: ctc0_.ioWrite(ctcKanal(port), d); break;

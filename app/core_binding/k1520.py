@@ -345,6 +345,22 @@ _lib.k1520_term_key.restype = ctypes.c_bool
 _lib.k1520_term_send.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
 _lib.k1520_term_send.restype = ctypes.c_bool
 
+# Winchesterplatten am WDC des P8000 (Entwurf 25 §10.9; andere Maschinen: False / "")
+_lib.k1520_hd_mount.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_bool]
+_lib.k1520_hd_mount.restype = ctypes.c_bool
+_lib.k1520_hd_create.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p]
+_lib.k1520_hd_create.restype = ctypes.c_bool
+_lib.k1520_hd_unmount.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_hd_unmount.restype = ctypes.c_bool
+_lib.k1520_hd_flush.argtypes = [K1520Handle]
+_lib.k1520_hd_flush.restype = ctypes.c_bool
+_lib.k1520_hd_path.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_hd_path.restype = ctypes.c_char_p
+_lib.k1520_hd_led.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_hd_led.restype = ctypes.c_bool
+_lib.k1520_hd_error.argtypes = [K1520Handle]
+_lib.k1520_hd_error.restype = ctypes.c_char_p
+
 # k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
 _lib.k1520_create_with_em.argtypes = [
     ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
@@ -1193,6 +1209,36 @@ class K1520Emulator:
         """Text wie getippt senden (``\\r``/``\\n`` = Return)."""
         data = text.encode("latin-1", "replace")
         return bool(_lib.k1520_term_send(self._handle, i, data, len(data)))
+
+    # ─── Winchesterplatten am WDC des P8000 (k1520_hd_*) ─────────────────────
+
+    def hd_mount(self, unit: int, path: str, wp: bool = False) -> bool:
+        """Abbild (roh/LBA) an Laufwerk 0–2 anschließen; ``wp=True`` wird abgewiesen."""
+        return bool(_lib.k1520_hd_mount(self._handle, unit, path.encode("utf-8"), wp))
+
+    def hd_create(self, unit: int, path: str, typ: str = "K5504.50") -> bool:
+        """Neues Abbild (E5 + gültiger PAR/BTT-Sektor) anlegen und anschließen."""
+        return bool(_lib.k1520_hd_create(self._handle, unit, path.encode("utf-8"), typ.encode("utf-8")))
+
+    def hd_unmount(self, unit: int) -> bool:
+        """Laufwerk lösen (geänderte Spuren werden vorher zurückgeschrieben)."""
+        return bool(_lib.k1520_hd_unmount(self._handle, unit))
+
+    def hd_flush(self) -> bool:
+        """Geänderte Spuren aller Platten sofort zurückschreiben."""
+        return bool(_lib.k1520_hd_flush(self._handle))
+
+    def hd_path(self, unit: int) -> str:
+        """Pfad des Abbilds an Laufwerk ``unit`` (``""`` = keins)."""
+        return (_lib.k1520_hd_path(self._handle, unit) or b"").decode("utf-8", "replace")
+
+    def hd_led(self, unit: int) -> bool:
+        """Zugriffslampe des Laufwerks."""
+        return bool(_lib.k1520_hd_led(self._handle, unit))
+
+    def hd_error(self) -> str:
+        """Grund des letzten gescheiterten ``hd_mount``/``hd_create``."""
+        return (_lib.k1520_hd_error(self._handle) or b"").decode("utf-8", "replace")
 
     def panel_lamps(self) -> int:
         """Anzeigefeld: Rohbyte des K8915-Latches 61H, **aktiv low** (FFH = alles

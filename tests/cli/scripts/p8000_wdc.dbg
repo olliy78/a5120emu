@@ -1,0 +1,11 @@
+# WDC-Sicht am P8000 (AP P13d): ohne Platte, WDC im Reset (PIO2-B5 Pull-up) — nur Ansicht.
+wdc
+wdc r
+wdc u 0 4
+wdc d 1FF8H 8
+wdc log
+g 200000
+wdc log 4
+cpu wdc
+cpu u880
+q

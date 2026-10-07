@@ -274,3 +274,9 @@ k1520_add_test(p8000_kopplung SRC test_p8000_kopplung.cpp
 k1520_add_test(p8000_monitor16 SRC test_p8000_monitor16.cpp
                           LIBS k1520_p8000 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# P8000 mit WDC 4.2 an der 16-Bit-PIO2 (doc/design/25_p8000.md §10.11 AP P13d): Hardwaretest U8001
+# ohne Fehler, Init-Fehler 39 ohne PAR, Save-State P8KS v3, Plattenschnittstelle.
+k1520_add_test(p8000_wdc_maschine SRC test_p8000_wdc_maschine.cpp
+                          LIBS k1520_p8000 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)

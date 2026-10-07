@@ -2,7 +2,8 @@
  * @file p8000.h
  * @brief Robotron P8000 — fünfte Maschine des Kerns: 8-Bit-Seite (U880-Rechnerkarte + Floppy +
  *        Kern-Terminal an tty1) und — mit `Config::karte16` — die 16-Bit-Karte samt Kopplung
- *        (AP P11).  WDC folgt (P13).
+ *        (AP P11) und — mit `Config::wdc` — der Winchester-Disk-Controller an der PIO2 der
+ *        16-Bit-Karte samt bis zu drei Platten (AP P13d).
  *
  * Quelle: doc/design/25_p8000.md §10.1–§10.7 (Entwurf), Karten `P8000Karte8` (P5e) und
  * `P8000Floppy8` (P5f), Terminal `k1520::p8000::Terminal` (P6).
@@ -29,6 +30,11 @@
  * `stateBytes/restoreStateBytes` (Speicher).  Nicht: Medieninhalt, EPROM, Hub-Verbindungen und
  * der Zustand der Hub-Wandler (Zeichen in Flug an tty0/2/3).
  *
+ * **WDC (P13d):** eigene Uhr in WDC-Takten, nach der 16-Bit-Karte bis zur selben Maschinenzeit
+ * nachgezogen (Reihenfolge 8 → 16 → WDC, Entwurf §10.2); Leitungen über `P8000WdcAnschluss`.
+ * Platten gehören der Maschine (`hdMount/hdCreate/hdUnmount`), der WDC kennt nur Zeiger.
+ * Save-State P8KS v3 = v2 + Abschnitt WDC (samt Plattenmechanik, nicht dem Medieninhalt).
+ *
  * Nicht hier (spätere APs): Rahmenpuffer mit dem Terminal-Zeichensatz (P16; bis dahin liefert
  * `framebuffer()` ein leeres Bild).
  */
@@ -39,6 +45,9 @@
 #include "core/cards/p8000/karte16.h"
 #include "core/cards/p8000/karte8.h"
 #include "core/cards/p8000/kopplung.h"
+#include "core/cards/p8000/wdc.h"
+#include "core/cards/p8000/wdc_anschluss.h"
+#include "core/peripherals/winchester/platte.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/p8000_terminal/terminal.h"
 #include "core/peripherals/p8000_terminal/terminal_anschluss.h"
@@ -74,6 +83,19 @@ public:
         std::vector<P8000Dram16::Karte> dram = {P8000Dram16::Karte{P8000Dram16::Karte::Typ::M1, 0}};
         bool     bruecken_4xr1_5xr1 = true;   ///< nur Index16 = I1 (Kopplung [KP1])
         uint32_t takt16_hz = 4'000'000;
+
+        // ── WDC (AP P13d) — nur mit 16-Bit-Karte ──
+        /// Firmware des WDC bzw. kein WDC.  Vorgabe vorerst AUS (Entwurf §10.4: 4.2), wie `karte16`.
+        enum class Wdc { Aus, V4_2, V4_0_05, V3_4_05 };
+        Wdc      wdc = Wdc::Aus;
+        uint32_t taktwdc_hz = 4'000'000;   ///< 40 MHz ÷ 10; 41,4-MHz-Bestückung 4 140 000
+        /// Abbild an Laufwerk 0 ("" = keins); Geometrie aus `platte_typ` (Name aus
+        /// `winchester::typen()`, z. B. "K5504.50"), sonst aus PAR-Sektor bzw. Dateigröße.
+        std::string platte;
+        std::string platte_typ;
+        /// [P5] der Platte: fehlt Z0/K0/S1 ein gültiger PAR-Sektor, liefert die Spursynthese einen
+        /// erzeugten (WEGA-3.1-AVR-Abbild).  AUS = die Firmware sieht den Sektor, wie er ist.
+        bool        platte_par_ergaenzen = true;
     };
 
     /// Kanal des Kern-Terminals (Konsole des U880-Monitors und von UDOS).
@@ -111,7 +133,8 @@ public:
     void setKeyRepeatRealtime(bool) override {}
 
     int machineType() const override { return 4; }   // K1520_MACHINE_P8000 (Entwurf §10.9)
-    /// Bit 0 RUN-LED (K14), Bit 1 UNIT16 = U8001 läuft (nicht im Reset); ohne 16-Bit-Karte 0.
+    /// Bit 0 RUN-LED (K14), Bit 1 UNIT16 = U8001 läuft (nicht im Reset), Bit 2 Plattenzugriff
+    /// (WDC); ohne 16-Bit-Karte 0.
     uint8_t panelLamps() const override;
     /// Kein K1520-Bus: RAF und K6022 sind nicht steckbar (Entwurf §10.1).
     bool zusatzkartenSteckbar() const override { return false; }
@@ -160,17 +183,30 @@ public:
     void setDFUECallback(SerialCb) override {}
     void dfueSend(uint8_t) override {}
 
+    // ─── Winchester (WDC, AP P13d; Laufwerk 0–2) ─────────────────────────────
+    /// Abbild roh/LBA anschließen (Geometrie: `platte_typ` bzw. PAR/Dateigröße).  Ein Winchester-
+    /// laufwerk kennt keinen Schreibschutz — @p wp = true wird abgewiesen.
+    bool hdMount(int unit, const std::string& path, bool wp = false);
+    /// Neues Abbild des Typs @p typ (E5 + gültiger PAR/BTT-Sektor) anlegen und anschließen.
+    bool hdCreate(int unit, const std::string& path, const std::string& typ);
+    bool hdUnmount(int unit);
+    bool hdFlush();
+    std::string hdPath(int unit) const;
+    /// Lampe: Laufwerk gewählt und Disk-Schnittstelle in den letzten 0,1 s aktiv.
+    bool hdLed(int unit) const;
+    const std::string& hdError() const { return hd_fehler_; }
+
     // ─── Diagnose (U880-Sicht: ADP/RFF wirksam, ohne Wartetakt-Zählung) ─────
     uint8_t memReadDebug(uint16_t addr) override;
     void    memWriteDebug(uint16_t addr, uint8_t data) override;
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     std::string lastError() const override { return lw().lastError(); }
 
-    // ─── Save-State P8KS v1 (Entwurf 25 §10.2) ───────────────────────────────
+    // ─── Save-State P8KS v3 (Entwurf 25 §10.2; v1/v2 laden ohne 16-Bit-Teil bzw. WDC) ───────────────────────────────
     /// Kennung „P8KS“, dann `P8000_STAND`, dann Abschnitte `[Kennung u8][Länge u32][Bytes]`
     /// (unbekannte Abschnitte werden übersprungen).  Die Disketten werden NICHT gesichert — der
     /// Aufrufer mountet vor dem Laden dieselben Abbilder (nur die Kopfposition wird gesetzt).
-    static constexpr uint8_t P8000_STAND = 2;
+    static constexpr uint8_t P8000_STAND = 3;
     std::vector<uint8_t> stateBytes() const;
     /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) übereinstimmt;
     /// scheitert das Laden mittendrin, wird der alte Zustand wiederhergestellt.
@@ -186,6 +222,11 @@ public:
     /// 16-Bit-Karte bzw. Kopplung; nullptr ohne `Config::karte16`.
     P8000Karte16*  karte16()  { return k16_.get(); }
     P8000Kopplung* kopplung() { return kopplung_.get(); }
+    /// WDC bzw. Platte an Laufwerk @p unit; nullptr ohne `Config::wdc` bzw. ohne Abbild.
+    P8000Wdc* wdc() { return wdc_.get(); }
+    k1520::winchester::Platte* platte(int unit) {
+        return (unit >= 0 && unit < P8000Wdc::LAUFWERKE) ? platten_[size_t(unit)].get() : nullptr;
+    }
     K1520Bus&     bus()     { return bus_; }
     k1520::p8000::Terminal&       terminal()       { return term_; }
     const k1520::p8000::Terminal& terminal() const { return term_; }
@@ -214,6 +255,7 @@ private:
     void configAbschnitt(std::vector<uint8_t>& out, uint8_t stand) const;
     static P8000Karte16::Config karte16Config(const Config& c);
     uint64_t zeit16(uint64_t t8) const;
+    uint64_t zeitWdc(uint64_t t8) const;
 
     const Config cfg_;
     K1520Bus     bus_;
@@ -221,6 +263,13 @@ private:
     P8000Floppy8 floppy_;
     std::unique_ptr<P8000Karte16>  k16_;
     std::unique_ptr<P8000Kopplung> kopplung_;
+    // Reihenfolge: Platten vor dem WDC (der hält nur Zeiger), Anschluss zuletzt (zuerst abgebaut).
+    std::array<std::unique_ptr<k1520::winchester::Platte>, P8000Wdc::LAUFWERKE> platten_;
+    std::unique_ptr<P8000Wdc>          wdc_;
+    std::unique_ptr<P8000WdcAnschluss> wdc_an_;
+    uint64_t    hd_zugriff_t_ = 0;   ///< Maschinenzeit des letzten Plattenzugriffs (Lampe)
+    int         hd_zugriff_lw_ = -1;  ///< Laufwerk des letzten Zugriffs (−1 = noch keiner)
+    std::string hd_fehler_;
     k1520::p8000::Terminal          term_;
     k1520::p8000::TerminalAnschluss term_anschluss_;
     k1520::serial::SerialHub        hub_;

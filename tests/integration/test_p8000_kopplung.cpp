@@ -271,8 +271,9 @@ TEST(P8000Stand, StandV1LaedtNurOhneSechzehnBitTeil) {
     quelle.powerOn();
     laufe(quelle, 1'000'000);
     std::vector<uint8_t> v = quelle.stateBytes();
-    // v2 → v1: Version 1, im Konfigurationsabschnitt (der erste) fehlt das Flag „16-Bit-Karte".
-    ASSERT_EQ(v[4], 2);
+    // v3 → v1: Version 1, im Konfigurationsabschnitt (der erste) fehlt das Flag „16-Bit-Karte"
+    // (ohne 16-Bit-Karte sind v2 und v3 gleich aufgebaut).
+    ASSERT_EQ(v[4], P8000Machine::P8000_STAND);
     ASSERT_EQ(v[5], 1);
     uint32_t n = uint32_t(v[6]) | uint32_t(v[7]) << 8 | uint32_t(v[8]) << 16 | uint32_t(v[9]) << 24;
     ASSERT_EQ(v[10 + n - 1], 0);                         // karte16 = false
@@ -287,6 +288,6 @@ TEST(P8000Stand, StandV1LaedtNurOhneSechzehnBitTeil) {
     P8000Machine mit(mit16());
     EXPECT_FALSE(mit.restoreStateBytes(v));
     EXPECT_NE(mit.stateError().find("v1"), std::string::npos) << mit.stateError();
-    EXPECT_FALSE(mit.restoreStateBytes(quelle.stateBytes()));   // v2 ohne 16-Bit-Teil
-    EXPECT_FALSE(ohne.restoreStateBytes(mit.stateBytes()));     // v2 mit 16-Bit-Teil
+    EXPECT_FALSE(mit.restoreStateBytes(quelle.stateBytes()));   // v3 ohne 16-Bit-Teil
+    EXPECT_FALSE(ohne.restoreStateBytes(mit.stateBytes()));     // v3 mit 16-Bit-Teil
 }

@@ -182,7 +182,8 @@ inline std::string lampen61(uint8_t v) {
 class DbgMachine {
 public:
     /// @p cfg gilt nur für den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
-    explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}) {
+    /// @p p8cfg: Vorlage für den P8000 (WDC/Platte, P13d); `karte16` setzt die Maschinenart.
+    explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}, const P8000Machine::Config* p8cfg = nullptr) {
         if (art == Art::K8915) k8_ = std::make_unique<K8915Machine>();
         else if (art == Art::K8915G2) {
             K8915Machine::Config c;
@@ -190,7 +191,7 @@ public:
             k8_ = std::make_unique<K8915Machine>(c);
         }
         else if (art == Art::P8000 || art == Art::P8000_16) {   // AP P12a
-            P8000Machine::Config c;
+            P8000Machine::Config c = p8cfg ? *p8cfg : P8000Machine::Config{};
             c.karte16 = (art == Art::P8000_16);
             p8_ = std::make_unique<P8000Machine>(c);
         }

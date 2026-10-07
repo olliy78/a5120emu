@@ -157,6 +157,8 @@ public:
     void setzePinTreiber(int pio, int port, uint8_t pegel, uint8_t treibMask);
     /// Nach jedem CPU-Schreiben auf eine PIO und nach jedem PIO-Reset (Kopplung, P11).
     void setzePioHaken(std::function<void(int pio)> h) { pio_haken_ = std::move(h); }
+    /// Nach jedem CPU-Schreiben auf PIO2 und nach jedem PIO-Reset (WDC-Anschluss, P13d).
+    void setzeWdcHaken(std::function<void()> h) { wdc_haken_ = std::move(h); }
 
     // ─── Bus von außen (Debugger/Tests; ohne Wartetakt, mit allen Nebenwirkungen) ──
     uint16_t busLesen(const Z8kBusCycle& c);
@@ -214,6 +216,7 @@ private:
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];
     std::function<void(int)> pio_haken_;
+    std::function<void()>    wdc_haken_;
 
     std::array<std::unique_ptr<Anschluss>, TTY_ANZAHL> anschluesse_;
     bool seriell_geaendert_ = false;

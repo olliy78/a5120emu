@@ -352,6 +352,18 @@ public:
     void    setModus3Flanke(bool an) { modus3_flanke_ = an; }
     bool    modus3Flanke() const { return modus3_flanke_; }
 
+    /**
+     * @brief Modus 1: RDY bleibt nach dem Moduswort L und wird erst durch das erste
+     *        CPU-Lesen aktiv (U855-Beschreibung §5: „Für Operationen im Hand-shake-Betrieb
+     *        ist zunächst die READY-Leitung in den aktiven Zustand zu bringen (IN-Befehl der
+     *        CPU)"; Rücksetzen: „Ready … inaktiv").  Vorgabe AUS = bisheriges Verhalten (RDY
+     *        nach dem Moduswort H).  P8000 (P13d): der WDC-Treiber liest nach dem Umschalten
+     *        auf Eingabe ein „Scheinbyte", und der WDC schickt am Ende ein Byte mehr „nur zur
+     *        Ready-Abschaltung PIO" — beides setzt dieses Verhalten voraus.
+     */
+    void    setModus1ReadyNachLesen(bool an) { modus1_rdy_nach_lesen_ = an; }
+    bool    modus1ReadyNachLesen() const { return modus1_rdy_nach_lesen_; }
+
     void    serializeHandshake(std::vector<uint8_t>& out) const;
     bool    deserializeHandshake(const uint8_t*& p, const uint8_t* end);
 
@@ -457,6 +469,7 @@ private:
     /// Modus-3-Bedingung (Maske, UND/ODER, aktiver Pegel) für @p input.
     static bool bedingung(const Port& p, uint8_t input);
     bool    modus3_flanke_ = false;
+    bool    modus1_rdy_nach_lesen_ = false;
 
     // State
     mutable Port porta_;        ///< Port A configuration and state (mutable for getVector)

@@ -711,10 +711,10 @@ void Z80PIO::resetHandshake() {
     }
 }
 
-/// RDY-Ausgangszustand nach einem Moduswort (Zilog: Modus 1 ⇒ H, sonst L).
+/// RDY-Ausgangszustand nach einem Moduswort (Modus 1 ⇒ H bzw. mit `setModus1ReadyNachLesen` L, sonst L).
 void Z80PIO::modusRdy(int i) {
     const Port& p = (i == 0) ? porta_ : portb_;
-    bool h = (p.mode == 1);
+    bool h = (p.mode == 1) && !modus1_rdy_nach_lesen_;
     // Port A in Modus 2: BRDY gehört der Eingabeseite des Port-A-Betriebs (leer ⇒ H)
     if (i == 1 && porta_.mode == 2) h = true;
     setRdy(i, h);

@@ -67,12 +67,26 @@ bool promptZeile(const P8000Machine& m, const std::string& bild) {
 
 }  // namespace
 
-int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16)
+int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16,
+                   const std::string& wdc, const std::string& hd)
 {
     using T = k1520::p8000::Terminal;
     P8000Machine::Config cfg;
     cfg.karte16 = karte16;
-    P8000Machine m(cfg);
+    if (!wdc.empty() || !hd.empty()) {
+        if (!karte16) { fprintf(stderr, "ERROR: --wdc/--hd nur mit --machine p8000-16\n"); return 2; }
+        using W = P8000Machine::Config::Wdc;
+        const std::string w = wdc.empty() ? "4.2" : wdc;
+        if      (w == "4.2")    cfg.wdc = W::V4_2;
+        else if (w == "4.0.05") cfg.wdc = W::V4_0_05;
+        else if (w == "3.4.05") cfg.wdc = W::V3_4_05;
+        else { fprintf(stderr, "ERROR: --wdc %s unbekannt (4.2|4.0.05|3.4.05)\n", w.c_str()); return 2; }
+        cfg.platte = hd;
+    }
+    std::unique_ptr<P8000Machine> mp;
+    try { mp = std::make_unique<P8000Machine>(cfg); }
+    catch (const std::exception& e) { fprintf(stderr, "ERROR: %s\n", e.what()); return 2; }
+    P8000Machine& m = *mp;
     if ((!o.raf.empty() && o.raf != "none") || o.ptape)
         fprintf(stderr, "WARN: --raf/--ptape gibt es am P8000 nicht (kein K1520-Steckplatz) — ignoriert\n");
     auto rd = [&](uint16_t a) { return m.memReadDebug(a); };
@@ -211,6 +225,28 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
             }
         }
     });
+    // WDC (AP P13d): je Statuswechsel ein Ereignis; Kommandoblock (FW 30B7–30BF) bei Übernahme,
+    // Fehlerbyte (30C7) bei Status 7.
+    long wdc_kmd = 0, wdc_fehler = 0;
+    if (P8000Wdc* w = m.wdc()) {
+        w->statusBeobachter = [&, w](uint8_t alt, uint8_t neu) {
+            char b[96];
+            if ((alt & 7) == 1 && (neu & 7) != 1) {
+                ++wdc_kmd;
+                snprintf(b, sizeof b, "WDC Kommando %02X LW %u  %02X %02X %02X %02X  Laenge %02X%02X",
+                         w->lesen(0x30B7), w->lesen(0x30B8), w->lesen(0x30B9), w->lesen(0x30BA), w->lesen(0x30BB),
+                         w->lesen(0x30BC), w->lesen(0x30BE), w->lesen(0x30BD));
+                event(std::string("wdck") + b, b, m.cpuPC());
+            } else if ((neu & 7) == 7) {
+                ++wdc_fehler;
+                snprintf(b, sizeof b, "WDC Fehler %02X", w->lesen(0x30C7));
+                event(b, b, m.cpuPC());
+            } else {
+                snprintf(b, sizeof b, "WDC Status %d -> %d", alt & 7, neu & 7);
+                event(b, b, m.cpuPC());
+            }
+        };
+    }
     m.setBusTrace([&](bool isIO, bool isRead, uint16_t addr, uint8_t data) {
         const uint16_t pc = insn_pc;
         if (!isIO) {
@@ -326,6 +362,10 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
             fprintf(stderr, "U8001:       %s, PC=%02X:%04X FCW=%04X, Zeit=%llu\n",
                     k16->inReset() ? "im Reset" : "laeuft", k16->cpu().pcSeg, k16->cpu().pc, k16->cpu().fcw,
                     (unsigned long long)k16->zeit());
+        if (P8000Wdc* w = m.wdc())
+            fprintf(stderr, "WDC:         %s, PC=%04X Status %d, %ld Kommandos, %ld Fehlermeldungen, Platte %s\n",
+                    w->imReset() ? "im Reset" : "laeuft", w->cpu().PC, w->status(), wdc_kmd, wdc_fehler,
+                    m.hdPath(0).empty() ? "(keine)" : m.hdPath(0).c_str());
 
         fprintf(stderr, "\nI/O-Ports (rd/wr):\n");
         for (int p = 0; p < 256; ++p)
