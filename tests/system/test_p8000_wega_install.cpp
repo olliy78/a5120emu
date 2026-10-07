@@ -1,0 +1,197 @@
+/**
+ * @file test_p8000_wega_install.cpp
+ * @brief P8000 Meilenstein M3 (doc/design/25_p8000.md AP P15): WEGA 3.0 im Emulator auf die
+ *        Winchester installieren und von der Platte starten.
+ *
+ * Soll = `~/projects/robotron/P8000/doc/install_WEGA_3.1.log` (Ablauf), Datenträger = die 17
+ * WEGA-3.0-Disketten (doc/p8000/wega_datentraeger.md; NICHT im Repo — fehlen sie, wird der Test
+ * übersprungen).  Stufen, jede mit Zwischenstand in der Ablage (`tests/support/p8000_wega.h`):
+ *   1 `mkfs`  : Hardwaretest, `O U`, `boot`, `sa.format` (4.1) und `sa.mkfs` /usr 13000 + / 7000
+ *   2 `root`  : `sa.install` nach md(0,16000) mit root1 … root5
+ *   3 `usr`   : `sa.install` nach md(0,0) mit usr1 … usr9
+ *   …
+ * Eine vorhandene Stufe wird geladen statt gerechnet (`K1520_P8000_NEU=1` rechnet alles neu,
+ * `K1520_P8000_BIS=<stufe>` hört nach dieser Stufe auf).  Harte Taktgrenzen, Fortschrittszeile je
+ * 400 Mio. Takte — ein Hänger endet mit Bild, nicht im Zeitüberlauf.
+ */
+
+#include <gtest/gtest.h>
+
+#include <cstdlib>
+#include <fstream>
+#include <string>
+
+#include "core/filesystem/disk_volume.h"
+#include "core/logger.h"
+#include "core/machines/p8000/p8000.h"
+#include "tests/support/fixtures.h"
+#include "tests/support/p8000_input.h"
+#include "tests/support/p8000_wega.h"
+
+using namespace k1520test::p8000;
+
+namespace {
+void stumm() { k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR); }
+constexpr const char* FIXTURE = "udosP8000_640k_wega.hfe";
+
+bool neuRechnen() { const char* e = std::getenv("K1520_P8000_NEU"); return e && *e && *e != '0'; }
+bool letzteStufe(const char* name) {
+    const char* e = std::getenv("K1520_P8000_BIS");
+    return e && std::string(e) == name;
+}
+
+/// `sa.format`/`sa.verify` 4.1 (WEGA 3.1) anstelle der V1.4 der WEGA-3.0-Startdiskette (wie
+/// test_p8000_sa_format.cpp); dafür weichen die Kernvarianten `wega.n26`/`wega.n52`.
+::testing::AssertionResult saFassung41(const std::string& diskette) {
+    std::string f, err;
+    static const FormatCatalog fk = FormatCatalog::loadDefault(&f);
+    static const FsCatalog     fs = FsCatalog::loadDefault(fk, &f);
+    auto vol = DiskVolume::open(diskette, "", fk, fs, err, /*read_only=*/false);
+    if (!vol) return ::testing::AssertionFailure() << err;
+    vol->setBackup(false);
+    for (const char* n : {"wega.n26", "wega.n52"}) {
+        FileRef ref;
+        ref.name = n;
+        if (!vol->erase(ref)) return ::testing::AssertionFailure() << n << ": " << vol->lastError();
+    }
+    for (const char* n : {"sa.format", "sa.verify"}) {
+        FileRef ref;
+        ref.name = n;
+        if (!vol->erase(ref)) return ::testing::AssertionFailure() << n << ": " << vol->lastError();
+        if (!vol->insert(std::string(P8000_FIXTURE_DIR) + "/" + n, ref, TransferOptions{}))
+            return ::testing::AssertionFailure() << n << ": " << vol->lastError();
+    }
+    if (!vol->flush()) return ::testing::AssertionFailure() << vol->lastError();
+    return ::testing::AssertionSuccess();
+}
+
+/// Frage abwarten (Cursorzeile endet darauf), dann @p antwort tippen.
+::testing::AssertionResult frage(P8000Machine& m, const std::string& text, const std::string& antwort,
+                                 long long grenze = 400'000'000) {
+    if (warteAufFrage(m, {text}, grenze) != 0)
+        return ::testing::AssertionFailure() << "fehlt: '" << text << "'\n" << bild(m);
+    laufe(m, 200'000);
+    tippeZeile(m, antwort);
+    return ::testing::AssertionSuccess();
+}
+
+void bisBootPrompt(P8000Machine& m) {
+    ASSERT_TRUE(laufeBisText(m, "U880-Softwaremonitor Version 3.1 - Press RETURN", 200'000'000)) << bild(m);
+    tippe(m, "\r");
+    ASSERT_TRUE(laufeBisPrompt(m, ">", 4'000'000)) << bild(m);
+    tippe(m, "\r");
+    ASSERT_TRUE(laufeBisText(m, "U8000-Softwaremonitor Version 3.1 - Press NMI", 80'000'000)) << bild(m);
+    laufe(m, 2'000'000);
+    m.nmi();
+    ASSERT_TRUE(laufeBisText(m, "MAXSEG=<0F>", 400'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisPrompt(m, "*", 80'000'000)) << bild(m);
+    tippeZeile(m, "O U");
+    ASSERT_TRUE(laufeBisText(m, "BOOTING FROM UDOS FLOPPY", 40'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisPrompt(m, ">", 40'000'000)) << bild(m);
+    tippeZeile(m, "boot");
+    ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
+}
+
+/// Stufe 1: frische Platte ohne PAR (wie im Protokoll), formatieren, Dateisysteme anlegen.
+void stufeMkfs(WegaLauf& l) {
+    {
+        k1520test::TempDisk fix{FIXTURE};
+        ASSERT_TRUE(kopiere(fix.path(), l.start));
+    }
+    ASSERT_TRUE(saFassung41(l.start));
+    {   // Platte K5504.50, Z0/K0/S1 = E5 (kein PAR; die Spursynthese ergänzt ihn nicht)
+        std::string fehler;
+        ASSERT_TRUE(k1520::winchester::Platte::neu(l.platte, *k1520::winchester::typNachName("K5504.50"), &fehler))
+            << fehler;
+        std::fstream f(l.platte, std::ios::in | std::ios::out | std::ios::binary);
+        const std::string e5(512, char(0xE5));
+        f.write(e5.data(), std::streamsize(e5.size()));
+    }
+    l.m = std::make_unique<P8000Machine>(wegaConfig(l.platte, false));
+    P8000Machine& m = *l.m;
+    ASSERT_TRUE(m.mountDisk(0, l.start, m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_NO_FATAL_FAILURE(bisBootPrompt(m));
+
+    tippeZeile(m, "ud(0,0)sa.format");
+    ASSERT_TRUE(frage(m, "Which Typ ? (No./n/q)", "4"));
+    ASSERT_TRUE(frage(m, "Parameter for Drive ok ? (y/l/p/q)", "y"));
+    ASSERT_TRUE(frage(m, "Manual Input of bad Track of Drive 0 (y/n/q) ?", "n"));
+    ASSERT_TRUE(frage(m, "Format Begin: Cylinder (a/Start-Cylinder)", "a"));
+    ASSERT_TRUE(frage(m, "to Cyl 1023 Hd 4 ? (y/n/q)", "y"));
+    ASSERT_TRUE(frage(m, "Rewrite PAR&BTT from WDC-RAM to HD-Drive 0 ? (y/n)", "y", 8'000'000'000LL));
+    ASSERT_TRUE(frage(m, "End of 'sa.format' (y/n) ?", "y"));
+    ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
+    // sa.verify ist in test_p8000_sa_format.cpp abgedeckt und wird hier übersprungen.
+    struct Fs { const char* groesse; const char* name; };
+    for (const Fs& fs : {Fs{"13000", "md(0,0)"}, Fs{"7000", "md(0,16000)"}}) {
+        tippeZeile(m, "ud(0,0)sa.mkfs");
+        ASSERT_TRUE(frage(m, "file system size:", fs.groesse));
+        ASSERT_TRUE(frage(m, "file system:", fs.name));
+        ASSERT_TRUE(laufeBisText(m, "m/n = 1 72", 4'000'000'000LL)) << bild(m);
+        ASSERT_TRUE(laufeBisPrompt(m, ":", 4'000'000'000LL)) << bild(m);
+    }
+}
+
+/// `sa.install` mit den Disketten @p disks nach @p ziel (Protokoll Z. 106–439 bzw. 444–1555).
+void saInstall(WegaLauf& l, const std::string& ziel, const std::vector<std::string>& disks) {
+    P8000Machine& m = *l.m;
+    ASSERT_TRUE(l.diskettenwechsel(disks.front()));
+    tippeZeile(m, "ud(0,0)sa.install");
+    ASSERT_TRUE(frage(m, "Enter Date (MM/DD/YY) :", "05/30/89"));
+    ASSERT_TRUE(frage(m, "input file system :", "fd(1,0)"));
+    ASSERT_TRUE(frage(m, "output file system :", ziel));
+    size_t naechste = 1;
+    for (;;) {
+        const int i = warteAufFrage(m, {"(n/y/a/A/q/Q) ? :", "next input disk ? (y/n) :",
+                                        "overwrite (y/n/q) ? :", "repeat (y/n/q) ? :", "Exit called"},
+                                    4'000'000'000LL);
+        ASSERT_GE(i, 0) << "sa.install haengt\n" << bild(m);
+        ASSERT_NE(i, 3) << "Lesefehler\n" << bild(m);
+        if (i == 4) break;
+        laufe(m, 200'000);
+        if (i == 0) { tippeZeile(m, "A"); continue; }
+        if (i == 2) { tippeZeile(m, "y"); continue; }
+        // next input disk
+        if (naechste < disks.size()) {
+            std::fprintf(stderr, "  [Diskette %s]\n", disks[naechste].c_str());
+            ASSERT_TRUE(l.diskettenwechsel(disks[naechste++]));
+            tippeZeile(m, "y");
+        } else {
+            tippeZeile(m, "n");
+        }
+    }
+    EXPECT_EQ(naechste, disks.size());
+    l.diskAuswerfen();
+    ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
+}
+
+/// Eine Stufe: aus der Ablage laden oder rechnen und ablegen.  Liefert false, wenn danach Schluss ist.
+template <typename F>
+bool stufe(WegaLauf& l, const char* name, F&& rechnen) {
+    std::string fehler;
+    if (!neuRechnen() && stufeDa(name)) {
+        EXPECT_TRUE(stufeLaden(l, name, &fehler)) << fehler;
+    } else {
+        std::fprintf(stderr, "  [Stufe %s rechnen]\n", name);
+        rechnen();
+        if (::testing::Test::HasFatalFailure()) return false;
+        EXPECT_TRUE(stufeSichern(l, name, &fehler)) << fehler;
+    }
+    return !::testing::Test::HasFailure() && !letzteStufe(name);
+}
+}  // namespace
+
+TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
+    stumm();
+    if (!dateiDa(wegaDiskette("root1")))
+        GTEST_SKIP() << "WEGA-3.0-Disketten fehlen (" << wegaDisketten() << ", K1520_WEGA_DISKS)";
+    WegaLauf l;
+    if (!stufe(l, "p15_1_mkfs", [&] { stufeMkfs(l); })) return;
+    if (!stufe(l, "p15_2_root", [&] { saInstall(l, "md(0,16000)", {"root1", "root2", "root3", "root4", "root5"}); }))
+        return;
+    if (!stufe(l, "p15_3_usr", [&] {
+            saInstall(l, "md(0,0)", {"usr1", "usr2", "usr3", "usr4", "usr5", "usr6", "usr7", "usr8", "usr9"});
+        }))
+        return;
+}

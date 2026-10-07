@@ -29,6 +29,8 @@
 #   tools/dev.sh test-format [args]   NUR die langsamen format_integration-Boot-Disk-Tests
 #   tools/dev.sh test-matrix [args]   NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menü
 #                                     jedes Laufwerkstyps, Leerdiskette, Smoke Spur 0-2)
+#   tools/dev.sh test-wega [args]     NUR P8000-WEGA-Installation (Label wega_install, lang,
+#                                     braucht die WEGA-Disketten ausserhalb des Repos)
 #   tools/dev.sh test-python [args]   NUR die Python-Ebene (C-ABI + GUI, Label python)
 #   tools/dev.sh test-oracle [args]   U8001/U8002-Primitive gegen MAMEs z8000 (Differenz-
 #                                     prüfung, Label mame_oracle, eigenes build_oracle/,
@@ -246,7 +248,7 @@ case "$cmd" in
         # LABEL format_integration (Boot-Disk-Kette) und format_matrix (88 Menüs).
         # Für nur diese: test-format bzw. test-matrix; für ALLES: test-all.
         c_ylw ">> ctest (build/, -j$JOBS) [ohne format_integration/format_matrix]"
-        run_ctest build -LE "format_(integration|matrix)" \
+        run_ctest build -LE "format_(integration|matrix)|wega_install" \
               -j"$JOBS" "$@" ;;
     test-all)
         build_dir build
@@ -256,6 +258,10 @@ case "$cmd" in
         build_dir build
         c_ylw ">> ctest (build/) NUR format_integration (langsam)"
         run_ctest build -L format_integration "$@" ;;
+    test-wega)
+        build_dir build
+        c_ylw ">> ctest (build/) NUR wega_install — P8000: WEGA auf die Platte (Stunde+, Zwischenstaende ~/.cache/k1520emu/p8000_wega)"
+        run_ctest build -L wega_install "$@" ;;
     test-matrix)
         build_dir build
         c_ylw ">> ctest (build/) NUR format_matrix — 88 FORMAT.COM-Menues auf Leerdisketten"
@@ -295,7 +301,7 @@ case "$cmd" in
         # (jeder Prozessstart ~0,5 s) — Begründung oben bei JOBS.
         c_ylw ">> ctest (build_win/, unter wine, -j$JOBS) [ohne format_integration/format_matrix]"
         WINEDEBUG="${WINEDEBUG:--all}" \
-        run_ctest build_win -LE "format_(integration|matrix)" \
+        run_ctest build_win -LE "format_(integration|matrix)|wega_install" \
               -j"$JOBS" "$@" ;;
     check)
         for d in build build_trace; do [ -d "$d" ] && build_dir "$d" || c_ylw ">> $d: nicht vorhanden"; done ;;

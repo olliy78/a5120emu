@@ -165,3 +165,11 @@ set(_p8000_dir "P8000_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/p8000\"")
 k1520_add_test(p8000_sa_format SRC test_p8000_sa_format.cpp
                             LIBS k1520_p8000 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 3600)
+
+# ─── P8000 M3 (doc/design/25_p8000.md AP P15): WEGA 3.0 auf die Platte installieren und von ihr
+# starten.  Braucht die WEGA-Disketten außerhalb des Repos (sonst übersprungen) und rechnet
+# Milliarden Takte — eigenes Label `wega_install` (NICHT in test/test-format; tools/dev.sh test-wega).
+# Zwischenstände in ~/.cache/k1520emu/p8000_wega (tests/support/p8000_wega.h).
+k1520_add_test(p8000_wega_install SRC test_p8000_wega_install.cpp
+                            LIBS k1520_p8000 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 14400)
