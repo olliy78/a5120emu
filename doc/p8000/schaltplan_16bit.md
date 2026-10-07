@@ -103,6 +103,8 @@ Damit (nur Speicherzyklen, IST3 = 1):
   **allein am NBR-Vergleich**, im segmentierten allein an SN6.
 - **Gleichheit:** `A>B` mit A = NBR, B = Adresse A15–A8 ⇒ Adresse-High **= NBR → Stack-MMU**
   (Handbuch: „unklar"). *gelesen (74S85-Kaskade, A = Latch, B = LAD), Kaskadenrichtung abgeleitet.*
+  **Widerspruch (P9b):** WEGA `mch.s` (`nsseg`, `getmem`, `putmem`: `cpb rh7, NBREAK; jr ugt` ⇒ Stack)
+  rechnet Gleichheit als **Data**. Emulator: Vorgabe Plan, umschaltbar (`mmu_logik_abdeckung.md`).
 - Die Segmentnummer, die die CPU im nichtsegmentierten Normal-Mode ausgibt, geht unverändert (SN0–5)
   an Data-/Stack-/Code-MMU; „Segment 63" ist also eine Eigenschaft der CPU-Ausgabe bzw. der
   MMU-Programmierung, nicht der Logik. *abgeleitet.*

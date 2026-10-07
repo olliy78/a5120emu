@@ -343,6 +343,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_p8000_floppy8 PUBLIC k1520_p8000_karte8 k1520_upd765 k1520_z80dma k1520_laufwerke k1520_k5122)
     target_include_directories(k1520_p8000_floppy8 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, 16-Bit-Karte: MMU-Steuerlogik — drei UB8010, Auswahl, NBR, On-Board, TRPL/IF1L (AP P9b)
+    add_library(k1520_p8000_mmu_logik16 STATIC core/cards/p8000/mmu_logik16.cpp)
+    target_link_libraries(k1520_p8000_mmu_logik16 PUBLIC k1520_z8010)
+    target_include_directories(k1520_p8000_mmu_logik16 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
     add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
     target_link_libraries(k1520_i8279 PUBLIC k1520_logger)

@@ -65,6 +65,8 @@ k1520_add_test(p8000_rom SRC cards/test_p8000_rom.cpp LIBS k1520_p8000_speicher8
 k1520_add_test(p8000_karte8 SRC cards/test_p8000_karte8.cpp LIBS k1520_p8000_karte8 LABELS "${_lbl}")
 # P8000 Floppy-Seite der 8-Bit-Karte: U8272 + UA858 + PIO2-Glue, READ DATA per DMA (AP P5f)
 k1520_add_test(p8000_floppy8 SRC cards/test_p8000_floppy8.cpp LIBS k1520_p8000_floppy8 k1520_testsupport LABELS "${_lbl}")
+# P8000 16-Bit-Karte: MMU-Steuerlogik (Auswahl, NBR, On-Board, SUP, TRPL/IF1L; AP P9b)
+k1520_add_test(p8000_mmu_logik SRC cards/test_p8000_mmu_logik.cpp LIBS k1520_p8000_mmu_logik16 LABELS "${_lbl}")
 # ADA K6022 (Lochband, SIF1000) und ASS 590069 (Fernschreiber) des PRG 710 (AP-P8b/c)
 k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
 # K6022 an Dateien: Leser im Bandformat, Stanzer gebunden (doc/design/23_lochstreifen.md §5, AP-L2)
