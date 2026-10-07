@@ -266,6 +266,11 @@ k1520_add_test(p8000_stand SRC test_p8000_stand.cpp
 
 # P8000 Meilenstein M2 (doc/design/25_p8000.md §10.11 AP P11): Kopplung 8 ↔ 16 in der Maschine,
 # U8000-Monitor über tty1, Hardwaretest U8001, `O U` + `boot` von der WEGA-Startdiskette.
+# P8000 Kopplung K1–K15 an den echten Karten + Save-State P8KS v2 (AP P11, Entwurf 25 §10.3).
+k1520_add_test(p8000_kopplung SRC test_p8000_kopplung.cpp
+                          LIBS k1520_p8000 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
 k1520_add_test(p8000_monitor16 SRC test_p8000_monitor16.cpp
                           LIBS k1520_p8000 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
