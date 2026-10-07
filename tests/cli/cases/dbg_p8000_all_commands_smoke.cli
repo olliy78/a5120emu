@@ -1,0 +1,15 @@
+# Dispatch-Smoke am P8000 (AP P12a): jedes Kommando einmal; was es nur am A5120 gibt,
+# meldet "nicht vorhanden" statt abzustuerzen; die 16-Bit-Kommandos melden ohne Karte ihre Voraussetzung.
+tool:    k1520dbg
+run:     --machine p8000 -x %CLI_DIR%/scripts/all_commands_smoke_p8000.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  's2' gibt es am P8000 nicht
+expect:  'snap' gibt es am P8000 nicht
+expect:  ZVE2 ('r 2') gibt es am P8000 nicht
+expect:  RFF=0 (EPROM ueberall selektiert)
+expect:  UA858 RR0=
+expect:  'mmu' braucht die 16-Bit-Karte
+expect:  "machine":"p8000"
+expect:  state saved

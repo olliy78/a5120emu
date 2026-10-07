@@ -1,0 +1,10 @@
+# Dispatch-Smoke am P8000 mit 16-Bit-Karte (AP P12a/P12b): U8001-Kontext, MMU-Sicht, Kopplung.
+tool:    k1520dbg
+run:     --machine p8000-16 -x %CLI_DIR%/scripts/all_commands_smoke_p8000_16.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  UB8010 Code  MR=
+expect:  gewaehlte MMU:
+expect:  K11 RESET16
+expect:  CPU-Kontext: U8001
