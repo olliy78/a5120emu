@@ -157,3 +157,11 @@ k1520_add_test(pc1715_pctest_scp SRC test_pc1715_pctest_scp.cpp
 k1520_add_test(pc1715_format SRC test_pc1715_format.cpp
                             LIBS k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# ─── P8000 M3-Anfang (doc/design/25_p8000.md §10.11 AP P13d): WDC 4.2 an der 16-Bit-PIO2,
+# sa.format + sa.verify von der WEGA-Startdiskette formatieren und prüfen eine TempPlatte
+# (K5504.50, 5120 Spuren) — Minuten, daher format_integration.
+set(_p8000_dir "P8000_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/p8000\"")
+k1520_add_test(p8000_sa_format SRC test_p8000_sa_format.cpp
+                            LIBS k1520_p8000 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 3600)
