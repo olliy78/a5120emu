@@ -53,7 +53,8 @@
  *       FFFFH.  Treiben mehrere MMUs (TRNS = 0 oder MST = 0), gilt verdrahtetes UND; ebenso beim
  *       Lesen mehrerer per /CS gewählter MMUs und bei gleichen IDs in der Trap-Quittung.
  *  [L8] /SUP sperrt SYSDS (Bl. 9) für JEDEN Hauptspeicherzyklus — Schreiben wirkt nicht, Lesen
- *       liefert den offenen Bus —, auch bei MMU aus; der On-Board-Speicher hängt nicht an SYSDS.
+ *       liefert den offenen Bus (welches Datum: karte16.h [K7]) —, auch bei MMU aus; der
+ *       On-Board-Speicher hängt nicht an SYSDS.
  *  [L9] Die Register FFC1–FFF9 sind an A1/A2 nicht dekodiert (D13 ohne LAD1/2, 3D24 nur LAD3–5)
  *       ⇒ jedes erscheint 4-fach (FFC1/3/5/7 …); ebenso LEDAUS FFB9–FFBF.
  *  [L10] Schreib-Strobes (LEDEIN, LEDAUS, SOFTRESET, RETI) wirken nur beim Schreiben; Lesen aller

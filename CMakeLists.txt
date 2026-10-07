@@ -352,6 +352,11 @@ if(BUILD_K1520)
     add_library(k1520_p8000_dram16 STATIC core/cards/p8000/dram16.cpp)
     target_include_directories(k1520_p8000_dram16 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # P8000, 16-Bit-Rechnerkarte: U8001, On-Board-Speicher, CTC/SIO/PIO, E/A, NMI/Reset (AP P10b)
+    add_library(k1520_p8000_karte16 STATIC core/cards/p8000/karte16.cpp)
+    target_link_libraries(k1520_p8000_karte16 PUBLIC k1520_p8000_mmu_logik16 k1520_p8000_dram16 k1520_z8000 k1520_ctc k1520_sio k1520_pio k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_p8000_karte16 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # 8279-Tastaturcontroller, Tastatur K7609, ATP 590068 (PRG 710, doc/design/20_prg710.md AP-P2a)
     add_library(k1520_i8279 STATIC core/primitives/i8279.cpp)
     target_link_libraries(k1520_i8279 PUBLIC k1520_logger)

@@ -947,3 +947,34 @@ TEST(Z80SIO, StatusAffectsVector_AlleSechsQuellen) {
     ASSERT_TRUE(sio.hasInterrupt());
     EXPECT_EQ(sio.getVector(), 0xD2) << "B-Ext/Status 001";
 }
+
+TEST(Z80SIO, Wr0Befehl7AnKanalA_WirktWieRetiAuchFuerKanalB) {
+    // Zilog Z80-SIO, WR0 CMD 7 „Return from Int (Ch A only)": wie RETI auf dem Datenbus —
+    // löscht das IUS der höchsten internen Quelle in Bedienung.  Der MON16 des P8000 bedient
+    // SIO0-B und schreibt 38H an SIO0-A (`PTY_INT`, `SIO_ISR`).
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.ioWrite(3, 0x01); sio.ioWrite(3, 0x02);   // Ch B WR1: Tx-Interrupt
+    sio.ioWrite(3, 0x05); sio.ioWrite(3, 0x68);
+    sio.ioWrite(2, 0x41);
+    sio.channelB().txGet();
+    ASSERT_TRUE(sio.hasInterrupt());
+    sio.getVector();                                // Quittung ⇒ B in Bedienung
+    ASSERT_TRUE(sio.channelB().ius);
+    sio.ioWrite(3, 0x28);                           // Reset Tx Int Pending
+    sio.ioWrite(1, 0x38);                           // CMD 7 an Kanal A
+    EXPECT_FALSE(sio.channelB().ius);
+    EXPECT_FALSE(sio.channelA().ius);
+
+    // A in Bedienung: der Befehl löscht zuerst A (höchste Quelle), B bleibt.
+    sio.channelA().ius = true;
+    sio.channelB().ius = true;
+    sio.ioWrite(1, 0x38);
+    EXPECT_FALSE(sio.channelA().ius);
+    EXPECT_TRUE(sio.channelB().ius);
+    // an Kanal B geschrieben: wie bisher nur B
+    sio.channelA().ius = true;
+    sio.ioWrite(3, 0x38);
+    EXPECT_TRUE(sio.channelA().ius);
+    EXPECT_FALSE(sio.channelB().ius);
+}

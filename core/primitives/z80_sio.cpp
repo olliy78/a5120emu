@@ -528,8 +528,16 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
             case 6: // Error Reset (clear error flags)
                 ch.rr1 &= ~0x70;  // Clear parity, overrun, framing errors
                 break;
-            case 7: // Return from Interrupt (High/Low reset)
-                ch.ius = false;
+            case 7: // Return from Interrupt
+                // Datenblatt (Zilog Z80-SIO, WR0 CMD 7, „Channel A only"): wirkt wie ein RETI
+                // auf dem Datenbus — löscht das IUS der HÖCHSTEN internen Quelle in Bedienung,
+                // also auch das von Kanal B.  Bisher nur das des beschriebenen Kanals; der
+                // MON16 des P8000 bedient SIO0-B und schreibt 38H an SIO0-A (`PTY_INT`,
+                // `SIO_ISR`) — sonst bliebe Kanal B in Bedienung und sperrte die Kette.
+                // An Kanal B geschrieben bleibt es beim alten (Datenblatt: nur Kanal A).
+                if (is_b) ch.ius = false;
+                else if (ch_a_.ius) ch_a_.ius = false;
+                else ch_b_.ius = false;
                 break;
         }
 
