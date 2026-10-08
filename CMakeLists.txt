@@ -240,6 +240,11 @@ if(BUILD_K1520)
             core/primitives/z8010.cpp
         )
         target_include_directories(k1520_z8010 PUBLIC ${CMAKE_SOURCE_DIR})
+        # Z8/UB8840 Einchiprechner (P8000-Terminal, Tastaturen; AP P19c, doc/p8000/z8_abdeckung.md)
+        add_library(k1520_z8 STATIC
+            core/primitives/z8.cpp
+        )
+        target_include_directories(k1520_z8 PUBLIC ${CMAKE_SOURCE_DIR})
 
     target_link_libraries(k1520_sio PUBLIC k1520_bus)
     target_include_directories(k1520_sio PUBLIC ${CMAKE_SOURCE_DIR})
