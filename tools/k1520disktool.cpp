@@ -122,7 +122,9 @@ void gebrauch() {
         "         [--segment 2600+1591,4000+0200]   … UDOS-Segmente ANFANG+LAENGE (hex)\n"
         "         [--mem E000:E3FF:0080]            … LOW:HIGH:STACK (hex)\n"
         "         [--block-len 0] [--extra 0]       … Kopfsektor 17 bzw. 44-47\n"
-        "  rm     <abbild> <muster…>                Dateien loeschen\n"
+        "  rm     <abbild> <muster…>                Dateien loeschen (WEGA: auch leere\n"
+        "                                             Verzeichnisse)\n"
+        "  mkdir  <abbild> <pfad…>                  Verzeichnis anlegen (nur WEGA)\n"
         "  create <abbild> --fs NAME [--label N]    leere Diskette anlegen\n"
         "         [--boot abbild.bin]               … mit Bootabbild in den Systemspuren\n"
         "  attr   <abbild> <datei> [--type …]       Dateiangaben zeigen/aendern\n"
@@ -424,6 +426,15 @@ int cmd_ls(const Optionen& o) {
         for (const FileEntry& e : liste)
             std::cout << (seiten ? v->volumeDir(e.volume) + "/" : "")
                       << e.qualifiedName() << "\n";
+    } else if (v->istWega()) {
+        // UNIX-Sicht wie `ls -l`: Rechte, Links, Besitzer, Gruppe, Groesse, Zeit, Pfad
+        for (const FileEntry& e : liste) {
+            std::string groesse = std::to_string(e.size);
+            if (e.type == "c" || e.type == "b") groesse = e.created;   // major,minor
+            std::printf("%-10s %3d %5d %5d %8s %-16s %s%s\n", e.attributes.c_str(),
+                        e.unix_nlink, e.unix_uid, e.unix_gid, groesse.c_str(),
+                        e.date.c_str(), e.name.c_str(), e.damaged ? "  [DEFEKT]" : "");
+        }
     } else {
         if (seiten) std::cout << "Seite ";
         std::cout << "Name                 Typ   Groesse  Eigensch. Start Datum\n";
@@ -947,6 +958,8 @@ int cmd_get(const Optionen& o) {
         for (const FileEntry& e : v->list()) {
             if (mit_seite && e.volume != muster.volume) continue;
             if (!passt(muster.name, e.qualifiedName())) continue;
+            // WEGA: nur gewoehnliche Dateien haben Inhalt (Ordner entstehen mit)
+            if (v->istWega() && e.type != "-") continue;
 
             std::string datei = e.qualifiedName();
             std::replace(datei.begin(), datei.end(), ':', '_');
@@ -1088,6 +1101,11 @@ int cmd_rm(const Optionen& o) {
             if (passt(muster.name, e.qualifiedName()))
                 treffer.push_back(FileRef{e.volume, e.qualifiedName()});
         }
+        // WEGA: tiefste Pfade zuerst — ein Verzeichnis laesst sich erst leer loeschen.
+        if (v->istWega())
+            std::sort(treffer.begin(), treffer.end(), [](const FileRef& a, const FileRef& b) {
+                return a.name > b.name;
+            });
         for (const FileRef& r : treffer) {
             if (o.dry_run) { std::cout << "wuerde loeschen: " << r.name << "\n"; ++n; continue; }
             if (!v->erase(r)) { std::cerr << "Fehler: " << v->lastError() << "\n";
@@ -1097,6 +1115,24 @@ int cmd_rm(const Optionen& o) {
         }
     }
     if (n == 0) { std::cerr << "Fehler: kein Eintrag passt auf das Muster\n"; return kFehler; }
+    if (o.dry_run) return kOk;
+    if (!v->flush()) { std::cerr << "Fehler: " << v->lastError() << "\n"; return kFehler; }
+    return kOk;
+}
+
+int cmd_mkdir(const Optionen& o) {
+    if (o.rest.size() < 3) { std::cerr << "Fehler: Abbild und Pfad angeben\n"; return kFehler; }
+    int rc = kOk;
+    auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/true);
+    if (!v) return rc;
+    for (size_t i = 2; i < o.rest.size(); ++i) {
+        if (o.dry_run) { std::cout << "wuerde anlegen: " << o.rest[i] << "\n"; continue; }
+        if (!v->makeDirectory(FileRef::parse(o.rest[i], o.volume))) {
+            std::cerr << "Fehler: " << v->lastError() << "\n";
+            return kFehler;
+        }
+        std::cout << "angelegt: " << o.rest[i] << "\n";
+    }
     if (o.dry_run) return kOk;
     if (!v->flush()) { std::cerr << "Fehler: " << v->lastError() << "\n"; return kFehler; }
     return kOk;
@@ -1512,6 +1548,7 @@ int main(int argc, char** argv) {
     if (befehl == "get")     return cmd_get(o);
     if (befehl == "put")     return cmd_put(o);
     if (befehl == "rm")      return cmd_rm(o);
+    if (befehl == "mkdir")   return cmd_mkdir(o);
     if (befehl == "create")  return cmd_create(o);
     if (befehl == "attr")    return cmd_attr(o);
     if (befehl == "boot-get") return cmd_boot_get(o);

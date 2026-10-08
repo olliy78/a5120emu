@@ -497,6 +497,10 @@ public:
     bool extract(const FileRef& ref, const std::string& dest_path, const TransferOptions&);
     bool insert (const std::string& src_path, const FileRef& ref, const TransferOptions&);
     bool erase  (const FileRef& ref);
+    /// @brief Verzeichnis anlegen (nur WEGA; Zwischenverzeichnisse entstehen mit).
+    bool makeDirectory(const FileRef& ref);
+    /// @brief Liegt ein WEGA-Dateisystem (Verzeichnisbaum, UNIX) vor?
+    bool istWega() const { return profile_ && profile_->type == FsType::Wega; }
 
     /// @brief Warum das letzte @ref insert / @ref insertAll abgelehnt wurde.
     ///        Nur aussagekraeftig, wenn der Aufruf `false` lieferte.

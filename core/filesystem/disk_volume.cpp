@@ -16,6 +16,7 @@
 #include "core/filesystem/prg_boot.h"
 #include "core/filesystem/udos/udos1715_fs.h"
 #include "core/filesystem/udos/udos_fs.h"
+#include "core/filesystem/wega/wega_fs.h"
 #include "core/peripherals/floppy_drive/track_codec.h"
 
 #include <algorithm>
@@ -793,6 +794,11 @@ bool istBeiblatt(const fs::path& name) {
  * Nutzerbereich ("3:NAME.TYP") — ohne es bliebe der beim Extrahieren eingesetzte
  * Unterstrich stehen und die Datei landete im Bereich 0.
  */
+/// @brief WEGA: Pfad im Quellordner = Pfad auf dem Datentraeger ("bin/ls").
+std::string wegaZielName(const std::string& src_dir, const std::string& quelle) {
+    return fs::path(quelle).lexically_relative(src_dir).generic_string();
+}
+
 std::string zielName(const std::string& quelle, FsType typ,
                      const std::map<std::string, CpmAngabe>& beiblatt) {
     const std::string datei = fs::path(quelle).filename().string();
@@ -1137,6 +1143,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
                 } else if (p->type == FsType::Udos1715) {
                     SectorSpace probe(dv->disk_->medium(), *f);
                     ja = Udos1715FileSystem::looksLikeUdos1715(probe, *p, &warum);
+                } else if (p->type == FsType::Wega) {
+                    SectorSpace probe(dv->disk_->medium(), *f);
+                    const WegaSpaceDev geraet(probe);
+                    ja = WegaFileSystem::looksLikeWega(geraet, &warum);
                 } else {
                     int belegt = 0;
                     ja = cpmVerzeichnisPlausibel(dv->disk_->medium(), *f, *p, &warum,
@@ -1310,6 +1320,10 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
             auto u = Udos1715FileSystem::mount(*v.space, *dv->profile_, warum);
             if (!u) { err = warum; return roh(warum); }
             v.fs = std::move(u);
+        } else if (dv->profile_->type == FsType::Wega) {
+            auto w = WegaFileSystem::mount(std::make_unique<WegaSpaceDev>(*v.space), warum);
+            if (!w) { err = warum; return roh(warum); }
+            v.fs = std::move(w);
         } else {
             auto c = CpmFileSystem::mount(*v.space, *dv->profile_, warum);
             if (!c) { err = warum; return roh(warum); }
@@ -1808,7 +1822,8 @@ bool DiskVolume::extractMit(const FileRef& ref, const std::string& dest_path,
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->read(ref.name, d))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
 
-    if (opt.text) d = nachLinuxText(d);
+    // WEGA ist UNIX: LF ist schon das Linux-Zeilenende, umgesetzt wird nichts.
+    if (opt.text && !istWega()) d = nachLinuxText(d);
     if (opt.dry_run) return true;
 
     std::error_code ec;
@@ -1816,6 +1831,9 @@ bool DiskVolume::extractMit(const FileRef& ref, const std::string& dest_path,
         return fail("Zieldatei existiert bereits: " + dest_path);
 
     std::string err;
+    // WEGA-Pfade tragen Unterverzeichnisse ("bin/ls") — die Ordner entstehen mit.
+    if (istWega() && fs::path(dest_path).has_parent_path())
+        fs::create_directories(fs::path(dest_path).parent_path(), ec);
     if (!schreibeDatei(dest_path, d, err)) return fail(err);
 
     // ── Die Angaben, die eine Linux-Datei nicht traegt (§2.1) ────────────────
@@ -1864,7 +1882,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     std::vector<uint8_t> d;
     std::string err;
     if (!leseDatei(src_path, d, err)) return fail(err);
-    if (opt.text) d = nachDiskettenText(d);
+    if (opt.text && !istWega()) d = nachDiskettenText(d);
     if (opt.dry_run) return true;
 
     WriteOptions wo;
@@ -2038,7 +2056,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     // Systemdatei im Bereich 0.  Bei UDOS ist der Diskettenname der Dateiname; ihn
     // aus dem `.fileinfo` zu nehmen hiesse, ein Umbenennen im Ordner zu ignorieren —
     // und genau das Umbenennen ist dort der Weg zurueck aus der Rettung.
-    if (profile_ && !isUdosFamily(profile_->type)
+    if (profile_ && profile_->type == FsType::Cpm
         && ref.name == fs::path(src_path).filename().string()) {
         FileAngaben ein;
         const fs::path woher = opt.angaben_datei.empty()
@@ -2047,6 +2065,14 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             ziel_name = ein.name;
     }
 
+    // WEGA: Zugriffsrechte aus der Linux-Datei — ausfuehrbar bleibt ausfuehrbar.
+    if (istWega()) {
+        std::error_code ec;
+        const fs::perms pr = fs::status(src_path, ec).permissions();
+        const bool x = !ec && (pr & fs::perms::owner_exec) != fs::perms::none;
+        wo.wega_mode = x ? 0755 : 0644;
+        wo.wega_mode_gesetzt = true;
+    }
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->write(ziel_name, d, wo))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
     insert_name_ = ziel_name;
@@ -2067,6 +2093,15 @@ bool DiskVolume::setAttributes(const FileRef& ref, const CpmAttrs& attrs) {
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
+        return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    return true;
+}
+
+bool DiskVolume::makeDirectory(const FileRef& ref) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
+                                        + " gibt es auf dieser Diskette nicht");
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->makeDirectory(ref.name))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
     return true;
 }
@@ -2404,6 +2439,11 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             // Nutzdatei — sie wird mit ausgegeben (wie `CAT P=&`), aber nicht
             // extrahiert: beim Zurueckschreiben waere sie ein Fremdkoerper.
             if (e.type == "D") continue;
+            // WEGA: Verzeichnisse werden Ordner, Geraetedateien haben keinen Inhalt.
+            if (istWega()) {
+                if (e.type == "d") { fs::create_directories(ziel / e.name, ec); continue; }
+                if (e.type != "-") continue;
+            }
             FileRef r{v, e.qualifiedName()};
             // Nutzerbereich-Praefix ("3:NAME") ist im Dateinamen unbrauchbar.
             std::string datei = e.qualifiedName();
@@ -2477,6 +2517,16 @@ bool DiskVolume::sammleQuelldateien(const std::string& src_dir,
     std::error_code ec;
     if (!fs::is_directory(src_dir, ec)) return fail("Kein Ordner: " + src_dir);
 
+    if (volumes_.size() == 1 && istWega()) {
+        // WEGA hat einen Verzeichnisbaum: der ganze Ordner, rekursiv.
+        for (const auto& e : fs::recursive_directory_iterator(src_dir, ec)) {
+            if (e.is_directory()) continue;
+            if (ist_zubehoer(e.path())) continue;
+            je_volume[0].push_back(e.path().string());
+        }
+        std::sort(je_volume[0].begin(), je_volume[0].end());
+        return true;
+    }
     if (volumes_.size() == 1) {
         for (const auto& e : fs::directory_iterator(src_dir, ec)) {
             if (e.is_directory()) continue;         // Unterordner kennt CP/M nicht
@@ -2554,7 +2604,8 @@ bool DiskVolume::checkFit(const std::string& src_dir, std::string& bericht) cons
         for (const std::string& p : je_volume[v]) {
             std::error_code ec;
             PlannedFile f;
-            f.name   = zielName(p, profile_->type, cpm_beiblatt);
+            f.name   = istWega() ? wegaZielName(src_dir, p)
+                              : zielName(p, profile_->type, cpm_beiblatt);
             f.size   = fs::file_size(p, ec);
             f.volume = static_cast<int>(v);
             plan.push_back(f);
@@ -2598,6 +2649,18 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
     // Schritt 3: ausfuehren, mit Ruecknahme.  Die Momentaufnahme des Mediums kostet
     // ~1 MB je Diskette — billig gegenueber einer halb beschriebenen Diskette.
     const DiskMedium sicherung = disk_->medium();
+    // WEGA: auch die LEEREN Unterordner gehoeren zum Baum.
+    if (istWega()) {
+        std::error_code ec;
+        for (const auto& e : fs::recursive_directory_iterator(src_dir, ec)) {
+            if (!e.is_directory()) continue;
+            if (!volumes_[0].fs->makeDirectory(wegaZielName(src_dir, e.path().string()))) {
+                const std::string grund = volumes_[0].fs->lastError();
+                disk_->medium() = sicherung;
+                return fail(grund + " — die Diskette wurde nicht veraendert.");
+            }
+        }
+    }
     const std::map<std::string, UdosAngabe> beiblatt =
         leseBeiblatt(fs::path(src_dir) / kUdosBeiblatt);
     const std::map<std::string, CpmAngabe> cpm_beiblatt =
@@ -2605,7 +2668,8 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
 
     for (size_t v = 0; v < volumes_.size(); ++v) {
         for (const std::string& quelle : je_volume[v]) {
-            const std::string name = zielName(quelle, profile_->type, cpm_beiblatt);
+            const std::string name = istWega() ? wegaZielName(src_dir, quelle)
+                                               : zielName(quelle, profile_->type, cpm_beiblatt);
             TransferOptions o = opt;
             o.overwrite = true;          // im Stapel ersetzt der Ordner den Bestand
             // Gefiltert ist hier schon; die Einzelsperre wuerde nur noch einmal
@@ -2807,6 +2871,11 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
             auto u = Udos1715FileSystem::format(*v.space, *profil, label, err);
             if (!u) return nullptr;
             v.fs = std::move(u);
+        } else if (profil->type == FsType::Wega) {
+            // wie `sa.mkfs 1440` — Verschraenkung 1/72 wie auf den Lieferdisketten
+            auto w = WegaFileSystem::format(std::make_unique<WegaSpaceDev>(*v.space), label, err);
+            if (!w) return nullptr;
+            v.fs = std::move(w);
         } else {
             auto c = CpmFileSystem::mount(*v.space, *profil, err);
             if (!c) return nullptr;

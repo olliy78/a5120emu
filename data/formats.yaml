@@ -798,3 +798,17 @@ filesystems:
     type:        udos1715
     usable_tracks: 40
     detect_rank: -10
+
+  # ══ WEGA (UNIX System III des P8000) ═══════════════════════════════════════
+  # Eigener Grund fuer einen Eintrag: kein CP/M, sondern ein Blockdateisystem mit
+  # Superblock in Block 1 (doc/design/27_wega_dateisystem.md).  Die 15 Dateisystem-
+  # disketten der WEGA-3.0-Lieferung tragen 1440 Bloecke = die ganze 720-K-Diskette
+  # (80 Zyl. × 2 Koepfe × 9 × 512), Block n = Byte n·512 der linearen Sektorfolge.
+  # Erkennung ohne Magic (Plausibilitaet: Groessen, Listen, Wurzel mit . und ..);
+  # detect_rank -10, damit die positive Probe vor dem CP/A-Rueckfall gewinnt.
+
+  - name:        wega720
+    description: "WEGA (UNIX System III, P8000) — 80 Spuren doppelseitig, 9×512 (720K)"
+    format:      k5601_9x512
+    type:        wega
+    detect_rank: -10

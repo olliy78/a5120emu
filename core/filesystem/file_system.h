@@ -64,6 +64,14 @@ struct FileEntry {
     /// @c false, und @ref FileSystem::loadDetails traegt sie einzeln nach.
     bool        details_loaded = true;
 
+    // ── nur WEGA (UNIX System III, doc/design/27_wega_dateisystem.md) ────────
+    uint16_t    unix_mode  = 0;  ///< di_mode samt Dateiart (040755 …); 0 = kein UNIX
+    int         unix_uid   = 0;
+    int         unix_gid   = 0;
+    int         unix_nlink = 0;
+    uint32_t    unix_inode = 0;  ///< Inode-Nummer
+    uint32_t    unix_mtime = 0;  ///< Sekunden seit 1970 (GMT), wie auf der Platte
+
     /// @brief Eindeutige Bezeichnung innerhalb des Volumes ("NAME.TYP" bzw. "3:NAME.TYP").
     std::string qualifiedName() const {
         return user == 0 ? name : std::to_string(user) + ":" + name;
@@ -164,6 +172,15 @@ struct WriteOptions {
     bool cpm_read_only = false;   ///< R/O
     bool cpm_system    = false;   ///< SYS (im `DIR` unsichtbar)
     bool cpm_archived  = false;   ///< ARCHIV
+
+    // ── nur WEGA: was eine UNIX-Inode traegt ─────────────────────────────────
+    /// @brief Zugriffsrechte (untere 12 Bit, z. B. 0755); 0 = Vorgabe 0644.
+    uint16_t wega_mode = 0;
+    bool     wega_mode_gesetzt = false;   ///< 0 ist eine Angabe (`chmod 0`)
+    int      wega_uid  = 0;               ///< Besitzer (Vorgabe 0 = Superuser `wega`)
+    int      wega_gid  = 0;
+    /// @brief Aenderungszeit (Sekunden seit 1970); 0 = jetzt.
+    uint32_t wega_mtime = 0;
 };
 
 /**
@@ -301,8 +318,19 @@ public:
     virtual bool write(const std::string& name, const std::vector<uint8_t>& data,
                        const WriteOptions& opt) = 0;
 
-    /// @brief Datei entfernen.
+    /// @brief Datei entfernen (WEGA: auch ein LEERES Verzeichnis).
     virtual bool erase(const std::string& name) = 0;
+
+    /**
+     * @brief Verzeichnis anlegen — nur Dateisysteme mit Verzeichnisbaum (WEGA).
+     *
+     * Fehlende Zwischenverzeichnisse werden mit angelegt (wie `mkdir -p`); ein schon
+     * vorhandenes Verzeichnis ist kein Fehler.
+     */
+    virtual bool makeDirectory(const std::string& name) {
+        (void)name;
+        return fail("Dieses Dateisystem kennt keine Unterverzeichnisse");
+    }
 
     /**
      * @brief Kopfsektorangaben einer vorhandenen Datei aendern (nur UDOS).
