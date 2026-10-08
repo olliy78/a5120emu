@@ -75,6 +75,7 @@ import os
 
 import yaml
 
+from app import instanz
 from app import paths
 from app import profil as profile
 from app.ui.screen_widget import CRTParams
@@ -97,7 +98,10 @@ def default_config_dir() -> str:
 def default_config_path(profil: "profile.Programmprofil" = None) -> str:
     """Path of the auto-persisted configuration file of *profil* (default A5120)."""
     profil = profil or profile.VORGABE
-    return os.path.join(default_config_dir(), profil.konfig_datei)
+    von_hand = instanz.konfig_pfad_vorgabe()           # --config DATEI
+    if von_hand:
+        return von_hand
+    return os.path.join(default_config_dir(), instanz.konfig_datei(profil.konfig_datei))
 
 
 def konfig_umziehen(profil: "profile.Programmprofil" = None) -> str:

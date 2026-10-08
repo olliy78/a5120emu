@@ -37,6 +37,8 @@ from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QIcon
 from app.ui.screen_widget import ScreenWidget
 from app.ui.settings_widget import SettingsWidget
 from app.ui.drive_widget import DriveWidget
+from app import instanz
+from app.ui import k7673_layout
 from app.ui.platten_widget import PlattenWidget
 from app.ui.serial_widget import SerialWidget
 from app.ui.eprom_widget import EpromWidget
@@ -74,7 +76,7 @@ class MainWindow(QMainWindow):
         """
         super().__init__()
         self.profil = profil or profile.VORGABE
-        self.setWindowTitle(self.profil.titel)
+        self.setWindowTitle(self._fenstertitel(self.profil.standard_modell()))
         self.setWindowIcon(QIcon.fromTheme("computer"))
         
         # Current drive-bay configuration (one core DriveProfile name per K5122
@@ -87,6 +89,7 @@ class MainWindow(QMainWindow):
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
         # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
         self._model = self.profil.standard_modell()
+        self._rechner_war_da = True
         # Hardwarevarianten des Programms (PC 1715: Zeichensatz, Tastatur-ROM; AP-6) —
         # Konstruktorparameter des Kerns wie das Modell, ein Wechsel ist ein Kaltstart.
         self._hardware = self.profil.hardware_standard()
@@ -243,7 +246,6 @@ class MainWindow(QMainWindow):
         # this applies CRT/speed, mounts the stored disks and restores the
         # window size + dock layout.
         self._load_or_create_default_config()
-        self._platte_vorbereiten()
 
         # Disketten von der Kommandozeile — NACH der Konfiguration, damit sie
         # deren Belegung schlagen, und VOR power_on(), damit der Kaltstart schon
@@ -478,6 +480,30 @@ class MainWindow(QMainWindow):
         # The screen must hold focus to receive F11 / Esc and host keystrokes.
         self.screen_widget.setFocus()
 
+    def _fenstertitel(self, modell) -> str:
+        """Titel je Modell (P8000: „P8000 Terminal“ für die Terminaleinheit); eine benannte
+        Instanz (``--instance``) trägt ihren Namen mit, damit man die Fenster unterscheidet."""
+        titel = self.profil.modell_titel(modell)
+        n = instanz.name()
+        return f"{titel} [{n}]" if n else titel
+
+    def _rechner_anzeigen(self):
+        """Laufwerke, Platte und Frontplatte nur, wenn das Modell einen Rechner hat.
+
+        Die eigenständige Terminaleinheit (P8000 Terminal) hat weder K5122 noch WDC noch
+        Frontplatte; der Kasten „Laufwerke“ und die Lampen verschwinden, statt tot dazustehen.
+        """
+        hat = self.profil.modell_hat_rechner(self._model)
+        self.drives_dock.toggleViewAction().setEnabled(hat)
+        if not hat:
+            self.drives_dock.hide()
+        elif not self._rechner_war_da:
+            self.drives_dock.show()
+        self._rechner_war_da = hat
+        if self.status_widget.frontplatte is not None:
+            self.status_widget.frontplatte.setVisible(hat)
+        self.setWindowTitle(self._fenstertitel(self._model))
+
     # ── On-screen keyboard → emulator ────────────────────────────────────────
 
     def _tastatur_bauen(self):
@@ -486,6 +512,9 @@ class MainWindow(QMainWindow):
         if self._tastatur_art == "p8000":
             from app.ui.p8000_terminal import KeyboardP8000Widget
             return KeyboardP8000Widget()
+        if self._tastatur_art == "k7673":
+            from app.ui.keyboard_k7673 import KeyboardK7673Widget
+            return KeyboardK7673Widget()
         if self._tastatur_art == "k7672":
             from app.ui.keyboard_k7672 import KeyboardK7672Widget
             return KeyboardK7672Widget()
@@ -509,12 +538,19 @@ class MainWindow(QMainWindow):
         self.keyboard_widget.keyPressed.connect(self._on_kbd_press)
         self.keyboard_widget.keyReleased.connect(self._on_kbd_release)
         self.screen_widget.key_sink = self.keyboard_widget
+        if self.profil.terminal:
+            self.screen_widget.flagsChanged.connect(self.keyboard_widget.zeige_flags)
         self.keyboard_dock.setWidget(self.keyboard_widget)
         alt.deleteLater()
         self.keyboard_widget.set_powered(bool(self.act_power.isChecked()))
         QTimer.singleShot(0, self._shrink_keyboard)
 
     def _on_kbd_press(self, keycode: int, shift: bool, ctrl: bool):
+        matrix = k7673_layout.kode_matrix(keycode)
+        if matrix is not None:
+            # Flachtastatur K7673: Matrixtaste des Originalterminals (Reiter 0).
+            self.emulator.term_matrix_key(0, matrix[0], matrix[1], True)
+            return
         if self.profil.terminal:
             # Funktionstastenleiste → Terminal des aktuellen Reiters.
             self.screen_widget.sende_taste(keycode, shift, ctrl)
@@ -522,6 +558,10 @@ class MainWindow(QMainWindow):
         self.emulator.key_press(keycode, shift, ctrl)
 
     def _on_kbd_release(self, keycode: int):
+        matrix = k7673_layout.kode_matrix(keycode)
+        if matrix is not None:
+            self.emulator.term_matrix_key(0, matrix[0], matrix[1], False)
+            return
         self.emulator.key_release(keycode)
 
     # ── Seiten-Docks minimal halten (Bildschirm bekommt den Rest) ────────────
@@ -960,6 +1000,8 @@ class MainWindow(QMainWindow):
             data["eprom"] = self._eprom_zustand()
         if self.platten_widget is not None:
             data["platte"] = self.platten_widget.zustand_lesen()
+        if self.profil.terminal:
+            data["terminal"] = {"skalierung": self.screen_widget.skalierung}
         data["lochstreifen"] = self._ptape_zustand_lesen()
         return data
 
@@ -1215,10 +1257,16 @@ class MainWindow(QMainWindow):
                 self.drives_widget.load_mounts(data.get("disks") or [])
 
             # Winchesterplatte (P8000): fehlender Abschnitt = noch nicht entschieden
-            # (das Programm legt beim ERSTEN Start die Standardplatte an, s. `_platte_vorbereiten`),
+            # (das Programm legt KEINE Platte von selbst an — nur über den Plattenkasten),
             # vorhandener Abschnitt mit leerem Pfad = ausdrücklich keine Platte.
             if "platte" in data and self.platten_widget is not None:
                 self.platten_widget.zustand_anwenden(data.get("platte"))
+
+            # Terminalbild des Originalterminals: Skalierung (ganzzahlig/glatt).
+            if self.profil.terminal:
+                t = data.get("terminal")
+                self.screen_widget.set_skalierung(
+                    str((t or {}).get("skalierung", "glatt")) if isinstance(t, dict) else "glatt")
 
             # Serielle Schnittstellen: Einstellung übernehmen und aktive wieder
             # aufnehmen (doc/design/19 §7.4a).  Fehlt der Abschnitt, bleibt alles,
@@ -1636,27 +1684,7 @@ class MainWindow(QMainWindow):
             return
         self._model = neu
         self._apply_drive_types(self._drive_types, cold_restart=True)
-        self._platte_vorbereiten()
         self._schedule_autosave()
-
-    def _platte_vorbereiten(self):
-        """Beim ERSTEN Start (oder nach Wechsel auf ein Modell mit WDC) die Standardplatte besorgen.
-
-        Nur, solange über die Platte noch nicht entschieden ist (kein ``platte``-Abschnitt in der
-        Konfiguration, nie angeschlossen/abgetrennt): eine vorhandene Datei am Standardort wird
-        angeschlossen (NIE überschrieben), sonst entsteht eine neue K5504.50 mit PAR-Sektor.
-        Wer die Platte abtrennt, hat entschieden — dann bleibt das Laufwerk leer.
-        """
-        pw = self.platten_widget
-        if pw is None or not pw.verfuegbar() or pw.entschieden:
-            return
-        pfad = pw.standard_pfad()
-        # Vor dem ersten Einschalten (Start) ist die Platte beim Hochlauf schon da: kein Rückstell-Hinweis.
-        hinweis = bool(self._emu_started)
-        if os.path.isfile(pfad):
-            pw.anschliessen(pfad, hinweis)
-        else:
-            pw.neu_anlegen(pfad, hinweis=hinweis)
 
     def _on_hardware_selected(self, schluessel: str, wert: str):
         """Eine Hardwarevariante (Zeichensatz, Tastatur-ROM) geändert → neue Maschine, wie
@@ -1916,6 +1944,7 @@ class MainWindow(QMainWindow):
         # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.
         self.status_widget.set_drive_types(types)
         self.status_widget.set_em_sichtbar(bool(em))
+        self._rechner_anzeigen()
         self._update_drive_status()
 
         if cold_restart and self._emu_started and self.act_power.isChecked():
@@ -2197,6 +2226,7 @@ class MainWindow(QMainWindow):
         # Winchester: geänderte Spuren zurückschreiben (der Kern tut es verzögert).
         if self.platten_widget is not None:
             self.platten_widget.sichern()
+            self.platten_widget.freigeben()
         self._geschlossen = True
         # Erst NACH dem Speichern: `aktiv` soll den Zustand beim Beenden festhalten.
         self.serial_widget.beenden()

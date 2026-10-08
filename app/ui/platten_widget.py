@@ -26,7 +26,7 @@ from PySide6.QtCore import QTimer, Signal, Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
                                QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
-from app import paths
+from app import instanz, paths
 from app.ui import status_bar
 
 #: Plattentypen des Kerns (`core/peripherals/winchester/platte.cpp`):
@@ -157,8 +157,12 @@ class PlattenWidget(QWidget):
             self.meldung.emit(f"Platte {self._pfad} gibt es nicht mehr — Laufwerk bleibt leer.")
             self._pfad = ""
             return
+        if not self._sperren(self._pfad):
+            self._pfad = ""
+            return
         if not self.emulator.hd_mount(UNIT, self._pfad):
             self.meldung.emit(f"Platte {self._pfad} nicht anschließbar: {self.emulator.hd_error()}")
+            instanz.sperre_loesen(self._pfad)
             self._pfad = ""
 
     # ── Bedienung ────────────────────────────────────────────────────────────
@@ -170,7 +174,11 @@ class PlattenWidget(QWidget):
         if not self._verfuegbar or self.emulator is None:
             return False
         self._loesen()
+        if not self._sperren(pfad):
+            self._anzeigen()
+            return False
         if not self.emulator.hd_mount(UNIT, pfad):
+            instanz.sperre_loesen(pfad)
             self.meldung.emit(f"Platte nicht angeschlossen: {self.emulator.hd_error()}")
             self._anzeigen()
             return False
@@ -186,7 +194,11 @@ class PlattenWidget(QWidget):
             return False
         self._loesen()
         os.makedirs(os.path.dirname(os.path.abspath(pfad)), exist_ok=True)
+        if not self._sperren(pfad):
+            self._anzeigen()
+            return False
         if not self.emulator.hd_create(UNIT, pfad, typ):
+            instanz.sperre_loesen(pfad)
             self.meldung.emit(f"Platte nicht angelegt: {self.emulator.hd_error()}")
             self._anzeigen()
             return False
@@ -206,7 +218,27 @@ class PlattenWidget(QWidget):
     def _loesen(self):
         if self._pfad and self.emulator is not None:
             self.emulator.hd_unmount(UNIT)
+        if self._pfad:
+            instanz.sperre_loesen(self._pfad)
         self._pfad = ""
+
+    def _sperren(self, pfad: str) -> bool:
+        """Die Platte für diese Instanz reservieren (Mehrinstanzbetrieb, `app/instanz.py`).
+
+        Zwei Rechner auf derselben Platte überschrieben sich gegenseitig; die zweite Instanz
+        bekommt sie deshalb nicht (der Kern kennt keinen Schreibschutz für Platten)."""
+        fremd = instanz.sperre_nehmen(pfad)
+        if fremd is None:
+            return True
+        self.meldung.emit(f"Die Platte {os.path.basename(pfad)} gehört schon dem Prozess {fremd} "
+                          "(andere Instanz) — nicht angeschlossen.  Zwei Rechner auf einer Platte "
+                          "zerstören sie; eine eigene Platte über „Neue Platte…“ anlegen.")
+        return False
+
+    def freigeben(self):
+        """Beim Beenden: die Sperre neben dem Abbild entfernen (die Platte bleibt gemerkt)."""
+        if self._pfad:
+            instanz.sperre_loesen(self._pfad)
 
     def sichern(self):
         """Geänderte Spuren jetzt in die Datei schreiben (vor Zwischenstand und Beenden)."""
@@ -279,8 +311,11 @@ class PlattenWidget(QWidget):
                                  "(Einstellungen ▸ Allgemein ▸ Modell).")
         elif not self._pfad:
             self.name.setText("keine Platte angeschlossen")
-            self.hinweis.setText("Ein Winchesterlaufwerk hat keinen Schreibschutz; Änderungen "
-                                 "gehen von selbst in die Datei.")
+            self.hinweis.setText(
+                "Das Programm legt keine Platte von selbst an (eine leere Platte schickt den "
+                "16-Bit-Monitor nach dem Hardwaretest in den AUTOBOOT).  „Neue Platte…“ legt "
+                "ein Abbild an (unformatiert, mit Parametersatz; formatieren mit sa.format im "
+                "Gast), „Anschließen…“ nimmt ein vorhandenes.")
         else:
             self.name.setText(os.path.basename(self._pfad))
             self.name.setToolTip(self._pfad)

@@ -380,6 +380,8 @@ class TerminalTabs(QWidget):
         self.params = CRTParams()
         self.key_sink = None
         self._powered = True
+        #: Skalierung des Originalterminals („ganzzahlig“/„glatt“), an neue Reiter weitergegeben.
+        self.skalierung = "glatt"
         self._terminals: List[TerminalWidget] = []
 
         lay = QVBoxLayout(self)
@@ -416,7 +418,13 @@ class TerminalTabs(QWidget):
             w.deleteLater()
         self._terminals = []
         for i in range(n):
-            t = TerminalWidget(self.params, i)
+            original = emulator.term_kind(i) == 1
+            if original:
+                from app.ui.p8000_original import OriginalTerminalWidget
+                t = OriginalTerminalWidget(self.params, i)
+                t.set_skalierung(self.skalierung)
+            else:
+                t = TerminalWidget(self.params, i)
             t.toggleFullscreenRequested.connect(self.toggleFullscreenRequested)
             t.exitFullscreenRequested.connect(self.exitFullscreenRequested)
             t.flagsChanged.connect(lambda f, ti=i: self._flags(ti, f))
@@ -424,7 +432,11 @@ class TerminalTabs(QWidget):
             t.set_emulator(emulator)
             t.set_powered(self._powered)
             tty = emulator.term_tty(i)
-            self.tabs.addTab(t, f"tty{tty} (Konsole)" if tty == 1 else f"tty{tty}")
+            if tty < 0:                          # eigenständiges Terminal: keine Rechner-Schnittstelle
+                name = "P8000 Terminal"
+            else:
+                name = f"tty{tty} (Konsole)" if tty == 1 else f"tty{tty}"
+            self.tabs.addTab(t, name)
         # Ein einziger Reiter braucht keine Leiste.
         self.tabs.tabBar().setVisible(n > 1)
         if 0 <= aktuell < n:
@@ -480,8 +492,15 @@ class TerminalTabs(QWidget):
 
     def _blinken(self):
         t = self.aktuell()
-        if t is not None:
+        if t is not None and hasattr(t, "blinken"):      # das Originalbild blinkt selbst (Firmware)
             t.blinken()
+
+    def set_skalierung(self, art: str):
+        """Skalierung des Originalterminal-Bildes („ganzzahlig“/„glatt“) für alle Reiter."""
+        self.skalierung = art
+        for t in self._terminals:
+            if hasattr(t, "set_skalierung"):
+                t.set_skalierung(art)
 
     def _flags(self, index: int, flags: int):
         if self.aktuell() is self._terminals[index]:
@@ -501,8 +520,15 @@ class TerminalTabs(QWidget):
             return "kein Terminal"
         if not self._powered:
             return "ausgeschaltet"
-        modus = "VT100" if self.emulator.term_mode(t.index) == 1 else "ADM31"
         f = max(0, self.emulator.term_flags(t.index))
+        if self.emulator.term_kind(t.index) == 1:
+            # Originalterminal: die Betriebsart (ADM31/VT100) steckt in der Firmware, nicht im Kern.
+            teile = ["Originalterminal Typ 2",
+                     "Zeichensatz 2 (deutsch)" if f & TF_ZG2 else "Zeichensatz 1 (ASCII)"]
+            if f & TF_CAPS:
+                teile.append("Caps lock")
+            return " · ".join(teile)
+        modus = "VT100" if self.emulator.term_mode(t.index) == 1 else "ADM31"
         teile = [modus, "Zeichensatz 2 (deutsch)" if f & TF_ZG2 else "Zeichensatz 1 (ASCII)",
                  "On-Line" if f & TF_ONLINE else "Off-Line"]
         if not f & TF_VIDEO:
