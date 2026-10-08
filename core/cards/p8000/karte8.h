@@ -182,6 +182,10 @@ private:
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];
     bool wait_gewarnt_ = false;
+    /// Der zuletzt ausgeführte Befehl war EI: bis nach dem NÄCHSTEN Befehl keine maskierbare
+    /// Unterbrechung annehmen (Z80-Datenblatt; `EI; RETI` am Ende jeder ISR).  Wie
+    /// `P8000Wdc::ei_sperre_`.  Befund P22, Merkposten p8000 Nr. 40.
+    bool ei_sperre_ = false;
 
     std::array<std::unique_ptr<Anschluss>, TTY_ANZAHL> anschluesse_;
     bool seriell_geaendert_ = false;

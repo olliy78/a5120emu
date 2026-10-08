@@ -195,6 +195,44 @@ TEST_F(P8000Karte8_, KetteDmaPio2Ctc0Sio0Sio1Pio0Pio1Ctc1) {
     EXPECT_EQ(folge, (std::vector<int>{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70}));
 }
 
+/// Wächter P22 (Merkposten p8000 Nr. 40): nach EI nimmt der U880 erst nach dem FOLGENDEN Befehl
+/// einen Interrupt an.  `EI; RETI` am Ende jeder ISR der Koppelsoftware — ohne die Sperre fiel ein
+/// anstehender Interrupt zwischen beide, RETI lief nie, und unter Last wuchs der Stapel in den Code.
+TEST_F(P8000Karte8_, NachEiErstNachDemFolgendenBefehlEinInterrupt) {
+    // `EI; RETI` (FB ED 4D) aus dem EPROM (nach Reset überall eingeblendet).
+    uint16_t ei = 0;
+    for (uint32_t a = 0; a + 2 < 0x2000 && !ei; ++a)
+        if (k.speicher().peek(uint16_t(a)) == 0xFB && k.speicher().peek(uint16_t(a + 1)) == 0xED &&
+            k.speicher().peek(uint16_t(a + 2)) == 0x4D)
+            ei = uint16_t(a);
+    ASSERT_NE(ei, 0);
+    // CTC0 Kanal 0 fordert an (Vektor 20H).
+    out(0x08, 0x20);
+    out(0x08, 0x85);
+    out(0x08, 0x01);
+    k.takt(0);
+    k.ctc0().clockTick(64);
+    bus.updateInterruptChain();
+    ASSERT_TRUE(bus.isINT());
+    Z80& c = k.cpu();
+    c.IM = 2;
+    c.I = 0x00;
+    c.IFF1 = c.IFF2 = false;
+    c.PC = ei;
+    c.SP = 0xF000;
+    ASSERT_GT(k.schritt(), 0);                     // EI
+    EXPECT_TRUE(c.IFF1);
+    EXPECT_EQ(c.PC, uint16_t(ei + 1));
+    ASSERT_GT(k.schritt(), 0);                     // RETI läuft — noch keine Annahme
+    EXPECT_NE(c.PC, uint16_t(ei + 1)) << "Interrupt zwischen EI und RETI angenommen";
+    EXPECT_EQ(c.SP, 0xF002) << "RETI hat den Stapel nicht abgebaut";
+    EXPECT_TRUE(c.IFF1);
+    bus.updateInterruptChain();
+    EXPECT_TRUE(bus.isINT()) << "Anforderung steht noch";
+    ASSERT_GT(k.schritt(), 0);                     // jetzt angenommen
+    EXPECT_FALSE(c.IFF1);
+}
+
 // ─── RESET / RESI / NMI (P2a §4) ─────────────────────────────────────────────
 
 TEST_F(P8000Karte8_, ResiPowerOnEinsTasteNull_AnPio2A7) {

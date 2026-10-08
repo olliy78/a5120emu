@@ -187,6 +187,7 @@ void P8000Karte8::pinsAnlegen(int i)
 void P8000Karte8::resetBausteine()
 {
     sp_.reset();                       // RFF Q = 0
+    ei_sperre_ = false;
     ctc0_.reset(); ctc1_.reset();
     sio0_.reset(); sio1_.reset();
     pio0_.reset(); pio1_.reset(); pio2_.reset();   // /PM1 = /M1 ∧ /RES (§2)
@@ -236,7 +237,11 @@ int P8000Karte8::schritt()
         return used;
     }
     bus_.updateInterruptChain();
-    if (bus_.isINT() && cpu_.IFF1) {
+    // Nach EI erst nach dem folgenden Befehl annehmen (Befund P22): ohne die Sperre fiel ein
+    // anstehender Interrupt zwischen `EI` und `RETI` der Koppelsoftware — das RETI lief nie,
+    // der Kanal blieb in Bedienung, und jede Runde ließ 2 Byte auf dem Stapel, bis er in den Code
+    // wuchs (MON8 „BREAK AD82", Koppelsoftware tot, alle tty der 8-Bit-Seite still).
+    if (!ei_sperre_ && bus_.isINT() && cpu_.IFF1) {
         const uint8_t vec = bus_.interruptAcknowledge();
         cpu_.interrupt(vec);
     }
@@ -244,8 +249,10 @@ int P8000Karte8::schritt()
         cpu_.nmi();
         bus_.clearNMI();
     }
+    const bool ei = !cpu_.halted && sp_.peek(cpu_.PC) == 0xFB;
     int used = cpu_.step();
     if (used == 0) return 0;
+    ei_sperre_ = ei;
     if (bm_cpu_) bm_cpu_();
     // EPROM-Zugriffe (auch M1) kosten zwei Wartetakte (Schaltplan §1.1).
     if (const uint32_t w = sp_.nimmWartetakte(); w > 0) {
@@ -341,6 +348,8 @@ void P8000Karte8::serialize(std::vector<uint8_t>& out) const
     out.push_back(wait_gewarnt_ ? 1 : 0);
     for (auto& an : self->anschluesse_) out.push_back(an->dcdRef() ? 1 : 0);
     out.push_back(bus_.isNMI() ? 1 : 0);
+    // Seit P22 (an das Ende, damit ältere Stände — v3/v4 ohne dieses Byte — weiter laden).
+    out.push_back(ei_sperre_ ? 1 : 0);
 }
 
 bool P8000Karte8::deserialize(const uint8_t*& p, const uint8_t* end)
@@ -366,6 +375,7 @@ bool P8000Karte8::deserialize(const uint8_t*& p, const uint8_t* end)
     for (auto& an : anschluesse_) an->dcdRef() = *p++ != 0;
     const bool nmi = *p++ != 0;
     if (nmi) bus_.assertNMI(); else bus_.clearNMI();
+    ei_sperre_ = (p < end) ? (*p++ != 0) : false;   // fehlt in Ständen vor P22
     seriell_geaendert_ = true;
     bus_.markIntDirty();
     return true;
