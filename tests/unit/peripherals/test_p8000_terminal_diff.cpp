@@ -989,3 +989,87 @@ TEST(P8000TerminalDiff, TastenwiederholungKommtVonDerTastatur)
     EXPECT_GE(s.size(), 6u);   // 1 + Wiederholungen nach 500 ms, dann alle ≈ 100 ms
     EXPECT_EQ(s.find_first_not_of('a'), std::string::npos);
 }
+
+// ═════ Bildvergleich Original ↔ Kern-Terminal (gleiche Eingabe, gleiches Bild?) ════════════
+
+namespace {
+struct Vergleich { const char* name; TerminalModus modus; std::string eingabe; bool gleich; const char* grund; };
+}
+
+/// Jede Eingabe der Fälle oben geht durch BEIDE Terminals; verglichen werden alle 24 Zeilen und
+/// der Cursor.  `gleich = false` nur mit Begründung (die Erwartung am Original steht im Fall oben).
+TEST(P8000TerminalDiff, BildvergleichMitDemKernTerminal)
+{
+    using M = TerminalModus;
+    std::string zeilen, zeilenVt;
+    for (int z = 0; z < 24; ++z) {
+        zeilen += "\x1b=" + std::string(1, char(0x20 + z)) + " Z" + std::to_string(z);
+        zeilenVt += "\x1b[" + std::to_string(z + 1) + ";1HZ" + std::to_string(z);
+    }
+    const Vergleich faelle[] = {
+        {"Umbruch", M::ADM31, std::string(80, 'x') + "y", true, ""},
+        {"Rollen", M::ADM31, "\x1b=7 unten" + std::string(75, '.'), true, ""},
+        {"BS ADM31", M::ADM31, "\x1b=! \b", true, ""},
+        {"BS VT100", M::VT100, "\x1b[2;1H\bab\b", true, ""},
+        {"HT ADM31", M::ADM31, "\tab\t\x1b= o\t\x1b=7o\t", true, ""},
+        {"HT VT100", M::VT100, "\t\x1b[1;79H\t\t", true, ""},
+        {"LF", M::ADM31, zeilen + "\x1b=7 \n", true, ""},
+        {"VT", M::ADM31, "\n\n\x0b\x0b\x0b\x0b", true, ""},
+        {"FF ADM31", M::ADM31, "\x0c\x0c\x1b= n\x0c\x0c", true, ""},
+        {"FF VT100", M::VT100, std::string(100, '\x0c'), true, ""},
+        {"CR RS", M::VT100, "abc\n\rabc\n\x1e", true, ""},
+        {"Steuerzeichen", M::ADM31, "\x01\x02" "a", true, ""},
+        {"Programm-Mode", M::ADM31, "\x1bU\x01\x1f" "b\x1bu\x01", false, "ESC u wird im Programm-Mode angezeigt"},
+        {"CBT ADM31", M::ADM31, "\x1b= 3\x1bI\x1bI", true, ""},
+        {"CHT ADM31", M::ADM31, "\x1bi\x1bi", true, ""},
+        {"CHT Ende", M::ADM31, "\x1b=7o\x1bi", false, "ESC i in Spalte 80 der letzten Zeile rollt"},
+        {"CDE", M::ADM31, "abcdef\x1b= \"\x1bW", true, ""},
+        {"CIN", M::ADM31, "abcdef\x1b= \"\x1bQ", true, ""},
+        {"HVP", M::ADM31, "\x1b=~~x\x1b=0@", true, ""},
+        {"LDE", M::ADM31, zeilen + "\x1b=\"(\x1bR", true, ""},
+        {"LER", M::ADM31, "abcdef\x1b= \"\x1bT", true, ""},
+        {"LIN", M::ADM31, zeilen + "\x1b=\"(\x1b" "E", true, ""},
+        {"PER", M::ADM31, zeilen + "\x1b=\"!\x1bY", true, ""},
+        {"SDE *", M::ADM31, zeilen + "\x1b=%%\x1b*", true, ""},
+        {"SDE :", M::ADM31, zeilen + "\x1b=%%\x1b:", true, ""},
+        {"CBT VT100", M::VT100, "\x1b[1;20H\x1b[Z", false, "(Spalte - 8) & F8H"},
+        {"CHT VT100", M::VT100, "\x1b[I\x1b[3I\x1b[99I", true, ""},
+        {"CUx", M::VT100, "\x1b[5;10H\x1b[2D\x1b[D\x1b[0D\x1b[99D\x1b[3B\x1b[99B\x1b[4C\x1b[99C\x1b[2A\x1b[99A", true, ""},
+        {"CUP", M::VT100, "\x1b[7;12H\x1b[;5H", true, ""},
+        {"HVP f", M::VT100, "\x1b[99;99f", true, ""},
+        {"DCH", M::VT100, "abcdef\x1b[1;2H\x1b[P\x1b[2P", true, ""},
+        {"DL", M::VT100, zeilenVt + "\x1b[3;5H\x1b[2M", true, ""},
+        {"ED 0", M::VT100, zeilenVt + "\x1b[3;2H\x1b[J", true, ""},
+        {"ED 1", M::VT100, zeilenVt + "\x1b[3;2H\x1b[1J", true, ""},
+        {"ED 2", M::VT100, zeilenVt + "\x1b[3;2H\x1b[2J", true, ""},
+        {"EL 0", M::VT100, "abcdef\x1b[1;3H\x1b[K", true, ""},
+        {"EL 1", M::VT100, "abcdef\x1b[1;3H\x1b[1K", true, ""},
+        {"EL 2", M::VT100, "abcdef\x1b[1;3H\x1b[2K", true, ""},
+        {"ICH", M::VT100, "abcdef\x1b[1;2H\x1b[2@", true, ""},
+        {"IL (W6)", M::VT100, zeilenVt + "\x1b[3;5H\x1b[2L", true, ""},
+        {"IND", M::VT100, zeilenVt + "\x1b[24;3H\x1b" "D", true, ""},
+        {"NEL", M::VT100, "\x1b[24;9H\x1b" "E", true, ""},
+        {"RI", M::VT100, zeilenVt + "\x1b[1;4H\x1b" "M", true, ""},
+        {"DECSC/RC", M::VT100, "\x1b[5;9H\x1b" "7\x1b[1;1H\x1b" "8", true, ""},
+        {"Folge mit CR", M::VT100, "\x1b[3\r;4H", false, "CR bricht die Folge ab"},
+        {"ESC E ADM31", M::ADM31, "abc\x1b" "E", true, ""},
+        {"ESC E VT100", M::VT100, "abc\x1b" "E", true, ""},
+    };
+    for (const auto& f : faelle) {
+        Orig o;
+        frisch(o, f.modus);
+        o.eingabe(f.eingabe);
+        Terminal k = kern(f.modus);
+        k.eingabe(f.eingabe);
+        const int n = unterschiede(o, k);
+        if (f.gleich) {
+            EXPECT_EQ(n, 0) << f.name;
+            if (n)
+                for (int z = 0; z < 24; ++z)
+                    if (o.zl(z) != kzl(k, z)) ADD_FAILURE() << f.name << " Zeile " << z << ": Original '" << o.zl(z) << "' Kern '" << kzl(k, z) << "'";
+            if (n) ADD_FAILURE() << f.name << " Cursor Original " << o.zeile() << "," << o.spalte() << " Kern " << k.zeile() << "," << k.spalte();
+        } else {
+            EXPECT_GT(n, 0) << f.name << " — als Abweichung geführt (" << f.grund << "), ist aber gleich";
+        }
+    }
+}
