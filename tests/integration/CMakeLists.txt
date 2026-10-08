@@ -286,3 +286,9 @@ k1520_add_test(p8000_wdc_maschine SRC test_p8000_wdc_maschine.cpp
 k1520_add_test(p8000_terminal_einheit SRC test_p8000_terminal_einheit.cpp
                           LIBS k1520_p8000_terminal_hw k1520_serial
                           LABELS "${_lbl}" TIMEOUT 120)
+
+# Variante „P8000 + P8000 Terminal" (AP P20c): tty1 fest am Originalterminal, M2-Dialog über die
+# K7673, Save-State P8KS v4; Mehrplatz Rechner + zwei Terminal-Maschinen über Loopback-Telnet.
+k1520_add_test(p8000_terminal_original SRC test_p8000_terminal_original.cpp
+                          LIBS k1520_p8000 k1520_logger k1520_testsupport
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 900)

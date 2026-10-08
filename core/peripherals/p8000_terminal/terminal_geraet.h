@@ -24,6 +24,8 @@ public:
     virtual void takt(uint64_t maschinenTakte) = 0;
     virtual std::string text(int z) const = 0;
     virtual TerminalZelle zelle(int z, int s) const = 0;
+    /// An (z, s) wirksames Feldattribut (ATTR_*-Bits, Feldregel bis Zeilenende).
+    virtual uint8_t attribut(int z, int s) const = 0;
     virtual int zeile() const = 0;    ///< Cursor, 0-basiert
     virtual int spalte() const = 0;
     /// Zeichentaste (wie `Terminal::zeichenTaste`).  Rückgabe false = auf diesem Terminal nicht tippbar.
@@ -41,9 +43,11 @@ public:
     explicit KernTerminalGeraet(serial::SerialAnschluss& karte, uint64_t phiNenn = 4'000'000)
         : anschluss_(karte, term_, phiNenn) {}
     Terminal& terminal() { return term_; }
+    const Terminal& terminal() const { return term_; }
     void takt(uint64_t n) override { anschluss_.takt(n); }
     std::string text(int z) const override { return term_.text(z); }
     TerminalZelle zelle(int z, int s) const override { return term_.zelle(z, s); }
+    uint8_t attribut(int z, int s) const override { return term_.wirksamesAttribut(z, s); }
     int zeile() const override { return term_.zeile(); }
     int spalte() const override { return term_.spalte(); }
     bool zeichenTaste(uint8_t c, bool ctrl) override { term_.zeichenTaste(c, ctrl); return true; }

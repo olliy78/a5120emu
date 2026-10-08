@@ -102,7 +102,7 @@ TEST(P8000WdcMaschine, StandV3RundreiseIstBitgleich) {
     ASSERT_FALSE(a.wdc()->imReset()) << bild(a);
     laufe(a, 3'000'000);
     const std::vector<uint8_t> s = a.stateBytes();
-    EXPECT_EQ(s[4], 3);
+    EXPECT_EQ(s[4], P8000Machine::P8000_STAND);
     ASSERT_TRUE(b.restoreStateBytes(s)) << b.stateError();
     EXPECT_EQ(b.stateBytes(), s);
     laufe(a, 6'000'000);
@@ -154,6 +154,7 @@ TEST(P8000WdcMaschine, KonfigurationUndPlattenschnittstelle) {
         q.powerOn();
         laufe(q, 500'000);
         std::vector<uint8_t> v = q.stateBytes();
+        p8ksAufV3(v);                                         // v4 → v3 (Terminalbytes am Ende weg)
         ASSERT_EQ(v[4], 3);
         uint32_t n = uint32_t(v[6]) | uint32_t(v[7]) << 8 | uint32_t(v[8]) << 16 | uint32_t(v[9]) << 24;
         ASSERT_EQ(v[10 + n - 5], 0);                          // wdc = Aus

@@ -33,10 +33,19 @@
  * **WDC (P13d):** eigene Uhr in WDC-Takten, nach der 16-Bit-Karte bis zur selben Maschinenzeit
  * nachgezogen (Reihenfolge 8 → 16 → WDC, Entwurf §10.2); Leitungen über `P8000WdcAnschluss`.
  * Platten gehören der Maschine (`hdMount/hdCreate/hdUnmount`), der WDC kennt nur Zeiger.
- * Save-State P8KS v3 = v2 + Abschnitt WDC (samt Plattenmechanik, nicht dem Medieninhalt).
+ * Save-State P8KS v3 = v2 + Abschnitt WDC (samt Plattenmechanik, nicht dem Medieninhalt); v4 s. u.
  *
- * Nicht hier (spätere APs): Rahmenpuffer mit dem Terminal-Zeichensatz (P16; bis dahin liefert
- * `framebuffer()` ein leeres Bild).
+ * **Konsole tty1 (AP P20c, Entwurf 25 §11, Entwurf 28):** `Config::terminal` wählt das
+ * vereinfachte Kern-Terminal (P6, Vorgabe — Variante „P8000") oder das **Originalterminal Typ 2 +
+ * K7673.09** (Variante „P8000 + P8000 Terminal": `P8000TerminalEinheit` über `TerminalHwKopplung`
+ * fest an tty1, Firmware P8T 5.0 auf dem Z8).  Beide hinter `TerminalGeraet`.  Das Original wird
+ * beim Netz-Ein `terminal_vorlauf_ms` VOR dem Rechner eingeschaltet (es braucht ≈ 0,5 s bis zur
+ * Bereitschaft, Merkposten 29/34); was es dabei sendet (00H der Firmware, Merkposten 30), geht ins
+ * Leere wie am ausgeschalteten Rechner.  Die Reset-Taste des Rechners lässt das Terminal laufen.
+ * Save-State **P8KS v4** = v3 + Terminalart im Fingerabdruck; ein v3-Stand lädt nur mit Kern-Terminal.
+ *
+ * Rahmenpuffer: mit Originalterminal das Pixelbild 640 × 312 (0 dunkel, 1 normal, 2 hell);
+ * mit Kern-Terminal leer (die Oberfläche rastert aus `k1520_term_snapshot`).
  */
 
 #pragma once
@@ -51,6 +60,8 @@
 #include "core/machines/machine.h"
 #include "core/peripherals/p8000_terminal/terminal.h"
 #include "core/peripherals/p8000_terminal/terminal_anschluss.h"
+#include "core/peripherals/p8000_terminal/terminal_geraet.h"
+#include "core/peripherals/p8000_terminal_hw/terminal_einheit.h"
 #include "core/serial/hub.h"
 #include <array>
 #include <atomic>
@@ -99,9 +110,20 @@ public:
         /// [P5] der Platte: fehlt Z0/K0/S1 ein gültiger PAR-Sektor, liefert die Spursynthese einen
         /// erzeugten (WEGA-3.1-AVR-Abbild).  AUS = die Firmware sieht den Sektor, wie er ist.
         bool        platte_par_ergaenzen = true;
+
+        // ── Konsole tty1 (AP P20c) ──
+        enum class TerminalArt { Kern, Original };
+        /// Vorgabe Kern-Terminal, bis P21/P22 umstellen (M1/M2-Wächter bleiben unverändert).
+        TerminalArt terminal = TerminalArt::Kern;
+        /// Nur `Original`: Bestückung des Terminals (Zeichensätze, Zeichentakt-Teiler, Tastatur).
+        k1520::p8000::P8000TerminalEinheitConfig terminal_hw;
+        /// Nur `Original`: so lange läuft das Terminal vor dem Rechner (Netz-Ein-Reihenfolge am
+        /// Arbeitsplatz).  Ohne Vorlauf fielen die ersten Zeilen des Hardwaretests in die
+        /// Einschaltphase der Firmware (Tastaturwarte, Merkposten 29).
+        uint32_t terminal_vorlauf_ms = 1000;
     };
 
-    /// Kanal des Kern-Terminals (Konsole des U880-Monitors und von UDOS).
+    /// Kanal der Konsole (U880-Monitor, UDOS) — Kern- oder Originalterminal.
     static constexpr int KONSOLE_TTY = 1;
 
     P8000Machine();
@@ -118,9 +140,9 @@ public:
     void nmi() override { nmi_taster_.store(true, std::memory_order_relaxed); }
 
     // ─── Bild: das Kern-Terminal der Konsole ────────────────────────────────
-    const uint8_t* framebuffer() const override { return fb_.data(); }
-    int  fbWidth()  const override { return FB_BREITE; }
-    int  fbHeight() const override { return FB_HOEHE; }
+    const uint8_t* framebuffer() const override;
+    int  fbWidth()  const override;
+    int  fbHeight() const override;
     bool fbDirty()  const override { return false; }
     void fbClearDirty() override {}
     void setConsoleMode(bool) override {}
@@ -135,8 +157,18 @@ public:
     /// BREAK, MODE, VIDEO, ON/OFF, SI/SO) und 0x02000100/0x02000101 = Caps lock an/aus.
     /// `ctrl` macht aus einem Buchstaben das Steuerzeichen.
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
-    void keyRelease(uint32_t) override {}
+    /// Nur Originalterminal: `0x04000000 | Zeile << 8 | Spalte` (Matrix der K7673) wird
+    /// gedrückt gehalten, bis derselbe Kode losgelassen wird; andere Kodes ohne Wirkung.
+    void keyRelease(uint32_t code) override;
     void setKeyRepeatRealtime(bool) override {}
+    /// Kodes für Matrixtasten der K7673 (Originalterminal).
+    static constexpr uint32_t MATRIX_KODE = 0x04000000u;
+    static constexpr uint32_t matrixKode(int zeile, int spalte) {
+        return MATRIX_KODE | (uint32_t(zeile) << 8) | uint32_t(spalte);
+    }
+    /// LEDs der K7673 (Bit 0 ON/OFF, 1 CAPS LOCK, 2 MODE); Kern-Terminal 0.
+    uint8_t keyboardLeds() const override;
+    uint32_t bellCount() const override { return konsole_->klingel(); }
 
     int machineType() const override { return 4; }   // K1520_MACHINE_P8000 (Entwurf §10.9)
     /// Bit 0 RUN-LED (K14), Bit 1 UNIT16 = U8001 läuft (nicht im Reset), Bit 2 Plattenzugriff
@@ -182,7 +214,9 @@ public:
     // ─── Serielle Schnittstellen: tty0, tty2, tty3 am Hub; tty1 am Kern-Terminal ─
     k1520::serial::SerialHub* serialHub() override { return &hub_; }
     std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
-    std::vector<std::string> festeSchnittstellen() const override { return {"Terminal P8000 (tty1)"}; }
+    std::vector<std::string> festeSchnittstellen() const override {
+        return {hwterm_ ? "Terminal P8000 Typ 2 (tty1)" : "Terminal P8000 (tty1)"};
+    }
     // (mit 16-Bit-Karte zusätzlich tty4–tty7 am Hub)
     /// Alter Unterbau (Rückruf/Einspeisen) gibt es am P8000 nicht — alle tty gehen über den
     /// Hub bzw. das Kern-Terminal.
@@ -208,11 +242,11 @@ public:
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     std::string lastError() const override { return lw().lastError(); }
 
-    // ─── Save-State P8KS v3 (Entwurf 25 §10.2; v1/v2 laden ohne 16-Bit-Teil bzw. WDC) ───────────────────────────────
+    // ─── Save-State P8KS v4 (Entwurf 25 §10.2; v1/v2/v3 laden ohne 16-Bit-Teil/WDC/Originalterminal) ───────────────────────────────
     /// Kennung „P8KS“, dann `P8000_STAND`, dann Abschnitte `[Kennung u8][Länge u32][Bytes]`
     /// (unbekannte Abschnitte werden übersprungen).  Die Disketten werden NICHT gesichert — der
     /// Aufrufer mountet vor dem Laden dieselben Abbilder (nur die Kopfposition wird gesetzt).
-    static constexpr uint8_t P8000_STAND = 3;
+    static constexpr uint8_t P8000_STAND = 4;
     std::vector<uint8_t> stateBytes() const;
     /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) übereinstimmt;
     /// scheitert das Laden mittendrin, wird der alte Zustand wiederhergestellt.
@@ -234,10 +268,19 @@ public:
         return (unit >= 0 && unit < P8000Wdc::LAUFWERKE) ? platten_[size_t(unit)].get() : nullptr;
     }
     K1520Bus&     bus()     { return bus_; }
-    k1520::p8000::Terminal&       terminal()       { return term_; }
-    const k1520::p8000::Terminal& terminal() const { return term_; }
+    /// Das Kern-Terminal (P6).  Mit Originalterminal gibt es keins ⇒ std::logic_error;
+    /// maschinenneutral ist `konsole()`.
+    k1520::p8000::Terminal&       terminal();
+    const k1520::p8000::Terminal& terminal() const;
+    /// Die Konsole an tty1 hinter der gemeinsamen Schnittstelle (Kern- oder Originalterminal).
+    k1520::p8000::TerminalGeraet&       konsole()       { return *konsole_; }
+    const k1520::p8000::TerminalGeraet& konsole() const { return *konsole_; }
+    bool hatOriginalTerminal() const { return hwterm_ != nullptr; }
+    /// Das Originalterminal (Einheit samt Tastatur); nullptr mit Kern-Terminal.
+    k1520::p8000::P8000TerminalEinheit*       originalTerminal()       { return hwterm_ ? &hwterm_->einheit() : nullptr; }
+    const k1520::p8000::P8000TerminalEinheit* originalTerminal() const { return hwterm_ ? &hwterm_->einheit() : nullptr; }
     /// Zeile @p z (0–23) des Konsolen-Terminals als Text (80 Zeichen).
-    std::string terminalZeile(int z) const { return term_.text(z); }
+    std::string terminalZeile(int z) const { return konsole_->text(z); }
     uint64_t totalCycles() const { return total_cycles_; }
     void     clearStop() { stop_.store(false); }
     uint16_t cpuPC() { return karte_.cpu().PC; }
@@ -276,8 +319,10 @@ private:
     uint64_t    hd_zugriff_t_ = 0;   ///< Maschinenzeit des letzten Plattenzugriffs (Lampe)
     int         hd_zugriff_lw_ = -1;  ///< Laufwerk des letzten Zugriffs (−1 = noch keiner)
     std::string hd_fehler_;
-    k1520::p8000::Terminal          term_;
-    k1520::p8000::TerminalAnschluss term_anschluss_;
+    // Konsole tty1: genau eins von beiden (konsole_ besitzt es).
+    std::unique_ptr<k1520::p8000::TerminalGeraet> konsole_;
+    k1520::p8000::KernTerminalGeraet* kern_ = nullptr;
+    k1520::p8000::HwTerminalGeraet*   hwterm_ = nullptr;
     k1520::serial::SerialHub        hub_;
     uint64_t serial_naechst_ = 0;
 

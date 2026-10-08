@@ -476,8 +476,9 @@ if(BUILD_K1520)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # P8000 (doc/design/25_p8000.md §10, AP P7a): 8-Bit-Seite (Karte8 + Floppy8 + Kern-Terminal)
-    add_library(k1520_p8000 STATIC core/machines/p8000/p8000.cpp)
-    target_link_libraries(k1520_p8000 PUBLIC k1520_p8000_floppy8 k1520_p8000_karte8 k1520_p8000_karte16 k1520_p8000_kopplung k1520_p8000_wdc_anschluss k1520_p8000_terminal k1520_laufwerke k1520_bus k1520_logger k1520_serial)
+    # + Originalterminal an tty1 (Config::terminal) und „P8000 Terminal" als eigene Maschine (P20c/P20d)
+    add_library(k1520_p8000 STATIC core/machines/p8000/p8000.cpp core/machines/p8000/p8000_terminal_machine.cpp)
+    target_link_libraries(k1520_p8000 PUBLIC k1520_p8000_floppy8 k1520_p8000_karte8 k1520_p8000_karte16 k1520_p8000_kopplung k1520_p8000_wdc_anschluss k1520_p8000_terminal k1520_p8000_terminal_hw k1520_laufwerke k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_p8000 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # libk1520core.so — stable C-API shared library

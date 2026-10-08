@@ -210,6 +210,20 @@ bool P8000TerminalEinheit::taste(TerminalTaste t) {
     return true;
 }
 
+bool P8000TerminalEinheit::matrixDirekt(MatrixTaste t, bool an) {
+    if (t.zeile < 0 || t.spalte < 0 || t.zeile >= TastaturK7673::ZEILEN || t.spalte >= TastaturK7673::SPALTEN)
+        return false;
+    if (an) kb_.druecke(t.zeile, t.spalte);
+    else kb_.loslassen(t.zeile, t.spalte);
+    return true;
+}
+
+void P8000TerminalEinheit::setzeCapsLock(bool an) {
+    if (bool(kb_.leds() & 2) == an) return;
+    const MatrixTaste p = positionFuer(std::vector<uint8_t>{0x3A});
+    if (p.gueltig()) matrixTaste(p);
+}
+
 bool P8000TerminalEinheit::tippe(const std::string& s) {
     for (unsigned char c : s)
         if (!zeichenTaste(c)) return false;

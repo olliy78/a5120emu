@@ -102,6 +102,11 @@ public:
     /// Text tippen; false, sobald ein Zeichen keine Taste hat (davor Getipptes bleibt).
     bool tippe(const std::string& s);
     bool tastenFertig() const { return aktionen_.empty(); }
+    /// Matrixtaste sofort drücken/loslassen, ohne Zeitplan (Oberfläche: gehalten, solange der
+    /// Anwender hält).  Ungültige Position ⇒ false.
+    bool matrixDirekt(MatrixTaste t, bool an);
+    /// CAPS LOCK (Rasttaste mit LED) auf @p an bringen — gedrückt wird nur, wenn die LED anders steht.
+    void setzeCapsLock(bool an);
     /// Lauf bis alle Tasten getippt sind (höchstens @p maxMs), dann noch @p nachMs.
     void tastenAbwarten(uint64_t nachMs = 50, uint64_t maxMs = 60000);
     /// Lauf, bis die Firmware ruht (`P8000TerminalHw::ruht`, 3 Proben im Abstand 1 ms) und keine
@@ -153,6 +158,9 @@ public:
     TerminalHwKopplung(serial::SerialAnschluss& karte, P8000TerminalEinheit& term,
                        uint64_t phiNenn = 4'000'000);
     void takt(uint64_t maschinenTakte);
+    /// Zeitbezug neu setzen: die Einheit lief für sich (z. B. Vorlauf vor dem Rechner,
+    /// Entwurf 28 §3) — ab jetzt zählen Maschinentakte wieder ab ihrer aktuellen Zeit.
+    void synchronisiere() { rest_ = 0; ziel_ = term_.takte(); rxRest_ = 0; }
     bool baudAbweichend() const;
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
@@ -176,9 +184,12 @@ public:
                      const P8000TerminalEinheitConfig& cfg = P8000TerminalEinheitConfig())
         : einheit_(cfg), kopplung_(karte, einheit_, phiNenn) {}
     P8000TerminalEinheit& einheit() { return einheit_; }
+    const P8000TerminalEinheit& einheit() const { return einheit_; }
+    TerminalHwKopplung& kopplung() { return kopplung_; }
     void takt(uint64_t n) override { kopplung_.takt(n); }
     std::string text(int z) const override { return einheit_.hw().text(z); }
     TerminalZelle zelle(int z, int s) const override { return einheit_.hw().zelle(z, s); }
+    uint8_t attribut(int z, int s) const override { return einheit_.hw().wirksamesAttribut(z, s); }
     int zeile() const override { return einheit_.hw().cursorZeile(); }
     int spalte() const override { return einheit_.hw().cursorSpalte(); }
     bool zeichenTaste(uint8_t c, bool ctrl) override { return einheit_.zeichenTaste(c, ctrl); }

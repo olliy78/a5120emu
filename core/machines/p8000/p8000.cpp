@@ -5,6 +5,7 @@
  */
 
 #include "core/machines/p8000/p8000.h"
+#include "core/peripherals/p8000_terminal/terminal_tasten.h"
 #include "core/logger.h"
 #include "core/util/zustand.h"
 #include <cstring>
@@ -66,9 +67,18 @@ P8000Machine::P8000Machine(const Config& cfg)
     : cfg_(cfg)
     , karte_(bus_, karteConfig(cfg))
     , floppy_(karte_, floppyConfig(cfg))
-    , term_anschluss_(karte_.anschluss(KONSOLE_TTY), term_, cfg.takt8_hz)
     , hub_(cfg.takt8_hz)
 {
+    if (cfg.terminal == Config::TerminalArt::Original) {
+        auto t = std::make_unique<k1520::p8000::HwTerminalGeraet>(karte_.anschluss(KONSOLE_TTY), cfg.takt8_hz,
+                                                                  cfg.terminal_hw);
+        hwterm_ = t.get();
+        konsole_ = std::move(t);
+    } else {
+        auto t = std::make_unique<k1520::p8000::KernTerminalGeraet>(karte_.anschluss(KONSOLE_TTY), cfg.takt8_hz);
+        kern_ = t.get();
+        konsole_ = std::move(t);
+    }
     karte_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
     if (cfg.karte16) {
         // Handbuch S. 3-33/3-87: nur die Paare 8-Bit Index 1 / 16-Bit Index 1 bzw. 3 / 4.
@@ -143,6 +153,15 @@ void P8000Machine::powerOn()
     }
     if (wdc_an_) wdc_an_->rechne();
     hd_zugriff_lw_ = -1;
+    if (hwterm_) {
+        // Arbeitsplatz-Reihenfolge: erst das Terminal, dann der Rechner.  Was das Terminal in der
+        // Einschaltphase sendet (00H der Firmware, Merkposten 30), trifft einen Rechner ohne Netz.
+        auto& e = hwterm_->einheit();
+        e.einschalten();
+        e.laufeMs(cfg_.terminal_vorlauf_ms);
+        while (e.hw().hatAusgabe()) (void)e.hw().holeAusgabe();
+        hwterm_->kopplung().synchronisiere();
+    }
     nachReset();
     LOG_INFO("P8000", "Netz ein (8-Bit-Teil)");
 }
@@ -166,19 +185,54 @@ uint8_t P8000Machine::panelLamps() const
 
 // ─── Terminal ────────────────────────────────────────────────────────────────
 
+k1520::p8000::Terminal& P8000Machine::terminal()
+{
+    if (!kern_) throw std::logic_error("P8000: Originalterminal an tty1 — kein Kern-Terminal (konsole() benutzen)");
+    return kern_->terminal();
+}
+
+const k1520::p8000::Terminal& P8000Machine::terminal() const
+{
+    if (!kern_) throw std::logic_error("P8000: Originalterminal an tty1 — kein Kern-Terminal (konsole() benutzen)");
+    return kern_->terminal();
+}
+
 uint8_t P8000Machine::screenChar(int col, int row) const
 {
     if (col < 0 || row < 0 || col >= k1520::p8000::Terminal::SPALTEN ||
         row >= k1520::p8000::Terminal::ZEILEN)
         return 0;
-    const auto& z = term_.zelle(row, col);
+    const auto z = konsole_->zelle(row, col);
     return z.feld ? uint8_t(' ') : z.zeichen;
+}
+
+const uint8_t* P8000Machine::framebuffer() const
+{
+    return hwterm_ ? hwterm_->einheit().hw().pixel().data() : fb_.data();
+}
+int P8000Machine::fbWidth() const  { return hwterm_ ? hwterm_->einheit().hw().pixelBreite() : FB_BREITE; }
+int P8000Machine::fbHeight() const { return hwterm_ ? hwterm_->einheit().hw().pixelHoehe() : FB_HOEHE; }
+
+uint8_t P8000Machine::keyboardLeds() const
+{
+    return hwterm_ ? hwterm_->einheit().tastatur().leds() : 0;
+}
+
+namespace {
+constexpr uint32_t LOSLASSEN = 0x00800000u;   ///< Merker im Tastenpuffer: Matrixtaste loslassen
 }
 
 void P8000Machine::keyPress(uint32_t k, bool, bool ctrl)
 {
     std::lock_guard<std::mutex> lk(tasten_sperre_);
-    tasten_.push_back({k, ctrl});
+    tasten_.push_back({k & ~LOSLASSEN, ctrl});
+}
+
+void P8000Machine::keyRelease(uint32_t k)
+{
+    if ((k & 0xFF000000u) != MATRIX_KODE) return;
+    std::lock_guard<std::mutex> lk(tasten_sperre_);
+    tasten_.push_back({k | LOSLASSEN, false});
 }
 
 void P8000Machine::tastenAbgeben()
@@ -188,33 +242,22 @@ void P8000Machine::tastenAbgeben()
         std::lock_guard<std::mutex> lk(tasten_sperre_);
         t.swap(tasten_);
     }
-    using k1520::p8000::TerminalTaste;
     for (const Taste& e : t) {
-        switch (e.code) {
-            case 0x01000004: case 0x01000005: term_.taste(TerminalTaste::CR);  continue;   // Return/Enter
-            case 0x01000000: term_.taste(TerminalTaste::ESC); continue;                    // Escape
-            case 0x01000003: term_.taste(TerminalTaste::BS);  continue;                    // Backspace
-            case 0x01000001: term_.taste(TerminalTaste::HT);  continue;                    // Tab
-            case 0x01000007: term_.taste(TerminalTaste::DEL); continue;                    // Delete
-            // Cursortasten des Terminals (<BS> <VT> <FF> <LF>) und <HOME> (Tab. 4.3-6) sowie Shift+Tab
-            case 0x01000012: term_.taste(TerminalTaste::BS);  continue;                    // Pfeil links
-            case 0x01000013: term_.taste(TerminalTaste::VT);  continue;                    // Pfeil hoch
-            case 0x01000014: term_.taste(TerminalTaste::FF);  continue;                    // Pfeil rechts
-            case 0x01000015: term_.taste(TerminalTaste::LF);  continue;                    // Pfeil runter
-            case 0x01000010: term_.taste(TerminalTaste::HOME); continue;                   // Pos1
-            case 0x01000002: term_.taste(TerminalTaste::BACKTAB); continue;                // Shift+Tab
-            // Eigene Kodes für Tasten ohne Qt-Gegenstück: 0x02000000 + TerminalTaste (Funktionstasten,
-            // BREAK, MODE, VIDEO, ON/OFF, SI/SO); 0x02000100/0x02000101 = Caps lock an/aus (Rasttaste).
-            case 0x02000100: term_.setzeCapsLock(true);  continue;
-            case 0x02000101: term_.setzeCapsLock(false); continue;
-            default: break;
-        }
-        if (e.code >= 0x02000000 && e.code <= 0x02000000 + uint32_t(TerminalTaste::SI_SO)) {
-            term_.taste(static_cast<TerminalTaste>(e.code - 0x02000000));
+        // Matrixtasten der K7673 (nur Originalterminal): drücken bzw. loslassen, ohne Zeitplan —
+        // die Oberfläche hält sie so lange, wie der Anwender sie hält.
+        if ((e.code & 0xFF000000u) == MATRIX_KODE) {
+            if (hwterm_)
+                hwterm_->einheit().matrixDirekt({int((e.code >> 8) & 0x7F), int(e.code & 0xFF)}, !(e.code & LOSLASSEN));
             continue;
         }
-        if (e.code == '\r' || e.code == '\n') { term_.taste(TerminalTaste::CR); continue; }
-        if (e.code < 0x80) term_.zeichenTaste(static_cast<uint8_t>(e.code), e.ctrl);
+        // Caps lock an/aus (Rasttaste): Kern-Terminal setzt den Zustand, das Original drückt die Taste.
+        if (e.code == 0x02000100 || e.code == 0x02000101) {
+            const bool an = e.code == 0x02000100;
+            if (kern_) kern_->terminal().setzeCapsLock(an);
+            else hwterm_->einheit().setzeCapsLock(an);
+            continue;
+        }
+        k1520::p8000::qtTasteAnTerminal(*konsole_, e.code, e.ctrl);
     }
 }
 
@@ -329,7 +372,7 @@ int P8000Machine::run(int max_cycles)
             if (wdc_->zugriffAktiv()) { hd_zugriff_t_ = total_cycles_; hd_zugriff_lw_ = wdc_->gewaehltesLaufwerk(); }
         }
 
-        term_anschluss_.takt(static_cast<uint64_t>(n));
+        konsole_->takt(static_cast<uint64_t>(n));
         if (total_cycles_ >= serial_naechst_) serial_naechst_ = hub_.takt(total_cycles_);
     }
     lw().autoFlush(total_cycles_);
@@ -338,7 +381,7 @@ int P8000Machine::run(int max_cycles)
     return max_cycles - remaining;
 }
 
-// ─── Save-State P8KS v3 (Entwurf §10.2) ──────────────────────────────────────
+// ─── Save-State P8KS v4 (Entwurf §10.2) ──────────────────────────────────────
 
 namespace {
 constexpr char     MAGIC[4] = {'P', '8', 'K', 'S'};
@@ -367,23 +410,31 @@ void P8000Machine::configAbschnitt(std::vector<uint8_t>& out, uint8_t stand) con
         a.num(n);
         a.raw(reinterpret_cast<uint8_t*>(const_cast<char*>(l.data())), l.size());
     }
-    if (stand < 2) return;
-    bool k16 = cfg_.karte16;
-    a.flag(k16);
-    if (!k16) return;
-    uint8_t i16 = static_cast<uint8_t>(cfg_.index16), m16 = static_cast<uint8_t>(cfg_.mon16);
-    uint32_t t16 = cfg_.takt16_hz;
-    bool br = cfg_.bruecken_4xr1_5xr1;
-    uint8_t nk = static_cast<uint8_t>(cfg_.dram.size());
-    a.num(i16); a.num(m16); a.num(t16); a.flag(br); a.num(nk);
-    for (const P8000Dram16::Karte& k : cfg_.dram) {
-        uint8_t typ = static_cast<uint8_t>(k.typ), mod = k.modul;
-        a.num(typ); a.num(mod);
+    if (stand >= 2) {
+        bool k16 = cfg_.karte16;
+        a.flag(k16);
+        if (k16) {
+            uint8_t i16 = static_cast<uint8_t>(cfg_.index16), m16 = static_cast<uint8_t>(cfg_.mon16);
+            uint32_t t16 = cfg_.takt16_hz;
+            bool br = cfg_.bruecken_4xr1_5xr1;
+            uint8_t nk = static_cast<uint8_t>(cfg_.dram.size());
+            a.num(i16); a.num(m16); a.num(t16); a.flag(br); a.num(nk);
+            for (const P8000Dram16::Karte& k : cfg_.dram) {
+                uint8_t typ = static_cast<uint8_t>(k.typ), mod = k.modul;
+                a.num(typ); a.num(mod);
+            }
+            if (stand >= 3) {
+                uint8_t w = static_cast<uint8_t>(cfg_.wdc);
+                uint32_t tw = cfg_.taktwdc_hz;
+                a.num(w); a.num(tw);
+            }
+        }
     }
-    if (stand < 3) return;
-    uint8_t w = static_cast<uint8_t>(cfg_.wdc);
-    uint32_t tw = cfg_.taktwdc_hz;
-    a.num(w); a.num(tw);
+    if (stand >= 4) {   // P8KS v4: Terminalart der Konsole (+ Zeichentakt-Teiler des Originals) am Ende
+        uint8_t art = hwterm_ ? 1 : 0;
+        uint8_t teiler = hwterm_ ? static_cast<uint8_t>(cfg_.terminal_hw.hw.zeichentaktTeiler) : 0;
+        a.num(art); a.num(teiler);
+    }
 }
 
 std::vector<uint8_t> P8000Machine::stateBytes() const
@@ -398,8 +449,7 @@ std::vector<uint8_t> P8000Machine::stateBytes() const
     b.clear(); floppy_.serialize(b);  abschnitt(out, ABS_FLOPPY, b);
     b.clear(); karte_.serialize(b);   abschnitt(out, ABS_KARTE, b);
     b.clear();
-    term_.serialize(b);
-    term_anschluss_.serialize(b);
+    konsole_->serialize(b);   // Kern: Terminal + Anschluss (bitgleich zu v3); Original: P8TH + Kopplung
     abschnitt(out, ABS_TERMINAL, b);
     if (k16_) {
         b.clear(); k16_->serialize(b);      abschnitt(out, ABS_KARTE16, b);
@@ -447,6 +497,7 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     const uint8_t stand = b[4];
     if (stand < 2 && k16_) { state_error_ = "P8KS v1 kennt keinen 16-Bit-Teil"; return false; }
     if (stand < 3 && wdc_) { state_error_ = "P8KS v" + std::to_string(stand) + " kennt keinen WDC"; return false; }
+    if (stand < 4 && hwterm_) { state_error_ = "P8KS v" + std::to_string(stand) + " kennt kein Originalterminal"; return false; }
     std::vector<uint8_t> cfg;
     configAbschnitt(cfg, stand);
     if (!t[ABS_CONFIG].da || cfg.size() != static_cast<size_t>(t[ABS_CONFIG].e - t[ABS_CONFIG].p) ||
@@ -488,7 +539,7 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     if (wdc_ && !lade(ABS_WDC, "WDC (Platten wie beim Speichern angeschlossen?)",
                       [&](const uint8_t*& p, const uint8_t* e) { return wdc_->deserialize(p, e); })) return false;
     if (!lade(ABS_TERMINAL, "Terminal", [&](const uint8_t*& p, const uint8_t* e) {
-            return term_.deserialize(p, e) && term_anschluss_.deserialize(p, e); })) return false;
+            return konsole_->deserialize(p, e); })) return false;
     if (!lade(ABS_MASCHINE, "Maschine", [&](const uint8_t*& p, const uint8_t* e) {
             auto a = k1520::ZAr::leser(p, e);
             uint64_t tc = 0, sn = 0; bool nmi = false; uint32_t n = 0;
