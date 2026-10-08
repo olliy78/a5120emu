@@ -6,11 +6,11 @@ Reine Daten und Rechnung — kein Qt (prüfbar ohne Fenster).  Quellen: `doc/p80
 
 * **Position** = ``(zeile, spalte)`` mit Zeile 0–7 und Spalte 0–15 (P0.0–7 = Spalte 0–7,
   P1.0–7 = Spalte 8–15); der Kern kodiert sie als ``0x04000000 | zeile << 8 | spalte``.
-* **Die Beschriftung der Tastenkappen kennt keine Quelle** (Befund P19a): Bild und Wirtsabbildung
-  folgen dem, was das Terminal aus dem Scancode macht, nicht einem Foto der Tastatur.  Die
-  Anordnung (QWERTZ-Block, Cursor-/Bearbeitungsblock, Ziffernblock) ist ein Vorschlag; die
-  Matrixpositionen und ihre Scancodes sind dagegen gelesen (Test gegen
-  ``term_matrix_scancode`` des Kerns).
+* **Anordnung und Beschriftung der Tastenkappen folgen dem Foto des Anwenders** (2026-10-08,
+  ``doc/p8000/bilder/tastatur_k7673_foto.jpg``, ``doc/p8000/tastatur_k7673.md`` §8).  Die Zuordnung
+  Kappe ↔ Matrixposition ist dort, wo das Foto keine Quelle hat (F1–F11, CE, „+“, rechtes CTRL,
+  die vier Zeilen-/Zeichentasten), eine ANNAHME aus der Scancode-Wirkung.  Die Matrixpositionen
+  und ihre Scancodes sind dagegen gelesen (Test gegen ``term_matrix_scancode`` des Kerns).
 """
 
 from __future__ import annotations
@@ -38,65 +38,100 @@ def kode_matrix(kode: int) -> Optional[Position]:
 # wie sie ``k1520_term_matrix_scancode`` liefert — der Test vergleicht beides.
 _E0 = 0xE000
 
-#: Position → (Scancode, Beschriftung normal, Beschriftung mit SHIFT, Tooltip-Name).
-#: Beschriftungen sind die Zeichen, die das Terminal 5.0 daraus macht (Zeichensatz 1).
-TASTEN: Dict[Position, Tuple[int, str, str, str]] = {
+_SCANCODE: Dict[Position, int] = {
     # Zeile 0
-    (0, 0): (0x02, "1", "!", ""), (0, 1): (0x04, "3", "@", ""), (0, 2): (0x06, "5", "%", ""),
-    (0, 3): (0x08, "7", "/", ""), (0, 4): (0x0A, "9", ")", ""), (0, 5): (0x0C, "~", "?", "ß in Zeichensatz 2"),
-    (0, 6): (0x1D, "TAB", "", "Tabulator (HT)"), (0, 7): (0x4A, "-", "", "Ziffernblock"),
-    (0, 8): (_E0 | 0x4D, "▶", "", "Cursor rechts"), (0, 9): (_E0 | 0x52, "CHAR\nDEL", "", "CHAR DELETE"),
-    (0, 10): (_E0 | 0x49, "CHAR\nINS", "", "CHAR INSERT"), (0, 11): (_E0 | 0x35, "/", "", "Ziffernblock"),
-    (0, 14): (0x45E19DC5, "PAUSE", "", "PAUSE (ohne Wirkung im Terminal 5.0)"),
+    (0, 0): 0x02, (0, 1): 0x04, (0, 2): 0x06, (0, 3): 0x08, (0, 4): 0x0A, (0, 5): 0x0C, (0, 6): 0x1D, (0, 7): 0x4A, (0, 8): _E0 | 0x4D, (0, 9): _E0 | 0x52, (0, 10): _E0 | 0x49, (0, 11): _E0 | 0x35, (0, 14): 0x45e19dc5,
     # Zeile 1
-    (1, 0): (0x10, "q", "Q", ""), (1, 1): (0x12, "e", "E", ""), (1, 2): (0x14, "t", "T", ""),
-    (1, 3): (0x16, "u", "U", ""), (1, 4): (0x18, "o", "O", ""), (1, 5): (0x1A, "]", "}", "ü in Zeichensatz 2"),
-    (1, 6): (0x2A, "SHIFT", "", "SHIFT (links)"),
-    (1, 8): (_E0 | 0x50, "▼", "", "Cursor runter"), (1, 9): (_E0 | 0x53, "LINE\nDEL", "", "LINE DELETE"),
-    (1, 10): (_E0 | 0x51, "LINE\nINS", "", "LINE INSERT"), (1, 11): (0x48, "8", "", "Ziffernblock"),
-    (1, 14): (0x57, "", "", ""), (1, 15): (0x58, "", "", ""),
+    (1, 0): 0x10, (1, 1): 0x12, (1, 2): 0x14, (1, 3): 0x16, (1, 4): 0x18, (1, 5): 0x1A, (1, 6): 0x2A, (1, 8): _E0 | 0x50, (1, 9): _E0 | 0x53, (1, 10): _E0 | 0x51, (1, 11): 0x48, (1, 14): 0x57, (1, 15): 0x58,
     # Zeile 2
-    (2, 0): (0x1E, "a", "A", ""), (2, 1): (0x20, "d", "D", ""), (2, 2): (0x22, "g", "G", ""),
-    (2, 3): (0x24, "j", "J", ""), (2, 4): (0x26, "l", "L", ""), (2, 5): (0x28, "[", "{", "ä in Zeichensatz 2"),
-    (2, 6): (0x3A, "CAPS\nLOCK", "", "CAPS LOCK (rastet, LED)"), (2, 7): (0x4E, "=", "", "Ziffernblock"),
-    (2, 8): (_E0 | 0x4B, "◀", "", "Cursor links"), (2, 11): (0x4C, "5", "", "Ziffernblock"),
-    (2, 14): (0x42, "", "", ""),
+    (2, 0): 0x1E, (2, 1): 0x20, (2, 2): 0x22, (2, 3): 0x24, (2, 4): 0x26, (2, 5): 0x28, (2, 6): 0x3A, (2, 7): 0x4E, (2, 8): _E0 | 0x4B, (2, 11): 0x4C, (2, 14): 0x42,
     # Zeile 3
-    (3, 0): (0x2C, "y", "Y", ""), (3, 1): (0x2E, "c", "C", ""), (3, 2): (0x30, "b", "B", ""),
-    (3, 3): (0x32, "m", "M", ""), (3, 4): (0x34, ".", ":", ""),
-    (3, 6): (0x2A, "SHIFT", "", "SHIFT (rechts)"), (3, 7): (_E0 | 0x1C, "ENTER", "", "ENTER (sendet CR)"),
-    (3, 8): (0x1C, "RETURN", "", "RETURN (CR)"), (3, 11): (0x50, "2", "", "Ziffernblock"),
-    (3, 14): (0x3E, "BREAK", "", "BREAK"), (3, 15): (0x3F, "", "", ""),
+    (3, 0): 0x2C, (3, 1): 0x2E, (3, 2): 0x30, (3, 3): 0x32, (3, 4): 0x34, (3, 6): 0x2A, (3, 7): _E0 | 0x1C, (3, 8): 0x1C, (3, 11): 0x50, (3, 14): 0x3E, (3, 15): 0x3F,
     # Zeile 4
-    (4, 0): (0x03, "2", '"', ""), (4, 1): (0x05, "4", "$", ""), (4, 2): (0x07, "6", "&", ""),
-    (4, 3): (0x09, "8", "(", ""), (4, 4): (0x0B, "0", "=", ""), (4, 5): (0x0D, "'", "`", ""),
-    (4, 6): (0x56, "<", ">", ""), (4, 7): (0x0E, "DEL", "", "DEL (7FH)"),
-    (4, 8): (0x52, "0", "", "Ziffernblock"), (4, 9): (_E0 | 0x47, "PAGE\nERASE", "", "PAGE ERASE"),
-    (4, 10): (0x45, "BS", "", "BS (zweite Taste)"), (4, 11): (0x37, "*", "", "Ziffernblock"),
-    (4, 12): (0x49, "9", "", "zweite 9"), (4, 14): (_E0 | 0x37, "", "", ""), (4, 15): (0x46, "", "", ""),
+    (4, 0): 0x03, (4, 1): 0x05, (4, 2): 0x07, (4, 3): 0x09, (4, 4): 0x0B, (4, 5): 0x0D, (4, 6): 0x56, (4, 7): 0x0E, (4, 8): 0x52, (4, 9): _E0 | 0x47, (4, 10): 0x45, (4, 11): 0x37, (4, 12): 0x49, (4, 14): _E0 | 0x37, (4, 15): 0x46,
     # Zeile 5
-    (5, 0): (0x11, "w", "W", ""), (5, 1): (0x13, "r", "R", ""), (5, 2): (0x15, "z", "Z", ""),
-    (5, 3): (0x17, "i", "I", ""), (5, 4): (0x19, "p", "P", ""), (5, 5): (0x1B, "+", "*", ""),
-    (5, 6): (0x01, "ESC", "", "ESC"), (5, 7): (0x0F, "BACK\nTAB", "", "BACKTAB"),
-    (5, 8): (0xE152E152, "00", "", "Ziffernblock „00“"), (5, 9): (_E0 | 0x4F, "HOME", "", "HOME"),
-    (5, 10): (0x47, "7", "", "Ziffernblock"), (5, 11): (0x49, "9", "", "Ziffernblock"),
-    (5, 12): (0x3B, "SI/SO", "", "Zeichensatz 1 ⇄ 2"), (5, 14): (0x43, "", "", ""), (5, 15): (0x44, "", "", ""),
+    (5, 0): 0x11, (5, 1): 0x13, (5, 2): 0x15, (5, 3): 0x17, (5, 4): 0x19, (5, 5): 0x1B, (5, 6): 0x01, (5, 7): 0x0F, (5, 8): 0xe152e152, (5, 9): _E0 | 0x4F, (5, 10): 0x47, (5, 11): 0x49, (5, 12): 0x3B, (5, 14): 0x43, (5, 15): 0x44,
     # Zeile 6
-    (6, 0): (0x1F, "s", "S", ""), (6, 1): (0x21, "f", "F", ""), (6, 2): (0x23, "h", "H", ""),
-    (6, 3): (0x25, "k", "K", ""), (6, 4): (0x27, "\\", "|", "ö in Zeichensatz 2"),
-    (6, 5): (0x2B, "#", "^", ""), (6, 6): (0x2A, "SHIFT", "", "SHIFT (Mitte)"),
-    (6, 7): (0x29, "BS", "", "BS (Backspace)"),
-    (6, 8): (0x53, ",", "", "Ziffernblock"), (6, 10): (0x4B, "4", "", "Ziffernblock"),
-    (6, 11): (0x4D, "6", "", "Ziffernblock"), (6, 13): (0x38, "CTRL", "", "CTRL"),
-    (6, 14): (0x40, "", "", ""), (6, 15): (0x41, "", "", ""),
+    (6, 0): 0x1F, (6, 1): 0x21, (6, 2): 0x23, (6, 3): 0x25, (6, 4): 0x27, (6, 5): 0x2B, (6, 6): 0x2A, (6, 7): 0x29, (6, 8): 0x53, (6, 10): 0x4B, (6, 11): 0x4D, (6, 13): 0x38, (6, 14): 0x40, (6, 15): 0x41,
     # Zeile 7
-    (7, 0): (0x2D, "x", "X", ""), (7, 1): (0x2F, "v", "V", ""), (7, 2): (0x31, "n", "N", ""),
-    (7, 3): (0x33, ",", ";", ""), (7, 4): (0x35, "-", "_", ""), (7, 7): (0x39, "", "", "Leertaste"),
-    (7, 9): (_E0 | 0x48, "▲", "", "Cursor hoch"), (7, 10): (0x4F, "1", "", "Ziffernblock"),
-    (7, 11): (0x51, "3", "", "Ziffernblock"), (7, 12): (0x54, "ON/\nOFF", "", "ON/OFF (rastet, LED)"),
-    (7, 13): (_E0 | 0x38, "", "", ""), (7, 14): (0x3C, "MODE", "", "MODE (rastet, LED)"),
-    (7, 15): (0x3D, "VIDEO", "", "VIDEO"),
+    (7, 0): 0x2D, (7, 1): 0x2F, (7, 2): 0x31, (7, 3): 0x33, (7, 4): 0x35, (7, 7): 0x39, (7, 9): _E0 | 0x48, (7, 10): 0x4F, (7, 11): 0x51, (7, 12): 0x54, (7, 13): _E0 | 0x38, (7, 14): 0x3C, (7, 15): 0x3D,
 }
+
+# Beschriftung der Tastenkappen nach dem Foto des Anwenders (2026-10-08, `doc/p8000/bilder/
+# tastatur_k7673_foto.jpg`; Zuordnung und Annahmen: `doc/p8000/tastatur_k7673.md` §8).
+#: Position → (Kappe unten/Haupt, Kappe oben, Tooltip).  „Oben“ ist die Umschaltbelegung der Kappe
+#: (bei Zeichentasten das Zeichen mit SHIFT); die Zeichensatz-2-Belegung (DIN 66003: §, ß, Ä Ö Ü …)
+#: steht im Tooltip.  Tasten, die das Foto nicht zeigt, tragen ihren Scancode.
+BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
+    # Zeile 0
+    (0, 0): ("1", "!", ""), (0, 1): ("3", "@", "Zeichensatz 2 (SI/SO): §"), (0, 2): ("5", "%", ""),
+    (0, 3): ("7", "/", ""), (0, 4): ("9", ")", ""), (0, 5): ("ß", "?", "Kappe „? ~ ß“; ß im Zeichensatz 2, sonst ~"),
+    (0, 6): ("⇥", "", "TAB (HT)"), (0, 7): ("−", "", "Ziffernblock"),
+    (0, 8): ("→", "", "Cursor rechts"),
+    (0, 9): ("|←|", "", "CHAR DELETE (Annahme: Kappensymbol |←|)"),
+    (0, 10): ("|→|", "", "CHAR INSERT (Annahme: Kappensymbol |→|)"),
+    (0, 11): ("÷", "", "Ziffernblock (sendet „/“)"),
+    (0, 14): ("F11", "", "Annahme: F11 (Matrixposition mit PAUSE-Folge, im Terminal 5.0 ohne Wirkung)"),
+    # Zeile 1
+    (1, 0): ("Q", "", ""), (1, 1): ("E", "", ""), (1, 2): ("T", "", ""), (1, 3): ("U", "", ""),
+    (1, 4): ("O", "", ""), (1, 5): ("Ü", "}", "Kappe „} Ü ]“; Ü im Zeichensatz 2"),
+    (1, 6): ("+", "", "Ziffernblock „+“ (Annahme). K7673.09 sendet an dieser Position SHIFT (2AH), "
+                      "K7673.01 den Code 00H = „+“"),
+    (1, 8): ("↓", "", "Cursor runter"), (1, 9): ("⤒", "", "LINE DELETE (Annahme: Kappensymbol ⤒)"),
+    (1, 10): ("⤓", "", "LINE INSERT (Annahme: Kappensymbol ⤓)"), (1, 11): ("8", "", "Ziffernblock"),
+    (1, 14): ("F8", "", "Annahme: F8 (Scancode 57H, ohne Wirkung)"),
+    (1, 15): ("F9", "", "Annahme: F9 (Scancode 58H, ohne Wirkung)"),
+    # Zeile 2
+    (2, 0): ("A", "", ""), (2, 1): ("D", "", ""), (2, 2): ("G", "", ""), (2, 3): ("J", "", ""),
+    (2, 4): ("L", "", ""), (2, 5): ("Ä", "{", "Kappe „{ Ä [“; Ä im Zeichensatz 2"),
+    (2, 6): ("CAPS\nLOCK", "", "CAPS LOCK (rastet im Terminal, LED)"), (2, 7): ("=", "", "Ziffernblock"),
+    (2, 8): ("←", "", "Cursor links"), (2, 11): ("5", "", "Ziffernblock"),
+    (2, 14): ("F4", "", "Annahme: F4 (Scancode 42H, ohne Wirkung)"),
+    # Zeile 3
+    (3, 0): ("Y", "", ""), (3, 1): ("C", "", ""), (3, 2): ("B", "", ""), (3, 3): ("M", "", ""),
+    (3, 4): (".", ":", ""), (3, 6): ("⇕", "", "SHIFT (links und rechts am Foto: ⇕)"),
+    (3, 7): ("ENTER", "", "Ziffernblock ENTER (sendet CR)"), (3, 8): ("↵\nRETURN", "", "RETURN (CR)"),
+    (3, 11): ("2", "", "Ziffernblock"), (3, 14): ("BREAK", "", "BREAK"),
+    (3, 15): ("F1", "", "Annahme: F1 (Scancode 3FH, ohne Wirkung)"),
+    # Zeile 4
+    (4, 0): ("2", '"', ""), (4, 1): ("4", "$", ""), (4, 2): ("6", "&", ""),
+    (4, 3): ("8", "(", ""), (4, 4): ("0", "=", ""), (4, 5): ("´", "`", "Kappe „` ´“ (ASCII ' und `)"),
+    (4, 6): ("<", ">", ""), (4, 7): ("DEL", "", "DEL (7FH)"),
+    (4, 8): ("0", "", "Ziffernblock"), (4, 9): ("CLEAR", "", "PAGE ERASE (Kappe CLEAR)"),
+    (4, 10): ("CE", "", "Ziffernblock CE (Annahme: Matrixposition 45H, das Terminal macht BS daraus)"),
+    (4, 11): ("*", "", "Ziffernblock"),
+    (4, 12): ("9*", "", "zweite „9“ (45H/49H-Position) — am Foto keine Taste"),
+    (4, 14): ("F10", "", "Annahme: F10 (E0 37, ohne Wirkung)"),
+    (4, 15): ("F7", "", "Annahme: F7 (Scancode 46H, ohne Wirkung)"),
+    # Zeile 5
+    (5, 0): ("W", "", ""), (5, 1): ("R", "", ""), (5, 2): ("Z", "", ""), (5, 3): ("I", "", ""),
+    (5, 4): ("P", "", ""), (5, 5): ("+", "*", ""), (5, 6): ("ESC", "", "ESC"),
+    (5, 7): ("⇤", "", "BACKTAB"),
+    (5, 8): ("00", "", "Ziffernblock „00“"), (5, 9): ("↖", "", "HOME"),
+    (5, 10): ("7", "", "Ziffernblock"), (5, 11): ("9", "", "Ziffernblock"),
+    (5, 12): ("SI\nSO", "", "Zeichensatz 1 ⇄ 2"),
+    (5, 14): ("F5", "", "Annahme: F5 (Scancode 43H, ohne Wirkung)"),
+    (5, 15): ("F6", "", "Annahme: F6 (Scancode 44H, ohne Wirkung)"),
+    # Zeile 6
+    (6, 0): ("S", "", ""), (6, 1): ("F", "", ""), (6, 2): ("H", "", ""), (6, 3): ("K", "", ""),
+    (6, 4): ("Ö", "|", "Kappe „| Ö \\“; Ö im Zeichensatz 2"),
+    (6, 5): ("#", "^", ""), (6, 6): ("⇕", "", "SHIFT (rechts)"), (6, 7): ("BS", "", "BS (Backspace)"),
+    (6, 8): (",", "", "Ziffernblock"), (6, 10): ("4", "", "Ziffernblock"),
+    (6, 11): ("6", "", "Ziffernblock"), (6, 13): ("CTRL", "", "CTRL (links)"),
+    (6, 14): ("F2", "", "Annahme: F2 (Scancode 40H, ohne Wirkung)"),
+    (6, 15): ("F3", "", "Annahme: F3 (Scancode 41H, ohne Wirkung)"),
+    # Zeile 7
+    (7, 0): ("X", "", ""), (7, 1): ("V", "", ""), (7, 2): ("N", "", ""),
+    (7, 3): (",", ";", ""), (7, 4): ("-", "_", ""), (7, 7): ("", "", "Leertaste"),
+    (7, 9): ("↑", "", "Cursor hoch"), (7, 10): ("1", "", "Ziffernblock"),
+    (7, 11): ("3", "", "Ziffernblock"), (7, 12): ("OFF", "", "ON/OFF (rastet im Terminal, LED)"),
+    (7, 13): ("CTRL", "", "CTRL (rechts; Annahme: Matrixposition E0 38 — im Terminal 5.0 ohne Wirkung)"),
+    (7, 14): ("MOD", "", "MODE (rastet, LED)"), (7, 15): ("VIDEO", "", "VIDEO"),
+}
+
+#: Position → (Scancode, Kappe unten, Kappe oben, Tooltip) — die Scancodes sind massgeblich (EPROM-Abzug).
+TASTEN: Dict[Position, Tuple[int, str, str, str]] = {
+    p: (_SCANCODE[p],) + BESCHRIFTUNG[p] for p in _SCANCODE}
 
 #: Tasten, die im Terminal 5.0 keine Wirkung haben (kein Zeichen, keine Funktion).
 OHNE_WIRKUNG: Tuple[Position, ...] = (
@@ -110,7 +145,7 @@ LED_TASTEN: Dict[int, Position] = {0x01: (7, 12), 0x02: (2, 6), 0x04: (7, 14)}
 RASTTASTEN = frozenset(LED_TASTEN.values())
 
 #: Tasten, die als Umschalter wirken und von der Bildschirmtastatur „gehalten“ werden können.
-UMSCHALTER: Tuple[Position, ...] = ((1, 6), (3, 6), (6, 6), (6, 13))
+UMSCHALTER: Tuple[Position, ...] = ((3, 6), (6, 6), (6, 13))
 
 
 def positionen() -> List[Position]:
@@ -131,11 +166,21 @@ def _erste_position() -> Dict[int, Position]:
 
 #: Scancode → erste Position, die ihn sendet (SHIFT sitzt dreimal, die „9“ zweimal).
 SCANCODE_POS: Dict[int, Position] = _erste_position()
+# Der Wirts-SHIFT geht über die linke Shift-Kappe des Fotos; (1, 6) ist dort das „+“ des Ziffernblocks.
+SCANCODE_POS[0x2A] = (3, 6)
 
 # ── Tastenbild: Position, x, y, Breite in Tasteneinheiten ───────────────────────────────────────
+# Anordnung nach dem Foto des Anwenders: Funktionsreihe oben (OFF | SI/SO MOD VIDEO BREAK | F1–F4 |
+# F5–F8 | F9–F11 | Anzeigefeld), darunter Haupt-, Bearbeitungs- und Ziffernblock, Cursorkreuz.
 #: Bildhöhe/-breite in Tasteneinheiten (Höhe einer Taste = 1).
-BILD_BREITE = 23.6
+BILD_BREITE = 23.4
 BILD_HOEHE = 7.6
+
+#: Anzeigefeld oben rechts am Foto: (LED-Bit, Beschriftung, x, y) — die LEDs sitzen NICHT auf den Tasten.
+LED_FELD: Tuple[Tuple[int, str, float, float], ...] = (
+    (0x01, "OFF", 19.2, 0.0), (0x02, "CAPS", 20.9, 0.0), (0x04, "MOD", 22.4, 0.0))
+#: Rahmen des Anzeigefelds (x, y, Breite, Höhe).
+LED_RAHMEN = (19.0, 0.0, 4.3, 1.05)
 
 
 def _reihe(y: float, x: float, eintraege) -> List[Tuple[Position, float, float, float]]:
@@ -152,41 +197,61 @@ def _gleich(positionen_, breite=1.0):
 
 def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
     t: List[Tuple[Position, float, float, float]] = []
-    # Funktionsreihe
-    t += _reihe(0.0, 0.0, _gleich([(5, 12), (7, 14), (7, 15), (3, 14), (7, 12), (0, 14)], 1.4))
-    # Hauptblock
-    t += _reihe(1.15, 0.0, [((5, 6), 1.0)] + _gleich(
+    # Funktionsreihe (y = 0): OFF, SI/SO MOD VIDEO BREAK, F1–F4, F5–F8, F9–F11.
+    # F1–F11 sind ANNAHME: die elf Positionen ohne Wirkung in aufsteigender Scancode-Folge.
+    t += [((7, 12), 0.0, 0.0, 1.0)]
+    t += _reihe(0.0, 2.0, _gleich([(5, 12), (7, 14), (7, 15), (3, 14)]))
+    fkeys = [(3, 15), (6, 14), (6, 15), (2, 14), (5, 14), (5, 15), (4, 15), (1, 14), (1, 15), (4, 14), (0, 14)]
+    for p, x in zip(fkeys, (6.5, 7.5, 8.5, 9.5, 11.0, 12.0, 13.0, 14.0, 15.5, 16.5, 17.5)):
+        t.append((p, x, 0.0, 1.0))
+    # Zifferntasten-Reihe: ESC 1 2 … 0 ß ´ BS DEL
+    t += _reihe(1.5, 0.0, [((5, 6), 1.0)] + _gleich(
         [(0, 0), (4, 0), (0, 1), (4, 1), (0, 2), (4, 2), (0, 3), (4, 3), (0, 4), (4, 4),
-         (0, 5), (4, 5)]) + [((4, 7), 2.0)])
-    t += _reihe(2.15, 0.0, [((0, 6), 1.5)] + _gleich(
+         (0, 5), (4, 5)]) + [((6, 7), 1.0), ((4, 7), 1.0)])
+    # TAB Q W E R T Z U I O P Ü + BACKTAB
+    t += _reihe(2.5, 0.0, [((0, 6), 1.5)] + _gleich(
         [(1, 0), (5, 0), (1, 1), (5, 1), (1, 2), (5, 2), (1, 3), (5, 3), (1, 4), (5, 4),
          (1, 5), (5, 5)]) + [((5, 7), 1.5)])
-    t += _reihe(3.15, 0.0, [((2, 6), 1.75)] + _gleich(
+    # CAPS LOCK A S D F G H J K L Ö Ä # RETURN (RETURN zweizeilig hoch)
+    t += _reihe(3.5, 0.5, [((2, 6), 1.4)] + _gleich(
         [(2, 0), (6, 0), (2, 1), (6, 1), (2, 2), (6, 2), (2, 3), (6, 3), (2, 4), (6, 4),
-         (2, 5), (6, 5)]) + [((3, 7), 1.25)])
-    t += _reihe(4.15, 0.0, [((1, 6), 1.25), ((4, 6), 1.0)] + _gleich(
+         (2, 5), (6, 5)]))
+    # SHIFT < Y X C V B N M , . - SHIFT
+    t += _reihe(4.5, 0.0, [((3, 6), 1.25), ((4, 6), 0.8)] + _gleich(
         [(3, 0), (7, 0), (3, 1), (7, 1), (3, 2), (7, 2), (3, 3), (7, 3), (3, 4), (7, 4)])
-        + [((3, 6), 2.75)])
-    t += _reihe(5.15, 0.0, [((6, 13), 1.5), ((6, 6), 1.5), ((7, 7), 8.0), ((3, 8), 2.0),
-                            ((6, 7), 1.0), ((4, 10), 1.0)])
-    # Bearbeitungsblock
-    t += _reihe(1.15, 15.6, _gleich([(0, 9), (0, 10), (4, 9)]))
-    t += _reihe(2.15, 15.6, _gleich([(1, 9), (1, 10), (5, 9)]))
-    t += _reihe(4.15, 16.6, _gleich([(7, 9)]))
-    t += _reihe(5.15, 15.6, _gleich([(2, 8), (1, 8), (0, 8)]))
-    # Ziffernblock
-    t += _reihe(1.15, 19.6, _gleich([(5, 8), (0, 11), (4, 11), (0, 7)]))
-    t += _reihe(2.15, 19.6, _gleich([(5, 10), (1, 11), (5, 11), (2, 7)]))
-    t += _reihe(3.15, 19.6, _gleich([(6, 10), (2, 11), (6, 11), (6, 8)]))
-    t += _reihe(4.15, 19.6, _gleich([(7, 10), (3, 11), (7, 11), (4, 12)]))
-    t += _reihe(5.15, 19.6, [((4, 8), 2.0)])
-    # Tasten ohne Wirkung: schmale Leiste unten
-    t += _reihe(6.6, 0.0, _gleich([p for p in OHNE_WIRKUNG if p != (0, 14)], 1.0))
+        + [((6, 6), 1.85)])
+    t += [((3, 8), 13.9, 3.5, 1.1)]          # RETURN: Höhe 2 (siehe HOEHE2)
+    # CTRL, Leertaste, CTRL
+    t += [((6, 13), 2.6, 5.5, 1.0), ((7, 7), 3.6, 5.5, 7.9), ((7, 13), 11.5, 5.5, 1.0)]
+    # Bearbeitungsblock: Zeile 1: |←| CLEAR |→| ; Zeile 2: ⤒ HOME ⤓
+    t += _reihe(1.5, 15.5, _gleich([(0, 9), (4, 9), (0, 10)]))
+    t += _reihe(2.5, 15.5, _gleich([(1, 9), (5, 9), (1, 10)]))
+    # Cursorkreuz
+    t += [((7, 9), 16.5, 4.5, 1.0)]
+    t += _reihe(5.5, 15.5, _gleich([(2, 8), (1, 8), (0, 8)]))
+    # Ziffernblock (Spalten bei 19.1, Teilung 1.06); ENTER zweizeilig hoch
+    for y, zeile in ((1.5, [(4, 10), (0, 11), (4, 11), (0, 7)]),
+                     (2.5, [(5, 10), (1, 11), (5, 11), (1, 6)]),
+                     (3.5, [(6, 10), (2, 11), (6, 11), (2, 7)]),
+                     (4.5, [(7, 10), (3, 11), (7, 11)]),
+                     (5.5, [(4, 8), (5, 8), (6, 8)])):
+        for k, p in enumerate(zeile):
+            t.append((p, 19.1 + 1.06 * k, y, 1.0))
+    t.append(((3, 7), 19.1 + 1.06 * 3, 4.5, 1.0))   # ENTER: Höhe 2
+    # Die einzige belegte Position ohne Taste am Foto: schmale Leiste unten
+    t.append(((4, 12), 19.1, 6.55, 1.0))
     return t
 
 
 #: ``(Position, x, y, breite)`` — jede der 105 Positionen genau einmal.
 BILD: List[Tuple[Position, float, float, float]] = _bildaufbau()
+
+#: Tasten, die zwei Zeilen hoch sind (RETURN, ENTER des Ziffernblocks).
+HOEHE2: Tuple[Position, ...] = ((3, 8), (3, 7))
+
+
+def taste_hoehe(pos: Position) -> float:
+    return 2.0 if pos in HOEHE2 else 1.0
 
 # ── Zeichen → Taste (NORMAL_Tab / SHIFT_Tab der Firmware 5.0) ──────────────────────────────────
 _NORMAL = bytes.fromhex(

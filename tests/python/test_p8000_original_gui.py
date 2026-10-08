@@ -322,11 +322,36 @@ def test_layout_105_positionen_scancodes_wie_im_eprom_abzug():
     assert sorted(p for p, *_ in L.BILD) == sorted(L.TASTEN)      # jede Position genau einmal im Bild
     assert len(L.BILD) == 105
     # Keine zwei Tasten überdecken sich
-    felder = [(x, y, x + b, y + 1) for _, x, y, b in L.BILD]
+    felder = [(x, y, x + b, y + L.taste_hoehe(p)) for p, x, y, b in L.BILD]
     for i, a in enumerate(felder):
         for b in felder[i + 1:]:
             assert a[2] <= b[0] + 1e-6 or b[2] <= a[0] + 1e-6 or a[3] <= b[1] + 1e-6 or b[3] <= a[1] + 1e-6, (a, b)
     assert max(f[2] for f in felder) <= L.BILD_BREITE and max(f[3] for f in felder) <= L.BILD_HOEHE
+
+
+def test_tastenbild_folgt_dem_foto_reihenfolge_und_beschriftung():
+    """Reihen von links nach rechts wie am Foto der Anwendertastatur (doc/p8000/bilder)."""
+    from app.ui import k7673_layout as L
+    def reihe(y, x0=0.0, x1=15.0):
+        return [L.TASTEN[p][1] for p, x, yy, b in sorted(L.BILD, key=lambda e: e[1])
+                if abs(yy - y) < 1e-6 and x0 <= x < x1]
+    assert reihe(0.0, 0, 19) == ["OFF", "SI\nSO", "MOD", "VIDEO", "BREAK"] + [f"F{n}" for n in range(1, 12)]
+    assert reihe(1.5) == ["ESC", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "ß", "´", "BS", "DEL"]
+    assert reihe(2.5) == ["⇥", "Q", "W", "E", "R", "T", "Z", "U", "I", "O", "P", "Ü", "+", "⇤"]
+    assert reihe(3.5, x1=13.5) == ["CAPS\nLOCK", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Ö", "Ä", "#"]
+    assert reihe(4.5, x1=13.5) == ["⇕", "<", "Y", "X", "C", "V", "B", "N", "M", ",", ".", "-", "⇕"]
+    assert reihe(5.5, x1=13.5) == ["CTRL", "", "CTRL"]
+    # Ziffernblock: CE ÷ * − / 7 8 9 + / 4 5 6 = / 1 2 3 ENTER / 0 00 ,
+    zb = lambda y: [L.TASTEN[p][1] for p, x, yy, b in sorted(L.BILD, key=lambda e: e[1])
+                    if abs(yy - y) < 1e-6 and x >= 19]
+    assert zb(1.5) == ["CE", "÷", "*", "−"] and zb(2.5) == ["7", "8", "9", "+"]
+    assert zb(3.5) == ["4", "5", "6", "="] and zb(4.5) == ["1", "2", "3", "ENTER"]
+    assert zb(5.5) == ["0", "00", ","]
+    # Umschaltbelegung der Zeichentasten wie auf den Kappen (SHIFT oben)
+    assert L.TASTEN[(0, 1)][1:3] == ("3", "@") and L.TASTEN[(4, 6)][1:3] == ("<", ">")
+    assert L.TASTEN[(5, 5)][1:3] == ("+", "*") and L.TASTEN[(6, 5)][1:3] == ("#", "^")
+    # Der Wirts-SHIFT geht über die linke SHIFT-Kappe, nicht über das „+“ des Ziffernblocks
+    assert L.SCANCODE_POS[0x2A] == (3, 6)
 
 
 def test_jede_matrixposition_ist_ueber_die_bildschirmtastatur_erreichbar(qapp):
@@ -363,7 +388,7 @@ def test_umschalter_rasten_und_die_rechte_maustaste_haelt(qapp):
     ereignisse = []
     kw.keyPressed.connect(lambda k, s, c: ereignisse.append(("an", L.kode_matrix(k))))
     kw.keyReleased.connect(lambda k: ereignisse.append(("aus", L.kode_matrix(k))))
-    shift, ctrl, a = (1, 6), (6, 13), (2, 0)
+    shift, ctrl, a = (3, 6), (6, 13), (2, 0)
     QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, kw.taste_rechteck(shift).center().toPoint())
     assert ereignisse == [("an", shift)] and kw.gehalten() == {shift}      # SHIFT bleibt gedrückt
     QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, kw.taste_rechteck(a).center().toPoint())
@@ -466,7 +491,7 @@ def test_wirts_shift_wird_als_shift_der_k7673_weitergegeben(qapp):
     _ev(t, True, Qt.Key_A, Qt.ShiftModifier, "A")
     _ev(t, False, Qt.Key_A, Qt.ShiftModifier, "A")
     _ev(t, False, Qt.Key_Shift)
-    assert emu.ereignisse == [((1, 6), True), ((2, 0), True), ((2, 0), False), ((1, 6), False)]
+    assert emu.ereignisse == [((3, 6), True), ((2, 0), True), ((2, 0), False), ((3, 6), False)]
 
 
 def test_zeichen_mit_shift_ohne_wirts_shift_drueckt_shift_vorher(qapp):
@@ -479,25 +504,25 @@ def test_zeichen_mit_shift_ohne_wirts_shift_drueckt_shift_vorher(qapp):
     emu = Aufzeichner()
     t = _widget(qapp, emu)
     t.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Q, Qt.NoModifier, "@"))
-    assert emu.ereignisse == [((1, 6), True)]                   # erst nur SHIFT
+    assert emu.ereignisse == [((3, 6), True)]                   # erst nur SHIFT
     for _ in range(100):                       # Zeitgeber unter Last großzügig abwarten
         QTest.qWait(50)
         if len(emu.ereignisse) > 1:
             break
-    assert emu.ereignisse == [((1, 6), True), ((0, 1), True)]
+    assert emu.ereignisse == [((3, 6), True), ((0, 1), True)]
     t.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Q, Qt.NoModifier, "@"))
-    assert emu.ereignisse[2:] == [((0, 1), False), ((1, 6), False)]
+    assert emu.ereignisse[2:] == [((0, 1), False), ((3, 6), False)]
     # Kurz getippt: losgelassen, bevor der Vorlauf um ist — das Zeichen kommt trotzdem
     emu.ereignisse.clear()
     t.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Q, Qt.NoModifier, "@"))
     t.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Q, Qt.NoModifier, "@"))
     for _ in range(100):
         QTest.qWait(50)
-        if emu.ereignisse[-1] == ((1, 6), False) and ((0, 1), False) in emu.ereignisse:
+        if emu.ereignisse[-1] == ((3, 6), False) and ((0, 1), False) in emu.ereignisse:
             break
     assert ((0, 1), True) in emu.ereignisse and ((0, 1), False) in emu.ereignisse
-    assert emu.ereignisse[-1] == ((1, 6), False)
-    assert emu.ereignisse.index(((1, 6), True)) < emu.ereignisse.index(((0, 1), True))
+    assert emu.ereignisse[-1] == ((3, 6), False)
+    assert emu.ereignisse.index(((3, 6), True)) < emu.ereignisse.index(((0, 1), True))
 
 
 def test_strg_buchstabe_und_sondertasten(qapp):
