@@ -1,0 +1,20 @@
+# Was das Werkzeug auf eine WEGA-Diskette schreibt, muss die eigene Vollpruefung
+# OHNE Befund bestehen: Freiliste, Inode-Zaehler, Linkzaehler und Verzeichnisse
+# so, wie der WEGA-Kern sie selbst hinterliesse (doc/design/27 §4).  Dazwischen
+# loeschen und ueberschreiben — auch der Rueckweg muss sauber sein.
+tool:   k1520disktool
+tmpfile w.img:
+file a:
+  eins
+file b:
+  zwei zwei zwei
+setup_run: create %w.img% --fs wega720
+setup_run: put %w.img% %a% --as bin/a
+setup_run: put %w.img% %b% --as usr/lib/x/b
+setup_run: rm %w.img% bin/a
+setup_run: put %w.img% %b% --as usr/lib/x/b --force
+run:    check %w.img% --full
+expect: Vollpruefung
+expect: ohne Befund
+forbid: wega.
+exit:   0

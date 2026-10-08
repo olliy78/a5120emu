@@ -1,0 +1,12 @@
+# Gegenstueck zu dt_wega_rm_verzeichnis: mit Muster faellt der ganze Ast, tiefste
+# Pfade zuerst, und die Diskette ist danach wieder leer und sauber.
+tool:   k1520disktool
+tmpfile w.img:
+file a:
+  inhalt
+setup_run: create %w.img% --fs wega720
+setup_run: put %w.img% %a% --as usr/x/a
+setup_run: rm %w.img% usr*
+run:    check %w.img% --full
+expect: ohne Befund
+exit:   0

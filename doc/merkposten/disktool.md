@@ -21,6 +21,51 @@ app/disktool/               PySide6-Oberfläche  →  bash run_disktool.sh
 
 Was beim Weiterarbeiten zu wissen ist:
 
+- **WEGA — das UNIX des P8000 (2026-10-08, AP P17, Entwurf
+  `doc/design/27_wega_dateisystem.md`).**  System-III-Dateisystem, big endian,
+  512-B-Blöcke, Superblock in Block 1 **ohne Magic**, Inodes ab Block 2 (64 B, 13 × 3-Byte-
+  Adressen), Inode 2 = Wurzel.  `core/filesystem/wega/wega_fs.{h,cpp}` arbeitet auf einem
+  **Blockgerät** (`WegaSpaceDev` über dem `SectorSpace` der Diskette, `WegaSpeicherDev`
+  über dem Plattenpuffer); Profil `wega720` (`k5601_9x512`, `detect_rank: -10`).  Sieben
+  Festlegungen, die man nicht aufweichen darf:
+  **(1) NICFREE ist 50, nicht 100** (`head/sys/param.h`), und `s_isize` zählt Block 0/1
+  mit (Inodes = (s_isize−2)·8) — beides am Abbild nachgemessen.
+  **(2) `s_tfree` = Länge der Freiliste + 1 ist der NORMALFALL.**  `sa.mkfs` zählt die
+  Endmarke 0 mit (`bfree(0)`), der Kern gleicht das nie aus — auf ALLEN 10 Lieferdisketten
+  steht es so.  Die Prüfung nimmt beide Zahlen an (`wega.frei.zaehler` erst bei einer
+  dritten), `format` macht es genauso, `wouldFit` rechnet vorsichtig einen weniger.  Der
+  erste Prüflauf an den echten Disketten meldete genau das zehnmal — Falschmeldung.
+  **(3) Vergabe = die Algorithmen des Kerns** (`alloc.c`: alloc/free/ialloc/ifree,
+  `sa.mkfs`: bflist mit Verschränkung m/n, Inode 1 = Bad-Block-Datei mit nlink 0, Wurzel
+  `040777`) — nicht „verbessern": was wir schreiben, muss für WEGA wie selbst geschrieben
+  aussehen.  `s_inode[]` ist nur ein Zwischenspeicher, maßgeblich ist `di_mode == 0`.
+  **(4) Jede Operation ist eine Transaktion** (Arbeitskopie `WegaFileSystem::Tx`, Superblock
+  zuletzt): „kein Platz" mittendrin hinterlässt NICHTS (Wächter
+  `WegaFs.VolleDisketteIstEineTransaktion` vergleicht den ganzen Puffer).
+  **(5) Namen sind Pfade** (`bin/ls`), `list()` liefert den ganzen Baum samt Verzeichnissen
+  (Typ `d`); `put --as a/b/c` legt fehlende Verzeichnisse an, `put <ordner>` geht
+  rekursiv (auch leere Ordner), `rm` mit Muster löscht tiefste Pfade zuerst, ein
+  Verzeichnis nur leer.  Neu dafür: `FileSystem::makeDirectory` (Vorgabe: Fehler),
+  `DiskVolume::makeDirectory`, CLI `mkdir`.  Namen > 14 Zeichen werden **abgewiesen**,
+  nicht gekürzt.  `--text` setzt nichts um (LF ist schon UNIX).
+  **(6) Die Platte ist ein eigener Weg** (`wega_platte.{h,cpp}`, nur Kommandozeile):
+  rohes LBA-Abbild, PAR in Z0/K0/S1, **Zylinder 0 außerhalb des Blockraums**, BTT-Spurschlupf;
+  die **Partitionen stehen NICHT auf der Platte**, sondern im Kern (`md_sizes[]`,
+  `uts/conf/wpar.c` + `mdsize.h`) — eingehängt wird die Standardtabelle, aber nur, wo ein
+  plausibles Dateisystem liegt.  Namen `md2/etc/passwd`; Schreibschutz als Vorgabe,
+  `<abbild>~` vor dem ersten Zurückschreiben.  Die installierte P15-Platte prüft mit
+  `--full` ohne Befund (4 Partitionen, ~1240 Dateien).
+  **(7) Rechte**: neue Dateien 0644, ausführbare Linux-Datei ⇒ 0755, uid/gid 0 (`wega`);
+  Überschreiben behält Inode, Besitzer und Rechte.  Besitzer/Zeiten tragen `get`→`put`
+  (noch) nicht — `.fileinfo` für WEGA ist offen (Entwurf §6).
+  Gegenproben: die Python-Vorstufe `tools/p8000/wega_s3fs.py` liest, was der Kern schreibt
+  (`py_wega_gegenprobe`); alle Lieferdisketten (`~/Documents/K1520emu/Disketten/P8000/
+  WEGA3.0`, `K1520_WEGA_IMG`) und die Platte (`K1520_WEGA_PLATTE`) prüfen ohne Befund —
+  diese Fälle werden übersprungen, wenn die Abbilder fehlen.  Ein `fsck` unter WEGA im
+  Emulator gegen eine von uns beschriebene Platte steht noch aus.  Wächter:
+  `WegaFs*.*`, `WegaDiskVolume.*`, `WegaLieferdisketten.*`, `WegaPlatte.*`,
+  `cli_dt_wega_*`, `FsCatalog.ProfilnamenSindEinStabilerVertrag`.
+
 - **SCP1700/CP/M-86 (A7100) — eine Diskette mit ZWEI Datenraten (2026-08-18,
   `doc/scp1700_diskettenformat.md`, Entwurf §22).**  Die Disketten des **A7100**
   tragen ein CP/M-86; das Dateisystem ist gewöhnliches CP/M (Verzeichnis ab

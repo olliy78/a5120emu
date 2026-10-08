@@ -1,0 +1,12 @@
+# Ein Verzeichnis laesst sich nur LEER loeschen (wie `rmdir`).  Mit Muster loescht
+# `rm` dagegen von den tiefsten Pfaden her — dann faellt der ganze Ast (zweiter Fall
+# dt_wega_rm_ast).
+tool:   k1520disktool
+tmpfile w.img:
+file a:
+  inhalt
+setup_run: create %w.img% --fs wega720
+setup_run: put %w.img% %a% --as usr/x/a
+run:    rm %w.img% usr/x
+expect: ist nicht leer
+exit:   1

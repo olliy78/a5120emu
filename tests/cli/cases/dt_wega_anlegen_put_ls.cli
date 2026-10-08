@@ -1,0 +1,17 @@
+# WEGA (P8000, UNIX System III) — eine 720-K-Diskette anlegen, einen Verzeichnisbaum
+# hineinschreiben und als `ls -l` zurueckbekommen.  Geprueft wird, dass die Erkennung
+# die frisch angelegte Diskette OHNE --fs wiederfindet, dass `--as` fehlende
+# Verzeichnisse anlegt und dass `mkdir` ein leeres Verzeichnis traegt.
+tool:   k1520disktool
+tmpfile w.img:
+file motd:
+  WEGA 3.0 -- Willkommen
+setup_run: create %w.img% --fs wega720 --label probe
+setup_run: put %w.img% %motd% --as etc/motd
+setup_run: mkdir %w.img% usr/spool/lp
+run:    ls %w.img% -l
+expect: Dateisystem: wega720 (erkannt)
+expect_re: -rw-r--r-- +1 +0 +0 +23 .* etc/motd
+expect_re: drwxr-xr-x +2 .* usr/spool/lp
+expect: probe
+exit:   0
