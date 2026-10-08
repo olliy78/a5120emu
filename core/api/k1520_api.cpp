@@ -248,27 +248,11 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
             else if (val == "3.3") cfg.mon16 = Cfg::Mon16::V3_3;
             else { fehler = "P8000: mon16 = " + val + " unbekannt (3.0 | 3.1 | 3.3)"; return false; }
         } else if (key == "dram") {
-            // Karten mit '+' getrennt: 1M@<modul 0–15> bzw. 256K@<modul 0–63>, z. B. "1M@0+256K@4"
+            // Langform "1M@0+256K@4" (Moduladressen), Kurzform "4x256K" | "4x1M" | "16M" (RAM-Karte
+            // 16 MB) — Regeln und Prüfung (Überlappung, Anzahl, Moduladresse): P8000Dram16::parse.
             std::vector<P8000Dram16::Karte> karten;
-            size_t q = 0;
-            while (q <= val.size()) {
-                size_t e = val.find('+', q);
-                if (e == std::string::npos) e = val.size();
-                const std::string k = val.substr(q, e - q);
-                q = e + 1;
-                const size_t at = k.find('@');
-                P8000Dram16::Karte kk;
-                int maxmod = 0;
-                if (at != std::string::npos && k.substr(0, at) == "1M") { kk.typ = P8000Dram16::Karte::Typ::M1; maxmod = 15; }
-                else if (at != std::string::npos && k.substr(0, at) == "256K") { kk.typ = P8000Dram16::Karte::Typ::K256; maxmod = 63; }
-                else { fehler = "P8000: dram-Karte '" + k + "' unbekannt (1M@n | 256K@n)"; return false; }
-                const std::string m = k.substr(at + 1);
-                if (m.empty() || m.size() > 2 || m.find_first_not_of("0123456789") != std::string::npos ||
-                    std::stoi(m) > maxmod) { fehler = "P8000: dram-Moduladresse '" + m + "' ungueltig"; return false; }
-                kk.modul = static_cast<uint8_t>(std::stoi(m));
-                karten.push_back(kk);
-            }
-            if (karten.empty() || karten.size() > size_t(P8000Dram16::MAX_KARTEN)) { fehler = "P8000: dram = 1 bis 4 Karten"; return false; }
+            const std::string f = P8000Dram16::parse(val, karten);
+            if (!f.empty()) { fehler = "P8000: " + f; return false; }
             cfg.dram = karten;
         } else if (key == "wdc") {
             if (val == "4.2") cfg.wdc = Cfg::Wdc::V4_2;
