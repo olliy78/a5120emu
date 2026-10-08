@@ -144,3 +144,122 @@ TEST(P8000TerminalOriginal, SaveStateRundreiseAmPrompt) {
     EXPECT_NE(b.stateError().find("Konfiguration"), std::string::npos) << b.stateError();
     EXPECT_EQ(a.stateBytes(), b.stateBytes());
 }
+
+// ─── (b) Mehrplatz: Rechner + zwei Terminal-Maschinen über Loopback-Telnet ───────────────────────
+
+#include <chrono>
+#include <functional>
+#include <thread>
+
+#include "core/machines/p8000/p8000_terminal_machine.h"
+
+namespace {
+using namespace k1520::serial;
+
+/// Kanal @p name des Rechner-Hubs als Telnet-Server auf einem freien Loopback-Port; Rückgabe Port.
+uint16_t ttyAlsServer(P8000Machine& m, const std::string& name) {
+    SerialHub* hub = m.serialHub();
+    for (int i = 0; i < hub->anzahl(); ++i) {
+        if (hub->info(i).name != name) continue;
+        SerialKonfig k = hub->konfig(i);
+        k.betriebsart = Betriebsart::Telnet;
+        k.rolle = Rolle::Server;
+        k.host = "127.0.0.1";
+        k.port = 0;
+        k.loop = false;
+        if (!hub->konfigurieren(i, k) || !hub->start(i)) return 0;
+        return hub->status(i).port_aktiv;
+    }
+    return 0;
+}
+
+std::unique_ptr<P8000TerminalMachine> arbeitsplatz(uint16_t port) {
+    P8000TerminalMachine::Config c;
+    std::string fehler;
+    const std::string text = "art=telnet,rolle=client,host=127.0.0.1,port=" + std::to_string(port) + ",verbinden=1";
+    EXPECT_TRUE(P8000TerminalMachine::konfigAusText(text.c_str(), c, fehler)) << fehler;
+    auto t = std::make_unique<P8000TerminalMachine>(c);
+    t->powerOn();
+    return t;
+}
+
+std::string termBild(const P8000TerminalMachine& t) {
+    std::string s;
+    for (int z = 0; z < 24; ++z) {
+        std::string l = t.einheit().hw().text(z);
+        while (!l.empty() && l.back() == ' ') l.pop_back();
+        s += l + "\n";
+    }
+    return s;
+}
+}  // namespace
+
+TEST(P8000TerminalOriginal, ZweiArbeitsplaetzeUeberLoopbackTelnet) {
+    stumm();
+    P8000Machine m(original());
+    const uint16_t p0 = ttyAlsServer(m, "tty0"), p2 = ttyAlsServer(m, "tty2");
+    ASSERT_NE(p0, 0);
+    ASSERT_NE(p2, 0);
+    auto t0 = arbeitsplatz(p0), t2 = arbeitsplatz(p2);
+    // Verbindungsaufbau abwarten (I/O-Fäden beider Seiten).
+    for (int i = 0; i < 200; ++i) {
+        if (t0->serialHub()->status(0).zustand == Zustand::Verbunden &&
+            t2->serialHub()->status(0).zustand == Zustand::Verbunden) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(t0->serialHub()->status(0).zustand, Zustand::Verbunden);
+    ASSERT_EQ(t2->serialHub()->status(0).zustand, Zustand::Verbunden);
+
+    m.powerOn();
+    // Gleichschritt: 5 000 Rechnertakte (1,25 ms) ≙ 4 608 Z8-Takte je Terminal.
+    auto schritt = [&] {
+        m.run(int(kBatch));
+        t0->run(4608);
+        t2->run(4608);
+    };
+    auto bisText = [&](const std::function<std::string()>& b, const std::string& nadel, long long grenze) {
+        for (long long t = 0; t < grenze; t += kBatch) {
+            schritt();
+            if (t % 100'000 == 0 && b().find(nadel) != std::string::npos) return true;
+        }
+        return b().find(nadel) != std::string::npos;
+    };
+    auto konsole = [&] { return bild(m); };
+    auto bild0 = [&] { return termBild(*t0); };
+    auto bild2 = [&] { return termBild(*t2); };
+    ASSERT_TRUE(bisText(konsole, "Press RETURN", 200'000'000)) << bild(m);
+    // Beide Arbeitsplätze haben ihre Einschaltmeldung (Firmware P8T 5.0 in eigener Maschine).
+    EXPECT_NE(bild0().find("ADM31/9600 baud"), std::string::npos) << bild0();
+    EXPECT_NE(bild2().find("ADM31/9600 baud"), std::string::npos) << bild2();
+    m.keyPress('\r', false, false);
+    ASSERT_TRUE(bisText(konsole, "\n>", 20'000'000)) << bild(m);
+    // MON8 `PW <port> <byte>` (U880SM.S IOPORT): MON8 richtet nur tty1 ein — SIO0-A (tty0) und
+    // SIO1-A (tty2) stehen nach dem Hardwaretest auf 5 Bit.  Also wie ein Betriebssystem: WR5 =
+    // 68H (8 Bit, Sender an) über 25H bzw. 29H (Steuerregister Kanal A), dann je zwei Bytes ins Senderegister
+    // (24H bzw. 28H).  Der Rechner gibt auf seinen ttys aus, die Arbeitsplätze zeigen es.
+    // Die erste Eingabe am `>` nach dem Hardwaretest bootet (beobachtet, mit dem Kern-Terminal
+    // ebenso — Gastverhalten): erst RETURN ⇒ „DISK ERROR“ abwarten, sonst gehen die Zeichen im Ladeversuch unter.
+    m.keyPress('\r', false, false);
+    ASSERT_TRUE(bisText(konsole, "DISK ERROR", 80'000'000)) << bild(m);
+    for (int i = 0; i < 2000; ++i) schritt();
+    for (const char* z : {"pw 25 05\r", "pw 25 68\r", "pw 29 05\r", "pw 29 68\r",
+                          "pw 24 54\r", "pw 24 30\r", "pw 28 54\r", "pw 28 32\r"}) {
+        for (const char* c = z; *c; ++c) m.keyPress(uint8_t(*c), false, false);
+        for (long long t = 0; t < 40'000'000 && !m.originalTerminal()->tastenFertig(); t += kBatch) schritt();
+        for (int i = 0; i < 400; ++i) schritt();
+    }
+    for (int i = 0; i < 20; ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); schritt(); }   // I/O-Fäden
+    ASSERT_TRUE(bisText(bild0, "T0", 4'000'000)) << bild0() << "\n--- Konsole\n" << bild(m);
+    ASSERT_TRUE(bisText(bild2, "T2", 4'000'000)) << bild2() << "\n--- Konsole\n" << bild(m);
+    EXPECT_EQ(bild0().find("T2"), std::string::npos);
+    EXPECT_EQ(bild2().find("T0"), std::string::npos);
+
+    // Rückweg: Taste „x“ am Arbeitsplatz an tty0 (K7673 → Firmware → Telnet → SIO0-A); MON8
+    // `PR 24` liest das Empfangsregister und zeigt 78.
+    t0->keyPress('x', false, false);
+    for (long long t = 0; t < 8'000'000 && !t0->einheit().tastenFertig(); t += kBatch) schritt();
+    for (int i = 0; i < 40; ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); schritt(); }
+    for (const char* c = "pr 24\r"; *c; ++c) m.keyPress(uint8_t(*c), false, false);
+    for (long long t = 0; t < 40'000'000 && !m.originalTerminal()->tastenFertig(); t += kBatch) schritt();
+    ASSERT_TRUE(bisText(konsole, "\n78", 4'000'000)) << bild(m);
+}
