@@ -126,6 +126,15 @@ der Quelldisketten im Emulator `k5601_9x512`; Kern meldet nach `md(0,16000)wega`
 `/etc/inittab` startet im Zustand 2 getty an console, tty0, tty2, tty4–7 (tty3 aus).  Superuser:
 `wega` (uid 0), Passwort bei Auslieferung `root` (Systemhandbuch).  `/etc/passwd` kennt kein `root`.
 
+**Nachtrag P22 (2026-10-08):** `/etc/ttytype` der installierten 3.0 führt **alle** Kanäle als `P8`
+(ADM31) — das Systemhandbuch (Abschnitt 2.9.2) zeigt `PV` (VT100) für tty4–7, die Auslieferung nicht.
+`/bin/write`, `/usr/bin/mesg`, `/usr/bin/talk` sind da.  Nach `/etc/new.install` steht in Block 0 der
+Platte ein `boot0.md`, das WEGA **selbst** startet (zeigt „> boot", „Boot", „: md(0,16000)wega" ohne
+Eingabe) — der Kaltstart braucht nach dem Hardwaretest keine Eingabe mehr; `/etc/rc_csh` prüft dann
+alle Dateisysteme (fsck) und geht nach „Going multi-user in 30 seconds!" in den Mehrbenutzerbetrieb.
+Plattenlage im Abbild: Vorlauf **90** Sektoren (1 Zylinder × 5 Köpfe × 18 der K5504.50), also
+`tools/p8000/wega_s3fs.py --vorlauf 90 <platte.img> 16000 get /etc/inittab ziel`.
+
 ## 6. Offen
 
 - `.hfe`-Fassungen (DiskTool-Lauf nach Bauzustand: `tools/dev.sh tool k1520disktool …`).

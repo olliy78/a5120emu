@@ -33,6 +33,7 @@
 #include "core/logger.h"
 #include "core/machines/p8000/p8000.h"
 #include "core/machines/p8000/p8000_terminal_machine.h"
+#include "core/primitives/z80.h"
 #include "core/serial/hub.h"
 #include "tests/support/p8000_input.h"
 #include "tests/support/p8000_wega.h"
@@ -296,6 +297,24 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
     }
     std::vector<Platz*> alle;
     for (Platz& p : a.plaetze) alle.push_back(&p);
+    auto alleBilder = [&] {
+        std::string s;
+        for (Platz* p : alle) s += "--- " + p->name + "\n" + p->bild();
+        Z80& c = m.karte8().cpu();
+        char z[256];
+        std::snprintf(z, sizeof z, "--- U880 PC=%04X SP=%04X IFF1=%d IM=%d\n", c.PC, c.SP, c.IFF1, int(c.IM));
+        s += z;
+        for (int n = 0; n < 2; ++n) {
+            const auto d = (n ? m.karte8().sio1() : m.karte8().sio0()).debugState();
+            for (int k2 = 0; k2 < 2; ++k2) {
+                const auto& ch = d.ch[k2];
+                std::snprintf(z, sizeof z, "    SIO%d-%c iei=%d ius=%d rx=%d tx=%d ext=%d rr0=%02X wr1=%02X q=%zu\n", n,
+                              k2 ? 'B' : 'A', ch.iei, ch.ius, ch.irqRx, ch.irqTx, ch.irqExt, ch.rr0, ch.wr1, ch.rxQueued);
+                s += z;
+            }
+        }
+        return s;
+    };
     for (size_t i = 1; i < a.plaetze.size(); ++i) {
         ASSERT_TRUE(a.bisText(a.plaetze[i], "9600 baud", 40'000'000)) << a.plaetze[i].bild();
     }
@@ -306,6 +325,28 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
                      double(m.totalCycles()) / 4e6);
     }
 
+    // Diagnose (kein Wächter, `K1520_P22_DIAG2=1`): PC-Verlauf des U880 bis zum Einsprung in MON8
+    // (RST 30H / RST 38H / NMI 66H) — so wurde der Stapelüberlauf der Koppelsoftware gefunden
+    // (fehlende EI-Sperre, Merkposten p8000 Nr. 40).
+    struct Spur { uint16_t pc, sp; bool iff; uint64_t t; };
+    std::vector<Spur> ring(65536);
+    size_t rpos = 0;
+    bool gefangen = false;
+    if (std::getenv("K1520_P22_DIAG2")) {
+        Z80& cpu = m.karte8().cpu();
+        cpu.traceCallback = [&](const Z80& c) {
+            if (gefangen) return;
+            ring[rpos++ % ring.size()] = Spur{c.PC, c.SP, c.IFF1, m.totalCycles()};
+            if (c.PC == 0x0030 || c.PC == 0x0066 || c.PC == 0x0038) {
+                gefangen = true;
+                std::fprintf(stderr, "  [U880 bei %04X, Takt %llu] Verlauf:\n", c.PC, (unsigned long long)m.totalCycles());
+                for (size_t i = 0; i < ring.size(); ++i) {
+                    const Spur& e = ring[(rpos + i) % ring.size()];
+                    if (i + 4000 >= ring.size()) std::fprintf(stderr, "    %04X sp=%04X ei=%d t=%llu\n", e.pc, e.sp, e.iff, (unsigned long long)e.t);
+                }
+            }
+        };
+    }
     // `who` an der Konsole zeigt alle drei Anmeldungen.
     ASSERT_TRUE(a.kommando(k, "who"));
     {
@@ -316,7 +357,7 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
 
     // Parallele Last: an allen Stationen gleichzeitig ein Kommando.
     for (Platz* p : alle) a.gib(*p, "ls -l /bin");
-    ASSERT_TRUE(a.bisPrompts(alle, 4'000'000'000LL));
+    ASSERT_TRUE(a.bisPrompts(alle, 4'000'000'000LL)) << alleBilder();
     for (Platz* p : alle) {
         // Letzte Zeile vollständig: kein Zeichen verloren (XON/XOFF der Firmware bei 36 Zeichen
         // Puffer gegen den Dauerstrom von drei gleichzeitigen Ausgaben).
@@ -324,14 +365,33 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
             << p->name << "\n" << p->bild();
     }
     for (Platz* p : alle) a.gib(*p, "date");
-    ASSERT_TRUE(a.bisPrompts(alle, 800'000'000));
+    ASSERT_TRUE(a.bisPrompts(alle, 800'000'000)) << alleBilder();
     for (Platz* p : alle) EXPECT_NE(p->bild().find("MES"), std::string::npos) << p->name << "\n" << p->bild();
     for (Platz* p : alle) a.gib(*p, "who am i");
-    ASSERT_TRUE(a.bisPrompts(alle, 800'000'000));
+    ASSERT_TRUE(a.bisPrompts(alle, 800'000'000)) << alleBilder();
     for (Platz* p : alle) {
         const std::string soll = p == &k ? "console" : p->name;
         EXPECT_NE(p->bild().find(soll), std::string::npos) << p->name << "\n" << p->bild();
     }
+
+    // Flusssteuerung: 30 × `ESC *` (Bild löschen im ADM31-Betrieb, je ≈ 65 ms Firmwarezeit, Merkposten
+    // 28) kommen im Zeichenabstand von ≈ 1 ms — der Empfangspuffer der Firmware (45 Zeichen) füllt
+    // sich, bei 36 sendet das Terminal DC3.  Nur wenn WEGA (Kern-tty bzw. Koppelsoftware) es beachtet, kommt
+    // die folgende Zeile vollständig an.
+    if (std::getenv("K1520_P22_OHNE_IXON")) {   // Gegenprobe: ohne XON/XOFF am Gast gehen Zeichen verloren
+        for (Platz* p : alle) a.gib(*p, "stty -ixon");
+        ASSERT_TRUE(a.bisPrompts(alle, 800'000'000)) << alleBilder();
+    }
+    for (Platz* p : alle)
+        {
+            std::string xy;
+            for (int i = 0; i < 30; ++i) xy += "xy";
+            a.gib(*p, "echo " + xy + " | tr xy '\\033*' ; echo ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+        }
+    ASSERT_TRUE(a.bisPrompts(alle, 2'000'000'000LL)) << alleBilder();
+    for (Platz* p : alle)
+        EXPECT_NE(p->bild().find("\nABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\n"), std::string::npos)
+            << p->name << "\n" << p->bild();
 
     // Nachricht von einem Arbeitsplatz an den anderen (write).
     Platz& p1 = a.plaetze[1];
