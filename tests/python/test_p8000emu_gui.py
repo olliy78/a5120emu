@@ -147,7 +147,7 @@ def test_rom_fassung_und_modell_in_den_einstellungen(qapp, umgebung):
     try:
         sw = w.settings_widget
         assert set(sw.hardware_combos) == {"index", "mon8", "mon16", "dram", "wdc"}
-        assert sw.model_combo.count() == 3 and not sw.model_combo.isHidden()
+        assert sw.model_combo.count() == 7 and not sw.model_combo.isHidden()
         assert not sw.ptape_box.isVisibleTo(sw)           # am P8000 keine Lochstreifenkarte
         for k in ("mon16", "dram", "wdc", "mon8", "index"):
             assert sw.hardware_combos[k].isEnabled()
@@ -458,6 +458,9 @@ def test_reiter_folgen_term_count(qapp, umgebung):
         def term_count(self):
             return 2
 
+        def term_kind(self, i):
+            return 0
+
         def term_tty(self, i):
             return (1, 4)[i]
 
@@ -481,26 +484,42 @@ def test_reiter_folgen_term_count(qapp, umgebung):
 
 # ─── Platte, Laufwerke, Statuszeile ──────────────────────────────────────────
 
-def test_erster_start_legt_die_standardplatte_mit_par_an_und_merkt_sie(qapp, umgebung, tmp_path):
+def test_erster_start_legt_keine_platte_an_und_der_monitor_meldet_sich(qapp, umgebung, tmp_path):
+    """Anwenderentscheid (P21): das Vollgerät startet OHNE Platte.  Eine von selbst angelegte leere (E5)
+    Platte schickte MON16 in den AUTOBOOT (Merkposten 26a); angelegt wird nur über den Plattenkasten."""
     from app import config_io
     w = _fenster(qapp)
     try:
-        pfad = tmp_path / "disks" / "p8000_platte.img"
-        assert pfad.is_file() and pfad.stat().st_size == PLATTE_BYTES
-        assert w.platten_widget.pfad() == str(pfad) and w.emulator.hd_path(0) == str(pfad)
-        # PAR-Sektor auf Z0/K0/S1: Kenntext „PARMTR" (Platte::neu)
-        assert b"PARMTR" in pfad.read_bytes()[:18 * 512]
+        assert not (tmp_path / "disks" / "p8000_platte.img").exists()
+        assert w.platten_widget.pfad() == "" and w.emulator.hd_path(0) == ""
+        assert w.platten_widget.verfuegbar() and w.platten_widget.knopf_neu.isEnabled()
+        assert "Neue Platte" in w.platten_widget.hinweis.text()
+        assert w.platten_widget.name.text() == "keine Platte angeschlossen"
+        assert _bis(w, "Press RETURN", 160_000_000, 4_000_000)       # Hardwaretest + Monitor, kein AUTOBOOT
         w._autosave_now()
         cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
-        assert cfg["platte"] == {"path": str(pfad)}
-        assert "disks" in cfg and cfg["drive_types"][:2] == ["K5601", "K5601"]
+        assert "platte" not in cfg or cfg["platte"] == {"path": ""}
     finally:
         _zu(w, qapp)
-    # zweiter Start: dieselbe Platte, nichts neu angelegt (Änderungszeit bleibt)
-    zeit = pfad.stat().st_mtime_ns
+
+
+def test_platte_entsteht_nur_ueber_den_plattenkasten_und_wird_gemerkt(qapp, umgebung, tmp_path):
+    from app import config_io
     w = _fenster(qapp)
+    pfad = str(tmp_path / "meine_platte.img")
     try:
-        assert w.platten_widget.pfad() == str(pfad) and pfad.stat().st_mtime_ns == zeit
+        assert w.platten_widget.neu_anlegen(pfad)                    # = „Neue Platte…“ im Kasten
+        assert os.path.getsize(pfad) == PLATTE_BYTES and w.emulator.hd_path(0) == pfad
+        # PAR-Sektor auf Z0/K0/S1: Kenntext „PARMTR" (Platte::neu)
+        assert b"PARMTR" in Path(pfad).read_bytes()[:18 * 512]
+        w._autosave_now()
+        cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
+        assert cfg["platte"] == {"path": pfad}
+    finally:
+        _zu(w, qapp)
+    w = _fenster(qapp)                                               # zweiter Start: dieselbe Platte
+    try:
+        assert w.platten_widget.pfad() == pfad and w.emulator.hd_path(0) == pfad
     finally:
         _zu(w, qapp)
 
@@ -508,15 +527,16 @@ def test_erster_start_legt_die_standardplatte_mit_par_an_und_merkt_sie(qapp, umg
 def test_abtrennen_ist_eine_entscheidung_und_wird_gemerkt(qapp, umgebung, tmp_path):
     from app import config_io
     w = _fenster(qapp)
+    pfad = str(tmp_path / "erste.img")
     try:
-        pfad = w.platten_widget.pfad()
+        assert w.platten_widget.neu_anlegen(pfad)
         w.platten_widget.abtrennen()
         assert w.platten_widget.pfad() == "" and w.emulator.hd_path(0) == ""
         w._autosave_now()
         assert config_io.load_config(str(umgebung / "p8000emu.yaml"))["platte"] == {"path": ""}
     finally:
         _zu(w, qapp)
-    w = _fenster(qapp)                               # neu starten: bleibt leer, wird nicht neu angelegt
+    w = _fenster(qapp)                               # neu starten: bleibt leer
     try:
         assert w.platten_widget.pfad() == "" and w.emulator.hd_path(0) == ""
         # Wieder anschließen (dieselbe Datei) und neu anlegen mit anderem Typ

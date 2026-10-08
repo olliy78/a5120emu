@@ -134,7 +134,7 @@ SCANCODE_POS: Dict[int, Position] = _erste_position()
 
 # ── Tastenbild: Position, x, y, Breite in Tasteneinheiten ───────────────────────────────────────
 #: Bildhöhe/-breite in Tasteneinheiten (Höhe einer Taste = 1).
-BILD_BREITE = 23.4
+BILD_BREITE = 23.6
 BILD_HOEHE = 7.6
 
 
@@ -216,7 +216,8 @@ def _zeichentabelle() -> Dict[str, Tuple[Position, bool]]:
             if pos is None or ch in aus:
                 continue
             aus[ch] = (pos, mit_shift)
-    # Mit SHIFT erreichbar, ohne SHIFT ein anderes Zeichen derselben Taste: die Tabellen nennen es.
+    # SHIFT + Taste 56H liefert die Firmware (TGETCHAR) als „>“, ohne SHIFT_Tab-Eintrag.
+    aus.setdefault(">", ((4, 6), True))
     return aus
 
 
