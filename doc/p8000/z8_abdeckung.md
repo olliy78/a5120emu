@@ -17,7 +17,7 @@ gibt es nur hinter `Z8Config::haltStop` (Vorgabe aus = unbelegt).
 
 **Gegenprobe:** MAME `src/devices/cpu/z8/z8ops.hxx` + Opcodetabelle aus `z8.cpp` (Stand 741d827a,
 Prüfsummen in `tests/oracle/CMakeLists.txt`; nur Vergleich, nichts übernommen) —
-`tools/dev.sh test-oracle -R z8_mame`.
+`tools/dev.sh test-oracle -R Z8Mame`.
 
 Tests: Binary `k1520_test_z8` (Suiten `Z8Tabelle`, `Z8Alu`, `Z8Einop`, `Z8Laden`, `Z8Stapel`,
 `Z8Sprung`, `Z8Steuer`, `Z8Register`, `Z8Reset`, `Z8Irq`, `Z8Zaehler`, `Z8Uart`, `Z8Port`, `Z8Bus`,
@@ -152,6 +152,7 @@ mit P37 = 1 (Übergang P3 = 80H → C0H), die ein Empfänger als Ruhezustand üb
 | [Z8-A1] | Inhalt eines Zeigerregisters ist eine volle Registeradresse | Table 37 (IR = Reg 00–FF); MAME gleich |
 | [Z8-A2] | Ungerade Paaradresse ⇒ n, n+1 | Datenblatt verlangt gerade; MAME gleich |
 | [Z8-A3] | Indexbasis X ohne Ex-Abbildung | Table 37 „Reg (Rn)", Beispiel 12; **MAME bildet E0–EF ab** (im Orakel ausgeblendet) |
+| [Z8-A4] | LDCI/LDEI mit überlappendem r und rr: Laden schreibt erst r, dann rr; Speichern (D3/93) erst rr, dann r | undokumentiert; so verhält sich MAME (Orakel) |
 | [Z8-F1] | DA ausserhalb der Tabelle wie die Rechnung (±06/±60, C = C ∨ Über-/Unterlauf), V bleibt | Datenblatt: „undefined"; MAME gleich |
 | [Z8-F2] | SWAP: C und V bleiben | „undefined"; MAME gleich |
 | [Z8-F3] | Ziel FLAGS eines flagsetzenden Befehls: Ergebnis gewinnt | UM0016 rät davon ab; MAME je Befehl verschieden (im Orakel ausgeblendet) |
@@ -173,4 +174,7 @@ Ergebnis des letzten Laufs: §10a.
 
 ### 10a. Ergebnis
 
-(wird nach dem Lauf eingetragen)
+2026-10-08: **grün** — 676 485 Fälle verglichen über alle 231 belegten Opcodes, ausgeblendet
+14 213 (Port-/Steuerregister) und 2 302 (Indexbasis E0–EF).  Einzige Befundänderung am Kern
+durch das Orakel: Reihenfolge der Rückschreibungen bei LDCI/LDEI in Speicherrichtung mit
+überlappendem r/rr [Z8-A4].  Taktabweichungen nur die bekannten (02/03, PUSH extern).

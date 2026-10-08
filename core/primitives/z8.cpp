@@ -888,14 +888,17 @@ int Z8::ausfuehren(uint8_t op) {
         const uint16_t adr = paarLesen(rr);
         const uint8_t ra = regLesen(r);
         const bool ext = in.mn == Mn::LDEI;
-        if (in.fmt == Fmt::Ir1_Irr2)
+        if (in.fmt == Fmt::Ir1_Irr2) {
             regSchreiben(ra, ext ? extLesen(adr, true, Z8Zugriff::Extern) : progLesen(adr, Z8Zugriff::Konstante));
-        else {
+            regSchreiben(r, uint8_t(ra + 1));
+            paarSchreiben(rr, uint16_t(adr + 1));
+        } else {
             const uint8_t v = regLesen(ra);
             if (ext) extSchreiben(adr, true, Z8Zugriff::Extern, v); else progSchreiben(adr, v);
+            // Überlappen r und rr, entscheidet die Reihenfolge: erst das Paar, dann r [Z8-A4]
+            paarSchreiben(rr, uint16_t(adr + 1));
+            regSchreiben(r, uint8_t(ra + 1));
         }
-        regSchreiben(r, uint8_t(ra + 1));
-        paarSchreiben(rr, uint16_t(adr + 1));
         break;
     }
 
