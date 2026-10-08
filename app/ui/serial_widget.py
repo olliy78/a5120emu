@@ -808,9 +808,14 @@ class SerialWidget(QWidget):
     #: ein leerer Text heißt „Feld ausblenden".
     statuszeile = Signal(str, str, str, str)
 
-    def __init__(self, emulator, parent=None):
+    def __init__(self, emulator, parent=None, ports=(), hinweis: str = ""):
         super().__init__(parent)
         self.emulator = None
+        #: Port-Vorschläge je Schnittstellenname (``(name, port)``); gelten nur für eine Schnittstelle,
+        #: die noch auf dem Kernvorgabe-Port steht (eine gespeicherte Wahl überschreibt sie danach).
+        self.ports = dict(ports)
+        #: Hinweistext über den Blöcken (Mehrplatzbetrieb am P8000); leer = keiner.
+        self.hinweis = hinweis
         self._bloecke: List[SerialBlock] = []
         self._lay = QVBoxLayout(self)
         self._lay.setContentsMargins(4, 4, 4, 4)
@@ -833,10 +838,20 @@ class SerialWidget(QWidget):
                 w.deleteLater()
         self._bloecke = []
         n = emulator.serial_count() if emulator is not None else 0
+        if self.hinweis and n:
+            text = QLabel(self.hinweis)
+            text.setWordWrap(True)
+            text.setTextFormat(Qt.RichText)
+            text.setStyleSheet("color: gray;")
+            self._lay.addWidget(text)
         for i in range(n):
             info = emulator.serial_info(i)
             if info is None:
                 continue
+            vorschlag = self.ports.get(info.name)
+            konfig = emulator.serial_config(i)
+            if vorschlag and konfig is not None and konfig.port == 5000:
+                emulator.serial_configure(i, port=int(vorschlag))
             block = SerialBlock(emulator, i, info)
             block.changed.connect(self.changed)
             # Ein Knopfdruck soll die Statuszeile sofort nachziehen, nicht erst im

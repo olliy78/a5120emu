@@ -76,6 +76,12 @@ _SPEC: List[Tuple] = [
      "Einen gesicherten Zwischenstand laden — nur bei gleicher Konfiguration und mit "
      "denselben Disketten/derselben Platte", "_stand_laden", False),
 
+    # Verbindung der Terminaleinheit (P8000 Terminal) zum Rechner.  KEIN Kürzel (die Kürzeltabelle
+    # des Handbuchs ist ein Vertrag); nur im Modell „P8000 Terminal“ wählbar.
+    ("verbindung", "&Verbindung zum Rechner…", "serial", None,
+     "Telnet-/RFC-2217-Verbindung des Terminals zu einem Rechner herstellen oder trennen "
+     "(nur im Modell „P8000 Terminal“)", "_verbindung_dialog", False),
+
     # ── EPROMmer (nur PRG 710, AP-P7c) ──────────────────────────────────────
     # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kürzel:
     # jedes Strg+Umschalt+… müsste in die Kürzeltabelle des Handbuchs (ein Vertrag).
@@ -166,6 +172,7 @@ KURZ = {
     "p8000emu": "P8000",
     "stand_speichern": "Stand sichern",
     "stand_laden": "Stand laden",
+    "verbindung": "Verbindung",
     "eprom_einlegen": "PROM",
     "eprom_leer": "Leer",
     "eprom_speichern": "Sichern",
@@ -192,6 +199,7 @@ NUR_FUER = {
     "nmi": ("k8915", "p8000"),           # NMI-Taster der Frontplatte
     "stand_speichern": ("p8000",),       # Zwischenstand (P8KS)
     "stand_laden": ("p8000",),
+    "verbindung": ("p8000",),
     "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),     # die jeweils ANDEREN Emulatoren
     "a5120emu": ("k8915", "prg710", "pc1715", "p8000"),
     "prg710emu": ("a5120", "k8915", "pc1715", "p8000"),
@@ -222,7 +230,7 @@ REIHENFOLGE: List = [
     None,
     "einlegen", "auswerfen",
     None,
-    "stand_speichern", "stand_laden",
+    "stand_speichern", "stand_laden", "verbindung",
     None,
     "dock_drives", "dock_settings", "dock_screen", "dock_keyboard", "dock_eprom",
     None,

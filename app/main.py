@@ -8,12 +8,14 @@ Main entry point for the Qt6 GUI application.  EIN Programm, fünf Gesichter:
 Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`),
 ``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl),
 ``--machine pc1715`` das des PC1715 Emulators (PC 1715, Modellwahl),
-``--machine p8000`` das des P8000 Emulators (Terminal, Winchester, Modellwahl);
-ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
+``--machine p8000`` das des P8000 Emulators (Terminal, Winchester, Modellwahl),
+``--machine p8000term`` das des P8000 Terminals (dasselbe Programm mit dem Arbeitsplatz-Terminal
+ohne Rechner als Vorgabe); ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
 fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``run_pc1715emu.sh``, ``run_p8000emu.sh``, ``bin/k8915emu``, Startmenü).
 
 Usage:
-    python3 app/main.py [--machine a5120|k8915|prg710|pc1715|p8000] [DISKETTE …]
+    python3 app/main.py [--machine a5120|k8915|prg710|pc1715|p8000|p8000term]
+                        [--instance NAME] [--config DATEI] [DISKETTE …]
 
 Requirements:
     - PySide6 (Qt6 Python bindings)
@@ -27,6 +29,7 @@ Setup (details: SETUP.md):
        (sets LD_LIBRARY_PATH=build, activates venv, runs this file)
 """
 
+import os
 import sys
 import signal
 from pathlib import Path
@@ -62,10 +65,21 @@ for _arg in _args:
     if _arg == "--machine":
         _MASCHINE = next(_args, "")
         if not _MASCHINE:
-            print("--machine braucht einen Namen: a5120, k8915, prg710, pc1715 oder p8000", file=sys.stderr)
+            print("--machine braucht einen Namen: a5120, k8915, prg710, pc1715, p8000 oder p8000term", file=sys.stderr)
             sys.exit(2)
     elif _arg.startswith("--machine="):
         _MASCHINE = _arg.split("=", 1)[1]
+    elif _arg in ("--instance", "--config"):
+        # Mehrinstanzbetrieb (app/instanz.py): eigener Konfigurationsname bzw. -datei.  Über die
+        # Umgebung weitergereicht, damit auch ein von hier gestartetes Kindprogramm sie kennt.
+        _wert = next(_args, "")
+        if not _wert:
+            print(f"{_arg} braucht einen Wert", file=sys.stderr)
+            sys.exit(2)
+        os.environ["K1520_INSTANZ" if _arg == "--instance" else "K1520_KONFIG"] = _wert
+    elif _arg.startswith(("--instance=", "--config=")):
+        _name, _wert = _arg.split("=", 1)
+        os.environ["K1520_INSTANZ" if _name == "--instance" else "K1520_KONFIG"] = _wert
     else:
         _rest.append(_arg)
 try:
@@ -97,9 +111,11 @@ _KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
          "pc1715": "Emulator der Buerocomputer PC 1715 und PC 1715W",
          "p8000": "Emulator des 16-Bit-Arbeitsplatzcomputers P8000 (U880 + U8001, UDOS und WEGA)"}
 _P = PROFIL.programm
-HILFE = f"""{_P} — {_KOPF[PROFIL.maschine]}
+HILFE = f"""{_P} — {_KOPF[PROFIL.maschine] if _P != "p8000term" else "Arbeitsplatz-Terminal des P8000 (Terminal Typ 2 + Tastatur K7673.09, ohne Rechner)"}
 
   {_P} [DISKETTE …]     {_LAUFWERKE_TEXT}
+  {_P} --instance NAME  eigene Konfiguration ({PROFIL.konfig_datei[:-5]}-NAME.yaml), mehrere Fenster nebeneinander
+  {_P} --config DATEI   Konfigurationsdatei von Hand festlegen
   {_P} --paths          aufgeloeste Pfade zeigen (Bibliothek, Katalog, Disketten)
   {_P} --help           diese Hilfe
 

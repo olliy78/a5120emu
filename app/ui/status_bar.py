@@ -407,6 +407,9 @@ class MachineStatus(QWidget):
         self.seriell_verbindungen = SeriellFeld()
         self._lay.addWidget(self.seriell_server)
         self._lay.addWidget(self.seriell_verbindungen)
+        # Leitung der P8000-Terminaleinheit zum Rechner (sonst ausgeblendet).
+        self.verbindung = SeriellFeld()
+        self._lay.addWidget(self.verbindung)
         self._fest = self._lay.count()
 
         # A5120.16-Leuchten (V1/V2) + Modus — feste Stelle zwischen Takt und

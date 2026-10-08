@@ -80,6 +80,9 @@ class Programmprofil:
     terminal: bool = False
     #: Kasten „Winchester" mit Plattenabbild (P8000, `app/ui/platten_widget.py`).
     platte: bool = False
+    #: Port-Vorschläge der seriellen Schnittstellen: ``(Schnittstellenname, Port)`` (P8000: tty0 …
+    #: tty7 als Server für Arbeitsplatz-Terminals, XB5 der Terminaleinheit als Client).
+    schnittstellen_ports: Tuple[Tuple[str, int], ...] = ()
     #: Terminalart je Modell (P8000, Entwurf 25 §11): ``(Schlüssel, Art)`` mit Art ``"kern"`` (Rechner
     #: mit dem Kern-Terminal), ``"original"`` (Rechner mit dem Originalterminal Typ 2 an tty1) oder
     #: ``"einheit"`` (nur das Terminal, ohne Rechner, Leitung über den Hub).  Fehlt ein Modell: ``"kern"``.
@@ -223,6 +226,23 @@ class Programmprofil:
             if k == schluessel:
                 return dict(paare).get("wdc", "aus") != "aus"
         return False
+
+    def schnittstellen_hinweis(self, modell) -> str:
+        """Hinweis über den Blöcken des Reiters „Schnittstellen“ (leer = keiner).  Nur P8000."""
+        art = self.modell_art(modell)
+        if art == "einheit":
+            return ("Diese Leitung (XB5) führt zum <b>Rechner</b>: Betriebsart und Rechner-Adresse "
+                    "einstellen, dann <i>Verbinden</i> (oder Menü <i>Maschine ▸ Verbindung zum "
+                    "Rechner…</i>).  Der Rechner bietet die Leitung als Server an, z. B. tty4 auf "
+                    "Port 5004.")
+        if self.modell_arten and art in ("original", "kern") and self.modell_normalisieren(modell) != "p8000-8":
+            return ("<b>Mehrplatzbetrieb:</b> jede Leitung (tty0, tty2, tty3, tty4–7) kann als "
+                    "<i>Server</i> für ein Arbeitsplatz-Terminal laufen — <i>Starten</i> drücken, "
+                    "im zweiten Programm <b>p8000term</b> unter <i>Maschine ▸ Verbindung zum "
+                    "Rechner…</i> dieselbe Adresse und denselben Port eintragen.  WEGA belegt "
+                    "tty1 (Konsole), 6, 7, 0, 2, 4, 5.  Vorschläge: tty4 → 5004 … tty7 → 5007, "
+                    "tty0 → 5000, tty2 → 5002, tty3 → 5003.")
+        return ""
 
     def modell_art(self, modell) -> str:
         """Terminalart des Modells: ``"kern"`` | ``"original"`` | ``"einheit"`` (nur P8000)."""
@@ -493,6 +513,9 @@ P8000 = Programmprofil(
          (("4.2", "WDC 4.2"), ("4.0.05", "WDC 4.0.05"), ("3.4.05", "WDC 3.4.05")),
          ("p8000", "p8000-ot")),
     ),
+    schnittstellen_ports=(("tty0", 5000), ("tty2", 5002), ("tty3", 5003), ("tty4", 5004),
+                          ("tty5", 5005), ("tty6", 5006), ("tty7", 5007),
+                          ("Terminal (XB5)", 5004)),
     ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>robotron P8000</b>",
     andere="a5120",
     weitere=("k8915", "prg710", "pc1715"),

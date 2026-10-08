@@ -391,7 +391,9 @@ class MainWindow(QMainWindow):
         # IM Einstellungen-Kasten, kein eigener Kasten.  Namen und Fähigkeiten der
         # Blöcke kommen aus dem Kern.  Das Widget (und mit ihm sein 4-Hz-Takt für
         # die Statuszeile) lebt auch, solange der Reiter nicht obenauf liegt.
-        self.serial_widget = SerialWidget(self.emulator)
+        self.serial_widget = SerialWidget(
+            self.emulator, ports=self.profil.schnittstellen_ports,
+            hinweis=self.profil.schnittstellen_hinweis(self._model))
         self.settings_widget = SettingsWidget(self.screen_widget, profil=self.profil,
                                               schnittstellen=self.serial_widget)
         self.settings_dock.setWidget(self.settings_widget)
@@ -503,6 +505,33 @@ class MainWindow(QMainWindow):
         if self.status_widget.frontplatte is not None:
             self.status_widget.frontplatte.setVisible(hat)
         self.setWindowTitle(self._fenstertitel(self._model))
+        if hasattr(self, "act_verbindung"):
+            self.act_verbindung.setEnabled(self.profil.modell_art(self._model) == "einheit")
+
+    def _verbindung_dialog(self):
+        """Menü *Maschine ▸ Verbindung zum Rechner…* (nur die Terminaleinheit hat die Leitung XB5)."""
+        if self.profil.modell_art(self._model) != "einheit":
+            QMessageBox.information(
+                self, "Verbindung zum Rechner",
+                "Dieses Modell hat einen eigenen Rechner.  Die Leitungen für Arbeitsplatz-Terminals "
+                "stehen unter Einstellungen ▸ Schnittstellen (tty0, tty2–tty7).")
+            return
+        from app.ui.verbindung_dialog import VerbindungDialog
+        dlg = VerbindungDialog(self.emulator, 0, self)
+        dlg.exec()
+        self._schedule_autosave()
+        self._update_verbindung()
+
+    def _update_verbindung(self):
+        """Statuszeile: Zustand der Leitung zum Rechner (nur Terminaleinheit)."""
+        feld = self.status_widget.verbindung
+        if self.profil.modell_art(self._model) != "einheit":
+            feld.zeige("")
+            return
+        from app.ui.verbindung_dialog import zustand_text
+        st = self.emulator.serial_status(0)
+        feld.zeige(f"Rechner: {zustand_text(st)}",
+                   "Leitung des Terminals zum Rechner (Maschine ▸ Verbindung zum Rechner…)")
 
     # ── On-screen keyboard → emulator ────────────────────────────────────────
 
@@ -754,6 +783,7 @@ class MainWindow(QMainWindow):
             emu_menu.addSeparator()
             emu_menu.addAction(self.act_stand_speichern)
             emu_menu.addAction(self.act_stand_laden)
+            emu_menu.addAction(self.act_verbindung)
         if self.eprom_dock is not None:          # nur im Profil mit EPROMmer
             emu_menu.addSeparator()
             eprom_menu = emu_menu.addMenu("E&PROMmer")
@@ -1543,6 +1573,7 @@ class MainWindow(QMainWindow):
         self.status_widget.set_takt(self.speed_factor if laeuft else None, gemessen)
         self._update_drive_status()
         self._update_em_status()
+        self._update_verbindung()
         # Stand von Leser/Stanzer im selben Takt (kein eigener Zeitgeber).
         if self.lochstreifen_dock.isVisible():
             self.lochstreifen_widget.aktualisieren()
@@ -1914,6 +1945,7 @@ class MainWindow(QMainWindow):
         self._drive_types = types
         self.emulator = new_emu
         self._tastatur_tauschen()
+        self.serial_widget.hinweis = self.profil.schnittstellen_hinweis(self._model)
         self.serial_widget.set_emulator(new_emu)
         self.serial_widget.zustand_anwenden(serielle)
         self.screen_widget.set_emulator(new_emu)
@@ -1945,6 +1977,7 @@ class MainWindow(QMainWindow):
         self.status_widget.set_drive_types(types)
         self.status_widget.set_em_sichtbar(bool(em))
         self._rechner_anzeigen()
+        self._update_verbindung()
         self._update_drive_status()
 
         if cold_restart and self._emu_started and self.act_power.isChecked():

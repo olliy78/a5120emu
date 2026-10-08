@@ -10,8 +10,8 @@
 #
 #   * `disks:` und `platte:` — Pfade des Baurechners gelten auf keinem anderen Rechner; ohne
 #     den Abschnitt lässt das Zurücksetzen Disketten und Platte in Ruhe.  Fehlt `platte:`
-#     beim ersten Start ganz, legt das Programm die Platte selbst an
-#     (`<Diskettenordner>/p8000_platte.img`, Typ K5504.50, mit PAR-Sektor).
+#     beim ersten Start ganz, bleibt das Winchesterlaufwerk leer: das Programm legt KEINE Platte von selbst an (eine leere
+#     Platte schickt MON16 nach dem Hardwaretest in den AUTOBOOT) — „Neue Platte…“ im Plattenkasten.
 #   * `window.geometry` — die Bildschirmposition des Baurechners.  `width`/`height` reichen;
 #     ein `dock_state` fehlt, die Startaufteilung ordnet die Kästen selbst.
 version: 1
@@ -30,7 +30,8 @@ crt:
 general:
   speed: 5.0
   # Modell: p8000 (16-Bit-Teil + Winchester, Vollgerät) | p8000-16 (ohne Winchester) |
-  # p8000-8 (nur 8-Bit-Teil, UDOS).
+  # p8000-8 (nur 8-Bit-Teil, UDOS); mit Originalterminal: p8000-ot | p8000-16-ot | p8000-8-ot;
+  # p8000-term (nur das Terminal, Arbeitsplatz — Programm p8000term).
   model: p8000
   # Hardwarevarianten (Kaltstart nötig; ein fehlender Schlüssel = Vorgabe):
   # Platinenindex 34 (8-Bit 3 / 16-Bit 4) | 11; MON8 3.1 | 3.0; MON16 3.1 | 3.0 | 3.3;
