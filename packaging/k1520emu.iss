@@ -127,6 +127,10 @@
 #define Programm3 "PRG710 Emulator"
 ; Der vierte: PC 1715 (--machine pc1715, Bildschirm K7222/K7221 als Modell).
 #define Programm4 "PC1715 Emulator"
+; Der fuenfte: P8000 (--machine p8000, Modellwahl und Originalterminal im Programm).
+#define Programm5 "P8000 Emulator"
+; Der sechste: das P8000 Terminal (--machine p8000term, Arbeitsplatz ohne Rechner).
+#define Programm6 "P8000 Terminal"
 #define Anbieter  "Olaf Krieger"
 
 [Setup]
@@ -250,6 +254,12 @@ Name: "{group}\{#Programm3}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\{#Programm4}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\main.py"" --machine pc1715"; WorkingDir: "{app}"; Comment: "{#Programm4}"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
+Name: "{group}\{#Programm5}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
+  Parameters: """{app}\app\main.py"" --machine p8000"; WorkingDir: "{app}"; Comment: "{#Programm5}"; \
+  IconFilename: "{app}\share\icons\a5120emu.ico"
+Name: "{group}\{#Programm6}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
+  Parameters: """{app}\app\main.py"" --machine p8000term"; WorkingDir: "{app}"; Comment: "{#Programm6}"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\k1520DiskTool"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"; \
@@ -673,6 +683,11 @@ begin
   { Der PC1715 Emulator: ebenso. }
   VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
                    ExpandConstant('{app}\bin\pc1715emu.cmd'));
+  { Der P8000 Emulator und das P8000 Terminal: ebenso. }
+  VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
+                   ExpandConstant('{app}\bin\p8000emu.cmd'));
+  VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
+                   ExpandConstant('{app}\bin\p8000term.cmd'));
   VorlageSchreiben(ExpandConstant('{tmp}\disktool_launcher.cmd'),
                    ExpandConstant('{app}\bin\k1520disktool.cmd'));
 
@@ -716,7 +731,7 @@ begin
   Daten := AbweichenderDatenOrdner;
   StringChangeEx(Daten, '\', '\\', True);
 
-  SetArrayLength(Zeilen, 40);
+  SetArrayLength(Zeilen, 44);
   Zeilen[0]  := 'import ctypes, os, sys';
   Zeilen[1]  := 'os.environ["QT_QPA_PLATFORM"] = "offscreen"';
   Zeilen[2]  := 'sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))';
@@ -752,11 +767,11 @@ begin
   Zeilen[24] := 'lib.k1520_create.argtypes = [ctypes.c_int]';
   Zeilen[25] := 'lib.k1520_create.restype = ctypes.c_void_p';
   Zeilen[26] := 'lib.k1520_destroy.argtypes = [ctypes.c_void_p]';
-  Zeilen[27] := 'for nr, name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715")):';
+  Zeilen[27] := 'for nr, name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715"), (4, "P8000"), (5, "P8000-Terminal")):';
   Zeilen[28] := '    h = lib.k1520_create(nr)';
   Zeilen[29] := '    if not h: sys.exit(name + ": k1520_create schlug fehl")';
   Zeilen[30] := '    lib.k1520_destroy(h)';
-  Zeilen[31] := 'print("Maschinen:  A5120, PRG710, K8915, PC1715")';
+  Zeilen[31] := 'print("Maschinen:  A5120, PRG710, K8915, PC1715, P8000, P8000-Terminal")';
   Zeilen[32] := 'from app import profil';
   Zeilen[33] := 'MainWindow(profil=profil.profil("k8915")).close()';
   Zeilen[34] := 'print("Oberflaeche K8915: baut auf")';
@@ -764,7 +779,11 @@ begin
   Zeilen[36] := 'print("Oberflaeche PRG710: baut auf")';
   Zeilen[37] := 'MainWindow(profil=profil.profil("pc1715")).close()';
   Zeilen[38] := 'print("Oberflaeche PC1715: baut auf")';
-  Zeilen[39] := 'sys.stdout.flush()';
+  Zeilen[39] := 'MainWindow(profil=profil.profil("p8000")).close()';
+  Zeilen[40] := 'print("Oberflaeche P8000: baut auf")';
+  Zeilen[41] := 'MainWindow(profil=profil.profil("p8000term")).close()';
+  Zeilen[42] := 'print("Oberflaeche P8000 Terminal: baut auf")';
+  Zeilen[43] := 'sys.stdout.flush()';
 
   Datei := ExpandConstant('{app}\.rauchtest.py');
   if not SaveStringsToFile(Datei, Zeilen, False) then

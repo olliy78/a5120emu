@@ -380,12 +380,20 @@ TEST(WegaDiskVolume, AnlegenErkennenRundreise) {
     std::map<std::string, FileEntry> l;
     for (const FileEntry& e : dv->list()) l[e.name] = e;
     EXPECT_EQ(l["usr/leer"].type, "d");
+#ifdef _WIN32
+    // Das Dateisystem des Wirts kennt kein Ausfuehrungsrecht (fs::permissions bleibt ohne Wirkung):
+    // die Datei kommt mit 0644 auf die Diskette.
+    EXPECT_EQ(l["bin/hallo"].attributes, "-rw-r--r--");
+#else
     EXPECT_EQ(l["bin/hallo"].attributes, "-rwxr-xr-x");
+#endif
     EXPECT_EQ(l["usr/daten.bin"].size, 123457u);
     ASSERT_TRUE(dv->extractAll(ziel, TransferOptions{})) << dv->lastError();
-    std::ifstream a(fs::path(ziel) / "usr" / "daten.bin", std::ios::binary);
-    std::vector<uint8_t> z((std::istreambuf_iterator<char>(a)), std::istreambuf_iterator<char>());
-    EXPECT_EQ(z, muster(123457, 9));
+    {   // Geschlossen vor remove_all (Windows: "Sharing violation")
+        std::ifstream a(fs::path(ziel) / "usr" / "daten.bin", std::ios::binary);
+        std::vector<uint8_t> z((std::istreambuf_iterator<char>(a)), std::istreambuf_iterator<char>());
+        EXPECT_EQ(z, muster(123457, 9));
+    }
     EXPECT_TRUE(fs::is_directory(fs::path(ziel) / "usr" / "leer"));
     const FsCheckReport& r = dv->check(FsCheckLevel::Voll, true);
     EXPECT_EQ(befundeAbWarnung(r), 0) << r.alsText();

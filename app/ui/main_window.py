@@ -154,7 +154,7 @@ class MainWindow(QMainWindow):
         self.run_timer.setInterval(self.frame_interval_ms)
 
         # Alle Bedienwege einmal anlegen (Menü und Leiste zeigen dieselben).
-        aktionen.erzeuge_aktionen(self, self.profil.maschine)
+        aktionen.erzeuge_aktionen(self, self.profil.maschine, self.profil.programm)
         if self.profil.maschine != "a5120":
             self.act_ueber.setText(f"Ü&ber {self.profil.programm}…")
         # Inhalt und Stil der Symbolleiste — aus der Konfiguration überschrieben.
@@ -932,7 +932,7 @@ class MainWindow(QMainWindow):
     def _leiste_einrichten(self):
         """Dialog: welche Schaltflächen die Leiste zeigt und in welcher Folge."""
         namen = {}
-        reihenfolge = aktionen.reihenfolge(self.profil.maschine)
+        reihenfolge = aktionen.reihenfolge(self.profil.maschine, self.profil.programm)
         for name in reihenfolge:
             a = name and self._aktion(name)
             if a is not None:
@@ -2036,6 +2036,9 @@ class MainWindow(QMainWindow):
 
     def _p8000emu_starten(self):
         self._emulator_starten("p8000")
+
+    def _p8000termemu_starten(self):
+        self._emulator_starten("p8000term")
 
     # ── Zwischenstand (nur P8000, P8KS) ──────────────────────────────────────
 

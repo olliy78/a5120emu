@@ -195,7 +195,7 @@ TEST(P8000Terminal, TastaturFunktionstasten_Tab437)
 {
     const Zeile36 tab[] = {
         {T::LINE_ERASE, "\x1bT", "\x1b[K"}, {T::PAGE_ERASE, "\x1bY", "\x1b[J"},
-        {T::LINE_INSERT, "\x1bE", "\x1b[L"}, {T::CHAR_INSERT, "\x1bQ", "\x1b[@"},
+        {T::LINE_INSERT, "" "E", "\x1b[L"}, {T::CHAR_INSERT, "\x1bQ", "\x1b[@"},
         {T::LINE_DELETE, "\x1bR", "\x1b[M"},   // W3: ESC R, nicht ESC T der Referenzkarte
         {T::CHAR_DELETE, "\x1bW", "\x1b[P"},
         {T::TAB, "\x09", "\x1b[I"}, {T::BACKTAB, "\x1bI", "\x1b[Z"},

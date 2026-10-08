@@ -96,6 +96,14 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   (SCP 1715 V0006/V0007, CP/A 1715, UDOS1715; Wächter
   `test_pc1715_disketten_sind_in_der_vorgabeauswahl`); die Vorgabe mountet keine (kein `disks:`).
   Rauchtests erzeugen jetzt auch `k1520_create(3)` und das PC1715-Fenster.
+  **Seit AP P18 (2026-10-08) gibt es den fünften und sechsten: P8000 Emulator (`p8000emu`,
+  `--machine p8000`) und P8000 Terminal (`p8000term`, `--machine p8000term`)**: dieselbe Vorlage
+  (der Name wählt das Profil; `p8000term*` darf NICHT von `p8000emu*` verschluckt werden — die
+  Muster sind verschieden, keine Präfixe voneinander), je ein `.desktop.in`, `{#Programm5}`/`{#Programm6}`,
+  beide Vorgabedateien, Rauchtests mit `k1520_create(4)`/`(5)` und beiden Fenstern; **keine
+  P8000-Disketten** in `DISKS_DEFAULT` (es gibt keine in `disks/`, Entscheid offen). Wächter
+  `test_die_p8000_programme_sind_in_allen_paketwegen`.  Im `.iss` wächst das Rauchtest-Feld
+  `Zeilen` mit (SetArrayLength + laufende Nummern: neue Zeilen ANS ENDE, vor `sys.stdout.flush()`).
   **Alle Rauchtests (install.sh, .iss, beide release.yml-Jobs) erzeugen ALLE Maschinen**
   (`k1520_create(0)`, `(1)` und `(2)`) — Wächter `test_rauchtests_pruefen_beide_maschinen`. Wächter `py_packaging`
   (`test_launcher_sh_waehlt_die_maschine_am_namen`, `test_iss_hat_den_k8915_emulator_im_startmenue`,

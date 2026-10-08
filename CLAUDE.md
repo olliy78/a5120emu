@@ -549,6 +549,11 @@ Profil, Terminal vorn; `maschine` bleibt `p8000`. Bild: `app/ui/p8000_original.p
 des Kerns — Wächter) + `keyboard_k7673.py`; Wirtstasten über `NORMAL_Tab`/`SHIFT_Tab`, ein selbst gedrücktes SHIFT bekommt
 150 ms Vorlauf. Verbindung: `app/ui/verbindung_dialog.py` (*Maschine ▸ Verbindung zum Rechner…*, kein Kürzel). Mehrinstanz:
 `--instance NAME`/`--config DATEI` (`app/instanz.py`), Plattensperre `<abbild>.lock`. Wächter `py_p8000_original_gui`.
+**Paket und Werkzeugmenü (AP P18, 2026-10-08; `doc/design/13_distribution.md` §10b):** `p8000emu` und `p8000term` sind
+fünfter/sechster Starter im Linux-Paket und im Inno-Setup (Vorlage `launcher.*`, `p8000emu.desktop.in`/`p8000term.desktop.in`,
+`MASCHINEN`, `{#Programm5}`/`{#Programm6}`, beide `default_config_p8000*.yaml`, Rauchtest `k1520_create(4)`/`(5)`); **keine
+P8000-Disketten im Paket**. Menü *Werkzeuge*: `p8000term` ist überall erreichbar, `Aktionen.gibt_es(name, maschine, programm)`
+trennt `p8000emu`/`p8000term` (gleiche Maschine). Wächter `py_packaging`, `py_programme`, `py_pc1715emu_gui`.
 **Grundsatz:** Chips werden vollständig + systematisch getestet, Debugger unterstützen sie vollständig
 (Plan §10.11a). **Vor Arbeiten daran: `doc/merkposten/p8000.md` lesen**; Plan und Stand
 `doc/design/25_p8000.md` (§9/§9a), Quellen/Referenzen `doc/p8000/` (EPROM-Abzüge in `doc/p8000/eproms/`).

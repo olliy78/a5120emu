@@ -131,6 +131,9 @@ TEST(WegaPlatte, SchreibschutzUndRundreise) {
     std::ifstream f(p, std::ios::binary);
     std::vector<uint8_t> neu((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     EXPECT_TRUE(std::equal(neu.begin(), neu.begin() + kKoepfe * kSek * 512, b.begin()));
+    // Unter Windows verweigert remove() eine noch offene Datei ("Sharing violation").
+    f.close();
+    pl.reset();
     fs::remove(p);
     fs::remove(p + "~");
 }

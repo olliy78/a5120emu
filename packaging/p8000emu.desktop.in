@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=P8000 Emulator
+GenericName=K1520 Emulator
+Comment=Emulator des 16-Bit-Arbeitsplatzcomputers robotron P8000 (U880 + U8001, UDOS und WEGA)
+Comment[en]=Emulator of the robotron P8000 16-bit workstation (U880 + U8001, UDOS and WEGA)
+Exec="@ROOT@/bin/p8000emu"
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=P8000;U8001;Z8000;WEGA;UDOS;robotron;emulator;
+StartupNotify=true
+StartupWMClass=main.py
