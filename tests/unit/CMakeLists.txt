@@ -112,6 +112,8 @@ k1520_add_test(p8000_terminal SRC peripherals/test_p8000_terminal.cpp
 # Original-P8000-Terminal Typ 2 (Firmware P8T 5.0 auf dem Z8) + Tastatur K7673.09 (Entwurf 28, P20a/b)
 k1520_add_test(p8000_terminal_hw SRC peripherals/test_p8000_terminal_hw.cpp
                               LIBS k1520_p8000_terminal_hw LABELS "${_lbl}")
+k1520_add_test(tastatur_k7673 SRC peripherals/test_tastatur_k7673.cpp
+                              LIBS k1520_p8000_terminal_hw LABELS "${_lbl}")
 
 # P8000-Winchesterplatte: Geometrie, PAR, Spursynthese/-zerlegung, Mechanik (Entwurf 25 AP P13b)
 k1520_add_test(platte         SRC peripherals/test_platte.cpp

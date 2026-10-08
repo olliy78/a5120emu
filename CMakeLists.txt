@@ -452,7 +452,8 @@ if(BUILD_K1520)
     # Original-P8000-Terminal Typ 2 (Z8 + Firmware P8T 5.0 + 8275) und Tastatur K7673.09,
     # Entwurf 28 (AP P20a/P20b)
     add_library(k1520_p8000_terminal_hw STATIC
-        core/peripherals/p8000_terminal_hw/terminal_hw.cpp)
+        core/peripherals/p8000_terminal_hw/terminal_hw.cpp
+        core/peripherals/p8000_terminal_hw/tastatur_k7673.cpp)
     target_link_libraries(k1520_p8000_terminal_hw PUBLIC k1520_z8 k1520_i8275 k1520_p8000_terminal k1520_serial k1520_logger)
     target_include_directories(k1520_p8000_terminal_hw PUBLIC ${CMAKE_SOURCE_DIR})
 
