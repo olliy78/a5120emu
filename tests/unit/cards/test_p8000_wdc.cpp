@@ -575,14 +575,23 @@ TEST(P8000Wdc_, Firmware4_0_05LiestMitEingebranntenParametern)
     EXPECT_EQ(std::string(r.daten.begin(), r.daten.begin() + 9), "WDC_V.4.0");
 }
 
+namespace {
+Platte::Config spur3xFuerStart()
+{
+    Platte::Config pc;
+    pc.spurformat = Platte::Spurformat::V3x;
+    return pc;
+}
+}  // namespace
+
 TEST(P8000Wdc_, Firmware3_4_05StartetOhneZweitenEprom)
 {
     // Abzug „3.4.05" (Gerät des Anwenders): nur EPROM 1, Prüfsummen bei 0FF8H, EPROM 2 unbestückt.
-    // Läuft bis „bereit"; das Spurformat der 3.x-Firmware ist NICHT untersucht — sie meldet beim
-    // ersten Kommando Fehler 05 und liest auf einer 4.2-Spur nicht jeden Block (offen, §12).
+    // Läuft bis „bereit"; ihr Spurformat ist ein anderes als das der 4.2 (Tests `P8000Wdc3x.*`, §12 Nr. 11),
+    // darum hier die 3.x-Spur — auf einer 4.2-Spur meldet das erste Kommando Fehler 05.
     P8000Wdc::Config cfg;
     cfg.firmware = P8000Wdc::Config::Firmware::V3_4_05;
-    Aufbau a(cfg);
+    Aufbau a(cfg, spur3xFuerStart());
     ASSERT_TRUE(a.host.warteStatus(1, 200'000'000)) << "Status " << int(a.wdc.status());
     a.host.ausfuehren(sektorKommando(0x00, 0, 0, 0, 1));
     auto r = a.host.ausfuehren({0x28, 0, 0, 0, 0, 0, 12, 0, 0}, 12);
@@ -957,4 +966,122 @@ TEST(P8000WdcHw, EinByteJeArdyAktivierung)
     h.w->setzeArdy(true);
     EXPECT_EQ(strobes, 2);
     EXPECT_EQ(h.w->hostZaehler(), 0x102);
+}
+
+
+// ─── Firmware 3.x (P24) ──────────────────────────────────────────────────────
+//
+// Die 3.4.05 schreibt und erwartet eine andere Spurlage als die 4.2 (wdc_firmware.md §12 Nr. 11):
+// Sektoren physisch der Reihe nach 1…18 (kein Interleave 2:1, kein Kopfversatz), Lücke hinter der
+// Kennfeld-CRC FF×2 · 00×18 · FF×8, Kennfeldabstand ≈ 570 Byte; der Interleave steckt in der
+// LOGISCHEN Blockreihenfolge (Tabelle `01 09 11 07 0F 05 0D 03 0B 02 0A 12 08 10 06 0E 04 0C` im Abzug).
+
+namespace {
+constexpr int BLOCK_ZU_SEKTOR_3X[18] = {1, 9, 17, 7, 15, 5, 13, 3, 11, 2, 10, 18, 8, 16, 6, 14, 4, 12};
+
+P8000Wdc::Config firmware3x()
+{
+    P8000Wdc::Config cfg;
+    cfg.firmware = P8000Wdc::Config::Firmware::V3_4_05;
+    return cfg;
+}
+Platte::Config spur3x()
+{
+    Platte::Config pc;
+    pc.spurformat = P8000Wdc::spurformat(P8000Wdc::Config::Firmware::V3_4_05);
+    return pc;
+}
+}  // namespace
+
+TEST(P8000Wdc3x, SpurformatJeFirmware)
+{
+    using F = P8000Wdc::Config::Firmware;
+    EXPECT_EQ(P8000Wdc::spurformat(F::V3_4_05), Platte::Spurformat::V3x);
+    EXPECT_EQ(P8000Wdc::spurformat(F::V4_0_05), Platte::Spurformat::V4_2);   // trägt die 2:1-Tabelle der 4.2
+    EXPECT_EQ(P8000Wdc::spurformat(F::V4_2), Platte::Spurformat::V4_2);
+}
+
+/// Die Hochlauf-Leseprobe der 3.4.05 (BTT auf Z0/K0/S1) findet Sektor 1 nur in der 3.x-Spur; auf der
+/// 4.2-Spur (Interleave 2:1, Kopfversatz) meldet das erste Kommando Fehler 05.
+TEST(P8000Wdc3x, HochlaufLeseprobeBraucht3xSpur)
+{
+    {
+        Aufbau a(firmware3x(), spur3x());
+        ASSERT_TRUE(a.host.warteStatus(1, 200'000'000));
+        EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x00, 0, 0, 0, 1)).fehler, 0);
+        auto r = a.host.ausfuehren({0x28, 0, 0, 0, 0, 0, 12, 0, 0}, 12);
+        ASSERT_EQ(r.fehler, 0);
+        EXPECT_EQ(std::string(r.daten.begin(), r.daten.begin() + 12), "WDC_V.3.4.05");
+    }
+    Aufbau b(firmware3x());                              // Gegenprobe: 4.2-Spurlage
+    ASSERT_TRUE(b.host.warteStatus(1, 200'000'000));
+    EXPECT_EQ(b.host.ausfuehren(sektorKommando(0x00, 0, 0, 0, 1)).fehler, 0x05);
+}
+
+TEST(P8000Wdc3x, LiestUndSchreibtBloeckeInDerLogischenReihenfolge)
+{
+    Aufbau a(firmware3x(), spur3x());
+    for (int s = 1; s <= 18; ++s) ASSERT_TRUE(a.platte.sektorSchreiben(1, 0, s, muster(s).data()));
+    // Block 0 liegt auf Zylinder 1 / Kopf 0 (Zylinder 0 ist für die BTT reserviert); Block k → Sektor Tabelle[k].
+    // Je Kommando kommt genau EIN Block (512 B) — auch bei Längenfeld 1024 (anders als 4.2, nachgemessen).
+    for (int k = 0; k < 8; ++k) {
+        auto r = a.host.ausfuehren(blockKommando(0x21, 0, uint32_t(k)), 512, nullptr, 800'000'000);
+        ASSERT_EQ(r.fehler, 0) << "Block " << k;
+        const auto m = muster(BLOCK_ZU_SEKTOR_3X[k]);
+        EXPECT_TRUE(std::equal(m.begin(), m.end(), r.daten.begin())) << "Block " << k;
+    }
+    {
+        auto r = a.host.ausfuehren(blockKommando(0x21, 0, 0, 1024), 512, nullptr, 800'000'000);
+        ASSERT_EQ(r.fehler, 0);
+        const auto m = muster(1);
+        EXPECT_TRUE(std::equal(m.begin(), m.end(), r.daten.begin()));
+    }
+    // Schreiben: Block 3 → Sektor 7
+    const auto neu = muster(99);
+    const std::vector<uint8_t> d(neu.begin(), neu.end());
+    ASSERT_EQ(a.host.ausfuehren(blockKommando(0x22, 0, 3), 0, &d, 800'000'000).fehler, 0);
+    a.platte.flush();
+    std::array<uint8_t, 512> x{};
+    ASSERT_TRUE(a.platte.sektorLesen(1, 0, 7, x.data()));
+    EXPECT_EQ(x, neu);
+}
+
+/// Formatieren mit der 3.x: Sektoren 1…18 der Reihe nach auf JEDEM Kopf, Spur wird zerlegt und gilt als
+/// formatiert; Kommando 04 allein (ohne Rücklesen) geht ebenfalls.
+TEST(P8000Wdc3x, FormatiertSpurenMitSektorenDerReihe)
+{
+    Aufbau a(firmware3x(), spur3x(), [](Platte& p) { p.setzeFormatiert(7, 0, false); p.setzeFormatiert(7, 1, false); });
+    ASSERT_TRUE(a.host.warteStatus(1, 200'000'000));
+    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x04, 0, 7, 0, 1), 0, nullptr, 800'000'000).fehler, 0);
+    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x14, 0, 7, 1, 1), 0, nullptr, 800'000'000).fehler, 0);
+    for (int kopf : {0, 1}) {
+        const auto& s = a.platte.spur(7, kopf);
+        std::vector<int> folge;
+        for (int i = 0; i < Platte::BYTES_JE_SPUR; ++i)
+            if ((s[size_t(i)] & Platte::MARKE) && s[size_t(i + 1)] == 0xFE && !(s[size_t(i + 1)] & Platte::MARKE))
+                folge.push_back(s[size_t(i + 5)] & 0xFF);
+        ASSERT_EQ(folge.size(), 18u) << "Kopf " << kopf;
+        for (int k = 0; k < 18; ++k) EXPECT_EQ(folge[size_t(k)], k + 1) << "Kopf " << kopf;
+        const auto z = a.platte.zerlege(7, kopf, s);
+        EXPECT_TRUE(z.formatiert);
+        EXPECT_EQ(z.daten.size(), 18u);
+    }
+}
+
+/// 4.0.05 dagegen schreibt die Spurlage der 4.2 (Interleave 2:1, Kopfversatz) — dieselbe 2:1-Tabelle im Abzug.
+TEST(P8000Wdc3x, Firmware4_0_05FormatiertWieDie4_2)
+{
+    P8000Wdc::Config cfg;
+    cfg.firmware = P8000Wdc::Config::Firmware::V4_0_05;
+    Aufbau a(cfg, {}, [](Platte& p) { p.setzeFormatiert(7, 1, false); });
+    ASSERT_TRUE(a.host.warteStatus(1, 200'000'000));
+    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x04, 0, 7, 1, 1), 0, nullptr, 800'000'000).fehler, 0);
+    const auto& s = a.platte.spur(7, 1);
+    std::vector<int> folge;
+    for (int i = 0; i < Platte::BYTES_JE_SPUR; ++i)
+        if ((s[size_t(i)] & Platte::MARKE) && s[size_t(i + 1)] == 0xFE) folge.push_back(s[size_t(i + 5)] & 0xFF);
+    ASSERT_GE(folge.size(), 18u);
+    EXPECT_EQ(folge[0], 18);     // Kopf 1: 18 1 10 … (Kopfversatz)
+    EXPECT_EQ(folge[1], 1);
+    EXPECT_EQ(folge[2], 10);
 }

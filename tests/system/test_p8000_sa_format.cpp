@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <fstream>
 #include <string>
 
@@ -180,19 +181,23 @@ TEST(P8000SaFormat, FormatiertUndPrueftEineTempPlatte) {
 }
 
 /// Der Anwenderweg des Plattenkastens „Neue Platte…" (Standard „unformatiert"): `hdCreate` mit dem
-/// Suffix ":unformatiert" an einer Maschine MIT Vorgabe `platte_par_ergaenzen` (wie im Programm)
-/// führt bis zum ersten Bild von sa.format — ohne Parametersatz meldet der WDC „Error in PAR&BTT"
-/// und der Monitor bleibt bedienbar.  (Mit Parametersatz + E5-Inhalt startete AUTOBOOT die E5-Bytes.)
+/// Suffix ":unformatiert", danach Abtrennen und „Anschließen…" derselben Datei, an einer Maschine mit der
+/// Programmvorgabe `platte_par_ergaenzen = false` (seit P24), führt bis zum ersten Bild von sa.format —
+/// ohne Parametersatz meldet der WDC „Error in PAR&BTT" und der Monitor bleibt bedienbar.  (Mit
+/// Parametersatz + E5-Inhalt startete AUTOBOOT die E5-Bytes; die Kern-Vorgabe `true` ergänzte ihn
+/// beim Anschließen wieder.)
 TEST(P8000SaFormat, NeuePlatteUnformatiertKommtBisZumFormatDialog) {
     stumm();
     k1520test::TempDisk disk{FIXTURE};
     ASSERT_TRUE(saFassung41(disk.path()));
     k1520test::TempPlatte pfad = k1520test::TempPlatte::leer("p8000_neu_unformatiert.img");
     P8000Machine::Config c = mitWdc("");
-    c.platte_par_ergaenzen = true;                       // Programmvorgabe
+    c.platte_par_ergaenzen = false;                      // Programmvorgabe (plattepar=aus)
     P8000Machine m(c);
     ASSERT_TRUE(m.mountDisk(0, disk.path(), m.defaultFormatName(0), false)) << m.lastError();
     ASSERT_TRUE(m.hdCreate(0, pfad.path(), "K5504.50:unformatiert")) << m.hdError();
+    ASSERT_TRUE(m.hdUnmount(0));
+    ASSERT_TRUE(m.hdMount(0, pfad.path())) << m.hdError();   // „Anschließen…": kein erzeugter Parametersatz
     m.powerOn();
     ASSERT_NO_FATAL_FAILURE(bisBootPrompt(m));
     tippeZeile(m, "ud(0,0)sa.format");
@@ -200,4 +205,45 @@ TEST(P8000SaFormat, NeuePlatteUnformatiertKommtBisZumFormatDialog) {
     ASSERT_TRUE(laufeBisText(m, "Firmwareversion 'WDC_4.2'", 400'000'000)) << bild(m);
     ASSERT_TRUE(laufeBisText(m, "Error in PAR&BTT on Drive 0 (PAR not ok) (BTT not ok)", 40'000'000)) << bild(m);
     ASSERT_TRUE(laufeBisText(m, "Which Typ ? (No./n/q)", 40'000'000)) << bild(m);
+}
+
+
+/// P24: `sa.format` V1.4 der WEGA-3.0-Startdiskette gegen WDC 3.4.05 und eine K5504.50-Platte
+/// (1024/5/18, das Laufwerk des EPROMs; Mitschnitt des Anwenders: `WDC_V.3.4.05`).  Der Dialog läuft
+/// wie dort bis zum Formatieren; formatiert wird nur EINE Spur (Rechenzeit), danach schreibt die
+/// Firmware die BTT (Kommando C2) nach Z0/K0/S1.  Ohne BTT auf der Platte meldet der Hardwaretest
+/// `ERROR 52 06` (Init-Fehler „DEFEKT" fehlt) — wie bei der 4.2 ohne PAR.
+TEST(P8000SaFormat3x, Sa1_4MitFirmware3_4_05FormatiertEineSpurUndSchreibtDieBtt) {
+    stumm();
+    k1520test::TempDisk disk{FIXTURE};
+    k1520test::TempPlatte platte;
+    parLoeschen(platte.path());
+    P8000Machine::Config c = mitWdc(platte.path());
+    c.wdc = P8000Machine::Config::Wdc::V3_4_05;
+    P8000Machine m(c);
+    ASSERT_TRUE(m.mountDisk(0, disk.path(), m.defaultFormatName(0), false)) << m.lastError();
+    m.powerOn();
+    ASSERT_NO_FATAL_FAILURE(bisBootPrompt(m));
+    EXPECT_NE(bild(m).find("*** ERROR 52   06"), std::string::npos) << bild(m);
+    tippeZeile(m, "ud(0,0)sa.format");
+    ASSERT_TRUE(laufeBisText(m, "*** Format Hard-Disk V. 1.4 ***", 400'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "WDC-Firmware-Version: 'WDC_V.3.4.05'", 40'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "Drives: 1    Cylinders: 1024    Heads: 5", 40'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "Sectors: 18    Bytes/Sector: 512", 40'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "Blocks/Drive: 92070", 40'000'000)) << bild(m);
+    ASSERT_TRUE(frage(m, "Read BTT from HD in WDC-RAM ?", "n"));
+    ASSERT_TRUE(laufeBisText(m, "No Entries in Bad Track Table (BTT)", 400'000'000)) << bild(m);
+    ASSERT_TRUE(frage(m, "Manual Input of Bad Track ?", "n"));
+    ASSERT_TRUE(frage(m, "Format Begin: Cylinder", "100"));
+    ASSERT_TRUE(frage(m, "Head", "0"));
+    ASSERT_TRUE(frage(m, "Format End:   Cylinder", "100"));
+    ASSERT_TRUE(frage(m, "Head", "0"));
+    ASSERT_TRUE(frage(m, "Ready for format from Cyl 100 Hd 0 to Cyl 100 Hd 0 :", "y"));
+    ASSERT_TRUE(frage(m, "Rewrite BTT from WDC-RAM to HD ?", "y", 1'000'000'000));
+    ASSERT_TRUE(laufeBisText(m, "Exit called", 600'000'000)) << bild(m);
+    EXPECT_EQ(bild(m).find("Error"), std::string::npos) << bild(m);
+    m.hdFlush();
+    std::array<uint8_t, 512> btt{};
+    ASSERT_TRUE(m.platte(0)->sektorLesen(0, 0, 1, btt.data()));
+    EXPECT_EQ(std::string(btt.begin(), btt.begin() + 6), "DEFEKT");   // Kennung der BTT (3.x kennt keinen PAR)
 }

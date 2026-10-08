@@ -55,6 +55,12 @@ const k1520::winchester::Typ* P8000Wdc::romLaufwerk(Config::Firmware f)
     }
 }
 
+k1520::winchester::Platte::Spurformat P8000Wdc::spurformat(Config::Firmware f)
+{
+    return f == Config::Firmware::V3_4_05 ? k1520::winchester::Platte::Spurformat::V3x
+                                          : k1520::winchester::Platte::Spurformat::V4_2;
+}
+
 P8000Wdc::P8000Wdc(const Config& cfg) : cfg_(cfg)
 {
     rom_.fill(0xFF);

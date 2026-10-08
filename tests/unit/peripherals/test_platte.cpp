@@ -635,3 +635,44 @@ TEST(Platte, SaveStateRundreise)
     EXPECT_FALSE(d.deserialize(p, st.data() + st.size() / 2));
     EXPECT_EQ(d.zylinder(), 0);
 }
+
+
+// ─── Spurformat der Firmware 3.x (P24) ───────────────────────────────────────
+
+TEST(Platte, Spurformat3xLegtDieSektorenDerReiheNachAufJedenKopf)
+{
+    TempPlatte tp;
+    Platte p;
+    Platte::Config pc;
+    pc.spurformat = Platte::Spurformat::V3x;
+    ASSERT_TRUE(p.oeffnen(tp, pc));
+    const auto d = muster(0, 2, 7);
+    ASSERT_TRUE(p.sektorSchreiben(0, 2, 7, d.data()));
+    for (int kopf : {0, 2}) {
+        const auto& s = p.spur(0, kopf);
+        int idx = 0;
+        for (int i = 0; i < 18; ++i) {
+            const int b = 36 + i * 570;                 // erste Marke bei 36, Abstand 570
+            for (int j = 0; j < 3; ++j) ASSERT_EQ(s[size_t(b + j)], 0xA1 | M);
+            EXPECT_EQ(s[size_t(b + 3)], 0xFE);
+            EXPECT_EQ(s[size_t(b + 6)], kopf);
+            EXPECT_EQ(s[size_t(b + 7)], i + 1) << "Kopf " << kopf;       // Sektor i+1: kein Interleave, kein Versatz
+            std::vector<uint8_t> id;
+            for (int j = 0; j < 10; ++j) id.push_back(static_cast<uint8_t>(s[size_t(b + j)]));
+            EXPECT_EQ(crc(id), 0);
+            // Lücke FF×2 · 00×18 · FF×8, danach Datenmarke und Kennung FB
+            for (int j = 10; j < 12; ++j) EXPECT_EQ(s[size_t(b + j)], 0xFF);
+            for (int j = 12; j < 30; ++j) EXPECT_EQ(s[size_t(b + j)], 0x00);
+            for (int j = 30; j < 38; ++j) EXPECT_EQ(s[size_t(b + j)], 0xFF);
+            EXPECT_EQ(s[size_t(b + 38)], 0xA1 | M);
+            EXPECT_EQ(s[size_t(b + 39)], 0xFB);
+            ++idx;
+        }
+        EXPECT_EQ(idx, 18);
+        if (kopf == 2)
+            for (int j = 0; j < 512; ++j) ASSERT_EQ(s[size_t(36 + 6 * 570 + 40 + j)], d[size_t(j)]);   // Sektor 7
+        const auto z = p.zerlege(0, kopf, s);
+        EXPECT_TRUE(z.formatiert);
+        EXPECT_EQ(z.daten.size(), 18u);
+    }
+}

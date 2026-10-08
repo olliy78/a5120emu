@@ -103,8 +103,13 @@ public:
     static constexpr uint16_t MARKE         = 0x100;
     static constexpr int      SEKTOR        = 512;
 
+    /// Spurlage, wie die WDC-Firmware sie beim Formatieren schreibt (P24): 4.2 mit Interleave 2:1 und
+    /// Kopfversatz, die Serie 3.x mit Sektoren der Reihe nach und anderem Lückenaufbau.
+    enum class Spurformat { V4_2, V3x };
+
     struct Config {
         std::optional<Geometrie> geometrie;       ///< fest; sonst PAR-Sektor bzw. Dateigröße
+        Spurformat spurformat    = Spurformat::V4_2;
         uint64_t startzeit_takte = 0;             ///< READY nach so vielen Takten ab Öffnen [P3]
         uint64_t seek_takte      = 4000;          ///< SEEK COMPLETE nach letztem Schritt (1 ms @ 4 MHz) [P3]
         uint64_t flush_pause     = 2'000'000;     ///< Schreibpause vor dem Zurückschreiben (0,5 s @ 4 MHz)

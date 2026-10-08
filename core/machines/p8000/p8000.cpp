@@ -327,6 +327,7 @@ bool P8000Machine::hdMountMit(int unit, const std::string& path, bool par_ergaen
     k1520::winchester::Platte::Config pc;
     pc.par_ergaenzen = par_ergaenzen;
     const auto fw = firmwareVon(cfg_.wdc);
+    pc.spurformat = P8000Wdc::spurformat(fw);
     const auto* rom = P8000Wdc::romLaufwerk(fw);
     const k1520::winchester::Typ* konf = cfg_.platte_typ.empty() ? nullptr : k1520::winchester::typNachName(cfg_.platte_typ);
     if (rom) {

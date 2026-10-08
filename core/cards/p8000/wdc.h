@@ -105,6 +105,14 @@ public:
     static const k1520::winchester::Typ* romLaufwerk(Config::Firmware f);
     /// Laufwerk zur Endung eines EPROM-Abzugs (`WDC_1_3.4_05` → 5); nullptr bei unbekannter Endung.
     static const k1520::winchester::Typ* romLaufwerkNachEndung(int endung);
+    /**
+     * Spurlage, die die Firmware beim Formatieren schreibt UND beim Lesen erwartet (P24): 4.2 und
+     * 4.0.05 mit Interleave 2:1 und Kopfversatz (`sc_tab` im Abzug: `01 0A 02 0B …`), 3.4.05 mit
+     * den Sektoren der Reihe nach, einer anderen Lücke hinter dem Kennfeld und dem Interleave in
+     * der LOGISCHEN Blockreihenfolge (Tabelle `01 09 11 07 0F 05 …` im Abzug).  Die Hochlauf-Leseprobe
+     * der 3.4.05 (BTT auf Z0/K0/S1) scheitert mit Fehler 05 an der 4.2-Spur.
+     */
+    static k1520::winchester::Platte::Spurformat spurformat(Config::Firmware f);
 
     P8000Wdc() : P8000Wdc(Config{}) {}
     explicit P8000Wdc(const Config& cfg);

@@ -256,6 +256,7 @@ void Platte::schritt(bool nach_innen, uint64_t t)
 
 namespace {
 // sc_tab der Firmware (Interleave 2:1), Kopf h beginnt mit sc_tab[(i − h) mod n] (ft_trk)
+constexpr int SLOT_3X = 570;   // Abstand der Kennfelder, die die 3.x beim Formatieren schreibt
 constexpr uint8_t SC_TAB[18] = {1, 10, 2, 11, 3, 12, 4, 13, 5, 14, 6, 15, 7, 16, 8, 17, 9, 18};
 
 struct Schreiber {
@@ -277,19 +278,29 @@ std::vector<uint16_t> Platte::synthetisiere(int zyl, int kopf)
     if (unformatiert_[spurIndex(zyl, kopf)]) return s;   // [P2]
     const int n = geo_.sektoren;
     std::array<uint8_t, SEKTOR> d{};
+    const bool v3 = cfg_.spurformat == Spurformat::V3x;
+    // 3.x: ganze Spur FF, erste Kennfeldmarke bei Byte 36, Abstand 570, Sektoren der Reihe nach
+    // (kein Interleave, kein Kopfversatz), Lücke hinter der Kennfeld-CRC FF×2 · 00×18 · FF×8
+    if (v3) std::fill(s.begin(), s.end(), uint16_t(0xFF));
     for (int i = 0; i < n; ++i) {
-        const int sek = SC_TAB[(i - kopf % n + n) % n];
-        Schreiber w{s, i * SLOT};
-        w.fuell(0xFF, 18);
+        const int sek = v3 ? (i + 1) : SC_TAB[(i - kopf % n + n) % n];
+        Schreiber w{s, v3 ? 36 + i * SLOT_3X : i * SLOT};
+        if (!v3) w.fuell(0xFF, 18);
         w.crc = 0xFFFF;
         w.marke(0xA1); w.marke(0xA1); w.marke(0xA1);
         w.daten(0xFE);
         w.daten(static_cast<uint8_t>(zyl)); w.daten(static_cast<uint8_t>(zyl >> 8));
         w.daten(static_cast<uint8_t>(kopf)); w.daten(static_cast<uint8_t>(sek));
         w.crcAus();
-        w.fuell(0xFF, 10);
-        w.fuell(0x00, 7);
-        w.fuell(0xFF, 11);
+        if (v3) {
+            w.fuell(0xFF, 2);
+            w.fuell(0x00, 18);
+            w.fuell(0xFF, 8);
+        } else {
+            w.fuell(0xFF, 10);
+            w.fuell(0x00, 7);
+            w.fuell(0xFF, 11);
+        }
         if (!sektorSicht(zyl, kopf, sek, d.data())) d.fill(0xE5);
         w.crc = 0xFFFF;
         w.marke(0xA1);
