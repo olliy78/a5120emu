@@ -1140,9 +1140,11 @@ die entsprechenden Tasten, **Return**, **Esc**, **Tab**, **Rücktaste** (BS), **
 **F12** ON/OFF. Die Wiederholung gehaltener Tasten macht die Tastatur selbst. Die **Bildschirmtastatur**
 (*Ansicht ▸ Tastatur*) zeigt die Matrix mit allen 105 belegten Tasten: ein Klick drückt die Taste,
 **Umschalt und Strg rasten** beim Klick ein (zweiter Klick löst sie), die **rechte Maustaste** hält jede
-Taste fest. Die LEDs ON/OFF, CAPS LOCK und MODE zeigen den Zustand der Tastatur. Die Beschriftung der
-Tastenkappen des Originals ist nicht bekannt: die Tasten tragen die Zeichen, die das Terminal aus dem
-Scancode macht; die schmale Reihe unten sind Tasten ohne Wirkung im Terminal. Die Kürzel des Fensters
+Taste fest. Anordnung und Beschriftung folgen dem Foto einer echten Tastatur (deutsches Tastenfeld, Funktionsreihe mit
+OFF, SI/SO, MOD, VIDEO, BREAK und F1–F11, Bearbeitungsblock, Cursorkreuz, Ziffernblock mit CE und 00);
+die LEDs OFF, CAPS und MOD sitzen wie dort im Anzeigefeld oben rechts. Bei F1–F11, CE, dem „+“ des
+Ziffernblocks und den Zeilen-/Zeichentasten des Bearbeitungsblocks beruht die Zuordnung zur Matrix auf einer
+Annahme (die Tooltips nennen den Scancode); die meisten F-Tasten haben im Terminal 5.0 keine Wirkung. Die Kürzel des Fensters
 (nur mit Strg+Umschalt, F11) bleiben, alles Übrige gehört dem Terminal.
 
 **Mehrplatz Schritt für Schritt** (ein Rechner, ein oder mehrere Arbeitsplätze). Ein installiertes WEGA

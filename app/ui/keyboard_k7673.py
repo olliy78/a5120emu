@@ -11,8 +11,8 @@ den Kern ab — der Kern kennt diese Kodierung (`k1520_key_press`).
   andere Taste ebenso festhalten.
 * **LEDs**: ON/OFF, CAPS LOCK und MODE zeigen den Zustand, den die Tastatur im Kern führt
   (``term_leds``).
-* Die Beschriftung der Tastenkappen kennt keine Quelle (Befund P19a); die Tasten tragen die
-  Zeichen, die das Terminal aus dem Scancode macht.
+* Anordnung und Beschriftung folgen dem Foto der Tastatur des Anwenders (`k7673_layout`); die LEDs
+  sitzen wie dort im Anzeigefeld oben rechts (OFF/CAPS/MOD), nicht auf den Tasten.
 
 Dieselbe Schnittstelle wie die anderen Bildschirmtastaturen (``keyPressed``/``keyReleased``/
 ``set_powered``/``set_leds``/``clear_host_keys``), damit das Hauptfenster sie einhängt.
@@ -57,13 +57,13 @@ class KeyboardK7673Widget(QWidget):
         s = self._massstab()
         for p, x, y, b in L.BILD:
             if p == pos:
-                return QRectF((x + _FUGE) * s, (y + _FUGE) * s, (b - 2 * _FUGE) * s, (1 - 2 * _FUGE) * s)
+                return QRectF((x + _FUGE) * s, (y + _FUGE) * s, (b - 2 * _FUGE) * s, (L.taste_hoehe(pos) - 2 * _FUGE) * s)
         raise KeyError(pos)
 
     def taste_bei(self, punkt: QPointF) -> Optional[L.Position]:
         s = self._massstab()
         for p, x, y, b in L.BILD:
-            if QRectF(x * s, y * s, b * s, s).contains(punkt):
+            if QRectF(x * s, y * s, b * s, L.taste_hoehe(p) * s).contains(punkt):
                 return p
         return None
 
@@ -197,11 +197,11 @@ class KeyboardK7673Widget(QWidget):
                 mit_shift = ""
             p.setPen(text if wirkt else QColor(150, 150, 150))
             zeilen = normal.split("\n")
-            if mit_shift and len(mit_shift) == 1 and len(normal) == 1:
+            if mit_shift:
                 # Zeichentaste: Umschaltzeichen oben links klein, Grundzeichen unten groß.
                 schrift.setPixelSize(max(6, int(s * 0.42)))
                 p.setFont(schrift)
-                p.drawText(r.adjusted(0, 0.38 * s, 0, 0), Qt.AlignCenter, normal)
+                p.drawText(r.adjusted(0, 0.3 * s, 0, 0), Qt.AlignCenter, normal)
                 schrift.setPixelSize(max(5, int(s * 0.3)))
                 p.setFont(schrift)
                 p.drawText(r.adjusted(0.1 * s, 0.04 * s, 0, 0), Qt.AlignLeft | Qt.AlignTop, mit_shift)
@@ -211,18 +211,24 @@ class KeyboardK7673Widget(QWidget):
                                                       else 0.30 if breit <= 4 else 0.25))))
                 p.setFont(schrift)
                 p.drawText(r, Qt.AlignCenter, normal)
-        # LEDs auf den Tasten, die sie anzeigen
-        for bit, pos in L.LED_TASTEN.items():
-            r = self.taste_rechteck(pos)
+        # Anzeigefeld oben rechts (wie am Foto): Beschriftung und LED nebeneinander
+        rx, ry, rb, rh = L.LED_RAHMEN
+        p.setPen(QPen(rand, 1))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(QRectF(rx * s, ry * s, rb * s, rh * s), 0.2 * s, 0.2 * s)
+        schrift.setPixelSize(max(5, int(s * 0.3)))
+        p.setFont(schrift)
+        for bit, name, x, y in L.LED_FELD:
+            p.setPen(text)
+            p.drawText(QRectF(x * s, (y + 0.08) * s, 1.3 * s, 0.4 * s), Qt.AlignLeft | Qt.AlignVCenter, name)
             an = bool(self._leds & bit) and self._powered
             p.setPen(Qt.NoPen)
             p.setBrush(led_an if an else led_aus)
-            d = 0.22 * s
-            p.drawEllipse(QRectF(r.right() - d * 1.4, r.top() + d * 0.4, d, d))
-        # Keine Beschriftung der Tastenkappen bekannt: Hinweis am unteren Rand (nur bei Platz).
+            p.drawRect(QRectF((x + 0.05) * s, (y + 0.6) * s, 0.4 * s, 0.2 * s))
+        # Hinweis am unteren Rand (nur bei Platz).
         if self.height() > L.BILD_HOEHE * s + 0.9 * s:
             schrift.setPixelSize(max(6, int(s * 0.3)))
             p.setFont(schrift)
             p.setPen(QColor(140, 140, 140))
             p.drawText(QRectF(0, L.BILD_HOEHE * s, self.width(), s * 0.9), Qt.AlignCenter,
-                       "K7673.09 — Anordnung nach Funktion; SHIFT/CTRL rasten, rechte Maustaste hält jede Taste")
+                       "K7673 nach Foto — SHIFT/CTRL rasten, rechte Maustaste hält jede Taste")

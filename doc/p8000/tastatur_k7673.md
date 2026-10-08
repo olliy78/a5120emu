@@ -245,6 +245,38 @@ alle 128 Positionen gleiche Codefolge wie die Firmware (Zeit ± 1,5 ms), Wiederh
 
 ## 7. Offen
 1. Quarzfrequenz, Bittakt, Wiederholzeiten (Messung, Beschaffungsliste in `terminal_typ2.md` §11).
-2. Tastenkappen (Foto der K7673.09) — Zuordnung Matrixposition ↔ Beschriftung, deutsches oder ASCII-Layout.
+2. Tastenkappen: Foto liegt vor (§8); offen nur die Annahmen dort (F1–F11, CE, „+“, rechtes CTRL, Variante .01/.09).
 3. Herkunft P3.0 (Sendefreigabe) und P3.1 (Neustart) — Kabel hat nur Takt und Daten (XB1/2, XB1/4).
 4. Ob zwischen Z8-Pin und Leitung invertierende Treiber sitzen (Pegel auf XB1).
+
+## 8. Tastenkappenbeschriftung nach Foto (Anwender, 2026-10-08)
+
+Quelle: `doc/p8000/bilder/tastatur_k7673_foto.jpg`.  Deutsches Tastenfeld (QWERTZ, ISO mit `< >`-Taste, zwei SHIFT `⇕`,
+zwei CTRL), Kappen mit DIN-66003-Zweitbelegung (`@ §`, `Ü }`, `Ö |`, `Ä {`, `? ~ ß`).  Matrixpositionen/Scancodes
+unverändert (EPROM, Test `term_matrix_scancode`); geändert sind Anordnung, Beschriftung und die Zuordnung der Kappen.
+Umsetzung: `app/ui/k7673_layout.py` (`BESCHRIFTUNG`, `BILD`, `LED_FELD`).
+
+Abweichungen gegenüber der früheren Vermutung (Position → Kappe nach Foto):
+
+| Position (Zeile, Spalte) | Code | früher | Foto / Annahme |
+|---|---|---|---|
+| (6,7) / (4,7) | 29 / 0E | BS unten / DEL Hauptreihe | BS und DEL beide oben rechts in der Zifferreihe |
+| (4,10) | 45 | „BS (zweite)" | **CE** des Ziffernblocks (Annahme: Position der IBM-NumLock; Terminal macht BS daraus) |
+| (5,8) | E1 52 E1 52 | oben im Ziffernblock | **00** unten im Ziffernblock |
+| (1,6) | 2A (.09) | SHIFT links | **+** des Ziffernblocks (Annahme, s. u.) |
+| (3,6) / (6,6) | 2A | SHIFT rechts / Mitte | SHIFT links / rechts (`⇕`) |
+| (7,13) | E0 38 | ohne Wirkung | **CTRL rechts** (Annahme: Nachbarposition von CTRL links (6,13)) |
+| 11 Positionen „ohne Wirkung" + PAUSE | 3F 40 41 42 43 44 46 57 58 E0 37 PAUSE | schmale Leiste | **F1…F11** in dieser Scancode-Reihenfolge (Annahme; ein zwölfter Kandidat fehlt am Foto) |
+| (0,9) (0,10) (1,9) (1,10) | E0 52/49/53/51 | CHAR/LINE DEL/INS | `\|←\|` CHAR DELETE, `\|→\|` CHAR INSERT, `⤒` LINE DELETE, `⤓` LINE INSERT (Annahme nach Pfeilrichtung) |
+| (4,9) / (5,9) | E0 47 / E0 4F | PAGE ERASE / HOME | **CLEAR** / `↖` |
+| (0,6) / (5,7) | 1D / 0F | TAB / BACKTAB | `⇥` links vor Q / `⇤` rechts hinter `+` |
+| (4,12) | 49 | zweite 9 | am Foto **keine Taste** (nur als Zusatzfeld unten) |
+| LEDs | — | auf den Tasten | Anzeigefeld OFF / CAPS / MOD oben rechts |
+
+**Variante K7673.01 gegen .09** (Vergleich der Codetabellen; .01 hat die Tabelle bei 0322H statt 02E3H, davon
+abgesehen und von Programmunterschieden — RAM-Selbsttest, LED-Test — sind nur **vier** Einträge verschieden):
+(1,6) .09 = 2A SHIFT, .01 = **00H** (Terminal: „+"); (6,6) .09 = 2A, .01 = **36H** (rechter Shift, im Terminal 5.0
+ohne Wirkung, `NORMAL_Tab[36H] = 80H`); (0,14) und (5,8) tragen gleiche Folgen, nur mit anderer Folgenadresse.
+Das Foto passt zur Position (1,6) = „+" — das sendet nur die **.01**; unter .09 macht es SHIFT.  Ob die Tastatur des
+Anwenders .01 oder .09 trägt, ist offen (EPROM-Aufdruck/Selbsttest nachsehen); für den Emulator wäre .01 als zweite
+Variante eine reine Tabellenänderung im Kern.
