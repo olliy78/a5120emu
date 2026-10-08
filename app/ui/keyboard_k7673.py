@@ -191,7 +191,10 @@ class KeyboardK7673Widget(QWidget):
             p.drawRoundedRect(r, 0.12 * s, 0.12 * s)
             _, normal, mit_shift, _tipp = L.TASTEN[pos]
             if not wirkt:
-                normal, mit_shift = f"{L.scancode(pos):X}" if L.scancode(pos) < 0x100 else "", ""
+                sc = L.scancode(pos)
+                if not normal:
+                    normal = f"E0 {sc & 0xFF:X}" if sc & 0xFF00 == 0xE000 else f"{sc:X}"
+                mit_shift = ""
             p.setPen(text if wirkt else QColor(150, 150, 150))
             zeilen = normal.split("\n")
             if mit_shift and len(mit_shift) == 1 and len(normal) == 1:
@@ -203,7 +206,9 @@ class KeyboardK7673Widget(QWidget):
                 p.setFont(schrift)
                 p.drawText(r.adjusted(0.1 * s, 0.04 * s, 0, 0), Qt.AlignLeft | Qt.AlignTop, mit_shift)
             else:
-                schrift.setPixelSize(max(5, int(s * (0.30 if len(zeilen) > 1 or len(normal) > 2 else 0.42))))
+                breit = max(len(z) for z in zeilen)
+                schrift.setPixelSize(max(5, int(s * (0.42 if breit <= 2 and len(zeilen) == 1
+                                                      else 0.30 if breit <= 4 else 0.25))))
                 p.setFont(schrift)
                 p.drawText(r, Qt.AlignCenter, normal)
         # LEDs auf den Tasten, die sie anzeigen

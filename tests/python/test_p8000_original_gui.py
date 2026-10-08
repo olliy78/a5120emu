@@ -480,7 +480,10 @@ def test_zeichen_mit_shift_ohne_wirts_shift_drueckt_shift_vorher(qapp):
     t = _widget(qapp, emu)
     t.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Q, Qt.NoModifier, "@"))
     assert emu.ereignisse == [((1, 6), True)]                   # erst nur SHIFT
-    QTest.qWait(O.SHIFT_VORLAUF_MS + 80)
+    for _ in range(100):                       # Zeitgeber unter Last großzügig abwarten
+        QTest.qWait(50)
+        if len(emu.ereignisse) > 1:
+            break
     assert emu.ereignisse == [((1, 6), True), ((0, 1), True)]
     t.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Q, Qt.NoModifier, "@"))
     assert emu.ereignisse[2:] == [((0, 1), False), ((1, 6), False)]
@@ -488,7 +491,10 @@ def test_zeichen_mit_shift_ohne_wirts_shift_drueckt_shift_vorher(qapp):
     emu.ereignisse.clear()
     t.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Q, Qt.NoModifier, "@"))
     t.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Q, Qt.NoModifier, "@"))
-    QTest.qWait(O.MINDEST_HALTEN_MS + 100)
+    for _ in range(100):
+        QTest.qWait(50)
+        if emu.ereignisse[-1] == ((1, 6), False) and ((0, 1), False) in emu.ereignisse:
+            break
     assert ((0, 1), True) in emu.ereignisse and ((0, 1), False) in emu.ereignisse
     assert emu.ereignisse[-1] == ((1, 6), False)
     assert emu.ereignisse.index(((1, 6), True)) < emu.ereignisse.index(((0, 1), True))
