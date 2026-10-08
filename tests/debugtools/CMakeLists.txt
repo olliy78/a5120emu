@@ -21,3 +21,7 @@ k1520_add_test(z8k_table         SRC test_z8k_table.cpp         LABELS "${_lbl}"
 k1520_add_test(z8k_disasm        SRC test_z8k_disasm.cpp        LABELS "${_lbl}")  # tools/z8000/z8k_disasm.h
 k1520_add_test(z8k_asm           SRC test_z8k_asm.cpp           LABELS "${_lbl}"   # tools/z8000/z8k_asm.h
                DEFS "Z8K_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/z8000\"")
+
+# Z8/UB8840 (P8000 AP P19c): Disassembler/Assembler tools/z8/, Debuggersicht tools/dbg_z8.h
+k1520_add_test(z8_asm            SRC test_z8_asm.cpp            LABELS "${_lbl}")  # tools/z8/z8_disasm.h + z8_asm.h
+k1520_add_test(dbg_z8            SRC test_dbg_z8.cpp            LIBS k1520_z8 LABELS "${_lbl}")  # tools/dbg_z8.h

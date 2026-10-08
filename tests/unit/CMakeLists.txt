@@ -9,6 +9,9 @@ k1520_add_test(z80   SRC primitives/test_z80.cpp   LIBS k1520_z80 LABELS "${_lbl
 k1520_add_test(z8000 SRC primitives/test_z8000.cpp LIBS k1520_z8000 LABELS "${_lbl}")
 # UB8010/Z8010-MMU (P8000 AP P9a)
 k1520_add_test(z8010 SRC primitives/test_z8010.cpp LIBS k1520_z8010 LABELS "${_lbl}")
+# Z8/UB8840 (P8000 AP P19c, doc/p8000/z8_abdeckung.md): Befehle, Peripherie, Firmwareproben
+k1520_add_test(z8    SRC primitives/test_z8.cpp primitives/test_z8_peripherie.cpp
+                     LIBS k1520_z8 LABELS "${_lbl}")
 k1520_add_test(pio   SRC primitives/test_pio.cpp   LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl}")
 # P8000 P5c/P5d: Handshake-/Pinpegel-Erweiterung PIO, Bruchtakt-Zähleingang CTC
