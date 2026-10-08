@@ -359,3 +359,14 @@ Unbekannter Typ → Exit 2. Wächter: `cli_bt_raf`, `cli_bt_raf_k8915`, `cli_bt_
 PRG 710/710-1, der sie seit AP-L1 **nicht mehr fest** trägt.  Ohne `--ptape` antwortet
 auf E0H–E7H niemand (FFH).  Ein Band einlegen kann `boot_trace` nicht; zum Verfolgen
 eines Treibers `--watchio 0xE0,0xE4`.
+
+### P8000-Originalterminal (AP P20c/P20d)
+
+- `--machine p8000 --konsole original` (auch `p8000-16`): tty1 am Originalterminal Typ 2 + K7673.09 statt am
+  Kern-Terminal; `--keys` tippt mit Haltezeit über die K7673 (≈ 640 000 Takte je Zeichen), der Bericht zeigt die
+  Terminalzeile des Originals.
+- `--machine p8000-terminal`: das Terminal ohne Rechner — Netz-Ein bis zur Einschaltmeldung („ADM31/9600 baud…"),
+  300 ms warten, `--keys` (Zeichen, `<CR>`) über die K7673, danach Bild, Cursor/LEDs/Klingel und die Bytes, die das
+  Terminal auf der Leitung XB5 gesendet hat (beginnt mit dem 00H des Starts).  `-c` = Grenze in Z8-Takten
+  (Vorgabe 2 s = 7 372 800), `--json` mit `meldung`, `keys_typed`, `sent`, `row0`.  Exit 0 = Meldung da, alle
+  Tasten getippt.  Wächter `bt_p8000_terminal`, `bt_p8000_konsole_original`.

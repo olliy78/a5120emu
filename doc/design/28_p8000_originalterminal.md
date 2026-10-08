@@ -24,7 +24,7 @@ austauschen kann.  Weicht das Original vom Handbuch ab, **gewinnt das Original**
 | `TerminalGeraet` | `core/peripherals/p8000_terminal/terminal_geraet.h` | gemeinsame Außenschnittstelle beider Terminals (§6), mit `KernTerminalGeraet` (P6) und `HwTerminalGeraet` |
 | ROM-Daten | `rom_p8t.h`, `rom_k7673.h` | `P8T_1_5.0`, `P8TEZS`, `P8TDZS`, `K7673.09` als C-Felder (`tools/eprom_to_h.py`) |
 
-`P8000Machine` und die C-ABI bleiben unberührt (P20c/d).
+`P8000Machine` und die C-ABI blieben in P20a/b unberührt; Anbindung s. §9 (P20c/d).
 
 ## 3. Zeitführung
 
@@ -112,3 +112,24 @@ K7673 (Haltezeit so, dass die Entprellung sie sieht).
 - `test_tastatur_k7673`: Modell, und Differenzialtest gegen die K7673-Firmware auf dem Z8-Kern.
 - Integration: Taste „a“ ⇒ Terminal sendet „a“; Host sendet `ESC [ 2 J` ⇒ Bild leer.
 - CLI: `k1520dbg --terminal` Skriptlauf.
+
+## 9. Anbindung (P20c/P20d, Nachtrag 2026-10-08)
+
+- **Variante „P8000 + P8000 Terminal"**: `P8000Machine::Config::terminal = Original` baut statt des
+  `KernTerminalGeraet` ein `HwTerminalGeraet` an tty1; die Laufschleife ruft je Befehl `konsole_->takt(n)`
+  (Kopplung rechnet Maschinentakte mit Rest in Z8-Takte, driftfrei, §3).  Netz-Ein: Terminal zuerst,
+  `terminal_vorlauf_ms` = 1500, danach `TerminalHwKopplung::synchronisiere()` (Zeitbezug ab der aktuellen Z8-Zeit).
+  Rahmenpuffer der Maschine = Pixelbild 640 × 312; `keyboardLeds()` = LEDs der K7673.  Save-State P8KS v4
+  (Terminalart im Fingerabdruck, Abschnitt Terminal = P8TH + Kopplung).
+- **Variante „P8000 Terminal"**: `P8000TerminalMachine` (`core/machines/p8000/`) — `K1520Machine` um eine Einheit,
+  Leitung am Hub der Einheit (Vorgabe Telnet-Client 127.0.0.1:5000), `run()` in Z8-Takten, Save-State „P8TM" v1.
+  Gewählt statt einer eigenen Bibliothek oder eines Handles ohne `K1520Machine`, weil die C-ABI jeden Handle als
+  `K1520Machine*` behandelt (Seriell, Bild, Tasten, LEDs, Klingel gehen dann ohne Sonderweg).
+- **C-ABI**: `K1520_MACHINE_P8000_TERMINAL = 5`, `k1520_create_p8000_terminal(konfig)`; `k1520_term_*` bedienen beide
+  Terminalarten (`k1520_term_kind`), neu `_framebuffer`, `_frame_count`, `_matrix_key`, `_scancode_key`,
+  `_matrix_scancode`, `_leds`; `k1520_state_*` auch für P8TM.  Tasten: Matrixkode `0x04000000 | Zeile << 8 | Spalte`.
+- **Werkzeuge**: `boot_trace --machine p8000-terminal` (bis zur Einschaltmeldung, `--keys`, gesendete Bytes),
+  `boot_trace`/`k1520dbg --konsole original`; `k1520dbg --terminal` (P20a) bleibt der Z8-Prüfstand.
+- **Tests**: `test_p8000_terminal_original` (Banner im Originalbild, `O U` … `boot` bis `:` über die K7673, Matrixtaste,
+  Save-State-Rundreise, Mehrplatz über Loopback-Telnet), `py_c_api`, `py_binding`, `bt_p8000_terminal`,
+  `bt_p8000_konsole_original`.
