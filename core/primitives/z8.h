@@ -176,6 +176,8 @@ public:
     uint8_t arbeitsreg(unsigned n) const { return uint8_t((rp & 0xF0) | (n & 15)); }
 
     bool irqFreigegeben() const { return irqEin_; }
+    /// Prüfstand/Debugger: Freigabe des IRQ-Registers setzen (sonst nur durch EI bzw. Reset).
+    void setIrqFreigabe(bool an) { irqEin_ = an; }
     bool angehalten() const { return halt_; }
     bool inReset() const { return resetLine_; }
     uint16_t letzterPc() const { return lastPc_; }
