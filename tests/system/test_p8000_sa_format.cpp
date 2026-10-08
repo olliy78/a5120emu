@@ -178,3 +178,26 @@ TEST(P8000SaFormat, FormatiertUndPrueftEineTempPlatte) {
         EXPECT_NE(bild(m).find("m/n = 1 72"), std::string::npos) << bild(m);
     }
 }
+
+/// Der Anwenderweg des Plattenkastens „Neue Platte…" (Standard „unformatiert"): `hdCreate` mit dem
+/// Suffix ":unformatiert" an einer Maschine MIT Vorgabe `platte_par_ergaenzen` (wie im Programm)
+/// führt bis zum ersten Bild von sa.format — ohne Parametersatz meldet der WDC „Error in PAR&BTT"
+/// und der Monitor bleibt bedienbar.  (Mit Parametersatz + E5-Inhalt startete AUTOBOOT die E5-Bytes.)
+TEST(P8000SaFormat, NeuePlatteUnformatiertKommtBisZumFormatDialog) {
+    stumm();
+    k1520test::TempDisk disk{FIXTURE};
+    ASSERT_TRUE(saFassung41(disk.path()));
+    k1520test::TempPlatte pfad = k1520test::TempPlatte::leer("p8000_neu_unformatiert.img");
+    P8000Machine::Config c = mitWdc("");
+    c.platte_par_ergaenzen = true;                       // Programmvorgabe
+    P8000Machine m(c);
+    ASSERT_TRUE(m.mountDisk(0, disk.path(), m.defaultFormatName(0), false)) << m.lastError();
+    ASSERT_TRUE(m.hdCreate(0, pfad.path(), "K5504.50:unformatiert")) << m.hdError();
+    m.powerOn();
+    ASSERT_NO_FATAL_FAILURE(bisBootPrompt(m));
+    tippeZeile(m, "ud(0,0)sa.format");
+    ASSERT_TRUE(laufeBisText(m, ">>>  Format Hard-Disk 4.1  <<<", 400'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "Firmwareversion 'WDC_4.2'", 400'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "Error in PAR&BTT on Drive 0 (PAR not ok) (BTT not ok)", 40'000'000)) << bild(m);
+    ASSERT_TRUE(laufeBisText(m, "Which Typ ? (No./n/q)", 40'000'000)) << bild(m);
+}

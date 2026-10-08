@@ -778,7 +778,9 @@ K1520_API const char* k1520_state_error(K1520Handle h);
  *  Winchesterlaufwerk hat keinen Schreibschutz).  Grund: k1520_hd_error. */
 K1520_API bool        k1520_hd_mount(K1520Handle h, int unit, const char* path, bool wp);
 /** @brief Neues Abbild des Typs @p typ ("K5504.50", "D5126", …; NULL/"" = K5504.50) anlegen
- *  — Datenbytes E5, Z0/K0/S1 = gültiger PAR/BTT-Sektor — und anschließen. */
+ *  — Datenbytes E5, Z0/K0/S1 = gültiger PAR/BTT-Sektor — und anschließen.  Mit dem Suffix
+ *  ":unformatiert" ("K5504.50:unformatiert") entsteht ein Laufwerk wie neu: durchgehend E5,
+ *  KEIN Parametersatz (WDC: "Error in PAR&BTT"; sa.format legt ihn an). */
 K1520_API bool        k1520_hd_create(K1520Handle h, int unit, const char* path, const char* typ);
 /** @brief Laufwerk lösen; geänderte Spuren werden vorher zurückgeschrieben. */
 K1520_API bool        k1520_hd_unmount(K1520Handle h, int unit);

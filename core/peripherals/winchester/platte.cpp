@@ -83,14 +83,15 @@ std::optional<Geometrie> parGeometrie(const uint8_t* s)
 
 Platte::~Platte() { schliessen(); }
 
-bool Platte::neu(const std::string& pfad, const Typ& t, std::string* fehler)
+bool Platte::neu(const std::string& pfad, const Typ& t, std::string* fehler, bool mit_par)
 {
     std::ofstream f(pfad, std::ios::binary | std::ios::trunc);
     if (!f) {
         if (fehler) *fehler = "Abbild nicht anlegbar: " + pfad;
         return false;
     }
-    const auto par = parSektor(t);
+    auto par = parSektor(t);
+    if (!mit_par) par.fill(0xE5);   // unformatiert: auch Z0/K0/S1 ohne Parametersatz
     f.write(reinterpret_cast<const char*>(par.data()), par.size());
     std::vector<char> block(1 << 20, static_cast<char>(0xE5));   // Füllwert nach Formatieren
     uint64_t rest = t.g.bytes() - par.size();

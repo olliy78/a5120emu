@@ -228,9 +228,15 @@ public:
     /// Abbild roh/LBA anschließen (Geometrie: `platte_typ` bzw. PAR/Dateigröße).  Ein Winchester-
     /// laufwerk kennt keinen Schreibschutz — @p wp = true wird abgewiesen.
     bool hdMount(int unit, const std::string& path, bool wp = false);
-    /// Neues Abbild des Typs @p typ (E5 + gültiger PAR/BTT-Sektor) anlegen und anschließen.
+    /// Neues Abbild des Typs @p typ anlegen und anschließen.  Ohne Suffix: E5 + gültiger PAR/BTT-
+    /// Sektor.  Mit Suffix `:unformatiert`: wie ein neues Laufwerk — durchgehend E5, KEIN
+    /// Parametersatz (der WDC meldet „Error in PAR&BTT", der Monitor bleibt bedienbar, `sa.format`
+    /// legt ihn an); die Platte wird dann OHNE Parametersatz-Ergänzung angeschlossen.
     bool hdCreate(int unit, const std::string& path, const std::string& typ);
     bool hdUnmount(int unit);
+private:
+    bool hdMountMit(int unit, const std::string& path, bool par_ergaenzen);
+public:
     bool hdFlush();
     std::string hdPath(int unit) const;
     /// Lampe: Laufwerk gewählt und Disk-Schnittstelle in den letzten 0,1 s aktiv.

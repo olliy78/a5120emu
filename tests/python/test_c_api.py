@@ -237,6 +237,12 @@ def test_p8000_can_be_created_configured_and_refused():
         assert not _lib.k1520_hd_mount(handle, 1, pfad.encode(), True)   # kein Schreibschutz
         assert _lib.k1520_hd_error(handle)
         assert not _lib.k1520_hd_create(handle, 0, pfad.encode(), b"quatsch")
+        # Suffix ":unformatiert": Laufwerk wie neu, Z0/K0/S1 = E5 (kein Parametersatz)
+        roh = os.path.join(d, "roh.img")
+        assert _lib.k1520_hd_create(handle, 0, roh.encode(), b"D5126:unformatiert"), _lib.k1520_hd_error(handle)
+        with open(roh, "rb") as f:
+            assert f.read(512) == b"\xe5" * 512
+        assert _lib.k1520_hd_create(handle, 0, pfad.encode(), b"D5126")
         _lib.k1520_power_on(handle)
         assert _lib.k1520_run(handle, 100_000) > 0
         assert not _lib.k1520_hd_led(handle, 0)                          # WDC noch im Reset

@@ -279,11 +279,17 @@ bool P8000Machine::isDiskLedOn(int d) const
 bool P8000Machine::hdMount(int unit, const std::string& path, bool wp)
 {
     hd_fehler_.clear();
+    if (wp) { hd_fehler_ = "ein Winchesterlaufwerk hat keinen Schreibschutz"; return false; }
+    return hdMountMit(unit, path, cfg_.platte_par_ergaenzen);
+}
+
+bool P8000Machine::hdMountMit(int unit, const std::string& path, bool par_ergaenzen)
+{
+    hd_fehler_.clear();
     if (!wdc_) { hd_fehler_ = "kein WDC (wdc=aus)"; return false; }
     if (unit < 0 || unit >= P8000Wdc::LAUFWERKE) { hd_fehler_ = "Laufwerk 0–2"; return false; }
-    if (wp) { hd_fehler_ = "ein Winchesterlaufwerk hat keinen Schreibschutz"; return false; }
     k1520::winchester::Platte::Config pc;
-    pc.par_ergaenzen = cfg_.platte_par_ergaenzen;
+    pc.par_ergaenzen = par_ergaenzen;
     if (!cfg_.platte_typ.empty()) pc.geometrie = k1520::winchester::typNachName(cfg_.platte_typ)->g;
     auto p = std::make_unique<k1520::winchester::Platte>();
     if (!p->oeffnen(path, pc)) { hd_fehler_ = p->fehler(); return false; }
@@ -299,11 +305,20 @@ bool P8000Machine::hdMount(int unit, const std::string& path, bool wp)
 bool P8000Machine::hdCreate(int unit, const std::string& path, const std::string& typ)
 {
     hd_fehler_.clear();
-    const k1520::winchester::Typ* t = k1520::winchester::typNachName(typ.empty() ? "K5504.50" : typ);
+    // Suffix ":unformatiert" = Laufwerk wie neu (kein Parametersatz), sonst E5 + PAR/BTT.
+    static const std::string kUnformatiert = ":unformatiert";
+    std::string name = typ;
+    bool unformatiert = false;
+    if (name.size() >= kUnformatiert.size() &&
+        name.compare(name.size() - kUnformatiert.size(), kUnformatiert.size(), kUnformatiert) == 0) {
+        unformatiert = true;
+        name.erase(name.size() - kUnformatiert.size());
+    }
+    const k1520::winchester::Typ* t = k1520::winchester::typNachName(name.empty() ? "K5504.50" : name);
     if (!t) { hd_fehler_ = "Plattentyp '" + typ + "' unbekannt"; return false; }
     if (!wdc_) { hd_fehler_ = "kein WDC (wdc=aus)"; return false; }
-    if (!k1520::winchester::Platte::neu(path, *t, &hd_fehler_)) return false;
-    return hdMount(unit, path);
+    if (!k1520::winchester::Platte::neu(path, *t, &hd_fehler_, !unformatiert)) return false;
+    return hdMountMit(unit, path, unformatiert ? false : cfg_.platte_par_ergaenzen);
 }
 
 bool P8000Machine::hdUnmount(int unit)

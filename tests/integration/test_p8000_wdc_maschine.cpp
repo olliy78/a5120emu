@@ -139,6 +139,23 @@ TEST(P8000WdcMaschine, KonfigurationUndPlattenschnittstelle) {
     EXPECT_EQ(m.wdc()->platte(1), m.platte(1));
     EXPECT_FALSE(m.hdMount(2, neu.path(), true));          // kein Schreibschutz an der Winchester
     EXPECT_FALSE(m.hdCreate(0, neu.path(), "quatsch"));
+    // Suffix ":unformatiert": Laufwerk wie neu — durchgehend E5, auch Z0/K0/S1 (kein Parametersatz).
+    {
+        k1520test::TempPlatte roh = k1520test::TempPlatte::leer("p8000_hd_roh.img");
+        ASSERT_TRUE(m.hdCreate(2, roh.path(), "D5126:unformatiert")) << m.hdError();
+        std::ifstream f(roh.path(), std::ios::binary);
+        std::string erste(512, 0);
+        f.read(erste.data(), 512);
+        EXPECT_EQ(erste, std::string(512, char(0xE5)));
+        EXPECT_FALSE(m.hdCreate(0, roh.path(), "quatsch:unformatiert"));
+        EXPECT_TRUE(m.hdUnmount(2));
+        // ohne Suffix bleibt es beim Parametersatz auf Z0/K0/S1
+        ASSERT_TRUE(m.hdCreate(2, roh.path(), "D5126")) << m.hdError();
+        std::ifstream g(roh.path(), std::ios::binary);
+        g.read(erste.data(), 512);
+        EXPECT_NE(erste, std::string(512, char(0xE5)));
+        EXPECT_TRUE(m.hdUnmount(2));
+    }
     EXPECT_TRUE(m.hdFlush());
     EXPECT_TRUE(m.hdUnmount(1));
     EXPECT_EQ(m.wdc()->platte(1), nullptr);

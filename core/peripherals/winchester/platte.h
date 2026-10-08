@@ -112,7 +112,10 @@ public:
     Platte& operator=(const Platte&) = delete;
 
     /// Legt ein neues Abbild in voller Größe an: Datenbytes E5, Z0/K0/S1 = PAR/BTT von @p t.
-    static bool neu(const std::string& pfad, const Typ& t, std::string* fehler = nullptr);
+    /// @p mit_par = false: ein UNFORMATIERTES Laufwerk wie neu aus der Verpackung — die Datei ist
+    /// durchgehend E5, auch Z0/K0/S1 (kein Parametersatz; der WDC meldet „Error in PAR&BTT",
+    /// `sa.format` legt ihn an).
+    static bool neu(const std::string& pfad, const Typ& t, std::string* fehler = nullptr, bool mit_par = true);
     /// Geometrie zur Dateigröße (nur eindeutige Typen; 45 342 720 B ist D5146 oder VS ⇒ keine).
     static std::optional<Geometrie> geometrieAusGroesse(uint64_t bytes);
 
