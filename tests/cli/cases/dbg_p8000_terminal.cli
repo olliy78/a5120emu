@@ -1,0 +1,39 @@
+# k1520dbg --terminal (AP P20a): Originalterminal P8000 Typ 2 als Einheit — Firmware P8T 5.0
+# auf dem Z8, Tastatur K7673.09.  Einschaltmeldung, 8275-Zustand, Host-Zeichen und
+# Escape-Folge, Tastendruck über die Matrix, VT100-Umschaltung mit DSR-Antwort, Kontext
+# `cpu z8` (Register, Disassembler, Schritt durch die Einheit).
+tool:    k1520dbg
+run:     --terminal
+timeout: 120
+exit:    0
+stdin:
+  lauf 1000
+  term
+  crt
+  host \e*\x1eHallo\r\nP8000
+  ruhe
+  term
+  key a
+  aus
+  taste MODE
+  host \e[12;34H\e[6n
+  ruhe
+  aus
+  r
+  u 0CH 3
+  s 2
+  b 285H
+  g
+  bl
+  q
+expect:    0|ADM31/9600 baud/Video Attr. on (c)zft/keaw
+expect:    Cursor 1,0  Zeichensatz 1
+expect:    8275: programmiert, 80x24, 13 Linien, Unterstrich 12, VRTC 3, HRTC 22, nicht transparent, Cursor Unterstrich blinkend
+expect:    Anzeige an, IE 0
+expect:     0|Hallo
+expect:     1|P8000
+expect:    Cursor 1,5
+expect:    <00>a
+expect:    <1B>[12;34R
+expect:    000C
+expect:    Haltepunkt 0285

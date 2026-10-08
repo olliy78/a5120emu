@@ -192,6 +192,12 @@ public:
 
     std::set<uint16_t> haltepunkte;
     uint64_t maxSchritte = 20000000;
+    /// Ein Befehl im Zusammenhang einer Einheit (P20: Terminal samt Video/Tastatur/Watchdog);
+    /// ohne Rückruf `Z8::step()` allein (Prüfstand).
+    std::function<void()> schritt;
+    /// Zusätzliche Kommandos des Gastgebers (z. B. `term`, `host`); true = erkannt.
+    std::function<bool(const std::vector<std::string>&, std::string&)> zusatz;
+    std::string zusatzHilfe;
 
     /// Eine Kommandozeile.  Rückgabe false = `q`.
     bool befehl(const std::string& zeile, std::string& out) {
@@ -204,14 +210,14 @@ public:
         if (k == "r" || k == "regs") { out += regText(c_); out += zeileBei(c_.pc) + "\n"; return true; }
         if (k == "s" || k == "step") {
             const long n = arg(1, 1);
-            for (long i = 0; i < n; ++i) { out += zeileBei(c_.pc) + "\n"; c_.step(); }
+            for (long i = 0; i < n; ++i) { out += zeileBei(c_.pc) + "\n"; eins(); }
             out += "-> " + zeileBei(c_.pc) + "\n";
             return true;
         }
         if (k == "n" || k == "next") {
             const z8dis::Ergebnis e = z8dis::disasm(m_.prog, c_.pc);
             if (e.ruft) laufBis(uint16_t(c_.pc + e.len), out);
-            else { out += zeileBei(c_.pc) + "\n"; c_.step(); }
+            else { out += zeileBei(c_.pc) + "\n"; eins(); }
             out += "-> " + zeileBei(c_.pc) + "\n";
             return true;
         }
@@ -221,7 +227,7 @@ public:
             bool weg = false;
             while (i++ < maxSchritte) {
                 const uint8_t op = m_.prog(c_.pc);
-                c_.step();
+                eins();
                 if ((op == 0xAF || op == 0xBF) && spGroesser(c_.sp, sp0)) { weg = true; break; }
             }
             out += weg ? "-> " + zeileBei(c_.pc) + "\n" : "  (kein RET innerhalb der Schrittgrenze)\n";
@@ -331,7 +337,8 @@ public:
         }
         if (k == "reset") { c_.reset(); c_.step(); out += "-> " + zeileBei(c_.pc) + "\n"; return true; }
         if (k == "takte") { out += fmt("  %llu interne Takte\n", (unsigned long long)c_.takte); return true; }
-        if (k == "help" || k == "h" || k == "?") { out += hilfe(); return true; }
+        if (k == "help" || k == "h" || k == "?") { out += hilfe() + zusatzHilfe; return true; }
+        if (zusatz && zusatz(t, out)) return true;
         out += "  unbekanntes Kommando '" + k + "' (help)\n";
         return true;
     }
@@ -360,6 +367,7 @@ private:
     std::deque<IrqEintrag> irqLog_;
 
     std::string zeileBei(uint16_t a) const { return z8dis::zeile(m_.prog, a); }
+    void eins() { if (schritt) schritt(); else c_.step(); }
     bool spGroesser(uint16_t a, uint16_t b) const {
         return c_.stapelIntern() ? uint8_t(a) > uint8_t(b) : a > b;
     }
@@ -372,7 +380,7 @@ private:
                 return;
             }
             erster = false;
-            c_.step();
+            eins();
         }
         out += fmt("  Schrittgrenze (%llu) erreicht\n", (unsigned long long)maxSchritte);
     }

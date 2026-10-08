@@ -32,6 +32,8 @@
  * 16-Bit-PIO2 bzw. Winchester an Laufwerk 0 (Kopie wie die Disketten, `--rw` = Original);
  * Befehle `wdc [r|u|d|log]`, `cpu wdc` (nur Ansicht).
  * `--ptape` steckt die Lochstreifen-Karte K6022 (SIF1000, E0H–E7H; alle Maschinen).
+ * `--terminal`: Originalterminal P8000 Typ 2 (P8T 5.0 + K7673.09) als Einheit, Kontext `cpu z8`
+ * auf dessen Z8, Zusatzkommandos term/crt/host/key/taste/lauf (tools/dbg_p8000_terminal.h, P20a).
  * `--z8 <abzug>[@org]` [--z8-fassung ub8840|ub8820|z8681]: Z8-Prüfstand ohne Maschine
  * (`cpu z8`-Kontext aus tools/dbg_z8.h; AP P19c) — z. B. Terminal-/Tastaturfirmware des P8000.
  *
@@ -53,6 +55,7 @@
 #include "tools/dbg_u8000.h"      // U8001-Kontext: Adressen, FCW, Aufrufstapel
 #include "tools/dbg_p8000.h"      // P8000: ADP, DMA, Kopplung, MMU (AP P12)
 #include "tools/dbg_z8.h"         // Z8/UB8840 (`--z8`, `cpu z8`, AP P19c)
+#include "tools/dbg_p8000_terminal.h"   // Originalterminal (`--terminal`, AP P20a)
 #include "tools/em_trace.h"       // EM-Ereignisse als Text (emlog, boot_trace --em)
 #include "tools/z8000/z8k_disasm.h"
 #include "tools/z8000/z8k_asm.h"
@@ -201,6 +204,7 @@ int main(int argc, char** argv){
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     const char* z8_bild = nullptr; // --z8 <abzug>[@org]: Z8-Prüfstand (P19c), ohne Maschine
     std::string z8_fassung;        // --z8-fassung ub8840|ub8820|z8681
+    bool terminal_hw = false;      // --terminal: Originalterminal P8000 Typ 2 (P20a)
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
             if (!dbgm::parseMachine(argv[++i], art)){
@@ -220,6 +224,7 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--ptape")) ptape_opt=true;
         else if (!strcmp(argv[i],"--z8") && i+1<argc) z8_bild=argv[++i];
         else if (!strcmp(argv[i],"--z8-fassung") && i+1<argc) z8_fassung=argv[++i];
+        else if (!strcmp(argv[i],"--terminal")) terminal_hw=true;
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -227,6 +232,8 @@ int main(int argc, char** argv){
     }
     // Z8-Prüfstand (P19c): eigener Kontext ohne Maschine (tools/dbg_z8.h, `help` dort).
     if (z8_bild) return dbgz8::pruefstand(z8_bild, z8_fassung, script);
+    // Originalterminal (P20a): Einheit ohne Maschine, Kontext `cpu z8` auf dem Terminal-Z8.
+    if (terminal_hw) return dbgp8kt::pruefstand(script);
     // Emulator-Log standardmäßig still (das Tool druckt selbst); für Diagnose per
     // K1520DBG_LOGLEVEL=off|error|warn|info|debug|trace anhebbar (z. B. K5122 >>> READ/FORMAT).
     Level baseLvl = Level::ERROR;
