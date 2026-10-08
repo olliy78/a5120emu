@@ -7,7 +7,8 @@ Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
 (`p8000emu`) — dasselbe Programm mit
 eigener Konfiguration und eigener Tastatur; was nur den K8915, den PRG, den
 PC 1715 bzw. den P8000 betrifft, steht in den Abschnitten „Der K8915 Emulator", „Der PRG710
-Emulator", „Der PC1715 Emulator" und „Der P8000 Emulator". Nachgebildet werden **Bus und Steckkarten** — Z80,
+Emulator", „Der PC1715 Emulator" und „Der P8000 Emulator" (die Bedienung des P8000 selbst — Selbsttest,
+Monitore, UDOS, WEGA — beschreibt das Kapitel „Bedienung des P8000"). Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
@@ -1076,15 +1077,16 @@ die *Betriebsart*. Was anders ist:
 * **Winchesterplatte** — im Kasten *Laufwerke* unter den Disketten. **Anschließen…** hängt ein
   vorhandenes Abbild an den WDC, **Neue Platte…** legt eines an (Typ K5504.50 u. a., mit
   gültigem Parametersatz **PAR**, aber **unformatiert**: formatieren mit `sa.format` im Gast),
-  **Abtrennen** löst es. Beim allerersten Start legt das Programm `p8000_platte.img` im
-  Diskettenordner an. Eine Platte hat **keinen Schreibschutz**; geschrieben wird von selbst,
+  **Abtrennen** löst es. Es gibt **keine vorgegebene Platte** (das Programm legt von selbst keine an; der Plattenkasten
+  schlägt für *Neue Platte…* den Namen `p8000_platte.img` im Diskettenordner vor). Eine Platte hat **keinen Schreibschutz**; geschrieben wird von selbst,
   beim Abtrennen, bei einem Zwischenstand und beim Beenden. Der WDC erkennt die Platte beim
   Hochlauf: eine im Betrieb angeschlossene sieht der Gast erst nach *Rückstellen* oder
   *Rechner ein*. Die Lampe im Kasten und **Platte** in der Statuszeile leuchten bei jedem
   Zugriff. *Hinweis:* der 16-Bit-Monitor versucht nach dem Hardwaretest, von der Platte zu
   starten; auf einer leeren (E5-gefüllten) Platte endet das in einer Eingabeschleife ohne
   Prompt — das ist Gastverhalten, kein Fehler, und der Grund, warum das Programm keine leere
-  Platte vorgibt. Erst die WEGA-Installation macht die Platte startfähig.
+  Platte vorgibt. Erst die WEGA-Installation macht die Platte startfähig (Ablauf im Kapitel
+  *Bedienung des P8000*).
 * **Statuszeile** (nur *Computer mit Terminal*) — Lampen **Run** (RUN-LED der 16-Bit-Karte), **16-Bit** (der U8001 läuft),
   **Platte** (WDC-Zugriff) und **Power**, dann der Takt und die Laufwerke. Ohne
   16-Bit-Karte liefert der Kern keine Lampen: sie bleiben dunkel.
@@ -1175,6 +1177,352 @@ Mehrere Instanzen nebeneinander: `--instance NAME` (oder die Umgebungsvariable `
 eigene Konfiguration `p8000emu-NAME.yaml` an und setzt den Namen in den Fenstertitel; `--config DATEI`
 legt die Konfigurationsdatei von Hand fest. Disketten- und Plattenabbilder gehören je einer Instanz: ein
 Abbild, das ein anderer Prozess schon hält, wird nicht angeschlossen (Meldung in der Statuszeile).
+
+## Bedienung des P8000
+
+Der P8000 erklärt sich am Gerät nicht von selbst: es gibt kein Menü, nur ein Terminal mit einer
+Eingabeaufforderung, und welche Eingabe man braucht, hängt davon ab, *wer* gerade antwortet — der
+Monitor des 8-Bit-Teils, der Monitor des 16-Bit-Teils, UDOS oder WEGA. Dieses Kapitel führt durch die
+Abläufe. Die Befehle stammen aus den Quellen der Monitore (`U880SM.S`, `p.init.s` …), der Einführung
+in die Software (Anhang C und D), dem Installationsprotokoll von WEGA 3.1 und den Abnahmeläufen des
+Emulators; was sich auf keine dieser Quellen stützen ließ, steht nicht hier oder ist als *nicht
+geprüft* gekennzeichnet. Alle Eingaben werden mit RETURN abgeschlossen; Groß- und Kleinschreibung
+gilt beim U880-Monitor gleich, beim U8000-Monitor nur Großbuchstaben (Handbuch Anhang D).
+
+### Überblick: was ist was
+
+* **8-Bit-Teil (U880)** — die erste Karte. Sie trägt den Monitor **MON8** („U880-Softwaremonitor"),
+  den Hardwaretest, den Diskettenkontroller (zwei Laufwerke A: und B:, in UDOS 0 und 1) und die
+  seriellen Kanäle **tty0, tty1, tty2, tty3**. Auf ihr läuft **UDOS** (Prompt `%`).
+* **16-Bit-Teil (U8001)** — die zweite Karte mit Speicherverwaltung (MMU), Hauptspeicher und den
+  Kanälen **tty4–tty7**. Sie trägt den Monitor **MON16** („U8000-Softwaremonitor", Prompt `*`). Auf ihr
+  läuft **WEGA** (UNIX, Prompt `#`). Sie wird vom 8-Bit-Teil gestartet; **Diskettenzugriffe** von WEGA
+  gehen nur, solange auf dem 8-Bit-Teil UDOS läuft.
+* **Winchester (WDC)** — der Plattenkontroller (hier eine K5504.50 mit 1024 Zylindern, 5 Köpfen,
+  18 Sektoren, 92 070 Blöcke zu 512 Byte). Ohne Platte startet WEGA nicht.
+* **Terminal (tty1)** — der P8000 hat keinen eigenen Bildschirm. Seine **Konsole** ist tty1 mit 9600
+  Baud. Der Emulator zeigt dafür das Originalterminal Typ 2 mit Flachtastatur K7673.09 (siehe die
+  vorangehenden Abschnitte). Weitere Arbeitsplätze hängen an tty0, tty2 und tty4–tty7; **tty3** ist dem
+  Drucker vorbehalten.
+
+Wo die einzelnen Teile im Emulator eingestellt werden:
+
+* *Einstellungen ▸ Allgemein*: **Rechnerausstattung** (*Vollgerät*, *ohne Winchester*, *nur
+  8-Bit-Teil*), **Betriebsart** (*Computer mit Terminal* oder *nur Terminal*), **Hauptspeicher
+  (16-Bit)**, ROM-Fassungen.
+* *Ansicht ▸ Laufwerke*: Disketten A: und B: sowie der **Plattenkasten** (*Anschließen…*, *Neue
+  Platte…*, *Abtrennen*).
+* *Datei ▸ Diskette einlegen* (oder *Mount* im Laufwerkskasten): Diskette einlegen.
+* *Maschine ▸ Rückstellen*, *Maschine ▸ NMI-Taster*, *Maschine ▸ Verbindung zum Rechner…* (nur
+  Betriebsart *nur Terminal*), *Maschine ▸ Bildschirminhalt als Text kopieren*.
+
+### Einschalten und Selbsttest
+
+Nach dem Einschalten (beim Programmstart oder mit *Maschine ▸ Rechner einschalten*) läuft zuerst das
+Terminal an und meldet sich mit `ADM31/9600 baud/Video Attr. on`; erst danach spricht der Rechner. **Mit
+dem Tippen warten, bis die Einschaltmeldung des Rechners da ist** — die ersten Zehntelsekunden
+nach der Terminalmeldung nimmt die Tastatur nichts an, und ein zu früh getipptes Zeichen fehlt.
+
+Ein erfolgreicher Start des 8-Bit-Teils sieht so aus (das Beispiel stammt vom echten Gerät; bei MON8
+3.0 steht dort 3.0):
+
+```
+P8000 Hardwaretest U880 - Version 3.1
+
+U880-Softwaremonitor Version 3.1 - Press RETURN
+```
+
+Der Hardwaretest prüft EPROM-Prüfsumme, statischen RAM, PIO, CTC, SIO, Diskettenkontroller, DMA und
+dynamischen RAM. Der Speichertest braucht **rund 16 Sekunden Maschinenzeit** und steht lange auf einer
+Ziffer (Schritt 30); bei der Vorgabe-Geschwindigkeit des Emulators (fünffach) dauert er entsprechend
+kürzer. Dann erscheint „Press RETURN". **RETURN** führt zum Prompt **`>`** des U880-Monitors.
+
+*Fehlermeldungen* des Hardwaretests haben die Form `*** ERROR nn  parameter …`; nach einem Fehler läuft
+der Test in der Regel mit dem nächsten Schritt weiter. Die Nummern des 8-Bit-Teils laut Handbuch:
+00 EPROM-Prüfsumme, 05–08 statischer RAM, 10–11 PIO, 15–17 CTC, 20–21 SIO, 25 Diskettenkontroller
+(keine Bereitmeldung), 26–27 DMA, 30–33 dynamischer RAM.
+
+Der **16-Bit-Hardwaretest** (`P8000 Hardwaretest U8001 - Version 3.1`) läuft, wenn der U8000-Monitor
+gestartet wird, und schließt mit
+
+```
+MAXSEG=<0F>
+*
+```
+
+ab. `MAXSEG` ist die Nummer des höchsten gefundenen 64-KB-Segments (hexadezimal) und damit der
+Speicherausbau:
+
+| Hauptspeicher (*Einstellungen ▸ Allgemein ▸ Hauptspeicher*) | MAXSEG |
+|---|---|
+| 2 × 256 KB = 512 KB | `07` |
+| 4 × 256 KB = 1 MB (Standard) oder 1 × 1 MB | `0F` |
+| 4 × 1 MB = 4 MB | `3F` |
+| RAM-Karte 16 MB bestückt mit 2 MB / 4 MB | `1F` / `3F` |
+| RAM-Karte 16 MB bestückt mit 8 MB oder 16 MB | `7E` (Segment 7FH fehlt: Hardware, kein Fehler) |
+
+Die Fehlernummern des 16-Bit-Teils laut Handbuch (Auszug): 40 EPROM-Prüfsumme (fatal), 45–48 statischer
+RAM, 50–51 PIO, 55–57 CTC, 60–61 SIO, 70 kein DRAM (fatal), 71 Segmentadresse, 72–75 dynamischer RAM,
+76 keine fehlerfreien Segmente oberhalb Segment 0 (fatal), 80–97 MMU. Fatale Fehler brechen den Test ab.
+
+**Typische Meldungen und was sie bedeuten**
+
+* `*** ERROR 52 C1 …`, `*** ERROR 53 C1 …`, `*** ERROR 54 C1` im 16-Bit-Hardwaretest: der Test des
+  **Winchesterkontrollers** schlägt fehl. Nach `p.test.s` ist 52 „Schreiben in den WDC-RAM fehlerhaft"
+  (Parameter: Rückgabecode des WDC, Testwert `AAAA`/`5555`), 53 „Lesen bzw. Vergleich fehlerhaft"
+  (zusätzlich der gelesene Wert) und 54 „falsche Kommandoauswertung" (der Rückgabecode war nicht `01`).
+  Der Code `C1` bedeutet, dass der WDC nicht antwortet — im Emulator der Zustand ohne Winchester
+  (*Rechnerausstattung ▸ ohne Winchester* bzw. *nur 8-Bit-Teil*); die Deutung deckt sich mit dem
+  Mitschnitt eines Geräts ohne Winchesterbeisteller. Im Handbuch der Einführung stehen 52–54 nicht. Der
+  Test läuft danach bis `MAXSEG=<..>` und `*` weiter. Kommt derselbe Fehler mit Rückgabecode `08` und
+  `MAXSEG=<07>` (so im Mitschnitt vom Gerät des Anwenders), war an der Hardware etwas defekt; ein
+  Emulatorlauf mit fehlerfreiem Ausbau zeigt keine Fehlerzeile.
+* `DISK ERROR` beim Start von der Platte (U8000-Monitor): die Platte ist nicht lesbar, nicht
+  formatiert oder enthält keinen Urlader (Block 0). `HARD DISK ERROR 81` mit Blinkcode wurde am
+  Gerät des Anwenders bei einer Platte mit Lesefehlern beobachtet (Bedeutung der Zahl *nicht geprüft*).
+* `INSERT SYSTEMDISK` (MON8): die Diskette in A: ist keine Systemdiskette; `DISK ERROR` (MON8):
+  Spur 0, Sektor 1 von Laufwerk 0 ist nicht lesbar — keine Diskette eingelegt oder falsches Format.
+* `Hardware Error in Connection` (UDOS, beim Start der Koppelsoftware `WEGA`): es gibt keine
+  16-Bit-Karte (*Rechnerausstattung ▸ nur 8-Bit-Teil*) oder die Kopplung ist defekt. Bei *nur 8-Bit-Teil*
+  ist das **das Soll**, kein Fehler. `U8000-Port do not work` ist die zweite Meldung der Kopplungsprüfung.
+
+**Wiederholen, Rückstellen, NMI**
+
+* *Maschine ▸ Rückstellen* (Strg+Umschalt+R) ist die RESET-Taste des Geräts. Laut Handbuch führt sie —
+  anders als das Einschalten — **nicht** erneut durch den Hardwaretest, sondern in den U880-Monitor
+  („Press RETURN"). *Maschine ▸ Rechner ausschalten* und wieder *einschalten* (Strg+Umschalt+P) startet
+  vollständig kalt mit Hardwaretest und lässt alle eingelegten Disketten neu einlegen.
+* *Maschine ▸ NMI-Taster* ist die NMI-Taste. Solange der U8000 nicht läuft, wirkt sie nur auf den U880;
+  läuft der U8000 (Monitor oder WEGA), wirkt sie **nur** auf den U8000. Direkt nach der Meldung
+  „U8000-Softwaremonitor … **Press NMI**" startet sie WEGA von der Platte (nach dem 16-Bit-Hardwaretest);
+  sonst gibt der U8000-Monitor „NMI" aus und kehrt zur Eingabe zurück.
+* Den Test des 8-Bit-Teils wiederholt der Monitorbefehl **`T`**, den des 16-Bit-Teils `T` am Prompt `*`.
+
+### Der U880-Monitor (MON8)
+
+Prompt **`>`**. Alle Zahlen **hexadezimal**, ohne Kennzeichen; ein Zahlenwert, der mit einem Buchstaben
+beginnt (`A0`), darf so geschrieben werden. Eine fehlerhafte Eingabe quittiert der Monitor mit `?`.
+Während einer Ausgabe hält **Strg+S** an, **Strg+Q** gibt wieder frei; Zeichen löschen: BS, Zeile
+löschen: DEL (RUBOUT).
+
+*Der Monitor liest nach einer Eingabe unter Umständen erst nach Millionen Takten wieder.* Die nächste Zeile
+erst tippen, wenn das `>` (bzw. die Antwort) da ist. Ein **leeres RETURN** am `>` startet den Urlader
+(bootet die Diskette in A:) und endet ohne Diskette mit `DISK ERROR` — also nur mit Absicht drücken.
+
+| Befehl | Syntax | Wirkung und Beispiel |
+|---|---|---|
+| `D` | `D adr (anzahl)` | Speicher ansehen. Ohne Anzahl ein Byte, das mit einem neuen Wert überschrieben werden kann (Wert + RETURN schreibt und geht weiter, `_` geht zurück, `Q` beendet). `D 1000 20` zeigt 32 Byte ab 1000H. |
+| `C` | `C adr1 adr2 anzahl` | zwei Bereiche vergleichen; Unterschiede werden ausgegeben. |
+| `F` | `F anfang ende byte` | Bereich füllen. `F 1000 1FFF 00` |
+| `M` | `M quelle ziel anzahl` | Bereich verschieben. |
+| `PR` | `PR port` | Port lesen. `PR 24` |
+| `PW` | `PW port byte` | Port schreiben. `PW 24 55` schreibt 55H an Port 24H (SIO0 Kanal A Daten = tty0). |
+| `R` | `R (register)` | Register ansehen/ändern (`A B C D E F H L I A' … IX IY PC SP`); ohne Namen alle. |
+| `B` | `B (adr)` | Haltepunkt (RAM-Adresse); ohne Adresse löscht den letzten. |
+| `G` | `G (adr)` | Programm starten; ohne Adresse am aktuellen PC fortsetzen. `G 1000` |
+| `N` | `N (anzahl)` | Einzelschritt (Standard 1, höchstens 256), nach jedem Befehl die Register. |
+| `I` | `I` | Interruptstatus zeigen/ändern: `O1` erlaubt, `O0` gesperrt. |
+| `GE` | `GE datei` | UDOS-Maschinencodedatei von Diskette in den RAM laden, ohne UDOS zu starten (Satzlänge höchstens 400H). |
+| `S` | `S datei anfang ende (E=einsprung)(RL=satzlänge)` | Speicherbereich als UDOS-Datei auf die Diskette schreiben. Danach in UDOS **zuerst `I`** geben (Belegungsplan hat sich geändert). |
+| `Q` | `Q` | zurück zu UDOS, wenn es vorher lief (nach `T` nicht möglich). |
+| `T` | `T` | Hardwaretest des 8-Bit-Teils. |
+| `O` | `O` | Betriebssystem von der Diskette in A: starten (UDOS, OS/M, IS/M); Fehler `DISK ERROR` oder `INSERT SYSTEMDISK`. |
+| `X` | `X` | **U8000-Monitor starten** (nur mit 16-Bit-Karte); er meldet sich an tty1 mit „Press NMI". |
+
+Die Befehle `D` bis `X` stehen im Quelltext `U880SM.S` in dieser Form; die übrigen Systemparameter
+(Nullen nach LF, Prompt-Zeichen 3EH `>` …) sind veränderbare RAM-Zellen, hier nicht nötig.
+
+Ein kleiner Test, ob Port-Ausgabe funktioniert (siehe auch den Mehrplatzbetrieb): `pw 25 05`, `pw 25 68`
+schaltet tty0 auf 8 Bit mit Sender ein, danach schreibt `pw 24 54` ein „T" auf die Leitung tty0.
+
+### Der U8000-Monitor (MON16)
+
+Prompt **`*`**. Er wird mit **`x`** vom U880-Monitor aus (oder von der WEGA-Startdiskette) gestartet,
+meldet sich mit `U8000-Softwaremonitor Version 3.1 - Press NMI`, und **erst die NMI-Taste** (*Maschine ▸
+NMI-Taster*) startet den 16-Bit-Hardwaretest. Danach erscheint `MAXSEG=<..>` und `*`.
+
+Alle Befehle mit **Großbuchstaben**, Zahlen hexadezimal und mit einer **Ziffer** beginnend (`0B`, nicht
+`B`). Eine Adresse darf eine Segmentangabe in spitzen Klammern haben: `<2>1000`.
+
+| Befehl | Syntax | Wirkung |
+|---|---|---|
+| `D` | `D adr (anzahl) (W/B/L)` | Speicher ansehen/ändern als Wort (Standard), Byte oder Langwort. |
+| `C`, `F`, `M` | wie beim U880, Wortformat | vergleichen, füllen (gerade Anfangsadresse), verschieben. |
+| `PR`, `PW` | `PR port (W)`, `PW port (W) werte` | Ein-/Ausgabeports. |
+| `PRS`, `PWS` | wie `PR`/`PW` | **Special-I/O**, also die Register der Speicherverwaltung (MMU). |
+| `R` | `R (register)` | Register `R0`…`R15`, `SG` (Segment), `PC`, `FC`, `RF`, `N4`, `N5`, `PS`, `P0`, ferner `H0`/`L0` …, `RR0` …. |
+| `B` | `B (adr (zähler))` | Haltepunkt (nur auf gerader RAM-Adresse), optional erst beim n-ten Durchlauf. |
+| `G`, `N` | wie beim U880 | starten bzw. Einzelschritt. |
+| `HR`, `HW` | `HR block puffer (gerät)` | **Plattenblock** (512 Byte) lesen/schreiben, Gerät 0–3. Vorsicht: `HW` schreibt. |
+| `GE`, `S` | `GE datei (segment)`, `S datei anf ende` | UDOS-Datei laden/sichern über das laufende UDOS des 8-Bit-Teils. |
+| `Q`, `QRES` | | zum 8-Bit-Teil zurück; `QRES` setzt den 16-Bit-Teil dabei zurück. |
+| `T` | `T` | 16-Bit-Hardwaretest. |
+| `O` | `O D` / `O F` / `O U` | WEGA starten: `O D` von der **Platte** (Block 0), `O F` von **Diskette** (`boot0.flp`), `O U` bootet von der **UDOS-Diskette** (Meldung `BOOTING FROM UDOS FLOPPY`, danach Prompt `>` und `boot`, siehe unten). |
+
+`RGE`, `RS`, `RQ` gelten nur an einem seriell angeschlossenen Fremdsystem statt des Terminals; ob der
+Emulator diesen Weg zeigt, ist *nicht geprüft*. Weitere Einträge der Befehlstabelle in `p.init.s`
+(`FF`, `FR`, `FW`, `LOAD`, `SEND`, `QUIT`) sind im Handbuch nicht beschrieben und hier nicht erklärt.
+
+### UDOS booten (8-Bit-Teil)
+
+1. **Systemdiskette in A: einlegen**: *Datei ▸ Diskette einlegen ▸ Laufwerk A:* (oder *Mount* im
+   Laufwerkskasten). Für den P8000 ist die **WEGA-Startdiskette** eine UDOS-Systemdiskette. Eine
+   `.img` fragt nach dem Format (das UDOS-Format der Startdiskette ist `k5601_16x256`: 80 Spuren,
+   zweiseitig, 16 Sektoren zu 256 Byte je Seite), `.hfe`/`.dmk` nie.
+2. **Kalt starten** (*Maschine ▸ Rechner ausschalten*, dann *einschalten*), sofern die Diskette erst
+   jetzt eingelegt wurde — ein laufender Rechner sieht den Wechsel nicht.
+3. Nach dem Hardwaretest: **RETURN** bei „Press RETURN", warten auf das `>`, dann **RETURN** (oder `O`)
+   — der Urlader liest Spur 0 Sektor 1 (Kennung `P8000SYS`), danach laden OS und NDOS.
+4. UDOS meldet sich mit dem Prompt **`%`**. Auf der WEGA-Startdiskette läuft vorher die
+   Startdatei `OS.INIT` (u. a. `KINIT`, `WEGA`); ohne 16-Bit-Karte meldet die Koppelsoftware `Hardware
+   Error in Connection` und kehrt zum Prompt `%` zurück.
+
+Wichtige UDOS-Kommandos (Namen aus der Einführung in die Software; die Syntax im Einzelnen
+*nicht geprüft*, `HELP`, wo vorhanden, erläutert sie):
+
+| Kommando | Wirkung |
+|---|---|
+| `CAT` | Verzeichnis (UDOS kennt **kein `dir`**: Antwort `NONEXISTENT COMMAND`). Zeigt nur Nicht-Systemdateien. |
+| `DATE` | Datum ein-/ausgeben |
+| `STATUS` | Zustand der Diskette |
+| `COPY`, `COPY.DISK` | Dateien bzw. ganze Disketten kopieren |
+| `DELETE`, `RENAME`, `MOVE` | löschen, umbenennen, verschieben |
+| `COMPARE`, `DUMP`, `EXTRACT` | vergleichen, Hexdump, Dateiangaben |
+| `FORMAT` | Diskette formatieren — **fehlt auf der WEGA-Startdiskette**; nur von einer UDOS-Diskette, die es enthält |
+| `DEBUG` | zurück in den U880-Monitor |
+| `ERROR`, `ERRORS` | Fehlercode erläutern, Fehlerstatistik der Diskette |
+| `SETFD` | Laufwerkskonfiguration (Format) setzen |
+| `DO` | Kommandodatei ausführen |
+| `EDIT`, `ASM`, `U8000ASM`, … | Editor, Assembler (Systemprogramme, soweit auf der Diskette) |
+
+Namen von Dateien in anderen Laufwerken: `ud(0,0)name` ist die Datei `name` auf UDOS-Laufwerk 0 (A:).
+**Eine leere Diskette formatieren:** *Leere Diskette* im Laufwerkskasten legt ein unformatiertes Medium
+ein, das UDOS mit `FORMAT` formatieren muss. `FORMAT` steht nicht auf der WEGA-Startdiskette; ob und wie
+es sich am P8000 mit der UDOS-2.2-Diskette bedienen lässt, ist *nicht geprüft*.
+
+### WEGA: die Platte vorbereiten und installieren
+
+Das gilt nur für das *Vollgerät*. Die Disketten der WEGA-Auslieferung (WEGA-Startdiskette,
+`root1`–`root5`, `usr1`–`usr9`) gehören nicht zum Programm; sie müssen als `.img`/`.hfe` vorliegen. Die
+Datenträger sind 9 × 512 Byte, zweiseitig, 80 Spuren (Formatwahl beim Einlegen: 80 × 2 × 9 × 512). Die
+ausführliche Anleitung ist das Installationshandbuch von WEGA; hier die Schrittfolge, wie sie im
+Installationsprotokoll von WEGA 3.1 steht und im Emulator geprüft ist.
+
+1. **Platte anlegen.** Im Plattenkasten *Neue Platte…* (Typ K5504.50) und anschließen. Die Platte ist
+   danach **unformatiert**. Eine im Betrieb angeschlossene Platte erkennt der Rechner erst nach
+   *Rückstellen* bzw. Aus- und Einschalten. **Offener Punkt, nicht geprüft:** die so angelegte Platte
+   trägt einen Parametersatz (PAR) und sonst nur E5; MON16 startet nach dem Hardwaretest genau diese E5-Bytes
+   (AUTOBOOT) und landet in einer Eingabeschleife ohne `*` — Gastverhalten, kein Emulatorfehler. Der
+   Abnahmelauf der Installation arbeitet mit einer fabrikneuen Platte **ohne** Parametersatz (dann meldet
+   `sa.format` „Error on RESET … PAR not ok" und fragt den Plattentyp ab, wie im Protokoll unten). Wie man
+   diesen Ausgangszustand in der Oberfläche herstellt, ist hier nicht belegt.
+2. **Startdiskette in A:** (WEGA-Startdiskette), kalt starten, bei „Press RETURN" **RETURN**, am `>`
+   noch einmal **RETURN**: UDOS startet, und die Koppelsoftware der Startdatei meldet
+   „U8000-Softwaremonitor … Press NMI" (am Gerät geht auch **`x`** am `>`). Den **NMI-Taster** drücken;
+   der Test endet bei `MAXSEG=<..>` und `*`.
+3. Am `*`: **`O U`** — Antwort `BOOTING FROM UDOS FLOPPY` und der Prompt `>`. Dann **`boot`**. Es folgt
+   `Boot` und der Prompt **`:`** des Urladers. Von hier ruft man Programme der Startdiskette mit
+   `ud(0,0)programm` auf.
+4. **Formatieren:** `ud(0,0)sa.format`. Das Programm (bei WEGA 3.1: Version 4.1) fragt: Laufwerkstyp
+   (Nummer `4` = ROB K5504.50), Parameter ok (`y`), manuelle Eingabe schlechter Spuren (`n`), Formatbeginn
+   (`a`), Formatierung bestätigen (`y`), PAR und BTT zurückschreiben (`y`), Ende (`y`). Die Fragen sind
+   die der Fassung 4.1 aus dem Protokoll; die WEGA-3.0-Startdiskette trägt die ältere Fassung 1.4 für
+   Firmware 3.x, die mit der WDC-Firmware 4.2 des Emulators nicht zusammenpasst. Das Formatieren
+   der ganzen Platte dauert rund **21 Minuten Maschinenzeit**; die Dauer in der Oberfläche habe ich *nicht
+   gemessen*. `ud(0,0)sa.verify` prüft danach (fragt nach Anfangs- und Endzylinder, am Protokoll 0 und
+   1023).
+5. **Dateisysteme anlegen:** `ud(0,0)sa.mkfs` — Größe `13000`, Name `md(0,0)` (das spätere `/usr`);
+   noch einmal `ud(0,0)sa.mkfs` — Größe `7000`, Name `md(0,16000)` (das Wurzeldateisystem).
+6. **Wurzel einspielen:** `ud(0,0)sa.install`. Datum `MM/DD/YY`, Quelle `fd(1,0)`, Ziel `md(0,16000)`;
+   **die Quelldiskette `root1` erst jetzt in B: einlegen** (liegt sie schon beim Laden von `sa.install`
+   in B:, scheitert das Laden mit UDOS-Fehler `C4`), auf die Frage je Eintrag `A` (alle). Bei „next input
+   disk ? (y/n)" die nächste Diskette (`root2` … `root5`) in B: einlegen, `y`; nach der letzten `n`.
+7. Dasselbe für `/usr` mit Ziel `md(0,0)` und den Disketten `usr1` … `usr9`.
+8. **Erster Start:** am `:` **`md(0,16000)wega`**. Der Kern meldet sich („WEGA Kernel -- Release …",
+   Dateisystemtabelle), dann steht der Einbenutzerbetrieb (Prompt `#`).
+9. **Einrichten:** `/etc/new.install` (Fragen `neu angelegt werden ? (j/n)` → `j`, Größen
+   `4000` und `60732` bzw. RETURN für die Standardwerte), danach **`init 2`**. Datum `MM/DD/YY` und
+   Uhrzeit `HH:MM` eingeben, nach den Dateisystemprüfungen und „Going multi-user in 30 seconds!" erscheint
+   `login:`. Diese Schritte brauchen mehrere Minuten Maschinenzeit.
+
+### WEGA starten, anmelden, beenden
+
+* **Starten von der Platte (nach der Installation):** Rechner einschalten, **RETURN**, **RETURN** (UDOS mit
+  der Koppelsoftware von der WEGA-Startdiskette in A:), bei „Press NMI" den **NMI-Taster**. Danach
+  wird **nichts mehr getippt**: der Urlader von der Platte gibt `> boot` und `: md(0,16000)wega` selbst
+  ein, die Dateisysteme werden geprüft, und nach rund vier Minuten Maschinenzeit steht `WEGA login:`.
+  Von Hand geht es am Prompt `*` mit `O D` und am Urladeprompt `:` mit `md(0,16000)wega`.
+* **Anmelden:** Name **`wega`**, Kennwort **`root`** (Auslieferung). Der Prompt ist `#`, das
+  Willkommensbild folgt.
+* **Erste Kommandos:** `date` (Datum), `who` (wer ist angemeldet), `ls /` und `ls -l /bin`
+  (Verzeichnisse), `who am i` (eigener Kanal), `echo text`.
+* **Mehrbenutzerbetrieb:** WEGA startet `getty` auf der Konsole, tty0, tty2 und tty4–tty7 (tty3 =
+  Drucker). Ein zweiter Arbeitsplatz ist ein weiteres `p8000emu` in der Betriebsart *nur Terminal*; die
+  Schritte stehen im Abschnitt *Das Originalterminal und der Mehrplatzbetrieb*. Am Arbeitsplatz holt
+  **RETURN** die Anmeldezeile. `write wega tty4` schickt eine Nachricht, `exit` meldet ab.
+* **Herunterfahren:** `halt` (meldet „System is coming down. Thirty seconds to forced log-off", wartet,
+  beendet die Prozesse und endet im Einbenutzerbetrieb), dann **`sync;sync`**. Erst danach ausschalten
+  (*Maschine ▸ Rechner ausschalten*) — sonst prüft der nächste Start das Dateisystem mit der Meldung
+  „BOOT WEGA (NO SYNC!)". Auch ohne `halt` gilt vor jedem Abschalten: `sync;sync`.
+* Die Platte schreibt der Emulator beim Abtrennen, bei einem Zwischenstand und beim Beenden von selbst
+  zurück.
+
+### Terminal und Tastatur
+
+Das Terminal ist ein Terminal **ADM31** (VT100 wählbar), 80 × 24, 9600 Baud. Beim Einschalten gilt ADM31;
+WEGA führt alle Kanäle als ADM31 (`/etc/ttytype`: `P8`). Die Tasten des Wirtsrechners gehen über die
+Tastenmatrix der K7673.09 an das Terminal (Näheres im Abschnitt *Das Originalterminal*). Die für die
+Bedienung des P8000 wichtigen:
+
+| Taste (Wirtsrechner) | Taste am P8000-Terminal | Wirkung |
+|---|---|---|
+| Rücktaste | BS | letztes Zeichen löschen |
+| Entf | DEL | im Monitor: Eingabezeile löschen (RUBOUT, 7FH) |
+| Esc | ESC | Escape (Folgen für Vollbildprogramme) |
+| Pfeiltasten | Cursor | Cursorsteuerung (ADM31: FF, BS, VT, LF) |
+| F2 / F3 / F4 | PAGE ERASE / LINE INSERT / CHAR INSERT | Bild löschen, Zeile einfügen, Zeichen einfügen |
+| F5 / F6 | LINE DELETE / CHAR DELETE | Zeile bzw. Zeichen entfernen |
+| F7 oder Pause | BREAK | sendet eine Unterbrechung (Break); der Anmeldeprozess `getty` schaltet daraufhin zur nächsten Baudrate |
+| F8 | SI/SO | Zeichensatz 1 ↔ 2 (deutsche Umlaute `ä ö ü ß` liegen im Satz 2) |
+| F9 | MODE | ADM31 ↔ VT100; jede Umschaltung initialisiert das Terminal neu |
+| F10 | VIDEO | Videoattribute (Blinken, invers) ein/aus |
+| F12 | ON/OFF | On-line/Off-line: im Off-line-Zustand erscheinen Tastenanschläge nur lokal |
+| Strg + Buchstabe | CTRL | Steuerzeichen; **Strg+S** hält die Ausgabe an, **Strg+Q** gibt sie frei |
+| Umschalt, Feststell | SHIFT, CAPS LOCK | wie üblich |
+
+Die Bildschirmtastatur (*Ansicht ▸ Tastatur*) zeigt dieselben Tasten und rastet Umschalt und Strg beim Klick
+ein. Die Zuordnung der F-Tasten F1 und F11 sowie von CE zur Matrix beruht auf einer Annahme (siehe dort).
+**Text kopieren:** Rechtsklick auf das Bild oder *Maschine ▸ Bildschirminhalt als Text kopieren*; ein
+Tastenkürzel gibt es nicht, weil Strg+C dem Gast gehört.
+
+Bei hoher Zeichenmenge (z. B. bei vielen Bildlöschungen hintereinander) bremst WEGA über XON/XOFF; das ist
+die Firmware des Terminals und kein Fehler.
+
+### Fehlersuche
+
+* **Der Bildschirm bleibt leer.** Zuerst die Betriebsart: *nur Terminal* ohne Verbindung zum Rechner zeigt
+  nur die Einschaltmeldung des Terminals. Mit *Maschine ▸ Verbindung zum Rechner…* verbinden (oder
+  *Computer mit Terminal* wählen). Nach dem Einschalten dauert es einen Moment, bis die Meldung erscheint.
+* **Rechner nicht verbunden** (Statuszeile „Rechner: …"): Gegenstelle ist kein Server oder die Adresse
+  stimmt nicht; ein Client versucht es selbst weiter. Der Server (Rechner) lauscht erst nach *Starten*
+  im Reiter *Schnittstellen*.
+* **Tasten gehen am Anfang verloren.** Erst nach der Einschaltmeldung des Rechners tippen; am Original
+  kostet jede Taste außerdem Zeit (die Eingabe kommt nach und nach an). Nach einer Eingabe am Monitor
+  erst weitertippen, wenn das Echo/der Prompt da ist.
+* **Nach dem Hardwaretest kein Prompt `*`, nur ein stehender Bildschirm** (Vollgerät mit leerer Platte):
+  der 16-Bit-Monitor versucht, von der Platte zu starten (AUTOBOOT) und läuft in eine Eingabeschleife.
+  Das ist Gastverhalten; *Rückstellen* und die Platte im Plattenkasten *Abtrennen* (siehe auch Schritt 1
+  der Installation).
+* **`ERROR 52/53/54`:** der WDC antwortet nicht (siehe oben); **`DISK ERROR`**: Platte nicht lesbar bzw.
+  nicht installiert; **`md: io error`** (Urlader): die Platte ist nicht formatiert oder nicht angeschlossen.
+* **Die neu angeschlossene Platte wird nicht gefunden.** *Rückstellen* — der WDC erkennt die Platte beim
+  Hochlauf.
+* **`sa.install` meldet UDOS-Fehler `C4` beim Laden.** Die Quelldiskette zu früh in B: eingelegt (siehe
+  Schritt 6).
+* **`login:` erscheint am Arbeitsplatz nicht.** Am Arbeitsplatz RETURN drücken; `getty` hat die erste
+  Anmeldezeile schon gesendet, bevor die Verbindung stand.
+* **Die Datei- oder Plattenabbilder sind „von einem anderen Prozess belegt".** Ein Abbild gehört einer
+  Instanz; zwei Programme dürfen dieselbe Datei nicht gleichzeitig anschließen.
 
 ## Tastenkürzel
 
