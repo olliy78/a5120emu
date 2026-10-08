@@ -1,4 +1,4 @@
-# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / p8000term — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
 Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
@@ -1087,8 +1087,8 @@ Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
   *Rechner ein*. Die Lampe im Kasten und **Platte** in der Statuszeile leuchten bei jedem
   Zugriff. *Hinweis:* der 16-Bit-Monitor versucht nach dem Hardwaretest, von der Platte zu
   starten; auf einer leeren (E5-gefüllten) Platte endet das in einer Eingabeschleife ohne
-  Prompt — das ist Gastverhalten, kein Fehler. Erst die WEGA-Installation macht die Platte
-  startfähig.
+  Prompt — das ist Gastverhalten, kein Fehler, und der Grund, warum das Programm keine leere
+  Platte vorgibt. Erst die WEGA-Installation macht die Platte startfähig.
 * **Statuszeile** — Lampen **Run** (RUN-LED der 16-Bit-Karte), **16-Bit** (der U8001 läuft),
   **Platte** (WDC-Zugriff) und **Power**, dann der Takt und die Laufwerke. Ohne
   16-Bit-Karte liefert der Kern keine Lampen: sie bleiben dunkel.
@@ -1107,6 +1107,65 @@ Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
   von der eingelegten UDOS-Systemdiskette (A:). Mit 16-Bit-Karte startet `x` bzw. die
   Koppelsoftware von UDOS den U8000-Monitor an tty1.
 * Eine **RAM-Disk** (RAF) und den **Lochstreifen** gibt es am P8000 nicht.
+
+### Das Originalterminal und der Mehrplatzbetrieb
+
+Statt des schlanken Kern-Terminals gibt es das **echte P8000-Terminal Typ 2**: Z8-Rechner mit der
+Original-Firmware P8T 5.0, 8275 und Zeichengenerator, dazu die **Flachtastatur K7673.09**. Der
+Escape-Folgen-Parser, die Zeichensätze, Cursor und Blinken stammen dann aus der Firmware, nicht aus
+einer Nachbildung. Gewählt wird es unter *Einstellungen ▸ Allgemein ▸ Modell*:
+
+* **P8000** (Vorgabe, Vollgerät / ohne Winchester / nur 8-Bit): Rechner mit dem schlanken Kern-Terminal.
+* **P8000 + P8000 Terminal** (ebenfalls Vollgerät / ohne Winchester / nur 8-Bit): derselbe Rechner,
+  seine Konsole tty1 ist das Originalterminal.
+* **P8000 Terminal**: nur das Terminal, ein **Arbeitsplatz** ohne Rechner. Er hat weder Laufwerke noch
+  Winchester noch Frontplatte (die Kästen verschwinden); seine serielle Leitung führt zu einem Rechner.
+  Das Programm **p8000term** (Starter `run_p8000term.sh`) startet gleich in diesem Modell, mit eigener
+  Konfiguration `p8000term.yaml`.
+
+**Bild.** Das Terminal zeigt das fertige Pixelbild (640 × 312). Es wird nur neu gezeichnet, wenn die
+Maschine ein neues Bild geliefert hat. Ein Rechtsklick auf das Bild wählt die **Skalierung** (ganzzahlig:
+scharfe Pixel mit dunklem Rand; glatt: füllt das Fenster) und die **Zeichenfarbe** (grün, weiß, bernstein;
+feiner unter *Einstellungen ▸ CRT*). Der Reiter über dem Bild heißt am Arbeitsplatz „P8000 Terminal",
+am Rechner „tty1 (Konsole)".
+
+**Tastatur.** Die Tasten des Wirtsrechners gehen über die **Tastenmatrix der K7673**: ein Zeichen wird auf
+die Taste (und gegebenenfalls Umschalt) zurückgeführt, die es erzeugt — ein deutsches `ä ö ü ß` landet auf
+den Tasten des Zeichensatzes 2 (erst **SI/SO**, F8, einschalten). Strg, Umschalt und Feststelltaste gehen als
+die entsprechenden Tasten, **Return**, **Esc**, **Tab**, **Rücktaste** (BS), **Entf** (DEL), die Pfeile,
+**Pos1** und **Einfg** (CHAR INSERT) ebenfalls; **F2** PAGE ERASE, **F3** LINE INSERT, **F4** CHAR INSERT,
+**F5** LINE DELETE, **F6** CHAR DELETE, **F7**/Pause BREAK, **F8** SI/SO, **F9** MODE, **F10** VIDEO,
+**F12** ON/OFF. Die Wiederholung gehaltener Tasten macht die Tastatur selbst. Die **Bildschirmtastatur**
+(*Ansicht ▸ Tastatur*) zeigt die Matrix mit allen 105 belegten Tasten: ein Klick drückt die Taste,
+**Umschalt und Strg rasten** beim Klick ein (zweiter Klick löst sie), die **rechte Maustaste** hält jede
+Taste fest. Die LEDs ON/OFF, CAPS LOCK und MODE zeigen den Zustand der Tastatur. Die Beschriftung der
+Tastenkappen des Originals ist nicht bekannt: die Tasten tragen die Zeichen, die das Terminal aus dem
+Scancode macht; die schmale Reihe unten sind Tasten ohne Wirkung im Terminal. Die Kürzel des Fensters
+(nur mit Strg+Umschalt, F11) bleiben, alles Übrige gehört dem Terminal.
+
+**Mehrplatz Schritt für Schritt** (ein Rechner, ein Arbeitsplatz; WEGA belegt tty1, 6, 7, 0, 2, 4, 5):
+
+1. **Rechner starten:** `run_p8000emu.sh`, Modell *P8000 + P8000 Terminal*; WEGA bis zur Anmeldung
+   hochfahren (oder UDOS bis zum Prompt).
+2. **Telnet-Server an tty4 einschalten:** *Einstellungen ▸ Schnittstellen*, Block **tty4**, Betriebsart
+   Telnet, Rolle **Server**, Port **5004** (der Vorschlag), **Starten**. In der Statuszeile steht
+   „Telnet/RFC2217 Server Port: 5004". Die anderen Leitungen tty0, tty2, tty3, tty5–7 laufen genauso
+   (Vorschläge 5000, 5002, 5003, 5005–5007).
+3. **Zweiten Prozess als Terminal verbinden:** `run_p8000term.sh` (oder `--instance platz2` für einen
+   weiteren Arbeitsplatz mit eigener Konfiguration), *Maschine ▸ Verbindung zum Rechner…*: Art Telnet,
+   Rolle Client, Rechner `127.0.0.1` (oder die Adresse des Rechners im Netz), Port **5004**, **Verbinden**.
+   Die Statuszeile zeigt „Rechner: verbunden mit …". Ein Client versucht es selbst weiter, bis der Rechner
+   antwortet; nur *Trennen* beendet das.
+4. **Anmeldung:** unter WEGA ist tty4 für eine Anmeldung vorgesehen; läuft dort das `getty`, zeigt der
+   Arbeitsplatz die Anmeldezeile (Name und Kennwort wie an der Konsole). Die Terminalart (ADM31 oder VT100)
+   stellt WEGA mit `ttytype` ein. Ohne laufendes Betriebssystem zeigt ein Test am Monitor, dass die
+   Verbindung steht: `pw 25 05`, `pw 25 68`, `pw 24 54` am Rechner schreiben ein „T" auf die Leitung tty0 (Port-
+   Ausgabebefehle des Monitors MON8; der Arbeitsplatz an tty0 zeigt das Zeichen).
+
+Mehrere Instanzen nebeneinander: `--instance NAME` (oder die Umgebungsvariable `K1520_INSTANZ`) legt eine
+eigene Konfiguration `p8000term-NAME.yaml` an und setzt den Namen in den Fenstertitel; `--config DATEI`
+legt die Konfigurationsdatei von Hand fest. Disketten- und Plattenabbilder gehören je einer Instanz: ein
+Abbild, das ein anderer Prozess schon hält, wird nicht angeschlossen (Meldung in der Statuszeile).
 
 ## Tastenkürzel
 

@@ -533,12 +533,22 @@ C-ABI `K1520_MACHINE_P8000 = 4`, `k1520_create_p8000(konfig)`; `boot_trace`/`k15
 Hauptfenster — `profil.terminal` ersetzt die Bildröhre durch `TerminalTabs` (`app/ui/p8000_terminal.py`: je Kern-Terminal
 ein Reiter, **Zeichensatz aus den EPROM-Abzügen** `P8TEZS`/`P8TDZS` → `app/ui/p8000_zeichensatz.py`, erzeugt von
 `tools/p8000/zeichensatz_zu_py.py`), Funktionstastenleiste statt Bildschirmtastatur, Plattenkasten unter den Disketten
-(`app/ui/platten_widget.py`; **Standardplatte `p8000_platte.img` beim ersten Start**, `platte.path: ""` = bewusst keine),
+(`app/ui/platten_widget.py`; **seit P21 keine Standardplatte mehr** — das Vollgerät startet ohne Platte, angelegt wird nur über *Neue Platte…*),
 Modellwahl Vollgerät/ohne Winchester/nur 8-Bit, ROM-Fassung und Platinenindex als `hardware`-Wahl
 (`Programmprofil.kern_parameter` → `p8000={…}`), Frontplatte Run/16-Bit/Platte/Power (aktiv high), Zwischenstand
 (*Maschine ▸ Zwischenstand*, ohne Kürzel). Zusätzliche C-ABI (additiv): `k1520_term_snapshot/_flags/_bell_count`,
 `k1520_state_save/_load/_error`; Tasten ohne Qt-Gegenstück gehen als `0x02000000 + TerminalTaste` an
-`P8000Machine::keyPress`. Wächter `py_p8000emu_gui`. Offen: weitere Kern-Terminals (tty4–7), UDOS-Laufwerksnamen 0/1.
+`P8000Machine::keyPress`. Wächter `py_p8000emu_gui`. Offen: UDOS-Laufwerksnamen 0/1.
+**Varianten und Mehrplatz (AP P21, 2026-10-08; Entwurf 26 §8, Handbuch „Das Originalterminal und der Mehrplatzbetrieb"):**
+`general.model` = `p8000`/`p8000-16`/`p8000-8` (Kern-Terminal) · `p8000-ot`/`-16-ot`/`-8-ot` (**P8000 + P8000 Terminal**: Originalterminal
+Typ 2 + Flachtastatur K7673.09 an tty1) · `p8000-term` (**P8000 Terminal**: Arbeitsplatz ohne Rechner, Kernmaschine `p8000-terminal`,
+Leitung per Hub). Das Profil entscheidet (`modell_arten`/`modell_art`/`modell_maschine`), nie die Oberfläche. Zweites Programm
+**`p8000term`** (`run_p8000term.sh`, `--machine p8000term`, `p8000term.yaml`, `data/default_config_p8000term.yaml`) = dasselbe
+Profil, Terminal vorn; `maschine` bleibt `p8000`. Bild: `app/ui/p8000_original.py` (Pixelbild 640 × 312, Pause bei unverändertem
+`term_frame_count`, Skalierung ganzzahlig/glatt, Farbe), Tastatur: `app/ui/k7673_layout.py` (Matrix gleich `term_matrix_scancode`
+des Kerns — Wächter) + `keyboard_k7673.py`; Wirtstasten über `NORMAL_Tab`/`SHIFT_Tab`, ein selbst gedrücktes SHIFT bekommt
+150 ms Vorlauf. Verbindung: `app/ui/verbindung_dialog.py` (*Maschine ▸ Verbindung zum Rechner…*, kein Kürzel). Mehrinstanz:
+`--instance NAME`/`--config DATEI` (`app/instanz.py`), Plattensperre `<abbild>.lock`. Wächter `py_p8000_original_gui`.
 **Grundsatz:** Chips werden vollständig + systematisch getestet, Debugger unterstützen sie vollständig
 (Plan §10.11a). **Vor Arbeiten daran: `doc/merkposten/p8000.md` lesen**; Plan und Stand
 `doc/design/25_p8000.md` (§9/§9a), Quellen/Referenzen `doc/p8000/` (EPROM-Abzüge in `doc/p8000/eproms/`).

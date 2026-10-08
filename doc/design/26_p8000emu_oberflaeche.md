@@ -109,9 +109,95 @@ Konfiguration wird abgelehnt (Meldung mit `state_error()`, Maschine unverändert
    sieben Stellen — ein Profilfeld `laufwerk_namen` wäre der saubere Weg).
 3. Zeichen > 7 Bit und Umlaute außer ä ö ü ß Ä Ö Ü; `§` fehlt als Taste (liegt auf `@`).
 4. Eine **leere** (E5) Platte lässt MON16 nach dem Hardwaretest in eine Eingabeschleife ohne `*` laufen (Merkposten 21,
-   Gastverhalten) — mit der Standardplatte des ersten Starts trifft das jeden Anwender des Vollgeräts; Handbuch weist darauf hin.
-   Option für später: Standard ohne Platte starten oder `AUTOBOOT` abschaltbar machen (Frage an den Anwender).
+   Gastverhalten).  **Entschieden (P21, Anwender): das Vollgerät startet OHNE Platte** — s. §8.6.
 5. Terminal-Klingel (`term_bell_count`) wird noch nicht gehört (K8915 piept über `bell_count`).
 6. Nur-8-Bit-ROMs `3.1n`/`2.1n` des Kerns sind nicht wählbar.
 7. P18 (Paket): dritter→fünfter Starter `p8000emu`, `data/default_config_p8000.yaml`, `app/ui/p8000_zeichensatz.py` (reiner
    Python-Code, geht mit), `tools/p8000/zeichensatz_zu_py.py` bleibt im Quellbaum.
+
+
+## 8. Originalterminal, Varianten und Mehrplatz (AP P21, 2026-10-08)
+
+Kern-API: `doc/design/28_p8000_originalterminal.md` §9; Plan `doc/design/25_p8000.md` §11.  Der Kern bleibt unberührt —
+alles hier ist Oberfläche (`app/`).
+
+### 8.1 Modelle und Profile
+
+`general.model` kennt jetzt sieben Schlüssel (Reihenfolge = Reihenfolge im Auswahlfeld): `p8000`, `p8000-16`, `p8000-8`
+(Kern-Terminal, wie bisher) · `p8000-ot`, `p8000-16-ot`, `p8000-8-ot` (**P8000 + P8000 Terminal**: dieselben drei Untervarianten
+mit `terminal=original` an tty1) · `p8000-term` (**P8000 Terminal**: Kernmaschine `p8000-terminal`, nur das Terminal).
+Neue Profilfelder (additiv, die anderen Programme sehen sie nicht): `modell_arten` (`kern` | `original` | `einheit`; Methoden
+`modell_art`, `modell_original_terminal`, `modell_hat_rechner`, `modell_titel`), `schnittstellen_ports` (Portvorschläge) und
+`schnittstellen_hinweis(modell)`.  `modell_maschine()` liefert für `p8000-term` `p8000-terminal` — **der EINE Ort, der aus dem
+Modell eine Kernmaschine macht**, bleibt `Programmprofil` (kein `if machine == …` in der Oberfläche).  Die ROM-/Index-Wahl
+(`hardware`) ist am Terminal ausgegraut, `kern_parameter("p8000-term")` = `{"p8000": {}}`.
+
+**Zwei Programme, ein Profilkörper:** `P8000TERM = dataclasses.replace(P8000, programm="p8000term", titel="P8000 Terminal",
+konfig_datei="p8000term.yaml", vorgabe_datei="default_config_p8000term.yaml", modelle=<Terminal vorn>)` unter dem Namen
+`p8000term` in `PROFILE`.  `maschine` bleibt `p8000` — Aktionstabelle (`NUR_FUER`), Laufwerkstabelle und Frontplatte hängen
+daran.  Starter `run_p8000term.sh` (`--machine p8000term`), Vorgabedatei `data/default_config_p8000term.yaml` (ohne Geometrie,
+Pfade, Platte; Werkzeugleiste mit `verbindung`).
+
+### 8.2 Bildschirm (`app/ui/p8000_original.py`)
+
+`TerminalTabs.set_emulator` wählt je Terminal das Widget nach `term_kind(i)`: 0 = `TerminalWidget` (Zellen), 1 =
+`OriginalTerminalWidget`.  Reitername am Original ohne Rechner: „P8000 Terminal" (`term_tty` < 0).
+* **Kein Dauer-Repaint**: `aktualisieren()` (25 Hz) fragt nur `term_flags` und `term_frame_count`; das Pixelbild (640 × 312,
+  Stufen 0/1/2 als `QImage.Format_Indexed8` mit Farbtabelle aus den Phosphorfarben) wird nur bei geändertem Zähler geholt.
+  Cursor, Blinken, Invers, Hell stecken im Bild (Firmware) — es gibt keinen Blink-Zeitgeber.
+* **Skalierung** `ganzzahlig` (Faktor = min(Breite/640, Höhe/312), mindestens 1, dunkler Rand) oder `glatt` (Seitenverhältnis
+  gewahrt, geglättet); Wahl im Kontextmenü des Bildes, gemerkt unter `terminal: {skalierung: …}`.  **Farbe** grün/weiß/bernstein
+  im selben Menü (setzt `phosphor_on/off` der CRT-Einstellungen, die ohnehin gemerkt werden).
+* Die Zeile unter dem Bild nennt „Originalterminal Typ 2 · Zeichensatz … · Caps lock" — ADM31/VT100 steckt in der Firmware und
+  ist von außen nicht lesbar (`term_mode` = 2).
+
+### 8.3 Tastatur: Matrix, Bildschirmtastatur, Wirtstasten
+
+* **`app/ui/k7673_layout.py`** (ohne Qt): `TASTEN` (105 Positionen → Scancode, Beschriftung normal/mit SHIFT, Name), `BILD`
+  (Tastenbild als Rechtecke in Tasteneinheiten), `ZEICHEN` (ASCII → Position + Umschalt, aus `NORMAL_Tab`/`SHIFT_Tab` der
+  Firmware 5.0; `>` = SHIFT + Taste 56H nach `TGETCHAR`), `UMLAUTE` (ä ö ü ß § Ä Ö Ü → die ASCII-Taste, die der Zeichensatz 2
+  zum Umlaut macht: `TGET8` addiert/subtrahiert 20H), `SONDERTASTEN` (Qt-Kode → Scancode).  **Wächter**: die Tabelle ist
+  Position für Position gleich `term_matrix_scancode` des Kerns (aus dem EPROM-Abzug), alle 105 stehen genau einmal im Bild.
+  Die **Anordnung** des Bildes ist ein Vorschlag (die Tastenkappen kennen wir nicht, `tastatur_k7673.md` §7.2).
+* **`KeyboardK7673Widget`**: gemalte Tasten, Klick → `keyPressed(0x04000000 | Zeile << 8 | Spalte)`, Loslassen → `keyReleased`;
+  das Hauptfenster setzt beides als `term_matrix_key(0, …)` ab.  **SHIFT (3×) und CTRL rasten** beim Klick (zweiter Klick löst),
+  die **rechte Maustaste** hält jede Taste; LEDs (ON/OFF, CAPS LOCK, MODE) aus `keyboard_leds()` im Bildtakt.
+* **Wirtstasten** (`OriginalTerminalWidget.keyPressEvent`): Sondertasten über die Tabelle, Zeichen über `ZEICHEN`; Wirts-Shift und
+  Strg gehen als SHIFT/CTRL der K7673.  Braucht ein Zeichen SHIFT und der Wirt hält keins (AltGr+Q = `@`), drückt das Widget SHIFT
+  selbst **und wartet `SHIFT_VORLAUF_MS` = 150 ms** mit der Taste — die K7673 sendet gleichzeitig erkannte Tasten zeilenweise,
+  `3` käme sonst vor dem SHIFT.  Wirts-Autorepeat wird verworfen (die K7673 wiederholt selbst); Fokusverlust lässt alles los.
+  Strg+Buchstabe wird über die Taste (nicht das Steuerzeichen) aufgelöst.  Einfügen geht über `term_send`.
+* **Kürzel-Regel unverändert**: kein neues Kürzel (Aktion `verbindung` ohne), Kürzeltabelle des Handbuchs unberührt, F11 bleibt beim Fenster.
+
+### 8.4 Verbindung und Mehrinstanz
+
+* **Terminaleinheit**: die Leitung XB5 ist Schnittstelle 0 (`Terminal (XB5)`, Vorgabe Client).  `VerbindungDialog`
+  (*Maschine ▸ Verbindung zum Rechner…*, nur im Modell `p8000-term` freigegeben): Art (Telnet/RFC 2217/Datei), Rolle,
+  Rechner, Port, Verbinden/Trennen — dieselben Kernaufrufe wie der Reiter *Schnittstellen* (`serial_configure/_start/_stop`),
+  im Betrieb gesperrt, Zustand im 4-Hz-Takt.  Statuszeile: „Rechner: verbunden mit …/getrennt/verbindet …".
+* **Rechner mit Originalterminal**: der Reiter *Schnittstellen* bietet tty0, tty2, tty3, (tty4–7 mit 16-Bit-Karte) wie bisher als
+  Server an; neu sind **Portvorschläge** (tty0 5000, tty2 5002, tty3 5003, tty4–7 5004–5007, Terminaleinheit 5004 — nur wo der
+  Kern noch den Vorgabeport 5000 führt, eine gespeicherte Wahl gewinnt) und ein **Hinweistext** über den Blöcken
+  (Mehrplatz, welche ttys WEGA belegt).
+* **Mehrinstanz** (`app/instanz.py`, ohne Qt): `--instance NAME`/`K1520_INSTANZ` → `p8000term-NAME.yaml` und „[NAME]" im Titel;
+  `--config DATEI`/`K1520_KONFIG` → Konfigurationsdatei von Hand.  **Plattensperre**: neben dem Abbild liegt `<abbild>.lock` mit der
+  Prozesskennung; eine zweite Instanz auf derselben Platte bekommt sie nicht (Meldung; der Kern kennt keinen Schreibschutz für
+  Platten, deshalb „nicht anschließen" statt „schreibgeschützt"), eine verwaiste Sperre (Prozess tot) wird übernommen.  Disketten
+  hängen an der Konfiguration der Instanz.
+* **Terminaleinheit im Hauptfenster**: `_rechner_anzeigen()` blendet Laufwerkskasten, Platte und Frontplatte aus, setzt den Titel
+  und gibt die Aktion `verbindung` frei; der Kasten bleibt in der Konfiguration bestehen (ein Modellwechsel zurück bringt ihn wieder).
+
+### 8.5 Wächter
+
+`tests/python/test_p8000_original_gui.py` (`py_p8000_original_gui`, 33 Fälle): Profil/Modelle/Titel, `p8000term`-Profil,
+Variantenwahl baut die richtige Maschine und Widgets, Boot-Smoke „P8000 + Terminal" (Einschaltmeldung im Framebuffer,
+Hardwaretest über die Leitung), Frame-Pause (Zähler unverändert ⇒ kein `term_framebuffer`), Skalierung, Layout gegen den
+Kern (105 Positionen, jede erreichbar), Halten von SHIFT/CTRL, Wirtstasten (Zeichen, Sonder, Shift-Vorlauf, Strg, Autorepeat,
+Fokusverlust), Verbindungsdialog, Statuszeile, Portvorschläge, Instanzname/`--config`, Plattensperre,
+**Mehrplatz über Loopback-Telnet** (Taste im Widget → `pr 24` = 78 am Rechner; Ausgabe des Rechners → Terminalbild).
+
+### 8.6 Vorgabe ohne Platte (Anwenderentscheid)
+
+Das Vollgerät legt **keine** Standardplatte mehr an (`_platte_vorbereiten` ist weg): eine leere E5-Platte schickte MON16 in den
+AUTOBOOT.  Ohne Platte endet der Hochlauf am MON8-Prompt (`Press RETURN`, `>`).  Eine Platte entsteht nur über *Neue Platte…*
+im Plattenkasten, der das im Hinweis sagt; ein `platte`-Abschnitt in der Konfiguration (auch `path: ""`) wirkt wie zuvor.
