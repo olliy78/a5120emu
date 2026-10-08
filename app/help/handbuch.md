@@ -1142,8 +1142,7 @@ die entsprechenden Tasten, **Return**, **Esc**, **Tab**, **Rücktaste** (BS), **
 **Umschalt und Strg rasten** beim Klick ein (zweiter Klick löst sie), die **rechte Maustaste** hält jede
 Taste fest. Anordnung und Beschriftung folgen dem Foto einer echten Tastatur (deutsches Tastenfeld, Funktionsreihe mit
 OFF, SI/SO, MOD, VIDEO, BREAK und F1–F11, Bearbeitungsblock, Cursorkreuz, Ziffernblock mit CE und 00);
-die LEDs OFF, CAPS und MOD sitzen wie dort im Anzeigefeld oben rechts. Bei F1–F11, CE, dem „+“ des
-Ziffernblocks und den Zeilen-/Zeichentasten des Bearbeitungsblocks beruht die Zuordnung zur Matrix auf einer
+die LEDs OFF, CAPS und MOD sitzen wie dort im Anzeigefeld oben rechts. Bei F1–F11, CE und den Zeilen-/Zeichentasten des Bearbeitungsblocks beruht die Zuordnung zur Matrix auf einer
 Annahme (die Tooltips nennen den Scancode); die meisten F-Tasten haben im Terminal 5.0 keine Wirkung. Die Kürzel des Fensters
 (nur mit Strg+Umschalt, F11) bleiben, alles Übrige gehört dem Terminal.
 

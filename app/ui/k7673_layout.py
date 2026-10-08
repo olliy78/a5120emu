@@ -8,7 +8,7 @@ Reine Daten und Rechnung — kein Qt (prüfbar ohne Fenster).  Quellen: `doc/p80
   P1.0–7 = Spalte 8–15); der Kern kodiert sie als ``0x04000000 | zeile << 8 | spalte``.
 * **Anordnung und Beschriftung der Tastenkappen folgen dem Foto des Anwenders** (2026-10-08,
   ``doc/p8000/bilder/tastatur_k7673_foto.jpg``, ``doc/p8000/tastatur_k7673.md`` §8).  Die Zuordnung
-  Kappe ↔ Matrixposition ist dort, wo das Foto keine Quelle hat (F1–F11, CE, „+“, rechtes CTRL,
+  Kappe ↔ Matrixposition ist dort, wo das Foto keine Quelle hat (F1–F11, CE, rechtes CTRL,
   die vier Zeilen-/Zeichentasten), eine ANNAHME aus der Scancode-Wirkung.  Die Matrixpositionen
   und ihre Scancodes sind dagegen gelesen (Test gegen ``term_matrix_scancode`` des Kerns).
 """
@@ -42,6 +42,7 @@ _SCANCODE: Dict[Position, int] = {
     # Zeile 0
     (0, 0): 0x02, (0, 1): 0x04, (0, 2): 0x06, (0, 3): 0x08, (0, 4): 0x0A, (0, 5): 0x0C, (0, 6): 0x1D, (0, 7): 0x4A, (0, 8): _E0 | 0x4D, (0, 9): _E0 | 0x52, (0, 10): _E0 | 0x49, (0, 11): _E0 | 0x35, (0, 14): 0x45e19dc5,
     # Zeile 1
+    (1, 7): 0x00,
     (1, 0): 0x10, (1, 1): 0x12, (1, 2): 0x14, (1, 3): 0x16, (1, 4): 0x18, (1, 5): 0x1A, (1, 6): 0x2A, (1, 8): _E0 | 0x50, (1, 9): _E0 | 0x53, (1, 10): _E0 | 0x51, (1, 11): 0x48, (1, 14): 0x57, (1, 15): 0x58,
     # Zeile 2
     (2, 0): 0x1E, (2, 1): 0x20, (2, 2): 0x22, (2, 3): 0x24, (2, 4): 0x26, (2, 5): 0x28, (2, 6): 0x3A, (2, 7): 0x4E, (2, 8): _E0 | 0x4B, (2, 11): 0x4C, (2, 14): 0x42,
@@ -75,8 +76,9 @@ BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
     # Zeile 1
     (1, 0): ("Q", "", ""), (1, 1): ("E", "", ""), (1, 2): ("T", "", ""), (1, 3): ("U", "", ""),
     (1, 4): ("O", "", ""), (1, 5): ("Ü", "}", "Kappe „} Ü ]“; Ü im Zeichensatz 2"),
-    (1, 6): ("+", "", "Ziffernblock „+“ (Annahme). K7673.09 sendet an dieser Position SHIFT (2AH), "
-                      "K7673.01 den Code 00H = „+“"),
+    (1, 6): ("⇕", "", "SHIFT (links, 2AH)"),
+    (1, 7): ("+", "", "Ziffernblock „+“: Code 00H (Terminal: „+“); Annahme (1,7), die Nachbarin von „−“ und „=“ "
+                      "in Spalte 7 — der Kern zählt sie nicht mit, weil der Code 0 ist"),
     (1, 8): ("↓", "", "Cursor runter"), (1, 9): ("⤒", "", "LINE DELETE (Annahme: Kappensymbol ⤒)"),
     (1, 10): ("⤓", "", "LINE INSERT (Annahme: Kappensymbol ⤓)"), (1, 11): ("8", "", "Ziffernblock"),
     (1, 14): ("F8", "", "Annahme: F8 (Scancode 57H, ohne Wirkung)"),
@@ -89,7 +91,7 @@ BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
     (2, 14): ("F4", "", "Annahme: F4 (Scancode 42H, ohne Wirkung)"),
     # Zeile 3
     (3, 0): ("Y", "", ""), (3, 1): ("C", "", ""), (3, 2): ("B", "", ""), (3, 3): ("M", "", ""),
-    (3, 4): (".", ":", ""), (3, 6): ("⇕", "", "SHIFT (links und rechts am Foto: ⇕)"),
+    (3, 4): (".", ":", ""), (3, 6): ("SHIFT", "", "SHIFT (2AH), dritte Position — am Foto ohne Kappe"),
     (3, 7): ("ENTER", "", "Ziffernblock ENTER (sendet CR)"), (3, 8): ("↵\nRETURN", "", "RETURN (CR)"),
     (3, 11): ("2", "", "Ziffernblock"), (3, 14): ("BREAK", "", "BREAK"),
     (3, 15): ("F1", "", "Annahme: F1 (Scancode 3FH, ohne Wirkung)"),
@@ -115,7 +117,7 @@ BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
     # Zeile 6
     (6, 0): ("S", "", ""), (6, 1): ("F", "", ""), (6, 2): ("H", "", ""), (6, 3): ("K", "", ""),
     (6, 4): ("Ö", "|", "Kappe „| Ö \\“; Ö im Zeichensatz 2"),
-    (6, 5): ("#", "^", ""), (6, 6): ("⇕", "", "SHIFT (rechts)"), (6, 7): ("BS", "", "BS (Backspace)"),
+    (6, 5): ("#", "^", ""), (6, 6): ("⇕", "", "SHIFT (rechts, 2AH)"), (6, 7): ("BS", "", "BS (Backspace)"),
     (6, 8): (",", "", "Ziffernblock"), (6, 10): ("4", "", "Ziffernblock"),
     (6, 11): ("6", "", "Ziffernblock"), (6, 13): ("CTRL", "", "CTRL (links)"),
     (6, 14): ("F2", "", "Annahme: F2 (Scancode 40H, ohne Wirkung)"),
@@ -133,6 +135,9 @@ BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
 TASTEN: Dict[Position, Tuple[int, str, str, str]] = {
     p: (_SCANCODE[p],) + BESCHRIFTUNG[p] for p in _SCANCODE}
 
+#: Positionen, die der Kern NICHT als belegt zählt (Scancode 00H), die aber eine Taste tragen: das „+“.
+OHNE_KERNZAEHLUNG: Tuple[Position, ...] = ((1, 7),)
+
 #: Tasten, die im Terminal 5.0 keine Wirkung haben (kein Zeichen, keine Funktion).
 OHNE_WIRKUNG: Tuple[Position, ...] = (
     (1, 14), (1, 15), (2, 14), (3, 15), (4, 14), (4, 15), (5, 14), (5, 15), (6, 14), (6, 15),
@@ -145,11 +150,11 @@ LED_TASTEN: Dict[int, Position] = {0x01: (7, 12), 0x02: (2, 6), 0x04: (7, 14)}
 RASTTASTEN = frozenset(LED_TASTEN.values())
 
 #: Tasten, die als Umschalter wirken und von der Bildschirmtastatur „gehalten“ werden können.
-UMSCHALTER: Tuple[Position, ...] = ((3, 6), (6, 6), (6, 13))
+UMSCHALTER: Tuple[Position, ...] = ((1, 6), (3, 6), (6, 6), (6, 13))
 
 
 def positionen() -> List[Position]:
-    """Alle belegten Positionen (105), Reihenfolge Zeile, Spalte."""
+    """Alle Positionen mit Taste (105 vom Kern gezählte + das „+“ bei (1, 7)), Reihenfolge Zeile, Spalte."""
     return sorted(TASTEN)
 
 
@@ -166,8 +171,8 @@ def _erste_position() -> Dict[int, Position]:
 
 #: Scancode → erste Position, die ihn sendet (SHIFT sitzt dreimal, die „9“ zweimal).
 SCANCODE_POS: Dict[int, Position] = _erste_position()
-# Der Wirts-SHIFT geht über die linke Shift-Kappe des Fotos; (1, 6) ist dort das „+“ des Ziffernblocks.
-SCANCODE_POS[0x2A] = (3, 6)
+# Der Wirts-SHIFT geht über die linke Shift-Kappe des Fotos = (1, 6) (die erste der drei 2AH-Positionen).
+assert SCANCODE_POS[0x2A] == (1, 6)
 
 # ── Tastenbild: Position, x, y, Breite in Tasteneinheiten ───────────────────────────────────────
 # Anordnung nach dem Foto des Anwenders: Funktionsreihe oben (OFF | SI/SO MOD VIDEO BREAK | F1–F4 |
@@ -217,7 +222,7 @@ def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
         [(2, 0), (6, 0), (2, 1), (6, 1), (2, 2), (6, 2), (2, 3), (6, 3), (2, 4), (6, 4),
          (2, 5), (6, 5)]))
     # SHIFT < Y X C V B N M , . - SHIFT
-    t += _reihe(4.5, 0.0, [((3, 6), 1.25), ((4, 6), 0.8)] + _gleich(
+    t += _reihe(4.5, 0.0, [((1, 6), 1.25), ((4, 6), 0.8)] + _gleich(
         [(3, 0), (7, 0), (3, 1), (7, 1), (3, 2), (7, 2), (3, 3), (7, 3), (3, 4), (7, 4)])
         + [((6, 6), 1.85)])
     t += [((3, 8), 13.9, 3.5, 1.1)]          # RETURN: Höhe 2 (siehe HOEHE2)
@@ -231,19 +236,20 @@ def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
     t += _reihe(5.5, 15.5, _gleich([(2, 8), (1, 8), (0, 8)]))
     # Ziffernblock (Spalten bei 19.1, Teilung 1.06); ENTER zweizeilig hoch
     for y, zeile in ((1.5, [(4, 10), (0, 11), (4, 11), (0, 7)]),
-                     (2.5, [(5, 10), (1, 11), (5, 11), (1, 6)]),
+                     (2.5, [(5, 10), (1, 11), (5, 11), (1, 7)]),
                      (3.5, [(6, 10), (2, 11), (6, 11), (2, 7)]),
                      (4.5, [(7, 10), (3, 11), (7, 11)]),
                      (5.5, [(4, 8), (5, 8), (6, 8)])):
         for k, p in enumerate(zeile):
             t.append((p, 19.1 + 1.06 * k, y, 1.0))
     t.append(((3, 7), 19.1 + 1.06 * 3, 4.5, 1.0))   # ENTER: Höhe 2
-    # Die einzige belegte Position ohne Taste am Foto: schmale Leiste unten
+    # Die beiden belegten Positionen ohne Kappe am Foto: Zusatzfeld unten
     t.append(((4, 12), 19.1, 6.55, 1.0))
+    t.append(((3, 6), 20.2, 6.55, 1.2))        # dritte SHIFT-Position (am Foto keine Kappe)
     return t
 
 
-#: ``(Position, x, y, breite)`` — jede der 105 Positionen genau einmal.
+#: ``(Position, x, y, breite)`` — jede Position aus ``TASTEN`` (106) genau einmal.
 BILD: List[Tuple[Position, float, float, float]] = _bildaufbau()
 
 #: Tasten, die zwei Zeilen hoch sind (RETURN, ENTER des Ziffernblocks).
@@ -277,7 +283,7 @@ def _zeichentabelle() -> Dict[str, Tuple[Position, bool]]:
             if not 0x20 <= c < 0x7F:
                 continue
             ch = chr(c)
-            pos = SCANCODE_POS.get(sc)
+            pos = SCANCODE_POS.get(sc) if sc else None   # 00H: Ziffernblock-„+" — das Hauptblock-„+" gilt
             if pos is None or ch in aus:
                 continue
             aus[ch] = (pos, mit_shift)

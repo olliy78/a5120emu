@@ -263,20 +263,22 @@ Abweichungen gegenüber der früheren Vermutung (Position → Kappe nach Foto):
 | (6,7) / (4,7) | 29 / 0E | BS unten / DEL Hauptreihe | BS und DEL beide oben rechts in der Zifferreihe |
 | (4,10) | 45 | „BS (zweite)" | **CE** des Ziffernblocks (Annahme: Position der IBM-NumLock; Terminal macht BS daraus) |
 | (5,8) | E1 52 E1 52 | oben im Ziffernblock | **00** unten im Ziffernblock |
-| (1,6) | 2A (.09) | SHIFT links | **+** des Ziffernblocks (Annahme, s. u.) |
-| (3,6) / (6,6) | 2A | SHIFT rechts / Mitte | SHIFT links / rechts (`⇕`) |
+| (1,7) | **00** | leer (Kern zählt 0 nicht) | **+** des Ziffernblocks: Code 00H = „+“ im Terminal, Nachbarin von „−“ und „=“ in Spalte 7 (Annahme) |
+| (1,6) / (6,6) | 2A | SHIFT links / Mitte | SHIFT links / rechts (`⇕`), vom Anwender bestätigt (K7673.09) |
+| (3,6) | 2A | SHIFT rechts | dritte SHIFT-Position, **am Foto ohne Kappe** (Zusatzfeld) |
 | (7,13) | E0 38 | ohne Wirkung | **CTRL rechts** (Annahme: Nachbarposition von CTRL links (6,13)) |
 | 11 Positionen „ohne Wirkung" + PAUSE | 3F 40 41 42 43 44 46 57 58 E0 37 PAUSE | schmale Leiste | **F1…F11** in dieser Scancode-Reihenfolge (Annahme; ein zwölfter Kandidat fehlt am Foto) |
 | (0,9) (0,10) (1,9) (1,10) | E0 52/49/53/51 | CHAR/LINE DEL/INS | `\|←\|` CHAR DELETE, `\|→\|` CHAR INSERT, `⤒` LINE DELETE, `⤓` LINE INSERT (Annahme nach Pfeilrichtung) |
 | (4,9) / (5,9) | E0 47 / E0 4F | PAGE ERASE / HOME | **CLEAR** / `↖` |
 | (0,6) / (5,7) | 1D / 0F | TAB / BACKTAB | `⇥` links vor Q / `⇤` rechts hinter `+` |
-| (4,12) | 49 | zweite 9 | am Foto **keine Taste** (nur als Zusatzfeld unten) |
+| (4,12) | 49 | zweite 9 | am Foto **keine Taste** (Zusatzfeld unten, neben (3,6)) |
 | LEDs | — | auf den Tasten | Anzeigefeld OFF / CAPS / MOD oben rechts |
 
-**Variante K7673.01 gegen .09** (Vergleich der Codetabellen; .01 hat die Tabelle bei 0322H statt 02E3H, davon
-abgesehen und von Programmunterschieden — RAM-Selbsttest, LED-Test — sind nur **vier** Einträge verschieden):
-(1,6) .09 = 2A SHIFT, .01 = **00H** (Terminal: „+"); (6,6) .09 = 2A, .01 = **36H** (rechter Shift, im Terminal 5.0
-ohne Wirkung, `NORMAL_Tab[36H] = 80H`); (0,14) und (5,8) tragen gleiche Folgen, nur mit anderer Folgenadresse.
-Das Foto passt zur Position (1,6) = „+" — das sendet nur die **.01**; unter .09 macht es SHIFT.  Ob die Tastatur des
-Anwenders .01 oder .09 trägt, ist offen (EPROM-Aufdruck/Selbsttest nachsehen); für den Emulator wäre .01 als zweite
-Variante eine reine Tabellenänderung im Kern.
+Zählung: Der Kern zählt 105 Positionen mit Scancode ≠ 0; das „+“ bei (1,7) hat den Code 00H und fehlt dort, die
+Oberfläche kennt daher 106 Tasten (105 Kappen am Foto + das Zusatzfeld mit (3,6) und (4,12) ergibt 104 + 2).  Die
+übrigen 22 Positionen mit Eintrag 00 00 sind unbelegt.
+
+**Abzugsdifferenz K7673.01 gegen .09** (reiner Vergleich; die .01 ist keine Anwendervariante — das Foto zeigt eine
+.09): die .01 hat die Tabelle bei 0322H statt 02E3H, dazu Programmunterschiede (RAM-Selbsttest, LED-Test); in der
+Codetabelle sind nur vier Einträge verschieden: (1,6) .09 = 2A, .01 = 00H; (6,6) .09 = 2A, .01 = 36H (rechter Shift, im
+Terminal 5.0 ohne Wirkung); die Folgen von (0,14) und (5,8) sind gleich, nur die Folgenadresse unterscheidet sich.
