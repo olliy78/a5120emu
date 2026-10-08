@@ -89,7 +89,8 @@ class SettingsWidget(QWidget):
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_general_tab(), "Allgemein")
-        self.tabs.addTab(self._build_drives_tab(), "Laufwerke")
+        self._drives_tab = self._build_drives_tab()
+        self.tabs.addTab(self._drives_tab, "Laufwerke")
         self.schnittstellen = schnittstellen
         if schnittstellen is not None:
             rolle = QScrollArea()
@@ -99,6 +100,7 @@ class SettingsWidget(QWidget):
             self.tabs.addTab(rolle, "Schnittstellen")
         self.tabs.addTab(self._build_crt_tab(), "CRT")
         layout.addWidget(self.tabs)
+        self._modus_anpassen()
 
     def zeige_schnittstellen(self):
         """Den Reiter „Schnittstellen“ nach vorn holen (für Tests und Aufrufer)."""
@@ -233,7 +235,11 @@ class SettingsWidget(QWidget):
         form = QFormLayout(inner)
 
         self.model_combo = QComboBox(inner)
-        for schluessel, _maschine, _em, beschriftung, _tastatur in self.profil.modelle:
+        # Mit Betriebsart (P8000): das Feld zeigt nur die Modelle MIT Rechner („Rechnerausstattung“),
+        # das Modell „nur Terminal“ kommt über das zweite Feld.
+        zeilen = (self.profil.ausstattungen() if self.profil.betriebsart_wahl
+                  else self.profil.modelle)
+        for schluessel, _maschine, _em, beschriftung, _tastatur in zeilen:
             self.model_combo.addItem(beschriftung, schluessel)
         # Modelle, die der Kern noch nicht fährt: sichtbar, aber nicht wählbar.
         for schluessel, beschriftung, grund in self.profil.gesperrte_modelle:
@@ -243,12 +249,26 @@ class SettingsWidget(QWidget):
             self.model_combo.setItemData(i, grund, Qt.ToolTipRole)
         self.model_combo.currentIndexChanged.connect(self._on_model_combo)
         self.model_combo.setToolTip(self.profil.modell_tipp)
-        # Nur im Programm mit Modellwahl; model_value() liefert sonst
-        # die Vorgabe.
+        # Betriebsart (P8000): Computer mit Terminal | nur Terminal
+        self.betriebsart_combo = QComboBox(inner)
+        self.betriebsart_combo.addItem("Computer mit Terminal", "computer")
+        self.betriebsart_combo.addItem("nur Terminal", "terminal")
+        self.betriebsart_combo.setToolTip(
+            "Computer mit Terminal: der Rechner samt seinem Terminal in einem Fenster.  "
+            "Nur Terminal: der Arbeitsplatz ohne Rechner — er wird über die serielle Leitung "
+            "(Maschine ▸ Verbindung zum Rechner…) mit dem Rechner eines anderen P8000-Emulators "
+            "verbunden.  Ein Wechsel schaltet die Maschine aus und neu ein.")
+        self.betriebsart_combo.currentIndexChanged.connect(self._on_model_combo)
+        # Nur im Programm mit Modellwahl; model_value() liefert sonst die Vorgabe.
         if self.profil.modellwahl:
-            form.addRow("Modell:", self.model_combo)
+            form.addRow("Rechnerausstattung:" if self.profil.betriebsart_wahl else "Modell:",
+                        self.model_combo)
+            if self.profil.betriebsart_wahl:
+                form.addRow("Betriebsart:", self.betriebsart_combo)
         else:
             self.model_combo.setVisible(False)
+        if not self.profil.betriebsart_wahl:
+            self.betriebsart_combo.setVisible(False)
 
         # Hardwarevarianten des Programms (Profil.hardware, z. B. PC 1715: Zeichensatz, Tastatur)
         self.hardware_combos = {}
@@ -379,23 +399,60 @@ class SettingsWidget(QWidget):
         self._raf_guard = False
 
     def _on_model_combo(self, _idx: int):
-        self._hardware_gesperrt_nach_modell()
+        self._modus_anpassen()
         if self._model_guard:
             return
         self.modelChanged.emit(self.model_value())
 
+    def _terminal_betrieb(self) -> bool:
+        return (self.profil.betriebsart_wahl
+                and self.betriebsart_combo.currentData() == "terminal")
+
+    def ausstattung_value(self) -> str:
+        """Die gewählte Rechnerausstattung (auch im Betrieb „nur Terminal“ — sie wird gemerkt)."""
+        return self.profil.ausstattung_normalisieren(self.model_combo.currentData())
+
+    def set_ausstattung_value(self, schluessel: str):
+        """Die Ausstattung setzen (ohne Signal)."""
+        self._model_guard = True
+        idx = self.model_combo.findData(self.profil.ausstattung_normalisieren(schluessel))
+        self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._model_guard = False
+
     def model_value(self) -> str:
-        """Der aktuell gewählte Modellschlüssel (``app.modell.A5120``/``A5120_16``)."""
+        """Der aktuell gewählte Modellschlüssel (``app.modell.A5120``/``A5120_16``; P8000: bei
+        „nur Terminal“ der Schlüssel des Terminalmodells)."""
+        if self._terminal_betrieb():
+            return self.profil.einheit_modell()
         data = self.model_combo.currentData()
         return self.profil.modell_normalisieren(data)
 
     def set_model_value(self, model: str):
         """Den Eintrag für *model* wählen (ohne Signal)."""
         self._model_guard = True
-        idx = self.model_combo.findData(self.profil.modell_normalisieren(model))
-        self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        schluessel = self.profil.modell_normalisieren(model)
+        if self.profil.betriebsart_wahl:
+            terminal = self.profil.modell_art(schluessel) == "einheit"
+            self.betriebsart_combo.setCurrentIndex(1 if terminal else 0)
+            if not terminal:                  # im Terminalbetrieb bleibt die gemerkte Ausstattung
+                idx = self.model_combo.findData(schluessel)
+                self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        else:
+            idx = self.model_combo.findData(schluessel)
+            self.model_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._model_guard = False
+        self._modus_anpassen()
+
+    def _modus_anpassen(self):
+        """Felder und Reiter dem Modell anpassen: unwirksame Hardwarewahl ausgrauen, bei „nur
+        Terminal“ die Ausstattung ausgrauen und den Reiter „Laufwerke“ ausblenden."""
         self._hardware_gesperrt_nach_modell()
+        if self.profil.betriebsart_wahl:
+            self.model_combo.setEnabled(not self._terminal_betrieb())
+        hat = self.profil.modell_hat_rechner(self.model_value())
+        i = self.tabs.indexOf(self._drives_tab) if hasattr(self, "_drives_tab") else -1
+        if i >= 0:
+            self.tabs.setTabVisible(i, hat)
 
     def set_nenntakt(self, text: str) -> None:
         """Beschriftung der Taktstufen nach dem Nenntakt des Modells (ohne Signal)."""

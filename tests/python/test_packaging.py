@@ -148,7 +148,6 @@ def test_lock_nagelt_mit_hashes_fest():
     ("prg710emu.desktop.in", "prg710emu"),
     ("pc1715emu.desktop.in", "pc1715emu"),
     ("p8000emu.desktop.in", "p8000emu"),
-    ("p8000term.desktop.in", "p8000term"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_eintrag_ist_gueltig(datei, starter):
@@ -235,8 +234,7 @@ def test_die_p8000_programme_sind_in_allen_paketwegen():
     iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
     cmd = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
     sh = (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
-    for programm, maschine, titel in (("p8000emu", "p8000", "P8000 Emulator"),
-                                      ("p8000term", "p8000term", "P8000 Terminal")):
+    for programm, maschine, titel in (("p8000emu", "p8000", "P8000 Emulator"),):
         assert re.search(rf'^MASCHINEN="[^"]*\b{programm}\b', text, re.M), \
             "ohne Eintrag in MASCHINEN bleibt der Starter beim Deinstallieren liegen"
         assert f'> "$PREFIX/bin/{programm}"' in text and f"{programm}.desktop.in" in text
@@ -252,7 +250,7 @@ def test_die_p8000_programme_sind_in_allen_paketwegen():
         assert f"default_config_{maschine}.yaml" in bp
         assert (PROJECT_ROOT / "data" / p.vorgabe_datei).is_file()
     assert '#define Programm5 "P8000 Emulator"' in iss
-    assert '#define Programm6 "P8000 Terminal"' in iss
+    assert "Programm6" not in iss and "p8000term" not in iss      # P23a: eine GUI
     # Zur Laufzeit wird nichts aus doc/ gebraucht: ROM-, Zeichensatz- und
     # Firmwaredaten sind einkompiliert bzw. liegen unter app/.
     assert "k1520_create(nr)" in text or "k1520_create(_nr)" in text
@@ -316,7 +314,7 @@ def test_rauchtests_pruefen_beide_maschinen():
     assert 'profil("prg710")' in quellen["k1520emu.iss"]
     assert 'profil("pc1715")' in quellen["install.sh"]
     assert 'profil("pc1715")' in quellen["k1520emu.iss"]
-    for programm in ("p8000", "p8000term"):
+    for programm in ("p8000",):
         assert f'profil("{programm}")' in quellen["install.sh"]
         assert f'profil("{programm}")' in quellen["k1520emu.iss"]
 
@@ -366,7 +364,6 @@ def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
     ("prg710emu", ["--machine", "prg710"]),
     ("pc1715emu", ["--machine", "pc1715"]),
     ("p8000emu", ["--machine", "p8000"]),
-    ("p8000term", ["--machine", "p8000term"]),
 ])
 def test_launcher_sh_waehlt_die_maschine_am_namen(tmp_path, name, erwartet):
     """EINE Vorlage, zwei Starter: der Name entscheidet über das Profil."""
@@ -1330,7 +1327,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
     for pflicht in [
         "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
         "k8915emu.desktop.in", "prg710emu.desktop.in", "pc1715emu.desktop.in", "p8000emu.desktop.in",
-        "p8000term.desktop.in", "uv_pins.txt",
+        "uv_pins.txt",
         "lib/common.sh", "requirements.lock", "VERSION", "README.md",
         "payload/bin/libk1520core.so",
         "payload/app/main.py", "payload/app/paths.py",
@@ -1345,7 +1342,6 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
         "payload/share/k1520emu/default_config_prg710.yaml",
         "payload/share/k1520emu/default_config_pc1715.yaml",
         "payload/share/k1520emu/default_config_p8000.yaml",
-        "payload/share/k1520emu/default_config_p8000term.yaml",
         "payload/share/icons/a5120emu.svg",
         # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
         # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-
@@ -1491,8 +1487,6 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert (heim / ".local" / "share" / "applications" / "pc1715emu.desktop").is_file()
     assert os.access(ziel / "bin" / "p8000emu", os.X_OK)
     assert (heim / ".local" / "share" / "applications" / "p8000emu.desktop").is_file()
-    assert os.access(ziel / "bin" / "p8000term", os.X_OK)
-    assert (heim / ".local" / "share" / "applications" / "p8000term.desktop").is_file()
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"

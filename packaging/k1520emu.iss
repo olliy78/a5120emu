@@ -129,8 +129,6 @@
 #define Programm4 "PC1715 Emulator"
 ; Der fuenfte: P8000 (--machine p8000, Modellwahl und Originalterminal im Programm).
 #define Programm5 "P8000 Emulator"
-; Der sechste: das P8000 Terminal (--machine p8000term, Arbeitsplatz ohne Rechner).
-#define Programm6 "P8000 Terminal"
 #define Anbieter  "Olaf Krieger"
 
 [Setup]
@@ -257,9 +255,6 @@ Name: "{group}\{#Programm4}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\{#Programm5}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\main.py"" --machine p8000"; WorkingDir: "{app}"; Comment: "{#Programm5}"; \
-  IconFilename: "{app}\share\icons\a5120emu.ico"
-Name: "{group}\{#Programm6}"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
-  Parameters: """{app}\app\main.py"" --machine p8000term"; WorkingDir: "{app}"; Comment: "{#Programm6}"; \
   IconFilename: "{app}\share\icons\a5120emu.ico"
 Name: "{group}\k1520DiskTool"; Filename: "{app}\venv\Scripts\pythonw.exe"; \
   Parameters: """{app}\app\disktool\main.py"""; WorkingDir: "{app}"; Comment: "Dateiaustausch mit K1520-Disketten"; \
@@ -683,11 +678,9 @@ begin
   { Der PC1715 Emulator: ebenso. }
   VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
                    ExpandConstant('{app}\bin\pc1715emu.cmd'));
-  { Der P8000 Emulator und das P8000 Terminal: ebenso. }
+  { Der P8000 Emulator (auch als Terminal-Arbeitsplatz): ebenso. }
   VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
                    ExpandConstant('{app}\bin\p8000emu.cmd'));
-  VorlageSchreiben(ExpandConstant('{tmp}\launcher.cmd'),
-                   ExpandConstant('{app}\bin\p8000term.cmd'));
   VorlageSchreiben(ExpandConstant('{tmp}\disktool_launcher.cmd'),
                    ExpandConstant('{app}\bin\k1520disktool.cmd'));
 
@@ -731,7 +724,7 @@ begin
   Daten := AbweichenderDatenOrdner;
   StringChangeEx(Daten, '\', '\\', True);
 
-  SetArrayLength(Zeilen, 44);
+  SetArrayLength(Zeilen, 42);
   Zeilen[0]  := 'import ctypes, os, sys';
   Zeilen[1]  := 'os.environ["QT_QPA_PLATFORM"] = "offscreen"';
   Zeilen[2]  := 'sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))';
@@ -781,9 +774,7 @@ begin
   Zeilen[38] := 'print("Oberflaeche PC1715: baut auf")';
   Zeilen[39] := 'MainWindow(profil=profil.profil("p8000")).close()';
   Zeilen[40] := 'print("Oberflaeche P8000: baut auf")';
-  Zeilen[41] := 'MainWindow(profil=profil.profil("p8000term")).close()';
-  Zeilen[42] := 'print("Oberflaeche P8000 Terminal: baut auf")';
-  Zeilen[43] := 'sys.stdout.flush()';
+  Zeilen[41] := 'sys.stdout.flush()';
 
   Datei := ExpandConstant('{app}\.rauchtest.py');
   if not SaveStringsToFile(Datei, Zeilen, False) then

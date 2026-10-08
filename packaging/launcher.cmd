@@ -45,6 +45,5 @@ if /i "%~n0"=="k8915emu" set "MASCHINE=--machine k8915"
 if /i "%~n0"=="prg710emu" set "MASCHINE=--machine prg710"
 if /i "%~n0"=="pc1715emu" set "MASCHINE=--machine pc1715"
 if /i "%~n0"=="p8000emu" set "MASCHINE=--machine p8000"
-if /i "%~n0"=="p8000term" set "MASCHINE=--machine p8000term"
 
 "%ROOT%\venv\Scripts\pythonw.exe" "%ROOT%\app\main.py" %MASCHINE% %*

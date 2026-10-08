@@ -246,6 +246,7 @@ class MainWindow(QMainWindow):
         # this applies CRT/speed, mounts the stored disks and restores the
         # window size + dock layout.
         self._load_or_create_default_config()
+        self._betriebsart_vorwahl()
 
         # Disketten von der Kommandozeile — NACH der Konfiguration, damit sie
         # deren Belegung schlagen, und VOR power_on(), damit der Kaltstart schon
@@ -324,9 +325,9 @@ class MainWindow(QMainWindow):
 
         # ── Bildschirm-Dock (links) ──────────────────────────────────────────
         if self.profil.terminal:
-            # P8000: Textterminal je Kern-Terminal (Reiter) statt Bildröhre.
-            from app.ui.p8000_terminal import TerminalTabs
-            self.screen_widget = TerminalTabs()
+            # P8000: das Originalterminal — dasselbe CRT-Widget, gespeist aus dem Terminalbild.
+            from app.ui.p8000_original import OriginalTerminalWidget
+            self.screen_widget = OriginalTerminalWidget()
         else:
             self.screen_widget = ScreenWidget()
         self.screen_widget.set_emulator(self.emulator)
@@ -497,16 +498,31 @@ class MainWindow(QMainWindow):
         """
         hat = self.profil.modell_hat_rechner(self._model)
         self.drives_dock.toggleViewAction().setEnabled(hat)
+        self.drives_dock.toggleViewAction().setVisible(hat)
+        # Alles, was nur mit einem Rechner Sinn hat (Diskette, Platte, Zwischenstand, NMI), samt
+        # den Lampen der Statuszeile; die Verbindung zum Rechner dagegen nur OHNE (Terminalbetrieb).
+        for n in ("nmi", "einlegen", "auswerfen", "stand_speichern", "stand_laden"):
+            a = getattr(self, f"act_{n}", None)
+            if a is not None:
+                a.setVisible(hat)
+                a.setEnabled(hat)
+        a = getattr(self, "act_verbindung", None)
+        if a is not None:
+            a.setVisible(not hat)
+        self.status_widget.set_rechner_sichtbar(hat)
         if not hat:
             self.drives_dock.hide()
         elif not self._rechner_war_da:
             self.drives_dock.show()
         self._rechner_war_da = hat
-        if self.status_widget.frontplatte is not None:
-            self.status_widget.frontplatte.setVisible(hat)
         self.setWindowTitle(self._fenstertitel(self._model))
         if hasattr(self, "act_verbindung"):
             self.act_verbindung.setEnabled(self.profil.modell_art(self._model) == "einheit")
+
+    def _text_kopieren(self):
+        """Menü *Maschine ▸ Bildschirminhalt als Text kopieren* (wie im Kontextmenü des Bildes)."""
+        self.screen_widget.text_kopieren()
+        self.statusBar().showMessage("Bildschirminhalt als Text kopiert", 3000)
 
     def _verbindung_dialog(self):
         """Menü *Maschine ▸ Verbindung zum Rechner…* (nur die Terminaleinheit hat die Leitung XB5)."""
@@ -538,9 +554,6 @@ class MainWindow(QMainWindow):
     def _tastatur_bauen(self):
         """Die Bildschirmtastatur des Modells: K7637 (A5120), K7672 (K8915, PRG 710-1),
         K7609 (PRG 710) oder die 1715-Tastatur (PC 1715)."""
-        if self._tastatur_art == "p8000":
-            from app.ui.p8000_terminal import KeyboardP8000Widget
-            return KeyboardP8000Widget()
         if self._tastatur_art == "k7673":
             from app.ui.keyboard_k7673 import KeyboardK7673Widget
             return KeyboardK7673Widget()
@@ -579,10 +592,6 @@ class MainWindow(QMainWindow):
         if matrix is not None:
             # Flachtastatur K7673: Matrixtaste des Originalterminals (Reiter 0).
             self.emulator.term_matrix_key(0, matrix[0], matrix[1], True)
-            return
-        if self.profil.terminal:
-            # Funktionstastenleiste → Terminal des aktuellen Reiters.
-            self.screen_widget.sende_taste(keycode, shift, ctrl)
             return
         self.emulator.key_press(keycode, shift, ctrl)
 
@@ -784,6 +793,7 @@ class MainWindow(QMainWindow):
             emu_menu.addAction(self.act_stand_speichern)
             emu_menu.addAction(self.act_stand_laden)
             emu_menu.addAction(self.act_verbindung)
+            emu_menu.addAction(self.act_text_kopieren)
         if self.eprom_dock is not None:          # nur im Profil mit EPROMmer
             emu_menu.addSeparator()
             eprom_menu = emu_menu.addMenu("E&PROMmer")
@@ -1018,6 +1028,9 @@ class MainWindow(QMainWindow):
         general = {"speed": float(self.speed_factor)}
         if self.profil.modellwahl:              # alle Profile mit Modellwahl
             general["model"] = self._model
+            if self.profil.betriebsart_wahl:
+                # Die Rechnerausstattung bleibt auch im Betrieb „nur Terminal“ gemerkt.
+                general["ausstattung"] = self.settings_widget.ausstattung_value()
         general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
         general["ptape"] = bool(self._ptape)
         data = config_io.build_config(
@@ -1030,8 +1043,6 @@ class MainWindow(QMainWindow):
             data["eprom"] = self._eprom_zustand()
         if self.platten_widget is not None:
             data["platte"] = self.platten_widget.zustand_lesen()
-        if self.profil.terminal:
-            data["terminal"] = {"skalierung": self.screen_widget.skalierung}
         data["lochstreifen"] = self._ptape_zustand_lesen()
         return data
 
@@ -1247,8 +1258,13 @@ class MainWindow(QMainWindow):
             # _apply_drive_types (der auch das Modell an den core-Konstruktor
             # gibt).  Ein fehlender Eintrag ist die Vorgabe A5120 (ohne EM) —
             # ältere Konfigurationen laufen damit unverändert.
+            # Alte Modellschlüssel des P8000 (p8000/-16/-8 mit Kern-Terminal) bildet
+            # `modell_normalisieren` auf die Ausstattung mit Originalterminal ab.
             self._model = (self.profil.modell_normalisieren(general.get("model"))
                            if self.profil.modellwahl else self.profil.standard_modell())
+            if self.profil.betriebsart_wahl:
+                self.settings_widget.set_ausstattung_value(
+                    general.get("ausstattung") or self._model)
             self.settings_widget.set_model_value(self._model)
             # Hardwarevarianten: fehlender Schlüssel = Vorgabe (ältere Konfigurationen).
             self._hardware = self.profil.hardware_normalisieren(general)
@@ -1292,11 +1308,8 @@ class MainWindow(QMainWindow):
             if "platte" in data and self.platten_widget is not None:
                 self.platten_widget.zustand_anwenden(data.get("platte"))
 
-            # Terminalbild des Originalterminals: Skalierung (ganzzahlig/glatt).
-            if self.profil.terminal:
-                t = data.get("terminal")
-                self.screen_widget.set_skalierung(
-                    str((t or {}).get("skalierung", "glatt")) if isinstance(t, dict) else "glatt")
+            # (Ein alter Abschnitt ``terminal`` mit der Skalierung des früheren Terminalwidgets
+            # wird übergangen; das Bild füllt das Fenster wie bei den anderen Maschinen.)
 
             # Serielle Schnittstellen: Einstellung übernehmen und aktive wieder
             # aufnehmen (doc/design/19 §7.4a).  Fehlt der Abschnitt, bleibt alles,
@@ -1717,6 +1730,20 @@ class MainWindow(QMainWindow):
         self._apply_drive_types(self._drive_types, cold_restart=True)
         self._schedule_autosave()
 
+    def _betriebsart_vorwahl(self):
+        """``--mode computer|terminal`` (Umgebung ``K1520_BETRIEBSART``): die Betriebsart des P8000
+        für diesen Start vorwählen — nach der Konfiguration, vor dem Einschalten."""
+        art = os.environ.get("K1520_BETRIEBSART", "")
+        if not self.profil.betriebsart_wahl or art not in ("computer", "terminal"):
+            return
+        if art == "terminal":
+            ziel = self.profil.einheit_modell()
+        else:
+            ziel = self.settings_widget.ausstattung_value()
+        if ziel and ziel != self._model:
+            self._model = ziel
+            self._apply_drive_types(self._drive_types, cold_restart=False, sichern=False)
+
     def _on_hardware_selected(self, schluessel: str, wert: str):
         """Eine Hardwarevariante (Zeichensatz, Tastatur-ROM) geändert → neue Maschine, wie
         beim Modellwechsel (die ROMs sind am Kern Konstruktorparameter)."""
@@ -2036,9 +2063,6 @@ class MainWindow(QMainWindow):
 
     def _p8000emu_starten(self):
         self._emulator_starten("p8000")
-
-    def _p8000termemu_starten(self):
-        self._emulator_starten("p8000term")
 
     # ── Zwischenstand (nur P8000, P8KS) ──────────────────────────────────────
 

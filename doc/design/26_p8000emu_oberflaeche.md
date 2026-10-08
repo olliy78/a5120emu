@@ -132,24 +132,30 @@ Neue Profilfelder (additiv, die anderen Programme sehen sie nicht): `modell_arte
 Modell eine Kernmaschine macht**, bleibt `Programmprofil` (kein `if machine == …` in der Oberfläche).  Die ROM-/Index-Wahl
 (`hardware`) ist am Terminal ausgegraut, `kern_parameter("p8000-term")` = `{"p8000": {}}`.
 
-**Zwei Programme, ein Profilkörper:** `P8000TERM = dataclasses.replace(P8000, programm="p8000term", titel="P8000 Terminal",
-konfig_datei="p8000term.yaml", vorgabe_datei="default_config_p8000term.yaml", modelle=<Terminal vorn>)` unter dem Namen
-`p8000term` in `PROFILE`.  `maschine` bleibt `p8000` — Aktionstabelle (`NUR_FUER`), Laufwerkstabelle und Frontplatte hängen
-daran.  Starter `run_p8000term.sh` (`--machine p8000term`), Vorgabedatei `data/default_config_p8000term.yaml` (ohne Geometrie,
-Pfade, Platte; Werkzeugleiste mit `verbindung`).
+**Eine GUI (P23a, 2026-10-08):** Es gibt nur `p8000emu`.  Das frühere Programm `p8000term` (Profil `P8000TERM`, `run_p8000term.sh`,
+`default_config_p8000term.yaml`, Starter/Menüeintrag/Paketzeile) ist entfallen.  Im Einstellungsdialog (*Allgemein*) wählt man
+*Rechnerausstattung* (Vollgerät / ohne Winchester / nur 8-Bit; `Programmprofil.ausstattungen()`) und *Betriebsart* („Computer mit
+Terminal“ | „nur Terminal“; `betriebsart_wahl`, `einheit_modell()`).  Das Modell in der Konfiguration bleibt EIN Schlüssel
+(`-ot`-Modelle bzw. `p8000-term`), `general.ausstattung` merkt die Ausstattung im Terminalbetrieb.  Alte Schlüssel `p8000`/`-16`/`-8`
+(Kern-Terminal) werden über `modell_alt` auf `-ot` abgebildet, ein Abschnitt `terminal:` (alte Skalierung) und `machine.raf*` werden beim
+Laden übergangen und beim nächsten Speichern nicht mehr geschrieben.  Die Kern-Terminal-Modelle sind nicht mehr wählbar (im Kern bleiben
+sie Testgegenstelle).  `--mode computer|terminal` (Umgebung `K1520_BETRIEBSART`) stellt die Betriebsart für den Start vor.  „Nur
+Terminal“ blendet den Reiter *Laufwerke*, Laufwerks-/Frontplattenfelder der Statuszeile, NMI, Einlegen/Auswerfen und Zwischenstand aus und
+zeigt *Verbindung zum Rechner…*; der Moduswechsel baut die Maschine neu (mit EPROM-Rückfrage wie bei anderen Modellwechseln).  Die RAF
+(`raf_wahl=False`) gibt es im P8000 nicht.  Das Terminalbild läuft im gemeinsamen CRT-Widget (§8.2); `app/ui/p8000_terminal.py` (Kern-Terminal-
+Widget, Funktionstastenleiste) und der Zeichensatz-Abzug sind gelöscht.
 
 ### 8.2 Bildschirm (`app/ui/p8000_original.py`)
 
-`TerminalTabs.set_emulator` wählt je Terminal das Widget nach `term_kind(i)`: 0 = `TerminalWidget` (Zellen), 1 =
-`OriginalTerminalWidget`.  Reitername am Original ohne Rechner: „P8000 Terminal" (`term_tty` < 0).
-* **Kein Dauer-Repaint**: `aktualisieren()` (25 Hz) fragt nur `term_flags` und `term_frame_count`; das Pixelbild (640 × 312,
-  Stufen 0/1/2 als `QImage.Format_Indexed8` mit Farbtabelle aus den Phosphorfarben) wird nur bei geändertem Zähler geholt.
-  Cursor, Blinken, Invers, Hell stecken im Bild (Firmware) — es gibt keinen Blink-Zeitgeber.
-* **Skalierung** `ganzzahlig` (Faktor = min(Breite/640, Höhe/312), mindestens 1, dunkler Rand) oder `glatt` (Seitenverhältnis
-  gewahrt, geglättet); Wahl im Kontextmenü des Bildes, gemerkt unter `terminal: {skalierung: …}`.  **Farbe** grün/weiß/bernstein
-  im selben Menü (setzt `phosphor_on/off` der CRT-Einstellungen, die ohnehin gemerkt werden).
-* Die Zeile unter dem Bild nennt „Originalterminal Typ 2 · Zeichensatz … · Caps lock" — ADM31/VT100 steckt in der Firmware und
-  ist von außen nicht lesbar (`term_mode` = 2).
+`OriginalTerminalWidget` ist seit P23a ein `ScreenWidget` (QOpenGLWidget, CRT-Shader, `CRTParams`) — dasselbe Widget und derselbe
+CRT-Reiter wie bei den anderen Maschinen, gleiche Vorgaben.  Es gibt keine Reiter je Terminal mehr (genau ein Originalterminal).
+* **Kein Dauer-Upload**: `_on_update()` fragt `term_flags` und `term_frame_count`; das Pixelbild (640 × 312, Stufen 0/1/2) wird nur
+  bei geändertem Zähler geholt, über `translate` auf die Textur-Bytes 0/184/255 gebracht und hochgeladen (Texturgröße folgt dem Bild).
+  Seitenverhältnis/Füllung wie bei den anderen Maschinen (`ScreenWidget.paintGL`).  Cursor, Blinken, Invers, Hell stecken im Bild.
+* **Keine Farb- und Zoomwahl** am Widget mehr; Farbe, Helligkeit, Kontrast, Krümmung usw. nur über *Einstellungen ▸ CRT*.
+* **Text kopieren**: Kontextmenü (rechte Maustaste) und *Maschine ▸ Bildschirminhalt als Text kopieren*: `term_text` (80 × 24), Zeilen
+  `rstrip`, `\n`, in die Zwischenablage; kein Kürzel.
+* Die Funktionsanzeige (Zeichensatz/Caps) geht als `flagsChanged` an die Bildschirmtastatur.
 
 ### 8.3 Tastatur: Matrix, Bildschirmtastatur, Wirtstasten
 
@@ -189,7 +195,7 @@ Pfade, Platte; Werkzeugleiste mit `verbindung`).
 
 ### 8.5 Wächter
 
-`tests/python/test_p8000_original_gui.py` (`py_p8000_original_gui`, 33 Fälle): Profil/Modelle/Titel, `p8000term`-Profil,
+`tests/python/test_p8000_original_gui.py` (`py_p8000_original_gui`, 33 Fälle): Profil/Modelle/Titel, Betriebsart und Modellmigration, CRT-Verdrahtung, Text kopieren, RAF-Entfernung,
 Variantenwahl baut die richtige Maschine und Widgets, Boot-Smoke „P8000 + Terminal" (Einschaltmeldung im Framebuffer,
 Hardwaretest über die Leitung), Frame-Pause (Zähler unverändert ⇒ kein `term_framebuffer`), Skalierung, Layout gegen den
 Kern (105 Positionen, jede erreichbar), Halten von SHIFT/CTRL, Wirtstasten (Zeichen, Sonder, Shift-Vorlauf, Strg, Autorepeat,

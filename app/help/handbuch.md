@@ -1,4 +1,4 @@
-# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / p8000term — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu — Kurzhandbuch
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
 Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
@@ -1044,13 +1044,18 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
 `p8000emu` ist derselbe Emulator für den 16-Bit-Arbeitsplatzcomputer **robotron P8000**:
 8-Bit-Karte mit U880 (Monitor MON8, Betriebssystem **UDOS**), 16-Bit-Karte mit U8001 und
 Speicherverwaltung (Monitor MON16, **WEGA**/UNIX) und Winchesterkontroller (WDC). Der P8000 hat
-**keinen Bildschirm am Rechner**: seine Konsole ist ein serielles **Terminal** (tty1), das der
-Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
+**keinen Bildschirm am Rechner**: seine Konsole ist ein serielles **Terminal** (tty1) — der
+Emulator bildet das echte Terminal Typ 2 samt Flachtastatur nach (nächster Abschnitt). Es gibt
+**ein** Programm; ob es den Rechner samt Terminal oder nur den Terminal-Arbeitsplatz zeigt, wählt
+die *Betriebsart*. Was anders ist:
 
-* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **Vollgerät** (16-Bit-Teil und
-  Winchester, Vorgabe), **ohne Winchester** (nur UDOS und Monitor) oder **nur 8-Bit-Teil**
-  (die Koppelsoftware meldet dort „Hardware Error in Connection" — das ist das Soll eines
-  P8000 ohne 16-Bit-Karte). Ein Wechsel startet die Maschine kalt.
+* **Rechnerausstattung und Betriebsart** — *Einstellungen ▸ Allgemein*. *Rechnerausstattung*:
+  **Vollgerät** (16-Bit-Teil und Winchester, Vorgabe), **ohne Winchester** (nur UDOS und Monitor)
+  oder **nur 8-Bit-Teil** (die Koppelsoftware meldet dort „Hardware Error in Connection" — das ist
+  das Soll eines P8000 ohne 16-Bit-Karte). *Betriebsart*: **Computer mit Terminal** (Vorgabe) oder
+  **nur Terminal** (s. u.). Ein Wechsel startet die Maschine kalt. Alte Konfigurationen mit dem
+  früheren schlanken Kern-Terminal werden beim Laden auf die Ausstattung mit Originalterminal
+  abgebildet.
 * **ROM-Fassungen und Bestückung** — ebenfalls unter *Allgemein*: Platinenindex (8-Bit 3 /
   16-Bit 4, oder beide 1), **MON8** 3.1/3.0, **MON16** 3.1/3.0/3.3, Hauptspeicher der
   16-Bit-Seite (256 KB, 1 MB, 2 MB) und **WDC-Firmware** 4.2/4.0.05/3.4.05. Wo eine Wahl am
@@ -1058,25 +1063,16 @@ Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
 * **Takt** 4 MHz (Vorgabe fünffach: der Hardwaretest mit Speichertest braucht rund 16 s
   Maschinenzeit, bis „Press RETURN" erscheint). **Laufwerke**: zwei K5601 (UDOS-Laufwerk 0
   und 1, hier **A:** und **B:**); der externe Stecker bleibt leer.
-* **Das Terminal** — der Kasten *Bildschirm* zeigt je Kern-Terminal einen Reiter (heute **tty1**
-  = Konsole). Gezeichnet wird mit dem Zeichengenerator des echten Terminals (8 × 12;
-  Zeichensatz 1 ASCII, Zeichensatz 2 deutsch mit § Ä Ö Ü ä ö ü ß auf den Stellen
-  @ [ \ ] { | } ~); Invers, Blinken, Unterstreichen, Hell und „leer" folgen den
-  Feldattributen. Die Zeile unter dem Bild nennt **Betriebsart (ADM31 oder VT100)**,
-  Zeichensatz und Zustand; ADM31 gilt nach dem Einschalten, umschalten tut der Gast (WEGA:
-  `ttytype`).
-* **Tasten** — die Tastatur des Wirtsrechners geht an das Terminal: Zeichen, **Strg**+Buchstabe
-  (Steuerzeichen), Return, Esc, Tab, **Umschalt+Tab** (BACKTAB), Rücktaste, Entf (DEL),
-  Pfeiltasten (die Terminaltasten BS, VT, LF, FF), Pos1; **F1** LINE ERASE, **F2** PAGE ERASE,
-  **F3** LINE INSERT, **F4** CHAR INSERT (auch Einfg), **F5** LINE DELETE, **F6** CHAR DELETE,
-  **F7** BREAK (auch Pause), **F8** SI/SO (Zeichensatz). Die Umlaute ä ö ü ß Ä Ö Ü sendet das
-  Terminal wie ein deutsches Gerät mit den ASCII-Stellen des Zeichensatzes 2. Die
-  Feststelltaste rastet im Terminal. Einfügen aus der Zwischenablage: **Umschalt+Einfg** oder
-  mittlere Maustaste. **F11** (Vollbild) ist die einzige Taste, die das Fenster für sich behält.
-* **Funktionstastenleiste** — *Ansicht ▸ Tastatur* zeigt die Tasten, die es am PC nicht gibt:
-  LINE ERASE … CHAR DELETE, Cursortasten, TAB/BACKTAB, BREAK, **MODE** und **VIDEO** (laden das
-  Terminal neu und löschen das Bild!), **ON/OFF** (Off-Line zeigt Tasten nur am Terminal an),
-  dazu die Rasttasten **SI/SO** und **CAPS LOCK**, die den Zustand des Terminals zeigen.
+* **Das Terminal** — der Kasten *Bildschirm* zeigt das Originalterminal (tty1 = Konsole) im
+  selben Röhrenbild wie die anderen Emulatoren: Helligkeit, Kontrast, Krümmung, Phosphorfarbe und
+  die übrigen Regler stehen unter *Einstellungen ▸ CRT* und wirken genau wie dort. ADM31 gilt nach
+  dem Einschalten, umschalten tut der Gast (WEGA: `ttytype`).
+* **Tasten** — die Tastatur des Wirtsrechners geht an das Terminal; Belegung und Bildschirmtastatur
+  (Flachtastatur K7673.09) im Abschnitt *Das Originalterminal*. **F11** (Vollbild) ist die einzige
+  Taste, die das Fenster für sich behält.
+* **Text kopieren** — Rechtsklick auf das Bild oder *Maschine ▸ Bildschirminhalt als Text kopieren*:
+  der Inhalt des Terminalbildes (80 × 24, nicht gerendert, ohne Schlussleerzeichen) landet als reiner
+  Text in der Zwischenablage. Ein Tastenkürzel gibt es nicht (Strg+C gehört dem Gast).
 * **Winchesterplatte** — im Kasten *Laufwerke* unter den Disketten. **Anschließen…** hängt ein
   vorhandenes Abbild an den WDC, **Neue Platte…** legt eines an (Typ K5504.50 u. a., mit
   gültigem Parametersatz **PAR**, aber **unformatiert**: formatieren mit `sa.format` im Gast),
@@ -1089,12 +1085,12 @@ Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
   starten; auf einer leeren (E5-gefüllten) Platte endet das in einer Eingabeschleife ohne
   Prompt — das ist Gastverhalten, kein Fehler, und der Grund, warum das Programm keine leere
   Platte vorgibt. Erst die WEGA-Installation macht die Platte startfähig.
-* **Statuszeile** — Lampen **Run** (RUN-LED der 16-Bit-Karte), **16-Bit** (der U8001 läuft),
+* **Statuszeile** (nur *Computer mit Terminal*) — Lampen **Run** (RUN-LED der 16-Bit-Karte), **16-Bit** (der U8001 läuft),
   **Platte** (WDC-Zugriff) und **Power**, dann der Takt und die Laufwerke. Ohne
   16-Bit-Karte liefert der Kern keine Lampen: sie bleiben dunkel.
-* **NMI** — *Maschine ▸ NMI-Taster*: die NMI-Taste des Geräts; ist die 16-Bit-Karte
+* **NMI** (nur *Computer mit Terminal*) — *Maschine ▸ NMI-Taster*: die NMI-Taste des Geräts; ist die 16-Bit-Karte
   freigegeben, geht sie an den U8001 („Press NMI" im Hardwaretest von MON16).
-* **Zwischenstand** — *Maschine ▸ Zwischenstand sichern…/laden…* (P8KS): sichert die Maschine
+* **Zwischenstand** (nur *Computer mit Terminal*) — *Maschine ▸ Zwischenstand sichern…/laden…* (P8KS): sichert die Maschine
   samt Terminalbild, aber **nicht** Disketten und Platte; beim Laden müssen dieselben Abbilder
   liegen, und Modell, ROM-Fassungen, Hauptspeicher und Laufwerke müssen übereinstimmen (sonst
   bleibt die Maschine unverändert, mit Begründung). Zuverlässig nur **am Prompt**: Zeichen im
@@ -1102,34 +1098,35 @@ Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
 * **Schnittstellen** — tty1 hängt fest am Terminal; **tty0, tty2, tty3** (8-Bit-Karte) und mit
   16-Bit-Karte **tty4–tty7** stehen im Reiter *Schnittstellen* (Telnet, RFC 2217, Datei). Ein
   zweites Terminal an WEGA (`getty` auf tty0, tty2, tty4–tty7) ist also ein Telnet-Server an dem
-  Kanal mit einem Arbeitsplatz *P8000 Terminal* (s. u.) oder einem Terminalprogramm davor (für
+  Kanal mit einem Arbeitsplatz (*Betriebsart: nur Terminal*, s. u.) oder einem Terminalprogramm davor (für
   Vollbildprogramme wie `vi` die Terminalart beachten: WEGA 3.0 führt alle Kanäle als ADM31). Ohne
   Verbindung verfallen die Zeichen in Zeichenzeit.
 * **Bootweg** — Hardwaretest, „U880-Softwaremonitor … Press RETURN", RETURN, danach bootet MON8
   von der eingelegten UDOS-Systemdiskette (A:). Mit 16-Bit-Karte startet `x` bzw. die
   Koppelsoftware von UDOS den U8000-Monitor an tty1.
-* Eine **RAM-Disk** (RAF) und den **Lochstreifen** gibt es am P8000 nicht.
+* Eine **RAM-Disk** (RAF) und den **Lochstreifen** gibt es am P8000 nicht; die Einstellungen
+  bieten sie dort nicht an.
 
 ### Das Originalterminal und der Mehrplatzbetrieb
 
-Statt des schlanken Kern-Terminals gibt es das **echte P8000-Terminal Typ 2**: Z8-Rechner mit der
+Der P8000 hat das **echte Terminal Typ 2**: Z8-Rechner mit der
 Original-Firmware P8T 5.0, 8275 und Zeichengenerator, dazu die **Flachtastatur K7673.09**. Der
-Escape-Folgen-Parser, die Zeichensätze, Cursor und Blinken stammen dann aus der Firmware, nicht aus
-einer Nachbildung. Gewählt wird es unter *Einstellungen ▸ Allgemein ▸ Modell*:
+Escape-Folgen-Parser, die Zeichensätze, Cursor und Blinken stammen aus der Firmware, nicht aus
+einer Nachbildung. Gewählt wird die *Betriebsart* unter *Einstellungen ▸ Allgemein*:
 
-* **P8000** (Vorgabe, Vollgerät / ohne Winchester / nur 8-Bit): Rechner mit dem schlanken Kern-Terminal.
-* **P8000 + P8000 Terminal** (ebenfalls Vollgerät / ohne Winchester / nur 8-Bit): derselbe Rechner,
-  seine Konsole tty1 ist das Originalterminal.
-* **P8000 Terminal**: nur das Terminal, ein **Arbeitsplatz** ohne Rechner. Er hat weder Laufwerke noch
-  Winchester noch Frontplatte (die Kästen verschwinden); seine serielle Leitung führt zu einem Rechner.
-  Das Programm **p8000term** (Starter `run_p8000term.sh`) startet gleich in diesem Modell, mit eigener
-  Konfiguration `p8000term.yaml`.
+* **Computer mit Terminal** (Vorgabe): der Rechner in der gewählten Ausstattung (Vollgerät / ohne
+  Winchester / nur 8-Bit); seine Konsole tty1 ist das Originalterminal.
+* **Nur Terminal**: ein **Arbeitsplatz** ohne Rechner. Er hat weder Laufwerke noch Winchester noch
+  Frontplatte: der Reiter *Laufwerke*, der Kasten, die Lampen und Laufwerksfelder der Statuszeile, der
+  NMI-Taster, *Diskette einlegen/auswerfen* und der Zwischenstand verschwinden; seine serielle Leitung
+  führt zu einem Rechner (*Maschine ▸ Verbindung zum Rechner…*). Die gewählte Rechnerausstattung bleibt
+  gemerkt und ist beim Zurückschalten wieder da. Dieselbe Wahl trifft der Start mit
+  `p8000emu --mode terminal` (bzw. `--mode computer`).
 
-**Bild.** Das Terminal zeigt das fertige Pixelbild (640 × 312). Es wird nur neu gezeichnet, wenn die
-Maschine ein neues Bild geliefert hat. Ein Rechtsklick auf das Bild wählt die **Skalierung** (ganzzahlig:
-scharfe Pixel mit dunklem Rand; glatt: füllt das Fenster) und die **Zeichenfarbe** (grün, weiß, bernstein;
-feiner unter *Einstellungen ▸ CRT*). Der Reiter über dem Bild heißt am Arbeitsplatz „P8000 Terminal",
-am Rechner „tty1 (Konsole)".
+**Bild.** Das Terminal liefert das fertige Pixelbild (640 × 312); es wird nur neu geholt, wenn die
+Maschine ein neues Bild geliefert hat, und füllt den Bildschirmkasten wie bei den anderen Maschinen.
+Farbe, Helligkeit und alles Übrige stellt *Einstellungen ▸ CRT* ein; eine eigene Farb- oder
+Zoomwahl am Bild gibt es nicht. Der Rechtsklick bietet *Bildschirminhalt als Text kopieren*.
 
 **Tastatur.** Die Tasten des Wirtsrechners gehen über die **Tastenmatrix der K7673**: ein Zeichen wird auf
 die Taste (und gegebenenfalls Umschalt) zurückgeführt, die es erzeugt — ein deutsches `ä ö ü ß` landet auf
@@ -1150,7 +1147,7 @@ Annahme (die Tooltips nennen den Scancode); die meisten F-Tasten haben im Termin
 startet `getty` im Mehrbenutzerbetrieb auf der Konsole (tty1) und auf **tty0, tty2, tty4, tty5, tty6, tty7**
 (`/etc/inittab`); **tty3** ist dem Drucker vorbehalten. Im Gast ist also nichts zu ändern:
 
-1. **Rechner starten:** `run_p8000emu.sh`, Modell *P8000 + P8000 Terminal*, Platte mit installiertem
+1. **Rechner starten:** `run_p8000emu.sh`, Betriebsart *Computer mit Terminal*, Platte mit installiertem
    WEGA anschließen. Nach dem Hardwaretest RETURN, RETURN (UDOS mit Koppelsoftware), **NMI** (*Maschine ▸
    NMI-Taster*) bei „Press NMI"; danach startet WEGA **von selbst** („> boot", „: md(0,16000)wega" erscheinen
    ohne Eingabe — nichts tippen), prüft die Dateisysteme und meldet nach rund vier Minuten Maschinenzeit
@@ -1159,8 +1156,8 @@ startet `getty` im Mehrbenutzerbetrieb auf der Konsole (tty1) und auf **tty0, tt
    Telnet, Rolle **Server**, Port **5004** (der Vorschlag), **Starten**. In der Statuszeile steht
    „Telnet/RFC2217 Server Port: 5004". Die anderen Leitungen tty0, tty2, tty3, tty5–7 laufen genauso
    (Vorschläge 5000, 5002, 5003, 5005–5007).
-3. **Zweiten Prozess als Terminal verbinden:** `run_p8000term.sh` (oder `--instance platz2` für einen
-   weiteren Arbeitsplatz mit eigener Konfiguration), *Maschine ▸ Verbindung zum Rechner…*: Art Telnet,
+3. **Zweiten Prozess als Terminal verbinden:** `run_p8000emu.sh --mode terminal --instance platz2`
+   (Betriebsart *nur Terminal*, eigene Konfiguration), *Maschine ▸ Verbindung zum Rechner…*: Art Telnet,
    Rolle Client, Rechner `127.0.0.1` (oder die Adresse des Rechners im Netz), Port **5004**, **Verbinden**.
    Die Statuszeile zeigt „Rechner: verbunden mit …". Ein Client versucht es selbst weiter, bis der Rechner
    antwortet; nur *Trennen* beendet das.
@@ -1175,7 +1172,7 @@ startet `getty` im Mehrbenutzerbetrieb auf der Konsole (tty1) und auf **tty0, tt
    Ausgabebefehle des Monitors MON8; der Arbeitsplatz an tty0 zeigt das Zeichen).
 
 Mehrere Instanzen nebeneinander: `--instance NAME` (oder die Umgebungsvariable `K1520_INSTANZ`) legt eine
-eigene Konfiguration `p8000term-NAME.yaml` an und setzt den Namen in den Fenstertitel; `--config DATEI`
+eigene Konfiguration `p8000emu-NAME.yaml` an und setzt den Namen in den Fenstertitel; `--config DATEI`
 legt die Konfigurationsdatei von Hand fest. Disketten- und Plattenabbilder gehören je einer Instanz: ein
 Abbild, das ein anderer Prozess schon hält, wird nicht angeschlossen (Meldung in der Statuszeile).
 

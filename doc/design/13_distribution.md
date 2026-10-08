@@ -876,27 +876,22 @@ Kommandozeilenprogramm im Paket schon gebahnt hat.
 
 ## 10b. Die P8000-Programme (AP P18, 2026-10-08)
 
-Fünftes und sechstes Programm derselben Installation: **`p8000emu`** (`--machine p8000`) und
-**`p8000term`** (`--machine p8000term`, das Arbeitsplatz-Terminal ohne Rechner; eigene
-Konfiguration `p8000term.yaml`, damit es neben dem Rechner läuft).  Verdrahtet wie die
+Fünftes Programm derselben Installation: **`p8000emu`** (`--machine p8000`; Betriebsart „nur Terminal“ = der Arbeitsplatz ohne
+Rechner, `--mode terminal`; ein zeitweiliges sechstes Programm `p8000term` ist mit P23a entfallen).  Verdrahtet wie die
 Vorgänger: dieselbe Starter-Vorlage (`launcher.sh`/`launcher.cmd` wählen am NAMEN),
-`p8000emu.desktop.in`/`p8000term.desktop.in`, `{#Programm5}`/`{#Programm6}` im `.iss`
-(Startmenü, `bin\p8000emu.cmd`/`bin\p8000term.cmd`), `MASCHINEN` in `install.sh`,
-`data/default_config_p8000.yaml`/`…_p8000term.yaml` nach `share/k1520emu/`.  Rauchtests
-(install.sh, .iss, beide `release.yml`-Jobs) erzeugen jetzt `k1520_create(4)` (P8000) und
-`(5)` (P8000-Terminal) und bauen beide Fenster.  Wächter `py_packaging`
+`p8000emu.desktop.in`, `{#Programm5}` im `.iss`, `bin\p8000emu.cmd`, `MASCHINEN` in `install.sh`,
+`data/default_config_p8000.yaml` nach `share/k1520emu/`.  Rauchtests
+(install.sh, .iss, beide `release.yml`-Jobs) erzeugen `k1520_create(4)` (P8000) und bauen das Fenster.  Wächter `py_packaging`
 (`test_die_p8000_programme_sind_in_allen_paketwegen`).  Festlegungen:
 
 - **Zur Laufzeit wird nichts aus `doc/` gebraucht.** Monitor-/WDC-/Terminal-ROMs
-  (`rom_*.h`) und Z8/Z8000-Tabellen sind einkompiliert, der Terminal-Zeichensatz liegt als
-  `app/ui/p8000_zeichensatz.py` im Paket (`app/` wird ganz eingepackt).  Die einzigen
+  (`rom_*.h`) und Z8/Z8000-Tabellen sind einkompiliert, das Terminalbild liefert die
+  Firmware im Kern.  Die einzigen
   Dateizugriffe des Kerns sind Anwenderdaten (Platte, Zwischenstand P8KS).
 - **Keine P8000-Beispieldisketten im Paket**: `disks/` enthält keine, und die Vorgabe kommt
   ohne Standardplatte (P21) aus.  Kommen Abzüge hinzu, gehören sie in `DISKS_DEFAULT`
   (Entscheid des Anwenders nötig) mit einem Wächter wie bei PRG/PC1715.
-- **Menü *Werkzeuge*:** `p8000term` ist in allen anderen Programmen erreichbar, im
-  `p8000term` ist der Gegenpart `p8000emu` (beide teilen `maschine = "p8000"`; die
-  Aktionsauswahl `NUR_FUER` unterscheidet sie über `programm`).  Wächter
+- **Menü *Werkzeuge*:** `p8000emu` ist in allen anderen Programmen erreichbar.  Wächter
   `py_programme`/`py_pc1715emu_gui::test_werkzeugmenue_kennt_alle_emulatoren`.
 
 ---

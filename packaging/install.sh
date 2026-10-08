@@ -49,7 +49,7 @@ CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 # erste Maschine, weitere K1520-Rechner bekommen ein eigenes Programm in
 # derselben Installation.  Eine neue gehört hier hinein UND braucht eine
 # <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
-MASCHINEN="a5120emu k8915emu prg710emu pc1715emu p8000emu p8000term"
+MASCHINEN="a5120emu k8915emu prg710emu pc1715emu p8000emu"
 
 # Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
 # Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
@@ -451,12 +451,10 @@ chmod +x "$PREFIX/bin/prg710emu"
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/pc1715emu"
 chmod +x "$PREFIX/bin/pc1715emu"
 
-# Der P8000 Emulator und das P8000 Terminal (Arbeitsplatz ohne Rechner): ebenso,
-# `p8000emu*` => `--machine p8000`, `p8000term*` => `--machine p8000term`.
+# Der P8000 Emulator (auch als Terminal-Arbeitsplatz, Betriebsart "nur Terminal"): ebenso,
+# `p8000emu*` => `--machine p8000`.
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/p8000emu"
 chmod +x "$PREFIX/bin/p8000emu"
-ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/p8000term"
-chmod +x "$PREFIX/bin/p8000term"
 
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
@@ -484,9 +482,6 @@ if [ "$SHORTCUTS" = yes ]; then
     ln -sf "$PREFIX/bin/p8000emu" "$BINDIR/p8000emu"
     ersetze_platzhalter "$SELF_DIR/p8000emu.desktop.in" "$PREFIX" > "$APPDIR/p8000emu.desktop"
 
-    ln -sf "$PREFIX/bin/p8000term" "$BINDIR/p8000term"
-    ersetze_platzhalter "$SELF_DIR/p8000term.desktop.in" "$PREFIX" > "$APPDIR/p8000term.desktop"
-
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
         > "$APPDIR/k1520disktool.desktop"
@@ -501,7 +496,7 @@ if [ "$SHORTCUTS" = yes ]; then
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,p8000emu,p8000term,k1520disktool}"
+    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,p8000emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
         *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
@@ -579,9 +574,7 @@ fenster = MainWindow(profil=_profil.profil("pc1715"))
 fenster.close()
 fenster = MainWindow(profil=_profil.profil("p8000"))
 fenster.close()
-fenster = MainWindow(profil=_profil.profil("p8000term"))
-fenster.close()
-print("     Oberfläche: baut auf (A5120, K8915, PRG710, PC1715, P8000, P8000 Terminal)")
+print("     Oberfläche: baut auf (A5120, K8915, PRG710, PC1715, P8000)")
 PYEOF
 # Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
 # ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.
@@ -607,11 +600,11 @@ printf "\n"
 info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
-printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s, P8000: %s, P8000 Terminal: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu" "$PREFIX/bin/p8000emu" "$PREFIX/bin/p8000term"
+printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s, P8000: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu" "$PREFIX/bin/p8000emu"
 printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
     "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
-    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / p8000term   (bzw. über das Startmenü)\n"
+    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu   (bzw. über das Startmenü)\n"
 fi
 
 # Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im

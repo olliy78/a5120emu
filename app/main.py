@@ -9,12 +9,13 @@ Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`),
 ``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl),
 ``--machine pc1715`` das des PC1715 Emulators (PC 1715, Modellwahl),
 ``--machine p8000`` das des P8000 Emulators (Terminal, Winchester, Modellwahl),
-``--machine p8000term`` das des P8000 Terminals (dasselbe Programm mit dem Arbeitsplatz-Terminal
-ohne Rechner als Vorgabe); ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
+(``--mode terminal`` stellt dort die Betriebsart „nur Terminal“ ein, ``--mode computer`` „Computer mit
+Terminal“); ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
 fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``run_pc1715emu.sh``, ``run_p8000emu.sh``, ``bin/k8915emu``, Startmenü).
 
 Usage:
-    python3 app/main.py [--machine a5120|k8915|prg710|pc1715|p8000|p8000term]
+    python3 app/main.py [--machine a5120|k8915|prg710|pc1715|p8000]
+                        [--mode computer|terminal]  (nur p8000)
                         [--instance NAME] [--config DATEI] [DISKETTE …]
 
 Requirements:
@@ -65,10 +66,18 @@ for _arg in _args:
     if _arg == "--machine":
         _MASCHINE = next(_args, "")
         if not _MASCHINE:
-            print("--machine braucht einen Namen: a5120, k8915, prg710, pc1715, p8000 oder p8000term", file=sys.stderr)
+            print("--machine braucht einen Namen: a5120, k8915, prg710, pc1715 oder p8000", file=sys.stderr)
             sys.exit(2)
     elif _arg.startswith("--machine="):
         _MASCHINE = _arg.split("=", 1)[1]
+    elif _arg == "--mode" or _arg.startswith("--mode="):
+        # Betriebsart des P8000 (computer | terminal) für diesen Start vorwählen; sie wird danach
+        # wie jede Einstellung gemerkt.  Über die Umgebung an das Hauptfenster gereicht.
+        _wert = next(_args, "") if _arg == "--mode" else _arg.split("=", 1)[1]
+        if _wert not in ("computer", "terminal"):
+            print("--mode: computer oder terminal", file=sys.stderr)
+            sys.exit(2)
+        os.environ["K1520_BETRIEBSART"] = _wert
     elif _arg in ("--instance", "--config"):
         # Mehrinstanzbetrieb (app/instanz.py): eigener Konfigurationsname bzw. -datei.  Über die
         # Umgebung weitergereicht, damit auch ein von hier gestartetes Kindprogramm sie kennt.
@@ -111,10 +120,13 @@ _KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
          "pc1715": "Emulator der Buerocomputer PC 1715 und PC 1715W",
          "p8000": "Emulator des 16-Bit-Arbeitsplatzcomputers P8000 (U880 + U8001, UDOS und WEGA)"}
 _P = PROFIL.programm
-HILFE = f"""{_P} — {_KOPF[PROFIL.maschine] if _P != "p8000term" else "Arbeitsplatz-Terminal des P8000 (Terminal Typ 2 + Tastatur K7673.09, ohne Rechner)"}
+_MODUS_HILFE = ("  {p} --mode MODUS      Betriebsart: computer (Rechner mit Terminal) oder terminal\n"
+                "                        (nur das Terminal, Verbindung zu einem anderen Rechner)\n"
+                if PROFIL.maschine == "p8000" else "")
+HILFE = f"""{_P} — {_KOPF[PROFIL.maschine]}
 
   {_P} [DISKETTE …]     {_LAUFWERKE_TEXT}
-  {_P} --instance NAME  eigene Konfiguration ({PROFIL.konfig_datei[:-5]}-NAME.yaml), mehrere Fenster nebeneinander
+{_MODUS_HILFE.format(p=_P)}  {_P} --instance NAME  eigene Konfiguration ({PROFIL.konfig_datei[:-5]}-NAME.yaml), mehrere Fenster nebeneinander
   {_P} --config DATEI   Konfigurationsdatei von Hand festlegen
   {_P} --paths          aufgeloeste Pfade zeigen (Bibliothek, Katalog, Disketten)
   {_P} --help           diese Hilfe

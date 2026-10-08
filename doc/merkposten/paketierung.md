@@ -96,11 +96,7 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   (SCP 1715 V0006/V0007, CP/A 1715, UDOS1715; Wächter
   `test_pc1715_disketten_sind_in_der_vorgabeauswahl`); die Vorgabe mountet keine (kein `disks:`).
   Rauchtests erzeugen jetzt auch `k1520_create(3)` und das PC1715-Fenster.
-  **Seit AP P18 (2026-10-08) gibt es den fünften und sechsten: P8000 Emulator (`p8000emu`,
-  `--machine p8000`) und P8000 Terminal (`p8000term`, `--machine p8000term`)**: dieselbe Vorlage
-  (der Name wählt das Profil; `p8000term*` darf NICHT von `p8000emu*` verschluckt werden — die
-  Muster sind verschieden, keine Präfixe voneinander), je ein `.desktop.in`, `{#Programm5}`/`{#Programm6}`,
-  beide Vorgabedateien, Rauchtests mit `k1520_create(4)`/`(5)` und beiden Fenstern; **keine
+  **Seit AP P18 (2026-10-08) gibt es den fünften: P8000 Emulator (`p8000emu`, `--machine p8000`)**; das zeitweilige sechste `p8000term` ist mit P23a entfallen (Betriebsart „nur Terminal“ im selben Programm, `--mode terminal`): dieselbe Vorlage (der Name wählt das Profil), `.desktop.in`, `{#Programm5}`, Vorvorgabedatei, Rauchtests mit `k1520_create(4)` und dem Fenster; **keine
   P8000-Disketten** in `DISKS_DEFAULT` (es gibt keine in `disks/`, Entscheid offen). Wächter
   `test_die_p8000_programme_sind_in_allen_paketwegen`.  Im `.iss` wächst das Rauchtest-Feld
   `Zeilen` mit (SetArrayLength + laufende Nummern: neue Zeilen ANS ENDE, vor `sys.stdout.flush()`).

@@ -3,7 +3,7 @@
 doc/design/26_p8000emu_oberflaeche.md §8.4.  Zwei Dinge unterscheiden eine Instanz von der anderen:
 
 * **Ein Instanzname** (``--instance NAME`` auf der Kommandozeile oder ``K1520_INSTANZ``) hängt sich an
-  den Namen der Konfigurationsdatei (``p8000term-arbeitsplatz2.yaml``) und an den Fenstertitel.
+  den Namen der Konfigurationsdatei (``p8000emu-arbeitsplatz2.yaml``) und an den Fenstertitel.
   Ohne Namen ändert sich nichts — die Dateinamen der Einzelinstanz bleiben, wie sie sind.
   ``--config DATEI`` (``K1520_KONFIG``) legt die Konfigurationsdatei ganz von Hand fest.
 * **Eine Sperrdatei neben einem Plattenabbild** (``<abbild>.lock`` mit der Prozesskennung): zwei

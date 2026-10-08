@@ -37,8 +37,8 @@ mit ihnen anstellen kann, wenn sie beschädigt oder von einem fremden Rechner si
   löschen, den UDOS-Anhang hinter der Prüfsumme bearbeiten.
 - **Bootfähige Disketten anlegen** — CP/A, SCPX und UDOS, aus einer Leerdiskette heraus.
 - **Zwei neue Programme für den P8000:** `p8000emu` (U880 + U8001, UDOS und WEGA, Winchester,
-  Originalterminal mit Flachtastatur K7673.09) und `p8000term` (der Arbeitsplatz ohne Rechner,
-  per serieller Leitung mit einem `p8000emu` verbunden, mehrere Plätze möglich). Es liegen
+  Originalterminal mit Flachtastatur K7673.09; Betriebsart „nur Terminal“ = der Arbeitsplatz ohne
+  Rechner, per serieller Leitung mit einem zweiten `p8000emu` verbunden, mehrere Plätze möglich). Es liegen
   keine P8000-Disketten bei.
 - **Nachgebildete K7637-Tastatur** im Emulator: das Tastenfeld zeigt mit, jede PC-Taste
   spricht die Taste an ihrer Stelle an.
