@@ -37,7 +37,8 @@ Verstehen. Ports und Protokoll gelten für alle Stände (3.x-Abzüge nutzen dies
 eingebrannt (`eprom_diffs.txt`: Köpfe, Zylinder, Vorkompensation je `_04`/`_05`); **4.2 ist
 laufwerksunabhängig** und liest die Parameter (**PAR**) zusammen mit der BTT aus Sektor
 Z0/K0/S1 der Platte (FW Z. 563–716; `PARMTR` fehlt in den 3.x-Abzügen). Deshalb heißt der
-Abzug nur `WDC_x_4.2` ohne Laufwerkskennung.
+Abzug nur `WDC_x_4.2` ohne Laufwerkskennung. **Welches Laufwerk ein Abzug ≤ 4.0 meint und wie die
+3.x ihre Spuren schreibt: §13 (P24).**
 
 ## 1. Takt [Index 3: gelesen; Index 1: abgeleitet]
 
@@ -506,6 +507,88 @@ nicht für die echte Karte:
    Adresse ohne RAM-Schreiben; Schärfung der Markeneinblendung; Zähler beim Schreiben nur mit DEN)?
 10. **Schreibverzögerung** (W11, 2 Byte angenommen) und Lesezeitpunkt von MAERK — Logikanalysator an
    WRITE DATA/READ DATA gegen /DEND.
-11. **Firmware 3.x** (Abzug 3.4.05 des Anwendergeräts): startet bis Status 1, meldet beim ersten
-   Kommando Fehler 05 und liest auf einer 4.2-formatierten Spur nicht jeden Block (Fehler 09) —
-   Spurformat und Fehlercodes der 3.x sind nicht untersucht.
+11. **Firmware 3.x** (Abzug 3.4.05 des Anwendergeräts) — **geklärt in P24, siehe §13**: die 3.4.05
+   schreibt und erwartet Sektoren der Reihe nach (kein Interleave 2:1, kein Kopfversatz) und eine
+   andere Lücke hinter dem Kennfeld; auf der 4.2-Spur scheitert ihre Hochlauf-Leseprobe der BTT mit
+   Fehler 05. Mit der 3.x-Spurlage in der Plattensynthese (`Platte::Spurformat::V3x`) startet sie
+   fehlerfrei, liest, schreibt und formatiert, und `sa.format` V1.4 der WEGA-3.0-Startdiskette läuft
+   mit ihr bis zum Schreiben der BTT. **Offen:** die Serien 3.0 bis 3.3 (Abzüge nur als Dateien, nicht
+   eingebunden; die Tabellen am Ende der EPROMs 3.0–3.3 fehlen, ihr Spurformat ist unbekannt); die
+   Fehlercodes 3.x sind nur soweit belegt, wie §13 sie nennt; Fehler 09 aus P13c/d war die 4.2-Spur.
+
+## 13. Firmware ↔ Laufwerk, Spurformat der Serie 3.x (AP P24, 2026-10-08)
+
+**Sicherheitsgrade wie oben.** Quelle: die Bytes der Abzüge `doc/p8000/eproms/WDC/WDC_1_*` (Disassembly mit
+`k1520dbg --machine p8000-16 --wdc 3.4.05`, `wdc u 0 1900`), Gegenprobe im Emulator
+(`P8000Wdc3x.*`, `P8000WdcRomLaufwerk.*`, `P8000SaFormat3x.*`). Keine Quelle der 3.x (nur Binärabzüge).
+
+### 13.1 Das Laufwerk steckt im EPROM [gelesen]
+
+Bis 4.0 sind Köpfe, Zylinderzahl, Beginn der Vorkompensation und Sektoren je Spur Konstanten im Code. Die
+Endung des Abzugsnamens (`_01 … _05`) wählt das Laufwerk (`eprom_diffs.txt`; dort sind die Zeilen
+„Sektoren…“ in Wahrheit **Zylinder − 1**: `03 FF` = 1023, `33 03` = 819 → 820, `66 02` = 614 → 615):
+
+| Endung | Laufwerk (`typen()`) | Zyl. | Köpfe | Sek. | Vorkomp. | Abzüge |
+|---|---|---|---|---|---|---|
+| `_01` | NEC D5126 | 615 | 4 | 18 | 128 | 3.0_01 |
+| `_02` | NEC D5146 | 615 | 8 | 18 | 128, Ramp-Sprung bei 02B0 | 3.0_02 |
+| `_04` | ROBOTRON VS | 820 | 6 | 18 | 820 | 3.0_04, 3.2_04, 3.3_04, 3.4_04 |
+| `_05` | K5504.50 | 1024 | 5 | 18 | 1024 | 3.2_05, 3.3_05, 3.4_05, **4.0_05** |
+
+Die Werte stimmen mit den PAR-Werten von `sa.format` (`typen()`) überein, die Vorkompensation ebenfalls
+(K5504.50 1024, VS 820, D5126/D5146 128). **Fundstellen** (Operanden in `LD B,n` / `LD HL,nnnn` / `LD E,n`):
+
+| | Köpfe | Zylinder − 1 (Wort) | Vorkomp. (Wort) | Sektoren (`LD E,12H`) |
+|---|---|---|---|---|
+| 3.0 … 3.4 | 0106, 0129 (weitere je Abzug) | 0125 | 00F8 | 010A, 0123 |
+| 4.0_05 | 012A, 014D | 0149 | 011F | 012E, 0147 |
+
+Die Zylinderzahl ist also **keine Annahme**: sie steht im EPROM (Zählschleife über `Zylinder − 1`); der
+Mitschnitt „`WDC_V.3.4.05` mit K5504.50 = 1024/5/18“ ist damit belegt. Im Emulator sind nur 3.4.05 und
+4.0.05 eingebunden (`rom_wdc.h`), beide `_05` ⇒ K5504.50. Kern: `P8000Wdc::romLaufwerk()`,
+`romLaufwerkNachEndung()` (alle vier Endungen); Wächter `P8000WdcRomLaufwerk.*` liest die Fundstellen aus
+**jedem** Abzug der Serie 3 und aus 4.0_05 nach. `P8000Machine` weist bis 4.0 jede Platte anderer Größe
+ab („Firmware 3.4.05 gehört zu K5504.50 (1024/5/18 = 47 185 920 B), die Datei hat … B“) und einen
+widersprechenden `plattentyp`; bei 4.2 prüft sie den Parametersatz der Datei gegen den eingestellten Typ.
+
+### 13.2 Spurformat der 3.4.05 gegenüber der 4.2 [gelesen: Abzug; gemessen: Emulator]
+
+| | 4.2 / 4.0.05 | 3.4.05 |
+|---|---|---|
+| Sektorfolge auf der Spur | Interleave 2:1 (`01 0A 02 0B …`), Kopf *h* um *h* Plätze rotiert | **1, 2, 3 … 18**, auf jedem Kopf gleich |
+| Interleave | physisch | **logisch**: Block *k* einer Spur → Sektor `01 09 11 07 0F 05 0D 03 0B 02 0A 12 08 10 06 0E 04 0C` (Tabelle bei 0F42) |
+| Kennfeld | `A1* A1* A1* FE Z Z K S CRC CRC` | gleich |
+| Lücke Kennfeld-CRC → Datenmarke | FF×10 · 00×7 · FF×11 | FF×2 · **00×18** · FF×8 (Summe 28, Datenmarke 36 Byte hinter der letzten Kennfeld-A1-Marke) |
+| Datenfeld | `A1* FB`, 512 B, CRC | gleich |
+| Kennfeldabstand | 578 | **570–571**, erste Marke bei Byte 36 (nach dem Formatieren gemessen) |
+| Daten je Kommando | Länge ≤ 4 KB | **ein Block (512 B)** je Kommando, auch bei Längenfeld 1024 [gemessen, Lesen] |
+| BTT | `DEFEKT`, Zähler, Einträge, `FF FF FF` auf Z0/K0/S1; dahinter der PAR | dieselbe BTT-Struktur (Kennfeld `FE 00 00 00 01`); **kein PAR** |
+
+**Hochlauf:** `CALL 0371` liest die BTT von Z0/K0/S1 (Kennfeld `FE 00 00 00 01`, Daten ab 20FD, Text
+`DEFEKT`, Zähler bei +6, drei `FF` hinter den Einträgen) und kopiert 7AH Byte BTT nach 3600H. Gelesen: Fehler **05** =
+Sektor nicht lesbar (Wiederholungen 314B ff. erschöpft), **06** = Kennung `DEFEKT`/Endemarke falsch. Auf einer
+neuen Platte (E5 überall) meldet der Hardwaretest deshalb `*** ERROR 52   06` [gemessen]; die 4.2 meldet dort
+`39` (Init-Fehler 38 + LW 0).
+
+**Warum die 4.2-Spur nicht geht** [gemessen, Auftrennung der Merkmale]: Kennfeld-Lage (Byte 18…36),
+Kennfeldabstand (570…578) und Lücken-Aufteilung sind für die Hochlauf-Leseprobe belanglos, solange die
+Summe der Lücke ≥ 28 Byte ist (25 reichen nicht); **entscheidend ist die Sektorfolge**: mit Interleave 2:1
+und Kopfversatz liest sie Sektor 10 statt 1 und gibt nach den Wiederholungen Fehler 05. Warum die Routine
+auf der Reihenfolge besteht (Zählung von Kennfeldern ab Index?), ist **nicht** geklärt [unsicher] — der
+Nachbau stützt sich auf das, was die 3.4.05 selbst schreibt, nicht auf eine Deutung der Leseroutine.
+
+**Umsetzung:** `Platte::Config::spurformat` (`V4_2` | `V3x`), von `P8000Wdc::spurformat(Firmware)` gewählt
+(3.4.05 → `V3x`, 4.0.05/4.2 → `V4_2`; der Abzug 4.0_05 trägt die 2:1-Tabelle der 4.2). Die Zerlegung
+geschriebener Spuren ist für beide Formate dieselbe. Abbilder bleiben nach (Zylinder, Kopf, **Sektor-ID**)
+geordnet — ein von der 3.4.05 beschriebenes Abbild ist also gegenüber der 4.2-Blockreihenfolge pro Spur
+permutiert (Block *k* liegt auf Sektor-ID der 3.x-Tabelle); das DiskTool (`WegaPlatte`) kennt nur die 4.2-Ordnung
+und bleibt unverändert.
+
+**Belege im Emulator:** `P8000Wdc3x.HochlaufLeseprobeBraucht3xSpur` (3.x-Spur: fehlerfrei, `WDC_V.3.4.05`;
+4.2-Spur: Fehler 05), `…LiestUndSchreibtBloeckeInDerLogischenReihenfolge`, `…FormatiertSpurenMitSektorenDerReihe`
+(Kommando 04 und 14), `…Firmware4_0_05FormatiertWieDie4_2`, `Platte.Spurformat3x…`, und der Systemtest
+`P8000SaFormat3x.Sa1_4MitFirmware3_4_05FormatiertEineSpurUndSchreibtDieBtt` (`format_integration`): WEGA-3.0-Startdiskette, `sa.format`
+V1.4 meldet `*** Format Hard-Disk V. 1.4 ***`, `WDC_V.3.4.05`, 1024/5/18, 92070 Blöcke, fragt BTT lesen, manuelle
+schlechte Spuren, Formatbeginn/-ende (Zylinder, Kopf), „Ready for format …“, formatiert **eine** Spur, schreibt die BTT
+(„Rewrite BTT from WDC-RAM to HD“, C2) und endet mit „Exit called“; Z0/K0/S1 trägt danach `DEFEKT`. Nicht gelaufen:
+das Formatieren der ganzen Platte und `sa.verify` V1.4 (Rechenzeit; das 3.x-Zeitverhalten der Gesamtplatte ist unbelegt).

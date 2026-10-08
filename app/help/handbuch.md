@@ -1079,7 +1079,11 @@ die *Betriebsart*. Was anders ist:
   **Inhalt**: Vorgabe *Unformatiert, wie ein neues Laufwerk* — ohne Parametersatz, formatieren mit
   `sa.format` im Gast; oder *Formatiert mit Parametersatz (K5504.50, leer)*, nur für Sonderfälle),
   **Abtrennen** löst es. Es gibt **keine vorgegebene Platte** (das Programm legt von selbst keine an; der Plattenkasten
-  schlägt für *Neue Platte…* den Namen `p8000_platte.img` im Diskettenordner vor). Eine Platte hat **keinen Schreibschutz**; geschrieben wird von selbst,
+  schlägt für *Neue Platte…* den Namen `p8000_platte.k5504.img` im Diskettenordner vor). **Der Dateiname trägt den Typ:**
+  `<name>.<kürzel>.img` mit `k5504` (K5504.50), `d5126`, `d5146` oder `vs`; *Neue Platte…* hängt das Kürzel
+  selbst an, und der Dialog *Anschließen…* zeigt bei den älteren WDC-Fassungen (unten) nur die Dateien des
+  passenden Typs — *Alle Dateien* bleibt der Ausweg; eine Datei ohne Kürzel wird nur auf ihre Größe geprüft.
+  Die Endung bleibt `.img`, damit DiskTool und Dateimanager die Abbilder weiter erkennen. Eine Platte hat **keinen Schreibschutz**; geschrieben wird von selbst,
   beim Abtrennen, bei einem Zwischenstand und beim Beenden. Der WDC erkennt die Platte beim
   Hochlauf: eine im Betrieb angeschlossene sieht der Gast erst nach *Rückstellen* oder
   *Rechner ein*. Die Lampe im Kasten und **Platte** in der Statuszeile leuchten bei jedem
@@ -1088,6 +1092,18 @@ die *Betriebsart*. Was anders ist:
   Prompt — das ist Gastverhalten, kein Fehler, und der Grund, warum das Programm keine leere
   Platte vorgibt. Erst die WEGA-Installation macht die Platte startfähig (Ablauf im Kapitel
   *Bedienung des P8000*).
+* **WDC-Firmware und Plattentyp** (*Einstellungen ▸ Allgemein*, Feld *WDC-Firmware*): bei **4.2** (Vorgabe)
+  steht der Parametersatz auf der Platte, der Typ ist frei wählbar, und der Parametersatz muss zur
+  Dateigröße passen. Bei **4.0.05** und **3.4.05** (*experimentell*) sind die Laufwerksdaten im EPROM
+  eingebrannt: das Laufwerk ist immer die **K5504.50** (1024 Zylinder, 5 Köpfe, 18 Sektoren,
+  47 185 920 Byte). Die Typwahl in *Neue Platte…* ist dann gesperrt, und eine Datei anderer Größe
+  weist das Programm mit Klartext ab („Firmware 3.4.05 gehört zu K5504.50 …, die Datei hat … B“). Wechselt man die
+  Firmware bei angeschlossener Platte, die nicht passt, fragt das Programm vor dem Neustart, statt die
+  Platte still zu trennen. Die 3.4.05 schreibt ihre Spuren anders als die 4.2 (Sektoren der Reihe nach);
+  der Emulator bildet das nach, und `sa.format` V1.4 der WEGA-3.0-Startdiskette läuft damit bis zum
+  Formatieren und zum Schreiben der Bad-Track-Tabelle (eine Spur geprüft, nicht die ganze Platte).
+  Der Parametersatz einer Platte wird **nicht** vom Programm ergänzt (*Parametersatz der Platte: aus*);
+  nur das WEGA-3.1-Abbild des AVR-Emulators (1380/10/18) braucht *ergänzen*.
 * **Statuszeile** (nur *Computer mit Terminal*) — Lampen **Run** (RUN-LED der 16-Bit-Karte), **16-Bit** (der U8001 läuft),
   **Platte** (WDC-Zugriff) und **Power**, dann der Takt und die Laufwerke. Ohne
   16-Bit-Karte liefert der Kern keine Lampen: sie bleiben dunkel.
@@ -1428,7 +1444,9 @@ Installationsprotokoll von WEGA 3.1 steht und im Emulator geprüft ist.
    (Nummer `4` = ROB K5504.50), Parameter ok (`y`), manuelle Eingabe schlechter Spuren (`n`), Formatbeginn
    (`a`), Formatierung bestätigen (`y`), PAR und BTT zurückschreiben (`y`), Ende (`y`). Die Fragen sind
    die der Fassung 4.1 aus dem Protokoll; die WEGA-3.0-Startdiskette trägt die ältere Fassung 1.4 für
-   Firmware 3.x, die mit der WDC-Firmware 4.2 des Emulators nicht zusammenpasst. Das Formatieren
+   Firmware 3.x. Sie passt nicht zur WDC-Firmware 4.2, wohl aber zur **3.4.05** (*Einstellungen ▸
+   Allgemein ▸ WDC-Firmware*, experimentell): `sa.format` V1.4 meldet dann `WDC_V.3.4.05`, 1024 Zylinder, 5 Köpfe,
+   18 Sektoren, 92070 Blöcke und fragt Bad-Track-Tabelle, Formatbereich (Zylinder und Kopf) und Bestätigung ab. Das Formatieren
    der ganzen Platte dauert rund **21 Minuten Maschinenzeit**; die Dauer in der Oberfläche habe ich *nicht
    gemessen*. `ud(0,0)sa.verify` prüft danach (fragt nach Anfangs- und Endzylinder, am Protokoll 0 und
    1023).
@@ -1517,6 +1535,10 @@ die Firmware des Terminals und kein Fehler.
   **Unformatiert** anlegen (siehe auch Schritt 1 der Installation).
 * **`ERROR 52/53/54`:** der WDC antwortet nicht (siehe oben); **`DISK ERROR`**: Platte nicht lesbar bzw.
   nicht installiert; **`md: io error`** (Urlader): die Platte ist nicht formatiert oder nicht angeschlossen.
+* **„Firmware 3.4.05 gehört zu K5504.50 …, die Datei hat … B“ beim Anschließen.** Die älteren WDC-Fassungen
+  (4.0.05, 3.4.05) kennen nur dieses eine Laufwerk; eine Platte anderer Größe (D5126, D5146, VS) braucht die
+  Firmware 4.2. Umgekehrt meldet die 3.4.05 beim Hochlauf (Hardwaretest `ERROR 52`, Rückgabe 06) „Bad-Track-Tabelle fehlt“ auf einer
+  neuen Platte — `sa.format` V1.4 legt sie an; Fehler 05 hieße „Tabelle nicht lesbar“ (Spurlage der 4.2 statt der 3.x).
 * **Die neu angeschlossene Platte wird nicht gefunden.** *Rückstellen* — der WDC erkennt die Platte beim
   Hochlauf.
 * **`sa.install` meldet UDOS-Fehler `C4` beim Laden.** Die Quelldiskette zu früh in B: eingelegt (siehe
