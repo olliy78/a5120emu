@@ -143,6 +143,7 @@ private:
     /// drei Wandler des A5120 rund 13 % Laufzeit.
     std::atomic<bool> ruhig_{false};
     uint64_t ztLetzte_   = 0;   ///< zuletzt getaktete Zeichenzeit (Emulationsfaden)
+    uint64_t blickAbstand(uint64_t zt) const;
     unsigned ruhZaehler_ = 0;
 
     mutable std::mutex m_;

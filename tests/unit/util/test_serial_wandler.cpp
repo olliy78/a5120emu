@@ -640,3 +640,25 @@ TEST(SerialWandler, GastResetLoestXoffUndRtsHalt) {
     EXPECT_EQ(a.gelesenText(), "q");
     EXPECT_FALSE(w.sicht().xoffHalt);
 }
+
+/// Wächter P22: nach einem Wechsel von einer LANGSAMEN auf 9600 Bd nimmt der Wandler ein
+/// Zeichen spätestens 1/16 der 9600-Zeichenzeit später ab — auch wenn die Maschine ihn (wie
+/// `P8000Machine::run`) nur zu den Zeiten taktet, die er selbst zurückgibt.  Vorher lag der
+/// nächste Blick 1/16 der ALTEN Zeichenzeit entfernt (MON16-Fehler 61).
+TEST(SerialWandler, NachWechselAufSchnellesFormatKeinVerspaeteterBlick) {
+    for (bool angebunden : {false, true}) {
+        AttrappeAnschluss a;
+        a.fmt = serialFormatRechnen(16, 8, 0, 2, 256);   // 600 Bd: Zeichenzeit 16 × Z9600
+        Wandler w(a);
+        if (angebunden) w.anbinden();
+        uint64_t z = 0, n = 0;
+        for (int i = 0; i < 40; ++i) { z = n; n = w.takt(z); }   // eingeschwungen, letzter Blick bei z
+        a.fmt = serialFormatRechnen(16, 8, 0, 2, 16);    // 9600 Bd, unmittelbar nach dem Blick
+        const uint64_t ab = z + 1;
+        a.sende("X");
+        for (z = ab; !a.gastSendet.empty() && z < ab + 16 * Z9600; ++z)
+            if (z >= n) n = w.takt(z);                   // nur zu den Zeiten, die er nennt
+        EXPECT_TRUE(a.gastSendet.empty()) << angebunden;
+        EXPECT_LE(z - ab, Z9600 / 16 + 16) << angebunden;
+    }
+}

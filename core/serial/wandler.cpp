@@ -17,6 +17,17 @@ Wandler::Wandler(SerialAnschluss& anschluss, uint64_t phiNenn)
     wirksam_ = kandidat_ = gemeldet_ = ersatz_;
 }
 
+/// Abstand bis zum nächsten Blick: 1/16 Zeichenzeit, aber höchstens 1/16 der Ersatz-Zeichenzeit
+/// (9600 Bd).  Der Wandler sieht ein neues Format erst beim nächsten Blick; stand der Gast vorher
+/// auf einer langsamen Rate (oder einer, die ein stehender Zähler-Kanal fast auf null drückt), lag
+/// der nächste Blick sonst um 1/16 der ALTEN Zeichenzeit entfernt — ein dann mit 9600 Bd
+/// geschriebenes Zeichen galt erst zig Millisekunden später als gesendet (MON16-Hardwaretest
+/// Fehler 61 „SIO-Port interruptet nicht", Befund P22).
+uint64_t Wandler::blickAbstand(uint64_t zt) const {
+    const uint64_t deckel = ersatz_.zeichen_takte ? ersatz_.zeichen_takte : zt;
+    return std::max<uint64_t>(1, std::min(zt, deckel) / 16);
+}
+
 uint64_t Wandler::takt(uint64_t zyklus) {
     if (zyklus < letzterZyklus_) {
         // Taktzähler zurückgesetzt (neue Maschine, Reset des Zählers): alle Fristen neu.
@@ -29,7 +40,7 @@ uint64_t Wandler::takt(uint64_t zyklus) {
     if (zyklus < naechsterBlick_) return naechsterBlick_;
     if (ruhig_.load(std::memory_order_acquire) && (++ruhZaehler_ & 15u) != 0 &&
         !a_.senderHatZeichen()) {
-        naechsterBlick_ = zyklus + std::max<uint64_t>(1, ztLetzte_ / 16);
+        naechsterBlick_ = zyklus + blickAbstand(ztLetzte_);
         return naechsterBlick_;
     }
 
@@ -40,7 +51,7 @@ uint64_t Wandler::takt(uint64_t zyklus) {
     // Ein Blick je 1/16 Zeichenzeit: die Zeichenzeit wird damit auf ~6 % genau
     // eingehalten, und die Sperre fällt bei 9600 Bd nur alle 160 Takte an statt je
     // Instruktion.
-    naechsterBlick_ = zyklus + std::max<uint64_t>(1, zt / 16);
+    naechsterBlick_ = zyklus + blickAbstand(zt);
     ztLetzte_       = zt;
     const bool rts = v24_ && a_.rts();
     const bool dtr = v24_ && a_.dtr();
