@@ -245,7 +245,7 @@ Offen vor dem Bau: Lauftest von `BASIC`, `EDIT`, `PROM`, `EPROM43`, `LW`, `REORG
 - Die Dateizählungen beziehen sich auf die extrahierten Abbilder; Dateien mit Namen, die das DiskTool in
   UDOS-Unterverzeichnisse (`Side0`/`Side1`) legt, wurden unter ihrem Basisnamen zusammengefasst.
 
-## 6. UDOS-Entwicklerdiskette (`disks/udos_entwickler_k5601.hfe`)
+## 6. UDOS-Entwicklerdiskette (**aufgegangen in §7, 2026-10-08**: `disks/udos_entwickler_k5601.hfe` und `tools/udos_entwickler/` sind entfernt, in git-Verlauf bis `bc86cb9`)
 
 Gebaut aus `tools/udos_entwickler/` (`build.py`, Wächter `cli_udos_entwickler`; gleiches Schema wie die PRG-Disketten, §4).
 Eine **nicht startfähige Datendiskette** (UDOS 4.3, `udos_ds77`, beidseitig) für das **zweite Laufwerk** jeder Maschine mit
@@ -286,3 +286,22 @@ den Tastaturtypen der verschiedenen Geräte.
 **Bewusst nicht aufgenommen:** `GCL`, `LZP`, `ZOCS`, `TZOCS` (Zweck nicht ermittelt), `UPRO`/`ESPRO` (EPROM-Programmierer, andere
 Hardware), `COPYSD`, `RAMFL`/`RFA`/`RAMTEST`/`DZR.ARAM.OBJ` (RAM-Disketten-Treiber, gerätegebunden), die Anwendungen
 `KDE`/`KDP`/`NEBS`/`URGAN`, und alles aus NDOS-Familien.
+
+## 7. UDOS-Systemdiskette des A5120 mit Entwicklerwerkzeugen (`disks/a5120_udos43_k5601_entwickler.hfe`)
+
+Gebaut aus `tools/udos_a5120/` (`build.py`, Wächter `cli_udos_a5120`, Schema wie §4/§6). Damit hat jede der drei
+UDOS-Maschinen **eine** Bootdiskette (A5120, PRG 710, PRG 710-1); die frühere Entwicklerdiskette (§6) ist entfernt, ihr Inhalt liegt auf der A5120-Diskette. Die PRG-Disketten tragen die Werkzeuge nicht (kein Platz); bei Bedarf aus der A5120-Diskette holen.
+
+- **Bestand:** alles von `udos_boot_scp.hfe` (UDOS BC.5120, 08/90; Systemspuren `boot_udos43.bin`), außer `UPRO`/`ESPRO`
+  (EPROM-Programmierer, andere Hardware) und den Dateien, die die Entwicklerdiskette gleichen Inhalts mitbringt
+  (`ASM`, `ASM2`, `ASM3`, `LINK`, `NOTE.TO.UDOS.4`, `.4.2`). `EDIT` bleibt das der A5120 (unterscheidet sich vom
+  `EDIT` der Entwicklerdiskette).
+- **Dazu:** alles von der Entwicklerdiskette. **Seite 0:** Systemkern, Kommandos, `ASM`/`LINK`, PL/Z (`PLZSYS`, `PLZCG`
+  samt Überlagerungen, `PLINK`), `REORG`, `LW`. **Seite 1:** `HELP`, Treiber, Dokumente, `EDI`+`ADM_O2`, `SEDIT`, `SYD`,
+  `BASIC`, `TRANSFER`, `SG` mit Quellen und neun fertigen Kernen. Seite 0 war mit allem zu voll (266 KB gegen ~249 KB).
+- **Belegung:** Seite 0 212 KB (37 KB frei), Seite 1 234 KB (16 KB frei), `check --full` ohne Befund.
+- **Geprüft (2026-10-08, Emulator, A5120, Kaltstart von dieser Diskette allein):** Boot bis `UDOS BC.5120`; `STATUS`, `CAT`,
+  `HELP`, `ASM`, `LINK`, `EDIT`, `SCREEN`, `SG`, `LW`, `REORG`, `TRANSFER`, `PLZSYS`, `PLINK`, `SYD`, `SEDIT`, `EDI` (Seite 1,
+  lädt `ADM_O2`) melden sich; `ASM TEST.S` → `LINK TEST.OBJ` erzeugt `TESTP`; `BASIC` rechnet `PRINT 2+3` → `5`.
+  **Nicht geprüft:** ein Übersetzungslauf von `PLZSYS`/`PLZCG` mit echtem PL/Z-Quelltext, `SG` bis zum fertigen Kern,
+  `SYD`/`EDI` im Einsatz, `TRANSFER` mit CP/M-Diskette. Neu bauen: `python3 tools/udos_a5120/build.py --tool build/k1520disktool`.

@@ -107,13 +107,13 @@ add_test(NAME cli_lochband_com
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/lochband/build.py" --check)
 set_tests_properties(cli_lochband_com PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77 LABELS "cli;fast")
 
-# Wächter „die UDOS-Entwicklerdiskette in disks/ ist der Inhalt von tools/udos_entwickler/“
-# (doc/udos_programme.md §6).  Neu bauen:
-#   python3 tools/udos_entwickler/build.py --tool build/k1520disktool
-add_test(NAME cli_udos_entwickler
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/udos_entwickler/build.py"
+# Wächter „die UDOS-Systemdiskette des A5120 in disks/ ist der Inhalt von tools/udos_a5120/“
+# (doc/udos_programme.md §7).  Neu bauen:
+#   python3 tools/udos_a5120/build.py --tool build/k1520disktool
+add_test(NAME cli_udos_a5120
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/udos_a5120/build.py"
             --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
-set_tests_properties(cli_udos_entwickler PROPERTIES
+set_tests_properties(cli_udos_a5120 PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
 # Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des

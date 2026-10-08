@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'SCREEN'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=SCREEN
+typ=P
+eig=-
+start=430D
+satz=1024
+block=1024
+rest=1024
+segment=4000:9145
+mem=4000:63FF:0100
+zusatz=0
+erst=870413
+geaend=900808

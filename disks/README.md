@@ -33,7 +33,7 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, 5×1024-System, mit HARDY.COM | K5601 |
 | `udos1715_640k_pc1715_system.hfe` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM", 80×32×256 — dieselbe Diskette liegt als `.img` unter `tests/fixtures/disks/` | MFS 1.6 |
 | `prg710_udos43_k5601_system.hfe` | **UDOS 4.3 für den PRG 710**, beidseitig: Seite 0 Kommandos, Treiber, Assembler, Editor `SCREEN`, `PROG`; Seite 1 MRS-700-Umgebung (`MRS`, `MPSS`, `EDI`, `PROM`, E/A-Treiber) und Dokumente. Gebaut aus `tools/prg_disketten/`, `check --full` ohne Befund | PRG 710 (K5601) |
-| `udos_entwickler_k5601.hfe` | **UDOS-Entwicklerdiskette** (nicht startfähig, ins 2. Laufwerk): Assembler/Binder, Editoren `EDIT`/`EDI`/`SEDIT`, Debugger `SYD`, BASIC, PL/Z, Systemgenerierung `SG` samt Quellen und fertigen `POS_*`-Kernen. Gebaut aus `tools/udos_entwickler/`, `check --full` ohne Befund | A5120, PRG 710/710-1, USAR (UDOS 4.3 mit K5601) |
+| `a5120_udos43_k5601_entwickler.hfe` | **UDOS 4.3 für den A5120** (UDOS BC.5120, 08/90), startfähig, **mit allen Entwicklerwerkzeugen** der Entwicklerdiskette (ASM/LINK, EDIT/EDI/SEDIT, SYD, BASIC, PL/Z, TRANSFER, REORG, LW, SG samt `POS_*`-Kernen). Bestand der Altdiskette `udos_boot_scp` ohne `UPRO`/`ESPRO`. Gebaut aus `tools/udos_a5120/`, `check --full` ohne Befund | A5120 (K5601) |
 | `prg710-1_udos43_k5601_v43_189.hfe` | **UDOS 4.3 für den PRG 710-1**, **derselbe Inhalt** wie die 710-Diskette; verschieden nur Systemspuren und `OS`-Kennung (`UDOS PG710-1`). Gebaut aus `tools/prg_disketten/`, `check --full` ohne Befund | PRG 710-1 (K5601) |
 | `prg710_scpx15_cpa640_sysprg.hfe` | **SCPX V1.5 für den PRG 710** (im Emulator mit `SYSPRG` erzeugt) | PRG 710 (K5601) |
 | `prg710-1_scpx17_cpa640_boot.hfe` | **SCPX 1526 V1.7 für den PRG 710-1**, Abzug des Anwenders | PRG 710-1 (K5601) |
@@ -74,7 +74,7 @@ tools/dev.sh tool k1520disktool put    neu.hfe auszug/          # @OS.COM und de
 | `boot_cpa780.bin` | 15104 | CP/A (alle cpa780-Disketten des Projekts sind hier byte-gleich) | `cpa_cpa780_k5601_noclock.hfe` |
 | `boot_scpx640.bin` | 16384 | SCPX 1526 V1.7, 16×256-System | `scpx17_cpa780_k5601.hfe` |
 | `boot_scpx798.bin` | 18432 | SCPX 1526 V1.7, 5×1024-System | `scpx17_5x1024_k5601_hardy.hfe` |
-| `boot_udos43.bin` | 13728 | UDOS 4.3 (Seite 0: Spuren 0–2 + Bootspur 21) | `udos_boot_scp.hfe` |
+| `boot_udos43.bin` | 13728 | UDOS 4.3 (Seite 0: Spuren 0–2 + Bootspur 21) | `a5120_udos43_k5601_entwickler.hfe` (Altbestand `udos_boot_scp`, jetzt unter `tests/fixtures/disks/`) |
 | `boot_scpx8915_55k.bin` | 20480 | SCPX 8915 V5.3, Fassung „55 K“ (K8915; Zylinder 0–1 beidseitig 5×1024, **Ladekopf mit CRC**) | `k8915scpx_cpa800_k5601_bios55k-disk900.hfe` |
 | `boot_scpx8915_v24.bin` | 20480 | SCPX 8915 V5.3, Fassung „V24 XON/XOFF“ | `k8915scpx_boot1.hfe` (Diskette 901) |
 
@@ -92,7 +92,7 @@ die Diskette.
 > Datenträger wandert so:
 >
 > ```sh
-> k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
+> k1520disktool get    a5120_udos43_k5601_entwickler.hfe --to auszug     # Dateien + Beiblatt
 > k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 --boot disks/boot_udos43.bin
 > k1520disktool put    neu.hfe auszug
 > ```

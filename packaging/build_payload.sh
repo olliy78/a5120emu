@@ -45,11 +45,10 @@ cpa_cpa780_k5601_noclock.hfe
 cpa_cpa780_combo5zoll_noclock.hfe
 cpa_cpa780_combo8zoll_noclock.hfe
 scpx17_cpa780_k5601.hfe
-udos_boot_k5600_20.hfe
+a5120_udos43_k5601_entwickler.hfe
 k8915scpx_boot1.hfe
 prg710_udos43_k5601_system.hfe
 prg710-1_udos43_k5601_v43_189.hfe
-udos_entwickler_k5601.hfe
 prg710_scpx15_cpa640_sysprg.hfe
 prg710-1_scpx17_cpa640_boot.hfe
 pc1715_scp1715_v0006_boot.hfe
