@@ -1101,8 +1101,10 @@ Emulator mit eingebautem Zeichensatz nachbildet. Was anders ist:
   Flug an den seriellen Schnittstellen und in den Wandlern stehen nicht im Stand.
 * **Schnittstellen** — tty1 hängt fest am Terminal; **tty0, tty2, tty3** (8-Bit-Karte) und mit
   16-Bit-Karte **tty4–tty7** stehen im Reiter *Schnittstellen* (Telnet, RFC 2217, Datei). Ein
-  zweites Terminal an WEGA (`getty` auf tty4) ist also ein Telnet-Server an tty4 mit einem
-  VT100-Emulator (xterm, PuTTY) davor. Ohne Verbindung verfallen die Zeichen in Zeichenzeit.
+  zweites Terminal an WEGA (`getty` auf tty0, tty2, tty4–tty7) ist also ein Telnet-Server an dem
+  Kanal mit einem Arbeitsplatz *P8000 Terminal* (s. u.) oder einem Terminalprogramm davor (für
+  Vollbildprogramme wie `vi` die Terminalart beachten: WEGA 3.0 führt alle Kanäle als ADM31). Ohne
+  Verbindung verfallen die Zeichen in Zeichenzeit.
 * **Bootweg** — Hardwaretest, „U880-Softwaremonitor … Press RETURN", RETURN, danach bootet MON8
   von der eingelegten UDOS-Systemdiskette (A:). Mit 16-Bit-Karte startet `x` bzw. die
   Koppelsoftware von UDOS den U8000-Monitor an tty1.
@@ -1143,10 +1145,15 @@ Tastenkappen des Originals ist nicht bekannt: die Tasten tragen die Zeichen, die
 Scancode macht; die schmale Reihe unten sind Tasten ohne Wirkung im Terminal. Die Kürzel des Fensters
 (nur mit Strg+Umschalt, F11) bleiben, alles Übrige gehört dem Terminal.
 
-**Mehrplatz Schritt für Schritt** (ein Rechner, ein Arbeitsplatz; WEGA belegt tty1, 6, 7, 0, 2, 4, 5):
+**Mehrplatz Schritt für Schritt** (ein Rechner, ein oder mehrere Arbeitsplätze). Ein installiertes WEGA
+startet `getty` im Mehrbenutzerbetrieb auf der Konsole (tty1) und auf **tty0, tty2, tty4, tty5, tty6, tty7**
+(`/etc/inittab`); **tty3** ist dem Drucker vorbehalten. Im Gast ist also nichts zu ändern:
 
-1. **Rechner starten:** `run_p8000emu.sh`, Modell *P8000 + P8000 Terminal*; WEGA bis zur Anmeldung
-   hochfahren (oder UDOS bis zum Prompt).
+1. **Rechner starten:** `run_p8000emu.sh`, Modell *P8000 + P8000 Terminal*, Platte mit installiertem
+   WEGA anschließen. Nach dem Hardwaretest RETURN, RETURN (UDOS mit Koppelsoftware), **NMI** (*Maschine ▸
+   NMI-Taster*) bei „Press NMI"; danach startet WEGA **von selbst** („> boot", „: md(0,16000)wega" erscheinen
+   ohne Eingabe — nichts tippen), prüft die Dateisysteme und meldet nach rund vier Minuten Maschinenzeit
+   „WEGA login:". An der Konsole anmelden (Superuser `wega`, Kennwort `root`).
 2. **Telnet-Server an tty4 einschalten:** *Einstellungen ▸ Schnittstellen*, Block **tty4**, Betriebsart
    Telnet, Rolle **Server**, Port **5004** (der Vorschlag), **Starten**. In der Statuszeile steht
    „Telnet/RFC2217 Server Port: 5004". Die anderen Leitungen tty0, tty2, tty3, tty5–7 laufen genauso
@@ -1156,9 +1163,13 @@ Scancode macht; die schmale Reihe unten sind Tasten ohne Wirkung im Terminal. Di
    Rolle Client, Rechner `127.0.0.1` (oder die Adresse des Rechners im Netz), Port **5004**, **Verbinden**.
    Die Statuszeile zeigt „Rechner: verbunden mit …". Ein Client versucht es selbst weiter, bis der Rechner
    antwortet; nur *Trennen* beendet das.
-4. **Anmeldung:** unter WEGA ist tty4 für eine Anmeldung vorgesehen; läuft dort das `getty`, zeigt der
-   Arbeitsplatz die Anmeldezeile (Name und Kennwort wie an der Konsole). Die Terminalart (ADM31 oder VT100)
-   stellt WEGA mit `ttytype` ein. Ohne laufendes Betriebssystem zeigt ein Test am Monitor, dass die
+4. **Anmeldung:** `getty` hat seine erste Anmeldezeile meist schon ins Leere geschickt, bevor der
+   Arbeitsplatz verbunden war — **RETURN** am Arbeitsplatz holt „WEGA login:" (das Einschalt-00H des
+   Terminals stört nicht). Name und Kennwort wie an der Konsole; `who` an der Konsole zeigt danach jede
+   Anmeldung mit ihrem Kanal, `write wega tty4` schickt eine Nachricht hinüber, `exit` meldet ab, und die
+   Anmeldezeile kommt von selbst wieder. Die Terminalart steht in `/etc/ttytype`: WEGA 3.0 führt alle
+   Kanäle als `P8` (ADM31) — die Betriebsart, in der das Terminal einschaltet. Vor dem Ausschalten
+   `sync;sync` an der Konsole. Ohne laufendes Betriebssystem zeigt ein Test am Monitor, dass die
    Verbindung steht: `pw 25 05`, `pw 25 68`, `pw 24 54` am Rechner schreiben ein „T" auf die Leitung tty0 (Port-
    Ausgabebefehle des Monitors MON8; der Arbeitsplatz an tty0 zeigt das Zeichen).
 
