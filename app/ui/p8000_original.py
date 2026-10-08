@@ -87,12 +87,16 @@ class OriginalTerminalWidget(ScreenWidget):
 
     # ── Kontextmenü ──────────────────────────────────────────────────────────
 
-    def _kontextmenue(self, pos):
+    def kontextmenue_bauen(self) -> QMenu:
+        """Das Menü der rechten Maustaste: nur noch das Kopieren (Farbe: Einstellungen ▸ CRT)."""
         menue = QMenu(self)
         a = menue.addAction(KOPIEREN_TEXT)
         a.setEnabled(self.emulator is not None)
         a.triggered.connect(lambda _c=False: self.text_kopieren())
-        menue.exec(self.mapToGlobal(pos))
+        return menue
+
+    def _kontextmenue(self, pos):
+        self.kontextmenue_bauen().exec(self.mapToGlobal(pos))
 
     def text_kopieren(self) -> str:
         """Den Bildschirminhalt als reinen Text in die Zwischenablage (und zurück)."""

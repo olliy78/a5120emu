@@ -519,6 +519,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "act_verbindung"):
             self.act_verbindung.setEnabled(self.profil.modell_art(self._model) == "einheit")
 
+    def _text_kopieren(self):
+        """Menü *Maschine ▸ Bildschirminhalt als Text kopieren* (wie im Kontextmenü des Bildes)."""
+        self.screen_widget.text_kopieren()
+        self.statusBar().showMessage("Bildschirminhalt als Text kopiert", 3000)
+
     def _verbindung_dialog(self):
         """Menü *Maschine ▸ Verbindung zum Rechner…* (nur die Terminaleinheit hat die Leitung XB5)."""
         if self.profil.modell_art(self._model) != "einheit":
@@ -788,6 +793,7 @@ class MainWindow(QMainWindow):
             emu_menu.addAction(self.act_stand_speichern)
             emu_menu.addAction(self.act_stand_laden)
             emu_menu.addAction(self.act_verbindung)
+            emu_menu.addAction(self.act_text_kopieren)
         if self.eprom_dock is not None:          # nur im Profil mit EPROMmer
             emu_menu.addSeparator()
             eprom_menu = emu_menu.addMenu("E&PROMmer")

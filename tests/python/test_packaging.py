@@ -250,7 +250,7 @@ def test_die_p8000_programme_sind_in_allen_paketwegen():
         assert f"default_config_{maschine}.yaml" in bp
         assert (PROJECT_ROOT / "data" / p.vorgabe_datei).is_file()
     assert '#define Programm5 "P8000 Emulator"' in iss
-    assert '#define Programm6 "P8000 Terminal"' in iss
+    assert "Programm6" not in iss and "p8000term" not in iss      # P23a: eine GUI
     # Zur Laufzeit wird nichts aus doc/ gebraucht: ROM-, Zeichensatz- und
     # Firmwaredaten sind einkompiliert bzw. liegen unter app/.
     assert "k1520_create(nr)" in text or "k1520_create(_nr)" in text

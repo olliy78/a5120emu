@@ -1,6 +1,7 @@
-"""P21 — das ORIGINALTERMINAL im p8000emu / p8000term (doc/design/26_p8000emu_oberflaeche.md §8).
+"""P21/P23a — das ORIGINALTERMINAL im p8000emu (doc/design/26_p8000emu_oberflaeche.md §8, §11).
 
-Variantenwahl (Kern-Terminal | + P8000 Terminal | P8000 Terminal), Bildschirm-Widget für das Pixelbild,
+Rechnerausstattung + Betriebsart (Computer mit Terminal | nur Terminal), das Terminalbild im
+gemeinsamen CRT-Widget (jeder Regler erreicht den Shader), Text kopieren, Bildschirmtastatur K7673,
 Bildschirmtastatur K7673 und Abbildung der Wirtstastatur auf die Tastenmatrix, Verbindungsdialog,
 Mehrinstanz (Konfiguration, Plattensperre) und der Mehrplatz über Loopback-Telnet.
 
@@ -98,11 +99,12 @@ def test_profil_modelle_arten_und_titel():
     from app import profil
     p = profil.profil("p8000")
     schluessel = [m[0] for m in p.modelle]
-    assert schluessel == ["p8000", "p8000-16", "p8000-8", "p8000-ot", "p8000-16-ot", "p8000-8-ot", "p8000-term"]
-    assert [p.modell_art(k) for k in schluessel] == [
-        "kern", "kern", "kern", "original", "original", "original", "einheit"]
+    # Kern-Terminal-Modelle gibt es in der Oberfläche nicht mehr (P23a)
+    assert schluessel == ["p8000-ot", "p8000-16-ot", "p8000-8-ot", "p8000-term"]
+    assert [p.modell_art(k) for k in schluessel] == ["original", "original", "original", "einheit"]
+    assert [m[0] for m in p.ausstattungen()] == schluessel[:3] and p.einheit_modell() == "p8000-term"
     assert p.modell_maschine("p8000-ot") == "p8000" and p.modell_maschine("p8000-term") == "p8000-terminal"
-    assert p.modell_tastatur("p8000-ot") == "k7673" and p.modell_tastatur("p8000") == "p8000"
+    assert p.modell_tastatur("p8000-ot") == "k7673" and p.modell_tastatur("p8000-term") == "k7673"
     assert p.modell_titel("p8000-term") == "P8000 Terminal" and p.modell_titel("p8000-ot") == "P8000 Emulator"
     assert p.modell_hat_rechner("p8000-ot") and not p.modell_hat_rechner("p8000-term")
     assert p.kern_parameter("p8000-ot")["p8000"]["terminal"] == "original"
@@ -110,7 +112,6 @@ def test_profil_modelle_arten_und_titel():
     assert "wdc" not in p.kern_parameter("p8000-16-ot")["p8000"]
     assert p.kern_parameter("p8000-8-ot")["p8000"]["karte16"] == "0"
     assert p.kern_parameter("p8000-term") == {"p8000": {}}
-    assert "terminal" not in p.kern_parameter("p8000")["p8000"]
     assert p.modell_hat_wdc("p8000-ot") and not p.modell_hat_wdc("p8000-16-ot")
     assert not p.modell_hat_wdc("p8000-term")
     # ROM-Wahl wirkt am Terminal nicht
@@ -118,19 +119,50 @@ def test_profil_modelle_arten_und_titel():
     assert p.hardware_wirkt("mon16", "p8000-ot") and not p.hardware_wirkt("mon16", "p8000-8-ot")
 
 
-def test_p8000term_ist_dasselbe_programm_mit_dem_terminal_vorn():
-    from app import profil
-    t = profil.profil("p8000term")
+def test_alte_modellschluessel_werden_auf_die_neue_wahl_abgebildet(qapp, umgebung):
+    """Eine p8000emu.yaml aus der Zeit mit Kern-Terminal bleibt lesbar: p8000/-16/-8 -> -ot."""
+    from app import config_io, profil
     p = profil.profil("p8000")
-    assert (t.programm, t.titel, t.konfig_datei, t.vorgabe_datei) == (
-        "p8000term", "P8000 Terminal", "p8000term.yaml", "default_config_p8000term.yaml")
-    assert t.maschine == "p8000" and t.standard_modell() == "p8000-term"
-    assert {m[0] for m in t.modelle} == {m[0] for m in p.modelle}
-    assert p.standard_modell() == "p8000"               # das Rechnerprogramm bleibt, wie es war
-    assert (PROJECT_ROOT / "data" / "default_config_p8000term.yaml").is_file()
-    starter = PROJECT_ROOT / "run_p8000term.sh"
-    assert starter.is_file() and os.access(starter, os.X_OK)
-    assert "--machine p8000term" in starter.read_text(encoding="utf-8")
+    for alt, neu in (("p8000", "p8000-ot"), ("p8000-16", "p8000-16-ot"), ("p8000-8", "p8000-8-ot"),
+                     ("p8000-ot", "p8000-ot"), ("p8000-term", "p8000-term"), ("quatsch", "p8000-ot")):
+        assert p.modell_normalisieren(alt) == neu, alt
+    assert p.ausstattung_normalisieren("p8000-term") == "p8000-ot"        # das Terminal ist keine Ausstattung
+    assert p.ausstattung_normalisieren("p8000-16") == "p8000-16-ot"
+    # und im Fenster: eine alte Konfiguration mit Kern-Terminal startet mit dem Originalterminal
+    (umgebung / "p8000emu.yaml").write_text(
+        "version: 1\ngeneral:\n  speed: 1.0\n  model: p8000-16\nterminal:\n  skalierung: ganzzahlig\n"
+        "machine:\n  raf: raf512\n  raf_standby: true\n", encoding="utf-8")
+    w = _fenster(qapp)
+    try:
+        assert w._model == "p8000-16-ot" and w.emulator.term_kind(0) == 1
+        assert w.settings_widget.model_value() == "p8000-16-ot"
+        assert w.settings_widget.betriebsart_combo.currentData() == "computer"
+        assert w._raf == "none"
+        w._autosave_now()
+        cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
+        assert cfg["general"]["model"] == "p8000-16-ot" and cfg["general"]["ausstattung"] == "p8000-16-ot"
+        assert "raf" not in (cfg.get("machine") or {})
+        assert "terminal" not in cfg                      # die alte Skalierung ist aufgeraeumt
+    finally:
+        _zu(w, qapp)
+    # Eine Konfiguration des frueheren Programms p8000term (model: p8000-term) -> nur Terminal
+    (umgebung / "p8000emu.yaml").write_text(
+        "version: 1\ngeneral:\n  speed: 1.0\n  model: p8000-term\n", encoding="utf-8")
+    w = _fenster(qapp)
+    try:
+        assert w._model == "p8000-term" and w.settings_widget.betriebsart_combo.currentData() == "terminal"
+    finally:
+        _zu(w, qapp)
+
+
+def test_p8000term_ist_als_eigenes_programm_entfallen():
+    from app import profil, programme
+    with pytest.raises(ValueError):
+        profil.profil("p8000term")
+    assert not hasattr(programme, "P8000TERMEMU")
+    for datei in ("run_p8000term.sh", "data/default_config_p8000term.yaml", "packaging/p8000term.desktop.in"):
+        assert not (PROJECT_ROOT / datei).exists(), datei
+    assert "p8000term" not in profil.PROFILE
 
 
 def test_ohne_modellwahl_aendert_sich_an_den_anderen_profilen_nichts():
@@ -147,26 +179,86 @@ def test_ohne_modellwahl_aendert_sich_an_den_anderen_profilen_nichts():
 def test_variante_p8000_plus_terminal_baut_das_originalterminal(qapp, umgebung):
     from app.ui.keyboard_k7673 import KeyboardK7673Widget
     from app.ui.p8000_original import OriginalTerminalWidget
+    from app.ui.screen_widget import ScreenWidget
     w = _fenster(qapp, modell="p8000-ot")
     try:
         assert w.emulator.machine == "p8000" and w.emulator.term_kind(0) == 1
         assert isinstance(w.keyboard_widget, KeyboardK7673Widget)
-        assert isinstance(w.screen_widget.aktuell(), OriginalTerminalWidget)
+        assert isinstance(w.screen_widget, OriginalTerminalWidget)
+        assert isinstance(w.screen_widget, ScreenWidget)         # DASSELBE CRT-Widget wie die anderen
         assert w.windowTitle() == "P8000 Emulator"
         assert not w.drives_dock.isHidden() and w.platten_widget.verfuegbar()
-        assert w.screen_widget.tabs.tabText(0) == "tty1 (Konsole)"
         w._autosave_now()
         from app import config_io
         cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
-        assert cfg["general"]["model"] == "p8000-ot" and cfg["terminal"] == {"skalierung": "glatt"}
-        # und zurück zum Kern-Terminal
-        w._on_model_selected("p8000")
-        w.run_timer.stop()
-        assert w.emulator.term_kind(0) == 0
-        assert not isinstance(w.keyboard_widget, KeyboardK7673Widget)
-        assert not isinstance(w.screen_widget.aktuell(), OriginalTerminalWidget)
+        assert cfg["general"]["model"] == "p8000-ot" and cfg["general"]["ausstattung"] == "p8000-ot"
+        assert "terminal" not in cfg and "crt" in cfg
     finally:
         _zu(w, qapp)
+
+
+def test_betriebsart_nur_terminal_blendet_den_rechner_aus(qapp, umgebung):
+    """Reiter Laufwerke, Lampen/Frontplatte der Statuszeile, NMI, Diskette und Zwischenstand
+    verschwinden; die Verbindung zum Rechner erscheint; die Ausstattung bleibt gemerkt."""
+    w = _fenster(qapp, modell="p8000-16-ot")
+    try:
+        sw = w.settings_widget
+        i = sw.tabs.indexOf(sw._drives_tab)
+        assert sw.tabs.isTabVisible(i) and sw.model_combo.isEnabled()
+        assert w.status_widget.rechner_sichtbar() and w.status_widget.felder()
+        rechner_aktionen = [w.act_nmi, w.act_einlegen, w.act_auswerfen, w.act_stand_speichern,
+                            w.act_stand_laden]
+        assert all(a.isVisible() and a.isEnabled() for a in rechner_aktionen)
+        assert not w.act_verbindung.isVisible()
+
+        # Betriebsart umschalten: Neuaufbau als Terminaleinheit
+        sw.betriebsart_combo.setCurrentIndex(1)
+        w.run_timer.stop()
+        assert w._model == "p8000-term" and w.emulator.machine == "p8000-terminal"
+        assert w.windowTitle() == "P8000 Terminal"
+        assert not sw.tabs.isTabVisible(i)
+        assert not sw.model_combo.isEnabled() and sw.ausstattung_value() == "p8000-16-ot"
+        assert not w.status_widget.rechner_sichtbar()
+        assert all(not f.isVisible() for f in w.status_widget.felder())
+        assert w.status_widget.frontplatte.isHidden()
+        assert all(not a.isVisible() and not a.isEnabled() for a in rechner_aktionen)
+        assert w.act_verbindung.isVisible() and w.act_verbindung.isEnabled()
+        assert w.drives_dock.isHidden() and not w.drives_dock.toggleViewAction().isEnabled()
+        w._autosave_now()
+        from app import config_io
+        g = config_io.load_config(str(umgebung / "p8000emu.yaml"))["general"]
+        assert g["model"] == "p8000-term" and g["ausstattung"] == "p8000-16-ot"
+
+        # zurueck: dieselbe Ausstattung, alles wieder da
+        sw.betriebsart_combo.setCurrentIndex(0)
+        w.run_timer.stop()
+        assert w._model == "p8000-16-ot" and w.emulator.machine == "p8000"
+        assert sw.tabs.isTabVisible(i) and sw.model_combo.isEnabled()
+        assert w.status_widget.rechner_sichtbar() and all(f.isVisible() for f in w.status_widget.felder())
+        assert all(a.isVisible() and a.isEnabled() for a in rechner_aktionen)
+        assert not w.act_verbindung.isVisible()
+    finally:
+        _zu(w, qapp)
+
+
+def test_start_mit_modus_terminal_stellt_die_betriebsart_vor(qapp, umgebung, monkeypatch):
+    monkeypatch.setenv("K1520_BETRIEBSART", "terminal")
+    w = _fenster(qapp)
+    try:
+        assert w._model == "p8000-term" and w.emulator.machine == "p8000-terminal"
+        assert w.settings_widget.betriebsart_combo.currentData() == "terminal"
+        w._autosave_now()
+    finally:
+        _zu(w, qapp)
+    monkeypatch.setenv("K1520_BETRIEBSART", "computer")
+    w = _fenster(qapp)                                         # Terminal (gemerkt) -> Computer
+    try:
+        assert w._model == "p8000-ot" and w.emulator.machine == "p8000"
+    finally:
+        _zu(w, qapp)
+    r = subprocess.run([sys.executable, str(PROJECT_ROOT / "app" / "main.py"), "--machine", "p8000",
+                        "--help"], capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+    assert "--mode" in r.stdout
 
 
 def test_variante_p8000_terminal_ist_die_einheit_ohne_rechner(qapp, umgebung):
@@ -174,16 +266,15 @@ def test_variante_p8000_terminal_ist_die_einheit_ohne_rechner(qapp, umgebung):
     w = _fenster(qapp, modell="p8000-term")
     try:
         assert w.emulator.machine == "p8000-terminal"
-        assert w.emulator.term_tty(0) < 0                 # kein ttyN, die Leitung geht über den Hub
-        assert isinstance(w.screen_widget.aktuell(), OriginalTerminalWidget)
+        assert w.emulator.term_tty(0) < 0                 # kein ttyN, die Leitung geht ueber den Hub
+        assert isinstance(w.screen_widget, OriginalTerminalWidget)
         assert w.windowTitle() == "P8000 Terminal"
         assert w.drives_dock.isHidden() and not w.drives_dock.toggleViewAction().isEnabled()
         assert w.status_widget.frontplatte is not None and w.status_widget.frontplatte.isHidden()
         assert not w.platten_widget.verfuegbar()
         assert w.act_verbindung.isEnabled()
-        assert w.screen_widget.tabs.tabText(0) == "P8000 Terminal"
-        # zurück zu einem Rechner: Kästen und Titel kommen wieder
-        w._on_model_selected("p8000")
+        # zurueck zu einem Rechner: Kaesten und Titel kommen wieder
+        w._on_model_selected("p8000-ot")
         w.run_timer.stop()
         assert w.windowTitle() == "P8000 Emulator" and not w.drives_dock.isHidden()
         assert not w.act_verbindung.isEnabled()
@@ -192,33 +283,37 @@ def test_variante_p8000_terminal_ist_die_einheit_ohne_rechner(qapp, umgebung):
         _zu(w, qapp)
 
 
-def test_programm_p8000term_startet_als_terminal_mit_eigener_konfiguration(qapp, umgebung):
-    from app import config_io
-    w = _fenster(qapp, programm="p8000term")
+def test_p8000_hat_keine_ram_disk(qapp, umgebung):
+    """Die RAF ist eine K1520-Karte: kein Auswahlfeld, kein Kaestchen, kein Konfigurationsschluessel."""
+    w = _fenster(qapp)
     try:
-        assert w._model == "p8000-term" and w.windowTitle() == "P8000 Terminal"
-        assert w.emulator.machine == "p8000-terminal"
-        assert "verbindung" in [a.objectName() or "" for a in w.controls_bar.actions()] or \
-            w.act_verbindung in w.controls_bar.actions()
+        sw = w.settings_widget
+        assert not sw.raf_combo.isVisibleTo(sw) and not sw.raf_standby_box.isVisibleTo(sw)
         w._autosave_now()
-        assert (umgebung / "p8000term.yaml").is_file() and not (umgebung / "p8000emu.yaml").exists()
-        assert config_io.load_config(str(umgebung / "p8000term.yaml"))["general"]["model"] == "p8000-term"
+        from app import config_io
+        cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
+        assert "raf" not in (cfg.get("machine") or {}) and "raf_standby" not in (cfg.get("machine") or {})
+        assert w._raf == "none"
     finally:
         _zu(w, qapp)
+    # die anderen Maschinen behalten sie
+    from app import profil
+    assert all(profil.profil(m).raf_wahl for m in ("a5120", "k8915", "prg710", "pc1715"))
+    assert not profil.profil("p8000").raf_wahl
 
 
 def test_boot_smoke_p8000_plus_terminal_einschaltmeldung_im_originalbild(qapp, umgebung):
-    """Netz-Ein: die Firmware des Terminals schreibt ihre Meldung in den Bildspeicher; später
-    kommt die Meldung des Rechners (Hardwaretest) über die Leitung auf dasselbe Bild."""
+    """Netz-Ein: die Firmware des Terminals schreibt ihre Meldung in den Bildspeicher; spaeter
+    kommt die Meldung des Rechners (Hardwaretest) ueber die Leitung auf dasselbe Bild."""
     w = _fenster(qapp, modell="p8000-8-ot")
     try:
-        # Das Terminal läuft vor dem Rechner an (Vorlauf 1,5 s): seine Einschaltmeldung steht schon
-        # im Bildspeicher, bevor der Rechner die erste Zeile schreibt — lesbar über die Zellen-API.
+        # Das Terminal laeuft vor dem Rechner an (Vorlauf 1,5 s): seine Einschaltmeldung steht schon
+        # im Bildspeicher, bevor der Rechner die erste Zeile schreibt - lesbar ueber die Zellen-API.
         text = w.emulator.term_text(0)
         assert "ADM31/9600 baud" in text, text
-        t = w.screen_widget.aktuell()
+        t = w.screen_widget
         t.aktualisieren()
-        assert t._bild is not None and any(t._daten[:640 * 14])          # und als Pixel im Bild
+        assert t._fb_bytes is not None and any(t._daten[:640 * 14])      # und als Pixel im Bild
         gelaufen = 0
         while gelaufen < 250_000_000 and "Press RETURN" not in text:
             gelaufen += w.emulator.run(4_000_000)
@@ -226,7 +321,6 @@ def test_boot_smoke_p8000_plus_terminal_einschaltmeldung_im_originalbild(qapp, u
         assert "P8000 Hardwaretest U880" in text and "Press RETURN" in text, text
         t.aktualisieren()
         assert any(t._daten)                                  # die Rechnermeldung steht im Pixelbild
-        assert "Originalterminal" in w.screen_widget.modus_text()
     finally:
         _zu(w, qapp)
 
@@ -237,69 +331,173 @@ def test_bildschirm_zieht_frames_und_pausiert_bei_unveraendertem_zaehler(qapp, u
     w = _fenster(qapp, modell="p8000-term")
     try:
         emu = w.emulator
-        t = w.screen_widget.aktuell()
+        t = w.screen_widget
         emu.run(3_000_000)
         aufrufe = []
         original = emu.term_framebuffer
         emu.term_framebuffer = lambda i=0: (aufrufe.append(1), original(i))[1]
         t.aktualisieren()
         assert len(aufrufe) == 1                             # neues Bild geholt
-        bild = t._bild
+        bild = t._fb_bytes
         zaehler = emu.term_frame_count(0)
         for _ in range(5):
             t.aktualisieren()
-        assert len(aufrufe) == 1 and t._bild is bild          # Zähler unverändert: weder geholt noch neu
+        assert len(aufrufe) == 1 and t._fb_bytes is bild      # Zaehler unveraendert: weder geholt noch neu
         assert emu.term_frame_count(0) == zaehler
-        emu.run(4_000_000)                                    # ≈ 1 s Z8-Zeit ⇒ viele Bilder
+        emu.run(4_000_000)                                    # ~ 1 s Z8-Zeit => viele Bilder
         assert emu.term_frame_count(0) > zaehler
         t.aktualisieren()
-        assert len(aufrufe) == 2 and t._bild is not bild
+        assert len(aufrufe) == 2 and t._fb_bytes is not bild
     finally:
         _zu(w, qapp)
 
 
-def test_skalierung_ganzzahlig_oder_glatt(qapp, umgebung):
-    from app.ui.p8000_original import BILD_H, BILD_W
+def test_die_stufen_des_terminals_gehen_als_textur_in_den_shader(qapp, umgebung):
+    """dunkel/normal/hell -> 0 / 184 / 255 in der Textur, in der Groesse des Terminalbildes."""
     w = _fenster(qapp, modell="p8000-term")
     try:
-        t = w.screen_widget.aktuell()
-        t.resize(1300, 700)
-        t.set_skalierung("ganzzahlig")
-        r = t.bild_rechteck()
-        assert (r.width(), r.height()) == (2 * BILD_W, 2 * BILD_H)              # Faktor 2, Rand dunkel
-        assert r.center().x() in range(648, 653)
-        t.set_skalierung("glatt")
-        r = t.bild_rechteck()
-        assert r.width() == 1300 and abs(r.height() - 1300 * BILD_H // BILD_W) <= 1
-        # die Wahl geht an alle Reiter, wird gemerkt und zurückgeladen
-        w.screen_widget.set_skalierung("ganzzahlig")
-        assert t.skalierung == "ganzzahlig"
+        t = w.screen_widget
+        w.emulator.run(3_000_000)
+        t.aktualisieren()
+        assert (t._fb_w, t._fb_h) == (640, 312) and len(t._fb_bytes) == 640 * 312
+        assert set(t._fb_bytes) <= {0, 184, 255} and set(t._daten) <= {0, 1, 2}
+        assert {0, 184, 255} & set(t._fb_bytes) >= {0}
+        assert all(a == (0, 184, 255)[b] for a, b in zip(t._fb_bytes[:5000], t._daten[:5000]))
+    finally:
+        _zu(w, qapp)
+
+
+class _Uniformen:
+    """Ersatz fuer die GL-Funktionen: schreibt die gesetzten Uniformen des CRT-Shaders mit."""
+
+    def __init__(self):
+        self.werte = {}
+
+    def _setze(self, ort, *werte):
+        self.werte[ort] = werte
+
+    glUniform1f = glUniform2f = glUniform3f = _setze
+
+
+class _Programm:
+    def uniformLocation(self, name):
+        return name
+
+
+def _uniformen(screen):
+    f = _Uniformen()
+    screen._program = _Programm()
+    screen._set_uniforms(f)
+    return f.werte
+
+
+def test_jeder_crt_regler_erreicht_das_terminalbild(qapp, umgebung):
+    """Das Terminal benutzt dasselbe ScreenWidget, dieselben CRTParams und denselben CRT-Reiter wie
+    die anderen Maschinen: jeder Regler setzt den Wert im Widget UND ist im Shader angekommen."""
+    from PySide6.QtWidgets import QCheckBox, QDoubleSpinBox
+    from app.ui.screen_widget import CRTParams, ScreenWidget
+    w = _fenster(qapp, modell="p8000-ot")
+    try:
+        sw, screen = w.settings_widget, w.screen_widget
+        assert isinstance(screen, ScreenWidget) and sw.screen is screen
+        assert screen.params == CRTParams()                  # gleiche Standardwerte wie die anderen
+        regler = [
+            ("brightness", lambda p: p.brightness, "uBrightness", lambda v: (v,)),
+            ("contrast", lambda p: p.contrast, "uContrast", lambda v: (v,)),
+            ("curvature_x", lambda p: p.curvature[0], "uCurvature", lambda v: (v, screen.params.curvature[1])),
+            ("curvature_y", lambda p: p.curvature[1], "uCurvature", lambda v: (screen.params.curvature[0], v)),
+            ("corner_radius", lambda p: p.corner_radius, "uCorner", lambda v: (v,)),
+            ("scale_x", lambda p: p.scale_x, "uScale", lambda v: (v, screen.params.scale_y)),
+            ("scale_y", lambda p: p.scale_y, "uScale", lambda v: (screen.params.scale_x, v)),
+            ("offset_x", lambda p: p.offset_x, "uOffset", lambda v: (v, screen.params.offset_y)),
+            ("offset_y", lambda p: p.offset_y, "uOffset", lambda v: (screen.params.offset_x, v)),
+        ]
+        spins = sw.findChildren(QDoubleSpinBox)
+        assert len(spins) == len(regler)
+        for spin, (name, lesen, uniform, soll) in zip(spins, regler):
+            vorher = lesen(screen.params)
+            ziel = spin.minimum() + (spin.maximum() - spin.minimum()) * 0.37
+            if abs(ziel - vorher) < 1e-3:
+                ziel = spin.minimum() + (spin.maximum() - spin.minimum()) * 0.71
+            spin.setValue(ziel)
+            assert abs(lesen(screen.params) - spin.value()) < 1e-9, name
+            u = _uniformen(screen)[uniform]
+            erwartet = soll(lesen(screen.params))
+            assert all(abs(a - b) < 1e-5 for a, b in zip(u, erwartet)), (name, u, erwartet)
+        # Vignette (Kaestchen): aus => Uniform 0
+        box = next(b for b in sw.findChildren(QCheckBox) if b.text() == "Vignette")
+        assert _uniformen(screen)["uVignette"][0] > 0
+        box.setChecked(False)
+        assert screen.params.vignette_on is False and _uniformen(screen)["uVignette"] == (0.0,)
+        # Farben: die Phosphorfarben gehen an den Shader (der Farbwaehler selbst ist ein Dialog)
+        screen.params.phosphor_on = (0.9, 0.5, 0.1)
+        screen.params.phosphor_off = (0.1, 0.1, 0.2)
+        u = _uniformen(screen)
+        assert u["uPhosphorOn"] == (0.9, 0.5, 0.1) and u["uPhosphorOff"] == (0.1, 0.1, 0.2)
+        # Zuruecksetzen: wieder die Vorgaben
+        sw._reset_crt()
+        assert screen.params == CRTParams()
+        # und gemerkt: die Konfiguration traegt die Werte
+        spins[0].setValue(1.7)
         w._autosave_now()
         from app import config_io
-        cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
-        assert cfg["terminal"] == {"skalierung": "ganzzahlig"}
-    finally:
-        _zu(w, qapp)
-    w = _fenster(qapp, modell="p8000-term")
-    try:
-        assert w.screen_widget.skalierung == "ganzzahlig"
-        assert w.screen_widget.aktuell().skalierung == "ganzzahlig"
+        assert abs(config_io.load_config(str(umgebung / "p8000emu.yaml"))["crt"]["brightness"] - 1.7) < 1e-6
     finally:
         _zu(w, qapp)
 
 
-def test_zeichenfarbe_gruen_weiss_bernstein(qapp, umgebung):
-    from app.ui.p8000_original import FARBEN
-    w = _fenster(qapp, modell="p8000-term")
+def test_die_vorgabe_des_p8000_hat_dieselbe_roehre_wie_die_anderen(qapp, umgebung):
+    from app import config_io, profil
+    p8000 = config_io.standard_konfiguration(profil.profil("p8000"))["crt"]
+    for andere in ("a5120", "k8915", "pc1715"):
+        crt = config_io.standard_konfiguration(profil.profil(andere))["crt"]
+        for k, v in p8000.items():
+            assert crt[k] == v, (andere, k)
+
+
+def test_kontextmenue_hat_nur_noch_das_kopieren_und_keine_farbe_oder_zoomwahl(qapp, umgebung):
+    from app.ui import p8000_original as po
+    assert not hasattr(po, "FARBEN") and not hasattr(po, "SKALIERUNGEN")
+    t = _widget(qapp)
+    assert not hasattr(t, "set_skalierung") and not hasattr(t, "set_farbe")
+    menue = t.kontextmenue_bauen()
+    assert [a.text() for a in menue.actions()] == ["Bildschirminhalt als Text kopieren"]
+    assert all(a.shortcut().isEmpty() for a in menue.actions())        # ^C gehoert dem Gast
+
+
+def test_bildschirminhalt_als_text_in_die_zwischenablage(qapp, umgebung):
+    """Reiner Text (nicht gerendert): 24 Zeilen, rechts ohne Leerzeichen, durch \\n getrennt."""
+    from PySide6.QtGui import QGuiApplication
+    w = _fenster(qapp, modell="p8000-8-ot")
     try:
-        t = w.screen_widget.aktuell()
-        t.aktualisieren()
-        for schluessel, _anzeige, an, _aus in FARBEN:
-            t.set_farbe(schluessel)
-            assert tuple(w.screen_widget.params.phosphor_on) == an
-            assert t._bild is None or t._bild.colorTable()[1] != t._bild.colorTable()[0]
+        assert _bis_text(w, "Press RETURN")
+        t = w.screen_widget
+        QGuiApplication.clipboard().setText("vorher")
+        menue = t.kontextmenue_bauen()
+        menue.actions()[0].trigger()
+        text = QGuiApplication.clipboard().text()
+        erwartet = "\n".join(z.rstrip() for z in w.emulator.term_text(0).split("\n"))
+        assert text == erwartet
+        zeilen = text.split("\n")
+        assert len(zeilen) == 24 and all(z == z.rstrip() and len(z) <= 80 for z in zeilen)
+        assert "P8000 Hardwaretest U880" in text and "\r" not in text
+        # derselbe Weg ueber den Menueeintrag, ohne Tastenkuerzel
+        QGuiApplication.clipboard().setText("")
+        assert w.act_text_kopieren.shortcut().isEmpty()
+        assert w.act_text_kopieren in [a for m in w.menuBar().actions() for a in m.menu().actions()]
+        w.act_text_kopieren.trigger()
+        assert QGuiApplication.clipboard().text() == erwartet
     finally:
         _zu(w, qapp)
+
+
+def _bis_text(w, text, budget=250_000_000, schritt=4_000_000):
+    gelaufen = 0
+    while gelaufen < budget:
+        if text in w.emulator.term_text(0):
+            return True
+        gelaufen += w.emulator.run(schritt)
+    return text in w.emulator.term_text(0)
 
 
 # ─── Tastatur K7673: Tastenbild ──────────────────────────────────────────────
@@ -434,8 +632,7 @@ def test_tastatur_im_fenster_geht_an_die_matrix_des_kerns(qapp, umgebung):
 
 def _widget(qapp, emu=None):
     from app.ui.p8000_original import OriginalTerminalWidget
-    from app.ui.screen_widget import CRTParams
-    t = OriginalTerminalWidget(CRTParams())
+    t = OriginalTerminalWidget()
     t.set_emulator(emu or Aufzeichner())
     return t
 
@@ -682,7 +879,7 @@ def test_schnittstellenreiter_bietet_ttys_als_server_mit_portvorschlaegen(qapp, 
         assert ports == {"tty0": 5000, "tty2": 5002, "tty3": 5003, "tty4": 5004,
                          "tty5": 5005, "tty6": 5006, "tty7": 5007}
         assert all(w.emulator.serial_config(i).rolle == K.SER_SERVER for i in range(7))
-        assert "Mehrplatzbetrieb" in w.serial_widget.hinweis and "p8000term" in w.serial_widget.hinweis
+        assert "Mehrplatzbetrieb" in w.serial_widget.hinweis and "nur Terminal" in w.serial_widget.hinweis
     finally:
         _zu(w, qapp)
     w = _fenster(qapp, modell="p8000-term")
@@ -696,38 +893,38 @@ def test_schnittstellenreiter_bietet_ttys_als_server_mit_portvorschlaegen(qapp, 
 
 def test_instanzname_und_config_bestimmen_die_konfigurationsdatei(umgebung, monkeypatch, tmp_path):
     from app import config_io, instanz, profil
-    t = profil.profil("p8000term")
-    assert Path(config_io.default_config_path(t)).name == "p8000term.yaml"
+    t = profil.profil("p8000")
+    assert Path(config_io.default_config_path(t)).name == "p8000emu.yaml"
     monkeypatch.setenv("K1520_INSTANZ", "platz 2/../x")
     assert instanz.name() == "platz2x"                                       # bereinigt
-    assert Path(config_io.default_config_path(t)).name == "p8000term-platz2x.yaml"
-    assert Path(config_io.default_config_path(profil.profil("p8000"))).name == "p8000emu-platz2x.yaml"
+    assert Path(config_io.default_config_path(t)).name == "p8000emu-platz2x.yaml"
     eigene = str(tmp_path / "meine.yaml")
     monkeypatch.setenv("K1520_KONFIG", eigene)
     assert config_io.default_config_path(t) == eigene
 
 
 def test_zwei_instanzen_schreiben_getrennte_konfigurationen(qapp, umgebung, monkeypatch):
+    monkeypatch.setenv("K1520_BETRIEBSART", "terminal")      # --mode terminal
     monkeypatch.setenv("K1520_INSTANZ", "a")
-    w1 = _fenster(qapp, programm="p8000term")
+    w1 = _fenster(qapp)
     monkeypatch.setenv("K1520_INSTANZ", "b")
-    w2 = _fenster(qapp, programm="p8000term")
+    w2 = _fenster(qapp)
     try:
         assert w1.windowTitle() == "P8000 Terminal [a]" and w2.windowTitle() == "P8000 Terminal [b]"
         w1._autosave_now()
         w2._autosave_now()
-        assert (umgebung / "p8000term-a.yaml").is_file() and (umgebung / "p8000term-b.yaml").is_file()
+        assert (umgebung / "p8000emu-a.yaml").is_file() and (umgebung / "p8000emu-b.yaml").is_file()
     finally:
         _zu(w1, qapp)
         _zu(w2, qapp)
 
 
 def test_main_kennt_instance_und_config():
-    r = subprocess.run([sys.executable, str(PROJECT_ROOT / "app" / "main.py"), "--machine", "p8000term",
+    r = subprocess.run([sys.executable, str(PROJECT_ROOT / "app" / "main.py"), "--machine", "p8000",
                         "--instance", "platz2", "--help"], capture_output=True, text=True, timeout=60,
                        encoding="utf-8")
-    assert r.returncode == 0 and "--instance NAME" in r.stdout and "p8000term-NAME.yaml" in r.stdout
-    r = subprocess.run([sys.executable, str(PROJECT_ROOT / "app" / "main.py"), "--machine", "p8000term",
+    assert r.returncode == 0 and "--instance NAME" in r.stdout and "p8000emu-NAME.yaml" in r.stdout
+    r = subprocess.run([sys.executable, str(PROJECT_ROOT / "app" / "main.py"), "--machine", "p8000",
                         "--instance"], capture_output=True, text=True, timeout=60, encoding="utf-8")
     assert r.returncode == 2
 
@@ -825,10 +1022,10 @@ def test_mehrplatz_taste_im_terminal_erreicht_den_rechner_und_ausgabe_das_bild(q
             schritt()
         assert bis(arbeitsplatz, "T0", 4_000_000), arbeitsplatz()      # Ausgabe des Rechners → Terminalbild
         # Der Arbeitsplatz zeigt es auch im Widget (Pixelbild geholt, Zähler gelaufen)
-        widget = OriginalTerminalWidget(CRTParams())
+        widget = OriginalTerminalWidget()
         widget.set_emulator(t)
         widget.aktualisieren()
-        assert widget._bild is not None and any(widget._daten)
+        assert widget._fb_bytes is not None and any(widget._daten)
 
         # Rückweg: Taste „x" im Widget des Arbeitsplatzes
         QTest.keyPress(widget, Qt.Key_X)                      # gehalten wie von einer Hand: die K7673

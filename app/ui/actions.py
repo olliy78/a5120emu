@@ -82,6 +82,12 @@ _SPEC: List[Tuple] = [
      "Telnet-/RFC-2217-Verbindung des Terminals zu einem Rechner herstellen oder trennen "
      "(nur im Modell „P8000 Terminal“)", "_verbindung_dialog", False),
 
+    # Bildschirminhalt des Originalterminals als reiner Text in die Zwischenablage (auch im
+    # Kontextmenü des Bildes).  KEIN Kürzel: ^C gehört dem Gast.
+    ("text_kopieren", "Bildschirminhalt als &Text kopieren", None, None,
+     "Den Text des Terminalbildes (80 × 24, nicht gerendert) in die Zwischenablage kopieren",
+     "_text_kopieren", False),
+
     # ── EPROMmer (nur PRG 710, AP-P7c) ──────────────────────────────────────
     # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kürzel:
     # jedes Strg+Umschalt+… müsste in die Kürzeltabelle des Handbuchs (ein Vertrag).
@@ -173,6 +179,7 @@ KURZ = {
     "stand_speichern": "Stand sichern",
     "stand_laden": "Stand laden",
     "verbindung": "Verbindung",
+    "text_kopieren": "Text kopieren",
     "eprom_einlegen": "PROM",
     "eprom_leer": "Leer",
     "eprom_speichern": "Sichern",
@@ -200,6 +207,7 @@ NUR_FUER = {
     "stand_speichern": ("p8000",),       # Zwischenstand (P8KS)
     "stand_laden": ("p8000",),
     "verbindung": ("p8000",),
+    "text_kopieren": ("p8000",),
     # Die jeweils ANDEREN Emulatoren.
     "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),
     "a5120emu": ("k8915", "prg710", "pc1715", "p8000"),
@@ -231,7 +239,7 @@ REIHENFOLGE: List = [
     None,
     "einlegen", "auswerfen",
     None,
-    "stand_speichern", "stand_laden", "verbindung",
+    "stand_speichern", "stand_laden", "verbindung", "text_kopieren",
     None,
     "dock_drives", "dock_settings", "dock_screen", "dock_keyboard", "dock_eprom",
     None,
