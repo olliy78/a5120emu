@@ -16,8 +16,8 @@
 #     ein `dock_state` fehlt, die Startaufteilung ordnet die Kästen selbst.
 version: 1
 
-# Bildröhre des Terminals: nur die Farben und die Helligkeit gelten für den Textbildschirm
-# (app/ui/screen_widget.py::CRTParams); Krümmung und Rand gibt es am Terminal nicht.
+# Bildröhre: dieselben Werte und derselbe Shader wie bei den anderen Emulatoren
+# (app/ui/screen_widget.py::CRTParams, Einstellungen ▸ CRT).
 crt:
   phosphor_on: '#78D41D'
   phosphor_off: '#050F05'
@@ -29,10 +29,14 @@ crt:
 # Diskette dauern sonst sehr lange; die Uhr des Gastes zählt aber Taktzyklen und geht dann vor.
 general:
   speed: 5.0
-  # Modell: p8000 (16-Bit-Teil + Winchester, Vollgerät) | p8000-16 (ohne Winchester) |
-  # p8000-8 (nur 8-Bit-Teil, UDOS); mit Originalterminal: p8000-ot | p8000-16-ot | p8000-8-ot;
-  # p8000-term (nur das Terminal, Arbeitsplatz — Programm p8000term).
-  model: p8000
+  # Modell (Betriebsart + Rechnerausstattung, Einstellungen ▸ Allgemein):
+  #   p8000-ot (Vollgerät: 16-Bit-Teil + Winchester) | p8000-16-ot (ohne Winchester) |
+  #   p8000-8-ot (nur 8-Bit-Teil, UDOS) — Betriebsart „Computer mit Terminal“;
+  #   p8000-term — Betriebsart „nur Terminal“ (Arbeitsplatz ohne Rechner).
+  # `ausstattung` merkt die Rechnerausstattung auch im Terminalbetrieb.  Alte Schlüssel
+  # p8000 | p8000-16 | p8000-8 (Kern-Terminal) werden beim Laden auf die -ot-Modelle abgebildet.
+  model: p8000-ot
+  ausstattung: p8000-ot
   # Hardwarevarianten (Kaltstart nötig; ein fehlender Schlüssel = Vorgabe):
   # Platinenindex 34 (8-Bit 3 / 16-Bit 4) | 11; MON8 3.1 | 3.0; MON16 3.1 | 3.0 | 3.3;
   # Hauptspeicher 1M@0 | 256K@0 | 1M@0+1M@1; WDC-Firmware 4.2 | 4.0.05 | 3.4.05.

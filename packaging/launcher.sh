@@ -55,7 +55,6 @@ case "$(basename "$0")" in
     prg710emu*) set -- --machine prg710 "$@" ;;
     pc1715emu*) set -- --machine pc1715 "$@" ;;
     p8000emu*) set -- --machine p8000 "$@" ;;
-    p8000term*) set -- --machine p8000term "$@" ;;
 esac
 
 exec "$ROOT/venv/bin/python3" "$ROOT/app/main.py" "$@"

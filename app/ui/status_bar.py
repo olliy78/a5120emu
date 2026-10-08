@@ -443,6 +443,9 @@ class MachineStatus(QWidget):
 
         self._felder: List[DriveField] = []
         self._lampen: List[DriveLamp] = []
+        #: Laufwerksfelder, -lampen und -trennstriche (zum gemeinsamen Ausblenden).
+        self._laufwerk_widgets: List[QWidget] = []
+        self._rechner_sichtbar = True
         self.set_drive_types(self.profil.standard_laufwerke())
 
     # ── Takt ─────────────────────────────────────────────────────────────────
@@ -527,17 +530,37 @@ class MachineStatus(QWidget):
                 w.deleteLater()
         self._felder = []
         self._lampen = []
+        self._laufwerk_widgets = []
 
         for drive, typ in enumerate(dt.normalize_list(drive_types)):
             if not dt.is_present(typ):
                 continue
-            self._lay.addWidget(_trennstrich())
+            strich = _trennstrich()
+            self._lay.addWidget(strich)
             lampe = DriveLamp()
             feld = DriveField(drive)
             self._lay.addWidget(lampe)
             self._lay.addWidget(feld)
             self._lampen.append(lampe)
             self._felder.append(feld)
+            self._laufwerk_widgets += [strich, lampe, feld]
+        self.set_rechner_sichtbar(self._rechner_sichtbar)
+
+    def set_rechner_sichtbar(self, sichtbar: bool) -> None:
+        """Laufwerke und Frontplatte zeigen oder ausblenden (P8000 „nur Terminal“: kein Rechner).
+
+        Gemerkt wird die Wahl, damit ein späterer Neuaufbau der Felder (:meth:`set_drive_types`)
+        sie beibehält.
+        """
+        self._rechner_sichtbar = bool(sichtbar)
+        for w in self._laufwerk_widgets:
+            w.setVisible(self._rechner_sichtbar)
+        if self.frontplatte is not None:
+            self.frontplatte.setVisible(self._rechner_sichtbar)
+
+    def rechner_sichtbar(self) -> bool:
+        """Zeigt die Statuszeile Laufwerke/Frontplatte?  (Für Tests; unabhängig vom Fensterzustand.)"""
+        return self._rechner_sichtbar
 
     def felder(self) -> List[DriveField]:
         """Die Laufwerksfelder in Steckplatzreihenfolge (für Tests und Abfragen)."""

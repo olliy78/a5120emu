@@ -1,20 +1,25 @@
 """Bildschirm und Tastatur des ORIGINALTERMINALS (Typ 2 + Flachtastatur K7673.09) im P8000 Emulator.
 
 doc/design/26_p8000emu_oberflaeche.md §8, Kern: `doc/design/28_p8000_originalterminal.md` §9.
-Anders als das Kern-Terminal (`app/ui/p8000_terminal.py`: Zellen, die die Oberfläche selbst
-zeichnet) liefert das Originalterminal ein fertiges **Pixelbild** — Firmware, 8275 und
-Zeichengenerator haben es gezeichnet, Cursor, Blinken, Hell und Invers stecken schon darin.
-Dieses Modul zeigt es nur an:
+Das Originalterminal liefert ein fertiges **Pixelbild** (640 × 312, drei Stufen: dunkel/normal/hell) —
+Firmware, 8275 und Zeichengenerator haben es gezeichnet, Cursor, Blinken, Hell und Invers stecken
+schon darin.  Dieses Modul speist es in dasselbe **CRT-Widget** ein, das die anderen Maschinen
+benutzen (:class:`~app.ui.screen_widget.ScreenWidget`, GLSL-Shader, :class:`CRTParams`): Kontrast,
+Helligkeit, Scanlines, Krümmung, Phosphorfarbe & Co. stellt der CRT-Reiter der Einstellungen ein,
+Farbwahl und Zoom des Widgets selbst gibt es nicht mehr (P23a).
 
-* **Kein Dauer-Repaint.**  ``term_frame_count`` zählt die gezeigten Bilder (62,8 Hz); ändert er sich
-  nicht, ist das Bild unverändert und es wird weder geholt noch gezeichnet.
-* **Skalierung wählbar**: *ganzzahlig* (Pixel bleiben scharf, Rand bleibt dunkel) oder *glatt*
-  (füllt das Widget unter Wahrung des Seitenverhältnisses).
+* **Kein Dauer-Upload.**  ``term_frame_count`` zählt die gezeigten Bilder (62,8 Hz); ändert er sich
+  nicht, ist das Bild unverändert und es wird weder geholt noch hochgeladen.
+* **Stufen → Textur**: dunkel/normal/hell werden auf 0, 0,72 und 1,0 der Textur abgebildet (das
+  Verhältnis, mit dem das Gerät „normal“ gegen „hell“ zeichnet); den Rest macht der Shader.
 * **Die Wirtstastatur geht über die Tastenmatrix** (`k7673_layout`): Zeichen werden über die
   Firmware-Tabellen `NORMAL_Tab`/`SHIFT_Tab` auf die Taste (und ggf. SHIFT) zurückgeführt, die es
   erzeugt; Sondertasten, Shift, Ctrl und Caps lock gehen als die entsprechenden Matrixtasten.
   Die Wiederholung gehaltener Tasten macht die K7673 selbst (Verzögerung/Abstand im Kern), die
   automatische Wiederholung des Wirtsrechners wird deshalb verworfen.
+* **Rechtsklick ▸ „Bildschirminhalt als Text kopieren“**: der Text des Bildes laut Kern
+  (``term_text``, 80 × 24, Zeilen ohne Schlussleerzeichen, ``\n``) in die Zwischenablage — nicht
+  gerendert.  Kein Tastenkürzel: ^C gehört dem Gast.
 * **Kürzel-Regel unverändert**: Fensterkürzel nur mit Strg+Umschalt (Ausnahme F11).
 """
 
@@ -22,14 +27,19 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QPainter, QActionGroup
-from PySide6.QtWidgets import QMenu, QWidget
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QMenu
 
 from app.ui import k7673_layout as L
-from app.ui.screen_widget import CRTParams
+from app.ui.screen_widget import ScreenWidget
 
 BILD_W, BILD_H = 640, 312
+
+KOPIEREN_TEXT = "Bildschirminhalt als Text kopieren"
+
+#: Terminalstufe (0 dunkel, 1 normal, 2 hell) → Textur-Byte des CRT-Shaders.
+_STUFEN = bytes([0, 184, 255] + [255] * 253)
 
 #: Verzögerung zwischen einem selbst gedrückten SHIFT und dem Zeichen (Wirtszeit, ms): die K7673
 #: sendet gleichzeitig erkannte Tasten in Zeilenreihenfolge — SHIFT muss vorher schon da sein.
@@ -37,40 +47,24 @@ SHIFT_VORLAUF_MS = 150
 #: Haltezeit eines Zeichens, das vor Ablauf des Vorlaufs schon losgelassen wurde.
 MINDEST_HALTEN_MS = 100
 
-SKALIERUNGEN = (("ganzzahlig", "Ganzzahlig (scharfe Pixel)"), ("glatt", "Glatt (füllt das Fenster)"))
+class OriginalTerminalWidget(ScreenWidget):
+    """Der Bildschirm des Originalterminals: CRT-Widget, das ``term_framebuffer`` zeigt und die
+    Tasten annimmt."""
 
-#: Vorgaben der Zeichenfarbe: (Schlüssel, Anzeige, Phosphor an, Phosphor aus)
-FARBEN = (("gruen", "Grün", (0.47, 0.83, 0.11), (0.02, 0.06, 0.02)),
-          ("weiss", "Weiß", (0.88, 0.90, 0.88), (0.04, 0.04, 0.05)),
-          ("bernstein", "Bernstein", (1.0, 0.69, 0.0), (0.07, 0.04, 0.0)))
-
-
-class OriginalTerminalWidget(QWidget):
-    """Der Bildschirm des Originalterminals: zeigt ``term_framebuffer`` und nimmt die Tasten an."""
-
-    toggleFullscreenRequested = Signal()
-    exitFullscreenRequested = Signal()
     #: Terminalzustand (``term_flags``) hat sich geändert (Bit 3 = Zeichensatz 2, Bit 4 = CAPS).
     flagsChanged = Signal(int)
 
-    def __init__(self, params: CRTParams, index: int = 0, parent=None):
+    def __init__(self, parent=None, index: int = 0):
         super().__init__(parent)
-        self.params = params
         self.index = index
-        self.emulator = None
-        self._powered = True
         self._frame = -1                       # zuletzt gezeigter Bildzähler
         self._flags = -1
-        self._bild: Optional[QImage] = None    # 8 Bit indiziert, 640 × 312
-        self._daten = b""
-        self.skalierung = "glatt"
+        self._daten = b""                      # letztes Bild, Stufen 0…2 (für Tests)
         #: gehaltene Wirtstasten: Qt-Kode → [(Position, gedrückt von uns)]
         self._gehalten: Dict[int, List[Tuple[int, int]]] = {}
         self._shift_physisch = False
         self._ausstehend: Dict[int, QTimer] = {}
-        self.setFocusPolicy(Qt.StrongFocus)
-        self.setMinimumSize(320, 156)
-        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self._fb_w, self._fb_h = BILD_W, BILD_H
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._kontextmenue)
 
@@ -78,71 +72,44 @@ class OriginalTerminalWidget(QWidget):
 
     def set_emulator(self, emulator):
         self._alles_loslassen()
-        self.emulator = emulator
+        super().set_emulator(emulator)
         self._frame, self._flags = -1, -1
-        self._bild, self._daten = None, b""
-        self.aktualisieren()
+        self._fb_bytes, self._daten = None, b""
+        self._on_update()
 
     def set_powered(self, an: bool):
-        self._powered = bool(an)
         if not an:
             self._alles_loslassen()
-        self.update()
+        super().set_powered(an)
 
     def sizeHint(self) -> QSize:
         return QSize(BILD_W + 16, BILD_H + 16)
 
-    def heightForWidth(self, breite: int) -> int:
-        return breite * BILD_H // BILD_W
-
-    # ── Farben und Skalierung ────────────────────────────────────────────────
-
-    def _farbtabelle(self) -> List[int]:
-        """Dunkel / normal / hell als RGB aus den Phosphorfarben der Einstellungen (CRT)."""
-        p = self.params
-
-        def farbe(rgb, f):
-            return QColor(*(max(0, min(255, int(c * 255 * f))) for c in rgb)).rgb()
-
-        hell = max(0.3, min(1.0, p.brightness / 2.5)) * min(1.2, p.contrast)
-        return [farbe(p.phosphor_off, 1.0), farbe(p.phosphor_on, 0.72 * hell),
-                farbe(p.phosphor_on, 1.0 * hell)]
-
-    def farben_geaendert(self):
-        if self._bild is not None:
-            self._bild.setColorTable(self._farbtabelle())
-        self.update()
-
-    def set_skalierung(self, art: str):
-        if art in dict(SKALIERUNGEN) and art != self.skalierung:
-            self.skalierung = art
-            self.update()
-
-    def set_farbe(self, schluessel: str):
-        for k, _anzeige, an, aus in FARBEN:
-            if k == schluessel:
-                self.params.phosphor_on, self.params.phosphor_off = an, aus
-                self.farben_geaendert()
-                return
+    # ── Kontextmenü ──────────────────────────────────────────────────────────
 
     def _kontextmenue(self, pos):
         menue = QMenu(self)
-        gruppe = QActionGroup(menue)
-        for k, anzeige in SKALIERUNGEN:
-            a = menue.addAction(anzeige)
-            a.setCheckable(True)
-            a.setChecked(k == self.skalierung)
-            gruppe.addAction(a)
-            a.triggered.connect(lambda _c=False, k=k: self.set_skalierung(k))
-        menue.addSeparator()
-        for k, anzeige, _an, _aus in FARBEN:
-            a = menue.addAction(f"Farbe: {anzeige}")
-            a.triggered.connect(lambda _c=False, k=k: self.set_farbe(k))
+        a = menue.addAction(KOPIEREN_TEXT)
+        a.setEnabled(self.emulator is not None)
+        a.triggered.connect(lambda _c=False: self.text_kopieren())
         menue.exec(self.mapToGlobal(pos))
 
-    # ── Bild holen und zeichnen ──────────────────────────────────────────────
+    def text_kopieren(self) -> str:
+        """Den Bildschirminhalt als reinen Text in die Zwischenablage (und zurück)."""
+        text = self.bildschirmtext()
+        QGuiApplication.clipboard().setText(text)
+        return text
+
+    def bildschirmtext(self) -> str:
+        """Der Text des Bildes: 24 Zeilen, rechts ohne Leerzeichen, durch ``\n`` getrennt."""
+        return "\n".join(z.rstrip() for z in self.text().split("\n")) if self.emulator else ""
+
+    # ── Bild holen (der Takt des ScreenWidget ruft es) ───────────────────────
 
     def aktualisieren(self):
+        self._on_update()
+
+    def _on_update(self):
         """Neues Bild holen — aber nur, wenn der Bildzähler des Kerns sich bewegt hat."""
         emu = self.emulator
         if emu is None:
@@ -151,44 +118,29 @@ class OriginalTerminalWidget(QWidget):
         if flags != self._flags:
             self._flags = flags
             self.flagsChanged.emit(max(0, flags))
-        zaehler = emu.term_frame_count(self.index)
-        if zaehler == self._frame and self._bild is not None:
+        if not self._powered:
             return
-        self._frame = zaehler
+        zaehler = emu.term_frame_count(self.index)
+        if zaehler == self._frame and self._fb_bytes is not None:
+            return
         bild = emu.term_framebuffer(self.index)
         if bild is None:
             return
+        self._frame = zaehler
         b, h, daten = bild
-        self._daten = daten                    # das QImage hält nur einen Zeiger darauf
-        img = QImage(self._daten, b, h, b, QImage.Format_Indexed8)
-        img.setColorTable(self._farbtabelle())
-        self._bild = img
+        self._daten = daten
+        if (b, h) != (self._fb_w, self._fb_h):
+            self._fb_w, self._fb_h = b, h
+            self._texture_stale = True
+        self._fb_bytes = daten.translate(_STUFEN)
+        self._pending_upload = True
         self.update()
-
-    def bild_rechteck(self) -> QRect:
-        """Das Rechteck im Widget, in das das Bild gezeichnet wird (für Tests und Maus)."""
-        w, h = self.width(), self.height()
-        if self.skalierung == "ganzzahlig":
-            f = max(1, min(w // BILD_W, h // BILD_H))
-            zw, zh = BILD_W * f, BILD_H * f
-        else:
-            f = min(w / BILD_W, h / BILD_H)
-            zw, zh = int(BILD_W * f), int(BILD_H * f)
-        return QRect((w - zw) // 2, (h - zh) // 2, zw, zh)
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(*(int(c * 255) for c in self.params.phosphor_off)))
-        if self._bild is not None and self._powered:
-            ziel = self.bild_rechteck()
-            p.setRenderHint(QPainter.SmoothPixmapTransform, self.skalierung == "glatt")
-            p.drawImage(ziel, self._bild)
 
     def pixel(self, x: int, y: int) -> int:
         """Stufe (0 dunkel, 1 normal, 2 hell) des Punktes (x, y) im letzten geholten Bild — für Tests."""
         if not self._daten:
             return 0
-        return self._daten[y * BILD_W + x]
+        return self._daten[y * self._fb_w + x]
 
     # ── Tastatur: Wirtstaste → Matrixtasten ──────────────────────────────────
 

@@ -397,7 +397,7 @@ def test_werkzeugmenue_kennt_alle_emulatoren(qapp, konfig_ordner, monkeypatch):
                         lambda k, *a, **kw: gerufen.append(k))
     erwartet = {"a5120": programme.EMULATOR, "k8915": programme.K8915EMU,
                 "prg710": programme.PRG710EMU, "pc1715": programme.PC1715EMU,
-                "p8000": programme.P8000EMU, "p8000term": programme.P8000TERMEMU}
+                "p8000": programme.P8000EMU}
     for maschine in erwartet:
         w = _fenster(qapp, maschine)
         try:

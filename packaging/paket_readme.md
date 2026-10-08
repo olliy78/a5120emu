@@ -18,11 +18,11 @@ die Bildschirmvariante K7222/K7221 oder den **PC 1715W** wählt man unter „Mod
 Beigelegt sind SCP 1715 (V0006 und V0007), CP/A 1715, UDOS1715 und SCP 3.0 für den
 1715W (`pc1715_*`, `pc1715w_*`, `udos1715_*` im Diskettenordner).
 Fünfter ist der Arbeitsplatzcomputer **P8000** (`p8000emu`, Startmenü „P8000 Emulator";
-Vollgerät mit 16-Bit-Teil und Winchester, ohne Winchester oder nur der 8-Bit-Teil, jeweils
-wahlweise mit dem Originalterminal, unter „Modell") und als sechstes Programm das
-**P8000 Terminal** (`p8000term`, Startmenü „P8000 Terminal"): der Arbeitsplatz ohne Rechner,
-der sich über die serielle Leitung („Maschine ▸ Verbindung zum Rechner…") mit einem laufenden
-`p8000emu` verbindet (Mehrplatzbetrieb; weitere Plätze mit `p8000term --instance NAME`).
+unter „Einstellungen ▸ Allgemein" wählen Sie die Rechnerausstattung — Vollgerät mit 16-Bit-Teil
+und Winchester, ohne Winchester oder nur der 8-Bit-Teil — und die Betriebsart: „Computer mit
+Terminal" oder „nur Terminal"). „Nur Terminal" ist der Arbeitsplatz ohne Rechner, der sich über
+die serielle Leitung („Maschine ▸ Verbindung zum Rechner…") mit einem laufenden `p8000emu`
+verbindet (Mehrplatzbetrieb; weitere Plätze mit `p8000emu --mode terminal --instance NAME`).
 Es liegen **keine** P8000-Disketten oder -Platten bei: UDOS- und WEGA-Abbilder bringen Sie selbst
 mit; eine Platte legen Sie im Plattenkasten über „Neue Platte…" an.
 
@@ -90,7 +90,6 @@ k8915emu
 prg710emu
 pc1715emu
 p8000emu
-p8000term
 ```
 
 Das Paket enthält ein zweites Programm, das **k1520DiskTool**: es tauscht Dateien
@@ -146,7 +145,7 @@ Assembler stehen als Beispielzeilen darin).
 |---|---|
 | Programm | wohin bei der Installation gewählt (Vorschlag `~/K1520emu`) |
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
-| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml`, `pc1715emu.yaml`, `p8000emu.yaml` bzw. `p8000term.yaml` (je Programm) |
+| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml`, `pc1715emu.yaml`, `p8000emu.yaml` (je Programm) |
 
 Die Beispieldisketten werden beim ersten Start in den Diskettenordner
 ausgepackt.  Der Emulator schreibt Änderungen an einer eingelegten Diskette
