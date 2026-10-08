@@ -191,7 +191,9 @@ def test_p8000_can_be_created_configured_and_refused():
 
     for konfig in (None, b"", b"index8=1,mon8=3.1,lw0=K5601,lw1=none,terminals=1,karte16=0",
                    b"karte16=1,index16=4,mon16=3.1,dram=1M@0",
-                   b"index8=1,index16=1,karte16=1,mon16=3.0,dram=256K@0+256K@1"):
+                   b"index8=1,index16=1,karte16=1,mon16=3.0,dram=256K@0+256K@1",
+                   b"karte16=1,dram=4x256K", b"karte16=1,dram=4x1M", b"karte16=1,dram=16M",
+                   b"karte16=1,dram=2M@0+1M@2"):
         handle = _lib.k1520_create_p8000(konfig)
         assert handle, _lib.k1520_last_init_error()
         assert _lib.k1520_machine_type(handle) == 4
@@ -212,7 +214,8 @@ def test_p8000_can_be_created_configured_and_refused():
     assert handle and _lib.k1520_machine_type(handle) == 4
     _lib.k1520_destroy(K1520Handle(handle))
 
-    for schlecht in (b"quatsch=1", b"index8=2", b"mon8=9", b"index16=2", b"dram=2M@0",
+    for schlecht in (b"quatsch=1", b"index8=2", b"mon8=9", b"index16=2", b"dram=2M@1",
+                     b"dram=5x256K", b"dram=32M", b"karte16=1,dram=16M+1M@1", b"karte16=1,dram=8M@0+1M@7",
                      b"dram=1M@16", b"mon16=9", b"karte16=2", b"karte16=1,index8=1",
                      b"karte16=1,dram=1M@0+1M@0", b"wdc=4.2", b"terminals=2", b"lw0", b"lw5=K5601",
                      b"karte16=1,wdc=9", b"plattentyp=XY", b"karte16=1,wdc=4.2,platte=/gibt/es/nicht.img",

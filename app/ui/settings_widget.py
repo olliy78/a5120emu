@@ -32,6 +32,7 @@ from app import drive_types as dt
 from app import profil as profile
 from app import takt
 from app import raf
+from app import p8000_ram
 
 
 class SettingsWidget(QWidget):
@@ -338,7 +339,12 @@ class SettingsWidget(QWidget):
         self._hardware_guard = True
         try:
             for k, box in self.hardware_combos.items():
-                i = box.findData((daten or {}).get(k))
+                wert = (daten or {}).get(k)
+                i = box.findData(wert)
+                if i < 0 and k == "dram" and wert and p8000_ram.gueltig(wert):
+                    # eigene Bestückung aus der Konfiguration (P23b): als Eintrag zeigen
+                    box.addItem(p8000_ram.anzeige(wert), wert)
+                    i = box.count() - 1
                 box.setCurrentIndex(i if i >= 0 else 0)
         finally:
             self._hardware_guard = False

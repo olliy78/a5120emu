@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 #include "core/cards/p8000/dram16.h"
 
+#include <algorithm>
+
 using K = P8000Dram16::Karte;
 
 namespace {
@@ -193,4 +195,120 @@ TEST(P8000Dram16, RundreiseIstBitgleich_UndAndereBestueckungWirdAbgelehnt) {
     P8000Dram16 c;   // nur 1 MB
     p = s.data();
     EXPECT_FALSE(c.deserialize(p, s.data() + s.size()));
+}
+
+// ─── RAM-Karte 16 MB (2009) und Konfigurationstext (P23b, doc/p8000/ram_konfiguration.md) ──
+
+TEST(P8000Dram16, RamKarte_LiegtAbNull_GroesseNachBestueckung) {
+    const struct { K::Typ t; uint32_t g; } tab[] = {
+        {K::Typ::R2, 0x200000}, {K::Typ::R4, 0x400000}, {K::Typ::R8, 0x800000}, {K::Typ::R16, 0x1000000}};
+    for (const auto& e : tab) {
+        P8000Dram16 d(cfg({K{e.t, 0}}));
+        ASSERT_TRUE(d.fehler().empty());
+        EXPECT_EQ(d.gesamt(), e.g);
+        EXPECT_TRUE(d.gewaehlt(0));
+        EXPECT_TRUE(d.gewaehlt(std::min<uint32_t>(e.g, 0x7F0000) - 2));
+        if (e.g < 0x1000000) EXPECT_FALSE(d.gewaehlt(e.g)) << std::hex << e.g;
+    }
+    EXPECT_FALSE(P8000Dram16::pruefe(cfg({K{K::Typ::R16, 1}})).empty()) << "keine Moduladresse";
+}
+
+TEST(P8000Dram16, RamKarte_U16SperrtSegment7F_NurAb8MB_UndNurUnterhalbA23) {
+    P8000Dram16 d8(cfg({K{K::Typ::R8, 0}}));
+    EXPECT_TRUE(d8.gewaehlt(0x7EFFFE));
+    EXPECT_FALSE(d8.gewaehlt(0x7F0000));
+    EXPECT_FALSE(d8.gewaehlt(0x7FFFFE));
+    EXPECT_FALSE(d8.gewaehlt(0x800000));
+    P8000Dram16 d16(cfg({K{K::Typ::R16, 0}}));
+    EXPECT_FALSE(d16.gewaehlt(0x7F8000));
+    EXPECT_TRUE(d16.gewaehlt(0x800000));
+    EXPECT_TRUE(d16.gewaehlt(0xFF0000)) << "A23 = 1: der 8-MB-Term mit 7FH− gilt nur für A23 = 0";
+    EXPECT_TRUE(d16.gewaehlt(0xFFFFFE));
+    uint16_t w = 0x5555;
+    EXPECT_FALSE(d16.lesen(0x7F1234, w));
+    EXPECT_EQ(w, 0x5555) << "kein MEMSEL — offener Bus (Karte16)";
+    EXPECT_FALSE(d16.schreiben(0x7F1234, true, 0));
+    EXPECT_TRUE(d16.schreiben(0xFFFFFE, true, 0xCAFE));
+    EXPECT_TRUE(d16.lesen(0xFFFFFE, w));
+    EXPECT_EQ(w, 0xCAFE);
+}
+
+TEST(P8000Dram16, RamKarte_HatKeineParitaet) {
+    P8000Dram16 d(cfg({K{K::Typ::R8, 0}}));
+    EXPECT_FALSE(d.paritaetsfehlerSetzen(0x1000)) << "SIMMs ×8, PE− am Stecker frei";
+    uint16_t w;
+    d.lesen(0x1000, w);
+    EXPECT_FALSE(d.pe());
+    P8000Dram16 m(cfg({K{K::Typ::R2, 0}, K{K::Typ::M1, 2}}));   // daneben eine Robotron-Karte
+    ASSERT_TRUE(m.fehler().empty());
+    EXPECT_FALSE(m.paritaetsfehlerSetzen(0x100000));
+    EXPECT_TRUE(m.paritaetsfehlerSetzen(0x200000));
+}
+
+TEST(P8000Dram16, RamKarte_UeberlapptJedeKarteUnterIhrerGroesse) {
+    EXPECT_FALSE(P8000Dram16::pruefe(cfg({K{K::Typ::R16, 0}, K{K::Typ::M1, 15}})).empty());
+    EXPECT_FALSE(P8000Dram16::pruefe(cfg({K{K::Typ::R2, 0}, K{K::Typ::R2, 0}})).empty()) << "zweimal ab 0";
+    EXPECT_FALSE(P8000Dram16::pruefe(cfg({K{K::Typ::R4, 0}, K{K::Typ::K256, 15}})).empty());
+    EXPECT_TRUE(P8000Dram16::pruefe(cfg({K{K::Typ::R4, 0}, K{K::Typ::K256, 16}})).empty());
+    EXPECT_TRUE(P8000Dram16::pruefe(cfg({K{K::Typ::R8, 0}, K{K::Typ::M1, 8}})).empty());
+}
+
+TEST(P8000Dram16, Parse_LangUndKurzform) {
+    std::vector<K> k;
+    ASSERT_EQ(P8000Dram16::parse("4x256K", k), "");
+    ASSERT_EQ(k.size(), 4u);
+    for (int i = 0; i < 4; ++i) EXPECT_TRUE(k[i].typ == K::Typ::K256 && k[i].modul == i);
+    EXPECT_EQ(P8000Dram16::format(k), "256K@0+256K@1+256K@2+256K@3");
+    ASSERT_EQ(P8000Dram16::parse("4\xC3\x97" "1m", k), "");
+    EXPECT_EQ(P8000Dram16::format(k), "1M@0+1M@1+1M@2+1M@3");
+    ASSERT_EQ(P8000Dram16::parse("16M", k), "");
+    EXPECT_EQ(P8000Dram16::format(k), "16M@0");
+    ASSERT_EQ(P8000Dram16::parse("1M", k), "");
+    EXPECT_EQ(P8000Dram16::format(k), "1M@0");
+    ASSERT_EQ(P8000Dram16::parse("1M@0+256K@4", k), "") << "rückwärtskompatibel";
+    EXPECT_EQ(P8000Dram16::format(k), "1M@0+256K@4");
+    ASSERT_EQ(P8000Dram16::parse("8M@0+1M@8", k), "");
+    for (const char* schlecht : {"", "5x256K", "0x1M", "4x16M", "2M@1", "1M@16", "256K@64", "32M",
+                                 "1M@0+1M@0", "1M@0+256K@3", "16M+1M@1", "1M@", "@0", "1M@0+",
+                                 "256K@0+256K@1+256K@2+256K@3+256K@4"}) {
+        std::vector<K> r = {K{}};
+        EXPECT_FALSE(P8000Dram16::parse(schlecht, r).empty()) << schlecht;
+        EXPECT_EQ(r.size(), 1u) << "bei Fehler unverändert: " << schlecht;
+    }
+    EXPECT_NE(P8000Dram16::parse("1M@0+256K@3", k).find("überlappen"), std::string::npos);
+}
+
+TEST(P8000Dram16, MaxSegment_WieMon16Testschritt70) {
+    std::vector<K> k;
+    auto ms = [&](const char* t) {
+        EXPECT_EQ(P8000Dram16::parse(t, k), "") << t;
+        return P8000Dram16::maxSegment(k);
+    };
+    EXPECT_EQ(ms("1M@0"), 0x0F);
+    EXPECT_EQ(ms("4x256K"), 0x0F);
+    EXPECT_EQ(ms("2x256K"), 0x07);
+    EXPECT_EQ(ms("1x256K"), 0x03);
+    EXPECT_EQ(ms("4x1M"), 0x3F);
+    EXPECT_EQ(ms("2M"), 0x1F);
+    EXPECT_EQ(ms("4M"), 0x3F);
+    EXPECT_EQ(ms("8M"), 0x7E) << "U16: Segment 7FH fehlt";
+    EXPECT_EQ(ms("16M"), 0x7E) << "MMU aus: A23 = 0, die obere Hälfte sieht MON16 nicht";
+    EXPECT_EQ(ms("256K@0+256K@2"), 0x03) << "erstes Loch beendet die Suche";
+    EXPECT_EQ(ms("256K@1"), -1) << "Segment 0 fehlt: FATAL";
+}
+
+TEST(P8000Dram16, RamKarte_RundreiseIstBitgleich) {
+    P8000Dram16 a(cfg({K{K::Typ::R16, 0}}));
+    a.schreiben(0xFFFFFE, true, 0x1234);
+    a.schreiben(0x000101, false, 0x0077);
+    std::vector<uint8_t> s;
+    a.serialize(s);
+    P8000Dram16 b(cfg({K{K::Typ::R16, 0}}));
+    const uint8_t* p = s.data();
+    ASSERT_TRUE(b.deserialize(p, s.data() + s.size()));
+    EXPECT_EQ(b.peek(0xFFFFFE), 0x12);
+    EXPECT_EQ(b.peek(0x000101), 0x77);
+    P8000Dram16 c(cfg({K{K::Typ::R8, 0}}));
+    p = s.data();
+    EXPECT_FALSE(c.deserialize(p, s.data() + s.size())) << "andere Bestückung";
 }
