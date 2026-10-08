@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=P8000 Terminal
+GenericName=K1520 Emulator
+Comment=Arbeitsplatz-Terminal des robotron P8000 (Terminal Typ 2 + Flachtastatur K7673.09, ohne Rechner)
+Comment[en]=Workstation terminal of the robotron P8000 (terminal type 2 + flat keyboard K7673.09, no computer)
+Exec="@ROOT@/bin/p8000term"
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=P8000;Terminal;K7673;Z8;robotron;emulator;
+StartupNotify=true
+StartupWMClass=main.py

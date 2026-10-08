@@ -319,7 +319,7 @@ A5120 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
-    weitere=("prg710", "pc1715", "p8000"),
+    weitere=("prg710", "pc1715", "p8000", "p8000term"),
 )
 
 K8915 = Programmprofil(
@@ -352,7 +352,7 @@ K8915 = Programmprofil(
                  "K3528, 64 KB).  Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
-    weitere=("prg710", "pc1715", "p8000"),
+    weitere=("prg710", "pc1715", "p8000", "p8000term"),
     # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
     # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
@@ -381,7 +381,7 @@ PRG710 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
     andere="a5120",
-    weitere=("k8915", "pc1715", "p8000"),
+    weitere=("k8915", "pc1715", "p8000", "p8000term"),
 )
 
 PC1715 = Programmprofil(
@@ -429,7 +429,7 @@ PC1715 = Programmprofil(
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
     andere="a5120",
-    weitere=("k8915", "prg710", "p8000"),
+    weitere=("k8915", "prg710", "p8000", "p8000term"),
 )
 
 #: Modelle des P8000 mit einem Rechner / mit der 16-Bit-Karte (Wirkungsbereich der Hardwarewahl).
@@ -518,7 +518,7 @@ P8000 = Programmprofil(
                           ("Terminal (XB5)", 5004)),
     ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>robotron P8000</b>",
     andere="a5120",
-    weitere=("k8915", "prg710", "pc1715"),
+    weitere=("k8915", "prg710", "pc1715", "p8000term"),
 )
 
 # „P8000 Terminal“ (`p8000term`): dasselbe Programm mit dem Arbeitsplatz-Modell vorn — eigener Name,
@@ -537,6 +537,8 @@ P8000TERM = dataclasses.replace(
     modell_tipp=("Vorgabe: nur das Terminal (Arbeitsplatz) — Menü Maschine ▸ Verbindung zum Rechner. "
                  "Die anderen Modelle bringen den Rechner selbst mit.  " + P8000.modell_tipp),
     ueber_rechner="des Arbeitsplatz-Terminals <b>robotron P8000 Terminal</b>",
+    # Im Werkzeugmenü des Terminals: der Rechner (p8000emu), nicht es selbst.
+    weitere=("k8915", "prg710", "pc1715", "p8000"),
 )
 
 #: Alle Profile nach Name.  Schlüssel = Maschinenname, außer beim Arbeitsplatz-Terminal.

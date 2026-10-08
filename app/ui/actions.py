@@ -144,6 +144,10 @@ _SPEC: List[Tuple] = [
      "Den P8000 Emulator öffnen (P8000) — ein eigenes Programm "
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_p8000emu_starten", False),
+    ("p8000termemu", "P8000 &Terminal starten", None, None,
+     "Das P8000 Terminal öffnen (Arbeitsplatz ohne Rechner) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_p8000termemu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -170,6 +174,7 @@ KURZ = {
     "prg710emu": "PRG710",
     "pc1715emu": "PC1715",
     "p8000emu": "P8000",
+    "p8000termemu": "P8000 Term.",
     "stand_speichern": "Stand sichern",
     "stand_laden": "Stand laden",
     "verbindung": "Verbindung",
@@ -200,11 +205,14 @@ NUR_FUER = {
     "stand_speichern": ("p8000",),       # Zwischenstand (P8KS)
     "stand_laden": ("p8000",),
     "verbindung": ("p8000",),
-    "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),     # die jeweils ANDEREN Emulatoren
+    # Die jeweils ANDEREN Emulatoren.  `p8000` meint beide P8000-Programme
+    # (gleiche Maschine); „!p8000term“ nimmt das Terminal aus, „p8000term“ nimmt es auf.
+    "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),
     "a5120emu": ("k8915", "prg710", "pc1715", "p8000"),
     "prg710emu": ("a5120", "k8915", "pc1715", "p8000"),
     "pc1715emu": ("a5120", "k8915", "prg710", "p8000"),
-    "p8000emu": ("a5120", "k8915", "prg710", "pc1715"),
+    "p8000emu": ("a5120", "k8915", "prg710", "pc1715", "p8000term"),
+    "p8000termemu": ("a5120", "k8915", "prg710", "pc1715", "p8000", "!p8000term"),
     # EPROMmer (Kasten und Bedienung) — nur der PRG 710 hat einen.
     "eprom_einlegen": ("prg710",),
     "eprom_leer": ("prg710",),
@@ -265,15 +273,23 @@ STANDARD_K8915: List = [
 ]
 
 
-def gibt_es(name: str, maschine: str = "a5120") -> bool:
-    """Hat das Programm der Maschine *maschine* die Aktion *name*?"""
+def gibt_es(name: str, maschine: str = "a5120", programm: str = "") -> bool:
+    """Hat das Programm der Maschine *maschine* die Aktion *name*?
+
+    *programm* unterscheidet nur das P8000 Terminal (``p8000term``) vom
+    P8000 Emulator — beide haben die Maschine ``p8000``.
+    """
     erlaubt = NUR_FUER.get(name)
-    return erlaubt is None or maschine in erlaubt
+    if erlaubt is None:
+        return True
+    if programm and "!" + programm in erlaubt:
+        return False
+    return maschine in erlaubt or (bool(programm) and programm in erlaubt)
 
 
-def reihenfolge(maschine: str = "a5120") -> List:
+def reihenfolge(maschine: str = "a5120", programm: str = "") -> List:
     """:data:`REIHENFOLGE` ohne die Aktionen, die es in diesem Programm nicht gibt."""
-    return [n for n in REIHENFOLGE if n is None or gibt_es(n, maschine)]
+    return [n for n in REIHENFOLGE if n is None or gibt_es(n, maschine, programm)]
 
 
 def standard(maschine: str = "a5120") -> List:
@@ -281,7 +297,7 @@ def standard(maschine: str = "a5120") -> List:
     return list(STANDARD_K8915 if maschine in ("k8915", "p8000") else STANDARD)
 
 
-def erzeuge_aktionen(fenster, maschine: str = "a5120") -> None:
+def erzeuge_aktionen(fenster, maschine: str = "a5120", programm: str = "") -> None:
     """Die Aktionen anlegen, verdrahten und als ``fenster.act_<name>`` ablegen.
 
     Aktionen aus :data:`NUR_FUER`, die nicht zur Maschine *maschine* gehören,
@@ -289,7 +305,7 @@ def erzeuge_aktionen(fenster, maschine: str = "a5120") -> None:
     noch in der Leiste noch im Einrichtdialog.
     """
     for name, text, bild, kuerzel, tipp, methode, rastend in _SPEC:
-        if not gibt_es(name, maschine):
+        if not gibt_es(name, maschine, programm):
             continue
         a = QAction(text, fenster)
         if bild:
