@@ -20,6 +20,7 @@
 #include "tools/event_bp.h"
 #include "tools/z80dis_min.h"
 #include "core/machines/p8000/p8000.h"
+#include "core/machines/p8000/p8000_terminal_machine.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -60,7 +61,7 @@ std::string zeileAus(const std::string& bild, int r) {
 /// Ziel erreicht: Cursorzeile `>` oder `%` (Monitor/UDOS) oder „Press RETURN" irgendwo im Bild.
 bool promptZeile(const P8000Machine& m, const std::string& bild) {
     using T = k1520::p8000::Terminal;
-    const std::string c = zeileAus(bild, std::min(m.terminal().zeile(), T::ZEILEN - 1));
+    const std::string c = zeileAus(bild, std::min(m.konsole().zeile(), T::ZEILEN - 1));
     if (c == ">" || c == "%") return true;
     return bild.find("Press RETURN") != std::string::npos;
 }
@@ -68,11 +69,12 @@ bool promptZeile(const P8000Machine& m, const std::string& bild) {
 }  // namespace
 
 int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16,
-                   const std::string& wdc, const std::string& hd)
+                   const std::string& wdc, const std::string& hd, bool originalTerminal)
 {
     using T = k1520::p8000::Terminal;
     P8000Machine::Config cfg;
     cfg.karte16 = karte16;
+    if (originalTerminal) cfg.terminal = P8000Machine::Config::TerminalArt::Original;
     if (!wdc.empty() || !hd.empty()) {
         if (!karte16) { fprintf(stderr, "ERROR: --wdc/--hd nur mit --machine p8000-16\n"); return 2; }
         using W = P8000Machine::Config::Wdc;
@@ -300,7 +302,8 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
             ++zeichen;
             if (t.cr) break;
         }
-        laufe(zeichen * 10'000 + 200'000);
+        // Originalterminal: jede Taste geht mit Haltezeit über die K7673 (80 + 80 ms ≈ 640 000 Takte).
+        laufe(zeichen * (m.hatOriginalTerminal() ? 700'000 : 10'000) + 200'000);
     };
 
     // ── Lauf ─────────────────────────────────────────────────────────────────
@@ -351,8 +354,12 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
         fprintf(stderr, "Prompt:      %s\n", prompt ? "JA" : "nein");
         if (!o.keys.empty())
             fprintf(stderr, "Tasten:      %zu von %zu getippt\n", tasten_pos, tasten.size());
-        fprintf(stderr, "Terminal:    Cursor %d/%d, Modus %s, BEL %u\n", m.terminal().zeile(), m.terminal().spalte(),
-                m.terminal().modus() == k1520::p8000::TerminalModus::VT100 ? "VT100" : "ADM31", m.terminal().klingel());
+        if (m.hatOriginalTerminal())
+            fprintf(stderr, "Terminal:    Original Typ 2 (P8T 5.0), Cursor %d/%d, BEL %u, LEDs %X\n", m.konsole().zeile(),
+                    m.konsole().spalte(), m.konsole().klingel(), m.keyboardLeds());
+        else
+            fprintf(stderr, "Terminal:    Cursor %d/%d, Modus %s, BEL %u\n", m.terminal().zeile(), m.terminal().spalte(),
+                    m.terminal().modus() == k1520::p8000::TerminalModus::VT100 ? "VT100" : "ADM31", m.terminal().klingel());
         fprintf(stderr, "Ereignisse:  %ld (%ld Zeilen), Interrupts: %ld, Befehle: %llu\n",
                 ev_total, ev_lines, ints, (unsigned long long)instr);
         const Z80& z = m.karte8().cpu();
@@ -430,4 +437,85 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
     }
     if (o.until.kind != untilcond::UntilCond::NONE) return until_hit ? 0 : 2;
     return prompt ? 0 : 1;
+}
+
+// ─── --machine p8000-terminal (AP P20d) ──────────────────────────────────────
+
+int bootTraceP8000Terminal(const K8915TraceOpts& o)
+{
+    if (!o.disk.empty()) fprintf(stderr, "WARN: das Terminal hat keine Laufwerke — Diskette ignoriert\n");
+    // Die Einheit selbst (ohne Hub): was das Terminal auf XB5 sendet, landet im Bericht statt
+    // in einem unverbundenen Wandler.  Gleicher Kern wie `P8000TerminalMachine`.
+    k1520::p8000::P8000TerminalEinheit e;
+    e.einschalten();
+    struct { k1520::p8000::P8000TerminalEinheit& e; uint64_t totalCycles() const { return e.takte(); }
+             void run(int n) { e.laufe(uint64_t(n)); } } m{e};
+    if (!o.quiet) {
+        fprintf(stderr, "=== P8000 Terminal (Typ 2, P8T 5.0 + K7673.09) Trace ===\n");
+        fprintf(stderr, "Max Z8-Takte: %lld (%.2f s)\n\n", o.limit, double(o.limit) / P8000TerminalMachine::einheitHz());
+    }
+    std::string gesendet;
+    auto sammle = [&] {
+        while (e.hw().hatAusgabe()) {
+            const auto s = e.hw().holeAusgabe();
+            char b[16];
+            snprintf(b, sizeof b, s.brk ? " BRK" : " %02X", s.byte);
+            gesendet += b;
+        }
+    };
+    auto bild = [&] {
+        std::string s;
+        for (int r = 0; r < 24; ++r) s += e.hw().text(r) + "\n";
+        return s;
+    };
+    const uint64_t schritt = P8000TerminalMachine::einheitHz() / 100;   // 10 ms
+    auto laufe = [&](uint64_t n) { for (uint64_t k = 0; k < n; k += schritt) { m.run(int(schritt)); sammle(); } };
+    // Bis zur Einschaltmeldung, dann die Tasten (über die K7673, je Taste mit Haltezeit).
+    bool meldung = false;
+    while (static_cast<long long>(m.totalCycles()) < o.limit && !(meldung = bild().find("baud") != std::string::npos))
+        laufe(schritt);
+    laufe(30 * schritt);   // 300 ms: Tasten in den ersten ≈ 150 ms nach der Meldung verwirft das Terminal (Merkposten 35)
+    size_t getippt = 0, tasten = 0;
+    for (size_t i = 0; i < o.keys.size(); ++i) {
+        ++tasten;
+        const bool cr = o.keys.compare(i, 4, "<CR>") == 0 || o.keys.compare(i, 4, "<cr>") == 0 ||
+                        o.keys.compare(i, 4, "<ET>") == 0 || o.keys.compare(i, 4, "<et>") == 0;
+        const bool ok = cr ? e.taste(k1520::p8000::TerminalTaste::CR) : e.zeichenTaste(uint8_t(o.keys[i]));
+        if (cr) i += 3;
+        if (!ok) { fprintf(stderr, "WARN: keine Taste fuer '%c' auf der K7673.09\n", o.keys[i]); continue; }
+        ++getippt;
+    }
+    while (!e.tastenFertig() && static_cast<long long>(m.totalCycles()) < o.limit + 60LL * 3'686'400) laufe(schritt);
+    laufe(5 * schritt);
+    const std::string b = bild();
+    const bool ok = meldung && getippt == tasten;
+    if (!o.quiet) {
+        fprintf(stderr, "Einschaltmeldung: %s   Z8-Takte: %llu (%.2f s)   Bilder: %llu   Watchdog-Resets: %u\n",
+                meldung ? "JA" : "nein", (unsigned long long)m.totalCycles(),
+                double(m.totalCycles()) / P8000TerminalMachine::einheitHz(), (unsigned long long)e.hw().bilder(),
+                e.hw().watchdogResets());
+        if (!o.keys.empty()) fprintf(stderr, "Tasten:      %zu von %zu getippt\n", getippt, tasten);
+        fprintf(stderr, "Cursor:      Zeile %d Spalte %d   BEL %u   LEDs %X   Zeichensatz %d\n", e.hw().cursorZeile(),
+                e.hw().cursorSpalte(), e.hw().klingel(), unsigned(e.tastatur().leds()), e.hw().zeichensatz2() ? 2 : 1);
+        fprintf(stderr, "Leitung XB5 (Terminal → Rechner):%s\n", gesendet.empty() ? " (nichts)" : gesendet.c_str());
+        const Z8& z = e.hw().z8();
+        fprintf(stderr, "Final Z8:    PC=%04X\n", z.pc);
+        fprintf(stderr, "Bild:\n");
+        for (int r = 0; r < 24; ++r) {
+            std::string z2 = b.substr(size_t(r) * 81, 80);
+            for (char& c : z2) if (c < 0x20 || c >= 0x7F) c = ' ';
+            fprintf(stderr, "  |%s|\n", z2.c_str());
+        }
+    }
+    if (o.json) {
+        std::string gs;   // gesendete Bytes ohne führendes Leerzeichen, JSON-tauglich
+        for (char c : gesendet) gs += c;
+        if (!gs.empty() && gs[0] == ' ') gs.erase(0, 1);
+        fprintf(stderr, "{\"machine\":\"p8000-terminal\",\"meldung\":%s,\"cycles\":%llu,\"keys\":%zu,"
+                        "\"keys_typed\":%zu,\"sent\":\"%s\",\"row0\":\"",
+                meldung ? "true" : "false", (unsigned long long)m.totalCycles(), tasten, getippt, gs.c_str());
+        for (char c : b.substr(0, 80)) if (c >= 0x20 && c < 0x7F && c != '"' && c != '\\') fputc(c, stderr);
+        fprintf(stderr, "\"}\n");
+    }
+    return ok ? 0 : 1;
 }

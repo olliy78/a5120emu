@@ -1,0 +1,8 @@
+# boot_trace --machine p8000 --konsole original (AP P20c): tty1 am Originalterminal Typ 2 + K7673;
+# RETURN über die K7673 am „Press RETURN" ⇒ Prompt `>` des U880-Monitors.
+tool:    boot_trace
+run:     --machine p8000 --konsole original --quiet --json --keys <CR> --until "screen ~ /RETURN +>/"
+timeout: 240
+exit:    0
+expect:  "machine":"p8000"
+expect:  "until":{"set":true,"met":true

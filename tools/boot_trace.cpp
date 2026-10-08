@@ -303,6 +303,8 @@ int main(int argc, char** argv) {
     bool        machine_p8000 = false;   // P8000, 8-Bit-Seite (AP P7c; gleiche Optionen wie K8915)
     bool        machine_p8000_16 = false;   // --machine p8000-16: mit 16-Bit-Karte (AP P11)
     std::string p8000_wdc, p8000_hd;         // --wdc <fw> / --hd <abbild> (P8000-16, AP P13d)
+    bool        p8000_original = false;      // --konsole original: tty1 am Originalterminal (AP P20c)
+    bool        machine_p8000_terminal = false;   // --machine p8000-terminal: Terminal ohne Rechner (P20d)
     bool        stall_set     = false;   // --stall angegeben? (Vorgabe je Maschine verschieden)
     bool        limit_set     = false;   // -c angegeben? (Vorgabe je Maschine verschieden)
     K8915TraceOpts k8o;
@@ -332,12 +334,18 @@ int main(int argc, char** argv) {
             else if (mn == "pc1715w" || mn == "PC1715W") { machine_k8915 = true; machine_pc1715 = machine_pc1715w = true; }
             else if (mn == "p8000" || mn == "P8000") { machine_k8915 = true; machine_p8000 = true; }
             else if (mn == "p8000-16" || mn == "P8000-16") { machine_k8915 = true; machine_p8000 = machine_p8000_16 = true; }
+            else if (mn == "p8000-terminal" || mn == "P8000-TERMINAL") { machine_k8915 = true; machine_p8000_terminal = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16 | p8000-terminal)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
         else if (!strcmp(argv[i], "--wdc") && i+1 < argc) p8000_wdc = argv[++i];
         else if (!strcmp(argv[i], "--hd") && i+1 < argc) p8000_hd = argv[++i];
+        else if (!strcmp(argv[i], "--konsole") && i+1 < argc) {
+            const std::string k = argv[++i];
+            if (k == "original") p8000_original = true;
+            else if (k != "kern") { fprintf(stderr, "--konsole %s unbekannt (kern | original)\n", k.c_str()); return 2; }
+        }
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
@@ -534,7 +542,12 @@ int main(int argc, char** argv) {
                                            disk_path, cow_temp.c_str()); }
             }
         }
-        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn, machine_p8000_16, p8000_wdc, p8000_hd)
+        if (machine_p8000_terminal) {
+            if (!limit_set) k8o.limit = 2 * 3'686'400;   // Z8-Takte: 2 s
+            return bootTraceP8000Terminal(k8o);
+        }
+        if (p8000_original && !machine_p8000) { fprintf(stderr, "ERROR: --konsole nur mit --machine p8000[-16]\n"); return 2; }
+        const int rc = machine_p8000 ? bootTraceP8000(k8o, prn, machine_p8000_16, p8000_wdc, p8000_hd, p8000_original)
                      : machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
                      : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);

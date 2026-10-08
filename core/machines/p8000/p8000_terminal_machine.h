@@ -134,6 +134,8 @@ public:
     uint64_t totalCycles() const { return einheit_.takte(); }
 
     static constexpr uint32_t MATRIX_KODE = 0x04000000u;
+    /// Takt von `run()` (interner Z8-Takt).
+    static constexpr uint64_t einheitHz() { return k1520::p8000::P8000TerminalEinheit::Z8_HZ; }
 
 protected:
     K1520Bus& systemBus() override { return bus_; }

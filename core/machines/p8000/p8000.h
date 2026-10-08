@@ -119,8 +119,9 @@ public:
         k1520::p8000::P8000TerminalEinheitConfig terminal_hw;
         /// Nur `Original`: so lange läuft das Terminal vor dem Rechner (Netz-Ein-Reihenfolge am
         /// Arbeitsplatz).  Ohne Vorlauf fielen die ersten Zeilen des Hardwaretests in die
-        /// Einschaltphase der Firmware (Tastaturwarte, Merkposten 29).
-        uint32_t terminal_vorlauf_ms = 1000;
+        /// Einschaltphase der Firmware (Tastaturwarte, Merkposten 29); die Einschaltmeldung steht
+        /// nach ≈ 0,84 s, Tasten nimmt das Terminal ab ≈ 1,0 s an (Merkposten 35).
+        uint32_t terminal_vorlauf_ms = 1500;
     };
 
     /// Kanal der Konsole (U880-Monitor, UDOS) — Kern- oder Originalterminal.

@@ -200,6 +200,7 @@ int main(int argc, char** argv){
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
     const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
+    const char* konsole_opt = nullptr; // --konsole kern|original: Terminal an tty1 (P8000, P20c)
     const char* hd_opt  = nullptr; // --hd <abbild>: Winchester an WDC-Laufwerk 0 (setzt --wdc 4.2)
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     const char* z8_bild = nullptr; // --z8 <abzug>[@org]: Z8-Prüfstand (P19c), ohne Maschine
@@ -220,6 +221,7 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
         else if (!strcmp(argv[i],"--wdc") && i+1<argc) wdc_opt=argv[++i];
+        else if (!strcmp(argv[i],"--konsole") && i+1<argc) konsole_opt=argv[++i];
         else if (!strcmp(argv[i],"--hd") && i+1<argc) hd_opt=argv[++i];
         else if (!strcmp(argv[i],"--ptape")) ptape_opt=true;
         else if (!strcmp(argv[i],"--z8") && i+1<argc) z8_bild=argv[++i];
@@ -258,6 +260,12 @@ int main(int argc, char** argv){
     // P8000-WDC (P13d): --wdc/--hd nur mit p8000-16.  Die Platte wird wie die Disketten im
     // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende gelöscht), mit --rw direkt.
     P8000Machine::Config p8cfg;
+    if (konsole_opt){
+        if (art!=dbgm::Art::P8000 && art!=dbgm::Art::P8000_16){ fprintf(stderr,"--konsole gibt es nur am P8000\n"); return 2; }
+        const std::string k = konsole_opt;
+        if (k=="original") p8cfg.terminal = P8000Machine::Config::TerminalArt::Original;
+        else if (k!="kern"){ fprintf(stderr,"--konsole: '%s' unbekannt (kern|original)\n",konsole_opt); return 2; }
+    }
     static std::string hd_kopie;
     struct HdKopieWeg { ~HdKopieWeg(){ if(!hd_kopie.empty()) std::remove(hd_kopie.c_str()); } };
     static HdKopieWeg hd_kopie_weg;
@@ -2675,8 +2683,9 @@ int main(int argc, char** argv){
             fprintf(stderr,"   Fehlerbyte (30C7) %02X   -> 'wdc log' fuer das Protokoll\n",rdw(0x30C7));
             return true; }
         if (cmd=="term"){
-            auto& tm=pm.terminal();
-            fprintf(stderr,"  Terminal tty1 (Kern-Terminal): Cursor Zeile %d Spalte %d\n",tm.zeile(),tm.spalte());
+            auto& tm=pm.konsole();
+            fprintf(stderr,"  Terminal tty1 (%s): Cursor Zeile %d Spalte %d\n",
+                    pm.hatOriginalTerminal()?"Originalterminal Typ 2, P8T 5.0":"Kern-Terminal",tm.zeile(),tm.spalte());
             int last=-1; for (int r=0;r<k1520::p8000::Terminal::ZEILEN;++r){
                 std::string z=pm.terminalZeile(r); while(!z.empty() && (z.back()==' '||z.back()==0)) z.pop_back();
                 if (!z.empty()) last=r; }
