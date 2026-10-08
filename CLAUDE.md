@@ -554,6 +554,11 @@ fünfter/sechster Starter im Linux-Paket und im Inno-Setup (Vorlage `launcher.*`
 `MASCHINEN`, `{#Programm5}`/`{#Programm6}`, beide `default_config_p8000*.yaml`, Rauchtest `k1520_create(4)`/`(5)`); **keine
 P8000-Disketten im Paket**. Menü *Werkzeuge*: `p8000term` ist überall erreichbar, `Aktionen.gibt_es(name, maschine, programm)`
 trennt `p8000emu`/`p8000term` (gleiche Maschine). Wächter `py_packaging`, `py_programme`, `py_pc1715emu_gui`.
+**Mehrplatz-Abnahme (AP P22, 2026-10-08; `doc/p8000/mehrplatz_abnahme.md`, Merkposten 40–43):** WEGA von der Platte,
+Konsole am Originalterminal + drei Arbeitsplätze (tty0/tty2 über die Koppelsoftware, tty4) per Loopback-Telnet
+(`P8000WegaMehrplatz.*`, `tools/dev.sh test-wega`).  **Der U880 der 8-Bit-Karte nimmt nach `EI` erst nach dem folgenden
+Befehl an** (sonst wuchs unter Last der Stapel der Koppelsoftware in den Code), **der Wandler blickt höchstens 1/16 der
+9600-Zeichenzeit voraus** (sonst MON16-Fehler 61) — beides nicht aufweichen.
 **Grundsatz:** Chips werden vollständig + systematisch getestet, Debugger unterstützen sie vollständig
 (Plan §10.11a). **Vor Arbeiten daran: `doc/merkposten/p8000.md` lesen**; Plan und Stand
 `doc/design/25_p8000.md` (§9/§9a), Quellen/Referenzen `doc/p8000/` (EPROM-Abzüge in `doc/p8000/eproms/`).
