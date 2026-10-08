@@ -323,12 +323,17 @@ _lib.k1520_create_pc1715_ex.restype = K1520Handle
 # k1520_create_p8000(konfig: const char*) -> K1520Handle   (Entwurf 25 §10.9; "schluessel=wert,…")
 _lib.k1520_create_p8000.argtypes = [ctypes.c_char_p]
 _lib.k1520_create_p8000.restype = K1520Handle
+# k1520_create_p8000_terminal(konfig) -> K1520Handle   („P8000 Terminal", AP P20d)
+_lib.k1520_create_p8000_terminal.argtypes = [ctypes.c_char_p]
+_lib.k1520_create_p8000_terminal.restype = K1520Handle
 
 # P8000-Terminals (k1520_term_*; andere Maschinen: 0 / -1 / False)
 _lib.k1520_term_count.argtypes = [K1520Handle]
 _lib.k1520_term_count.restype = ctypes.c_int
 _lib.k1520_term_tty.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_tty.restype = ctypes.c_int
+_lib.k1520_term_kind.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_kind.restype = ctypes.c_int
 _lib.k1520_term_char.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int]
 _lib.k1520_term_char.restype = ctypes.c_uint8
 _lib.k1520_term_attr.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int]
@@ -353,6 +358,20 @@ _lib.k1520_term_flags.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_flags.restype = ctypes.c_int
 _lib.k1520_term_bell_count.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_bell_count.restype = ctypes.c_uint32
+# Originalterminal (P20d): Pixelbild, Bildzähler, Matrix-/Scancode-Tasten, LEDs der K7673
+_lib.k1520_term_framebuffer.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                                        ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+_lib.k1520_term_framebuffer.restype = ctypes.c_int
+_lib.k1520_term_frame_count.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_frame_count.restype = ctypes.c_uint32
+_lib.k1520_term_matrix_key.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_bool]
+_lib.k1520_term_matrix_key.restype = ctypes.c_bool
+_lib.k1520_term_scancode_key.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_uint32, ctypes.c_bool]
+_lib.k1520_term_scancode_key.restype = ctypes.c_bool
+_lib.k1520_term_matrix_scancode.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+_lib.k1520_term_matrix_scancode.restype = ctypes.c_uint32
+_lib.k1520_term_leds.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_term_leds.restype = ctypes.c_int
 _lib.k1520_state_save.argtypes = [K1520Handle, ctypes.c_char_p]
 _lib.k1520_state_save.restype = ctypes.c_bool
 _lib.k1520_state_load.argtypes = [K1520Handle, ctypes.c_char_p]
@@ -581,7 +600,7 @@ def _utf8(path) -> bytes:
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
-                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4}
+                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5}
 # (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
 # AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
@@ -854,8 +873,11 @@ class K1520Emulator:
             tastatur: nur PC 1715/1715W — Tastatur-ROM ``"s600"`` (QWERTY, Vorgabe)
                 oder ``"tast618"`` (QWERTZ).
             p8000: nur ``machine="p8000"`` — Konfiguration als Wörterbuch (Schlüssel wie im
-                Konfigurationstext von ``k1520_create_p8000``, z. B. ``{"mon8": "3.1"}``);
+                Konfigurationstext von ``k1520_create_p8000``, z. B. ``{"mon8": "3.1"}``,
+                ``{"terminal": "original"}`` = Originalterminal Typ 2 an tty1);
                 die Laufwerksnamen aus ``drive_types`` werden als ``lw0``..``lw3`` ergänzt.
+                Bei ``machine="p8000-terminal"`` (Originalterminal ohne Rechner) die Schlüssel
+                von ``k1520_create_p8000_terminal``, z. B. ``{"rolle": "client", "port": 5001}``.
             em: Erweiterungsmodul des A5120.16 — ``None``/``"none"`` = ohne EM,
                 ``"em064"`` oder ``"em256"``.  Nur am A5120 (sonst ValueError).
             raf: RAM-Floppy — ``None``/``"none"`` = ohne, ``"raf128"``, ``"raf512"``
@@ -902,6 +924,9 @@ class K1520Emulator:
                     if n:
                         teile.append(f"lw{i}={n}")
                 handle = _lib.k1520_create_p8000(",".join(teile).encode("utf-8"))
+            elif machine == "p8000-terminal":
+                teile = [f"{k}={v}" for k, v in (p8000 or {}).items()]
+                handle = _lib.k1520_create_p8000_terminal(",".join(teile).encode("utf-8"))
             elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
@@ -1172,18 +1197,23 @@ class K1520Emulator:
         return None if v < 0 else bool(v)
 
     def machine_type(self) -> int:
-        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715, 4 = P8000)."""
+        """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715, 4 = P8000,
+        5 = P8000 Terminal)."""
         return int(_lib.k1520_machine_type(self._handle))
 
     # ─── Terminals des P8000 (k1520_term_*) ──────────────────────────────────
 
     def term_count(self) -> int:
-        """Zahl der Kern-Terminals (P8000: 1 = tty1; sonst 0)."""
+        """Zahl der Terminals (P8000: 1 = tty1; P8000 Terminal: 1; sonst 0)."""
         return int(_lib.k1520_term_count(self._handle))
 
     def term_tty(self, i: int = 0) -> int:
-        """Kanalnummer (ttyN) des Terminals ``i``; -1 bei ungültigem Index."""
+        """Kanalnummer (ttyN) des Terminals ``i``; -2 = eigenständiges Terminal, -1 ungültig."""
         return int(_lib.k1520_term_tty(self._handle, i))
+
+    def term_kind(self, i: int = 0) -> int:
+        """0 = Kern-Terminal (P6), 1 = Originalterminal Typ 2 + K7673.09, -1 ungültig."""
+        return int(_lib.k1520_term_kind(self._handle, i))
 
     def term_char(self, i: int, col: int, row: int) -> str:
         """Zeichen einer Terminalzelle (80 × 24); ``""`` außerhalb."""
@@ -1243,6 +1273,40 @@ class K1520Emulator:
     def term_bell_count(self, i: int = 0) -> int:
         """Zahl der BEL des Terminals seit dem Einschalten."""
         return int(_lib.k1520_term_bell_count(self._handle, i))
+
+    # ─── Originalterminal (P20d): Pixelbild und Tastatur K7673 ─────────────────
+
+    def term_framebuffer(self, i: int = 0) -> Optional[tuple]:
+        """Pixelbild ``(breite, hoehe, bytes)`` des Originalterminals (640 × 312, je Punkt 0 dunkel,
+        1 normal, 2 hell); ``None`` am Kern-Terminal bzw. bei ungültigem Index."""
+        b, h = ctypes.c_int(), ctypes.c_int()
+        _lib.k1520_term_framebuffer(self._handle, i, None, 0, ctypes.byref(b), ctypes.byref(h))
+        n = b.value * h.value
+        if n <= 0:
+            return None
+        buf = ctypes.create_string_buffer(n)
+        got = _lib.k1520_term_framebuffer(self._handle, i, buf, n, None, None)
+        return (b.value, h.value, bytes(buf.raw[:got])) if got == n else None
+
+    def term_frame_count(self, i: int = 0) -> int:
+        """Gezeigte Bilder seit dem Einschalten (unverändert ⇒ Pixelbild unverändert)."""
+        return int(_lib.k1520_term_frame_count(self._handle, i))
+
+    def term_matrix_key(self, i: int, zeile: int, spalte: int, gedrueckt: bool) -> bool:
+        """K7673-Matrixtaste drücken/loslassen (gehalten bis zum Loslassen)."""
+        return bool(_lib.k1520_term_matrix_key(self._handle, i, zeile, spalte, gedrueckt))
+
+    def term_scancode_key(self, i: int, scancode: int, gedrueckt: bool) -> bool:
+        """Taste über ihre Make-Folge (0x1C = RETURN, 0xE048 = Pfeil hoch …) drücken/loslassen."""
+        return bool(_lib.k1520_term_scancode_key(self._handle, i, scancode, gedrueckt))
+
+    def term_matrix_scancode(self, i: int, zeile: int, spalte: int) -> int:
+        """Make-Folge der Matrixtaste als Zahl (0 = keine Taste) — für das Tastaturbild."""
+        return int(_lib.k1520_term_matrix_scancode(self._handle, i, zeile, spalte))
+
+    def term_leds(self, i: int = 0) -> int:
+        """LEDs der K7673 (Bit 0 ON/OFF, 1 CAPS LOCK, 2 MODE); -1 ohne Originalterminal."""
+        return int(_lib.k1520_term_leds(self._handle, i))
 
     # ─── Save-State des P8000 ────────────────────────────────────────────────
 

@@ -210,6 +210,38 @@ def test_p8000_zeigt_banner_am_terminal_und_nimmt_tasten(temp_disk):
     assert any(z.rstrip() == ">" for z in emu.term_text(0).split("\n")), emu.term_text(0)
 
 
+def test_p8000_mit_originalterminal_und_eigenstaendiges_terminal():
+    """AP P20d: ``p8000={"terminal": "original"}`` — das Banner steht im Bild des Originalterminals
+    (Firmware P8T 5.0), Return geht über die K7673; ``machine="p8000-terminal"`` zeigt die
+    Einschaltmeldung und ein Pixelbild 640 × 312."""
+    from app.core_binding.k1520 import K1520Emulator
+
+    emu = K1520Emulator(machine="p8000", p8000={"terminal": "original"})
+    assert emu.term_kind(0) == 1 and emu.term_tty(0) == 1
+    emu.power_on()
+    done = 0
+    while done < 200_000_000 and "Press RETURN" not in emu.term_text(0):
+        done += emu.run(500_000)
+    assert "P8000 Hardwaretest U880 - Version 3.1" in emu.term_text(0), emu.term_text(0)
+    assert emu.term_send(0, "\r")
+    for _ in range(200):
+        emu.run(50_000)
+        if any(z.rstrip() == ">" for z in emu.term_text(0).split("\n")):
+            break
+    assert any(z.rstrip() == ">" for z in emu.term_text(0).split("\n")), emu.term_text(0)
+    b, h, px = emu.term_framebuffer(0)
+    assert (b, h) == (640, 312) and len(px) == b * h and any(px)
+
+    t = K1520Emulator(machine="p8000-terminal", p8000={"rolle": "server", "port": 0})
+    assert t.machine_type() == 5 and t.term_count() == 1 and t.term_tty(0) == -2
+    t.power_on()
+    for _ in range(10):
+        t.run(368_640)
+    assert t.term_text(0).startswith("ADM31/9600 baud"), t.term_text(0)
+    assert t.term_leds(0) == 0 and t.term_frame_count(0) > 0
+    assert t.term_matrix_scancode(0, 0, 0) >= 0
+
+
 def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
     """PC 1715 (AP-4b): jede maschinenneutrale C-ABI-Funktion wirkt am Gerät oder meldet
     ihren Ruhewert — Boot von der SCP-Diskette bis `A>`, Format erkannt, Lampen, Tastatur

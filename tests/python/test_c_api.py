@@ -107,6 +107,81 @@ def test_unbuilt_machine_type_is_refused_with_a_reason():
     _lib.k1520_destroy(K1520Handle(handle))
 
 
+def test_p8000_terminal_als_maschine_und_originalterminal_am_p8000(tmp_path):
+    """AP P20d: „P8000 Terminal" (Typ 5, `k1520_create_p8000_terminal`) und `terminal=original` am
+    P8000 — Terminal-Funktionen mit Pixelbild, Matrix/Scancode, LEDs, Save-State P8TM; falsche
+    Konfiguration → NULL mit Grund."""
+    import ctypes
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for konfig in (None, b"", b"firmware=5.0,zeichensatz=dzs-ezs,teiler=7,art=rfc2217,rolle=server,port=0",
+                   b"art=telnet,rolle=client,host=127.0.0.1,port=5000,verbinden=0"):
+        h = _lib.k1520_create_p8000_terminal(konfig)
+        assert h, _lib.k1520_last_init_error()
+        assert _lib.k1520_machine_type(h) == 5
+        assert _lib.k1520_term_count(h) == 1 and _lib.k1520_term_kind(h, 0) == 1
+        assert _lib.k1520_term_tty(h, 0) == -2 and _lib.k1520_term_tty(h, 1) == -1
+        assert _lib.k1520_serial_count(h) == 1                       # Leitung XB5 am eigenen Hub
+        assert not _lib.k1520_mount_disk(h, 0, b"/tmp/x.hfe", b"", False)
+        _lib.k1520_destroy(K1520Handle(h))
+    h = _lib.k1520_create(5)
+    assert h and _lib.k1520_machine_type(h) == 5
+    _lib.k1520_power_on(h)
+    for _ in range(40):                                              # Z8-Takte: 40 × 0,1 s
+        _lib.k1520_run(h, 368_640)
+    text = ctypes.create_string_buffer(96)
+    _lib.k1520_term_text(h, 0, 0, text, 96)
+    assert text.value.startswith(b"ADM31/9600 baud"), text.value
+    assert _lib.k1520_term_mode(h, 0) == 2 and _lib.k1520_term_flags(h, 0) & 32
+    b, hh = ctypes.c_int(), ctypes.c_int()
+    assert _lib.k1520_term_framebuffer(h, 0, None, 0, ctypes.byref(b), ctypes.byref(hh)) == 0
+    assert (b.value, hh.value) == (640, 312)
+    buf = ctypes.create_string_buffer(640 * 312)
+    assert _lib.k1520_term_framebuffer(h, 0, buf, len(buf), None, None) == 640 * 312
+    assert any(buf.raw)
+    assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (640, 312)
+    assert _lib.k1520_term_frame_count(h, 0) > 200
+    # Tastaturbild: jede Make-Folge gehört zu einer Matrixposition; RETURN = 1CH
+    folgen = {_lib.k1520_term_matrix_scancode(h, 0, z, s) for z in range(8) for s in range(16)}
+    assert 0x1C in folgen and 0xE048 in folgen
+    assert _lib.k1520_term_scancode_key(h, 0, 0x3A, True)            # CAPS LOCK drücken …
+    for _ in range(4):
+        _lib.k1520_run(h, 36_864)
+    assert _lib.k1520_term_scancode_key(h, 0, 0x3A, False)           # … und loslassen
+    for _ in range(4):
+        _lib.k1520_run(h, 36_864)
+    assert _lib.k1520_term_leds(h, 0) & 2 and _lib.k1520_keyboard_leds(h) & 2
+    assert not _lib.k1520_term_scancode_key(h, 0, 0x7777, True)
+    assert not _lib.k1520_term_matrix_key(h, 0, 8, 0, True)
+    pfad = str(tmp_path / "term.p8tm").encode()
+    assert _lib.k1520_state_save(h, pfad)
+    h2 = _lib.k1520_create_p8000_terminal(None)
+    assert _lib.k1520_state_load(h2, pfad), _lib.k1520_state_error(h2)
+    _lib.k1520_term_text(h2, 0, 0, text, 96)
+    assert text.value.startswith(b"ADM31/9600 baud")
+    h3 = _lib.k1520_create_p8000_terminal(b"teiler=7")
+    assert not _lib.k1520_state_load(h3, pfad) and _lib.k1520_state_error(h3)
+    for x in (h, h2, h3):
+        _lib.k1520_destroy(K1520Handle(x))
+    for schlecht in (b"firmware=6.0", b"zeichensatz=x", b"teiler=9", b"art=x", b"rolle=x", b"port=70000",
+                     b"verbinden=2", b"quatsch=1"):
+        assert not _lib.k1520_create_p8000_terminal(schlecht), schlecht
+        assert _lib.k1520_last_init_error().decode().startswith("P8000-Terminal"), schlecht
+
+    # Am P8000: terminal=original — tty1, Art 1, Pixelbild; Kern-Terminal: Art 0, kein Pixelbild
+    h = _lib.k1520_create_p8000(b"terminal=original,teiler=8,zeichensatz=ezs-dzs,vorlauf=500")
+    assert h, _lib.k1520_last_init_error()
+    assert _lib.k1520_term_tty(h, 0) == 1 and _lib.k1520_term_kind(h, 0) == 1
+    _lib.k1520_destroy(K1520Handle(h))
+    h = _lib.k1520_create_p8000(None)
+    assert _lib.k1520_term_kind(h, 0) == 0 and _lib.k1520_term_leds(h, 0) == -1
+    assert _lib.k1520_term_framebuffer(h, 0, None, 0, None, None) == 0
+    assert not _lib.k1520_term_matrix_key(h, 0, 0, 0, True)
+    _lib.k1520_destroy(K1520Handle(h))
+    for schlecht in (b"terminal=x", b"vorlauf=abc", b"firmware=6.0"):
+        assert not _lib.k1520_create_p8000(schlecht), schlecht
+
+
 def test_p8000_can_be_created_configured_and_refused():
     """`k1520_create_p8000` (AP P7b): Typ 4, Terminal-Funktionen, Konfigurationstext;
     unbekannte/noch nicht gebaute Schlüssel und unzulässige Bestückung → NULL mit Grund

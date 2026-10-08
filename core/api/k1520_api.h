@@ -17,6 +17,7 @@ typedef enum {
     K1520_MACHINE_K8915  = 2,
     K1520_MACHINE_PC1715 = 3,
     K1520_MACHINE_P8000  = 4,
+    K1520_MACHINE_P8000_TERMINAL = 5,   /* Originalterminal Typ 2 + K7673.09 ohne Rechner (P20d) */
 } K1520MachineType;
 
 typedef struct {
@@ -117,12 +118,34 @@ K1520_API K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int z
  *
  * @param konfig  Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel:
  *                `index8` (1|3), `mon8` (3.0|3.1|3.1n = nur 8 Bit|2.1n), `lw0`..`lw3`
- *                (Laufwerksprofil, "none" = leer), `terminals` (nur "1"), `karte16` (nur "0").
+ *                (Laufwerksprofil, "none" = leer), `terminals` (nur "1"), `karte16` (nur "0"),
+ *                **`terminal`** (`kern` = vereinfachtes Kern-Terminal, Vorgabe | `original` =
+ *                Originalterminal Typ 2 + K7673.09 fest an tty1, AP P20c) und für das Original
+ *                `firmware` (nur 5.0), `zeichensatz` (ezs-dzs | dzs-ezs = Bestückung ZG1-ZG2),
+ *                `teiler` (7 | 8, Zeichentakt), `vorlauf` (ms, die das Terminal vor dem Rechner
+ *                eingeschaltet wird; Vorgabe 1000).
  *                Schlüssel der noch nicht gebauten Teile (`index16`, `mon16`, `dram`, `wdc`,
  *                `platte`) und unbekannte Schlüssel/Werte → NULL, Grund in k1520_last_init_error.
  * k1520_machine_type() = 4.  `k1520_create(K1520_MACHINE_P8000)` = Vorgabe-Konfiguration.
  */
 K1520_API K1520Handle k1520_create_p8000(const char* konfig);
+
+/**
+ * @brief „P8000 Terminal" (K1520_MACHINE_P8000_TERMINAL): Originalterminal Typ 2 (Z8 + Firmware
+ *        P8T 5.0 + 8275) + Tastatur K7673.09 OHNE Rechner — ein Arbeitsplatz (Entwurf 25 §11, AP P20d).
+ *
+ * Die serielle Leitung XB5 ist Schnittstelle 0 der `k1520_serial_*`-Funktionen (eigener Hub);
+ * Vorgabe Telnet-Client auf 127.0.0.1:5000, verbunden wird mit `verbinden=1` oder
+ * `k1520_serial_start`.  `k1520_run` zählt Z8-Takte (3 686 400 Hz).  Bild: `k1520_framebuffer`
+ * bzw. `k1520_term_framebuffer` (640 × 312, 0 dunkel / 1 normal / 2 hell) und die `k1520_term_*`
+ * mit i = 0; LEDs `k1520_keyboard_leds`/`k1520_term_leds`; Save-State „P8TM" über `k1520_state_*`.
+ * Keine Laufwerke.
+ * @param konfig  wie bei k1520_create_p8000: `firmware` (5.0; 6.0 gehört zu anderer Hardware),
+ *                `zeichensatz` (ezs-dzs | dzs-ezs), `teiler` (7 | 8), `art` (telnet | rfc2217 |
+ *                datei), `rolle` (client | server), `host`, `port`, `datei`, `verbinden` (0 | 1).
+ *                Fehler → NULL, Grund in k1520_last_init_error.
+ */
+K1520_API K1520Handle k1520_create_p8000_terminal(const char* konfig);
 
 /**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).
@@ -669,13 +692,17 @@ K1520_API const char* k1520_ptape_punch_file(K1520Handle h);
 /** @brief Format der Bindung; -1 ohne Karte. */
 K1520_API int      k1520_ptape_punch_format(K1520Handle h);
 
-/* ─── Terminals des P8000 (Entwurf 25 §10.9; andere Maschinen: 0 / -1 / false) ───────────
- * Index i zählt die Kern-Terminals (derzeit eins: tty1).  80 × 24 Zellen, Zeilen/Spalten 0-basiert. */
+/* ─── Terminals des P8000 (Entwurf 25 §10.9, P20d; andere Maschinen: 0 / -1 / false) ───────
+ * Index i zählt die Terminals: am P8000 die Konsole tty1 (Kern- ODER Originalterminal, je nach
+ * `terminal=`), an „P8000 Terminal" das Terminal selbst (i = 0).  80 × 24 Zellen, 0-basiert. */
 
-/** @brief Zahl der Kern-Terminals (0 an Maschinen ohne). */
+/** @brief Zahl der Terminals (0 an Maschinen ohne). */
 K1520_API int      k1520_term_count(K1520Handle h);
-/** @brief Kanalnummer (ttyN) des Terminals i; -1 bei ungültigem i. */
+/** @brief Kanalnummer (ttyN) des Terminals i; -2 = eigenständiges Terminal (Leitung XB5 am Hub),
+ *  -1 bei ungültigem i. */
 K1520_API int      k1520_term_tty(K1520Handle h, int i);
+/** @brief Art des Terminals i: 0 = Kern-Terminal (P6), 1 = Originalterminal Typ 2; -1 ungültig. */
+K1520_API int      k1520_term_kind(K1520Handle h, int i);
 /** @brief Zeichen der Zelle (Attributfeld = Leerzeichen); 0 außerhalb oder bei ungültigem i. */
 K1520_API uint8_t  k1520_term_char(K1520Handle h, int i, int col, int row);
 /** @brief Wirksames Attribut der Zelle (Bit 0 blink, 1 invers, 2 leer, 3 hell, 4 unterstrichen). */
@@ -685,9 +712,13 @@ K1520_API uint8_t  k1520_term_attr(K1520Handle h, int i, int col, int row);
 K1520_API int      k1520_term_text(K1520Handle h, int i, int row, char* buf, int cap);
 /** @brief Cursor des Terminals; false bei ungültigem i. */
 K1520_API bool     k1520_term_cursor(K1520Handle h, int i, int* col, int* row);
-/** @brief Betriebsart: 0 ADM31, 1 VT100, -1 bei ungültigem i. */
+/** @brief Betriebsart: 0 ADM31, 1 VT100, 2 = unbekannt (Originalterminal: Zustand der Firmware),
+ *  -1 bei ungültigem i. */
 K1520_API int      k1520_term_mode(K1520Handle h, int i);
-/** @brief Taste des Terminals (Qt-Code oder ASCII wie k1520_key_press); false bei ungültigem i. */
+/** @brief Taste des Terminals (Qt-Code oder ASCII wie k1520_key_press); false bei ungültigem i.
+ *  Am Originalterminal wird sie über die K7673 getippt (Matrixdruck mit Haltezeit 80 ms +
+ *  80 ms Pause, SHIFT/CTRL aus den Tabellen der Firmware); ohne Taste auf der K7673.09 (NL,
+ *  LINE ERASE) ohne Wirkung. */
 K1520_API bool     k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctrl);
 /** @brief @p len Zeichen wie getippt senden ('\r'/'\n' = Return); false bei ungültigem i. */
 K1520_API bool     k1520_term_send(K1520Handle h, int i, const char* text, int len);
@@ -699,12 +730,37 @@ K1520_API bool     k1520_term_send(K1520Handle h, int i, const char* text, int l
  *  (auch bei ungültigem i). */
 K1520_API int      k1520_term_snapshot(K1520Handle h, int i, uint8_t* buf, int cap);
 /** @brief Zustand des Terminals: Bit 0 On-Line, 1 Video-Attribute an, 2 Programm-Mode, 3 Zeichensatz 2
- *  (SI/SO), 4 Caps lock; -1 bei ungültigem i. */
+ *  (SI/SO), 4 Caps lock; -1 bei ungültigem i.  Originalterminal: nur Bit 3 (RS-Flipflop des ZG),
+ *  Bit 4 (LED CAPS LOCK) und Bit 5 = 1 (Originalterminal). */
 K1520_API int      k1520_term_flags(K1520Handle h, int i);
 /** @brief Anzahl BEL des Terminals seit dem Einschalten (Piezophon); 0 bei ungültigem i. */
 K1520_API uint32_t k1520_term_bell_count(K1520Handle h, int i);
 
-/* ─── Save-State des P8000 (P8KS, Entwurf 25 §10.2; andere Maschinen: false).  Gesichert wird der
+/* Nur Originalterminal (k1520_term_kind = 1; sonst 0 / false / -1): Pixelbild und Tastatur K7673. */
+
+/** @brief Pixelbild des letzten Bildes (Firmware + 8275 + Zeichengenerator) nach @p buf: Breite ×
+ *  Höhe Byte zeilenweise (640 × 312), je Punkt 0 dunkel, 1 normal, 2 hell (Highlight).  @p breite
+ *  /@p hoehe (dürfen NULL sein) erhalten die Größe auch bei zu kleinem @p cap.  Rückgabe =
+ *  Bytezahl, 0 bei zu kleinem Puffer oder ohne Originalterminal. */
+K1520_API int      k1520_term_framebuffer(K1520Handle h, int i, uint8_t* buf, int cap, int* breite, int* hoehe);
+/** @brief Zahl der gezeigten Bilder seit dem Einschalten (62,8 Hz) — ändert sie sich nicht, ist das
+ *  Pixelbild unverändert. */
+K1520_API uint32_t k1520_term_frame_count(K1520Handle h, int i);
+/** @brief Taste der K7673-Matrix (Zeile 0–7, Spalte 0–15) drücken bzw. loslassen — gehalten, bis
+ *  sie losgelassen wird (Wiederholung macht die Tastatur selbst).  Gleichwertig: k1520_key_press
+ *  bzw. k1520_key_release mit `0x04000000 | Zeile << 8 | Spalte`. */
+K1520_API bool     k1520_term_matrix_key(K1520Handle h, int i, int zeile, int spalte, bool gedrueckt);
+/** @brief Wie k1520_term_matrix_key, die Taste über ihre Make-Folge (IBM-XT Satz 1, robotron-
+ *  Belegung) gewählt: 1CH = RETURN, E048H = Pfeil hoch, …; false, wenn keine Taste sie sendet. */
+K1520_API bool     k1520_term_scancode_key(K1520Handle h, int i, uint32_t scancode, bool gedrueckt);
+/** @brief Make-Folge der Matrixtaste (wie k1520_term_scancode_key; 0 = keine Taste) — für das
+ *  Tastaturbild der Oberfläche, aus dem EPROM-Abzug der K7673.09 gelesen. */
+K1520_API uint32_t k1520_term_matrix_scancode(K1520Handle h, int i, int zeile, int spalte);
+/** @brief LEDs der K7673: Bit 0 ON/OFF, 1 CAPS LOCK, 2 MODE; -1 ohne Originalterminal. */
+K1520_API int      k1520_term_leds(K1520Handle h, int i);
+
+/* ─── Save-State des P8000 (P8KS v4) und des „P8000 Terminal" (P8TM v1), Entwurf 25 §10.2; andere
+ * Maschinen: false.  Gesichert wird der
  * Maschinenzustand, nicht der Medieninhalt (Disketten und Platten vor dem Laden anschließen). */
 
 /** @brief Zustand in eine Datei schreiben; false bei Schreibfehler oder an anderen Maschinen. */

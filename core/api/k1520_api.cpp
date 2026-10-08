@@ -5,6 +5,7 @@
 #include "core/machines/prg710/prg710.h"
 #include "core/machines/pc1715/pc1715.h"
 #include "core/machines/p8000/p8000.h"
+#include "core/machines/p8000/p8000_terminal_machine.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -91,11 +92,12 @@ K1520Handle k1520_create_configured(K1520MachineType type,
             if (names[i] && names[i][0]) k += (k.empty() ? "" : ",") + ("lw" + std::to_string(i)) + "=" + names[i];
         return k1520_create_p8000(k.c_str());
     }
+    if (type == K1520_MACHINE_P8000_TERMINAL) return k1520_create_p8000_terminal(nullptr);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
         // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000, P8000-Terminal)";
         return nullptr;
     }
 
@@ -219,6 +221,17 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
             else { fehler = "P8000: mon8 = " + val + " unbekannt (3.0 | 3.1 | 3.1n | 2.1n)"; return false; }
         } else if (key.size() == 3 && key.compare(0, 2, "lw") == 0 && key[2] >= '0' && key[2] <= '3') {
             cfg.laufwerke[key[2] - '0'] = val;
+        } else if (key == "terminal") {
+            if (val == "kern") cfg.terminal = Cfg::TerminalArt::Kern;
+            else if (val == "original") cfg.terminal = Cfg::TerminalArt::Original;
+            else { fehler = "P8000: terminal = " + val + " unbekannt (kern | original)"; return false; }
+        } else if (key == "vorlauf") {
+            if (val.empty() || val.size() > 6 || val.find_first_not_of("0123456789") != std::string::npos) {
+                fehler = "P8000: vorlauf = " + val + " ungueltig (Millisekunden)"; return false;
+            }
+            cfg.terminal_vorlauf_ms = static_cast<uint32_t>(std::stoul(val));
+        } else if (const int hw = P8000TerminalMachine::hwSchluessel(key, val, cfg.terminal_hw, fehler); hw != 0) {
+            if (hw < 0) return false;
         } else if (key == "terminals") {
             if (val != "1") { fehler = "P8000: terminals = " + val + " noch nicht moeglich (nur 1 = tty1)"; return false; }
         } else if (key == "karte16") {
@@ -274,6 +287,21 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
         }
     }
     return true;
+}
+
+K1520Handle k1520_create_p8000_terminal(const char* konfig) {
+    g_init_error.clear();
+    P8000TerminalMachine::Config cfg;
+    if (!P8000TerminalMachine::konfigAusText(konfig, cfg, g_init_error)) return nullptr;
+    setup_logging();
+    try {
+        K1520Machine* m = new P8000TerminalMachine(cfg);   // Handle = K1520Machine* (s. toMachine)
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    }
 }
 
 K1520Handle k1520_create_p8000(const char* konfig) {
@@ -1257,109 +1285,210 @@ bool k1520_raf_save(K1520Handle h, const char* pfad) {
     return r && r->speichereInhalt(pfad);
 }
 
-// ─── Terminals des P8000 (Entwurf 25 §10.9) ─────────────────────────────────
-// Derzeit genau ein Kern-Terminal (tty1); Index i ≠ 0 und andere Maschinen → Ruhewerte.
-static P8000Machine* p8000Of(K1520Handle h, int i) {
-    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
-    return (p && i == 0) ? p : nullptr;
+// ─── Terminals des P8000 (Entwurf 25 §10.9, P20d) ───────────────────────────
+// Genau ein Terminal je Handle: am P8000 die Konsole tty1 (Kern- oder Originalterminal), an
+// „P8000 Terminal" das Originalterminal selbst.  Index i ≠ 0 und andere Maschinen → Ruhewerte.
+namespace {
+struct TermSicht {
+    P8000Machine* p8 = nullptr;                    ///< P8000 (Konsole tty1)
+    P8000TerminalMachine* pt = nullptr;            ///< „P8000 Terminal"
+    explicit operator bool() const { return p8 || pt; }
+    K1520Machine* maschine() const { return p8 ? static_cast<K1520Machine*>(p8) : pt; }
+    /// Das Originalterminal (nullptr = Kern-Terminal).
+    k1520::p8000::P8000TerminalEinheit* original() const { return p8 ? p8->originalTerminal() : &pt->einheit(); }
+    std::string text(int z) const { return p8 ? p8->konsole().text(z) : pt->einheit().hw().text(z); }
+    k1520::p8000::TerminalZelle zelle(int z, int sp) const { return p8 ? p8->konsole().zelle(z, sp) : pt->einheit().hw().zelle(z, sp); }
+    uint8_t attribut(int z, int sp) const { return p8 ? p8->konsole().attribut(z, sp) : pt->einheit().hw().wirksamesAttribut(z, sp); }
+    int zeile() const  { return p8 ? p8->konsole().zeile()  : pt->einheit().hw().cursorZeile(); }
+    int spalte() const { return p8 ? p8->konsole().spalte() : pt->einheit().hw().cursorSpalte(); }
+    unsigned klingel() const { return p8 ? p8->konsole().klingel() : pt->einheit().hw().klingel(); }
+};
+TermSicht termOf(K1520Handle h, int i) {
+    TermSicht t;
+    if (!h || i != 0) return t;
+    K1520Machine* m = toMachine(h);
+    t.p8 = dynamic_cast<P8000Machine*>(m);
+    if (!t.p8) t.pt = dynamic_cast<P8000TerminalMachine*>(m);
+    return t;
 }
+}  // namespace
 static bool termZelleOk(int col, int row) {
     return col >= 0 && col < k1520::p8000::Terminal::SPALTEN && row >= 0 && row < k1520::p8000::Terminal::ZEILEN;
 }
 
 int k1520_term_count(K1520Handle h) {
-    return h && dynamic_cast<P8000Machine*>(toMachine(h)) ? 1 : 0;
+    return termOf(h, 0) ? 1 : 0;
 }
 
 int k1520_term_tty(K1520Handle h, int i) {
-    return p8000Of(h, i) ? P8000Machine::KONSOLE_TTY : -1;
+    const TermSicht t = termOf(h, i);
+    if (!t) return -1;
+    return t.p8 ? P8000Machine::KONSOLE_TTY : -2;
+}
+
+int k1520_term_kind(K1520Handle h, int i) {
+    const TermSicht t = termOf(h, i);
+    if (!t) return -1;
+    return t.original() ? 1 : 0;
 }
 
 uint8_t k1520_term_char(K1520Handle h, int i, int col, int row) {
-    auto* p = p8000Of(h, i);
-    return (p && termZelleOk(col, row)) ? p->screenChar(col, row) : 0;
+    const TermSicht t = termOf(h, i);
+    if (!t || !termZelleOk(col, row)) return 0;
+    const auto c = t.zelle(row, col);
+    return c.feld ? uint8_t(' ') : c.zeichen;
 }
 
 uint8_t k1520_term_attr(K1520Handle h, int i, int col, int row) {
-    auto* p = p8000Of(h, i);
-    return (p && termZelleOk(col, row)) ? p->terminal().wirksamesAttribut(row, col) : 0;
+    const TermSicht t = termOf(h, i);
+    return (t && termZelleOk(col, row)) ? t.attribut(row, col) : 0;
 }
 
 int k1520_term_text(K1520Handle h, int i, int row, char* buf, int cap) {
-    auto* p = p8000Of(h, i);
-    if (!p || !buf || cap <= 0 || row < 0 || row >= k1520::p8000::Terminal::ZEILEN) return 0;
-    const std::string t = p->terminalZeile(row);
-    const int n = std::min<int>(static_cast<int>(t.size()), cap - 1);
-    std::memcpy(buf, t.data(), static_cast<size_t>(n));
+    const TermSicht t = termOf(h, i);
+    if (!t || !buf || cap <= 0 || row < 0 || row >= k1520::p8000::Terminal::ZEILEN) return 0;
+    const std::string z = t.text(row);
+    const int n = std::min<int>(static_cast<int>(z.size()), cap - 1);
+    std::memcpy(buf, z.data(), static_cast<size_t>(n));
     buf[n] = 0;
     return n;
 }
 
 bool k1520_term_cursor(K1520Handle h, int i, int* col, int* row) {
-    auto* p = p8000Of(h, i);
-    if (!p) return false;
-    if (col) *col = p->terminal().spalte();
-    if (row) *row = p->terminal().zeile();
+    const TermSicht t = termOf(h, i);
+    if (!t) return false;
+    if (col) *col = t.spalte();
+    if (row) *row = t.zeile();
     return true;
 }
 
 int k1520_term_mode(K1520Handle h, int i) {
-    auto* p = p8000Of(h, i);
-    if (!p) return -1;
-    return p->terminal().modus() == k1520::p8000::TerminalModus::VT100 ? 1 : 0;
+    const TermSicht t = termOf(h, i);
+    if (!t) return -1;
+    if (t.original()) return 2;   // Betriebsart steckt in der Firmware des Originals
+    return t.p8->terminal().modus() == k1520::p8000::TerminalModus::VT100 ? 1 : 0;
 }
 
 bool k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctrl) {
-    auto* p = p8000Of(h, i);
-    if (!p) return false;
-    p->keyPress(keycode, shift, ctrl);
+    const TermSicht t = termOf(h, i);
+    if (!t) return false;
+    t.maschine()->keyPress(keycode, shift, ctrl);
     return true;
 }
 
 int k1520_term_snapshot(K1520Handle h, int i, uint8_t* buf, int cap) {
     using k1520::p8000::Terminal;
-    auto* p = p8000Of(h, i);
+    const TermSicht t = termOf(h, i);
     constexpr int N = Terminal::ZEILEN * Terminal::SPALTEN * 3;
-    if (!p || !buf || cap < N) return 0;
-    const Terminal& t = p->terminal();
+    if (!t || !buf || cap < N) return 0;
     uint8_t* o = buf;
     for (int z = 0; z < Terminal::ZEILEN; ++z)
-        for (int s = 0; s < Terminal::SPALTEN; ++s) {
-            const auto& c = t.zelle(z, s);
+        for (int sp = 0; sp < Terminal::SPALTEN; ++sp) {
+            const auto c = t.zelle(z, sp);
             *o++ = c.feld ? uint8_t(' ') : c.zeichen;
-            *o++ = t.wirksamesAttribut(z, s);
+            *o++ = t.attribut(z, sp);
             *o++ = uint8_t((c.zg2 ? 1 : 0) | (c.feld ? 2 : 0));
         }
     return N;
 }
 
 int k1520_term_flags(K1520Handle h, int i) {
-    auto* p = p8000Of(h, i);
-    if (!p) return -1;
-    const auto& t = p->terminal();
-    return (t.onLine() ? 1 : 0) | (t.videoAttribute() ? 2 : 0) | (t.programmMode() ? 4 : 0) |
-           (t.zeichensatz2() ? 8 : 0) | (t.capsLock() ? 16 : 0);
+    const TermSicht t = termOf(h, i);
+    if (!t) return -1;
+    if (auto* o = t.original())   // Original: nur, was die Hardware zeigt (RS-Flipflop, LED CAPS LOCK)
+        return (o->hw().zeichensatz2() ? 8 : 0) | ((o->tastatur().leds() & 2) ? 16 : 0) | 32;
+    const auto& k = t.p8->terminal();
+    return (k.onLine() ? 1 : 0) | (k.videoAttribute() ? 2 : 0) | (k.programmMode() ? 4 : 0) |
+           (k.zeichensatz2() ? 8 : 0) | (k.capsLock() ? 16 : 0);
 }
 
 uint32_t k1520_term_bell_count(K1520Handle h, int i) {
-    auto* p = p8000Of(h, i);
-    return p ? p->terminal().klingel() : 0;
+    const TermSicht t = termOf(h, i);
+    return t ? t.klingel() : 0;
+}
+
+int k1520_term_framebuffer(K1520Handle h, int i, uint8_t* buf, int cap, int* breite, int* hoehe) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    if (!o) return 0;
+    const auto& px = o->hw().pixel();
+    if (breite) *breite = o->hw().pixelBreite();
+    if (hoehe) *hoehe = o->hw().pixelHoehe();
+    const int n = static_cast<int>(px.size());
+    if (!buf || cap < n) return 0;
+    std::memcpy(buf, px.data(), px.size());
+    return n;
+}
+
+uint32_t k1520_term_frame_count(K1520Handle h, int i) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    return o ? static_cast<uint32_t>(o->hw().bilder()) : 0;
+}
+
+bool k1520_term_matrix_key(K1520Handle h, int i, int zeile, int spalte, bool gedrueckt) {
+    const TermSicht t = termOf(h, i);
+    if (!t || !t.original() || zeile < 0 || spalte < 0 || zeile >= k1520::p8000::TastaturK7673::ZEILEN ||
+        spalte >= k1520::p8000::TastaturK7673::SPALTEN)
+        return false;
+    const uint32_t kode = P8000Machine::matrixKode(zeile, spalte);
+    if (gedrueckt) t.maschine()->keyPress(kode, false, false);
+    else t.maschine()->keyRelease(kode);
+    return true;
+}
+
+/// Make-Folge als Zahl: 1DH, E048H (E0 + 48H), E11D45H …
+static uint32_t folgeAlsZahl(const std::vector<uint8_t>& f) {
+    uint32_t v = 0;
+    for (uint8_t b : f) v = (v << 8) | b;
+    return v;
+}
+
+bool k1520_term_scancode_key(K1520Handle h, int i, uint32_t scancode, bool gedrueckt) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    if (!o || scancode == 0) return false;
+    for (int z = 0; z < k1520::p8000::TastaturK7673::ZEILEN; ++z)
+        for (int sp = 0; sp < k1520::p8000::TastaturK7673::SPALTEN; ++sp)
+            if (folgeAlsZahl(o->tastatur().makeFolge(z, sp)) == scancode)
+                return k1520_term_matrix_key(h, i, z, sp, gedrueckt);
+    return false;
+}
+
+uint32_t k1520_term_matrix_scancode(K1520Handle h, int i, int zeile, int spalte) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    if (!o || zeile < 0 || spalte < 0 || zeile >= k1520::p8000::TastaturK7673::ZEILEN ||
+        spalte >= k1520::p8000::TastaturK7673::SPALTEN)
+        return 0;
+    return folgeAlsZahl(o->tastatur().makeFolge(zeile, spalte));
+}
+
+int k1520_term_leds(K1520Handle h, int i) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    return o ? o->tastatur().leds() : -1;
 }
 
 bool k1520_state_save(K1520Handle h, const char* path) {
-    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
-    return p && path && p->saveState(path);
+    if (!h || !path) return false;
+    if (auto* p = dynamic_cast<P8000Machine*>(toMachine(h))) return p->saveState(path);
+    if (auto* t = dynamic_cast<P8000TerminalMachine*>(toMachine(h))) return t->saveState(path);
+    return false;
 }
 
 bool k1520_state_load(K1520Handle h, const char* path) {
-    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
-    return p && path && p->loadState(path);
+    if (!h || !path) return false;
+    if (auto* p = dynamic_cast<P8000Machine*>(toMachine(h))) return p->loadState(path);
+    if (auto* t = dynamic_cast<P8000TerminalMachine*>(toMachine(h))) return t->loadState(path);
+    return false;
 }
 
 const char* k1520_state_error(K1520Handle h) {
     static thread_local std::string s;
-    auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
-    s = p ? p->stateError() : std::string("kein Save-State an dieser Maschine");
+    if (auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr) s = p->stateError();
+    else if (auto* t = h ? dynamic_cast<P8000TerminalMachine*>(toMachine(h)) : nullptr) s = t->stateError();
+    else s = "kein Save-State an dieser Maschine";
     return s.c_str();
 }
 
@@ -1410,11 +1539,11 @@ const char* k1520_hd_error(K1520Handle h) {
 }
 
 bool k1520_term_send(K1520Handle h, int i, const char* text, int len) {
-    auto* p = p8000Of(h, i);
-    if (!p) return false;
+    const TermSicht t = termOf(h, i);
+    if (!t) return false;
     for (int k = 0; text && k < len; ++k) {
         const unsigned char c = static_cast<unsigned char>(text[k]);
-        p->keyPress((c == '\r' || c == '\n') ? 0x01000004u : c, false, false);
+        t.maschine()->keyPress((c == '\r' || c == '\n') ? 0x01000004u : c, false, false);
     }
     return true;
 }
