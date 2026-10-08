@@ -37,6 +37,12 @@ TYPEN = (
     ("D5146", "D5146 (NEC, 615 Zyl., 8 Köpfe)", 615, 8, 18),
     ("VS", "VS (Robotron, 820 Zyl., 6 Köpfe)", 820, 6, 18),
 )
+#: Dateinamenkürzel je Typ (Kern: `winchester::typen()`, geprüft durch `k1520_hd_typ_kuerzel`):
+#: Plattenabbilder heißen ``<name>.<kürzel>.img`` (P24) — die Endung bleibt ``.img``, damit
+#: DiskTool und Dateimanager sie weiter erkennen.
+KUERZEL = {"K5504.50": "k5504", "D5126": "d5126", "D5146": "d5146", "VS": "vs"}
+#: WDC-Fassungen, die noch nicht belegt sind (3.x-Spurformat, wdc_firmware.md §12 Nr. 11).
+EXPERIMENTELL = ("4.0.05", "3.4.05")
 STANDARD_TYP = "K5504.50:unformatiert"   # Vorgabe: Laufwerk wie neu, ohne Parametersatz
 STANDARD_DATEI = "p8000_platte.img"
 INHALT_UNFORMATIERT = "unformatiert"
@@ -51,6 +57,70 @@ def typ_mit_inhalt(typ: str, inhalt: str) -> str:
 UNIT = 0          # nur Laufwerk 0 — die Maschine führt drei, der Kasten bedient das erste
 
 
+def rom_typ(firmware: str) -> str:
+    """Plattentyp, den das EPROM der WDC-Firmware festlegt (``""`` = 4.2, laufwerksunabhängig)."""
+    from app.core_binding import k1520
+    return k1520.hd_rom_typ(firmware or "")
+
+
+def typ_masse(name: str):
+    """(Zylinder, Köpfe, Sektoren) des Typs *name* aus :data:`TYPEN`, sonst ``None``."""
+    for n, _text, z, k, sek in TYPEN:
+        if n == name:
+            return z, k, sek
+    return None
+
+
+def leerzeichen(n: int) -> str:
+    """47185920 → ``"47 185 920"`` (wie die Meldungen des Kerns)."""
+    return f"{n:,}".replace(",", " ")
+
+
+def kuerzel_aus_dateiname(pfad: str) -> str:
+    """``platte.k5504.img`` → ``k5504``; ``""`` bei einer Datei ohne Typkürzel."""
+    name = os.path.basename(pfad).lower()
+    if not name.endswith(".img"):
+        return ""
+    teile = name[:-4].rsplit(".", 1)
+    return teile[1] if len(teile) == 2 and teile[1] in KUERZEL.values() else ""
+
+
+def dateiname_mit_kuerzel(pfad: str, typ: str) -> str:
+    """*pfad* auf ``<name>.<kürzel>.img`` bringen: fehlt die Endung, wird sie angehängt, ein anderes
+    Typkürzel ersetzt, ``.img`` ohne Kürzel davor ergänzt."""
+    kz = KUERZEL.get(typ, "")
+    if not kz:
+        return pfad if "." in os.path.basename(pfad) else pfad + ".img"
+    ordner, name = os.path.split(pfad)
+    if kuerzel_aus_dateiname(name):
+        name = name[:-4].rsplit(".", 1)[0] + ".img"
+    elif not name.lower().endswith(".img"):
+        name += ".img"
+    return os.path.join(ordner, name[:-4] + f".{kz}.img")
+
+
+def abweisung(pfad: str, firmware: str) -> str:
+    """Passt das Abbild *pfad* zum EPROM der Firmware?  ``""`` = ja (oder 4.2: der Parametersatz der
+    Platte entscheidet), sonst der Klartext.  Bis 4.0 legt das EPROM das Laufwerk fest."""
+    rom = rom_typ(firmware)
+    masse = typ_masse(rom) if rom else None
+    if not rom or masse is None:
+        return ""
+    z, k, sek = masse
+    soll = z * k * sek * 512
+    kopf = f"Firmware {firmware} gehört zu {rom} ({z}/{k}/{sek} = {leerzeichen(soll)} B)"
+    kz = kuerzel_aus_dateiname(pfad)
+    if kz and kz != KUERZEL[rom]:
+        return f"{kopf}; der Dateiname nennt aber „{kz}“"
+    try:
+        ist = os.path.getsize(pfad)
+    except OSError:
+        return ""
+    if ist != soll:
+        return f"{kopf}, die Datei hat {leerzeichen(ist)} B"
+    return ""
+
+
 def groesse_text(zyl: int, kopf: int, sektoren: int) -> str:
     mib = zyl * kopf * sektoren * 512 / (1024 * 1024)
     return f"{mib:.0f} MiB"
@@ -59,15 +129,32 @@ def groesse_text(zyl: int, kopf: int, sektoren: int) -> str:
 class PlattenDialog(QDialog):
     """Typ der neuen Platte erfragen (der Pfad kommt danach aus dem Speichern-Dialog)."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, firmware: str = "4.2"):
         super().__init__(parent)
         self.setWindowTitle("Neue Platte anlegen")
+        self.firmware = firmware
         lay = QVBoxLayout(self)
         form = QFormLayout()
         self.typ = QComboBox()
         for name, text, z, k, s in TYPEN:
             self.typ.addItem(f"{text} — {groesse_text(z, k, s)}", name)
         form.addRow("Plattentyp:", self.typ)
+        # Bis WDC 4.0 steckt das Laufwerk im EPROM: die Wahl entfällt, der Typ des ROMs steht fest.
+        self.rom = rom_typ(firmware)
+        self.typ_hinweis = QLabel()
+        self.typ_hinweis.setWordWrap(True)
+        if self.rom:
+            self.typ.setCurrentIndex(max(0, self.typ.findData(self.rom)))
+            self.typ.setEnabled(False)
+            self.typ.setToolTip(f"Die Firmware {firmware} legt das Laufwerk fest "
+                                "(Parameter im EPROM eingebrannt).")
+            self.typ_hinweis.setText(f"Firmware {firmware}: das EPROM bestimmt das Laufwerk "
+                                     f"({self.rom}); die Typwahl ist gesperrt.")
+            form.addRow("", self.typ_hinweis)
+        self.dateiname = QLabel()
+        form.addRow("Dateiendung:", self.dateiname)
+        self.typ.currentIndexChanged.connect(self._dateiendung)
+        self._dateiendung()
         # Inhalt: Vorgabe = unformatiert, wie ein neues Laufwerk (kein Parametersatz).  Mit
         # Parametersatz aber leer startet der 16-Bit-Monitor die E5-Bytes als Bootprogramm.
         self.inhalt = QComboBox()
@@ -83,6 +170,12 @@ class PlattenDialog(QDialog):
         tasten.accepted.connect(self.accept)
         tasten.rejected.connect(self.reject)
         lay.addWidget(tasten)
+
+    def kuerzel(self) -> str:
+        return KUERZEL.get(self.typ.currentData(), "")
+
+    def _dateiendung(self):
+        self.dateiname.setText(f"<name>.{self.kuerzel()}.img  (wird angehängt)")
 
     def typ_name(self) -> str:
         """Typname für ``hd_create``, bei „unformatiert“ mit dem Suffix des Kerns."""
@@ -102,6 +195,8 @@ class PlattenWidget(QWidget):
         self.emulator = emulator
         self._pfad = ""
         self._verfuegbar = True
+        #: WDC-Firmware der Maschine ("4.2" | "4.0.05" | "3.4.05"); bis 4.0 legt das EPROM den Typ fest.
+        self.firmware = "4.2"
         #: Hat der Anwender (oder die Konfiguration) schon über die Platte entschieden?
         #: Erst dann legt das Programm beim Start keine Standardplatte mehr an.
         self.entschieden = False
@@ -157,6 +252,15 @@ class PlattenWidget(QWidget):
         self._verfuegbar = bool(an)
         self._anzeigen()
 
+    def set_firmware(self, firmware: str):
+        """Die WDC-Fassung der Maschine (bestimmt Dialoge und Dateifilter)."""
+        self.firmware = firmware or "4.2"
+        self._anzeigen()
+
+    def passt_nicht_zu(self, firmware: str) -> str:
+        """Klartext, falls die angeschlossene Platte nicht zur Firmware *firmware* passt, sonst ``""``."""
+        return abweisung(self._pfad, firmware) if self._pfad else ""
+
     def set_emulator(self, emulator):
         """An die (neue) Maschine hängen und die gemerkte Platte dort anschließen."""
         self.emulator = emulator
@@ -190,6 +294,10 @@ class PlattenWidget(QWidget):
         *hinweis* = False vor dem ersten Einschalten (Start): dort gilt der Rückstell-Hinweis nicht."""
         if not self._verfuegbar or self.emulator is None:
             return False
+        grund = self._kuerzel_widerspruch(pfad)
+        if grund:
+            self.meldung.emit(f"Platte nicht angeschlossen: {grund}")
+            return False
         self._loesen()
         if not self._sperren(pfad):
             self._anzeigen()
@@ -203,7 +311,20 @@ class PlattenWidget(QWidget):
         self.entschieden = True
         self._anzeigen(neu_angeschlossen=hinweis)
         self.geaendert.emit()
+        rom = rom_typ(self.firmware)
+        if rom and not kuerzel_aus_dateiname(pfad):
+            self.meldung.emit(f"Datei ohne Typkürzel: nur die Größe wurde geprüft (Firmware "
+                              f"{self.firmware} = {rom}, Endung .{KUERZEL.get(rom, '')}.img).")
         return True
+
+    def _kuerzel_widerspruch(self, pfad: str) -> str:
+        """Nennt der Dateiname einen anderen Typ als das EPROM festlegt?  (Die Größe prüft der Kern.)"""
+        rom = rom_typ(self.firmware)
+        kz = kuerzel_aus_dateiname(pfad)
+        if rom and kz and kz != KUERZEL.get(rom):
+            return (f"Firmware {self.firmware} gehört zu {rom} (.{KUERZEL.get(rom)}.img), "
+                    f"der Dateiname nennt „{kz}“")
+        return ""
 
     def neu_anlegen(self, pfad: str, typ: str = STANDARD_TYP, hinweis: bool = True) -> bool:
         """Eine neue Platte anlegen (*typ* ggf. mit Suffix ``:unformatiert``, s. :func:`typ_mit_inhalt`) und anschließen (*hinweis* wie bei :meth:`anschliessen`)."""
@@ -265,22 +386,29 @@ class PlattenWidget(QWidget):
     def _anschliessen_dialog(self):
         start = self._pfad or str(paths.user_disks_dir())
         pfad, _ = QFileDialog.getOpenFileName(
-            self, "Plattenabbild anschließen", start,
-            "Plattenabbild (*.img *.hd *.bin);;Alle Dateien (*)")
+            self, "Plattenabbild anschließen", start, self.anschliessen_filter())
         if pfad:
             self.anschliessen(pfad)
 
+    def anschliessen_filter(self) -> str:
+        """Dateifilter des „Anschließen…“-Dialogs: bis 4.0 nur der Typ des ROMs (``*.k5504.img``),
+        sonst alle ``*.img``; „Alle Dateien“ bleibt der Ausweg (Datei ohne Kürzel)."""
+        rom = rom_typ(self.firmware)
+        if rom:
+            return f"Plattenabbild {rom} (*.{KUERZEL.get(rom, '')}.img);;Alle Dateien (*)"
+        return "Plattenabbild (*.img);;Alle Dateien (*)"
+
     def _neu_dialog(self):
-        dlg = PlattenDialog(self)
+        dlg = PlattenDialog(self, self.firmware)
         if not dlg.exec():
             return
+        vorschlag = str(paths.user_disks_dir() / f"p8000_platte.{dlg.kuerzel()}.img")
         pfad, _ = QFileDialog.getSaveFileName(
-            self, "Neue Platte speichern unter", self.standard_pfad(),
+            self, "Neue Platte speichern unter", vorschlag,
             "Plattenabbild (*.img);;Alle Dateien (*)")
         if not pfad:
             return
-        if "." not in os.path.basename(pfad):
-            pfad += ".img"
+        pfad = dateiname_mit_kuerzel(pfad, dlg.typ.currentData())
         if os.path.exists(pfad) and QMessageBox.question(
                 self, "Neue Platte", f"{pfad} gibt es schon.  Überschreiben?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
@@ -341,4 +469,9 @@ class PlattenWidget(QWidget):
                 "Neu angeschlossen: der WDC erkennt die Platte erst nach Rückstellen oder "
                 "Rechner ein." if neu_angeschlossen else
                 "Kein Schreibschutz; Änderungen gehen von selbst in die Datei.")
+        if self._verfuegbar and self.firmware in EXPERIMENTELL:
+            # Bis WDC 4.0 gilt das Laufwerk des EPROMs; die Fassungen sind noch nicht belegt (P24).
+            self.hinweis.setText(self.hinweis.text() + f"\nWDC {self.firmware} (experimentell): das EPROM "
+                                 f"legt das Laufwerk fest ({rom_typ(self.firmware)}, Endung "
+                                 f".{KUERZEL.get(rom_typ(self.firmware), '')}.img).")
         self._lampe()

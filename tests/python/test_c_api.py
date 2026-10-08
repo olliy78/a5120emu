@@ -219,7 +219,8 @@ def test_p8000_can_be_created_configured_and_refused():
                      b"dram=1M@16", b"mon16=9", b"karte16=2", b"karte16=1,index8=1",
                      b"karte16=1,dram=1M@0+1M@0", b"wdc=4.2", b"terminals=2", b"lw0", b"lw5=K5601",
                      b"karte16=1,wdc=9", b"plattentyp=XY", b"karte16=1,wdc=4.2,platte=/gibt/es/nicht.img",
-                     b"platte=/tmp/x.img"):
+                     b"platte=/tmp/x.img", b"karte16=1,wdc=4.2,plattepar=vielleicht",
+                     b"karte16=1,wdc=3.4.05,plattentyp=D5126"):
         assert not _lib.k1520_create_p8000(schlecht), schlecht
         assert _lib.k1520_last_init_error().decode().startswith("P8000"), schlecht
 
@@ -252,6 +253,20 @@ def test_p8000_can_be_created_configured_and_refused():
         _lib.k1520_destroy(K1520Handle(handle))
         handle = _lib.k1520_create_p8000(f"karte16=1,wdc=4.2,platte={pfad}".encode())
         assert handle and _lib.k1520_hd_path(handle, 0) == pfad.encode()
+        _lib.k1520_destroy(K1520Handle(handle))
+    # P24: das EPROM der Firmware bis 4.0 legt den Typ fest; Kürzel; plattepar=aus
+    assert _lib.k1520_hd_rom_typ(b"3.4.05") == b"K5504.50" and _lib.k1520_hd_rom_typ(b"4.0.05") == b"K5504.50"
+    assert _lib.k1520_hd_rom_typ(b"4.2") == b"" and _lib.k1520_hd_rom_typ(None) == b""
+    assert _lib.k1520_hd_typ_kuerzel(b"K5504.50") == b"k5504" and _lib.k1520_hd_typ_kuerzel(b"VS") == b"vs"
+    assert _lib.k1520_hd_typ_kuerzel(b"quatsch") == b""
+    with tempfile.TemporaryDirectory() as d:
+        klein = os.path.join(d, "klein.img")
+        handle = _lib.k1520_create_p8000(b"karte16=1,wdc=3.4.05,plattepar=aus")
+        assert handle, _lib.k1520_last_init_error()
+        assert not _lib.k1520_hd_create(handle, 0, klein.encode(), b"D5126")
+        assert "Firmware 3.4.05 gehört zu K5504.50" in _lib.k1520_hd_error(handle).decode()
+        assert _lib.k1520_hd_create(handle, 0, klein.encode(), b"")   # leer = Typ des ROMs
+        assert os.path.getsize(klein) == 1024 * 5 * 18 * 512
         _lib.k1520_destroy(K1520Handle(handle))
     handle = _lib.k1520_create_p8000(b"karte16=1")
     assert not _lib.k1520_hd_create(handle, 0, b"/tmp/egal.img", None)

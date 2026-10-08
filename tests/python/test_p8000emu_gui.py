@@ -100,7 +100,8 @@ def test_vorgaben_des_vollgeraets(qapp, umgebung):
     assert p.standard_modell() == "p8000-ot"
     kern = p.kern_parameter("p8000-ot", {})["p8000"]
     assert kern == {"karte16": "1", "wdc": "4.2", "terminal": "original", "index8": "3",
-                    "index16": "4", "mon16": "3.1", "dram": "4x256K", "mon8": "3.1"}
+                    "index16": "4", "mon16": "3.1", "dram": "4x256K", "mon8": "3.1",
+                    "plattepar": "aus"}
     # ohne Winchester: keine wdc-Zeile (der Kern lehnt wdc ohne … nicht ab, aber es soll aus sein)
     k16 = p.kern_parameter("p8000-16-ot", {})["p8000"]
     assert k16["karte16"] == "1" and "wdc" not in k16
@@ -116,7 +117,7 @@ def test_jede_hardwarewahl_baut_eine_maschine(qapp, umgebung):
     from app import profil
     from app.core_binding.k1520 import K1520Emulator
     p = profil.profil("p8000")
-    assert [h[0] for h in p.hardware] == ["index", "mon8", "mon16", "dram", "wdc"]
+    assert [h[0] for h in p.hardware] == ["index", "mon8", "mon16", "dram", "wdc", "platte_par"]
     for schluessel, _b, _t, werte, modelle in p.hardware:
         for modell in (modelle or ("p8000-ot", "p8000-16-ot", "p8000-8-ot")):
             for wert, _anzeige in werte:
@@ -133,7 +134,7 @@ def test_hardwarewahl_normalisiert_gross_klein_und_fehlendes(qapp, umgebung):
     from app import profil
     p = profil.profil("p8000")
     assert p.hardware_normalisieren({}) == {"index": "34", "mon8": "3.1", "mon16": "3.1",
-                                            "dram": "4x256K", "wdc": "4.2"}
+                                            "dram": "4x256K", "wdc": "4.2", "platte_par": "aus"}
     n = p.hardware_normalisieren({"dram": "1m@0+1m@1", "mon8": 3.0, "wdc": "9.9", "index": "11"})
     assert n["dram"] == "2x1M" and n["mon8"] == "3.0" and n["wdc"] == "4.2"
     assert n["index"] == "11"
@@ -181,7 +182,7 @@ def test_rom_fassung_und_modell_in_den_einstellungen(qapp, umgebung):
     w = _fenster(qapp)
     try:
         sw = w.settings_widget
-        assert set(sw.hardware_combos) == {"index", "mon8", "mon16", "dram", "wdc"}
+        assert set(sw.hardware_combos) == {"index", "mon8", "mon16", "dram", "wdc", "platte_par"}
         # Rechnerausstattung (3) + Betriebsart (2); die Kern-Terminal-Modelle gibt es nicht mehr
         assert sw.model_combo.count() == 3 and not sw.model_combo.isHidden()
         assert [sw.betriebsart_combo.itemData(i) for i in range(2)] == ["computer", "terminal"]
@@ -579,3 +580,135 @@ def test_kern_schnittstelle_additiv(qapp, umgebung, tmp_path):
     a = K1520Emulator()
     assert not a.state_save(pfad) and a.term_snapshot(0) == b""
     assert a.term_flags(0) == -1 and not a.state_load(pfad) and a.state_error()
+
+
+# ─── P24: WDC-Firmware und Plattentyp ────────────────────────────────────────
+
+def test_kuerzel_der_oberflaeche_stimmen_mit_dem_kern(qapp):
+    """Die Kürzeltabelle der Oberfläche ist die des Kerns; das ROM-Laufwerk kommt aus dem Kern."""
+    from app.core_binding import k1520
+    from app.ui import platten_widget as pw
+    for name, *_ in pw.TYPEN:
+        assert pw.KUERZEL[name] == k1520.hd_typ_kuerzel(name), name
+    assert k1520.hd_typ_kuerzel("gibtsnicht") == ""
+    assert k1520.hd_rom_typ("4.2") == "" and k1520.hd_rom_typ("3.4.05") == "K5504.50"
+    assert k1520.hd_rom_typ("4.0.05") == "K5504.50"
+    # Dateinamen: Kürzel anhängen / ersetzen / nicht verdoppeln
+    assert pw.dateiname_mit_kuerzel("/x/platte", "K5504.50") == "/x/platte.k5504.img"
+    assert pw.dateiname_mit_kuerzel("/x/platte.img", "K5504.50") == "/x/platte.k5504.img"
+    assert pw.dateiname_mit_kuerzel("/x/platte.k5504.img", "K5504.50") == "/x/platte.k5504.img"
+    assert pw.dateiname_mit_kuerzel("/x/platte.d5126.img", "K5504.50") == "/x/platte.k5504.img"
+    assert pw.kuerzel_aus_dateiname("/x/a.vs.img") == "vs" and pw.kuerzel_aus_dateiname("/x/a.img") == ""
+
+
+def test_dialog_neue_platte_sperrt_den_typ_bei_firmware_bis_4_0(qapp):
+    from app.ui import platten_widget as pw
+    d42 = pw.PlattenDialog(None, "4.2")
+    assert d42.typ.isEnabled() and not d42.rom
+    d42.typ.setCurrentIndex(d42.typ.findData("VS"))
+    assert d42.kuerzel() == "vs" and ".vs.img" in d42.dateiname.text()
+    for fw in ("3.4.05", "4.0.05"):
+        d = pw.PlattenDialog(None, fw)
+        assert not d.typ.isEnabled() and d.typ.currentData() == "K5504.50"
+        assert d.kuerzel() == "k5504" and "gesperrt" in d.typ_hinweis.text()
+        assert d.typ_name().startswith("K5504.50")
+
+
+def test_anschliessen_dialog_filtert_nach_dem_typ_des_roms(qapp, umgebung):
+    w = _fenster(qapp)
+    try:
+        pwid = w.platten_widget
+        assert pwid.anschliessen_filter() == "Plattenabbild (*.img);;Alle Dateien (*)"
+        pwid.set_firmware("3.4.05")
+        assert pwid.anschliessen_filter() == "Plattenabbild K5504.50 (*.k5504.img);;Alle Dateien (*)"
+    finally:
+        _zu(w, qapp)
+
+
+def test_firmware_3_4_05_weist_falsche_platten_ab_und_meldet_klartext(qapp, umgebung, tmp_path):
+    from app import config_io
+    w = _fenster(qapp)
+    try:
+        w._on_hardware_selected("wdc", "3.4.05")          # keine Platte dran: keine Rückfrage
+        w.run_timer.stop()
+        assert w._hardware["wdc"] == "3.4.05" and w.platten_widget.firmware == "3.4.05"
+        meldungen = []
+        w.platten_widget.meldung.connect(meldungen.append)
+        # Dateiname nennt einen anderen Typ
+        klein = str(tmp_path / "klein.d5126.img")
+        Path(klein).write_bytes(b"")
+        assert not w.platten_widget.anschliessen(klein)
+        assert any("d5126" in m and "k5504" in m for m in meldungen), meldungen
+        # Datei ohne Kürzel, falsche Größe: der Kern weist mit Klartext ab
+        roh = str(tmp_path / "zu_klein.img")
+        Path(roh).write_bytes(b"\xe5" * (615 * 4 * 18 * 512))
+        assert not w.platten_widget.anschliessen(roh)
+        assert "Firmware 3.4.05 gehört zu K5504.50 (1024/5/18 = 47 185 920 B)" in meldungen[-1]
+        # Anlegen: Typ steht fest
+        gut = str(tmp_path / "gut.k5504.img")
+        assert w.platten_widget.neu_anlegen(gut, "K5504.50:unformatiert")
+        assert os.path.getsize(gut) == PLATTE_BYTES
+        # ohne Kürzel, aber richtig groß: geht, mit Hinweis
+        ohne = str(tmp_path / "ohne_kuerzel.img")
+        Path(ohne).write_bytes(Path(gut).read_bytes())
+        meldungen.clear()
+        assert w.platten_widget.anschliessen(ohne)
+        assert any("ohne Typkürzel" in m for m in meldungen), meldungen
+        w._autosave_now()
+        assert config_io.load_config(str(umgebung / "p8000emu.yaml"))["platte"] == {"path": ohne}
+    finally:
+        _zu(w, qapp)
+
+
+def test_firmware_wechsel_mit_unpassender_platte_fragt_vor_dem_neustart(qapp, umgebung, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    w = _fenster(qapp)
+    fragen = []
+    antwort = {"wert": QMessageBox.No}
+
+    def frage(*args, **kwargs):
+        fragen.append(args[2])
+        return antwort["wert"]
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(frage))
+    try:
+        klein = str(tmp_path / "klein.d5126.img")
+        assert w.platten_widget.neu_anlegen(klein, "D5126")          # 4.2: jeder Typ ist recht
+        # Nein: nichts ändert sich, das Auswahlfeld zeigt wieder 4.2
+        w._on_hardware_selected("wdc", "3.4.05")
+        assert len(fragen) == 1 and "Firmware 3.4.05 gehört zu K5504.50" in fragen[0]
+        assert w._hardware["wdc"] == "4.2" and w.emulator.hd_path(0) == klein
+        # Ja: neu gebaut, die Platte wird getrennt (Datei bleibt)
+        antwort["wert"] = QMessageBox.Yes
+        w._on_hardware_selected("wdc", "3.4.05")
+        w.run_timer.stop()
+        assert w._hardware["wdc"] == "3.4.05" and w.platten_widget.pfad() == ""
+        assert w.emulator.hd_path(0) == "" and os.path.exists(klein)
+        # passende Platte: keine Frage mehr
+        fragen.clear()
+        gut = str(tmp_path / "gut.k5504.img")
+        assert w.platten_widget.neu_anlegen(gut, "K5504.50")
+        w._on_hardware_selected("wdc", "4.0.05")
+        assert not fragen and w._hardware["wdc"] == "4.0.05" and w.emulator.hd_path(0) == gut
+    finally:
+        _zu(w, qapp)
+
+
+def test_programm_ergaenzt_den_parametersatz_nicht_von_selbst(qapp, umgebung, tmp_path):
+    """Programmvorgabe `platte_par = aus`: eine über „Anschließen…“ geöffnete unformatierte Platte
+    bleibt ohne Parametersatz.  Nur ausdrücklich (Hardwarewahl) ergänzt der Kern ihn."""
+    from app import profil
+    p = profil.profil("p8000")
+    kern = p.kern_parameter("p8000-ot", None)["p8000"]
+    assert kern["plattepar"] == "aus"
+    assert p.kern_parameter("p8000-ot", {"platte_par": "ergaenzen"})["p8000"]["plattepar"] == "ergaenzen"
+    w = _fenster(qapp)
+    try:
+        pfad = str(tmp_path / "unformatiert.k5504.img")
+        assert w.platten_widget.neu_anlegen(pfad)                    # Vorgabe: unformatiert
+        w.platten_widget.abtrennen()
+        assert w.platten_widget.anschliessen(pfad)
+        assert Path(pfad).read_bytes()[:512] == b"\xe5" * 512      # unverändert, kein PAR zurückgeschrieben
+        w.emulator.hd_flush()
+        assert Path(pfad).read_bytes()[256:262] != b"PARMTR"
+    finally:
+        _zu(w, qapp)

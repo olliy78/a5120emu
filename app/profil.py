@@ -229,6 +229,7 @@ class Programmprofil:
         kern["mon8"] = hardware.get("mon8", "3.1")
         if mit_wdc:
             kern["wdc"] = hardware.get("wdc", "4.2")
+            kern["plattepar"] = hardware.get("platte_par", "aus")   # P24: Programmvorgabe AUS
         return {"p8000": kern}
 
     def modell_hat_wdc(self, modell) -> bool:
@@ -531,8 +532,20 @@ P8000 = Programmprofil(
          _MIT16),
         ("dram", "Hauptspeicher (16-Bit):", _p8000_ram.TIPP, _p8000_ram.AUSBAUTEN, _MIT16),
         ("wdc", "WDC-Firmware:",
-         "Firmware des Winchesterkontrollers (Z80 mit eigener ROM).",
-         (("4.2", "WDC 4.2"), ("4.0.05", "WDC 4.0.05"), ("3.4.05", "WDC 3.4.05")),
+         "Firmware des Winchesterkontrollers (Z80 mit eigener ROM).  4.2 ist laufwerksunabhängig "
+         "(Parametersatz auf der Platte) und die geprüfte Fassung.  4.0.05 und 3.4.05 sind "
+         "EXPERIMENTELL: ihr EPROM legt das Laufwerk fest (K5504.50, 1024/5/18), eine Platte "
+         "anderer Größe wird abgewiesen, und das Spurformat der 3.x ist noch nicht belegt "
+         "(doc/p8000/wdc_firmware.md §12 Nr. 11).",
+         (("4.2", "WDC 4.2"), ("4.0.05", "WDC 4.0.05 (experimentell)"),
+          ("3.4.05", "WDC 3.4.05 (experimentell)")),
+         ("p8000-ot",)),
+        ("platte_par", "Parametersatz der Platte:",
+         "Was der WDC auf Zylinder 0 / Kopf 0 / Sektor 1 sieht.  aus (Vorgabe): nur das, was in der "
+         "Datei steht — eine unformatierte Platte bleibt unformatiert.  ergänzen: fehlt der "
+         "Parametersatz, liefert die Platte einen erzeugten (nur für das WEGA-3.1-Abbild des "
+         "AVR-Emulators, 1380/10/18).",
+         (("aus", "aus (Vorgabe)"), ("ergaenzen", "ergänzen (WEGA-3.1-AVR-Abbild)")),
          ("p8000-ot",)),
     ),
     schnittstellen_ports=(("tty0", 5000), ("tty2", 5002), ("tty3", 5003), ("tty4", 5004),

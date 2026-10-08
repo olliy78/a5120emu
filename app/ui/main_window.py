@@ -375,6 +375,7 @@ class MainWindow(QMainWindow):
             kl.setContentsMargins(0, 0, 0, 0)
             kl.addWidget(self.drives_widget)
             self.platten_widget = PlattenWidget(self.emulator)
+            self.platten_widget.set_firmware(self._hardware.get("wdc", "4.2"))
             self.platten_widget.set_verfuegbar(self.profil.modell_hat_wdc(self._model))
             self.platten_widget.meldung.connect(
                 lambda text: self.statusBar().showMessage(text, 8000))
@@ -1269,6 +1270,8 @@ class MainWindow(QMainWindow):
             # Hardwarevarianten: fehlender Schlüssel = Vorgabe (ältere Konfigurationen).
             self._hardware = self.profil.hardware_normalisieren(general)
             self.settings_widget.set_hardware_value(self._hardware)
+            if self.platten_widget is not None:
+                self.platten_widget.set_firmware(self._hardware.get("wdc", "4.2"))
 
             # RAM-Disk (doc/design/22_raf512.md §7.2): fehlender Abschnitt/Schlüssel
             # oder unbekannter Wert = keine RAF bzw. kein Stand-by — anders als bei
@@ -1750,6 +1753,9 @@ class MainWindow(QMainWindow):
         neu = self.profil.hardware_normalisieren({**self._hardware, schluessel: wert})
         if neu == self._hardware:
             return
+        if schluessel == "wdc" and not self._platte_rueckfrage(neu.get("wdc", "4.2")):
+            self.settings_widget.set_hardware_value(self._hardware)
+            return
         if not self._eprom_rueckfrage("Wechsel der Hardwarevariante"):
             self.settings_widget.set_hardware_value(self._hardware)
             return
@@ -1761,6 +1767,20 @@ class MainWindow(QMainWindow):
             self.settings_widget.set_hardware_value(vorher)
             return
         self._schedule_autosave()
+
+    def _platte_rueckfrage(self, firmware: str) -> bool:
+        """P24: passt die angeschlossene Platte nicht zur neuen WDC-Firmware (bis 4.0 legt das EPROM
+        das Laufwerk fest), vor dem Neustart fragen statt still zu trennen.  True = weitermachen."""
+        if self.platten_widget is None:
+            return True
+        problem = self.platten_widget.passt_nicht_zu(firmware)
+        if not problem:
+            return True
+        return QMessageBox.question(
+            self, "WDC-Firmware",
+            f"{problem}.\n\nMit dem Wechsel startet die Maschine neu und die Platte wird "
+            "getrennt (die Datei bleibt unverändert).  Trotzdem wechseln?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
 
     def _maschine_erzeugen(self, types: list) -> K1520Emulator:
         """Eine neue Maschine mit Laufwerksschacht *types*, Modell und RAM-Disk.
@@ -1987,6 +2007,7 @@ class MainWindow(QMainWindow):
             # Die Platte gehört der Maschine: die neue bekommt dieselbe Datei (wenn das Modell
             # einen WDC hat — sonst bleibt der Kasten gesperrt, die Wahl aber gemerkt).
             self.platten_widget.set_verfuegbar(self.profil.modell_hat_wdc(self._model))
+            self.platten_widget.set_firmware(self._hardware.get("wdc", "4.2"))
             self.platten_widget.set_emulator(new_emu)
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
