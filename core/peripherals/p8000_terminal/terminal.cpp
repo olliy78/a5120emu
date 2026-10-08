@@ -325,7 +325,7 @@ void Terminal::taste(TerminalTaste t) {
     case T::DEL:  sende("\x7F"); break;
     case T::LINE_ERASE:   sende(adm ? "\x1bT" : "\x1b[K"); break;
     case T::PAGE_ERASE:   sende(adm ? "\x1bY" : "\x1b[J"); break;
-    case T::LINE_INSERT:  sende(adm ? "\x1bE" : "\x1b[L"); break;
+    case T::LINE_INSERT:  sende(adm ? "\x1b" "E" : "\x1b[L"); break;
     case T::CHAR_INSERT:  sende(adm ? "\x1bQ" : "\x1b[@"); break;
     case T::LINE_DELETE:  sende(adm ? "\x1bR" : "\x1b[M"); break;   // W3
     case T::CHAR_DELETE:  sende(adm ? "\x1bW" : "\x1b[P"); break;
