@@ -251,3 +251,90 @@ TEST(P8000TerminalHw, SaveStateSetztGenauFort)
     EXPECT_EQ(a.pixel(), b.pixel());
     EXPECT_EQ(a.z8().pc, b.z8().pc);
 }
+
+// ── Attribute und Cursor im Pixelbild (Videoregel Entwurf 28 §4) ───────────────
+
+#include "core/peripherals/p8000_terminal_hw/terminal_einheit.h"
+
+namespace {
+/// Punkte einer Zelle (Rasterzeile l) als Bitmuster; Stufe 2 = hell.
+uint8_t muster(const P8000TerminalHw& t, int z, int s, int l, int* hell = nullptr) {
+    uint8_t m = 0;
+    for (int b = 0; b < 8; ++b) {
+        const uint8_t p = t.pixel()[size_t(z * 13 + l) * 640 + size_t(s * 8 + b)];
+        if (p) m = uint8_t(m | (0x80 >> b));
+        if (hell && p == 2) ++*hell;
+    }
+    return m;
+}
+}  // namespace
+
+TEST(P8000TerminalHw, AttributeUndCursorImPixelbild)
+{
+    P8000TerminalEinheit e;
+    e.laufeMs(1000);
+    ASSERT_TRUE(e.taste(TerminalTaste::MODE));   // VT100: SGR 1/4/5/7
+    e.tastenAbwarten();
+    for (char c : std::string("\x1b[2J\x1b[H" "\x1b[1mH\x1b[4mU\x1b[7mI\x1b[5mB\x1b[0mN"))
+        e.hw().hostByte(uint8_t(c));
+    ASSERT_TRUE(e.ruheAbwarten());
+    e.laufeMs(40);                                // zwei Bilder: der 8275 zeigt den neuen BWS
+    const P8000TerminalHw& t = e.hw();
+    // BWS: 81 H 'H' A0 'U' 90 'I' 82 'B' 80 'N'
+    const uint8_t soll[] = {0x81, 'H', 0xA0, 'U', 0x90, 'I', 0x82, 'B', 0x80, 'N'};
+    for (int s = 0; s < 10; ++s) EXPECT_EQ(t.bwsByte(0, s), soll[s]) << s;
+    // Zellen: Attributzelle leer, Folgezeichen mit Attribut
+    EXPECT_TRUE(t.bildZelle(0, 0).empty);
+    EXPECT_TRUE(t.bildZelle(0, 1).hlgt);
+    EXPECT_TRUE(t.bildZelle(0, 3).lten);
+    EXPECT_TRUE(t.bildZelle(0, 5).rvv);
+    EXPECT_TRUE(t.bildZelle(0, 7).blink);
+    EXPECT_FALSE(t.bildZelle(0, 9).hlgt || t.bildZelle(0, 9).lten || t.bildZelle(0, 9).rvv || t.bildZelle(0, 9).blink);
+    // Highlight: Punkte in Stufe 2
+    int hell = 0;
+    for (int l = 0; l < 12; ++l) EXPECT_EQ(muster(t, 0, 1, l, &hell), P8T_ZG_EZS['H' * 16 + l]) << l;
+    EXPECT_GT(hell, 0);
+    // Unterstrich in Rasterzeile 12 (P3 = CCH)
+    EXPECT_EQ(muster(t, 0, 3, 12), 0xFF);
+    EXPECT_EQ(muster(t, 0, 3, 5), P8T_ZG_EZS['U' * 16 + 5]);
+    // Invers: alle 13 Rasterzeilen invertiert
+    for (int l = 0; l < 13; ++l) EXPECT_EQ(muster(t, 0, 5, l), uint8_t(~P8T_ZG_EZS['I' * 16 + l])) << l;
+    // Blinken: in der Dunkelphase leer, in der Hellphase sichtbar (Phase 32 Bilder ≈ 0,5 s)
+    bool an = false, aus = false;
+    for (int i = 0; i < 80; ++i) {
+        e.laufeMs(16);
+        const uint8_t m = muster(t, 0, 7, 3);
+        (m ? an : aus) = true;
+    }
+    EXPECT_TRUE(an);
+    EXPECT_TRUE(aus);
+    // Cursor (blinkender Unterstrich) hinter „N": Rasterzeile 12 voll in der Hellphase
+    EXPECT_EQ(t.cursorZeile(), 0);
+    EXPECT_EQ(t.cursorSpalte(), 10);
+    bool cAn = false, cAus = false;
+    for (int i = 0; i < 40; ++i) {
+        e.laufeMs(16);
+        (muster(t, 0, 10, 12) == 0xFF ? cAn : cAus) = true;
+    }
+    EXPECT_TRUE(cAn);
+    EXPECT_TRUE(cAus);
+}
+
+TEST(P8000TerminalHw, ZeichensatzWechselGiltFuerDasGanzeBild)
+{
+    P8000TerminalEinheit e;
+    e.laufeMs(1000);
+    for (char c : std::string("\x1b*\x1e[")) e.hw().hostByte(uint8_t(c));
+    ASSERT_TRUE(e.ruheAbwarten());
+    e.laufeMs(40);
+    auto zelle = [&] { uint8_t m[12]; for (int l = 0; l < 12; ++l) m[l] = muster(e.hw(), 0, 0, l); return std::vector<uint8_t>(m, m + 12); };
+    const std::vector<uint8_t> ezs(P8T_ZG_EZS + '[' * 16, P8T_ZG_EZS + '[' * 16 + 12);
+    const std::vector<uint8_t> dzs(P8T_ZG_DZS + '[' * 16, P8T_ZG_DZS + '[' * 16 + 12);
+    ASSERT_NE(ezs, dzs);                          // „[" ↔ „Ä"
+    EXPECT_EQ(zelle(), ezs);
+    ASSERT_TRUE(e.taste(TerminalTaste::SI_SO));   // Strobe 2000H
+    e.tastenAbwarten();
+    e.laufeMs(40);
+    EXPECT_TRUE(e.hw().zeichensatz2());
+    EXPECT_EQ(zelle(), dzs);                      // dasselbe Byte, jetzt aus P8TDZS
+}

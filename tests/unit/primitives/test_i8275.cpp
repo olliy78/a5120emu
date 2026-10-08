@@ -287,6 +287,24 @@ TEST(I8275, CursorBlinktAlle16Bilder)
     EXPECT_TRUE(sicht[32]);
 }
 
+// P8000-Terminal (Firmware RESET_DISPLAY sendet E0H zweimal): Preset Counters setzt den
+// Bildzähler zurück — die Blinkphasen beginnen von vorn.
+TEST(I8275, PresetCountersSetztDieBlinkzaehlerZurueck)
+{
+    Rig r;
+    r.params(0x4F, 0x97, 0xCC, 0x5A);   // P8000-Terminal: 80x24, 13 Linien, Unterstrich blinkend
+    r.start();
+    r.crt.write(true, 0x80); r.crt.write(false, 0); r.crt.write(false, 0);
+    for (int i = 0; i < 40; ++i) r.crt.frame();
+    EXPECT_FALSE(r.crt.charBlinkOn());
+    r.crt.write(true, 0xE0);
+    EXPECT_TRUE(r.crt.charBlinkOn());
+    r.crt.frame();
+    EXPECT_TRUE(r.crt.cells(0, 0).cursor);   // Bild 0 der Cursorphase: sichtbar
+    EXPECT_TRUE(r.crt.cursorUnderline());
+    EXPECT_TRUE(r.crt.cursorBlinks());
+}
+
 TEST(I8275, ZeichenBlinkphase32Bilder)
 {
     Rig r;
