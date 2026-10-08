@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 from app import modell as _modell
+from app import p8000_ram as _p8000_ram
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,8 @@ class Programmprofil:
                 if v == w.lower():
                     aus[k] = w
                     break
+            if k == "dram":            # P8000: Umzug alter Werte, eigene Bestückung bleibt
+                aus[k] = _p8000_ram.normalisieren(daten.get(k))
         return aus
 
     def hardware_wirkt(self, schluessel: str, modell) -> bool:
@@ -213,7 +216,7 @@ class Programmprofil:
         if mit16:
             kern["index16"] = index[1]
             kern["mon16"] = hardware.get("mon16", "3.1")
-            kern["dram"] = hardware.get("dram", "1M@0")
+            kern["dram"] = hardware.get("dram", _p8000_ram.STANDARD)
         kern["mon8"] = hardware.get("mon8", "3.1")
         if mit_wdc:
             kern["wdc"] = hardware.get("wdc", "4.2")
@@ -503,11 +506,7 @@ P8000 = Programmprofil(
          "ROM-Fassung des Monitors der 16-Bit-Karte.",
          (("3.1", "MON16 3.1"), ("3.0", "MON16 3.0"), ("3.3", "MON16 3.3")),
          _MIT16),
-        ("dram", "Hauptspeicher (16-Bit):",
-         "DRAM-Karten der 16-Bit-Seite.  Der Monitor errechnet MAXSEG aus dem Speichertest.",
-         (("1M@0", "1 MB (eine Karte 1M)"), ("256K@0", "256 KB (eine Karte 256K)"),
-          ("1M@0+1M@1", "2 MB (zwei Karten 1M)")),
-         _MIT16),
+        ("dram", "Hauptspeicher (16-Bit):", _p8000_ram.TIPP, _p8000_ram.AUSBAUTEN, _MIT16),
         ("wdc", "WDC-Firmware:",
          "Firmware des Winchesterkontrollers (Z80 mit eigener ROM).",
          (("4.2", "WDC 4.2"), ("4.0.05", "WDC 4.0.05"), ("3.4.05", "WDC 3.4.05")),

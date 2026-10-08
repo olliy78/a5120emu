@@ -101,7 +101,7 @@ def test_vorgaben_des_vollgeraets(qapp, umgebung):
     assert p.standard_modell() == "p8000"
     kern = p.kern_parameter("p8000", {})["p8000"]
     assert kern == {"karte16": "1", "wdc": "4.2", "index8": "3", "index16": "4",
-                    "mon16": "3.1", "dram": "1M@0", "mon8": "3.1"}
+                    "mon16": "3.1", "dram": "4x256K", "mon8": "3.1"}
     # ohne Winchester: keine wdc-Zeile (der Kern lehnt wdc ohne … nicht ab, aber es soll aus sein)
     k16 = p.kern_parameter("p8000-16", {})["p8000"]
     assert k16["karte16"] == "1" and "wdc" not in k16
@@ -134,10 +134,46 @@ def test_hardwarewahl_normalisiert_gross_klein_und_fehlendes(qapp, umgebung):
     from app import profil
     p = profil.profil("p8000")
     assert p.hardware_normalisieren({}) == {"index": "34", "mon8": "3.1", "mon16": "3.1",
-                                            "dram": "1M@0", "wdc": "4.2"}
+                                            "dram": "4x256K", "wdc": "4.2"}
     n = p.hardware_normalisieren({"dram": "1m@0+1m@1", "mon8": 3.0, "wdc": "9.9", "index": "11"})
-    assert n["dram"] == "1M@0+1M@1" and n["mon8"] == "3.0" and n["wdc"] == "4.2"
+    assert n["dram"] == "2x1M" and n["mon8"] == "3.0" and n["wdc"] == "4.2"
     assert n["index"] == "11"
+
+
+def test_ram_ausbau_umzug_eigene_bestueckung_und_abweisung(qapp, umgebung):
+    """P23b (doc/p8000/ram_konfiguration.md): alte Werte → Kurzform DERSELBEN Bestückung,
+    eigene gültige Langform bleibt, Ungültiges → Vorgabe 4 × 256 KB; der Kern nimmt jede
+    angebotene und jede durchgelassene Bestückung, und was die Prüfung abweist, weist auch er ab."""
+    from app import p8000_ram, profil
+    from app.core_binding.k1520 import _lib
+    p = profil.profil("p8000")
+    norm = lambda v: p.hardware_normalisieren({"dram": v})["dram"]
+    assert norm("1M@0") == "1x1M" and norm("256k@0") == "1x256K" and norm("") == "4x256K"
+    assert norm("1m@0+256k@4") == "1M@0+256K@4"
+    assert norm("16m") == "16M" and norm("4×1M") == "4x1M"
+    for schlecht in ("1M@0+1M@0", "1M@0+256K@3", "2M@1", "5x256K", "32M", "quatsch", "16M+1M@1",
+                     "256K@0+256K@1+256K@2+256K@3+256K@4", "1M@16", "256K@64", "8M@0+1M@7"):
+        assert not p8000_ram.gueltig(schlecht), schlecht
+        assert norm(schlecht) == "4x256K", schlecht
+        assert not _lib.k1520_create_p8000(b"karte16=1,dram=" + schlecht.encode()), schlecht
+    for gut in [w for w, _a in p8000_ram.AUSBAUTEN] + ["1M@0+256K@4", "8M@0+1M@8", "2x1M", "1x256K"]:
+        assert p8000_ram.gueltig(gut), gut
+        h = _lib.k1520_create_p8000(b"karte16=1,dram=" + gut.encode())
+        assert h, (gut, _lib.k1520_last_init_error())
+        _lib.k1520_destroy(h)
+    assert "16 MB" in p8000_ram.anzeige("16M") and "benutzerdefiniert" in p8000_ram.anzeige("1M@0+256K@4")
+
+    # Auswahlfeld: Vorgabe = Standard, eine eigene Bestückung erscheint als eigener Eintrag
+    w = _fenster(qapp)
+    try:
+        box = w.settings_widget.hardware_combos["dram"]
+        assert box.currentData() == "4x256K" and "Standard" in box.currentText()
+        assert "8 MB" in box.toolTip()
+        w.settings_widget.set_hardware_value({**p.hardware_standard(), "dram": "1M@0+256K@4"})
+        assert box.currentData() == "1M@0+256K@4"
+        assert box.currentText().startswith("benutzerdefiniert")
+    finally:
+        _zu(w, qapp)
 
 
 def test_rom_fassung_und_modell_in_den_einstellungen(qapp, umgebung):
