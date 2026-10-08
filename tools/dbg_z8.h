@@ -37,6 +37,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "core/util/os_compat.h"   // isatty (auch unter Windows)
 
 namespace dbgz8 {
 
@@ -376,5 +377,67 @@ private:
         out += fmt("  Schrittgrenze (%llu) erreicht\n", (unsigned long long)maxSchritte);
     }
 };
+
+/// Eigenständiger Prüfstand für `k1520dbg --z8 <bild>[@org]`: Abzug am Programmbus (Rest FFH),
+/// externer Programm- und Datenspeicher je 64 KB RAM.  Kommandos aus @p script, dann stdin.
+inline int pruefstand(const std::string& bildArg, const std::string& fassung, const char* script) {
+    std::string pfad = bildArg;
+    long org = 0;
+    const size_t at = bildArg.rfind('@');
+    if (at != std::string::npos && at > 0) { pfad = bildArg.substr(0, at); if (!zahl(bildArg.substr(at + 1), org)) org = 0; }
+    Z8Config cfg = Z8Config::ub8840();
+    if (fassung == "ub8820") cfg = Z8Config::ub8820();
+    else if (fassung == "z8681") cfg = Z8Config::z8681();
+    else if (!fassung.empty() && fassung != "ub8840") { std::fprintf(stderr, "--z8-fassung ub8840|ub8820|z8681\n"); return 2; }
+    std::vector<uint8_t> prog(65536, 0xFF), extProg(65536, 0xFF), daten(65536, 0);
+    FILE* f = std::fopen(pfad.c_str(), "rb");
+    if (!f) { std::fprintf(stderr, "Z8-Abzug '%s' nicht lesbar\n", pfad.c_str()); return 2; }
+    size_t n = 0;
+    int ch;
+    while ((ch = std::fgetc(f)) != EOF && org + long(n) < 65536) {
+        const size_t a = size_t(org) + n++;
+        if (a < cfg.programmbus) prog[a] = uint8_t(ch); else extProg[a] = uint8_t(ch);
+    }
+    std::fclose(f);
+    Z8 cpu(cfg);
+    cpu.programmLesen = [&](uint16_t a) { return prog[a]; };
+    cpu.busLesen = [&](const Z8BusZyklus& c) { return c.datenspeicher ? daten[c.adresse] : extProg[c.adresse]; };
+    cpu.busSchreiben = [&](const Z8BusZyklus& c, uint8_t v) { (c.datenspeicher ? daten : extProg)[c.adresse] = v; };
+    Speicher sp;
+    sp.prog = [&](uint16_t a) { return a < cfg.programmbus ? prog[a] : extProg[a]; };
+    sp.progSchreiben = [&](uint16_t a, uint8_t v) { (a < cfg.programmbus ? prog : extProg)[a] = v; };
+    sp.daten = [&](uint16_t a) { return daten[a]; };
+    sp.datenSchreiben = [&](uint16_t a, uint8_t v) { daten[a] = v; };
+    Kontext k(cpu, sp);
+    cpu.reset();
+    cpu.step();
+    std::printf("Z8-Prüfstand (%s): %s, %zu Byte ab %04lX — help für Kommandos\n",
+                fassung.empty() ? "ub8840" : fassung.c_str(), pfad.c_str(), n, org);
+    auto quelle = [&](FILE* in, bool prompt) {
+        char zeile[1024];
+        for (;;) {
+            if (prompt) { std::printf("z8> "); std::fflush(stdout); }
+            if (!std::fgets(zeile, sizeof zeile, in)) return true;
+            std::string z = zeile;
+            while (!z.empty() && (z.back() == '\n' || z.back() == '\r')) z.pop_back();
+            const size_t h = z.find('#');
+            if (h == 0) continue;
+            if (prompt == false && !z.empty()) std::printf("z8> %s\n", z.c_str());
+            std::string out;
+            const bool weiter = k.befehl(z == "cpu z8" ? "r" : z, out);
+            std::fputs(out.c_str(), stdout);
+            if (!weiter) return false;
+        }
+    };
+    if (script) {
+        FILE* s = std::fopen(script, "r");
+        if (!s) { std::fprintf(stderr, "Skript '%s' nicht lesbar\n", script); return 2; }
+        const bool weiter = quelle(s, false);
+        std::fclose(s);
+        if (!weiter) return 0;
+    }
+    quelle(stdin, k1520::os::isTerminal(0));
+    return 0;
+}
 
 }  // namespace dbgz8
