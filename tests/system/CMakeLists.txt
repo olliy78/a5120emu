@@ -173,3 +173,10 @@ k1520_add_test(p8000_sa_format SRC test_p8000_sa_format.cpp
 k1520_add_test(p8000_wega_install SRC test_p8000_wega_install.cpp
                             LIBS k1520_p8000 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 14400 RUN_SERIAL)
+
+# ─── P8000 Mehrplatz-Abnahme (doc/design/25_p8000.md §11 AP P22): Kaltstart von der Platte aus
+# p15_7_sync mit der Konsole am Originalterminal und zwei Arbeitsplätzen („P8000 Terminal") über
+# Loopback-Telnet.  Ohne Zwischenstand übersprungen; Label wie die Installation.
+k1520_add_test(p8000_wega_mehrplatz SRC test_p8000_wega_mehrplatz.cpp
+                            LIBS k1520_p8000 k1520_logger k1520_testsupport
+                            LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 TIMEOUT 7200 RUN_SERIAL)

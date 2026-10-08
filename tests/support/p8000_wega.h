@@ -158,8 +158,8 @@ inline bool stufeLaden(WegaLauf& l, const std::string& name, std::string* fehler
     return true;
 }
 
-/// Cursorzeile (rechts ohne Leerzeichen).
-inline std::string cursorZeile(const P8000Machine& m) { return zeile(m, m.terminal().zeile()); }
+/// Cursorzeile (rechts ohne Leerzeichen) — Kern- oder Originalterminal (P22).
+inline std::string cursorZeile(const P8000Machine& m) { return zeile(m, m.konsole().zeile()); }
 
 inline bool endetMit(const std::string& s, const std::string& e) {
     return s.size() >= e.size() && s.compare(s.size() - e.size(), e.size(), e) == 0;
