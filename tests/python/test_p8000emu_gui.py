@@ -266,8 +266,9 @@ def test_platte_entsteht_nur_ueber_den_plattenkasten_und_wird_gemerkt(qapp, umge
     try:
         assert w.platten_widget.neu_anlegen(pfad)                    # = „Neue Platte…“ im Kasten
         assert os.path.getsize(pfad) == PLATTE_BYTES and w.emulator.hd_path(0) == pfad
-        # PAR-Sektor auf Z0/K0/S1: Kenntext „PARMTR" (Platte::neu)
-        assert b"PARMTR" in Path(pfad).read_bytes()[:18 * 512]
+        # Vorgabe „unformatiert“: Z0/K0/S1 ist E5, KEIN Parametersatz (sonst startet MON16 im AUTOBOOT E5-Bytes)
+        assert b"PARMTR" not in Path(pfad).read_bytes()[:18 * 512]
+        assert Path(pfad).read_bytes()[:512] == b"\xe5" * 512
         w._autosave_now()
         cfg = config_io.load_config(str(umgebung / "p8000emu.yaml"))
         assert cfg["platte"] == {"path": pfad}
@@ -276,6 +277,29 @@ def test_platte_entsteht_nur_ueber_den_plattenkasten_und_wird_gemerkt(qapp, umge
     w = _fenster(qapp)                                               # zweiter Start: dieselbe Platte
     try:
         assert w.platten_widget.pfad() == pfad and w.emulator.hd_path(0) == pfad
+    finally:
+        _zu(w, qapp)
+
+
+def test_dialog_neue_platte_waehlt_standardmaessig_unformatiert(qapp, umgebung, tmp_path):
+    """Der Dialog „Neue Platte anlegen“: Vorgabe unformatiert; „mit Parametersatz“ legt PAR/BTT an."""
+    from app.ui import platten_widget as pw
+    dlg = pw.PlattenDialog()
+    assert dlg.inhalt.currentData() == pw.INHALT_UNFORMATIERT
+    assert dlg.typ_name().endswith(":unformatiert")
+    dlg.inhalt.setCurrentIndex(dlg.inhalt.findData(pw.INHALT_MIT_PAR))
+    assert dlg.typ_name() == dlg.typ.currentData()
+    w = _fenster(qapp)
+    try:
+        pfad = str(tmp_path / "mit_par.img")
+        assert w.platten_widget.neu_anlegen(pfad, dlg.typ_name())
+        assert b"PARMTR" in Path(pfad).read_bytes()[:18 * 512]
+        roh = str(tmp_path / "roh.img")
+        dlg2 = pw.PlattenDialog()
+        assert w.platten_widget.neu_anlegen(roh, dlg2.typ_name())
+        assert Path(roh).read_bytes()[:512] == b"\xe5" * 512
+        # Der Kern kommt damit nach dem Hardwaretest zum Monitor (kein AUTOBOOT mit E5-Bytes)
+        assert _bis(w, "Press RETURN", 160_000_000, 4_000_000)
     finally:
         _zu(w, qapp)
 

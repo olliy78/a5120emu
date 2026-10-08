@@ -37,8 +37,17 @@ TYPEN = (
     ("D5146", "D5146 (NEC, 615 Zyl., 8 Köpfe)", 615, 8, 18),
     ("VS", "VS (Robotron, 820 Zyl., 6 Köpfe)", 820, 6, 18),
 )
-STANDARD_TYP = "K5504.50"
+STANDARD_TYP = "K5504.50:unformatiert"   # Vorgabe: Laufwerk wie neu, ohne Parametersatz
 STANDARD_DATEI = "p8000_platte.img"
+INHALT_UNFORMATIERT = "unformatiert"
+INHALT_MIT_PAR = "par"
+
+
+def typ_mit_inhalt(typ: str, inhalt: str) -> str:
+    """Typname für ``hd_create``: ``<typ>:unformatiert`` (kein Parametersatz) bzw. ``<typ>``."""
+    return f"{typ}:unformatiert" if inhalt == INHALT_UNFORMATIERT else typ
+
+
 UNIT = 0          # nur Laufwerk 0 — die Maschine führt drei, der Kasten bedient das erste
 
 
@@ -59,9 +68,16 @@ class PlattenDialog(QDialog):
         for name, text, z, k, s in TYPEN:
             self.typ.addItem(f"{text} — {groesse_text(z, k, s)}", name)
         form.addRow("Plattentyp:", self.typ)
+        # Inhalt: Vorgabe = unformatiert, wie ein neues Laufwerk (kein Parametersatz).  Mit
+        # Parametersatz aber leer startet der 16-Bit-Monitor die E5-Bytes als Bootprogramm.
+        self.inhalt = QComboBox()
+        self.inhalt.addItem("Unformatiert, wie ein neues Laufwerk (Standard) — "
+                            "mit sa.format formatieren", INHALT_UNFORMATIERT)
+        self.inhalt.addItem("Formatiert mit Parametersatz (K5504.50, leer)", INHALT_MIT_PAR)
+        form.addRow("Inhalt:", self.inhalt)
         lay.addLayout(form)
-        lay.addWidget(QLabel("Die Platte entsteht mit gültigem Parametersatz (PAR), aber "
-                             "unformatiert:\nformatieren mit sa.format im Gast "
+        lay.addWidget(QLabel("Standard: Die Platte hat noch keinen Parametersatz; der Monitor "
+                             "bleibt bedienbar,\nformatieren mit ud(0,0)sa.format im Gast "
                              "(WEGA-Installation)."))
         tasten = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         tasten.accepted.connect(self.accept)
@@ -69,7 +85,8 @@ class PlattenDialog(QDialog):
         lay.addWidget(tasten)
 
     def typ_name(self) -> str:
-        return self.typ.currentData()
+        """Typname für ``hd_create``, bei „unformatiert“ mit dem Suffix des Kerns."""
+        return typ_mit_inhalt(self.typ.currentData(), self.inhalt.currentData())
 
 
 class PlattenWidget(QWidget):
@@ -189,7 +206,7 @@ class PlattenWidget(QWidget):
         return True
 
     def neu_anlegen(self, pfad: str, typ: str = STANDARD_TYP, hinweis: bool = True) -> bool:
-        """Eine neue Platte mit PAR-Sektor anlegen und anschließen (*hinweis* wie bei :meth:`anschliessen`)."""
+        """Eine neue Platte anlegen (*typ* ggf. mit Suffix ``:unformatiert``, s. :func:`typ_mit_inhalt`) und anschließen (*hinweis* wie bei :meth:`anschliessen`)."""
         if not self._verfuegbar or self.emulator is None:
             return False
         self._loesen()
@@ -312,10 +329,11 @@ class PlattenWidget(QWidget):
         elif not self._pfad:
             self.name.setText("keine Platte angeschlossen")
             self.hinweis.setText(
-                "Das Programm legt keine Platte von selbst an (eine leere Platte schickt den "
+                "Das Programm legt keine Platte von selbst an (eine Platte mit Parametersatz, aber leer, schickt den "
                 "16-Bit-Monitor nach dem Hardwaretest in den AUTOBOOT).  „Neue Platte…“ legt "
-                "ein Abbild an (unformatiert, mit Parametersatz; formatieren mit sa.format im "
-                "Gast), „Anschließen…“ nimmt ein vorhandenes.")
+                "ein Abbild an (Standard: unformatiert wie ein neues Laufwerk, ohne "
+                "Parametersatz; formatieren mit ud(0,0)sa.format im Gast), „Anschließen…“ "
+                "nimmt ein vorhandenes.")
         else:
             self.name.setText(os.path.basename(self._pfad))
             self.name.setToolTip(self._pfad)

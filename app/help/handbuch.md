@@ -1075,8 +1075,9 @@ die *Betriebsart*. Was anders ist:
   der Inhalt des Terminalbildes (80 × 24, nicht gerendert, ohne Schlussleerzeichen) landet als reiner
   Text in der Zwischenablage. Ein Tastenkürzel gibt es nicht (Strg+C gehört dem Gast).
 * **Winchesterplatte** — im Kasten *Laufwerke* unter den Disketten. **Anschließen…** hängt ein
-  vorhandenes Abbild an den WDC, **Neue Platte…** legt eines an (Typ K5504.50 u. a., mit
-  gültigem Parametersatz **PAR**, aber **unformatiert**: formatieren mit `sa.format` im Gast),
+  vorhandenes Abbild an den WDC, **Neue Platte…** legt eines an (Typ K5504.50 u. a.; Wahl
+  **Inhalt**: Vorgabe *Unformatiert, wie ein neues Laufwerk* — ohne Parametersatz, formatieren mit
+  `sa.format` im Gast; oder *Formatiert mit Parametersatz (K5504.50, leer)*, nur für Sonderfälle),
   **Abtrennen** löst es. Es gibt **keine vorgegebene Platte** (das Programm legt von selbst keine an; der Plattenkasten
   schlägt für *Neue Platte…* den Namen `p8000_platte.img` im Diskettenordner vor). Eine Platte hat **keinen Schreibschutz**; geschrieben wird von selbst,
   beim Abtrennen, bei einem Zwischenstand und beim Beenden. Der WDC erkennt die Platte beim
@@ -1408,14 +1409,14 @@ Datenträger sind 9 × 512 Byte, zweiseitig, 80 Spuren (Formatwahl beim Einlegen
 ausführliche Anleitung ist das Installationshandbuch von WEGA; hier die Schrittfolge, wie sie im
 Installationsprotokoll von WEGA 3.1 steht und im Emulator geprüft ist.
 
-1. **Platte anlegen.** Im Plattenkasten *Neue Platte…* (Typ K5504.50) und anschließen. Die Platte ist
-   danach **unformatiert**. Eine im Betrieb angeschlossene Platte erkennt der Rechner erst nach
-   *Rückstellen* bzw. Aus- und Einschalten. **Offener Punkt, nicht geprüft:** die so angelegte Platte
-   trägt einen Parametersatz (PAR) und sonst nur E5; MON16 startet nach dem Hardwaretest genau diese E5-Bytes
-   (AUTOBOOT) und landet in einer Eingabeschleife ohne `*` — Gastverhalten, kein Emulatorfehler. Der
-   Abnahmelauf der Installation arbeitet mit einer fabrikneuen Platte **ohne** Parametersatz (dann meldet
-   `sa.format` „Error on RESET … PAR not ok" und fragt den Plattentyp ab, wie im Protokoll unten). Wie man
-   diesen Ausgangszustand in der Oberfläche herstellt, ist hier nicht belegt.
+1. **Platte anlegen.** Im Plattenkasten *Neue Platte…* (Typ K5504.50, Inhalt **Unformatiert**, die
+   Vorgabe) und anschließen. Die Platte ist danach wie ein fabrikneues Laufwerk: **ohne Parametersatz**.
+   Eine im Betrieb angeschlossene Platte erkennt der Rechner erst nach *Rückstellen* bzw. Aus- und
+   Einschalten. Der Hardwaretest endet dann mit `ERROR 52` (der WDC meldet „Error in PAR&BTT"), der Monitor
+   bleibt bedienbar: `O U`, am `>` `boot`, dann `ud(0,0)sa.format` — es meldet „PAR not ok"/„BTT not ok"
+   und fragt den Plattentyp ab (Protokoll unten; im Emulator bis zu diesem Bild geprüft). Wer *Formatiert
+   mit Parametersatz* wählt, bekommt eine Platte mit PAR und sonst nur E5; MON16 startet nach dem
+   Hardwaretest genau diese E5-Bytes (AUTOBOOT) und landet in einer Eingabeschleife ohne `*` — Gastverhalten.
 2. **Startdiskette in A:** (WEGA-Startdiskette), kalt starten, bei „Press RETURN" **RETURN**, am `>`
    noch einmal **RETURN**: UDOS startet, und die Koppelsoftware der Startdatei meldet
    „U8000-Softwaremonitor … Press NMI" (am Gerät geht auch **`x`** am `>`). Den **NMI-Taster** drücken;
@@ -1511,8 +1512,9 @@ die Firmware des Terminals und kein Fehler.
   erst weitertippen, wenn das Echo/der Prompt da ist.
 * **Nach dem Hardwaretest kein Prompt `*`, nur ein stehender Bildschirm** (Vollgerät mit leerer Platte):
   der 16-Bit-Monitor versucht, von der Platte zu starten (AUTOBOOT) und läuft in eine Eingabeschleife.
-  Das ist Gastverhalten; *Rückstellen* und die Platte im Plattenkasten *Abtrennen* (siehe auch Schritt 1
-  der Installation).
+  Ursache: eine Platte *mit Parametersatz, aber leer* — der Monitor startet die E5-Bytes. Das ist
+  Gastverhalten; Platte im Plattenkasten *Abtrennen*, *Rückstellen*, dann *Neue Platte…* mit Inhalt
+  **Unformatiert** anlegen (siehe auch Schritt 1 der Installation).
 * **`ERROR 52/53/54`:** der WDC antwortet nicht (siehe oben); **`DISK ERROR`**: Platte nicht lesbar bzw.
   nicht installiert; **`md: io error`** (Urlader): die Platte ist nicht formatiert oder nicht angeschlossen.
 * **Die neu angeschlossene Platte wird nicht gefunden.** *Rückstellen* — der WDC erkennt die Platte beim
