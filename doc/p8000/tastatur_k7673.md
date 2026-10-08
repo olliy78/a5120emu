@@ -56,9 +56,10 @@ Kabel Treiber (invertierend) liegen, ist unbekannt [U]; das Terminal hat eine Po
 ### 2.2 Code-Erzeugung [G: 0131H, 0146H–0208H]
 - Tabelle 02E3H, je Tastenposition 2 Byte `[Merker, Code]`, Index = Zeile·16 + Port·8 + Bit (Port 0 = P0, 1 = P1).
 - Merker Bit 0 = vorher **E0** senden; Merker Bit 3 = **Folge**: Länge = Merker>>4, Adresse = (Merker & 7)·256 + Code.
-- Break = Code | 80H (bei E0-Tasten: E0, dann Code | 80H); Folgen werden beim Loslassen nicht gesendet.
+- Break = Code | 80H (bei E0-Tasten: E0, dann Code | 80H).  **Berichtigt (P20b, Differenzialtest):** Folgen werden auch
+  beim Loslassen gesendet, jedes Byte mit Bit 7 (die „00"-Taste: `E1 D2 E1 D2`); nur PAUSE (02FFH) sendet beim Loslassen nichts.
 - **Sonderfälle**: Taste mit Code 1DH (Tabellenadresse 02EFH; bei IBM Strg, im Terminal 5.0 aber **TAB**) gedrückt merken; PAUSE (02FFH) bei gedrückter 1DH-Taste
-  sendet stattdessen die Folge `E0 46 E0 C6` (03E9H). PAUSE wird nicht wiederholt.
+  sendet stattdessen den Eintrag 03EDH (Folge `E0 46 E0 C6`). PAUSE wird nicht wiederholt.
 - **Rastende Tasten mit LED** (Make toggelt die LED, nur einmal je Druck): Code 54H (ON/OFF) → P2.4, 3AH (CAPS LOCK)
   → P2.5, 3CH (MODE) → P2.6. Die Codes selbst werden normal gesendet; den Zustand führt das **Terminal** getrennt
   (LED und Terminalzustand können auseinanderlaufen, z. B. nach Terminal-Neustart) [A]. Keine LED für SI/SO,
@@ -234,6 +235,13 @@ Folgen ab 03E3H). Begründung:
   höchstens 3 gleichzeitig gedrückte Tasten, Wiederholung der zuletzt gedrückten Taste.
 - LEDs P2.4/5/6 (ON/OFF, CAPS, MODE) als Zustand für die Oberfläche.
 - Übergabe an das Terminal als ganze Bytes (`terminal_typ2.md` §7), Abstand ≥ 1 Byte-Zeit (Vorgabe ≈ 1 ms [U]).
+
+## 6a. Umsetzung (P20b, 2026-10-08)
+
+`core/peripherals/p8000_terminal_hw/tastatur_k7673.{h,cpp}` (`TastaturK7673`), Entwurf 28 §5.  Zeitkonstanten am
+Z8-Kern gemessen: Zeile → Zeile 445 Takte, Runde 3564 (+ 90 beim Kopieren des Kandidaten, + 9782 bei der Auswertung),
+Byte 5344 (Bit 522: Daten 144 nach der steigenden Flanke, Takt tief 180–522).  Wächter `TastaturK7673Diff.*`:
+alle 128 Positionen gleiche Codefolge wie die Firmware (Zeit ± 1,5 ms), Wiederholung, Mehrfachtasten, PAUSE, LEDs.
 
 ## 7. Offen
 1. Quarzfrequenz, Bittakt, Wiederholzeiten (Messung, Beschaffungsliste in `terminal_typ2.md` §11).
