@@ -276,8 +276,8 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
 
 /// Kaltstart von der installierten Platte (Protokoll Z. 1852–1941): Netz ein, MON8 → RETURN → UDOS
 /// mit der Koppelsoftware → MON16 → NMI → Hardwaretest → AUTOBOOT lädt Block 0 (`pb.image` =
-/// boot0.md, von `/etc/new.install` geschrieben) → `> boot` → `:` → `md(0,16000)wega` →
-/// Mehrbenutzerbetrieb → `login:`.  Kein Save-State: nur Platte + Startdiskette aus p15_7_sync.
+/// boot0.md, von `/etc/new.install` geschrieben) → `> boot` → `:` → `md(0,16000)wega` (boot0
+/// gibt sich beides selbst) → Mehrbenutzerbetrieb → `login:`.  Kein Save-State: nur Platte + Startdiskette aus p15_7_sync.
 TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
     stumm();
     if (!stufeDa("p15_7_sync")) GTEST_SKIP() << "kein Zwischenstand p15_7_sync";
@@ -296,10 +296,9 @@ TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
     laufe(m, 2'000'000);
     m.nmi();
     ASSERT_TRUE(laufeBisText(m, "MAXSEG=<0F>", 400'000'000)) << bild(m);
-    ASSERT_TRUE(laufeBisPrompt(m, ">", 400'000'000)) << bild(m);   // boot0.md aus Block 0
-    tippeZeile(m, "boot");
-    ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
-    tippeZeile(m, "md(0,16000)wega");
+    // boot0.md aus Block 0 startet WEGA SELBST („> boot", „Boot", „: md(0,16000)wega" ohne
+    // Eingabe, Befund P22).  Früher wurde hier am `>` getippt — das traf nur zufällig das Fenster
+    // von Millisekunden, bevor boot0 sich die Eingabe selbst gibt.
     ASSERT_TRUE(langBisText(m, "WEGA Kernel -- Release 3.2", 2'000'000'000LL)) << bild(m);
     for (;;) {
         const int i = warteAufFrage(m, {"Enter Date (MM/DD/YY or <cr>):", "Enter Time (HH:MM):", "login:", "#1"},
