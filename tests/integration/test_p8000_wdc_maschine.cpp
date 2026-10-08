@@ -189,3 +189,88 @@ TEST(P8000WdcMaschine, KonfigurationUndPlattenschnittstelle) {
     EXPECT_FALSE(m.restoreStateBytes(s));
     EXPECT_NE(m.stateError().find("v2"), std::string::npos) << m.stateError();
 }
+
+// ─── P24: Firmware ↔ Plattentyp ──────────────────────────────────────────────
+
+namespace {
+P8000Machine::Config mitFirmware(P8000Machine::Config::Wdc w) {
+    P8000Machine::Config c = mitWdc("");
+    c.wdc = w;
+    return c;
+}
+}  // namespace
+
+/// Bis 4.0 legt das EPROM das Laufwerk fest: eine Datei anderer Größe wird mit Klartext abgewiesen.
+TEST(P8000WdcMaschine, P24Firmware3_4_05WeistFalscheGroesseMitKlartextAb) {
+    stumm();
+    P8000Machine m(mitFirmware(P8000Machine::Config::Wdc::V3_4_05));
+    k1520test::TempPlatte klein("D5126", "p24_klein.img");        // 615/4/18 = 22 671 360 B
+    EXPECT_FALSE(m.hdMount(0, klein.path()));
+    EXPECT_EQ(m.hdError(),
+              "Firmware 3.4.05 gehört zu K5504.50 (1024/5/18 = 47 185 920 B), die Datei hat 22 671 360 B");
+    EXPECT_EQ(m.hdPath(0), "");
+    EXPECT_FALSE(m.hdCreate(0, klein.path(), "D5126"));            // anderer Typ als das ROM
+    EXPECT_NE(m.hdError().find("passt nicht"), std::string::npos) << m.hdError();
+
+    k1520test::TempPlatte gut("K5504.50", "p24_gut.img");
+    EXPECT_TRUE(m.hdMount(0, gut.path())) << m.hdError();
+    EXPECT_EQ(m.platte(0)->geometrie(), (k1520::winchester::Geometrie{1024, 5, 18}));
+    EXPECT_FALSE(m.platte(0)->parErgaenzt());                      // die 3.x liest nie einen PAR-Sektor
+
+    // Typ leer = der des ROMs
+    k1520test::TempPlatte neu = k1520test::TempPlatte::leer("p24_neu.img");
+    EXPECT_TRUE(m.hdCreate(1, neu.path(), "")) << m.hdError();
+    EXPECT_EQ(m.platte(1)->geometrie().zylinder, 1024);
+}
+
+TEST(P8000WdcMaschine, P24Firmware4_0_05GiltDasselbeUndPlattentypWiderspruchWirdAbgewiesen) {
+    stumm();
+    P8000Machine m(mitFirmware(P8000Machine::Config::Wdc::V4_0_05));
+    k1520test::TempPlatte vs("VS", "p24_vs.img");
+    EXPECT_FALSE(m.hdMount(0, vs.path()));
+    EXPECT_NE(m.hdError().find("Firmware 4.0.05 gehört zu K5504.50"), std::string::npos) << m.hdError();
+
+    P8000Machine::Config c = mitFirmware(P8000Machine::Config::Wdc::V3_4_05);
+    c.platte_typ = "D5146";                                        // widerspricht dem ROM
+    EXPECT_THROW(P8000Machine{c}, std::invalid_argument);
+    c.platte_typ = "K5504.50";                                     // stimmt: zulässig
+    EXPECT_NO_THROW(P8000Machine{c});
+}
+
+/// 4.2 liest den PAR von der Platte: widerspricht er dem eingestellten Typ, wird abgewiesen.
+TEST(P8000WdcMaschine, P24Firmware4_2PruefParGegenKonfiguriertenTyp) {
+    stumm();
+    k1520test::TempPlatte p("K5504.50", "p24_par.img");
+    {   // Parametersatz einer D5126 auf einer Datei in K5504-Größe
+        const auto par = k1520::winchester::parSektor(*k1520::winchester::typNachName("D5126"));
+        std::fstream f(p.path(), std::ios::in | std::ios::out | std::ios::binary);
+        f.write(reinterpret_cast<const char*>(par.data()), std::streamsize(par.size()));
+    }
+    P8000Machine::Config c = mitWdc("");
+    c.platte_typ = "K5504.50";
+    P8000Machine m(c);
+    EXPECT_FALSE(m.hdMount(0, p.path()));
+    EXPECT_NE(m.hdError().find("Parametersatz der Platte nennt 615/4/18, eingestellt ist K5504.50"),
+              std::string::npos) << m.hdError();
+    // ohne festgelegten Typ gilt der PAR (und scheitert hier an der Dateigröße — vorhandenes Verhalten)
+    P8000Machine ohne(mitWdc(""));
+    EXPECT_FALSE(ohne.hdMount(0, p.path()));
+    EXPECT_NE(ohne.hdError().find("passt nicht"), std::string::npos) << ohne.hdError();
+}
+
+/// Eine unformatierte Platte bekommt beim späteren Anschließen KEINEN erzeugten PAR (Programmvorgabe).
+TEST(P8000WdcMaschine, P24UnformatiertePlatteBleibtBeimAnschliessenOhnePar) {
+    stumm();
+    P8000Machine::Config c = mitWdc("");
+    c.platte_par_ergaenzen = false;                                // Programmvorgabe (plattepar=aus)
+    P8000Machine m(c);
+    k1520test::TempPlatte neu = k1520test::TempPlatte::leer("p24_unf.img");
+    ASSERT_TRUE(m.hdCreate(0, neu.path(), "K5504.50:unformatiert")) << m.hdError();
+    ASSERT_TRUE(m.hdUnmount(0));
+    ASSERT_TRUE(m.hdMount(0, neu.path())) << m.hdError();          // „Anschließen…" derselben Datei
+    EXPECT_FALSE(m.platte(0)->parErgaenzt());
+    std::array<uint8_t, 512> s{};
+    ASSERT_TRUE(m.platte(0)->sektorLesen(0, 0, 1, s.data()));
+    EXPECT_EQ(s[0], 0xE5);
+    EXPECT_EQ(s[256], 0xE5);
+}

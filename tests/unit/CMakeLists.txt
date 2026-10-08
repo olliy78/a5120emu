@@ -83,6 +83,9 @@ k1520_add_test(p8000_ram_konfig_lang SRC cards/test_p8000_ram_konfig.cpp LIBS k1
 # P8000 WDC: Original-Firmware mit Stub-Host gegen eine TempPlatte (Entwurf 25 AP P13c)
 k1520_add_test(p8000_wdc SRC cards/test_p8000_wdc.cpp LIBS k1520_p8000_wdc LABELS "${_lbl}"
                DEFS "P8000_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
+# P24: Firmware-Fassung → Laufwerkstyp, gegen die Bytes der EPROM-Abzüge
+k1520_add_test(p8000_wdc_rom_laufwerk SRC cards/test_p8000_wdc_rom_laufwerk.cpp LIBS k1520_p8000_wdc LABELS "${_lbl}"
+               DEFS "P8000_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
 # ADA K6022 (Lochband, SIF1000) und ASS 590069 (Fernschreiber) des PRG 710 (AP-P8b/c)
 k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
 # K6022 an Dateien: Leser im Bandformat, Stanzer gebunden (doc/design/23_lochstreifen.md §5, AP-L2)

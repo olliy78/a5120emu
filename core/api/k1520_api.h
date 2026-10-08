@@ -792,6 +792,13 @@ K1520_API const char* k1520_hd_path(K1520Handle h, int unit);
 K1520_API bool        k1520_hd_led(K1520Handle h, int unit);
 /** @brief Grund des letzten gescheiterten k1520_hd_mount/k1520_hd_create. */
 K1520_API const char* k1520_hd_error(K1520Handle h);
+/** @brief Plattentyp, den das WDC-EPROM der Fassung @p firmware ("4.2" | "4.0.05" | "3.4.05")
+ *  festlegt ("K5504.50"); "" bei 4.2 (laufwerksunabhängig, PAR von der Platte) oder unbekannter
+ *  Fassung.  Ohne Handle — eine Eigenschaft der Abzüge (P24). */
+K1520_API const char* k1520_hd_rom_typ(const char* firmware);
+/** @brief Dateinamenkürzel eines Plattentyps ("K5504.50" → "k5504"); "" bei unbekanntem Typ.
+ *  Plattenabbilder heißen `<name>.<kürzel>.img` (P24). */
+K1520_API const char* k1520_hd_typ_kuerzel(const char* typ);
 
 #ifdef __cplusplus
 }

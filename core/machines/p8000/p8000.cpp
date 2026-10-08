@@ -5,6 +5,7 @@
  */
 
 #include "core/machines/p8000/p8000.h"
+#include <filesystem>
 #include "core/peripherals/p8000_terminal/terminal_tasten.h"
 #include "core/logger.h"
 #include "core/util/zustand.h"
@@ -60,6 +61,36 @@ uint64_t P8000Machine::zeitWdc(uint64_t t8) const
     return (t8 / f8) * fw + (t8 % f8) * fw / f8;
 }
 
+namespace {
+/// 47185920 → "47 185 920" (Klartext in Meldungen).
+std::string mitLeerzeichen(uint64_t n)
+{
+    std::string z = std::to_string(n), r;
+    for (size_t i = 0; i < z.size(); ++i) {
+        if (i && (z.size() - i) % 3 == 0) r += ' ';
+        r += z[i];
+    }
+    return r;
+}
+/// "Firmware 3.4.05 gehört zu K5504.50 (1024/5/18 = 47 185 920 B)"
+std::string romTypText(P8000Wdc::Config::Firmware f)
+{
+    const auto* t = P8000Wdc::romLaufwerk(f);
+    if (!t) return std::string("Firmware ") + P8000Wdc::firmwareName(f);
+    return std::string("Firmware ") + P8000Wdc::firmwareName(f) + " gehört zu " + t->name + " (" +
+           std::to_string(t->g.zylinder) + "/" + std::to_string(t->g.koepfe) + "/" +
+           std::to_string(t->g.sektoren) + " = " + mitLeerzeichen(t->g.bytes()) + " B)";
+}
+P8000Wdc::Config::Firmware firmwareVon(P8000Machine::Config::Wdc w)
+{
+    switch (w) {
+        case P8000Machine::Config::Wdc::V4_0_05: return P8000Wdc::Config::Firmware::V4_0_05;
+        case P8000Machine::Config::Wdc::V3_4_05: return P8000Wdc::Config::Firmware::V3_4_05;
+        default:                                  return P8000Wdc::Config::Firmware::V4_2;
+    }
+}
+}  // namespace
+
 P8000Machine::P8000Machine() : P8000Machine(Config{}) {}
 P8000Machine::~P8000Machine() = default;
 
@@ -106,6 +137,11 @@ P8000Machine::P8000Machine(const Config& cfg)
             case Config::Wdc::V3_4_05: wc.firmware = P8000Wdc::Config::Firmware::V3_4_05; break;
             default:                   wc.firmware = P8000Wdc::Config::Firmware::V4_2; break;
         }
+        // P24: bis 4.0 legt das EPROM das Laufwerk fest — ein widersprechender Typ wird abgewiesen
+        if (const auto* rom = P8000Wdc::romLaufwerk(wc.firmware);
+            rom && !cfg.platte_typ.empty() && !(k1520::winchester::typNachName(cfg.platte_typ)->g == rom->g))
+            throw std::invalid_argument(std::string("P8000: ") + romTypText(wc.firmware) + ", plattentyp = " +
+                                        cfg.platte_typ + " widerspricht");
         wc.takt_hz = cfg.taktwdc_hz;
         wc.ram_fuellwert = cfg.ram_fuellwert;
         wdc_ = std::make_unique<P8000Wdc>(wc);
@@ -290,9 +326,33 @@ bool P8000Machine::hdMountMit(int unit, const std::string& path, bool par_ergaen
     if (unit < 0 || unit >= P8000Wdc::LAUFWERKE) { hd_fehler_ = "Laufwerk 0–2"; return false; }
     k1520::winchester::Platte::Config pc;
     pc.par_ergaenzen = par_ergaenzen;
-    if (!cfg_.platte_typ.empty()) pc.geometrie = k1520::winchester::typNachName(cfg_.platte_typ)->g;
+    const auto fw = firmwareVon(cfg_.wdc);
+    const auto* rom = P8000Wdc::romLaufwerk(fw);
+    const k1520::winchester::Typ* konf = cfg_.platte_typ.empty() ? nullptr : k1520::winchester::typNachName(cfg_.platte_typ);
+    if (rom) {
+        // P24: das EPROM legt Köpfe/Zylinder/Sektoren fest; die Firmware liest nie einen PAR-Sektor.
+        pc.geometrie = rom->g;
+        pc.par_ergaenzen = false;
+        std::error_code ec;
+        const uint64_t groesse = std::filesystem::file_size(path, ec);
+        if (!ec && groesse != rom->g.bytes()) {
+            hd_fehler_ = romTypText(fw) + ", die Datei hat " + mitLeerzeichen(groesse) + " B";
+            return false;
+        }
+    } else if (konf) {
+        pc.geometrie = konf->g;
+    }
     auto p = std::make_unique<k1520::winchester::Platte>();
     if (!p->oeffnen(path, pc)) { hd_fehler_ = p->fehler(); return false; }
+    // 4.2 liest den PAR von der Platte: ein Parametersatz, der dem festgelegten Typ widerspricht,
+    // würde die Firmware mit anderen Maßen rechnen lassen als die Dateiablage (hier abweisen).
+    if (!rom && konf && p->parImAbbild() && !(*p->parImAbbild() == konf->g)) {
+        const auto& g = *p->parImAbbild();
+        hd_fehler_ = "Der Parametersatz der Platte nennt " + std::to_string(g.zylinder) + "/" +
+                     std::to_string(g.koepfe) + "/" + std::to_string(g.sektoren) +
+                     ", eingestellt ist " + konf->name;
+        return false;
+    }
     hdUnmount(unit);
     platten_[size_t(unit)] = std::move(p);
     wdc_->anschliessen(unit, platten_[size_t(unit)].get());
@@ -314,9 +374,16 @@ bool P8000Machine::hdCreate(int unit, const std::string& path, const std::string
         unformatiert = true;
         name.erase(name.size() - kUnformatiert.size());
     }
-    const k1520::winchester::Typ* t = k1520::winchester::typNachName(name.empty() ? "K5504.50" : name);
-    if (!t) { hd_fehler_ = "Plattentyp '" + typ + "' unbekannt"; return false; }
     if (!wdc_) { hd_fehler_ = "kein WDC (wdc=aus)"; return false; }
+    // P24: bis 4.0 bestimmt das EPROM den Typ — leer = der des ROMs, ein anderer wird abgewiesen
+    const auto* rom = P8000Wdc::romLaufwerk(firmwareVon(cfg_.wdc));
+    const k1520::winchester::Typ* t =
+        k1520::winchester::typNachName(name.empty() ? (rom ? rom->name : "K5504.50") : name);
+    if (!t) { hd_fehler_ = "Plattentyp '" + typ + "' unbekannt"; return false; }
+    if (rom && !(t->g == rom->g)) {
+        hd_fehler_ = romTypText(firmwareVon(cfg_.wdc)) + ", Typ " + t->name + " passt nicht";
+        return false;
+    }
     if (!k1520::winchester::Platte::neu(path, *t, &hd_fehler_, !unformatiert)) return false;
     return hdMountMit(unit, path, unformatiert ? false : cfg_.platte_par_ergaenzen);
 }

@@ -394,6 +394,10 @@ _lib.k1520_hd_led.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_hd_led.restype = ctypes.c_bool
 _lib.k1520_hd_error.argtypes = [K1520Handle]
 _lib.k1520_hd_error.restype = ctypes.c_char_p
+_lib.k1520_hd_rom_typ.argtypes = [ctypes.c_char_p]
+_lib.k1520_hd_rom_typ.restype = ctypes.c_char_p
+_lib.k1520_hd_typ_kuerzel.argtypes = [ctypes.c_char_p]
+_lib.k1520_hd_typ_kuerzel.restype = ctypes.c_char_p
 
 # k1520_create_with_em(type, d0..d3, em: const char*) -> K1520Handle
 _lib.k1520_create_with_em.argtypes = [
@@ -838,6 +842,16 @@ class SerialStatus:
             return None
         return " ".join(n for n, b in _LEITUNG_NAMEN
                         if self.leitungen_gegenseite_bekannt & self.leitungen_gegenseite & b)
+
+
+def hd_rom_typ(firmware: str) -> str:
+    """Plattentyp, den das WDC-EPROM festlegt (``"K5504.50"``); ``""`` bei 4.2 (PAR von der Platte)."""
+    return (_lib.k1520_hd_rom_typ(firmware.encode("utf-8")) or b"").decode("ascii")
+
+
+def hd_typ_kuerzel(typ: str) -> str:
+    """Dateinamenkürzel eines Plattentyps (``"K5504.50"`` → ``"k5504"``), ``""`` wenn unbekannt."""
+    return (_lib.k1520_hd_typ_kuerzel(typ.encode("utf-8")) or b"").decode("ascii")
 
 
 def classify_host(host: str) -> int:

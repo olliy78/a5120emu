@@ -80,11 +80,16 @@ struct Typ {
     uint8_t     ramp;         ///< rp_mod
     uint8_t     ztk40, ztk41, zmn40, zmx40, zmn41, zmx41;
     const char* name;         ///< kurzer Name für Konfiguration/Text („K5504.50")
+    const char* kuerzel = ""; ///< Dateinamenkürzel (klein): `<name>.<kuerzel>.img`, P24
 };
 
 /// K5504.50, NEC D5126, NEC D5146, ROBOTRON VS, WEGA-3.1-AVR (1380/10/18).
 const std::vector<Typ>& typen();
 const Typ* typNachName(const std::string& name);
+/// Typ zu einem Dateinamenkürzel (`k5504`, `d5126`, `d5146`, `vs`; Groß-/Kleinschreibung egal).
+const Typ* typNachKuerzel(const std::string& kuerzel);
+/// Kürzel aus einem Dateinamen: `platte.k5504.img` → `k5504`; sonst "" (Datei ohne Kürzel).
+std::string kuerzelAusDateiname(const std::string& pfad);
 
 /// Erzeugt den PAR/BTT-Sektor Z0/K0/S1 (512 B): „DEFEKT", leere BTT mit Endekennung, „PARMTR"…
 std::array<uint8_t, 512> parSektor(const Typ& t);
@@ -127,6 +132,9 @@ public:
     const std::string& pfad() const { return pfad_; }
     const Geometrie& geometrie() const { return geo_; }
     bool parErgaenzt() const { return par_ueberlagert_; }
+    /// Geometrie aus dem PAR-Sektor der DATEI (Z0/K0/S1), falls dort ein gültiger steht — auch wenn
+    /// eine feste Geometrie in `Config` gilt (P24: die Maschine prüft beide gegeneinander).
+    const std::optional<Geometrie>& parImAbbild() const { return par_im_abbild_; }
 
     // ─── Mechanik (Zeitbasis: Takte des Controllers) ─────────────────────────
     bool bereit(uint64_t t) const { return offen() && t >= bereit_ab_; }
@@ -192,6 +200,7 @@ private:
     Config       cfg_;
     Geometrie    geo_;
     bool         par_ueberlagert_ = false;
+    std::optional<Geometrie> par_im_abbild_;
     std::array<uint8_t, SEKTOR> par_{};
     std::vector<uint8_t> unformatiert_;            ///< je Spur 1 = unformatiert [P1]
     std::map<int, Spur> cache_;                    ///< Kopf → Spur des aktuellen Zylinders

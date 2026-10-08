@@ -23,6 +23,38 @@ constexpr int MEM_VERSATZ = 6;   // Schreibzugriff von LD (HL),A ≈ Takt 6
 constexpr int SCHREIBVERZUG = 2; // [W11] RAM-Byte → Kopf: Puffer + Schieberegister
 }  // namespace
 
+const char* P8000Wdc::firmwareName(Config::Firmware f)
+{
+    switch (f) {
+        case Config::Firmware::V4_0_05: return "4.0.05";
+        case Config::Firmware::V3_4_05: return "3.4.05";
+        default:                        return "4.2";
+    }
+}
+
+const k1520::winchester::Typ* P8000Wdc::romLaufwerkNachEndung(int endung)
+{
+    // Aus den Bytes der Abzüge (Wächter P8000WdcRomLaufwerk.*): Köpfe/Zylinder−1/Vorkompensation
+    // als Konstanten, Sektoren je Spur überall 18.  Die Endung ist die Beschriftung des Abzugs,
+    // die Werte sind nachgelesen — nicht umgekehrt.
+    switch (endung) {
+        case 1: return k1520::winchester::typNachName("D5126");     // 615 Zyl., 4 Köpfe, Vork. 128
+        case 2: return k1520::winchester::typNachName("D5146");     // 615 Zyl., 8 Köpfe, Vork. 128
+        case 4: return k1520::winchester::typNachName("VS");        // 820 Zyl., 6 Köpfe, Vork. 820
+        case 5: return k1520::winchester::typNachName("K5504.50");  // 1024 Zyl., 5 Köpfe, Vork. 1024
+        default: return nullptr;
+    }
+}
+
+const k1520::winchester::Typ* P8000Wdc::romLaufwerk(Config::Firmware f)
+{
+    switch (f) {
+        case Config::Firmware::V4_0_05:
+        case Config::Firmware::V3_4_05: return romLaufwerkNachEndung(5);   // beide Abzüge tragen _05
+        default:                        return nullptr;                    // 4.2: PAR von der Platte
+    }
+}
+
 P8000Wdc::P8000Wdc(const Config& cfg) : cfg_(cfg)
 {
     rom_.fill(0xFF);

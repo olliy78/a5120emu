@@ -262,6 +262,12 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
             else { fehler = "P8000: wdc = " + val + " unbekannt (4.2 | 4.0.05 | 3.4.05 | aus)"; return false; }
         } else if (key == "platte") {
             cfg.platte = val;          // Pfad des Abbilds an Laufwerk 0 (roh/LBA)
+        } else if (key == "plattepar") {
+            // P24: Parametersatz ergänzen (nur das WEGA-3.1-AVR-Abbild braucht das); Kern-Vorgabe
+            // "ergaenzen" (Bestandstests), das Programm schickt "aus".
+            if (val == "ergaenzen") cfg.platte_par_ergaenzen = true;
+            else if (val == "aus") cfg.platte_par_ergaenzen = false;
+            else { fehler = "P8000: plattepar = " + val + " unbekannt (ergaenzen | aus)"; return false; }
         } else if (key == "plattentyp") {
             if (!k1520::winchester::typNachName(val)) { fehler = "P8000: plattentyp = " + val + " unbekannt"; return false; }
             cfg.platte_typ = val;
@@ -1519,6 +1525,23 @@ const char* k1520_hd_error(K1520Handle h) {
     static thread_local std::string s;
     auto* p = h ? dynamic_cast<P8000Machine*>(toMachine(h)) : nullptr;
     s = p ? (p->wdc() ? p->hdError() : std::string("kein WDC")) : std::string("keine Winchester an dieser Maschine");
+    return s.c_str();
+}
+
+const char* k1520_hd_rom_typ(const char* firmware) {
+    static thread_local std::string s;
+    using F = P8000Wdc::Config::Firmware;
+    const std::string f = firmware ? firmware : "";
+    const auto* t = f == "4.0.05" ? P8000Wdc::romLaufwerk(F::V4_0_05)
+                  : f == "3.4.05" ? P8000Wdc::romLaufwerk(F::V3_4_05) : nullptr;
+    s = t ? t->name : "";
+    return s.c_str();
+}
+
+const char* k1520_hd_typ_kuerzel(const char* typ) {
+    static thread_local std::string s;
+    const auto* t = k1520::winchester::typNachName(typ ? typ : "");
+    s = t ? t->kuerzel : "";
     return s.c_str();
 }
 

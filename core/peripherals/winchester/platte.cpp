@@ -8,6 +8,7 @@
 #include "core/util/zustand.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 
@@ -27,11 +28,11 @@ const std::vector<Typ>& typen()
 {
     // sa.format Z. 36–40 (WEGA 3.x); 1380/10/18 = WEGA-3.1-Abbild für den AVR-Emulator (§11)
     static const std::vector<Typ> t = {
-        {"ROB K5504.50", {1024, 5, 18}, 1024, 1, 203, 209, 251, 253, 241, 243, "K5504.50"},
-        {"NEC D5126   ", {615, 4, 18}, 128, 12, 203, 209, 248, 250, 239, 241, "D5126"},
-        {"NEC D5146   ", {615, 8, 18}, 128, 12, 203, 209, 248, 250, 239, 241, "D5146"},
-        {"ROBOTRON VS ", {820, 6, 18}, 820, 1, 203, 209, 251, 253, 241, 243, "VS"},
-        {"WDC-Emulator", {1380, 10, 18}, 1380, 1, 203, 209, 251, 253, 241, 243, "WEGA31-AVR"},
+        {"ROB K5504.50", {1024, 5, 18}, 1024, 1, 203, 209, 251, 253, 241, 243, "K5504.50", "k5504"},
+        {"NEC D5126   ", {615, 4, 18}, 128, 12, 203, 209, 248, 250, 239, 241, "D5126", "d5126"},
+        {"NEC D5146   ", {615, 8, 18}, 128, 12, 203, 209, 248, 250, 239, 241, "D5146", "d5146"},
+        {"ROBOTRON VS ", {820, 6, 18}, 820, 1, 203, 209, 251, 253, 241, 243, "VS", "vs"},
+        {"WDC-Emulator", {1380, 10, 18}, 1380, 1, 203, 209, 251, 253, 241, 243, "WEGA31-AVR", "avr"},
     };
     return t;
 }
@@ -41,6 +42,28 @@ const Typ* typNachName(const std::string& name)
     for (const auto& t : typen())
         if (name == t.name) return &t;
     return nullptr;
+}
+
+const Typ* typNachKuerzel(const std::string& kuerzel)
+{
+    std::string k = kuerzel;
+    for (auto& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (const auto& t : typen())
+        if (k == t.kuerzel) return &t;
+    return nullptr;
+}
+
+std::string kuerzelAusDateiname(const std::string& pfad)
+{
+    // `<name>.<kuerzel>.img` — das vorletzte Stück vor der Endung `.img`, nur wenn es ein Typkürzel ist
+    std::string n = std::filesystem::path(pfad).filename().string();
+    for (auto& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (n.size() < 5 || n.compare(n.size() - 4, 4, ".img") != 0) return "";
+    n.erase(n.size() - 4);
+    const auto punkt = n.rfind('.');
+    if (punkt == std::string::npos) return "";
+    const std::string k = n.substr(punkt + 1);
+    return typNachKuerzel(k) ? k : "";
 }
 
 std::array<uint8_t, 512> parSektor(const Typ& t)
@@ -138,6 +161,7 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
     const bool s0_ok = static_cast<bool>(datei_);
     datei_.clear();
     const auto par = s0_ok ? parGeometrie(s0.data()) : std::nullopt;
+    par_im_abbild_ = par;
 
     if (cfg.geometrie)      geo_ = *cfg.geometrie;
     else if (par)           geo_ = *par;

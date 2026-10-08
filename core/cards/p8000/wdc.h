@@ -88,6 +88,24 @@ public:
     };
     static constexpr int LAUFWERKE = 3;
 
+    /// Name der Fassung ("4.2", "4.0.05", "3.4.05") — wie im Konfigurationstext.
+    static const char* firmwareName(Config::Firmware f);
+    /**
+     * Laufwerkstyp, den das EPROM FESTLEGT (P24): bis 4.0 sind Zylinder, Köpfe, Sektoren je Spur
+     * und Vorkompensation als Konstanten im Abzug eingebrannt, ein anderes Laufwerk braucht ein
+     * anderes EPROM (Endung des Abzugsnamens: `_01` = D5126 615/4, `_02` = D5146 615/8,
+     * `_04` = VS 820/6, `_05` = K5504.50 1024/5; siehe `romLaufwerkNachEndung`).  Die
+     * eingebundenen Abzüge 3.4.05 und 4.0.05 tragen beide `_05`.
+     * `nullptr` = die Fassung ist laufwerksunabhängig (4.2: PAR+BTT von der Platte).
+     * Hergeleitet aus den Bytes der Abzüge, nicht aus der Beschriftung — Wächter
+     * `P8000WdcRomLaufwerk.*` liest sie an den Fundstellen von `eprom_diffs.txt` nach
+     * (Zylinderzahl: das EPROM kennt `Zylinder − 1`; die Annahme „Sektoren je Spur = 18"
+     * steht ebenfalls im Abzug, `LD E,12H`).
+     */
+    static const k1520::winchester::Typ* romLaufwerk(Config::Firmware f);
+    /// Laufwerk zur Endung eines EPROM-Abzugs (`WDC_1_3.4_05` → 5); nullptr bei unbekannter Endung.
+    static const k1520::winchester::Typ* romLaufwerkNachEndung(int endung);
+
     P8000Wdc() : P8000Wdc(Config{}) {}
     explicit P8000Wdc(const Config& cfg);
 
