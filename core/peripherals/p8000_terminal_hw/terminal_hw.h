@@ -111,6 +111,10 @@ public:
     int cursorSpalte() const { return crt_.cursorCol(); }
     bool zeichensatz2() const { return zg2_; }
     unsigned klingel() const { return klingel_; }
+    /// Firmware 5.0 steht in ihrer Warteschleife MAIN0 (0285H–0293H), ohne Zeichen in Tastatur-
+    /// und Empfangspuffer (STAT0 = R04H, Bit 4/6) und ohne Rahmen auf der Leitung.  Prüfhilfe:
+    /// ein Löschen des Bildes dauert ≈ 65 ms (jedes Zeichen wartet auf den Zeilen-DMA).
+    bool ruht() const;
     unsigned watchdogResets() const { return wdResets_; }
     uint64_t bilder() const { return bilder_; }
 

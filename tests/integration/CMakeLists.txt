@@ -280,3 +280,9 @@ k1520_add_test(p8000_monitor16 SRC test_p8000_monitor16.cpp
 k1520_add_test(p8000_wdc_maschine SRC test_p8000_wdc_maschine.cpp
                           LIBS k1520_p8000 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
+# Originalterminal P8000 Typ 2 + K7673.09 als Einheit (Entwurf 28, AP P20a/b): Tastatur → Leitung,
+# Rechner → Bild über einen Kartenkanal, Austauschbarkeit mit dem Kern-Terminal, Telnet am Hub.
+k1520_add_test(p8000_terminal_einheit SRC test_p8000_terminal_einheit.cpp
+                          LIBS k1520_p8000_terminal_hw k1520_serial
+                          LABELS "${_lbl}" TIMEOUT 120)

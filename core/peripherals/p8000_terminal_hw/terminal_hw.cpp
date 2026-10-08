@@ -334,6 +334,12 @@ void P8000TerminalHw::laufeBis(uint64_t ziel) {
     }
 }
 
+bool P8000TerminalHw::ruht() const {
+    const uint16_t pc = z8_.pc;
+    return pc >= 0x0285 && pc <= 0x0293 && (z8_.reg[0x04] & 0x50) == 0 && hostWartend() == 0 &&
+           !srVoll_;
+}
+
 // ── Bild lesen ──────────────────────────────────────────────────────────────
 
 uint16_t P8000TerminalHw::zeilenAdresse(int z) const {
