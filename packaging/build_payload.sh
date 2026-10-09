@@ -39,11 +39,10 @@ GW=yes
 # Entscheid des Anwenders 2026-10-03, 20_prg710.md AP-P5h) samt der UDOS-Entwicklerdiskette
 # (2026-10-06, Software als gemeinfrei erklärt, doc/udos_programme.md §6).  Dazu vier PC-1715-Disketten (SCP 1715 V0006 und V0007, CP/A 1715, UDOS1715; 21_pc1715.md
 # AP-5c — gleiche Herkunftslage wie die PRG-Abzüge: Abzüge aus dem Bestand des Anwenders).
+# CP/A am A5120: EINE Diskette mit allen BIOS-Fassungen (2026-10-09, tools/cpa_a5120/); die vier
+# frueheren Einzeldisketten bleiben als Arbeitsstand in disks/ (--disks all).
 # Alles aus disks/: --disks all.
-DISKS_DEFAULT="cpa_cpa780_k5601_clock.hfe
-cpa_cpa780_k5601_noclock.hfe
-cpa_cpa780_combo5zoll_noclock.hfe
-cpa_cpa780_combo8zoll_noclock.hfe
+DISKS_DEFAULT="cpa_cpa780_k5601_system.hfe
 scpx17_cpa780_k5601.hfe
 a5120_udos43_k5601_entwickler.hfe
 k8915scpx_boot1.hfe

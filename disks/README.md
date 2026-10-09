@@ -24,6 +24,7 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 
 | Datei | System | Laufwerke A: / B: / C: |
 |-------|--------|------------------------|
+| **`cpa_cpa780_k5601_system.hfe`** | **DIE CP/A-Diskette der Auslieferung.** Bootet mit `@OS.COM` = mit Uhr, 3 × K5601; daneben die übrigen BIOS-Fassungen unter eigenem Namen, vom `A>` aus zu starten (voller BIOS-Neustart, ^C behält die Wahl): `OSNOCLK` (ohne Uhr), `OSCOMB5` (B: K5600.10, C: K5600.20), `OSCOMB8` (B: MF3200, C: MF6400), `OSRAF` (RAF als M:), `OSEM256` (A5120.16). Dazu Systemprogramme (FORMAT, CPABCGEN, PIP, STAT, POWER, DIENST …), Textverarbeitung (WordMaster mit deutscher Hilfe, TP 3.0 samt TPDRUCK und Installer TPINSCPA), Entwicklung (BASIC, Turbo Pascal, M80/LINKMT, Z1, ZSID), alle eigenen Prüfprogramme (SERTEST, ROMREAD, EM256*, RAF*, LBREAD/LBPUNCH) und `LIESMICH.TXT`; 52 Dateien, 194 KB frei. Gebaut aus `tools/cpa_a5120/` (`build.py`, Wächter `cli_cpa_a5120`); `CPABCGEN B: OSCOMB5.COM` erzeugt eine Systemdiskette auf Basis einer Variante | A: K5601 · B:/C: je nach gestarteter Variante |
 | `cpa_cpa780_k5601_clock` | CP/A **mit Uhr** | K5601 / K5601 / K5601 |
 | `cpa_cpa780_k5601_noclock` | CP/A ohne Uhr | K5601 / K5601 / K5601 |
 | `cpa_cpa780_k5601_noclock-raf` | CP/A ohne Uhr, **BIOS mit eingebautem RAF-Treiber** (`raf=1`, `rafpar=1`, 88H): mit gesteckter RAM-Floppy (Einstellungen ▸ RAM-Disk) steht nach dem Kaltstart **M:** bereit (RAF 128/512/2M: 127/508/2032 KByte), Inhalt übersteht RESET; ohne Karte kein M:.  Bau: `tests/fixtures/README.md` | K5601 / K5601 / K5601 |
@@ -44,11 +45,15 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `pc1715w_scp30_system.hfe` | **SCP 3.0** (CP/M 3, cpa800, 5×1024), „LOADER PC 1715W V0001", mit den `SC6xx.ZGF`-Zeichensätzen | PC 1715W (U8272) |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
+Die einzelnen `cpa_cpa780_*`-Disketten (clock, noclock, combo5zoll, combo8zoll, `-raf`) sind
+**Arbeitsstand für manuelle Läufe** (ihre `.prn`-Listings gehören dazu) und kommen nicht mehr in den
+Installer; ausgeliefert wird nur `cpa_cpa780_k5601_system.hfe`.
+
 **Eigene Programme auf den Bootdisketten** (Quelle und eingecheckte `.com` unter `tools/`):
 
 | Programm | Quelle | Disketten |
 |----------|--------|-----------|
-| `SERTEST.COM` — Prüfprogramm der seriellen Schnittstellen | `tools/sertest/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe` |
+| `SERTEST.COM` — Prüfprogramm der seriellen Schnittstellen | `tools/sertest/` | `cpa_cpa780_k5601_system`, alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe` |
 | `ROMREAD.COM` — liest das Boot-EPROM der ZRE nach `ROM.BIN` | `tools/romread/` | alle `cpa_cpa780_*` |
 | `EM256ADR.COM`, `EM16ABL.COM`, `EM256FUL.COM` — Prüfprogramme der A5120.16 (EM064/EM256, U8001) | `tools/em256/` | alle `cpa_cpa780_*` |
 | `RAFCPM.COM` (Laufwerk M:), `RAF512.COM` (Laufwerk P:) — nachladbare Treiber der RAM-Floppy RAF (ZWG der AdW, Fremdsoftware, freigegeben; Entwurf 22) | `doc/raf512/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe`, `prg710-1_scpx17_cpa640_boot.hfe` |
