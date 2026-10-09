@@ -161,7 +161,7 @@ public:
     /// Nur Originalterminal: `0x04000000 | Zeile << 8 | Spalte` (Matrix der K7673) wird
     /// gedrückt gehalten, bis derselbe Kode losgelassen wird; andere Kodes ohne Wirkung.
     void keyRelease(uint32_t code) override;
-    void setKeyRepeatRealtime(bool) override {}
+    void setKeyRepeatRealtime(bool an) override { if (hwterm_) hwterm_->einheit().setWiederholungEchtzeit(an); }
     /// Kodes für Matrixtasten der K7673 (Originalterminal).
     static constexpr uint32_t MATRIX_KODE = 0x04000000u;
     static constexpr uint32_t matrixKode(int zeile, int spalte) {

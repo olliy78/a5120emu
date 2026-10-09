@@ -519,8 +519,9 @@ def test_layout_105_positionen_scancodes_wie_im_eprom_abzug():
         assert L.scancode((1, 7)) == 0 and L.TASTEN[(1, 7)][1] == "+"
     finally:
         del e
-    assert sorted(p for p, *_ in L.BILD) == sorted(L.TASTEN)      # jede Position genau einmal im Bild
-    assert len(L.BILD) == 106
+    # jede Position genau einmal im Bild — bis auf die zwei, die am Foto keine Kappe haben
+    assert sorted(p for p, *_ in L.BILD) == sorted(set(L.TASTEN) - set(L.OHNE_KAPPE))
+    assert len(L.BILD) == 104
     # Keine zwei Tasten überdecken sich
     felder = [(x, y, x + b, y + L.taste_hoehe(p)) for p, x, y, b in L.BILD]
     for i, a in enumerate(felder):
@@ -564,15 +565,16 @@ def test_jede_matrixposition_ist_ueber_die_bildschirmtastatur_erreichbar(qapp):
     gedrueckt, losgelassen = [], []
     kw.keyPressed.connect(lambda k, s, c: gedrueckt.append(k))
     kw.keyReleased.connect(lambda k: losgelassen.append(k))
-    for pos in L.positionen():
+    sichtbar = [p for p in L.positionen() if p not in L.OHNE_KAPPE]
+    for pos in sichtbar:
         if pos in L.UMSCHALTER:
             continue
         mitte = kw.taste_rechteck(pos).center().toPoint()
         assert kw.taste_bei(QPointF(mitte)) == pos
         QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, mitte)
-    erwartet = [L.matrix_kode(*p) for p in L.positionen() if p not in L.UMSCHALTER]
+    erwartet = [L.matrix_kode(*p) for p in sichtbar if p not in L.UMSCHALTER]
     assert gedrueckt == erwartet and losgelassen == erwartet       # Drücken UND Loslassen je Taste
-    assert len(set(gedrueckt)) == 106 - len(L.UMSCHALTER)
+    assert len(set(gedrueckt)) == len(sichtbar) - len([p for p in L.UMSCHALTER if p in sichtbar])
     # Kodierung: dieselbe wie im Kern (`0x04000000 | Zeile << 8 | Spalte`)
     assert L.matrix_kode(3, 8) == 0x04000308 and L.kode_matrix(0x04000308) == (3, 8)
     assert L.kode_matrix(0x41) is None
@@ -1044,3 +1046,20 @@ def test_mehrplatz_taste_im_terminal_erreicht_den_rechner_und_ausgabe_das_bild(q
     finally:
         t.serial_stop(0)
         m.serial_stop(0)
+
+
+def test_wirtstaste_wird_auf_der_bildschirmtastatur_mitgezeigt(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from app.ui.keyboard_k7673 import KeyboardK7673Widget
+    t = _widget(qapp)
+    kw = KeyboardK7673Widget()
+    t.matrixGeaendert.connect(kw.host_matrix)
+    emu_gesendet = kw.keyPressed
+    gesendet = []
+    emu_gesendet.connect(lambda *a: gesendet.append(a))
+    taste = kw._by_pos[(2, 0)]
+    QTest.keyPress(t, Qt.Key_A)
+    assert kw._is_down(taste) and not gesendet          # hervorgehoben, aber nichts doppelt gesendet
+    QTest.keyRelease(t, Qt.Key_A)
+    assert not kw._is_down(taste)

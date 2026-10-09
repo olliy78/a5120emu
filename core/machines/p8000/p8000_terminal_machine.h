@@ -80,7 +80,7 @@ public:
 
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
     void keyRelease(uint32_t code) override;
-    void setKeyRepeatRealtime(bool) override {}
+    void setKeyRepeatRealtime(bool an) override { einheit_.setWiederholungEchtzeit(an); }
     uint8_t keyboardLeds() const override { return einheit_.tastatur().leds(); }
     int machineType() const override { return 5; }   // K1520_MACHINE_P8000_TERMINAL
     uint32_t bellCount() const override { return einheit_.hw().klingel(); }

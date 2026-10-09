@@ -210,6 +210,33 @@ TEST(TastaturK7673Diff, LedTastenSchaltenEinmalJeDruck)
     EXPECT_EQ(m.k.leds(), 0x06);   // CAPS + MODE an, ON/OFF zweimal = aus
 }
 
+// Echtzeit-Betrieb: die Ticks der Wiederholung kommen von außen (Wirtsuhr), nicht aus der
+// Maschinenzeit — eine lange gehaltene Taste wiederholt bei schnellem Rechner nicht schneller.
+TEST(TastaturK7673, WiederholungMitExternenTicksFolgtNurDenTicks)
+{
+    TastaturK7673 k;
+    k.setTickExtern(true);
+    k.laufeBis(50 * MS);
+    k.gesendetLeeren();
+    k.druecke(2, 0);                               // „a"
+    k.laufeBis(2000 * MS);                         // 2 s Maschinenzeit, aber kein einziger Tick
+    EXPECT_EQ(k.gesendet().size(), 1u) << "nur das Make, keine Wiederholung ohne Ticks";
+    EXPECT_TRUE(k.wiederholungLaeuft());
+    k.tickExtern(TastaturK7673::VERZOEGERUNG - 1); // eine Rundenlänge vor der Verzögerung
+    k.laufeBis(2100 * MS);
+    EXPECT_EQ(k.gesendet().size(), 1u);
+    k.tickExtern(1);
+    k.laufeBis(2200 * MS);
+    EXPECT_EQ(k.gesendet().size(), 2u) << "erste Wiederholung nach genau 50 Ticks";
+    k.loslassen(2, 0);
+    k.laufeBis(2400 * MS);
+    EXPECT_FALSE(k.wiederholungLaeuft());
+    // Zurück auf die interne Zeitbasis: kein Schwall, die Uhr läuft weiter
+    k.setTickExtern(false);
+    k.laufeBis(2600 * MS);
+    EXPECT_FALSE(k.tickExtern());
+}
+
 TEST(TastaturK7673, LeitungsprotokollEinesBytes)
 {
     TastaturK7673 k;

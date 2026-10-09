@@ -76,6 +76,27 @@ public:
     /// (sie können über @p takt hinausreichen — ein Byte wird als Ganzes geplant).
     void laufeBis(uint64_t takt);
     uint64_t takte() const { return jetzt_; }
+
+    /// Zeitbasis der Tastenwiederholung (T1-Tick, 10 ms bei 8 MHz): intern aus den
+    /// Tastaturtakten (Vorgabe, wiederholbar für Tests) oder von außen über @ref tickExtern.
+    /// Die Oberfläche speist die Ticks aus der Wirtsuhr, damit Verzögerung und Abstand nicht
+    /// mit dem eingestellten Rechnertakt schrumpfen.  Beim Zurückschalten beginnt ein
+    /// voller Tick, kein Schwall.
+    void setTickExtern(bool an) {
+        if (externTick_ && !an) tick_ = jetzt_ + TICK_TAKTE;
+        externTick_ = an;
+    }
+    bool tickExtern() const { return externTick_; }
+    void tickExtern(uint64_t n) {
+        for (; n; --n) {
+            if (z0D_ != VERZOEGERUNG) ++z0D_;
+            if (z0C_ != ABSTAND) ++z0C_;
+        }
+    }
+    /// Läuft gerade eine Wiederholung (Taste gehalten, die wiederholt)?  Nur dann zählt die Uhr.
+    bool wiederholungLaeuft() const { return (letzte_ >> 8) != 0 && letzte_ != 0x2FF; }
+    /// Dauer eines Ticks in Nanosekunden (Echtzeit).
+    uint64_t tickNs() const { return TICK_TAKTE * 1'000'000'000ull / taktHz(); }
     uint32_t taktHz() const { return cfg_.quarzHz / 2; }
 
     /// Flanken mit Zeit ≤ @p bis abholen (in Reihenfolge).
@@ -122,6 +143,7 @@ private:
     uint8_t ledMerker_ = 0;          ///< 39H
     uint8_t p2_ = 0x8F;
     int z0D_ = 0, z0C_ = 0;
+    bool externTick_ = false;        ///< Ticks kommen von außen (nicht serialisiert)
     std::deque<uint8_t> puffer_;
     // Zeit
     uint64_t jetzt_ = 0, naechst_ = 0, tick_ = 0;

@@ -53,6 +53,9 @@ class OriginalTerminalWidget(ScreenWidget):
 
     #: Terminalzustand (``term_flags``) hat sich geändert (Bit 3 = Zeichensatz 2, Bit 4 = CAPS).
     flagsChanged = Signal(int)
+    #: Zeile, Spalte, gedrückt? — jede Matrixtaste, die die Wirtstastatur an den Kern gibt
+    #: (die Bildschirmtastatur zeigt sie mit).
+    matrixGeaendert = Signal(int, int, bool)
 
     def __init__(self, parent=None, index: int = 0):
         super().__init__(parent)
@@ -156,6 +159,7 @@ class OriginalTerminalWidget(ScreenWidget):
         super().focusOutEvent(event)
 
     def _matrix(self, pos, gedrueckt: bool):
+        self.matrixGeaendert.emit(pos[0], pos[1], gedrueckt)
         if self.emulator is not None:
             self.emulator.term_matrix_key(self.index, pos[0], pos[1], gedrueckt)
 

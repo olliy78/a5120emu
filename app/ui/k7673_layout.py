@@ -175,17 +175,19 @@ SCANCODE_POS: Dict[int, Position] = _erste_position()
 assert SCANCODE_POS[0x2A] == (1, 6)
 
 # ── Tastenbild: Position, x, y, Breite in Tasteneinheiten ───────────────────────────────────────
-# Anordnung nach dem Foto des Anwenders: Funktionsreihe oben (OFF | SI/SO MOD VIDEO BREAK | F1–F4 |
-# F5–F8 | F9–F11 | Anzeigefeld), darunter Haupt-, Bearbeitungs- und Ziffernblock, Cursorkreuz.
-#: Bildhöhe/-breite in Tasteneinheiten (Höhe einer Taste = 1).
-BILD_BREITE = 23.4
-BILD_HOEHE = 7.6
+# Dasselbe Gehäuse und Raster wie die K7672 (`keyboard_k7672.py`) — nur die Kappen sind anders
+# beschriftet.  Funktionsreihe oben (OFF | SI/SO MOD VIDEO BREAK | F1–F4 | F5–F8 | F9–F11 |
+# Anzeigefeld), darunter Haupt-, Bearbeitungs- und Ziffernblock, Cursorkreuz.
+#: Bildhöhe/-breite in Tasteneinheiten (Höhe einer Taste = 1), ohne Rand.
+BILD_BREITE = 23.0
+BILD_HOEHE = 6.5
 
-#: Anzeigefeld oben rechts am Foto: (LED-Bit, Beschriftung, x, y) — die LEDs sitzen NICHT auf den Tasten.
-LED_FELD: Tuple[Tuple[int, str, float, float], ...] = (
-    (0x01, "OFF", 19.2, 0.0), (0x02, "CAPS", 20.9, 0.0), (0x04, "MOD", 22.4, 0.0))
-#: Rahmen des Anzeigefelds (x, y, Breite, Höhe).
-LED_RAHMEN = (19.0, 0.0, 4.3, 1.05)
+#: Anzeigefeld oben rechts: (LED-Bit, Beschriftung) in der Reihenfolge von links nach rechts.
+LED_FELD: Tuple[Tuple[int, str], ...] = ((0x01, "OFF"), (0x02, "CAPS"), (0x04, "MOD"))
+
+#: Positionen der Matrix, die am Foto KEINE Kappe haben (dritte SHIFT-Position, zweite „9“):
+#: sie liegen in der Tabelle des Kerns, sind aber an der Bildschirmtastatur nicht zu sehen.
+OHNE_KAPPE: Tuple[Position, ...] = ((3, 6), (4, 12))
 
 
 def _reihe(y: float, x: float, eintraege) -> List[Tuple[Position, float, float, float]]:
@@ -202,12 +204,13 @@ def _gleich(positionen_, breite=1.0):
 
 def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
     t: List[Tuple[Position, float, float, float]] = []
+    mb, nb = 15.5, 19.0                      # linke Kante Mittelblock / Ziffernblock (wie K7672)
     # Funktionsreihe (y = 0): OFF, SI/SO MOD VIDEO BREAK, F1–F4, F5–F8, F9–F11.
     # F1–F11 sind ANNAHME: die elf Positionen ohne Wirkung in aufsteigender Scancode-Folge.
     t += [((7, 12), 0.0, 0.0, 1.0)]
     t += _reihe(0.0, 2.0, _gleich([(5, 12), (7, 14), (7, 15), (3, 14)]))
     fkeys = [(3, 15), (6, 14), (6, 15), (2, 14), (5, 14), (5, 15), (4, 15), (1, 14), (1, 15), (4, 14), (0, 14)]
-    for p, x in zip(fkeys, (6.5, 7.5, 8.5, 9.5, 11.0, 12.0, 13.0, 14.0, 15.5, 16.5, 17.5)):
+    for p, x in zip(fkeys, (6.5, 7.5, 8.5, 9.5, 11.0, 12.0, 13.0, 14.0, mb, mb + 1, mb + 2)):
         t.append((p, x, 0.0, 1.0))
     # Zifferntasten-Reihe: ESC 1 2 … 0 ß ´ BS DEL
     t += _reihe(1.5, 0.0, [((5, 6), 1.0)] + _gleich(
@@ -217,39 +220,36 @@ def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
     t += _reihe(2.5, 0.0, [((0, 6), 1.5)] + _gleich(
         [(1, 0), (5, 0), (1, 1), (5, 1), (1, 2), (5, 2), (1, 3), (5, 3), (1, 4), (5, 4),
          (1, 5), (5, 5)]) + [((5, 7), 1.5)])
-    # CAPS LOCK A S D F G H J K L Ö Ä # RETURN (RETURN zweizeilig hoch)
-    t += _reihe(3.5, 0.5, [((2, 6), 1.4)] + _gleich(
+    # CAPS LOCK A S D F G H J K L Ö Ä # RETURN (RETURN zweizeilig hoch); links ein Blindstück
+    t += _reihe(3.5, 0.5, [((2, 6), 1.25)] + _gleich(
         [(2, 0), (6, 0), (2, 1), (6, 1), (2, 2), (6, 2), (2, 3), (6, 3), (2, 4), (6, 4),
          (2, 5), (6, 5)]))
     # SHIFT < Y X C V B N M , . - SHIFT
-    t += _reihe(4.5, 0.0, [((1, 6), 1.25), ((4, 6), 0.8)] + _gleich(
+    t += _reihe(4.5, 0.0, [((1, 6), 1.25), ((4, 6), 1.0)] + _gleich(
         [(3, 0), (7, 0), (3, 1), (7, 1), (3, 2), (7, 2), (3, 3), (7, 3), (3, 4), (7, 4)])
-        + [((6, 6), 1.85)])
-    t += [((3, 8), 13.9, 3.5, 1.1)]          # RETURN: Höhe 2 (siehe HOEHE2)
+        + [((6, 6), 1.5)])
+    t += [((3, 8), 13.75, 3.5, 1.25)]        # RETURN: Höhe 2 (siehe HOEHE2)
     # CTRL, Leertaste, CTRL
-    t += [((6, 13), 2.6, 5.5, 1.0), ((7, 7), 3.6, 5.5, 7.9), ((7, 13), 11.5, 5.5, 1.0)]
+    t += [((6, 13), 2.5, 5.5, 1.0), ((7, 7), 3.5, 5.5, 8.0), ((7, 13), 11.5, 5.5, 1.0)]
     # Bearbeitungsblock: Zeile 1: |←| CLEAR |→| ; Zeile 2: ⤒ HOME ⤓
-    t += _reihe(1.5, 15.5, _gleich([(0, 9), (4, 9), (0, 10)]))
-    t += _reihe(2.5, 15.5, _gleich([(1, 9), (5, 9), (1, 10)]))
+    t += _reihe(1.5, mb, _gleich([(0, 9), (4, 9), (0, 10)]))
+    t += _reihe(2.5, mb, _gleich([(1, 9), (5, 9), (1, 10)]))
     # Cursorkreuz
-    t += [((7, 9), 16.5, 4.5, 1.0)]
-    t += _reihe(5.5, 15.5, _gleich([(2, 8), (1, 8), (0, 8)]))
-    # Ziffernblock (Spalten bei 19.1, Teilung 1.06); ENTER zweizeilig hoch
+    t += [((7, 9), mb + 1, 4.5, 1.0)]
+    t += _reihe(5.5, mb, _gleich([(2, 8), (1, 8), (0, 8)]))
+    # Ziffernblock; ENTER zweizeilig hoch
     for y, zeile in ((1.5, [(4, 10), (0, 11), (4, 11), (0, 7)]),
                      (2.5, [(5, 10), (1, 11), (5, 11), (1, 7)]),
                      (3.5, [(6, 10), (2, 11), (6, 11), (2, 7)]),
                      (4.5, [(7, 10), (3, 11), (7, 11)]),
                      (5.5, [(4, 8), (5, 8), (6, 8)])):
         for k, p in enumerate(zeile):
-            t.append((p, 19.1 + 1.06 * k, y, 1.0))
-    t.append(((3, 7), 19.1 + 1.06 * 3, 4.5, 1.0))   # ENTER: Höhe 2
-    # Die beiden belegten Positionen ohne Kappe am Foto: Zusatzfeld unten
-    t.append(((4, 12), 19.1, 6.55, 1.0))
-    t.append(((3, 6), 20.2, 6.55, 1.2))        # dritte SHIFT-Position (am Foto keine Kappe)
+            t.append((p, nb + k, y, 1.0))
+    t.append(((3, 7), nb + 3, 4.5, 1.0))     # ENTER: Höhe 2
     return t
 
 
-#: ``(Position, x, y, breite)`` — jede Position aus ``TASTEN`` (106) genau einmal.
+#: ``(Position, x, y, breite)`` — jede Position aus ``TASTEN`` (106) außer ``OHNE_KAPPE`` genau einmal.
 BILD: List[Tuple[Position, float, float, float]] = _bildaufbau()
 
 #: Tasten, die zwei Zeilen hoch sind (RETURN, ENTER des Ziffernblocks).

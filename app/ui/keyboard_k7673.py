@@ -1,18 +1,23 @@
 """Bildschirmtastatur der Flachtastatur K7673.09 (P8000-Terminal Typ 2).
 
-doc/design/26_p8000emu_oberflaeche.md §8.  Nachgebildet ist die **Tastenmatrix** (8 Zeilen ×
-16 Spalten, 105 belegte Positionen — `app/ui/k7673_layout.py`): ein Klick drückt die Matrixtaste,
-das Loslassen der Maus lässt sie los; die Wiederholung gehaltener Tasten macht die K7673 im Kern.
-Das Hauptfenster setzt ``keyPressed(kode, …)`` mit ``kode = 0x04000000 | Zeile << 8 | Spalte`` an
-den Kern ab — der Kern kennt diese Kodierung (`k1520_key_press`).
+doc/design/26_p8000emu_oberflaeche.md §8.  Die K7673.09 steckt im **selben Gehäuse wie die K7672**
+(K8915); deshalb erbt dieses Widget Aussehen und Zeichnung von :class:`KeyboardK7672Widget`
+(Wanne, Ausschnitte, Kappen mit Flanke, Lampenfeld) und tauscht nur Belegung und Beschriftung.
 
-* **SHIFT (dreimal) und CTRL rasten beim Klicken ein** („halten“) und lösen sich mit dem zweiten
+Nachgebildet ist die **Tastenmatrix** (8 Zeilen × 16 Spalten, 105 belegte Positionen —
+`app/ui/k7673_layout.py`): ein Klick drückt die Matrixtaste, das Loslassen der Maus lässt sie los;
+die Wiederholung gehaltener Tasten macht die K7673 im Kern (in Echtzeit, nicht in Maschinentakten —
+`k1520_set_key_repeat_realtime`).  Das Hauptfenster setzt ``keyPressed(kode, …)`` mit
+``kode = 0x04000000 | Zeile << 8 | Spalte`` an den Kern ab — der Kern kennt diese Kodierung
+(`k1520_key_press`).
+
+* **SHIFT (zweimal) und CTRL rasten beim Klicken ein** („halten“) und lösen sich mit dem zweiten
   Klick — mit der Maus gibt es keine zwei Hände.  Mit der rechten Maustaste lässt sich jede
   andere Taste ebenso festhalten.
-* **LEDs**: ON/OFF, CAPS LOCK und MODE zeigen den Zustand, den die Tastatur im Kern führt
-  (``term_leds``).
-* Anordnung und Beschriftung folgen dem Foto der Tastatur des Anwenders (`k7673_layout`); die LEDs
-  sitzen wie dort im Anzeigefeld oben rechts (OFF/CAPS/MOD), nicht auf den Tasten.
+* **LEDs**: OFF, CAPS und MOD im Lampenfeld oben rechts zeigen den Zustand, den die Tastatur im
+  Kern führt (``term_leds``).
+* Die Wirtstastatur läuft nicht über dieses Widget, sondern über das Terminalbild
+  (`p8000_original.py`); die Tasten hier reagieren nur auf die Maus.
 
 Dieselbe Schnittstelle wie die anderen Bildschirmtastaturen (``keyPressed``/``keyReleased``/
 ``set_powered``/``set_leds``/``clear_host_keys``), damit das Hauptfenster sie einhängt.
@@ -20,61 +25,101 @@ Dieselbe Schnittstelle wie die anderen Bildschirmtastaturen (``keyPressed``/``ke
 
 from __future__ import annotations
 
-from typing import Optional, Set
+from dataclasses import dataclass
+from typing import List, Optional, Set
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtWidgets import QSizePolicy
 
 from app.ui import k7673_layout as L
+from app.ui.keyboard import _Key
+from app.ui.keyboard_k7672 import KeyboardK7672Widget, _Taste
 
-_FUGE = 0.08                       # Fuge zwischen zwei Tasten (Tasteneinheiten)
+
+@dataclass
+class _Taste73(_Taste):
+    """Eine Taste der K7673 — dazu ihre Matrixposition."""
+
+    pos: L.Position = (-1, -1)
 
 
-class KeyboardK7673Widget(QWidget):
-    keyPressed = Signal(int, bool, bool)
-    keyReleased = Signal(int)
+#: Umlauttasten wie auf dem Foto: links oben/unten die ASCII-Zeichen derselben Codes
+#: (DIN 66003 ↔ ASCII), rechts groß der Umlaut — und ß mit „?“ oben, „~“ unten, ß unten rechts.
+_UMLAUTE = {
+    (1, 5): ("}", "]", "Ü", False),
+    (2, 5): ("{", "[", "Ä", False),
+    (6, 4): ("|", "\\", "Ö", False),
+    (0, 5): ("?", "~", "ß", True),
+}
+
+#: Sinnbilder auf den Kappen, die mittig stehen (wie die Pfeile der K7672).
+_MITTIG = ("↑", "↓", "←", "→", "↕", "⇕", "⇥", "⇤", "⤒", "⤓", "↖", "|←|", "|→|", "")
+
+
+def _taste_bauen(pos: L.Position, x: float, y: float, b: float) -> _Taste73:
+    sc, unten, oben, tipp = L.TASTEN[pos]
+    h = L.taste_hoehe(pos)
+    kind = "normal"
+    if pos in L.UMSCHALTER:
+        kind = "shift" if pos[1] == 6 else "ctrl"
+    rechts, rechts_unten = "", False
+    if pos in _UMLAUTE:
+        oben, unten, rechts, rechts_unten = _UMLAUTE[pos]
+    name = tipp or unten.replace("\n", " ") or "Taste"
+    return _Taste73(x=x, y=y, low=unten, up=oben, code=None, w=b, h=h, style="light",
+                    shape="rect", kind=kind, name=name,
+                    vertical=(pos == (3, 7)), rechts=rechts, rechts_unten=rechts_unten,
+                    gruppe=_gruppe(x, y), matrix=-1, scan=sc, pos=pos)
+
+
+def _gruppe(x: float, y: float) -> str:
+    """Tastenblock (ein Ausschnitt im Gehäuse) — dieselbe Teilung wie bei der K7672."""
+    if y == 0.0:
+        return "f1" if x < 6.0 else "f2" if x < 10.5 else "f3" if x < 15.0 else "f4"
+    if x >= 19.0:
+        return "ziffern"
+    if x >= 15.5:
+        return "kursor" if y >= 4.5 else "mitte"
+    return "haupt"
+
+
+class KeyboardK7673Widget(KeyboardK7672Widget):
+    """Anklickbare Nachbildung der K7673.09 (P8000-Terminal) — Schnittstelle wie die K7672."""
+
+    _MITTIG = _MITTIG
+
+    def _layout(self) -> List[_Key]:
+        return [_taste_bauen(pos, x, y, b) for pos, x, y, b in L.BILD]
+
+    def _anzeigen_verankern(self):
+        self._by_pos = {k.pos: k for k in self._keys}
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._gedrueckt: Set[L.Position] = set()   # Maus drückt gerade
         self._gehalten: Set[L.Position] = set()    # eingerastet (SHIFT/CTRL, rechte Maustaste)
-        self._leds = 0
-        self._powered = True
-        self._unter_maus: Optional[L.Position] = None
+        self._host: Set[L.Position] = set()        # von der Wirtstastatur gedrückt (nur Anzeige)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.setMinimumSize(360, 120)
-        self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.NoFocus)           # der Fokus gehört dem Terminalbild
+        self.setFocusPolicy(Qt.NoFocus)            # der Fokus gehört dem Terminalbild
 
-    # ── Geometrie ────────────────────────────────────────────────────────────
-
-    def _massstab(self) -> float:
-        return min(self.width() / L.BILD_BREITE, self.height() / L.BILD_HOEHE)
+    # ── Geometrie (für Tests und Treffer) ────────────────────────────────────
 
     def taste_rechteck(self, pos: L.Position) -> QRectF:
-        """Rechteck der Taste im Widget (für Zeichnen, Treffer und Tests)."""
-        s = self._massstab()
-        for p, x, y, b in L.BILD:
-            if p == pos:
-                return QRectF((x + _FUGE) * s, (y + _FUGE) * s, (b - 2 * _FUGE) * s, (L.taste_hoehe(pos) - 2 * _FUGE) * s)
-        raise KeyError(pos)
+        """Rechteck der Kappe im Widget."""
+        unit, ox, oy = self._geometry()
+        return self.kappe_von(self._by_pos[pos], unit, ox, oy)
 
     def taste_bei(self, punkt: QPointF) -> Optional[L.Position]:
-        s = self._massstab()
-        for p, x, y, b in L.BILD:
-            if QRectF(x * s, y * s, b * s, L.taste_hoehe(p) * s).contains(punkt):
-                return p
+        key = self._key_at(punkt)
+        return key.pos if key is not None else None
+
+    def _key_at(self, pos) -> Optional[_Key]:
+        unit, ox, oy = self._geometry()
+        punkt = QPointF(pos)
+        for key in self._keys:
+            if self._rect_of(key, unit, ox, oy).contains(punkt):
+                return key
         return None
-
-    def sizeHint(self) -> QSize:
-        return QSize(int(L.BILD_BREITE * 26), int(L.BILD_HOEHE * 26))
-
-    def heightForWidth(self, breite: int) -> int:
-        return int(breite * L.BILD_HOEHE / L.BILD_BREITE)
-
-    def hasHeightForWidth(self) -> bool:
-        return True
 
     # ── Zustand ──────────────────────────────────────────────────────────────
 
@@ -86,7 +131,7 @@ class KeyboardK7673Widget(QWidget):
         self.update()
 
     def set_leds(self, maske: int):
-        maske = max(0, int(maske))
+        maske = max(0, int(maske)) & 0xFF
         if maske != self._leds:
             self._leds = maske
             self.update()
@@ -97,8 +142,34 @@ class KeyboardK7673Widget(QWidget):
     def zeige_flags(self, flags: int):
         """Schnittstelle der Funktionstastenleiste — die LEDs kommen hier aus ``term_leds``."""
 
+    def _lampen_zustand(self):
+        return tuple((name, bool(self._leds & bit) and self._powered, "gelb")
+                     for bit, name in L.LED_FELD)
+
+    def _led_spots(self, unit: float, ox: float, oy: float):
+        """Nur die drei Lampen — die Punkte über ALT1/^S/MOD2 der K7672 gibt es hier nicht."""
+        feld = self._lampenfeld(unit, ox, oy)
+        return [(feld.x() + feld.width() * (0.17 + 0.33 * i), feld.y() + feld.height() * 0.66,
+                 an, name) for i, (name, an, _f) in enumerate(self._lampen_zustand())]
+
+    def _is_down(self, key: _Key) -> bool:
+        return key.pos in self._gedrueckt or key.pos in self._gehalten or key.pos in self._host
+
+    def _is_active(self, key: _Key) -> bool:
+        return key.pos in self._gehalten
+
+    def host_matrix(self, zeile: int, spalte: int, gedrueckt: bool):
+        """Die Wirtstastatur drückt/löst eine Matrixtaste: hervorheben (sendet nichts)."""
+        pos = (zeile, spalte)
+        if gedrueckt:
+            self._host.add(pos)
+        else:
+            self._host.discard(pos)
+        self.update()
+
     def clear_host_keys(self):
         """Alles loslassen, was die Bildschirmtastatur hält (Fokusverlust, Ausschalten)."""
+        self._host.clear()
         for pos in sorted(self._gedrueckt | self._gehalten):
             self.keyReleased.emit(L.matrix_kode(*pos))
         self._gedrueckt.clear()
@@ -116,7 +187,7 @@ class KeyboardK7673Widget(QWidget):
         ``halten=None``: Umschalter rasten, andere Tasten gelten, solange :meth:`loslassen` noch
         nicht kam.  ``halten=True``: einrasten (zweiter Aufruf löst).
         """
-        if pos not in L.TASTEN:
+        if pos not in self._by_pos:
             return
         rasten = halten if halten is not None else pos in L.UMSCHALTER
         if rasten:
@@ -151,84 +222,29 @@ class KeyboardK7673Widget(QWidget):
             for pos in list(self._gedrueckt):
                 self.loslassen(pos)
 
-    def mouseMoveEvent(self, event):
-        pos = self.taste_bei(event.position())
-        if pos != self._unter_maus:
-            self._unter_maus = pos
-            if pos is not None:
-                sc = L.scancode(pos)
-                name = L.TASTEN[pos][3] or L.TASTEN[pos][1].replace("\n", " ")
-                QToolTip.showText(event.globalPosition().toPoint(),
-                                  f"{name} — Zeile {pos[0]}, Spalte {pos[1]}, Scancode {sc:X}H"
-                                  + (" (ohne Wirkung)" if pos in L.OHNE_WIRKUNG else ""), self)
-
     def leaveEvent(self, event):
-        self._unter_maus = None
+        # Maus verlässt das Widget mit gedrückter Taste: nicht hängen lassen (Wiederholung!).
+        for pos in list(self._gedrueckt):
+            self.loslassen(pos)
 
-    # ── Zeichnen ─────────────────────────────────────────────────────────────
+    # Die Wirtstastatur gehört dem Terminalbild; die Bildschirmtastatur nimmt keine Tasten an.
+    def host_key_press(self, event):
+        return None
 
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing, True)
-        pal = self.palette()
-        p.fillRect(self.rect(), pal.window())
-        s = self._massstab()
-        schrift = QFont(self.font())
-        dunkel = pal.window().color().lightness() < 128
-        kappe = QColor(70, 72, 78) if dunkel else QColor(232, 232, 228)
-        kappe_tot = QColor(52, 54, 58) if dunkel else QColor(205, 205, 200)
-        gedrueckt = QColor(70, 140, 220) if dunkel else QColor(120, 175, 240)
-        rand = QColor(25, 25, 28) if dunkel else QColor(120, 120, 120)
-        text = QColor(235, 235, 235) if dunkel else QColor(20, 20, 20)
-        led_an = QColor(255, 80, 60)
-        led_aus = QColor(90, 40, 40)
-        for pos, x, y, b in L.BILD:
-            r = self.taste_rechteck(pos)
-            wirkt = pos not in L.OHNE_WIRKUNG
-            aktiv = pos in self._gedrueckt or pos in self._gehalten
-            p.setPen(QPen(rand, 1))
-            p.setBrush(gedrueckt if aktiv else (kappe if wirkt else kappe_tot))
-            p.drawRoundedRect(r, 0.12 * s, 0.12 * s)
-            _, normal, mit_shift, _tipp = L.TASTEN[pos]
-            if not wirkt:
-                sc = L.scancode(pos)
-                if not normal:
-                    normal = f"E0 {sc & 0xFF:X}" if sc & 0xFF00 == 0xE000 else f"{sc:X}"
-                mit_shift = ""
-            p.setPen(text if wirkt else QColor(150, 150, 150))
-            zeilen = normal.split("\n")
-            if mit_shift:
-                # Zeichentaste: Umschaltzeichen oben links klein, Grundzeichen unten groß.
-                schrift.setPixelSize(max(6, int(s * 0.42)))
-                p.setFont(schrift)
-                p.drawText(r.adjusted(0, 0.3 * s, 0, 0), Qt.AlignCenter, normal)
-                schrift.setPixelSize(max(5, int(s * 0.3)))
-                p.setFont(schrift)
-                p.drawText(r.adjusted(0.1 * s, 0.04 * s, 0, 0), Qt.AlignLeft | Qt.AlignTop, mit_shift)
-            else:
-                breit = max(len(z) for z in zeilen)
-                schrift.setPixelSize(max(5, int(s * (0.42 if breit <= 2 and len(zeilen) == 1
-                                                      else 0.30 if breit <= 4 else 0.25))))
-                p.setFont(schrift)
-                p.drawText(r, Qt.AlignCenter, normal)
-        # Anzeigefeld oben rechts (wie am Foto): Beschriftung und LED nebeneinander
-        rx, ry, rb, rh = L.LED_RAHMEN
-        p.setPen(QPen(rand, 1))
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(QRectF(rx * s, ry * s, rb * s, rh * s), 0.2 * s, 0.2 * s)
-        schrift.setPixelSize(max(5, int(s * 0.3)))
-        p.setFont(schrift)
-        for bit, name, x, y in L.LED_FELD:
-            p.setPen(text)
-            p.drawText(QRectF(x * s, (y + 0.08) * s, 1.3 * s, 0.4 * s), Qt.AlignLeft | Qt.AlignVCenter, name)
-            an = bool(self._leds & bit) and self._powered
-            p.setPen(Qt.NoPen)
-            p.setBrush(led_an if an else led_aus)
-            p.drawRect(QRectF((x + 0.05) * s, (y + 0.6) * s, 0.4 * s, 0.2 * s))
-        # Hinweis am unteren Rand (nur bei Platz).
-        if self.height() > L.BILD_HOEHE * s + 0.9 * s:
-            schrift.setPixelSize(max(6, int(s * 0.3)))
-            p.setFont(schrift)
-            p.setPen(QColor(140, 140, 140))
-            p.drawText(QRectF(0, L.BILD_HOEHE * s, self.width(), s * 0.9), Qt.AlignCenter,
-                       "K7673 nach Foto — SHIFT/CTRL rasten, rechte Maustaste hält jede Taste")
+    def host_key_release(self, event):
+        return None
+
+    def keyPressEvent(self, event):
+        event.ignore()
+
+    def keyReleaseEvent(self, event):
+        event.ignore()
+
+    # ── Kurzhinweis ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _tip(key: _Key) -> str:
+        pos = key.pos
+        sc = L.scancode(pos)
+        return (f"{key.name} — Zeile {pos[0]}, Spalte {pos[1]}, Scancode {sc:X}H"
+                + (" (ohne Wirkung)" if pos in L.OHNE_WIRKUNG else ""))

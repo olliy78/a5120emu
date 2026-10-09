@@ -17,6 +17,7 @@
  */
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -88,6 +89,11 @@ public:
     void laufeMs(uint64_t ms) { laufe(ms * Z8_HZ / 1000); }
     uint64_t takte() const { return hw_.takte(); }
 
+    /// Tastenwiederholung nach Wirtsuhr statt Maschinenzeit (fadensicher; Oberfläche).
+    /// Vorgabe aus: Tests laufen ungebremst und müssen wiederholbar sein.
+    void setWiederholungEchtzeit(bool an) { echtzeit_.store(an, std::memory_order_relaxed); }
+    bool wiederholungEchtzeit() const { return echtzeit_.load(std::memory_order_relaxed); }
+
     P8000TerminalHw& hw() { return hw_; }
     const P8000TerminalHw& hw() const { return hw_; }
     TastaturK7673& tastatur() { return kb_; }
@@ -136,6 +142,7 @@ private:
     uint64_t zuKbd(uint64_t z8) const;
     uint64_t zuZ8(uint64_t kbd) const;
     void tastaturNachziehen(uint64_t z8Bis);
+    void echtzeitTicks();
     void aktionenAusfuehren();
 
     Config cfg_;
@@ -147,6 +154,9 @@ private:
     std::deque<Aktion> aktionen_;
     uint64_t aktionZeit_ = 0;      ///< Z8-Zeit der nächsten Aktion
     uint64_t kbdZ_ = 1, kbdN_ = 1; ///< kbd = (z8 − kbdStart_) · Z / N (gekürzt)
+    std::atomic<bool> echtzeit_{false};
+    bool     ezBezug_ = false;     ///< Wirtsuhr-Bezug gültig (nur Lauffaden)
+    uint64_t ezNs_ = 0;            ///< Wirtszeit des letzten gezählten Ticks
     uint64_t kbdStart_ = 0;        ///< Z8-Zeit, zu der die Tastatur eingeschaltet wird
 };
 

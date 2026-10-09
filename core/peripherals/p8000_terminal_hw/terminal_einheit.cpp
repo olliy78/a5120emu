@@ -4,6 +4,7 @@
 #include <numeric>
 
 #include "core/peripherals/p8000_terminal_hw/rom_p8t.h"
+#include "core/peripherals/tasten_uhr.h"
 #include "core/serial/hub.h"
 #include "core/util/zustand.h"
 
@@ -69,8 +70,25 @@ uint64_t P8000TerminalEinheit::zuKbd(uint64_t z8) const {
 }
 uint64_t P8000TerminalEinheit::zuZ8(uint64_t k) const { return kbdStart_ + skaliere(k, kbdN_, kbdZ_); }
 
+// Wiederholungs-Ticks der K7673 aus der Wirtsuhr: Verzögerung (500 ms) und Abstand (100 ms)
+// sind Eigenschaften der Tastatur (eigener Quarz), nicht des Rechnertakts.  Die Uhr wird nur
+// gelesen, solange eine Wiederholung läuft — dieser Pfad wird je Befehl gerufen.
+void P8000TerminalEinheit::echtzeitTicks() {
+    if (!kb_.wiederholungLaeuft()) { ezBezug_ = false; return; }
+    const uint64_t jetzt = TastenUhr::wirtsuhrNs();
+    if (!ezBezug_) { ezNs_ = jetzt; ezBezug_ = true; return; }
+    const uint64_t tick = kb_.tickNs();
+    uint64_t n = (jetzt - ezNs_) / tick;
+    if (!n) return;
+    ezNs_ += n * tick;
+    kb_.tickExtern(std::min<uint64_t>(n, 1000));   // nach einer Pause kein Schwall
+}
+
 void P8000TerminalEinheit::tastaturNachziehen(uint64_t bis) {
     if (bis < kbdStart_) return;                 // Tastatur noch nicht eingeschaltet
+    const bool ez = wiederholungEchtzeit();
+    kb_.setTickExtern(ez);
+    if (ez) echtzeitTicks();
     const uint64_t k = zuKbd(bis);
     kb_.laufeBis(k);
     for (const TastaturFlanke& f : kb_.holeFlanken(k)) {

@@ -352,6 +352,7 @@ class MainWindow(QMainWindow):
         if self.profil.terminal:
             # Rasttasten der Funktionstastenleiste folgen dem Zustand des Terminals.
             self.screen_widget.flagsChanged.connect(self.keyboard_widget.zeige_flags)
+        self._host_matrix_verbinden()
 
         self.keyboard_dock = QDockWidget("Tastatur", self)
         self.keyboard_dock.setObjectName("keyboard_dock")
@@ -569,6 +570,11 @@ class MainWindow(QMainWindow):
             return KeyboardK7609Widget()
         return KeyboardWidget()
 
+    def _host_matrix_verbinden(self):
+        """K7673: die Matrixtasten der Wirtstastatur auf der Bildschirmtastatur mitzeigen."""
+        if hasattr(self.screen_widget, "matrixGeaendert") and hasattr(self.keyboard_widget, "host_matrix"):
+            self.screen_widget.matrixGeaendert.connect(self.keyboard_widget.host_matrix)
+
     def _tastatur_tauschen(self):
         """Nach einem Modellwechsel die Bildschirmtastatur des neuen Modells einsetzen
         (PRG 710 ⇄ 710-1) — dasselbe Dock, dieselben Verbindungen."""
@@ -583,6 +589,7 @@ class MainWindow(QMainWindow):
         self.screen_widget.key_sink = self.keyboard_widget
         if self.profil.terminal:
             self.screen_widget.flagsChanged.connect(self.keyboard_widget.zeige_flags)
+        self._host_matrix_verbinden()
         self.keyboard_dock.setWidget(self.keyboard_widget)
         alt.deleteLater()
         self.keyboard_widget.set_powered(bool(self.act_power.isChecked()))

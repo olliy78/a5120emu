@@ -177,10 +177,10 @@ void TastaturK7673::schritt() {
 
 void TastaturK7673::laufeBis(uint64_t ziel) {
     for (;;) {
-        const uint64_t t = std::min(naechst_, tick_);
+        const uint64_t t = externTick_ ? naechst_ : std::min(naechst_, tick_);
         if (t > ziel) break;
         jetzt_ = t;
-        if (tick_ <= naechst_) {                      // IRQ5 (0117H)
+        if (!externTick_ && tick_ <= naechst_) {                      // IRQ5 (0117H)
             if (z0D_ != VERZOEGERUNG) ++z0D_;
             if (z0C_ != ABSTAND) ++z0C_;
             tick_ += TICK_TAKTE;
