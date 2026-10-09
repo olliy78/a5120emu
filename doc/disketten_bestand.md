@@ -196,3 +196,7 @@ eine Systemdiskette an (`@OS.COM` byte-gleich `OSCOMB5`), die allein in A: boote
 Nicht umgesetzt: Varianten mit Uhr und Fremdlaufwerken (`OS555C`, `OS588C`) — brauchen
 BIOS-Neuübersetzungen. Nicht verändert: die Test-Fixtures, die Matrix und `tools/disketten_beigaben.py`
 (pflegt weiter die Einzeldisketten).
+
+**Aufgeräumt (2026-10-09):** Die Einzeldisketten `cpa_cpa780_{k5601_clock,k5601_noclock,k5601_noclock-raf,combo5zoll_noclock,combo8zoll_noclock}.{hfe,img}`
+sind aus `disks/` entfernt; es bleibt nur `cpa_cpa780_k5601_system.hfe` (und die `.prn`-Listings). Die Tests brauchten sie nicht
+(eigene Kopien unter `tests/fixtures/disks/`). Handbeispiele in den Dokumenten zeigen jetzt auf die Fixtures.

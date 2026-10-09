@@ -68,16 +68,6 @@ PRG710_1 = RAF_TREIBER + LOCHBAND                       # SCPX 1.7: RAF512 im Ga
 # Bootdisketten und was sie tragen.  SCPX 1526 am A5120 ist nicht geprueft und
 # fehlt deshalb.
 DISKETTEN = {
-    'cpa_cpa780_k5601_noclock.hfe': A5120,
-    'cpa_cpa780_k5601_noclock.img': A5120,
-    'cpa_cpa780_k5601_clock.hfe': A5120,
-    'cpa_cpa780_k5601_clock.img': A5120,
-    'cpa_cpa780_combo5zoll_noclock.hfe': A5120,
-    'cpa_cpa780_combo5zoll_noclock.img': A5120,
-    'cpa_cpa780_combo8zoll_noclock.hfe': A5120,
-    'cpa_cpa780_combo8zoll_noclock.img': A5120,
-    'cpa_cpa780_k5601_noclock-raf.hfe': A5120,
-    'cpa_cpa780_k5601_noclock-raf.img': A5120,
     'k8915scpx_boot1.hfe': K8915,
     # PC 1715: PCTEST nur dort, wo es nachweislich durchlaeuft (Pc1715Pctest.Scp*, AP-4f).
     # NICHT auf pc1715_scp1715_v0007_cpa640_boot.hfe: PCTEST setzt keinen Stapel, der

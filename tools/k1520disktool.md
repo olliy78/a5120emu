@@ -356,13 +356,13 @@ behandelt sie als **ein Byteband** in einer `.bin`.
 
 ```sh
 # 1. Bootabbild aus einer vorhandenen Bootdiskette holen
-k1520disktool boot-get disks/cpa_cpa780_k5601_noclock.hfe boot_cpa780.bin
+k1520disktool boot-get tests/fixtures/disks/cpa_cpa780_k5601_noclock.hfe boot_cpa780.bin
 
 # 2. neue Diskette damit anlegen …
 k1520disktool create neu.hfe --fs cpa780 --boot boot_cpa780.bin
 
 # 3. … und die Systemdateien hineinkopieren (@OS.COM und der Rest)
-k1520disktool get disks/cpa_cpa780_k5601_noclock.hfe --to auszug
+k1520disktool get tests/fixtures/disks/cpa_cpa780_k5601_noclock.hfe --to auszug
 k1520disktool put neu.hfe auszug
 ```
 

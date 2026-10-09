@@ -124,7 +124,7 @@ Schneller Einzeltest, ob Tasten ankommen und ob ein Befehl Wirkung zeigt.
 **Sondersyntax im `text`:** `|` = Enter mittendrin, `^X` = Strg+X, `~` = blankes Strg+C.
 
 ```sh
-tools/dev.sh tool kbd_test disks/cpa_cpa780_k5601_clock.img "120000|DIR"   # Uhr stellen, dann DIR
+tools/dev.sh tool kbd_test tests/fixtures/disks/cpa_cpa780_k5601_clock.img "120000|DIR"   # Uhr stellen, dann DIR
 ```
 
 Auf der Uhr-Diskette funktioniert die CCP-Eingabe nach der Zeiteingabe vollständig;

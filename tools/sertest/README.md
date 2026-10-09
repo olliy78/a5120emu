@@ -15,7 +15,7 @@ einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md
 > *Annahmen* und *Kabel* als **[bestätigen]**.
 
 **Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/` — allen
-`cpa_cpa780_*` (A5120, CP/A) und `k8915scpx_boot1.hfe` (K8915, SCPX 8915). Die CP/A-Disketten
+`cpa_cpa780_k5601_system.hfe` (A5120, CP/A) und `k8915scpx_boot1.hfe` (K8915, SCPX 8915). Die CP/A-Disketten
 (Auswahl) und die K8915-Diskette gehen als Beispieldisketten ins Paket und landen beim
 ersten Start im Diskettenordner des Anwenders. Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
 

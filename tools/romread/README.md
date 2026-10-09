@@ -45,7 +45,7 @@ Nutzt M80 + LINKMT aus dem Schwesterprojekt `CPA_Workbench/tools` über den
 `cli_romread_com_passt_zur_quelle` (ohne Werkzeugkette übersprungen) und
 `cli_beigaben_auf_den_disketten`.
 
-**Auf den Disketten:** `ROMREAD.COM` liegt auf allen A5120-Bootdisketten `cpa_cpa780_*`
+**Auf den Disketten:** `ROMREAD.COM` liegt auf der A5120-Systemdiskette `cpa_cpa780_k5601_system.hfe`
 in `disks/` und damit auf den Beispieldisketten der Installation.
 
 ## Auf dem echten A5120 verwenden
@@ -68,7 +68,7 @@ Das Programm ist mit `k1520dbg` end-to-end verifiziert (CP/A läuft, EPROM wird
 ein-/ausgeblendet, System überlebt):
 
 ```sh
-A=$(mktemp --suffix=.img); cp disks/cpa_cpa780_k5601_noclock.img "$A"
+A=$(mktemp --suffix=.img); cp tests/fixtures/disks/cpa_cpa780_k5601_noclock.img "$A"
 RR=$(pwd)/tools/romread/romread.com
 printf "g 100000000\nload $RR 0x100\nset PC 0x100\nset SP 0x7F00\ng 5000000\nsave /tmp/buf.bin 0x8000 1024\nscreen\nq\n" \
   | tools/dev.sh tool k1520dbg "$A"
