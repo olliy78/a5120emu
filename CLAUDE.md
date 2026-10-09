@@ -541,7 +541,10 @@ C-ABI `K1520_MACHINE_P8000 = 4`, `k1520_create_p8000(konfig)`; `boot_trace`/`k15
 (`tools/dev.sh test-wega`), Mehrplatz mit **Originalterminal Typ 2 (Z8 + Original-Firmware P8T 5.0) und Flachtastatur K7673.09**,
 DiskTool-WEGA-Dateisystem (`core/filesystem/wega/`, Doku `doc/design/27_wega_dateisystem.md`), Paket. Offen: Gerätemessungen (P3b),
 MSVC-Gegenprobe der CI. Plattendateien tragen das Typkürzel: `<name>.<k5504|d5126|d5146|vs>.img`; „Neue Platte…" legt
-standardmäßig UNFORMATIERT an (Merkposten 48–54).
+standardmäßig UNFORMATIERT an (Merkposten 48–54). **Gepackt `.img.gz`** (Vorgabe für neue Platten, miniz in
+`third_party/miniz`, `core/util/gzip_datei.h`): das Abbild liegt ganz im Speicher, die Datei schreibt ein eigener
+Faden — nach 0,5 s Schreibpause UND frühestens 5 s Wirtszeit nach dem letzten Mal, sofort bei Abtrennen/Reset/Beenden
+(Merkposten 56).
 **Oberfläche `p8000emu` (AP P16, 2026-10-07; `--machine p8000`, `run_p8000emu.sh`, `p8000emu.yaml`,
 `data/default_config_p8000.yaml`, `doc/design/26_p8000emu_oberflaeche.md`):** fünftes Programmprofil im gemeinsamen
 Hauptfenster. **Seit P23a gibt es nur EINE GUI (`p8000emu`, Modus über *Einstellungen ▸ Allgemein ▸ Betriebsart* bzw. `--mode computer|terminal`) und nur Modelle MIT Originalterminal; das Kern-Terminal-Widget `TerminalTabs`/`p8000_terminal.py`, `p8000_zeichensatz.py` und `tools/p8000/zeichensatz_zu_py.py` sind entfallen** — das Terminalbild ist ein `ScreenWidget` (`app/ui/p8000_original.py`, derselbe CRT-Shader/-Dialog wie bei den anderen Maschinen), Rechtsklick ▸ *Bildschirminhalt als Text kopieren*, Bildschirmtastatur K7673 (`keyboard_k7673.py`, Layout nach Anwenderfoto). Der Rest des Absatzes beschreibt den Stand von P16: Funktionstastenleiste statt Bildschirmtastatur, Plattenkasten unter den Disketten

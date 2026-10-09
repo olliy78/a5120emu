@@ -4,6 +4,7 @@
  */
 
 #include "core/filesystem/wega/wega_platte.h"
+#include "core/util/gzip_datei.h"
 
 #include <algorithm>
 #include <cstring>
@@ -47,12 +48,12 @@ bool parGueltig(const uint8_t* s, int& zyl, int& koepfe, int& sek, std::string& 
 } // namespace
 
 bool WegaPlatte::istPlatte(const std::string& pfad, std::string* why) {
-    std::ifstream f(pfad, std::ios::binary);
-    if (!f) { if (why) *why = "nicht lesbar"; return false; }
-    uint8_t s[512] = {};
-    if (!f.read(reinterpret_cast<char*>(s), 512)) { if (why) *why = "kuerzer als ein Sektor"; return false; }
+    // gzip-gepackt (.img.gz) oder roh — erkannt an den Magic Bytes
+    std::vector<uint8_t> s;
+    if (!k1520::gzip::ladenAnfang(pfad, 512, s)) { if (why) *why = "nicht lesbar"; return false; }
+    if (s.size() < 512) { if (why) *why = "kuerzer als ein Sektor"; return false; }
     int z, k, n; std::string t;
-    return parGueltig(s, z, k, n, t, why);
+    return parGueltig(s.data(), z, k, n, t, why);
 }
 
 int64_t WegaPlatte::offsetVon(uint32_t block) const {
@@ -73,11 +74,7 @@ std::unique_ptr<WegaPlatte> WegaPlatte::open(const std::string& pfad, std::strin
     std::unique_ptr<WegaPlatte> p(new WegaPlatte);
     p->pfad_ = pfad;
     p->read_only_ = read_only;
-    {
-        std::ifstream f(pfad, std::ios::binary);
-        if (!f) { err = "nicht lesbar: " + pfad; return nullptr; }
-        p->buf_.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-    }
+    if (!k1520::gzip::laden(pfad, p->buf_, &p->art_, &err)) return nullptr;
     if (p->buf_.size() < 512 * 4) { err = "zu klein fuer ein Plattenabbild"; return nullptr; }
     std::string why;
     if (!parGueltig(p->buf_.data(), p->zyl_, p->koepfe_, p->sek_, p->typ_, &why)) {
@@ -148,11 +145,9 @@ bool WegaPlatte::flush() {
         if (ec) { err_ = "Sicherungskopie " + pfad_ + "~ nicht anlegbar: " + ec.message(); return false; }
         backup_getan_ = true;
     }
-    std::ofstream f(pfad_, std::ios::binary | std::ios::trunc);
-    if (!f.write(reinterpret_cast<const char*>(buf_.data()), static_cast<std::streamsize>(buf_.size()))) {
-        err_ = "nicht schreibbar: " + pfad_;
+    // in der Art zurück, in der geladen wurde; atomar über <pfad>.tmp
+    if (!k1520::gzip::speichern(pfad_, buf_.data(), buf_.size(), art_, k1520::gzip::STUFE_VORGABE, &err_))
         return false;
-    }
     dirty_ = false;
     return true;
 }

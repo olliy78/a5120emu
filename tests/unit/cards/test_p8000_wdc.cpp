@@ -604,6 +604,7 @@ TEST(P8000Wdc_, SaveStateRundreiseMittenImLesen)
     Aufbau a;
     for (uint32_t b = 0; b < 8; ++b)
         ASSERT_TRUE(a.platte.sektorSchreiben(blockLage(b)[0], blockLage(b)[1], blockLage(b)[2], muster(int(b)).data()));
+    ASSERT_TRUE(a.platte.flush());            // p2 liest die DATEI — das Abbild liegt bis dahin nur im Speicher
     ASSERT_TRUE(a.host.warteStatus(1, 40'000'000));
     ASSERT_TRUE(a.host.sende(blockKommando(0x21, 0, 0, 8 * 512)));
     a.host.lauf(30'000);                      // mitten in Sektorsuche/DMA

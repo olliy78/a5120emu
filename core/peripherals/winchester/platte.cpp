@@ -9,8 +9,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <functional>
+#include <mutex>
+#include <thread>
 
 namespace k1520::winchester {
 
@@ -55,9 +60,10 @@ const Typ* typNachKuerzel(const std::string& kuerzel)
 
 std::string kuerzelAusDateiname(const std::string& pfad)
 {
-    // `<name>.<kuerzel>.img` — das vorletzte Stück vor der Endung `.img`, nur wenn es ein Typkürzel ist
+    // `<name>.<kuerzel>.img[.gz]` — das vorletzte Stück vor der Endung `.img`, nur wenn es ein Typkürzel ist
     std::string n = std::filesystem::path(pfad).filename().string();
     for (auto& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (n.size() > 3 && n.compare(n.size() - 3, 3, ".gz") == 0) n.erase(n.size() - 3);
     if (n.size() < 5 || n.compare(n.size() - 4, 4, ".img") != 0) return "";
     n.erase(n.size() - 4);
     const auto punkt = n.rfind('.');
@@ -102,29 +108,94 @@ std::optional<Geometrie> parGeometrie(const uint8_t* s)
     return Geometrie{static_cast<uint16_t>(zyl), s[279], s[280]};
 }
 
+// ─── Schreibfaden ────────────────────────────────────────────────────────────
+
+/// Ein Arbeitsfaden je Platte, höchstens ein Auftrag zugleich (die Platte stößt keinen neuen an,
+/// solange einer läuft).  Er kennt nur seine Kopie und die Datei — nie den Zustand der Platte.
+class Schreibfaden {
+public:
+    using Auftrag = std::function<bool(std::string& fehler)>;
+    struct Ergebnis { bool ok; std::string fehler; };
+
+    ~Schreibfaden()
+    {
+        {
+            std::lock_guard<std::mutex> l(m_);
+            ende_ = true;
+        }
+        cv_.notify_all();
+        if (t_.joinable()) t_.join();
+    }
+    void uebergeben(Auftrag a)
+    {
+        std::unique_lock<std::mutex> l(m_);
+        cv_.wait(l, [&] { return !auftrag_ && !aktiv_; });
+        auftrag_ = std::move(a);
+        if (!t_.joinable()) t_ = std::thread([this] { lauf(); });
+        cv_.notify_all();
+    }
+    void warten()
+    {
+        std::unique_lock<std::mutex> l(m_);
+        cv_.wait(l, [&] { return !auftrag_ && !aktiv_; });
+    }
+    bool beschaeftigt() const
+    {
+        std::lock_guard<std::mutex> l(m_);
+        return auftrag_ || aktiv_;
+    }
+    /// Ergebnis des zuletzt abgeschlossenen Auftrags, einmal abholbar.
+    std::optional<Ergebnis> abholen()
+    {
+        std::lock_guard<std::mutex> l(m_);
+        auto e = std::move(ergebnis_);
+        ergebnis_.reset();
+        return e;
+    }
+
+private:
+    void lauf()
+    {
+        std::unique_lock<std::mutex> l(m_);
+        for (;;) {
+            cv_.wait(l, [&] { return ende_ || auftrag_; });
+            if (!auftrag_) return;   // ende_ und nichts mehr zu tun
+            Auftrag a = std::move(auftrag_);
+            auftrag_ = nullptr;
+            aktiv_ = true;
+            l.unlock();
+            std::string f;
+            const bool ok = a(f);
+            l.lock();
+            ergebnis_ = Ergebnis{ok, std::move(f)};
+            aktiv_ = false;
+            cv_.notify_all();
+        }
+    }
+
+    mutable std::mutex m_;
+    std::condition_variable cv_;
+    std::thread t_;
+    Auftrag auftrag_;
+    bool aktiv_ = false, ende_ = false;
+    std::optional<Ergebnis> ergebnis_;
+};
+
 // ─── Datei ───────────────────────────────────────────────────────────────────
 
+Platte::Platte() = default;
 Platte::~Platte() { schliessen(); }
 
 bool Platte::neu(const std::string& pfad, const Typ& t, std::string* fehler, bool mit_par)
 {
-    std::ofstream f(pfad, std::ios::binary | std::ios::trunc);
-    if (!f) {
-        if (fehler) *fehler = "Abbild nicht anlegbar: " + pfad;
-        return false;
+    std::vector<uint8_t> d(size_t(t.g.bytes()), 0xE5);   // Füllwert nach Formatieren
+    if (mit_par) {                                         // unformatiert: auch Z0/K0/S1 ohne Parametersatz
+        const auto par = parSektor(t);
+        std::memcpy(d.data(), par.data(), par.size());
     }
-    auto par = parSektor(t);
-    if (!mit_par) par.fill(0xE5);   // unformatiert: auch Z0/K0/S1 ohne Parametersatz
-    f.write(reinterpret_cast<const char*>(par.data()), par.size());
-    std::vector<char> block(1 << 20, static_cast<char>(0xE5));   // Füllwert nach Formatieren
-    uint64_t rest = t.g.bytes() - par.size();
-    while (rest > 0 && f) {
-        const auto n = static_cast<std::streamsize>(std::min<uint64_t>(rest, block.size()));
-        f.write(block.data(), n);
-        rest -= static_cast<uint64_t>(n);
-    }
-    if (!f) {
-        if (fehler) *fehler = "Abbild nicht vollständig geschrieben: " + pfad;
+    std::string f;
+    if (!gzip::speichern(pfad, d.data(), d.size(), gzip::artNachEndung(pfad), gzip::STUFE_VORGABE, &f)) {
+        if (fehler) *fehler = "Abbild nicht anlegbar: " + f;
         return false;
     }
     return true;
@@ -149,18 +220,21 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
     fehler_.clear();
     cfg_ = cfg;
     std::error_code ec;
-    const uint64_t groesse = std::filesystem::file_size(pfad, ec);
-    if (ec) { fehler_ = "Abbild nicht gefunden: " + pfad; return false; }
-    datei_.open(pfad, std::ios::in | std::ios::out | std::ios::binary);
-    if (!datei_) { fehler_ = "Abbild nicht zu öffnen: " + pfad; return false; }
+    if (!std::filesystem::exists(pfad, ec)) { fehler_ = "Abbild nicht gefunden: " + pfad; return false; }
+    {   // geschrieben wird später im Schreibfaden — schreibgeschützt fällt HIER auf, nicht dort
+        std::fstream probe(pfad, std::ios::in | std::ios::out | std::ios::binary);
+        if (!probe) { fehler_ = "Abbild nicht zu öffnen: " + pfad; return false; }
+    }
+    std::string lf;
+    if (!gzip::laden(pfad, abbild_, &art_, &lf)) {
+        fehler_ = "Abbild nicht lesbar: " + lf;
+        abbild_.clear();
+        return false;
+    }
+    const uint64_t groesse = abbild_.size();
     pfad_ = pfad;
 
-    std::array<uint8_t, SEKTOR> s0{};
-    datei_.seekg(0);
-    datei_.read(reinterpret_cast<char*>(s0.data()), SEKTOR);
-    const bool s0_ok = static_cast<bool>(datei_);
-    datei_.clear();
-    const auto par = s0_ok ? parGeometrie(s0.data()) : std::nullopt;
+    const auto par = groesse >= uint64_t(SEKTOR) ? parGeometrie(abbild_.data()) : std::nullopt;
     par_im_abbild_ = par;
 
     if (cfg.geometrie)      geo_ = *cfg.geometrie;
@@ -168,14 +242,14 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
     else if (auto g = geometrieAusGroesse(groesse)) geo_ = *g;
     else {
         fehler_ = "Geometrie unbekannt (kein PAR-Sektor, Größe " + std::to_string(groesse) + " B)";
-        datei_.close();
+        abbild_.clear();
         return false;
     }
     if (geo_.bytes() != groesse) {
         fehler_ = "Dateigröße " + std::to_string(groesse) + " B passt nicht zu " +
                   std::to_string(geo_.zylinder) + "/" + std::to_string(geo_.koepfe) + "/" +
                   std::to_string(geo_.sektoren);
-        datei_.close();
+        abbild_.clear();
         return false;
     }
     par_ueberlagert_ = false;
@@ -194,15 +268,28 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
     seek_ende_ = 0;
     bereit_ab_ = cfg.startzeit_takte;
     letzt_schreiben_ = 0;
+    sektor_neu_.assign(size_t(geo_.zylinder) * geo_.koepfe * geo_.sektoren, 0);
+    abbild_neu_ = false;
+    in_arbeit_.clear();
+    je_geschrieben_ = false;
+    schreibfehler_.clear();
+    offen_ = true;
+    if (gepackt()) LOG_INFO("WDC", "Platte %s: gzip-gepackt, %llu B entpackt", pfad.c_str(),
+                            static_cast<unsigned long long>(groesse));
     return true;
 }
 
 void Platte::schliessen()
 {
-    if (!datei_.is_open()) return;
-    flush();
+    if (!offen_) return;
+    if (!flush())
+        LOG_ERROR("WDC", "Platte %s: beim Schließen NICHT gesichert (%s)", pfad_.c_str(), schreibfehler_.c_str());
+    faden_.reset();   // wartet auf den Faden und beendet ihn
     cache_.clear();
-    datei_.close();
+    abbild_.clear();
+    abbild_.shrink_to_fit();
+    sektor_neu_.clear();
+    offen_ = false;
 }
 
 bool Platte::sektorLesen(int zyl, int kopf, int sektor, uint8_t* d)
@@ -210,11 +297,8 @@ bool Platte::sektorLesen(int zyl, int kopf, int sektor, uint8_t* d)
     if (!offen() || zyl < 0 || zyl >= geo_.zylinder || kopf < 0 || kopf >= geo_.koepfe ||
         sektor < 1 || sektor > geo_.sektoren)
         return false;
-    datei_.seekg(static_cast<std::streamoff>(offset(zyl, kopf, sektor)));
-    datei_.read(reinterpret_cast<char*>(d), SEKTOR);
-    const bool ok = static_cast<bool>(datei_);
-    datei_.clear();
-    return ok;
+    std::memcpy(d, abbild_.data() + offset(zyl, kopf, sektor), SEKTOR);
+    return true;
 }
 
 bool Platte::sektorSchreiben(int zyl, int kopf, int sektor, const uint8_t* d)
@@ -222,13 +306,11 @@ bool Platte::sektorSchreiben(int zyl, int kopf, int sektor, const uint8_t* d)
     if (!offen() || zyl < 0 || zyl >= geo_.zylinder || kopf < 0 || kopf >= geo_.koepfe ||
         sektor < 1 || sektor > geo_.sektoren)
         return false;
-    datei_.seekp(static_cast<std::streamoff>(offset(zyl, kopf, sektor)));
-    datei_.write(reinterpret_cast<const char*>(d), SEKTOR);
-    datei_.flush();
-    const bool ok = static_cast<bool>(datei_);
-    datei_.clear();
-    if (ok && zyl == 0 && kopf == 0 && sektor == 1) par_ueberlagert_ = false;
-    return ok;
+    std::memcpy(abbild_.data() + offset(zyl, kopf, sektor), d, SEKTOR);
+    sektor_neu_[sektorIndex(zyl, kopf, sektor)] = 1;
+    abbild_neu_ = true;
+    if (zyl == 0 && kopf == 0 && sektor == 1) par_ueberlagert_ = false;
+    return true;
 }
 
 bool Platte::sektorSicht(int zyl, int kopf, int sektor, uint8_t* d)
@@ -449,24 +531,109 @@ void Platte::zylinderVerlassen()
     cache_.clear();
 }
 
-void Platte::flush()
+bool Platte::flush()
 {
+    if (!offen_) return true;
     for (auto& [kopf, s] : cache_)
         if (s.schmutzig) zurueckschreiben(zyl_, kopf, s);
+    return dateiSchreiben(/*warten=*/true);
 }
 
 bool Platte::schmutzig() const
 {
+    if (abbild_neu_) return true;
     for (const auto& [kopf, s] : cache_)
         if (s.schmutzig) return true;
     return false;
 }
 
+bool Platte::schreibtGerade() const { return faden_ && faden_->beschaeftigt(); }
+
+void Platte::warteAufSchreiben()
+{
+    if (faden_) faden_->warten();
+    ergebnisAbholen();
+}
+
 bool Platte::autoFlush(uint64_t t)
 {
-    if (!schmutzig() || t < letzt_schreiben_ + cfg_.flush_pause) return false;
-    flush();
+    ergebnisAbholen();
+    if (!offen_ || !schmutzig() || t < letzt_schreiben_ + cfg_.flush_pause) return false;
+    // Zweite Schranke in WIRTSzeit: nicht öfter als alle `min_abstand_ms` in die Datei, und nie,
+    // solange der Faden noch am vorigen Auftrag sitzt — die Änderung wartet im Speicher.
+    if (schreibtGerade()) return false;
+    if (je_geschrieben_ &&
+        std::chrono::steady_clock::now() - letzt_datei_ < std::chrono::milliseconds(cfg_.min_abstand_ms))
+        return false;
+    for (auto& [kopf, s] : cache_)
+        if (s.schmutzig) zurueckschreiben(zyl_, kopf, s);
+    dateiSchreiben(/*warten=*/false);
     return true;
+}
+
+bool Platte::dateiSchreiben(bool warten)
+{
+    if (faden_) faden_->warten();   // ein laufender Auftrag zuerst; sein Ergebnis zählt mit
+    ergebnisAbholen();
+    if (abbild_neu_) {
+        Schreibfaden::Auftrag a;
+        if (gepackt()) {
+            // Ganze Kopie (47 MB ≈ 10 ms) — gepackt wird im Faden, nicht hier.
+            auto kopie = std::make_shared<std::vector<uint8_t>>(abbild_);
+            a = [pfad = pfad_, kopie, stufe = cfg_.gzip_stufe](std::string& f) {
+                return gzip::speichern(pfad, kopie->data(), kopie->size(), gzip::Art::Gzip, stufe, &f);
+            };
+        } else {
+            // Roh: nur die geänderten Sektoren, an Ort und Stelle
+            std::vector<std::pair<uint64_t, std::array<uint8_t, SEKTOR>>> sek;
+            for (size_t i = 0; i < sektor_neu_.size(); ++i) {
+                if (!sektor_neu_[i]) continue;
+                std::array<uint8_t, SEKTOR> d;
+                std::memcpy(d.data(), abbild_.data() + i * SEKTOR, SEKTOR);
+                sek.emplace_back(uint64_t(i) * SEKTOR, d);
+                in_arbeit_.push_back(i);
+            }
+            auto liste = std::make_shared<decltype(sek)>(std::move(sek));
+            a = [pfad = pfad_, liste](std::string& f) {
+                std::fstream datei(pfad, std::ios::in | std::ios::out | std::ios::binary);
+                if (!datei) { f = "nicht zu öffnen: " + pfad; return false; }
+                for (const auto& [off, d] : *liste) {
+                    datei.seekp(static_cast<std::streamoff>(off));
+                    datei.write(reinterpret_cast<const char*>(d.data()), SEKTOR);
+                }
+                datei.flush();
+                if (!datei) { f = "Schreibfehler: " + pfad; return false; }
+                return true;
+            };
+        }
+        std::fill(sektor_neu_.begin(), sektor_neu_.end(), uint8_t(0));
+        abbild_neu_ = false;
+        if (!faden_) faden_ = std::make_unique<Schreibfaden>();
+        faden_->uebergeben(std::move(a));
+        letzt_datei_ = std::chrono::steady_clock::now();
+        je_geschrieben_ = true;
+    }
+    if (!warten) return true;
+    if (faden_) faden_->warten();
+    ergebnisAbholen();
+    return !abbild_neu_;
+}
+
+void Platte::ergebnisAbholen()
+{
+    if (!faden_) return;
+    const auto e = faden_->abholen();
+    if (!e) return;
+    if (e->ok) {
+        in_arbeit_.clear();
+        return;
+    }
+    // Gescheitert: wieder als ungesichert führen — der nächste Versuch schreibt den AKTUELLEN Inhalt
+    schreibfehler_ = e->fehler;
+    LOG_WARN("WDC", "Platte: Datei nicht geschrieben (%s) — bleibt ungesichert", e->fehler.c_str());
+    for (size_t i : in_arbeit_) sektor_neu_[i] = 1;
+    in_arbeit_.clear();
+    abbild_neu_ = true;
 }
 
 // ─── Save-State ──────────────────────────────────────────────────────────────

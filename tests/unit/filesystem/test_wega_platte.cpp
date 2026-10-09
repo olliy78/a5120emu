@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "core/filesystem/wega/wega_platte.h"
+#include "core/util/gzip_datei.h"
 #include "tests/support/temp_path.h"
 
 namespace fs = std::filesystem;
@@ -133,6 +134,38 @@ TEST(WegaPlatte, SchreibschutzUndRundreise) {
     EXPECT_TRUE(std::equal(neu.begin(), neu.begin() + kKoepfe * kSek * 512, b.begin()));
     // Unter Windows verweigert remove() eine noch offene Datei ("Sharing violation").
     f.close();
+    pl.reset();
+    fs::remove(p);
+    fs::remove(p + "~");
+}
+
+TEST(WegaPlatte, GepacktesAbbildBleibtGepackt) {
+    const std::string p = k1520test::tempPath("rund_platte.img.gz");
+    std::vector<uint8_t> b = leerePlatte();
+    {
+        auto off = [](uint32_t bn) -> int64_t { return (int64_t(bn) + kKoepfe * kSek) * 512; };
+        std::string err;
+        ASSERT_TRUE(WegaFileSystem::format(
+            std::make_unique<WegaSpeicherDev>(b, 13000, off, nullptr), "usr", err, 0, 3, 34)) << err;
+    }
+    ASSERT_TRUE(k1520::gzip::speichern(p, b.data(), b.size(), k1520::gzip::Art::Gzip));
+    EXPECT_TRUE(WegaPlatte::istPlatte(p));
+    std::string err;
+    const std::vector<uint8_t> inhalt = {'g', 'e', 'p', 'a', 'c', 'k', 't'};
+    {
+        auto pl = WegaPlatte::open(p, err, /*read_only=*/false);
+        ASSERT_TRUE(pl) << err;
+        ASSERT_TRUE(pl->fs(0).write("gz", inhalt, {})) << pl->fs(0).lastError();
+        ASSERT_TRUE(pl->flush()) << pl->lastError();
+    }
+    EXPECT_EQ(k1520::gzip::artVon(p), k1520::gzip::Art::Gzip);
+    EXPECT_EQ(k1520::gzip::artVon(p + "~"), k1520::gzip::Art::Gzip);   // Sicherung = altes Original
+    EXPECT_LT(fs::file_size(p), b.size() / 10);
+    auto pl = WegaPlatte::open(p, err);
+    ASSERT_TRUE(pl) << err;
+    std::vector<uint8_t> z;
+    ASSERT_TRUE(pl->fs(0).read("gz", z));
+    EXPECT_EQ(z, inhalt);
     pl.reset();
     fs::remove(p);
     fs::remove(p + "~");

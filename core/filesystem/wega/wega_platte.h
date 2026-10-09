@@ -14,6 +14,9 @@
  * md3 /tmp 23000/4000, md4 /z 27000/60732) — und es wird nur eingehängt, was dort
  * wirklich ein plausibles Dateisystem trägt.
  *
+ * Das Abbild darf gzip-gepackt sein (`.img.gz`, erkannt an den Magic Bytes); zurueckgeschrieben
+ * wird in derselben Art.
+ *
  * Schreibschutz ist die Vorgabe (wie bei physischen Datenträgern); vor dem ersten
  * Zurückschreiben entsteht `<abbild>~`.
  *
@@ -22,6 +25,7 @@
 
 #pragma once
 #include "core/filesystem/wega/wega_fs.h"
+#include "core/util/gzip_datei.h"
 
 #include <memory>
 #include <string>
@@ -83,6 +87,7 @@ private:
 
     std::string pfad_;
     std::vector<uint8_t> buf_;
+    k1520::gzip::Art art_ = k1520::gzip::Art::Roh;   ///< so wird zurueckgeschrieben
     int zyl_ = 0, koepfe_ = 0, sek_ = 0;
     std::string typ_;
     std::vector<uint32_t> btt_;     ///< Defektspuren als Zylinder·Koepfe+Kopf, aufsteigend

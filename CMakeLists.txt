@@ -96,6 +96,23 @@ if(BUILD_K1520)
     )
     target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # Gepackte Abbilder (.img.gz) — miniz ist BEIGELEGT (third_party/miniz, MIT, dort das Warum).
+    # Amalgamation: genau EINE Datei übersetzen.  MINIZ_NO_ZLIB_COMPATIBLE_NAMES ist Pflicht:
+    # libk1520core.so lebt im selben Prozess wie Qt (bringt zlib mit) — keine `deflate`/`crc32`.
+    add_library(miniz STATIC third_party/miniz/miniz.c)
+    target_include_directories(miniz PUBLIC third_party/miniz)
+    target_compile_definitions(miniz PUBLIC MINIZ_NO_ARCHIVE_APIS MINIZ_NO_STDIO MINIZ_NO_TIME
+                                            MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+    set_target_properties(miniz PROPERTIES C_STANDARD 11)
+    if (MSVC)
+        target_compile_options(miniz PRIVATE /w)
+    else()
+        target_compile_options(miniz PRIVATE -w)
+    endif()
+    add_library(k1520_gzip STATIC core/util/gzip_datei.cpp)
+    target_include_directories(k1520_gzip PUBLIC ${CMAKE_SOURCE_DIR})
+    target_link_libraries(k1520_gzip PRIVATE miniz)
+
     # Serielle Schnittstellen nach aussen: reine Protokoll-Codecs ohne Socket (Entwurf 19, AP-S2)
     add_library(k1520_serial_codec STATIC
         core/serial/telnet_codec.cpp
@@ -203,7 +220,7 @@ if(BUILD_K1520)
         core/filesystem/check/udos1715_check.cpp
         core/filesystem/check/udos1715_recover.cpp
     )
-    target_link_libraries(k1520_fs PUBLIC k1520_geometry k1520_floppy2 k1520_util)
+    target_link_libraries(k1520_fs PUBLIC k1520_geometry k1520_floppy2 k1520_util k1520_gzip)
     target_include_directories(k1520_fs PUBLIC ${CMAKE_SOURCE_DIR})
 
     # PIO primitive
@@ -366,7 +383,7 @@ if(BUILD_K1520)
 
     # P8000, Winchesterlaufwerk am WDC: LBA-Abbild, Spursynthese/-zerlegung, Mechanik (AP P13b)
     add_library(k1520_winchester STATIC core/peripherals/winchester/platte.cpp)
-    target_link_libraries(k1520_winchester PUBLIC k1520_logger)
+    target_link_libraries(k1520_winchester PUBLIC k1520_logger k1520_gzip Threads::Threads)
     target_include_directories(k1520_winchester PUBLIC ${CMAKE_SOURCE_DIR})
 
     # P8000, Winchester-Disk-Controller: UA880 + CTC + Original-Firmware, Host-/Disk-Logik (AP P13c)

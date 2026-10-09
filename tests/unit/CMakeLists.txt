@@ -153,6 +153,8 @@ k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520
 
 # ── core/util/ ───────────────────────────────────────────────────────────────
 k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")
+# Gepackte Abbilder: gzip-Hülle um miniz (core/util/gzip_datei.h, third_party/miniz)
+k1520_add_test(gzip_datei SRC util/test_gzip_datei.cpp LIBS k1520_gzip LABELS "${_lbl}")
 # Serielle Schnittstellen nach außen, Netzschicht (Entwurf 19 §11) — nur Loopback, nie feste Ports.
 k1520_add_test(serial_adresse SRC util/test_serial_adresse.cpp LIBS k1520_serial_net LABELS "${_lbl}")
 k1520_add_test(serial_netz    SRC util/test_serial_netz.cpp    LIBS k1520_serial_net LABELS "${_lbl}")

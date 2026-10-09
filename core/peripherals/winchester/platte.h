@@ -32,9 +32,21 @@
  * Kennfeld.  Formatiert ⇔ alle n Kennfelder gültig; dann gehen alle gültigen Datenfelder ins
  * Abbild.  Sonst gilt die Spur als unformatiert, das Abbild bleibt unverändert.
  *
- * **Zurückschreiben:** geschriebene Spuren bleiben als Strom im Zwischenspeicher (`eigen`), bis
- * der Kamm den Zylinder verlässt; zerlegt und sektorweise in die Datei geschrieben wird beim
- * Zylinderwechsel, beim Schließen, bei `flush()` und nach einer Schreibpause (`autoFlush`).
+ * **Zurückschreiben, Stufe 1 (Spur → Abbild):** geschriebene Spuren bleiben als Strom im
+ * Zwischenspeicher (`eigen`), bis der Kamm den Zylinder verlässt; zerlegt und sektorweise ins
+ * Abbild übernommen wird beim Zylinderwechsel, beim Schließen, bei `flush()` und nach einer
+ * Schreibpause (`autoFlush`).
+ *
+ * **Stufe 2 (Abbild → Datei):** das Abbild liegt GANZ im Speicher, roh (`.img`) oder gzip-gepackt
+ * (`.img.gz`, erkannt an den Magic Bytes, `core/util/gzip_datei.h`).  In die Datei geschrieben wird
+ * in einem **eigenen Faden** — Packen kostet auf einer vollen Platte Sekunden, und der
+ * Emulationsfaden ist bei erhöhtem Takt ohnehin ausgelastet.  Er übergibt nur eine Kopie (roh: die
+ * geänderten Sektoren, gzip: das ganze Abbild).  `autoFlush` schreibt erst, wenn BEIDES gilt:
+ * `flush_pause` Takte Schreibpause (Maschinenzeit) UND `min_abstand_ms` seit dem letzten Schreiben
+ * (WIRTSzeit — die Schranke schützt den Wirt, und bei 10× Takt wären 5 s Maschinenzeit nur 0,5 s).
+ * `flush()` und `schliessen()` (Abtrennen, Reset, Beenden) schreiben SOFORT und warten, bis die
+ * Datei steht.  gzip wird atomar ersetzt (`<pfad>.tmp` + `rename`), roh sektorweise an Ort und
+ * Stelle.  Ein gescheitertes Schreiben lässt die Änderung als ungesichert stehen (nächster Versuch).
  *
  * **Annahmen** (benannt, Messfragen in wdc_firmware.md §12):
  *  - [P1] Zustand „unformatiert" lebt nur im Speicher (und im Save-State); ein vorhandenes
@@ -51,13 +63,18 @@
 #pragma once
 #include <array>
 #include <cstdint>
-#include <fstream>
+#include <chrono>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "core/util/gzip_datei.h"
+
 namespace k1520::winchester {
+
+class Schreibfaden;
 
 /// CRC-CCITT (0x1021) wie der CRC-Generator der WDC-Karte (Startwert vom Aufrufer).
 uint16_t crcCcitt(uint16_t crc, uint8_t byte);
@@ -114,14 +131,17 @@ public:
         uint64_t seek_takte      = 4000;          ///< SEEK COMPLETE nach letztem Schritt (1 ms @ 4 MHz) [P3]
         uint64_t flush_pause     = 2'000'000;     ///< Schreibpause vor dem Zurückschreiben (0,5 s @ 4 MHz)
         bool     par_ergaenzen   = true;          ///< [P5]
+        uint32_t min_abstand_ms  = 5000;          ///< Wirtszeit zwischen zwei Schreibvorgängen in die Datei
+        int      gzip_stufe      = gzip::STUFE_VORGABE;
     };
 
-    Platte() = default;
+    Platte();
     ~Platte();
     Platte(const Platte&) = delete;
     Platte& operator=(const Platte&) = delete;
 
     /// Legt ein neues Abbild in voller Größe an: Datenbytes E5, Z0/K0/S1 = PAR/BTT von @p t.
+    /// Endet @p pfad auf `.gz`, wird es gzip-gepackt angelegt.
     /// @p mit_par = false: ein UNFORMATIERTES Laufwerk wie neu aus der Verpackung — die Datei ist
     /// durchgehend E5, auch Z0/K0/S1 (kein Parametersatz; der WDC meldet „Error in PAR&BTT",
     /// `sa.format` legt ihn an).
@@ -132,7 +152,9 @@ public:
     bool oeffnen(const std::string& pfad, const Config& cfg);
     bool oeffnen(const std::string& pfad);
     void schliessen();
-    bool offen() const { return datei_.is_open(); }
+    bool offen() const { return offen_; }
+    /// gzip-gepacktes Abbild (an den Magic Bytes erkannt, nicht an der Endung)?
+    bool gepackt() const { return art_ == gzip::Art::Gzip; }
     const std::string& fehler() const { return fehler_; }
     const std::string& pfad() const { return pfad_; }
     const Geometrie& geometrie() const { return geo_; }
@@ -159,16 +181,25 @@ public:
     /// Zustand setzen (Prüfungen; neue Abbilder „unformatiert" vorbereiten).
     void setzeFormatiert(int zyl, int kopf, bool f);
 
-    // ─── Sektorzugriff (Abbild, ohne Zwischenspeicher) ───────────────────────
+    // ─── Sektorzugriff (Abbild im Speicher, ohne Spur-Zwischenspeicher) ─────
     bool sektorLesen(int zyl, int kopf, int sektor, uint8_t* daten512);
     bool sektorSchreiben(int zyl, int kopf, int sektor, const uint8_t* daten512);
 
     // ─── Zurückschreiben ─────────────────────────────────────────────────────
-    /// Zerlegt alle geänderten Spuren und schreibt sie ins Abbild; Ströme bleiben erhalten.
-    void flush();
-    /// `flush()`, wenn seit dem letzten Schreiben `flush_pause` Takte vergangen sind.
+    /// Zerlegt alle geänderten Spuren, übernimmt sie ins Abbild und schreibt die Datei SOFORT;
+    /// kehrt erst zurück, wenn sie steht.  Ströme bleiben erhalten.  false = Datei nicht geschrieben.
+    bool flush();
+    /// Nach `flush_pause` Takten Schreibpause UND `min_abstand_ms` Wirtszeit seit dem letzten
+    /// Schreiben: Spuren ins Abbild, Datei im Schreibfaden (kehrt sofort zurück).  true = angestoßen.
     bool autoFlush(uint64_t t);
+    /// Ungesichert: geänderte Spurströme oder Abbildänderungen, die noch nicht an den Schreibfaden
+    /// übergeben sind (was er gerade schreibt, zählt nicht — s. `schreibtGerade`).
     bool schmutzig() const;
+    bool schreibtGerade() const;
+    /// Wartet auf den Schreibfaden (Tests); wertet sein Ergebnis aus.
+    void warteAufSchreiben();
+    /// Letzter Fehler beim Schreiben der Datei ("" = keiner seit dem Öffnen).
+    const std::string& schreibfehler() const { return schreibfehler_; }
 
     /// Zerlegt einen Strom (öffentlich für Tests): Sektordaten je gültigem Datenfeld.
     struct Zerlegung {
@@ -200,7 +231,24 @@ private:
     }
     size_t spurIndex(int zyl, int kopf) const { return size_t(zyl) * geo_.koepfe + size_t(kopf); }
 
-    std::fstream datei_;
+    /// Datei schreiben: im Schreibfaden (@p warten = false) oder sofort und wartend.
+    bool dateiSchreiben(bool warten);
+    /// Ergebnis des Schreibfadens abholen; bei einem Fehler die Änderung wieder als ungesichert führen.
+    void ergebnisAbholen();
+    size_t sektorIndex(int zyl, int kopf, int sektor) const {
+        return (size_t(zyl) * geo_.koepfe + size_t(kopf)) * geo_.sektoren + size_t(sektor - 1);
+    }
+
+    bool         offen_ = false;
+    gzip::Art    art_   = gzip::Art::Roh;
+    std::vector<uint8_t> abbild_;                  ///< ganzer Inhalt (entpackt)
+    std::vector<uint8_t> sektor_neu_;              ///< je Sektor 1 = noch nicht in der Datei (roh)
+    bool         abbild_neu_ = false;              ///< irgendein Sektor noch nicht in der Datei
+    std::vector<size_t> in_arbeit_;                ///< Sektoren des laufenden Auftrags (roh)
+    std::unique_ptr<Schreibfaden> faden_;
+    std::chrono::steady_clock::time_point letzt_datei_{};   ///< letzter Schreibauftrag (Wirtszeit)
+    bool         je_geschrieben_ = false;
+    std::string  schreibfehler_;
     std::string  pfad_, fehler_;
     Config       cfg_;
     Geometrie    geo_;

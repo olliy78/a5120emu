@@ -1112,8 +1112,14 @@ die *Betriebsart*. Was anders ist:
   `<name>.<kürzel>.img` mit `k5504` (K5504.50), `d5126`, `d5146` oder `vs`; *Neue Platte…* hängt das Kürzel
   selbst an, und der Dialog *Anschließen…* zeigt bei den älteren WDC-Fassungen (unten) nur die Dateien des
   passenden Typs — *Alle Dateien* bleibt der Ausweg; eine Datei ohne Kürzel wird nur auf ihre Größe geprüft.
-  Die Endung bleibt `.img`, damit DiskTool und Dateimanager die Abbilder weiter erkennen. Eine Platte hat **keinen Schreibschutz**; geschrieben wird von selbst,
-  beim Abtrennen, bei einem Zwischenstand und beim Beenden. Der WDC erkennt die Platte beim
+  Die Endung bleibt `.img`, damit DiskTool und Dateimanager die Abbilder weiter erkennen.
+  **Gepackt:** *Neue Platte…* legt standardmäßig `<name>.<kürzel>.img.gz` an (gzip; eine leere K5504.50 sind
+  47 MB roh und gut 200 KB gepackt) — abwählbar mit *Gepackt speichern*. Beide Arten lassen sich anschließen;
+  das Programm erkennt die Packung am Inhalt und schreibt in derselben Art zurück. `gunzip` macht aus einer
+  gepackten Platte jederzeit ein rohes `.img`, `gzip` umgekehrt. Eine Platte hat **keinen Schreibschutz**; geschrieben
+  wird von selbst — im Hintergrund, nach einer halben Sekunde ohne Plattenzugriff, aber höchstens alle 5 Sekunden —
+  und sofort beim Abtrennen, bei *Rückstellen*, bei einem Zwischenstand und beim Beenden (das Beenden wartet, bis die
+  Datei steht). Der WDC erkennt die Platte beim
   Hochlauf: eine im Betrieb angeschlossene sieht der Gast erst nach *Rückstellen* oder
   *Rechner ein*. Die Lampe im Kasten und **Platte** in der Statuszeile leuchten bei jedem
   Zugriff. *Hinweis:* der 16-Bit-Monitor versucht nach dem Hardwaretest, von der Platte zu

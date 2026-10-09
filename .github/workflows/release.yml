@@ -144,6 +144,7 @@ jobs:
                        share/doc/handbuch_k1520dbg.md \
                        share/tools/z80_disasm2.py \
                        share/doc/lizenzen/isocline-LICENSE.txt \
+                       share/doc/lizenzen/miniz-LICENSE.txt \
                        share/doc/lizenzen/greaseweazle-COPYING.txt; do
             [ -f "$root/$datei" ] || { echo "FEHLER: $datei fehlt im Paket"; exit 1; }
           done
@@ -373,6 +374,7 @@ jobs:
                                'share\doc\handbuch_k1520dbg.md',
                                'share\tools\z80_disasm2.py',
                                'share\doc\lizenzen\isocline-LICENSE.txt',
+                               'share\doc\lizenzen\miniz-LICENSE.txt',
                                'share\doc\lizenzen\greaseweazle-COPYING.txt')) {
             if (-not (Test-Path -LiteralPath "$root\$datei")) { throw "$datei fehlt im Paket" }
           }

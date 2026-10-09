@@ -549,7 +549,7 @@ TEST(Platte, ZylinderwechselSchreibtGeaenderteSpurenZurueck)
     datenfeldSchreiben(p, 0, 45, muster(0, 0, 1));
     datenfeldSchreiben(p, 2, 45 + 578, muster(0, 2, 18));   // Kopf 2 Slot 1 = SC_TAB[17] = 18
     p.schritt(true, 50);
-    EXPECT_FALSE(p.schmutzig());
+    EXPECT_TRUE(p.schmutzig());            // im Abbild, aber noch nicht in der Datei
     std::array<uint8_t, 512> r{};
     ASSERT_TRUE(p.sektorLesen(0, 0, 1, r.data()));
     EXPECT_EQ(r, muster(0, 0, 1));
@@ -675,4 +675,156 @@ TEST(Platte, Spurformat3xLegtDieSektorenDerReiheNachAufJedenKopf)
         EXPECT_TRUE(z.formatiert);
         EXPECT_EQ(z.daten.size(), 18u);
     }
+}
+
+// ─── Abbild im Speicher, Schreibfaden, gzip (.img.gz) ────────────────────────
+
+namespace {
+std::vector<uint8_t> dateiInhalt(const std::string& p)
+{
+    std::ifstream f(p, std::ios::binary);
+    return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+}
+std::array<uint8_t, 512> sektorDerDatei(const std::string& p, int z, int k, int s)
+{
+    std::vector<uint8_t> d;
+    EXPECT_TRUE(k1520::gzip::laden(p, d));
+    std::array<uint8_t, 512> r{};
+    const size_t off = size_t(((z * 5 + k) * 18 + s - 1)) * 512;   // K5504.50
+    if (d.size() >= off + 512) std::memcpy(r.data(), d.data() + off, 512);
+    return r;
+}
+}  // namespace
+
+TEST(Platte, KuerzelAuchHinterGz)
+{
+    EXPECT_EQ(kuerzelAusDateiname("/x/p8000_platte.k5504.img.gz"), "k5504");
+    EXPECT_EQ(kuerzelAusDateiname("P.D5126.IMG.GZ"), "d5126");
+    EXPECT_EQ(kuerzelAusDateiname("p.k5504.gz"), "");
+}
+
+TEST(Platte, NeuMitGzEndungLegtGepacktAn)
+{
+    TempPlatte tp("K5504.50", "gepackt.k5504.img.gz");
+    EXPECT_EQ(k1520::gzip::artVon(tp.path()), k1520::gzip::Art::Gzip);
+    EXPECT_LT(std::filesystem::file_size(tp.path()), 1'000'000u);   // 47 MB E5 → wenige 100 KB
+    Platte p;
+    ASSERT_TRUE(p.oeffnen(tp)) << p.fehler();
+    EXPECT_TRUE(p.gepackt());
+    EXPECT_EQ(p.geometrie(), (Geometrie{1024, 5, 18}));
+    EXPECT_FALSE(p.parErgaenzt());   // PAR steht im Abbild
+}
+
+TEST(Platte, GepacktesAbbildRundreise)
+{
+    TempPlatte tp("K5504.50", "rund.k5504.img.gz");
+    {
+        Platte p;
+        ASSERT_TRUE(p.oeffnen(tp));
+        datenfeldSchreiben(p, 4, 45, muster(0, 4, SC_TAB[(0 - 4 + 18) % 18]));
+        ASSERT_TRUE(p.sektorSchreiben(700, 3, 9, muster(700, 3, 9).data()));
+    }   // Schließen schreibt sofort und wartet
+    EXPECT_EQ(k1520::gzip::artVon(tp.path()), k1520::gzip::Art::Gzip);   // bleibt gepackt
+    EXPECT_FALSE(std::filesystem::exists(tp.path() + ".tmp"));
+    EXPECT_EQ(sektorDerDatei(tp, 700, 3, 9), muster(700, 3, 9));
+    Platte q;
+    ASSERT_TRUE(q.oeffnen(tp));
+    std::array<uint8_t, 512> r{};
+    const int sek = SC_TAB[(0 - 4 + 18) % 18];
+    ASSERT_TRUE(q.sektorLesen(0, 4, sek, r.data()));
+    EXPECT_EQ(r, muster(0, 4, sek));
+}
+
+TEST(Platte, SektorSchreibenErreichtDieDateiErstBeimFlush)
+{
+    for (const char* name : {"roh.k5504.img", "gz.k5504.img.gz"}) {
+        TempPlatte tp("K5504.50", name);
+        Platte p;
+        ASSERT_TRUE(p.oeffnen(tp));
+        const auto vorher = dateiInhalt(tp);
+        ASSERT_TRUE(p.sektorSchreiben(3, 2, 7, muster(3, 2, 7).data()));
+        EXPECT_TRUE(p.schmutzig()) << name;
+        EXPECT_EQ(dateiInhalt(tp), vorher) << name;   // nur im Speicher
+        ASSERT_TRUE(p.flush());
+        EXPECT_FALSE(p.schmutzig());
+        EXPECT_FALSE(p.schreibtGerade());              // flush() wartet
+        EXPECT_EQ(sektorDerDatei(tp, 3, 2, 7), muster(3, 2, 7)) << name;
+        EXPECT_EQ(sektorDerDatei(tp, 3, 2, 8)[0], 0xE5) << name;   // Nachbar unberührt
+    }
+}
+
+TEST(Platte, AutoFlushHaeltDenMindestabstandInWirtszeit)
+{
+    TempPlatte tp("K5504.50", "abstand.k5504.img.gz");
+    Platte::Config cfg;
+    cfg.flush_pause = 1000;
+    cfg.min_abstand_ms = 60'000;   // im Test nie abgelaufen
+    Platte p;
+    ASSERT_TRUE(p.oeffnen(tp, cfg));
+    ASSERT_TRUE(p.sektorSchreiben(1, 0, 1, muster(1, 0, 1).data()));
+    datenfeldSchreiben(p, 0, 45 + 578, muster(0, 0, 10), 5000);
+    EXPECT_FALSE(p.autoFlush(5999));   // Schreibpause (Maschinenzeit) noch nicht um
+    EXPECT_TRUE(p.autoFlush(6000));    // erstes Schreiben: kein Abstand nötig
+    EXPECT_FALSE(p.schmutzig());       // übergeben; geschrieben wird im Faden
+    p.warteAufSchreiben();
+    EXPECT_EQ(sektorDerDatei(tp, 0, 0, 10), muster(0, 0, 10));
+    EXPECT_EQ(sektorDerDatei(tp, 1, 0, 1), muster(1, 0, 1));
+
+    ASSERT_TRUE(p.sektorSchreiben(2, 0, 1, muster(2, 0, 1).data()));
+    EXPECT_FALSE(p.autoFlush(1'000'000));   // Pause um, aber keine 60 s Wirtszeit seit dem letzten
+    EXPECT_TRUE(p.schmutzig());
+    EXPECT_NE(sektorDerDatei(tp, 2, 0, 1), muster(2, 0, 1));
+    ASSERT_TRUE(p.flush());                 // Abtrennen/Reset/Beenden: sofort, ohne Abstand
+    EXPECT_EQ(sektorDerDatei(tp, 2, 0, 1), muster(2, 0, 1));
+
+    Platte::Config ohne = cfg;
+    ohne.min_abstand_ms = 0;
+    Platte q;
+    p.schliessen();
+    ASSERT_TRUE(q.oeffnen(tp, ohne));
+    ASSERT_TRUE(q.sektorSchreiben(3, 0, 1, muster(3, 0, 1).data()));
+    EXPECT_TRUE(q.autoFlush(1'000'000));
+    q.warteAufSchreiben();
+    ASSERT_TRUE(q.sektorSchreiben(4, 0, 1, muster(4, 0, 1).data()));
+    EXPECT_TRUE(q.autoFlush(2'000'000));   // ohne Abstand sofort wieder
+    q.warteAufSchreiben();
+    EXPECT_EQ(sektorDerDatei(tp, 4, 0, 1), muster(4, 0, 1));
+}
+
+TEST(Platte, GescheitertesSchreibenBleibtUngesichertUndWirdWiederholt)
+{
+    for (const char* name : {"fehler.k5504.img.gz", "fehler.k5504.img"}) {
+        TempPlatte tp("K5504.50", name);
+        Platte::Config cfg;
+        cfg.min_abstand_ms = 0;
+        Platte p;
+        ASSERT_TRUE(p.oeffnen(tp, cfg));
+        const bool gz = p.gepackt();
+        // gzip scheitert an einem Verzeichnis `<pfad>.tmp`, roh an einer fehlenden Datei
+        if (gz) std::filesystem::create_directory(tp.path() + ".tmp");
+        else std::filesystem::rename(tp.path(), tp.path() + ".weg");
+        ASSERT_TRUE(p.sektorSchreiben(9, 1, 3, muster(9, 1, 3).data()));
+        EXPECT_FALSE(p.flush()) << name;
+        EXPECT_TRUE(p.schmutzig()) << name;
+        EXPECT_FALSE(p.schreibfehler().empty());
+        if (gz) std::filesystem::remove(tp.path() + ".tmp");
+        else std::filesystem::rename(tp.path() + ".weg", tp.path());
+        EXPECT_TRUE(p.autoFlush(100'000'000)) << name;   // nächster Versuch
+        p.warteAufSchreiben();
+        EXPECT_FALSE(p.schmutzig());
+        EXPECT_EQ(sektorDerDatei(tp, 9, 1, 3), muster(9, 1, 3)) << name;
+    }
+}
+
+TEST(Platte, KaputteGzDateiWirdAbgewiesen)
+{
+    TempPlatte tp("K5504.50", "kaputt.k5504.img.gz");
+    auto d = dateiInhalt(tp);
+    d.resize(d.size() / 2);
+    std::ofstream(tp.path(), std::ios::binary | std::ios::trunc)
+        .write(reinterpret_cast<const char*>(d.data()), static_cast<std::streamsize>(d.size()));
+    Platte p;
+    EXPECT_FALSE(p.oeffnen(tp));
+    EXPECT_NE(p.fehler().find("nicht lesbar"), std::string::npos) << p.fehler();
+    EXPECT_FALSE(p.offen());
 }

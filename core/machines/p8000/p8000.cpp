@@ -181,6 +181,7 @@ void P8000Machine::nachReset()
 void P8000Machine::powerOn()
 {
     lw().flushDisks();
+    hdFlush();
     karte_.powerOn();        // RAM/ADP/Latches vorbelegen, RESI = 1, /RES (Floppy über Reset-Haken)
     if (wdc_) wdc_->powerOn();   // Netz-Ein des WDC; danach hält PIO2-B5 (Pull-up) ihn im Reset
     if (k16_) {
@@ -206,6 +207,7 @@ void P8000Machine::reset()
 {
     bestueckungAbschliessen();
     lw().flushDisks();
+    hdFlush();               // Plattenabbild SOFORT in die Datei (sonst erst nach 5 s Wirtszeit)
     karte_.reset();          // Taste /RESP: RESI = 0
     nachReset();
     LOG_INFO("P8000", "Reset-Taste");

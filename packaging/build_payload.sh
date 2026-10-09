@@ -482,6 +482,9 @@ cp "$REPO/tools/z80_disasm2.py" "$STAGE/payload/share/tools/z80_disasm2.py"
 # der Text daneben.  Greaseweazle kommt weiter unten dazu (eigenes wheel).
 cp "$REPO/third_party/isocline/LICENSE" \
    "$STAGE/payload/share/doc/lizenzen/isocline-LICENSE.txt"
+# miniz steckt einkompiliert im Kern und im DiskTool (gepackte Plattenabbilder .img.gz).
+cp "$REPO/third_party/miniz/LICENSE" \
+   "$STAGE/payload/share/doc/lizenzen/miniz-LICENSE.txt"
 
 # GUI ohne Bytecode-Reste des Entwicklungsrechners (--exclude MUSS vor dem
 # Pfad stehen, sonst wirkt es bei GNU tar nicht)

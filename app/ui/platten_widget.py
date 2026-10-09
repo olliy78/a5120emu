@@ -5,9 +5,13 @@ Zylinder/Kopf/Sektor, `doc/design/25_p8000.md` §10.8) — anders als eine Diske
 
 * **Kein Schreibschutz.**  Ein Winchesterlaufwerk hat keinen; der Kern weist ``wp`` ab
   (`k1520_hd_mount`).  Der Kasten bietet ihn deshalb gar nicht erst an.
-* **Geschrieben wird verzögert, aber von selbst** (der Kern zerlegt geänderte Spuren beim
-  Zylinderwechsel und nach einer Schreibpause zurück).  Der Kasten stößt ein ``hd_flush`` an,
-  wo es auf die Datei ankommt: vor dem Abtrennen, vor einem Zwischenstand und beim Beenden.
+* **Geschrieben wird verzögert, aber von selbst** (der Kern hält das Abbild im Speicher und
+  schreibt die Datei in einem eigenen Faden — nach 0,5 s Schreibpause, höchstens alle 5 s
+  Wirtszeit).  Der Kasten stößt ein ``hd_flush`` an, wo es auf die Datei ankommt: vor dem
+  Abtrennen, vor einem Zwischenstand und beim Beenden; das wartet, bis die Datei steht.
+* **Gepackt (``.img.gz``)** ist die Vorgabe für neue Platten: eine leere K5504.50 sind 47 MB
+  roh und gut 200 KB gepackt.  Der Kern erkennt gzip an den Magic Bytes, nicht an der Endung,
+  und schreibt in derselben Art zurück; ``gunzip`` macht daraus jederzeit ein rohes ``.img``.
 * **Der WDC erkennt die Platte beim Hochlauf** (Initialisierung ≈ 4,5 s Maschinenzeit).  Eine
   Platte, die man im Betrieb anschließt, sieht der Gast erst nach *Rückstellen* oder
   *Rechner ein* — der Kasten sagt das, statt die Maschine ungefragt neu zu starten.
@@ -20,11 +24,13 @@ Zylinder/Kopf/Sektor, `doc/design/25_p8000.md` §10.8) — anders als eine Diske
 
 from __future__ import annotations
 
+import gzip
 import os
+import zlib
 from typing import Optional
 
 from PySide6.QtCore import QTimer, Signal, Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
                                QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
 from app import instanz, paths
@@ -40,7 +46,7 @@ TYPEN = (
 )
 #: Dateinamenkürzel je Typ (Kern: `winchester::typen()`, geprüft durch `k1520_hd_typ_kuerzel`):
 #: Plattenabbilder heißen ``<name>.<kürzel>.img`` (P24) — die Endung bleibt ``.img``, damit
-#: DiskTool und Dateimanager sie weiter erkennen.
+#: DiskTool und Dateimanager sie weiter erkennen; gepackt ``<name>.<kürzel>.img.gz``.
 KUERZEL = {"K5504.50": "k5504", "D5126": "d5126", "D5146": "d5146", "VS": "vs"}
 #: WDC-Fassungen, die noch nicht belegt sind (3.x-Spurformat, wdc_firmware.md §12 Nr. 11).
 EXPERIMENTELL = ("4.0.05", "3.4.05")
@@ -54,6 +60,9 @@ def typ_mit_inhalt(typ: str, inhalt: str) -> str:
     """Typname für ``hd_create``: ``<typ>:unformatiert`` (kein Parametersatz) bzw. ``<typ>``."""
     return f"{typ}:unformatiert" if inhalt == INHALT_UNFORMATIERT else typ
 
+
+GZ = ".gz"
+GZIP_KENNUNG = b"\x1f\x8b"
 
 UNIT = 0          # nur Laufwerk 0 — die Maschine führt drei, der Kasten bedient das erste
 
@@ -77,27 +86,55 @@ def leerzeichen(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
 
+def ist_gepackt(pfad: str) -> bool:
+    """Ist die Datei gzip-gepackt?  Wie der Kern an den Magic Bytes, nicht an der Endung."""
+    try:
+        with open(pfad, "rb") as f:
+            return f.read(2) == GZIP_KENNUNG
+    except OSError:
+        return False
+
+
+def inhalt_groesse(pfad: str) -> int:
+    """Größe des Abbilds: roh = Dateigröße, gzip = entpackte Größe (ISIZE am Dateiende — der Kern
+    schreibt einteilige Dateien).  ``OSError``, wenn die Datei fehlt."""
+    if not ist_gepackt(pfad):
+        return os.path.getsize(pfad)
+    with open(pfad, "rb") as f:
+        f.seek(-4, os.SEEK_END)
+        return int.from_bytes(f.read(4), "little")
+
+
 def kuerzel_aus_dateiname(pfad: str) -> str:
-    """``platte.k5504.img`` → ``k5504``; ``""`` bei einer Datei ohne Typkürzel."""
+    """``platte.k5504.img[.gz]`` → ``k5504``; ``""`` bei einer Datei ohne Typkürzel."""
     name = os.path.basename(pfad).lower()
+    if name.endswith(GZ):
+        name = name[:-len(GZ)]
     if not name.endswith(".img"):
         return ""
     teile = name[:-4].rsplit(".", 1)
     return teile[1] if len(teile) == 2 and teile[1] in KUERZEL.values() else ""
 
 
-def dateiname_mit_kuerzel(pfad: str, typ: str) -> str:
+def dateiname_mit_kuerzel(pfad: str, typ: str, gepackt: Optional[bool] = None) -> str:
     """*pfad* auf ``<name>.<kürzel>.img`` bringen: fehlt die Endung, wird sie angehängt, ein anderes
-    Typkürzel ersetzt, ``.img`` ohne Kürzel davor ergänzt."""
+    Typkürzel ersetzt, ``.img`` ohne Kürzel davor ergänzt.  *gepackt*: ``True`` → ``….img.gz``,
+    ``False`` → ``.gz`` entfernen, ``None`` → wie im Namen."""
+    ordner, name = os.path.split(pfad)
+    hat_gz = name.lower().endswith(GZ)
+    if hat_gz:
+        name = name[:-len(GZ)]
+    gz = GZ if (hat_gz if gepackt is None else gepackt) else ""
     kz = KUERZEL.get(typ, "")
     if not kz:
-        return pfad if "." in os.path.basename(pfad) else pfad + ".img"
-    ordner, name = os.path.split(pfad)
+        if "." not in name:
+            name += ".img"
+        return os.path.join(ordner, name + gz) if ordner else name + gz
     if kuerzel_aus_dateiname(name):
         name = name[:-4].rsplit(".", 1)[0] + ".img"
     elif not name.lower().endswith(".img"):
         name += ".img"
-    return os.path.join(ordner, name[:-4] + f".{kz}.img")
+    return os.path.join(ordner, name[:-4] + f".{kz}.img" + gz)
 
 
 def abweisung(pfad: str, firmware: str) -> str:
@@ -114,7 +151,7 @@ def abweisung(pfad: str, firmware: str) -> str:
     if kz and kz != KUERZEL[rom]:
         return f"{kopf}; der Dateiname nennt aber „{kz}“"
     try:
-        ist = os.path.getsize(pfad)
+        ist = inhalt_groesse(pfad)
     except OSError:
         return ""
     if ist != soll:
@@ -141,7 +178,7 @@ def ohne_startblock(pfad: str) -> bool:
     Defektspur der BTT davor verschiebt um eine Spur.  Unlesbares/Fremdes ⇒ ``False``.
     """
     try:
-        with open(pfad, "rb") as f:
+        with (gzip.open(pfad, "rb") if ist_gepackt(pfad) else open(pfad, "rb")) as f:
             s0 = f.read(512)
             if len(s0) < 512 or s0[0:6] != b"DEFEKT" or s0[256:262] != b"PARMTR":
                 return False
@@ -157,7 +194,7 @@ def ohne_startblock(pfad: str) -> bool:
                     spur += 1
             f.seek(spur * sek * 512)
             b0 = f.read(512)
-    except OSError:
+    except (OSError, EOFError, zlib.error):
         return False
     return len(b0) == 512 and b0.count(b0[0]) == 512
 
@@ -195,7 +232,6 @@ class PlattenDialog(QDialog):
         self.dateiname = QLabel()
         form.addRow("Dateiendung:", self.dateiname)
         self.typ.currentIndexChanged.connect(self._dateiendung)
-        self._dateiendung()
         # Inhalt: Vorgabe = unformatiert, wie ein neues Laufwerk (kein Parametersatz).  Mit
         # Parametersatz aber leer startet der 16-Bit-Monitor die E5-Bytes als Bootprogramm.
         self.inhalt = QComboBox()
@@ -203,10 +239,16 @@ class PlattenDialog(QDialog):
                             "mit sa.format formatieren", INHALT_UNFORMATIERT)
         self.inhalt.addItem("Formatiert mit Parametersatz (K5504.50, leer)", INHALT_MIT_PAR)
         form.addRow("Inhalt:", self.inhalt)
+        # Gepackt ist die Vorgabe: der Kern packt im eigenen Faden, die Emulation merkt nichts davon.
+        self.gepackt_wahl = QCheckBox("Gepackt speichern (.img.gz) — spart Platz, z. B. 47 MB → 0,2 MB")
+        self.gepackt_wahl.setChecked(True)
+        self.gepackt_wahl.toggled.connect(self._dateiendung)
+        form.addRow("Datei:", self.gepackt_wahl)
         lay.addLayout(form)
         lay.addWidget(QLabel("Standard: Die Platte hat noch keinen Parametersatz; der Monitor "
                              "bleibt bedienbar,\nformatieren mit ud(0,0)sa.format im Gast "
                              "(WEGA-Installation)."))
+        self._dateiendung()
         tasten = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         tasten.accepted.connect(self.accept)
         tasten.rejected.connect(self.reject)
@@ -215,8 +257,14 @@ class PlattenDialog(QDialog):
     def kuerzel(self) -> str:
         return KUERZEL.get(self.typ.currentData(), "")
 
-    def _dateiendung(self):
-        self.dateiname.setText(f"<name>.{self.kuerzel()}.img  (wird angehängt)")
+    def gepackt(self) -> bool:
+        return self.gepackt_wahl.isChecked()
+
+    def endung(self) -> str:
+        return f".{self.kuerzel()}.img" + (GZ if self.gepackt() else "")
+
+    def _dateiendung(self, *_):
+        self.dateiname.setText(f"<name>{self.endung()}  (wird angehängt)")
 
     def typ_name(self) -> str:
         """Typname für ``hd_create``, bei „unformatiert“ mit dem Suffix des Kerns."""
@@ -439,24 +487,25 @@ class PlattenWidget(QWidget):
             self.anschliessen(pfad)
 
     def anschliessen_filter(self) -> str:
-        """Dateifilter des „Anschließen…“-Dialogs: bis 4.0 nur der Typ des ROMs (``*.k5504.img``),
-        sonst alle ``*.img``; „Alle Dateien“ bleibt der Ausweg (Datei ohne Kürzel)."""
+        """Dateifilter des „Anschließen…“-Dialogs: bis 4.0 nur der Typ des ROMs (``*.k5504.img``,
+        auch gepackt), sonst alle ``*.img``/``*.img.gz``; „Alle Dateien“ bleibt der Ausweg."""
         rom = rom_typ(self.firmware)
         if rom:
-            return f"Plattenabbild {rom} (*.{KUERZEL.get(rom, '')}.img);;Alle Dateien (*)"
-        return "Plattenabbild (*.img);;Alle Dateien (*)"
+            kz = KUERZEL.get(rom, "")
+            return f"Plattenabbild {rom} (*.{kz}.img *.{kz}.img.gz);;Alle Dateien (*)"
+        return "Plattenabbild (*.img *.img.gz);;Alle Dateien (*)"
 
     def _neu_dialog(self):
         dlg = PlattenDialog(self, self.firmware)
         if not dlg.exec():
             return
-        vorschlag = str(paths.user_disks_dir() / f"p8000_platte.{dlg.kuerzel()}.img")
+        vorschlag = str(paths.user_disks_dir() / f"p8000_platte{dlg.endung()}")
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Neue Platte speichern unter", vorschlag,
-            "Plattenabbild (*.img);;Alle Dateien (*)")
+            "Plattenabbild (*.img.gz *.img);;Alle Dateien (*)")
         if not pfad:
             return
-        pfad = dateiname_mit_kuerzel(pfad, dlg.typ.currentData())
+        pfad = dateiname_mit_kuerzel(pfad, dlg.typ.currentData(), dlg.gepackt())
         if os.path.exists(pfad) and QMessageBox.question(
                 self, "Neue Platte", f"{pfad} gibt es schon.  Überschreiben?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:

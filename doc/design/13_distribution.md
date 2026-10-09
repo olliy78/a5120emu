@@ -751,6 +751,14 @@ und `ldd` ohne readline/tinfo) und `py_third_party_lizenzen` (jede beigelegte Qu
 LICENSE + Herkunft und ist permissiv). Windows-Gegenprobe: `tools/dev.sh win` — 970/970
 unter wine, `k1520dbg.exe` hängt nur an `KERNEL32.dll` und `msvcrt.dll`.
 
+**Zweite Fremdquelle (2026-10-09): `third_party/miniz` (MIT)** — Deflate für die gepackten
+Plattenabbilder `.img.gz` (Kern und DiskTool, Merkposten p8000 Nr. 56). Nach demselben Muster
+beigelegt (eine Amalgamation, `-w`/`/w`), zusätzlich mit `MINIZ_NO_ZLIB_COMPATIBLE_NAMES`, weil
+`libk1520core.so` im selben Prozess wie Qts zlib lebt. Ihr Lizenztext liegt im Paket als
+`share/doc/lizenzen/miniz-LICENSE.txt`; `py_packaging` verlangt seitdem für **jede** Quelle
+unter `third_party/` einen solchen Eintrag in `build_payload.sh`, `release.yml` prüft die Datei
+in beiden Paketen.
+
 **(2) Der Release-Bau muss `-DK1520_FORMATS_DEFAULT=` auch für `k1520dbg` setzen.**
 Sonst trägt das ausgelieferte Programm den absoluten Pfad des Baurechners als
 Suchkandidaten für `formats.yaml` — dieselbe Falle wie bei der Kernbibliothek (§7),

@@ -1694,6 +1694,10 @@ def test_handbuch_und_lizenzen_reisen_mit():
     assert "share/doc/handbuch_k1520dbg.md" in bp
     assert "share/tools/z80_disasm2.py" in bp
     assert "lizenzen/isocline-LICENSE.txt" in bp
+    # JEDE beigelegte Fremdquelle ist einkompiliert — ihr Lizenztext reist mit (miniz: .img.gz)
+    for quelle in sorted(p for p in (PROJECT_ROOT / "third_party").iterdir() if p.is_dir()):
+        assert f"lizenzen/{quelle.name}-LICENSE.txt" in bp, \
+            f"third_party/{quelle.name}: Lizenztext wird nicht ins Paket gelegt"
     assert "lizenzen/greaseweazle-COPYING.txt" in bp, \
         "die Lizenz der Greaseweazle-Anbindung wird nicht mitgeliefert"
 

@@ -940,7 +940,8 @@ begin
     'unter „Datei ▸ Physisches Laufwerk…".' + #13#10 + #13#10 +
     'LIZENZEN' + #13#10 +
     'Die Texte der mitgelieferten Fremdsoftware (isocline für die' + #13#10 +
-    'Zeilenbearbeitung des Debuggers, Greaseweazle) liegen unter' + #13#10 +
+    'Zeilenbearbeitung des Debuggers, miniz für gepackte Plattenabbilder,' + #13#10 +
+    'Greaseweazle) liegen unter' + #13#10 +
     '<Installation>\share\doc\lizenzen\.');
 end;
 

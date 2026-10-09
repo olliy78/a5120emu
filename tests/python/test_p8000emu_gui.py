@@ -305,6 +305,26 @@ def test_dialog_neue_platte_waehlt_standardmaessig_unformatiert(qapp, umgebung, 
         _zu(w, qapp)
 
 
+def test_neue_platte_gepackt_anlegen_und_pruefen(qapp, umgebung, tmp_path):
+    """``.img.gz``: der Kern legt gepackt an, die Prüfungen des Kastens lesen durch die Packung."""
+    import gzip
+    from app.ui import platten_widget as pw
+    w = _fenster(qapp)
+    try:
+        pfad = str(tmp_path / "gepackt.k5504.img.gz")
+        assert w.platten_widget.neu_anlegen(pfad, "K5504.50")          # mit Parametersatz
+        assert pw.ist_gepackt(pfad)
+        assert Path(pfad).stat().st_size < 1_000_000
+        assert pw.inhalt_groesse(pfad) == 1024 * 5 * 18 * 512
+        assert pw.ohne_startblock(pfad)                                # PAR, aber Block 0 leer
+        assert pw.abweisung(pfad, "3.4.05") == ""                      # Größe = entpackte Größe
+        w.platten_widget.sichern()
+        with gzip.open(pfad, "rb") as f:                               # gunzip liest, was der Kern schrieb
+            assert f.read(512)[256:262] == b"PARMTR"
+    finally:
+        _zu(w, qapp)
+
+
 def test_abtrennen_ist_eine_entscheidung_und_wird_gemerkt(qapp, umgebung, tmp_path):
     from app import config_io
     w = _fenster(qapp)
@@ -599,6 +619,13 @@ def test_kuerzel_der_oberflaeche_stimmen_mit_dem_kern(qapp):
     assert pw.dateiname_mit_kuerzel("/x/platte.k5504.img", "K5504.50") == "/x/platte.k5504.img"
     assert pw.dateiname_mit_kuerzel("/x/platte.d5126.img", "K5504.50") == "/x/platte.k5504.img"
     assert pw.kuerzel_aus_dateiname("/x/a.vs.img") == "vs" and pw.kuerzel_aus_dateiname("/x/a.img") == ""
+    # gepackt: .gz bleibt, kommt hinzu oder fällt weg — das Kürzel steht immer vor .img
+    assert pw.kuerzel_aus_dateiname("/x/a.d5126.img.gz") == "d5126"
+    assert pw.dateiname_mit_kuerzel("/x/platte.k5504.img.gz", "K5504.50") == "/x/platte.k5504.img.gz"
+    assert pw.dateiname_mit_kuerzel("/x/platte.d5126.img.gz", "VS") == "/x/platte.vs.img.gz"
+    assert pw.dateiname_mit_kuerzel("/x/platte", "K5504.50", True) == "/x/platte.k5504.img.gz"
+    assert pw.dateiname_mit_kuerzel("/x/platte.img", "K5504.50", True) == "/x/platte.k5504.img.gz"
+    assert pw.dateiname_mit_kuerzel("/x/platte.k5504.img.gz", "K5504.50", False) == "/x/platte.k5504.img"
 
 
 def test_dialog_neue_platte_sperrt_den_typ_bei_firmware_bis_4_0(qapp):
@@ -606,7 +633,10 @@ def test_dialog_neue_platte_sperrt_den_typ_bei_firmware_bis_4_0(qapp):
     d42 = pw.PlattenDialog(None, "4.2")
     assert d42.typ.isEnabled() and not d42.rom
     d42.typ.setCurrentIndex(d42.typ.findData("VS"))
-    assert d42.kuerzel() == "vs" and ".vs.img" in d42.dateiname.text()
+    assert d42.kuerzel() == "vs" and ".vs.img.gz" in d42.dateiname.text()
+    assert d42.gepackt()                                   # Vorgabe: gepackt
+    d42.gepackt_wahl.setChecked(False)
+    assert d42.endung() == ".vs.img" and ".vs.img " in d42.dateiname.text()
     for fw in ("3.4.05", "4.0.05"):
         d = pw.PlattenDialog(None, fw)
         assert not d.typ.isEnabled() and d.typ.currentData() == "K5504.50"
@@ -618,9 +648,10 @@ def test_anschliessen_dialog_filtert_nach_dem_typ_des_roms(qapp, umgebung):
     w = _fenster(qapp)
     try:
         pwid = w.platten_widget
-        assert pwid.anschliessen_filter() == "Plattenabbild (*.img);;Alle Dateien (*)"
+        assert pwid.anschliessen_filter() == "Plattenabbild (*.img *.img.gz);;Alle Dateien (*)"
         pwid.set_firmware("3.4.05")
-        assert pwid.anschliessen_filter() == "Plattenabbild K5504.50 (*.k5504.img);;Alle Dateien (*)"
+        assert pwid.anschliessen_filter() == \
+            "Plattenabbild K5504.50 (*.k5504.img *.k5504.img.gz);;Alle Dateien (*)"
     finally:
         _zu(w, qapp)
 
