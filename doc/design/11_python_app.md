@@ -880,3 +880,42 @@ fragt auch nicht nach.
   der K8915 Emulator nicht und schreibt auch kein `general.model` — ein
   Erweiterungsmodul gibt es nur am A5120 (`K1520Emulator(machine="k8915", em=…)` →
   `ValueError`, `k1520_create_with_em` mit EM am K8915 → NULL).
+
+### 10.11 Die Maschine rechnet im eigenen Faden (2026-10-09, `app/emulationstakt.py`)
+
+**Befund.** `emulator.run()` lief aus einem 20-ms-`QTimer` im GUI-Faden.  Schafft der Wirt
+den eingestellten Takt nicht — gemessen: P8000 mit Originalterminal (Z8 + U880 + U8001)
+erreicht auf einem Kern ≈ 7×, eingestellt 10× —, dauert jeder Schritt länger als sein
+Abstand (28 ms je 20-ms-Bild); die Ereignisschleife kommt nicht mehr dran, Dialoge öffnen
+sich nicht, die Arbeitsumgebung meldet „reagiert nicht".  Betrifft **alle** Maschinen; bei
+den 2,45-MHz-Rechnern fällt es erst auf einem langsamen Wirt auf.
+
+**Aufbau.** `Emulationstakt` (Name im Fenster weiter `run_timer`, `start`/`stop`/`isActive`
+wie der frühere `QTimer`) ruft `run()` in Scheiben von 2 ms Wanduhr des eingestellten Tempos
+und hält das Tempo selbst (Rückstand höchstens 0,1 s, mehr verfällt).  `k1520_run` gibt die
+GIL frei — die Oberfläche läuft auf einem anderen Prozessorkern.  Schafft der Wirt das Tempo
+nicht, wird die **Maschine** langsamer, nicht die Oberfläche.  Ein Bild (20 ms) meldet die
+gerechneten Takte (`bild`) und Ausnahmen (`fehler`) im GUI-Faden.
+
+**Kernsperre.** Der Kern ist nicht threadsicher: jede C-Funktion läuft über
+`_GesperrteBibliothek` (`app/core_binding/k1520.py`, ein `RLock`); `with kern_sperre():`
+bündelt zusammengehörige Aufrufe (Bild holen, Statuszeile).  Zwei Festlegungen, gemessen:
+- **Wer wartet, meldet sich an** (`wartende`), der Faden lässt nach seiner Scheibe den
+  Vortritt.  `RLock` ist nicht fair; ohne Anmeldung nahm sich der Faden die Sperre sofort
+  wieder, und die Oberfläche verhungerte (gemessen: 7 statt 600 Takte in 6 s).  Auch
+  `with kern_sperre():` meldet sich an — ein ungezähltes `RLock.acquire` dort war genau
+  dieser Fehler.
+- **`stop()` kehrt erst zurück, wenn keine Scheibe mehr rechnet**, und gibt dafür eine
+  gehaltene Sperre vorübergehend ab (sonst Verklemmung).  Tests, die den Takt anhalten und
+  `_run_emulator()` selbst rufen, sehen keinen zweiten Fahrer.
+
+**Verworfen:** die Sperre im GUI-Faden bis `QAbstractEventDispatcher.aboutToBlock` zu
+HALTEN.  Brachte ≈ 12 % Kerntempo (7,0× statt 6,1×), aber jede Schleife aus
+`processEvents()` + `sleep` (Testhelfer wie `warte()`, Fortschrittsdialoge) ruht für Qt nie
+— die Maschine stand dann still (`py_serial_gui` rot).
+
+Gemessen (P8000-ot, offscreen, 16 Kerne): vorher GUI blockiert; nachher 6,1× bei
+eingestellten 10× (Kern allein: 7×) und ein 10-ms-Oberflächentakt mit p99 ≈ 15 ms.  Z8-Terminal und P8000 auf **getrennte** Kerne zu
+legen hiesse, die serielle Kopplung in Zeitquanten zu takten (Merkposten P8000 40–43: der
+Wandler blickt höchstens 1/16 Zeichenzeit voraus) — bewusst nicht gemacht.
+Wächter: `py_emulationstakt`.

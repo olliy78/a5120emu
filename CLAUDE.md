@@ -242,6 +242,16 @@ bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 > - **Ohne die Datei läuft alles weiter** (`{}` → eingebaute Vorgaben); sie ist
 >   eine Beigabe, keine Voraussetzung.
 
+> **Die Maschine rechnet im EIGENEN Faden** (2026-10-09, `app/emulationstakt.py`,
+> `doc/design/11_python_app.md` §10.11) — nicht mehr per `QTimer` im GUI-Faden (der fror
+> ein, sobald der Wirt den Takt nicht schaffte, z. B. P8000+Originalterminal bei 10×).
+> Jeder Kernaufruf geht über die **Kernsperre** (`_GesperrteBibliothek` in
+> `app/core_binding/k1520.py`); mehrere am Stück mit `with kern_sperre():`.  Wartende
+> **melden sich an** (`RLock` ist nicht fair — sonst verhungert die Oberfläche), und
+> `run_timer.stop()` ist synchron.  **Verworfen:** die Sperre im GUI-Faden bis
+> `aboutToBlock` zu halten (`processEvents()`+`sleep` ruht für Qt nie → Maschine steht).
+> Wächter `py_emulationstakt`.
+
 **Tests for this side live in `tests/python/`** (pytest, registered with ctest under label
 `python`, one ctest case per module: `py_c_api`, `py_binding`, `py_boot_smoke`, …). They cover
 the two things C++ tests cannot reach: the **C-ABI** (`core/api/k1520_api.h` ↔ `libk1520core.so`

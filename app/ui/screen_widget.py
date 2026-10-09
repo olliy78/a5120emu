@@ -44,6 +44,7 @@ from PySide6.QtOpenGL import (
     QOpenGLTexture,
 )
 
+from app.core_binding.k1520 import kern_sperre
 from app.ui.einfuegen import TastenEinfueger
 from app.ui.keyboard import qt_event_to_core_key
 
@@ -627,6 +628,12 @@ class ScreenWidget(QOpenGLWidget):
     def _on_update(self):
         if not self.emulator or not self._powered:
             return
+        # EINE Sperre für das ganze Bild: die Emulation läuft in einem eigenen
+        # Faden (app/emulationstakt.py), sonst wartete jeder Aufruf eine Scheibe ab.
+        with kern_sperre():
+            self._bild_holen()
+
+    def _bild_holen(self):
         if not self.emulator.is_framebuffer_dirty():
             return
         # Bildgröße kann sich mit der Maschine ändern (PC 1715: K7221/K7222).

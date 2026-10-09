@@ -31,6 +31,7 @@ from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMenu
 
+from app.core_binding.k1520 import kern_sperre
 from app.mitschrift import Mitschrift
 from app.ui import k7673_layout as L
 from app.ui.screen_widget import ScreenWidget
@@ -154,6 +155,11 @@ class OriginalTerminalWidget(ScreenWidget):
         emu = self.emulator
         if emu is None:
             return
+        # Eine Sperre für das ganze Bild (Emulation im eigenen Faden).
+        with kern_sperre():
+            self._bild_holen(emu)
+
+    def _bild_holen(self, emu):
         self._mitschrift_abholen()
         flags = emu.term_flags(self.index)
         if flags != self._flags:

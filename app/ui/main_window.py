@@ -51,13 +51,14 @@ from app.ui.status_bar import MachineStatus
 from app.ui.toolbar_config import ToolbarDialog
 from app.ui import actions as aktionen
 from app.ui_icons import icon
-from app.core_binding.k1520 import K1520Emulator
+from app.core_binding.k1520 import K1520Emulator, kern_sperre
 from app import config_io
 from app import drive_types as dt
 from app import paths
 from app import programme
 from app import profil as profile
 from app import takt
+from app.emulationstakt import Emulationstakt
 from app import raf
 
 
@@ -149,9 +150,14 @@ class MainWindow(QMainWindow):
         # (`showEvent`) — vorher verfällt es (siehe `_maximiert_herstellen`).
         self._maximiert_nachholen = None
 
-        self.run_timer = QTimer()
-        self.run_timer.timeout.connect(self._run_emulator)
-        self.run_timer.setInterval(self.frame_interval_ms)
+        # Die Maschine rechnet in einem EIGENEN Faden (app/emulationstakt.py), nicht
+        # im GUI-Faden — sonst friert die Oberfläche ein, sobald der Wirt den
+        # eingestellten Takt nicht schafft.  Der Name `run_timer` bleibt (start/stop/
+        # isActive wie beim früheren QTimer).
+        self.run_timer = Emulationstakt(lambda: self.emulator, self.CPU_HZ,
+                                        self.frame_interval_ms, self)
+        self.run_timer.bild.connect(self._bild_nach_lauf)
+        self.run_timer.fehler.connect(lambda t: self._on_error(f"Emulator error: {t}"))
 
         # Alle Bedienwege einmal anlegen (Menü und Leiste zeigen dieselben).
         aktionen.erzeuge_aktionen(self, self.profil.maschine, self.profil.programm)
@@ -1582,20 +1588,29 @@ class MainWindow(QMainWindow):
         return int(self.CPU_HZ * self.frame_interval_ms / 1000 * factor)
 
     def _run_emulator(self):
-        """Run emulator for one frame."""
+        """Ein Bild lang synchron im GUI-Faden rechnen (für Tests, die den
+        Emulationstakt angehalten haben und die Zeit selbst schalten)."""
         try:
-            cycles = self.emulator.run(self._cycles_per_frame())
-            self.cycles += cycles
-            self.frame_count += 1
-            # Die Tastaturanzeigen hängen am Kommandostrom zur Tastatur, ändern
-            # sich also mitten im Lauf; einmal je Bild abholen (die
-            # Bildschirmtastatur zeichnet nur bei echter Änderung neu).
-            if self.keyboard_dock.isVisible():
-                self.keyboard_widget.set_leds(self.emulator.keyboard_leds())
+            self._bild_nach_lauf(self.emulator.run(self._cycles_per_frame()))
         except Exception as e:
             self._on_error(f"Emulator error: {e}")
+
+    def _bild_nach_lauf(self, cycles: int):
+        """Bildtakt (GUI-Faden): gerechnete Takte zählen, Tastaturanzeigen holen."""
+        self.cycles += cycles
+        self.frame_count += 1
+        # Die Tastaturanzeigen hängen am Kommandostrom zur Tastatur, ändern
+        # sich also mitten im Lauf; einmal je Bild abholen (die
+        # Bildschirmtastatur zeichnet nur bei echter Änderung neu).
+        if self.keyboard_dock.isVisible():
+            self.keyboard_widget.set_leds(self.emulator.keyboard_leds())
     
     def _update_status(self):
+        # Viele Kernabfragen hintereinander: unter einer Sperre (Emulationsfaden).
+        with kern_sperre():
+            self._update_status_gesperrt()
+
+    def _update_status_gesperrt(self):
         """Statuszeile nachführen: eingestellter Takt und Laufwerke.
 
         Angezeigt wird der EINGESTELLTE Takt — wortgleich mit dem Auswahlfeld.
@@ -1722,11 +1737,10 @@ class MainWindow(QMainWindow):
     def _apply_speed(self, speed: float):
         """Set emulation speed. 1.0 = real time, >1.0 = fast-forward, 0.0 = unlimited.
 
-        Unlimited runs the timer with a 0 ms interval (as fast as the host allows)
-        instead of a blocking loop, so the UI stays responsive."""
+        Der Emulationsfaden hält das Tempo selbst; schafft der Wirt es nicht, wird
+        die Maschine langsamer, nicht die Oberfläche."""
         self.speed_factor = float(speed)
-        self.run_timer.setInterval(0 if self.speed_factor == 0.0
-                                   else self.frame_interval_ms)
+        self.run_timer.set_tempo(self.CPU_HZ, self.speed_factor)
         # Die Statuszeile nennt den eingestellten Takt — sie darf nicht bis zum
         # nächsten Sekundentakt hinterherhinken.
         if getattr(self, "status_widget", None) is not None:
@@ -2337,6 +2351,8 @@ class MainWindow(QMainWindow):
         if not self._eprom_rueckfrage("Beenden"):
             event.ignore()
             return
+        # Erst die Maschine anhalten (Emulationsfaden auflösen), dann sichern.
+        self.run_timer.beenden()
         # Den Stand beim Beenden IMMER wegschreiben, nicht nur eine anstehende
         # Änderung: die letzte Aufteilung der Kästen kann von einem Ereignis
         # stammen, das kein Speichern ausgelöst hat.

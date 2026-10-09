@@ -66,6 +66,86 @@ except Exception as e:
     sys.exit(1)
 
 
+class _GesperrteFunktion:
+    """Eine C-Funktion, deren Aufruf unter der Kernsperre läuft.
+
+    ``argtypes``/``restype`` und alles andere gehen an die ctypes-Funktion durch, so
+    dass die Deklarationen unten unverändert bleiben.
+    """
+    __slots__ = ("_f", "_bib")
+
+    def __init__(self, f, bib):
+        object.__setattr__(self, "_f", f)
+        object.__setattr__(self, "_bib", bib)
+
+    def __call__(self, *args):
+        self._bib.anfordern()
+        try:
+            return self._f(*args)
+        finally:
+            self._bib.freigeben()
+
+    def __getattr__(self, name):
+        return getattr(self._f, name)
+
+    def __setattr__(self, name, wert):
+        setattr(self._f, name, wert)
+
+
+class _GesperrteBibliothek:
+    """Die Kernbibliothek hinter EINER Sperre (``threading.RLock``).
+
+    Der Kern ist nicht threadsicher; seit die Emulation in einem eigenen Faden läuft
+    (``app/emulationstakt.py``), ruft die Oberfläche gleichzeitig aus dem GUI-Faden.
+    Jeder Aufruf hält die Sperre nur für sich; mehrere zusammengehörige Aufrufe
+    bündelt ``with kern_sperre():``.  ``k1520_run`` gibt die GIL frei
+    (ctypes.CDLL) — der Kern rechnet also auf einem anderen Prozessorkern als die
+    Oberfläche.
+    """
+
+    def __init__(self, roh):
+        self._roh = roh
+        self.sperre = threading.RLock()
+        self._zaehler_sperre = threading.Lock()
+        self.wartende = 0
+
+    def anfordern(self):
+        """Sperre nehmen; ist sie umkämpft, als wartend anmelden — der
+        Emulationsfaden lässt nach seiner Scheibe den Vortritt (``RLock`` ist nicht
+        fair: ohne das nähme er sie sich sofort wieder, und die Oberfläche
+        verhungerte — gemessen 7 statt 600 Takte in 6 s)."""
+        if not self.sperre.acquire(blocking=False):
+            with self._zaehler_sperre:
+                self.wartende += 1
+            self.sperre.acquire()
+            with self._zaehler_sperre:
+                self.wartende -= 1
+
+    def freigeben(self):
+        self.sperre.release()
+
+    # Kontext für zusammenhängende Aufrufe (``with kern_sperre():``)
+    def __enter__(self):
+        self.anfordern()
+        return self
+
+    def __exit__(self, *exc):
+        self.sperre.release()
+
+    def __getattr__(self, name):
+        f = _GesperrteFunktion(getattr(self._roh, name), self)
+        self.__dict__[name] = f          # nächstes Mal ohne __getattr__
+        return f
+
+
+_lib = _GesperrteBibliothek(_lib)
+
+
+def kern_sperre():
+    """Die Kernsperre als Kontext — mehrere Aufrufe am Stück, ohne dass der
+    Emulationsfaden dazwischen rechnet.  Wiedereintrittsfähig."""
+    return _lib
+
 # ════════════════════════════════════════════════════════════════════════════
 # C-API Function Signatures
 # ════════════════════════════════════════════════════════════════════════════
@@ -1431,7 +1511,8 @@ class K1520Emulator:
             Actual cycles executed
         """
         return _lib.k1520_run(self._handle, max_cycles)
-    
+
+
     def run_async(self, cycles_per_frame: int = 10000, fps: int = 50):
         """
         Run emulator in background thread.
