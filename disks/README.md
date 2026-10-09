@@ -57,6 +57,16 @@ build/k1520disktool` (Wächter `cli_beigaben_auf_den_disketten`; er prüft auch,
 Prüflinge `tests/fixtures/cpm/em*.com` und `tests/fixtures/raf/RAF{CPM,512}.COM` dieselbe
 Fassung tragen).
 
+## P8000 / WEGA (Unterordner)
+
+| Ordner | Inhalt |
+|--------|--------|
+| `wega30/` | WEGA 3.0: UDOS-Startdiskette, 15 Installationsdisketten (`p8000_wega30_root1…5`, `usr1…9`, `doc1`, als `.dmk`) und eine **fertig installierte Platte** `p8000_wega30_platte.k5504.img.gz` |
+| `wega31/` | WEGA 3.1: fertig installierte Platte `p8000_wega31_platte.avr.img.gz` (Abbild von pofo.de, Sektor 0 mit Parametersatz) + Startdiskette; keine Installationsdisketten vorhanden |
+
+Beide Platten starten im `p8000emu` bis `WEGA login:` — Bedienung und Herkunft in der README des Ordners.
+Platten sind **gzip-gepackt** (`.img.gz`); der Emulator liest und schreibt sie so (Merkposten p8000 Nr. 56).
+
 ## Bootabbilder (`boot_*.bin`) — Systemspuren zum Wiedereinspielen
 
 Bootfähig wird eine Diskette durch die **Systemspuren** vor dem Dateisystem; das

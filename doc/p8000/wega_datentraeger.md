@@ -8,7 +8,10 @@ Stand 2026-10-06. Nur gesicherte Befunde; alles Ungeprüfte ist als solches geke
   (Zylinder → Kopf → Sektor 1..N) und gibt Geometrie, Bezeichnung, Kommentar, SHA-256 aus.
   `--info`, `--json`, `-d ZIELDIR`. Wächter `tests/python/test_cqm2img.py` (Mini-CQM
   selbst erzeugt; echte Abbilder nur optional, `K1520_WEGA_CQM` = Ordner).
-- Die Abbilder liegen **nicht im Repo**: `~/Documents/K1520emu/Disketten/P8000/WEGA3.0/w30*.img`
+- **Seit 2026-10-09 im Repo als DMK:** `disks/wega30/p8000_wega30_*.dmk` (bytegleich zu den `.img`
+  unten, dazu eine fertig installierte Platte; `disks/wega30/README.md`).  Die Tests lesen weiter die `.img`
+  außerhalb des Repos (`K1520_WEGA_DISKS`).
+- Die `.img`-Abbilder liegen **nicht im Repo**: `~/Documents/K1520emu/Disketten/P8000/WEGA3.0/w30*.img`
   (17 Stück, 11,5 MB). Erzeugt mit
   `python3 tools/p8000/cqm2img.py -d ~/Documents/K1520emu/Disketten/P8000/WEGA3.0 ~/projects/robotron/P8000/discs/WEGA3.0/*.cqm`.
 - **Keine `.hfe`**: dafür wäre `tools/dev.sh tool k1520disktool` (Bauzustand) nötig; in diesem
