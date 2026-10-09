@@ -8,9 +8,10 @@ und ein paar Vielfache davon an; damit Auswahlfeld
 (:mod:`app.ui.status_bar`) dieselbe Sprache sprechen, stehen Stufen und
 Beschriftung hier und nicht zweimal nebenher.
 
-Der **Faktor** ist die Rechengrösse: 1,0 = Echtzeit, >1 = Zeitraffer, ``0.0`` =
-unbegrenzt (so schnell, wie der Wirtsrechner kann — ein Nenntakt lässt sich
-dafür nicht angeben, deshalb die Sonderbeschriftung).
+Der **Faktor** ist die Rechengrösse: 1,0 = Echtzeit, >1 = Zeitraffer.  ``0.0`` =
+unbegrenzt kennt der Emulationstakt weiter, die Oberfläche bietet es seit
+2026-10-09 nicht mehr an (:func:`stufe` bildet es aus älteren Konfigurationen
+auf die schnellste Stufe ab).
 """
 
 from __future__ import annotations
@@ -22,7 +23,19 @@ NENNTAKT_HZ = 2_450_000
 NENNTAKT_TEXT = "2,45 MHz"
 
 #: Angebotene Faktoren, in der Reihenfolge des Auswahlfelds.
-STUFEN = (1.0, 2.0, 5.0, 10.0, 0.0)
+STUFEN = (1.0, 2.0, 5.0, 10.0)
+
+
+def stufe(faktor) -> float:
+    """*faktor* als angebotene Stufe: unbekannt oder ≤ 0 („unbegrenzt" einer älteren
+    Konfiguration) wird die schnellste, sonst die nächstgelegene."""
+    try:
+        faktor = float(faktor)
+    except (TypeError, ValueError):
+        return 1.0
+    if faktor <= 0.0:
+        return max(STUFEN)
+    return min(STUFEN, key=lambda f: abs(f - faktor))
 
 
 def beschriftung(faktor: float, nenntakt: str = NENNTAKT_TEXT) -> str:

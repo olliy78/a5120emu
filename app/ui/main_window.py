@@ -1276,7 +1276,8 @@ class MainWindow(QMainWindow):
             self.screen_widget.update()
 
             general = data.get("general") or {}
-            speed = float(general.get("speed", 1.0))
+            # „unbegrenzt" gibt es in der Oberfläche nicht mehr — takt.stufe.
+            speed = takt.stufe(general.get("speed", 1.0))
             self.settings_widget.set_speed_value(speed)
             self._apply_speed(speed)
 

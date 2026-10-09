@@ -46,7 +46,7 @@ crt:
   offset_x: 0.0
   offset_y: 0.0
 
-# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,45 MHz, 0,0 = unbegrenzt)
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,45 MHz)
 # und Modell (app/modell.py: "a5120" = ohne Erweiterung, "a5120.16" = EM256+U8001).
 general:
   speed: 10.0

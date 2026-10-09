@@ -43,7 +43,7 @@ class SettingsWidget(QWidget):
     # Emitted after any CRT parameter change (colour/slider/reset).
     crtChanged = Signal()
     # Emitted when the speed dropdown selection changes; carries the factor
-    # (1.0 = real time, >1.0 = fast-forward, 0.0 = unlimited).
+    # (1.0 = real time, >1.0 = fast-forward).
     speedChanged = Signal(float)
     # Emitted when a drive-type dropdown changes; carries the list of 4 core
     # DriveProfile names (one per K5122 slot, "none" = empty slot).
@@ -64,7 +64,7 @@ class SettingsWidget(QWidget):
     # Mitschrift des Terminals: Dateiname geändert (leer = aus).  Nur Profile mit Terminal.
     mitschriftChanged = Signal(str)
 
-    #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
+    #: (Beschriftung, Faktor).  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
     #: sagen: der Nenntakt des A5120 (2,45 MHz) und seine Vielfachen.  Das
     #: Profil des K8915 bekommt seine eigene Liste (2,4576 MHz), siehe __init__.
@@ -539,7 +539,7 @@ class SettingsWidget(QWidget):
         self.speedChanged.emit(self.speed_value())
 
     def speed_value(self) -> float:
-        """Current speed factor from the dropdown (0.0 = unlimited)."""
+        """Current speed factor from the dropdown."""
         data = self.speed_combo.currentData()
         return float(data) if data is not None else 1.0
 

@@ -46,7 +46,7 @@ crt:
   offset_x: 0.0
   offset_y: 0.0
 
-# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,458 MHz, 0,0 = unbegrenzt).
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,458 MHz).
 # Zehnfach: der Kaltstart (Urlader, Laufwerkssuche, Laden des Betriebssystems) dauert sonst mehrere Sekunden.
 general:
   speed: 10.0

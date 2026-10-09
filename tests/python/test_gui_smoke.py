@@ -401,12 +401,33 @@ def test_clock_labels_are_the_same_in_the_dropdown_and_the_status_bar(window):
     im_feld = [window.settings_widget.speed_combo.itemText(i)
                for i in range(window.settings_widget.speed_combo.count())]
     assert im_feld == [b for b, _ in takt.auswahl()]
-    assert im_feld[:4] == ["2,45 MHz", "2 × 2,45 MHz", "5 × 2,45 MHz",
-                           "10 × 2,45 MHz"]
+    assert im_feld == ["2,45 MHz", "2 × 2,45 MHz", "5 × 2,45 MHz",
+                       "10 × 2,45 MHz"], "kein „unbegrenzt“ mehr (2026-10-09)"
 
     for beschriftung, faktor in takt.auswahl():
         window.status_widget.set_takt(faktor)
         assert window.status_widget.takt.text() == f"Takt: {beschriftung}"
+
+
+@pytest.mark.parametrize("programm", ["a5120", "k8915", "prg710", "pc1715", "p8000"])
+def test_no_machine_offers_unlimited_speed(qapp, programm):
+    """„unbegrenzt“ ist aus der Taktauswahl ALLER Programme verschwunden (nur in der
+    Oberfläche — der Emulationstakt kennt den Faktor 0.0 weiter)."""
+    from app import profil, takt
+    from app.ui.screen_widget import ScreenWidget
+    from app.ui.settings_widget import SettingsWidget
+    sw = SettingsWidget(ScreenWidget(), profil=profil.profil(programm))
+    faktoren = [sw.speed_combo.itemData(i) for i in range(sw.speed_combo.count())]
+    assert 0.0 not in faktoren and faktoren == list(takt.STUFEN)
+    assert not any("unbegrenzt" in sw.speed_combo.itemText(i)
+                   for i in range(sw.speed_combo.count()))
+
+
+def test_an_old_unlimited_speed_in_the_config_becomes_the_fastest_step():
+    from app import takt
+    assert takt.stufe(0.0) == 10.0
+    assert takt.stufe("kaputt") == 1.0
+    assert takt.stufe(4.0) == 5.0 and takt.stufe(1.0) == 1.0
 
 
 def test_status_bar_has_no_cycle_counter_any_more(window):

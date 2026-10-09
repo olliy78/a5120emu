@@ -4,8 +4,8 @@ Links in der Zeile stehen die flüchtigen Meldungen des Fensters
 (``statusBar().showMessage``), rechts dieses Widget mit dem **Zustand der
 Maschine**:
 
-* **Takt** — der EINGESTELLTE Takt (``2,45 MHz``, ``10 × 2,45 MHz``,
-  ``unbegrenzt``), wortgleich mit dem Auswahlfeld unter *Einstellungen ▸
+* **Takt** — der EINGESTELLTE Takt (``2,45 MHz`` … ``10 × 2,45 MHz``),
+  wortgleich mit dem Auswahlfeld unter *Einstellungen ▸
   Allgemein*; die Stufen stehen in :mod:`app.takt`.  Hier stand eine Zeitlang
   die *gemessene* Geschwindigkeit — die schwankt von Sekunde zu Sekunde
   (``10,0×``, ``9,8×``, ``10×``) und liest sich wie ein Fehler, wo keiner ist.

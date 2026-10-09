@@ -46,7 +46,7 @@ crt:
   offset_x: 0.0
   offset_y: 0.0
 
-# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,4576 MHz, 0,0 = unbegrenzt).
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,4576 MHz).
 # Zehnfach: das Laden von UDOS dauert sonst ≈ 18 s (≈ 45 Mio. Takte).
 general:
   speed: 10.0

@@ -46,7 +46,7 @@ crt:
   offset_x: 0.0
   offset_y: 0.0
 
-# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,4576 MHz, 0,0 = unbegrenzt).
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,4576 MHz).
 # Zehnfach: der Selbsttest des Boot-ROMs dauert sonst ≈ 12 s.
 general:
   speed: 10.0

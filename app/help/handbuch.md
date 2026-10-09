@@ -88,7 +88,7 @@ gemerkt.
 
 **Takt** — der eingestellte Takt der Maschine, wortgleich mit dem Auswahlfeld
 unter *Einstellungen ▸ Allgemein*: `2,45 MHz` (Echtzeit), `2 × 2,45 MHz`,
-`5 × 2,45 MHz`, `10 × 2,45 MHz` oder `unbegrenzt`. Was der Wirtsrechner davon
+`5 × 2,45 MHz` oder `10 × 2,45 MHz`. Was der Wirtsrechner davon
 tatsächlich hält, steht im **Tooltip** („Gemessen: 9,8 × 2,45 MHz") — samt dem
 Hinweis, wenn er nicht mitkommt. Als Anzeige taugte der gemessene Wert nicht:
 er schwankt von Sekunde zu Sekunde und liest sich wie ein Fehler, wo keiner ist.
@@ -558,8 +558,8 @@ ein Tester immer mit `SERTEST ENDE FEHLER` — das ist richtig so.
 ## Der Takt der Maschine
 
 *Einstellungen ▸ Allgemein ▸ Takt*: `2,45 MHz` — das ist der Takt des echten
-A5120 — sowie `2 ×`, `5 ×` und `10 × 2,45 MHz` und *unbegrenzt* (so schnell, wie
-der Wirtsrechner kann).
+A5120 — sowie `2 ×`, `5 ×` und `10 × 2,45 MHz`.  Schafft der Wirtsrechner eine Stufe
+nicht, läuft die Maschine so schnell er kann; die Oberfläche bleibt bedienbar.
 
 `2,45 MHz` ist das, was die Uhr des Gastsystems erwartet — sie zählt Taktzyklen
 und geht bei jedem Vielfachen entsprechend falsch. Schneller ist gut, um einen

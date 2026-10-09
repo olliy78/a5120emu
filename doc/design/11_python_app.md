@@ -494,8 +494,8 @@ Steckplatz eine Leuchte samt Feld** (Dateiname der eingelegten Diskette,
 der Laufwerkskasten.
 
 * **Der Takt ist der EINGESTELLTE**, wortgleich mit dem Auswahlfeld — beide
-  Beschriftungen kommen aus `app/takt.py` (`2,45 MHz`, `10 × 2,45 MHz`,
-  `unbegrenzt`).  Hier stand zuerst der *gemessene*; der schwankt im
+  Beschriftungen kommen aus `app/takt.py` (`2,45 MHz` … `10 × 2,45 MHz`;
+  `unbegrenzt` ist seit 2026-10-09 nicht mehr wählbar, s. §10.11).  Hier stand zuerst der *gemessene*; der schwankt im
   Sekundentakt (`10,0×`, `9,8×`, `10×`) und las sich wie ein Fehler, wo keiner
   war.  Gemessen wird weiter — der Wert steht im **Tooltip**, mitsamt dem Satz
   „Der Wirtsrechner kommt nicht mit", sobald er unter 90 % der Einstellung
@@ -919,3 +919,8 @@ eingestellten 10× (Kern allein: 7×) und ein 10-ms-Oberflächentakt mit p99 ≈
 legen hiesse, die serielle Kopplung in Zeitquanten zu takten (Merkposten P8000 40–43: der
 Wandler blickt höchstens 1/16 Zeichenzeit voraus) — bewusst nicht gemacht.
 Wächter: `py_emulationstakt`.
+
+**„unbegrenzt" nicht mehr wählbar** (2026-10-09, alle Programme): die Taktauswahl endet bei
+10×; `takt.stufe()` bildet ein `speed: 0.0` einer älteren Konfiguration auf die schnellste
+Stufe ab.  Der Emulationstakt kennt den Faktor 0.0 weiter (intern, Tests).  Wächter
+`test_no_machine_offers_unlimited_speed` (`py_gui_smoke`).
