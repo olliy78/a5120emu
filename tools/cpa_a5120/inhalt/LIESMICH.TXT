@@ -38,14 +38,15 @@ SYSTEMPROGRAMME
                     SET, ... (DIENST ist die SCP-Fassung von POWER)
   SUBM              Stapeldateien
   MSDOSCPA          MS-DOS-Disketten lesen/schreiben
-  TLC               Terminalprogramm (TLC.PAR, TLCX.PMA)
+  TLC               Terminalprogramm fuer die V.24-Schnittstelle K8025 A
+                    (9600 Baud, 8N1; Einstellungen TLC.PAR, TLCX.PMA)
   RAMTEST           Speichertest
   HARDY             Rechnertest
 
 TEXTVERARBEITUNG
 ----------------
-  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die Hilfe-
-                datei WM.HLP ist ins Deutsche uebersetzt (Original russisch).
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
   TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88):
                 Bildschirm 24*80 ueber das BIOS, Standarddrucker K 6313.
                 Zu TP gehoeren die Overlays TPOVLY1.OVR, TPHT.OVR und
