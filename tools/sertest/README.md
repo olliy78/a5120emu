@@ -19,10 +19,9 @@ einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md
 > [unten](#geräteprüfung-durch-den-anwender); was davon abhängt, steht in den Abschnitten
 > *Annahmen* und *Kabel* als **[bestätigen]**.
 
-**Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/` — allen
+**Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/`:
 `cpa_cpa780_k5601_system.hfe` (A5120, CP/A), `k8915scpx_boot1.hfe` (K8915, SCPX 8915) und
-`pc1715_cpa1715_system.hfe` (PC 1715, CP/A 1715; gebaut von `tools/cpa_pc1715/build.py`). Die CP/A-Disketten
-(Auswahl) und die K8915-Diskette gehen als Beispieldisketten ins Paket und landen beim
+`pc1715_cpa1715_system.hfe` (PC 1715, CP/A 1715; gebaut von `tools/cpa_pc1715/build.py`). Alle drei gehen als Beispieldisketten ins Paket und landen beim
 ersten Start im Diskettenordner des Anwenders. Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
 
 Inhalt: Bedienung · Prüfsteckertest · Test mit Gegenstelle · Flusssteuerung ·
@@ -487,18 +486,19 @@ nicht `No Fatal error(s)` meldet (M80 selbst endet auch bei Fehlern mit 0). Die
 gebaute `.com` wird nach `tools/sertest/sertest.com` kopiert und **eingecheckt** —
 die CI hat die CPA_Workbench nicht.
 
-**Nach jedem Neubau die Disketten nachziehen:**
+**Nach jedem Neubau die Disketten nachziehen** — SERTEST.COM liegt auf vier Disketten, die drei Bauwege
+nehmen es alle aus `tools/sertest/sertest.com`:
 
 ```sh
 tools/dev.sh build
-python3 tools/disketten_beigaben.py --tool build/k1520disktool          # aufspielen
-python3 tools/disketten_beigaben.py --tool build/k1520disktool --check  # = Wächter
+python3 tools/cpa_a5120/build.py  --tool build/k1520disktool    # disks/cpa_cpa780_k5601_system.hfe  (A5120, CP/A)
+python3 tools/cpa_pc1715/build.py --tool build/k1520disktool    # disks/pc1715_cpa1715_system.hfe    (PC 1715, CP/A)
+python3 tools/disketten_beigaben.py --tool build/k1520disktool  # k8915scpx_boot1.hfe u. a. (K8915, SCPX 8915)
 ```
 
-Der Wächter `cli_beigaben_auf_den_disketten` schlägt an, wenn eine der Disketten
-(Liste `DISKETTEN` im Skript) SERTEST.COM nicht oder in einer anderen Fassung trägt.
-Dasselbe Skript bringt ROMREAD und die A5120.16-Prüfprogramme auf die A5120-Disketten;
-gebaut wird über den gemeinsamen Teil `tools/cpm_bau.py`.
+Wächter (je mit `--check`, ctest): `cli_cpa_a5120`, `cli_cpa_pc1715` und `cli_beigaben_auf_den_disketten` schlagen an,
+wenn eine Diskette SERTEST.COM nicht oder in anderer Fassung trägt. `tools/disketten_beigaben.py` bringt außerdem
+ROMREAD und die A5120.16-Prüfprogramme auf ihre Disketten; gebaut wird über den gemeinsamen Teil `tools/cpm_bau.py`.
 
 ## Im Emulator ausprobieren
 
