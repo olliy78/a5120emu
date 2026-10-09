@@ -45,7 +45,7 @@ Nutzt M80 + LINKMT aus dem Schwesterprojekt `CPA_Workbench/tools` über den
 `cli_romread_com_passt_zur_quelle` (ohne Werkzeugkette übersprungen) und
 `cli_beigaben_auf_den_disketten`.
 
-**Auf den Disketten:** `ROMREAD.COM` liegt auf der A5120-Systemdiskette `cpa_cpa780_k5601_system.hfe`
+**Auf den Disketten:** `ROMREAD.COM` liegt auf der A5120-Systemdiskette `a5120_cpa_k5601_system.hfe`
 in `disks/` und damit auf den Beispieldisketten der Installation.
 
 ## Auf dem echten A5120 verwenden

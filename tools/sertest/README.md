@@ -20,7 +20,7 @@ einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md
 > *Annahmen* und *Kabel* als **[bestätigen]**.
 
 **Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/`:
-`cpa_cpa780_k5601_system.hfe` (A5120, CP/A), `k8915scpx_boot1.hfe` (K8915, SCPX 8915) und
+`a5120_cpa_k5601_system.hfe` (A5120, CP/A), `k8915scpx_boot1.hfe` (K8915, SCPX 8915) und
 `pc1715_cpa1715_system.hfe` (PC 1715, CP/A 1715; gebaut von `tools/cpa_pc1715/build.py`). Alle drei gehen als Beispieldisketten ins Paket und landen beim
 ersten Start im Diskettenordner des Anwenders. Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
 
@@ -491,7 +491,7 @@ nehmen es alle aus `tools/sertest/sertest.com`:
 
 ```sh
 tools/dev.sh build
-python3 tools/cpa_a5120/build.py  --tool build/k1520disktool    # disks/cpa_cpa780_k5601_system.hfe  (A5120, CP/A)
+python3 tools/cpa_a5120/build.py  --tool build/k1520disktool    # disks/a5120_cpa_k5601_system.hfe  (A5120, CP/A)
 python3 tools/cpa_pc1715/build.py --tool build/k1520disktool    # disks/pc1715_cpa1715_system.hfe    (PC 1715, CP/A)
 python3 tools/disketten_beigaben.py --tool build/k1520disktool  # k8915scpx_boot1.hfe u. a. (K8915, SCPX 8915)
 ```

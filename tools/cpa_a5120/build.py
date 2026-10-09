@@ -4,7 +4,7 @@
 build.py  -  die CP/A-Systemdiskette des A5120 (mit allen BIOS-Varianten) bauen
 ===============================================================================
 
-  disks/cpa_cpa780_k5601_system.hfe
+  disks/a5120_cpa_k5601_system.hfe
 
 DIE CP/A-Diskette der Auslieferung (statt frueher vier: clock, noclock, combo5zoll,
 combo8zoll).  Sie bootet mit `@OS.COM` = BIOS mit Uhr, 3 x K5601; die uebrigen BIOS-Fassungen
@@ -51,7 +51,7 @@ REPO = os.path.dirname(os.path.dirname(HIER))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
 import disketten_beigaben as beigaben  # noqa: E402  (Programmliste + Quellpfade, EINE Wahrheit)
 
-NAME = 'cpa_cpa780_k5601_system.hfe'
+NAME = 'a5120_cpa_k5601_system.hfe'
 BOOT = os.path.join(REPO, 'disks', 'boot_cpa780.bin')
 RAF_FIXTURES = os.path.join(REPO, 'tests', 'fixtures', 'raf')
 # Die Beigaben des A5120, die auf CP/A-Disketten gehoeren (ohne PCTEST: PC 1715)

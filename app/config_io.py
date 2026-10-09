@@ -40,7 +40,7 @@ Example::
       speed: 1.0
     disks:
       - drive: 0
-        path: /home/user/projects/a5120emu_ui/disks/cpa_cpa780_k5601_system.hfe
+        path: /home/user/projects/a5120emu_ui/disks/a5120_cpa_k5601_system.hfe
         format: cpa780
         write_protect: false
     window:

@@ -150,7 +150,7 @@ Was dabei zu beachten ist:
 
 ## 5. Vorschlag für die Auslieferung
 
-Vier CP/A-Disketten → **eine** (`cpa_cpa780_k5601_system.hfe`), mit
+Vier CP/A-Disketten → **eine** (`a5120_cpa_k5601_system.hfe`), mit
 
 - `@OS.COM` = Bootvariante (siehe 4.2),
 - `OS555`, `OS555C` (drei 5¼″, ohne/mit Uhr), `OS588`, `OS588C` (K5601 + zwei 8″), `OSC`
@@ -169,7 +169,7 @@ ausgelieferte Diskette, die das Handbuch/CLAUDE.md als Anwenderfunktion beschrei
 würde mit 4.2 entfallen); `pc1715_cpa1715_workbench` und `…_v0006_pctest` sind
 Fixtures ohne Gegenstück in `disks/`.
 
-## 6. Umgesetzt (2026-10-09): `cpa_cpa780_k5601_system.hfe`
+## 6. Umgesetzt (2026-10-09): `a5120_cpa_k5601_system.hfe`
 
 Gebaut von `tools/cpa_a5120/build.py` (Wächter `cli_cpa_a5120`), im Installer **statt** der vier
 CP/A-Einzeldisketten (`DISKS_DEFAULT`). Die Einzeldisketten bleiben als Arbeitsstand in `disks/`.
@@ -196,7 +196,7 @@ BIOS-Neuübersetzungen. Nicht verändert: die Test-Fixtures, die Matrix und `too
 (pflegt weiter die Einzeldisketten).
 
 **Aufgeräumt (2026-10-09):** Die Einzeldisketten `cpa_cpa780_{k5601_clock,k5601_noclock,k5601_noclock-raf,combo5zoll_noclock,combo8zoll_noclock}.{hfe,img}`
-sind aus `disks/` entfernt; es bleibt nur `cpa_cpa780_k5601_system.hfe` (die `.prn`-Listings liegen seit dem Folgecommit bei den Fixtures). Die Tests brauchten sie nicht
+sind aus `disks/` entfernt; es bleibt nur `a5120_cpa_k5601_system.hfe` (die `.prn`-Listings liegen seit dem Folgecommit bei den Fixtures). Die Tests brauchten sie nicht
 (eigene Kopien unter `tests/fixtures/disks/`). Handbeispiele in den Dokumenten zeigen jetzt auf die Fixtures.
 
 `leer.hfe`, `leer_scp.hfe/.dmk` und `unbekannt_daten_b.img` sind ebenfalls aus `disks/` entfernt (von keinem Test aus `disks/` gelesen; die Tests legen `leer.hfe` selbst in ein Temp-Verzeichnis). `doc/analyse_format_leerspur.md` beschreibt `leer_scp.*` als Messquelle von damals.

@@ -458,7 +458,7 @@ gestartet.
 
 **SERTEST** (*Serial Test*, `SERTEST.COM`) prüft die seriellen Schnittstellen eines
 A5120 (unter CP/A), eines K8915 (unter SCPX 8915) und eines PC 1715 (unter CP/A 1715) — im Emulator ebenso wie am echten
-Gerät. Es steht auf den mitgelieferten Systemdisketten (`cpa_cpa780_k5601_system` für den A5120,
+Gerät. Es steht auf den mitgelieferten Systemdisketten (`a5120_cpa_k5601_system` für den A5120,
 `k8915scpx_boot1.hfe` für den K8915, `pc1715_cpa1715_system.hfe` für den PC 1715); gestartet wird es am Prompt mit `SERTEST`. Es
 erkennt selbst, auf welchem Rechner es läuft, stellt die geprüfte Schnittstelle für die
 Dauer der Prüfung auf 9600 Bd 8N1 und hinterher wieder so ein, wie das Betriebssystem

@@ -42,7 +42,7 @@ GW=yes
 # CP/A am A5120: EINE Diskette mit allen BIOS-Fassungen (2026-10-09, tools/cpa_a5120/); die vier
 # frueheren Einzeldisketten bleiben als Arbeitsstand in disks/ (--disks all).
 # Alles aus disks/: --disks all.
-DISKS_DEFAULT="cpa_cpa780_k5601_system.hfe
+DISKS_DEFAULT="a5120_cpa_k5601_system.hfe
 scpx17_cpa780_k5601.hfe
 a5120_udos43_k5601_entwickler.hfe
 k8915scpx_boot1.hfe
