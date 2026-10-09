@@ -126,6 +126,14 @@ add_test(NAME cli_cpa_a5120
 set_tests_properties(cli_cpa_a5120 PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Wächter „die CP/A-Systemdiskette des PC 1715 in disks/ ist der Inhalt von tools/cpa_pc1715/“.
+# Neu bauen: python3 tools/cpa_pc1715/build.py --tool build/k1520disktool
+add_test(NAME cli_cpa_pc1715
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/cpa_pc1715/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_cpa_pc1715 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
 # Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des
 # Generators" (AP-P0d, doc/design/20_prg710.md): tools/gen_prg710_zre_prn.py --check
 # erzeugt beide Listings im Speicher, prüft MD5 der ROM-Abzüge, dass JEDES der 1024 Byte

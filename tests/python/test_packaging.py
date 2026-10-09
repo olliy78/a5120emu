@@ -230,7 +230,7 @@ def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
     block = text[text.index('DISKS_DEFAULT="'):]
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
     soll = {"pc1715_scp1715_v0006_boot.hfe", "pc1715_scp1715_v0007_cpa640_boot.hfe",
-            "pc1715_cpa1715_boot_4lw.hfe", "pc1715_cpz22_boot.hfe",
+            "pc1715_cpa1715_system.hfe", "pc1715_cpz22_boot.hfe",
             "udos1715_640k_pc1715_system.hfe",
             "pc1715w_scp30_system.hfe"}
     assert soll <= set(block)

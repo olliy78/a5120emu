@@ -34,7 +34,7 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `prg710-1_scpx17_cpa640_boot.hfe` | **SCPX 1526 V1.7 für den PRG 710-1**, Abzug des Anwenders | PRG 710-1 (K5601) |
 | `pc1715_scp1715_v0006_boot.hfe` | **SCP 1715 V0006** (cpa800, 5×1024), bootfähig nach S502 | PC 1715 (K5601) |
 | `pc1715_scp1715_v0007_cpa640_boot.hfe` | **SCP 1715 V0007** (cpa640, 16×256) | PC 1715 (K5601) |
-| `pc1715_cpa1715_boot_4lw.hfe` | **CP/A 1715**, Bootdiskette mit Werkzeugen | PC 1715 (K5601) |
+| **`pc1715_cpa1715_system.hfe`** | **DIE CP/A-1715-Diskette der Auslieferung.** Bootet mit `@OS.COM` = BIOS 24.05.88, 4 LW; daneben `OS2LWUHR` (24.05.88, 2 LW, Uhr, ohne Monitor) und `OS0189` (03.01.89, 3 LW), vom `A>` aus zu starten. Dazu FORMATPX, CPA1715G, STAT, POWER, DIENST, DISKCOPY, UNERA, DIMA, TLC, WM mit deutscher Hilfe, TP 3.0 mit TPDRUCK/TPINSCPA, BASIC, Turbo Pascal, M80/LINKMT/Z1/ZSID und `LIESMICH.TXT`. Gebaut aus `tools/cpa_pc1715/` (Wächter `cli_cpa_pc1715`); die BIOS-Quelltexte der früheren Bootdiskette liegen als Fixture `tests/fixtures/disks/pc1715_cpa1715_boot_4lw.hfe` | PC 1715 (K5601) |
 | `pc1715_cpz22_boot.hfe` | **CP/Z 2.2** (cpa640, „52K CP/Z 2.2“), bootfähig, Tastatur per SIO-Interrupt | PC 1715 (K5601) |
 | `pc1715w_scp30_system.hfe` | **SCP 3.0** (CP/M 3, cpa800, 5×1024), „LOADER PC 1715W V0001", mit den `SC6xx.ZGF`-Zeichensätzen | PC 1715W (U8272) |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |

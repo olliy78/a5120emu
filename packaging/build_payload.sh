@@ -52,7 +52,7 @@ prg710_scpx15_cpa640_sysprg.hfe
 prg710-1_scpx17_cpa640_boot.hfe
 pc1715_scp1715_v0006_boot.hfe
 pc1715_scp1715_v0007_cpa640_boot.hfe
-pc1715_cpa1715_boot_4lw.hfe
+pc1715_cpa1715_system.hfe
 pc1715_cpz22_boot.hfe
 pc1715w_scp30_system.hfe
 udos1715_640k_pc1715_system.hfe"

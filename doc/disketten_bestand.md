@@ -61,7 +61,7 @@ Tests nehmen ihre Kopie unter `tests/fixtures/disks/`, s. §3).
 | `prg710_udos43_k5601_system.hfe` · `prg710-1_udos43_k5601_v43_189.hfe` | PRG 710 / 710-1 · UDOS 4.3 | ✔ ✔ | |
 | `prg710_scpx15_cpa640_sysprg.hfe` · `prg710-1_scpx17_cpa640_boot.hfe` | PRG 710 / 710-1 · SCPX | ✔ ✔ | |
 | `pc1715_scp1715_v0006_boot` · `…_v0007_cpa640_boot` | PC 1715 · SCP 1715 (zwei Fassungen) | ✔ ✔ | |
-| `pc1715_cpa1715_boot_4lw` · `pc1715_cpz22_boot` | PC 1715 · CP/A 1715 · CP/Z 2.2 | ✔ ✔ | |
+| `pc1715_cpa1715_system` (früher `…_boot_4lw`) · `pc1715_cpz22_boot` | PC 1715 · CP/A 1715 · CP/Z 2.2 | ✔ ✔ | siehe §7 |
 | `udos1715_640k_pc1715_system.hfe` | PC 1715 · UDOS1715/NDOS | ✔ | |
 | `pc1715w_scp30_system.hfe` | PC 1715W · SCP 3.0 | ✔ | |
 | `boot_*.bin`, `bootsec_cpa780.bin` | Systemspuren zum Wiedereinspielen | — | `boot_*` Werkzeugvorrat; `bootsec_cpa780.bin` zusätzlich Testvergleichswert |
@@ -200,3 +200,19 @@ sind aus `disks/` entfernt; es bleibt nur `cpa_cpa780_k5601_system.hfe` (die `.p
 (eigene Kopien unter `tests/fixtures/disks/`). Handbeispiele in den Dokumenten zeigen jetzt auf die Fixtures.
 
 `leer.hfe`, `leer_scp.hfe/.dmk` und `unbekannt_daten_b.img` sind ebenfalls aus `disks/` entfernt (von keinem Test aus `disks/` gelesen; die Tests legen `leer.hfe` selbst in ein Temp-Verzeichnis). `doc/analyse_format_leerspur.md` beschreibt `leer_scp.*` als Messquelle von damals.
+
+## 7. PC 1715: `pc1715_cpa1715_system.hfe` (2026-10-09)
+
+Vorher: `pc1715_cpa1715_boot_4lw` war eine **Quelltext-Diskette** (35 BIOS-Quelldateien `BIOP*.MAC`/`*.ERL`, `@OS.COM`
+24.05.88 mit 4 LW, FORMATPX, CPA1715G, M80/LINKMT/MLOAD, PIP, WM, Z1, ZSID; ohne STAT/POWER/TP/BASIC/Pascal).
+Sie bleibt als Fixture (`tests/fixtures/disks/`, die Tests nutzen sie).
+
+Neu, gebaut von `tools/cpa_pc1715/build.py` (Wächter `cli_cpa_pc1715`), Herkunft und Gründe: `tools/cpa_pc1715/README.md`:
+- `@OS.COM` = 24.05.88, 4 LW, Monitor (unverändert). Dazu `OS2LWUHR` (24.05.88, 2 LW, ohne Monitor, mit Uhr)
+  und `OS0189` (03.01.89, 3 LW, neueste Fassung). Nachgewiesen: Start vom `A>` aus (voller BIOS-Neustart);
+  `CPA1715G B: OS0189.COM` legt eine Systemdiskette an, die allein am 1715 in 03.01.89 bootet.
+- Werkzeuge wie bei der A5120-Diskette: STAT, POWER (3.08), DIENST, DISKCOPY, UNERA, DIMA, CLS, TLC, MSDOSCPA, RAMTEST,
+  WM mit deutscher Hilfe, TP 3.0 (+TPDRUCK, TPINSCPA), BASIC, Turbo Pascal, `LIESMICH.TXT`; im Emulator gestartet,
+  BASIC/Pascal/STAT/TP/WM-Hilfe inhaltlich geprüft.
+- Weggelassen: BIOS-Quellen, PCTEST (setzt die CTC-Vektorbasis um, bricht CP/A), SERTEST/ROMREAD/EM256 (A5120-Hardware),
+  RAF/Lochband.
