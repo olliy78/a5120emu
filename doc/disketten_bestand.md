@@ -64,7 +64,6 @@ Tests nehmen ihre Kopie unter `tests/fixtures/disks/`, s. §3).
 | `pc1715_cpa1715_boot_4lw` · `pc1715_cpz22_boot` | PC 1715 · CP/A 1715 · CP/Z 2.2 | ✔ ✔ | |
 | `udos1715_640k_pc1715_system.hfe` | PC 1715 · UDOS1715/NDOS | ✔ | |
 | `pc1715w_scp30_system.hfe` | PC 1715W · SCP 3.0 | ✔ | |
-| `leer.hfe`, `leer_scp.hfe/.dmk`, `unbekannt_daten_b.img` | Altlasten | — | Dateinamen tauchen in einigen Tests als Ziel-/Temp-Name auf, gelesen wird `disks/leer*` nicht — vor dem Löschen `rg` prüfen |
 | `boot_*.bin`, `bootsec_cpa780.bin` | Systemspuren zum Wiedereinspielen | — | `boot_*` Werkzeugvorrat; `bootsec_cpa780.bin` zusätzlich Testvergleichswert |
 
 Ausgeliefert sind damit **17 Disketten**; davon vier für CP/A am A5120 — die einzige Stelle,
@@ -165,8 +164,7 @@ nur ohne Uhr. `OS555C`/`OS588C` müssen also aus den BIOS-Quellen neu gebaut wer
 `tests/fixtures/README.md` bei `-raf`/`-em256` beschrieben). Ohne diese Neubauten kann man die vier vorhandenen Varianten
 (`clock`, `noclock`, `combo5zoll`, `combo8zoll`) sofort bündeln.
 
-Nebenbei gefunden: `leer.hfe`, `leer_scp.*`, `unbekannt_daten_b.img` in `disks/` sehen
-nach Altlast aus (s. §2); `-raf` in `disks/` ist die einzige nicht
+Nebenbei gefunden (inzwischen entfernt: `leer.hfe`, `leer_scp.*`, `unbekannt_daten_b.img`); `-raf` in `disks/` ist die einzige nicht
 ausgelieferte Diskette, die das Handbuch/CLAUDE.md als Anwenderfunktion beschreibt (→
 würde mit 4.2 entfallen); `pc1715_cpa1715_workbench` und `…_v0006_pctest` sind
 Fixtures ohne Gegenstück in `disks/`.
@@ -200,3 +198,5 @@ BIOS-Neuübersetzungen. Nicht verändert: die Test-Fixtures, die Matrix und `too
 **Aufgeräumt (2026-10-09):** Die Einzeldisketten `cpa_cpa780_{k5601_clock,k5601_noclock,k5601_noclock-raf,combo5zoll_noclock,combo8zoll_noclock}.{hfe,img}`
 sind aus `disks/` entfernt; es bleibt nur `cpa_cpa780_k5601_system.hfe` (die `.prn`-Listings liegen seit dem Folgecommit bei den Fixtures). Die Tests brauchten sie nicht
 (eigene Kopien unter `tests/fixtures/disks/`). Handbeispiele in den Dokumenten zeigen jetzt auf die Fixtures.
+
+`leer.hfe`, `leer_scp.hfe/.dmk` und `unbekannt_daten_b.img` sind ebenfalls aus `disks/` entfernt (von keinem Test aus `disks/` gelesen; die Tests legen `leer.hfe` selbst in ein Temp-Verzeichnis). `doc/analyse_format_leerspur.md` beschreibt `leer_scp.*` als Messquelle von damals.
