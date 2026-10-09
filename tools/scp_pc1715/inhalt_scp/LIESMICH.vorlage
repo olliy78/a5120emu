@@ -1,0 +1,47 @@
+@TITEL@
+@UNTERSTRICH@
+
+Betriebssystem: @SYSTEM@
+Diskettenformat: @FORMAT@
+@HINWEIS@
+SYSTEM
+------
+@SYSTEMPROGRAMME@
+  PIP, STAT         Dateien kopieren / Belegung und Laufwerksdaten
+  POWER, DIENST     Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+                    SET, ... (DIENST ist die SCP-Fassung von POWER)
+  XDIR, D           Verzeichnis (XDIR mit Groessen, D als Uebersicht)
+  SUBM, XSUB        Stapeldateien
+  PRINT             Dateien ausdrucken
+  DIMA              Disketten-Monitor (Sektoren ansehen und aendern)
+  DISKCOPY          Diskette kopieren
+  UNERA             geloeschte Dateien zurueckholen
+  TLC               Terminalprogramm fuer die V.24-Schnittstelle
+                    (Voreinstellung PC 1715 - V.24, 1200 Baud)
+  RAMTEST           Speichertest
+@PCTEST@
+TEXTVERARBEITUNG
+----------------
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88):
+                Bildschirm 24*80 ueber das BIOS. Zu TP gehoeren die Overlays
+                TPOVLY1.OVR, TPHT.OVR und TPDRUCK.OVR (Druckersteuerung).
+  TPINSCPA      Installationsprogramm fuer TP.
+
+ENTWICKLUNG
+-----------
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+", fuer den PC 1715) mit
+                PASCAL.TXT (Fehlertexte), PASCAL.RES, PASSAVE und PASINST
+                (Anpassung). Editor mit E, Uebersetzen C, Starten R.
+  F80, FORLIB   Fortran-80 mit Laufzeitbibliothek (Binden mit L80)
+  M80, L80, LIB, LINKMT   Makroassembler, Binder, Bibliotheksverwaltung
+  MLOAD         Lader
+  Z1            Z80-Assembler
+  ZSID          Debugger
+
+PRUEFPROGRAMM
+-------------
+  SERTEST    serielle Schnittstellen des PC 1715: Drucker X4 (nur Senden)
+             und V.24 X5; Pruefstecker- und Gegenstellentest

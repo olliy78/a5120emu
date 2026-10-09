@@ -1,0 +1,70 @@
+CP/A fuer den PC 1715 - Systemdiskette des k1520emu
+====================================================
+
+Diese Diskette bootet CP/A 1715 (BIOS 24.05.88). Gebaut wird sie aus
+tools/cpa_pc1715/ (Quelltext des Emulators); Anleitung dort.
+
+BETRIEBSSYSTEM-VARIANTEN
+------------------------
+Das BIOS steckt in @OS.COM. Beim Einschalten laedt der Lader genau diese
+Datei; die anderen Fassungen starten Sie vom A>-Prompt durch Eingabe des
+Namens. Das ist ein vollstaendiger Neustart des BIOS (RAM-Test,
+Laufwerkserkennung); ein Warmstart (^C) behaelt die gewaehlte Variante bei.
+
+  @OS.COM    BIOS 24.05.88, 4 Laufwerke (A: bis D:), mit BIOS-Monitor,
+             TPA bis 0C205H
+  OS2LWUHR   BIOS 24.05.88, 2 Laufwerke (A:, B:), ohne Monitor, fragt die
+             Uhrzeit (HH:MM), TPA bis 0C605H
+  OS0189     BIOS 03.01.89 (neueste Fassung), 3 Laufwerke (A: bis C:), mit
+             BIOS-Monitor, TPA bis 0CD05H
+
+Alle Laufwerke sind 5 Zoll, 80 Spuren, DD, beidseitig.
+
+Eine Systemdiskette auf Basis einer Variante erzeugt CPA1715G:
+   CPA1715G B:               (Quellsystem @OS.COM)
+   CPA1715G B: OS0189.COM    (Quellsystem OS0189)
+Die Zieldiskette muss leer sein (148K, 200K, 400K, 624K oder 800K).
+Formatieren: FORMATPX.
+
+SYSTEMPROGRAMME
+---------------
+  FORMATPX          Disketten formatieren
+  CPA1715G          Systemdiskette erzeugen
+  PIP, STAT         Dateien kopieren / Belegung und Laufwerksdaten
+  POWER, DIENST     Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+                    SET, ... (DIENST ist die SCP-Fassung von POWER)
+  DISKCOPY          Diskette kopieren
+  UNERA             geloeschte Dateien zurueckholen
+  DIMA              Disketten-Monitor (Sektoren ansehen und aendern)
+  CLS               Bildschirm loeschen
+  MSDOSCPA          MS-DOS-Disketten lesen/schreiben
+  TLC               Terminalprogramm fuer die V.24-Schnittstelle (TLC.PAR,
+                    TLCX.PMA); zeigt "PC 1715 - V.24", 9600 Baud
+  RAMTEST           Speichertest
+  SERTEST           Serial Test V0.2: prueft Drucker (X4, nur Senden) und V.24
+                    (X5) mit Pruefstecker oder gegen einen zweiten Rechner;
+                    "SERTEST" ohne Argumente, Ctrl+C beendet
+
+TEXTVERARBEITUNG
+----------------
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J;
+                die Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88):
+                Bildschirm 24*80 ueber das BIOS. Zu TP gehoeren die Overlays
+                TPOVLY1.OVR, TPHT.OVR und TPDRUCK.OVR (Druckersteuerung).
+  TPINSCPA      Installationsprogramm fuer TP; fuer den PC 1715 bietet es auch
+                den direkten Bildpufferzugriff (24*80, PC1715, F800h).
+
+ENTWICKLUNG
+-----------
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+", fuer den PC 1715) mit
+                PASCAL.TXT (Fehlertexte), PASCAL.RES, PASSAVE und PASINST
+                (Anpassung). Editor mit E, Uebersetzen C, Starten R.
+  M80, LINKMT   Makroassembler und Binder (MLOAD: Lader)
+  Z1            Z80-Assembler
+  ZSID          Debugger
+
+Die BIOS-Quelltexte von CP/A 1715 (BIOP*.MAC, *.ERL) stehen nicht mehr auf
+dieser Diskette; sie liegen im Projekt in tests/fixtures/disks/
+(pc1715_cpa1715_boot_4lw.hfe).

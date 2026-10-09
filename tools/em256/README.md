@@ -10,7 +10,7 @@ Befunde: **`doc/design/17_a5120_16.md`** (§3 G1/S4/G2b, §7 Schaltpläne).
 | `em16abl.com` | **S4/G2–G5** — die belegten Abläufe des 16-Bit-Mode, Zeilen A–H: Start aus Reset, Segmentweiche, VI/Status-8, INT-16, Einzelbefehlszähler→NVI, Parität, STOP, RESET16 | `src/fw16abl.s` |
 | `em256ful.com` | **G2b** — Volltest v2.0, 21 Prüfungen in Gruppen A–E (PIO, Speicher, U8001-CPU, DRAM-March-C, Parität) | `src/fw_*.s` (9 Blöcke) |
 
-Alle drei liegen auf den A5120-Bootdisketten `cpa_cpa780_*` in `disks/` und damit auf den
+Alle drei liegen auf der A5120-Systemdiskette `a5120_cpa_k5601_system.hfe` in `disks/` und damit auf den
 Beispieldisketten der Installation (`tools/disketten_beigaben.py`). Am Prompt starten:
 `EM256ADR`, `EM16ABL`, `EM256FUL`. Ohne Erweiterungskarte melden sie „keine Karte“ und
 ändern nichts. Ausgabe seitenweise; jede Zeile endet mit `OK`/`[OK]` bzw. einem Befund mit

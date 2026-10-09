@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'ACTIVATE'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=ACTIVATE
+typ=P
+eig=WS
+start=4000
+satz=1024
+block=1024
+rest=1024
+segment=4000:1022
+mem=4000:43FF:0080
+zusatz=0
+erst=791019
+geaend=900808

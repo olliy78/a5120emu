@@ -1,0 +1,87 @@
+CP/A fuer den A5120 - Systemdiskette des k1520emu
+==================================================
+
+Diese Diskette bootet CP/A (BIOS 25.09.89, CCP 11.01.89). Gebaut wird sie
+aus tools/cpa_a5120/ (Quelltext des Emulators); Anleitung dort.
+
+BETRIEBSSYSTEM-VARIANTEN
+------------------------
+Das BIOS steckt in @OS.COM. Beim Einschalten laedt der Lader genau diese
+Datei; alle anderen Varianten starten Sie vom A>-Prompt durch Eingabe des
+Namens. Das ist ein vollstaendiger Neustart des BIOS (RAM-Test, Laufwerks-
+erkennung); ein Warmstart (^C) behaelt die gewaehlte Variante bei.
+
+  Datei      Laufwerke A: / B: / C:              Uhr   Besonderheit
+  @OS.COM    K5601 / K5601 / K5601               ja    fragt die Uhrzeit
+  OSNOCLK    K5601 / K5601 / K5601               nein
+  OSCOMB5    K5601 / K5600.10 / K5600.20         nein  B: 5 Zoll 40 Sp. SS,
+                                                       C: 5 Zoll 80 Sp. SS
+  OSCOMB8    K5601 / MF3200 / MF6400 (K5602.10)  nein  B:, C: 8 Zoll
+  OSRAF      K5601 / K5601 / K5601               nein  RAM-Floppy RAF als M:
+                                                       (ohne Karte kein M:)
+  OSEM256    K5601 / K5601 / K5601               nein  A5120.16: RAM-Floppy
+                                                       M: im EM256
+
+A: ist immer ein K5601 - das ist die Voraussetzung dafuer, dass die
+Diskette bootet. Die Varianten aendern nur B:, C:, Uhr und RAM-Floppy.
+
+Mit der gestarteten Variante koennen Sie Disketten der jeweiligen Laufwerks-
+typen formatieren (FORMAT) und lesen. Eine Systemdiskette erzeugt
+CPABCGEN:  CPABCGEN B:  oder  CPABCGEN B: OSCOMB5.COM  (Quellsystem).
+
+SYSTEMPROGRAMME
+---------------
+  FORMAT, FORMATB   Disketten formatieren
+  CPABCGEN          Systemdiskette erzeugen (Boot-Sektoren + @OS.COM)
+  PIP, STAT         Dateien kopieren / Belegung und Laufwerksdaten
+  POWER, DIENST     Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+                    SET, ... (DIENST ist die SCP-Fassung von POWER)
+  SUBM              Stapeldateien
+  MSDOSCPA          MS-DOS-Disketten lesen/schreiben
+  TLC               Terminalprogramm fuer die V.24-Schnittstelle K8025 A
+                    (9600 Baud, 8N1; Einstellungen TLC.PAR, TLCX.PMA)
+  RAMTEST           Speichertest
+  HARDY             Rechnertest
+
+TEXTVERARBEITUNG
+----------------
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88):
+                Bildschirm 24*80 ueber das BIOS, Standarddrucker K 6313.
+                Zu TP gehoeren die Overlays TPOVLY1.OVR, TPHT.OVR und
+                TPDRUCK.OVR (Druckersteuerung) - alle muessen im Laufwerk
+                stehen, aus dem TP gestartet wird.
+  TPINSCPA      Installationsprogramm fuer TP: aendert TP.COM fuer anderen
+                Bildschirm (16*64, 24*80, ...); Aufruf  TPINSCPA [lw:][datei]
+                (Vorgabe TP.COM, zurueckgeschrieben unter gleichem Namen).
+
+ENTWICKLUNG
+-----------
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+", 1987) mit PASCAL.TXT
+                (Fehlertexte), PASCAL.RES, PASSAVE und PASINST (Anpassung an
+                Bildschirm/Geraete). Editor mit E, Uebersetzen C, Starten R.
+  M80, LINKMT   Makroassembler und Binder (MLOAD: Lader)
+  Z1            Z80-Assembler
+  ZSID          Debugger
+  BRUN          Laufzeitmodul zu BASC 1520 (SCPX)
+
+PRUEFPROGRAMME (im Emulator entwickelt, am Geraet wie dort verwendbar)
+------------------------------------------------------------------------
+  SERTEST    serielle Schnittstellen (K8025): Pruefstecker- und Gegenstellen-
+             test, Baudraten, Flusssteuerung
+  ROMREAD    liest das Boot-EPROM der ZRE nach ROM.BIN
+  EM256ADR   A5120.16: Portbasis der Steuerkarte und Attributspeicher
+  EM16ABL    A5120.16: Ablaeufe des 16-Bit-Modus (U8001)
+  EM256FUL   A5120.16: Volltest (21 Pruefungen)
+  EM256TST   A5120.16: U8000-Test (PIO, Speicher)
+  RAFCPM     Treiber RAM-Floppy RAF, Laufwerk M: (Original ZWG)
+  RAF512     Treiber RAM-Floppy RAF, Laufwerk P: (2 Karten ab 88H)
+  RAFTEST    ZWG-Pruefprogramm RAF; Kartenadresse auf 88H/89H eingestellt
+  RAFQUICK   ZWG-Schnelltest RAF (zerstoerungsfrei)
+  LBREAD     Lochband lesen (K6022/SIF1000):   LBREAD datei [/A] [/K] [/O]
+  LBPUNCH    Lochband stanzen
+
+Die Treiber RAFCPM/RAF512 und die Pruefprogramme brauchen die jeweilige
+Hardware (im Emulator: Einstellungen, RAM-Disk bzw. Lochstreifen).

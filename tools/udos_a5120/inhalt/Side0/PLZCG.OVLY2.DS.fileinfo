@@ -1,0 +1,21 @@
+# k1520DiskTool — Angaben zu 'PLZCG.OVLY2.DS'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=PLZCG.OVLY2.DS
+typ=P
+eig=WES
+start=AD1A
+satz=512
+block=0
+rest=512
+segment=6600:2788
+mem=4000:B165:0000
+zusatz=3D577366
+segs=6600+0AE4,7366+3D57
+erst=850625
+geaend=891031

@@ -13,7 +13,6 @@ Formatier-Experimente. Der Inhalt darf sich jederzeit ändern.
 |--------|--------|
 | `.hfe` | HFE-Rohbild mit Spuren/Sektoren (formatagnostisch, enthält die Bitzellen) |
 | `.img` | reine Nutzdaten der Diskette (Geometrie steckt im Formatnamen) |
-| `.prn` | vollständig gelinkter, kommentierter BIOS-Quelltext der jeweiligen Diskette — mit `k1520dbg -l <datei>.prn` laden, dann zeigt jede Disassembly-Zeile Label + Originalkommentar |
 
 ## Namensschema
 
@@ -24,38 +23,42 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 
 | Datei | System | Laufwerke A: / B: / C: |
 |-------|--------|------------------------|
-| `cpa_cpa780_k5601_clock` | CP/A **mit Uhr** | K5601 / K5601 / K5601 |
-| `cpa_cpa780_k5601_noclock` | CP/A ohne Uhr | K5601 / K5601 / K5601 |
-| `cpa_cpa780_k5601_noclock-raf` | CP/A ohne Uhr, **BIOS mit eingebautem RAF-Treiber** (`raf=1`, `rafpar=1`, 88H): mit gesteckter RAM-Floppy (Einstellungen ▸ RAM-Disk) steht nach dem Kaltstart **M:** bereit (RAF 128/512/2M: 127/508/2032 KByte), Inhalt übersteht RESET; ohne Karte kein M:.  Bau: `tests/fixtures/README.md` | K5601 / K5601 / K5601 |
-| `cpa_cpa780_combo5zoll_noclock` | CP/A ohne Uhr | K5601 / **K5600.10** / **K5600.20** |
-| `cpa_cpa780_combo8zoll_noclock` | CP/A ohne Uhr | K5601 / **MF3200** / **K5602.10 · MF6400** |
-| `scpx17_cpa780_k5601.hfe` | SCPX 1526 V1.7, 16×256-System | K5601 |
-| `scpx17_5x1024_k5601_hardy.hfe` | SCPX 1526 V1.7, 5×1024-System, mit HARDY.COM | K5601 |
+| **`a5120_cpa_k5601_system.hfe`** | **DIE CP/A-Diskette der Auslieferung.** Bootet mit `@OS.COM` = mit Uhr, 3 × K5601; daneben die übrigen BIOS-Fassungen unter eigenem Namen, vom `A>` aus zu starten (voller BIOS-Neustart, ^C behält die Wahl): `OSNOCLK` (ohne Uhr), `OSCOMB5` (B: K5600.10, C: K5600.20), `OSCOMB8` (B: MF3200, C: MF6400), `OSRAF` (RAF als M:), `OSEM256` (A5120.16). Dazu Systemprogramme (FORMAT, CPABCGEN, PIP, STAT, POWER, DIENST …), Textverarbeitung (WordMaster mit deutscher Hilfe, TP 3.0 samt TPDRUCK und Installer TPINSCPA), Entwicklung (BASIC, Turbo Pascal, M80/LINKMT, Z1, ZSID), alle eigenen Prüfprogramme (SERTEST, ROMREAD, EM256*, RAF*, LBREAD/LBPUNCH) und `LIESMICH.TXT`; 52 Dateien, 194 KB frei. Gebaut aus `tools/cpa_a5120/` (`build.py`, Wächter `cli_cpa_a5120`); `CPABCGEN B: OSCOMB5.COM` erzeugt eine Systemdiskette auf Basis einer Variante | A: K5601 · B:/C: je nach gestarteter Variante |
 | `udos1715_640k_pc1715_system.hfe` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM", 80×32×256 — dieselbe Diskette liegt als `.img` unter `tests/fixtures/disks/` | MFS 1.6 |
-| `prg710_udos43_k5601_system.hfe` | **UDOS 4.3 für den PRG 710**, beidseitig, Seite 0 mit allen Kommandos (aus der MRS-Diskette, ohne das beschädigte `PROG.DOK` der Seite 1), im DiskTool gebaut (`create --boot --prg 710` + `put`), `check --full` ohne Befund | PRG 710 (K5601) |
-| `prg710-1_udos43_k5601_v43_189.hfe` | **UDOS.PRG710-1 V4.3 1/89**, Abzug des Anwenders, `check --full` ohne Befund | PRG 710-1 (K5601) |
-| `prg710_scpx15_cpa640_sysprg.hfe` | **SCPX V1.5 für den PRG 710** (im Emulator mit `SYSPRG` erzeugt) | PRG 710 (K5601) |
-| `prg710-1_scpx17_cpa640_boot.hfe` | **SCPX 1526 V1.7 für den PRG 710-1**, Abzug des Anwenders | PRG 710-1 (K5601) |
-| `pc1715_scp1715_v0006_boot.hfe` | **SCP 1715 V0006** (cpa800, 5×1024), bootfähig nach S502 | PC 1715 (K5601) |
-| `pc1715_scp1715_v0007_cpa640_boot.hfe` | **SCP 1715 V0007** (cpa640, 16×256) | PC 1715 (K5601) |
-| `pc1715_cpa1715_boot_4lw.hfe` | **CP/A 1715**, Bootdiskette mit Werkzeugen | PC 1715 (K5601) |
-| `pc1715_cpz22_boot.hfe` | **CP/Z 2.2** (cpa640, „52K CP/Z 2.2“), bootfähig, Tastatur per SIO-Interrupt | PC 1715 (K5601) |
-| `pc1715w_scp30_system.hfe` | **SCP 3.0** (CP/M 3, cpa800, 5×1024), „LOADER PC 1715W V0001", mit den `SC6xx.ZGF`-Zeichensätzen | PC 1715W (U8272) |
+| `prg710_udos43_k5601_system.hfe` | **UDOS 4.3 für den PRG 710**, beidseitig: Seite 0 Kommandos, Treiber, Assembler, Editor `SCREEN`, `PROG`; Seite 1 MRS-700-Umgebung (`MRS`, `MPSS`, `EDI`, `PROM`, E/A-Treiber) und Dokumente. Gebaut aus `tools/prg_disketten/`, `check --full` ohne Befund | PRG 710 (K5601) |
+| `a5120_udos43_k5601_entwickler.hfe` | **UDOS 4.3 für den A5120** (UDOS BC.5120, 08/90), startfähig, **mit allen Entwicklerwerkzeugen** der Entwicklerdiskette (ASM/LINK, EDIT/EDI/SEDIT, SYD, BASIC, PL/Z, TRANSFER, REORG, LW, SG samt `POS_*`-Kernen). Bestand der Altdiskette `udos_boot_scp` ohne `UPRO`/`ESPRO`. Gebaut aus `tools/udos_a5120/`, `check --full` ohne Befund | A5120 (K5601) |
+| `prg710-1_udos43_k5601_v43_189.hfe` | **UDOS 4.3 für den PRG 710-1**, **derselbe Inhalt** wie die 710-Diskette; verschieden nur Systemspuren und `OS`-Kennung (`UDOS PG710-1`). Gebaut aus `tools/prg_disketten/`, `check --full` ohne Befund | PRG 710-1 (K5601) |
+| **`pc1715_cpa1715_system.hfe`** | **DIE CP/A-1715-Diskette der Auslieferung.** Bootet mit `@OS.COM` = BIOS 24.05.88, 4 LW; daneben `OS2LWUHR` (24.05.88, 2 LW, Uhr, ohne Monitor) und `OS0189` (03.01.89, 3 LW), vom `A>` aus zu starten. Dazu FORMATPX, CPA1715G, STAT, POWER, DIENST, DISKCOPY, UNERA, DIMA, TLC, WM mit deutscher Hilfe, TP 3.0 mit TPDRUCK/TPINSCPA, BASIC, Turbo Pascal, M80/LINKMT/Z1/ZSID und `LIESMICH.TXT`. Gebaut aus `tools/cpa_pc1715/` (Wächter `cli_cpa_pc1715`); die BIOS-Quelltexte der früheren Bootdiskette liegen als Fixture `tests/fixtures/disks/pc1715_cpa1715_boot_4lw.hfe` | PC 1715 (K5601) |
+| **`a5120_scpx17_k5601_system.hfe`** | **SCPX 1526 V 1.7 (52K) für den A5120**, 5×1024 (K5601). `SYSP` erzeugt Systeme für andere Tastatur/Bildschirm/Laufwerke (alle BIOS-Module dabei), `INIT`, `MODF`, `SYSG`; dazu TP 3.0, WM (deutsche Hilfe), BASIC, Turbo Pascal, M80/LINKMT/Z1/ZSID, EM256-/RAF-/Lochband-/Serien-Prüfprogramme, `LIESMICH.TXT`. Gebaut aus `tools/scpx_a5120/` (`cli_scpx_a5120`) | A5120 (K5601) |
+| **`k8915_scpx8915_v24_system.hfe`** | **SCPX 8915 V 5.3, Anpassung „V24 (XON/XOFF)“ für den K8915** (die frühere Diskette „901“), 5×1024. Mit **`RADE`** (RAM-Disk E: auf der zweiten Speicherbank, Autostart), `DISGEN`, `FORMAT`, `SOFTKEY`, `PIP`, `STAT`; dazu TP 3.0, WM, BASIC, Pascal, Entwicklungswerkzeuge, SERTEST/RAF/Lochband, `LIESMICH.TXT`. Aus `tools/scpx_k8915/` (`cli_scpx_k8915`) | K8915 |
+| **`prg710_scpx15_system.hfe`** | **SCPX V 1.5 „B. Daehmlow“ für den PRG 710**, 16×256, BIOS-Module `B151V24`/`B152V24`/`B152IFSS`, `SYSPRG`; PRG-Werkzeuge: **`PROG`** (PROM-Programmierer), `CONV1` (UDOS→SCP), `ASM`/`LINK`/`LIB`/`DU`/`EDIT`; Textprogramm, Sprachen, SERTEST/RAF/Lochband, `LIESMICH.TXT`. Aus `tools/scpx_prg/` (`cli_scpx_prg`) | PRG 710 (K5601) |
+| **`prg710-1_scpx17_system.hfe`** | **SCPX 1526 V 1.7 (52K) für den PRG 710-1**, 16×256, BIOS-Module `B17172xx`/`B17272xx`; sonst wie die 710-Diskette (ohne Anwenderdaten) | PRG 710-1 (K5601) |
+| **`pc1715_scp1715_v0006_system.hfe`** | **SCP 1715 V0006** (03/08/87, 48 KB), 5×1024; `INIT`, `SGEN`, `INSTSCP`, `PCTEST`, Werkzeuge, TP 3.0, WM, BASIC, Pascal, Fortran-80, M80/L80, `TLC`, SERTEST. Aus `tools/scp_pc1715/` (`cli_scp_pc1715`) | PC 1715 (K5601) |
+| **`pc1715_scp1715_v0007_system.hfe`** | **SCP 1715 V0007** (01/11/88, 50 KB, nachladbarer CCP), 16×256; sonst wie V0006 (ohne `PCTEST`) | PC 1715 (K5601) |
+| **`pc1715_cpz22_system.hfe`** | **CP/Z 2.2** („52K CP/Z 2.2 ZOAZ MRL“ 06.12.88), 16×256, mit `CPZINIT`/`CPZGEN`/`CPZDUP`, Turbo Pascal, WordStar; dazu WM, BASIC, `TLC`, SERTEST | PC 1715 (K5601) |
+| **`pc1715w_scp30_system.hfe`** | **SCP 3.0 (CP/M 3) V0003 28.03.89, Lader PC 1715W**, 5×1024; Zeichensätze `SC6xx.ZGF`, Textprogramm V1/3B + `TPINSTD`, WM, BASIC, Pascal, SERTEST V0.3. Aus `tools/scp_pc1715w/` (`cli_scp_pc1715w`) | PC 1715W (U8272) |
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
-**Eigene Programme auf den Bootdisketten** (Quelle und eingecheckte `.com` unter `tools/`):
+Alle Systemdisketten werden von Skripten gebaut (`tools/<…>/build.py`, Wächter `cli_*`) und tragen eine `LIESMICH.TXT`; Inventur und
+Gründe: `doc/scp_inventur.md`, `doc/disketten_bestand.md`. Die früheren Einzeldisketten (CP/A clock, noclock, combo5zoll, combo8zoll, `-raf`;
+SCPX/SCP-Bootdisketten) gibt es nur noch als Testdaten unter `tests/fixtures/disks/`; ihre BIOS-Fassungen liegen als `@OS.COM`/`OS*.COM` auf der Systemdiskette. Dort liegen auch die
+`.prn`-Listings der Fassungen (`cpa_cpa780_*.prn`, für `k1520dbg -l`).
+
+**Eigene Programme auf den Systemdisketten** (Quelle und eingecheckte `.com` unter `tools/`; die Bauskripte `tools/<…>/build.py`
+spielen sie über `tools/disketten_beigaben.py` und `tools/diskbau.py` ein):
 
 | Programm | Quelle | Disketten |
 |----------|--------|-----------|
-| `SERTEST.COM` — Prüfprogramm der seriellen Schnittstellen | `tools/sertest/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe` |
-| `ROMREAD.COM` — liest das Boot-EPROM der ZRE nach `ROM.BIN` | `tools/romread/` | alle `cpa_cpa780_*` |
-| `EM256ADR.COM`, `EM16ABL.COM`, `EM256FUL.COM` — Prüfprogramme der A5120.16 (EM064/EM256, U8001) | `tools/em256/` | alle `cpa_cpa780_*` |
-| `RAFCPM.COM` (Laufwerk M:), `RAF512.COM` (Laufwerk P:) — nachladbare Treiber der RAM-Floppy RAF (ZWG der AdW, Fremdsoftware, freigegeben; Entwurf 22) | `doc/raf512/` | alle `cpa_cpa780_*`, `k8915scpx_boot1.hfe`, `prg710-1_scpx17_cpa640_boot.hfe` |
+| `SERTEST.COM` V0.3 — serielle Schnittstellen | `tools/sertest/` | alle Systemdisketten außer UDOS |
+| `ROMREAD.COM` — liest das Boot-EPROM der ZRE nach `ROM.BIN` | `tools/romread/` | A5120 (CP/A, SCPX) |
+| `EM256ADR.COM`, `EM16ABL.COM`, `EM256FUL.COM`, `EM256TST.COM` — Prüfprogramme der A5120.16 (EM064/EM256, U8001) | `tools/em256/` | A5120 (CP/A, SCPX) |
+| `RAFCPM.COM` (M:), `RAF512.COM` (P:), `RAFTEST.COM`, `RAFQUICK.COM` — RAM-Floppy RAF (ZWG der AdW, Fremdsoftware, freigegeben; Entwurf 22) | `doc/raf512/`, `tests/fixtures/raf/` | A5120, K8915, PRG 710/710-1 |
+| `LBREAD.COM`, `LBPUNCH.COM` — Lochband lesen/stanzen (K6022/SIF1000) | `tools/lochband/` | A5120 (CP/A, SCPX), K8915, PRG 710/710-1 |
 
-Nach einem Neubau nachziehen mit `python3 tools/disketten_beigaben.py --tool
-build/k1520disktool` (Wächter `cli_beigaben_auf_den_disketten`; er prüft auch, dass die
-Prüflinge `tests/fixtures/cpm/em*.com` und `tests/fixtures/raf/RAF{CPM,512}.COM` dieselbe
-Fassung tragen).
+Nach einem Neubau einer dieser Dateien alle Systemdisketten nachbauen (`python3 tools/<ordner>/build.py --tool build/k1520disktool`;
+die Wächter `cli_*` melden eine alte Fassung). `python3 tools/disketten_beigaben.py --tool build/k1520disktool --check`
+(Wächter `cli_beigaben_auf_den_disketten`) prüft, dass die Prüflinge `tests/fixtures/cpm/em*.com` und
+`tests/fixtures/raf/RAF{CPM,512}.COM` dieselbe Fassung tragen.
 
 ## P8000 / WEGA (Unterordner)
 
@@ -80,12 +83,12 @@ tools/dev.sh tool k1520disktool put    neu.hfe auszug/          # @OS.COM und de
 
 | Datei | Größe | System | Herkunft |
 |-------|-------|--------|----------|
-| `boot_cpa780.bin` | 15104 | CP/A (alle cpa780-Disketten des Projekts sind hier byte-gleich) | `cpa_cpa780_k5601_noclock.hfe` |
-| `boot_scpx640.bin` | 16384 | SCPX 1526 V1.7, 16×256-System | `scpx17_cpa780_k5601.hfe` |
-| `boot_scpx798.bin` | 18432 | SCPX 1526 V1.7, 5×1024-System | `scpx17_5x1024_k5601_hardy.hfe` |
-| `boot_udos43.bin` | 13728 | UDOS 4.3 (Seite 0: Spuren 0–2 + Bootspur 21) | `udos_boot_scp.hfe` |
+| `boot_cpa780.bin` | 15104 | CP/A (alle cpa780-Disketten des Projekts sind hier byte-gleich) | `tests/fixtures/disks/cpa_cpa780_k5601_noclock.hfe` |
+| `boot_scpx640.bin` | 16384 | SCPX 1526 V1.7, 16×256-System | `tests/fixtures/disks/scpx17_cpa780_k5601.hfe` |
+| `boot_scpx798.bin` | 18432 | SCPX 1526 V1.7, 5×1024-System | `tests/fixtures/disks/scpx17_5x1024_k5601_hardy_norm.hfe` |
+| `boot_udos43.bin` | 13728 | UDOS 4.3 (Seite 0: Spuren 0–2 + Bootspur 21) | `a5120_udos43_k5601_entwickler.hfe` (Altbestand `udos_boot_scp`, jetzt unter `tests/fixtures/disks/`) |
 | `boot_scpx8915_55k.bin` | 20480 | SCPX 8915 V5.3, Fassung „55 K“ (K8915; Zylinder 0–1 beidseitig 5×1024, **Ladekopf mit CRC**) | `k8915scpx_cpa800_k5601_bios55k-disk900.hfe` |
-| `boot_scpx8915_v24.bin` | 20480 | SCPX 8915 V5.3, Fassung „V24 XON/XOFF“ | `k8915scpx_boot1.hfe` (Diskette 901) |
+| `boot_scpx8915_v24.bin` | 20480 | SCPX 8915 V5.3, Fassung „V24 XON/XOFF“ | `tests/fixtures/disks/k8915scpx_boot1.hfe` (Diskette 901) |
 
 K8915: `create neu.hfe --fs scpx8915 --boot disks/boot_scpx8915_55k.bin` — der Name `scpx8915`
 ist nötig (seine Systemspuren = Zylinder 0–1), und das Abbild muss einen gültigen
@@ -101,7 +104,7 @@ die Diskette.
 > Datenträger wandert so:
 >
 > ```sh
-> k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
+> k1520disktool get    a5120_udos43_k5601_entwickler.hfe --to auszug     # Dateien + Beiblatt
 > k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 --boot disks/boot_udos43.bin
 > k1520disktool put    neu.hfe auszug
 > ```
@@ -112,7 +115,7 @@ die Diskette.
 > Speicherangaben im Kopfsektor, nicht in ihren Bytes. Die kleinste bootfähige Diskette
 > ist Systemspuren + `OS` + `ZDOS`. Hintergrund: `doc/udos_diskettenformat.md` §14.
 
-Die beiden **Combo**-Disketten konfigurieren im BIOS B:/C: als andere Laufwerkstypen
+Die beiden **Combo**-Fassungen (`OSCOMB5`/`OSCOMB8`, Fixtures `combo5zoll`/`combo8zoll`) konfigurieren im BIOS B:/C: als andere Laufwerkstypen
 (DPB-Codes 10540/10580 bzw. 00877/10877). FORMAT.COM bietet dadurch je gewähltem Laufwerk
 die zugehörigen Formate an (5¼″ einseitig, 8″ SD/DD). Details, live abgegriffene Formatmenüs
 und die Test-Pipeline: `doc/format.md` §11 und §5/§3.5.

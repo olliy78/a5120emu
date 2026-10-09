@@ -1,0 +1,69 @@
+	Bildschirmmodus (weiter mit ^J)
+
+^O   Einfuegen ein/aus          DEL  Zeichen links loeschen
+^S   Cursor Zeichen links       ^G   Zeichen rechts loeschen
+^D   Cursor Zeichen rechts      ^\   Wort links loeschen
+^A   Cursor Wort links          ^T   Wort rechts loeschen
+^F   Cursor Wort rechts         ^U   Zeile links loeschen
+^Q   Tabulator rechts           ^K   Zeile rechts loeschen
+^E   Cursor Zeile hoch          ^Y   ganze Zeile loeschen
+^X   Cursor Zeile runter        ^I   Tabulator in die Datei
+^^   Cursor Schirmanfang/-ende  ^N   Zeile aufspalten
+^L   Cursor rechts              ^@   naechstes Zeichen 4x
+^W   Datei Zeile abwaerts       ^P   naechstes Zeichen in Datei
+^Z   Datei Zeile aufwaerts      ^V   VIO-Steuerung
+^R   vorige Seite               ESC  Bildschirmmodus verlassen
+^C   naechste Seite             ^J   Hilfe anzeigen
+	
+        Befehlsmodus (weiter mit ^J)
+
++-  hier + oder - noetig, ohne Angabe gilt +
+@   hier ET oder Zeilenuebergabe (^Z)
+$   hier ESC, ET oder ^Z noetig
+N   Zahl, ohne Angabe 1, # = 65535
+
++-NC   N Zeichen weiter        +-ND   N Zeichen loeschen
++-NL   N Zeilen weiter         +-NK   N Zeilen loeschen
++-NT   N Zeilen drucken          NZ   N Sekunden Pause
++-NP   N Seiten drucken        +-N@   N Zeilen weiter,
+                                      eine drucken
+
+NItext$     Text N-mal einfuegen
+I@          Einfuegemodus (Ende mit ^Z oder ESC)
+A@, NAtext$ anfuegen: wie 1L, dann wie Einfuegen
+N<....>     Schleife: <....> N-mal (ohne Angabe 65535)
+	
+ 	Befehlsmodus (weiter mit ^J)
+
++-NFs$      finden: kurze Suche nach Schluessel s, N-mal
++-NNs$      naechster: lange Suche nach Schluessel s, N-mal
++-NSs$t$    <t> nach kurzer Suche einsetzen, N-mal
++-NRs$t$    <t> nach langer Suche einsetzen, N-mal
+/F,/N,/S,/R wie F,N,S,R, aber ohne Abbruch von <..>/QX
+            bei Misserfolg
+
+Y[D:]Name.Typ$   Datei an Cursorposition einlesen
+NW[D:]Name.Typ$  N Zeilen in Datei schreiben
+
+^N  CR/LF in Text oder Schluessel   ^Y  ESC in Text/Schluessel
+^A  beliebiges Zeichen im Schluessel
+^A  Trennzeichen im Schluessel
+^OX Fehlen von X im Schluessel
+	
+Befehlsmodus (^J: zurueck zum Bearbeiten)
+
+NQP       N Zeilen in Q-Puffer, aus Datei loeschen
+N/QP      N Zeilen an Q-Puffer anhaengen, aus Datei loeschen
+NQG       (get) Q-Puffer N-mal in die Datei kopieren
+QT        Q-Puffer ausgeben
+QK        (KILL) Q-Puffer leeren
+QX        Befehl im Q-Puffer ausfuehren
+QLtext$   (LOAD) Text in Q-Puffer legen
+N/QLtext$ Text N-mal an Q-Puffer anhaengen
+
+V  Bildschirmmodus          N!  Zeichen mit Code N in Datei
+;  Rest = Kommentar         E   normal beenden
+H  auf Platte schreiben,    Q   abbrechen
+   weiter bearbeiten        ^Q  Hilfe anzeigen
+O  zurueck zur Ursprungsdatei in WM
+ 

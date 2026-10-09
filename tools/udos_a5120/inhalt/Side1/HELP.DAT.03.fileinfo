@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'HELP.DAT.03'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=HELP.DAT.03
+typ=A
+eig=-
+start=490E
+satz=128
+block=128
+rest=85
+segment=4353:17746
+mem=0149:0010:2BCD
+zusatz=482D4E45
+erst=V_4.3
+geaend=900808

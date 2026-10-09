@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'MRS4.OVL1'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=MRS4.OVL1
+typ=P
+eig=WE
+start=0000
+satz=1024
+block=1024
+rest=1024
+segment=6400:34216
+mem=6400:F1CA:0000
+zusatz=0
+erst=V_4.1
+geaend=890302

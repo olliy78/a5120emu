@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'BOOT'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=BOOT
+typ=P
+eig=WES
+start=4000
+satz=128
+block=128
+rest=128
+segment=4000:759
+mem=4000:4461:0080
+zusatz=0
+erst=V_4.0
+geaend=891031

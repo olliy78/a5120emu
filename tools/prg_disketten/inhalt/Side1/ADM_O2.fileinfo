@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'ADM_O2'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=ADM_O2
+typ=P
+eig=WE
+start=EC80
+satz=128
+block=128
+rest=128
+segment=EC80:702
+mem=EC80:EF7F:0080
+zusatz=0
+erst=880725
+geaend=890306

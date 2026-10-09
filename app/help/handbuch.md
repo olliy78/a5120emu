@@ -459,9 +459,10 @@ gestartet.
 ### Das Prüfprogramm SERTEST
 
 **SERTEST** (*Serial Test*, `SERTEST.COM`) prüft die seriellen Schnittstellen eines
-A5120 (unter CP/A) und eines K8915 (unter SCPX 8915) — im Emulator ebenso wie am echten
-Gerät. Es steht auf den mitgelieferten Systemdisketten (`cpa_cpa780_*` für den A5120,
-`k8915scpx_boot1.hfe` für den K8915); gestartet wird es am Prompt mit `SERTEST`. Es
+A5120 (unter CP/A), eines K8915 (unter SCPX 8915), eines PC 1715 (unter CP/A 1715), eines PC 1715W (unter SCP 3.0) und eines
+PRG 710 bzw. PRG 710-1 (unter SCPX) — im Emulator ebenso wie am echten Gerät. Es steht auf den mitgelieferten Systemdisketten (`a5120_cpa_k5601_system` für den A5120,
+`k8915scpx_boot1.hfe` für den K8915, `pc1715_cpa1715_system.hfe` für den PC 1715); gestartet wird es am Prompt mit `SERTEST`. Für den PC 1715W und die PRG
+liegt es nicht auf den Lieferdisketten; mit dem DiskTool (`put`) auf eine SCP-3.0- bzw. SCPX-Diskette kopieren. Es
 erkennt selbst, auf welchem Rechner es läuft, stellt die geprüfte Schnittstelle für die
 Dauer der Prüfung auf 9600 Bd 8N1 und hinterher wieder so ein, wie das Betriebssystem
 sie erwartet. Die Tastatur prüft es nicht (sie bleibt die Eingabe des Programms).
@@ -470,7 +471,7 @@ sie erwartet. Die Tastatur prüft es nicht (sie bleibt die Eingabe des Programms
 erkannten Rechner und die Liste der Schnittstellen mit ihren Nummern:
 
 ```
-Serial Test V0.1
+Serial Test V0.3
 Rechner: A5120 (K8025)
 Schnittstellen:
   1  DFUE/V.24      SIO A33 Kanal A   V.24
@@ -480,7 +481,8 @@ Schnittstellen:
 Tester (Aktiv) oder Gegenstelle (Passiv)? T/G
 ```
 
-Am K8915 sind es `1 Drucker/IFSS1`, `2 V.24` und `3 DFUE/IFSS2`. Mit **T** wird der
+Am K8915 sind es `1 Drucker/IFSS1`, `2 V.24` und `3 DFUE/IFSS2`, am PC 1715 und am PC 1715W `1 Drucker` (nur Senden — sein Empfänger ist die Tastatur) und `2 V.24`, am PRG 710 `1 V.24`,
+`2 IFSS Hauptdrucker` und `3 ZIFSS`, am PRG 710-1 `1 V.24` und `2 ZIFSS` (die Tastatur sitzt dort an der SIO A32-B und wird nie angefasst). Mit **T** wird der
 Rechner zum **Tester**: SERTEST fragt je Schnittstelle `Test der … ? J/N` und für jede
 gewählte, ob mit **Prüfstecker** und/oder mit **Gegenstelle** geprüft werden soll; am
 Ende stehen eine Zusammenfassung und `SERTEST ENDE OK` bzw. `SERTEST ENDE FEHLER`. Mit
@@ -494,7 +496,8 @@ SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n
 SERTEST G n                  Gegenstelle an Schnittstelle n
   /P nur Prüfsteckertest, /G nur Test mit Gegenstelle (ohne beide: beide)
   /A automatisch: keine Rückfragen, kein Warten auf eine Taste
-  /M:A bzw. /M:K   Rechner A5120 bzw. K8915 vorgeben (falls die Erkennung irrt)
+  /M:A, /M:K, /M:P, /M:W, /M:R bzw. /M:S   Rechner A5120, K8915, PC 1715, PC 1715W,
+                                           PRG 710 bzw. PRG 710-1 vorgeben (falls die Erkennung irrt)
 ```
 
 Jedes Ergebnis steht als eigene Zeile da, z. B. `SERTEST DFUE/V.24 ECHO: OK`, sonst

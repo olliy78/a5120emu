@@ -552,7 +552,7 @@ cyl1-Retry-Zyklus mit dem cyl2-Zyklus instruktionsweise.
   Define greift dort nicht).
 
 **Repro (Format 6, Blank-`.hfe`, hängt bei „FORMATIEREN auf Spur 4"):**
-`python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 B.hfe; cp disks/cpa_cpa780_k5601_clock.img A.img;`
+`python3 tools/img_to_hfe.py --blank --cyls 80 --heads 2 B.hfe; cp tests/fixtures/disks/cpa_cpa780_k5601_clock.img A.img;`
 Script: `boot 80`/`type 12:00:00`/enter / `boot 5`/`type FORMAT`/enter / `boot 30`/enter (Fkt 0) /
 `boot 6`/`type B`/enter / `boot 10`/enter (Verify j) / `boot 8`/`type X`/`boot 3`/`type 6`/`boot 6`/enter /
 `boot 5`/`type 9`/enter / `boot 6`/`type j` / `boot 250` / `ramdump 0100 2200 tpa.bin` /
@@ -816,8 +816,8 @@ mountet Disk B: **schreibend**, FORMAT-Writes landen in der diskB-Datei):
 ```sh
 tools/dev.sh tool format_driver          # baut + zeigt Usage
 # Zwei Disketten anlegen (immer Kopien verwenden, NICHT die Fixtures!):
-D=$(mktemp --suffix=.img); cp disks/cpa_cpa780_k5601_clock.img "$D"   # Ziel B:
-A=disks/cpa_cpa780_k5601_clock.img                                     # Boot A:
+D=$(mktemp --suffix=.img); cp tests/fixtures/disks/cpa_cpa780_k5601_clock.img "$D"   # Ziel B:
+A=tests/fixtures/disks/cpa_cpa780_k5601_clock.img                                     # Boot A:
 build/format_driver "$A" "$D" script.txt
 ```
 

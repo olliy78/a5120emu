@@ -91,6 +91,89 @@ add_test(NAME cli_beigaben_auf_den_disketten
 set_tests_properties(cli_beigaben_auf_den_disketten PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Wächter „die beiden PRG-UDOS-Lieferdisketten in disks/ sind der Inhalt von
+# tools/prg_disketten/“ (doc/udos_programme.md): Dateiliste, Seite, Inhalt und Systemspuren
+# beider Disketten gegen den gemeinsamen Ordner.  Neu bauen:
+#   python3 tools/prg_disketten/build.py --tool build/k1520disktool
+add_test(NAME cli_prg_disketten
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/prg_disketten/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_prg_disketten PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „LBREAD.COM/LBPUNCH.COM sind aus tools/lochband/src gebaut“ (nur mit CP/M-Werkzeugkette,
+# sonst übersprungen, Rückgabe 77).  Neu bauen: python3 tools/lochband/build.py
+add_test(NAME cli_lochband_com
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/lochband/build.py" --check)
+set_tests_properties(cli_lochband_com PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77 LABELS "cli;fast")
+
+# Wächter „die UDOS-Systemdiskette des A5120 in disks/ ist der Inhalt von tools/udos_a5120/“
+# (doc/udos_programme.md §7).  Neu bauen:
+#   python3 tools/udos_a5120/build.py --tool build/k1520disktool
+add_test(NAME cli_udos_a5120
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/udos_a5120/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_udos_a5120 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die CP/A-Systemdiskette des A5120 in disks/ ist der Inhalt von tools/cpa_a5120/“
+# (doc/disketten_bestand.md).  Zieht auch nach, wenn eine Beigabe (SERTEST, EM256*, RAF*, LB*)
+# neu gebaut wurde.  Neu bauen:
+#   python3 tools/cpa_a5120/build.py --tool build/k1520disktool
+add_test(NAME cli_cpa_a5120
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/cpa_a5120/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_cpa_a5120 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die CP/A-Systemdiskette des PC 1715 in disks/ ist der Inhalt von tools/cpa_pc1715/“.
+# Neu bauen: python3 tools/cpa_pc1715/build.py --tool build/k1520disktool
+add_test(NAME cli_cpa_pc1715
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/cpa_pc1715/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_cpa_pc1715 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCPX-Systemdiskette des A5120 in disks/ ist der Inhalt von tools/scpx_a5120/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scpx_a5120/build.py --tool build/k1520disktool
+add_test(NAME cli_scpx_a5120
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scpx_a5120/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scpx_a5120 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCPX-8915-Systemdiskette des K8915 in disks/ ist der Inhalt von tools/scpx_k8915/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scpx_k8915/build.py --tool build/k1520disktool
+add_test(NAME cli_scpx_k8915
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scpx_k8915/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scpx_k8915 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCPX-Systemdisketten des PRG 710 und 710-1 in disks/ ist der Inhalt von tools/scpx_prg/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scpx_prg/build.py --tool build/k1520disktool
+add_test(NAME cli_scpx_prg
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scpx_prg/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scpx_prg PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCP-/CP/Z-Systemdisketten des PC 1715 in disks/ ist der Inhalt von tools/scp_pc1715/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scp_pc1715/build.py --tool build/k1520disktool
+add_test(NAME cli_scp_pc1715
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scp_pc1715/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scp_pc1715 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCP-3.0-Systemdiskette des PC 1715W in disks/ ist der Inhalt von tools/scp_pc1715w/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scp_pc1715w/build.py --tool build/k1520disktool
+add_test(NAME cli_scp_pc1715w
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scp_pc1715w/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scp_pc1715w PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
 # Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des
 # Generators" (AP-P0d, doc/design/20_prg710.md): tools/gen_prg710_zre_prn.py --check
 # erzeugt beide Listings im Speicher, prüft MD5 der ROM-Abzüge, dass JEDES der 1024 Byte

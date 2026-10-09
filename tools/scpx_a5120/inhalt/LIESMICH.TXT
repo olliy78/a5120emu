@@ -1,0 +1,87 @@
+SCPX fuer den A5120 - Systemdiskette des k1520emu
+==================================================
+
+Betriebssystem: SCPX 1526 - V 1.7 (52K), BIOS V 1.7 vom 01.11.87
+(Robotron-Bildschirm-Version der CP/M-2.2-Familie, "SCPX").
+Diskettenformat dieser Diskette: 5 x 1024 Byte, 80 Spuren, beidseitig
+(K5601). Das Format steht auch auf den anderen Systemdisketten des Pakets.
+Die Systemspuren sind fuer Tastatur K7637, Bildschirm 80*24 und Laufwerke
+K5601 eingerichtet.
+
+SYSTEM EINRICHTEN
+-----------------
+  SYSP      Systemdiskette generieren: fragt Tastatur (K7606/K7636 oder
+            K7637), Bildschirm (64*16 oder 80*24), Anzahl der Laufwerke und
+            je Laufwerk den Typ (MF3200, MF6400, K5600.10, K5600.20 oder
+            5,25 Zoll doppelseitig 80 Spuren) und schreibt das passende
+            System auf die Zieldiskette. Die vier BIOS-Module dazu liegen
+            als BIOSG617/G717/K617/K717.SYS auf der Diskette, die
+            Systemdateien als SYL17.SYS und CCPBD17.SYS.
+  SYSG      Systemspuren von einem Laufwerk auf ein anderes kopieren.
+  INIT      Diskette formatieren. Formate: 0 = 16*256 doppelseitig (Vorgabe),
+            1 = 16*256 einseitig, 2 = 26*128 einseitig, 3 = 5*1024
+            doppelseitig, 4 = 5*1024 einseitig.
+  MODF      Diskettenformat eines Laufwerks fuer die laufende Sitzung
+            umstellen. MODX  Format einer eingelegten Diskette bestimmen.
+  SEPR      Druckerschnittstelle des BIOS einstellen.
+
+Eine Systemdiskette im Format 16*256 (zum Beispiel, um alte 16*256-
+Disketten zu benutzen) entsteht so:
+  1. INIT B:   Format 0 (16*256 doppelseitig) waehlen
+  2. MODF B:   Laufwerk B: ebenfalls auf Format 0 stellen
+  3. SYSP      wie oben antworten; bei "Welches Format fuer 5,25-Zoll-Lw?"
+               0 (= 16*256) waehlen und Ausgabe-Laufwerk B: angeben
+Danach bootet die Diskette in B: (als A: eingelegt); die Dateien kopiert
+man mit PIP.
+
+DIENSTPROGRAMME
+---------------
+  PIP, STAT         Dateien kopieren / Belegung und Laufwerksdaten
+  POWER, DIENST     Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+                    SET, ... (DIENST ist die SCP-Fassung von POWER)
+  DIMA              Disketten-Monitor (Sektoren ansehen und aendern)
+  DISKCOPY          Diskette kopieren
+  UNERA             geloeschte Dateien zurueckholen
+  TLC               Terminalprogramm fuer die V.24-Schnittstelle K8025 A
+                    (9600 Baud, 8N1; Einstellungen TLC.PAR, TLCX.PMA)
+  RAMTEST           Speichertest
+  HARDY             Rechnertest
+
+TEXTVERARBEITUNG
+----------------
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88):
+                Bildschirm 24*80 ueber das BIOS. Zu TP gehoeren die Overlays
+                TPOVLY1.OVR, TPHT.OVR und TPDRUCK.OVR (Druckersteuerung).
+  TPINSCPA      Installationsprogramm fuer TP (Bildschirm, Aufruf
+                TPINSCPA [lw:][datei]).
+
+ENTWICKLUNG
+-----------
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+") mit PASCAL.TXT
+                (Fehlertexte), PASCAL.RES, PASSAVE und PASINST (Anpassung).
+                Editor mit E, Uebersetzen C, Starten R.
+  M80, LINKMT   Makroassembler und Binder (MLOAD: Lader)
+  Z1            Z80-Assembler
+  ZSID          Debugger
+
+PRUEFPROGRAMME (im Emulator entwickelt, am Geraet wie dort verwendbar)
+------------------------------------------------------------------------
+  SERTEST    serielle Schnittstellen (K8025)
+  ROMREAD    liest das Boot-EPROM der ZRE nach ROM.BIN
+  EM256ADR   A5120.16: Portbasis der Steuerkarte und Attributspeicher
+  EM16ABL    A5120.16: Ablaeufe des 16-Bit-Modus (U8001)
+  EM256FUL   A5120.16: Volltest (21 Pruefungen)
+  EM256TST   A5120.16: U8000-Test (PIO, Speicher)
+  RAFCPM     Treiber RAM-Floppy RAF, Laufwerk M: (Original ZWG)
+  RAF512     Treiber RAM-Floppy RAF, Laufwerk P: (2 Karten ab 88H)
+  RAFTEST    ZWG-Pruefprogramm RAF; Kartenadresse auf 88H/89H eingestellt
+  RAFQUICK   ZWG-Schnelltest RAF (zerstoerungsfrei)
+  LBREAD     Lochband lesen (K6022/SIF1000):   LBREAD datei [/A] [/K] [/O]
+  LBPUNCH    Lochband stanzen:                 LBPUNCH datei [/A] [/K]
+
+Die EM*-Programme brauchen das Erweiterungsmodul EM256, die RAF-Programme
+die RAM-Floppy, LBREAD/LBPUNCH die Lochstreifenkarte K6022 (im Emulator:
+Einstellungen).

@@ -96,12 +96,12 @@ using k1520::logging::Level;
 // machine-wide A5120Machine::MachineSnapshot used by snap/restore/reverse-step.)
 struct Snap {
     uint16_t PC=0,SP=0,AF=0,BC=0,DE=0,HL=0,IX=0,IY=0,AF_=0,BC_=0,DE_=0,HL_=0;
-    uint8_t  I=0,R=0; uint64_t cyc=0; bool halted=false; bool valid=false;
+    uint8_t  I=0,R=0,IM=0; bool IFF1=false; uint64_t cyc=0; bool halted=false; bool valid=false;
 };
 static inline Snap grab(const Z80& z){
     Snap s; s.PC=z.PC; s.SP=z.SP; s.AF=z.AF; s.BC=z.BC; s.DE=z.DE; s.HL=z.HL;
     s.IX=z.IX; s.IY=z.IY; s.AF_=z.AF_; s.BC_=z.BC_; s.DE_=z.DE_; s.HL_=z.HL_;
-    s.I=z.I; s.R=z.R; s.cyc=z.cycles; s.halted=z.halted; s.valid=true; return s;
+    s.I=z.I; s.R=z.R; s.IM=z.IM; s.IFF1=z.IFF1; s.cyc=z.cycles; s.halted=z.halted; s.valid=true; return s;
 }
 
 // ─── Ctrl-C während eines langen Laufs (§7) ───────────────────────────────────
@@ -202,6 +202,7 @@ int main(int argc, char** argv){
     const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
     const char* konsole_opt = nullptr; // --konsole kern|original: Terminal an tty1 (P8000, P20c)
     const char* hd_opt  = nullptr; // --hd <abbild>: Winchester an WDC-Laufwerk 0 (setzt --wdc 4.2)
+    std::string ptape_in, ptape_out;   // --ptape-in/-out: Band einlegen / Stanzer an Datei binden
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     const char* z8_bild = nullptr; // --z8 <abzug>[@org]: Z8-Prüfstand (P19c), ohne Maschine
     std::string z8_fassung;        // --z8-fassung ub8840|ub8820|z8681
@@ -227,6 +228,8 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--z8") && i+1<argc) z8_bild=argv[++i];
         else if (!strcmp(argv[i],"--z8-fassung") && i+1<argc) z8_fassung=argv[++i];
         else if (!strcmp(argv[i],"--terminal")) terminal_hw=true;
+        else if (!strcmp(argv[i],"--ptape-in") && i+1<argc) { ptape_opt=true; ptape_in=argv[++i]; }
+        else if (!strcmp(argv[i],"--ptape-out") && i+1<argc) { ptape_opt=true; ptape_out=argv[++i]; }
         else if (!strcmp(argv[i],"--rw")) mount_mode=MOUNT_RW;
         else if (!strcmp(argv[i],"--cow")) mount_mode=MOUNT_COW;
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
@@ -303,7 +306,10 @@ int main(int argc, char** argv){
             fprintf(stderr,"--raf: %s\n",m.base().rafFehler().c_str()); return 2; }
     }
     { std::string err;   // ebenfalls vor dem ersten Lauf
-      if (!dbgm::steckeK6022(m.base(), ptape_opt, err)){ fprintf(stderr,"--ptape: %s\n",err.c_str()); return 2; } }
+      if (!dbgm::steckeK6022(m.base(), ptape_opt, err)){ fprintf(stderr,"--ptape: %s\n",err.c_str()); return 2; }
+      if (m.base().k6022()) {
+          if (!ptape_in.empty() && !m.base().k6022()->bandEinlegenDatei(ptape_in, err)){ fprintf(stderr,"--ptape-in: %s\n",err.c_str()); return 2; }
+          if (!ptape_out.empty() && !m.base().k6022()->stanzerBinden(ptape_out, K6022::Format::Roh, err)){ fprintf(stderr,"--ptape-out: %s\n",err.c_str()); return 2; } } }
     m.powerOn();
     const bool K8 = m.einCpu();      // eine CPU: K8915 ODER PRG (keine ZVE2/Snapshots)
     const bool K89 = m.isK8915();
@@ -1373,9 +1379,9 @@ int main(int argc, char** argv){
         char fl[12]; flagsStr(s.AF,fl);
         fprintf(stderr,
             "  %s PC=%04X SP=%04X(->%04X) AF=%04X[%s] BC=%04X DE=%04X HL=%04X "
-            "IX=%04X IY=%04X  AF'=%04X BC'=%04X DE'=%04X HL'=%04X I=%02X R=%02X%s cyc=%llu\n",
+            "IX=%04X IY=%04X  AF'=%04X BC'=%04X DE'=%04X HL'=%04X I=%02X IM=%u%s R=%02X%s cyc=%llu\n",
             who.c_str(),s.PC,s.SP,ret,s.AF,fl,s.BC,s.DE,s.HL,s.IX,s.IY,s.AF_,s.BC_,s.DE_,s.HL_,
-            s.I,s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
+            s.I,(unsigned)s.IM,s.IFF1?" EI":" DI",s.R, s.halted?" HALT":"", (unsigned long long)s.cyc);
     };
     auto stateLine = [&]{
         if (KP){   // PRG: Speicherverwaltung (EBH Freigabe, E8H[0]/[F]) statt A8H
@@ -1962,8 +1968,10 @@ int main(int argc, char** argv){
             uint64_t ran=0; int n=0;
             for (size_t i=0;i<t.size();++i){
                 uint32_t code=decodeKey(t,i); ++n;
-                if (code<0x20 && code!=0x01000004u) code = 0x01000004u;   // CR/LF/Steuerzeichen → Return
-                m.keyPress(code,false,false); ran+=goSilent(150000);
+                bool strg=false;
+                if (code>=0x01 && code<=0x1A && code!=0x0D) { code += 0x60; strg=true; }   // ^A..^Z = Strg + Buchstabe (\x0b = ^K)
+                else if (code<0x20 && code!=0x01000004u) code = 0x01000004u;   // CR/LF/übrige Steuerzeichen → Return
+                m.keyPress(code,false,strg); ran+=goSilent(150000);
                 if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
                 m.keyRelease(code);           ran+=goSilent(100000);
                 if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
@@ -2961,7 +2969,7 @@ int main(int argc, char** argv){
               "    map               Overlay ein/aus, BWS-Register 34H (Bildbasis, ZG-Wahl), Bildformat\n"
               "    d/u/x/e/wp        Speicher in CPU-SICHT (mit Overlay: Lesen = ROM, Schreiben = RAM darunter)\n"
               "    screen/gscreen    Bild direkt vom 8275-Raster (screenChar), nie ueber die CPU-Sicht\n"
-              "    keys <text>       Tasten ueber Tastatur1715 (U880 + S600), je Taste 250 000 Takte; \\r = Return\n"
+              "    keys <text>       Tasten ueber Tastatur1715 (U880 + S600), je Taste 250 000 Takte; \\r = Return, \\x01..\\x1A = Strg+Buchstabe\n"
               "    vars ; where ; dev [ctc|pio|sio|crt] ; ivt   Overlay/BWS, K5122, CTC0, SIO0, 8275, Interruptkette\n"
               "    Listings: -l doc/EPROMS/PC1715/s502.prn  (ROM-Overlay; nur solange die Bytes passen)\n"
               "    Nicht vorhanden: s2/b2/rj2/r 2 (ZVE2), bbusrq, snap/restore/rs/rc, savestate/loadstate, bank\n");

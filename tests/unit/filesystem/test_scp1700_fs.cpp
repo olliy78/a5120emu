@@ -16,7 +16,7 @@
  *
  * Das CP/A-BIOS kennt diese Disketten übrigens: „Jeder Fehler in Spur 0, Sektor 1
  * führt zur Annahme von Systemspuren (A7100-System mit 5" FM und 8272-Hardware mit
- * 128er Sektorlänge)" — `biosdsk.mac`, s. `disks/cpa_cpa780_k5601_clock.prn`.
+ * 128er Sektorlänge)" — `biosdsk.mac`, s. `tests/fixtures/disks/cpa_cpa780_k5601_clock.prn`.
  *
  * @see doc/scp1700_diskettenformat.md
  * @see core/filesystem/cpm/cpm_fs.h

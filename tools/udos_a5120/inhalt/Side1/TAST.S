@@ -1,0 +1,1 @@
+       LD HL,6C5H       LD (HL),10H       RET

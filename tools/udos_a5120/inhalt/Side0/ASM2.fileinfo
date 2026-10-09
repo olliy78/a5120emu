@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'ASM2'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=ASM2
+typ=P
+eig=WES
+start=5880
+satz=1024
+block=1024
+rest=512
+segment=5880:6242
+mem=5880:727F:0000
+zusatz=0
+erst=791207
+geaend=891031

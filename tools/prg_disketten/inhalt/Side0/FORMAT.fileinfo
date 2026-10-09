@@ -1,0 +1,21 @@
+# k1520DiskTool — Angaben zu 'FORMAT'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=FORMAT
+typ=P
+eig=WS
+start=4000
+satz=128
+block=128
+rest=128
+segment=4000:1455
+mem=4000:5AFB:0080
+zusatz=1C55897
+segs=4000+05AF,5897+01C5
+erst=870506
+geaend=880429

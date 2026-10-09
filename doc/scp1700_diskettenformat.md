@@ -23,7 +23,7 @@ Das ist keine Vermutung. Das CP/A-BIOS des A5120 rechnet ausdrücklich damit:
         jr      nz,selsys       ;Fehler beim Lesen; Systemsp. annehmen
 ;                                (z.B. SCP1700 mit 5"FM in Spur 0!!)
 ```
-(`biosdsk.mac`, s. `disks/cpa_cpa780_k5601_clock.prn`)
+(`biosdsk.mac`, s. `tests/fixtures/disks/cpa_cpa780_k5601_clock.prn`)
 
 ---
 

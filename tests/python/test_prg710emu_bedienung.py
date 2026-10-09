@@ -22,8 +22,8 @@ pytestmark = requires_core
 DISKS = PROJECT_ROOT / "disks"
 UDOS_710 = "prg710_udos43_k5601_system.hfe"
 UDOS_710_1 = "prg710-1_udos43_k5601_v43_189.hfe"
-SCPX_710 = "prg710_scpx15_cpa640_sysprg.hfe"
-SCPX_710_1 = "prg710-1_scpx17_cpa640_boot.hfe"
+SCPX_710 = "prg710_scpx15_system.hfe"
+SCPX_710_1 = "prg710-1_scpx17_system.hfe"
 
 
 @pytest.fixture

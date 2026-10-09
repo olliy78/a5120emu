@@ -1,0 +1,42 @@
+CP/Z 2.2 fuer den PC 1715 - Systemdiskette des k1520emu
+=========================================================
+
+Betriebssystem: CP/Z 2.2 ("52K CP/Z 2.2 ZOAZ MRL", 06.12.88; BDOS PC/BC
+3/88, Variante vom 03.01.88). CP/Z ist ein CP/M-2.2-kompatibles System
+fuer den PC 1715. Diskettenformat: 16 x 256 Byte, 80 Spuren, beidseitig.
+
+SYSTEM
+------
+  CPZINIT   Diskette initialisieren (fragt den Laufwerksnamen).
+  CPZGEN    CP/Z-Systemgenerierung (Version 12/87).
+  CPZDUP    CP/Z-System kopieren (Version 12/87).
+  PIP, STAT         Dateien kopieren / Belegung und Laufwerksdaten
+  POWER, DIENST     Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+                    SET, ... (DIENST ist die SCP-Fassung von POWER)
+  FDIR, SDIR, UDIR, XDIR   Verzeichnisausgaben
+  FC08              File-Commander V 0.8 (Dateiverwaltung)
+  SH                Shell (benoetigt SH.OVR)
+  DISKCOPY          Diskette kopieren
+  DIMA              Disketten-Monitor (Sektoren ansehen und aendern)
+  DU                Disk Utility v8.6 (Disketten bearbeiten)
+  DOCTOR            Disketten- und Verzeichnisanalyse
+  NSWEEP            Datei-Dienstprogramm (NSWP)
+  ZAP               ZAP80, Patch-Programm
+  GIDE, GIDETEST    nachladbarer GIDE-Treiber (Laufwerk N:) und sein Test
+  TLC               Terminalprogramm fuer die V.24-Schnittstelle
+                    (Voreinstellung PC 1715 - V.24, 1200 Baud)
+  Weitere Programme der Fassung: CPMADR, CPMSTAT, DIP, UGET, UPUT, USB,
+  ZEXALL, ZSLAP.
+
+TEXTVERARBEITUNG UND ENTWICKLUNG
+--------------------------------
+  WS330         WordStar 3.30 (WSMSGS.OVR, WSOVLY1.OVR)
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TURBO         Turbo Pascal (TURBO.MSG, TURBO.OVR)
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+
+PRUEFPROGRAMM
+-------------
+  SERTEST    serielle Schnittstellen des PC 1715: Drucker X4 (nur Senden)
+             und V.24 X5; Pruefstecker- und Gegenstellentest

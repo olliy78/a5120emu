@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'OS'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=OS
+typ=P
+eig=WS
+start=13DE
+satz=512
+block=0
+rest=384
+segment=1000:5632
+mem=1000:25FF:0080
+zusatz=0
+erst=V_4.3
+geaend=880429

@@ -1,0 +1,20 @@
+# k1520DiskTool — Angaben zu 'PRINT'.
+# Sie stehen NICHT in der Datei selbst.  Beim Einfuegen (`put`) werden sie
+# wieder uebernommen.
+# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —
+# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.
+# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in
+# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.
+fs=udos
+name=PRINT
+typ=P
+eig=WS
+start=5000
+satz=256
+block=0
+rest=256
+segment=5000:1126
+mem=5000:54FF:0100
+zusatz=0
+erst=V_4.2
+geaend=880429

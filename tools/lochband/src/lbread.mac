@@ -1,0 +1,486 @@
+	TITLE	'LBREAD - Lochband lesen (K6022 / SIF1000)'
+	.Z80
+;
+; lbread.mac - liest ein Lochband vom Lochbandleser (daro 1210) an der ADA K6022
+;              (SIF1000) in eine CP/M-Datei.  Laeuft unter CP/A und SCPX (BDOS-
+;              Aufrufe), am A5120, A5120.16, K8915 und PRG 710/710-1.
+;
+;   LBREAD datei [/A] [/K] [/O]
+;
+;     /A   ASCII-Band: gerade Paritaet wird geprueft (Fehler werden
+;          gezaehlt und gemeldet), Bit 7 wird geloescht, 1AH beendet das Lesen
+;     /K   alle Bytes behalten (sonst werden Vor- und Nachlauf aus 00H entfernt)
+;     /O   vorhandene Datei ueberschreiben
+;
+; Vorlage ist der UDOS-Treiber PTAPE.6022 (AP-P8, doc/design/23_lochstreifen.md,
+; doc/merkposten/prg710.md "Lochband K6022"):
+;
+;   K6022 = zwei Z80-PIO auf E/A E0H-E7H (A0 = B/A, A1 = C/D):
+;     E0H Daten A  E1H Daten B  E2H Steuer A  E3H Steuer B   Stanzer (daro 1215)
+;     E4H Daten A  E5H Daten B  E6H Steuer A  E7H Steuer B   Leser  (daro 1210)
+;   Leser: Tor A Betriebsart 1 (Eingabe, Vektor ECH, Interrupt), Tor B Bitbetrieb
+;   D0-D3 aus (KOM = 03H), D4-D7 ein (STA, D6 = Bandende / kein Band).
+;   Ein Byte holen: auf den END-Interrupt (/ASTB) warten, dann IN (E4H) — das
+;   Lesen setzt zugleich RUF fuer das naechste Byte.
+;
+; Es gibt KEINEN Abfragebetrieb: die PIO liefert kein Bereit-Bit.  Das Programm
+; haengt deshalb seinen Interrupt-Vektor (ECH) in die IM-2-Tabelle des Betriebs-
+; systems (Seite = I-Register; CP/A, SCPX A5120/PRG/K8915 laufen alle in IM 2 mit
+; freigegebenen Interrupts, die Plaetze ECH/EEH sind dort frei).  Ist der Platz
+; nicht frei oder I = 0, bricht das Programm ab, ohne etwas zu veraendern.
+; Am Ende werden Vektor und PIO wieder zurueckgesetzt.
+;
+; Lizenz: MIT
+;
+
+BDOS	EQU	0005H
+WBOOT	EQU	0000H
+FCB	EQU	005CH
+TAIL	EQU	0080H
+
+F_PRINT	EQU	9
+F_OPEN	EQU	15
+F_CLOSE	EQU	16
+F_DELETE EQU	19
+F_WRITE	EQU	21
+F_MAKE	EQU	22
+F_DMA	EQU	26
+
+LE_DAT	EQU	0E4H		; Leser Tor A Daten
+LE_STA	EQU	0E5H		; Leser Tor B Daten (KOM aus / STA ein)
+LE_CTA	EQU	0E6H		; Leser Tor A Steuer
+LE_CTB	EQU	0E7H		; Leser Tor B Steuer
+VEC_LE	EQU	0ECH		; Interruptvektor des Lesers (wie PTAPE.6022)
+STA_END	EQU	40H		; STA D6 = Bandende / kein Band
+
+OPT_A	EQU	01H
+OPT_K	EQU	02H
+OPT_O	EQU	04H
+
+	ORG	100H
+
+START:
+	LD	(OLDSP), SP
+	LD	SP, STACK
+	CALL	OPTION
+	LD	A, (FCB+1)
+	CP	' '
+	JP	Z, USAGE
+
+	; ---- Interruptumgebung des Betriebssystems pruefen ----
+	LD	A, I
+	OR	A
+	LD	DE, M_NOIM2
+	JP	Z, FAIL
+	LD	H, A
+	LD	L, VEC_LE
+	LD	(SLOT), HL
+	LD	A, (HL)
+	LD	(OLD0), A
+	INC	HL
+	LD	B, (HL)
+	LD	A, B
+	LD	(OLD1), A
+	LD	A, (OLD0)
+	CP	B			; frei = beide Bytes gleich (0000H oder FFFFH)
+	LD	DE, M_SLOT
+	JP	NZ, FAIL
+
+	; ---- Zieldatei ----
+	LD	DE, FCB
+	LD	C, F_OPEN
+	CALL	BDOS
+	INC	A
+	JR	Z, NOFILE
+	LD	A, (FLAGS)
+	AND	OPT_O
+	LD	DE, M_EXIST
+	JP	Z, FAIL
+	LD	DE, FCB
+	LD	C, F_DELETE
+	CALL	BDOS
+NOFILE:
+	XOR	A
+	LD	(FCB+12), A		; EX
+	LD	(FCB+13), A		; S1
+	LD	(FCB+14), A		; S2
+	LD	(FCB+32), A		; CR
+	LD	DE, FCB
+	LD	C, F_MAKE
+	CALL	BDOS
+	INC	A
+	LD	DE, M_MAKE
+	JP	Z, FAIL
+	LD	A, 1
+	LD	(MADE), A
+	LD	DE, BUF
+	LD	C, F_DMA
+	CALL	BDOS
+
+	; ---- Vektor eintragen, Leser-PIO programmieren (PTAPE.6022) ----
+	DI
+	LD	HL, (SLOT)
+	LD	DE, ISR
+	LD	(HL), E
+	INC	HL
+	LD	(HL), D
+	LD	A, 1
+	LD	(INST), A
+	XOR	A
+	LD	(FLAGLE), A
+	LD	A, 0CFH			; Tor B: Bitbetrieb ...
+	OUT	(LE_CTB), A
+	LD	A, 0F0H			; ... D4-D7 Eingaenge (STA), D0-D3 Ausgaenge (KOM)
+	OUT	(LE_CTB), A
+	LD	A, VEC_LE		; Tor A: Vektor
+	OUT	(LE_CTA), A
+	LD	A, 4FH			; Betriebsart 1 (Eingabe)
+	OUT	(LE_CTA), A
+	LD	A, 83H			; Interrupt frei
+	OUT	(LE_CTA), A
+	LD	A, 03H			; KOM
+	OUT	(LE_STA), A
+	IN	A, (LE_DAT)		; erstes RUF (Datenregister lesen)
+	EI
+
+	IN	A, (LE_STA)		; Band im Leser?
+	AND	STA_END
+	JP	NZ, E_NOTAPE
+
+	; ---- Hauptschleife: je Byte END-Interrupt abwarten, dann holen ----
+LOOP:
+	CALL	WAIT
+	JP	C, TIMEOUT
+	XOR	A
+	LD	(FLAGLE), A
+	IN	A, (LE_DAT)		; Byte (und RUF fuer das naechste)
+	LD	C, A
+	IN	A, (LE_STA)
+	AND	STA_END
+	LD	(ENDF), A
+	LD	A, C
+	CALL	PUTB
+	LD	A, (EOFF)
+	OR	A
+	JR	NZ, FINISH
+	LD	A, (ENDF)
+	OR	A
+	JR	Z, LOOP
+	JR	FINISH
+
+TIMEOUT:
+	LD	A, (STARTED)
+	OR	A
+	JR	NZ, FINISH		; nach Daten: kein weiteres Zeichen = Bandende
+	CALL	CLEAN
+	LD	DE, M_NOREAD
+	JP	FAILDEL
+
+E_NOTAPE:
+	CALL	CLEAN
+	LD	DE, M_NOTAPE
+	JP	FAILDEL
+
+; ---- fertig: Rest schreiben, Datei schliessen, Bericht ----
+FINISH:
+	CALL	CLEAN
+	LD	A, (BUFN)
+	OR	A
+	JR	Z, FIN2
+FIN1:	LD	A, 1AH			; Rest des Satzes mit ^Z auffuellen
+	CALL	PUTRAW
+	LD	A, (BUFN)
+	OR	A
+	JR	NZ, FIN1
+FIN2:
+	LD	DE, FCB
+	LD	C, F_CLOSE
+	CALL	BDOS
+	INC	A
+	LD	DE, M_CLOSE
+	JP	Z, FAIL
+	LD	HL, (CNT)
+	CALL	PRDEC
+	LD	DE, M_OK2
+	CALL	PUTS
+	LD	A, (FLAGS)
+	AND	OPT_A
+	JP	Z, EXIT
+	LD	HL, (PERR)
+	CALL	PRDEC
+	LD	DE, M_PERR
+	CALL	PUTS
+	JP	EXIT
+
+USAGE:
+	LD	DE, M_USAGE
+	JP	FAIL
+
+; Fehler ohne Aufraeumen/mit Aufraeumen der angelegten Datei
+FAILDEL:
+	CALL	PUTS
+	LD	DE, FCB
+	LD	C, F_CLOSE
+	CALL	BDOS
+	LD	DE, FCB
+	LD	C, F_DELETE
+	CALL	BDOS
+	JP	EXIT
+FAIL:
+	CALL	PUTS
+EXIT:
+	LD	SP, (OLDSP)
+	JP	WBOOT
+
+; =============================================================================
+; CLEAN - PIO sperren, Vektorplatz zuruecksetzen (nur wenn eingetragen)
+; =============================================================================
+CLEAN:
+	LD	A, (INST)
+	OR	A
+	RET	Z
+	DI
+	LD	A, 03H			; Interrupt aus
+	OUT	(LE_CTA), A
+	LD	HL, (SLOT)
+	LD	A, (OLD0)
+	LD	(HL), A
+	INC	HL
+	LD	A, (OLD1)
+	LD	(HL), A
+	XOR	A
+	LD	(INST), A
+	EI
+	RET
+
+; =============================================================================
+; ISR - END des Lesers (Byte liegt an)
+; =============================================================================
+ISR:
+	PUSH	AF
+	LD	A, 1
+	LD	(FLAGLE), A
+	POP	AF
+	EI
+	RETI
+
+; =============================================================================
+; WAIT - auf END warten, CY = Zeitablauf (rund eine Sekunde)
+; =============================================================================
+WAIT:
+	LD	BC, 0FFFFH
+WAIT1:	LD	A, (FLAGLE)
+	OR	A
+	RET	NZ
+	DEC	BC
+	LD	A, B
+	OR	C
+	JR	NZ, WAIT1
+	SCF
+	RET
+
+; =============================================================================
+; PUTB - ein gelesenes Byte (A) verarbeiten
+; =============================================================================
+PUTB:
+	LD	C, A
+	LD	A, (FLAGS)
+	AND	OPT_A
+	LD	A, C
+	JR	Z, PB1
+	OR	A			; gerade Paritaet erwartet (PE), sonst Fehler zaehlen
+	JP	PE, PBPOK
+	LD	HL, (PERR)
+	INC	HL
+	LD	(PERR), HL
+PBPOK:	AND	7FH			; ASCII: Paritaetsbit weg
+	CP	1AH
+	JR	NZ, PB1
+	LD	(EOFF), A		; ^Z beendet das Lesen
+	RET
+PB1:	OR	A
+	JR	NZ, PBDATA
+	LD	A, (FLAGS)
+	AND	OPT_K
+	JR	NZ, PBDATA
+	LD	A, (STARTED)		; Null: Vorlauf (verwerfen) oder Nachlauf (merken)
+	OR	A
+	RET	Z
+	LD	HL, (NULLS)
+	INC	HL
+	LD	(NULLS), HL
+	RET
+PBDATA:
+	LD	(CUR), A
+	LD	HL, (NULLS)
+PB2:	LD	A, H
+	OR	L
+	JR	Z, PB3
+	PUSH	HL
+	XOR	A
+	CALL	PUTRAW
+	POP	HL
+	DEC	HL
+	JR	PB2
+PB3:	LD	HL, 0
+	LD	(NULLS), HL
+	LD	A, 1
+	LD	(STARTED), A
+	LD	A, (CUR)
+	JP	PUTRAW
+
+; =============================================================================
+; PUTRAW - Byte A in den Satzpuffer; bei 128 Byte Satz schreiben; Zaehler + 1
+; =============================================================================
+PUTRAW:
+	PUSH	AF
+	LD	A, (BUFN)
+	LD	E, A
+	LD	D, 0
+	LD	HL, BUF
+	ADD	HL, DE
+	POP	AF
+	LD	(HL), A
+	INC	E
+	LD	A, E
+	LD	(BUFN), A
+	LD	HL, (CNT)		; Zaehler (16 Bit)
+	INC	HL
+	LD	(CNT), HL
+PR1:	LD	A, (BUFN)
+	CP	128
+	RET	NZ
+	XOR	A
+	LD	(BUFN), A
+	LD	DE, FCB
+	LD	C, F_WRITE
+	CALL	BDOS
+	OR	A
+	RET	Z
+	CALL	CLEAN			; Diskette voll o. ae.
+	LD	DE, M_WRITE
+	JP	FAIL
+
+; =============================================================================
+; OPTION - Kommandozeile nach /A /K /O absuchen
+; =============================================================================
+OPTION:
+	XOR	A
+	LD	(FLAGS), A
+	LD	HL, TAIL
+	LD	B, (HL)
+	INC	HL
+OP1:	LD	A, B
+	OR	A
+	RET	Z
+	LD	A, (HL)
+	INC	HL
+	DEC	B
+	CP	'/'
+	JR	NZ, OP1
+OP2:	LD	A, B
+	OR	A
+	RET	Z
+	LD	A, (HL)
+	AND	5FH			; Grossbuchstabe
+	LD	C, OPT_A
+	CP	'A'
+	JR	Z, OP3
+	LD	C, OPT_K
+	CP	'K'
+	JR	Z, OP3
+	LD	C, OPT_O
+	CP	'O'
+	JR	NZ, OP1
+OP3:	LD	A, (FLAGS)
+	OR	C
+	LD	(FLAGS), A
+	INC	HL
+	DEC	B
+	JR	OP2
+
+; =============================================================================
+; PUTS / PRNUM
+; =============================================================================
+PUTS:
+	LD	C, F_PRINT
+	JP	BDOS
+
+; HL dezimal ausgeben
+PRDEC:
+	LD	DE, 10000
+	CALL	PD1
+	LD	DE, 1000
+	CALL	PD1
+	LD	DE, 100
+	CALL	PD1
+	LD	DE, 10
+	CALL	PD1
+	LD	DE, 1
+PD1:	LD	C, '0'
+PD2:	OR	A
+	SBC	HL, DE
+	JR	C, PD3
+	INC	C
+	JR	PD2
+PD3:	ADD	HL, DE
+	PUSH	HL
+	PUSH	DE
+	LD	E, C
+	LD	C, 2
+	CALL	BDOS
+	POP	DE
+	POP	HL
+	RET
+
+; =============================================================================
+; Meldungen
+; =============================================================================
+M_USAGE:
+	DB	'LBREAD - Lochband lesen (K6022/SIF1000)', 0DH, 0AH
+	DB	'  LBREAD datei [/A] [/K] [/O]', 0DH, 0AH
+	DB	'  /A ASCII (Bit 7 weg, ^Z = Ende)  /K alle Bytes behalten', 0DH, 0AH
+	DB	'  /O Datei ueberschreiben', 0DH, 0AH, '$'
+M_NOIM2:
+	DB	'FEHLER: Betriebssystem laeuft nicht im Interruptmodus 2.', 0DH, 0AH, '$'
+M_SLOT:
+	DB	'FEHLER: Vektorplatz ECH in der Interrupttabelle ist belegt.', 0DH, 0AH, '$'
+M_EXIST:
+	DB	'FEHLER: Datei existiert (/O ueberschreibt).', 0DH, 0AH, '$'
+M_MAKE:
+	DB	'FEHLER: Datei konnte nicht angelegt werden.', 0DH, 0AH, '$'
+M_WRITE:
+	DB	'FEHLER: Schreiben auf Diskette fehlgeschlagen.', 0DH, 0AH, '$'
+M_CLOSE:
+	DB	'FEHLER: Datei konnte nicht geschlossen werden.', 0DH, 0AH, '$'
+M_NOTAPE:
+	DB	'FEHLER: Kein Band im Leser (STA D6).', 0DH, 0AH, '$'
+M_NOREAD:
+	DB	'FEHLER: Leser antwortet nicht (K6022 gesteckt? Leser an?).', 0DH, 0AH, '$'
+M_PERR:	DB	' Paritaetsfehler.', 0DH, 0AH, '$'
+M_OK2:	DB	' Byte gelesen.', 0DH, 0AH, '$'
+
+; =============================================================================
+; Daten
+; =============================================================================
+OLDSP:	DW	0
+SLOT:	DW	0
+OLD0:	DB	0
+OLD1:	DB	0
+INST:	DB	0
+MADE:	DB	0
+FLAGS:	DB	0
+FLAGLE:	DB	0
+ENDF:	DB	0
+EOFF:	DB	0
+STARTED: DB	0
+CUR:	DB	0
+NULLS:	DW	0
+CNT:	DW	0
+PERR:	DW	0
+BUFN:	DB	0
+BUF:	DS	128
+	DS	96
+STACK	EQU	$
+
+	END	START

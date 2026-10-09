@@ -1,0 +1,73 @@
+SCPX fuer den @GERAET@ - Systemdiskette des k1520emu
+==================================================
+
+Betriebssystem: @SYSTEM@
+Diskettenformat: 16 x 256 Byte, 80 Spuren, beidseitig (die Form der PRG-
+Systemdisketten). Gestartet wird nach dem Einschalten ueber die Starttaste.
+
+SYSTEM EINRICHTEN
+-----------------
+  SYSPRG    "Systemgenerierung SCPX 1526 (V1.7) fuer PRG710 / PRG710-1": setzt
+            aus Lader (SYL17.SYS), CCP/BDOS (CCPBD17.SYS) und einem BIOS-
+            Modul ein System zusammen; gefragt wird zum Beispiel das
+            Bildschirmformat (1 = 1K, 2 = 2K Bildschirm).
+  SYSG      Systemspuren von einem Laufwerk auf ein anderes kopieren.
+@MODULE@
+  FORMAT    Disketten formatieren.        MODF  Diskettenformat umstellen.
+  CODP      Disketten kopieren.
+  CONV1     Konvertierung UDOS --> SCP: UDOS-Disketten (77 oder 40 Spuren,
+            ein- oder zweiseitig) in SCP-Disketten umsetzen.
+
+PROM-PROGRAMMIERUNG
+-------------------
+  PROG      PROM-Programmer V1.1: PROMs (1 oder 2 KByte, Prozessortyp
+            U880) lesen, programmieren, vergleichen und ansehen. Kommandos
+            P, R, D, E, H, T, C, V, S, Q; Anleitung am Bildschirm.
+
+DIENSTPROGRAMME
+---------------
+  PIP, STAT         Dateien kopieren / Belegung und Laufwerksdaten
+  SDIR              Verzeichnis mit Groesse, Attributen und Belegung
+  SUBM              Stapeldateien
+  POWER, DIENST     Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+                    SET, ... (DIENST ist die SCP-Fassung von POWER)
+  DIMA              Disketten-Monitor (Sektoren ansehen und aendern)
+  DISKCOPY          Diskette kopieren
+  UNERA             geloeschte Dateien zurueckholen
+  RAMTEST           Speichertest
+
+ENTWICKLUNG
+-----------
+  EDIT          Editor
+  ASM           Assembler
+  LINK          Binder         LIB   Bibliotheksverwaltung
+  DU            U880-Debugger (Erweiterungen HIST.UTL und TRACE.UTL)
+  M80, LINKMT   Makroassembler und Binder (MLOAD: Lader)
+  Z1            Z80-Assembler
+  ZSID          Debugger
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+") mit PASCAL.TXT
+                (Fehlertexte) und PASCAL.RES. Editor mit E, Uebersetzen C,
+                Starten R.
+
+TEXTVERARBEITUNG
+----------------
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88).
+                Zu TP gehoeren die Overlays TPOVLY1.OVR, TPHT.OVR und
+                TPDRUCK.OVR (Druckersteuerung).
+  TPINSCPA      Installationsprogramm fuer TP.
+
+PRUEFPROGRAMME (im Emulator entwickelt, am Geraet wie dort verwendbar)
+------------------------------------------------------------------------
+  SERTEST    serielle Schnittstellen (K8025): @SERTEST@
+  RAFCPM     Treiber RAM-Floppy RAF, Laufwerk M: (Original ZWG)
+  RAF512     Treiber RAM-Floppy RAF, Laufwerk P: (2 Karten ab 88H)
+  RAFTEST    ZWG-Pruefprogramm RAF; Kartenadresse auf 88H/89H eingestellt
+  RAFQUICK   ZWG-Schnelltest RAF (zerstoerungsfrei)
+  LBREAD     Lochband lesen (K6022/SIF1000):   LBREAD datei [/A] [/K] [/O]
+  LBPUNCH    Lochband stanzen:                 LBPUNCH datei [/A] [/K]
+
+RAF und Lochstreifenkarte K6022 sind steckbare Optionen (im Emulator:
+Einstellungen); ohne die Karte melden die Programme nichts Sinnvolles.

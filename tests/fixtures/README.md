@@ -24,6 +24,12 @@ stehen diese beiden Eigenschaften nicht im Namen.
 | laufwerkskonfiguration | Laufwerkstypen, die das BIOS des Systems für A:/B:/C: annimmt |
 | merkmale | `clock`/`noclock` (Uhrzeit-Abfrage beim Kaltstart), `hardy` (HARDY.COM an Bord); beim K8915 BIOS-Fassung (`bios55k`, `v24xonxoff`), Besonderheit (`autodbase`) und Diskettennummer des Anwenders (`disk900`) |
 
+## Listings (`cpa_cpa780_*.prn`)
+
+Vollständig gelinkte, kommentierte BIOS-Quelltexte der CP/A-Fassungen (clock, noclock, `-raf`, combo5zoll, combo8zoll) —
+mit `k1520dbg -l tests/fixtures/disks/<name>.prn` zeigt jede Disassembly-Zeile Label und Originalkommentar. Sie liegen bei den
+Disketten, deren `@OS.COM` sie beschreiben; für Anwender sind sie nicht gedacht (nicht im Installer).
+
 ## Dateien
 
 | Datei | Inhalt | benutzt von |
@@ -179,7 +185,7 @@ EM256-Diskette (M80/LINKMT unter `tools/cparun`, `linkmt @os=cpabas,ccp,bdos,x:b
 BIOS D000H–F6B7H).  Geändert gegenüber `bios_org.mac`: `em256 equ 0` (statt 1), `raf equ 1`
 (statt 0) mit `rafpar equ 1`, `raf_d equ 88h`, `raf_nb equ 4` (Treiber `biosraf*.mac`
 unverändert), `uhrvar equ 0`, `diskA equ 11580` (statt 10877), `kltbef: db 0`.  Eingespielt
-mit `k1520disktool rm/put`.  Das Listing liegt als `disks/cpa_cpa780_k5601_noclock-raf.prn`
+mit `k1520disktool rm/put`.  Das Listing liegt als `cpa_cpa780_k5601_noclock-raf.prn` (hier)
 bei.  Kaltstart mit RAF512: „- RAF mit Parity als RAM-Floppy M:" / „  508 kByte (   32
 Spuren zu 127 Sektoren)", beim ersten Mal „M: ist undefiniert, es folgt nichtzerstoerende
 Formatierung ...", nach RESET „M: ist noch wie bei letzter Benutzung geladen!"; ohne Karte

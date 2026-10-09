@@ -1,0 +1,49 @@
+SCP 3.0 fuer den PC 1715W - Systemdiskette des k1520emu
+========================================================
+
+Betriebssystem: SCP 3.0 (R-BWS) V0003 vom 28.03.89 (CP/M 3), Lader
+"SCP 3.0 - LOADER PC 1715W" V0001 vom 25.05.87. Diskettenformat:
+5 x 1024 Byte, 80 Spuren, beidseitig; vier Systemspuren.
+Beim Start laedt PROFILE.SUB den Zeichensatz SC619.ZGF (MODCS).
+Speicherbaenke: 0 Bildschirm/Zeichengeneratoren, 1 System, 2 Anwender (TPA),
+3 bis 5 RAM-Disk (Beschreibung in SCPWPC.TXT).
+
+SYSTEM
+------
+  INIT, INITDIR   Diskette formatieren / Verzeichnis anlegen
+  COPYSYS         Systemspuren kopieren (Beispiel COPYSYS A: B: [B=MFS1.4])
+  MODFD           Diskettentypen der Laufwerke einstellen (MFS1.2, MFS1.4,
+                  MF3200, MF6400; LOGIN, OFFSET)
+  MODIO           Geraeteparameter: Bildschirm, PRN, V24 (z. B.
+                  MODIO V24[4800,,DC1/DC3,7,ODD])
+  MODCS           Zeichensatz laden (SC6xx.ZGF; LOADCS.RSX)
+  DEVICE, SET, SETDEF, SHOW   Geraetezuordnung, Attribute, Suchpfad, Anzeige
+  DATE            Datum und Uhrzeit
+  HELP            Hilfe zu den Kommandos (HELP.HLP)
+  CCP, GENCOM, GET, PUT, SUBMIT, SAVE   Kommandoprozessor, RSX anbinden,
+                  Konsolen-Umlenkung, Stapelverarbeitung
+  PIP, DIR, TYPE, ERASE, RENAME, DUMP, LINK   Dateien kopieren, anzeigen,
+                  loeschen, umbenennen; Binder
+
+TEXTVERARBEITUNG
+----------------
+  TP            Textprogramm (deutsch) V1/3B (12/87) fuer SCPX und SCP 3,
+                Bildschirm 24*80, mit Funktionstasten. Zu TP gehoeren die
+                Overlays TPOVLY0.OVR, TPHT.OVR und TPDRUCK.OVR.
+  TPINSTD       Installationsprogramm fuer TP (TPINSTD V2/2, 03.04.87) mit
+                seinen Dateien TPINSTD.000/.001/.002/.011/.012.
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+
+ENTWICKLUNG
+-----------
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+") mit PASCAL.TXT
+                (Fehlertexte) und PASCAL.RES. Editor mit E, Uebersetzen C,
+                Starten R.
+  LINK          Binder des SCP 3.0 (siehe System)
+
+PRUEFPROGRAMM
+-------------
+  SERTEST    serielle Schnittstellen des PC 1715W: Drucker X4 (nur Senden)
+             und V.24 X5; Pruefstecker- und Gegenstellentest

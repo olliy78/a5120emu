@@ -578,7 +578,7 @@ ersten Lauf** (C-ABI `k1520_raf_*`, Python `K1520Emulator(raf="raf512")`, Oberfl
 *Einstellungen ▸ Allgemein ▸ RAM-Disk* mit Stand-by-Ablage `raf_<programm>.bin`,
 `k1520dbg`/`boot_trace --raf`).  Gast: `RAFCPM.COM` (M:) / `RAF512.COM` (P:) unter CP/A,
 SCPX 8915 und SCPX 1.7, dazu die CP/A-Diskette mit eingebautem Treiber
-`disks/cpa_cpa780_k5601_noclock-raf.hfe`.  Kern der Sache: A8–A15 (Register B) tragen
+`OSRAF.COM` auf `disks/a5120_cpa_k5601_system.hfe`.  Kern der Sache: A8–A15 (Register B) tragen
 Sektor bzw. Bytezeiger, Sperrbits und Spiegelung sind **so** nachgebildet, RESET erhält den
 Inhalt.  **Vor Arbeiten daran: `doc/merkposten/raf.md` lesen**; Entwurf
 `doc/design/22_raf512.md`, Originale `doc/raf512/`.
