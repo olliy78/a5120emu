@@ -1293,7 +1293,14 @@ RAM, 50–51 PIO, 55–57 CTC, 60–61 SIO, 70 kein DRAM (fatal), 71 Segmentadre
   Mitschnitt eines Geräts ohne Winchesterbeisteller. Im Handbuch der Einführung stehen 52–54 nicht. Der
   Test läuft danach bis `MAXSEG=<..>` und `*` weiter. Kommt derselbe Fehler mit Rückgabecode `08` und
   `MAXSEG=<07>` (so im Mitschnitt vom Gerät des Anwenders), war an der Hardware etwas defekt; ein
-  Emulatorlauf mit fehlerfreiem Ausbau zeigt keine Fehlerzeile.
+  Emulatorlauf mit fehlerfreiem Ausbau zeigt keine Fehlerzeile. Im *Vollgerät* **ohne Platte** antwortet
+  der WDC zwar, findet aber kein Laufwerk: `ERROR 52 C1` und `ERROR 53 27` (27 = kein Laufwerk bereit).
+  Der WDC wartet beim Hochlauf bis zu 32 Sekunden Maschinenzeit auf Laufwerk 0 — so lange steht der
+  Test nach „P8000 Hardwaretest U8001", bevor die Fehler, `MAXSEG` und `*` kommen. Mit unformatierter
+  Platte heißt die Zeile `ERROR 52 39` (kein Parametersatz).
+* Nach `MAXSEG=<..>` **kein `*`**, keine Fehlerzeile: der Test war fehlerfrei, und der Monitor startet die
+  Platte (AUTOBOOT). Ist auf ihr kein WEGA, bleibt er stehen — *Rückstellen*, `x`, und bei „Press NMI"
+  **RETURN** statt NMI (siehe „Der U8000-Monitor").
 * `DISK ERROR` beim Start von der Platte (U8000-Monitor): die Platte ist nicht lesbar, nicht
   formatiert oder enthält keinen Urlader (Block 0). `HARD DISK ERROR 81` mit Blinkcode wurde am
   Gerät des Anwenders bei einer Platte mit Lesefehlern beobachtet (Bedeutung der Zahl *nicht geprüft*).
@@ -1311,8 +1318,9 @@ RAM, 50–51 PIO, 55–57 CTC, 60–61 SIO, 70 kein DRAM (fatal), 71 Segmentadre
   vollständig kalt mit Hardwaretest und lässt alle eingelegten Disketten neu einlegen.
 * *Maschine ▸ NMI-Taster* ist die NMI-Taste. Solange der U8000 nicht läuft, wirkt sie nur auf den U880;
   läuft der U8000 (Monitor oder WEGA), wirkt sie **nur** auf den U8000. Direkt nach der Meldung
-  „U8000-Softwaremonitor … **Press NMI**" startet sie WEGA von der Platte (nach dem 16-Bit-Hardwaretest);
-  sonst gibt der U8000-Monitor „NMI" aus und kehrt zur Eingabe zurück.
+  „U8000-Softwaremonitor … **Press NMI**" startet sie den 16-Bit-Hardwaretest und — wenn er fehlerfrei
+  besteht — WEGA von der Platte (AUTOBOOT; mit einer leeren Platte kommt danach kein `*`, siehe „Der
+  U8000-Monitor"); sonst gibt der U8000-Monitor „NMI" aus und kehrt zur Eingabe zurück.
 * Den Test des 8-Bit-Teils wiederholt der Monitorbefehl **`T`**, den des 16-Bit-Teils `T` am Prompt `*`.
 
 ### Der U880-Monitor (MON8)
@@ -1354,9 +1362,20 @@ schaltet tty0 auf 8 Bit mit Sender ein, danach schreibt `pw 24 54` ein „T" auf
 
 ### Der U8000-Monitor (MON16)
 
-Prompt **`*`**. Er wird mit **`x`** vom U880-Monitor aus (oder von der WEGA-Startdiskette) gestartet,
-meldet sich mit `U8000-Softwaremonitor Version 3.1 - Press NMI`, und **erst die NMI-Taste** (*Maschine ▸
-NMI-Taster*) startet den 16-Bit-Hardwaretest. Danach erscheint `MAXSEG=<..>` und `*`.
+Prompt **`*`**. Er wird mit **`x`** und RETURN vom U880-Monitor aus (oder von der WEGA-Startdiskette)
+gestartet und meldet sich mit `U8000-Softwaremonitor Version 3.1 - Press NMI`. Jetzt gibt es zwei Wege:
+
+* **NMI-Taste** (*Maschine ▸ NMI-Taster*): der 16-Bit-Hardwaretest läuft bis `MAXSEG=<..>`. **Meldet er
+  einen Fehler** (z. B. `ERROR 52` ohne Platte oder mit unformatierter Platte), erscheint danach `*`.
+  **Besteht er fehlerfrei** — Winchesterkontroller und Platte mit Parametersatz —, startet der Monitor
+  den Urlader in Block 0 der Platte (AUTOBOOT, wie am Gerät). Mit installiertem WEGA ist das der
+  Kaltstart von der Platte; ist die Platte formatiert, aber **leer** (z. B. die früher vom Programm
+  angelegte `p8000_platte.img` oder *Formatiert mit Parametersatz*), läuft die CPU in die leeren Bytes,
+  und **nach `MAXSEG` kommt kein `*`** mehr — nur *Rückstellen* hilft. Der Plattenkasten weist auf eine
+  solche Platte hin.
+* **RETURN** (oder eine andere Taste) statt NMI: der Monitor geht ohne 16-Bit-Hardwaretest und ohne
+  AUTOBOOT sofort zum Prompt (`?`, dann `*`). Das ist der Weg zu `O U` / `boot` / `ud(0,0)sa.format`,
+  solange auf der Platte noch kein WEGA steht. Den Hardwaretest holt `T` am `*` nach.
 
 Alle Befehle mit **Großbuchstaben**, Zahlen hexadezimal und mit einer **Ziffer** beginnend (`0B`, nicht
 `B`). Eine Adresse darf eine Segmentangabe in spitzen Klammern haben: `<2>1000`.
@@ -1436,7 +1455,9 @@ Installationsprotokoll von WEGA 3.1 steht und im Emulator geprüft ist.
 2. **Startdiskette in A:** (WEGA-Startdiskette), kalt starten, bei „Press RETURN" **RETURN**, am `>`
    noch einmal **RETURN**: UDOS startet, und die Koppelsoftware der Startdatei meldet
    „U8000-Softwaremonitor … Press NMI" (am Gerät geht auch **`x`** am `>`). Den **NMI-Taster** drücken;
-   der Test endet bei `MAXSEG=<..>` und `*`.
+   mit der unformatierten Platte endet der Test bei `ERROR 52 39`, `MAXSEG=<..>` und `*`. (Ist die Platte
+   schon formatiert, aber noch ohne WEGA, statt NMI **RETURN** drücken — sonst bootet der Monitor die leere
+   Platte und es kommt kein `*`.)
 3. Am `*`: **`O U`** — Antwort `BOOTING FROM UDOS FLOPPY` und der Prompt `>`. Dann **`boot`**. Es folgt
    `Boot` und der Prompt **`:`** des Urladers. Von hier ruft man Programme der Startdiskette mit
    `ud(0,0)programm` auf.
