@@ -27,7 +27,7 @@ Zwei Dinge leben hier:
 
 **Woher die Tastencodes kommen.** Die K7637 sendet den *physischen* Code aus
 ihrer ROM-Codetabelle; das CP/A-BIOS rekodiert die hohen Codes über die Tabelle
-``cp37`` (im Listing ``disks/cpa_cpa780_*.prn``).  Daraus stammen alle
+``cp37`` (im Listing ``tests/fixtures/disks/cpa_cpa780_*.prn``).  Daraus stammen alle
 Sondercodes unten — SEL0..3 (die Tasten ``0 1 2 3`` links oben) 0xA0..0xA3,
 PF1..PF12 0xC1..0xCC, die Umschaltebene PA1..PA3/CLEAR/REC/FM/DUP/EREOF/ERINP,
 CE 0xB9, ENTER 0xC0, ET1 0xFF, MON (``M``) 0xB0, RESET 0xAF, ``00`` 0xB1 sowie

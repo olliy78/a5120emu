@@ -33,7 +33,7 @@ Unterschiede der Disketten stecken **nur in der Übersetzung des BIOS** (`@OS.CO
 | `noclock-raf` | 15 616 B | feaf37cd | K5601 ×3 | nein | `raf=1`, `rafpar=1`: M: auf der RAF (88H); **ohne Karte kein M:** |
 | `noclock-em256` | 15 232 B | da8fa9e0 | K5601 ×3 | nein | `em256=1` (A5120.16); nur als Fixture |
 
-Die Listings (`disks/cpa_cpa780_*.prn`) existieren für die ersten fünf; `-em256` hat keins.
+Die Listings (`tests/fixtures/disks/cpa_cpa780_*.prn`) existieren für die ersten fünf; `-em256` hat keins.
 Eine Uhr-Variante der Fremdlaufwerke gibt es nicht — die Kombination Laufwerke × Uhr ist
 nicht lückenlos gebaut (kein `combo5zoll_clock`).
 
@@ -198,5 +198,5 @@ BIOS-Neuübersetzungen. Nicht verändert: die Test-Fixtures, die Matrix und `too
 (pflegt weiter die Einzeldisketten).
 
 **Aufgeräumt (2026-10-09):** Die Einzeldisketten `cpa_cpa780_{k5601_clock,k5601_noclock,k5601_noclock-raf,combo5zoll_noclock,combo8zoll_noclock}.{hfe,img}`
-sind aus `disks/` entfernt; es bleibt nur `cpa_cpa780_k5601_system.hfe` (und die `.prn`-Listings). Die Tests brauchten sie nicht
+sind aus `disks/` entfernt; es bleibt nur `cpa_cpa780_k5601_system.hfe` (die `.prn`-Listings liegen seit dem Folgecommit bei den Fixtures). Die Tests brauchten sie nicht
 (eigene Kopien unter `tests/fixtures/disks/`). Handbeispiele in den Dokumenten zeigen jetzt auf die Fixtures.

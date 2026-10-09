@@ -13,7 +13,6 @@ Formatier-Experimente. Der Inhalt darf sich jederzeit ändern.
 |--------|--------|
 | `.hfe` | HFE-Rohbild mit Spuren/Sektoren (formatagnostisch, enthält die Bitzellen) |
 | `.img` | reine Nutzdaten der Diskette (Geometrie steckt im Formatnamen) |
-| `.prn` | vollständig gelinkter, kommentierter BIOS-Quelltext der jeweiligen Diskette — mit `k1520dbg -l <datei>.prn` laden, dann zeigt jede Disassembly-Zeile Label + Originalkommentar |
 
 ## Namensschema
 
@@ -41,7 +40,7 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
 Die früheren Einzeldisketten (clock, noclock, combo5zoll, combo8zoll, `-raf`) gibt es nur noch als Testdaten unter
-`tests/fixtures/disks/`; ihre BIOS-Fassungen liegen als `@OS.COM`/`OS*.COM` auf der Systemdiskette. Geblieben sind die
+`tests/fixtures/disks/`; ihre BIOS-Fassungen liegen als `@OS.COM`/`OS*.COM` auf der Systemdiskette. Dort liegen auch die
 `.prn`-Listings der Fassungen (`cpa_cpa780_*.prn`, für `k1520dbg -l`).
 
 **Eigene Programme auf den Bootdisketten** (Quelle und eingecheckte `.com` unter `tools/`):

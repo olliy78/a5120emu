@@ -143,7 +143,7 @@ formats:
   # mit halber Datenrate (128-B-Sektoren).  Das ist keine Vermutung, das CP/A-BIOS
   # rechnet damit: „Jeder Fehler in Spur 0, Sektor 1 führt zur Annahme von
   # Systemspuren (A7100-System mit 5" FM und 8272-Hardware mit 128er
-  # Sektorlänge)" — `biosdsk.mac`, s. disks/cpa_cpa780_k5601_clock.prn.
+  # Sektorlänge)" — `biosdsk.mac`, s. tests/fixtures/disks/cpa_cpa780_k5601_clock.prn.
   # Gemessen am Referenzdatenträger (Greaseweazle F1, 300 min⁻¹): FM-Flusszeiten
   # 4/8 µs auf c0h0, MFM 4/6/8 µs überall sonst.
   - name:        scp1700_640

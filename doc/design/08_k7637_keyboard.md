@@ -453,7 +453,7 @@ LOCK bleibt gesetzt und wird (wie am Original) mit SHIFT aufgehoben.
 ### 7.1 Die Tastencodes des Tastenfelds
 
 Alle Sondercodes stammen aus der BIOS-Umkodiertabelle **`cp37`** (Listing
-`disks/cpa_cpa780_*.prn`) — sie ist die einzige vorliegende Quelle für die
+`tests/fixtures/disks/cpa_cpa780_*.prn`) — sie ist die einzige vorliegende Quelle für die
 physischen Codes, das Tastatur-EPROM fehlt.
 
 | Taste(n) | Grundebene | Umschaltebene |

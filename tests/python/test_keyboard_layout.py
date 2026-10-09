@@ -44,7 +44,7 @@ def test_raw_base_matches_the_core():
 
 
 @pytest.mark.parametrize("name, code", [
-    # Die Codes stammen aus cp37 (disks/cpa_cpa780_*.prn).
+    # Die Codes stammen aus cp37 (tests/fixtures/disks/cpa_cpa780_*.prn).
     ("ET1 (BIOS: CR)",                    0xFF),
     ("ENTER (Ziffernblock, ≠ ET1)",       0xC0),
     ("CE (Eingabe löschen)",              0xB9),
