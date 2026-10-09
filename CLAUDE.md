@@ -534,9 +534,7 @@ MSVC-Gegenprobe der CI. Plattendateien tragen das Typkürzel: `<name>.<k5504|d51
 standardmäßig UNFORMATIERT an (Merkposten 48–54).
 **Oberfläche `p8000emu` (AP P16, 2026-10-07; `--machine p8000`, `run_p8000emu.sh`, `p8000emu.yaml`,
 `data/default_config_p8000.yaml`, `doc/design/26_p8000emu_oberflaeche.md`):** fünftes Programmprofil im gemeinsamen
-Hauptfenster — `profil.terminal` ersetzt die Bildröhre durch `TerminalTabs` (`app/ui/p8000_terminal.py`: je Kern-Terminal
-ein Reiter, **Zeichensatz aus den EPROM-Abzügen** `P8TEZS`/`P8TDZS` → `app/ui/p8000_zeichensatz.py`, erzeugt von
-`tools/p8000/zeichensatz_zu_py.py`), Funktionstastenleiste statt Bildschirmtastatur, Plattenkasten unter den Disketten
+Hauptfenster. **Seit P23a gibt es nur EINE GUI (`p8000emu`, Modus über *Einstellungen ▸ Allgemein ▸ Betriebsart* bzw. `--mode computer|terminal`) und nur Modelle MIT Originalterminal; das Kern-Terminal-Widget `TerminalTabs`/`p8000_terminal.py`, `p8000_zeichensatz.py` und `tools/p8000/zeichensatz_zu_py.py` sind entfallen** — das Terminalbild ist ein `ScreenWidget` (`app/ui/p8000_original.py`, derselbe CRT-Shader/-Dialog wie bei den anderen Maschinen), Rechtsklick ▸ *Bildschirminhalt als Text kopieren*, Bildschirmtastatur K7673 (`keyboard_k7673.py`, Layout nach Anwenderfoto). Der Rest des Absatzes beschreibt den Stand von P16: Funktionstastenleiste statt Bildschirmtastatur, Plattenkasten unter den Disketten
 (`app/ui/platten_widget.py`; **seit P21 keine Standardplatte mehr** — das Vollgerät startet ohne Platte, angelegt wird nur über *Neue Platte…*),
 Modellwahl Vollgerät/ohne Winchester/nur 8-Bit, ROM-Fassung und Platinenindex als `hardware`-Wahl
 (`Programmprofil.kern_parameter` → `p8000={…}`), Frontplatte Run/16-Bit/Platte/Power (aktiv high), Zwischenstand

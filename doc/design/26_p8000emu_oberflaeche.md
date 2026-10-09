@@ -32,6 +32,8 @@ Bildschirmtastatur durch `KeyboardP8000Widget`.  `profil.platte` hängt den Plat
 (derselbe Kasten „Laufwerke").  Alles Übrige — Aktionen, Symbolleiste, Statuszeile, Konfiguration,
 Einstellungen, Schnittstellenreiter, Werkzeugmenü — ist unverändert das gemeinsame Fenster.
 
+> **Stand 2026-10-09:** die Abschnitte 2-3 beschreiben den Zustand von P16 (Kern-Terminal-Widget `TerminalTabs`). Seit **P23a** (siehe §8, Absatz Eine GUI) gibt es nur noch das Originalterminal als `ScreenWidget` mit dem gemeinsamen CRT-Dialog; Farb-/Zoomwahl entfielen, das Zeichensatz-Rendering steckt im Terminal-Kern.
+
 ## 3. Terminal-Widget (`TerminalWidget`, `TerminalTabs`)
 
 * **Der Kern führt die Textschicht, die Oberfläche zeichnet nur.**  Neue C-ABI `k1520_term_snapshot` liefert das
