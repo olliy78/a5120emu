@@ -67,19 +67,9 @@ PRG710_1 = RAF_TREIBER + LOCHBAND                       # SCPX 1.7: RAF512 im Ga
 
 # Bootdisketten und was sie tragen.  SCPX 1526 am A5120 ist nicht geprueft und
 # fehlt deshalb.
-DISKETTEN = {
-    'k8915scpx_boot1.hfe': K8915,
-    # PC 1715: PCTEST nur dort, wo es nachweislich durchlaeuft (Pc1715Pctest.Scp*, AP-4f).
-    # NICHT auf pc1715_scp1715_v0007_cpa640_boot.hfe: PCTEST setzt keinen Stapel, der
-    # geerbte CCP-Stapel von V0007 (SP ~CAF0) liegt im Speichertestbereich (bis BDOS-16)
-    # → „Speicherfehler auf Adresse: CAEC".  NICHT auf pc1715_cpa1715_boot_4lw.hfe: PCTEST
-    # legt die CTC-Vektorbasis auf 08H, der CP/A-Takt auf Kanal 3 springt ins Leere
-    # (wie AP-4d).  Nicht UDOS 1715, nicht SCP 3.0 des 1715W.  Beides Gastverhalten.
-    'pc1715_scp1715_v0006_boot.hfe': PC1715,
-    'prg710-1_scpx17_cpa640_boot.hfe': PRG710_1,
-    'prg710_scpx15_cpa640_sysprg.hfe': LOCHBAND,
-    'scpx17_cpa780_k5601.hfe': LOCHBAND,
-}
+# Die Systemdisketten werden von ihren Bauskripten (tools/cpa_*, tools/scp*) gebaut und tragen die Beigaben
+# selbst; hier bleibt nur die Liste der Programme (PROGRAMME) und der Pruefling-Vergleich (KOPIEN).
+DISKETTEN = {}
 
 # Prueflinge der Tests, die dieselbe Fassung tragen muessen.
 KOPIEN = {

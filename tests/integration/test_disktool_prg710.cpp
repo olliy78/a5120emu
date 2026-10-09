@@ -329,8 +329,8 @@ TEST(DisktoolPrg710, LieferdisketteBootet) {
     const Fall faelle[] = {
         {V::Prg710,   true,  "prg710_udos43_k5601_system.hfe"},
         {V::Prg710_1, true,  "prg710-1_udos43_k5601_v43_189.hfe"},
-        {V::Prg710,   false, "prg710_scpx15_cpa640_sysprg.hfe"},
-        {V::Prg710_1, false, "prg710-1_scpx17_cpa640_boot.hfe"},
+        {V::Prg710,   false, "prg710_scpx15_system.hfe"},
+        {V::Prg710_1, false, "prg710-1_scpx17_system.hfe"},
     };
     for (const Fall& f : faelle) {
         SCOPED_TRACE(f.disk);

@@ -1,0 +1,64 @@
+SCPX fuer den K8915 - Systemdiskette des k1520emu
+==================================================
+
+Betriebssystem: SCPX 8915 V 5.3, Anpassung "V24 (XON/XOFF)"
+(CCP/BDOS "SCPX V0/2", VEB Robotron Elektronik Zella-Mehlis, 1988).
+Diskettenformat: 5 x 1024 Byte, 80 Spuren, beidseitig (K5601).
+Beim Einschalten meldet das System "Coldstart * Disk on A: ready ?" -
+mit <ENTER> bestaetigen. Danach richtet der Autostart die RAM-Disk E: ein.
+
+RAM-DISK E:
+-----------
+  RADE      RAM-Disk fuer SCPX 8915, Version 1.5 (16.10.1989): macht die
+            zweiten 64 KByte des Rechners als Laufwerk E: (64 * 1 KByte)
+            nutzbar. Wird beim Start automatisch ausgefuehrt (Autostart
+            "rade"), kann aber auch von Hand gestartet werden; der Inhalt
+            von E: ist nach dem Ausschalten weg.
+
+SYSTEM
+------
+  DISGEN    Systemgenerator (Version 1.9): Systemspuren lesen und schreiben,
+            System anpassen (Laufwerksformat, Autostart).
+  FORMAT    Disketten formatieren.
+  SOFTKEY   Editor fuer die Softkeys (Funktionstasten PF1 ... PF10).
+  PIP, STAT Dateien kopieren / Belegung und Laufwerksdaten
+  DUMP      Dateien hexadezimal ansehen
+  SUBM      Stapeldateien (SUB-Dateien)
+  POWER, DIENST   Dienstprogramm mit DIR, COPY, REN, ERA, TYPE, DUMP, SORT,
+            SET, ... (DIENST ist die SCP-Fassung von POWER)
+  DIMA      Disketten-Monitor (Sektoren ansehen und aendern)
+  DISKCOPY  Diskette kopieren
+  UNERA     geloeschte Dateien zurueckholen
+  RAMTEST   Speichertest
+
+TEXTVERARBEITUNG
+----------------
+  WM, WM.HLP    WordMaster 1.07 (Texteditor). Hilfe im Editor mit ^J; die
+                Hilfedatei WM.HLP ist deutsch (Original russisch).
+  TP            Textprozessor, Version 3.0 "Anpassung an CP/A" (20.04.88).
+                Zu TP gehoeren die Overlays TPOVLY1.OVR, TPHT.OVR und
+                TPDRUCK.OVR (Druckersteuerung).
+  TPINSCPA      Installationsprogramm fuer TP.
+
+ENTWICKLUNG
+-----------
+  BASIC         BASIC-Interpreter (Microsoft-BASIC, Fassung R-BWS, 12/1984)
+  PASCAL        Turbo Pascal 3 (Robotron "TURBO/+") mit PASCAL.TXT
+                (Fehlertexte), PASCAL.RES, PASSAVE und PASINST (Anpassung).
+                Editor mit E, Uebersetzen C, Starten R.
+  M80, LINKMT   Makroassembler und Binder (MLOAD: Lader)
+  Z1            Z80-Assembler
+  ZSID          Debugger
+
+PRUEFPROGRAMME (im Emulator entwickelt, am Geraet wie dort verwendbar)
+------------------------------------------------------------------------
+  SERTEST    serielle Schnittstellen (K7028): Drucker/IFSS1, V.24, DFUE/IFSS2
+  RAFCPM     Treiber RAM-Floppy RAF, Laufwerk M: (Original ZWG)
+  RAF512     Treiber RAM-Floppy RAF, Laufwerk P: (2 Karten ab 88H)
+  RAFTEST    ZWG-Pruefprogramm RAF; Kartenadresse auf 88H/89H eingestellt
+  RAFQUICK   ZWG-Schnelltest RAF (zerstoerungsfrei)
+  LBREAD     Lochband lesen (K6022/SIF1000):   LBREAD datei [/A] [/K] [/O]
+  LBPUNCH    Lochband stanzen:                 LBPUNCH datei [/A] [/K]
+
+RAF und Lochstreifenkarte K6022 sind steckbare Optionen (im Emulator:
+Einstellungen); ohne die Karte melden die Programme nichts Sinnvolles.

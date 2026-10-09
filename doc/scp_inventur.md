@@ -46,7 +46,7 @@ den Systemspuren ist die Vorgabe.
 |---------|-----------------------------------|
 | SCPX 1.7 A5120 | `SYL17.SYS`, `CCPBD17.SYS`, `BIOSG617/G717/K617/K717.SYS`; `SYSP`, `SYSG`, `INIT`, `MODF`, `MODX`, `SEPR`, `PIP`, `STAT`, `POWER` (+ `HARDY` auf der 5×1024-Diskette; Spiele/TP auf `A5120_TP_Power_Spiele`) |
 | SCPX PRG 710 / 710-1 | `SYL17`, `CCPBD17`, BIOS-Module (s. §2), `SYSPRG`, `SYSG`, `FORMAT`, `PIP`, `STAT`, `SUBM`, `EDIT`, `DU` (+ auf der 710-1-Diskette: `ASM`, `LINK`, `LIB`, `DIMA`, `SDIR`, `MODF`, `POWER`, TP, `TURBO`, `INSTALL`, `CODP`, `CONV1`, PROM-Dateien) |
-| SCPX 8915 | `DISGEN`, `FORMAT`, `POWER`, `STAT`, **`RADE.COM`** (RAM-Disk E:, v 1.5, 16.10.1989, nutzt die zweite Speicherbank — auf 901/904, nicht auf der 55-K-Fassung 900), TP 3.0 |
+| SCPX 8915 | `DISGEN`, `FORMAT`, `POWER`, `STAT`, **`RADE.COM`** (RAM-Disk E:, v 1.5, 16.10.1989, nutzt die zweite Speicherbank — auf 900 und 901, nicht auf 904), TP 3.0 |
 | SCP 1715 V0004–V0006 | `INIT`, `SGEN`, `INSTSCP`, `DISKPAR`, `KEYS`, `SCP-DOS`, `SCP1715`, `PIP`, `POWER`, `STAT`, `TLC` (+`TLC.PAR`), `DIMA`, `DISKCOPY`, `UNERA`, `XDIR`, `XSUB`, `SUBM`, `PCTEST` |
 | SCP 1715 V0007 | `CCP.SPR`, `INIT`, `INSTSCP`, `SGEN` (Datendisketten tragen meist nur diese vier) |
 | SCP 3.0 | `SCP3.SYS`, `CCP.COM`, `COPYSYS`, `INIT`, `INITDIR`, `PIP`, `SET`, `SETDEF`, `DEVICE`, `SHOW`, `DIR`, `TYPE`, `ERASE`, `RENAME`, `SAVE`, `GET`, `PUT`, `DUMP`, `GENCOM`, `LINK`, `SUBMIT`, `SPACE`, `HELP`, `DATE`, `MODCS`/`LOADCS.RSX`/`MODIO`/`MODFD`, `SC6xx.ZGF`, `PROFILE.SUB`, TP-Familie |
@@ -75,7 +75,7 @@ und ist die Herkunft in dieser Sammlung belegt (Fremdsoftware nur, wenn sie ohne
 ### K8915 — SCPX 8915 V 5.3 (`k8915scpx_boot1.hfe` = Fassung 901)
 - **Ist da:** `DISGEN`, `FORMAT`, `POWER`, `RADE` (**RAM-Disk E: mit der zweiten Speicherbank — gefordert, vorhanden**), TP 3.0, `SERTEST`, `RAFCPM`/`RAF512`, `LBREAD`/`LBPUNCH`.
 - **Fehlt:** `STAT` (nur auf einem Teil der Fassungen), `PIP`, ein Editor/Entwicklungsumgebung. Vorschlag: `STAT`, `PIP`, `WM`, `DIENST`, `BASIC`, `PASCAL`/`TURBO` nach Test.
-- **Fassungen:** 55 K (900) hat **kein** `RADE`. Vorschlag: Auslieferung = 901 (V24 XON/XOFF) mit `RADE`; die 55-K-Fassung bleibt Fixture. [Zu klären: soll die 55-K-Variante als zweites BIOS-Modul auf der Diskette liegen? `DISGEN` stellt keine Fassung um — die BIOS-Fassung steckt auf den Systemspuren.]
+- **Fassungen:** `RADE` liegt auf 900 (55 K) und 901 (V24 XON/XOFF), nicht auf 904. Auslieferung = 901 (V24 XON/XOFF) mit `RADE`; die 55-K-Fassung bleibt Fixture (die BIOS-Fassung steckt auf den Systemspuren, `DISGEN` stellt keine andere ein).
 - **Gen 2 (V2, 64 KB, K3528):** hat nur 64 KB, also keine zweite Bank — `RADE` entfällt dort.
 
 ### PRG 710 — SCPX V 1.5 (`prg710_scpx15_cpa640_sysprg.hfe`)
@@ -103,9 +103,27 @@ und ist die Herkunft in dieser Sammlung belegt (Fremdsoftware nur, wenn sie ohne
 3. **Jede Diskette wird im Emulator gestartet und ihre Programme werden angefasst**, wie bei den CP/A-Disketten (Nachweis in der README des Bauordners).
 4. `SERTEST` kommt je Maschine erst dazu, wenn es dort geprüft ist (1715W: nach dem Agentenauftrag; PRG: offen).
 
-## 7. Offene Fragen an den Anwender
-1. A5120: Auslieferungsformat **16×256** (`scpx640`, heute) oder **5×1024** (`scpx798`, mit `HARDY`)?
-2. K8915: nur **901** (V24, mit `RADE`) oder zusätzlich die 55-K-Fassung?
-3. PC 1715: **drei Disketten** (SCP V0006, SCP V0007, CP/Z 2.2) oder weniger?
-4. PRG 710 / 710-1: soll es einen **SERTEST** für die PRG-Hardware geben (zweiter Agentenauftrag)?
-5. Dürfen die Anwenderdaten auf der 710-1-Diskette (`KLINGEL.DAT`, `RITE.DAT`, `ROM*.DAT` …) auf der ausgelieferten Fassung entfallen?
+## 7. Fragen an den Anwender — beantwortet 2026-10-09
+1. A5120: **5×1024** (`scpx798`) — wie die übrigen SCP-/CP/A-Disketten; wer 16×256 braucht, erzeugt es mit `INIT`+`MODF`+`SYSP` (in der `LIESMICH.TXT`).
+2. K8915: **Disk 901** als Basis (V24 XON/XOFF, mit `RADE`), aber ohne den Handschrift-Namen; die richtige Versionsbezeichnung steht in der `LIESMICH.TXT`.
+3. PC 1715: **drei Disketten** (SCP V0006, SCP V0007, CP/Z 2.2).
+4. PRG 710/710-1: SERTEST wird umgesetzt (in V0.3 mit dem 1715W); Lochstreifen-Werkzeug auf PRG, A5120, K8915; PRG bekommt PROM-Programmierer (`PROG`) und Entwicklerwerkzeuge.
+5. Anwenderdaten kommen nicht auf die Disketten.
+
+## 8. Umgesetzt (2026-10-09)
+
+Neun Systemdisketten, gebaut von `tools/diskbau.py` + je einem `build.py` (Wächter `cli_*`), je mit `LIESMICH.TXT`; Nachweise und
+Weggelassenes in der `README.md` des Bauordners:
+
+| Diskette | Bauordner | freier Platz |
+|----------|-----------|-------------:|
+| `a5120_scpx17_k5601_system.hfe` | `tools/scpx_a5120/` | 270 KB |
+| `k8915_scpx8915_v24_system.hfe` | `tools/scpx_k8915/` | 382 KB |
+| `prg710_scpx15_system.hfe`, `prg710-1_scpx17_system.hfe` | `tools/scpx_prg/` | 150 / 130 KB |
+| `pc1715_scp1715_v0006_system.hfe`, `…_v0007_system.hfe`, `pc1715_cpz22_system.hfe` | `tools/scp_pc1715/` | 284 / 178 / 160 KB |
+| `pc1715w_scp30_system.hfe` | `tools/scp_pc1715w/` | 68 KB |
+
+Gemeinsame Programme liegen in `tools/scp_gemeinsam/` (eine Kopie für alle Bauskripte; `cpa_a5120`/`cpa_pc1715` tragen noch eigene Kopien).
+Die alten SCPX-/SCP-Disketten sind aus `disks/` entfernt (Fixtures bleiben), der Installer liefert die neuen (`DISKS_DEFAULT`).
+Gefundene Mängel der Vorlagen: `TLC.PAR` stand auf dem PC 1715 (jetzt je Maschine passend, A5120: K8025 A, 9600 Bd); `MSDOSCPA` und
+`DIENST` melden sich unter SCPX bzw. SCP 3.0 nicht (nicht aufgenommen); der BASIC-Compiler `BASCOM` ist an keiner Maschine lauffähig.

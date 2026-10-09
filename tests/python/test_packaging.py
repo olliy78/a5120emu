@@ -229,8 +229,8 @@ def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
     text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     block = text[text.index('DISKS_DEFAULT="'):]
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
-    soll = {"pc1715_scp1715_v0006_boot.hfe", "pc1715_scp1715_v0007_cpa640_boot.hfe",
-            "pc1715_cpa1715_system.hfe", "pc1715_cpz22_boot.hfe",
+    soll = {"pc1715_scp1715_v0006_system.hfe", "pc1715_scp1715_v0007_system.hfe",
+            "pc1715_cpa1715_system.hfe", "pc1715_cpz22_system.hfe",
             "udos1715_640k_pc1715_system.hfe",
             "pc1715w_scp30_system.hfe"}
     assert soll <= set(block)
@@ -282,13 +282,13 @@ def test_rauchtests_pruefen_beide_maschinen():
 
 def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
     """16_k8915.md §6.23, Entscheid des Anwenders 2026-10-01: die Systemdiskette
-    901 (``k8915scpx_boot1.hfe``) gehört zur Vorgabeauswahl — ohne sie startet der
+    901 (``k8915_scpx8915_v24_system.hfe``) gehört zur Vorgabeauswahl — ohne sie startet der
     K8915 Emulator einer frischen Installation ins Leere.  Sie trägt auch
     SERTEST.COM (Entwurf 19 §14)."""
     text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     block = text[text.index('DISKS_DEFAULT="'):]
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
-    assert "k8915scpx_boot1.hfe" in block
+    assert "k8915_scpx8915_v24_system.hfe" in block
     for name in block:
         assert (PACKAGING.parent / "disks" / name).is_file(), name
 
@@ -302,7 +302,7 @@ def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
     block = text[text.index('DISKS_DEFAULT="'):]
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
     soll = {"prg710_udos43_k5601_system.hfe", "prg710-1_udos43_k5601_v43_189.hfe",
-            "prg710_scpx15_cpa640_sysprg.hfe", "prg710-1_scpx17_cpa640_boot.hfe"}
+            "prg710_scpx15_system.hfe", "prg710-1_scpx17_system.hfe"}
     assert soll <= set(block)
     for name in soll:
         assert (PACKAGING.parent / "disks" / name).is_file(), name

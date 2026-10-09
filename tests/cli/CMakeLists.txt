@@ -134,6 +134,46 @@ add_test(NAME cli_cpa_pc1715
 set_tests_properties(cli_cpa_pc1715 PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Wächter „die SCPX-Systemdiskette des A5120 in disks/ ist der Inhalt von tools/scpx_a5120/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scpx_a5120/build.py --tool build/k1520disktool
+add_test(NAME cli_scpx_a5120
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scpx_a5120/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scpx_a5120 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCPX-8915-Systemdiskette des K8915 in disks/ ist der Inhalt von tools/scpx_k8915/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scpx_k8915/build.py --tool build/k1520disktool
+add_test(NAME cli_scpx_k8915
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scpx_k8915/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scpx_k8915 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCPX-Systemdisketten des PRG 710 und 710-1 in disks/ ist der Inhalt von tools/scpx_prg/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scpx_prg/build.py --tool build/k1520disktool
+add_test(NAME cli_scpx_prg
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scpx_prg/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scpx_prg PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCP-/CP/Z-Systemdisketten des PC 1715 in disks/ ist der Inhalt von tools/scp_pc1715/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scp_pc1715/build.py --tool build/k1520disktool
+add_test(NAME cli_scp_pc1715
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scp_pc1715/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scp_pc1715 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
+# Wächter „die SCP-3.0-Systemdiskette des PC 1715W in disks/ ist der Inhalt von tools/scp_pc1715w/“ (doc/scp_inventur.md).
+# Neu bauen: python3 tools/scp_pc1715w/build.py --tool build/k1520disktool
+add_test(NAME cli_scp_pc1715w
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/scp_pc1715w/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_scp_pc1715w PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
 # Wächter „die kommentierten Boot-ROM-Listings des PRG 710/710-1 sind die Ausgabe des
 # Generators" (AP-P0d, doc/design/20_prg710.md): tools/gen_prg710_zre_prn.py --check
 # erzeugt beide Listings im Speicher, prüft MD5 der ROM-Abzüge, dass JEDES der 1024 Byte

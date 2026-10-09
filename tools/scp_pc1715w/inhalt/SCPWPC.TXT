@@ -1,0 +1,109 @@
+.po10
+                                                           
+1. Neue Version SCP 3.0 fuer PC 1715W
+-------------------------------------
+
+Aâ   1/8¸  stehô  fueò  deî  PÃ 1715× diå Versioî 000² deó  Betriebssystemó 
+SCĞ 3.° zuò Verfuegung®
+Eiî  Austauscè  deò Versioî 000± beé ausgelieferteî   PÃ  1715×  isô  nicht
+zwingenä erforderlich.
+Diå  Aenderunç betriffô diå Bereitstellunç folgendeò Systemzelleî fueò  deî 
+Systemprogrammiererº
+
+;------------------------------------------------------
+; BIOS Control Block ( erreichbar ueber @DTBL - n)
+;------------------------------------------------------
+@dma?:	ds	1		;(@DTBL-4) DMA-Nutzung (0-DMA frei)
+@pSCB:	dw	@SCB		;(@DTBL-2) Adresse SCB
+@abank:	ds	1		;(@DTBL-1) aktuelles Bankregister
+
+;-------------------------------
+;Laufwerktabelle (immer 32 Byte)
+;-------------------------------
+@dtbl:	dtbl 	<dpha,dphb,dphc,dphd,dphe>	;Drive A>...E>
+
+
+Die  Systemzellen des BIOS-Control-Block (BCB) besitzen folgende Bedeutung:
+
+@abank - aktuelles Bankregister
+         Daó  Bankregisteò enthaelô iî Bit7-Bit´ diå Zielbanë unä iî  Bit3-
+         Bit° diå Quellbank®  Zielbanë unä Quellbanë sinä  identisch¬  wenî 
+         kein Interbanktransport (mit LDIR oder DMA) aktiv ist.
+         Fuer die Baenke gilt folgende Zuordnung:
+
+           0 - Hintergrundbank (Bildschirm, Zeichengeneratoren)
+           1 - Systembank (gebanktes BIOS, BDOS)
+           2 - Anwenderbank (TPA)
+           3 - RAM-Disk
+           4 - RAM-Disk
+           5 - RAM-Disk
+
+        Einå  Bankumschaltunç (uebeò Toò 24H© daræ nuò vorgenommeî  werden¬ 
+        wenî  deò  DMÁ nichô aktiö isô (@dma?)®  Iî jedeí Falì isô voò  deí 
+        naechsteî  Ruæ  voî BIOÓ odeò BDOÓ diå aktuellå Banë wiedeò  herzu
+        stellen.
+
+@pSCB  - Zeiger auf den System-Control-Block (SCB)
+
+@dma?  - DMA - aktiv Schalter
+         00H - DMA nicht aktiv
+         FFH - DMA aktiv (z.B FD-Arbeit)
+
+Beachte:‚   Diå  genannteî Systemzelleî duerfeî  nur  geleseî  werden®  Einå 
+           Aenderunç fuehrô zuí Systemabsturú !!!!
+
+Erreichbaò sinä dieså Systemzelleî uebeò diå BIOS-Funktioî 22®  Dieså BIOS-
+Funktioî  lieferô  diå  Adresså @DTBÌ  (Laufwerktabelle)®  Unmittelbaò  voò 
+dieseò Adresså liegô deò BIOS-Control-Blocë entsprechenä obigeò Definition.
+
+.paŠ2. Systemerweiterungsmodul LOADCS.RSX
+--------------------------------------
+
+Aâ   Betriebssystemversioî  SCĞ  3.°  V000²  stehô  diå   Systemerweiterunç 
+LOADCS.RSØ miô deí Grundpakeô SCĞ 3.° zuò Verfuegung.
+LOADCS.RSØ  ermoeglicht deî Datentransporô zwischeî  deí  Bildschirmhinter
+grundspeicheò bzw® deî ladbareî Zeichengeneratoreî unä deí Anwenderspeicheò 
+(TPA) beim PC 1715W.
+Durcè  diå  Systemerweiterunç wirä diå BDOS-Funktioî  11³  realisiert¬  diå 
+durch ein Anwenderprogramm z.B. wie folgt aufgerufen werden kann:
+
+               ld     c,113     ;BDOS Nummer
+               ld     b,n	;Kommando
+               ld     de,padr	;Pufferadresse (2K)
+               call   5
+
+n:             0 - schreiben Zeichengenerator 1 vom Puffer
+	       1 - schreiben Zeichengenerator 2 vom Puffer
+	       2 - lesen Zeichengenerator 1 nach Puffer
+               3 - lesen Zeichengenerator 2 nach Puffer
+	       4 - schreiben Hintergrundspeicher vom Puffer
+	       5 - lesen Hintergrundspeicher nach Puffer
+
+padr:          Adresse eines 2K grossen Puffers
+
+
+Dieóe  BDOS-Funktioî  kanî natuerlicè aucè voî eineò  hoehereî Programmier
+sprachå  auó gerufeî werden¬  wenî diå Registeò BÃ unä DÅ entsprechenä  ge
+ladeî werden.
+Diå  Systemerweiterunç isô nacè deò Erstellunç deó Anwenderprogrammó  durcè 
+eiî Kommando
+
+               GENCOM  prog LOADCS
+
+mit diesem zu verbinden.
+Miô  Aufruæ  deó Anwenderprogrammó 'prog§ wirä diå  Systemerweiterunç  danî 
+automatiscè  geladeî  (siehå Kommandï GENCOÍ ií "SCĞ 3.° Handbucè fueò  deî 
+Bediener"© unä nacè Beendigunç deó Anwenderprogrammó selbstaendiç entfernt.
+
+Hinweis:
+Programme¬  diå einå aelterå Versioî voî LOADCS.RSØ bereitó enthalteî (z.B® 
+GEDIT fuer SCP 3.0), muessen durch ein Kommando
+
+               GENCOM  prog LOADCS
+
+miô  deò  neueî  Versioî  voî  LOADCS.RSØ  verbundeî  werden¬  uí  auæ  deò 
+Betriebssystemversioî SCĞ 3.° V000² lauffaehiç zõ sein.
+
+
+
+                               

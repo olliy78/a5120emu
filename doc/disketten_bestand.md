@@ -218,3 +218,8 @@ Neu, gebaut von `tools/cpa_pc1715/build.py` (Wächter `cli_cpa_pc1715`), Herkunf
   `SertestKopplung.Pc1715_*`); auf den SCP-Disketten fehlt es (nur unter CP/A 1715 geprüft).
 - Weggelassen: BIOS-Quellen, PCTEST (setzt die CTC-Vektorbasis um, bricht CP/A), ROMREAD/EM256 (A5120-Hardware),
   RAF/Lochband.
+
+## 8. SCP/SCPX/CP/Z
+
+Die Systemdisketten für SCPX/SCP/CP/Z (alle sechs Maschinen) sind in `doc/scp_inventur.md` inventarisiert und seit 2026-10-09 gebaut
+(§8 dort). Der Installer enthält je Maschine × Betriebssystem eine Diskette (`packaging/build_payload.sh`, `DISKS_DEFAULT`).

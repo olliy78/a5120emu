@@ -39,23 +39,23 @@ GW=yes
 # Entscheid des Anwenders 2026-10-03, 20_prg710.md AP-P5h) samt der UDOS-Entwicklerdiskette
 # (2026-10-06, Software als gemeinfrei erklärt, doc/udos_programme.md §6).  Dazu vier PC-1715-Disketten (SCP 1715 V0006 und V0007, CP/A 1715, UDOS1715; 21_pc1715.md
 # AP-5c — gleiche Herkunftslage wie die PRG-Abzüge: Abzüge aus dem Bestand des Anwenders).
-# CP/A am A5120: EINE Diskette mit allen BIOS-Fassungen (2026-10-09, tools/cpa_a5120/); die vier
-# frueheren Einzeldisketten bleiben als Arbeitsstand in disks/ (--disks all).
+# Seit 2026-10-09: je Maschine x Betriebssystem EINE Systemdiskette, gebaut von tools/<…>/build.py
+# (cpa_a5120, cpa_pc1715, scpx_a5120, scpx_k8915, scpx_prg, scp_pc1715, scp_pc1715w; Inventur: doc/scp_inventur.md).
 # Alles aus disks/: --disks all.
 DISKS_DEFAULT="a5120_cpa_k5601_system.hfe
-scpx17_cpa780_k5601.hfe
+a5120_scpx17_k5601_system.hfe
 a5120_udos43_k5601_entwickler.hfe
-k8915scpx_boot1.hfe
+k8915_scpx8915_v24_system.hfe
 prg710_udos43_k5601_system.hfe
 prg710-1_udos43_k5601_v43_189.hfe
-prg710_scpx15_cpa640_sysprg.hfe
-prg710-1_scpx17_cpa640_boot.hfe
-pc1715_scp1715_v0006_boot.hfe
-pc1715_scp1715_v0007_cpa640_boot.hfe
+prg710_scpx15_system.hfe
+prg710-1_scpx17_system.hfe
 pc1715_cpa1715_system.hfe
-pc1715_cpz22_boot.hfe
-pc1715w_scp30_system.hfe
-udos1715_640k_pc1715_system.hfe"
+pc1715_scp1715_v0006_system.hfe
+pc1715_scp1715_v0007_system.hfe
+pc1715_cpz22_system.hfe
+udos1715_640k_pc1715_system.hfe
+pc1715w_scp30_system.hfe"
 
 usage() {
     cat <<EOF

@@ -1,0 +1,105 @@
+ wird erwartet
+ oder 
+Ausdruck
+File
+-Variable
+Konstante
+Integer
+Real
+Typ
+String
+Bezeichner
+nicht
+erlaubt
+ungueltige
+duerfen
+unvertraeglich
+Text
+sind
+Fehler
+un
+Opera
+er
+sein
+en
+01';'
+02':'
+03','
+04'('
+05')'
+06'='
+07':='
+08'['
+09']'
+10'.'
+11'..'
+12BEGIN
+13DO
+14END
+15OF
+16PROCEDUREFUNCTION
+17THEN
+18TODOWNTO
+20Boolean-
+21-
+22-
+23-
+24-
+25--
+26--
+27--
+28Point-
+29Record-
+30einfach 
+31einfach 
+32-
+33-
+34-
+35-
+36-
+37getyptes 
+40definite  Marke
+41bekannt Syntax-
+42Bezug auf bekannt 
+43Marke doppelt vwdet
+44  
+45 ausshalb d Grz
+46n- d CASE-Selector-  
+47nd-   mit dem tor
+48r  Ergebnis-
+49  lage
+50Lage d - d   
+51r Teilbeichs-
+52te Grze > obe Grze
+53resvites Wort
+54e Zuweisg
+55- uebschreitet die Zeile
+56 in -
+57 in -
+58es Zeich im 
+60 ist hi  
+61s d Point  hi  
+62Strukturite n  hi  
+63-s  hi  
+64-s d getypte s  hi  
+65getypte s  hi  
+66I/O-tion  hi  
+67s muess VAR-Paramet 
+68kompont   s 
+69 Einrichtg eines s
+70Mgbasis- ausshalb d Grz
+71s  GOTO
+72Marke  im gleich Block veinbart
+73definite  FORWARD -Prozedure()-Fktion()
+74INLINE-
+75es Vwd von ABSOLUTE
+76Ovlays   FORWARD 
+77Ovlays   im Direct-Mode vwdet wd
+90  gefd
+91wartetes Ende des Quelltextes
+92 moeglich, ein OVERLAY- zu oeffn
+93  Compil-Directive
+96vschachtelte INCLUDE-s  
+97zu viele vschachtelte WITH's
+98Memoryueblauf
+99Compilueblauf
