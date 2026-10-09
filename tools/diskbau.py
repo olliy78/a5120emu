@@ -93,9 +93,9 @@ class Diskette:
     # -- Werkzeug ---------------------------------------------------------------------------------------------
     @staticmethod
     def _lauf(tool, *args):
-        r = subprocess.run([tool, *args], capture_output=True, text=True)
+        r = subprocess.run([*tool, *args], capture_output=True, text=True)
         if r.returncode != 0:
-            sys.exit(f"Fehler: {' '.join([os.path.basename(tool), *args])}\n{r.stdout}{r.stderr}")
+            sys.exit(f"Fehler: {' '.join([os.path.basename(tool[-1]), *args])}\n{r.stdout}{r.stderr}")
         return r.stdout
 
     # -- bauen ------------------------------------------------------------------------------------------------
@@ -158,10 +158,12 @@ class Diskette:
     def main(self, soll, beschreibung=''):
         ap = argparse.ArgumentParser(description=beschreibung or self.name)
         ap.add_argument('--tool', required=True, help='k1520disktool')
+        ap.add_argument('--emulator', action='append', default=[],
+                        help='davor zu setzender Starter (Cross-Bau: wine; wiederholbar)')
         ap.add_argument('--out', default=os.path.join(REPO, 'disks'), help='Zielordner (Vorgabe: disks/)')
         ap.add_argument('--check', action='store_true', help='nur vergleichen, nichts schreiben')
         o = ap.parse_args()
-        tool = os.path.abspath(o.tool)
+        tool = [*o.emulator, os.path.abspath(o.tool)]
         if o.check:
             sys.exit(0 if self.pruefen(tool, o.out, soll) else 1)
         self.bauen(tool, o.out, soll)
@@ -171,10 +173,12 @@ def main_mehrere(paare, beschreibung=''):
     """Eine build.py, die mehrere Disketten baut: paare = [(Diskette, soll), ...]."""
     ap = argparse.ArgumentParser(description=beschreibung)
     ap.add_argument('--tool', required=True, help='k1520disktool')
+    ap.add_argument('--emulator', action='append', default=[],
+                    help='davor zu setzender Starter (Cross-Bau: wine; wiederholbar)')
     ap.add_argument('--out', default=os.path.join(REPO, 'disks'), help='Zielordner (Vorgabe: disks/)')
     ap.add_argument('--check', action='store_true', help='nur vergleichen, nichts schreiben')
     o = ap.parse_args()
-    tool = os.path.abspath(o.tool)
+    tool = [*o.emulator, os.path.abspath(o.tool)]
     if o.check:
         ok = [d.pruefen(tool, o.out, soll) for d, soll in paare]
         sys.exit(0 if all(ok) else 1)
