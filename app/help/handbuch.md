@@ -687,6 +687,25 @@ zurück (`ERROR C9`). `ERROR C2` beim Lesen heisst: kein Band im Leser. Für
 **A5120** und **K8915** liegt kein Treiber bei — die Karte steckt (E/A E0H–E7H),
 ein Programm muss sie selbst bedienen.
 
+## Rechtsklick auf das Bild: Text kopieren, Zwischenablage einfügen
+
+Das Menü der rechten Maustaste auf dem Bildschirm gibt es bei **allen** Maschinen:
+
+* **Bildschirminhalt als Text kopieren** — der Inhalt des Textbildes (80 × 24, beim PC 1715 samt
+  Statuszeile 25 Zeilen) landet als reiner Text, nicht gerendert, in der Zwischenablage; Zeilen
+  ohne Schlussleerzeichen, Attribut- und Steuerzeichen als Leerzeichen.
+* **Zwischenablage über Tastatur einfügen** — der Text aus der Zwischenablage wird Zeichen für
+  Zeichen **wie getippt** an den Gast gegeben, mit **120 Zeichen je Sekunde** (Wirtszeit): zügig, aber
+  nicht schneller, als Tastatur und Gast folgen. Zeilenenden werden zu *Return*, Tabulatoren zu *Tab*.
+  **Zeichen, für die es keine Taste gibt** (z. B. Umlaute auf einer Tastatur ohne sie), werden
+  **übersprungen**; die Statuszeile sagt danach, wie viele eingegeben und wie viele übersprungen wurden.
+  Solange das Einfügen läuft, steht an derselben Stelle **Einfügen abbrechen**. Tippt der Gast
+  zwischendurch zurück (Passwortabfrage, Menü), gilt, was er sieht — der Emulator wartet nicht auf ihn.
+  Am Originalterminal des P8000 nimmt die K7673 nur etwa **7 Zeichen je Sekunde** an (sie entprellt jede
+  Taste über 41 Abtastungen); dorthin wird entsprechend langsamer eingefügt.
+
+Tastenkürzel gibt es für beides nicht (Strg+C und Strg+V gehören dem Gast).
+
 ## Die Bildröhre einstellen
 
 *Einstellungen ▸ CRT*: Leuchtfarbe, Helligkeit, Kontrast, Wölbung, Rundung der
@@ -1074,6 +1093,16 @@ die *Betriebsart*. Was anders ist:
 * **Text kopieren** — Rechtsklick auf das Bild oder *Maschine ▸ Bildschirminhalt als Text kopieren*:
   der Inhalt des Terminalbildes (80 × 24, nicht gerendert, ohne Schlussleerzeichen) landet als reiner
   Text in der Zwischenablage. Ein Tastenkürzel gibt es nicht (Strg+C gehört dem Gast).
+  Der Rechtsklick bietet außerdem *Zwischenablage über Tastatur einfügen* (siehe *Rechtsklick auf das Bild*).
+* **Mitschrift** — *Einstellungen ▸ Allgemein ▸ Mitschrift*: ein Feld mit dem Dateinamen und daneben der
+  Ordnerknopf, der eine `.txt` wählt oder anlegt. Alles, was das Terminal **vom Rechner empfängt**, wird dort
+  als Text mitgeschrieben (Zeilenenden, Tabulatoren, druckbare Zeichen; Escape-Folgen wie Cursor setzen und
+  Löschen fallen weg). Eine vorhandene Datei wird **fortgesetzt**, nie überschrieben. Weil der Rechner
+  getippte Zeichen zurückspiegelt (Echo), steht darin auch die Eingabe — Passwörter nicht, die werden nicht
+  gespiegelt. Eine angefangene Zeile (Eingabeaufforderung) erscheint nach einer Sekunde Ruhe. Feld leeren
+  schaltet die Mitschrift aus; ist die Datei nicht beschreibbar, meldet es die Statuszeile und die
+  Mitschrift stoppt, der Emulator läuft weiter. Das Feld gilt für beide Betriebsarten (Computer mit
+  Terminal und nur Terminal) und wird in der Konfiguration gemerkt.
 * **Winchesterplatte** — im Kasten *Laufwerke* unter den Disketten. **Anschließen…** hängt ein
   vorhandenes Abbild an den WDC, **Neue Platte…** legt eines an (Typ K5504.50 u. a.; Wahl
   **Inhalt**: Vorgabe *Unformatiert, wie ein neues Laufwerk* — ohne Parametersatz, formatieren mit

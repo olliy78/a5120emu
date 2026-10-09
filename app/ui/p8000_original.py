@@ -31,12 +31,11 @@ from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMenu
 
+from app.mitschrift import Mitschrift
 from app.ui import k7673_layout as L
 from app.ui.screen_widget import ScreenWidget
 
 BILD_W, BILD_H = 640, 312
-
-KOPIEREN_TEXT = "Bildschirminhalt als Text kopieren"
 
 #: Terminalstufe (0 dunkel, 1 normal, 2 hell) → Textur-Byte des CRT-Shaders.
 _STUFEN = bytes([0, 184, 255] + [255] * 253)
@@ -51,11 +50,18 @@ class OriginalTerminalWidget(ScreenWidget):
     """Der Bildschirm des Originalterminals: CRT-Widget, das ``term_framebuffer`` zeigt und die
     Tasten annimmt."""
 
+    #: Die K7673 nimmt höchstens ≈ 6,5 Zeichen je Sekunde Maschinenzeit an (gemessen 2026-10-09: 20 Zeichen
+    #: in 3,09 s bei 4 MHz; die Matrix wird 41 Abtastungen lang entprellt, Druck UND Loslassen).  Schneller
+    #: zu füttern füllte nur die Warteschlange des Kerns — und ein Abbrechen käme ins Leere.
+    EINFUEGEN_ZEICHEN_PRO_S = 7
+
     #: Terminalzustand (``term_flags``) hat sich geändert (Bit 3 = Zeichensatz 2, Bit 4 = CAPS).
     flagsChanged = Signal(int)
     #: Zeile, Spalte, gedrückt? — jede Matrixtaste, die die Wirtstastatur an den Kern gibt
     #: (die Bildschirmtastatur zeigt sie mit).
     matrixGeaendert = Signal(int, int, bool)
+    #: Die Mitschrift ist ausgefallen (Datei nicht beschreibbar): Meldung für die Statuszeile.
+    mitschriftFehler = Signal(str)
 
     def __init__(self, parent=None, index: int = 0):
         super().__init__(parent)
@@ -68,14 +74,56 @@ class OriginalTerminalWidget(ScreenWidget):
         self._shift_physisch = False
         self._ausstehend: Dict[int, QTimer] = {}
         self._fb_w, self._fb_h = BILD_W, BILD_H
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(self._kontextmenue)
+        self._mitschrift = Mitschrift()
+        self._kern_sammelt = False             # hat der Kern der AKTUELLEN Maschine die Mitschrift an?
+
+    # ── Mitschrift der empfangenen Zeichen (Einstellungen ▸ Allgemein) ──────
+
+    def set_mitschrift(self, pfad: str) -> bool:
+        """Alles, was das Terminal vom Rechner empfängt, als Text an *pfad* anhängen (leer = aus).
+
+        Rückgabe: Mitschrift läuft.  Bei einem Fehler (Datei nicht anlegbar/beschreibbar) bleibt sie
+        aus und :attr:`mitschriftFehler` meldet es.
+        """
+        bereit = self._mitschrift.setze_pfad(pfad)
+        if self._mitschrift.fehler:
+            self.mitschriftFehler.emit(self._mitschrift.fehler)
+        self._mitschrift_am_kern()
+        return bereit
+
+    def mitschrift_abschliessen(self):
+        """Beim Beenden: noch Abholbares und die angefangene Zeile in die Datei."""
+        self._mitschrift_abholen()
+        self._mitschrift.abschliessen()
+
+    def mitschrift_pfad(self) -> str:
+        return self._mitschrift.pfad
+
+    def _mitschrift_am_kern(self):
+        """Den Kern die Bytes sammeln lassen — nur, solange eine Mitschrift läuft."""
+        an = self._mitschrift.aktiv
+        if self.emulator is not None and (an or self._kern_sammelt):
+            self.emulator.term_log_enable(an, self.index)
+        self._kern_sammelt = an and self.emulator is not None
+
+    def _mitschrift_abholen(self):
+        m = self._mitschrift
+        if not m.aktiv or self.emulator is None:
+            return
+        m.schreibe(self.emulator.term_log_read(self.index))
+        m.takt()
+        if m.fehler:                                   # Schreibfehler: Mitschrift ist ausgefallen
+            self._mitschrift_am_kern()
+            self.mitschriftFehler.emit(m.fehler)
 
     # ── Verbindung zur Maschine ──────────────────────────────────────────────
 
     def set_emulator(self, emulator):
         self._alles_loslassen()
+        self._mitschrift.abschliessen()
         super().set_emulator(emulator)
+        self._kern_sammelt = False                     # die neue Maschine weiss noch nichts davon
+        self._mitschrift_am_kern()                     # die neue Maschine sammelt von Anfang an
         self._frame, self._flags = -1, -1
         self._fb_bytes, self._daten = None, b""
         self._on_update()
@@ -83,29 +131,14 @@ class OriginalTerminalWidget(ScreenWidget):
     def set_powered(self, an: bool):
         if not an:
             self._alles_loslassen()
+            self._mitschrift_abholen()
+            self._mitschrift.abschliessen()
         super().set_powered(an)
 
     def sizeHint(self) -> QSize:
         return QSize(BILD_W + 16, BILD_H + 16)
 
-    # ── Kontextmenü ──────────────────────────────────────────────────────────
-
-    def kontextmenue_bauen(self) -> QMenu:
-        """Das Menü der rechten Maustaste: nur noch das Kopieren (Farbe: Einstellungen ▸ CRT)."""
-        menue = QMenu(self)
-        a = menue.addAction(KOPIEREN_TEXT)
-        a.setEnabled(self.emulator is not None)
-        a.triggered.connect(lambda _c=False: self.text_kopieren())
-        return menue
-
-    def _kontextmenue(self, pos):
-        self.kontextmenue_bauen().exec(self.mapToGlobal(pos))
-
-    def text_kopieren(self) -> str:
-        """Den Bildschirminhalt als reinen Text in die Zwischenablage (und zurück)."""
-        text = self.bildschirmtext()
-        QGuiApplication.clipboard().setText(text)
-        return text
+    # ── Kontextmenü: das des ScreenWidget (Text kopieren, Zwischenablage einfügen) ────────────
 
     def bildschirmtext(self) -> str:
         """Der Text des Bildes: 24 Zeilen, rechts ohne Leerzeichen, durch ``\n`` getrennt."""
@@ -121,6 +154,7 @@ class OriginalTerminalWidget(ScreenWidget):
         emu = self.emulator
         if emu is None:
             return
+        self._mitschrift_abholen()
         flags = emu.term_flags(self.index)
         if flags != self._flags:
             self._flags = flags
@@ -291,13 +325,19 @@ class OriginalTerminalWidget(ScreenWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def einfuegen(self, text: str):
-        """Text wie getippt zum Gast schicken (über die K7673: mit ihrem Tempo, ≈ 6 Zeichen/s)."""
-        if self.emulator is None or not text:
-            return
-        ascii_text = "".join(c for c in text.replace("\r\n", "\n") if c == "\n" or 0x20 <= ord(c) < 0x7F)
-        if ascii_text:
-            self.emulator.term_send(self.index, ascii_text)
+    def eingabe_druecken(self, c: str) -> bool:
+        """Ein Zeichen über die K7673 tippen (Kern: SHIFT/CTRL aus den Tabellen der Firmware);
+        ``False`` = keine Taste, übersprungen.  Gedrückt bleibt nichts — der Kern tippt komplett."""
+        if self.emulator is None:
+            return False
+        if c == "\n":
+            return bool(self.emulator.term_send(self.index, "\n"))
+        if not " " <= c <= "~":
+            return False
+        return bool(self.emulator.term_send(self.index, c))
+
+    def eingabe_loslassen(self):
+        pass
 
     def text(self) -> str:
         """Der Text des Bildes laut Kern (``term_text``) — am Originalterminal aus dem BWS."""

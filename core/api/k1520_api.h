@@ -759,6 +759,13 @@ K1520_API uint32_t k1520_term_matrix_scancode(K1520Handle h, int i, int zeile, i
 /** @brief LEDs der K7673: Bit 0 ON/OFF, 1 CAPS LOCK, 2 MODE; -1 ohne Originalterminal. */
 K1520_API int      k1520_term_leds(K1520Handle h, int i);
 
+/** @brief Mitschrift der vom Rechner EMPFANGENEN Zeichen am Originalterminal ein-/ausschalten
+ *  (Rohbytes; ausgeschaltet wird ein Rest verworfen).  false ohne Originalterminal. */
+K1520_API bool     k1520_term_log_enable(K1520Handle h, int i, bool an);
+/** @brief Holt die seit dem letzten Aufruf mitgeschriebenen Bytes nach @p buf (höchstens @p cap;
+ *  der Rest bleibt für den nächsten Aufruf).  Rückgabe = Bytezahl, 0 = nichts/ungültig. */
+K1520_API int      k1520_term_log_read(K1520Handle h, int i, char* buf, int cap);
+
 /* ─── Save-State des P8000 (P8KS v4) und des „P8000 Terminal" (P8TM v1), Entwurf 25 §10.2; andere
  * Maschinen: false.  Gesichert wird der
  * Maschinenzustand, nicht der Medieninhalt (Disketten und Platten vor dem Laden anschließen). */

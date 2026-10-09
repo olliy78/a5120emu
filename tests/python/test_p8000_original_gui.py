@@ -455,13 +455,14 @@ def test_die_vorgabe_des_p8000_hat_dieselbe_roehre_wie_die_anderen(qapp, umgebun
             assert crt[k] == v, (andere, k)
 
 
-def test_kontextmenue_hat_nur_noch_das_kopieren_und_keine_farbe_oder_zoomwahl(qapp, umgebung):
+def test_kontextmenue_hat_nur_kopieren_und_einfuegen_und_keine_farbe_oder_zoomwahl(qapp, umgebung):
     from app.ui import p8000_original as po
     assert not hasattr(po, "FARBEN") and not hasattr(po, "SKALIERUNGEN")
     t = _widget(qapp)
     assert not hasattr(t, "set_skalierung") and not hasattr(t, "set_farbe")
     menue = t.kontextmenue_bauen()
-    assert [a.text() for a in menue.actions()] == ["Bildschirminhalt als Text kopieren"]
+    assert [a.text() for a in menue.actions()] == ["Bildschirminhalt als Text kopieren",
+                                                   "Zwischenablage über Tastatur einfügen"]
     assert all(a.shortcut().isEmpty() for a in menue.actions())        # ^C gehoert dem Gast
 
 
@@ -489,6 +490,15 @@ def test_bildschirminhalt_als_text_in_die_zwischenablage(qapp, umgebung):
         assert QGuiApplication.clipboard().text() == erwartet
     finally:
         _zu(w, qapp)
+
+
+def _warte(qapp, bedingung, frist=5.0):
+    import time
+    ende = time.monotonic() + frist
+    while time.monotonic() < ende and not bedingung():
+        qapp.processEvents()
+        time.sleep(0.001)
+    assert bedingung()
 
 
 def _bis_text(w, text, budget=250_000_000, schritt=4_000_000):
@@ -788,6 +798,7 @@ def test_einfuegen_geht_ueber_term_send(qapp):
     emu = Aufzeichner()
     t = _widget(qapp, emu)
     t.einfuegen("ls\r\nÄ")
+    _warte(qapp, lambda: not t.einfuegen_laeuft())
     assert emu.gesendet == "ls\n"
 
 
@@ -1063,3 +1074,96 @@ def test_wirtstaste_wird_auf_der_bildschirmtastatur_mitgezeigt(qapp):
     assert kw._is_down(taste) and not gesendet          # hervorgehoben, aber nichts doppelt gesendet
     QTest.keyRelease(t, Qt.Key_A)
     assert not kw._is_down(taste)
+
+
+# ─── Mitschrift der empfangenen Zeichen (Einstellungen ▸ Allgemein) ──────────
+
+def test_mitschrift_feld_und_ordnerknopf_nur_mit_terminal(qapp, umgebung):
+    w = _fenster(qapp)
+    try:
+        s = w.settings_widget
+        assert s.mitschrift_edit.isVisibleTo(s) and s.mitschrift_knopf.isVisibleTo(s)
+        assert not s.mitschrift_knopf.icon().isNull()
+    finally:
+        _zu(w, qapp)
+    for programm in ("a5120", "k8915"):
+        a = _fenster(qapp, programm)
+        try:
+            assert not a.settings_widget._mitschrift_zeile.isVisibleTo(a.settings_widget)
+            assert "mitschrift" not in a._gather_config()["general"]
+        finally:
+            _zu(a, qapp)
+
+
+def test_mitschrift_schreibt_empfangenes_an_die_datei_und_haengt_an(qapp, umgebung, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    ziel = tmp_path / "sitzung"                           # ohne .txt: der Knopf ergaenzt sie
+    monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(ziel), "Textdateien (*.txt)"))
+    (tmp_path / "sitzung.txt").write_text("frueher\n", encoding="utf-8")
+    w = _fenster(qapp, modell="p8000-8-ot")
+    try:
+        w.settings_widget.mitschrift_knopf.click()
+        assert w.settings_widget.mitschrift_value() == str(ziel) + ".txt"
+        assert w.screen_widget.mitschrift_pfad() == str(ziel) + ".txt"
+        assert _bis_text(w, "Press RETURN")
+        w.screen_widget.mitschrift_abschliessen()
+        inhalt = (tmp_path / "sitzung.txt").read_text(encoding="utf-8")
+        assert inhalt.startswith("frueher\n") and "P8000 Hardwaretest U880" in inhalt
+        assert "\x1b" not in inhalt
+        # in der Konfiguration, und beim Laden wieder da
+        assert w._gather_config()["general"]["mitschrift"] == str(ziel) + ".txt"
+        # leeren = aus: der Kern sammelt nichts mehr
+        w.settings_widget.mitschrift_edit.clear()
+        w.settings_widget.mitschrift_edit.editingFinished.emit()
+        assert w.screen_widget.mitschrift_pfad() == ""
+        w.emulator.run(4_000_000)
+        assert w.emulator.term_log_read(0) == b""
+    finally:
+        _zu(w, qapp)
+
+
+def test_mitschrift_fehler_geht_in_die_statuszeile_der_emulator_laeuft_weiter(qapp, umgebung, tmp_path):
+    w = _fenster(qapp, modell="p8000-8-ot")
+    try:
+        w.settings_widget.mitschrift_edit.setText(str(tmp_path / "gibt-es-nicht" / "x.txt"))
+        w.settings_widget.mitschrift_edit.editingFinished.emit()
+        assert "Mitschrift gestoppt" in w.statusBar().currentMessage()
+        assert w.screen_widget.mitschrift_pfad() == ""
+        assert w.emulator.run(1_000_000) > 0
+    finally:
+        _zu(w, qapp)
+
+
+def test_standardansicht_zuruecksetzen_beruehrt_die_mitschrift_nicht(qapp, umgebung, tmp_path):
+    w = _fenster(qapp, modell="p8000-8-ot")
+    try:
+        ziel = str(tmp_path / "bleibt.txt")
+        w.settings_widget.mitschrift_edit.setText(ziel)
+        w.settings_widget.mitschrift_edit.editingFinished.emit()
+        w._apply_config({"general": {"speed": 1.0}, "crt": {}})     # fehlender Schluessel = nicht anfassen
+        assert w.settings_widget.mitschrift_value() == ziel
+    finally:
+        _zu(w, qapp)
+
+
+def test_einfuegen_am_originalterminal_kommt_ueber_die_k7673_an(qapp, umgebung):
+    """Gegen den echten Kern: Zwischenablage → Tasten → Echo des MON8 im Terminalbild."""
+    w = _fenster(qapp, modell="p8000-8-ot")
+    try:
+        assert _bis_text(w, "Press RETURN")
+        w.emulator.term_send(0, "\r")
+        gelaufen = 0
+        while gelaufen < 50_000_000 and not any(z.rstrip() == ">" for z in w.emulator.term_text(0).split("\n")):
+            gelaufen += w.emulator.run(50_000)
+        t = w.screen_widget
+        t.einfuegen("xyäz")                      # ä hat keine Taste: übersprungen
+        meldung = []
+        t.einfuegenFertig.connect(lambda e, u: meldung.append((e, u)))
+        gelaufen = 0
+        while gelaufen < 100_000_000 and not ("xyz" in w.emulator.term_text(0) and meldung):
+            qapp.processEvents()
+            gelaufen += w.emulator.run(50_000)
+        assert "xyz" in w.emulator.term_text(0) and meldung == [(3, 1)]
+    finally:
+        _zu(w, qapp)

@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -80,6 +81,11 @@ public:
     /// Rechner → Terminal: ein Zeichen als Rahmen (Start, 8 Daten LSB zuerst, Stopp) auf P30,
     /// frühestens jetzt, nach dem letzten Rahmen.  Rahmenabstand @p bits Bitzeiten.
     void hostByte(uint8_t b, int bits = 10);
+    /// Mitschrift: alle vom Rechner EMPFANGENEN Zeichen (Rohbytes, in Empfangsreihenfolge) werden
+    /// gesammelt, solange sie an ist; die Oberfläche holt sie ab (fremder Faden, daher gesperrt).
+    /// Aus ⇒ nichts wird gesammelt und ein Rest verworfen.  Nicht im Save-State.
+    void setMitschrift(bool an);
+    std::string holeMitschrift(size_t hoechstens = MITSCHRIFT_MAX);
     /// Rahmen, die noch nicht ganz auf der Leitung waren.
     size_t hostWartend() const;
     /// Zeit, zu der die Leitung frei wird (Ende des letzten Rahmens).
@@ -202,6 +208,10 @@ private:
     bool     srVoll_ = false, taktAlt_ = false;
     // serielle Leitung
     std::deque<Rahmen> rx_;
+    std::mutex mitschriftSperre_;
+    std::string mitschrift_;
+    bool mitschriftAn_ = false;
+    static constexpr size_t MITSCHRIFT_MAX = 1u << 20;   ///< ungeholt: mehr als 1 MiB verfällt
     uint64_t rxFrei_ = 0;
     std::deque<TerminalSendung> aus_;
     // Bild

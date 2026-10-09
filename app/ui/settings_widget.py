@@ -23,6 +23,7 @@ from typing import Callable, List
 from PySide6.QtWidgets import (
     QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QScrollArea,
     QSlider, QDoubleSpinBox, QComboBox, QCheckBox, QPushButton, QLabel, QColorDialog, QFrame,
+    QLineEdit, QToolButton, QFileDialog,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -33,6 +34,7 @@ from app import profil as profile
 from app import takt
 from app import raf
 from app import p8000_ram
+from app.ui_icons import icon
 
 
 class SettingsWidget(QWidget):
@@ -59,6 +61,8 @@ class SettingsWidget(QWidget):
     # Kästchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
     # wie bei der RAF (doc/design/23_lochstreifen.md §7).
     ptapeChanged = Signal(bool)
+    # Mitschrift des Terminals: Dateiname geändert (leer = aus).  Nur Profile mit Terminal.
+    mitschriftChanged = Signal(str)
 
     #: (Beschriftung, Faktor) — Faktor 0.0 heisst „unbegrenzt".  Die Stufen
     #: stehen in :mod:`app.takt`, damit Auswahlfeld und Statuszeile dasselbe
@@ -84,6 +88,7 @@ class SettingsWidget(QWidget):
         # Dito für RAM-Disk-Auswahl und Stand-by-Kästchen.
         self._raf_guard = False
         self._ptape_guard = False
+        self._mitschrift_guard = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -323,7 +328,60 @@ class SettingsWidget(QWidget):
         else:
             self.ptape_box.setVisible(False)       # P8000: gibt es die Karte nicht
 
+        # Mitschrift des Terminals (nur Profil mit Terminal): Dateiname + Ordnerknopf.
+        self.mitschrift_edit = QLineEdit(inner)
+        self.mitschrift_edit.setPlaceholderText("leer = keine Mitschrift")
+        self.mitschrift_edit.setClearButtonEnabled(True)
+        self.mitschrift_edit.setToolTip(
+            "Textdatei, in die alles geschrieben wird, was das Terminal vom Rechner empfängt "
+            "(ohne Steuer- und Escape-Folgen).  Eine vorhandene Datei wird fortgesetzt, nicht "
+            "überschrieben.  Weil der Rechner Eingaben zurückspiegelt (Echo), steht darin auch "
+            "die Eingabe — Passwörter nicht.")
+        self.mitschrift_edit.editingFinished.connect(self._on_mitschrift_edit)
+        self.mitschrift_knopf = QToolButton(inner)
+        self.mitschrift_knopf.setIcon(icon("folder"))
+        self.mitschrift_knopf.setToolTip("Textdatei für die Mitschrift wählen oder anlegen …")
+        self.mitschrift_knopf.clicked.connect(self._on_mitschrift_waehlen)
+        self._mitschrift_zeile = QWidget(inner)
+        zl = QHBoxLayout(self._mitschrift_zeile)
+        zl.setContentsMargins(0, 0, 0, 0)
+        zl.addWidget(self.mitschrift_edit, 1)
+        zl.addWidget(self.mitschrift_knopf)
+        if self.profil.terminal:
+            form.addRow("Mitschrift:", self._mitschrift_zeile)
+        else:
+            self._mitschrift_zeile.setVisible(False)
+
         return inner
+
+    # ── Mitschrift ───────────────────────────────────────────────────────────
+
+    def _on_mitschrift_edit(self):
+        if not self._mitschrift_guard:
+            self.mitschriftChanged.emit(self.mitschrift_edit.text().strip())
+
+    def _on_mitschrift_waehlen(self):
+        """Ordnerknopf: .txt wählen oder neu benennen — eine vorhandene wird angehängt, deshalb
+        keine Überschreibfrage."""
+        start = self.mitschrift_edit.text().strip()
+        pfad, _ = QFileDialog.getSaveFileName(
+            self, "Mitschrift in Textdatei", start, "Textdateien (*.txt);;Alle Dateien (*)",
+            options=QFileDialog.DontConfirmOverwrite)
+        if not pfad:
+            return
+        if "." not in pfad.replace("\\", "/").rsplit("/", 1)[-1]:
+            pfad += ".txt"
+        self.mitschrift_edit.setText(pfad)
+        self.mitschriftChanged.emit(pfad)
+
+    def mitschrift_value(self) -> str:
+        return self.mitschrift_edit.text().strip()
+
+    def set_mitschrift_value(self, pfad: str):
+        """Dateinamen setzen, ohne ``mitschriftChanged`` auszulösen."""
+        self._mitschrift_guard = True
+        self.mitschrift_edit.setText(pfad or "")
+        self._mitschrift_guard = False
 
     def _on_hardware_combo(self, schluessel: str):
         if self._hardware_guard:

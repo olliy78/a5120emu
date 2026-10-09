@@ -65,6 +65,7 @@ except Exception as e:
         traceback.print_exc()
     sys.exit(1)
 
+
 # ════════════════════════════════════════════════════════════════════════════
 # C-API Function Signatures
 # ════════════════════════════════════════════════════════════════════════════
@@ -349,6 +350,10 @@ _lib.k1520_term_key.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_uint32, ctyp
 _lib.k1520_term_key.restype = ctypes.c_bool
 _lib.k1520_term_send.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
 _lib.k1520_term_send.restype = ctypes.c_bool
+_lib.k1520_term_log_enable.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_bool]
+_lib.k1520_term_log_enable.restype = ctypes.c_bool
+_lib.k1520_term_log_read.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_term_log_read.restype = ctypes.c_int
 
 
 # Terminal-Bild auf einmal, Terminalzustand, Save-State (P16)
@@ -1269,6 +1274,22 @@ class K1520Emulator:
         data = text.encode("latin-1", "replace")
         return bool(_lib.k1520_term_send(self._handle, i, data, len(data)))
 
+    def term_log_enable(self, an: bool, i: int = 0) -> bool:
+        """Mitschrift der vom Rechner EMPFANGENEN Zeichen am Originalterminal ein-/ausschalten."""
+        return bool(_lib.k1520_term_log_enable(self._handle, i, an))
+
+    def term_log_read(self, i: int = 0) -> bytes:
+        """Die seit dem letzten Aufruf mitgeschriebenen Rohbytes (leer, wenn aus oder nichts neu)."""
+        buf = ctypes.create_string_buffer(65536)
+        ergebnis = bytearray()
+        while True:
+            n = _lib.k1520_term_log_read(self._handle, i, buf, len(buf))
+            if n <= 0:
+                return bytes(ergebnis)
+            ergebnis += buf.raw[:n]
+            if n < len(buf):
+                return bytes(ergebnis)
+
     #: Zellen × Bytes des Terminalbildes (``term_snapshot``).
     TERM_ZEILEN, TERM_SPALTEN = 24, 80
 
@@ -1786,8 +1807,10 @@ class K1520Emulator:
         """Read one I/O port (non-destructive where the hardware allows it)."""
         return _lib.k1520_io_read(self._handle, ctypes.c_uint8(port))
 
-    def screen_text(self) -> str:
+    def screen_text(self, zeilen: int = VRAM_ROWS) -> str:
         """Textbildschirm als 24 Zeilen à 80 Zeichen (Attributbit 7 maskiert).
+
+        ``zeilen`` > 24 nur für den PC 1715 (25. Zeile = Statuszeile); der A5120 kennt 24.
 
         Liest das K7024-Bildwiederholram direkt — unabhängig vom gerenderten
         Framebuffer und damit die robuste Art, den Bildschirminhalt zu prüfen.
@@ -1798,7 +1821,7 @@ class K1520Emulator:
             return "\n".join(
                 "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)
                         for c in range(VRAM_COLS))
-                for r in range(VRAM_ROWS))
+                for r in range(zeilen))
         chars = [chr(self.mem_read(VRAM_BASE + i) & 0x7F)
                  for i in range(VRAM_COLS * VRAM_ROWS)]
         return "\n".join("".join(chars[r * VRAM_COLS:(r + 1) * VRAM_COLS])

@@ -206,6 +206,9 @@ class MainWindow(QMainWindow):
         self.settings_widget.rafChanged.connect(self._on_raf_selected)
         self.settings_widget.rafStandbyChanged.connect(self._on_raf_standby_changed)
         self.settings_widget.ptapeChanged.connect(self._on_ptape_selected)
+        self.settings_widget.mitschriftChanged.connect(self._on_mitschrift_selected)
+        if hasattr(self.screen_widget, "mitschriftFehler"):
+            self.screen_widget.mitschriftFehler.connect(self._mitschrift_fehler)
         self.lochstreifen_widget.geaendert.connect(self._schedule_autosave)
         self.lochstreifen_widget.meldung.connect(
             lambda text: self.statusBar().showMessage(text, 5000))
@@ -336,6 +339,7 @@ class MainWindow(QMainWindow):
         # QOpenGLWidget überlebt der Kontext dank aboutToBeDestroyed-Cleanup.
         self.screen_widget.toggleFullscreenRequested.connect(self.toggle_fullscreen)
         self.screen_widget.exitFullscreenRequested.connect(self.exit_fullscreen)
+        self.screen_widget.einfuegenFertig.connect(self._einfuegen_fertig)
 
         self.screen_dock = QDockWidget("Bildschirm", self)
         self.screen_dock.setObjectName("screen_dock")
@@ -525,6 +529,13 @@ class MainWindow(QMainWindow):
         """Menü *Maschine ▸ Bildschirminhalt als Text kopieren* (wie im Kontextmenü des Bildes)."""
         self.screen_widget.text_kopieren()
         self.statusBar().showMessage("Bildschirminhalt als Text kopiert", 3000)
+
+    def _einfuegen_fertig(self, eingegeben: int, uebersprungen: int):
+        """Rückmeldung nach *Zwischenablage über Tastatur einfügen* (Rechtsklick auf das Bild)."""
+        text = f"{eingegeben} Zeichen eingegeben"
+        if uebersprungen:
+            text += f", {uebersprungen} ohne Taste übersprungen"
+        self.statusBar().showMessage(text, 5000)
 
     def _verbindung_dialog(self):
         """Menü *Maschine ▸ Verbindung zum Rechner…* (nur die Terminaleinheit hat die Leitung XB5)."""
@@ -1041,6 +1052,8 @@ class MainWindow(QMainWindow):
                 general["ausstattung"] = self.settings_widget.ausstattung_value()
         general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
         general["ptape"] = bool(self._ptape)
+        if self.profil.terminal:
+            general["mitschrift"] = self.settings_widget.mitschrift_value()
         data = config_io.build_config(
             self.screen_widget.params, general, self.drives_widget.get_mounts(),
             self._gather_window_state(), drive_types=self._drive_types,
@@ -1301,6 +1314,13 @@ class MainWindow(QMainWindow):
             # „fehlt" hier „aus" — der Neuaufbau unten in _apply_drive_types steckt sie.
             self._ptape = general.get("ptape") is True
             self.settings_widget.set_ptape_value(self._ptape)
+
+            # Mitschrift des Terminals: ein FEHLENDER Schlüssel heisst „nicht anfassen“ (die
+            # Ansichts-Vorgabe trägt keinen Dateinamen), ein leerer „aus“.
+            if self.profil.terminal and "mitschrift" in general:
+                pfad = str(general.get("mitschrift") or "")
+                self.settings_widget.set_mitschrift_value(pfad)
+                self.screen_widget.set_mitschrift(pfad)
 
             # Drive-bay configuration must be applied BEFORE the disks, so the
             # panels for the present slots exist and the machine matches.  During
@@ -1900,6 +1920,21 @@ class MainWindow(QMainWindow):
 
     # ── Lochstreifen K6022 (doc/design/23_lochstreifen.md §7) ────────────────
 
+    def _on_mitschrift_selected(self, pfad: str):
+        """Dateiname der Mitschrift geändert (Feld oder Ordnerknopf)."""
+        if not hasattr(self.screen_widget, "set_mitschrift"):
+            return
+        laeuft = self.screen_widget.set_mitschrift(pfad)
+        if laeuft:
+            self.statusBar().showMessage(f"Mitschrift läuft: {pfad}", 4000)
+        elif not pfad.strip():
+            self.statusBar().showMessage("Mitschrift aus", 3000)
+        self._schedule_autosave()
+
+    def _mitschrift_fehler(self, text: str):
+        """Die Mitschrift ist ausgefallen (Datei nicht beschreibbar) — der Emulator läuft weiter."""
+        self.statusBar().showMessage(f"Mitschrift gestoppt: {text}", 10000)
+
     def _on_ptape_selected(self, an: bool):
         """Kästchen „Lochstreifen" → neue Maschine (wie bei der RAF)."""
         an = bool(an)
@@ -2321,6 +2356,8 @@ class MainWindow(QMainWindow):
         self.run_timer.stop()
         self.status_timer.stop()
         self._lamp_timer.stop()
+        if hasattr(self.screen_widget, "mitschrift_abschliessen"):
+            self.screen_widget.mitschrift_abschliessen()
         self.screen_widget.stop_display()
         self.emulator.stop()
         # Der Fokuswächter filtert ANWENDUNGSWEIT jedes Ereignis; ein geschlossenes

@@ -549,6 +549,10 @@ Konsole am Originalterminal + drei Arbeitsplätze (tty0/tty2 über die Koppelsof
 (`P8000WegaMehrplatz.*`, `tools/dev.sh test-wega`).  **Der U880 der 8-Bit-Karte nimmt nach `EI` erst nach dem folgenden
 Befehl an** (sonst wuchs unter Last der Stapel der Koppelsoftware in den Code), **der Wandler blickt höchstens 1/16 der
 9600-Zeichenzeit voraus** (sonst MON16-Fehler 61) — beides nicht aufweichen.
+**Rechtsklick auf das Bild + Mitschrift (2026-10-09, Merkposten 55):** *Bildschirminhalt als Text kopieren* und *Zwischenablage
+über Tastatur einfügen* (120 Zeichen/s Wirtszeit, Zeichen ohne Taste entfallen; am Originalterminal nur 7/s, weil die K7673 nicht
+mehr annimmt) im Basis-`ScreenWidget` aller Maschinen; *Einstellungen ▸ Allgemein ▸ Mitschrift* (nur Terminal-Profil) hängt
+alles Empfangene als Text an eine `.txt` (`app/mitschrift.py`, Kern `k1520_term_log_*`).
 **Grundsatz:** Chips werden vollständig + systematisch getestet, Debugger unterstützen sie vollständig
 (Plan §10.11a). **Vor Arbeiten daran: `doc/merkposten/p8000.md` lesen**; Plan und Stand
 `doc/design/25_p8000.md` (§9/§9a), Quellen/Referenzen `doc/p8000/` (EPROM-Abzüge in `doc/p8000/eproms/`).

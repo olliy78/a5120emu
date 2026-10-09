@@ -32,9 +32,9 @@ next frame picks them up) to dial the look toward the real screen.
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
-from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QImage
-from PySide6.QtCore import Qt, QTimer, QSize, QElapsedTimer, Signal
+from PySide6.QtWidgets import QMenu, QWidget
+from PySide6.QtGui import QGuiApplication, QImage, QKeyEvent
+from PySide6.QtCore import QEvent, Qt, QTimer, QSize, QElapsedTimer, Signal
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtOpenGL import (
     QOpenGLShader,
@@ -44,6 +44,7 @@ from PySide6.QtOpenGL import (
     QOpenGLTexture,
 )
 
+from app.ui.einfuegen import TastenEinfueger
 from app.ui.keyboard import qt_event_to_core_key
 
 # ── Raw GL enum constants (avoid a PyOpenGL dependency) ───────────────────────
@@ -59,6 +60,14 @@ FB_HEIGHT = 288
 # Displayed aspect ratio: the real A5120 tube is 4:3, so the 640x288 (20:9)
 # framebuffer is intentionally stretched to fill a 4:3 area (letterboxed).
 DISPLAY_ASPECT = 4.0 / 3.0
+
+KOPIEREN_TEXT = "Bildschirminhalt als Text kopieren"
+EINFUEGEN_TEXT = "Zwischenablage über Tastatur einfügen"
+EINFUEGEN_ABBRECHEN_TEXT = "Einfügen abbrechen"
+
+#: Zeichen, die auf der (US-)Tastatur mit Umschalt entstehen — für das synthetische Tastenereignis
+#: beim Einfügen; die Maschine bekommt das Zeichen selbst, Umschalt ist nur das Begleitbit.
+_MIT_UMSCHALT = set('!"#$%&()*+:<>?@^_{|}~')
 
 
 def hex_to_rgb(s: str) -> Tuple[float, float, float]:
@@ -345,6 +354,8 @@ class ScreenWidget(QOpenGLWidget):
     # Kept for backward compatibility with callers/tests referencing them.
     COLS = 80
     ROWS = 24
+    #: Eingaberate von „Zwischenablage über Tastatur einfügen" (Zeichen je Wirtssekunde).
+    EINFUEGEN_ZEICHEN_PRO_S = 120
     WIDTH = FB_WIDTH
     HEIGHT = FB_HEIGHT
 
@@ -397,6 +408,14 @@ class ScreenWidget(QOpenGLWidget):
         self.setMinimumSize(320, 240)
         self.setFocusPolicy(Qt.StrongFocus)
 
+        # Rechtsklick: Text kopieren / Zwischenablage über die Tastatur einfügen.
+        self._einfueger = TastenEinfueger(self.eingabe_druecken, self.eingabe_loslassen, self,
+                                          rate=self.EINFUEGEN_ZEICHEN_PRO_S)
+        self._einfueger.fertig.connect(self._einfuegen_fertig)
+        self._eingabe_ereignis = None          # das gerade „gedrückte“ Zeichen (für das Loslassen)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._kontextmenue)
+
     # ── Public API (unchanged from the old widget) ───────────────────────────
 
     def set_emulator(self, emulator):
@@ -422,6 +441,99 @@ class ScreenWidget(QOpenGLWidget):
 
     def sizeHint(self) -> QSize:
         return QSize(640, 480)  # 4:3
+
+    # ── Rechtsklick: Text kopieren, Zwischenablage einfügen ───────────────────
+
+    #: Ein Hinweis nach dem Einfügen („N Zeichen, M übersprungen"); das Hauptfenster zeigt ihn.
+    einfuegenFertig = Signal(int, int)
+
+    def kontextmenue_bauen(self) -> QMenu:
+        menue = QMenu(self)
+        a = menue.addAction(KOPIEREN_TEXT)
+        a.setEnabled(self.emulator is not None)
+        a.triggered.connect(lambda _c=False: self.text_kopieren())
+        if self.einfuegen_laeuft():
+            b = menue.addAction(EINFUEGEN_ABBRECHEN_TEXT)
+            b.triggered.connect(lambda _c=False: self.einfuegen_abbrechen())
+        else:
+            b = menue.addAction(EINFUEGEN_TEXT)
+            b.setEnabled(self.emulator is not None and self._powered
+                         and bool(QGuiApplication.clipboard().text()))
+            b.triggered.connect(lambda _c=False: self.einfuegen(QGuiApplication.clipboard().text()))
+        return menue
+
+    def _kontextmenue(self, pos):
+        self.kontextmenue_bauen().exec(self.mapToGlobal(pos))
+
+    def bildschirmtext(self) -> str:
+        """Der Text des Bildes: Zeilen ohne Schlussleerzeichen, durch ``\n`` getrennt.
+
+        Aus dem Bildwiederholspeicher der Karte (nicht aus dem gerenderten Bild).  Attribut- und
+        Steuerzeichen werden zu Leerzeichen.  PC 1715: 25 Zeilen (mit Statuszeile), sonst 24.
+        """
+        if self.emulator is None:
+            return ""
+        pc1715 = str(getattr(self.emulator, "machine", "")).startswith("pc1715")
+        roh = self.emulator.screen_text(25) if pc1715 else self.emulator.screen_text()
+        zeilen = ["".join(c if " " <= c < "\x7f" else " " for c in z).rstrip()
+                  for z in roh.split("\n")]
+        return "\n".join(zeilen)
+
+    def text_kopieren(self) -> str:
+        """Den Bildschirminhalt als reinen Text in die Zwischenablage (und zurück)."""
+        text = self.bildschirmtext()
+        QGuiApplication.clipboard().setText(text)
+        return text
+
+    def einfuegen(self, text: str):
+        """Text zeichenweise über die Tastatur eingeben (120 Zeichen/s, Zeichen ohne Taste entfallen)."""
+        if self.emulator is None or not self._powered or not text:
+            return
+        self._einfueger.starten(text)
+
+    def einfuegen_laeuft(self) -> bool:
+        return self._einfueger.laeuft()
+
+    def einfuegen_abbrechen(self):
+        self._einfueger.abbrechen()
+
+    def _einfuegen_fertig(self, eingegeben: int, uebersprungen: int):
+        self.einfuegenFertig.emit(eingegeben, uebersprungen)
+
+    @staticmethod
+    def _zeichen_ereignis(c: str, art):
+        """Das Wirtstasten-Ereignis, das *c* erzeugt hätte; ``None`` = keine Taste dafür."""
+        if c == "\n":
+            return QKeyEvent(art, Qt.Key_Return, Qt.NoModifier, "\r")
+        if c == "\t":
+            return QKeyEvent(art, Qt.Key_Tab, Qt.NoModifier, "\t")
+        if not " " <= c <= "~":
+            return None
+        mods = Qt.ShiftModifier if (c.isupper() or c in _MIT_UMSCHALT) else Qt.NoModifier
+        return QKeyEvent(art, ord(c.upper()), mods, c)    # Qt::Key_* = ASCII (Buchstaben groß)
+
+    def eingabe_druecken(self, c: str) -> bool:
+        """Ein Zeichen wie von der Wirtstastatur drücken — durch die Bildschirmtastatur, also mit
+        derselben Abbildung wie echtes Tippen.  ``False``: keine Taste (übersprungen)."""
+        if self.emulator is None:
+            return False
+        ev = self._zeichen_ereignis(c, QEvent.KeyPress)
+        mapped = None if ev is None else self._map_key(ev, press=True)
+        if mapped is None:
+            if ev is not None and self.key_sink is not None:
+                self._map_key(self._zeichen_ereignis(c, QEvent.KeyRelease), press=False)
+            return False
+        self.emulator.key_press(*mapped)
+        self._eingabe_ereignis = self._zeichen_ereignis(c, QEvent.KeyRelease)
+        return True
+
+    def eingabe_loslassen(self):
+        ev, self._eingabe_ereignis = self._eingabe_ereignis, None
+        if ev is None or self.emulator is None:
+            return
+        mapped = self._map_key(ev, press=False)
+        if mapped is not None:
+            self.emulator.key_release(mapped[0])
 
     # ── Fullscreen (handled by the main window; see signals above) ────────────
 

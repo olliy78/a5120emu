@@ -145,7 +145,24 @@ void P8000TerminalHw::portAusgang(int port, uint8_t pegel) {
 
 // ── serielle Leitung ─────────────────────────────────────────────────────────
 
+void P8000TerminalHw::setMitschrift(bool an) {
+    std::lock_guard<std::mutex> lk(mitschriftSperre_);
+    mitschriftAn_ = an;
+    if (!an) mitschrift_.clear();
+}
+
+std::string P8000TerminalHw::holeMitschrift(size_t hoechstens) {
+    std::lock_guard<std::mutex> lk(mitschriftSperre_);
+    std::string s = mitschrift_.substr(0, hoechstens);
+    mitschrift_.erase(0, s.size());
+    return s;
+}
+
 void P8000TerminalHw::hostByte(uint8_t b, int bits) {
+    {
+        std::lock_guard<std::mutex> lk(mitschriftSperre_);
+        if (mitschriftAn_ && mitschrift_.size() < MITSCHRIFT_MAX) mitschrift_.push_back(char(b));
+    }
     const uint64_t start = std::max(rxFrei_, z8_.takte);
     rx_.push_back({start, b});
     rxFrei_ = start + uint64_t(std::max(bits, 10)) * BIT_TAKTE;

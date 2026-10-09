@@ -230,6 +230,23 @@ TEST(P8000TerminalHw, WatchdogSetztEineHaengendeFirmwareZurueck)
     EXPECT_EQ(o.watchdogResets(), 0u);
 }
 
+TEST(P8000TerminalHw, MitschriftSammeltEmpfangeneRohbytesNurSolangeSieAnIst)
+{
+    P8000TerminalHw t;
+    bereit(t);
+    t.hostByte('v');                              // vor dem Einschalten der Mitschrift: nicht erfasst
+    t.setMitschrift(true);
+    for (char c : std::string("ab\x1b" "Tc\r\n")) t.hostByte(uint8_t(c));
+    EXPECT_EQ(t.holeMitschrift(3), "ab\x1b");      // begrenzt abholen, der Rest bleibt
+    EXPECT_EQ(t.holeMitschrift(), "Tc\r\n");
+    EXPECT_EQ(t.holeMitschrift(), "");
+    t.hostByte('x');
+    t.setMitschrift(false);                       // aus ⇒ ein Rest wird verworfen
+    EXPECT_EQ(t.holeMitschrift(), "");
+    t.hostByte('y');
+    EXPECT_EQ(t.holeMitschrift(), "");
+}
+
 TEST(P8000TerminalHw, SaveStateSetztGenauFort)
 {
     P8000TerminalHw a;

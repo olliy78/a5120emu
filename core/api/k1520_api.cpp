@@ -1545,6 +1545,23 @@ const char* k1520_hd_typ_kuerzel(const char* typ) {
     return s.c_str();
 }
 
+bool k1520_term_log_enable(K1520Handle h, int i, bool an) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    if (!o) return false;
+    o->hw().setMitschrift(an);
+    return true;
+}
+
+int k1520_term_log_read(K1520Handle h, int i, char* buf, int cap) {
+    const TermSicht t = termOf(h, i);
+    auto* o = t ? t.original() : nullptr;
+    if (!o || !buf || cap <= 0) return 0;
+    const std::string s = o->hw().holeMitschrift(size_t(cap));   // der Rest bleibt für den nächsten Aufruf
+    std::memcpy(buf, s.data(), s.size());
+    return int(s.size());
+}
+
 bool k1520_term_send(K1520Handle h, int i, const char* text, int len) {
     const TermSicht t = termOf(h, i);
     if (!t) return false;
