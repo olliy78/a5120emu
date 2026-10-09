@@ -9,6 +9,7 @@
 | `bootabbild.bin` | Bootkopf (128 B): Platz 0 + F0-Platz mit den Laufwerks-Parametersätzen; CP/A 1715 hat keine Systemspuren. Aus `pc1715_cpa1715_boot_4lw`, Platz 1/2 mit E5 geleert |
 | `varianten/` | `@OS.COM` (24.05.88, 4 LW), `OS2LWUHR` (24.05.88, 2 LW, Uhr; `tests/fixtures/disks/pc1715_cpa1715_workbench.hfe`), `OS0189` (03.01.89, 3 LW; Gotek-Abzug `CPA_PC1715`) |
 | `inhalt/` | Programme (s. u.) und `LIESMICH.TXT` |
+| (Beigabe) | `SERTEST.COM` (V0.2, aus `tools/sertest/sertest.com` über `disketten_beigaben.PROGRAMME`) |
 | (gemeinsam) | `WM.HLP` deutsch aus `tools/cpa_a5120/quellen/WM_HLP_de.txt` |
 
 ## Herkunft in `inhalt/`
@@ -23,4 +24,4 @@
 
 Geprüft am 1715-Emulator (`k1520dbg --machine pc1715`): Start von STAT, POWER, DIENST, DIMA, UNERA, DISKCOPY, CLS,
 TLC (zeigt „PC 1715 - V.24“), RAMTEST, MSDOSCPA; BASIC `PRINT 7*6`; Pascal `writeln(6*7)` → 42; TP-Anfangsmenü;
-WM-Hilfe deutsch. Nicht aufgenommen: BIOS-Quellen (Fixture), PCTEST, A5120-Prüfprogramme, RAF/Lochband, BASCOM/L80.
+WM-Hilfe deutsch. Nicht aufgenommen: BIOS-Quellen (Fixture), PCTEST, A5120-Prüfprogramme (ROMREAD, EM256*), RAF/Lochband, BASCOM/L80. SERTEST V0.2 ist dabei (Drucker + V.24, `Sertest.Pc1715_*`, `SertestKopplung.Pc1715_*`).

@@ -836,6 +836,17 @@ ENDE OK`); **ST7 erledigt** (README mit Kabelbelegung und Checkliste, Merkposten
 ist nur die Geräteprüfung durch den Anwender (§14.10, §14.11).
 Arbeitspakete §14.9 (AP-ST1 … AP-ST7).
 
+**V0.2 (2026-10-09): PC 1715** (CP/A 1715, `Pc1715Machine`, Variante PC1715 — nicht 1715W) als dritte
+Maschine, Schalter `/M:P`. Hardware nach CP/A-1715-BIOS (`biopcsio.mac`, `biop.mac`: „Printer 0c/0e CTC 08,
+V24 0d/0f CTC 09") und Kern (`core/cards/pc1715_zre/`): SIO0 bei 0CH–0FH, **AB0 = Kanal, AB1 = Steuer**
+(Daten 0CH/0DH, Steuer 0EH/0FH; Datenport und Steuerport liegen 2 auseinander, an K8025/K7028 1 — die
+Tabelle trägt beide Ports, Feld +9 den Steuerport von Kanal B). Kanal A: **Sender = Drucker X4**
+(102/103/106, CTC0 K0 mit Vorteiler 256, SIO ×1 = 9600 Bd), **Empfänger = Tastatur** (Takt von der Tastatur,
+WR1/3/4 gehören ihr: SIO-A wird nie zurückgesetzt, nur WR5 und CTC0 K0 gesetzt). Kanal B = **V.24 X5**
+(CTC0 K1, ×16). φ = 2,4576 MHz wie bisher. Neu: Art `ART_DRU` (nur Senden), Teil `SENDEN`, Vektor `F0H`
+(„0f0h..0f6 frei bei PC1715", in jeder BIOS-Fassung innerhalb der Vektorsäule). Einzelheiten und
+Annahmen: `tools/sertest/README.md`; Wächter `Sertest.Pc1715_*`, `SertestKopplung.Pc1715_*`.
+
 ### 14.1 Ziel
 
 Ein Z80-Programm unter CP/M 2.2, das die seriellen Schnittstellen eines **A5120** (K8025)
@@ -845,10 +856,10 @@ gegen den Rx/Tx-Loop (§6.5) bzw. gegen einen zweiten Emulator über RFC 2217 (N
 Kreuzung §6.4). Das Programm ist damit zugleich Abnahmewerkzeug für Geräte und End-zu-End-
 Wächter der Schnittstellenemulation (SIO, CTC, Wandler, Steuerleitungen, Flusssteuerung).
 
-- Name **„Serial Test"**, Version **0.1**, Datei **`SERTEST.COM`**.
-- Kopfzeile beim Start, genau so: `Serial Test V0.1  (c) 2026 Olaf Krieger`
+- Name **„Serial Test"**, Version **0.2** (0.1 = nur A5120/K8915; Prüfling `tests/fixtures/cpm/SERTEST_V01.COM`), Datei **`SERTEST.COM`**.
+- Kopfzeile beim Start, genau so: `Serial Test V0.2  (c) 2026 Olaf Krieger`
 - Zwei Rollen: **Tester (Aktiv)** und **Gegenstelle (Passiv)**.
-- Läuft unter **CP/A (A5120)** und **SCPX 8915 V5.3 (K8915)**; benutzt vom Betriebssystem
+- Läuft unter **CP/A (A5120)**, **SCPX 8915 V5.3 (K8915)** und **CP/A 1715 (PC 1715)**; benutzt vom Betriebssystem
   nur das BDOS (Funktionen 0, 6, 9). Alles andere geht direkt auf die Hardware.
   Umgesetzt (ST1): **auch die Ausgabe zeichenweise über BDOS 6**, BDOS 9 bleibt ungenutzt —
   BDOS 9 läuft durch die Abbruchprüfung des BDOS (`conbrk`), die eine während der Ausgabe
@@ -861,7 +872,7 @@ Wächter der Schnittstellenemulation (SIO, CTC, Wandler, Steuerleitungen, Flusss
 **Gemeinsamer Anfang:**
 
 ```
-Serial Test V0.1  (c) 2026 Olaf Krieger
+Serial Test V0.2  (c) 2026 Olaf Krieger
 Rechner: A5120 (K8025)
 Schnittstellen:
   1  DFUE/V.24      SIO A33 Kanal A   V.24

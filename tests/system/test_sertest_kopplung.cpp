@@ -39,6 +39,10 @@
 #include "core/serial/wandler.h"
 #include "tests/system/sertest_hilfen.h"
 
+#ifndef K1520_SERTEST_V01
+#error "K1520_SERTEST_V01 fehlt (tests/fixtures/cpm/SERTEST_V01.COM)"
+#endif
+
 using namespace sertest;
 using k1520::serial::Betriebsart;
 using k1520::serial::Rolle;
@@ -302,7 +306,93 @@ TEST(SertestKopplung, A5120_V24_LeitungenUndEcho) {
     g.maschine().serialHub()->stopAlle();
 }
 
+/**
+ * @test SertestKopplung.Pc1715_V24_LeitungenUndEcho
+ * @brief Schneller Fall der Standardregression, V0.2: PC 1715 (Tester, Client) ↔ PC 1715
+ *        (Gegenstelle, Server) an der V.24 (SIO0 Kanal B; CP/A 1715).  Leitungen: CTS = RTS,
+ *        107 (an /DCDA) = DTR über das Nullmodemkabel des Hubs.
+ */
+TEST(SertestKopplung, Pc1715_V24_LeitungenUndEcho) {
+    SertestPc1715 t, g;
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 1, t, 1));
+    durchgang(t, 2, "V.24", g, 2, "V.24", true);
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
 #else
+
+/**
+ * @test SertestKopplung.Pc1715_DruckerSendetAnDieGegenstelle
+ * @brief PC 1715 Drucker (X4, nur Senden) → PC 1715 V.24 als Gegenstelle: SENDEN OK am
+ *        Tester (LEITUNGEN/FLUSS-* ENTFAELLT); das Ergebnis liest man an der Gegenstelle:
+ *        „Abschnitt E: 1000H Bytes“, „Abschnitt fertig, Empfangsfehler 0000H“.  Am
+ *        Wandler des Testers: 1 Weckzeichen + 6 Ankündigung + 4096 Nutzbytes.
+ */
+TEST(SertestKopplung, Pc1715_DruckerSendetAnDieGegenstelle) {
+    SertestPc1715 t, g;
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 1, t, 0));
+    Paar<SertestPc1715, SertestPc1715> p{t, g};
+    ASSERT_TRUE(t.neuerLauf());
+    g.tippe("sertest g 2\r");
+    ASSERT_TRUE(p.bisText(g, "Gegenstelle an V.24 bereit.")) << g.bild();
+    t.tippe("sertest t 1 /g /a\r");
+    ASSERT_TRUE(p.bisEnde()) << "Tester:\n" << t.bild() << "\nGegenstelle:\n" << g.bild();
+    const auto& pt = t.protokoll();
+    EXPECT_EQ(pt.wert("Drucker", "LEITUNGEN").value_or("-"), "ENTFAELLT") << pt.text();
+    EXPECT_EQ(pt.wert("Drucker", "SENDEN").value_or("-"), "OK") << pt.text() << t.bild();
+    EXPECT_EQ(pt.wert("Drucker", "FLUSS-HW").value_or("-"), "ENTFAELLT") << pt.text();
+    EXPECT_EQ(pt.wert("Drucker", "FLUSS-XON").value_or("-"), "ENTFAELLT") << pt.text();
+    EXPECT_FALSE(pt.wert("Drucker", "ECHO")) << pt.text();
+    EXPECT_EQ(pt.ende().value_or("-"), "OK") << pt.text();
+    ASSERT_TRUE(p.bis([&] {
+        for (const std::string& z : zeilenAus(g.bild()))
+            if (fertigZeile(z)) return true;
+        return false;
+    })) << "Gegenstelle:\n" << g.bild();
+    const std::string bg = g.bild();
+    EXPECT_NE(bg.find("Abschnitt E: 1000H Bytes"), std::string::npos) << bg;
+    EXPECT_NE(bg.find("Abschnitt fertig, Empfangsfehler 0000H"), std::string::npos) << bg;
+    EXPECT_EQ(bg.find("Zeitueberlauf"), std::string::npos) << bg;
+    EXPECT_EQ(bg.find("verworfen"), std::string::npos) << bg;
+    EXPECT_EQ(t.maschine().serialHub()->status(0).bytes_gesendet, 1u + 6u + 4096u);
+    ASSERT_TRUE(t.bisPrompt(kFrist)) << t.bild();
+    for (int r = 0; r < 100; ++r) g.lauf();
+    g.ctrlC();
+    ASSERT_TRUE(g.bisPrompt(kFrist)) << g.bild();
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
+/**
+ * @test SertestKopplung.Pc1715_MitA5120UndDerAltenV01_BeideRichtungen
+ * @brief Gemischte Fassungen an der V.24: PC 1715 mit V0.2 ↔ A5120 mit der BISHERIGEN V0.1
+ *        (`tests/fixtures/cpm/SERTEST_V01.COM`).  Erst 1715 Tester / A5120 Gegenstelle,
+ *        dann umgekehrt.  Beide Seiten 9600 8N1; die Leitungserwartungen sind verschieden
+ *        (1715: CTS = RTS; A5120: CTS = V106 ∧ V107), die Schrittfolge der LEITUNGEN
+ *        (00, DTR, RTS+DTR, DTR, 00) lässt beide aufgehen.
+ */
+TEST(SertestKopplung, Pc1715_MitA5120UndDerAltenV01_BeideRichtungen) {
+    SertestPc1715 p;
+    SertestA5120 a(K1520_SERTEST_V01);
+    ASSERT_TRUE(boot(p));
+    ASSERT_TRUE(boot(a));
+    ASSERT_NO_FATAL_FAILURE(koppeln(a, 0, p, 1));
+    {
+        SCOPED_TRACE("PC 1715 (V0.2) Tester, A5120 (V0.1) Gegenstelle");
+        durchgang(p, 2, "V.24", a, 1, "DFUE/V.24", true);
+    }
+    {
+        SCOPED_TRACE("A5120 (V0.1) Tester, PC 1715 (V0.2) Gegenstelle");
+        durchgang(a, 1, "DFUE/V.24", p, 2, "V.24", true);
+    }
+    a.maschine().serialHub()->stopAlle();
+    p.maschine().serialHub()->stopAlle();
+}
 
 /**
  * @test SertestKopplung.A5120_Ifss_Echo

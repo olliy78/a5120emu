@@ -214,5 +214,7 @@ Neu, gebaut von `tools/cpa_pc1715/build.py` (Wächter `cli_cpa_pc1715`), Herkunf
 - Werkzeuge wie bei der A5120-Diskette: STAT, POWER (3.08), DIENST, DISKCOPY, UNERA, DIMA, CLS, TLC, MSDOSCPA, RAMTEST,
   WM mit deutscher Hilfe, TP 3.0 (+TPDRUCK, TPINSCPA), BASIC, Turbo Pascal, `LIESMICH.TXT`; im Emulator gestartet,
   BASIC/Pascal/STAT/TP/WM-Hilfe inhaltlich geprüft.
-- Weggelassen: BIOS-Quellen, PCTEST (setzt die CTC-Vektorbasis um, bricht CP/A), SERTEST/ROMREAD/EM256 (A5120-Hardware),
+- **SERTEST V0.2** ist dabei (kennt den PC 1715: Drucker X4 nur Senden, V.24 X5; Wächter `Sertest.Pc1715_*`,
+  `SertestKopplung.Pc1715_*`); auf den SCP-Disketten fehlt es (nur unter CP/A 1715 geprüft).
+- Weggelassen: BIOS-Quellen, PCTEST (setzt die CTC-Vektorbasis um, bricht CP/A), ROMREAD/EM256 (A5120-Hardware),
   RAF/Lochband.

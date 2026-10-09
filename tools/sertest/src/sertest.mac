@@ -1,4 +1,4 @@
-	TITLE	'Serial Test V0.1'
+	TITLE	'Serial Test V0.2'
 	.Z80
 ;
 ; sertest.mac - "Serial Test": prueft die seriellen Schnittstellen eines
@@ -28,6 +28,12 @@
 ; Auto Enables, Gegenstelle bremst mit RTS) und FLUSS-XON (Gegenstelle bremst mit
 ; XOFF/XON, Nutzdaten ohne 11H/13H); Bericht 1BH 'B' m ueL ueH bzL bzH s mit dem
 ; Bremszaehler bz.
+;
+; V0.2: PC 1715 (CP/A 1715) als dritte Maschine, /M:P. SIO0 bei 0CH-0FH (AB0 =
+; Kanal, AB1 = Steuer: Datenport und Steuerport 2 auseinander - die Tabelle traegt
+; beide), Drucker = Kanal A nur Senden (ART_DRU; der Empfaenger ist die Tastatur,
+; Kanalreset verboten), V.24 = Kanal B, "DCD" der Pruefung = Leitung 107 an /DCDA.
+; Beleg: BIOP.MAC/BIOPCSIO.MAC des CP/A 1715, doc/merkposten/pc1715.md.
 ;
 ; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
 ;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
@@ -62,29 +68,34 @@ LF	EQU	0AH
 ; =============================================================================
 M_A5120	EQU	1		; A5120, ASS K8025
 M_K8915	EQU	2		; K8915, ATS K7028
+M_PC171	EQU	3		; PC 1715 (ZRE, SIO0 bei 0CH-0FH)
 
 ART_V24	EQU	0		; volle V.24 mit Steuerleitungen
 ART_IFS	EQU	1		; IFSS bzw. nur 103/104 - keine Steuerleitungen
+ART_DRU	EQU	2		; nur Senden (PC 1715 Drucker X4: 102/103/106, Empfaenger = Tastatur)
 
 ; Eintrag der Schnittstellentabelle (IF_LEN Bytes):
 ;   +0 DW  Name ('$'-terminiert)
 ;   +2 DB  Art (ART_V24/ART_IFS)
 ;   +3 DB  Datenport
-;   +4 DB  Steuerport (Kanal B: Steuerport OR 2 - an allen Bausteinen hier)
+;   +4 DB  Steuerport (K8025/K7028: Datenport+1; PC 1715: Datenport+2)
 ;   +5 DB  CTC-Kanalport des Baudtakts (0 = Takt nicht anfassen, A5120-Drucker)
 ;   +6 DB  CTC-Steuerwort fuer 9600 (wie das BIOS: CP/A 17H, SCPX 07H; ZK = 1)
 ;   +7 DB  Kanal (0 = A, 1 = B)
 ;   +8 DB  Interruptvektor: 0 = der des BIOS (WR1 B D2 "Status affects Vector"
 ;          gesetzt, Basis aus RR2 Kanal B); sonst eigener Vektor, D2 aus
-;   +9 DW  BIOS-Vorgabe des Kanals (Wiederherstellen, Format von PORTPR)
-IF_LEN	EQU	11
+;   +9 DB  Steuerport von Kanal B derselben SIO (RR2, Vektor)
+;  +10 DW  BIOS-Vorgabe des Kanals (Wiederherstellen, Format von PORTPR)
+IF_LEN	EQU	12
+IF_DAT	EQU	3
+IF_STB	EQU	9
 IF_ART	EQU	2
 IF_STE	EQU	4
 IF_CTC	EQU	5
 IF_CTW	EQU	6
 IF_KAN	EQU	7
 IF_VEK	EQU	8
-IF_VOR	EQU	9
+IF_VOR	EQU	10
 
 ; SIO
 W5_STD	EQU	0EAH		; WR5: DTR, 8 Bit, Sender ein, RTS
@@ -109,10 +120,13 @@ N_EMPF	EQU	65		; IN/RRA/JR/DJNZ (36)
 ; betreibt. Eine Tabellenzeile, "Status affects Vector" aus:
 VEK_A	EQU	0E4H		; CP/A: intvsy+04h, laut bios.mac "frei"
 VEK_K	EQU	0C0H		; SCPX 8915: FFC0H, das BIOS belegt nur FFD0-FFD7/FFF0-FFFF
+VEK_P	EQU	0F0H		; CP/A 1715: biop*.mac "0f0h..0f6 frei bei PC1715"; liegt in
+				; jeder BIOS-Fassung innerhalb der Vektorsaeule (intvl <= 0E8H)
 
 ; Erkennung: Bausteinadressen (Datenport Kanal A; Steuer A = +1, B = +3)
 SIO_K1	EQU	40H		; K8915 SIO 1 - am A5120 frei (offener Bus = FFH)
 SIO_5X	EQU	50H		; A5120 SIO A33 / K8915 SIO 2
+SIO_PA	EQU	0EH		; PC 1715 SIO0: Steuer A (0CH/0DH Daten A/B, 0EH/0FH Steuer A/B)
 SIO_A32	EQU	5CH		; A5120 SIO A32 (Tastatur) - am K8915 Spiegel der
 				; CTC 2 (K3 = Zeitgeber): dort NIE schreiben!
 
@@ -336,7 +350,12 @@ TI_E1:	LD	(HL), A
 ; PRUEFS - Pruefsteckertest (14.5): DATEN-LOOP, dann LEITUNGEN-LOOP (nur V.24,
 ; an IFSS ENTFAELLT). Die Schnittstelle ist von TESTIF programmiert (SIOPRG).
 ; -----------------------------------------------------------------------------
-PRUEFS:	CALL	DLOOP
+PRUEFS:	CALL	IFART
+	CP	ART_DRU
+	JR	NZ, PS_1
+	CALL	DLSEND			; Drucker: nur Senden, Leitung 106 = Break
+	JP	DRLOOP
+PS_1:	CALL	DLOOP
 	CALL	IFART
 	CP	ART_V24
 	LD	HL, T_LLOOP
@@ -413,6 +432,185 @@ DL_KE:	LD	HL, T_DLOOP		; FEHLER KEIN ECHO BEI xxH
 DL_H:	LD	A, 'H'
 	CALL	PUTC
 	JP	CRLF
+
+; DLSEND - DATEN-LOOP am Drucker (PC 1715, nur Senden, kein Empfangsweg): 256
+; Zeichen 00H-FFH senden, jedes mit Frist 20 ms. Prueft nur, dass der Sender
+; laeuft (Takt CTC0 K0, SIO-Tx): FEHLER SENDER BLOCKIERT, wenn der Sendepuffer
+; nicht mehr frei wird. Ein Echo gibt es hier nie.
+DLSEND:	LD	DE, M_DSLA
+	CALL	PUTS
+	XOR	A
+	LD	(DLZ), A
+DS_LP:	LD	A, (DLZ)
+	AND	0FH
+	CALL	Z, KEYPOL
+	LD	A, (DLZ)
+	LD	DE, 20
+	CALL	SENDE
+	JR	C, DS_TX
+	LD	HL, DLZ
+	INC	(HL)
+	JR	NZ, DS_LP
+	LD	DE, 5			; das letzte Zeichen ganz hinausschieben
+	CALL	WARTE
+	LD	HL, T_DLOOP
+	JP	ERGOK
+DS_TX:	LD	HL, T_DLOOP
+	LD	DE, G_SBLK
+	JP	ERGFEH
+
+; DRLOOP - LEITUNGEN-LOOP am Drucker (Pruefstecker 330-042: 103 -> 106): Break
+; aus, an, aus; CTS (RR0 D5) muss dem Break folgen (TxD "0" = EIN = CTS EIN).
+; Je Schritt eine Zeile "  Break=b  CTS=c  erwartet  CTS=c  RR0=xxH"; FEHLER
+; BREAK=b nennt den ersten abweichenden Schritt. Danach WR5 wie vorher.
+DRLOOP:	LD	DE, M_DRLA
+	CALL	PUTS
+	XOR	A
+	LD	(LLFEH), A
+	LD	(DLZ), A		; Schritt 0..2, Break = Schritt AND 1
+DR_LP:	LD	A, (DLZ)
+	AND	1
+	CALL	SETBRK
+	LD	DE, 10
+	CALL	WARTE
+	CALL	LIESLEI
+	LD	(LLRR0), A
+	LD	A, (DLZ)
+	AND	1
+	LD	B, 0
+	JR	Z, DR_E
+	LD	B, RR0_CTS
+DR_E:	LD	A, B
+	LD	(LLERW), A
+	LD	DE, M_DRBR
+	CALL	PUTS
+	LD	A, (DLZ)
+	AND	1
+	CALL	PUTBIT
+	LD	DE, M_LCTS
+	CALL	PUTS
+	LD	A, (LLRR0)
+	AND	RR0_CTS
+	CALL	PUTBIT
+	LD	DE, M_LERW
+	CALL	PUTS
+	LD	DE, M_LCTS
+	CALL	PUTS
+	LD	A, (LLERW)
+	CALL	PUTBIT
+	LD	DE, M_LRR0
+	CALL	PUTS
+	LD	A, (LLRR0)
+	CALL	PUTHEX
+	LD	A, 'H'
+	CALL	PUTC
+	LD	A, (LLRR0)
+	AND	RR0_CTS
+	LD	HL, LLERW
+	CP	(HL)
+	JR	Z, DR_OK
+	LD	DE, M_LFAL
+	CALL	PUTS
+	LD	A, (LLFEH)
+	OR	A
+	JR	NZ, DR_OK		; nur die erste merken
+	LD	A, (DLZ)
+	AND	1
+	OR	80H
+	LD	(LLFEH), A
+DR_OK:	CALL	CRLF
+	LD	HL, DLZ
+	INC	(HL)
+	LD	A, (HL)
+	CP	3
+	JP	C, DR_LP
+	XOR	A
+	CALL	SETBRK
+	LD	HL, T_LLOOP
+	LD	A, (LLFEH)
+	OR	A
+	JP	Z, ERGOK
+	AND	1
+	LD	(DLZ), A
+	LD	DE, M_EMPTY
+	CALL	ERGFE0
+	LD	DE, M_DRBR+2
+	CALL	PUTS
+	LD	A, (DLZ)
+	CALL	PUTBIT
+	JP	CRLF
+
+; SETBRK - Break (WR5 D4) setzen (A <> 0) bzw. loeschen, Rest von WR5 unveraendert.
+SETBRK:	LD	B, A
+	LD	A, (WR5S)
+	AND	0EFH
+	INC	B
+	DEC	B
+	JR	Z, SB_1
+	OR	10H
+SB_1:	LD	(WR5S), A
+	CALL	IFSTE
+	DI
+	LD	A, 5
+	OUT	(C), A
+	LD	A, (WR5S)
+	OUT	(C), A
+	EI
+	RET
+
+; DRSEND - SENDEN (14.7 am Drucker): wie ECHO, aber ohne Rueckkanal. Weckzeichen,
+; Ankuendigung 1BH 'S' 'E' nL nH s, 500 ms Pause (die Gegenstelle zeigt "Abschnitt
+; E" und beginnt zu echoen - das Echo geht ins Leere), dann 4096 Nutzbytes aus
+; dem LFSR. OK heisst nur "alles gesendet, Sender nie blockiert"; ob es ankam,
+; zeigt die Gegenstelle ("Abschnitt fertig, Empfangsfehler 0000H").
+DRSEND:	LD	DE, M_DSEN
+	CALL	PUTS
+	LD	A, 'E'
+	LD	(ECMOD), A
+	LD	HL, T_SEND
+	LD	(ECTEIL), HL
+	XOR	A			; Weckzeichen
+	CALL	SENDB
+	JR	C, DE_SB
+	LD	DE, 200
+	CALL	WARTE
+	LD	A, 'S'
+	LD	(PKBUF), A
+	LD	A, 'E'
+	LD	(PKBUF+1), A
+	LD	HL, N_ECHO
+	LD	(PKBUF+2), HL
+	LD	HL, PKBUF
+	LD	B, 4
+	CALL	SENDPK
+	JR	C, DE_SB
+	LD	DE, 500
+	CALL	WARTE
+	LD	HL, N_ECHO
+	LD	(TXN), HL
+	LD	HL, LFSR0
+	LD	(TXZ), HL
+DE_LP:	LD	A, (TXN)
+	AND	0FFH
+	CALL	Z, KEYPOL
+	LD	HL, TXZ
+	CALL	NUTZB
+	LD	DE, 1000
+	CALL	SENDE
+	JR	C, DE_SB
+	LD	HL, (TXN)
+	DEC	HL
+	LD	(TXN), HL
+	LD	A, H
+	OR	L
+	JR	NZ, DE_LP
+	LD	DE, 5
+	CALL	WARTE
+	LD	HL, T_SEND
+	JP	ERGOK
+DE_SB:	LD	HL, T_SEND
+	LD	DE, G_SBLK
+	JP	ERGFEH
 
 ; LLOOP - LEITUNGEN-LOOP (nur V.24): RTS/DTR in den Kombinationen 00, 10, 01,
 ; 11 setzen, 10 ms warten, CTS/DCD lesen und mit der Erwartungstabelle der
@@ -497,6 +695,9 @@ KOMERW:	LD	HL, LLE_A
 	CP	M_A5120
 	JR	Z, KE_1
 	LD	HL, LLE_K
+	CP	M_K8915
+	JR	Z, KE_1
+	LD	HL, LLE_P
 KE_1:	LD	A, (DLZ)
 	LD	E, A
 	LD	D, 0
@@ -561,6 +762,16 @@ PUTNIB:	AND	0FH
 ; (ECHOT) mit dem Modus der Ankuendigung: 'E', 'H', 'X'.
 ; -----------------------------------------------------------------------------
 GEGTST:	CALL	IFART
+	CP	ART_DRU
+	JR	NZ, GT_0
+	LD	HL, T_LEIT		; Drucker: ohne Rueckkanal - nur SENDEN
+	CALL	ERGENT
+	CALL	DRSEND
+	LD	HL, T_FLHW
+	CALL	ERGENT
+	LD	HL, T_FLXO
+	JP	ERGENT
+GT_0:	CALL	IFART
 	CP	ART_V24
 	JR	Z, GT_1
 	LD	HL, T_LEIT
@@ -793,9 +1004,7 @@ EC_LP:	LD	A, (ECSTE)
 	LD	HL, TXZ
 	CALL	NUTZB
 	POP	DE
-	DEC	C			; Datenport
-	OUT	(C), A
-	INC	C
+	CALL	DATOUT
 	LD	HL, (TXN)
 	DEC	HL
 	LD	(TXN), HL
@@ -805,8 +1014,7 @@ EC_RX:	IN	A, (C)
 	DI
 	CALL	FEHLR
 	EI
-	DEC	C
-	IN	A, (C)
+	CALL	DATIN
 	LD	(ECZ), A
 	LD	B, A
 	LD	A, (ECMOD)		; FLUSS-XON: 13H/11H sind Steuerung, kein Echo
@@ -1100,18 +1308,26 @@ GEGEN:
 	JR	Z, GE_INT
 	DEC	A
 	CALL	IFWAHL
-	JR	GE_LOS
+	CALL	IFART
+	CP	ART_DRU
+	JR	NZ, GE_LOS
+	LD	DE, M_NURS		; der Drucker hat keinen Empfangsweg
+	CALL	PUTS
+	JP	ENDE
 
 	; Interaktiv: die ERSTE mit J bestaetigte Schnittstelle gilt
 GE_INT:	XOR	A
 GE_LP:	LD	(IFLAUF), A
 	CALL	IFWAHL
+	CALL	IFART
+	CP	ART_DRU
+	JR	Z, GE_NX		; nur Senden: als Gegenstelle nicht anzubieten
 	LD	DE, M_TDER
 	CALL	PUTS
 	CALL	PUTNAM
 	CALL	FRAGJN
 	JR	Z, GE_LOS
-	LD	A, (IFLAUF)
+GE_NX:	LD	A, (IFLAUF)
 	INC	A
 	LD	HL, IFANZ
 	CP	(HL)
@@ -1505,11 +1721,29 @@ ERKENN:
 	JR	EK_UNB
 EK_A:	LD	C, SIO_5X
 	CALL	SIOFND
-	JR	Z, EK_UNB
+	JR	Z, EK_P
 	LD	C, SIO_A32		; nur lesen!
 	CALL	SIORR0
 	LD	A, M_A5120
 	JR	NZ, EK_EI
+	JR	EK_UNB
+	; PC 1715: weder 40H noch 50H - SIO0 bei 0EH/0FH (AB0 = Kanal, AB1 = Steuer).
+	; Erst NACH A5120/K8915: 0CH-0FH ist am A5120 die ZRE-CTC, ein Zeigerwort
+	; auf 0FH waere dort ein Steuerwort.
+EK_P:	LD	C, SIO_PA
+	IN	B, (C)			; RR0 Kanal A
+	INC	C
+	IN	A, (C)			; RR0 Kanal B
+	AND	B
+	INC	A
+	JR	Z, EK_UNB
+	LD	A, 2
+	OUT	(C), A
+	IN	A, (C)			; RR2 Kanal B
+	INC	A
+	JR	Z, EK_UNB
+	LD	A, M_PC171
+	JR	EK_EI
 EK_UNB:	XOR	A
 EK_EI:	EI
 	OR	A
@@ -1518,6 +1752,9 @@ EK_EI:	EI
 EK_SET:	LD	(MASCH), A
 	LD	HL, BES_A
 	CP	M_A5120
+	JR	Z, EK_S1
+	LD	HL, BES_P
+	CP	M_PC171
 	JR	Z, EK_S1
 	LD	HL, BES_K
 EK_S1:	LD	(MBESCH), HL
@@ -1625,6 +1862,9 @@ PA_OPT:	INC	HL
 	JR	Z, PA_M
 	LD	B, M_K8915
 	CP	'K'
+	JR	Z, PA_M
+	LD	B, M_PC171
+	CP	'P'
 	JP	NZ, PA_ERR
 PA_M:	LD	A, B
 	LD	(MVORG), A
@@ -1787,10 +2027,15 @@ SIOPRG:	LD	HL, (IFZEIG)
 	LD	A, 1
 	OUT	(C), A			; ZK 1: 2,4576 MHz / 16 = 153,6 kHz = 16 x 9600
 SP_1:	CALL	IFSTE
+	LD	A, IF_ART
+	CALL	IFB
+	CP	ART_DRU
+	JR	Z, SP_5			; PC 1715 Drucker: SIO-A gehoert der Tastatur - kein
+					; Kanalreset, WR1/3/4 bleiben, nur WR5 (Senden)
 	LD	HL, SP_TAB
 	LD	B, SP_LEN
 	OTIR
-	LD	A, 5
+SP_5:	LD	A, 5
 	OUT	(C), A
 	LD	A, (WR5S)
 	OUT	(C), A
@@ -1840,6 +2085,28 @@ LIESLEI: CALL	IFSTE
 	LD	A, 10H
 	OUT	(C), A
 	IN	A, (C)
+	LD	B, A
+	LD	A, (MASCH)
+	CP	M_PC171
+	JR	NZ, LL_FR
+	LD	A, IF_ART
+	CALL	IFB
+	CP	ART_V24
+	JR	NZ, LL_FR
+	; PC 1715 V.24: CTS (106) liegt an /CTSB, die Leitung 107 (DSR) an /DCDA, 109
+	; an /DCDB und haengt am Pruefstecker an Port 30H (nicht an DTR). "DCD" der
+	; Pruefung = 107 (RR0 von Kanal A, Bit 3) - so folgt es dem DTR der Gegenseite.
+	LD	A, B
+	AND	0FFH XOR RR0_DCD
+	LD	B, A
+	LD	C, SIO_PA		; Steuer A (0EH)
+	LD	A, 10H
+	OUT	(C), A
+	IN	A, (C)
+	AND	RR0_DCD
+	OR	B
+	LD	B, A
+LL_FR:	LD	A, B
 	EI
 	RET
 
@@ -1859,9 +2126,29 @@ SE_I:	IN	A, (C)
 	SCF
 	RET
 SE_FR:	POP	AF
-	DEC	C			; Datenport = Steuerport - 1
-	OUT	(C), A
+	CALL	DATOUT
 	OR	A
+	RET
+
+; DATOUT - A an den Datenport der gewaehlten Schnittstelle. DATIN - A vom
+; Datenport. Erhalten BC, DE, HL (Datenport und Steuerport liegen je nach
+; Maschine verschieden: K8025/K7028 +1, PC 1715 +2).
+DATOUT:	PUSH	BC
+	LD	B, A
+	LD	A, IF_DAT
+	CALL	IFB
+	LD	C, A
+	LD	A, B
+	OUT	(C), A
+	POP	BC
+	RET
+
+DATIN:	PUSH	BC
+	LD	A, IF_DAT
+	CALL	IFB
+	LD	C, A
+	IN	A, (C)
+	POP	BC
 	RET
 
 ; EMPF - DE = Frist in ms (>= 1). A = Zeichen, CY = Zeitueberlauf.
@@ -1880,8 +2167,7 @@ EP_I:	IN	A, (C)
 EP_DA:	DI
 	CALL	FEHLR
 	EI
-	DEC	C
-	IN	A, (C)
+	CALL	DATIN
 	OR	A
 	RET
 
@@ -1939,7 +2225,8 @@ FEHLR:	LD	A, 1
 EINH:	CALL	IFSTE
 	LD	A, C
 	LD	(ISRPC), A
-	OR	2			; Steuerport Kanal B
+	LD	A, IF_STB		; Steuerport Kanal B derselben SIO
+	CALL	IFB
 	LD	(ISRPB), A
 	LD	HL, 0
 	LD	(ADR1), HL
@@ -2079,9 +2366,7 @@ IG_L:	IN	A, (C)
 	RRA
 	JR	NC, IG_NZ
 	CALL	FEHLR
-	DEC	C
-	IN	A, (C)
-	INC	C
+	CALL	DATIN
 	CALL	RXREIN
 	LD	HL, (INTZ)
 	INC	HL
@@ -2260,7 +2545,7 @@ FJ_1:	PUSH	AF
 ; =============================================================================
 ; Texte (ohne Umlaute)
 ; =============================================================================
-M_KOPF:	DB	'Serial Test V0.1  (c) 2026 Olaf Krieger',CR,LF,'$'
+M_KOPF:	DB	'Serial Test V0.2  (c) 2026 Olaf Krieger',CR,LF,'$'
 M_RECH:	DB	'Rechner: $'
 M_VORG:	DB	' (vorgegeben)$'
 M_ROLLE: DB	'Tester (Aktiv) oder Gegenstelle (Passiv)? T/G $'
@@ -2284,6 +2569,7 @@ M_ENDFE: DB	'SERTEST ENDE FEHLER',CR,LF,'$'
 M_GEGH:	DB	'Gegenstelle (Passiv): Dieses Geraet mit einem passenden Kabel mit einem',CR,LF
 	DB	'anderen Rechner verbinden, auf dem Serial Test als Tester (Aktiv) laeuft.',CR,LF
 	DB	'Beenden mit Ctrl+C.',CR,LF,'$'
+M_NURS:	DB	'Der Drucker kann nur senden - als Gegenstelle nicht moeglich.',CR,LF,'$'
 M_KEINE: DB	'Keine Schnittstelle gewaehlt.',CR,LF,'$'
 M_GBER:	DB	'Gegenstelle an $'
 M_GBE2:	DB	' bereit.',CR,LF,'$'
@@ -2298,19 +2584,20 @@ M_INTA:	DB	'Empfangsinterrupt ausgeloest',CR,LF
 	DB	'SERTEST INTERRUPT OK',CR,LF,'$'
 M_ABBR:	DB	CR,LF,'Abbruch mit Ctrl+C.',CR,LF,'$'
 M_NRF:	DB	'Diese Schnittstelle gibt es nicht.',CR,LF,'$'
-M_UNBEK: DB	'Rechner nicht erkannt. Mit /M:A (A5120) oder /M:K (K8915) vorgeben.',CR,LF,'$'
+M_UNBEK: DB	'Rechner nicht erkannt. Mit /M:A (A5120), /M:K (K8915) oder /M:P (PC 1715) vorgeben.',CR,LF,'$'
 M_HILFE: DB	'Aufruf:',CR,LF
 	DB	'  SERTEST                      interaktiv',CR,LF
 	DB	'  SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n',CR,LF
 	DB	'  SERTEST G n                  Gegenstelle an Schnittstelle n',CR,LF
 	DB	'  /P nur Pruefstecker, /G nur Gegenstelle, /A ohne Rueckfragen',CR,LF
-	DB	'  /M:A bzw. /M:K  Rechner A5120 bzw. K8915 vorgeben',CR,LF,'$'
+	DB	'  /M:A, /M:K bzw. /M:P  Rechner A5120, K8915 bzw. PC 1715 vorgeben',CR,LF,'$'
 
 ; Teile der Ergebniszeilen
 T_DLOOP: DB	'DATEN-LOOP$'
 T_LLOOP: DB	'LEITUNGEN-LOOP$'
 T_LEIT:	DB	'LEITUNGEN$'
 T_ECHO:	DB	'ECHO$'
+T_SEND:	DB	'SENDEN$'
 T_FLHW:	DB	'FLUSS-HW$'
 T_FLXO:	DB	'FLUSS-XON$'
 G_NGEB:	DB	'NICHT GEBREMST$'
@@ -2329,6 +2616,10 @@ M_EMPTY: DB	'$'
 ; Pruefstecker (14.5)
 M_DLLA:	DB	'Daten-Loop: 256 Zeichen 00H-FFH ...',CR,LF,'$'
 M_LLLA:	DB	'Leitungen-Loop: RTS/DTR -> CTS/DCD',CR,LF,'$'
+M_DSLA:	DB	'Daten-Loop: 256 Zeichen 00H-FFH nur senden (kein Echo) ...',CR,LF,'$'
+M_DRLA:	DB	'Leitungen-Loop: Break -> CTS (103 -> 106)',CR,LF,'$'
+M_DRBR:	DB	'  Break=$'
+M_DSEN:	DB	'Senden: 4096 Bytes zur Gegenstelle (Ergebnis dort ablesen) ...',CR,LF,'$'
 M_LEIN:	DB	'  $'
 M_LRTS:	DB	'RTS=$'
 M_LDTR:	DB	' DTR=$'
@@ -2353,6 +2644,9 @@ M_GEB2:	DB	'H mal gebremst.',CR,LF,'$'
 ;  K8915 (K7028): CTS = V107 AND (NOT RTS OR V106), DCD = V109 - also CTS = DTR
 LLE_A:	DB	0, 0, RR0_DCD, RR0_CTS OR RR0_DCD
 LLE_K:	DB	0, 0, RR0_CTS OR RR0_DCD, RR0_CTS OR RR0_DCD
+;  PC 1715 (X5, Pruefstecker 320-032: 105->106, 108->107, 111->109): CTS = RTS,
+;  "DCD" (= 107 an /DCDA) = DTR
+LLE_P:	DB	0, RR0_CTS, RR0_DCD, RR0_CTS OR RR0_DCD
 
 ; =============================================================================
 ; Maschinenbeschreibungen: DW Name, DW Liste, DW Schnittstellentabelle, DB Anzahl
@@ -2361,15 +2655,22 @@ BES_A:	DW	N_A5120, L_A5120, IF_A
 	DB	3
 BES_K:	DW	N_K8915, L_K8915, IF_K
 	DB	3
+BES_P:	DW	N_PC171, L_PC171, IF_P
+	DB	2
 
 N_A5120: DB	'A5120 (K8025)$'
 N_K8915: DB	'K8915 (K7028)$'
+N_PC171: DB	'PC 1715 (ZRE)$'
 
 L_A5120: DB	'Schnittstellen:',CR,LF
 	DB	'  1  DFUE/V.24      SIO A33 Kanal A   V.24',CR,LF
 	DB	'  2  DFUE/IFSS      SIO A33 Kanal B   IFSS',CR,LF
 	DB	'  3  Drucker        SIO A32 Kanal B   IFSS',CR,LF
 	DB	'  -  Tastatur K7637 SIO A32 Kanal A   (Tastatur)',CR,LF,'$'
+L_PC171: DB	'Schnittstellen:',CR,LF
+	DB	'  1  Drucker        SIO0 Kanal A      nur Senden (X4)',CR,LF
+	DB	'  2  V.24           SIO0 Kanal B      V.24 (X5)',CR,LF
+	DB	'  -  Tastatur S600  SIO0 Kanal A      (Empfaenger)',CR,LF,'$'
 L_K8915: DB	'Schnittstellen:',CR,LF
 	DB	'  1  Drucker/IFSS1  SIO1 Kanal B      IFSS',CR,LF
 	DB	'  2  V.24           SIO1 Kanal A      V.24',CR,LF
@@ -2380,23 +2681,29 @@ L_K8915: DB	'Schnittstellen:',CR,LF
 ; A5120: Brueckenstellung W1:7 und X7-X8 "gezeichnet" angenommen (ZRE-CTC K0).
 ; CTC-Steuerwort wie das BIOS: CP/A 17H (bioscpb.mac), SCPX 8915 07H (DE82H/D9C7H).
 IF_A:	DW	S_A1
-	DB	ART_V24, 50H, 51H, 0CH, 17H, 0, VEK_A	; A33 A, Takt ZRE-CTC K0
+	DB	ART_V24, 50H, 51H, 0CH, 17H, 0, VEK_A, 53H	; A33 A, Takt ZRE-CTC K0
 	DW	V_A1
 	DW	S_A2
-	DB	ART_IFS, 52H, 53H, 0CH, 17H, 1, VEK_A	; A33 B, ZRE-CTC K0 (geteilt mit 1)
+	DB	ART_IFS, 52H, 53H, 0CH, 17H, 1, VEK_A, 53H	; A33 B, ZRE-CTC K0 (geteilt mit 1)
 	DW	V_A2
 	DW	S_A3
-	DB	ART_IFS, 5EH, 5FH, 0, 0, 1, VEK_A	; A32 B, Takt CTC A34 K0 = Tastatur: NICHT anfassen
+	DB	ART_IFS, 5EH, 5FH, 0, 0, 1, VEK_A, 5FH	; A32 B, Takt CTC A34 K0 = Tastatur: NICHT anfassen
 	DW	V_A3
 IF_K:	DW	S_K1
-	DB	ART_IFS, 42H, 43H, 4AH, 07H, 1, VEK_K	; SIO1 B, CTC1 K2
+	DB	ART_IFS, 42H, 43H, 4AH, 07H, 1, VEK_K, 43H	; SIO1 B, CTC1 K2
 	DW	V_K1
 	DW	S_K2
-	DB	ART_V24, 40H, 41H, 48H, 07H, 0, VEK_K	; SIO1 A, CTC1 K0 (Takt ueber D13)
+	DB	ART_V24, 40H, 41H, 48H, 07H, 0, VEK_K, 43H	; SIO1 A, CTC1 K0 (Takt ueber D13)
 	DW	V_K2
 	DW	S_K3
-	DB	ART_IFS, 50H, 51H, 58H, 07H, 0, 0	; SIO2 A, CTC2 K0; Vektor des BIOS
+	DB	ART_IFS, 50H, 51H, 58H, 07H, 0, 0, 53H	; SIO2 A, CTC2 K0; Vektor des BIOS
 	DW	V_K3
+IF_P:	DW	S_P1
+	DB	ART_DRU, 0CH, 0EH, 08H, 37H, 0, VEK_P, 0FH	; SIO0 A (Sender), CTC0 K0: Vorteiler 256, SIO x1
+	DW	V_P1
+	DW	S_P2
+	DB	ART_V24, 0DH, 0FH, 09H, 17H, 1, VEK_P, 0FH	; SIO0 B, CTC0 K1: Vorteiler 16, SIO x16
+	DW	V_P2
 
 ; BIOS-Vorgaben zum Wiederherstellen (Format PORTPR). Nichts davon ist
 ; rueckzulesen; Quellen s. Entwurf 19 Par. 14.4.
@@ -2429,6 +2736,18 @@ V_K2:	DB	1+1, 48H, 03H
 V_K3:	DB	1+1, 58H, 03H
 	DB	1+1, 51H, 18H
 	DB	1
+; CP/A 1715 (biopcpb.mac, biopcsio.mac; iobtty 01811): der Drucker (SIO0 A) wird
+; vom BIOS erst bei der ersten Benutzung programmiert - nur CTC0 K0 (37H, ZK 1 =
+; 9600 Bd bei SIO x1) und WR5 EAH (8 Bit, Tx ein, DTR + RTS); WR1/3/4 gehoeren
+; der Tastatur und werden nie angefasst. V.24 (UC1:, iobuc1 01811) wird nur in
+; einer BIOS-Fassung mit UC1: im Interrupt betrieben; hier Kanalreset + CTC-Reset
+; (Zustand nach dem Kaltstart) - ein laufender UC1:-Treiber wird abgeloest.
+V_P1:	DB	2+1, 08H, 37H, 01H
+	DB	2+1, 0EH, 5, 0EAH
+	DB	1
+V_P2:	DB	1+1, 09H, 03H
+	DB	1+1, 0FH, 18H
+	DB	1
 
 S_A1:	DB	'DFUE/V.24$'
 S_A2:	DB	'DFUE/IFSS$'
@@ -2436,6 +2755,8 @@ S_A3:	DB	'Drucker$'
 S_K1:	DB	'Drucker/IFSS1$'
 S_K2:	DB	'V.24$'
 S_K3:	DB	'DFUE/IFSS2$'
+S_P1:	DB	'Drucker$'
+S_P2:	DB	'V.24$'
 
 ; =============================================================================
 ; Variablen (beim Start geloescht)

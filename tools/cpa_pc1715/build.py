@@ -65,6 +65,8 @@ def soll():
         for n in sorted(os.listdir(os.path.join(HIER, ordner))):
             inhalt[n] = _lies(HIER, ordner, n)
     inhalt[LIESMICH] = a5120._cpm_text(inhalt[LIESMICH])
+    # SERTEST V0.2 kennt den PC 1715 (unter CP/A 1715 geprueft: Sertest.Pc1715_*)
+    inhalt['SERTEST.COM'] = _lies(a5120.beigaben.PROGRAMME['SERTEST.COM'])
     inhalt['WM.HLP'] = a5120._wm_hlp()
     return inhalt
 

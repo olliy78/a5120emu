@@ -122,13 +122,25 @@ Konfigurationen sind über den NAMEN verschlüsselt; alte Namen bildet
 ## SERTEST — Prüfprogramm für Gerät und Emulator (Entwurf 19 §14)
 
 `tools/sertest/` (`src/sertest.mac`, `build.py`, eingecheckte `sertest.com`, README mit
-Bedienung, Kabelbelegung und **Checkliste der Geräteprüfung**). Z80 unter CP/A und
-SCPX 8915: Prüfstecker (DATEN-LOOP, LEITUNGEN-LOOP) und Test gegen eine zweite Maschine
+Bedienung, Kabelbelegung und **Checkliste der Geräteprüfung**). Z80 unter CP/A, CP/A 1715 und
+SCPX 8915 (**V0.2** seit 2026-10-09, PC 1715 dazu): Prüfstecker (DATEN-LOOP, LEITUNGEN-LOOP) und Test gegen eine zweite Maschine
 (LEITUNGEN, ECHO, FLUSS-HW, FLUSS-XON). Wächter `Sertest.*` (eine Maschine, Loop),
 `SertestKopplung.*` (zwei Maschinen über RFC 2217; ein Fall in `tools/dev.sh test`, die
 übrigen in `test-format`), `cli_sertest_com_passt_zur_quelle` (`build.py --check`, ohne
 CPA_Workbench übersprungen).
 
+- **PC 1715 (V0.2)** — fünf Dinge, die man nicht aufweichen darf: **(1)** Kanal A der SIO0 ist
+  Drucker-Sender **und** Tastatur-Empfänger: der Drucker (`ART_DRU`) bekommt **nie** einen Kanalreset,
+  nur WR5 (EAH) und CTC0 K0 (37H/01H); `AUFR` stellt genau diese BIOS-Werte her. Gegenstelle am Drucker
+  gibt es nicht (kein Empfangsweg). **(2)** Port-Tabelle trägt Daten- UND Steuerport (1715: +2,
+  K8025/K7028: +1) — nirgends `DEC C`/`OR 2` zurückbauen (`DATIN`/`DATOUT`, Feld `IF_STB`).
+  **(3)** Leitungen: CTS = Leitung 106 (`/CTSB`), „DCD" der Prüfung = **107 an `/DCDA`** (RR0 von Kanal
+  A, Bit 3 — `LIESLEI` bildet das), nicht 109 (die hängt am Prüfstecker an Port 30H, nicht an DTR);
+  Erwartung `LLE_P`: CTS = RTS, DCD = DTR. **(4)** Vektor `F0H`, V.24-Vorgabe nach dem Test =
+  Kanalreset + CTC-Reset (kein WR1/WR2 des BIOS-UC1: — ohne `iobuc1` wäre ein Interrupt auf leerem
+  Eintrag ein Sprung nach 0000H). **(5)** Maschinenerkennung des 1715 erst NACH A5120/K8915 (0CH–0FH ist
+  am A5120 die ZRE-CTC, ein Zeigerwort auf 0FH wäre dort ein Steuerwort). Wächter `Sertest.Pc1715_*`,
+  `SertestKopplung.Pc1715_*` (Kopplung 1715 ↔ 1715, Drucker → V.24, 1715 V0.2 ↔ A5120 V0.1).
 - **Ergebniszeilen sind ein Vertrag** (`SERTEST <name> <TEIL>: OK|FEHLER …|ENTFAELLT`,
   `SERTEST ENDE …`); gelesen von `SertestProtokoll` (`tests/system/sertest_hilfen.h`), das
   eine Zeile erst nach 500 000 Takten ununterbrochen im Bild gelten lässt — zeichenweise

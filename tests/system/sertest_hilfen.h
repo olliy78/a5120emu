@@ -4,7 +4,7 @@
  *        SERTEST.COM, Kaltstart bis zum Prompt, Bedienung über die Tastatur und das
  *        Einsammeln der Ergebniszeilen (§14.3) — für A5120 (CP/A) und K8915 (SCPX 8915).
  *
- * Beide Maschinen haben dieselbe Oberfläche (@ref SertestA5120, @ref SertestK8915), ein
+ * Alle Maschinen (auch @ref SertestPc1715, PC 1715 mit CP/A 1715, V0.2) haben dieselbe Oberfläche (@ref SertestA5120, @ref SertestK8915), ein
  * Fall kann also als Schablone über beide laufen:
  *
  * ```
@@ -49,10 +49,12 @@
 #include "core/filesystem/fs_catalog.h"
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
+#include "core/machines/pc1715/pc1715.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
 #include "tests/support/fixtures.h"
 #include "tests/support/keyboard.h"
 #include "tests/support/machine_run.h"
+#include "tests/support/pc1715_input.h"
 #include "tests/support/screen.h"
 #include "tests/system/k8915_bedienung.h"
 
@@ -68,10 +70,11 @@ inline std::string comPfad() { return K1520_SERTEST_COM; }
 /// Systemdisketten der beiden Maschinen (Fixtures, immer als TempDisk benutzt).
 inline constexpr const char* kDisketteA5120 = "cpa_cpa780_k5601_noclock.img";
 inline constexpr const char* kDisketteK8915 = "k8915scpx_cpa800_k5601_bios55k-disk900.hfe";
+inline constexpr const char* kDisketteP1715 = "pc1715_cpa1715_boot_4lw.hfe";
 
 /// `SERTEST.COM` mit dem k1520DiskTool (DiskVolume) auf die Diskette @p pfad schreiben.
 /// Dateisystem wird erkannt (CP/A bzw. SCPX 8915).  Liefert leer bei Erfolg, sonst den Grund.
-inline std::string aufspielen(const std::string& pfad) {
+inline std::string aufspielen(const std::string& pfad, const std::string& com = "") {
     std::string f;
     static const FormatCatalog formate = FormatCatalog::loadDefault(&f);
     static const FsCatalog     fs      = FsCatalog::loadDefault(formate, &f);
@@ -81,7 +84,7 @@ inline std::string aufspielen(const std::string& pfad) {
     v->setBackup(false);   // TempDisk räumt nur die Kopie selbst weg, kein `…~` liegen lassen
     TransferOptions o;
     o.overwrite = true;
-    if (!v->insert(comPfad(), FileRef::parse("SERTEST.COM"), o)) return "insert: " + v->lastError();
+    if (!v->insert(com.empty() ? comPfad() : com, FileRef::parse("SERTEST.COM"), o)) return "insert: " + v->lastError();
     if (!v->flush()) return "flush: " + v->lastError();
     return {};
 }
@@ -296,9 +299,10 @@ private:
  */
 class SertestA5120 : public SertestBasis<SertestA5120> {
 public:
-    explicit SertestA5120(const std::string& fixture = kDisketteA5120)
+    /// @p com leer = die eingecheckte V0.2, sonst ein anderes SERTEST.COM (z. B. V0.1).
+    explicit SertestA5120(const std::string& com = "", const std::string& fixture = kDisketteA5120)
         : disk_(fixture, "sertest_a5120_" + fixture) {
-        fehler_ = aufspielen(disk_.path());
+        fehler_ = aufspielen(disk_.path(), com);
         if (fehler_.empty() && !m_.mountDisk(0, disk_.path(), "cpa780", false))
             fehler_ = "mountDisk: " + m_.lastError();
     }
@@ -357,6 +361,50 @@ public:
 private:
     k1520test::TempDisk disk_;
     K8915Machine        m_;
+    std::string         fehler_;
+};
+
+/**
+ * @brief PC 1715 mit CP/A 1715 (`pc1715_cpa1715_boot_4lw.hfe`, BIOS 24.05.88) und SERTEST.COM
+ * auf A:.  Tastatur über die Tastatur1715 (`pc1715_input.h`: je Taste 150 000 Takte
+ * gedrückt + 100 000 Pause), das Bild ohne die CP/A-Statuszeile (Zeile 25).
+ * Die Maschine wird mit der Programmversion (@p fixture) der Wahl aufgespielt; SERTEST.COM
+ * ist wahlweise die eingecheckte V0.2 oder eine andere (@p com, z. B. die alte V0.1).
+ */
+class SertestPc1715 : public SertestBasis<SertestPc1715> {
+public:
+    explicit SertestPc1715(const std::string& com = "", const std::string& fixture = kDisketteP1715)
+        : disk_(fixture, "sertest_pc1715_" + fixture) {
+        fehler_ = aufspielen(disk_.path(), com);
+        if (fehler_.empty() && !m_.mountDisk(0, disk_.path(), m_.defaultFormatName(0), false))
+            fehler_ = "mountDisk: " + m_.lastError();
+    }
+    const std::string& fehler() const { return fehler_; }
+
+    bool kaltstart(long long frist = 200'000'000) {
+        if (!fehler_.empty()) return false;
+        m_.powerOn();
+        return bisPrompt(frist);
+    }
+    void tippe(const std::string& s) { k1520test::pc1715::tippe(m_, s); }
+    void ctrlC() {
+        m_.keyPress('c', false, true);
+        k1520test::pc1715::laufe(m_, k1520test::pc1715::kHalten);
+        m_.keyRelease('c');
+        k1520test::pc1715::laufe(m_, k1520test::pc1715::kPause);
+    }
+    std::string bild() {
+        std::string s;
+        for (int r = 0; r < 24; ++r) s += k1520test::pc1715::zeile(m_, r) + "\n";
+        return s;
+    }
+    long long schritt() { return m_.run(static_cast<int>(k1520test::pc1715::kBatch)); }
+    bool tastaturLeer() { return true; }
+    Pc1715Machine& maschine() { return m_; }
+
+private:
+    k1520test::TempDisk disk_;
+    Pc1715Machine       m_;
     std::string         fehler_;
 };
 

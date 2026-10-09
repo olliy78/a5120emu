@@ -41,6 +41,9 @@ SYSTEMPROGRAMME
   TLC               Terminalprogramm fuer die V.24-Schnittstelle (TLC.PAR,
                     TLCX.PMA); zeigt "PC 1715 - V.24", 9600 Baud
   RAMTEST           Speichertest
+  SERTEST           Serial Test V0.2: prueft Drucker (X4, nur Senden) und V.24
+                    (X5) mit Pruefstecker oder gegen einen zweiten Rechner;
+                    "SERTEST" ohne Argumente, Ctrl+C beendet
 
 TEXTVERARBEITUNG
 ----------------

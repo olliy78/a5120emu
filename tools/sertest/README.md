@@ -1,12 +1,17 @@
 # sertest — Serial Test (`SERTEST.COM`)
 
 Z80-Programm unter CP/M 2.2, das die seriellen Schnittstellen eines **A5120**
-(ASS K8025, CP/A) und eines **K8915** (ATS K7028, SCPX 8915 V5.3) prüft — am
+(ASS K8025, CP/A), eines **K8915** (ATS K7028, SCPX 8915 V5.3) und eines **PC 1715**
+(ZRE, CP/A 1715) prüft — am
 Gerät mit Prüfstecker bzw. Nullmodemkabel, im Emulator gegen den Rx/Tx-Loop bzw.
 einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md`
 **§14**.
 
-> **Stand V0.1, fertig (AP-ST1 … ST7, 2026-10-01):** Kommandozeile, Maschinenerkennung,
+> **V0.2 (2026-10-09): PC 1715 dazu** (Drucker X4 nur Senden, V.24 X5; Schalter `/M:P`,
+> Abschnitt [PC 1715](#pc-1715-ab-v02)). V0.1 (A5120/K8915) bleibt als Prüfling
+> `tests/fixtures/cpm/SERTEST_V01.COM` im Baum; sie kennt den 1715 nicht (`Rechner nicht erkannt`).
+>
+> **Stand, fertig (V0.1: AP-ST1 … ST7, 2026-10-01):** Kommandozeile, Maschinenerkennung,
 > SIO-/CTC-Schicht (9600 8N1 für die Dauer der Prüfung, danach BIOS-Vorgabe),
 > **Prüfsteckertest** (DATEN-LOOP, LEITUNGEN-LOOP) und **Test mit Gegenstelle** (LEITUNGEN,
 > ECHO, FLUSS-HW, FLUSS-XON). Im Emulator vollständig grün (`Sertest.*`,
@@ -15,7 +20,8 @@ einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md
 > *Annahmen* und *Kabel* als **[bestätigen]**.
 
 **Wo es liegt:** `SERTEST.COM` steht auf den Bootdisketten in `disks/` — allen
-`cpa_cpa780_k5601_system.hfe` (A5120, CP/A) und `k8915scpx_boot1.hfe` (K8915, SCPX 8915). Die CP/A-Disketten
+`cpa_cpa780_k5601_system.hfe` (A5120, CP/A), `k8915scpx_boot1.hfe` (K8915, SCPX 8915) und
+`pc1715_cpa1715_system.hfe` (PC 1715, CP/A 1715; gebaut von `tools/cpa_pc1715/build.py`). Die CP/A-Disketten
 (Auswahl) und die K8915-Diskette gehen als Beispieldisketten ins Paket und landen beim
 ersten Start im Diskettenordner des Anwenders. Am Gerät: Diskette mit `gw write` schreiben, booten, `SERTEST`.
 
@@ -31,7 +37,7 @@ SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n (Nummer aus der Liste)
 SERTEST G n                  Gegenstelle an Schnittstelle n
 /P nur Prüfsteckertest, /G nur Gegenstellentest (ohne beide: beide)
 /A automatisch: keine Rückfragen, kein „beliebige Taste"
-/M:A bzw. /M:K   Rechner A5120 bzw. K8915 vorgeben (überstimmt die Erkennung)
+/M:A, /M:K bzw. /M:P   Rechner A5120, K8915 bzw. PC 1715 vorgeben (überstimmt die Erkennung)
 ```
 
 Fehlerhafte Kommandozeile → Kurzhilfe, Ende. **Ctrl+C** beendet an jeder Stelle
@@ -40,7 +46,7 @@ Fehlerhafte Kommandozeile → Kurzhilfe, Ende. **Ctrl+C** beendet an jeder Stell
 Beim Start:
 
 ```
-Serial Test V0.1  (c) 2026 Olaf Krieger
+Serial Test V0.2  (c) 2026 Olaf Krieger
 Rechner: A5120 (K8025)
 Schnittstellen:
   1  DFUE/V.24      SIO A33 Kanal A   V.24
@@ -69,7 +75,7 @@ SERTEST ENDE OK | SERTEST ENDE FEHLER
 SERTEST INTERRUPT OK                  (nur Gegenstelle, einmal beim ersten Empfangsinterrupt)
 ```
 
-`<TEIL>` ∈ `DATEN-LOOP`, `LEITUNGEN-LOOP`, `LEITUNGEN`, `ECHO`, `FLUSS-HW`, `FLUSS-XON`;
+`<TEIL>` ∈ `DATEN-LOOP`, `LEITUNGEN-LOOP`, `LEITUNGEN`, `ECHO`, `FLUSS-HW`, `FLUSS-XON`, `SENDEN` (nur PC-1715-Drucker, ersetzt ECHO);
 `ENTFAELLT` heißt „gilt für diese Schnittstelle nicht" (Leitungen und FLUSS-HW an IFSS).
 `<name>` ist der Name aus der Liste (`DFUE/V.24`, `Drucker/IFSS1`, …). Wer an diesem
 Format etwas ändert, ändert `tests/system/sertest_hilfen.h` (`SertestProtokoll`) mit.
@@ -185,11 +191,74 @@ oder B ≠ FFH ist **und** RR2 über Kanal B (Registerzeiger 2) ≠ FFH liefert.
 - **A5120:** 40H–43H offener Bus (FFH), SIO bei 50H (A33), und RR0 bei 5DH/5FH
   (A32) ≠ FFH — dort wird **nur gelesen**: am K8915 ist 5CH–5FH ein Spiegel der
   CTC 2, ein Zeigerwort wäre dort ein Vektor-/Steuerwort.
-- sonst: `Rechner nicht erkannt`, Abhilfe `/M:A` bzw. `/M:K`.
+- **PC 1715:** weder 40H noch 50H eine SIO, aber RR0 von Kanal A **und** B bei 0EH/0FH ≠ FFH und
+  RR2 über Kanal B (0FH) ≠ FFH. Diese Prüfung läuft **erst nach** den beiden anderen: 0CH–0FH ist am
+  A5120 die ZRE-CTC, ein Zeigerwort auf 0FH wäre dort ein Steuerwort. (Am 1715W liegt 40H/41H der FDC-
+  Zugriff der DMA — der 1715W ist nicht Gegenstand.)
+- sonst: `Rechner nicht erkannt`, Abhilfe `/M:A`, `/M:K` bzw. `/M:P`.
 
 **[bestätigen]** am Gerät: ob an einem A5120 in jeder Ausbaustufe 40H–43H frei ist, und
 ob die nicht vom BIOS benutzte SIO 1 des K8915 einen Vektor ≠ FFH trägt (RR2 ist dort nie
 programmiert — sonst `/M:K`). Checkliste Schritt 1.
+
+## PC 1715 (ab V0.2)
+
+Belege: CP/A-1715-BIOS (`BIOP.MAC` „Ausgang PC1715: Printer 0c 0e CTC 08/08 nur DTR senden, V24 0d 0f CTC 09/09",
+`BIOPCSIO.MAC`, `BIOPKBDC.MAC`, Vektorbelegung in `BIOPNUC.MAC`: „0c0h..0cfh frei", „0f0h..0f6 frei bei PC1715"),
+`doc/merkposten/pc1715.md` (Schnittstellen AP-4a), Kern `core/cards/pc1715_zre/pc1715_zre.cpp`.
+
+```
+Serial Test V0.2  (c) 2026 Olaf Krieger
+Rechner: PC 1715 (ZRE)
+Schnittstellen:
+  1  Drucker        SIO0 Kanal A      nur Senden (X4)
+  2  V.24           SIO0 Kanal B      V.24 (X5)
+  -  Tastatur S600  SIO0 Kanal A      (Empfaenger)
+```
+
+- **SIO0 bei 0CH–0FH, AB0 = Kanal, AB1 = Steuer:** Daten A/B = 0CH/0DH, Steuer A/B = 0EH/0FH (an K8025/K7028
+  liegt der Steuerport 1 über dem Datenport, hier 2). Die Schnittstellentabelle trägt deshalb beide Ports
+  und das Feld „Steuerport Kanal B" (RR2).
+- **Drucker (SIO0 Kanal A, nur Sender):** Leitungen 102/103/106 (EFS10). Der Empfänger von Kanal A ist die
+  Tastatur und bekommt Takt und Format von ihr (WR4 = x1, WR3, WR1 = 0) — SERTEST fasst sie **nie** an,
+  setzt keinen Kanalreset und programmiert nur **CTC0 K0** (37H, ZK 1: 2,4576 MHz / 256 = 9600 Bd als
+  Sendetakt bei SIO ×1, wie `biopcsio`) und **WR5** (EAH). Nach dem Test dieselben BIOS-Werte
+  (`V_P1`); das BIOS programmiert den Drucker erst bei der ersten Benutzung genauso. Teile:
+  - *Prüfstecker* (330-042: 103 → 106): **DATEN-LOOP** = 256 Zeichen 00H–FFH **nur senden** (es gibt kein
+    Echo; OK heißt: der Sender läuft, Sendepuffer wird immer wieder frei; sonst `FEHLER SENDER BLOCKIERT`).
+    **LEITUNGEN-LOOP** = Break aus, an, aus; CTS (RR0 D5) muss folgen (TxD „0" = EIN):
+    `  Break=1  CTS=1  erwartet  CTS=1  RR0=xxH`, Fehler `FEHLER Break=b`.
+  - *Gegenstelle*: **LEITUNGEN**, **FLUSS-HW**, **FLUSS-XON** `ENTFAELLT`; statt ECHO **SENDEN**:
+    Weckzeichen, Ankündigung `1BH 'S' 'E' …`, 500 ms Pause, 4096 Nutzbytes. Es kommt nichts zurück —
+    `OK` heißt nur „vollständig gesendet, Sender nie blockiert". **Das Ergebnis liest man an der
+    Gegenstelle** (V.24 eines zweiten Rechners, `SERTEST G 2`): `Abschnitt E: 1000H Bytes` und
+    `Abschnitt fertig, Empfangsfehler 0000H`.
+  - `SERTEST G 1` (Drucker als Gegenstelle) gibt es nicht: `Der Drucker kann nur senden …`.
+- **V.24 (SIO0 Kanal B):** Takt CTC0 K1 (09H, 17H, ZK 1 → ×16 = 9600 Bd), Leitungen 105 → RTS (`WR5 D1`),
+  108 → DTR (`WR5 D7`), 106 → `/CTSB` (RR0 D5), **107 → `/DCDA`** (RR0 D3 von **Kanal A**, wird nur gelesen
+  und mit dem Kommando „Reset Ext/Status" — wie es das BIOS beim Drucker-DTR-Verfahren tut), 109 → `/DCDB`.
+  Als „DCD" der Prüfung gilt die **107**, weil sie dem DTR der Gegenseite folgt (am Hub/Nullmodemkabel wie am
+  Prüfstecker 320-032: 108 → 107). Die 109 hängt am Prüfstecker an der Leitung 111 (Port 30H), nicht am DTR.
+  Erwartung (RTS, DTR) → (CTS, DCD): 00 → 0 0, RTS → 1 0, DTR → 0 1, beide → 1 1 — **CTS = RTS**, anders als
+  am A5120 (CTS = RTS ∧ DTR). Die LEITUNGEN-Schrittfolge (00, DTR, RTS+DTR, DTR, 00) und die Spiegelung der
+  Gegenstelle (CTS → RTS, DCD → DTR) gehen an beiden Maschinen auf; gemischt geprüft (unten).
+- **Interrupt der Gegenstelle:** eigener Vektor **F0H**, „Status affects Vector" aus (WR2 B := F0H) — BIOS-Beleg
+  „0f0h..0f6 frei bei PC1715", liegt in jeder Fassung (`intvl` ≤ E8H) innerhalb der Vektorsäule (I = F7H).
+  Die Tastatur bleibt unberührt (das BIOS fragt sie im 25-ms-Takt per Polling ab, WR1 A = 0).
+- **Wiederherstellen:** V.24 = Kanalreset B + CTC0 K1 Reset (Zustand nach dem Kaltstart; kein Eingriff in
+  UC1:-Interruptwerte, damit eine BIOS-Fassung ohne UC1: nicht auf einen leeren Vektor läuft — ein laufender
+  UC1:-Treiber wird abgelöst). Drucker siehe oben.
+- **Takt:** φ = 2,4576 MHz (CTC0 K0 mit Vorteiler 256 und ZK 1 ergibt genau 9600 Bd — daran ist es im BIOS
+  ablesbar), die Zählschleifen gelten unverändert (Fristen sind Mindestzeiten; das 25-ms-Timer-Interrupt des BIOS
+  verlängert sie nur).
+- **Geprüft** im Emulator unter CP/A 1715 24.05.88 (`@OS.COM`, `tests/fixtures/disks/pc1715_cpa1715_boot_4lw.hfe`)
+  und `OS0189` (03.01.89: Liste, Gegenstelle bereit). `OS2LWUHR` nicht einzeln. SCP 1715 / UDOS 1715 / 1715W
+  sind nicht Gegenstand.
+- **Kabel (Entwurf, [bestätigen]):** X5 V.24 (EFS26) wie üblich: Prüfstecker **320-032** (103 → 104, 105 → 106,
+  108 → 107, 111 → 109 — so prüft auch PCTEST), Nullmodem 103 ↔ 104, 105 → 106, 108 → 107 (+ 109) gekreuzt,
+  102 ↔ 102. X4 Drucker (EFS10, 102/103/106): Prüfstecker **330-042** (103 → 106). Für SENDEN: X4-103 an
+  V.24-104 des anderen Rechners, 102 ↔ 102 (106 braucht SERTEST nicht). Pinbelegung der Buchsen: Gerätedoku
+  (`pc_serv.pdf` §1.2.8), nicht in diesem Haus ausgewertet.
 
 ## Annahmen
 
@@ -209,7 +278,11 @@ Was mit **[bestätigen]** markiert ist, prüft die Checkliste unten.
   **[bestätigen]** über die Rohzeilen (Checkliste Schritt 2).
 - **A5120-Drucker:** Takt CTC A34 K0 = Takt der Tastatur, wird **nie** angefasst;
   nur das SIO-Format wird gesetzt.
-- φ = 2,4576 MHz an beiden Maschinen (Zeitbasis der Zählschleifen; gemessen +7 %
+- **PC 1715:** wie oben; zusätzlich **[bestätigen]**: CTS-Pegel am Drucker-Prüfstecker 330-042 (Break = EIN),
+  RR2 B einer nie programmierten SIO ≠ FFH (sonst `/M:P`), der freie Vektor F0H in der BIOS-Fassung des Geräts,
+  die Brücken für Sender-Takt (CTC0 K0 → TxCA, CTC0 K1 → RxCB/TxCB) und dass Kanal A nach WR5 = EAH den
+  Drucker nicht stört (am Gerät mit Drucker einmal drucken).
+- φ = 2,4576 MHz an allen Maschinen (Zeitbasis der Zählschleifen; gemessen +7 %
   durch BIOS-Interrupts — Fristen sind Mindestzeiten).
 - **Interruptvektoren** (Gegenstelle): wo das BIOS die SIO nicht im Interrupt betreibt,
   ein eigener Vektor ohne „Status affects Vector" — CP/A **E4H** (`intvsy+04h`, laut
@@ -381,6 +454,16 @@ Prüfstecker sieht den nicht. `ZEITUEBERLAUF BESTAETIGUNG` heißt: auf der ander
 läuft keine Gegenstelle, das Kabel ist nicht gekreuzt oder eine Seite hat einen anderen
 Takt.
 
+### PC 1715 — Checkliste für das Gerät
+
+| # | Tun | Erwartet |
+|---|-----|----------|
+| 1 | `SERTEST`, an `T/G` Ctrl+C, `DIR` | `Rechner: PC 1715 (ZRE)`, zwei Schnittstellen + Tastatur; bei `Rechner nicht erkannt` → `/M:P` und RR2-Befund notieren |
+| 2 | Prüfstecker 330-042 am X4: `SERTEST T 1 /P` | `DATEN-LOOP: OK`, `LEITUNGEN-LOOP: OK` mit drei Break-Zeilen (CTS 0, 1, 0); danach Tastatur bedienbar, Drucker druckt (`^P`+`DIR`) |
+| 3 | Prüfstecker 320-032 am X5: `SERTEST T 2 /P` | beide OK, vier Rohzeilen CTS = RTS, DCD = DTR; ohne Stecker `KEIN ECHO BEI 00H` |
+| 4 | Nullmodem X5 ↔ X5 zweier 1715 (oder zu einem A5120-X6): `SERTEST G 2` / `SERTEST T 2 /G` | wie A5120 ↔ A5120 (Schritt 3 der Liste oben): `ECHO`, `FLUSS-HW`, `FLUSS-XON` OK |
+| 5 | Drucker X4 → V.24 des anderen Rechners: dort `SERTEST G 2`, hier `SERTEST T 1 /G` | `SENDEN: OK`, an der Gegenstelle `Abschnitt fertig, Empfangsfehler 0000H` |
+
 ## Bauen
 
 ```sh
@@ -392,9 +475,11 @@ python3 tools/sertest/build.py --out x.com   # Temp-Bau nach x.com
 
 `--check` ist der ctest-Wächter `cli_sertest_com_passt_zur_quelle`; ohne Werkzeugkette
 endet er mit 77 (= übersprungen). Die Emulatortests stehen in
-`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`) und, mit zwei gekoppelten
-Maschinen, in `tests/system/test_sertest_kopplung.cpp` (`SertestKopplung.*`; ein Fall in
-`tools/dev.sh test`, die übrigen in `tools/dev.sh test-format`).
+`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`; PC 1715: `Sertest.Pc1715_*`) und, mit zwei gekoppelten
+Maschinen, in `tests/system/test_sertest_kopplung.cpp` (`SertestKopplung.*`; zwei Fälle — A5120 und
+PC 1715 — in `tools/dev.sh test`, die übrigen in `tools/dev.sh test-format`, darunter
+`Pc1715_DruckerSendetAnDieGegenstelle` und `Pc1715_MitA5120UndDerAltenV01_BeideRichtungen` mit V0.1 auf
+dem A5120).
 
 M80 + LINKMT aus `~/projects/CPA_Workbench/tools` über `cparun`, Ladeadresse
 0100H; Pfad überschreibbar mit `CPA_TOOLS=<pfad>`. Das Skript bricht ab, wenn M80

@@ -59,7 +59,7 @@ PROGRAMME = {
     'LBPUNCH.COM':  os.path.join(TOOLS, 'lochband', 'lbpunch.com'),
 }
 LOCHBAND = ['LBREAD.COM', 'LBPUNCH.COM']   # K6022/SIF1000 auf E0H-E7H; A5120, K8915, PRG (SCPX und CP/A getestet)
-PC1715 = ['PCTEST.COM']      # SERTEST kennt die 1715-Ports nicht; LB* nur mechanisch am PC 1715
+PC1715 = ['PCTEST.COM']      # SERTEST V0.2 kennt den 1715, steht aber nur auf der CP/A-Systemdiskette (tools/cpa_pc1715); LB* nur mechanisch
 A5120 = [n for n in PROGRAMME if n not in PC1715]
 RAF_TREIBER = ['RAFCPM.COM', 'RAF512.COM']   # E/A 88H/89H — an allen drei Maschinen
 K8915 = ['SERTEST.COM', *RAF_TREIBER, *LOCHBAND]        # ROMREAD/EM* sprechen A5120-Hardware an
