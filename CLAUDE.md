@@ -526,8 +526,12 @@ werden wiederverwendet. Eine Klasse `P8000Machine` unter `core/machines/p8000/`,
 `wdc`), neue Primitive `z8010` (UB8010) und ein vollständig überarbeiteter `z80_dma`/`z8000`,
 Terminal `core/peripherals/p8000_terminal/` (ADM31/VT100 im Kern), Platte `core/peripherals/winchester/`.
 C-ABI `K1520_MACHINE_P8000 = 4`, `k1520_create_p8000(konfig)`; `boot_trace`/`k1520dbg --machine p8000|p8000-16`.
-**Stand:** M1 (UDOS bootet) und M2 (`x` → U8000-Monitor, `O U` → `boot`) erreicht, WDC läuft mit Firmware 4.2,
-`sa.format` (M3) in Arbeit; DiskTool-WEGA-Dateisystem und Paket offen.
+**Stand 2026-10-09: M1–M4 erreicht.** UDOS bootet (8-Bit), `x` → U8000-Monitor, `O U` → `boot`, WDC mit Original-Firmware
+(4.2 Vorgabe; 3.4.05/4.0.05 „experimentell", Laufwerk durch das ROM festgelegt), WEGA installiert und von Platte gestartet
+(`tools/dev.sh test-wega`), Mehrplatz mit **Originalterminal Typ 2 (Z8 + Original-Firmware P8T 5.0) und Flachtastatur K7673.09**,
+DiskTool-WEGA-Dateisystem (`core/filesystem/wega/`, Doku `doc/design/27_wega_dateisystem.md`), Paket. Offen: Gerätemessungen (P3b),
+MSVC-Gegenprobe der CI. Plattendateien tragen das Typkürzel: `<name>.<k5504|d5126|d5146|vs>.img`; „Neue Platte…" legt
+standardmäßig UNFORMATIERT an (Merkposten 48–54).
 **Oberfläche `p8000emu` (AP P16, 2026-10-07; `--machine p8000`, `run_p8000emu.sh`, `p8000emu.yaml`,
 `data/default_config_p8000.yaml`, `doc/design/26_p8000emu_oberflaeche.md`):** fünftes Programmprofil im gemeinsamen
 Hauptfenster — `profil.terminal` ersetzt die Bildröhre durch `TerminalTabs` (`app/ui/p8000_terminal.py`: je Kern-Terminal
