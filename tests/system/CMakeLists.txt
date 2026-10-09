@@ -124,23 +124,26 @@ k1520_add_test(k8915_format_verfahren SRC test_k8915_format_verfahren.cpp
 # Gerüst: sertest_hilfen.h.  Die eingecheckte .com kommt über K1520_SERTEST_COM;
 # ob sie zur Quelle passt, prüft cli_sertest_com_passt_zur_quelle.
 k1520_add_test(sertest SRC test_sertest.cpp
-                       LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
+                       LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                        LABELS "system;fast" DEFS LOG_LEVEL=2
                        K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com"
-                       K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM")
+                       K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM"
+                       K1520_SERTEST_V02="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V02.COM")
 # AP-ST5: Tester gegen Gegenstelle auf zwei gekoppelten Maschinen (RFC 2217, Loopback).
 # Ein schneller Fall (A5120 ↔ A5120 V.24) in der Standardregression, die übrigen
 # (je zwei Kaltstarts, K8915, gemischt, Gegenfall) unter format_integration.
 k1520_add_test(sertest_kopplung SRC test_sertest_kopplung.cpp
-                       LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
+                       LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                        LABELS "system;fast" DEFS LOG_LEVEL=2
                        K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com"
-                       K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM")
+                       K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM"
+                       K1520_SERTEST_V02="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V02.COM")
 k1520_add_test(sertest_kopplung_lang SRC test_sertest_kopplung.cpp
-                       LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
+                       LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                        LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 SERTEST_KOPPLUNG_LANG=1
                        K1520_SERTEST_COM="${CMAKE_SOURCE_DIR}/tools/sertest/sertest.com"
-                       K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM" TIMEOUT 300)
+                       K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM"
+                       K1520_SERTEST_V02="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V02.COM" TIMEOUT 300)
 
 # ─── PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): FORMAT → bootfähige Diskette ──
 # Die TIEFE: UDOS-FORMAT beider Seiten mit SYSTEMDISK? Y, Systemdateien kopieren, Kaltstart

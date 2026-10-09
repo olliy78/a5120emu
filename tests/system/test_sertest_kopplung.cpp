@@ -42,6 +42,9 @@
 #ifndef K1520_SERTEST_V01
 #error "K1520_SERTEST_V01 fehlt (tests/fixtures/cpm/SERTEST_V01.COM)"
 #endif
+#ifndef K1520_SERTEST_V02
+#error "K1520_SERTEST_V02 fehlt (tests/fixtures/cpm/SERTEST_V02.COM)"
+#endif
 
 using namespace sertest;
 using k1520::serial::Betriebsart;
@@ -55,15 +58,19 @@ namespace {
 
 constexpr long long kScheibe = 10'000;          ///< Takte je Maschine und Runde (≈ 4 ms)
 constexpr double    kFaktor  = 8.0;             ///< höchstens 8× Echtzeit gekoppelt
-constexpr double    kPhi     = 2'457'600.0;     ///< beide Maschinen
+// φ je Maschine: `T::kPhi` (A5120, K8915, PC 1715 2,4576 MHz; PC 1715W 3,9936 MHz).
 constexpr long long kFrist   = 150'000'000;     ///< ≈ 60 s Maschinenzeit je Lauf
 constexpr long long kBoot    = 100'000'000;
 
-/// Zwei Maschinen in gleichen Scheiben, gedrosselt.
+/// Zwei Maschinen in Scheiben gleicher MASCHINENZEIT, gedrosselt.  Laufen sie mit
+/// verschiedenem Takt (PC 1715W gegen PC 1715), bekommt die Gegenseite entsprechend mehr
+/// bzw. weniger Takte je Runde: beide Wandler takten in Maschinentakten, aber die
+/// Steuerleitungen und das Netz laufen in Uhrzeit.
 template <class T, class G>
 struct Paar {
     T& t;
     G& g;
+    static constexpr long long kScheibeG = static_cast<long long>(kScheibe * G::kPhi / T::kPhi + 0.5);
 
     bool bis(const std::function<bool()>& fertig, long long frist = kFrist) {
         const auto t0 = Uhr::now();
@@ -73,8 +80,8 @@ struct Paar {
             if (fertig()) return true;
             if (n >= frist) return false;
             n += t.lauf(kScheibe);
-            g.lauf(kScheibe);
-            const auto soll = std::chrono::duration<double>(n / kPhi / kFaktor);
+            g.lauf(kScheibeG);
+            const auto soll = std::chrono::duration<double>(n / T::kPhi / kFaktor);
             const auto ist = Uhr::now() - t0;
             if (ist + std::chrono::milliseconds(2) < soll)
                 std::this_thread::sleep_for(soll - ist);
@@ -137,6 +144,17 @@ std::string lage(S& s, int i) {
            " dtr=" + std::to_string(st.dtr) + " cts=" + std::to_string(st.cts) +
            " dcd=" + std::to_string(st.dcd) + " " + st.meldung;
 }
+
+/// CPU-Stand der 1715-Familie (PC, SP, IFF1) für Fehlermeldungen; für die anderen leer.
+template <class S>
+auto cpuLage(S& s, int) -> decltype(s.maschine().zre().cpu().PC, std::string()) {
+    const auto& c = s.maschine().zre().cpu();
+    char b[80];
+    std::snprintf(b, sizeof b, " CPU PC=%04X SP=%04X IFF1=%d", c.PC, c.SP, int(c.IFF1));
+    return b;
+}
+template <class S>
+std::string cpuLage(S&, long) { return {}; }
 
 template <class S>
 ::testing::AssertionResult boot(S& s) {
@@ -237,7 +255,8 @@ void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::
 
     const std::string bt = t.bild();
     const auto& pt = t.protokoll();
-    const std::string lageT = "\nTester: " + lage(t, nt - 1) + "\nGegenstelle: " + lage(g, ng - 1);
+    const std::string lageT = "\nTester: " + lage(t, nt - 1) + cpuLage(t, 0) + "\nGegenstelle: " +
+                              lage(g, ng - 1) + cpuLage(g, 0);
     EXPECT_EQ(pt.wert(nameT, "LEITUNGEN").value_or("-"), v24 ? "OK" : "ENTFAELLT")
         << pt.text() << bt << "\nGegenstelle:\n" << g.bild();
     EXPECT_EQ(pt.wert(nameT, "ECHO").value_or("-"), "OK") << pt.text() << lageT;
@@ -308,7 +327,7 @@ TEST(SertestKopplung, A5120_V24_LeitungenUndEcho) {
 
 /**
  * @test SertestKopplung.Pc1715_V24_LeitungenUndEcho
- * @brief Schneller Fall der Standardregression, V0.2: PC 1715 (Tester, Client) ↔ PC 1715
+ * @brief Schneller Fall der Standardregression, V0.3: PC 1715 (Tester, Client) ↔ PC 1715
  *        (Gegenstelle, Server) an der V.24 (SIO0 Kanal B; CP/A 1715).  Leitungen: CTS = RTS,
  *        107 (an /DCDA) = DTR über das Nullmodemkabel des Hubs.
  */
@@ -322,7 +341,116 @@ TEST(SertestKopplung, Pc1715_V24_LeitungenUndEcho) {
     g.maschine().serialHub()->stopAlle();
 }
 
+/**
+ * @test SertestKopplung.Pc1715W_V24_LeitungenUndEcho
+ * @brief Schneller Fall der Standardregression, V0.3: PC 1715W (Tester, Client) ↔ PC 1715W
+ *        (Gegenstelle, Server) an der V.24 (SIO0 Kanal B; SCP 3.0 = CP/M 3).  Die
+ *        Gegenstelle empfängt im Interrupt (Vektor 30H, ISR in der TPA-Bank, BDOS-Aufrufe
+ *        mit gesperrter SIO), alle Abschnitte ohne Empfangsfehler.
+ */
+TEST(SertestKopplung, Pc1715W_V24_LeitungenUndEcho) {
+    SertestPc1715W t, g;
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 1, t, 1));
+    durchgang(t, 2, "V.24", g, 2, "V.24", true);
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
 #else
+
+/**
+ * @test SertestKopplung.Pc1715W_DruckerSendetAnDieGegenstelle
+ * @brief PC 1715W Drucker (X4, nur Senden) → PC 1715W V.24 als Gegenstelle, V0.3 auf beiden:
+ *        SENDEN OK am Tester, an der Gegenstelle 1000H Bytes ohne Empfangsfehler.
+ */
+TEST(SertestKopplung, Pc1715W_DruckerSendetAnDieGegenstelle) {
+    SertestPc1715W t, g;
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 1, t, 0));
+    Paar<SertestPc1715W, SertestPc1715W> p{t, g};
+    ASSERT_TRUE(t.neuerLauf());
+    g.tippe("sertest g 2\r");
+    ASSERT_TRUE(p.bisText(g, "Gegenstelle an V.24 bereit.")) << g.bild();
+    t.tippe("sertest t 1 /g /a\r");
+    ASSERT_TRUE(p.bisEnde()) << "Tester:\n" << t.bild() << "\nGegenstelle:\n" << g.bild();
+    const auto& pt = t.protokoll();
+    EXPECT_EQ(pt.wert("Drucker", "LEITUNGEN").value_or("-"), "ENTFAELLT") << pt.text();
+    EXPECT_EQ(pt.wert("Drucker", "SENDEN").value_or("-"), "OK") << pt.text() << t.bild();
+    EXPECT_EQ(pt.wert("Drucker", "FLUSS-HW").value_or("-"), "ENTFAELLT") << pt.text();
+    EXPECT_EQ(pt.wert("Drucker", "FLUSS-XON").value_or("-"), "ENTFAELLT") << pt.text();
+    EXPECT_FALSE(pt.wert("Drucker", "ECHO")) << pt.text();
+    EXPECT_EQ(pt.ende().value_or("-"), "OK") << pt.text();
+    ASSERT_TRUE(p.bis([&] {
+        for (const std::string& z : zeilenAus(g.bild()))
+            if (fertigZeile(z)) return true;
+        return false;
+    })) << "Gegenstelle:\n" << g.bild();
+    const std::string bg = g.bild();
+    EXPECT_NE(bg.find("Abschnitt E: 1000H Bytes"), std::string::npos) << bg;
+    EXPECT_NE(bg.find("Abschnitt fertig, Empfangsfehler 0000H"), std::string::npos) << bg;
+    EXPECT_EQ(bg.find("Zeitueberlauf"), std::string::npos) << bg;
+    EXPECT_EQ(bg.find("verworfen"), std::string::npos) << bg;
+    EXPECT_EQ(t.maschine().serialHub()->status(0).bytes_gesendet, 1u + 6u + 4096u);
+    ASSERT_TRUE(t.bisPrompt(kFrist)) << t.bild();
+    for (int r = 0; r < 100; ++r) g.lauf();
+    g.ctrlC();
+    ASSERT_TRUE(g.bisPrompt(kFrist)) << g.bild();
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
+/**
+ * @test SertestKopplung.Pc1715W_MitPc1715UndDerAltenV02_BeideRichtungen
+ * @brief PC 1715W mit V0.3 ↔ PC 1715 mit der BISHERIGEN V0.2 (`SERTEST_V02.COM`, CP/A 1715) an
+ *        der V.24, beide Richtungen.  Die Maschinen laufen mit verschiedenem Takt (3,9936 gegen
+ *        2,4576 MHz), beide stellen 9600 Bd ein (1715W: Zähler 57H/ZK 13, 1715: Zeitgeber
+ *        17H/ZK 1) — die Leitungserwartung ist dieselbe (CTS = RTS, 107 = DTR).
+ */
+TEST(SertestKopplung, Pc1715W_MitPc1715UndDerAltenV02_BeideRichtungen) {
+    SertestPc1715W w;
+    SertestPc1715 p(K1520_SERTEST_V02);
+    ASSERT_TRUE(boot(w));
+    ASSERT_TRUE(boot(p));
+    ASSERT_NO_FATAL_FAILURE(koppeln(p, 1, w, 1));
+    {
+        SCOPED_TRACE("PC 1715W (V0.3) Tester, PC 1715 (V0.2) Gegenstelle");
+        durchgang(w, 2, "V.24", p, 2, "V.24", true);
+    }
+    {
+        SCOPED_TRACE("PC 1715 (V0.2) Tester, PC 1715W (V0.3) Gegenstelle");
+        durchgang(p, 2, "V.24", w, 2, "V.24", true);
+    }
+    w.maschine().serialHub()->stopAlle();
+    p.maschine().serialHub()->stopAlle();
+}
+
+/**
+ * @test SertestKopplung.Pc1715W_MitA5120UndDerAltenV01_BeideRichtungen
+ * @brief PC 1715W mit V0.3 ↔ A5120 mit der BISHERIGEN V0.1 (`SERTEST_V01.COM`, CP/A) an der
+ *        V.24, beide Richtungen.  Die Leitungserwartungen der Fassungen sind verschieden
+ *        (1715W: CTS = RTS; A5120: CTS = V106 ∧ V107), die LEITUNGEN-Schrittfolge geht an
+ *        beiden auf.
+ */
+TEST(SertestKopplung, Pc1715W_MitA5120UndDerAltenV01_BeideRichtungen) {
+    SertestPc1715W w;
+    SertestA5120 a(K1520_SERTEST_V01);
+    ASSERT_TRUE(boot(w));
+    ASSERT_TRUE(boot(a));
+    ASSERT_NO_FATAL_FAILURE(koppeln(a, 0, w, 1));
+    {
+        SCOPED_TRACE("PC 1715W (V0.3) Tester, A5120 (V0.1) Gegenstelle");
+        durchgang(w, 2, "V.24", a, 1, "DFUE/V.24", true);
+    }
+    {
+        SCOPED_TRACE("A5120 (V0.1) Tester, PC 1715W (V0.3) Gegenstelle");
+        durchgang(a, 1, "DFUE/V.24", w, 2, "V.24", true);
+    }
+    a.maschine().serialHub()->stopAlle();
+    w.maschine().serialHub()->stopAlle();
+}
 
 /**
  * @test SertestKopplung.Pc1715_DruckerSendetAnDieGegenstelle
@@ -370,7 +498,7 @@ TEST(SertestKopplung, Pc1715_DruckerSendetAnDieGegenstelle) {
 
 /**
  * @test SertestKopplung.Pc1715_MitA5120UndDerAltenV01_BeideRichtungen
- * @brief Gemischte Fassungen an der V.24: PC 1715 mit V0.2 ↔ A5120 mit der BISHERIGEN V0.1
+ * @brief Gemischte Fassungen an der V.24: PC 1715 mit V0.3 ↔ A5120 mit der BISHERIGEN V0.1
  *        (`tests/fixtures/cpm/SERTEST_V01.COM`).  Erst 1715 Tester / A5120 Gegenstelle,
  *        dann umgekehrt.  Beide Seiten 9600 8N1; die Leitungserwartungen sind verschieden
  *        (1715: CTS = RTS; A5120: CTS = V106 ∧ V107), die Schrittfolge der LEITUNGEN
@@ -383,15 +511,137 @@ TEST(SertestKopplung, Pc1715_MitA5120UndDerAltenV01_BeideRichtungen) {
     ASSERT_TRUE(boot(a));
     ASSERT_NO_FATAL_FAILURE(koppeln(a, 0, p, 1));
     {
-        SCOPED_TRACE("PC 1715 (V0.2) Tester, A5120 (V0.1) Gegenstelle");
+        SCOPED_TRACE("PC 1715 (V0.3) Tester, A5120 (V0.1) Gegenstelle");
         durchgang(p, 2, "V.24", a, 1, "DFUE/V.24", true);
     }
     {
-        SCOPED_TRACE("A5120 (V0.1) Tester, PC 1715 (V0.2) Gegenstelle");
+        SCOPED_TRACE("A5120 (V0.1) Tester, PC 1715 (V0.3) Gegenstelle");
         durchgang(a, 1, "DFUE/V.24", p, 2, "V.24", true);
     }
     a.maschine().serialHub()->stopAlle();
     p.maschine().serialHub()->stopAlle();
+}
+
+// ─── PRG 710 / PRG 710-1 (SCPX V1.5 / V1.7), V0.3 ────────────────────────────
+// Hub-Index: 0 = V.24 (A33-A); 710: 1 = IFSS Hauptdrucker (A32-B), 2 = ZIFSS (A32-A);
+// 710-1: 1 = ZIFSS (A32-A).  K8025 wie am A5120 (CTS = V106 ∧ V107).
+
+/**
+ * @test SertestKopplung.Prg710_1_V24_MitPrg710_1 / Prg710_V24_MitPrg710
+ * @brief V.24: PRG 710-1 (Tester, Client) ↔ PRG 710-1 (Gegenstelle, Server) und PRG 710 ↔
+ *        PRG 710 — beide Varianten haben dieselbe K8025-Schnittstelle; LEITUNGEN, ECHO,
+ *        FLUSS-HW, FLUSS-XON OK.
+ */
+TEST(SertestKopplung, Prg710_1_V24_MitPrg710_1) {
+    SertestPrg t(prg710test::V::Prg710_1), g(prg710test::V::Prg710_1);
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 0, t, 0));
+    durchgang(t, 1, "V.24", g, 1, "V.24", true);
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
+TEST(SertestKopplung, Prg710_V24_MitPrg710) {
+    SertestPrg t(prg710test::V::Prg710), g(prg710test::V::Prg710);
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 0, t, 0));
+    durchgang(t, 1, "V.24", g, 1, "V.24", true);
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
+/// Gemischt: PRG 710 (V1.5, 8279) ↔ PRG 710-1 (V1.7, K7672) an der V.24, beide Richtungen.
+TEST(SertestKopplung, Prg710_V24_MitPrg710_1_BeideRichtungen) {
+    SertestPrg a(prg710test::V::Prg710), b(prg710test::V::Prg710_1);
+    ASSERT_TRUE(boot(a));
+    ASSERT_TRUE(boot(b));
+    ASSERT_NO_FATAL_FAILURE(koppeln(a, 0, b, 0));
+    {
+        SCOPED_TRACE("PRG 710 Tester, PRG 710-1 Gegenstelle");
+        durchgang(a, 1, "V.24", b, 1, "V.24", true);
+    }
+    {
+        SCOPED_TRACE("PRG 710-1 Tester, PRG 710 Gegenstelle");
+        durchgang(b, 1, "V.24", a, 1, "V.24", true);
+    }
+    a.maschine().serialHub()->stopAlle();
+    b.maschine().serialHub()->stopAlle();
+}
+
+/**
+ * @test SertestKopplung.Prg710_1_Zifss_MitPrg710_1
+ * @brief ZIFSS (A32 Kanal A) ↔ ZIFSS am 710-1: ECHO und FLUSS-XON über die IFSS; die Tastatur
+ *        K7672 an A32 Kanal B bleibt unberührt (beide Rechner danach bedienbar).  Dann am 710 der
+ *        IFSS-Hauptdrucker (A32 Kanal B) gegen den ZIFSS (A32 Kanal A) eines anderen 710.
+ */
+TEST(SertestKopplung, Prg710_1_Zifss_MitPrg710_1) {
+    SertestPrg t(prg710test::V::Prg710_1), g(prg710test::V::Prg710_1);
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 1, t, 1));
+    durchgang(t, 2, "ZIFSS", g, 2, "ZIFSS", false);
+    EXPECT_TRUE(t.dirFindetSertest()) << t.bild();
+    EXPECT_TRUE(g.dirFindetSertest()) << g.bild();
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
+TEST(SertestKopplung, Prg710_IfssHauptdruckerGegenZifss) {
+    SertestPrg t(prg710test::V::Prg710), g(prg710test::V::Prg710);
+    ASSERT_TRUE(boot(t));
+    ASSERT_TRUE(boot(g));
+    ASSERT_NO_FATAL_FAILURE(koppeln(g, 2, t, 1));   // Gegenstelle ZIFSS (A32-A), Tester IFSS Haupt (A32-B)
+    durchgang(t, 2, "IFSS Hauptdrucker", g, 3, "ZIFSS", false);
+    t.maschine().serialHub()->stopAlle();
+    g.maschine().serialHub()->stopAlle();
+}
+
+/**
+ * @test SertestKopplung.Prg710_1_MitPc1715UndDerAltenV02_BeideRichtungen
+ * @brief PRG 710-1 mit V0.3 ↔ PC 1715 mit der BISHERIGEN V0.2 (`SERTEST_V02.COM`, CP/A 1715) an
+ *        der V.24, beide Richtungen (PRG: CTS = V106 ∧ V107 wie A5120; 1715: CTS = RTS).
+ */
+TEST(SertestKopplung, Prg710_1_MitPc1715UndDerAltenV02_BeideRichtungen) {
+    SertestPrg r(prg710test::V::Prg710_1);
+    SertestPc1715 p(K1520_SERTEST_V02);
+    ASSERT_TRUE(boot(r));
+    ASSERT_TRUE(boot(p));
+    ASSERT_NO_FATAL_FAILURE(koppeln(r, 0, p, 1));
+    {
+        SCOPED_TRACE("PRG 710-1 (V0.3) Tester, PC 1715 (V0.2) Gegenstelle");
+        durchgang(r, 1, "V.24", p, 2, "V.24", true);
+    }
+    {
+        SCOPED_TRACE("PC 1715 (V0.2) Tester, PRG 710-1 (V0.3) Gegenstelle");
+        durchgang(p, 2, "V.24", r, 1, "V.24", true);
+    }
+    r.maschine().serialHub()->stopAlle();
+    p.maschine().serialHub()->stopAlle();
+}
+
+/**
+ * @test SertestKopplung.Prg710_MitA5120UndDerAltenV01_BeideRichtungen
+ * @brief PRG 710 mit V0.3 ↔ A5120 mit der BISHERIGEN V0.1 (`SERTEST_V01.COM`, CP/A) an der V.24
+ *        (gleiche K8025-Logik), beide Richtungen.  Danach PRG ZIFSS (710-1) ↔ A5120 DFÜ/IFSS.
+ */
+TEST(SertestKopplung, Prg710_MitA5120UndDerAltenV01_BeideRichtungen) {
+    SertestPrg r(prg710test::V::Prg710);
+    SertestA5120 a(K1520_SERTEST_V01);
+    ASSERT_TRUE(boot(r));
+    ASSERT_TRUE(boot(a));
+    ASSERT_NO_FATAL_FAILURE(koppeln(a, 0, r, 0));
+    {
+        SCOPED_TRACE("PRG 710 (V0.3) Tester, A5120 (V0.1) Gegenstelle");
+        durchgang(r, 1, "V.24", a, 1, "DFUE/V.24", true);
+    }
+    {
+        SCOPED_TRACE("A5120 (V0.1) Tester, PRG 710 (V0.3) Gegenstelle");
+        durchgang(a, 1, "DFUE/V.24", r, 1, "V.24", true);
+    }
+    a.maschine().serialHub()->stopAlle();
+    r.maschine().serialHub()->stopAlle();
 }
 
 /**

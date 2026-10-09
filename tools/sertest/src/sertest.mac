@@ -1,4 +1,4 @@
-	TITLE	'Serial Test V0.2'
+	TITLE	'Serial Test V0.3'
 	.Z80
 ;
 ; sertest.mac - "Serial Test": prueft die seriellen Schnittstellen eines
@@ -35,6 +35,23 @@
 ; Kanalreset verboten), V.24 = Kanal B, "DCD" der Pruefung = Leitung 107 an /DCDA.
 ; Beleg: BIOP.MAC/BIOPCSIO.MAC des CP/A 1715, doc/merkposten/pc1715.md.
 ;
+; V0.3: PC 1715W (SCP 3.0 = CP/M 3, 256 KB mit Bankregister), /M:W. Gleiche SIO0/CTC0
+; wie der 1715 (0CH-0FH bzw. 08H-0BH), aber 3,9936 MHz statt 2,4576 MHz und die
+; Baudtakte nach der Rechnung des SCP-3.0-BIOS (CTC im Zaehlerbetrieb 57H, ZK 13,
+; SIO x16): die Zeitbasis der Zaehlschleifen ist je Maschine einstellbar (ZEITIN).
+; Unter CP/M 3 ist die TPA eine andere Bank als das BIOS - ein Interrupt in der
+; Systembank liefe in fremden Speicher: darum sperrt BDOSW die Empfangsinterrupts
+; der Gegenstelle fuer die Dauer jedes BDOS-Aufrufs (WSCHUTZ). Erkennung des 1715W
+; ueber BDOS 12 (CP/M 3 = Version >= 30H), dann die SIO0 bei 0EH/0FH - ohne je
+; die Ports 40H/41H (U8272 per DMA) anzufassen.
+;
+; V0.3, PRG 710 / PRG 710-1 (SCPX V1.5 bzw. V1.7, K2521-ZRE + ASS K8025 wie A5120): /M:R = PRG 710,
+; /M:S = PRG 710-1. Die K8025 liegt wie am A5120 bei 50H-5FH; V.24 = A33 Kanal A (Takt CTC A34 K2,
+; 5AH), IFSS/ZIFSS an der A32 (Takt CTC A34 K0, 58H). Am 710-1 gehoert A32 Kanal B der Tastatur
+; K7672 - tabu; der 710 hat dort den IFSS-Hauptdrucker und die Tastatur am 8279 (C8H/C9H).
+; Erkennung: SIO bei 50H, KEINE ZRE-CTC bei 0CH-0FH (A5120), aber die K2521-CTC bei 80H-83H;
+; 8279-Status bei C9H <> FFH = 710. Eigener Vektor D0H (Tabelle I = DFH: DFD0H = FFFFH).
+;
 ; Konsole: AUSSCHLIESSLICH BDOS 6 (direkte E/A), Ende ueber BDOS 0.
 ;   - Eingabe mit BDOS 6/E=FFH, nicht BDOS 1/11: deren Ctrl+C-/Ctrl+S-
 ;     Behandlung griffe sonst dazwischen.
@@ -58,6 +75,7 @@ CMDTXT	EQU	0081H		; Kommandozeilenrest (vom CCP in Grossbuchstaben)
 
 F_BOOT	EQU	0		; Warmstart
 F_DCIO	EQU	6		; direkte Konsol-E/A (E=FFH: Eingabe, sonst Ausgabe)
+F_VERS	EQU	12		; Versionsnummer (CP/M 2.2: 22H, CP/M 3: 31H)
 
 CTRLC	EQU	03H
 CR	EQU	0DH
@@ -69,6 +87,9 @@ LF	EQU	0AH
 M_A5120	EQU	1		; A5120, ASS K8025
 M_K8915	EQU	2		; K8915, ATS K7028
 M_PC171	EQU	3		; PC 1715 (ZRE, SIO0 bei 0CH-0FH)
+M_PC17W	EQU	4		; PC 1715W (ZRE, SIO0 wie 1715, SCP 3.0 = CP/M 3)
+M_PRG0	EQU	5		; PRG 710 (K2521-ZRE, K8025, Tastatur 8279)
+M_PRG1	EQU	6		; PRG 710-1 (wie 710, A32 Kanal B = Tastatur K7672)
 
 ART_V24	EQU	0		; volle V.24 mit Steuerleitungen
 ART_IFS	EQU	1		; IFSS bzw. nur 103/104 - keine Steuerleitungen
@@ -86,7 +107,10 @@ ART_DRU	EQU	2		; nur Senden (PC 1715 Drucker X4: 102/103/106, Empfaenger = Tasta
 ;          gesetzt, Basis aus RR2 Kanal B); sonst eigener Vektor, D2 aus
 ;   +9 DB  Steuerport von Kanal B derselben SIO (RR2, Vektor)
 ;  +10 DW  BIOS-Vorgabe des Kanals (Wiederherstellen, Format von PORTPR)
-IF_LEN	EQU	12
+;  +12 DB  CTC-Zeitkonstante fuer 9600 (1 bei Vorteiler 16 und 2,4576 MHz; 13 am
+;          1715W im Zaehlerbetrieb: 1,9968 MHz / 13 = 16 x 9600)
+IF_LEN	EQU	13
+IF_ZK	EQU	12
 IF_DAT	EQU	3
 IF_STB	EQU	9
 IF_ART	EQU	2
@@ -109,12 +133,21 @@ RR0_DCD	EQU	08H		; RR0 D3
 RR0_CTS	EQU	20H		; RR0 D5
 RR1_FEH	EQU	70H		; RR1 D4 Paritaet, D5 Ueberlauf, D6 Rahmen
 
-; Zeitbasis: phi = 2,4576 MHz an beiden Maschinen = 2458 Takte je ms.
+; Zeitbasis: phi = 2,4576 MHz an A5120, K8915 und PC 1715 = 2458 Takte je ms,
+; am PC 1715W 3,9936 MHz = 3994 Takte je ms (ZEITIN stellt die Zaehler ein).
 ; Je ms kommen ~100 Takte fuer ZEITK (Zaehler, Ctrl+C-Takt) hinzu; die
 ; Innenschleifen sind darauf abgestimmt (Takte je Durchlauf in Klammern).
-N_WARTE	EQU	181		; DJNZ (13)
+; WARTE hat zwei DJNZ-Schleifen (ein Zaehler reicht nur bis 256 Durchlaeufe,
+; am 1715W braucht eine ms ~300).
+N_WARTE	EQU	180		; DJNZ (13), erste Schleife
+N_WART2	EQU	1		; DJNZ (13), zweite Schleife
 N_SENDE	EQU	60		; IN/AND/JR/DJNZ (39)
 N_EMPF	EQU	65		; IN/RRA/JR/DJNZ (36)
+; PC 1715W (3,9936 MHz, 3994 Takte je ms):
+NW_WART	EQU	150
+NW_WAR2	EQU	149
+NW_SEND	EQU	100
+NW_EMPF	EQU	108
 
 ; Eigene Interruptvektoren (WR2 B), wo das BIOS die SIO nicht im Interrupt
 ; betreibt. Eine Tabellenzeile, "Status affects Vector" aus:
@@ -122,6 +155,12 @@ VEK_A	EQU	0E4H		; CP/A: intvsy+04h, laut bios.mac "frei"
 VEK_K	EQU	0C0H		; SCPX 8915: FFC0H, das BIOS belegt nur FFD0-FFD7/FFF0-FFFF
 VEK_P	EQU	0F0H		; CP/A 1715: biop*.mac "0f0h..0f6 frei bei PC1715"; liegt in
 				; jeder BIOS-Fassung innerhalb der Vektorsaeule (intvl <= 0E8H)
+VEK_R	EQU	0D0H		; PRG (SCPX): I = DFH, die Tabelle ueberlagert BIOS-Daten; DFC0H-DFFFH
+				; ist FFH (= "kein Eintrag"), belegt nur E0H (ZRE-CTC) und 90H (K5122)
+VEK_W	EQU	30H		; SCP 3.0 (1715W): die Tabelle liegt bei I = F3H (F300H), belegt
+				; sind 08H-0EH (CTC2), 14H (DMA) und - falls das BIOS die SIO
+				; oeffnet - 20H-2EH (WR2 B = 20H, "Status affects Vector"); ab
+				; F360H steht Code. 30H-5EH sind frei (Nullen).
 
 ; Erkennung: Bausteinadressen (Datenport Kanal A; Steuer A = +1, B = +3)
 SIO_K1	EQU	40H		; K8915 SIO 1 - am A5120 frei (offener Bus = FFH)
@@ -150,6 +189,7 @@ START:
 
 	CALL	ERKENN
 	JP	C, UNBEK
+	CALL	ZEITIN
 
 	; --- Rechner und Schnittstellenliste ---------------------------------
 	LD	DE, M_RECH
@@ -693,6 +733,10 @@ KL_2:	JP	SETLEI
 KOMERW:	LD	HL, LLE_A
 	LD	A, (MASCH)
 	CP	M_A5120
+	JR	Z, KE_1
+	CP	M_PRG0			; PRG: dieselbe K8025 wie am A5120
+	JR	Z, KE_1
+	CP	M_PRG1
 	JR	Z, KE_1
 	LD	HL, LLE_K
 	CP	M_K8915
@@ -1710,7 +1754,20 @@ ERKENN:
 	LD	A, (MVORG)		; /M:A bzw. /M:K ueberstimmt die Erkennung
 	OR	A
 	JR	NZ, EK_SET
-	DI				; kein BIOS-Interrupt zwischen Zeiger und RR2
+	; CP/M 3 (BDOS 12 liefert L >= 30H) gibt es nur am PC 1715W (SCP 3.0): dort NUR die
+	; SIO0 bei 0EH/0FH pruefen. 40H/41H sind am 1715W der U8272 (DMA-Zugriff) und werden
+	; nie gelesen. Die drei anderen Systeme melden 22H (CP/A, SCPX 8915, SCP 1715).
+	LD	C, F_VERS
+	CALL	BDOS
+	LD	A, L
+	CP	30H
+	JR	C, EK_ALT
+	DI
+	CALL	PCSIO
+	JR	Z, EK_UNB
+	LD	A, M_PC17W
+	JR	EK_EI
+EK_ALT:	DI				; kein BIOS-Interrupt zwischen Zeiger und RR2
 	LD	C, SIO_K1
 	CALL	SIOFND
 	JR	Z, EK_A
@@ -1722,6 +1779,9 @@ ERKENN:
 EK_A:	LD	C, SIO_5X
 	CALL	SIOFND
 	JR	Z, EK_P
+	CALL	PRGCHK			; PRG? A = M_PRG0/M_PRG1, sonst 0
+	OR	A
+	JR	NZ, EK_EI
 	LD	C, SIO_A32		; nur lesen!
 	CALL	SIORR0
 	LD	A, M_A5120
@@ -1730,17 +1790,7 @@ EK_A:	LD	C, SIO_5X
 	; PC 1715: weder 40H noch 50H - SIO0 bei 0EH/0FH (AB0 = Kanal, AB1 = Steuer).
 	; Erst NACH A5120/K8915: 0CH-0FH ist am A5120 die ZRE-CTC, ein Zeigerwort
 	; auf 0FH waere dort ein Steuerwort.
-EK_P:	LD	C, SIO_PA
-	IN	B, (C)			; RR0 Kanal A
-	INC	C
-	IN	A, (C)			; RR0 Kanal B
-	AND	B
-	INC	A
-	JR	Z, EK_UNB
-	LD	A, 2
-	OUT	(C), A
-	IN	A, (C)			; RR2 Kanal B
-	INC	A
+EK_P:	CALL	PCSIO
 	JR	Z, EK_UNB
 	LD	A, M_PC171
 	JR	EK_EI
@@ -1756,6 +1806,15 @@ EK_SET:	LD	(MASCH), A
 	LD	HL, BES_P
 	CP	M_PC171
 	JR	Z, EK_S1
+	LD	HL, BES_W
+	CP	M_PC17W
+	JR	Z, EK_S1
+	LD	HL, BES_R0
+	CP	M_PRG0
+	JR	Z, EK_S1
+	LD	HL, BES_R1
+	CP	M_PRG1
+	JR	Z, EK_S1
 	LD	HL, BES_K
 EK_S1:	LD	(MBESCH), HL
 	LD	DE, 4
@@ -1768,6 +1827,55 @@ EK_S1:	LD	(MBESCH), HL
 	LD	A, (HL)			; +6 DB Anzahl
 	LD	(IFANZ), A
 	OR	A			; CY = 0
+	RET
+
+; PRGCHK - die K8025 bei 50H ist gefunden: A5120 oder PRG? Nur lesend.
+; Am A5120 liegt die ZRE-CTC bei 0CH-0FH (ihre Zaehlerstaende sind nie alle FFH);
+; am PRG ist dort nichts (offener Bus = FFH), die K2521-CTC liegt bei 80H-83H. Diese
+; Ports werden nur gelesen, wenn 0CH-0FH leer war (am A5120 nie). Dann 8279-Status
+; bei C9H (nur Status, nicht das Datenregister C8H): <> FFH = PRG 710, sonst 710-1.
+; A = M_PRG0, M_PRG1 oder 0 (kein PRG).
+PRGCHK:	LD	C, 0CH
+	CALL	AND4
+	INC	A
+	JR	NZ, PC_NO		; ZRE-CTC antwortet: A5120
+	LD	C, 80H
+	CALL	AND4
+	INC	A
+	JR	Z, PC_NO		; auch dort nichts: keins von beiden
+	IN	A, (0C9H)
+	INC	A
+	LD	A, M_PRG1
+	RET	Z
+	LD	A, M_PRG0
+	RET
+PC_NO:	XOR	A
+	RET
+
+; AND4 - vier Ports ab C lesen und die Werte UND-verknuepfen. A = Ergebnis.
+AND4:	LD	B, 4
+	LD	D, 0FFH
+A4_L:	IN	A, (C)
+	AND	D
+	LD	D, A
+	INC	C
+	DJNZ	A4_L
+	RET
+
+; PCSIO - gibt es eine SIO0 des PC 1715/1715W bei 0CH-0FH (AB0 = Kanal, AB1 =
+; Steuer)? RR0 von Kanal A und B <> FFH und RR2 ueber Kanal B <> FFH. NZ = ja.
+; Unter DI aufrufen, wo es ein BIOS gibt, das die SIO im Interrupt betreibt.
+PCSIO:	LD	C, SIO_PA
+	IN	B, (C)			; RR0 Kanal A
+	INC	C
+	IN	A, (C)			; RR0 Kanal B
+	AND	B
+	INC	A
+	RET	Z
+	LD	A, 2
+	OUT	(C), A
+	IN	A, (C)			; RR2 Kanal B
+	INC	A
 	RET
 
 ; SIORR0 - C = Datenport Kanal A einer vermuteten SIO. Liest NUR RR0 von
@@ -1796,7 +1904,7 @@ SIOFND:	CALL	SIORR0
 ;   SERTEST                      interaktiv
 ;   SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n
 ;   SERTEST G n                  Gegenstelle an Schnittstelle n
-;   /M:A bzw. /M:K               Rechner vorgeben (in jeder Form)
+;   /M:A, /M:K, /M:P, /M:W, /M:R bzw. /M:S   Rechner vorgeben (in jeder Form)
 ; Ausgang: CY = Fehler.
 ; =============================================================================
 PARSE:
@@ -1810,7 +1918,7 @@ PARSE:
 	POP	HL
 PA_NX:	CALL	SKIPSP
 	OR	A
-	JR	Z, PA_END
+	JP	Z, PA_END
 	CP	'/'
 	JR	Z, PA_OPT
 	; Wort ohne '/': erst die Rolle, dann die Nummer
@@ -1865,6 +1973,15 @@ PA_OPT:	INC	HL
 	JR	Z, PA_M
 	LD	B, M_PC171
 	CP	'P'
+	JR	Z, PA_M
+	LD	B, M_PC17W
+	CP	'W'
+	JR	Z, PA_M
+	LD	B, M_PRG0
+	CP	'R'
+	JR	Z, PA_M
+	LD	B, M_PRG1
+	CP	'S'
 	JP	NZ, PA_ERR
 PA_M:	LD	A, B
 	LD	(MVORG), A
@@ -1874,9 +1991,9 @@ PA_SET:	LD	A, 1
 	; Wort muss hier enden
 PA_WE:	LD	A, (HL)
 	OR	A
-	JR	Z, PA_NX
+	JP	Z, PA_NX
 	CP	' '
-	JR	Z, PA_NX
+	JP	Z, PA_NX
 	JP	PA_ERR
 
 	; Gesamturteil
@@ -2024,8 +2141,10 @@ SIOPRG:	LD	HL, (IFZEIG)
 	LD	A, IF_CTW
 	CALL	IFB
 	OUT	(C), A			; Zeitgeber, Vorteiler 16, ZK folgt
-	LD	A, 1
+	LD	A, IF_ZK
+	CALL	IFB
 	OUT	(C), A			; ZK 1: 2,4576 MHz / 16 = 153,6 kHz = 16 x 9600
+					; (1715W: Zaehler, ZK 13: 1,9968 MHz / 13 = 153,6 kHz)
 SP_1:	CALL	IFSTE
 	LD	A, IF_ART
 	CALL	IFB
@@ -2088,8 +2207,10 @@ LIESLEI: CALL	IFSTE
 	LD	B, A
 	LD	A, (MASCH)
 	CP	M_PC171
+	JR	Z, LL_PC
+	CP	M_PC17W
 	JR	NZ, LL_FR
-	LD	A, IF_ART
+LL_PC:	LD	A, IF_ART
 	CALL	IFB
 	CP	ART_V24
 	JR	NZ, LL_FR
@@ -2115,7 +2236,8 @@ LL_FR:	LD	A, B
 ; Zerstoert BC, DE.
 SENDE:	PUSH	AF
 	CALL	IFSTE
-SE_MS:	LD	B, N_SENDE
+SE_MS:	LD	A, (NSEND)
+	LD	B, A
 SE_I:	IN	A, (C)
 	AND	RR0_TX
 	JR	NZ, SE_FR
@@ -2155,7 +2277,8 @@ DATIN:	PUSH	BC
 ; RR1-Fehler des Zeichens zaehlen nach FEHLZ (mit Error Reset); das Zeichen
 ; wird trotzdem geliefert. Zerstoert BC, DE.
 EMPF:	CALL	IFSTE
-EP_MS:	LD	B, N_EMPF
+EP_MS:	LD	A, (NEMPF)
+	LD	B, A
 EP_I:	IN	A, (C)
 	RRA				; RR0 D0 -> CY
 	JR	C, EP_DA
@@ -2172,8 +2295,12 @@ EP_DA:	DI
 	RET
 
 ; WARTE - DE ms warten (>= 1). Zerstoert B, DE.
-WARTE:	LD	B, N_WARTE
+WARTE:	LD	A, (NWART)
+	LD	B, A
 WA_I:	DJNZ	WA_I
+	LD	A, (NWAR2)
+	LD	B, A
+WA_J:	DJNZ	WA_J
 	CALL	ZEITK
 	JR	NZ, WARTE
 	RET
@@ -2468,6 +2595,105 @@ LDHLHL:	LD	A, (HL)
 	RET
 
 ; =============================================================================
+; Zeitbasis je Maschine, BDOS-Aufruf mit Schutz der Empfangsinterrupts
+; =============================================================================
+; ZEITIN - Zaehler der Warteschleifen (NWART, NWAR2, NSEND, NEMPF) und WSCHUTZ
+; nach der erkannten Maschine einstellen. Zerstoert A.
+ZEITIN:	LD	A, N_WARTE
+	LD	(NWART), A
+	LD	A, N_WART2
+	LD	(NWAR2), A
+	LD	A, N_SENDE
+	LD	(NSEND), A
+	LD	A, N_EMPF
+	LD	(NEMPF), A
+	LD	A, (MASCH)
+	CP	M_PC17W
+	RET	NZ
+	LD	A, NW_WART
+	LD	(NWART), A
+	LD	A, NW_WAR2
+	LD	(NWAR2), A
+	LD	A, NW_SEND
+	LD	(NSEND), A
+	LD	A, NW_EMPF
+	LD	(NEMPF), A
+	LD	A, 1
+	LD	(WSCHUTZ), A
+	RET
+
+; BDOSW - CALL BDOS, am 1715W (WSCHUTZ) mit gesperrtem Empfangsinterrupt.
+; Unter CP/M 3 liegt die TPA in einer anderen Bank als das BIOS: das BIOS wechselt
+; die Bank (F640H: DI, OUT (24H), EI!) und laeuft dann mit EI in der Systembank -
+; ein SIO-Interrupt dort sprange auf den Tabelleneintrag der Gegenstelle, deren
+; ISR in der TPA-Bank steht (in der Systembank liegt an der Stelle anderer
+; Speicher). Deshalb ist WR1 des Kanals (ISRPC) waehrend des Aufrufs 0; was in der
+; Zeit in den FIFO der SIO kam, holt BDOSW danach selbst (RXDRAIN, ohne
+; Interruptzaehlung). Vorher werden schon wartende Zeichen geholt: eine bereits
+; gemeldete Empfangsanforderung geht mit WR1 := 0 NICHT weg (gelatcht), wohl aber, wenn
+; die Zeichen gelesen sind - sonst nimmt die CPU sie in der Systembank an und springt
+; in fremden Speicher. Erhaelt BC, DE, HL, liefert A des BDOS. Ruft man unter EI.
+BDOSW:	LD	A, (WSCHUTZ)
+	OR	A
+	JP	Z, BDOS
+	DI
+	LD	A, (HAKEN)
+	OR	A
+	JR	Z, BW_1
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	LD	A, (ISRPC)
+	LD	C, A
+	LD	A, 1
+	OUT	(C), A
+	XOR	A
+	OUT	(C), A			; WR1 := 0 - kein Empfangsinterrupt mehr
+	CALL	RXDRAIN			; eine schon gemeldete, noch nicht angenommene Anforderung
+					; bleibt sonst stehen (WR1 := 0 loescht sie nicht) und kaeme
+					; in der Systembank an - das Lesen der Zeichen nimmt sie zurueck
+	POP	HL
+	POP	DE
+	POP	BC
+BW_1:	CALL	BDOS			; das BIOS darf EI setzen - die SIO meldet nichts mehr
+	DI
+	PUSH	AF
+	LD	A, (HAKEN)
+	OR	A
+	JR	Z, BW_2
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	CALL	RXDRAIN
+	LD	A, (ISRPC)
+	LD	C, A
+	LD	A, 1
+	OUT	(C), A
+	LD	A, 10H
+	OUT	(C), A			; WR1: Empfangsinterrupt bei jedem Zeichen
+	CALL	RXDRAIN			; ein Zeichen, das waehrend des Schreibens kam
+	POP	HL
+	POP	DE
+	POP	BC
+BW_2:	POP	AF
+	EI
+	RET
+
+; RXDRAIN - alle im Empfaenger des Kanals (ISRPC) wartenden Zeichen in den
+; Ringpuffer holen (wie ISRG, aber ohne INTZ). Unter DI. Zerstoert A, BC, DE, HL.
+RXDRAIN: LD	A, (ISRPC)
+	LD	C, A
+RD_L:	IN	A, (C)
+	RRA
+	JR	NC, RD_E
+	CALL	FEHLR
+	CALL	DATIN
+	CALL	RXREIN
+	JR	RD_L
+RD_E:	CALL	FEHLR			; Sonderfall ohne Zeichen
+	RET
+
+; =============================================================================
 ; Konsole - nur BDOS 6
 ; =============================================================================
 ; PUTC - Zeichen A ausgeben. Erhaelt BC, DE, HL.
@@ -2476,7 +2702,7 @@ PUTC:	PUSH	HL
 	PUSH	BC
 	LD	E, A
 	LD	C, F_DCIO
-	CALL	BDOS
+	CALL	BDOSW
 	POP	BC
 	POP	DE
 	POP	HL
@@ -2503,7 +2729,7 @@ KEYPOL:	PUSH	HL
 	PUSH	BC
 	LD	E, 0FFH
 	LD	C, F_DCIO
-	CALL	BDOS
+	CALL	BDOSW
 	POP	BC
 	POP	DE
 	POP	HL
@@ -2545,7 +2771,7 @@ FJ_1:	PUSH	AF
 ; =============================================================================
 ; Texte (ohne Umlaute)
 ; =============================================================================
-M_KOPF:	DB	'Serial Test V0.2  (c) 2026 Olaf Krieger',CR,LF,'$'
+M_KOPF:	DB	'Serial Test V0.3  (c) 2026 Olaf Krieger',CR,LF,'$'
 M_RECH:	DB	'Rechner: $'
 M_VORG:	DB	' (vorgegeben)$'
 M_ROLLE: DB	'Tester (Aktiv) oder Gegenstelle (Passiv)? T/G $'
@@ -2584,13 +2810,16 @@ M_INTA:	DB	'Empfangsinterrupt ausgeloest',CR,LF
 	DB	'SERTEST INTERRUPT OK',CR,LF,'$'
 M_ABBR:	DB	CR,LF,'Abbruch mit Ctrl+C.',CR,LF,'$'
 M_NRF:	DB	'Diese Schnittstelle gibt es nicht.',CR,LF,'$'
-M_UNBEK: DB	'Rechner nicht erkannt. Mit /M:A (A5120), /M:K (K8915) oder /M:P (PC 1715) vorgeben.',CR,LF,'$'
+M_UNBEK: DB	'Rechner nicht erkannt. Mit /M:A (A5120), /M:K (K8915),',CR,LF
+	DB	'/M:P (PC 1715), /M:W (PC 1715W), /M:R (PRG 710) oder',CR,LF
+	DB	'/M:S (PRG 710-1) vorgeben.',CR,LF,'$'
 M_HILFE: DB	'Aufruf:',CR,LF
 	DB	'  SERTEST                      interaktiv',CR,LF
 	DB	'  SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n',CR,LF
 	DB	'  SERTEST G n                  Gegenstelle an Schnittstelle n',CR,LF
 	DB	'  /P nur Pruefstecker, /G nur Gegenstelle, /A ohne Rueckfragen',CR,LF
-	DB	'  /M:A, /M:K bzw. /M:P  Rechner A5120, K8915 bzw. PC 1715 vorgeben',CR,LF,'$'
+	DB	'  /M:A, /M:K, /M:P, /M:W, /M:R bzw. /M:S  Rechner vorgeben:',CR,LF
+	DB	'     A5120, K8915, PC 1715, PC 1715W, PRG 710 bzw. PRG 710-1',CR,LF,'$'
 
 ; Teile der Ergebniszeilen
 T_DLOOP: DB	'DATEN-LOOP$'
@@ -2657,10 +2886,19 @@ BES_K:	DW	N_K8915, L_K8915, IF_K
 	DB	3
 BES_P:	DW	N_PC171, L_PC171, IF_P
 	DB	2
+BES_W:	DW	N_PC17W, L_PC171, IF_W
+	DB	2
+BES_R0:	DW	N_PRG0, L_PRG0, IF_R0
+	DB	3
+BES_R1:	DW	N_PRG1, L_PRG1, IF_R1
+	DB	2
 
 N_A5120: DB	'A5120 (K8025)$'
 N_K8915: DB	'K8915 (K7028)$'
 N_PC171: DB	'PC 1715 (ZRE)$'
+N_PC17W: DB	'PC 1715W (ZRE)$'
+N_PRG0:	DB	'PRG 710 (K2521, K8025)$'
+N_PRG1:	DB	'PRG 710-1 (K2521, K8025)$'
 
 L_A5120: DB	'Schnittstellen:',CR,LF
 	DB	'  1  DFUE/V.24      SIO A33 Kanal A   V.24',CR,LF
@@ -2671,6 +2909,15 @@ L_PC171: DB	'Schnittstellen:',CR,LF
 	DB	'  1  Drucker        SIO0 Kanal A      nur Senden (X4)',CR,LF
 	DB	'  2  V.24           SIO0 Kanal B      V.24 (X5)',CR,LF
 	DB	'  -  Tastatur S600  SIO0 Kanal A      (Empfaenger)',CR,LF,'$'
+L_PRG0:	DB	'Schnittstellen:',CR,LF
+	DB	'  1  V.24           SIO A33 Kanal A   V.24 (X4)',CR,LF
+	DB	'  2  IFSS Hauptdr.  SIO A32 Kanal B   IFSS (X6)',CR,LF
+	DB	'  3  ZIFSS          SIO A32 Kanal A   IFSS (X5)',CR,LF
+	DB	'  -  Tastatur K7609 8279 C8H/C9H      (Tastatur)',CR,LF,'$'
+L_PRG1:	DB	'Schnittstellen:',CR,LF
+	DB	'  1  V.24           SIO A33 Kanal A   V.24 (X4)',CR,LF
+	DB	'  2  ZIFSS          SIO A32 Kanal A   IFSS (X5)',CR,LF
+	DB	'  -  Tastatur K7672 SIO A32 Kanal B   (Tastatur)',CR,LF,'$'
 L_K8915: DB	'Schnittstellen:',CR,LF
 	DB	'  1  Drucker/IFSS1  SIO1 Kanal B      IFSS',CR,LF
 	DB	'  2  V.24           SIO1 Kanal A      V.24',CR,LF
@@ -2683,27 +2930,74 @@ L_K8915: DB	'Schnittstellen:',CR,LF
 IF_A:	DW	S_A1
 	DB	ART_V24, 50H, 51H, 0CH, 17H, 0, VEK_A, 53H	; A33 A, Takt ZRE-CTC K0
 	DW	V_A1
+	DB	1
 	DW	S_A2
 	DB	ART_IFS, 52H, 53H, 0CH, 17H, 1, VEK_A, 53H	; A33 B, ZRE-CTC K0 (geteilt mit 1)
 	DW	V_A2
+	DB	1
 	DW	S_A3
 	DB	ART_IFS, 5EH, 5FH, 0, 0, 1, VEK_A, 5FH	; A32 B, Takt CTC A34 K0 = Tastatur: NICHT anfassen
 	DW	V_A3
+	DB	1
 IF_K:	DW	S_K1
 	DB	ART_IFS, 42H, 43H, 4AH, 07H, 1, VEK_K, 43H	; SIO1 B, CTC1 K2
 	DW	V_K1
+	DB	1
 	DW	S_K2
 	DB	ART_V24, 40H, 41H, 48H, 07H, 0, VEK_K, 43H	; SIO1 A, CTC1 K0 (Takt ueber D13)
 	DW	V_K2
+	DB	1
 	DW	S_K3
 	DB	ART_IFS, 50H, 51H, 58H, 07H, 0, 0, 53H	; SIO2 A, CTC2 K0; Vektor des BIOS
 	DW	V_K3
+	DB	1
 IF_P:	DW	S_P1
 	DB	ART_DRU, 0CH, 0EH, 08H, 37H, 0, VEK_P, 0FH	; SIO0 A (Sender), CTC0 K0: Vorteiler 256, SIO x1
 	DW	V_P1
+	DB	1
 	DW	S_P2
 	DB	ART_V24, 0DH, 0FH, 09H, 17H, 1, VEK_P, 0FH	; SIO0 B, CTC0 K1: Vorteiler 16, SIO x16
 	DW	V_P2
+	DB	1
+; PC 1715W: SIO0/CTC0 wie am 1715, aber CTC im Zaehlerbetrieb (57H, ZK 13) - so
+; programmiert das SCP-3.0-BIOS (A843H: Zaehler 57H, ZK = 13 x Baudcode, SIO x16);
+; 1,9968 MHz (= phi/2 an CLK/TRG0/1) / 13 = 153,6 kHz = 16 x 9600. [bestaetigen]
+IF_W:	DW	S_P1
+	DB	ART_DRU, 0CH, 0EH, 08H, 57H, 0, VEK_W, 0FH	; SIO0 A (Sender), CTC0 K0
+	DW	V_W1
+	DB	13
+	DW	S_P2
+	DB	ART_V24, 0DH, 0FH, 09H, 57H, 1, VEK_W, 0FH	; SIO0 B, CTC0 K1
+	DW	V_W2
+	DB	13
+
+; PRG 710 / 710-1: K8025 wie am A5120 (50H-5FH). V.24 = A33 Kanal A, Takt CTC A34 K2
+; (5AH, Zeitgeber 07H/ZK 1 wie das BIOS B152V24/B17272V2: Tabelle 03H 07H 01H). Der IFSS-
+; Hauptdrucker (710: A32 Kanal B) und der ZIFSS (A32 Kanal A) haengen am CTC A34 K0 (58H).
+; Am 710-1 bedient K0 auch die Tastatur K7672 (A32 Kanal B, 9600 8N2): das BIOS stellt
+; ihn beim Kaltstart auf 07H/ZK 1 (Tabelle bei E090H) - SERTEST fasst ihn dort nicht an
+; (CTC-Port 0). Am 710 steht dort keine Tastatur, das BIOS programmiert K0 erst fuer den
+; IFSS (B152IFSS: 05H/ZK 1): SERTEST programmiert K0 selbst.
+IF_R0:	DW	S_R1
+	DB	ART_V24, 50H, 51H, 5AH, 07H, 0, VEK_R, 53H	; A33 A, CTC A34 K2
+	DW	V_R1
+	DB	1
+	DW	S_R2
+	DB	ART_IFS, 5EH, 5FH, 58H, 07H, 1, VEK_R, 5FH	; A32 B (Hauptdrucker), CTC A34 K0
+	DW	V_R2
+	DB	1
+	DW	S_R3
+	DB	ART_IFS, 5CH, 5DH, 58H, 07H, 0, VEK_R, 5FH	; A32 A (ZIFSS), CTC A34 K0
+	DW	V_R3
+	DB	1
+IF_R1:	DW	S_R1
+	DB	ART_V24, 50H, 51H, 5AH, 07H, 0, VEK_R, 53H
+	DW	V_R1
+	DB	1
+	DW	S_R3
+	DB	ART_IFS, 5CH, 5DH, 0, 0, 0, VEK_R, 5FH	; A32 A (ZIFSS); K0 gehoert auch der Tastatur: nicht anfassen
+	DW	V_R4
+	DB	1
 
 ; BIOS-Vorgaben zum Wiederherstellen (Format PORTPR). Nichts davon ist
 ; rueckzulesen; Quellen s. Entwurf 19 Par. 14.4.
@@ -2749,12 +3043,45 @@ V_P2:	DB	1+1, 09H, 03H
 	DB	1+1, 0FH, 18H
 	DB	1
 
+; SCP 3.0 (PC 1715W, BNKBIOS3 A89BH ff., Geraetetabelle F833H ff.: WR4 44H = 40H OR 04H,
+; WR3 C0H = Empfaenger noch aus, WR5 68H = 8 Bit, Sender ein, DTR/RTS aus; CTC im
+; Zaehlerbetrieb 57H, ZK 13 bei Baudcode 1 = 9600). Das BIOS programmiert die Kanaele
+; beim Oeffnen des Geraets neu; hier die Werte nach seiner Initialisierung. Kanal A
+; gehoert der Tastatur: nur WR5 und CTC0 K0, nie WR1/3/4. [bestaetigen]
+V_W1:	DB	2+1, 08H, 57H, 0DH
+	DB	2+1, 0EH, 5, 68H
+	DB	1
+V_W2:	DB	2+1, 09H, 57H, 0DH
+	DB	9+1, 0FH, 18H, 4, 44H, 3, 0C0H, 5, 68H, 1, 0
+	DB	1
+
+; PRG, SCPX (B152V24/B17272V2: E2FEH, E301H; B152IFSS: E2D8H, E2DAH; B17272ZI: E30FH ff.):
+;  V.24 A33 A: CTC A34 K2 03H 07H 01H; SIO WR4 4CH (x16, 2 Stopp, ohne Paritaet), WR3 41H,
+;              WR5 E8H (8 Bit, DTR, Sender ein, RTS aus).
+;  IFSS (710, A32 B): CTC A34 K0 05H/ZK 1; WR4 45H (x16, 1 Stopp, ungerade), WR3 41H, WR5 2AH.
+;  ZIFSS am 710 benutzt kein BIOS: Kanalreset. ZIFSS am 710-1 (B17272ZI): WR4 45H, WR3 41H,
+;  WR5 2AH, CTC K0 bleibt dem BIOS (Tastatur). Das BIOS programmiert beim ERSTEN Zugriff
+;  und merkt es sich - darum die Werte nach seiner Initialisierung.
+V_R1:	DB	3+1, 5AH, 03H, 07H, 01H
+	DB	7+1, 51H, 18H, 4, 4CH, 3, 41H, 5, 0E8H
+	DB	1
+V_R2:	DB	2+1, 58H, 05H, 01H
+	DB	7+1, 5FH, 18H, 4, 45H, 3, 41H, 5, 2AH
+	DB	1
+V_R3:	DB	1+1, 5DH, 18H
+	DB	1
+V_R4:	DB	7+1, 5DH, 18H, 4, 45H, 3, 41H, 5, 2AH
+	DB	1
+
 S_A1:	DB	'DFUE/V.24$'
 S_A2:	DB	'DFUE/IFSS$'
 S_A3:	DB	'Drucker$'
 S_K1:	DB	'Drucker/IFSS1$'
 S_K2:	DB	'V.24$'
 S_K3:	DB	'DFUE/IFSS2$'
+S_R1:	DB	'V.24$'
+S_R2:	DB	'IFSS Hauptdrucker$'
+S_R3:	DB	'ZIFSS$'
 S_P1:	DB	'Drucker$'
 S_P2:	DB	'V.24$'
 
@@ -2835,6 +3162,12 @@ BREMSZ:	DS	2		;   wie oft gebremst (Bericht, H/X)
 GEWR5:	DS	1		;   WR5 vor dem Abschnitt
 BLKZ:	DS	2		;   Bytes bis zur naechsten Pause
 PAUSZ:	DS	2		;   ms der laufenden Pause
+; Zeitbasis je Maschine (ZEITIN) und PC 1715W (V0.3)
+NWART:	DS	1		; WARTE: erste DJNZ-Schleife
+NWAR2:	DS	1		;        zweite DJNZ-Schleife
+NSEND:	DS	1		; SENDE: Pollschleife je ms
+NEMPF:	DS	1		; EMPF:  Pollschleife je ms
+WSCHUTZ: DS	1		; <> 0: BDOS-Aufrufe mit gesperrtem Empfangsinterrupt (BDOSW)
 VAREND:
 VARLEN	EQU	VAREND-VARANF
 

@@ -1,12 +1,24 @@
 # sertest — Serial Test (`SERTEST.COM`)
 
-Z80-Programm unter CP/M 2.2, das die seriellen Schnittstellen eines **A5120**
-(ASS K8025, CP/A), eines **K8915** (ATS K7028, SCPX 8915 V5.3) und eines **PC 1715**
-(ZRE, CP/A 1715) prüft — am
+Z80-Programm unter CP/M 2.2 (am PC 1715W unter CP/M 3), das die seriellen Schnittstellen
+eines **A5120** (ASS K8025, CP/A), eines **K8915** (ATS K7028, SCPX 8915 V5.3), eines
+**PC 1715** (ZRE, CP/A 1715), eines **PC 1715W** (ZRE, SCP 3.0) und eines **PRG 710 / PRG 710-1**
+(K2521-ZRE + ASS K8025, SCPX V1.5 / V1.7) prüft — am
 Gerät mit Prüfstecker bzw. Nullmodemkabel, im Emulator gegen den Rx/Tx-Loop bzw.
 einen zweiten Emulator. Spezifikation: `doc/design/19_serielle_schnittstellen.md`
 **§14**.
 
+> **V0.3 (2026-10-09): PC 1715W und PRG 710 / 710-1 dazu** (Schalter `/M:W`, `/M:R`, `/M:S`;
+> Abschnitte [PC 1715W](#pc-1715w-ab-v03) und [PRG 710 / 710-1](#prg-710--prg-710-1-ab-v03)).
+> Die Zeitbasis der Zählschleifen ist je Maschine einstellbar (1715W: 3,9936 MHz), die
+> BDOS-Aufrufe sind am 1715W gegen CP/M-3-Bankwechsel geschützt. Die Fassungen V0.1/V0.2 bleiben
+> als Prüflinge in `tests/fixtures/cpm/SERTEST_V01.COM` / `SERTEST_V02.COM`; **Verhalten alter
+> Fassungen an den neuen Maschinen:** V0.2 hält einen 1715W für einen PC 1715 (gleiche SIO bei
+> 0EH/0FH) und rechnet mit 2,4576 MHz und Zeitgeberbetrieb; V0.2 und V0.1 halten ein PRG für
+> einen A5120 (K8025 bei 50H, A32 antwortet) — beides ist der Grund für die Erkennung und die
+> Schalter von V0.3 (Wächter `Sertest.Pc1715W_AlteV02…`, `Sertest.Prg710_1_AlteV02…`).
+
+>
 > **V0.2 (2026-10-09): PC 1715 dazu** (Drucker X4 nur Senden, V.24 X5; Schalter `/M:P`,
 > Abschnitt [PC 1715](#pc-1715-ab-v02)). V0.1 (A5120/K8915) bleibt als Prüfling
 > `tests/fixtures/cpm/SERTEST_V01.COM` im Baum; sie kennt den 1715 nicht (`Rechner nicht erkannt`).
@@ -36,7 +48,8 @@ SERTEST T n [/P] [/G] [/A]   Tester an Schnittstelle n (Nummer aus der Liste)
 SERTEST G n                  Gegenstelle an Schnittstelle n
 /P nur Prüfsteckertest, /G nur Gegenstellentest (ohne beide: beide)
 /A automatisch: keine Rückfragen, kein „beliebige Taste"
-/M:A, /M:K bzw. /M:P   Rechner A5120, K8915 bzw. PC 1715 vorgeben (überstimmt die Erkennung)
+/M:A, /M:K, /M:P, /M:W, /M:R bzw. /M:S   Rechner vorgeben (überstimmt die Erkennung):
+   A5120, K8915, PC 1715, PC 1715W, PRG 710 bzw. PRG 710-1
 ```
 
 Fehlerhafte Kommandozeile → Kurzhilfe, Ende. **Ctrl+C** beendet an jeder Stelle
@@ -45,7 +58,7 @@ Fehlerhafte Kommandozeile → Kurzhilfe, Ende. **Ctrl+C** beendet an jeder Stell
 Beim Start:
 
 ```
-Serial Test V0.2  (c) 2026 Olaf Krieger
+Serial Test V0.3  (c) 2026 Olaf Krieger
 Rechner: A5120 (K8025)
 Schnittstellen:
   1  DFUE/V.24      SIO A33 Kanal A   V.24
@@ -193,12 +206,22 @@ oder B ≠ FFH ist **und** RR2 über Kanal B (Registerzeiger 2) ≠ FFH liefert.
 - **PC 1715:** weder 40H noch 50H eine SIO, aber RR0 von Kanal A **und** B bei 0EH/0FH ≠ FFH und
   RR2 über Kanal B (0FH) ≠ FFH. Diese Prüfung läuft **erst nach** den beiden anderen: 0CH–0FH ist am
   A5120 die ZRE-CTC, ein Zeigerwort auf 0FH wäre dort ein Steuerwort. (Am 1715W liegt 40H/41H der FDC-
-  Zugriff der DMA — der 1715W ist nicht Gegenstand.)
-- sonst: `Rechner nicht erkannt`, Abhilfe `/M:A`, `/M:K` bzw. `/M:P`.
+  Zugriff der DMA — der 1715W wird deshalb schon vorher über BDOS 12 abgefangen, s. u.)
+- **PC 1715W (ab V0.3):** wird **vor** allem anderen über BDOS 12 erkannt (CP/M 3 meldet `L` = 31H,
+  CP/A, SCPX und SCP 1715 melden 22H) und dann nur die SIO0 bei 0EH/0FH wie am 1715 geprüft; **40H/41H
+  werden am 1715W nie angefasst** (U8272 per DMA). Gibt es dort keine SIO, bleibt es bei `nicht erkannt`.
+- **PRG 710 / 710-1 (ab V0.3):** SIO bei 50H gefunden (wie A5120), aber **keine ZRE-CTC bei 0CH–0FH**
+  (am A5120 antwortet sie, dort sind die vier Lesewerte nie alle FFH) und die **K2521-CTC bei 80H–83H
+  antwortet** (diese Ports werden nur gelesen, wenn 0CH–0FH leer war — am A5120 nie). Danach der
+  8279-Status bei C9H (nur der Status, nie das Datenregister C8H): ≠ FFH = PRG 710, sonst PRG 710-1.
+  Läuft **vor** der alten A5120-Prüfung (A32 antwortet auch am PRG).
+- sonst: `Rechner nicht erkannt`, Abhilfe `/M:A`, `/M:K`, `/M:P`, `/M:W`, `/M:R` bzw. `/M:S`.
 
 **[bestätigen]** am Gerät: ob an einem A5120 in jeder Ausbaustufe 40H–43H frei ist, und
 ob die nicht vom BIOS benutzte SIO 1 des K8915 einen Vektor ≠ FFH trägt (RR2 ist dort nie
-programmiert — sonst `/M:K`). Checkliste Schritt 1.
+programmiert — sonst `/M:K`); ob am PRG der offene Bus bei 0CH–0FH FFH liest, ob ein 710-1 bei C9H FFH
+liest (sonst hielte SERTEST ihn für einen 710 — `/M:S`) und ob der 1715W-Schalter BDOS 12 = 31H hält.
+Checkliste Schritt 1.
 
 ## PC 1715 (ab V0.2)
 
@@ -207,7 +230,7 @@ Belege: CP/A-1715-BIOS (`BIOP.MAC` „Ausgang PC1715: Printer 0c 0e CTC 08/08 nu
 `doc/merkposten/pc1715.md` (Schnittstellen AP-4a), Kern `core/cards/pc1715_zre/pc1715_zre.cpp`.
 
 ```
-Serial Test V0.2  (c) 2026 Olaf Krieger
+Serial Test V0.3  (c) 2026 Olaf Krieger
 Rechner: PC 1715 (ZRE)
 Schnittstellen:
   1  Drucker        SIO0 Kanal A      nur Senden (X4)
@@ -259,6 +282,113 @@ Schnittstellen:
   V.24-104 des anderen Rechners, 102 ↔ 102 (106 braucht SERTEST nicht). Pinbelegung der Buchsen: Gerätedoku
   (`pc_serv.pdf` §1.2.8), nicht in diesem Haus ausgewertet.
 
+## PC 1715W (ab V0.3)
+
+Belege: `doc/pc1715/pc1715w_hardware.md` (§1 E/A-Karte, §5 Interrupts), Stromlaufplan 1715W Bl. D, Kern
+(`core/cards/pc1715_zre/` in der Betriebsart `Config::w`, `core/machines/pc1715/`), und das **SCP-3.0-BIOS**
+(`SCP3.SYS`, gebankter Teil A600H ff., am laufenden System im Debugger gelesen): Kanalinitialisierung A89BH ff.
+(Tabelle F833H ff.), Tastatur-Polling ADCDH ff., Bankumschalter F640H, Vektortabelle bei F300H.
+
+```
+Serial Test V0.3  (c) 2026 Olaf Krieger
+Rechner: PC 1715W (ZRE)
+Schnittstellen:                       (Liste wie am PC 1715)
+  1  Drucker        SIO0 Kanal A      nur Senden (X4)
+  2  V.24           SIO0 Kanal B      V.24 (X5)
+  -  Tastatur S600  SIO0 Kanal A      (Empfaenger)
+```
+
+- **Dieselbe Schnittstellenlage wie der PC 1715:** SIO0 bei 0CH–0FH (AB0 = Kanal, AB1 = Steuer), CTC0 bei
+  08H–0BH, Drucker X4 = Kanal A nur Sender (Empfänger = Tastatur, nie anfassen), V.24 X5 = Kanal B, 107 an
+  `/DCDA`, 109 an `/DCDB`, 106 an `/CTSB`. Die Erwartung der Leitungen ist die des 1715 (CTS = RTS, 107 = DTR).
+  Eine Zusatzkarte (CTC1/SIO1 bei 10H–17H, LT107/LT111 bei 2CH–2FH) kennt SERTEST nicht — nicht bestückt.
+- **Takt 3,9936 MHz** (`φ = 15,9744 MHz / 4`): die Zählschleifen `N_SENDE`/`N_EMPF`/`N_WARTE` sind Variablen
+  (`ZEITIN`; 3994 statt 2458 Takte je ms; `WARTE` hat zwei DJNZ-Schleifen, eine ms braucht ~300 Durchläufe).
+  Fristen sind Mindestzeiten — wie bisher.
+- **Baudtakt wie das BIOS:** bei 3,9936 MHz ergibt ein Zeitgeber (Vorteiler 16/256) kein ×16-9600 (153,6 kHz
+  = φ / 26 — kein Vorteiler-Vielfaches). Das BIOS rechnet darum **im Zählerbetrieb**: Steuerwort `57H`,
+  **ZK = 13 × Baudcode** (Baudcode 1 = 9600; A843H–A89AH), SIO ×16 (WR4 = 40H OR 04H = 44H). Daraus folgt
+  **CLK/TRG0 und CLK/TRG1 = 1,9968 MHz = φ/2** (13 × 153,6 kHz) — SERTEST programmiert deshalb CTC0 K0
+  (Drucker) und K1 (V.24) mit `57H`, `0DH`. **[bestätigen]** Der Emulator verdrahtet CLK/TRG am 1715W noch nicht:
+  er meldet das Format der Schnittstellen als „ungültig“ und taktet mit dem Ersatzformat 9600 8N1; die Tests
+  prüfen darum die CTC-Programmierung selbst (`Pc1715W_ProgrammiertDenBaudtaktWieDasBios`).
+- **BIOS-Vorgabe nach dem Test** (Tabelle F833H, A89BH): CTC `57H`/13; V.24 = Kanalreset B, WR4 44H, WR3 C0H (Empfänger
+  noch aus), WR5 68H (DTR/RTS aus); Drucker: nur WR5 68H und CTC0 K0 `57H`/13 (WR1/3/4 gehören der Tastatur).
+  Das BIOS programmiert die Kanäle beim Öffnen des Geräts neu. **[bestätigen]**
+- **Interrupt der Gegenstelle:** eigener Vektor **30H**. Die BIOS-Tabelle liegt bei `I = F3H` (F300H, in der
+  gemeinsamen Speicherzone); belegt sind 08H–0EH (CTC2), 14H (DMA-Ende) und — sobald das BIOS die SIO öffnet —
+  20H–2EH (WR2 B = 20H, „Status affects Vector“); ab F360H steht Code. 30H–5EH sind frei (Nullen). Am laufenden
+  System ist die SIO nicht im Interrupt (Tastatur wird gepollt, WR1 = 0).
+- **CP/M 3 und die Bänke — der eigentliche Unterschied:** SCP 3.0 hat die TPA in einer anderen Bank als das
+  BIOS (Systembank mit dem gebankten BDOS/BIOS 7800H–BFFFH; ab C000H gemeinsamer Speicher, dort auch Vektortabelle und BIOS-ISRs). Das BIOS wechselt die
+  Bank mit F640H (`DI / OUT (24H),A / EI / RET`) **und läuft danach mit EI in der Systembank** — ein SIO-Interrupt
+  dort spränge auf den Tabelleneintrag der Gegenstelle, deren ISR in der TPA-Bank steht. Darum ist jeder
+  BDOS-Aufruf (`BDOSW`, nur am 1715W) so geklammert: DI → WR1 des Kanals := 0 → **wartende Zeichen aus dem
+  Empfänger holen** (eine schon gemeldete Anforderung geht mit WR1 := 0 *nicht* weg, wohl aber mit dem Lesen der
+  Zeichen — das ist im Emulator als Zufallsabsturz aufgefallen) → BDOS → wieder holen → WR1 := 10H → EI. Die
+  ISR der BIOS-eigenen Interrupts (1-Hz-Uhr F648H, DMA FB6CH) hängt dagegen an eigenem Stapel in der gemeinsamen
+  Zone und ist bankunabhängig. Ohne `BDOSW` fällt `Sertest.Pc1715W_V24EmpfaengtImInterrupt` (verifiziert). Zeichen,
+  die während eines BDOS-Aufrufs kommen, liegen im SIO-FIFO (3 Byte ≈ 3 ms) — ein BDOS-6-Aufruf braucht
+  deutlich weniger; ein Rollen des Bildschirms mitten im Empfang würde es sprengen (die Gegenstelle schreibt
+  nur im Ruhezustand).
+- **Konsole:** BDOS 6 (E = FFH: Eingabe ohne Warten, sonst Ausgabe) und BDOS 0 verhalten sich unter CP/M 3
+  wie unter 2.2; Strg+C kommt als 03H an (Wächter `Sertest.Pc1715W_CtrlC…`).
+- **Geprüft** im Emulator mit SCP 3.0 V0003 (`pc1715w_scp30_system.hfe`): `Sertest.Pc1715W_*`,
+  `SertestKopplung.Pc1715W_*` (1715W ↔ 1715W schnell; Drucker → V.24; 1715W ↔ PC 1715 mit V0.2; 1715W ↔ A5120
+  mit V0.1, je beide Richtungen).
+- **Kabel:** wie 1715 (X5 V.24: Prüfstecker 320-032, Nullmodem; X4 Drucker: 330-042) — der 1715W hat dieselben
+  Buchsen [bestätigen, Schaltplan Bl. D: X4/X5 an A20–A23].
+
+## PRG 710 / PRG 710-1 (ab V0.3)
+
+Belege: `doc/merkposten/prg710.md` (K8025 am PRG, Tastaturen), `doc/design/20_prg710.md` §3.7 (`DRUCK.DOK`: V.24
+X4 50H/51H CTC 5AH, IFSS-Hauptdrucker X6 5EH/5FH, ZIFSS X5 5CH/5DH, CTC 58H), Kern (`core/machines/prg710/`,
+`core/cards/k8025/`) und das **SCPX-BIOS selbst** (`B152V24`/`B152IFSS` V1.5, `B17272V2`/`B17272ZI` V1.7:
+Initialisierungstabellen bei E090H, E2FEH/E301H bzw. E2D8H, E30FH).
+
+```
+Serial Test V0.3  (c) 2026 Olaf Krieger          Serial Test V0.3  (c) 2026 Olaf Krieger
+Rechner: PRG 710 (K2521, K8025)                  Rechner: PRG 710-1 (K2521, K8025)
+  1  V.24           SIO A33 Kanal A   V.24 (X4)    1  V.24           SIO A33 Kanal A   V.24 (X4)
+  2  IFSS Hauptdr.  SIO A32 Kanal B   IFSS (X6)    2  ZIFSS          SIO A32 Kanal A   IFSS (X5)
+  3  ZIFSS          SIO A32 Kanal A   IFSS (X5)    -  Tastatur K7672 SIO A32 Kanal B   (Tastatur)
+  -  Tastatur K7609 8279 C8H/C9H      (Tastatur)
+```
+
+**Sind 710 und 710-1 bei den seriellen Schnittstellen gleich?** Fast — nachgeprüft im Kern und an den BIOS-Fassungen:
+
+| | PRG 710 | PRG 710-1 | Beleg |
+|---|---|---|---|
+| K8025, Ports 50H–5FH, V.24 an A33-A mit CTC A34 K2 (5AH) | ja | ja | `prg710.cpp` (`taktquelle = 1`), B152V24 = B17272V2 (gleiche Tabelle `03 07 01`, WR4 4CH, WR5 E8H) |
+| ZIFSS A32-A (5CH/5DH), Takt CTC A34 K0 | ja | ja | `k8025.cpp` `ctcTakte()`, B17272ZI |
+| IFSS-Hauptdrucker A32-B (5EH/5FH) | **ja** (X6) | **nein** — A32-B = Tastatur K7672 | `prg710.md` „K8025 am PRG“ |
+| Tastatur | 8279 + K7609 (C8H/C9H, Polling) | K7672 an A32-B, 9600 8N2 | `prg710.md` „Tastaturen“ |
+| CTC A34 K0 | vom BIOS erst für den IFSS programmiert (`05 01`) | beim Kaltstart auf `07 01` — **auch für die Tastatur** | B152IFSS / B17272V2 (E080H) |
+| BIOS-Fassung | SCPX V1.5 (BW 15) | SCPX V1.7 (BW 17) | `doc/design/20_prg710.md` §5 |
+| Takt φ, K8025-Logik (CTS = V106 ∧ V107, DCD = V109 ∧ V107) | 2,4576 MHz, wie A5120 | dito | `Prg710Machine::CPU_HZ`, K8025 |
+
+Die Hardware der **Schnittstellen** ist also gleich, **die Belegung der A32 und der Taktkanal K0 nicht** — daher
+zwei Maschinen im Programm (`/M:R` = 710, `/M:S` = 710-1; beide werden erkannt).
+
+- **Tabu am 710-1:** A32-B (5EH/5FH) und der CTC A34 K0 (58H). SERTEST führt A32-B nicht in der Liste, schreibt
+  nie nach 5EH/5FH außer beim 710 (dort ist es der IFSS) und **programmiert K0 am 710-1 nicht** (CTC-Port 0 in der
+  Tabelle; das BIOS hat K0 beim Kaltstart auf 9600 gestellt). Am 710 programmiert SERTEST K0 selbst (`07H`, ZK 1).
+  Die Wiederherstellung am 710-1 setzt am ZIFSS nur die SIO-Kanalwerte (A32-A), nie K0.
+- **Interrupt der Gegenstelle:** eigener Vektor **D0H**. Beide BIOS setzen `I = DFH`, die Tabelle ruht auf
+  BIOS-Daten (DF00H–DF8FH); belegt sind nur 90H (K5122-PIO) und E0H (ZRE-CTC), DFC0H–DFFFH ist FFH
+  (= „kein Eintrag“, SERTEST springt dann nur mit RETI zurück). Das BIOS betreibt die K8025 gepollt. **[bestätigen]**
+  für andere BIOS-Fassungen (nur B152V24/B152IFSS/B17272V2/B17272ZI geprüft).
+- **BIOS-Vorgabe nach dem Test** (Tabellen s. Quelltext, `V_R1`–`V_R4`): V.24 = CTC K2 `03 07 01`, WR4 4CH, WR3 41H,
+  WR5 E8H; IFSS (710) = K0 `05 01`, WR4 45H (7O1), WR3 41H, WR5 2AH; ZIFSS am 710-1 = WR4 45H/WR3 41H/WR5 2AH;
+  ZIFSS am 710 benutzt das BIOS nicht (Kanalreset). Das BIOS programmiert beim ersten Zugriff und merkt es sich — darum
+  die Werte *nach* seiner Initialisierung.
+- Getestet mit den bootfähigen Fixtures (`prg710_scpx15_cpa640_sysprg.hfe`, `prg710-1_scpx17_cpa640_boot.hfe`), je
+  Variante (`Sertest.Prg/SertestPrgP.*`) und gekoppelt (`SertestKopplung.Prg710*`): 710-1 ↔ 710-1 (V.24 und
+  ZIFSS), 710 ↔ 710 (V.24, IFSS-Hauptdrucker ↔ ZIFSS), 710 ↔ 710-1, 710-1 ↔ PC 1715 (V0.2), 710 ↔ A5120 (V0.1).
+- **Kabel:** wie A5120 (K8025-Belegung der V.24 am Stecker X4, IFSS an X5/X6; Prüfstecker/Nullmodem nach dem Abschnitt
+  *Kabel*), die Pinbelegung der PRG-Buchsen selbst **[bestätigen]** — am 710-1 darf an A32-B nichts gesteckt werden, was die
+  Tastatur stört.
+
 ## Annahmen
 
 Was mit **[bestätigen]** markiert ist, prüft die Checkliste unten.
@@ -281,8 +411,21 @@ Was mit **[bestätigen]** markiert ist, prüft die Checkliste unten.
   RR2 B einer nie programmierten SIO ≠ FFH (sonst `/M:P`), der freie Vektor F0H in der BIOS-Fassung des Geräts,
   die Brücken für Sender-Takt (CTC0 K0 → TxCA, CTC0 K1 → RxCB/TxCB) und dass Kanal A nach WR5 = EAH den
   Drucker nicht stört (am Gerät mit Drucker einmal drucken).
-- φ = 2,4576 MHz an allen Maschinen (Zeitbasis der Zählschleifen; gemessen +7 %
-  durch BIOS-Interrupts — Fristen sind Mindestzeiten).
+- **PC 1715W (V0.3), nur ein Gerät kann es bestätigen:** (1) CLK/TRG0/1 der CTC0 = φ/2, SIO ×16 (aus der
+  BIOS-Rechnung ZK = 13 × Baudcode abgeleitet, nicht aus dem Schaltplan gelesen — der Plan ist als Scan nicht
+  auflösbar); (2) 107 an `/DCDA` wie am 1715 (MAME verdrahtet DSR an `/SYNCB` — Quelle ungeprüft); (3) BDOS 12 meldet
+  unter SCP 3.0 immer ≥ 30H; (4) WR4 von Kanal A bleibt nach dem BIOS-Kaltstart ×16 (SERTEST fasst WR4 von A nie an,
+  der Drucker-Sendetakt hängt daran); (5) der freie Vektor 30H in der BIOS-Tabelle F300H und dass das BIOS die SIO
+  nicht im Interrupt betreibt, solange kein Gerät geöffnet ist; (6) ob eine bereits gemeldete Empfangsanforderung am
+  echten U856 mit dem Lesen der Zeichen verschwindet (Emulator: ja) — Schritt 5 der Checkliste; (7) die Restore-Werte
+  (WR3 C0H, WR5 68H, CTC `57H`/13).
+- **PRG 710 / 710-1 (V0.3), [bestätigen]:** (1) offener Bus bei 0CH–0FH und am 710-1 bei C9H liest FFH (Erkennung);
+  (2) die K2521-CTC liegt bei 80H–83H und antwortet; (3) der Vektor D0H ist in jeder SCPX-Fassung frei
+  (`DFD0H = FFFFH`); (4) CTC A34 K0 kann am 710 frei programmiert werden; am 710-1 hält das BIOS ihn für die Tastatur;
+  (5) der Takt der V.24 ist CTC A34 K2 im Zeitgeberbetrieb von φ (BIOS-Tabelle) — A46 und die ZRE-CTC-Kette
+  (`taktquelle = 1`) sind nur über den Emulator-Kern, nicht am Gerät belegt.
+- φ = 2,4576 MHz an A5120, K8915, PC 1715 und PRG (Zeitbasis der Zählschleifen; gemessen +7 %
+  durch BIOS-Interrupts — Fristen sind Mindestzeiten); **PC 1715W 3,9936 MHz** (eigene Zähler, `ZEITIN`).
 - **Interruptvektoren** (Gegenstelle): wo das BIOS die SIO nicht im Interrupt betreibt,
   ein eigener Vektor ohne „Status affects Vector" — CP/A **E4H** (`intvsy+04h`, laut
   BIOS frei), SCPX 8915 **C0H** (FFC0H). An der SIO 2 des K8915 (Tastatur) gilt der
@@ -407,6 +550,13 @@ Achtung: dieselben Kontaktnummern tragen an der K8025-X5 die **umgekehrte** Pola
 (Sender passiv, Empfänger aktiv) muss der K8915 **ebenso** stehen: sein Empfänger speist die
 Schleife des A5120-Senders, der A5120-Empfänger die seines Senders.
 
+### PC 1715W und PRG
+
+Wie PC 1715 (1715W: dieselben Stecker X4/X5, Prüfstecker 330-042/320-032) bzw. A5120 (PRG: V.24 X4 mit der K8025-Belegung
+von X6 des A5120, IFSS X5/X6). Alles **[bestätigen]**. Gemischt koppelbar: 1715W/PC 1715 über die V.24 (beide Richtungen,
+Tests), PRG/A5120 über die V.24, PRG-ZIFSS gegen IFSS anderer Maschinen (Drucker-IFSS der K8025 ist beidseitig aktiv —
+dieselbe Einschränkung wie am A5120-Drucker, nicht ausprobiert).
+
 ### Welche Schnittstellen gegeneinander
 
 Das Protokoll trägt keine Schnittstellennummer; es kommt nur auf die **Art** an
@@ -463,6 +613,18 @@ Takt.
 | 4 | Nullmodem X5 ↔ X5 zweier 1715 (oder zu einem A5120-X6): `SERTEST G 2` / `SERTEST T 2 /G` | wie A5120 ↔ A5120 (Schritt 3 der Liste oben): `ECHO`, `FLUSS-HW`, `FLUSS-XON` OK |
 | 5 | Drucker X4 → V.24 des anderen Rechners: dort `SERTEST G 2`, hier `SERTEST T 1 /G` | `SENDEN: OK`, an der Gegenstelle `Abschnitt fertig, Empfangsfehler 0000H` |
 
+### PC 1715W und PRG — Checkliste für das Gerät
+
+| # | Tun | Erwartet |
+|---|-----|----------|
+| 1 | 1715W: `SERTEST` (SCP 3.0), Strg+C, `DIR`; PRG: `SERTEST`, Strg+C, `DIR` | `Rechner: PC 1715W (ZRE)` bzw. `PRG 710 …` / `PRG 710-1 …` mit der passenden Liste; sonst Abhilfe `/M:W`, `/M:R`, `/M:S` und die Lesewerte von 0CH–0FH, 80H, C9H notieren |
+| 2 | Prüfstecker an V.24: `SERTEST T 2 /P` (1715W) / `T 1 /P` (PRG) | beide OK; 1715W: CTS = RTS, DCD = DTR; PRG: 00 → CTS 0 DCD 0, 10 → 0 0, 01 → 0 1, 11 → 1 1 |
+| 3 | 1715W-Drucker: Stecker 330-042: `T 1 /P`; danach Tastatur bedienbar | `DATEN-LOOP`/`LEITUNGEN-LOOP` OK |
+| 4 | Nullmodem: `SERTEST G n` auf dem einen, `SERTEST T n /G` auf dem anderen | `ECHO`, `FLUSS-HW`, `FLUSS-XON` OK, `SERTEST INTERRUPT OK`, Empfangsfehler 0000H — am 1715W ist das der Beleg für CTC `57H`/13 und die Bankumschaltung |
+| 5 | **1715W:** während der Gegenstelle sehr schnell Tasten drücken (Rollen des Bildschirms) und Strg+C; danach `DIR` | System bedienbar, kein Absturz (Interrupt/Bank) |
+| 6 | **PRG 710-1:** nach Tests am ZIFSS Tastatur prüfen; **PRG 710:** IFSS-Hauptdrucker gegen ZIFSS | Tastatur geht, ENTER lädt wieder |
+| 7 | Baudrate: Gegenstelle am 1715W gegen einen PC mit bekanntem 9600 8N1 | läuft; sonst Annahme (1) bzw. (5) der Liste oben |
+
 ## Bauen
 
 ```sh
@@ -474,7 +636,8 @@ python3 tools/sertest/build.py --out x.com   # Temp-Bau nach x.com
 
 `--check` ist der ctest-Wächter `cli_sertest_com_passt_zur_quelle`; ohne Werkzeugkette
 endet er mit 77 (= übersprungen). Die Emulatortests stehen in
-`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`; PC 1715: `Sertest.Pc1715_*`) und, mit zwei gekoppelten
+`tests/system/test_sertest.cpp` (`tools/dev.sh test -R Sertest`; PC 1715: `Sertest.Pc1715_*`, 1715W: `Sertest.Pc1715W_*`,
+PRG: `Sertest.Prg/SertestPrgP.*`) und, mit zwei gekoppelten
 Maschinen, in `tests/system/test_sertest_kopplung.cpp` (`SertestKopplung.*`; zwei Fälle — A5120 und
 PC 1715 — in `tools/dev.sh test`, die übrigen in `tools/dev.sh test-format`, darunter
 `Pc1715_DruckerSendetAnDieGegenstelle` und `Pc1715_MitA5120UndDerAltenV01_BeideRichtungen` mit V0.1 auf
@@ -486,7 +649,8 @@ nicht `No Fatal error(s)` meldet (M80 selbst endet auch bei Fehlern mit 0). Die
 gebaute `.com` wird nach `tools/sertest/sertest.com` kopiert und **eingecheckt** —
 die CI hat die CPA_Workbench nicht.
 
-**Nach jedem Neubau die Disketten nachziehen** — SERTEST.COM liegt auf vier Disketten, die drei Bauwege
+**Nach jedem Neubau die Disketten nachziehen** — SERTEST.COM liegt auf vier Disketten (für PC 1715W und PRG kommen
+Platzierungen auf SCP-3.0- bzw. SCPX-Disketten hinzu — das macht der Diskettenbau, nicht dieses Verzeichnis), die drei Bauwege
 nehmen es alle aus `tools/sertest/sertest.com`:
 
 ```sh

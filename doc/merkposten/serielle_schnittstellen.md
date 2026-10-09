@@ -141,6 +141,22 @@ CPA_Workbench übersprungen).
   Eintrag ein Sprung nach 0000H). **(5)** Maschinenerkennung des 1715 erst NACH A5120/K8915 (0CH–0FH ist
   am A5120 die ZRE-CTC, ein Zeigerwort auf 0FH wäre dort ein Steuerwort). Wächter `Sertest.Pc1715_*`,
   `SertestKopplung.Pc1715_*` (Kopplung 1715 ↔ 1715, Drucker → V.24, 1715 V0.2 ↔ A5120 V0.1).
+- **PC 1715W + PRG 710/710-1 (V0.3, 2026-10-09)** — sechs Dinge, die man nicht aufweichen darf: **(1)** **1715W =
+  Hardware des 1715, aber 3,9936 MHz, CTC im Zählerbetrieb (`57H`, ZK 13 = 13 × Baudcode, BIOS A843H) und CP/M 3**: die
+  Zählschleifen sind Variablen (`ZEITIN`: `NWART/NWAR2/NSEND/NEMPF`), die Tabelle trägt die ZK (`IF_ZK`); der Emulator
+  verdrahtet CLK/TRG0/1 des 1715W nicht (Format „ungültig“, Wandler läuft mit Ersatzformat 9600 8N1) — Tests prüfen darum
+  `isTimerMode`/`getCount` der CTC, nicht die Baudrate. **(2)** **Unter CP/M 3 jeder BDOS-Aufruf mit gesperrtem SIO-Interrupt
+  (`BDOSW`, `WSCHUTZ`)**: das BIOS wechselt die Bank (F640H mit EI) und läuft in der Systembank, die ISR der Gegenstelle steht
+  in der TPA-Bank; **vor dem BDOS-Aufruf die wartenden Zeichen lesen** — `Z80SIO::irq_rx` ist gelatcht, WR1 := 0 löscht sie
+  nicht (zufälliger Absturz nach ~220 BDOS-Aufrufen, bis das Lesen davor stand); Negativprobe `Sertest.Pc1715W_V24Empfaengt…`.
+  **(3)** **Erkennung 1715W über BDOS 12 (≥ 30H) vor allen Port-Zugriffen** (40H/41H sind dort der U8272); PRG über „SIO bei
+  50H, ZRE-CTC bei 0CH–0FH leer, K2521-CTC bei 80H antwortet“ **vor** der A5120-Prüfung, 710 gegen 710-1 am 8279-Status C9H.
+  **(4)** **Am 710-1 sind A32-B (5EH/5FH) und CTC A34 K0 (58H) die Tastatur K7672 — tabu**; K0 wird dort nicht programmiert
+  (Tabelle: CTC-Port 0), am 710 schon (IFSS). **(5)** PRG-Vektor **D0H** (`I = DFH`, DFC0H–DFFFH = FFH), 1715W-Vektor **30H**
+  (`I = F3H`; 20H–2EH belegt das BIOS, wenn es die SIO öffnet). **(6)** Die Fassungen V0.1/V0.2 sind Prüflinge
+  (`tests/fixtures/cpm/SERTEST_V01.COM`/`_V02.COM`, nicht überschreiben): V0.2 hält den 1715W für einen PC 1715, V0.1/V0.2 ein
+  PRG für einen A5120. Wächter `Sertest.Pc1715W_*`, `Sertest.Prg/SertestPrgP.*`, `SertestKopplung.Pc1715W_*`,
+  `SertestKopplung.Prg710*` (Zeitgeber der Paare je Maschine: `T::kPhi`, Scheibe der Gegenseite proportional).
 - **Ergebniszeilen sind ein Vertrag** (`SERTEST <name> <TEIL>: OK|FEHLER …|ENTFAELLT`,
   `SERTEST ENDE …`); gelesen von `SertestProtokoll` (`tests/system/sertest_hilfen.h`), das
   eine Zeile erst nach 500 000 Takten ununterbrochen im Bild gelten lässt — zeichenweise

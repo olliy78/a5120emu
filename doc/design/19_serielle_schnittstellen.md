@@ -847,6 +847,18 @@ WR1/3/4 gehören ihr: SIO-A wird nie zurückgesetzt, nur WR5 und CTC0 K0 gesetzt
 („0f0h..0f6 frei bei PC1715", in jeder BIOS-Fassung innerhalb der Vektorsäule). Einzelheiten und
 Annahmen: `tools/sertest/README.md`; Wächter `Sertest.Pc1715_*`, `SertestKopplung.Pc1715_*`.
 
+**V0.3 (2026-10-09): PC 1715W und PRG 710 / 710-1** (`/M:W`, `/M:R` = 710, `/M:S` = 710-1; Version 0.3 trägt alle drei
+Neuerungen). **1715W** (SCP 3.0 = CP/M 3): SIO0/CTC0 wie am 1715, aber 3,9936 MHz; Baudtakt wie das SCP-3.0-BIOS
+(CTC Zählerbetrieb `57H`, ZK 13, SIO ×16 ⇒ CLK/TRG = φ/2 [bestätigen]); Zeitbasis je Maschine (`ZEITIN`); jeder BDOS-Aufruf
+sperrt die Empfangsinterrupts der Gegenstelle (`BDOSW`: das BIOS läuft nach dem Bankwechsel F640H mit EI in der
+Systembank, die ISR steht in der TPA-Bank — vorher wartende Zeichen lesen, die gelatchte Anforderung bleibt sonst stehen);
+Vektor 30H (Tabelle bei F300H); Erkennung über BDOS 12. **PRG:** K2521-ZRE + K8025 wie A5120; 710 und 710-1
+unterscheiden sich in der A32 (710: IFSS-Hauptdrucker A32-B + ZIFSS A32-A, Tastatur am 8279; 710-1: nur ZIFSS A32-A, A32-B =
+Tastatur K7672 tabu, CTC A34 K0 gehört auch ihr); V.24 an A33-A mit CTC A34 K2 (Zeitgeber `07H`/ZK 1, BIOS B152V24 =
+B17272V2); Vektor D0H (`I = DFH`); Erkennung SIO 50H + ZRE-CTC 0CH leer + K2521-CTC 80H + 8279-Status C9H.
+Einzelheiten, Belege, Annahmen und Checkliste: `tools/sertest/README.md` (Abschnitte „PC 1715W“, „PRG 710 / PRG 710-1“);
+Wächter `Sertest.Pc1715W_*`, `Sertest.Prg/SertestPrgP.*`, `SertestKopplung.Pc1715W_*`, `SertestKopplung.Prg710*`.
+
 ### 14.1 Ziel
 
 Ein Z80-Programm unter CP/M 2.2, das die seriellen Schnittstellen eines **A5120** (K8025)
@@ -856,10 +868,10 @@ gegen den Rx/Tx-Loop (§6.5) bzw. gegen einen zweiten Emulator über RFC 2217 (N
 Kreuzung §6.4). Das Programm ist damit zugleich Abnahmewerkzeug für Geräte und End-zu-End-
 Wächter der Schnittstellenemulation (SIO, CTC, Wandler, Steuerleitungen, Flusssteuerung).
 
-- Name **„Serial Test"**, Version **0.2** (0.1 = nur A5120/K8915; Prüfling `tests/fixtures/cpm/SERTEST_V01.COM`), Datei **`SERTEST.COM`**.
-- Kopfzeile beim Start, genau so: `Serial Test V0.2  (c) 2026 Olaf Krieger`
+- Name **„Serial Test"**, Version **0.3** (0.1 = nur A5120/K8915, Prüfling `tests/fixtures/cpm/SERTEST_V01.COM`; 0.2 = + PC 1715, Prüfling `…/SERTEST_V02.COM`), Datei **`SERTEST.COM`**.
+- Kopfzeile beim Start, genau so: `Serial Test V0.3  (c) 2026 Olaf Krieger`
 - Zwei Rollen: **Tester (Aktiv)** und **Gegenstelle (Passiv)**.
-- Läuft unter **CP/A (A5120)**, **SCPX 8915 V5.3 (K8915)** und **CP/A 1715 (PC 1715)**; benutzt vom Betriebssystem
+- Läuft unter **CP/A (A5120)**, **SCPX 8915 V5.3 (K8915)**, **CP/A 1715 (PC 1715)**, **SCP 3.0 = CP/M 3 (PC 1715W)** und **SCPX V1.5/V1.7 (PRG 710/710-1)**; benutzt vom Betriebssystem
   nur das BDOS (Funktionen 0, 6, 9). Alles andere geht direkt auf die Hardware.
   Umgesetzt (ST1): **auch die Ausgabe zeichenweise über BDOS 6**, BDOS 9 bleibt ungenutzt —
   BDOS 9 läuft durch die Abbruchprüfung des BDOS (`conbrk`), die eine während der Ausgabe
@@ -872,7 +884,7 @@ Wächter der Schnittstellenemulation (SIO, CTC, Wandler, Steuerleitungen, Flusss
 **Gemeinsamer Anfang:**
 
 ```
-Serial Test V0.2  (c) 2026 Olaf Krieger
+Serial Test V0.3  (c) 2026 Olaf Krieger
 Rechner: A5120 (K8025)
 Schnittstellen:
   1  DFUE/V.24      SIO A33 Kanal A   V.24

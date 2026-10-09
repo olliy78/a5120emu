@@ -4,8 +4,9 @@
  *        SERTEST.COM, Kaltstart bis zum Prompt, Bedienung über die Tastatur und das
  *        Einsammeln der Ergebniszeilen (§14.3) — für A5120 (CP/A) und K8915 (SCPX 8915).
  *
- * Alle Maschinen (auch @ref SertestPc1715, PC 1715 mit CP/A 1715, V0.2) haben dieselbe Oberfläche (@ref SertestA5120, @ref SertestK8915), ein
- * Fall kann also als Schablone über beide laufen:
+ * Alle Maschinen (auch @ref SertestPc1715, PC 1715 mit CP/A 1715, V0.2, und @ref SertestPc1715W,
+ * PC 1715W mit SCP 3.0, V0.3) haben dieselbe Oberfläche (@ref SertestA5120, @ref SertestK8915), ein
+ * Fall kann also als Schablone über alle laufen:
  *
  * ```
  * SertestA5120 s;                       // TempDisk + SERTEST.COM + Laufwerk A:
@@ -50,6 +51,7 @@
 #include "core/machines/a5120/a5120.h"
 #include "core/machines/k8915/k8915.h"
 #include "core/machines/pc1715/pc1715.h"
+#include "core/machines/prg710/prg710.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
 #include "tests/support/fixtures.h"
 #include "tests/support/keyboard.h"
@@ -57,6 +59,7 @@
 #include "tests/support/pc1715_input.h"
 #include "tests/support/screen.h"
 #include "tests/system/k8915_bedienung.h"
+#include "tests/system/prg710_bedienung.h"
 
 #ifndef K1520_SERTEST_COM
 #error "K1520_SERTEST_COM fehlt — k1520_add_test(... DEFS K1520_SERTEST_COM=\"…\")"
@@ -71,15 +74,18 @@ inline std::string comPfad() { return K1520_SERTEST_COM; }
 inline constexpr const char* kDisketteA5120 = "cpa_cpa780_k5601_noclock.img";
 inline constexpr const char* kDisketteK8915 = "k8915scpx_cpa800_k5601_bios55k-disk900.hfe";
 inline constexpr const char* kDisketteP1715 = "pc1715_cpa1715_boot_4lw.hfe";
+inline constexpr const char* kDisketteP1715W = "pc1715w_scp30_system.hfe";
+// PRG: prg710test::scpxDiskette(V) — SCPX V1.5 (710) bzw. V1.7 (710-1), bootfähig als Fixture.
 
 /// `SERTEST.COM` mit dem k1520DiskTool (DiskVolume) auf die Diskette @p pfad schreiben.
 /// Dateisystem wird erkannt (CP/A bzw. SCPX 8915).  Liefert leer bei Erfolg, sonst den Grund.
-inline std::string aufspielen(const std::string& pfad, const std::string& com = "") {
+inline std::string aufspielen(const std::string& pfad, const std::string& com = "",
+                              const std::string& fsName = "") {
     std::string f;
     static const FormatCatalog formate = FormatCatalog::loadDefault(&f);
     static const FsCatalog     fs      = FsCatalog::loadDefault(formate, &f);
     std::string err;
-    auto v = DiskVolume::open(pfad, "", formate, fs, err, /*read_only=*/false);
+    auto v = DiskVolume::open(pfad, fsName, formate, fs, err, /*read_only=*/false);
     if (!v) return "DiskVolume::open: " + err;
     v->setBackup(false);   // TempDisk räumt nur die Kopie selbst weg, kein `…~` liegen lassen
     TransferOptions o;
@@ -271,6 +277,9 @@ public:
         return false;
     }
 
+    /// Systemtakt der Maschine (φ) in Hz: Zeitbasis für gleich schnell laufende Paare.
+    static constexpr double kPhi = 2'457'600.0;
+
     /// Ein Schritt der Maschine; zählt die Takte für das Protokoll mit.
     long long lauf() { const long long n = selbst().schritt(); takt_ += n; return n; }
     /// Wie lauf(), aber @p takte Takte — zwei gekoppelte Maschinen laufen damit in
@@ -405,6 +414,108 @@ public:
 private:
     k1520test::TempDisk disk_;
     Pc1715Machine       m_;
+    std::string         fehler_;
+};
+
+/**
+ * @brief PC 1715W mit SCP 3.0 (`pc1715w_scp30_system.hfe`, CP/M 3, 3,9936 MHz) und SERTEST.COM
+ * auf A:.  Der Kaltstart ist fertig, wenn PROFILE.SUB (`modcs sc619.zgf[1]`) durch ist und der
+ * Prompt `A>` wieder steht.  Tastatur und Bild wie am PC 1715 (`pc1715_input.h`).
+ */
+class SertestPc1715W : public SertestBasis<SertestPc1715W> {
+public:
+    static constexpr double kPhi = 3'993'600.0;
+
+    explicit SertestPc1715W(const std::string& com = "", const std::string& fixture = kDisketteP1715W)
+        : disk_(fixture, "sertest_pc1715w_" + fixture), m_(konfig()) {
+        fehler_ = aufspielen(disk_.path(), com);
+        if (fehler_.empty() && !m_.mountDisk(0, disk_.path(), m_.defaultFormatName(0), false))
+            fehler_ = "mountDisk: " + m_.lastError();
+    }
+    const std::string& fehler() const { return fehler_; }
+
+    bool kaltstart(long long frist = 300'000'000) {
+        if (!fehler_.empty()) return false;
+        m_.powerOn();
+        // Die Kommandozeile von PROFILE.SUB steht vor dem zweiten Prompt im Bild.
+        return bis("A>modcs sc619.zgf[1]", frist) && bisPrompt(frist);
+    }
+    void tippe(const std::string& s) { k1520test::pc1715::tippe(m_, s); }
+    void ctrlC() {
+        m_.keyPress('c', false, true);
+        k1520test::pc1715::laufe(m_, k1520test::pc1715::kHalten);
+        m_.keyRelease('c');
+        k1520test::pc1715::laufe(m_, k1520test::pc1715::kPause);
+    }
+    std::string bild() {
+        std::string s;
+        for (int r = 0; r < 24; ++r) s += k1520test::pc1715::zeile(m_, r) + "\n";
+        return s;
+    }
+    long long schritt() { return m_.run(static_cast<int>(k1520test::pc1715::kBatch)); }
+    bool tastaturLeer() { return true; }
+    Pc1715Machine& maschine() { return m_; }
+
+private:
+    static Pc1715Machine::Config konfig() {
+        Pc1715Machine::Config c;
+        c.variante = Pc1715Machine::Config::Variante::Pc1715W;
+        return c;
+    }
+    k1520test::TempDisk disk_;
+    Pc1715Machine       m_;
+    std::string         fehler_;
+};
+
+/**
+ * @brief PRG 710 bzw. 710-1 mit SCPX (V1.5 / V1.7, `prg710test::scpxDiskette`) und SERTEST.COM auf A:.
+ * Kaltstart wie die FORMAT-Wächter: Netz ein, 3 Mio. Takte, Return (710-1: ENTER startet das
+ * Laden), SCPX-Gruß, `A>`.  Tastatur über `keyPress` (710: K7609/8279, 710-1: K7672 an A32-B —
+ * deshalb ist diese Schnittstelle für SERTEST tabu); Ctrl+C = `keyPress('c', false, true)`.
+ */
+class SertestPrg : public SertestBasis<SertestPrg> {
+public:
+    using V = prg710test::V;
+    explicit SertestPrg(V v, const std::string& com = "")
+        : v_(v), disk_(prg710test::scpxDiskette(v), std::string("sertest_prg_") + prg710test::name(v) + ".hfe"),
+          m_(konfig(v)) {
+        fehler_ = aufspielen(disk_.path(), com, "scpx640");
+        if (fehler_.empty() && !m_.mountDisk(0, disk_.path(), m_.defaultFormatName(0), false))
+            fehler_ = "mountDisk: " + m_.lastError();
+    }
+    const std::string& fehler() const { return fehler_; }
+
+    bool kaltstart(long long frist = prg710test::kBoot) {
+        if (!fehler_.empty()) return false;
+        m_.powerOn();
+        prg710test::lauf(m_, 3'000'000);
+        prg710test::taste(m_, prg710test::QK_RETURN);
+        return prg710test::bisText(m_, prg710test::scpxGruss(v_), frist) && bisPrompt(frist);
+    }
+    void tippe(const std::string& s) {
+        for (char c : s)
+            prg710test::taste(m_, c == '\r' ? prg710test::QK_RETURN : static_cast<uint32_t>(uint8_t(c)));
+    }
+    void ctrlC() {
+        m_.keyPress('c', false, true);
+        prg710test::lauf(m_, 100'000);
+        m_.keyRelease('c');
+        prg710test::lauf(m_, 100'000);
+    }
+    std::string bild() { return prg710test::bild(m_); }
+    long long schritt() { return m_.run(prg710test::kSchritt); }
+    bool tastaturLeer() { return true; }
+    Prg710Machine& maschine() { return m_; }
+
+private:
+    static Prg710Machine::Config konfig(V v) {
+        Prg710Machine::Config c;
+        c.variante = v;
+        return c;
+    }
+    V                   v_;
+    k1520test::TempDisk disk_;
+    Prg710Machine       m_;
     std::string         fehler_;
 };
 

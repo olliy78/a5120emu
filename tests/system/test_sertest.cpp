@@ -19,6 +19,10 @@
 #include "core/serial/hub.h"
 #include "tests/system/sertest_hilfen.h"
 
+#ifndef K1520_SERTEST_V02
+#error "K1520_SERTEST_V02 fehlt (tests/fixtures/cpm/SERTEST_V02.COM)"
+#endif
+
 using namespace sertest;
 using k1520::serial::SerialStatus;
 
@@ -44,7 +48,7 @@ void pruefeListe(S& s, const std::string& rechner, const std::vector<std::string
                  const std::string& tastatur) {
     ASSERT_TRUE(startBisRolle(s));
     const std::string b = s.bild();
-    EXPECT_TRUE(hatZeile(b, "Serial Test V0.2  (c) 2026 Olaf Krieger")) << b;
+    EXPECT_TRUE(hatZeile(b, "Serial Test V0.3  (c) 2026 Olaf Krieger")) << b;
     EXPECT_TRUE(hatZeile(b, "Rechner: " + rechner))
         << "Erkennung ohne /M: (und ohne „(vorgegeben)“)\n" << b;
     EXPECT_TRUE(hatZeile(b, "Schnittstellen:")) << b;
@@ -64,7 +68,7 @@ void pruefeKurzhilfe(S& s) {
     ASSERT_TRUE(s.bisPrompt(kFrist)) << "Kurzhilfe ⇒ Ende\n" << s.bild();
     const std::string b = s.bild();
     EXPECT_NE(b.find("SERTEST T n [/P] [/G] [/A]"), std::string::npos) << b;
-    EXPECT_NE(b.find("/M:A, /M:K bzw. /M:P"), std::string::npos) << b;
+    EXPECT_NE(b.find("/M:A, /M:K, /M:P, /M:W, /M:R bzw. /M:S"), std::string::npos) << b;
     EXPECT_EQ(b.find("T/G"), std::string::npos) << "keine Rollenfrage\n" << b;
     EXPECT_TRUE(s.protokoll().zeilen().empty()) << s.protokoll().text();
 }
@@ -630,4 +634,339 @@ TEST(Sertest, Pc1715_AlteV01ErkenntDenRechnerNicht) {
     ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
     EXPECT_TRUE(hatZeile(s.bild(), "Serial Test V0.1  (c) 2026 Olaf Krieger")) << s.bild();
     EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+// ─── PC 1715W / SCP 3.0 = CP/M 3 (V0.3) ──────────────────────────────────────
+//
+// Hardware wie der 1715 (SIO0 0CH–0FH, AB0 = Kanal, AB1 = Steuer; CTC0 08H–0BH; Kanal A =
+// Drucker-Sender + Tastatur-Empfänger, Kanal B = V.24), aber 3,9936 MHz, CTC im
+// Zählerbetrieb (57H, ZK 13 — so rechnet das SCP-3.0-BIOS 9600 Bd) und CP/M 3 mit Bänken
+// (BDOS 12 = 31H).  Der Emulator verdrahtet CLK/TRG0/1 am 1715W noch nicht: das Format der
+// Schnittstellen gilt dort als ungültig (Wandler läuft mit dem Ersatzformat 9600 8N1) —
+// deshalb prüfen die Fälle die CTC-Programmierung selbst (`ctcZaehler`).
+
+namespace {
+/// CTC0 K1 (V.24) bzw. K0 (Drucker) im Zählerbetrieb mit Zeitkonstante @p zk?
+::testing::AssertionResult ctcZaehler(SertestPc1715W& s, int kanal, int zk) {
+    const Z80CTC& c = s.maschine().zre().ctc();
+    if (c.isTimerMode(kanal))
+        return ::testing::AssertionFailure() << "CTC0 K" << kanal << " im Zeitgeberbetrieb";
+    if (c.getCount(kanal) != zk)
+        return ::testing::AssertionFailure() << "CTC0 K" << kanal << " Zaehlerstand " << c.getCount(kanal)
+                                             << " statt ZK " << zk;
+    return ::testing::AssertionSuccess();
+}
+}  // namespace
+
+TEST(Sertest, Pc1715W_ErkenntRechnerUndListetSchnittstellen) {
+    SertestPc1715W s;
+    pruefeListe(s, "PC 1715W (ZRE)",
+                {"  1  Drucker        SIO0 Kanal A      nur Senden (X4)",
+                 "  2  V.24           SIO0 Kanal B      V.24 (X5)"},
+                "  -  Tastatur S600  SIO0 Kanal A      (Empfaenger)");
+}
+
+TEST(Sertest, Pc1715W_VorgabeMitMWUeberstimmtDieErkennung) {
+    SertestPc1715W s;
+    ASSERT_TRUE(startBisRolle(s, "sertest /m:w"));
+    EXPECT_TRUE(hatZeile(s.bild(), "Rechner: PC 1715W (ZRE) (vorgegeben)")) << s.bild();
+    s.ctrlC();
+    EXPECT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+}
+
+TEST(Sertest, Pc1715W_FalscheKommandozeileGibtKurzhilfe) {
+    SertestPc1715W s;
+    pruefeKurzhilfe(s);
+}
+
+TEST(Sertest, Pc1715W_CtrlCAnDerRollenfrageLaesstSystemBedienbar) {
+    SertestPc1715W s;
+    pruefeCtrlCRolle(s);
+}
+
+TEST(Sertest, Pc1715W_GegenstelleAmDruckerGehtNicht) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    s.tippe("sertest g 1\r");
+    ASSERT_TRUE(s.bis("Der Drucker kann nur senden", kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+TEST(Sertest, Pc1715W_CtrlCInDerGegenstelleLaesstSystemBedienbar) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    s.tippe("sertest g 2\r");
+    ASSERT_TRUE(s.bis("Gegenstelle an V.24 bereit.", kFrist)) << s.bild();
+    for (int i = 0; i < 100; ++i) s.lauf();
+    EXPECT_NE(letzteZeile(s.bild()), "A>") << s.bild();
+    s.ctrlC();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+/// Wie am 1715: Drucker DATEN-LOOP (nur Senden) und LEITUNGEN-LOOP (Break → CTS) OK, V.24
+/// beide OK mit CTS = RTS, DCD (107) = DTR; danach lebt die Tastatur.
+TEST(Sertest, Pc1715W_PruefsteckerMitLoopAnBeidenSchnittstellenOk) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, true);
+
+    ASSERT_TRUE(s.neuerLauf()) << s.bild();
+    s.tippe("sertest t 1 /p /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    std::string b = s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    auto& p = s.protokoll();
+    EXPECT_EQ(p.wert("Drucker", "DATEN-LOOP").value_or("-"), "OK") << p.text() << b;
+    EXPECT_EQ(p.wert("Drucker", "LEITUNGEN-LOOP").value_or("-"), "OK") << p.text() << b;
+    EXPECT_EQ(p.ende().value_or("-"), "OK") << p.text();
+    for (const char* z : {"  Break=0  CTS=0  erwartet  CTS=0  RR0=", "  Break=1  CTS=1  erwartet  CTS=1  RR0="})
+        EXPECT_NE(b.find(z), std::string::npos) << z << "\n" << b;
+
+    const int erwartet[4][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};   // CTS = RTS, DCD = DTR
+    ASSERT_TRUE(s.neuerLauf()) << s.bild();
+    s.tippe("sertest t 2 /p /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    b = s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_EQ(p.wert("V.24", "DATEN-LOOP").value_or("-"), "OK") << p.text() << b;
+    EXPECT_EQ(p.wert("V.24", "LEITUNGEN-LOOP").value_or("-"), "OK") << p.text() << b;
+    EXPECT_EQ(p.ende().value_or("-"), "OK") << p.text();
+    for (int k = 0; k < 4; ++k)
+        EXPECT_NE(b.find(leitungsZeile(k & 1, k >> 1, erwartet[k][0], erwartet[k][1])), std::string::npos)
+            << "Kombination " << k << "\n" << b;
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+TEST(Sertest, Pc1715W_PruefsteckerOhneLoopMeldetFehler) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, false);
+    s.tippe("sertest t 1 /p /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    auto& p = s.protokoll();
+    EXPECT_EQ(p.wert("Drucker", "DATEN-LOOP").value_or("-"), "OK") << p.text();
+    EXPECT_EQ(p.wert("Drucker", "LEITUNGEN-LOOP").value_or("-"), "FEHLER Break=1") << p.text();
+    ASSERT_TRUE(s.neuerLauf()) << s.bild();
+    s.tippe("sertest t 2 /p /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_EQ(p.wert("V.24", "DATEN-LOOP").value_or("-"), "FEHLER KEIN ECHO BEI 00H") << p.text();
+    EXPECT_EQ(p.wert("V.24", "LEITUNGEN-LOOP").value_or("-").rfind("FEHLER RTS=", 0), 0u) << p.text();
+    EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
+}
+
+/// Ctrl+C mitten im DATEN-LOOP: Kanalreset B und CTC0 K1 wieder auf dem Wert nach der
+/// BIOS-Initialisierung (57H, ZK 13); die Tastatur lebt.
+TEST(Sertest, Pc1715W_CtrlCImDatenLoopLaesstSystemBedienbar) {
+    SertestPc1715W s;
+    pruefeCtrlCImDatenLoop(s, 2, "0 8N1 (ungueltig) rts=0 dtr=0");
+    EXPECT_TRUE(ctcZaehler(s, 1, 13));
+}
+
+/// Während des Tests: Zählerbetrieb mit ZK 13 am Baudkanal (Drucker K0, V.24 K1), SIO ×16 —
+/// das ist die 9600-Bd-Rechnung des SCP-3.0-BIOS (153,6 kHz = 1,9968 MHz / 13).
+TEST(Sertest, Pc1715W_ProgrammiertDenBaudtaktWieDasBios) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, true);
+    s.tippe("sertest t 2 /p /a\r");
+    ASSERT_TRUE(s.bis("Daten-Loop: 256 Zeichen", kFrist)) << s.bild();
+    EXPECT_TRUE(ctcZaehler(s, 1, 13));
+    EXPECT_EQ(s.maschine().zre().sio().channelB().format().teiler, 16);
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    EXPECT_EQ(s.protokoll().ende().value_or("-"), "OK") << s.protokoll().text();
+}
+
+/// Der Drucker teilt die SIO mit der Tastatur: nach dem Test WR5 = BIOS-Wert 68H (rts/dtr aus)
+/// und die Tastatur geht weiter.
+TEST(Sertest, Pc1715W_DruckerLaesstDieTastaturLebenUndStelltDieBiosVorgabeHer) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, true);
+    s.tippe("sertest t 1 /p /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    EXPECT_EQ(s.protokoll().ende().value_or("-"), "OK") << s.protokoll().text();
+    EXPECT_FALSE(hubStatus(s, 0).rts);
+    EXPECT_FALSE(hubStatus(s, 0).dtr);
+    EXPECT_TRUE(s.dirFindetSertest()) << s.bild();
+}
+
+/// Empfang im Interrupt trotz Bankumschaltung: Vektor 30H in der Tabelle bei I = F3H, die
+/// ISR läuft in der TPA-Bank, die BDOS-Aufrufe des Hauptprogramms sperren die SIO (BDOSW).
+TEST(Sertest, Pc1715W_V24EmpfaengtImInterrupt) {
+    SertestPc1715W s;
+    pruefeInterrupt(s, 2, "V.24", 0xF300);
+}
+
+TEST(Sertest, Pc1715W_TesterAutomatikOhneGegenstelle) {
+    SertestPc1715W s;
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, false);
+    s.tippe("sertest t 2 /g /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    auto& p = s.protokoll();
+    EXPECT_EQ(p.wert("V.24", "ECHO").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << p.text();
+    EXPECT_EQ(p.wert("V.24", "FLUSS-XON").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << p.text();
+    EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
+}
+
+/// Die VORHERIGE V0.2 (`tests/fixtures/cpm/SERTEST_V02.COM`) kennt den 1715W nicht: sie hält
+/// ihn für einen PC 1715 (gleiche SIO bei 0EH/0FH, 40H/50H leer) und rechnet mit 2,4576 MHz
+/// und Zeitgeberbetrieb.  Das ist der Grund für /M:W und die Erkennung über BDOS 12 in V0.3.
+TEST(Sertest, Pc1715W_AlteV02HaeltDenRechnerFuerEinenPc1715) {
+    SertestPc1715W s(K1520_SERTEST_V02);
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    s.tippe("sertest\r");
+    ASSERT_TRUE(s.bis("T/G", kFrist)) << s.bild();
+    EXPECT_TRUE(hatZeile(s.bild(), "Serial Test V0.2  (c) 2026 Olaf Krieger")) << s.bild();
+    EXPECT_TRUE(hatZeile(s.bild(), "Rechner: PC 1715 (ZRE)")) << s.bild();
+    s.ctrlC();
+    EXPECT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+}
+
+// ─── PRG 710 / PRG 710-1 / SCPX (V0.3) ───────────────────────────────────────
+//
+// K2521-ZRE + ASS K8025 (50H–5FH wie am A5120): V.24 = A33 Kanal A (Takt CTC A34 K2),
+// IFSS-Hauptdrucker A32-B (nur 710), ZIFSS A32-A, Takt CTC A34 K0.  Am 710-1 trägt A32-B die
+// Tastatur K7672 (tabu), am 710 sitzt die Tastatur am 8279.  Eigener Vektor D0H (I = DFH).
+// Die beiden Varianten laufen mit denselben Fällen (TEST_P); die Unterschiede sind die Liste
+// und die Erkennung.
+
+namespace {
+using PV = prg710test::V;
+
+struct PrgFall {
+    PV v;
+    const char* rechner;
+    std::vector<std::string> eintraege;
+    const char* tastatur;
+    std::vector<std::string> namen;
+    std::vector<bool> v24;
+};
+
+const PrgFall& prgFall(PV v) {
+    static const PrgFall f0{PV::Prg710, "PRG 710 (K2521, K8025)",
+        {"  1  V.24           SIO A33 Kanal A   V.24 (X4)",
+         "  2  IFSS Hauptdr.  SIO A32 Kanal B   IFSS (X6)",
+         "  3  ZIFSS          SIO A32 Kanal A   IFSS (X5)"},
+        "  -  Tastatur K7609 8279 C8H/C9H      (Tastatur)",
+        {"V.24", "IFSS Hauptdrucker", "ZIFSS"}, {true, false, false}};
+    static const PrgFall f1{PV::Prg710_1, "PRG 710-1 (K2521, K8025)",
+        {"  1  V.24           SIO A33 Kanal A   V.24 (X4)",
+         "  2  ZIFSS          SIO A32 Kanal A   IFSS (X5)"},
+        "  -  Tastatur K7672 SIO A32 Kanal B   (Tastatur)",
+        {"V.24", "ZIFSS"}, {true, false}};
+    return v == PV::Prg710 ? f0 : f1;
+}
+}  // namespace
+
+class SertestPrgP : public ::testing::TestWithParam<PV> {};
+
+TEST_P(SertestPrgP, ErkenntRechnerUndListetSchnittstellen) {
+    SertestPrg s(GetParam());
+    const PrgFall& f = prgFall(GetParam());
+    pruefeListe(s, f.rechner, f.eintraege, f.tastatur);
+}
+
+TEST_P(SertestPrgP, VorgabeUeberstimmtDieErkennung) {
+    // /M:R = 710, /M:S = 710-1 — auch die jeweils andere Fassung lässt sich vorgeben.
+    SertestPrg s(GetParam());
+    const PrgFall& f = prgFall(GetParam());
+    ASSERT_TRUE(startBisRolle(s, GetParam() == PV::Prg710 ? "sertest /m:r" : "sertest /m:s"));
+    EXPECT_TRUE(hatZeile(s.bild(), std::string("Rechner: ") + f.rechner + " (vorgegeben)")) << s.bild();
+    s.ctrlC();
+    EXPECT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+}
+
+TEST_P(SertestPrgP, FalscheKommandozeileGibtKurzhilfe) {
+    SertestPrg s(GetParam());
+    pruefeKurzhilfe(s);
+}
+
+TEST_P(SertestPrgP, CtrlCAnDerRollenfrageLaesstSystemBedienbar) {
+    SertestPrg s(GetParam());
+    pruefeCtrlCRolle(s);
+}
+
+TEST_P(SertestPrgP, CtrlCInDerGegenstelleLaesstSystemBedienbar) {
+    SertestPrg s(GetParam());
+    pruefeCtrlCGegenstelle(s, "V.24");
+}
+
+/// Mit Loop: V.24 mit der K8025-Erwartung (CTS = RTS ∧ DTR, DCD = DTR), IFSS ohne Leitungen;
+/// danach `DIR` — am 710-1 teilt der ZIFSS die SIO A32 mit der Tastatur (Kanal B).
+TEST_P(SertestPrgP, PruefsteckerMitLoopAnAllenSchnittstellenOk) {
+    SertestPrg s(GetParam());
+    const PrgFall& f = prgFall(GetParam());
+    const int erwartet[4][2] = {{0, 0}, {0, 0}, {0, 1}, {1, 1}};
+    pruefeLoopAlle(s, f.namen, f.v24, erwartet);
+}
+
+TEST_P(SertestPrgP, PruefsteckerOhneLoopMeldetFehler) {
+    SertestPrg s(GetParam());
+    pruefeOhneLoop(s, 1, "V.24");
+}
+
+/// Ctrl+C im DATEN-LOOP der V.24: Kanalreset + BIOS-Werte (B152V24/B17272V2: Zeitgeber 07H/
+/// ZK 1, WR4 4CH = 2 Stoppbits, WR5 E8H = DTR).
+TEST_P(SertestPrgP, CtrlCImDatenLoopStelltDieBiosVorgabeHer) {
+    SertestPrg s(GetParam());
+    pruefeCtrlCImDatenLoop(s, 1, "9600 8N2 rts=0 dtr=1");
+}
+
+TEST_P(SertestPrgP, V24EmpfaengtImInterrupt) {
+    SertestPrg s(GetParam());
+    pruefeInterrupt(s, 1, "V.24", 0xDF00);
+}
+
+/// Der ZIFSS (A32 Kanal A) empfängt im Interrupt; am 710-1 bleibt die Tastatur (A32-B) am Leben.
+TEST_P(SertestPrgP, ZifssEmpfaengtImInterruptUndLaesstDieTastaturLeben) {
+    SertestPrg s(GetParam());
+    const int nr = static_cast<int>(prgFall(GetParam()).namen.size());
+    pruefeInterrupt(s, nr, "ZIFSS", 0xDF00);
+}
+
+TEST_P(SertestPrgP, TesterAutomatikOhneGegenstelle) {
+    SertestPrg s(GetParam());
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    loopAlle(s, false);
+    s.tippe("sertest t 1 /g /a\r");
+    ASSERT_TRUE(s.bisEnde(kFrist)) << s.bild();
+    ASSERT_TRUE(s.bisPrompt(kFrist)) << s.bild();
+    auto& p = s.protokoll();
+    EXPECT_EQ(p.wert("V.24", "ECHO").value_or("-"), "FEHLER ZEITUEBERLAUF BESTAETIGUNG") << p.text();
+    EXPECT_EQ(p.ende().value_or("-"), "FEHLER") << p.text();
+}
+
+INSTANTIATE_TEST_SUITE_P(Prg, SertestPrgP, ::testing::Values(PV::Prg710, PV::Prg710_1),
+                         [](const ::testing::TestParamInfo<PV>& i) {
+                             return std::string(prg710test::name(i.param));
+                         });
+
+/// Die VORHERIGE V0.2 kennt die PRG nicht: sie erkennt die K8025 bei 50H samt SIO A32 als A5120
+/// (Banner V0.2, `Rechner: A5120 (K8025)`) — Grund für /M:R, /M:S und die ZRE-CTC-Probe in V0.3.
+TEST(Sertest, Prg710_1_AlteV02HaeltDenRechnerFuerEinenA5120) {
+    SertestPrg s(PV::Prg710_1, K1520_SERTEST_V02);
+    ASSERT_TRUE(s.fehler().empty()) << s.fehler();
+    ASSERT_TRUE(s.kaltstart()) << s.bild();
+    s.tippe("sertest\r");
+    ASSERT_TRUE(s.bis("T/G", kFrist)) << s.bild();
+    EXPECT_TRUE(hatZeile(s.bild(), "Serial Test V0.2  (c) 2026 Olaf Krieger")) << s.bild();
+    EXPECT_TRUE(hatZeile(s.bild(), "Rechner: A5120 (K8025)")) << s.bild();
+    s.ctrlC();
+    EXPECT_TRUE(s.bisPrompt(kFrist)) << s.bild();
 }
