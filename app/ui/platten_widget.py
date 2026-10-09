@@ -11,10 +11,11 @@ Zylinder/Kopf/Sektor, `doc/design/25_p8000.md` §10.8) — anders als eine Diske
 * **Der WDC erkennt die Platte beim Hochlauf** (Initialisierung ≈ 4,5 s Maschinenzeit).  Eine
   Platte, die man im Betrieb anschließt, sieht der Gast erst nach *Rückstellen* oder
   *Rechner ein* — der Kasten sagt das, statt die Maschine ungefragt neu zu starten.
-* **Neu angelegt wird mit PAR-Sektor** (`Platte::neu`: Parametersatz auf Zylinder 0 / Kopf 0 /
-  Sektor 1, Rest 0E5H).  Formatiert ist sie damit NICHT: ``sa.format`` im Gast legt die
-  Spuren an; der 16-Bit-Monitor versucht nach dem Hardwaretest, von der leeren Platte zu
-  starten (Merkposten p8000 Nr. 21 — Gastverhalten, kein Fehler).
+* **Neu angelegt wird standardmäßig OHNE PAR-Sektor** (`:unformatiert`, Merkposten p8000 Nr. 48):
+  der Hardwaretest endet mit ERROR 52 39, MON16 kommt zum Prompt ``*``.  Eine Platte MIT
+  Parametersatz, aber leerem Block 0 (Wahl „Formatiert mit Parametersatz“ oder die frühere
+  Standardplatte) schickt MON16 nach dem Hardwaretest in den AUTOBOOT — kein ``*``
+  (Gastverhalten, Nr. 21/54); der Kasten erkennt das (:func:`ohne_startblock`) und sagt es.
 """
 
 from __future__ import annotations
@@ -119,6 +120,46 @@ def abweisung(pfad: str, firmware: str) -> str:
     if ist != soll:
         return f"{kopf}, die Datei hat {leerzeichen(ist)} B"
     return ""
+
+
+#: Hinweis zu einer Platte mit Parametersatz, aber leerem Block 0 (:func:`ohne_startblock`).
+HINWEIS_OHNE_START = (
+    "Die Platte hat einen Parametersatz, aber keinen Urlader (Block 0 leer): bestehen WDC und Platte "
+    "den 16-Bit-Hardwaretest, startet MON16 nach „Press NMI“ und MAXSEG diesen Block (AUTOBOOT) — "
+    "es kommt kein „*“.  Zum Prompt „*“: bei „Press NMI“ statt des NMI-Tasters RETURN drücken "
+    "(Antwort „?“, dann „*“), dort weiter mit O U / boot / ud(0,0)sa.format.  Oder die Platte abtrennen.")
+
+
+def ohne_startblock(pfad: str) -> bool:
+    """Trägt das Abbild einen gültigen Parametersatz (``PARMTR``), aber in WDC-Block 0 nur ein
+    einziges Füllbyte (E5 einer neu angelegten, 00/E5 einer formatierten Platte ohne WEGA)?
+
+    Dann startet MON16 nach einem fehlerfreien Hardwaretest diesen Block (``AUTOBOOT`` in
+    ``p.boot.s`` → ``DSK_BOOT`` liest Block 0 nach ``%8000`` und springt hin) und bleibt ohne
+    Prompt stehen — Gastverhalten wie am Gerät (Merkposten p8000 Nr. 21/54).  Lage von Block 0 wie
+    im DiskTool (`core/filesystem/wega/wega_platte.cpp::offsetVon`): Zylinder 1, Kopf 0, jede
+    Defektspur der BTT davor verschiebt um eine Spur.  Unlesbares/Fremdes ⇒ ``False``.
+    """
+    try:
+        with open(pfad, "rb") as f:
+            s0 = f.read(512)
+            if len(s0) < 512 or s0[0:6] != b"DEFEKT" or s0[256:262] != b"PARMTR":
+                return False
+            koepfe, sek = s0[279], s0[280]
+            if not (2 <= koepfe <= 16 and sek in (17, 18)):
+                return False
+            n = (s0[6] | s0[7] << 8) // 3
+            defekte = sorted(((s0[8 + 3 * i] << 8 | s0[9 + 3 * i]) * koepfe + s0[10 + 3 * i])
+                             for i in range(min(n, 40)))
+            spur = koepfe                      # Zylinder 1, Kopf 0 = WDC-Block 0
+            for d in defekte:
+                if d <= spur:
+                    spur += 1
+            f.seek(spur * sek * 512)
+            b0 = f.read(512)
+    except OSError:
+        return False
+    return len(b0) == 512 and b0.count(b0[0]) == 512
 
 
 def groesse_text(zyl: int, kopf: int, sektoren: int) -> str:
@@ -229,7 +270,7 @@ class PlattenWidget(QWidget):
         self.knopf_neu.clicked.connect(self._neu_dialog)
         self.knopf_abtrennen.clicked.connect(self.abtrennen)
         self.knopf_anschliessen.setToolTip("Ein vorhandenes Plattenabbild (roh) an den WDC hängen")
-        self.knopf_neu.setToolTip("Eine neue, unformatierte Platte mit Parametersatz anlegen")
+        self.knopf_neu.setToolTip("Eine neue Platte anlegen (Standard: unformatiert, ohne Parametersatz)")
         self.knopf_abtrennen.setToolTip("Die Platte vom WDC lösen (vorher wird sie zurückgeschrieben)")
 
         # Die Lampe folgt dem ZUGRIFF, im selben 120-ms-Takt wie die Laufwerke.
@@ -285,6 +326,9 @@ class PlattenWidget(QWidget):
             self.meldung.emit(f"Platte {self._pfad} nicht anschließbar: {self.emulator.hd_error()}")
             instanz.sperre_loesen(self._pfad)
             self._pfad = ""
+        elif ohne_startblock(self._pfad):
+            self.meldung.emit(f"Platte {os.path.basename(self._pfad)}: Parametersatz, aber kein "
+                              "Urlader — nach NMI kein „*“ (AUTOBOOT); bei „Press NMI“ RETURN drücken.")
 
     # ── Bedienung ────────────────────────────────────────────────────────────
 
@@ -311,6 +355,10 @@ class PlattenWidget(QWidget):
         self.entschieden = True
         self._anzeigen(neu_angeschlossen=hinweis)
         self.geaendert.emit()
+        if ohne_startblock(pfad):
+            self.meldung.emit(f"Platte {os.path.basename(pfad)}: Parametersatz, aber kein Urlader — "
+                              "nach NMI kein „*“ (AUTOBOOT); bei „Press NMI“ RETURN drücken.")
+            return True
         rom = rom_typ(self.firmware)
         if rom and not kuerzel_aus_dateiname(pfad):
             self.meldung.emit(f"Datei ohne Typkürzel: nur die Größe wurde geprüft (Firmware "
@@ -469,6 +517,10 @@ class PlattenWidget(QWidget):
                 "Neu angeschlossen: der WDC erkennt die Platte erst nach Rückstellen oder "
                 "Rechner ein." if neu_angeschlossen else
                 "Kein Schreibschutz; Änderungen gehen von selbst in die Datei.")
+            if ohne_startblock(self._pfad):
+                # Fehlerbericht „kein * nach MAXSEG" (Merkposten p8000 Nr. 54): eine früher
+                # angelegte Standardplatte mit PAR, aber ohne WEGA, schickt MON16 in den AUTOBOOT.
+                self.hinweis.setText(self.hinweis.text() + "\n" + HINWEIS_OHNE_START)
         if self._verfuegbar and self.firmware in EXPERIMENTELL:
             # Bis WDC 4.0 gilt das Laufwerk des EPROMs; die Fassungen sind noch nicht belegt (P24).
             self.hinweis.setText(self.hinweis.text() + f"\nWDC {self.firmware} (experimentell): das EPROM "
