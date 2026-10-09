@@ -1764,8 +1764,10 @@ int main(int argc, char** argv){
             uint64_t ran=0; int n=0;
             for (size_t i=0;i<t.size();++i){
                 uint32_t code=decodeKey(t,i); ++n;
-                if (code<0x20 && code!=0x01000004u) code = 0x01000004u;   // CR/LF/Steuerzeichen → Return
-                m.keyPress(code,false,false); ran+=goSilent(150000);
+                bool strg=false;
+                if (code>=0x01 && code<=0x1A && code!=0x0D) { code += 0x60; strg=true; }   // ^A..^Z = Strg + Buchstabe (\x0b = ^K)
+                else if (code<0x20 && code!=0x01000004u) code = 0x01000004u;   // CR/LF/übrige Steuerzeichen → Return
+                m.keyPress(code,false,strg); ran+=goSilent(150000);
                 if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
                 m.keyRelease(code);           ran+=goSilent(100000);
                 if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
@@ -2494,7 +2496,7 @@ int main(int argc, char** argv){
               "    map               Overlay ein/aus, BWS-Register 34H (Bildbasis, ZG-Wahl), Bildformat\n"
               "    d/u/x/e/wp        Speicher in CPU-SICHT (mit Overlay: Lesen = ROM, Schreiben = RAM darunter)\n"
               "    screen/gscreen    Bild direkt vom 8275-Raster (screenChar), nie ueber die CPU-Sicht\n"
-              "    keys <text>       Tasten ueber Tastatur1715 (U880 + S600), je Taste 250 000 Takte; \\r = Return\n"
+              "    keys <text>       Tasten ueber Tastatur1715 (U880 + S600), je Taste 250 000 Takte; \\r = Return, \\x01..\\x1A = Strg+Buchstabe\n"
               "    vars ; where ; dev [ctc|pio|sio|crt] ; ivt   Overlay/BWS, K5122, CTC0, SIO0, 8275, Interruptkette\n"
               "    Listings: -l doc/EPROMS/PC1715/s502.prn  (ROM-Overlay; nur solange die Bytes passen)\n"
               "    Nicht vorhanden: s2/b2/rj2/r 2 (ZVE2), bbusrq, snap/restore/rs/rc, savestate/loadstate, bank\n");
