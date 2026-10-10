@@ -6,7 +6,7 @@ damit es überhaupt läuft, und **wie du einen Lauf anstößt**.
 
 > **Nichts läuft von selbst.** Kein Bau bei einem Push, keiner bei einem Pull Request,
 > kein Zeitplan. Jeder Lauf wird von Hand angestoßen — bis auf eine Ausnahme: der
-> Push eines Versions-Tags `v*` baut das Release-Paket (siehe [§4](#4-release-paket-bauen)).
+> Push eines Versions-Tags `v*` baut das Release-Paket (siehe [§4.3](#43-release-paket-releaseyml); Versionen und Releases: [§7](#7-versionen-und-releases-konzept-2026-10-10-fassung-03)).
 > Auch das ist eine bewusste Handlung, und wer sie loswerden will, streicht den
 > `push:`-Block in `release.yml`.
 
@@ -219,8 +219,11 @@ on:
   noch nicht gab. Ein Release ist nach außen gerichtet; veröffentlicht wird es von
   Hand unter *Releases → Edit → Publish release*.
 
-Die Version im Dateinamen und in `VERSION` kommt aus `git describe --tags` — deshalb
-checkt der Job die volle Historie aus (`fetch-depth: 0`, dabei `filter: blob:none`,
+Die Version im Dateinamen und in `VERSION` kommt aus `tools/version.py --bau`
+(Basis aus der Datei `VERSION` + Tag bzw. Commit-Hash, [§7](#7-versionen-und-releases-konzept-2026-10-10-fassung-03));
+bei einer **Vorabversion** (`v0.3.0-beta.1`) wird das Release als *Pre-release*
+angelegt statt als Entwurf. Für das Tag braucht der Job die Historie, deshalb
+checkt er sie ganz aus (`fetch-depth: 0`, dabei `filter: blob:none`,
 weil die ~500 MB Diskettenabbilder in der Historie hier niemand braucht).
 
 ### 4.4 Windows — Bauen und Regression (`windows-ci.yml`)
@@ -417,3 +420,187 @@ packaging/build_payload.sh        # was release.yml fährt
 - **Neue Testebene?** In `tools/dev.sh` eintragen — die Pipeline erbt sie dann.
 - **Neuer Workflow?** Hier in [§1](#1-was-es-gibt) und in der Tabelle in `CLAUDE.md`
   ergänzen, sonst findet ihn niemand wieder.
+
+---
+
+## 7. Versionen und Releases (Konzept 2026-10-10, Fassung 0.3)
+
+Bis 0.2 stand die Version an vier Stellen, die nichts voneinander wussten:
+`core/version.h` (fest `0.1.0` — das zeigt das Über-Fenster als „Bibliothek"),
+`CMakeLists.txt` (`project(… VERSION 1.0.0)`), `app/main.py`
+(`setApplicationVersion("1.0.0")`) und `build_payload.sh` (`git describe`). Die
+Tags `v0.1.0`/`v0.2.0` stimmten mit keiner davon überein. Dieses Kapitel legt fest,
+wie es ab 0.3 ist.
+
+### 7.1 Eine Quelle: die Datei `VERSION`
+
+Im Wurzelverzeichnis liegt **`VERSION`**, eine Zeile, die **Basisversion**:
+
+```
+0.3.0-beta        während der Vorbereitung von 0.3.0
+0.3.0-rc          kurz vor dem Abschluss (optional)
+0.3.0             die Endfassung — steht nur im Release-Commit
+0.4.0-beta        unmittelbar danach
+```
+
+Grammatik: `MAJOR.MINOR.PATCH` oder `MAJOR.MINOR.PATCH-beta` / `-rc` — **ohne**
+laufende Nummer. Die Nummer der Vorabversion (`beta.1`, `beta.2`, …) steht nur im
+Tag; so muss für jede Testrunde nicht eigens `VERSION` geändert und committet werden.
+
+Aus der Basis wird die **Bauversion** abgeleitet — an genau einer Stelle,
+**`tools/version.py`** (nur Standardbibliothek, läuft ohne venv, auch unter Windows):
+
+| Lage | Bauversion | Beispiel |
+|------|-----------|----------|
+| `HEAD` trägt ein passendes Tag | Tag ohne `v` | `0.3.0-beta.2`, `0.3.0` |
+| sonst, mit git | Basis `+g<kurzhash>`, bei unsauberem Baum `.dirty` | `0.3.0-beta+g1a2b3c4` |
+| ohne git (Quellarchiv) | Basis `+unbekannt` | `0.3.0-beta+unbekannt` |
+
+Ein Tag **passt**, wenn es die Basis fortschreibt: `v0.3.0-beta.N` zu `0.3.0-beta`,
+`v0.3.0-rc.N` zu `0.3.0-rc`, `v0.3.0` zu `0.3.0`. Alles andere ist ein Fehler
+(`tools/version.py --pruefe-tag v0.4.0-beta.1` → Rückgabewert ≠ 0) — der Release-Bau
+bricht dann ab, statt ein falsch beschriftetes Paket zu erzeugen.
+
+Weitere Ausgaben von `tools/version.py`:
+
+- `--basis` → Inhalt von `VERSION`;
+- `--bau` → Bauversion (Vorgabe);
+- `--windows` → **vierstellige Zahl** für `VersionInfoVersion` des Installers:
+  `X.Y.Z.B` mit B = N bei `beta.N` (1–49), 50+N bei `rc.N`, **100** bei der
+  Endfassung, 0 bei einem Bau ohne Tag. Damit liegt 0.3.0 in den
+  Dateieigenschaften über allen Betas;
+- `--beispielordner` → Name des Beispieldiskettenordners (§7.5);
+- `--vorab` → Rückgabewert 0, wenn die Bauversion eine Vorabversion ist (für
+  `release.yml`).
+
+### 7.2 Wer die Version woher bekommt
+
+- **Kern** (`libk1520core`, `libk1520disk`, `k1520dbg`): `core/version.h` wird aus
+  `core/version.h.in` **erzeugt** (`configure_file` ins Bauverzeichnis, Pfad
+  `core/version.h` bleibt für die `#include`s gleich). CMake liest `VERSION` mit
+  `CMAKE_CONFIGURE_DEPENDS` (eine geänderte Datei konfiguriert neu) und nimmt den
+  Cache-Wert **`K1520_VERSION_VOLL`**, Vorgabe `<Basis>+dev`. Der Commit-Hash wird
+  bewusst NICHT bei jedem Bau eingerechnet — er veraltete ohne Neukonfiguration und
+  zwänge sonst bei jedem Commit zum Neubau des ganzen Kerns. Wer ein Paket schnürt
+  (`build_payload.sh`), setzt `-DK1520_VERSION_VOLL=$(tools/version.py --bau)`.
+  `project(… VERSION …)` bekommt den Zahlenteil (`0.3.0`).
+  `k1520_version()` und `k1520d_version()` liefern denselben Text.
+- **Oberfläche**: `app/version.py::fassung()` — in einer Installation die erste
+  Angabe der mitgelieferten Datei `VERSION` (schreibt `build_payload.sh`), im
+  Quellbaum `tools/version.py --bau`-Logik direkt (import, kein Prozess). Benutzt
+  von `setApplicationVersion`, dem Über-Fenster beider Programme (zeigt
+  *Version* **und** *Bibliothek*), dem Handbuch und der Konfiguration.
+- **Handbuch** (`app/help/handbuch.md`, `app/disktool/help/handbuch.md`): oben steht
+  `Version {{VERSION}}`; `app/ui_help.py` ersetzt den Platzhalter beim Anzeigen. Der
+  Text in der Datei bleibt damit versionsfrei und kann nie veralten.
+- **Paket/Installer**: `build_payload.sh` nimmt `tools/version.py --bau` statt
+  `git describe`, gibt dem Inno-Setup `/DVersion=<Bauversion>` (die `.iss` lässt
+  Bindestrich und `+` in `AppVersion` zu — sonst nur der Zahlenteil) und
+  `/DVersionInfo=$(tools/version.py --windows)`. `install.sh` zeigt die Version wie bisher
+  aus `VERSION`.
+
+### 7.3 Ablauf: Testbau, Vorabversion, Endfassung
+
+**Testbau ohne Tag** (nur für dich, Ergebnis als Artefakt, 30 Tage, Download nur
+angemeldet):
+
+```sh
+gh workflow run release.yml --ref versionierung      # oder --ref main
+```
+
+→ Paket `k1520emu-0.3.0-beta+g1a2b3c4-linux-x86_64.tar.gz`, Über-Fenster zeigt
+dasselbe.
+
+**Vorabversion für Tester** (öffentlich herunterladbar):
+
+```sh
+tools/dev.sh release 0.3.0-beta.1
+```
+
+`release` prüft: Arbeitsbaum sauber, Zweig `main` (mit `--zweig-egal` abschaltbar),
+Tag existiert nicht, Version größer als jedes vorhandene Tag, passt zu `VERSION`
+(für eine Vorabversion wird `VERSION` bei Bedarf auf die Basis gesetzt und das
+committet — z. B. beim Wechsel von `-beta` auf `-rc`). Dann `tools/dev.sh test`,
+annotiertes Tag `v0.3.0-beta.1`, und **erst nach Rückfrage** `git push origin
+<zweig> v0.3.0-beta.1` (`--ohne-push`: nur lokal). Das Tag startet `release.yml`;
+das legt bei einer Vorabversion ein **Pre-release** an (sofort sichtbar, auf GitHub
+gekennzeichnet), nicht einen Entwurf.
+
+**Endfassung:**
+
+```sh
+tools/dev.sh release 0.3.0
+```
+
+Wie oben, aber vorher **alle vier Testrunden** (`test`, `test-format`,
+`test-matrix`, `win` — dauert; das Skript sagt das vorher an). Ablauf: `VERSION` →
+`0.3.0`, Commit „Version 0.3.0", Tag `v0.3.0`, danach `VERSION` → `0.4.0-beta`,
+Commit „Nächste Fassung: 0.4.0-beta". Gepusht werden beide Commits und das Tag.
+`release.yml` legt einen **Entwurf** an — die Endfassung veröffentlichst du von Hand
+(*Releases → Edit → Publish release*), wie bisher.
+
+Warum lokal und keine eigene „Release machen"-Action: ein Tag, das eine Action mit
+dem eingebauten `GITHUB_TOKEN` pusht, **startet keine weiteren Workflows** — man
+bräuchte einen persönlichen Zugangsschlüssel mit Schreibrecht. Und die langen
+Testrunden laufen ohnehin auf dem Entwicklungsrechner.
+
+### 7.4 Konfigurationsdateien
+
+Die `*.yaml` der Programme tragen schon `version: 1` (`CONFIG_VERSION` in
+`app/config_io.py`) — bisher geschrieben, nie gelesen. Festlegungen:
+
+- **`version` bleibt die FORMATversion**, nicht die Programmversion. Sie steigt nur
+  bei einer inkompatiblen Änderung des Aufbaus; die meisten Releases ändern sie nicht.
+- **Neu: `geschrieben_von: <Bauversion>`** — reine Auskunft für die Fehlersuche, nie
+  Grundlage einer Fallunterscheidung.
+- **Beim Laden** läuft eine Migrationskette `_MIGRATIONEN = {1: _migriere_1_zu_2, …}`
+  von der gelesenen bis zur eigenen Formatversion (derzeit leer). Fehlt `version`,
+  gilt 1.
+- **Ist die gelesene Formatversion HÖHER als die eigene** (ein älteres Programm liest
+  die Datei eines neueren), wird gewarnt (Protokoll + einmalig Statuszeile) und die
+  Datei **nicht überschrieben** — weder beim Autosave noch beim Beenden. Sonst
+  zerstörte ein Probelauf mit einer alten Fassung die Einstellungen der neuen.
+
+### 7.5 Beispieldisketten: ein Ordner je Fassung
+
+`paths.seed_user_disks()` kopierte bis 0.2 **nur, wenn der Arbeitsordner noch nicht
+existierte** — nach einem Update kamen neue Disketten also nie an. Ab 0.3:
+
+- Ziel ist ein **Unterordner** des Arbeitsordners (`user_disks_dir()`):
+  `Beispieldisketten_v03` für die Endfassung 0.3.x (Name aus MAJOR und MINOR, ein
+  Patch-Release legt keinen neuen an), bei einer Vorabversion mit vollem Zusatz:
+  `Beispieldisketten_v03-beta.2`. So bekommt ein Tester jede geänderte
+  Zusammenstellung zu sehen, und der Anwender der Endfassung hat genau einen Ordner.
+  Ein Bau ohne Tag legt **keinen** Ordner je Commit an, sondern
+  `Beispieldisketten_v03-test` (wie jeder andere nur, wenn er fehlt — wer nach
+  einem Testbau die neueste Zusammenstellung sehen will, löscht ihn).
+- Angelegt wird, **wenn dieser Unterordner fehlt** — unabhängig davon, ob der
+  Arbeitsordner existiert. Was sonst im Arbeitsordner liegt (auch die flach
+  abgelegten Disketten aus 0.1/0.2), bleibt **unangetastet**; eine Konfiguration,
+  die auf sie zeigt, funktioniert weiter.
+- Die Gliederung **`<maschine>_<system>/`** aus `disks/` bleibt im Paket
+  (`share/disks/<ordner>/<datei>.gz` statt flach) und im Beispielordner erhalten,
+  samt `disks/README.md` und den `LIESMICH.TXT` der Ordner.
+- Der Öffnen-Dialog beginnt weiter im Arbeitsordner (`user_disks_dir()`); dort sieht
+  man die eigenen Disketten und die Beispielordner nebeneinander.
+- Im Quellbaum geschieht weiterhin nichts (dort wird direkt aus `disks/` gearbeitet).
+
+### 7.6 `release.yml`
+
+- Erster Schritt bei einem Tag: `tools/version.py --pruefe-tag "$TAG"` — passt das
+  Tag nicht zu `VERSION`, bricht der Lauf ab.
+- Release anlegen: Vorabversion (`--vorab`) → `gh release create --prerelease`
+  (nicht als Entwurf), Endfassung → `--draft` wie bisher. Titel `K1520emu <Tag>`.
+- Rauchtest: die Bibliothek meldet über `k1520_version()` genau die Bauversion des
+  Pakets; Disketten werden unter `share/disks/*/` gesucht.
+
+### 7.7 Wächter
+
+| Wächter | hält |
+|---------|------|
+| `py_version` (`tests/python/test_version.py`) | Grammatik von `VERSION`, Ableitung `--bau`/`--windows`/`--beispielordner`/`--pruefe-tag` an Beispielen (Tag passt/passt nicht, beta < rc < final, dirty), Bauversion = `k1520_version()`-Präfix |
+| `py_c_api` | `k1520_version()` und `k1520d_version()` beginnen mit der Basis aus `VERSION` |
+| `py_paths` bzw. eigener Test | Seeding in den versionierten Unterordner, Gliederung bleibt, vorhandene Dateien unberührt, zweiter Aufruf kopiert nichts |
+| `py_config_io` | `geschrieben_von` wird geschrieben; höhere Formatversion → nicht überschrieben; Migrationskette läuft |
+| `py_help` | `{{VERSION}}` ist im angezeigten Handbuch ersetzt |
+| `py_packaging` | `build_payload.sh` benutzt `tools/version.py`, nicht mehr `git describe`; `.iss` setzt `VersionInfoVersion` aus `VersionInfo` |
