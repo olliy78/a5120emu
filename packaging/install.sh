@@ -72,7 +72,7 @@ STARTER="$MASCHINEN $WERKZEUGE"
 # das Deinstallieren wieder.  Die Liste wandert beim Installieren in den Ausweis
 # (siehe unten), sodass eine ältere Installation nach ihrer EIGENEN Liste
 # abgeräumt wird und nicht nach der einer neueren Fassung.
-INVENTAR="bin app share venv python tools .cache-uv VERSION requirements.lock LICENSE"
+INVENTAR="bin app share venv python tools .cache-uv VERSION requirements.lock LICENSE LIZENZ.txt"
 
 MODE=install
 SHORTCUTS=yes
@@ -324,7 +324,9 @@ for d in bin app share; do
     cp -R "$SELF_DIR/payload/$d" "$PREFIX/$d"
 done
 cp "$SELF_DIR/VERSION" "$SELF_DIR/requirements.lock" "$PREFIX/"
-if [ -f "$SELF_DIR/LICENSE" ]; then cp "$SELF_DIR/LICENSE" "$PREFIX/"; fi
+for _l in LICENSE LIZENZ.txt; do
+    if [ -f "$SELF_DIR/$_l" ]; then cp "$SELF_DIR/$_l" "$PREFIX/"; fi
+done
 
 # Ausweis für das Deinstallieren.  Er beantwortet zwei Fragen: ob dieses
 # Verzeichnis überhaupt uns gehört (sonst wird nichts gelöscht) und WAS darin

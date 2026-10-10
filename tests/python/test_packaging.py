@@ -1707,6 +1707,32 @@ def test_handbuch_und_lizenzen_reisen_mit():
         "die Lizenz der Greaseweazle-Anbindung wird nicht mitgeliefert"
 
 
+def test_lizenz_bleibt_reines_mit_und_die_begleitdatei_reist_mit():
+    """LICENSE = NUR der englische MIT-Text; Übersetzung und Beigabenhinweis in LIZENZ.txt.
+
+    GitHubs Lizenzerkennung (licensee) verlangt 98 % Übereinstimmung mit dem
+    Mustertext; schon ein angehängter Absatz macht aus „MIT" ein „NOASSERTION"
+    (am 2026-10-10 mit licensee nachgeprüft).  Deshalb steht der deutsche Text samt
+    Hinweis zu den Beigaben Dritter in LIZENZ.txt — und das Setup zeigt DIESE.
+    """
+    lizenz = (PROJECT_ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert lizenz.startswith("MIT License\n\nCopyright (c) ")
+    assert lizenz.rstrip().endswith("OTHER DEALINGS IN THE\nSOFTWARE."), \
+        "LICENSE trägt mehr als den MIT-Text — die Lizenzerkennung bricht"
+    begleit = (PROJECT_ROOT / "LIZENZ.txt").read_text(encoding="utf-8")
+    # der englische Text steht in der Begleitdatei gleichlautend (ab der Copyright-Zeile)
+    assert lizenz[lizenz.index("Copyright (c) "):].rstrip() in begleit
+    assert begleit.index("Jedem, der eine Kopie") < begleit.index("Permission is hereby"), \
+        "die deutsche Übersetzung gehört über den englischen Text"
+    assert "Beigaben Dritter" in begleit and "Third-party material" in begleit
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert "LIZENZ.txt" in bp
+    assert "LIZENZ.txt" in (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert "LicenseFile={#Paket}\\LIZENZ.txt" in iss
+    assert 'Source: "{#Paket}\\LIZENZ.txt"' in iss
+
+
 @nur_unix_installer
 def test_installer_verweist_den_debugger_und_raeumt_ihn_wieder_weg():
     """Ein Verweis in ~/.local/bin — und er muss beim Deinstallieren verschwinden.

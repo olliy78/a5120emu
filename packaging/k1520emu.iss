@@ -193,7 +193,11 @@ ArchiveExtraction=full
 ; Der Bootstrap laedt Python und Qt nach — das Paket selbst ist winzig, die
 ; Installation braucht am Ende aber gut 150 MB.
 ExtraDiskSpaceRequired=157286400
-LicenseFile={#Paket}\LICENSE
+; Lizenzseite: LIZENZ.txt, nicht LICENSE — oben die deutsche Uebersetzung, darunter
+; der massgebliche englische Text und der Hinweis zu den Beigaben Dritter.
+; LICENSE selbst muss der reine MIT-Text bleiben (GitHubs Lizenzerkennung).
+; UTF-8 ohne BOM liest Inno seit 6.3.0 auch fuer LicenseFile richtig.
+LicenseFile={#Paket}\LIZENZ.txt
 ; Das Symbol des Programms — fuer das Setup selbst, fuer den Eintrag unter
 ; „Apps" und (unten) fuer die Verknuepfungen.  Ohne das traegt alles davon das
 ; Python-Symbol, weil die Verknuepfung auf pythonw.exe zeigt.
@@ -216,6 +220,7 @@ Source: "{#Paket}\payload\*"; DestDir: "{app}"; \
 Source: "{#Paket}\VERSION";           DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Paket}\requirements.lock"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Paket}\LICENSE";           DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Paket}\LIZENZ.txt";        DestDir: "{app}"; Flags: ignoreversion
 
 ; ── Nur waehrend der Installation gebraucht ─────────────────────────────────
 ; `dontcopy` statt `DestDir: <tmp>`: diese vier braucht der Code SCHON in

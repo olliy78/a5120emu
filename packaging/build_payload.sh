@@ -607,7 +607,12 @@ else
     cp "$SELF_DIR/lib/common.sh"            "$STAGE/lib/common.sh"
     chmod +x "$STAGE/install.sh"
 fi
-if [ -f "$REPO/LICENSE" ]; then cp "$REPO/LICENSE" "$STAGE/LICENSE"; fi
+# LICENSE = der reine englische MIT-Text (GitHubs Lizenzerkennung verlangt ihn
+# unverändert), LIZENZ.txt = deutsche Übersetzung + englischer Text + Hinweis
+# zu den Beigaben Dritter; das Setup zeigt LIZENZ.txt als Lizenzseite.
+for _l in LICENSE LIZENZ.txt; do
+    if [ -f "$REPO/$_l" ]; then cp "$REPO/$_l" "$STAGE/$_l"; fi
+done
 
 printf '%s (%s, %s, Python %s)\n' \
     "$VERSION" "$PLATFORM" "$(date +%Y-%m-%d)" "$K1520_PY_VERSION" > "$STAGE/VERSION"

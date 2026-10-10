@@ -131,6 +131,7 @@ k1520dbg meine_diskette.hfe        # Sitzung öffnen, `help` zeigt die Befehle
 | Handbuch | `<Installation>/share/doc/handbuch_k1520dbg.md` |
 | Dazu | `<Installation>/share/tools/z80_disasm2.py` — statisches Vollisting einer `.COM` |
 | Lizenzen der Fremdsoftware | `<Installation>/share/doc/lizenzen/` |
+| Lizenz des Emulators (MIT, deutsch + englisch) und Hinweis zu den beigelegten Disketten und ROM-Abzügen | `<Installation>/LIZENZ.txt` |
 
 Einen Startmenü-Eintrag hat er bewusst nicht — er wird in einen vorhandenen
 Arbeitsablauf aus Editor, Assembler und Konsole eingebunden. Unter **Windows** öffnet

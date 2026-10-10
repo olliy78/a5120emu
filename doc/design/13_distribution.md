@@ -190,7 +190,7 @@ Bewusst auf allen Plattformen **gleich aufgebaut**, nur die Wurzel unterscheidet
   share/disks/  mitgelieferte Beispieldisketten, GEPACKT (§8)
   tools/        uv[.exe]
   venv/         vom Bootstrap erzeugt
-  requirements.lock, VERSION, LICENSE, .k1520emu-installation
+  requirements.lock, VERSION, LICENSE, LIZENZ.txt, .k1520emu-installation
 ```
 
 | Plattform | `<install-root>` | Benutzerdaten | Verknüpfung |
