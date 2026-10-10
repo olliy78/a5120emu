@@ -338,13 +338,16 @@ TEST(K8915Scpx, RuecktasteKorrigiertDieEingabezeile)
     ASSERT_TRUE(tippeUeberOberflaeche(m, {'d', 'i', 'r', 'x', QK_BACKSPACE, QK_RETURN_}))
         << vramLines(m);
     const std::string t = vramText(m);
-    size_t zeile = t.rfind("A>dir");
-    ASSERT_NE(zeile, std::string::npos) << vramLines(m);
-    zeile -= zeile % 80;
-    std::string eingabe = t.substr(zeile, 80);
-    while (!eingabe.empty() && (eingabe.back() == ' ' || eingabe.back() == '\0')) eingabe.pop_back();
-    EXPECT_EQ(eingabe, "A>dir") << "das x ist vom Schirm gelöscht\n"
-        << "DIAG size=" << eingabe.size() << " t=" << t.size() << " zeile=" << zeile << "\n" << vramLines(m);
+    // Zeilenweise suchen: die letzte Bildzeile, die mit "A>dir" beginnt, rechts bereinigt.
+    std::string eingabe;
+    for (size_t z = 0; z + 80 <= t.size(); z += 80) {
+        std::string zeile = t.substr(z, 80);
+        if (zeile.compare(0, 5, "A>dir") != 0) continue;
+        while (!zeile.empty() && (zeile.back() == ' ' || zeile.back() == '\0')) zeile.pop_back();
+        eingabe = zeile;
+    }
+    ASSERT_FALSE(eingabe.empty()) << vramLines(m);
+    EXPECT_EQ(eingabe, "A>dir") << "das x ist vom Schirm gelöscht\n" << vramLines(m);
     EXPECT_TRUE(enthaelt(m, "A: RADE     COM")) << "dir ausgeführt\n" << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "DIRX?")) << vramLines(m);
 

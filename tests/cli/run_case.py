@@ -183,7 +183,7 @@ def main():
 
         for name, content in case["files"].items():
             path = os.path.join(tmpdir, name)
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8", newline="") as f:   # kein CRLF unter Windows
                 f.write(content)
             subst[name] = path
         for name in case["tmpfiles"]:
