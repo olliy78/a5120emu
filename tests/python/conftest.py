@@ -152,6 +152,16 @@ def qapp():
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
     yield app
+    # Fenster VOR dem Interpreterende ordentlich abbauen: bleiben sie liegen, zerstört
+    # der Abbau am Prozessende die QOpenGLWidgets in beliebiger Reihenfolge — in
+    # test_gui_smoke endete das reproduzierbar mit „malloc_consolidate(): unaligned
+    # fastbin chunk" (rc 134/139) NACH den grünen Fällen.
+    import gc
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    app.processEvents()
+    gc.collect()
     app.processEvents()
 
 
