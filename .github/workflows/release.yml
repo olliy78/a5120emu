@@ -108,7 +108,8 @@ jobs:
           # Die Bibliothek muss genau die Bauversion des Pakets melden (§7.6):
           # erste Angabe der mitgelieferten VERSION, gegengeprüft an der Ableitung.
           erwartet=$(python3 tools/version.py --bau)
-          paket=$(awk '{print $1; exit}' "$root/VERSION")
+          # VERSION liegt NEBEN payload/ (wie requirements.lock), nicht darin.
+          paket=$(awk '{print $1; exit}' "$root/../VERSION")
           [ "$paket" = "$erwartet" ] \
             || { echo "FEHLER: Paket-VERSION '$paket' != Bauversion '$erwartet'"; exit 1; }
           python3 - "$root/bin/libk1520core.so" "$erwartet" <<'PY'
@@ -342,7 +343,7 @@ jobs:
           # Die DLL muss genau die Bauversion des Pakets melden (§7.6): erste
           # Angabe der mitgelieferten VERSION, gegengeprüft an der Ableitung.
           $erwartet = (& python tools/version.py --bau).Trim()
-          $paket = ((Get-Content -LiteralPath "$root\VERSION" -TotalCount 1) -split '\s+')[0]
+          $paket = ((Get-Content -LiteralPath "$root\..\VERSION" -TotalCount 1) -split '\s+')[0]
           if ($paket -ne $erwartet) { throw "Paket-VERSION '$paket' != Bauversion '$erwartet'" }
           & python $abi "$root\bin\k1520core.dll" $erwartet
           if ($LASTEXITCODE -ne 0) { throw 'k1520core.dll ist nicht ladbar oder meldet eine andere Version' }

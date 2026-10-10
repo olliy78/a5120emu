@@ -435,9 +435,12 @@ if [ "$SKIP_BUILD" = no ]; then
     # `k1520dbg` erbt K1520_FORMATS_DEFAULT ueber k1520_floppy2 und traegt damit
     # ebenfalls KEINEN Pfad des Baurechners (§10a.3 (2) des Entwurfs); der
     # Waechter dagegen steht im Rauchtest von release.yml.
+    # Die Bauausgabe geht in eine Datei; bei einem Fehlschlag kommt ihr Ende
+    # auf den Schirm — sonst steht in der CI nur „fehlgeschlagen" (2026-10-10).
+    _baulog="$BUILD_DIR/build_payload.log"
     cmake --build "$BUILD_DIR" --target k1520core k1520disk k1520disktool k1520dbg \
-        -j"$(kerne)" \
-        >/dev/null || die "Bauen der Bibliotheken/Werkzeuge fehlgeschlagen"
+        -j"$(kerne)" >"$_baulog" 2>&1 \
+        || { tail -60 "$_baulog" >&2; die "Bauen der Bibliotheken/Werkzeuge fehlgeschlagen"; }
     ok "$K1520_CORE_LIB, $K1520_DISK_LIB, $K1520_DISK_CLI, $K1520_DBG"
 fi
 [ -f "$BUILD_DIR/$K1520_CORE_LIB" ]     || die "Kernbibliothek fehlt: $BUILD_DIR/$K1520_CORE_LIB"
