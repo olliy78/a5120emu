@@ -1,7 +1,7 @@
 # tools/scpx_prg — SCPX-Systemdisketten des PRG 710 und PRG 710-1
 
-`python3 tools/scpx_prg/build.py --tool build/k1520disktool` baut `disks/prg710_scpx15_system.hfe` (SCPX V 1.5 „B. Daehmlow“) und
-`disks/prg710-1_scpx17_system.hfe` (SCPX 1526 V 1.7); Wächter `cli_scpx_prg`. Format 16 × 256 (`scpx640`, wie die bisherigen PRG-Disketten).
+`python3 tools/scpx_prg/build.py --tool build/k1520disktool` baut `disks/prg710_scpx15/prg710_scpx15_system.hfe` (SCPX V 1.5 „B. Daehmlow“) und
+`disks/prg710-1_scpx17/prg710-1_scpx17_system.hfe` (SCPX 1526 V 1.7); Wächter `cli_scpx_prg`. Format 16 × 256 (`scpx640`, wie die bisherigen PRG-Disketten).
 
 | Quelle | Inhalt |
 |--------|--------|

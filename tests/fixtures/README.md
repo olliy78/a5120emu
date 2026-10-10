@@ -86,7 +86,7 @@ UDOS1715/NDOS hält die Dateiverkettung in eigenen Zeigersektoren *innerhalb* de
 Sektoren — anders als ZDOS auf dem A5120, dessen Kontrollblock hinter der Daten-CRC
 liegt und ein rohes Sektorabbild unbrauchbar macht. Genau das prüft
 `FsCatalog.Udos1715ProfileSindImgFaehigUndEinseitigGezaehlt` mit; die spurbasierte
-Aufnahme derselben Diskette liegt als `disks/udos1715_640k_pc1715_system.hfe` im
+Aufnahme derselben Diskette liegt als `disks/pc1715_udos1715/udos1715_640k_pc1715_system.hfe` im
 Arbeitsverzeichnis. Hintergrund: `doc/udos1715_diskettenformat.md` §8.
 
 ## Zwei Fixtures, weil zwei **verschiedene Rechner** dasselbe Dateisystem benutzen

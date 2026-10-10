@@ -15,11 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT, requires_core
+from conftest import PROJECT_ROOT, ausgelieferte_diskette, requires_core
 
 pytestmark = requires_core
 
-DISKS = PROJECT_ROOT / "disks"
 UDOS_710 = "prg710_udos43_k5601_system.hfe"
 UDOS_710_1 = "prg710-1_udos43_k5601_v43_189.hfe"
 SCPX_710 = "prg710_scpx15_system.hfe"
@@ -53,7 +52,7 @@ def _einlegen(w, tmp_path, monkeypatch, name, laufwerk=0):
     """Eine ausgelieferte Diskette (Kopie) über den Weg des Laufwerkskastens einlegen."""
     from PySide6.QtWidgets import QFileDialog
     kopie = tmp_path / f"l{laufwerk}_{name}"
-    shutil.copy(DISKS / name, kopie)
+    shutil.copy(ausgelieferte_diskette(name), kopie)
     monkeypatch.setattr(QFileDialog, "getOpenFileName",
                         staticmethod(lambda *a, **k: (str(kopie), "")))
     assert not w.drives_widget.is_mounted(laufwerk)

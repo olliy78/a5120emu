@@ -2281,7 +2281,7 @@ bei `FORMAT`, `ESPRO` und `UPRO`.
 Fixture: `tests/fixtures/disks/udos1715_640k_pc1715_system.img` (640 KB — das
 `.img` genügt, weil bei NDOS nichts außerhalb der Sektoren steht); die
 spurbasierte Aufnahme derselben Diskette liegt unter
-`disks/udos1715_640k_pc1715_system.hfe`.
+`disks/pc1715_udos1715/udos1715_640k_pc1715_system.hfe`.
 
 Am echten Laufwerk gegengeprüft (Greaseweazle F1 + MFS-1.6-Diskette): der
 Physisch-Pfad des DiskTool öffnet die eingelegte Diskette, erkennt `udos1715` und

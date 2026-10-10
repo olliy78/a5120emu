@@ -4,7 +4,7 @@
 build.py  -  die CP/A-Systemdiskette des A5120 (mit allen BIOS-Varianten) bauen
 ===============================================================================
 
-  disks/a5120_cpa_k5601_system.hfe
+  disks/a5120_cpa/a5120_cpa_k5601_system.hfe
 
 DIE CP/A-Diskette der Auslieferung (statt frueher vier: clock, noclock, combo5zoll,
 combo8zoll).  Sie bootet mit `@OS.COM` = BIOS mit Uhr, 3 x K5601; die uebrigen BIOS-Fassungen
@@ -27,7 +27,7 @@ Inhalt (Herkunft je Gruppe):
                (Patchbereich Dateiversatz 22H/23H, Vorgabe 8FH/8EH; wie test_raf_zwg.cpp)
   RAFQUICK     ZWG-Schnelltest aus tests/fixtures/raf/, unveraendert
 
-Systemspuren: disks/boot_cpa780.bin.  `@OS.COM` wird als ERSTE Datei eingespielt (dort, in
+Systemspuren: disks/bootsektoren/boot_cpa780.bin.  `@OS.COM` wird als ERSTE Datei eingespielt (dort, in
 Block 3, sucht der Lader).
 
 Aufruf:
@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.join(REPO, 'tools'))
 import disketten_beigaben as beigaben  # noqa: E402  (Programmliste + Quellpfade, EINE Wahrheit)
 
 NAME = 'a5120_cpa_k5601_system.hfe'
-BOOT = os.path.join(REPO, 'disks', 'boot_cpa780.bin')
+BOOT = os.path.join(REPO, 'disks', 'bootsektoren', 'boot_cpa780.bin')
 RAF_FIXTURES = os.path.join(REPO, 'tests', 'fixtures', 'raf')
 # Die Beigaben des A5120, die auf CP/A-Disketten gehoeren (ohne PCTEST: PC 1715)
 BEIGABEN = ['SERTEST.COM', 'ROMREAD.COM', 'EM256ADR.COM', 'EM16ABL.COM', 'EM256FUL.COM',
@@ -124,7 +124,8 @@ def wm_hlp_schreiben():
 
 def bauen(tool, ausgabe):
     wm_hlp_schreiben()
-    ziel = os.path.join(ausgabe, NAME)
+    ziel = beigaben.diskpfad(ausgabe, NAME)
+    os.makedirs(os.path.dirname(ziel), exist_ok=True)
     if os.path.exists(ziel):
         os.remove(ziel)
     with tempfile.TemporaryDirectory() as tmp:
@@ -145,7 +146,7 @@ def bauen(tool, ausgabe):
 
 
 def pruefen(tool, ausgabe):
-    diskette = os.path.join(ausgabe, NAME)
+    diskette = beigaben.diskpfad(ausgabe, NAME)
     if not os.path.isfile(diskette):
         print(f'{NAME}: fehlt')
         return False

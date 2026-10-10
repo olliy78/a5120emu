@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT, requires_core
+from conftest import PROJECT_ROOT, ausgelieferte_diskette, requires_core
 
 PACKAGING = PROJECT_ROOT / "packaging"
 SCRIPTS = ["install.sh", "build_payload.sh", "launcher.sh",
@@ -269,7 +269,7 @@ def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
             "pc1715w_scp30_system.hfe"}
     assert soll <= set(block)
     for name in soll:
-        assert (PACKAGING.parent / "disks" / name).is_file(), name
+        assert ausgelieferte_diskette(name).is_file(), name
     vorgabe = (PACKAGING.parent / "data" / "default_config_pc1715.yaml").read_text(encoding="utf-8")
     assert not re.search(r"^disks:", vorgabe, re.M)
 
@@ -329,7 +329,7 @@ def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
     assert "k8915_scpx8915_v24_system.hfe" in block
     for name in block:
-        assert (PACKAGING.parent / "disks" / name).is_file(), name
+        assert ausgelieferte_diskette(name).is_file(), name
 
 
 def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
@@ -344,7 +344,7 @@ def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
             "prg710_scpx15_system.hfe", "prg710-1_scpx17_system.hfe"}
     assert soll <= set(block)
     for name in soll:
-        assert (PACKAGING.parent / "disks" / name).is_file(), name
+        assert ausgelieferte_diskette(name).is_file(), name
     # Die Disketten gehoeren dem Anwender nach dem ersten Start: kein Pfad in der Vorgabe.
     vorgabe = (PACKAGING.parent / "data" / "default_config_prg710.yaml").read_text(encoding="utf-8")
     assert not re.search(r"^disks:", vorgabe, re.M)
@@ -1390,7 +1390,7 @@ def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
     assert gepackt, "keine gepackten Beispieldisketten im Paket"
     assert not list(disks.glob("*.hfe")), "ungepackte Abbilder im Paket"
 
-    original = PROJECT_ROOT / "disks" / gepackt[0].stem
+    original = ausgelieferte_diskette(gepackt[0].stem)
     with gzip.open(gepackt[0], "rb") as f:
         assert f.read() == original.read_bytes(), "gepacktes Abbild weicht ab"
 
@@ -1494,7 +1494,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert ausgepackt
     assert not list(nutzer_disks.glob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
     for f in ausgepackt:
-        assert f.read_bytes() == (PROJECT_ROOT / "disks" / f.name).read_bytes(), \
+        assert f.read_bytes() == ausgelieferte_diskette(f.name).read_bytes(), \
             f"{f.name} kam beschädigt beim Anwender an"
 
     # Platzbedarf: ohne das Schlankmachen wären es ~400 MB.  Gezählt wird wie

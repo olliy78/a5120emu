@@ -25,6 +25,13 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DISKS = PROJECT_ROOT / "tests" / "fixtures" / "disks"
 
+
+def ausgelieferte_diskette(name):
+    """Pfad einer Diskette aus ``disks/<maschine>_<system>/`` (die Ordner heissen nicht wie die Datei)."""
+    treffer = sorted((PROJECT_ROOT / "disks").glob(f"*/{name}"))
+    assert treffer, f"{name} liegt in keinem Unterordner von disks/"
+    return treffer[0]
+
 # `import app...` funktioniert damit unabhängig vom Aufrufverzeichnis.
 sys.path.insert(0, str(PROJECT_ROOT))
 

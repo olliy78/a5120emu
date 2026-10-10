@@ -1310,7 +1310,7 @@ TEST(K8915Scpx, FremdeSystemspurWirdFuerDenK8915Abgelehnt)
 
 /**
  * @test K8915Scpx.AusgelieferteBootabbilderSindDieSystemspurenDerDisketten
- * @brief `disks/boot_scpx8915_{55k,v24}.bin` (README) = `boot-get` der Disketten 900/901 —
+ * @brief `disks/bootsektoren/boot_scpx8915_{55k,v24}.bin` (README) = `boot-get` der Disketten 900/901 —
  *        sonst läge dort ein Abbild, dessen Herkunft niemand mehr belegen kann.
  */
 TEST(K8915Scpx, AusgelieferteBootabbilderSindDieSystemspurenDerDisketten)
@@ -1319,7 +1319,7 @@ TEST(K8915Scpx, AusgelieferteBootabbilderSindDieSystemspurenDerDisketten)
     using k1520test::readFileBytes;
     for (const auto& p : {std::pair<const char*, const char*>{"boot_scpx8915_55k.bin", kSys900},
                           {"boot_scpx8915_v24.bin", kSys901}}) {
-        const std::string datei = readFileBytes(diskPath(std::string("../../../disks/") + p.first));
+        const std::string datei = readFileBytes(diskPath(std::string("../../../disks/bootsektoren/") + p.first));
         const std::vector<uint8_t> sys = systemabbild(p.second);
         ASSERT_EQ(datei.size(), 20480u) << p.first;
         EXPECT_EQ(std::vector<uint8_t>(datei.begin(), datei.end()), sys) << p.first;

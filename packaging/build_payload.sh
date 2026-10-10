@@ -524,13 +524,17 @@ lege_diskette_ab() {
 case "$DISKS" in
     none) ;;
     all)
-        for d in "$REPO"/disks/*.hfe "$REPO"/disks/*.img "$REPO"/disks/*.dmk; do
-            if [ -f "$d" ]; then lege_diskette_ab "$d"; fi
+        # disks/<maschine>_<system>/…; die P8000-Ordner (WEGA, Platten) kommen nicht ins Paket.
+        for d in $(find "$REPO/disks" -mindepth 2 -maxdepth 2 -type f \
+                        \( -name '*.hfe' -o -name '*.img' -o -name '*.dmk' \) \
+                        -not -path '*/p8000_*' | sort); do
+            lege_diskette_ab "$d"
         done ;;
     default)
         for d in $DISKS_DEFAULT; do
-            if [ -f "$REPO/disks/$d" ]; then
-                lege_diskette_ab "$REPO/disks/$d"
+            pfad=$(find "$REPO/disks" -mindepth 2 -maxdepth 2 -type f -name "$d" | head -1)
+            if [ -n "$pfad" ]; then
+                lege_diskette_ab "$pfad"
             else
                 warn "Beispieldiskette fehlt, wird ausgelassen: $d"
             fi

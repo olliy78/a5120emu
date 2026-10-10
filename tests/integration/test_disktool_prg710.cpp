@@ -327,10 +327,10 @@ TEST_P(DisktoolPrg710, ScpxBootdisketteAusModulenBootetBisA) {
 TEST(DisktoolPrg710, LieferdisketteBootet) {
     struct Fall { V v; bool udos; const char* disk; };
     const Fall faelle[] = {
-        {V::Prg710,   true,  "prg710_udos43_k5601_system.hfe"},
-        {V::Prg710_1, true,  "prg710-1_udos43_k5601_v43_189.hfe"},
-        {V::Prg710,   false, "prg710_scpx15_system.hfe"},
-        {V::Prg710_1, false, "prg710-1_scpx17_system.hfe"},
+        {V::Prg710,   true,  "prg710_udos43/prg710_udos43_k5601_system.hfe"},
+        {V::Prg710_1, true,  "prg710-1_udos43/prg710-1_udos43_k5601_v43_189.hfe"},
+        {V::Prg710,   false, "prg710_scpx15/prg710_scpx15_system.hfe"},
+        {V::Prg710_1, false, "prg710-1_scpx17/prg710-1_scpx17_system.hfe"},
     };
     for (const Fall& f : faelle) {
         SCOPED_TRACE(f.disk);

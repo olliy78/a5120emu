@@ -1,6 +1,6 @@
 # tools/cpa_a5120 — Bau der CP/A-Systemdiskette des A5120
 
-`python3 tools/cpa_a5120/build.py --tool build/k1520disktool` baut `disks/a5120_cpa_k5601_system.hfe`
+`python3 tools/cpa_a5120/build.py --tool build/k1520disktool` baut `disks/a5120_cpa/a5120_cpa_k5601_system.hfe`
 (`--check` = Wächter `cli_cpa_a5120`). Beschreibung des Inhalts für den Anwender: `inhalt/LIESMICH.TXT`;
 Entscheidungen und Versuche: `doc/disketten_bestand.md`.
 
