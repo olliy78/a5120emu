@@ -85,3 +85,6 @@ else()
         "'${K1520_PYTEST_PYTHON}'.  Nachinstallieren: "
         "venv/bin/python3 -m pip install -r requirements-dev.txt")
 endif()
+
+# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+k1520_test_zeiten_skalieren()

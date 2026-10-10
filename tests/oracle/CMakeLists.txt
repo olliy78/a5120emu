@@ -89,3 +89,6 @@ endif()
 k1520_add_test(z8_mame SRC test_z8_mame.cpp
                LIBS k1520_z8 k1520_mame_z8_oracle
                LABELS "mame_oracle;slow" TIMEOUT 600)
+
+# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+k1520_test_zeiten_skalieren()

@@ -89,6 +89,15 @@ und die Include-Wurzel kommen automatisch, ebenso der Fixture-Pfad als
 Compile-Definition. Weitere Argumente: `DEFS` (zusätzliche Makros),
 `TIMEOUT` (Vorgabe 60 s).
 
+> **Zeitgrenzen werden mit `K1520_TEST_ZEIT_FAKTOR` malgenommen** (CMake-Cache,
+> Vorgabe **2**, seit 2026-10-10): die Zahlen in den `CMakeLists.txt` sind auf
+> einem freien Rechner bemessen, bei ~2900 Fällen mit `-j16` und nebenher
+> laufenden Emulatoren reichten sie nicht mehr. `k1520_add_test()` rechnet den
+> Faktor selbst ein; für mit `add_test()` angelegte Fälle steht als letzte Zeile
+> jeder `tests/<ebene>/CMakeLists.txt` `k1520_test_zeiten_skalieren()` — ein
+> neues Testverzeichnis braucht diese Zeile ebenfalls. Gezielt ändern:
+> `cmake -B build -DK1520_TEST_ZEIT_FAKTOR=3`.
+
 > **Falle:** `gtest_discover_tests(... PROPERTIES LABELS "a;b")` übernimmt nur
 > das ERSTE Label — die Liste zerfällt beim Durchreichen. `k1520_add_test()`
 > maskiert die Semikola; nicht daran vorbeibauen.

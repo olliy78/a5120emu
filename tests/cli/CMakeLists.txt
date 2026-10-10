@@ -197,3 +197,6 @@ add_test(NAME cli_k8915g2_prn_passt_zur_quelle
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/gen_k8915g2_prn.py" --check)
 set_tests_properties(cli_k8915g2_prn_passt_zur_quelle PROPERTIES
     TIMEOUT 60 LABELS "cli;fast")
+
+# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+k1520_test_zeiten_skalieren()
