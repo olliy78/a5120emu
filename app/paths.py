@@ -545,44 +545,91 @@ def default_disk_dir() -> Path:
     return bundled if bundled else base_dir()
 
 
+#: Begleitdateien, die mit den Disketten in den Beispielordner wandern
+#: (``disks/README.md`` und die ``LIESMICH.TXT`` der Ordner, falls vorhanden).
+BEGLEITDATEIEN = ("README.md", "LIESMICH.TXT")
+
+
+def beispiel_ordner() -> Path:
+    """Der Beispieldiskettenordner DIESER Fassung im Arbeitsordner (§7.5).
+
+    ``<user_disks_dir()>/Beispieldisketten_v03`` (Endfassung), ``…_v03-beta.2``
+    (Vorabversion) oder ``…_v03-test`` (Bau ohne Tag) — Name aus
+    :func:`app.version.beispielordner`.
+    """
+    from app import version
+    return user_disks_dir() / version.beispielordner(version.fassung())
+
+
 def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img")) -> int:
-    """Kopiert die mitgelieferten Beispieldisketten **einmalig** ins Benutzerverzeichnis.
+    """Legt die mitgelieferten Beispieldisketten in den Ordner dieser Fassung.
 
-    Gedacht für den Erststart nach einer Installation (``main.py`` ruft es auf,
-    der Installer ebenfalls).  Ist das Zielverzeichnis schon vorhanden, geschieht
-    nichts — der Anwender hat es dann bereits in der Hand.  Im Quellbaum
-    ebenfalls ein No-op: dort wird direkt aus ``disks/`` gearbeitet.
+    Gedacht für den Start einer **Installation** (``main.py`` ruft es auf, der
+    Installer ebenfalls).  Ziel ist ein **Unterordner** des Arbeitsordners
+    (:func:`beispiel_ordner`); angelegt wird er, **wenn er fehlt** — unabhängig
+    davon, ob der Arbeitsordner schon existiert.  So kommt nach einem Update die
+    neue Zusammenstellung an, und was sonst im Arbeitsordner liegt (auch die
+    flach abgelegten Disketten aus 0.1/0.2), bleibt unangetastet.  Existiert der
+    Beispielordner, geschieht nichts (der Anwender hat ihn in der Hand).  Im
+    Quellbaum ebenfalls ein No-op: dort wird direkt aus ``disks/`` gearbeitet.
 
-    Im Paket liegen die Abbilder **gepackt** (``*.hfe.gz``): sie bestehen
-    überwiegend aus Füllmuster, und gebraucht werden sie genau einmal — hier.
-    Ungepackt lägen sie danach doppelt auf der Platte.  Beides wird angenommen,
-    damit ältere Pakete und der Quellbaum weiter funktionieren.
+    Die Gliederung ``<maschine>_<system>/`` des Pakets bleibt erhalten.  Im Paket
+    liegen die Abbilder **gepackt** (``*.hfe.gz``): sie bestehen überwiegend aus
+    Füllmuster, und gebraucht werden sie genau einmal — hier.  Ungepackt lägen sie
+    danach doppelt auf der Platte.  Beides wird angenommen, damit ältere Pakete
+    und der Quellbaum weiter funktionieren.
 
     Returns:
-        Anzahl angelegter Dateien.
+        Anzahl angelegter Diskettendateien (Begleitdateien zählen nicht).
     """
+    import fnmatch
     import gzip
     import shutil
 
     if not is_installed_layout():
         return 0
-    target = user_disks_dir()
-    if target.exists():
-        return 0
     source = bundled_disks_dir()
     if source is None:
         return 0
+    target = beispiel_ordner()
+    if target.exists():
+        return 0
 
-    target.mkdir(parents=True, exist_ok=True)
+    def ist_abbild(name: str) -> bool:
+        return any(fnmatch.fnmatch(name, p) for p in patterns)
+
+    # In einem Zwischenordner aufbauen und erst am Ende umbenennen: ein
+    # abgebrochener Lauf hinterliesse sonst einen halb gefüllten Ordner, den
+    # der nächste Start wegen `target.exists()` nie mehr vervollständigte.
+    target.parent.mkdir(parents=True, exist_ok=True)
+    teil = target.parent / (target.name + ".teil")
+    if teil.exists():
+        shutil.rmtree(teil, ignore_errors=True)
     count = 0
-    for pattern in patterns:
-        for f in sorted(source.glob(pattern)):
-            shutil.copy2(f, target / f.name)
-            count += 1
-        for f in sorted(source.glob(pattern + ".gz")):
-            with gzip.open(f, "rb") as gepackt, open(target / f.stem, "wb") as offen:
-                shutil.copyfileobj(gepackt, offen)
-            count += 1
+    try:
+        for f in sorted(source.rglob("*")):
+            if not f.is_file():
+                continue
+            rel = f.relative_to(source)
+            if f.name.endswith(".gz") and ist_abbild(f.name[:-3]):
+                ziel = teil / rel.parent / f.name[:-3]
+                ziel.parent.mkdir(parents=True, exist_ok=True)
+                with gzip.open(f, "rb") as gepackt, open(ziel, "wb") as offen:
+                    shutil.copyfileobj(gepackt, offen)
+                count += 1
+            elif ist_abbild(f.name):
+                ziel = teil / rel
+                ziel.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, ziel)
+                count += 1
+            elif f.name in BEGLEITDATEIEN:
+                ziel = teil / rel
+                ziel.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, ziel)
+        teil.rename(target)
+    except OSError:
+        shutil.rmtree(teil, ignore_errors=True)
+        raise
     return count
 
 

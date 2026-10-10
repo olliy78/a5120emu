@@ -72,6 +72,7 @@ Zurücksetzen die eingelegten Disketten in Ruhe.
 """
 
 import os
+from typing import Callable, Dict
 
 import yaml
 
@@ -80,7 +81,16 @@ from app import paths
 from app import profil as profile
 from app.ui.screen_widget import CRTParams
 
+#: FORMATversion der Konfigurationsdatei — NICHT die Programmversion.  Sie steigt
+#: nur bei einer inkompatiblen Änderung des Aufbaus (doc/ci_pipeline.md §7.4);
+#: die meisten Fassungen ändern sie nicht.  Die Programmversion steht als
+#: ``geschrieben_von`` daneben (reine Auskunft für die Fehlersuche).
 CONFIG_VERSION = 1
+
+#: Migrationskette: ``{n: f}`` hebt eine Datei der Formatversion ``n`` auf
+#: ``n + 1`` (``f(data) -> data``).  Derzeit leer, weil es nur Format 1 gibt.
+#: Beim Laden läuft die Kette von der gelesenen bis zur eigenen Version.
+_MIGRATIONEN: Dict[int, Callable[[dict], dict]] = {}
 
 #: Name der Konfiguration des A5120 bis 2026-09 — Quelle des einmaligen Umzugs.
 ALTE_KONFIG_DATEI = "config.yaml"
@@ -150,8 +160,11 @@ def build_config(crt: CRTParams, general: dict, disks: list,
     ``machine`` (doc/design/22_raf512.md §7.2): ``{"raf": …, "raf_standby": …}``;
     ``None`` = Abschnitt weglassen (beim Laden heisst das: keine RAF).
     """
+    from app import version as _version
     data = {
         "version": CONFIG_VERSION,
+        # Auskunft, nie Grundlage einer Fallunterscheidung (§7.4).
+        "geschrieben_von": _version.fassung(),
         "crt": crt.to_dict(),
         "general": dict(general or {}),
         "drive_types": list(drive_types) if drive_types else [],
@@ -165,20 +178,87 @@ def build_config(crt: CRTParams, general: dict, disks: list,
     return data
 
 
-def save_config(path: str, data: dict):
-    """Write *data* to *path* as YAML, creating parent directories as needed."""
+def format_version(data: dict) -> int:
+    """Formatversion einer gelesenen Konfiguration; fehlt oder unlesbar → 1."""
+    v = data.get("version", 1) if isinstance(data, dict) else 1
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else 1
+
+
+def ist_neuer_als_dieses_programm(data: dict) -> bool:
+    """Stammt die Datei von einem NEUEREN Programm (höhere Formatversion)?"""
+    return format_version(data) > CONFIG_VERSION
+
+
+def migriere(data: dict) -> dict:
+    """Die Migrationskette von der gelesenen bis zur eigenen Formatversion.
+
+    Eine höhere gelesene Version bleibt unangetastet (sie wird nur gelesen, so
+    gut es geht, und :func:`save_config` schützt die Datei).
+    """
+    v = format_version(data)
+    while v < CONFIG_VERSION:
+        schritt = _MIGRATIONEN.get(v)
+        if schritt is None:
+            raise ValueError(f"keine Migration von Konfigurationsformat {v} auf {v + 1}")
+        data = schritt(data)
+        v += 1
+        data["version"] = v
+    return data
+
+
+def _datei_ist_neuer(path: str) -> bool:
+    """Trägt die vorhandene Datei ``path`` eine höhere Formatversion als wir?"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            vorhanden = yaml.safe_load(f)
+    except Exception:
+        return False                 # fehlt oder defekt: nichts zu schützen
+    return ist_neuer_als_dieses_programm(vorhanden)
+
+
+def save_config(path: str, data: dict, erzwingen: bool = False) -> bool:
+    """Write *data* to *path* as YAML, creating parent directories as needed.
+
+    **Schutz vor Überschreiben** (doc/ci_pipeline.md §7.4): trägt die vorhandene
+    Datei eine HÖHERE Formatversion als dieses Programm, hat ein neueres sie
+    geschrieben — ein Probelauf mit einer alten Fassung darf die Einstellungen
+    der neuen nicht zerstören.  Dann wird nichts geschrieben (Autosave wie
+    Beenden laufen hier durch).  ``erzwingen`` ist für die ausdrückliche Wahl
+    des Anwenders (*Konfiguration speichern unter…*).
+
+    Returns:
+        ``True``, wenn geschrieben wurde; ``False``, wenn der Schutz griff.
+    """
+    if not erzwingen and _datei_ist_neuer(path):
+        global _schutz_gemeldet
+        if not _schutz_gemeldet:
+            _schutz_gemeldet = True
+            print(f"[config] {path} stammt von einem neueren Programm "
+                  f"(Format > {CONFIG_VERSION}) und wird nicht überschrieben")
+        return False
     directory = os.path.dirname(os.path.abspath(path))
     if directory:
         os.makedirs(directory, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    return True
+
+
+#: Die Schutzmeldung nur einmal je Lauf ins Protokoll (Autosave schreibt oft).
+_schutz_gemeldet = False
 
 
 def load_config(path: str) -> dict:
-    """Read a YAML configuration file and return it as a dict (``{}`` if empty)."""
+    """Read a YAML configuration file and return it as a dict (``{}`` if empty).
+
+    Läuft die Migrationskette bis zur eigenen Formatversion; eine NEUERE Datei
+    wird unverändert geliefert (siehe :func:`ist_neuer_als_dieses_programm`).
+    """
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return data or {}
+    if not isinstance(data, dict):
+        return {}
+    return migriere(data) if data else {}
 
 
 def standard_konfiguration(profil: "profile.Programmprofil" = None) -> dict:

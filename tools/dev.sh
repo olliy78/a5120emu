@@ -44,6 +44,10 @@
 #                                     wine — lokale Vorprüfung der Portierung
 #   tools/dev.sh check                build/ + build_trace/ bauen + Frische melden
 #   tools/dev.sh rebuild              build/ + build_trace/ von Grund auf neu (rm -rf)
+#   tools/dev.sh release <version>    Vorabversion (0.3.0-beta.1, 0.3.0-rc.1) oder Endfassung
+#                                     (0.3.0) veroeffentlichen: pruefen, testen, taggen, nach
+#                                     Rueckfrage pushen (doc/ci_pipeline.md §7.3).  Optionen:
+#                                     --ohne-push  --zweig-egal  --trocken (nur ausgeben)
 #
 # K1520_JOBS=<n> setzt die Testparallelität (Vorgabe: nproc).
 #
@@ -308,8 +312,88 @@ case "$cmd" in
     rebuild)
         c_ylw ">> rm -rf build build_trace + Neubau von Grund auf"
         rm -rf build build_trace build_win; build_dir build; build_dir build_trace ;;
+    release)
+        # Eine Version veroeffentlichen — Konzept: doc/ci_pipeline.md §7.3.
+        #   tools/dev.sh release 0.3.0-beta.1     Vorabversion (Tag startet release.yml -> Pre-release)
+        #   tools/dev.sh release 0.3.0            Endfassung (vorher ALLE vier Testrunden)
+        # Pruefungen: Arbeitsbaum sauber, Zweig main (--zweig-egal), Tag frei, Version
+        # groesser als jedes Tag.  --ohne-push: nur lokal.  --trocken: die Pruefungen laufen,
+        # die Testrunden und alle Git-Schritte werden nur ausgegeben.
+        version=""; ohne_push=0; zweig_egal=0; trocken=0
+        for _a in "$@"; do
+            case "$_a" in
+                --ohne-push)  ohne_push=1 ;;
+                --zweig-egal) zweig_egal=1 ;;
+                --trocken)    trocken=1 ;;
+                -*)           c_red "unbekannte Option: $_a"; exit 2 ;;
+                *)            [ -z "$version" ] && version="${_a#v}" || { c_red "nur EINE Version angeben"; exit 2; } ;;
+            esac
+        done
+        [ -n "$version" ] || { c_red "Version fehlt: tools/dev.sh release 0.3.0-beta.1 | 0.3.0"; exit 2; }
+        VPY=python3; command -v python3 >/dev/null 2>&1 || VPY=python
+        # Grammatik, Tag noch frei, groesser als jedes vorhandene Tag (tools/version.py).
+        "$VPY" tools/version.py --pruefe-release "$version" || exit 1
+        basis="$("$VPY" tools/version.py --release-basis "$version")"
+        endfassung=1; case "$version" in *-*) endfassung=0 ;; esac
+        zweig="$(git rev-parse --abbrev-ref HEAD)"
+        if [ "$zweig_egal" = 0 ] && [ "$zweig" != main ]; then
+            c_red "Release nur von main (aktuell: $zweig) — oder --zweig-egal"; exit 1
+        fi
+        if [ -n "$(git status --porcelain)" ]; then
+            c_red "Arbeitsbaum nicht sauber — erst committen oder zurueckstellen"; git status --short | head -10; exit 1
+        fi
+        if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            c_red "Tag v$version existiert bereits"; exit 1
+        fi
+        alt="$(cat VERSION)"
+        trock() { c_ylw "   [trocken] $*"; }
+        # Ein Git-/Dateischritt: trocken nur zeigen, sonst ausfuehren.
+        tu() { if [ "$trocken" = 1 ]; then trock "$*"; else "$@"; fi; }
+        versionsdatei() { if [ "$trocken" = 1 ]; then trock "echo $1 > VERSION"; else echo "$1" > VERSION; fi; }
+        # Die Testrunden: Vorabversion nur `test`, Endfassung alle vier (dauert!).
+        if [ "$endfassung" = 1 ]; then
+            c_ylw ">> Endfassung $version: vier Testrunden nacheinander (test, test-format, test-matrix, win) —"
+            c_ylw "   das dauert (test ~35 s, test-format ~1 min, test-matrix ~3 min, win einige Minuten)."
+            runden=(test test-format test-matrix win)
+        else
+            runden=(test)
+        fi
+        for r in "${runden[@]}"; do
+            if [ "$trocken" = 1 ]; then trock "tools/dev.sh $r"; else
+                c_ylw ">> Testrunde: $r"
+                "$0" "$r" || { c_red "Testrunde '$r' rot — kein Tag gesetzt, nichts veraendert"; exit 1; }
+            fi
+        done
+        # VERSION auf die Basis dieser Fassung stellen (nur wenn noetig).
+        if [ "$alt" != "$basis" ]; then
+            versionsdatei "$basis"
+            tu git add VERSION
+            if [ "$endfassung" = 1 ]; then msg="Version $version"; else msg="VERSION: $basis (fuer v$version)"; fi
+            tu git commit -q -m "$msg"
+        fi
+        tu git tag -a "v$version" -m "K1520emu $version"
+        if [ "$endfassung" = 1 ]; then
+            naechste="$("$VPY" tools/version.py --naechste-basis "$version")"
+            versionsdatei "$naechste"
+            tu git add VERSION
+            tu git commit -q -m "Naechste Fassung: $naechste"
+        fi
+        befehl="git push origin $zweig v$version"
+        if [ "$ohne_push" = 1 ] || [ "$trocken" = 1 ]; then
+            [ "$trocken" = 1 ] && trock "$befehl (nach Rueckfrage)" || c_ylw ">> --ohne-push: zum Veroeffentlichen spaeter:  $befehl"
+        else
+            c_ylw ">> Tag v$version ist gesetzt.  Jetzt veroeffentlichen mit:  $befehl"
+            [ "$endfassung" = 1 ] && c_ylw "   (beide Commits und das Tag; release.yml legt einen ENTWURF an)" \
+                                   || c_ylw "   (release.yml legt ein PRE-RELEASE an)"
+            antwort=""
+            if [ -t 0 ]; then read -r -p "Jetzt pushen? [j/N] " antwort || true; fi
+            case "$antwort" in
+                j|J|y|Y) $befehl ;;
+                *) c_ylw ">> nicht gepusht.  Spaeter:  $befehl" ;;
+            esac
+        fi ;;
     ''|-h|--help|help)
-        sed -n '2,42p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//' ;;
+        sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//' ;;
     *)
         c_red "unbekanntes Kommando: $cmd"; echo "siehe: tools/dev.sh --help"; exit 2 ;;
 esac

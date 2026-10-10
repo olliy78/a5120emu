@@ -61,7 +61,7 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 | `integration/` | 72 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
 | `cli/` | 70 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
 | `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS, K8915 FORMAT/DISGEN (`test_k8915_format*.cpp`, Bedienhelfer `k8915_bedienung.h`) — plus die 88er Format-Matrix und die sechs K8915-Verfahren. **Langsam** (Minuten) |
-| `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll |
+| `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll, Versionen/Releases (`test_version.py`, `dev.sh release --trocken` im Wegwerf-Repo), Handbuch-Platzhalter (`test_help.py`) |
 | `oracle/` | 1 | Differenzprüfung U8001/U8002 gegen MAMEs z8000 (Label `mame_oracle`). Nur `tools/dev.sh test-oracle` — eigenes `build_oracle/`, lädt MAME-Quellen beim Konfigurieren (`core/primitives/z8000/README.md`) |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
 | `fixtures/` | — | Testdisketten (`tests/fixtures/README.md`) |

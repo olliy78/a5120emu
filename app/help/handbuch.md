@@ -1,5 +1,7 @@
 # a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu — Kurzhandbuch
 
+Version {{VERSION}}
+
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
 Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
 (`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
@@ -776,8 +778,10 @@ er sie **einmal** um — die Einrichtung geht beim Update also nicht verloren.
 | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml` | die Konfiguration je Programm |
 | `share/k1520emu/default_config_a5120.yaml`, `…_k8915.yaml` (in der Installation) | der Auslieferungszustand |
 
-Beim ersten Start nach einer Installation werden die mitgelieferten
-Beispieldisketten dorthin ausgepackt. Verschieben lässt sich das mit den
+Beim ersten Start einer Fassung werden die mitgelieferten Beispieldisketten
+dort in einen eigenen Ordner ausgepackt (`Beispieldisketten_v03`, für eine
+Vorabversion mit Zusatz wie `Beispieldisketten_v03-beta.2`) — gegliedert nach
+`<maschine>_<system>/`. Was sonst im Arbeitsordner liegt, bleibt unberührt. Verschieben lässt sich das mit den
 Umgebungsvariablen `K1520_DATA` (Arbeitsordner) und `K1520_DISKS` (nur die
 Abbilder). Wo das Programm gerade sucht, sagt `a5120emu --paths`.
 

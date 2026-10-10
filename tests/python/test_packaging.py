@@ -1386,9 +1386,14 @@ def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
 
     stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
     disks = stage / "payload" / "share" / "disks"
-    gepackt = sorted(disks.glob("*.hfe.gz"))
+    # Gliederung <maschine>_<system>/ bleibt erhalten (doc/ci_pipeline.md §7.5).
+    gepackt = sorted(disks.glob("*/*.hfe.gz"))
     assert gepackt, "keine gepackten Beispieldisketten im Paket"
-    assert not list(disks.glob("*.hfe")), "ungepackte Abbilder im Paket"
+    assert not list(disks.glob("*.gz")), "Disketten liegen flach statt im Ordner ihrer Maschine"
+    assert not list(disks.rglob("*.hfe")), "ungepackte Abbilder im Paket"
+    for g in gepackt:
+        assert (PROJECT_ROOT / "disks" / g.parent.name / g.stem).is_file(), \
+            f"{g.relative_to(disks)} liegt nicht im Ordner, aus dem es stammt"
 
     original = ausgelieferte_diskette(gepackt[0].stem)
     with gzip.open(gepackt[0], "rb") as f:
@@ -1490,9 +1495,9 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"
-    ausgepackt = sorted(nutzer_disks.glob("*.hfe"))
+    ausgepackt = sorted(nutzer_disks.glob("Beispieldisketten_*/*/*.hfe"))
     assert ausgepackt
-    assert not list(nutzer_disks.glob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
+    assert not list(nutzer_disks.rglob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
     for f in ausgepackt:
         assert f.read_bytes() == ausgelieferte_diskette(f.name).read_bytes(), \
             f"{f.name} kam beschädigt beim Anwender an"
@@ -1567,7 +1572,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
                             capture_output=True, text=True, env=umgebung, timeout=300)
     assert deinst.returncode == 0, deinst.stderr
     assert not ziel.exists(), "Deinstallieren fand die Installation nicht"
-    assert any(nutzer_disks.glob("*.hfe")), "Deinstallieren hat Anwenderdisketten gelöscht"
+    assert any(nutzer_disks.rglob("*.hfe")), "Deinstallieren hat Anwenderdisketten gelöscht"
     assert not (heim / ".local" / "bin" / "python3.12").exists(), \
         "uv hat einen Python-Symlink im PATH des Anwenders hinterlassen"
 
@@ -1902,3 +1907,49 @@ def test_die_anbindung_schreibt_nicht_auf_die_nutzlast():
     # Kein direkter Import mehr — der ginge an der Umleitung vorbei.
     assert not re.search(r"^\s*(import greaseweazle|from greaseweazle)", text, re.M), \
         "ein Import an `_leise` vorbei schreibt wieder auf die Nutzlast"
+
+
+# ─── Version (doc/ci_pipeline.md §7) ─────────────────────────────────────────
+
+def test_build_payload_nimmt_die_version_aus_tools_version_py():
+    """Eine Quelle: kein ``git describe`` mehr, die Windows-Nummer kommt aus ``--windows``."""
+    text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert "git describe" not in text
+    assert "tools/version.py" in text and "--bau" in text and "--windows" in text
+    # Die Bauversion geht in den Kern (k1520_version()) und in den Installer.
+    assert "-DK1520_VERSION_VOLL=$VERSION" in text
+    assert "//DVersionInfo=" in text
+
+
+def test_iss_setzt_die_dateiversion_aus_versioninfo():
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert "VersionInfoVersion={#VersionInfo}" in iss
+    assert "VersionInfoVersion=0.0.0.0" not in iss
+    assert "#define VersionInfo" in iss          # Vorgabe, wenn ohne /DVersionInfo gebaut wird
+
+
+@requires_core
+def test_paketname_und_version_datei_tragen_die_bauversion(tmp_path):
+    """Ohne ``--version``: Name und erste Angabe der ``VERSION`` im Paket sind die Bauversion."""
+    bau = _sh(sys.executable, str(PROJECT_ROOT / "tools" / "version.py"), "--bau").stdout.strip()
+    assert bau.startswith("0.") or bau[0].isdigit()
+    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
+              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
+              "--out", str(tmp_path), "--disks", "default")
+    assert out.returncode == 0, out.stdout + out.stderr
+    stage = next(p for p in tmp_path.glob("k1520emu-*") if p.is_dir())
+    assert stage.name.startswith(f"k1520emu-{bau}-"), stage.name
+    erste = (stage / "VERSION").read_text(encoding="utf-8").split()[0]
+    assert erste == bau
+    gepackt = list((stage / "payload" / "share" / "disks").glob("*/*.hfe.gz"))
+    assert gepackt, "share/disks/<ordner>/…gz fehlt"
+
+
+def test_release_workflow_prueft_tag_und_unterscheidet_vorabversion():
+    wf = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert len(re.findall(r"run: python3? tools/version\.py --pruefe-tag", wf)) == 2   # Linux- UND Windows-Job
+    assert wf.count("--prerelease") >= 2 and "--draft" in wf
+    assert len(re.findall(r"if python3? tools/version\.py --vorab", wf)) == 2
+    # Der Rauchtest sucht die Disketten gegliedert und prüft die Bibliotheksversion.
+    assert 'share/disks"/*/*.gz' in wf
+    assert len(re.findall(r"tools/version\.py --bau", wf)) == 2

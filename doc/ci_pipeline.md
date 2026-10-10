@@ -425,6 +425,15 @@ packaging/build_payload.sh        # was release.yml fährt
 
 ## 7. Versionen und Releases (Konzept 2026-10-10, Fassung 0.3)
 
+> **Umgesetzt** (Zweig `versionierung`, 2026-10-10): `VERSION`, `tools/version.py` +
+> `app/version.py`, `core/version.h.in`, `tools/dev.sh release`, `release.yml`, Beispielordner,
+> `geschrieben_von`/Migrationskette, `{{VERSION}}`; Wächter §7.7. Festlegungen bei Lücken des
+> Konzepts: Kürzel `v<MAJOR><MINOR>` mit MAJOR=0 weggelassen und MINOR zweistellig (`0.3` →
+> `v03`, `1.2` → `v102`); unlesbare Fassung → `Beispieldisketten_unbekannt`; Folgefassung nach
+> `0.3.1` ist `0.3.2-beta` (nur nach `X.Y.0` wird MINOR erhöht); `release` stellt VERSION
+> NACH den Testrunden um (ein roter Lauf verändert nichts); `dev.sh release --trocken` führt
+> die Prüfungen aus und gibt Testrunden und Git-Schritte nur aus.
+
 Bis 0.2 stand die Version an vier Stellen, die nichts voneinander wussten:
 `core/version.h` (fest `0.1.0` — das zeigt das Über-Fenster als „Bibliothek"),
 `CMakeLists.txt` (`project(… VERSION 1.0.0)`), `app/main.py`

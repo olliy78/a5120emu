@@ -469,7 +469,9 @@ Zwei weitere Bau-Einstellungen sind für ein *verteilbares* Paket nicht verhande
 - **`-DBUILD_K1520_TESTS=OFF`** — spart GoogleTest per FetchContent, also einen
   Netzzugriff im Release-Job.
 
-Weiter im Release-Job: Version aus `git describe` in `VERSION` stempeln, SHA256SUMS
+Weiter im Release-Job: Version aus `tools/version.py --bau` in `VERSION` stempeln (Konzept
+Versionen und Releases: `doc/ci_pipeline.md` §7 — eine Quelle `VERSION`, Vorabversionen als
+Pre-release, Beispieldisketten je Fassung in `Beispieldisketten_v03[-beta.N]`), SHA256SUMS
 beilegen, die kuratierte Diskettenauswahl aus `disks/` zusammenstellen. Und: **auf jeder
 Plattform den Rauchtest fahren** (Lib laden, `k1520_version()`, `formats.yaml` finden) — ein
 Payload, dessen DLL nichts exportiert, darf kein Release-Asset werden.

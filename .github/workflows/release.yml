@@ -5,15 +5,23 @@
 # Auslöser (Bedienung: doc/ci_pipeline.md):
 #   * von Hand auf einem Branch → Paket bauen und prüfen, Ergebnis nur als
 #                      Artefakt (Probelauf, kein Release).
-#   * von Hand auf einem Tag v* → zusätzlich als Entwurf an das GitHub-Release
-#                      hängen:  gh workflow run release.yml --ref v1.2.0
+#   * von Hand auf einem Tag v* → zusätzlich an das GitHub-Release hängen
+#                      (Vorabversion: Pre-release, Endfassung: Entwurf):
+#                      gh workflow run release.yml --ref v0.3.0-beta.1
 #   * Push eines Tags v* → dasselbe automatisch.  Der EINZIGE nicht-manuelle
 #                      Auslöser der ganzen Pipeline, und auch der ist eine
-#                      bewusste Handlung (`git push origin v1.2.0`).  Wer auch
+#                      bewusste Handlung (`tools/dev.sh release 0.3.0-beta.1`).  Wer auch
 #                      das von Hand will, streicht den `push:`-Block unten.
 #
-# Der Entwurf ist Absicht: ein Release ist nach außen gerichtet, da schaut vor
-# dem Veröffentlichen jemand drauf.
+# Version und Release-Art (doc/ci_pipeline.md §7): die Version steht in der Datei
+# VERSION und wird von tools/version.py abgeleitet.  Erster Schritt bei einem Tag
+# ist `tools/version.py --pruefe-tag` — passt das Tag nicht zu VERSION, bricht der
+# Lauf ab, statt ein falsch beschriftetes Paket zu erzeugen.  Eine VORABVERSION
+# (v0.3.0-beta.N, -rc.N) wird sofort als Pre-release veröffentlicht, damit Tester
+# sie laden können; eine ENDFASSUNG bleibt ein Entwurf — ein Release ist nach
+# außen gerichtet, da schaut vor dem Veröffentlichen jemand drauf.  Ein Lauf ohne
+# Tag (`gh workflow run release.yml --ref <zweig>`) erzeugt nur das Artefakt mit
+# Bauversion <Basis>+g<kurzhash>.
 #
 # Zwei Jobs, ein Skript: beide rufen packaging/build_payload.sh auf, das die
 # Plattformunterschiede selbst kennt (Bibliotheksnamen, Laufzeitbindung,
@@ -54,12 +62,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # build_payload.sh stempelt `git describe --tags` in VERSION — dafür
-          # braucht es die ganze Historie.  `filter: blob:none` holt dabei nur
+          # tools/version.py liest die Tags auf HEAD (Bauversion) und alle Tags
+          # (Prüfung) — dafür braucht es die ganze Historie.  `filter: blob:none` holt dabei nur
           # die Commits/Bäume und die Blobs des Arbeitsstands: das Repo trägt
           # ~500 MB Diskettenabbilder in der Historie, die hier niemand braucht.
           fetch-depth: 0
           filter: blob:none
+
+      - name: Tag zu VERSION prüfen (nur bei Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 tools/version.py --pruefe-tag "$GITHUB_REF_NAME"
 
       - name: Systempakete
         run: |
@@ -93,11 +105,19 @@ jobs:
             || { echo "FEHLER: ein Pfad löst nicht auf"; exit 1; }
 
           echo "── C-ABI ──"
-          python3 - "$root/bin/libk1520core.so" <<'PY'
+          # Die Bibliothek muss genau die Bauversion des Pakets melden (§7.6):
+          # erste Angabe der mitgelieferten VERSION, gegengeprüft an der Ableitung.
+          erwartet=$(python3 tools/version.py --bau)
+          paket=$(awk '{print $1; exit}' "$root/VERSION")
+          [ "$paket" = "$erwartet" ] \
+            || { echo "FEHLER: Paket-VERSION '$paket' != Bauversion '$erwartet'"; exit 1; }
+          python3 - "$root/bin/libk1520core.so" "$erwartet" <<'PY'
           import ctypes, sys
           lib = ctypes.CDLL(sys.argv[1])
           lib.k1520_version.restype = ctypes.c_char_p
           print("k1520_version:", lib.k1520_version().decode())
+          if lib.k1520_version().decode() != sys.argv[2]:
+              sys.exit("FEHLER: k1520_version() meldet nicht die Bauversion " + sys.argv[2])
           # Beide Maschinen: ROM-/Zeichengeneratordaten sind einkompiliert,
           # der K8915 (K1520_MACHINE_K8915 = 2) muss sich ebenso erzeugen lassen.
           lib.k1520_create.argtypes = [ctypes.c_int]
@@ -131,7 +151,8 @@ jobs:
             || { echo "FEHLER: k1520dbg startet nicht"; cat "$RUNNER_TEMP/dbg.txt"; exit 1; }
           head -3 "$RUNNER_TEMP/dbg.txt"
           # Und einmal mit eingelegter Diskette — dabei laeuft der Formatkatalog mit.
-          disk=$(ls "$root/share/disks"/*.gz 2>/dev/null | head -1)
+          # Die Disketten liegen nach <maschine>_<system>/ gegliedert (§7.5).
+          disk=$(ls "$root/share/disks"/*/*.gz 2>/dev/null | head -1)
           if [ -n "$disk" ]; then
             gunzip -c "$disk" > "$RUNNER_TEMP/probe.hfe"
             printf 'q\n' | "$root/bin/k1520dbg" "$RUNNER_TEMP/probe.hfe" >/dev/null 2>&1 \
@@ -192,7 +213,9 @@ jobs:
           grep -q '@' "$RUNNER_TEMP/notes.md" \
             && { echo "unersetzte Platzhalter in den Release-Notizen:" >&2;
                  grep -n '@[A-Z]' "$RUNNER_TEMP/notes.md" >&2; exit 1; } || true
-          gh release create "$TAG" --draft --title "K1520emu $TAG" \
+          # Vorabversion → sofort sichtbares Pre-release, Endfassung → Entwurf (§7.6).
+          if python3 tools/version.py --vorab; then art="--prerelease"; else art="--draft"; fi
+          gh release create "$TAG" $art --title "K1520emu $TAG" \
               --notes-file "$RUNNER_TEMP/notes.md" 2>/dev/null || true
           for versuch in 1 2 3 4 5; do
               if gh release view "$TAG" >/dev/null 2>&1; then break; fi
@@ -201,7 +224,7 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 \
             || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
           gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 --clobber
-          echo "Linux-Paket liegt am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Linux-Paket liegt am Release **$TAG** (Pre-release bei Vorabversion, sonst Entwurf)." >> "$GITHUB_STEP_SUMMARY"
 
   windows:
     name: Windows x64 — Paket
@@ -215,6 +238,11 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
+
+      - name: Tag zu VERSION prüfen (nur bei Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: python tools/version.py --pruefe-tag "$GITHUB_REF_NAME"
 
       - name: MSVC-Umgebung (vcvars64) übernehmen
         shell: pwsh
@@ -302,6 +330,7 @@ jobs:
             'lib = ctypes.CDLL(sys.argv[1])',
             'lib.k1520_version.restype = ctypes.c_char_p',
             "print('k1520_version:', lib.k1520_version().decode())",
+            'if lib.k1520_version().decode() != sys.argv[2]: sys.exit("k1520_version() meldet nicht die Bauversion " + sys.argv[2])',
             'lib.k1520_create.argtypes = [ctypes.c_int]',
             'lib.k1520_create.restype = ctypes.c_void_p',
             'lib.k1520_destroy.argtypes = [ctypes.c_void_p]',
@@ -310,8 +339,13 @@ jobs:
             '    if not h: sys.exit(name + ": k1520_create schlug fehl")',
             '    lib.k1520_destroy(h)',
             "    print('Maschine', name, 'laeuft an')")
-          & python $abi "$root\bin\k1520core.dll"
-          if ($LASTEXITCODE -ne 0) { throw 'k1520core.dll ist nicht ladbar' }
+          # Die DLL muss genau die Bauversion des Pakets melden (§7.6): erste
+          # Angabe der mitgelieferten VERSION, gegengeprüft an der Ableitung.
+          $erwartet = (& python tools/version.py --bau).Trim()
+          $paket = ((Get-Content -LiteralPath "$root\VERSION" -TotalCount 1) -split '\s+')[0]
+          if ($paket -ne $erwartet) { throw "Paket-VERSION '$paket' != Bauversion '$erwartet'" }
+          & python $abi "$root\bin\k1520core.dll" $erwartet
+          if ($LASTEXITCODE -ne 0) { throw 'k1520core.dll ist nicht ladbar oder meldet eine andere Version' }
 
           Write-Host '── keine fremde C-Laufzeit ──'
           $abh = (& dumpbin /dependents "$root\bin\k1520core.dll") |
@@ -356,7 +390,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { $ausgabe | Write-Host; throw 'k1520dbg.exe startet nicht' }
           $ausgabe | Select-Object -First 3 | ForEach-Object { Write-Host "     $_" }
           # Und einmal mit eingelegter Diskette.
-          $disk = Get-ChildItem "$root\share\disks\*.gz" -ErrorAction SilentlyContinue |
+          $disk = Get-ChildItem "$root\share\disks\*\*.gz" -ErrorAction SilentlyContinue |
                   Select-Object -First 1
           if ($disk) {
             $hfe = Join-Path $env:RUNNER_TEMP 'probe.hfe'
@@ -413,7 +447,9 @@ jobs:
           grep -q '@' "$RUNNER_TEMP/notes.md" \
             && { echo "unersetzte Platzhalter in den Release-Notizen:" >&2;
                  grep -n '@[A-Z]' "$RUNNER_TEMP/notes.md" >&2; exit 1; } || true
-          gh release create "$TAG" --draft --title "K1520emu $TAG" \
+          # Vorabversion → sofort sichtbares Pre-release, Endfassung → Entwurf (§7.6).
+          if python tools/version.py --vorab; then art="--prerelease"; else art="--draft"; fi
+          gh release create "$TAG" $art --title "K1520emu $TAG" \
               --notes-file "$RUNNER_TEMP/notes.md" 2>/dev/null || true
           for versuch in 1 2 3 4 5; do
               if gh release view "$TAG" >/dev/null 2>&1; then break; fi
@@ -427,4 +463,4 @@ jobs:
           # Archiv also nichts anfangen; es bleibt Artefakt dieses Laufs, damit
           # der Rauchtest oben hineinsehen kann.
           gh release upload "$TAG" dist/*setup.exe dist/*setup.exe.sha256 --clobber
-          echo "Windows-Setup liegt am Release **$TAG** (Entwurf)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Windows-Setup liegt am Release **$TAG** (Pre-release bei Vorabversion, sonst Entwurf)." >> "$GITHUB_STEP_SUMMARY"

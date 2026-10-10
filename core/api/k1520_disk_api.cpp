@@ -15,6 +15,7 @@
 
 #include "core/api/k1520_disk_api.h"
 #include "core/api/k1520_sync_internal.h"
+#include "core/version.h"
 
 #include "core/filesystem/disk_volume.h"
 #include "core/filesystem/geometry_probe.h"
@@ -1089,7 +1090,7 @@ extern "C" int k1520d_apply_repairs(K1520Disk h, const int* befund_nr, const int
     return H(h)->vol->applyRepairs(auswahl);
 }
 
-extern "C" const char* k1520d_version(void) { return "k1520disk 0.1"; }
+extern "C" const char* k1520d_version(void) { return K1520_VERSION_TEXT; }
 
 // ─── Wiederherstellung (doc/design/15_dateisystempruefung.md §13) ────────────
 

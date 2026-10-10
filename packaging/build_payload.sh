@@ -63,7 +63,8 @@ K1520-Emulator — Paket schnüren
 
   --out DIR        Ausgabeverzeichnis (Vorgabe: $OUT)
   --build-dir DIR  Bauverzeichnis für den Release-Kern (Vorgabe: $BUILD_DIR)
-  --version V      Versionsbezeichnung (Vorgabe: aus git describe)
+  --version V      Versionsbezeichnung (Vorgabe: tools/version.py --bau, also
+                   Tag auf HEAD oder <VERSION>+g<kurzhash>[.dirty])
   --disks WAS      default | all | none — welche Beispieldisketten mitkommen
   --skip-build     vorhandene Bibliothek im Bauverzeichnis verwenden
   --relock         packaging/requirements.lock neu auflösen (braucht Netz)
@@ -342,8 +343,17 @@ done
 
 # ─── Version und Zielname ────────────────────────────────────────────────────
 
+# tools/version.py braucht nur eine Standard-Python (kein venv); unter Windows
+# (Git-Bash) heisst sie oft nur `python`.
+VERSION_PY=""
+for _k in python3 python; do have "$_k" && { VERSION_PY=$_k; break; }; done
+[ -n "$VERSION_PY" ] || die "python3 wird fuer tools/version.py gebraucht"
+
 if [ -z "$VERSION" ]; then
-    VERSION=$(cd "$REPO" && git describe --tags --always --dirty 2>/dev/null || echo 0.0.0)
+    # Eine Quelle: tools/version.py (doc/ci_pipeline.md §7.1) — Tag auf HEAD, sonst
+    # <Basis aus VERSION>+g<kurzhash>[.dirty].
+    VERSION=$("$VERSION_PY" "$REPO/tools/version.py" --bau) \
+        || die "tools/version.py liefert keine Bauversion (VERSION kaputt?)"
 fi
 case "$(uname -s)" in
     Darwin)               PLATFORM="macos-$(uname -m)" ;;
@@ -406,12 +416,14 @@ if [ "$SKIP_BUILD" = no ]; then
         cmake -S "$REPO" -B "$BUILD_DIR" \
             -DCMAKE_BUILD_TYPE=Release -DLOG_LEVEL=3 \
             -DK1520_FORMATS_DEFAULT= -DBUILD_K1520_TESTS=OFF \
+            "-DK1520_VERSION_VOLL=$VERSION" \
             $LAUFZEIT_ARGS \
             >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
     else
         cmake -S "$REPO" -B "$BUILD_DIR" \
             -DCMAKE_BUILD_TYPE=Release -DLOG_LEVEL=3 \
             -DK1520_FORMATS_DEFAULT= -DBUILD_K1520_TESTS=OFF \
+            "-DK1520_VERSION_VOLL=$VERSION" \
             -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
             >/dev/null || die "cmake-Konfiguration fehlgeschlagen"
     fi
@@ -516,9 +528,20 @@ cp "$SELF_DIR/icon.ico"      "$STAGE/payload/share/icons/a5120emu.ico"
 # wird es genau einmal: beim ersten Start entpackt `paths.seed_user_disks()` es
 # in das Arbeitsverzeichnis des Anwenders.  Ungepackt lägen die Abbilder danach
 # doppelt auf der Platte — einmal in der Installation, einmal beim Anwender.
+#
+# Die Gliederung `<maschine>_<system>/` aus disks/ BLEIBT erhalten
+# (share/disks/<ordner>/<datei>.gz, doc/ci_pipeline.md §7.5): seed_user_disks()
+# legt sie genauso im Beispielordner des Anwenders an.  Eine LIESMICH.TXT bzw.
+# README.md des Ordners wandert mit.
 lege_diskette_ab() {
-    gzip -9 -c "$1" > "$STAGE/payload/share/disks/$(basename "$1").gz" \
+    _ordner=$(basename "$(dirname "$1")")
+    mkdir -p "$STAGE/payload/share/disks/$_ordner"
+    gzip -9 -c "$1" > "$STAGE/payload/share/disks/$_ordner/$(basename "$1").gz" \
         || die "Beispieldiskette nicht packbar: $1"
+    for _b in LIESMICH.TXT README.md; do
+        [ -f "$(dirname "$1")/$_b" ] && cp "$(dirname "$1")/$_b" "$STAGE/payload/share/disks/$_ordner/$_b"
+    done
+    return 0
 }
 
 case "$DISKS" in
@@ -680,16 +703,19 @@ if [ "$SETUP" = yes ]; then
         _gw_version=$GW_VERSION
     fi
     info "Windows-Installationsprogramm bauen (Python $PY_VERSION aus $PY_RELEASE)"
-    # Version ohne die git-Zusätze: Inno will etwas, das wie eine Version
-    # aussieht, `1.2.3-4-gabc1234-dirty` lehnt es ab.
-    _iss_version=$(printf '%s' "$VERSION" | sed 's/^v//; s/[^0-9.].*$//')
-    [ -n "$_iss_version" ] || _iss_version=0.0.0
+    # AppVersion/Dateiname tragen die volle Bauversion (Bindestrich und `+`
+    # nimmt Inno an); VersionInfoVersion braucht dagegen vier Zahlen und kommt
+    # aus tools/version.py --windows.  Mit `--version X` von Hand (Tests) gilt
+    # dasselbe, soweit X dem Schema folgt, sonst 0.0.0.0.
+    _iss_version=$VERSION
+    _iss_info=$("$VERSION_PY" "$REPO/tools/version.py" --windows 2>/dev/null) || _iss_info=0.0.0.0
     # Die Adresse des Python-Archivs setzt die .iss aus Fassung und Release
     # selbst zusammen — sie darf hier gar nicht erst als Argument auftauchen:
     # die MSYS-Shell rechnet Argumente, die wie Pfade aussehen, in
     # Windows-Pfade um und macht aus `https://…` `https:\…`.
     iscc //Qp \
          "//DVersion=$_iss_version" \
+         "//DVersionInfo=$_iss_info" \
          "//DPaket=$(cygpath -w "$STAGE")" \
          "//DGwWheel=$_gw_wheel" \
          "//DGwVersion=$_gw_version" \

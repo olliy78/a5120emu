@@ -17,6 +17,17 @@ packaging/build_payload.sh --disks all    # alle Disketten aus disks/ statt der 
 packaging/build_payload.sh --no-archive   # nur den Baum, kein Archiv
 ```
 
+**Die Version** kommt aus `tools/version.py --bau` (Datei `VERSION` im Wurzelverzeichnis,
+Tag auf `HEAD`, sonst `<Basis>+g<kurzhash>`; `doc/ci_pipeline.md` §7) — nicht mehr aus
+`git describe`.  Sie steht im Paketnamen (`k1520emu-0.3.0-beta+g1a2b3c4-linux-x86_64`), in
+der mitgelieferten `VERSION` (erste Angabe), in der Bibliothek
+(`-DK1520_VERSION_VOLL=…` → `k1520_version()`) und im Windows-Setup (`/DVersion=` die
+Bauversion, `/DVersionInfo=` die vierstellige Zahl aus `tools/version.py --windows` für die
+Dateieigenschaften).  `--version X` setzt sie von Hand (nur für Versuche).  Die
+Beispieldisketten bleiben in `share/disks/<maschine>_<system>/` gegliedert; beim Start einer
+Fassung legt `seed_user_disks()` daraus den Ordner `Beispieldisketten_v03[-beta.N|-test]` im
+Arbeitsordner an.  Veröffentlichen: `tools/dev.sh release <version>`.
+
 Der Bau geht in ein **eigenes** Verzeichnis (`build_dist/`), damit `build/` und
 `build_trace/` unberührt bleiben.  Zwei Einstellungen sind dabei nicht
 verhandelbar:

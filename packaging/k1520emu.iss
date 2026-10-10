@@ -6,7 +6,7 @@
 ; Gebaut wird das von packaging/build_payload.sh --setup (dort steht auch der
 ; iscc-Aufruf); Entwurf und Begruendungen: doc/design/13_distribution.md §5.1.
 ;
-;   iscc /DVersion=1.2.3 /DPaket="C:\...\k1520emu-1.2.3-windows-x86_64" \
+;   iscc /DVersion=1.2.3 /DVersionInfo=1.2.3.100 /DPaket="C:\...\k1520emu-1.2.3-windows-x86_64" \
 ;        /DPyVersion=3.12.13 /DPyRelease=20260807 /DPySha256=… /DPySize=… \
 ;        /DGwWheel=greaseweazle-1.23-py3-none-any.whl /DGwVersion=1.23 \
 ;        k1520emu.iss
@@ -73,8 +73,16 @@
 ;    Startern, Protokolle), kennt es nicht — das steht namentlich im Abschnitt
 ;    zum Deinstallieren.  Fremdes im selben Ordner ueberlebt beides.
 
+; Version     = Bauversion (tools/version.py --bau), z. B. 0.3.0-beta+g1a2b3c4 oder
+;                0.3.0-beta.2 — Bindestrich und `+` sind in AppVersion und im
+;                Dateinamen erlaubt (doc/ci_pipeline.md §7.2).
+; VersionInfo  = vierstellige Zahl fuer die Dateieigenschaften des Setups
+;                (tools/version.py --windows), 0.3.0 liegt ueber allen Betas.
 #ifndef Version
   #define Version "0.0.0"
+#endif
+#ifndef VersionInfo
+  #define VersionInfo "0.0.0.0"
 #endif
 #ifndef Paket
   #error "Bitte /DPaket=<Verzeichnis des geschnuerten Pakets> angeben"
@@ -139,7 +147,7 @@ AppName={#Produkt}
 AppVersion={#Version}
 AppVerName={#Produkt} {#Version}
 AppPublisher={#Anbieter}
-VersionInfoVersion=0.0.0.0
+VersionInfoVersion={#VersionInfo}
 
 ; ── Wohin, und mit welchen Rechten ──────────────────────────────────────────
 ;
@@ -744,7 +752,7 @@ begin
   Zeilen[13] := 'if fmt is None:';
   Zeilen[14] := '    sys.exit("formats.yaml nicht gefunden: " + paths.describe())';
   Zeilen[15] := 'print("Katalog:   ", fmt)';
-  Zeilen[16] := 'print("Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.user_disks_dir())';
+  Zeilen[16] := 'print("Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.beispiel_ordner())';
   Zeilen[17] := 'from PySide6.QtWidgets import QApplication';
   Zeilen[18] := 'from app.ui.main_window import MainWindow';
   Zeilen[19] := 'qt = QApplication([])';

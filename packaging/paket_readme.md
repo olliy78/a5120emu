@@ -147,8 +147,9 @@ Assembler stehen als Beispielzeilen darin).
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
 | Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml`, `pc1715emu.yaml`, `p8000emu.yaml` (je Programm) |
 
-Die Beispieldisketten werden beim ersten Start in den Diskettenordner
-ausgepackt.  Der Emulator schreibt Änderungen an einer eingelegten Diskette
+Die Beispieldisketten werden beim ersten Start einer Fassung in einen eigenen
+Unterordner des Diskettenordners ausgepackt (`Beispieldisketten_v03`, bei einer
+Vorabversion `Beispieldisketten_v03-beta.2`), gegliedert nach `<maschine>_<system>/`.  Der Emulator schreibt Änderungen an einer eingelegten Diskette
 dorthin zurück — die Originale im Programmverzeichnis bleiben unangetastet und
 ein Update überschreibt nichts davon.
 

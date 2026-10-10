@@ -1,0 +1,14 @@
+/**
+ * @file version.h  (erzeugt aus core/version.h.in — NICHT von Hand ändern)
+ * @brief Versionskennung des Kerns — EINE Quelle für `k1520_version()`,
+ *        `k1520d_version()` und die RFC-2217-SIGNATURE der seriellen
+ *        Schnittstellen (Entwurf 19 §7.5).
+ *
+ * `configure_file` legt sie ins Bauverzeichnis (`<build>/core/version.h`); der
+ * Include-Pfad `core/version.h` bleibt für alle Ziele gleich.  Der Text ist die
+ * Bauversion (doc/ci_pipeline.md §7.2): `K1520_VERSION_VOLL` aus der
+ * Zwischenablage von CMake, Vorgabe `<Basis aus VERSION>+dev`.
+ */
+#pragma once
+
+#define K1520_VERSION_TEXT "@K1520_VERSION_TEXT@"

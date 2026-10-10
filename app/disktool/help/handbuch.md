@@ -1,5 +1,7 @@
 # k1520DiskTool — Kurzhandbuch
 
+Version {{VERSION}}
+
 Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1715 …)
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
 Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
@@ -48,8 +50,9 @@ nicht dort, wo das Programm installiert ist:
 | `K1520emu/Dateien` | was von den Disketten geholt und auf sie geschrieben wird |
 
 Dort gehen die Dateidialoge auf, und die rechte Hälfte zeigt beim Start den
-Dateiordner. Beim ersten Start nach einer Installation werden die mitgelieferten
-Beispieldisketten dorthin ausgepackt.
+Dateiordner. Beim ersten Start einer Fassung werden die mitgelieferten Beispieldisketten
+dort in einen eigenen Ordner ausgepackt (`Beispieldisketten_v03`, bei einer
+Vorabversion mit Zusatz wie `…_v03-beta.2`); Vorhandenes bleibt unberührt.
 
 Verschieben lässt sich das mit `K1520_DATA` (beide Ordner) bzw. `K1520_DISKS`
 (nur die Abbilder). Wo das Werkzeug gerade sucht, sagt

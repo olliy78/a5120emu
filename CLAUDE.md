@@ -625,6 +625,24 @@ alle Werkzeuge, der Stapelbetrieb für den Agenten (COW-Mount, `--quiet --json`,
 > `[0x07F2]` Sektorzahl, `[0x03F0]` Ladeadresse. Wächter: `test_boot_integration`,
 > `test_k5122`, `test_k2526`.
 
+## Versionierung (`VERSION`, `tools/version.py`; Konzept `doc/ci_pipeline.md` §7)
+
+EINE Quelle: die Datei **`VERSION`** (Basis, z. B. `0.3.0-beta`; die laufende Nummer
+`beta.N` steht nur im Tag). Die **Bauversion** leitet `tools/version.py` ab (Logik in
+`app/version.py`, nur Stdlib): Tag auf `HEAD` → ohne `v`, sonst `<Basis>+g<hash>[.dirty]`,
+ohne git `+unbekannt`. Kern: `core/version.h` wird aus `core/version.h.in` ins Bauverzeichnis
+erzeugt (`K1520_VERSION_VOLL`, Vorgabe `<Basis>+dev`); `k1520_version()` und
+`k1520d_version()` liefern dasselbe, `build_payload.sh` setzt die Paketversion — **nie
+`build/` damit verschmutzen** (Paketbau läuft in `build_dist/`). Oberfläche:
+`app/version.py::fassung()` (Über-Fenster, `setApplicationVersion`, `{{VERSION}}` im
+Handbuch, `geschrieben_von` in der Konfiguration; `version:` dort bleibt die FORMATversion,
+höhere Formatversion = Datei wird nicht überschrieben, Migrationskette `_MIGRATIONEN`).
+Beispieldisketten: `seed_user_disks()` legt `Beispieldisketten_v03[-beta.N|-test]` im
+Arbeitsordner an, wenn er fehlt (Gliederung `<maschine>_<system>/` bleibt). Veröffentlichen:
+`tools/dev.sh release <version> [--ohne-push] [--zweig-egal] [--trocken]`; das Tag startet
+`release.yml` (Vorabversion → Pre-release, Endfassung → Entwurf). Wächter: `py_version`,
+`py_help`, `py_paths`, `py_config_io`, `py_c_api`, `py_packaging`.
+
 ## Subagenten / Delegation an günstigere Modelle
 
 Projektspezifische Subagenten liegen in `.claude/agents/`. **Standing rule: soweit sinnvoll,

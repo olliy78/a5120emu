@@ -6,6 +6,7 @@ Deckt ab, was die C++-Tests nicht erreichen können:
 |---------|------------------------------|
 | **C-ABI** (`libk1520core.so` ↔ ctypes) | Der C++-Compiler prüft die Python-Seite nicht. Eine geänderte Signatur bricht **still** — ctypes merkt es erst beim Aufruf, oft als Absturz statt als Fehlermeldung. |
 | **GUI** (PySide6) | Fensteraufbau, Widget-Verdrahtung, Konfigurationsrundlauf, Laufwerksleiste — läuft headless über `QT_QPA_PLATFORM=offscreen`. |
+| **Versionen** | `test_version.py` (`py_version`): Grammatik von `VERSION`, Ableitung der Bauversion an Wegwerf-Git-Repos, `tools/dev.sh release --trocken` (nie scharf); `test_help.py`: `{{VERSION}}` im Handbuch. Konzept `doc/ci_pipeline.md` §7. |
 | **App-Logik** | `drive_types` (Laufwerkskatalog + Migration alter Profilnamen), `config_io` (YAML), `keyboard` (Qt-Taste → Kerncode). |
 
 ## Ausführen
