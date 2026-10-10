@@ -43,7 +43,8 @@ tools/dev.sh rebuild             # rm -rf build build_trace, then build from scr
 > **Läufe über ~60 s gehören in den HINTERGRUND** (`Bash` mit `run_in_background: true`),
 > nicht in den Vordergrund. Betrifft `test-format` (~60 s), `test-matrix` (~160 s),
 > `test-all`, `win` und jeden längeren `boot_trace`-/`format_all.py`-Lauf; `tools/dev.sh
-> test` läuft in ~34 s und darf im Vordergrund bleiben. Drei Gründe, und der dritte ist
+> test` (Stand 2026-10-10: ~265 s auf 16 Kernen, davon ein Drittel die Python-Ebene;
+> ohne sie: `-LE python`, `tools/dev.sh test -L python` nur sie) gehört ebenfalls dorthin. Drei Gründe, und der dritte ist
 > der eigentliche: ein Vordergrundlauf **blockiert die Sitzung** für die ganze Dauer; er
 > zwingt zu einer Zeitschätzung, die bei einem Fehlschlag zu kurz ist; und die Rückmeldung
 > kommt bei einem Hintergrundlauf **von selbst**, sobald der Prozess endet.

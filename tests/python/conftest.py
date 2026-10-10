@@ -152,6 +152,16 @@ def qapp():
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
     yield app
+    # Fenster VOR dem Interpreterende ordentlich abbauen: bleiben sie liegen, zerstört
+    # der Abbau am Prozessende die QOpenGLWidgets in beliebiger Reihenfolge — in
+    # test_gui_smoke endete das reproduzierbar mit „malloc_consolidate(): unaligned
+    # fastbin chunk" (rc 134/139) NACH den grünen Fällen.
+    import gc
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    app.processEvents()
+    gc.collect()
     app.processEvents()
 
 
@@ -193,8 +203,14 @@ def kein_unerwartetes_meldungsfenster(monkeypatch):
 # ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 def run_until_text(emu, needle: str, max_cycles: int = 60_000_000,
-                   chunk: int = 100_000) -> bool:
-    """Emulieren, bis *needle* im Textbildschirm steht (oder das Budget endet)."""
+                   chunk: int = 400_000) -> bool:
+    """Emulieren, bis *needle* im Textbildschirm steht (oder das Budget endet).
+
+    Laufzeitregel: ``screen_text()`` kostet 2000 Einzelaufrufe über die Kernsperre
+    (~2–10 ms) und damit oft MEHR als der Lauf dazwischen.  Deshalb grobe Schritte; der Text
+    bleibt stehen, das Überlaufen um höchstens ``chunk`` Takte (~0,1 s Maschinenzeit) schadet nicht.
+    Wer eine flüchtige Meldung sucht, übergibt ein kleineres ``chunk``.
+    """
     done = 0
     while done < max_cycles:
         done += emu.run(chunk)

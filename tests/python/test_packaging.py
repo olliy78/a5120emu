@@ -1310,20 +1310,34 @@ def test_slim_behaelt_was_die_gui_importiert():
 
 # ─── Payload schnüren ────────────────────────────────────────────────────────
 
+@pytest.fixture(scope="module")
+def payload(tmp_path_factory):
+    """EIN Schnür-Lauf (``build_payload.sh``, Bauversion, Beispieldisketten) für alle Fälle des Moduls.
+
+    Vorher schnürte jeder der vier Fälle sein eigenes Paket (je ~10 s, vor allem Archiv und
+    gzip der Disketten); sie prüfen alle nur verschiedene Seiten desselben Ergebnisses.
+    Zurück kommt das Ausgabeverzeichnis; das Paket darin heisst ``k1520emu-<Bauversion>-…``.
+    """
+    ziel = tmp_path_factory.mktemp("payload")
+    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
+              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
+              "--out", str(ziel), "--disks", "default")
+    assert out.returncode == 0, out.stdout + out.stderr
+    return ziel
+
+
+def _stage(ziel):
+    return next(p for p in ziel.glob("k1520emu-*") if p.is_dir())
+
 @requires_core
-def test_payload_enthaelt_alles_zum_starten(tmp_path):
+def test_payload_enthaelt_alles_zum_starten(payload):
     """Ein vollständiger Schnür-Lauf gegen die gebaute Bibliothek.
 
     Prüft den Inhalt gegen die Liste dessen, was der Emulator zum Start
     braucht — fällt eine Datei aus dem Skript, schlägt das hier fehl und nicht
     erst beim Anwender.
     """
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--version", "test", "--disks", "none")
-    assert out.returncode == 0, out.stdout + out.stderr
-
-    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    stage = _stage(payload)
     for pflicht in [
         "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
         "k8915emu.desktop.in", "prg710emu.desktop.in", "pc1715emu.desktop.in", "p8000emu.desktop.in",
@@ -1360,7 +1374,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
     assert os.access(stage / "install.sh", os.X_OK), "install.sh ist nicht ausführbar"
     assert not list(stage.rglob("__pycache__")), "Bytecode des Baurechners im Paket"
 
-    archiv = next(tmp_path.glob("k1520emu-test-*.tar.gz"))
+    archiv = next(payload.glob("k1520emu-*.tar.gz"))
     with tarfile.open(archiv) as tf:
         namen = tf.getnames()
     assert all(n.startswith(stage.name) for n in namen), \
@@ -1370,7 +1384,7 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
 
 
 @requires_core
-def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
+def test_beispieldisketten_liegen_gepackt_im_paket(payload):
     """Abbilder sind zu ~90 % Füllmuster und werden genau einmal gebraucht.
 
     Ungepackt lägen sie nach dem Erststart doppelt auf der Platte — in der
@@ -1379,12 +1393,7 @@ def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
     """
     import gzip
 
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--version", "test")
-    assert out.returncode == 0, out.stdout + out.stderr
-
-    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    stage = _stage(payload)
     disks = stage / "payload" / "share" / "disks"
     # Gliederung <maschine>_<system>/ bleibt erhalten (doc/ci_pipeline.md §7.5).
     gepackt = sorted(disks.glob("*/*.hfe.gz"))
@@ -1411,6 +1420,10 @@ def test_paket_traegt_keinen_pfad_des_baurechners(tmp_path):
     build = tmp_path / "build"
     cfg = _sh("cmake", "-S", str(PROJECT_ROOT), "-B", str(build),
               "-DCMAKE_BUILD_TYPE=Release", "-DK1520_FORMATS_DEFAULT=",
+              # -O0: geprüft wird, was an Zeichenketten im Binärabbild steht, und das hängt
+              # nicht an der Optimierung.  -O3 kostete gut 100 s Rechenzeit je Lauf; der echte
+              # Release-Bau (release.yml, Rauchtest "kein Baurechner-Pfad") prüft es zusätzlich.
+              "-DCMAKE_CXX_FLAGS_RELEASE=-O0", "-DCMAKE_C_FLAGS_RELEASE=-O0",
               "-DBUILD_K1520_TESTS=OFF")
     assert cfg.returncode == 0, cfg.stderr
     bld = _sh("cmake", "--build", str(build), "--target", "k1520core", "-j4")
@@ -1616,18 +1629,13 @@ def test_disktool_findet_seine_bibliothek_im_installationslayout(tmp_path):
 
 
 @requires_core
-def test_disktool_kommandozeile_laeuft_aus_dem_paket(tmp_path):
+def test_disktool_kommandozeile_laeuft_aus_dem_paket(payload):
     """Das mitgelieferte Programm muss ohne den Quellbaum arbeiten.
 
     Geprüft wird der geschnürte Stand, nicht ``build/``: Läuft `formats`, dann
     hat das Programm auch den Formatkatalog des Pakets gefunden.
     """
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--version", "test", "--disks", "none")
-    assert out.returncode == 0, out.stdout + out.stderr
-
-    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    stage = _stage(payload)
     cli = stage / "payload" / "bin" / "k1520disktool-cli"
     assert os.access(cli, os.X_OK), "die Kommandozeile ist nicht ausführbar"
 
@@ -1955,15 +1963,11 @@ def test_iss_setzt_die_dateiversion_aus_versioninfo():
 
 
 @requires_core
-def test_paketname_und_version_datei_tragen_die_bauversion(tmp_path):
+def test_paketname_und_version_datei_tragen_die_bauversion(payload):
     """Ohne ``--version``: Name und erste Angabe der ``VERSION`` im Paket sind die Bauversion."""
     bau = _sh(sys.executable, str(PROJECT_ROOT / "tools" / "version.py"), "--bau").stdout.strip()
     assert bau.startswith("0.") or bau[0].isdigit()
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--disks", "default")
-    assert out.returncode == 0, out.stdout + out.stderr
-    stage = next(p for p in tmp_path.glob("k1520emu-*") if p.is_dir())
+    stage = _stage(payload)
     assert stage.name.startswith(f"k1520emu-{bau}-"), stage.name
     erste = (stage / "VERSION").read_text(encoding="utf-8").split()[0]
     assert erste == bau
