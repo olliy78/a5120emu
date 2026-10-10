@@ -683,7 +683,10 @@ TEST(SerialHubGegenseite, ResetImRueckstauTrenntSauber) {
     c.s.schliessen();
     u.z = z;
     ASSERT_TRUE(u.warte([&] { return a.zustand() == Zustand::Lauscht; }, 5000));
-    u.laufe(100);
+    // Auf die Zustellung WARTEN statt eine feste Zeit zu laufen: die Maschinenzeit schreitet
+    // je Schleifendurchlauf (sleep 1 ms) fort, und Windows schläft dabei ~15 ms statt 1 ms —
+    // 100 "ms" brachten dort nur ein Drittel des Puffers zum Gast.
+    u.warte([&] { return a.a.gelesen.size() >= Wandler::PUFFER; }, 5000);
     const std::string g = a.a.gelesenText();
     EXPECT_GE(g.size(), Wandler::PUFFER) << "der Empfangspuffer wird noch zugestellt";
     EXPECT_EQ(g, m.substr(0, g.size()));

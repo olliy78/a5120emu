@@ -154,7 +154,11 @@ struct Aufbau {
         laufwerk->start();
         EXPECT_TRUE(m.mountDiskImage(0, std::move(img), laufwerk_wp)) << m.lastError();
     }
-    ~Aufbau() { laufwerk->stop(); }
+    // Der Arbeitsfaden haelt eine Referenz auf den TrackSync, den die Maschine (im Bild) besitzt.
+    // Die Maschine wird VOR dem Laufwerk zerstoert (Deklarationsreihenfolge umgekehrt); dessen
+    // Destruktor rief dann shutdown() auf dem freigegebenen TrackSync — unter MSVC ein
+    // Zugriffsfehler (0xC0000005).  Darum das Laufwerk hier ganz abraeumen.
+    ~Aufbau() { laufwerk->stop(); laufwerk.reset(); }
 };
 
 bool enthaelt(K8915Machine& m, const std::string& s) {
