@@ -1068,7 +1068,7 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
 
 ## Der P8000 Emulator
 
-`p8000emu` ist derselbe Emulator für den 16-Bit-Arbeitsplatzcomputer **robotron P8000**:
+`p8000emu` ist derselbe Emulator für den 16-Bit-Arbeitsplatzcomputer **EAW P8000**:
 8-Bit-Karte mit U880 (Monitor MON8, Betriebssystem **UDOS**), 16-Bit-Karte mit U8001 und
 Speicherverwaltung (Monitor MON16, **WEGA**/UNIX) und Winchesterkontroller (WDC). Der P8000 hat
 **keinen Bildschirm am Rechner**: seine Konsole ist ein serielles **Terminal** (tty1) — der

@@ -67,7 +67,7 @@ enum class UdosMapSitte : uint8_t {
     Zdos,      ///< UDOS 1526 / 4.x auf dem A5120
     /// UDOS1715/NDOS.  Angetroffen auf zwei **unverwandten** Rechnern, die nur
     /// dieselbe Diskettensitte teilen: dem **PC 1715** (UDOS1715, Namensgeber) und
-    /// dem **Robotron P8000** (UDOS 2.2).  Der Name sagt, wo es entschluesselt
+    /// dem **EAW P8000** (UDOS 2.2).  Der Name sagt, wo es entschluesselt
     /// wurde — nicht, dass die Maschinen etwas miteinander zu tun haetten.
     Ndos1715
 };

@@ -529,7 +529,7 @@ Plan: `doc/design/21_pc1715.md`.
 
 ## Fünfte Maschine: P8000 (Branch `P8000`, Stand 2026-10-07)
 
-Robotron P8000 mit 8-Bit-Teil (U880, UDOS) und 16-Bit-Teil (UB8001 + 3×UB8010-MMU, WEGA/UNIX),
+EAW P8000 mit 8-Bit-Teil (U880, UDOS) und 16-Bit-Teil (UB8001 + 3×UB8010-MMU, WEGA/UNIX),
 Winchester-Controller WDC mit Original-Firmware. **Kein K1520-Rechner** — eigener Bus; nur Bausteine
 werden wiederverwendet. Eine Klasse `P8000Machine` unter `core/machines/p8000/`, Karten unter
 `core/cards/p8000/` (`speicher8`, `karte8`, `floppy8`, `karte16`, `mmu_logik16`, `dram16`, `kopplung`,

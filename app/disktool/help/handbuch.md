@@ -145,7 +145,7 @@ Diskeditor und in der Formatzeile.
 Disketten vom **PC 1715** tragen UDOS mit dem Treiber **NDOS** statt ZDOS. Das
 Werkzeug erkennt sie von selbst und nennt sie `udos1715`.
 
-Dieselben Disketten schreibt auch der **Robotron P8000** (dort UDOS 2.2, z. B. seine
+Dieselben Disketten schreibt auch der **EAW P8000** (dort UDOS 2.2, z. B. seine
 WEGA-Startdiskette). Die beiden Rechner haben nichts miteinander zu tun — sie legen
 ihre Disketten nur gleich an; der Name `udos1715` benennt das Dateisystem, nicht die
 Maschine. Für die Bedienung macht es keinen Unterschied.

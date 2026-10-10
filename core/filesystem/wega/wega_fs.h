@@ -2,7 +2,7 @@
  * @file wega_fs.h
  * @brief WEGA-Dateisystem (System III UNIX des P8000) — lesen, schreiben, pruefen.
  *
- * WEGA ist das UNIX des Robotron P8000 (Z8001, also **big endian**).  Sein
+ * WEGA ist das UNIX des EAW P8000 (Z8001, also **big endian**).  Sein
  * Dateisystem ist das System-III-Dateisystem mit 512-Byte-Bloecken, ohne Magic:
  *
  *   - Block 0 Boot-Block, **Block 1 Superblock** (`struct filsys`),

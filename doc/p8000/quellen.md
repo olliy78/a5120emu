@@ -1,7 +1,7 @@
 # P8000 — Quellenkatalog (AP0)
 
 Stand 2026-10-06. Nur Befunde; was nicht gefunden wurde, steht als „nicht gefunden".
-Gerät: Robotron/EAW P8000 = 8-Bit-Teil (U880, Monitor MON8, WDC, Terminal) + 16-Bit-Teil
+Gerät: EAW P8000 = 8-Bit-Teil (U880, Monitor MON8, WDC, Terminal) + 16-Bit-Teil
 (U8001, 3× U8010-MMU, Monitor MON16), Betriebssystem WEGA (UNIX System III-Derivat) bzw. UDOS 2.2/3.x.
 
 ## 0. Wichtigste Befunde
