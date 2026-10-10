@@ -203,8 +203,14 @@ def kein_unerwartetes_meldungsfenster(monkeypatch):
 # ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 def run_until_text(emu, needle: str, max_cycles: int = 60_000_000,
-                   chunk: int = 100_000) -> bool:
-    """Emulieren, bis *needle* im Textbildschirm steht (oder das Budget endet)."""
+                   chunk: int = 400_000) -> bool:
+    """Emulieren, bis *needle* im Textbildschirm steht (oder das Budget endet).
+
+    Laufzeitregel: ``screen_text()`` kostet 2000 Einzelaufrufe über die Kernsperre
+    (~2–10 ms) und damit oft MEHR als der Lauf dazwischen.  Deshalb grobe Schritte; der Text
+    bleibt stehen, das Überlaufen um höchstens ``chunk`` Takte (~0,1 s Maschinenzeit) schadet nicht.
+    Wer eine flüchtige Meldung sucht, übergibt ein kleineres ``chunk``.
+    """
     done = 0
     while done < max_cycles:
         done += emu.run(chunk)
