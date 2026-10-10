@@ -1420,9 +1420,13 @@ def test_paket_traegt_keinen_pfad_des_baurechners(tmp_path):
     build = tmp_path / "build"
     cfg = _sh("cmake", "-S", str(PROJECT_ROOT), "-B", str(build),
               "-DCMAKE_BUILD_TYPE=Release", "-DK1520_FORMATS_DEFAULT=",
+              # -O0: geprüft wird, was an Zeichenketten im Binärabbild steht, und das hängt
+              # nicht an der Optimierung.  -O3 kostete gut 100 s Rechenzeit je Lauf; der echte
+              # Release-Bau (release.yml, Rauchtest "kein Baurechner-Pfad") prüft es zusätzlich.
+              "-DCMAKE_CXX_FLAGS_RELEASE=-O0", "-DCMAKE_C_FLAGS_RELEASE=-O0",
               "-DBUILD_K1520_TESTS=OFF")
     assert cfg.returncode == 0, cfg.stderr
-    bld = _sh("cmake", "--build", str(build), "--target", "k1520core", f"-j{os.cpu_count() or 4}")
+    bld = _sh("cmake", "--build", str(build), "--target", "k1520core", "-j4")
     assert bld.returncode == 0, bld.stderr[-3000:]
 
     roh = (build / "libk1520core.so").read_bytes()
