@@ -56,8 +56,8 @@ public:
         const Z80SIO::Channel::Format f = ch().format();
         const Z80CTC& c = i_ == 3 ? k_.ctc1_ : k_.ctc0_;
         const int kanal = i_ == 3 ? 0 : i_;
-        return k1520::serial::serialFormatRechnenQ16(f.teiler, f.tx_bits, f.paritaet, f.stopp_halbe,
-                                                     c.teilerTakteQ16(kanal) * 2, k_.cfg_.takt_hz);
+        return merker_.rechnenQ16(f.teiler, f.tx_bits, f.paritaet, f.stopp_halbe,
+                                  c.teilerTakteQ16(kanal) * 2, k_.cfg_.takt_hz);
     }
     bool senderHatZeichen() const override { return ch().senderHatZeichen(); }
     uint8_t senderNimm() override {
@@ -90,6 +90,7 @@ private:
     }
     P8000Karte16& k_;
     int           i_;
+    mutable k1520::serial::SerialFormatMerker merker_;   // format() kommt je Befehl, s. dort
     bool          dcd_ = false;
     std::string   name_, stecker_;
 };

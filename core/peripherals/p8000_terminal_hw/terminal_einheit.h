@@ -176,7 +176,7 @@ public:
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
-    uint64_t zeichenTakte() const;
+    uint64_t zeichenTakte(const serial::SerialFormat& f) const;
     serial::SerialAnschluss& karte_;
     P8000TerminalEinheit& term_;
     uint64_t phi_;

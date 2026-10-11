@@ -313,8 +313,7 @@ TerminalHwKopplung::TerminalHwKopplung(serial::SerialAnschluss& karte, P8000Term
                                        uint64_t phiNenn)
     : karte_(karte), term_(term), phi_(phiNenn ? phiNenn : 4'000'000), ziel_(term.takte()) {}
 
-uint64_t TerminalHwKopplung::zeichenTakte() const {
-    const serial::SerialFormat f = karte_.format();
+uint64_t TerminalHwKopplung::zeichenTakte(const serial::SerialFormat& f) const {
     if (f.gueltig && f.zeichen_takte) return f.zeichen_takte;
     return 11ull * phi_ / 9600;
 }
@@ -328,7 +327,10 @@ void TerminalHwKopplung::takt(uint64_t n) {
     auto& hw = term_.hw();
     const serial::SerialFormat f = karte_.format();
     const int bits = f.gueltig ? 1 + f.daten + (f.paritaet ? 1 : 0) + (f.stopp_halbe + 1) / 2 : 11;
-    const uint64_t scheibe = std::max<uint64_t>(1, zeichenTakte() / 8);
+    // Das Format ändert sich nur durch Gast-Zugriffe auf SIO/CTC, nie innerhalb dieser Schleife:
+    // einmal je Aufruf holen (vorher dreimal, je Befehl).
+    const uint64_t zt = zeichenTakte(f);
+    const uint64_t scheibe = std::max<uint64_t>(1, zt / 8);
     while (n > 0) {
         const uint64_t s = std::min(n, scheibe);
         n -= s;
@@ -340,7 +342,7 @@ void TerminalHwKopplung::takt(uint64_t n) {
         // Gast → Terminal (Zeichentakt des Gastformats)
         if (rxRest_ == 0 && karte_.senderHatZeichen()) {
             hw.hostByte(karte_.senderNimm(), bits);
-            rxRest_ = zeichenTakte();
+            rxRest_ = zt;
         }
         // Terminal → Gast (fertige Rahmen), BREAK eine Rahmenzeit
         while (hw.hatAusgabe()) {

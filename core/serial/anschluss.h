@@ -83,6 +83,31 @@ SerialFormat serialFormatRechnenQ16(uint8_t sioTeiler, uint8_t daten, uint8_t pa
                                     uint8_t stopp_halbe, uint64_t ctcTakteQ16,
                                     uint64_t phiNenn = PHI_NENN);
 
+/// Merker vor serialFormatRechnenQ16: dieselbe Rechnung (reine Funktion der Eingaben, Ergebnis
+/// bitgleich), aber nur bei geänderten Eingaben neu — Teiler, Format und CTC-Periode ändern
+/// sich nur, wenn der Gast SIO/CTC umprogrammiert; abgefragt wird je Befehl (Terminalkopplung,
+/// Wandler).  Nicht fadensicher: wie jedes format() nur aus dem Emulationsfaden.
+class SerialFormatMerker {
+public:
+    const SerialFormat& rechnenQ16(uint8_t sioTeiler, uint8_t daten, uint8_t paritaet,
+                                   uint8_t stopp_halbe, uint64_t ctcTakteQ16,
+                                   uint64_t phiNenn = PHI_NENN) {
+        if (!gueltig_ || k_[0] != sioTeiler || k_[1] != daten || k_[2] != paritaet ||
+            k_[3] != stopp_halbe || q16_ != ctcTakteQ16 || phi_ != phiNenn) {
+            k_[0] = sioTeiler; k_[1] = daten; k_[2] = paritaet; k_[3] = stopp_halbe;
+            q16_ = ctcTakteQ16; phi_ = phiNenn;
+            f_ = serialFormatRechnenQ16(sioTeiler, daten, paritaet, stopp_halbe, ctcTakteQ16, phiNenn);
+            gueltig_ = true;
+        }
+        return f_;
+    }
+private:
+    uint8_t      k_[4] = {0, 0, 0, 0};
+    uint64_t     q16_ = 0, phi_ = 0;
+    SerialFormat f_;
+    bool         gueltig_ = false;
+};
+
 /// Eine wählbare Taktquelle (Brücke auf der Karte), z. B. "ZRE-CTC K0 (W1:7)".
 struct Taktquelle {
     std::string name;

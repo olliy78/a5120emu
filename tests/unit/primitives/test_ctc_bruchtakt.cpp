@@ -96,3 +96,23 @@ TEST(CtcBruchtakt, VorgabeUnveraendertGanzzahligeAuskunftUndKeinZaehlen) {
     ctc.clockTick(100000);
     EXPECT_EQ(zcto, 0);
 }
+
+// Der Merker vor serialFormatRechnenQ16 darf nichts verändern: bei jeder Eingabefolge
+// (auch bei wechselnden Eingaben und Wiederholungen) dasselbe wie die direkte Rechnung.
+TEST(CtcBruchtakt, FormatMerkerGleichDirekterRechnung) {
+    k1520::serial::SerialFormatMerker m;
+    uint32_t z = 12345;
+    auto zufall = [&](uint32_t n) { z = z * 1664525u + 1013904223u; return (z >> 8) % n; };
+    for (int i = 0; i < 20000; ++i) {
+        const uint8_t teiler = static_cast<uint8_t>(zufall(4) == 0 ? 0 : 16u << zufall(3));
+        const uint8_t daten = static_cast<uint8_t>(4 + zufall(6)), par = static_cast<uint8_t>(zufall(3));
+        const uint8_t stopp = static_cast<uint8_t>(zufall(6));
+        const uint64_t q = zufall(5) == 0 ? 0 : (uint64_t{zufall(2000)} + 1) << 16;
+        const int wiederholen = 1 + static_cast<int>(zufall(3));
+        for (int w = 0; w < wiederholen; ++w) {
+            const auto a = m.rechnenQ16(teiler, daten, par, stopp, q, 4000000);
+            const auto b = k1520::serial::serialFormatRechnenQ16(teiler, daten, par, stopp, q, 4000000);
+            ASSERT_TRUE(a == b) << i;
+        }
+    }
+}
