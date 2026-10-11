@@ -87,7 +87,9 @@ void P8000TerminalHw::einschalten() {
     wdLetzt_ = jetzt;
     bildStart_ = jetzt; bildRest_ = 0;
     bildBeginnen();
+    std::lock_guard<std::mutex> l(pixSperre_);
     pix_.assign(size_t(pixB_) * size_t(pixH_), 0);
+    pixAlt_ = false;   // das leere Bild gilt, bis das erste Bild fertig ist
 }
 
 // ── Bus ────────────────────────────────────────────────────────────────────
@@ -293,28 +295,51 @@ void P8000TerminalHw::bildEnde() {
     crt_.frame();
     zbedient_.fill(false);
     ++bilder_;
+    bildMerken();
+}
+
+void P8000TerminalHw::bildMerken() {
+    std::lock_guard<std::mutex> l(pixSperre_);
+    Bildstand& b = bild_;
+    b.cols = crt_.configured() ? crt_.cols() : 80;
+    b.rows = crt_.configured() ? crt_.rows() : 24;
+    b.lin = crt_.configured() ? crt_.lineCount() : 13;
+    b.ul = crt_.underlineLine();
+    b.blinkAn = crt_.charBlinkOn();
+    b.cursorUnterstrich = crt_.cursorUnderline();
+    b.zg2 = zg2_;
+    b.zellen.clear();
+    for (int r = 0; r < b.rows; ++r)
+        for (int c = 0; c < b.cols; ++c) b.zellen.push_back(crt_.cells(r, c));
+    pixAlt_ = true;
+}
+
+void P8000TerminalHw::pixAktuell() const {
+    std::lock_guard<std::mutex> l(pixSperre_);
+    if (!pixAlt_) return;
+    pixAlt_ = false;
     rastern();
 }
 
-void P8000TerminalHw::rastern() {
-    const int cols = crt_.configured() ? crt_.cols() : 80;
-    const int rows = crt_.configured() ? crt_.rows() : 24;
-    const int lin = crt_.configured() ? crt_.lineCount() : 13;
+// Aufrufer hält pixSperre_.
+void P8000TerminalHw::rastern() const {
+    const int cols = bild_.cols, rows = bild_.rows, lin = bild_.lin;
     pixB_ = cols * 8;
     pixH_ = rows * lin;
     pix_.assign(size_t(pixB_) * size_t(pixH_), 0);
-    const std::vector<uint8_t>& zg = zg2_ ? zg2v_ : zg1_;
-    const int ul = crt_.underlineLine();
-    const bool blinkAn = crt_.charBlinkOn();
+    const std::vector<uint8_t>& zg = bild_.zg2 ? zg2v_ : zg1_;
+    const int ul = bild_.ul;
+    const bool blinkAn = bild_.blinkAn;
+    const bool curUl = bild_.cursorUnterstrich;
     for (int r = 0; r < rows; ++r)
         for (int c = 0; c < cols; ++c) {
-            const I8275::Cell& z = crt_.cells(r, c);
+            const I8275::Cell& z = bild_.zellen[size_t(r) * size_t(cols) + size_t(c)];
             for (int l = 0; l < lin; ++l) {
                 uint8_t bits = 0;
                 const bool vsp = z.empty || (z.blink && !blinkAn);
                 if (!vsp && !z.charAttr) bits = zg[size_t((z.code & 0x7F) * 16 + (l & 15))];
-                if (l == ul && (z.lten || (z.cursor && crt_.cursorUnderline()))) bits = 0xFF;
-                if (z.cursor && !crt_.cursorUnderline()) bits = uint8_t(~bits);
+                if (l == ul && (z.lten || (z.cursor && curUl))) bits = 0xFF;
+                if (z.cursor && !curUl) bits = uint8_t(~bits);
                 if (z.rvv) bits = uint8_t(~bits);
                 uint8_t* zeile = &pix_[size_t(r * lin + l) * size_t(pixB_) + size_t(c * 8)];
                 for (int b = 0; b < 8; ++b)
@@ -443,7 +468,7 @@ bool P8000TerminalHw::deserialize(const uint8_t*& p, const uint8_t* end) {
     z8_.setPin(3, 3, !srVoll_);
     z8_.setPin(3, 1, p31Ende_ == 0);
     z8_.setPin(3, 2, naechstes_ < zeilenImBild_);
-    rastern();
+    bildMerken();   // Pixelbild folgt beim Abholen
     return true;
 }
 

@@ -127,9 +127,13 @@ public:
     /// Zelle des 8275 nach dem letzten Bild (Feldattribute, Cursor, Blinkphase).
     const I8275::Cell& bildZelle(int z, int s) const { return crt_.cells(z, s); }
     /// Pixelbild des letzten Bildes: Breite × Höhe Byte, 0 dunkel / 1 normal / 2 hell.
-    const std::vector<uint8_t>& pixel() const { return pix_; }
-    int pixelBreite() const { return pixB_; }
-    int pixelHoehe() const { return pixH_; }
+    /// Gerastert wird erst beim Abholen (das Bildende hält nur die Eingaben fest) — der Rechner
+    /// erzeugt 50 Bilder/s, die Oberfläche holt höchstens so viele und oft weniger.  Der Inhalt
+    /// ist derselbe wie beim Rastern am Bildende.  Der Verweis gilt bis zum nächsten Abholen
+    /// nach einem neuen Bild: wie bisher unter der Kernsperre lesen/kopieren.
+    const std::vector<uint8_t>& pixel() const { pixAktuell(); return pix_; }
+    int pixelBreite() const { pixAktuell(); return pixB_; }
+    int pixelHoehe() const { pixAktuell(); return pixH_; }
 
     // ── Zugriff für Debugger/Tests ──────────────────────────────────────────
     Z8& z8() { return z8_; }
@@ -170,7 +174,12 @@ private:
     uint64_t zeitVon(uint64_t zeichentakte) const;   ///< Bildanfang + Zeichentakte → Z8-Takte
     void     ereignis(int nr);
     void     bildEnde();                     ///< VRTC: frame() + Raster
-    void     rastern();
+    /// Bildende: hält fest, was das Raster braucht (Zellen des 8275, Maße, Blinkphase,
+    /// Zeichensatz) und merkt „Pixelbild veraltet".
+    void     bildMerken();
+    /// Rastert, falls seit dem letzten Abholen ein neues Bild festgehalten wurde.
+    void     pixAktuell() const;
+    void     rastern() const;
     void     watchdogPruefen();
 
     Config cfg_;
@@ -216,8 +225,17 @@ private:
     std::deque<TerminalSendung> aus_;
     // Bild
     uint64_t bilder_ = 0;
-    std::vector<uint8_t> pix_;
-    int pixB_ = 640, pixH_ = 312;
+    /// Eingaben des Rasters, am Bildende festgehalten (Befehle des Z8 zwischen zwei Bildern
+    /// dürfen das schon fertige Bild nicht mehr verändern).
+    struct Bildstand {
+        int  cols = 80, rows = 24, lin = 13, ul = 0;
+        bool blinkAn = true, cursorUnterstrich = false, zg2 = false;
+        std::vector<I8275::Cell> zellen;   ///< rows × cols, zeilenweise
+    } bild_;
+    mutable std::mutex pixSperre_;         ///< schützt bild_/pix_/pixAlt_ (Emulations- und Abholfaden)
+    mutable bool pixAlt_ = false;
+    mutable std::vector<uint8_t> pix_;
+    mutable int pixB_ = 640, pixH_ = 312;
 };
 
 }  // namespace k1520::p8000
