@@ -721,25 +721,6 @@ void Z80PIO::modusRdy(int i) {
     if (i == 0 && porta_.mode == 2) setRdy(1, true);   // Eingabeseite (BRDY) leer
 }
 
-uint8_t Z80PIO::treiber(int i) const {
-    const Port& p = (i == 0) ? porta_ : portb_;
-    switch (p.mode) {
-        case 0:  return 0xFF;
-        case 2:  return (i == 0 && !hs_[0].stb) ? 0xFF : 0x00;   // Ausgabe nur bei /ASTB = L
-        case 3:  return static_cast<uint8_t>(~p.direction);
-        default: return 0x00;
-    }
-}
-
-uint8_t Z80PIO::pins(int i, uint8_t pullups) const {
-    const Port& p = (i == 0) ? porta_ : portb_;
-    const Handshake& h = hs_[i];
-    const uint8_t t = treiber(i);
-    const uint8_t offen = static_cast<uint8_t>(~t & ~h.ext_mask);
-    return static_cast<uint8_t>((p.output_latch & t) | (h.ext_pegel & h.ext_mask & ~t) |
-                                (pullups & offen));
-}
-
 void Z80PIO::setExtern(int i, uint8_t pegel, uint8_t mask) {
     Port& p = (i == 0) ? porta_ : portb_;
     Handshake& h = hs_[i];

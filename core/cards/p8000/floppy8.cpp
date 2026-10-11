@@ -107,6 +107,7 @@ void P8000Floppy8::reset()
     drq_pin_ = rdy_ = false;
     dma_.setReady(false);
     fdc_.setTC(false);
+    pins_gueltig_ = false;
     // PIO2 steht nach /RES in Modus 1 (Eingang): alle Pins offen = Pull-up = 1
     pinsAuswerten();
     karte_.setzePinTreiber(2, 1, fdc_.irq() ? 0x10 : 0x00, 0x10);
@@ -115,6 +116,12 @@ void P8000Floppy8::reset()
 void P8000Floppy8::pinsAuswerten()
 {
     const uint8_t a = karte_.pio2().pinsA(), b = karte_.pio2().pinsB();
+    // Die Auswertung ist eine reine Funktion von (PA, PB, Blockende) und für den U8272 idempotent
+    // (setTC wirkt nur an der Flanke, setReset nur bei Wechsel, Datenrate setzt nur ab) — bei
+    // gleichen Eingängen entfällt sie.  takt() läuft je Rechnerbefehl.  Reset und Laden
+    // verwerfen den Merker, weil sie den FDC unabhängig von den Pins setzen.
+    if (pins_gueltig_ && a == pins_a_ && b == pins_b_ && dma_ende_ == pins_ende_) return;
+    pins_gueltig_ = true; pins_a_ = a; pins_b_ = b; pins_ende_ = dma_ende_;
     fdc_.setDatenrate((a & 0x10) ? 250 : 500);                       // PA4: 1 = 4 MHz / 0 = 8 MHz
     const bool res = (b & 0x80) != 0;                                // PB7
     const bool aktiv = cfg_.fdc_reset_high_aktiv ? res : !res;
@@ -122,7 +129,7 @@ void P8000Floppy8::pinsAuswerten()
         fdc_resetet_ = aktiv;
         fdc_.setReset(aktiv);
     }
-    fdc_.setTC(tcPegel());
+    fdc_.setTC(dma_ende_ || ((a & 0x40) != 0));                      // == tcPegel()
 }
 
 void P8000Floppy8::takt(int n)
@@ -158,6 +165,7 @@ bool P8000Floppy8::deserialize(const uint8_t*& p, const uint8_t* end)
     drq_pin_ = *p++ != 0;
     rdy_ = *p++ != 0;
     fdc_resetet_ = *p++ != 0;
+    pins_gueltig_ = false;
     for (int i = 0; i < 4; ++i) {
         const bool m = *p++ != 0;
         const uint8_t cyl = *p++;

@@ -211,7 +211,20 @@ public:
             uint8_t rx_bits     = 5; ///< Empfangsbits je Zeichen (WR3 D7–6)
             bool asynchron() const { return stopp_halbe != 0; }
         };
-        Format format() const;
+        /// Inline: die Terminalkopplung des P8000 fragt das Format je Rechnerbefehl.
+        Format format() const {
+            // Kodierung der Bitzahl in WR3 D7–6 / WR5 D6–5: 00=5, 01=7, 10=6, 11=8.
+            static constexpr uint8_t BITS[4] = {5, 7, 6, 8};
+            static constexpr uint8_t TEILER[4] = {1, 16, 32, 64};
+            Format f;
+            f.teiler      = TEILER[(wr[4] >> 6) & 0x03];
+            const uint8_t sb = (wr[4] >> 2) & 0x03;       // 00 synchron, 01 1, 10 1½, 11 2
+            f.stopp_halbe = sb == 0 ? 0 : static_cast<uint8_t>(sb + 1);
+            f.paritaet    = (wr[4] & 0x01) ? ((wr[4] & 0x02) ? 2 : 1) : 0;
+            f.tx_bits     = BITS[(wr[5] >> 5) & 0x03];
+            f.rx_bits     = BITS[(wr[3] >> 6) & 0x03];
+            return f;
+        }
 
         bool rts() const         { return (wr[5] & 0x02) != 0; } ///< Ausgang RTS (WR5 D1), true = aktiv
         bool dtr() const         { return (wr[5] & 0x80) != 0; } ///< Ausgang DTR (WR5 D7), true = aktiv

@@ -360,6 +360,8 @@ private:
     PeriodenQuelleQ16 eingangQ16_[4];  ///< dasselbe in Q16 (Bruchtakt-Kaskaden)
     uint64_t takt_hz_[4]  = {0, 0, 0, 0};  ///< Bruchtakt-Quelle (0 = keine), s. setzeEingangsTakt
     uint64_t takt_phi_[4] = {0, 0, 0, 0};
+    struct QMerker { uint64_t tc = 0, phi = 0, hz = 0, erg = 0; };   ///< teilerTakteQ16: letzte Division
+    mutable QMerker q16Merker_[4];
     uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
     bool     reset_laedt_tc_ = false;   ///< s. setResetLaedtZeitkonstante
     bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)

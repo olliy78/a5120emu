@@ -225,8 +225,16 @@ uint64_t Z80CTC::teilerTakteQ16(int kanal) const {
     if (!(c.control & CTRL_COUNTER))
         return (((c.control & CTRL_PRESCALE256) ? 256u : 16u) * tc) << 16;
     // Bruchtakt: Takte je Impuls = phi/hz, in EINER Division gerechnet (gerundet).
-    if (takt_hz_[kanal])
-        return (takt_phi_[kanal] * 65536u * tc + takt_hz_[kanal] / 2) / takt_hz_[kanal];
+    if (takt_hz_[kanal]) {
+        // Die 64-Bit-Division kostet je Aufruf; abgefragt wird je Rechnerbefehl (Terminalkopplung),
+        // die Eingaben ändern sich nur beim Umprogrammieren.  Reine Funktion → Merker bitgleich.
+        QMerker& m = q16Merker_[kanal];
+        if (m.tc != tc || m.phi != takt_phi_[kanal] || m.hz != takt_hz_[kanal]) {
+            m.tc = tc; m.phi = takt_phi_[kanal]; m.hz = takt_hz_[kanal];
+            m.erg = (m.phi * 65536u * tc + m.hz / 2) / m.hz;
+        }
+        return m.erg;
+    }
     static thread_local int tiefe = 0;
     if (tiefe > 16) return 0;
     ++tiefe;

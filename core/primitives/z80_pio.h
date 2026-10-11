@@ -382,8 +382,25 @@ private:
     void    modusRdy(int i);
     void    stbEdge(int i, bool pegel);
     void    setExtern(int i, uint8_t pegel, uint8_t mask);
-    uint8_t pins(int i, uint8_t pullups) const;
-    uint8_t treiber(int i) const;   ///< Maske der vom PIO getriebenen Pins
+    // Inline im Kopf: die Floppy-Karte des P8000 fragt die Pins je Rechnerbefehl ab.
+    uint8_t pins(int i, uint8_t pullups) const {
+        const Port& p = (i == 0) ? porta_ : portb_;
+        const Handshake& h = hs_[i];
+        const uint8_t t = treiber(i);
+        const uint8_t offen = static_cast<uint8_t>(~t & ~h.ext_mask);
+        return static_cast<uint8_t>((p.output_latch & t) | (h.ext_pegel & h.ext_mask & ~t) |
+                                    (pullups & offen));
+    }
+    /// Maske der vom PIO getriebenen Pins
+    uint8_t treiber(int i) const {
+        const Port& p = (i == 0) ? porta_ : portb_;
+        switch (p.mode) {
+            case 0:  return 0xFF;
+            case 2:  return (i == 0 && !hs_[0].stb) ? 0xFF : 0x00;   // Ausgabe nur bei /ASTB = L
+            case 3:  return static_cast<uint8_t>(~p.direction);
+            default: return 0x00;
+        }
+    }
 
     /**
      * @brief State machine for control register programming.

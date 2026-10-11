@@ -74,6 +74,8 @@ public:
 
 private:
     void pinsAuswerten();
+    bool    pins_gueltig_ = false, pins_ende_ = false;   ///< Merker von pinsAuswerten()
+    uint8_t pins_a_ = 0, pins_b_ = 0;
     void reset();
 
     P8000Karte8& karte_;
