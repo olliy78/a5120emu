@@ -87,7 +87,7 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     zre_.setZCTOCallback([this](int ch, bool lvl) {
         if (ch == 0)
             for (int i = 0; i < 4; ++i) ass_.ctcA34().clkTrg(i, lvl);
-    });
+    }, 0x01);   // nur ZC/TO0 geht nach außen
     ass_.setzeZreTakt([this] { return zre_.ctc().teilerTakte(0); });
     // Am 710-1 ist A32-B die Tastatur (fest verdrahtet, nicht nach außen); AP-P4 benennt neu.
     // Namen nach der Gerätebeschriftung (DRUCK.DOK, §3.7/§3.9), Reihenfolge = C-ABI-Index.

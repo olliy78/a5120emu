@@ -126,7 +126,8 @@ P8000Karte16::P8000Karte16(const Config& cfg)
     for (int k = 0; k < 3; ++k) ctc0_.setzeEingangsTakt(k, baud, cfg.takt_hz);
     ctc1_.setzeEingangsTakt(0, baud, cfg.takt_hz);
     ctc1_.setzeEingangsTakt(2, baud, cfg.takt_hz);
-    ctc1_.setZCTOCallback([this](int ch, bool lvl) { if (ch == 2) ctc1_.clkTrg(3, lvl); });
+    ctc1_.setZCTOCallback([this](int ch, bool lvl) { if (ch == 2) ctc1_.clkTrg(3, lvl); },
+                          0x04);   // nur K2 → K3; K0/K1/K3 hört niemand
     ctc1_.setzeEingangsQuelleQ16(3, [this] { return ctc1_.teilerTakteQ16(2); });
 
     peri_.setInterruptChain({&ctc0_, &ctc1_, &sio0_, &sio1_, &pio0_, &pio1_, &pio2_});

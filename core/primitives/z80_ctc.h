@@ -140,13 +140,12 @@ public:
      * @brief Advance the internal timer counters by @p ticks system-clock cycles.
      *
      * Semantik-identisch zu @p ticks aufeinanderfolgenden clockTick()-Aufrufen,
-     * aber schnell: solange KEIN Kanal innerhalb des Fensters eine ZC/TO-Flanke
-     * erzeugen kann (der häufige Fall — Timer feuern nur alle zehntausende
-     * T-States), werden die Prescaler/Zähler rein arithmetisch fortgeschrieben
-     * (ohne Callback).  Kann in diesem Fenster eine Flanke fallen (zcto_active
-     * gesetzt oder ein Zähler erreicht 0), fällt die Methode für dieses eine
-     * Fenster auf die exakte Pro-Takt-Schleife zurück — die Kaskaden-/Interrupt-
-     * Flankentiming bleibt damit bit-genau erhalten.
+     * aber schnell: nur die Flanken BEOBACHTETER Kanäle (Interrupt-Freigabe, Trigger-
+     * Betrieb oder Rückruf-Maske, s. setZCTOCallback) laufen als exakter Einzeltakt;
+     * bis kurz davor — und für unbeobachtete Kanäle, die Nulldurchgänge nur nachladen
+     * (Baudraten-Teiler) — werden Prescaler/Zähler rein arithmetisch fortgeschrieben.
+     * Der Zustand am Fensterende ist byte-gleich zu Einzeltakten (auch zcto_active),
+     * Zähler lesen zwischen zwei Fenstern liefert also den Einzeltakt-Wert.
      *
      * @return true, wenn in diesem Fenster eine ZC/TO-Flanke fallen konnte
      *         (Slow-Path) — der Aufrufer markiert die Interrupt-Chain dann dirty.
@@ -180,8 +179,13 @@ public:
     /**
      * @brief Set global callback for all ZC/TO output pulses.
      * @param cb Callback function.
+     * @param kanalmaske Bit n = der Rückruf wertet die Flanke von Kanal n aus.  Vorgabe 0x0F
+     *        (alle) ist die sichere Wahl; ein Kanal außerhalb der Maske darf von
+     *        clockTick(int) rein rechnerisch fortgeschrieben werden (kein Rückruf für ihn).
+     *        Wer die Maske verkleinert, muss wissen, dass NIEMAND sonst die Flanke des Kanals
+     *        braucht (Kaskade, Koppelbus, SIO-Takt als Flanke).
      */
-    void    setZCTOCallback(ZCTOCallback cb);
+    void    setZCTOCallback(ZCTOCallback cb, uint8_t kanalmaske = 0x0F);
 
     /**
      * @brief Get the current down-counter value of a channel.
@@ -342,6 +346,7 @@ private:
     uint8_t     vec_base_ = 0;         ///< Interrupt vector base address
     bool        iei_      = false;     ///< Interrupt Enable Input
     std::string name_;                 ///< Device name
+    uint8_t      zcto_mask_ = 0x0F;    ///< Kanäle, deren Flanke der Rückruf auswertet
     ZCTOCallback zcto_cb_;             ///< Output pulse callback
     PeriodenQuelle eingang_[4];        ///< CLK/TRG-Quellen (Verdrahtung, nicht im Savestate)
     PeriodenQuelleQ16 eingangQ16_[4];  ///< dasselbe in Q16 (Bruchtakt-Kaskaden)
@@ -350,6 +355,16 @@ private:
     uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
     bool     reset_laedt_tc_ = false;   ///< s. setResetLaedtZeitkonstante
     bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)
+
+    /// Hat die ZC/TO-Flanke von Kanal @p i eine Wirkung (Interrupt, Trigger-Betrieb, Rückruf)?
+    bool zcto_beobachtet(int i) const {
+        return (ch_[i].control & (CTRL_INT_EN | CTRL_CLK_TRG)) ||
+               (zcto_cb_ && ((zcto_mask_ >> i) & 1));
+    }
+
+    /// Schreibt @p skip Takte für die Kanäle der Maske @p kanaele rein rechnerisch fort (nur wenn kein beobachteter Kanal in dieser
+    /// Strecke eine Flanke hat); Zustand danach wie nach @p skip Einzeltakten (s. clockTick(int)).
+    void springe(long long skip, uint8_t kanaele);
 
     /// Ein Zählimpuls am Eingang eines laufenden Zähler-Kanals (Bruchtakt-Weg).
     void zaehleImpuls(int ch);

@@ -18,6 +18,7 @@ k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl
 # P8000 P5c/P5d: Handshake-/Pinpegel-Erweiterung PIO, Bruchtakt-Zähleingang CTC
 k1520_add_test(pio_handshake  SRC primitives/test_pio_handshake.cpp  LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc_bruchtakt  SRC primitives/test_ctc_bruchtakt.cpp  LIBS k1520_ctc k1520_sio k1520_serial LABELS "${_lbl}")
+k1520_add_test(ctc_sprung     SRC primitives/test_ctc_sprung.cpp     LIBS k1520_ctc k1520_sio k1520_serial LABELS "${_lbl}")
 k1520_add_test(sio   SRC primitives/test_sio.cpp   LIBS k1520_sio LABELS "${_lbl}")
 # 8279-Tastaturteil (PRG 710, doc/design/20_prg710.md AP-P2a)
 k1520_add_test(i8279 SRC primitives/test_i8279.cpp LIBS k1520_i8279 LABELS "${_lbl}")

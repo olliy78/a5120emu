@@ -179,7 +179,8 @@ void Pc1715Machine::bauW()
     for (int u = 0; u < 4; ++u) w.fdc.setDrive(u, &afs_.drive(u));
 
     // CTC2: ZC/TO1 → C/TRG2 (Uhr: K1 100 Hz → K2 1 Hz, [BIOS] A785–A79F).
-    w.ctc2.setZCTOCallback([this](int ch, bool lvl) { if (ch == 1) w_->ctc2.clkTrg(2, lvl); });
+    w.ctc2.setZCTOCallback([this](int ch, bool lvl) { if (ch == 1) w_->ctc2.clkTrg(2, lvl); },
+                          0x02);   // nur K1 → K2 (Uhr)
     w.ctc2.setzeEingangsQuelle(2, [this] { return w_->ctc2.teilerTakte(1); });
 
     // Interruptkette DMA → CTC2 → SIO0 (Plan, [MAME]; Scan nicht eindeutig [?]).

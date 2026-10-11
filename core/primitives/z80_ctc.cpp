@@ -30,6 +30,7 @@
  * @see Robotron A5120 Technical Documentation (U857D Manual, pages 612-616)
  */
 #include "z80_ctc.h"
+#include <algorithm>
 #include <cstring>
 #include <type_traits>
 
@@ -51,9 +52,12 @@ Z80CTC::Z80CTC(const std::string& name) : name_(name) {}
  * the pulse, level=true to clear it).
  *
  * @param cb Callback function receiving (channel, level)
+ * @param kanalmaske Kanäle, deren Flanke der Rückruf wirklich auswertet (Bit n = Kanal n);
+ *        nur für sie läuft clockTick(int) die Flanke als Einzeltakt, siehe dort
  */
-void Z80CTC::setZCTOCallback(ZCTOCallback cb) {
-    zcto_cb_ = std::move(cb);
+void Z80CTC::setZCTOCallback(ZCTOCallback cb, uint8_t kanalmaske) {
+    zcto_cb_   = std::move(cb);
+    zcto_mask_ = kanalmaske;
 }
 
 // =============================================================================
@@ -274,59 +278,96 @@ void Z80CTC::reset() {
 bool Z80CTC::clockTick(int ticks) {
     if (ticks <= 0) return false;
 
-    // Kann in diesem Fenster IRGENDEIN Kanal eine ZC/TO-Flanke erzeugen?
-    // (a) ein bereits gesetztes zcto_active → Flanke auf dem 1. Takt; oder
-    // (b) ein laufender Timer-Kanal erreicht innerhalb `ticks` T-States die 0.
-    // Nur dann ist die genaue Kaskaden-/Interrupt-Reihenfolge relevant.
-    bool event_in_window = false;
-    for (int i = 0; i < 4 && !event_in_window; i++) {
-        const Channel& c = ch_[i];
-        if (c.zcto_active) { event_in_window = true; break; }
-        if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
-            // Bruchtakt-Zähler: so viele Impulse fallen im Fenster; erreicht der
-            // Zähler dabei die 0, exakte Schleife.
-            const uint64_t n = (takt_acc_[i] + (uint64_t)ticks * takt_hz_[i]) / takt_phi_[i];
-            if (n >= (uint64_t)(c.counter > 0 ? c.counter : 1)) event_in_window = true;
-            continue;
+    // Beobachtet ist ein Kanal, dessen ZC/TO-Flanke etwas bewirkt: Interrupt-Freigabe,
+    // Rückruf (laut Kanalmaske) oder Trigger-Betrieb (fireZCTO hält den Kanal an).  Nur die
+    // Flanke eines beobachteten Kanals muss als exakter Einzeltakt laufen; alle übrigen
+    // Zähler werden rein rechnerisch fortgeschrieben (Zustand danach byte-gleich zum
+    // Einzeltaktpfad, auch zcto_active — es steht im Save-State).
+    // Unter dieser Strecke bis zur nächsten Flanke lohnt der Sprung nicht → Einzeltakte.
+    constexpr long long kMinSprung = 8;
+    int  rest = ticks;
+    bool einzeln_gelaufen = false;   // nur dann kann sich „Interrupt anstehend" geändert haben
+    bool vorher = false;
+    auto einzeltakte = [&](int n) {
+        if (!einzeln_gelaufen) { vorher = anyPending(); einzeln_gelaufen = true; }
+        for (int t = 0; t < n; ++t) clockTick();
+        rest -= n;
+    };
+    while (rest > 0) {
+        // Takte unmittelbar VOR der nächsten Flanke eines beobachteten Kanals (>= rest: keine im Fenster)
+        long long dist = rest;
+        bool nur_einzeln = false;
+        uint8_t tut = 0;   // Kanäle, die im Sprung etwas fortzuschreiben haben (läuft / Flankenende)
+        for (int i = 0; i < 4; ++i) {
+            const Channel& c = ch_[i];
+            if (!c.running) {
+                if (c.zcto_active) {
+                    tut |= uint8_t(1u << i);
+                    if (zcto_beobachtet(i)) dist = 0;
+                }
+                continue;
+            }
+            tut |= uint8_t(1u << i);
+            const bool zaehler = (c.control & CTRL_COUNTER) != 0;
+            const bool bruch   = zaehler && takt_any_ && takt_hz_[i];
+            const int  prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
+            // Randfälle, die die Sprungformel nicht abdeckt → Rest des Fensters Einzeltakt
+            if (bruch ? takt_hz_[i] >= takt_phi_[i] : (!zaehler && c.prescaleCnt >= prescale)) {
+                nur_einzeln = true;
+                break;
+            }
+            if (!zcto_beobachtet(i)) continue;
+            if (c.zcto_active) { dist = 0; continue; }     // Flankenende: Rückruf(true) fällig
+            const long long cc = c.counter > 0 ? c.counter : 1;
+            if (bruch) {
+                const uint64_t num = (uint64_t)cc * takt_phi_[i] - takt_acc_[i];
+                dist = std::min<long long>(dist, (long long)((num + takt_hz_[i] - 1) / takt_hz_[i]) - 1);
+            } else if (!zaehler) {
+                dist = std::min<long long>(dist, (prescale - c.prescaleCnt) + (cc - 1) * prescale - 1);
+            }   // Zähler ohne Bruchtakt zählt nur über clkTrg()
         }
-        if (!c.running || (c.control & CTRL_COUNTER)) continue;
-        const int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
-        // T-States bis zur nächsten 0: erst den Prescaler auffüllen, dann
-        // (counter-1) volle Prescaler-Perioden.
-        const long long to_zero =
-            (long long)(prescale - c.prescaleCnt) + (long long)(c.counter - 1) * prescale;
-        if (to_zero <= ticks) event_in_window = true;
-    }
 
-    if (event_in_window) {                 // exakte Pro-Takt-Schleife (selten)
-        // Nur eine ECHTE Interrupt-Änderung (ein INT_EN-Kanal setzt int_pending —
-        // inkl. interner Kaskade ch2→ch3) muss die Bus-Interrupt-Chain dirty
-        // markieren.  Reine Takt-/Kaskadenkanäle OHNE INT_EN (z.B. der Baud-Takt-
-        // teiler) feuern zwar ständig ihr ZC/TO, ändern aber keinen Interrupt —
-        // sie sollen den teuren Chain-Walk NICHT auslösen.  anyPending()-Delta
-        // erfasst genau das (billig: vier bool-Prüfungen).
-        const bool pending_before = anyPending();
-        for (int t = 0; t < ticks; ++t) clockTick();
-        return anyPending() != pending_before;
+        if (nur_einzeln) { einzeltakte(rest); break; }
+        if (dist >= rest) {                                // häufigster Fall: nichts Beobachtetes im Fenster
+            if (tut) springe(rest, tut);
+            break;
+        }
+        if (dist >= kMinSprung) { springe(dist, tut); rest -= (int)dist; dist = 0; }
+        einzeltakte((int)dist + 1);                        // bis einschließlich des Flankentakts
     }
+    return einzeln_gelaufen && anyPending() != vorher;
+}
 
-    // Schnellpfad: keine Flanke im Fenster → Prescaler/Zähler rein arithmetisch
-    // fortschreiben, ohne Callback (semantisch identisch zu `ticks` Einzeltakten).
-    for (int i = 0; i < 4; i++) {
+void Z80CTC::springe(long long skip, uint8_t kanaele) {
+    for (int i = 0; i < 4; ++i) {
+        if (!((kanaele >> i) & 1)) continue;
         Channel& c = ch_[i];
+        uint64_t n;                 // Zählimpulse im Sprung
+        bool     letzter_takt;      // fiel der letzte Impuls auf den letzten Sprungtakt?
         if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
-            const uint64_t sum = takt_acc_[i] + (uint64_t)ticks * takt_hz_[i];
-            c.counter    -= (int)(sum / takt_phi_[i]);   // bleibt > 0 (s. Fensterprüfung)
-            takt_acc_[i]  = sum % takt_phi_[i];
+            const uint64_t sum = takt_acc_[i] + (uint64_t)skip * takt_hz_[i];
+            n            = sum / takt_phi_[i];
+            takt_acc_[i] = sum % takt_phi_[i];
+            letzter_takt = n > 0 && takt_acc_[i] < takt_hz_[i];
+        } else if (c.running && !(c.control & CTRL_COUNTER)) {
+            const unsigned sh = (c.control & CTRL_PRESCALE256) ? 8 : 4;   // Vorteiler 256 / 16
+            const uint64_t total = (uint64_t)c.prescaleCnt + (uint64_t)skip;
+            c.prescaleCnt = (int)(total & ((1u << sh) - 1));
+            n             = total >> sh;
+            letzter_takt  = n > 0 && c.prescaleCnt == 0;
+        } else {
+            c.zcto_active = false;   // Einzeltakt löscht ein anstehendes Flankenende
             continue;
         }
-        if (!c.running || (c.control & CTRL_COUNTER)) continue;
-        const int prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
-        const long long total = (long long)c.prescaleCnt + ticks;
-        c.prescaleCnt = (int)(total % prescale);
-        c.counter    -= (int)(total / prescale);   // bleibt > 0 (keine Flanke)
+        c.zcto_active = false;
+        if (n == 0) continue;
+        const uint64_t cc = (uint64_t)(c.counter > 0 ? c.counter : 1);
+        if (n < cc) { c.counter -= (int)n; continue; }  // beobachtet: stets dieser Fall
+        // unbeobachtet: durchlaufene Nulldurchgänge nur nachladen (Zeitkonstante 0 = 256)
+        const uint64_t tc = (c.timeConst == 0) ? 256u : c.timeConst;
+        c.counter     = (int)(tc - ((n - cc) % tc));
+        c.zcto_active = letzter_takt && ((n - cc) % tc == 0);
     }
-    return false;
 }
 
 /**

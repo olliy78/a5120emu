@@ -117,7 +117,9 @@ public:
      * @brief ZC/TO-Ausgänge 0–2 nach außen (Koppelbus, X2); die Kaskade X10–X11 wird
      *        zusätzlich intern bedient.
      */
-    void setZCTOCallback(Z80CTC::ZCTOCallback cb) { zcto_ext_ = std::move(cb); }
+    /// @p kanalmaske: Kanäle, deren Flanke der äußere Rückruf braucht (s. Z80CTC::setZCTOCallback)
+    void setZCTOCallback(Z80CTC::ZCTOCallback cb, uint8_t kanalmaske = 0x0F)
+    { zcto_ext_ = std::move(cb); zcto_ext_maske_ = kanalmaske; zctoVerdrahten(); }
 
     // ─── Speicher der Karte (0000H–0FFFH) ────────────────────────────────────
     /** @brief Liegt @p a im Adressbereich der Karte (0000H–0FFFH)?  Nicht: ob sie antwortet. */
@@ -148,4 +150,6 @@ private:
     LeseFn    lesen_;
     SchreibFn schreiben_;
     Z80CTC::ZCTOCallback zcto_ext_;
+    uint8_t zcto_ext_maske_ = 0x0F;
+    void zctoVerdrahten();   ///< Rückruf der CTC samt Kanalmaske (Kaskade ∪ außen)
 };

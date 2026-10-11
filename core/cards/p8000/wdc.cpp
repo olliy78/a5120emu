@@ -89,7 +89,7 @@ P8000Wdc::P8000Wdc(const Config& cfg) : cfg_(cfg)
     // [H1] Nulldurchgang K2 beendet die Hostübertragung, wenn HEN schon zurückgenommen ist
     ctc_.setZCTOCallback([this](int ch, bool pegel) {
         if (ch == 2 && !pegel && !(cntst_ & 0x08)) host_aktiv_ = false;
-    });
+    }, 0x04);   // nur K2 wird ausgewertet
     powerOn();
 }
 

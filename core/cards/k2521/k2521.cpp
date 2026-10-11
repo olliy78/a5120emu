@@ -64,13 +64,24 @@ K2521::K2521(K1520Bus& bus, const Config& cfg)
     cpu_.writePort    = [this](uint16_t p, uint8_t d) { bus_.ioWrite(p, d); };
     cpu_.retiCallback = [this]()                      { bus_.signalRETI(); };
 
+    zctoVerdrahten();
+}
+
+void K2521::zctoVerdrahten()
+{
     // CTC-Kaskade X10–X11: ZC/TO[n] → CLK/TRG[n+1]; zusätzlich nach außen (Koppelbus).
+    // Die Kanalmaske sagt der CTC, wessen Flanke überhaupt jemand braucht (Kaskadenquelle
+    // oder äußerer Rückruf) — nur die läuft in clockTick(int) als Einzeltakt.
+    uint8_t maske = zcto_ext_ ? zcto_ext_maske_ : 0;
+    if (cfg_.kaskade_to0_clk1) maske |= 0x01;
+    if (cfg_.kaskade_to1_clk2) maske |= 0x02;
+    if (cfg_.kaskade_to2_clk3) maske |= 0x04;
     ctc_.setZCTOCallback([this](int ch, bool lvl) {
         if (ch == 0 && cfg_.kaskade_to0_clk1) ctc_.clkTrg(1, lvl);
         if (ch == 1 && cfg_.kaskade_to1_clk2) ctc_.clkTrg(2, lvl);
         if (ch == 2 && cfg_.kaskade_to2_clk3) ctc_.clkTrg(3, lvl);
         if (zcto_ext_) zcto_ext_(ch, lvl);
-    });
+    }, maske);
 }
 
 void K2521::attachToBus(K1520Bus& bus)

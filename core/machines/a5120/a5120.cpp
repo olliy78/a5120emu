@@ -129,7 +129,7 @@ void A5120Machine::wireBackplane() {
     zre_.ctc().setZCTOCallback([this](int ch, bool lvl) {
         if (ch >= 0 && ch < 3)
             koppel_.zc_to[ch].drive(lvl);
-    });
+    }, 0x07);   // Koppelbus kennt nur ZC/TO0..2; K3 hat keinen Abnehmer
 
     // ZRE CTC ZC/TO[2] → ZRE CTC CLK/TRG[3] (hardwired on K2526 via Koppelbus)
     koppel_.zc_to[2].connect([this](bool lvl) {
