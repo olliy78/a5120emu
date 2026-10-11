@@ -150,7 +150,15 @@ public:
      * @return true, wenn in diesem Fenster eine ZC/TO-Flanke fallen konnte
      *         (Slow-Path) — der Aufrufer markiert die Interrupt-Chain dann dirty.
      */
-    bool    clockTick(int ticks);
+    bool    clockTick(int ticks) {
+        // Aufgeschobenes Takten: nur aufsummieren; abgerechnet wird erst, wenn die Summe
+        // den Horizont überschreitet (die vorausberechnete nächste BEOBACHTETE Flanke liegt
+        // dann im Fenster) oder wenn ein Zugriff den Zustand sieht (ioRead/ioWrite/clkTrg/
+        // getCount/debugState/serialize/reset ...).  Ergebnis bitgleich zum sofortigen Takten.
+        aufgeschoben_ += ticks;
+        if (aufgeschoben_ <= horizont_) return false;
+        return abrechnen();
+    }
 
     /**
      * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
@@ -355,6 +363,21 @@ private:
     uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
     bool     reset_laedt_tc_ = false;   ///< s. setResetLaedtZeitkonstante
     bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)
+
+    // ─── Aufgeschobenes Takten ────────────────────────────────────────────────
+    long long aufgeschoben_ = 0;   ///< noch nicht verrechnete Takte
+    long long horizont_     = 0;   ///< so viele Takte dürfen sich ansammeln, ohne dass eine beobachtete Flanke fällt
+    bool      dirty_rest_   = false; ///< Interrupt-Änderung aus einer Zugriffs-Abrechnung (s. abrechnen)
+
+    /// Verrechnet die angesammelten Takte (bisheriges clockTick(int)) und bestimmt den Horizont neu.
+    bool abrechnen();
+    /// Abrechnung vor einem lesenden/schreibenden Zugriff; schadet nie (Zustand byte-gleich zum Einzeltakt).
+    void sichtbar() const { if (aufgeschoben_) const_cast<Z80CTC*>(this)->abrechnenZugriff(); }
+    void abrechnenZugriff() { dirty_rest_ |= abrechnen(); }
+    /// Takte bis vor die nächste beobachtete Flanke (0 = keine Reserve), gedeckelt.
+    long long berechneHorizont() const;
+    /// Das bisherige clockTick(int): sofort verrechnen.
+    bool tickSofort(int ticks);
 
     /// Hat die ZC/TO-Flanke von Kanal @p i eine Wirkung (Interrupt, Trigger-Betrieb, Rückruf)?
     bool zcto_beobachtet(int i) const {

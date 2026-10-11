@@ -105,3 +105,55 @@ TEST(CtcSprung, UnbeobachteterBaudkanalSpringtUndLiestExakt) {
     EXPECT_EQ(a.ioRead(1), b.ioRead(1));
     EXPECT_EQ(rufe, 0);   // Kanal 1 liegt außerhalb der Maske: kein Rückruf im Sprungpfad
 }
+
+// Aufgeschobenes Takten: viele KLEINE Fenster (Befehlsgröße), der Zustand von b wird nur
+// gelegentlich angesehen.  Rückrufe und Dirty-Meldung müssen trotzdem im selben Fenster
+// fallen wie beim Einzeltakt (der Interrupt ist im selben Befehl sichtbar), und jeder
+// Zugriff dazwischen (Lesen, Schreiben, clkTrg, Reset, Save-State) sieht den Einzeltakt-Zustand.
+TEST(CtcSprung, AufgeschobenesTaktenGleichEinzeltaktenBeiZugriffenDazwischen) {
+    std::mt19937 rng(0xDEF3);
+    auto zufall = [&](int n) { return static_cast<int>(rng() % n); };
+    constexpr uint64_t PHI = 4000000;
+    for (int lauf = 0; lauf < 300; ++lauf) {
+        uint64_t hz[4] = {0, 0, 0, 0};
+        for (int k = 0; k < 4; ++k) if (zufall(3) == 0) hz[k] = 100000 + zufall(3800000);
+        const uint8_t maske = static_cast<uint8_t>(zufall(16));
+        const bool kaskade = zufall(2) == 0;
+        Rig a(maske, kaskade, hz, PHI), b(maske, kaskade, hz, PHI);
+        auto programmiere = [&](int k) {
+            uint8_t ctrl = 0x01 | 0x04;
+            if (zufall(3) == 0) ctrl |= 0x80;
+            if (zufall(2) == 0) ctrl |= 0x40;
+            if (zufall(2) == 0) ctrl |= 0x20;
+            if (zufall(5) == 0) ctrl |= 0x08;
+            if (zufall(2) == 0) ctrl |= 0x10;
+            const uint8_t tc = zufall(4) == 0 ? 0 : static_cast<uint8_t>(1 + zufall(zufall(2) ? 6 : 255));
+            for (Rig* r : {&a, &b}) { r->ctc.ioWrite(k, ctrl); r->ctc.ioWrite(k, tc); }
+        };
+        for (int k = 0; k < 4; ++k) programmiere(k);
+
+        for (int schritt = 0; schritt < 3000; ++schritt) {
+            const int r = zufall(200);
+            const int k = zufall(4);
+            if (r == 0) programmiere(k);
+            else if (r == 1) for (Rig* x : {&a, &b}) x->ctc.ioWrite(k, 0x03);
+            else if (r == 2) { const bool f = zufall(2); for (Rig* x : {&a, &b}) x->ctc.clkTrg(k, f); }
+            else if (r == 3) ASSERT_EQ(a.ctc.ioRead(k), b.ctc.ioRead(k)) << lauf << "/" << schritt;
+            else if (r == 4) ASSERT_EQ(a.zustand(), b.zustand()) << lauf << "/" << schritt;
+            else if (r == 5) ASSERT_EQ(a.ctc.getCount(k), b.ctc.getCount(k));
+            else if (r == 6 && a.pending()) {
+                for (Rig* x : {&a, &b}) { x->ctc.setIEI(true); x->ctc.getVector(); x->ctc.onRETI(); }
+            }
+            else if (r == 7) for (Rig* x : {&a, &b}) x->ctc.reset();
+
+            const int n = 4 + zufall(17);   // wie ein Befehl: 4..20 Takte
+            const bool p0 = a.pending();
+            for (int t = 0; t < n; ++t) a.ctc.clockTick();
+            const bool dirty = b.ctc.clockTick(n);
+            ASSERT_EQ(a.ereignisse, b.ereignisse) << "Lauf " << lauf << " Schritt " << schritt;
+            ASSERT_EQ(dirty, a.pending() != p0) << "Lauf " << lauf << " Schritt " << schritt;
+            a.ereignisse.clear(); b.ereignisse.clear();
+        }
+        ASSERT_EQ(a.zustand(), b.zustand()) << "Lauf " << lauf;
+    }
+}

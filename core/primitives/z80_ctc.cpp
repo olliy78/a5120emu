@@ -56,6 +56,7 @@ Z80CTC::Z80CTC(const std::string& name) : name_(name) {}
  *        nur für sie läuft clockTick(int) die Flanke als Einzeltakt, siehe dort
  */
 void Z80CTC::setZCTOCallback(ZCTOCallback cb, uint8_t kanalmaske) {
+    sichtbar(); horizont_ = 0;   // neue Beobachtungslage ⇒ Vorausschau neu
     zcto_cb_   = std::move(cb);
     zcto_mask_ = kanalmaske;
 }
@@ -85,6 +86,7 @@ void Z80CTC::setZCTOCallback(ZCTOCallback cb, uint8_t kanalmaske) {
  * @param data Control byte or time constant value
  */
 void Z80CTC::ioWrite(uint8_t port, uint8_t data) {
+    sichtbar(); horizont_ = 0;   // Umprogrammierung: erst alte Takte verrechnen, Horizont beim nächsten Takten neu
     int ch = port & 0x03;
     Channel& c = ch_[ch];
 
@@ -141,6 +143,7 @@ void Z80CTC::ioWrite(uint8_t port, uint8_t data) {
  * @return Current down-counter value (8-bit)
  */
 uint8_t Z80CTC::ioRead(uint8_t port) {
+    sichtbar();
     int ch = port & 0x03;
     return static_cast<uint8_t>(ch_[ch].counter & 0xFF);
 }
@@ -159,6 +162,7 @@ uint8_t Z80CTC::ioRead(uint8_t port) {
  * external clock/trigger events via clkTrg().
  */
 void Z80CTC::clockTick() {
+    sichtbar(); horizont_ = 0;
     for (int i = 0; i < 4; i++) {
         Channel& c = ch_[i];
 
@@ -235,6 +239,7 @@ uint64_t Z80CTC::teilerTakteQ16(int kanal) const {
 
 void Z80CTC::setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz) {
     if (kanal < 0 || kanal > 3) return;
+    sichtbar();
     if (zaehler_hz == 0 || phi_hz == 0) {
         takt_hz_[kanal] = takt_phi_[kanal] = takt_acc_[kanal] = 0;
     } else {
@@ -244,6 +249,7 @@ void Z80CTC::setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz) 
     }
     takt_any_ = false;
     for (int i = 0; i < 4; ++i) if (takt_hz_[i]) takt_any_ = true;
+    horizont_ = 0;
 }
 
 void Z80CTC::setzeEingangsQuelleQ16(int kanal, PeriodenQuelleQ16 quelle) {
@@ -270,12 +276,50 @@ void Z80CTC::setzeEingangsPeriode(int kanal, uint64_t takte) {
 }
 
 void Z80CTC::reset() {
+    sichtbar(); horizont_ = 0;
     for (auto& c : ch_) c = Channel{};
     for (auto& a : takt_acc_) a = 0;   // Quelle bleibt verdrahtet, die Phase beginnt neu
     vec_base_ = 0;
 }
 
-bool Z80CTC::clockTick(int ticks) {
+bool Z80CTC::abrechnen() {
+    const long long p = aufgeschoben_;
+    aufgeschoben_ = 0;                       // zuerst leeren: Rückrufe (Kaskade) dürfen clkTrg → sichtbar() rufen
+    bool dirty = dirty_rest_;
+    dirty_rest_ = false;
+    if (p > 0) dirty |= tickSofort(static_cast<int>(p));
+    horizont_ = berechneHorizont();
+    return dirty;
+}
+
+long long Z80CTC::berechneHorizont() const {
+    // Spiegel der Vorausschau in tickSofort() für ein unendlich langes Fenster.
+    constexpr long long kMax = 1LL << 28;
+    long long dist = kMax;
+    for (int i = 0; i < 4; ++i) {
+        const Channel& c = ch_[i];
+        if (!c.running) {
+            if (c.zcto_active && zcto_beobachtet(i)) return 0;
+            continue;
+        }
+        const bool zaehler = (c.control & CTRL_COUNTER) != 0;
+        const bool bruch   = zaehler && takt_any_ && takt_hz_[i];
+        const int  prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
+        if (bruch ? takt_hz_[i] >= takt_phi_[i] : (!zaehler && c.prescaleCnt >= prescale)) return 0;
+        if (!zcto_beobachtet(i)) continue;
+        if (c.zcto_active) return 0;
+        const long long cc = c.counter > 0 ? c.counter : 1;
+        if (bruch) {
+            const uint64_t num = (uint64_t)cc * takt_phi_[i] - takt_acc_[i];
+            dist = std::min<long long>(dist, (long long)((num + takt_hz_[i] - 1) / takt_hz_[i]) - 1);
+        } else if (!zaehler) {
+            dist = std::min<long long>(dist, (prescale - c.prescaleCnt) + (cc - 1) * prescale - 1);
+        }
+    }
+    return dist < 0 ? 0 : dist;
+}
+
+bool Z80CTC::tickSofort(int ticks) {
     if (ticks <= 0) return false;
 
     // Beobachtet ist ein Kanal, dessen ZC/TO-Flanke etwas bewirkt: Interrupt-Freigabe,
@@ -390,6 +434,7 @@ void Z80CTC::springe(long long skip, uint8_t kanaele) {
  * @param rising_edge true for rising edge, false for falling edge
  */
 void Z80CTC::clkTrg(int channel, bool rising_edge) {
+    sichtbar(); horizont_ = 0;
     Channel& c = ch_[channel];
     bool want_rising = (c.control & CTRL_EDGE_RISE) != 0;
     if (rising_edge != want_rising) return;
@@ -594,6 +639,7 @@ void Z80CTC::onRETI() {
  * @return Current counter value (1-256, where 256 is represented as 0)
  */
 int Z80CTC::getCount(int channel) const {
+    sichtbar();
     return ch_[channel].counter;
 }
 
@@ -614,6 +660,7 @@ bool Z80CTC::isTimerMode(int channel) const {
 }
 
 Z80CTC::DebugState Z80CTC::debugState() const {
+    sichtbar();
     DebugState d;
     d.vecBase = vec_base_;
     d.iei     = iei_;
@@ -636,6 +683,7 @@ Z80CTC::DebugState Z80CTC::debugState() const {
 // vec_base_ and the IEI line are appended. The ZC/TO callback and name are not
 // part of the saved state (re-established by wiring).
 void Z80CTC::serialize(std::vector<uint8_t>& out) const {
+    sichtbar();
     static_assert(std::is_trivially_copyable_v<Channel>, "Channel must be POD");
     const uint8_t* chp = reinterpret_cast<const uint8_t*>(&ch_[0]);
     out.insert(out.end(), chp, chp + sizeof(ch_));
@@ -644,12 +692,14 @@ void Z80CTC::serialize(std::vector<uint8_t>& out) const {
 }
 
 void Z80CTC::serializeTakt(std::vector<uint8_t>& out) const {
+    sichtbar();
     for (uint64_t a : takt_acc_)
         for (int i = 0; i < 8; ++i) out.push_back(static_cast<uint8_t>((a >> (8 * i)) & 0xFF));
 }
 
 bool Z80CTC::deserializeTakt(const uint8_t*& p, const uint8_t* end) {
     if (end - p < 32) return false;
+    aufgeschoben_ = 0; horizont_ = 0;
     for (uint64_t& a : takt_acc_) {
         a = 0;
         for (int i = 0; i < 8; ++i) a |= static_cast<uint64_t>(*p++) << (8 * i);
@@ -659,6 +709,7 @@ bool Z80CTC::deserializeTakt(const uint8_t*& p, const uint8_t* end) {
 
 bool Z80CTC::deserialize(const uint8_t*& p, const uint8_t* end) {
     if (static_cast<size_t>(end - p) < sizeof(ch_) + 2) return false;
+    aufgeschoben_ = 0; horizont_ = 0;   // neuer Zustand ersetzt auch die angesammelten Takte
     std::memcpy(&ch_[0], p, sizeof(ch_)); p += sizeof(ch_);
     vec_base_ = *p++;
     iei_      = (*p++ != 0);
