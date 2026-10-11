@@ -68,10 +68,15 @@ def test_every_header_function_has_ctypes_signatures():
     )
 
 
-def test_version_is_a_semver_string():
+def test_version_beginnt_mit_der_basis_aus_version_datei():
+    """``k1520_version()`` ist die Bauversion: Basis aus ``VERSION`` plus Zusatz
+    (``+dev`` im Entwicklungsbau, ``+g<hash>`` im Paket, nichts bei einem Tag)."""
     from app.core_binding.k1520 import K1520Emulator
+    from app import version as v
+    basis = v.lies_basis(PROJECT_ROOT)
     version = K1520Emulator.version()
-    assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"unerwartete Version: {version!r}"
+    assert version.startswith(basis), f"{version!r} beginnt nicht mit {basis!r}"
+    assert re.fullmatch(r"\d+\.\d+\.\d+(-(beta|rc)(\.\d+)?)?(\+\S+)?", version), version
 
 
 def test_create_and_destroy_roundtrip():

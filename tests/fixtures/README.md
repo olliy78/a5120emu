@@ -51,7 +51,7 @@ Disketten, deren `@OS.COM` sie beschreiben; für Anwender sind sie nicht gedacht
 | `cpa_mini.img` / `cpa_mini.hfe` | synthetische Mini-Diskette (2 KB / 26 KB), kein Systemabbild | `test_hfe_image`, `test_disk_image_raw` |
 | `udos_ds77_k5601_fremdsync.hfe` | UDOS 4.3, an einem **fremden** K1520-Rechner (K5601) beschrieben: Datenfeld-Sync mit nur ein bis zwei echten Sync-Marken (die übrigen 0xA1 regulär kodiert), ID-CRC **ohne** A1-Präambel, 34 + 12 Dateien | `DiskVolume.LiestEineDisketteMitFremderSyncSitte`, `test_gw_physical` (Naht) |
 | `udos1715_640k_pc1715_system.img` | **UDOS1715/NDOS** (PC 1715), Systemdiskette „SYSTEM": 80×32×256, 67 Dateien, darunter das Systemhandbuch `UDOS.TEXT` | `Udos1715.*`, `Udos1715Belegung.*`, `Udos1715Schreiben.*` |
-| `udosP8000_640k_wega.hfe` | **UDOS1715/NDOS** vom **Robotron P8000** (UDOS 2.2), „WEGA-STARTDISKETTE": 80×32×256, 42 Dateien (UDOS-Dienstprogramme + die WEGA-Urlader und `sa.*`-Werkzeuge). **Anderer Rechner als der PC 1715**, gleiche Diskettensitte — nur mit `77H` statt `00` hinter dem Belegungsplan | `Udos1715P8000.*` |
+| `udosP8000_640k_wega.hfe` | **UDOS1715/NDOS** vom **EAW P8000** (UDOS 2.2), „WEGA-STARTDISKETTE": 80×32×256, 42 Dateien (UDOS-Dienstprogramme + die WEGA-Urlader und `sa.*`-Werkzeuge). **Anderer Rechner als der PC 1715**, gleiche Diskettensitte — nur mit `77H` statt `00` hinter dem Belegungsplan | `Udos1715P8000.*` |
 | `p8000/sa.format`, `p8000/sa.verify` (+ `.fileinfo`) | **`sa.format`/`sa.verify` 4.1** (WEGA 3.1, Format/Verify Hard-Disk 4.1) — auf der WEGA-3.0-Startdiskette steht nur V1.4 (für WDC-Firmware 3.x).  Geholt mit `tools/p8000/wega_s3fs.py <WEGA_3.1.20160725.dd> 16000 get /sa.format …` aus dem Root-Dateisystem des WEGA-3.1-Abbilds von pofo.de (`doc/p8000/wdc_firmware.md` §11); werden im Test auf die Temp-Kopie der Startdiskette gelegt (dafür weichen `wega.n26`/`wega.n52`) | `P8000SaFormat.*` |
 | `scp1700_640k_a7100_system.hfe` | **SCP1700/CP/M-86** (A7100), Systemdiskette: 80×2×16×256 MFM — aber **Spur 0 Kopf 0 in FM mit halber Datenrate** (16×128, 125 kbit/s), 46 Dateien | `Scp1700.*` |
 | `k8915scpx_boot1.hfe` | **SCPX 8915 V5.3, Fassung „V24 (XON/XOFF)“** (K8915) = **Diskette 901** des Anwenders (`***901.VOL`; Greaseweazle-Abzug, gleich `disks/k8915scpx_boot1.hfe`; Name aus der Zeit, als es die einzige war): `cpa800`, Systemspuren 5×1024 ab Zylinder 0, DISGEN-Einstellung B: = 16×256, Autostart `rade`, `RADE.COM`, `DISGEN`, `FORMAT`, Turbo Pascal | `K8915Scpx.*` |
@@ -91,7 +91,7 @@ Arbeitsverzeichnis. Hintergrund: `doc/udos1715_diskettenformat.md` §8.
 
 ## Zwei Fixtures, weil zwei **verschiedene Rechner** dasselbe Dateisystem benutzen
 
-Der **PC 1715** und der **Robotron P8000** sind nicht verwandt — anderer Hersteller-
+Der **PC 1715** und der **EAW P8000** sind nicht verwandt — anderer Hersteller-
 zweig, andere Bauart, anderer Zweck der Diskette (Systemdiskette gegen
 WEGA-Startdiskette).  Gemeinsam ist ihnen nur die Sitte, nach der sie eine Diskette
 anlegen; deshalb tragen `udos1715_640k_pc1715_system.img` (PC 1715) und

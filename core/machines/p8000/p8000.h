@@ -1,6 +1,6 @@
 /**
  * @file p8000.h
- * @brief Robotron P8000 — fünfte Maschine des Kerns: 8-Bit-Seite (U880-Rechnerkarte + Floppy +
+ * @brief EAW P8000 — fünfte Maschine des Kerns: 8-Bit-Seite (U880-Rechnerkarte + Floppy +
  *        Kern-Terminal an tty1) und — mit `Config::karte16` — die 16-Bit-Karte samt Kopplung
  *        (AP P11) und — mit `Config::wdc` — der Winchester-Disk-Controller an der PIO2 der
  *        16-Bit-Karte samt bis zu drei Platten (AP P13d).

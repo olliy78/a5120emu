@@ -6,7 +6,7 @@
 ; Gebaut wird das von packaging/build_payload.sh --setup (dort steht auch der
 ; iscc-Aufruf); Entwurf und Begruendungen: doc/design/13_distribution.md §5.1.
 ;
-;   iscc /DVersion=1.2.3 /DPaket="C:\...\k1520emu-1.2.3-windows-x86_64" \
+;   iscc /DVersion=1.2.3 /DVersionInfo=1.2.3.100 /DPaket="C:\...\k1520emu-1.2.3-windows-x86_64" \
 ;        /DPyVersion=3.12.13 /DPyRelease=20260807 /DPySha256=… /DPySize=… \
 ;        /DGwWheel=greaseweazle-1.23-py3-none-any.whl /DGwVersion=1.23 \
 ;        k1520emu.iss
@@ -73,8 +73,16 @@
 ;    Startern, Protokolle), kennt es nicht — das steht namentlich im Abschnitt
 ;    zum Deinstallieren.  Fremdes im selben Ordner ueberlebt beides.
 
+; Version     = Bauversion (tools/version.py --bau), z. B. 0.3.0-beta+g1a2b3c4 oder
+;                0.3.0-beta.2 — Bindestrich und `+` sind in AppVersion und im
+;                Dateinamen erlaubt (doc/ci_pipeline.md §7.2).
+; VersionInfo  = vierstellige Zahl fuer die Dateieigenschaften des Setups
+;                (tools/version.py --windows), 0.3.0 liegt ueber allen Betas.
 #ifndef Version
   #define Version "0.0.0"
+#endif
+#ifndef VersionInfo
+  #define VersionInfo "0.0.0.0"
 #endif
 #ifndef Paket
   #error "Bitte /DPaket=<Verzeichnis des geschnuerten Pakets> angeben"
@@ -139,7 +147,7 @@ AppName={#Produkt}
 AppVersion={#Version}
 AppVerName={#Produkt} {#Version}
 AppPublisher={#Anbieter}
-VersionInfoVersion=0.0.0.0
+VersionInfoVersion={#VersionInfo}
 
 ; ── Wohin, und mit welchen Rechten ──────────────────────────────────────────
 ;
@@ -185,7 +193,11 @@ ArchiveExtraction=full
 ; Der Bootstrap laedt Python und Qt nach — das Paket selbst ist winzig, die
 ; Installation braucht am Ende aber gut 150 MB.
 ExtraDiskSpaceRequired=157286400
-LicenseFile={#Paket}\LICENSE
+; Lizenzseite: LIZENZ.txt, nicht LICENSE — oben die deutsche Uebersetzung, darunter
+; der massgebliche englische Text und der Hinweis zu den Beigaben Dritter.
+; LICENSE selbst muss der reine MIT-Text bleiben (GitHubs Lizenzerkennung).
+; UTF-8 ohne BOM liest Inno seit 6.3.0 auch fuer LicenseFile richtig.
+LicenseFile={#Paket}\LIZENZ.txt
 ; Das Symbol des Programms — fuer das Setup selbst, fuer den Eintrag unter
 ; „Apps" und (unten) fuer die Verknuepfungen.  Ohne das traegt alles davon das
 ; Python-Symbol, weil die Verknuepfung auf pythonw.exe zeigt.
@@ -208,6 +220,7 @@ Source: "{#Paket}\payload\*"; DestDir: "{app}"; \
 Source: "{#Paket}\VERSION";           DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Paket}\requirements.lock"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Paket}\LICENSE";           DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Paket}\LIZENZ.txt";        DestDir: "{app}"; Flags: ignoreversion
 
 ; ── Nur waehrend der Installation gebraucht ─────────────────────────────────
 ; `dontcopy` statt `DestDir: <tmp>`: diese vier braucht der Code SCHON in
@@ -297,6 +310,11 @@ Type: files;          Name: "{app}\.k1520emu-installation"
 ; Wer darueber hinweg aktualisiert, soll die Datei nicht behalten.
 Type: files;          Name: "{app}\install.ps1"
 Type: dirifempty;     Name: "{app}"
+; Die Konfiguration des Anwenders (%APPDATA%\K1520emu: die *emu.yaml der Programme,
+; Instanzen, Stand-by-Ablage der RAM-Floppy, Werkzeugkonsole) gehoert zur Installation
+; und geht mit ihr (Wunsch des Anwenders 2026-10-11).  Die ARBEITSDISKETTEN im
+; Dokumentenordner bleiben dagegen liegen: das sind Daten des Anwenders.
+Type: filesandordirs; Name: "{userappdata}\K1520emu"
 
 [Code]
 
@@ -744,7 +762,7 @@ begin
   Zeilen[13] := 'if fmt is None:';
   Zeilen[14] := '    sys.exit("formats.yaml nicht gefunden: " + paths.describe())';
   Zeilen[15] := 'print("Katalog:   ", fmt)';
-  Zeilen[16] := 'print("Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.user_disks_dir())';
+  Zeilen[16] := 'print("Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.beispiel_ordner())';
   Zeilen[17] := 'from PySide6.QtWidgets import QApplication';
   Zeilen[18] := 'from app.ui.main_window import MainWindow';
   Zeilen[19] := 'qt = QApplication([])';

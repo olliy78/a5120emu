@@ -2214,11 +2214,13 @@ class MainWindow(QMainWindow):
 
     def _ueber_dialog(self) -> None:
         from app.core_binding.k1520disk import version
+        from app import version as _version
         QMessageBox.about(
             self, "Über k1520DiskTool",
             f"<h3>k1520DiskTool</h3>"
             f"<p>Dateiaustausch mit K1520-Disketten (CP/A, SCPX, UDOS).</p>"
-            f"<p>Bibliothek: {version()}</p>")
+            f"<p>Version: {_version.fassung()}<br>"
+            f"Bibliothek: {version()}</p>")
 
     def _schreibschutz_umgeschaltet(self, an: bool) -> None:
         """Schreibschutz — der bewusste Schritt zum Schreiben.

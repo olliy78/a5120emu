@@ -215,3 +215,6 @@ k1520_add_test(fs_recover    SRC filesystem/test_fs_recover.cpp
 k1520_add_test(pc1715_zre SRC cards/test_pc1715_zre.cpp LIBS k1520_pc1715_zre LABELS "${_lbl}")
 # Speicher des PC 1715W: BR 24H, 74S287, Bank 0, Bildquelle (doc/design/21_pc1715.md AP-W1)
 k1520_add_test(pc1715w_speicher SRC cards/test_pc1715w_speicher.cpp LIBS k1520_pc1715w_speicher LABELS "${_lbl}")
+
+# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+k1520_test_zeiten_skalieren()

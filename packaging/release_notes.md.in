@@ -59,7 +59,9 @@ Alles im Einzelnen: der Änderungsverlauf am Ende dieser Seite.
 |-------|--------|-------|
 | **`K1520emu-@VERSION@-win-x64-setup.exe`** | Windows 10/11, 64 Bit | **Doppelklicken, dem Assistenten folgen.** Er fragt, ob für alle Benutzer (`C:\Program Files`, braucht Administratorrechte) oder nur für Sie (`%LOCALAPPDATA%\Programs`), dann nach dem Diskettenordner — und richtet alles ein. Legt Startmenü-Einträge an und lässt sich über *Einstellungen → Apps* wieder entfernen. |
 | `k1520emu-@TAG@-linux-x86_64.tar.gz` | Linux, x86-64 | Auspacken und `./install.sh` aufrufen. |
-| `*.sha256` | | Prüfsummen. Kontrolle: `sha256sum -c <datei>.sha256` bzw. unter Windows `Get-FileHash <datei>`. |
+
+Die SHA-256-Prüfsumme jeder Datei zeigt GitHub neben ihr in der Liste an (Kontrolle:
+`sha256sum <datei>` bzw. unter Windows `Get-FileHash <datei>`).
 
 Beide Systeme installieren **benutzerlokal, ohne Administratorrechte**.
 

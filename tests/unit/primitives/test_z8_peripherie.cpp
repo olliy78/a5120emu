@@ -8,6 +8,7 @@
 #include "tests/unit/primitives/z8_rig.h"
 
 #include <algorithm>
+#include <bitset>
 
 using z8test::Rig;
 using z8test::SerielleQuelle;
@@ -420,7 +421,7 @@ TEST(Z8Uart, SendenMitUngeraderParitaet) {
         const uint64_t s = rg.cpu.takte;
         while (rg.cpu.takte - s < 8 * BIT + BIT / 2) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
         const int p = (rg.cpu.portPegel(3) >> 7) & 1;   // Bit 7 = Parität
-        const int einsen = __builtin_popcount(d & 0x7F) + p;
+        const int einsen = static_cast<int>(std::bitset<7>(d & 0x7F).count()) + p;
         EXPECT_EQ(einsen % 2, 1) << int(d);
     }
 }

@@ -1,5 +1,7 @@
 # k1520DiskTool — Kurzhandbuch
 
+Version {{VERSION}}
+
 Dieses Werkzeug holt Dateien von Disketten der K1520-Rechner (A5120, A5130, PC 1715 …)
 auf den heutigen Rechner und schreibt sie zurück. Es liest und schreibt die
 Dateisysteme von **CP/A**, **SCPX**, **UDOS/ZDOS**, **UDOS1715/NDOS** und
@@ -48,8 +50,9 @@ nicht dort, wo das Programm installiert ist:
 | `K1520emu/Dateien` | was von den Disketten geholt und auf sie geschrieben wird |
 
 Dort gehen die Dateidialoge auf, und die rechte Hälfte zeigt beim Start den
-Dateiordner. Beim ersten Start nach einer Installation werden die mitgelieferten
-Beispieldisketten dorthin ausgepackt.
+Dateiordner. Beim ersten Start einer Fassung werden die mitgelieferten Beispieldisketten
+dort in einen eigenen Ordner ausgepackt (`Beispieldisketten_v03`, bei einer
+Vorabversion mit Zusatz wie `…_v03-beta.2`); Vorhandenes bleibt unberührt.
 
 Verschieben lässt sich das mit `K1520_DATA` (beide Ordner) bzw. `K1520_DISKS`
 (nur die Abbilder). Wo das Werkzeug gerade sucht, sagt
@@ -142,7 +145,7 @@ Diskeditor und in der Formatzeile.
 Disketten vom **PC 1715** tragen UDOS mit dem Treiber **NDOS** statt ZDOS. Das
 Werkzeug erkennt sie von selbst und nennt sie `udos1715`.
 
-Dieselben Disketten schreibt auch der **Robotron P8000** (dort UDOS 2.2, z. B. seine
+Dieselben Disketten schreibt auch der **EAW P8000** (dort UDOS 2.2, z. B. seine
 WEGA-Startdiskette). Die beiden Rechner haben nichts miteinander zu tun — sie legen
 ihre Disketten nur gleich an; der Name `udos1715` benennt das Dateisystem, nicht die
 Maschine. Für die Bedienung macht es keinen Unterschied.
@@ -778,3 +781,19 @@ Speicherabbild neu auf und liest die Datei nicht noch einmal.
 * **Die Ansicht ist immer frisch.** Nach jeder schreibenden Aktion wird das
   Verzeichnis neu aus dem Medium gelesen — es gibt keinen Zwischenspeicher, der
   etwas anderes behaupten könnte.
+
+## Bugs, Wünsche und Anregungen
+
+Fehler, Wünsche und Anregungen bitte über das Ticketsystem des Projekts auf GitHub
+melden: <https://github.com/olliy78/a5120emu/issues>. Ein neues Ticket legt man
+dort mit *New issue* an; dafür braucht es ein (kostenloses) GitHub-Konto. Bevor Sie
+eins schreiben, lohnt ein Blick, ob dasselbe schon gemeldet ist.
+
+Hilfreich in einer Fehlermeldung sind:
+
+* die **Version** (*Hilfe ▸ Über …* bzw. oben in diesem Handbuch),
+* das **Betriebssystem** des Rechners, auf dem der Emulator läuft,
+* **was Sie getan haben**, was Sie erwartet haben und was stattdessen geschah,
+* bei Problemen mit einer Diskette nach Möglichkeit das **Abbild** selbst
+  (als Anhang am Ticket, falls seine Weitergabe erlaubt ist),
+* bei „wird nicht gefunden“ die Ausgabe von `--paths` (siehe oben).

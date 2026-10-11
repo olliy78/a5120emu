@@ -11,6 +11,7 @@ Testebene aufhalten und liesse sich headless nicht wieder schliessen.
 """
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -127,7 +128,8 @@ def test_konsolentext_nennt_aufruf_arbeitsordner_und_handbuch(eigener_ordner):
     (eigener_ordner / "meine.hfe").write_bytes(b"")
     text = programme.konsolentext(eigener_ordner)
 
-    assert "k1520dbg meine.hfe" in text          # ein Aufruf zum Abtippen
+    # ein Aufruf zum Abtippen (unter Windows mit .exe: der Name kommt vom Fundort)
+    assert re.search(r"k1520dbg(\.exe)? meine\.hfe", text)
     assert " ls meine.hfe" in text               # und die zweite Richtung
     assert str(eigener_ordner) in text           # wo man steht
     assert programme.HANDBUCH_DBG in text        # wo es ausführlich steht

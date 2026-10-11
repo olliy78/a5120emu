@@ -108,7 +108,7 @@ Was beim Weiterarbeiten zu wissen ist:
   verschwand der erste Sektor.  Wächter: `Scp1700.*` (5 Fälle),
   `HfeCodec.FmSpurMitHalberRate_UeberlebtDenRundlauf`.  Am echten Laufwerk
   gegengeprüft.
-- **Der Robotron P8000 fährt dasselbe NDOS — ein ANDERER Rechner, nicht eine
+- **Der EAW P8000 fährt dasselbe NDOS — ein ANDERER Rechner, nicht eine
   Spielart des PC 1715 (2026-08-18, `doc/udos1715_diskettenformat.md` §3.0a).**
   Die beiden Maschinen sind unverwandt (der P8000 startet mit dieser Diskette sein
   Hauptsystem **WEGA**); geteilt wird allein die Sitte, nach der eine Diskette

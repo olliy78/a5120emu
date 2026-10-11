@@ -124,11 +124,12 @@ def test_udos_bootet_bis_zum_datum_und_anzeigen_folgen_dem_laufwerk(name, varian
 
     gesehen = {"led": False, "motor": False}
     erreicht = False
-    for _ in range(6000):
+    for i in range(6000):
         emu.run(20_000)
         gesehen["led"] |= bool(emu.is_disk_led_on(0))
         gesehen["motor"] |= bool(emu.is_motor_on(0))
-        if "Neues Datum" in emu.screen_text():
+        # Lampen alle 20 000 Takte, der teure Bildschirmtext nur alle 200 000 (er bleibt stehen).
+        if i % 10 == 9 and "Neues Datum" in emu.screen_text():
             erreicht = True
             break
     assert erreicht, "\n".join(_zeilen(emu))

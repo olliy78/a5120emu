@@ -52,7 +52,13 @@ th { background: palette(alternate-base); }
 def lade_handbuch(pfad: Path = HANDBUCH) -> str:
     """Den Handbuchtext lesen.  Fehlt die Datei, sagt das Fenster das auch."""
     try:
-        return pfad.read_text(encoding="utf-8")
+        text = pfad.read_text(encoding="utf-8")
+        # Die Datei bleibt versionsfrei (`{{VERSION}}`) und kann nie veralten;
+        # ersetzt wird erst beim Anzeigen (doc/ci_pipeline.md §7.2).
+        if "{{VERSION}}" in text:
+            from app import version
+            text = text.replace("{{VERSION}}", version.fassung())
+        return text
     except OSError as e:
         return (f"# Handbuch nicht gefunden\n\nDie Datei `{pfad}` liess sich nicht "
                 f"lesen:\n\n    {e}\n")

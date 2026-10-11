@@ -75,9 +75,11 @@ def _kaltstart(w, qapp):
 
 def _lauf(w, text, rahmen=1500):
     """Fensterweise rechnen (49 000 Takte je Bild), bis *text* auf dem Bildschirm steht."""
-    for _ in range(rahmen):
+    for i in range(rahmen):
         w._run_emulator()
-        if text in w.emulator.screen_text():
+        # Der Bildschirmtext kostet mehr als ein Bild Lauf: nur jedes vierte Bild prüfen
+        # (der Text bleibt stehen); das letzte Bild immer.
+        if (i % 4 == 3 or i == rahmen - 1) and text in w.emulator.screen_text():
             return True
     return False
 

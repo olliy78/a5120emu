@@ -1,0 +1,132 @@
+MIT-Lizenz – deutsche Übersetzung (nicht maßgeblich)
+====================================================
+
+Dies ist eine inoffizielle Übersetzung der MIT-Lizenz ins Deutsche. Sie ist
+nicht rechtsverbindlich: Die Bedingungen, unter denen diese Software steht,
+legt allein der englische Wortlaut fest. Die Übersetzung soll lediglich
+deutschsprachigen Lesern das Verständnis erleichtern. Der englische Wortlaut
+steht weiter unten in dieser Datei und gleichlautend in der Datei LICENSE.
+
+Quelle der Übersetzung: deutschsprachige Wikipedia, Artikel „MIT-Lizenz“,
+Abschnitt „Sinngemäße Übersetzung (nicht offiziell)“, Fassung vom 15. August
+2026, https://de.wikipedia.org/w/index.php?title=MIT-Lizenz&oldid=269693305 –
+Text unter der Lizenz CC BY-SA 4.0,
+https://creativecommons.org/licenses/by-sa/4.0/deed.de
+
+Copyright (c) 2026 olliy78
+
+Jedem, der eine Kopie dieser Software und der zugehörigen
+Dokumentationsdateien (die „Software“) erhält, wird hiermit kostenlos die
+Erlaubnis erteilt, ohne Einschränkung mit der Software zu handeln,
+einschließlich und ohne Einschränkung der Rechte zur Nutzung, zum Kopieren,
+Ändern, Zusammenführen, Veröffentlichen, Verteilen, Unterlizenzieren und/oder
+Verkaufen von Kopien der Software, und Personen, denen die Software zur
+Verfügung gestellt wird, dies unter den folgenden Bedingungen zu gestatten:
+
+Der obige Urheberrechtshinweis und dieser Genehmigungshinweis müssen in allen
+Kopien oder wesentlichen Teilen der Software enthalten sein.
+
+DIE SOFTWARE WIRD OHNE MÄNGELGEWÄHR UND OHNE JEGLICHE AUSDRÜCKLICHE ODER
+STILLSCHWEIGENDE GEWÄHRLEISTUNG, EINSCHLIESSLICH, ABER NICHT BESCHRÄNKT AUF
+DIE GEWÄHRLEISTUNG DER MARKTGÄNGIGKEIT, DER EIGNUNG FÜR EINEN BESTIMMTEN ZWECK
+UND DER NICHTVERLETZUNG VON RECHTEN DRITTER, ZUR VERFÜGUNG GESTELLT. DIE
+AUTOREN ODER URHEBERRECHTSINHABER SIND IN KEINEM FALL HAFTBAR FÜR ANSPRÜCHE,
+SCHÄDEN ODER ANDERE VERPFLICHTUNGEN, OB IN EINER VERTRAGS- ODER HAFTUNGSKLAGE,
+EINER UNERLAUBTEN HANDLUNG ODER ANDERWEITIG, DIE SICH AUS ODER IN VERBINDUNG
+MIT DER SOFTWARE ODER DER NUTZUNG ODER ANDEREN GESCHÄFTEN MIT DER SOFTWARE
+ERGEBEN.
+
+
+Beigaben Dritter – nicht von dieser Lizenz erfasst
+--------------------------------------------------
+
+Neben dem Programmcode dieses Projekts enthalten das Repository und die daraus
+erzeugten Pakete Material Dritter:
+
+  - Diskettenabbilder mit Betriebssystemen und Programmen der damaligen
+    Hersteller (z. B. in disks/ und tests/fixtures/),
+  - EPROM-Abzüge (z. B. in doc/EPROMS/ und doc/p8000/eproms/); ihre Inhalte
+    sind außerdem als Datenfelder in den Quelltext übernommen und damit in die
+    Programmbibliothek eingebaut (z. B. core/cards/k2526/rom_data.h,
+    core/cards/k7024/chargen_*.h, core/cards/*/rom_*.h),
+  - digitalisierte Dokumente wie Handbücher, Betriebsdokumentationen,
+    Schaltpläne und Datenblätter (z. B. in doc/original_docs/).
+
+Diese Beigaben fallen nicht unter die MIT-Lizenz; sie gilt nur für die Arbeit
+der Autoren dieses Projekts. Die Rechte an den Beigaben liegen bei den
+jeweiligen Rechteinhabern oder deren Rechtsnachfolgern, und für sie können
+andere Bedingungen gelten. Das Projekt kann an ihnen keine Rechte einräumen.
+
+Die Beigaben werden grundsätzlich so wiedergegeben, wie sie überliefert sind.
+Ausnahmen sind Ergänzungen des Projekts, etwa eigene Prüfprogramme aus tools/
+(z. B. SERTEST.COM) auf einigen Diskettenabbildern oder die ausdrücklich als
+„repariert“ benannte Fassung eines EPROM-Abzugs neben dem unveränderten
+Original. Die Beigaben liegen ausschließlich bei, um die historische Technik
+verständlich zu machen und die Funktion des Emulators zu prüfen.
+
+Rechteinhaber, die mit der Weitergabe einer Beigabe nicht einverstanden sind,
+werden gebeten, sich über die Issues des GitHub-Repositorys zu melden
+(https://github.com/olliy78/a5120emu/issues); die Beigabe wird dann geprüft
+und gegebenenfalls entfernt.
+
+
+------------------------------------------------------------------------------
+
+MIT License – English original (authoritative)
+==============================================
+
+This is the authoritative text of the license; it is identical to the file
+LICENSE. The German translation above is for information only.
+
+Copyright (c) 2026 olliy78
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+Third-party material – not covered by this license
+---------------------------------------------------
+
+Besides the program code of this project, the repository and the packages
+built from it contain third-party material:
+
+  - disk images with operating systems and programs of the original
+    manufacturers (e.g. in disks/ and tests/fixtures/),
+  - EPROM dumps (e.g. in doc/EPROMS/ and doc/p8000/eproms/); their contents
+    are also included in the source code as data arrays and are thus built
+    into the program library (e.g. core/cards/k2526/rom_data.h,
+    core/cards/k7024/chargen_*.h, core/cards/*/rom_*.h),
+  - digitised documents such as manuals, operating documentation, schematics
+    and data sheets (e.g. in doc/original_docs/).
+
+This material is not covered by the MIT License, which applies only to the
+work of the authors of this project. The rights to it remain with the
+respective rights holders or their legal successors, and other terms may apply
+to it. The project cannot grant any rights to it.
+
+The material is generally reproduced as it has been handed down. Exceptions
+are additions made by this project, such as its own test programs from tools/
+(e.g. SERTEST.COM) on some disk images, or the version of one EPROM dump
+explicitly named “repaired” (“repariert”) next to the unmodified original. The
+material is included solely to make the historical technology understandable
+and to verify that the emulator works correctly.
+
+Rights holders who object to the distribution of any of this material are
+asked to get in touch through the issues of the GitHub repository
+(https://github.com/olliy78/a5120emu/issues); the material will then be
+reviewed and removed where appropriate.

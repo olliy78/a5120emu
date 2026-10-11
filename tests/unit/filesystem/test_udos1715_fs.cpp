@@ -43,7 +43,7 @@ namespace {
 
 constexpr const char* kFixture = "udos1715_640k_pc1715_system.img";
 /// @brief Dieselbe Diskettensitte auf einem **anderen Rechner**: die
-///        WEGA-Startdiskette des **Robotron P8000** (UDOS 2.2).
+///        WEGA-Startdiskette des **EAW P8000** (UDOS 2.2).
 ///
 /// Der P8000 ist keine Spielart des PC 1715 — andere Maschine, anderer Zweck der
 /// Diskette (sie startet WEGA).  Geteilt wird nur, wie eine Diskette angelegt ist;
@@ -776,7 +776,7 @@ TEST(Udos1715Segmente, ZuVieleSegmenteWerdenAbgewiesen) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Der Robotron P8000 — ein ANDERER Rechner mit derselben Diskettensitte
+// Der EAW P8000 — ein ANDERER Rechner mit derselben Diskettensitte
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // Nicht verwandt mit dem PC 1715 und nicht dessen Nachfolger: eine eigene Maschine,
