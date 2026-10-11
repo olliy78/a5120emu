@@ -12,8 +12,8 @@
 #     den Abschnitt lässt das Zurücksetzen Disketten und Platte in Ruhe.  Fehlt `platte:`
 #     beim ersten Start ganz, bleibt das Winchesterlaufwerk leer: das Programm legt KEINE Platte von selbst an (eine leere
 #     Platte schickt MON16 nach dem Hardwaretest in den AUTOBOOT) — „Neue Platte…“ im Plattenkasten.
-#   * `window.geometry` — die Bildschirmposition des Baurechners.  `width`/`height` reichen;
-#     ein `dock_state` fehlt, die Startaufteilung ordnet die Kästen selbst.
+#   * `window.geometry` — die Bildschirmposition des Baurechners.  `width`/`height` und
+#     `dock_state` reichen.
 version: 1
 
 # Bildröhre: dieselben Werte und derselbe Shader wie bei den anderen Emulatoren
@@ -21,8 +21,20 @@ version: 1
 crt:
   phosphor_on: '#78D41D'
   phosphor_off: '#050F05'
-  brightness: 2.5
-  contrast: 1.1
+  brightness: 2.3
+  contrast: 0.9
+  mask_strength: 0.0
+  mask_pitch: 1.0
+  curvature:
+  - 0.16
+  - 0.16
+  corner_radius: 0.1
+  vignette_strength: 0.35
+  flicker_strength: 0.0
+  scale_x: 0.9
+  scale_y: 0.9
+  offset_x: 0.0
+  offset_y: 0.0
 
 # Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 4 MHz).
 # Fünffach: der Hardwaretest (Speichertest, ≈ 16 s Maschinenzeit) und der Kaltstart von der
@@ -58,9 +70,14 @@ drive_types:
 - none
 
 window:
-  width: 1280
-  height: 760
+  width: 1646
+  height: 894
   maximized: false
+  # Kastenaufteilung (QMainWindow.saveState, Base64) — dieselbe wie bei A5120/K8915/PRG710/PC1715:
+  # Bildschirm links, rechts Laufwerke/Einstellungen (Reiter) und darunter die Tastatur K7673,
+  # sichtbar (Wunsch des Anwenders 2026-10-11; vorher fehlte der Eintrag, und die Tastatur saß
+  # unter dem Bildschirm und machte ihn kleiner).
+  dock_state: AAAA/wAAAAD9AAAAAgAAAAAAAAPUAAADD/wCAAAAAfsAAAAWAHMAYwByAGUAZQBuAF8AZABvAGMAawEAAABUAAADDwAAAQQA////AAAAAQAAApQAAAMP/AIAAAAC/AAAAFQAAAJgAAABQgEAAB36AAAAAQIAAAAD+wAAABYAZAByAGkAdgBlAHMAXwBkAG8AYwBrAQAAAAD/////AAAAWgD////7AAAAGgBzAGUAdAB0AGkAbgBnAHMAXwBkAG8AYwBrAQAAAAD/////AAABJAD////7AAAAIgBsAG8AYwBoAHMAdAByAGUAaQBmAGUAbgBfAGQAbwBjAGsAAAAAAP////8AAAF3AP////sAAAAaAGsAZQB5AGIAbwBhAHIAZABfAGQAbwBjAGsBAAACugAAAKkAAACMAP///wAAAAAAAAMPAAAAAQAAAAIAAAABAAAAAvwAAAABAAAAAgAAAAEAAAAgAGMAbwBuAHQAcgBvAGwAcwBfAHQAbwBvAGwAYgBhAHIBAAAAAP////8AAAAAAAAAAA==
   # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
   toolbar:
   - konfig_laden

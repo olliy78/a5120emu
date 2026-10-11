@@ -23,8 +23,10 @@ und Winchester, ohne Winchester oder nur der 8-Bit-Teil — und die Betriebsart:
 Terminal" oder „nur Terminal"). „Nur Terminal" ist der Arbeitsplatz ohne Rechner, der sich über
 die serielle Leitung („Maschine ▸ Verbindung zum Rechner…") mit einem laufenden `p8000emu`
 verbindet (Mehrplatzbetrieb; weitere Plätze mit `p8000emu --mode terminal --instance NAME`).
-Es liegen **keine** P8000-Disketten oder -Platten bei: UDOS- und WEGA-Abbilder bringen Sie selbst
-mit; eine Platte legen Sie im Plattenkasten über „Neue Platte…" an.
+Im Beispielordner liegen **WEGA 3.0 und WEGA 3.1** (`p8000_wega30/`, `p8000_wega31/`): je eine
+fertig installierte Platte (`*.img.gz` — im Plattenkasten über „Anschließen…" einbinden), die
+UDOS-Startdiskette und für WEGA 3.0 der ganze Installationssatz; die `README.md` im Ordner sagt,
+wie man davon startet. Eine leere Platte legen Sie über „Neue Platte…" an.
 
 ### K8915: eine eigene Bootdiskette
 

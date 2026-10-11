@@ -561,7 +561,7 @@ def beispiel_ordner() -> Path:
     return user_disks_dir() / version.beispielordner(version.fassung())
 
 
-def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img")) -> int:
+def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img", "*.img.gz")) -> int:
     """Legt die mitgelieferten Beispieldisketten in den Ordner dieser Fassung.
 
     Gedacht für den Start einer **Installation** (``main.py`` ruft es auf, der
@@ -577,7 +577,9 @@ def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img")) -> int:
     liegen die Abbilder **gepackt** (``*.hfe.gz``): sie bestehen überwiegend aus
     Füllmuster, und gebraucht werden sie genau einmal — hier.  Ungepackt lägen sie
     danach doppelt auf der Platte.  Beides wird angenommen, damit ältere Pakete
-    und der Quellbaum weiter funktionieren.
+    und der Quellbaum weiter funktionieren.  P8000-Platten (``*.img.gz``) liegen
+    im Paket als ``*.img.gz.gz`` und kommen beim Anwender als ``*.img.gz`` an —
+    gepackt, wie der Emulator sie anschließt.
 
     Returns:
         Anzahl angelegter Diskettendateien (Begleitdateien zählen nicht).

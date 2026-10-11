@@ -310,6 +310,11 @@ Type: files;          Name: "{app}\.k1520emu-installation"
 ; Wer darueber hinweg aktualisiert, soll die Datei nicht behalten.
 Type: files;          Name: "{app}\install.ps1"
 Type: dirifempty;     Name: "{app}"
+; Die Konfiguration des Anwenders (%APPDATA%\K1520emu: die *emu.yaml der Programme,
+; Instanzen, Stand-by-Ablage der RAM-Floppy, Werkzeugkonsole) gehoert zur Installation
+; und geht mit ihr (Wunsch des Anwenders 2026-10-11).  Die ARBEITSDISKETTEN im
+; Dokumentenordner bleiben dagegen liegen: das sind Daten des Anwenders.
+Type: filesandordirs; Name: "{userappdata}\K1520emu"
 
 [Code]
 

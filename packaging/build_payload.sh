@@ -550,10 +550,10 @@ lege_diskette_ab() {
 case "$DISKS" in
     none) ;;
     all)
-        # disks/<maschine>_<system>/…; die P8000-Ordner (WEGA, Platten) kommen nicht ins Paket.
+        # disks/<maschine>_<system>/… samt der P8000-Ordner (WEGA-Disketten und -Platten).
         for d in $(find "$REPO/disks" -mindepth 2 -maxdepth 2 -type f \
-                        \( -name '*.hfe' -o -name '*.img' -o -name '*.dmk' \) \
-                        -not -path '*/p8000_*' | sort); do
+                        \( -name '*.hfe' -o -name '*.img' -o -name '*.dmk' -o -name '*.img.gz' \) \
+                        | sort); do
             lege_diskette_ab "$d"
         done ;;
     default)
@@ -564,6 +564,13 @@ case "$DISKS" in
             else
                 warn "Beispieldiskette fehlt, wird ausgelassen: $d"
             fi
+        done
+        # P8000 (2026-10-11, Entscheid des Anwenders): die WEGA-Sätze GANZ — fertig installierte
+        # Platten (*.img.gz, bleiben beim Anwender gepackt, der Emulator schließt sie so an),
+        # Startdisketten und der Installationssatz (*.dmk).
+        for d in $(find "$REPO/disks" -mindepth 2 -maxdepth 2 -type f -path '*/p8000_*' \
+                        \( -name '*.dmk' -o -name '*.img.gz' \) | sort); do
+            lege_diskette_ab "$d"
         done ;;
     *) die "--disks erwartet default|all|none, nicht '$DISKS'" ;;
 esac

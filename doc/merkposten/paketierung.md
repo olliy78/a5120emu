@@ -96,8 +96,8 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   (SCP 1715 V0006/V0007, CP/A 1715, UDOS1715; Wächter
   `test_pc1715_disketten_sind_in_der_vorgabeauswahl`); die Vorgabe mountet keine (kein `disks:`).
   Rauchtests erzeugen jetzt auch `k1520_create(3)` und das PC1715-Fenster.
-  **Seit AP P18 (2026-10-08) gibt es den fünften: P8000 Emulator (`p8000emu`, `--machine p8000`)**; das zeitweilige sechste `p8000term` ist mit P23a entfallen (Betriebsart „nur Terminal“ im selben Programm, `--mode terminal`): dieselbe Vorlage (der Name wählt das Profil), `.desktop.in`, `{#Programm5}`, Vorvorgabedatei, Rauchtests mit `k1520_create(4)` und dem Fenster; **keine
-  P8000-Disketten** in `DISKS_DEFAULT` (es gibt keine in `disks/`, Entscheid offen). Wächter
+  **Seit AP P18 (2026-10-08) gibt es den fünften: P8000 Emulator (`p8000emu`, `--machine p8000`)**; das zeitweilige sechste `p8000term` ist mit P23a entfallen (Betriebsart „nur Terminal“ im selben Programm, `--mode terminal`): dieselbe Vorlage (der Name wählt das Profil), `.desktop.in`, `{#Programm5}`, Vorvorgabedatei, Rauchtests mit `k1520_create(4)` und dem Fenster; **P8000-WEGA-Sätze
+  im Paket** (2026-10-11, Entscheid des Anwenders: Platten `*.img.gz` bleiben beim Anwender gepackt — im Paket `*.img.gz.gz`, `seed_user_disks` kennt `*.img.gz` —, dazu alle `.dmk`). Wächter
   `test_die_p8000_programme_sind_in_allen_paketwegen`.  Im `.iss` wächst das Rauchtest-Feld
   `Zeilen` mit (SetArrayLength + laufende Nummern: neue Zeilen ANS ENDE, vor `sys.stdout.flush()`).
   **Alle Rauchtests (install.sh, .iss, beide release.yml-Jobs) erzeugen ALLE Maschinen**

@@ -781,3 +781,19 @@ Speicherabbild neu auf und liest die Datei nicht noch einmal.
 * **Die Ansicht ist immer frisch.** Nach jeder schreibenden Aktion wird das
   Verzeichnis neu aus dem Medium gelesen — es gibt keinen Zwischenspeicher, der
   etwas anderes behaupten könnte.
+
+## Bugs, Wünsche und Anregungen
+
+Fehler, Wünsche und Anregungen bitte über das Ticketsystem des Projekts auf GitHub
+melden: <https://github.com/olliy78/a5120emu/issues>. Ein neues Ticket legt man
+dort mit *New issue* an; dafür braucht es ein (kostenloses) GitHub-Konto. Bevor Sie
+eins schreiben, lohnt ein Blick, ob dasselbe schon gemeldet ist.
+
+Hilfreich in einer Fehlermeldung sind:
+
+* die **Version** (*Hilfe ▸ Über …* bzw. oben in diesem Handbuch),
+* das **Betriebssystem** des Rechners, auf dem der Emulator läuft,
+* **was Sie getan haben**, was Sie erwartet haben und was stattdessen geschah,
+* bei Problemen mit einer Diskette nach Möglichkeit das **Abbild** selbst
+  (als Anhang am Ticket, falls seine Weitergabe erlaubt ist),
+* bei „wird nicht gefunden“ die Ausgabe von `--paths` (siehe oben).

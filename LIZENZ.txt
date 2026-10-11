@@ -13,7 +13,7 @@ Abschnitt „Sinngemäße Übersetzung (nicht offiziell)“, Fassung vom 15. Aug
 Text unter der Lizenz CC BY-SA 4.0,
 https://creativecommons.org/licenses/by-sa/4.0/deed.de
 
-Copyright (c) 2025 olliy78
+Copyright (c) 2026 olliy78
 
 Jedem, der eine Kopie dieser Software und der zugehörigen
 Dokumentationsdateien (die „Software“) erhält, wird hiermit kostenlos die
@@ -78,7 +78,7 @@ MIT License – English original (authoritative)
 This is the authoritative text of the license; it is identical to the file
 LICENSE. The German translation above is for information only.
 
-Copyright (c) 2025 olliy78
+Copyright (c) 2026 olliy78
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -397,6 +397,13 @@ class MainWindow(QMainWindow):
         self.drives_dock.setWidget(drives_scroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.drives_dock)
 
+        # Reiter gestapelter Kästen (Laufwerke/Einstellungen/EPROMmer/Lochstreifen)
+        # OBEN am Kasten statt Qts Vorgabe unten (Wunsch des Anwenders 2026-10-11).
+        # Gilt für jede Andockfläche; der dock_state merkt die Lage nicht, sie
+        # kommt immer von hier.
+        from PySide6.QtWidgets import QTabWidget
+        self.setTabPosition(Qt.AllDockWidgetAreas, QTabWidget.TabPosition.North)
+
         # ── Einstellungen-Dock (rechts, getabbt; anfangs versteckt) ──────────
         self.settings_dock = QDockWidget("Einstellungen", self)
         self.settings_dock.setObjectName("settings_dock")
@@ -2349,7 +2356,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self, f"Über {self.profil.programm}",
             f"<h3>{self.profil.programm}</h3>"
-            f"<p>Emulator {rechner} am K1520-Bus — "
+            f"<p>Emulator {rechner} — "
             f"Karten und Bus werden nachgebildet, der Z80-Code von Boot-ROM, "
             f"BIOS und Betriebssystem läuft unverändert.</p>"
             f"<p>Version: {_version.fassung()}<br>"

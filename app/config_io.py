@@ -34,7 +34,7 @@ Example::
     version: 1
     crt:
       phosphor_on: '#78D41D'
-      brightness: 2.5
+      brightness: 2.3
       ...
     general:
       speed: 1.0
