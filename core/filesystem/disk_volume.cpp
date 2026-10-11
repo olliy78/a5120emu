@@ -2067,9 +2067,15 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
 
     // WEGA: Zugriffsrechte aus der Linux-Datei — ausfuehrbar bleibt ausfuehrbar.
     if (istWega()) {
+#ifdef _WIN32
+        // Windows kennt kein Ausfuehrungsrecht: MSVC meldet fuer JEDE Datei 0777 (MinGW 0666),
+        // das wuerde jede Datei zu 0755 machen.  Einheitlich 0644, damit beide Bauarten gleich sind.
+        const bool x = false;
+#else
         std::error_code ec;
         const fs::perms pr = fs::status(src_path, ec).permissions();
         const bool x = !ec && (pr & fs::perms::owner_exec) != fs::perms::none;
+#endif
         wo.wega_mode = x ? 0755 : 0644;
         wo.wega_mode_gesetzt = true;
     }
