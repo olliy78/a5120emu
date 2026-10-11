@@ -214,7 +214,10 @@ on:
 
 **Das Ergebnis** liegt an zwei Stellen:
 
-- als Artefakt `k1520emu-linux-x86_64` am Lauf (30 Tage), immer;
+- als Artefakt am Lauf (30 Tage), immer: `k1520emu-linux-x86_64` (das `.tar.gz`) und
+  `k1520emu-windows-x64` (nur das Setup; die äußere `.zip` beim Herunterladen legt GitHub
+  um jedes Artefakt). `.sha256`-Dateien gibt es seit 2026-10-11 nicht mehr — GitHub zeigt
+  die Prüfsumme jedes Release-Assets selbst an;
 - bei einem Tag zusätzlich am GitHub-Release — als **Entwurf**, wenn es das Release
   noch nicht gab. Ein Release ist nach außen gerichtet; veröffentlicht wird es von
   Hand unter *Releases → Edit → Publish release*.

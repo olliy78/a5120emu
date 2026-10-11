@@ -189,7 +189,6 @@ jobs:
           name: k1520emu-linux-x86_64
           path: |
             dist/*.tar.gz
-            dist/*.sha256
           retention-days: 30
 
       - name: An das Release hängen (nur bei Tag)
@@ -224,7 +223,9 @@ jobs:
           done
           gh release view "$TAG" >/dev/null 2>&1 \
             || { echo "Release $TAG existiert nicht und liess sich nicht anlegen" >&2; exit 1; }
-          gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 --clobber
+          # Ohne .sha256-Datei (2026-10-11): GitHub zeigt die SHA-256 jedes Release-Assets
+          # selbst an; eine Prüfsumme neben der Datei schützt vor keinem Austausch.
+          gh release upload "$TAG" dist/*.tar.gz --clobber
           echo "Linux-Paket liegt am Release **$TAG** (Pre-release bei Vorabversion, sonst Entwurf)." >> "$GITHUB_STEP_SUMMARY"
 
   windows:
@@ -422,10 +423,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: k1520emu-windows-x64
+          # NUR das Setup (2026-10-11): das .zip ist die Payload für den Rauchtest oben,
+          # ein Anwender kann damit nichts anfangen.  Die äußere .zip beim Herunterladen
+          # legt GitHub selbst um jedes Artefakt.
           path: |
-            dist/*.zip
             dist/*setup.exe
-            dist/*.sha256
           retention-days: 30
 
       - name: An das Release hängen (nur bei Tag)
@@ -463,5 +465,5 @@ jobs:
           # selbst (packaging/k1520emu.iss).  Ein Anwender koennte mit dem
           # Archiv also nichts anfangen; es bleibt Artefakt dieses Laufs, damit
           # der Rauchtest oben hineinsehen kann.
-          gh release upload "$TAG" dist/*setup.exe dist/*setup.exe.sha256 --clobber
+          gh release upload "$TAG" dist/*setup.exe --clobber
           echo "Windows-Setup liegt am Release **$TAG** (Pre-release bei Vorabversion, sonst Entwurf)." >> "$GITHUB_STEP_SUMMARY"

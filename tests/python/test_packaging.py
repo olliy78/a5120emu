@@ -1379,8 +1379,9 @@ def test_payload_enthaelt_alles_zum_starten(payload):
         namen = tf.getnames()
     assert all(n.startswith(stage.name) for n in namen), \
         "Archiv entpackt ohne gemeinsames Wurzelverzeichnis"
-    pruefsumme = archiv.with_suffix(".gz.sha256").read_text(encoding="utf-8").split()[0]
-    assert len(pruefsumme) == 64
+    # Seit 2026-10-11 bewusst KEINE .sha256 daneben (GitHub zeigt die Prüfsumme der
+    # Release-Assets selbst an).
+    assert not list(payload.glob("*.sha256")), "eine .sha256-Datei neben dem Archiv"
 
 
 @requires_core

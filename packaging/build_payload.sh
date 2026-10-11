@@ -687,9 +687,10 @@ if [ "$ARCHIVE" = yes ]; then
         ARCHIV="$NAME.tar.gz"
         ( cd "$OUT" && tar czf "$ARCHIV" "$NAME" )
     fi
-    ( cd "$OUT" && sha256_of "$ARCHIV" | awk -v n="$ARCHIV" '{print $1"  "n}' > "$ARCHIV.sha256" )
+    # Keine .sha256-Datei daneben (2026-10-11): GitHub zeigt die Prüfsumme jedes
+    # Release-Assets selbst an, und eine mitgelieferte schützt vor keinem Austausch.
     ok "$OUT/$ARCHIV  ($(du -h "$OUT/$ARCHIV" | awk '{print $1}'))"
-    printf "     %s\n" "$(cat "$OUT/$ARCHIV.sha256")"
+    printf "     sha256 %s\n" "$(sha256_of "$OUT/$ARCHIV" | awk '{print $1}')"
 fi
 
 # ─── 6. Windows-Installationsprogramm ────────────────────────────────────────
@@ -743,9 +744,8 @@ if [ "$SETUP" = yes ]; then
         || die "Inno Setup ist fehlgeschlagen"
     _exe=$(ls -1 "$OUT"/*setup.exe 2>/dev/null | head -1)
     [ -n "$_exe" ] || die "Setup wurde nicht erzeugt"
-    ( cd "$OUT" && sha256_of "$(basename "$_exe")" \
-        | awk -v n="$(basename "$_exe")" '{print $1"  "n}' > "$(basename "$_exe").sha256" )
     ok "$_exe  ($(du -h "$_exe" | awk '{print $1}'))"
+    printf "     sha256 %s\n" "$(sha256_of "$_exe" | awk '{print $1}')"
 fi
 
 printf "\n"
