@@ -151,7 +151,10 @@ int P8000Wdc::schritt()
 {
     if (rst_) return 0;
     diskBis(tw_);
-    kette_.markIntDirty();
+    // Kein pauschales markIntDirty() je Befehl mehr (kostete einen vollen Kettengang pro Schritt,
+    // ≈ 4 % der Laufzeit): die Kette hängt allein an der CTC, und jede Stelle, die deren Zustand
+    // ändert, meldet es selbst — ioSchreiben/ioLesen (CTC-Tore), impuls() und hostHandshake()
+    // (clkTrg), clockTick() unten, hardwareReset, Quittung/RETI (K1520Bus) und deserialize.
     kette_.updateInterruptChain();
     const uint64_t c0 = cpu_.cycles;
     int m1 = 1;
@@ -227,7 +230,10 @@ P8000Wdc::Platte* P8000Wdc::gewaehlt() const
 uint8_t P8000Wdc::ioLesen(uint8_t port)
 {
     diskBis(tw_ + IO_VERSATZ);
-    if ((port & 0xFC) == 0x70) return ctc_.ioRead(port & 3);
+    if ((port & 0xFC) == 0x70) {
+        kette_.markIntDirty();   // wie ioSchreiben: ein CTC-Zugriff kann die Kette ändern
+        return ctc_.ioRead(port & 3);
+    }
     if ((port & 0x08) && (port >> 4) == PORT_ST_PRT) {
         const uint64_t t = tw_ + IO_VERSATZ;
         uint8_t v = 0xFF;                                     // [W10] Bit 0, 1, 4; /WRITE FAULT inaktiv
