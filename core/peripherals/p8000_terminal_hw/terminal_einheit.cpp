@@ -58,6 +58,7 @@ P8000TerminalEinheit::P8000TerminalEinheit(const Config& cfg)
 P8000TerminalEinheit::~P8000TerminalEinheit() = default;
 
 void P8000TerminalEinheit::einschalten() {
+    vorZugriff(true);
     hw_.einschalten();
     kb_.einschalten();
     kbdStart_ = takte() + uint64_t(cfg_.tastaturVerzugMs) * Z8_HZ / 1000;
@@ -99,7 +100,7 @@ void P8000TerminalEinheit::tastaturNachziehen(uint64_t bis) {
 }
 
 void P8000TerminalEinheit::aktionenAusfuehren() {
-    while (!aktionen_.empty() && takte() >= aktionZeit_) {
+    while (!aktionen_.empty() && hw_.takte() >= aktionZeit_) {
         const Aktion a = aktionen_.front();
         aktionen_.pop_front();
         if (a.t.gueltig()) {
@@ -111,21 +112,27 @@ void P8000TerminalEinheit::aktionenAusfuehren() {
 }
 
 void P8000TerminalEinheit::laufeBis(uint64_t ziel) {
-    while (takte() < ziel) {
+    vorZugriff(true);
+    laufeBisRoh(ziel);
+}
+
+void P8000TerminalEinheit::laufeBisRoh(uint64_t ziel) {
+    while (hw_.takte() < ziel) {
         uint64_t z = ziel;
-        if (!aktionen_.empty()) z = std::min(z, std::max(aktionZeit_, takte()));
-        if (hub_) z = std::min(z, std::max(hubNaechst_, takte()));
+        if (!aktionen_.empty()) z = std::min(z, std::max(aktionZeit_, hw_.takte()));
+        if (hub_) z = std::min(z, std::max(hubNaechst_, hw_.takte()));
         tastaturNachziehen(z);
         hw_.laufeBis(z);
-        if (!aktionen_.empty() && takte() >= aktionZeit_) aktionenAusfuehren();
-        if (hub_ && takte() >= hubNaechst_) {
-            const uint64_t n = hub_->takt(takte());
-            hubNaechst_ = n > takte() ? n : takte() + 1;
+        if (!aktionen_.empty() && hw_.takte() >= aktionZeit_) aktionenAusfuehren();
+        if (hub_ && hw_.takte() >= hubNaechst_) {
+            const uint64_t n = hub_->takt(hw_.takte());
+            hubNaechst_ = n > hw_.takte() ? n : hw_.takte() + 1;
         }
     }
 }
 
 void P8000TerminalEinheit::matrixTaste(MatrixTaste t, const std::vector<MatrixTaste>& mods) {
+    vorZugriff(true);
     const uint64_t H = uint64_t(cfg_.tasteHalteMs) * Z8_HZ / 1000;
     const uint64_t P = uint64_t(cfg_.tastePauseMs) * Z8_HZ / 1000;
     const bool leer = aktionen_.empty();
@@ -134,7 +141,7 @@ void P8000TerminalEinheit::matrixTaste(MatrixTaste t, const std::vector<MatrixTa
     aktionen_.push_back({H, t, false});
     for (const auto& m : mods) aktionen_.push_back({P, m, false});
     aktionen_.push_back({P, MatrixTaste{}, false});   // Pause bis zur nächsten Taste
-    if (leer) aktionZeit_ = takte() + aktionen_.front().warteZ8;
+    if (leer) aktionZeit_ = hw_.takte() + aktionen_.front().warteZ8;
 }
 
 MatrixTaste P8000TerminalEinheit::positionFuer(const std::vector<uint8_t>& folge) const {
@@ -214,6 +221,7 @@ bool P8000TerminalEinheit::tastenFuerZeichen(uint8_t c, bool ctrl, std::vector<M
 }
 
 bool P8000TerminalEinheit::zeichenTaste(uint8_t c, bool ctrl) {
+    vorZugriff(true);
     std::vector<MatrixTaste> mods;
     MatrixTaste t;
     if (!tastenFuerZeichen(c, ctrl, mods, t)) return false;
@@ -222,6 +230,7 @@ bool P8000TerminalEinheit::zeichenTaste(uint8_t c, bool ctrl) {
 }
 
 bool P8000TerminalEinheit::taste(TerminalTaste t) {
+    vorZugriff(true);
     const MatrixTaste p = positionFuer(t);
     if (!p.gueltig()) return false;
     matrixTaste(p);
@@ -229,6 +238,7 @@ bool P8000TerminalEinheit::taste(TerminalTaste t) {
 }
 
 bool P8000TerminalEinheit::matrixDirekt(MatrixTaste t, bool an) {
+    vorZugriff(true);
     if (t.zeile < 0 || t.spalte < 0 || t.zeile >= TastaturK7673::ZEILEN || t.spalte >= TastaturK7673::SPALTEN)
         return false;
     if (an) kb_.druecke(t.zeile, t.spalte);
@@ -237,24 +247,28 @@ bool P8000TerminalEinheit::matrixDirekt(MatrixTaste t, bool an) {
 }
 
 void P8000TerminalEinheit::setzeCapsLock(bool an) {
+    vorZugriff(true);
     if (bool(kb_.leds() & 2) == an) return;
     const MatrixTaste p = positionFuer(std::vector<uint8_t>{0x3A});
     if (p.gueltig()) matrixTaste(p);
 }
 
 bool P8000TerminalEinheit::tippe(const std::string& s) {
+    vorZugriff(true);
     for (unsigned char c : s)
         if (!zeichenTaste(c)) return false;
     return true;
 }
 
 void P8000TerminalEinheit::tastenAbwarten(uint64_t nachMs, uint64_t maxMs) {
+    vorZugriff(true);
     const uint64_t ende = takte() + maxMs * Z8_HZ / 1000;
     while (!tastenFertig() && takte() < ende) laufe(Z8_HZ / 100);
     laufeMs(nachMs);
 }
 
 bool P8000TerminalEinheit::ruheAbwarten(uint64_t maxMs) {
+    vorZugriff(true);
     const uint64_t ende = takte() + maxMs * Z8_HZ / 1000;
     int folge = 0;
     while (takte() < ende) {
@@ -266,6 +280,7 @@ bool P8000TerminalEinheit::ruheAbwarten(uint64_t maxMs) {
 }
 
 serial::SerialHub& P8000TerminalEinheit::hub() {
+    vorZugriff(true);
     if (!hub_) {
         hub_ = std::make_unique<serial::SerialHub>(Z8_HZ);
         hub_->registriere(uart_);
@@ -275,6 +290,7 @@ serial::SerialHub& P8000TerminalEinheit::hub() {
 }
 
 void P8000TerminalEinheit::serialize(std::vector<uint8_t>& out) const {
+    vorZugriff(false);
     out.push_back(SAVE_VERSION);
     hw_.serialize(out);
     kb_.serialize(out);
@@ -287,6 +303,7 @@ void P8000TerminalEinheit::serialize(std::vector<uint8_t>& out) const {
 }
 
 bool P8000TerminalEinheit::deserialize(const uint8_t*& p, const uint8_t* end) {
+    vorZugriff(true);
     if (p >= end || *p != SAVE_VERSION) return false;
     const uint8_t* q = p + 1;
     if (!hw_.deserialize(q, end) || !kb_.deserialize(q, end)) return false;
@@ -311,7 +328,13 @@ bool P8000TerminalEinheit::deserialize(const uint8_t*& p, const uint8_t* end) {
 
 TerminalHwKopplung::TerminalHwKopplung(serial::SerialAnschluss& karte, P8000TerminalEinheit& term,
                                        uint64_t phiNenn)
-    : karte_(karte), term_(term), phi_(phiNenn ? phiNenn : 4'000'000), ziel_(term.takte()) {}
+    : karte_(karte), term_(term), phi_(phiNenn ? phiNenn : 4'000'000), ziel_(term.hw_.takte()) {
+    term_.nz_ = this;
+}
+
+TerminalHwKopplung::~TerminalHwKopplung() {
+    if (term_.nz_ == this) term_.nz_ = nullptr;
+}
 
 uint64_t TerminalHwKopplung::zeichenTakte(const serial::SerialFormat& f) const {
     if (f.gueltig && f.zeichen_takte) return f.zeichen_takte;
@@ -323,8 +346,109 @@ bool TerminalHwKopplung::baudAbweichend() const {
     return f.gueltig && (f.baud_nenn != 9600 || f.daten != 8);
 }
 
+void TerminalHwKopplung::synchronisiere() {
+    offen_ = 0; ringN_ = 0;
+    aufgeschoben_ = false;
+    aktiv = false;
+    ruheFolge_ = 0;
+    rest_ = 0;
+    ziel_ = term_.hw_.takte();
+    rxRest_ = 0;
+}
+
+// ── Aufschub ────────────────────────────────────────────────────────────────
+
+/// Die Umrechnung Maschine → Z8 rechnet je Scheibe q = s·Z8_HZ + rest; ziel += q / phi; rest = q % phi.
+/// Über mehrere Scheiben ist das genau die Rechnung mit der Summe der Takte (Reste summieren sich
+/// exakt) — deshalb darf ein Block von Takten auf einmal gefaltet werden.
+void TerminalHwKopplung::falten(uint64_t takte) {
+    const uint64_t q = takte * P8000TerminalHw::Z8_HZ + rest_;
+    ziel_ += q / phi_;
+    rest_ = q % phi_;
+}
+
+/// Holt alles Offene nach und lässt die Einheit auf dem Stand zurück, den Aufruf für Aufruf
+/// ergeben hätte — auch im Zustand der Tastatur: `P8000TerminalEinheit::laufeBis` läuft nur, wenn
+/// der Z8 das Ziel noch nicht erreicht hat (er übersteigt es um bis zu einen Befehl), und führt
+/// dann die Tastatur bis zu diesem Ziel nach.  Der Tastaturstand im Save-State hängt also daran,
+/// welcher Aufruf zuletzt wirklich lief.  Deshalb wird der Großteil in einem Zug gerechnet, die
+/// letzten Aufrufe (mindestens `SCHWANZ_TAKTE`, länger als jeder Z8-Befehl, also läuft darin
+/// mindestens einer) dann wieder einzeln und in Scheiben wie `takt`.
+void TerminalHwKopplung::aufholen() {
+    if (!offen_) return;
+    auto& hw = term_.hw_;
+    uint64_t schwanz = 0;
+    unsigned k = 0;
+    while (k < ringN_ && schwanz < SCHWANZ_TAKTE) { schwanz += ring_[(ringPos_ - 1 - k) % RING]; ++k; }
+    if (schwanz > offen_) schwanz = offen_;
+    falten(offen_ - schwanz);
+    if (ziel_ > hw.takte()) term_.laufeBisRoh(ziel_);
+    if (k) {
+        const serial::SerialFormat f = karte_.format();
+        const uint64_t scheibe = std::max<uint64_t>(1, zeichenTakte(f) / 8);
+        for (unsigned j = k; j-- > 0;) {
+            uint64_t n = ring_[(ringPos_ - 1 - j) % RING];
+            while (n > 0) {
+                const uint64_t s = std::min(n, scheibe);
+                n -= s;
+                falten(s);
+                if (ziel_ > hw.takte()) term_.laufeBisRoh(ziel_);
+            }
+        }
+    }
+    offen_ = 0;
+    ringN_ = 0;
+}
+
+void TerminalHwKopplung::aufschubBeenden() {
+    aufholen();
+    aufgeschoben_ = false;
+    aktiv = false;
+    ruheFolge_ = 0;
+}
+
+void TerminalHwKopplung::nachziehen(bool schreibend) {
+    aufholen();
+    if (term_.hw_.hatAusgabe()) {   // dürfte nicht sein (s. Klassenkommentar): nicht liegen lassen
+        ++verspaetet;
+        aufschubBeenden();
+    } else if (schreibend) {
+        aufschubBeenden();
+    }
+}
+
+void TerminalHwKopplung::setzeAufschub(bool an) {
+    aufschubErlaubt_ = an;
+    if (!an) aufschubBeenden();
+}
+
+bool TerminalHwKopplung::ruhigJetzt() {
+    return rxRest_ == 0 && !breakAktiv_ && !term_.hw_.hatAusgabe() && term_.ruhigRoh();
+}
+
+void TerminalHwKopplung::probeMerken() {
+    if (!aufschubErlaubt_ || term_.hw_.takte() < naechsteProbe_) return;
+    naechsteProbe_ = term_.hw_.takte() + P8000TerminalHw::Z8_HZ / 1000;   // 1 ms
+    ruheFolge_ = ruhigJetzt() ? ruheFolge_ + 1 : 0;
+    if (ruheFolge_ >= 3) { aufgeschoben_ = true; aktiv = true; }
+}
+
 void TerminalHwKopplung::takt(uint64_t n) {
-    auto& hw = term_.hw();
+    if (aufgeschoben_) {
+        if (!karte_.senderHatZeichen()) {
+            offen_ += n;
+            ring_[ringPos_++ % RING] = uint32_t(n);
+            if (ringN_ < RING) ++ringN_;
+            if (offen_ >= HORIZONT) {
+                aufholen();
+                if (term_.hw_.hatAusgabe()) ++verspaetet;
+                if (term_.hw_.hatAusgabe() || !ruhigJetzt()) aufschubBeenden();
+            }
+            return;
+        }
+        aufschubBeenden();   // ein Zeichen für das Terminal: ab hier Scheibe für Scheibe wie ohne Aufschub
+    }
+    auto& hw = term_.hw_;
     const serial::SerialFormat f = karte_.format();
     const int bits = f.gueltig ? 1 + f.daten + (f.paritaet ? 1 : 0) + (f.stopp_halbe + 1) / 2 : 11;
     // Das Format ändert sich nur durch Gast-Zugriffe auf SIO/CTC, nie innerhalb dieser Schleife:
@@ -335,10 +459,8 @@ void TerminalHwKopplung::takt(uint64_t n) {
         const uint64_t s = std::min(n, scheibe);
         n -= s;
         rxRest_ = rxRest_ > s ? rxRest_ - s : 0;
-        const uint64_t q = s * P8000TerminalHw::Z8_HZ + rest_;
-        ziel_ = std::max(ziel_ + q / phi_, ziel_);
-        rest_ = q % phi_;
-        if (ziel_ > term_.takte()) term_.laufeBis(ziel_);
+        falten(s);
+        if (ziel_ > hw.takte()) term_.laufeBisRoh(ziel_);
         // Gast → Terminal (Zeichentakt des Gastformats)
         if (rxRest_ == 0 && karte_.senderHatZeichen()) {
             hw.hostByte(karte_.senderNimm(), bits);
@@ -355,8 +477,9 @@ void TerminalHwKopplung::takt(uint64_t n) {
             if (!karte_.empfaengerFrei()) break;
             karte_.empfange(hw.holeAusgabe().byte);
         }
-        if (breakAktiv_ && term_.takte() >= breakBis_) { karte_.breakEmpfang(false); breakAktiv_ = false; }
+        if (breakAktiv_ && hw.takte() >= breakBis_) { karte_.breakEmpfang(false); breakAktiv_ = false; }
     }
+    probeMerken();
 }
 
 void TerminalHwKopplung::serialize(std::vector<uint8_t>& out) const {
@@ -373,6 +496,7 @@ bool TerminalHwKopplung::deserialize(const uint8_t*& p, const uint8_t* end) {
     a.num(r); a.num(z); a.num(rx); a.num(bb); a.flag(ba);
     if (!a.ok) return false;
     rest_ = r; ziel_ = z; rxRest_ = rx; breakBis_ = bb; breakAktiv_ = ba;
+    offen_ = 0; ringN_ = 0; aufgeschoben_ = false; aktiv = false; ruheFolge_ = 0; naechsteProbe_ = 0;
     p = a.p;
     return true;
 }

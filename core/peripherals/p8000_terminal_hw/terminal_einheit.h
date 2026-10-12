@@ -53,6 +53,21 @@ struct MatrixTaste {
 };
 
 class P8000TerminalEinheit;
+class TerminalHwKopplung;
+
+/// Wer die Einheit nur nach Bedarf laufen lässt (die Kopplung an einen Rechnerkanal, s. dort),
+/// holt sie vor jedem Zugriff von außen auf den Stand nach, den sie Befehl für Befehl hätte.
+/// `aktiv` = es steht Zeit aus oder der Aufschub ist eingeschaltet; nur dann kostet der Zugriff etwas.
+struct EinheitNachzieher {
+    bool aktiv = false;
+    /// Zeichen des Terminals, die erst nach einem Aufschub kamen (soll 0 bleiben, s. Kopplung).
+    uint64_t verspaetet = 0;
+    /// @p schreibend: der Zugriff kann Zustand ändern ⇒ der Aufschub endet auch (Neubeginn nach
+    /// einer Ruheprobe); nur lesend bleibt er erhalten (die Oberfläche holt 60 Bilder je Sekunde).
+    virtual void nachziehen(bool schreibend) = 0;
+    virtual void setzeAufschub(bool an) = 0;
+    virtual ~EinheitNachzieher() = default;
+};
 
 /// SerialAnschluss des Terminals (XB5 „COMPUTER") — der Z8-UART aus Sicht eines Hubs.
 class TerminalUartAnschluss : public serial::SerialAnschluss {
@@ -87,17 +102,22 @@ public:
     void laufeBis(uint64_t z8Takt);
     void laufe(uint64_t z8Takte) { laufeBis(takte() + z8Takte); }
     void laufeMs(uint64_t ms) { laufe(ms * Z8_HZ / 1000); }
-    uint64_t takte() const { return hw_.takte(); }
+    uint64_t takte() const { vorZugriff(false); return hw_.takte(); }
+
+    /// Aufschub der Kopplung ein/aus (Vorgabe ein).  Aus ⇒ die Einheit läuft nach jedem Rechner-
+    /// befehl, wie ohne Aufschub; für Gegenproben (Ergebnis bitgleich).  Ohne Kopplung ohne Wirkung.
+    void setzeAufschub(bool an) { if (nz_) nz_->setzeAufschub(an); }
+    uint64_t aufschubVerspaetet() const { return nz_ ? nz_->verspaetet : 0; }
 
     /// Tastenwiederholung nach Wirtsuhr statt Maschinenzeit (fadensicher; Oberfläche).
     /// Vorgabe aus: Tests laufen ungebremst und müssen wiederholbar sein.
     void setWiederholungEchtzeit(bool an) { echtzeit_.store(an, std::memory_order_relaxed); }
     bool wiederholungEchtzeit() const { return echtzeit_.load(std::memory_order_relaxed); }
 
-    P8000TerminalHw& hw() { return hw_; }
-    const P8000TerminalHw& hw() const { return hw_; }
-    TastaturK7673& tastatur() { return kb_; }
-    const TastaturK7673& tastatur() const { return kb_; }
+    P8000TerminalHw& hw() { vorZugriff(true); return hw_; }
+    const P8000TerminalHw& hw() const { vorZugriff(false); return hw_; }
+    TastaturK7673& tastatur() { vorZugriff(true); return kb_; }
+    const TastaturK7673& tastatur() const { vorZugriff(false); return kb_; }
 
     // ── Tasten (zeitlicher Ablauf über die Matrix) ───────────────────────────
     /// Matrixtaste drücken, halten, loslassen; @p mods vorher drücken, danach loslassen.
@@ -127,7 +147,7 @@ public:
     MatrixTaste positionFuer(TerminalTaste t) const;
 
     // ── Leitung zum Rechner / Hub ────────────────────────────────────────────
-    TerminalUartAnschluss& anschluss() { return uart_; }
+    TerminalUartAnschluss& anschluss() { vorZugriff(true); return uart_; }
     /// Eigener Hub mit genau einem Anschluss (Terminal XB5) — für den eigenständigen Betrieb.
     serial::SerialHub& hub();
     bool hatHub() const { return hub_ != nullptr; }
@@ -138,6 +158,19 @@ public:
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:
+    friend class TerminalHwKopplung;
+    /// Zugriff von außen: erst den Stand nachholen, den die Kopplung schuldet (s. EinheitNachzieher).
+    void vorZugriff(bool schreibend) const { if (nz_ && nz_->aktiv) nz_->nachziehen(schreibend); }
+    /// Wie hw()/laufeBis()/takte() ohne den Nachzieher — für die Kopplung selbst.
+    P8000TerminalHw& hwRoh() { return hw_; }
+    void laufeBisRoh(uint64_t z8Takt);
+    /// Die Einheit wird sich bis zum nächsten Eingang von außen nicht rühren: Firmware wartet in
+    /// MAIN0 (`P8000TerminalHw::ruht`), keine Taste anhängig oder in Wiederholung, keine Flanke
+    /// und kein Zeichen im Tastaturpuffer, kein Hub.  Nur dann kann auch nichts zum Rechner gehen.
+    bool ruhigRoh() const {
+        return hw_.ruht() && aktionen_.empty() && !hub_ && !kb_.flankenAnstehend() &&
+               kb_.pufferBelegung() == 0 && !kb_.wiederholungLaeuft();
+    }
     struct Aktion { uint64_t warteZ8; MatrixTaste t; bool an; };
     uint64_t zuKbd(uint64_t z8) const;
     uint64_t zuZ8(uint64_t kbd) const;
@@ -145,6 +178,7 @@ private:
     void echtzeitTicks();
     void aktionenAusfuehren();
 
+    EinheitNachzieher* nz_ = nullptr;   ///< gesetzt von der Kopplung (Besitzer der Zeitführung)
     Config cfg_;
     P8000TerminalHw hw_;
     TastaturK7673 kb_;
@@ -163,19 +197,47 @@ private:
 /// Kopplung an einen Rechnerkanal (Variante „P8000 + Terminal"): Zeichen des Gast-SIO im
 /// Zeichentakt des Gastformats auf die Leitung P30, Zeichen des Terminals (Rahmenende) in den
 /// SIO-Empfänger, sobald er frei ist.  BREAK des Terminals ⇒ `breakEmpfang` für die Rahmenzeit.
-class TerminalHwKopplung {
+///
+/// **Aufschub.**  `takt` kommt je Rechnerbefehl (wenige Takte) und ließ jedes Mal den Z8 des
+/// Terminals nachlaufen — ein gutes Fünftel der Laufzeit, fast ganz Aufrufaufwand.  Die Zeit der
+/// Einheit hängt aber nur an der Summe der Takte (Z8-Lauf ist von der Stückelung unabhängig: die
+/// Ereignisse Bildzeile/Watchdog/Tastaturflanke sind Haltepunkte, und die Umrechnung mit Rest
+/// summiert exakt), sichtbar wird sie nur an drei Stellen:
+///  - Rechner → Terminal: ein Zeichen aus dem Sender wird zu einem festen Z8-Zeitpunkt auf die
+///    Leitung gelegt.  `takt` fragt deshalb weiter je Aufruf nach dem Sender; steht ein Zeichen
+///    an, holt es die Einheit nach und arbeitet wie bisher Scheibe für Scheibe;
+///  - Terminal → Rechner: Zeichen und BREAK kommen aus dem Z8-Lauf.  Sie entstehen nur als Folge
+///    eines Eingangs (Zeichen vom Rechner, Taste) — wartet die Firmware ruhig in ihrer Schleife
+///    (`ruhigRoh`, dreimal im Abstand von ≈ 1 ms bestätigt), kommt nichts, bis wieder ein Eingang
+///    kommt.  Nur dann wird aufgeschoben, höchstens `HORIZONT` Takte weit; danach folgt die nächste
+///    Ruheprobe.  (Käme doch etwas, wird es verspätet zugestellt und in `aufschubVerspaetet()` gezählt.)
+///  - jeder Zugriff von außen (Bild, Tasten, Save-State, Debugger) holt vorher nach
+///    (`EinheitNachzieher`).
+/// Beim Nachholen entsteht derselbe Stand wie Aufruf für Aufruf — bis auf das letzte Bit des
+/// Save-States: die Einheit führt die Tastatur nur dann nach, wenn der Z8 sein Ziel noch nicht
+/// erreicht hatte; deshalb werden die letzten Aufrufe einzeln nachgespielt (s. `aufholen`).
+class TerminalHwKopplung : private EinheitNachzieher {
 public:
     TerminalHwKopplung(serial::SerialAnschluss& karte, P8000TerminalEinheit& term,
                        uint64_t phiNenn = 4'000'000);
+    ~TerminalHwKopplung();
     void takt(uint64_t maschinenTakte);
     /// Zeitbezug neu setzen: die Einheit lief für sich (z. B. Vorlauf vor dem Rechner,
     /// Entwurf 28 §3) — ab jetzt zählen Maschinentakte wieder ab ihrer aktuellen Zeit.
-    void synchronisiere() { rest_ = 0; ziel_ = term_.takte(); rxRest_ = 0; }
+    void synchronisiere();
     bool baudAbweichend() const;
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
+    static constexpr uint64_t HORIZONT = 4096;   ///< Rechnertakte (≈ 1 ms) je Aufschub
 
 private:
+    void nachziehen(bool schreibend) override;
+    void setzeAufschub(bool an) override;
+    void falten(uint64_t takte);    ///< Rechnertakte in ziel_/rest_ rechnen (Summe wie Scheibe für Scheibe)
+    void aufholen();                ///< alles Offene nachholen, auf dem Stand „Aufruf für Aufruf"
+    void aufschubBeenden();         ///< aufholen, wieder Scheibe für Scheibe
+    bool ruhigJetzt();              ///< Ruheprobe (siehe Klassenkommentar)
+    void probeMerken();             ///< Ruheprobe am Ende einer Scheibe-für-Scheibe-Runde
     uint64_t zeichenTakte(const serial::SerialFormat& f) const;
     serial::SerialAnschluss& karte_;
     P8000TerminalEinheit& term_;
@@ -185,6 +247,16 @@ private:
     uint64_t rxRest_ = 0;           ///< Maschinentakte bis zum nächsten Gastzeichen
     uint64_t breakBis_ = 0;         ///< Z8-Zeit, bis zu der BREAK anliegt
     bool breakAktiv_ = false;
+    // Aufschub (nicht im Save-State: nur Tempo, kein Zustand)
+    bool     aufschubErlaubt_ = true;
+    bool     aufgeschoben_ = false;   ///< die Einheit läuft nur nach Bedarf
+    uint64_t offen_ = 0;              ///< Rechnertakte, die noch nicht in ziel_/rest_ stehen
+    static constexpr unsigned RING = 64;                  ///< Länge der Aufrufliste (Zweierpotenz)
+    static constexpr uint64_t SCHWANZ_TAKTE = 160;        ///< so viele letzte Takte werden einzeln nachgespielt
+    uint32_t ring_[RING] = {};        ///< Takte der letzten aufgeschobenen Aufrufe
+    unsigned ringPos_ = 0, ringN_ = 0;
+    unsigned ruheFolge_ = 0;          ///< aufeinanderfolgende ruhige Proben
+    uint64_t naechsteProbe_ = 0;      ///< Z8-Zeit der nächsten Probe
 };
 
 /// Originalterminal hinter `TerminalGeraet` (besitzt Einheit und Kopplung).

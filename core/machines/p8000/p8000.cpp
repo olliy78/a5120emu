@@ -5,6 +5,8 @@
  */
 
 #include "core/machines/p8000/p8000.h"
+
+#include <utility>
 #include <filesystem>
 #include "core/peripherals/p8000_terminal/terminal_tasten.h"
 #include "core/logger.h"
@@ -244,16 +246,18 @@ uint8_t P8000Machine::screenChar(int col, int row) const
     return z.feld ? uint8_t(' ') : z.zeichen;
 }
 
+// Nur lesen: über die const-Überladungen, damit der Aufschub der Terminalkopplung bestehen bleibt
+// (die Oberfläche holt das Bild 60-mal je Sekunde).
 const uint8_t* P8000Machine::framebuffer() const
 {
-    return hwterm_ ? hwterm_->einheit().hw().pixel().data() : fb_.data();
+    return hwterm_ ? std::as_const(*hwterm_).einheit().hw().pixel().data() : fb_.data();
 }
-int P8000Machine::fbWidth() const  { return hwterm_ ? hwterm_->einheit().hw().pixelBreite() : FB_BREITE; }
-int P8000Machine::fbHeight() const { return hwterm_ ? hwterm_->einheit().hw().pixelHoehe() : FB_HOEHE; }
+int P8000Machine::fbWidth() const  { return hwterm_ ? std::as_const(*hwterm_).einheit().hw().pixelBreite() : FB_BREITE; }
+int P8000Machine::fbHeight() const { return hwterm_ ? std::as_const(*hwterm_).einheit().hw().pixelHoehe() : FB_HOEHE; }
 
 uint8_t P8000Machine::keyboardLeds() const
 {
-    return hwterm_ ? hwterm_->einheit().tastatur().leds() : 0;
+    return hwterm_ ? std::as_const(*hwterm_).einheit().tastatur().leds() : 0;
 }
 
 namespace {

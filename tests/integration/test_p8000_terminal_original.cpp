@@ -145,6 +145,83 @@ TEST(P8000TerminalOriginal, SaveStateRundreiseAmPrompt) {
     EXPECT_EQ(a.stateBytes(), b.stateBytes());
 }
 
+/// Aufschub der Terminalkopplung: die Einheit läuft nur nach Bedarf (`TerminalHwKopplung`), das
+/// Ergebnis muss bitgleich sein zu „nach jedem Befehl" — Banner, Eingaben (Rechner → Terminal →
+/// Rechner und zurück), Lesezugriffe der Oberfläche mittendrin, Save-State zu jedem Zeitpunkt.
+TEST(P8000TerminalOriginal, AufschubDerKopplungIstBitgleich) {
+    stumm();
+    P8000Machine ohne(original()), mit(original());
+    ohne.originalTerminal()->setzeAufschub(false);
+    ohne.powerOn();
+    mit.powerOn();
+    // Verglichen werden Terminal- und Maschinenabschnitt des Save-States (Kennung 4/5: Z8, RAM, Bild,
+    // Tastatur, Zeiten), dazu der RAM des Rechners und sein PC.  Den Rest des Stands nicht: einige
+    // Bausteine (`Z80Dma::serialize`, Kartenabschnitt) kopieren ihr Zustandsstruct roh samt
+    // Füllbytes, die bei zwei Maschinen im selben Prozess verschieden sind (getrennte Prozesse
+    // geben bitgleiche Stände — so wurde das Ganze auch über 100 Mio. Takte WEGA geprüft).
+    auto terminalStand = [](const std::vector<uint8_t>& v) {
+        std::vector<uint8_t> r;
+        for (size_t o = 5; o + 5 <= v.size();) {
+            const size_t n = size_t(v[o + 1]) | size_t(v[o + 2]) << 8 | size_t(v[o + 3]) << 16 | size_t(v[o + 4]) << 24;
+            if (v[o] == 4 || v[o] == 5) r.insert(r.end(), v.begin() + long(o), v.begin() + long(std::min(v.size(), o + 5 + n)));
+            o += 5 + n;
+        }
+        return r;
+    };
+    auto ram = [](P8000Machine& m) {
+        std::vector<uint8_t> r(65536);
+        for (int i = 0; i < 65536; ++i) r[size_t(i)] = m.memReadDebug(uint16_t(i));
+        return r;
+    };
+    auto gleich = [&]() -> ::testing::AssertionResult {
+        const auto a = terminalStand(ohne.stateBytes()), b = terminalStand(mit.stateBytes());
+        if (a != b) {
+            size_t i = 0;
+            while (i < a.size() && i < b.size() && a[i] == b[i]) ++i;
+            std::string hexa, hexb;
+            char tmp[8];
+            for (size_t k = a.size() - 120; k < a.size(); ++k) {
+                snprintf(tmp, sizeof tmp, "%02x%s", a[k], k == i ? "*" : " "); hexa += tmp;
+                snprintf(tmp, sizeof tmp, "%02x%s", b[k], k == i ? "*" : " "); hexb += tmp;
+            }
+            return ::testing::AssertionFailure() << "Terminal-/Maschinenstand weicht ab ab Byte " << i << " von "
+                   << a.size() << "/" << b.size() << ", verspaetet=" << mit.originalTerminal()->aufschubVerspaetet()
+                   << "\nohne " << hexa << "\nmit  " << hexb;
+        }
+        if (ohne.cpuPC() != mit.cpuPC()) return ::testing::AssertionFailure() << "PC";
+        if (ram(ohne) != ram(mit)) return ::testing::AssertionFailure() << "RAM";
+        return ::testing::AssertionSuccess();
+    };
+    auto beide = [&](long long takte, long long pruefe = 1'000'000) {
+        for (long long t = 0, seit = 0; t < takte; t += kBatch, seit += kBatch) {
+            ohne.run(int(kBatch));
+            mit.run(int(kBatch));
+            if (seit >= pruefe) {
+                seit = 0;
+                // Lesen der Oberfläche mittendrin (nur bei „mit"): darf nichts ändern
+                (void)mit.framebuffer();
+                (void)mit.keyboardLeds();
+                ASSERT_TRUE(gleich()) << "bei " << t;
+            }
+        }
+        ASSERT_TRUE(gleich());
+    };
+    long long t = 0;
+    while (t < 200'000'000 && bild(ohne).find("Press RETURN") == std::string::npos) {
+        ASSERT_NO_FATAL_FAILURE(beide(100'000, 1'000'000'000));
+        t += 100'000;
+    }
+    ASSERT_NE(bild(ohne).find("Press RETURN"), std::string::npos) << bild(ohne);
+    for (const char* zeile : {"\r", "h\r", "d 0 20\r", "\r"}) {
+        tippe(ohne, zeile);
+        tippe(mit, zeile);
+        ASSERT_NO_FATAL_FAILURE(beide(6'000'000, 500'000)) << zeile;
+    }
+    EXPECT_EQ(bild(ohne), bild(mit));
+    EXPECT_EQ(ohne.originalTerminal()->hw().pixel(), mit.originalTerminal()->hw().pixel());
+    EXPECT_EQ(mit.originalTerminal()->aufschubVerspaetet(), 0u);
+}
+
 // ─── (b) Mehrplatz: Rechner + zwei Terminal-Maschinen über Loopback-Telnet ───────────────────────
 
 #include <chrono>
