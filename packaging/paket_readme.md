@@ -23,8 +23,10 @@ und Winchester, ohne Winchester oder nur der 8-Bit-Teil — und die Betriebsart:
 Terminal" oder „nur Terminal"). „Nur Terminal" ist der Arbeitsplatz ohne Rechner, der sich über
 die serielle Leitung („Maschine ▸ Verbindung zum Rechner…") mit einem laufenden `p8000emu`
 verbindet (Mehrplatzbetrieb; weitere Plätze mit `p8000emu --mode terminal --instance NAME`).
-Es liegen **keine** P8000-Disketten oder -Platten bei: UDOS- und WEGA-Abbilder bringen Sie selbst
-mit; eine Platte legen Sie im Plattenkasten über „Neue Platte…" an.
+Im Beispielordner liegen **WEGA 3.0 und WEGA 3.1** (`p8000_wega30/`, `p8000_wega31/`): je eine
+fertig installierte Platte (`*.img.gz` — im Plattenkasten über „Anschließen…" einbinden), die
+UDOS-Startdiskette und für WEGA 3.0 der ganze Installationssatz; die `README.md` im Ordner sagt,
+wie man davon startet. Eine leere Platte legen Sie über „Neue Platte…" an.
 
 ### K8915: eine eigene Bootdiskette
 
@@ -131,6 +133,7 @@ k1520dbg meine_diskette.hfe        # Sitzung öffnen, `help` zeigt die Befehle
 | Handbuch | `<Installation>/share/doc/handbuch_k1520dbg.md` |
 | Dazu | `<Installation>/share/tools/z80_disasm2.py` — statisches Vollisting einer `.COM` |
 | Lizenzen der Fremdsoftware | `<Installation>/share/doc/lizenzen/` |
+| Lizenz des Emulators (MIT, deutsch + englisch) und Hinweis zu den beigelegten Disketten und ROM-Abzügen | `<Installation>/LIZENZ.txt` |
 
 Einen Startmenü-Eintrag hat er bewusst nicht — er wird in einen vorhandenen
 Arbeitsablauf aus Editor, Assembler und Konsole eingebunden. Unter **Windows** öffnet
@@ -147,8 +150,9 @@ Assembler stehen als Beispielzeilen darin).
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
 | Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml`, `pc1715emu.yaml`, `p8000emu.yaml` (je Programm) |
 
-Die Beispieldisketten werden beim ersten Start in den Diskettenordner
-ausgepackt.  Der Emulator schreibt Änderungen an einer eingelegten Diskette
+Die Beispieldisketten werden beim ersten Start einer Fassung in einen eigenen
+Unterordner des Diskettenordners ausgepackt (`Beispieldisketten_v03`, bei einer
+Vorabversion `Beispieldisketten_v03-beta.2`), gegliedert nach `<maschine>_<system>/`.  Der Emulator schreibt Änderungen an einer eingelegten Diskette
 dorthin zurück — die Originale im Programmverzeichnis bleiben unangetastet und
 ein Update überschreibt nichts davon.
 

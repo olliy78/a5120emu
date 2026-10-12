@@ -186,3 +186,6 @@ k1520_add_test(p8000_wega_install SRC test_p8000_wega_install.cpp
 k1520_add_test(p8000_wega_mehrplatz SRC test_p8000_wega_mehrplatz.cpp
                             LIBS k1520_p8000 k1520_logger k1520_testsupport
                             LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 TIMEOUT 7200 RUN_SERIAL)
+
+# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+k1520_test_zeiten_skalieren()

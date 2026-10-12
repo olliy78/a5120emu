@@ -6,6 +6,7 @@ Deckt ab, was die C++-Tests nicht erreichen können:
 |---------|------------------------------|
 | **C-ABI** (`libk1520core.so` ↔ ctypes) | Der C++-Compiler prüft die Python-Seite nicht. Eine geänderte Signatur bricht **still** — ctypes merkt es erst beim Aufruf, oft als Absturz statt als Fehlermeldung. |
 | **GUI** (PySide6) | Fensteraufbau, Widget-Verdrahtung, Konfigurationsrundlauf, Laufwerksleiste — läuft headless über `QT_QPA_PLATFORM=offscreen`. |
+| **Versionen** | `test_version.py` (`py_version`): Grammatik von `VERSION`, Ableitung der Bauversion an Wegwerf-Git-Repos, `tools/dev.sh release --trocken` (nie scharf); `test_help.py`: `{{VERSION}}` im Handbuch. Konzept `doc/ci_pipeline.md` §7. |
 | **App-Logik** | `drive_types` (Laufwerkskatalog + Migration alter Profilnamen), `config_io` (YAML), `keyboard` (Qt-Taste → Kerncode). |
 
 ## Ausführen
@@ -56,6 +57,35 @@ System-Interpreter.
 | `test_serial_gui.py` | Dock „Schnittstellen" (AP-S7, beide Programme): Blockzustände, Knopftexte, Sperren im Betrieb, Host-Etikett, Statuszeilenfelder (tatsächliche Ports; nur VERBUNDEN, nie versuchende Clients/Datei), Konfiguration `schnittstellen:` und Wiederaufnahme (§7.4a), Maschinenwechsel; echte Loopback-Sockets mit freien Ports. Aufräumen siehe `_zu()` (Zeitgeber + Fokusfilter stilllegen, sonst wird die Datei mit jedem Fenster langsamer) |
 | `test_serial_pyserial.py` | Interop (AP-S8): pyserial `rfc2217://` gegen den Emulator-Server — Echo-Gast über die BIOS-Sprungleiste, Bytes beidseitig, Baud (Gast maßgeblich), Steuerleitungen gekreuzt, RTS-Halt. Ohne `pyserial` übersprungen |
 | `test_programme.py` | Nachbarprogramme starten (`app/programme.py`): Befehlszeile, Abkopplung, Startdatei der Werkzeugkonsole, Werkzeugmenü beider Oberflächen |
+
+## Laufzeitregeln für neue Python-Tests
+
+Stand 2026-10-10: 52 Module, ~540 s Rechenzeit auf ruhiger Maschine (vorher ~680 s); unter
+`ctest -j16` mit allen anderen Ebenen gleichzeitig das Mehrfache. Was die Zeit kostet, in
+der Reihenfolge der Messung:
+
+- **Emulierte Takte sind die Hauptsache.** Ein Boot bis zum Prompt kostet 2–6 s, der P8000-
+  Hardwaretest bis `MAXSEG` 20 s. Nur dort booten, wo der Test GENAU diese Aussage prüft; was
+  C++-Tests schon über den Kern sichern (`Prg710Udos.*`, `K8915Scpx.*`), gehört nicht noch
+  einmal durch die Python-Schicht — sie prüft Bindung und Verdrahtung.
+- **`screen_text()` ist teuer** (außerhalb des A5120 2000 `k1520_screen_char`-Aufrufe über die
+  Kernsperre, 2–10 ms — oft mehr als der Lauf dazwischen). In Warteschleifen deshalb nicht
+  nach jedem 20 000-Takte-Schritt lesen: `conftest.run_until_text` (Schritt 400 000) benutzen
+  oder nur jede n-te Runde prüfen; der gesuchte Text bleibt ohnehin stehen. Nur wer eine
+  flüchtige Meldung sucht, braucht feine Schritte. (Messung: `py_prg710_api` 22 s → 6 s.)
+- **Ein teurer Aufbau gehört in eine `scope="module"`-Fixture** (`payload` in
+  `test_packaging.py`: ein `build_payload.sh`-Lauf statt vier). Der Test darf das Ergebnis nur
+  lesen.
+- **Nichts bauen, was nur dem Test dient, mit voller Optimierung** (`py_packaging` baut die
+  Bibliothek mit `-O0`; die geprüfte Eigenschaft hängt nicht daran).
+- **Fenster abbauen.** `qapp` schließt am Sitzungsende alle Fenster und sammelt Müll, bevor
+  der Interpreter endet — ohne das stürzte `py_gui_smoke` NACH den grünen Fällen ab
+  (`malloc_consolidate`, rc 134/139), nur bei allen 79 Fällen zusammen.
+- **Wanduhr-Wartezeiten** (`time.sleep`, feste `lesen(3.0)`) kosten kaum Rechenzeit, aber sie
+  halten einen ctest-Platz und verlängern den Schwanz; auf Ereignisse warten, nicht auf Zeit.
+- **Messen:** `venv/bin/python3 -m pytest tests/python/test_X.py --durations=15` (ruhige
+  Maschine: sonst verfälscht Fremdlast die Wandzeit um ein Mehrfaches — die CPU-Zeit
+  `user+sys` bleibt vergleichbar).
 
 ## Grenzen
 

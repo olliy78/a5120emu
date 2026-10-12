@@ -655,8 +655,8 @@ nehmen es alle aus `tools/sertest/sertest.com`:
 
 ```sh
 tools/dev.sh build
-python3 tools/cpa_a5120/build.py  --tool build/k1520disktool    # disks/a5120_cpa_k5601_system.hfe  (A5120, CP/A)
-python3 tools/cpa_pc1715/build.py --tool build/k1520disktool    # disks/pc1715_cpa1715_system.hfe    (PC 1715, CP/A)
+python3 tools/cpa_a5120/build.py  --tool build/k1520disktool    # disks/a5120_cpa/a5120_cpa_k5601_system.hfe  (A5120, CP/A)
+python3 tools/cpa_pc1715/build.py --tool build/k1520disktool    # disks/pc1715_cpa1715/pc1715_cpa1715_system.hfe    (PC 1715, CP/A)
 python3 tools/disketten_beigaben.py --tool build/k1520disktool  # k8915scpx_boot1.hfe u. a. (K8915, SCPX 8915)
 ```
 

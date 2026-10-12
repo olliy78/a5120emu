@@ -292,3 +292,6 @@ k1520_add_test(p8000_terminal_einheit SRC test_p8000_terminal_einheit.cpp
 k1520_add_test(p8000_terminal_original SRC test_p8000_terminal_original.cpp
                           LIBS k1520_p8000 k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 900)
+
+# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+k1520_test_zeiten_skalieren()

@@ -266,21 +266,30 @@ def test_ohne_env_data_bleibt_die_aufloesung_dynamisch(tmp_path, monkeypatch):
     assert paths.user_data_dir() == heim / "Dokumente" / "K1520emu"
 
 
+def _mit_version(root: Path, bau: str) -> Path:
+    """Schreibt die ``VERSION`` einer Installation (erste Angabe = Bauversion)."""
+    (root / "VERSION").write_text(f"{bau} (linux-x86_64, 2026-10-10, Python 3.12)\n")
+    return root
+
+
 def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):
-    root = _fake_install(tmp_path)
+    root = _mit_version(_fake_install(tmp_path), "0.3.0-beta+gabc1234")
     at_root(root)
     (root / "share" / "disks" / "beispiel.hfe").write_bytes(b"x")
     ziel = tmp_path / "userdata" / "disks"
     monkeypatch.setenv(paths.ENV_DISKS, str(ziel))
 
+    # Bau ohne Tag → `…-test`, kein Ordner je Commit (doc/ci_pipeline.md §7.5).
+    assert paths.beispiel_ordner() == ziel / "Beispieldisketten_v03-test"
     assert paths.seed_user_disks() == 1
-    assert (ziel / "beispiel.hfe").exists()
+    assert (ziel / "Beispieldisketten_v03-test" / "beispiel.hfe").exists()
 
-    # Zweiter Aufruf fasst ein vorhandenes Verzeichnis nicht mehr an:
+    # Zweiter Aufruf fasst einen vorhandenen Beispielordner nicht mehr an:
     # was der Anwender dort geändert hat, bleibt.
-    (ziel / "beispiel.hfe").write_bytes(b"vom anwender geaendert")
+    geaendert = ziel / "Beispieldisketten_v03-test" / "beispiel.hfe"
+    geaendert.write_bytes(b"vom anwender geaendert")
     assert paths.seed_user_disks() == 0
-    assert (ziel / "beispiel.hfe").read_bytes() == b"vom anwender geaendert"
+    assert geaendert.read_bytes() == b"vom anwender geaendert"
 
 
 def test_seed_user_disks_packt_gepackte_beispiele_aus(tmp_path, at_root, monkeypatch):
@@ -288,17 +297,62 @@ def test_seed_user_disks_packt_gepackte_beispiele_aus(tmp_path, at_root, monkeyp
     entpackt und bitgleich ankommen (sonst mountet der Emulator Müll)."""
     import gzip
 
-    root = _fake_install(tmp_path)
+    root = _mit_version(_fake_install(tmp_path), "0.3.0")
     at_root(root)
     inhalt = bytes(range(256)) * 40
-    with gzip.open(root / "share" / "disks" / "beispiel.hfe.gz", "wb") as f:
+    (root / "share" / "disks" / "a5120_cpa").mkdir()
+    with gzip.open(root / "share" / "disks" / "a5120_cpa" / "beispiel.hfe.gz", "wb") as f:
         f.write(inhalt)
     ziel = tmp_path / "userdata" / "disks"
     monkeypatch.setenv(paths.ENV_DISKS, str(ziel))
 
     assert paths.seed_user_disks() == 1
-    assert (ziel / "beispiel.hfe").read_bytes() == inhalt
-    assert not list(ziel.glob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
+    ordner = ziel / "Beispieldisketten_v03"            # Endfassung 0.3.x
+    # Die Gliederung <maschine>_<system>/ bleibt erhalten.
+    assert (ordner / "a5120_cpa" / "beispiel.hfe").read_bytes() == inhalt
+    assert not list(ordner.rglob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
+
+
+@pytest.mark.parametrize("bau, ordner", [
+    ("0.3.0-beta.2", "Beispieldisketten_v03-beta.2"),     # Vorabversion: voller Zusatz
+    ("0.3.0-rc.1", "Beispieldisketten_v03-rc.1"),
+    ("0.3.1", "Beispieldisketten_v03"),                   # Patch-Release: derselbe Ordner
+    ("0.3.0-beta+g1a2b3c4.dirty", "Beispieldisketten_v03-test"),
+])
+def test_beispielordner_folgt_der_fassung(tmp_path, at_root, monkeypatch, bau, ordner):
+    at_root(_mit_version(_fake_install(tmp_path), bau))
+    monkeypatch.setenv(paths.ENV_DISKS, str(tmp_path / "d"))
+    assert paths.beispiel_ordner() == tmp_path / "d" / ordner
+
+
+def test_seed_legt_den_ordner_auch_bei_vorhandenem_arbeitsordner_an(tmp_path, at_root, monkeypatch):
+    """Der Kern der Änderung: bis 0.2 kam nach einem Update nie etwas Neues an,
+    weil nur kopiert wurde, wenn der ARBEITSORDNER fehlte.  Jetzt zählt der
+    Unterordner der Fassung — und alles Vorhandene bleibt unberührt (auch die
+    flach abgelegten Disketten aus 0.1/0.2)."""
+    root = _mit_version(_fake_install(tmp_path), "0.3.0-beta.1")
+    at_root(root)
+    (root / "share" / "disks" / "a5120_cpa").mkdir()
+    (root / "share" / "disks" / "a5120_cpa" / "neu.hfe").write_bytes(b"neu")
+    (root / "share" / "disks" / "README.md").write_text("liesmich")
+    ziel = tmp_path / "arbeit"
+    ziel.mkdir()
+    (ziel / "alt_flach.hfe").write_bytes(b"alt")
+    monkeypatch.setenv(paths.ENV_DISKS, str(ziel))
+
+    assert paths.seed_user_disks() == 1
+    assert (ziel / "Beispieldisketten_v03-beta.1" / "a5120_cpa" / "neu.hfe").read_bytes() == b"neu"
+    assert (ziel / "Beispieldisketten_v03-beta.1" / "README.md").exists()
+    assert (ziel / "alt_flach.hfe").read_bytes() == b"alt"
+    assert sorted(p.name for p in ziel.iterdir()) == ["Beispieldisketten_v03-beta.1", "alt_flach.hfe"]
+
+    # Eine andere Fassung (Update) bekommt ihren eigenen Ordner dazu.
+    _mit_version(root, "0.3.0-beta.2")
+    from app import version
+    version._gemerkt.clear()        # im echten Lauf ändert sich die VERSION-Datei nicht
+    assert paths.seed_user_disks() == 1
+    assert (ziel / "Beispieldisketten_v03-beta.2" / "a5120_cpa" / "neu.hfe").exists()
+    assert (ziel / "Beispieldisketten_v03-beta.1").is_dir()
 
 
 def test_seed_user_disks_ist_im_quellbaum_wirkungslos(at_root, monkeypatch, tmp_path):

@@ -100,6 +100,31 @@ def lies(disktool, abbild, name, tmp):
     return None
 
 
+#: Unterordner von ``disks/`` je Diskette (Schema ``<maschine>_<system>``, wie ``p8000_wega30``).
+#: EINE Wahrheit für Bauskripte und Wächter; Bootabbilder liegen in ``disks/bootsektoren/``.
+ORDNER = {
+    'a5120_cpa_k5601_system.hfe': 'a5120_cpa',
+    'a5120_scpx17_k5601_system.hfe': 'a5120_scpx17',
+    'a5120_udos43_k5601_entwickler.hfe': 'a5120_udos43',
+    'k8915_scpx8915_v24_system.hfe': 'k8915_scpx8915',
+    'pc1715_cpa1715_system.hfe': 'pc1715_cpa1715',
+    'pc1715_cpz22_system.hfe': 'pc1715_cpz22',
+    'pc1715_scp1715_v0006_system.hfe': 'pc1715_scp1715_v0006',
+    'pc1715_scp1715_v0007_system.hfe': 'pc1715_scp1715_v0007',
+    'pc1715w_scp30_system.hfe': 'pc1715w_scp30',
+    'udos1715_640k_pc1715_system.hfe': 'pc1715_udos1715',
+    'prg710_scpx15_system.hfe': 'prg710_scpx15',
+    'prg710-1_scpx17_system.hfe': 'prg710-1_scpx17',
+    'prg710_udos43_k5601_system.hfe': 'prg710_udos43',
+    'prg710-1_udos43_k5601_v43_189.hfe': 'prg710-1_udos43',
+}
+
+
+def diskpfad(wurzel, name):
+    """Pfad einer Diskette unter ``wurzel`` (``disks/``): ``<wurzel>/<ordner>/<name>``."""
+    return os.path.join(wurzel, ORDNER.get(name, ''), name)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument('--tool', required=True, help='Pfad zu k1520disktool')
@@ -127,7 +152,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp:
         for diskette in a.nur:
-            abbild = os.path.join(a.ordner, diskette)
+            abbild = diskpfad(a.ordner, diskette)
             if not os.path.isfile(abbild):
                 print(f'FEHLT   {diskette}')
                 fehler += 1

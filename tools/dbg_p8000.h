@@ -38,7 +38,11 @@
 
 namespace dbgp8 {
 
+// Formatprüfung nur unter GCC/Clang — MSVC kennt __attribute__ nicht
+// (Release-Bau Windows schlug 2026-10-10 daran fehl; MinGW merkt es nicht).
+#if defined(__GNUC__)
 inline std::string fmt(const char* f, ...) __attribute__((format(printf, 1, 2)));
+#endif
 inline std::string fmt(const char* f, ...) {
     char b[512];
     va_list ap;

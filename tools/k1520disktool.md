@@ -390,7 +390,7 @@ Die Systemspuren des K8915 sind Zylinder 0–1 beidseitig (5×1024, 20480 B) mit
 CP/A-Datendiskette ab Zylinder 0 (keine Systemspuren):
 
 ```sh
-k1520disktool boot-get disk900.hfe boot.bin                  # oder disks/boot_scpx8915_55k.bin
+k1520disktool boot-get disk900.hfe boot.bin                  # oder disks/bootsektoren/boot_scpx8915_55k.bin
 k1520disktool create neu.hfe --fs scpx8915 --boot boot.bin   # .img geht ebenso
 k1520disktool put neu.hfe auszug                             # Systemprogramme (DISGEN, FORMAT …)
 # eine mit FORMAT.COM formatierte Diskette nachträglich bootfähig machen:
@@ -400,7 +400,7 @@ k1520disktool boot-put formatiert.hfe boot.bin --fs scpx8915
 Ein Abbild ohne gültigen Ladekopf — etwa ein CP/A-Abbild des A5120 — oder kürzer als
 der Ladekopf verlangt (12 Sektoren) wird **abgewiesen**, bevor etwas geschrieben wird;
 dasselbe gilt für `boot-put` auf eine Diskette, die schon einen K8915-Ladekopf trägt.
-Fertige Abbilder: `disks/boot_scpx8915_55k.bin` (BIOS „55 K“), `…_v24.bin` (V24 XON/XOFF).
+Fertige Abbilder: `disks/bootsektoren/boot_scpx8915_55k.bin` (BIOS „55 K“), `…_v24.bin` (V24 XON/XOFF).
 
 Ein **kürzeres** Abbild ist erlaubt (der Rest bleibt formatierte Leerspur), ein
 **längeres** ist ein Fehler — und zwar bevor irgendetwas angelegt wird:

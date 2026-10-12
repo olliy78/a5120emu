@@ -43,7 +43,8 @@ tools/dev.sh rebuild             # rm -rf build build_trace, then build from scr
 > **Läufe über ~60 s gehören in den HINTERGRUND** (`Bash` mit `run_in_background: true`),
 > nicht in den Vordergrund. Betrifft `test-format` (~60 s), `test-matrix` (~160 s),
 > `test-all`, `win` und jeden längeren `boot_trace`-/`format_all.py`-Lauf; `tools/dev.sh
-> test` läuft in ~34 s und darf im Vordergrund bleiben. Drei Gründe, und der dritte ist
+> test` (Stand 2026-10-10: ~265 s auf 16 Kernen, davon ein Drittel die Python-Ebene;
+> ohne sie: `-LE python`, `tools/dev.sh test -L python` nur sie) gehört ebenfalls dorthin. Drei Gründe, und der dritte ist
 > der eigentliche: ein Vordergrundlauf **blockiert die Sitzung** für die ganze Dauer; er
 > zwingt zu einer Zeitschätzung, die bei einem Fehlschlag zu kurz ist; und die Rückmeldung
 > kommt bei einem Hintergrundlauf **von selbst**, sobald der Prozess endet.
@@ -529,7 +530,7 @@ Plan: `doc/design/21_pc1715.md`.
 
 ## Fünfte Maschine: P8000 (Branch `P8000`, Stand 2026-10-07)
 
-Robotron P8000 mit 8-Bit-Teil (U880, UDOS) und 16-Bit-Teil (UB8001 + 3×UB8010-MMU, WEGA/UNIX),
+EAW P8000 mit 8-Bit-Teil (U880, UDOS) und 16-Bit-Teil (UB8001 + 3×UB8010-MMU, WEGA/UNIX),
 Winchester-Controller WDC mit Original-Firmware. **Kein K1520-Rechner** — eigener Bus; nur Bausteine
 werden wiederverwendet. Eine Klasse `P8000Machine` unter `core/machines/p8000/`, Karten unter
 `core/cards/p8000/` (`speicher8`, `karte8`, `floppy8`, `karte16`, `mmu_logik16`, `dram16`, `kopplung`,
@@ -556,7 +557,7 @@ Modellwahl Vollgerät/ohne Winchester/nur 8-Bit, ROM-Fassung und Platinenindex a
 `P8000Machine::keyPress`. Wächter `py_p8000emu_gui`. Offen: UDOS-Laufwerksnamen 0/1.
 **Varianten und Mehrplatz (AP P21, 2026-10-08; Entwurf 26 §8, Handbuch „Das Originalterminal und der Mehrplatzbetrieb"):**
 `general.model` = `p8000-ot`/`-16-ot`/`-8-ot` (**Computer mit Terminal**: Originalterminal Typ 2 + Flachtastatur K7673.09 an tty1) · `p8000-term` (**nur Terminal**: Arbeitsplatz ohne Rechner, Kernmaschine `p8000-terminal`, Leitung per Hub). **Seit P23a (2026-10-08) nur EIN Programm `p8000emu`**: die Kern-Terminal-Modelle `p8000`/`-16`/`-8` sind aus der Oberfläche verschwunden (alte Schlüssel werden über `modell_alt` auf `-ot` abgebildet; im Kern bleiben sie Testgegenstelle), das Programm `p8000term` (Profil, `run_p8000term.sh`, `default_config_p8000term.yaml`, Starter/Menü/Paket) ist entfallen. Einstellungen ▸ Allgemein: *Rechnerausstattung* (Vollgerät/ohne Winchester/nur 8-Bit; `general.ausstattung` merkt sie auch im Terminalbetrieb) + *Betriebsart* (`betriebsart_wahl`); `--mode computer|terminal` (Umgebung `K1520_BETRIEBSART`) wählt sie beim Start. „Nur Terminal“ blendet Reiter *Laufwerke*, Laufwerks-/Frontplattenfelder der Statuszeile (`MachineStatus.set_rechner_sichtbar`), NMI, Einlegen/Auswerfen, Zwischenstand aus (`_rechner_anzeigen`), `verbindung` nur dort sichtbar. `raf_wahl=False`: keine RAM-Disk im P8000. Bild: `OriginalTerminalWidget` ist ein `ScreenWidget` (CRT-Shader, `CRTParams`, derselbe CRT-Reiter, gleiche Vorgaben; Stufen 0/1/2 → Textur 0/184/255); Farb-/Zoomwahl entfallen, Rechtsklick/*Maschine* ▸ *Bildschirminhalt als Text kopieren* (`act_text_kopieren`, KEIN Kürzel, ^C gehört dem Gast). Tastatur: `app/ui/k7673_layout.py` (Matrix gleich `term_matrix_scancode` des Kerns — Wächter) + `keyboard_k7673.py`; Wirtstasten über `NORMAL_Tab`/`SHIFT_Tab`, ein selbst gedrücktes SHIFT bekommt 150 ms Vorlauf. Verbindung: `app/ui/verbindung_dialog.py` (*Maschine ▸ Verbindung zum Rechner…*, kein Kürzel). Mehrinstanz: `--instance NAME`/`--config DATEI` (`app/instanz.py`), Plattensperre `<abbild>.lock`. Wächter `py_p8000_original_gui`.
-**Paket und Werkzeugmenü (AP P18, 2026-10-08, seit P23a nur `p8000emu`; `doc/design/13_distribution.md` §10b):** `p8000emu` ist fünfter Starter im Linux-Paket und im Inno-Setup (Vorlage `launcher.*`, `p8000emu.desktop.in`, `MASCHINEN`, `{#Programm5}`, `default_config_p8000.yaml`); **keine P8000-Disketten im Paket**. Wächter `py_packaging`, `py_programme`, `py_pc1715emu_gui`.
+**Paket und Werkzeugmenü (AP P18, 2026-10-08, seit P23a nur `p8000emu`; `doc/design/13_distribution.md` §10b):** `p8000emu` ist fünfter Starter im Linux-Paket und im Inno-Setup (Vorlage `launcher.*`, `p8000emu.desktop.in`, `MASCHINEN`, `{#Programm5}`, `default_config_p8000.yaml`); **P8000-WEGA-Sätze (Platten `*.img.gz` + Disketten) liegen seit 2026-10-11 im Paket** (Beispielordner `p8000_wega30/`, `p8000_wega31/`). Wächter `py_packaging`, `py_programme`, `py_pc1715emu_gui`.
 **Mehrplatz-Abnahme (AP P22, 2026-10-08; `doc/p8000/mehrplatz_abnahme.md`, Merkposten 40–43):** WEGA von der Platte,
 Konsole am Originalterminal + drei Arbeitsplätze (tty0/tty2 über die Koppelsoftware, tty4) per Loopback-Telnet
 (`P8000WegaMehrplatz.*`, `tools/dev.sh test-wega`).  **Der U880 der 8-Bit-Karte nimmt nach `EI` erst nach dem folgenden
@@ -578,7 +579,7 @@ ersten Lauf** (C-ABI `k1520_raf_*`, Python `K1520Emulator(raf="raf512")`, Oberfl
 *Einstellungen ▸ Allgemein ▸ RAM-Disk* mit Stand-by-Ablage `raf_<programm>.bin`,
 `k1520dbg`/`boot_trace --raf`).  Gast: `RAFCPM.COM` (M:) / `RAF512.COM` (P:) unter CP/A,
 SCPX 8915 und SCPX 1.7, dazu die CP/A-Diskette mit eingebautem Treiber
-`OSRAF.COM` auf `disks/a5120_cpa_k5601_system.hfe`.  Kern der Sache: A8–A15 (Register B) tragen
+`OSRAF.COM` auf `disks/a5120_cpa/a5120_cpa_k5601_system.hfe`.  Kern der Sache: A8–A15 (Register B) tragen
 Sektor bzw. Bytezeiger, Sperrbits und Spiegelung sind **so** nachgebildet, RESET erhält den
 Inhalt.  **Vor Arbeiten daran: `doc/merkposten/raf.md` lesen**; Entwurf
 `doc/design/22_raf512.md`, Originale `doc/raf512/`.
@@ -624,6 +625,24 @@ alle Werkzeuge, der Stapelbetrieb für den Agenten (COW-Mount, `--quiet --json`,
 > Handschlag-RAM: `[0x03F8]` Fertigmeldung, `[0x03F7]` Indexzähler, `[0x03FD]` Pfadbyte,
 > `[0x07F2]` Sektorzahl, `[0x03F0]` Ladeadresse. Wächter: `test_boot_integration`,
 > `test_k5122`, `test_k2526`.
+
+## Versionierung (`VERSION`, `tools/version.py`; Konzept `doc/ci_pipeline.md` §7)
+
+EINE Quelle: die Datei **`VERSION`** (Basis, z. B. `0.3.0-beta`; die laufende Nummer
+`beta.N` steht nur im Tag). Die **Bauversion** leitet `tools/version.py` ab (Logik in
+`app/version.py`, nur Stdlib): Tag auf `HEAD` → ohne `v`, sonst `<Basis>+g<hash>[.dirty]`,
+ohne git `+unbekannt`. Kern: `core/version.h` wird aus `core/version.h.in` ins Bauverzeichnis
+erzeugt (`K1520_VERSION_VOLL`, Vorgabe `<Basis>+dev`); `k1520_version()` und
+`k1520d_version()` liefern dasselbe, `build_payload.sh` setzt die Paketversion — **nie
+`build/` damit verschmutzen** (Paketbau läuft in `build_dist/`). Oberfläche:
+`app/version.py::fassung()` (Über-Fenster, `setApplicationVersion`, `{{VERSION}}` im
+Handbuch, `geschrieben_von` in der Konfiguration; `version:` dort bleibt die FORMATversion,
+höhere Formatversion = Datei wird nicht überschrieben, Migrationskette `_MIGRATIONEN`).
+Beispieldisketten: `seed_user_disks()` legt `Beispieldisketten_v03[-beta.N|-test]` im
+Arbeitsordner an, wenn er fehlt (Gliederung `<maschine>_<system>/` bleibt). Veröffentlichen:
+`tools/dev.sh release <version> [--ohne-push] [--zweig-egal] [--trocken]`; das Tag startet
+`release.yml` (Vorabversion → Pre-release, Endfassung → Entwurf). Wächter: `py_version`,
+`py_help`, `py_paths`, `py_config_io`, `py_c_api`, `py_packaging`.
 
 ## Subagenten / Delegation an günstigere Modelle
 

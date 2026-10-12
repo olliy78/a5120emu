@@ -397,6 +397,13 @@ class MainWindow(QMainWindow):
         self.drives_dock.setWidget(drives_scroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.drives_dock)
 
+        # Reiter gestapelter Kästen (Laufwerke/Einstellungen/EPROMmer/Lochstreifen)
+        # OBEN am Kasten statt Qts Vorgabe unten (Wunsch des Anwenders 2026-10-11).
+        # Gilt für jede Andockfläche; der dock_state merkt die Lage nicht, sie
+        # kommt immer von hier.
+        from PySide6.QtWidgets import QTabWidget
+        self.setTabPosition(Qt.AllDockWidgetAreas, QTabWidget.TabPosition.North)
+
         # ── Einstellungen-Dock (rechts, getabbt; anfangs versteckt) ──────────
         self.settings_dock = QDockWidget("Einstellungen", self)
         self.settings_dock.setObjectName("settings_dock")
@@ -1396,7 +1403,15 @@ class MainWindow(QMainWindow):
         path = self._konfig_pfad()
         if os.path.exists(path):
             try:
-                self._apply_config(config_io.load_config(path))
+                daten = config_io.load_config(path)
+                self._apply_config(daten)
+                if config_io.ist_neuer_als_dieses_programm(daten):
+                    # Die Datei bleibt unangetastet (config_io.save_config);
+                    # der Anwender soll wissen, warum Änderungen nicht bleiben.
+                    meldung = (f"{os.path.basename(path)} stammt von einem neueren "
+                               "Programm — Einstellungen werden nicht gespeichert.")
+                    print(f"[config] {meldung}")
+                    self.statusBar().showMessage(meldung, 15000)
                 return
             except Exception as e:
                 QMessageBox.warning(
@@ -1494,7 +1509,7 @@ class MainWindow(QMainWindow):
         if "." not in path.rsplit("/", 1)[-1]:
             path += ".yaml"
         try:
-            config_io.save_config(path, self._gather_config())
+            config_io.save_config(path, self._gather_config(), erzwingen=True)
         except Exception as e:
             QMessageBox.critical(self, "Save Configuration", str(e))
 
@@ -2336,14 +2351,16 @@ class MainWindow(QMainWindow):
             fassung = _E.version()
         except Exception:
             fassung = "unbekannt"
+        from app import version as _version
         rechner = self.profil.ueber_rechner
         QMessageBox.about(
             self, f"Über {self.profil.programm}",
             f"<h3>{self.profil.programm}</h3>"
-            f"<p>Emulator {rechner} am K1520-Bus — "
+            f"<p>Emulator {rechner} — "
             f"Karten und Bus werden nachgebildet, der Z80-Code von Boot-ROM, "
             f"BIOS und Betriebssystem läuft unverändert.</p>"
-            f"<p>Bibliothek: {fassung}</p>"
+            f"<p>Version: {_version.fassung()}<br>"
+            f"Bibliothek: {fassung}</p>"
             f"<p>Das Handbuch steht unter <i>Hilfe ▸ Handbuch</i> (F1).</p>")
     
     def closeEvent(self, event):

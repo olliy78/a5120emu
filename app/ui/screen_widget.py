@@ -99,8 +99,8 @@ class CRTParams:
     phosphor_off: Tuple[float, float, float] = hex_to_rgb("#050f05")  # dark pixel
 
     # Overall image (adjustable).
-    brightness: float = 2.5
-    contrast: float = 1.1
+    brightness: float = 2.3
+    contrast: float = 0.9
 
     # Aperture-grille style vertical mask.  A monochrome green tube has NO shadow
     # mask, so this is fixed off (no GUI control).
@@ -109,8 +109,8 @@ class CRTParams:
 
     # Tube curvature (barrel distortion) amount per axis, and rounded corners
     # (adjustable).
-    curvature: Tuple[float, float] = (0.1, 0.1)
-    corner_radius: float = 0.05       # 0 = square
+    curvature: Tuple[float, float] = (0.16, 0.16)
+    corner_radius: float = 0.1        # 0 = square
 
     # Edge darkening — fixed (no GUI control).
     vignette_strength: float = 0.35
@@ -121,8 +121,8 @@ class CRTParams:
     # Raster geometry (like the CRT's H/V size + position controls): the image
     # can be made smaller than the tube face and shifted, so its content clears
     # the rounded corners.  scale 1.0 = fills the tube; offset in tube-width units.
-    scale_x: float = 0.98
-    scale_y: float = 0.98
+    scale_x: float = 0.9
+    scale_y: float = 0.9
     offset_x: float = 0.0
     offset_y: float = 0.0
 

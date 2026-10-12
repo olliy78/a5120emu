@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT, requires_core
+from conftest import PROJECT_ROOT, ausgelieferte_diskette, requires_core
 
 PACKAGING = PROJECT_ROOT / "packaging"
 SCRIPTS = ["install.sh", "build_payload.sh", "launcher.sh",
@@ -269,7 +269,7 @@ def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
             "pc1715w_scp30_system.hfe"}
     assert soll <= set(block)
     for name in soll:
-        assert (PACKAGING.parent / "disks" / name).is_file(), name
+        assert ausgelieferte_diskette(name).is_file(), name
     vorgabe = (PACKAGING.parent / "data" / "default_config_pc1715.yaml").read_text(encoding="utf-8")
     assert not re.search(r"^disks:", vorgabe, re.M)
 
@@ -329,7 +329,7 @@ def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
     block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
     assert "k8915_scpx8915_v24_system.hfe" in block
     for name in block:
-        assert (PACKAGING.parent / "disks" / name).is_file(), name
+        assert ausgelieferte_diskette(name).is_file(), name
 
 
 def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
@@ -344,7 +344,7 @@ def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
             "prg710_scpx15_system.hfe", "prg710-1_scpx17_system.hfe"}
     assert soll <= set(block)
     for name in soll:
-        assert (PACKAGING.parent / "disks" / name).is_file(), name
+        assert ausgelieferte_diskette(name).is_file(), name
     # Die Disketten gehoeren dem Anwender nach dem ersten Start: kein Pfad in der Vorgabe.
     vorgabe = (PACKAGING.parent / "data" / "default_config_prg710.yaml").read_text(encoding="utf-8")
     assert not re.search(r"^disks:", vorgabe, re.M)
@@ -1310,20 +1310,34 @@ def test_slim_behaelt_was_die_gui_importiert():
 
 # ─── Payload schnüren ────────────────────────────────────────────────────────
 
+@pytest.fixture(scope="module")
+def payload(tmp_path_factory):
+    """EIN Schnür-Lauf (``build_payload.sh``, Bauversion, Beispieldisketten) für alle Fälle des Moduls.
+
+    Vorher schnürte jeder der vier Fälle sein eigenes Paket (je ~10 s, vor allem Archiv und
+    gzip der Disketten); sie prüfen alle nur verschiedene Seiten desselben Ergebnisses.
+    Zurück kommt das Ausgabeverzeichnis; das Paket darin heisst ``k1520emu-<Bauversion>-…``.
+    """
+    ziel = tmp_path_factory.mktemp("payload")
+    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
+              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
+              "--out", str(ziel), "--disks", "default")
+    assert out.returncode == 0, out.stdout + out.stderr
+    return ziel
+
+
+def _stage(ziel):
+    return next(p for p in ziel.glob("k1520emu-*") if p.is_dir())
+
 @requires_core
-def test_payload_enthaelt_alles_zum_starten(tmp_path):
+def test_payload_enthaelt_alles_zum_starten(payload):
     """Ein vollständiger Schnür-Lauf gegen die gebaute Bibliothek.
 
     Prüft den Inhalt gegen die Liste dessen, was der Emulator zum Start
     braucht — fällt eine Datei aus dem Skript, schlägt das hier fehl und nicht
     erst beim Anwender.
     """
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--version", "test", "--disks", "none")
-    assert out.returncode == 0, out.stdout + out.stderr
-
-    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    stage = _stage(payload)
     for pflicht in [
         "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
         "k8915emu.desktop.in", "prg710emu.desktop.in", "pc1715emu.desktop.in", "p8000emu.desktop.in",
@@ -1360,17 +1374,18 @@ def test_payload_enthaelt_alles_zum_starten(tmp_path):
     assert os.access(stage / "install.sh", os.X_OK), "install.sh ist nicht ausführbar"
     assert not list(stage.rglob("__pycache__")), "Bytecode des Baurechners im Paket"
 
-    archiv = next(tmp_path.glob("k1520emu-test-*.tar.gz"))
+    archiv = next(payload.glob("k1520emu-*.tar.gz"))
     with tarfile.open(archiv) as tf:
         namen = tf.getnames()
     assert all(n.startswith(stage.name) for n in namen), \
         "Archiv entpackt ohne gemeinsames Wurzelverzeichnis"
-    pruefsumme = archiv.with_suffix(".gz.sha256").read_text(encoding="utf-8").split()[0]
-    assert len(pruefsumme) == 64
+    # Seit 2026-10-11 bewusst KEINE .sha256 daneben (GitHub zeigt die Prüfsumme der
+    # Release-Assets selbst an).
+    assert not list(payload.glob("*.sha256")), "eine .sha256-Datei neben dem Archiv"
 
 
 @requires_core
-def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
+def test_beispieldisketten_liegen_gepackt_im_paket(payload):
     """Abbilder sind zu ~90 % Füllmuster und werden genau einmal gebraucht.
 
     Ungepackt lägen sie nach dem Erststart doppelt auf der Platte — in der
@@ -1379,18 +1394,18 @@ def test_beispieldisketten_liegen_gepackt_im_paket(tmp_path):
     """
     import gzip
 
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--version", "test")
-    assert out.returncode == 0, out.stdout + out.stderr
-
-    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    stage = _stage(payload)
     disks = stage / "payload" / "share" / "disks"
-    gepackt = sorted(disks.glob("*.hfe.gz"))
+    # Gliederung <maschine>_<system>/ bleibt erhalten (doc/ci_pipeline.md §7.5).
+    gepackt = sorted(disks.glob("*/*.hfe.gz"))
     assert gepackt, "keine gepackten Beispieldisketten im Paket"
-    assert not list(disks.glob("*.hfe")), "ungepackte Abbilder im Paket"
+    assert not list(disks.glob("*.gz")), "Disketten liegen flach statt im Ordner ihrer Maschine"
+    assert not list(disks.rglob("*.hfe")), "ungepackte Abbilder im Paket"
+    for g in gepackt:
+        assert (PROJECT_ROOT / "disks" / g.parent.name / g.stem).is_file(), \
+            f"{g.relative_to(disks)} liegt nicht im Ordner, aus dem es stammt"
 
-    original = PROJECT_ROOT / "disks" / gepackt[0].stem
+    original = ausgelieferte_diskette(gepackt[0].stem)
     with gzip.open(gepackt[0], "rb") as f:
         assert f.read() == original.read_bytes(), "gepacktes Abbild weicht ab"
 
@@ -1406,6 +1421,10 @@ def test_paket_traegt_keinen_pfad_des_baurechners(tmp_path):
     build = tmp_path / "build"
     cfg = _sh("cmake", "-S", str(PROJECT_ROOT), "-B", str(build),
               "-DCMAKE_BUILD_TYPE=Release", "-DK1520_FORMATS_DEFAULT=",
+              # -O0: geprüft wird, was an Zeichenketten im Binärabbild steht, und das hängt
+              # nicht an der Optimierung.  -O3 kostete gut 100 s Rechenzeit je Lauf; der echte
+              # Release-Bau (release.yml, Rauchtest "kein Baurechner-Pfad") prüft es zusätzlich.
+              "-DCMAKE_CXX_FLAGS_RELEASE=-O0", "-DCMAKE_C_FLAGS_RELEASE=-O0",
               "-DBUILD_K1520_TESTS=OFF")
     assert cfg.returncode == 0, cfg.stderr
     bld = _sh("cmake", "--build", str(build), "--target", "k1520core", "-j4")
@@ -1490,11 +1509,11 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"
-    ausgepackt = sorted(nutzer_disks.glob("*.hfe"))
+    ausgepackt = sorted(nutzer_disks.glob("Beispieldisketten_*/*/*.hfe"))
     assert ausgepackt
-    assert not list(nutzer_disks.glob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
+    assert not list(nutzer_disks.rglob("*.gz")), "gepackte Datei blieb beim Anwender liegen"
     for f in ausgepackt:
-        assert f.read_bytes() == (PROJECT_ROOT / "disks" / f.name).read_bytes(), \
+        assert f.read_bytes() == ausgelieferte_diskette(f.name).read_bytes(), \
             f"{f.name} kam beschädigt beim Anwender an"
 
     # Platzbedarf: ohne das Schlankmachen wären es ~400 MB.  Gezählt wird wie
@@ -1567,7 +1586,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
                             capture_output=True, text=True, env=umgebung, timeout=300)
     assert deinst.returncode == 0, deinst.stderr
     assert not ziel.exists(), "Deinstallieren fand die Installation nicht"
-    assert any(nutzer_disks.glob("*.hfe")), "Deinstallieren hat Anwenderdisketten gelöscht"
+    assert any(nutzer_disks.rglob("*.hfe")), "Deinstallieren hat Anwenderdisketten gelöscht"
     assert not (heim / ".local" / "bin" / "python3.12").exists(), \
         "uv hat einen Python-Symlink im PATH des Anwenders hinterlassen"
 
@@ -1611,18 +1630,13 @@ def test_disktool_findet_seine_bibliothek_im_installationslayout(tmp_path):
 
 
 @requires_core
-def test_disktool_kommandozeile_laeuft_aus_dem_paket(tmp_path):
+def test_disktool_kommandozeile_laeuft_aus_dem_paket(payload):
     """Das mitgelieferte Programm muss ohne den Quellbaum arbeiten.
 
     Geprüft wird der geschnürte Stand, nicht ``build/``: Läuft `formats`, dann
     hat das Programm auch den Formatkatalog des Pakets gefunden.
     """
-    out = _sh("sh", str(PACKAGING / "build_payload.sh"),
-              "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
-              "--out", str(tmp_path), "--version", "test", "--disks", "none")
-    assert out.returncode == 0, out.stdout + out.stderr
-
-    stage = next(p for p in tmp_path.glob("k1520emu-test-*") if p.is_dir())
+    stage = _stage(payload)
     cli = stage / "payload" / "bin" / "k1520disktool-cli"
     assert os.access(cli, os.X_OK), "die Kommandozeile ist nicht ausführbar"
 
@@ -1700,6 +1714,32 @@ def test_handbuch_und_lizenzen_reisen_mit():
             f"third_party/{quelle.name}: Lizenztext wird nicht ins Paket gelegt"
     assert "lizenzen/greaseweazle-COPYING.txt" in bp, \
         "die Lizenz der Greaseweazle-Anbindung wird nicht mitgeliefert"
+
+
+def test_lizenz_bleibt_reines_mit_und_die_begleitdatei_reist_mit():
+    """LICENSE = NUR der englische MIT-Text; Übersetzung und Beigabenhinweis in LIZENZ.txt.
+
+    GitHubs Lizenzerkennung (licensee) verlangt 98 % Übereinstimmung mit dem
+    Mustertext; schon ein angehängter Absatz macht aus „MIT" ein „NOASSERTION"
+    (am 2026-10-10 mit licensee nachgeprüft).  Deshalb steht der deutsche Text samt
+    Hinweis zu den Beigaben Dritter in LIZENZ.txt — und das Setup zeigt DIESE.
+    """
+    lizenz = (PROJECT_ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert lizenz.startswith("MIT License\n\nCopyright (c) ")
+    assert lizenz.rstrip().endswith("OTHER DEALINGS IN THE\nSOFTWARE."), \
+        "LICENSE trägt mehr als den MIT-Text — die Lizenzerkennung bricht"
+    begleit = (PROJECT_ROOT / "LIZENZ.txt").read_text(encoding="utf-8")
+    # der englische Text steht in der Begleitdatei gleichlautend (ab der Copyright-Zeile)
+    assert lizenz[lizenz.index("Copyright (c) "):].rstrip() in begleit
+    assert begleit.index("Jedem, der eine Kopie") < begleit.index("Permission is hereby"), \
+        "die deutsche Übersetzung gehört über den englischen Text"
+    assert "Beigaben Dritter" in begleit and "Third-party material" in begleit
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert "LIZENZ.txt" in bp
+    assert "LIZENZ.txt" in (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert "LicenseFile={#Paket}\\LIZENZ.txt" in iss
+    assert 'Source: "{#Paket}\\LIZENZ.txt"' in iss
 
 
 @nur_unix_installer
@@ -1902,3 +1942,45 @@ def test_die_anbindung_schreibt_nicht_auf_die_nutzlast():
     # Kein direkter Import mehr — der ginge an der Umleitung vorbei.
     assert not re.search(r"^\s*(import greaseweazle|from greaseweazle)", text, re.M), \
         "ein Import an `_leise` vorbei schreibt wieder auf die Nutzlast"
+
+
+# ─── Version (doc/ci_pipeline.md §7) ─────────────────────────────────────────
+
+def test_build_payload_nimmt_die_version_aus_tools_version_py():
+    """Eine Quelle: kein ``git describe`` mehr, die Windows-Nummer kommt aus ``--windows``."""
+    text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    assert "git describe" not in text
+    assert "tools/version.py" in text and "--bau" in text and "--windows" in text
+    # Die Bauversion geht in den Kern (k1520_version()) und in den Installer.
+    assert "-DK1520_VERSION_VOLL=$VERSION" in text
+    assert "//DVersionInfo=" in text
+
+
+def test_iss_setzt_die_dateiversion_aus_versioninfo():
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    assert "VersionInfoVersion={#VersionInfo}" in iss
+    assert "VersionInfoVersion=0.0.0.0" not in iss
+    assert "#define VersionInfo" in iss          # Vorgabe, wenn ohne /DVersionInfo gebaut wird
+
+
+@requires_core
+def test_paketname_und_version_datei_tragen_die_bauversion(payload):
+    """Ohne ``--version``: Name und erste Angabe der ``VERSION`` im Paket sind die Bauversion."""
+    bau = _sh(sys.executable, str(PROJECT_ROOT / "tools" / "version.py"), "--bau").stdout.strip()
+    assert bau.startswith("0.") or bau[0].isdigit()
+    stage = _stage(payload)
+    assert stage.name.startswith(f"k1520emu-{bau}-"), stage.name
+    erste = (stage / "VERSION").read_text(encoding="utf-8").split()[0]
+    assert erste == bau
+    gepackt = list((stage / "payload" / "share" / "disks").glob("*/*.hfe.gz"))
+    assert gepackt, "share/disks/<ordner>/…gz fehlt"
+
+
+def test_release_workflow_prueft_tag_und_unterscheidet_vorabversion():
+    wf = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert len(re.findall(r"run: python3? tools/version\.py --pruefe-tag", wf)) == 2   # Linux- UND Windows-Job
+    assert wf.count("--prerelease") >= 2 and "--draft" in wf
+    assert len(re.findall(r"if python3? tools/version\.py --vorab", wf)) == 2
+    # Der Rauchtest sucht die Disketten gegliedert und prüft die Bibliotheksversion.
+    assert 'share/disks"/*/*.gz' in wf
+    assert len(re.findall(r"tools/version\.py --bau", wf)) == 2

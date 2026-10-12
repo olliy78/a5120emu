@@ -1,8 +1,44 @@
 cmake_minimum_required(VERSION 3.16)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Version   (doc/ci_pipeline.md §7.1/§7.2)
+# ─────────────────────────────────────────────────────────────────────────────
+# EINE Quelle: die Datei VERSION im Wurzelverzeichnis (Basisversion, eine Zeile,
+# z. B. `0.3.0-beta`).  CMAKE_CONFIGURE_DEPENDS: eine geänderte Datei lässt
+# CMake neu konfigurieren, damit core/version.h nicht veraltet.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" K1520_VERSION_BASIS LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+if(NOT K1520_VERSION_BASIS MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-(beta|rc))?$")
+    message(FATAL_ERROR "VERSION: '${K1520_VERSION_BASIS}' ist keine gültige Basisversion "
+                        "(MAJOR.MINOR.PATCH[-beta|-rc], doc/ci_pipeline.md §7.1)")
+endif()
+set(K1520_VERSION_ZAHL "${CMAKE_MATCH_1}")
+
 # C steht neben CXX, weil der Zeileneditor des Debuggers (third_party/isocline,
 # MIT) reines C ist — ohne das meldet CMake beim Erzeugen „Missing variable is:
 # CMAKE_C_CREATE_STATIC_LIBRARY". Eigener Kerncode ist unverändert C++.
-project(a5120emu VERSION 1.0.0 LANGUAGES C CXX)
+project(a5120emu VERSION ${K1520_VERSION_ZAHL} LANGUAGES C CXX)
+
+# Bauversion.  Leer (Vorgabe) heisst `<Basis>+dev`; ein Paket setzt sie über
+# `-DK1520_VERSION_VOLL=$(tools/version.py --bau)`.  Der Commit-Hash wird
+# bewusst NICHT bei jedem Bau eingerechnet: er veraltete ohne Neukonfiguration
+# und zwänge bei jedem Commit zum Neubau des ganzen Kerns.  Absichtlich kein
+# Cache-Vorgabewert `<Basis>+dev`: der bliebe nach einer Änderung von VERSION
+# im Cache stehen.
+set(K1520_VERSION_VOLL "" CACHE STRING
+    "Bauversion für k1520_version(); leer = <Basis aus VERSION>+dev")
+if(K1520_VERSION_VOLL STREQUAL "")
+    set(K1520_VERSION_TEXT "${K1520_VERSION_BASIS}+dev")
+else()
+    set(K1520_VERSION_TEXT "${K1520_VERSION_VOLL}")
+endif()
+message(STATUS "Version: ${K1520_VERSION_TEXT}")
+# core/version.h entsteht im Bauverzeichnis; der Include-Pfad `core/version.h`
+# bleibt für Kern, DiskTool, Debugger und Tests derselbe.
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/core/version.h.in"
+               "${CMAKE_BINARY_DIR}/core/version.h" @ONLY)
+include_directories("${CMAKE_BINARY_DIR}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -10,7 +10,7 @@
 #       LIBS    <lib> [...]               # ohne GTest::gtest_main (kommt automatisch)
 #       LABELS  <label> [...]             # ctest -L / -LE
 #       DEFS    <NAME=wert> [...]         # zusätzliche Compile-Definitionen
-#       TIMEOUT <sekunden>                # Vorgabe 60
+#       TIMEOUT <sekunden>                # Vorgabe 60, wird mit K1520_TEST_ZEIT_FAKTOR malgenommen
 #       [RUN_SERIAL])                     # Fälle nie parallel (gemeinsame Dateien)
 #
 # Feste Zusagen für jeden so erzeugten Test:
@@ -20,6 +20,16 @@
 #     („./build/k1520_test_k2526 --gtest_filter=…") gültig bleiben.
 #   * Include-Wurzel    ${CMAKE_SOURCE_DIR}  → #include "core/…" / "tools/…"
 #   * Fixture-Pfade als Compile-Definition (siehe unten)
+
+# Zeitgrenzen: EIN Faktor für alle Tests (2026-10-10).  Die Grenzen in den
+# CMakeLists sind auf einem leeren Rechner gemessen; mit ~2900 Fällen bei
+# `-j16` und nebenher laufenden Emulatoren reichten sie nicht mehr
+# (cli_dbg_k8915_all_commands_smoke: 120 s überschritten, einzeln ~30 s).
+# Statt jede Zahl einzeln zu verdoppeln, gilt dieser Faktor — für
+# k1520_add_test() hier, für die übrigen add_test()-Fälle über
+# k1520_test_zeiten_skalieren() am Ende von tests/CMakeLists.txt.
+set(K1520_TEST_ZEIT_FAKTOR 2 CACHE STRING
+    "Faktor auf alle ctest-Zeitgrenzen (ganze Zahl)")
 
 function(k1520_add_test name)
     cmake_parse_arguments(T "RUN_SERIAL" "TIMEOUT" "SRC;LIBS;LABELS;DEFS" ${ARGN})
@@ -34,6 +44,7 @@ function(k1520_add_test name)
     if(NOT T_TIMEOUT)
         set(T_TIMEOUT 60)
     endif()
+    math(EXPR T_TIMEOUT "${T_TIMEOUT} * ${K1520_TEST_ZEIT_FAKTOR}")
 
     set(target k1520_test_${name})
 
@@ -89,3 +100,21 @@ function(k1520_add_test name)
     gtest_discover_tests(${target} ${_discovery}
         PROPERTIES TIMEOUT ${T_TIMEOUT} LABELS "${_labels}" ${_serial})
 endfunction()
+
+# Skaliert die TIMEOUT-Eigenschaft aller mit add_test() angelegten Tests des
+# AUFRUFENDEN Verzeichnisses mit K1520_TEST_ZEIT_FAKTOR — als letzte Zeile jeder
+# tests/<ebene>/CMakeLists.txt (aus dem eigenen Verzeichnis, weil der Zugriff auf
+# Tests eines anderen Verzeichnisses erst ab CMake 3.28 geht).  Die Fälle aus
+# k1520_add_test() stehen NICHT in der Verzeichnis-Eigenschaft TESTS (sie
+# entstehen erst beim gtest-Einsammeln) und sind oben schon skaliert — doppelt
+# wird also nichts.  Tests ohne eigene Grenze bleiben bei der ctest-Vorgabe.
+macro(k1520_test_zeiten_skalieren)
+    get_property(_k1520_tests DIRECTORY PROPERTY TESTS)
+    foreach(_k1520_t IN LISTS _k1520_tests)
+        get_test_property(${_k1520_t} TIMEOUT _k1520_alt)
+        if(_k1520_alt)
+            math(EXPR _k1520_neu "${_k1520_alt} * ${K1520_TEST_ZEIT_FAKTOR}")
+            set_tests_properties(${_k1520_t} PROPERTIES TIMEOUT ${_k1520_neu})
+        endif()
+    endforeach()
+endmacro()

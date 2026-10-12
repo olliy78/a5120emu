@@ -35,6 +35,8 @@ import tempfile
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HIER))
+sys.path.insert(0, os.path.join(REPO, 'tools'))
+import disketten_beigaben as _db  # noqa: E402  (Ordner je Diskette)
 
 # Hilfsfunktionen (CP/M-Text, WM.HLP) und der Quellpfad der Hilfe kommen aus dem A5120-Bau.
 _spec = importlib.util.spec_from_file_location('cpa_a5120_build', os.path.join(REPO, 'tools', 'cpa_a5120', 'build.py'))
@@ -72,7 +74,8 @@ def soll():
 
 
 def bauen(tool, ausgabe):
-    ziel = os.path.join(ausgabe, NAME)
+    ziel = _db.diskpfad(ausgabe, NAME)
+    os.makedirs(os.path.dirname(ziel), exist_ok=True)
     if os.path.exists(ziel):
         os.remove(ziel)
     with tempfile.TemporaryDirectory() as tmp:
@@ -93,7 +96,7 @@ def bauen(tool, ausgabe):
 
 
 def pruefen(tool, ausgabe):
-    diskette = os.path.join(ausgabe, NAME)
+    diskette = _db.diskpfad(ausgabe, NAME)
     if not os.path.isfile(diskette):
         print(f'{NAME}: fehlt')
         return False

@@ -1,5 +1,7 @@
 # a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu — Kurzhandbuch
 
+Version {{VERSION}}
+
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
 Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
 (`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
@@ -776,8 +778,10 @@ er sie **einmal** um — die Einrichtung geht beim Update also nicht verloren.
 | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml` | die Konfiguration je Programm |
 | `share/k1520emu/default_config_a5120.yaml`, `…_k8915.yaml` (in der Installation) | der Auslieferungszustand |
 
-Beim ersten Start nach einer Installation werden die mitgelieferten
-Beispieldisketten dorthin ausgepackt. Verschieben lässt sich das mit den
+Beim ersten Start einer Fassung werden die mitgelieferten Beispieldisketten
+dort in einen eigenen Ordner ausgepackt (`Beispieldisketten_v03`, für eine
+Vorabversion mit Zusatz wie `Beispieldisketten_v03-beta.2`) — gegliedert nach
+`<maschine>_<system>/`. Was sonst im Arbeitsordner liegt, bleibt unberührt. Verschieben lässt sich das mit den
 Umgebungsvariablen `K1520_DATA` (Arbeitsordner) und `K1520_DISKS` (nur die
 Abbilder). Wo das Programm gerade sucht, sagt `a5120emu --paths`.
 
@@ -1064,7 +1068,7 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
 
 ## Der P8000 Emulator
 
-`p8000emu` ist derselbe Emulator für den 16-Bit-Arbeitsplatzcomputer **robotron P8000**:
+`p8000emu` ist derselbe Emulator für den 16-Bit-Arbeitsplatzcomputer **EAW P8000**:
 8-Bit-Karte mit U880 (Monitor MON8, Betriebssystem **UDOS**), 16-Bit-Karte mit U8001 und
 Speicherverwaltung (Monitor MON16, **WEGA**/UNIX) und Winchesterkontroller (WDC). Der P8000 hat
 **keinen Bildschirm am Rechner**: seine Konsole ist ein serielles **Terminal** (tty1) — der
@@ -1650,3 +1654,19 @@ lädt trotzdem.
 **Gar nichts startet.** `a5120emu --paths` (bzw. `k8915emu --paths`) sagt, wo das Programm die
 Kernbibliothek und den Formatkatalog sucht — das ist die erste Frage, wenn
 etwas nicht gefunden wird.
+
+## Bugs, Wünsche und Anregungen
+
+Fehler, Wünsche und Anregungen bitte über das Ticketsystem des Projekts auf GitHub
+melden: <https://github.com/olliy78/a5120emu/issues>. Ein neues Ticket legt man
+dort mit *New issue* an; dafür braucht es ein (kostenloses) GitHub-Konto. Bevor Sie
+eins schreiben, lohnt ein Blick, ob dasselbe schon gemeldet ist.
+
+Hilfreich in einer Fehlermeldung sind:
+
+* die **Version** (*Hilfe ▸ Über …* bzw. oben in diesem Handbuch),
+* das **Betriebssystem** des Rechners, auf dem der Emulator läuft,
+* **was Sie getan haben**, was Sie erwartet haben und was stattdessen geschah,
+* bei Problemen mit einer Diskette nach Möglichkeit das **Abbild** selbst
+  (als Anhang am Ticket, falls seine Weitergabe erlaubt ist),
+* bei „wird nicht gefunden“ die Ausgabe von `--paths` (siehe oben).

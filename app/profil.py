@@ -475,7 +475,7 @@ P8000 = Programmprofil(
     programm="p8000emu",
     titel="P8000 Emulator",
     rechner="P8000",
-    beschreibung="Emulator des 16-Bit-Arbeitsplatzcomputers robotron P8000 (U880 + U8001, UDOS und WEGA)",
+    beschreibung="Emulator des 16-Bit-Arbeitsplatzcomputers EAW P8000 (U880 + U8001, UDOS und WEGA)",
     konfig_datei="p8000emu.yaml",
     vorgabe_datei="default_config_p8000.yaml",
     # 4 MHz (P8000Machine::Config::takt8_hz); 16-Bit-Karte und WDC laufen ebenfalls mit 4 MHz.
@@ -551,7 +551,7 @@ P8000 = Programmprofil(
     schnittstellen_ports=(("tty0", 5000), ("tty2", 5002), ("tty3", 5003), ("tty4", 5004),
                           ("tty5", 5005), ("tty6", 5006), ("tty7", 5007),
                           ("Terminal (XB5)", 5004)),
-    ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>robotron P8000</b>",
+    ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>EAW P8000</b>",
     andere="a5120",
     weitere=("k8915", "prg710", "pc1715"),
 )

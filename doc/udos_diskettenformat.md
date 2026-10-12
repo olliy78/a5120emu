@@ -909,7 +909,7 @@ Gebaut wird sie so (Werkzeug: `tools/k1520disktool.md`):
 ```sh
 k1520disktool get    udos_boot_scp.hfe --to auszug     # Dateien + Beiblatt
 k1520disktool create neu.hfe --fs udos_ds77 --label UDOS.SYS.4.3 \
-                     --boot disks/boot_udos43.bin      # Systemspuren 0–2 + 21
+                     --boot disks/bootsektoren/boot_udos43.bin      # Systemspuren 0–2 + 21
 k1520disktool put    neu.hfe auszug                    # alle Dateien, Angaben aus dem Beiblatt
 ```
 

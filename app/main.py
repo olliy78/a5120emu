@@ -174,7 +174,8 @@ def main():
 
     # Set application metadata
     app.setApplicationName("K1520 Emulator")
-    app.setApplicationVersion("1.0.0")
+    from app import version as _version
+    app.setApplicationVersion(_version.fassung())
 
     # Ctrl+C im Terminal sauber beenden: Qts C++-Eventloop kehrt sonst nie nach
     # Python zurück, sodass der SIGINT-Handler nie läuft.  Ein periodischer

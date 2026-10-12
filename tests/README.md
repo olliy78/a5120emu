@@ -61,7 +61,7 @@ Testebene = Verzeichnis = ctest-Label. Quer dazu `fast` / `slow`.
 | `integration/` | 72 | Ganze Maschine, echter Kaltboot von einer Fixture-Diskette |
 | `cli/` | 70 | Die gebauten Werkzeuge als Prozess. Fälle als Daten in `cli/cases/*.cli`, ausgeführt von `cli/run_case.py` |
 | `system/` | 106 | Originale DDR-Programme unter dem Emulator: FORMAT, CPABCGEN, SCPX INIT/MODF/SYSP, HARDY, UDOS, K8915 FORMAT/DISGEN (`test_k8915_format*.cpp`, Bedienhelfer `k8915_bedienung.h`) — plus die 88er Format-Matrix und die sechs K8915-Verfahren. **Langsam** (Minuten) |
-| `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll |
+| `python/` | 12 | pytest: C-ABI (ctypes ↔ `libk1520core.so`), PySide6-GUI headless, Pfadauflösung, Testprotokoll, Versionen/Releases (`test_version.py`, `dev.sh release --trocken` im Wegwerf-Repo), Handbuch-Platzhalter (`test_help.py`) |
 | `oracle/` | 1 | Differenzprüfung U8001/U8002 gegen MAMEs z8000 (Label `mame_oracle`). Nur `tools/dev.sh test-oracle` — eigenes `build_oracle/`, lädt MAME-Quellen beim Konfigurieren (`core/primitives/z8000/README.md`) |
 | `support/` | — | Bibliothek `k1520_testsupport`, keine Tests |
 | `fixtures/` | — | Testdisketten (`tests/fixtures/README.md`) |
@@ -88,6 +88,15 @@ heißt `k1520_test_<name>`, das Binary landet in `build/`, `GTest::gtest_main`
 und die Include-Wurzel kommen automatisch, ebenso der Fixture-Pfad als
 Compile-Definition. Weitere Argumente: `DEFS` (zusätzliche Makros),
 `TIMEOUT` (Vorgabe 60 s).
+
+> **Zeitgrenzen werden mit `K1520_TEST_ZEIT_FAKTOR` malgenommen** (CMake-Cache,
+> Vorgabe **2**, seit 2026-10-10): die Zahlen in den `CMakeLists.txt` sind auf
+> einem freien Rechner bemessen, bei ~2900 Fällen mit `-j16` und nebenher
+> laufenden Emulatoren reichten sie nicht mehr. `k1520_add_test()` rechnet den
+> Faktor selbst ein; für mit `add_test()` angelegte Fälle steht als letzte Zeile
+> jeder `tests/<ebene>/CMakeLists.txt` `k1520_test_zeiten_skalieren()` — ein
+> neues Testverzeichnis braucht diese Zeile ebenfalls. Gezielt ändern:
+> `cmake -B build -DK1520_TEST_ZEIT_FAKTOR=3`.
 
 > **Falle:** `gtest_discover_tests(... PROPERTIES LABELS "a;b")` übernimmt nur
 > das ERSTE Label — die Liste zerfällt beim Durchreichen. `k1520_add_test()`

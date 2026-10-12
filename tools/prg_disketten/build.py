@@ -34,6 +34,8 @@ import tempfile
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HIER))
+sys.path.insert(0, os.path.join(REPO, 'tools'))
+import disketten_beigaben as _db  # noqa: E402  (Ordner je Diskette)
 
 # Geraet -> (Diskette in disks/, Datentraegername)
 DISKETTEN = {
@@ -77,7 +79,8 @@ def _inhalt_von_ordner(ordner):
 
 def bauen(tool, geraet, ausgabe):
     name, label = DISKETTEN[geraet]
-    ziel = os.path.join(ausgabe, name)
+    ziel = _db.diskpfad(ausgabe, name)
+    os.makedirs(os.path.dirname(ziel), exist_ok=True)
     if os.path.exists(ziel):
         os.remove(ziel)
     with tempfile.TemporaryDirectory() as tmp:
@@ -95,7 +98,7 @@ def bauen(tool, geraet, ausgabe):
 
 def pruefen(tool, geraet, ausgabe):
     name, _ = DISKETTEN[geraet]
-    diskette = os.path.join(ausgabe, name)
+    diskette = _db.diskpfad(ausgabe, name)
     if not os.path.isfile(diskette):
         print(f'{name}: fehlt')
         return False

@@ -64,8 +64,12 @@ def test_every_header_function_has_ctypes_signatures():
 
 
 def test_version_string():
+    """Dieselbe Bauversion wie der Kern (doc/ci_pipeline.md §7.2), kein eigener Text mehr."""
     from app.core_binding.k1520disk import version
-    assert version().startswith("k1520disk")
+    from app.core_binding.k1520 import K1520Emulator
+    from app import version as v
+    assert version() == K1520Emulator.version()
+    assert version().startswith(v.lies_basis(PROJECT_ROOT))
 
 
 # ─── Katalog ─────────────────────────────────────────────────────────────────

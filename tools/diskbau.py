@@ -100,7 +100,8 @@ class Diskette:
 
     # -- bauen ------------------------------------------------------------------------------------------------
     def bauen(self, tool, ausgabe, soll):
-        ziel = os.path.join(ausgabe, self.name)
+        ziel = _beigaben.diskpfad(ausgabe, self.name)
+        os.makedirs(os.path.dirname(ziel), exist_ok=True)
         if os.path.exists(ziel):
             os.remove(ziel)
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,7 +126,7 @@ class Diskette:
 
     # -- pruefen (Waechter) -----------------------------------------------------------------------------------
     def pruefen(self, tool, ausgabe, soll):
-        diskette = os.path.join(ausgabe, self.name)
+        diskette = _beigaben.diskpfad(ausgabe, self.name)
         if not os.path.isfile(diskette):
             print(f'{self.name}: fehlt')
             return False

@@ -57,3 +57,4 @@ option(K1520_Z8K_MAME_ORACLE "U8001-Primitive gegen MAMEs z8000 prüfen (lädt M
 if(K1520_Z8K_MAME_ORACLE)
     add_subdirectory(oracle)
 endif()
+

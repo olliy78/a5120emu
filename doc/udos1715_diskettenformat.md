@@ -2,13 +2,13 @@
 
 **Stand:** 2026-08-18 · Referenzdatenträger: eine am Greaseweazle eingelesene
 Systemdiskette („SYSTEM", 67 Dateien, 80×32×256, 0 CRC-Fehler); als zweiter Beleg die
-**WEGA-Startdiskette des Robotron P8000** (UDOS 2.2, 42 Dateien, dieselbe Geometrie)
+**WEGA-Startdiskette des EAW P8000** (UDOS 2.2, 42 Dateien, dieselbe Geometrie)
 
 Dieses Dokument beschreibt ein **Dateisystem**, keine Maschine. Es heißt hier
 UDOS1715, weil es am **PC 1715** aufgenommen und entschlüsselt wurde; angetroffen wurde
 es inzwischen auf zwei **völlig verschiedenen Rechnern**:
 
-| | **PC 1715** | **Robotron P8000** |
+| | **PC 1715** | **EAW P8000** |
 |---|---|---|
 | Bauart | Bürocomputer, U880 (Z80) | Mehrprozessorsystem; UDOS läuft auf dem Z80-Vorrechner |
 | UDOS-Fassung | UDOS1715 | UDOS 2.2 |
@@ -166,7 +166,7 @@ Spur 4FH:  FF FF FF FF   voll
 
 ### 3.0a Zwei Rechner, dieselbe Sitte — aber nicht dasselbe Füllmuster
 
-Die Diskette des **Robotron P8000** (UDOS 2.2, WEGA-Startdiskette) ist Feld für Feld
+Die Diskette des **EAW P8000** (UDOS 2.2, WEGA-Startdiskette) ist Feld für Feld
 dieselbe Karte — nur füllt ihr Formatierer den Platz zwischen Belegungsplan und
 Zählern nicht mit `00`, sondern mit dem **`77H`-Rest der ZDOS-Sitte**:
 
@@ -435,7 +435,7 @@ Python-Prüfskript gegengerechnet:
 | **Belegungskarte ↔ Auszählung aus allen Dateien** | **1673 = 1673, beide Richtungen ohne Rest** |
 | Zähler `177H` + `17CH` = 80 · 32 | 1673 + 887 = 2560 ✔ |
 
-Am **zweiten** Datenträger — der WEGA-Startdiskette des Robotron P8000 (42 Dateien,
+Am **zweiten** Datenträger — der WEGA-Startdiskette des EAW P8000 (42 Dateien,
 UDOS 2.2) — dasselbe Bild:
 
 | Probe | Ergebnis |

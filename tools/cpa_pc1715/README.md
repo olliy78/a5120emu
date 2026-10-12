@@ -1,6 +1,6 @@
 # tools/cpa_pc1715 — Bau der CP/A-Systemdiskette des PC 1715
 
-`python3 tools/cpa_pc1715/build.py --tool build/k1520disktool` baut `disks/pc1715_cpa1715_system.hfe`
+`python3 tools/cpa_pc1715/build.py --tool build/k1520disktool` baut `disks/pc1715_cpa1715/pc1715_cpa1715_system.hfe`
 (`--check` = Wächter `cli_cpa_pc1715`). Gegenstück zu `tools/cpa_a5120/`; Beschreibung für den Anwender:
 `inhalt/LIESMICH.TXT`, Entscheidungen: `doc/disketten_bestand.md` §7.
 

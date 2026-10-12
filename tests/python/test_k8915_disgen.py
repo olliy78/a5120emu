@@ -30,6 +30,7 @@ K8915_901 = "k8915scpx_boot1.hfe"
 
 # Vergleich über den Text: DISGEN räumt nach jedem Befehl ab, was darunter stand.
 SCHRITT = 100_000
+PROBE_ALLE = 3                # Bildschirmprobe alle 300 000 Takte
 
 
 def _fenster(qapp, disks):
@@ -97,12 +98,14 @@ class _Tipper:
     def zeilen(self):
         return [z.rstrip(" \x00") for z in self.bild().split("\n") if z.strip(" \x00")]
 
+    # Der Bildschirmtext kostet mehr als der Lauf dazwischen (2000 Einzelaufrufe) und die
+    # gesuchten Zustände bleiben stehen: geprüft wird nur nach jedem ``PROBE_ALLE``-ten Schritt.
     def bis(self, text, frist=60_000_000):
         t = 0
         while t < frist:
             if text in self.bild():
                 return True
-            t += self.emu.run(SCHRITT)
+            t += self.emu.run(SCHRITT * PROBE_ALLE)
         return text in self.bild()
 
     def bis_weg(self, text, frist=60_000_000):
@@ -110,7 +113,7 @@ class _Tipper:
         while t < frist:
             if text not in self.bild():
                 return True
-            t += self.emu.run(SCHRITT)
+            t += self.emu.run(SCHRITT * PROBE_ALLE)
         return text not in self.bild()
 
     def bis_prompt(self, frist=200_000_000):
@@ -119,7 +122,7 @@ class _Tipper:
             z = self.zeilen()
             if z and z[-1] == "A>":
                 return True
-            t += self.emu.run(SCHRITT)
+            t += self.emu.run(SCHRITT * PROBE_ALLE)
         return False
 
     def cursor_feld(self):

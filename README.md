@@ -220,4 +220,16 @@ cparun/      eigenständiges Unterprojekt: CP/M-Programme direkt auf dem Host au
 
 ## Lizenz
 
-MIT — siehe [LICENSE](LICENSE).
+Der Programmcode steht unter der MIT-Lizenz — maßgeblich ist der englische Text in
+[LICENSE](LICENSE). Eine deutsche Übersetzung (nur zur Information) steht in
+[LIZENZ.txt](LIZENZ.txt).
+
+**Beigaben Dritter sind davon ausgenommen:** Diskettenabbilder mit Betriebssystemen und
+Programmen der damaligen Hersteller (`disks/`, `tests/fixtures/`), EPROM-Abzüge
+(`doc/EPROMS/`, `doc/p8000/eproms/`, eingebaut als Datenfelder wie
+`core/cards/k2526/rom_data.h`) und digitalisierte Handbücher und Schaltpläne
+(`doc/original_docs/`). Die Rechte daran liegen bei den jeweiligen Rechteinhabern; sie
+liegen nur bei, um die historische Technik verständlich zu machen und den Emulator zu
+prüfen. Rechteinhaber, die mit der Weitergabe nicht einverstanden sind, melden sich bitte
+über die [Issues](https://github.com/olliy78/a5120emu/issues). Wortlaut auf Deutsch und
+Englisch: [LIZENZ.txt](LIZENZ.txt).

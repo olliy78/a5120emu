@@ -1,12 +1,12 @@
 # tools/scpx_a5120 — SCPX-Systemdiskette des A5120
 
-`python3 tools/scpx_a5120/build.py --tool build/k1520disktool` baut `disks/a5120_scpx17_k5601_system.hfe`
+`python3 tools/scpx_a5120/build.py --tool build/k1520disktool` baut `disks/a5120_scpx17/a5120_scpx17_k5601_system.hfe`
 (`--check` = Wächter `cli_scpx_a5120`). Betriebssystem **SCPX 1526 V 1.7 (52K)**, Format **5 × 1024** (`scpx798`, K5601 — wie die
 anderen Systemdisketten des Pakets). Anwenderbeschreibung: `inhalt/LIESMICH.TXT`; Inventur und Entscheidungen: `doc/scp_inventur.md`.
 
 | Quelle | Inhalt |
 |--------|--------|
-| `bootabbild.bin` | Systemspuren (= `disks/boot_scpx798.bin`, aus der Hardy-Diskette) |
+| `bootabbild.bin` | Systemspuren (= `disks/bootsektoren/boot_scpx798.bin`, aus der Hardy-Diskette) |
 | `inhalt/` | System und Dienste der Hardy-Diskette: `SYL17`/`CCPBD17`/`BIOSG617,G717,K617,K717.SYS`, `SYSP`, `SYSG`, `INIT`, `MODF`, `MODX`, `SEPR`, `PIP`, `POWER`, `STAT`, `HARDY` |
 | `tools/scp_gemeinsam/` | TP 3.0 (+TPINSCPA), WM, DIENST, BASIC, PASCAL, M80/LINKMT/MLOAD/Z1/ZSID, RAMTEST, DIMA, UNERA, DISKCOPY, TLC (+ `TLC.PAR` für K8025 A, 9600 Bd — im Emulator mit dem TLC-Installationsmenü erzeugt), EM256TST |
 | Beigaben | SERTEST, ROMREAD, EM256ADR, EM16ABL, EM256FUL, RAFCPM, RAF512, LBREAD, LBPUNCH (`tools/disketten_beigaben.py`), RAFTEST (Adresse 88H/89H), RAFQUICK |

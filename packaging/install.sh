@@ -72,7 +72,7 @@ STARTER="$MASCHINEN $WERKZEUGE"
 # das Deinstallieren wieder.  Die Liste wandert beim Installieren in den Ausweis
 # (siehe unten), sodass eine ältere Installation nach ihrer EIGENEN Liste
 # abgeräumt wird und nicht nach der einer neueren Fassung.
-INVENTAR="bin app share venv python tools .cache-uv VERSION requirements.lock LICENSE"
+INVENTAR="bin app share venv python tools .cache-uv VERSION requirements.lock LICENSE LIZENZ.txt"
 
 MODE=install
 SHORTCUTS=yes
@@ -324,7 +324,9 @@ for d in bin app share; do
     cp -R "$SELF_DIR/payload/$d" "$PREFIX/$d"
 done
 cp "$SELF_DIR/VERSION" "$SELF_DIR/requirements.lock" "$PREFIX/"
-if [ -f "$SELF_DIR/LICENSE" ]; then cp "$SELF_DIR/LICENSE" "$PREFIX/"; fi
+for _l in LICENSE LIZENZ.txt; do
+    if [ -f "$SELF_DIR/$_l" ]; then cp "$SELF_DIR/$_l" "$PREFIX/"; fi
+done
 
 # Ausweis für das Deinstallieren.  Er beantwortet zwei Fragen: ob dieses
 # Verzeichnis überhaupt uns gehört (sonst wird nichts gelöscht) und WAS darin
@@ -529,6 +531,13 @@ from app import paths
 lib = ctypes.CDLL(str(paths.core_library()))
 lib.k1520_version.restype = ctypes.c_char_p
 print("     Kern:      ", lib.k1520_version().decode())
+# Die Bibliothek und die mitgelieferte VERSION-Datei sollen dieselbe Bauversion
+# nennen (doc/ci_pipeline.md §7.2) — sonst zeigte das Ueber-Fenster zweierlei.
+# Nur eine Warnung: mit `build_payload.sh --skip-build --version X` von Hand
+# weichen sie ab, und das ist dann gewollt.  Streng prueft das release.yml.
+from app import version
+if lib.k1520_version().decode() != version.fassung():
+    print("     WARNUNG: Kern", lib.k1520_version().decode(), "!= Paket", version.fassung())
 
 # Beide Maschinen aus der Bibliothek: ROM- und Zeichengeneratordaten sind
 # einkompiliert, hier zeigt sich, ob die Bibliothek auch den K8915 traegt
@@ -550,7 +559,7 @@ fmt = paths.formats_file()
 if fmt is None:
     sys.exit("formats.yaml nicht gefunden:\n" + paths.describe())
 print("     Katalog:   ", fmt)
-print("     Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.user_disks_dir())
+print("     Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.beispiel_ordner())
 
 # Die Anbindung an echte Laufwerke ist FREIWILLIG — fehlt sie, laeuft alles
 # uebrige weiter, nur der Menuepunkt bleibt gesperrt.  Deshalb wird sie
