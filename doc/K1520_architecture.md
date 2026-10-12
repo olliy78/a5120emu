@@ -464,6 +464,73 @@ Die Primitiven sind generische Implementierungen der Z80-Peripheriechips, unabh�
 - Einfache Speicherblöcke mit konfigurierbaren Adressbereichen
 - EPROM initialisiert mit eingebetteten Daten aus `.h`-Datei
 
+### 5.3a Rechenaufwand: wo die Zeit hingeht und die Regeln dazu — 2026-10-12
+
+**Befund (Callgrind, Release + `-g`).** Der Kern, nicht die Oberfläche, begrenzt das
+erreichbare Vielfache der Echtzeit: der Emulationsfaden (`app/emulationstakt.py`, 2-ms-Scheiben)
+läuft bei Überlast zu 100 %, der GUI-Faden braucht ≈ 6 %, es gibt kein Busy-Wait. Im Kern lag
+der größte Posten bei **allen** Maschinen im **`Z80CTC`**: A5120 ≈ 32 %, K8915 ≈ 45 %, P8000
+≈ 62 %. Ursache: Baudraten-Kanäle (Zeitgeber, ZK klein, z. B. Steuerwort 47H/ZK 2) erzeugen
+alle paar Takte einen Nulldurchgang; die alte Fenster-Vorprüfung in `clockTick(int)` sah darum
+fast immer ein Ereignis und fiel auf „ein `clockTick()` je Takt" zurück — und die Karten rufen
+`clockTick(n)` nach **jedem Befehl** mit n = 4…20.
+
+**Zwei Stufen im CTC (`core/primitives/z80_ctc.{h,cpp}`), beide bitgleich zum Einzeltakten:**
+
+1. **Sprung bis vor die nächste BEOBACHTETE Flanke** (`springe`). Beobachtet ist ein Kanal,
+   wenn seine ZC/TO-Flanke eine Wirkung hat: Interrupt freigegeben, Trigger-Betrieb
+   (`CTRL_CLK_TRG`, `fireZCTO` hält ihn an) oder Bit in der **Rückruf-Maske**
+   (`setZCTOCallback(cb, kanalmaske)`, `zcto_beobachtet(i)`). Unbeobachtete Kanäle werden rein
+   arithmetisch fortgeschrieben (Prescaler/Zähler, Nachladen per Modulo); nur die Flanke eines
+   beobachteten Kanals läuft als exakter Einzeltakt. Der Zustand am Fensterende ist
+   byte-gleich, auch `zcto_active` (Save-State). Prescaler ≥ Teiler bzw. Bruchtakt ≥ φ fallen
+   auf Einzeltakte zurück.
+2. **Aufgeschobenes Takten** (`clockTick(int)` inline im Header): die Takte werden nur
+   aufsummiert (`aufgeschoben_`); verrechnet wird erst, wenn die Summe den **Horizont**
+   (`berechneHorizont()`: Takte bis vor die nächste beobachtete Flanke) überschreitet — dann
+   fällt die Flanke samt Dirty-Meldung im selben `clockTick`-Aufruf wie vorher, also im selben
+   Befehl — oder wenn ein Zugriff den Zustand sieht.
+
+**Zugriffsdisziplin (nicht aufweichen):** jede Methode, die CTC-Zustand liest oder schreibt,
+ruft vorher `sichtbar()` — heute `ioRead`, `ioWrite`, `clkTrg`, `getCount`, `debugState`,
+`serialize`/`serializeTakt`, `reset`, `setZCTOCallback`, `setzeEingangsTakt`, das einzelne
+`clockTick()`. Nach `deserialize*` werden die angesammelten Takte verworfen; nach jeder
+Neuprogrammierung ist der Horizont 0 (wird beim nächsten Takt neu bestimmt). **Wer dem CTC
+einen neuen Zugriffsweg gibt, muss `sichtbar()` rufen**, sonst sieht er einen veralteten Zähler.
+
+**Rückruf-Maske je Maschine** — Vorgabe `0x0F` (alle beobachtet) ist die sichere Wahl;
+verkleinert nur, wo geprüft ist, dass niemand sonst die Flanke abnimmt (Kaskade, Koppelbus,
+SIO-Takt als Flanke):
+
+| Maschine / Karte | Maske | Grund |
+|---|---|---|
+| A5120 (K2526) | `0x07` | der Koppelbus kennt nur ZC/TO0…2 |
+| PRG 710 | `0x01` | nach außen geht nur ZC/TO0 |
+| K2521 (PRG 710, K8915 V2) | aus Kaskaden + äußerem Rückruf (`zctoVerdrahten()`) | Kaskade K2→K3 hängt als Rückruf an K2 |
+| PC 1715W | `0x02` | nur K1 → K2 (Uhr) |
+| P8000 Karte16, WDC | `0x04` | nur K2 wird ausgewertet |
+| K7028, PC-1715-ZRE, P8000 Karte8 | — | kein Rückruf ⇒ nichts per Maske beobachtet |
+
+**Kleinere Posten:** `Z80PIO::pins/treiber` und `Z80SIO::Channel::format` stehen inline im
+Header; `Z80CTC::teilerTakteQ16` merkt sich die letzte 64-Bit-Division.
+
+**Wirkung** (headless über die C-ABI, Mio. Takte je Sekunde, gleicher Rechner):
+
+| Maschine | vorher | nachher |
+|---|---|---|
+| A5120 (CP/A-Prompt) | 66 | 135 (≈ 54× bei 2,5 MHz) |
+| K8915 | 39 | 114 |
+| PRG 710 | 100 | 125 |
+| PC 1715 | ≈ 83 | 94 |
+| P8000 (WEGA, Originalterminal + WDC) | 12,6 (3,2×) | 47 (11,8×) — dazu §10.2a im Entwurf 25 |
+
+**Nachweis der Bitgleichheit:** Hashes von RAM + Bild nach 200–400 Mio. Takten vorher/nachher
+gleich (A5120, K8915, PRG 710, PC 1715); P8000-Save-State nach 100 Mio. Takten `cmp`-gleich.
+Wächter: `CtcSprung.*` (`tests/unit/primitives/test_ctc_sprung.cpp`: 400 Zufallskonfigurationen
+Sprung == Einzeltakt inkl. Kaskade, Zählerlesen, Neuprogrammierung, Kanal-Reset;
+`AufgeschobenesTaktenGleichEinzeltaktenBeiZugriffenDazwischen` mit 300 × 3000 Fenstern und
+zufälligen Zugriffen dazwischen). Messen für den A5120: `tools/dev.sh tool bench_run`.
+
 ### 5.4 Schicht 2: Steckkarten
 
 Jede Karte besteht aus:

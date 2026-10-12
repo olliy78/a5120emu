@@ -212,13 +212,16 @@ public:
 
     // Takt-Eingang (aufgerufen bei jedem System-Takt)
     void    clockTick();
+    // Gebündelt, je Befehl (seit 2026-10-12 aufgeschoben + Sprung bis vor die
+    // nächste BEOBACHTETE Flanke, bitgleich — Architektur §5.3a)
+    bool    clockTick(int ticks);
 
     // CLK/TRG-Eingänge für Counter-Modus
     void    clkTrg(int channel, bool rising_edge);
 
     // ZC/TO-Ausgänge
     using ZCTOCallback = std::function<void(int channel, bool level)>;
-    void    setZCTOCallback(ZCTOCallback);
+    void    setZCTOCallback(ZCTOCallback, uint8_t kanalmaske = 0x0F);  // Maske: §5.3a
 
     int     getCount(int channel) const;
     bool    isTimerMode(int channel) const;
