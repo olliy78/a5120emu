@@ -1,4 +1,4 @@
-# K1520emu — Emulator für Robotron-Rechner am K1520-Bus
+# K1520emu — Sammlung von Emulatoren und Werkzeugen für K1520 und P8000 Rechner
 
 Hardwarenahe Emulation von Bürocomputern und Steuerrechnern aus der DDR, gebaut aus dem
 **K1520-Bausteinsystem** — dem Z80-Bussystem, auf dem A5120, K8915, PRG 710 und PC 1715
