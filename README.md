@@ -1,11 +1,15 @@
 # K1520emu — Emulator für Robotron-Rechner am K1520-Bus
 
 Hardwarenahe Emulation von Bürocomputern und Steuerrechnern aus der DDR, gebaut aus dem
-**K1520-Bausteinsystem** und seinen Verwandten. Nachgebildet wird nicht das Betriebssystem,
-sondern die **Hardware** — Steckkarten, Prozessoren, Floppy-Controller, Tastaturen. Boot-ROM,
-BIOS und Betriebssystem laufen als echter Maschinencode; deshalb booten die
-Original-Betriebssysteme von Original-Disketten, und auch Formatieren mit dem originalen
-`FORMAT.COM` funktioniert.
+**K1520-Bausteinsystem** — dem Z80-Bussystem, auf dem A5120, K8915, PRG 710 und PC 1715
+beruhen. Mit dabei ist außerdem die **EAW P8000**: kein K1520-Rechner, sondern ein eigener
+8/16-Bit-Arbeitsplatzrechner mit UNIX-Ableger WEGA, der nur einzelne Bausteine mit den
+anderen teilt.
+
+Nachgebildet wird nicht das Betriebssystem, sondern die **Hardware** — Steckkarten,
+Prozessoren, Floppy-Controller, Tastaturen. Boot-ROM, BIOS und Betriebssystem laufen als
+echter Maschinencode; deshalb booten die Original-Betriebssysteme von Original-Disketten,
+und auch Formatieren mit dem originalen `FORMAT.COM` funktioniert.
 
 > ### ⬇ Fertige Pakete für Windows und Linux
 > **[Zur Downloadseite (aktuelles Release)](https://github.com/olliy78/k1520emu/releases/latest)**
@@ -29,19 +33,45 @@ Dazu steckbare Optionen wie RAM-Floppy und Lochstreifen, serielle Schnittstellen
 (Telnet, RFC 2217, Datei) und echte Disketten über einen
 [Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter.
 
+## k1520DiskTool — Dateien zwischen PC und Diskette
+
+Ein eigenes Programm mit Oberfläche und Kommandozeile, das Dateien von Diskettenabbildern
+holt und zurückschreibt, ohne dass der Emulator laufen muss — praktisch, um Quelltexte am
+PC zu bearbeiten und dann im Emulator zu übersetzen, oder um eine Diskette zu sichern.
+
+- Dateisysteme **CP/A, SCPX, UDOS, UDOS 1715/NDOS, SCP1700** (A7100) und **WEGA**, in den
+  Abbildformaten `.img`, `.hfe` und `.dmk`; Geometrie und Dateisystem erkennt es selbst.
+- Auflisten, herausholen, einfügen, löschen, leere oder bootfähige Disketten anlegen.
+- **Diskeditor** bis hinunter auf den einzelnen Sektor, **Dateisystemprüfung** mit
+  Reparatur und **Rettung gelöschter Dateien**.
+- Echte Disketten lassen sich über einen Greaseweazle direkt öffnen.
+
+## Debugger `k1520dbg` — auch für eigene Programme
+
+Ein interaktiver Debugger im Stil von gdb, der die **ganze Maschine** anhält, nicht nur ein
+Programm. Er hängt an der Hardware, nicht am Betriebssystem — untersuchen lassen sich deshalb
+Boot-ROM, BIOS, Treiber und Anwendungen unter jedem Gastsystem gleichermaßen, auch eigene
+Z80-Programme.
+
+- Haltepunkte, Einzelschritt, **Rückwärtsschritt** und Momentaufnahmen: einmal booten, oft
+  weitermachen.
+- Speicher, E/A und Bildschirm beobachten, Tastenfolgen einspielen — damit lassen sich auch
+  bildschirmgesteuerte Programme automatisiert durchfahren.
+- **Quelltext statt Hexdump:** ein kommentiertes Listing oder roher `.MAC`-Quelltext wird an
+  die Adressen angeheftet.
+- Die Diskette wird kopiert eingelegt; ein Original kann nicht versehentlich beschädigt
+  werden.
+
 ## Die Programme und ihre Handbücher
 
 - **Emulator** — je Rechner ein eigenes Programm (`a5120emu`, `k8915emu`, `prg710emu`,
   `pc1715emu`, `p8000emu`) mit gemeinsamer Oberfläche: Bildröhre, Laufwerke,
   Bildschirmtastatur.
   **[Handbuch des Emulators](app/help/handbuch.md)** (auch im Programm unter *Hilfe*)
-- **k1520DiskTool** — Dateien zwischen PC und Diskettenabbild austauschen, ohne dass der
-  Emulator läuft: CP/A, SCPX, UDOS, NDOS, SCP1700, WEGA in `.img`, `.hfe` und `.dmk`; mit
-  Diskeditor, Dateisystemprüfung und Rettung gelöschter Dateien.
+- **k1520DiskTool** —
   **[Handbuch des DiskTools](app/disktool/help/handbuch.md)** ·
   [Kommandozeile](tools/k1520disktool.md)
-- **Debugger `k1520dbg`** — hält die ganze Maschine an, nicht nur ein Programm; auch für
-  eigene Z80-Programme unter CP/A, SCPX oder UDOS.
+- **Debugger `k1520dbg`** —
   **[Handbuch des Debuggers](doc/handbuch_k1520dbg.md)** ·
   [Kommandoreferenz](tools/k1520dbg.md) ·
   [Einstieg mit Beispielen](tools/how_to_debug_and_trace.md)
