@@ -1,8 +1,18 @@
-# K1520 Emulator – Architekturkonzept v2.0
+# K1520emu – Architektur
 
 **Autor:** Olaf Krieger  
-**Stand:** Mai 2026  
-**Basis:** TGL 37271/01, Technische Dokumentation A5120, K2526, K7024, K8025, K5122, K7637
+**Stand:** Oktober 2026 (erste Fassung Mai 2026)  
+**Basis:** TGL 37271/01, technische Dokumentation der emulierten Rechner und Karten
+
+> **Wozu dieses Dokument.** Es ist die **Übersicht**: wie Kern, Bibliotheken, Oberfläche
+> und Werkzeuge zusammenhängen, welche Regeln für alle Maschinen gelten und wo die
+> Einzelheiten stehen. Die Feinentwürfe je Baugruppe und Maschine liegen unter
+> [`doc/design/`](design/), die Festlegungen mit ihren Wächtern unter
+> [`doc/merkposten/`](merkposten/). Wo sich beide widersprechen, gilt der jüngere Entwurf —
+> und dieses Dokument ist zu berichtigen.
+>
+> Die Abschnittsnummern §5.1a/b, §5.3a, §8.5–§8.8 und §14 werden aus Quelltext und anderen
+> Dokumenten zitiert und bleiben deshalb stabil.
 
 ---
 
@@ -10,35 +20,73 @@
 
 ### 1.1 Ziel
 
-Entwicklung eines hardwarenahen, modularen Emulators für die **K1520-Rechnerfamilie** (DDR, 1980er Jahre). Zielcomputer:
+Ein hardwarenaher, modularer Emulator für Rechner aus dem **K1520-Bausteinsystem**
+(DDR, 1980er Jahre) — und für die **EAW P8000**, die kein K1520-Rechner ist, aber genug
+Bausteine mit ihnen teilt, um im selben Kern zu leben.
 
-| Computer | Karten | OS |
-|----------|--------|-----|
-| Robotron A5120 | K2526, K3526, K7024, K8025, K5122 | CPA, SIOS, SCP, UDOS, MUTOS |
-| PRG710 / PRG710-1 | (noch zu ermitteln) | SCPX |
-| K8915 (5¼″ V3) | 045-8762 ZRE+128K, K7028 ATS, K7024, K5122 — s. `doc/design/16_k8915.md` | SCPX 8915 |
-| weitere | konfigurierbar | — |
+| Rechner | Wesentliche Karten / Bausteine | Betriebssysteme | Entwurf |
+|---|---|---|---|
+| **robotron A5120** | K2526 (ZRE, zwei Z80), K3526, K7024, K8025, K5122, Tastatur K7637 | CP/A, SCPX, UDOS | dieses Dokument, [design/03](design/03_k2526_zre.md)–[09](design/09_floppy_drive.md) |
+| **A5120.16** | A5120 + Erweiterungsmodul EM064/EM256 mit U8001 | wie A5120 | [design/17](design/17_a5120_16.md) |
+| **robotron K8915** V3 / V2 | ZRE 045-8762 bzw. K2521 + K3528, K7028, K7024, K5122, Tastatur K7672 | SCPX 8915 | [design/16](design/16_k8915.md), [design/24](design/24_k8915_varianten.md) |
+| **PRG 710 / PRG 710-1** | K2521, Speicherverwaltung, K7024, K5122, ATP 590068 (EPROMmer), ASS 590069 | UDOS 4.3, SCPX | [design/20](design/20_prg710.md) |
+| **robotron PC 1715 / 1715W** | eigene ZRE mit 8275-Bild, Tastatur mit eigenem U880, K5122-Bauart bzw. U8272 + Z80-DMA | SCP 1715, CP/A, CP/Z, UDOS 1715, SCP 3.0 | [design/21](design/21_pc1715.md) |
+| **EAW P8000** | 8-Bit-Karte (U880), 16-Bit-Karte (U8001 + 3 × U8010), WDC, Originalterminal (Z8) | UDOS, WEGA | [design/25](design/25_p8000.md), [26](design/26_p8000emu_oberflaeche.md), [28](design/28_p8000_originalterminal.md) |
 
-### 1.2 Abgrenzung zum Vorgänger
+Dazu Optionen, die in jede K1520-Maschine gesteckt werden können: RAM-Floppy RAF
+([design/22](design/22_raf512.md)) und Lochstreifen K6022 ([design/23](design/23_lochstreifen.md)).
 
-Der bestehende `a5120emu` (Verzeichnis `src/`) bleibt unverändert als Legacy-Code erhalten. Der neue Emulator entsteht **vollständig neu** in separaten Verzeichnissen und teilt **keinen Code** mit dem Vorgänger außer den Z80-Disassembler-Tools.
+### 1.2 Programme und Bibliotheken
 
-`cparun/` bleibt eigenständiges Tool ohne Änderungen.
+```
+  Emulator-Oberfläche (app/)        k1520DiskTool                Werkzeuge (tools/)
+  a5120emu  k8915emu  prg710emu     Oberfläche app/disktool/     k1520dbg  boot_trace
+  pc1715emu  p8000emu               CLI k1520disktool            floppy_diag  format_driver
+          │ ctypes                          │ ctypes / C++                │ C++, statisch gelinkt
+          ▼                                 ▼                             │
+  libk1520core  (C-ABI, §9)         libk1520disk  (C-ABI, §9)            │
+  Maschinen · Karten · Bus ·        Dateisysteme · DiskVolume            │
+  Primitive · Peripherie                    │                             │
+          │                                 │                             │
+          └──────────────┬──────────────────┘◄────────────────────────────┘
+                         ▼
+  gemeinsame statische Bibliotheken: Floppy-Schicht (§8), Formatkatalog,
+  Geometrieerkennung, Logger, Hilfsbibliotheken
+```
+
+- **`libk1520core`** ist der Emulator: alle Maschinen hinter einer C-ABI (§9).
+- **`libk1520disk`** ist das DiskTool ohne Z80, Karten und Bus; es teilt mit dem Kern
+  nur die Floppy-Schicht (§8.7a) und die Geometrieerkennung (§8.6.9).
+- Die **Oberflächen** sind Python/PySide6 um diese Bibliotheken herum (§10).
+- Die **Werkzeuge** (§11) linken die statischen Kernbibliotheken direkt und sehen damit
+  mehr als die C-ABI — etwa die ZVE2 des A5120 oder Save-States.
+- **`cparun/`** ist ein unabhängiges Unterprojekt (CP/M-Programme direkt auf dem Wirt)
+  und teilt keinen Code.
+
+Ein früherer monolithischer Emulator mit BIOS-Traps (`src/`) ist im August 2026 entfernt
+worden; nichts hier hängt von ihm ab.
 
 ### 1.3 Grundprinzip
 
-Der neue Emulator bildet echte K1520-Hardware nach — nicht BIOS-Traps oder OS-Spezifika. Dadurch kann jedes Betriebssystem booten, das auf echter Hardware läuft.
+Der Emulator bildet echte Hardware nach — keine BIOS-Traps, keine Kenntnis des
+Betriebssystems. Boot-ROM, BIOS und Betriebssystem laufen als echter Maschinencode;
+dadurch bootet jedes System, das auf der echten Hardware läuft, einschließlich
+Formatieren mit den Originalprogrammen.
 
 ---
 
 ## 2. Emulierte Hardware (A5120 als Referenzplattform)
 
+Der A5120 war die erste Maschine des Kerns; an ihm sind Bus, Primitive und Floppy-Schicht
+entstanden. Die übrigen Maschinen sind in §2.6 und in ihren Entwürfen beschrieben.
+
 ### 2.1 K1520-System
 
-Der K1520 ist ein genormter Backplane-Bus (TGL 37271/01) auf dem Karten mit Z80-kompatiblen Chips aufgebaut werden.
+Der K1520 ist ein genormter Rückwandbus (TGL 37271/01), auf dem Karten mit
+Z80-kompatiblen Bausteinen stecken.
 
 ```
-A5120 Backplane (11 Slots)
+A5120 Rückwand (11 Steckplätze)
 ┌────────────────────────────────────────────────────────────────┐
 │  Slot 1: K3526 (OPS) – Operationsspeicher 64 KB DRAM          │
 │  Slot 2: K5122 (AFS) – Anschlußsteuerung Folienspeicher (FDC) │
@@ -51,15 +99,15 @@ A5120 Backplane (11 Slots)
       Systembus               Koppelbus
       (X1, 58-pol.)          (X2, 58-pol.)
 
-Documented variant A5120.16 slot sequence:
+Dokumentierte Steckfolge des A5120.16:
 
-1. K8025 (ASS) - serial interfaces
-2. 062-9005 - Z8000 CPU card
-3. 062-9000 - Z8000 RAM card
-4. K2526 (ZRE) - central processing unit
-5. K7024 (ABS) - display
-6. K5122 (AFS) - floppy controller
-7. K3526 (OPS) - RAM
+1. K8025 (ASS) – serielle Schnittstellen
+2. 062-9005 – Z8000-CPU-Karte
+3. 062-9000 – Z8000-RAM-Karte
+4. K2526 (ZRE) – Zentrale Recheneinheit
+5. K7024 (ABS) – Bildschirm
+6. K5122 (AFS) – Floppy-Controller
+7. K3526 (OPS) – RAM
 ```
 
 ### 2.2 K1520 Systembus-Signale (TGL 37271/01)
@@ -111,147 +159,52 @@ Koppelbus-Signale:
 F800H–FFFFH: VRAM (K7024, 2 KB, konfigurierbar)
 ```
 
+
+### 2.6 Die übrigen Maschinen
+
+| Maschine | Bus / Aufbau | Besonderheit im Kern | Merkposten |
+|---|---|---|---|
+| **K8915** | K1520, eine CPU, 128 KB mit Speicherumschaltung A8H (V3) bzw. K2521 + K3528 (V2) | K5122 in der Betriebsart `/WAIT` **ohne** ZVE2; Bild nur über `k1520_screen_char` | [k8915](merkposten/k8915.md), [k8915_varianten](merkposten/k8915_varianten.md) |
+| **PRG 710 / 710-1** | K1520, K2521, Seitenregister E8H–EBH | Variante wählt ROM, Tastaturweg (8279/K7609 bzw. K7672) und Marken-FF-Polarität; EPROMmer, Fernschreiber | [prg710](merkposten/prg710.md) |
+| **PC 1715 / 1715W** | eigene Platine, kein Steckbus | ROM-Overlay, Bild aus dem Haupt-RAM über 8275; 1715W mit 256 KB, U8272 + Z80-DMA | [pc1715](merkposten/pc1715.md) |
+| **P8000** | **eigener Bus**, kein K1520 | 8- und 16-Bit-Teil mit eigener Zeitbasis (`laufeBis`), MMU U8010, WDC mit Original-Firmware, Originalterminal mit Z8 | [p8000](merkposten/p8000.md) |
+
+Der PC 1715 und die P8000 haben keinen K1520-Steckplatz; RAF und K6022 lassen sich am
+PC 1715 nur mechanisch gegenprüfen, an der P8000 gar nicht stecken
+(`K1520Machine::zusatzkartenSteckbar()`).
+
 ---
 
 ## 3. Projektstruktur
 
-Der neue Emulator lebt im selben Repository (`a5120emu/`), aber vollständig getrennt vom alten Code:
-
 ```
-a5120emu/
-├── src/                         # LEGACY (unverändert, Referenz)
-├── cparun/                      # UNVERÄNDERT (eigenständig)
-│
-├── core/                        # ══ NEUER C++ KERN ══
-│   ├── CMakeLists.txt
-│   ├── bus/                     # K1520 Bus-Simulator
-│   │   ├── k1520_bus.h/cpp      # Systembus
-│   │   └── koppelbus.h/cpp      # Koppelbus (Signal-Routing)
-│   │
-│   ├── primitives/              # Chip-Primitive (Bausteine für Karten)
-│   │   ├── z80_cpu.h/cpp        # Z80 CPU (aus src/ adaptiert)
-│   │   ├── z80_pio.h/cpp        # Z80 PIO (Q 301)
-│   │   ├── z80_sio.h/cpp        # Z80 SIO (Q 304)
-│   │   ├── z80_ctc.h/cpp        # Z80 CTC (Q 302)
-│   │   ├── z80_dma.h/cpp        # Z80 DMA (Cpu2-Modus)
-│   │   ├── ram_device.h/cpp     # DRAM-Block
-│   │   └── eprom_device.h/cpp   # EPROM-Block (Daten aus .h-Datei)
-│   │
-│   ├── cards/                   # Steckkarten (K1520-kompatibel)
-│   │   ├── k2526/               # ZRE – Zentrale Recheneinheit
-│   │   │   ├── k2526.h/cpp
-│   │   │   └── rom_data.h       # EPROM-Inhalt (aus .bin generiert)
-│   │   ├── k3526/               # OPS – Operationsspeicher
-│   │   │   └── k3526.h/cpp
-│   │   ├── k7024/               # ABS – Bildschirmkarte
-│   │   │   ├── k7024.h/cpp
-│   │   │   ├── chargen_zg1.h    # Zeichengenerator obere Zeilen 0–7  (EPROM A103)
-│   │   │   └── chargen_zg2.h    # Zeichengenerator untere Zeilen 8–11 (EPROM A123)
-│   │   ├── k8025/               # ASS – Anschlußsteuerung Seriell
-│   │   │   └── k8025.h/cpp
-│   │   └── k5122/               # AFS – Folienspeicher-Anschlußsteuerung
-│   │       └── k5122.h/cpp      #      formatagnostischer Lesekopf-Streaming-Controller (§8.5)
-│   │
-│   ├── peripherals/             # Externe Peripheriegeräte
-│   │   ├── k7637/               # Serielle Tastatur
-│   │   │   ├── k7637.h/cpp
-│   │   │   └── keytable.h       # Scan-Code-Tabellen (aus .bin)
-│   │   └── floppy_drive/        # formatagnostischer Floppy-Stack (§8.5)
-│   │       ├── disk_format.h/cpp       # DiskFormat/TrackFormat (Geometrie + Verfahren je Spur)
-│   │       ├── format_catalog.h/cpp    # lädt data/formats.yaml + Validierung (§8.6)
-│   │       ├── track_image.h/cpp       # zentrale TrackImage-Abstraktion (Byte-+Markenstrom)
-│   │       ├── track_codec.h/cpp       # IBM-Track (FM/MFM) bauen/parsen + CRC
-│   │       ├── bit_codec.h/cpp         # Bitzellen ⇆ Bytes (MFM/FM, HFE)
-│   │       ├── drive_profile.h/cpp     # Laufwerksprofile (4 Slots)
-│   │       ├── disk_medium.h/cpp       # DAS interne Diskettenabbild (alle Spuren, §8.7)
-│   │       ├── image_codec.h/cpp       # Container-Fabrik (.img/.hfe/.dmk) + Sniffing
-│   │       ├── img_codec.h/cpp         # .img  ⇄ DiskMedium (braucht DiskFormat)
-│   │       ├── hfe_codec.h/cpp         # .hfe  ⇄ DiskMedium (HxC v1, MFM/FM, Mischdichte)
-│   │       ├── dmk_codec.h/cpp         # .dmk  ⇄ DiskMedium (David Keil)
-│   │       ├── disk_image.h/cpp        # gemountete Diskette: Medium + Dateibindung + Autosave
-│   │       └── floppy_drive2.h/cpp     # FloppyDriveV2 (Profil + Kopfposition + Diskette)
-│   │
-│   ├── machines/                # Maschinenkonfigurationen
-│   │   ├── machine.h            # Abstrakte Maschinenbasis
-│   │   ├── a5120/
-│   │   │   ├── a5120.h/cpp      # A5120 Instantiierung
-│   │   │   └── backplane.h      # Koppelbus-Verdrahtung A5120
-│   │   └── prg710/
-│   │       ├── prg710.h/cpp
-│   │       └── backplane.h
-│   │
-│   ├── util/                    # Querschnitts-Helfer
-│   │   └── yaml_lite.h/cpp      # minimaler YAML-Subset-Parser für Config-Dateien (§8.6.2)
-│   │
-│   └── api/                     # C-API (öffentliche Schnittstelle)
-│       ├── k1520_api.h          # Stabiles C-ABI
-│       └── k1520_api.cpp
-│
-├── data/                        # ══ LAUFZEIT-KONFIGURATION ══
-│   └── formats.yaml             # Diskettenformat-Katalog (§8.6)
-│
-├── app/                         # ══ PYTHON QT6 ANWENDUNG ══
-│   ├── requirements.txt         # PySide6
-│   ├── main.py
-│   ├── emulator_thread.py       # QThread für C++-Kern
-│   ├── core_binding/
-│   │   └── k1520.py             # ctypes-Wrapper
-│   ├── ui/
-│   │   ├── main_window.py       # Hauptfenster
-│   │   ├── machine_view.py      # Maschinenansicht (Theme)
-│   │   ├── screen_widget.py     # Framebuffer → Qt Widget
-│   │   ├── drive_widget.py      # Diskettenlaufwerk-Widget
-│   │   └── config_dialog.py     # Konfigurationsdialog
-│   ├── themes/
-│   │   ├── a5120_theme.py       # A5120 Farben und Layout
-│   │   └── prg710_theme.py
-│   └── config/
-│       └── machines/
-│           ├── a5120.json
-│           └── prg710.json
-│
-├── cli/                         # ══ CLI BINARY ══
-│   ├── CMakeLists.txt
-│   └── k1520cli.cpp             # Standalone ohne Python
-│
-├── tests/                       # ══ TESTS ══ (Ebene = Verzeichnis = ctest-Label)
-│   ├── support/                 # k1520_testsupport: Screen/Tastatur/TempDisk
-│   ├── unit/                    # eine Klasse isoliert (spiegelt core/)
-│   │   ├── primitives/  bus/  cards/  peripherals/  util/
-│   ├── debugtools/              # die header-only Bausteine aus tools/*.h
-│   ├── integration/             # ganze Maschine, echter Kaltboot
-│   ├── cli/                     # Werkzeuge als Prozess (Blackbox)
-│   ├── system/                  # FORMAT/CPABCGEN/SCPX/HARDY (langsam)
-│   ├── fixtures/disks/          # Testdisketten
-│   └── python/                  # pytest: C-ABI + GUI
-│       ├── conftest.py          # ctypes-Loader, Fixtures, Headless-Qt
-│       ├── test_c_api.py
-│       ├── test_k7024.py
-│       └── ...
-│
-├── tools/                       # UNVERÄNDERT + erweitert
-│   ├── z80_disasm.py            # (bestehend)
-│   ├── z80_disasm3.py           # (bestehend)
-│   └── eprom_to_h.py            # NEU: .bin → .h Konverter
-│
-└── doc/
-    ├── K1520_architecture.md    # Diese Datei
-    ├── design/                  # Modul-Feinentwürfe
-    │   ├── 01_k1520_bus.md
-    │   ├── 02_primitives.md
-    │   ├── 03_k2526_zre.md
-    │   ├── 04_k3526_ops.md
-    │   ├── 05_k7024_abs.md
-    │   ├── 06_k8025_ass.md
-    │   ├── 07_k5122_afs.md
-    │   ├── 08_k7637_keyboard.md
-    │   ├── 09_floppy_drive.md
-    │   ├── 10_c_api.md
-    │   ├── 11_python_app.md
-    │   ├── 12_testing.md
-    │   └── 13_distribution.md   # Verteilbares Paket (Win/Linux/macOS)
-    ├── EPROMS/                  # Binäre EPROM-Inhalte
-    └── trascripted/             # Originaldokumentation
+k1520emu/
+├── core/                        C++-Kern
+│   ├── bus/                     K1520Bus (Speicher-/E-A-Verteilung, INT-Kette, BUSRQ, NMI, MEMDI)
+│   │                            + Koppelbus (benannte Signale der Rückwand)
+│   ├── primitives/              Bausteine: Z80 (U880), Z80-PIO/-CTC/-SIO/-DMA, U8001 (z8000),
+│   │                            U8010 (z8010), Z8, 8275, 8279, µPD765/U8272, RAM/EPROM
+│   ├── cards/                   Steckkarten, je Karte ein Verzeichnis (§5.4)
+│   ├── peripherals/             Geräte außerhalb des Busses: Tastaturen (k7637, k7672, k7609,
+│   │                            tastatur1715), floppy_drive/ (§8), winchester/, lochstreifen/,
+│   │                            p8000_terminal{,_hw}/
+│   ├── machines/                machine.h (K1520Machine), laufwerke.*, je Maschine ein Verzeichnis
+│   ├── filesystem/              Dateisysteme fürs DiskTool: cpm/, udos/, wega/, check/, DiskVolume
+│   ├── serial/                  SerialHub, Wandler, Telnet/RFC 2217/Datei (§16.1)
+│   ├── api/                     C-ABI: k1520_api (Emulator), k1520_disk_api (DiskTool),
+│   │                            k1520_sync_api (physische Diskette), k1520_export.h
+│   ├── util/                    yaml_lite, gzip_datei, os_compat, zustand
+│   ├── logger.{h,cpp}           Laufzeit-gesteuertes Protokoll (§12)
+│   └── version.h.in             Bauversion (§12)
+├── app/                         Python/PySide6: Emulator-Oberfläche (§10), disktool/, gw/
+├── tools/                       Debugger, Tracer, DiskTool-CLI, Disassembler, Gastprogramme (§11)
+├── data/                        formats.yaml (§8.6), default_config_*.yaml (Auslieferungszustand)
+├── tests/                       Testebenen unit/ debugtools/ integration/ cli/ system/ python/ (§13)
+├── packaging/                   verteilbares Paket, Inno-Setup
+├── disks/                       Beispieldisketten je <maschine>_<system>/
+├── third_party/                 miniz, isocline
+├── cparun/                      eigenständiges Unterprojekt
+└── doc/                         dieses Dokument, design/, merkposten/, Analysen, EPROM-Abzüge
 ```
 
 ---
@@ -260,112 +213,126 @@ a5120emu/
 
 ### 4.1 Hardware-genau, nicht OS-spezifisch
 
-Jede Karte wird nach ihrer technischen Dokumentation implementiert. Das Ergebnis: Jedes OS das auf echter Hardware läuft, läuft auch auf dem Emulator – ohne spezifische Kenntnis des OS.
+Jede Karte wird nach ihrer technischen Dokumentation implementiert. Ergebnis: jedes
+Betriebssystem, das auf der echten Hardware läuft, läuft auch im Emulator — ohne
+spezifische Kenntnis dieses Systems.
 
-| Vorgänger | Neu |
-|-----------|-----|
-| HALT-Trap → CPA-BIOS-Funktion | I/O-Port → Karten-Register-Emulation |
-| Nur CPA bootbar | Beliebiges K1520-OS bootbar |
-| BIOS in C++ reimplementiert | BIOS läuft als Z80-Code nativ |
-| Monolithisch | Modular, Karte = eigene Klasse |
+| BIOS-Trap-Emulator | Dieser Kern |
+|---|---|
+| HALT-Trap → BIOS-Funktion in C++ | E/A-Port → Register der Karte |
+| nur das eine System bootbar | jedes System der Maschine bootbar |
+| BIOS nachprogrammiert | BIOS läuft als Maschinencode |
+| monolithisch | modular, Karte = eigene Klasse |
 
-### 4.2 Karte als eigenständige Klasse (und optional als .so)
+### 4.2 Karte als eigenständige Klasse
 
-Jede Steckkarte ist eine **in sich geschlossene C++ Klasse**, die:
-- am K1520Bus registriert wird (I/O-Port-Bereiche, Memory-Bereiche)
-- im Koppelbus Signale senden und empfangen kann
-- DIP-Schalter und Brücken als **Compile-Zeit-Konfiguration** hat
-- EPROM-Inhalte als eingebettete `uint8_t`-Arrays hat
+Jede Steckkarte ist eine in sich geschlossene C++-Klasse, die
 
-Für **Tests** kann jede Karte als eigenständige `.so`-Bibliothek gebaut werden und über Python/ctypes direkt angesteuert werden — ohne den Rest des Systems.
+- sich am Bus anmeldet (E/A- und Speicherbereiche, Glied der Interruptkette),
+- über den Koppelbus Signale ausgibt und empfängt,
+- Brücken und DIP-Schalter als **Konfigurationsstruktur** zur Bauzeit bekommt
+  (z. B. `K2526::A5120Config`), nicht als Laufzeiteinstellung,
+- EPROM-Inhalte als eingebettete Datenfelder trägt (§4.4).
 
-Für **Produktion** werden alle Karten statisch in `libk1520core.so` gelinkt.
+Jede Karte ist eine eigene **statische** Bibliothek (`k1520_k5122`, `k1520_k7024`, …) und
+damit für sich testbar; `libk1520core` linkt alle zusammen.
 
-### 4.3 Keine Zyklus-genaue Simulation
+### 4.3 Befehlsgenau, nicht zyklusgenau
 
-Der Emulator ist **transaktionsgenau**, nicht zyklus-genau:
-- Z80 CPU führt vollständige Buszyklen aus (Fetch, Decode, Execute)
-- Karten reagieren sofort auf Bus-Zugriffe
-- Keine Emulation von Propagierungsverzögerungen oder Bus-Timing
-- Interrupt-Daisy-Chain wird korrekt verwaltet (reihenfolgetreu)
+Der Kern ist **befehls- bzw. transaktionsgenau**:
 
-Das ist ausreichend, um Software korrekt auszuführen. Timing-empfindliche Hardware (z.B. Floppy-Markenerkennung) wird funktional, nicht timing-genau emuliert.
+- die CPU führt einen Befehl als Ganzes aus; Karten reagieren sofort auf den Buszugriff,
+- nach jedem Befehl bekommen Zähler, Controller und Geräte die verstrichenen Takte
+  (`clockTick(n)`, `takt(n)`, `advance(n)`) — **Maschinenzeit**, nicht Wirtszeit,
+- keine Laufzeiten und Bus-Timings auf Signalebene, aber die Interruptkette ist
+  reihenfolgetreu.
 
-### 4.4 EPROM-Daten als compile-time Konstanten
+Wo Zeit für das Gastsystem sichtbar ist (Indexpuls, Baudrate, Wartezyklen der EPROMs,
+Tastaturwiederholung), wird sie in Maschinentakten gerechnet. Mehrere Prozessoren einer
+Maschine werden in fester Reihenfolge bis zur selben Maschinenzeit nachgezogen
+(A5120.16 §5.1b, P8000 in [design/25](design/25_p8000.md) §10.2) — der Lauf bleibt
+deterministisch. Was der Rechenaufwand dabei kostet und welche Regeln daraus folgen: §5.3a.
+
+### 4.4 EPROM-Daten als Konstanten zur Bauzeit
 
 ```cpp
-// Generiert aus: tools/eprom_to_h.py doc/EPROMS/Bildschirm_ABS_K7024_A103.bin
-// Enthält 1024 Bytes Zeichengenerator-Daten (Latein)
+// Erzeugt aus: tools/eprom_to_h.py doc/EPROMS/K7024/...
 #pragma once
 #include <cstdint>
-static constexpr uint8_t CHARSET_LATIN[1024] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Char 0x00
+static constexpr uint8_t CHARGEN_ZG1[1024] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Zeichen 0x00
     // ...
 };
 ```
 
-Ein Austausch ohne Neukompilierung ist nicht vorgesehen und nicht nötig.
+Boot-ROMs, Zeichengeneratoren und Gerätefirmware (WDC, Originalterminal) werden so
+eingebaut, nicht zur Laufzeit geladen. Ausnahme ist der EPROMmer des PRG 710, dessen
+Sockel ein Gerät ist und Dateien liest.
 
 ---
 
-## 5. C++ Kern: Schichtmodell
+## 5. C++-Kern: Schichtmodell
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Schicht 4: Maschinenkonfiguration                              │
-│  a5120.h: Karten instantiieren, Koppelbus verdrahten            │
+│  Schicht 4: Maschinen                                           │
+│  K1520Machine ← A5120 · K8915 · PRG 710 · PC 1715 · P8000       │
+│  Karten anlegen, Koppelbus verdrahten, Laufschleife             │
 ├─────────────────────────────────────────────────────────────────┤
-│  Schicht 3: Peripheriegeräte                                    │
-│  k7637 (Tastatur), FloppyDrive (Image), emulierteDrucker       │
+│  Schicht 3: Peripherie                                          │
+│  Tastaturen · Laufwerke (§8) · Winchester · Terminal · SerialHub│
 ├─────────────────────────────────────────────────────────────────┤
 │  Schicht 2: Steckkarten                                         │
-│  k2526, k3526, k7024, k8025, k5122                             │
+│  K2526 · K3526 · K7024 · K8025 · K5122 · K7028 · EM · RAF · …   │
 ├─────────────────────────────────────────────────────────────────┤
-│  Schicht 1: Chip-Primitive                                      │
-│  Z80CPU, Z80PIO, Z80SIO, Z80CTC, RAMDevice, EPROMDevice        │
+│  Schicht 1: Bausteine (Primitive)                               │
+│  Z80 · PIO · CTC · SIO · DMA · U8001 · U8010 · Z8 · 8275 · …    │
 ├─────────────────────────────────────────────────────────────────┤
-│  Schicht 0: K1520 Bus-Simulator                                 │
-│  K1520Bus (Systembus), Koppelbus (Signal-Router)               │
+│  Schicht 0: Bus                                                 │
+│  K1520Bus (Systembus) · Koppelbus (Signal-Router)               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.1 Schicht 0: K1520 Bus-Simulator
+Jede Schicht kennt nur die darunter. Die Floppy-Schicht unterhalb von `DiskImage` kennt
+überhaupt keine Maschine (§8.7a).
 
-Der Bus-Simulator ist der Kern des Systems. Alle Karten registrieren sich beim Bus und erhalten Callbacks für ihre zugewiesenen Adressbereiche.
+### 5.1 Schicht 0: K1520-Bus
+
+Karten melden sich am Bus an und bekommen Rückrufe für ihre Bereiche. Die Verteilung läuft
+über eine Seitentabelle (`rebuildPageTable`), sodass ein Speicherzugriff keinen
+Bereichsvergleich kostet.
 
 ```cpp
 class K1520Bus {
 public:
-    // Registrierung: Karte meldet I/O-Port-Bereich an
-    void registerIODevice(BusDevice* dev, uint8_t basePort, uint8_t numPorts);
-    // Registrierung: Karte meldet Speicherbereich an
-    void registerMemDevice(MemDevice* dev, uint16_t base, uint16_t size);
+    // Anmeldung
+    void registerIO(BusDevice* dev, uint8_t basePort, uint8_t numPorts = 1);
+    void registerMem(MemDevice* dev, uint16_t base, uint16_t size);
+    void unregisterMem(MemDevice* dev);
+    void addMemdiDriver(MemdiDriver* dev);            // /MEMDI je Zugriff (§5.1a)
 
-    // CPU-Zugriffe (von Z80CPU aufgerufen)
-    uint8_t memRead(uint16_t addr);
-    void    memWrite(uint16_t addr, uint8_t data);
-    uint8_t ioRead(uint8_t port);
-    void    ioWrite(uint8_t port, uint8_t data);
+    // Zugriffe der CPU — E/A mit voller Adresse AB0–15 (§5.1a)
+    uint8_t memRead(uint16_t addr);    void memWrite(uint16_t addr, uint8_t data);
+    uint8_t ioRead(uint16_t addr);     void ioWrite(uint16_t addr, uint8_t data);
 
-    // Bus-Signale (von Karten gesetzt)
-    void assertINT(BusDevice* src);    // /INT anfordern
-    void releaseINT(BusDevice* src);
-    void assertNMI();
-    void assertWAIT();
-    void releaseWAIT();
+    // Interruptkette (Reihenfolge = Priorität) und Annahme
+    void setInterruptChain(std::initializer_list<InterruptSlave*> chain);
+    void appendInterruptChain(InterruptSlave* dev);
+    uint8_t interruptAcknowledge();    void signalRETI();
+
+    // Bussignale
+    void assertINT();   void releaseINT();
+    void assertNMI();   void clearNMI();
+    void assertWAIT();  void releaseWAIT();  void addWaitCycles(int n);
+    void assertBUSRQ(); void releaseBUSRQ();
     void assertRESET();
-
-    // Interrupt-Daisy-Chain (Reihenfolge = Priorität)
-    void setInterruptChain(std::vector<InterruptSlave*> chain);
-
-    // DMA-Prioritätskette
-    void setDMAChain(std::vector<DMADevice*> chain);
-
-    // /MEMDI (X1 C09) — JE ZUGRIFF von einem Vorrangspeicher gezogen (s. §5.1a)
-    void addMemdiDriver(MemdiDriver* dev);
-    bool memdiActive() const;   // nur während memRead()/memWrite() gültig
+    void setIODI(bool disabled);
 };
 ```
+
+Die Interruptkette wird nur neu bewertet, wenn ein Glied sich als geändert meldet
+(`markIntDirty`). Der A5120 nutzt zusätzlich `setBusMasterZVE2` für die zweite CPU der
+K2526 (§14.5).
 
 #### 5.1a /MEMDI gegen MEMDI1/2 (seit 2026-09-28, A5120.16 S1)
 
@@ -415,54 +382,45 @@ STOP) als `EM::EreignisInfo`; Text dazu in `tools/em_trace.h` (`boot_trace --em`
 
 ### 5.2 Koppelbus
 
-Der Koppelbus modelliert die Wickelbrücken-Verdrahtung der Backplane. Er ist kein generischer Bus, sondern ein **Signal-Router**: Karten können benannte Signale anbieten und empfangen. Die Verdrahtung ist in `machines/a5120/backplane.h` definiert.
+Der Koppelbus (`core/bus/koppelbus.h`) bildet die maschinenspezifisch verdrahteten
+Leitungen der Rückwand nach. Er ist kein Bus im eigentlichen Sinn, sondern ein
+**Signal-Router**: eine Karte treibt eine benannte Leitung (`drive(pegel)`), andere hängen
+sich mit einem Rückruf daran (`connect(...)`). Verdrahtet wird in der Maschine, beim A5120
+im Konstruktor von `A5120Machine`:
 
 ```cpp
-// In machines/a5120/backplane.h:
-// Definiert die Verdrahtung der Wickelbrücken für A5120
-struct A5120Backplane {
-    static void wire(Koppelbus& kb,
-                     K2526& zre, K8025& ass, K5122& afs, K7024& abs) {
-        // Zweite Interrupt-Kette: ZRE BS-PIO hat niedrigste Priorität
-        kb.connect(zre.IEO1(), ass.IEI1());
-        kb.connect(ass.IEO1(), afs.IEI1());
-        kb.connect(afs.IEO1(), abs.IEI1());
-        kb.connect(abs.IEO1(), zre.IEI1_sink());
-
-        // CTC-Taktverbindungen (ZRE CTC → K8025 CTC Takteingang)
-        kb.connect(zre.ctc_zc_to2(), zre.ctc_clk_trg3());  // intern auf ZRE
-        // Weitere Verbindungen nach Ermittlung der Backplane-Verdrahtung...
-    }
-};
+// core/machines/a5120/a5120.cpp (Auszug)
+koppel_.zc_to[ch].drive(lvl);                       // ZRE-CTC gibt ZC/TO aus
+koppel_.zc_to[2].connect([this](bool lvl) { ... }); // Taktkaskade
+koppel_.memdi1.connect([this, g](bool level) { ops_.setMemDI(g, !level); });
 ```
 
-### 5.3 Schicht 1: Chip-Primitive
+Die zweite Interruptkette (/IEI1–/IEO1) ist als Leitung vorhanden, aber nicht verdrahtet
+(§14.7).
 
-Die Primitiven sind generische Implementierungen der Z80-Peripheriechips, unabhängig von jeder konkreten Karte.
+### 5.3 Schicht 1: Bausteine
 
-**Z80PIO** (Q 301 / U 855):
-- 2 Ports (A, B), jeweils 8 Bit
-- Betriebsarten: Output, Input, Bidirektional, Bit-Mode
-- Interrupt mit Daisy-Chain (IEI/IEO)
+Die Primitive sind generische Nachbildungen der Bausteine, unabhängig von jeder Karte.
+Grundsatz seit der P8000: **ein Baustein wird vollständig und systematisch getestet**, nicht
+nur so weit, wie die erste Karte ihn braucht, und die Debugger unterstützen ihn ganz.
 
-**Z80SIO** (Q 304 / U 856):
-- 2 Kanäle (A, B), asynchron/synchron
-- UART-Protokoll: Start-Stop, programmierbare Baudrate
-- Interrupt mit Daisy-Chain
+| Baustein | Datei | Benutzt von |
+|---|---|---|
+| Z80 / U880 | `z80.{h,cpp}` | allen Maschinen, auch im WDC der P8000 |
+| Z80-PIO / U855 | `z80_pio.*` | allen Maschinen |
+| Z80-CTC / U857 | `z80_ctc.*` | allen Maschinen (Rechenaufwand §5.3a) |
+| Z80-SIO / U856 | `z80_sio.*` | K8025, K7028, PC 1715, P8000 |
+| Z80-DMA / U858 | `z80_dma.*` | PC 1715W, P8000 |
+| U8001 (Z8000) | `z8000.*`, `z8000/` | EM256 (A5120.16), P8000 16-Bit-Karte |
+| U8010 (MMU) | `z8010.*` | P8000 |
+| Z8 | `z8.*`, `z8/` | P8000-Originalterminal |
+| 8275 (CRT-Controller) | `i8275.*` | PC 1715, P8000-Originalterminal |
+| 8279 (Tastatur/Anzeige) | `i8279.*` | PRG 710 (K7609, ATP 590068) |
+| µPD765 / U8272 | `upd765.*` | PC 1715W, P8000 |
+| RAM- / EPROM-Block | `ram_device.h`, `eprom_device.h` | Karten |
 
-**Z80CTC** (Q 302 / U 857):
-- 4 Kanäle, Timer und Zähler
-- ZC/TO-Ausgänge für Taktverbindungen
-- Interrupt mit Daisy-Chain
-
-**Z80CPU**:
-- Aus `src/z80.cpp` adaptiert
-- Callbacks → K1520Bus (statt direkte Memory-Pointer)
-- Zyklenzähler für Timing
-
-**RAMDevice / EPROMDevice**:
-- Einfache Speicherblöcke mit konfigurierbaren Adressbereichen
-- EPROM initialisiert mit eingebetteten Daten aus `.h`-Datei
+Die Z80 ruft den Bus über Rückrufe; sie hält einen Taktzähler und kann für den Debugger
+**vor** einem Befehl anhalten (`abortBeforeExecute`).
 
 ### 5.3a Rechenaufwand: wo die Zeit hingeht und die Regeln dazu — 2026-10-12
 
@@ -531,310 +489,230 @@ Sprung == Einzeltakt inkl. Kaskade, Zählerlesen, Neuprogrammierung, Kanal-Reset
 `AufgeschobenesTaktenGleichEinzeltaktenBeiZugriffenDazwischen` mit 300 × 3000 Fenstern und
 zufälligen Zugriffen dazwischen). Messen für den A5120: `tools/dev.sh tool bench_run`.
 
+
 ### 5.4 Schicht 2: Steckkarten
 
-Jede Karte besteht aus:
-1. Einer Klasse, die am K1520Bus und Koppelbus registriert wird
-2. Primitiven (PIO, SIO, CTC, RAM, EPROM), die die Karte intern verwendet
-3. DIP-Schalter / Brücken-Konfiguration (Template-Parameter oder Konstanten)
+Jede Karte besteht aus einer Klasse, die sich an Bus und Koppelbus anmeldet, den Bausteinen,
+die sie intern benutzt, und einer `Config`-Struktur für Brücken und Schalter.
 
-Beispiel-Interface für eine Karte:
+| Karte | Verzeichnis | Maschinen |
+|---|---|---|
+| K2526 ZRE (zwei Z80, Q240-Schutz, Boot-ROM) | `k2526/` | A5120 |
+| K3526 OPS (64 KB) | `k3526/` | A5120 |
+| K7024 ABS (Bildschirm) | `k7024/` | A5120, K8915, PRG 710 |
+| K8025 ASS (seriell) | `k8025/` | A5120, PRG 710 |
+| K5122 AFS (Floppy, Betriebsarten `/BUSRQ` und `/WAIT`) | `k5122/` | A5120, K8915, PRG 710, PC 1715 (`Portlage::Pc1715`) |
+| EM064/EM256 (U8001) | `em/` | A5120.16 |
+| ZRE 045-8762 (CPU + 128 KB) | `zre8762/` | K8915 V3 |
+| K2521 ZRE · K3528 RAM | `k2521/`, `k3528/` | K8915 V2, PRG 710 |
+| K7028 ATS (2 × SIO, 2 × CTC) | `k7028/` | K8915 |
+| Speicherverwaltung · ATP 590068 · ASS 590069 | `prg710_speicher/`, `atp590068/`, `ass590069/` | PRG 710 |
+| PC-1715-ZRE · 1715W-Speicher/Bild | `pc1715_zre/`, `pc1715w_speicher/` | PC 1715 / 1715W |
+| 8-/16-Bit-Karte, MMU-Logik, DRAM, Floppy, Kopplung, WDC | `p8000/` | P8000 |
+| RAF 128/512/2M | `raf/` | Option, alle K1520-Maschinen |
+| K6022 (Lochstreifen) | `k6022/` | Option, alle K1520-Maschinen |
+| K3820 PFS (Festwertspeicher) | `k3820/` | keine — liegt für spätere Geräte bereit |
 
-```cpp
-class K5122 : public BusDevice, public InterruptSlave {
-public:
-    // Konfiguration (entspricht DIP-Schaltern/Brücken)
-    struct Config {
-        uint8_t io_base = 0x10;      // Basis-I/O-Adresse (Standard A5120)
-        bool    use_busrq = true;    // BUSRQ oder WAIT-Modus
-        int     num_drives = 3;      // Laufwerke A/B/C
-    };
+Die Einzelheiten jeder Karte stehen in ihrem Feinentwurf; die K5122 hat mit
+[design/07](design/07_k5122_afs.md) den umfangreichsten.
 
-    K5122(K1520Bus& bus, Koppelbus& koppel, const Config& cfg);
+### 5.5 Schicht 4: Maschinen
 
-    // BusDevice Interface
-    uint8_t ioRead(uint8_t port) override;
-    void    ioWrite(uint8_t port, uint8_t data) override;
+Alle Maschinen leiten von **`K1520Machine`** (`core/machines/machine.h`) ab. Diese Klasse
+enthält **genau** das, was die C-ABI braucht: Lebenslauf (`powerOn`, `reset`, `run`,
+`stop`, `nmi`), Bild, Tastatur, Disketten, serielle Schnittstellen, Optionen,
+Diagnosezugriffe. Was einer Maschine eigen ist (ZVE2 und Save-States des A5120,
+Speicherumschaltung des K8915, Platten der P8000), bleibt in der konkreten Klasse und wird
+von den Werkzeugen direkt benutzt.
 
-    // Laufwerk-Verwaltung (aus C-API aufrufbar)
-    void    mountDrive(int drv, FloppyDrive* drive);
-    void    unmountDrive(int drv);
-    bool    isDriveActive(int drv) const;
-
-    // InterruptSlave (Daisy-Chain)
-    void    setIEI(bool) override;
-    bool    getIEO() const override;
-};
+```
+K1520Machine (abstrakt)
+├── A5120Machine         core/machines/a5120/      (+ EM über Config::em)
+├── K8915Machine         core/machines/k8915/      (Config::generation = V3 | Gen2)
+├── Prg710Machine        core/machines/prg710/     (Variante 710 | 710-1)
+├── Pc1715Machine        core/machines/pc1715/     (Variante PC1715 | PC1715W)
+├── P8000Machine         core/machines/p8000/      (Ausstattung, Terminal, WDC)
+└── P8000TerminalMachine core/machines/p8000/      (nur Originalterminal, ohne Rechner)
 ```
 
-### 5.5 Maschinenkonfiguration (compile-time)
+**`Laufwerke`** (`core/machines/laufwerke.*`) ist der gemeinsame Baustein für alles, was
+an der K5122 und ihren vier Laufwerken hängt — Einlegen, Anlegen, Speichern unter,
+Formaterkennung, Schreibschutz, Autosave. Die Maschinen reichen nur durch; auch die
+Floppy der P8000-8-Bit-Karte benutzt ihn.
 
-Eine Maschinenkonfiguration instantiiert alle Karten mit ihren konkreten DIP-Schalter-Einstellungen und verdrahtet den Koppelbus:
+**Anlegen und Bestücken.** Die Maschine wird über die C-ABI erzeugt
+(`k1520_create`, `k1520_create_configured`, `k1520_create_k8915`, `k1520_create_prg710`,
+`k1520_create_pc1715[_ex]`, `k1520_create_p8000[_terminal]`, `k1520_create_with_em`).
+Optionen werden **nach dem Anlegen und vor dem ersten Lauf** gesteckt
+(`installRaf`, `installK6022`), damit es nicht für jede Kombination eine eigene
+Erzeugerfunktion braucht.
 
-```cpp
-// machines/a5120/a5120.cpp
-class A5120Machine : public Machine {
-    K1520Bus bus_;
-    Koppelbus koppel_;
+**Laufschleife.** `run(max_cycles)` führt Befehl für Befehl aus und gibt nach jedem Befehl
+die verbrauchten Takte an Zähler, Controller, Tastatur und `SerialHub` weiter (§4.3).
+Eingaben von außen (Tasten, NMI, Anhalten) werden fadensicher eingereiht und in `run()`
+verbraucht. Die Oberfläche ruft `run` aus ihrem eigenen Faden (§10.2).
 
-    // Karten mit A5120-spezifischer Konfiguration
-    K2526 zre_{bus_, koppel_, K2526::A5120Config{}};
-    K3526 ops_{bus_};
-    K8025 ass_{bus_, koppel_, K8025::A5120Config{}};
-    K5122 afs_{bus_, koppel_, K5122::A5120Config{}};
-    K7024 abs_{bus_, koppel_, K7024::A5120Config{}};
-
-public:
-    A5120Machine() {
-        // Koppelbus-Verdrahtung für A5120
-        A5120Backplane::wire(koppel_, zre_, ass_, afs_, abs_);
-    }
-};
-```
-
-Die Umschaltung zwischen Maschinen erfolgt **vor dem Start** über die C-API:
-
-```c
-K1520Handle k1520_create(K1520MachineType type);  // K1520_MACHINE_A5120, etc.
-```
+**Save-State.** Der A5120 (Format v7, mit EM-Block) und die P8000 (P8KS v4) können ihren
+Zustand speichern und laden; der Medieninhalt gehört nicht dazu.
 
 ---
 
-## 6. Bildschirmemulation (K7024 → Framebuffer)
+## 6. Bildschirm
 
-### 6.1 Architektur
+### 6.1 Wege zum Bild
 
-```
-K7024-Emulation
-    │
-    │ VRAM-Schreibzugriff (0xF800–0xFFFF, 1920 Bytes)
-    ▼
-Zeichengenerator: 2 EPROMs A103 (Zeilen 0–7) + A123 (Zeilen 8–11), je 1024 Bytes
-    │ Adressierung: [Bit9:3 = Zeichencode 0x00–0x7F] + [Bit2:0 = Zeilen-Nr]
-    │ → 8 Pixel pro Zeile; ein lateinischer Satz (kein Kyrillisch)
-    ▼
-Pixel-Framebuffer (intern in K7024)
-    640 × 288 Pixel (80 Zeichen × 8px, 24 Zeilen × 12px)
-    Format: 8-Bit Monochrom (0=schwarz, 255=weiß/grün)
-    │
-    │ k1520_get_framebuffer() via C-API
-    ▼
-Python Qt6: ScreenWidget
-    │ QImage (640×288, Grayscale) → colorize (grüner Phosphor)
-    │ Skalierung: Integer-Faktor (1×, 2×, 3×)
-    ▼
-QPainter → QWidget
-```
+| Maschine | Erzeugt von | Zugang |
+|---|---|---|
+| A5120, K8915, PRG 710 | K7024: VRAM + Zeichengenerator → Pixelbild 640 × 288 | `k1520_framebuffer`, `k1520_screen_char` |
+| PC 1715 / 1715W | 8275 liest den Bildspeicher per DMA aus dem Haupt-RAM bzw. dem Bild-RAM, Pixelbild 640 × 300 | ebenso |
+| P8000 | Originalterminal: Z8-Firmware + 8275 im Terminal | `k1520_term_framebuffer`, `k1520_term_*` |
 
-### 6.2 Zeichengenerator-Adressierung (K7024-konform)
+Der Text wird **nie** über `k1520_mem_read` gelesen: beim K8915 überdeckt die
+Speicherumschaltung den Bildspeicher, beim PC 1715 und der P8000 liegt er gar nicht im
+Adressraum der Haupt-CPU. `k1520_screen_char` fragt die Bildschirmkarte direkt.
 
-Das Zeichen-EPROM hat 1024 Bytes. Adresse: `[A9:A3] = 7-Bit ISO-Zeichencode`, `[A2:A0] = Zeile (0–7 von 12)`.
+Die K7024 nutzt zwei Zeichen-EPROMs: `chargen_zg1.h` (Pixelzeilen 0–7) und
+`chargen_zg2.h` (Zeilen 8–11); Einzelheiten in [design/05](design/05_k7024_abs.md).
 
-Für 12 Zeilen eines Zeichens werden je 8 Pixel aus dem EPROM gelesen (bei `/LP3`-Steuerung: die obere und untere Hälfte des EPROMs werden selektiv ausgewählt). Die genaue Adressierung wird in `doc/design/05_k7024_abs.md` spezifiziert.
+### 6.2 Darstellung
 
-### 6.3 Farbe
+Der Kern liefert ein **monochromes** Pixelbild (8 Bit je Punkt, Stufen für Halbhell). Alles
+Weitere — Phosphorfarbe, Nachleuchten, Krümmung, Rasterlinien — macht die Oberfläche in
+einem GLSL-Shader (`app/ui/screen_widget.py`, `QOpenGLWidget`, eingestellt über `CRTParams`).
+Die Emulation weiß davon nichts.
 
-Die K7024 erzeugt ein monochromes Video-Signal (`/VIDEO`, aktiv-low). Der Framebuffer ist monochrom. Die Phosphorfarbe wird **ausschließlich in der Python-GUI** appliziert (kein Teil der C++ Emulation):
+### 6.3 Text statt Bild
 
-```python
-def apply_phosphor(gray_img: QImage) -> QImage:
-    # Phosphorfarbe A5120: P31 (grün), typisch #00FF40
-    # Wird als RGB-Colorize über QImage angewandt
-```
-
-### 6.4 CLI-Textmodus
-
-Im CLI-Modus umgeht K7024 den Zeichengenerator. Stattdessen:
-- VRAM-Änderung → Unicode-Ausgabe auf stdout (Byte direkt als ASCII/ISO-8859-1)
-- Cursor-Position wird via ANSI-Escape-Codes gesetzt
-
-Die C-API bietet beide Schnittstellen:
-```c
-// GUI-Modus: Pixel-Framebuffer
-const uint8_t* k1520_get_framebuffer(K1520Handle h);  // 640×288 Bytes
-
-// CLI-Modus: Text-Änderungen
-bool k1520_console_char_changed(K1520Handle h, int* x, int* y, char* ch);
-```
+Für Tests, Werkzeuge und die Zwischenablage gibt es den Bildinhalt als Text:
+`k1520_screen_char(col, row)` je Zeichen, `k1520_console_poll` für geänderte Zeichen,
+beim P8000-Terminal `k1520_term_snapshot` und eine Mitschrift (`k1520_term_log_*`).
 
 ---
 
-## 7. Tastaturemulation (K7637 → K8025)
+## 7. Tastatur
 
-### 7.1 Signal-Kette
+### 7.1 Tastaturen der Maschinen
 
-```
-PC-Tastatur (Host)
-    │ Qt6 KeyPressEvent oder stdin
-    ▼
-K7637-Emulation (C++ Klasse)
-    │ physischer K7637-Tastencode (NICHT ASCII), 9600 Baud, 1+8+1
-    │ Latenz: ~1 Byte-Zeit (~2604 Takte) bis das Byte am SIO ankommt
-    ▼
-K8025 SIO A32 (Kanal A, Daten 0x5C / Status 0x5D)
-    │ UART-Empfang (4-fach-FIFO)
-    ▼
-Z80: 25ms-Timer-ISR pollt die Tastatur (kbdpin=0, KEIN eigener Tastatur-IRQ),
-    │ liest 0x5C, recodiert via BIOS-cp37-Tabelle, puffert in 0xF6D9
-    ▼
-CCP CONIN holt das Zeichen aus dem Puffer
-```
+| Maschine | Tastatur | Anschluss |
+|---|---|---|
+| A5120 | K7637 | seriell an K8025 SIO A32, 9600 Bd |
+| K8915 | K7672 (Z8 in der Tastatur, SCP/DCP) | seriell an K7028 |
+| PRG 710 | K7609 | 8279 auf der ATP 590068 |
+| PRG 710-1 | K7672 | K8025 A32-B |
+| PC 1715 | eigene Tastatur mit U880 + S600 | seriell an SIO-A der ZRE |
+| P8000 | K7673.09 | am Originalterminal (Z8) |
 
-> **Real-HW-treues Timing (Fix 2026-06-18, s. `doc/design/08_k7637_keyboard.md`):** Tastatur→Host-
-> Bytes (Tastencodes UND die 0x80-Typcode-Quittungen) werden über `K7637::service(now_cycles)`
-> (pro Instruktion aus der Run-Loop) erst nach einer 9600-Baud-Byte-Zeit freigegeben — sonst
-> konkurrieren der ISR-Tastatur-Scan und der Vordergrund-LED-Handshake um dasselbe RX-Byte und
-> fluten den Tastaturpuffer. `translateKey()` liefert physische K7637-Codes (ET1 0xFF ≠ Enter 0xC0,
-> Cursor 0x94–0x97, F1–F8 0xC1–0xC8, …), die der OS-`cp37`-Treiber recodiert.
+Alle Tastaturen sind **Peripherie**, keine Busgeräte; sie liefern die physischen Codes der
+echten Tastatur (nicht ASCII), die das Gastsystem selbst umsetzt. Die Oberfläche übersetzt
+Wirtstasten über eine Tabelle je Tastatur und hat für jede eine Bildschirmtastatur
+(`app/ui/keyboard_*.py`).
 
-### 7.2 K7637 Emulationsklasse
+### 7.2 Zeit
 
-Die K7637 ist kein K1520-Bus-Gerät, sondern ein **externes Peripheriegerät** mit IFSS-Schnittstelle. Im Emulator verbindet es sich direkt mit dem SIO-Kanal des K8025:
+Tastaturbytes werden nach der Zeichenzeit der Schnittstelle freigegeben, in Maschinentakten
+(`service(now_cycles)`). Beim K7637 war das die Lösung für Doppel- und Fehleingaben: ohne
+die 9600-Baud-Latenz konkurrierten der Tastatur-Scan der Timer-ISR und die LED-Quittung um
+dasselbe Empfangsbyte ([design/08](design/08_k7637_keyboard.md)).
 
-```cpp
-class K7637Keyboard {
-public:
-    // Anbindung an SIO-Kanal
-    void connect(Z80SIO::Channel& sio_channel);
+Die **Tastenwiederholung** zählt in der Oberfläche in Echtzeit (`setKeyRepeatRealtime`):
+der Rechnertakt ist einstellbar, die Tastatur hat ihren eigenen Quarz. In Tests und
+Werkzeugen bleibt sie in Maschinentakten, damit Läufe wiederholbar sind.
 
-    // Eingabe-Interface (von außen aufgerufen)
-    void keyPress(uint32_t host_keycode);
-    void keyRelease(uint32_t host_keycode);
-    void consoleChar(char c);  // für CLI-Modus
+### 7.3 K7637 im Detail
 
-    // Kommandos von K8025 (Lampen, Akustik)
-    void setLED(uint8_t led_mask);
-    void beep();
-};
-```
-
-### 7.3 Tastatur-Code-Tabellen
-
-Die K7637 hat 3 Code-Tabellen (CTAB0, CTAB1, CTAB2) mit je Normal- und Shift-Belegung. Diese sind im Keyboard-EPROM (2KB) gespeichert. Da das EPROM nicht vorliegt, werden die Tabellen aus der Dokumentation rekonstruiert.
-
-### 7.4 Kommandos an Tastatur (K8025 → K7637)
-
-| Byte | Wirkung |
-|------|---------|
-| 00H | Software-Reset |
-| 20H | Fehler-LED blinken |
-| 44H | Akustisches Signal (~1s) |
-| 52H | LED-Anzeigen ein/aus |
-| 55H + xxH | Erweiterte LED-Steuerung |
+Signalkette, Codetabellen und die Kommandos des Rechners an die Tastatur (Reset, LED,
+Signalton) stehen in [design/08](design/08_k7637_keyboard.md); der Weg der Zeichen im
+A5120-BIOS (25-ms-Timer-ISR, Puffer, CONIN) ebenda.
 
 ---
 
-## 8. Diskettenemulation (K5122 + FloppyDrive)
+## 8. Diskettenemulation (K5122 + Laufwerk)
 
 ### 8.1 Schichtung
 
 ```
-K5122 FDC-Karte
-    │ PIO-Register (10H–18H)
-    │ Steuersignale: /WE, MK, /STR, /ST, MR/SD, /HL
-    │ Statussignale: /RDYL, /TO, /WP, /FW
-    ▼
-FloppyDrive (C++ Klasse, pro Laufwerk)
-    │ Image-Datei (.img), Format-Definition (.cfg)
-    │ Spur/Seite/Sektor → Byte-Offset im Image
-    ▼
-Host-Dateisystem
+K5122 (Karte)                     core/cards/k5122/
+   │ PIO-Register 10H–18H, /STR /ST MK MK1, Index aus der Drehzahl
+   ▼
+FloppyDriveV2 — DriveProfile + Kopfposition + Spurdichte-Übersetzung
+   ▼
+DiskImage — DiskMedium (alle Spuren im Speicher) + Bindung + Autosave
+   ├── Datei: ImageCodec (.img | .hfe | .dmk)                       §8.7
+   └── echte Diskette: TrackSync + Arbeitsfaden (Greaseweazle)       §8.8
+   ▼
+TrackImage · TrackCodec · BitCodec                                   §8.5
 ```
+
+Die Geschichte des Stapels in Kürze: zuerst ein Controller, der Sektoren nachbildete
+(§8.3/§8.4 beschreiben dessen Portprotokoll, das unverändert gilt); dann der
+formatagnostische Lesekopf (§8.5); dann der Formatkatalog in YAML (§8.6); dann das interne
+Medium mit Container-Codecs (§8.7); zuletzt die echte Diskette als zweite Bindung (§8.8).
+Wo ältere Abschnitte etwas als abgelöst kennzeichnen, gilt der jüngere.
+
+Die P8000 nutzt die Floppy-Schicht ebenfalls (Floppy der 8-Bit-Karte); ihre
+Winchester-Platte ist ein eigenes Gerät (§8.9).
 
 ### 8.2 Disk-Format-Konfiguration (ABGELÖST → §8.6)
 
-> **Historisch.** Das hier skizzierte `cpaFormates.cfg`-Format stammt aus dem CP/A-Umfeld und ist
-> **nie produktiv benutzt worden**: `FormatParser::parseFile()` wird ausschließlich von
-> `test_format_parser.cpp` aufgerufen, und seine reale Grammatik (`[name]`-Sektionen +
-> `track cf cl hf hl sp bps`) weicht vom unten gezeigten `disk … end`-Stil ab. Produktiv gelten
-> die einkompilierten `FormatParser::builtinFormats()`. Beides wird durch den YAML-Katalog
-> **§8.6** ersetzt (Etappe E3).
-
-Das Format einer Diskette ist in einer Konfigurationsdatei im `cpaFormates.cfg`-Stil definiert:
-
-```
-disk cpa780
-    cyls = 80
-    heads = 2
-    tracks 0-1.0 ibm.mfm  # Spur 0+1, Kopf 0: 26 Sektoren à 128 Bytes
-        secs = 26
-        bps = 128
-    end
-    tracks 2-79.0 ibm.mfm  # Spur 2-79, Kopf 0: 5 Sektoren à 1024 Bytes
-        secs = 5
-        bps = 1024
-    end
-    ...
-end
-```
-
-Der `FormatParser` liest diese Datei und berechnet Byte-Offsets für jede Sektor-Anforderung.
+> **Historisch.** Hier stand ein `cpaFormates.cfg`-artiges Format, das nie produktiv benutzt
+> wurde. Die Formate stehen seit August 2026 in `data/formats.yaml` (§8.6).
 
 ### 8.3 K5122 PIO-Protokoll (vereinfacht)
 
-Die K5122 verwendet zwei Z80-PIO-Chips für die Kommunikation mit dem Z80:
-- **Steuer-PIO** (10H–13H): Kontrollsignale (seek, step, head load, write enable)
-- **Daten-PIO** (14H–17H): Datenbytes beim Lesen/Schreiben
-- **Laufwerksauswahl** (18H): Welches Laufwerk ist aktiv
+Die K5122 verwendet zwei Z80-PIO-Bausteine:
+- **Steuer-PIO** (10H–13H): Steuersignale (Schritt, Kopf laden, Schreibfreigabe, Marken)
+- **Daten-PIO** (14H–17H): Datenbytes beim Lesen und Schreiben
+- **Laufwerksauswahl** (18H, 8212): **High-Nibble = /SE (Auswahl), Low-Nibble = /LCK
+  (Motor)**, beide low-aktiv
 
-Der Z80 kommuniziert über PIO-Interrupts (/BUSRQ-Modus) oder /WAIT-Verlängerung. Der Emulator löst den Datentransfer nach Abschluss einer internen Sektor-Operation aus.
+Im A5120 holt die ZVE2 die Bytes unter `/BUSRQ` ab (§14.5); K8915, PRG 710 und PC 1715
+fahren die zweite Betriebsart `/WAIT` mit nur einer CPU. Vollständiges Modell:
+[design/07](design/07_k5122_afs.md).
 
 ### 8.4 Laufwerkszuweisung via C-API
 
 ```c
-// Laufwerk A: mit CPA780-Image bestücken
-k1520_set_disk_format(h, 0, "cpa780");
-k1520_mount_disk(h, 0, "/path/to/cpadisk.img");
+// Laufwerk A: Abbild einlegen. Der Formatname zählt nur bei .img; bei .hfe/.dmk steht
+// die Geometrie in der Datei, verlangt wird trotzdem ein gültiger Katalogname
+// (die Oberfläche gibt den Laufwerksstandard, k1520_drive_default_format).
+k1520_mount_disk(h, 0, "/pfad/cpadisk.hfe", "cpa800", false);
 
-// Laufwerk B: leeres Image erstellen
-k1520_create_disk(h, 1, "cpa800", "/path/to/new.img");
+// Laufwerk B: leere, unformatierte Diskette in Laufwerksgeometrie anlegen
+k1520_create_disk(h, 1, "/pfad/neu.hfe", "", false);
 ```
 
-**Laufwerksbestückung (Drive-Typen) — bei der Maschinen-Erzeugung:** Welche Laufwerks*typen*
-in den 4 K5122-Slots stecken, wird beim Erzeugen der Maschine festgelegt (Laufzeit, nicht
-compile-time):
+**Laufwerksbestückung** — welche Laufwerkstypen in den vier Anschlüssen stecken, wird beim
+Erzeugen der Maschine festgelegt:
 
 ```c
-// Default-Bestückung (4× K5601, 5,25"-MFM, doppelseitig):
-K1520Handle h  = k1520_create(K1520_MACHINE_A5120);
-
-// Explizite Bestückung (NULL/"" = Default K5601; unbekannter Name → Default-Profil):
-//   z. B. Slot 0 = 8"-FM-Laufwerk, Slots 1–3 = 5,25"-MFM:
+K1520Handle h  = k1520_create(K1520_MACHINE_A5120);              // 4 × K5601
 K1520Handle h2 = k1520_create_configured(K1520_MACHINE_A5120,
                                          "MF3200", NULL, NULL, NULL);
 ```
 
-Die Profile heißen wie die realen Laufwerke (`builtinDriveProfile`):
-
-| Profil | Zoll | Spuren×Köpfe | Verfahren | Kapazität |
+| Profil | Zoll | Spuren × Köpfe | Verfahren | Kapazität |
 |--------|------|--------------|-----------|-----------|
-| `K5601` (**Default**) | 5,25″ | 80×2 | MFM + FM | 800 KB |
-| `K5600.10` | 5,25″ | 40×1 | MFM | 200 KB |
-| `K5600.20` | 5,25″ | 80×1 | MFM + FM | 400 KB |
-| `MF3200` | 8″ | 77×1 | **nur FM** | ~300 KB |
-| `MF6400` | 8″ | 77×1 | FM + MFM | ~600 KB |
-| `none` | — | — | — | leerer Slot |
+| `K5601` (**Vorgabe**) | 5,25″ | 80 × 2 | MFM + FM | 800 KB |
+| `K5600.10` | 5,25″ | 40 × 1 | MFM | 200 KB |
+| `K5600.20` | 5,25″ | 80 × 1 | MFM + FM | 400 KB |
+| `MF3200` | 8″ | 77 × 1 | **nur FM** | ~300 KB |
+| `MF6400` | 8″ | 77 × 1 | FM + MFM | ~600 KB |
+| `none` | — | — | — | leerer Anschluss |
 
-Beide 8″-Laufwerke sind **einseitig mit 77 Spuren** und unterscheiden sich allein im
-beherrschten Verfahren — das MF6400 kann zusätzlich MFM und damit die doppelte Kapazität;
-es fährt deshalb auch die FM-Formate des MF3200. Das **K5602 ist zum MF3200 voll kompatibel**
-und hat kein eigenes Profil. Frühere technische Namen (`ss_525_40`, `mf6400_8_ss77`, …) lösen
-`builtinDriveProfile` weiterhin als **Alias** auf, damit gespeicherte Konfigurationen
-(`app/config_io.py`) nicht still auf ein anderes Laufwerk zurückfallen.
+Das K5602 ist zum MF3200 voll kompatibel und hat kein eigenes Profil; frühere technische
+Namen (`ss_525_40`, …) werden als Alias aufgelöst. Das Verfahren (FM/MFM) ist
+Laufwerksvorgabe (`DriveProfile::default_read_encoding`), das Gastsystem schaltet per
+Steuerwort um (0x85 = MFM / 0x87 = FM).
 
-Das Verfahren (FM/MFM) ist
-Laufwerks-Default (`DriveProfile::default_read_encoding`), das OS schaltet zur Laufzeit per
-Steuerwort um (0x85=MFM / 0x87=FM). C++-seitig direkt über `A5120Machine::Config` (Tools wie
-`k1520dbg`/`boot_trace` können das fest setzen), später per GUI bzw. Config-Datei (CLI).
-Der gewählte Profilname ist über `K5122::DebugState::driveProfileName` (Debugger `dev k5122`)
-beobachtbar.
+Passt eine Diskette nicht zur Spurdichte des Laufwerks (40 Spuren im 80er-Laufwerk und
+umgekehrt, zweiseitig im einseitigen), wird sie **übersetzt statt abgewiesen**
+(`FloppyDriveV2::mount`, `mediumCylinder()`); die Einschränkung meldet `k1520_disk_notice`.
+Einzelheiten: [design/09](design/09_floppy_drive.md) §7.2.
 
-> **Laufwerkstyp = reine BIOS-Software-Eigenschaft, kein K5122-Limit.** Welche Formate die
-> CP/A-Formatierprogramme anbieten und welche Geometrie das OS erwartet, entscheidet allein
-> der BIOS-DPB (`dpbtyp`, aus dem Generierungswert `diskA/B/C/D`); die K5122 streamt
-> formatagnostisch Bits. Deshalb lassen sich mit **Combo-Boot-Disketten** (B:/C: als
-> Fremdtypen konfiguriert) alle Laufwerkstypen-Menüs — inkl. der 8″-FM/MFM-Formate — ohne
-> echte Hardware im Emulator abgreifen. Katalog + Pipeline: `doc/format.md`.
+> **Laufwerkstyp = Eigenschaft des BIOS, keine Grenze der K5122.** Welche Formate die
+> Formatierprogramme anbieten, entscheidet der Diskettenparameterblock des BIOS; die K5122
+> streamt formatagnostisch Bits. Deshalb lassen sich mit Combo-Boot-Disketten alle
+> Laufwerkstypen-Menüs ohne echte Hardware abgreifen ([format.md](format.md)).
 
 ### 8.5 Formatagnostischer Floppy-Stack (K5122 + DiskImage/TrackImage) — 2026-06-10
 
@@ -1219,7 +1097,7 @@ Vereinbarung, nicht Befund.  Wächter: `A5120DiskApi.DetectedFormat_*`.
 | **E5** | C-API `_description`/`_source`/`_last_init_error`, GUI-Labels, Startabbruch | ✅ end-to-end geprüft |
 | **E6** | *offen, optional:* `DriveProfile` ebenfalls aus YAML (`drives.yaml`) — derselbe Parser | — |
 
-#### 8.6.9 Risiken
+#### 8.6.10 Risiken
 
 - **R1 — Boot-Regression durch Encoding-Deklaration (größtes Risiko).** Die A5120-Bootdisketten
   sind **reines Standard-IBM-MFM**; der Boot-ROM startet in FM, findet keine IDAM und schaltet
@@ -1397,203 +1275,164 @@ liegen Zustandsverwaltung, Warteschlange, Decodierung und sogar ein voller Boot 
 einer spurweisen Quelle“ in der Regression; die Hardware fügt nur USB hinzu und läuft von
 Hand hinter `K1520_GW_HARDWARE=1`.
 
----
 
-## 9. C-API (libk1520.so)
+### 8.9 Winchester-Platte der P8000 — 2026-10
 
-Die C-API ist die einzige Schnittstelle zwischen Python und dem C++-Kern. Sie ist `extern "C"` und damit stabil über Compiler-Versionen.
-
-```c
-// ─── Maschinen-Lifecycle ─────────────────────────────────────────
-typedef void* K1520Handle;
-typedef enum { K1520_MACHINE_A5120, K1520_MACHINE_PRG710 } K1520MachineType;
-
-K1520Handle k1520_create(K1520MachineType type);
-void        k1520_destroy(K1520Handle h);
-void        k1520_reset(K1520Handle h);
-void        k1520_power_on(K1520Handle h);
-void        k1520_power_off(K1520Handle h);
-
-// ─── Ausführungssteuerung ─────────────────────────────────────────
-int         k1520_run(K1520Handle h, int max_cycles); // returns cycles used
-void        k1520_stop(K1520Handle h);
-bool        k1520_is_running(K1520Handle h);
-
-// ─── Anzeige (GUI-Modus) ──────────────────────────────────────────
-const uint8_t* k1520_framebuffer(K1520Handle h);  // 640×288 monochrom
-int            k1520_fb_width(K1520Handle h);      // 640
-int            k1520_fb_height(K1520Handle h);     // 288
-bool           k1520_fb_dirty(K1520Handle h);      // seit letztem Aufruf?
-void           k1520_fb_clear_dirty(K1520Handle h);
-
-// ─── Anzeige (CLI-Modus) ──────────────────────────────────────────
-void        k1520_set_console_mode(K1520Handle h, bool enable);
-int         k1520_console_poll(K1520Handle h,     // gibt geändertes Zeichen zurück
-                               int* x, int* y);   // Position; -1 = kein Ereignis
-
-// ─── Tastatur ────────────────────────────────────────────────────
-void        k1520_key_press(K1520Handle h, uint32_t keycode);
-void        k1520_key_release(K1520Handle h, uint32_t keycode);
-void        k1520_console_input(K1520Handle h, char c); // für CLI-Modus
-
-// ─── Diskettenlaufwerke ───────────────────────────────────────────
-bool        k1520_mount_disk(K1520Handle h, int drive,
-                             const char* image_path,
-                             const char* format_name);
-bool        k1520_unmount_disk(K1520Handle h, int drive);
-bool        k1520_disk_active(K1520Handle h, int drive);
-bool        k1520_disk_write_protected(K1520Handle h, int drive);
-void        k1520_set_write_protect(K1520Handle h, int drive, bool wp);
-
-// ─── Serielle Schnittstellen (K8025) ─────────────────────────────
-// Für externen Anschluss (Drucker, Terminal) via Python
-typedef void (*K1520SerialRxCallback)(void* ctx, uint8_t byte);
-void        k1520_serial_set_rx_callback(K1520Handle h, int port,
-                                          K1520SerialRxCallback cb, void* ctx);
-void        k1520_serial_tx(K1520Handle h, int port, uint8_t byte);
-
-// ─── Debug ───────────────────────────────────────────────────────
-typedef struct { uint16_t pc, sp, af, bc, de, hl, ix, iy; } K1520CpuRegs;
-void        k1520_get_cpu_regs(K1520Handle h, K1520CpuRegs* out);
-uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);
-const char* k1520_last_error(K1520Handle h);
-```
+Die Platte am WDC (`core/peripherals/winchester/platte.*`) gehört nicht zur Floppy-Schicht.
+Die Original-Firmware des WDC sieht nie Bits, sondern Bytes; eine Spur ist deshalb ein
+umlaufender Ring aus Datenbytes mit Markenkennzeichen, das Medium ein rohes LBA-Abbild.
+Plattendateien tragen das Typkürzel (`<name>.<k5504|d5126|d5146|vs>.img`) und liegen
+**gepackt** als `.img.gz` vor: das Abbild liegt ganz im Speicher, ein eigener Faden schreibt
+nach einer Schreibpause zurück (`core/util/gzip_datei.*`). Einzelheiten:
+[design/25](design/25_p8000.md) §10.8 und [merkposten/p8000](merkposten/p8000.md).
 
 ---
 
-## 10. Python Qt6-Anwendung
+## 9. C-ABI
 
-### 10.1 Fenster-Layout A5120
+Die Python-Seite sieht den Kern **nur** über `extern "C"`-Funktionen. Es gibt drei
+Schnittstellen in zwei Bibliotheken:
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ [ROBOTRON A5120]                              [●] Betriebsanzeige   │
-├───────────────────────────────────┬─────────────────────────────────┤
-│                                   │  ┌─────────────────────────┐   │
-│   Bildschirm (640×288 → 2×)       │  │  Laufwerk A:            │   │
-│   (grüne Phosphor-Farbe)          │  │  [cpa780     ▾] [Öffnen]│   │
-│                                   │  │  cpadisk.img  [●] aktiv  │   │
-│                                   │  ├─────────────────────────┤   │
-│                                   │  │  Laufwerk B:            │   │
-│                                   │  │  [cpa800     ▾] [Öffnen]│   │
-│                                   │  │  (leer)                 │   │
-│                                   │  ├─────────────────────────┤   │
-│                                   │  │  Laufwerk C:            │   │
-│                                   │  │  [cpa800     ▾] [Öffnen]│   │
-│                                   │  │  (leer)                 │   │
-│                                   │  └─────────────────────────┘   │
-│                                   │                                 │
-│                                   │  [RESET]  [Konfiguration...]    │
-└───────────────────────────────────┴─────────────────────────────────┘
-```
+| Kopf | Präfix | Bibliothek | Inhalt |
+|---|---|---|---|
+| `core/api/k1520_api.h` | `k1520_` | `libk1520core` | Emulator: Maschinen, Bild, Tastatur, Disketten, Schnittstellen, Optionen, Diagnose |
+| `core/api/k1520_disk_api.h` | `k1520d_` | `libk1520disk` | DiskTool: Abbild öffnen, Dateien, Diskeditor, Prüfung, Rettung |
+| `core/api/k1520_sync_api.h` | `k1520s_` | beide | physische Diskette: Aufträge abholen und erledigen (§8.8) |
 
-### 10.2 Emulator-Thread-Modell
+Regeln, die für alle drei gelten:
 
-```python
-class EmulatorThread(QThread):
-    frameReady = Signal()
-    diskActivity = Signal(int, bool)
+- **`K1520_API`** (`core/api/k1520_export.h`) vor jeder Funktion — ohne das exportiert eine
+  MSVC-DLL nichts.
+- **Erweitern, nicht ändern.** Neue Fähigkeiten kommen als neue Funktionen; eine
+  bestehende Signatur bleibt. Ein Handle (`K1520Handle`) steht für eine Maschine; welche,
+  entscheidet allein die Erzeugerfunktion (§5.5).
+- **Kein C++-Typ über die Grenze** — nur Zahlen, Zeichenketten, Puffer und einfache
+  Strukturen (`K1520EmState`, …).
+- **Fehler** über `k1520_last_error(h)`; scheitert schon das Anlegen, über
+  `k1520_last_init_error()`.
+- **Drei Stellen müssen übereinstimmen** — Kopf, Bibliothek und die ctypes-Deklarationen
+  in `app/core_binding/k1520.py` bzw. `k1520disk.py`. `tests/python/test_c_api.py`
+  vergleicht sie mechanisch, denn eine abweichende Signatur bricht sonst still.
 
-    def run(self):
-        CYCLES_PER_FRAME = 2_457_600 // 60  # 2.4576 MHz / 60 Hz
-        while not self._stop:
-            k1520_run(self.handle, CYCLES_PER_FRAME)
-
-            if k1520_fb_dirty(self.handle):
-                k1520_fb_clear_dirty(self.handle)
-                self.frameReady.emit()
-
-            for drv in range(4):
-                self.diskActivity.emit(drv, k1520_disk_active(self.handle, drv))
-```
-
-### 10.3 Maschinenkonfiguration (JSON)
-
-```json
-{
-  "machine": "A5120",
-  "display_name": "Robotron A5120",
-  "theme": "a5120",
-  "drives": [
-    {"slot": 0, "label": "Laufwerk A:"},
-    {"slot": 1, "label": "Laufwerk B:"},
-    {"slot": 2, "label": "Laufwerk C:"}
-  ],
-  "serial_ports": [
-    {"slot": 0, "label": "V.24 / DFÜ"},
-    {"slot": 1, "label": "Drucker IFSS"}
-  ]
-}
-```
+Funktionsliste und Gruppen: der Kopf selbst und [design/10](design/10_c_api.md).
 
 ---
 
-## 11. CLI-Modus
+## 10. Python-Anwendung
 
-```bash
-# GUI-Modus (Standard)
-k1520emu --machine a5120 --disk-a cpadisk.img:cpa780
+Feinentwurf: [design/11](design/11_python_app.md), Bedienung:
+[`app/help/handbuch.md`](../app/help/handbuch.md).
 
-# CLI-Modus (Terminal-I/O)
-k1520cli --machine a5120 --disk-a cpadisk.img:cpa780 --console
+### 10.1 Ein Programm, fünf Gestalten
 
-# Batch-Modus (Skripting)
-k1520cli --machine a5120 --disk-a cpadisk.img:cpa780 \
-         --inject "DIR" --output /tmp/dir.txt --exit-on-idle
-```
+Die Oberfläche (`app/main.py` → `app/ui/main_window.py`) ist für alle Maschinen dieselbe.
+Was einer Maschine eigen ist, steht im **Programmprofil** (`app/profil.py`): Titel,
+Konfigurationsdatei, Takt, Tastatur, Frontplatte, Modellwahl, eigene Aktionen. In der
+Oberfläche gibt es kein `if machine == …`. Der Name des Starters (`a5120emu`,
+`k8915emu`, `prg710emu`, `pc1715emu`, `p8000emu`) bzw. `--machine` wählt das Profil.
 
-Im CLI-Modus:
-- K7024 schreibt Unicode auf stdout statt Framebuffer
-- K7637 liest von stdin (raw mode)
-- Kein Qt6-Import notwendig
+Bausteine der Oberfläche:
+
+- **Aktionen** — jede Bedienung ist eine `QAction` in `app/ui/actions.py`; Menü und
+  Symbolleiste zeigen dieselbe, die Leiste wird aus einer Namensliste der Konfiguration
+  gebaut. Tastenkürzel nur mit `Strg+Umschalt` (Ausnahme `F11`), weil alle übrigen Tasten
+  dem emulierten Rechner gehören.
+- **Bildschirm** — `ScreenWidget` mit CRT-Shader (§6.2).
+- **Laufwerkskasten**, **Statuszeile** (eingestellter Takt, Laufwerksleuchte, Abbild,
+  Schreibschutz), **Einstellungen** mit den Reitern für Schnittstellen, RAM-Disk,
+  Lochstreifen.
+- **Pfade** — alles über `app/paths.py`: Umgebungsvariable → Installationslayout →
+  Quellbaum. `python3 app/main.py --paths` zeigt die ganze Auflösung.
+- **Konfiguration** — je Programm eine YAML-Datei (`a5120emu.yaml`, …) im
+  Benutzerordner; der Auslieferungszustand ist ebenfalls eine Datei
+  (`data/default_config_<maschine>.yaml`).
+
+### 10.2 Fäden
+
+Die Maschine rechnet in einem **eigenen Faden** (`app/emulationstakt.py`) in kurzen
+Scheiben; `k1520_run` gibt die GIL frei. Kann der Wirt den eingestellten Takt nicht halten,
+wird die Maschine langsamer, nicht die Oberfläche.
+
+Der Kern ist **nicht** threadsicher: jeder Aufruf geht über die **Kernsperre**
+(`_GesperrteBibliothek` in `app/core_binding/k1520.py`), mehrere zusammenhängende mit
+`with kern_sperre():`. Weil ein `RLock` nicht fair ist, melden Wartende sich an und
+bekommen nach der laufenden Scheibe den Vortritt — sonst verhungert die Oberfläche.
+
+Weitere Fäden außerhalb der Maschine: der E/A-Faden des `SerialHub` (§16.1) und der
+Arbeitsfaden der physischen Diskette (§8.8).
+
+### 10.3 Das DiskTool
+
+`app/disktool/` ist eine zweite Anwendung über `libk1520disk` mit eigener Oberfläche und
+eigenem Handbuch ([`app/disktool/help/handbuch.md`](../app/disktool/help/handbuch.md)).
+Beide Programme starten einander über das Menü *Werkzeuge* (`app/programme.py`).
+Entwurf: [design/13_k1520disktool](design/13_k1520disktool.md),
+[design/15](design/15_dateisystempruefung.md) (Prüfung), [design/27](design/27_wega_dateisystem.md) (WEGA).
+
+---
+
+## 11. Werkzeuge
+
+Die Werkzeuge in `tools/` linken die statischen Kernbibliotheken direkt und kommen damit an
+alles, was die C-ABI bewusst nicht zeigt.
+
+| Werkzeug | Zweck | Doku |
+|---|---|---|
+| `k1520dbg` | interaktiver Debugger für alle Maschinen (`--machine`), beide CPUs des A5120, U8001, Z8 | [handbuch_k1520dbg](handbuch_k1520dbg.md), [tools/k1520dbg.md](../tools/k1520dbg.md) |
+| `boot_trace` | nicht-interaktiver Tracer: lokalisiert, wo ein Lauf hängt | [tools/boot_trace.md](../tools/boot_trace.md) |
+| `k1520disktool` | DiskTool auf der Kommandozeile | [tools/k1520disktool.md](../tools/k1520disktool.md) |
+| `floppy_diag`, `format_driver`, `kbd_test`, `bench_run` | Diagnose, Formatier-Pipeline, Messung | [tools/README.md](../tools/README.md) |
+| `z8kasm`, Disassembler | Assembler für U8001-Firmware, Z80/Z8-Disassembler | [tools/z80_disasm.md](../tools/z80_disasm.md) |
+
+Einstieg in die Fehlersuche: [tools/how_to_debug_and_trace.md](../tools/how_to_debug_and_trace.md).
+Daneben liegen Gastprogramme mit Quelle und fertigem `.com` (SERTEST, ROMREAD, EM256-Prüfungen),
+die auf die Beispieldisketten kopiert werden.
 
 ---
 
 ## 12. Build-System
 
-```cmake
-# CMakeLists.txt (root)
-cmake_minimum_required(VERSION 3.20)
-project(k1520emu)
-
-# Optionen
-option(BUILD_SHARED_LIBS "Build cards as shared libs for testing" OFF)
-option(BUILD_GUI         "Build Python Qt6 application"          ON)
-option(BUILD_CLI         "Build CLI binary"                      ON)
-option(BUILD_TESTS       "Build test suite"                      ON)
-
-add_subdirectory(core)     # libk1520core (+ optionale Karten-Libs)
-add_subdirectory(cli)      # k1520cli
-# Python-App: kein cmake-Target, via pip install -e .
-```
-
-**Für Entwicklung/Tests** (`-DBUILD_SHARED_LIBS=ON`):
-- `libk1520_bus.so` – Bus-Simulator
-- `libk1520_k7024.so` – Bildschirmkarte (einzeln testbar)
-- `libk1520_k5122.so` – FDC (einzeln testbar)
-- `libk1520core.so` – Alles zusammen (C-API)
-
-**Für Produktion** (`-DBUILD_SHARED_LIBS=OFF`):
-- `libk1520core.so` – Alles statisch zusammengelinkt, eine .so
+- **CMake**, jede Komponente eine statische Bibliothek (`k1520_bus`, `k1520_z80`,
+  `k1520_k5122`, `k1520_a5120`, …), daraus die zwei gemeinsamen Bibliotheken
+  `k1520core` und `k1520disk`, die Werkzeuge und die Testprogramme.
+- **`LOG_LEVEL`** (0–5) ist die **Obergrenze** zur Bauzeit; was darüber liegt, wird nicht
+  übersetzt. Die tatsächliche Ausgabe steuert der Logger zur Laufzeit
+  (`core/logger.h`): Grundstufe, dazu Fenster nach Befehlszähler oder Takt und ein
+  bereichsweiser Schub (`K1520_LOG_BOOST`).
+- Zwei Bauverzeichnisse: `build/` (LOG_LEVEL 3) und `build_trace/` (LOG_LEVEL 5).
+  **Gebaut und getestet wird immer über `tools/dev.sh`**, das vorher neu baut — ein
+  Werkzeug direkt aus einem nicht neu gebauten Verzeichnis testet veraltete Objekte.
+- **Plattformen:** Linux (GCC) und Windows (MSVC, eigener Zweig im `CMakeLists.txt`);
+  `tools/dev.sh win` baut zur Vorprüfung mit MinGW-w64 und testet unter wine.
+- **Version** aus der Datei `VERSION`, abgeleitet über `tools/version.py`
+  (`core/version.h.in` → `k1520_version()`); Konzept in [ci_pipeline](ci_pipeline.md) §7.
+- **Paket** über `packaging/build_payload.sh` bzw. das Inno-Setup:
+  [design/13_distribution](design/13_distribution.md), [merkposten/paketierung](merkposten/paketierung.md).
 
 ---
 
 ## 13. Testkonzept
 
-Das Testsystem ist nach Testebenen gegliedert (`unit`, `debugtools`,
-`integration`, `cli`, `system`, `python`), jede Ebene ein Verzeichnis unter
-`tests/` und zugleich ein ctest-Label.  Begründung der Gliederung, was in welche
-Ebene gehört und die bewussten Auslassungen: **`doc/design/12_testing.md`**.
-Ausführen, einen Test hinzufügen, gemeinsame Infrastruktur: **`tests/README.md`**.
-Testdisketten: **`tests/fixtures/README.md`**.
-
-Kurz:
+Das Testsystem ist nach Ebenen gegliedert (`unit`, `debugtools`, `integration`, `cli`,
+`system`, `python`), jede Ebene ein Verzeichnis unter `tests/` und zugleich ein
+ctest-Label; quer dazu `fast`/`slow`. Begründung der Gliederung:
+[design/12](design/12_testing.md). Ausführen und erweitern: [tests/README.md](../tests/README.md).
+Testdisketten: [tests/fixtures/README.md](../tests/fixtures/README.md).
 
 ```sh
-tools/dev.sh test          # Regression ohne die langsamen (~12 s)
-tools/dev.sh test-format   # nur die langsamen System-Tests (~51 s)
+tools/dev.sh test          # Regression (rund 2900 Fälle, einige Minuten)
+tools/dev.sh test-format   # langsame Formatier- und Bootketten
+tools/dev.sh test-matrix   # jeder FORMAT.COM-Menüeintrag einzeln
 tools/dev.sh test-level unit
 ```
+
+Zwei Grundsätze tragen den Aufbau: **Festlegungen haben Wächter** — jede Regel in den
+Merkposten nennt den Test, der sie hält —, und **die Python-Ebene prüft, was C++ nicht
+erreicht**: die C-ABI gegen ihre ctypes-Deklarationen und die Verdrahtung der Oberfläche
+(Qt ohne Bildschirm).
+
+
+---
 
 ## 14. Interrupt-System A5120 (vollständige Spezifikation)
 
@@ -1891,6 +1730,7 @@ nicht boot-kritisch:
 | RETI-Erkennung im Z80CTC | im Z80PIO vorhanden (`onRETI`/IUS); verschachtelte CTC-Interrupts ggf. unvollständig |
 | Post-Boot VRAM-Wipe nach ~50–65M Idle-Takten | kosmetisch; vermutl. Uhr-/Timing-Drift + streunende ZVE2-Floppy-Aktivität (`doc/open_points.md`) |
 
+
 ---
 
 ## 15. Offene Fragen (Hardware-Dokumentation)
@@ -1899,25 +1739,53 @@ nicht boot-kritisch:
 
 Hat die K3526 außer dem 64KB DRAM irgendwelche Steuerlogik (Banking-Register, Schreibschutz-Logik)? Oder ist sie wirklich nur ein passiver 64KB DRAM-Block?
 
+
 ### 15.2 PRG710 / K8915 Hardware
 
-K8915: Stand und Planung in `doc/design/16_k8915.md`, Festlegungen mit Wächtern in `doc/merkposten/k8915.md`. PRG710: es fehlen noch alle Hardware-Informationen. Die Architektur unterstützt sie bereits als Konfiguration, aber die konkreten Karten und deren Verdrahtung müssen noch ermittelt werden.
+Beide sind inzwischen als Maschinen umgesetzt (§2.6). Was am Gerät noch zu klären ist,
+führen die Pläne als Anwenderfragen: K8915 in [design/16](design/16_k8915.md) §6 und
+[merkposten/k8915](merkposten/k8915.md), PRG 710 in [design/20](design/20_prg710.md) §8 und
+[merkposten/prg710](merkposten/prg710.md). Weitere offene Punkte: [open_points.md](open_points.md).
 
 ---
 
-## 16. Migrationspfad aus bestehendem Code
+## 16. Querschnittsthemen
 
-| Komponente | Herkunft | Aktion |
-|------------|----------|--------|
-| `src/z80.cpp/h` | Legacy | In `core/primitives/z80_cpu.cpp/h` übernehmen, Bus-Callbacks anpassen |
-| `src/floppy.cpp/h` | Legacy | Image-Lese-/Schreiblogik in `core/peripherals/floppy_drive/` übernehmen |
-| `tools/z80_disasm*.py` | Legacy | Unverändert übernehmen, `eprom_to_h.py` hinzufügen |
-| `src/cpa_bios.cpp` | Legacy | Nicht übernehmen (HALT-Trap-Ansatz entfällt) |
-| `src/terminal*.cpp` | Legacy | Nicht übernehmen (durch K7024+K7637 ersetzt) |
-| `cparun/` | Legacy | Komplett unverändert beibehalten |
-| `cpa_src/` | Referenz | Nur zum Studium des CPA-BIOS, kein Code übernehmen |
-| `disks/*.img` | Assets | Weiterhin verwendbar |
+### 16.1 Serielle Schnittstellen nach außen
+
+Die seriellen Kanäle der Karten gehen über **Telnet**, **RFC 2217** (Client oder Server)
+oder in eine **Datei** nach außen. Je Maschine ein `SerialHub` (`core/serial/`) mit eigenem
+E/A-Faden; je Schnittstelle ein `Wandler`, der in **Maschinenzeit** nach der vom Gast
+programmierten Baudrate taktet und verlustfrei durch Rückstau ist. Die Karten liefern nur
+einen `SerialAnschluss` und kennen kein Netz. Der Gast ist maßgeblich: eine Anfrage der
+Gegenstelle ändert Baudrate und Format nie.
+[design/19](design/19_serielle_schnittstellen.md), [merkposten/serielle_schnittstellen](merkposten/serielle_schnittstellen.md).
+
+### 16.2 Steckbare Optionen
+
+- **RAM-Floppy RAF 128/512/2M** auf E/A 88H/89H; RESET erhält den Inhalt, die Oberfläche
+  legt ihn als Stand-by-Ablage ab. [design/22](design/22_raf512.md), [merkposten/raf](merkposten/raf.md).
+- **Lochstreifen K6022** (Leser und Stanzer) auf E/A E0H–E7H; Bandformate roh, Intel HEX
+  und ASCII-Bild, der Stanzer schreibt nach einer Pause zurück.
+  [design/23](design/23_lochstreifen.md), [merkposten/lochstreifen](merkposten/lochstreifen.md).
+
+Beide werden nach dem Anlegen und vor dem ersten Lauf gesteckt (§5.5).
+
+### 16.3 Physische Diskette
+
+Ein Greaseweazle-Adapter ersetzt die Datei als Bindung des Mediums; der Kern kennt den
+Adapter nicht (§8.8). Das Python-Paket `greaseweazle` ist freiwillig — fehlt es, fehlt der
+Menüpunkt, und die Tests laufen trotzdem.
+[design/14](design/14_physische_diskette.md), [merkposten/physische_diskette](merkposten/physische_diskette.md).
+
+### 16.4 Verteilung
+
+Das Anwenderpaket (~2 MB) bringt Python und Qt bei der Installation in eine eigene
+Umgebung innerhalb der Installation, ohne Administratorrechte; unter Windows über ein
+Inno-Setup. Arbeitsdisketten liegen im Dokumentenordner, getrennt vom Programm.
+[design/13_distribution](design/13_distribution.md), [packaging/README](../packaging/README.md).
 
 ---
 
-*Detaillierte Feinentwürfe für jedes Modul in `doc/design/0X_*.md`.*
+*Feinentwürfe je Baugruppe und Maschine: [`doc/design/`](design/). Festlegungen mit Wächtern:
+[`doc/merkposten/`](merkposten/).*
