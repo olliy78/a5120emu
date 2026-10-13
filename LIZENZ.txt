@@ -66,7 +66,7 @@ verständlich zu machen und die Funktion des Emulators zu prüfen.
 
 Rechteinhaber, die mit der Weitergabe einer Beigabe nicht einverstanden sind,
 werden gebeten, sich über die Issues des GitHub-Repositorys zu melden
-(https://github.com/olliy78/a5120emu/issues); die Beigabe wird dann geprüft
+(https://github.com/olliy78/k1520emu/issues); die Beigabe wird dann geprüft
 und gegebenenfalls entfernt.
 
 
@@ -128,5 +128,5 @@ and to verify that the emulator works correctly.
 
 Rights holders who object to the distribution of any of this material are
 asked to get in touch through the issues of the GitHub repository
-(https://github.com/olliy78/a5120emu/issues); the material will then be
+(https://github.com/olliy78/k1520emu/issues); the material will then be
 reviewed and removed where appropriate.

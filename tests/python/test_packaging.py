@@ -670,7 +670,7 @@ def test_release_notizen_nennen_jede_ausgelieferte_datei():
         assert muster in vorlage, f"{muster} fehlt in der Release-Beschreibung"
     # Ein Verweis auf die Projektseite gehört dazu — das Release ist für viele
     # der erste Kontakt mit dem Projekt.
-    assert "github.com/olliy78/a5120emu" in vorlage
+    assert "github.com/olliy78/k1520emu" in vorlage
     assert vorlage.lstrip().startswith("# "), "keine Überschrift"
 
 

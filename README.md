@@ -10,7 +10,7 @@ Deshalb bootet die Maschine mehrere Original-Betriebssysteme von Original-Disket
 inklusive Formatieren mit dem originalen `FORMAT.COM`.
 
 > ### ⬇ Fertige Pakete für Windows und Linux
-> **[Zur Downloadseite (aktuelles Release)](https://github.com/olliy78/a5120emu/releases/latest)**
+> **[Zur Downloadseite (aktuelles Release)](https://github.com/olliy78/k1520emu/releases/latest)**
 >
 > Installation benutzerlokal, **ohne Administratorrechte** — für Windows ein
 > Installationsprogramm, für Linux ein Archiv mit `install.sh`. Weder Compiler noch
@@ -137,7 +137,7 @@ Die Oberfläche ist in **[APP_README.md](APP_README.md)** beschrieben.
 
 ### Verteilbares Paket selbst schnüren
 
-Wer den Emulator nur benutzen will, nimmt die **[fertigen Pakete](https://github.com/olliy78/a5120emu/releases/latest)**
+Wer den Emulator nur benutzen will, nimmt die **[fertigen Pakete](https://github.com/olliy78/k1520emu/releases/latest)**
 — dieser Abschnitt beschreibt, wie sie entstehen. `packaging/build_payload.sh` schnürt ein
 ~3-MB-Archiv; dessen Installer holt Python und Qt mit
 [`uv`](https://github.com/astral-sh/uv) in eine eigene Laufzeitumgebung **innerhalb der
@@ -231,5 +231,5 @@ Programmen der damaligen Hersteller (`disks/`, `tests/fixtures/`), EPROM-Abzüge
 (`doc/original_docs/`). Die Rechte daran liegen bei den jeweiligen Rechteinhabern; sie
 liegen nur bei, um die historische Technik verständlich zu machen und den Emulator zu
 prüfen. Rechteinhaber, die mit der Weitergabe nicht einverstanden sind, melden sich bitte
-über die [Issues](https://github.com/olliy78/a5120emu/issues). Wortlaut auf Deutsch und
+über die [Issues](https://github.com/olliy78/k1520emu/issues). Wortlaut auf Deutsch und
 Englisch: [LIZENZ.txt](LIZENZ.txt).

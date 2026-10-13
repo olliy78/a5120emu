@@ -6,7 +6,7 @@ mit seinen Steckkarten** — es gibt keine BIOS-Traps: Boot-ROM, BIOS und Betrie
 laufen als echter Z80-Code. Deshalb bootet die Maschine mehrere Original-Betriebssysteme
 von Original-Disketten: **CP/A**, **SCPX** und **UDOS**.
 
-Beschreibung, Aufbau und Entwicklungsstand: **[Projektseite mit README](https://github.com/olliy78/a5120emu#readme)**
+Beschreibung, Aufbau und Entwicklungsstand: **[Projektseite mit README](https://github.com/olliy78/k1520emu#readme)**
 
 <!-- Der folgende Abschnitt gehoert zur JEWEILIGEN Version und wird vor jedem
      Tag neu geschrieben.  Er steht hier und nicht in einer CHANGELOG-Datei,
@@ -122,4 +122,4 @@ seine Dateien sucht, beantwortet `python3 app/main.py --paths` in der Installati
 
 ---
 
-**Alle Änderungen:** https://github.com/olliy78/a5120emu/commits/@TAG@
+**Alle Änderungen:** https://github.com/olliy78/k1520emu/commits/@TAG@

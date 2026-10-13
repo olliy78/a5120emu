@@ -785,7 +785,7 @@ Speicherabbild neu auf und liest die Datei nicht noch einmal.
 ## Bugs, Wünsche und Anregungen
 
 Fehler, Wünsche und Anregungen bitte über das Ticketsystem des Projekts auf GitHub
-melden: <https://github.com/olliy78/a5120emu/issues>. Ein neues Ticket legt man
+melden: <https://github.com/olliy78/k1520emu/issues>. Ein neues Ticket legt man
 dort mit *New issue* an; dafür braucht es ein (kostenloses) GitHub-Konto. Bevor Sie
 eins schreiben, lohnt ein Blick, ob dasselbe schon gemeldet ist.
 
