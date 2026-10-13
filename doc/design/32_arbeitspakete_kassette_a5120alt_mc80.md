@@ -60,9 +60,9 @@ ein eigenes Worktree.
 
 | AP | Titel | Art | hängt ab von | Umfang | Stand |
 |---|---|---|---|---|---|
-| K0 | K5020: Abschrift Programmierung + Signale | ana | — | M | offen |
+| K0 | K5020: Abschrift Programmierung + Signale | ana | — | M | **fertig 2026-10-14** |
 | K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | offen |
-| K2 | K5200: Laufwerkszeiten und Signale | ana | — | S | offen |
+| K2 | K5200: Laufwerkszeiten und Signale | ana | — | S | **fertig 2026-10-14** |
 | K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | offen |
 | K4 | `cards/k5020` | cpp | K3 | M | offen |
 | K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | offen |
@@ -72,11 +72,11 @@ ein eigenes Worktree.
 | K9 | Oberfläche „Kassette“ | py | K5 | M | offen |
 | K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | offen |
 | K11 | optional `.wav` (ISO 3407) | cpp | K3 + Mitschnitt | M | zurückgestellt |
-| A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | offen |
-| A1a | K7023: Abschrift BD/SLP | ana | — | S | offen |
+| A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
+| A1a | K7023: Abschrift BD/SLP | ana | — | S | **fertig 2026-10-14** |
 | A1 | `cards/k7023` | cpp | A1a | M | offen |
 | A2 | K3525 (16 KB) | cpp | — | S | offen |
-| A3a | K7636 + Anschluss an K2526: Abschrift | ana | — | M | offen |
+| A3a | K7636 + Anschluss an K2526: Abschrift | ana | — | M | **fertig 2026-10-14** |
 | A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | offen |
 | A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | offen |
 | A4 | `cards/k5120` | cpp | A4a | L | zurückgestellt |
@@ -85,7 +85,7 @@ ein eigenes Worktree.
 | A7 | BCU 880 bis Prompt | int | A5, A0 | L | offen |
 | A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | offen |
 | A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | offen |
-| M0 | MC80.3x: Hardware-Abschrift | ana | — | M | offen |
+| M0 | MC80.3x: Hardware-Abschrift | ana | — | M | **fertig 2026-10-14** |
 | M1 | EGOS-Disassemblat (`.prn`) | ana | — | L | offen |
 | M2 | `Mc80Machine` Gerüst: ZVE, SPE, Segmente | cpp | M0 | M | offen |
 | M3 | VIS2a + ASP + Tastatur → EGOS meldet sich | cpp/int | M2, M1 | L | offen |
@@ -102,6 +102,14 @@ ein eigenes Worktree.
 ## 3. Funde während der Umsetzung
 
 (von den Agenten fortzuschreiben: Datum, AP, Fund, Folge)
+
+- 2026-10-14 K0: Entwurf 29 §4.1 ordnet die Init-Worte falsch zu (`CFH,80H,17H,7FH`/`CFH,FDH,17H,DFH` gehören zur Steuer-PIO; Daten-PIO nur `0FH`/`4FH`); die Steuer-PIO braucht Interrupt bei High (FEX, `37H`) UND bei Low (KMBG, `17H`). Blocklänge laut BD 2–256. `zre.prn:437`-Kommentar „Bits 1,0 löschen“ falsch (AND F3H löst internes Rücksetzen aus). Folge: K1/K4 beachten.
+- 2026-10-14 K2: K5020 kennt UMS/WID/KNG/AVE nicht (Schreibschutz für die CPU nur indirekt). 12 000/6 000 Bit/s nominal, Bitzelle 83,33 µs. CRC/Präambel stehen nicht in der K5200-Unterlage → K1. Bei 19 cm/s keine Zeiten in der BD.
+- 2026-10-14 K0/M0: Bitzelle als ZEIT modellieren, nicht als Teiler (Teilerverhältnis nicht lesbar); externer Takt X3B06/X4B06 beim MC80.30 offen → M7.
+- 2026-10-14 A0: V0.6 ist ein anderes Programm (liest Zylinder 1, 6×128 B, Einsprung 042EH) → BCU „SYL auf Spur 1“; V0.9_2 bleibt Vorgabe. Der Kern kann kein anderes Lade-ROM laden → A5/A7 brauchen eine Konfigurationsgröße dafür. „BCU ohne SYL“ braucht vermutlich unbekanntes „EPROM BCU 880 V2.2“ (A7 offen). k8924-Abzug handgepatcht (CRC passt nicht).
+- 2026-10-14 A1a: K7023 hat KEINE Lesesperre; K7023.01 hat Helligkeit je Zelle (Marken 04H–0FH) — K7024-Kern ignoriert Marken. Für „alt“ muss K2526 `config_bridges` Bit 1 (Port 0AH Bit 6 = BAB1) gesetzt werden (A5). VRAM beim Start 0xFF vorschlagsweise.
+- 2026-10-14 A3a: K7636 Statusbit 3 = /UINT (0 = Code bereit), Ruhewert 0CH muss das K7636-Modell selbst vorgeben (K2526-Standard unverändert lassen); Typzeichen 80H nach Reset/Kommando. CSV hat Druckfehler-Stellen mit [?] (A15 DA→im Modell 0A).
+- 2026-10-14 M0: **Entwurf 31 §3.1 ist falsch: Segmentumschaltung über Port 85H = ZVE-PIO Kanal B** (A = Einsernummer). Takt 2,4576 MHz (MAME stimmt). SPE-2-Sperrports B0H–B3H, MAME bildet SPE nicht ab. Offen: Schreibschutz 8CH, SPE-2-Zustand nach Reset (→ M1), VIS2a-Lesepfad.
 
 ---
 
