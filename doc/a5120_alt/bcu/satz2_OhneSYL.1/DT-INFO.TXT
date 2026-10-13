@@ -1,0 +1,9 @@
+A
+SYS1
+====================
+Datentraeger: Diskette 5,25"  DD DS, doppelt gelocht
+Formatierung: 26x128x40x1
+Betriebssystem: BCU880 1.2
+Rechner: A5120?
+Hinweis: Auf der Vorderseite ist DISK.085.
+Herkunft: VEB Halbleiterwerk Frankfurt/Oder

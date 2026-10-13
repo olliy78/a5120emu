@@ -1,0 +1,8 @@
+Hoffmann BCK 40T
+SYS80
+====================
+Datentraeger: Diskette 5,25"  DD DS
+Formatierung: 26x128x80x1
+Betriebssystem: BCU880
+Rechner: A5120?
+Herkunft: VEB Halbleiterwerk Frankfurt/Oder

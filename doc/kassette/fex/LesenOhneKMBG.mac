@@ -1,0 +1,80 @@
+;Lesen von Kassetten ohne kmbg.rel und abspeichern auf Diskette
+;unter Zuhilfenahme der rueckuebersetzten kmbg.rel-Routinen
+;02/2015
+;V0.1
+
+			.z80
+			org		0100h
+
+;##############
+;Vereinbarungen
+;##############
+bdos	equ				0005h						;BDOS-Aufrufe
+etx		equ				0024h						;Textendekennzeichen
+;
+ctcz0	equ				000dh 						;Kanal 0 CTC auf ZRE
+;
+;PIO-Adressen
+dadat	equ				0030h						;Daten-PIO, Port A, Daten
+dastw	equ				0032h						;Daten-PIO, Port A, Steuer
+dbdat	equ				0031h						;Daten-PIO, Port B, Daten
+dbstw	equ				0033h						;Daten-PIO, Port B, Steuer
+;
+sadat	equ				0034h						;Steuer-PIO, Port A, Daten
+sastw	equ				0036h						;Steuer-PIO, Port A, Steuer
+sbdat	equ				0035h						;Steuer-PIO, Port B, Daten
+sbstw	equ				0037h						;Steuer-PIO, Port B, Steuer
+;Steuer-PIO Portbelegung
+;Tor A	Bit 0 - Ausgang	-	/RES2	Reservieren KMBG2
+;		Bit 1 - Ausgang -	/RES1	Reservieren KMBG1
+;		Bit 2 - Ausgang -	/AWA2	Auswahl KMBG2
+;		Bit 3 - Ausgang -	/AWA1	Auswahl KMBG1
+;		Bit 4 - Ausgang -	TRV		Transport vorwaerts
+;		Bit 5 - Ausgang -	TRR		Transport rueckwaerts
+;		Bit 6 - Ausgang -	HGE		hohe Geschwindigkeit (mit TRV o. TRR)
+;		Bit 7 - Eingang -	AEB		Anfang/Ende Band Zustandssignal
+;Tor B	Bit 0 - Eingang -	AZV		Aufzeichnungsverfahren
+;		Bit 1 - Ausgang -	AUF		Aufzeichnen
+;		Bit 2 - Eingang -	KSB		Kassettenseite B
+;		Bit 3 - Eingang -	/NIB2	negiertes Signal 'nicht bereit' KMBG2
+;		Bit 4 - Eingang -	/NIB1	negiertes Signal 'nicht bereit' KMBG1
+;		Bit 5 - Eingang -	BMS		Blockmarkierungssignal
+;		Bit 6 - Eingang -	STA		Status, fehlerhafte Flusswechsel bei AUF
+;		Bit 7 - Eingang -	ZF		Zeitfehler
+;***************************************************************************
+;
+;########################
+;Initialisierung der PIOs - original aus kmbg.rel
+;########################
+        ld      a, 0fh
+        out     dastw               ;Daten-PIO Port A Mode 0 Ausgabe
+        ld      a, 4fh
+        out     dbstw               ;Daten-PIO Port B Mode 1 Eingabe
+        ld      a, 7fh
+        out     sastw               ;Steuer-PIO Port A Mode 1 Eingabe
+        out     sbstw               ;Steuer-PIO Port B Mode 1 Eingabe
+        ld      a, 03h
+        out     sadat				;beide Kass.-LW reservieren
+        inc     a
+        out     sbdat               ;?? Kass.-seite B, normalerweise Eingang
+        ld      a, 0cfh
+        out     sastw				;Mode 0 - Ausgabe
+        ld      a, 80h
+        out     sastw 				;
+        ld      a, 17h
+        out     sastw
+        ld      a, 7fh
+        out     sastw
+        ld      a, 0cfh
+        out     sbstw
+        ld      a, 0fdh
+        out     sbstw
+        ld      a, 17h
+        out     sbstw
+        ld      a, 0dfh
+        out     sbstw
+;*****************************************************************************
+
+
+
+end

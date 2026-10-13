@@ -1,0 +1,146 @@
+;
+;***** Kassettenroutinen ******************
+;##########################################
+; eine Bandmarke ruecksetzen
+;IN:	-
+;OUT:	-
+;KILL:	-
+bmrue:	ld		c, (ix+6)		;Fkt.-code eine BM ruecksetzen
+		jr		raus
+;******************************************
+;##########################################
+; eine Bandmarke vorspulen
+;IN:	-
+;OUT:	-
+;KILL:	-
+bmvor:	ld		c, (ix+5)		;Fkt.-code eine BM vorsetzen
+		jr		raus
+;******************************************
+;##########################################
+; einen Block rueckspulen
+;IN:	-
+;OUT:	-
+;KILL:	-
+blrue:	ld		c, (ix+4)		;Fkt.-code einen Block ruecksetzen
+		jr		raus
+;******************************************
+;##########################################
+; einen Block vorspulen
+;IN:	-
+;OUT:	-
+;KILL:	-
+blvor:	ld		c, (ix+3)		;Fkt.-code einen Block vorspulen
+		jr		raus
+;******************************************
+;##########################################
+; eine Bandmarke schreiben
+;IN:	-
+;OUT:	-
+;KILL:	-
+bmtx:	ld		c, (ix+2)		;Fkt.-code Bandmarke schreiben
+		jr		raus
+;******************************************
+;##########################################
+; Band schnell rueckspulen
+;IN:	-
+;OUT:	-
+;KILL:	-
+rspu:	ld		c, (ix+8)		;Fkt.-code schnelles rueckspulen
+		jr		raus
+;******************************************
+;##########################################
+; Band schnell vorspulen
+;IN:	-
+;OUT:	-
+;KILL:	-
+vspu:	ld		c, (ix+7)		;Fkt.-code vorspulen
+		jr		raus
+;******************************************
+;##########################################
+; Band loeschen
+;IN:	-
+;OUT:	-
+;KILL:	-
+bloe:	ld		c, (ix+11)		;Fkt.-code Band loeschen
+		jr		raus
+;******************************************
+;##########################################
+; Bandlaufwerk entriegeln
+;IN:	-
+;OUT:	-
+;KILL:	-
+entr:	ld		c, (ix+10)		;Fkt.-code entriegeln
+;Seitenanzeige loeschen, d.h., Leerzeichen darstellen
+		ld      a, " "
+		ld      (sttxt3), a
+		jr		raus
+;******************************************
+;##########################################
+; Laufwerk verriegeln
+;IN:	-
+;OUT:	-
+;KILL:	-
+verr:	ld		c, (ix+9)		;Fkt.-code Verriegeln/Reservieren
+		jr      raus
+;******************************************
+;##########################################
+; Block lesen
+;IN:	HL - gewuenschte Blocklaenge
+;		DE - Lesepufferadresse
+;OUT:	A  - Status (oder auch (status))
+;		HL - tatsaechlich gelesene Blocklaenge (oder (kpulen))
+;KILL:
+blrx:	ld		c, (ix+0)		;Fkt.-code Block lesen
+		jr		raus
+;*******************************************
+;###########################################
+; Block schreiben
+;IN:	HL - zu schreibende Blocklaenge
+;		DE - Schreibpufferadresse
+;OUT:	A  - Status (oder auch (status))
+bltx:	ld		c, (ix+1)		;Fkt.-code Block schreiben
+		jr		raus
+;*******************************************
+;###########################################
+;Endpunkt der meisten Kassettenroutinen
+raus:   ld      a, c
+		ld      (lbef), a       ;Befehlscode speichern
+		call	kmbg
+		ld		(status), a		;Status merken
+		ld		(kpulen), hl	;tatsaechliche Blocklaenge merken
+;Statusbytes direkt von der ASS holen und speichern
+		in      a, (sad)        ;Steuer-PIO, Port A, Datenwort
+		ld      (sbsa), a       ;ablegen
+		in      a, (sbd)        ;Steuer-PIO, Port B, Datenwort
+		ld      (sbsb), a       ;ablegen
+		ret
+;********************************************
+;
+;Befehlstabellen fuer kmbg.rel
+;Befehlscodes Laufwerk 1
+btab1:  db      01h                     ;einen Block lesen
+		db      02h                     ;einen Block schreiben
+		db      11h                     ;Bandmarke schreiben
+		db      12h                     ;einen Block vorspulen
+		db      32h                     ;einen Block rueckspulen
+		db      13h                     ;eine Bandmarke vorspulen
+		db      33h                     ;eine Bandmarke rueckspulen
+		db      14h                     ;schnelles vorspulen
+		db      34h                     ;schnelles rueckspulen
+		db      15h                     ;LW verriegeln/reservieren
+		db      16h                     ;LW entriegeln
+		db      18h                     ;Band loeschen
+;Befehlcodes Laufwerk 2
+btab2:  db      41h                     ;einen Block lesen
+		db      42h                     ;einen Block schreiben
+		db      51h                     ;eine Bandmarke schreiben
+		db      52h                     ;einen Block vorspulen
+		db      72h                     ;einen Block rueckspulen
+		db      53h                     ;eine Bandmarke vorspulen
+		db      73h                     ;eine Bandmarke rueckspulen
+		db      54h                     ;schnelles vorspulen
+		db      74h                     ;schnelles rueckspulen
+		db      55h                     ;LW verriegeln/reservieren
+		db      56h                     ;LW entriegeln
+		db      58h                     ;Band loeschen
+;

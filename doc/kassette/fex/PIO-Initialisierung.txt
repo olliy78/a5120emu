@@ -1,0 +1,20 @@
+PIO-Initialisierung:
+====================
+
+Steuerwort-Ausgaben an die einzelnen PIO-Ports:
+Daten-PIO, Port A
+0fh	0000 ffff	Mode 0 Byte-Ausgabe
+cfh 1100 ffff
+80h 1000 0000
+17h 0001 0111
+7fh 0111 ffff
+
+Daten-PIO, Port B
+4fh	0100 1111
+cfh 1100 1111
+fdh 1111 1101
+17h 0001 0111
+dfh 1101 1111
+
+Steuer-PIO, Port A und B
+7fh	0111 1111

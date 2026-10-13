@@ -1,0 +1,14 @@
+D15
+SIOS 1SS Copy1
+====================
+Datentraeger: Diskette 5,25"  DD DS
+Formatierung: 26x128x40x1
+Betriebssystem: BCU/SIOS
+Rechner: A5120
+Hinweis: Auf der Rueckseite ist DISK.153
+Inhalt: (VolID: ROBINI)
+        DATA (01/01 - 73/26 - 01/01)
+Herkunft: VEB Halbleiterwerk Frankfurt/Oder
+VolID: ROBINI    
+Bootfaehig: Nein
+Inhalt: DATA        (01/01 - 73/26 - 01/01)

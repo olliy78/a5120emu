@@ -1,0 +1,10 @@
+BCU 
+Kaltstart
+====================
+Datentraeger: Diskette 5,25"  DD DS
+Formatierung: 26x128x40x1
+Betriebssystem: BCU
+Rechner: A5120?
+VolID: ROBINI    
+Bootfaehig: Nein
+Inhalt: DATA        (01/01 - 73/26 - 01/01)

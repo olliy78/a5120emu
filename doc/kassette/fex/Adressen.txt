@@ -1,0 +1,123 @@
+; ### Merkzellen ###
+0044
+015b    	Merkzelle für übergebenen Befehlscode (C) --> erstes Byte nach Prg.
+015c-015d   Merkzelle für übergebene Blockpufferadresse (DE)
+015e-015f   Merkzelle für übergebene Blocklänge (HL)
+0160
+0161
+0162-0163
+0164-0165
+0166-0167
+0168-0169
+016a
+016d        wird am Anfang mit Null beschrieben (Statusbyte?)
+016e        Bit 5 wird geprüft
+016f-0170   Puffer
+0273-0274   vor kmbg-Programm, Lesepuffer/Schreibpuffer
+0386        Top neuer SP-Inhalt
+0387-0388   Merkzelle fuer alten SP
+;
+;
+; ### Interruptadressen ###
+06c2    int01
+06eb    int02
+08c1    int03
+08f9	xxx
+;
+; ### I/O-Adressen ###
+0d
+30
+31
+32
+33
+34
+35
+36
+37
+;
+; ### Ansprungadressenverzeichnis - nur für Debugzwecke
+bdos	0005
+start	0389
+kmbg01  03b5
+kmbg02  0435
+kmbg03  045f
+kmbg04  0473
+kmbg05  048c
+kmbg06  0423
+kmbg07  0480
+kmbg08  0484
+kmbg09  04b1
+kmbg10  04ae
+kmbg11  0529
+kmbg12  052f
+kmbg13  04db
+kmbg14  04e7
+kmbg15  04f3
+kmbg16  04a2
+kmbg17  051b
+kmbg18  053a
+kmbg19  0505
+kmbg20  0522
+kmbg21  050a
+kmbg22  04e7
+kmbg23  0532
+kmbg24  0457
+kmbg25  05bc
+kmbg26  05cb
+kmbg27  05ec
+kmbg28  0602
+kmbg29  0654
+kmbg30  0668
+kmbg31  06a5
+kmbg32  06b3
+int01   06c2 - Interruptroutine
+int03	08c1 - Interruptroutine
+kmbg34  06d4 - Interruptroutine
+kmbg35  06e2
+kmbg36	0706
+kmbg37  0709
+kmbg38	0733
+kmbg39	0755
+kmbg40  0616
+kmbg41  07c3
+kmbg42  07d2
+kmbg43  07e7
+kmbg44	07fa
+kmbg45  0816
+kmbg46  083f
+kmbg47  081a
+kmbg48  0855
+kmbg49  087b
+kmbg50  089e
+kmbg51  089b
+kmbg52	08ac
+kmbg53	0898
+kmbg54	0922
+kmbg55	0949
+kmbg56	081c
+kmbg57	098b
+kmbg58	0999
+kmbg59	0992
+kmbg60	09aa
+kmbg61	09b3
+kmbg62	09c9
+kmbg63	09ec
+kmbg64	0a2c
+kmbg65	0a28
+kmbg66	09cf
+kmbg67	0a38
+kmbg68	0a5c
+kmbg69	0a6d
+kmbg70	0a53
+kmbg71	0a57
+kmbg72	0a7c
+kmbg73	0a71
+kmbg74	08f9
+kmbg75	0553
+kmbg76	0780
+kmbg77	05a4
+kmbg78	046c
+kmbg79	0500
+txt01	0a87
+txt02	0ab2
+; ### Ende Ansprungadressenverzeichnis

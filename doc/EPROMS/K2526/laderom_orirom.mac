@@ -1,0 +1,733 @@
+;
+;  Z80 Disassembly of LOAD.V09
+;  Urlader der A5120-Rechner
+;  6/3/2005 17:32
+;
+;  Lade-ROM-Adresse: 0000h - 03ffh
+;  dahinter liegt RAM-Bereich, der nur schreibend
+;  erreicht werden kann, dieser dient als Speicher-
+;  seitenschutz-RAM, dahinter liegt dann noch der
+;  normale RAM
+;
+
+; *****************
+; wichtige Adressen
+; *****************
+; IVPIO         00b8h   Zeiger auf Interruptroutine PIO Kanal A (X007a)
+; IPIO          007ah   Inhalt von IVPIO, Beginn Interruptroutine auf $007ah
+;
+;
+; *****************
+
+;
+	org     0
+;
+START:  nop                     ; 0000  00              Wert 00h wird immer in (HL) geladen (s. weiter unten)
+;
+;  ***************************************
+;  Routine lädt den Inhalt von $00 = 00h von Adresse
+;  $0000 an $0800 mal (2 kByte) aufsteigend, d.h. der hinter dem ROM liegende
+;  RAM und ein zusätzliches kByte RAM wird mit $00 beschrieben
+;  ***************************************
+BEGIN:  ld      bc,RAMEND       ; 0001  01 00 08        2kByte
+	ld      d,c             ; 0004  51
+	ld      e,c             ; 0005  59              DE = 0000h
+	ld      h,c             ; 0006  61
+	ld      l,c             ; 0007  69              HL = 0000h
+LADEN:  ldi                     ; 0008  ed a0           (DE):=(HL), dann DE=DE+1: BC=BC-1: HL=HL+1
+	dec     hl              ; 000a  2b              um immer auf 0000h zu verweisen, HL immer = 0
+	jp      pe,LADEN        ; 000b  ea 08 00        noch keine 2k beschrieben -> Rücksprung
+				;                       PV=1 bei BC=$0000, Hintergrund-RAM hinter
+				;                       dem Lade-PROM wird auch mit 00h gefuellt
+;							Befehl 'dec hl' veraendert keine Flags
+;
+;  *****************************************
+;
+;
+;  *****************************************
+;  Initialisierung der CPU-internen Vektoren
+;  und der BS-PIO
+;  *****************************************
+	xor     a               ; 000e  af              A=0, Carry=0, Parity=1
+	out     (2),a           ; 000f  d3 02           Ruecksetzen Speicherschutz-Flip Flop
+;
+	ld      sp,SPSTART      ; 0011  31 e0 07        Stack bei 07e0h
+	im      2               ; 0014  ed 5e           Interrupt-Mode 2
+	ld      a,0             ; 0016  3e 00           A=0
+	ld      i,a             ; 0018  ed 47           CPU-Interruptvektor 00h High-Teil
+;
+;  **************************
+;  Initialisierung der BS-PIO
+;  **************************
+;
+	ld      a,7fh           ; 001a  3e 7f
+	out     (9),a           ; 001c  d3 09           Einstellung Arbeitsmodus Kanal A BS-PIO
+;
+;                                                       0111 1111 = 7fh
+;                                                       ||
+;                                                       ---> Modus 1 - Eingabe
+;
+	out     (0bh),a         ; 001e  d3 0b           Modus 1 - Eingabe auch fuer Kanal B
+	ld      a,0ffh          ; 0020  3e ff
+	out     (8),a           ; 0022  d3 08           PIO Daten, Kanal A
+X0024:  out     (0ah),a         ; 0024  d3 0a           PIO Daten, Kanal B
+	ld      a,0b8h          ; 0026  3e b8           Interruptvektor Kanal A (00b8h)
+	out     (9),a           ; 0028  d3 09
+	ld      a,0ffh          ; 002a  3e ff           Modus 3 - Einzelbitsteuerung
+	out     (9),a           ; 002c  d3 09
+	ld      a,7fh           ; 002e  3e 7f           A0...A6 Eingang, A7 Ausgang
+	out     (9),a           ; 0030  d3 09
+;
+;  ************************
+;  Ende PIO-Initialisierung
+;  ************************
+;
+	ld      ix,RAMEND       ; 0032  dd 21 00 08     Adresse des 3. kBytes RAM in IX
+	ld      (X0462),ix      ; 0036  dd 22 62 04     RAM-Ende merken
+	ld      hl,X044e        ; 003a  21 4e 04
+	ld      de,X0400        ; 003d  11 00 04
+	ld      b,3eh           ; 0040  06 3e           62 dezimal (64k RAM - 2k BS-RAM)
+RAMTEST:ld      c,(ix+0)        ; 0042  dd 4e 00        Adresse, nächster zu erwartender RAM
+;                                                       Inhalt in "C" sichern
+	ld      a,0d7h          ; 0045  3e d7           Interruptsteuerwort, Kanal A
+;                                                       1101 0111 = 0d7h
+;							||||-------------> Maske folgt
+;							|||--------------> Low loest Interrupt aus
+;							||---------------> AND-Verknuepfung
+;							|----------------> Interrupt ein
+;
+	out     (9),a           ; 0047  d3 09           Ausgabe Steuerwort Kanal A
+	ld      a,9fh           ; 0049  3e 9f           Interruptmaske fuer Kanal A
+;                                                       1001 1111 = 09fh
+;                                                       Bit 6 - RDY
+;                                                       Bit 5 - WR --- nur diese beiden loesen
+;                                                       wenn beide zusammen low sind, Interrupt aus
+;                                                       (s. auch S. 28 ff. Betriebsdokumentation
+;                                                       Zentrale Recheneinheit K2526/27)
+	out     (9),a           ; 004b  d3 09           Ausgabe Interruptmaske Kanal A
+	ei                      ; 004d  fb              Interrupt erlauben
+	ld      (ix+0),0ffh     ; 004e  dd 36 00 ff     erstes Byte des 3. kBytes RAM (0800) mit 0ffh
+							beschreiben
+; bei Interrupt durch Beschreiben des RAM wird nach 00b8h gesprungen,
+; dort steht die anzuspringende Adresse: 007ah
+	nop                     ; 0052  00              nichts tun, auf Interrupt warten
+; Rückkehr aus Interruptbehandlungsroutine
+	di                      ; 0053  f3              Interrupt ausschalten
+	ld      a,47h           ; 0054  3e 47           0100 0111b
+;         						Interrupt aus, AND-Verknüpfung
+;                                                       Low löst Interrupt aus, keine Maske folgt
+	out     (9),a           ; 0056  d3 09           BS-PIO Kan. A Steuerwort
+	add     ix,de           ; 0058  dd 19
+	djnz    RAMTEST         ; 005a  10 e6		noch nicht alle kByte getestet, dann zurueck
+;
+; RAM-Test beendet
+;
+	ld      hl,X046f        ; 005c  21 6f 04	HL=$046f
+	ld      de,X006f        ; 005f  11 6f 00	DE=$006f
+	ld      bc,X0024        ; 0062  01 24 00	BC=$0024
+	lddr                    ; 0065  ed b8		(DE) mit (HL) laden, DE-1, HL-1, BC-1 bis BC=0
+	ld      hl,X044e        ; 0067  21 4e 04	HL=$044e
+	bit     0,(hl)          ; 006a  cb 46		Bit0 von $044e negiert ins Z-Flag bringen
+	jr      z,X00bc         ; 006c  28 4e		Sprung nach $00bc, wenn Bit0 von $044e=1
+	ld      hl,X0800        ; 006e  21 00 08
+	ld      (X004c),hl      ; 0071  22 4c 00
+X0074:  ld      hl,(X0462)      ; 0074  2a 62 04	Inhalt Merkzelle RAM-Ende nach HL
+	ld      l,9dh           ; 0077  2e 9d
+	jp      (hl)            ; 0079  e9
+;
+; **************************************************************
+; Beginn PIO Interruptroutine Kanal A, ausgeloest durch
+; beschreiben von RAM-Speicher = Bit 6 und 7 AND-verknuepft s.o.
+; **************************************************************
+;
+IPIO:   ld      a,47h           ; 007a  3e 47           ; 0100 0111
+;                                                              ---- = Kennzeichen Interruptsteuerwort
+;                                                         ---- = Interrupt ausschalten, AND verknuepft
+;                                                                Low Pegel, kein Maskenwort folgt
+	out     (9),a           ; 007c  d3 09           ; Steuerwort Kanal A
+	ld      a,0ffh          ; 007e  3e ff           ; nachsehen, ob oben beschriebene RAM-Zelle
+	cp      (ix+0)          ; 0080  dd be 00        ; auch den Wert ffh angenommen hat
+	jr      nz,NORAM        ; 0083  20 22           ; nicht gleich, dann Sprung
+	ld      (ix+0),c        ; 0085  dd 71 00        ; oben gesicherten alten Wert zurückspeichern
+	bit     0,(hl)          ; 0088  cb 46           ; Test Bit 0 von ($044e)
+	jr      nz,RTST1        ; 008a  20 06           ; Sprung, wenn Bit 0 = 0 ist (Z=neg Bit)
+	ld      (X0460),ix      ; 008c  dd 22 60 04     ; $0800 in ($0460) merken
+	reti                    ; 0090  ed 4d           ; Rückkehr vom Interrupt
+;
+RTST1:  ld      (X0464),ix      ; 0092  dd 22 64 04     ;
+	bit     6,(hl)          ; 0096  cb 76
+	jr      nz,zurueck      ; 0098  20 0b           ; wenn Bit 6 = 0, dann zurueck
+	set     6,(hl)          ; 009a  cb f6           ; Bit 6 von $044e setzen
+	ld      (X046c),ix      ; 009c  dd 22 6c 04     ; RAM $046c mit Wert laden
+	ld      a,5             ; 00a0  3e 05
+	ld      (X046c),a       ; 00a2  32 6c 04        ; und mit neuem Wert überschreiben
+zurueck:reti                    ; 00a5  ed 4d
+;
+
+NORAM:  bit     0,(hl)          ; 00a7  cb 46           ; Z=neg Bit 0
+	jr      nz,X00b1        ; 00a9  20 06           ; Sprung wenn Bit 0=0
+	set     0,(hl)          ; 00ab  cb c6           ; Bit 0 = 1 setzen
+	ld      (X0462),ix      ; 00ad  dd 22 62 04     ;
+X00b1:  ld      (X0464),ix      ; 00b1  dd 22 64 04
+	reti                    ; 00b5  ed 4d
+
+; *************************
+; Ende PIO Interruptroutine
+; *************************
+;
+	nop                     ; 00b7  00
+;
+; diese Routine wird durch Beschreiben des RAM angesprungen
+IVPIO:  DW                      ; 00b8  7a 00           ; Zeiger Interruptroutine PIO: $007a (IPIO)
+;
+;
+; ab folgender Adresse wird mit nachfolgender Routine alles aus dem restlichen ROM ($00ba bis $03ff)
+; in das dahinterliegende RAM kopiert
+X00ba:  DW	 		; 00ba  c7 01
+;
+WEITER:	ld	hl,X00ba	; 00bc	21 ba 00	HL=$00ba
+	ld      d,h             ; 00bf  54
+	ld      e,l             ; 00c0  5d		DE=$00ba
+	ld      bc,X0346        ; 00c1  01 46 03	BC=$0346
+	ldir                    ; 00c4  ed b0		$00ba bis $0400 wird ins dahinter
+;							liegende RAM kopiert
+;
+; Lade-ROM-Abschaltung und Initialisierung des Floppycontrollers
+; dabei wird nicht kontrolliert, ob ein Floppycontroller vorhanden ist
+; I/O-Adressen Floppycontroller: $10-$1b reserviert, davon genutzt:
+; $10 - Steuer PIO Port A Daten, $11 - dito Steuerwort
+; $12 - Steuer PIO Port B Daten, $13 - dito Steuerwort
+; $14 - Daten PIO Port A Daten, $15 - dito Steuerwort
+; $16 - Daten PIO Port B Daten, $17 - dito Steuerwort
+; $18 - Chipselect fuer 8212-Tor
+;
+        ld      a,0ffh          ; 00c6  3e ff
+	out     (0bh),a         ; 00c8  d3 0b		Einzelbitsteuerung Port B ZVE-PIO
+	out     (13h),a         ; 00ca  d3 13		Einzelbitsteuerung Steuer-PIO Port B
+;							Floppy-Controller
+	ld      a,0e2h          ; 00cc  3e e2
+	out     (0bh),a         ; 00ce  d3 0b           $e2 = 1110 0010 an Port B ZVE-PIO
+;							d.h.: Bit 7,6,5 und 1 = Eingang
+;							      Bit 4,3,2 und 0 = Ausgang
+	in      a,(0ah)         ; 00d0  db 0a
+	and     0f6h            ; 00d2  e6 f6		$f6 = 1111 0110
+	out     (0ah),a         ; 00d4  d3 0a           Bit 0 und 3 Port B auf Null setzen, d.h.
+;							Lade-ROM abschalten und ZVE2 in Waitzustand
+	ei                      ; 00d6  fb		Interrupt einschalten
+	ld      a,0f3h          ; 00d7  3e f3
+	out     (13h),a         ; 00d9  d3 13		$f3 = 1111 0011
+;							Steuer PIO Port B Floppycontroller
+;							d.h.: Bit 7,6,5,4,1 und 0 = Eingang
+							      Bit 2 und 3 = Ausgang
+	ld      a,7fh           ; 00db  3e 7f		&0111 1111
+	out     (12h),a         ; 00dd  d3 12		Steuer-PIO Port B - Datenwort
+	out     (11h),a         ; 00df  d3 11		Steuer-PIO Port A Modus 1 - Byteeingabe
+	ld      a,0a9h          ; 00e1  3e a9		&1010 1001
+	out     (10h),a         ; 00e3  d3 10		A7 = 1 - Step
+;							A6 = 0 - Head Load
+;							A5 = 1 - Mark Reset / Step Direction
+;							A4 = 0 - Mark1
+;
+;							A3 = 1 - Start
+;							A2 = 0 - Fault Reset
+;							A1 = 0 - Mark
+;							A0 = 1 - Write Enable
+	ld      a,3fh           ; 00e5  3e 3f		&0011 1111
+	out     (11h),a         ; 00e7  d3 11		Steuer-PIO Port A - Modus 0 Byteausgabe
+	out     (15h),a         ; 00e9  d3 15		Daten-PIO Port A - Modus 0 Byteausgabe
+	ld      a,0bah          ; 00eb  3e ba		&1011 1010
+	out     (11h),a         ; 00ed  d3 11		Interruptvektor??
+;
+; Ende Initialisierung des Floppycontrollers
+;
+	ld      a,4             ; 00ef  3e 04		evtl. 4 Laufwerke ???
+	ld      (X07f2),a       ; 00f1  32 f2 07	Anzahl merken
+	ld      a,0c3h          ; 00f4  3e c3		Befehlsbyte 'jp $01dd
+
+;--------------------------> Unsinn
+	ld      (X0000),a       ; 00f6  32 00 00	auf RAM = $0000 eintragen
+	ld      hl,X01dd        ; 00f9  21 dd 01
+	ld      (X0001),hl      ; 00fc  22 01 00	c3 dd 01 auf $0000-$0002 abspeichern
+;
+	ld      a,0eeh          ; 00ff  3e ee		&1110 1110
+X0101:  ld      (M8212),a       ; 0101  32 fc 03	Wert merken
+	out     (18h),a         ; 0104  d3 18		Ausgabe an 8212-Tor auf Floppycontroller
+;							D8=1 - SE2, D7=1 - SE1, D6=1 - LCK4, D5=0 - LCK3
+;							D4=1 - SE4, D3=1 - SE3, D2=1 - LCK1, D1=0 - LCK2
+;							d.h. Laufwerk 2 und 3 verriegelt
+	ld      hl,X0400        ; 0106  21 00 04	HL=$0400
+	ld      b,l             ; 0109  45		B=$00
+	ld      (MERK1),hl      ; 010a  22 f0 03	HL merken
+	ld      de,X5006        ; 010d  11 06 50	DE=$5006
+;
+X0110:  in      a,(12h)         ; 0110  db 12		Steuer-PIO Port B Daten einlesen
+	rlca                    ; 0112  07		bit7 in C-Flag schieben
+	jr      nc,LWOK         ; 0113  30 13		Test, ob Laufwerkbereit-Bit = 0
+	dec     d               ; 0115  15		Zaehler??
+	jr      z,X0140         ; 0116  28 28		bereits $15-mal durchlaufen
+	ld      a,9             ; 0118  3e 09		A0= Write Enable = 1
+;							A3= Start = 1
+	ld      b,a             ; 011a  47
+	out     (10h),a         ; 011b  d3 10		Steuer-PIO, Port A, Daten
+	ld      a,89h           ; 011d  3e 89		A7= Step = 1
+	out     (10h),a         ; 011f  d3 10		setzen
+;Zeitschleife
+X0121:  dec     c               ; 0121  0d
+	jr      nz,X0121        ; 0122  20 fd
+	djnz    X0121           ; 0124  10 fb
+;
+	jr      X0110           ; 0126  18 e8		;zurück, bis alle Laufwerke abgefragt sind
+;
+; Laufwerk bereit
+LWOK:   ld      hl,ANZLW        ; 0128  21 f7 03	Merkzelle fuer Anzahl der Floppylaufwerke
+	ld      (hl),4          ; 012b  36 04		4 Laufwerke merken
+	ld      a,97h           ; 012d  3e 97		&1001 0111
+;							A3-A0 = 0111 --> Interruptsteuerwort in Mode 3
+;							A7 = 1       --> Interrupt einschalten
+;							A4 = 1       --> Interruptmaske folgt
+	out     (11h),a         ; 012f  d3 11		Steuer PIO A, Steuerwort
+	ld      a,0ffh          ; 0131  3e ff		A7-A0 = 1 --> kein Interrupt generierbar
+	out     (11h),a         ; 0133  d3 11
+;
+LWOK1:  ld      a,(hl)          ; 0135  7e		Anzahl der Laufwerke nach A
+	or      a               ; 0136  b7
+	ld      a,87h           ; 0137  3e 87
+	jr      z,X0153         ; 0139  28 18
+	dec     c               ; 013b  0d
+	jr      nz,LWOK1        ; 013c  20 f7
+	djnz    LWOK1           ; 013e  10 f5
+;
+;
+X0140:  ld      a,(M8212)       ; 0140  3a fc 03	zuletzt an 8212 ausgegebenes Byte
+	cp      77h             ; 0143  fe 77		&0111 0111 - SE2 und SE4 aktiv
+	jp      z,KTEST         ; 0145  ca 7e 02	kein Disklaufwerk gefunden, dann Kassettentest
+	rlca                    ; 0148  07
+	jr      X0101           ; 0149  18 b6
+;
+X014b:  dec     e               ; 014b  1d              .
+	jr      z,X0140         ; 014c  28 f2           (r
+	ld      a,(X03fd)       ; 014e  3a fd 03        :}.
+	xor     2               ; 0151  ee 02           n.
+;wird von $0139 aus angesprungen
+X0153:  ld      (X03fd),a       ; 0153  32 fd 03        2}.
+	ld      hl,X8001        ; 0156  21 01 80        !..
+	ld      (X07f0),hl      ; 0159  22 f0 07        "p.
+	ld      h,0             ; 015c  26 00           &.
+	ld      (X03f5),hl      ; 015e  22 f5 03        "u.
+	ld      l,h             ; 0161  6c              l
+	ld      (X03f3),hl      ; 0162  22 f3 03        "s.
+	call    X0194           ; 0165  cd 94 01        M..
+X0168:  ld      a,(hl)          ; 0168  7e              ~
+	or      a               ; 0169  b7              7
+	jr      z,X0168         ; 016a  28 fc           (|
+	dec     a               ; 016c  3d              =
+	jr      z,X014b         ; 016d  28 dc           (\
+	call    X01b6           ; 016f  cd b6 01        M6.
+	jr      nz,X0140        ; 0172  20 cc            L
+	call    X0437           ; 0174  cd 37 04        M7.
+X0177:  ld      hl,(X03fa)      ; 0177  2a fa 03        *z.
+	ld      (X0462),hl      ; 017a  22 62 04        "b.
+	in      a,(0ah)         ; 017d  db 0a           [.
+	or      1               ; 017f  f6 01           v.
+	out     (0ah),a         ; 0181  d3 0a           S.
+	ld      bc,X0346        ; 0183  01 46 03        .F.
+	ld      de,X00ba        ; 0186  11 ba 00        .:.
+	ld      h,d             ; 0189  62              b
+	ld      l,h             ; 018a  6c              l
+X018b:  ldi                     ; 018b  ed a0           m
+	dec     hl              ; 018d  2b              +
+	jp      pe,X018b        ; 018e  ea 8b 01        j..
+	jp      X0074           ; 0191  c3 74 00        Ct.
+;
+;Routine wird von von $0165 per CALL aufgerufen
+X0194:  ld      hl,X03f7        ; 0194  21 f7 03
+	ld      (hl),10h        ; 0197  36 10
+	out     (14h),a         ; 0199  d3 14           Daten PIO A Daten
+	out     (4),a           ; 019b  d3 04           Reset ZVE2
+;
+	ld      a,0ffh          ; 019d  3e ff		Daten PIO B Steuerwort
+	out     (17h),a         ; 019f  d3 17		Port B auf Mode 3 setzen
+	out     (17h),a         ; 01a1  d3 17           alle Bit auf Eingabe
+;
+	ld      a,0a5h          ; 01a3  3e a5
+	out     (10h),a         ; 01a5  d3 10           Steuer-PIO Port A Daten
+;							1010 0101b = $a5
+;							|||| ||||--> A0 Write enable
+;							|||| |||---> A1 Mark
+;							|||| ||----> A2 Fault reset
+;							|||| |-----> A3 Start
+;							||||-------> A4 Mark1
+;							|||--------> A5 Mark reset o. Step direction
+;							||---------> A6 Head load
+;							|----------> A7 Step
+;
+	ld      a,7fh           ; 01a7  3e 7f           Mode 1 - Byte-Eingabe
+	out     (17h),a         ; 01a9  d3 17           Daten PIO Port B
+	in      a,(16h)         ; 01ab  db 16           Daten PIO B einlesen, Leerbefehl um Interrupt
+;							zu aktivieren
+	ld      a,(X03fd)       ; 01ad  3a fd 03
+	out     (10h),a         ; 01b0  d3 10           Steuer PIO Port A Daten
+	inc     hl              ; 01b2  23
+	ld      (hl),0          ; 01b3  36 00
+	ret                     ; 01b5  c9
+;
+;*************
+;Routine wird von $016f per CALL aufgerufen
+X01b6:  ld      hl,(0400h)      ; 01b6  2a 00 04
+	ld      bc,05953h       ; 01b9  01 53 59
+	sbc     hl,bc           ; 01bc  ed 42
+	ret     nz              ; 01be  c0
+	ld      hl,0402h        ; 01bf  21 02 04
+	ld      a,4ch           ; 01c2  3e 4c
+	cp      (hl)            ; 01c4  be
+	ret     nz              ; 01c5  c0
+	ret                     ; 01c6  c9
+;
+; Interruptroutine
+	ei                      ; 01c7  fb              Interrupt ein
+	push    af              ; 01c8  f5
+	push    hl              ; 01c9  e5
+	ld      hl,LWANZ        ; 01ca  21 f7 03        Anz. der Floppylaufwerke
+	dec     (hl)            ; 01cd  35              Anz. der Laufwerke = 0?
+	jr      z,int1          ; 01ce  28 04           ja, dann Sprung
+int2:   pop     hl              ; 01d0  e1
+	pop     af              ; 01d1  f1
+	reti                    ; 01d2  ed 4d
+;
+int1:   ld      a,0bdh          ; 01d4  3e bd           $1011 1101
+	out     (10h),a         ; 01d6  d3 10           Steuer PIO A, Daten
+	inc     hl              ; 01d8  23
+	ld      (hl),1          ; 01d9  36 01
+	jr      int2            ; 01db  18 f3		zum Ende der Interruptroutine springen
+;
+;
+; Adresse der folgenden Routine wird als Sprung auf $0000 eingetragen (s. $00f4)
+X01dd:  ld      hl,(03f0h)      ; 01dd  2a f0 03
+	ld      a,(07f1h)       ; 01e0  3a f1 07
+	ld      b,a             ; 01e3  47
+	ld      de,0700h        ; 01e4  11 00 07
+	ld      c,16h           ; 01e7  0e 16
+	exx                     ; 01e9  d9		Zweitregistersatz einschalten
+	ld      bc,0fea1h       ; 01ea  01 a1 fe
+	ld      de,(03f3h)      ; 01ed  ed 5b f3 03
+	ld      hl,(03f5h)      ; 01f1  2a f5 03
+	ld      a,0bdh          ; 01f4  3e bd		&1011 1101
+	out     (10h),a         ; 01f6  d3 10		Steuer-PIO Floppy Port A Daten
+X01f8:  ld      a,0b5h          ; 01f8  3e b5		&1011 0101
+	out     (10h),a         ; 01fa  d3 10
+	jr      X025a           ; 01fc  18 5c
+;
+X01fe:  ld      h,a             ; 01fe  67              g
+	xor     a               ; 01ff  af              /
+	exx                     ; 0200  d9              Y
+	ld      b,a             ; 0201  47              G
+	exx                     ; 0202  d9              Y
+	jr      X0273           ; 0203  18 6e           .n
+;
+X0205:  in      a,(16h)         ; 0205  db 16           ;drei Bytes von Floppy holen
+	in      a,(16h)         ; 0207  db 16           ;Sync Zeichen uebergehen
+	in      a,(16h)         ; 0209  db 16
+;
+;Test auf "SYL" als erste Bytes
+X020b:  in      a,(16h)         ; 020b  db 16		ein Byte von Floppy holen
+	cp      b               ; 020d  b8		mit Inhalt von Reg. B vergleichen
+	jr      nz,X01f8        ; 020e  20 e8		nicht gleich
+	in      a,(16h)         ; 0210  db 16		weiteres Byte holen
+	cp      e               ; 0212  bb		mit Inhalt Reg. E vergleichen
+	jr      nz,X01f8        ; 0213  20 e3   	nicht gleich
+	in      a,(16h)         ; 0215  db 16		weiteres Byte holen
+	cp      d               ; 0217  ba		mit Inhalt Reg. D vergleichen
+	jr      nz,X01f8        ; 0218  20 de           nicht gleich
+	in      a,(16h)         ; 021a  db 16           weiteres Byte holen
+	cp      l               ; 021c  bd              mit Inhalt Reg. L vergleichen
+	jr      nz,X01f8        ; 021d  20 d9           nicht gleich
+	in      a,(16h)         ; 021f  db 16           weiteres Byte holen
+	cp      h               ; 0221  bc              mit Inhalt Reg. H vergleichen
+	jr      nz,X01fe        ; 0222  20 da           nicht gleich
+;
+	ld      a,0b5h          ; 0224  3e b5           $1011 0101
+	out     (10h),a         ; 0226  d3 10           Steuer PIO A Daten
+;							Mark1 ausschalten
+	ld      a,(03fdh)       ; 0228  3a fd 03        
+	bit     1,a             ; 022b  cb 4f           
+	out     (10h),a         ; 022d  d3 10           
+	in      a,(16h)         ; 022f  db 16           ;ein Byte von Floppy holen
+	jr      nz,X0239        ; 0231  20 06           
+	in      a,(16h)         ; 0233  db 16
+	in      a,(16h)         ; 0235  db 16
+	in      a,(16h)         ; 0237  db 16
+X0239:  in      a,(16h)         ; 0239  db 16
+	exx                     ; 023b  d9
+	ini                     ; 023c  ed a2
+	ini                     ; 023e  ed a2
+	ini                     ; 0240  ed a2
+	inir                    ; 0242  ed b2
+	ex      de,hl           ; 0244  eb
+	ini                     ; 0245  ed a2
+	ini                     ; 0247  ed a2
+	ld      a,0b5h          ; 0249  3e b5
+	out     (10h),a         ; 024b  d3 10
+	ex      de,hl           ; 024d  eb
+	ld      a,(07f1h)       ; 024e  3a f1 07
+	ld      b,a             ; 0251  47
+	exx                     ; 0252  d9
+	ld      a,(07f2h)       ; 0253  3a f2 07
+	cp      l               ; 0256  bd
+	jr      z,X0267         ; 0257  28 0e
+	inc     l               ; 0259  2c
+;
+;
+;Ansprung von $01fc her
+X025a:  ld      a,(X03fd)       ; 025a  3a fd 03
+	bit     1,a             ; 025d  cb 4f
+	out     (10h),a         ; 025f  d3 10		;Step-Signal (A7) setzen
+	in      a,(16h)         ; 0261  db 16		;Byte von Floppy einlesen
+	jr      z,X0205         ; 0263  28 a0		;nichts gelesen, dann zurueck
+X0265:  jr      X020b           ; 0265  18 a4		;ein Byte eingelesen
+;
+X0267:  ld      a,3             ; 0267  3e 03
+	out     (11h),a         ; 0269  d3 11
+	ld      (X03f8),a       ; 026b  32 f8 03
+	jr      X0265           ; 026e  18 f5           ;weiter auf SYL testen
+;
+	ld      bc,X1eda        ; 0270  01 da 1e
+X0273:  ld      (X07f1),a       ; 0273  32 f1 07
+	ld      a,2             ; 0276  3e 02
+	ld      (X07f2),a       ; 0278  32 f2 07
+	jp      X01f8           ; 027b  c3 f8 01
+;
+; Ansprung, wenn SE2 und SE4 aktiv
+; kein Diskettenlaufwerk gefunden, Test auf Kassettenbetrieb
+KTEST:  ld      a,0ffh          ; 027e  3e ff		alle Ausgaenge 8212 Floppycontroller auf high
+	out     (18h),a         ; 0280  d3 18
+	ld      hl,X03bc        ; 0282  21 bc 03
+	ld      (MERK1),hl      ; 0285  22 f0 03	evtl. Interruptsaeule neu belegen fuer KMBG-Test
+	ld      hl,X03d4        ; 0288  21 d4 03
+	ld      (X03f2),hl      ; 028b  22 f2 03
+	ld      hl,X03c7        ; 028e  21 c7 03
+	ld      (X03f4),hl      ; 0291  22 f4 03
+	ld      a,3             ; 0294  3e 03
+	ld      i,a             ; 0296  ed 47		Interruptregister auf $03 setzen
+	ld      a,7fh           ; 0298  3e 7f
+	out     (33h),a         ; 029a  d3 33		K5020 Daten-PIO Port B - Byteausgabe
+	out     (36h),a         ; 029c  d3 36		K5020 Steuer-PIO Port A - Byteausgabe
+	out     (37h),a         ; 029e  d3 37		K5020 Steuer-PIO Port B - Byteausgabe
+	ld      a,3             ; 02a0  3e 03		&0000 0011
+	out     (34h),a         ; 02a2  d3 34		beide Laufwerke anwaehlen
+	inc     a               ; 02a4  3c		&0000 0100
+	out     (35h),a         ; 02a5  d3 35		K5020 Steuer-PIO Port B - Datenwort
+	ld      a,0ffh          ; 02a7  3e ff		&1111 1111
+	out     (37h),a         ; 02a9  d3 37
+	ld      a,0fdh          ; 02ab  3e fd		&1111 1101
+	out     (37h),a         ; 02ad  d3 37
+	ld      a,0ffh          ; 02af  3e ff		&1111 1111
+	out     (36h),a         ; 02b1  d3 36
+	ld      a,80h           ; 02b3  3e 80		&1000 0000
+	out     (36h),a         ; 02b5  d3 36
+	in      a,(34h)         ; 02b7  db 34		K5020 Steuer-PIO Port A - Datenwort
+	and     7ch             ; 02b9  e6 7c		&0111 1100
+	jp      nz,NOLW         ; 02bb  c2 b0 03	kein Kassettenlaufwerk gefunden, Fehlerlampe
+;
+	ld      e,9             ; 02be  1e 09
+	ld      a,0f2h          ; 02c0  3e f2		&1111 0010
+	out     (0ch),a         ; 02c2  d3 0c		ZVE-CTC Kanal 0 - Interrupvektor $f2
+X02c4:  ld      a,5             ; 02c4  3e 05
+	ld      (X03fa),a       ; 02c6  32 fa 03
+X02c9:  ld      a,e             ; 02c9  7b		$09 (s.o.), &1000 0001
+	out     (34h),a         ; 02ca  d3 34		Kass.-LW1 anwaehlen
+	ld      b,0             ; 02cc  06 00
+	call    ZEIT            ; 02ce  cd b6 03	Zeitschleife, warten bis LW angelaufen ist
+	call    ZEIT            ; 02d1  cd b6 03	Zeitschleife
+	ld      hl,X0400        ; 02d4  21 00 04	Adresse RAM-Beginn $0400
+	ld      (X03f8),hl      ; 02d7  22 f8 03	merken
+	ld      d,10h           ; 02da  16 10		&0001 0000
+	in      a,(35h)         ; 02dc  db 35		Status Kass.-LW1
+	bit     0,e             ; 02de  cb 43
+	jr      nz,X02e4        ; 02e0  20 02
+	ld      d,8             ; 02e2  16 08
+X02e4:  and     d               ; 02e4  a2
+	jp      z,X0397         ; 02e5  ca 97 03
+	xor     a               ; 02e8  af		A=0
+	ld      (X03f6),a       ; 02e9  32 f6 03
+	ld      a,14h           ; 02ec  3e 14		&0001 0100
+	ld      (X03f7),a       ; 02ee  32 f7 03	merken
+	ld      a,0a7h          ; 02f1  3e a7		&1010 0111
+	out     (0dh),a         ; 02f3  d3 0d		ZVE-CTC Kanal 1 Steuerwort
+;							D7=1 - Interruptfreigabe
+;							D6=0 - Zeitgeber
+;							D5=1 - Teiler = 256
+;							D4=0 - neg. Flanke loest aus
+;							D3=0 - Triggerzeitpunkt
+;							D2=1 - Zeitkonstante folgt
+;							D1=1 - warten bis Zeitkonstante geladen
+;							D0=1 - Kanalsteuerwort
+;
+	ld      a,0ffh          ; 02f5  3e ff		&1111 1111 - Zeitkonstante
+	out     (0dh),a         ; 02f7  d3 0d		Ausgabe an ZVE-CTC Kanal 1
+X02f9:  in      a,(34h)         ; 02f9  db 34		PIO 2 Tor A K5020
+	bit     7,a             ; 02fb  cb 7f		Test auf Bandanfang erreicht
+	jr      nz,X0317        ; 02fd  20 18		Bandanfang gefunden
+	or      20h             ; 02ff  f6 20           
+	out     (34h),a         ; 0301  d3 34           
+	ld      l,3             ; 0303  2e 03           ..
+X0305:  call    X03b6           ; 0305  cd b6 03        M6.
+	in      a,(34h)         ; 0308  db 34           [4
+	bit     7,a             ; 030a  cb 7f           K.
+	jr      nz,X0317        ; 030c  20 09            .
+	dec     l               ; 030e  2d              -
+	jr      nz,X0305        ; 030f  20 f4            t
+	and     0dfh            ; 0311  e6 df           f_
+	out     (34h),a         ; 0313  d3 34           S4
+	jr      X033b           ; 0315  18 24           .$
+;
+X0317:  and     0dfh            ; 0317  e6 df		&1101 1111
+	out     (34h),a         ; 0319  d3 34		Transport vorwärts einschalten
+	call    ZEIT            ; 031b  cd b6 03	warten
+	or      30h             ; 031e  f6 30		&0000 0011
+	out     (34h),a         ; 0320  d3 34		kein Kass.LW reservieren
+	and     0c3h            ; 0322  e6 c3		&1100 0011
+	out     (34h),a         ; 0324  d3 34		Transport abschalten
+X0326:  in      a,(35h)         ; 0326  db 35		LW-Zustand abfragen
+	and     d               ; 0328  a2		Bit 6 bis 0 ausblenden
+	jr      z,X0326         ; 0329  28 fb		Zeitfehler aufgetreten, noch einmal
+	in      a,(34h)         ; 032b  db 34
+	bit     0,a             ; 032d  cb 47           KG
+	jr      nz,X0335        ; 032f  20 04            .
+	add     a,4             ; 0331  c6 04           F.
+	jr      X0337           ; 0333  18 02           ..
+;
+X0335:  add     a,8             ; 0335  c6 08           F.
+X0337:  out     (34h),a         ; 0337  d3 34           S4
+	jr      X02f9           ; 0339  18 be           .>
+;
+X033b:  ld      c,a             ; 033b  4f              O
+	and     0f3h            ; 033c  e6 f3           fs
+	or      40h             ; 033e  f6 40           v@
+	out     (34h),a         ; 0340  d3 34           S4
+	ld      a,c             ; 0342  79              y
+	out     (34h),a         ; 0343  d3 34           S4
+	or      10h             ; 0345  f6 10           v.
+	out     (34h),a         ; 0347  d3 34           S4
+X0349:  in      a,(34h)         ; 0349  db 34           [4
+	rla                     ; 034b  17              .
+	jr      nc,X0349        ; 034c  30 fb           0{
+	ld      b,0             ; 034e  06 00           ..
+	call    X03b6           ; 0350  cd b6 03        M6.
+	ld      d,4             ; 0353  16 04           ..
+X0355:  ld      a,0f0h          ; 0355  3e f0           >p
+	out     (33h),a         ; 0357  d3 33           S3
+	ld      bc,X8331        ; 0359  01 31 83        .1.
+	ld      a,97h           ; 035c  3e 97           >.
+	out     (33h),a         ; 035e  d3 33           S3
+	out     (33h),a         ; 0360  d3 33           S3
+	in      a,(31h)         ; 0362  db 31           [1
+	xor     a               ; 0364  af              /
+X0365:  cp      b               ; 0365  b8              8
+	jr      nz,X0365        ; 0366  20 fd            }
+	ld      a,3             ; 0368  3e 03           >.
+	out     (33h),a         ; 036a  d3 33           S3
+	ld      hl,(X03f8)      ; 036c  2a f8 03        *x.
+	dec     hl              ; 036f  2b              +
+	dec     hl              ; 0370  2b              +
+	dec     hl              ; 0371  2b              +
+	ld      (X03f8),hl      ; 0372  22 f8 03        "x.
+	dec     d               ; 0375  15              .
+	jr      nz,X0355        ; 0376  20 dd            ]
+	ld      bc,X0d00        ; 0378  01 00 0d        ...
+	call    X03b6           ; 037b  cd b6 03        M6.
+	in      a,(34h)         ; 037e  db 34           [4
+	and     0efh            ; 0380  e6 ef           fo
+	out     (34h),a         ; 0382  d3 34           S4
+	ld      a,21h           ; 0384  3e 21           >!
+	out     (0dh),a         ; 0386  d3 0d           S.
+	call    X01b6           ; 0388  cd b6 01        M6.
+	jr      nz,X0398        ; 038b  20 0b            .
+	call    X0434           ; 038d  cd 34 04        M4.
+	jp      X0177           ; 0390  c3 77 01        Cw.
+;
+X0393:  ld      a,3             ; 0393  3e 03           >.
+	out     (33h),a         ; 0395  d3 33           S3
+X0397:  nop                     ; 0397  00              .
+X0398:  ld      a,21h           ; 0398  3e 21           >!
+	out     (0dh),a         ; 039a  d3 0d           S.
+	ld      hl,X03fa        ; 039c  21 fa 03        !z.
+	dec     (hl)            ; 039f  35              5
+	ld      a,3             ; 03a0  3e 03           >.
+	out     (34h),a         ; 03a2  d3 34           S4
+	jp      nz,X02c9        ; 03a4  c2 c9 02        BI.
+	bit     0,e             ; 03a7  cb 43           KC
+	jr      z,X03b0         ; 03a9  28 05           (.
+	ld      e,6             ; 03ab  1e 06           ..
+	jp      X02c4           ; 03ad  c3 c4 02        CD.
+; ******************************
+; kein Disketten- und Kassettenlaufwerk gefunden, Prozessor geht in Endlosschleife
+NOLW  : ld      a,9fh           ; 03b0  3e 9f
+	out     (3),a           ; 03b2  d3 03		Fehlerlampe auf Tastatur anschalten
+ENDLOS: jr      ENDLOS          ; 03b4  18 fe		Endlosschleife
+; ******************************
+;
+; Zeitschleife
+ZEIT:   dec     c               ; 03b6  0d
+	jr      nz,X03b6        ; 03b7  20 fd
+	djnz    X03b6           ; 03b9  10 fb
+	ret                     ; 03bb  c9
+; Ende Zeitschleife
+;
+X03bc:  ei                      ; 03bc  fb              {
+	push    af              ; 03bd  f5              u
+	in      a,(31h)         ; 03be  db 31           [1
+	ld      a,0f4h          ; 03c0  3e f4           >t
+	out     (33h),a         ; 03c2  d3 33           S3
+	pop     af              ; 03c4  f1              q
+	reti                    ; 03c5  ed 4d           mM
+;
+X03c7:  ei                      ; 03c7  fb              {
+	push    af              ; 03c8  f5              u
+	push    hl              ; 03c9  e5              e
+	ld      hl,(X03f8)      ; 03ca  2a f8 03        *x.
+	ini                     ; 03cd  ed a2           m"
+	ld      (X03f8),hl      ; 03cf  22 f8 03        "x.
+	jr      X03e1           ; 03d2  18 0d           ..
+;
+X03d4:  ei                      ; 03d4  fb              {
+	push    af              ; 03d5  f5              u
+	push    hl              ; 03d6  e5              e
+	ld      hl,X03f6        ; 03d7  21 f6 03        !v.
+	dec     (hl)            ; 03da  35              5
+	jr      nz,X03e1        ; 03db  20 04            .
+	inc     l               ; 03dd  2c              ,
+	dec     (hl)            ; 03de  35              5
+	jr      z,X03e5         ; 03df  28 04           (.
+X03e1:  pop     hl              ; 03e1  e1              a
+	pop     af              ; 03e2  f1              q
+	reti                    ; 03e3  ed 4d           mM
+;
+X03e5:  pop     hl              ; 03e5  e1              a
+	pop     af              ; 03e6  f1              q
+	pop     af              ; 03e7  f1              q
+	ld      hl,X0393        ; 03e8  21 93 03        !..
+	ex      (sp),hl         ; 03eb  e3              c
+	push    af              ; 03ec  f5              u
+	reti                    ; 03ed  ed 4d           mM
+;
+	nop                     ; 03ef  00              .
+MERK1:  DW                      ; 03f0  00 04		Merkzelle benutzt aus $010a
+X03f2:  DW                      ; 03f2  fe 00
+X03f4:  nop                     ; 03f4  00
+X03f5:  nop                     ; 03f5  00
+X03f6:  nop                     ; 03f6  00
+LWANZ:  DB                      ; 03f7  00		Merkzelle fuer Anzahl Floppylaufwerke
+X03f8:  DB                      ; 03f8  00
+;
+	org     3fah
+; Merkzellen
+;
+X03fa:  nop                     ; 03fa  00 08
+M8212:  DB                      ; 03fc  00		Merkzelle Ausgabe 8212 Floppycontroller (Adr. $18)
+X03fd:  DB                      ; 03fd  00
+	DB 	                ; 03fe  f7
+	DB	                ; 03ff  6b
+
+;
+	end
+;
