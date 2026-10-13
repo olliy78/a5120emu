@@ -12,7 +12,7 @@ echter Maschinencode; deshalb booten die Original-Betriebssysteme von Original-D
 und auch Formatieren mit dem originalen `FORMAT.COM` funktioniert.
 
 > ### ⬇ Fertige Pakete für Windows und Linux
-> **[Zur Downloadseite (aktuelles Release)](https://github.com/olliy78/k1520emu/releases/latest)**
+> **[Zur Downloadseite (alle Releases)](https://github.com/olliy78/k1520emu/releases)**
 >
 > Installation benutzerlokal, **ohne Administratorrechte** — für Windows ein
 > Installationsprogramm, für Linux ein Archiv mit `install.sh`. Weder Compiler noch
@@ -81,7 +81,7 @@ Welche Diskette was enthält: [disks/README.md](disks/README.md).
 ## Aus dem Quelltext bauen
 
 Wer den Emulator nur benutzen will, nimmt die
-**[fertigen Pakete](https://github.com/olliy78/k1520emu/releases/latest)**. Für Entwickler:
+**[fertigen Pakete](https://github.com/olliy78/k1520emu/releases)**. Für Entwickler:
 
 ```sh
 python3 -m venv venv && source venv/bin/activate
