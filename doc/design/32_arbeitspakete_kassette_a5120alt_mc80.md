@@ -65,7 +65,7 @@ ein eigenes Worktree.
 | K2 | K5200: Laufwerkszeiten und Signale | ana | — | S | **fertig 2026-10-14** |
 | K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
 | K4 | `cards/k5020` | cpp | K3 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
-| K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | offen |
+| K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | **fertig 2026-10-14** (113367c; `K5020Test.*`, `K5020Rom.*`) |
 | K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
 | K7 | A5120 bootet vom Band | int | K5, K6 | M | offen |
 | K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | offen |
@@ -112,6 +112,7 @@ ein eigenes Worktree.
 - 2026-10-14 M0: **Entwurf 31 §3.1 ist falsch: Segmentumschaltung über Port 85H = ZVE-PIO Kanal B** (A = Einsernummer). Takt 2,4576 MHz (MAME stimmt). SPE-2-Sperrports B0H–B3H, MAME bildet SPE nicht ab. Offen: Schreibschutz 8CH, SPE-2-Zustand nach Reset (→ M1), VIS2a-Lesepfad.
 - 2026-10-14 K1: Blockformat = reine Software: `AA | 1…256 Daten | CRC-16/ARC (low zuerst, Start 0000, nur Daten) | AA`; Bandmarke = Block ohne Daten `AA 00 00 AA` (rückwärts `AA FF FF AA`). **Berichtigung K0:** Steuer-PIO A Bit 7 = 1 heißt Band unter der Lichtschranke, 0 = AEB aktiv. Bootband: 4×128 B nach 0400H, `SYL` in 0400–0402, Einsprung 0434H (darf nicht zurückkehren). STA = AUF ∧ AVE. FEX-Formate nicht belegbar (K6: nur Rohblöcke + Bootband). Details `doc/kassette/treiber.md` §8.
 - 2026-10-14 K3: Bitrate ergibt sich aus Dichte (31,5 Bit/mm) × Geschwindigkeit; Zeiten LW1200/SK1200/PK3/K5200-19 sind Annahmen `[?]`. K4 muss: PIO-Polarität, AWA-Gating, BMS-Verzögerung 108 µs, „HGE nach AUF“ → `wiedergabe(false)`, TRV+TRR → `umspulen()`, `autoFlush()` je run()-Scheibe (K5).
+- 2026-10-14 K4: Lade-ROM bootet vollständig von einem K3-Band (Test `K5020Rom.LiestEinBootbandMitVierBloeckenUndPruefSyl`). Steuer-PIO braucht Flankentrigger (`setModus3Flanke`), Daten-PIO `modus1ReadyNachLesen`. UMS wirkt auf steigende Flanke. K5: `clockTick` mit Instruktionstakten, bei true `markIntDirty()`+`updateInterruptChain()`, `autoFlush()` je run(); Chain `{pioDaten, pioSteuer}`; `takt_hz` je Maschine (A5120 2 457 600). `k5020.md` §3.1 (AEB-Polarität) ist noch zu berichtigen.
 
 ---
 
