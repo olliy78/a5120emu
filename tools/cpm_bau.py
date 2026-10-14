@@ -46,12 +46,16 @@ class Programm:
     ``;%INCLUDE datei.inc`` der Quelle werden dann durch deren Inhalt ersetzt.
     """
 
-    def __init__(self, name, ordner, vorstufe=None):
+    def __init__(self, name, ordner, vorstufe=None, endung='com'):
         if len(name) > 8:
             raise ValueError(f"'{name}' ist kein CP/M-8.3-Name")
         self.name = name.lower()
         self.ordner = ordner
         self.vorstufe = vorstufe
+        # Endung des eingecheckten Ergebnisses.  'bin' fuer Programme, die nicht
+        # bei 0100H laufen (z. B. das Kassetten-Bootprogramm, .PHASE 0400H): der
+        # Inhalt ist derselbe — LINKMT legt ab 0100H ab, ausgefuehrt wird woanders.
+        self.endung = endung
 
     @property
     def quelle(self):
@@ -59,7 +63,7 @@ class Programm:
 
     @property
     def eingecheckt(self):
-        return os.path.join(self.ordner, f'{self.name}.com')
+        return os.path.join(self.ordner, f'{self.name}.{self.endung}')
 
 
 def log(msg):
@@ -187,7 +191,7 @@ def pruefe(programme):
     fehler = 0
     with tempfile.TemporaryDirectory(prefix='cpm_check_') as tmp:
         for p in programme:
-            neu = os.path.join(tmp, f'{p.name}.com')
+            neu = os.path.join(tmp, f'{p.name}.{p.endung}')
             baue(p, os.path.join(tmp, 'build', p.name), neu)
             if filecmp.cmp(neu, p.eingecheckt, shallow=False):
                 print(f"OK: {p.eingecheckt} passt zur Quelle ({os.path.getsize(neu)} Bytes)")

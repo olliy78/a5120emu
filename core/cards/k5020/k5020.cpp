@@ -57,6 +57,13 @@ void K5020::Tor::ioWrite(uint8_t port, uint8_t d) {
     pio.ioWrite(rel, d);
     if (steuer) {
         karte.leitungen();
+        // Nach einem Steuerwort die Rückleitungen NEU anlegen, auch wenn sie sich nicht
+        // geändert haben: `Z80PIO::setExtern` übernimmt die Pegel nur im Modus 3 ins
+        // Eingaberegister, der Moduswechsel selbst holt sie nicht nach.  Ohne das las das
+        // Lade-ROM nach `CFH`/`FDH` (ROM 02A7–02AD) das Vorgaberegister FFH statt der beim
+        // Reset (noch Modus 1) angelegten Pegel — /NIB1 = 1 bei LEEREM Gerät 1, das ROM
+        // spulte dort endlos statt auf Gerät 2 zu wechseln (AP K7, KassetteBoot.*Geraet2).
+        if (rel == 1 || rel == 3) karte.ext_neu_ = true;
         karte.eingaenge();   // STA = AUF ∧ AVE sofort (treiber.md §3.2: BCU fragt ohne Bandlauf ab)
     } else if (rel == 0 && pio.debugState().port[0].mode == 0) {
         if (!karte.tx_busy_) karte.uebernehmen();   // Schieberegister leer: sofort übernehmen

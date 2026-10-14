@@ -116,6 +116,19 @@ TEST_F(K5020Test, ResUndAwaFolgenDerFunktionstabelle) {
     EXPECT_TRUE(l2.reserviert()) << "06: Bit 0 = 0 = RES2";
 }
 
+// AP K7: die Rückleitungen gelten auch dann, wenn sie sich seit dem Reset nicht geändert haben.
+// Beim Reset steht die Steuer-PIO noch nicht im Modus 3, ihr Eingaberegister übernimmt die Pegel
+// erst nach dem Steuerwort — sonst liest das Lade-ROM FFH und hält ein LEERES Gerät 1 für bereit
+// (/NIB1 = 1) und Magnetband unter der Lichtschranke; es spult dort endlos statt Gerät 2 zu nehmen.
+TEST_F(K5020Test, LeeresGeraetIstNachDerRomInitNichtBereit) {
+    steuerInit();
+    bus.ioWrite(SA, 0x09);                 // Gerät 1 reserviert + angewählt (ROM 02C9, E = 09H)
+    EXPECT_EQ(b() & 0x18, 0) << "/NIB1 und /NIB2 = 0: kein Gerät hat eine Kassette";
+    EXPECT_EQ(b() & 0x04, 0) << "KSB";
+    bus.ioWrite(SA, 0x06);                 // Gerät 2 (E = 06H)
+    EXPECT_EQ(b() & 0x18, 0);
+}
+
 TEST_F(K5020Test, Res2UndBeideReserviert) {
     steuerInit();
     bus.ioWrite(SA, 0x02);   // KMBG 2 reserviert (Bit 0 = 0), KMBG 1 nicht (Bit 1 = 1)

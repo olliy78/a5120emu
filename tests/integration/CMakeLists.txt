@@ -226,6 +226,12 @@ k1520_add_test(k5020_maschinen SRC test_k5020_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_logger k1520_testsupport
                                LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 
+# A5120 bootet vom Band (doc/design/29_kassette.md AP K7): keine Diskette, K5020 gesteckt, das
+# Lade-ROM fällt auf die Kassette (LW1, bzw. LW1 leer → LW2) und startet tools/kassette/bandtest.
+k1520_add_test(kassette_boot SRC test_kassette_boot.cpp
+                             LIBS k1520_a5120 k1520_logger k1520_testsupport
+                             LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
                                LABELS "${_lbl}" DEFS LOG_LEVEL=2)
