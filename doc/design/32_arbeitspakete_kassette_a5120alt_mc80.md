@@ -70,7 +70,7 @@ ein eigenes Worktree.
 | K7 | A5120 bootet vom Band | int | K5, K6 | M | **fertig 2026-10-14** (04575b5; `KassetteBoot.*`, `cli_bandtest_*`) |
 | K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | **fertig 2026-10-14** (7ff31f9; `ScpxKmbg.SchreibtUndLiestEinenBlock`, `cli_kmbgtest_com_passt_zur_quelle`) |
 | K9 | Oberfläche „Kassette“ | py | K5 | M | **fertig 2026-10-14** (c28ebbc; `py_kassette_gui`) |
-| K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | offen |
+| K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | **fertig 2026-10-14** (6913361; `py_help`, `py_kassette_gui`) |
 | K11 | optional `.wav` (ISO 3407) | cpp | K3 + Mitschnitt | M | zurückgestellt |
 | A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
 | A1a | K7023: Abschrift BD/SLP | ana | — | S | **fertig 2026-10-14** |
