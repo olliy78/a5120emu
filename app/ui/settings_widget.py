@@ -61,6 +61,9 @@ class SettingsWidget(QWidget):
     # Kästchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
     # wie bei der RAF (doc/design/23_lochstreifen.md §7).
     ptapeChanged = Signal(bool)
+    # Kästchen „Kassette (K5221, AKB K5020)" umgeschaltet — Neuaufbau wie beim Lochstreifen
+    # (doc/design/29_kassette.md).
+    tapeChanged = Signal(bool)
     # Mitschrift des Terminals: Dateiname geändert (leer = aus).  Nur Profile mit Terminal.
     mitschriftChanged = Signal(str)
 
@@ -88,6 +91,7 @@ class SettingsWidget(QWidget):
         # Dito für RAM-Disk-Auswahl und Stand-by-Kästchen.
         self._raf_guard = False
         self._ptape_guard = False
+        self._tape_guard = False
         self._mitschrift_guard = False
 
         layout = QVBoxLayout(self)
@@ -328,6 +332,20 @@ class SettingsWidget(QWidget):
         else:
             self.ptape_box.setVisible(False)       # P8000: gibt es die Karte nicht
 
+        # Kassette: AKB K5020 mit zwei Laufwerken K5200 — wie der Lochstreifen eine
+        # Option, Vorgabe aus (doc/design/29_kassette.md).
+        self.tape_box = QCheckBox("Kassette (K5221, AKB K5020)", inner)
+        self.tape_box.setToolTip(
+            "Steckt den Anschlussbaustein K5020 mit zwei Kassettenlaufwerken K5200 "
+            "(A5120 und PRG 710: E/A 30H–37H, K8915 und PC 1715: D0H–D7H).  Bedient "
+            "werden sie im Kasten „Kassette“.  Ein Wechsel schaltet die Maschine aus "
+            "und neu ein.")
+        self.tape_box.toggled.connect(self._on_tape_box)
+        if self.profil.tape_wahl:
+            form.addRow("", self.tape_box)
+        else:
+            self.tape_box.setVisible(False)        # P8000: gibt es die Karte nicht
+
         # Mitschrift des Terminals (nur Profil mit Terminal): Dateiname + Ordnerknopf.
         self.mitschrift_edit = QLineEdit(inner)
         self.mitschrift_edit.setPlaceholderText("leer = keine Mitschrift")
@@ -419,6 +437,20 @@ class SettingsWidget(QWidget):
         if self._ptape_guard:
             return
         self.ptapeChanged.emit(bool(an))
+
+    def _on_tape_box(self, an: bool):
+        if self._tape_guard:
+            return
+        self.tapeChanged.emit(bool(an))
+
+    def tape_value(self) -> bool:
+        return self.tape_box.isChecked()
+
+    def set_tape_value(self, an: bool):
+        """Kästchen setzen, ohne ``tapeChanged`` auszulösen."""
+        self._tape_guard = True
+        self.tape_box.setChecked(bool(an))
+        self._tape_guard = False
 
     def ptape_value(self) -> bool:
         return self.ptape_box.isChecked()
