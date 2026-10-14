@@ -78,7 +78,7 @@ ein eigenes Worktree.
 | A2 | K3525 (16 KB) | cpp | — | S | offen |
 | A3a | K7636 + Anschluss an K2526: Abschrift | ana | — | M | **fertig 2026-10-14** |
 | A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | offen |
-| A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | offen |
+| A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | **fertig 2026-10-14** (`doc/a5120_alt/k5120.md`; K5120 ≈ K5122, A4 nur als Variante, Anwenderwunsch) |
 | A4 | `cards/k5120` | cpp | A4a | L | zurückgestellt |
 | A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | offen |
 | A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | offen |
