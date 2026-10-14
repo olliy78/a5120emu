@@ -67,7 +67,7 @@ ein eigenes Worktree.
 | K4 | `cards/k5020` | cpp | K3 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
 | K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | **fertig 2026-10-14** (113367c; `K5020Test.*`, `K5020Rom.*`) |
 | K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
-| K7 | A5120 bootet vom Band | int | K5, K6 | M | offen |
+| K7 | A5120 bootet vom Band | int | K5, K6 | M | **fertig 2026-10-14** (04575b5; `KassetteBoot.*`, `cli_bandtest_*`) |
 | K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | **fertig 2026-10-14** (f24c155; `K5020Maschine.*`, `py_tape_api`, `cli_dbg_tape*`, `cli_bt_tape`) |
 | K9 | Oberfläche „Kassette“ | py | K5 | M | **fertig 2026-10-14** (f24c155; `K5020Maschine.*`, `py_tape_api`, `cli_dbg_tape*`, `cli_bt_tape`) |
 | K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | offen |
@@ -115,6 +115,7 @@ ein eigenes Worktree.
 - 2026-10-14 K4: Lade-ROM bootet vollständig von einem K3-Band (Test `K5020Rom.LiestEinBootbandMitVierBloeckenUndPruefSyl`). Steuer-PIO braucht Flankentrigger (`setModus3Flanke`), Daten-PIO `modus1ReadyNachLesen`. UMS wirkt auf steigende Flanke. K5: `clockTick` mit Instruktionstakten, bei true `markIntDirty()`+`updateInterruptChain()`, `autoFlush()` je run(); Chain `{pioDaten, pioSteuer}`; `takt_hz` je Maschine (A5120 2 457 600). `k5020.md` §3.1 (AEB-Polarität) ist noch zu berichtigen.
 - 2026-10-14 K5: PC 1715 steckt die K5020 auf D0H (30H–37H belegt durch LT107/BWS), PRG 710 bleibt bei 30H (D0H–D4H = EPROMmer); nur mechanisch am PC 1715. Gast-ISRs: kein HALT-Warten auf die ISR (Wettlauf), ISR A > 0x20 B — siehe `doc/merkposten/kassette.md`. GUI (K9) muss `tape_flush` je Laufwerk beim Beenden rufen. Nach Kern-/Werkzeug-Änderungen einmal `tools/dev.sh build` vor dem Volllauf (7 CLI-Fälle waren nur veraltete k1520dbg-Binary). Python-Ebene im Worktree braucht `venv/` (Symlink aufs Haupt-venv).
 - 2026-10-14 K6: Block mit 128 Daten = 132 B auf dem Band (nicht 131, das ist die ROM-Leselänge). `k1520tape bootband prog.bin band.k52` verlangt 'SYL' am Anfang; Einsprung bei 34H liegt im Anwenderprogramm. Lücke zwischen Blöcken 10 mm = Annahme [?]. CLI-Runner kennt nur Textdateien.
+- 2026-10-14 K7: **A5120 bootet ohne Diskette vom (selbstgebauten) Band** — `tools/kassette/bandtest/`, Fixture `tests/fixtures/kassette/bandtest_boot.k52`. Kernfehler in K5020 behoben: `Z80PIO::setExtern` übernimmt Pegel nur im Modus 3 und holt sie beim Moduswechsel nicht nach → nach jedem Steuerwort Rückleitungen neu anlegen (`ext_neu_`). Ob `Z80PIO` selbst beim Moduswechsel neu einlesen sollte (P8000-Karten nutzen `setExtern`): offen [?]. Boot dauert ~27 Mio. Takte. `boot_trace --tape` bindet und schreibt zurück — nie Fixture direkt angeben.
 
 ---
 
