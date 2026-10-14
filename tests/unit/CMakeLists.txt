@@ -47,6 +47,9 @@ k1520_add_test(k5122_wait SRC cards/test_k5122_wait.cpp LIBS k1520_k5122 LABELS 
 # K5122 in der Konfiguration „1715“ (PC 1715, doc/design/21_pc1715.md AP-2)
 k1520_add_test(k5122_pc1715 SRC cards/test_k5122_pc1715.cpp LIBS k1520_k5122 LABELS "${_lbl}")
 k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
+# K7023/K7023.01 (BAB1, frühe A5120; doc/a5120_alt/k7023.md, AP A1)
+k1520_add_test(k7023 SRC cards/test_k7023.cpp      LIBS k1520_k7023 k1520_bus LABELS "${_lbl}"
+               DEFS "K7023_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/EPROMS/K7023\"")
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
 # ZRE 045-8762 des K8915: Speicherbild je A8H-Wert (doc/design/16_k8915.md §4.2a)
 k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")

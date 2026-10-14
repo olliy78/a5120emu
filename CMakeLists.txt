@@ -320,6 +320,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k7024 PUBLIC k1520_bus)
     target_include_directories(k1520_k7024 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # K7023 / K7023.01 ABS (BAB1) – Bildschirm 16x64 der frühen A5120 (doc/a5120_alt/k7023.md)
+    add_library(k1520_k7023 STATIC core/cards/k7023/k7023.cpp)
+    target_link_libraries(k1520_k7023 PUBLIC k1520_bus)
+    target_include_directories(k1520_k7023 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # K2526 ZRE – Zentrale Recheneinheit (CPU card, enthält jetzt ZVE1)
     add_library(k1520_k2526 STATIC core/cards/k2526/k2526.cpp)
     target_link_libraries(k1520_k2526 PUBLIC k1520_z80 k1520_pio k1520_ctc k1520_bus)
