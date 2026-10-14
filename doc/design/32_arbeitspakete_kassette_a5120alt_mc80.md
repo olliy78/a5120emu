@@ -61,12 +61,12 @@ ein eigenes Worktree.
 | AP | Titel | Art | hängt ab von | Umfang | Stand |
 |---|---|---|---|---|---|
 | K0 | K5020: Abschrift Programmierung + Signale | ana | — | M | **fertig 2026-10-14** |
-| K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | offen |
+| K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | **fertig 2026-10-14** (957c329, `doc/kassette/treiber.md`) |
 | K2 | K5200: Laufwerkszeiten und Signale | ana | — | S | **fertig 2026-10-14** |
-| K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | offen |
-| K4 | `cards/k5020` | cpp | K3 | M | offen |
+| K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
+| K4 | `cards/k5020` | cpp | K3 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
 | K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | offen |
-| K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | offen |
+| K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
 | K7 | A5120 bootet vom Band | int | K5, K6 | M | offen |
 | K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | offen |
 | K9 | Oberfläche „Kassette“ | py | K5 | M | offen |
@@ -110,6 +110,8 @@ ein eigenes Worktree.
 - 2026-10-14 A1a: K7023 hat KEINE Lesesperre; K7023.01 hat Helligkeit je Zelle (Marken 04H–0FH) — K7024-Kern ignoriert Marken. Für „alt“ muss K2526 `config_bridges` Bit 1 (Port 0AH Bit 6 = BAB1) gesetzt werden (A5). VRAM beim Start 0xFF vorschlagsweise.
 - 2026-10-14 A3a: K7636 Statusbit 3 = /UINT (0 = Code bereit), Ruhewert 0CH muss das K7636-Modell selbst vorgeben (K2526-Standard unverändert lassen); Typzeichen 80H nach Reset/Kommando. CSV hat Druckfehler-Stellen mit [?] (A15 DA→im Modell 0A).
 - 2026-10-14 M0: **Entwurf 31 §3.1 ist falsch: Segmentumschaltung über Port 85H = ZVE-PIO Kanal B** (A = Einsernummer). Takt 2,4576 MHz (MAME stimmt). SPE-2-Sperrports B0H–B3H, MAME bildet SPE nicht ab. Offen: Schreibschutz 8CH, SPE-2-Zustand nach Reset (→ M1), VIS2a-Lesepfad.
+- 2026-10-14 K1: Blockformat = reine Software: `AA | 1…256 Daten | CRC-16/ARC (low zuerst, Start 0000, nur Daten) | AA`; Bandmarke = Block ohne Daten `AA 00 00 AA` (rückwärts `AA FF FF AA`). **Berichtigung K0:** Steuer-PIO A Bit 7 = 1 heißt Band unter der Lichtschranke, 0 = AEB aktiv. Bootband: 4×128 B nach 0400H, `SYL` in 0400–0402, Einsprung 0434H (darf nicht zurückkehren). STA = AUF ∧ AVE. FEX-Formate nicht belegbar (K6: nur Rohblöcke + Bootband). Details `doc/kassette/treiber.md` §8.
+- 2026-10-14 K3: Bitrate ergibt sich aus Dichte (31,5 Bit/mm) × Geschwindigkeit; Zeiten LW1200/SK1200/PK3/K5200-19 sind Annahmen `[?]`. K4 muss: PIO-Polarität, AWA-Gating, BMS-Verzögerung 108 µs, „HGE nach AUF“ → `wiedergabe(false)`, TRV+TRR → `umspulen()`, `autoFlush()` je run()-Scheibe (K5).
 
 ---
 
