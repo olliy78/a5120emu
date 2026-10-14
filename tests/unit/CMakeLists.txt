@@ -41,6 +41,7 @@ k1520_add_test(bus   SRC bus/test_bus.cpp          LIBS k1520_bus LABELS "${_lbl
 k1520_add_test(k2526 SRC cards/test_k2526.cpp
                      LIBS k1520_k2526 k1520_k3526 k1520_k5122 k1520_floppy LABELS "${_lbl}")
 k1520_add_test(k3526 SRC cards/test_k3526.cpp      LIBS k1520_k3526 k1520_bus LABELS "${_lbl}")
+k1520_add_test(k3525 SRC cards/test_k3525.cpp      LIBS k1520_k3525 k1520_bus LABELS "${_lbl}")
 k1520_add_test(k5122 SRC cards/test_k5122.cpp      LIBS k1520_k5122 LABELS "${_lbl}")
 # K5122 im /WAIT-Betrieb (K8915, doc/design/16_k8915.md AP-E3a)
 k1520_add_test(k5122_wait SRC cards/test_k5122_wait.cpp LIBS k1520_k5122 LABELS "${_lbl}")

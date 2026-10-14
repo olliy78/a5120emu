@@ -308,6 +308,11 @@ if(BUILD_K1520)
     add_library(k1520_k3526 STATIC core/cards/k3526/k3526.cpp)
     target_include_directories(k1520_k3526 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # K3525 – 16-KB-dRAM-Karte der frühen A5120 (doc/design/30, AP A2)
+    add_library(k1520_k3525 STATIC core/cards/k3525/k3525.cpp)
+    target_link_libraries(k1520_k3525 PUBLIC k1520_bus)
+    target_include_directories(k1520_k3525 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # K7637 serial keyboard peripheral
     add_library(k1520_k7637 STATIC
         core/peripherals/k7637/k7637.cpp
