@@ -15,6 +15,7 @@
 
 #pragma once
 #include "core/bus/k1520_bus.h"
+#include "core/cards/k5020/k5020.h"
 #include "core/cards/k6022/k6022.h"
 #include "core/cards/raf/raf.h"
 #include "core/peripherals/floppy_drive/disk_image.h"
@@ -249,6 +250,57 @@ public:
     /// Feste Basis der K6022 in allen Maschinen (Entwurf 23 §2).
     static constexpr uint8_t K6022_BASIS = 0xE0;
 
+    // ─── Kassette: AKB K5020 + zwei K5200 (doc/design/29_kassette.md §2, AP K5) ──────
+    // Wie die K6022: nach dem Anlegen, VOR dem ersten run()/reset() gesteckt; die Maschine
+    // hängt beide PIOs (Daten vor Steuer) hinten an die Interruptkette, taktet die Karte im
+    // Laufweg (@ref k5020Takt, Instruktionstakte), schreibt gebundene Bänder je run()-Scheibe
+    // zurück (@ref k5020AutoFlush) und setzt sie beim /RESET zurück (Bänder bleiben liegen).
+    // Basis je Maschine (@ref k5020Basis): A5120 30H, K8915 D0H, PRG 710 30H.  Kein Save-State.
+    /**
+     * @brief Steckt die K5020 auf @ref k5020Basis … +7.
+     * @return false (Grund in @ref k5020Fehler) nach dem ersten run()/reset(), bei doppeltem
+     *         Stecken oder belegtem Tor.
+     */
+    bool installK5020() {
+        k5020_fehler_.clear();
+        if (!zusatzkartenSteckbar()) {
+            k5020_fehler_ = "Diese Maschine hat keinen K1520-Steckplatz fuer eine K5020";
+            return false;
+        }
+        if (!bestueckbar_) {
+            k5020_fehler_ = "K5020 nur vor dem ersten Lauf/Reset steckbar";
+            return false;
+        }
+        if (k5020_) {
+            k5020_fehler_ = "Es steckt bereits eine K5020";
+            return false;
+        }
+        K1520Bus& bus = systemBus();
+        const int basis = k5020Basis();
+        for (int p = basis; p < basis + 8; ++p) {   // erst prüfen, dann anmelden (wie K6022)
+            if (const BusDevice* d = bus.ioOwner(static_cast<uint8_t>(p))) {
+                char buf[96];
+                std::snprintf(buf, sizeof buf, "E/A-Tor %02XH belegt (%s)", p, d->deviceName());
+                k5020_fehler_ = buf;
+                return false;
+            }
+        }
+        K5020::Config cfg;
+        cfg.basis = static_cast<uint8_t>(basis);
+        cfg.takt_hz = k6022TaktHz();
+        auto karte = std::make_unique<K5020>(cfg);
+        karte->attachToBus(bus);
+        k5020_ = std::move(karte);
+        k5020Einketten(*k5020_);
+        bus.markIntDirty();
+        return true;
+    }
+    /** @brief Die gesteckte K5020 (nullptr = keine). */
+    K5020*       k5020()       { return k5020_.get(); }
+    const K5020* k5020() const { return k5020_.get(); }
+    /** @brief Grund des letzten gescheiterten @ref installK5020 ("" = keiner). */
+    const std::string& k5020Fehler() const { return k5020_fehler_; }
+
 protected:
     /** @brief Der Systembus, auf dem Zusatzkarten (RAF) ihre E/A-Tore anmelden. */
     virtual K1520Bus& systemBus() = 0;
@@ -278,15 +330,32 @@ protected:
      *         zurückschreiben (Entwurf 23 §5, wie `Laufwerke::autoFlush`). */
     void k6022AutoFlush() { if (k6022_) k6022_->autoFlush(); }
 
+    /** @brief E/A-Basis der K5020 (A5120/PRG 710: 30H; K8915 überschreibt mit D0H). */
+    virtual int k5020Basis() const { return 0x30; }
+    /** @brief PIOs der frisch gesteckten K5020 hinten an die Kette (Daten vor Steuer). */
+    virtual void k5020Einketten(K5020& k) {
+        systemBus().appendInterruptChain(&k.pioDaten());
+        systemBus().appendInterruptChain(&k.pioSteuer());
+    }
+    /** @brief Laufweg: Karte fortschreiben; true = Interruptzustand evtl. geändert. */
+    bool k5020Takt(int takte) { return k5020_ && k5020_->clockTick(takte); }
+    /** @brief Systemweiter /RESET: PIOs zurück; Bänder bleiben. */
+    void k5020Reset() { if (k5020_) k5020_->reset(); }
+    /** @brief Ende jeder run()-Scheibe: gebundene Bänder nach der Schreibpause zurückschreiben. */
+    void k5020AutoFlush() { if (k5020_) k5020_->autoFlush(); }
+
     /// Erst NACH Bus und Karten der abgeleiteten Klasse zerstört — unschädlich, die
     /// RAF fasst den Bus in ihrem Destruktor nicht an.
     std::unique_ptr<RAF> raf_;
     /// Wie raf_: nach Bus und Karten der abgeleiteten Klasse zerstört; die K6022 fasst
     /// den Bus im Destruktor nicht an (Bus samt Kette sind dann schon fort).
     std::unique_ptr<K6022> k6022_;
+    /// Wie k6022_ (K5020 fasst den Bus im Destruktor nicht an).
+    std::unique_ptr<K5020> k5020_;
 
 private:
     bool        bestueckbar_ = true;
     std::string raf_fehler_;
     std::string k6022_fehler_;
+    std::string k5020_fehler_;
 };

@@ -239,3 +239,13 @@ Spalte nennt die Etappe, die sie braucht.
 | `pc1715w_scp30_system.hfe` | **SCP 3.0 des PC 1715W** („SCP 3.0 – LOADER PC 1715W V0001 25/05/87"): `cpa800`, 4 Systemspuren, 42 Dateien (`SCP3.SYS`, `SC6xx.ZGF`); aus `PC1715W_SCP30.scp` gewandelt, 80 Zylinder (81/82 unformatiert) | AP-W3 |
 | `pc1715_scp1715_v0006_pctest.hfe` | `pc1715_scp1715_v0006_boot.hfe` + **`PCTEST.COM`** (`../cpm/PCTEST.COM`, mit `k1520disktool put`), 10 Dateien — Werkstest unter SCP mit Prüfsteckern | AP-4f (`Pc1715Pctest.Scp*`) |
 | `pc1715_cpa1715_workbench.hfe` | **CP/A 1715 aus der CPA_Workbench** (Variante `pc_1715`, `cpa800`, `@OS.COM` 24.05.88 ohne BIOS-Monitor, Bootkopf `03F0` aus `prebuilt/pc_1715`, dazu `PCTEST.COM`, `FORMATP.COM`, M80/LINKMT …); Vorgabe-Konfiguration → fragt beim Start nach der Uhrzeit. `gw convert` aus dem `cpadisk.img` des Diskettenbaus (Workbench-Stand `10d6f1e`) | AP-3b, AP-4d |
+
+## `kassette/bandtest_boot.k52`: Bootband für das Lade-ROM (AP K7)
+
+Erzeugt mit `tools/dev.sh tool k1520tape bootband tools/kassette/bandtest/bandtest.bin
+tests/fixtures/kassette/bandtest_boot.k52` (Seite A, 4 Blöcke zu 128 B Daten = je 132 B auf dem
+Band, Lücken nach `k1520tape`).  Das Programm (`tools/kassette/bandtest/`, Quelle + `.bin`) trägt
+`SYL` bei 0400H, springt bei 0434H ein und schreibt „KASSETTE OK“ nach F800H.  Benutzer:
+`KassetteBoot.*` (`tests/integration/test_kassette_boot.cpp`); die Tests lesen die Datei nur und
+binden sie nicht (kein Zurückschreiben).  Wächter, dass Band und Programm zusammenpassen:
+`cli_bandtest_bootband`; dass das Programm zur Quelle passt: `cli_bandtest_bin_passt_zur_quelle`.

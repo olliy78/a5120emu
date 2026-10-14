@@ -61,16 +61,16 @@ ein eigenes Worktree.
 | AP | Titel | Art | hängt ab von | Umfang | Stand |
 |---|---|---|---|---|---|
 | K0 | K5020: Abschrift Programmierung + Signale | ana | — | M | **fertig 2026-10-14** |
-| K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | offen |
+| K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | **fertig 2026-10-14** (957c329, `doc/kassette/treiber.md`) |
 | K2 | K5200: Laufwerkszeiten und Signale | ana | — | S | **fertig 2026-10-14** |
-| K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | offen |
-| K4 | `cards/k5020` | cpp | K3 | M | offen |
-| K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | offen |
-| K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | offen |
-| K7 | A5120 bootet vom Band | int | K5, K6 | M | offen |
-| K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | offen |
-| K9 | Oberfläche „Kassette“ | py | K5 | M | offen |
-| K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | offen |
+| K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
+| K4 | `cards/k5020` | cpp | K3 | M | **fertig 2026-10-14** (113367c; `K5020Test.*`, `K5020Rom.*`) |
+| K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | **fertig 2026-10-14** (f24c155; `K5020Maschine.*`, `py_tape_api`, `cli_dbg_tape*`, `cli_bt_tape`) |
+| K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | **fertig 2026-10-14** (96b72f9; `cli_k1520tape_*`) |
+| K7 | A5120 bootet vom Band | int | K5, K6 | M | **fertig 2026-10-14** (04575b5; `KassetteBoot.*`, `cli_bandtest_*`) |
+| K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | **fertig 2026-10-14** (7ff31f9; `ScpxKmbg.SchreibtUndLiestEinenBlock`, `cli_kmbgtest_com_passt_zur_quelle`) |
+| K9 | Oberfläche „Kassette“ | py | K5 | M | **fertig 2026-10-14** (c28ebbc; `py_kassette_gui`) |
+| K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | **fertig 2026-10-14** (6913361; `py_help`, `py_kassette_gui`) |
 | K11 | optional `.wav` (ISO 3407) | cpp | K3 + Mitschnitt | M | zurückgestellt |
 | A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
 | A1a | K7023: Abschrift BD/SLP | ana | — | S | **fertig 2026-10-14** |
@@ -110,6 +110,14 @@ ein eigenes Worktree.
 - 2026-10-14 A1a: K7023 hat KEINE Lesesperre; K7023.01 hat Helligkeit je Zelle (Marken 04H–0FH) — K7024-Kern ignoriert Marken. Für „alt“ muss K2526 `config_bridges` Bit 1 (Port 0AH Bit 6 = BAB1) gesetzt werden (A5). VRAM beim Start 0xFF vorschlagsweise.
 - 2026-10-14 A3a: K7636 Statusbit 3 = /UINT (0 = Code bereit), Ruhewert 0CH muss das K7636-Modell selbst vorgeben (K2526-Standard unverändert lassen); Typzeichen 80H nach Reset/Kommando. CSV hat Druckfehler-Stellen mit [?] (A15 DA→im Modell 0A).
 - 2026-10-14 M0: **Entwurf 31 §3.1 ist falsch: Segmentumschaltung über Port 85H = ZVE-PIO Kanal B** (A = Einsernummer). Takt 2,4576 MHz (MAME stimmt). SPE-2-Sperrports B0H–B3H, MAME bildet SPE nicht ab. Offen: Schreibschutz 8CH, SPE-2-Zustand nach Reset (→ M1), VIS2a-Lesepfad.
+- 2026-10-14 K1: Blockformat = reine Software: `AA | 1…256 Daten | CRC-16/ARC (low zuerst, Start 0000, nur Daten) | AA`; Bandmarke = Block ohne Daten `AA 00 00 AA` (rückwärts `AA FF FF AA`). **Berichtigung K0:** Steuer-PIO A Bit 7 = 1 heißt Band unter der Lichtschranke, 0 = AEB aktiv. Bootband: 4×128 B nach 0400H, `SYL` in 0400–0402, Einsprung 0434H (darf nicht zurückkehren). STA = AUF ∧ AVE. FEX-Formate nicht belegbar (K6: nur Rohblöcke + Bootband). Details `doc/kassette/treiber.md` §8.
+- 2026-10-14 K3: Bitrate ergibt sich aus Dichte (31,5 Bit/mm) × Geschwindigkeit; Zeiten LW1200/SK1200/PK3/K5200-19 sind Annahmen `[?]`. K4 muss: PIO-Polarität, AWA-Gating, BMS-Verzögerung 108 µs, „HGE nach AUF“ → `wiedergabe(false)`, TRV+TRR → `umspulen()`, `autoFlush()` je run()-Scheibe (K5).
+- 2026-10-14 K4: Lade-ROM bootet vollständig von einem K3-Band (Test `K5020Rom.LiestEinBootbandMitVierBloeckenUndPruefSyl`). Steuer-PIO braucht Flankentrigger (`setModus3Flanke`), Daten-PIO `modus1ReadyNachLesen`. UMS wirkt auf steigende Flanke. K5: `clockTick` mit Instruktionstakten, bei true `markIntDirty()`+`updateInterruptChain()`, `autoFlush()` je run(); Chain `{pioDaten, pioSteuer}`; `takt_hz` je Maschine (A5120 2 457 600). `k5020.md` §3.1 (AEB-Polarität) ist noch zu berichtigen.
+- 2026-10-14 K5: PC 1715 steckt die K5020 auf D0H (30H–37H belegt durch LT107/BWS), PRG 710 bleibt bei 30H (D0H–D4H = EPROMmer); nur mechanisch am PC 1715. Gast-ISRs: kein HALT-Warten auf die ISR (Wettlauf), ISR A > 0x20 B — siehe `doc/merkposten/kassette.md`. GUI (K9) muss `tape_flush` je Laufwerk beim Beenden rufen. Nach Kern-/Werkzeug-Änderungen einmal `tools/dev.sh build` vor dem Volllauf (7 CLI-Fälle waren nur veraltete k1520dbg-Binary). Python-Ebene im Worktree braucht `venv/` (Symlink aufs Haupt-venv).
+- 2026-10-14 K6: Block mit 128 Daten = 132 B auf dem Band (nicht 131, das ist die ROM-Leselänge). `k1520tape bootband prog.bin band.k52` verlangt 'SYL' am Anfang; Einsprung bei 34H liegt im Anwenderprogramm. Lücke zwischen Blöcken 10 mm = Annahme [?]. CLI-Runner kennt nur Textdateien.
+- 2026-10-14 K7: **A5120 bootet ohne Diskette vom (selbstgebauten) Band** — `tools/kassette/bandtest/`, Fixture `tests/fixtures/kassette/bandtest_boot.k52`. Kernfehler in K5020 behoben: `Z80PIO::setExtern` übernimmt Pegel nur im Modus 3 und holt sie beim Moduswechsel nicht nach → nach jedem Steuerwort Rückleitungen neu anlegen (`ext_neu_`). Ob `Z80PIO` selbst beim Moduswechsel neu einlesen sollte (P8000-Karten nutzen `setExtern`): offen [?]. Boot dauert ~27 Mio. Takte. `boot_trace --tape` bindet und schreibt zurück — nie Fixture direkt angeben.
+- 2026-10-14 K9: GUI-Kassette fertig (Profilfeld `tape_wahl`, kein Kästchen am P8000; `tape_flush` beim Beenden/Neuaufbau/Auswerfen; `tape_load` legt fehlende .k52 leer an — Abweichung vom Lochstreifen). Kassette nicht im Save-State. Festlegungen für K10: Kasten nur mit Karte, `kassette:`-Abschnitt, kein Kürzel, Wächter `py_kassette_gui`.
+- 2026-10-14 K8: `KMBG.REL` läuft unter SCPX 1.7 am A5120 (schreibt/liest Block, alle Status 00); kein Kernfehler. **Offen [?]:** KMBG wartet nur ~2,45 s (≈0,9 m bei 381 mm/s) auf Magnetband; der 1-m-Vorspann des Modells ist von Position 0 aus nicht zu durchqueren → Status 04 bei frisch eingelegter Kassette; erst nach Rückspulen (UMS) geht es. Vorspannlänge/Einlegeposition klären (K10/Handbuch oder Modell). `tools/cpm_bau.py` hat jetzt `module=` für Fremd-REL. `k1520dbg`: `--tape` vor dem Diskpfad.
 
 ---
 

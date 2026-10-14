@@ -692,6 +692,50 @@ K1520_API const char* k1520_ptape_punch_file(K1520Handle h);
 /** @brief Format der Bindung; -1 ohne Karte. */
 K1520_API int      k1520_ptape_punch_format(K1520Handle h);
 
+/* ─── Kassette: AKB K5020 + zwei K5200 (Entwurf 29, AP K5; steckbar wie die K6022) ───────────
+ * Gesteckt wird nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset: A5120 (auch .16) 30H–37H,
+ * K8915 D0H–D7H, PRG 710 30H–37H; am PC 1715 nur wenn die Tore frei sind (BWS 34H liegt dort).
+ * @p drive ist 0 oder 1 (Geräte X3/X4).  Bandpositionen in µm der Seitenkoordinate; Seite 0 = A,
+ * 1 = B.  Fehlertext in k1520_tape_error.  Ohne Karte: false / -1 / "". */
+K1520_API bool     k1520_tape_install(K1520Handle h);
+K1520_API bool     k1520_tape_installed(K1520Handle h);
+/** @brief Grund des letzten gescheiterten k1520_tape_*-Aufrufs ("" nach Erfolg). */
+K1520_API const char* k1520_tape_error(K1520Handle h);
+/** @brief Kassettendatei (.k52) einlegen und BINDEN; gibt es sie nicht, entsteht eine leere.
+ *  Änderungen werden nach ≈ 0,5 s Schreibpause zurückgeschrieben. */
+K1520_API bool     k1520_tape_load(K1520Handle h, int drive, const char* path);
+/** @brief Leere Kassette ohne Datei einlegen (nur im Speicher). */
+K1520_API bool     k1520_tape_new(K1520Handle h, int drive);
+/** @brief Kassette entnehmen (gebundene Datei wird vorher geschrieben); false, solange das
+ *  Gerät reserviert ist oder das Band läuft. */
+K1520_API bool     k1520_tape_eject(K1520Handle h, int drive);
+/** @brief Gebundene Datei sofort zurückschreiben (true auch ohne Bindung). */
+K1520_API bool     k1520_tape_flush(K1520Handle h, int drive);
+/** @brief Gebundene Datei von @p drive ("" = keine). */
+K1520_API const char* k1520_tape_file(K1520Handle h, int drive);
+/** @brief Aktive Seite (0 = A, 1 = B); -1 ohne Karte/Kassette. */
+K1520_API int      k1520_tape_side(K1520Handle h, int drive);
+/** @brief Kassette wenden (nur bei stehendem, nicht reserviertem Gerät). */
+K1520_API bool     k1520_tape_flip(K1520Handle h, int drive);
+/** @brief Schreibschutz einer Seite setzen. */
+K1520_API bool     k1520_tape_protect(K1520Handle h, int drive, int side, bool on);
+/** @brief Schreibschutz einer Seite: 1/0; -1 ohne Karte/Kassette. */
+K1520_API int      k1520_tape_protected(K1520Handle h, int drive, int side);
+/** @brief Kopfstelle (µm) setzen; nur bei stehendem Band. */
+K1520_API bool     k1520_tape_set_position(K1520Handle h, int drive, int64_t um);
+/** @brief Zustand: eingelegt, Seite, Kopfstelle (µm), Bandlänge (µm), Blöcke der aktiven Seite,
+ *  Band bewegt sich (alle Zeiger optional); false ohne Karte. */
+K1520_API bool     k1520_tape_status(K1520Handle h, int drive, int* loaded, int* side,
+                                     int64_t* pos_um, int64_t* len_um, int* blocks, int* moving);
+/** @brief Zahl der Blöcke (einschließlich Bandmarken) einer Seite; -1 ohne Karte/Kassette. */
+K1520_API int      k1520_tape_block_count(K1520Handle h, int drive, int side);
+/** @brief Block i einer Seite: Startstelle (µm), Bytezahl, 1 = Bandmarke; false bei ungültigem i. */
+K1520_API bool     k1520_tape_block_info(K1520Handle h, int drive, int side, int i,
+                                         int64_t* start_um, int* bytes, int* mark);
+/** @brief Rohbytes von Block i (höchstens @p cap); Rückgabe = Blocklänge, -1 ungültig. */
+K1520_API int      k1520_tape_block_data(K1520Handle h, int drive, int side, int i,
+                                         uint8_t* buf, int cap);
+
 /* ─── Terminals des P8000 (Entwurf 25 §10.9, P20d; andere Maschinen: 0 / -1 / false) ───────
  * Index i zählt die Terminals: am P8000 die Konsole tty1 (Kern- ODER Originalterminal, je nach
  * `terminal=`), an „P8000 Terminal" das Terminal selbst (i = 0).  80 × 24 Zellen, 0-basiert. */

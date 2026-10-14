@@ -98,6 +98,9 @@ class Programmprofil:
     modell_alt: Tuple[Tuple[str, str], ...] = ()
     #: Kästchen „Lochstreifen" unter *Allgemein* (K6022): am P8000 gibt es die Karte nicht.
     ptape_wahl: bool = True
+    #: Kästchen „Kassette (K5221, AKB K5020)" unter *Allgemein*: wie der Lochstreifen
+    #: nicht am P8000 (kein K1520-Bus).
+    tape_wahl: bool = True
     #: Lampen der Frontplatte: ``"k8915"`` (Latch 61H, aktiv low) oder ``"p8000"``
     #: (Run/Unit16/Platte, aktiv high) — nur mit :attr:`frontplatte`.
     frontplatte_art: str = "k8915"
@@ -488,6 +491,7 @@ P8000 = Programmprofil(
     terminal=True,
     platte=True,
     ptape_wahl=False,
+    tape_wahl=False,
     raf_wahl=False,                 # die RAF ist eine K1520-Karte; der P8000 hat keinen K1520-Bus
     modellwahl=True,
     betriebsart_wahl=True,
