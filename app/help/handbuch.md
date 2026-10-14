@@ -59,7 +59,10 @@ Speichern unter und für die echte Diskette.
 **Lochstreifen** — Leser und Stanzer, nur solange die Lochstreifen-Karte steckt
 (siehe *Lochstreifen* unten).
 
-**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk, Lochstreifen), *Laufwerke*
+**Kassette** — die beiden Kassettenlaufwerke, nur solange die Kassetten-Karte steckt
+(siehe *Kassette* unten).
+
+**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk, Lochstreifen, Kassette), *Laufwerke*
 (welcher Laufwerkstyp in welchem Steckplatz steckt), *Schnittstellen* (die seriellen
 Anschlüsse des Rechners nach außen, ein Block je Schnittstelle — siehe *Serielle
 Schnittstellen* unten) und *CRT* (das Aussehen der Bildröhre).
@@ -692,6 +695,41 @@ zurück (`ERROR C9`). `ERROR C2` beim Lesen heisst: kein Band im Leser. Für
 **A5120** und **K8915** liegt kein Treiber bei — die Karte steckt (E/A E0H–E7H),
 ein Programm muss sie selbst bedienen.
 
+## Kassette
+
+*Einstellungen ▸ Allgemein ▸ Kassette (K5221, AKB K5020)* steckt den
+Anschlussbaustein K5020 mit zwei Kassettenlaufwerken K5200 — in allen Programmen
+außer dem P8000, ab Werk aus. Ein Wechsel schaltet die Maschine aus und baut sie neu
+auf, wie beim Lochstreifen. Die Karte liegt am A5120 und am PRG 710 auf E/A
+30H–37H, am K8915 und am PC 1715 auf D0H–D7H (am PC 1715 nur mechanisch: es gibt
+dort keinen Gasttreiber).
+
+**Zurückspulen vor KMBG/FEX:** Programme, die die Kassette über `KMBG.REL` (SCPX)
+oder FEX bedienen, warten nur rund 2,5 s auf das Magnetband. Eine frisch eingelegte
+Kassette steht noch im Vorspann und wird in dieser Zeit nicht erreicht (Status 04);
+sie muss deshalb vorher zurückgespult werden (UMS bzw. das Rückspulkommando des
+Programms).
+
+Mit gesteckter Karte erscheint der Kasten **Kassette** (neben *Laufwerke*,
+*Ansicht ▸ Kassette* holt ihn zurück), mit einem Block je Laufwerk (Gerät 1 und 2):
+
+* **Lampe und Datei** — die Lampe leuchtet, solange das Band läuft. Darunter stehen
+  die Seite (A oder B) und die Kopfstelle (`12,3 von 90,0 mm, 4 Blöcke`).
+* **Einlegen…** legt eine `.k52`-Datei ein und **bindet** sie: was das Programm
+  schreibt, landet nach einer Schreibpause in der Datei, wie bei einer Diskette. Eine
+  Datei, die es noch nicht gibt, wird als leere Kassette angelegt.
+* **Neue** legt eine leere Kassette ohne Datei ein (sie bleibt im Speicher und wird
+  nicht gemerkt). **Auswerfen** schreibt die Datei zurück und nimmt die Kassette
+  heraus; läuft das Band oder hat der Rechner das Gerät reserviert, geht es nicht.
+* **Wenden** dreht die Kassette (Seite A ↔ B), nur bei stehendem Band.
+* **Seite A / B schreibgeschützt** — der Schreibschutz je Seite.
+
+Gemerkt werden je Laufwerk Datei und Schreibschutz; beim nächsten Start wird die
+Kassette wieder eingelegt (eine fehlende Datei entsteht leer neu). Die Bänder
+überstehen ein Rückstellen des Rechners, aber keinen Zwischenstand (*Maschine ▸
+Zwischenstand* sichert die Karte nicht). Für die Kassette gibt es kein
+Tastenkürzel.
+
 ## Rechtsklick auf das Bild: Text kopieren, Zwischenablage einfügen
 
 Das Menü der rechten Maustaste auf dem Bildschirm gibt es bei **allen** Maschinen:
@@ -745,7 +783,7 @@ Alles, was man einstellt, landet fortlaufend in
 kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
 zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
 Takt, Modell, RAM-Disk (samt Stand-by), Lochstreifen-Karte samt Leser- und
-Stanzerdatei, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
+Stanzerdatei, Kassetten-Karte samt den Dateien beider Laufwerke, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
 (samt dem, was lief), Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.
@@ -1165,7 +1203,7 @@ die *Betriebsart*. Was anders ist:
 * **Bootweg** — Hardwaretest, „U880-Softwaremonitor … Press RETURN", RETURN, danach bootet MON8
   von der eingelegten UDOS-Systemdiskette (A:). Mit 16-Bit-Karte startet `x` bzw. die
   Koppelsoftware von UDOS den U8000-Monitor an tty1.
-* Eine **RAM-Disk** (RAF) und den **Lochstreifen** gibt es am P8000 nicht; die Einstellungen
+* Eine **RAM-Disk** (RAF), den **Lochstreifen** und die **Kassette** gibt es am P8000 nicht; die Einstellungen
   bieten sie dort nicht an.
 
 ### Das Originalterminal und der Mehrplatzbetrieb

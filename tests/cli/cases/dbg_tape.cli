@@ -1,0 +1,14 @@
+# k1520dbg --tape-card (Entwurf 29, AP K5): Kassettenkarte K5020 auf 30H, Befehl `tape`
+# zeigt die Karte mit zwei leeren Geraeten; Blockliste ohne Kassette meldet das.
+tool:    k1520dbg
+disk:    cpa_cpa780_k5601_clock.img
+run:     --tape-card %DISK%
+stdin:
+  tape
+  tape 1
+  q
+expect:  K5020 Basis 30H
+expect:  Geraet 1 (K5200-38): keine Kassette
+expect:  Geraet 2 (K5200-38): keine Kassette
+expect:  Geraet 1: keine Kassette
+forbid:  keine Kassettenkarte gesteckt

@@ -11,3 +11,4 @@ expect:  [3] watch-rw [6009..6009]
 expect:  [4] break-read [600A..600A]
 expect:  [5] break-rw [600B..600C] != 00
 expect:  keine RAF gesteckt
+expect:  keine Kassettenkarte gesteckt

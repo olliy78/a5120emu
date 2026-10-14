@@ -197,6 +197,8 @@ protected:
     // anderen Maschinen nach dem Anlegen, vor dem ersten Lauf gesteckt, hinten in der Kette.
     K1520Bus& systemBus() override { return bus_; }
     uint32_t  k6022TaktHz() const override { return cpuHz(); }
+    /// 30H–37H liegt am PC 1715 unter LT107 (2CH–33H) und BWS (34H): Ausweichbasis D0H (nur mechanisch, Entwurf 29 §2).
+    int       k5020Basis() const override { return 0xD0; }
 
 private:
     void resetHardware();

@@ -38,6 +38,7 @@ boot_trace [DISK] [optionen]
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-/Loaded-code-Histogramm, VRAM-Schreibzähler, 80-Spalten-VRAM-Textdump) |
 | `--raf <typ>` | RAM-Floppy (`raf128`\|`raf512`\|`raf2m`\|`none`) vor dem ersten Lauf stecken, an allen Maschinen (§10) |
 | `--ptape` | Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) vor dem ersten Lauf stecken, an allen Maschinen (§10a) |
+| `--tape <k52>` / `--tape2 <k52>` / `--tape-card` | Kassettenkarte K5020 (zwei K5200; A5120/PRG 710 30H, K8915 D0H) vor dem ersten Lauf stecken; `.k52` an Gerät 1 bzw. 2 binden (fehlende Datei = leere Kassette), `--tape-card` nur die Karte (`doc/merkposten/kassette.md`) |
 | `--until <cond>` | **anhalten, sobald `<cond>` gilt** (läuft über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann Report (§3) |
 | `--coverage [file]` | **Code-Coverage**: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl; mit `file` zusätzlich CSV `cpu,pc,hits` (§4) |
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |

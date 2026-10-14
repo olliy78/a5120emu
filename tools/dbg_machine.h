@@ -83,6 +83,20 @@ inline bool steckeK6022(K1520Machine& m, bool an, std::string& err) {
     return true;
 }
 
+/**
+ * @brief Steckt die Kassettenkarte K5020 (`--tape`, Entwurf 29 AP K5) in @p m, wenn @p an, und
+ *        bindet ggf. `.k52`-Dateien an Gerät 1/2 (@p d1/@p d2; fehlende Datei = leere Kassette).
+ */
+inline bool steckeK5020(K1520Machine& m, bool an, const std::string& d1, const std::string& d2,
+                        std::string& err) {
+    if (!an) return true;
+    if (!m.installK5020()) { err = m.k5020Fehler(); return false; }
+    const std::string* d[2] = {&d1, &d2};
+    for (int i = 0; i < 2; ++i)
+        if (!d[i]->empty() && !m.k5020()->laufwerk(i).dateiBinden(*d[i], err)) return false;
+    return true;
+}
+
 inline const char* rafName(RAF::Typ t) {
     return t == RAF::Typ::RAF128 ? "RAF 128" : t == RAF::Typ::RAF2M ? "RAF-2M" : "RAF 512";
 }

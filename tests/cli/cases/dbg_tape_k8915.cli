@@ -1,0 +1,9 @@
+# --tape-card am K8915: Basis D0H (Entwurf 29 §2).
+tool:    k1520dbg
+disk:    k8915scpx_boot1.hfe
+run:     --machine k8915 --tape-card %DISK%
+stdin:
+  tape
+  q
+expect:  K5020 Basis D0H
+forbid:  keine Kassettenkarte gesteckt

@@ -263,6 +263,7 @@ void Pc1715Machine::resetHardware()
         w.dma.setReady(!w.fdc.drq());
     }
     k6022Reset();            // K6022 (gesteckt?): PIOs; Band und Stanzband bleiben
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurück, Bänder bleiben liegen
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
@@ -441,6 +442,7 @@ int Pc1715Machine::run(int max_cycles)
         if (kbd_rest_ >= 32) { kbd_.run(kbd_rest_); kbd_rest_ = 0; }
         bool dirty = zre_.clockTick(used);
         dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
+        dirty |= k5020Takt(used);   // Kassette (gesteckt?)
         // Schnittstellen nach außen: der Wandler arbeitet nur alle 1/16 Zeichenzeit.
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
@@ -455,6 +457,7 @@ int Pc1715Machine::run(int max_cycles)
     }
     lw_.autoFlush(total_cycles_);
     k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
+    k5020AutoFlush();   // Kassettendateien nach der Schreibpause
     return max_cycles - remaining;
 }
 
@@ -506,6 +509,7 @@ int Pc1715Machine::runW(int max_cycles)
         bool dirty = zre_.clockTick(used);
         dirty |= w.ctc2.clockTick(used);
         dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
+        dirty |= k5020Takt(used);   // Kassette (gesteckt?)
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
             dirty |= zre_.nimmSeriellGeaendert();
@@ -518,5 +522,6 @@ int Pc1715Machine::runW(int max_cycles)
     }
     lw_.autoFlush(total_cycles_);
     k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
+    k5020AutoFlush();   // Kassettendateien nach der Schreibpause
     return max_cycles - remaining;
 }

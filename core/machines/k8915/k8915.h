@@ -239,6 +239,7 @@ public:
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
 protected:
+    int k5020Basis() const override { return 0xD0; }   // K8915: D0H–D7H (Entwurf 29 §2)
     K1520Bus& systemBus() override { return bus_; }
 
 private:

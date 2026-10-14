@@ -1,0 +1,8 @@
+# k1520tape bootband weist ein Programm ohne 'SYL' am Anfang ab (das Lade-ROM wuerde es verwerfen).
+tool:   k1520tape
+tmpfile band.k52:
+file boot.bin:
+  kein Bootprogramm
+run:    bootband %boot.bin% %band.k52%
+expect: SYL
+exit:   1
