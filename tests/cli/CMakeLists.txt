@@ -73,6 +73,12 @@ foreach(_prog IN LISTS _cpm_programme)
         TIMEOUT 180 SKIP_RETURN_CODE 77 LABELS "cli;fast")
 endforeach()
 
+# SCPX-Prüfprogramm KMBGTEST (AP K8, mit KMBG.REL gebunden): .com passt zur Quelle.
+add_test(NAME cli_kmbgtest_com_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/kassette/kmbgtest/build.py" --check)
+set_tests_properties(cli_kmbgtest_com_passt_zur_quelle PROPERTIES
+    TIMEOUT 180 SKIP_RETURN_CODE 77 LABELS "cli;fast")
+
 # Kassetten-Bootprogramm BANDTEST (AP K7): .bin passt zur Quelle, das eingecheckte Bootband
 # passt zur .bin (k1520tape bootband, bytegleich).
 add_test(NAME cli_bandtest_bin_passt_zur_quelle

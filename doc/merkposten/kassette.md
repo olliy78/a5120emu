@@ -21,8 +21,10 @@ Stand/Karten `doc/design/32_...`, Abschrift `doc/kassette/k5020.md`, `treiber.md
 | 6 | **Laufwerke 0/1 = Geräte 1/2 (X3/X4).**  `k1520_tape_load` BINDET die `.k52` (fehlende Datei = leere Kassette, sofort angelegt); `_new` legt eine Kassette ohne Datei ein; Auswerfen schreibt vorher und scheitert bei reserviertem/laufendem Gerät. | `py_tape_api` |
 | 7 | **AEB-Polarität:** Bit 7 der Steuer-PIO A = 1 → Magnetband unter der Lichtschranke, 0 → AEB aktiv (Vorspann/Marke); `k5020.md` ist berichtigt, `treiber.md` §3.1 maßgeblich. | `K5020Test.AebFolgtDemAngewaehltenGeraet...` |
 | 8 | **Gastprogramm im Test:** ISRs dürfen sich nicht überlappen (kIsrA 0x4200, kIsrB 0x4280) und die Hauptschleife wartet **ohne HALT** auf das Fertigmerkmal (Wettlauf zwischen Abfrage und ISR). | `K5020Maschine.*_Z80...` |
+| 9 | **`KMBG.REL` (SCPX) braucht eine zurückgespulte Kassette**: steht sie im Vorspann, fährt KMBG mit Arbeitsgeschwindigkeit los und wartet nur 65 536 × 92 Takte = **2,45 s** auf das Magnetband (KMBG 048E–04A4, Modul-relativ), sonst Status 04.  Bei 381 mm/s sind das ≈ 0,9 m — der 1-m-Vorspann des Kernmodells (`Geometrie::vorspann_um` [?]) ist ab Position 0 nicht zu schaffen; nach `UMS` (Lichtschranke kurz im Vorspann) geht es.  Der Test spult deshalb vorher in einem eigenen `KassettenLaufwerk` zurück.  Ob der Vorspann kürzer sein müsste oder eine neue Kassette nicht am Vorspannanfang liegt, ist offen [?]. | `ScpxKmbg.SchreibtUndLiestEinenBlock` |
 
 ## Offen
 
-- Oberfläche (K9), CLI `k1520tape` (K6, fertig), Bootband (K7), SCPX/`KMBG.REL` (K8), MC80 (M7).
+- Oberfläche (K9), CLI `k1520tape` (K6, fertig), Bootband (K7), SCPX/`KMBG.REL` (K8, fertig), MC80 (M7).
+- Vorspannlänge/Lage einer frisch eingelegten Kassette gegen die KMBG-Frist 2,45 s (Festlegung 9) [?].
 - Stellung in der Interruptkette am A5120/K8915/PRG [?] — ohne Gasttreiber unbelegt.

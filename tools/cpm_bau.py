@@ -46,7 +46,7 @@ class Programm:
     ``;%INCLUDE datei.inc`` der Quelle werden dann durch deren Inhalt ersetzt.
     """
 
-    def __init__(self, name, ordner, vorstufe=None, endung='com'):
+    def __init__(self, name, ordner, vorstufe=None, endung='com', module=()):
         if len(name) > 8:
             raise ValueError(f"'{name}' ist kein CP/M-8.3-Name")
         self.name = name.lower()
@@ -56,6 +56,11 @@ class Programm:
         # bei 0100H laufen (z. B. das Kassetten-Bootprogramm, .PHASE 0400H): der
         # Inhalt ist derselbe — LINKMT legt ab 0100H ab, ausgefuehrt wird woanders.
         self.endung = endung
+        # Fremde Microsoft-REL-Module, die mitgebunden werden (z. B. die
+        # Robotron-Kassettenbibliothek KMBG.REL).  Sie werden als <NAME>.ERL in
+        # build/ gelegt (LINKMT liest dasselbe Format unter der Endung .ERL)
+        # und hinter dem Hauptmodul angegeben.
+        self.module = list(module)
 
     @property
     def quelle(self):
@@ -166,8 +171,13 @@ def baue(p, build_dir, ziel):
     if not os.path.isfile(_klein(build_dir, p.name, 'erl')):
         raise RuntimeError("M80 hat keine .ERL erzeugt.")
 
-    log(f"\n[2] LINKMT: {up}.ERL -> {up}.COM (Ladeadresse {LOADADDR}H)")
-    run([cparun, 'linkmt', f'{up}={up}/p:{LOADADDR}'], cwd=build_dir)
+    namen = [up]
+    for m in p.module:
+        stem = os.path.splitext(os.path.basename(m))[0].upper()
+        shutil.copyfile(m, os.path.join(build_dir, f'{stem}.ERL'))
+        namen.append(stem)
+    log(f"\n[2] LINKMT: {','.join(namen)} -> {up}.COM (Ladeadresse {LOADADDR}H)")
+    run([cparun, 'linkmt', f'{up}={",".join(namen)}/p:{LOADADDR}'], cwd=build_dir)
     com = _klein(build_dir, p.name, 'com')
     if not os.path.isfile(com):
         raise RuntimeError("LINKMT hat keine .COM erzeugt.")

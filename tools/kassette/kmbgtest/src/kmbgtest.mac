@@ -1,0 +1,175 @@
+	TITLE	'KMBGTEST - Block schreiben/lesen mit KMBG.REL (SCPX, A5120)'
+	.Z80
+;
+; kmbgtest.mac - Pruefprogramm fuer die Robotron-Kassettenbibliothek
+;                KMBG.REL unter SCPX am A5120 mit AKB K5020 (AP K8,
+;                Entwurf 29).  Schreibt auf Laufwerk 1 einen Block,
+;                setzt das Band um einen Block zurueck, liest ihn wieder
+;                und vergleicht.
+;
+; Aufrufschnittstelle wie im FEX (doc/kassette/fex/kassrout.mac):
+;   C = Befehl (Bit 6 = LW 2, Bit 5 = rueckwaerts), DE = Puffer,
+;   HL = Blocklaenge;  zurueck A = Status, HL = gelesene Bytes
+;   (einschliesslich Prae-/Postambel und CRC).  Statusbits:
+;   doc/kassette/treiber.md §4.9.  Befehle: 15H reservieren, 02H Block
+;   schreiben, 32H Block zurueck, 01H Block lesen, 16H freigeben.
+;
+; Ausgabe (fuer den Test ScpxKmbg.SchreibtUndLiestEinenBlock):
+;   KMBGTEST RES=ss SCHR=ss ZURUECK=ss LESEN=ss LAENGE=hhhh FREI=ss
+;   KMBGTEST OK            bzw.   KMBGTEST FEHLER
+;
+; Bau:   python3 tools/kassette/kmbgtest/build.py  (M80 + LINKMT mit
+;        doc/kassette/fex/KMBG.REL, tools/cpm_bau.py)
+;
+; Lizenz: MIT (dieses Programm; KMBG.REL ist Robotron-Software)
+;
+	EXTRN	KMBG
+;
+BDOS	EQU	5
+LEN	EQU	128		; Blocklaenge (Daten)
+;
+	CSEG
+START:	LD	SP,STAPEL
+	LD	DE,TKOPF
+	CALL	TEXT
+;
+; Schreibpuffer mit einem Muster fuellen: Byte i = 7*i + 3
+	LD	HL,WPUF
+	LD	B,LEN
+	LD	A,3
+FUELL:	LD	(HL),A
+	INC	HL
+	ADD	A,7
+	DJNZ	FUELL
+;
+	LD	C,15H		; Laufwerk 1 reservieren
+	CALL	AUFTR
+	LD	(SRES),A
+;
+	LD	C,02H		; Block schreiben
+	LD	DE,WPUF
+	LD	HL,LEN
+	CALL	KMBG
+	LD	(SSCHR),A
+;
+	LD	C,32H		; einen Block zurueck
+	CALL	AUFTR
+	LD	(SZUR),A
+;
+	LD	C,01H		; Block lesen
+	LD	DE,RPUF
+	LD	HL,LEN
+	CALL	KMBG
+	LD	(SLES),A
+	LD	(LLES),HL
+;
+	LD	C,16H		; Laufwerk freigeben
+	CALL	AUFTR
+	LD	(SFREI),A
+;
+; Ergebniszeile
+	LD	DE,TRES
+	CALL	TEXT
+	LD	A,(SRES)
+	CALL	HEX2
+	LD	DE,TSCHR
+	CALL	TEXT
+	LD	A,(SSCHR)
+	CALL	HEX2
+	LD	DE,TZUR
+	CALL	TEXT
+	LD	A,(SZUR)
+	CALL	HEX2
+	LD	DE,TLES
+	CALL	TEXT
+	LD	A,(SLES)
+	CALL	HEX2
+	LD	DE,TLAE
+	CALL	TEXT
+	LD	A,(LLES+1)
+	CALL	HEX2
+	LD	A,(LLES)
+	CALL	HEX2
+	LD	DE,TFREI
+	CALL	TEXT
+	LD	A,(SFREI)
+	CALL	HEX2
+	LD	DE,TNZ
+	CALL	TEXT
+;
+; Urteil: Schreiben und Lesen ohne Fehlerbits (Bandmarke/AEB/CRC/Laenge/
+; nicht bereit), Laenge = LEN + 4, Daten gleich
+	LD	A,(SSCHR)
+	LD	B,A
+	LD	A,(SLES)
+	OR	B
+	JR	NZ,FEHLER
+	LD	HL,(LLES)
+	LD	DE,LEN+4
+	OR	A
+	SBC	HL,DE
+	JR	NZ,FEHLER
+	LD	HL,WPUF
+	LD	DE,RPUF
+	LD	B,LEN
+VGL:	LD	A,(DE)
+	CP	(HL)
+	JR	NZ,FEHLER
+	INC	HL
+	INC	DE
+	DJNZ	VGL
+	LD	DE,TOK
+	JR	ENDE
+FEHLER:	LD	DE,TFEHL
+ENDE:	CALL	TEXT
+	JP	0		; Warmstart
+;
+; Auftrag ohne Daten (reservieren, freigeben, Block zurueck)
+AUFTR:	LD	DE,RPUF
+	LD	HL,LEN
+	JP	KMBG
+;
+; Text bis '$' ausgeben
+TEXT:	LD	C,9
+	JP	BDOS
+;
+; A als zwei Hexziffern ausgeben
+HEX2:	PUSH	AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	CALL	HEX1
+	POP	AF
+HEX1:	AND	0FH
+	ADD	A,90H
+	DAA
+	ADC	A,40H
+	DAA
+	LD	E,A
+	LD	C,2
+	JP	BDOS
+;
+TKOPF:	DB	0DH,0AH,'KMBGTEST V1',0DH,0AH,'$'
+TRES:	DB	'KMBGTEST RES=$'
+TSCHR:	DB	' SCHR=$'
+TZUR:	DB	' ZURUECK=$'
+TLES:	DB	' LESEN=$'
+TLAE:	DB	' LAENGE=$'
+TFREI:	DB	' FREI=$'
+TNZ:	DB	0DH,0AH,'$'
+TOK:	DB	'KMBGTEST OK',0DH,0AH,'$'
+TFEHL:	DB	'KMBGTEST FEHLER',0DH,0AH,'$'
+;
+SRES:	DB	0
+SSCHR:	DB	0
+SZUR:	DB	0
+SLES:	DB	0
+SFREI:	DB	0
+LLES:	DW	0
+WPUF:	DS	LEN
+RPUF:	DS	LEN+8		; KMBG legt bis zu LEN+4 Bytes ab (Reserve)
+	DS	128
+STAPEL	EQU	$
+;
+	END	START
