@@ -119,7 +119,8 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     Prg710Machine m(cfg);
     { std::string err;
       if (!dbgm::steckeRaf(m, o.raf, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
-      if (!dbgm::steckeK6022(m, o.ptape, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
+      if (!dbgm::steckeK6022(m, o.ptape, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; }
+      if (!dbgm::steckeK5020(m, o.tape, o.tape1, o.tape2, err)) { fprintf(stderr, "--tape: %s\n", err.c_str()); return 2; } }
     m.powerOn();
     const char* name_m = v1 ? "PRG 710-1" : "PRG 710";
     auto rd = [&](uint16_t a) { return m.memReadDebug(a); };
