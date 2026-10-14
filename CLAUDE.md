@@ -595,6 +595,19 @@ Vertrag; der Stanzer wird an seine Datei **gebunden** und schreibt nach 0,5 s St
 Maschinenzeit zurück.  Kasten „Lochstreifen“ nur mit Karte, kein Kürzel, nicht im Save-State.
 **Vor Arbeiten daran: `doc/merkposten/lochstreifen.md` lesen**; Entwurf `doc/design/23_lochstreifen.md`.
 
+## In Planung (Zweig `kassette_mc80`): Kassette K5020/K5200, frühe A5120, MC80 → `mc80emu`
+
+Noch **nichts umgesetzt** (Stand 2026-10-13).  Entwürfe **29** (Kassette als steckbare Option wie
+der Lochstreifen, A5120 30H–37H / K8915 D0H, nicht im Save-State), **30** (A5120 „5¼″ alt“ mit
+K7023 16×64 + K3525 + K7636, dann „KMBG“, 8″), **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`,
+`K1520_MACHINE_MC80 = 6`); **Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`**
+(Spielregeln §0, Stand §2, AP-Karten §4–6).  Quellen liegen im Repo: `doc/kassette/`, `doc/a5120_alt/`,
+`doc/mc80/`, `doc/EPROMS/{MC80,K5120,K7023,K5261,A5130}`, `doc/original_docs/` (+ `mc80/`).  Drei
+Befunde, die man kennen muss: **das vorhandene Lade-ROM bootet schon von Kassette** (`zre.prn`
+027E–03AF = K5020-Weg, bisher „Sekundär-Controller“ genannt); **CP/A 25.09.89 kann K7023 (BAB1)
+und K7636 ohne Neugenerierung** (Port 0AH Bit 6); **Belegungsplan + Codetabellen der K7636** stehen
+in `K7634-36-Serviceschaltplaene.pdf` S. 8 ff. — ein Tastatur-ROM-Abzug ist nicht nötig.
+
 ## Boot-ROM debugging workflow
 
 Der volle CP/A-Kaltstart läuft (Boot-ROM → SYL-Lader → Zweitlader → CP/A-Bootsystem →

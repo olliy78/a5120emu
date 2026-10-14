@@ -1,0 +1,337 @@
+;Menue zur Handbedienung
+menue:  ld      de, sttxt               ;Ueberschrift u. Menue ausgeben
+		ld      c, straus
+		call    bdos
+;
+;************ STATUS *********************
+;Statuszeile erzeugen
+;gemaess "Anleitung fuer den Systemprogrammierer" liegt auf $de38 die
+;aktuelle Kursorposition, die dann auch entsprechend gesetzt werden kann
+;in Zeile 24 wird bei Bedarf eine Fehlermeldung ausgegeben
+stprint:ld      hl, (curpos)            ;SCPX aktuelle Kursorposition
+		ld      (cmerk), hl             ;merken
+		ld      hl, zeile21             ;21. Zeile setzen
+		ld      (curpos), hl
+		ld      e, curaus               ;Kursor ausschalten
+		ld      c, bsaus
+		call    bdos
+;Meldung ausgeben
+		ld      de, sttxt2              ;LW  Status Blocklaenge Disk
+		ld      c, straus
+		call    bdos
+;
+		ld      a, (aktklw)             ;akt. Kass.LW darstellen
+		ld      e, a
+		ld      c, bsaus
+		call    bdos
+		ld      de, sttxt3
+		ld      c, straus
+		call    bdos
+;
+		ld      a, (status)             ;akt. Statuswert holen
+		call    atoa                    ;und als Hexwert ausgeben
+		ld      e, "h"
+		ld      c, bsaus
+		call    bdos
+;
+		ld      e, "="                  ;Gleichheitszeichen ausgeben
+		ld      c, bsaus
+		call    bdos
+;
+;Status als Binaerwert ausgeben
+		ld      a, (status)             ;Status holen
+		call    stap
+		ld      e, "b"
+		ld      c, bsaus
+		call    bdos
+;
+;Blocklaenge ausgeben
+		ld      de, sttxt4
+		ld      c, straus
+		call    bdos
+		ld      hl, (kpusol)            ;Solllaenge
+		call    printhl
+		ld      de, sttxt5
+		ld      c, straus
+		call    bdos
+		ld      hl, (kpulen)            ;Istlaenge
+		call    printhl
+;Diskettendateistatus ausgeben
+		ld      de, sttxt6
+		ld      c, straus
+		call    bdos
+;------>
+;hier die Diskettendarstellung einfuegen
+;------>
+		ld      de, crlf
+		ld      c, straus
+		call    bdos
+;
+		ld      a, (status)
+		and     00001000b               ;Bit4=1 --> R/W-Fehler
+		cp      0
+		jr      z, f2
+		ld      de, ftxt2
+		jr      f1
+f2:     ld      a, (status)
+		and     01000000b               ;Bit6=1 --> Klarsichtband
+		cp      0
+		jr      z, f3
+		ld      de, ftxt1
+		jr      f1
+f3:     ld      a, (status)
+		and     00000100b               ;Bit2=1 --> Geraet nicht bereit
+		cp      0
+		jr      z, f4
+		ld      de, ftxt3
+		jr      f1
+f4:     ld      a, (status)
+		and     00100000b               ;Bit5=1 --> Bandmarke erkannt
+		cp      0
+		jr      z, f5
+		ld      de, ftxt4
+		jr      f1
+f5:		ld      de, ftxt0
+f1:		ld      c, straus
+		call    bdos
+;
+;alte Kursorposition wiederherstellen
+		ld      hl, (cmerk)
+		ld      (curpos), hl
+		ld      e, curein               ;Kursor einschalten
+		ld      c, bsaus
+		call    bdos
+;******** ENDE STATUS ********************
+		ld      c, cein                 ;Tastenabfrage fuer Menue
+		call    bdos
+;
+		cp      "a"                     ;Bandlaufwerk verriegeln
+		jp      nz, men1
+		call    verr
+		call    kseite                  ;Kassettenseite ermitteln
+		jp      menue
+men1:   cp      "b"                     ;Bandlaufwerk schnell rueckspulen
+		jp      nz, men2
+		call    rspu
+		jp      menue
+men2:   cp      "c"                     ;Bandlaufwerk schnell vorspulen
+		jp      nz, men3
+		call    vspu
+		jp      menue
+men3:   cp      "d"                     ;einen Block vorspulen
+		jp      nz, men4
+		call    blvor
+		jp      menue
+men4:   cp      "e"                     ;einen Block ruecksetzen
+		jp      nz, men5
+		call    blrue
+		jp      menue
+men5:   cp      "f"                     ;eine Bandmarke vorspulen
+		jp      nz, men6
+		call    bmvor
+		jp      menue
+men6:   cp      "g"                     ;eine Bandmarke rueckspulen
+		jp      nz, men7
+		call    bmrue
+		jp      menue
+men7:   cp      "h"                     ;einen Block lesen
+		jp      nz, men8
+		call    kpuloe                  ;Kassettenpuffer loeschen
+		ld      hl, 260                 ;maximale Blocklaenge
+		ld      (kpusol), hl            ;Puffersollspeicher
+		ld      de, kaspu1              ;Kassettenpufferadresse
+		call    blrx                    ;Blockleseroutine
+		jp      menue
+men8:   cp      "i"                     ;einen Block schreiben
+		jp      nz, men9
+		ld      hl, (kpulen)            ;real zu schreibende Pufferlaenge
+		ld      de, kaspu1              ;Pufferadresse
+		call    bltx
+		jp      menue
+men9:   cp      "j"                     ;Bandmarke schreiben
+		jp      nz, men10
+		call    bmtx
+		jp      menue
+men10:  cp      "k"                     ;Band loeschen
+		jp      nz, men11
+		call    bloe
+		jp      menue
+men11:  cp      "l"                     ;Bandlaufwerk entriegeln
+		jp      nz, men12
+		call    entr
+		jp      menue
+;*** Block auf Disk schreiben *********
+men12:  cp      "m"                     ;gelesenen Block auf Disk schreiben
+		jp      nz, men13
+		call    txnam                   ;LW, Dat.-name u. Extension eingeben
+		ld      de, fcbtx               ;Datei versuchen zu oeffnen
+		ld      c, open
+		call    bdos
+		cp      0ffh                    ;A=$ff --> Datei nicht vorhanden
+		jr      nz, men121              ;Datei bereits vorhanden
+		ld      de, fcbtx               ;wenn nicht vorhanden,
+		ld      c, datcre               ;dann anlegen
+		call    bdos
+;
+men121: ld      de, fcbtx               ;Datei vorhanden, dann
+		ld      c, datend               ;Dateiende ermitteln
+		call    bdos
+;Datei offen und bereit zum Beschreiben nach Dateiende
+		ld      hl, (kpulen)            ;Pufferlaenge holen
+		ld      a, h                    ;mehr als 256 Byte?
+		and     00000001b               ;Bit 0
+		rlca                            ;evtl. nach links schieben
+		ld      b, a                    ;B als Zaehler
+		ld      a, l                    ;max. 255 Byte
+		and     10000000b               ;hoechstwertiges Bit
+		rlca
+		add     a, b                    ;max. dreimal speichern
+;in B ist die Anzahl der Speichervorgaenge gespeichert
+		push    bc                      ;Zaehler sichern
+;nur zu Testzwecken, um Stack zu normalisieren
+		pop     bc
+;********* ############## ************************
+;hier erst einmal feststellen, ob wirklich 260 Byte insgesamt durch kmbg.rel
+;im Blockpuffer abgelegt werden, oder nur die wirklichen max. 256 Byte. Dann
+;muesste nur max. zweimal geschrieben werden.
+
+;Schreibdatei wieder schliessen
+		ld      de, fcbtx
+		ld      c, close
+		call    bdos
+		jp      menue
+;------------------
+men13:  cp      "n"                     ;ganze Kassettenseite lesen und auf Disk
+		jp      nz, men14
+
+		call    verr                    ;Band verriegeln
+		call    rspu                    ;Band rueckspulen
+
+		call    entr                    ;Laufwerk entriegeln
+
+
+
+		jp      menue
+;===========================================
+men14:  cp      "o"                     ;Blockanzeige
+		jp      nz, men15
+		ld      hl, kaspu1              ;Adresse Kassettenpuffer
+		call    banzei
+		jp      menue
+men15:  cp      "x"                     ;automatischer Betrieb
+		jp      nz, men16
+		call    rxnam
+		jp      menue
+;
+men16:  cp      "Q"                     ;Programm beenden
+		jp      nz, men17
+		ld      e, home
+		ld      c, bsaus
+		call    bdos
+		jp      exit
+;
+men17:  cp      "w"                     ;aktives Kass.LW wechseln
+		jr      nz, men172
+		ld      a, (aktklw)             ;akt. Laufwerk holen
+		cp      "1"                     ;LW 1?
+		jr      z, men171               ;nein
+		ld      a, "1"                  ;LW 2 als aktiv setzen
+		ld      (aktklw), a
+		ld      ix, btab1               ;Befehlstabelle 1 setzen
+		jr      men172
+men171: ld      a, "2"                  ;akt. Kass.LW 2 setzen
+		ld      (aktklw), a
+		ld      ix, btab2               ;Befehlstabelle 2 setzen
+men172: cp      "s"                     ;erweiterte Statusseite
+		jp      nz, men18
+;erweiterten Status als spezielle BS-Seite anzeigen
+;Status speichert die zuletzt ausgelesenen PIO 2 Ports
+;PIO 2:	Tor  A		Tor  B
+;		(sbsa)		(sbsb)
+;		0000 0000	0000 0000
+;		|			|||| || |--> AZV Aufzeichnungsverfahren
+;		|			|||| ||----> KSB =1 -> Kassettenseite B
+;		|			|||| |-----> /NIB2 nicht bereit LW2
+;		|			||||-------> /NIB1 nicht bereit LW1
+;		|			|||--------> BMS Blockmarkierungssignal
+;		|			||---------> STA Status
+;		|			|----------> ZF Zeitfehler
+;		|----------------------> AEB Anfang/Ende Band
+;alle nicht bezeichneten Bit's sind Ausgaenge
+;
+		exx
+		ex      af, af
+		ld      de, estt01
+		ld      c, straus
+		call    bdos
+;Status als 0 und 1 ausgeben
+		ld		a, (sbsa)				;Tor A
+		call    stap                    ;ausgeben
+		ld		e, "|"					;Zwischenraum darstellen
+		ld		c, bsaus
+		call	bdos2
+		ld		a, (sbsb)				;Tor B darstellen
+		call    stap
+;weitere Erlaeuterungstexte anzeigen
+		ld      de, estt02
+		ld      c, straus
+		call    bdos
+		ld      c, cein                 ;zum Beenden auf Taste warten
+		call    bdos
+		ex      af, af
+		exx
+;
+men18:	jp      menue
+;
+sttxt6: db      "   ",etx
+sttxt5: db      "  Ist:",etx
+sttxt4: db      "  Soll:",etx
+sttxt3: db   	"   ",etx
+sttxt2: db      "LW  Status         Blocklaenge           Disk",0dh,0ah,etx
+ftxt0:  db      "                                     ",etx
+ftxt1:  db      "KLARSICHTBAND ERREICHT",etx
+ftxt2:  db      "R/W-FEHLER",etx
+ftxt3:  db      "GERAET NICHT BEREIT / ZEITLIMITFEHLER",etx
+ftxt4:  db      "BANDMARKE ERKANNT",etx
+sttxt:  db      home
+		db		"Kassettenprogramm V0.1 - (C) HB - 2011/12",0dh,0ah,0ah
+		db      "a - Laufwerk verriegeln       b - schnell rueckspulen",0dh,0ah
+		db      "c - schnell vorspulen         d - einen Block vorspulen",0dh,0ah
+		db      "e - einen Block rueckspulen   f - Bandmarke vorspulen",0dh,0ah
+		db      "g - Bandmarke rueckspulen     h - einen Block lesen",0dh,0ah
+		db      "i - einen Block schreiben     j - eine Bandmarke schreiben",0dh,0ah
+		db      "k - Band loeschen             l - Bandlaufwerk entriegeln",0dh,0ah,0ah
+		db      "m - Block auf Disk schreiben  n - Kassette auf Disk",0dh,0ah
+		db      "o - Block anzeigen            w - akt. KLW wechseln",0dh,0ah
+		db      "s - erweiterter Status",0dh,0ah
+		db      "x - automatischer Betrieb    Q - Programm beenden",0dh,0ah
+		db      "Ihre Wahl bitte: ",etx
+rlwtxt: db      0dh,0ah,"Laufwerksbuchstabe : ",etx
+tlwtxt:	db      0dh,0ah,"Ausgabelaufwerk    : ",etx
+dntxt:	db		0dh,0ah,"Dateiname          : ",etx
+entxt:	db		0dh,0ah,"Extension          : ",etx
+ftxt:	db		0dh,0ah,"Datei nicht gefunden! - Taste",etx
+detxt:  db      0dh,0ah,"Kommandodatei erfolgreich verarbeitet. - Taste",etx
+dngef:  db      0dh,0ah,"Kommandodatei leer oder falsche Kommandosyntax! - Taste",etx
+quitxt: db      0dh,0ah,"Befehlsverarbeitung abgebrochen.",etx
+lertxt:	db      0dh,0ah,"Kassettenlesepuffer leer! - Taste",etx
+exist:  db      0dh,0ah,"Datei vorhanden, ueberschreiben ? (j/n): ",etx
+zeiloe: db      18h,1ah,etx
+;Texte fuer erweiterte Statusanzeige
+estt01: db      home
+		db      "Erweiterter Kassettenlaufwerksstatus",0dh,0ah,0ah
+		db		" Tor A  | Tor B  |  AEB - Anfang/Ende Band", 00dh, 00ah
+		db		"--------|--------|  HGE - hohe Geschwindigkeit = 1", 00dh, 00ah
+		db      "76543210|76543210|  TRR - Transport rueckwaerts", 00dh, 00ah
+		db		"84218421|84218421|  TRV - Transport vorwaerts", 00dh, 00ah
+		db		"--------|--------|  AWA - Auswahl Laufwerk 1 o. 2", 00dh, 00ah
+		db		"    AARR|   NN   |  RES - Reserviert LW 1 o. 2", 00dh, 00ah
+		db		"AHTTWWEE| SBIIKAA|  ZF  - Zeitfehler", 00dh, 00ah
+		db		"EGRRAASS|ZTMBBSUZ|  STA - Status", 00dh, 00ah
+		db		"BERV1212|FAS12BFV|  BMS - Blockmarkierungssignal", 00dh, 00ah, etx
+		db		"--------|--------|  NIB - negiert 'Nicht Bereit'", 00d, 00ah
+estt02: db      "|  KSB - Kassettenseite B", 00dh, 00ah
+		db      "                    AUF - =1 --> Aufzeichnen", 00dh, 00ah
+		db      "                    AZV - Aufzeichnungsverfahren", 00dh, 00ah, 00ah
+estt03: db      "zurueck mit Taste ",etx
+;

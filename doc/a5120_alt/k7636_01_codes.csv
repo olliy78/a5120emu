@@ -1,0 +1,129 @@
+pos,leitung,zeile,rechenadresse_hex,loc_a_hex,loc_b_hex,beschriftung,code_a_hex,code_b_hex,zeichen_a,zeichen_b,dauer,anmerkung
+C08,A0,Z0,00,1F0,270,K,6B,4B,k,K,,
+D08,A0,Z1,01,1F1,271,I,69,49,i,I,,
+C07,A0,Z2,02,1F2,272,J,6A,4A,j,J,,
+E08,A0,Z3,03,1F3,273,8 (,38,28,8,(,,[?] Scan druckt 3B/2B (= C10); 38/28 aus Beschriftung und K7636.03 abgeleitet
+E07,A0,Z4,04,1F4,274,7 ',37,27,7,',,
+D07,A0,Z5,05,1F5,275,U,75,55,u,U,,
+B06,A0,Z6,06,1F6,276,N,6E,4E,n,N,,
+B07,A0,Z7,07,1F7,277,M,6D,4D,m,M,,
+-,A8,Z0,08,1F8,278,(nicht belegt),00,00,,,,
+-,A8,Z1,09,1F9,279,(nicht belegt),00,00,,,,
+-,A8,Z2,0A,1FA,27A,(nicht belegt),00,00,,,,
+E17,A8,Z3,0B,1FB,27B,DEL,1B,1B,,,,Scan druckt E12 (Druckfehler); CP/A: 1B = DEL (spcdel)
+E16,A8,Z4,0C,1FC,27C,INS MODE,A8,A8,,,,CP/A: A8 = Ersatz numerisches Minus (zblmin)
+D15,A8,Z5,0D,1FD,27D,(nicht bestueckt),00,00,,,,
+D16,A8,Z6,0E,1FE,27E,INS LINE,03,03,,,,CP/A: 03 = spcins
+D17,A8,Z7,0F,1FF,27F,DEL LINE,13,13,,,,CP/A: 13 = ESC-Ersatz
+C17,A1,Z0,10,200,280,->| (Tab rechts),01,01,,,,CP/A: kcurwr
+B17,A1,Z1,11,201,281,Cursor rechts,07,07,,,D,
+C06,A1,Z2,12,202,282,H,68,48,h,H,,
+A17,A1,Z3,13,203,283,(nicht bestueckt),00,00,,,,
+E06,A1,Z4,14,204,284,6 &,36,26,6,&,,
+D06,A1,Z5,15,205,285,Y,79,59,y,Y,,
+B05,A1,Z6,16,206,286,B,62,42,b,B,,
+A05,A1,Z7,17,207,287,Leertaste (A02-A08),20,20,,,D,
+A59,A9,Z0,18,208,288,Wahltaste 3 (LED A58),A3,A3,,,,CP/A: SEL3
+A57,A9,Z1,19,209,289,S9,C9,C9,,,,
+A56,A9,Z2,1A,20A,28A,S2,C2,C2,,,,
+A54,A9,Z3,1B,20B,28B,S (3fach-Taste A54-C54),C0,C0,,,,
+A53,A9,Z4,1C,20C,28C,000,12,12,,,,
+A52,A9,Z5,1D,20D,28D,00,11,11,,,,
+A51,A9,Z6,1E,20E,28E,0 (Ziffernblock),30,30,0,0,,
+A50,A9,Z7,1F,20F,28F,(nicht bestueckt),00,00,,,,
+C16,A2,Z0,20,210,290,Cursor hoch,04,04,,,D,
+B16,A2,Z1,21,211,291,Cursor Home (Pfeil schraeg),0C,0C,,,,CP/A: kcurpu
+C05,A2,Z2,22,212,292,G,67,47,g,G,,
+A16,A2,Z3,23,213,293,Cursor runter,05,05,,,D,
+E05,A2,Z4,24,214,294,5 %,35,25,5,%,,Scan druckt E06 (Druckfehler)
+D05,A2,Z5,25,215,295,T,74,54,t,T,,
+B04,A2,Z6,26,216,296,V,76,56,v,V,,
+A10,A2,Z7,27,217,297,ET1 (Eingabetaste 1),FF,FF,,,,CP/A: ET1 = CR
+B59,A10,Z0,28,218,298,Wahltaste 2 (LED B58),A2,A2,,,,CP/A: SEL2
+B57,A10,Z1,29,219,299,S8,C8,C8,,,,
+B56,A10,Z2,2A,21A,29A,(nicht bestueckt),00,00,,,,
+B54,A10,Z3,2B,21B,29B,(von S1/S 3fach-Taste ueberdeckt),00,00,,,,
+B53,A10,Z4,2C,21C,29C,3 (Ziffernblock),33,33,3,3,,
+B52,A10,Z5,2D,21D,29D,2 (Ziffernblock),32,32,2,2,,
+B51,A10,Z6,2E,21E,29E,1 (Ziffernblock),31,31,1,1,,
+B50,A10,Z7,2F,21F,29F,(nicht bestueckt),00,00,,,,
+C15,A3,Z0,30,220,2A0,|<- (Tab links),0B,0B,,,,CP/A: kcurwl
+B15,A3,Z1,31,221,2A1,Cursor links,06,06,,,D,
+C04,A3,Z2,32,222,2A2,F,66,46,f,F,,
+E13,A3,Z3,33,223,2A3,|<-| (Tab-Symbol),0F,0F,,,,CP/A: Ersatz-TAB (09h)
+E04,A3,Z4,34,224,2A4,4 ¤,34,24,4,$,,"24h = Waehrungszeichen ¤ (Beschriftung), CP/A-Zeichensatz [?]"
+D04,A3,Z5,35,225,2A5,R,72,52,r,R,,
+B03,A3,Z6,36,226,2A6,C,63,43,c,C,,
+A15,A3,Z7,37,227,2A7,Return-Pfeil,DA,0A,,,,"[?] a-Spalte druckt DA, b-Spalte 0A; K7636.03 druckt 0A/0A, CP/A kennt 0A (kcurpd) -> 0A erwartet"
+C59,A11,Z0,38,228,2A8,Wahltaste 1 (LED C58),A1,A1,,,,CP/A: SEL1
+C57,A11,Z1,39,229,2A9,S7,C7,C7,,,,
+C56,A11,Z2,3A,22A,2AA,S3,C3,C3,,,,
+C54,A11,Z3,3B,22B,2AB,S1,C1,C1,,,,
+C53,A11,Z4,3C,22C,2AC,6 (Ziffernblock),36,36,6,6,,
+C52,A11,Z5,3D,22D,2AD,5 (Ziffernblock),35,35,5,5,,
+C51,A11,Z6,3E,22E,2AE,4 (Ziffernblock),34,34,4,4,,
+C50,A11,Z7,3F,22F,2AF,- (Ziffernblock),2D,2D,-,-,,
+C12,A4,Z0,40,230,2B0,] },5D,7D,],},,
+D12,A4,Z1,41,231,2B1,[ {,5B,7B,[,{,,
+C03,A4,Z2,42,232,2B2,D,64,44,d,D,,
+E12,A4,Z3,43,233,2B3,^ ~ (Ueberstrich),5E,7E,^,~,,
+E03,A4,Z4,44,234,2B4,3 #,33,23,3,#,,
+D03,A4,Z5,45,235,2B5,E,65,45,e,E,,
+B02,A4,Z6,46,236,2B6,X,78,58,x,X,,
+A11,A4,Z7,47,237,2B7,(nicht bestueckt),00,00,,,,
+D59,A12,Z0,48,238,2B8,Wahltaste 0 (LED D58),A0,A0,,,,CP/A: SEL0 (CAPS-Lock-Selektor)
+D57,A12,Z1,49,239,2B9,S6,C6,C6,,,,
+D56,A12,Z2,4A,23A,2BA,S5,C5,C5,,,,
+D54,A12,Z3,4B,23B,2BB,S4,C4,C4,,,,
+D53,A12,Z4,4C,23C,2BC,9 (Ziffernblock),39,39,9,9,,
+D52,A12,Z5,4D,23D,2BD,8 (Ziffernblock),38,38,8,8,,
+D51,A12,Z6,4E,23E,2BE,7 (Ziffernblock),37,37,7,7,,
+D50,A12,Z7,4F,23F,2BF,CE,19,19,,,,CP/A: spcce
+C11,A5,Z0,50,240,2C0,* :,3A,2A,:,*,,
+D11,A5,Z1,51,241,2C1,@ `,40,60,@,`,,Kappe: @ mit Schraegstrich (60h = Gravis)
+C02,A5,Z2,52,242,2C2,S,73,73,s,s,,[?] Scan druckt b=73 (auch bei K7636.03); 53 erwartet
+E11,A5,Z3,53,243,2C3,- =,2D,3D,-,=,,
+E02,A5,Z4,54,244,2C4,"2 """,32,22,2,"""",,
+D02,A5,Z5,55,245,2C5,W,77,57,w,W,,
+B01,A5,Z6,56,246,2C6,Z,7A,5A,z,Z,,
+B10,A5,Z7,57,247,2C7,/ ?,2F,3F,/,?,,
+F59,A13,Z0,58,248,2C8,Betriebsbereitschaft (Ein/Aus),00,00,,,,"wirkt ueber /SA (BD S. 11: Bruecken E1:1..E1:6), kein Code"
+F57,A13,Z1,59,249,2C9,"(Steuertaste-Platz, Abdeckbaustein)",80,01,,,,"Codes = Steuertaste (BD 4.6.4: Tastenklick aus/ein bzw. Signal), im Belegungsplan nicht bestueckt"
+F56,A13,Z2,5A,24A,2CA,M,10,10,,,,CP/A: 10 = MON (pfec)
+F54,A13,Z3,5B,24B,2CB,CI,AF,AF,,,,CP/A: AF = CI (PF15/Stop)
+F53,A13,Z4,5C,24C,2CC,(LED/Fehlerlampe),00,00,,,,
+F52,A13,Z5,5D,24D,2CD,(LED/Fehlerlampe),00,00,,,,
+F51,A13,Z6,5E,24E,2CE,(LED/Fehlerlampe),00,00,,,,
+-,A13,Z7,5F,24F,2CF,(nicht belegt),00,00,,,,
+C10,A6,Z0,60,250,2D0,; +,3B,2B,;,+,,
+D10,A6,Z1,61,251,2D1,P,70,50,p,P,,
+C01,A6,Z2,62,252,2D2,A,61,41,a,A,,
+E10,A6,Z3,63,253,2D3,0 _,30,5F,0,_,D,b-Code 5F steht in der Dauerfunktionsliste
+E01,A6,Z4,64,254,2D4,1 !,31,21,1,!,,
+D01,A6,Z5,65,255,2D5,Q,71,51,q,Q,,
+B09,A6,Z6,66,256,2D6,. >,2E,3E,.,>,,"Scan zeigt einen Punkt vor 2E (Fleck?), 2E steht nicht in der Dauerliste [?]"
+A00,A6,Z7,67,257,2D7,ET2 (Eingabetaste 2),FE,FE,,,,CP/A: ET2 = Control-Ersatz (ctlc)
+E59,A14,Z0,68,258,2D8,-,00,00,,,,
+E57,A14,Z1,69,259,2D9,-,00,00,,,,
+E56,A14,Z2,6A,25A,2DA,-,00,00,,,,
+E54,A14,Z3,6B,25B,2DB,-,00,00,,,,
+E53,A14,Z4,6C,25C,2DC,-,00,00,,,,
+E52,A14,Z5,6D,25D,2DD,-,00,00,,,,
+E51,A14,Z6,6E,25E,2DE,-,00,00,,,,
+-,A14,Z7,6F,25F,2DF,-,00,00,,,,
+C09,A7,Z0,70,260,2E0,L,6C,4C,l,L,,
+D09,A7,Z1,71,261,2E1,O,6F,4F,o,O,,
+B08,A7,Z2,72,262,2E2,", <",2C,3C,",",<,,
+E09,A7,Z3,73,263,2E3,9 ),39,29,9,),,
+E00,A7,Z4,74,264,2E4,(Beschriftung fehlt),A4,A4,,,,"[?] Code A4, im Belegungsplan keine Taste"
+D00,A7,Z5,75,265,2E5,-,00,00,,,,
+B00,A7,Z6,76,266,2E6,\ |,5C,7C,\,|,,
+C00,A7,Z7,77,267,2E7,"LOCK (Umschaltfeststeller, LED C99)",00,00,,,,"Rechenadresse 77H, selbst ohne Code"
+SL1,A15,Z0,78,268,2E8,Sonderleitung 1,A9,A9,,,,
+SL2,A15,Z1,79,269,2E9,Sonderleitung 2,AA,AA,,,,
+SL3,A15,Z2,7A,26A,2EA,Sonderleitung 3,AB,AB,,,,
+SL4,A15,Z3,7B,26B,2EB,Sonderleitung 4,AC,AC,,,,
+SL5,A15,Z4,7C,26C,2EC,Sonderleitung 5,AD,AD,,,,
+SL6,A15,Z5,7D,26D,2ED,Sonderleitung 6,AE,AE,,,,
+A99,A15,Z6,7E,26E,2EE,CTRL (nicht bestueckt),00,00,,,,Rechenadresse 7EH; im Belegungsplan keine Taste
+B11/B99,A15,Z7,7F,26F,2EF,SHIFT (zwei Tasten),00,00,,,,"Rechenadresse 7FH, selbst ohne Code"

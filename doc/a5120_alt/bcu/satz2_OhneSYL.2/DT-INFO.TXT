@@ -1,0 +1,9 @@
+BCK 40 Sp.
+SKP Hoffmann
+====================
+Datentraeger: Diskette 5,25"  DD DS
+Formatierung: 26x128x40x1
+Betriebssystem: BCU880 2.1
+Rechner: A5120?
+Herkunft: VEB Halbleiterwerk Frankfurt/Oder
+Bootfaehig: Ja

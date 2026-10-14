@@ -1,0 +1,28 @@
+29.10.2012
+
+Mit dem Programm FEX koennen unter SCPX verschiedene Kassettenformate erzeugt
+und gelesen werden. Es handelt sich um folgende Formatmoeglichkeiten:
+
+1. Basisstufe
+2. Kompaktstufe
+3. Ausbaustufe
+4. FLX K1600
+5. Freies Format
+
+Um die Unterschiede der verschiedenen Formatmoeglichkeiten zu testen, wurde
+eine ASCII-Datei aufgezeichnet, die die Zahlen 0-9 als Text enthaelt. Bei allen
+Aufzeichnungen wurde die Blocklaenge zu 20 gewaehlt und als Fuellzeichen, so
+es abgefragt wurde, $ed festgelegt. Das DKOI-Format wurde nicht getestet, da es
+sich dabei nur um eine andere Kodierungsart der Zeichen handelt und nicht um ein
+Kassettenformat.
+
+
+1. Basisstufe
+   ----------
+
+
+
+2. Kompaktstufe
+   ------------
+
+Initialisierung im Format K1600

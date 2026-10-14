@@ -1,0 +1,69 @@
+;Programm steuert ein KMB-Gerät auf Wiedergabe rueckwaerts
+;PIOs werden wie in ASS K5020 beschrieben initialisiert
+;hb 04/2015
+;V0.1
+;
+		.z80
+		aseg
+		org             0100h
+;
+;PIO-Adressen
+dadat	equ	0030h		;Daten-PIO, Port A, Daten
+dastw	equ	0032h		;Daten-PIO, Port A, Steuer
+dbdat	equ	0031h		;Daten-PIO, Port B, Daten
+dbstw	equ	0033h		;Daten-PIO, Port B, Steuer
+;
+sadat	equ	0034h		;Steuer-PIO, Port A, Daten
+sastw	equ	0036h		;Steuer-PIO, Port A, Steuer
+sbdat	equ	0035h		;Steuer-PIO, Port B, Daten
+sbstw	equ	0037h		;Steuer-PIO, Port B, Steuer
+;Steuer-PIO Portbelegung
+;Tor A	Bit 0 - Ausgang	-	/RES2	Reservieren KMBG2
+;	Bit 1 - Ausgang -	/RES1	Reservieren KMBG1
+;	Bit 2 - Ausgang -	/AWA2	Auswahl KMBG2
+;	Bit 3 - Ausgang -	/AWA1	Auswahl KMBG1
+;	Bit 4 - Ausgang -	TRV	Transport vorwaerts
+;	Bit 5 - Ausgang -	TRR	Transport rueckwaerts
+;	Bit 6 - Ausgang -	HGE	hohe Geschwindigkeit (mit TRV o. TRR)
+;	Bit 7 - Eingang -	AEB	Anfang/Ende Band Zustandssignal
+;Tor B	Bit 0 - Eingang -	AZV	Aufzeichnungsverfahren
+;	Bit 1 - Ausgang -	AUF	Aufzeichnen
+;	Bit 2 - Eingang -	KSB	Kassettenseite B
+;	Bit 3 - Eingang -	/NIB2	negiertes Signal 'nicht bereit' KMBG2
+;	Bit 4 - Eingang -	/NIB1	negiertes Signal 'nicht bereit' KMBG1
+;	Bit 5 - Eingang -	BMS	Blockmarkierungssignal
+;	Bit 6 - Eingang -	STA	Status, fehlerhafte Flusswechsel bei AUF
+;	Bit 7 - Eingang -	ZF	Zeitfehler
+;
+start:  ld      a, 00fh
+	out     (dastw), a      ;Daten PIO Port A Byte-Ausgabe
+	ld      a, 007h         ;kein Interrupt
+	out     (dastw), a
+	out     (dbstw), a      ;auch fuer PIO Port B
+	ld      a, 04fh         ;Daten PIO Port B Byte-Eingabe
+	out     (dbstw), a
+	ld      a, 0cfh         ;Steuer PIO beide Ports auf Bit-Ein/Ausgabe
+	out     (sastw), a
+	ld      a, 080h         ;Bit 7 Eingang, alle and. Ausgaenge
+	out     (sastw), a
+	ld      a, 0cfh
+	out     (sastw), a
+	ld      a, 0fdh         ;Bit 1 Ausgang, alle and. Eingaenge
+	out     (sastw), a
+;
+	ld      a, 001h         ;Kass.-LW 1 reservieren
+	out     (sadat), a
+	call    zeit            ;kurz warten
+	ld      a, 009h         ;Kass.-LW 1 angewaehlt
+	out     (sadat), a
+	call    zeit            ;kurz warten
+	ld      a, 029h         ;Transport rueckwaerts
+	out     (sadat), a
+	ret                     ;zurueck zum SCPX
+;
+zeit:   ld      b, 0ffh
+z1:     nop
+	djnz    z1
+	ret
+;
+end

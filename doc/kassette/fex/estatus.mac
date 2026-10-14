@@ -1,0 +1,626 @@
+;Kassettenansteuerungstestprogramm
+;jedes Steuersignal kann einzeln gesetzt und rueckgesetzt
+;werden, der Status wird staendig neu angezeigt
+;(C) H. Bretfeld
+;V0.1 - 08.04.2012
+;
+	.z80
+	aseg
+	org	0100h
+;
+test	equ	1			;auskommentieren bei realem Betrieb
+k8915	equ	1			;Adressen K8915, auskommentieren wenn A5120
+;
+;PIO-Grundadressen der AKB
+ifdef	k8915
+padr	equ	0d0h			;fuer K8915
+else
+padr	equ	030h			;fuer A5120
+endif
+;
+pio1ad	equ	padr+0			;PIO1 A Daten
+pio1as	equ	padr+2			;PIO1 A Steuer
+pio1bd	equ	padr+1			;PIO1 B Daten
+pio1bs	equ	padr+3			;PIO1 B Steuer
+;
+pio2ad	equ	padr+4			;PIO2 A Daten
+pio2as	equ	padr+6			;PIO2 A Steuer
+pio2bd	equ	padr+5			;PIO2 B Daten
+pio2bs	equ	padr+7			;PIO2 B Steuer
+;
+bdos	equ	5			;BDOS-Einsprungsadresse
+home    equ	0ch			;Bildschirm loeschen und Kursor Home
+etx	equ	024h			;Ende darzustellender Text
+;
+	ifndef	test
+	jp	start			;ueberspringen des Statuswortes
+	endif
+	jp	start1			;ueberspringen Statuswort+Init.-routin
+;
+status:	dw	0			;Statuswort
+;Status speichert die zuletzt ausgelesenen PIO 2 Ports
+; PIO 2:	Tor  A		Tor  B
+;		(status)			(status+1)
+;		0000 0000	0000 0000
+;		|			|||| || |--> AZV Aufzeichnungsverfahren
+;		|			|||| ||----> KSB =1 -> Kassettenseite B
+;		|			|||| |-----> /NIB2 nicht bereit LW2
+;		|			||||-------> /NIB1 nicht bereit LW1
+;		|			|||--------> BMS Blockmarkierungssignal
+;		|			||---------> STA Status
+;		|			|----------> ZF Zeitfehler
+;		|--------------------------> AEB Anfang/Ende Band
+;alle nicht bezeichneten Bit's sind Ausgaenge
+;
+;
+;***************
+;Initialisierung
+;***************
+;
+;PIO1 - Port A - Byte Ausgabe - Interruptgesteuert
+;PIO1 - Port B - Byte Eingabe - Interruptgesteuert
+;
+;PIO 2 - Steuer-PIO
+;PIO2 - Port A - Bit E/A
+;Bit 0-6 Ausgang, Bit 7 Eingang
+;
+;PIO2 - Port B - Bit E/A
+;Bit 0, 2-7 Eingang, Bit 1 Ausgang
+;
+start:	di				;Interrupt aus
+	ld	a, (0f7ebh)		;naechsten freien Platz in Interruptsaeule
+	ld	l, a
+	ld	h, 0f7h			;HL=naechste freie Adr.
+	ld	(hl), high(int1)	;PIO1A-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int1)
+	ld	a, l			;Int.-vektor PIO1 A
+	out	(pio1as), a
+	ld	a, 00fh			;Mode 0 Byte-Ausgabe
+	out	(pio1as), a
+	ld	a, 007h			;Interrupt aus
+	out	(pio1as), a
+	dec	hl
+;
+	ld	(hl), high(int2)	;PIO1B-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int2)
+	ld	a, l			;Int.-vektor PIO1 B
+	out	(pio1bs), a
+	ld	a, 04fh			;Mode 1 Byte-Eingabe
+	out	(pio1bs), a
+	ld	a, 007h			;Interrupt aus
+	out	(pio1bs), a
+	dec	hl
+;
+	ld	(hl), high(int3)	;PIO2A-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int3)
+	ld	a, l
+	out	(pio2as), a		;Int.-vektor PIO2 A
+	ld	a, 0cfh
+	out	(pio2as), a		;Mode 3 Bit-E/A
+	ld	a, 080h
+	out	(pio2as), a		;Bit 0-6 Ausg., Bit 7 Eing.
+	ld	a, 037h			;Interruptausloesung bei High
+	out	(pio2as), a		;Interruptmaske folgt
+	ld	a, 07fh			;nur Bit 7 interruptfaehig
+	out	(pio2as), a
+	dec	hl
+;
+	ld	(hl), high(int4)	;PIO2B-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int4)
+	ld	a, l
+	out	(pio2bs), a		;Int.-vektor PIO2 B
+	ld	a, 0cfh
+	out	(pio2bs), a		;Mode 3 Bit-E/A
+	ld	a, 0fdh
+	out	(pio2bs), a		;Bit 1 Ausg., alle anderen Eingang
+	ld	a, 037h			;Int. aus, OR verknuepft, Int. bei High
+	out	(pio2bs), a		;Maske folgt
+	ld	a, 01fh
+	out	(pio2bs), a		;Bit 7,6 u. 5 Interruptausloeser
+	dec	hl
+;
+	ld	a, l
+	ld	(0f7ebh), a		;Merkzelle in Interruptsaeule aktualisieren
+;
+	ei				;Interrupts zulassen
+;
+
+;Kommentarzeichen entfernen im Regulaerbetrieb
+start1:	ifndef	test
+	call	stread			;Status einlesen
+	endif
+;
+;Menue darstellen
+	ld	c, 9
+	ld	de, sttxt1
+	call	bdos			;Grundmenue darstellen
+;
+;Status als 0 und 1 ausgeben
+stap:	ld	hl, (status)		;Status holen
+	ld	a, l			;Tor A
+	ld	b, 8			;Zaehler, 8 bit darstellen
+stap2:	rla				;Bit nach CY schieben
+	jr	c, stap1
+	ld	de, ntxt		;Text fuer Nulldarstellung
+	jr	stap5
+stap1:	ld	de, etxt		;Text fuer Einsdarstellung
+stap5:	ld	c, 9
+	push	af
+	push	bc
+	push	hl
+	call	bdos			;und darstellen
+	pop	hl
+	pop	bc
+	pop	af
+	djnz	stap2			;8 Bit darstellen
+;
+	ld	de, ltxt		;Zwischenraum darstellen
+	ld	c, 9
+	push	af
+	push	bc
+	push	hl
+	call	bdos
+	pop	hl
+	pop	bc
+	pop	af
+;
+	ld	a, h			;Tor B darstellen
+	ld	b, 8
+stap3:	rla
+	jr	c, stap4
+	ld	de, ntxt
+	jr	stap6
+stap4:	ld	de, etxt
+stap6:	ld	c, 9
+	push	af
+	push	bc
+	push	hl
+	call	bdos
+	pop	hl
+	pop	bc
+	pop	af
+	djnz	stap3
+;
+	ld	de, stxt
+	ld	c, 9
+	call	bdos
+;
+	ld	c, 9
+	ld	de, sttxt2
+	call	bdos
+;
+;**** Auswertung Menueeingaben
+	ld	c, 1			;Tastaturabfrage
+	call	bdos
+	cp	"q"			;Programmende
+	jp	z, fini			;ja
+;
+	cp	"m"			;Memory-Anzeige
+	jr	nz, mens
+	ld	hl, 0103h		;Adresse Anzeigebereich -> (status)
+	call	z, banzei
+	jp	menend
+;
+mens:	cp	"s"			;reservieren/verriegeln
+	jr	nz, mena
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	a, (pio2ad)		;Status holen
+	endif
+;
+	bit	1, a			;Bit 1 auswerten
+	jr	z, mens1		;Sprung bei Bit1=0
+	res	1, a
+	jr	mens2
+mens1:	set	1, a
+mens2:
+	ifndef	test
+	out	(pio2ad), a		;neu setzen
+	endif
+;
+	ld	(status), a
+	jp	menend
+;
+mena:	cp	"a"			;LW auswaehlen
+	jr	nz, menv
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	a, (pio2ad)
+	endif
+;
+	bit	3, a
+	jr	z, mena1
+	res	3, a
+	jr	mena2
+mena1:	set	3, a
+mena2:
+	ifndef	testsub
+	out	(pio2ad), a
+	endif
+;
+	ld	(status), a
+	jp	menend
+;
+menv:	cp	"v"			;Transport vorwaerts
+	jr	nz, menr
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	a, (pio2ad)
+	endif
+;
+	bit	4, a
+	jr	z, menv1
+	res	4, a
+	jr	menv2
+menv1:	set	4, a
+menv2:
+	ifndef	test
+	out	(pio2ad), a
+	endif
+;
+	ld	(status), a
+	jp	menend
+;
+menr:	cp	"r"			;Transport rueckwaerts
+	jr	nz, menh
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	(pioa2d), a
+	endif
+;
+	bit	5, a
+	jr	z, menr1
+	res	5, a
+	jr	menr2
+menr1:	set	5, a
+menr2:
+	ifndef	test
+	out	(pio2ad), a
+	endif
+;
+	ld	(status), a
+	jp	menend
+;
+menh:	cp	"h"			;hohe Geschwindigkeit
+	jr	nz, menu
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	(pio2ad), a
+	endif
+;
+	bit	6, a
+	jr	z, menh1
+	res	6, a
+	jr	menh2
+menh1:	set	6, a
+menh2:
+	ifndef	test
+	out	(pio2ad), a
+	endif
+;
+	ld	(status), a
+	jp	menend
+;
+menu:	cp	"u"			;umspulen TRV+TRR setzen/ruecksetzen
+	jr	nz, menend
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	(pio2ad), a
+	endif
+;Testen, ob TRV+TRR =0, wenn ja beide auf 1 setzen
+;ist einer von beiden bereits gesetzt, dann beenden
+	and	00110000b		;alles ausser TRV u. TRR ausblenden
+	cp	00000000b		;beide Bits =0?
+	jr	nz, menu1		;nein
+;
+	ifdef	test
+	ld	a, (status)
+	else
+	in	(pio2ad), a
+	endif
+;
+	set	5, a
+	set	4, a
+;
+	ifndef	test
+	out	(pio2ad), a
+	endif
+;
+	jr	menu2
+
+menu1:	cp	00110000b		;beide Bits gesetzt?
+	jr	nz, menend		;nein
+;
+	ifdef	test			;beide Bits gesetzt, dann ruecksetzen
+	ld	a, (status)
+	else
+	in	a, (pio2ad)
+	endif
+;
+	res	5, a
+	res	4, a
+;
+	ifndef	test
+	out	(pio2ad), a
+	endif
+;
+menu2:	ld	(status), a
+;
+menend:	ifndef	test			;Menueende
+	jp	start
+	endif
+	jp	start1
+
+;
+;
+;
+;
+;
+;Teststatus ablegen fuer Entwicklungszwecke
+tststa:	ld	a, 00000011b		;Tor A
+	ld	(status), a
+	ld	a, 00000000b		;Tor B
+	ld	(status+1), a
+	ret
+;
+;
+;Status lesen
+stread:	ex	af, af
+	in	a, (pio2ad)
+	ld	(status), a		;Tor A
+	in	a, (pio2bd)
+	ld	(status+1), a		;Tor B
+	ex	af, af
+	ret
+;
+;
+fini:	jp	0			;SCPX Kaltstart
+;
+;
+;
+;***************************************
+;      Interruptroutinen
+;***************************************
+;
+;Interruptroutine PIO1A
+int1:
+	ei
+	reti
+;***************************************
+;Interruptroutine PIO1B
+int2:
+	ei
+	reti
+;***************************************
+;Interruptroutine PIO2A
+int3:
+	ei
+	reti
+;***************************************
+;Interruptroutine PIO2B
+int4:
+	ei
+	reti
+;****************************************
+;****************************************
+;       Ende Interruptroutinen
+;****************************************
+;
+;***************************************
+;	Hilfsprogramm Blockanzeige
+;***************************************
+;in HL Anfangsadresse des anzuzeigenden Speicherbereiches
+banzei:	ld	(merk1), hl		;Anf.-adr. retten
+	ld	(adrmrk), hl		;Zeilenadressanzeigemerkzelle
+ban14:	ld 	e, home			;Bildschirm loeschen
+	ld	c, 2
+	call	bdos
+;
+	ld	de, kopf1		;Adresse ausgeben
+	ld	c, 9
+	call	bdos
+	ld	a, (merk1+1)		;Adresse High-Teil
+	call	atoa
+	ld	a, (merk1)		;Adresse Low-Teil
+	call	atoa
+	ld	de, crlf
+	ld	c, 9
+	call	bdos
+;
+	ld	de, kopf2		;Kopfzeilen ausgeben
+	ld	c, 9
+	call	bdos
+;
+	ld 	hl,(merk1)
+	ld 	c, 16			;Zeilenzaehler
+;
+ban05:	ld	a, (adrmrk+1)		;Zeilenanfangsadresse ausgeben
+	call	atoa
+	ld	a, (adrmrk)
+	call	atoa
+	call	leerz			;Leerzeichen ausgeben
+	call	leerz			;und noch eines
+	ld 	b, 16			;Anzahl auszugebener Stellen
+ban01:	ld 	a, (hl)
+	call	atoa			;Hex in ASCII und Ausgabe
+	call	leerz
+	inc	hl
+	djnz	ban01			;16 Zeichen darstellen
+	exx
+	ld	de, absta		;mehr Abstand fuer ASCII-Anzeige
+	ld	c, 9
+	call	bdos
+	exx
+; nochmal 16 Zeichen von vorn als ASCII ausgeben, wenn druckbar
+	ld	b, 16			;wieder 16 Zeichen ASCII ausgeben
+	ld	de, -16
+	add	hl, de			;temporaer von Hl 16 Zeichen abziehen
+ban04:	ld	a, (hl)
+	cp	20h			;nicht druckbares Zeichen?
+	jr 	nc, ban02
+	ld 	a, "."
+	jr	ban03
+;
+ban02:	cp	7eh
+	jr 	c, ban03
+	ld 	a, "."
+ban03:	exx
+	ld 	e, a			;Zeichen druckbar, dann ausgeben
+	ld 	c, 2
+	call	bdos
+	exx
+	inc	hl
+	ld	(adrmrk), hl
+	djnz	ban04
+;neue Zeile
+	exx
+	ld 	de, crlf		;neue Zeile
+	ld 	c, 9
+	call	bdos
+	exx
+;
+	dec	c
+	ld 	a, 0
+	cp	c
+	jr 	nz, ban05
+;
+ban08:	ld 	de, bantxt
+	ld 	c, 9
+	call	bdos
+ban07:	ld 	c, 1
+	call	bdos			;auf Tastendruck warten
+	cp	"x"
+	ret 	z			;Routinenende
+;neue Adresse einstellen
+	cp	"0"			;erste Ziffer = 0?
+	jr	z, ban09		;ja
+	ld 	de, zloe		;Zeile loeschen und Kursor an Zeilenanfang
+	ld 	c, 9
+	call	bdos
+	jr	ban08
+;
+;vier Hexziffern eingeben und in Adresse umwandeln
+ban09:	ld	b, 4			;vier Stellen
+ban13:	push	bc
+	ld	c, 1
+	call	bdos			;Ziffer holen, Zeichen in A
+	ld	hl, zahl
+	ld	bc, 16
+	cpir				;ist Eingabe eine Hexziffer?
+	jr	z, ban10		;ja
+;falsche Eingabe
+	ld 	de, zloe		;Zeile loeschen und Kursor an Zeilenanfang
+	ld 	c, 9
+	call	bdos
+	jr	ban08			;und neue Eingabe
+;
+ban10:	bit	6, a			;Ziffer oder Buchstabe?
+	jr	z, ban11		;Ziffer
+	add	a, 9
+ban11:	and	00001111b		;oberes Nibble ausblenden
+	exx				;Register tauschen
+	ld	hl, (merk1)		;Ablageregister loeschen
+	rlca				;Hexziffer ins obere Nibble von A
+	rlca				;schieben
+	rlca
+	rlca
+;Ziffern in HL einschieben
+	ld	b, 4
+ban12:	rla				;Bit in CY einschieben
+	rl	l			;CY in L, MSB von L in CY
+	rl	h			;MSB von L in H
+	djnz	ban12			;vier Bits schieben
+	ld	(merk1), hl
+	ld	(adrmrk), hl
+	exx
+	pop	bc
+	djnz	ban13
+	jp	ban14
+;
+;***** Ende Blockanzeige ******
+;
+;wandelt (A) HEX in ASCII und gibt an Kursorposition aus
+atoa:	push	af
+	rra
+	rra
+	rra
+	rra
+	call	atoa1
+	pop	af
+atoa1:	push	af
+	and	00001111b
+	add	a, 030h
+	cp	03ah			;groesser als '9' ?
+	jp	c, atoa2		;nein
+	add	a, 7			;Satzzeichen ueberspringen
+atoa2:	exx
+	ld 	e, a			;ausgeben
+	ld 	c, 2
+	call	bdos
+	exx
+	pop	af
+	ret
+;
+;LEERZ gibt Leerzeichen an Kursorposition aus
+leerz:	exx
+	ld 	e, " "
+	ld	c, 2
+	call	bdos
+	exx
+	ret
+;
+;
+;**************************************************************************
+merk1:	dw	0000			;Merkzelle 1
+adrmrk:	dw	0000			;Adressmerkzelle RAM-Anzeige
+;**************************************************************************
+;Texte
+sttxt1:	db	00ch
+	db	"Kassettensteuerprogramm", 00dh, 00ah
+	db	"=======================", 00dh, 00ah
+	db	00ah, 00dh
+	db	"Tor A           | Tor B          |   Auswahlmoeglichkeiten (nur LW1)", 00dh, 00ah
+	db	"----------------|----------------|   s - reServieren/verriegeln", 00dh, 00ah
+	db	"8 4 2 1 8 4 2 1 | 8 4 2 1 8 4 2 1|   a - Auswaehlen", 00dh, 00ah
+	db	"----------------|----------------|   v - transport Vorwaerts", 00dh, 00ah
+	db	"        A A R R |       N N      |   r - transport Rueckwaerts", 00dh, 00ah
+	db	"A H T T W W E E |   S B I I K A A|   h - Hohe geschwindigkeit", 00dh, 00ah
+	db	"E G R R A A S S | Z T M B B S U Z|   u - Umspulen", 00dh, 00ah
+	db	"B E R V 1 2 1 2 | F A S 1 2 B F V|", 00dh, 00ah
+	db	"----------------|----------------|   m - Memory-anzeige", 00dh, 00ah, etx
+sttxt2:	db	00dh, 00ah
+	db	"---------------------------------|   q - Quit", 00dh, 00ah
+sttxt3:	db	"Ihre Wahl : ", etx
+;
+ntxt:	db	"0 ", etx
+etxt:	db	"1 ", etx
+ltxt:	db	"| ", etx
+stxt:	db	008h, "|", etx
+;
+crlf:	db	0dh, 0ah, etx
+bantxt:	db	0dh, 0ah,"neue Adresse (0xxxx) oder e(x)it ? : ",etx
+absta:	db	"   ",etx
+kopf1:	db	"Adresse : ",etx
+kopf2:	db	"      00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f", 0dh, 0ah
+	db	"=====================================================", 0dh, 0ah, etx
+zloe:	db	018h,01ah,020h,008h,etx
+zahl:	db	"0123456789abcdef"
+;
+;
+end

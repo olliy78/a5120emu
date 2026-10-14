@@ -1,0 +1,390 @@
+;Hilfsroutinen fuer das Programm fexmain.mac
+;
+;UP gibt Statuszeile vor dem Menue aus
+stzei:	exx				;ersten Text ausgeben
+	ld	de, sttxt1
+	ld	c, 9
+	call	bdos
+	exx
+;
+	ld	a, (seite)
+	cp	"A"
+
+
+;----------------------> hier gehts weiter
+
+
+
+	ret
+;
+;Texte fuer die Statuszeile
+sttxt1:	db	0ah, 0dh, "Status:    Seite: ", 024h
+;
+;****************************************************************
+;Warteschleife > 20ms
+;benutzt zweiten Registersatz
+wait1:	exx
+	ex	af, af
+	xor	a
+	ld	c, 20			;aeussere Schleife
+w1:	ld	b, 188
+w2:	djnz	w2			;innere Schleife ca. 1ms
+	dec	c
+	cp	c
+	jr	nz, w1
+	ex	af, af
+	exx
+	ret
+;
+;
+;*********************************
+; Laufwerksroutinen
+;*********************************
+;Laufwerke reservieren/verriegeln
+res1:	ex	af, af
+	in	a, (pio2ad)		;Zustand einlesen
+	set	1, a			;Bit 1 = 1
+	out	(pio2ad), a		;neuen Zustand schreiben
+	ex	af, af
+	ret
+;
+res2:	ex	af, af
+	in	a, (pio2ad)
+	set	0, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;***************************
+;Laufwerke wieder entriegeln
+ent1:	ex	af, af
+	in	a, (pio2ad)
+	res	1, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+ent2:	ex	af, af
+	in	a, (pio2ad)
+	res	0, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;**********************************
+;
+;alle LW-Funktionen resetten
+resall:	ex	af, af
+	xor	a			;A=0
+	out	(pio2ad), a
+	out	(pio2bd), a
+	ex	af, af
+	ret
+;**********************************
+;
+;Transport vorwaerts
+tvein:	ex	af, af
+	in	a, (pio2ad)		;Zustand holen
+	set	4, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+tvaus:	ex	af, af
+	in	a, (pio2ad)
+	res	4, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+;Transport rueckwaerts
+trein:	ex	af, af
+	in	a, (pio2ad)
+	set	5, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+traus:	ex	af, af
+	in	a, (pio2ad)
+	res	5, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+;Hohe Geschwindigkeit
+hgein:	ex	af, af
+	in	a, (pio2ad)
+	set	6, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+hgaus:	ex	af, af
+	in	a, (pio2ad)
+	res	6, a
+	out	(pio2ad), a
+	ex	af, af
+	ret
+;
+;Aufzeichnen
+azein:	ex	af, af
+	in	a, (pio2bd)
+	set	1, a
+	out	(pio2bd), a
+	ex	af, af
+	ret
+;
+azaus:	ex	af, af
+	in	a, (pio2bd)
+	res	1, a
+	out	(pio2bd), a
+	ex	af, af
+	ret
+;***************************************
+;Interrupts ein-/ausschalten
+;PIO 1 A --> Byte-Ausgabe
+i1aein:	ex	af, af			;Interrupt PIO 1 A ein
+	ld	a, 10000011b		;Bit 7=1 --> Interrupt ein
+;					 Bit 2, 3 =0 und Bit 0, 1=1 --> Interruptsteuerwort
+	out	(pio1as), a
+	out	(pio1ad), a		;Scheinausgabe zur Interruptaktivierung
+	ex	af, af
+	ret
+;
+i1aaus:	ex	af, af			;Interrupt PIO 1 A aus
+	ld	a, 00000011b
+	out	(pio1as), a
+	ex	af, af
+	ret
+;
+;PIO 1 B --> Byte-Eingabe
+i1bein:	ex	af, af			;Interrupt PIO 1 B ein
+	ld	a, 10000011b
+	out	(pio1bs), a
+	in	a, (pio1bd)		;Scheineingabe
+	ex	af, af
+	ret
+;
+i1baus:	ex	af, af			;Interrupt PIO 1 B aus
+	ld	a, 00000011b
+	out	(pio1bs), a
+	ex	af, af
+	ret
+;
+;PIO 2 Bit-Ein/Ausgabe (Steuer-PIO)
+i2aein:	ex	af, af			;Interrupt PIO 2 A ein
+	ld	a, 10000011b
+	out	(pio2as), a
+	ex	af, af
+	ret
+;
+i2aaus:	ex	af, af			;Interrupt PIO 2 A aus
+	ld	a, 00000011b
+	out	(pio2as), a
+	ex	af, af
+	ret
+;
+i2bein:	ex	af, af			;Interrupt PIO 2 B ein
+	ld	a, 10000011b
+	out	(pio2bs), a
+	ex	af, af
+	ret
+;
+i2baus:	ex	af, af
+	ld	a, 00000011b		;Interrupt PIO 2 B aus
+	out	(pio2bs), a
+	ex	af, af
+	ret
+;*************************************************************
+;
+;Laufwerks-Status bearbeiten
+;
+;Status auslesen und speichern, Statusmerkzellen setzen
+stread:	ex	af, af
+	in	a, (pio2ad)
+	ld	(status), a
+	in	a, (pio2bd)
+	ld	(status+1), a
+;Kassettenladezustand bestimmen
+	and	014h			;Bits 2 und 4 extrahieren
+	cp	0			;keine Kassette geladen
+	jr	z, str1
+	cp	010h			;LW1 geladen, Seite A
+	jr	nz, str2
+	ld	a, "A"
+	jr	str1
+str2:	cp	014h
+	jr	nz, str3
+	ld	a, "B"			;LW1 geladen, Seite B
+str1:	ld	(seite), a
+	ex	af, af
+	ret
+;
+str3:	ld	a, 0ffh			;prinzipieller LW-Fehler
+	jr	str1
+;
+;*************************************************************
+;
+;***************************************
+;	Hilfsprogramm Blockanzeige
+;***************************************
+;in HL Anfangsadresse des anzuzeigenden Speicherbereiches
+banzei:	ld	(merk1), hl		;Anf.-adr. retten
+	ld	(adrmrk), hl		;Zeilenadressanzeigemerkzelle
+ban14:	ld 	e, home			;Bildschirm loeschen			
+	ld	c, 2
+	call	bdos
+;
+	ld	de, kopf1		;Adresse ausgeben
+	ld	c, 9
+	call	bdos
+	ld	a, (merk1+1)		;Adresse High-Teil
+	call	atoa
+	ld	a, (merk1)		;Adresse Low-Teil
+	call	atoa
+	ld	de, crlf
+	ld	c, 9
+	call	bdos
+;
+	ld	de, kopf2		;Kopfzeilen ausgeben
+	ld	c, 9
+	call	bdos
+;
+	ld 	hl,(merk1)
+	ld 	c, 16			;Zeilenzaehler
+;
+ban05:	ld	a, (adrmrk+1)		;Zeilenanfangsadresse ausgeben
+	call	atoa
+	ld	a, (adrmrk)
+	call	atoa
+	call	leerz			;Leerzeichen ausgeben
+	call	leerz			;und noch eines
+	ld 	b, 16			;Anzahl auszugebener Stellen
+ban01:	ld 	a, (hl)
+	call	atoa			;Hex in ASCII und Ausgabe
+	call	leerz
+	inc	hl
+	djnz	ban01			;16 Zeichen darstellen
+	exx
+	ld	de, absta		;mehr Abstand fuer ASCII-Anzeige
+	ld	c, 9
+	call	bdos
+	exx
+; nochmal 16 Zeichen von vorn als ASCII ausgeben, wenn druckbar
+	ld	b, 16			;wieder 16 Zeichen ASCII ausgeben
+	ld	de, -16
+	add	hl, de			;temporaer von Hl 16 Zeichen abziehen
+ban04:	ld	a, (hl)
+	cp	20h			;nicht druckbares Zeichen?
+	jr 	nc, ban02
+	ld 	a, "."
+	jr	ban03
+;
+ban02:	cp	7eh
+	jr 	c, ban03
+	ld 	a, "."
+ban03:	exx
+	ld 	e, a			;Zeichen druckbar, dann ausgeben
+	ld 	c, 2
+	call	bdos
+	exx
+	inc	hl
+	ld	(adrmrk), hl
+	djnz	ban04
+;neue Zeile
+	exx
+	ld 	de, crlf		;neue Zeile
+	ld 	c, 9
+	call	bdos
+	exx
+;
+	dec	c
+	ld 	a, 0
+	cp	c
+	jr 	nz, ban05
+;
+ban08:	ld 	de, bantxt
+	ld 	c, 9
+	call	bdos
+ban07:	ld 	c, 1
+	call	bdos			;auf Tastendruck warten
+	cp	"q"
+	ret 	z			;Routinenende
+;neue Adresse einstellen
+	cp	"0"			;erste Ziffer = 0?
+	jr	z, ban09		;ja
+	ld 	de, zloe		;Zeile loeschen und Kursor an Zeilenanfang
+	ld 	c, 9
+	call	bdos
+	jr	ban08
+;
+;vier Hexziffern eingeben und in Adresse umwandeln
+ban09:	ld	b, 4			;vier Stellen
+ban13:	push	bc
+	ld	c, 1
+	call	bdos			;Ziffer holen, Zeichen in A
+	ld	hl, zahl
+	ld	bc, 16
+	cpir				;ist Eingabe eine Hexziffer?
+	jr	z, ban10		;ja
+;falsche Eingabe
+	ld 	de, zloe		;Zeile loeschen und Kursor an Zeilenanfang
+	ld 	c, 9
+	call	bdos
+	jr	ban08			;und neue Eingabe
+;
+ban10:	bit	6, a			;Ziffer oder Buchstabe?
+	jr	z, ban11		;Ziffer
+	add	a, 9
+ban11:	and	00001111b		;oberes Nibble ausblenden
+	exx				;Register tauschen
+	ld	hl, (merk1)		;Ablageregister loeschen
+	rlca				;Hexziffer ins obere Nibble von A
+	rlca				;schieben
+	rlca
+	rlca
+;Ziffern in HL einschieben
+	ld	b, 4
+ban12:	rla				;Bit in CY einschieben
+	rl	l			;CY in L, MSB von L in CY
+	rl	h			;MSB von L in H
+	djnz	ban12			;vier Bits schieben
+	ld	(merk1), hl
+	ld	(adrmrk), hl
+	exx
+	pop	bc
+	djnz	ban13
+	jp	ban14
+;
+;***** Ende Blockanzeige ******
+;
+;wandelt (A) HEX in ASCII und gibt an Kursorposition aus
+atoa:	push	af
+	rra
+	rra
+	rra
+	rra
+	call	atoa1
+	pop	af
+atoa1:	push	af
+	and	00001111b
+	add	a, 030h
+	cp	03ah			;groesser als '9' ?
+	jp	c, atoa2		;nein
+	add	a, 7			;Satzzeichen ueberspringen
+atoa2:	exx
+	ld 	e, a			;ausgeben
+	ld 	c, 2
+	call	bdos
+	exx
+	pop	af
+	ret
+;
+;LEERZ gibt Leerzeichen an Kursorposition aus
+leerz:	exx
+	ld 	e, " "
+	ld	c, 2
+	call	bdos
+	exx
+	ret
+;
+;**************************************************************************

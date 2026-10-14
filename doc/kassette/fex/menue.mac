@@ -1,0 +1,160 @@
+;Menueprogramm mit verschiebbaren Anzeigen der Menuepunkte
+;V.01 - HB 05/2011
+;
+;	asm menue=menue
+;	link menue,menue/y/n/e
+;
+	.z80
+	org	0100h
+;
+;Vereinbarungen
+test	equ	1
+;
+etx	equ	24h			;End of Text
+bdos	equ	5			;BDOS-Einsprungsadresse
+home    equ	0ch			;Bildschirm loeschen und Kursor Home
+enter	equ	0dh			;Eingabe gueltig machen
+;
+ifdef test
+curup	equ	"u"
+curdw	equ	"d"
+else
+curup	equ	01ah			;Kursur nach oben, auch CTRL-Z
+curdw	equ	0ah			;Kursur nach unten, auch CTRL-J
+endif
+;
+start:	ld	a, 0
+	ld	(ampkt), a		;auf ersten Menuepkt setzen
+;
+men4:	ld	c, 9
+	ld	de, mtxt
+	call	bdos
+	ld	c, 1
+	call	bdos
+;
+	cp	curup			;Kursor aufwaerts
+	jr	nz, men1
+	ld	a, (ampkt)
+	cp	0
+	jr	nz, men9
+	ld	a, 4			;von unten wieder anfangen
+	ld	(ampkt), a
+men10:	call	menue			;darzustellenden Text anpassen
+	jr	men4
+men9:	dec	a			;Menuepunkt groesser Null
+	ld	(ampkt), a
+	jr	men10
+;
+men1:	cp	curdw			;Kursor nach unten
+	jr	nz, men2
+	ld	a, (ampkt)
+	cp	4			;letzter Menuepunkt aktuell?
+	jr	z, men11		;ja
+	inc	a			;einen Menuepunkt weiter
+	ld	(ampkt), a
+	jr	men10
+men11:	xor	a			;A=0
+	ld	(ampkt), a		;ablegen
+	jr	men10			;Text anpassen
+;
+men2:	cp	enter			;Enter fuer Programmausfuehrung
+	jr	z, men3			;hier kann eigene Routine beginnen
+	jr	men4			;von vorn bei allen anderen Tasten
+;Ausfuehrung des entsprechenden Programmes nach Enter
+men3:	ld	a, (ampkt)		;Kennzahl des Programmpunktes holen
+	cp	0
+	jr	nz, men5
+	ld	de, ptxt1
+	jr	darst	
+men5:	cp	1
+	jr	nz, men6
+	ld	de, ptxt2
+	jr	darst
+men6:	cp	2
+	jr	nz, men7
+	ld	de, ptxt3
+	jr	darst
+men7:	cp	3
+	jr	nz, men8
+	ld	de, ptxt4
+darst:	ld	c, 9
+	call	bdos
+	ld	c, 1
+	call	bdos
+men8:	jp	0			;Programmende gewaehlt
+;
+
+
+
+
+
+
+
+
+;
+menue:	ld	hl, mtxt
+	ld	a, ">"
+m2:	cp	(hl)
+	jr	z, m1
+	inc	hl
+	jr	m2
+m1:	ld	a, " "
+	ld	(hl), a
+	ld	a, "<"
+m4:	cp	(hl)
+	jr	z, m3
+	inc	hl
+	jr	m4
+m3:	ld	a, " "
+	ld	(hl), a
+;
+	ld	a, (ampkt)
+	sla	a
+	ld	b, a
+	ld	hl, mtxt
+m8:	ld	a, " "
+m6:	cp	(hl)
+	jr	z, m5
+	inc	hl
+	jr	m6
+m5:	xor	a
+	cp	b
+	jr	z, m7
+	dec	b
+	inc	hl
+	jr	m8
+m7:	ld	a, ">"
+	ld	(hl), a
+	ld	a, " "
+m10:	cp	(hl)
+	jr	z, m9
+	inc	hl
+	jr	m10
+m9:	ld	a, "<"
+	ld	(hl), a
+	ret
+;
+;
+;
+;Merkzellen
+ampkt:	db	0			;aktueller Menuepunkt
+;Texte
+mtxt:	home
+	db	">Programm1<", 0dh, 0ah
+	db	" Programmpunkt2 ", 0dh, 0ah
+	db	" Programmunterpunkt3 ", 0dh, 0ah
+	db	" Prog4 ", 0dh, 0ah
+	db	" Ende "
+	db	0dh, 0ah, 0ah
+	db	"Ihre Wahl bitte: ",etx
+;
+;Folgende Texte werden nur fuer den Testfall benoetigt
+ifdef	test
+ptxt1:	db	home,"Ausfuehrung Programm Nr. 1 - Taste",etx
+ptxt2:	db	home,"Ausfuehrung Programm Nr. 2 - Taste",etx
+ptxt3:	db	home,"Ausfuehrung Programm Nr. 3 - Taste",etx
+ptxt4:	db	home,"Ausfuehrung Programm Nr. 4 - Taste",etx
+endif
+;
+;
+end
