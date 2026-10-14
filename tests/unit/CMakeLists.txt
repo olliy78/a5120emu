@@ -91,6 +91,8 @@ k1520_add_test(p8000_wdc_rom_laufwerk SRC cards/test_p8000_wdc_rom_laufwerk.cpp 
 k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
 # K6022 an Dateien: Leser im Bandformat, Stanzer gebunden (doc/design/23_lochstreifen.md §5, AP-L2)
 k1520_add_test(k6022_bindung SRC cards/test_k6022_bindung.cpp LIBS k1520_k6022 LABELS "${_lbl}")
+# AKB K5020: Kassettenanschluss mit zwei PIOs und zwei Laufwerken (doc/design/29, AP K4)
+k1520_add_test(k5020 SRC cards/test_k5020.cpp LIBS k1520_k5020 k1520_z80 LABELS "${_lbl}")
 k1520_add_test(ass590069 SRC cards/test_ass590069.cpp LIBS k1520_ass590069 LABELS "${_lbl}")
 # ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
 k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
