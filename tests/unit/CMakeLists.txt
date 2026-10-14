@@ -133,6 +133,10 @@ k1520_add_test(platte         SRC peripherals/test_platte.cpp
 # Lochstreifen-Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4, AP-L2)
 k1520_add_test(band_format    SRC peripherals/test_band_format.cpp
                               LIBS k1520_lochstreifen LABELS "${_lbl}")
+# Kassettenband: Medium, .k52-Codec, Laufwerk (doc/design/29_kassette.md, AP K3)
+k1520_add_test(kassette_medium      SRC peripherals/test_kassette_medium.cpp      LIBS k1520_kassette LABELS "${_lbl}")
+k1520_add_test(k52_codec            SRC peripherals/test_k52_codec.cpp            LIBS k1520_kassette LABELS "${_lbl}")
+k1520_add_test(kassetten_laufwerk   SRC peripherals/test_kassetten_laufwerk.cpp   LIBS k1520_kassette LABELS "${_lbl}")
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Zeichenbare Sicht auf eine Spur (Diskeditor, §19)

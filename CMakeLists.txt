@@ -460,6 +460,12 @@ if(BUILD_K1520)
     # Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4)
     add_library(k1520_lochstreifen STATIC core/peripherals/lochstreifen/band_format.cpp)
     target_include_directories(k1520_lochstreifen PUBLIC ${CMAKE_SOURCE_DIR})
+    # Kassettenband: Medium, `.k52`-Codec, Laufwerk (doc/design/29_kassette.md, AP K3)
+    add_library(k1520_kassette STATIC
+        core/peripherals/kassette/kassetten_medium.cpp
+        core/peripherals/kassette/k52_codec.cpp
+        core/peripherals/kassette/kassetten_laufwerk.cpp)
+    target_include_directories(k1520_kassette PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_k6022 STATIC core/cards/k6022/k6022.cpp)
     target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger k1520_lochstreifen)
     target_include_directories(k1520_k6022 PUBLIC ${CMAKE_SOURCE_DIR})
