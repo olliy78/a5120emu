@@ -704,6 +704,12 @@ auf, wie beim Lochstreifen. Die Karte liegt am A5120 und am PRG 710 auf E/A
 30H–37H, am K8915 und am PC 1715 auf D0H–D7H (am PC 1715 nur mechanisch: es gibt
 dort keinen Gasttreiber).
 
+**Zurückspulen vor KMBG/FEX:** Programme, die die Kassette über `KMBG.REL` (SCPX)
+oder FEX bedienen, warten nur rund 2,5 s auf das Magnetband. Eine frisch eingelegte
+Kassette steht noch im Vorspann und wird in dieser Zeit nicht erreicht (Status 04);
+sie muss deshalb vorher zurückgespult werden (UMS bzw. das Rückspulkommando des
+Programms).
+
 Mit gesteckter Karte erscheint der Kasten **Kassette** (neben *Laufwerke*,
 *Ansicht ▸ Kassette* holt ihn zurück), mit einem Block je Laufwerk (Gerät 1 und 2):
 

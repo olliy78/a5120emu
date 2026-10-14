@@ -29,7 +29,7 @@ und auch Formatieren mit dem originalen `FORMAT.COM` funktioniert.
 | **robotron PC 1715 / PC 1715W** | SCP 1715, CP/A, CP/Z, UDOS 1715, SCP 3.0 |
 | **EAW P8000** (8- und 16-Bit-Teil, Winchester) | UDOS, WEGA (UNIX) |
 
-Dazu steckbare Optionen wie RAM-Floppy und Lochstreifen, serielle Schnittstellen nach außen
+Dazu steckbare Optionen wie RAM-Floppy, Lochstreifen und Kassette, serielle Schnittstellen nach außen
 (Telnet, RFC 2217, Datei) und echte Disketten über einen
 [Greaseweazle](https://github.com/keirf/greaseweazle)-Adapter.
 
