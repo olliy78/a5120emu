@@ -68,8 +68,8 @@ ein eigenes Worktree.
 | K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | **fertig 2026-10-14** (113367c; `K5020Test.*`, `K5020Rom.*`) |
 | K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
 | K7 | A5120 bootet vom Band | int | K5, K6 | M | offen |
-| K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | offen |
-| K9 | Oberfläche „Kassette“ | py | K5 | M | offen |
+| K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | **fertig 2026-10-14** (f24c155; `K5020Maschine.*`, `py_tape_api`, `cli_dbg_tape*`, `cli_bt_tape`) |
+| K9 | Oberfläche „Kassette“ | py | K5 | M | **fertig 2026-10-14** (f24c155; `K5020Maschine.*`, `py_tape_api`, `cli_dbg_tape*`, `cli_bt_tape`) |
 | K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | offen |
 | K11 | optional `.wav` (ISO 3407) | cpp | K3 + Mitschnitt | M | zurückgestellt |
 | A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
@@ -113,6 +113,7 @@ ein eigenes Worktree.
 - 2026-10-14 K1: Blockformat = reine Software: `AA | 1…256 Daten | CRC-16/ARC (low zuerst, Start 0000, nur Daten) | AA`; Bandmarke = Block ohne Daten `AA 00 00 AA` (rückwärts `AA FF FF AA`). **Berichtigung K0:** Steuer-PIO A Bit 7 = 1 heißt Band unter der Lichtschranke, 0 = AEB aktiv. Bootband: 4×128 B nach 0400H, `SYL` in 0400–0402, Einsprung 0434H (darf nicht zurückkehren). STA = AUF ∧ AVE. FEX-Formate nicht belegbar (K6: nur Rohblöcke + Bootband). Details `doc/kassette/treiber.md` §8.
 - 2026-10-14 K3: Bitrate ergibt sich aus Dichte (31,5 Bit/mm) × Geschwindigkeit; Zeiten LW1200/SK1200/PK3/K5200-19 sind Annahmen `[?]`. K4 muss: PIO-Polarität, AWA-Gating, BMS-Verzögerung 108 µs, „HGE nach AUF“ → `wiedergabe(false)`, TRV+TRR → `umspulen()`, `autoFlush()` je run()-Scheibe (K5).
 - 2026-10-14 K4: Lade-ROM bootet vollständig von einem K3-Band (Test `K5020Rom.LiestEinBootbandMitVierBloeckenUndPruefSyl`). Steuer-PIO braucht Flankentrigger (`setModus3Flanke`), Daten-PIO `modus1ReadyNachLesen`. UMS wirkt auf steigende Flanke. K5: `clockTick` mit Instruktionstakten, bei true `markIntDirty()`+`updateInterruptChain()`, `autoFlush()` je run(); Chain `{pioDaten, pioSteuer}`; `takt_hz` je Maschine (A5120 2 457 600). `k5020.md` §3.1 (AEB-Polarität) ist noch zu berichtigen.
+- 2026-10-14 K5: PC 1715 steckt die K5020 auf D0H (30H–37H belegt durch LT107/BWS), PRG 710 bleibt bei 30H (D0H–D4H = EPROMmer); nur mechanisch am PC 1715. Gast-ISRs: kein HALT-Warten auf die ISR (Wettlauf), ISR A > 0x20 B — siehe `doc/merkposten/kassette.md`. GUI (K9) muss `tape_flush` je Laufwerk beim Beenden rufen. Nach Kern-/Werkzeug-Änderungen einmal `tools/dev.sh build` vor dem Volllauf (7 CLI-Fälle waren nur veraltete k1520dbg-Binary). Python-Ebene im Worktree braucht `venv/` (Symlink aufs Haupt-venv).
 
 ---
 
