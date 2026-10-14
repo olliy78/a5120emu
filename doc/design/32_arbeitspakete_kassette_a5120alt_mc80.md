@@ -75,7 +75,7 @@ ein eigenes Worktree.
 | A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
 | A1a | K7023: Abschrift BD/SLP | ana | — | S | **fertig 2026-10-14** |
 | A1 | `cards/k7023` | cpp | A1a | M | offen |
-| A2 | K3525 (16 KB) | cpp | — | S | offen |
+| A2 | K3525 (16 KB) | cpp | — | S | **fertig 2026-10-14** (94e2360; `K3525.*`) |
 | A3a | K7636 + Anschluss an K2526: Abschrift | ana | — | M | **fertig 2026-10-14** |
 | A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | offen |
 | A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | **fertig 2026-10-14** (`doc/a5120_alt/k5120.md`; K5120 ≈ K5122, A4 nur als Variante, Anwenderwunsch) |
@@ -118,6 +118,7 @@ ein eigenes Worktree.
 - 2026-10-14 K7: **A5120 bootet ohne Diskette vom (selbstgebauten) Band** — `tools/kassette/bandtest/`, Fixture `tests/fixtures/kassette/bandtest_boot.k52`. Kernfehler in K5020 behoben: `Z80PIO::setExtern` übernimmt Pegel nur im Modus 3 und holt sie beim Moduswechsel nicht nach → nach jedem Steuerwort Rückleitungen neu anlegen (`ext_neu_`). Ob `Z80PIO` selbst beim Moduswechsel neu einlesen sollte (P8000-Karten nutzen `setExtern`): offen [?]. Boot dauert ~27 Mio. Takte. `boot_trace --tape` bindet und schreibt zurück — nie Fixture direkt angeben.
 - 2026-10-14 K9: GUI-Kassette fertig (Profilfeld `tape_wahl`, kein Kästchen am P8000; `tape_flush` beim Beenden/Neuaufbau/Auswerfen; `tape_load` legt fehlende .k52 leer an — Abweichung vom Lochstreifen). Kassette nicht im Save-State. Festlegungen für K10: Kasten nur mit Karte, `kassette:`-Abschnitt, kein Kürzel, Wächter `py_kassette_gui`.
 - 2026-10-14 K8: `KMBG.REL` läuft unter SCPX 1.7 am A5120 (schreibt/liest Block, alle Status 00); kein Kernfehler. **Offen [?]:** KMBG wartet nur ~2,45 s (≈0,9 m bei 381 mm/s) auf Magnetband; der 1-m-Vorspann des Modells ist von Position 0 aus nicht zu durchqueren → Status 04 bei frisch eingelegter Kassette; erst nach Rückspulen (UMS) geht es. Vorspannlänge/Einlegeposition klären (K10/Handbuch oder Modell). `tools/cpm_bau.py` hat jetzt `module=` für Fremd-REL. `k1520dbg`: `--tape` vor dem Diskpfad.
+- 2026-10-14 A2: `K3525` (16 KB, Basis im 4-KB-Raster, Power-on 0xFF, Bus-/MEMDI oder MEMDI1/2); vier Karten 0000/4000/8000/C000 = 64 KB; Lade-ROM der K2526 NACH den Karten registrieren. Refresh nicht modelliert. `K1520Bus::registerMem`: Überlappung wirft NICHT (Lesen: letzte Karte gewinnt, Schreiben an alle). BD der K3525 ist Scan ohne Textebene; Brücken X6/X7 [?].
 
 ---
 
