@@ -582,6 +582,11 @@ if(BUILD_K1520)
     target_link_libraries(k1520disktool PRIVATE k1520_fs)
     target_include_directories(k1520disktool PRIVATE ${CMAKE_SOURCE_DIR})
 
+    # k1520tape: Kassettenbaender (.k52) anlegen/fuellen, Bootband (tools/k1520tape.md)
+    add_executable(k1520tape tools/k1520tape.cpp)
+    target_link_libraries(k1520tape PRIVATE k1520_kassette)
+    target_include_directories(k1520tape PRIVATE ${CMAKE_SOURCE_DIR})
+
     # z8kasm: Assembler/Disassembler fuer U8001/U8002 (header-only tools/z8000/)
     add_executable(z8kasm tools/z8kasm.cpp)
     target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
