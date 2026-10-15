@@ -16,3 +16,12 @@ BASIC, GRAB, OCED, RAM-Modus, MC80.22-Betriebssystem).
 | `bsys_2x.prn` | Betriebssystem MC80.21/22 kommentiert, ERZEUGT von `tools/gen_mc8020_bsys_prn.py` |
 
 Analyseergebnisse kommen hierher: `hardware_3x.md`, `egos.prn`, `hardware_2x.md`, `bsys_2x.prn`.
+
+## Lokale Referenz (nicht im Repo)
+
+Das gescannte **MC80.2x-Nutzerhandbuch** (43 MB, überwiegend Seitenbilder; Quelle tiffe.de
+`Robotron/MC80.2X/MC80.2x-Handbuch.pdf`) liegt auf dem Entwicklungsrechner unter
+`~/projects/robotron/mc80/MC80.2x-Handbuch.pdf` (Kopie aus dem tiffe-Spiegel
+`~/projects/robotron/tiffe_de_Robotron/www.tiffe.de/Robotron/MC80.2X/`).  Was nur dort steht
+(Geräteadresstabelle, Speichertabelle, Bilder/Tabellen 3.x), ist in `hardware_2x.md` ausgewertet;
+bei Zweifeln dort nachsehen — Seiten als Bild lesen, die Textebene ist fehlerhaft.
