@@ -83,6 +83,7 @@ ein eigenes Worktree.
 | A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | **fertig 2026-10-15** (514cf6a; `A5120Ausfuehrung.*`, `py_a5120_modelle`, `py_c_api`) |
 | A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | **fertig 2026-10-15** (4f21185; `BootIntegrationAlt.*`, `cli_bt_ausfuehrung_alt`, `cli_dbg_ausfuehrung_*`) |
 | A7 | BCU 880 bis Prompt | int | A5, A0 | L | **teilweise fertig 2026-10-15** (45c4adc; V1.2 bootet bis `A>`; V2.1 mit keinem vorhandenen Lade-ROM startbar — Befund; `BootIntegrationBcu.*`) |
+| A7b | Experiment: V2.1-System auf SYL-Bootaufbau (Eigenbau, kein Beleg) | int | A7 | S | offen (nach A8) |
 | A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | offen |
 | A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | offen |
 | M0 | MC80.3x: Hardware-Abschrift | ana | — | M | **fertig 2026-10-14** |
