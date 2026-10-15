@@ -96,7 +96,7 @@ ein eigenes Worktree.
 | M6 | Programm `mc80emu` + Paket | py | M3 | L | **fertig 2026-10-15** (8efbc89; `py_mc80emu_gui`, `py_packaging`, `py_programme`, `py_gui_smoke`) |
 | M7 | Kassette an MC80.31/.30/.33 | cpp/int | M3, K4 | L | **fertig für .30/.31 2026-10-15** (1c39e26; `Mc80Kassette.*`, `Mc80K5020.*`; .33 gesperrt, `doc/mc80/pk3.md`) |
 | M8 | `boot_trace`/`k1520dbg --machine mc80` | cpp | M3 | M | **fertig 2026-10-15** (83fef80; `cli_bt_mc80_*`, `cli_dbg_mc80_*`) |
-| M9 | Merkposten MC80, CLAUDE.md, Handbuch | doc | M6 | S | offen |
+| M9 | Merkposten MC80, CLAUDE.md, Handbuch | doc | M6 | S | **fertig 2026-10-15** (a5c37cd; `doc/merkposten/mc80.md`) |
 | M10 | MC80.2x: Hardware aus Handbuch + ROM-Disassemblat | ana | — | L | offen |
 | M11 | MC80.21/.22 im Kern (DPL/BSA/MBI) | cpp/int | M10, M2 | L | offen |
 | M12 | MC80.2x in `mc80emu` | py | M11, M6 | M | offen |
