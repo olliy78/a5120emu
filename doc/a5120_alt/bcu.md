@@ -151,6 +151,96 @@ Kopie; `.img` mit `--format`), dann `keys \r` (Typzeichen verbrauchen) und `keys
 2. Karten an 40H, 90H–97H, EEH [?] (§4) — für den Prompt nicht nötig.
 3. Start-EPROM für „ohne SYL“ (V1.2/V2.1) fehlt (§5); damit fehlen auch WordStar/Assembler
    der „ohne SYL“-Sätze im Emulator (die Dateien selbst sind per DiskTool lesbar [?, nicht geprüft]).
-4. Kassette (KMBG, Laufwerk F:) → AP A8: `KMBG.REL` liegt auf `satz2_OhneSYL.1` (Fixture
-   `bcu12_ss40-26x128_k5600-10_ohnesyl-sys1.img`); ob die V1.2 der SYL-Disketten den Treiber schon
-   im BIOS hat, ist nicht geprüft (Texte „NOT READY/END OF PAPER/TIME OUT“ gehören zum Drucker).
+4. ~~Kassette (KMBG, Laufwerk F:) → AP A8~~ — erledigt, §8.  Die V1.2 hat den Kassettentreiber
+   **nicht** im BIOS; er kommt als `KMBG.REL` per `OPEN` dazu.
+5. 17-Byte-Abschlussblock: READ SEQ liefert ihn als zusätzlichen Satz (§8.3); ob das am Gerät
+   genauso war oder ein späteres BCU es ausblendet, ist offen [?].
+
+## 8. Kassette als Laufwerk F: (AP A8)
+
+Stand 2026-10-15.  Wächter `BcuKassette.FormatiertSchreibtLiest` (`tests/system/test_bcu_kassette.cpp`,
+`format_integration`).  Gerät: Ausführung `Kmbg` (= `Alt` + K5020 fest), Lade-ROM V0.6, Satz 2.
+Disassemblat des Treibers: `KMBG.REL` von `satz2_OhneSYL.1`, Code ab Dateiversatz 100H, Adressen
+relativ (wie `doc/kassette/treiber.md` „BCU“); im Lauf liegt er ab C900H.
+
+### 8.1 Bedienung
+
+```
+A>                      (Typzeichen 80H: erst eine leere Zeile, §4)
+   — Systemdiskette „ohne SYL“ nach A: legen (s. u.) —
+A>OPEN B:KMBG           kmbg opened
+A>B:INIT                **FORMATIERUNG KASSETTE IN DRIVE F**  /  KASSETTE IN DRIVE F! (Y)  → Y
+A>PIP F:=B:STAT.COM
+A>PIP B:STAT2.COM=F:STAT.COM
+```
+
+- **`OPEN`** ist ein eingebautes CCP-Kommando (Befehlstafel D958H: DIR ERA TYPE SAVE REN USER
+  **OPEN** TOD RES).  Es lädt eine `.REL` nach 0100H, ruft deren Kopfprogramm (Seitenrelokation
+  unter `(0029H)`, Meldung „kmbg opened“), trägt das Modul ein und senkt `(0029H)` (CCP DDCA–DDFD).
+  Erst damit hängt sich der Treiber in den BDOS-Einsprung (`(0006H)` → Modul+14H).  `B:KMBG`
+  sucht `KMBG.COM` („B:KMBG?“); `B:KMBG.REL` lädt zwar (beliebiger Typ → `.REL`, CCP DE19H), ruft
+  aber nur den Lader — der Treiber bleibt ohne Einsprung.
+- **Warmstart braucht die Diskette „ohne SYL“ in A:.**  WBOOT (ECC7H) lädt das System von A:
+  Zylinder 0–1; auf der SYL-Diskette steht dort der Lader → Absturz (Bild voller Müll).  Der
+  Kaltstart von der SYL-Diskette selbst braucht keinen Warmstart; jedes `^C` und jedes Programm,
+  das mit `JP 0` endet (PIP, INIT-Abbruch), schon.  Am Gerät also: von der SYL-Diskette starten,
+  dann die Arbeitsdiskette einlegen [abg].
+- **F: ist Gerät 2** (K5200 an X4).  Der Treiber kennt E: und F: (BDOS 0EH: E = 4/5; FCB-Laufwerk
+  5/6), Merker 0018H (E:) / 0019H (F:); `sub_0046` setzt Bit 0 für E: → Steuer-PIO-Bits `/RES1`,
+  `/AWA1`, `/NIB1`; für F: Bit 0 = 0 → `/RES2`, `/AWA2`, `/NIB2` (KMBG 0357–037C).  Fehler bei
+  leerem Gerät meldet INIT nicht (Befehle ohne Bit 7).
+- **INIT verlassen:** INIT fragt nach dem Formatieren „AGAIN?“ und endet nur auf 0DH (`INIT.COM`
+  011A).  Die K7636.01 hat keinen Code 0DH, und der CONIN von Satz 2 übersetzt nicht (§4) — jede
+  andere Taste formatiert erneut bzw. fragt wieder.  Ausweg über die BDOS-Ausgabebremse (E020H:
+  `^S` wartet, folgt `^C` → `JP 0`): **DEL LINE (13H) während des Formatierens drücken**, nach dem
+  Formatieren **INS LINE (03H)** → Warmstart.  Ob der Bediener eine Tastatur mit 0DH hatte, ist
+  offen (§7.1).
+
+### 8.2 Formatieren (BDOS 50H, KMBG 0263–027D)
+
+`Y` → Befehlsfolge D1H (Bandmarke schreiben), E1H (1,27 s löschen), 21H (zurückspulen), 41H
+(freigeben), jede mit Reservieren (B1H) davor.  Von Position 0 (Kassette frisch eingelegt, Kopf am
+Vorspannanfang) **geht es ohne Rückspulen**: der Treiber fährt mit `TRV` und wartet **ohne Frist**
+auf das Magnetband (0B04–0B08), dann auf die BOT-Marke (0B17) — anders als die SCPX-Bibliothek mit
+ihrer 2,45-s-Frist (Merkposten Kassette 9).  Rückspulen (05A6): steht das Band im Vorspann, `TRR`
+bis zum Magnetband (Frist 65 536 Schleifen), dann `UMS`; gewartet wird nur, bis `/NIB` fällt —
+das Ende des Umspulens nicht.  Ergebnis auf dem Band: ein Block, die Bandmarke `AA 00 00 AA`.
+
+### 8.3 Dateiablage (bestätigt treiber.md §6.3)
+
+`PIP F:=B:STAT.COM` (STAT.COM = 23 Sätze) hinterlässt 27 Blöcke:
+
+| Block | Inhalt |
+|---|---|
+| 0 | Bandmarke von INIT |
+| 1 | Kopf, 16 B = FCB 0–15: `00 'STAT    COM' 00 00 00 17` — PIP schreibt `STAT.$$$`, das Umbenennen (BDOS 17H) schreibt den Kopf mit dem neuen Namen neu; Byte 15 = Satzzahl |
+| 2–24 | 23 × 128 B Daten |
+| 25 | Abschluss, 17 B = FCB 0–16 **mit dem Arbeitsnamen**: `00 'STAT    $$$' 00 40 17 00` |
+| 26 | Bandmarke |
+
+**READ SEQ (01D2–01F0) liest bis zur Bandmarke** (Länge 0 → Dateiende) und kopiert jeden anderen
+Block in den DMA-Puffer — auch den 17-B-Abschluss.  `PIP B:STAT2.COM=F:STAT.COM` liefert daher
+24 Sätze: die 23 richtigen und einen 24., dessen erste 17 Byte der Abschlussblock sind (Rest =
+alter Pufferinhalt).  Gastverhalten laut Code [abg]; am Gerät nicht nachgeprüft [?].
+
+### 8.4 Kernfehler, die BCU aufdeckte
+
+Beim ersten Schreiben meldete BCU `7xWRITE`: das Echo (Lese-nach-Schreiben, je Byte verglichen in
+der Daten-PIO-B-ISR 0915) blieb nach wenigen Bytes aus.  Ursache waren zwei Abweichungen vom Z80/
+U880 im Kern, beide jetzt behoben und einzeln abgesichert:
+
+1. **Interrupt direkt nach `EI`** (`a5120.cpp`): die Maschine nahm einen anstehenden Interrupt
+   schon vor dem auf `EI` folgenden Befehl an — zwischen `EI` und `RETI` der ISR (0945/0946); das
+   RETI lief nie.  Jetzt `Z80::ei_schatten`/`interruptAnnehmbar()` (Wächter
+   `Z80Test.EiSchatten_InterruptErstNachDemFolgendenBefehl`).  Dieselbe Festlegung hatte die
+   P8000-8-Bit-Karte schon für sich (`karte8.cpp`, Befund P22); die übrigen Maschinen (K8915, PRG,
+   PC 1715) prüfen weiter nur IFF1 [?].
+2. **RETI von Port B, während Port A anfordert** (`Z80PIO::onRETI`): B galt als gesperrt, weil A
+   eine *anstehende* Anforderung hatte; B blieb in Bedienung (IUS) und sperrte sich bis zum
+   nächsten fremden RETI.  Bei der RETI-Dekodierung gibt ein nur anstehender Kanal IEO frei; jetzt
+   sperrt für B nur noch A in Bedienung (Wächter `RetiChain.PioRetiVonBLoeschtIusAuchWennAAnfordert`).
+   Die gleiche Lesart steckt noch in `Z80CTC`/`Z80SIO::onRETI` (Kanal-IEI mit „anstehend“) und
+   über Bausteingrenzen in `K1520Bus::updateInterruptChain` [?, nicht angefasst].
+
+`K5020::verloreneBytes()` steigt im Lauf (≈ 34) — Bytes, die beim Suchen/Überfahren an der
+Daten-PIO B ankommen, während der Treiber sie nicht liest; die Datei selbst kommt vollständig zurück.

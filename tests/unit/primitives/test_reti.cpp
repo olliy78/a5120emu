@@ -110,6 +110,37 @@ TEST(RetiChain, PioHoldsIusUntilRetiAndOnlyThenAcknowledgesAgain) {
     EXPECT_EQ(pio.getVector(), 0xC4) << "nach RETI wieder quittierbar";
 }
 
+/// RETI der Port-B-ISR, während Port A schon ANFORDERT (noch nicht quittiert): bei der
+/// RETI-Dekodierung gibt ein nur anstehender Kanal IEO frei — B muss aus der Bedienung, sonst
+/// sperrt B sich selbst bis zum nächsten RETI (Befund A8, BCU-KMBG: Kassettenecho über B,
+/// Ausgabe über A, beide Interrupts abwechselnd).
+TEST(RetiChain, PioRetiVonBLoeschtIusAuchWennAAnfordert) {
+    K1520Bus bus;
+    Z80PIO pio("PIO");
+    bus.registerIO(&pio, 0x00, 4);
+    bus.setInterruptChain({&pio});
+    armPio(pio, 0xC4);
+    pio.ioWrite(3, 0xC8);   // Port B: Vektor
+    pio.ioWrite(3, 0x4F);   // Modus 1 (Eingabe)
+    pio.ioWrite(3, 0x87);   // IE=1
+    bus.updateInterruptChain();
+
+    pio.portBWrite(0x11);
+    bus.updateInterruptChain();
+    ASSERT_EQ(bus.interruptAcknowledge(), 0xC8) << "B quittiert";
+    bus.updateInterruptChain();
+    pio.portAWrite(0x22);                     // A fordert an, während B bedient wird
+    bus.updateInterruptChain();
+    bus.signalRETI();                         // RETI der B-ISR
+    EXPECT_EQ(bus.interruptAcknowledge(), 0xC4) << "A quittiert";
+    bus.updateInterruptChain();
+    bus.signalRETI();                         // RETI der A-ISR
+    pio.portBWrite(0x33);
+    bus.updateInterruptChain();
+    EXPECT_EQ(bus.interruptAcknowledge(), 0xC8)
+        << "B blieb nach seinem RETI in Bedienung (IUS) und sperrt sich selbst";
+}
+
 // ─── SIO ─────────────────────────────────────────────────────────────────────
 
 TEST(RetiChain, SioHoldsIusUntilRetiAndOnlyThenAcknowledgesAgain) {

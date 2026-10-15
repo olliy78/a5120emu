@@ -32,6 +32,7 @@ Stand/Karten `doc/design/32_...`, Abschrift `doc/kassette/k5020.md`, `treiber.md
 | 17 | **FEX-Formate sind nicht belegbar**; `k1520tape` kann nur Rohblöcke und Bootband.  Der CLI-Runner kennt nur Textdateien. | `cli_k1520tape_*` |
 | 18 | **Oberfläche (K9):** Profilfeld `tape_wahl` (am P8000 kein Kästchen); `general.tape` (true/false), Vorgabe aus (auch in den `data/default_config_*.yaml`); Abschnitt `kassette:` je Laufwerk Datei + Schreibschutz — **fehlt er, bleibt alles**.  Kasten „Kassette“ nur mit Karte, **kein Tastenkürzel**.  Ein Wechsel des Kästchens baut die Maschine neu.  `tape_flush` je Laufwerk beim Beenden, Neuaufbau und Auswerfen.  **Abweichung vom Lochstreifen:** `tape_load` legt eine fehlende `.k52` leer an. | `py_kassette_gui` (`test_vorgabe_aus_und_kasten_folgt_der_karte`, `test_p8000_hat_keine_kassette`, `test_auslieferung_hat_die_karte_aus`, `test_keine_kuerzel`, `test_wiederherstellung_aus_der_konfiguration`) |
 | 19 | **Handbuch** (`app/help/handbuch.md` „Kassette“) gehört zum Vertrag: Abschnitt und Hinweis „KMBG/FEX erst zurückspulen“ (Festlegung 9) bleiben; Kürzeltabelle unverändert. | `py_help` |
+| 20 | **BCU 880 (Ausführung `Kmbg`): F: ist GERÄT 2** (E: = Gerät 1), Treiber per `OPEN B:KMBG` (nicht `B:KMBG`), Warmstart braucht die Diskette „ohne SYL“ in A:; der BCU-Treiber wartet beim Überfahren des Vorspanns **ohne Frist** — eine frisch eingelegte Kassette (Position 0) geht, anders als bei Festlegung 9.  READ SEQ liefert den 17-B-Abschlussblock als zusätzlichen Satz (Gastverhalten).  Dabei gefunden und behoben: Interrupt erst NACH dem Befehl hinter `EI` (`Z80::ei_schatten`, A5120-Laufweg) und `Z80PIO::onRETI` (B wird auch frei, wenn A nur anfordert) — sonst `7xWRITE` (Echo verloren).  Details `doc/a5120_alt/bcu.md` §8. | `BcuKassette.FormatiertSchreibtLiest`, `Z80Test.EiSchatten_*`, `RetiChain.PioRetiVonBLoeschtIusAuchWennAAnfordert` |
 
 ## Bekannte Eigenheiten
 
@@ -47,4 +48,4 @@ Stand/Karten `doc/design/32_...`, Abschrift `doc/kassette/k5020.md`, `treiber.md
   Klärung gilt „erst zurückspulen“ (im Handbuch vermerkt).
 - Stellung in der Interruptkette am A5120/K8915/PRG [?] — ohne Gasttreiber unbelegt.
 - `Z80PIO::setExtern` beim Moduswechsel (Festlegung 12) [?].
-- Bootband A8 (BCU mit Kassette F:), MC80 (M7), optional `.wav` nach ISO 3407 (K11, zurückgestellt).
+- MC80 (M7), optional `.wav` nach ISO 3407 (K11, zurückgestellt).
