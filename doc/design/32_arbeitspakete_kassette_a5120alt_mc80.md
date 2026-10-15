@@ -81,7 +81,7 @@ ein eigenes Worktree.
 | A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | **fertig 2026-10-14** (`doc/a5120_alt/k5120.md`; K5120 ≈ K5122, A4 nur als Variante, Anwenderwunsch) |
 | A4 | `cards/k5120` | cpp | A4a | L | zurückgestellt |
 | A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | **fertig 2026-10-15** (514cf6a; `A5120Ausfuehrung.*`, `py_a5120_modelle`, `py_c_api`) |
-| A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | offen |
+| A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | **fertig 2026-10-15** (4f21185; `BootIntegrationAlt.*`, `cli_bt_ausfuehrung_alt`, `cli_dbg_ausfuehrung_*`) |
 | A7 | BCU 880 bis Prompt | int | A5, A0 | L | offen |
 | A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | offen |
 | A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | offen |
@@ -122,6 +122,7 @@ ein eigenes Worktree.
 - 2026-10-14 A1: `K7023` (.00/.01) fertig: FC00H, 64×16, Zelle 8×16, Framebuffer 512×256 (nicht 640×288 — GUI beachten), Kursor Bit 7 als Balken Linien 12–15, `.01` Marken 04H–0FH. GCC: Konfig-Struct mit Defaultwerten im Klassenkörper + `explicit K(bus, const Config& = Config{})` kompiliert nicht → zwei Konstruktoren (gilt für K7636/weitere Karten). Beim Einbau (A5): `config_bridges` Bit 1 setzen; Karte nach den RAM-Karten registrieren; `k1520_screen_char` über `vramRead`. Zwei SerielleKopplung-64KiB-Tests liefen bei paralleler Rechnerlast in den Zeitüberlauf (vermutlich Last).
 - 2026-10-14 A3: K7636-Modell (`core/peripherals/k7636/`) + `UBusGeraet`-Schnittstelle an der K2526 (`setUBusGeraet` vor `powerOn()`, `service(zve1_cycles)` je Befehl; ohne Gerät unverändert K7637-Verdrahtung); Bildschirmtastatur `keyboard_k7636.py` (Matrix `0x03000000|Adresse`, noch nicht im Profil). Tabellenkorrekturen: A15 → 0AH, C02-b → 53H [?]. Annahmen [?]: 2 ms Reaktionszeit, Strg=ET2-Vorsatz. A5 muss anlegen: C-ABI für Lampenmaske (Bit 0–3 Wahl, 4 INS MODE, 5 Fehler), Kern bietet `wahlLampe()/insModeLampe()/fehlerLampe()`. Volllauf nach Merge noch nicht gefahren (A5 holt ihn nach). Nicht im Savestate.
 - 2026-10-15 A5: `Config::ausfuehrung` Neu/Alt/Kmbg (Acht lehnt der Konstruktor ab, EM nur bei Neu); `Config::fuerAusfuehrung(a)` = 3× K5600.10; C-ABI `k1520_create_a5120_ausfuehrung`/`k1520_a5120_ausfuehrung`, Lampen der K7636 über `k1520_keyboard_leds` (Bit 0–3 Wahl, 4 INS, 5 Fehler, 6 SHIFT/LOCK, 7 Signal); Python `ausfuehrung="alt"|"kmbg"`; Profil-Modelle „A5120 (64×16, K7636)“, „A5120 Kassette“ (+ „A5120 8″“ ausgegraut). Offen: `boot_trace`/`k1520dbg` ohne `--ausfuehrung` (→ A6 zuerst); Konsolenmodus nur K7024; anderes Lade-ROM braucht Config-Feld (A7); GUI-Modellwechsel setzt Laufwerke nicht auf die Vorgabe der Ausführung (A9-Frage); K7637 am Alt-Modell nicht an SIO A32.
+- 2026-10-15 A6: CP/A 25.09.89 der vorhandenen Disketten läuft auf „alt“ unverändert bis `A>` (BAB1, „Tastatur: K7636“, `dir`); kein Kernfehler, Weg 2 unnötig. `boot_trace`/`k1520dbg` haben `--ausfuehrung neu|alt|kmbg` und `--laufwerke`. Neue Fixture 40-Spur-K5600.10-Bootdiskette (noch combo5zoll-BIOS, Banner „A:5″(80,DD,DS)“; ein BIOS mit `diskA=10540` fehlt, optional). Tastendruck im CP/A-Autostart → `*break*` (Gastverhalten). Platte war voll: Worktrees/`build*` regelmäßig aufräumen.
 
 ---
 
