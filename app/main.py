@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-K1520 Emulator — A5120, K8915, PRG710, PC1715 und P8000 Emulator
-===============================================================
+K1520 Emulator — A5120, K8915, PRG710, PC1715, P8000 und MC80 Emulator
+=====================================================================
 
-Main entry point for the Qt6 GUI application.  EIN Programm, fünf Gesichter:
+Main entry point for the Qt6 GUI application.  EIN Programm, sechs Gesichter:
 ``--machine k8915`` wählt das Programmprofil des K8915 Emulators (eigene
 Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`),
 ``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl),
 ``--machine pc1715`` das des PC1715 Emulators (PC 1715, Modellwahl),
 ``--machine p8000`` das des P8000 Emulators (Terminal, Winchester, Modellwahl),
+``--machine mc80`` das des MC80 Emulators (MC80.30/31, ohne Laufwerke),
 (``--mode terminal`` stellt dort die Betriebsart „nur Terminal“ ein, ``--mode computer`` „Computer mit
 Terminal“); ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
-fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``run_pc1715emu.sh``, ``run_p8000emu.sh``, ``bin/k8915emu``, Startmenü).
+fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``run_pc1715emu.sh``, ``run_p8000emu.sh``, ``run_mc80emu.sh``, ``bin/k8915emu``, Startmenü).
 
 Usage:
-    python3 app/main.py [--machine a5120|k8915|prg710|pc1715|p8000]
+    python3 app/main.py [--machine a5120|k8915|prg710|pc1715|p8000|mc80]
                         [--mode computer|terminal]  (nur p8000)
                         [--instance NAME] [--config DATEI] [DISKETTE …]
 
@@ -66,7 +67,7 @@ for _arg in _args:
     if _arg == "--machine":
         _MASCHINE = next(_args, "")
         if not _MASCHINE:
-            print("--machine braucht einen Namen: a5120, k8915, prg710, pc1715 oder p8000", file=sys.stderr)
+            print("--machine braucht einen Namen: a5120, k8915, prg710, pc1715, p8000 oder mc80", file=sys.stderr)
             sys.exit(2)
     elif _arg.startswith("--machine="):
         _MASCHINE = _arg.split("=", 1)[1]
@@ -110,15 +111,20 @@ if "--paths" in sys.argv[1:]:
 # --help: ebenfalls vor den Qt-Importen, damit die Hilfe auch ohne PySide6 kommt.
 # Laufwerke, die das Profil ab Werk bestückt (A5120: A:–C: + leerer D:-Platz, also
 # vier Steckplätze; K8915: zwei) — so viele Disketten nimmt die Kommandozeile.
-_ANZAHL_LAUFWERKE = 4 if PROFIL.maschine == "a5120" else 2   # K8915, PRG: zwei
+# MC80: keine Laufwerke — Disketten nimmt die Kommandozeile dort gar nicht.
+_ANZAHL_LAUFWERKE = (0 if not PROFIL.laufwerke
+                     else 4 if PROFIL.maschine == "a5120" else 2)   # K8915, PRG: zwei
 _LAUFWERKE_TEXT = ("bis zu vier Abbilder, in Laufwerksreihenfolge A: B: C: D:"
                    if _ANZAHL_LAUFWERKE == 4 else
-                   "bis zu zwei Abbilder, in Laufwerksreihenfolge A: B:")
+                   "bis zu zwei Abbilder, in Laufwerksreihenfolge A: B:"
+                   if _ANZAHL_LAUFWERKE == 2 else
+                   "keine Abbilder (die Maschine hat keine Diskettenlaufwerke)")
 _KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
          "k8915": "Emulator des Arbeitsplatzcomputers K8915 (K1520-Bus)",
          "prg710": "Emulator der Programmiergeraete PRG 710 und PRG 710-1 (K1520-Bus)",
          "pc1715": "Emulator der Buerocomputer PC 1715 und PC 1715W",
-         "p8000": "Emulator des 16-Bit-Arbeitsplatzcomputers P8000 (U880 + U8001, UDOS und WEGA)"}
+         "p8000": "Emulator des 16-Bit-Arbeitsplatzcomputers P8000 (U880 + U8001, UDOS und WEGA)",
+         "mc80": "Emulator der Mikrorechner MC80.30 und MC80.31 (VEB Elektronik Gera)"}
 _P = PROFIL.programm
 _MODUS_HILFE = ("  {p} --mode MODUS      Betriebsart: computer (Rechner mit Terminal) oder terminal\n"
                 "                        (nur das Terminal, Verbindung zu einem anderen Rechner)\n"
@@ -158,7 +164,7 @@ for _arg in sys.argv[1:]:
         sys.exit(2)
     CLI_DISKS.append(_arg)
 if len(CLI_DISKS) > _ANZAHL_LAUFWERKE:
-    _zahl = "vier" if _ANZAHL_LAUFWERKE == 4 else "zwei"
+    _zahl = {4: "vier", 2: "zwei"}.get(_ANZAHL_LAUFWERKE, "keine")
     print(f"{_P}: {len(CLI_DISKS)} Disketten angegeben, die Maschine hat {_zahl} "
           f"Laufwerke", file=sys.stderr)
     sys.exit(2)

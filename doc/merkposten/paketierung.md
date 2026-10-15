@@ -98,7 +98,12 @@ Sieben Dinge, die man dabei nicht kaputtmachen darf:
   Rauchtests erzeugen jetzt auch `k1520_create(3)` und das PC1715-Fenster.
   **Seit AP P18 (2026-10-08) gibt es den fünften: P8000 Emulator (`p8000emu`, `--machine p8000`)**; das zeitweilige sechste `p8000term` ist mit P23a entfallen (Betriebsart „nur Terminal“ im selben Programm, `--mode terminal`): dieselbe Vorlage (der Name wählt das Profil), `.desktop.in`, `{#Programm5}`, Vorvorgabedatei, Rauchtests mit `k1520_create(4)` und dem Fenster; **P8000-WEGA-Sätze
   im Paket** (2026-10-11, Entscheid des Anwenders: Platten `*.img.gz` bleiben beim Anwender gepackt — im Paket `*.img.gz.gz`, `seed_user_disks` kennt `*.img.gz` —, dazu alle `.dmk`). Wächter
-  `test_die_p8000_programme_sind_in_allen_paketwegen`.  Im `.iss` wächst das Rauchtest-Feld
+  `test_die_p8000_programme_sind_in_allen_paketwegen`.
+  **Seit AP M6 (2026-10-15) gibt es den sechsten: MC80 Emulator (`mc80emu`, `--machine mc80`)**:
+  dieselbe Vorlage, `mc80emu.desktop.in`, `{#Programm6}` im .iss (das Rauchtest-Feld wächst auf
+  44 Zeilen), `default_config_mc80.yaml` (ohne `disks:`/`drive_types:` — keine Laufwerke),
+  Eintrag in `MASCHINEN`, Rauchtests mit `k1520_create(6)` und dem Fenster.  Die Spiele aus
+  `doc/mc80/spiele/` liegen NICHT im Paket.  Wächter `test_der_mc80_emulator_ist_in_allen_paketwegen`.  Im `.iss` wächst das Rauchtest-Feld
   `Zeilen` mit (SetArrayLength + laufende Nummern: neue Zeilen ANS ENDE, vor `sys.stdout.flush()`).
   **Alle Rauchtests (install.sh, .iss, beide release.yml-Jobs) erzeugen ALLE Maschinen**
   (`k1520_create(0)`, `(1)` und `(2)`) — Wächter `test_rauchtests_pruefen_beide_maschinen`. Wächter `py_packaging`

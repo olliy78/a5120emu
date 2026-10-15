@@ -63,6 +63,14 @@ from app.emulationstakt import Emulationstakt
 from app import raf
 
 
+def ladeadresse_aus_namen(pfad: str) -> str:
+    """Ladeadresse, wie sie im Namen eines Speicherabzugs steht (``tetris_4000_4fff.bin``,
+    ``pharao_6400-94e0.bin`` → ``"4000"``/``"6400"``); sonst ``"4000"`` (RAM-Segment der SPE 2)."""
+    import re
+    m = re.search(r"_([0-9A-Fa-f]{4})[-_][0-9A-Fa-f]{4}", os.path.basename(pfad))
+    return m.group(1).upper() if m else "4000"
+
+
 class MainWindow(QMainWindow):
     """Main emulator window."""
     
@@ -177,6 +185,9 @@ class MainWindow(QMainWindow):
         # Erst jetzt: die Leiste kann Kastenschalter zeigen, und die gibt es
         # erst, seit die Kästen stehen.
         self._leiste_fuellen(self._leisten_inhalt)
+        if not self.profil.laufwerke:
+            # MC80: kein Diskettenlaufwerk — Kasten, Menüs und Statusfelder gar nicht erst zeigen.
+            self._rechner_anzeigen()
 
         # Status updates
         self.cycles = 0
@@ -537,24 +548,27 @@ class MainWindow(QMainWindow):
         Frontplatte; der Kasten „Laufwerke“ und die Lampen verschwinden, statt tot dazustehen.
         """
         hat = self.profil.modell_hat_rechner(self._model)
-        self.drives_dock.toggleViewAction().setEnabled(hat)
-        self.drives_dock.toggleViewAction().setVisible(hat)
+        # Ein Rechner ohne Diskettenlaufwerke (MC80): Kasten und Diskettenmenüs fallen weg.
+        lw = hat and self.profil.laufwerke
+        self.drives_dock.toggleViewAction().setEnabled(lw)
+        self.drives_dock.toggleViewAction().setVisible(lw)
         # Alles, was nur mit einem Rechner Sinn hat (Diskette, Platte, Zwischenstand, NMI), samt
         # den Lampen der Statuszeile; die Verbindung zum Rechner dagegen nur OHNE (Terminalbetrieb).
         for n in ("nmi", "einlegen", "auswerfen", "stand_speichern", "stand_laden"):
             a = getattr(self, f"act_{n}", None)
             if a is not None:
-                a.setVisible(hat)
-                a.setEnabled(hat)
+                sichtbar = lw if n in ("einlegen", "auswerfen") else hat
+                a.setVisible(sichtbar)
+                a.setEnabled(sichtbar)
         a = getattr(self, "act_verbindung", None)
         if a is not None:
             a.setVisible(not hat)
         self.status_widget.set_rechner_sichtbar(hat)
-        if not hat:
+        if not lw:
             self.drives_dock.hide()
         elif not self._rechner_war_da:
             self.drives_dock.show()
-        self._rechner_war_da = hat
+        self._rechner_war_da = lw
         self.setWindowTitle(self._fenstertitel(self._model))
         if hasattr(self, "act_verbindung"):
             self.act_verbindung.setEnabled(self.profil.modell_art(self._model) == "einheit")
@@ -610,6 +624,10 @@ class MainWindow(QMainWindow):
         if self._tastatur_art in ("pc1715", "pc1715-tast618"):
             from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
             return KeyboardPc1715Widget(qwertz=self._tastatur_art == "pc1715-tast618")
+        if self._tastatur_art == "mc80":
+            # MC80.3x: abgesetzte Tastatur auf Zeichenebene (Entwurf 31, AP M6).
+            from app.ui.keyboard_mc80 import KeyboardMc80Widget
+            return KeyboardMc80Widget()
         if self._tastatur_art == "k7609":
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
@@ -850,6 +868,10 @@ class MainWindow(QMainWindow):
             emu_menu.addAction(self.act_stand_speichern)
             emu_menu.addAction(self.act_stand_laden)
             emu_menu.addAction(self.act_verbindung)
+            emu_menu.addAction(self.act_text_kopieren)
+        if hasattr(self, "act_speicherabzug_laden"):   # nur MC80 (AP M6)
+            emu_menu.addSeparator()
+            emu_menu.addAction(self.act_speicherabzug_laden)
             emu_menu.addAction(self.act_text_kopieren)
         if self.eprom_dock is not None:          # nur im Profil mit EPROMmer
             emu_menu.addSeparator()
@@ -1176,6 +1198,8 @@ class MainWindow(QMainWindow):
                     self._has_saved_layout = True
             except Exception:
                 pass
+        if not self.profil.laufwerke:
+            self.drives_dock.hide()        # ein gespeichertes Layout bringt ihn nicht zurück
 
     def _geometrie_herstellen(self, win: dict):
         """Größe, Lage und „maximiert" aus dem ``window``-Abschnitt herstellen.
@@ -2244,6 +2268,51 @@ class MainWindow(QMainWindow):
 
     def _p8000emu_starten(self):
         self._emulator_starten("p8000")
+
+    def _mc80emu_starten(self):
+        self._emulator_starten("mc80")
+
+    # ── Speicherabzug laden (nur MC80, AP M6) ────────────────────────────────
+
+    def _speicherabzug_laden(self, pfad: str = "", adresse=None) -> int:
+        """Menü *Maschine ▸ Speicherabzug laden…*: eine Binärdatei ab einer Adresse in den RAM.
+
+        Ohne Kassette (M7) der Weg, Spiele und Programme in den MC80 zu bringen (Entwurf 31
+        §4, ``doc/mc80/spiele/``).  Vorher muss EGOS ``INIT`` ausgeführt haben (sonst gibt es
+        die RAM-Kette nicht); gestartet wird mit dem EGOS-Kommando des Programms.  Die
+        Adresse wird erfragt (Vorgabe 4000H, der Anfang des RAM-Segments der SPE 2).
+        ``pfad``/``adresse`` überspringen die Dialoge (Tests).  Rückgabe: geladene Bytes
+        (0 = abgebrochen oder Fehler).
+        """
+        if not pfad:
+            pfad, _ = QFileDialog.getOpenFileName(
+                self, "Speicherabzug laden", self._stand_ordner(),
+                "Speicherabzüge (*.bin *.com *.rom *.mem);;Alle Dateien (*)")
+            if not pfad:
+                return 0
+        if adresse is None:
+            from PySide6.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getText(
+                self, "Speicherabzug laden",
+                "Ladeadresse (hexadezimal, z. B. 4000):",
+                text=ladeadresse_aus_namen(pfad))
+            if not ok:
+                return 0
+            try:
+                adresse = int(text.strip().rstrip("hH"), 16)
+            except ValueError:
+                QMessageBox.warning(self, "Speicherabzug laden",
+                                    f"„{text}“ ist keine hexadezimale Adresse.")
+                return 0
+        try:
+            with kern_sperre():
+                n = self.emulator.mem_load(adresse, pfad)
+        except (OSError, ValueError, RuntimeError) as e:
+            QMessageBox.warning(self, "Speicherabzug laden", str(e))
+            return 0
+        self.statusBar().showMessage(
+            f"{n} Byte ab {adresse:04X}H geladen ({os.path.basename(pfad)})", 8000)
+        return n
 
     # ── Zwischenstand (nur P8000, P8KS) ──────────────────────────────────────
 

@@ -1,15 +1,15 @@
-# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / mc80emu — Kurzhandbuch
 
 Version {{VERSION}}
 
 Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
+Verwandten am K1520-Bus. Es gibt ihn in sechs Gestalten: den **A5120 Emulator**
 (`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
-(`prg710emu`), den **PC1715 Emulator** (`pc1715emu`) und den **P8000 Emulator**
-(`p8000emu`) — dasselbe Programm mit
+(`prg710emu`), den **PC1715 Emulator** (`pc1715emu`), den **P8000 Emulator**
+(`p8000emu`) und den **MC80 Emulator** (`mc80emu`) — dasselbe Programm mit
 eigener Konfiguration und eigener Tastatur; was nur den K8915, den PRG, den
-PC 1715 bzw. den P8000 betrifft, steht in den Abschnitten „Der K8915 Emulator", „Der PRG710
-Emulator", „Der PC1715 Emulator" und „Der P8000 Emulator" (die Bedienung des P8000 selbst — Selbsttest,
+PC 1715, den P8000 bzw. den MC80 betrifft, steht in den Abschnitten „Der K8915 Emulator", „Der PRG710
+Emulator", „Der PC1715 Emulator", „Der P8000 Emulator" und „Der MC80 Emulator" (die Bedienung des P8000 selbst — Selbsttest,
 Monitore, UDOS, WEGA — beschreibt das Kapitel „Bedienung des P8000"). Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
@@ -1174,6 +1174,46 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
 * **Schnittstellen** — **Drucker (X4)** und **V.24 (X5)**; die Tastatur hängt
   fest an SIO-A und steht nicht im Reiter. Ein Drucker ohne Verbindung gilt als
   besetzt.
+
+## Der MC80 Emulator
+
+`mc80emu` ist derselbe Emulator für die Mikrorechner **MC80.30** und **MC80.31** des
+VEB Elektronik Gera (U880 mit 2,4576 MHz, Betriebssystem **EGOS** im ROM, Grafikkarte
+VIS 2a mit 512 × 256 Bildpunkten, abgesetzte Tastatur mit eigenem Prozessor). Was
+anders ist:
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **MC80.30** (Vorgabe) oder
+  **MC80.31** (zusätzlich die EPROM-Programmsegmente 10H/20H). Ein
+  Wechsel erzeugt die Maschine neu (Kaltstart) und wird in `mc80emu.yaml` gemerkt. Die
+  **MC80.33** (vom Treiber-ROM der AKM liegt nur die Hälfte vor) und die **MC80.21/.22**
+  stehen ausgegraut in der Auswahl.
+* **Speichererweiterung** — *Einstellungen ▸ Allgemein*: eine oder zwei Karten **SPE 2**
+  (die zweite bringt das RAM-Segment 02H). Ein Wechsel startet die Maschine kalt.
+* **Keine Laufwerke** — der Kasten „Laufwerke“, die Diskettenmenüs und die
+  Laufwerksfelder der Statuszeile fehlen. RAM-Disk und Lochstreifen gibt es am MC80
+  nicht; die **Kassette** folgt mit einer späteren Fassung.
+* **Einschalten** — EGOS meldet sich nach gut einer Sekunde mit
+  „mc 80.30. microcomputer“ und „Version 3.0“, unten steht `OK` und der Prompt `>`.
+  **Erst `INIT` eingeben** (mit ENTER): das legt die Kommandokette im RAM an; Tasten,
+  die vor dem Ende von INIT kommen, gehen verloren.
+* **Programme laden** — *Maschine ▸ Speicherabzug laden…* lädt eine Binärdatei ab einer
+  Adresse in den Arbeitsspeicher (erfragt wird die Adresse; steht sie im Dateinamen wie
+  bei `tetris_4000_4fff.bin`, ist sie vorgeschlagen). Gestartet wird mit dem
+  EGOS-Kommando des Programms, z. B. **TETRIS**: nach `INIT` ab 4000H laden, dann
+  `te` + ENTER; **HASI** ebenso ab 4000H mit `hasi`. Kein Tastenkürzel.
+* **Die Bildschirmtastatur** zeichnet das Tastenbild der Betriebsdokumentation
+  (Bild A5): Hauptfeld mit **CTRL**, Feststeller **⇩** und den beiden Umschalttasten
+  **⇧**, darunter **OFF**, Leertaste und **ENTER**; rechts die acht **Steuertasten**
+  S0–S7 (Sondertasten 0–7 von EGOS) und der Ziffernblock. Die Tastatur sendet
+  **Zeichen**, nicht Tastenpositionen. Kursortasten, **CL**, **CRLF**, **÷** und **00**
+  lassen sich drücken, senden aber nichts — ihre Codes sind nicht überliefert. Die
+  Leuchten links zeigen CTRL und Umschaltung, die rechts neben CL die Bereitschaft.
+* Die **PC-Tastatur**: Zeichen als Zeichen (EGOS tauscht in der Vorgabe Groß und
+  Klein — „a“ erscheint als „A“), **Enter** = ENTER, **Esc** = OFF (Abbruch),
+  **Tab** = Tabulator, **F1–F8** = Steuertasten S0–S7. Die Pfeiltasten wirken nicht.
+* **Text kopieren** — der Bildschirm ist eine Grafik; *Maschine ▸ Bildschirminhalt als
+  Text kopieren* (oder Rechtsklick) erkennt die EGOS-Schrift wieder und liefert 25
+  Textzeilen.
 
 ## Der P8000 Emulator
 

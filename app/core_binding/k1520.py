@@ -749,7 +749,8 @@ def _utf8(path) -> bytes:
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "a5120-alt": 0, "a5120-kmbg": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
-                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5}
+                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5,
+                 "mc80": 6, "mc80-31": 6}
 # (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
 # AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
@@ -765,6 +766,9 @@ A5120_AUSFUEHRUNG_MASCHINE = {"a5120-alt": "alt", "a5120-kmbg": "kmbg"}
 K7023_COLS, K7023_ROWS = 64, 16
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
+# Variante für k1520_create_mc80 (Entwurf 31, AP M6): "mc80" = MC80.30, "mc80-31" = MC80.31.
+# .33/.21/.22 lehnt der Kern noch ab (Variante 2/3/4) — die Oberfläche führt sie gesperrt.
+MC80_VARIANTEN = {"mc80": 0, "mc80-31": 1}
 # Bauform für k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
 K8915_GENERATIONEN = {"k8915": 0, "k8915-g2": 1}
 
@@ -1022,7 +1026,7 @@ class K1520Emulator:
                  em: Optional[str] = None, raf: Optional[str] = None,
                  ptape: bool = False, tape: bool = False, zeichensatz: str = "deutsch",
                  tastatur: str = "s600", p8000: Optional[dict] = None,
-                 ausfuehrung: Optional[str] = None):
+                 ausfuehrung: Optional[str] = None, spe=1):
         """Initialize emulator instance.
 
         Args:
@@ -1033,7 +1037,8 @@ class K1520Emulator:
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
             machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"k8915-g2"`` (K8915 Gen 2), ``"prg710"`` oder
                 ``"prg710-1"``, ``"pc1715"``, ``"pc1715-k7221"`` (PC 1715 mit dem
-                Bildschirm K7221, 64×16) oder ``"pc1715w"`` — siehe :data:`MACHINE_TYPES`.
+                Bildschirm K7221, 64×16), ``"pc1715w"``, ``"mc80"`` (MC80.30) oder
+                ``"mc80-31"`` — siehe :data:`MACHINE_TYPES`.
             zeichensatz: nur PC 1715 — Bestückung der ZG-EPROMs, ``"deutsch"``
                 (S619 + S602, Vorgabe), ``"polnisch"`` oder ``"kyrillisch"``; beim
                 ``"pc1715w"`` ohne Wirkung (der Satz kommt von Diskette).
@@ -1055,6 +1060,8 @@ class K1520Emulator:
             tape: Kassettenkarte K5020 (zwei K5200; A5120 30H, K8915 D0H, PRG 710 30H,
                 PC 1715 D0H) stecken, wie ``ptape`` direkt nach dem Anlegen.  Fehler → ValueError.
                 Bei der Ausführung ``"kmbg"`` steckt sie ohnehin (dann ohne Wirkung).
+            spe: nur MC80 (``"mc80"`` = MC80.30, ``"mc80-31"`` = MC80.31) — Zahl der
+                Speichererweiterungen SPE 2, ``1`` (Vorgabe) oder ``2`` (auch als Text).
             ausfuehrung: nur A5120 — ``None``/``"neu"`` (Vorgabe), ``"alt"`` (K7023.01 16×64,
                 4× K3525, K7636; Vorgabelaufwerke 3× K5600.10), ``"kmbg"`` (wie ``"alt"`` mit
                 fest gesteckter K5020); ``"acht"`` lehnt der Kern noch ab.  Gleichwertig:
@@ -1120,6 +1127,9 @@ class K1520Emulator:
             elif machine == "p8000-terminal":
                 teile = [f"{k}={v}" for k, v in (p8000 or {}).items()]
                 handle = _lib.k1520_create_p8000_terminal(",".join(teile).encode("utf-8"))
+            elif machine in MC80_VARIANTEN:
+                handle = _lib.k1520_create_mc80(MC80_VARIANTEN[machine],
+                                                f"spe={int(spe)}".encode("ascii"))
             elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))

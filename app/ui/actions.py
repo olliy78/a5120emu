@@ -82,6 +82,13 @@ _SPEC: List[Tuple] = [
      "Telnet-/RFC-2217-Verbindung des Terminals zu einem Rechner herstellen oder trennen "
      "(nur im Modell „P8000 Terminal“)", "_verbindung_dialog", False),
 
+    # Speicherabzug in den RAM laden (nur MC80, AP M6: Spiele und Programme ohne Kassette).
+    # KEIN Kürzel (die Kürzeltabelle des Handbuchs ist ein Vertrag).
+    ("speicherabzug_laden", "&Speicherabzug laden…", "open", None,
+     "Eine Binärdatei ab einer Adresse in den Arbeitsspeicher laden (k1520_mem_load) — "
+     "vorher INIT eingeben, gestartet wird mit dem EGOS-Kommando des Programms",
+     "_speicherabzug_laden", False),
+
     # Bildschirminhalt des Originalterminals als reiner Text in die Zwischenablage (auch im
     # Kontextmenü des Bildes).  KEIN Kürzel: ^C gehört dem Gast.
     ("text_kopieren", "Bildschirminhalt als &Text kopieren", None, None,
@@ -150,6 +157,10 @@ _SPEC: List[Tuple] = [
      "Den P8000 Emulator öffnen (P8000) — ein eigenes Programm "
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_p8000emu_starten", False),
+    ("mc80emu", "&MC80 Emulator starten", None, None,
+     "Den MC80 Emulator öffnen (MC80.30/31) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_mc80emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -176,6 +187,8 @@ KURZ = {
     "prg710emu": "PRG710",
     "pc1715emu": "PC1715",
     "p8000emu": "P8000",
+    "mc80emu": "MC80",
+    "speicherabzug_laden": "Abzug laden",
     "stand_speichern": "Stand sichern",
     "stand_laden": "Stand laden",
     "verbindung": "Verbindung",
@@ -207,13 +220,15 @@ NUR_FUER = {
     "stand_speichern": ("p8000",),       # Zwischenstand (P8KS)
     "stand_laden": ("p8000",),
     "verbindung": ("p8000",),
-    "text_kopieren": ("p8000",),
+    "text_kopieren": ("p8000", "mc80"),
+    "speicherabzug_laden": ("mc80",),    # Speicherabzug laden (AP M6)
     # Die jeweils ANDEREN Emulatoren.
-    "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),
-    "a5120emu": ("k8915", "prg710", "pc1715", "p8000"),
-    "prg710emu": ("a5120", "k8915", "pc1715", "p8000"),
-    "pc1715emu": ("a5120", "k8915", "prg710", "p8000"),
-    "p8000emu": ("a5120", "k8915", "prg710", "pc1715"),
+    "k8915emu": ("a5120", "prg710", "pc1715", "p8000", "mc80"),
+    "a5120emu": ("k8915", "prg710", "pc1715", "p8000", "mc80"),
+    "prg710emu": ("a5120", "k8915", "pc1715", "p8000", "mc80"),
+    "pc1715emu": ("a5120", "k8915", "prg710", "p8000", "mc80"),
+    "p8000emu": ("a5120", "k8915", "prg710", "pc1715", "mc80"),
+    "mc80emu": ("a5120", "k8915", "prg710", "pc1715", "p8000"),
     # EPROMmer (Kasten und Bedienung) — nur der PRG 710 hat einen.
     "eprom_einlegen": ("prg710",),
     "eprom_leer": ("prg710",),
@@ -239,7 +254,7 @@ REIHENFOLGE: List = [
     None,
     "einlegen", "auswerfen",
     None,
-    "stand_speichern", "stand_laden", "verbindung", "text_kopieren",
+    "stand_speichern", "stand_laden", "verbindung", "text_kopieren", "speicherabzug_laden",
     None,
     "dock_drives", "dock_settings", "dock_screen", "dock_keyboard", "dock_eprom",
     None,
@@ -274,6 +289,20 @@ STANDARD_K8915: List = [
 ]
 
 
+#: Die Standardleiste des MC80: keine Laufwerke, dafür der Speicherabzug (AP M6).
+STANDARD_MC80: List = [
+    "konfig_laden", "konfig_speichern",
+    None,
+    "power", "reset",
+    None,
+    "speicherabzug_laden",
+    None,
+    "dock_settings", "dock_keyboard",
+    None,
+    "hilfe",
+]
+
+
 def gibt_es(name: str, maschine: str = "a5120", programm: str = "") -> bool:
     """Hat das Programm der Maschine *maschine* die Aktion *name*?
 
@@ -292,6 +321,8 @@ def reihenfolge(maschine: str = "a5120", programm: str = "") -> List:
 
 def standard(maschine: str = "a5120") -> List:
     """Inhalt der Symbolleiste beim ersten Start (Programmprofil *maschine*)."""
+    if maschine == "mc80":
+        return list(STANDARD_MC80)
     return list(STANDARD_K8915 if maschine in ("k8915", "p8000") else STANDARD)
 
 

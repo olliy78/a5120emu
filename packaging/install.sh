@@ -49,7 +49,7 @@ CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 # erste Maschine, weitere K1520-Rechner bekommen ein eigenes Programm in
 # derselben Installation.  Eine neue gehört hier hinein UND braucht eine
 # <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
-MASCHINEN="a5120emu k8915emu prg710emu pc1715emu p8000emu"
+MASCHINEN="a5120emu k8915emu prg710emu pc1715emu p8000emu mc80emu"
 
 # Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
 # Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
@@ -458,6 +458,10 @@ chmod +x "$PREFIX/bin/pc1715emu"
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/p8000emu"
 chmod +x "$PREFIX/bin/p8000emu"
 
+# Der MC80 Emulator (MC80.30/31 per Modellwahl): ebenso, `mc80emu*` => `--machine mc80`.
+ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/mc80emu"
+chmod +x "$PREFIX/bin/mc80emu"
+
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
 # entsteht der Starter der Oberflaeche.
@@ -484,6 +488,9 @@ if [ "$SHORTCUTS" = yes ]; then
     ln -sf "$PREFIX/bin/p8000emu" "$BINDIR/p8000emu"
     ersetze_platzhalter "$SELF_DIR/p8000emu.desktop.in" "$PREFIX" > "$APPDIR/p8000emu.desktop"
 
+    ln -sf "$PREFIX/bin/mc80emu" "$BINDIR/mc80emu"
+    ersetze_platzhalter "$SELF_DIR/mc80emu.desktop.in" "$PREFIX" > "$APPDIR/mc80emu.desktop"
+
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
         > "$APPDIR/k1520disktool.desktop"
@@ -498,7 +505,7 @@ if [ "$SHORTCUTS" = yes ]; then
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,p8000emu,k1520disktool}"
+    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,p8000emu,mc80emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
         *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
@@ -545,12 +552,12 @@ if lib.k1520_version().decode() != version.fassung():
 lib.k1520_create.argtypes = [ctypes.c_int]
 lib.k1520_create.restype = ctypes.c_void_p
 lib.k1520_destroy.argtypes = [ctypes.c_void_p]
-for _nr, _name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715"), (4, "P8000"), (5, "P8000-Terminal")):
+for _nr, _name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715"), (4, "P8000"), (5, "P8000-Terminal"), (6, "MC80")):
     _h = lib.k1520_create(_nr)
     if not _h:
         sys.exit(_name + ": k1520_create schlug fehl")
     lib.k1520_destroy(_h)
-print("     Maschinen:  A5120, PRG710, K8915, PC1715, P8000, P8000-Terminal")
+print("     Maschinen:  A5120, PRG710, K8915, PC1715, P8000, P8000-Terminal, MC80")
 
 import PySide6
 print("     PySide6:   ", PySide6.__version__)
@@ -583,7 +590,9 @@ fenster = MainWindow(profil=_profil.profil("pc1715"))
 fenster.close()
 fenster = MainWindow(profil=_profil.profil("p8000"))
 fenster.close()
-print("     Oberfläche: baut auf (A5120, K8915, PRG710, PC1715, P8000)")
+fenster = MainWindow(profil=_profil.profil("mc80"))
+fenster.close()
+print("     Oberfläche: baut auf (A5120, K8915, PRG710, PC1715, P8000, MC80)")
 PYEOF
 # Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
 # ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.
@@ -609,11 +618,11 @@ printf "\n"
 info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
-printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s, P8000: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu" "$PREFIX/bin/p8000emu"
+printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s, P8000: %s, MC80: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu" "$PREFIX/bin/p8000emu" "$PREFIX/bin/mc80emu"
 printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
     "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
-    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu   (bzw. über das Startmenü)\n"
+    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / mc80emu   (bzw. über das Startmenü)\n"
 fi
 
 # Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im

@@ -548,7 +548,7 @@ class SettingsWidget(QWidget):
         hat = self.profil.modell_hat_rechner(self.model_value())
         i = self.tabs.indexOf(self._drives_tab) if hasattr(self, "_drives_tab") else -1
         if i >= 0:
-            self.tabs.setTabVisible(i, hat)
+            self.tabs.setTabVisible(i, hat and self.profil.laufwerke)   # MC80: keine Laufwerke
 
     def set_nenntakt(self, text: str) -> None:
         """Beschriftung der Taktstufen nach dem Nenntakt des Modells (ohne Signal)."""
