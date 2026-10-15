@@ -74,7 +74,7 @@ ein eigenes Worktree.
 | K11 | optional `.wav` (ISO 3407) | cpp | K3 + Mitschnitt | M | zurückgestellt |
 | A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
 | A1a | K7023: Abschrift BD/SLP | ana | — | S | **fertig 2026-10-14** |
-| A1 | `cards/k7023` | cpp | A1a | M | offen |
+| A1 | `cards/k7023` | cpp | A1a | M | **fertig 2026-10-14** (7dd94df; `K7023.*`) |
 | A2 | K3525 (16 KB) | cpp | — | S | **fertig 2026-10-14** (94e2360; `K3525.*`) |
 | A3a | K7636 + Anschluss an K2526: Abschrift | ana | — | M | **fertig 2026-10-14** |
 | A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | offen |
@@ -119,6 +119,7 @@ ein eigenes Worktree.
 - 2026-10-14 K9: GUI-Kassette fertig (Profilfeld `tape_wahl`, kein Kästchen am P8000; `tape_flush` beim Beenden/Neuaufbau/Auswerfen; `tape_load` legt fehlende .k52 leer an — Abweichung vom Lochstreifen). Kassette nicht im Save-State. Festlegungen für K10: Kasten nur mit Karte, `kassette:`-Abschnitt, kein Kürzel, Wächter `py_kassette_gui`.
 - 2026-10-14 K8: `KMBG.REL` läuft unter SCPX 1.7 am A5120 (schreibt/liest Block, alle Status 00); kein Kernfehler. **Offen [?]:** KMBG wartet nur ~2,45 s (≈0,9 m bei 381 mm/s) auf Magnetband; der 1-m-Vorspann des Modells ist von Position 0 aus nicht zu durchqueren → Status 04 bei frisch eingelegter Kassette; erst nach Rückspulen (UMS) geht es. Vorspannlänge/Einlegeposition klären (K10/Handbuch oder Modell). `tools/cpm_bau.py` hat jetzt `module=` für Fremd-REL. `k1520dbg`: `--tape` vor dem Diskpfad.
 - 2026-10-14 A2: `K3525` (16 KB, Basis im 4-KB-Raster, Power-on 0xFF, Bus-/MEMDI oder MEMDI1/2); vier Karten 0000/4000/8000/C000 = 64 KB; Lade-ROM der K2526 NACH den Karten registrieren. Refresh nicht modelliert. `K1520Bus::registerMem`: Überlappung wirft NICHT (Lesen: letzte Karte gewinnt, Schreiben an alle). BD der K3525 ist Scan ohne Textebene; Brücken X6/X7 [?].
+- 2026-10-14 A1: `K7023` (.00/.01) fertig: FC00H, 64×16, Zelle 8×16, Framebuffer 512×256 (nicht 640×288 — GUI beachten), Kursor Bit 7 als Balken Linien 12–15, `.01` Marken 04H–0FH. GCC: Konfig-Struct mit Defaultwerten im Klassenkörper + `explicit K(bus, const Config& = Config{})` kompiliert nicht → zwei Konstruktoren (gilt für K7636/weitere Karten). Beim Einbau (A5): `config_bridges` Bit 1 setzen; Karte nach den RAM-Karten registrieren; `k1520_screen_char` über `vramRead`. Zwei SerielleKopplung-64KiB-Tests liefen bei paralleler Rechnerlast in den Zeitüberlauf (vermutlich Last).
 
 ---
 
