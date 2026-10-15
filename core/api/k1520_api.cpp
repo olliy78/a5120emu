@@ -410,6 +410,39 @@ K1520Handle k1520_create_with_em(K1520MachineType type,
     }
 }
 
+K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
+                                           const char* d0, const char* d1,
+                                           const char* d2, const char* d3) {
+    using A = A5120Machine::Config::Ausfuehrung;
+    g_init_error.clear();
+    if (ausfuehrung < 0 || ausfuehrung > 3) {
+        g_init_error = "Unbekannte A5120-Ausfuehrung " + std::to_string(ausfuehrung) +
+                       " (0 neu, 1 alt, 2 KMBG, 3 8 Zoll)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        A5120Machine::Config cfg = A5120Machine::Config::fuerAusfuehrung(static_cast<A>(ausfuehrung));
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+        K1520Machine* m = new A5120Machine(cfg);   // Acht wirft (noch nicht umgesetzt)
+        return m;
+    } catch (const std::exception& ex) {
+        g_init_error = ex.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+int k1520_a5120_ausfuehrung(K1520Handle h) {
+    auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
+    return a ? static_cast<int>(a->ausfuehrung()) : -1;
+}
+
 const char* k1520_em_variant(K1520Handle h) {
     const EM* em = emOf(h);
     if (!em) return "";
@@ -1214,6 +1247,167 @@ const char* k1520_ptape_punch_file(K1520Handle h) {
 int k1520_ptape_punch_format(K1520Handle h) {
     auto* k = ptapeOf(h);
     return k ? static_cast<int>(k->stanzerFormat()) : -1;
+}
+
+// ─── Kassette K5020/K5200 (Entwurf 29, AP K5) ───────────────────────────────────
+namespace {
+thread_local std::string tape_fehler;
+K5020* tapeOf(K1520Handle h) {
+    return h ? toMachine(h)->k5020() : nullptr;
+}
+bool tapeErgebnis(bool ok, const std::string& fehler) {
+    tape_fehler = ok ? std::string() : fehler;
+    return ok;
+}
+/// Karte und Laufwerk @p drive (0/1) oder nullptr (+ Fehlertext).
+kassette::KassettenLaufwerk* tapeLw(K1520Handle h, int drive) {
+    K5020* k = tapeOf(h);
+    if (!k) { tape_fehler = "keine Kassettenkarte (K5020) gesteckt"; return nullptr; }
+    if (drive != 0 && drive != 1) { tape_fehler = "Laufwerk muss 0 oder 1 sein"; return nullptr; }
+    return &k->laufwerk(drive);
+}
+/// Das eingelegte Medium oder nullptr (+ Fehlertext).
+std::shared_ptr<kassette::KassettenMedium> tapeMedium(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return nullptr;
+    auto m = lw->medium();
+    if (!m) tape_fehler = "keine Kassette eingelegt";
+    return m;
+}
+}  // namespace
+
+bool k1520_tape_install(K1520Handle h) {
+    if (!h) return tapeErgebnis(false, "kein Handle");
+    g_init_error.clear();
+    K1520Machine* m = toMachine(h);
+    if (!m->installK5020()) {
+        g_init_error = m->k5020Fehler();
+        return tapeErgebnis(false, g_init_error);
+    }
+    return tapeErgebnis(true, {});
+}
+
+bool k1520_tape_installed(K1520Handle h) { return tapeOf(h) != nullptr; }
+
+const char* k1520_tape_error(K1520Handle) { return tape_fehler.c_str(); }
+
+bool k1520_tape_load(K1520Handle h, int drive, const char* path) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    if (!path || !*path) return tapeErgebnis(false, "kein Pfad");
+    std::string fehler;
+    const bool ok = lw->dateiBinden(path, fehler);
+    return tapeErgebnis(ok, fehler);
+}
+
+bool k1520_tape_new(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    return tapeErgebnis(lw->kassetteEinlegen(std::make_shared<kassette::KassettenMedium>()),
+                        "Es liegt schon eine Kassette im Laufwerk");
+}
+
+bool k1520_tape_eject(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    if (!lw->medium()) return tapeErgebnis(false, "keine Kassette eingelegt");
+    // Eine gebundene Datei schreibt das Laufwerk vorher; scheitert das, bleibt die Kassette liegen.
+    const bool ok = lw->kassetteAuswerfen(false);
+    return tapeErgebnis(ok, lw->letzterDateifehler().empty()
+                                ? std::string("Entladen gesperrt (Geraet reserviert oder Band laeuft)")
+                                : lw->letzterDateifehler());
+}
+
+bool k1520_tape_flush(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    std::string fehler;
+    const bool ok = lw->speichern(fehler);
+    return tapeErgebnis(ok, fehler);
+}
+
+const char* k1520_tape_file(K1520Handle h, int drive) {
+    K5020* k = tapeOf(h);
+    static thread_local std::string buf;
+    buf = (k && (drive == 0 || drive == 1)) ? k->laufwerk(drive).pfad() : std::string();
+    return buf.c_str();
+}
+
+int k1520_tape_side(K1520Handle h, int drive) {
+    auto m = tapeMedium(h, drive);
+    return m ? static_cast<int>(m->aktiveSeite()) : -1;
+}
+
+bool k1520_tape_flip(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    return tapeErgebnis(lw->wenden(),
+                        "Wenden nur bei eingelegter Kassette, stehendem und nicht reserviertem Geraet");
+}
+
+bool k1520_tape_protect(K1520Handle h, int drive, int side, bool on) {
+    auto m = tapeMedium(h, drive);
+    if (!m) return false;
+    if (side != 0 && side != 1) return tapeErgebnis(false, "Seite muss 0 oder 1 sein");
+    m->setSchreibschutz(static_cast<kassette::Seite>(side), on);
+    return tapeErgebnis(true, {});
+}
+
+int k1520_tape_protected(K1520Handle h, int drive, int side) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return -1;
+    return m->schreibgeschuetzt(static_cast<kassette::Seite>(side)) ? 1 : 0;
+}
+
+bool k1520_tape_set_position(K1520Handle h, int drive, int64_t um) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    return tapeErgebnis(lw->positionSetzen(um),
+                        "Position nur bei eingelegter Kassette und stehendem Band setzbar");
+}
+
+bool k1520_tape_status(K1520Handle h, int drive, int* loaded, int* side,
+                       int64_t* pos_um, int64_t* len_um, int* blocks, int* moving) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    auto m = lw->medium();
+    if (loaded) *loaded = m ? 1 : 0;
+    if (side)   *side = m ? static_cast<int>(m->aktiveSeite()) : -1;
+    if (pos_um) *pos_um = static_cast<int64_t>(lw->positionMm() * 1000.0);
+    if (len_um) *len_um = m ? static_cast<int64_t>(m->geometrie().laenge_um) : 0;
+    if (blocks) *blocks = m ? static_cast<int>(m->anzahlBloecke(m->aktiveSeite())) : 0;
+    if (moving) *moving = lw->bewegt() ? 1 : 0;
+    return true;
+}
+
+int k1520_tape_block_count(K1520Handle h, int drive, int side) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return -1;
+    return static_cast<int>(m->anzahlBloecke(static_cast<kassette::Seite>(side)));
+}
+
+bool k1520_tape_block_info(K1520Handle h, int drive, int side, int i,
+                           int64_t* start_um, int* bytes, int* mark) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return false;
+    const auto s = static_cast<kassette::Seite>(side);
+    if (i < 0 || static_cast<size_t>(i) >= m->anzahlBloecke(s)) return false;
+    const auto& b = m->block(s, static_cast<size_t>(i));
+    if (start_um) *start_um = m->blockStart(s, static_cast<size_t>(i));
+    if (bytes)    *bytes = static_cast<int>(b.bytes.size());
+    if (mark)     *mark = b.bandmarke() ? 1 : 0;
+    return true;
+}
+
+int k1520_tape_block_data(K1520Handle h, int drive, int side, int i, uint8_t* buf, int cap) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return -1;
+    const auto s = static_cast<kassette::Seite>(side);
+    if (i < 0 || static_cast<size_t>(i) >= m->anzahlBloecke(s)) return -1;
+    const auto& b = m->block(s, static_cast<size_t>(i));
+    if (buf && cap > 0)
+        std::copy_n(b.bytes.begin(), std::min<size_t>(b.bytes.size(), static_cast<size_t>(cap)), buf);
+    return static_cast<int>(b.bytes.size());
 }
 
 bool k1520_ptape_punch_enable(K1520Handle h, bool on) {

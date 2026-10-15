@@ -220,6 +220,30 @@ k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp
 
 # Lochstreifen-Karte K6022 als Option in allen Maschinen (doc/design/23_lochstreifen.md AP-L1):
 # stecken, zu spät, doppelt, Tor belegt; Z80-Gastcode stanzt über E0H und liest über E4H.
+# Kassettenkarte K5020 als Option (doc/design/29_kassette.md AP K5): stecken, zu spät, doppelt,
+# Tor belegt; Z80-Gastcode schreibt einen Block aufs Band und liest das Echo (A5120/.16, K8915, PRG 710/-1).
+k1520_add_test(k5020_maschinen SRC test_k5020_maschinen.cpp
+                               LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_logger k1520_testsupport
+                               LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# A5120 bootet vom Band (doc/design/29_kassette.md AP K7): keine Diskette, K5020 gesteckt, das
+# Lade-ROM fällt auf die Kassette (LW1, bzw. LW1 leer → LW2) und startet tools/kassette/bandtest.
+k1520_add_test(kassette_boot SRC test_kassette_boot.cpp
+                             LIBS k1520_a5120 k1520_logger k1520_testsupport
+                             LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# A5120-Ausführungen (doc/design/30_a5120_fruehe_varianten.md AP A5): neu (unverändert),
+# alt (4× K3525, K7023.01, K7636, Brücke 0AH Bit 6), KMBG (+ K5020 fest), 8″ abgelehnt.
+k1520_add_test(a5120_ausfuehrungen SRC test_a5120_ausfuehrungen.cpp
+                                   LIBS k1520_a5120 k1520_logger
+                                   LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+# CP/A auf dem A5120 „5¼″ alt“ bis A> (AP A6): K7023 BAB1 FC00H, K7636, dir getippt.
+k1520_add_test(boot_alt SRC test_boot_alt.cpp LIBS ${_libs}
+                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+# BCU 880 auf dem frühen A5120 (AP A7): Lade-ROM V0.6, Disketten „SYL auf Spur 1“ bis A>.
+k1520_add_test(boot_bcu SRC test_boot_bcu.cpp LIBS ${_libs}
+                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
 k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
                                LABELS "${_lbl}" DEFS LOG_LEVEL=2)

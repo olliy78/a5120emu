@@ -1,0 +1,5 @@
+# k1520dbg --tastatur mit unbekanntem Namen (AP A7): Abbruch mit Grund.
+tool:    k1520dbg
+run:     --tastatur k7634
+expect:  --tastatur: unbekannt 'k7634' (k7636|k7637)
+exit:    2

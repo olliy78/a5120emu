@@ -1558,3 +1558,32 @@ TEST_F(Z80Test, AbortBeforeExecute_IgnoredWithoutTraceCallback) {
     EXPECT_EQ(asked, 0);
     EXPECT_EQ(cpu.A, 0xAB);
 }
+
+/**
+ * @test Z80Test/EiSchatten_InterruptErstNachDemFolgendenBefehl
+ * @brief Nach `EI` ist ein maskierbarer Interrupt erst nach dem nächsten Befehl annehmbar
+ *        (`EI; RETI` muss das RETI noch ausführen; Befund A8, doc/design/32_…).
+ * @par Pass criterion  Nach EI: IFF1 = 1, aber nicht annehmbar; nach dem folgenden NOP annehmbar;
+ *      DI/Reset löschen den Schatten.
+ */
+TEST_F(Z80Test, EiSchatten_InterruptErstNachDemFolgendenBefehl) {
+    load({0xFB, 0x00, 0x00, 0xFB, 0xF3});     // EI; NOP; NOP; EI; DI
+    EXPECT_FALSE(cpu.interruptAnnehmbar());  // IFF1 = 0 nach Reset
+    cpu.step();                               // EI
+    EXPECT_TRUE(cpu.IFF1);
+    EXPECT_TRUE(cpu.ei_schatten);
+    EXPECT_FALSE(cpu.interruptAnnehmbar());  // zwischen EI und dem Folgebefehl: nein
+    cpu.step();                               // NOP
+    EXPECT_TRUE(cpu.interruptAnnehmbar());
+    cpu.step();                               // NOP
+    EXPECT_TRUE(cpu.interruptAnnehmbar());
+    cpu.step();                               // EI
+    EXPECT_FALSE(cpu.interruptAnnehmbar());
+    cpu.step();                               // DI
+    EXPECT_FALSE(cpu.ei_schatten);
+    EXPECT_FALSE(cpu.interruptAnnehmbar());
+    cpu.IFF1 = true;
+    cpu.ei_schatten = true;
+    cpu.reset();
+    EXPECT_FALSE(cpu.ei_schatten);
+}

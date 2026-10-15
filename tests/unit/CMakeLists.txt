@@ -41,12 +41,16 @@ k1520_add_test(bus   SRC bus/test_bus.cpp          LIBS k1520_bus LABELS "${_lbl
 k1520_add_test(k2526 SRC cards/test_k2526.cpp
                      LIBS k1520_k2526 k1520_k3526 k1520_k5122 k1520_floppy LABELS "${_lbl}")
 k1520_add_test(k3526 SRC cards/test_k3526.cpp      LIBS k1520_k3526 k1520_bus LABELS "${_lbl}")
+k1520_add_test(k3525 SRC cards/test_k3525.cpp      LIBS k1520_k3525 k1520_bus LABELS "${_lbl}")
 k1520_add_test(k5122 SRC cards/test_k5122.cpp      LIBS k1520_k5122 LABELS "${_lbl}")
 # K5122 im /WAIT-Betrieb (K8915, doc/design/16_k8915.md AP-E3a)
 k1520_add_test(k5122_wait SRC cards/test_k5122_wait.cpp LIBS k1520_k5122 LABELS "${_lbl}")
 # K5122 in der Konfiguration „1715“ (PC 1715, doc/design/21_pc1715.md AP-2)
 k1520_add_test(k5122_pc1715 SRC cards/test_k5122_pc1715.cpp LIBS k1520_k5122 LABELS "${_lbl}")
 k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
+# K7023/K7023.01 (BAB1, frühe A5120; doc/a5120_alt/k7023.md, AP A1)
+k1520_add_test(k7023 SRC cards/test_k7023.cpp      LIBS k1520_k7023 k1520_bus LABELS "${_lbl}"
+               DEFS "K7023_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/EPROMS/K7023\"")
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
 # ZRE 045-8762 des K8915: Speicherbild je A8H-Wert (doc/design/16_k8915.md §4.2a)
 k1520_add_test(zre8762 SRC cards/test_zre8762.cpp  LIBS k1520_zre8762 LABELS "${_lbl}")
@@ -91,6 +95,8 @@ k1520_add_test(p8000_wdc_rom_laufwerk SRC cards/test_p8000_wdc_rom_laufwerk.cpp 
 k1520_add_test(k6022 SRC cards/test_k6022.cpp         LIBS k1520_k6022 LABELS "${_lbl}")
 # K6022 an Dateien: Leser im Bandformat, Stanzer gebunden (doc/design/23_lochstreifen.md §5, AP-L2)
 k1520_add_test(k6022_bindung SRC cards/test_k6022_bindung.cpp LIBS k1520_k6022 LABELS "${_lbl}")
+# AKB K5020: Kassettenanschluss mit zwei PIOs und zwei Laufwerken (doc/design/29, AP K4)
+k1520_add_test(k5020 SRC cards/test_k5020.cpp LIBS k1520_k5020 k1520_z80 LABELS "${_lbl}")
 k1520_add_test(ass590069 SRC cards/test_ass590069.cpp LIBS k1520_ass590069 LABELS "${_lbl}")
 # ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
 k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
@@ -105,6 +111,10 @@ k1520_add_test(raf   SRC cards/test_raf.cpp        LIBS k1520_raf k1520_z80 LABE
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
+# Parallele Tastatur K7636 an der K2526 (frühe A5120, AP A3; doc/a5120_alt/k7636.md)
+k1520_add_test(k7636          SRC peripherals/test_k7636.cpp
+                              LIBS k1520_k7636 k1520_k2526 LABELS "${_lbl}"
+                              DEFS "K7636_CSV=\"${CMAKE_SOURCE_DIR}/doc/a5120_alt/k7636_01_codes.csv\"")
 # Tastatur K7609 des PRG 710: Host-Taste → 8279-Code (doc/prg710/k7609_codes.csv, AP-P2a)
 k1520_add_test(k7609          SRC peripherals/test_k7609.cpp
                               LIBS k1520_k7609 LABELS "${_lbl}")
@@ -133,6 +143,10 @@ k1520_add_test(platte         SRC peripherals/test_platte.cpp
 # Lochstreifen-Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4, AP-L2)
 k1520_add_test(band_format    SRC peripherals/test_band_format.cpp
                               LIBS k1520_lochstreifen LABELS "${_lbl}")
+# Kassettenband: Medium, .k52-Codec, Laufwerk (doc/design/29_kassette.md, AP K3)
+k1520_add_test(kassette_medium      SRC peripherals/test_kassette_medium.cpp      LIBS k1520_kassette LABELS "${_lbl}")
+k1520_add_test(k52_codec            SRC peripherals/test_k52_codec.cpp            LIBS k1520_kassette LABELS "${_lbl}")
+k1520_add_test(kassetten_laufwerk   SRC peripherals/test_kassetten_laufwerk.cpp   LIBS k1520_kassette LABELS "${_lbl}")
 k1520_add_test(track_codec    SRC peripherals/test_track_codec.cpp    LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(bit_codec      SRC peripherals/test_bit_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Zeichenbare Sicht auf eine Spur (Diskeditor, §19)

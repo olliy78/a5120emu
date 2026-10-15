@@ -24,7 +24,21 @@
  *     --raf <typ>    RAM-Floppy stecken (raf128|raf512|raf2m|none), vor dem ersten Lauf;
  *                    gilt für alle Maschinen (A5120, --em, --machine k8915|prg710[-1])
  *     --ptape        Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken, alle Maschinen
+ *     --tape <k52>   Kassettenkarte K5020 stecken (A5120 30H, K8915 D0H, PRG 30H) und die
+ *                    Kassettendatei <k52> an Gerät 1 binden (fehlt sie: leere Kassette);
+ *                    --tape2 <k52> = Gerät 2; --tape-card = nur die Karte
  *     --cpu u8000    jeden Befehl des U8001 als Zeile "U8 …" (Deckel -W); impliziert --em
+ *     --ausfuehrung neu|alt|kmbg  A5120-Ausführung (Entwurf 30): alt = K7023 64×16 ab FC00H,
+ *                    K7636, 4× K3525, 3× K5600.10; kmbg = alt + K5020 fest.  Bildschirm-
+ *                    ausgabe/--until screen lesen dann die K7023 (64×16)
+ *     --laufwerke P0,P1,..  Laufwerksprofile ab A: ersetzen (z. B. K5601,K5601 für ein
+ *                    umgerüstetes altes Gerät); gilt auch ohne --ausfuehrung
+ *     --laderom v06|v09_1|v09_2  gestecktes Lade-ROM der K2526 (Vorgabe v09_2 = zre.rom;
+ *                    v06 startet BCU 880 „SYL auf Spur 1“, doc/a5120_alt/laderom.md, AP A7)
+ *     --tastatur k7636|k7637  Tastatur abweichend von der Ausführung (BCU 880 V1.2:
+ *                    neu + k7636 = K7024 80×24 + K7636 am U-Bus)
+ *     --format NAME  Katalogformat, mit dem die Diskette zuerst gemountet wird (bei .img
+ *                    maßgeblich, z. B. k5601_ss40_26x128; sonst cpa780, dann cpa800)
  *
  * --machine k8915 (| k8915-g2, Generation 2) fährt statt des A5120 einen K8915 (eigener Zweig,
  * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
@@ -291,6 +305,11 @@ int main(int argc, char** argv) {
     bool      fold_on       = false;          // --fold: collapse identical consecutive -w/-z lines
     const char* em_variant  = nullptr;        // --em [em256|em064]: A5120.16 + EM-Transaktionen
     bool      trace_u8000   = false;          // --cpu u8000: jeden U8001-Befehl zeigen
+    const char* ausf_opt    = nullptr;        // --ausfuehrung neu|alt|kmbg (AP A6)
+    const char* lw_opt      = nullptr;        // --laufwerke P0,P1,…  (AP A6)
+    const char* laderom_opt = nullptr;        // --laderom v06|v09_1|v09_2 (AP A7)
+    const char* format_opt  = nullptr;        // --format NAME: Katalogformat für .img (AP A7)
+    const char* tastatur_opt = nullptr;       // --tastatur k7636|k7637 (AP A7)
     // Disk-mount mode (§6): COW default → the disk is copied to a temp file and that copy
     // is mounted, so a committed fixture is never modified (no more `mktemp; cp` ritual).
     // --rw mounts the original writable; --read-only/--ro mounts it write-protected.
@@ -310,6 +329,8 @@ int main(int argc, char** argv) {
     K8915TraceOpts k8o;
     std::string raf_opt;                 // --raf none|raf128|raf512|raf2m: RAM-Floppy vor dem ersten Lauf stecken
     bool        ptape_opt = false;       // --ptape: Lochstreifen-Karte K6022 vor dem ersten Lauf stecken
+    bool        tape_opt = false;        // --tape/--tape2/--tape-card: Kassettenkarte K5020
+    std::string tape1_opt, tape2_opt;
     std::vector<std::string> nur_a5120;   // am K8915 wirkungslose Schalter (Meldung)
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
@@ -347,6 +368,9 @@ int main(int argc, char** argv) {
             else if (k != "kern") { fprintf(stderr, "--konsole %s unbekannt (kern | original)\n", k.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
+        else if (!strcmp(argv[i], "--tape-card")) { tape_opt = true; k8o.tape = true; }
+        else if (!strcmp(argv[i], "--tape") && i+1 < argc) { tape_opt = true; k8o.tape = true; tape1_opt = k8o.tape1 = argv[++i]; }
+        else if (!strcmp(argv[i], "--tape2") && i+1 < argc) { tape_opt = true; k8o.tape = true; tape2_opt = k8o.tape2 = argv[++i]; }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
         else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
@@ -403,6 +427,11 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--cow")) { mount_mode = MOUNT_COW; }
         else if (!strcmp(argv[i], "--read-only")||!strcmp(argv[i], "--ro")) { mount_mode = MOUNT_RO; }
         else if (!strcmp(argv[i], "--quiet")) { quiet = true; }
+        else if (!strcmp(argv[i], "--ausfuehrung") && i+1 < argc) { ausf_opt = argv[++i]; nur_a5120.push_back("--ausfuehrung"); }
+        else if (!strcmp(argv[i], "--laufwerke") && i+1 < argc) { lw_opt = argv[++i]; nur_a5120.push_back("--laufwerke"); }
+        else if (!strcmp(argv[i], "--laderom") && i+1 < argc) { laderom_opt = argv[++i]; nur_a5120.push_back("--laderom"); }
+        else if (!strcmp(argv[i], "--format") && i+1 < argc) { format_opt = argv[++i]; nur_a5120.push_back("--format"); }
+        else if (!strcmp(argv[i], "--tastatur") && i+1 < argc) { tastatur_opt = argv[++i]; nur_a5120.push_back("--tastatur"); }
         else if (!strcmp(argv[i], "--em")) {
             em_variant = "em256";
             if (i+1 < argc && (!strcmp(argv[i+1],"em256") || !strcmp(argv[i+1],"em064")))
@@ -570,10 +599,29 @@ int main(int argc, char** argv) {
     A5120Machine::Config mcfg;
     if (em_variant) mcfg.em = !strcmp(em_variant,"em064") ? A5120Machine::Config::Em::em064
                                                           : A5120Machine::Config::Em::em256;
-    A5120Machine machine(mcfg);
+    { std::string err;
+      if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err, laderom_opt, tastatur_opt)) { fprintf(stderr, "%s\n", err.c_str()); return 2; } }
+    std::unique_ptr<A5120Machine> machine_p;
+    try { machine_p = std::make_unique<A5120Machine>(mcfg); }
+    catch (const std::exception& e) { fprintf(stderr, "Maschine: %s\n", e.what()); return 2; }
+    A5120Machine& machine = *machine_p;
+    // Textbild: am `Neu` der Bildspeicher F800H in CPU-Sicht (80×24, wie bisher), am alten
+    // Gerät die K7023 (64×16 ab FC00H, Bit 7 = Kursor ausgeblendet).
+    const int scr_cols = machine.k7023() ? 64 : 80;
+    const int scr_rows = machine.k7023() ? 16 : 24;
+    auto scrByte = [&](int r, int c) -> uint8_t {
+        if (machine.k7023()) return (uint8_t)(machine.screenChar(c, r) & 0x7F);
+        return machine.memReadDebug((uint16_t)(0xF800 + r*80 + c));
+    };
+    if (!quiet && machine.k7023())
+        fprintf(stderr, "Ausfuehrung: %s (K7023 64x16, K7636), Laufwerke %s/%s/%s/%s\n",
+                machine.ausfuehrung() == A5120Machine::Config::Ausfuehrung::Kmbg ? "KMBG" : "alt",
+                mcfg.drive_profiles[0].c_str(), mcfg.drive_profiles[1].c_str(),
+                mcfg.drive_profiles[2].c_str(), mcfg.drive_profiles[3].c_str());
     { std::string err;
       if (!dbgm::steckeRaf(machine, raf_opt, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
-      if (!dbgm::steckeK6022(machine, ptape_opt, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
+      if (!dbgm::steckeK6022(machine, ptape_opt, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; }
+      if (!dbgm::steckeK5020(machine, tape_opt, tape1_opt, tape2_opt, err)) { fprintf(stderr, "--tape: %s\n", err.c_str()); return 2; } }
     machine.powerOn();
 
     // ── A5120.16 (S5): EM-Transaktionen (--em) und U8001-Befehle (--cpu u8000) ──
@@ -762,8 +810,8 @@ int main(int argc, char** argv) {
                 // batch, so gate on the per-instruction sample_count instead.)
                 if ((sample_count & 0xFFF) == 0) {
                     std::string scr;
-                    for (int r = 0; r < 24; ++r) for (int c = 0; c < 80; ++c) {
-                        uint8_t ch = machine.memReadDebug((uint16_t)(0xF800 + r*80 + c));
+                    for (int r = 0; r < scr_rows; ++r) for (int c = 0; c < scr_cols; ++c) {
+                        uint8_t ch = scrByte(r, c);
                         scr += (ch >= 0x20 && ch < 0x7F) ? (char)ch : ' ';
                     }
                     met = until.screenMatch(scr);
@@ -929,7 +977,8 @@ int main(int argc, char** argv) {
                if (!quiet) fprintf(stderr, "COW: '%s' → %s (writes discarded; --rw to persist)\n",
                                    disk_path, mount_path.c_str()); }
     }
-    bool mounted = machine.mountDisk(mount_drive, mount_path, "cpa780", wp);
+    // --format NAME (AP A7): ein .img anderer Geometrie (z. B. k5601_ss40_26x128 für BCU 880).
+    bool mounted = machine.mountDisk(mount_drive, mount_path, format_opt ? format_opt : "cpa780", wp);
     if (!mounted) {
         mounted = machine.mountDisk(mount_drive, mount_path, "cpa800", wp);
     }
@@ -1226,14 +1275,14 @@ int main(int argc, char** argv) {
         }
 
         // Screen content as text (VRAM bytes → ISO-8859 chars, 80 columns)
-        fprintf(stderr, "\nScreen (VRAM as text, 80 cols, '.' = 0x00/0xFF):\n");
-        for (int row = 0; row < 24; ++row) {
+        fprintf(stderr, "\nScreen (VRAM as text, %d cols, '.' = 0x00/0xFF):\n", scr_cols);
+        for (int row = 0; row < scr_rows; ++row) {
             char line[81];
-            for (int col = 0; col < 80; ++col) {
-                uint8_t c = machine.memReadDebug(static_cast<uint16_t>(0xF800 + row * 80 + col));
+            for (int col = 0; col < scr_cols; ++col) {
+                uint8_t c = scrByte(row, col);
                 line[col] = (c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : '.';
             }
-            line[80] = '\0';
+            line[scr_cols] = '\0';
             fprintf(stderr, "  |%s|\n", line);
         }
     }

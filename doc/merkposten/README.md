@@ -17,6 +17,8 @@ sind nur nicht mehr in jeder einzelnen Anfrage geladen.
 | `pc1715.md` | `core/machines/pc1715/` + `pc1715_zre`, `i8275`, `tastatur1715`, K5122-`Portlage::Pc1715`, Primitive `z80_dma`/`upd765` — vierte Maschine PC 1715 / PC 1715W (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Vierte Maschine: PC 1715 / PC 1715W“) |
 | `raf.md` | `core/cards/raf/` + `installRaf` in allen Maschinen, `k1520_raf_*`, `app/raf.py` — RAM-Floppy RAF 128/512/2M (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „RAM-Floppy RAF“) |
 | `p8000.md` | `core/machines/p8000/` + `core/cards/p8000/`, `p8000_terminal`, `Z80PIO::setModus3Flanke` — fünfte Maschine P8000 (direkt hier angelegt, AP P7d) |
+| `a5120_alt.md` | `A5120Machine::Config::ausfuehrung` (Alt/Kmbg) + Karten `k7023`/`k3525`, `peripherals/k7636`, BCU 880, Kernfehler EI-Schatten/PIO-RETI — frühe A5120 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Frühe A5120“) |
+| `kassette.md` | `core/cards/k5020/` + `core/peripherals/kassette/` + `installK5020` in allen Maschinen, `k1520_tape_*`, `--tape`, Debugger-Befehl `tape` — Kassette K5020/K5200 |
 | `lochstreifen.md` | `core/cards/k6022/` + `core/peripherals/lochstreifen/` + `installK6022` in allen Maschinen, `k1520_ptape_*`, Kasten „Lochstreifen“ — Lochstreifen K6022/SIF1000 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz) |
 
 ## Warum ausgelagert

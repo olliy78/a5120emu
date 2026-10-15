@@ -58,6 +58,7 @@ void Z80::reset() {
     SP = 0xFFFF;
     I = R = 0;
     IFF1 = IFF2 = false;
+    ei_schatten = false;
     IM = 0;
     halted = false;
     cycles = 0;
@@ -878,6 +879,7 @@ int Z80::step() {
             return 0;
     }
 
+    ei_schatten = false;   // der Befehl nach EI läuft — danach ist ein Interrupt wieder annehmbar
     R = (R & 0x80) | ((R + 1) & 0x7F);
     uint8_t opcode = fetchByte();
     int c = execMain(opcode);
@@ -1102,7 +1104,7 @@ int Z80::execMain(uint8_t opcode) {
         case 0xF8: if (F & FLAG_S) { PC = pop(); return 11; } return 5;
         case 0xF9: SP = HL; return 6;
         case 0xFA: { uint16_t a = fetchWord(); if (F & FLAG_S) PC = a; return 10; }
-        case 0xFB: IFF1 = IFF2 = true; return 4; // EI
+        case 0xFB: IFF1 = IFF2 = true; ei_schatten = true; return 4; // EI
         case 0xFC: { uint16_t a = fetchWord(); if (F & FLAG_S) { push(PC); PC = a; return 17; } return 10; }
         case 0xFD: return execFD();
         case 0xFE: cp8(fetchByte()); return 7;

@@ -1,0 +1,51 @@
+	TITLE	'A5120 Kassetten-Bootprogramm BANDTEST'
+	.Z80
+;
+; bandtest.mac - kleinstes Programm, das das Lade-ROM des A5120 (zre.prn
+;                027E-03AF, Kassettenzweig) von einem Bootband laedt und
+;                startet.  Schreibt "KASSETTE OK" in den Bildspeicher der
+;                K7024 (F800H) und bleibt dann stehen.
+;
+; Aufbau, den das Lade-ROM verlangt (doc/kassette/treiber.md §6.1):
+;   - 4 Bloecke zu 128 Byte nach 0400H (k1520tape bootband legt sie an)
+;   - 0400H-0402H = 'SYL'  (Signaturpruefung 01B6H, gerufen bei 0388H)
+;   - Einsprung 0434H per CALL (038DH).  Nach der Rueckkehr spraenge das
+;     ROM nach 0177H - das Programm kehrt deshalb NIE zurueck.
+;
+; Assembliert wird fuer 0400H (.PHASE); LINKMT legt die Bytes wie bei
+; jeder .COM ab 0100H ab, die Datei bandtest.bin ist also genau der
+; Bandinhalt ab 0400H (ohne Auffuellung auf 512 Byte - das macht
+; k1520tape bootband).
+;
+; Bau:   python3 tools/kassette/bandtest/build.py  [--band <k1520tape>]
+;
+; Lizenz: MIT
+;
+BWS	EQU	0F800H		; Bildspeicher K7024 (24 x 80, ab F800H)
+BWSLEN	EQU	0800H
+
+	CSEG
+	.PHASE	0400H
+
+ANFANG:	DB	'SYL'		; 0400: Signatur fuer das Lade-ROM
+	DS	34H-3,00H	; 0403-0433: frei
+
+; 0434: Einsprung (CALL vom Lade-ROM)
+START:	DI
+	LD	SP,0400H	; eigener Stapel unter dem Programm
+	LD	HL,BWS		; Bild loeschen
+	LD	DE,BWS+1
+	LD	BC,BWSLEN-1
+	LD	(HL),' '
+	LDIR
+	LD	HL,TEXT		; Meldung in die erste Zeile
+	LD	DE,BWS
+	LD	BC,TEXTL
+	LDIR
+STOP:	JR	STOP		; nie zurueck (Lade-ROM ginge nach 0177H)
+
+TEXT:	DB	'KASSETTE OK'
+TEXTL	EQU	$-TEXT
+
+	.DEPHASE
+	END

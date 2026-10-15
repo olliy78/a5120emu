@@ -595,18 +595,38 @@ Vertrag; der Stanzer wird an seine Datei **gebunden** und schreibt nach 0,5 s St
 Maschinenzeit zurück.  Kasten „Lochstreifen“ nur mit Karte, kein Kürzel, nicht im Save-State.
 **Vor Arbeiten daran: `doc/merkposten/lochstreifen.md` lesen**; Entwurf `doc/design/23_lochstreifen.md`.
 
-## In Planung (Zweig `kassette_mc80`): Kassette K5020/K5200, frühe A5120, MC80 → `mc80emu`
+## Kassette K5020/K5200 (alle Maschinen außer P8000; PC 1715 nur mechanisch)
 
-Noch **nichts umgesetzt** (Stand 2026-10-13).  Entwürfe **29** (Kassette als steckbare Option wie
-der Lochstreifen, A5120 30H–37H / K8915 D0H, nicht im Save-State), **30** (A5120 „5¼″ alt“ mit
-K7023 16×64 + K3525 + K7636, dann „KMBG“, 8″), **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`,
-`K1520_MACHINE_MC80 = 6`); **Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`**
-(Spielregeln §0, Stand §2, AP-Karten §4–6).  Quellen liegen im Repo: `doc/kassette/`, `doc/a5120_alt/`,
-`doc/mc80/`, `doc/EPROMS/{MC80,K5120,K7023,K5261,A5130}`, `doc/original_docs/` (+ `mc80/`).  Drei
-Befunde, die man kennen muss: **das vorhandene Lade-ROM bootet schon von Kassette** (`zre.prn`
-027E–03AF = K5020-Weg, bisher „Sekundär-Controller“ genannt); **CP/A 25.09.89 kann K7023 (BAB1)
-und K7636 ohne Neugenerierung** (Port 0AH Bit 6); **Belegungsplan + Codetabellen der K7636** stehen
-in `K7634-36-Serviceschaltplaene.pdf` S. 8 ff. — ein Tastatur-ROM-Abzug ist nicht nötig.
+AKB K5020 (zwei Z80-PIOs) mit zwei Laufwerken K5200 als steckbare Option auf **E/A 30H–37H**
+(A5120 auch .16, PRG 710/710-1) bzw. **D0H–D7H** (K8915, PC 1715), gesteckt über
+`K1520Machine::installK5020` **nach dem Anlegen, vor dem ersten Lauf** (C-ABI `k1520_tape_*`,
+Python `K1520Emulator(tape=True)`, `--tape` in `boot_trace`/`k1520dbg`, Befehl `tape`), Vorgabe
+überall aus (`general.tape`), nicht im Save-State.  Kern: Karte `core/cards/k5020/`, Laufwerk/Medium/
+`.k52` `core/peripherals/kassette/`; CLI `k1520tape`; Kasten „Kassette“ nur mit Karte, kein Kürzel.
+Das Lade-ROM **bootet schon von Kassette** (Bootband `SYL`, 4 × 128 B; A5120 ohne Diskette:
+`tools/kassette/bandtest/`), SCPX schreibt/liest mit `KMBG.REL` (**Kassette vorher zurückspulen**,
+Frist 2,45 s — offen [?]).  Stand 2026-10-14: K0–K9 fertig.
+**Vor Arbeiten daran: `doc/merkposten/kassette.md` lesen** (Blockformat, AEB-Polarität,
+`Z80PIO::setExtern`-Befund, UMS-Flanke); Entwurf `doc/design/29_kassette_k5020_k5200.md`.
+
+## Frühe A5120 (Ausführungen Alt/Kmbg) + BCU 880
+
+`A5120Machine::Config::ausfuehrung` = `Neu` (Vorgabe, bitgleich) | `Alt` (K7023 16×64 + 4× K3525 + K7636,
+K2526-Brücke Port 0AH Bit 6 = BAB1, 3× K5600.10 an der K5122) | `Kmbg` (= `Alt` + K5020 fest); `Acht` gesperrt.
+C-ABI `k1520_create_a5120_ausfuehrung`, Python `ausfuehrung="alt"|"kmbg"`, GUI-Modelle „A5120 (64×16, K7636)“ /
+„A5120 Kassette“, Werkzeuge `--ausfuehrung/--laderom/--tastatur`.  CP/A 25.09.89 läuft unverändert bis `A>`;
+**BCU 880 V1.2** bootet (Lade-ROM V0.6, „SYL auf Spur 1“) und formatiert/beschreibt die Kassette als F:.
+**V2.1 gibt es nur als Eigenbau** (kein Original, kein Beleg).  Zwei Kernfehler dabei behoben (`Z80`-EI-Schatten,
+`Z80PIO::onRETI`) — in K8915/PRG 710/PC 1715/CTC/SIO/Bus **nicht** nachgezogen (A8b, riskant, vorgemerkt).
+Plan: `doc/design/30_a5120_fruehe_varianten.md`, Stand `doc/design/32_...`.
+**Vor Arbeiten daran: `doc/merkposten/a5120_alt.md` lesen.**
+
+## In Planung (Zweig `kassette_mc80`): MC80 → `mc80emu`
+
+Kassette und frühe A5120 sind umgesetzt (s. o.); **noch nicht umgesetzt: MC80** (Stand 2026-10-15).
+Entwurf **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`, `K1520_MACHINE_MC80 = 6`);
+**Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`** (Spielregeln §0,
+Stand §2, AP-Karten §6).  Quellen im Repo: `doc/mc80/`, `doc/EPROMS/MC80`, `doc/original_docs/mc80/`.
 
 ## Boot-ROM debugging workflow
 

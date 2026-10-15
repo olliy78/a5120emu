@@ -61,30 +61,32 @@ ein eigenes Worktree.
 | AP | Titel | Art | hängt ab von | Umfang | Stand |
 |---|---|---|---|---|---|
 | K0 | K5020: Abschrift Programmierung + Signale | ana | — | M | **fertig 2026-10-14** |
-| K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | offen |
+| K1 | Abgleich der vier K5020-Treiber, Bandformat | ana | K0 | L | **fertig 2026-10-14** (957c329, `doc/kassette/treiber.md`) |
 | K2 | K5200: Laufwerkszeiten und Signale | ana | — | S | **fertig 2026-10-14** |
-| K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | offen |
-| K4 | `cards/k5020` | cpp | K3 | M | offen |
-| K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | offen |
-| K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | offen |
-| K7 | A5120 bootet vom Band | int | K5, K6 | M | offen |
-| K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | offen |
-| K9 | Oberfläche „Kassette“ | py | K5 | M | offen |
-| K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | offen |
+| K3 | `peripherals/kassette`: Medium, `.k52`, Laufwerk | cpp | K1, K2 | M | **fertig 2026-10-14** (bbcd4a3; `KassettenMedium.*`, `K52Codec.*`, `KassettenLaufwerk.*`) |
+| K4 | `cards/k5020` | cpp | K3 | M | **fertig 2026-10-14** (113367c; `K5020Test.*`, `K5020Rom.*`) |
+| K5 | Stecken in allen Maschinen, C-ABI, Python, Werkzeuge | cpp/py | K4 | M | **fertig 2026-10-14** (f24c155; `K5020Maschine.*`, `py_tape_api`, `cli_dbg_tape*`, `cli_bt_tape`) |
+| K6 | CLI `k1520tape` (+ Bootband) | cpp | K3 | S | **fertig 2026-10-14** (96b72f9; `cli_k1520tape_*`) |
+| K7 | A5120 bootet vom Band | int | K5, K6 | M | **fertig 2026-10-14** (04575b5; `KassetteBoot.*`, `cli_bandtest_*`) |
+| K8 | SCPX + `KMBG.REL`: Block schreiben/lesen | int | K5 | M | **fertig 2026-10-14** (7ff31f9; `ScpxKmbg.SchreibtUndLiestEinenBlock`, `cli_kmbgtest_com_passt_zur_quelle`) |
+| K9 | Oberfläche „Kassette“ | py | K5 | M | **fertig 2026-10-14** (c28ebbc; `py_kassette_gui`) |
+| K10 | Merkposten Kassette, CLAUDE.md, Handbuch | doc | K7–K9 | S | **fertig 2026-10-14** (6913361; `py_help`, `py_kassette_gui`) |
 | K11 | optional `.wav` (ISO 3407) | cpp | K3 + Mitschnitt | M | zurückgestellt |
 | A0 | Lade-ROM-Fassungen V0.6/V0.9 vergleichen | ana | — | S | **fertig 2026-10-14** |
 | A1a | K7023: Abschrift BD/SLP | ana | — | S | **fertig 2026-10-14** |
-| A1 | `cards/k7023` | cpp | A1a | M | offen |
-| A2 | K3525 (16 KB) | cpp | — | S | offen |
+| A1 | `cards/k7023` | cpp | A1a | M | **fertig 2026-10-14** (7dd94df; `K7023.*`) |
+| A2 | K3525 (16 KB) | cpp | — | S | **fertig 2026-10-14** (94e2360; `K3525.*`) |
 | A3a | K7636 + Anschluss an K2526: Abschrift | ana | — | M | **fertig 2026-10-14** |
-| A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | offen |
+| A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | **fertig 2026-10-14** (9ab3e1f; `K7636.*`, `K7636K2526.*`, `py_keyboard_k7636`) |
 | A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | **fertig 2026-10-14** (`doc/a5120_alt/k5120.md`; K5120 ≈ K5122, A4 nur als Variante, Anwenderwunsch) |
 | A4 | `cards/k5120` | cpp | A4a | L | zurückgestellt |
-| A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | offen |
-| A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | offen |
-| A7 | BCU 880 bis Prompt | int | A5, A0 | L | offen |
-| A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | offen |
-| A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | offen |
+| A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | **fertig 2026-10-15** (514cf6a; `A5120Ausfuehrung.*`, `py_a5120_modelle`, `py_c_api`) |
+| A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | **fertig 2026-10-15** (4f21185; `BootIntegrationAlt.*`, `cli_bt_ausfuehrung_alt`, `cli_dbg_ausfuehrung_*`) |
+| A7 | BCU 880 bis Prompt | int | A5, A0 | L | **teilweise fertig 2026-10-15** (45c4adc; V1.2 bootet bis `A>`; V2.1 mit keinem vorhandenen Lade-ROM startbar — Befund; `BootIntegrationBcu.*`) |
+| A7b | Experiment: V2.1-System auf SYL-Bootaufbau (Eigenbau, kein Beleg) | int | A7 | S | **fertig 2026-10-15** (a38f612; `BootIntegrationBcu.V21EigenbauBootet`; EIGENBAU, kein Beleg) |
+| A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | **fertig 2026-10-15** (0c18b03; `BcuKassette.FormatiertSchreibtLiest`, `Z80Test.EiSchatten_*`, `RetiChain.PioRetiVonB*`) |
+| A8b | Vormerkung: EI-Schatten/RETI-Lesart in K8915, PRG 710, PC 1715, CTC/SIO/Bus nachziehen | cpp/int | A8 | M | vorgemerkt (riskant: alle Gast-Boots laufen neu) |
+| A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | **fertig 2026-10-15** (e0c3231; `py_help`, `py_a5120_modelle`, `py_kassette_gui`) |
 | M0 | MC80.3x: Hardware-Abschrift | ana | — | M | **fertig 2026-10-14** |
 | M1 | EGOS-Disassemblat (`.prn`) | ana | — | L | offen |
 | M2 | `Mc80Machine` Gerüst: ZVE, SPE, Segmente | cpp | M0 | M | offen |
@@ -110,6 +112,22 @@ ein eigenes Worktree.
 - 2026-10-14 A1a: K7023 hat KEINE Lesesperre; K7023.01 hat Helligkeit je Zelle (Marken 04H–0FH) — K7024-Kern ignoriert Marken. Für „alt“ muss K2526 `config_bridges` Bit 1 (Port 0AH Bit 6 = BAB1) gesetzt werden (A5). VRAM beim Start 0xFF vorschlagsweise.
 - 2026-10-14 A3a: K7636 Statusbit 3 = /UINT (0 = Code bereit), Ruhewert 0CH muss das K7636-Modell selbst vorgeben (K2526-Standard unverändert lassen); Typzeichen 80H nach Reset/Kommando. CSV hat Druckfehler-Stellen mit [?] (A15 DA→im Modell 0A).
 - 2026-10-14 M0: **Entwurf 31 §3.1 ist falsch: Segmentumschaltung über Port 85H = ZVE-PIO Kanal B** (A = Einsernummer). Takt 2,4576 MHz (MAME stimmt). SPE-2-Sperrports B0H–B3H, MAME bildet SPE nicht ab. Offen: Schreibschutz 8CH, SPE-2-Zustand nach Reset (→ M1), VIS2a-Lesepfad.
+- 2026-10-14 K1: Blockformat = reine Software: `AA | 1…256 Daten | CRC-16/ARC (low zuerst, Start 0000, nur Daten) | AA`; Bandmarke = Block ohne Daten `AA 00 00 AA` (rückwärts `AA FF FF AA`). **Berichtigung K0:** Steuer-PIO A Bit 7 = 1 heißt Band unter der Lichtschranke, 0 = AEB aktiv. Bootband: 4×128 B nach 0400H, `SYL` in 0400–0402, Einsprung 0434H (darf nicht zurückkehren). STA = AUF ∧ AVE. FEX-Formate nicht belegbar (K6: nur Rohblöcke + Bootband). Details `doc/kassette/treiber.md` §8.
+- 2026-10-14 K3: Bitrate ergibt sich aus Dichte (31,5 Bit/mm) × Geschwindigkeit; Zeiten LW1200/SK1200/PK3/K5200-19 sind Annahmen `[?]`. K4 muss: PIO-Polarität, AWA-Gating, BMS-Verzögerung 108 µs, „HGE nach AUF“ → `wiedergabe(false)`, TRV+TRR → `umspulen()`, `autoFlush()` je run()-Scheibe (K5).
+- 2026-10-14 K4: Lade-ROM bootet vollständig von einem K3-Band (Test `K5020Rom.LiestEinBootbandMitVierBloeckenUndPruefSyl`). Steuer-PIO braucht Flankentrigger (`setModus3Flanke`), Daten-PIO `modus1ReadyNachLesen`. UMS wirkt auf steigende Flanke. K5: `clockTick` mit Instruktionstakten, bei true `markIntDirty()`+`updateInterruptChain()`, `autoFlush()` je run(); Chain `{pioDaten, pioSteuer}`; `takt_hz` je Maschine (A5120 2 457 600). `k5020.md` §3.1 (AEB-Polarität) ist noch zu berichtigen.
+- 2026-10-14 K5: PC 1715 steckt die K5020 auf D0H (30H–37H belegt durch LT107/BWS), PRG 710 bleibt bei 30H (D0H–D4H = EPROMmer); nur mechanisch am PC 1715. Gast-ISRs: kein HALT-Warten auf die ISR (Wettlauf), ISR A > 0x20 B — siehe `doc/merkposten/kassette.md`. GUI (K9) muss `tape_flush` je Laufwerk beim Beenden rufen. Nach Kern-/Werkzeug-Änderungen einmal `tools/dev.sh build` vor dem Volllauf (7 CLI-Fälle waren nur veraltete k1520dbg-Binary). Python-Ebene im Worktree braucht `venv/` (Symlink aufs Haupt-venv).
+- 2026-10-14 K6: Block mit 128 Daten = 132 B auf dem Band (nicht 131, das ist die ROM-Leselänge). `k1520tape bootband prog.bin band.k52` verlangt 'SYL' am Anfang; Einsprung bei 34H liegt im Anwenderprogramm. Lücke zwischen Blöcken 10 mm = Annahme [?]. CLI-Runner kennt nur Textdateien.
+- 2026-10-14 K7: **A5120 bootet ohne Diskette vom (selbstgebauten) Band** — `tools/kassette/bandtest/`, Fixture `tests/fixtures/kassette/bandtest_boot.k52`. Kernfehler in K5020 behoben: `Z80PIO::setExtern` übernimmt Pegel nur im Modus 3 und holt sie beim Moduswechsel nicht nach → nach jedem Steuerwort Rückleitungen neu anlegen (`ext_neu_`). Ob `Z80PIO` selbst beim Moduswechsel neu einlesen sollte (P8000-Karten nutzen `setExtern`): offen [?]. Boot dauert ~27 Mio. Takte. `boot_trace --tape` bindet und schreibt zurück — nie Fixture direkt angeben.
+- 2026-10-14 K9: GUI-Kassette fertig (Profilfeld `tape_wahl`, kein Kästchen am P8000; `tape_flush` beim Beenden/Neuaufbau/Auswerfen; `tape_load` legt fehlende .k52 leer an — Abweichung vom Lochstreifen). Kassette nicht im Save-State. Festlegungen für K10: Kasten nur mit Karte, `kassette:`-Abschnitt, kein Kürzel, Wächter `py_kassette_gui`.
+- 2026-10-14 K8: `KMBG.REL` läuft unter SCPX 1.7 am A5120 (schreibt/liest Block, alle Status 00); kein Kernfehler. **Offen [?]:** KMBG wartet nur ~2,45 s (≈0,9 m bei 381 mm/s) auf Magnetband; der 1-m-Vorspann des Modells ist von Position 0 aus nicht zu durchqueren → Status 04 bei frisch eingelegter Kassette; erst nach Rückspulen (UMS) geht es. Vorspannlänge/Einlegeposition klären (K10/Handbuch oder Modell). `tools/cpm_bau.py` hat jetzt `module=` für Fremd-REL. `k1520dbg`: `--tape` vor dem Diskpfad.
+- 2026-10-14 A2: `K3525` (16 KB, Basis im 4-KB-Raster, Power-on 0xFF, Bus-/MEMDI oder MEMDI1/2); vier Karten 0000/4000/8000/C000 = 64 KB; Lade-ROM der K2526 NACH den Karten registrieren. Refresh nicht modelliert. `K1520Bus::registerMem`: Überlappung wirft NICHT (Lesen: letzte Karte gewinnt, Schreiben an alle). BD der K3525 ist Scan ohne Textebene; Brücken X6/X7 [?].
+- 2026-10-14 A1: `K7023` (.00/.01) fertig: FC00H, 64×16, Zelle 8×16, Framebuffer 512×256 (nicht 640×288 — GUI beachten), Kursor Bit 7 als Balken Linien 12–15, `.01` Marken 04H–0FH. GCC: Konfig-Struct mit Defaultwerten im Klassenkörper + `explicit K(bus, const Config& = Config{})` kompiliert nicht → zwei Konstruktoren (gilt für K7636/weitere Karten). Beim Einbau (A5): `config_bridges` Bit 1 setzen; Karte nach den RAM-Karten registrieren; `k1520_screen_char` über `vramRead`. Zwei SerielleKopplung-64KiB-Tests liefen bei paralleler Rechnerlast in den Zeitüberlauf (vermutlich Last).
+- 2026-10-14 A3: K7636-Modell (`core/peripherals/k7636/`) + `UBusGeraet`-Schnittstelle an der K2526 (`setUBusGeraet` vor `powerOn()`, `service(zve1_cycles)` je Befehl; ohne Gerät unverändert K7637-Verdrahtung); Bildschirmtastatur `keyboard_k7636.py` (Matrix `0x03000000|Adresse`, noch nicht im Profil). Tabellenkorrekturen: A15 → 0AH, C02-b → 53H [?]. Annahmen [?]: 2 ms Reaktionszeit, Strg=ET2-Vorsatz. A5 muss anlegen: C-ABI für Lampenmaske (Bit 0–3 Wahl, 4 INS MODE, 5 Fehler), Kern bietet `wahlLampe()/insModeLampe()/fehlerLampe()`. Volllauf nach Merge noch nicht gefahren (A5 holt ihn nach). Nicht im Savestate.
+- 2026-10-15 A5: `Config::ausfuehrung` Neu/Alt/Kmbg (Acht lehnt der Konstruktor ab, EM nur bei Neu); `Config::fuerAusfuehrung(a)` = 3× K5600.10; C-ABI `k1520_create_a5120_ausfuehrung`/`k1520_a5120_ausfuehrung`, Lampen der K7636 über `k1520_keyboard_leds` (Bit 0–3 Wahl, 4 INS, 5 Fehler, 6 SHIFT/LOCK, 7 Signal); Python `ausfuehrung="alt"|"kmbg"`; Profil-Modelle „A5120 (64×16, K7636)“, „A5120 Kassette“ (+ „A5120 8″“ ausgegraut). Offen: `boot_trace`/`k1520dbg` ohne `--ausfuehrung` (→ A6 zuerst); Konsolenmodus nur K7024; anderes Lade-ROM braucht Config-Feld (A7); GUI-Modellwechsel setzt Laufwerke nicht auf die Vorgabe der Ausführung (A9-Frage); K7637 am Alt-Modell nicht an SIO A32.
+- 2026-10-15 A6: CP/A 25.09.89 der vorhandenen Disketten läuft auf „alt“ unverändert bis `A>` (BAB1, „Tastatur: K7636“, `dir`); kein Kernfehler, Weg 2 unnötig. `boot_trace`/`k1520dbg` haben `--ausfuehrung neu|alt|kmbg` und `--laufwerke`. Neue Fixture 40-Spur-K5600.10-Bootdiskette (noch combo5zoll-BIOS, Banner „A:5″(80,DD,DS)“; ein BIOS mit `diskA=10540` fehlt, optional). Tastendruck im CP/A-Autostart → `*break*` (Gastverhalten). Platte war voll: Worktrees/`build*` regelmäßig aufräumen.
+- 2026-10-15 A7: BCU 880 **V1.2 bootet bis `A>`** (`dir b:`); **V2.1 startet mit keinem der vier Lade-ROMs** (Start-EPROM unbekannt; „EPROM BCU 880 VERSION 2.2“ ist nur die Kennung des Programms `EPROM.COM`). Beide „SYL auf Spur 1“-Sätze sind V1.2 (DT-INFO „Bootfähig: Nein“ falsch): Satz 2 → K7023/`Alt`, Satz 1 → K7024 + K7636 (`Neu`+`tastatur=K7636`). Neue Config-Felder `laderom` (V09_2 Vorgabe|V09_1|V06) und `tastatur`; Werkzeuge `--laderom`, `--tastatur`, `--format`. BCU lässt nach Reset 80H in der K7636 liegen (erstes Zeichen der ersten Zeile verloren). SYL-Disketten taugen nicht als Dateidisketten (OFF=2). C-ABI für laderom/tastatur fehlt noch (A9, falls GUI-Modell BCU). `KMBG.REL` liegt auf `bcu12_ss40-26x128_k5600-10_ohnesyl-sys1.img` (A8).
+- 2026-10-15 A8: BCU V1.2 formatiert/schreibt/liest die Kassette in F: (Modell `Kmbg`, Lade-ROM V0.6). **Zwei Kernfehler behoben:** (1) `Z80::ei_schatten` + `interruptAnnehmbar()` — Interrupt wurde direkt nach `EI` angenommen (nur im A5120-Laufweg genutzt; K8915/PRG 710/PC 1715 prüfen weiter nur IFF1, vermutlich gleicher Fehler [?] → A8b); (2) `Z80PIO::onRETI` ließ Port B in Bedienung, wenn A nur anforderte (gleiche Lesart steckt noch in `Z80CTC`/`Z80SIO::onRETI` und `K1520Bus::updateInterruptChain` [?]). BCU-Bedienung: `OPEN B:KMBG`, F: = Gerät 2, Diskette „ohne SYL“ nach A:, INIT verlassen mit ^S/^C (Handbuch A9); BCU wartet im Vorspann ohne Frist (frische Kassette geht, anders als SCPX/KMBG). READ SEQ liefert 17-B-Abschlussblock als 24. Satz.
+- 2026-10-15 A7b: **Eigenbau** (V1.2-SYL-Lader/Kaltstart + V2.1-System + V1.2-Plattentreiber, 11 Adressen umgebogen) bootet bis `A>`, `dir b:` geht; `tools/bcu_v21_eigenbau.py`, Fixture als „EIGENBAU, kein Original“. V2.1 trägt keinen residenten Plattentreiber ab F100H → stammt vermutlich aus dem unbekannten Start-EPROM [?]. Nicht erprobt: WRITE, WBOOT. `boot_trace` bricht nach ~4,8 Mio. Takten ab (längere Läufe `k1520dbg g N`).
 
 ---
 

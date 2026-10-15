@@ -1,0 +1,16 @@
+# k1520dbg --tastatur k7636 --laderom v06 (AP A7): BCU 880 V1.2 Satz 1 (Bild 80x24 = K7024)
+# am A5120 „neu“ mit K7636 am U-Bus; `screen` liest die K7024, `keys` tippt ueber die K7636
+# (erste Zeile leer: sie verbraucht das Typzeichen 80H aus dem Kaltstart, bcu.md §4).
+tool:    k1520dbg
+disk:    bcu12_ss40-26x128_k5600-10_syl-spur1-satz1.img
+run:     --tastatur k7636 --laufwerke K5600.10,K5600.10,K5600.10,none --laderom v06 --format k5601_ss40_26x128 %DISK%
+stdin:
+  gscreen "A>" 60000000
+  keys \r
+  g 5000000
+  keys user\r
+  g 5000000
+  screen
+  q
+expect:  |BCU 880 VERS 1.2
+expect:  |A>user

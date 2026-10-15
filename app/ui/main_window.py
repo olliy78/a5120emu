@@ -45,6 +45,7 @@ from app.ui.eprom_widget import EpromWidget
 from app.ui.keyboard import KeyboardWidget
 from app.ui.focus import release_focus, ScreenFocusGuard
 from app.ui.help_window import HelpWindow
+from app.ui.kassette_widget import KassetteWidget
 from app.ui.lochstreifen_widget import LochstreifenWidget
 from app.ui import status_bar
 from app.ui.status_bar import MachineStatus
@@ -106,6 +107,9 @@ class MainWindow(QMainWindow):
         # Leser-/Stanzer-Dateien, auch solange die Karte nicht steckt.
         self._ptape = False
         self._ptape_zustand = {}
+        # Kassette K5020 (doc/design/29_kassette.md): dasselbe Muster.
+        self._tape = False
+        self._tape_zustand = {}
 
         # Create emulator (powered on only AFTER the config restored the disks,
         # so a cold start boots from the last-mounted images).
@@ -215,6 +219,10 @@ class MainWindow(QMainWindow):
         self.settings_widget.mitschriftChanged.connect(self._on_mitschrift_selected)
         if hasattr(self.screen_widget, "mitschriftFehler"):
             self.screen_widget.mitschriftFehler.connect(self._mitschrift_fehler)
+        self.settings_widget.tapeChanged.connect(self._on_tape_selected)
+        self.kassette_widget.geaendert.connect(self._schedule_autosave)
+        self.kassette_widget.meldung.connect(
+            lambda text: self.statusBar().showMessage(text, 5000))
         self.lochstreifen_widget.geaendert.connect(self._schedule_autosave)
         self.lochstreifen_widget.meldung.connect(
             lambda text: self.statusBar().showMessage(text, 5000))
@@ -236,7 +244,7 @@ class MainWindow(QMainWindow):
         # ergibt und nicht fünfzig.
         for dock in (self.screen_dock, self.keyboard_dock,
                      self.drives_dock, self.settings_dock, self.eprom_dock,
-                     self.lochstreifen_dock):
+                     self.lochstreifen_dock, self.kassette_dock):
             if dock is None:
                 continue
             dock.visibilityChanged.connect(lambda *_: self._kasten_sichtbarkeit())
@@ -453,6 +461,17 @@ class MainWindow(QMainWindow):
         self.lochstreifen_dock.visibilityChanged.connect(
             lambda sichtbar: sichtbar and self.lochstreifen_widget.aktualisieren())
 
+        # ── Kassette-Dock (K5020, doc/design/29_kassette.md) ──────────────────
+        # Wie der Lochstreifen: immer angelegt, sichtbar nur bei gesteckter Karte.
+        self.kassette_widget = KassetteWidget(self.emulator)
+        self.kassette_dock = QDockWidget("Kassette", self)
+        self.kassette_dock.setObjectName("kassette_dock")
+        self.kassette_dock.setWidget(self.kassette_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.kassette_dock)
+        self.tabifyDockWidget(self.drives_dock, self.kassette_dock)
+        self.kassette_dock.visibilityChanged.connect(
+            lambda sichtbar: sichtbar and self.kassette_widget.aktualisieren())
+
         # ── Kastenschalter ───────────────────────────────────────────────────
         # Sie kommen von Qt (``toggleViewAction``) und sind damit immer richtig
         # herum angehakt.  Beschriftung, Symbol und Kurzwort bekommen sie hier —
@@ -465,7 +484,8 @@ class MainWindow(QMainWindow):
                  "Einstellungen"),
                 ("eprom", self.eprom_dock, "E&PROMmer", "eprom", "EPROMmer"),
                 ("lochstreifen", self.lochstreifen_dock, "L&ochstreifen", "lochstreifen",
-                 "Lochstreifen")):
+                 "Lochstreifen"),
+                ("kassette", self.kassette_dock, "&Kassette", "kassette", "Kassette")):
             if dock is None:
                 continue
             a = dock.toggleViewAction()
@@ -483,6 +503,7 @@ class MainWindow(QMainWindow):
         self.settings_dock.show()
         self.settings_dock.raise_()
         self._lochstreifen_kasten()
+        self._kassette_kasten()
 
         # Startaufteilung: rechte Spalte (Laufwerke) so schmal wie möglich, ohne
         # horizontales Scrollen; Bildschirm breit.  Tastatur auf Minimalhöhe.
@@ -592,6 +613,10 @@ class MainWindow(QMainWindow):
         if self._tastatur_art == "k7609":
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
+        if self._tastatur_art == "k7636":
+            # Frühe A5120 (Entwurf 30, AP A5): parallele K7636 am U-Bus der K2526.
+            from app.ui.keyboard_k7636 import KeyboardK7636Widget
+            return KeyboardK7636Widget()
         return KeyboardWidget()
 
     def _host_matrix_verbinden(self):
@@ -839,7 +864,8 @@ class MainWindow(QMainWindow):
         view_menu = menu_bar.addMenu("&Ansicht")
         view_menu.addAction(self.act_vollbild)
         view_menu.addSeparator()
-        for name in ("screen", "keyboard", "drives", "settings", "eprom", "lochstreifen"):
+        for name in ("screen", "keyboard", "drives", "settings", "eprom", "lochstreifen",
+                     "kassette"):
             if hasattr(self, f"act_dock_{name}"):
                 view_menu.addAction(getattr(self, f"act_dock_{name}"))
         view_menu.addSeparator()
@@ -1065,6 +1091,7 @@ class MainWindow(QMainWindow):
                 general["ausstattung"] = self.settings_widget.ausstattung_value()
         general.update(self._hardware)          # PC 1715: zeichensatz, tastatur
         general["ptape"] = bool(self._ptape)
+        general["tape"] = bool(self._tape)
         if self.profil.terminal:
             general["mitschrift"] = self.settings_widget.mitschrift_value()
         data = config_io.build_config(
@@ -1078,6 +1105,7 @@ class MainWindow(QMainWindow):
         if self.platten_widget is not None:
             data["platte"] = self.platten_widget.zustand_lesen()
         data["lochstreifen"] = self._ptape_zustand_lesen()
+        data["kassette"] = self._tape_zustand_lesen()
         return data
 
     def _gather_window_state(self) -> dict:
@@ -1328,6 +1356,9 @@ class MainWindow(QMainWindow):
             # „fehlt" hier „aus" — der Neuaufbau unten in _apply_drive_types steckt sie.
             self._ptape = general.get("ptape") is True
             self.settings_widget.set_ptape_value(self._ptape)
+            # Kassette K5020: dasselbe (fehlend = aus).
+            self._tape = general.get("tape") is True and self.profil.tape_wahl
+            self.settings_widget.set_tape_value(self._tape)
 
             # Mitschrift des Terminals: ein FEHLENDER Schlüssel heisst „nicht anfassen“ (die
             # Ansichts-Vorgabe trägt keinen Dateinamen), ein leerer „aus“.
@@ -1371,12 +1402,15 @@ class MainWindow(QMainWindow):
             # alles, wie es ist.  Eine fehlende Datei → Statuszeile, kein Fenster.
             if "lochstreifen" in data:
                 self._ptape_zustand_anwenden(data.get("lochstreifen") or {})
+            if "kassette" in data:
+                self._tape_zustand_anwenden(data.get("kassette") or {})
 
             if "window" in data:
                 self._apply_window_state(data.get("window") or {})
             # Ein gespeichertes Kastenlayout kann den Lochstreifen-Kasten zeigen,
             # obwohl die Karte nicht (mehr) steckt.
             self._lochstreifen_kasten()
+            self._kassette_kasten()
         finally:
             self._loading_config = False
 
@@ -1464,6 +1498,7 @@ class MainWindow(QMainWindow):
         hardware_vorher = dict(self._hardware)
         raf_vorher = self._raf
         ptape_vorher = self._ptape
+        tape_vorher = self._tape
         self._apply_config(vorgabe)
         # Ein geänderter Laufwerksschacht ODER ein geändertes Modell bedeutet
         # eine NEUE Maschine (:meth:`_apply_drive_types`), und die ist noch
@@ -1473,7 +1508,8 @@ class MainWindow(QMainWindow):
         # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
         if (self._drive_types != vorher or self._model != modell_vorher
                 or self._hardware != hardware_vorher
-                or self._raf != raf_vorher or self._ptape != ptape_vorher):
+                or self._raf != raf_vorher or self._ptape != ptape_vorher
+                or self._tape != tape_vorher):
             self._cold_restart()
         # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
         # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
@@ -1651,6 +1687,8 @@ class MainWindow(QMainWindow):
         # Stand von Leser/Stanzer im selben Takt (kein eigener Zeitgeber).
         if self.lochstreifen_dock.isVisible():
             self.lochstreifen_widget.aktualisieren()
+        if self.kassette_dock.isVisible():
+            self.kassette_widget.aktualisieren()
 
     def _update_em_status(self):
         """Die EM-Leuchten (V1/V2) und den Modus — nur wenn das Modell eins hat.
@@ -1851,6 +1889,7 @@ class MainWindow(QMainWindow):
                             em=self.profil.modell_em(self._model),
                             raf=raf.core_param(self._raf) if self.profil.raf_wahl else None,
                             ptape=bool(self._ptape),
+                            tape=bool(self._tape),
                             **self.profil.kern_parameter(self._model, self._hardware))
         # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
         # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
@@ -1978,6 +2017,46 @@ class MainWindow(QMainWindow):
         self._lochstreifen_kasten(zeigen=an)
         self._schedule_autosave()
 
+    def _on_tape_selected(self, an: bool):
+        """Kästchen „Kassette" → neue Maschine (wie beim Lochstreifen)."""
+        an = bool(an)
+        if an == self._tape:
+            return
+        if not self._eprom_rueckfrage("Wechsel der Kassetten-Karte"):
+            self.settings_widget.set_tape_value(self._tape)
+            return
+        self._tape = an
+        self._apply_drive_types(self._drive_types, cold_restart=True)
+        self._kassette_kasten(zeigen=an)
+        self._schedule_autosave()
+
+    def _kassette_kasten(self, zeigen: bool = False):
+        """Kasten und Menüeintrag nur bei gesteckter Karte; *zeigen* holt ihn nach vorn."""
+        dock = getattr(self, "kassette_dock", None)
+        if dock is None:
+            return
+        gesteckt = bool(self.emulator.tape_installed())
+        dock.toggleViewAction().setVisible(gesteckt)
+        if not gesteckt:
+            dock.hide()
+        elif zeigen:
+            dock.show()
+            dock.raise_()
+        self.kassette_widget.aktualisieren()
+
+    def _tape_zustand_lesen(self) -> dict:
+        """Laufwerke für die Konfiguration — ohne Karte der zuletzt bekannte Stand."""
+        if self.emulator.tape_installed():
+            self._tape_zustand = self.kassette_widget.zustand_lesen()
+        return dict(self._tape_zustand or {})
+
+    def _tape_zustand_anwenden(self, z) -> None:
+        self._tape_zustand = dict(z) if isinstance(z, dict) else {}
+        hinweise = self.kassette_widget.zustand_anwenden(self._tape_zustand)
+        if hinweise:
+            print("[kassette] " + " ".join(hinweise))
+            self.statusBar().showMessage(" ".join(hinweise), 10000)
+
     def _lochstreifen_kasten(self, zeigen: bool = False):
         """Kasten und Menüeintrag nur bei gesteckter Karte; *zeigen* holt ihn nach vorn."""
         dock = getattr(self, "lochstreifen_dock", None)
@@ -2041,6 +2120,8 @@ class MainWindow(QMainWindow):
             self.settings_widget.set_raf_value(self._raf)
             self._ptape = bool(self.emulator.ptape_installed())
             self.settings_widget.set_ptape_value(self._ptape)
+            self._tape = bool(self.emulator.tape_installed())
+            self.settings_widget.set_tape_value(self._tape)
             return False
 
         # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
@@ -2055,6 +2136,9 @@ class MainWindow(QMainWindow):
         # Maschine bindet sie wieder (Leser von vorn, Stanzer setzt die Datei fort).
         self._ptape_zustand_lesen()
         self.emulator.ptape_punch_flush()
+        # Kassette: gebundene .k52 zurückschreiben, Dateien merken.
+        self._tape_zustand_lesen()
+        self.kassette_widget.sichern()
 
         try:
             self.emulator.stop()
@@ -2073,6 +2157,8 @@ class MainWindow(QMainWindow):
             self.eprom_widget.sockel_anwenden(eprom)
         self.lochstreifen_widget.set_emulator(new_emu)
         self._ptape_zustand_anwenden(self._ptape_zustand)
+        self.kassette_widget.set_emulator(new_emu)
+        self._tape_zustand_anwenden(self._tape_zustand)
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         if self.platten_widget is not None:
@@ -2091,6 +2177,8 @@ class MainWindow(QMainWindow):
         self.settings_widget.set_raf_value(self._raf)       # dito
         self.settings_widget.set_ptape_value(self._ptape)   # dito
         self._lochstreifen_kasten()
+        self.settings_widget.set_tape_value(self._tape)
+        self._kassette_kasten()
         # Die Statuszeile führt je bestücktem Steckplatz ein Feld — ein
         # abgemeldetes Laufwerk muss auch dort verschwinden.  Die EM-Leuchten
         # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.
@@ -2380,6 +2468,8 @@ class MainWindow(QMainWindow):
         self._raf_sichern()
         # Lochstreifen: was gestanzt ist, gehört jetzt in die gebundene Datei.
         self.emulator.ptape_punch_flush()
+        # Kassette: gebundene Dateien zurückschreiben (der Kern tut es verzögert).
+        self.kassette_widget.sichern()
         # Winchester: geänderte Spuren zurückschreiben (der Kern tut es verzögert).
         if self.platten_widget is not None:
             self.platten_widget.sichern()

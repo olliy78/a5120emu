@@ -308,6 +308,15 @@ if(BUILD_K1520)
     add_library(k1520_k3526 STATIC core/cards/k3526/k3526.cpp)
     target_include_directories(k1520_k3526 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # K7636 parallele Tastatur am U-Bus der K2526 (frühe A5120, doc/a5120_alt/k7636.md)
+    add_library(k1520_k7636 STATIC core/peripherals/k7636/k7636.cpp)
+    target_include_directories(k1520_k7636 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K3525 – 16-KB-dRAM-Karte der frühen A5120 (doc/design/30, AP A2)
+    add_library(k1520_k3525 STATIC core/cards/k3525/k3525.cpp)
+    target_link_libraries(k1520_k3525 PUBLIC k1520_bus)
+    target_include_directories(k1520_k3525 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # K7637 serial keyboard peripheral
     add_library(k1520_k7637 STATIC
         core/peripherals/k7637/k7637.cpp
@@ -319,6 +328,11 @@ if(BUILD_K1520)
     add_library(k1520_k7024 STATIC core/cards/k7024/k7024.cpp)
     target_link_libraries(k1520_k7024 PUBLIC k1520_bus)
     target_include_directories(k1520_k7024 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K7023 / K7023.01 ABS (BAB1) – Bildschirm 16x64 der frühen A5120 (doc/a5120_alt/k7023.md)
+    add_library(k1520_k7023 STATIC core/cards/k7023/k7023.cpp)
+    target_link_libraries(k1520_k7023 PUBLIC k1520_bus)
+    target_include_directories(k1520_k7023 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # K2526 ZRE – Zentrale Recheneinheit (CPU card, enthält jetzt ZVE1)
     add_library(k1520_k2526 STATIC core/cards/k2526/k2526.cpp)
@@ -358,7 +372,8 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em k1520_raf k1520_k6022
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em k1520_raf k1520_k6022 k1520_k5020
+        k1520_k3525 k1520_k7023 k1520_k7636
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger k1520_serial
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -460,9 +475,19 @@ if(BUILD_K1520)
     # Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4)
     add_library(k1520_lochstreifen STATIC core/peripherals/lochstreifen/band_format.cpp)
     target_include_directories(k1520_lochstreifen PUBLIC ${CMAKE_SOURCE_DIR})
+    # Kassettenband: Medium, `.k52`-Codec, Laufwerk (doc/design/29_kassette.md, AP K3)
+    add_library(k1520_kassette STATIC
+        core/peripherals/kassette/kassetten_medium.cpp
+        core/peripherals/kassette/k52_codec.cpp
+        core/peripherals/kassette/kassetten_laufwerk.cpp)
+    target_include_directories(k1520_kassette PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_k6022 STATIC core/cards/k6022/k6022.cpp)
     target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger k1520_lochstreifen)
     target_include_directories(k1520_k6022 PUBLIC ${CMAKE_SOURCE_DIR})
+    # AKB K5020 (Kassettenanschluss: zwei PIOs + zwei Laufwerke) — doc/design/29, AP K4
+    add_library(k1520_k5020 STATIC core/cards/k5020/k5020.cpp)
+    target_link_libraries(k1520_k5020 PUBLIC k1520_pio k1520_bus k1520_logger k1520_kassette)
+    target_include_directories(k1520_k5020 PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_ass590069 STATIC core/cards/ass590069/ass590069.cpp)
     target_link_libraries(k1520_ass590069 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_serial)
     target_include_directories(k1520_ass590069 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -482,7 +507,7 @@ if(BUILD_K1520)
     # AP-V6a): K2521 + K3528 statt der ZRE 045-8762, Config::generation.
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
-        k1520_zre8762 k1520_k2521 k1520_k3528 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf k1520_k6022
+        k1520_zre8762 k1520_k2521 k1520_k3528 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf k1520_k6022 k1520_k5020
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -491,7 +516,7 @@ if(BUILD_K1520)
     add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
     target_link_libraries(k1520_prg710 PUBLIC
         k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
-        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_ass590069 k1520_raf
+        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_k5020 k1520_ass590069 k1520_raf
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -571,6 +596,11 @@ if(BUILD_K1520)
     add_executable(k1520disktool tools/k1520disktool.cpp)
     target_link_libraries(k1520disktool PRIVATE k1520_fs)
     target_include_directories(k1520disktool PRIVATE ${CMAKE_SOURCE_DIR})
+
+    # k1520tape: Kassettenbaender (.k52) anlegen/fuellen, Bootband (tools/k1520tape.md)
+    add_executable(k1520tape tools/k1520tape.cpp)
+    target_link_libraries(k1520tape PRIVATE k1520_kassette)
+    target_include_directories(k1520tape PRIVATE ${CMAKE_SOURCE_DIR})
 
     # z8kasm: Assembler/Disassembler fuer U8001/U8002 (header-only tools/z8000/)
     add_executable(z8kasm tools/z8kasm.cpp)

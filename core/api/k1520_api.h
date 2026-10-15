@@ -84,6 +84,26 @@ K1520_API K1520Handle k1520_create_k8915(int generation,
                                          const char* drive2, const char* drive3);
 
 /**
+ * @brief A5120 in einer Ausführung (doc/design/30_a5120_fruehe_varianten.md, AP A5).
+ *
+ * @param ausfuehrung 0 = „5¼″ neu“ (K3526, K7024 24×80, K7637; wie k1520_create_configured),
+ *                    1 = „5¼″ alt“ (4× K3525, K7023.01 16×64 ab FC00H — Framebuffer 512×256,
+ *                    `k1520_screen_char` 64×16 —, Tastatur K7636 am U-Bus der K2526, Brücke
+ *                    Port 0AH Bit 6 = 1), 2 = KMBG (wie 1, dazu die K5020 fest auf 30H–37H),
+ *                    3 = 8″ (K5602, noch nicht umgesetzt) und alles andere → NULL mit Grund in
+ *                    k1520_last_init_error.
+ * @param drive0..3   wie bei k1520_create_configured; NULL/"" = Vorgabe der Ausführung
+ *                    (neu: K5601; alt/KMBG: K5600.10, K5600.10, K5600.10, none).
+ * k1520_machine_type() = 0; Ausführung: k1520_a5120_ausfuehrung().  Tastaturanzeigen der
+ * K7636 über k1520_keyboard_leds.
+ */
+K1520_API K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
+                                                     const char* drive0, const char* drive1,
+                                                     const char* drive2, const char* drive3);
+/** @brief Ausführung eines A5120 (0 neu, 1 alt, 2 KMBG); -1 bei einer anderen Maschine. */
+K1520_API int k1520_a5120_ausfuehrung(K1520Handle h);
+
+/**
  * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
  *
  * @param variante    0 = PC 1715, 1 = PC 1715W (seit AP-W3; nur mit bildschirm 0, sonst NULL mit Grund)
@@ -202,6 +222,9 @@ K1520_API void k1520_set_key_repeat_realtime(K1520Handle h, bool realtime);
  * Bit gesetzt ist —, Bit 7 = akustisches Signal läuft (≈1 s).  Die
  * Betriebsanzeige E54 und die LOCK-Anzeige C99 stehen nicht darin: die eine
  * hängt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
+ *
+ * **A5120 „alt“/KMBG (K7636):** Bit 0…3 = Wahllampen A58…D58, Bit 4 = INS MODE (E15),
+ * Bit 5 = Fehlerlampe, Bit 6 = SHIFT/LOCK (C99), Bit 7 = akustisches Signal läuft.
  */
 K1520_API uint32_t k1520_keyboard_leds(K1520Handle h);
 /**
@@ -691,6 +714,50 @@ K1520_API bool     k1520_ptape_punch_flush(K1520Handle h);
 K1520_API const char* k1520_ptape_punch_file(K1520Handle h);
 /** @brief Format der Bindung; -1 ohne Karte. */
 K1520_API int      k1520_ptape_punch_format(K1520Handle h);
+
+/* ─── Kassette: AKB K5020 + zwei K5200 (Entwurf 29, AP K5; steckbar wie die K6022) ───────────
+ * Gesteckt wird nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset: A5120 (auch .16) 30H–37H,
+ * K8915 D0H–D7H, PRG 710 30H–37H; am PC 1715 nur wenn die Tore frei sind (BWS 34H liegt dort).
+ * @p drive ist 0 oder 1 (Geräte X3/X4).  Bandpositionen in µm der Seitenkoordinate; Seite 0 = A,
+ * 1 = B.  Fehlertext in k1520_tape_error.  Ohne Karte: false / -1 / "". */
+K1520_API bool     k1520_tape_install(K1520Handle h);
+K1520_API bool     k1520_tape_installed(K1520Handle h);
+/** @brief Grund des letzten gescheiterten k1520_tape_*-Aufrufs ("" nach Erfolg). */
+K1520_API const char* k1520_tape_error(K1520Handle h);
+/** @brief Kassettendatei (.k52) einlegen und BINDEN; gibt es sie nicht, entsteht eine leere.
+ *  Änderungen werden nach ≈ 0,5 s Schreibpause zurückgeschrieben. */
+K1520_API bool     k1520_tape_load(K1520Handle h, int drive, const char* path);
+/** @brief Leere Kassette ohne Datei einlegen (nur im Speicher). */
+K1520_API bool     k1520_tape_new(K1520Handle h, int drive);
+/** @brief Kassette entnehmen (gebundene Datei wird vorher geschrieben); false, solange das
+ *  Gerät reserviert ist oder das Band läuft. */
+K1520_API bool     k1520_tape_eject(K1520Handle h, int drive);
+/** @brief Gebundene Datei sofort zurückschreiben (true auch ohne Bindung). */
+K1520_API bool     k1520_tape_flush(K1520Handle h, int drive);
+/** @brief Gebundene Datei von @p drive ("" = keine). */
+K1520_API const char* k1520_tape_file(K1520Handle h, int drive);
+/** @brief Aktive Seite (0 = A, 1 = B); -1 ohne Karte/Kassette. */
+K1520_API int      k1520_tape_side(K1520Handle h, int drive);
+/** @brief Kassette wenden (nur bei stehendem, nicht reserviertem Gerät). */
+K1520_API bool     k1520_tape_flip(K1520Handle h, int drive);
+/** @brief Schreibschutz einer Seite setzen. */
+K1520_API bool     k1520_tape_protect(K1520Handle h, int drive, int side, bool on);
+/** @brief Schreibschutz einer Seite: 1/0; -1 ohne Karte/Kassette. */
+K1520_API int      k1520_tape_protected(K1520Handle h, int drive, int side);
+/** @brief Kopfstelle (µm) setzen; nur bei stehendem Band. */
+K1520_API bool     k1520_tape_set_position(K1520Handle h, int drive, int64_t um);
+/** @brief Zustand: eingelegt, Seite, Kopfstelle (µm), Bandlänge (µm), Blöcke der aktiven Seite,
+ *  Band bewegt sich (alle Zeiger optional); false ohne Karte. */
+K1520_API bool     k1520_tape_status(K1520Handle h, int drive, int* loaded, int* side,
+                                     int64_t* pos_um, int64_t* len_um, int* blocks, int* moving);
+/** @brief Zahl der Blöcke (einschließlich Bandmarken) einer Seite; -1 ohne Karte/Kassette. */
+K1520_API int      k1520_tape_block_count(K1520Handle h, int drive, int side);
+/** @brief Block i einer Seite: Startstelle (µm), Bytezahl, 1 = Bandmarke; false bei ungültigem i. */
+K1520_API bool     k1520_tape_block_info(K1520Handle h, int drive, int side, int i,
+                                         int64_t* start_um, int* bytes, int* mark);
+/** @brief Rohbytes von Block i (höchstens @p cap); Rückgabe = Blocklänge, -1 ungültig. */
+K1520_API int      k1520_tape_block_data(K1520Handle h, int drive, int side, int i,
+                                         uint8_t* buf, int cap);
 
 /* ─── Terminals des P8000 (Entwurf 25 §10.9, P20d; andere Maschinen: 0 / -1 / false) ───────
  * Index i zählt die Terminals: am P8000 die Konsole tty1 (Kern- ODER Originalterminal, je nach

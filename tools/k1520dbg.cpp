@@ -28,10 +28,19 @@
  * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
  *
  * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
+ * `--ausfuehrung neu|alt|kmbg` / `--laufwerke P0,P1,…` (A5120, AP A6): altes Gerät mit
+ * K7023 64×16 + K7636; Bildschirmbefehle lesen dann die K7023 (tools/dbg_machine.h).
+ * `--laderom v06|v09_1|v09_2` (A5120, AP A7): gestecktes Lade-ROM (Vorgabe v09_2 = zre.rom;
+ * v06 startet BCU 880 „SYL auf Spur 1“, doc/a5120_alt/laderom.md).
+ * `--tastatur k7636|k7637` (A5120, AP A7): Tastatur abweichend von der Ausführung.
+ * `--format NAME`: Katalogformat, mit dem ein `.img` zuerst gemountet wird (bei .hfe/.dmk
+ * Platzhalter), z. B. `k5601_ss40_26x128` für die BCU-Abbilder.
  * `--wdc 4.2|4.0.05|3.4.05` und `--hd <abbild>` (nur `--machine p8000-16`, P13d): WDC an der
  * 16-Bit-PIO2 bzw. Winchester an Laufwerk 0 (Kopie wie die Disketten, `--rw` = Original);
  * Befehle `wdc [r|u|d|log]`, `cpu wdc` (nur Ansicht).
  * `--ptape` steckt die Lochstreifen-Karte K6022 (SIF1000, E0H–E7H; alle Maschinen).
+ * `--tape <k52>` / `--tape2 <k52>` / `--tape-card` steckt die Kassettenkarte K5020 (A5120/PRG 30H,
+ *   K8915 D0H, PC 1715 D0H) und bindet die Kassettendatei an Gerät 1/2; Befehl `tape`.
  * `--terminal`: Originalterminal P8000 Typ 2 (P8T 5.0 + K7673.09) als Einheit, Kontext `cpu z8`
  * auf dessen Z8, Zusatzkommandos term/crt/host/key/taste/lauf (tools/dbg_p8000_terminal.h, P20a).
  * `--z8 <abzug>[@org]` [--z8-fassung ub8840|ub8820|z8681]: Z8-Prüfstand ohne Maschine
@@ -198,12 +207,19 @@ int main(int argc, char** argv){
     dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|k8915-g2|prg710|prg710-1|pc1715|pc1715w|p8000|p8000-16 (Vorgabe a5120)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
+    const char* ausf_opt = nullptr; // --ausfuehrung neu|alt|kmbg: A5120-Ausführung (Entwurf 30, AP A6)
+    const char* lw_opt = nullptr;   // --laufwerke P0,P1,…: Laufwerksprofile ab A: (A5120)
+    const char* laderom_opt = nullptr; // --laderom v06|v09_1|v09_2: Lade-ROM der K2526 (AP A7)
+    const char* format_opt = nullptr;  // --format NAME: Katalogformat für .img (zuerst versucht)
+    const char* tastatur_opt = nullptr; // --tastatur k7636|k7637: Tastatur (A5120, AP A7)
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
     const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
     const char* konsole_opt = nullptr; // --konsole kern|original: Terminal an tty1 (P8000, P20c)
     const char* hd_opt  = nullptr; // --hd <abbild>: Winchester an WDC-Laufwerk 0 (setzt --wdc 4.2)
     std::string ptape_in, ptape_out;   // --ptape-in/-out: Band einlegen / Stanzer an Datei binden
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
+    bool tape_opt = false;         // --tape/--tape2/--tape-card: Kassettenkarte K5020 (Entwurf 29)
+    std::string tape1_opt, tape2_opt;
     const char* z8_bild = nullptr; // --z8 <abzug>[@org]: Z8-Prüfstand (P19c), ohne Maschine
     std::string z8_fassung;        // --z8-fassung ub8840|ub8820|z8681
     bool terminal_hw = false;      // --terminal: Originalterminal P8000 Typ 2 (P20a)
@@ -220,11 +236,19 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"-d") && i+1<argc) disks[3]=argv[++i];
         else if (!strcmp(argv[i],"--console")) start_console=true;
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
+        else if (!strcmp(argv[i],"--ausfuehrung") && i+1<argc) ausf_opt=argv[++i];
+        else if (!strcmp(argv[i],"--laufwerke") && i+1<argc) lw_opt=argv[++i];
+        else if (!strcmp(argv[i],"--laderom") && i+1<argc) laderom_opt=argv[++i];
+        else if (!strcmp(argv[i],"--format") && i+1<argc) format_opt=argv[++i];
+        else if (!strcmp(argv[i],"--tastatur") && i+1<argc) tastatur_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
         else if (!strcmp(argv[i],"--wdc") && i+1<argc) wdc_opt=argv[++i];
         else if (!strcmp(argv[i],"--konsole") && i+1<argc) konsole_opt=argv[++i];
         else if (!strcmp(argv[i],"--hd") && i+1<argc) hd_opt=argv[++i];
         else if (!strcmp(argv[i],"--ptape")) ptape_opt=true;
+        else if (!strcmp(argv[i],"--tape-card")) tape_opt=true;
+        else if (!strcmp(argv[i],"--tape") && i+1<argc) { tape_opt=true; tape1_opt=argv[++i]; }
+        else if (!strcmp(argv[i],"--tape2") && i+1<argc) { tape_opt=true; tape2_opt=argv[++i]; }
         else if (!strcmp(argv[i],"--z8") && i+1<argc) z8_bild=argv[++i];
         else if (!strcmp(argv[i],"--z8-fassung") && i+1<argc) z8_fassung=argv[++i];
         else if (!strcmp(argv[i],"--terminal")) terminal_hw=true;
@@ -259,6 +283,11 @@ int main(int argc, char** argv){
         if      (e=="em256") mcfg.em = A5120Machine::Config::Em::em256;
         else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
+    }
+    if (ausf_opt || lw_opt || laderom_opt || tastatur_opt){
+        if (art!=dbgm::Art::A5120){ fprintf(stderr,"--ausfuehrung/--laufwerke gibt es nur am A5120 (ebenso --laderom/--tastatur)\n"); return 2; }
+        std::string err;
+        if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err, laderom_opt, tastatur_opt)){ fprintf(stderr,"%s\n",err.c_str()); return 2; }
     }
     // P8000-WDC (P13d): --wdc/--hd nur mit p8000-16.  Die Platte wird wie die Disketten im
     // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende gelöscht), mit --rw direkt.
@@ -307,6 +336,7 @@ int main(int argc, char** argv){
     }
     { std::string err;   // ebenfalls vor dem ersten Lauf
       if (!dbgm::steckeK6022(m.base(), ptape_opt, err)){ fprintf(stderr,"--ptape: %s\n",err.c_str()); return 2; }
+      if (!dbgm::steckeK5020(m.base(), tape_opt, tape1_opt, tape2_opt, err)){ fprintf(stderr,"--tape: %s\n",err.c_str()); return 2; }
       if (m.base().k6022()) {
           if (!ptape_in.empty() && !m.base().k6022()->bandEinlegenDatei(ptape_in, err)){ fprintf(stderr,"--ptape-in: %s\n",err.c_str()); return 2; }
           if (!ptape_out.empty() && !m.base().k6022()->stanzerBinden(ptape_out, K6022::Format::Roh, err)){ fprintf(stderr,"--ptape-out: %s\n",err.c_str()); return 2; } } }
@@ -348,7 +378,8 @@ int main(int argc, char** argv){
     // Formatname ist bei .hfe/.dmk nur Platzhalter; bei .img entscheidet er.  Der K8915
     // bootet von cpa800, der A5120 zuerst cpa780 (unverändert).
     const std::string pfmt = (KP||KC||KQ) ? m.base().defaultFormatName(0) : std::string();
-    const char* fmt1 = (KP||KC||KQ) ? pfmt.c_str() : K8 ? "cpa800" : "cpa780";
+    // --format NAME (AP A7): ein .img in anderer Geometrie, z. B. k5601_ss40_26x128 (BCU 880).
+    const char* fmt1 = format_opt ? format_opt : (KP||KC||KQ) ? pfmt.c_str() : K8 ? "cpa800" : "cpa780";
     const char* fmt2 = KP ? "udos_ds77" : KC ? "cpa640" : KQ ? pfmt.c_str() : K8 ? "cpa780" : "cpa800";
     bool mount_failed = false;
     // COW temp copies to unlink at exit (empty unless mount_mode==MOUNT_COW).
@@ -1556,10 +1587,10 @@ int main(int argc, char** argv){
         }
     };
     auto screen = [&]{
-        for (int row=0;row<24;++row){ char ln[81];
-            for (int c=0;c<80;++c){ uint8_t ch=m.screenByte(row,c);
+        for (int row=0;row<m.screenRows();++row){ char ln[81]; const int nc=m.screenCols();
+            for (int c=0;c<nc;++c){ uint8_t ch=m.screenByte(row,c);
                 ln[c]=(ch>=0x20&&ch<0x7F)?(char)ch:'.'; }
-            ln[80]=0; fprintf(stderr,"  |%s|\n",ln); }
+            ln[nc]=0; fprintf(stderr,"  |%s|\n",ln); }
     };
     // ── screen text as a condition (doc/feature_requests/interaktive_programme.md #1/#5) ──
     // Render one 80-char row of the text VRAM (0xF800) into `out` (no trailing NUL
@@ -3032,6 +3063,8 @@ int main(int argc, char** argv){
             fprintf(stderr,
               "  RUN     g/c [N]   run to breakpoint (or N MASCHINEN-Takte; Ctrl-C bricht ab)\n"
               "          clock [zve1|machine]   welche Uhr die Lauf-Budgets zaehlt\n"
+              "  KASSETTE tape     (mit --tape) K5020: Karte, je Geraet Kassette/Seite/Kopf/Bloecke/Bindung\n"
+              "          tape <1|2> [A|B]       Blockliste einer Seite;  tape <1|2> <A|B> <i>  Rohbytes von Block i\n"
               "  RAF     raf       (mit --raf) Typ, Kapazitaet, Latch, gesperrt, Sektor aus dem Latch\n"
               "          raf <S>   Hexdump des 128-B-Sektors S in TREIBER-Lesart: Byte 0 zuerst, also\n"
               "                    rueckwaerts aus der Karte gelesen (INIR/OTIR ohne Autoinkrement)\n"
@@ -3897,6 +3930,51 @@ int main(int argc, char** argv){
                         for (int i=0;i<16;++i){ uint8_t v=r->peek((uint32_t)sek*128u+127u-(uint32_t)(o+i));
                             fprintf(stderr,"%02X ",v); asc[i]=(v>=0x20&&v<0x7F)?(char)v:'.'; }
                         asc[16]=0; fprintf(stderr," |%s|\n",asc); } } } }
+        else if (cmd=="tape"){   // Kassette K5020/K5200 (--tape): Status, Blockliste, Blockinhalt
+            K5020* kk = m.base().k5020();
+            if (!kk){ fprintf(stderr,"  keine Kassettenkarte gesteckt (--tape <k52> | --tape-card)\n"); }
+            else if (t.size()<2){
+                fprintf(stderr,"  K5020 Basis %02XH  angewaehlt: %d  ZF=%d  verlorene Bytes: %llu\n",
+                        (unsigned)kk->config().basis,kk->angewaehlt()+1,kk->zeitfehler()?1:0,(unsigned long long)kk->verloreneBytes());
+                for (int d=0; d<2; ++d){
+                    auto& lw=kk->laufwerk(d);
+                    auto md=lw.medium();
+                    fprintf(stderr,"  Geraet %d (%s): ",d+1,lw.profil().name);
+                    if (!md){ fprintf(stderr,"keine Kassette\n"); continue; }
+                    fprintf(stderr,"Seite %c  Kopf %.1f mm von %.1f m  Bloecke A/B: %zu/%zu  %s%s%s%s\n",
+                            md->aktiveSeite()==kassette::Seite::A?'A':'B',lw.positionMm(),md->geometrie().laenge_um/1e6,
+                            md->anzahlBloecke(kassette::Seite::A),md->anzahlBloecke(kassette::Seite::B),
+                            lw.bewegt()?"Band laeuft ":"Band steht ",lw.reserviert()?"reserviert ":"",
+                            lw.bereit()?"bereit ":"nicht bereit ",lw.gebunden()?lw.pfad().c_str():"(ohne Datei)"); }
+            }
+            else {
+                const long d=parseNum(t[1]);
+                if (d<1 || d>2){ fprintf(stderr,"  ? tape [<1|2> [A|B [<Block>]]]\n"); }
+                else {
+                    auto md=kk->laufwerk((int)d-1).medium();
+                    if (!md){ fprintf(stderr,"  Geraet %ld: keine Kassette\n",d); }
+                    else {
+                        const kassette::Seite sd = (t.size()>2 && (t[2]=="B"||t[2]=="b")) ? kassette::Seite::B
+                                                 : (t.size()>2 && (t[2]=="A"||t[2]=="a")) ? kassette::Seite::A : md->aktiveSeite();
+                        const char sn = sd==kassette::Seite::A?'A':'B';
+                        if (t.size()<4){
+                            fprintf(stderr,"  Geraet %ld Seite %c: %zu Bloecke%s\n",d,sn,md->anzahlBloecke(sd),
+                                    md->schreibgeschuetzt(sd)?"  (schreibgeschuetzt)":"");
+                            for (size_t i=0;i<md->anzahlBloecke(sd);++i){
+                                const auto& b=md->block(sd,i);
+                                fprintf(stderr,"  [%zu] ab %.1f mm  %zu Bytes%s\n",i,md->blockStart(sd,i)/1000.0,b.bytes.size(),
+                                        b.bandmarke()?"  Bandmarke":""); } }
+                        else {
+                            const long i=parseNum(t[3]);
+                            if (i<0 || (size_t)i>=md->anzahlBloecke(sd)) fprintf(stderr,"  ? Block 0..%zu\n",md->anzahlBloecke(sd));
+                            else {
+                                const auto& b=md->block(sd,(size_t)i);
+                                fprintf(stderr,"  Geraet %ld Seite %c Block %ld: %zu Bytes (Praeambel ... CRC lo/hi, Postambel)\n",d,sn,i,b.bytes.size());
+                                for (size_t o=0;o<b.bytes.size();o+=16){
+                                    fprintf(stderr,"  %04zX: ",o);
+                                    for (size_t q=0;q<16 && o+q<b.bytes.size();++q) fprintf(stderr,"%02X ",b.bytes[o+q]);
+                                    fprintf(stderr,"\n"); } } } } } }
+        }
         else if (cmd=="clock"){   // §7: Uhrenwahl für Lauf-Budgets (g/gu/gscreen/hist)
             if (t.size()>1){
                 if (t[1]=="zve1") clock_machine=false;

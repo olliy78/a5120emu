@@ -1,7 +1,7 @@
 # 30 — Frühe A5120-Ausführungen: „5¼″ alt“, „KMBG“, „8″“ (Planung)
 
-Stand: 2026-10-13 — **Planung, nichts umgesetzt; Entscheidungen des Anwenders vom 2026-10-13
-eingearbeitet (§2).**  Kassette selbst: Entwurf 29.  Legende wie dort.
+Stand: 2026-10-15 — **umgesetzt (A0–A8, A7b, A9); zurückgestellt: A4 (eigene K5120-Karte), 8″; vorgemerkt: A8b.
+Festlegungen und Wächter: `doc/merkposten/a5120_alt.md`.**  Entscheidungen des Anwenders vom 2026-10-13 (§2).  Kassette selbst: Entwurf 29.  Legende wie dort.
 
 ---
 
@@ -58,6 +58,17 @@ Wickelbrücken B5–B7 von Port 0AH bereits ab (`K2526::A5120Config::config_brid
 Quellen mit `crt`/`fdc`/`diskA` neu generieren (`make_@OS.cmd` im Archiv, M80/LINKMT) und
 als Fixture ablegen.
 
+**Ergebnis AP A6 (2026-10-15):** bestätigt — Weg 2 war nicht nötig.  Die vorhandenen Disketten
+tragen das BIOS 25.09.89; es liest die Brücke (BAB1), meldet „Tastatur: K7636“ und kommt ohne
+Kernänderung bis `A>`, `dir` über die K7636 geht.  Geprüft (a) mit
+`cpa_cpa780_k5601_noclock.hfe` an auf K5601 umgerüsteten Laufwerken und (b) an der Vorgabe
+3× K5600.10 mit einer 40-Spur-Systemdiskette aus `make_bootdisk --preset k5600_10_fmt1`
+(`@OS.COM` = `combo5zoll`, meldet A: als K5601 — die automatische Formaterkennung liest die
+einseitige 40-Spur-Diskette trotzdem).  Ein BIOS mit `diskA = 10540` (Banner „A:5"(40,DD,SS)“)
+gibt es damit noch nicht; es bliebe Weg 2.  Wächter `BootIntegrationAlt.*`,
+`cli_bt_ausfuehrung_alt`, `cli_dbg_ausfuehrung_*`; Werkzeuge `boot_trace`/`k1520dbg
+--ausfuehrung neu|alt|kmbg [--laufwerke P0,…]`.
+
 ### 3.2 BCU 880 — Originalsystem der Frühzeit, liegt vor [Disk]
 
 `doc/a5120_alt/bcu/` (Herkunft VEB Halbleiterwerk Frankfurt/Oder):
@@ -66,6 +77,15 @@ BCU 880 V1.2 und 2.1, „EPROM BCU 880 VERSION 2.2“, ASSEMBLER FZW/BL V5.1, PI
 [Web] brauchte BCU „einen besonderen Lade-EPROM“ — Kandidaten liegen vor: Lade-ROM **V0.6** und
 **V0.9_1** (`doc/EPROMS/K2526/laderom_v06.bin`, `laderom_v09_1.bin` = MAME `a5120_v2`; Analyse des
 Anwenders `doc/EPROMS/K2526/laderom_v06.mac`, `laderom_orirom.mac`).  BCU ist damit **die** Abnahme für KMBG und K7023.
+
+**Ergebnis AP A7 (2026-10-15, `doc/a5120_alt/bcu.md`):** BCU 880 **V1.2** startet mit Lade-ROM **V0.6**
+von beiden Disketten „SYL auf Spur 1“ bis `A>` — Satz 2 (Bild 64×16 ab FC00H) auf `Alt`, Satz 1
+(Bild 80×24 ab F800H) auf `Neu` mit K7636 (`Config::tastatur`); `dir b:` liest die V1.2-
+Systemdiskette „ohne SYL“ mit `KMBG.REL`.  Neu im Kern: `Config::laderom` (V0.9_2 Vorgabe, V0.9_1,
+V0.6) und `Config::tastatur`; Werkzeuge `--laderom`, `--tastatur`, `--format`.  **V2.1 startet
+nicht:** alle V2.1-Disketten sind „ohne SYL“, und deren Start-EPROM liegt nicht vor.  **Berichtigung:**
+„EPROM BCU 880 VERSION 2.2“ ist die Kennung von `EPROM.COM` (EPROM-Programmierprogramm), kein
+Start-EPROM.  Wächter `BootIntegrationBcu.*`, `cli_bt_laderom_*`, `cli_dbg_tastatur_*`.
 
 ### 3.3 Tastatur K7636 — Beschriftung und Codes liegen vor [SLP]
 

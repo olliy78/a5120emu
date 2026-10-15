@@ -1,0 +1,5 @@
+# k1520dbg --ausfuehrung mit unbekanntem Namen bzw. an einer anderen Maschine: Abbruch mit Grund.
+tool:    k1520dbg
+run:     --machine k8915 --ausfuehrung alt
+expect:  --ausfuehrung/--laufwerke gibt es nur am A5120
+exit:    2

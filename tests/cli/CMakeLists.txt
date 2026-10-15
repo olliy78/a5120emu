@@ -46,7 +46,8 @@ foreach(_case IN LISTS _cli_cases)
                 --tool "k1520dbg=$<TARGET_FILE:k1520dbg>"
                 --tool "boot_trace=$<TARGET_FILE:boot_trace>"
                 --tool "k1520disktool=$<TARGET_FILE:k1520disktool>"
-                --tool "z8kasm=$<TARGET_FILE:z8kasm>")
+                --tool "z8kasm=$<TARGET_FILE:z8kasm>"
+                --tool "k1520tape=$<TARGET_FILE:k1520tape>")
     set_tests_properties(cli_${_name} PROPERTIES TIMEOUT 120 LABELS "cli;fast")
 endforeach()
 
@@ -71,6 +72,26 @@ foreach(_prog IN LISTS _cpm_programme)
     set_tests_properties(cli_${_prog}_com_passt_zur_quelle PROPERTIES
         TIMEOUT 180 SKIP_RETURN_CODE 77 LABELS "cli;fast")
 endforeach()
+
+# SCPX-Prüfprogramm KMBGTEST (AP K8, mit KMBG.REL gebunden): .com passt zur Quelle.
+add_test(NAME cli_kmbgtest_com_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/kassette/kmbgtest/build.py" --check)
+set_tests_properties(cli_kmbgtest_com_passt_zur_quelle PROPERTIES
+    TIMEOUT 180 SKIP_RETURN_CODE 77 LABELS "cli;fast")
+
+# Kassetten-Bootprogramm BANDTEST (AP K7): .bin passt zur Quelle, das eingecheckte Bootband
+# passt zur .bin (k1520tape bootband, bytegleich).
+add_test(NAME cli_bandtest_bin_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/kassette/bandtest/build.py" --check)
+set_tests_properties(cli_bandtest_bin_passt_zur_quelle PROPERTIES
+    TIMEOUT 180 SKIP_RETURN_CODE 77 LABELS "cli;fast")
+add_test(NAME cli_bandtest_bootband
+    COMMAND "${CMAKE_COMMAND}" -DTOOL=$<TARGET_FILE:k1520tape>
+            -DBIN=${CMAKE_SOURCE_DIR}/tools/kassette/bandtest/bandtest.bin
+            -DSOLL=${CMAKE_SOURCE_DIR}/tests/fixtures/kassette/bandtest_boot.k52
+            -DTMP=${CMAKE_CURRENT_BINARY_DIR}/bandtest_boot_neu.k52
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/bandtest_bootband.cmake)
+set_tests_properties(cli_bandtest_bootband PROPERTIES TIMEOUT 60 LABELS "cli;fast")
 if(NOT CMAKE_CROSSCOMPILING)
     set_tests_properties(cli_em256_com_passt_zur_quelle PROPERTIES
         ENVIRONMENT "Z8KASM=$<TARGET_FILE:z8kasm>")
