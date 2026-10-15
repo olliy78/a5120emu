@@ -10,6 +10,7 @@
 
 #include "core/cards/mc80/spe.h"
 #include "core/cards/mc80/rom_spe2.h"
+#include "core/cards/mc80/rom_segmente.h"
 
 namespace {
 
@@ -144,6 +145,72 @@ TEST_F(Mc80SpeTest, ZweiteKarteOhneRomUndOhneTore) {
     EXPECT_EQ(bus.ioOwner(0xB3), &spe1);
     EXPECT_FALSE(spe2.config().rom_block);
     EXPECT_EQ(spe2.config().io_base, 0);
+}
+
+
+// ─── EPROM-Segmente 10H/20H (AP M4, MC80.31E) ────────────────────────────────────────────
+struct Mc80EpromSegmentTest : ::testing::Test {
+    K1520Bus bus;
+    Mc80Spe2 ram{Mc80Spe2::Config::mc8030()};
+    Mc80EpromSegment s10{0x10};
+    Mc80EpromSegment s20{0x20};
+    Mc80Segmentfenster fenster;
+    void SetUp() override {
+        s10.abzug(0x4000, MC80_SEG10_D, sizeof(MC80_SEG10_D));
+        s20.abzug(0x4000, MC80_SEG20_F, sizeof(MC80_SEG20_F));
+        s20.abzug(0x5000, MC80_SEG20_G, sizeof(MC80_SEG20_G));
+        ram.attachToBus(bus);
+        fenster.anmelden(&ram);
+        fenster.anmelden(&s10);
+        fenster.anmelden(&s20);
+        fenster.attachToBus(bus);
+        ram.powerOn(0x00);
+        segment(0x00);
+    }
+    void segment(uint8_t m) { ram.setSegmentRegister(m); s10.setSegmentRegister(m); s20.setSegmentRegister(m); }
+};
+
+TEST_F(Mc80EpromSegmentTest, NurDasGewaehlteSegmentIstSichtbar) {
+    segment(0x00);
+    EXPECT_EQ(bus.memRead(0x4000), 0xFF);                 // keins gewählt: offener Bus
+    segment(0x10);
+    EXPECT_EQ(bus.memRead(0x4000), MC80_SEG10_D[0]);
+    EXPECT_EQ(bus.memRead(0x4FFF), MC80_SEG10_D[0xFFF]);
+    EXPECT_EQ(bus.memRead(0x5000), 0xFF);                 // 10H hat hier (im Test) keinen Abzug
+    segment(0x20);
+    EXPECT_EQ(bus.memRead(0x4000), MC80_SEG20_F[0]);
+    EXPECT_EQ(bus.memRead(0x5123), MC80_SEG20_G[0x123]);
+    segment(0x01);                                        // RAM-Segment 1: 00H aus dem dRAM
+    EXPECT_EQ(bus.memRead(0x4000), 0x00);
+}
+
+TEST_F(Mc80EpromSegmentTest, EpromLiestNurUndWirdNieBeschrieben) {
+    segment(0x10);
+    bus.memWrite(0x4000, static_cast<uint8_t>(~MC80_SEG10_D[0]));
+    EXPECT_EQ(bus.memRead(0x4000), MC80_SEG10_D[0]);
+    // Schreiben bei gewähltem EPROM-Segment erreicht auch das (abgewählte) RAM nicht
+    segment(0x01);
+    EXPECT_EQ(bus.memRead(0x4000), 0x00);
+    // RAM und EPROM zugleich gewählt: das Schreiben trifft das RAM, gelesen wird nach
+    // Anmeldereihenfolge (RAM zuerst) -- am Gerät wäre das ein Buskonflikt.
+    segment(0x11);
+    bus.memWrite(0x4001, 0x5A);
+    segment(0x01);
+    EXPECT_EQ(bus.memRead(0x4001), 0x5A);
+    segment(0x10);
+    EXPECT_EQ(bus.memRead(0x4001), MC80_SEG10_D[1]);
+}
+
+TEST_F(Mc80EpromSegmentTest, AbzuegeSindDieEingebettetenQuellen) {
+    // d = Tetris (bytegleich mit doc/mc80/spiele/tetris_4000_4fff.bin): Kette 'T','E',FFH bei 4003H
+    segment(0x10);
+    EXPECT_EQ(bus.memRead(0x4000), 0x01);
+    EXPECT_EQ(bus.memRead(0x4003), 'T');
+    EXPECT_EQ(bus.memRead(0x4004), 'E');
+    // f = HASI
+    segment(0x20);
+    EXPECT_EQ(bus.memRead(0x4003), 'H');
+    EXPECT_EQ(bus.memRead(0x4006), 'I');
 }
 
 }  // namespace

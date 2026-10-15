@@ -197,3 +197,13 @@ ihr NMI springt in ein INIT, das es nur mit `0800v2` gibt — und nur mit einem 
 | 7 | Feinaufbau Verzeichniseintrag/Dateikopf auf der Kassette | M7/K1 |
 | 9 | Reihenfolge der Interruptkette über die Karten: EGOS gibt keinen Hinweis.  Scharf sind nur ASP-SIO A (Rx, FFFCH), ASP-CTC K3 (FFEEH), beim Magnetband ASP-CTC K1 (FFEAH) und die vier K5020-Kanäle (FFB0H–FFB8H); ZVE-CTC/-PIO und ASP-PIO programmiert EGOS nie.  Innerhalb der ASP SIO > CTC [BDA S.18]; der Ablauf setzt nur voraus, dass CTC K3 hinter SIO A liegt (nachgeordnete Verarbeitung) | M3 |
 | 8 | MC80.33: zweite Hälfte des Magnetband-ROMs (1800H–1FFFH) fehlt | Anwender (Wunschliste) |
+
+## 6. EPROM-Segmente 10H/20H (AP M4, MC80.31E)
+
+Kern: `Mc80EpromSegment` (`core/cards/mc80/spe.*`, Abzüge `rom_segmente.h` aus `doc/EPROMS/MC80/segmente/`),
+nur in `Mc80Machine` Variante .31, lesen-nur, sichtbar ⇔ Bit 10H bzw. 20H im Segmentregister 85H.
+Lage der 4-KB-Abzüge im Fenster (aus den Abzügen abgeleitet, nicht aus einer Quelle):
+- **20H:** f = 4000H (= erste Hälfte `spiele/hasi_4000_5fff.bin`), g = 5000H (zweite Hälfte HASI, bytegleich ab 4096), h = 6000H (Eigenbezüge). **e fehlt** (7000H [?]) – nicht geraten, Fenster dort liest FFH.
+- **10H:** d = 4000H (bytegleich `spiele/tetris_4000_4fff.bin`, Name `TE`), b = 5000H, c = 6000H (Kopf `BA`; Lauf 6006H–6156H bestätigt die Lage), **a = 7000H [?]** (Sprungbezüge 4xxx/5xxx sprechen nicht dafür; ohne Beleg).
+- Die Programme sind Kettenobjekte (`01 dist name FF`); die RAM-Kette von EGOS führt nicht von selbst in die EPROM-Segmente (kein Abzug enthält ein Glied `FE adr 10|20`) [?]. Der Test legt das Glied nach INIT selbst ins RAM (4000H Segment 1). `TE` (Tetris, 10H) und `HASI` (20H) laufen so aus dem EPROM; `BA` läuft an und endet ohne BASIC-Arbeitsbereich mit `ERROR %C7`.
+- **Sondertasten laden Editor/BASIC: nicht belegt.** FED0H+3n bleibt nach Reset/INIT leer (die CCD-Fassung `31e-2400` kopiert 21 Byte aus 23EAH = FFH-Leerbereich); `ED` liegt in `31e-3000/3400` (ROM, nicht Segment). Welche Taste was lädt, steht in keiner vorhandenen Quelle [?].

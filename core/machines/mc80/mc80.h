@@ -130,6 +130,9 @@ public:
     Mc80Tastatur& tastatur() { return tast_; }
     Mc80Spe2& spe(int i) { return *spe_.at(static_cast<size_t>(i)); }
     int       speKarten() const { return static_cast<int>(spe_.size()); }
+    /// EPROM-Segmente (.31: 10H und 20H; sonst leer).
+    int       epromSegmente() const { return static_cast<int>(eprom_.size()); }
+    Mc80EpromSegment& epromSegment(int i) { return *eprom_.at(static_cast<size_t>(i)); }
     K1520Bus& bus() { return bus_; }
     uint64_t  totalCycles() const { return total_cycles_; }
     void      clearStop() { stop_.store(false); }
@@ -146,6 +149,8 @@ private:
     K1520Bus bus_;
     Mc80Zve  zve_;
     std::vector<std::unique_ptr<Mc80Spe2>> spe_;
+    /// EPROM-Segmente 10H/20H (nur Variante .31E), lesen-nur, am Segmentfenster.
+    std::vector<std::unique_ptr<Mc80EpromSegment>> eprom_;
     Mc80Segmentfenster fenster_;
     Mc80Vis2a vis_;
     Mc80Asp   asp_;

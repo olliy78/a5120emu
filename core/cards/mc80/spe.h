@@ -34,7 +34,23 @@
 #include <cstdint>
 #include <vector>
 
-class Mc80Spe2 : public BusDevice, public MemDevice {
+/**
+ * @brief Teilnehmer am Segmentfenster 4000H–BFFFH (RAM-Karte SPE 2 oder EPROM-Segment).
+ *
+ * Das Segmentfenster fragt jede Karte, ob sie bei Adresse @p a den Bus treibt; die erste,
+ * die es tut, liefert das Byte.  Schreiben geht an alle (jede entscheidet selbst).
+ */
+class Mc80SegmentKarte {
+public:
+    virtual ~Mc80SegmentKarte() = default;
+    virtual bool    ramLiest(uint16_t a) const = 0;
+    virtual uint8_t ramLesen(uint16_t a) const = 0;
+    virtual void    ramSchreiben(uint16_t a, uint8_t d) = 0;
+    /// Segmentregister der ZVE (85H) hat sich geändert.
+    virtual void    setSegmentRegister(uint8_t maske) = 0;
+};
+
+class Mc80Spe2 : public BusDevice, public MemDevice, public Mc80SegmentKarte {
 public:
     static constexpr uint16_t ROM_BASIS   = 0x2000;
     static constexpr uint16_t ROM_GROESSE = 0x2000;   ///< 8 Fassungen 2708
@@ -78,17 +94,17 @@ public:
 
     // ─── RAM-Block (über das Segmentfenster) ─────────────────────────────────
     /// Treibt die Karte bei einem Lesezugriff auf @p a im RAM-Block den Bus?
-    bool    ramLiest(uint16_t a) const;
-    uint8_t ramLesen(uint16_t a) const { return ram_[(a - RAM_BASIS) & (RAM_GROESSE - 1)]; }
+    bool    ramLiest(uint16_t a) const override;
+    uint8_t ramLesen(uint16_t a) const override { return ram_[(a - RAM_BASIS) & (RAM_GROESSE - 1)]; }
     /// Schreibzugriff auf @p a (wirkungslos bei abgeschaltetem Segment bzw. Sperre).
-    void    ramSchreiben(uint16_t a, uint8_t d);
+    void    ramSchreiben(uint16_t a, uint8_t d) override;
 
     void attachToBus(K1520Bus& bus);
     void reset();                        ///< alle Blöcke frei; RAM bleibt
     void powerOn(uint8_t fill = 0x00);   ///< RAM vorbelegen, dann reset()
 
     /// Segmentregister der ZVE (85H): RAM-Block freigegeben ⇔ segment_bit gesetzt.
-    void setSegmentRegister(uint8_t maske) { ram_frei_ = (maske & cfg_.segment_bit) != 0; }
+    void setSegmentRegister(uint8_t maske) override { ram_frei_ = (maske & cfg_.segment_bit) != 0; }
     bool segmentAktiv() const { return ram_frei_; }
 
     bool romBlockGesperrt(int block) const { return rom_sperre_.test(block & 63); }
@@ -107,6 +123,35 @@ private:
 };
 
 /**
+ * @brief EPROM-Segment (MC80.31E: Segment 10H und 20H): nur lesbar, 4-KB-Abzüge im Fenster.
+ *
+ * Quelle: doc/EPROMS/MC80/README.md (`segmente/`), doc/design/31_mc80.md §4.  Das Segment ist
+ * freigegeben ⇔ sein Bit im Segmentregister (85H) gesetzt ist.  Schreibzugriffe sind
+ * wirkungslos (EPROM).  Was kein Abzug abdeckt, treibt den Bus nicht (Fenster liefert FFH).
+ * Die Lage der Abzüge im Fenster steht beim Anlegen (@ref abzug), nicht im Baustein.
+ */
+class Mc80EpromSegment : public Mc80SegmentKarte {
+public:
+    explicit Mc80EpromSegment(uint8_t segment_bit) : bit_(segment_bit) {}
+    /// Abzug @p daten (@p laenge Byte) ab Fensteradresse @p adresse einsetzen (4000H–BFFFH).
+    void abzug(uint16_t adresse, const uint8_t* daten, uint16_t laenge);
+
+    bool    ramLiest(uint16_t a) const override;
+    uint8_t ramLesen(uint16_t a) const override;
+    void    ramSchreiben(uint16_t, uint8_t) override {}
+    void    setSegmentRegister(uint8_t maske) override { frei_ = (maske & bit_) != 0; }
+    uint8_t segmentBit() const { return bit_; }
+    bool    segmentAktiv() const { return frei_; }
+
+private:
+    struct Abzug { uint16_t adresse; const uint8_t* daten; uint16_t laenge; };
+    const Abzug* suche(uint16_t a) const;
+    uint8_t bit_;
+    bool frei_ = false;
+    std::vector<Abzug> abzuege_;
+};
+
+/**
  * @brief Das Fenster 4000H–BFFFH: fragt die RAM-Blöcke aller SPE-Karten.
  *
  * Lesen: die erste Karte, die den Bus treibt; keine → FFH (offener Bus, wie MAME
@@ -116,11 +161,11 @@ private:
  */
 class Mc80Segmentfenster : public MemDevice {
 public:
-    void anmelden(Mc80Spe2* spe) { karten_.push_back(spe); }
+    void anmelden(Mc80SegmentKarte* karte) { karten_.push_back(karte); }
     void attachToBus(K1520Bus& bus) { bus.registerMem(this, Mc80Spe2::RAM_BASIS, Mc80Spe2::RAM_GROESSE); }
     uint8_t memRead(uint16_t a) override;
     void    memWrite(uint16_t a, uint8_t d) override;
 
 private:
-    std::vector<Mc80Spe2*> karten_;
+    std::vector<Mc80SegmentKarte*> karten_;
 };

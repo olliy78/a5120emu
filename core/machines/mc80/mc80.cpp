@@ -6,6 +6,7 @@
 
 #include "core/machines/mc80/mc80.h"
 #include "core/cards/mc80/egos_text.h"
+#include "core/cards/mc80/rom_segmente.h"
 #include "core/logger.h"
 #include <stdexcept>
 
@@ -52,6 +53,24 @@ Mc80Machine::Mc80Machine(const Config& cfg)
         fenster_.anmelden(karte.get());
         spe_.push_back(std::move(karte));
     }
+    if (cfg_.variante == Config::Variante::Mc8031) {
+        // MC80.31E: EPROM-Segmente 10H und 20H (doc/EPROMS/MC80/segmente/, je 4-KB-Abzug).
+        // Lage: d = 4000H (bytegleich doc/mc80/spiele/tetris_4000_4fff.bin), f = 4000H und
+        // g = 5000H (= 2. Hälfte von hasi_4000_5fff.bin); b = 5000H, c = 6000H, h = 6000H nach
+        // den Eigenbezügen der Sprungziele; a = 7000H [?] (ohne Beleg), e (20H, 7000H?) fehlt.
+        auto s10 = std::make_unique<Mc80EpromSegment>(0x10);
+        s10->abzug(0x4000, MC80_SEG10_D, sizeof(MC80_SEG10_D));
+        s10->abzug(0x5000, MC80_SEG10_B, sizeof(MC80_SEG10_B));
+        s10->abzug(0x6000, MC80_SEG10_C, sizeof(MC80_SEG10_C));
+        s10->abzug(0x7000, MC80_SEG10_A, sizeof(MC80_SEG10_A));
+        auto s20 = std::make_unique<Mc80EpromSegment>(0x20);
+        s20->abzug(0x4000, MC80_SEG20_F, sizeof(MC80_SEG20_F));
+        s20->abzug(0x5000, MC80_SEG20_G, sizeof(MC80_SEG20_G));
+        s20->abzug(0x6000, MC80_SEG20_H, sizeof(MC80_SEG20_H));
+        for (auto* k : {s10.get(), s20.get()}) fenster_.anmelden(k);
+        eprom_.push_back(std::move(s10));
+        eprom_.push_back(std::move(s20));
+    }
     fenster_.attachToBus(bus_);
     vis_.attachToBus(bus_);
     asp_.attachToBus(bus_);
@@ -59,6 +78,7 @@ Mc80Machine::Mc80Machine(const Config& cfg)
     tast_.senden = [this](uint8_t b) { asp_.empfange(b); };
     zve_.setSegmentCallback([this](uint8_t m) {
         for (auto& k : spe_) k->setSegmentRegister(m);
+        for (auto& k : eprom_) k->setSegmentRegister(m);
     });
     bus_.setInterruptChain({&zve_, &asp_});   // Kartenreihenfolge [?], hardware_3x.md §7
     powerOn();

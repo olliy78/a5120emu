@@ -95,3 +95,23 @@ void Mc80Segmentfenster::memWrite(uint16_t a, uint8_t d)
 {
     for (auto* k : karten_) k->ramSchreiben(a, d);
 }
+
+void Mc80EpromSegment::abzug(uint16_t adresse, const uint8_t* daten, uint16_t laenge)
+{
+    abzuege_.push_back({adresse, daten, laenge});
+}
+
+const Mc80EpromSegment::Abzug* Mc80EpromSegment::suche(uint16_t a) const
+{
+    for (const auto& z : abzuege_)
+        if (a >= z.adresse && a < z.adresse + z.laenge) return &z;
+    return nullptr;
+}
+
+bool Mc80EpromSegment::ramLiest(uint16_t a) const { return frei_ && suche(a) != nullptr; }
+
+uint8_t Mc80EpromSegment::ramLesen(uint16_t a) const
+{
+    const Abzug* z = suche(a);
+    return z ? z->daten[a - z->adresse] : 0xFF;
+}

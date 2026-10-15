@@ -183,6 +183,11 @@ k1520_add_test(mc80_boot SRC test_mc80_boot.cpp
                           LIBS k1520_mc80 k1520_logger
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 
+# MC80.31E (AP M4): EPROM-Segmente 10H/20H, Programme aus dem EPROM über die EGOS-Kette.
+k1520_add_test(mc80_segmente SRC test_mc80_segmente.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 # PC 1715 (doc/design/21_pc1715.md AP-1b): Maschine bauen, echter Urlader S502 (kopiert sich,
 # blendet das ROM aus), Bildwechsel.  Ohne Floppy; das Verhalten danach ist AP-1c.
 k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp
