@@ -90,10 +90,49 @@ inline bool steckeK6022(K1520Machine& m, bool an, std::string& err) {
 inline bool steckeK5020(K1520Machine& m, bool an, const std::string& d1, const std::string& d2,
                         std::string& err) {
     if (!an) return true;
-    if (!m.installK5020()) { err = m.k5020Fehler(); return false; }
+    // Am KMBG (--ausfuehrung kmbg) steckt sie schon fest — dann nur die Dateien binden.
+    if (!m.k5020() && !m.installK5020()) { err = m.k5020Fehler(); return false; }
     const std::string* d[2] = {&d1, &d2};
     for (int i = 0; i < 2; ++i)
         if (!d[i]->empty() && !m.k5020()->laufwerk(i).dateiBinden(*d[i], err)) return false;
+    return true;
+}
+
+/**
+ * @brief `--ausfuehrung neu|alt|kmbg` und `--laufwerke P0,P1,…` (AP A6, Entwurf 30) in die
+ *        A5120-Konfiguration übernehmen.
+ *
+ * @p ausf (nullptr = nicht angegeben) setzt die Ausführung samt ihrer Laufwerksvorgabe
+ * (`Config::fuerAusfuehrung`, am alten Gerät 3× K5600.10); @p lw (nullptr = Vorgabe) ersetzt
+ * danach die Laufwerksprofile von vorn an — z. B. `K5601`, wenn ein altes Gerät wie im Feld
+ * auf die K5601 umgerüstet ist.  Das EM (`cfg.em`) bleibt erhalten.
+ */
+inline bool parseAusfuehrung(const char* ausf, const char* lw, A5120Machine::Config& cfg,
+                             std::string& err) {
+    using A = A5120Machine::Config::Ausfuehrung;
+    if (ausf) {
+        const std::string s = ausf;
+        A a;
+        if      (s == "neu")  a = A::Neu;
+        else if (s == "alt")  a = A::Alt;
+        else if (s == "kmbg") a = A::Kmbg;
+        else { err = "--ausfuehrung: unbekannt '" + s + "' (neu|alt|kmbg)"; return false; }
+        const auto em = cfg.em;
+        cfg = A5120Machine::Config::fuerAusfuehrung(a);
+        cfg.em = em;
+    }
+    if (lw) {
+        std::string s = lw;
+        size_t i = 0, p = 0;
+        while (i < 4) {
+            const size_t k = s.find(',', p);
+            const std::string t = s.substr(p, k == std::string::npos ? std::string::npos : k - p);
+            if (t.empty()) { err = "--laufwerke: leerer Eintrag in '" + s + "'"; return false; }
+            cfg.drive_profiles[i++] = t;
+            if (k == std::string::npos) break;
+            p = k + 1;
+        }
+    }
     return true;
 }
 
@@ -286,8 +325,15 @@ public:
         if (p7_) return (uint8_t)(p7_->screenChar(col, row) & 0x7F);   // VRAM nur bei E8H[F]=FFH in CPU-Sicht
         if (pc_) return (uint8_t)(pc_->screenChar(col, row) & 0x7F);   // Bild kommt per DMA, nie über mem_read
         if (p8_) return (uint8_t)(p8_->screenChar(col, row) & 0x7F);   // Kern-Terminal tty1 (80 × 24)
+        if (a5_->k7023()) {   // altes Gerät (AP A6): K7023 64×16 ab FC00H; außerhalb = Leerzeichen
+            if (row >= 16 || col >= 64) return 0x20;
+            return (uint8_t)(a5_->screenChar(col, row) & 0x7F);
+        }
         return a5_->memReadDebug((uint16_t)(0xF800 + row * 80 + col));
     }
+    /// Sichtbares Textbild: 64×16 an der K7023 (A5120 alt), sonst 80×24.
+    int screenCols() const { return (a5_ && a5_->k7023()) ? 64 : 80; }
+    int screenRows() const { return (a5_ && a5_->k7023()) ? 16 : 24; }
 
     // ─── CPU ─────────────────────────────────────────────────────────────────
     Z80& cpuDebug() {

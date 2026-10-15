@@ -58,6 +58,17 @@ Wickelbrücken B5–B7 von Port 0AH bereits ab (`K2526::A5120Config::config_brid
 Quellen mit `crt`/`fdc`/`diskA` neu generieren (`make_@OS.cmd` im Archiv, M80/LINKMT) und
 als Fixture ablegen.
 
+**Ergebnis AP A6 (2026-10-15):** bestätigt — Weg 2 war nicht nötig.  Die vorhandenen Disketten
+tragen das BIOS 25.09.89; es liest die Brücke (BAB1), meldet „Tastatur: K7636“ und kommt ohne
+Kernänderung bis `A>`, `dir` über die K7636 geht.  Geprüft (a) mit
+`cpa_cpa780_k5601_noclock.hfe` an auf K5601 umgerüsteten Laufwerken und (b) an der Vorgabe
+3× K5600.10 mit einer 40-Spur-Systemdiskette aus `make_bootdisk --preset k5600_10_fmt1`
+(`@OS.COM` = `combo5zoll`, meldet A: als K5601 — die automatische Formaterkennung liest die
+einseitige 40-Spur-Diskette trotzdem).  Ein BIOS mit `diskA = 10540` (Banner „A:5"(40,DD,SS)“)
+gibt es damit noch nicht; es bliebe Weg 2.  Wächter `BootIntegrationAlt.*`,
+`cli_bt_ausfuehrung_alt`, `cli_dbg_ausfuehrung_*`; Werkzeuge `boot_trace`/`k1520dbg
+--ausfuehrung neu|alt|kmbg [--laufwerke P0,…]`.
+
 ### 3.2 BCU 880 — Originalsystem der Frühzeit, liegt vor [Disk]
 
 `doc/a5120_alt/bcu/` (Herkunft VEB Halbleiterwerk Frankfurt/Oder):

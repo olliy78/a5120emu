@@ -1,0 +1,9 @@
+# boot_trace --ausfuehrung alt (Entwurf 30, AP A6): altes Geraet mit K7023 64x16 + K7636 und
+# 3x K5600.10; CP/A bootet von der 40-Spur-Systemdiskette, der Bildschirmbericht kommt von der K7023.
+tool:    boot_trace
+disk:    cpa_combo5zoll_noclock_k5600_10_boot.hfe
+run:     -L /dev/null --ausfuehrung alt --until "screen ~ \"TPA ist OK\"" -c 120000000 -p 1 %DISK%
+expect:  Ausfuehrung: alt (K7023 64x16, K7636), Laufwerke K5600.10/K5600.10/K5600.10/none
+expect:  Screen (VRAM as text, 64 cols
+expect:  - Tastatur: K7636
+forbid:  not met

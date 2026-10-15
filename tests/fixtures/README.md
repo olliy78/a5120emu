@@ -37,6 +37,7 @@ Disketten, deren `@OS.COM` sie beschreiben; für Anwender sind sie nicht gedacht
 | `cpa_cpa780_k5601_clock.img` / `.hfe` | CP/A **mit Uhr**, A:/B:/C: = K5601 | `test_boot_integration` (Hauptfixture), alle CLI-Tests, `make_bootdisk` (Preset cpa780) |
 | `cpa_cpa780_k5601_noclock.img` / `.hfe` | CP/A **ohne Uhr**, A:/B:/C: = K5601 | `test_boot_integration` (Boot von B:/C:, .img vs .hfe) |
 | `cpa_cpa780_combo5zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: K5600.10** · **C: K5600.20** | `make_bootdisk` (Presets k5600_10_fmt1, k5600_20_fmt1) |
+| `cpa_combo5zoll_noclock_k5600_10_boot.hfe` | **40-Spur-einseitige** CP/A-Systemdiskette (K5600.10, FORMAT-Menü F1: 26×128 Sp. 0–1 + 5×1024 Sp. 2–39), `@OS.COM` = unverändertes BIOS 25.09.89 `combo5zoll` (meldet A: als K5601). Erzeugt 2026-10-15 mit `make_bootdisk.py --preset k5600_10_fmt1 --out …` (Leerdiskette → FORMAT → CPABCGEN aus `cpa_cpa780_combo5zoll_noclock.img`) | `BootIntegrationAlt.CpaAufK5600_10BisPrompt`, `cli_bt_ausfuehrung_alt` (A5120 „alt“, AP A6) |
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `cpa_cpa780_k5601_noclock-em256.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `em256 equ 1`** (A5120.16, RAM-Floppy M: im EM256) | `Em256RamFloppy.*` |
 | `cpa_cpa780_k5601_noclock-raf.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `raf equ 1`, `rafpar equ 1`** (RAM-Floppy M: auf der RAF an 88H, Software-Parität) | `RafCpaBios.*`, `RafCpaBiosKapazitaet.*` |

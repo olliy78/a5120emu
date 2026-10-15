@@ -28,6 +28,8 @@
  * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
  *
  * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
+ * `--ausfuehrung neu|alt|kmbg` / `--laufwerke P0,P1,…` (A5120, AP A6): altes Gerät mit
+ * K7023 64×16 + K7636; Bildschirmbefehle lesen dann die K7023 (tools/dbg_machine.h).
  * `--wdc 4.2|4.0.05|3.4.05` und `--hd <abbild>` (nur `--machine p8000-16`, P13d): WDC an der
  * 16-Bit-PIO2 bzw. Winchester an Laufwerk 0 (Kopie wie die Disketten, `--rw` = Original);
  * Befehle `wdc [r|u|d|log]`, `cpu wdc` (nur Ansicht).
@@ -200,6 +202,8 @@ int main(int argc, char** argv){
     dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|k8915-g2|prg710|prg710-1|pc1715|pc1715w|p8000|p8000-16 (Vorgabe a5120)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
+    const char* ausf_opt = nullptr; // --ausfuehrung neu|alt|kmbg: A5120-Ausführung (Entwurf 30, AP A6)
+    const char* lw_opt = nullptr;   // --laufwerke P0,P1,…: Laufwerksprofile ab A: (A5120)
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
     const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
     const char* konsole_opt = nullptr; // --konsole kern|original: Terminal an tty1 (P8000, P20c)
@@ -224,6 +228,8 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"-d") && i+1<argc) disks[3]=argv[++i];
         else if (!strcmp(argv[i],"--console")) start_console=true;
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
+        else if (!strcmp(argv[i],"--ausfuehrung") && i+1<argc) ausf_opt=argv[++i];
+        else if (!strcmp(argv[i],"--laufwerke") && i+1<argc) lw_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
         else if (!strcmp(argv[i],"--wdc") && i+1<argc) wdc_opt=argv[++i];
         else if (!strcmp(argv[i],"--konsole") && i+1<argc) konsole_opt=argv[++i];
@@ -266,6 +272,11 @@ int main(int argc, char** argv){
         if      (e=="em256") mcfg.em = A5120Machine::Config::Em::em256;
         else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
+    }
+    if (ausf_opt || lw_opt){
+        if (art!=dbgm::Art::A5120){ fprintf(stderr,"--ausfuehrung/--laufwerke gibt es nur am A5120\n"); return 2; }
+        std::string err;
+        if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err)){ fprintf(stderr,"%s\n",err.c_str()); return 2; }
     }
     // P8000-WDC (P13d): --wdc/--hd nur mit p8000-16.  Die Platte wird wie die Disketten im
     // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende gelöscht), mit --rw direkt.
@@ -1564,10 +1575,10 @@ int main(int argc, char** argv){
         }
     };
     auto screen = [&]{
-        for (int row=0;row<24;++row){ char ln[81];
-            for (int c=0;c<80;++c){ uint8_t ch=m.screenByte(row,c);
+        for (int row=0;row<m.screenRows();++row){ char ln[81]; const int nc=m.screenCols();
+            for (int c=0;c<nc;++c){ uint8_t ch=m.screenByte(row,c);
                 ln[c]=(ch>=0x20&&ch<0x7F)?(char)ch:'.'; }
-            ln[80]=0; fprintf(stderr,"  |%s|\n",ln); }
+            ln[nc]=0; fprintf(stderr,"  |%s|\n",ln); }
     };
     // ── screen text as a condition (doc/feature_requests/interaktive_programme.md #1/#5) ──
     // Render one 80-char row of the text VRAM (0xF800) into `out` (no trailing NUL

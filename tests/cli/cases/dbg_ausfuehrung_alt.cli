@@ -1,0 +1,14 @@
+# k1520dbg --ausfuehrung alt --laufwerke K5601 (Entwurf 30, AP A6): umgeruestetes altes Geraet;
+# `screen` liest die K7023 (16 Zeilen a 64), `keys` tippt ueber die K7636.
+tool:    k1520dbg
+disk:    cpa_cpa780_k5601_noclock.hfe
+run:     --ausfuehrung alt --laufwerke K5601,K5601,K5601,none %DISK%
+stdin:
+  gscreen "TPA ist OK" 100000000
+  g 3000000
+  keys dir\r
+  g 20000000
+  screen
+  q
+expect:  |A>dir                                                           |
+expect:  A: @OS      COM
