@@ -195,4 +195,5 @@ ihr NMI springt in ein INIT, das es nur mit `0800v2` gibt — und nur mit einem 
 | 5 | Ursache „erstes Byte ABH“ beim Lesen | K1 (andere Treiber), K4 |
 | 6 | Laufwerk 2 und Block vor/zurück im EGOS nicht ausprogrammiert — gab es eine spätere Fassung? | Anwender |
 | 7 | Feinaufbau Verzeichniseintrag/Dateikopf auf der Kassette | M7/K1 |
+| 9 | Reihenfolge der Interruptkette über die Karten: EGOS gibt keinen Hinweis.  Scharf sind nur ASP-SIO A (Rx, FFFCH), ASP-CTC K3 (FFEEH), beim Magnetband ASP-CTC K1 (FFEAH) und die vier K5020-Kanäle (FFB0H–FFB8H); ZVE-CTC/-PIO und ASP-PIO programmiert EGOS nie.  Innerhalb der ASP SIO > CTC [BDA S.18]; der Ablauf setzt nur voraus, dass CTC K3 hinter SIO A liegt (nachgeordnete Verarbeitung) | M3 |
 | 8 | MC80.33: zweite Hälfte des Magnetband-ROMs (1800H–1FFFH) fehlt | Anwender (Wunschliste) |
