@@ -809,7 +809,11 @@ int A5120Machine::run(int max_cycles) {
         // seinem normalen BIOS-Stack, nie in `[0xEC00,0xEC10]`) → keine Regression.
         const uint16_t zve1_sp = zre_.cpuSP();
         const bool sp_in_scpx_mini_stack = (zve1_sp >= 0xEC00 && zve1_sp <= 0xEC10);
-        if (bus_.isINT() && zre_.cpuIFF1() && !sp_in_scpx_mini_stack) {
+        // Nach `EI` erst nach dem folgenden Befehl (Z80::ei_schatten): sonst fällt ein
+        // anstehender Interrupt zwischen `EI` und `RETI` — das RETI läuft nie, der Baustein
+        // bleibt in Bedienung und sperrt alle nachrangigen (Befund A8: BCU-KMBG verlor das
+        // Kassettenecho, „7xWRITE“).
+        if (bus_.isINT() && zre_.cpuInterruptAnnehmbar() && !sp_in_scpx_mini_stack) {
             uint8_t vec = bus_.interruptAcknowledge();
             LOG_DEBUG("A5120", "INT zugestellt: Vektor=0x%02X PC=%04X", vec, zre_.cpuPC());
             zre_.cpuInterrupt(vec);

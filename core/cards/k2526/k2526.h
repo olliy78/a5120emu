@@ -508,6 +508,8 @@ public:
      * @return true when ZVE1 will accept a maskable interrupt
      */
     bool     cpuIFF1()  const         { return cpu_.IFF1; }
+    /// IFF1 und nicht unmittelbar nach `EI` (Z80::ei_schatten).
+    bool     cpuInterruptAnnehmbar() const { return cpu_.interruptAnnehmbar(); }
 
     /**
      * @brief Read ZVE1's current program counter (for diagnostics).

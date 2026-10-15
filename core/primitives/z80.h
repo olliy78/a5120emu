@@ -175,6 +175,16 @@ public:
     bool IFF2;     ///< Interrupt Flip-Flop 2 - backup of IFF1 during NMI
     uint8_t IM;    ///< Interrupt mode (0, 1, or 2)
     bool halted;   ///< True when CPU is halted by HALT instruction
+    /**
+     * @brief `EI` war der zuletzt ausgeführte Befehl.  Der Z80/U880 nimmt einen maskierbaren
+     *        Interrupt erst NACH dem auf `EI` folgenden Befehl an — sonst fiele er zwischen
+     *        `EI` und `RETI`, das RETI liefe nie, und der Baustein bliebe in Bedienung (IUS).
+     *        Gesetzt von `EI`, gelöscht vom nächsten ausgeführten Befehl; wer Interrupts
+     *        zustellt, fragt @ref interruptAnnehmbar.
+     */
+    bool ei_schatten = false;
+    /// Maskierbarer Interrupt jetzt annehmbar (IFF1 und nicht unmittelbar nach `EI`).
+    bool interruptAnnehmbar() const { return IFF1 && !ei_schatten; }
     ///@}
 
     /**
