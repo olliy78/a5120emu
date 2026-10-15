@@ -549,6 +549,10 @@ _lib.k1520_mem_read.restype = ctypes.c_uint8
 _lib.k1520_mem_write.argtypes = [K1520Handle, ctypes.c_uint16, ctypes.c_uint8]
 _lib.k1520_mem_write.restype = None
 
+# k1520_mem_load(K1520Handle, addr: uint16, path: const char*) -> int  (Bytes oder <0)
+_lib.k1520_mem_load.argtypes = [K1520Handle, ctypes.c_uint16, ctypes.c_char_p]
+_lib.k1520_mem_load.restype = ctypes.c_int
+
 # k1520_io_read(K1520Handle, port: uint8) -> uint8
 _lib.k1520_io_read.argtypes = [K1520Handle, ctypes.c_uint8]
 _lib.k1520_io_read.restype = ctypes.c_uint8
@@ -2066,6 +2070,15 @@ class K1520Emulator:
     def mem_write(self, addr: int, data: int):
         """Write one byte through the bus."""
         _lib.k1520_mem_write(self._handle, ctypes.c_uint16(addr), ctypes.c_uint8(data))
+
+    def mem_load(self, addr: int, path) -> int:
+        """Binärdatei ab ``addr`` in den Speicher schreiben (wie ``mem_write``, also im
+        gerade sichtbaren Segment).  Liefert die Bytezahl; Fehler -> ``OSError``."""
+        n = _lib.k1520_mem_load(self._handle, ctypes.c_uint16(addr), os.fsencode(str(path)))
+        if n < 0:
+            raise OSError({-1: "ungueltige Argumente", -2: "Datei nicht lesbar",
+                           -3: "Datei passt nicht unter 10000H"}.get(n, str(n)))
+        return n
 
     def io_read(self, port: int) -> int:
         """Read one I/O port (non-destructive where the hardware allows it)."""

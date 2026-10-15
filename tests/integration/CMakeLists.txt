@@ -336,3 +336,9 @@ k1520_add_test(p8000_terminal_original SRC test_p8000_terminal_original.cpp
 
 # Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()
+
+# MC80 (AP M5): Spiele-Speicherabzuege doc/mc80/spiele/ laden und ueber die EGOS-Kette starten.
+k1520_add_test(mc80_spiele SRC test_mc80_spiele.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                          "MC80_SPIELE_DIR=\"${CMAKE_SOURCE_DIR}/doc/mc80/spiele\"")

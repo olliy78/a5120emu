@@ -571,6 +571,20 @@ def test_mem_read_write_roundtrip(emulator):
     assert emulator.mem_read(0x6000) == 0x5A
 
 
+def test_mem_load_schreibt_eine_datei_in_den_speicher(emulator, tmp_path):
+    """k1520_mem_load: Bytezahl als Ergebnis, negative Fehlercodes."""
+    emulator.power_on()
+    datei = tmp_path / "abzug.bin"
+    datei.write_bytes(bytes([0x11, 0x22, 0x33, 0x44]))
+    assert emulator.mem_load(0x6000, datei) == 4
+    assert [emulator.mem_read(0x6000 + i) for i in range(4)] == [0x11, 0x22, 0x33, 0x44]
+    with pytest.raises(OSError):
+        emulator.mem_load(0x6000, tmp_path / "gibt_es_nicht.bin")
+    datei.write_bytes(bytes(16))
+    with pytest.raises(OSError):
+        emulator.mem_load(0xFFF8, datei)       # passt nicht unter 10000H
+
+
 @pytest.mark.parametrize("drive", [0, 1, 2])
 def test_format_catalogue_is_reachable_per_drive(emulator, drive):
     """Der Formatkatalog (data/formats.yaml) kommt über die C-API an."""

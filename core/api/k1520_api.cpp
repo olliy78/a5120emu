@@ -958,6 +958,18 @@ void k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data) {
     toMachine(h)->memWriteDebug(addr, data);
 }
 
+int k1520_mem_load(K1520Handle h, uint16_t addr, const char* path) {
+    if (!h || !path) return -1;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return -2;
+    const std::vector<char> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (static_cast<size_t>(addr) + data.size() > 0x10000u) return -3;
+    auto* m = toMachine(h);
+    for (size_t i = 0; i < data.size(); ++i)
+        m->memWriteDebug(static_cast<uint16_t>(addr + i), static_cast<uint8_t>(data[i]));
+    return static_cast<int>(data.size());
+}
+
 uint8_t k1520_io_read(K1520Handle h, uint8_t port) {
     return toMachine(h)->ioReadDebug(port);
 }

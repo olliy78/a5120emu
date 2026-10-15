@@ -561,6 +561,16 @@ K1520_API bool        k1520_raf_save(K1520Handle h, const char* pfad);
 K1520_API uint8_t     k1520_mem_read(K1520Handle h, uint16_t addr);
 /** @brief Write memory through the machine bus for diagnostics. */
 K1520_API void        k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data);
+/**
+ * @brief Load a binary file byte by byte into memory starting at @p addr (additive, all machines).
+ *
+ * Goes through the same path as k1520_mem_write (machine bus / CPU view, so on the MC80 it
+ * is the currently selected segment, ROM areas ignore the writes).  Not thread-safe.
+ * @return number of bytes written (>= 0), or a negative code:
+ *         -1 invalid handle/arguments, -2 file cannot be opened, -3 file does not fit
+ *         below 10000H (nothing is written in that case).
+ */
+K1520_API int         k1520_mem_load(K1520Handle h, uint16_t addr, const char* path);
 /** @brief Read I/O port through the machine bus for diagnostics. */
 K1520_API uint8_t     k1520_io_read(K1520Handle h, uint8_t port);
 K1520_API const char* k1520_last_error(K1520Handle h);
