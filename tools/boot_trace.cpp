@@ -24,6 +24,9 @@
  *     --raf <typ>    RAM-Floppy stecken (raf128|raf512|raf2m|none), vor dem ersten Lauf;
  *                    gilt für alle Maschinen (A5120, --em, --machine k8915|prg710[-1])
  *     --ptape        Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken, alle Maschinen
+ *     --tape <k52>   Kassettenkarte K5020 stecken (A5120 30H, K8915 D0H, PRG 30H) und die
+ *                    Kassettendatei <k52> an Gerät 1 binden (fehlt sie: leere Kassette);
+ *                    --tape2 <k52> = Gerät 2; --tape-card = nur die Karte
  *     --cpu u8000    jeden Befehl des U8001 als Zeile "U8 …" (Deckel -W); impliziert --em
  *
  * --machine k8915 (| k8915-g2, Generation 2) fährt statt des A5120 einen K8915 (eigener Zweig,
@@ -310,6 +313,8 @@ int main(int argc, char** argv) {
     K8915TraceOpts k8o;
     std::string raf_opt;                 // --raf none|raf128|raf512|raf2m: RAM-Floppy vor dem ersten Lauf stecken
     bool        ptape_opt = false;       // --ptape: Lochstreifen-Karte K6022 vor dem ersten Lauf stecken
+    bool        tape_opt = false;        // --tape/--tape2/--tape-card: Kassettenkarte K5020
+    std::string tape1_opt, tape2_opt;
     std::vector<std::string> nur_a5120;   // am K8915 wirkungslose Schalter (Meldung)
 
     // Runtime log control (new gated logging). Default base = ERROR so a plain
@@ -347,6 +352,9 @@ int main(int argc, char** argv) {
             else if (k != "kern") { fprintf(stderr, "--konsole %s unbekannt (kern | original)\n", k.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--ptape")) { ptape_opt = true; k8o.ptape = true; }
+        else if (!strcmp(argv[i], "--tape-card")) { tape_opt = true; k8o.tape = true; }
+        else if (!strcmp(argv[i], "--tape") && i+1 < argc) { tape_opt = true; k8o.tape = true; tape1_opt = k8o.tape1 = argv[++i]; }
+        else if (!strcmp(argv[i], "--tape2") && i+1 < argc) { tape_opt = true; k8o.tape = true; tape2_opt = k8o.tape2 = argv[++i]; }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
         else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
@@ -573,7 +581,8 @@ int main(int argc, char** argv) {
     A5120Machine machine(mcfg);
     { std::string err;
       if (!dbgm::steckeRaf(machine, raf_opt, err)) { fprintf(stderr, "--raf: %s\n", err.c_str()); return 2; }
-      if (!dbgm::steckeK6022(machine, ptape_opt, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; } }
+      if (!dbgm::steckeK6022(machine, ptape_opt, err)) { fprintf(stderr, "--ptape: %s\n", err.c_str()); return 2; }
+      if (!dbgm::steckeK5020(machine, tape_opt, tape1_opt, tape2_opt, err)) { fprintf(stderr, "--tape: %s\n", err.c_str()); return 2; } }
     machine.powerOn();
 
     // ── A5120.16 (S5): EM-Transaktionen (--em) und U8001-Befehle (--cpu u8000) ──

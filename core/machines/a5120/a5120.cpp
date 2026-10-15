@@ -192,6 +192,7 @@ void A5120Machine::resetHardware() {
     if (em_) em_->reset();  // EM: PIO hochohmig ⇒ RESET16/Pull-ups; DRAM + A22 bleiben
     rafReset();             // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     k6022Reset();           // K6022 (gesteckt?): PIOs zurück, Band und Stanzband bleiben
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurück, Bänder bleiben liegen
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
@@ -765,6 +766,7 @@ int A5120Machine::run(int max_cycles) {
         bool ctc_fired = zre_.clockTick(used);
         ctc_fired      = ass_.clockTick(used) || ctc_fired;
         ctc_fired      = k6022Takt(used) || ctc_fired;   // Lochstreifen (gesteckt?)
+        ctc_fired      = k5020Takt(used) || ctc_fired;   // Kassette (gesteckt?)
         if (ctc_fired) bus_.markIntDirty();
 
         // Service the keyboard: advance the 9600-baud serial-transmit timing
@@ -788,6 +790,7 @@ int A5120Machine::run(int max_cycles) {
     // Floppy-Entwurfs; prüft nur alle 100 000 Takte).
     lw_.autoFlush(total_cycles_);
     k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
+    k5020AutoFlush();   // Kassettendateien nach der Schreibpause
 
     return max_cycles - remaining;
 }

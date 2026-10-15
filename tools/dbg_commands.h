@@ -37,6 +37,8 @@ inline const std::vector<std::string>& names() {
         "map","bank",
         // RAM-Floppy (--raf)
         "raf",
+        // Kassette (--tape)
+        "tape",
         // A5120.16 (U8001-Kontext)
         "cpu","a","fcw","psa","bmode","bvi","bint16","emlog",
         // P8000 (--machine p8000|p8000-16): ADP, UA858, Kopplung, MMU, Terminal
