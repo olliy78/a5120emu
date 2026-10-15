@@ -2,15 +2,11 @@
 
 Version {{VERSION}}
 
-Dieses Programm ist ein Emulator des Bürocomputers **robotron A5120** und seiner
-Verwandten am K1520-Bus. Es gibt ihn in fünf Gestalten: den **A5120 Emulator**
+Dieses Programm ist ein Emulator für Bürocomputer. Es enthällt den **A5120 Emulator**
 (`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
 (`prg710emu`), den **PC1715 Emulator** (`pc1715emu`) und den **P8000 Emulator**
-(`p8000emu`) — dasselbe Programm mit
-eigener Konfiguration und eigener Tastatur; was nur den K8915, den PRG, den
-PC 1715 bzw. den P8000 betrifft, steht in den Abschnitten „Der K8915 Emulator", „Der PRG710
-Emulator", „Der PC1715 Emulator" und „Der P8000 Emulator" (die Bedienung des P8000 selbst — Selbsttest,
-Monitore, UDOS, WEGA — beschreibt das Kapitel „Bedienung des P8000"). Nachgebildet werden **Bus und Steckkarten** — Z80,
+(`p8000emu`) — mit eigener Konfiguration und eigener Tastatur. 
+Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
 keine eingebauten Abkürzungen und keine Betriebssystem-Nachbauten: was auf der
