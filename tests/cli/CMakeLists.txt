@@ -198,5 +198,16 @@ add_test(NAME cli_k8915g2_prn_passt_zur_quelle
 set_tests_properties(cli_k8915g2_prn_passt_zur_quelle PROPERTIES
     TIMEOUT 60 LABELS "cli;fast")
 
+# Wächter „das kommentierte EGOS-Listing des MC80.3x ist die Ausgabe des Generators" (AP M1,
+# doc/mc80/egos.md): tools/gen_mc80_egos_prn.py --check prüft die MD5 der sechs MAME-Abzüge
+# (doc/EPROMS/MC80/mc8030_mame/), dass JEDES der 10240 Byte genau einmal und mit dem richtigen
+# Wert dargestellt ist, dass jeder Einsprung der EGOS-Softwareschnittstellen (Sprungleisten
+# 0BB5H und 2004H) benannt ist, die ROM-Kette ab 0AFEH, und vergleicht bytegleich mit
+# doc/mc80/egos.prn.  Neu erzeugen: python3 tools/gen_mc80_egos_prn.py
+add_test(NAME cli_mc80_egos_prn_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/gen_mc80_egos_prn.py" --check)
+set_tests_properties(cli_mc80_egos_prn_passt_zur_quelle PROPERTIES
+    TIMEOUT 60 LABELS "cli;fast")
+
 # Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()
