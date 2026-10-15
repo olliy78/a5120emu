@@ -42,11 +42,21 @@ static std::array<DriveProfile, 4> profilesFromConfig(const A5120Machine::Config
              builtinDriveProfile(cfg.drive_profiles[3]) };
 }
 
+// K2526-Brücken je Ausführung: die frühen Geräte haben die Wickelbrücke Port 0AH Bit 6
+// (BS-PIO B6 = config_bridges Bit 1) gesetzt — CP/A 25.09.89 wählt damit BAB1 (K7023,
+// 16×64 ab FC00H) statt BAB2 (doc/design/30 §3.1, doc/a5120_alt/k7023.md).  `Neu`: 00H wie bisher.
+static K2526::A5120Config zreKonfig(const A5120Machine::Config& cfg) {
+    K2526::A5120Config z;
+    if (cfg.ausfuehrung != A5120Machine::Config::Ausfuehrung::Neu)
+        z.config_bridges = 0x02;
+    return z;
+}
+
 // Default-Konstruktor delegiert an die Config-Variante (Default = 4× K5601).
 A5120Machine::A5120Machine() : A5120Machine(Config{}) {}
 
 A5120Machine::A5120Machine(const Config& cfg)
-    : zre_(bus_)
+    : zre_(bus_, zreKonfig(cfg))
     , ops_()
     , screen_(bus_)
     , ass_(bus_)
@@ -56,6 +66,27 @@ A5120Machine::A5120Machine(const Config& cfg)
     // Laufwerksverwaltung + Formatkatalog (wirft, wenn data/formats.yaml fehlt).
     , lw_(afs_, profilesFromConfig(cfg))
 {
+    using A = Config::Ausfuehrung;
+    ausf_ = cfg.ausfuehrung;
+    if (ausf_ == A::Acht)
+        throw std::invalid_argument("A5120 8 Zoll (K5602) ist noch nicht umgesetzt");
+    if (ausf_ != A::Neu && cfg.em != Config::Em::none)
+        throw std::invalid_argument("Ein Erweiterungsmodul gibt es nur am A5120 \u201e5\u00bc\u2033 neu\u201c");
+    if (ausf_ != A::Neu) {
+        // Kartenreihe „5¼″ alt“ (Entwurf 30 §1): vier K3525 zu je 16 KB, K7023.01 bei FC00H,
+        // K7636 an Stecker X1 der K2526 (vor powerOn anschließen, sie wird dort eingeschaltet).
+        for (int i = 0; i < 4; ++i) {
+            K3525::Config rc;
+            rc.base_addr = static_cast<uint16_t>(i * K3525::kGroesse);
+            k3525_[i] = std::make_unique<K3525>(rc);
+        }
+        K7023::Config vc;
+        vc.variante_01 = true;
+        k7023_ = std::make_unique<K7023>(bus_, vc);
+        k7636_ = std::make_unique<K7636>();
+        zre_.setUBusGeraet(k7636_.get());
+    }
+
     // Erweiterungsmodul (A5120.16) — nur auf ausdrücklichen Wunsch.
     if (cfg.em != Config::Em::none) {
         EM::Config ec;
@@ -67,15 +98,26 @@ A5120Machine::A5120Machine(const Config& cfg)
     // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
     // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
     wireBackplane();
+
+    // KMBG: die Kassettenkarte K5020 ist fest eingebaut (30H–37H, zwei K5200).
+    if (ausf_ == A::Kmbg && !installK5020())
+        throw std::runtime_error("K5020 der KMBG-Ausfuehrung: " + k5020Fehler());
 }
 
 void A5120Machine::wireBackplane() {
     // Register all cards on K1520 bus in slot order
+    if (k7023_) {
+        // Frühe Ausführung: RAM = 4× K3525, darüber der Bildspeicher der K7023 (FC00H);
+        // das Lade-ROM der K2526 kommt wie sonst danach (doc/design/32 §3, A1/A2).
+        for (auto& k : k3525_) k->attachToBus(bus_);
+        k7023_->attachToBus(bus_);
+    } else {
     // Slot 1: OPS (K3526) — full 64KB RAM, registered first (lowest priority)
     ops_.attachToBus(bus_);
 
     // Slot 5: ABS (K7024) — VRAM F800H-FFFFH, overlays OPS
     screen_.attachToBus(bus_);
+    }
 
     // Slot 4: ZRE (K2526) — I/O ports 00H-0FH, boot ROM 0000H-03FFH
     zre_.attachToBus(bus_);
@@ -142,8 +184,9 @@ void A5120Machine::wireBackplane() {
             ass_.ctcA34().clkTrg(i, lvl);
     });
 
-    // Connect keyboard to K8025 SIO A32, Channel A
-    kbd_.connect(ass_.sioA32(), 0);
+    // Connect keyboard to K8025 SIO A32, Channel A — nur am `Neu`; die frühen Geräte
+    // haben die parallele K7636 an der K2526 und keine K7637.
+    if (!k7636_) kbd_.connect(ass_.sioA32(), 0);
 
     // Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5).  Taktquelle der Brücken W1:7
     // und X7–X8 („gezeichnet"): ZRE-CTC K0 — derselbe ZC/TO0, der oben über den
@@ -209,6 +252,7 @@ void A5120Machine::resetHardware() {
     held_read_cycles_   = 0;
     held_read_watchdog_ = false;
     screen_.clearScreen();   // Bildschirm sichtbar löschen
+    if (k7023_) k7023_->clearScreen();
     boot_trace_count_ = 0;
 }
 
@@ -218,6 +262,7 @@ void A5120Machine::powerOn() {
     // Löschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
     // weiter — inklusive der Reste des vorherigen OS.
     ops_.fill(0xFF);
+    for (auto& k : k3525_) if (k) k->fill(0xFF);
     if (em_) em_->powerOn();
     rafPowerOn();       // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
@@ -321,7 +366,12 @@ static void loadZ80(Z80& z, const A5120Machine::MachineSnapshot::Z80Regs& r) {
 }
 
 void A5120Machine::captureState(MachineSnapshot& s, bool raf_inhalt) const {
-    std::memcpy(s.ram.data(), ops_.rawPtr(), s.ram.size());
+    if (k7023_) {
+        for (const auto& k : k3525_)
+            std::memcpy(s.ram.data() + k->config().base_addr, k->rawPtr(), K3525::kGroesse);
+    } else {
+        std::memcpy(s.ram.data(), ops_.rawPtr(), s.ram.size());
+    }
     saveZ80(zre_.cpu(),  s.zve1);
     saveZ80(zre_.zve2(), s.zve2);
     s.rom_enabled     = zre_.isRomEnabled();
@@ -350,6 +400,12 @@ void A5120Machine::captureState(MachineSnapshot& s, bool raf_inhalt) const {
     // (DRAM, Attributspeicher, PIO, Register, U8001 mit Ablaufzustand).
     s.device_state.push_back(em_ ? 1 : 0);
     if (em_) em_->serialize(s.device_state);
+    // Frühe Ausführung: Kennbyte 1 + Bildspeicher der K7023 (die K7636 ist nicht im Stand).
+    // Am `Neu` fehlt das Byte ganz — dessen Stand bleibt bitgleich.
+    if (k7023_) {
+        s.device_state.push_back(1);
+        k7023_->serialize(s.device_state);
+    }
     // v8: RAF — eigenes Feld, s. MachineSnapshot::raf_state.
     s.raf_state.assign(1, raf_ ? 1 : 0);
     if (raf_) raf_->saveState(s.raf_state, raf_inhalt);
@@ -398,7 +454,11 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
         LOG_WARN("A5120", "Zustand abgelehnt: %s", state_error_.c_str());
         return false;
     }
-    ops_.restore(s.ram.data());
+    if (k7023_) {
+        for (auto& k : k3525_) k->restore(s.ram.data() + k->config().base_addr);
+    } else {
+        ops_.restore(s.ram.data());
+    }
     loadZ80(zre_.cpu(),  s.zve1);
     loadZ80(zre_.zve2(), s.zve2);
     busrq_active_    = s.busrq_active;
@@ -428,6 +488,10 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
         if (p < end) {
             const uint8_t mit_em = *p++;
             if (mit_em && em_) em_->deserialize(p, end);
+        }
+        if (p < end && *p == 1 && k7023_) {
+            ++p;
+            k7023_->deserialize(p, end);
         }
     }
     return true;
@@ -460,6 +524,17 @@ constexpr uint8_t kStateVersion    = 8;
 }
 
 uint8_t A5120Machine::keyboardLeds() const {
+    if (k7636_) {
+        // K7636: Bit 0–3 Wahllampen A58…D58, Bit 4 INS MODE (E15), Bit 5 Fehlerlampe,
+        // Bit 6 SHIFT/LOCK (C99), Bit 7 akustisches Signal.
+        uint8_t m = 0;
+        for (int n = 0; n < 4; ++n) if (k7636_->wahlLampe(n)) m |= uint8_t(1u << n);
+        if (k7636_->insModeLampe()) m |= 0x10;
+        if (k7636_->fehlerLampe())  m |= 0x20;
+        if (k7636_->shiftLampe())   m |= 0x40;
+        if (k7636_->signalAktiv())  m |= 0x80;
+        return m;
+    }
     uint8_t mask = kbd_.leds();
     if (kbd_.beeping()) mask |= 0x80;
     return mask;
@@ -537,7 +612,10 @@ int A5120Machine::run(int max_cycles) {
         std::lock_guard<std::mutex> lk(key_mutex_);
         while (!key_queue_.empty()) {
             auto& ev = key_queue_.front();
-            if (ev.is_press)
+            if (k7636_) {
+                if (ev.is_press) k7636_->keyPress(ev.keycode, ev.shift, ev.ctrl);
+                else             k7636_->keyRelease(ev.keycode);
+            } else if (ev.is_press)
                 kbd_.keyPress(ev.keycode, ev.shift, ev.ctrl);
             else
                 kbd_.keyRelease(ev.keycode);
@@ -779,7 +857,9 @@ int A5120Machine::run(int max_cycles) {
         // which floods the keyboard buffer and drops real keystrokes at the CCP.
         // Tastatur-Service kann ein Empfangsbyte an den SIO zustellen (irq_rx) oder
         // ein Kommando verarbeiten (irq_tx) — beides ändert den Interruptzustand.
-        if (kbd_.service(total_cycles_)) bus_.markIntDirty();
+        // Frühe Ausführung: die K7636 am U-Bus (abgefragt, kein Interrupt).
+        if (k7636_) k7636_->service(total_cycles_);
+        else if (kbd_.service(total_cycles_)) bus_.markIntDirty();
 
         // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
         // 1/16 Zeichenzeit — dazwischen kostet es nur diesen Vergleich.
@@ -843,7 +923,7 @@ void A5120Machine::keyRelease(uint32_t kc) {
 }
 
 const uint8_t* A5120Machine::framebuffer() const {
-    return screen_.getFramebuffer();
+    return k7023_ ? k7023_->getFramebuffer() : screen_.getFramebuffer();
 }
 
 void A5120Machine::setDFUECallback(SerialCb cb) {

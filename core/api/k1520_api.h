@@ -84,6 +84,26 @@ K1520_API K1520Handle k1520_create_k8915(int generation,
                                          const char* drive2, const char* drive3);
 
 /**
+ * @brief A5120 in einer Ausführung (doc/design/30_a5120_fruehe_varianten.md, AP A5).
+ *
+ * @param ausfuehrung 0 = „5¼″ neu“ (K3526, K7024 24×80, K7637; wie k1520_create_configured),
+ *                    1 = „5¼″ alt“ (4× K3525, K7023.01 16×64 ab FC00H — Framebuffer 512×256,
+ *                    `k1520_screen_char` 64×16 —, Tastatur K7636 am U-Bus der K2526, Brücke
+ *                    Port 0AH Bit 6 = 1), 2 = KMBG (wie 1, dazu die K5020 fest auf 30H–37H),
+ *                    3 = 8″ (K5602, noch nicht umgesetzt) und alles andere → NULL mit Grund in
+ *                    k1520_last_init_error.
+ * @param drive0..3   wie bei k1520_create_configured; NULL/"" = Vorgabe der Ausführung
+ *                    (neu: K5601; alt/KMBG: K5600.10, K5600.10, K5600.10, none).
+ * k1520_machine_type() = 0; Ausführung: k1520_a5120_ausfuehrung().  Tastaturanzeigen der
+ * K7636 über k1520_keyboard_leds.
+ */
+K1520_API K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
+                                                     const char* drive0, const char* drive1,
+                                                     const char* drive2, const char* drive3);
+/** @brief Ausführung eines A5120 (0 neu, 1 alt, 2 KMBG); -1 bei einer anderen Maschine. */
+K1520_API int k1520_a5120_ausfuehrung(K1520Handle h);
+
+/**
  * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
  *
  * @param variante    0 = PC 1715, 1 = PC 1715W (seit AP-W3; nur mit bildschirm 0, sonst NULL mit Grund)
@@ -202,6 +222,9 @@ K1520_API void k1520_set_key_repeat_realtime(K1520Handle h, bool realtime);
  * Bit gesetzt ist —, Bit 7 = akustisches Signal läuft (≈1 s).  Die
  * Betriebsanzeige E54 und die LOCK-Anzeige C99 stehen nicht darin: die eine
  * hängt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
+ *
+ * **A5120 „alt“/KMBG (K7636):** Bit 0…3 = Wahllampen A58…D58, Bit 4 = INS MODE (E15),
+ * Bit 5 = Fehlerlampe, Bit 6 = SHIFT/LOCK (C99), Bit 7 = akustisches Signal läuft.
  */
 K1520_API uint32_t k1520_keyboard_leds(K1520Handle h);
 /**

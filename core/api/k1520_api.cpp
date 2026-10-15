@@ -410,6 +410,39 @@ K1520Handle k1520_create_with_em(K1520MachineType type,
     }
 }
 
+K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
+                                           const char* d0, const char* d1,
+                                           const char* d2, const char* d3) {
+    using A = A5120Machine::Config::Ausfuehrung;
+    g_init_error.clear();
+    if (ausfuehrung < 0 || ausfuehrung > 3) {
+        g_init_error = "Unbekannte A5120-Ausfuehrung " + std::to_string(ausfuehrung) +
+                       " (0 neu, 1 alt, 2 KMBG, 3 8 Zoll)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        A5120Machine::Config cfg = A5120Machine::Config::fuerAusfuehrung(static_cast<A>(ausfuehrung));
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+        K1520Machine* m = new A5120Machine(cfg);   // Acht wirft (noch nicht umgesetzt)
+        return m;
+    } catch (const std::exception& ex) {
+        g_init_error = ex.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+int k1520_a5120_ausfuehrung(K1520Handle h) {
+    auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
+    return a ? static_cast<int>(a->ausfuehrung()) : -1;
+}
+
 const char* k1520_em_variant(K1520Handle h) {
     const EM* em = emOf(h);
     if (!em) return "";

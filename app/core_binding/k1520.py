@@ -491,6 +491,15 @@ _lib.k1520_create_with_em.argtypes = [
 ]
 _lib.k1520_create_with_em.restype = K1520Handle
 
+# A5120-Ausführungen (doc/design/30_a5120_fruehe_varianten.md, AP A5)
+# k1520_create_a5120_ausfuehrung(ausfuehrung, d0..d3) -> K1520Handle
+_lib.k1520_create_a5120_ausfuehrung.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_a5120_ausfuehrung.restype = K1520Handle
+_lib.k1520_a5120_ausfuehrung.argtypes = [K1520Handle]
+_lib.k1520_a5120_ausfuehrung.restype = ctypes.c_int
+
 # RAM-Floppy RAF (doc/design/22_raf512.md §6)
 _lib.k1520_raf_install.argtypes = [K1520Handle, ctypes.c_char_p]
 _lib.k1520_raf_install.restype = ctypes.c_bool
@@ -730,7 +739,7 @@ def _utf8(path) -> bytes:
     return os.fspath(path).encode("utf-8")
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
-MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
+MACHINE_TYPES = {"a5120": 0, "a5120-alt": 0, "a5120-kmbg": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
                  "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5}
 # (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
@@ -738,6 +747,13 @@ MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2":
 PC1715_ZEICHENSAETZE = {"deutsch": 0, "polnisch": 1, "kyrillisch": 2}
 PC1715_TASTATUREN = {"s600": 0, "tast618": 1}
 PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
+# Ausführung des A5120 für k1520_create_a5120_ausfuehrung (Entwurf 30, AP A5).  "acht"
+# (8″, K5602) kennt der Kern, lehnt sie aber noch ab.
+A5120_AUSFUEHRUNGEN = {"neu": 0, "alt": 1, "kmbg": 2, "acht": 3}
+# Maschinennamen der frühen Ausführungen = machine="a5120" mit ausfuehrung=… .
+A5120_AUSFUEHRUNG_MASCHINE = {"a5120-alt": "alt", "a5120-kmbg": "kmbg"}
+# Bildschirm der frühen Ausführungen: K7023 64×16 (BAB1 ab FC00H).
+K7023_COLS, K7023_ROWS = 64, 16
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
 # Bauform für k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
@@ -996,7 +1012,8 @@ class K1520Emulator:
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
                  em: Optional[str] = None, raf: Optional[str] = None,
                  ptape: bool = False, tape: bool = False, zeichensatz: str = "deutsch",
-                 tastatur: str = "s600", p8000: Optional[dict] = None):
+                 tastatur: str = "s600", p8000: Optional[dict] = None,
+                 ausfuehrung: Optional[str] = None):
         """Initialize emulator instance.
 
         Args:
@@ -1028,6 +1045,11 @@ class K1520Emulator:
                 Maschine, wie ``raf`` direkt nach dem Anlegen.  Fehler → ValueError.
             tape: Kassettenkarte K5020 (zwei K5200; A5120 30H, K8915 D0H, PRG 710 30H,
                 PC 1715 D0H) stecken, wie ``ptape`` direkt nach dem Anlegen.  Fehler → ValueError.
+                Bei der Ausführung ``"kmbg"`` steckt sie ohnehin (dann ohne Wirkung).
+            ausfuehrung: nur A5120 — ``None``/``"neu"`` (Vorgabe), ``"alt"`` (K7023.01 16×64,
+                4× K3525, K7636; Vorgabelaufwerke 3× K5600.10), ``"kmbg"`` (wie ``"alt"`` mit
+                fest gesteckter K5020); ``"acht"`` lehnt der Kern noch ab.  Gleichwertig:
+                ``machine="a5120-alt"`` bzw. ``"a5120-kmbg"``.
         """
         # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
         # darf nicht über ein fehlendes Attribut stolpern.
@@ -1048,8 +1070,27 @@ class K1520Emulator:
         self._em = em if em and em != "none" else None
         if self._em and machine != "a5120":
             raise ValueError(f"ein Erweiterungsmodul gibt es nur am A5120, nicht am {machine!r}")
+        ausf = A5120_AUSFUEHRUNG_MASCHINE.get(machine, ausfuehrung or "neu")
+        if ausfuehrung and machine in A5120_AUSFUEHRUNG_MASCHINE and ausfuehrung != ausf:
+            raise ValueError(f"machine={machine!r} widerspricht ausfuehrung={ausfuehrung!r}")
+        if ausf not in A5120_AUSFUEHRUNGEN:
+            raise ValueError(f"unbekannte A5120-Ausführung {ausf!r} "
+                             f"(bekannt: {', '.join(A5120_AUSFUEHRUNGEN)})")
+        if ausf != "neu" and MACHINE_TYPES[machine] != 0:
+            raise ValueError(f"eine Ausführung gibt es nur am A5120, nicht am {machine!r}")
+        if ausf != "neu" and self._em:
+            raise ValueError("ein Erweiterungsmodul gibt es nur am A5120 der Ausführung „neu“")
+        self._ausfuehrung = ausf
+        if ausf in ("alt", "kmbg"):
+            self._machine = "a5120-" + ausf
         try:
-            if machine in PRG_VARIANTEN:
+            if ausf != "neu":
+                names = (self._drive_types or [])[:4]
+                names = names + [None] * (4 - len(names))
+                enc = lambda n: n.encode("utf-8") if n else None
+                handle = _lib.k1520_create_a5120_ausfuehrung(
+                    A5120_AUSFUEHRUNGEN[ausf], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            elif machine in PRG_VARIANTEN:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
                 enc = lambda n: n.encode("utf-8") if n else None
@@ -1104,7 +1145,7 @@ class K1520Emulator:
             _lib.k1520_destroy(handle)
             self._handle = None
             raise ValueError(reason or "K6022 nicht steckbar")
-        if tape and not _lib.k1520_tape_install(handle):
+        if tape and not _lib.k1520_tape_installed(handle) and not _lib.k1520_tape_install(handle):
             reason = _lib.k1520_last_init_error()
             reason = reason.decode("utf-8", "replace") if reason else ""
             _lib.k1520_destroy(handle)
@@ -1136,6 +1177,15 @@ class K1520Emulator:
     def machine(self) -> str:
         """Name der Maschine, mit der dieses Objekt erzeugt wurde (``"a5120"``/``"k8915"``)."""
         return self._machine
+
+    @property
+    def ausfuehrung(self) -> str:
+        """A5120-Ausführung laut Kern: ``"neu"``, ``"alt"``, ``"kmbg"`` (``""`` an anderen Maschinen)."""
+        n = _lib.k1520_a5120_ausfuehrung(self._handle)
+        for name, wert in A5120_AUSFUEHRUNGEN.items():
+            if wert == n:
+                return name
+        return ""
 
     @property
     def zeichensatz(self) -> str:
@@ -2026,6 +2076,12 @@ class K1520Emulator:
         Beim K8915 über ``k1520_screen_char`` von der Karte: die CPU-Sicht
         (``mem_read``) zeigt bei 1000H je nach Port A8H das RAM der ZRE.
         """
+        if self._ausfuehrung in ("alt", "kmbg"):
+            # K7023: 16 Zeilen à 64 Zeichen (BAB1), Kursor in Bit 7.
+            return "\n".join(
+                "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)
+                        for c in range(K7023_COLS))
+                for r in range(min(zeilen, K7023_ROWS)))
         if self._machine != "a5120":
             return "\n".join(
                 "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)

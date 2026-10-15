@@ -373,6 +373,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
         k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em k1520_raf k1520_k6022 k1520_k5020
+        k1520_k3525 k1520_k7023 k1520_k7636
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger k1520_serial
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})

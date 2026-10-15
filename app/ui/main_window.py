@@ -613,6 +613,10 @@ class MainWindow(QMainWindow):
         if self._tastatur_art == "k7609":
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
+        if self._tastatur_art == "k7636":
+            # Frühe A5120 (Entwurf 30, AP A5): parallele K7636 am U-Bus der K2526.
+            from app.ui.keyboard_k7636 import KeyboardK7636Widget
+            return KeyboardK7636Widget()
         return KeyboardWidget()
 
     def _host_matrix_verbinden(self):

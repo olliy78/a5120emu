@@ -6,8 +6,8 @@ Nachbildung der **parallelen Tastatur K7636.01** (lateinisch) am U-Bus der K2526
 (Belegungsplan ``K7634-36-Serviceschaltplaene.pdf`` S. 8, Abschrift in
 ``doc/a5120_alt/k7636.md`` / ``k7636_01_codes.csv``).  Gezeichnet wie die K7637 und die
 K7634 (:class:`app.ui.keyboard.KeyboardWidget`) und mit derselben Schnittstelle
-(:attr:`keyPressed`/:attr:`keyReleased`).  **Noch nicht in ein Programmprofil eingehängt**
-(AP A5); der Kern-Gegenpart ist ``core/peripherals/k7636/`` (``K7636::keyPress``).
+(:attr:`keyPressed`/:attr:`keyReleased`).  Eingehängt im ``a5120emu`` bei
+den Modellen „A5120 (64×16, K7636)“ und „A5120 Kassette“ (AP A5); der Kern-Gegenpart ist ``core/peripherals/k7636/`` (``K7636::keyPress``).
 
 **Was eine Taste sendet.**  Die Tastatur hat einen eigenen U880 und macht aus der
 Matrixposition den Code (Tabelle a = Grundstellung, b = Umschaltstellung).  Die Nachbildung
@@ -25,7 +25,7 @@ Betriebsbereitschaft).  Die **Kappenfarben** stehen nicht im Scan (nur „rt“/
 Rand einiger Zellen) und sind hier Annahmen **[?]**.  Positionen ohne Taste
 (``D15``, ``A17``, ``E00`` …) bleiben leer; ``F57`` ist ein Abdeckbaustein.
 
-**Anzeigen** (:meth:`set_leds`, Maske für die künftige C-ABI [?]): Bit 0…3 = Wahllampen
+**Anzeigen** (:meth:`set_leds`, Maske von ``k1520_keyboard_leds``): Bit 0…3 = Wahllampen
 0…3 (D58, C58, B58, A58), Bit 4 = INS MODE (E15), Bit 5 = Fehlerlampe (F53).  Die
 Umschaltlampe C99 folgt dem LOCK der Bildschirmtastatur.
 """

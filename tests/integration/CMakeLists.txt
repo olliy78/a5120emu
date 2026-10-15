@@ -232,6 +232,12 @@ k1520_add_test(kassette_boot SRC test_kassette_boot.cpp
                              LIBS k1520_a5120 k1520_logger k1520_testsupport
                              LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 
+# A5120-Ausführungen (doc/design/30_a5120_fruehe_varianten.md AP A5): neu (unverändert),
+# alt (4× K3525, K7023.01, K7636, Brücke 0AH Bit 6), KMBG (+ K5020 fest), 8″ abgelehnt.
+k1520_add_test(a5120_ausfuehrungen SRC test_a5120_ausfuehrungen.cpp
+                                   LIBS k1520_a5120 k1520_logger
+                                   LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
                                LABELS "${_lbl}" DEFS LOG_LEVEL=2)

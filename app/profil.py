@@ -348,10 +348,19 @@ A5120 = Programmprofil(
     nenntakt_text="2,45 MHz",
     tastatur="k7637",
     modellwahl=True,
-    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS),
+    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS) + (
+        # Frühe Ausführungen (Entwurf 30, AP A5): K7023.01 16×64, 4× K3525, Tastatur K7636.
+        (_modell.A5120_ALT, "a5120-alt", None, "A5120 (64×16, K7636)", "k7636"),
+        (_modell.A5120_KMBG, "a5120-kmbg", None, "A5120 Kassette", "k7636"),
+    ),
+    gesperrte_modelle=((_modell.A5120_ACHT, "A5120 8″ (K5602)",
+                        "Die 8″-Ausführung mit der Floppy-Einheit K5602 ist noch nicht "
+                        "nachgebildet."),),
     modell_tipp=("A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
-                 "EM256 mit dem U8001 hinzu.  Ein Wechsel erzeugt die Maschine neu "
-                 "(wie ein Kaltstart)."),
+                 "EM256 mit dem U8001 hinzu.  „A5120 (64×16, K7636)“ ist die frühe "
+                 "Ausführung mit dem Bildschirm K7023 und der Tastatur K7636, "
+                 "„A5120 Kassette“ dieselbe mit der Kassettenkarte K5020 (KMBG).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
     weitere=("prg710", "pc1715", "p8000"),

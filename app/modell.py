@@ -29,6 +29,14 @@ MODELS = [
     (A5120_16, "em256", "A5120.16 (EM256 + U8001)"),
 ]
 
+#: Frühe Ausführungen (doc/design/30_a5120_fruehe_varianten.md, AP A5) — eigene Kern-
+#: Maschine (``K1520Emulator(machine="a5120-alt")`` = ``ausfuehrung="alt"``), kein EM.
+#: Stehen nicht in :data:`MODELS` (dort nur die EM-Bestückung), sondern als Zeilen im
+#: Programmprofil (`app/profil.py`).  Fehlt ``general.model``, bleibt es der A5120 „neu“.
+A5120_ALT = "a5120-alt"
+A5120_KMBG = "a5120-kmbg"
+A5120_ACHT = "a5120-8"
+
 _EM_FOR = {schluessel: em for schluessel, em, _ in MODELS}
 _LABEL_FOR = {schluessel: label for schluessel, _, label in MODELS}
 

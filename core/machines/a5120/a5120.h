@@ -13,6 +13,9 @@
 #include "core/cards/k2526/k2526.h"
 #include "core/cards/k3526/k3526.h"
 #include "core/cards/k7024/k7024.h"
+#include "core/cards/k7023/k7023.h"
+#include "core/cards/k3525/k3525.h"
+#include "core/peripherals/k7636/k7636.h"
 #include "core/cards/k8025/k8025.h"
 #include "core/cards/k5122/k5122.h"
 #include "core/machines/laufwerke.h"
@@ -48,6 +51,32 @@ public:
         /// Leseadresse des Attributspeichers A22 (EM::A22Lesart).  Vorgabe = belegte
         /// Lesart (Scan 9005/2); die Handbuchlesart nur als Gegenprobe (G1-Test).
         EM::A22Lesart em_a22_lesart = EM::A22Lesart::ZyklusAdresse;
+
+        /**
+         * @brief Ausführung des Geräts (doc/design/30_a5120_fruehe_varianten.md, AP A5).
+         *
+         * - `Neu`  — A5120 „5¼″ neu“ (K3526, K7024 24×80, K7637 an der K8025): Vorgabe,
+         *            bitgleich der Maschine vor AP A5.
+         * - `Alt`  — A5120 „5¼″ alt“: 4× K3525 (0000/4000/8000/C000H), K7023.01 16×64 ab
+         *            FC00H (BAB1), K7636 am U-Bus der K2526, Wickelbrücke Port 0AH Bit 6 = 1
+         *            (`config_bridges` Bit 1: CP/A wählt damit BAB1).  Keine K7637.
+         * - `Kmbg` — wie `Alt`, dazu die K5020 fest gesteckt (30H–37H, 2× K5200).
+         * - `Acht` — A5120 8″ (K5602): noch nicht umgesetzt, der Konstruktor lehnt ab.
+         *
+         * Die Laufwerke stehen weiter in @ref drive_profiles; die Ausführungsvorgabe
+         * (3× K5600.10 an der K5122) liefert @ref fuerAusfuehrung.  Ein EM gibt es nur am `Neu`.
+         */
+        enum class Ausfuehrung { Neu = 0, Alt = 1, Kmbg = 2, Acht = 3 };
+        Ausfuehrung ausfuehrung = Ausfuehrung::Neu;
+
+        /// Vorgabekonfiguration einer Ausführung (Laufwerke laut Entwurf 30 §1).
+        static Config fuerAusfuehrung(Ausfuehrung a) {
+            Config c;
+            c.ausfuehrung = a;
+            if (a != Ausfuehrung::Neu)
+                c.drive_profiles = {"K5600.10", "K5600.10", "K5600.10", "none"};
+            return c;
+        }
     };
 
     /** @brief Construct with the default configuration (4× 5,25"-MFM, K5601). */
@@ -228,7 +257,10 @@ public:
     // Keyboard (enqueued thread-safely, consumed in run())
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
     void keyRelease(uint32_t qt_keycode) override;
-    void setKeyRepeatRealtime(bool an) override { kbd_.setRepeatRealtime(an); }
+    void setKeyRepeatRealtime(bool an) override {
+        kbd_.setRepeatRealtime(an);
+        if (k7636_) k7636_->setRepeatRealtime(an);
+    }
 
     /**
      * @brief Zustand der Tastaturanzeigen (K7637-Doku §2.1/§2.2.3).
@@ -240,20 +272,35 @@ public:
      */
     uint8_t keyboardLeds() const override;
 
-    // Framebuffer
-    const uint8_t* framebuffer() const override;
-    int  fbWidth()  const override { return 640; }
-    int  fbHeight() const override { return 288; }
-    bool fbDirty()  const override { return screen_.fbDirty(); }
-    void fbClearDirty() override { screen_.fbClearDirty(); }
+    /// Ausführung, mit der die Maschine gebaut wurde (Config::ausfuehrung).
+    Config::Ausfuehrung ausfuehrung() const { return ausf_; }
+    /// Bildschirmkarte K7023.01 / Tastatur K7636 / RAM-Karte K3525 Nr. @p i der frühen
+    /// Ausführungen (nullptr am `Neu`).
+    K7023*       k7023()       { return k7023_.get(); }
+    const K7023* k7023() const { return k7023_.get(); }
+    K7636*       k7636()       { return k7636_.get(); }
+    const K7636* k7636() const { return k7636_.get(); }
+    K3525*       k3525(int i)  { return (i >= 0 && i < 4) ? k3525_[i].get() : nullptr; }
 
-    // Console (CLI) mode
-    void setConsoleMode(bool on) override { screen_.setConsoleMode(on); }
-    bool consolePoll(int& x, int& y, char& ch) override {
-        return screen_.pollTextChange(x, y, ch);
+    // Framebuffer
+    // Am `Alt`/`Kmbg` kommt das Bild von der K7023 (512×256, 64×16 Zeichen).
+    const uint8_t* framebuffer() const override;
+    int  fbWidth()  const override { return k7023_ ? K7023::kFbW : 640; }
+    int  fbHeight() const override { return k7023_ ? K7023::kFbH : 288; }
+    bool fbDirty()  const override { return k7023_ ? k7023_->fbDirty() : screen_.fbDirty(); }
+    void fbClearDirty() override {
+        if (k7023_) k7023_->fbClearDirty(); else screen_.fbClearDirty();
     }
-    /// Bildspeicher der K7024 direkt (Bereichsprüfung in der C-ABI).
-    uint8_t screenChar(int col, int row) const override { return screen_.vramRead(col, row); }
+
+    // Console (CLI) mode — nur die K7024 kennt ihn; an der K7023 ohne Wirkung.
+    void setConsoleMode(bool on) override { if (!k7023_) screen_.setConsoleMode(on); }
+    bool consolePoll(int& x, int& y, char& ch) override {
+        return k7023_ ? false : screen_.pollTextChange(x, y, ch);
+    }
+    /// Bildspeicher der K7024 bzw. K7023 direkt (Bereichsprüfung in der C-ABI/Karte).
+    uint8_t screenChar(int col, int row) const override {
+        return k7023_ ? k7023_->vramRead(col, row) : screen_.vramRead(col, row);
+    }
 
     // ─── Serielle Schnittstellen (Entwurf 19 §3.1, AP-S5) ─────────────────────
     // Hub-Reihenfolge: 0 DFÜ/V.24 (X6), 1 DFÜ/IFSS (X5), 2 Drucker (X3); fest:
@@ -482,6 +529,13 @@ private:
     std::unique_ptr<EM> em_;  // A5120.16: Erweiterungsmodul (nur mit Config::em)
 
     K7637         kbd_;
+
+    // Frühe Ausführungen (Config::Ausfuehrung Alt/Kmbg): statt K3526/K7024/K7637 am Bus.
+    // Die K2526 hält nur einen Zeiger auf die K7636 (U-Bus-Gerät).
+    Config::Ausfuehrung ausf_ = Config::Ausfuehrung::Neu;
+    std::array<std::unique_ptr<K3525>, 4> k3525_;
+    std::unique_ptr<K7023> k7023_;
+    std::unique_ptr<K7636> k7636_;
 
     Laufwerke     lw_;        // Laufwerksverwaltung (gemeinsamer Baustein, laufwerke.h)
 
