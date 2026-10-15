@@ -5,6 +5,7 @@
  */
 
 #include "core/machines/mc80/mc80.h"
+#include "core/cards/mc80/egos_text.h"
 #include "core/logger.h"
 #include <stdexcept>
 
@@ -40,7 +41,7 @@ Mc80Machine::Config Mc80Machine::pruefe(const Config& cfg)
 }
 
 Mc80Machine::Mc80Machine(const Config& cfg)
-    : cfg_(pruefe(cfg)), zve_(bus_), fb_(static_cast<size_t>(FB_BREITE) * FB_HOEHE, 0)
+    : cfg_(pruefe(cfg)), zve_(bus_), vis_(bus_)
 {
     zve_.attachToBus(bus_);
     for (int i = 0; i < cfg_.spe_karten; ++i) {
@@ -52,10 +53,14 @@ Mc80Machine::Mc80Machine(const Config& cfg)
         spe_.push_back(std::move(karte));
     }
     fenster_.attachToBus(bus_);
+    vis_.attachToBus(bus_);
+    asp_.attachToBus(bus_);
+    tast_.empfaengerFrei = [this]() { return asp_.tastaturEmpfaengerFrei(); };
+    tast_.senden = [this](uint8_t b) { asp_.empfange(b); };
     zve_.setSegmentCallback([this](uint8_t m) {
         for (auto& k : spe_) k->setSegmentRegister(m);
     });
-    bus_.setInterruptChain({&zve_});
+    bus_.setInterruptChain({&zve_, &asp_});   // Kartenreihenfolge [?], hardware_3x.md §7
     powerOn();
 }
 
@@ -70,6 +75,7 @@ const FormatCatalog& Mc80Machine::formatCatalog() const
 void Mc80Machine::powerOn()
 {
     for (auto& k : spe_) k->powerOn(cfg_.ram_fill);
+    vis_.powerOn();
     zve_.powerOn(cfg_.ram_fill);   // zuletzt: meldet Segmentregister 00H an die SPE
     rafPowerOn();
     total_cycles_ = 0;
@@ -82,6 +88,8 @@ void Mc80Machine::reset()
     bestueckungAbschliessen();
     for (auto& k : spe_) k->reset();
     zve_.reset();
+    asp_.reset();     // die ASP liefert selbst einen Rücksetzimpuls [BDA S.17]
+    tast_.reset();    // VIS 2a: /RESET lässt das Bild stehen
     k6022Reset();
     k5020Reset();
     rafReset();
@@ -111,6 +119,12 @@ int Mc80Machine::run(int max_cycles)
         total_cycles_ += static_cast<uint64_t>(used);
 
         bool dirty = zve_.clockTick(used);
+        dirty |= asp_.clockTick(used);
+        dirty |= tast_.takt(used);
+        while (asp_.hatGesendet()) {
+            tast_.vomRechner(asp_.nimmGesendet());
+            dirty = true;
+        }
         dirty |= k6022Takt(used);
         dirty |= k5020Takt(used);
         if (dirty) bus_.markIntDirty();
@@ -118,4 +132,30 @@ int Mc80Machine::run(int max_cycles)
     k6022AutoFlush();
     k5020AutoFlush();
     return max_cycles - remaining;
+}
+
+// ─── Tastatur, Text ──────────────────────────────────────────────────────────
+
+void Mc80Machine::keyPress(uint32_t keycode, bool shift, bool ctrl)
+{
+    tast_.qtTaste(keycode, shift, ctrl);
+}
+
+std::string Mc80Machine::textZeile(int row) const
+{
+    if (row < 0 || row >= mc80::EGOS_TEXTZEILEN) return {};
+    if (text_revision_ != vis_.revision() || text_.empty()) {
+        auto* self = const_cast<Mc80Machine*>(this);
+        auto mem = [self](uint16_t a) { return self->bus_.memRead(a); };
+        text_ = mc80::egosText(vis_, mem);
+        text_revision_ = vis_.revision();
+    }
+    return text_[static_cast<size_t>(row)];
+}
+
+uint8_t Mc80Machine::screenChar(int col, int row) const
+{
+    if (col < 0 || col >= TEXT_SPALTEN || row < 0 || row >= mc80::EGOS_TEXTZEILEN) return 0;
+    const std::string z = textZeile(row);
+    return col < static_cast<int>(z.size()) ? static_cast<uint8_t>(z[static_cast<size_t>(col)]) : ' ';
 }

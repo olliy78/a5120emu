@@ -7,15 +7,17 @@
  * PIO 84H = Segmentregister über Tor B/85H, RAM-Steuerung 8CH/8DH) und SPE 2 (`Mc80Spe2`:
  * ROM 2000H–27FFH, leere Fassungen bis 3FFFH lesen 00H, RAM-Segment 4000H–BFFFH).  EGOS
  * läuft nach dem Einschalten durch RESET und die RESET-Kette bis zur Kommandoschleife; Bild
- * (VIS 2a), ASP (SIO/CTC/PIO) und Tastatur folgen in M3, Programmsegmente in M4, Kassette
- * in M7.
+ * (VIS 2a, C0H), ASP (SIO/CTC/PIO, D0H) und Tastatur (Zeichenebene an SIO A) seit M3,
+ * Programmsegmente in M4, Kassette in M7.
  *
  * **Varianten:** .30 und .31 sind im Kern bis M7 gleich (Kassettenanschluss unterscheidet
  * sie erst dort).  .33 (AKM + PK 3: Treiber-ROM nur halb vorhanden, egos.md §3) und die
  * MC80.2x (.21/.22, Etappe 3) werden abgelehnt (`std::invalid_argument`).
  *
- * Interruptkette (vorläufig): nur die ZVE (CTC → PIO) [? Reihenfolge über die Karten ist
- * offen, M3].  Keine Laufwerke (alle Diskettenfunktionen verneinen).  Kein Save-State.
+ * Interruptkette: ZVE (CTC → PIO) → ASP (SIO → CTC → PIO) [? Reihenfolge der KARTEN ist
+ * nicht belegt (hardware_3x.md §7); EGOS benutzt nur ASP-Quellen, die Reihenfolge der
+ * ZVE davor ist für EGOS gleichgültig].  Text: `screenChar` per Mustervergleich
+ * (`core/cards/mc80/egos_text.h`).  Keine Laufwerke (alle Diskettenfunktionen verneinen).  Kein Save-State.
  */
 
 #pragma once
@@ -23,6 +25,9 @@
 #include "core/bus/k1520_bus.h"
 #include "core/cards/mc80/spe.h"
 #include "core/cards/mc80/zve3x.h"
+#include "core/cards/mc80/asp.h"
+#include "core/cards/mc80/vis2a.h"
+#include "core/peripherals/mc80_tastatur/mc80_tastatur.h"
 #include <atomic>
 #include <memory>
 #include <string>
@@ -40,9 +45,12 @@ public:
     };
 
     static constexpr uint32_t CPU_HZ = Mc80Zve::CPU_HZ;
-    /// Bildgröße der VIS 2a (512 × 256); bis M3 bleibt das Bild schwarz.
-    static constexpr int FB_BREITE = 512;
-    static constexpr int FB_HOEHE  = 256;
+    /// Bildgröße der VIS 2a (512 × 256, ein Byte je Bildpunkt 00H/FFH, Zeile 0 oben).
+    static constexpr int FB_BREITE = Mc80Vis2a::BREITE;
+    static constexpr int FB_HOEHE  = Mc80Vis2a::HOEHE;
+    /// Textrückgewinnung: 25 Zeilen, höchstens 80 Spalten (Proportionalschrift → Spalte =
+    /// Zeichenindex in der Zeile, nicht Bildposition).
+    static constexpr int TEXT_SPALTEN = 80;
 
     Mc80Machine() : Mc80Machine(Config{}) {}
     explicit Mc80Machine(const Config& cfg);
@@ -57,20 +65,27 @@ public:
     void stop() override { stop_.store(true); }
     void nmi() override { nmi_taster_.store(true, std::memory_order_relaxed); }
 
-    // ─── Bild (M3) ───────────────────────────────────────────────────────────
-    const uint8_t* framebuffer() const override { return fb_.data(); }
+    // ─── Bild (VIS 2a) ───────────────────────────────────────────────────────
+    const uint8_t* framebuffer() const override { return vis_.framebuffer(); }
     int  fbWidth()  const override { return FB_BREITE; }
     int  fbHeight() const override { return FB_HOEHE; }
-    bool fbDirty()  const override { return false; }
-    void fbClearDirty() override {}
+    bool fbDirty()  const override { return vis_.dirty(); }
+    void fbClearDirty() override { vis_.clearDirty(); }
     void setConsoleMode(bool) override {}
     bool consolePoll(int&, int&, char&) override { return false; }
-    uint8_t screenChar(int, int) const override { return 0; }
+    /// Zeichen @p col der EGOS-Textzeile @p row (0…24), per Mustervergleich; Leerzeichen
+    /// hinter dem Zeilenende, 0 außerhalb.
+    uint8_t screenChar(int col, int row) const override;
+    /// Ganze Textzeile (Mustervergleich, ohne Leerzeichen am Ende).
+    std::string textZeile(int row) const;
 
-    // ─── Tastatur (M3) ───────────────────────────────────────────────────────
-    void keyPress(uint32_t, bool, bool) override {}
-    void keyRelease(uint32_t) override {}
-    void setKeyRepeatRealtime(bool) override {}
+    // ─── Tastatur (Zeichenebene an SIO A) ────────────────────────────────────
+    void keyPress(uint32_t keycode, bool shift, bool ctrl) override;
+    void keyRelease(uint32_t) override {}            // ein Anschlag je keyPress
+    void setKeyRepeatRealtime(bool) override {}       // Wiederholung macht die Tastatur
+    /// Bit 0 = Tastaturanzeige (14H an / 12H aus) [?].
+    uint8_t  keyboardLeds() const override { return tast_.anzeige() ? 1 : 0; }
+    uint32_t bellCount() const override { return tast_.summerZaehler(); }
 
     int machineType() const override { return 6; }   // K1520_MACHINE_MC80
     Config::Variante variante() const { return cfg_.variante; }
@@ -109,6 +124,10 @@ public:
     std::string lastError() const override { return ""; }
 
     Mc80Zve&  zve() { return zve_; }
+    Mc80Vis2a& vis() { return vis_; }
+    const Mc80Vis2a& vis() const { return vis_; }
+    Mc80Asp&  asp() { return asp_; }
+    Mc80Tastatur& tastatur() { return tast_; }
     Mc80Spe2& spe(int i) { return *spe_.at(static_cast<size_t>(i)); }
     int       speKarten() const { return static_cast<int>(spe_.size()); }
     K1520Bus& bus() { return bus_; }
@@ -128,7 +147,13 @@ private:
     Mc80Zve  zve_;
     std::vector<std::unique_ptr<Mc80Spe2>> spe_;
     Mc80Segmentfenster fenster_;
-    std::vector<uint8_t> fb_;
+    Mc80Vis2a vis_;
+    Mc80Asp   asp_;
+    Mc80Tastatur tast_;
+
+    // Textrückgewinnung, gepuffert je VIS-Revision
+    mutable uint64_t text_revision_ = ~0ull;
+    mutable std::vector<std::string> text_;
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};

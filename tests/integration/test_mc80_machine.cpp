@@ -3,7 +3,7 @@
  * @brief MC80.3x als Maschine (AP M2): nach dem Einschalten führt die ZVE EGOS aus — RESET
  *        (0776H), RESET-Kette mit KERN_RESET, Magnetband-Init und der Einschaltmeldung aus dem
  *        SPE-2-ROM, bis zur Kommandoschleife — und läuft 5 Mio. Takte ohne Absturz.  Bild und
- *        Tastatur kommen erst mit M3; geprüft wird über den Programmzähler und die Systemzellen.
+ *        Tastatur prüft test_mc80_boot.cpp (M3); hier geprüft wird über den Programmzähler und die Systemzellen.
  *        Adressen: doc/mc80/egos.prn.
  */
 
@@ -51,7 +51,7 @@ TEST(Mc80Maschine, EgosLaeuftDurchResetUndKetteBisZurKommandoschleife) {
     EXPECT_TRUE(b.test(0x07EF)) << "CON-Eingabe";
 
     // Kein Absturz: EGOS wartet in der Zeileneingabe auf das Zeilenende aus dem
-    // Tastaturinterrupt (02D7H: BIT 7,(IY+10) / JR Z) — die Tastatur kommt mit M3.
+    // Tastaturinterrupt (02D7H: BIT 7,(IY+10) / JR Z) — ohne Tastendruck.
     EXPECT_GE(l.m->cpuPC(), 0x02D7) << std::hex << l.m->cpuPC();
     EXPECT_LE(l.m->cpuPC(), 0x02DB) << std::hex << l.m->cpuPC();
     EXPECT_FALSE(l.m->zve().cpu().halted);

@@ -172,7 +172,14 @@ K1520_API K1520Handle k1520_create_p8000_terminal(const char* konfig);
  * @brief MC80 (K1520_MACHINE_MC80), doc/design/31_mc80.md — Stand AP M2: ZVE (U880 2,4576 MHz,
  *        EGOS 0000H–1FFFH, RAM C000H–FFFFH, CTC 80H, PIO 84H, Segmentregister = PIO B 85H)
  *        und SPE 2 (ROM 2000H–27FFH, leer bis 3FFFH = 00H, RAM-Segment 4000H–BFFFH).
- *        Bild, ASP und Tastatur folgen (M3); bis dahin ist das Bild 512 × 256 schwarz.
+ *        Seit AP M3: VIS 2a (C0H) — **Bitmap-Bild über k1520_framebuffer** (512 × 256, ein
+ *        Byte je Bildpunkt 00H/FFH, Zeile 0 = oben; es gibt kein eigenes Bitmap-ABI),
+ *        `k1520_screen_char(col,row)` über Textrückgewinnung (Mustervergleich gegen den
+ *        EGOS-Zeichengenerator; 25 Zeilen, Spalte = Zeichenindex der Zeile, da
+ *        Proportionalschrift), ASP (SIO D0H, CTC D4H, PIO D8H) und Tastatur an SIO A:
+ *        `k1520_key_press` (Qt-Code oder ASCII; Return = ENTER 11H, Escape = OFF 13H,
+ *        F1…F8 = Sondertaste 0…7), `k1520_bell_count` = Summer 07H, `k1520_keyboard_leds`
+ *        Bit 0 = Anzeige (14H/12H) [?].
  *
  * @param variante  0 = MC80.30, 1 = MC80.31; 2 = MC80.33, 3 = MC80.21, 4 = MC80.22 sind noch
  *                  nicht nachgebildet → NULL mit Grund.
@@ -571,7 +578,7 @@ K1520_API int      k1520_machine_type(K1520Handle h);
  *
  * On the K8915 the CPU view (k1520_mem_read) of the screen memory at 1000H is
  * covered by ZRE RAM as soon as port A8H bit0 is set; use this function to read
- * the screen.  0 for col/row outside 0…79 / 0…23 (PC 1715: 0…24, row 24 = CP/A status line).  Not thread-safe (like mem_read).
+ * the screen.  0 for col/row outside 0…79 / 0…23 (PC 1715: 0…24, row 24 = CP/A status line; MC80: 0…24, text recovered from the bitmap).  Not thread-safe (like mem_read).
  */
 K1520_API uint8_t  k1520_screen_char(K1520Handle h, int col, int row);
 /**

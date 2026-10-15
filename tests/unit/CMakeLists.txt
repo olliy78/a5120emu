@@ -60,6 +60,10 @@ k1520_add_test(k2521 SRC cards/test_k2521.cpp      LIBS k1520_k2521 LABELS "${_l
 # und SPE 2 (ROM 2000H, Leerbereich 00H, Segmentfenster, 1-KB-Sperren B0H-B3H)
 k1520_add_test(mc80_zve SRC cards/test_mc80_zve.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
 k1520_add_test(mc80_spe SRC cards/test_mc80_spe.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
+# MC80.3x (AP M3): VIS 2a (Bildpunkte, IN-Register, Bildkommandos, Rollen) und ASP (SIO D0H,
+# CTC D4H, PIO D8H, Kette SIO > CTC > PIO, Tastaturkanal)
+k1520_add_test(mc80_vis2a SRC cards/test_mc80_vis2a.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
+k1520_add_test(mc80_asp SRC cards/test_mc80_asp.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
 # K3528 der K8915 Gen 2: Speicherbild je A8H-Wert, /MEMDI (doc/design/24_k8915_varianten.md R3, AP-V4)
 k1520_add_test(k3528 SRC cards/test_k3528.cpp      LIBS k1520_k3528 LABELS "${_lbl}")
 # PFS K3820 (16 × 2708), von keiner Maschine benutzt (doc/design/24_k8915_varianten.md AP-V11)
@@ -113,6 +117,8 @@ k1520_add_test(em16  SRC cards/test_em16.cpp       LIBS k1520_em k1520_k3526 LAB
 k1520_add_test(raf   SRC cards/test_raf.cpp        LIBS k1520_raf k1520_z80 LABELS "${_lbl}")
 
 # ── core/peripherals/ ────────────────────────────────────────────────────────
+# MC80.3x-Tastatur auf Zeichenebene (AP M3, doc/mc80/egos.md §3)
+k1520_add_test(mc80_tastatur SRC peripherals/test_mc80_tastatur.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
 # Parallele Tastatur K7636 an der K2526 (frühe A5120, AP A3; doc/a5120_alt/k7636.md)

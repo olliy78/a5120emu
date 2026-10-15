@@ -410,6 +410,40 @@ def test_mc80_can_be_created_and_reports_its_type():
         assert grund in _lib.k1520_last_init_error()
 
 
+def test_mc80_screen_and_keyboard_through_the_c_abi():
+    """AP M3: Bitmap-Bild über `k1520_framebuffer` (512 × 256, 00H/FFH), Text über
+    `k1520_screen_char` (Mustervergleich gegen den EGOS-Zeichengenerator), Tasten über
+    `k1520_key_press` (ASCII/Qt) an die Tastatur an SIO A."""
+    import ctypes
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    handle = _lib.k1520_create_mc80(0, None)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+
+    def zeile(row):
+        return bytes(_lib.k1520_screen_char(h, c, row) for c in range(80)).rstrip(b" ")
+
+    def fahre(takte):
+        for _ in range(takte // 50_000):
+            _lib.k1520_run(h, 50_000)
+
+    try:
+        fahre(4_000_000)                       # EGOS bis zur Kommandoschleife
+        assert zeile(24) == b">"
+        assert zeile(23) == b"OK"
+        fb = ctypes.cast(_lib.k1520_framebuffer(h), ctypes.POINTER(ctypes.c_uint8))
+        werte = {fb[i] for i in range(512 * 256)}
+        assert werte == {0x00, 0xFF}
+        for k in b"init":                      # Tastenkappe ohne Umschalter
+            _lib.k1520_key_press(h, k - 0x20, False, False)   # Qt-Code = Großbuchstabe
+            _lib.k1520_key_release(h, k - 0x20)
+        fahre(400_000)
+        assert zeile(24) == b">INIT"
+    finally:
+        _lib.k1520_destroy(h)
+
+
 def test_k8915_can_be_created_and_reports_its_type():
     """`k1520_create(K1520_MACHINE_K8915)` liefert seit AP-E4b eine Maschine;
     `k1520_machine_type` meldet 2, die Anzeigen haben ihren Ruhezustand."""

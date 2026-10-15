@@ -172,8 +172,14 @@ k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
 # MC80.3x (Entwurf 31, AP M2): EGOS läuft nach dem Einschalten durch RESET und die RESET-Kette
-# bis zur Kommandoschleife, 5 Mio. Takte ohne Absturz (Bild/Tastatur erst M3).
+# bis zur Kommandoschleife, 5 Mio. Takte ohne Absturz (Bild/Tastatur: mc80_boot).
 k1520_add_test(mc80_maschine SRC test_mc80_machine.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# MC80.3x (AP M3): EGOS meldet sich auf der VIS 2a (Text per Mustervergleich gegen den
+# EGOS-Zeichengenerator), INIT und CATA über die Tastatur an SIO A der ASP.
+k1520_add_test(mc80_boot SRC test_mc80_boot.cpp
                           LIBS k1520_mc80 k1520_logger
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 

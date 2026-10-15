@@ -554,9 +554,11 @@ if(BUILD_K1520)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
     # MC80.3x (doc/design/31_mc80.md, AP M2): ZVE (U880, EGOS-ROM, CTC/PIO, Segmentregister 85H)
-    # + SPE 2 (ROM 2000H, RAM-Segment 4000H–BFFFH) + Segmentfenster
-    add_library(k1520_mc80_karten STATIC core/cards/mc80/zve3x.cpp core/cards/mc80/spe.cpp)
-    target_link_libraries(k1520_mc80_karten PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_bus k1520_logger)
+    # + SPE 2 (ROM 2000H, RAM-Segment 4000H–BFFFH) + Segmentfenster; M3: VIS 2a, ASP, Tastatur
+    add_library(k1520_mc80_karten STATIC core/cards/mc80/zve3x.cpp core/cards/mc80/spe.cpp
+        core/cards/mc80/vis2a.cpp core/cards/mc80/asp.cpp core/cards/mc80/egos_text.cpp
+        core/peripherals/mc80_tastatur/mc80_tastatur.cpp)
+    target_link_libraries(k1520_mc80_karten PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_sio k1520_bus k1520_logger)
     target_include_directories(k1520_mc80_karten PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_mc80 STATIC core/machines/mc80/mc80.cpp)
     target_link_libraries(k1520_mc80 PUBLIC k1520_mc80_karten k1520_raf k1520_k6022 k1520_k5020 k1520_floppy2 k1520_bus k1520_logger k1520_serial)
