@@ -23,7 +23,7 @@ und auch Formatieren mit dem originalen `FORMAT.COM` funktioniert.
 
 | Rechner | Betriebssysteme |
 |---|---|
-| **robotron A5120** (auch A5120.16 mit 16-Bit-Erweiterung) | CP/A, SCPX, UDOS |
+| **robotron A5120** (auch A5120.16 mit 16-Bit-Erweiterung, frühe Ausführungen 64×16 und Kassette) | CP/A, SCPX, UDOS, BCU 880 |
 | **robotron K8915** (V3 und V2) | SCPX 8915 |
 | **PRG 710 / PRG 710-1** (Numerik-Programmiergeräte) | UDOS, SCPX |
 | **robotron PC 1715 / PC 1715W** | SCP 1715, CP/A, CP/Z, UDOS 1715, SCP 3.0 |

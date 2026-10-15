@@ -609,17 +609,24 @@ Frist 2,45 s — offen [?]).  Stand 2026-10-14: K0–K9 fertig.
 **Vor Arbeiten daran: `doc/merkposten/kassette.md` lesen** (Blockformat, AEB-Polarität,
 `Z80PIO::setExtern`-Befund, UMS-Flanke); Entwurf `doc/design/29_kassette_k5020_k5200.md`.
 
-## In Planung (Zweig `kassette_mc80`): frühe A5120, MC80 → `mc80emu`
+## Frühe A5120 (Ausführungen Alt/Kmbg) + BCU 880
 
-Die **Kassette ist umgesetzt** (s. o.); **A5120 „alt“ und MC80 sind noch nicht umgesetzt**
-(Stand 2026-10-14).  Entwürfe **30** (A5120 „5¼″ alt“ mit
-K7023 16×64 + K3525 + K7636, dann „KMBG“, 8″), **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`,
-`K1520_MACHINE_MC80 = 6`); **Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`**
-(Spielregeln §0, Stand §2, AP-Karten §4–6).  Quellen liegen im Repo: `doc/kassette/`, `doc/a5120_alt/`,
-`doc/mc80/`, `doc/EPROMS/{MC80,K5120,K7023,K5261,A5130}`, `doc/original_docs/` (+ `mc80/`).  Zwei
-Befunde, die man kennen muss: **CP/A 25.09.89 kann K7023 (BAB1)
-und K7636 ohne Neugenerierung** (Port 0AH Bit 6); **Belegungsplan + Codetabellen der K7636** stehen
-in `K7634-36-Serviceschaltplaene.pdf` S. 8 ff. — ein Tastatur-ROM-Abzug ist nicht nötig.
+`A5120Machine::Config::ausfuehrung` = `Neu` (Vorgabe, bitgleich) | `Alt` (K7023 16×64 + 4× K3525 + K7636,
+K2526-Brücke Port 0AH Bit 6 = BAB1, 3× K5600.10 an der K5122) | `Kmbg` (= `Alt` + K5020 fest); `Acht` gesperrt.
+C-ABI `k1520_create_a5120_ausfuehrung`, Python `ausfuehrung="alt"|"kmbg"`, GUI-Modelle „A5120 (64×16, K7636)“ /
+„A5120 Kassette“, Werkzeuge `--ausfuehrung/--laderom/--tastatur`.  CP/A 25.09.89 läuft unverändert bis `A>`;
+**BCU 880 V1.2** bootet (Lade-ROM V0.6, „SYL auf Spur 1“) und formatiert/beschreibt die Kassette als F:.
+**V2.1 gibt es nur als Eigenbau** (kein Original, kein Beleg).  Zwei Kernfehler dabei behoben (`Z80`-EI-Schatten,
+`Z80PIO::onRETI`) — in K8915/PRG 710/PC 1715/CTC/SIO/Bus **nicht** nachgezogen (A8b, riskant, vorgemerkt).
+Plan: `doc/design/30_a5120_fruehe_varianten.md`, Stand `doc/design/32_...`.
+**Vor Arbeiten daran: `doc/merkposten/a5120_alt.md` lesen.**
+
+## In Planung (Zweig `kassette_mc80`): MC80 → `mc80emu`
+
+Kassette und frühe A5120 sind umgesetzt (s. o.); **noch nicht umgesetzt: MC80** (Stand 2026-10-15).
+Entwurf **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`, `K1520_MACHINE_MC80 = 6`);
+**Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`** (Spielregeln §0,
+Stand §2, AP-Karten §6).  Quellen im Repo: `doc/mc80/`, `doc/EPROMS/MC80`, `doc/original_docs/mc80/`.
 
 ## Boot-ROM debugging workflow
 

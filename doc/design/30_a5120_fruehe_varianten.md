@@ -1,7 +1,7 @@
 # 30 — Frühe A5120-Ausführungen: „5¼″ alt“, „KMBG“, „8″“ (Planung)
 
-Stand: 2026-10-13 — **Planung, nichts umgesetzt; Entscheidungen des Anwenders vom 2026-10-13
-eingearbeitet (§2).**  Kassette selbst: Entwurf 29.  Legende wie dort.
+Stand: 2026-10-15 — **umgesetzt (A0–A8, A7b, A9); zurückgestellt: A4 (eigene K5120-Karte), 8″; vorgemerkt: A8b.
+Festlegungen und Wächter: `doc/merkposten/a5120_alt.md`.**  Entscheidungen des Anwenders vom 2026-10-13 (§2).  Kassette selbst: Entwurf 29.  Legende wie dort.
 
 ---
 
