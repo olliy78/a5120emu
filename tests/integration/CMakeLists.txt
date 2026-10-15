@@ -171,6 +171,12 @@ k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
+# MC80.3x (Entwurf 31, AP M2): EGOS läuft nach dem Einschalten durch RESET und die RESET-Kette
+# bis zur Kommandoschleife, 5 Mio. Takte ohne Absturz (Bild/Tastatur erst M3).
+k1520_add_test(mc80_maschine SRC test_mc80_machine.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 # PC 1715 (doc/design/21_pc1715.md AP-1b): Maschine bauen, echter Urlader S502 (kopiert sich,
 # blendet das ROM aus), Bildwechsel.  Ohne Floppy; das Verhalten danach ist AP-1c.
 k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp

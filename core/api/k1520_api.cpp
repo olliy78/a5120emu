@@ -6,6 +6,7 @@
 #include "core/machines/pc1715/pc1715.h"
 #include "core/machines/p8000/p8000.h"
 #include "core/machines/p8000/p8000_terminal_machine.h"
+#include "core/machines/mc80/mc80.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -93,11 +94,12 @@ K1520Handle k1520_create_configured(K1520MachineType type,
         return k1520_create_p8000(k.c_str());
     }
     if (type == K1520_MACHINE_P8000_TERMINAL) return k1520_create_p8000_terminal(nullptr);
+    if (type == K1520_MACHINE_MC80) return k1520_create_mc80(0, nullptr);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
         // Kein stilles NULL: die Oberfläche soll sagen können, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000, P8000-Terminal)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000, P8000-Terminal, MC80)";
         return nullptr;
     }
 
@@ -290,6 +292,52 @@ K1520Handle k1520_create_p8000_terminal(const char* konfig) {
     } catch (const std::exception& e) {
         g_init_error = e.what();
         std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    }
+}
+
+K1520Handle k1520_create_mc80(int variante, const char* konfig) {
+    g_init_error.clear();
+    Mc80Machine::Config cfg;
+    switch (variante) {
+        case 0: cfg.variante = Mc80Machine::Config::Variante::Mc8030; break;
+        case 1: cfg.variante = Mc80Machine::Config::Variante::Mc8031; break;
+        case 2: cfg.variante = Mc80Machine::Config::Variante::Mc8033; break;
+        case 3: cfg.variante = Mc80Machine::Config::Variante::Mc8021; break;
+        case 4: cfg.variante = Mc80Machine::Config::Variante::Mc8022; break;
+        default:
+            g_init_error = "Unbekannte MC80-Variante " + std::to_string(variante) +
+                           " (0 = .30, 1 = .31, 2 = .33, 3 = .21, 4 = .22)";
+            return nullptr;
+    }
+    // Schlüssel=Wert-Liste wie beim P8000 (Entwurf 31; M2 kennt nur `spe`).
+    const std::string text = konfig ? konfig : "";
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t ende = text.find(',', pos);
+        if (ende == std::string::npos) ende = text.size();
+        const std::string teil = text.substr(pos, ende - pos);
+        pos = ende + 1;
+        if (teil.empty()) continue;
+        const size_t gl = teil.find('=');
+        const std::string key = teil.substr(0, gl);
+        const std::string val = gl == std::string::npos ? "" : teil.substr(gl + 1);
+        if (key == "spe" && (val == "1" || val == "2")) {
+            cfg.spe_karten = val == "1" ? 1 : 2;
+        } else if (key == "spe") {
+            g_init_error = "MC80: spe = " + val + " unbekannt (1 | 2)";
+            return nullptr;
+        } else {
+            g_init_error = "MC80: unbekannter Schluessel '" + key + "'";
+            return nullptr;
+        }
+    }
+    setup_logging();
+    try {
+        K1520Machine* m = new Mc80Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
         return nullptr;
     }
 }

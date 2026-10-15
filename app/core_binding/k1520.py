@@ -408,6 +408,11 @@ _lib.k1520_create_p8000.restype = K1520Handle
 _lib.k1520_create_p8000_terminal.argtypes = [ctypes.c_char_p]
 _lib.k1520_create_p8000_terminal.restype = K1520Handle
 
+# k1520_create_mc80(variante, konfig) -> K1520Handle   (Entwurf 31, AP M2)
+#   variante 0 = MC80.30, 1 = MC80.31 (2/3/4 = .33/.21/.22 → NULL); konfig "spe=1|2"
+_lib.k1520_create_mc80.argtypes = [ctypes.c_int, ctypes.c_char_p]
+_lib.k1520_create_mc80.restype = K1520Handle
+
 # P8000-Terminals (k1520_term_*; andere Maschinen: 0 / -1 / False)
 _lib.k1520_term_count.argtypes = [K1520Handle]
 _lib.k1520_term_count.restype = ctypes.c_int

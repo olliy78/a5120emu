@@ -18,6 +18,7 @@ typedef enum {
     K1520_MACHINE_PC1715 = 3,
     K1520_MACHINE_P8000  = 4,
     K1520_MACHINE_P8000_TERMINAL = 5,   /* Originalterminal Typ 2 + K7673.09 ohne Rechner (P20d) */
+    K1520_MACHINE_MC80   = 6,           /* MC80.3x (Entwurf 31, AP M2: Geruest ZVE + SPE 2) */
 } K1520MachineType;
 
 typedef struct {
@@ -166,6 +167,21 @@ K1520_API K1520Handle k1520_create_p8000(const char* konfig);
  *                Fehler → NULL, Grund in k1520_last_init_error.
  */
 K1520_API K1520Handle k1520_create_p8000_terminal(const char* konfig);
+
+/**
+ * @brief MC80 (K1520_MACHINE_MC80), doc/design/31_mc80.md — Stand AP M2: ZVE (U880 2,4576 MHz,
+ *        EGOS 0000H–1FFFH, RAM C000H–FFFFH, CTC 80H, PIO 84H, Segmentregister = PIO B 85H)
+ *        und SPE 2 (ROM 2000H–27FFH, leer bis 3FFFH = 00H, RAM-Segment 4000H–BFFFH).
+ *        Bild, ASP und Tastatur folgen (M3); bis dahin ist das Bild 512 × 256 schwarz.
+ *
+ * @param variante  0 = MC80.30, 1 = MC80.31; 2 = MC80.33, 3 = MC80.21, 4 = MC80.22 sind noch
+ *                  nicht nachgebildet → NULL mit Grund.
+ * @param konfig    Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel:
+ *                  `spe` (1 | 2: Zahl der SPE 2; die zweite = RAM-Segment 02H).
+ *                  Unbekannte Schlüssel/Werte → NULL, Grund in k1520_last_init_error.
+ * k1520_machine_type() = 6.  Keine Laufwerke.  `k1520_create(K1520_MACHINE_MC80)` = MC80.30.
+ */
+K1520_API K1520Handle k1520_create_mc80(int variante, const char* konfig);
 
 /**
  * @brief Reason the last k1520_create*() returned NULL ("" if none).

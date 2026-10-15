@@ -377,6 +377,39 @@ def test_pc1715_ex_waehlt_rom_fassungen():
     assert not _lib.k1520_create_pc1715_ex(0, 0, 0, 2, 0, None, None, None, None)
 
 
+def test_mc80_can_be_created_and_reports_its_type():
+    """`k1520_create_mc80` (Entwurf 31, AP M2): MC80.30/.31 liefern eine Maschine vom Typ 6,
+    die EGOS ab 0000H ausführt; .33/.21/.22 und unbekannte Schlüssel → NULL mit Grund."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for variante, konfig in ((0, None), (1, b"spe=2")):
+        handle = _lib.k1520_create_mc80(variante, konfig)
+        assert handle, _lib.k1520_last_init_error()
+        h = K1520Handle(handle)
+        try:
+            assert _lib.k1520_machine_type(h) == 6
+            assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (512, 256)
+            assert _lib.k1520_mem_read(h, 0x0000) == 0xC3      # JP 0776H (RESET)
+            assert _lib.k1520_mem_read(h, 0x2800) == 0x00      # leere SPE-2-Fassung
+            assert _lib.k1520_run(h, 100_000) > 0
+        finally:
+            _lib.k1520_destroy(h)
+
+    handle = _lib.k1520_create(6)                               # Vorgabe = MC80.30
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 6
+    finally:
+        _lib.k1520_destroy(h)
+
+    for variante, konfig, grund in ((2, None, b"MC80.33"), (3, None, b"MC80.21"),
+                                    (4, None, b"MC80.22"), (9, None, b"Variante"),
+                                    (0, b"spe=3", b"spe"), (0, b"vis=1", b"vis")):
+        assert not _lib.k1520_create_mc80(variante, konfig)
+        assert grund in _lib.k1520_last_init_error()
+
+
 def test_k8915_can_be_created_and_reports_its_type():
     """`k1520_create(K1520_MACHINE_K8915)` liefert seit AP-E4b eine Maschine;
     `k1520_machine_type` meldet 2, die Anzeigen haben ihren Ruhezustand."""

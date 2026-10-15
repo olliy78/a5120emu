@@ -553,6 +553,15 @@ if(BUILD_K1520)
     target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_pc1715w_speicher k1520_z80dma k1520_upd765 k1520_tastatur1715 k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # MC80.3x (doc/design/31_mc80.md, AP M2): ZVE (U880, EGOS-ROM, CTC/PIO, Segmentregister 85H)
+    # + SPE 2 (ROM 2000H, RAM-Segment 4000H–BFFFH) + Segmentfenster
+    add_library(k1520_mc80_karten STATIC core/cards/mc80/zve3x.cpp core/cards/mc80/spe.cpp)
+    target_link_libraries(k1520_mc80_karten PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_bus k1520_logger)
+    target_include_directories(k1520_mc80_karten PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_mc80 STATIC core/machines/mc80/mc80.cpp)
+    target_link_libraries(k1520_mc80 PUBLIC k1520_mc80_karten k1520_raf k1520_k6022 k1520_k5020 k1520_floppy2 k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_mc80 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # P8000 (doc/design/25_p8000.md §10, AP P7a): 8-Bit-Seite (Karte8 + Floppy8 + Kern-Terminal)
     # + Originalterminal an tty1 (Config::terminal) und „P8000 Terminal" als eigene Maschine (P20c/P20d)
     add_library(k1520_p8000 STATIC core/machines/p8000/p8000.cpp core/machines/p8000/p8000_terminal_machine.cpp)
@@ -564,7 +573,7 @@ if(BUILD_K1520)
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_mc80 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion
