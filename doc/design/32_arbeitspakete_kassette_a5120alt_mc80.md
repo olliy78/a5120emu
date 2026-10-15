@@ -80,7 +80,7 @@ ein eigenes Worktree.
 | A3 | K7636-Modell + K2526-Anschluss | cpp | A3a | M | **fertig 2026-10-14** (9ab3e1f; `K7636.*`, `K7636K2526.*`, `py_keyboard_k7636`) |
 | A4a | K5120: Analyse (BD, 2 ROMs, CP/A-Treiber) | ana | — | L | **fertig 2026-10-14** (`doc/a5120_alt/k5120.md`; K5120 ≈ K5122, A4 nur als Variante, Anwenderwunsch) |
 | A4 | `cards/k5120` | cpp | A4a | L | zurückgestellt |
-| A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | offen |
+| A5 | `A5120Machine::Config::ausfuehrung`, C-ABI, Profil-Modelle | cpp/py | A1, A2, A3 | M | **fertig 2026-10-15** (514cf6a; `A5120Ausfuehrung.*`, `py_a5120_modelle`, `py_c_api`) |
 | A6 | CP/A auf „5¼″ alt“ bis Prompt | int | A5 | M | offen |
 | A7 | BCU 880 bis Prompt | int | A5, A0 | L | offen |
 | A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | offen |
@@ -121,6 +121,7 @@ ein eigenes Worktree.
 - 2026-10-14 A2: `K3525` (16 KB, Basis im 4-KB-Raster, Power-on 0xFF, Bus-/MEMDI oder MEMDI1/2); vier Karten 0000/4000/8000/C000 = 64 KB; Lade-ROM der K2526 NACH den Karten registrieren. Refresh nicht modelliert. `K1520Bus::registerMem`: Überlappung wirft NICHT (Lesen: letzte Karte gewinnt, Schreiben an alle). BD der K3525 ist Scan ohne Textebene; Brücken X6/X7 [?].
 - 2026-10-14 A1: `K7023` (.00/.01) fertig: FC00H, 64×16, Zelle 8×16, Framebuffer 512×256 (nicht 640×288 — GUI beachten), Kursor Bit 7 als Balken Linien 12–15, `.01` Marken 04H–0FH. GCC: Konfig-Struct mit Defaultwerten im Klassenkörper + `explicit K(bus, const Config& = Config{})` kompiliert nicht → zwei Konstruktoren (gilt für K7636/weitere Karten). Beim Einbau (A5): `config_bridges` Bit 1 setzen; Karte nach den RAM-Karten registrieren; `k1520_screen_char` über `vramRead`. Zwei SerielleKopplung-64KiB-Tests liefen bei paralleler Rechnerlast in den Zeitüberlauf (vermutlich Last).
 - 2026-10-14 A3: K7636-Modell (`core/peripherals/k7636/`) + `UBusGeraet`-Schnittstelle an der K2526 (`setUBusGeraet` vor `powerOn()`, `service(zve1_cycles)` je Befehl; ohne Gerät unverändert K7637-Verdrahtung); Bildschirmtastatur `keyboard_k7636.py` (Matrix `0x03000000|Adresse`, noch nicht im Profil). Tabellenkorrekturen: A15 → 0AH, C02-b → 53H [?]. Annahmen [?]: 2 ms Reaktionszeit, Strg=ET2-Vorsatz. A5 muss anlegen: C-ABI für Lampenmaske (Bit 0–3 Wahl, 4 INS MODE, 5 Fehler), Kern bietet `wahlLampe()/insModeLampe()/fehlerLampe()`. Volllauf nach Merge noch nicht gefahren (A5 holt ihn nach). Nicht im Savestate.
+- 2026-10-15 A5: `Config::ausfuehrung` Neu/Alt/Kmbg (Acht lehnt der Konstruktor ab, EM nur bei Neu); `Config::fuerAusfuehrung(a)` = 3× K5600.10; C-ABI `k1520_create_a5120_ausfuehrung`/`k1520_a5120_ausfuehrung`, Lampen der K7636 über `k1520_keyboard_leds` (Bit 0–3 Wahl, 4 INS, 5 Fehler, 6 SHIFT/LOCK, 7 Signal); Python `ausfuehrung="alt"|"kmbg"`; Profil-Modelle „A5120 (64×16, K7636)“, „A5120 Kassette“ (+ „A5120 8″“ ausgegraut). Offen: `boot_trace`/`k1520dbg` ohne `--ausfuehrung` (→ A6 zuerst); Konsolenmodus nur K7024; anderes Lade-ROM braucht Config-Feld (A7); GUI-Modellwechsel setzt Laufwerke nicht auf die Vorgabe der Ausführung (A9-Frage); K7637 am Alt-Modell nicht an SIO A32.
 
 ---
 
