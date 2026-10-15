@@ -86,7 +86,7 @@ ein eigenes Worktree.
 | A7b | Experiment: V2.1-System auf SYL-Bootaufbau (Eigenbau, kein Beleg) | int | A7 | S | **fertig 2026-10-15** (a38f612; `BootIntegrationBcu.V21EigenbauBootet`; EIGENBAU, kein Beleg) |
 | A8 | Modell KMBG: BCU mit Kassette F: | int | A7, K5 | M | **fertig 2026-10-15** (0c18b03; `BcuKassette.FormatiertSchreibtLiest`, `Z80Test.EiSchatten_*`, `RetiChain.PioRetiVonB*`) |
 | A8b | Vormerkung: EI-Schatten/RETI-Lesart in K8915, PRG 710, PC 1715, CTC/SIO/Bus nachziehen | cpp/int | A8 | M | vorgemerkt (riskant: alle Gast-Boots laufen neu) |
-| A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | offen |
+| A9 | Oberfläche/Handbuch/Merkposten A5120 alt | py/doc | A6 | S | **fertig 2026-10-15** (e0c3231; `py_help`, `py_a5120_modelle`, `py_kassette_gui`) |
 | M0 | MC80.3x: Hardware-Abschrift | ana | — | M | **fertig 2026-10-14** |
 | M1 | EGOS-Disassemblat (`.prn`) | ana | — | L | offen |
 | M2 | `Mc80Machine` Gerüst: ZVE, SPE, Segmente | cpp | M0 | M | offen |
