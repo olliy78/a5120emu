@@ -249,6 +249,19 @@ Der U8001 hat dieselben Werkzeuge wie ZVE1, mit derselben Syntax (`tools/k1520db
 
 ---
 
+## 0g. MC80 (`--machine mc80|mc80-30|mc80-31 [--spe 1|2]`) — Kurzrezept
+
+Keine Diskette: EGOS läuft aus dem ROM, das Bild ist ein Text (25 × 80), der Prompt steht in Zeile 24.
+
+```sh
+tools/dev.sh trace --machine mc80 --quiet --json                       # Exit 0 = EGOS am Prompt `>`
+tools/dev.sh trace --machine mc80 --keys 'init<ET>' --until 'screen ~ ">INIT"'
+tools/dev.sh tool k1520dbg --machine mc80-31 --tape-card -l doc/mc80/egos.prn   # map, keys, tape, dev
+```
+
+Zuerst `map`: welches **Segment** (4000H–BFFFH, Register 85H) ist gerade sichtbar? Danach liest `d`/`u`/`x`
+genau dieses Segment. Vollständig: `tools/k1520dbg.md` §11e, `tools/boot_trace.md` §9b.
+
 ## 1. Schnellstart
 
 ```sh

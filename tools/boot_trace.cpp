@@ -66,6 +66,7 @@
 #include "tools/boot_trace_k8915.h"   // --machine k8915 (§8a AP-E4d)
 #include "tools/boot_trace_prg710.h"  // --machine prg710|prg710-1 (Entwurf 20 AP-P1d)
 #include "tools/boot_trace_p8000.h"   // --machine p8000 (Entwurf 25 AP P7c)
+#include "tools/boot_trace_mc80.h"      // --machine mc80 (AP M8)
 #include "tools/boot_trace_pc1715.h"  // --machine pc1715 (Entwurf 21 AP-2)
 #include "tools/em_trace.h"          // --em: EM-Transaktionen als Text
 #include "tools/dbg_u8000.h"         // --cpu u8000: Adressen <<seg>>off
@@ -318,6 +319,7 @@ int main(int argc, char** argv) {
     bool        machine_k8915 = false;
     int         machine_prg710 = 0;      // 1 = PRG 710, 2 = PRG 710-1 (gleiche Optionen wie K8915)
     bool        machine_pc1715 = false;  // PC 1715 (gleiche Optionen wie K8915)
+    int         machine_mc80 = 0;        // 1 = MC80.30, 2 = MC80.31 (AP M8; gleiche Optionen wie K8915)
     bool        machine_pc1715w = false; // … in der Variante PC 1715W (AP-W3)
     bool        machine_p8000 = false;   // P8000, 8-Bit-Seite (AP P7c; gleiche Optionen wie K8915)
     bool        machine_p8000_16 = false;   // --machine p8000-16: mit 16-Bit-Karte (AP P11)
@@ -353,11 +355,13 @@ int main(int argc, char** argv) {
             else if (mn == "prg710-1" || mn == "PRG710-1") { machine_k8915 = true; machine_prg710 = 2; }
             else if (mn == "pc1715" || mn == "PC1715") { machine_k8915 = true; machine_pc1715 = true; }
             else if (mn == "pc1715w" || mn == "PC1715W") { machine_k8915 = true; machine_pc1715 = machine_pc1715w = true; }
+            else if (mn == "mc80" || mn == "mc80-30" || mn == "MC80") { machine_k8915 = true; machine_mc80 = 1; }
+            else if (mn == "mc80-31" || mn == "MC80-31") { machine_k8915 = true; machine_mc80 = 2; }
             else if (mn == "p8000" || mn == "P8000") { machine_k8915 = true; machine_p8000 = true; }
             else if (mn == "p8000-16" || mn == "P8000-16") { machine_k8915 = true; machine_p8000 = machine_p8000_16 = true; }
             else if (mn == "p8000-terminal" || mn == "P8000-TERMINAL") { machine_k8915 = true; machine_p8000_terminal = true; }
             else if (mn != "a5120" && mn != "A5120") {
-                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16 | p8000-terminal)\n", mn.c_str()); return 2; }
+                fprintf(stderr, "unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | mc80 | mc80-30 | mc80-31 | p8000 | p8000-16 | p8000-terminal)\n", mn.c_str()); return 2; }
         }
         else if (!strcmp(argv[i], "--raf") && i+1 < argc) { raf_opt = argv[++i]; k8o.raf = raf_opt; }
         else if (!strcmp(argv[i], "--wdc") && i+1 < argc) p8000_wdc = argv[++i];
@@ -372,6 +376,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--tape") && i+1 < argc) { tape_opt = true; k8o.tape = true; tape1_opt = k8o.tape1 = argv[++i]; }
         else if (!strcmp(argv[i], "--tape2") && i+1 < argc) { tape_opt = true; k8o.tape = true; tape2_opt = k8o.tape2 = argv[++i]; }
         else if (!strcmp(argv[i], "--keys") && i+1 < argc) { k8o.keys = argv[++i]; }
+        else if (!strcmp(argv[i], "--spe") && i+1 < argc) { k8o.spe = atoi(argv[++i]);
+            if (k8o.spe < 1 || k8o.spe > 2) { fprintf(stderr, "--spe: 1 oder 2\n"); return 2; } }
         else if (!strcmp(argv[i], "--skip-selftest")) { k8o.skip_selftest = true; }
         else if (!strcmp(argv[i], "--no-cr"))         { k8o.auto_cr = false; }
         else if (!strcmp(argv[i], "--stall") && i+1 < argc) { k8o.stall = atoll(argv[++i]); stall_set = true; }
@@ -541,6 +547,12 @@ int main(int argc, char** argv) {
             if (!limit_set) k8o.limit = 60'000'000;
             if (!stall_set) k8o.stall = 10'000'000;
         }
+        if (machine_mc80) {
+            // MC80 (AP M8): EGOS durchlaeuft die RESET-Kette in ~3,7 Mio. Takten (1,5 s), Bildkommandos
+            // kosten je ~43 ms; 60 Mio. Takte = 24 s Maschinenzeit.  Stillstand erst nach 8 Mio. (3,3 s).
+            if (!limit_set) k8o.limit = 60'000'000;
+            if (!stall_set) k8o.stall = 8'000'000;
+        }
         if (machine_p8000) {
             // P8000 (AP P7c): Hardwaretest ≈ 64 Mio. Takte (16 s), danach „Press RETURN"; mit
             // `--keys "<CR><CR>"` weiter über `>` in den BOOT (UDOS bis `%` ≈ 100 Mio. Takte).
@@ -577,6 +589,7 @@ int main(int argc, char** argv) {
         }
         if (p8000_original && !machine_p8000) { fprintf(stderr, "ERROR: --konsole nur mit --machine p8000[-16]\n"); return 2; }
         const int rc = machine_p8000 ? bootTraceP8000(k8o, prn, machine_p8000_16, p8000_wdc, p8000_hd, p8000_original)
+                     : machine_mc80 ? bootTraceMc80(k8o, prn, machine_mc80 == 2)
                      : machine_pc1715 ? bootTracePc1715(k8o, prn, machine_pc1715w)
                      : machine_prg710 ? bootTracePrg710(k8o, machine_prg710 == 2, prn)
                                       : bootTraceK8915(k8o, prn);

@@ -29,6 +29,7 @@
 #include "core/cards/mc80/vis2a.h"
 #include "core/peripherals/mc80_tastatur/mc80_tastatur.h"
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -137,6 +138,9 @@ public:
     uint64_t  totalCycles() const { return total_cycles_; }
     void      clearStop() { stop_.store(false); }
     uint16_t  cpuPC() const { return zve_.cpu().PC; }
+    // Debugger/Werkzeuge (AP M8): Befehlsbeobachter und Bus-Protokoll.
+    void setCpuTraceCallback(std::function<void(const Z80&)> cb) { zve_.cpu().traceCallback = std::move(cb); }
+    void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
     /// Koppelbus ASP → K5020 (MC80.30): ASP-CTC K2 läuft als Zähler (EGOS MB_INIT `47H,02H`).
     bool aspBandtakt() const;
 
