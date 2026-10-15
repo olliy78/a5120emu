@@ -1,0 +1,2410 @@
+; ============================================================================
+; bsys_2x.prn -- Betriebssystem MC80.21/22 (VEB Elektronik Gera), kommentiert
+; ERZEUGT von tools/gen_mc8020_bsys_prn.py -- nicht von Hand aendern (AP M10, 2026-10-14)
+; ============================================================================
+;
+; Fassung: "Programmversion 12.01.84" (Nutzerhandbuch 12/86, Abschnitt 4.3.2) =
+;   MAME mc8020 BIOS "ver2": s01 (0000H) + s02_v2 (0400H) + s03_v2 (0800H) + mo01 (2000H).
+;   Nur diese Fassung passt zu den Arbeitszellen des Handbuchs (BLZ 0DF5H, BYE 0DF7H 2 Byte,
+;   PAZ 0DE8H, SPH 0DF2H).  Andere Abzuege:
+;   s02.rom      gegen s02_v2.rom :   51 Byte verschieden, 062EH-07FFH
+;   s02_v3.rom   gegen s02_v2.rom :  127 Byte verschieden, 05A0H-07FFH
+;   s03.rom      gegen s03_v2.rom :  968 Byte verschieden, 0802H-0BFBH
+;   mo01_v2.rom  gegen mo01.rom   :  404 Byte verschieden, 200AH-2202H
+;   ver1 (s02+s03+mo01_v2) ist dasselbe Programm mit anders gelegten Zellen (CRC 0DEFH,
+;   FEZ 0DEEH, PAZ 0DECH, BYZ 0DF1H, SPH 0DF3H, PUZ 0DF4H, BLZ 0DF6H, BYE nur 1 Byte bei 0DF8H)
+;   und passt damit NICHT zum Handbuch.  s02_v3 (MAME ver3) enthaelt bei 05B6H-05FFH das Menue
+;   MEN der KMBG-Fassung des Original-Listings (bytegleich), ab 0600H aber den Bandteil von s02:
+;   MEN springt nach 060DH/068AH/0691H, wo in s02_v3 anderer Code steht -> unstimmiger Satz,
+;   vermutlich Mischabzug [?].
+;
+; Kommentare: GROSSSCHRIFT = Abschrift des Original-Listings "MC 80 - Betriebssystem -"
+;   (Module S0.1-S0.3, Z-Nr. 50001:4100.00, 29 Blatt, doc/original_docs/mc80/
+;   mc80_22-bsys-doku.pdf; Abschrift tools/mc80/bsys_2x_abschrift.txt).  Das Listing stimmt
+;   mit den Abzuegen von 0000H bis 05B5H ueberein (bis auf 05A0H, s. dort); ab 05B6H gehoert
+;   es zu einer ANDEREN Fassung ohne Abzug -> Anhang am Ende.  Marken bis 05B5H = Original.
+;   normale Schrift = eigene Deutung (statisch, kein Emulator), [?] = Vermutung.
+;   Mnemonics in Zilog-Schreibweise (das Original schreibt JMP/CMP/JRNZ/CAZ ...).
+;
+; ---- Speicher (Handbuch 3.2.1) ----------------------------------------------------------
+;   0000-0BFF  ROM S0.1-S0.3 auf der ZRE K2521      0C00-0CFF  BWS 8 x 32 (ZRE-RAM)
+;   0D00-0D2B  Systemzellen, IM-2-Tabelle (I=0DH)   0D2C-0DEF  Vektoren Anwender (0D2C MBI-PIO B)
+;   0DE5-0DFF  Zellen Magnetband                    0E00-0EFF  Magnetbandpuffer
+;   0F00-0FFF  Stapel (SP = 1000H)                  2000-23FF  S0.4 (PFS K3820, mo01)
+;   2400-27FF  frei (Copy-Modus, Drucker/Lochband)  2800-2BFF  EPROM-Programmierung S2 (mo03)
+;   2C00-3FFF  Objektcodeeditor S1 (mo04-mo08)      4000-5FFF  EPAS/BASIC (mo09-mo16)
+;   6000-7FFF  Prozesssteuerprogramm (6000=00, 6001=JP: Start nach RESET)
+;   C000-FFFF  OPS K3525 16 KB (F020: Markentabelle des Editors)
+;
+; ---- Systemzellen 0D00H-0D2BH (aus TII kopiert) -------------------------------------------
+;   0D00 DPI (DPL-CTC 0)  0D02 TI1 (DPL-CTC 1)  0D04 TSI (DPL-CTC 2)  0D06 BREAK (DPL-CTC 3)
+;   0D08-0D0F MBI-CTC 0-3  0D10-0D17 Analog-BWS-Adressen  0D18-0D1C Tabulatoren
+;   0D1D KPS (Kursorposition, Low = BWS-Zeiger)  0D1E Zeichen unter dem Kursor
+;   0D1F Kursorblinkzaehler  0D20 Repetierzaehler  0D21-0D27 Tastenspeicher (7 Zeilen)
+;
+; ---- Arbeitszellen Magnetband (Handbuch 4.3.2.1) --------------------------------------------
+;   0DE5 CRC   0DE7 FEZ   0DE8 PAZ   0DEA NAZ   0DF0 BYZ   0DF2 SPH   0DF3 PUZ   0DF5 BLZ
+;   0DF7 BYE   0DF9 END   0DFB RAM   0DFD BLN   0DFF MBB
+;   SPH Bit 0 Bandmarke, 1 Kennzeichnungsblock, 2 Datei fertig, 5 Block gelesen,
+;       6 Bandmarke gelesen, 7 Blockende erkannt (eigene Deutung aus dem Code)
+;
+; ---- E/A (Handbuch 3.2.2, 4.3.2.1; Original-Listing) ------------------------------------
+;   01H/02H  Schreibfreigabe/-sperre RAM, 1-KB-Bereich auf A10-A15 (OUT (n),A: A auf A8-A15)
+;   80H-83H  ZRE-CTC, 84H-87H ZRE-PIO (A Daten, B Daten, A Steuer, B Steuer) -- Anwender
+;   EFH      MBI: Register Laufwerksteuerung (nur schreiben)
+;   F0H-F3H  DPL-CTC 0-3;  F4H/F5H DPL-PIO A Daten/Steuer;  F6H/F7H DPL-PIO B Daten/Steuer
+;   F8H-FBH  MBI-CTC 0-3;  FCH/FDH MBI-PIO A Daten/Steuer;  FEH/FFH MBI-PIO B Daten/Steuer
+;   E0H-E8H  EPROM-Programmiereinheit (nur S2/mo03, hier nicht benutzt)
+; ============================================================================
+
+	ORG	0000H
+
+; ---- S0.1: Neustart, RST-Leiste, Systemzellen (TII), Initialisierung -------
+BSY:
+0000  31 00 10    	LD SP,1000H		; STACK IM ZVE-RAM
+0003  ED 5E       	IM 2		; INTERRUPTMODUS 2
+0005  C3 69 00    	JP INI		; UP:INITIALISIERUNG
+RS1:
+0008  C3 07 60    	JP 6007H		; RST-Aussprung RST 08H -> 6007H (Handbuch 6.2: RST1..RST6 -> 6007H..6016H, Anwender)
+L000B:
+000B  C3 5B 01    	JP BSN		; UP:ZEICHEN AUF KURSORPOSITION (KPS) SCHREIBEN
+000E  FF FF       	DB	0FFH,0FFH
+RS2:
+0010  C3 0A 60    	JP 600AH
+L0013:
+0013  C3 81 02    	JP TST		; UP:TASTATURABFRAGE
+0016  FF FF       	DB	0FFH,0FFH
+RS3:
+0018  C3 0D 60    	JP 600DH
+L001B:
+001B  C3 13 02    	JP BSS		; UP:ZEICHEN SCHREIBEN
+001E  FF FF       	DB	0FFH,0FFH
+RS4:
+0020  C3 10 60    	JP 6010H
+0023  C3 2C 02    	JP BSL		; UP:ZEICHEN LESEN
+0026  FF FF       	DB	0FFH,0FFH
+RS5:
+0028  C3 13 60    	JP 6013H
+L002B:
+002B  C3 3E 02    	JP BKS		; UP:KURSOR SETZEN
+002E  FF FF       	DB	0FFH,0FFH
+RS6:
+0030  C3 16 60    	JP 6016H
+0033  C3 5E 02    	JP BKL		; UP:KPS LESEN
+0036  FF FF       	DB	0FFH,0FFH
+RS7:
+0038  C3 00 2C    	JP 2C00H		; RST 38H -> 2C00H (Testmodus des Objektcodeeditors, Handbuch 6.2)
+TII:
+003B  C4 00       	DW	00C4H		; DISPLAYINTERRUPT
+003D  CA 00       	DW	00CAH		; RETI-INTERRUPT
+003F  CD 00       	DW	00CDH		; ZEILENENDEINT.
+0041  00 00       	DW	0000H		; FREI FUER BREAK-INT.
+0043  00 00 00 00 00 00 00 00	DB	00H,00H,00H,00H,00H,00H,00H,00H		; INT.STARTADR. MBI  -- 0D08-0D0F: IM-2-Vektoren der MBI-CTC (Kanal 0..3), vom Bandprogramm besetzt
+004B  00 00 00 00 00 00 00 00	DB	00H,00H,00H,00H,00H,00H,00H,00H		; ANALOG-BWS-ADRESSEN  -- 0D10-0D17: Adressen der Analog-BWS fuer Zeile 2/4/6/8 (0000 = Textzeile)
+0053  08 10 18 1C 	DB	08H,10H,18H,1CH		; 0D18:TAB-POSITIONEN
+0057  20          	DB	20H		; LETZTE TAB-POS.= 32
+0058  00          	DB	00H		; 0D1D:KPS
+0059  3F          	DB	3FH		; 0D1E:ZEICHEN AUF KPS
+005A  20          	DB	20H		; 0D1F:KURSORBLINKZEITZAEHLER
+005B  80          	DB	80H		; 0D20:REPITIERZAEHLER
+005C  00          	DB	00H		; CTC0:INT.VEKTOR (DPL)
+005D  C7          	DB	0C7H		; C7H=ZAEHLER
+005E  01          	DB	01H		; 01 =ZEITKONSTANTE
+005F  07 07       	DB	07H,07H		; CTC2:IMPULS F. STRAHLRUECKL. TASTATUR FREIGEBEN
+0061  C7 21       	DB	0C7H,21H		; CTC2:C7H=ZAEHL.,LOEST TSI AUS 21H=ZEITKONSTANTE
+0063  47 D0       	DB	47H,0D0H		; CTC1:AUSZAEHLEN DER STRAHL-RUECKLAUFZEIT
+0065  FF          	DB	0FFH
+0066  C3 04 60    	JP 6004H		; NMI  -- NMI-Einsprung -> 6004H (Handbuch 6.2)
+INI:
+0069  3E 0D       	LD A,0DH		; INITIALISIERUNG
+006B  ED 47       	LD I,A		; I=0DH
+006D  21 00 0C    	LD HL,0C00H		; BILDWIEDERHOLSPEICHER
+0070  01 F4 21    	LD BC,21F4H		; C=PIO A (DPL), B=ZAEHLER
+0073  D9          	EXX		; ZWEITREG. FUER DPI LADEN
+0074  3E 0F       	LD A,0FH		; PIO A (DPL) AUF AUSGABE
+0076  D3 F5       	OUT (F5H),A
+0078  3E 01       	LD A,01H		; WAHL ZEILE 1 IN TASTENMATRIX
+007A  D3 F4       	OUT (F4H),A
+007C  3E FF       	LD A,FFH		; PIO B (DPL):EINZELBITSTEUER. ALLES EINGAENGE
+007E  D3 F7       	OUT (F7H),A
+0080  D3 F7       	OUT (F7H),A
+0082  21 3B 00    	LD HL,TII		; UMLADUNG 21H BYTE AB TII AUF BETR.SYSTEM RAM AB 0D00
+0085  11 00 0D    	LD DE,0D00H
+0088  01 21 00    	LD BC,0021H		; HL:=TII+21H
+008B  ED B0       	LDIR
+008D  01 F0 03    	LD BC,03F0H		; CTC 0 INIT., 3 STEUERWORTE VON TII UEBERTRAGEN
+0090  ED B3       	OTIR
+0092  01 F2 02    	LD BC,02F2H		; CTC 2 INIT., 2 STEUERWORTE
+0095  ED B3       	OTIR
+0097  3E 0C       	LD A,0CH		; BILDSCHIRM (BS) LOESCHEN
+0099  CD 5B 01    	CALL BSN
+009C  DB F6       	IN A,(F6H)		; LESEN ANGEWAEHLTER ZEILE IN D DATENWORT VON PIO B
+009E  57          	LD D,A
+009F  3E 0F       	LD A,0FH		; PIO B (DPL):BYTEAUSGABE
+00A1  D3 F7       	OUT (F7H),A
+00A3  01 F2 02    	LD BC,02F2H		; CTC 2 NEU INIT.
+00A6  ED B3       	OTIR
+00A8  01 F1 02    	LD BC,02F1H		; CTC 1 INIT.  -- CTC 1 (DPL): 47H/D0H Zaehler ohne Interrupt
+00AB  ED B3       	OTIR
+00AD  FB          	EI
+00AE  7A          	LD A,D
+00AF  FE 84       	CP 84H		; UC UND OFF GEDRUECKT? JA,KEIN START PROZESSPROGR.
+00B1  28 0E       	JR Z,IN1
+00B3  2A 00 60    	LD HL,(6000H)		; NEIN, STECKT PROZESSPR.? -(6000)=00 ,(NOP-BEF.) -(6001)=C3H,(JMP-BEF.)?
+00B6  7D          	LD A,L
+00B7  FE 00       	CP 00H
+00B9  20 06       	JR NZ,IN1		; NEIN:SPRUNG ZU IN1
+00BB  7C          	LD A,H
+00BC  FE C3       	CP C3H
+00BE  CC 01 60    	CALL Z,6001H		; JA:AUFRUF VON 6001
+IN1:
+00C1  C3 AC 04    	JP BSK		; BETR.SYSTEM-KOMMANDOABFRAGE
+DPI:
+00C4  D9          	EXX		; DISPLAYINT. VON CTC 0
+00C5  08          	EX AF,AF'
+00C6  ED A3       	OUTI
+00C8  08          	EX AF,AF'
+00C9  D9          	EXX
+TI1:
+00CA  FB          	EI
+00CB  ED 4D       	RETI		; INTERRUPTENDE
+TSI:
+00CD  08          	EX AF,AF'		; ZEILENENDEINTERRUPT
+00CE  D9          	EXX
+00CF  EB          	EX DE,HL
+TI2:
+00D0  7B          	LD A,E
+00D1  FE 01       	CP 01H		; OBERSTE ZEILE ALS NAECHSTES?
+00D3  20 2F       	JR NZ,TI3		; NEIN
+00D5  3E FF       	LD A,FFH		; JA:TASTATUR EINLESEN
+00D7  D3 F7       	OUT (F7H),A		; PIO B (DPL):EINGABE
+00D9  D3 F7       	OUT (F7H),A
+00DB  3E 40       	LD A,40H		; LETZTE ZEILE ANWAEHLEN:
+00DD  01 F6 07    	LD BC,07F6H		; C=PIO B, B=ZAEHLER
+00E0  21 21 0D    	LD HL,0D21H		; TASTENSPEICHER AB 0D21
+TI4:
+00E3  D3 F4       	OUT (F4H),A		; ZEILE ANWAEHLEN
+00E5  0F          	RRCA		; NAECHSTE ZEILE VORBEREITEN
+00E6  ED A2       	INI		; ZEILENBELEG. LESEN U.SPEICHERN
+00E8  20 F9       	JR NZ,TI4		; SCHLEIFENDURCHLAUF 7 MAL
+00EA  3E 0F       	LD A,0FH
+00EC  D3 F7       	OUT (F7H),A		; PIO B:AUSGABE
+TI9:
+00EE  EB          	EX DE,HL
+TI0:
+00EF  01 F4 21    	LD BC,21F4H		; B-REG. AUFFRISCHEN
+00F2  26 0C       	LD H,0CH		; H-REG. AUFFRISCHEN
+00F4  7D          	LD A,L
+00F5  E6 E0       	AND E0H		; ZEILENANFANG IM BWS FIXIEREN
+00F7  6F          	LD L,A
+00F8  2F          	CPL		; ZEILENPOS. AUF PIO B AUSGEBEN (BIT 7,6,5)
+00F9  D3 F6       	OUT (F6H),A
+00FB  3E 20       	LD A,20H		; LEERZEICHEN ALS ERSTES ZEICHEN BEI STRAHLVORLAUF
+00FD  D3 F4       	OUT (F4H),A
+00FF  D9          	EXX
+0100  08          	EX AF,AF'		; RUECKSCHALTEN AUF HAUPTREG.
+0101  FB          	EI
+0102  ED 4D       	RETI		; INTERRUPTENDE
+TI3:
+0104  CB 6F       	BIT 5,A
+0106  20 1A       	JR NZ,ANL		; ZEILEN 2,4,6,8 ANALOG?
+0108  FE 81       	CP 81H
+010A  20 E2       	JR NZ,TI9
+010C  21 1F 0D    	LD HL,0D1FH		; KURSORZAEHLER
+010F  CB 7E       	BIT 7,(HL)		; KEINE TASTE?
+0111  20 04       	JR NZ,TI5		; JA
+0113  35          	DEC (HL)		; NEIN:KURSORZAEHLER AUF 1 ABZAEHLEN
+0114  20 01       	JR NZ,TI5
+0116  34          	INC (HL)
+TI5:
+0117  23          	INC HL		; REPITIERZAEHLER
+0118  CB 7E       	BIT 7,(HL)		; KURSOR ABGESCHALTET?
+011A  20 D2       	JR NZ,TI9		; JA
+011C  35          	DEC (HL)		; NEIN:ZAEHLER AUF 1 ABZAEHLEN FREQUENZ CA. 50 HERTZ
+011D  20 CF       	JR NZ,TI9
+011F  34          	INC (HL)
+0120  18 CC       	JR TI9
+ANL:
+0122  26 0D       	LD H,0DH		; ANALOGDARSTELLUNG
+0124  E6 C0       	AND C0H		; IN A ZEILENPOS.
+0126  07          	RLCA		; ZEILEN 2,4,6,8 WANDELN IN ADRESSEN 0D10,0D12,0D14,0D16
+0127  07          	RLCA
+0128  07          	RLCA
+0129  C6 10       	ADD A,10H
+012B  6F          	LD L,A
+012C  7E          	LD A,(HL)		; INHALT VON 0D10 ... LESEN
+012D  23          	INC HL
+012E  66          	LD H,(HL)		; ADR. DES ANALOG-BWS UND
+012F  6F          	LD L,A		; NACHFOLGENDE ZELLE = 0 ?
+0130  B4          	OR H
+0131  28 BB       	JR Z,TI9		; JA: KEINE ANALOGDARSTELLUNG
+0133  3E 80       	LD A,80H		; PIO A: UMSCHALTEN Z-SIGNAL ANALOG (BIT 7 = 1)
+0135  D3 F4       	OUT (F4H),A
+0137  01 F6 FE    	LD BC,FEF6H		; C=PIO B, B=ZAEHLER
+013A  ED A3       	OUTI		; ERSTE ANALOGPOS. EINNEHMEN
+013C  3E 41       	LD A,41H		; INT. CTC 0 (DPI) SPERREN
+013E  D3 F0       	OUT (F0H),A
+0140  3E C1       	LD A,C1H		; INT. CTC 1 (TI1) FREIGEBEN
+0142  D3 F1       	OUT (F1H),A
+0144  FB          	EI
+0145  76          	HALT		; SYNCHRON.MIT TI1, ZEILENANFANG
+0146  ED B3       	OTIR		; ANALOGWERTEAUSGABE
+0148  3E C1       	LD A,C1H
+014A  D3 F0       	OUT (F0H),A		; CTC 0: INT. FREIGEBEN
+014C  3E 41       	LD A,41H
+014E  D3 F1       	OUT (F1H),A		; CTC 1: INT. SPERREN
+0150  7B          	LD A,E
+0151  C6 20       	ADD A,20H		; NAECHSTE ZEILE
+0153  5F          	LD E,A
+0154  C3 D0 00    	JP TI2
+TNI:
+0157  08          	EX AF,AF'		; Ende der Analogzeile: Zweitregister zurueck, weiter bei TI0
+0158  D9          	EXX
+0159  18 94       	JR TI0
+BSN:
+015B  F5          	PUSH AF		; ZEICHEN AUF KPS SCHREIBEN
+015C  E5          	PUSH HL
+015D  D5          	PUSH DE
+015E  2A 1D 0D    	LD HL,(0D1DH)		; KPS, L=ZEIGER BWS
+0161  5C          	LD E,H
+0162  26 0C       	LD H,0CH
+0164  A7          	AND A		; AKKU = 0 ?
+0165  28 1E       	JR Z,BN9
+0167  FE 7F       	CP 7FH		; NEIN:A>7FH -->KEIN ZEICH.IN A
+0169  30 1A       	JR NC,BN9
+016B  FE 20       	CP 20H		; A<20H -->STEUERZEICHEN
+016D  38 1A       	JR C,BN3
+016F  FE 60       	CP 60H		; 60H<A<7FH -->KLEINBUCHSTABEN
+0171  38 02       	JR C,BN1
+0173  D6 20       	SUB 20H		; KLEINBUCHST. IN GROSSBUCHST.
+BN1:
+0175  D6 40       	SUB 40H
+0177  E6 3F       	AND 3FH
+0179  77          	LD (HL),A		; ZU SCHREIB. ZEICHEN AUF KPS
+BN4:
+017A  2C          	INC L		; KPS+1 BILDENDE ?
+017B  20 01       	JR NZ,BN2		; NEIN
+017D  2D          	DEC L		; JA: KPS:=KPS-1
+BN2:
+017E  7E          	LD A,(HL)		; ZEICHEN NACH A
+017F  36 1F       	LD (HL),1FH
+0181  67          	LD H,A		; IN H NEUES ZEICHEN
+0182  22 1D 0D    	LD (0D1DH),HL		; KPS SPEICHERN
+BN9:
+0185  D1          	POP DE
+0186  E1          	POP HL
+0187  F1          	POP AF
+0188  C9          	RET
+BN3:
+0189  73          	LD (HL),E		; IN A STEUERZEICHEN
+018A  FE 09       	CP 09H		; KURSOR NACH RECHTS ?
+018C  28 EC       	JR Z,BN4
+018E  11 7E 01    	LD DE,017EH
+0191  D5          	PUSH DE
+0192  FE 08       	CP 08H		; KURSOR NACH LINKS ?
+0194  20 05       	JR NZ,BN8
+0196  7D          	LD A,L
+0197  A7          	AND A
+0198  C8          	RET Z
+0199  2D          	DEC L
+019A  C9          	RET
+BN8:
+019B  FE 0A       	CP 0AH		; KURSOR NACH UNTEN ?
+019D  20 06       	JR NZ,BN5
+019F  7D          	LD A,L
+01A0  C6 20       	ADD A,20H
+01A2  D8          	RET C
+01A3  6F          	LD L,A
+01A4  C9          	RET
+BN5:
+01A5  FE 0B       	CP 0BH		; KURSOR NACH OBEN ?
+01A7  20 06       	JR NZ,BN6
+01A9  7D          	LD A,L
+01AA  D6 20       	SUB 20H
+01AC  D8          	RET C
+01AD  6F          	LD L,A
+01AE  C9          	RET
+BN6:
+01AF  FE 0C       	CP 0CH		; DISPLAY LOESCHEN ?
+01B1  20 05       	JR NZ,BN7
+01B3  2E 00       	LD L,00H
+01B5  5D          	LD E,L
+01B6  18 1E       	JR BM4
+BN7:
+01B8  FE 0D       	CP 0DH		; KURSOR AN ZEILENANFANG ?
+01BA  20 05       	JR NZ,BM1
+01BC  7D          	LD A,L
+01BD  E6 E0       	AND E0H
+01BF  6F          	LD L,A
+01C0  C9          	RET
+BM1:
+01C1  FE 1A       	CP 1AH		; ZEICHEN LOESCHEN ?
+01C3  20 07       	JR NZ,BM2
+01C5  7D          	LD A,L
+01C6  A7          	AND A
+01C7  C8          	RET Z
+01C8  2D          	DEC L
+01C9  36 20       	LD (HL),20H
+01CB  C9          	RET
+BM2:
+01CC  FE 18       	CP 18H		; ZEILE LOESCHEN ?
+01CE  20 0F       	JR NZ,BM3
+01D0  7D          	LD A,L
+01D1  E6 E0       	AND E0H
+01D3  6F          	LD L,A
+01D4  1E 20       	LD E,20H
+BM4:
+01D6  E5          	PUSH HL
+BM5:
+01D7  36 20       	LD (HL),20H
+01D9  2C          	INC L
+01DA  1D          	DEC E
+01DB  20 FA       	JR NZ,BM5
+01DD  E1          	POP HL
+01DE  C9          	RET
+BM3:
+01DF  FE 02       	CP 02H		; KURSOR AN DISPLAYANFANG ?
+01E1  20 03       	JR NZ,BM6
+01E3  2E 00       	LD L,00H
+01E5  C9          	RET
+BM6:
+01E6  FE 03       	CP 03H		; TABULATOR ?
+01E8  C0          	RET NZ
+01E9  7D          	LD A,L
+01EA  F5          	PUSH AF
+01EB  E6 E0       	AND E0H
+01ED  6F          	LD L,A
+01EE  F1          	POP AF
+01EF  E6 1F       	AND 1FH
+01F1  E5          	PUSH HL
+01F2  21 18 0D    	LD HL,0D18H
+01F5  06 04       	LD B,04H
+BT1:
+01F7  BE          	CP (HL)		; TABULATORPOS.
+01F8  38 03       	JR C,BT2
+01FA  23          	INC HL
+01FB  10 FA       	DJNZ BT1
+BT2:
+01FD  7E          	LD A,(HL)
+01FE  E1          	POP HL
+01FF  85          	ADD A,L
+0200  6F          	LD L,A
+0201  C9          	RET
+BKU:
+0202  F5          	PUSH AF		; UMCODIERUNG BILDSCHIRMCODE
+0203  7A          	LD A,D
+0204  87          	ADD A,A		; UMRECHNUNG DE=DISPLAYPOS. IN DE=BWS-ADR.
+0205  87          	ADD A,A
+0206  87          	ADD A,A
+0207  87          	ADD A,A
+0208  87          	ADD A,A
+0209  83          	ADD A,E
+020A  5F          	LD E,A
+020B  30 02       	JR NC,BK1
+020D  1E FF       	LD E,FFH
+BK1:
+020F  16 0C       	LD D,0CH
+0211  F1          	POP AF
+0212  C9          	RET
+BSS:
+0213  D5          	PUSH DE		; ZEICHEN AUF DISPLAY SCHREIBEN
+0214  F5          	PUSH AF
+0215  CD 02 02    	CALL BKU
+0218  D6 20       	SUB 20H		; UMCOD. ASCII IN U402 BM001 60...7F IN 40...5F
+021A  FE 60       	CP 60H
+021C  30 0B       	JR NC,BS2
+021E  FE 40       	CP 40H		; NUR ASCII 20...7F ZULASSEN
+0220  38 02       	JR C,BS1
+0222  D6 20       	SUB 20H
+BS1:
+0224  D6 20       	SUB 20H
+0226  E6 3F       	AND 3FH
+0228  12          	LD (DE),A
+BS2:
+0229  F1          	POP AF
+022A  D1          	POP DE
+022B  C9          	RET
+BSL:
+022C  D5          	PUSH DE		; ZEICHEN VOM DISPLAY LESEN
+022D  CD 02 02    	CALL BKU
+0230  1A          	LD A,(DE)
+0231  D1          	POP DE
+0232  FE 1F       	CP 1FH		; KURSOR DORT ?
+0234  20 03       	JR NZ,BS3		; NEIN
+0236  3A 1E 0D    	LD A,(0D1EH)		; JA: UMCOD. U402 IN ASCII
+BS3:
+0239  EE 20       	XOR 20H
+023B  C6 20       	ADD A,20H
+023D  C9          	RET
+BKS:
+023E  F5          	PUSH AF		; KURSOR SETZEN
+023F  E5          	PUSH HL
+0240  D5          	PUSH DE
+0241  2A 1D 0D    	LD HL,(0D1DH)
+0244  5C          	LD E,H
+0245  26 0C       	LD H,0CH
+0247  7E          	LD A,(HL)
+0248  FE 1F       	CP 1FH
+024A  20 01       	JR NZ,BK2
+024C  73          	LD (HL),E		; ZEICHEN AUF ALTE KPS LADEN
+BK2:
+024D  D1          	POP DE
+024E  D5          	PUSH DE
+024F  CD 02 02    	CALL BKU
+0252  EB          	EX DE,HL
+0253  7E          	LD A,(HL)
+0254  36 1F       	LD (HL),1FH		; ZEICHEN VON NEUER KPS
+0256  67          	LD H,A		; KURSOR SETZEN
+0257  22 1D 0D    	LD (0D1DH),HL		; RUECKLADEN
+025A  D1          	POP DE
+025B  E1          	POP HL
+025C  F1          	POP AF
+025D  C9          	RET
+BKL:
+025E  ED 5B 1D 0D 	LD DE,(0D1DH)		; KPS LESEN
+0262  F5          	PUSH AF
+0263  7B          	LD A,E
+0264  07          	RLCA
+0265  07          	RLCA
+0266  07          	RLCA
+0267  E6 07       	AND 07H
+0269  57          	LD D,A
+026A  7B          	LD A,E		; A: D=ZEILE (0...7) E=POSITION (0...1FH)
+026B  E6 1F       	AND 1FH
+026D  5F          	LD E,A
+026E  F1          	POP AF
+026F  C9          	RET
+BBS:
+0270  CD 81 02    	CALL TST		; DISPLAY BESCHREIBEN BIS "ENTER" ODER "OFF"
+0273  28 FB       	JR Z,BBS
+0275  CD 5B 01    	CALL BSN
+0278  FE 06       	CP 06H		; " ENTER " ?
+027A  C8          	RET Z
+027B  FE 16       	CP 16H		; " OFF " ?
+027D  37          	SCF
+027E  C8          	RET Z
+027F  18 EF       	JR BBS
+TST:
+0281  E5          	PUSH HL		; TASTATURABFRAGE
+0282  C5          	PUSH BC
+0283  21 27 0D    	LD HL,0D27H		; RAM-ADR. LADEN
+0286  01 00 07    	LD BC,0700H		; TASTENSPEICHER LETZTES BYTE
+0289  7E          	LD A,(HL)
+028A  E6 C0       	AND C0H		; TASTEN UC (BIT 7) U. CTR (BIT 6) MERKEN
+028C  F5          	PUSH AF
+028D  7E          	LD A,(HL)		; RESTLICHE TAST. DIESER ZEILE
+028E  E6 3F       	AND 3FH
+TS3:
+0290  A7          	AND A		; TASTE GEDRUECKT ?
+0291  20 24       	JR NZ,TS2		; JA
+0293  2B          	DEC HL		; NEIN: NAECHSTE ZEILE ABFRAGEN
+0294  7E          	LD A,(HL)
+0295  10 F9       	DJNZ TS3		; 7 MAL
+0297  CB FE       	SET 7,(HL)		; KEINE TASTE:KENNZ.IN REPITIER-ZAEHLER
+0299  F1          	POP AF
+029A  2B          	DEC HL		; KURSORZAEHLER
+029B  7E          	LD A,(HL)
+029C  FE 01       	CP 01H		; ABGEZAEHLT ?
+029E  20 13       	JR NZ,TS0		; NEIN
+02A0  36 10       	LD (HL),10H		; JA: NEU SETZEN (320 [?] MILLISEC.)
+02A2  2B          	DEC HL
+02A3  44          	LD B,H		; (BC) = ZEICHEN AUF KPS
+02A4  4D          	LD C,L
+02A5  2B          	DEC HL
+02A6  6E          	LD L,(HL)		; HL = KURSORADR.
+02A7  26 0C       	LD H,0CH
+02A9  7E          	LD A,(HL)
+02AA  36 1F       	LD (HL),1FH		; KURSOR AUF DISPLAY SETZEN
+02AC  FE 1F       	CP 1FH		; STAND KURSOR DORT ?
+02AE  20 02       	JR NZ,TT3		; NEIN
+02B0  0A          	LD A,(BC)		; JA: ZEICHEN SCHREIBEN
+02B1  77          	LD (HL),A
+TT3:
+02B2  02          	LD (BC),A		; ZEICHEN AUF KPS MERKEN
+TS0:
+02B3  AF          	XOR A		; A=0,Z=1,CY=0: KEINE TASTE BET.
+02B4  C1          	POP BC
+02B5  E1          	POP HL
+02B6  C9          	RET
+TS2:
+02B7  0F          	RRCA		; TASTE IN ZEILE ERKANNT
+02B8  38 03       	JR C,TS4		; TASTE SUCHEN
+02BA  0C          	INC C
+02BB  18 FA       	JR TS2
+TS4:
+02BD  05          	DEC B		; C=TASTENNR. IN ZEILE B=ZEILENNR.
+02BE  78          	LD A,B
+02BF  87          	ADD A,A
+02C0  87          	ADD A,A
+02C1  87          	ADD A,A		; A=TASTENNR. 00...37H
+02C2  B1          	OR C
+02C3  C1          	POP BC		; B=GEMERKTE UMSCHALTTASTE
+02C4  FE 11       	CP 11H
+02C6  38 06       	JR C,TS5
+02C8  FE 2B       	CP 2BH		; TASTEN A...Z ?
+02CA  38 35       	JR C,TS6		; JA
+02CC  D6 1A       	SUB 1AH		; N.:TAST.NR. 2B..37H IN 11..2CH [?]
+TS5:
+02CE  CB 78       	BIT 7,B		; UC-TASTE ?
+02D0  28 02       	JR Z,TS8
+02D2  C6 1C       	ADD A,1CH
+TS8:
+02D4  21 05 03    	LD HL,TTA		; CODETAB. F. ASCII-TASTENCODE
+02D7  85          	ADD A,L
+02D8  6F          	LD L,A
+02D9  7E          	LD A,(HL)		; TASTENCODE
+TS9:
+02DA  CB 70       	BIT 6,B		; CTR-TASTE ?
+02DC  28 06       	JR Z,TS7		; NEIN
+02DE  D6 40       	SUB 40H		; JA: 40..5FH IN 00..1FH WANDELN
+02E0  FE 20       	CP 20H		; FALSCHER CODE ?
+02E2  30 CF       	JR NC,TS0		; JA: KEINE TASTE
+TS7:
+02E4  21 20 0D    	LD HL,0D20H		; REPITIERZAEHLER
+02E7  4E          	LD C,(HL)
+02E8  37          	SCF		; CY=1 BEI REPITIEREN
+02E9  06 20       	LD B,20H
+02EB  CB 79       	BIT 7,C		; TASTE NEU GEDR.? (Z=0)
+02ED  20 07       	JR NZ,TT2
+02EF  3F          	CCF		; CY=0
+02F0  0D          	DEC C		; REPITIERZ. AUF 1 ABGEZAEHLT ?
+02F1  20 04       	JR NZ,TT1		; NEIN
+02F3  06 05       	LD B,05H		; JA: 100 MILLISEC.
+02F5  37          	SCF		; CY=1
+TT2:
+02F6  70          	LD (HL),B		; REPITIERZ. NEU LADEN 20H O. 5
+TT1:
+02F7  CB 79       	BIT 7,C
+02F9  28 03       	JR Z,TT4
+02FB  2B          	DEC HL
+02FC  CB BE       	RES 7,(HL)		; EVTL. KURSORBLINKEN AKTIVIEREN
+TT4:
+02FE  C1          	POP BC
+02FF  E1          	POP HL
+0300  C9          	RET		; A=TASTENCODE CY,Z=ZEITZUSTAND
+TS6:
+0301  C6 30       	ADD A,30H		; TASTE A..Z:ASCII-CODE 41..5AH DIREKT BERECHNEN
+0303  18 D5       	JR TS9
+TTA:
+0305  30 31 32 33 34 35 36 37 38 39 2B 2C 5C 3B	DB	30H,31H,32H,33H,34H,35H,36H,37H,38H,39H,2BH,2CH,5CH,3BH		; TASTATUR-ASCII-TABELLE
+0313  2D 2E 20 3D 5B 03 00 1A 06 0B 16 0A 09 08	DB	2DH,2EH,20H,3DH,5BH,03H,00H,1AH,06H,0BH,16H,0AH,09H,08H
+0321  22 21 40 23 24 25 26 27 28 29 2A 3C 5E 3A	DB	22H,21H,40H,23H,24H,25H,26H,27H,28H,29H,2AH,3CH,5EH,3AH
+032F  2F 3E 20 3F 5D 03 00 1A 06 0B 16 0A 09 08	DB	2FH,3EH,20H,3FH,5DH,03H,00H,1AH,06H,0BH,16H,0AH,09H,08H
+
+; ---- S0.1: Rollen, Zeileneingabe, Hex-Ein-/Ausgabe -------------------------
+BS0:
+033D  F5          	PUSH AF		; DISPLAYINHALT 1 ZEILE NACH OBEN SCHIEBEN
+033E  E5          	PUSH HL
+033F  D5          	PUSH DE
+0340  C5          	PUSH BC
+0341  21 20 0C    	LD HL,0C20H		; ZEILE 2 BWS
+0344  11 00 0C    	LD DE,0C00H		; ZEILE 1 BWS
+0347  01 E0 00    	LD BC,00E0H
+034A  ED B0       	LDIR
+B01:
+034C  C1          	POP BC
+034D  D1          	POP DE
+034E  E1          	POP HL
+034F  F1          	POP AF
+0350  C9          	RET
+BSU:
+0351  F5          	PUSH AF		; DISPLAYINHALT 1 ZEILE NACH UNTEN SCHIEBEN
+0352  E5          	PUSH HL
+0353  D5          	PUSH DE
+0354  C5          	PUSH BC
+0355  21 DF 0C    	LD HL,0CDFH		; ENDE ZEILE 7 BWS
+0358  11 FF 0C    	LD DE,0CFFH		; ENDE ZEILE 8 BWS
+035B  01 E0 00    	LD BC,00E0H
+035E  ED B8       	LDDR
+0360  18 EA       	JR B01
+BZZ:
+0362  0E 1F       	LD C,1FH		; DISPLAYZEILE BESCHREIBEN
+BBZ:
+0364  CD 81 02    	CALL TST
+0367  CD 75 03    	CALL BSZ
+036A  28 F8       	JR Z,BBZ		; KEINE TASTE BETAET., Z=1
+036C  FE 06       	CP 06H		; " ENTER " ?
+036E  C8          	RET Z
+036F  FE 16       	CP 16H		; " OFF " ?
+0371  37          	SCF
+0372  C8          	RET Z		; JA
+0373  18 EF       	JR BBZ		; NEIN:ENTER O. OFF NICHT BET.
+BSZ:
+0375  D5          	PUSH DE		; ZEICHEN IN ZEILE AB DE BIS DE+C SCHREIBEN
+0376  E5          	PUSH HL
+0377  F5          	PUSH AF
+0378  EB          	EX DE,HL
+0379  CD 5E 02    	CALL BKL		; DE = KPS
+037C  EB          	EX DE,HL
+037D  B7          	OR A
+037E  ED 52       	SBC HL,DE
+0380  28 27       	JR Z,BZ4		; KURSOR AUF ZEILENBEREICHSANF.?
+BZ2:
+0382  DC 3E 02    	CALL C,BKS		; KURSOR VOR ZEILENBEREICH ?
+0385  38 22       	JR C,BZ4		; JA: AUF BEREICHSANFANG SETZEN
+0387  37          	SCF
+0388  24          	INC H		; H = 0 ?
+0389  25          	DEC H
+038A  20 F6       	JR NZ,BZ2		; KURSOR AUF FALSCHE ZEILE
+038C  7B          	LD A,E
+038D  81          	ADD A,C		; DE=SCHREIBBEREICHSENDE
+038E  5F          	LD E,A
+038F  7D          	LD A,L
+0390  B9          	CP C		; KURSOR HINTER ZEILENBEREICH
+0391  38 05       	JR C,BZ3		; NEIN: IM BEREICH
+0393  C4 3E 02    	CALL NZ,BKS		; JA: AUF SCHREIBBER.ENDE SETZEN
+0396  2E FF       	LD L,FFH
+BZ3:
+0398  F1          	POP AF
+0399  F5          	PUSH AF		; A=ZEICHEN
+039A  28 20       	JR Z,BZ5		; BEI Z=1 NICHT SCHREIBEN
+039C  FE 1A       	CP 1AH		; " CL " ?
+039E  CC 5B 01    	CALL Z,BSN
+03A1  FE 08       	CP 08H		; KURSOR NACH LINKS ?
+03A3  CC 5B 01    	CALL Z,BSN
+03A6  2C          	INC L
+03A7  28 13       	JR Z,BZ5
+BZ4:
+03A9  F1          	POP AF
+03AA  F5          	PUSH AF
+03AB  28 0F       	JR Z,BZ5		; KURSOR AM SCHREIBBEREICHSENDE
+03AD  FE 09       	CP 09H		; KURSOR NACH RECHTS ?
+03AF  CC 5B 01    	CALL Z,BSN
+03B2  FE 03       	CP 03H		; TABULATOR ?
+03B4  CC 5B 01    	CALL Z,BSN
+03B7  FE 20       	CP 20H		; ALLE SCHREIBZEICHEN SETZEN
+03B9  D4 5B 01    	CALL NC,BSN
+BZ5:
+03BC  F1          	POP AF
+03BD  E1          	POP HL
+03BE  D1          	POP DE
+03BF  C9          	RET
+HBS:
+03C0  F5          	PUSH AF		; HEXA-BYTE SCHREIBEN
+03C1  C5          	PUSH BC
+03C2  06 02       	LD B,02H		; B = ZAEHLER
+HW2:
+03C4  07          	RLCA
+03C5  07          	RLCA
+03C6  07          	RLCA
+03C7  07          	RLCA		; EINGABE: DE=POSITION A=HEXAZAHL
+03C8  4F          	LD C,A
+03C9  E6 0F       	AND 0FH		; BIT 4..7 AUSBLENDEN
+03CB  C6 30       	ADD A,30H
+03CD  FE 3A       	CP 3AH		; 0...9
+03CF  38 02       	JR C,HW1
+03D1  C6 07       	ADD A,07H		; A...F
+HW1:
+03D3  CD 13 02    	CALL BSS
+03D6  1C          	INC E		; NAECHSTE BILDPOS.
+03D7  79          	LD A,C
+03D8  10 EA       	DJNZ HW2		; 2 MAL
+03DA  C1          	POP BC
+03DB  F1          	POP AF
+03DC  C9          	RET
+HDS:
+03DD  F5          	PUSH AF		; HEXA-DOPPELBYTE SCHREIBEN
+03DE  7C          	LD A,H
+03DF  CD C0 03    	CALL HBS		; AUFRUF HBS MIT H UND L
+03E2  7D          	LD A,L
+03E3  CD C0 03    	CALL HBS
+03E6  F1          	POP AF
+03E7  C9          	RET
+ZLE:
+03E8  C5          	PUSH BC		; ZAHL LESEN
+03E9  4F          	LD C,A
+03EA  E6 7F       	AND 7FH		; BIT 0...6 STELLENZAHL
+03EC  47          	LD B,A
+03ED  21 00 00    	LD HL,0000H		; ANFANGSWERT NULL
+ZR3:
+03F0  CD 2C 02    	CALL BSL		; ZEICHEN LESEN
+03F3  D6 30       	SUB 30H
+03F5  FE 0A       	CP 0AH		; 0...9 ?
+03F7  38 0E       	JR C,ZR1		; JA
+03F9  CB 79       	BIT 7,C		; HEXAZAHL ? (BIT 7=1)
+03FB  28 25       	JR Z,ZR2
+03FD  D6 07       	SUB 07H		; A...F
+03FF  FE 10       	CP 10H
+0401  30 1F       	JR NC,ZR2
+0403  FE 0A       	CP 0AH
+0405  38 1B       	JR C,ZR2
+ZR1:
+0407  D5          	PUSH DE		; A=00..09 BZW. 00..0FH
+0408  29          	ADD HL,HL
+0409  5D          	LD E,L
+040A  54          	LD D,H
+040B  29          	ADD HL,HL
+040C  29          	ADD HL,HL
+040D  CB 79       	BIT 7,C		; HEXAZAHL ?
+040F  28 02       	JR Z,ZR4
+0411  5D          	LD E,L
+0412  54          	LD D,H
+ZR4:
+0413  19          	ADD HL,DE
+0414  5F          	LD E,A
+0415  16 00       	LD D,00H
+0417  B7          	OR A
+0418  ED 5A       	ADC HL,DE		; + NEUE ZIFFER
+041A  D1          	POP DE
+041B  13          	INC DE		; NAECHSTE DISPLAYPOS.
+041C  10 D2       	DJNZ ZR3		; ALLE STELLEN ?
+041E  37          	SCF
+041F  3F          	CCF		; CY=0
+0420  C1          	POP BC
+0421  C9          	RET
+ZR2:
+0422  79          	LD A,C		; KEINE ZIFFER GEFUNDEN
+0423  E6 7F       	AND 7FH
+0425  90          	SUB B
+0426  37          	SCF		; CY=1, Z=1 BEI STELLENZAHL NULL
+0427  C1          	POP BC
+0428  C9          	RET
+HBA:
+0429  E5          	PUSH HL		; HEXA-BYTE-ANFORDERUNG
+042A  3E 82       	LD A,82H
+042C  CD 51 04    	CALL HA2
+042F  7D          	LD A,L		; BYTE IN A
+0430  E1          	POP HL
+0431  C9          	RET
+HDA:
+0432  C5          	PUSH BC		; HEXA-DOPPELBYTE-ANFORDERUNG
+0433  4F          	LD C,A
+0434  3E 84       	LD A,84H
+0436  CD 51 04    	CALL HA2
+0439  79          	LD A,C
+043A  C1          	POP BC		; BYTE IN HL
+043B  C9          	RET
+HA5:
+043C  C1          	POP BC
+043D  F1          	POP AF
+HA6:
+043E  F5          	PUSH AF
+043F  D5          	PUSH DE
+0440  CD E8 03    	CALL ZLE
+0443  38 05       	JR C,HA1		; ZAHL NICHT VOLLSTAENDIG
+0445  F1          	POP AF		; ZAHL VOLLST., DE = NEUE POS.
+0446  F1          	POP AF
+0447  37          	SCF
+0448  3F          	CCF		; CY=0
+0449  C9          	RET
+HA1:
+044A  3E 3F       	LD A,3FH
+044C  D1          	POP DE
+044D  CD 13 02    	CALL BSS
+0450  F1          	POP AF
+HA2:
+0451  CD 3E 02    	CALL BKS
+0454  F5          	PUSH AF
+0455  C5          	PUSH BC
+0456  E6 07       	AND 07H		; BIT 0..2 AUSWERTEN
+0458  4F          	LD C,A		; C = 2 ODER 4
+0459  CD 64 03    	CALL BBZ
+045C  30 DE       	JR NC,HA5		; BEI " ENTER "
+045E  21 00 00    	LD HL,0000H		; BEI " OFF "
+0461  C1          	POP BC
+0462  F1          	POP AF
+0463  37          	SCF		; CY=1
+0464  C9          	RET
+TXS:
+0465  AF          	XOR A		; TEXT AUSSCHREIBEN
+TNS:
+0466  C5          	PUSH BC
+0467  47          	LD B,A
+0468  04          	INC B		; B=1 BEI TXS, B=TEXTNR.BEI TNS
+TX1:
+0469  CB 7E       	BIT 7,(HL)
+046B  23          	INC HL
+046C  28 FB       	JR Z,TX1		; SUCHSCHLEIFE TEXTANF.,BIT 7=1
+046E  10 F9       	DJNZ TX1
+0470  2B          	DEC HL
+TX2:
+0471  7E          	LD A,(HL)		; SCHLEIFE TEXT SCHREIBEN
+0472  CB BF       	RES 7,A
+0474  CD 5B 01    	CALL BSN
+0477  23          	INC HL
+0478  CB 7E       	BIT 7,(HL)
+047A  28 F5       	JR Z,TX2
+047C  C1          	POP BC
+047D  C9          	RET
+BSA:
+047E  F5          	PUSH AF		; DISPLAY LOESCHEN
+047F  E5          	PUSH HL
+0480  21 1F 0D    	LD HL,0D1FH
+0483  36 81       	LD (HL),81H
+0485  3E 0C       	LD A,0CH
+0487  CD 5B 01    	CALL BSN
+048A  3E 20       	LD A,20H
+048C  32 00 0C    	LD (0C00H),A		; KURSOR LOESCHEN
+048F  E1          	POP HL
+0490  F1          	POP AF
+0491  C9          	RET
+RSP:
+0492  06 3C       	LD B,3CH		; RAM SCHREIBSPERRE INITIALIS.
+0494  3E 0C       	LD A,0CH
+RP1:
+0496  C6 04       	ADD A,04H
+0498  D3 01       	OUT (01H),A		; SCHREIB-FREIGABE
+049A  10 FA       	DJNZ RP1
+049C  C9          	RET
+INX:
+049D  F3          	DI		; PROGRAMM "INIT"
+049E  21 00 0C    	LD HL,0C00H
+IX1:
+04A1  36 FF       	LD (HL),FFH		; SCHLEIFE RAM LOESCHEN
+04A3  23          	INC HL
+04A4  7C          	LD A,H
+04A5  B5          	OR L
+04A6  20 F9       	JR NZ,IX1
+04A8  32 20 F0    	LD (F020H),A		; ANFANG MARKENTAB. AUF 0 SETZEN
+04AB  C7          	RST 00H		; JMP 0000
+BSK:
+04AC  CD 92 04    	CALL RSP		; BETRIEBSSYSTEM-MENUEVERWALTUNG
+04AF  21 AC 04    	LD HL,04ACH		; RUECKSPRUNGADR.
+04B2  E5          	PUSH HL
+PRT:
+04B3  CD 5F 05    	CALL PR0		; BS LOESCHEN, B=0
+04B6  21 B5 05    	LD HL,05B5H		; MENUETABELLE 1
+PR5:
+04B9  CD 06 05    	CALL PRA		; AUSSCHREIBEN BIS ENDE-BILDENDE
+04BC  D4 3E 05    	CALL NC,PRE		; MENUEBEDIENUNG BEI VOLLST.BILD
+04BF  30 F8       	JR NC,PR5
+04C1  21 FF 3F    	LD HL,3FFFH		; MENUETAB. 2 (EDIT,RAM,EPROG)
+04C4  7E          	LD A,(HL)
+04C5  A7          	AND A		; ANFANG = 0 ?
+04C6  20 09       	JR NZ,PR1
+04C8  2B          	DEC HL
+PR6:
+04C9  CD 06 05    	CALL PRA
+04CC  D4 3E 05    	CALL NC,PRE
+04CF  30 F8       	JR NC,PR6
+PR1:
+04D1  21 FF 5F    	LD HL,5FFFH		; MENUETABELLE 3 5FFFH (PROM-BEREICH 2) [handschriftlich daneben: (7FFFH); ROM: 5FFFH]
+04D4  7E          	LD A,(HL)
+04D5  A7          	AND A
+04D6  20 09       	JR NZ,PR2
+04D8  2B          	DEC HL
+PR7:
+04D9  CD 06 05    	CALL PRA
+04DC  D4 3E 05    	CALL NC,PRE
+04DF  30 F8       	JR NC,PR7
+PR2:
+04E1  21 FF 77    	LD HL,77FFH		; MENUETABELLE 4 77FFH (PROZESSMENUE) [handschriftlich daneben: (5FFFH); ROM: 77FFH]
+04E4  7E          	LD A,(HL)
+04E5  A7          	AND A
+04E6  20 09       	JR NZ,PR3
+04E8  2B          	DEC HL
+PR8:
+04E9  CD 06 05    	CALL PRA
+04EC  D4 3E 05    	CALL NC,PRE
+04EF  30 F8       	JR NC,PR8
+PR3:
+04F1  21 FF FF    	LD HL,FFFFH		; MENUETABELLE 5 FFFFH (RAM-MENUE) [handschriftlich daneben: (77FFH); ROM: FFFFH]
+04F4  7E          	LD A,(HL)
+04F5  A7          	AND A
+04F6  20 09       	JR NZ,PR4
+04F8  2B          	DEC HL
+PR9:
+04F9  CD 06 05    	CALL PRA
+04FC  CD 3E 05    	CALL PRE
+04FF  18 F8       	JR PR9
+PR4:
+0501  CD 3E 05    	CALL PRE
+0504  18 FB       	JR PR4
+PRA:
+0506  56          	LD D,(HL)		; MENUE AUSSCHREIBEN
+0507  2B          	DEC HL
+0508  5E          	LD E,(HL)		; DE = ADRESSE
+0509  2B          	DEC HL
+050A  7E          	LD A,(HL)		; KENNBYTE
+050B  23          	INC HL
+050C  23          	INC HL
+050D  FE FF       	CP FFH		; TABELLENENDE ?
+050F  37          	SCF
+0510  C8          	RET Z		; JA
+0511  2B          	DEC HL
+0512  2B          	DEC HL
+0513  FE 80       	CP 80H		; KENNBYTE MENUENAME ?
+0515  28 08       	JR Z,PA1		; JA
+PA2:
+0517  2B          	DEC HL		; NEIN: NAECHSTE TABELLENZEILE
+0518  CB 7E       	BIT 7,(HL)
+051A  28 FB       	JR Z,PA2
+051C  2B          	DEC HL
+051D  18 E7       	JR PRA
+PA1:
+051F  E5          	PUSH HL		; MENUEZEILE AUSSCHREIBEN
+0520  EB          	EX DE,HL
+0521  50          	LD D,B		; B = DISPLAYZEILE
+0522  1E 00       	LD E,00H		; ZEILENANFANG
+0524  CD DD 03    	CALL HDS		; ADRESSE AUSSCHREIBEN
+0527  1C          	INC E
+0528  1C          	INC E
+0529  E1          	POP HL
+PA3:
+052A  2B          	DEC HL
+052B  7E          	LD A,(HL)		; TEXTZEICHEN
+052C  E6 7F       	AND 7FH
+052E  CD 13 02    	CALL BSS
+0531  1C          	INC E
+0532  CB 7E       	BIT 7,(HL)		; LETZTES ZEICHEN ?
+0534  28 F4       	JR Z,PA3		; NEIN
+0536  2B          	DEC HL		; JA
+0537  04          	INC B		; NAECHSTE DISPLAYZEILE
+0538  78          	LD A,B
+0539  FE 08       	CP 08H		; BILDENDE ?
+053B  38 C9       	JR C,PRA		; NEIN: NAECHSTE MENUEZEILE
+053D  C9          	RET		; JA
+PRE:
+053E  16 00       	LD D,00H		; MENUEBEDIENUNG
+PE1:
+0540  3E 07       	LD A,07H
+0542  BA          	CP D		; GROESSER ZEILE 8 ANGEWAEHLT ?
+0543  38 F9       	JR C,PRE		; JA: ZEILE 1
+0545  1E 05       	LD E,05H		; NEIN
+0547  3E 3E       	LD A,3EH
+0549  CD 3E 02    	CALL BKS
+054C  CD 13 02    	CALL BSS		; " > " SCHREIBEN
+L054F:
+054F  CD 81 02    	CALL TST
+0552  28 FB       	JR Z,L054F		; KEINE TASTE BET.
+0554  F5          	PUSH AF
+0555  3E 20       	LD A,20H
+0557  CD 13 02    	CALL BSS		; " > " LOESCHEN
+055A  F1          	POP AF
+055B  FE 4E       	CP 4EH		; " N " ?
+055D  20 08       	JR NZ,PE2		; NEIN
+PR0:
+055F  3E 0C       	LD A,0CH		; JA: BS LOESCHEN
+0561  CD 5B 01    	CALL BSN
+0564  06 00       	LD B,00H		; B = OBERSTE ZEILE
+0566  C9          	RET
+PE2:
+0567  FE 16       	CP 16H		; " OFF " ?
+0569  20 05       	JR NZ,PE3
+PE4:
+056B  21 B3 04    	LD HL,04B3H
+056E  E3          	EX (SP),HL
+056F  C9          	RET
+PE3:
+0570  14          	INC D
+0571  FE 0A       	CP 0AH		; KURSOR NACH UNTEN ?
+0573  28 CB       	JR Z,PE1		; JA
+0575  15          	DEC D
+0576  15          	DEC D
+0577  FE 0B       	CP 0BH		; KURSOR NACH OBEN ?
+0579  28 C5       	JR Z,PE1		; JA
+057B  14          	INC D
+057C  FE 06       	CP 06H		; " ENTER " ?
+057E  20 C0       	JR NZ,PE1
+0580  1E 00       	LD E,00H
+0582  CD 8E 05    	CALL HDL		; ADRESSE LESEN
+0585  38 E4       	JR C,PE4		; CY=1 BEI " OFF "
+0587  C1          	POP BC
+0588  3E 0C       	LD A,0CH
+058A  CD 5B 01    	CALL BSN		; BS LOESCHEN
+058D  E9          	JP (HL)		; SPRUNG AUF GELESENE ADRESSE
+HDL:
+058E  C5          	PUSH BC		; HEXA-DOPPELBYTE LESEN
+058F  4F          	LD C,A
+0590  3E 84       	LD A,84H
+0592  CD 3E 04    	CALL HA6
+0595  79          	LD A,C
+0596  C1          	POP BC
+0597  C9          	RET
+
+; ---- S0.2: Menuetabelle 1 (rueckwaerts gelesen ab 05B5H) -------------------
+0598  FF FF FF    	DB	0FFH,0FFH,0FFH		; MENUETABELLE 1 (RUECKWAERTS) TABELLENENDE ALS KENNBYTE
+059B  C4          	DB	0C4H		; " D " LETZTER BUCHST., BIT 7=1
+059C  4E 41 42    	DB	'NAB'		; " BAND "
+059F  80          	DB	80H		; KENNBYTE
+05A0  00 06       	DW	0600H		; STARTADR. "BAND": in dieser Fassung 0600H (Original-Listing: 05B6H, MB-BSY)
+05A2  D4          	DB	0D4H		; " T "
+05A3  49 4E 49    	DB	'INI'		; " INIT "
+05A6  80          	DB	80H		; KENNBYTE
+05A7  9D 04       	DW	049DH		; STARTADR. "INIT" (049D)
+05A9  D4          	DB	0D4H		; " T "
+05AA  53 45 54 4E 45 54 53 41 54	DB	'SETNETSAT'		; " TASTENTEST "
+05B3  80          	DB	80H		; KENNBYTE
+05B4  70 02       	DW	0270H		; STARTADR. (0270)
+05B6  FF FF FF FF 	DB	0FFH,0FFH,0FFH,0FFH		; frei (FFH); im Original-Listing steht hier das Menue MEN der KMBG-Fassung
+	DS	70,0FFH		; bis 05FFH FFH
+
+; ---- S0.2/S0.3: Magnetbandprogramm (Programmversion 12.01.84) --------------
+BAND:
+0600  CD 00 20    	CALL MBM		; Menuepunkt BAND: Untermenue S0.4 (MBM) fragt Betriebsart und Parameter ab
+0603  DA 00 00    	JP C,BSY		; Cy=1 (OFF) -> Neustart
+0606  3A FF 0D    	LD A,(0DFFH)		; MBB (0DFFH): 00 Schreiben, 01 Lesen, 02 Loeschen
+0609  E6 FF       	AND FFH
+060B  20 0D       	JR NZ,L061A
+060D  F5          	PUSH AF
+060E  CD 6F 06    	CALL MWR0		; MWR: Datei schreiben
+0611  30 06       	JR NC,L0619		; Cy=0: gut
+0613  CC 69 07    	CALL Z,BFEHL		; Cy=1,Z=1: vorhergehender Block fehlt -> 'BLOCK xxxx FEHLT'
+0616  C4 56 07    	CALL NZ,FDATM		; Cy=1,Z=0: Schreibversuch innerhalb einer Datei -> 'FDAT'
+L0619:
+0619  F1          	POP AF
+L061A:
+061A  FE 01       	CP 01H
+061C  20 08       	JR NZ,L0626
+061E  F5          	PUSH AF
+061F  CD 5D 06    	CALL MRD0		; MRD: Datei lesen; Cy=1 -> 'BLOCK xxxx FEHLT'
+0622  DC 69 07    	CALL C,BFEHL
+0625  F1          	POP AF
+L0626:
+0626  FE 02       	CP 02H
+0628  CC 23 07    	CALL Z,MCL0		; MCL: Kassette loeschen
+062B  18 D3       	JR BAND		; zurueck ins Magnetband-Menue
+BLE:
+062D  C3 2A 09    	JP BLE0		; Sprungleiste des Handbuchs (4.3.2.2/4.3.2.3): BLE = eine Blockstruktur lesen
+MRD:
+0630  C3 5D 06    	JP MRD0		; MRD Magnetband lesen (RAM,BLZ,BLN,MBB,NAZ,BYE)
+MWR:
+0633  C3 6F 06    	JP MWR0		; MWR Magnetband schreiben
+MCL:
+0636  C3 23 07    	JP MCL0		; MCL Magnetband loeschen (mit Bildschirmdialog)
+RCK:
+0639  C3 4F 0B    	JP RCK0		; RCK Rueckspulen bis Bandanfang, danach 'Lauf'
+AUS:
+063C  C3 8F 08    	JP AUS0		; AUS Endabschaltung Laufwerk
+LIN:
+063F  C3 A0 07    	JP LIN0		; LIN Initialisierung Lesen
+WIN:
+0642  C3 60 0A    	JP WIN0		; WIN Initialisierung Schreiben
+WVO:
+0645  C3 97 0A    	JP WVO0		; WVO Vorbereitung Schreiben (Art in SPH)
+GRZ:
+0648  C3 84 07    	JP GRZ0		; GRZ Grundzustand Pufferspeicher
+R1S:
+064B  C3 CE 07    	JP R1S0		; R1S Ruecksetzen um ca. 1 s
+LES:
+064E  C3 ED 07    	JP LES0		; LES Leseprogramm nach BLN,BLZ,RAM,BYE,MBB,NAZ
+LWK:
+0651  C3 9F 08    	JP LWK0		; LWK Laufwerk einschalten (Register E = Steuerdaten fuer PIO B)
+PIN:
+0654  C3 DA 08    	JP PIN0		; PIN Initialisierung Steuerport (MBI-PIO Kanal B)
+VGL:
+0657  C3 AC 09    	JP VGL0		; VGL Blocknummernvergleich und Suchlauf (BC = gesuchte BLN)
+ZEI:
+065A  C3 1F 09    	JP ZEI0		; ZEI Zeitschleife (A aussen, C mitte, B=256 innen)
+MRD0:
+065D  CD 84 07    	CALL GRZ0		; MRD0: Grundzustand, LIN, 1 s zurueck, LES, AUS
+0660  CD A0 07    	CALL LIN0
+0663  CD CE 07    	CALL R1S0
+0666  CD ED 07    	CALL LES0
+0669  F5          	PUSH AF
+066A  CD 8F 08    	CALL AUS0
+066D  F1          	POP AF
+066E  C9          	RET
+MWR0:
+066F  E5          	PUSH HL		; MWR0: Schreiben einer Datei
+0670  CD A0 07    	CALL LIN0
+0673  2A FD 0D    	LD HL,(0DFDH)		; BLN = 0001 ?
+0676  2B          	DEC HL
+0677  7D          	LD A,L
+0678  B4          	OR H
+0679  20 69       	JR NZ,L06E4		; nein: Bandstelle suchen
+067B  CD 4F 0B    	CALL RCK0		; ja: zum Bandanfang
+067E  21 00 14    	LD HL,1400H		; Vorluecke: 1400H Byte-Interrupts (ca. 27 s bei 192 Byte/s [?]; Handbuch 'ca. 30 s')
+0681  22 F9 0D    	LD (0DF9H),HL
+0684  21 2C 21    	LD HL,212CH		; Vektor CTC3 (0D0EH) = IVL (zaehlt 0DF9H herunter)
+0687  22 0E 0D    	LD (0D0EH),HL
+068A  CD 60 0A    	CALL WIN0		; WIN: Schreiben einrichten
+068D  CD 84 07    	CALL GRZ0
+0690  21 F2 0D    	LD HL,0DF2H		; SPH Bit 0: Bandmarke vorbereiten
+0693  CB C6       	SET 0,(HL)
+0695  CD 97 0A    	CALL WVO0
+L0698:
+0698  2A F9 0D    	LD HL,(0DF9H)		; warten, bis die Vorluecke abgelaufen ist
+069B  7D          	LD A,L
+069C  B4          	OR H
+069D  20 F9       	JR NZ,L0698
+069F  3E 0A       	LD A,0AH		; PIO B: Daten schreiben (0AH)
+06A1  D3 FE       	OUT (FEH),A
+06A3  3E AA       	LD A,AAH		; Praeambel AAH in das Schieberegister
+06A5  D3 FC       	OUT (FCH),A
+06A7  21 D1 0B    	LD HL,0BD1H		; Vektor CTC3 = ISB (Byte schreiben)
+06AA  22 0E 0D    	LD (0D0EH),HL
+06AD  CD 8B 0A    	CALL WARB		; warten, bis der Block heraus ist (BYZ = 0)
+L06B0:
+06B0  CD 84 07    	CALL GRZ0
+06B3  3E 02       	LD A,02H		; SPH Bit 1: Kennzeichnungsblock (Name, BLN FFFFH)
+06B5  32 F2 0D    	LD (0DF2H),A
+06B8  CD 97 0A    	CALL WVO0
+06BB  CD 8B 0A    	CALL WARB
+L06BE:
+06BE  CD 84 07    	CALL GRZ0		; Datenbloecke
+06C1  CD 97 0A    	CALL WVO0
+06C4  CD 8B 0A    	CALL WARB
+06C7  CD 15 0B    	CALL BLP		; BLN+1, BLZ-1, Protokoll; Z = alle Bloecke geschrieben
+06CA  20 F2       	JR NZ,L06BE
+06CC  CD 84 07    	CALL GRZ0
+06CF  3E 01       	LD A,01H		; SPH Bit 0: abschliessende Bandmarke
+06D1  32 F2 0D    	LD (0DF2H),A
+06D4  CD 97 0A    	CALL WVO0
+06D7  CD 8B 0A    	CALL WARB
+06DA  21 F2 0D    	LD HL,0DF2H
+L06DD:
+06DD  CB 56       	BIT 2,(HL)		; warten auf SPH Bit 2 (Nachpause fertig, Laufwerk aus)
+06DF  28 FC       	JR Z,L06DD
+06E1  AF          	XOR A
+L06E2:
+06E2  E1          	POP HL
+06E3  C9          	RET
+L06E4:
+06E4  CD CE 07    	CALL R1S0		; BLN > 1: 1 s zurueck, die VORHERGEHENDE Blocknummer suchen
+06E7  2A FD 0D    	LD HL,(0DFDH)
+06EA  2B          	DEC HL
+06EB  22 FD 0D    	LD (0DFDH),HL
+06EE  CD ED 07    	CALL LES0
+06F1  DC 8F 08    	CALL C,AUS0		; nicht gefunden: AUS, Cy=1 (Z aus LES)
+06F4  38 EC       	JR C,L06E2
+06F6  CD 2A 09    	CALL BLE0		; naechste Struktur lesen: muss eine Bandmarke sein
+06F9  21 F2 0D    	LD HL,0DF2H
+06FC  CB 76       	BIT 6,(HL)		; SPH Bit 6 = Bandmarke gelesen
+06FE  20 05       	JR NZ,L0705
+0700  C6 01       	ADD A,01H		; nein: Cy=1, Z=0 = Schreibversuch in einer Datei (FDAT)
+0702  37          	SCF
+0703  18 DD       	JR L06E2
+L0705:
+0705  3E 03       	LD A,03H		; MBI-CTC 3 ruecksetzen
+0707  D3 FB       	OUT (FBH),A
+0709  CD 84 07    	CALL GRZ0
+070C  3E 51       	LD A,51H		; Pausenzaehler PAZ (0DE8H) = 51H Byte-Zeiten
+070E  32 E8 0D    	LD (0DE8H),A
+0711  21 02 21    	LD HL,2102H		; Vektor CTC3 = IPA (Pause), dann wie beim Bandanfang weiter
+0714  22 0E 0D    	LD (0D0EH),HL
+0717  CD 60 0A    	CALL WIN0
+071A  2A FD 0D    	LD HL,(0DFDH)
+071D  23          	INC HL
+071E  22 FD 0D    	LD (0DFDH),HL
+0721  18 8D       	JR L06B0
+MCL0:
+0723  F5          	PUSH AF		; MCL0: 'MB-LOESCHEN ?', Start mit CTR+L (Code 0CH), Abbruch OFF
+0724  D5          	PUSH DE
+0725  E5          	PUSH HL
+0726  21 E3 21    	LD HL,TLO
+0729  CD 65 04    	CALL TXS
+L072C:
+072C  CD 13 00    	CALL L0013
+072F  FE 16       	CP 16H
+0731  20 04       	JR NZ,L0737
+L0733:
+0733  E1          	POP HL
+0734  D1          	POP DE
+0735  F1          	POP AF
+0736  C9          	RET
+L0737:
+0737  FE 0C       	CP 0CH
+0739  20 F1       	JR NZ,L072C
+073B  3E 20       	LD A,20H
+073D  CD 0B 00    	CALL L000B
+0740  CD A0 07    	CALL LIN0		; Laufwerk einschalten, zum Bandanfang
+0743  CD 4F 0B    	CALL RCK0
+0746  3E 02       	LD A,02H		; PIO B 02H: Schreiben mit Pausenpegel = Loeschen bis OFF
+0748  D3 FE       	OUT (FEH),A
+L074A:
+074A  CD 13 00    	CALL L0013
+074D  FE 16       	CP 16H
+074F  20 F9       	JR NZ,L074A
+0751  CD 8F 08    	CALL AUS0
+0754  18 DD       	JR L0733
+FDATM:
+0756  F5          	PUSH AF		; FDATM: Laufwerk aus, 'FDAT', auf Taste warten
+0757  E5          	PUSH HL
+0758  CD 8F 08    	CALL AUS0
+075B  21 DE 21    	LD HL,TFD
+075E  CD 65 04    	CALL TXS
+L0761:
+0761  CD 13 00    	CALL L0013
+0764  28 FB       	JR Z,L0761
+0766  E1          	POP HL
+0767  F1          	POP AF
+0768  C9          	RET
+BFEHL:
+0769  F5          	PUSH AF		; BFEHL: 'BLOCK xxxx FEHLT' mit BLN in Zeile 1, auf Taste warten
+076A  D5          	PUSH DE
+076B  E5          	PUSH HL
+076C  21 F2 21    	LD HL,TBF
+076F  CD 65 04    	CALL TXS
+0772  2A FD 0D    	LD HL,(0DFDH)
+0775  11 06 01    	LD DE,0106H
+0778  CD DD 03    	CALL HDS
+L077B:
+077B  CD 13 00    	CALL L0013
+077E  28 FB       	JR Z,L077B
+0780  E1          	POP HL
+0781  D1          	POP DE
+0782  F1          	POP AF
+0783  C9          	RET
+GRZ0:
+0784  F5          	PUSH AF		; GRZ0: Puffer 0E00-0EFFH = 0, PUZ = 0E00H, SPH = 0, CRC = 0, BYZ = 0
+0785  E5          	PUSH HL
+0786  AF          	XOR A
+0787  21 00 0E    	LD HL,0E00H
+078A  22 F3 0D    	LD (0DF3H),HL
+L078D:
+078D  77          	LD (HL),A
+078E  2C          	INC L
+078F  20 FC       	JR NZ,L078D
+0791  32 F2 0D    	LD (0DF2H),A
+0794  21 00 00    	LD HL,0000H
+0797  22 E5 0D    	LD (0DE5H),HL
+079A  22 F0 0D    	LD (0DF0H),HL
+079D  E1          	POP HL
+079E  F1          	POP AF
+079F  C9          	RET
+LIN0:
+07A0  F5          	PUSH AF		; LIN0: Laufwerk ein (E = 03H: Lesen, Capstan)
+07A1  D5          	PUSH DE
+07A2  E5          	PUSH HL
+07A3  1E 03       	LD E,03H
+07A5  CD 9F 08    	CALL LWK0
+07A8  21 81 0B    	LD HL,0B81H		; Vektor CTC3 = ISY (Synchronisations-/Blockendeinterrupt)
+07AB  22 0E 0D    	LD (0D0EH),HL
+07AE  3E 4F       	LD A,4FH		; MBI-PIO A: Betriebsart 1 (Byte-Eingabe)
+07B0  D3 FD       	OUT (FDH),A
+07B2  3E 08       	LD A,08H		; MBI-CTC Vektorbasis 08H (Tabelle 0D08-0D0FH)
+07B4  D3 F8       	OUT (F8H),A
+07B6  3E 47       	LD A,47H		; CTC 1 und CTC 2: 47H = Zaehler ohne Interrupt, Zeitkonstante 4BH [?Zweck]
+07B8  D3 F9       	OUT (F9H),A
+07BA  D3 FA       	OUT (FAH),A
+07BC  3E 4B       	LD A,4BH
+07BE  D3 F9       	OUT (F9H),A
+07C0  D3 FA       	OUT (FAH),A
+07C2  3E F7       	LD A,F7H		; CTC 3: F7H = Zaehler mit Interrupt, steigende Flanke, Zeitkonstante 1
+07C4  D3 FB       	OUT (FBH),A
+07C6  3E 01       	LD A,01H
+07C8  D3 FB       	OUT (FBH),A
+07CA  E1          	POP HL
+07CB  D1          	POP DE
+07CC  F1          	POP AF
+07CD  C9          	RET
+R1S0:
+07CE  F5          	PUSH AF		; R1S0: Rueckspulen (EFH = 0AH), dann kurz Vorlauf (06H) zum Bremsen [?], dann 13H
+07CF  C5          	PUSH BC
+07D0  3E 0A       	LD A,0AH
+07D2  D3 EF       	OUT (EFH),A		; Laufwerksregister EFH: 0AH = schneller Ruecklauf [?]
+07D4  3E 01       	LD A,01H
+07D6  0E 90       	LD C,90H
+07D8  CD 1F 09    	CALL ZEI0
+07DB  3E 06       	LD A,06H
+07DD  D3 EF       	OUT (EFH),A		; 06H = schneller Vorlauf [?]
+07DF  3E 01       	LD A,01H
+07E1  0E 20       	LD C,20H
+07E3  CD 1F 09    	CALL ZEI0
+07E6  3E 13       	LD A,13H
+07E8  D3 EF       	OUT (EFH),A		; 13H = Wiedergabe/Lauf 4,76 cm/s [?]
+07EA  C1          	POP BC
+07EB  F1          	POP AF
+07EC  C9          	RET
+LES0:
+07ED  C5          	PUSH BC		; LES0: Blockweise lesen, Fehlversuchszaehler FEZ = 10H
+07EE  D5          	PUSH DE
+07EF  E5          	PUSH HL
+07F0  3E 10       	LD A,10H
+07F2  32 E7 0D    	LD (0DE7H),A
+L07F5:
+07F5  CD 2A 09    	CALL BLE0		; naechste Blockstruktur
+07F8  3A E7 0D    	LD A,(0DE7H)
+07FB  E6 7F       	AND 7FH		; Fehlversuche erschoepft: Cy=1
+07FD  37          	SCF
+07FE  CA 8B 08    	JP Z,L088B
+0801  21 F2 0D    	LD HL,0DF2H		; SPH Bit 5: Datenblock gelesen?
+0804  CB 6E       	BIT 5,(HL)
+0806  28 ED       	JR Z,L07F5
+0808  CB AE       	RES 5,(HL)
+080A  2A F7 0D    	LD HL,(0DF7H)		; CRC ueber BLN + BYE Daten + CRC (BYE+4 Byte ab 0E01H): Rest 0 = gut
+080D  11 04 00    	LD DE,0004H
+0810  19          	ADD HL,DE
+0811  EB          	EX DE,HL
+0812  21 01 0E    	LD HL,0E01H
+L0815:
+0815  E5          	PUSH HL
+0816  4E          	LD C,(HL)
+0817  CD 3F 0A    	CALL CRR
+081A  E1          	POP HL
+081B  23          	INC HL
+081C  1B          	DEC DE
+081D  7A          	LD A,D
+081E  B3          	OR E
+081F  20 F4       	JR NZ,L0815
+0821  2A E5 0D    	LD HL,(0DE5H)		; CRC-Rest <> 0: neu lesen
+0824  7D          	LD A,L
+0825  B4          	OR H
+0826  20 CD       	JR NZ,L07F5
+0828  2A 01 0E    	LD HL,(0E01H)		; BLN = FFFFH: Kennzeichnungsblock -> nach NAZ umlagern
+082B  11 01 00    	LD DE,0001H
+082E  19          	ADD HL,DE
+082F  DC 26 0A    	CALL C,NAMU
+0832  38 C1       	JR C,L07F5
+0834  ED 4B FD 0D 	LD BC,(0DFDH)		; gelesene mit gesuchter BLN vergleichen, ggf. spulen
+0838  CD AC 09    	CALL VGL0
+083B  20 B8       	JR NZ,L07F5
+083D  3A FF 0D    	LD A,(0DFFH)		; beim Schreiben (MBB Bit 0 = 0) endet LES an der gefundenen Stelle, A = 08H
+0840  CB 47       	BIT 0,A
+0842  3E 08       	LD A,08H
+0844  28 45       	JR Z,L088B
+0846  3A FF 0D    	LD A,(0DFFH)
+0849  CB 7F       	BIT 7,A
+084B  F5          	PUSH AF
+084C  20 06       	JR NZ,L0854
+084E  21 12 04    	LD HL,0412H		; 'RD' in Zeile 2 Spalte 10 (0412H = Codes 'R','D')
+0851  22 2A 0C    	LD (0C2AH),HL
+L0854:
+0854  21 03 0E    	LD HL,0E03H		; Daten in den Hauptspeicher (RAM, 0DFBH) umlagern
+0857  ED 5B FB 0D 	LD DE,(0DFBH)
+085B  ED 4B F7 0D 	LD BC,(0DF7H)
+085F  ED B0       	LDIR
+0861  EB          	EX DE,HL
+0862  22 FB 0D    	LD (0DFBH),HL
+0865  2B          	DEC HL
+0866  11 1C 01    	LD DE,011CH		; Speicherstand in Zeile 2 ab Spalte 1CH
+0869  F1          	POP AF
+086A  F5          	PUSH AF
+086B  CC DD 03    	CALL Z,HDS
+086E  ED 4B FD 0D 	LD BC,(0DFDH)
+0872  03          	INC BC
+0873  ED 43 FD 0D 	LD (0DFDH),BC
+0877  2A F5 0D    	LD HL,(0DF5H)		; BLZ-1, Protokoll in Zeile 2 ab Spalte 12H
+087A  2B          	DEC HL
+087B  22 F5 0D    	LD (0DF5H),HL
+087E  11 12 01    	LD DE,0112H
+0881  F1          	POP AF
+0882  CC DD 03    	CALL Z,HDS
+0885  7C          	LD A,H
+0886  B5          	OR L
+0887  C2 F5 07    	JP NZ,L07F5
+088A  A7          	AND A
+L088B:
+088B  E1          	POP HL
+088C  D1          	POP DE
+088D  C1          	POP BC
+088E  C9          	RET
+AUS0:
+088F  F5          	PUSH AF		; AUS0: PIO B 01H (Lesen, Capstan aus), CTC 2 ruecksetzen, PIO-B-Interrupt aus, EFH = 0
+0890  3E 01       	LD A,01H
+0892  D3 FE       	OUT (FEH),A
+0894  3E 03       	LD A,03H
+0896  D3 FA       	OUT (FAH),A
+0898  D3 FF       	OUT (FFH),A
+089A  AF          	XOR A
+089B  D3 EF       	OUT (EFH),A
+089D  F1          	POP AF
+089E  C9          	RET
+LWK0:
+089F  F5          	PUSH AF		; LWK0: Steuerport einrichten
+08A0  C5          	PUSH BC
+08A1  CD DA 08    	CALL PIN0
+L08A4:
+08A4  DB FE       	IN A,(FEH)		; MBI-PIO B Bit 7 = 1: Kassette eingelegt
+08A6  CB 7F       	BIT 7,A
+08A8  CC EF 08    	CALL Z,KAS
+08AB  47          	LD B,A
+08AC  3A FF 0D    	LD A,(0DFFH)		; beim Schreiben und Loeschen (MBB Bit 0 = 0):
+08AF  CB 47       	BIT 0,A
+08B1  20 07       	JR NZ,L08BA
+08B3  CB 68       	BIT 5,B		; Bit 5 = 1: Schreibsperre (Riegel ausgebrochen)
+08B5  C4 0E 09    	CALL NZ,SSP
+08B8  20 EA       	JR NZ,L08A4
+L08BA:
+08BA  7B          	LD A,E		; Steuerdaten E an PIO B (Bit 0 Lesen, Bit 1 Capstan, Bit 3 Daten; Handbuch LWK)
+08BB  D3 FE       	OUT (FEH),A
+08BD  3E 01       	LD A,01H
+08BF  0E 40       	LD C,40H
+08C1  CD 1F 09    	CALL ZEI0
+08C4  3E 11       	LD A,11H		; EFH = 11H, dann PIO-B-Interrupt frei (83H), EFH = 13H [Magneten, ?]
+08C6  D3 EF       	OUT (EFH),A
+08C8  3E 01       	LD A,01H
+08CA  0E 40       	LD C,40H
+08CC  CD 1F 09    	CALL ZEI0
+08CF  3E 83       	LD A,83H
+08D1  D3 FF       	OUT (FFH),A
+08D3  3E 13       	LD A,13H
+08D5  D3 EF       	OUT (EFH),A
+08D7  C1          	POP BC
+08D8  F1          	POP AF
+08D9  C9          	RET
+PIN0:
+08DA  F5          	PUSH AF		; PIN0: Vektor 0D2CH = IPB, PIO B mit Tabelle PIOT einrichten (Interrupt noch gesperrt)
+08DB  C5          	PUSH BC
+08DC  E5          	PUSH HL
+08DD  21 67 0B    	LD HL,0B67H
+08E0  22 2C 0D    	LD (0D2CH),HL
+08E3  21 BB 21    	LD HL,PIOT
+08E6  01 FF 05    	LD BC,05FFH
+08E9  ED B3       	OTIR
+08EB  E1          	POP HL
+08EC  C1          	POP BC
+08ED  F1          	POP AF
+08EE  C9          	RET
+KAS:
+08EF  F5          	PUSH AF		; KAS: 'KAS. EINLEGEN', warten auf PIO B Bit 7 = 1
+08F0  C5          	PUSH BC
+08F1  E5          	PUSH HL
+08F2  21 C0 21    	LD HL,TKE
+08F5  CD 65 04    	CALL TXS
+L08F8:
+08F8  DB FE       	IN A,(FEH)
+08FA  CB 7F       	BIT 7,A
+08FC  28 FA       	JR Z,L08F8
+L08FE:
+08FE  3E 18       	LD A,18H
+0900  CD 0B 00    	CALL L000B
+0903  3E 03       	LD A,03H
+0905  0E 00       	LD C,00H
+0907  CD 1F 09    	CALL ZEI0
+090A  E1          	POP HL
+090B  C1          	POP BC
+090C  F1          	POP AF
+090D  C9          	RET
+SSP:
+090E  F5          	PUSH AF		; SSP: 'KAS. GESPERRT', warten auf PIO B Bit 5 = 0
+090F  C5          	PUSH BC
+0910  E5          	PUSH HL
+0911  21 CF 21    	LD HL,TKG
+0914  CD 65 04    	CALL TXS
+L0917:
+0917  DB FE       	IN A,(FEH)
+0919  CB 6F       	BIT 5,A
+091B  20 FA       	JR NZ,L0917
+091D  18 DF       	JR L08FE
+ZEI0:
+091F  06 00       	LD B,00H		; ZEI0: Wartezeit A x C x 256 DJNZ (C = 0 zaehlt 256)
+L0921:
+0921  10 FE       	DJNZ L0921
+0923  0D          	DEC C
+0924  20 FB       	JR NZ,L0921
+0926  3D          	DEC A
+0927  20 F8       	JR NZ,L0921
+0929  C9          	RET
+BLE0:
+092A  F5          	PUSH AF		; BLE0: auf das Blockende warten (SPH Bit 7 aus ISY), Zeitablauf ca. 35 s
+092B  C5          	PUSH BC
+092C  D5          	PUSH DE
+092D  E5          	PUSH HL
+L092E:
+092E  CD 84 07    	CALL GRZ0
+0931  21 F2 0D    	LD HL,0DF2H
+0934  01 00 00    	LD BC,0000H
+0937  3E 18       	LD A,18H
+L0939:
+0939  CB 7E       	BIT 7,(HL)
+093B  20 29       	JR NZ,L0966
+093D  10 FA       	DJNZ L0939
+093F  0D          	DEC C
+0940  20 F7       	JR NZ,L0939
+0942  3D          	DEC A
+0943  20 F4       	JR NZ,L0939
+0945  3A E7 0D    	LD A,(0DE7H)		; Zeitablauf: FEZ Bit 7 = 0 -> zum Bandanfang; sonst ca. 10 s zurueck
+0948  E6 80       	AND 80H
+094A  20 09       	JR NZ,L0955
+094C  CD 4F 0B    	CALL RCK0
+L094F:
+094F  21 E7 0D    	LD HL,0DE7H
+0952  35          	DEC (HL)
+0953  18 2D       	JR L0982
+L0955:
+0955  3E 0A       	LD A,0AH
+0957  D3 EF       	OUT (EFH),A
+0959  3E 15       	LD A,15H
+095B  0E 00       	LD C,00H
+095D  CD 1F 09    	CALL ZEI0
+0960  3E 13       	LD A,13H
+0962  D3 EF       	OUT (EFH),A
+0964  18 E9       	JR L094F
+L0966:
+0966  CB BE       	RES 7,(HL)		; Blockende erkannt: Bytezahl BYZ (0DF0H) pruefen
+0968  AF          	XOR A
+0969  2A F0 0D    	LD HL,(0DF0H)		; 4 Byte und letztes = AAH: Bandmarke (AA 00 00 AA) -> SPH Bit 6
+096C  11 04 00    	LD DE,0004H
+096F  ED 52       	SBC HL,DE
+0971  20 14       	JR NZ,L0987
+0973  AF          	XOR A
+0974  2A F3 0D    	LD HL,(0DF3H)
+0977  2B          	DEC HL
+0978  7E          	LD A,(HL)
+0979  FE AA       	CP AAH
+097B  20 B1       	JR NZ,L092E
+097D  21 F2 0D    	LD HL,0DF2H
+0980  CB F6       	SET 6,(HL)
+L0982:
+0982  E1          	POP HL
+0983  D1          	POP DE
+0984  C1          	POP BC
+0985  F1          	POP AF
+0986  C9          	RET
+L0987:
+0987  2A F7 0D    	LD HL,(0DF7H)		; BYE+6 Byte und letztes = AAH: Block -> SPH Bit 5, FEZ Bit 7
+098A  11 06 00    	LD DE,0006H
+098D  19          	ADD HL,DE
+098E  EB          	EX DE,HL
+098F  2A F0 0D    	LD HL,(0DF0H)
+0992  AF          	XOR A
+0993  ED 52       	SBC HL,DE
+0995  20 97       	JR NZ,L092E
+0997  2A F3 0D    	LD HL,(0DF3H)
+099A  2B          	DEC HL
+099B  7E          	LD A,(HL)
+099C  FE AA       	CP AAH
+099E  20 8E       	JR NZ,L092E
+09A0  21 F2 0D    	LD HL,0DF2H
+09A3  CB EE       	SET 5,(HL)
+09A5  21 E7 0D    	LD HL,0DE7H
+09A8  CB FE       	SET 7,(HL)
+09AA  18 D6       	JR L0982
+VGL0:
+09AC  D5          	PUSH DE		; VGL0: gelesene BLN (0E01H, hoeherwertiges Byte zuerst) mit BC vergleichen
+09AD  E5          	PUSH HL
+09AE  2A 01 0E    	LD HL,(0E01H)
+09B1  7C          	LD A,H
+09B2  65          	LD H,L
+09B3  6F          	LD L,A
+09B4  3A FF 0D    	LD A,(0DFFH)		; Protokoll in Zeile 1 Spalte 0DH (nicht bei MBB Bit 7)
+09B7  CB 7F       	BIT 7,A
+09B9  11 0D 01    	LD DE,010DH
+09BC  CC DD 03    	CALL Z,HDS
+09BF  AF          	XOR A
+09C0  E5          	PUSH HL
+09C1  ED 42       	SBC HL,BC
+09C3  54          	LD D,H
+09C4  E1          	POP HL
+09C5  20 03       	JR NZ,L09CA
+L09C7:
+09C7  E1          	POP HL
+09C8  D1          	POP DE
+09C9  C9          	RET
+L09CA:
+09CA  38 26       	JR C,L09F2		; gelesen > gesucht: zurueckspulen, Dauer ~ Differenz
+09CC  3E 0A       	LD A,0AH
+09CE  D3 EF       	OUT (EFH),A
+09D0  0E 00       	LD C,00H
+09D2  7A          	LD A,D
+09D3  07          	RLCA
+09D4  07          	RLCA
+09D5  07          	RLCA
+09D6  07          	RLCA
+09D7  C6 04       	ADD A,04H
+09D9  CD 1F 09    	CALL ZEI0
+09DC  3E 06       	LD A,06H
+09DE  D3 EF       	OUT (EFH),A
+09E0  3E 01       	LD A,01H
+09E2  0E 20       	LD C,20H
+09E4  CD 1F 09    	CALL ZEI0
+09E7  3E 13       	LD A,13H
+09E9  D3 EF       	OUT (EFH),A
+09EB  21 E7 0D    	LD HL,0DE7H
+09EE  35          	DEC (HL)
+09EF  A7          	AND A
+09F0  18 D5       	JR L09C7
+L09F2:
+09F2  11 20 00    	LD DE,0020H		; gelesen < gesucht: im Fangbereich (20H Bloecke) mit Lauf weiter (A=1, NZ)
+09F5  19          	ADD HL,DE
+09F6  ED 42       	SBC HL,BC
+09F8  38 05       	JR C,L09FF
+09FA  3E 01       	LD A,01H
+09FC  A7          	AND A
+09FD  18 C8       	JR L09C7
+L09FF:
+09FF  3E 06       	LD A,06H		; sonst vorspulen, Dauer ~ Differenz
+0A01  D3 EF       	OUT (EFH),A
+0A03  0E 01       	LD C,01H
+0A05  7C          	LD A,H
+0A06  2F          	CPL
+0A07  07          	RLCA
+0A08  07          	RLCA
+0A09  07          	RLCA
+0A0A  07          	RLCA
+0A0B  C6 03       	ADD A,03H
+0A0D  CD 1F 09    	CALL ZEI0
+0A10  3E 0A       	LD A,0AH
+0A12  D3 EF       	OUT (EFH),A
+0A14  3E 01       	LD A,01H
+0A16  0E 20       	LD C,20H
+0A18  CD 1F 09    	CALL ZEI0
+0A1B  3E 13       	LD A,13H
+0A1D  D3 EF       	OUT (EFH),A
+0A1F  21 E7 0D    	LD HL,0DE7H
+0A22  35          	DEC (HL)
+0A23  A7          	AND A
+0A24  18 A1       	JR L09C7
+NAMU:
+0A26  F5          	PUSH AF		; NAMU: beim Lesen Kennzeichnungsblock (BYE Byte ab 0E03H) nach (NAZ)
+0A27  3A FF 0D    	LD A,(0DFFH)
+0A2A  CB 47       	BIT 0,A
+0A2C  28 0F       	JR Z,L0A3D
+0A2E  E5          	PUSH HL
+0A2F  21 03 0E    	LD HL,0E03H
+0A32  ED 5B EA 0D 	LD DE,(0DEAH)
+0A36  ED 4B F7 0D 	LD BC,(0DF7H)
+0A3A  ED B0       	LDIR
+0A3C  E1          	POP HL
+L0A3D:
+0A3D  F1          	POP AF
+0A3E  C9          	RET
+CRR:
+0A3F  2A E5 0D    	LD HL,(0DE5H)		; CRR: CRC-16, rechtsschiebend, Polynom A001H (x16+x15+x2+1), Byte in C, Akku 0DE5H
+0A42  06 08       	LD B,08H
+L0A44:
+0A44  79          	LD A,C
+0A45  AD          	XOR L
+0A46  CB 0F       	RRC A
+0A48  F5          	PUSH AF
+0A49  CB 1C       	RR H
+0A4B  CB 1D       	RR L
+0A4D  F1          	POP AF
+0A4E  30 08       	JR NC,L0A58
+0A50  7C          	LD A,H
+0A51  EE 20       	XOR 20H
+0A53  67          	LD H,A
+0A54  7D          	LD A,L
+0A55  EE 01       	XOR 01H
+0A57  6F          	LD L,A
+L0A58:
+0A58  CB 09       	RRC C
+0A5A  10 E8       	DJNZ L0A44
+0A5C  22 E5 0D    	LD (0DE5H),HL
+0A5F  C9          	RET
+WIN0:
+0A60  F5          	PUSH AF		; WIN0: MBI-PIO A Ausgabe (0FH), Praeambel AAH bereitstellen
+0A61  3E 0F       	LD A,0FH
+0A63  D3 FD       	OUT (FDH),A
+0A65  3E AA       	LD A,AAH
+0A67  D3 FC       	OUT (FCH),A
+0A69  3E 02       	LD A,02H		; PIO B 02H: Schreiben, Capstan, Pausenpegel
+0A6B  D3 FE       	OUT (FEH),A
+0A6D  3E 08       	LD A,08H		; CTC 0: Vektor 08H, 47H/08H = Zaehler ohne Interrupt, alle 8 Bit [?]
+0A6F  D3 F8       	OUT (F8H),A
+0A71  3E 47       	LD A,47H
+0A73  D3 F8       	OUT (F8H),A
+0A75  3E 08       	LD A,08H
+0A77  D3 F8       	OUT (F8H),A
+0A79  3E C7       	LD A,C7H		; CTC 3: C7H/01H = Zaehler mit Interrupt bei jedem Impuls (je Byte [?])
+0A7B  D3 FB       	OUT (FBH),A
+0A7D  3E 01       	LD A,01H
+0A7F  D3 FB       	OUT (FBH),A
+0A81  3E 07       	LD A,07H		; CTC 2: 07H/32H = Zeitgeber Vorteiler 16, ZK 50: 2457600/16/50 = 3072 Hz [Bitzellentakt?]
+0A83  D3 FA       	OUT (FAH),A
+0A85  3E 32       	LD A,32H
+0A87  D3 FA       	OUT (FAH),A
+0A89  F1          	POP AF
+0A8A  C9          	RET
+WARB:
+0A8B  F5          	PUSH AF		; WARB: warten bis BYZ (0DF0H) = 0
+0A8C  E5          	PUSH HL
+L0A8D:
+0A8D  2A F0 0D    	LD HL,(0DF0H)
+0A90  7C          	LD A,H
+0A91  B5          	OR L
+0A92  20 F9       	JR NZ,L0A8D
+0A94  E1          	POP HL
+0A95  F1          	POP AF
+0A96  C9          	RET
+WVO0:
+0A97  F5          	PUSH AF		; WVO0: Puffer fuellen; PUZ = 0E01H
+0A98  C5          	PUSH BC
+0A99  D5          	PUSH DE
+0A9A  E5          	PUSH HL
+0A9B  21 F3 0D    	LD HL,0DF3H
+0A9E  34          	INC (HL)
+0A9F  21 F2 0D    	LD HL,0DF2H
+0AA2  CB 46       	BIT 0,(HL)		; SPH Bit 0: Bandmarke = 00 00 AA (mit Praeambel AA: AA 00 00 AA), BYZ = 4
+0AA4  28 10       	JR Z,L0AB6
+0AA6  21 04 00    	LD HL,0004H
+0AA9  22 F0 0D    	LD (0DF0H),HL
+0AAC  3E AA       	LD A,AAH
+0AAE  32 03 0E    	LD (0E03H),A
+L0AB1:
+0AB1  E1          	POP HL
+0AB2  D1          	POP DE
+0AB3  C1          	POP BC
+0AB4  F1          	POP AF
+0AB5  C9          	RET
+L0AB6:
+0AB6  2A F7 0D    	LD HL,(0DF7H)		; Block: BYZ = BYE+6 (AA, BLN 2, Daten, CRC 2, AA)
+0AB9  11 02 00    	LD DE,0002H
+0ABC  19          	ADD HL,DE
+0ABD  EB          	EX DE,HL
+0ABE  D5          	PUSH DE
+0ABF  21 04 00    	LD HL,0004H
+0AC2  19          	ADD HL,DE
+0AC3  22 F0 0D    	LD (0DF0H),HL
+0AC6  21 F2 0D    	LD HL,0DF2H
+0AC9  CB 4E       	BIT 1,(HL)		; SPH Bit 1: Kennzeichnungsblock, BLN = FFFFH, Daten aus (NAZ)
+0ACB  28 14       	JR Z,L0AE1
+0ACD  21 FF FF    	LD HL,FFFFH
+0AD0  22 01 0E    	LD (0E01H),HL
+0AD3  11 03 0E    	LD DE,0E03H
+0AD6  2A EA 0D    	LD HL,(0DEAH)
+0AD9  ED 4B F7 0D 	LD BC,(0DF7H)
+0ADD  ED B0       	LDIR
+0ADF  18 18       	JR L0AF9
+L0AE1:
+0AE1  2A FD 0D    	LD HL,(0DFDH)		; Datenblock: BLN hoeherwertiges Byte zuerst, Daten aus (RAM), RAM += BYE
+0AE4  7C          	LD A,H
+0AE5  65          	LD H,L
+0AE6  6F          	LD L,A
+0AE7  22 01 0E    	LD (0E01H),HL
+0AEA  11 03 0E    	LD DE,0E03H
+0AED  2A FB 0D    	LD HL,(0DFBH)
+0AF0  ED 4B F7 0D 	LD BC,(0DF7H)
+0AF4  ED B0       	LDIR
+0AF6  22 FB 0D    	LD (0DFBH),HL
+L0AF9:
+0AF9  D1          	POP DE		; CRC ueber BLN + Daten
+0AFA  21 01 0E    	LD HL,0E01H
+L0AFD:
+0AFD  E5          	PUSH HL
+0AFE  4E          	LD C,(HL)
+0AFF  CD 3F 0A    	CALL CRR
+0B02  E1          	POP HL
+0B03  23          	INC HL
+0B04  1B          	DEC DE
+0B05  7B          	LD A,E
+0B06  B2          	OR D
+0B07  20 F4       	JR NZ,L0AFD
+0B09  ED 4B E5 0D 	LD BC,(0DE5H)		; CRC niederwertiges Byte zuerst, dann Postambel AAH
+0B0D  71          	LD (HL),C
+0B0E  23          	INC HL
+0B0F  70          	LD (HL),B
+0B10  23          	INC HL
+0B11  36 AA       	LD (HL),AAH
+0B13  18 9C       	JR L0AB1
+BLP:
+0B15  D5          	PUSH DE		; BLP: Protokoll 'WR' (1217H), RAM, BLN+1, BLZ-1; Z = BLZ abgelaufen
+0B16  E5          	PUSH HL
+0B17  3A FF 0D    	LD A,(0DFFH)
+0B1A  CB 7F       	BIT 7,A
+0B1C  F5          	PUSH AF
+0B1D  20 10       	JR NZ,L0B2F
+0B1F  21 17 12    	LD HL,1217H
+0B22  22 2A 0C    	LD (0C2AH),HL
+0B25  2A FB 0D    	LD HL,(0DFBH)
+0B28  2B          	DEC HL
+0B29  11 1C 01    	LD DE,011CH
+0B2C  CD DD 03    	CALL HDS
+L0B2F:
+0B2F  2A FD 0D    	LD HL,(0DFDH)
+0B32  1E 0D       	LD E,0DH
+0B34  F1          	POP AF
+0B35  F5          	PUSH AF
+0B36  CC DD 03    	CALL Z,HDS
+0B39  23          	INC HL
+0B3A  22 FD 0D    	LD (0DFDH),HL
+0B3D  2A F5 0D    	LD HL,(0DF5H)
+0B40  2B          	DEC HL
+0B41  1E 12       	LD E,12H
+0B43  F1          	POP AF
+0B44  CC DD 03    	CALL Z,HDS
+0B47  22 F5 0D    	LD (0DF5H),HL
+0B4A  7C          	LD A,H
+0B4B  B5          	OR L
+0B4C  E1          	POP HL
+0B4D  D1          	POP DE
+0B4E  C9          	RET
+RCK0:
+0B4F  F5          	PUSH AF		; RCK0: Ruecklauf, warten bis PIO B Bit 6 = 0 (Bandende), dann 13H
+0B50  3E 0A       	LD A,0AH
+0B52  D3 EF       	OUT (EFH),A
+0B54  3E 01       	LD A,01H
+0B56  0E 00       	LD C,00H
+0B58  CD 1F 09    	CALL ZEI0
+L0B5B:
+0B5B  DB FE       	IN A,(FEH)
+0B5D  CB 77       	BIT 6,A
+0B5F  20 FA       	JR NZ,L0B5B
+0B61  3E 13       	LD A,13H
+0B63  D3 EF       	OUT (EFH),A
+0B65  F1          	POP AF
+0B66  C9          	RET
+IPB:
+0B67  FB          	EI		; IPB: Interrupt MBI-PIO B (Vektor 0D2CH)
+0B68  F5          	PUSH AF
+0B69  DB FE       	IN A,(FEH)		; Bit 7 = 0: Kassette ausgeworfen -> AUS, Ruecksprung nach 0600H (Handbuch 2.7)
+0B6B  CB 7F       	BIT 7,A
+0B6D  20 0B       	JR NZ,L0B7A
+0B6F  CD 8F 08    	CALL AUS0
+0B72  F1          	POP AF
+0B73  E1          	POP HL
+0B74  21 00 06    	LD HL,0600H
+0B77  E5          	PUSH HL
+0B78  ED 4D       	RETI
+L0B7A:
+0B7A  3E 02       	LD A,02H		; sonst (Bit 6: Bandende): EFH = 02H, Endabschaltung [?]
+0B7C  D3 EF       	OUT (EFH),A
+0B7E  F1          	POP AF
+0B7F  ED 4D       	RETI
+ISY:
+0B81  FB          	EI		; ISY: Interrupt MBI-CTC 3 beim Lesen = Synchronisation/Blockende
+0B82  F5          	PUSH AF
+0B83  E5          	PUSH HL
+0B84  21 A2 0B    	LD HL,0BA2H		; Vektor CTC 0 (0D08H) = ILB
+0B87  22 08 0D    	LD (0D08H),HL
+0B8A  DB FE       	IN A,(FEH)		; PIO B Bit 4 (Pausenpegel) waehlt 8 oder 7 Bit bis zum ersten Byte
+0B8C  CB 67       	BIT 4,A
+0B8E  3E C7       	LD A,C7H
+0B90  D3 F8       	OUT (F8H),A
+0B92  3E 08       	LD A,08H
+0B94  28 01       	JR Z,L0B97
+0B96  3D          	DEC A
+L0B97:
+0B97  D3 F8       	OUT (F8H),A
+0B99  21 F2 0D    	LD HL,0DF2H		; SPH Bit 7: Blockende erkannt
+0B9C  CB FE       	SET 7,(HL)
+0B9E  E1          	POP HL
+0B9F  F1          	POP AF
+0BA0  ED 4D       	RETI
+ILB:
+0BA2  FB          	EI		; ILB: Interrupt MBI-CTC 0 nach 8 Bit: ein Byte lesen
+0BA3  F5          	PUSH AF
+0BA4  D5          	PUSH DE
+0BA5  E5          	PUSH HL
+0BA6  3E C7       	LD A,C7H
+0BA8  D3 F8       	OUT (F8H),A
+0BAA  3E 08       	LD A,08H
+0BAC  D3 F8       	OUT (F8H),A
+0BAE  2A F3 0D    	LD HL,(0DF3H)
+0BB1  DB FC       	IN A,(FCH)		; Byte aus dem Schieberegister (MBI-PIO A)
+0BB3  77          	LD (HL),A
+0BB4  23          	INC HL
+0BB5  E5          	PUSH HL
+0BB6  AF          	XOR A
+0BB7  11 20 0F    	LD DE,0F20H		; Ringpuffer 0E00-0F1FH
+0BBA  ED 52       	SBC HL,DE
+0BBC  E1          	POP HL
+0BBD  38 03       	JR C,L0BC2
+0BBF  21 00 0E    	LD HL,0E00H
+L0BC2:
+0BC2  22 F3 0D    	LD (0DF3H),HL
+0BC5  2A F0 0D    	LD HL,(0DF0H)		; BYZ + 1
+0BC8  23          	INC HL
+0BC9  22 F0 0D    	LD (0DF0H),HL
+0BCC  E1          	POP HL
+0BCD  D1          	POP DE
+0BCE  F1          	POP AF
+0BCF  ED 4D       	RETI
+ISB:
+0BD1  FB          	EI		; ISB: Interrupt MBI-CTC 3 beim Schreiben: naechstes Byte ausgeben
+0BD2  F5          	PUSH AF
+0BD3  E5          	PUSH HL
+0BD4  2A F3 0D    	LD HL,(0DF3H)
+0BD7  7E          	LD A,(HL)
+0BD8  D3 FC       	OUT (FCH),A
+0BDA  23          	INC HL
+0BDB  22 F3 0D    	LD (0DF3H),HL
+0BDE  2A F0 0D    	LD HL,(0DF0H)		; BYZ - 1
+0BE1  2B          	DEC HL
+0BE2  22 F0 0D    	LD (0DF0H),HL
+0BE5  7C          	LD A,H
+0BE6  B5          	OR L
+0BE7  20 0F       	JR NZ,L0BF8
+0BE9  21 02 21    	LD HL,2102H		; Block heraus: Vektor CTC3 = IPA, PIO B 02H (Pausenpegel), PAZ = 51H
+0BEC  22 0E 0D    	LD (0D0EH),HL
+0BEF  3E 02       	LD A,02H
+0BF1  D3 FE       	OUT (FEH),A
+0BF3  3E 51       	LD A,51H
+0BF5  32 E8 0D    	LD (0DE8H),A
+L0BF8:
+0BF8  E1          	POP HL
+0BF9  F1          	POP AF
+0BFA  ED 4D       	RETI
+0BFC  FF FF FF FF 	DB	0FFH,0FFH,0FFH,0FFH
+
+; ---- S0.4 (mo01): Magnetband-Menue, Pausen-Interrupts, Texte ---------------
+	ORG	2000H
+MBM:
+2000  C5          	PUSH BC		; MBM: Magnetband-Menue (Handbuch 4.3): NAZ = 0C60H (Zeilen 4-7 des BWS)
+2001  D5          	PUSH DE
+2002  E5          	PUSH HL
+L2003:
+2003  21 60 0C    	LD HL,0C60H
+2006  22 EA 0D    	LD (0DEAH),HL
+2009  21 38 21    	LD HL,TMB
+200C  CD 65 04    	CALL TXS
+200F  16 00       	LD D,00H
+L2011:
+2011  7A          	LD A,D		; Markierung '>' auf Zeile 1..3
+2012  C6 01       	ADD A,01H
+2014  E6 03       	AND 03H
+2016  20 02       	JR NZ,L201A
+2018  C6 01       	ADD A,01H
+L201A:
+201A  57          	LD D,A
+201B  1E 00       	LD E,00H
+201D  3E 3E       	LD A,3EH
+201F  CD 1B 00    	CALL L001B
+2022  CD 2B 00    	CALL L002B
+L2025:
+2025  CD 13 00    	CALL L0013		; Taste (Cy = 1: neu gedrueckt)
+2028  30 FB       	JR NC,L2025
+202A  F5          	PUSH AF
+202B  3E 20       	LD A,20H
+202D  CD 1B 00    	CALL L001B
+2030  F1          	POP AF
+2031  FE 16       	CP 16H		; OFF: Cy = 1 zurueck
+2033  20 05       	JR NZ,L203A
+2035  37          	SCF
+L2036:
+2036  E1          	POP HL
+2037  D1          	POP DE
+2038  C1          	POP BC
+2039  C9          	RET
+L203A:
+203A  FE 0A       	CP 0AH
+203C  28 D3       	JR Z,L2011
+203E  15          	DEC D
+203F  15          	DEC D
+2040  FE 0B       	CP 0BH
+2042  28 CD       	JR Z,L2011
+2044  14          	INC D
+2045  FE 06       	CP 06H
+2047  20 C8       	JR NZ,L2011
+2049  7A          	LD A,D		; MBB = Zeile-1 (0 Schreiben, 1 Lesen, 2 Loeschen)
+204A  32 FF 0D    	LD (0DFFH),A
+204D  FE 02       	CP 02H		; Loeschen: ohne Parameter
+204F  F2 DB 20    	JP P,L20DB
+2052  FE 01       	CP 01H
+2054  21 74 21    	LD HL,TML
+2057  28 03       	JR Z,L205C
+2059  21 67 21    	LD HL,TMS
+L205C:
+205C  CD 65 04    	CALL TXS
+205F  21 80 00    	LD HL,0080H		; BYE = 0080H (MC-80-Datenformat)
+2062  22 F7 0D    	LD (0DF7H),HL
+L2065:
+2065  21 7D 21    	LD HL,TBL		; 'AB BLOCK-NR.:' -> BLN, Anzeige Zeile 0 Spalte 0DH
+2068  CD 65 04    	CALL TXS
+206B  11 0E 01    	LD DE,010EH
+206E  CD 32 04    	CALL HDA
+2071  38 90       	JR C,L2003
+2073  22 FD 0D    	LD (0DFDH),HL
+2076  11 0D 00    	LD DE,000DH
+2079  CD DD 03    	CALL HDS
+207C  21 91 21    	LD HL,TAD		; 'ADRESSE VON .... BIS ....' -> RAM (0DFBH)
+207F  CD 65 04    	CALL TXS
+L2082:
+2082  11 0C 01    	LD DE,010CH
+2085  CD 32 04    	CALL HDA
+2088  DA 03 20    	JP C,L2003
+208B  22 FB 0D    	LD (0DFBH),HL
+208E  D5          	PUSH DE
+208F  11 17 00    	LD DE,0017H
+2092  CD DD 03    	CALL HDS
+2095  D1          	POP DE
+2096  E5          	PUSH HL		; Endadresse
+2097  1E 15       	LD E,15H
+2099  CD 32 04    	CALL HDA
+209C  D1          	POP DE
+209D  DA 03 20    	JP C,L2003
+20A0  CD EA 20    	CALL BLA		; BLA: Blockzahl BC, aufgerundete Endadresse DE
+20A3  78          	LD A,B
+20A4  B1          	OR C
+20A5  28 DB       	JR Z,L2082
+20A7  1B          	DEC DE		; END (0DF9H) = DE-1, Anzeige Zeile 0 Spalte 1CH
+20A8  ED 53 F9 0D 	LD (0DF9H),DE
+20AC  EB          	EX DE,HL
+20AD  11 1C 00    	LD DE,001CH
+20B0  CD DD 03    	CALL HDS
+20B3  ED 43 F5 0D 	LD (0DF5H),BC		; BLZ (0DF5H) = BC, Anzeige Spalte 12H
+20B7  1E 12       	LD E,12H
+20B9  C5          	PUSH BC
+20BA  E1          	POP HL
+20BB  CD DD 03    	CALL HDS
+20BE  3A FF 0D    	LD A,(0DFFH)		; beim Schreiben: 'NAME :' und Kennzeichnungsblock auf Zeile 4-7 eingeben
+20C1  FE 00       	CP 00H
+20C3  20 16       	JR NZ,L20DB
+20C5  21 AE 21    	LD HL,TNA
+20C8  CD 65 04    	CALL TXS
+20CB  CD 70 02    	CALL BBS
+20CE  38 95       	JR C,L2065
+20D0  21 0D 0C    	LD HL,0C0DH		; Dateiangaben aus Zeile 0 (ab Spalte 0DH) an das Ende von Zeile 6 (0CCDH)
+20D3  11 CD 0C    	LD DE,0CCDH
+20D6  01 13 00    	LD BC,0013H
+20D9  ED B0       	LDIR
+L20DB:
+20DB  11 00 01    	LD DE,0100H		; Zeile 1 loeschen, A = 0, Cy = 0
+20DE  3E 18       	LD A,18H
+20E0  CD 2B 00    	CALL L002B
+20E3  CD 0B 00    	CALL L000B
+20E6  AF          	XOR A
+20E7  C3 36 20    	JP L2036
+BLA:
+20EA  37          	SCF		; BLA: Bloecke zu BYE Byte von HL bis DE zaehlen (BC), DE = aufgerundetes Ende+1
+20EB  01 00 00    	LD BC,0000H
+L20EE:
+20EE  E5          	PUSH HL
+20EF  ED 52       	SBC HL,DE
+20F1  E1          	POP HL
+20F2  D8          	RET C
+20F3  EB          	EX DE,HL
+20F4  C5          	PUSH BC
+20F5  ED 4B F7 0D 	LD BC,(0DF7H)
+20F9  B7          	OR A
+20FA  09          	ADD HL,BC
+20FB  C1          	POP BC
+20FC  03          	INC BC
+20FD  EB          	EX DE,HL
+20FE  30 EE       	JR NC,L20EE
+2100  3F          	CCF
+2101  C9          	RET
+IPA:
+2102  FB          	EI		; IPA: Pausen-Interrupt (CTC 3): PAZ-1; bei 0 naechster Block oder Ende
+2103  F5          	PUSH AF
+2104  E5          	PUSH HL
+2105  21 E8 0D    	LD HL,0DE8H
+2108  35          	DEC (HL)
+2109  20 1D       	JR NZ,L2128
+210B  3E 0A       	LD A,0AH		; PIO B 0AH: Daten schreiben, Vektor CTC3 = ISB, Praeambel AAH
+210D  D3 FE       	OUT (FEH),A
+210F  21 D1 0B    	LD HL,0BD1H
+2112  22 0E 0D    	LD (0D0EH),HL
+2115  3E AA       	LD A,AAH
+2117  D3 FC       	OUT (FCH),A
+2119  2A F0 0D    	LD HL,(0DF0H)		; kein Block vorbereitet (BYZ = 0): AUS, SPH Bit 2 = fertig
+211C  7C          	LD A,H
+211D  B5          	OR L
+211E  20 08       	JR NZ,L2128
+2120  CD 8F 08    	CALL AUS0
+2123  21 F2 0D    	LD HL,0DF2H
+2126  CB D6       	SET 2,(HL)
+L2128:
+2128  E1          	POP HL
+2129  F1          	POP AF
+212A  ED 4D       	RETI
+IVL:
+212C  FB          	EI		; IVL: Interrupt CTC 3 waehrend der Vorluecke: 0DF9H - 1
+212D  E5          	PUSH HL
+212E  2A F9 0D    	LD HL,(0DF9H)
+2131  2B          	DEC HL
+2132  22 F9 0D    	LD (0DF9H),HL
+2135  E1          	POP HL
+2136  ED 4D       	RETI
+TMB:
+2138  8C 4D 41 47 4E 45 54 42 41 4E 44 20 3A 0A 0D 20	DB	8CH,'MAGNETBAND :',0AH,0DH,' '		; 'MAGNETBAND :' / SCHREIBEN / LESEN / LOESCHEN (8CH = Bild loeschen)
+2148  20 53 43 48 52 45 49 42 45 4E 0A 0D 20 20 4C 45	DB	' SCHREIBEN',0AH,0DH,'  LE'
+2158  53 45 4E 0A 0D 20 20 4C 4F 45 53 43 48 45 4E	DB	'SEN',0AH,0DH,'  LOESCHEN'
+TMS:
+2167  8C 4D 42 2D 53 43 48 52 45 49 42 45 4E	DB	8CH,'MB-SCHREIBEN'		; 'MB-SCHREIBEN'
+TML:
+2174  8C 4D 42 2D 4C 45 53 45 4E	DB	8CH,'MB-LESEN'		; 'MB-LESEN'
+TBL:
+217D  82 0A 20 41 42 20 42 4C 4F 43 4B 2D 4E 52 2E 3A	DB	82H,0AH,' AB BLOCK-NR.:'		; ' AB BLOCK-NR.:....' (82H = Displayanfang, 0AH = Zeile tiefer)
+218D  2E 2E 2E 2E 	DB	'....'
+TAD:
+2191  82 0A 18 41 44 52 45 53 53 45 20 56 4F 4E 20 2E	DB	82H,0AH,18H,'ADRESSE VON .'		; 'ADRESSE VON .... BIS ....', FFH = Textende
+21A1  2E 2E 2E 20 42 49 53 20 2E 2E 2E 2E FF	DB	'... BIS ....',0FFH
+TNA:
+21AE  82 0A 18 0A 4E 41 4D 45 20 3A 0A 0D FF	DB	82H,0AH,18H,0AH,'NAME :',0AH,0DH,0FFH		; 'NAME :'
+PIOT:
+21BB  2C FF F0 17 3F	DB	2CH,0FFH,0F0H,17H,3FH		; PIOT: an MBI-PIO B (FFH): Vektor 2CH, Betriebsart 3, E/A-Maske F0H (7-4 Eingang), Int-Steuerwort 17H (gesperrt, ODER, low-aktiv), Maske 3FH (Bit 7,6)
+TKE:
+21C0  82 0A 4B 41 53 2E 20 45 49 4E 4C 45 47 45 4E	DB	82H,0AH,'KAS. EINLEGEN'		; 'KAS. EINLEGEN'
+TKG:
+21CF  82 0A 4B 41 53 2E 20 47 45 53 50 45 52 52 54	DB	82H,0AH,'KAS. GESPERRT'		; 'KAS. GESPERRT'
+TFD:
+21DE  98 46 44 41 54	DB	98H,'FDAT'		; 'FDAT' (98H = Zeile loeschen)
+TLO:
+21E3  8C 4D 42 2D 4C 4F 45 53 43 48 45 4E 20 3F 08	DB	8CH,'MB-LOESCHEN ?',08H		; 'MB-LOESCHEN ?'
+TBF:
+21F2  98 42 4C 4F 43 4B 20 20 20 20 20 20 46 45 48 4C	DB	98H,'BLOCK      FEHL'		; 'BLOCK      FEHLT'
+2202  54          	DB	'T'
+2203  FF FF FF FF 	DB	0FFH,0FFH,0FFH,0FFH
+	DS	505,0FFH		; bis 23FFH FFH
+; ============================================================================
+; ANHANG: Original-Listing ab 05B6H -- Fassung 'MB-BSY' (KMBG), KEIN ABZUG vorhanden
+; Marken und Kommentare wie im Original; [...] = E/A-Befehle der Zeile, abgeschrieben.
+; Diese Fassung kennt KEIN Register EFH: das Laufwerk wird nur ueber die MBI-PIO B (FEH)
+; geschaltet und auf die Taste 'LAUF' am Geraet gewartet (KOM, PIO B Bit 2).  Zellen:
+;   0DF5 BLN, 0DF7 BLZ (1 Byte), 0DF8 RAM, 0DFA SPH-1, 0DFB SPH, 0DFC SPH+1 Pufferzeiger,
+;   0DFE SPH+3 CRC; Puffer 0E00 (SPH+5)=00, 0E01 BLN, 0E03 Daten, 0E83 CRC, 0E85 AAH
+;   (Blatt 29 'LEGENDE ZUM MB-BSY').  Blockformat und CRC-Routine wie in ver2.
+; ============================================================================
+;  05B6  MEN:   MB-BSY BILDSCHIRM LOESCHEN
+;  05BB  ME1:
+;  05BE         MB-MENUE AUSSCHREIBEN
+;  05C3  ME3:   D=ZEILE KURSOR
+;  05C6         KURSOR AUF ZEILE 2...5
+;  05C9         UND SPALTE 14
+;  05CB         "*" SCHREIBEN
+;  05D3  ME2:   TASTATURABFRAGE
+;  05D9         "*" WEG
+;  05DF         "OFF" ?
+;  05E1         JA
+;  05E4         KURSOR NACH UNTEN ?
+;  05E6         JA
+;  05EA         KURSOR NACH OBEN ?
+;  05EC         JA
+;  05EF         "ENTER" ?
+;  05F1         NEIN
+;  05F4         BS LOESCHEN
+;  05FB         MB SCHREIBEN
+;  0601         MB LESEN
+;  0607         MB SPULEN
+;  060A         MB LOESCHEN
+;  060D  MSZ:   UP: PARAMETERABFRAGE
+;  0613         BLOCKNUMMER EINGEBEN UND AUF BLN=0DF5 SPEICHERN
+;  061B         BLOCKANZAHL EINGEBEN
+;  061E         UND AUF BLZ=0DF7 ABSPEICHERN
+;  0622         RAM ANFANGSADRESSE EINGEBEN
+;  0625         UND AUF RAM=0DF8 ABSPEICHERN
+;  062B         RAM ENDADRESSE BERECHNEN
+;  0631         MB SCHREIBEN ?
+;  0633         JA
+;  0636  MRD:   MB-LESEN ; UP:INITIALIS.
+;  0639  MR2:   UP:1 BLOCK EINLESEN
+;  063C  MR1:
+;  0640         UP:TEST ZU LESENDE BLN ERREICHT
+;  0643         NEIN
+;  0648         "RD" AUSSCHREIBEN
+;  064B         CRC-ZELLE
+;  0650         CRC-FEHLER !
+;  0653         PUFFERANFANG
+;  0656         RAM-ANFANG
+;  065A         PUFFER IN RAM
+;  065D         UMLAGERN
+;  0660         RAM-STAND PROTOKOLLIEREN
+;  066E         BLN:=BLN+1
+;  0676         BLZ:=BLZ-1 UND PROTOKOLLIEREN
+;  067D         WEITER LESEN BLZ > 0
+;  067F  AUS:   UP: ENDABSCHALTUNG KMBG  [LD A,001H / OUT 0FEH / LD A,003H / OUT 0FAH]
+;  0687         MB-MENUE
+;  068A  MSP:   UP:SPULEN
+;  068C         AUSSCHREIBEN
+;  0691  MCL:   UP:MB-LOESCHEN
+;  0693         AUSSCHREIBEN
+;  0696  MC1:
+;  0699         [LD A,0FFH / OUT 0FFH / LD A,034H / OUT 0FFH / LD A,B / OUT 0FEH]
+;  069D         MOTOR EIN
+;  06A1         SPULEN / LOESCHEN
+;  06A4  MC2:
+;  06A7         TASTATURABFRAGE
+;  06A9         "OFF" ?
+;  06AB         JA
+;  06AF  RME:   UP:RAM-ENDADRESSE BERECHNEN
+;  06B2         128 BYTES PRO BLOCK
+;  06B4  RM1:
+;  06BF         PROTOKOLLIEREN
+;  06C3  MLE:   UP:INITIALISIERUNG LESEN
+;  06C6         STARTINTERRUPT LADEN  [LD (0D0EH),HL]
+;  06C9         PIO A : EINGABE  [LD A,04FH / OUT 0FDH]
+;  06CD         [LD A,0FFH / OUT 0FFH]
+;  06D1         PIO B : AAEEEAEA  [LD A,034H / OUT 0FFH]
+;  06D5         MOTOR EIN, LESEN  [LD A,003H / OUT 0FEH]
+;  06D9         INT.-VEKTOR CTC  [LD A,008H / OUT 0F8H]
+;  06DD         [LD A,047H / OUT 0F9H / OUT 0FAH]
+;  06E3         [LD A,04BH / OUT 0F9H]
+;  06E7         ZEITBASIS CTC  [OUT 0FAH]
+;  06E9         [IN 0FEH / BIT 2,A]
+;  06ED         WARTEN AUF TASTE 'LAUF'  [CAZ KOM]
+;  06F3  ML1:
+;  06F6         WARTEN AUF MOTORGLEICHLAUF
+;  06F8         [LD A,0F7H / OUT 0FBH / LD A,001H]
+;  06FE         CTC 3: INTERRUPT FREI  [OUT 0FBH]
+;  0701  ML4:   1 BLOCK LESEN/UP:CLEAR PUFFER
+;  0704  ML2:   TEST ZUSTANDSSEMAPHORE
+;  070B         BLOCK FEHLERHAFT  [LD A,003H / OUT 0F8H]
+;  070D         CTC PASSIV
+;  070F         NEU INITIALISIEREN
+;  0712         RUECKSPRUNG
+;  0714  ML3:
+;  0716         BANDMARKE GELESEN
+;  071B         BYTEMELDER
+;  071D         1 BYTE GELESEN
+;  0720         BYTEZAEHLER(SPH-1) +1
+;  0722         BLOCK VOLL ?
+;  0724         NEIN
+;  0726         GELESENE BLN
+;  072F         = 0FFFFH
+;  0730         JA: NAMENSBLOCK
+;  0738         GELESENE BLN AUSSCHREIBEN
+;  073C  MXV:   UP:VERGLEICH GELESENE/ZU LESENDE
+;  0740         =0
+;  0741         ">"
+;  0746         "<"
+;  0748  MV1:
+;  074A         SPACE
+;  074C         PROTOKOLLIEREN
+;  0751  FE1:   UP:FEHLER 3 (CRC)
+;  0754  FE3:
+;  0759         MOTOR AUS  [LD A,001H / OUT 0FEH]
+;  075B         BEENDEN MIT "OFF"
+;  075E  MRS:   STARTINTERRUPT LESEN
+;  0764         LESEINTERRUPT LADEN  [LD (0D08H),HL]
+;  0767         [IN 0FEH]
+;  0769         PAUSENPEGEL ABFRAGEN  [BIT 4,A]
+;  076B         [LD A,0C7H / OUT 0F8H]
+;  076F         16 BIT
+;  0773         15 BIT
+;  0775  MS1:   CTC 1 ; ZAEHLER 15/16  [OUT 0F8H]
+;  0777         INHALT PUFFERZEIGER
+;  077B         =00H ?
+;  077D         JA,GRUNDZUSTAND,
+;  077F         =AAH ?
+;  0784         NEIN,D.H.KEINE POSTAMBEL
+;  0789         BLOCK VOLLZAEHLIG ?
+;  078B         JA
+;  078D         =03H, BANDMARKE ?
+;  078F         NEIN
+;  0791         BANDMARKE BIT 2=1
+;  0795  MS2:   BLOCK UNVOLLSTAENDIG
+;  0797  MS3:
+;  079B  KOM:   UP:WARTEN AUF TASTE 'LAUF'
+;  07A1         TEXT
+;  07A7  KM1:   [IN 0FEH / BIT 2,A]
+;  07AB         WEITER WARTEN
+;  07AF         BS-ZEILE LOESCHEN
+;  07B3  MRG:   UP: GRUNDZUSTAND PUFFER
+;  07B4         BYTEZAEHLER LESEN = 0
+;  07B9         SEMAPHORE = 0
+;  07BA  MG1:
+;  07BD         (PUFFERZEIGER)=(SPH+1)=0E00
+;  07C2  MG2:
+;  07C4         (0E00)...(0EFF)=00H
+;  07C9         CRC-WORT=(SPH+3)=0000H
+;  07CD  MRB:   UP: BANDMARKE LESEN
+;  07D2         FALSCHE BANDMARKE
+;  07DA         FALSCHE BANDMARKE
+;  07E2         BIT 5 =1 BEI BANDMARKE I.O.
+;  07E4         RET IM SCHREIBPROGRAMM
+;  07E8  MRN:   UP: NAME LESEN
+;  07ED         RET BEI SCHREIBPROGRAMM
+;  07F8         NAME AUF BILDSCHIRM
+;  07FD  MRE:   LESEINTERRUPT
+;  0801         [LD A,0C7H / OUT 0F8H]
+;  0805         CTC 0 ALS ZAEHLER BIS 8  [LD A,008H / OUT 0F8H]
+;  0809         HL:=(PUFFERZEIGER)
+;  080C         [IN 0FCH]
+;  080E         C=VORIGES BYTE
+;  0810         GELESENES BYTE IN PUFFER
+;  0811         PUFFERZEIGER NEU
+;  0817         BIT 3 = 1
+;  0819         CRC AKKUMULIEREN
+;  0821  FE4:   UP: FEHLER IN BANDMARKE
+;  0827         "F 2"
+;  082F         WEITER MIT OFF
+;  0832  CRC:   UP: CRC-BERECHNUNG
+;  0837  CR1:
+;  084B  CR2:
+;  084F         CRC-SUMME IN SPH+3
+;  0853  MWR:   SCHREIBPROGRAMM
+;  0856         UNTERMENUE AUSSCHREIBEN
+;  0861         BLN=0001 ?
+;  0862         NEIN
+;  0865         WARTESCHLEIFE 30 SEC.
+;  086B         WARTEINTERRUPT AKTIVIEREN
+;  0871         INITIALISIERUNG SCHREIBEN
+;  0874         GRUNDZUSTAND PUFFER
+;  0877         1. BANDMARKE SCHREIBEN
+;  087A  MW8:
+;  087F         WARTEN 30 SEC.
+;  0881         [LD A,00AH / OUT 0FEH]
+;  0883         SCHREIBSTROM FREI
+;  0885         PRAEAMBEL AUSGEBEN  [LD A,0AAH / OUT 0FCH]
+;  0889         DATENSCHREIBINTERRUPT LADEN
+;  088F         WARTEN AUF SPH=0
+;  0892         GRUNDZUSTAND PUFFER
+;  0895         2. BANDMARKE SCHREIBEN
+;  0898         WARTEN AUF SPH=0
+;  089D  MW1:   BLN>0001, INIT. LESEN
+;  08A0  MW6:   LESEN EINES BLOCKES
+;  08A8         ZU SCHREIBENDE BLN ERREICHT?
+;  08AD         GRUNDZUSTAND PUFFER
+;  08B3         BIT 4=1
+;  08B6         LESEN EINES BLOCKES
+;  08BA         BIT 5=1 BEI BANDMARKE
+;  08BC         KEINE BM VOR SCHREIBVERSUCH
+;  08BF         [LD A,003H / OUT 0FBH]
+;  08C1         CTC PASSIV
+;  08C3         GRUNDZUSTAND PUFFER
+;  08C6         VERL. ANFANGSPAUSE
+;  08C8         ZAEHLER PAUSENINTERRUPTS
+;  08CB         PAUSENINTERRUPT LADEN
+;  08D1         INIT. SCHREIBEN
+;  08D4  MW2:   GRUNDZUSTAND PUFFER
+;  08D7         NAME SCHREIBEN
+;  08DA         VORBEREITUNG SCHREIBEN
+;  08DD         WARTEN AUF SPH=0(BLOCK FERTIG)
+;  08E0  MW7:   GRUNDZUSTAND PUFFER
+;  08E6         DATEN VON RAM IN PUFFER
+;  08EC         "WR" AUF BS
+;  08F8         RAM - STAND AUF BS
+;  0901         BLN AUF BS
+;  0905         BLN:=BLN+1
+;  090B         BLZ:=BLZ-1
+;  0910         BLZ PROTOKOLLIEREN
+;  0913         WEITER SCHREIBEN
+;  0915  M88:   GRUNDZUSTAND PUFFER
+;  091E         NACHPAUSE
+;  0920         PAUSENZAEHLER
+;  0923  M10:
+;  0926         SPH=01H?
+;  0928         NEIN
+;  092A         ENDE
+;  092D  MWL:   WARTEINTERRUPT BOT
+;  0936         ZAEHLER MINUS 1
+;  0939  MA2:   INITIALISIERUNG SCHREIBEN
+;  093B         PIO A : AUSGABE  [LD A,00FH / OUT 0FDH]
+;  093D         PRAEAMBEL AAH  [LD A,0AAH / OUT 0FCH]
+;  0943         [OUT 0FFH (A=0FFH) / LD A,034H]
+;  0947         PIO B : AAEEEAEA  [OUT 0FFH]
+;  094B         MOTOR AN; WR ; STROM FEST  [LD A,002H / OUT 0FEH]
+;  094D         [IN 0FEH / BIT 2,A]
+;  0951         WARTEN AUF TASTE 'LAUF'
+;  0956         INT.-VEKTOR CTC  [LD A,008H / OUT 0F8H]
+;  0958         [LD A,047H / OUT 0F8H]
+;  095E         CTC 0 : BITZAEHLER  [LD A,008H / OUT 0F8H]
+;  0962         CTC 3: INTERRUPTGEBER  [LD A,0C7H / OUT 0FBH / LD A,001H / OUT 0FBH]
+;  0968         [LD A,007H / OUT 0FAH]
+;  096E         CTC 2 : ZEITBASISGEBER  [LD A,032H / OUT 0FAH]
+;  0971  MWB:   UP: BANDMARKE SCHREIBEN
+;  0973         4 BYTE
+;  0976         POSTAMBEL AAH
+;  097B         PUFFERZEIGER + 1
+;  0980  MWD:   INTERRUPT: DATEN AUSGABE PIO
+;  0983         HL=(PUFFERZEIGER)
+;  0987         (HL) AUSGEBEN  [OUT 0FCH]
+;  098A         INHALT ZEIGER INCR.
+;  0990         BYTEZAEHLER-1
+;  0991         BLOCK NOCH NICHT FERTIG
+;  0993         PAUSENINT. AKTIVIEREN
+;  0999         MOTOR AN; STROM FEST  [LD A,002H / OUT 0FEH]
+;  099D         PAUSENLAENGE FESTLEGEN  [LD A,051H]
+;  09A4  FE2:   UP:SCHREIBVERSUCH IN DATEI
+;  09B0  MWI:   PAUSENINTERRUPT
+;  09B3         INTERRUPTZAEHLER
+;  09B6         -1
+;  09B7         > 0
+;  09B9         PAUSENENDE; STROM FREI  [LD A,00AH / OUT 0FEH]
+;  09C0         DATENSCHREIBINT. AKTIVIEREN
+;  09C5         PRAEAMBEL AUSGEBEN  [LD A,0AAH / OUT 0FCH]
+;  09CA         SPH = 0 ?
+;  09CB         NEIN
+;  09CD         DATENBLOCK AUSGEGEBEN
+;  09CF         SPH=1 ALS KENNUNG
+;  09D4         MOTOR AUS  [LD A,000H / OUT 0FEH]
+;  09DA         CTC PASSIV  [LD A,003H / OUT 0FAH / OUT 0FBH]
+;  09DC  MI1:
+;  09E0  MWN:   UP : NAME SCHREIBEN
+;  09E5         KENNUNG NAME  [LD HL,0FFFFH / LD (SPH+06H),HL]
+;  09F1         NAME VON BWS AUF PUFFER  [LD HL,0C60H / LD BC,0080H / LDIR]
+;  09F6         BIT 0 SETZEN
+;  09F9  MWQ:   SCHREIBVORBEREITUNG
+;  09FB         E=82H
+;  09FE         SPH=86H
+;  0A08         ZEIGER AUF SPH+6=0E01H
+;  0A0E         BIT 0=1 ?
+;  0A15         JA
+;  0A17         NEIN,DANN BLN AUF 0E01,0E02  [LD (HL),B / INC HL / LD (HL),C]
+;  0A1B  MQ1:
+;  0A1C         BYTE ZUR CRC-BILDUNG NACH C
+;  0A1D         CRC AUS 128 BYTE + 2(BLN)
+;  0A2B         CRC AN PUFFERENDE  [LD (HL),C / INC HL / LD (HL),B]
+;  0A2D         ABSCHLUSS: POSTAMBEL
+;  0A30  MWU:   UP: BLOCK VON RAM IN PUFFER
+;  0A32         1.BYTE AUF 0E03H
+;  0A38         128 DATENBYTES
+;  0A3D         NEUER RAM-STAND IN 'RAM'
+;  0A41  WAR:   UP: WARTEN BIS SPH ZU NULL GEZAEHLT
+;  0A48         FREIBEREICH FUER ERWEITERUNG BIS AUSSCHLIESSLICH 0B3CH
+;  0B3C  T01:   TEXT: MAGNETBAND / BAND <-- RAM / BAND --> RAM / SPULEN / LOESCHEN
+
+	END

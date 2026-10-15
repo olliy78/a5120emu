@@ -185,6 +185,17 @@ add_test(NAME cli_prg710_zre_prn_passt_zur_quelle
 set_tests_properties(cli_prg710_zre_prn_passt_zur_quelle PROPERTIES
     TIMEOUT 60 LABELS "cli;fast")
 
+# Wächter „das kommentierte Listing des Betriebssystems MC80.21/22 ist die Ausgabe des
+# Generators" (AP M10, doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md): prüft MD5 der
+# Abzüge doc/EPROMS/MC80/mc8020/, dass jedes der 4096 Byte (0000-0BFFH, 2000-23FFH) genau einmal
+# und mit dem richtigen Wert dargestellt ist, dass jede Marke/jeder Kommentar der Abschrift
+# tools/mc80/bsys_2x_abschrift.txt an einem Befehlsanfang liegt, und vergleicht bytegleich mit
+# doc/mc80/bsys_2x.prn.  Neu erzeugen: python3 tools/gen_mc8020_bsys_prn.py
+add_test(NAME cli_mc8020_bsys_prn_passt_zur_quelle
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/gen_mc8020_bsys_prn.py" --check)
+set_tests_properties(cli_mc8020_bsys_prn_passt_zur_quelle PROPERTIES
+    TIMEOUT 60 LABELS "cli;fast")
+
 # Wächter „die kommentierten Listings der K8915-Gen-2-Abzüge (ZRE 175/176/177 und die zwei
 # belegten Chips der 2708-Karte PFS K3820) sind die Ausgabe des Generators" (AP-V3a,
 # doc/design/24_k8915_varianten.md): tools/gen_k8915g2_prn.py --check prüft die MD5 aller
