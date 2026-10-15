@@ -20,6 +20,7 @@ sind nur nicht mehr in jeder einzelnen Anfrage geladen.
 | `a5120_alt.md` | `A5120Machine::Config::ausfuehrung` (Alt/Kmbg) + Karten `k7023`/`k3525`, `peripherals/k7636`, BCU 880, Kernfehler EI-Schatten/PIO-RETI — frühe A5120 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Frühe A5120“) |
 | `kassette.md` | `core/cards/k5020/` + `core/peripherals/kassette/` + `installK5020` in allen Maschinen, `k1520_tape_*`, `--tape`, Debugger-Befehl `tape` — Kassette K5020/K5200 |
 | `lochstreifen.md` | `core/cards/k6022/` + `core/peripherals/lochstreifen/` + `installK6022` in allen Maschinen, `k1520_ptape_*`, Kasten „Lochstreifen“ — Lochstreifen K6022/SIF1000 (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz) |
+| `mc80.md` | `core/machines/mc80/` + `core/cards/mc80/`, `peripherals/mc80_tastatur`, `Z80CTC::setIntAusVerwirftAnforderung`, Programm `mc80emu` — sechste Maschine MC80.3x (direkt hier angelegt; `CLAUDE.md` trägt nur den Kurzabsatz „Sechste Maschine: MC80“) |
 
 ## Warum ausgelagert
 

@@ -146,7 +146,8 @@ bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
 
-> **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a,
+> **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a; seither auch `p8000emu` und **`mc80emu`**
+> (MC80 Emulator, `--machine mc80`, Modelle MC80.30/.31 über `general.model`, `mc80emu.yaml`, `data/default_config_mc80.yaml`, Profilfeld `laufwerke=False`, `app/ui/keyboard_mc80.py`),
 > `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
 > **A5120 Emulator** (`a5120emu`), **K8915 Emulator** (`k8915emu`, `app/main.py
 > --machine k8915`) und **PRG710 Emulator** (`prg710emu`, `--machine prg710`, Modellwahl PRG 710 /
@@ -607,7 +608,8 @@ Das Lade-ROM **bootet schon von Kassette** (Bootband `SYL`, 4 × 128 B; A5120 oh
 `tools/kassette/bandtest/`), SCPX schreibt/liest mit `KMBG.REL` (**Kassette vorher zurückspulen**,
 Frist 2,45 s — offen [?]).  Stand 2026-10-14: K0–K9 fertig.
 **Vor Arbeiten daran: `doc/merkposten/kassette.md` lesen** (Blockformat, AEB-Polarität,
-`Z80PIO::setExtern`-Befund, UMS-Flanke); Entwurf `doc/design/29_kassette_k5020_k5200.md`.
+`Z80PIO::setExtern`-Befund, UMS-Flanke); **am MC80** fest auf 30H, nur Laufwerk 1, Kompaktkassette
+(80 mm Vorspann, `doc/merkposten/mc80.md` Nr. 14/15); Entwurf `doc/design/29_kassette_k5020_k5200.md`.
 
 ## Frühe A5120 (Ausführungen Alt/Kmbg) + BCU 880
 
@@ -621,12 +623,20 @@ C-ABI `k1520_create_a5120_ausfuehrung`, Python `ausfuehrung="alt"|"kmbg"`, GUI-M
 Plan: `doc/design/30_a5120_fruehe_varianten.md`, Stand `doc/design/32_...`.
 **Vor Arbeiten daran: `doc/merkposten/a5120_alt.md` lesen.**
 
-## In Planung (Zweig `kassette_mc80`): MC80 → `mc80emu`
+## Sechste Maschine: MC80 (VEB Elektronik Gera) → `mc80emu`
 
-Kassette und frühe A5120 sind umgesetzt (s. o.); **noch nicht umgesetzt: MC80** (Stand 2026-10-15).
-Entwurf **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`, `K1520_MACHINE_MC80 = 6`);
-**Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`** (Spielregeln §0,
-Stand §2, AP-Karten §6).  Quellen im Repo: `doc/mc80/`, `doc/EPROMS/MC80`, `doc/original_docs/mc80/`.
+Mikrorechner MC80.30 / MC80.31 (U880 2,4576 MHz, **EGOS** im ROM, Grafikkarte VIS 2a 512 × 256, Tastatur seriell
+mit eigenem Prozessor, SPE-Speicherkarten mit Segmentumschaltung **Port 85H**).  Eine Klasse `Mc80Machine` unter
+`core/machines/mc80/`; Karten `core/cards/mc80/` (`zve3x`, `spe`, `vis2a`, `asp`), `peripherals/mc80_tastatur`.
+**In `libk1520core.so`** (`K1520_MACHINE_MC80 = 6`, `k1520_create_mc80(variante, "spe=1|2")`, Python
+`K1520Emulator(machine="mc80"|"mc80-31")`; Bild: `k1520_framebuffer` 512×256, Text nur über `k1520_screen_char`,
+nie `mem_read`).  `boot_trace`/`k1520dbg --machine mc80[-30|-31]`, Programm **mc80emu** (Profilfeld `laufwerke=False`,
+Speicherabzug laden via `k1520_mem_load`, Kassette K5020 fest auf 30H als **Kompaktkassette**, Paket).
+**Stand 2026-10-15:** M0–M9 für MC80.3x fertig (EGOS meldet sich, Spiele Pharao/Wall/Tetris/Hasi laufen **nach `INIT`**,
+`KINIT`/`WRITE`/`READ` auf Band); **MC80.33 gesperrt** (zweite ROM-Hälfte des PK-3-Treibers fehlt), Sondertasten →
+Editor/BASIC nicht belegbar.  **MC80.2x (M10–M12) in Planung** (Entwurf 31, `doc/design/32_...` §6).
+**Vor Arbeiten daran: `doc/merkposten/mc80.md` lesen** (Segmentport 85H, Leerbereich 00H, `Z80CTC::setIntAusVerwirftAnforderung`
+nur an der ASP-CTC, EPROM-Segmente, Kassettentakt-Annahmen, offene Fragen).  Plan: `doc/design/31_mc80.md`.
 
 ## Boot-ROM debugging workflow
 

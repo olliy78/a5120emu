@@ -1199,7 +1199,7 @@ anders ist:
   4000H–40FFH aus Segment 01 unter NAME, `READ 1,NAME,R` holt ihn an dieselbe Adresse
   zurück und hängt ihn in die Kommandokette — steht dort ein Programm mit Kennbyte,
   ist es danach wieder ein Kommando. Eine neu angelegte Kassette hat am MC80 einen
-  kurzen Vorspann und keine Anfangs-/Endmarke (die verträgt EGOS nicht); man muss sie
+  kurzen Vorspann (sie ist eine Kompaktkassette) und keine Anfangs-/Endmarke (die verträgt EGOS nicht); man muss sie
   nicht vorher zurückspulen.
 * **Einschalten** — EGOS meldet sich nach gut einer Sekunde mit
   „mc 80.30. microcomputer“ und „Version 3.0“, unten steht `OK` und der Prompt `>`.
@@ -1209,7 +1209,9 @@ anders ist:
   Adresse in den Arbeitsspeicher (erfragt wird die Adresse; steht sie im Dateinamen wie
   bei `tetris_4000_4fff.bin`, ist sie vorgeschlagen). Gestartet wird mit dem
   EGOS-Kommando des Programms, z. B. **TETRIS**: nach `INIT` ab 4000H laden, dann
-  `te` + ENTER; **HASI** ebenso ab 4000H mit `hasi`. Kein Tastenkürzel.
+  `te` + ENTER; **HASI** ebenso ab 4000H mit `hasi`. **Spiele und andere Programme erst nach
+  `INIT` laden** — vorher gibt es die Kommandokette nicht, in die sie sich einhängen.
+  Kein Tastenkürzel.
 * **Die Bildschirmtastatur** zeichnet das Tastenbild der Betriebsdokumentation
   (Bild A5): Hauptfeld mit **CTRL**, Feststeller **⇩** und den beiden Umschalttasten
   **⇧**, darunter **OFF**, Leertaste und **ENTER**; rechts die acht **Steuertasten**
