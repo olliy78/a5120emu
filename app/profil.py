@@ -98,6 +98,9 @@ class Programmprofil:
     modell_alt: Tuple[Tuple[str, str], ...] = ()
     #: Kästchen „Lochstreifen" unter *Allgemein* (K6022): am P8000 gibt es die Karte nicht.
     ptape_wahl: bool = True
+    #: Kästchen „Kassette (K5221, AKB K5020)" unter *Allgemein*: wie der Lochstreifen
+    #: nicht am P8000 (kein K1520-Bus).
+    tape_wahl: bool = True
     #: Lampen der Frontplatte: ``"k8915"`` (Latch 61H, aktiv low) oder ``"p8000"``
     #: (Run/Unit16/Platte, aktiv high) — nur mit :attr:`frontplatte`.
     frontplatte_art: str = "k8915"
@@ -108,6 +111,9 @@ class Programmprofil:
     #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
     #: Programme bieten sie an; ohne sie läuft die Maschine stets ohne RAF.
     raf_wahl: bool = True
+    #: Diskettenlaufwerke (K5122 o. ä.): ohne sie (MC80) fallen Kasten „Laufwerke“, die
+    #: Diskettenmenüs und die Laufwerksfelder der Statuszeile weg.
+    laufwerke: bool = True
     #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
     ueber_rechner: str = ""
     #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname
@@ -345,13 +351,22 @@ A5120 = Programmprofil(
     nenntakt_text="2,45 MHz",
     tastatur="k7637",
     modellwahl=True,
-    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS),
+    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS) + (
+        # Frühe Ausführungen (Entwurf 30, AP A5): K7023.01 16×64, 4× K3525, Tastatur K7636.
+        (_modell.A5120_ALT, "a5120-alt", None, "A5120 (64×16, K7636)", "k7636"),
+        (_modell.A5120_KMBG, "a5120-kmbg", None, "A5120 Kassette", "k7636"),
+    ),
+    gesperrte_modelle=((_modell.A5120_ACHT, "A5120 8″ (K5602)",
+                        "Die 8″-Ausführung mit der Floppy-Einheit K5602 ist noch nicht "
+                        "nachgebildet."),),
     modell_tipp=("A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
-                 "EM256 mit dem U8001 hinzu.  Ein Wechsel erzeugt die Maschine neu "
-                 "(wie ein Kaltstart)."),
+                 "EM256 mit dem U8001 hinzu.  „A5120 (64×16, K7636)“ ist die frühe "
+                 "Ausführung mit dem Bildschirm K7023 und der Tastatur K7636, "
+                 "„A5120 Kassette“ dieselbe mit der Kassettenkarte K5020 (KMBG).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
-    weitere=("prg710", "pc1715", "p8000"),
+    weitere=("prg710", "pc1715", "p8000", "mc80"),
 )
 
 K8915 = Programmprofil(
@@ -384,7 +399,7 @@ K8915 = Programmprofil(
                  "K3528, 64 KB).  Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
-    weitere=("prg710", "pc1715", "p8000"),
+    weitere=("prg710", "pc1715", "p8000", "mc80"),
     # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
     # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
@@ -413,7 +428,7 @@ PRG710 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
     andere="a5120",
-    weitere=("k8915", "pc1715", "p8000"),
+    weitere=("k8915", "pc1715", "p8000", "mc80"),
 )
 
 PC1715 = Programmprofil(
@@ -461,7 +476,7 @@ PC1715 = Programmprofil(
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
     andere="a5120",
-    weitere=("k8915", "prg710", "p8000"),
+    weitere=("k8915", "prg710", "p8000", "mc80"),
 )
 
 #: Modelle des P8000 mit einem Rechner / mit der 16-Bit-Karte (Wirkungsbereich der Hardwarewahl).
@@ -488,6 +503,7 @@ P8000 = Programmprofil(
     terminal=True,
     platte=True,
     ptape_wahl=False,
+    tape_wahl=False,
     raf_wahl=False,                 # die RAF ist eine K1520-Karte; der P8000 hat keinen K1520-Bus
     modellwahl=True,
     betriebsart_wahl=True,
@@ -553,11 +569,59 @@ P8000 = Programmprofil(
                           ("Terminal (XB5)", 5004)),
     ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>EAW P8000</b>",
     andere="a5120",
-    weitere=("k8915", "prg710", "pc1715"),
+    weitere=("k8915", "prg710", "pc1715", "mc80"),
+)
+
+MC80 = Programmprofil(
+    maschine="mc80",
+    programm="mc80emu",
+    titel="MC80 Emulator",
+    rechner="MC80",
+    beschreibung="Emulator der Mikrorechner MC80.30 und MC80.31 (VEB Elektronik Gera)",
+    konfig_datei="mc80emu.yaml",
+    vorgabe_datei="default_config_mc80.yaml",
+    # 2,4576 MHz (Mc80Machine::CPU_HZ = Mc80Zve::CPU_HZ).
+    nenntakt_hz=2_457_600,
+    nenntakt_text="2,4576 MHz",
+    tastatur="mc80",
+    modellwahl=True,
+    # .30 und .31 laufen im Kern bis M7 gleich (die .31 hat zusätzlich die EPROM-Segmente
+    # 10H/20H, M4); sie unterscheiden sich erst am Kassettenanschluss (M7).
+    modelle=(("mc80", "mc80", None, "MC80.30", "mc80"),
+             ("mc80-31", "mc80-31", None, "MC80.31 (Programmsegmente 10H/20H)", "mc80")),
+    # Der Kern lehnt diese Varianten ab (Mc80Machine → std::invalid_argument).
+    gesperrte_modelle=(
+        ("mc80-33", "MC80.33 (AKM + PK 3)",
+         "Nicht wählbar: vom Treiber-ROM der AKM liegt nur die Hälfte vor (doc/mc80/egos.md §3)."),
+        ("mc80-21", "MC80.21",
+         "Noch nicht nachgebildet (MC80.2x, Arbeitspakete M10–M12)."),
+        ("mc80-22", "MC80.22",
+         "Noch nicht nachgebildet (MC80.2x, Arbeitspakete M10–M12)."),
+    ),
+    hardware=(
+        ("spe", "Speichererweiterung:",
+         "Zahl der Speicherkarten SPE 2: die erste trägt ROM und RAM-Segment 01H, eine zweite "
+         "nur RAM (Segment 02H).  Ein Wechsel startet die Maschine kalt.",
+         (("1", "eine SPE 2"), ("2", "zwei SPE 2")),
+         ()),
+    ),
+    modell_tipp=("MC80.30 oder MC80.31 (mit den EPROM-Programmsegmenten 10H/20H).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
+    eigene_aktionen=("speicherabzug_laden",),
+    laufwerke=False,
+    # Lochstreifen K6022 (E0H–E7H) kollidiert mit dem EPROM-Programmierer E0H–EFH; die RAF
+    # (88H/89H) liegt im E/A-Bereich der ZVE (80H–8FH) [?].  Kassette seit AP M7: K5020 an
+    # 30H (.30 LW 1200 mit Takt aus der ASP, .31 K5200), EGOS bedient nur Laufwerk 1.
+    ptape_wahl=False,
+    tape_wahl=True,
+    raf_wahl=False,
+    ueber_rechner="der Mikrorechner <b>MC80.30/31</b> des VEB Elektronik Gera",
+    andere="a5120",
+    weitere=("k8915", "prg710", "pc1715", "p8000"),
 )
 
 #: Alle Profile nach Name (Schlüssel = Maschinenname).
-PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715, P8000)}
+PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715, P8000, MC80)}
 
 #: Das Profil ohne Angabe — ältere Starter, Tests, ``app/main.py`` ohne Schalter.
 VORGABE = A5120

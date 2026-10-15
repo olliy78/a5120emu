@@ -1,5 +1,5 @@
 #!/bin/sh
-# K1520-Emulator — Starter des A5120, K8915, PRG710, PC1715, P8000 Emulators UND des P8000 Terminals.  @ROOT@
+# K1520-Emulator — Starter des A5120, K8915, PRG710, PC1715, P8000 und MC80 Emulators UND des P8000 Terminals.  @ROOT@
 # wird beim Installieren eingesetzt.
 #
 # EINE Vorlage für beide: install.sh schreibt sie zweimal (bin/a5120emu,
@@ -55,6 +55,7 @@ case "$(basename "$0")" in
     prg710emu*) set -- --machine prg710 "$@" ;;
     pc1715emu*) set -- --machine pc1715 "$@" ;;
     p8000emu*) set -- --machine p8000 "$@" ;;
+    mc80emu*) set -- --machine mc80 "$@" ;;
 esac
 
 exec "$ROOT/venv/bin/python3" "$ROOT/app/main.py" "$@"

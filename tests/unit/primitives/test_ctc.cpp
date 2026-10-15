@@ -1047,3 +1047,22 @@ TEST(Z80CTC, TeilerTakte_KaskadeRekursiv) {
     ctc.setzeEingangsQuelle(1, [&] { return ctc.teilerTakte(1); });
     EXPECT_EQ(ctc.teilerTakte(1), 0u);
 }
+
+/**
+ * Steuerwort mit D7 = 0 bei anstehender Anforderung: Vorgabe = Anforderung bleibt (Verhalten
+ * aller bisherigen Maschinen), mit setIntAusVerwirftAnforderung(true) wird sie verworfen
+ * (MC80-ASP, EGOS TASTE_ISR 046FH, AP M3).
+ */
+TEST(Z80CTC, IntAusVerwirftAnforderungNurMitSchalter) {
+    for (bool schalter : {false, true}) {
+        Z80CTC ctc;
+        ctc.setIntAusVerwirftAnforderung(schalter);
+        ctc.setIEI(true);
+        ctc.ioWrite(3, 0x87);   // Interrupt ein, Zeitgeber, ×16, ZK folgt
+        ctc.ioWrite(3, 0x01);
+        ctc.clockTick(16);
+        ASSERT_TRUE(ctc.hasInterrupt());
+        ctc.ioWrite(3, 0x01);   // Interrupt aus, kein Rücksetzen
+        EXPECT_EQ(ctc.hasInterrupt(), !schalter) << "Schalter " << schalter;
+    }
+}

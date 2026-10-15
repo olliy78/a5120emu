@@ -377,6 +377,73 @@ def test_pc1715_ex_waehlt_rom_fassungen():
     assert not _lib.k1520_create_pc1715_ex(0, 0, 0, 2, 0, None, None, None, None)
 
 
+def test_mc80_can_be_created_and_reports_its_type():
+    """`k1520_create_mc80` (Entwurf 31, AP M2): MC80.30/.31 liefern eine Maschine vom Typ 6,
+    die EGOS ab 0000H ausführt; .33/.21/.22 und unbekannte Schlüssel → NULL mit Grund."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for variante, konfig in ((0, None), (1, b"spe=2")):
+        handle = _lib.k1520_create_mc80(variante, konfig)
+        assert handle, _lib.k1520_last_init_error()
+        h = K1520Handle(handle)
+        try:
+            assert _lib.k1520_machine_type(h) == 6
+            assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (512, 256)
+            assert _lib.k1520_mem_read(h, 0x0000) == 0xC3      # JP 0776H (RESET)
+            assert _lib.k1520_mem_read(h, 0x2800) == 0x00      # leere SPE-2-Fassung
+            assert _lib.k1520_run(h, 100_000) > 0
+        finally:
+            _lib.k1520_destroy(h)
+
+    handle = _lib.k1520_create(6)                               # Vorgabe = MC80.30
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+    try:
+        assert _lib.k1520_machine_type(h) == 6
+    finally:
+        _lib.k1520_destroy(h)
+
+    for variante, konfig, grund in ((2, None, b"MC80.33"), (3, None, b"MC80.21"),
+                                    (4, None, b"MC80.22"), (9, None, b"Variante"),
+                                    (0, b"spe=3", b"spe"), (0, b"vis=1", b"vis")):
+        assert not _lib.k1520_create_mc80(variante, konfig)
+        assert grund in _lib.k1520_last_init_error()
+
+
+def test_mc80_screen_and_keyboard_through_the_c_abi():
+    """AP M3: Bitmap-Bild über `k1520_framebuffer` (512 × 256, 00H/FFH), Text über
+    `k1520_screen_char` (Mustervergleich gegen den EGOS-Zeichengenerator), Tasten über
+    `k1520_key_press` (ASCII/Qt) an die Tastatur an SIO A."""
+    import ctypes
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    handle = _lib.k1520_create_mc80(0, None)
+    assert handle, _lib.k1520_last_init_error()
+    h = K1520Handle(handle)
+
+    def zeile(row):
+        return bytes(_lib.k1520_screen_char(h, c, row) for c in range(80)).rstrip(b" ")
+
+    def fahre(takte):
+        for _ in range(takte // 50_000):
+            _lib.k1520_run(h, 50_000)
+
+    try:
+        fahre(4_000_000)                       # EGOS bis zur Kommandoschleife
+        assert zeile(24) == b">"
+        assert zeile(23) == b"OK"
+        fb = ctypes.cast(_lib.k1520_framebuffer(h), ctypes.POINTER(ctypes.c_uint8))
+        werte = {fb[i] for i in range(512 * 256)}
+        assert werte == {0x00, 0xFF}
+        for k in b"init":                      # Tastenkappe ohne Umschalter
+            _lib.k1520_key_press(h, k - 0x20, False, False)   # Qt-Code = Großbuchstabe
+            _lib.k1520_key_release(h, k - 0x20)
+        fahre(400_000)
+        assert zeile(24) == b">INIT"
+    finally:
+        _lib.k1520_destroy(h)
+
+
 def test_k8915_can_be_created_and_reports_its_type():
     """`k1520_create(K1520_MACHINE_K8915)` liefert seit AP-E4b eine Maschine;
     `k1520_machine_type` meldet 2, die Anzeigen haben ihren Ruhezustand."""
@@ -502,6 +569,20 @@ def test_mem_read_write_roundtrip(emulator):
     assert emulator.mem_read(0x6000) == 0xA5
     emulator.mem_write(0x6000, 0x5A)
     assert emulator.mem_read(0x6000) == 0x5A
+
+
+def test_mem_load_schreibt_eine_datei_in_den_speicher(emulator, tmp_path):
+    """k1520_mem_load: Bytezahl als Ergebnis, negative Fehlercodes."""
+    emulator.power_on()
+    datei = tmp_path / "abzug.bin"
+    datei.write_bytes(bytes([0x11, 0x22, 0x33, 0x44]))
+    assert emulator.mem_load(0x6000, datei) == 4
+    assert [emulator.mem_read(0x6000 + i) for i in range(4)] == [0x11, 0x22, 0x33, 0x44]
+    with pytest.raises(OSError):
+        emulator.mem_load(0x6000, tmp_path / "gibt_es_nicht.bin")
+    datei.write_bytes(bytes(16))
+    with pytest.raises(OSError):
+        emulator.mem_load(0xFFF8, datei)       # passt nicht unter 10000H
 
 
 @pytest.mark.parametrize("drive", [0, 1, 2])

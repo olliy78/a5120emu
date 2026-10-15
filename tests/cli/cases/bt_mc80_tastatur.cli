@@ -1,0 +1,8 @@
+# boot_trace --machine mc80 --keys (AP M8): am Prompt wird `init<ET>` getippt (Zeichenebene an
+# ASP-SIO A); --until beendet den Lauf, sobald die Eingabezeile `>INIT` im Bild steht.
+tool:    boot_trace
+run:     --machine mc80 --quiet --json --keys init<ET> --until "screen ~ \">INIT\""
+timeout: 240
+exit:    0
+expect:  "machine":"mc80-30"
+expect:  "until":{"set":true,"met":true

@@ -470,12 +470,14 @@ class ScreenWidget(QOpenGLWidget):
         """Der Text des Bildes: Zeilen ohne Schlussleerzeichen, durch ``\n`` getrennt.
 
         Aus dem Bildwiederholspeicher der Karte (nicht aus dem gerenderten Bild).  Attribut- und
-        Steuerzeichen werden zu Leerzeichen.  PC 1715: 25 Zeilen (mit Statuszeile), sonst 24.
+        Steuerzeichen werden zu Leerzeichen.  PC 1715: 25 Zeilen (mit Statuszeile), MC80: 25, sonst 24.
         """
         if self.emulator is None:
             return ""
-        pc1715 = str(getattr(self.emulator, "machine", "")).startswith("pc1715")
-        roh = self.emulator.screen_text(25) if pc1715 else self.emulator.screen_text()
+        # PC 1715: Statuszeile; MC80: 25 EGOS-Textzeilen (aus dem Bitmap zurückgewonnen).
+        maschine = str(getattr(self.emulator, "machine", ""))
+        roh = (self.emulator.screen_text(25) if maschine.startswith(("pc1715", "mc80"))
+               else self.emulator.screen_text())
         zeilen = ["".join(c if " " <= c < "\x7f" else " " for c in z).rstrip()
                   for z in roh.split("\n")]
         return "\n".join(zeilen)

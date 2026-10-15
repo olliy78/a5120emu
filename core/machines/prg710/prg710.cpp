@@ -110,11 +110,18 @@ void Prg710Machine::interruptKetteSetzen()
     // AP-P8: K6022 (Stanzer vor Leser, nur gesteckt) und 590069 dahinter — Stellung [?].
     // Anders als am A5120/K8915 (Entwurf 23 §2: hinten) bleibt die K6022 hier VOR dem
     // Fernschreiber, wie sie bis AP-L1 fest steckte.
-    if (k6022_)
-        bus_.setInterruptChain({&afs_, &zre_, &ass_, &k6022_->pioStanzer(),
-                                &k6022_->pioLeser(), &fs_.sio(), &fs_.ctc()});
-    else
-        bus_.setInterruptChain({&afs_, &zre_, &ass_, &fs_.sio(), &fs_.ctc()});
+    bus_.setInterruptChain({&afs_, &zre_, &ass_});
+    if (k6022_) {
+        bus_.appendInterruptChain(&k6022_->pioStanzer());
+        bus_.appendInterruptChain(&k6022_->pioLeser());
+    }
+    bus_.appendInterruptChain(&fs_.sio());
+    bus_.appendInterruptChain(&fs_.ctc());
+    // K5020 (Entwurf 29, AP K5): hinten angehängt, Daten- vor Steuer-PIO — am Gerät unbelegt [?]
+    if (k5020_) {
+        bus_.appendInterruptChain(&k5020_->pioDaten());
+        bus_.appendInterruptChain(&k5020_->pioSteuer());
+    }
 }
 
 std::vector<k1520::serial::SerialAnschluss*> Prg710Machine::serielleAnschluesse()
@@ -137,6 +144,7 @@ void Prg710Machine::resetHardware()
     ass_.reset();
     atp_.reset();            // 8279: FIFO leer
     k6022Reset();            // K6022 (gesteckt?): PIOs; Band im Leser und Stanzband bleiben
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurück, Bänder bleiben liegen
     fs_.reset();
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();
@@ -239,6 +247,7 @@ int Prg710Machine::run(int max_cycles)
         bool dirty = zre_.clockTick(used);
         dirty |= ass_.clockTick(used);
         dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
+        dirty |= k5020Takt(used);   // Kassette (gesteckt?)
         dirty |= fs_.clockTick(used);
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
@@ -250,5 +259,6 @@ int Prg710Machine::run(int max_cycles)
     }
     lw_.autoFlush(total_cycles_);
     k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
+    k5020AutoFlush();   // Kassettendateien nach der Schreibpause
     return max_cycles - remaining;
 }

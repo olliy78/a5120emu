@@ -37,6 +37,12 @@ Disketten, deren `@OS.COM` sie beschreiben; für Anwender sind sie nicht gedacht
 | `cpa_cpa780_k5601_clock.img` / `.hfe` | CP/A **mit Uhr**, A:/B:/C: = K5601 | `test_boot_integration` (Hauptfixture), alle CLI-Tests, `make_bootdisk` (Preset cpa780) |
 | `cpa_cpa780_k5601_noclock.img` / `.hfe` | CP/A **ohne Uhr**, A:/B:/C: = K5601 | `test_boot_integration` (Boot von B:/C:, .img vs .hfe) |
 | `cpa_cpa780_combo5zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: K5600.10** · **C: K5600.20** | `make_bootdisk` (Presets k5600_10_fmt1, k5600_20_fmt1) |
+| `cpa_combo5zoll_noclock_k5600_10_boot.hfe` | **40-Spur-einseitige** CP/A-Systemdiskette (K5600.10, FORMAT-Menü F1: 26×128 Sp. 0–1 + 5×1024 Sp. 2–39), `@OS.COM` = unverändertes BIOS 25.09.89 `combo5zoll` (meldet A: als K5601). Erzeugt 2026-10-15 mit `make_bootdisk.py --preset k5600_10_fmt1 --out …` (Leerdiskette → FORMAT → CPABCGEN aus `cpa_cpa780_combo5zoll_noclock.img`) | `BootIntegrationAlt.CpaAufK5600_10BisPrompt`, `cli_bt_ausfuehrung_alt` (A5120 „alt“, AP A6) |
+| `bcu12_ss40-26x128_k5600-10_syl-spur1-satz2.img` | **BCU 880 V1.2** (FZW/BL), Startdiskette „SYL auf Spur 1“, Bildtreiber 64×16 ab FC00H (K7023), MFM 40×1×26×128 (Katalog `k5601_ss40_26x128`). Unveränderte Kopie von `doc/a5120_alt/bcu/satz2_SYL_auf_Spur1/disk.img` (Herkunft VEB Halbleiterwerk Frankfurt/Oder, Etikett „D15 SIOS 1SS Copy1“); startet nur mit Lade-ROM V0.6 (`doc/a5120_alt/bcu.md`) | `BootIntegrationBcu.V12BisPrompt`, `cli_bt_laderom_v06_bcu` (AP A7) |
+| `bcu12_ss40-26x128_k5600-10_syl-spur1-satz1.img` | dieselbe V1.2 als Startdiskette mit Bildtreiber **80×24 ab F800H** (K7024). Unveränderte Kopie von `doc/a5120_alt/bcu/satz1_SYL_auf_Spur1/disk.img` („BCU Kaltstart“) | `BootIntegrationBcu.V12Bab2BisPrompt`, `cli_dbg_tastatur_k7636_bcu` (AP A7) |
+| `bcu12_ss40-26x128_k5600-10_ohnesyl-sys1.img` | BCU-880-V1.2-Systemdiskette „ohne SYL“ (nicht startbar, §5 bcu.md) als **Datendiskette in B:** — 19 Dateien u. a. `KMBG.REL`, `EPROM.COM`, `PIP.COM`. Unveränderte Kopie von `doc/a5120_alt/bcu/satz2_OhneSYL.1/disk.img` („SYS1“) | `BootIntegrationBcu.V12BisPrompt`/`V12Bab2BisPrompt` (`dir b:`) |
+| `bcu21_ss40-26x128_k5600-10_ohnesyl-satz2-2.img` | **BCU 880 V2.1** („V.24/P“), Diskette „ohne SYL“ — startet mit keinem vorhandenen Lade-ROM (Befund, bcu.md §5). Unveränderte Kopie von `doc/a5120_alt/bcu/satz2_OhneSYL.2/disk.img` („BCK 40 Sp.“) | `BootIntegrationBcu.V21OhneSylStartetMitKeinemVorhandenenLaderom` (AP A7) |
+| `bcu21_ss40-26x128_k5600-10_eigenbau-syl-v21.img` | **EIGENBAU, kein Original** (AP A7b): V2.1-System von `satz2_OhneSYL.2` im SYL-Bootaufbau der V1.2-Diskette `satz2_SYL_auf_Spur1`, mit V1.2-Plattentreiber F100–F47F und 11 umgebogenen Adressen; gebaut mit `tools/bcu_v21_eigenbau.py --treiber` aus den beiden Quellabbildern in `doc/a5120_alt/bcu/`. Bootet mit Lade-ROM V0.6 (`Neu` + K7636) bis `A>` (`doc/a5120_alt/bcu.md` §9) | `BootIntegrationBcu.V21EigenbauBootet` |
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
 | `cpa_cpa780_k5601_noclock-em256.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `em256 equ 1`** (A5120.16, RAM-Floppy M: im EM256) | `Em256RamFloppy.*` |
 | `cpa_cpa780_k5601_noclock-raf.img` | CP/A ohne Uhr, K5601, **@OS.COM mit `raf equ 1`, `rafpar equ 1`** (RAM-Floppy M: auf der RAF an 88H, Software-Parität) | `RafCpaBios.*`, `RafCpaBiosKapazitaet.*` |
@@ -239,3 +245,13 @@ Spalte nennt die Etappe, die sie braucht.
 | `pc1715w_scp30_system.hfe` | **SCP 3.0 des PC 1715W** („SCP 3.0 – LOADER PC 1715W V0001 25/05/87"): `cpa800`, 4 Systemspuren, 42 Dateien (`SCP3.SYS`, `SC6xx.ZGF`); aus `PC1715W_SCP30.scp` gewandelt, 80 Zylinder (81/82 unformatiert) | AP-W3 |
 | `pc1715_scp1715_v0006_pctest.hfe` | `pc1715_scp1715_v0006_boot.hfe` + **`PCTEST.COM`** (`../cpm/PCTEST.COM`, mit `k1520disktool put`), 10 Dateien — Werkstest unter SCP mit Prüfsteckern | AP-4f (`Pc1715Pctest.Scp*`) |
 | `pc1715_cpa1715_workbench.hfe` | **CP/A 1715 aus der CPA_Workbench** (Variante `pc_1715`, `cpa800`, `@OS.COM` 24.05.88 ohne BIOS-Monitor, Bootkopf `03F0` aus `prebuilt/pc_1715`, dazu `PCTEST.COM`, `FORMATP.COM`, M80/LINKMT …); Vorgabe-Konfiguration → fragt beim Start nach der Uhrzeit. `gw convert` aus dem `cpadisk.img` des Diskettenbaus (Workbench-Stand `10d6f1e`) | AP-3b, AP-4d |
+
+## `kassette/bandtest_boot.k52`: Bootband für das Lade-ROM (AP K7)
+
+Erzeugt mit `tools/dev.sh tool k1520tape bootband tools/kassette/bandtest/bandtest.bin
+tests/fixtures/kassette/bandtest_boot.k52` (Seite A, 4 Blöcke zu 128 B Daten = je 132 B auf dem
+Band, Lücken nach `k1520tape`).  Das Programm (`tools/kassette/bandtest/`, Quelle + `.bin`) trägt
+`SYL` bei 0400H, springt bei 0434H ein und schreibt „KASSETTE OK“ nach F800H.  Benutzer:
+`KassetteBoot.*` (`tests/integration/test_kassette_boot.cpp`); die Tests lesen die Datei nur und
+binden sie nicht (kein Zurückschreiben).  Wächter, dass Band und Programm zusammenpassen:
+`cli_bandtest_bootband`; dass das Programm zur Quelle passt: `cli_bandtest_bin_passt_zur_quelle`.

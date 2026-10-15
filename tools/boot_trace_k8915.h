@@ -17,9 +17,12 @@
 #include <vector>
 
 struct K8915TraceOpts {
+    int         spe = 1;         ///< --spe 1|2: Zahl der SPE 2 am MC80 (AP M8)
     bool        gen2 = false;    ///< --machine k8915-g2: K8915 Generation 2 (K2521 + K3528, AP-V6b)
     std::string raf;             ///< --raf: RAM-Floppy stecken (leer = keine)
     bool        ptape = false;   ///< --ptape: Lochstreifen-Karte K6022 stecken (E0H–E7H)
+    bool        tape = false;    ///< --tape/--tape-card: Kassettenkarte K5020 stecken
+    std::string tape1, tape2;    ///< --tape/--tape2: .k52 an Gerät 1/2 binden
     std::string disk;            ///< Diskettenpfad (leer = keine)
     std::string mount_path;      ///< tatsächlich zu mountender Pfad (COW-Kopie o. ä.)
     bool        write_protect = false;

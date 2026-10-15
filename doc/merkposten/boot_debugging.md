@@ -126,3 +126,18 @@ analysis: `doc/analyse_zre_rom_boot.md`, `doc/analyse_bootloader.md`, `doc/K1520
 `boot_trace` post-boot tracing: `-p <cycles>` continues past `0x0437`; the summary then
 adds an I/O-port read/write histogram, VRAM write count + range, a loaded-code PC
 histogram, and an 80-col text dump of VRAM (`0xF800`) so the screen banner is visible.
+
+### MC80 (`--machine mc80|mc80-30|mc80-31 [--spe 1|2]`, AP M8)
+
+`boot_trace` (`tools/boot_trace_mc80.{h,cpp}`, `tools/boot_trace.md` §9b) und `k1520dbg` (`tools/k1520dbg.md` §11e)
+fahren die sechste Maschine. Eine CPU, kein Laufwerk; Bild als Text über `Mc80Machine::screenChar`
+(25 × 80, Mustervergleich) — **nie** `mem_read` (das Bild liegt im VIS-Speicher, nicht im CPU-Raum). Festlegungen:
+- **Prompt = Zeile 24 ist genau `>`** (`boot_trace` Exit 0); der Stillstand braucht **8 Mio.** Takte (die RESET-Kette
+  braucht ≈ 3,7 Mio. ohne Bildänderung), der Prompt steht nach ≈ 12 Mio. Takten.
+- **CPU-Sicht ≠ Segmentfenster:** `d/u/x/e/load` greifen auf das gerade über 85H freigegebene Segment zu; `map` zeigt, welches.
+  Nach dem RESET ist 85H = 00H (Lesen 4000H–BFFFH liefert FFH).
+- **Tastatur = Zeichenebene** (`keyPress` → `Mc80Tastatur`), je Zeichen 60 000 Takte (20 ms Tastenzeit + Zeichentakt).
+- **K5020 fest an 30H** (`--tape-card`); ohne Karte laufen EGOS-Zugriffe auf 30H–37H ins Leere.
+- `CATA` kann über Millionen Takte keinen Bild-/Portwechsel erzeugen → Scheinstillstand; `--stall` anheben.
+- ZVE2/Snapshots/Savestates: „nicht vorhanden“ wie bei den anderen Einzel-CPU-Maschinen.
+Wächter: `bt_mc80_{prompt,31_spe2,tastatur,tape}.cli`, `dbg_mc80_{map,tape,all_commands_smoke}.cli`.

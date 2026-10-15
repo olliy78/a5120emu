@@ -171,6 +171,23 @@ k1520_add_test(prg710_fernschreiber SRC test_prg710_fernschreiber.cpp
                           LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
+# MC80.3x (Entwurf 31, AP M2): EGOS läuft nach dem Einschalten durch RESET und die RESET-Kette
+# bis zur Kommandoschleife, 5 Mio. Takte ohne Absturz (Bild/Tastatur: mc80_boot).
+k1520_add_test(mc80_maschine SRC test_mc80_machine.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# MC80.3x (AP M3): EGOS meldet sich auf der VIS 2a (Text per Mustervergleich gegen den
+# EGOS-Zeichengenerator), INIT und CATA über die Tastatur an SIO A der ASP.
+k1520_add_test(mc80_boot SRC test_mc80_boot.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# MC80.31E (AP M4): EPROM-Segmente 10H/20H, Programme aus dem EPROM über die EGOS-Kette.
+k1520_add_test(mc80_segmente SRC test_mc80_segmente.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 # PC 1715 (doc/design/21_pc1715.md AP-1b): Maschine bauen, echter Urlader S502 (kopiert sich,
 # blendet das ROM aus), Bildwechsel.  Ohne Floppy; das Verhalten danach ist AP-1c.
 k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp
@@ -220,6 +237,30 @@ k1520_add_test(raf_maschinen SRC test_raf_maschinen.cpp
 
 # Lochstreifen-Karte K6022 als Option in allen Maschinen (doc/design/23_lochstreifen.md AP-L1):
 # stecken, zu spät, doppelt, Tor belegt; Z80-Gastcode stanzt über E0H und liest über E4H.
+# Kassettenkarte K5020 als Option (doc/design/29_kassette.md AP K5): stecken, zu spät, doppelt,
+# Tor belegt; Z80-Gastcode schreibt einen Block aufs Band und liest das Echo (A5120/.16, K8915, PRG 710/-1).
+k1520_add_test(k5020_maschinen SRC test_k5020_maschinen.cpp
+                               LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_logger k1520_testsupport
+                               LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# A5120 bootet vom Band (doc/design/29_kassette.md AP K7): keine Diskette, K5020 gesteckt, das
+# Lade-ROM fällt auf die Kassette (LW1, bzw. LW1 leer → LW2) und startet tools/kassette/bandtest.
+k1520_add_test(kassette_boot SRC test_kassette_boot.cpp
+                             LIBS k1520_a5120 k1520_logger k1520_testsupport
+                             LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# A5120-Ausführungen (doc/design/30_a5120_fruehe_varianten.md AP A5): neu (unverändert),
+# alt (4× K3525, K7023.01, K7636, Brücke 0AH Bit 6), KMBG (+ K5020 fest), 8″ abgelehnt.
+k1520_add_test(a5120_ausfuehrungen SRC test_a5120_ausfuehrungen.cpp
+                                   LIBS k1520_a5120 k1520_logger
+                                   LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+# CP/A auf dem A5120 „5¼″ alt“ bis A> (AP A6): K7023 BAB1 FC00H, K7636, dir getippt.
+k1520_add_test(boot_alt SRC test_boot_alt.cpp LIBS ${_libs}
+                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+# BCU 880 auf dem frühen A5120 (AP A7): Lade-ROM V0.6, Disketten „SYL auf Spur 1“ bis A>.
+k1520_add_test(boot_bcu SRC test_boot_bcu.cpp LIBS ${_libs}
+                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
 k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport
                                LABELS "${_lbl}" DEFS LOG_LEVEL=2)
@@ -295,3 +336,15 @@ k1520_add_test(p8000_terminal_original SRC test_p8000_terminal_original.cpp
 
 # Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()
+
+# MC80 (AP M7): Kassette an der K5020 (30H) über den EGOS-Bandtreiber — KINIT, WRITE eines
+# RAM-Programms, READ ...,R hängt es wieder in die RAM-Kette (je Modell .30/.31).
+k1520_add_test(mc80_kassette SRC test_mc80_kassette.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
+# MC80 (AP M5): Spiele-Speicherabzuege doc/mc80/spiele/ laden und ueber die EGOS-Kette starten.
+k1520_add_test(mc80_spiele SRC test_mc80_spiele.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                          "MC80_SPIELE_DIR=\"${CMAKE_SOURCE_DIR}/doc/mc80/spiele\"")

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MC80 Emulator
+GenericName=K1520 Emulator
+Comment=Emulator der Mikrorechner MC80.30 und MC80.31 (VEB Elektronik Gera)
+Comment[en]=Emulator of the MC80.30/MC80.31 microcomputers (VEB Elektronik Gera)
+Exec="@ROOT@/bin/mc80emu"
+Icon=a5120emu
+Terminal=false
+Categories=System;Emulator;
+Keywords=MC80;EGOS;Gera;Z80;U880;emulator;
+StartupNotify=true
+StartupWMClass=main.py

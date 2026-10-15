@@ -259,6 +259,15 @@ public:
      *        P8000 schreibt TC = AAH, Reset 03H und erwartet beim Lesen AAH (Fehler 16 sonst).
      */
     void setResetLaedtZeitkonstante(bool an) { reset_laedt_tc_ = an; }
+    /**
+     * Steuerwort mit D7 = 0 (Interrupt aus) verwirft eine ANSTEHENDE Anforderung des Kanals.
+     * Vorgabe aus (bisheriges Verhalten aller Maschinen).  MC80 (AP M3): EGOS stößt CTC-ASP K3
+     * mit `91H` (Zeitgeber, Vorteiler 16, ZK 1 = alle 16 Takte) an und schaltet ihn in der
+     * eigenen ISR erst nach ~70 Takten mit `01H` ab — ohne Verwerfen käme die ISR ein zweites
+     * Mal und jedes Tastenzeichen erschiene doppelt; am Gerät tut es das nicht [Befund;
+     * Datenblattlage [?]].  Wächter `Z80CTC.IntAusVerwirftAnforderungNurMitSchalter`.
+     */
+    void setIntAusVerwirftAnforderung(bool an) { int_aus_verwirft_ = an; }
 
     /// Wie teilerTakte(), aber in Q16 (Maschinentakte × 65536) — für Bruchtakte;
     /// bei ganzzahligen Teilern exakt `teilerTakte() << 16`.
@@ -364,6 +373,7 @@ private:
     mutable QMerker q16Merker_[4];
     uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
     bool     reset_laedt_tc_ = false;   ///< s. setResetLaedtZeitkonstante
+    bool     int_aus_verwirft_ = false; ///< s. setIntAusVerwirftAnforderung
     bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)
 
     // ─── Aufgeschobenes Takten ────────────────────────────────────────────────

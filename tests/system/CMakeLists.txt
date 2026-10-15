@@ -18,6 +18,18 @@ set(_lbl  "system;slow;format_integration")
 k1520_add_test(scpx_init SRC test_scpx_init.cpp LIBS ${_libs}
                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
+# SCPX + Robotron-Kassettenbibliothek KMBG.REL (doc/design/29_kassette.md AP K8): KMBGTEST.COM
+# schreibt mit gesteckter K5020 einen Block, setzt zurück, liest ihn wieder.
+k1520_add_test(scpx_kmbg SRC test_scpx_kmbg.cpp LIBS ${_libs} k1520_fs
+                         LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                         K1520_KMBGTEST_COM="${CMAKE_SOURCE_DIR}/tools/kassette/kmbgtest/kmbgtest.com"
+                         TIMEOUT 300)
+
+# BCU 880 V1.2 auf dem A5120 „KMBG“ (doc/design/32_… AP A8): INIT formatiert die Kassette in
+# Laufwerk F:, PIP schreibt eine Datei dorthin und liest sie zurück.
+k1520_add_test(bcu_kassette SRC test_bcu_kassette.cpp LIBS ${_libs} k1520_fs
+                            LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+
 # UDOS-4.3-Schreibpfad (origin/main 69b7445): 8212-Laufwerksauswahl und
 # Sektorkontrollblock — langsam, daher dasselbe Label.
 k1520_add_test(udos_format SRC test_udos_format.cpp LIBS ${_libs}

@@ -146,7 +146,8 @@ bash run_a5120emu.sh      # sets LD_LIBRARY_PATH=build and runs app/main.py
 bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
 
-> **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a,
+> **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a; seither auch `p8000emu` und **`mc80emu`**
+> (MC80 Emulator, `--machine mc80`, Modelle MC80.30/.31 über `general.model`, `mc80emu.yaml`, `data/default_config_mc80.yaml`, Profilfeld `laufwerke=False`, `app/ui/keyboard_mc80.py`),
 > `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
 > **A5120 Emulator** (`a5120emu`), **K8915 Emulator** (`k8915emu`, `app/main.py
 > --machine k8915`) und **PRG710 Emulator** (`prg710emu`, `--machine prg710`, Modellwahl PRG 710 /
@@ -595,18 +596,47 @@ Vertrag; der Stanzer wird an seine Datei **gebunden** und schreibt nach 0,5 s St
 Maschinenzeit zurück.  Kasten „Lochstreifen“ nur mit Karte, kein Kürzel, nicht im Save-State.
 **Vor Arbeiten daran: `doc/merkposten/lochstreifen.md` lesen**; Entwurf `doc/design/23_lochstreifen.md`.
 
-## In Planung (Zweig `kassette_mc80`): Kassette K5020/K5200, frühe A5120, MC80 → `mc80emu`
+## Kassette K5020/K5200 (alle Maschinen außer P8000; PC 1715 nur mechanisch)
 
-Noch **nichts umgesetzt** (Stand 2026-10-13).  Entwürfe **29** (Kassette als steckbare Option wie
-der Lochstreifen, A5120 30H–37H / K8915 D0H, nicht im Save-State), **30** (A5120 „5¼″ alt“ mit
-K7023 16×64 + K3525 + K7636, dann „KMBG“, 8″), **31** (MC80.3x, dann MC80.2x, Programm `mc80emu`,
-`K1520_MACHINE_MC80 = 6`); **Umsetzung ausschließlich nach `doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`**
-(Spielregeln §0, Stand §2, AP-Karten §4–6).  Quellen liegen im Repo: `doc/kassette/`, `doc/a5120_alt/`,
-`doc/mc80/`, `doc/EPROMS/{MC80,K5120,K7023,K5261,A5130}`, `doc/original_docs/` (+ `mc80/`).  Drei
-Befunde, die man kennen muss: **das vorhandene Lade-ROM bootet schon von Kassette** (`zre.prn`
-027E–03AF = K5020-Weg, bisher „Sekundär-Controller“ genannt); **CP/A 25.09.89 kann K7023 (BAB1)
-und K7636 ohne Neugenerierung** (Port 0AH Bit 6); **Belegungsplan + Codetabellen der K7636** stehen
-in `K7634-36-Serviceschaltplaene.pdf` S. 8 ff. — ein Tastatur-ROM-Abzug ist nicht nötig.
+AKB K5020 (zwei Z80-PIOs) mit zwei Laufwerken K5200 als steckbare Option auf **E/A 30H–37H**
+(A5120 auch .16, PRG 710/710-1) bzw. **D0H–D7H** (K8915, PC 1715), gesteckt über
+`K1520Machine::installK5020` **nach dem Anlegen, vor dem ersten Lauf** (C-ABI `k1520_tape_*`,
+Python `K1520Emulator(tape=True)`, `--tape` in `boot_trace`/`k1520dbg`, Befehl `tape`), Vorgabe
+überall aus (`general.tape`), nicht im Save-State.  Kern: Karte `core/cards/k5020/`, Laufwerk/Medium/
+`.k52` `core/peripherals/kassette/`; CLI `k1520tape`; Kasten „Kassette“ nur mit Karte, kein Kürzel.
+Das Lade-ROM **bootet schon von Kassette** (Bootband `SYL`, 4 × 128 B; A5120 ohne Diskette:
+`tools/kassette/bandtest/`), SCPX schreibt/liest mit `KMBG.REL` (**Kassette vorher zurückspulen**,
+Frist 2,45 s — offen [?]).  Stand 2026-10-14: K0–K9 fertig.
+**Vor Arbeiten daran: `doc/merkposten/kassette.md` lesen** (Blockformat, AEB-Polarität,
+`Z80PIO::setExtern`-Befund, UMS-Flanke); **am MC80** fest auf 30H, nur Laufwerk 1, Kompaktkassette
+(80 mm Vorspann, `doc/merkposten/mc80.md` Nr. 14/15); Entwurf `doc/design/29_kassette_k5020_k5200.md`.
+
+## Frühe A5120 (Ausführungen Alt/Kmbg) + BCU 880
+
+`A5120Machine::Config::ausfuehrung` = `Neu` (Vorgabe, bitgleich) | `Alt` (K7023 16×64 + 4× K3525 + K7636,
+K2526-Brücke Port 0AH Bit 6 = BAB1, 3× K5600.10 an der K5122) | `Kmbg` (= `Alt` + K5020 fest); `Acht` gesperrt.
+C-ABI `k1520_create_a5120_ausfuehrung`, Python `ausfuehrung="alt"|"kmbg"`, GUI-Modelle „A5120 (64×16, K7636)“ /
+„A5120 Kassette“, Werkzeuge `--ausfuehrung/--laderom/--tastatur`.  CP/A 25.09.89 läuft unverändert bis `A>`;
+**BCU 880 V1.2** bootet (Lade-ROM V0.6, „SYL auf Spur 1“) und formatiert/beschreibt die Kassette als F:.
+**V2.1 gibt es nur als Eigenbau** (kein Original, kein Beleg).  Zwei Kernfehler dabei behoben (`Z80`-EI-Schatten,
+`Z80PIO::onRETI`) — in K8915/PRG 710/PC 1715/CTC/SIO/Bus **nicht** nachgezogen (A8b, riskant, vorgemerkt).
+Plan: `doc/design/30_a5120_fruehe_varianten.md`, Stand `doc/design/32_...`.
+**Vor Arbeiten daran: `doc/merkposten/a5120_alt.md` lesen.**
+
+## Sechste Maschine: MC80 (VEB Elektronik Gera) → `mc80emu`
+
+Mikrorechner MC80.30 / MC80.31 (U880 2,4576 MHz, **EGOS** im ROM, Grafikkarte VIS 2a 512 × 256, Tastatur seriell
+mit eigenem Prozessor, SPE-Speicherkarten mit Segmentumschaltung **Port 85H**).  Eine Klasse `Mc80Machine` unter
+`core/machines/mc80/`; Karten `core/cards/mc80/` (`zve3x`, `spe`, `vis2a`, `asp`), `peripherals/mc80_tastatur`.
+**In `libk1520core.so`** (`K1520_MACHINE_MC80 = 6`, `k1520_create_mc80(variante, "spe=1|2")`, Python
+`K1520Emulator(machine="mc80"|"mc80-31")`; Bild: `k1520_framebuffer` 512×256, Text nur über `k1520_screen_char`,
+nie `mem_read`).  `boot_trace`/`k1520dbg --machine mc80[-30|-31]`, Programm **mc80emu** (Profilfeld `laufwerke=False`,
+Speicherabzug laden via `k1520_mem_load`, Kassette K5020 fest auf 30H als **Kompaktkassette**, Paket).
+**Stand 2026-10-15:** M0–M9 für MC80.3x fertig (EGOS meldet sich, Spiele Pharao/Wall/Tetris/Hasi laufen **nach `INIT`**,
+`KINIT`/`WRITE`/`READ` auf Band); **MC80.33 gesperrt** (zweite ROM-Hälfte des PK-3-Treibers fehlt), Sondertasten →
+Editor/BASIC nicht belegbar.  **MC80.2x (M10–M12) in Planung** (Entwurf 31, `doc/design/32_...` §6).
+**Vor Arbeiten daran: `doc/merkposten/mc80.md` lesen** (Segmentport 85H, Leerbereich 00H, `Z80CTC::setIntAusVerwirftAnforderung`
+nur an der ASP-CTC, EPROM-Segmente, Kassettentakt-Annahmen, offene Fragen).  Plan: `doc/design/31_mc80.md`.
 
 ## Boot-ROM debugging workflow
 

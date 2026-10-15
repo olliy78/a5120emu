@@ -1,0 +1,13 @@
+# Dispatch-Smoke am MC80 (AP M8): jedes Kommando einmal; was es nur am A5120 gibt,
+# meldet "nicht vorhanden" statt abzustuerzen.
+tool:    k1520dbg
+run:     --machine mc80 -x %CLI_DIR%/scripts/all_commands_smoke_mc80.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  's2' gibt es am MC80.30 nicht
+expect:  'snap' gibt es am MC80.30 nicht
+expect:  'savestate' gibt es am MC80.30 nicht
+expect:  ZVE2 ('r 2') gibt es am MC80.30 nicht
+expect:  Segmentregister 85H
+expect:  "machine":"MC80.30"

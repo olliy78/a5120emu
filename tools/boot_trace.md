@@ -38,6 +38,8 @@ boot_trace [DISK] [optionen]
 | `-p <zyklen>` | **nach** dem Boot weiterlaufen (`0x0437`+) — aktiviert den Post-Boot-Report (Port-/Loaded-code-Histogramm, VRAM-Schreibzähler, 80-Spalten-VRAM-Textdump) |
 | `--raf <typ>` | RAM-Floppy (`raf128`\|`raf512`\|`raf2m`\|`none`) vor dem ersten Lauf stecken, an allen Maschinen (§10) |
 | `--ptape` | Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) vor dem ersten Lauf stecken, an allen Maschinen (§10a) |
+| `--tape <k52>` / `--tape2 <k52>` / `--tape-card` | Kassettenkarte K5020 (zwei K5200; A5120/PRG 710/MC80 30H, K8915 D0H) vor dem ersten Lauf stecken; `.k52` an Gerät 1 bzw. 2 binden (fehlende Datei = leere Kassette), `--tape-card` nur die Karte (`doc/merkposten/kassette.md`) |
+| `--machine mc80\|mc80-30\|mc80-31` / `--spe 1\|2` | MC80 (.30/.31) mit 1 oder 2 SPE 2; `-c` 60 Mio., Stillstand 8 Mio. Takte (§9b) |
 | `--until <cond>` | **anhalten, sobald `<cond>` gilt** (läuft über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann Report (§3) |
 | `--coverage [file]` | **Code-Coverage**: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl; mit `file` zusätzlich CSV `cpu,pc,hits` (§4) |
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |
@@ -57,6 +59,11 @@ boot_trace [DISK] [optionen]
 | `-d LO:HI [datei]` | RAM-Bereich am Ende dumpen (optional in Datei) |
 | `--watch a,b,…` / `--watchio p[:zve1\|zve2],…` | Schreibzugriffe auf RAM-Adressen / I/O-Ports mitloggen — **ab Takt 0** (also inkl. Boot-ROM; die Zahl stimmt jetzt mit dem Port-Histogramm überein) und mit **`von=ZVE1/ZVE2`** (Bus-Master, nicht raten). Optionaler CPU-Filter je Port: `--watchio 0x11:zve2` |
 | `--em [em256\|em064]` | **A5120.16**: Maschine mit Erweiterungsmodul (Vorgabe `em256`); **jede Kommunikationstransaktion** der Karte wird eine Zeile `[#n EM cZYKLUS] …` — U880-Zugriffe auf PIO A32, A36 (Status-8), A34 (Vektor-8 → VI), A35 (lesen), A22 (je Seite), U8001-Zugriffe auf A33/A35 und Status-8, VI-/NVI-/NMI-Quittungen sowie die Pegelwechsel Moduswechsel (FF A29), INT-16, TREN, BUSRQ16, BUSAK16, RESET16, NVI, STOP. Zusammenfassung und `--json` (`em{mode,events,u8001_pc,u8001_instr}`) nennen den Endstand |
+| `--ausfuehrung neu\|alt\|kmbg` | **A5120-Ausführung** (Entwurf 30, AP A6): `alt` = K7023 64×16 ab FC00H, K7636, 4× K3525, Brücke Port 0AH Bit 6 = BAB1, 3× K5600.10; `kmbg` = `alt` + K5020 fest. Bildschirmtext (`-p`-Bericht, `--until screen:`) kommt dann von der K7023 (16 × 64) |
+| `--laufwerke P0,P1,…` | Laufwerksprofile ab A: ersetzen (Katalognamen, z. B. `K5601,K5601` für ein umgerüstetes altes Gerät, `none` = kein Laufwerk); auch ohne `--ausfuehrung` |
+| `--laderom v06\|v09_1\|v09_2` | **Lade-ROM der K2526** (AP A7, `doc/a5120_alt/laderom.md`): Vorgabe `v09_2` = `zre.rom`; `v06` liest Zylinder 1 und startet BCU 880 von den Disketten „SYL auf Spur 1“; `v09_1` = ältere V0.9 (kürzere Zeitgrenze) |
+| `--tastatur k7636\|k7637` | Tastatur abweichend von der Ausführung (AP A7): `--ausfuehrung neu --tastatur k7636` = K7024 80×24 + K7636 am U-Bus (BCU 880 V1.2) |
+| `--format NAME` | Katalogformat, mit dem die Diskette zuerst gemountet wird (bei `.img` maßgeblich, z. B. `k5601_ss40_26x128` für die BCU-Abbilder; Vorgabe `cpa780`, dann `cpa800`) |
 | `--cpu u8000` | **jeden U8001-Befehl** als Zeile `[#n U8 cZYKLUS] <<seg>>%off BEFEHL FCW=… R0..R3 SP` (disassembliert über die Segmentweiche, Deckel `-W`); impliziert `--em`. Am sinnvollsten ab einem Zustand im 16-Bit-Lauf (`--load-state`, z. B. aus `k1520dbg … bmode 16 … savestate`) |
 | `-l <f.prn>[@off]` | `.prn`-Listing → Trace-Zeilen & Histogramme mit kommentiertem Original-Quelltext annotieren (wiederholbar, §4) |
 | Mount-Modus | **Default = Copy-on-Write** (Disk wird in Temp kopiert, nur die Kopie gemountet, Writes verworfen, Temp beim Beenden gelöscht → committetes Fixture strukturell sicher, kein `mktemp`-Ritual). `--rw` = Original schreibend · `--read-only`/`--ro` = schreibgeschützt · `--cow` = COW explizit |
@@ -343,6 +350,42 @@ tools/dev.sh tool boot_trace --machine p8000 --quiet --json --keys '<CR><CR>' \
   (aktive CPU, MMU-Sicht, DMA-/Kopplungsprotokoll) gibt es seit P12 `k1520dbg --machine p8000|p8000-16`
   (`tools/k1520dbg.md` §11d) — `boot_trace` lokalisiert, `k1520dbg` seziert.
 - Wächter: `bt_p8000_banner.cli`, `bt_p8000_tastatur.cli`, `bt_p8000_16_monitor.cli`.
+
+## 9b. MC80 (`--machine mc80|mc80-30|mc80-31 [--spe 1|2]`)
+
+AP M8 (`doc/design/32_arbeitspakete_kassette_a5120alt_mc80.md`, Entwurf 31). Eine CPU (ZVE, EGOS-ROM
+0000H–1FFFH), kein Laufwerk, Bild = VIS 2a als Text (25 × 80, Mustervergleich `Mc80Machine::screenChar`).
+`mc80` = `mc80-30` = MC80.30, `mc80-31` = MC80.31 (mit den EPROM-Segmenten 10H/20H); `--spe` = Zahl der
+SPE 2 (Vorgabe 1; die zweite hat nur RAM, Segment 02H). Kein Datenträger-Argument.
+
+```sh
+tools/dev.sh tool boot_trace --machine mc80 --quiet --json                       # Exit 0 = Prompt
+tools/dev.sh tool boot_trace --machine mc80-31 --spe 2 --events /dev/null -l doc/mc80/egos.prn
+tools/dev.sh tool boot_trace --machine mc80 --keys 'init<ET>' --until 'screen ~ ">INIT"'
+```
+
+- Protokolliert: Segmentregister 85H (mit „Segmente nnH“), RAM-Steuerung 8CH/8DH (gefaltet — der
+  RESET-Test zählt sie durch), SPE-2-Sperrtore B0H–B3H, VIS C0H–CFH (je Port gefaltet), K5020 30H–37H,
+  Interrupts (mit IM). CTC/SIO/PIO laufen im Leerlauf mit und zählen **nicht** als Aktivität.
+- Abbruch: `--until`, Stillstand (Vorgabe **8 Mio.** Takte ohne Bildänderung/Steuerzugriff — die
+  RESET-Kette braucht ≈ 3,7 Mio. Takte ohne Bildänderung), `-c` (Vorgabe 60 Mio.). **Exit 0**, wenn beim
+  Stillstand Zeile 24 nur `>` zeigt (EGOS-Kommandoschleife; Zeile 23 zeigt dann die Meldung `OK`).
+  Der Prompt steht nach ≈ 12 Mio. Takten (≈ 5 s Maschinenzeit).
+- **`--keys 'init<ET>'`**: Zeichenebene (`Mc80Machine::keyPress` → `Mc80Tastatur::qtTaste`);
+  `<ET>` = Return, Grossbuchstaben mit Umschalt. Blockweise wie beim PC 1715 (ein Block endet mit `<ET>`
+  und wird getippt, sobald die Maschine steht); je Taste 60 000 Takte (Tastatur liefert im
+  Zeichentakt, 20 ms je Taste), danach 100 000 Nachlauf. Während der Eingabe zeigt Zeile 24 `>INIT`.
+- **`--tape-card`/`--tape`/`--tape2`**: K5020 an 30H–37H (am .31 mit K5200, am .30 umgebaut mit LW 1200 und
+  Takt aus ASP-CTC K2; M7, `doc/mc80/kassette.md`). Ohne die Karte laufen die EGOS-Schreibzugriffe auf
+  30H–37H ins Leere — sie stehen trotzdem im Ereignisprotokoll.
+- **Falle `CATA`**: läuft EGOS die ROM-Kette über die leeren SPE-Fassungen, ändert sich lange kein Bild
+  und kein beobachteter Port → `Stillstand: JA`, aber `Prompt: nein`. Für solche Kommandos `--stall`
+  hochsetzen oder `--until` nutzen.
+- Zusammenfassung: `Segment: 85H=.. RAM-Schutz ..`, JSON `{"machine":"mc80-30"|"mc80-31","seg":"0x01",…}`.
+  Weiter wie sonst: `--csv`, `--itrace`, `--coverage`, `-w/-W`, `--watch`, `--watchio`, `-d`, `--events[-cap]`,
+  `-l doc/mc80/egos.prn` (Listing des EGOS-ROM, `tools/gen_mc80_egos_prn.py`).
+- Wächter: `bt_mc80_prompt.cli`, `bt_mc80_31_spe2.cli`, `bt_mc80_tastatur.cli`, `bt_mc80_tape.cli`.
+- Nicht vorhanden: Savestates, ZVE2-Schalter, `--disk`.
 
 ## 10. RAM-Floppy (`--raf`)
 

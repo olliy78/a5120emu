@@ -1,0 +1,35 @@
+# k1520dbg --machine mc80 --spe 2 (AP M8): `map` zeigt Segmentregister, RAM-Schutz und die
+# sichtbaren Segmente; nach der RESET-Kette ist Segment 01H frei, EGOS steht am Prompt `>`.
+# Tastatur ueber `keys` (INIT -> EGOS meldet OK), Bild als Text, ZVE2 "nicht vorhanden".
+tool:    k1520dbg
+run:     --machine mc80 --spe 2
+timeout: 240
+exit:    0
+stdin:
+  map
+  g 12000000
+  map
+  where
+  rj
+  dev
+  ivt
+  e 0x4000 11 22
+  d 0x4000 4
+  keys init\r
+  g 6000000
+  screen find "OK"
+  s2
+  q
+expect:  Segmentregister 85H=00
+expect:  Segmentregister 85H=01
+expect:  SPE 2 #1  Segment 01H  SICHTBAR
+expect:  SPE 2 #2  Segment 02H  aus
+expect:  kein Segment freigegeben
+expect:  RAM-Schutz aus
+expect:  |OK| / |>|
+expect:  ASP-SIO (D0H-D3H)
+expect:  ASP SIO A (Tastatur)
+expect:  "machine":"MC80.30"
+expect:  4000: 11 22
+expect:  found at row
+expect:  's2' gibt es am MC80.30 nicht

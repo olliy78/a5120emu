@@ -409,7 +409,7 @@ def test_clock_labels_are_the_same_in_the_dropdown_and_the_status_bar(window):
         assert window.status_widget.takt.text() == f"Takt: {beschriftung}"
 
 
-@pytest.mark.parametrize("programm", ["a5120", "k8915", "prg710", "pc1715", "p8000"])
+@pytest.mark.parametrize("programm", ["a5120", "k8915", "prg710", "pc1715", "p8000", "mc80"])
 def test_no_machine_offers_unlimited_speed(qapp, programm):
     """„unbegrenzt“ ist aus der Taktauswahl ALLER Programme verschwunden (nur in der
     Oberfläche — der Emulationstakt kennt den Faktor 0.0 weiter)."""

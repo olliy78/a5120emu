@@ -174,6 +174,7 @@ protected:
     uint32_t  k6022TaktHz() const override { return CPU_HZ; }
     /// K6022 vor den Fernschreiber stellen (Stellung wie bis AP-L1), nicht hinten anhängen.
     void      k6022Einketten(K6022&) override { interruptKetteSetzen(); }
+    void      k5020Einketten(K5020&) override { interruptKetteSetzen(); }
 
 private:
     void resetHardware();

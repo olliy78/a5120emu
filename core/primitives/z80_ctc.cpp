@@ -121,6 +121,7 @@ void Z80CTC::ioWrite(uint8_t port, uint8_t data) {
 
     c.control     = data;
     c.awaiting_tc = (data & CTRL_TC_FOLLOWS) != 0;
+    if (int_aus_verwirft_ && !(data & CTRL_INT_EN)) c.int_pending = false;
 
     if (data & CTRL_RESET) {
         c.running     = false;

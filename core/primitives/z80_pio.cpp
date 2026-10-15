@@ -527,10 +527,16 @@ uint8_t Z80PIO::getVector() const {
  */
 void Z80PIO::onRETI() {
     // Clear IUS for the port being serviced
-    // Port A has higher priority, check it first
+    // Port A has higher priority, check it first.
+    // Während der RETI-Dekodierung (ED-Holezyklus) gibt ein Kanal mit nur ANSTEHENDER,
+    // noch nicht quittierter Anforderung seinen IEO frei — sperren darf dann nur ein Kanal
+    // in Bedienung (IUS).  Daher zählt für Port B hier nur porta_.ius, nicht porta_.pending
+    // (setIEI rechnet beides ein).  Sonst bliebe B in Bedienung, wenn A gerade anfordert,
+    // und sperrte sich selbst bis zum nächsten RETI (Befund A8: BCU-KMBG verlor das
+    // Kassettenecho der Daten-PIO B, während A das nächste Byte verlangte).
     if (porta_.iei && porta_.ius) {
         porta_.ius = false;
-    } else if (portb_.iei && portb_.ius) {
+    } else if (porta_.iei && portb_.ius) {
         portb_.ius = false;
     }
 }
