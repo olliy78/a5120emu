@@ -49,6 +49,7 @@ static K2526::A5120Config zreKonfig(const A5120Machine::Config& cfg) {
     K2526::A5120Config z;
     if (cfg.ausfuehrung != A5120Machine::Config::Ausfuehrung::Neu)
         z.config_bridges = 0x02;
+    z.laderom = cfg.laderom;   // AP A7: Lade-ROM-Fassung (Vorgabe V0.9_2 = zre.rom)
     return z;
 }
 
@@ -83,6 +84,13 @@ A5120Machine::A5120Machine(const Config& cfg)
         K7023::Config vc;
         vc.variante_01 = true;
         k7023_ = std::make_unique<K7023>(bus_, vc);
+    }
+    // Tastatur (AP A7): Vorgabe der Ausführung, am `Neu` wahlweise die K7636 (BCU 880 V1.2:
+    // K7024 + K7636).  Ohne K7636 bleibt die K7637 an der K8025 wie bisher (bitgleich).
+    using T = Config::Tastatur;
+    if (ausf_ != A::Neu && cfg.tastatur == T::K7637)
+        throw std::invalid_argument("K7637 gibt es nur am A5120 „5¼″ neu“");
+    if (ausf_ != A::Neu || cfg.tastatur == T::K7636) {
         k7636_ = std::make_unique<K7636>();
         zre_.setUBusGeraet(k7636_.get());
     }

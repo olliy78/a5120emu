@@ -108,7 +108,27 @@ inline bool steckeK5020(K1520Machine& m, bool an, const std::string& d1, const s
  * auf die K5601 umgerüstet ist.  Das EM (`cfg.em`) bleibt erhalten.
  */
 inline bool parseAusfuehrung(const char* ausf, const char* lw, A5120Machine::Config& cfg,
-                             std::string& err) {
+                             std::string& err, const char* laderom = nullptr,
+                             const char* tastatur = nullptr) {
+    // `--laderom v06|v09_1|v09_2` (AP A7, doc/a5120_alt/laderom.md): gestecktes Lade-ROM.
+    K2526::Laderom lr = cfg.laderom;
+    if (laderom) {
+        const std::string s = laderom;
+        if      (s == "v06")   lr = K2526::Laderom::V06;
+        else if (s == "v09_1") lr = K2526::Laderom::V09_1;
+        else if (s == "v09_2") lr = K2526::Laderom::V09_2;
+        else { err = "--laderom: unbekannt '" + s + "' (v06|v09_1|v09_2)"; return false; }
+    }
+    // `--tastatur k7636|k7637` (AP A7): Tastatur abweichend von der Ausführung (BCU 880 V1.2:
+    // `neu` + K7636).
+    using T = A5120Machine::Config::Tastatur;
+    T ta = cfg.tastatur;
+    if (tastatur) {
+        const std::string s = tastatur;
+        if      (s == "k7636") ta = T::K7636;
+        else if (s == "k7637") ta = T::K7637;
+        else { err = "--tastatur: unbekannt '" + s + "' (k7636|k7637)"; return false; }
+    }
     using A = A5120Machine::Config::Ausfuehrung;
     if (ausf) {
         const std::string s = ausf;
@@ -121,6 +141,8 @@ inline bool parseAusfuehrung(const char* ausf, const char* lw, A5120Machine::Con
         cfg = A5120Machine::Config::fuerAusfuehrung(a);
         cfg.em = em;
     }
+    cfg.laderom  = lr;   // nach fuerAusfuehrung, die die Config neu aufsetzt
+    cfg.tastatur = ta;
     if (lw) {
         std::string s = lw;
         size_t i = 0, p = 0;

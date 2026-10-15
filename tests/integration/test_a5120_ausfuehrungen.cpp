@@ -177,3 +177,51 @@ TEST(A5120Ausfuehrung, AltLaeuftDasLadeRomOhneDiskette) {
     for (int i = 0; i < 40; ++i) n += m->run(100'000);
     EXPECT_GE(n, 4'000'000);
 }
+
+// ─── AP A7: Tastatur und Lade-ROM als eigene Konfigurationsgrößen ─────────────
+
+/// `Neu` + K7636 (BCU 880 V1.2 „SYL auf Spur 1“, Satz 1): K3526 + K7024 bei F800H bleiben,
+/// die Tastatur sitzt aber am U-Bus der K2526 statt an der K8025.
+TEST(A5120Ausfuehrung, NeuMitK7636HatK7024UndTastaturAmUBus) {
+    A5120Machine::Config c;
+    c.tastatur = A5120Machine::Config::Tastatur::K7636;
+    A5120Machine m(c);
+    m.powerOn();
+    EXPECT_EQ(m.ausfuehrung(), A::Neu);
+    EXPECT_EQ(m.k7023(), nullptr);
+    EXPECT_EQ(m.k3525(0), nullptr);
+    ASSERT_NE(m.k7636(), nullptr);
+    EXPECT_EQ(port0A(m) & 0x40, 0) << "Brücke bleibt BAB2 (K7024)";
+    m.memWriteDebug(0xF800, 'B');
+    EXPECT_EQ(m.screenChar(0, 0), 'B');
+    EXPECT_EQ(m.bus().ioRead(0x06), K7636::TYP);
+    m.keyPress('d', false, false);
+    m.run(1);
+    m.k7636()->service(m.machineCycles() + K7636::ABSTAND_CODES);
+    EXPECT_EQ(m.bus().ioRead(0x01) & 0x08, 0);
+    EXPECT_EQ(m.bus().ioRead(0x06), 'd');
+}
+
+TEST(A5120Ausfuehrung, TastaturVorgabeFolgtDerAusfuehrung) {
+    EXPECT_EQ(A5120Machine::Config{}.tastatur, A5120Machine::Config::Tastatur::Vorgabe);
+    A5120Machine neu;
+    EXPECT_EQ(neu.k7636(), nullptr) << "Neu: K7637 an der K8025 wie bisher";
+    auto alt = A5120Machine::Config::fuerAusfuehrung(A::Alt);
+    alt.tastatur = A5120Machine::Config::Tastatur::K7636;   // ausdrücklich = Vorgabe
+    EXPECT_NO_THROW(A5120Machine{alt});
+    alt.tastatur = A5120Machine::Config::Tastatur::K7637;
+    EXPECT_THROW(A5120Machine{alt}, std::invalid_argument) << "keine SIO-Tastatur am alten Gerät";
+}
+
+TEST(A5120Ausfuehrung, LaderomIstUnabhaengigVonDerAusfuehrung) {
+    using L = K2526::Laderom;
+    EXPECT_EQ(A5120Machine::Config::fuerAusfuehrung(A::Alt).laderom, L::V09_2)
+        << "CP/A auf dem alten Gerät startet mit zre.rom (AP A6)";
+    auto c = A5120Machine::Config::fuerAusfuehrung(A::Alt);
+    c.laderom = L::V06;
+    A5120Machine m(c);
+    m.powerOn();
+    EXPECT_EQ(m.laderom(), L::V06);
+    for (uint16_t a : {0x0000, 0x00BA, 0x0122, 0x03FE})
+        EXPECT_EQ(m.memReadDebug(a), K2526::laderomDaten(L::V06)[a]) << "@" << a;
+}

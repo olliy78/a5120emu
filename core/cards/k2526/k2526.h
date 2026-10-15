@@ -86,6 +86,8 @@
 #include "core/primitives/z80_ctc.h"
 #include "core/primitives/eprom_device.h"
 #include "core/cards/k2526/rom_data.h"
+#include "core/cards/k2526/laderom_v06_data.h"
+#include "core/cards/k2526/laderom_v09_1_data.h"
 #include <array>
 #include <cstdint>
 
@@ -276,10 +278,37 @@ private:
 class K2526 : public BusDevice, public InterruptSlave {
 public:
     /** @brief Hardware configuration (bridge settings, fixed I/O base). */
+    /**
+     * @brief Gesteckte Lade-ROM-Fassung (doc/a5120_alt/laderom.md, AP A0/A7).
+     *
+     * - `V09_2` — `doc/EPROMS/zre.rom` (Vorgabe, bitgleich zu bisher): liest Zylinder 0,
+     *             4×128 B, Einsprung 0437H — CP/A, UDOS, SCPX.
+     * - `V09_1` — `doc/EPROMS/K2526/laderom_v09_1.bin`: wie V0.9_2, nur kürzere
+     *             Zeitgrenze (5 statt 16 Indexpulse) und 8 statt 9 Schrittschleifen.
+     * - `V06`   — `doc/EPROMS/K2526/laderom_v06.bin`: anderes Programm — liest
+     *             **Zylinder 1**, 6×128 B, Einsprung 042EH; startet die BCU-880-Disketten
+     *             „SYL auf Spur 1“ (AP A7).
+     */
+    enum class Laderom { V09_2 = 0, V09_1 = 1, V06 = 2 };
+
+    /// ROM-Inhalt einer Fassung (eingebettete Abzüge, `tools/eprom_to_h.py`).
+    static const uint8_t (&laderomDaten(Laderom l))[1024] {
+        switch (l) {
+            case Laderom::V09_1: return ZRE_LADEROM_V09_1;
+            case Laderom::V06:   return ZRE_LADEROM_V06;
+            case Laderom::V09_2: break;
+        }
+        return ZRE_BOOT_ROM;
+    }
+
     struct A5120Config {
         uint8_t io_base        = 0x00;   ///< I/O base address (fixed 0x00 in A5120)
         uint8_t config_bridges = 0x00;   ///< BS-PIO B5–B7 hardware bridge encoding
+        Laderom laderom        = Laderom::V09_2;  ///< gestecktes Lade-ROM (Vorgabe zre.rom)
     };
+
+    /// Gesteckte Lade-ROM-Fassung (A5120Config::laderom).
+    Laderom laderom() const { return cfg_.laderom; }
 
     /**
      * @brief Construct a K2526 with default A5120 configuration.
@@ -737,7 +766,7 @@ private:
     Z80PIO bs_pio_{"K2526-BS-PIO"};        ///< Q301: BS-PIO (Betriebssystem-PIO), ports 08H–0BH
     Z80CTC ctc_   {"K2526-CTC"};           ///< Q302: CTC (Zähler/Zeitgeber),       ports 0CH–0FH
 
-    EPROMDevice<1024> rom_{ZRE_BOOT_ROM};  ///< 1 KB boot EPROM at 0x0000–0x03FF
+    EPROMDevice<1024> rom_{laderomDaten(cfg_.laderom)};  ///< 1 KB boot EPROM at 0x0000–0x03FF
 
     MemIOProtect spa_{};         ///< Q240: Speicher-/E/A-Schutz (1024 segments × 64 bytes)
 

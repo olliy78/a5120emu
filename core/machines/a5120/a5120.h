@@ -69,6 +69,28 @@ public:
         enum class Ausfuehrung { Neu = 0, Alt = 1, Kmbg = 2, Acht = 3 };
         Ausfuehrung ausfuehrung = Ausfuehrung::Neu;
 
+        /**
+         * @brief Gestecktes Lade-ROM der K2526 (doc/a5120_alt/laderom.md, AP A7).
+         *
+         * Vorgabe `V09_2` (= `zre.rom`, bitgleich zu bisher) in jeder Ausführung — auch
+         * CP/A auf dem alten Gerät startet damit (AP A6).  `V06` braucht nur BCU 880 von
+         * den Disketten „SYL auf Spur 1“ (liest Zylinder 1); unabhängig von der Ausführung.
+         */
+        K2526::Laderom laderom = K2526::Laderom::V09_2;
+
+        /**
+         * @brief Tastatur (AP A7).  `Vorgabe` = die der Ausführung: `Neu` → K7637 an der
+         *        K8025, `Alt`/`Kmbg` → K7636 am U-Bus der K2526.
+         *
+         * `K7636` am `Neu` ergibt K3526 + K7024 (80×24 ab F800H) + K7636 — so erwartet es
+         * BCU 880 V1.2 (FZW/BL) von den Disketten „SYL auf Spur 1“: Bildtreiber für
+         * 80×24 ab F800H, Tastatur über die Tore 01H/06H (doc/a5120_alt/bcu.md).
+         * `K7637` an `Alt`/`Kmbg` lehnt der Konstruktor ab (dort ist die SIO-Tastatur nicht
+         * verdrahtet, doc/design/32 §3 A5).
+         */
+        enum class Tastatur { Vorgabe = 0, K7637 = 1, K7636 = 2 };
+        Tastatur tastatur = Tastatur::Vorgabe;
+
         /// Vorgabekonfiguration einer Ausführung (Laufwerke laut Entwurf 30 §1).
         static Config fuerAusfuehrung(Ausfuehrung a) {
             Config c;
@@ -274,6 +296,8 @@ public:
 
     /// Ausführung, mit der die Maschine gebaut wurde (Config::ausfuehrung).
     Config::Ausfuehrung ausfuehrung() const { return ausf_; }
+    /// Gestecktes Lade-ROM (Config::laderom).
+    K2526::Laderom laderom() const { return zre_.laderom(); }
     /// Bildschirmkarte K7023.01 / Tastatur K7636 / RAM-Karte K3525 Nr. @p i der frühen
     /// Ausführungen (nullptr am `Neu`).
     K7023*       k7023()       { return k7023_.get(); }

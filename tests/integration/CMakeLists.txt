@@ -240,6 +240,9 @@ k1520_add_test(a5120_ausfuehrungen SRC test_a5120_ausfuehrungen.cpp
 # CP/A auf dem A5120 „5¼″ alt“ bis A> (AP A6): K7023 BAB1 FC00H, K7636, dir getippt.
 k1520_add_test(boot_alt SRC test_boot_alt.cpp LIBS ${_libs}
                         LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+# BCU 880 auf dem frühen A5120 (AP A7): Lade-ROM V0.6, Disketten „SYL auf Spur 1“ bis A>.
+k1520_add_test(boot_bcu SRC test_boot_bcu.cpp LIBS ${_libs}
+                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 
 k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport

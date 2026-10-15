@@ -33,6 +33,12 @@
  *                    ausgabe/--until screen lesen dann die K7023 (64×16)
  *     --laufwerke P0,P1,..  Laufwerksprofile ab A: ersetzen (z. B. K5601,K5601 für ein
  *                    umgerüstetes altes Gerät); gilt auch ohne --ausfuehrung
+ *     --laderom v06|v09_1|v09_2  gestecktes Lade-ROM der K2526 (Vorgabe v09_2 = zre.rom;
+ *                    v06 startet BCU 880 „SYL auf Spur 1“, doc/a5120_alt/laderom.md, AP A7)
+ *     --tastatur k7636|k7637  Tastatur abweichend von der Ausführung (BCU 880 V1.2:
+ *                    neu + k7636 = K7024 80×24 + K7636 am U-Bus)
+ *     --format NAME  Katalogformat, mit dem die Diskette zuerst gemountet wird (bei .img
+ *                    maßgeblich, z. B. k5601_ss40_26x128; sonst cpa780, dann cpa800)
  *
  * --machine k8915 (| k8915-g2, Generation 2) fährt statt des A5120 einen K8915 (eigener Zweig,
  * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
@@ -301,6 +307,9 @@ int main(int argc, char** argv) {
     bool      trace_u8000   = false;          // --cpu u8000: jeden U8001-Befehl zeigen
     const char* ausf_opt    = nullptr;        // --ausfuehrung neu|alt|kmbg (AP A6)
     const char* lw_opt      = nullptr;        // --laufwerke P0,P1,…  (AP A6)
+    const char* laderom_opt = nullptr;        // --laderom v06|v09_1|v09_2 (AP A7)
+    const char* format_opt  = nullptr;        // --format NAME: Katalogformat für .img (AP A7)
+    const char* tastatur_opt = nullptr;       // --tastatur k7636|k7637 (AP A7)
     // Disk-mount mode (§6): COW default → the disk is copied to a temp file and that copy
     // is mounted, so a committed fixture is never modified (no more `mktemp; cp` ritual).
     // --rw mounts the original writable; --read-only/--ro mounts it write-protected.
@@ -420,6 +429,9 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--quiet")) { quiet = true; }
         else if (!strcmp(argv[i], "--ausfuehrung") && i+1 < argc) { ausf_opt = argv[++i]; nur_a5120.push_back("--ausfuehrung"); }
         else if (!strcmp(argv[i], "--laufwerke") && i+1 < argc) { lw_opt = argv[++i]; nur_a5120.push_back("--laufwerke"); }
+        else if (!strcmp(argv[i], "--laderom") && i+1 < argc) { laderom_opt = argv[++i]; nur_a5120.push_back("--laderom"); }
+        else if (!strcmp(argv[i], "--format") && i+1 < argc) { format_opt = argv[++i]; nur_a5120.push_back("--format"); }
+        else if (!strcmp(argv[i], "--tastatur") && i+1 < argc) { tastatur_opt = argv[++i]; nur_a5120.push_back("--tastatur"); }
         else if (!strcmp(argv[i], "--em")) {
             em_variant = "em256";
             if (i+1 < argc && (!strcmp(argv[i+1],"em256") || !strcmp(argv[i+1],"em064")))
@@ -588,7 +600,7 @@ int main(int argc, char** argv) {
     if (em_variant) mcfg.em = !strcmp(em_variant,"em064") ? A5120Machine::Config::Em::em064
                                                           : A5120Machine::Config::Em::em256;
     { std::string err;
-      if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err)) { fprintf(stderr, "%s\n", err.c_str()); return 2; } }
+      if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err, laderom_opt, tastatur_opt)) { fprintf(stderr, "%s\n", err.c_str()); return 2; } }
     std::unique_ptr<A5120Machine> machine_p;
     try { machine_p = std::make_unique<A5120Machine>(mcfg); }
     catch (const std::exception& e) { fprintf(stderr, "Maschine: %s\n", e.what()); return 2; }
@@ -965,7 +977,8 @@ int main(int argc, char** argv) {
                if (!quiet) fprintf(stderr, "COW: '%s' → %s (writes discarded; --rw to persist)\n",
                                    disk_path, mount_path.c_str()); }
     }
-    bool mounted = machine.mountDisk(mount_drive, mount_path, "cpa780", wp);
+    // --format NAME (AP A7): ein .img anderer Geometrie (z. B. k5601_ss40_26x128 für BCU 880).
+    bool mounted = machine.mountDisk(mount_drive, mount_path, format_opt ? format_opt : "cpa780", wp);
     if (!mounted) {
         mounted = machine.mountDisk(mount_drive, mount_path, "cpa800", wp);
     }

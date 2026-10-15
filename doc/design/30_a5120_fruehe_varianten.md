@@ -78,6 +78,15 @@ BCU 880 V1.2 und 2.1, „EPROM BCU 880 VERSION 2.2“, ASSEMBLER FZW/BL V5.1, PI
 **V0.9_1** (`doc/EPROMS/K2526/laderom_v06.bin`, `laderom_v09_1.bin` = MAME `a5120_v2`; Analyse des
 Anwenders `doc/EPROMS/K2526/laderom_v06.mac`, `laderom_orirom.mac`).  BCU ist damit **die** Abnahme für KMBG und K7023.
 
+**Ergebnis AP A7 (2026-10-15, `doc/a5120_alt/bcu.md`):** BCU 880 **V1.2** startet mit Lade-ROM **V0.6**
+von beiden Disketten „SYL auf Spur 1“ bis `A>` — Satz 2 (Bild 64×16 ab FC00H) auf `Alt`, Satz 1
+(Bild 80×24 ab F800H) auf `Neu` mit K7636 (`Config::tastatur`); `dir b:` liest die V1.2-
+Systemdiskette „ohne SYL“ mit `KMBG.REL`.  Neu im Kern: `Config::laderom` (V0.9_2 Vorgabe, V0.9_1,
+V0.6) und `Config::tastatur`; Werkzeuge `--laderom`, `--tastatur`, `--format`.  **V2.1 startet
+nicht:** alle V2.1-Disketten sind „ohne SYL“, und deren Start-EPROM liegt nicht vor.  **Berichtigung:**
+„EPROM BCU 880 VERSION 2.2“ ist die Kennung von `EPROM.COM` (EPROM-Programmierprogramm), kein
+Start-EPROM.  Wächter `BootIntegrationBcu.*`, `cli_bt_laderom_*`, `cli_dbg_tastatur_*`.
+
 ### 3.3 Tastatur K7636 — Beschriftung und Codes liegen vor [SLP]
 
 `doc/original_docs/K7634-36-Serviceschaltplaene.pdf` (2. Auflage 1987, Verzeichnis S. 2):

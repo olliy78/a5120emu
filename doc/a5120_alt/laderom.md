@@ -157,7 +157,9 @@ vier Fassungen vorhanden und bis auf §3 #15 gleich.
    (`85H`).  Nach Entwurf 07 §5 ist Bit 0 `/RDYL` (0 = bereit); unser `K5122::updateStatusPortB`
    liefert 0, sobald eine Diskette auf Drehzahl ist → V0.6 würde im Emulator **MFM** wählen.
    Ob das am Gerät die gemeinte Bedeutung ist (z. B. Laufwerkstyp-Brücke) ist **nicht belegt**.
-2. **BCU „ohne SYL“** (`satz2_OhneSYL.1–4`, teils „Bootfähig: Ja“): ihr erster Sektor beginnt
+2. *(AP A7, `bcu.md` §5: „EPROM BCU 880 VERSION 2.2“ ist kein Start-EPROM, sondern die Kennung von
+   `EPROM.COM`; V0.6 startet die „SYL auf Spur 1“-Disketten im Emulator tatsächlich — §5.3 ist damit
+   gefahren.)*  **BCU „ohne SYL“** (`satz2_OhneSYL.1–4`, teils „Bootfähig: Ja“): ihr erster Sektor beginnt
    `40 20 'BCU 880 …'`, enthält **keine** `SYL`-Kennung.  **Keines der vier ROMs** nimmt sie an
    (V0.9 liest Zylinder 0 und prüft `SYL`, V0.6 liest Zylinder 1 und prüft `SYL`).  Sie müssen
    von einem anderen Start-EPROM geladen werden — Entwurf 30 §3.2 nennt „EPROM BCU 880 VERSION

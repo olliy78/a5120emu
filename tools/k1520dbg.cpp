@@ -30,6 +30,11 @@
  * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
  * `--ausfuehrung neu|alt|kmbg` / `--laufwerke P0,P1,…` (A5120, AP A6): altes Gerät mit
  * K7023 64×16 + K7636; Bildschirmbefehle lesen dann die K7023 (tools/dbg_machine.h).
+ * `--laderom v06|v09_1|v09_2` (A5120, AP A7): gestecktes Lade-ROM (Vorgabe v09_2 = zre.rom;
+ * v06 startet BCU 880 „SYL auf Spur 1“, doc/a5120_alt/laderom.md).
+ * `--tastatur k7636|k7637` (A5120, AP A7): Tastatur abweichend von der Ausführung.
+ * `--format NAME`: Katalogformat, mit dem ein `.img` zuerst gemountet wird (bei .hfe/.dmk
+ * Platzhalter), z. B. `k5601_ss40_26x128` für die BCU-Abbilder.
  * `--wdc 4.2|4.0.05|3.4.05` und `--hd <abbild>` (nur `--machine p8000-16`, P13d): WDC an der
  * 16-Bit-PIO2 bzw. Winchester an Laufwerk 0 (Kopie wie die Disketten, `--rw` = Original);
  * Befehle `wdc [r|u|d|log]`, `cpu wdc` (nur Ansicht).
@@ -204,6 +209,9 @@ int main(int argc, char** argv){
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
     const char* ausf_opt = nullptr; // --ausfuehrung neu|alt|kmbg: A5120-Ausführung (Entwurf 30, AP A6)
     const char* lw_opt = nullptr;   // --laufwerke P0,P1,…: Laufwerksprofile ab A: (A5120)
+    const char* laderom_opt = nullptr; // --laderom v06|v09_1|v09_2: Lade-ROM der K2526 (AP A7)
+    const char* format_opt = nullptr;  // --format NAME: Katalogformat für .img (zuerst versucht)
+    const char* tastatur_opt = nullptr; // --tastatur k7636|k7637: Tastatur (A5120, AP A7)
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
     const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
     const char* konsole_opt = nullptr; // --konsole kern|original: Terminal an tty1 (P8000, P20c)
@@ -230,6 +238,9 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--em") && i+1<argc) em_opt=argv[++i];
         else if (!strcmp(argv[i],"--ausfuehrung") && i+1<argc) ausf_opt=argv[++i];
         else if (!strcmp(argv[i],"--laufwerke") && i+1<argc) lw_opt=argv[++i];
+        else if (!strcmp(argv[i],"--laderom") && i+1<argc) laderom_opt=argv[++i];
+        else if (!strcmp(argv[i],"--format") && i+1<argc) format_opt=argv[++i];
+        else if (!strcmp(argv[i],"--tastatur") && i+1<argc) tastatur_opt=argv[++i];
         else if (!strcmp(argv[i],"--raf") && i+1<argc) raf_opt=argv[++i];
         else if (!strcmp(argv[i],"--wdc") && i+1<argc) wdc_opt=argv[++i];
         else if (!strcmp(argv[i],"--konsole") && i+1<argc) konsole_opt=argv[++i];
@@ -273,10 +284,10 @@ int main(int argc, char** argv){
         else if (e=="em064") mcfg.em = A5120Machine::Config::Em::em064;
         else if (e!="none"){ fprintf(stderr,"--em: unbekanntes Modul '%s' (none|em064|em256)\n",em_opt); return 2; }
     }
-    if (ausf_opt || lw_opt){
-        if (art!=dbgm::Art::A5120){ fprintf(stderr,"--ausfuehrung/--laufwerke gibt es nur am A5120\n"); return 2; }
+    if (ausf_opt || lw_opt || laderom_opt || tastatur_opt){
+        if (art!=dbgm::Art::A5120){ fprintf(stderr,"--ausfuehrung/--laufwerke gibt es nur am A5120 (ebenso --laderom/--tastatur)\n"); return 2; }
         std::string err;
-        if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err)){ fprintf(stderr,"%s\n",err.c_str()); return 2; }
+        if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err, laderom_opt, tastatur_opt)){ fprintf(stderr,"%s\n",err.c_str()); return 2; }
     }
     // P8000-WDC (P13d): --wdc/--hd nur mit p8000-16.  Die Platte wird wie die Disketten im
     // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende gelöscht), mit --rw direkt.
@@ -367,7 +378,8 @@ int main(int argc, char** argv){
     // Formatname ist bei .hfe/.dmk nur Platzhalter; bei .img entscheidet er.  Der K8915
     // bootet von cpa800, der A5120 zuerst cpa780 (unverändert).
     const std::string pfmt = (KP||KC||KQ) ? m.base().defaultFormatName(0) : std::string();
-    const char* fmt1 = (KP||KC||KQ) ? pfmt.c_str() : K8 ? "cpa800" : "cpa780";
+    // --format NAME (AP A7): ein .img in anderer Geometrie, z. B. k5601_ss40_26x128 (BCU 880).
+    const char* fmt1 = format_opt ? format_opt : (KP||KC||KQ) ? pfmt.c_str() : K8 ? "cpa800" : "cpa780";
     const char* fmt2 = KP ? "udos_ds77" : KC ? "cpa640" : KQ ? pfmt.c_str() : K8 ? "cpa780" : "cpa800";
     bool mount_failed = false;
     // COW temp copies to unlink at exit (empty unless mount_mode==MOUNT_COW).
