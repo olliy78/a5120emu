@@ -328,3 +328,27 @@ am Gerät [MAME; HB „frei“].
 - Für M11 reicht vermutlich ein **zeichenweises Modell**: DPI je 64,5 µs Maschinenzeit, TSI nach 33 Zeichen,
   Tastatur im TSI; Bild aus dem BWS rekonstruieren (Textrückgewinnung trivial, 6-Bit-Code).
 - Tastenlage für die Bildschirmtastatur (M12): Foto des Originals ist zu klein.
+
+## 12. Gegenprobe gegen den MC80.3x (M0–M9) und Bauhinweise für M11
+
+| Punkt | MC80.3x (`hardware_3x.md`, `egos.md`, `kassette.md`) | MC80.2x (dieses Dokument) |
+|---|---|---|
+| Takt | 2,4576 MHz | 2,4576 MHz (407 ns) — gleich |
+| Kassettenkarte | K5020 an 30H–37H, Bits einzeln über die K5020 | **MBI** (eigene Karte) EFH + F8H–FFH, Byte über Schieberegister an PIO A — **K5020-Modell nicht wiederverwendbar**, nur das Medium |
+| Blockrahmen | `AA` · 20H…100H Daten · CRC lo,hi · `AA` | `AA` · **BLN hi,lo** · 80H Daten · CRC lo,hi · `AA` |
+| CRC | CRC-16/ARC **nur über die Daten** | CRC-16/ARC über **BLN + Daten** (gleiche Routine, gleiches Polynom) |
+| Bandmarke | `AA 00 00 AA` | `AA 00 00 AA` — gleich |
+| Erstes Byte beim Lesen | AAH oder ABH (EGOS) | Phasenwahl 8/7 Bit über MBI-PIO B Bit 4 (Hardware), Ringpuffer; kein ABH-Sonderfall im Code |
+| Bild | VIS2a Bitmap 512×256 | DPL: 8×32 Text (6-Bit-Code, BWS 0C00H) + bis 4 Analogkurven; kein Bitmap |
+| Tastatur | eigene Tastatur, ASCII über SIO | Matrix 7×8 an DPL-PIO A/B, im Zeilenende-Interrupt abgefragt |
+| Z80CTC-Befund M3 (Steuerwort D7=0 verwirft Anforderung) | ASP K3 | beim 2x schreibt das BSYS `41H` an DPL-CTC 0 und `41H`/`C1H` an CTC 1 um die Analogzeile (§5.3) — dieselbe Frage stellt sich dort [?] |
+
+**Was M11 ohne Raten bauen kann:** Speicherkarte (§3), E/A-Belegung (§4), Vektoren (§4), DPL als
+zeichenweises Modell (CTC 0 Zähler am Zeichentakt 64,5 µs, CTC 2 zählt 33 Zeichen, PIO A/B wie §5.1),
+Tastaturmatrix (§6), Bandformat und Interruptfolge der MBI (§7.3/7.4), ROM-Satz ver2 (§9).
+**Was geschätzt werden muss [?]:** Zeichentakt-Quelle der DPL (fest 64,5 µs angenommen), Dauer des
+Strahlrücklaufs (CTC 1 47H/D0H, CTC 2 07H/07H), Verkettung der MBI-CTC-Kanäle und der Bittakt
+(3072 Hz/2), Bedeutung der EFH-Bits, Bit 6 von MBI-PIO B, U402-Zeichenbilder, PPE-Bausteine.
+**Fehlt am Gerät/in den Unterlagen:** Schaltpläne DPL/MBI/PPE (auch nicht im 43-MB-Original), Abzug des
+U402, ROM der KMBG-Fassung (nur Listing), lesbares Tastaturfoto (M12), Bestätigung „253 vs. 255
+Abszissenwerte“.
