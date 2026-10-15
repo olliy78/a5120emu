@@ -158,6 +158,7 @@ void K2526::powerOn()
     // laufenden Betrieb mit der IM2-Vektorbasis des alten OS weiter und der erste
     // Timer-Interrupt nach dem `EI` des Lade-ROMs springt ins Leere.
     ctc_.reset();
+    if (ubus_geraet_) ubus_geraet_->ubusReset();   // Tastatur K7636 wird mit eingeschaltet
     bs_pio_.reset();   // wird direkt darunter neu programmiert (Mode 3 + Richtungen)
 
     // ── Q240 Schutztabelle zurücksetzen ────────────────────────────────────
@@ -242,6 +243,8 @@ uint8_t K2526::ioRead(uint8_t port)
     if (port <= 0x07) {
         // ── U-Bus ──────────────────────────────────────────────────────────
         uint8_t result = 0xFF;
+        if (ubus_geraet_ && ubus_geraet_->ubusRead(port, result))
+            return result;
         switch (port) {
             case 0x01:  // /UCS2: Tastengültigkeitsabfrage
                 result = ubus_kbd_valid_;
@@ -289,6 +292,7 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
 {
     if (port <= 0x07) {
         // ── U-Bus ──────────────────────────────────────────────────────────
+        if (ubus_geraet_) ubus_geraet_->ubusWrite(port, data);
         switch (port) {
             case 0x00:
                 // /INT-BS: OS-Ebenen-Wechsel anfordern.

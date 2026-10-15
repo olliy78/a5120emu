@@ -308,6 +308,10 @@ if(BUILD_K1520)
     add_library(k1520_k3526 STATIC core/cards/k3526/k3526.cpp)
     target_include_directories(k1520_k3526 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # K7636 parallele Tastatur am U-Bus der K2526 (frühe A5120, doc/a5120_alt/k7636.md)
+    add_library(k1520_k7636 STATIC core/peripherals/k7636/k7636.cpp)
+    target_include_directories(k1520_k7636 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # K7637 serial keyboard peripheral
     add_library(k1520_k7637 STATIC
         core/peripherals/k7637/k7637.cpp

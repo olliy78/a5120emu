@@ -105,6 +105,10 @@ k1520_add_test(raf   SRC cards/test_raf.cpp        LIBS k1520_raf k1520_z80 LABE
 # ── core/peripherals/ ────────────────────────────────────────────────────────
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
+# Parallele Tastatur K7636 an der K2526 (frühe A5120, AP A3; doc/a5120_alt/k7636.md)
+k1520_add_test(k7636          SRC peripherals/test_k7636.cpp
+                              LIBS k1520_k7636 k1520_k2526 LABELS "${_lbl}"
+                              DEFS "K7636_CSV=\"${CMAKE_SOURCE_DIR}/doc/a5120_alt/k7636_01_codes.csv\"")
 # Tastatur K7609 des PRG 710: Host-Taste → 8279-Code (doc/prg710/k7609_codes.csv, AP-P2a)
 k1520_add_test(k7609          SRC peripherals/test_k7609.cpp
                               LIBS k1520_k7609 LABELS "${_lbl}")

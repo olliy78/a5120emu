@@ -79,6 +79,7 @@
  */
 
 #pragma once
+#include "core/cards/k2526/ubus_geraet.h"
 #include "core/bus/k1520_bus.h"
 #include "core/primitives/z80.h"
 #include "core/primitives/z80_pio.h"
@@ -653,6 +654,16 @@ public:
      */
     void setKbdValid(uint8_t val)  { ubus_kbd_valid_ = val;  }
 
+    /**
+     * @brief Ein Gerät an den U-Bus (Stecker X1) schalten — zuschaltbare Konfiguration.
+     *
+     * Vorgabe nullptr: U-Bus wie bisher (K7637-Verdrahtung des A5120 unverändert).
+     * Mit Gerät bedient dieses die Ports 00H–07H selbst (Lesen) bzw. sieht alle
+     * Schreibzugriffe.  Das Gerät gehört dem Aufrufer.  Vor @ref powerOn anschließen.
+     */
+    void setUBusGeraet(UBusGeraet* g) { ubus_geraet_ = g; }
+    UBusGeraet* ubusGeraet() const    { return ubus_geraet_; }
+
 private:
     /**
      * @brief BS-PIO Port B output callback – decodes all output signals.
@@ -747,4 +758,5 @@ private:
     uint8_t ubus_kbd_valid_  = 0x00;  ///< Port 01H IN:  key valid flag      (/UCS2)
     uint8_t ubus_lamp_       = 0x00;  ///< Port 05H OUT: status lamp output  (/UCS3)
     uint8_t ubus_error_lamp_ = 0x00;  ///< Port 03H OUT: error  lamp output  (/UCS4)
+    UBusGeraet* ubus_geraet_ = nullptr; ///< optionales Gerät an X1 (K7636); nullptr = Standard
 };
