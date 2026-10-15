@@ -1,6 +1,6 @@
 # BCU 880 auf dem frühen A5120 — AP A7
 
-Stand 2026-10-15, Zweig `kassette_mc80`.  Grundlage: die Abbilder `doc/a5120_alt/bcu/*/disk.img`
+Stand 2026-10-15 (§9: Experiment A7b), Zweig `kassette_mc80`.  Grundlage: die Abbilder `doc/a5120_alt/bcu/*/disk.img`
 (+ `DT-INFO.TXT`, `.td0` als Beleg), Disassemblat mit `tools/z80_disasm2.py`, Läufe im Emulator
 (`boot_trace`/`k1520dbg --laderom v06`).  Wächter: `BootIntegrationBcu.*`
 (`tests/integration/test_boot_bcu.cpp`).
@@ -13,6 +13,7 @@ Stand 2026-10-15, Zweig `kassette_mc80`.  Grundlage: die Abbilder `doc/a5120_alt
 | `satz1_SYL_auf_Spur1` | „BCU Kaltstart“, „Bootfähig: Nein“ | **V1.2** FZW/BL, Bild **80×24 ab F800H** | **V0.6** | `Neu` + `Tastatur::K7636` (K7024, K7636, Laufwerke K5600.10) | **bootet bis `A>`, `dir b:` listet die Systemdiskette** (`V12Bab2BisPrompt`) |
 | `satz2_OhneSYL.1` | „SYS1“ | V1.2 | — | — | nicht startbar (§5); **als Datendiskette in B: lesbar** (LSHEXOUT, SYSGEN, MBASIC, STAT, KMBG.REL, INIT, LOAD, DDT, DISASS, FORMAT, SYS80, SYS8, SDT80, EDIT80, EPROM, DDT80T, PIP, SUBMIT, XSUB) |
 | `satz2_OhneSYL.2` | „BCK 40 Sp.“, „Bootfähig: Ja“ | **V2.1** (V.24/P) | — | — | **nicht startbar** (§5; `V21OhneSylStartetMitKeinemVorhandenenLaderom`) |
+| *Eigenbau* (kein Original) | V2.1-System + SYL-Aufbau der V1.2 | — | V0.6 | `Neu` + K7636 | **bootet bis `A>`**, `dir b:` listet — nur mit V1.2-Plattentreiber, §9 (`V21EigenbauBootet`) |
 | `satz2_OhneSYL.3/.4` | „SYS80“ (80 Spuren) / „Kaltstart SIOS 250“ | V2.1 (/S bzw. /P) | — | — | nicht startbar (§5) |
 | `satz1_OhneSYL` | „Wordstar“, „Bootfähig: Nein“ | V1.2 | — | — | nicht startbar (§5) |
 
@@ -128,8 +129,7 @@ V0.6: kein Befehl ab 0400H in 12 Mio. Takten, kein „BCU“ auf dem Bild).
 ein EPROM-Programmierprogramm unter BCU (Verzeichniseintrag `EPROM   COM` auf `OhneSYL.1`
 Zyl. 2 Sektor 25 und `OhneSYL.3` Zyl. 2 Sektor 1; Programmkopf `C3 32 01` = `JP 0132H`, Texte
 „E P R O M - P R O G R A M M I …“, „QUIT TO BCU 880-SYSTEM“).  Das Start-EPROM für „ohne SYL“
-ist damit **unbekannt** — kein Abzug, kein Name.  Ein Nachbau aus Kaltstartcode der SYL-Diskette
-+ V2.1-System wäre eine erfundene Diskette und unterbleibt.
+ist damit **unbekannt** — kein Abzug, kein Name.  Ein Nachbau aus Kaltstartcode der SYL-Diskette + V2.1-System ist eine erfundene Diskette; als gekennzeichneter Versuch steht er in §9 (Eigenbau, ohne Beleg).
 
 ## 6. Bedienung
 
@@ -244,3 +244,62 @@ U880 im Kern, beide jetzt behoben und einzeln abgesichert:
 
 `K5020::verloreneBytes()` steigt im Lauf (≈ 34) — Bytes, die beim Suchen/Überfahren an der
 Daten-PIO B ankommen, während der Treiber sie nicht liest; die Datei selbst kommt vollständig zurück.
+
+## 9. Experiment A7b — V2.1 im SYL-Bootaufbau (EIGENBAU, kein Beleg)
+
+Stand 2026-10-15.  **Diese Diskette hat es nie gegeben.**  Sie ist ein Versuch, das V2.1-System
+der „ohne SYL“-Diskette `satz2_OhneSYL.2` ohne das fehlende Start-EPROM (§5) im Emulator zum Laufen
+zu bringen, indem der Bootaufbau der V1.2-SYL-Diskette `satz2_SYL_auf_Spur1` nachgeahmt wird.
+Bau: `tools/bcu_v21_eigenbau.py [--treiber] <SYL.img> <OhneSYL2.img> <aus.img>` (liest nur; die
+Quellabbilder bleiben unverändert).  Ergebnis `tests/fixtures/disks/bcu21_ss40-26x128_k5600-10_eigenbau-syl-v21.img`
+(= `--treiber`).  Wächter `BootIntegrationBcu.V21EigenbauBootet` (Ausführung `Neu` + K7636, Lade-ROM V0.6).
+
+### 9.1 Was kopiert wurde
+
+| Zielort auf der Diskette | Herkunft | Änderung |
+|---|---|---|
+| Zyl. 0 und Zyl. 1 Sektoren 7–26, Rest von Zyl. 1 | `satz2_SYL_auf_Spur1` | keine |
+| Zyl. 1 Sektoren 1–6 (SYL-Lader, 0400H) | `satz2_SYL_auf_Spur1` | **nur** Lader-Kopf: Ladeadresse (0403/0404) D680H → **D600H**, Länge (0405/0406) 2180H → **1B00H** (A, 54 Sektoren) bzw. **1E80H** (B, 61 Sektoren). Beides liegt außerhalb der Lader-CRC 0407–06FD (§3), die Selbstprüfung bleibt gültig |
+| Zyl. 2 Sektoren 1–2 → D600–D6FF | Kaltstartteil D680–D77F der V1.2-Diskette (§4) | `LD HL,D681H`→D601H (Offset 20H), `JP PE,D6A8H`→D628H (2CH), Tafelzeiger D707H→**D687H** (35H), Ausgang `JP F112H`→**`JP D759H`** (85H).  Die Tafeln (D707–D77F → D687–D6FF) und das Füllen F450–FFFF mit 00H bleiben |
+| ab D700H, 52 Sektoren (ab Zyl. 2 Sektor 3) | `satz2_OhneSYL.2`, Zyl. 0–1 (D700–F0FF; D700H = Kopfsektor `40 20 'BCU 880 V.24/P'`) | Variante A: keine; Variante B: 11 Absolutadressen (Tabelle `TREIBER_REFS` im Skript) |
+| ab F100H, 7 Sektoren (nur B) | V1.2-SYL-Diskette, System ab D780H, Bytes F100–F47F | keine |
+
+Das System der V2.1 endet bei F0FFH; das Verzeichnis der „ohne SYL“-Diskette beginnt auf Zyl. 2.
+Weder V2.1 noch V1.2 („ohne SYL“, `OhneSYL.1`) tragen den **residenten Plattentreiber ab F100H**
+(HOME/SELDSK/SETTRK/READ/WRITE-Rümpfe, Neuladen für WBOOT, Tafeln; die BIOS-Sprungleiste EC00H
+zeigt dorthin: V2.1 EC18→F18B, EC1B→F156, EC1E→F18D, EC27→F1DA, WBOOT `CALL F11DH`).  Die
+SYL-Diskette der V1.2 bringt ihn mit (F100–F7FF im 67-Sektor-System); bei „ohne SYL“ muss er aus
+dem Start-EPROM kommen [?, Schluss aus dem Fehlen und aus dem Kopf, s. u.].
+
+### 9.2 Ergebnis
+
+- **Variante A** (Kaltstart + V2.1-System, kein Treiber): Lader, Kaltstart und BIOS-Einsprung
+  ECD0H laufen, die V2.1 meldet **`BCU 880 V.24-2.1` / `HFO/S`** auf dem Bild (80×24 ab F800H, K7024:
+  `Neu` + K7636; die 80 Spalten ab F800H folgen aus dem CONOUT des V2.1-BIOS, EF21H/EEDDH: Zeile 50H), bleibt
+  dann aber nach dem ersten Plattenzugriff stehen: die Sprungleiste springt nach F156H usw.
+  in leeren RAM (`PUSH HL`-Folge im Trace).  Ohne Test.
+- **Variante B** (+ V1.2-Treiber F100–F47F, 11 umgebogene Adressen): **bootet bis `A>`**, `dir b:` mit
+  der V2.1-Diskette in B: listet `ANMELD ASM` usw.  Das ist der Test.  Die V2.1-Banner-Zeile
+  (`HFO/SP`: das `P` ist das Byte ECC2H, das der V2.1-Kopf von 20H auf 50H setzt; der Kopf selbst läuft nur ab D759H) erscheint.
+- **Der V1.2-Treiber taugt als Ersatz**, weil V1.2 und V2.1 dieselbe BIOS-/BDOS-Aufteilung haben:
+  die Sprungleiste EC00–EC3F ist bis auf vier Zeiger gleich, die Absprünge in F1xx–F3xx und alle
+  Daten ab F450H (Variablen F450–F46E) haben gleiche Adressen oder wenige Bytes Versatz (Tabelle im Skript).
+  Dass die 11 Umbiegungen **richtig** sind, ist nur durch den Lauf belegt (HOME/SELDSK/SETTRK/READ
+  und ein `dir`); WRITE und Neuladen (WBOOT) sind **nicht** erprobt.
+
+### 9.3 Grenzen und offene Punkte
+
+1. **Eigenbau.**  Kopf (D700H, D710H–D758H: Stub nach F100H, Fenster F182–F184/F126/F12C/F239)
+   wird **übersprungen** (`JP D759H`): dieser Teil setzt ein Start-EPROM-Gerüst bei F100H
+   voraus, das es nicht gibt, und würde den V1.2-Treiber zerstören.  Wie das echte Gerät diesen
+   Kopf benutzte, bleibt offen [?].
+2. Der V1.2-Treiber ist eine **andere Fassung** als der Treiber des V2.1-Geräts (Einsprünge um bis
+   0x13 versetzt).  Unterschiede im Verhalten (Wartezeiten, Fehlerbehandlung, DPB-Tafeln F2E1/F2FB
+   ↔ F2E7/F301) sind nicht untersucht [?].
+3. WBOOT (`^C`, `JP 0`) ist nicht erprobt: es lädt D700H–F0FF neu von Zyl. 0–1 der Diskette in A:, die
+   hier das System auf Zyl. 2 trägt (§8.1: das gilt für jede SYL-Diskette).
+4. Die Tore 40H, 53H, 55H, 57H (V2.1-Kopf/Kaltstart: SIO/Karten) haben im Emulator keine Karte — die
+   Schreibzugriffe verpuffen; V2.1 läuft trotzdem bis `A>` (wie V1.2, §4).
+5. Das Start-EPROM selbst und damit „wie startete eine ‚ohne SYL‘-Diskette wirklich“ ist durch den
+   Versuch **nicht** geklärt; er zeigt nur, dass das V2.1-System **sonst nichts Fremdes braucht**
+   (kein anderes Bild-/Tastaturgerät, gleiche K5122-Tore), sobald Kaltstart und Plattentreiber vorhanden sind.

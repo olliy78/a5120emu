@@ -167,3 +167,36 @@ TEST(BootIntegrationBcu, V21OhneSylStartetMitKeinemVorhandenenLaderom) {
         EXPECT_EQ(bild(m).find("BCU"), std::string::npos) << bild(m);
     }
 }
+
+/**
+ * @brief EXPERIMENT (AP A7b) — EIGENBAU, kein Original: V2.1-System im SYL-Bootaufbau.
+ *
+ * `tools/bcu_v21_eigenbau.py --treiber` setzt aus der V1.2-SYL-Diskette (Lader Zylinder 1,
+ * Kaltstartteil, residenter Plattentreiber F100H–F47FH) und dem V2.1-System der „ohne SYL“-
+ * Diskette (`satz2_OhneSYL.2`) eine Diskette zusammen, die es nie gab (doc/a5120_alt/bcu.md §9).
+ * Der Test hält fest, dass das V2.1-BDOS damit bis `A>` kommt und B: liest.  Er sagt NICHTS
+ * darüber, wie ein echtes V2.1-Gerät startete.  Ausführung `Neu` + K7636: V2.1 schreibt 80×24
+ * ab F800H (CONOUT des BIOS: Zeile 50H).
+ */
+TEST(BootIntegrationBcu, V21EigenbauBootet) {
+    A5120Machine::Config cfg;
+    cfg.laderom  = L::V06;
+    cfg.tastatur = A5120Machine::Config::Tastatur::K7636;
+    cfg.drive_profiles = {"K5600.10", "K5600.10", "K5600.10", "none"};
+    A5120Machine m(cfg);
+    m.powerOn();
+    TempDisk a("bcu21_ss40-26x128_k5600-10_eigenbau-syl-v21.img");
+    ASSERT_TRUE(m.mountDisk(0, a.path(), kFormat, false)) << m.lastError();
+    TempDisk b("bcu21_ss40-26x128_k5600-10_ohnesyl-satz2-2.img");
+    ASSERT_TRUE(m.mountDisk(1, b.path(), kFormat, false)) << m.lastError();
+    ASSERT_TRUE(laufeBis(m, "\nA>", 60'000'000)) << "kein A>:\n" << bild(m);
+    EXPECT_NE(bild(m).find("BCU 880 V.24-2.1"), std::string::npos) << bild(m);
+    // Wie bei V1.2 (Satz 2): CONIN ohne Übersetzung, Zeilenende = ↵ (A15); die erste Zeile
+    // verbraucht das Typzeichen 80H der K7636.
+    const uint32_t ende = K7636::QK_TASTE_BASE | 0x37;
+    k1520test::typeKey(m, ende);
+    k1520test::typeString(m, "dir b:");
+    ASSERT_TRUE(laufeBis(m, "dir b:", 30'000'000)) << bild(m);
+    k1520test::typeKey(m, ende);
+    ASSERT_TRUE(laufeBis(m, "ANMELD", 40'000'000)) << "dir b: ohne Verzeichnis:\n" << bild(m);
+}
