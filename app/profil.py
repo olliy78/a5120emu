@@ -610,10 +610,10 @@ MC80 = Programmprofil(
     eigene_aktionen=("speicherabzug_laden",),
     laufwerke=False,
     # Lochstreifen K6022 (E0H–E7H) kollidiert mit dem EPROM-Programmierer E0H–EFH; die RAF
-    # (88H/89H) liegt im E/A-Bereich der ZVE (80H–8FH) [?]; die Kassette (K5020 an 30H bzw.
-    # AKM) kommt erst mit AP M7.
+    # (88H/89H) liegt im E/A-Bereich der ZVE (80H–8FH) [?].  Kassette seit AP M7: K5020 an
+    # 30H (.30 LW 1200 mit Takt aus der ASP, .31 K5200), EGOS bedient nur Laufwerk 1.
     ptape_wahl=False,
-    tape_wahl=False,
+    tape_wahl=True,
     raf_wahl=False,
     ueber_rechner="der Mikrorechner <b>MC80.30/31</b> des VEB Elektronik Gera",
     andere="a5120",

@@ -1365,7 +1365,7 @@ bool k1520_tape_load(K1520Handle h, int drive, const char* path) {
 bool k1520_tape_new(K1520Handle h, int drive) {
     auto* lw = tapeLw(h, drive);
     if (!lw) return false;
-    return tapeErgebnis(lw->kassetteEinlegen(std::make_shared<kassette::KassettenMedium>()),
+    return tapeErgebnis(lw->kassetteEinlegen(std::make_shared<kassette::KassettenMedium>(lw->neueKassette())),
                         "Es liegt schon eine Kassette im Laufwerk");
 }
 

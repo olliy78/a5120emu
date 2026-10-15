@@ -128,7 +128,8 @@ def test_profil_und_titel(qapp, konfig_ordner):
         "mc80emu", "MC80 Emulator", "mc80emu.yaml", "default_config_mc80.yaml")
     assert p.nenntakt_hz == 2_457_600 and p.nenntakt_text == "2,4576 MHz"
     assert p.modellwahl and not p.frontplatte and not p.eprommer and not p.terminal
-    assert not p.laufwerke and not p.raf_wahl and not p.ptape_wahl and not p.tape_wahl
+    assert not p.laufwerke and not p.raf_wahl and not p.ptape_wahl
+    assert p.tape_wahl, "Kassette K5020 an 30H seit AP M7"
     w = _fenster(qapp)
     try:
         assert w.windowTitle() == "MC80 Emulator"
@@ -294,6 +295,38 @@ def test_speicherabzug_laden_und_tetris_starten(qapp, konfig_ordner):
         finally:
             QMessageBox.warning = orig
         assert gemeldet and "10000H" in str(gemeldet[0])
+    finally:
+        _zu(w, qapp)
+
+
+# ── Kassette (AP M7) ─────────────────────────────────────────────────────────
+
+@requires_core
+@pytest.mark.parametrize("modell", ["mc80", "mc80-31"])
+def test_kassette_folgt_der_karte_und_legt_kompaktkassetten_an(qapp, konfig_ordner, tmp_path, modell):
+    """K5020 an 30H: Kasten „Kassette“ nur mit Karte; eine neu angelegte .k52 ist eine
+    Kompaktkassette ohne BOT-/EOT-Marke mit 80 mm Vorspann (doc/mc80/kassette.md §3)."""
+    import struct
+    w = _fenster(qapp)
+    try:
+        if modell != "mc80":
+            w._on_model_selected(modell)
+            qapp.processEvents()
+        assert w.emulator.machine == modell
+        box = w.settings_widget.tape_box
+        assert not box.isChecked() and not w.emulator.tape_installed()
+        assert not w.kassette_dock.isVisible()
+        box.setChecked(True)
+        qapp.processEvents()
+        assert w.emulator.tape_installed() and w.kassette_dock.isVisible()
+        assert w.emulator.machine == modell
+        band = tmp_path / "egos.k52"
+        assert w.kassette_widget.laufwerke[0].einlegen(str(band))
+        assert w.emulator.tape_status(0)["loaded"] and band.exists()
+        laenge, vorspann, abstand, marke, _ = struct.unpack_from("<IIIII", band.read_bytes(), 12)
+        assert (vorspann, abstand, marke) == (80_000, 0, 0)
+        assert w.emulator.tape_eject(0)
+        assert w.emulator.tape_new(0) and w.emulator.tape_status(0)["loaded"]
     finally:
         _zu(w, qapp)
 

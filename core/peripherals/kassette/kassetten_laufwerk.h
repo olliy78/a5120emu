@@ -103,6 +103,10 @@ public:
      *        Kassette oder nicht schreibbarem Ort.
      */
     bool dateiBinden(const std::string& pfad, std::string& fehler);
+    /// Bandmaße einer NEU entstehenden (leeren) Kassette — @ref dateiBinden mit fehlender Datei,
+    /// C-ABI `k1520_tape_new`.  Vorgabe: Robotron-Kassette mit Marken; MC80: Kompaktkassette.
+    void setNeueKassette(const Geometrie& g) { neue_kassette_ = g; }
+    const Geometrie& neueKassette() const { return neue_kassette_; }
     /// Bindung lösen (die Kassette bleibt im Laufwerk) — vorher zurückschreiben.
     bool dateiLoesen(std::string& fehler);
     bool gebunden() const { return !pfad_.empty(); }
@@ -180,6 +184,7 @@ private:
 
     std::shared_ptr<KassettenMedium> medium_;
     std::string pfad_;
+    Geometrie neue_kassette_{};
     uint64_t rev_gespeichert_ = 0, rev_gesehen_ = 0;
     double pause_s_ = 0.0;
     bool flush_faellig_ = false;

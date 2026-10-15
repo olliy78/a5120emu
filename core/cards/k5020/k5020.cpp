@@ -16,6 +16,7 @@ constexpr double kBmsHalteS = 108e-6;     // BD S.14: BMS = 1, solange mindesten
 K5020::K5020(const Config& cfg) : cfg_(cfg) {
     lw_[0] = std::make_unique<KassettenLaufwerk>(cfg.profil1, cfg.takt_hz);
     lw_[1] = std::make_unique<KassettenLaufwerk>(cfg.profil2, cfg.takt_hz);
+    for (auto& lw : lw_) lw->setNeueKassette(cfg.neue_kassette);
     // Blindeingabe nötig, um BRDY zu aktivieren (BD S.13; ROM 0362); Steuer-PIO flankengetriggert.
     daten_.setModus1ReadyNachLesen(true);
     steuer_.setModus3Flanke(true);
@@ -66,7 +67,10 @@ void K5020::Tor::ioWrite(uint8_t port, uint8_t d) {
         if (rel == 1 || rel == 3) karte.ext_neu_ = true;
         karte.eingaenge();   // STA = AUF ∧ AVE sofort (treiber.md §3.2: BCU fragt ohne Bandlauf ab)
     } else if (rel == 0 && pio.debugState().port[0].mode == 0) {
-        if (!karte.tx_busy_) karte.uebernehmen();   // Schieberegister leer: sofort übernehmen
+        if (!karte.tx_busy_) {                      // Schieberegister leer: sofort übernehmen
+            if (karte.taktLiegtAn()) karte.uebernehmen();
+            else karte.tx_wartet_ = true;           // ohne externen Takt bleibt es im Register
+        }
     }
 }
 
@@ -75,6 +79,7 @@ void K5020::Tor::ioWrite(uint8_t port, uint8_t d) {
 void K5020::rsi() {
     // Internes Rücksetzen der Anschlusssteuerung (beide Auswahlbits 0): Ablauf und Merker löschen.
     tx_busy_ = false;
+    tx_wartet_ = false;
     zf_ = false;
     bms_pin_ = false;
     bms_halte_bis_ = 0;
@@ -196,13 +201,22 @@ bool K5020::clockTick(int takte) {
     // Ausgabe: Schieberegister frei?
     if (tx_busy_ && static_cast<double>(zeit_) >= tx_ende_) {
         tx_busy_ = false;
-        if (daten_.ardy()) {
+        if (daten_.ardy() && taktLiegtAn()) {
             const double ende = tx_ende_;
             uebernehmen();
             tx_ende_ = ende + byteTakte();   // lückenlos anschließen (kein Drift)
             geaendert = true;
+        } else if (daten_.ardy()) {
+            tx_wartet_ = true;               // Takt weg: Byte bleibt im Ausgaberegister
         } else {
             zf_ = true;                      // kein neues Zeichen rechtzeitig
+        }
+    }
+    if (tx_wartet_ && !tx_busy_ && taktLiegtAn()) {
+        tx_wartet_ = false;
+        if (daten_.ardy()) {
+            uebernehmen();
+            geaendert = true;
         }
     }
     if (eingaenge()) geaendert = true;

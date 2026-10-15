@@ -38,9 +38,13 @@
  * **Nicht nachgebildet** (ohne Wirkung für die Software, k5020.md §10): Störflusswechsel-Kontrolle
  * (`STA` aus FWF), Präambelkontrolle (HGE-Puls), `/RDY`-Waits, die genaue Löschbedingung von ZF.
  *
- * **Takt.**  Die Zeiten laufen in Maschinentakten (`Config::takt_hz`); `Takt::ExternerCtc`
- * (MC80.30, Takt aus dem ASP-CTC) ist hier nur vorgemerkt — die Bitrate kommt aus dem
- * Laufwerksprofil, nicht aus dem Bustakt (Entscheidung bei M0/M7).
+ * **Takt.**  Die Zeiten laufen in Maschinentakten (`Config::takt_hz`); die Bitrate kommt
+ * aus dem Laufwerksprofil, nicht aus dem Bustakt (Bitzelle = Zeit, Fund K0/M0).
+ * `Takt::ExternerCtc` (umgebaute K5020 am MC80.30, AP M7): der Schreibtakt kommt über den
+ * Koppelbus von außen (@ref setExternerTakt, MC80: ASP-CTC K2 als Zähler ÷2).  Fehlt er,
+ * übernimmt das Schieberegister kein Byte — das Ausgaberegister bleibt voll, bis der Takt
+ * anliegt.  Die Leseseite ist selbsttaktend (Richtungstaktschrift) und hängt nicht daran.
+ * Welche Frequenz die Leitung führt, ist nicht belegt [?]; die Bitrate bleibt die des Profils.
  *
  * **Reset** setzt beide PIOs zurück und lässt alle Leitungen fallen; die Bänder bleiben
  * liegen.  Kein Save-State.  **Faden:** alles aus dem Lauffaden (keine eigene Sperre).
@@ -48,6 +52,7 @@
 
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 #include "core/bus/k1520_bus.h"
@@ -64,6 +69,8 @@ public:
         Takt     takt = Takt::Bustakt;
         kassette::ProfilId profil1 = kassette::ProfilId::K5200_38;   ///< Gerät 1 (X3)
         kassette::ProfilId profil2 = kassette::ProfilId::K5200_38;   ///< Gerät 2 (X4)
+        /// Bandmaße neu angelegter Kassetten an beiden Geräten (MC80: Kompaktkassette ohne Marken).
+        kassette::Geometrie neue_kassette{};
     };
 
     K5020() : K5020(Config{}) {}
@@ -88,6 +95,11 @@ public:
     /// Gerät @p n (0 = KMBG 1 / X3, 1 = KMBG 2 / X4).
     kassette::KassettenLaufwerk& laufwerk(int n) { return *lw_[n & 1]; }
     const kassette::KassettenLaufwerk& laufwerk(int n) const { return *lw_[n & 1]; }
+    /// Nur bei `Takt::ExternerCtc`: liefert die Koppelbusleitung gerade einen Bittakt?
+    /// Ohne Rückruf gilt der Takt als vorhanden.
+    void setExternerTakt(std::function<bool()> f) { ext_takt_ = std::move(f); }
+    /// Liegt der Schreibtakt an (Bustakt: immer)?
+    bool taktLiegtAn() const { return cfg_.takt == Takt::Bustakt || !ext_takt_ || ext_takt_(); }
     /// Angewähltes Gerät (0/1) oder -1.
     int angewaehlt() const { return sel_; }
 
@@ -137,6 +149,8 @@ private:
     bool tx_busy_ = false;
     double tx_ende_ = 0;              ///< Maschinentakt, an dem das Schieberegister frei wird
     bool zf_ = false;
+    bool tx_wartet_ = false;          ///< Byte im Ausgaberegister wartet auf den externen Takt
+    std::function<bool()> ext_takt_;
     // Eingabe
     uint64_t verloren_ = 0;
     uint64_t bms_halte_bis_ = 0;

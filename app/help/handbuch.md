@@ -773,7 +773,7 @@ Anschlussbaustein K5020 mit zwei Kassettenlaufwerken K5200 — in allen Programm
 außer dem P8000, ab Werk aus. Ein Wechsel schaltet die Maschine aus und baut sie neu
 auf, wie beim Lochstreifen. Die Karte liegt am A5120 und am PRG 710 auf E/A
 30H–37H, am K8915 und am PC 1715 auf D0H–D7H (am PC 1715 nur mechanisch: es gibt
-dort keinen Gasttreiber).
+dort keinen Gasttreiber), am MC80 auf 30H–37H (Bedienung unter *Der MC80 Emulator*).
 
 **Zurückspulen vor KMBG/FEX:** Programme, die die Kassette über `KMBG.REL` (SCPX)
 oder FEX bedienen, warten nur rund 2,5 s auf das Magnetband. Eine frisch eingelegte
@@ -1191,7 +1191,16 @@ anders ist:
   (die zweite bringt das RAM-Segment 02H). Ein Wechsel startet die Maschine kalt.
 * **Keine Laufwerke** — der Kasten „Laufwerke“, die Diskettenmenüs und die
   Laufwerksfelder der Statuszeile fehlen. RAM-Disk und Lochstreifen gibt es am MC80
-  nicht; die **Kassette** folgt mit einer späteren Fassung.
+  nicht.
+* **Kassette** — *Einstellungen ▸ Allgemein ▸ Kassette* steckt die Kassettenkarte
+  K5020 an E/A 30H (MC80.30: Laufwerk LW 1200, MC80.31: K5200; siehe *Kassette*).
+  EGOS bedient nur **Laufwerk 1**. Nach `INIT`: `KINIT 1` formatiert die Kassette
+  (gut eine Minute Bandzeit), `WRITE 1,NAME,01,4000,40FF` schreibt den Bereich
+  4000H–40FFH aus Segment 01 unter NAME, `READ 1,NAME,R` holt ihn an dieselbe Adresse
+  zurück und hängt ihn in die Kommandokette — steht dort ein Programm mit Kennbyte,
+  ist es danach wieder ein Kommando. Eine neu angelegte Kassette hat am MC80 einen
+  kurzen Vorspann und keine Anfangs-/Endmarke (die verträgt EGOS nicht); man muss sie
+  nicht vorher zurückspulen.
 * **Einschalten** — EGOS meldet sich nach gut einer Sekunde mit
   „mc 80.30. microcomputer“ und „Version 3.0“, unten steht `OK` und der Prompt `>`.
   **Erst `INIT` eingeben** (mit ENTER): das legt die Kommandokette im RAM an; Tasten,

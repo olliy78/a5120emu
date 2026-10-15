@@ -337,6 +337,12 @@ k1520_add_test(p8000_terminal_original SRC test_p8000_terminal_original.cpp
 # Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()
 
+# MC80 (AP M7): Kassette an der K5020 (30H) über den EGOS-Bandtreiber — KINIT, WRITE eines
+# RAM-Programms, READ ...,R hängt es wieder in die RAM-Kette (je Modell .30/.31).
+k1520_add_test(mc80_kassette SRC test_mc80_kassette.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2)
+
 # MC80 (AP M5): Spiele-Speicherabzuege doc/mc80/spiele/ laden und ueber die EGOS-Kette starten.
 k1520_add_test(mc80_spiele SRC test_mc80_spiele.cpp
                           LIBS k1520_mc80 k1520_logger

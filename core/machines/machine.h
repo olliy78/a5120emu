@@ -288,6 +288,7 @@ public:
         K5020::Config cfg;
         cfg.basis = static_cast<uint8_t>(basis);
         cfg.takt_hz = k6022TaktHz();
+        k5020Konfigurieren(cfg);
         auto karte = std::make_unique<K5020>(cfg);
         karte->attachToBus(bus);
         k5020_ = std::move(karte);
@@ -332,6 +333,9 @@ protected:
 
     /** @brief E/A-Basis der K5020 (A5120/PRG 710: 30H; K8915 überschreibt mit D0H). */
     virtual int k5020Basis() const { return 0x30; }
+    /** @brief Taktquelle/Laufwerksprofile der Karte festlegen (Vorgabe: Bustakt, zwei K5200
+     *         mit 38 cm/s; MC80.30: Takt aus der ASP + LW 1200, AP M7). */
+    virtual void k5020Konfigurieren(K5020::Config&) const {}
     /** @brief PIOs der frisch gesteckten K5020 hinten an die Kette (Daten vor Steuer). */
     virtual void k5020Einketten(K5020& k) {
         systemBus().appendInterruptChain(&k.pioDaten());

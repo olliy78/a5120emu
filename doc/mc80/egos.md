@@ -67,7 +67,7 @@ Quellenkürzel wie in `hardware_3x.md`; zusätzlich **[P xxxx]** = Adresse in `e
 10. **Tastaturprotokoll (M0 offener Punkt 6)** — §3.
 11. **Magnetband (für K1/M7)** — §2: K5020 an **30H–37H**, nur **Laufwerk 1** ausprogrammiert,
     Blockformat `AAH | Daten | CRC-16/ARC (low, high) | AAH`, Bandmarke = Block ohne Daten,
-    **gelesenes erstes Byte ist ABH**, Block vor/rück (11H/15H) **fehlt**.
+    erstes gelesenes Byte **AAH oder ABH** (berichtigt in M7, `kassette.md` §2.3), Block vor/rück (11H/15H) **fehlt**.
 
 ## 2. Magnetbandsoftware 1000H–1FFFH
 
@@ -103,13 +103,14 @@ Sprungleiste **1FF7H** (MB_INIT) / **1FFAH** (MB_STATUS) / **1FFDH** (physischer
 - **CRC = CRC-16/ARC** (Polynom 8005H gespiegelt, Start 0000H, Bit 0 zuerst, nur über die Daten;
   Prüfwert „123456789“ = BB3DH nachgerechnet) [P 1DD1].
 - **Bandmarke = Block ohne Daten**: AAH, 00H, 00H, AAH [P 19C9].  Schlusslücke: 34 × 250 ms mit AUF.
-- **Lesen** [P 1BE8–1C9A]: Interrupt je Byte; **das erste Byte muss ABH sein** (die Präambel AAH
-  kommt mit gesetztem Bit 0 an), sonst wird es verworfen [P 1BFF]; beim Mitlesen während des
+- **Lesen** [P 1BE8–1C9A]: Interrupt je Byte; das erste Byte muss **AAH oder ABH** sein, sonst wird
+  es verworfen [P 1BF0–1C03] (AAH läuft über die Postambelprobe und wird bei BMS = 1 Datenbyte —
+  **Berichtigung M7**, `kassette.md` §2.3; die frühere Lesart „muss ABH sein“ übersah den Zweig 1C3A); beim Mitlesen während des
   Schreibens wird Bit 0 des ersten Bytes ausgeblendet [P 1BC5].  Ein gelesenes AAH ist Postambel,
   wenn danach BMS = 0 ist [P 1C3A].  Länge = Bytes − 3; 0 = Bandmarke.  Puffer F910H (erstes Byte),
   Daten ab F911H, max. bis FA13H.  **Folge für K3/K4:** das Bandmodell muss beim Lesen das erste
-  Byte (Präambel) als ABH liefern, oder der EGOS-Treiber findet keinen Block [Befund; Ursache in
-  der K5020-Bittaktgewinnung [?] — K1 prüft gegen die anderen Treiber].
+  Byte (Präambel) als ABH liefern, oder der EGOS-Treiber findet keinen Block [**überholt** (M7):
+  AAH geht, das Modell liefert AAH; die lange Postambelprobe begrenzt aber die Bitrate, `kassette.md` §2.2].
 - **Lese-nach-Schreiben**: die Daten-PIO B liest während des Schreibens mit (Vektor B2H), Vergleich
   mit dem Puffer; Fehler → Wiederholen (Fehler 22H nach Ablauf) [P 1BAE, 1F4F].
 - **Bandmarke suchen** [P 19F5]: schnell vor/zurück, je Block BMS abtasten; ein kurzer Block
@@ -192,7 +193,7 @@ ihr NMI springt in ein INIT, das es nur mit `0800v2` gibt — und nur mit einem 
 | 2 | Wirkung der 256 Ausgaben auf 8CH im Einzelnen | Schaltplan `zve_bst_3o.pdf`; für M2 unerheblich |
 | 3 | Polarität des VIS-Lesepfads (Funktion 011) | M3 am Bild |
 | 4 | Tastaturcodes je Taste (Präfix/Code), Bedeutung 12H/14H | Tastaturfoto/Gerät; M3 nur Zeichenebene |
-| 5 | Ursache „erstes Byte ABH“ beim Lesen | K1 (andere Treiber), K4 |
+| 5 | ~~Ursache „erstes Byte ABH“ beim Lesen~~ — erledigt M7: AAH und ABH gehen (`kassette.md` §2.3) | — |
 | 6 | Laufwerk 2 und Block vor/zurück im EGOS nicht ausprogrammiert — gab es eine spätere Fassung? | Anwender |
 | 7 | Feinaufbau Verzeichniseintrag/Dateikopf auf der Kassette | M7/K1 |
 | 9 | Reihenfolge der Interruptkette über die Karten: EGOS gibt keinen Hinweis.  Scharf sind nur ASP-SIO A (Rx, FFFCH), ASP-CTC K3 (FFEEH), beim Magnetband ASP-CTC K1 (FFEAH) und die vier K5020-Kanäle (FFB0H–FFB8H); ZVE-CTC/-PIO und ASP-PIO programmiert EGOS nie.  Innerhalb der ASP SIO > CTC [BDA S.18]; der Ablauf setzt nur voraus, dass CTC K3 hinter SIO A liegt (nachgeordnete Verarbeitung) | M3 |

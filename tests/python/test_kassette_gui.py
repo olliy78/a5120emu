@@ -15,7 +15,7 @@ from conftest import requires_core
 
 pytestmark = requires_core
 
-MASCHINEN = ["a5120", "k8915", "prg710", "pc1715"]
+MASCHINEN = ["a5120", "k8915", "prg710", "pc1715", "mc80"]
 
 
 @pytest.fixture

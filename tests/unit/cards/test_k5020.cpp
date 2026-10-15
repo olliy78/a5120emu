@@ -343,6 +343,42 @@ TEST_F(K5020Test, ByteausgabeImTaktEinBlockMitEchoOhneZeitfehler) {
     }
 }
 
+// AP M7 (MC80.30, umgebaute K5020): Schreibtakt über den Koppelbus von außen.  Ohne Takt
+// übernimmt das Schieberegister kein Byte (ARDY bleibt, kein ZF, nichts aufs Band); sobald er
+// anliegt, geht das wartende Byte sofort und die übrigen im Takt des Profils (LW 1200).
+TEST_F(K5020Test, ExternerTaktSperrtUndGibtDieAusgabeFrei) {
+    K5020::Config c;
+    c.takt = K5020::Takt::ExternerCtc;
+    c.profil1 = ProfilId::LW1200;
+    neu(c);
+    bool takt = false;
+    EXPECT_TRUE(k().taktLiegtAn()) << "ohne Rückruf gilt der Takt als vorhanden";
+    k().setExternerTakt([&takt] { return takt; });
+    EXPECT_FALSE(k().taktLiegtAn());
+    auto m = std::make_shared<KassettenMedium>();
+    geraet1Bereit(m);
+    bus.ioWrite(DAC, 0x0F);
+    aufnahmeStarten(*this);
+    const double bz = profil(ProfilId::LW1200).byteZeitS();
+    bus.ioWrite(DA, 0xAA);
+    sek(bz * 3);
+    EXPECT_TRUE(k().pioDaten().ardy()) << "ohne Takt bleibt das Byte im Ausgaberegister";
+    EXPECT_EQ(b() & 0x80, 0) << "ohne Takt kein Zeitfehler";
+    takt = true;
+    sek(0.001);
+    EXPECT_FALSE(k().pioDaten().ardy()) << "Takt da: Byte übernommen";
+    bus.ioWrite(DA, 0x55);
+    sek(bz * 0.8);
+    EXPECT_TRUE(k().pioDaten().ardy()) << "nächstes Byte erst nach einer Bytezeit (LW 1200)";
+    sek(bz * 0.4);
+    EXPECT_FALSE(k().pioDaten().ardy());
+}
+
+TEST_F(K5020Test, BustaktFragtDenExternenTaktNicht) {
+    k().setExternerTakt([] { return false; });
+    EXPECT_TRUE(k().taktLiegtAn());
+}
+
 TEST_F(K5020Test, HgeNachAufSperrtDasEchoOhneSuchlauf) {
     auto m = std::make_shared<KassettenMedium>();
     geraet1Bereit(m);

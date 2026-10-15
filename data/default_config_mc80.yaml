@@ -50,6 +50,8 @@ general:
   model: mc80
   # Zahl der Speicherkarten SPE 2 (1 | 2; Kaltstart nötig, fehlend = 1).
   spe: '1'
+  # Kassette (K5020 an 30H: .30 mit LW 1200, .31 mit K5200) gesteckt? doc/mc80/kassette.md.
+  tape: false
 
 window:
   width: 1280

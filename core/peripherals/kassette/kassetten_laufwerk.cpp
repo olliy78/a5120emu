@@ -184,7 +184,7 @@ bool KassettenLaufwerk::dateiBinden(const std::string& pfad, std::string& fehler
             return false;
         }
     } else {
-        m = std::make_shared<KassettenMedium>();
+        m = std::make_shared<KassettenMedium>(neue_kassette_);
         if (!dateiSchreibenAtomar(pfad, k52::kodieren(*m), fehler)) return false;
     }
     kassetteEinlegen(std::move(m));

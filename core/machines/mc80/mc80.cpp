@@ -99,13 +99,20 @@ void Mc80Machine::powerOn()
     zve_.powerOn(cfg_.ram_fill);   // zuletzt: meldet Segmentregister 00H an die SPE
     rafPowerOn();
     total_cycles_ = 0;
-    reset();
+    // NICHT reset(): das schlösse die Bestückung ab, und powerOn() läuft schon im Konstruktor —
+    // installK5020() danach schlüge immer fehl (Fund M7, Wächter Mc80Kassette.KarteSteckbar…).
+    resetHardware();
     LOG_INFO("MC80", "%s: Netz ein", variantenName(cfg_.variante));
 }
 
 void Mc80Machine::reset()
 {
     bestueckungAbschliessen();
+    resetHardware();
+}
+
+void Mc80Machine::resetHardware()
+{
     for (auto& k : spe_) k->reset();
     zve_.reset();
     asp_.reset();     // die ASP liefert selbst einen Rücksetzimpuls [BDA S.17]
@@ -152,6 +159,41 @@ int Mc80Machine::run(int max_cycles)
     k6022AutoFlush();
     k5020AutoFlush();
     return max_cycles - remaining;
+}
+
+// ─── Kassette (AP M7) ────────────────────────────────────────────────────────
+
+void Mc80Machine::k5020Konfigurieren(K5020::Config& cfg) const
+{
+    if (cfg_.variante == Config::Variante::Mc8030) {
+        // Umgebaute K5020 + LW 1200 [Entwurf 31 §2, Forum 12849]: Schreibtakt über den
+        // Koppelbus aus ASP-CTC K2; Bitrate aus dem Profil LW 1200 [?] (doc/mc80/kassette.md §2).
+        cfg.takt = K5020::Takt::ExternerCtc;
+        cfg.profil1 = cfg.profil2 = kassette::ProfilId::LW1200;
+    } else {
+        // MC80.31: AKB K5020 + K5200 [hardware_3x.md §9] mit **19 cm/s** (6 000 Bit/s) [?]:
+        // EGOS' Leseinterrupt prüft jedes AAH mit gesperrten Interrupts 1,35 ms lang auf die
+        // Postambel (1C3A: DI, DJNZ 255) — bei 12 000 Bit/s kommen in der Zeit zwei Bytes, eins
+        // geht verloren; bei 6 000 Bit/s nicht (doc/mc80/kassette.md §2).
+        cfg.takt = K5020::Takt::Bustakt;
+        cfg.profil1 = cfg.profil2 = kassette::ProfilId::K5200_19;
+    }
+    // EGOS verträgt keine BOT-/EOT-Marke und keinen langen Vorspann (kassette.md §3).
+    cfg.neue_kassette = kassette::Geometrie::kompaktkassette();
+}
+
+void Mc80Machine::k5020Einketten(K5020& k)
+{
+    K1520Machine::k5020Einketten(k);
+    if (cfg_.variante == Config::Variante::Mc8030)
+        k.setExternerTakt([this]() { return aspBandtakt(); });
+}
+
+bool Mc80Machine::aspBandtakt() const
+{
+    // ZC/TO2 der ASP-CTC als Bittakt: nur solange Kanal 2 als Zähler (D6 = 1) läuft.
+    const auto st = const_cast<Mc80Asp&>(asp_).ctc().debugState();
+    return st.ch[2].running && (st.ch[2].control & 0x40) != 0;
 }
 
 // ─── Tastatur, Text ──────────────────────────────────────────────────────────

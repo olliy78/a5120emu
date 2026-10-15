@@ -77,6 +77,23 @@ struct Geometrie {
     uint32_t marken_abstand_um = 450'000;    ///< Magnetbandanfang → BOT-Marke (k5200.md §6 „bot_marke_pos“ [?]); EOT symmetrisch
     uint32_t marke_um          = 20'000;     ///< Länge von BOT-/EOT-Marke [?] (nirgends genannt; KMBG entprellt 2 ms)
     uint32_t initialluecke_um  = 40'000;     ///< BOT-Ende → erster Block (≥ 33 mm, k5200.md §3)
+    /**
+     * @brief Kassette ohne BOT-/EOT-Marke und mit kurzem Vorspann, wie sie der EGOS-Bandtreiber
+     *        des MC80 voraussetzt (AP M7, doc/mc80/kassette.md §3): EGOS fährt nach dem Umspulen
+     *        20 s vorwärts und hat dabei den AEB-Interrupt nach 250 ms scharf — jede Marke bräche
+     *        mit „Bandende“ ab.  **Vorspann 80 mm [?]**: EGOS' Rückspulen (1980H ff.) fährt erst
+     *        2 s vorwärts und verlässt sich darauf, danach aus dem Vorspann heraus zu sein, damit
+     *        `UMS` an der Vorspannkante hält — am LW 1200 sind 2 s nur 95 mm.  Sonst stünde eine
+     *        frisch eingelegte Kassette woanders als eine zurückgespulte, und das Lesen (16,5 s
+     *        Vorlauf) begänne hinter dem ersten Block, den das Schreiben (20 s) angelegt hat.
+     */
+    static Geometrie kompaktkassette() {
+        Geometrie g;
+        g.vorspann_um = 80'000;
+        g.marken_abstand_um = 0;
+        g.marke_um = 0;
+        return g;
+    }
     bool operator==(const Geometrie& o) const {
         return laenge_um == o.laenge_um && vorspann_um == o.vorspann_um && marken_abstand_um == o.marken_abstand_um &&
                marke_um == o.marke_um && initialluecke_um == o.initialluecke_um;

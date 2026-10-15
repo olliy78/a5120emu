@@ -8,7 +8,7 @@
  * ROM 2000H–27FFH, leere Fassungen bis 3FFFH lesen 00H, RAM-Segment 4000H–BFFFH).  EGOS
  * läuft nach dem Einschalten durch RESET und die RESET-Kette bis zur Kommandoschleife; Bild
  * (VIS 2a, C0H), ASP (SIO/CTC/PIO, D0H) und Tastatur (Zeichenebene an SIO A) seit M3,
- * Programmsegmente in M4, Kassette in M7.
+ * Programmsegmente in M4, Kassette (K5020 als steckbare Option an 30H) seit M7.
  *
  * **Varianten:** .30 und .31 sind im Kern bis M7 gleich (Kassettenanschluss unterscheidet
  * sie erst dort).  .33 (AKM + PK 3: Treiber-ROM nur halb vorhanden, egos.md §3) und die
@@ -137,13 +137,24 @@ public:
     uint64_t  totalCycles() const { return total_cycles_; }
     void      clearStop() { stop_.store(false); }
     uint16_t  cpuPC() const { return zve_.cpu().PC; }
+    /// Koppelbus ASP → K5020 (MC80.30): ASP-CTC K2 läuft als Zähler (EGOS MB_INIT `47H,02H`).
+    bool aspBandtakt() const;
 
 protected:
     K1520Bus& systemBus() override { return bus_; }
     uint32_t  k6022TaktHz() const override { return CPU_HZ; }
+    // ─── Kassette (AP M7, doc/mc80/kassette.md) ──────────────────────────────
+    /// K5020 fest an 30H–37H (EGOS-Treiber 1000H–1FFFH, IX+2 = 30H).
+    int  k5020Basis() const override { return 0x30; }
+    /// .31: K5020 + K5200 (Bustakt); .30: umgebaute K5020 + LW 1200, Takt von der ASP.
+    void k5020Konfigurieren(K5020::Config& cfg) const override;
+    /// Hinten an die Kette (hinter die ASP); am .30 die Koppelbusleitung ASP-CTC K2 → Takt.
+    void k5020Einketten(K5020& k) override;
 
 private:
     static Config pruefe(const Config& cfg);
+    /// Systemweiter /RESET ohne Abschluss der Bestückung (aus powerOn() und reset()).
+    void resetHardware();
 
     const Config cfg_;
     K1520Bus bus_;
