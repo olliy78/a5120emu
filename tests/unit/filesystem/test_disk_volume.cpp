@@ -187,7 +187,7 @@ TEST(DiskVolume, LehntAbbildOhneKatalogeintragMitDiagnoseAb) {
 
 /**
  * @test Eine Geometrie OHNE Katalogprofil wird trotzdem geoeffnet — per CP/A-Regel.
- * @par Kriterium  `k5601_ss80_26x128` hat keinen `filesystems:`-Eintrag; die Diskette
+ * @par Kriterium  `k5601_ds40_26x128` hat keinen `filesystems:`-Eintrag; die Diskette
  *                 laesst sich dennoch oeffnen, das Dateisystem heisst `cpa_auto`, und
  *                 die Meldung sagt, woher die Werte stammen.
  * @par Warum      Das ist der Kern des Rueckfalls: der Katalog nennt nur die Handvoll
@@ -197,7 +197,7 @@ TEST(DiskVolume, LehntAbbildOhneKatalogeintragMitDiagnoseAb) {
 TEST(DiskVolume, GeometrieOhneProfilWirdUeberDieCpaRegelGeoeffnet) {
     const std::string pfad =
         k1520test::tempPath("k1520_dv_ohne_profil.hfe");
-    const DiskFormat* fmt = formate().find("k5601_ss80_26x128");
+    const DiskFormat* fmt = formate().find("k5601_ds40_26x128");
     ASSERT_NE(fmt, nullptr);
     ASSERT_TRUE(dateisysteme().forFormat(fmt->name).empty())
         << "der Test setzt voraus, dass diese Geometrie KEIN benanntes Profil hat";
@@ -209,7 +209,7 @@ TEST(DiskVolume, GeometrieOhneProfilWirdUeberDieCpaRegelGeoeffnet) {
     fs::remove(pfad, ec);
 
     ASSERT_NE(dv, nullptr) << err;
-    EXPECT_EQ(dv->detection().format, "k5601_ss80_26x128");
+    EXPECT_EQ(dv->detection().format, "k5601_ds40_26x128");
     EXPECT_EQ(dv->detection().filesystem, "cpa_auto");
     EXPECT_NE(dv->detection().remarks.find("CP/A-Regel"), std::string::npos)
         << dv->detection().remarks;

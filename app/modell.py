@@ -35,6 +35,9 @@ MODELS = [
 #: Programmprofil (`app/profil.py`).  Fehlt ``general.model``, bleibt es der A5120 „neu“.
 A5120_ALT = "a5120-alt"
 A5120_KMBG = "a5120-kmbg"
+#: BCU 880 (doc/a5120_alt/bcu.md): Kern-Maschine ``a5120-alt`` mit ``laderom="v06"`` und
+#: ``tastatur="k7636"`` (``Programmprofil.modell_kernwahl``).
+A5120_BCU = "a5120-bcu"
 A5120_ACHT = "a5120-8"
 
 _EM_FOR = {schluessel: em for schluessel, em, _ in MODELS}

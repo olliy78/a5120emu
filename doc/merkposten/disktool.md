@@ -194,6 +194,14 @@ Was beim Weiterarbeiten zu wissen ist:
   `K8915Scpx.DiskToolBautBootdisketteAus*`, `.FremdeSystemspurWirdFuerDenK8915Abgelehnt`,
   `.BootPutMachtEineLeereDisketteBootfaehig`, `K8915Format.FormatDisketteGetBootPutBootetOhneDisgen`
   (langsam).  Keine C-ABI-Änderung.
+- **BCU 880 (frühe A5120, 2026-10-16, `doc/a5120_alt/bcu.md` §11).**  Profile `bcu880_syl` (Startdiskette
+  „SYL auf Spur 1“: Zylinder 1 = SYL-Lader, 2–4 = System; erkannt NUR am Lader — Kennung `SYL` + CRC-CCITT
+  0407–06FD gegen 06FE/06FF — weil der Rest leer ist und jede 40-Spur-Datendiskette sonst mitträfe) und
+  `bcu880` (Arbeitsdiskette „ohne SYL“, `detect: false`).  Neu im Profil: **`nur_boot`** — Dateien verweigert
+  (`DiskVolume::insert/erase/setAttributes/makeDirectory/insertAll/applyRepairs/recoverRestore`), freier Platz 0:
+  BCU sucht sein Verzeichnis ab Zylinder 2, dort liegt das System; eine Datei ab Zylinder 5 wäre nie sichtbar.
+  `boot_header: bcu | bcu_syl` — Bootabbild wird vor `create`/`boot-put` geprüft.  Bootabbilder
+  `disks/bootsektoren/boot_bcu12_*.bin` sind `boot-get` der Belege (`build.py --check`).  Wächter `DisktoolBcu.*`.
 - **PC 1715 / 1715W: der Bootkopf kann IM VERZEICHNIS stehen (2026-10-04, AP-D,
   `doc/design/21_pc1715.md`, `doc/pc1715/disketten.md` §3).**  Der Urlader S502 prüft von Spur 0
   Sektor 1 nur das Wort `F002H`/`F003H` (Bytes `02|03 F0`).  Zwei Profile (`boot_header: pc1715`):

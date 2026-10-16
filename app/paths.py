@@ -561,7 +561,7 @@ def beispiel_ordner() -> Path:
     return user_disks_dir() / version.beispielordner(version.fassung())
 
 
-def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img", "*.img.gz")) -> int:
+def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img", "*.img.gz", "*.k52")) -> int:
     """Legt die mitgelieferten Beispieldisketten in den Ordner dieser Fassung.
 
     Gedacht für den Start einer **Installation** (``main.py`` ruft es auf, der
@@ -579,7 +579,8 @@ def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img", "*.img.gz")) -> int:
     danach doppelt auf der Platte.  Beides wird angenommen, damit ältere Pakete
     und der Quellbaum weiter funktionieren.  P8000-Platten (``*.img.gz``) liegen
     im Paket als ``*.img.gz.gz`` und kommen beim Anwender als ``*.img.gz`` an —
-    gepackt, wie der Emulator sie anschließt.
+    gepackt, wie der Emulator sie anschließt.  Kassettenbänder (``*.k52``, BCU 880 und das
+    Demo-Bootband) kommen ebenso mit.
 
     Returns:
         Anzahl angelegter Diskettendateien (Begleitdateien zählen nicht).

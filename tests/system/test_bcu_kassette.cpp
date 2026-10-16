@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -43,6 +44,7 @@
 #include "core/logger.h"
 #include "core/machines/a5120/a5120.h"
 #include "core/peripherals/floppy_drive/format_catalog.h"
+#include "core/peripherals/kassette/k52_codec.h"
 #include "core/peripherals/kassette/kassetten_medium.h"
 #include "tests/support/fixtures.h"
 #include "tests/support/keyboard.h"
@@ -55,6 +57,10 @@ using k1520test::kSmallBatch;
 using k1520test::TempDisk;
 using kassette::KassettenMedium;
 using kassette::Seite;
+
+#ifndef A5120_LIEFERDISKETTEN
+#error "A5120_LIEFERDISKETTEN fehlt - k1520_add_test(... DEFS A5120_LIEFERDISKETTEN=\"<repo>/disks\")"
+#endif
 
 constexpr const char* kFormat = "k5601_ss40_26x128";
 constexpr const char* kSystem = "bcu12_ss40-26x128_k5600-10_ohnesyl-sys1.img";
@@ -176,6 +182,30 @@ TEST(BcuKassette, FormatiertSchreibtLiest) {
     k1520test::typeKey(m, kInsLine);              // ^C → Warmstart
     ASSERT_TRUE(laufeBisPrompt(m, 60'000'000)) << bild(m);
     EXPECT_LT(band->positionUm(), band->geometrie().vorspann_um) << "nicht zurueckgespult";
+
+    // Beispielband disks/a5120_bcu/bcu_kassette_formatiert.k52 = genau dieses Band.  Verglichen
+    // werden die Bloecke (Bytes je Seite), nicht die Luecken: die haengen an der Laufzeit des
+    // Treibers.  K1520_BEISPIELBAND=<pfad> schreibt das Band neu (tools/bcu_a5120/build.py).
+    {
+        const std::vector<uint8_t> inhalt = kassette::k52::kodieren(*band);
+        if (const char* ziel = std::getenv("K1520_BEISPIELBAND")) {
+            std::ofstream out(ziel, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(inhalt.data()), static_cast<std::streamsize>(inhalt.size()));
+            ASSERT_TRUE(static_cast<bool>(out)) << ziel;
+        }
+        const std::string pfad = std::string(A5120_LIEFERDISKETTEN) + "/a5120_bcu/bcu_kassette_formatiert.k52";
+        std::ifstream in(pfad, std::ios::binary);
+        ASSERT_TRUE(static_cast<bool>(in)) << pfad << " fehlt";
+        const std::vector<uint8_t> datei((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::string f;
+        auto beispiel = kassette::k52::dekodieren(datei, f);
+        ASSERT_TRUE(beispiel.has_value()) << f;
+        for (Seite s : {Seite::A, Seite::B}) {
+            ASSERT_EQ(beispiel->anzahlBloecke(s), band->anzahlBloecke(s));
+            for (size_t i = 0; i < band->anzahlBloecke(s); ++i)
+                EXPECT_EQ(beispiel->block(s, i).bytes, band->block(s, i).bytes) << "Block " << i;
+        }
+    }
 
     // ── Schreiben ──
     befehl(m, "pip f:=b:stat.com");

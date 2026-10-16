@@ -163,6 +163,15 @@ add_test(NAME cli_scpx_a5120
 set_tests_properties(cli_scpx_a5120 PROPERTIES
     TIMEOUT 180 LABELS "cli;fast")
 
+# Waechter „die BCU-880-Disketten in disks/a5120_bcu/ sind die Wandlung ihrer Belege doc/a5120_alt/bcu/,
+# das Demo-Bootband die Fixture, die BCU-Kassette formatiert“ (doc/a5120_alt/bcu.md §10).
+# Neu bauen: python3 tools/bcu_a5120/build.py --tool build/k1520disktool
+add_test(NAME cli_bcu_a5120
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/bcu_a5120/build.py"
+            --check --tool "$<TARGET_FILE:k1520disktool>" ${_beigaben_emulator})
+set_tests_properties(cli_bcu_a5120 PROPERTIES
+    TIMEOUT 180 LABELS "cli;fast")
+
 # Waechter „die SCPX-8915-Systemdiskette des K8915 in disks/ ist der Inhalt von tools/scpx_k8915/“ (doc/scp_inventur.md).
 # Neu bauen: python3 tools/scpx_k8915/build.py --tool build/k1520disktool
 add_test(NAME cli_scpx_k8915

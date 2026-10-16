@@ -44,8 +44,19 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | **`pc1715_scp1715_v0007/pc1715_scp1715_v0007_system.hfe`** | **SCP 1715 V0007** (01/11/88, 50 KB, nachladbarer CCP), 16×256; sonst wie V0006 (ohne `PCTEST`) | PC 1715 (K5601) |
 | **`pc1715_cpz22/pc1715_cpz22_system.hfe`** | **CP/Z 2.2** („52K CP/Z 2.2 ZOAZ MRL“ 06.12.88), 16×256, mit `CPZINIT`/`CPZGEN`/`CPZDUP`, Turbo Pascal, WordStar; dazu WM, BASIC, `TLC`, SERTEST | PC 1715 (K5601) |
 | **`pc1715w_scp30/pc1715w_scp30_system.hfe`** | **SCP 3.0 (CP/M 3) V0003 28.03.89, Lader PC 1715W**, 5×1024; Zeichensätze `SC6xx.ZGF`, Textprogramm V1/3B + `TPINSTD`, WM, BASIC, Pascal, SERTEST V0.3. Aus `tools/scp_pc1715w/` (`cli_scp_pc1715w`) | PC 1715W (U8272) |
+| **`a5120_bcu/a5120_bcu12_k5600-10_start-syl.hfe`** | **BCU 880 V1.2** (FZW/BL), Startdiskette „SYL auf Spur 1“ (Satz 2, Bild 64×16) — startet im Modell **„A5120 BCU 880 (Lade-ROM V0.6)“**, Laufwerke **K5600.10**. Keine Dateidiskette. Mit dem DiskTool **gebaut** (`create --fs bcu880_syl --boot bootsektoren/boot_bcu12_syl_k7023.bin`), sektorgleich zum Beleg `doc/a5120_alt/bcu/satz2_SYL_auf_Spur1/disk.img` | A: K5600.10 |
+| **`a5120_bcu/a5120_bcu12_k5600-10_arbeit-sys1.hfe`** | BCU 880 V1.2 „ohne SYL“ („SYS1“): Arbeitsdiskette mit PIP, STAT, INIT, `KMBG.REL`, MBASIC, DDT, EPROM u. a. (19 Dateien); in B:, nach dem Start auch in A: (Warmstart). Wandlung von `satz2_OhneSYL.1/disk.img` | B: K5600.10 |
+| `a5120_bcu/a5120_bcu12_k5600-10_kombi-eigenbau.hfe` | **EIGENBAU, kein Original** (`doc/a5120_alt/bcu.md` §12): Startdiskette **mit** Dateisystem — bootet wie die Startdiskette, Verzeichnis ab Zylinder 5 (nur in **A:** sichtbar), Warmstart funktioniert. Gebaut mit `create --fs bcu880_kombi --boot bootsektoren/boot_bcu12_kombi_k7023.bin`. Nicht im Paket | A: K5600.10 |
+| `a5120_bcu/a5120_bcu12_k5600-20_kombi80-eigenbau.hfe` | **EIGENBAU**: wie die Kombidiskette, aber **80 Spuren** für K5600.20 (A: Verzeichnis ab Zylinder 5, 243 KB). Nicht im Paket | A: K5600.20 |
+| `a5120_bcu/a5120_bcu12_k5600-20_arbeit80-eigenbau.hfe` | **EIGENBAU**: 80-Spur-Arbeitsdiskette für B: neben der 80-Spur-Kombidiskette (Verzeichnis ab Zylinder 2, 248 KB nutzbar), die 19 Dateien der Arbeitsdiskette. Nicht im Paket | B: K5600.20 |
+| `a5120_bcu/a5120_bcu21_k5600-10_eigenbau-syl-v21.hfe` | **EIGENBAU, kein Original** (`doc/a5120_alt/bcu.md` §9): BCU 880 **V2.1** im SYL-Aufbau (V1.2-Lader und -Plattentreiber), bootet im Modell BCU bis `A>`; Nur Startdiskette. Nicht im Paket | A: K5600.10 |
+| `a5120_bcu/bcu_kassette_formatiert.k52` | Kassette, formatiert von BCU-INIT (eine Bandmarke); unter BCU Gerät 2 = F: | Kassette (K5020) |
+| `a5120_bandtest/bandtest_boot.k52` | **Demo, Eigenbau**: Bootband für das Lade-ROM des A5120 (`tools/kassette/bandtest/`), schreibt `KASSETTE OK` — Kassette in Gerät 1, keine Diskette, Kaltstart | Kassette (K5020) |
 | `bootsektoren/bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
+Die BCU-Disketten (vier davon Eigenbau: Kombi 40/80 Spuren, Arbeitsdiskette 80 Spuren, V2.1) und die beiden Bänder legt `tools/bcu_a5120/build.py` an (Wächter `cli_bcu_a5120`; die formatierte
+Kassette entsteht im Test `BcuKassette.FormatiertSchreibtLiest` mit `K1520_BEISPIELBAND=<pfad>`, Herkunft und Bedienung
+in `a5120_bcu/README.md` und `doc/a5120_alt/bcu.md` §10).
 Alle Systemdisketten werden von Skripten gebaut (`tools/<…>/build.py`, Wächter `cli_*`) und tragen eine `LIESMICH.TXT`; Inventur und
 Gründe: `doc/scp_inventur.md`, `doc/disketten_bestand.md`. Die früheren Einzeldisketten (CP/A clock, noclock, combo5zoll, combo8zoll, `-raf`;
 SCPX/SCP-Bootdisketten) gibt es nur noch als Testdaten unter `tests/fixtures/disks/`; ihre BIOS-Fassungen liegen als `@OS.COM`/`OS*.COM` auf der Systemdiskette. Dort liegen auch die
@@ -61,6 +72,7 @@ spielen sie über `tools/disketten_beigaben.py` und `tools/diskbau.py` ein):
 | `EM256ADR.COM`, `EM16ABL.COM`, `EM256FUL.COM`, `EM256TST.COM` — Prüfprogramme der A5120.16 (EM064/EM256, U8001) | `tools/em256/` | A5120 (CP/A, SCPX) |
 | `RAFCPM.COM` (M:), `RAF512.COM` (P:), `RAFTEST.COM`, `RAFQUICK.COM` — RAM-Floppy RAF (ZWG der AdW, Fremdsoftware, freigegeben; Entwurf 22) | `doc/raf512/`, `tests/fixtures/raf/` | A5120, K8915, PRG 710/710-1 |
 | `LBREAD.COM`, `LBPUNCH.COM` — Lochband lesen/stanzen (K6022/SIF1000) | `tools/lochband/` | A5120 (CP/A, SCPX), K8915, PRG 710/710-1 |
+| `KMBGTEST.COM` — Kassette K5020 über die Robotron-Bibliothek; `KMBG.REL` — die Bibliothek selbst (zum Binden) | `tools/kassette/kmbgtest/`, `doc/kassette/fex/` | A5120 (SCPX) — CP/A und SCPX haben keinen Kassettentreiber im BIOS |
 
 Nach einem Neubau einer dieser Dateien alle Systemdisketten nachbauen (`python3 tools/<ordner>/build.py --tool build/k1520disktool`;
 die Wächter `cli_*` melden eine alte Fassung). `python3 tools/disketten_beigaben.py --tool build/k1520disktool --check`

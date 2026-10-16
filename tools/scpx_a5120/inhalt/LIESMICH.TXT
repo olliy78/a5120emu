@@ -81,7 +81,14 @@ PRUEFPROGRAMME (im Emulator entwickelt, am Geraet wie dort verwendbar)
   RAFQUICK   ZWG-Schnelltest RAF (zerstoerungsfrei)
   LBREAD     Lochband lesen (K6022/SIF1000):   LBREAD datei [/A] [/K] [/O]
   LBPUNCH    Lochband stanzen:                 LBPUNCH datei [/A] [/K]
+  KMBGTEST   Kassette K5020/K5200, Geraet 1: Block schreiben, zurueck,
+             lesen, vergleichen (Robotron-Bibliothek KMBG.REL)
+  KMBG.REL   die Kassettenbibliothek selbst, zum Binden eigener Programme
+             (M80/LINKMT; Aufruf: C = Befehl, DE = Puffer, HL = Laenge)
 
 Die EM*-Programme brauchen das Erweiterungsmodul EM256, die RAF-Programme
-die RAM-Floppy, LBREAD/LBPUNCH die Lochstreifenkarte K6022 (im Emulator:
-Einstellungen).
+die RAM-Floppy, LBREAD/LBPUNCH die Lochstreifenkarte K6022, KMBGTEST die
+Kassettenkarte K5020 (im Emulator: Einstellungen). SCPX hat keinen
+Kassettentreiber im BIOS und kein Laufwerk fuer die Kassette; Programme
+sprechen sie ueber KMBG.REL an. Die Kassette erst zurueckspulen (KMBG
+wartet nur etwa 2,5 s auf das Magnetband).

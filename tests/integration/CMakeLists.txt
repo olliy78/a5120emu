@@ -264,8 +264,17 @@ k1520_add_test(a5120_ausfuehrungen SRC test_a5120_ausfuehrungen.cpp
 k1520_add_test(boot_alt SRC test_boot_alt.cpp LIBS ${_libs}
                         LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
 # BCU 880 auf dem fruehen A5120 (AP A7): Lade-ROM V0.6, Disketten „SYL auf Spur 1“ bis A>.
+# Dazu die ausgelieferten BCU-Disketten aus disks/a5120_bcu/ (tools/bcu_a5120/build.py), nur als Kopie.
 k1520_add_test(boot_bcu SRC test_boot_bcu.cpp LIBS ${_libs}
-                        LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+                        LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                        "A5120_LIEFERDISKETTEN=\"${CMAKE_SOURCE_DIR}/disks\"" TIMEOUT 120)
+
+# DiskTool fuer BCU 880 (doc/a5120_alt/bcu.md §11): Startdiskette „SYL auf Spur 1“ erkennen/bauen,
+# Arbeitsdiskette bauen und fuellen, beide im Geraet (Lade-ROM V0.6), SYSGEN im Emulator.
+k1520_add_test(disktool_bcu SRC test_disktool_bcu.cpp
+                            LIBS k1520_a5120 k1520_fs k1520_logger k1520_testsupport
+                            LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                            "A5120_LIEFERDISKETTEN=\"${CMAKE_SOURCE_DIR}/disks\"" TIMEOUT 300)
 
 k1520_add_test(k6022_maschinen SRC test_k6022_maschinen.cpp
                                LIBS k1520_a5120 k1520_k8915 k1520_prg710 k1520_logger k1520_testsupport

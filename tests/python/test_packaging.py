@@ -384,6 +384,23 @@ def test_prg710_systemdisketten_sind_in_der_vorgabeauswahl():
     assert not re.search(r"^disks:", vorgabe, re.M)
 
 
+def test_bcu_disketten_und_baender_sind_in_der_vorgabeauswahl():
+    """BCU 880 am fruehen A5120 (doc/a5120_alt/bcu.md §10): Start- und Arbeitsdiskette, die
+    formatierte BCU-Kassette und das Demo-Bootband liegen im Paket und kommen beim Anwender an
+    (``seed_user_disks`` kennt ``*.k52``)."""
+    import inspect
+    from app import paths
+    text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    block = text[text.index('DISKS_DEFAULT="'):]
+    block = block[len('DISKS_DEFAULT="'):].split('"', 1)[0].split()
+    soll = {"a5120_bcu12_k5600-10_start-syl.hfe", "a5120_bcu12_k5600-10_arbeit-sys1.hfe",
+            "bcu_kassette_formatiert.k52", "bandtest_boot.k52"}
+    assert soll <= set(block)
+    for name in soll:
+        assert ausgelieferte_diskette(name).is_file(), name
+    assert "*.k52" in inspect.signature(paths.seed_user_disks).parameters["patterns"].default
+
+
 def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
     text = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
     assert '"%~n0"=="k8915emu"' in text and "--machine k8915" in text

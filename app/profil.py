@@ -110,6 +110,10 @@ class Programmprofil:
     #: Kernparameter je Modell: ``(Schluessel, ((Name, Wert), …))`` — Eintraege des
     #: Konfigurationstextes (P8000: ``karte16``, ``wdc``).  Leer = keine.
     modell_kern: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = ()
+    #: Feste Kernparameter einzelner Modelle der Profile ohne :attr:`modell_kern`:
+    #: ``(Schluessel, ((Name, Wert), …))`` — zusaetzliche Argumente fuer ``K1520Emulator(…)``
+    #: (A5120 „BCU 880“: ``laderom="v06"``, ``tastatur="k7636"``).  Sie gehen der Hardwarewahl vor.
+    modell_kernwahl: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = ()
     #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kaestchen
     #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
     #: Programme bieten sie an; ohne sie laeuft die Maschine stets ohne RAF.
@@ -216,7 +220,12 @@ class Programmprofil:
         """
         hardware = self.hardware_normalisieren(hardware or {})
         if not self.modell_kern:
-            return dict(hardware)
+            aus = dict(hardware)
+            schluessel = self.modell_normalisieren(modell)
+            for k, paare in self.modell_kernwahl:
+                if k == schluessel:
+                    aus.update(dict(paare))
+            return aus
         schluessel = self.modell_normalisieren(modell)
         if self.modell_art(schluessel) == "einheit":
             # Terminal ohne Rechner: ROM-Fassungen/Platinenindex gibt es nicht; die Leitung
@@ -358,14 +367,20 @@ A5120 = Programmprofil(
         # Fruehe Ausfuehrungen (Entwurf 30, AP A5): K7023.01 16×64, 4× K3525, Tastatur K7636.
         (_modell.A5120_ALT, "a5120-alt", None, "A5120 (64×16, K7636)", "k7636"),
         (_modell.A5120_KMBG, "a5120-kmbg", None, "A5120 Kassette", "k7636"),
+        # BCU 880 V1.2 von den Disketten „SYL auf Spur 1“ (doc/a5120_alt/bcu.md): Ausfuehrung
+        # „alt“ (K7023 64×16 = Satz 2), Lade-ROM V0.6 (liest Zylinder 1), Tastatur K7636.
+        (_modell.A5120_BCU, "a5120-alt", None, "A5120 BCU 880 (Lade-ROM V0.6)", "k7636"),
     ),
+    modell_kernwahl=((_modell.A5120_BCU, (("laderom", "v06"), ("tastatur", "k7636"))),),
     gesperrte_modelle=((_modell.A5120_ACHT, "A5120 8″ (K5602)",
                         "Die 8″-Ausführung mit der Floppy-Einheit K5602 ist noch nicht "
                         "nachgebildet."),),
     modell_tipp=("A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
                  "EM256 mit dem U8001 hinzu.  „A5120 (64×16, K7636)“ ist die frühe "
                  "Ausführung mit dem Bildschirm K7023 und der Tastatur K7636, "
-                 "„A5120 Kassette“ dieselbe mit der Kassettenkarte K5020 (KMBG).  "
+                 "„A5120 Kassette“ dieselbe mit der Kassettenkarte K5020 (KMBG), "
+                 "„A5120 BCU 880“ die frühe Ausführung mit dem Lade-ROM V0.6 für die "
+                 "BCU-Disketten „SYL auf Spur 1“ (Laufwerke K5600.10).  "
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",

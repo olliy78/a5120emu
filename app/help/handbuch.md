@@ -610,6 +610,9 @@ Neben dem A5120 „neu“ (K7024 mit 80×24 Zeichen, K7637) kennt das Programm z
 * **A5120 Kassette** — wie vorstehend, dazu fest die Kassettenkarte K5020 mit
   zwei Laufwerken K5200 (Geräte 1 und 2; unter BCU 880 sind das E: und F:). Das
   Feld *Kassette* in den Einstellungen entfällt, die Karte ist Teil des Modells.
+* **A5120 BCU 880 (Lade-ROM V0.6)** — die Ausführung „64×16, K7636“ mit dem
+  älteren Lade-ROM V0.6, das die BCU-Disketten „SYL auf Spur 1“ startet
+  (Abschnitt *BCU 880*).
 
 Ein Wechsel baut die Maschine neu auf (Kaltstart). Eine Konfiguration ohne Modell
 bleibt der A5120 „neu“. Das Modell **A5120 8″** (K5602) steht im Auswahlfeld
@@ -648,16 +651,41 @@ K7636 selbst.
 
 ### BCU 880
 
-Das Betriebssystem BCU 880 (V1.2) bootet auf dem Modell von den Disketten
-„SYL auf Spur 1“ bis `A>`. Das Lade-ROM wählt dafür die passende Fassung (V0.6);
-Bestückung und Lade-ROM stellt in dieser Fassung das Programm nicht zur Wahl —
-BCU-Disketten starten über die Werkzeuge `boot_trace`/`k1520dbg` mit
-`--ausfuehrung alt|kmbg --laderom v06 --format …`. Die Bedienung:
+Das Betriebssystem BCU 880 (V1.2) bootet von den Disketten „SYL auf Spur 1“ bis
+`A>`. Sie brauchen das Lade-ROM V0.6 — das Modell **A5120 BCU 880 (Lade-ROM
+V0.6)** unter *Einstellungen ▸ Allgemein ▸ Modell* steckt es zusammen mit dem
+Bildschirm K7023 (64×16) und der Tastatur K7636. Im Ordner der
+Beispieldisketten liegen dafür unter `a5120_bcu/`:
+
+| Datei | Inhalt |
+|-------|--------|
+| `a5120_bcu12_k5600-10_start-syl.hfe` | Startdiskette (BCU 880 V1.2, Satz 2 „SYL auf Spur 1“) — nach A: |
+| `a5120_bcu12_k5600-10_arbeit-sys1.hfe` | Arbeitsdiskette „SYS1“ (dieselbe V1.2 ohne Lader; PIP, STAT, INIT, `KMBG.REL`, MBASIC, DDT …) — nach B:, nach dem Start auch nach A: |
+| `bcu_kassette_formatiert.k52` | eine von BCU-INIT formatierte Kassette (für Gerät 2 = F:) |
+
+So geht es:
+
+1. **Laufwerke einstellen** (*Einstellungen ▸ Laufwerke*): A: und B: auf
+   **K5600.10** (5¼″, 40 Spuren, einseitig). Die Disketten haben 40 Spuren; in
+   einem 80-Spur-Laufwerk K5601 (der Laufwerkskasten meldet dann den
+   Doppelschritt) findet das Lade-ROM den Lader auf Spur 1 nicht, der Rechner
+   bleibt stehen. Der Modellwechsel stellt die Laufwerke nicht selbst um (siehe
+   oben).
+2. Startdiskette nach A:, Arbeitsdiskette nach B:, Kaltstart. Nach einigen
+   Sekunden meldet sich `BCU 880 VERS 1.2` mit `A>`.
+3. Zuerst eine **leere Zeile** eingeben (Typzeichen der K7636, siehe oben). Eine
+   Zeile schließt die Taste **↵** ab (diese BCU-Fassung übersetzt ET1 nicht).
+4. `dir b:` zeigt die Arbeitsdiskette. Die Startdiskette ist keine
+   Dateidiskette — `dir a:` zeigt dort Systemcode.
 
 * **Warmstart braucht die Diskette „ohne SYL“ in A:** — nach dem Kaltstart von
   der SYL-Diskette also die Arbeitsdiskette einlegen, bevor ^C oder ein Programm
   endet, sonst stürzt das System ab.
-* **Kassette:** `OPEN B:KMBG` lädt den Treiber (Meldung „kmbg opened“, `KMBG.REL`
+* **Kassette:** dazu unter *Einstellungen ▸ Allgemein* das Feld *Kassette*
+  einschalten (das ergibt dieselbe Karte K5020 wie das Modell *A5120 Kassette*)
+  und im Kasten *Kassette* ein Band in Gerät 2 legen, etwa
+  `bcu_kassette_formatiert.k52` (vorher kopieren: der Emulator schreibt in die
+  Datei zurück). `OPEN B:KMBG` lädt den Treiber (Meldung „kmbg opened“, `KMBG.REL`
   liegt auf der Arbeitsdiskette). Die Kassette im Gerät 2 ist **F:**, Gerät 1 ist E:.
   `B:INIT` formatiert sie (Antwort Y), danach `PIP F:=B:STAT.COM` und zurück. BCU
   wartet im Vorspann ohne Frist; eine frische Kassette muss man nicht erst
@@ -666,6 +694,10 @@ BCU-Disketten starten über die Werkzeuge `boot_trace`/`k1520dbg` mit
   Return (0DH), den die K7636.01 nicht liefert. Ausweg: während des Formatierens
   **DEL LINE** drücken (entspricht ^S), danach **INS LINE** (entspricht ^C) —
   Warmstart.
+* **CP/A und SCPX** haben keinen Kassettentreiber: CP/A bedient Kassetten
+  „außerhalb des BIOS“ (es hält dafür nur Interruptplätze frei), SCPX bringt nur
+  die Bibliothek `KMBG.REL` für eigene Programme mit (auf der SCPX-Diskette
+  zusammen mit dem Prüfprogramm `KMBGTEST`).
 * **Version V2.1:** vom Gerät liegt kein Lade-ROM vor, das sie startet. Ein
   V2.1-System läuft nur als **Eigenbau** (V1.2-Lader mit V2.1-System und
   V1.2-Plattentreiber, `tools/bcu_v21_eigenbau.py`) — **kein Original**.
@@ -766,6 +798,73 @@ zurück (`ERROR C9`). `ERROR C2` beim Lesen heisst: kein Band im Leser. Für
 **A5120** und **K8915** liegt kein Treiber bei — die Karte steckt (E/A E0H–E7H),
 ein Programm muss sie selbst bedienen.
 
+## Eine startfähige Diskette erstellen (A5120)
+
+Startfähig wird eine Diskette durch zweierlei: die **Systemspuren** vor dem Dateisystem
+(das Lade-ROM liest sie blind ein) und die Systemdateien dahinter. Der Weg hängt vom
+Betriebssystem ab. In allen Fällen gilt: im Emulator mit *Leere Diskette* ein
+unformatiertes Medium als `.hfe` oder `.dmk` anlegen (Abschnitt *Leere Disketten und
+„Speichern unter“*) und das Gastsystem formatieren lassen; die Geometrie des
+Laufwerks bestimmt die Diskette.
+
+**CP/A** (Beispieldiskette `a5120_cpa/a5120_cpa_k5601_system.hfe`, trägt `FORMAT.COM`,
+`CPABCGEN.COM` und `@OS.COM`):
+
+1. Systemdiskette nach A:, *Leere Diskette* nach B:, Kaltstart.
+2. `FORMAT` (Verfahren und Laufwerk B: wählen, ganze Diskette, mit Vergleichs-Lesen).
+3. Zurück am Prompt `CPABCGEN B:` — es schreibt die Systemspuren und `@OS.COM` auf B:
+   und meldet `OK`. Danach `DIR B:` zur Kontrolle.
+4. B: nach A: legen, Kaltstart: CP/A startet bis `A>`.
+
+**SCPX 1526 V1.7** (Beispieldiskette `a5120_scpx17/a5120_scpx17_k5601_system.hfe`;
+Quelle: `tools/scpx_a5120/inhalt/LIESMICH.TXT`). Für die Standardformate genügt es, die
+Systemdiskette zu kopieren. Eine Systemdiskette im Format 16×256 entsteht so:
+
+1. `INIT B:` mit Format 0 (16×256 doppelseitig) auf einer *Leeren Diskette* in B:.
+2. `MODF B:` stellt B: für die laufende Sitzung auf Format 0.
+3. `SYSP` erzeugt das System für die gewählte Tastatur, den Bildschirm und die
+   Laufwerke (alle BIOS-Module liegen auf der Diskette); bei „Welches Format für
+   5,25-Zoll-Lw?“ `0` wählen und als Ausgabe-Laufwerk B: angeben.
+4. Die Dateien (PIP, STAT, …) kopiert man danach mit `PIP`.
+
+`SYSG` allein genügt nicht: es kopiert die Systemspuren im Format des Quelllaufwerks.
+
+**UDOS 4.3** (Beispieldiskette `a5120_udos43/a5120_udos43_k5601_entwickler.hfe`;
+Quelle: `doc/udos_diskettenformat.md` §12.2). Vorder- und Rückseite sind getrennte
+Laufwerke (0 und 4 …); gebraucht werden zwei FORMAT-Läufe und zwei MOVE:
+
+    %FORMAT   SYSTEMDISK? Y   DRIVE? 1   ID? SYSDISK     READY? Y
+    %FORMAT   SYSTEMDISK? N   DRIVE? 5   ID? SYSDISK.B   READY? Y
+    %MOVE * S=0 D=1 P=&
+    %MOVE * S=4 D=5 P=&
+
+`SYSTEMDISK? Y` ist der einzige Unterschied zur Datendiskette: FORMAT schreibt dann
+Urlader und Bootabbild mit; ohne `Y` bleibt der Bildschirm beim Kaltstart schwarz.
+`P=&` bei `MOVE` ist Pflicht, sonst bleiben die als SECRET markierten Dateien liegen.
+Die Laufwerkstypen (`SET DISKCON`) setzen Grenzen — Matrix in
+`doc/udos_diskettenformat.md` §12.3 (bootfähig herstellbar: `41`, `31` und `41` am 8″).
+
+**BCU 880 V1.2.** Die Startdisketten „SYL auf Spur 1“ sind reine Startdisketten: SYL-Lader
+auf Zylinder 1, das System auf Zylinder 2–4, **kein** Dateisystem für Anwenderdateien
+(Abschnitt *BCU 880*, Quelle `doc/a5120_alt/bcu.md` §2). Gearbeitet wird mit der
+Arbeitsdiskette „ohne SYL“ in B:. Was belegt ist:
+
+* Auf der Arbeitsdiskette (`a5120_bcu12_k5600-10_arbeit-sys1.hfe`) liegt `SYSGEN.COM`;
+  der Text im Programm ist `SYSGEN VER 2.0` von Digital Research („SOURCE DRIVE NAME …“,
+  „DESTINATION DRIVE NAME …“, „FUNCTION COMPLETE“). Es ist also das übliche CP/M-SYSGEN,
+  das Systemspuren zwischen Laufwerken kopiert. **Ob es dabei den SYL-Lader auf Zylinder 1
+  mit der Systemlage der Startdiskette erzeugt, ist nicht belegt [?]** — es wurde nicht
+  gefahren, und die „ohne SYL“-Spuren (System auf Zylinder 0–1) unterscheiden sich von der
+  SYL-Lage (`bcu.md` §2 und §5). Daneben liegen `SYS8.COM`, `SYS80.COM`, `FORMAT.COM`,
+  `INIT.COM`, `LOAD.COM`; was sie im Einzelnen tun, ist hier nicht ausgewertet [?].
+* Ein eigenes BCU-Systemspurbild baut das DiskTool nicht: es kennt für diese Lage kein
+  Dateisystem (`info` meldet „kein bekanntes Dateisystem“), `create --boot` und
+  `boot-put` sind dafür nicht erprobt [?].
+* Der sichere Weg im Emulator ist deshalb die **Kopie** der Startdiskette
+  (*Speichern unter…* im Laufwerkskasten, `.hfe` → `.hfe`); sie bootet mit dem Lade-ROM
+  V0.6 wie das Original. Die Disketten „ohne SYL“ starten mit keinem vorhandenen
+  Lade-ROM (`doc/a5120_alt/laderom.md` §5.2) — sie sind Arbeitsdisketten.
+
 ## Kassette
 
 *Einstellungen ▸ Allgemein ▸ Kassette (K5221, AKB K5020)* steckt den
@@ -780,6 +879,15 @@ oder FEX bedienen, warten nur rund 2,5 s auf das Magnetband. Eine frisch eingele
 Kassette steht noch im Vorspann und wird in dieser Zeit nicht erreicht (Status 04);
 sie muss deshalb vorher zurückgespult werden (UMS bzw. das Rückspulkommando des
 Programms).
+
+**Beispielbänder** im Ordner der Beispieldisketten:
+
+* `a5120_bandtest/bandtest_boot.k52` — **Demo, Eigenbau** (kein Robotron-Band): ein
+  kleines Startprogramm für das Lade-ROM des A5120. Kassette in Gerät 1, **keine**
+  Diskette in A:, Kaltstart — das Lade-ROM probiert erst die Laufwerke durch und lädt
+  dann vom Band; nach gut zehn Sekunden steht `KASSETTE OK` in der ersten Zeile.
+* `a5120_bcu/bcu_kassette_formatiert.k52` — eine von BCU 880 formatierte Kassette
+  (Abschnitt *BCU 880*).
 
 Mit gesteckter Karte erscheint der Kasten **Kassette** (neben *Laufwerke*,
 *Ansicht ▸ Kassette* holt ihn zurück), mit einem Block je Laufwerk (Gerät 1 und 2):
@@ -800,6 +908,41 @@ Kassette wieder eingelegt (eine fehlende Datei entsteht leer neu). Die Bänder
 überstehen ein Rückstellen des Rechners, aber keinen Zwischenstand (*Maschine ▸
 Zwischenstand* sichert die Karte nicht). Für die Kassette gibt es kein
 Tastenkürzel.
+
+### Von Kassette starten
+
+Das Lade-ROM des A5120 (Quelle: `doc/kassette/treiber.md` §6.1) probiert nach dem
+Einschalten zuerst die Diskettenlaufwerke durch, dann die Kassette: **Gerät 1**, nach fünf
+Fehlversuchen **Gerät 2**, dann Halt. Es spult das Band zum Anfang und liest **vier Blöcke
+zu je 128 Byte** hintereinander nach **0400H**. Steht in 0400H–0402H die Kennung `SYL`,
+springt es nach **0434H**; sonst geht es in den Fehlerpfad. Gesamtfrist rund 136 s.
+
+Es startet also nur ein Band, das genau so aufgebaut ist: ein **Bootband**. Eines baut man
+mit `k1520tape bootband <programm.bin> <band.k52> [A|B]` (legt 4 × 128 Byte an, die Datei
+wird auf 512 Byte aufgefüllt); das Programm muss bei Versatz 34H einsetzen und `SYL` am
+Anfang tragen. Als Beispiel dienen `tools/kassette/bandtest/` (Quelle, `build.py`) und das
+fertige Demo-Band `a5120_bandtest/bandtest_boot.k52`.
+
+Ehrlich dazu:
+
+* **Für BCU 880, CP/A und SCPX ist keine Systemkassette bekannt**, und Originalbänder
+  liegen nicht vor. Ein Betriebssystem von Band zu starten hieße, einen eigenen Lader als
+  Bootband zu schreiben (Eigenbau, nicht belegt).
+* **CP/A und SCPX haben keinen Kassettentreiber** (CP/A: Kassetten „außerhalb des BIOS“;
+  SCPX: nur die Bibliothek `KMBG.REL`).
+* **BCU 880 hat einen Treiber** (Laufwerk F:), aber ob BCU von Band startet, ist nicht
+  belegt [?].
+* Der Floppy-SYL-Lader von Spur 0 taugt nicht als Bandinhalt: bei Versatz 34H liegt dort
+  ein `NOP` vor der K5122-Initialisierung.
+
+**Kassette je System:**
+
+| System | Kassettenbedienung |
+|--------|--------------------|
+| BCU 880 | Laufwerk E: (Gerät 1) und F: (Gerät 2); `INIT` formatiert, `OPEN B:KMBG` lädt den Treiber |
+| SCPX | nur die Bibliothek `KMBG.REL` und das Prüfprogramm `KMBGTEST` |
+| CP/A | kein Treiber |
+| EGOS (MC80) | Kommandos `KINIT`, `WRITE`, `READ` (Abschnitt *Der MC80 Emulator*) |
 
 ## Rechtsklick auf das Bild: Text kopieren, Zwischenablage einfügen
 

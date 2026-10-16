@@ -16,6 +16,7 @@
  */
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <string>
 
 #include "core/machines/a5120/a5120.h"
@@ -199,4 +200,69 @@ TEST(BootIntegrationBcu, V21EigenbauBootet) {
     ASSERT_TRUE(laufeBis(m, "dir b:", 30'000'000)) << bild(m);
     k1520test::typeKey(m, ende);
     ASSERT_TRUE(laufeBis(m, "ANMELD", 40'000'000)) << "dir b: ohne Verzeichnis:\n" << bild(m);
+}
+
+#ifndef A5120_LIEFERDISKETTEN
+#error "A5120_LIEFERDISKETTEN fehlt - k1520_add_test(... DEFS A5120_LIEFERDISKETTEN=\"<repo>/disks\")"
+#endif
+
+namespace {
+
+/// Kopie einer ausgelieferten Diskette aus disks/ (nie das Original mounten: der Emulator
+/// oeffnet r/w und schreibt zurueck).  Entfernt die Kopie am Ende.
+class Lieferkopie {
+public:
+    Lieferkopie(const std::string& rel, const std::string& name) {
+        namespace fs = std::filesystem;
+        const fs::path quelle = fs::path(A5120_LIEFERDISKETTEN) / rel;
+        ok_ = fs::is_regular_file(quelle);
+        path_ = (fs::temp_directory_path() / name).string();
+        if (ok_) fs::copy_file(quelle, path_, fs::copy_options::overwrite_existing);
+    }
+    ~Lieferkopie() { std::error_code ec; std::filesystem::remove(path_, ec); }
+    bool ok() const { return ok_; }
+    const std::string& path() const { return path_; }
+private:
+    bool ok_ = false;
+    std::string path_;
+};
+
+}  // namespace
+
+/**
+ * @brief Die AUSGELIEFERTE BCU-Startdiskette (disks/a5120_bcu/, .hfe aus dem Beleg
+ *        satz2_SYL_auf_Spur1, tools/bcu_a5120/build.py) bootet mit genau der Bestueckung des
+ *        Oberflaechenmodells „A5120 BCU 880 (Lade-ROM V0.6)“ (Ausfuehrung `Alt`, V0.6, K7636,
+ *        Laufwerke K5600.10) bis `A>`; `dir b:` listet die Arbeitsdiskette.  Danach wie am Geraet
+ *        die Arbeitsdiskette nach A: und ^C (INS LINE, 03H): der Warmstart laedt das System von
+ *        A: Zylinder 0-1 und kommt wieder zum Prompt (doc/a5120_alt/bcu.md §8.1).
+ */
+TEST(BootIntegrationBcu, LieferdisketteBootetImModellBcu) {
+    auto cfg = A5120Machine::Config::fuerAusfuehrung(A::Alt);   // 3x K5600.10
+    cfg.laderom  = L::V06;
+    cfg.tastatur = A5120Machine::Config::Tastatur::K7636;
+    A5120Machine m(cfg);
+    m.powerOn();
+    Lieferkopie a("a5120_bcu/a5120_bcu12_k5600-10_start-syl.hfe", "k1520_bcu_liefer_a.hfe");
+    Lieferkopie b("a5120_bcu/a5120_bcu12_k5600-10_arbeit-sys1.hfe", "k1520_bcu_liefer_b.hfe");
+    ASSERT_TRUE(a.ok() && b.ok()) << "disks/a5120_bcu/ unvollstaendig (tools/bcu_a5120/build.py)";
+    // .hfe: Geometrie aus der Datei, der Formatname ist nur Platzhalter.
+    ASSERT_TRUE(m.mountDisk(0, a.path(), m.defaultFormatName(0), false)) << m.lastError();
+    ASSERT_TRUE(m.mountDisk(1, b.path(), m.defaultFormatName(1), false)) << m.lastError();
+    const uint32_t ende = K7636::QK_TASTE_BASE | 0x37;   // Satz 2: Zeilenende = ↵ (A15)
+    bootUndDir(m, ende);
+
+    // Warmstart von der Arbeitsdiskette in A: (Kopie der Arbeitsdiskette, eigener Name).
+    Lieferkopie a2("a5120_bcu/a5120_bcu12_k5600-10_arbeit-sys1.hfe", "k1520_bcu_liefer_a2.hfe");
+    ASSERT_TRUE(a2.ok());
+    ASSERT_TRUE(m.mountDisk(0, a2.path(), m.defaultFormatName(0), false)) << m.lastError();
+    const uint32_t insLine = K7636::QK_TASTE_BASE | 0x0E;   // 03H = ^C
+    k1520test::runCycles(m, 2'000'000);
+    k1520test::typeKey(m, insLine);
+    k1520test::runCycles(m, 10'000'000);                     // Warmstart: System von A: neu laden
+    k1520test::typeString(m, "dir a:");
+    ASSERT_TRUE(laufeBis(m, "dir a:", 20'000'000)) << "nach dem Warmstart keine Eingabe:\n" << bild(m);
+    k1520test::typeKey(m, ende);
+    // CP/M listet mit dem Laufwerk am Zeilenanfang; bisher stand nur „B: …“ auf dem Bild.
+    EXPECT_TRUE(laufeBis(m, "\nA: ", 30'000'000)) << "dir a: nach dem Warmstart:\n" << bild(m);
 }

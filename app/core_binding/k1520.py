@@ -504,6 +504,16 @@ _lib.k1520_create_a5120_ausfuehrung.argtypes = [
 _lib.k1520_create_a5120_ausfuehrung.restype = K1520Handle
 _lib.k1520_a5120_ausfuehrung.argtypes = [K1520Handle]
 _lib.k1520_a5120_ausfuehrung.restype = ctypes.c_int
+# k1520_create_a5120_konfig(ausfuehrung, laderom, tastatur, d0..d3) -> K1520Handle (Modell BCU 880)
+_lib.k1520_create_a5120_konfig.argtypes = [
+    ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_a5120_konfig.restype = K1520Handle
+_lib.k1520_a5120_laderom.argtypes = [K1520Handle]
+_lib.k1520_a5120_laderom.restype = ctypes.c_int
+_lib.k1520_a5120_tastatur.argtypes = [K1520Handle]
+_lib.k1520_a5120_tastatur.restype = ctypes.c_int
 
 # RAM-Floppy RAF (doc/design/22_raf512.md §6)
 _lib.k1520_raf_install.argtypes = [K1520Handle, ctypes.c_char_p]
@@ -762,6 +772,11 @@ PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
 A5120_AUSFUEHRUNGEN = {"neu": 0, "alt": 1, "kmbg": 2, "acht": 3}
 # Maschinennamen der fruehen Ausfuehrungen = machine="a5120" mit ausfuehrung=… .
 A5120_AUSFUEHRUNG_MASCHINE = {"a5120-alt": "alt", "a5120-kmbg": "kmbg"}
+# Lade-ROM und Tastatur des A5120 fuer k1520_create_a5120_konfig (doc/a5120_alt/bcu.md, Modell
+# „BCU 880“): "v06" liest Zylinder 1 (BCU-Disketten „SYL auf Spur 1“).  "vorgabe" = die Tastatur
+# der Ausfuehrung (neu: K7637, alt/kmbg: K7636).
+A5120_LADEROME = {"v09_2": 0, "v09_1": 1, "v06": 2}
+A5120_TASTATUREN = {"vorgabe": 0, "k7637": 1, "k7636": 2}
 # Bildschirm der fruehen Ausfuehrungen: K7023 64×16 (BAB1 ab FC00H).
 K7023_COLS, K7023_ROWS = 64, 16
 # Variante fuer k1520_create_prg710 (nur die PRG-Namen).
@@ -1028,8 +1043,8 @@ class K1520Emulator:
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
                  em: Optional[str] = None, raf: Optional[str] = None,
                  ptape: bool = False, tape: bool = False, zeichensatz: str = "deutsch",
-                 tastatur: str = "s600", p8000: Optional[dict] = None,
-                 ausfuehrung: Optional[str] = None, spe=1):
+                 tastatur: Optional[str] = None, p8000: Optional[dict] = None,
+                 ausfuehrung: Optional[str] = None, spe=1, laderom: Optional[str] = None):
         """Initialize emulator instance.
 
         Args:
@@ -1045,8 +1060,13 @@ class K1520Emulator:
             zeichensatz: nur PC 1715 — Bestückung der ZG-EPROMs, ``"deutsch"``
                 (S619 + S602, Vorgabe), ``"polnisch"`` oder ``"kyrillisch"``; beim
                 ``"pc1715w"`` ohne Wirkung (der Satz kommt von Diskette).
-            tastatur: nur PC 1715/1715W — Tastatur-ROM ``"s600"`` (QWERTY, Vorgabe)
-                oder ``"tast618"`` (QWERTZ).
+            tastatur: PC 1715/1715W — Tastatur-ROM ``"s600"`` (QWERTY, Vorgabe)
+                oder ``"tast618"`` (QWERTZ).  A5120 — ``None``/``"vorgabe"`` (die der
+                Ausführung), ``"k7637"`` (nur „neu“) oder ``"k7636"`` (am „neu“: K7024 80×24
+                mit K7636).  An anderen Maschinen ohne Wirkung.
+            laderom: nur A5120 — gestecktes Lade-ROM der K2526: ``None``/``"v09_2"``
+                (Vorgabe), ``"v09_1"`` oder ``"v06"`` (BCU 880, Disketten „SYL auf Spur 1“).
+                Nicht zusammen mit ``em``.
             p8000: nur ``machine="p8000"`` — Konfiguration als Wörterbuch (Schlüssel wie im
                 Konfigurationstext von ``k1520_create_p8000``, z. B. ``{"mon8": "3.1"}``,
                 ``{"terminal": "original"}`` = Originalterminal Typ 2 an tty1);
@@ -1081,9 +1101,21 @@ class K1520Emulator:
         if zeichensatz not in PC1715_ZEICHENSAETZE:
             raise ValueError(f"unbekannter Zeichensatz {zeichensatz!r} "
                              f"(bekannt: {', '.join(PC1715_ZEICHENSAETZE)})")
-        if tastatur not in PC1715_TASTATUREN:
-            raise ValueError(f"unbekanntes Tastatur-ROM {tastatur!r} "
-                             f"(bekannt: {', '.join(PC1715_TASTATUREN)})")
+        ist_a5120 = MACHINE_TYPES[machine] == 0
+        if ist_a5120:
+            if (tastatur or "vorgabe") not in A5120_TASTATUREN:
+                raise ValueError(f"unbekannte A5120-Tastatur {tastatur!r} "
+                                 f"(bekannt: {', '.join(A5120_TASTATUREN)})")
+            if (laderom or "v09_2") not in A5120_LADEROME:
+                raise ValueError(f"unbekanntes Lade-ROM {laderom!r} "
+                                 f"(bekannt: {', '.join(A5120_LADEROME)})")
+        else:
+            if laderom is not None:
+                raise ValueError(f"ein Lade-ROM waehlt man nur am A5120, nicht am {machine!r}")
+            tastatur = tastatur or "s600"
+            if tastatur not in PC1715_TASTATUREN:
+                raise ValueError(f"unbekanntes Tastatur-ROM {tastatur!r} "
+                                 f"(bekannt: {', '.join(PC1715_TASTATUREN)})")
         self._zeichensatz = zeichensatz
         self._tastatur = tastatur
         self._em = em if em and em != "none" else None
@@ -1102,13 +1134,19 @@ class K1520Emulator:
         self._ausfuehrung = ausf
         if ausf in ("alt", "kmbg"):
             self._machine = "a5120-" + ausf
+        a5120_konfig = ist_a5120 and ((laderom or "v09_2") != "v09_2"
+                                      or (tastatur or "vorgabe") != "vorgabe")
+        if a5120_konfig and self._em:
+            raise ValueError("Lade-ROM/Tastatur sind mit einem Erweiterungsmodul nicht wählbar")
         try:
-            if ausf != "neu":
+            if ausf != "neu" or a5120_konfig:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
                 enc = lambda n: n.encode("utf-8") if n else None
-                handle = _lib.k1520_create_a5120_ausfuehrung(
-                    A5120_AUSFUEHRUNGEN[ausf], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+                handle = _lib.k1520_create_a5120_konfig(
+                    A5120_AUSFUEHRUNGEN[ausf], A5120_LADEROME[laderom or "v09_2"],
+                    A5120_TASTATUREN[tastatur or "vorgabe"],
+                    enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
             elif machine in PRG_VARIANTEN:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
@@ -1217,8 +1255,22 @@ class K1520Emulator:
 
     @property
     def tastatur(self) -> str:
-        """PC 1715/1715W: Tastatur-ROM (``"s600"``/``"tast618"``)."""
+        """PC 1715/1715W: Tastatur-ROM (``"s600"``/``"tast618"``); A5120: die Tastatur, wie der
+        Kern sie gebaut hat (``"k7637"``/``"k7636"``)."""
+        n = _lib.k1520_a5120_tastatur(self._handle)
+        for name, wert in A5120_TASTATUREN.items():
+            if n > 0 and wert == n:
+                return name
         return self._tastatur
+
+    @property
+    def laderom(self) -> str:
+        """A5120: gestecktes Lade-ROM laut Kern (``"v09_2"``/``"v09_1"``/``"v06"``), sonst ``""``."""
+        n = _lib.k1520_a5120_laderom(self._handle)
+        for name, wert in A5120_LADEROME.items():
+            if wert == n:
+                return name
+        return ""
 
     def k8915_generation(self) -> Optional[int]:
         """K8915: 0 = V3, 1 = Gen 2 (aus dem Kern); andere Maschinen ``None``."""

@@ -41,6 +41,8 @@ GW=yes
 # AP-5c — gleiche Herkunftslage wie die PRG-Abzuege: Abzuege aus dem Bestand des Anwenders).
 # Seit 2026-10-09: je Maschine x Betriebssystem EINE Systemdiskette, gebaut von tools/<…>/build.py
 # (cpa_a5120, cpa_pc1715, scpx_a5120, scpx_k8915, scpx_prg, scp_pc1715, scp_pc1715w; Inventur: doc/scp_inventur.md).
+# Seit 2026-10-16: BCU 880 am fruehen A5120 (tools/bcu_a5120/build.py: Start- und Arbeitsdiskette aus
+# den Belegen doc/a5120_alt/bcu/, formatierte BCU-Kassette) und das Demo-Bootband (Eigenbau, .k52).
 # Alles aus disks/: --disks all.
 DISKS_DEFAULT="a5120_cpa_k5601_system.hfe
 a5120_scpx17_k5601_system.hfe
@@ -55,7 +57,11 @@ pc1715_scp1715_v0006_system.hfe
 pc1715_scp1715_v0007_system.hfe
 pc1715_cpz22_system.hfe
 udos1715_640k_pc1715_system.hfe
-pc1715w_scp30_system.hfe"
+pc1715w_scp30_system.hfe
+a5120_bcu12_k5600-10_start-syl.hfe
+a5120_bcu12_k5600-10_arbeit-sys1.hfe
+bcu_kassette_formatiert.k52
+bandtest_boot.k52"
 
 usage() {
     cat <<EOF
@@ -552,7 +558,7 @@ case "$DISKS" in
     all)
         # disks/<maschine>_<system>/… samt der P8000-Ordner (WEGA-Disketten und -Platten).
         for d in $(find "$REPO/disks" -mindepth 2 -maxdepth 2 -type f \
-                        \( -name '*.hfe' -o -name '*.img' -o -name '*.dmk' -o -name '*.img.gz' \) \
+                        \( -name '*.hfe' -o -name '*.img' -o -name '*.dmk' -o -name '*.img.gz' -o -name '*.k52' \) \
                         | sort); do
             lege_diskette_ab "$d"
         done ;;

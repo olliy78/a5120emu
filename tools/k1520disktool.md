@@ -381,6 +381,25 @@ Wie gross die Systemspuren sind, hängt am Dateisystem — `info` sagt es:
 | `scpx8915` | 20480 B | Zylinder 0–1 beidseitig (5×1024) — K8915 |
 | `scp1715` | 20480 B | Zylinder 0–1 beidseitig (5×1024) — SCP 1715 und SCP 3.0 (PC 1715W) |
 | `cpa1715` | 128 B | **keine Spuren**: die ersten vier Verzeichnisplätze (CP/A 1715) |
+| `bcu880_syl` | 16640 B | Zylinder 0–4 (26×128): 1 = SYL-Lader, 2–4 = System — **nur Start, keine Dateien** |
+| `bcu880_kombi` | 16640 B | wie `bcu880_syl`, aber **Eigenbau mit Dateisystem ab Zylinder 5** (nur als A:) |
+| `bcu880_kombi80` | 16640 B | wie `bcu880_kombi` für **80 Spuren** (K5600.20); Arbeitsdiskette dazu `bcu880_80` (`create` verlangt `--boot`) |
+| `bcu880` | 6656 B | Zylinder 0–1 (26×128) — BCU 880 „ohne SYL“ |
+
+### BCU 880 (frühe A5120)
+
+Zwei Aufbauten (`doc/a5120_alt/bcu.md` §11).  Die **Startdiskette „SYL auf Spur 1“** (`bcu880_syl`) wird am
+SYL-Lader auf Zylinder 1 erkannt; sie ist eine reine Startdiskette — `put`/`rm`/`attr` werden verweigert
+(BCU sucht sein Verzeichnis ab Zylinder 2, dort liegt das System), `boot-get`/`boot-put`/`create --boot`
+gehen.  Die **Arbeitsdiskette „ohne SYL“** (`bcu880`, System auf Zylinder 0–1, Dateien ab Zylinder 2) ist
+eine gewöhnliche Dateidiskette.  Das Bootabbild wird vor dem Schreiben geprüft (SYL-Lader samt
+Selbstprüfung bzw. Kennung „BCU 880“):
+
+```sh
+k1520disktool create start.hfe  --fs bcu880_syl --boot disks/bootsektoren/boot_bcu12_syl_k7023.bin   # K7024: …_k7024.bin
+k1520disktool create arbeit.hfe --fs bcu880     --boot disks/bootsektoren/boot_bcu12_ohnesyl.bin
+k1520disktool put arbeit.hfe PIP.COM STAT.COM
+```
 
 ### K8915 (SCPX 8915)
 

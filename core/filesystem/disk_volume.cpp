@@ -57,6 +57,10 @@ std::string endung(const std::string& pfad) {
  * @param hinweis              dann der Klartext dazu
  * @param belegt               wenn gesetzt: Zahl der BELEGTEN Plaetze (0 = leer gelesen)
  */
+enum class BcuStart { Keiner, Syl, Kombi, Kombi80 };
+BcuStart bcuStartArt(const SectorSpace& raum);   // weiter unten (BCU 880)
+bool bcuSystemspuren(const SectorSpace& raum);
+
 bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsProfile& p,
                              std::string* warum = nullptr,
                              bool uneingerichtet_zaehlt = false,
@@ -85,6 +89,25 @@ bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsPr
             return true;
         }
     }
+
+    // `bcu_syl`: das Verzeichnis dieses Profils ist leer und beweist nichts — der POSITIVE
+    // Nachweis ist der SYL-Lader auf Zylinder 1.  Ohne ihn waere jede 40-Spur-Datendiskette
+    // zugleich eine BCU-Startdiskette.
+    if (p.boot_header == "bcu_syl" || p.boot_header == "bcu_kombi" || p.boot_header == "bcu_kombi80") {
+        const BcuStart art = bcuStartArt(raum);
+        if (art == BcuStart::Keiner)
+            return nein("Zylinder 1 Sektor 1 traegt keinen SYL-Lader (BCU 880 „SYL auf Spur 1“)");
+        const BcuStart soll = p.boot_header == "bcu_kombi" ? BcuStart::Kombi
+                            : p.boot_header == "bcu_kombi80" ? BcuStart::Kombi80 : BcuStart::Syl;
+        if (art != soll)
+            return nein(art == BcuStart::Syl ? "das System hat keine Kombi-Aenderungen (Profil bcu880_syl)"
+                        : "das System traegt die Kombi-Aenderungen einer anderen Spurzahl (bcu880_kombi / bcu880_kombi80)");
+    }
+
+    // `bcu` MIT Erkennung (bcu880_80): eine leere 80-Spur-Diskette 26×128 ist auch eine CP/A-Diskette;
+    // der POSITIVE Nachweis ist das BCU-System in den Systemspuren (Kennung „BCU 880“).
+    if (p.boot_header == "bcu" && p.detect && !bcuSystemspuren(raum))
+        return nein("die Systemspuren tragen keine BCU-880-Kennung");
 
     // `dir_boot`: der Bootkopf ist hier der POSITIVE Nachweis.  Ohne ihn waere jede
     // Datendiskette zugleich `cpa800` und `cpa1715` — und damit „nicht eindeutig".
@@ -359,6 +382,144 @@ std::string pc1715Bootabbildproblem(const FsProfile& p, const SectorSpace& raum,
     if (p.dir_boot && img.size() < 128)
         return "Das Bootabbild ist nur " + std::to_string(img.size()) + " Byte gross; der "
                "Bootbereich im Verzeichnis umfasst die ersten 128 Byte (vier Plaetze).";
+    return {};
+}
+
+
+// ─── BCU 880 (frueher A5120): Startdiskette „SYL auf Spur 1“ und Arbeitsdiskette ──
+//
+// Zwei Aufbauten, ein Dateisystem (doc/a5120_alt/bcu.md §2, §5):
+//  * `bcu880_syl` — Zylinder 1 Sektoren 1-6 tragen den SYL-Lader (768 B), den das Lade-ROM V0.6
+//    nach 0400H holt; ab Zylinder 2 steht das System (Ladeadresse/Laenge im Lader).  Das BIOS
+//    sucht sein Verzeichnis ab Zylinder 2 (OFF = 2) — die Diskette ist deshalb eine reine
+//    Startdiskette (`nur_boot`), Dateien gehoeren auf die Arbeitsdiskette.
+//  * `bcu880`     — „ohne SYL“: System auf Zylinder 0-1 (so schreibt es SYSGEN), Verzeichnis
+//    ab Zylinder 2.  Dient dem Warmstart (WBOOT liest von A: Zylinder 0-1).
+// Ein Abbild des falschen Aufbaus (oder ein CP/A-Bootabbild) liefert eine Diskette, die heil
+// aussieht und nicht startet — deshalb wird VOR dem Schreiben geurteilt.
+
+constexpr size_t kBcuSpur = 26 * 128;      ///< eine Spur: 26 Sektoren zu 128 B
+
+/// @brief Traegt der Puffer einen SYL-Lader mit stimmiger Selbstpruefung?
+///        Die CRC-CCITT (Startwert FFFFH) ueber 0407H-06FDH steht big endian in 06FEH/06FFH
+///        (der Lader prueft sich selbst, bevor er etwas tut — 042EH).  @p warum: Befund.
+bool bcuSylLaderPuffer(const uint8_t* p, size_t n, std::string* warum) {
+    auto nein = [&](const char* t) { if (warum) *warum = t; return false; };
+    if (n < 768) return nein("zu kurz fuer den SYL-Lader (768 Byte)");
+    if (p[0] != 'S' || p[1] != 'Y' || p[2] != 'L') return nein("keine Kennung SYL");
+    const uint16_t soll = static_cast<uint16_t>((p[0x2FE] << 8) | p[0x2FF]);
+    if (TrackCodec::crc16Ccitt(p + 7, 0x2FE - 7) != soll)
+        return nein("die Selbstpruefung (CRC 0407H-06FDH) des Laders stimmt nicht");
+    return true;
+}
+
+// Die „Kombidiskette“ (Eigenbau, doc/a5120_alt/bcu.md §12) ist eine Startdiskette, deren System
+// zwei Aenderungen traegt: Laufwerkskopf A: (EC3DH) zeigt auf die Tabelle EC73H, und diese hat
+// OFF = 5 — das Verzeichnis liegt hinter dem System.  Erkennungsmerkmal: beides zugleich, bei
+// Ladeadresse D680H.
+constexpr unsigned kBcuBasis = 0xD680, kBcuDphA = 0xEC3D, kBcuDpbA = 0xEC73;
+
+/// @brief Startdiskette oder Kombidiskette?  @p sys(off, n, aus) liefert Bytes des Systems ab
+///        Zylinder 2 (linear), false bei Luecke.
+template <class Hole>
+BcuStart bcuArtVon(const uint8_t* lader, Hole sys) {
+    const unsigned basis = lader[3] | (lader[4] << 8);
+    if (basis != kBcuBasis) return BcuStart::Syl;
+    uint8_t zeiger[2] = {0, 0}, off[2] = {0, 0}, dsm[2] = {0, 0};
+    if (!sys(kBcuDphA - kBcuBasis, 2, zeiger) || !sys(kBcuDpbA - kBcuBasis + 13, 2, off)
+        || !sys(kBcuDpbA - kBcuBasis + 5, 2, dsm))
+        return BcuStart::Syl;
+    if (zeiger[0] != (kBcuDpbA & 0xFF) || zeiger[1] != (kBcuDpbA >> 8) || off[0] != 5 || off[1] != 0)
+        return BcuStart::Syl;
+    // DSM unterscheidet die Spurzahl: 112 = 35 Zylinder ab 5 (40 Spuren), 242 = 75 Zylinder (80 Spuren).
+    return dsm[0] == 242 && dsm[1] == 0 ? BcuStart::Kombi80 : BcuStart::Kombi;
+}
+
+/// @brief Tragen Zylinder 0-1 ein BCU-System (Kennung „BCU 880“ irgendwo darin)?
+bool bcuSystemspuren(const SectorSpace& raum) {
+    if (raum.trackCount() < 2) return false;
+    std::vector<uint8_t> d;
+    for (size_t t = 0; t < 2; ++t) {
+        const SectorSpace::TrackRef r = raum.trackAt(t);
+        for (uint8_t k = 0; k < r.sectors; ++k) {
+            SectorData s;
+            if (!raum.readSector(r.cyl, r.head, static_cast<uint8_t>(r.first_id + k), s)) continue;
+            d.insert(d.end(), s.data.begin(), s.data.end());
+        }
+    }
+    const char kenn[] = "BCU 880";
+    return std::search(d.begin(), d.end(), kenn, kenn + 7) != d.end();
+}
+
+BcuStart bcuStartArt(const SectorSpace& raum) {
+    if (raum.trackCount() < 5) return BcuStart::Keiner;
+    const SectorSpace::TrackRef t1 = raum.trackAt(1);          // Zylinder 1
+    std::vector<uint8_t> lader;
+    for (uint8_t k = 0; k < 6; ++k) {
+        SectorData s;
+        if (!raum.readSector(t1.cyl, t1.head, static_cast<uint8_t>(t1.first_id + k), s))
+            return BcuStart::Keiner;
+        lader.insert(lader.end(), s.data.begin(), s.data.end());
+    }
+    if (!bcuSylLaderPuffer(lader.data(), lader.size(), nullptr)) return BcuStart::Keiner;
+    return bcuArtVon(lader.data(), [&](size_t off, size_t n, uint8_t* aus) {
+        for (size_t i = 0; i < n; ++i) {
+            const size_t o = off + i;                          // linear ab Zylinder 2
+            if (2 + o / kBcuSpur >= raum.trackCount()) return false;
+            const SectorSpace::TrackRef t = raum.trackAt(2 + o / kBcuSpur);
+            SectorData s;
+            const size_t im = o % kBcuSpur;
+            if (!raum.readSector(t.cyl, t.head, static_cast<uint8_t>(t.first_id + im / 128), s)
+                || s.data.size() != 128) return false;
+            aus[i] = s.data[im % 128];
+        }
+        return true;
+    });
+}
+
+std::string bcuBootabbildproblem(const FsProfile& p, const std::vector<uint8_t>& img) {
+    if (p.boot_header == "bcu_syl" || p.boot_header == "bcu_kombi" || p.boot_header == "bcu_kombi80") {
+        if (img.size() < 2 * kBcuSpur)
+            return "Das Bootabbild ist nur " + std::to_string(img.size()) + " Byte gross; eine "
+                   "BCU-Startdiskette braucht den Lader auf Zylinder 1 und das System ab Zylinder 2.";
+        std::string warum;
+        if (!bcuSylLaderPuffer(img.data() + kBcuSpur, img.size() - kBcuSpur, &warum))
+            return "Das Bootabbild traegt auf Zylinder 1 keinen gueltigen SYL-Lader (" + warum
+                 + ") — es stammt nicht von einer BCU-Diskette „SYL auf Spur 1“.  Ein Abbild "
+                   "„ohne SYL“ oder von CP/A startet mit dem Lade-ROM V0.6 nicht.";
+        const uint8_t* l = img.data() + kBcuSpur;
+        const size_t laenge = static_cast<size_t>(l[5]) | (static_cast<size_t>(l[6]) << 8);
+        const size_t da = img.size() - 2 * kBcuSpur;
+        if (laenge == 0 || laenge > da)
+            return "Der SYL-Lader verlangt " + std::to_string(laenge) + " Byte System ab Zylinder 2, "
+                   "das Bootabbild enthaelt dort aber nur " + std::to_string(da) + " — der Lader "
+                   "bliebe mitten im System stehen.";
+        const BcuStart art = bcuArtVon(l, [&](size_t off, size_t n, uint8_t* aus) {
+            if (off + n > da) return false;
+            std::copy_n(img.begin() + static_cast<long>(2 * kBcuSpur + off), n, aus);
+            return true;
+        });
+        const BcuStart soll = p.boot_header == "bcu_kombi" ? BcuStart::Kombi
+                            : p.boot_header == "bcu_kombi80" ? BcuStart::Kombi80 : BcuStart::Syl;
+        if (art != soll) {
+            if (art != BcuStart::Syl && soll == BcuStart::Syl)
+                return "Das Bootabbild ist eine Kombidiskette (Verzeichnis ab Zylinder 5, OFF 5 fuer A:); "
+                       "'bcu880_syl' fuehrt kein Dateisystem — Profil bcu880_kombi bzw. bcu880_kombi80 waehlen.";
+            if (art == BcuStart::Syl)
+                return "Das Bootabbild traegt die Kombi-Aenderungen nicht (Laufwerkskopf A: auf eine Tabelle "
+                       "mit OFF 5): ein Verzeichnis ab Zylinder 5 saehe BCU damit nie.  Bauen mit "
+                       "tools/bcu_kombi_bau.py.";
+            return "Das Bootabbild ist fuer eine andere Spurzahl gebaut (40 Spuren: bcu880_kombi, "
+                   "80 Spuren: bcu880_kombi80).";
+        }
+        return {};
+    }
+    if (p.boot_header == "bcu") {
+        const char k[] = "BCU 880";
+        if (std::search(img.begin(), img.end(), k, k + 7) == img.end())
+            return "Das Bootabbild traegt keine BCU-880-Kennung (\"BCU 880 VERS …\") — es "
+                   "stammt nicht von einer BCU-Diskette.  SYSGEN der BCU schreibt Zylinder 0-1.";
+    }
     return {};
 }
 
@@ -848,6 +1009,10 @@ std::string zusammen(const std::string& a, const std::string& b) {
 }
 
 /// @brief Eine Meldung, die sagt, was zu tun ist — nicht bloss, dass es nicht geht.
+constexpr const char* kNurBoot =
+    "Das ist eine reine Startdiskette (BCU 880 „SYL auf Spur 1“): das BIOS sucht sein "
+    "Verzeichnis ab Zylinder 2, dort liegt hier das System — eine Datei, die ab Zylinder 5 "
+    "stuende, saehe das Geraet nie.  Dateien gehoeren auf eine Arbeitsdiskette (--fs bcu880).";
 constexpr const char* kSchreibschutz =
     "Die Diskette ist schreibgeschuetzt geoeffnet. Zum Aendern den Schreibschutz "
     "aufheben (in der Oberflaeche den Haken \"Nur lesen\" entfernen).";
@@ -1279,7 +1444,7 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
             && belegte_plaetze[dv->profile_] == 0) {
             for (const FsProfile* p : fs_cat.forFormat(dv->format_->name))
                 if (!p->detect && p->type == FsType::Cpm && p->allowsContainer(ext)
-                    && p->boot_header != "pc1715")
+                    && p->boot_header != "pc1715" && p->boot_header != "bcu")
                     dv->detection_.remarks = zusammen(
                         dv->detection_.remarks,
                         "Verzeichnis leer — ebenso gut " + p->name + " (" + p->description
@@ -1516,6 +1681,7 @@ int rang(const std::string& kind) {
 
 int DiskVolume::applyRepairs(const std::vector<std::pair<int, int>>& auswahl) {
     if (read_only_) { fail(kSchreibschutz); return -1; }
+    if (profile_ && profile_->nur_boot) { fail(kNurBoot); return -1; }
     if (auswahl.empty()) { fail("Es wurde keine Reparatur ausgewaehlt"); return -1; }
     if (!disk_) { fail("keine Diskette geoeffnet"); return -1; }
 
@@ -1663,6 +1829,7 @@ bool DiskVolume::recoverExtract(int fnr, const std::string& dest_path) {
 
 bool DiskVolume::recoverRestore(int fnr, const std::string& name) {
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     const FsRecoverFind* f = fund(recover_, fnr);
     if (!f) return fail("Fund " + std::to_string(fnr) + " gibt es im letzten Suchlauf nicht");
     if (!valid(f->volume)) return fail("Fund ohne gueltiges Volume");
@@ -1863,6 +2030,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
                         const TransferOptions& opt) {
     insert_hindernis_ = InsertHindernis::Kein;
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
 
@@ -2087,6 +2255,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
 
 bool DiskVolume::setAttributes(const FileRef& ref, const UdosAttrs& attrs) {
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
@@ -2096,6 +2265,7 @@ bool DiskVolume::setAttributes(const FileRef& ref, const UdosAttrs& attrs) {
 
 bool DiskVolume::setAttributes(const FileRef& ref, const CpmAttrs& attrs) {
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
@@ -2105,6 +2275,7 @@ bool DiskVolume::setAttributes(const FileRef& ref, const CpmAttrs& attrs) {
 
 bool DiskVolume::makeDirectory(const FileRef& ref) {
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->makeDirectory(ref.name))
@@ -2114,6 +2285,7 @@ bool DiskVolume::makeDirectory(const FileRef& ref) {
 
 bool DiskVolume::erase(const FileRef& ref) {
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
                                         + " gibt es auf dieser Diskette nicht");
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->erase(ref.name))
@@ -2634,6 +2806,7 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
     insert_hindernis_ = InsertHindernis::Kein;
     zubehoer_gezaehlt_ = 0;
     if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
     std::vector<std::vector<std::string>> je_volume;
     if (!sammleQuelldateien(src_dir, je_volume, &zubehoer_gezaehlt_)) return false;
 
@@ -2793,6 +2966,13 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
         return nullptr;
     }
 
+    if (profil->boot_header == "bcu" && profil->detect && boot_image.empty()) {
+        err = "'" + fs_name + "' wird am BCU-System in den Systemspuren erkannt — ohne Bootabbild "
+              "(--boot, z. B. disks/bootsektoren/boot_bcu12_ohnesyl.bin) legte das Werkzeug eine "
+              "Diskette an, die es beim naechsten Oeffnen nicht mehr als BCU-Diskette erkennt.";
+        return nullptr;
+    }
+
     // Das Bootabbild wird gelesen und BEURTEILT, bevor irgendetwas angelegt wird —
     // ein zu grosses Abbild soll keine halbe Diskette hinterlassen.
     std::vector<uint8_t> boot;
@@ -2810,6 +2990,8 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
             err = pc1715Bootabbildproblem(*profil, raum, boot);
             if (!err.empty()) return nullptr;
         }
+        err = bcuBootabbildproblem(*profil, boot);
+        if (!err.empty()) return nullptr;
         err = prgBootabbildproblem(*profil, boot, nullptr);
         if (!err.empty()) return nullptr;
         if (boot.size() > platz) {
@@ -2981,6 +3163,8 @@ bool DiskVolume::writeBootImage(const std::vector<uint8_t>& img, int volume) {
         return fail(problem);
     if (const std::string problem = pc1715Bootabbildproblem(*profile_, raum, img);
         !problem.empty())
+        return fail(problem);
+    if (const std::string problem = bcuBootabbildproblem(*profile_, img); !problem.empty())
         return fail(problem);
     if (profile_->dir_boot) {
         auto* cpm = dynamic_cast<CpmFileSystem*>(volumes_[static_cast<size_t>(volume)].fs.get());
