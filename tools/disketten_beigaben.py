@@ -17,6 +17,14 @@ Emulator wie am Geraet ohne eigenen Kopierschritt bereitstehen:
                 Fassung aus SOFT1715.img, die Workbench-Fassung V 0.1 ist beschaedigt)
   RAFCPM.COM    doc/raf512/      RAM-Floppy RAF (Entwurf 22): Original-Treiber, Laufwerk M:
   RAF512.COM    doc/raf512/      dieselbe Karte, DKt-Fassung 2008, Laufwerk P: (alle drei Maschinen)
+  KMBGTEST.COM  tools/kassette/kmbgtest/  A5120 SCPX 1.7 — Kassette K5020 ueber die Robotron-Bibliothek
+  KMBG.REL      doc/kassette/fex/   die Bibliothek selbst (zum Binden eigener Programme, M80/LINKMT);
+                CP/A und SCPX haben keinen Kassettentreiber im BIOS (doc/a5120_alt/bcu.md §10)
+
+Ausserdem legt ``ORDNER`` die Unterordner aller Abbilder in ``disks/`` fest, auch der Abbilder,
+die kein CP/M-Bauskript erzeugt: BCU 880 (tools/bcu_a5120/build.py, Waechter ``cli_bcu_a5120``:
+zwei Disketten aus den Belegen doc/a5120_alt/bcu/, die formatierte BCU-Kassette und das
+Demo-Bootband ``bandtest_boot.k52``).
 
 Nach jedem Neubau einer .com muessen diese Kopien nachgezogen werden — sonst
 liefert das Paket eine alte Fassung aus.  Ebenso die Prueflinge der Tests unter
@@ -57,6 +65,8 @@ PROGRAMME = {
     'RAF512.COM':   os.path.join(RAF, 'RAF512.COM'),
     'LBREAD.COM':   os.path.join(TOOLS, 'lochband', 'lbread.com'),
     'LBPUNCH.COM':  os.path.join(TOOLS, 'lochband', 'lbpunch.com'),
+    'KMBGTEST.COM': os.path.join(TOOLS, 'kassette', 'kmbgtest', 'kmbgtest.com'),
+    'KMBG.REL':     os.path.join(REPO, 'doc', 'kassette', 'fex', 'KMBG.REL'),
 }
 LOCHBAND = ['LBREAD.COM', 'LBPUNCH.COM']   # K6022/SIF1000 auf E0H-E7H; A5120, K8915, PRG (SCPX und CP/A getestet)
 PC1715 = ['PCTEST.COM']      # SERTEST V0.2 kennt den 1715, steht aber nur auf der CP/A-Systemdiskette (tools/cpa_pc1715); LB* nur mechanisch
@@ -117,6 +127,11 @@ ORDNER = {
     'prg710-1_scpx17_system.hfe': 'prg710-1_scpx17',
     'prg710_udos43_k5601_system.hfe': 'prg710_udos43',
     'prg710-1_udos43_k5601_v43_189.hfe': 'prg710-1_udos43',
+    # BCU 880 am fruehen A5120 (tools/bcu_a5120/build.py, doc/a5120_alt/bcu.md §10)
+    'a5120_bcu12_k5600-10_start-syl.hfe': 'a5120_bcu',
+    'a5120_bcu12_k5600-10_arbeit-sys1.hfe': 'a5120_bcu',
+    'bcu_kassette_formatiert.k52': 'a5120_bcu',
+    'bandtest_boot.k52': 'a5120_bandtest',
 }
 
 

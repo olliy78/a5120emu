@@ -27,8 +27,11 @@ k1520_add_test(scpx_kmbg SRC test_scpx_kmbg.cpp LIBS ${_libs} k1520_fs
 
 # BCU 880 V1.2 auf dem A5120 „KMBG“ (doc/design/32_… AP A8): INIT formatiert die Kassette in
 # Laufwerk F:, PIP schreibt eine Datei dorthin und liest sie zurueck.
+# Vergleicht dabei das formatierte Band mit dem Beispielband disks/a5120_bcu/bcu_kassette_formatiert.k52
+# (K1520_BEISPIELBAND=<pfad> schreibt es neu, tools/bcu_a5120/build.py).
 k1520_add_test(bcu_kassette SRC test_bcu_kassette.cpp LIBS ${_libs} k1520_fs
-                            LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
+                            LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                            "A5120_LIEFERDISKETTEN=\"${CMAKE_SOURCE_DIR}/disks\"" TIMEOUT 600)
 
 # UDOS-4.3-Schreibpfad (origin/main 69b7445): 8212-Laufwerksauswahl und
 # Sektorkontrollblock — langsam, daher dasselbe Label.

@@ -41,6 +41,7 @@ Disketten, deren `@OS.COM` sie beschreiben; für Anwender sind sie nicht gedacht
 | `bcu12_ss40-26x128_k5600-10_syl-spur1-satz2.img` | **BCU 880 V1.2** (FZW/BL), Startdiskette „SYL auf Spur 1“, Bildtreiber 64×16 ab FC00H (K7023), MFM 40×1×26×128 (Katalog `k5601_ss40_26x128`). Unveränderte Kopie von `doc/a5120_alt/bcu/satz2_SYL_auf_Spur1/disk.img` (Herkunft VEB Halbleiterwerk Frankfurt/Oder, Etikett „D15 SIOS 1SS Copy1“); startet nur mit Lade-ROM V0.6 (`doc/a5120_alt/bcu.md`) | `BootIntegrationBcu.V12BisPrompt`, `cli_bt_laderom_v06_bcu` (AP A7) |
 | `bcu12_ss40-26x128_k5600-10_syl-spur1-satz1.img` | dieselbe V1.2 als Startdiskette mit Bildtreiber **80×24 ab F800H** (K7024). Unveränderte Kopie von `doc/a5120_alt/bcu/satz1_SYL_auf_Spur1/disk.img` („BCU Kaltstart“) | `BootIntegrationBcu.V12Bab2BisPrompt`, `cli_dbg_tastatur_k7636_bcu` (AP A7) |
 | `bcu12_ss40-26x128_k5600-10_ohnesyl-sys1.img` | BCU-880-V1.2-Systemdiskette „ohne SYL“ (nicht startbar, §5 bcu.md) als **Datendiskette in B:** — 19 Dateien u. a. `KMBG.REL`, `EPROM.COM`, `PIP.COM`. Unveränderte Kopie von `doc/a5120_alt/bcu/satz2_OhneSYL.1/disk.img` („SYS1“) | `BootIntegrationBcu.V12BisPrompt`/`V12Bab2BisPrompt` (`dir b:`) |
+| *(Hinweis)* | Die beiden V1.2-Belege `satz2_SYL_auf_Spur1` und `satz2_OhneSYL.1` liegen zusätzlich als `.hfe` in `disks/a5120_bcu/` (Wandlung mit dem DiskTool, `tools/bcu_a5120/build.py`); der Test `BootIntegrationBcu.LieferdisketteBootetImModellBcu` bootet von KOPIEN davon, `BcuKassette.FormatiertSchreibtLiest` vergleicht das formatierte Band mit `disks/a5120_bcu/bcu_kassette_formatiert.k52` | `cli_bcu_a5120` |
 | `bcu21_ss40-26x128_k5600-10_ohnesyl-satz2-2.img` | **BCU 880 V2.1** („V.24/P“), Diskette „ohne SYL“ — startet mit keinem vorhandenen Lade-ROM (Befund, bcu.md §5). Unveränderte Kopie von `doc/a5120_alt/bcu/satz2_OhneSYL.2/disk.img` („BCK 40 Sp.“) | `BootIntegrationBcu.V21OhneSylStartetMitKeinemVorhandenenLaderom` (AP A7) |
 | `bcu21_ss40-26x128_k5600-10_eigenbau-syl-v21.img` | **EIGENBAU, kein Original** (AP A7b): V2.1-System von `satz2_OhneSYL.2` im SYL-Bootaufbau der V1.2-Diskette `satz2_SYL_auf_Spur1`, mit V1.2-Plattentreiber F100–F47F und 11 umgebogenen Adressen; gebaut mit `tools/bcu_v21_eigenbau.py --treiber` aus den beiden Quellabbildern in `doc/a5120_alt/bcu/`. Bootet mit Lade-ROM V0.6 (`Neu` + K7636) bis `A>` (`doc/a5120_alt/bcu.md` §9) | `BootIntegrationBcu.V21EigenbauBootet` |
 | `cpa_cpa780_combo8zoll_noclock.img` | CP/A ohne Uhr, A: K5601 · **B: MF3200** · **C: K5602.10/MF6400** | `make_bootdisk` (Presets mf3200_fmt7, mf6400_fmt1) |
@@ -247,6 +248,9 @@ Spalte nennt die Etappe, die sie braucht.
 | `pc1715_cpa1715_workbench.hfe` | **CP/A 1715 aus der CPA_Workbench** (Variante `pc_1715`, `cpa800`, `@OS.COM` 24.05.88 ohne BIOS-Monitor, Bootkopf `03F0` aus `prebuilt/pc_1715`, dazu `PCTEST.COM`, `FORMATP.COM`, M80/LINKMT …); Vorgabe-Konfiguration → fragt beim Start nach der Uhrzeit. `gw convert` aus dem `cpadisk.img` des Diskettenbaus (Workbench-Stand `10d6f1e`) | AP-3b, AP-4d |
 
 ## `kassette/bandtest_boot.k52`: Bootband für das Lade-ROM (AP K7)
+
+Eine Kopie liegt als Beispielband unter `disks/a5120_bandtest/` (`tools/bcu_a5120/build.py`, Wächter
+`cli_bcu_a5120` prüft die Gleichheit).
 
 Erzeugt mit `tools/dev.sh tool k1520tape bootband tools/kassette/bandtest/bandtest.bin
 tests/fixtures/kassette/bandtest_boot.k52` (Seite A, 4 Blöcke zu 128 B Daten = je 132 B auf dem
