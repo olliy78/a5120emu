@@ -1,0 +1,25 @@
+# WEGA (P8000, UNIX System III): `attr` zeigt und aendert Modus/uid/gid/mtime (chmod,
+# chown, touch); `get` legt ein `.fileinfo` mit den UNIX-Angaben neben die Datei und
+# `put <ordner>` stellt sie auf einer anderen Diskette wieder her.  Der Fehler, den das
+# haelt: WEGA wurde wie UDOS behandelt, weil sein Typfeld ("-") gefuellt ist — `attr`
+# druckte Satzlaenge/ENTRY, und die Rechte gingen beim Auszug verloren.
+tool:   k1520disktool
+tmpfile w.img:
+tmpfile v.img:
+tmpfile raus:
+file prog:
+  echo hallo
+setup_run: create %w.img% --fs wega720 --label probe
+setup_run: put %w.img% %prog% --as bin/prog
+setup_run: attr %w.img% bin/prog --mode 4711 --uid 5 --gid 6 --mtime 400000000
+setup_run: get %w.img% --to %raus%
+setup_run: create %v.img% --fs wega720 --label zwei
+setup_run: put %v.img% %raus%
+run:    attr %v.img% bin/prog
+expect: Modus 0104711
+expect: uid 5   gid 6
+expect: mtime 400000000
+forbid: Satzlaenge
+forbid: ENTRY
+forbid: .fileinfo
+exit:   0

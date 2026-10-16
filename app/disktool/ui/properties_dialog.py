@@ -17,12 +17,18 @@ Zwei Festlegungen, die man kennen muss:
   nur, was sich gegenüber dem geladenen Stand unterscheidet — so kann der Dialog
   ein einzelnes Feld setzen, ohne die übrigen zu kennen.
 
+Bei **WEGA** (UNIX System III des P8000) gibt es weder das eine noch das andere,
+sondern eine Inode: Modus, Besitzer, Gruppe, Zeiten.  Bearbeitbar sind Modus
+(`chmod`), uid, gid und Änderungszeit (`touch`); Dateiart, Inode, Links, Größe und
+die übrigen Zeiten sind Struktur und bleiben Anzeige.
+
 Der Dialog ist ohne Diskette benutzbar (headless prüfbar): er bekommt einen
 ``Entry`` und ein ``DiskTool``; das Schreiben passiert erst in :meth:`uebernehmen`.
 """
 
 from __future__ import annotations
 
+import datetime
 from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import Qt
@@ -56,6 +62,43 @@ UDOS_EIGENSCHAFTEN = [
 ]
 
 
+#: Dateiarten einer WEGA-Inode mit Klartext (Spalte `type` der Dateiliste).
+UNIX_ARTEN = {
+    "-": "gewöhnliche Datei", "d": "Verzeichnis", "c": "Zeichen-Gerät",
+    "b": "Block-Gerät", "p": "FIFO (Pipe)", "mc": "gemultiplextes Zeichen-Gerät",
+    "mb": "gemultiplextes Block-Gerät",
+}
+
+#: Zeitformat der Aenderungszeit im Dialog — GMT, wie sie auf der Diskette steht
+#: (WEGA fuehrt keine Zeitzone).
+UNIX_ZEIT = "%Y-%m-%d %H:%M:%S"
+
+
+def unix_zeit_text(t: int) -> str:
+    """Sekunden seit 1970 → ``JJJJ-MM-TT HH:MM:SS`` (GMT); 0 = leer."""
+    if not t:
+        return ""
+    return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime(UNIX_ZEIT)
+
+
+def unix_zeit_parse(text: str, feld: str) -> int:
+    """Gegenstück zu :func:`unix_zeit_text`; leer = 0.  Wirft ``ValueError`` mit Klartext."""
+    t = text.strip()
+    if not t:
+        return 0
+    for fmt in (UNIX_ZEIT, "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            d = datetime.datetime.strptime(t, fmt).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
+        sek = int(d.timestamp())
+        if not 0 <= sek <= 0xFFFFFFFF:
+            break
+        return sek
+    raise ValueError(f"{feld}: '{text}' ist kein Zeitpunkt (JJJJ-MM-TT HH:MM:SS, GMT; "
+                     "1970 bis 2106)")
+
+
 def _hex16(v: int) -> str:
     return f"{v & 0xFFFF:04X}"
 
@@ -75,7 +118,7 @@ def _parse_hex(text: str, feld: str) -> int:
 
 
 class PropertiesDialog(QDialog):
-    """Eigenschaften einer Datei — je nach Dateisystem UDOS oder CP/M."""
+    """Eigenschaften einer Datei — je nach Dateisystem UDOS, CP/M oder WEGA (UNIX)."""
 
     def __init__(self, tool: "DiskTool", entry: "Entry", parent=None):
         super().__init__(parent)
@@ -86,11 +129,21 @@ class PropertiesDialog(QDialog):
 
         # Beide UDOS-Auspraegungen (ZDOS auf dem A5120, NDOS auf dem PC 1715) fuehren
         # dieselben Kopfsektorangaben — nur CP/M nicht.
-        self.udos = bool(entry.type) or tool.filesystem_type.startswith("udos")
+        # Die Art kommt aus dem Dateisystem, nicht aus dem Typfeld des Eintrags: bei
+        # WEGA steht dort eine Dateiart (-/d/c), die man leicht fuer einen UDOS-Typ haelt.
+        if tool.ist_wega or entry.ist_unix:
+            self.art = "wega"
+        elif tool.ist_udos or entry.type:
+            self.art = "udos"
+        else:
+            self.art = "cpm"
+        self.udos = self.art == "udos"
+        self.wega = self.art == "wega"
 
         lay = QVBoxLayout(self)
         lay.addWidget(self._kopf())
-        lay.addWidget(self._udos_teil() if self.udos else self._cpm_teil(), 1)
+        lay.addWidget({"wega": self._wega_teil, "udos": self._udos_teil,
+                       "cpm": self._cpm_teil}[self.art](), 1)
 
         self.hinweis = QLabel("")
         self.hinweis.setWordWrap(True)
@@ -123,12 +176,163 @@ class PropertiesDialog(QDialog):
         form.addRow("Name", QLabel(e.name))
         if e.side_dir:
             form.addRow("Seite", QLabel(f"{e.side_dir} (eigenständiger Datenträger)"))
-        form.addRow("Größe", QLabel(f"{e.size} Byte"))
+        if self.wega and e.type in ("c", "b"):
+            form.addRow("Größe", QLabel("— (Gerätedatei)"))
+        else:
+            form.addRow("Größe", QLabel(f"{e.size} Byte"))
         if e.damaged:
             defekt = QLabel("nicht vollständig lesbar (CRC-Fehler oder Kettenbruch)")
             defekt.setStyleSheet("color: #b00000;")
             form.addRow("Zustand", defekt)
         return kasten
+
+    def _wega_teil(self) -> QWidget:
+        """UNIX-Inode: Modus (rwx + setuid/setgid/sticky), uid, gid, mtime."""
+        e = self.entry
+        kasten = QGroupBox("UNIX-Inode (WEGA)")
+        form = QFormLayout(kasten)
+
+        form.addRow("Dateiart", self._nur_anzeige(
+            f"{e.type} — {UNIX_ARTEN.get(e.type, 'unbekannt')}",
+            "Die Dateiart steckt in den oberen Bits des Modus und ist Struktur: "
+            "aus einer Datei wird kein Verzeichnis."))
+        form.addRow("Inode", self._nur_anzeige(
+            str(e.unix_inode), "Nummer der Inode (2 = Wurzel); vergibt das Dateisystem."))
+        form.addRow("Links", self._nur_anzeige(
+            str(e.unix_nlink), "Zahl der Namen auf diese Inode (Hard Links)."))
+        if e.type in ("c", "b"):
+            form.addRow("Gerät", self._nur_anzeige(
+                f"major,minor = {e.unix_rdev_text}", "Geräteklasse und -nummer."))
+
+        # Modus: neun Rechte + drei Sonderbits, dazu die Oktalzahl — beide halten
+        # einander fest, damit man in der Schreibweise arbeiten kann, die man kennt.
+        raster = QWidget()
+        gitter = QFormLayout(raster)
+        gitter.setContentsMargins(0, 0, 0, 0)
+        self.f_rechte = {}
+        for zeile, (wer, schieb) in enumerate((("Besitzer", 6), ("Gruppe", 3),
+                                               ("Andere", 0))):
+            kopf = QWidget()
+            h = QHBoxLayout(kopf)
+            h.setContentsMargins(0, 0, 0, 0)
+            for text, bit in (("lesen", 4), ("schreiben", 2), ("ausführen", 1)):
+                k = QCheckBox(text)
+                k.setChecked(bool((e.unix_mode >> schieb) & bit))
+                k.toggled.connect(self._rechte_geaendert)
+                self.f_rechte[(schieb, bit)] = k
+                h.addWidget(k)
+            h.addStretch(1)
+            gitter.addRow(wer, kopf)
+        sonder = QWidget()
+        h = QHBoxLayout(sonder)
+        h.setContentsMargins(0, 0, 0, 0)
+        self.f_sonder = {}
+        for text, maske, tip in (
+                ("setuid", 0o4000, "Programm läuft mit den Rechten des Besitzers."),
+                ("setgid", 0o2000, "Programm läuft mit den Rechten der Gruppe."),
+                ("sticky", 0o1000, "Im Verzeichnis darf nur der Besitzer löschen.")):
+            k = QCheckBox(text)
+            k.setToolTip(tip)
+            k.setChecked(bool(e.unix_mode & maske))
+            k.toggled.connect(self._rechte_geaendert)
+            self.f_sonder[maske] = k
+            h.addWidget(k)
+        h.addStretch(1)
+        gitter.addRow("Sonderbits", sonder)
+        form.addRow("Modus", raster)
+
+        self.f_oktal = QLineEdit(f"{e.unix_mode & 0o7777:04o}")
+        self.f_oktal.setMaximumWidth(80)
+        self.f_oktal.setToolTip("Zugriffsrechte oktal, wie bei chmod (z. B. 0755, 4755).")
+        self.f_oktal.textEdited.connect(self._oktal_geaendert)
+        self.l_modus = QLabel(e.attrs)
+        self.l_modus.setStyleSheet("font-family: monospace;")
+        zeile = QWidget()
+        h = QHBoxLayout(zeile)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(self.f_oktal)
+        h.addWidget(self.l_modus)
+        h.addStretch(1)
+        form.addRow("Oktal", zeile)
+
+        self.f_uid = QSpinBox()
+        self.f_uid.setRange(0, 65535)
+        self.f_uid.setValue(e.unix_uid)
+        self.f_uid.setToolTip("Numerischer Besitzer (0 = Superuser); die Namen stehen "
+                              "in /etc/passwd auf der Diskette.")
+        form.addRow("Besitzer (uid)", self.f_uid)
+        self.f_gid = QSpinBox()
+        self.f_gid.setRange(0, 65535)
+        self.f_gid.setValue(e.unix_gid)
+        form.addRow("Gruppe (gid)", self.f_gid)
+
+        self.f_mtime = QLineEdit(unix_zeit_text(e.unix_mtime))
+        self.f_mtime.setPlaceholderText("JJJJ-MM-TT HH:MM:SS")
+        self.f_mtime.setToolTip("Änderungszeit des Inhalts (touch), GMT — WEGA führt "
+                                "keine Zeitzone.")
+        form.addRow("geändert (mtime)", self.f_mtime)
+        form.addRow("Zugriff (atime)", self._nur_anzeige(
+            unix_zeit_text(e.unix_atime) or "—", "Letzter Zugriff; setzt das System."))
+        form.addRow("Inode (ctime)", self._nur_anzeige(
+            unix_zeit_text(e.unix_ctime) or "—",
+            "Letzte Änderung der Inode.  Jede Änderung hier setzt sie auf „jetzt“, "
+            "wie chmod/chown im echten System — sie lässt sich nicht vorgeben."))
+
+        # Die Blockliste kostet einen Inode-Zugriff — nur fuer die Einzelansicht.
+        bloecke = self.tool.unix_blocks(e.ref) if e.type not in ("c", "b") else ""
+        b = self._nur_anzeige(bloecke or "—",
+                              "Belegte 512-Byte-Blöcke; hinter | die Verwaltungsblöcke "
+                              "(indirekt).  Struktur, nicht änderbar.")
+        b.setWordWrap(True)
+        form.addRow("Blöcke", b)
+
+        return kasten
+
+    # ── Modus: Kaestchen ⇄ Oktalzahl ──────────────────────────────────────────
+
+    def modus_aus_feldern(self) -> int:
+        """Die unteren zwölf Modusbits, wie die Kästchen sie gerade zeigen."""
+        m = 0
+        for (schieb, bit), k in self.f_rechte.items():
+            if k.isChecked():
+                m |= bit << schieb
+        for maske, k in self.f_sonder.items():
+            if k.isChecked():
+                m |= maske
+        return m
+
+    def _modus_text(self, rechte: int) -> str:
+        """``ls -l``-Schreibweise der unteren zwölf Bit hinter der Dateiart."""
+        t = ["rwxrwxrwx"[i] if rechte & (0o400 >> i) else "-" for i in range(9)]
+        if rechte & 0o4000:
+            t[2] = "s" if rechte & 0o100 else "S"
+        if rechte & 0o2000:
+            t[5] = "s" if rechte & 0o010 else "S"
+        if rechte & 0o1000:
+            t[8] = "t" if rechte & 0o001 else "T"
+        return (self.entry.attrs[:1] or "?") + "".join(t)
+
+    def _rechte_geaendert(self, *_):
+        m = self.modus_aus_feldern()
+        self.f_oktal.setText(f"{m:04o}")
+        self.l_modus.setText(self._modus_text(m))
+
+    def _oktal_geaendert(self, text: str):
+        try:
+            m = int(text.strip() or "0", 8)
+        except ValueError:
+            return                      # halb getippt; geprueft wird beim Uebernehmen
+        if not 0 <= m <= 0o7777:
+            return
+        for (schieb, bit), k in self.f_rechte.items():
+            k.blockSignals(True)
+            k.setChecked(bool((m >> schieb) & bit))
+            k.blockSignals(False)
+        for maske, k in self.f_sonder.items():
+            k.blockSignals(True)
+            k.setChecked(bool(m & maske))
+            k.blockSignals(False)
+        self.l_modus.setText(self._modus_text(m))
 
     def _udos_teil(self) -> QWidget:
         e = self.entry
@@ -291,6 +495,28 @@ class PropertiesDialog(QDialog):
         """
         e = self.entry
         aend: dict = {}
+        if self.wega:
+            text = self.f_oktal.text().strip() or "0"
+            try:
+                modus = int(text, 8)
+            except ValueError:
+                raise ValueError(f"Modus: '{text}' ist keine Oktalzahl") from None
+            if not 0 <= modus <= 0o7777:
+                raise ValueError(f"Modus: {text} liegt außerhalb von 0…7777 — die "
+                                 "Dateiart (obere Bits) lässt sich nicht ändern")
+            if modus != e.unix_mode & 0o7777:
+                aend["mode"] = modus
+            if self.f_uid.value() != e.unix_uid:
+                aend["uid"] = self.f_uid.value()
+            if self.f_gid.value() != e.unix_gid:
+                aend["gid"] = self.f_gid.value()
+            # Unveraendert getippter Text bleibt unveraendert: die Anzeige rundet nicht,
+            # aber ein leeres Feld hiesse „1970“ und soll nichts schreiben.
+            if self.f_mtime.text().strip() != unix_zeit_text(e.unix_mtime):
+                neu = unix_zeit_parse(self.f_mtime.text(), "geändert")
+                if neu != e.unix_mtime:
+                    aend["mtime"] = neu
+            return aend
         if not self.udos:
             if self.f_user.value() != e.user:      aend["user"] = self.f_user.value()
             if self.f_ro.isChecked() != e.read_only:  aend["read_only"] = self.f_ro.isChecked()
@@ -346,7 +572,9 @@ class PropertiesDialog(QDialog):
             return True
 
         try:
-            if self.udos:
+            if self.wega:
+                self.tool.set_unix_attrs(self.entry.ref, **aend)
+            elif self.udos:
                 self.tool.set_udos_attrs(self.entry.ref, **aend)
             else:
                 self.tool.set_cpm_attrs(self.entry.ref, **aend)

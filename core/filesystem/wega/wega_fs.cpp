@@ -40,6 +40,13 @@ std::string festText(const uint8_t* p, size_t n) {
     return s;
 }
 
+/// @brief Oktalziffern ohne fuehrende Null ("755").
+std::string oktal(unsigned v) {
+    char b[16];
+    std::snprintf(b, sizeof b, "%o", v);
+    return b;
+}
+
 /// @brief Sekunden seit 1970 (GMT) → "JJJJ-MM-TT HH:MM" — ohne gmtime (MSVC kennt kein _r).
 std::string datumText(uint32_t t) {
     if (t == 0) return {};
@@ -737,8 +744,11 @@ std::vector<FileEntry> WegaFileSystem::list() const {
             f.unix_nlink = d.nlink;
             f.unix_inode = e.ino;
             f.unix_mtime = d.mtime;
+            f.unix_atime = d.atime;
+            f.unix_ctime = d.ctime;
             if ((d.mode & IFMT) == IFCHR || (d.mode & IFMT) == IFBLK) {
                 // Geraetedatei: im ersten Adressfeld steht major<<8 | minor
+                f.unix_rdev = static_cast<uint16_t>(d.addr[0] & 0xFFFF);
                 f.created = std::to_string(d.addr[0] >> 8 & 0xFF) + ","
                           + std::to_string(d.addr[0] & 0xFF);
             }
@@ -875,7 +885,7 @@ bool WegaFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
         if (!hatBloecke(d.mode)) return fail(name + " ist eine Geraetedatei");
         if (!tx.kuerzen(d)) return false;
         if (opt.wega_mode_gesetzt) d.mode = static_cast<uint16_t>((d.mode & IFMT) | (opt.wega_mode & 07777));
-        if (opt.wega_mode_gesetzt || opt.wega_uid || opt.wega_gid) {
+        if (opt.wega_mode_gesetzt || opt.wega_owner_gesetzt || opt.wega_uid || opt.wega_gid) {
             d.uid = static_cast<int16_t>(opt.wega_uid);
             d.gid = static_cast<int16_t>(opt.wega_gid);
         }
@@ -909,6 +919,68 @@ bool WegaFileSystem::write(const std::string& name, const std::vector<uint8_t>& 
         if (!tx.setzeInode(elter, e)) return false;
     }
     return tx.commit();
+}
+
+bool WegaFileSystem::setAttributes(const std::string& name, const UnixAttrs& a) {
+    // Erst urteilen, dann schreiben: jede Eingabe wird vor dem ersten Blockzugriff
+    // geprueft, damit ein Fehler nichts hinterlaesst (wie bei den anderen Operationen).
+    if (a.set_mode && (a.mode & ~07777))
+        return fail("Modus 0" + oktal(a.mode) + " hat Bits ausserhalb von 07777 — "
+                    "die Dateiart laesst sich nicht aendern");
+    if (a.set_uid && (a.uid < 0 || a.uid > 65535))
+        return fail("uid " + std::to_string(a.uid) + " liegt ausserhalb von 0…65535");
+    if (a.set_gid && (a.gid < 0 || a.gid > 65535))
+        return fail("gid " + std::to_string(a.gid) + " liegt ausserhalb von 0…65535");
+    if (!a.set_mode && !a.set_uid && !a.set_gid && !a.set_mtime) return true;
+
+    Tx tx(*this);
+    if (!tx.start()) return false;
+    const Leser l = tx.leser();
+    const uint32_t ino = suche(l, tx.sb, name, nullptr, nullptr);
+    if (!ino) return fail("Datei nicht gefunden: " + name);
+    if (ino == 1) return fail("Inode 1 (Bad-Block-Datei) ist kein Dateisystemobjekt");
+    Dinode d;
+    if (!tx.inode(ino, d)) return fail("Inode nicht lesbar");
+    if (d.mode == 0) return fail("Inode " + std::to_string(ino) + " ist unbelegt");
+    if (a.set_mode) d.mode = static_cast<uint16_t>((d.mode & IFMT) | (a.mode & 07777));
+    if (a.set_uid)  d.uid = static_cast<int16_t>(a.uid);
+    if (a.set_gid)  d.gid = static_cast<int16_t>(a.gid);
+    // `touch -m`: nur die Aenderungszeit.  Die Inode-Zeit (ctime) setzt wie im Kern
+    // jede Aenderung am Inode auf „jetzt" — sie laesst sich nicht vorgeben.
+    if (a.set_mtime) d.mtime = a.mtime;
+    d.ctime = jetzt();
+    if (!tx.setzeInode(ino, d)) return false;
+    return tx.commit();
+}
+
+std::string WegaFileSystem::blockList(const std::string& name) const {
+    const Leser l = geraeteLeser();
+    const Superblock sb = superblock();
+    const uint32_t ino = suche(l, sb, name, nullptr, nullptr);
+    Dinode d;
+    if (!ino || !inodeLesen(l, sb, ino, d)) return {};
+    if (!hatBloecke(d.mode)) return {};
+    std::vector<uint32_t> daten, indirekt;
+    std::string err;
+    if (!dateiBloecke(l, d, sb.fsize, daten, &indirekt, err)) return {};
+    // Aufeinanderfolgende Bloecke zu Bereichen („120-125"); Loecher (0) bleiben Loecher.
+    auto bereiche = [](const std::vector<uint32_t>& v) {
+        std::string s;
+        for (size_t i = 0; i < v.size();) {
+            if (v[i] == 0) { ++i; continue; }
+            size_t j = i;
+            while (j + 1 < v.size() && v[j + 1] == v[j] + 1) ++j;
+            if (!s.empty()) s += ' ';
+            s += std::to_string(v[i]);
+            if (j > i) s += "-" + std::to_string(v[j]);
+            i = j + 1;
+        }
+        return s;
+    };
+    std::string out = bereiche(daten);
+    if (!indirekt.empty())
+        out += (out.empty() ? "" : " ") + std::string("| indirekt: ") + bereiche(indirekt);
+    return out;
 }
 
 bool WegaFileSystem::erase(const std::string& name) {

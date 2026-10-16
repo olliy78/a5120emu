@@ -63,7 +63,7 @@ struct Handle {
     TrackView                   spur;        ///< Stand des letzten k1520d_track_scan
     // Puffer je Getter — die Rueckgabe gilt bis zum naechsten Aufruf DERSELBEN Funktion.
     std::string s_error, s_name, s_type, s_attrs, s_date, s_dir, s_label, s_created,
-                s_segments;
+                s_segments, s_blocks;
     std::string s_fmt, s_fs, s_alt, s_remarks, s_fit, s_check;
     std::string s_bid, s_bobj, s_btext, s_bsum;   ///< Puffer der Pruefung
     std::string s_sid, s_stitel, s_swarum;        ///< Puffer der Checkliste (§5a)
@@ -536,6 +536,42 @@ extern "C" bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
     a.set_system    = set_system;    a.system    = system;
     a.set_archived  = set_archived;  a.archived  = archived;
     a.set_user      = set_user;      a.user      = user;
+    return H(h)->vol->setAttributes(FileRef::parse(name), a);
+}
+
+#define K1520D_ENTRY_UNIX(fn, typ, feld)                             \
+    extern "C" typ fn(K1520Disk h, int i) {                          \
+        const FileEntry* e = eintrag(h, i);                          \
+        return e ? static_cast<typ>(e->feld) : static_cast<typ>(0);  \
+    }
+
+K1520D_ENTRY_UNIX(k1520d_entry_unix_mode,  uint16_t, unix_mode)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_uid,   int,      unix_uid)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_gid,   int,      unix_gid)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_nlink, int,      unix_nlink)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_inode, uint32_t, unix_inode)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_mtime, uint32_t, unix_mtime)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_atime, uint32_t, unix_atime)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_ctime, uint32_t, unix_ctime)
+K1520D_ENTRY_UNIX(k1520d_entry_unix_rdev,  uint16_t, unix_rdev)
+#undef K1520D_ENTRY_UNIX
+
+extern "C" const char* k1520d_unix_blocks(K1520Disk h, const char* name) {
+    if (!h || !name) return "";
+    return halte(H(h)->s_blocks, H(h)->vol->blockList(FileRef::parse(name)));
+}
+
+extern "C" bool k1520d_set_unix_attrs(K1520Disk h, const char* name,
+                                      bool set_mode,  uint16_t mode,
+                                      bool set_uid,   int uid,
+                                      bool set_gid,   int gid,
+                                      bool set_mtime, uint32_t mtime) {
+    if (!h || !name) return false;
+    UnixAttrs a;
+    a.set_mode  = set_mode;  a.mode  = mode;
+    a.set_uid   = set_uid;   a.uid   = uid;
+    a.set_gid   = set_gid;   a.gid   = gid;
+    a.set_mtime = set_mtime; a.mtime = mtime;
     return H(h)->vol->setAttributes(FileRef::parse(name), a);
 }
 

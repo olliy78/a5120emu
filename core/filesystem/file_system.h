@@ -71,6 +71,9 @@ struct FileEntry {
     int         unix_nlink = 0;
     uint32_t    unix_inode = 0;  ///< Inode-Nummer
     uint32_t    unix_mtime = 0;  ///< Sekunden seit 1970 (GMT), wie auf der Platte
+    uint32_t    unix_atime = 0;  ///< Zugriffszeit
+    uint32_t    unix_ctime = 0;  ///< Inode-Aenderungszeit (`chmod`/`chown` setzen sie)
+    uint16_t    unix_rdev  = 0;  ///< Geraetedatei (c/b): major<<8 | minor, sonst 0
 
     /// @brief Eindeutige Bezeichnung innerhalb des Volumes ("NAME.TYP" bzw. "3:NAME.TYP").
     std::string qualifiedName() const {
@@ -181,6 +184,10 @@ struct WriteOptions {
     int      wega_gid  = 0;
     /// @brief Aenderungszeit (Sekunden seit 1970); 0 = jetzt.
     uint32_t wega_mtime = 0;
+    /// @brief uid/gid gelten auch dann, wenn beide 0 sind und kein Modus gesetzt ist
+    ///        (z. B. aus einer `.fileinfo`).  Sonst wirken sie nur zusammen mit
+    ///        @ref wega_mode_gesetzt oder bei einem Wert ungleich 0.
+    bool     wega_owner_gesetzt = false;
 };
 
 /**
@@ -226,6 +233,22 @@ struct CpmAttrs {
     bool set_system    = false;  bool system    = false;  ///< SYS — Hochbit von TYP[1]
     bool set_archived  = false;  bool archived  = false;  ///< ARC — Hochbit von TYP[2]
     bool set_user      = false;  int  user      = 0;      ///< Nutzerbereich 0…15
+};
+
+/**
+ * @struct UnixAttrs
+ * @brief Die aenderbaren Angaben einer WEGA-(UNIX-)Datei — `chmod`, `chown`, `touch`.
+ *
+ * Das Gegenstueck zu @ref UdosAttrs und @ref CpmAttrs fuer die dritte Familie.
+ * Dateiart (die oberen vier Modusbits), Inode-Nummer, Groesse und Linkzahl sind
+ * **nicht** aenderbar — sie gehoeren zur Struktur, nicht zu den Rechten.  Wie bei den
+ * anderen heisst ein nicht gesetztes Kennzeichen „unveraendert lassen".
+ */
+struct UnixAttrs {
+    bool     set_mode  = false;  uint16_t mode  = 0;   ///< nur die unteren 12 Bit (setuid/setgid/sticky + rwx)
+    bool     set_uid   = false;  int      uid   = 0;   ///< 0…65535
+    bool     set_gid   = false;  int      gid   = 0;   ///< 0…65535
+    bool     set_mtime = false;  uint32_t mtime = 0;   ///< Sekunden seit 1970 (`touch`)
 };
 
 /**
@@ -352,6 +375,27 @@ public:
     virtual bool setAttributes(const std::string& name, const CpmAttrs&) {
         last_error_ = "Dieses Dateisystem fuehrt keine CP/M-Attribute";
         return false;
+    }
+
+    /**
+     * @brief Modus, Besitzer und Aenderungszeit einer vorhandenen Datei aendern (nur WEGA).
+     *
+     * Eine Transaktion: Pruefung vor dem ersten Schreiben, danach hoechstens ein
+     * Inode-Block.  UDOS und CP/M kennen diese Angaben nicht und melden das als Fehler.
+     */
+    virtual bool setAttributes(const std::string& name, const UnixAttrs&) {
+        last_error_ = "Dieses Dateisystem fuehrt keine UNIX-Dateiangaben";
+        return false;
+    }
+
+    /**
+     * @brief Die belegten Bloecke einer Datei als Text (`"120-125 130 | indirekt: 140"`).
+     *
+     * Nur Dateisysteme mit Blockverwaltung (WEGA); sonst leer.  Schreibt nichts.
+     */
+    virtual std::string blockList(const std::string& name) const {
+        (void)name;
+        return {};
     }
 
     /**

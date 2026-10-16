@@ -240,7 +240,7 @@ K1520_API const char* k1520d_fs_name(int i);
 K1520_API const char* k1520d_fs_description(const char* name);
 /// @brief Geometrie, auf der dieses Dateisystem liegt.
 K1520_API const char* k1520d_fs_format(const char* name);
-/// @brief "cpm" | "udos" | "udos1715"
+/// @brief "cpm" | "udos" | "udos1715" | "wega"
 K1520_API const char* k1520d_fs_type(const char* name);
 /// @brief Geladene Katalogdateien (mehrzeilig) + Beanstandungen.
 K1520_API const char* k1520d_catalog_report(void);
@@ -394,6 +394,42 @@ K1520_API bool k1520d_set_cpm_attrs(K1520Disk h, const char* name,
                                     bool set_system,    bool system,
                                     bool set_archived,  bool archived,
                                     bool set_user,      int  user);
+
+/* ─── WEGA-(UNIX-)Dateiangaben ─────────────────────────────────────────────────
+ * Nur bei einer Diskette mit Dateisystemart "wega" (@ref k1520d_fs_type); sonst
+ * liefern die Getter 0 bzw. "" und @ref k1520d_set_unix_attrs scheitert.
+ */
+/// @brief di_mode samt Dateiart (z. B. 0100755); 0 = kein UNIX-Eintrag.
+K1520_API uint16_t    k1520d_entry_unix_mode(K1520Disk h, int i);
+K1520_API int         k1520d_entry_unix_uid(K1520Disk h, int i);
+K1520_API int         k1520d_entry_unix_gid(K1520Disk h, int i);
+K1520_API int         k1520d_entry_unix_nlink(K1520Disk h, int i);
+K1520_API uint32_t    k1520d_entry_unix_inode(K1520Disk h, int i);
+/// @brief Sekunden seit 1970 (GMT).
+K1520_API uint32_t    k1520d_entry_unix_mtime(K1520Disk h, int i);
+K1520_API uint32_t    k1520d_entry_unix_atime(K1520Disk h, int i);
+K1520_API uint32_t    k1520d_entry_unix_ctime(K1520Disk h, int i);
+/// @brief Geraetedatei (c/b): major<<8 | minor, sonst 0.
+K1520_API uint16_t    k1520d_entry_unix_rdev(K1520Disk h, int i);
+/// @brief Belegte Bloecke als Text (`"120-125 130 | indirekt: 140"`); leer bei Geraeten.
+///        Liest den Inode neu — nur fuer die Einzelansicht gedacht, nicht fuer die Liste.
+K1520_API const char* k1520d_unix_blocks(K1520Disk h, const char* name);
+
+/**
+ * @brief Modus, Besitzer und Aenderungszeit einer WEGA-Datei aendern (`chmod`/`chown`/`touch`).
+ *
+ * Eine Transaktion im Dateisystem; die Dateiart (obere Modusbits), Inode, Groesse und
+ * Linkzahl bleiben unberuehrt.  `set_* = false` laesst das Feld unveraendert.
+ *
+ * @param mode   nur die unteren 12 Bit (setuid/setgid/sticky + rwx); darueber = Fehler
+ * @param uid    0…65535
+ * @param mtime  Sekunden seit 1970
+ */
+K1520_API bool k1520d_set_unix_attrs(K1520Disk h, const char* name,
+                                     bool set_mode,  uint16_t mode,
+                                     bool set_uid,   int uid,
+                                     bool set_gid,   int gid,
+                                     bool set_mtime, uint32_t mtime);
 
 /* ─── Sektoransicht (Diskeditor) ───────────────────────────────────────────────
  * Eine Ebene UNTER dem Dateisystem: Spuren, Sektoren, Gaps und CRCs.  Fuer einen

@@ -56,8 +56,30 @@ Was beim Weiterarbeiten zu wissen ist:
   `<abbild>~` vor dem ersten Zurückschreiben.  Die installierte P15-Platte prüft mit
   `--full` ohne Befund (4 Partitionen, ~1240 Dateien).
   **(7) Rechte**: neue Dateien 0644, ausführbare Linux-Datei ⇒ 0755, uid/gid 0 (`wega`);
-  Überschreiben behält Inode, Besitzer und Rechte.  Besitzer/Zeiten tragen `get`→`put`
-  (noch) nicht — `.fileinfo` für WEGA ist offen (Entwurf §6).
+  Überschreiben behält die Inode.  **(8) UNIX-Dateiangaben (2026-10-17)**: Das DiskTool
+  schloss bisher „Typfeld gefüllt ⇒ UDOS" (`any(e.type)`, `bool(entry.type)`) — bei WEGA
+  steht dort aber eine Dateiart (`-`/`d`/`c`).  **Die Dateisystemart wird gefragt, nie
+  am Typfeld erraten**: C++ `DiskVolume::fsType()`/`istWega()`, Python
+  `DiskTool.ist_wega/ist_udos/ist_cpm` (aus `k1520d_fs_type`), `Entry.ist_unix`.
+  Schreibseite: `UnixAttrs` + `FileSystem::setAttributes(name, UnixAttrs)` (nur WEGA,
+  Modus nur die unteren 12 Bit — die Dateiart ist Struktur —, uid/gid 0…65535, mtime;
+  `ctime` setzt jede Änderung auf „jetzt" wie `chmod`, vorgeben lässt sie sich nicht;
+  Prüfung VOR dem ersten Blockzugriff, eine `Tx`), C-ABI `k1520d_set_unix_attrs`,
+  `k1520d_entry_unix_*`, `k1520d_unix_blocks` (additiv, ctypes nachgezogen, CLI
+  `attr --mode/--uid/--gid/--mtime`).  `.fileinfo` mit `fs=wega` entsteht für WEGA
+  **immer**, auch für Verzeichnisse (`<ordner>.fileinfo` NEBEN dem Ordner; `put <ordner>`
+  wendet es erst NACH dem Einfügen an — jede Datei darin ändert die mtime des
+  Verzeichnisses), dazu `wega-dateiangaben.txt` mit allen Inodes (Gerätedateien nur dort).
+  Zurückgespielt werden `mode`&07777, `uid`, `gid`, `mtime`; `nlink`/`inode`/`atime`/`ctime`/
+  `art`/`rdev` sind Auskunft.  Ein fremdes `.fileinfo` (udos/cpm) wird bei WEGA
+  **überlesen** (Kopieren von UDOS nach WEGA darf nicht scheitern), umgekehrt weist
+  UDOS/CP/M ein `fs=wega` ab.  Archiv: `.txt` im `ls -l`-Stil mit WEGA-Legende,
+  `diskarchive.yaml` bekommt je Datei `unix: {mode, uid, gid, mtime}` (Fassung bleibt 1).
+  Eigenschaften-Dialog: nur Inode-Felder, Kästchen ⇄ Oktalzahl.  Symlinks gibt es in
+  System III nicht (kein IFLNK).  Die Plattenabbild-CLI (`wega_platte`) schreibt weiter
+  nur 0644/0755 und bewusst noch kein `.fileinfo`.  Wächter: `WegaFs.SetAttributes*`,
+  `WegaFs.BlockListe*`, `WegaDiskVolume.Fileinfo*`/`Fremdes*`/`UnixAngaben*`,
+  `test_disktool_wega.py`, `cli_dt_wega_attr_get_put`.
   Gegenproben: die Python-Vorstufe `tools/p8000/wega_s3fs.py` liest, was der Kern schreibt
   (`py_wega_gegenprobe`); alle Lieferdisketten (`~/Documents/K1520emu/Disketten/P8000/
   WEGA3.0`, `K1520_WEGA_IMG`) und die Platte (`K1520_WEGA_PLATTE`) prüfen ohne Befund —
