@@ -766,6 +766,20 @@ filesystems:
     boot_header: bcu_syl
     nur_boot:    true
 
+  # `bcu880_kombi` — EIGENBAU (kein Beleg, doc/a5120_alt/bcu.md §12): Startdiskette, die zugleich
+  # Dateien traegt.  Wie `bcu880_syl`, aber das System ist so geaendert, dass A: das Verzeichnis ab
+  # Zylinder 5 sucht (OFF 5, DSM 112) und der Warmstart sein CCP von Zylinder 0 findet.  Erkannt am
+  # SYL-Lader PLUS der geaenderten Laufwerkstabelle von A:.  Dateien sieht BCU nur in Laufwerk A:.
+  - name:        bcu880_kombi
+    description: "BCU 880 V1.2 — EIGENBAU: Startdiskette mit Dateisystem ab Zylinder 5 (nur als A:)"
+    format:      k5601_ss40_26x128
+    type:        cpm
+    data_start:  { cyl: 5, head: 0 }
+    block_size:  1024
+    dir_entries: 64
+    skew:        6
+    boot_header: bcu_kombi
+
   # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
   # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,
   # 128-B-Sätze.  Nachgemessen am Referenzdatenträger (Verzeichnis bei c2h0,

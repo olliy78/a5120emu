@@ -422,3 +422,38 @@ Puffer ab 0900H); Laufwerke nur A–D.
 - **Tastatur-Falle beim Ausprobieren:** SYSGEN (wie INIT, §8.1) wartet auf **0DH**. Satz 1 (K7024) übersetzt
   ET1 → 0DH im CONIN und läuft durch; Satz 2 (K7023) reicht 0AH durch und käme nicht über „THEN TYPE RETURN“ (aus dem Code, `CP 0DH` / `JNZ` bei 0240H; nicht gelaufen).
 
+## 12. Eigenbau: Startdiskette MIT Dateisystem („Kombidiskette“, 2026-10-16)
+
+**EIGENBAU, kein Beleg und nicht am Gerät erprobt** — im Emulator nachgewiesen
+(`DisktoolBcu.KombidisketteBootetUndArbeitet`). Frage war, ob eine einseitige 40-Spur-Diskette zugleich
+startet und Dateien trägt. Ja, mit zwei Änderungen am System der Startdiskette (`tools/bcu_kombi_bau.py`,
+Bootabbild 5 Zylinder, `disks/bootsektoren/boot_bcu12_kombi_k7023.bin` bzw. `_k7024.bin`):
+
+1. **Verzeichnis hinter das System (Zylinder 5).** Das BIOS legt A:–D: auf eine gemeinsame Tabelle (DPB EC82H,
+   40 Spuren, OFF 2). Die zweite Tabelle EC73H (80 Spuren) ist im Original **unbenutzt** (kein Laufwerkskopf
+   zeigt darauf, im Disassemblat kein Verweis). Sie wird mit OFF = 5 und DSM = 112 überschrieben (113 KB = die
+   35 Zylinder 5–39), der Laufwerkskopf **A:** (EC3DH) zeigt darauf. **B:–D: behalten OFF 2** — die
+   Arbeitsdiskette „ohne SYL“ in B: bleibt unverändert lesbar. Folge: die Dateien dieser Diskette sieht BCU nur,
+   solange sie in **A:** liegt (in B: läse es das System als Verzeichnis).
+2. **Warmstart-CCP auf Zylinder 0.** Der Kaltstart (`JP F112H`) setzt den Warmstart auf „1 Spur, 17 Sektoren ab
+   Zylinder 0 Sektor 2 nach D780H“ (`LD (F12CH),1101H` ändert den Befehl `LD BC,1902H` in Neuladen F11BH). Der
+   Warmstart lädt also nur das **CCP (D780H–DFFFH)** von A: Zylinder 0 — nicht das ganze System, wie §5/§8.1 für
+   die Diskette „ohne SYL“ annahmen (dort sind es 51 Sektoren nur vor dem Kaltstart). Auf der Startdiskette ist
+   Zylinder 0 leer (Absturz bei `^C`/PIP). Die Kombidiskette trägt dort eine Kopie von D780H–DFFFH aus ihrem
+   eigenen System; das war die einzige Warmstart-Änderung nötig, am Code von Neuladen wird nichts verändert.
+
+Der Lader (Zylinder 1) bleibt unverändert, also gilt seine CRC weiter. Das DiskTool führt die Diskette als
+Profil `bcu880_kombi` (Dateisystem ab Zylinder 5, kein `nur_boot`); erkannt wird sie am SYL-Lader **plus** der
+geänderten Tabelle (EC3DH → EC73H, OFF = 5 bei Ladeadresse D680H). Das Bootabbild einer Startdiskette auf
+`bcu880_kombi` (oder umgekehrt) wird abgewiesen.
+
+```sh
+k1520disktool create kombi.hfe --fs bcu880_kombi --boot disks/bootsektoren/boot_bcu12_kombi_k7023.bin
+k1520disktool put kombi.hfe datei.txt            # liegt ab Zylinder 5; BCU sieht sie in A:
+```
+
+Fertige Diskette: `disks/a5120_bcu/a5120_bcu12_k5600-10_kombi-eigenbau.hfe` (nicht im Paket). Kombi-Abbild aus
+einem anderen V1.2-Startabbild: `python3 tools/bcu_kombi_bau.py <boot_syl.bin> <aus.bin>` (prüft die
+V1.2-Erwartungen vor dem Ändern). Offen: Verhalten am echten Gerät [?]; 80-Spur-/zweiseitige Varianten
+(DPB EC73H wäre dort nicht mehr frei).
+

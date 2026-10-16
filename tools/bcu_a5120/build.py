@@ -65,6 +65,14 @@ GEBAUT = {
     'a5120_bcu12_k5600-10_start-syl.hfe':
         (os.path.join(BELEGE, 'satz2_SYL_auf_Spur1', 'disk.img'), 'bcu880_syl',
          os.path.join(BOOTSEKTOREN, 'boot_bcu12_syl_k7023.bin')),
+    # EIGENBAU (kein Beleg, doc/a5120_alt/bcu.md §12): Startdiskette MIT Dateisystem (nur als A:)
+    'a5120_bcu12_k5600-10_kombi-eigenbau.hfe':
+        (None, 'bcu880_kombi', os.path.join(BOOTSEKTOREN, 'boot_bcu12_kombi_k7023.bin')),
+}
+#: Kombi-Bootabbild -> Startabbild, aus dem tools/bcu_kombi_bau.py es macht
+KOMBI_ABBILDER = {
+    'boot_bcu12_kombi_k7023.bin': 'boot_bcu12_syl_k7023.bin',
+    'boot_bcu12_kombi_k7024.bin': 'boot_bcu12_syl_k7024.bin',
 }
 #: Bootabbild in disks/bootsektoren/ -> Beleg, dem es mit `boot-get` entnommen ist
 BOOTABBILDER = {
@@ -105,6 +113,8 @@ def _bauen(tool, beleg, fs, boot, ziel, tmp):
     if os.path.exists(ziel):
         os.remove(ziel)
     _lauf(tool, 'create', ziel, '--fs', fs, '--boot', boot)
+    if beleg is None:
+        return                      # Eigenbau: kein Beleg, der Bau selbst ist der Nachweis (Test DisktoolBcu.Kombi*)
     rueck = os.path.join(tmp, 'rueck_gebaut.img')
     if os.path.exists(rueck):
         os.remove(rueck)
@@ -115,8 +125,19 @@ def _bauen(tool, beleg, fs, boot, ziel, tmp):
 
 
 def _bootabbilder_ok(tool, tmp):
-    """Die Bootabbilder in disks/bootsektoren/ sind `boot-get` ihrer Belege."""
+    """Die Bootabbilder in disks/bootsektoren/ sind `boot-get` ihrer Belege (Kombi: gebaut aus dem Startabbild)."""
     ok = True
+    sys.path.insert(0, os.path.join(REPO, 'tools'))
+    import bcu_kombi_bau
+    for name, quelle in KOMBI_ABBILDER.items():
+        with open(os.path.join(BOOTSEKTOREN, quelle), 'rb') as f:
+            soll = bcu_kombi_bau.bauen(f.read())
+        ist = os.path.join(BOOTSEKTOREN, name)
+        if os.path.isfile(ist) and open(ist, 'rb').read() == soll:
+            print(f'{name}: ok')
+        else:
+            print(f'{name}: fehlt oder ist nicht tools/bcu_kombi_bau.py auf {quelle}')
+            ok = False
     for name, beleg in BOOTABBILDER.items():
         kopie = os.path.join(tmp, 'beleg_' + name + '.img')
         shutil.copyfile(beleg, kopie)

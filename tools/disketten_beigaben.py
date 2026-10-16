@@ -130,6 +130,7 @@ ORDNER = {
     # BCU 880 am fruehen A5120 (tools/bcu_a5120/build.py, doc/a5120_alt/bcu.md §10)
     'a5120_bcu12_k5600-10_start-syl.hfe': 'a5120_bcu',
     'a5120_bcu12_k5600-10_arbeit-sys1.hfe': 'a5120_bcu',
+    'a5120_bcu12_k5600-10_kombi-eigenbau.hfe': 'a5120_bcu',
     'bcu_kassette_formatiert.k52': 'a5120_bcu',
     'bandtest_boot.k52': 'a5120_bandtest',
 }

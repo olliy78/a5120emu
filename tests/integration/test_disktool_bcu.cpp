@@ -394,3 +394,92 @@ TEST(DisktoolBcu, SysgenSchreibtDieSystemspurenDerArbeitsdiskette) {
     EXPECT_EQ(system, datei(bootbin("boot_bcu12_ohnesyl.bin")))
         << "SYSGEN hat nicht die Systemspuren der Quelle geschrieben:\n" << bild(m);
 }
+
+// ─── Kombidiskette (Eigenbau, doc/a5120_alt/bcu.md §12) ──────────────────────
+
+TEST(DisktoolBcu, KombidisketteWirdErkanntUndNimmtDateienAn) {
+    TempPfad p("k1520_bcu_kombi.img");
+    std::string fehler;
+    auto dv = baue(p.get(), "bcu880_kombi", bootbin("boot_bcu12_kombi_k7023.bin"), &fehler);
+    ASSERT_NE(dv, nullptr) << fehler;
+    TempPfad q("k1520_bcu_kombi_quelle.txt");
+    schreibe(q.get(), {'h', 'a', 'l', 'l', 'o', '\r', '\n', 0x1A});
+    FileRef ref;
+    ref.name = "HALLO.TXT";
+    ASSERT_TRUE(dv->insert(q.get(), ref, TransferOptions{})) << dv->lastError();
+    ASSERT_TRUE(dv->flush());
+    auto offen = oeffne(p.get());
+    ASSERT_NE(offen, nullptr);
+    EXPECT_EQ(offen->detection().filesystem, "bcu880_kombi");
+    EXPECT_EQ(offen->list().size(), 1u);
+    EXPECT_GT(offen->volumeInfo(0).free_bytes, 100u * 1024);
+}
+
+TEST(DisktoolBcu, StartUndKombiAbbildSindNichtAustauschbar) {
+    TempPfad zu("k1520_bcu_kombi_falsch.img");
+    std::string fehler;
+    EXPECT_EQ(baue(zu.get(), "bcu880_syl", bootbin("boot_bcu12_kombi_k7023.bin"), &fehler), nullptr);
+    EXPECT_NE(fehler.find("bcu880_kombi"), std::string::npos) << fehler;
+    EXPECT_EQ(baue(zu.get(), "bcu880_kombi", bootbin("boot_bcu12_syl_k7023.bin"), &fehler), nullptr);
+    EXPECT_NE(fehler.find("Kombi-Aenderungen"), std::string::npos) << fehler;
+    EXPECT_FALSE(fs::exists(zu.get()));
+}
+
+/**
+ * @brief Die Kombidiskette in A: bootet, BCU sieht die vom DiskTool geschriebene Datei (Verzeichnis
+ *        ab Zylinder 5), die Arbeitsdiskette in B: bleibt mit OFF 2 lesbar, PIP schreibt eine Datei
+ *        nach A: (und der Warmstart danach findet sein CCP auf Zylinder 0), und das DiskTool liest sie
+ *        bytegleich zurueck.
+ */
+TEST(DisktoolBcu, KombidisketteBootetUndArbeitet) {
+    TempPfad kombi("k1520_bcu_kombi_a.img");
+    {
+        std::string fehler;
+        auto dv = baue(kombi.get(), "bcu880_kombi", bootbin("boot_bcu12_kombi_k7023.bin"), &fehler);
+        ASSERT_NE(dv, nullptr) << fehler;
+        TempPfad q("k1520_bcu_kombi_hallo.txt");
+        schreibe(q.get(), {'h', 'a', 'l', 'l', 'o', '\r', '\n', 0x1A});
+        FileRef ref;
+        ref.name = "HALLO.TXT";
+        ASSERT_TRUE(dv->insert(q.get(), ref, TransferOptions{})) << dv->lastError();
+        ASSERT_TRUE(dv->flush());
+    }
+    TempDisk arbeit(kArbeit);
+
+    auto cfg = A5120Machine::Config::fuerAusfuehrung(A::Alt);
+    cfg.laderom = L::V06;
+    A5120Machine m(cfg);
+    m.powerOn();
+    ASSERT_TRUE(m.mountDisk(0, kombi.get(), kFormat, false)) << m.lastError();
+    ASSERT_TRUE(m.mountDisk(1, arbeit.path(), kFormat, false)) << m.lastError();
+    const uint32_t ende = K7636::QK_TASTE_BASE | 0x37;
+    bisPrompt(m, ende);
+
+    befehl(m, "dir a:", ende);
+    k1520test::runCycles(m, 20'000'000);
+    EXPECT_NE(bild(m).find("HALLO    TXT"), std::string::npos) << "A: ab Zylinder 5:\n" << bild(m);
+    befehl(m, "dir b:", ende);
+    k1520test::runCycles(m, 30'000'000);
+    EXPECT_NE(bild(m).find("SYSGEN   COM"), std::string::npos) << "B: (OFF 2):\n" << bild(m);
+
+    // PIP endet mit Warmstart: das CCP kommt von A: Zylinder 0 (17 Sektoren).
+    befehl(m, "b:pip a:kopie.com=b:stat.com", ende);
+    k1520test::runCycles(m, 60'000'000);
+    befehl(m, "dir a:", ende);
+    k1520test::runCycles(m, 30'000'000);
+    EXPECT_NE(bild(m).find("KOPIE    COM"), std::string::npos) << "nach PIP und Warmstart:\n" << bild(m);
+    ASSERT_TRUE(m.flushDisks()) << m.lastError();
+
+    auto a = oeffne(kombi.get());
+    auto b = oeffne(arbeit.path());
+    ASSERT_NE(a, nullptr);
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(a->detection().filesystem, "bcu880_kombi");
+    TempPfad x("k1520_bcu_kombi_kopie.bin"), y("k1520_bcu_kombi_stat.bin");
+    FileRef ka, kb;
+    ka.name = "KOPIE.COM";
+    kb.name = "STAT.COM";
+    ASSERT_TRUE(a->extract(ka, x.get(), TransferOptions{})) << a->lastError();
+    ASSERT_TRUE(b->extract(kb, y.get(), TransferOptions{})) << b->lastError();
+    EXPECT_EQ(datei(x.get()), datei(y.get()));
+}

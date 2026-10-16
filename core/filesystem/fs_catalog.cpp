@@ -160,9 +160,9 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     }
     if (const yaml::Node* n = node.find("boot_header")) {
         if (!n->isScalar() || (n->scalar != "k8915" && n->scalar != "pc1715"
-                               && n->scalar != "bcu" && n->scalar != "bcu_syl"
+                               && n->scalar != "bcu" && n->scalar != "bcu_syl" && n->scalar != "bcu_kombi"
                                && !n->scalar.empty()))
-            { why = "'boot_header' muss k8915, pc1715, bcu oder bcu_syl sein (oder fehlen)"; return false; }
+            { why = "'boot_header' muss k8915, pc1715, bcu, bcu_syl oder bcu_kombi sein (oder fehlen)"; return false; }
         out.boot_header = n->scalar;
     }
     if (const yaml::Node* n = node.find("dir_boot")) {

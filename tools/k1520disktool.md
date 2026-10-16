@@ -382,6 +382,7 @@ Wie gross die Systemspuren sind, hängt am Dateisystem — `info` sagt es:
 | `scp1715` | 20480 B | Zylinder 0–1 beidseitig (5×1024) — SCP 1715 und SCP 3.0 (PC 1715W) |
 | `cpa1715` | 128 B | **keine Spuren**: die ersten vier Verzeichnisplätze (CP/A 1715) |
 | `bcu880_syl` | 16640 B | Zylinder 0–4 (26×128): 1 = SYL-Lader, 2–4 = System — **nur Start, keine Dateien** |
+| `bcu880_kombi` | 16640 B | wie `bcu880_syl`, aber **Eigenbau mit Dateisystem ab Zylinder 5** (nur als A:) |
 | `bcu880` | 6656 B | Zylinder 0–1 (26×128) — BCU 880 „ohne SYL“ |
 
 ### BCU 880 (frühe A5120)
