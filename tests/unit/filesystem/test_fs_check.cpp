@@ -245,8 +245,16 @@ TEST(FsCheckKeineFalschmeldungen, JedesAngelegteCpmProfilPrueftOhneBefund) {
                                   / ("fscheck_neu_" + p.name + ext)).string();
         fs::remove(ziel);
 
+        // BCU 880 (80 Spuren) wird am System in den Systemspuren erkannt: `create` verlangt dort ein
+        // Bootabbild, hier ein Minimalabbild mit der Kennung.
+        std::string boot;
+        if (p.boot_header == "bcu" && p.detect) {
+            boot = (fs::temp_directory_path() / "fscheck_bcu_boot.bin").string();
+            std::ofstream(boot, std::ios::binary) << std::string(128, '\0') << "BCU 880 VERS 1.2";
+        }
+
         std::string err;
-        auto v = DiskVolume::create(ziel, p.name, "", formate(), dateisysteme(), err);
+        auto v = DiskVolume::create(ziel, p.name, "", formate(), dateisysteme(), err, boot);
         ASSERT_TRUE(v) << p.name << ": " << err;
 
         const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);

@@ -57,8 +57,9 @@ std::string endung(const std::string& pfad) {
  * @param hinweis              dann der Klartext dazu
  * @param belegt               wenn gesetzt: Zahl der BELEGTEN Plaetze (0 = leer gelesen)
  */
-enum class BcuStart { Keiner, Syl, Kombi };
+enum class BcuStart { Keiner, Syl, Kombi, Kombi80 };
 BcuStart bcuStartArt(const SectorSpace& raum);   // weiter unten (BCU 880)
+bool bcuSystemspuren(const SectorSpace& raum);
 
 bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsProfile& p,
                              std::string* warum = nullptr,
@@ -92,15 +93,21 @@ bool cpmVerzeichnisPlausibel(DiskMedium& medium, const DiskFormat& f, const FsPr
     // `bcu_syl`: das Verzeichnis dieses Profils ist leer und beweist nichts — der POSITIVE
     // Nachweis ist der SYL-Lader auf Zylinder 1.  Ohne ihn waere jede 40-Spur-Datendiskette
     // zugleich eine BCU-Startdiskette.
-    if (p.boot_header == "bcu_syl" || p.boot_header == "bcu_kombi") {
+    if (p.boot_header == "bcu_syl" || p.boot_header == "bcu_kombi" || p.boot_header == "bcu_kombi80") {
         const BcuStart art = bcuStartArt(raum);
         if (art == BcuStart::Keiner)
             return nein("Zylinder 1 Sektor 1 traegt keinen SYL-Lader (BCU 880 „SYL auf Spur 1“)");
-        if ((art == BcuStart::Kombi) != (p.boot_header == "bcu_kombi"))
-            return nein(art == BcuStart::Kombi
-                        ? "das System traegt die Kombi-Aenderungen (OFF 5 fuer A:) — Profil bcu880_kombi"
-                        : "das System hat keine Kombi-Aenderungen — Profil bcu880_syl");
+        const BcuStart soll = p.boot_header == "bcu_kombi" ? BcuStart::Kombi
+                            : p.boot_header == "bcu_kombi80" ? BcuStart::Kombi80 : BcuStart::Syl;
+        if (art != soll)
+            return nein(art == BcuStart::Syl ? "das System hat keine Kombi-Aenderungen (Profil bcu880_syl)"
+                        : "das System traegt die Kombi-Aenderungen einer anderen Spurzahl (bcu880_kombi / bcu880_kombi80)");
     }
+
+    // `bcu` MIT Erkennung (bcu880_80): eine leere 80-Spur-Diskette 26×128 ist auch eine CP/A-Diskette;
+    // der POSITIVE Nachweis ist das BCU-System in den Systemspuren (Kennung „BCU 880“).
+    if (p.boot_header == "bcu" && p.detect && !bcuSystemspuren(raum))
+        return nein("die Systemspuren tragen keine BCU-880-Kennung");
 
     // `dir_boot`: der Bootkopf ist hier der POSITIVE Nachweis.  Ohne ihn waere jede
     // Datendiskette zugleich `cpa800` und `cpa1715` — und damit „nicht eindeutig".
@@ -418,11 +425,30 @@ template <class Hole>
 BcuStart bcuArtVon(const uint8_t* lader, Hole sys) {
     const unsigned basis = lader[3] | (lader[4] << 8);
     if (basis != kBcuBasis) return BcuStart::Syl;
-    uint8_t zeiger[2] = {0, 0}, off[2] = {0, 0};
-    if (!sys(kBcuDphA - kBcuBasis, 2, zeiger) || !sys(kBcuDpbA - kBcuBasis + 13, 2, off))
+    uint8_t zeiger[2] = {0, 0}, off[2] = {0, 0}, dsm[2] = {0, 0};
+    if (!sys(kBcuDphA - kBcuBasis, 2, zeiger) || !sys(kBcuDpbA - kBcuBasis + 13, 2, off)
+        || !sys(kBcuDpbA - kBcuBasis + 5, 2, dsm))
         return BcuStart::Syl;
-    return (zeiger[0] == (kBcuDpbA & 0xFF) && zeiger[1] == (kBcuDpbA >> 8) && off[0] == 5 && off[1] == 0)
-               ? BcuStart::Kombi : BcuStart::Syl;
+    if (zeiger[0] != (kBcuDpbA & 0xFF) || zeiger[1] != (kBcuDpbA >> 8) || off[0] != 5 || off[1] != 0)
+        return BcuStart::Syl;
+    // DSM unterscheidet die Spurzahl: 112 = 35 Zylinder ab 5 (40 Spuren), 242 = 75 Zylinder (80 Spuren).
+    return dsm[0] == 242 && dsm[1] == 0 ? BcuStart::Kombi80 : BcuStart::Kombi;
+}
+
+/// @brief Tragen Zylinder 0-1 ein BCU-System (Kennung „BCU 880“ irgendwo darin)?
+bool bcuSystemspuren(const SectorSpace& raum) {
+    if (raum.trackCount() < 2) return false;
+    std::vector<uint8_t> d;
+    for (size_t t = 0; t < 2; ++t) {
+        const SectorSpace::TrackRef r = raum.trackAt(t);
+        for (uint8_t k = 0; k < r.sectors; ++k) {
+            SectorData s;
+            if (!raum.readSector(r.cyl, r.head, static_cast<uint8_t>(r.first_id + k), s)) continue;
+            d.insert(d.end(), s.data.begin(), s.data.end());
+        }
+    }
+    const char kenn[] = "BCU 880";
+    return std::search(d.begin(), d.end(), kenn, kenn + 7) != d.end();
 }
 
 BcuStart bcuStartArt(const SectorSpace& raum) {
@@ -452,7 +478,7 @@ BcuStart bcuStartArt(const SectorSpace& raum) {
 }
 
 std::string bcuBootabbildproblem(const FsProfile& p, const std::vector<uint8_t>& img) {
-    if (p.boot_header == "bcu_syl" || p.boot_header == "bcu_kombi") {
+    if (p.boot_header == "bcu_syl" || p.boot_header == "bcu_kombi" || p.boot_header == "bcu_kombi80") {
         if (img.size() < 2 * kBcuSpur)
             return "Das Bootabbild ist nur " + std::to_string(img.size()) + " Byte gross; eine "
                    "BCU-Startdiskette braucht den Lader auf Zylinder 1 und das System ab Zylinder 2.";
@@ -473,13 +499,19 @@ std::string bcuBootabbildproblem(const FsProfile& p, const std::vector<uint8_t>&
             std::copy_n(img.begin() + static_cast<long>(2 * kBcuSpur + off), n, aus);
             return true;
         });
-        if (art == BcuStart::Kombi && p.boot_header == "bcu_syl")
-            return "Das Bootabbild ist eine Kombidiskette (Verzeichnis ab Zylinder 5, OFF 5 fuer A:); "
-                   "'bcu880_syl' fuehrt kein Dateisystem — Profil bcu880_kombi waehlen.";
-        if (art != BcuStart::Kombi && p.boot_header == "bcu_kombi")
-            return "Das Bootabbild traegt die Kombi-Aenderungen nicht (Laufwerkskopf A: auf eine Tabelle "
-                   "mit OFF 5): ein Verzeichnis ab Zylinder 5 saehe BCU damit nie.  Bauen mit "
-                   "tools/bcu_kombi_bau.py.";
+        const BcuStart soll = p.boot_header == "bcu_kombi" ? BcuStart::Kombi
+                            : p.boot_header == "bcu_kombi80" ? BcuStart::Kombi80 : BcuStart::Syl;
+        if (art != soll) {
+            if (art != BcuStart::Syl && soll == BcuStart::Syl)
+                return "Das Bootabbild ist eine Kombidiskette (Verzeichnis ab Zylinder 5, OFF 5 fuer A:); "
+                       "'bcu880_syl' fuehrt kein Dateisystem — Profil bcu880_kombi bzw. bcu880_kombi80 waehlen.";
+            if (art == BcuStart::Syl)
+                return "Das Bootabbild traegt die Kombi-Aenderungen nicht (Laufwerkskopf A: auf eine Tabelle "
+                       "mit OFF 5): ein Verzeichnis ab Zylinder 5 saehe BCU damit nie.  Bauen mit "
+                       "tools/bcu_kombi_bau.py.";
+            return "Das Bootabbild ist fuer eine andere Spurzahl gebaut (40 Spuren: bcu880_kombi, "
+                   "80 Spuren: bcu880_kombi80).";
+        }
         return {};
     }
     if (p.boot_header == "bcu") {
@@ -2931,6 +2963,13 @@ std::unique_ptr<DiskVolume> DiskVolume::create(const std::string& path,
         err = "Dateisystem '" + fs_name + "' kann nicht als ." + ext + " angelegt werden"
             + (profil->type == FsType::Udos && ext == "img"
                    ? " (der UDOS-Sektorkontrollblock steht hinter der Daten-CRC)" : "");
+        return nullptr;
+    }
+
+    if (profil->boot_header == "bcu" && profil->detect && boot_image.empty()) {
+        err = "'" + fs_name + "' wird am BCU-System in den Systemspuren erkannt — ohne Bootabbild "
+              "(--boot, z. B. disks/bootsektoren/boot_bcu12_ohnesyl.bin) legte das Werkzeug eine "
+              "Diskette an, die es beim naechsten Oeffnen nicht mehr als BCU-Diskette erkennt.";
         return nullptr;
     }
 

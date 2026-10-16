@@ -84,7 +84,7 @@ struct FsProfile {
     ///        geschrieben, die der K8915-Lader mit `C` abweist.  `pc1715` (AP-D): das
     ///        Wort `F002H`/`F003H` (Bytes `02|03 F0`), das der Urlader S502 des PC 1715
     ///        als Einziges prueft — ein A5120-Lader (`SYL`) besteht es nicht.
-    ///        `bcu` / `bcu_syl` (BCU 880): Bootabbild einer BCU-Diskette — Kennung
+    ///        `bcu` / `bcu_syl` / `bcu_kombi` / `bcu_kombi80` (BCU 880): Bootabbild einer BCU-Diskette — Kennung
     ///        „BCU 880“ im System bzw. SYL-Lader auf Zylinder 1 mit gueltiger CRC.
     std::string boot_header;
 
@@ -108,6 +108,10 @@ struct FsProfile {
     uint32_t block_size  = 2048;   ///< Zuordnungseinheit
     uint16_t dir_entries = 128;    ///< Verzeichniseintraege (maxdir)
     uint8_t  skew        = 0;      ///< Sektorversatz je Spur (CP/A: 0)
+    /// @brief 0 = der ganze Datenbereich; sonst hoechstens so viele Bloecke.  Fuer ein BIOS, dessen
+    ///        Belegungsvektoren kleiner sind als die Diskette (BCU 880: 31 Byte = 248 Bloecke, die
+    ///        80-Spur-Diskette hat 253) — Bloecke, die das Geraet nie vergibt, vergibt das Werkzeug auch nicht.
+    uint16_t max_blocks  = 0;
     std::string os       = "cpm2.2";
 
     // ── nur die UDOS-Familie ─────────────────────────────────────────────────

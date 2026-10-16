@@ -457,3 +457,28 @@ einem anderen V1.2-Startabbild: `python3 tools/bcu_kombi_bau.py <boot_syl.bin> <
 V1.2-Erwartungen vor dem Ändern). Offen: Verhalten am echten Gerät [?]; 80-Spur-/zweiseitige Varianten
 (DPB EC73H wäre dort nicht mehr frei).
 
+### 12.1 Dasselbe für 80 Spuren (K5600.20, 96 tpi) — EIGENBAU
+
+Im Emulator nachgewiesen (`DisktoolBcu.Kombidiskette80ArbeitetUeberZylinder40Hinaus`): das V1.2-System
+läuft unverändert auf K5600.20-Laufwerken mit 80-Zylinder-Disketten (Format `k5601_ss80_26x128`); Lader und
+Treiber steppen einen Zylinder je Schritt, mehr braucht es nicht. Ein 100-KB-Kopiervorgang (PIP) legt die
+Kopie über Zylinder 40 hinaus ab, das DiskTool liest beide bytegleich.
+
+- **A:** Tabelle EC73H mit OFF 5, **DSM 242** (75 Zylinder = 243 Blöcke) — der Wert, den die im Original
+  ungenutzte Tabelle ohnehin trug.
+- **B:–D:** (EC82H) OFF 2, **DSM 247** statt 122. Der Belegungsvektor je Laufwerk ist im BIOS nur **31 Byte**
+  (DPH-Abstand 1FH) = 248 Blöcke groß; eine 80-Spur-Diskette mit OFF 2 hätte 253 Blöcke (DSM 252) und liefe mit
+  dem letzten Byte ins Nachbarlaufwerk. Das Profil `bcu880_80` kappt deshalb auf **248 Blöcke** (`max_blocks`),
+  damit das Werkzeug keinen Block vergibt, den BCU nie sieht (die obersten 5 KB bleiben ungenutzt).
+- **Profile:** `bcu880_kombi80` (Bootabbild `boot_bcu12_kombi80_k7023.bin`/`_k7024.bin`, gebaut mit
+  `tools/bcu_kombi_bau.py --80`; 40- und 80-Abbild unterscheiden sich im DSM der Tabelle EC73H und werden
+  gegenseitig abgewiesen) und `bcu880_80` (Arbeitsdiskette, Dateisystem ab Zylinder 2).
+- **Erkennung der 80-Spur-Arbeitsdiskette:** eine 80-Spur-Diskette 26×128 ist auch ein CP/A-Format (400K,
+  2-KB-Blöcke, 128 Plätze) — ohne Nachweis läse das Werkzeug sie falsch und `put` zerstörte sie. Nachweis ist
+  die Kennung „BCU 880“ im System auf Zylinder 0–1; deshalb verlangt `create --fs bcu880_80` ein Bootabbild
+  (`boot_bcu12_ohnesyl.bin`; das 40-Spur-System darin wird auf dieser Diskette nie gestartet).
+- **Disketten:** `disks/a5120_bcu/a5120_bcu12_k5600-20_kombi80-eigenbau.hfe` (A:) und
+  `…_arbeit80-eigenbau.hfe` (B:, die 19 Dateien der Arbeitsdiskette). Beides Eigenbau, nicht im Paket.
+- **Nicht** untersucht: 40-Spur-Disketten im 96-tpi-Laufwerk (bräuchten Doppelschritt, den der Treiber nicht
+  kennt), zweiseitig.
+

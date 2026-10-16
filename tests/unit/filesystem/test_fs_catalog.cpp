@@ -93,7 +93,7 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         "wega720",
         // BCU 880: Arbeitsdiskette „ohne SYL“ (Name, `detect: false`) und die Startdiskette
         // „SYL auf Spur 1“ (erkannt am Lader; `nur_boot`).
-        "bcu880", "bcu880_syl", "bcu880_kombi",
+        "bcu880", "bcu880_syl", "bcu880_kombi", "bcu880_kombi80", "bcu880_80",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";

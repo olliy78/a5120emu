@@ -97,6 +97,7 @@ std::unique_ptr<CpmFileSystem> CpmFileSystem::mount(SectorSpace& space,
 
     fs->data_start_   = erste.start;
     fs->total_blocks_ = static_cast<uint32_t>(fs->data_bytes_ / prof.block_size);
+    if (prof.max_blocks && fs->total_blocks_ > prof.max_blocks) fs->total_blocks_ = prof.max_blocks;
     if (fs->total_blocks_ == 0) {
         err = "Datenbereich ist kleiner als ein Block";
         return nullptr;

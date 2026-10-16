@@ -14,7 +14,9 @@
  */
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -482,4 +484,96 @@ TEST(DisktoolBcu, KombidisketteBootetUndArbeitet) {
     ASSERT_TRUE(a->extract(ka, x.get(), TransferOptions{})) << a->lastError();
     ASSERT_TRUE(b->extract(kb, y.get(), TransferOptions{})) << b->lastError();
     EXPECT_EQ(datei(x.get()), datei(y.get()));
+}
+
+/**
+ * @brief 80 Spuren (K5600.20), Eigenbau: Kombidiskette in A:, 80-Spur-Arbeitsdiskette in B:.
+ *        Eine 100-KB-Datei, die das DiskTool schreibt, wird von BCU nach A: kopiert — die Kopie liegt
+ *        ueber Zylinder 40 hinaus (nur ein 96-tpi-Laufwerk kommt dorthin) und das DiskTool liest beide
+ *        bytegleich.  B: ist OFF 2 (Verzeichnis ab Zylinder 2), A: OFF 5.
+ */
+TEST(DisktoolBcu, Kombidiskette80ArbeitetUeberZylinder40Hinaus) {
+    TempPfad kombi("k1520_bcu_kombi80_a.img"), arbeit("k1520_bcu_kombi80_b.img");
+    std::vector<uint8_t> gross(100 * 1024);
+    for (size_t i = 0; i < gross.size(); ++i) gross[i] = static_cast<uint8_t>((i * 7 + (i >> 8)) & 0xFF);
+    {
+        std::string fehler;
+        auto dv = baue(kombi.get(), "bcu880_kombi80", bootbin("boot_bcu12_kombi80_k7023.bin"), &fehler);
+        ASSERT_NE(dv, nullptr) << fehler;
+        TempPfad q("k1520_bcu_gross.com");
+        schreibe(q.get(), gross);
+        FileRef ref;
+        ref.name = "GROSS.COM";
+        ASSERT_TRUE(dv->insert(q.get(), ref, TransferOptions{})) << dv->lastError();
+        ASSERT_TRUE(dv->flush());
+
+        // Arbeitsdiskette: mit BCU-System in Zylinder 0-1 angelegt (daran wird sie erkannt), PIP.COM und STAT.COM von der Beleg-Diskette.
+        auto b = baue(arbeit.get(), "bcu880_80", bootbin("boot_bcu12_ohnesyl.bin"), &fehler);
+        ASSERT_NE(b, nullptr) << fehler;
+        TempDisk beleg(kArbeit);
+        auto quelle = oeffne(beleg.path());
+        ASSERT_NE(quelle, nullptr);
+        for (const char* n : {"PIP.COM", "STAT.COM"}) {
+            TempPfad z("k1520_bcu_pip.com");
+            FileRef r;
+            r.name = n;
+            ASSERT_TRUE(quelle->extract(r, z.get(), TransferOptions{})) << quelle->lastError();
+            ASSERT_TRUE(b->insert(z.get(), r, TransferOptions{})) << b->lastError();
+        }
+        ASSERT_TRUE(b->flush());
+    }
+
+    auto cfg = A5120Machine::Config::fuerAusfuehrung(A::Alt);
+    cfg.laderom = L::V06;
+    cfg.drive_profiles = {"K5600.20", "K5600.20", "K5600.20", "none"};
+    A5120Machine m(cfg);
+    m.powerOn();
+    ASSERT_TRUE(m.mountDisk(0, kombi.get(), "k5601_ss80_26x128", false)) << m.lastError();
+    ASSERT_TRUE(m.mountDisk(1, arbeit.get(), "k5601_ss80_26x128", false)) << m.lastError();
+    const uint32_t ende = K7636::QK_TASTE_BASE | 0x37;
+    bisPrompt(m, ende);
+    befehl(m, "dir a:", ende);
+    k1520test::runCycles(m, 20'000'000);
+    EXPECT_NE(bild(m).find("GROSS    COM"), std::string::npos) << "A: ab Zylinder 5:\n" << bild(m);
+    befehl(m, "dir b:", ende);
+    k1520test::runCycles(m, 20'000'000);
+    EXPECT_NE(bild(m).find("PIP      COM"), std::string::npos) << "B: ab Zylinder 2:\n" << bild(m);
+
+    befehl(m, "b:pip a:kopie.com=a:gross.com", ende);
+    k1520test::runCycles(m, 400'000'000);
+    befehl(m, "dir a:", ende);
+    k1520test::runCycles(m, 30'000'000);
+    EXPECT_NE(bild(m).find("KOPIE    COM"), std::string::npos) << "nach PIP:\n" << bild(m);
+    ASSERT_TRUE(m.flushDisks()) << m.lastError();
+
+    auto a = oeffne(kombi.get());
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->detection().filesystem, "bcu880_kombi80");
+    auto b = oeffne(arbeit.get());
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->detection().filesystem, "bcu880_80");   // nicht als CP/A-400K gelesen (2-KB-Bloecke!)
+    for (const char* n : {"GROSS.COM", "KOPIE.COM"}) {
+        TempPfad x("k1520_bcu_gross_aus.bin");
+        FileRef r;
+        r.name = n;
+        ASSERT_TRUE(a->extract(r, x.get(), TransferOptions{})) << n << ": " << a->lastError();
+        EXPECT_EQ(datei(x.get()), gross) << n;
+    }
+}
+
+TEST(DisktoolBcu, Kombi40Und80AbbilderSindNichtAustauschbar) {
+    TempPfad zu("k1520_bcu_kombi_spuren.img");
+    std::string fehler;
+    EXPECT_EQ(baue(zu.get(), "bcu880_kombi", bootbin("boot_bcu12_kombi80_k7023.bin"), &fehler), nullptr);
+    EXPECT_NE(fehler.find("Spurzahl"), std::string::npos) << fehler;
+    EXPECT_EQ(baue(zu.get(), "bcu880_kombi80", bootbin("boot_bcu12_kombi_k7023.bin"), &fehler), nullptr);
+    EXPECT_NE(fehler.find("Spurzahl"), std::string::npos) << fehler;
+}
+
+TEST(DisktoolBcu, Arbeitsdiskette80VerlangtEinBootabbild) {
+    TempPfad p("k1520_bcu_80_ohne.img");
+    std::string fehler;
+    EXPECT_EQ(baue(p.get(), "bcu880_80", "", &fehler), nullptr);
+    EXPECT_NE(fehler.find("--boot"), std::string::npos) << fehler;
+    EXPECT_FALSE(fs::exists(p.get()));
 }

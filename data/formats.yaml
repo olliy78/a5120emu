@@ -780,6 +780,36 @@ filesystems:
     skew:        6
     boot_header: bcu_kombi
 
+  # ── 80 Spuren (K5600.20, 96 tpi): EIGENBAU, im Emulator nachgewiesen ───────────────────────
+  # `bcu880_kombi80` — wie `bcu880_kombi`, aber 80 Zylinder: A: bekommt OFF 5 / DSM 242 (75 Zylinder
+  # = 243 Bloecke), B:-D: DSM 247.  Das BIOS haelt je Laufwerk nur 31 Byte Belegungsvektor
+  # (= 248 Bloecke); die 80-Spur-Diskette mit OFF 2 hat 253 Bloecke — `max_blocks` kappt, damit das
+  # Werkzeug keinen Block vergibt, den BCU nie sieht.
+  - name:        bcu880_kombi80
+    description: "BCU 880 V1.2 — EIGENBAU, 80 Spuren (K5600.20): Startdiskette mit Dateisystem ab Zylinder 5 (nur als A:)"
+    format:      k5601_ss80_26x128
+    type:        cpm
+    data_start:  { cyl: 5, head: 0 }
+    block_size:  1024
+    dir_entries: 64
+    skew:        6
+    boot_header: bcu_kombi80
+
+  # `bcu880_80` — Arbeitsdiskette 80 Spuren (Dateisystem ab Zylinder 2) fuer B: neben der Kombidiskette.
+  # Wird am BCU-System in den Systemspuren erkannt (Kennung „BCU 880“): eine 80-Spur-Diskette 26×128
+  # ist sonst auch ein CP/A-Format (400K) mit anderen Bloecken.  Deshalb verlangt `create` ein
+  # Bootabbild (boot_bcu12_ohnesyl.bin); das System selbst wird nicht gebraucht (der Warmstart liest A:).
+  - name:        bcu880_80
+    description: "BCU 880 V1.2 — EIGENBAU, 80 Spuren (K5600.20): Arbeitsdiskette, Dateisystem ab Zylinder 2, 248 Bloecke"
+    format:      k5601_ss80_26x128
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  1024
+    dir_entries: 64
+    skew:        6
+    max_blocks:  248
+    boot_header: bcu
+
   # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
   # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,
   # 128-B-Sätze.  Nachgemessen am Referenzdatenträger (Verzeichnis bei c2h0,

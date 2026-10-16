@@ -135,8 +135,15 @@ TEST(FsRecoverKeineFalschmeldungen, EineFrischAngelegteDisketteHatNichtsZuRetten
                                   / ("fsrec_neu_" + p.name + ext)).string();
         fs::remove(ziel);
 
+        // BCU 880 (80 Spuren) wird am System erkannt: `create` verlangt ein Bootabbild mit der Kennung.
+        std::string boot;
+        if (p.boot_header == "bcu" && p.detect) {
+            boot = (fs::temp_directory_path() / "fsrec_bcu_boot.bin").string();
+            std::ofstream(boot, std::ios::binary) << std::string(128, '\0') << "BCU 880 VERS 1.2";
+        }
+
         std::string err;
-        auto v = DiskVolume::create(ziel, p.name, "", formate(), dateisysteme(), err);
+        auto v = DiskVolume::create(ziel, p.name, "", formate(), dateisysteme(), err, boot);
         ASSERT_TRUE(v) << p.name << ": " << err;
 
         const FsRecoverReport& r = v->recoverScan(FsRecoverLevel::Oberflaeche, true);

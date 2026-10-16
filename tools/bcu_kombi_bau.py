@@ -20,7 +20,9 @@ ungeprueft (doc/a5120_alt/bcu.md §12):
    A: Zylinder 0 neu geladen.  Auf der Startdiskette ist Zylinder 0 leer (deshalb der Absturz bei ^C);
    hier steht dort eine Kopie von D780H-DFFFH aus dem System selbst.
 
-Aufruf: bcu_kombi_bau.py <boot_syl.bin> <aus.bin>
+Mit ``--80`` fuer 80 Spuren (K5600.20, 96 tpi): A: OFF 5 / DSM 242, B:-D: OFF 2 / DSM 247.
+
+Aufruf: bcu_kombi_bau.py [--80] <boot_syl.bin> <aus.bin>
 """
 import sys
 
@@ -28,10 +30,18 @@ SPT, SEC = 26, 128
 TRK = SPT * SEC
 BASIS = 0xD680                       # Ladeadresse des Systems (Zylinder 2 Sektor 1)
 DPB_NEU = 0xEC73                     # im Original ungenutzte zweite Tabelle (80 Spuren)
-DPB_ALT = 0xEC82                     # die von allen vier Laufwerksköpfen benutzte (40 Spuren)
+DPB_ALT = 0xEC82                     # die von allen vier Laufwerkskoepfen benutzte (40 Spuren)
 DPH_A_DPB = 0xEC3D                   # Laufwerkskopf A: + 0AH = Zeiger auf die Tabelle
-DPB_A = bytes([0x1A, 0x00, 0x03, 0x07, 0x00, 0x70, 0x00, 0x3F, 0x00, 0xC0, 0x00, 0x10, 0x00,
-               0x05, 0x00])         # SPT 26, BSH 3, BLM 7, EXM 0, DSM 112, DRM 63, AL0/1 C0 00, CKS 16, OFF 5
+def dpb(dsm, off):
+    """SPT 26, BSH 3, BLM 7, EXM 0, DSM, DRM 63, AL0/1 C0 00, CKS 16, OFF."""
+    return bytes([0x1A, 0x00, 0x03, 0x07, 0x00, dsm, 0x00, 0x3F, 0x00, 0xC0, 0x00, 0x10, 0x00, off, 0x00])
+
+
+DPB_A = dpb(112, 5)                  # 40 Spuren: 35 Zylinder ab 5 = 113 Bloecke
+# 80 Spuren: A: 75 Zylinder ab 5 = 243 Bloecke (DSM 242); B:-D: bleiben OFF 2, aber DSM 247 — der
+# Belegungsvektor je Laufwerk ist im BIOS nur 31 Byte (248 Bloecke) gross, 253 (DSM 252) liefen ins Nachbarlaufwerk.
+DPB_A_80 = dpb(242, 5)
+DPB_BCD_80 = dpb(247, 2)
 CCP_VON, CCP_SEKTOREN = 0xD780, 17   # was der Warmstart nach dem Kaltstart nachlaedt
 
 
@@ -44,7 +54,7 @@ def crc(b):
     return c
 
 
-def bauen(boot):
+def bauen(boot, spuren=40):
     assert len(boot) == 5 * TRK, 'Bootabbild muss Zylinder 0-4 umfassen (16640 Byte)'
     lader = boot[TRK:TRK + 768]
     assert lader[:3] == b'SYL' and crc(lader[7:0x2FE]) == int.from_bytes(lader[0x2FE:0x300], 'big'), \
@@ -65,7 +75,9 @@ def bauen(boot):
     assert at(0xF12B, 3) == bytes([0x01, 0x02, 0x19]) and at(0xF112, 3) == bytes([0x21, 0x01, 0x11]), \
         'Neuladen/Kaltstart haben nicht die erwartete Form (BC=1902H, LD HL,1101H)'
 
-    sysb[DPB_NEU - BASIS:DPB_NEU - BASIS + 15] = DPB_A
+    sysb[DPB_NEU - BASIS:DPB_NEU - BASIS + 15] = DPB_A if spuren == 40 else DPB_A_80
+    if spuren == 80:
+        sysb[DPB_ALT - BASIS:DPB_ALT - BASIS + 15] = DPB_BCD_80
     sysb[DPH_A_DPB - BASIS:DPH_A_DPB - BASIS + 2] = DPB_NEU.to_bytes(2, 'little')
 
     aus = bytearray(boot)
@@ -76,12 +88,15 @@ def bauen(boot):
 
 
 def main():
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    spuren = 80 if '--80' in args else 40
+    args = [a for a in args if a != '--80']
+    if len(args) != 2:
         sys.exit(__doc__)
-    with open(sys.argv[1], 'rb') as f:
+    with open(args[0], 'rb') as f:
         boot = f.read()
-    with open(sys.argv[2], 'wb') as f:
-        f.write(bauen(boot))
+    with open(args[1], 'wb') as f:
+        f.write(bauen(boot, spuren))
 
 
 if __name__ == '__main__':
