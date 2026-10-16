@@ -133,10 +133,33 @@ Inode 1 (Bad-Block-Datei, nlink 0) ist nie „verwaist".  Reparaturen: keine (Et
 die Kennungen sind Vertrag.  Falschmeldungen schlimmer als fehlende: alle Lieferdisketten
 und die installierte Platte müssen ohne Befund ab Warnung prüfen.
 
-## 6. Offen
+## 6. UNIX-Dateiangaben im DiskTool (2026-10-17)
 
-- `.fileinfo` für WEGA (Besitzer, Rechte, Zeiten durch `get`→`put` tragen) — heute nur
-  das Ausführbar-Bit.
+Eine WEGA-Datei trägt eine Inode, keinen UDOS-Kopfsektor:
+
+| Angabe | Anzeige | änderbar | `.fileinfo` | zurückgespielt |
+|--------|---------|----------|-------------|----------------|
+| Modus (`di_mode`, `rwx`-Text + Oktal) | ja | untere 12 Bit (`chmod`) | `mode=0104711` | ja |
+| uid / gid | ja | ja (0…65535) | `uid=`/`gid=` | ja |
+| mtime | ja | ja (`touch`) | `mtime=` | ja |
+| Dateiart `-`/`d`/`c`/`b`/`p` | ja | nein | `art=` | nein (Struktur) |
+| Inode, Links, Größe | ja | nein | `inode=`/`nlink=` | nein |
+| atime, ctime | ja | nein (`ctime` = jetzt) | `atime=`/`ctime=` | nein |
+| Gerät major,minor | ja | nein | `rdev=` | nein |
+| Blockliste | ja (Einzelansicht) | nein | — | — |
+
+Schreibseite: `FileSystem::setAttributes(name, UnixAttrs)` → `WegaFileSystem` (eine `Tx`,
+Prüfung vor dem ersten Blockzugriff), `DiskVolume::setAttributes`, C-ABI
+`k1520d_set_unix_attrs`.  Extraktion: `.fileinfo` je Datei **und je Verzeichnis**
+(`<ordner>.fileinfo`), `wega-dateiangaben.txt` mit allen Inodes (Geräte-/FIFO-Dateien nur
+dort).  `put <ordner>` stellt die Dateiangaben mit dem Einfügen her, die der Verzeichnisse
+danach (jede Datei ändert die mtime ihres Verzeichnisses).  System III kennt keine
+Symlinks; Hard Links sind in `list()` als mehrere Namen mit derselben Inode sichtbar, beim
+Zurückschreiben werden sie zu Kopien.
+
+## 7. Offen
+
+- ~~`.fileinfo` für WEGA~~ — erledigt 2026-10-17, s. u.
 - Rettung gelöschter Dateien (Inode bleibt bis zur Wiedervergabe lesbar, der Name im
   Verzeichnis auch) — Kandidat für eine spätere Etappe.
 - Reparaturen (Freiliste neu aufbauen wie `fsck -s`).

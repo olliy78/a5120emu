@@ -429,3 +429,249 @@ TEST(WegaLieferdisketten, AlleLesbarUndOhneBefund) {
     }
     if (geprueft == 0) GTEST_SKIP() << "keine Dateisystemdisketten in " << ordner;
 }
+
+// ─── UNIX-Dateiangaben: chmod / chown / touch ────────────────────────────────
+
+TEST(WegaFs, SetAttributesAendertModusBesitzerUndZeit) {
+    std::shared_ptr<std::vector<uint8_t>> puffer;
+    auto fs = neuesFs(1440, &puffer);
+    ASSERT_TRUE(fs);
+    WriteOptions w;
+    w.wega_mode = 0644; w.wega_mode_gesetzt = true;
+    ASSERT_TRUE(fs->write("bin/x", muster(700, 1), w)) << fs->lastError();
+
+    fs->setClock([] { return 600000123u; });
+    UnixAttrs a;
+    a.set_mode = true;  a.mode = 04755;
+    a.set_uid = true;   a.uid = 12;
+    a.set_gid = true;   a.gid = 7;
+    a.set_mtime = true; a.mtime = 500000000u;
+    ASSERT_TRUE(fs->setAttributes("bin/x", a)) << fs->lastError();
+
+    wega::Dinode d;
+    ASSERT_TRUE(fs->readInode(fs->lookup("bin/x"), d));
+    EXPECT_EQ(d.mode, wega::IFREG | 04755);        // Dateiart bleibt
+    EXPECT_EQ(d.uid, 12);
+    EXPECT_EQ(d.gid, 7);
+    EXPECT_EQ(d.mtime, 500000000u);
+    EXPECT_EQ(d.ctime, 600000123u);                // wie chmod: Inode-Zeit = jetzt
+    EXPECT_EQ(d.atime, 600000000u);                // unberuehrt
+    EXPECT_EQ(d.size, 700u);
+    EXPECT_EQ(d.nlink, 1);
+
+    // Nur ein Feld: die uebrigen bleiben stehen
+    UnixAttrs nur_gid;
+    nur_gid.set_gid = true; nur_gid.gid = 3;
+    ASSERT_TRUE(fs->setAttributes("bin/x", nur_gid));
+    ASSERT_TRUE(fs->readInode(fs->lookup("bin/x"), d));
+    EXPECT_EQ(d.gid, 3);
+    EXPECT_EQ(d.uid, 12);
+    EXPECT_EQ(d.mode, wega::IFREG | 04755);
+
+    // Verzeichnisse gehen genauso
+    UnixAttrs dir;
+    dir.set_mode = true; dir.mode = 0700;
+    ASSERT_TRUE(fs->setAttributes("bin", dir));
+    ASSERT_TRUE(fs->readInode(fs->lookup("bin"), d));
+    EXPECT_EQ(d.mode, wega::IFDIR | 0700);
+
+    bool gefunden = false;
+    for (const FileEntry& e : fs->list())
+        if (e.name == "bin/x") {
+            gefunden = true;
+            EXPECT_EQ(e.attributes, "-rwsr-xr-x");
+            EXPECT_EQ(e.unix_uid, 12);
+            EXPECT_EQ(e.unix_mtime, 500000000u);
+            EXPECT_EQ(e.unix_ctime, 600000123u);
+            EXPECT_EQ(e.unix_atime, 600000000u);
+        }
+    EXPECT_TRUE(gefunden);
+    const FsCheckReport r = fs->check(FsCheckLevel::Voll, true);
+    EXPECT_TRUE(r.ohneBefund()) << befundText(r);
+}
+
+TEST(WegaFs, SetAttributesPruftVorDemSchreiben) {
+    std::shared_ptr<std::vector<uint8_t>> puffer;
+    auto fs = neuesFs(1440, &puffer);
+    ASSERT_TRUE(fs);
+    ASSERT_TRUE(fs->write("a", muster(100, 1), {}));
+    const std::vector<uint8_t> vorher = *puffer;
+
+    UnixAttrs a;
+    a.set_mode = true; a.mode = 0170755;            // Dateiart aendern: verboten
+    EXPECT_FALSE(fs->setAttributes("a", a));
+    EXPECT_NE(fs->lastError().find("07777"), std::string::npos) << fs->lastError();
+
+    UnixAttrs u;
+    u.set_uid = true; u.uid = 70000;
+    EXPECT_FALSE(fs->setAttributes("a", u));
+    u.uid = -1;
+    EXPECT_FALSE(fs->setAttributes("a", u));
+
+    UnixAttrs ok;
+    ok.set_mode = true; ok.mode = 0600;
+    EXPECT_FALSE(fs->setAttributes("gibt/es/nicht", ok));
+    EXPECT_NE(fs->lastError().find("nicht gefunden"), std::string::npos);
+    EXPECT_EQ(*puffer, vorher) << "ein abgelehnter Aufruf darf nichts veraendern";
+}
+
+TEST(WegaFs, SchreibenMitZeitUndBesitzerAngabe) {
+    auto fs = neuesFs(1440);
+    ASSERT_TRUE(fs);
+    WriteOptions w;
+    w.wega_owner_gesetzt = true; w.wega_uid = 0; w.wega_gid = 0;
+    w.wega_mtime = 123456789u;
+    ASSERT_TRUE(fs->write("f", muster(10, 1), w));
+    wega::Dinode d;
+    ASSERT_TRUE(fs->readInode(fs->lookup("f"), d));
+    EXPECT_EQ(d.mtime, 123456789u);
+    EXPECT_EQ(d.atime, 123456789u);
+}
+
+TEST(WegaFs, BlockListeNenntDateiUndVerwaltungsbloecke) {
+    auto fs = neuesFs(1440);
+    ASSERT_TRUE(fs);
+    ASSERT_TRUE(fs->write("klein", muster(100, 1), {}));
+    ASSERT_TRUE(fs->write("gross", muster(40000, 2), {}));   // einfach indirekt
+    EXPECT_FALSE(fs->blockList("klein").empty());
+    EXPECT_EQ(fs->blockList("klein").find('|'), std::string::npos);
+    EXPECT_NE(fs->blockList("gross").find("| indirekt:"), std::string::npos)
+        << fs->blockList("gross");
+    EXPECT_TRUE(fs->blockList("gibt-es-nicht").empty());
+}
+
+// ─── Ueber DiskVolume: .fileinfo, Beiblatt, Rundreise ────────────────────────
+
+namespace {
+
+std::string leseText(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+void schreibeText(const fs::path& p, const std::string& t) {
+    fs::create_directories(p.parent_path());
+    std::ofstream(p, std::ios::binary).write(t.data(), static_cast<std::streamsize>(t.size()));
+}
+
+std::map<std::string, FileEntry> eintraege(const DiskVolume& dv) {
+    std::map<std::string, FileEntry> l;
+    for (const FileEntry& e : dv.list()) l[e.name] = e;
+    return l;
+}
+
+}  // namespace
+
+TEST(WegaDiskVolume, FileinfoTraegtUnixAngabenUndSpieltSieZurueck) {
+    const std::string img = k1520test::tempPath("wega_attr1.img");
+    const std::string img2 = k1520test::tempPath("wega_attr2.img");
+    const std::string quelle = k1520test::tempPath("wega_attr_quelle");
+    const std::string ziel = k1520test::tempPath("wega_attr_ziel");
+    for (const auto& p : {quelle, ziel}) fs::remove_all(p);
+    fs::remove(img); fs::remove(img2);
+    schreibeText(fs::path(quelle) / "bin" / "hallo", "echo hallo\n");
+    schreibeText(fs::path(quelle) / "etc" / "passwd", "root::0:0::/:/bin/sh\n");
+    fs::create_directories(fs::path(quelle) / "usr" / "leer");
+
+    std::string err;
+    auto dv = DiskVolume::create(img, "wega720", "probe", formate(), dateisysteme(), err);
+    ASSERT_TRUE(dv) << err;
+    ASSERT_TRUE(dv->insertAll(quelle, TransferOptions{})) << dv->lastError();
+
+    auto setze = [&](const std::string& name, uint16_t mode, int uid, int gid, uint32_t mtime) {
+        UnixAttrs a;
+        a.set_mode = true; a.mode = mode;
+        a.set_uid = true; a.uid = uid;
+        a.set_gid = true; a.gid = gid;
+        a.set_mtime = true; a.mtime = mtime;
+        ASSERT_TRUE(dv->setAttributes(FileRef{0, name}, a)) << dv->lastError();
+    };
+    setze("bin/hallo", 04711, 5, 6, 400000000u);
+    setze("etc/passwd", 0644, 0, 3, 400000001u);
+    setze("usr", 0750, 9, 8, 400000002u);
+    setze("usr/leer", 01777, 1, 2, 400000003u);
+
+    ASSERT_TRUE(dv->extractAll(ziel, TransferOptions{})) << dv->lastError();
+
+    // .fileinfo mit UNIX-Angaben — und keinem einzigen UDOS-/CP/M-Schluessel
+    const std::string fi = leseText(fs::path(ziel) / "bin" / "hallo.fileinfo");
+    EXPECT_NE(fi.find("fs=wega"), std::string::npos) << fi;
+    EXPECT_NE(fi.find("name=bin/hallo"), std::string::npos) << fi;
+    EXPECT_NE(fi.find("mode=0104711"), std::string::npos) << fi;
+    EXPECT_NE(fi.find("uid=5"), std::string::npos) << fi;
+    EXPECT_NE(fi.find("gid=6"), std::string::npos) << fi;
+    EXPECT_NE(fi.find("mtime=400000000"), std::string::npos) << fi;
+    for (const char* udos : {"typ=", "eig=", "satz=", "segment=", "mem=", "attr=", "UDOS"})
+        EXPECT_EQ(fi.find(udos), std::string::npos) << udos << " in\n" << fi;
+
+    // Verzeichnisse: `<ordner>.fileinfo` neben dem Ordner
+    const std::string dfi = leseText(fs::path(ziel) / "usr.fileinfo");
+    EXPECT_NE(dfi.find("mode=0040750"), std::string::npos) << dfi;
+    EXPECT_NE(dfi.find("art=d"), std::string::npos) << dfi;
+
+    // Beiblatt mit ALLEN Inodes, ohne UDOS-Begriffe
+    const std::string bb = leseText(fs::path(ziel) / "wega-dateiangaben.txt");
+    EXPECT_NE(bb.find("usr/leer art=d mode=0041777"), std::string::npos) << bb;
+    EXPECT_NE(bb.find("bin/hallo art=- mode=0104711"), std::string::npos) << bb;
+    EXPECT_EQ(bb.find("UDOS"), std::string::npos) << bb;
+
+    // Rundreise: auf eine frische Diskette zurueck, Angaben muessen gleich sein
+    auto dv2 = DiskVolume::create(img2, "wega720", "zwei", formate(), dateisysteme(), err);
+    ASSERT_TRUE(dv2) << err;
+    ASSERT_TRUE(dv2->insertAll(ziel, TransferOptions{})) << dv2->lastError();
+    const auto l1 = eintraege(*dv), l2 = eintraege(*dv2);
+    for (const char* n : {"bin/hallo", "etc/passwd", "usr", "usr/leer"}) {
+        ASSERT_TRUE(l2.count(n)) << n;
+        EXPECT_EQ(l2.at(n).unix_mode, l1.at(n).unix_mode) << n;
+        EXPECT_EQ(l2.at(n).unix_uid, l1.at(n).unix_uid) << n;
+        EXPECT_EQ(l2.at(n).unix_gid, l1.at(n).unix_gid) << n;
+        EXPECT_EQ(l2.at(n).unix_mtime, l1.at(n).unix_mtime) << n;
+    }
+    // Zubehoer ist keine Nutzdatei
+    for (const auto& [n, e] : l2) {
+        EXPECT_EQ(n.find(".fileinfo"), std::string::npos) << n;
+        EXPECT_EQ(n.find("wega-dateiangaben"), std::string::npos) << n;
+    }
+    const FsCheckReport& r = dv2->check(FsCheckLevel::Voll, true);
+    EXPECT_EQ(befundeAbWarnung(r), 0) << r.alsText();
+
+    dv.reset(); dv2.reset();
+    for (const auto& p : {quelle, ziel}) fs::remove_all(p);
+    fs::remove(img); fs::remove(img2);
+}
+
+TEST(WegaDiskVolume, FremdesFileinfoWirdUeberlesenNichtAlsUdosGedeutet) {
+    const std::string img = k1520test::tempPath("wega_fremd.img");
+    const std::string quelle = k1520test::tempPath("wega_fremd_quelle");
+    fs::remove_all(quelle); fs::remove(img);
+    schreibeText(fs::path(quelle) / "PROG", "x");
+    schreibeText(fs::path(quelle) / "PROG.fileinfo",
+                 "fs=udos\nname=PROG\ntyp=P\neig=W\nstart=4000\nsatz=1024\n");
+    std::string err;
+    auto dv = DiskVolume::create(img, "wega720", "fremd", formate(), dateisysteme(), err);
+    ASSERT_TRUE(dv) << err;
+    TransferOptions t;
+    EXPECT_TRUE(dv->insert((fs::path(quelle) / "PROG").string(), FileRef{0, "PROG"}, t))
+        << dv->lastError();
+    const auto l = eintraege(*dv);
+    ASSERT_TRUE(l.count("PROG"));
+    EXPECT_EQ(l.at("PROG").unix_mode & 07777, 0644);     // Vorgabe, nicht UDOS-Eigenschaft "W"
+    dv.reset();
+    fs::remove_all(quelle); fs::remove(img);
+}
+
+TEST(WegaDiskVolume, UnixAngabenAufEinerNichtWegaDisketteWerdenAbgelehnt) {
+    const std::string img = k1520test::tempPath("cpm_unix.img");
+    fs::remove(img);
+    std::string err;
+    auto dv = DiskVolume::create(img, "cpa780", "x", formate(), dateisysteme(), err);
+    ASSERT_TRUE(dv) << err;
+    UnixAttrs a;
+    a.set_mode = true; a.mode = 0755;
+    EXPECT_FALSE(dv->setAttributes(FileRef{0, "X.COM"}, a));
+    EXPECT_NE(dv->lastError().find("UNIX"), std::string::npos) << dv->lastError();
+    EXPECT_EQ(dv->fsType(), FsType::Cpm);
+    EXPECT_TRUE(dv->blockList(FileRef{0, "X.COM"}).empty());
+    dv.reset();
+    fs::remove(img);
+}

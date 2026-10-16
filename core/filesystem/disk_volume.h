@@ -556,6 +556,17 @@ public:
      */
     bool setAttributes(const FileRef& ref, const CpmAttrs& attrs);
 
+    /// @brief Modus, Besitzer und Aenderungszeit einer WEGA-Datei aendern (`chmod`/`chown`/`touch`).
+    ///        UDOS und CP/M melden das als Fehler.  Eine Transaktion im Dateisystem.
+    bool setAttributes(const FileRef& ref, const UnixAttrs& attrs);
+
+    /// @brief Belegte Bloecke als Text (nur WEGA, sonst leer) — fuer den Eigenschaften-Dialog.
+    std::string blockList(const FileRef& ref) const;
+
+    /// @brief Die Art des Dateisystems — die EINE Frage, nach der Oberflaeche und
+    ///        Archiv Dateiangaben unterscheiden (kein Rueckschluss aus `type`-Strings).
+    FsType fsType() const { return profile_ ? profile_->type : FsType::Cpm; }
+
     // ─── Sektoransicht (Diskeditor, §19) ─────────────────────────────────────
     //
     // Eine Ebene UNTER dem Dateisystem: hier gibt es keine Dateien, nur Spuren,

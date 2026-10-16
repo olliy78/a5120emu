@@ -242,6 +242,36 @@ _lib.k1520d_set_cpm_attrs.argtypes = [
 ]
 _lib.k1520d_set_cpm_attrs.restype = ctypes.c_bool
 
+# ── WEGA-(UNIX-)Dateiangaben ─────────────────────────────────────────────────
+_lib.k1520d_entry_unix_mode.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_mode.restype = ctypes.c_uint16
+_lib.k1520d_entry_unix_uid.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_uid.restype = ctypes.c_int
+_lib.k1520d_entry_unix_gid.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_gid.restype = ctypes.c_int
+_lib.k1520d_entry_unix_nlink.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_nlink.restype = ctypes.c_int
+_lib.k1520d_entry_unix_inode.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_inode.restype = ctypes.c_uint32
+_lib.k1520d_entry_unix_mtime.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_mtime.restype = ctypes.c_uint32
+_lib.k1520d_entry_unix_atime.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_atime.restype = ctypes.c_uint32
+_lib.k1520d_entry_unix_ctime.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_ctime.restype = ctypes.c_uint32
+_lib.k1520d_entry_unix_rdev.argtypes = [_H, ctypes.c_int]
+_lib.k1520d_entry_unix_rdev.restype = ctypes.c_uint16
+_lib.k1520d_unix_blocks.argtypes = [_H, _CS]
+_lib.k1520d_unix_blocks.restype = _CS
+_lib.k1520d_set_unix_attrs.argtypes = [
+    _H, _CS,
+    ctypes.c_bool, ctypes.c_uint16,
+    ctypes.c_bool, ctypes.c_int,
+    ctypes.c_bool, ctypes.c_int,
+    ctypes.c_bool, ctypes.c_uint32,
+]
+_lib.k1520d_set_unix_attrs.restype = ctypes.c_bool
+
 # ── Sektoransicht (Diskeditor) ──────────────────────────────────────────────
 _lib.k1520d_medium_cylinders.argtypes = [_H]
 _lib.k1520d_medium_cylinders.restype = ctypes.c_int
@@ -606,6 +636,32 @@ class Entry:
     extra: int = 0          # Kopfsektor 44…47 = die vier Bytes hinter Segment 1
     segments: str = ""      # ALLE Segmente, "4400+0041 8442+0026"
     created: str = ""       # Erstellungsvermerk (Datum ODER Versionstext)
+
+    # ── WEGA-(UNIX-)Angaben (bei CP/M und UDOS alle 0) ───────────────────────
+    # ``type`` ist hier die Dateiart: ``-`` Datei · ``d`` Verzeichnis · ``c``/``b``
+    # Geraet · ``p`` FIFO; ``attrs`` der ``ls -l``-Modusstring.
+    unix_mode: int = 0      # di_mode samt Dateiart (0 = kein UNIX-Eintrag)
+    unix_uid: int = 0
+    unix_gid: int = 0
+    unix_nlink: int = 0
+    unix_inode: int = 0
+    unix_mtime: int = 0     # Sekunden seit 1970 (GMT)
+    unix_atime: int = 0
+    unix_ctime: int = 0
+    unix_rdev: int = 0      # Geraetedatei: major<<8 | minor
+
+    @property
+    def ist_unix(self) -> bool:
+        """Trägt der Eintrag eine UNIX-Inode?  (Nicht aus ``type`` zu erraten:
+        ``type`` ist bei UDOS ein Dateityp, bei WEGA eine Dateiart.)"""
+        return self.unix_mode != 0
+
+    @property
+    def unix_rdev_text(self) -> str:
+        """``'major,minor'`` bei Geräten, sonst leer."""
+        if self.type not in ("c", "b"):
+            return ""
+        return f"{self.unix_rdev >> 8},{self.unix_rdev & 0xFF}"
 
     # ── CP/M-Attribute, aus ``attrs`` aufgeschluesselt ───────────────────────
 
@@ -1168,6 +1224,20 @@ class DiskTool:
         return "cpm" if self.filesystem.startswith("cpa") else ""
 
     @property
+    def ist_wega(self) -> bool:
+        """UNIX-Dateisystem (WEGA): Modus/uid/gid statt UDOS- oder CP/M-Angaben."""
+        return self.filesystem_type == "wega"
+
+    @property
+    def ist_udos(self) -> bool:
+        """UDOS-Familie (ZDOS, NDOS): Kopfsektorangaben."""
+        return self.filesystem_type.startswith("udos")
+
+    @property
+    def ist_cpm(self) -> bool:
+        return self.filesystem_type == "cpm"
+
+    @property
     def unambiguous(self) -> bool:
         """False = mehrere Dateisysteme passen gleich gut (siehe ``alternatives``)."""
         return bool(_lib.k1520d_detection_unambiguous(self._h))
@@ -1277,6 +1347,15 @@ class DiskTool:
             segments=_s(_lib.k1520d_entry_segments(self._h, i)),
             created=_s(_lib.k1520d_entry_created(self._h, i)),
             details_loaded=bool(_lib.k1520d_entry_details_loaded(self._h, i)),
+            unix_mode=int(_lib.k1520d_entry_unix_mode(self._h, i)),
+            unix_uid=int(_lib.k1520d_entry_unix_uid(self._h, i)),
+            unix_gid=int(_lib.k1520d_entry_unix_gid(self._h, i)),
+            unix_nlink=int(_lib.k1520d_entry_unix_nlink(self._h, i)),
+            unix_inode=int(_lib.k1520d_entry_unix_inode(self._h, i)),
+            unix_mtime=int(_lib.k1520d_entry_unix_mtime(self._h, i)),
+            unix_atime=int(_lib.k1520d_entry_unix_atime(self._h, i)),
+            unix_ctime=int(_lib.k1520d_entry_unix_ctime(self._h, i)),
+            unix_rdev=int(_lib.k1520d_entry_unix_rdev(self._h, i)),
         )
 
     def check_report(self) -> str:
@@ -1636,6 +1715,31 @@ class DiskTool:
                 archived is not None, bool(archived),
                 user is not None, int(user or 0)):
             raise K1520DiskError(self._fail())
+
+    def set_unix_attrs(self, name: str, *, mode: Optional[int] = None,
+                       uid: Optional[int] = None, gid: Optional[int] = None,
+                       mtime: Optional[int] = None) -> None:
+        """Modus, Besitzer und Änderungszeit einer WEGA-Datei ändern (`chmod`/`chown`/`touch`).
+
+        ``mode`` sind nur die unteren 12 Bit (setuid/setgid/sticky + rwx); die
+        Dateiart lässt sich nicht ändern.  Nicht angegebene Felder bleiben stehen.
+        Der Kern prüft vor dem ersten Schreiben und arbeitet als Transaktion.
+
+        Raises:
+            K1520DiskError: schreibgeschützt, Datei unbekannt, Wert außerhalb des
+                Bereichs, oder kein WEGA-Dateisystem.
+        """
+        if not _lib.k1520d_set_unix_attrs(
+                self._h, _b(name),
+                mode is not None, int(mode or 0) & 0xFFFF,
+                uid is not None, int(uid or 0),
+                gid is not None, int(gid or 0),
+                mtime is not None, int(mtime or 0)):
+            raise K1520DiskError(self._fail())
+
+    def unix_blocks(self, name: str) -> str:
+        """Belegte Blöcke einer WEGA-Datei als Text (``'120-125 130 | indirekt: 140'``)."""
+        return _s(_lib.k1520d_unix_blocks(self._h, _b(name)))
 
     # ── Sektoransicht (Diskeditor) ──────────────────────────────────────────
 

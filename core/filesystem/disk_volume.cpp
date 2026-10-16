@@ -812,6 +812,87 @@ std::map<std::string, CpmAngabe> leseCpmBeiblatt(const fs::path& datei) {
 
 constexpr const char* kFileinfoEndung = ".fileinfo";
 
+// ─── WEGA: die Angaben einer UNIX-Inode ──────────────────────────────────────
+//
+// WEGA fuehrt weder UDOS-Kopfsektorangaben noch CP/M-Attribute, sondern eine Inode:
+// Modus (mit Dateiart), Besitzer, Gruppe, Zeiten.  Zurueckgespielt werden koennen
+// nur Modus (untere 12 Bit), uid, gid und mtime — die uebrigen Felder (Art, Links,
+// Inode-Nummer, atime/ctime, Geraetenummer) stehen zur Auskunft da und werden beim
+// Einfuegen ueberlesen: Links und Inode vergibt das Dateisystem, die ctime ist per
+// Definition der Zeitpunkt der letzten Inode-Aenderung.
+
+constexpr const char* kWegaBeiblatt = "wega-dateiangaben.txt";
+
+struct UnixAngabe {
+    std::string art = "-";      ///< "-" Datei · "d" Verzeichnis · "c"/"b" Geraet · "p" FIFO
+    uint16_t    mode = 0;       ///< di_mode samt Dateiart
+    bool        mode_da = false;
+    int         uid = 0, gid = 0;
+    bool        owner_da = false;
+    uint32_t    mtime = 0, atime = 0, ctime = 0;
+    int         nlink = 0;
+    uint32_t    inode = 0;
+    std::string rdev;           ///< "major,minor" nur bei Geraetedateien
+};
+
+std::string modeOktal(uint16_t m) {
+    char t[16];
+    std::snprintf(t, sizeof t, "0%06o", static_cast<unsigned>(m));
+    return t;
+}
+
+UnixAngabe unixAus(const FileEntry& e) {
+    UnixAngabe a;
+    a.art     = e.type.empty() ? "-" : e.type;
+    a.mode    = e.unix_mode;
+    a.mode_da = true;
+    a.uid     = e.unix_uid;
+    a.gid     = e.unix_gid;
+    a.owner_da = true;
+    a.mtime   = e.unix_mtime;
+    a.atime   = e.unix_atime;
+    a.ctime   = e.unix_ctime;
+    a.nlink   = e.unix_nlink;
+    a.inode   = e.unix_inode;
+    if (e.type == "c" || e.type == "b")
+        a.rdev = std::to_string(e.unix_rdev >> 8) + "," + std::to_string(e.unix_rdev & 0xFF);
+    return a;
+}
+
+/// @brief Die Zeilen `mode=` … `rdev=` — gemeinsam fuer `.fileinfo` und Beiblatt.
+void schreibeUnixFelder(std::ostream& f, const UnixAngabe& a, char trenner) {
+    f << "art=" << a.art << trenner
+      << "mode=" << modeOktal(a.mode) << trenner
+      << "uid=" << a.uid << trenner
+      << "gid=" << a.gid << trenner
+      << "nlink=" << a.nlink << trenner
+      << "inode=" << a.inode << trenner
+      << "mtime=" << a.mtime << trenner
+      << "atime=" << a.atime << trenner
+      << "ctime=" << a.ctime;
+    if (!a.rdev.empty()) f << trenner << "rdev=" << a.rdev;
+    f << '\n';
+}
+
+/// @brief Einen Schluessel dieser Familie in @p a eintragen; false = kein WEGA-Schluessel.
+bool leseUnixFeld(UnixAngabe& a, const std::string& k, const std::string& v) {
+    auto zahl = [](const std::string& t, int basis) -> unsigned long {
+        return std::strtoul(t.c_str(), nullptr, basis);
+    };
+    if      (k == "art")   a.art = v.empty() ? "-" : v;
+    else if (k == "mode")  { a.mode = static_cast<uint16_t>(zahl(v, 8)); a.mode_da = true; }
+    else if (k == "uid")   { a.uid = static_cast<int>(zahl(v, 10)); a.owner_da = true; }
+    else if (k == "gid")   { a.gid = static_cast<int>(zahl(v, 10)); a.owner_da = true; }
+    else if (k == "mtime") a.mtime = static_cast<uint32_t>(zahl(v, 10));
+    else if (k == "atime") a.atime = static_cast<uint32_t>(zahl(v, 10));
+    else if (k == "ctime") a.ctime = static_cast<uint32_t>(zahl(v, 10));
+    else if (k == "nlink") a.nlink = static_cast<int>(zahl(v, 10));
+    else if (k == "inode") a.inode = static_cast<uint32_t>(zahl(v, 10));
+    else if (k == "rdev")  a.rdev = v;
+    else return false;
+    return true;
+}
+
 /**
  * @struct FileAngaben
  * @brief Die Vereinigung von @ref UdosAngabe und @ref CpmAngabe samt Herkunft.
@@ -822,9 +903,11 @@ constexpr const char* kFileinfoEndung = ".fileinfo";
  */
 struct FileAngaben {
     bool        udos = false;   ///< `fs=udos` (ZDOS/NDOS) statt `fs=cpm`
+    bool        wega = false;   ///< `fs=wega` (UNIX-Inode); schliesst @ref udos aus
     std::string name;           ///< der ECHTE Name auf der Diskette ("3:SYSTEM.COM")
     UdosAngabe  u;
     CpmAngabe   c;
+    UnixAngabe  x;
 };
 
 /// @brief Ist @p name ein `.fileinfo`?  (Endungsvergleich ohne Ruecksicht auf Gross/Klein)
@@ -851,7 +934,12 @@ bool schreibeFileinfo(const fs::path& ziel, const FileAngaben& a) {
     // Der Satz danach sagt, WAS ohne sie verlorenginge — und das ist bei den beiden
     // Familien sehr Verschiedenes: bei UDOS die Lauffaehigkeit, bei CP/M der
     // Nutzerbereich.  Ein gemeinsamer Satz waere fuer eine der beiden Seiten falsch.
-    if (a.udos)
+    if (a.wega)
+        f << "# Ohne sie bekommt die Datei beim Einfuegen die Vorgaben (Modus 0644 bzw.\n"
+             "# 0755, Besitzer 0/0, Zeit jetzt) — Inhalt und Name gehen nicht verloren.\n"
+             "# Zurueckgespielt werden mode (untere 12 Bit), uid, gid und mtime; art,\n"
+             "# nlink, inode, atime, ctime und rdev stehen nur zur Auskunft da.\n";
+    else if (a.udos)
         f << "# Ohne sie kann das Werkzeug nicht wissen, was fuer eine Datei das ist —\n"
              "# aus einem Programm wuerde eine Binaerdatei, die nicht laeuft.\n";
     else
@@ -859,9 +947,11 @@ bool schreibeFileinfo(const fs::path& ziel, const FileAngaben& a) {
              "# bei CP/M der Normalfall und selten ein Verlust.\n";
     f << "# Loeschen schadet nur dieser einen Datei; die Zeilenform ist dieselbe wie in\n"
          "# udos-dateiangaben.txt bzw. cpm-dateiangaben.txt.\n";
-    f << "fs=" << (a.udos ? "udos" : "cpm") << '\n';
+    f << "fs=" << (a.wega ? "wega" : a.udos ? "udos" : "cpm") << '\n';
     f << "name=" << a.name << '\n';
-    if (a.udos) {
+    if (a.wega) {
+        schreibeUnixFelder(f, a.x, '\n');
+    } else if (a.udos) {
         f << "typ=" << (a.u.typ.empty() ? "-" : a.u.typ) << '\n'
           << "eig=" << (a.u.eigenschaften.empty() ? "-" : a.u.eigenschaften) << '\n'
           << "start=" << hex16(a.u.start) << '\n'
@@ -901,8 +991,10 @@ bool leseFileinfo(const fs::path& datei, FileAngaben& out) {
         if (g == std::string::npos) continue;
         const std::string k = zeile.substr(0, g), v = zeile.substr(g + 1);
         etwas = true;
-        if      (k == "fs")     a.udos = (v != "cpm");
+        if      (k == "fs")   { a.wega = (v == "wega");
+                                a.udos = (v != "cpm" && !a.wega); }
         else if (k == "name")   a.name = v;
+        else if (leseUnixFeld(a.x, k, v)) {}
         else if (k == "attr") { if (v != "-") {
                                     a.c.read_only = v.find('R') != std::string::npos;
                                     a.c.system    = v.find('S') != std::string::npos;
@@ -945,7 +1037,8 @@ bool leseFileinfo(const fs::path& datei, FileAngaben& out) {
 /// @brief Ist das eines der beiden Beiblaetter oder ein `.fileinfo`?
 ///        Alles davon ist Zubehoer des Auszugs, keine Nutzdatei.
 bool istBeiblatt(const fs::path& name) {
-    return name == kUdosBeiblatt || name == kCpmBeiblatt || istFileinfo(name);
+    return name == kUdosBeiblatt || name == kCpmBeiblatt || name == kWegaBeiblatt
+           || istFileinfo(name);
 }
 
 /**
@@ -967,7 +1060,8 @@ std::string zielName(const std::string& quelle, FsType typ,
     // Das `.fileinfo` gehoert zu GENAU dieser Datei und geht dem Sammelbeiblatt
     // vor — es wandert mit ihr mit, das Beiblatt bleibt beim Umsortieren zurueck.
     FileAngaben ein;
-    if (leseFileinfo(fileinfoPfad(quelle), ein) && !ein.udos && !ein.name.empty())
+    if (leseFileinfo(fileinfoPfad(quelle), ein) && !ein.udos && !ein.wega
+        && !ein.name.empty())
         return ein.name;
     const auto it = beiblatt.find(datei);
     if (it != beiblatt.end() && !it->second.name.empty()) return it->second.name;
@@ -1959,7 +2053,7 @@ std::string DiskVolume::zubehoerGrund(const std::string& pfad) {
         return "'" + name.string() + "' ist eine Angabendatei, keine Nutzdatei — "
                "gemeint ist vermutlich '" + gemeint + "'.";
     }
-    if (name == kUdosBeiblatt || name == kCpmBeiblatt)
+    if (name == kUdosBeiblatt || name == kCpmBeiblatt || name == kWegaBeiblatt)
         return "'" + name.string() + "' ist das Beiblatt zu den Dateien dieses "
                "Ordners, keine Nutzdatei.";
     return "";
@@ -1969,8 +2063,11 @@ bool DiskVolume::schreibeAngabenDatei(const FileEntry& e, const std::string& des
     if (!profile_) return true;
     FileAngaben a;
     a.udos = isUdosFamily(profile_->type);
+    a.wega = istWega();
     a.name = e.qualifiedName();
-    if (a.udos) {
+    if (a.wega) {
+        a.x = unixAus(e);
+    } else if (a.udos) {
         a.u = angabeAus(e);
     } else {
         a.c.name      = e.qualifiedName();
@@ -2020,7 +2117,9 @@ bool DiskVolume::extractMit(const FileRef& ref, const std::string& dest_path,
     // Normalfall, den auch das echte CP/M erzeugt — es geht nichts verloren, und
     // eine Zubehoerdatei je Datei waere blosser Ballast.
     if (!profile_) return true;
-    if (!isUdosFamily(profile_->type) && !cpm_fileinfo_) return true;
+    // WEGA wie UDOS immer: Modus, Besitzer und Zeit stehen nirgends in der Linux-Datei,
+    // und ein Systemverzeichnis (bin/, etc/) ohne seine Rechte ist unbrauchbar.
+    if (!isUdosFamily(profile_->type) && !istWega() && !cpm_fileinfo_) return true;
 
     if (bekannt) return schreibeAngabenDatei(*bekannt, dest_path);
 
@@ -2088,9 +2187,10 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
         if (leseFileinfo(woher, ein)) {
             if (!ein.udos)
                 return fail("'" + fs::path(src_path).filename().string()
-                            + kFileinfoEndung + "' traegt CP/M-Angaben (fs=cpm), die "
-                            "Diskette ist eine der UDOS-Familie — die Angaben passen "
-                            "nicht zusammen.");
+                            + kFileinfoEndung + "' traegt "
+                            + (ein.wega ? "UNIX-Angaben (fs=wega)" : "CP/M-Angaben (fs=cpm)")
+                            + ", die Diskette ist eine der UDOS-Familie — die Angaben "
+                              "passen nicht zusammen.");
             angaben_gefunden       = true;
             mit.udos_type          = ein.u.typ;
             mit.udos_properties    = ein.u.eigenschaften;
@@ -2196,10 +2296,12 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
         const fs::path woher = opt.angaben_datei.empty()
                              ? fileinfoPfad(src_path) : fs::path(opt.angaben_datei);
         const bool hat_fileinfo = leseFileinfo(woher, ein);
-        if (hat_fileinfo && ein.udos)
+        if (hat_fileinfo && (ein.udos || ein.wega))
             return fail("'" + fs::path(src_path).filename().string() + kFileinfoEndung
-                        + "' traegt UDOS-Angaben (fs=udos), die Diskette ist eine "
-                          "CP/M-Diskette — die Angaben passen nicht zusammen.");
+                        + "' traegt " + (ein.wega ? "UNIX-Angaben (fs=wega)"
+                                                  : "UDOS-Angaben (fs=udos)")
+                        + ", die Diskette ist eine CP/M-Diskette — die Angaben passen "
+                          "nicht zusammen.");
         const bool aus_fileinfo = hat_fileinfo;
         if (aus_fileinfo) {
             wo.cpm_read_only = ein.c.read_only;
@@ -2241,8 +2343,31 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
             ziel_name = ein.name;
     }
 
-    // WEGA: Zugriffsrechte aus der Linux-Datei — ausfuehrbar bleibt ausfuehrbar.
+    // WEGA: Rechte, Besitzer und Zeit aus dem `.fileinfo` (fs=wega) — es ist die
+    // genaueste Auskunft.  Ein `.fileinfo` anderer Herkunft (UDOS/CP/M) passt hier
+    // nicht und wird ueberlesen: wer Dateien von einer UDOS-Diskette nach WEGA kopiert,
+    // soll nicht an der Angabendatei scheitern.
+    bool unix_gefunden = false;
     if (istWega()) {
+        FileAngaben ein;
+        const fs::path woher = opt.angaben_datei.empty()
+                             ? fileinfoPfad(src_path) : fs::path(opt.angaben_datei);
+        if (leseFileinfo(woher, ein) && ein.wega) {
+            if (ein.x.mode_da) {
+                wo.wega_mode = static_cast<uint16_t>(ein.x.mode & 07777);
+                wo.wega_mode_gesetzt = true;
+                unix_gefunden = true;
+            }
+            if (ein.x.owner_da) {
+                wo.wega_uid = ein.x.uid;
+                wo.wega_gid = ein.x.gid;
+                wo.wega_owner_gesetzt = true;
+            }
+            wo.wega_mtime = ein.x.mtime;       // 0 = jetzt
+        }
+    }
+    // Ohne Angaben: Zugriffsrechte aus der Linux-Datei — ausfuehrbar bleibt ausfuehrbar.
+    if (istWega() && !unix_gefunden) {
 #ifdef _WIN32
         // Windows kennt kein Ausfuehrungsrecht: MSVC meldet fuer JEDE Datei 0777 (MinGW 0666),
         // das wuerde jede Datei zu 0755 machen.  Einheitlich 0644, damit beide Bauarten gleich sind.
@@ -2279,6 +2404,21 @@ bool DiskVolume::setAttributes(const FileRef& ref, const CpmAttrs& attrs) {
     if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
         return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
     return true;
+}
+
+bool DiskVolume::setAttributes(const FileRef& ref, const UnixAttrs& attrs) {
+    if (read_only_) return fail(kSchreibschutz);
+    if (profile_ && profile_->nur_boot) return fail(kNurBoot);
+    if (!valid(ref.volume)) return fail("Seite " + std::to_string(ref.volume)
+                                        + " gibt es auf dieser Diskette nicht");
+    if (!volumes_[static_cast<size_t>(ref.volume)].fs->setAttributes(ref.name, attrs))
+        return fail(volumes_[static_cast<size_t>(ref.volume)].fs->lastError());
+    return true;
+}
+
+std::string DiskVolume::blockList(const FileRef& ref) const {
+    if (!valid(ref.volume)) return {};
+    return volumes_[static_cast<size_t>(ref.volume)].fs->blockList(ref.name);
 }
 
 bool DiskVolume::makeDirectory(const FileRef& ref) {
@@ -2627,8 +2767,14 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             if (e.type == "D") continue;
             // WEGA: Verzeichnisse werden Ordner, Geraetedateien haben keinen Inhalt.
             if (istWega()) {
-                if (e.type == "d") { fs::create_directories(ziel / e.name, ec); continue; }
-                if (e.type != "-") continue;
+                if (e.type == "d") {
+                    fs::create_directories(ziel / e.name, ec);
+                    // Rechte und Besitzer des Verzeichnisses: `<ordner>.fileinfo` neben dem Ordner.
+                    if (!opt.dry_run && !schreibeAngabenDatei(e, (ziel / e.name).string()))
+                        return false;
+                    continue;
+                }
+                if (e.type != "-") continue;     // Geraete/FIFOs: nur im Beiblatt
             }
             FileRef r{v, e.qualifiedName()};
             // Nutzerbereich-Praefix ("3:NAME") ist im Dateinamen unbrauchbar.
@@ -2658,6 +2804,26 @@ bool DiskVolume::extractAll(const std::string& dest_dir, const TransferOptions& 
             && !schreibeBeiblatt(fs::path(dest_dir) / kUdosBeiblatt, eintraege))
             return fail("Beiblatt nicht schreibbar: "
                         + (fs::path(dest_dir) / kUdosBeiblatt).string());
+    }
+
+    // WEGA: ein Beiblatt mit ALLEN Inodes — auch Geraetedateien, die als Datei nicht
+    // existieren koennen.  Nur zur Auskunft; zurueckgespielt wird aus den `.fileinfo`.
+    if (istWega() && !opt.dry_run) {
+        const fs::path bb = fs::path(dest_dir) / kWegaBeiblatt;
+        std::ofstream f(bb, std::ios::binary);
+        if (!f) return fail("Beiblatt nicht schreibbar: " + bb.string());
+        f << "# k1520DiskTool — UNIX-Angaben zu allen Eintraegen dieser WEGA-Diskette.\n"
+             "# Eine Zeile je Eintrag (auch Verzeichnisse und Geraetedateien, die als Datei\n"
+             "# nicht existieren koennen): Pfad, dann schluessel=wert.\n"
+             "#   art    - Datei · d Verzeichnis · c/b Geraet (rdev = major,minor) · p FIFO\n"
+             "#   mode   di_mode oktal samt Dateiart (0100755 = -rwxr-xr-x)\n"
+             "#   uid gid nlink inode · mtime/atime/ctime Sekunden seit 1970 (GMT)\n"
+             "# Beim Einfuegen (`put <ordner>`) gilt das `.fileinfo` je Datei, nicht dieses Blatt.\n";
+        for (const FileEntry& e : volumes_[0].fs->list()) {
+            f << e.name << ' ';
+            schreibeUnixFelder(f, unixAus(e), ' ');
+        }
+        if (!f) return fail("Beiblatt nicht schreibbar: " + bb.string());
     }
 
     // Dasselbe fuer CP/M — dort sind es Nutzerbereich und die drei Attributbits.
@@ -2889,6 +3055,29 @@ bool DiskVolume::insertAll(const std::string& src_dir, const TransferOptions& op
             if (!insert(quelle, FileRef{static_cast<int>(v), name}, o)) {
                 const std::string grund = last_error_;
                 disk_->medium() = sicherung;         // Ruecknahme
+                return fail(grund + " — die Diskette wurde nicht veraendert.");
+            }
+        }
+    }
+
+    // WEGA: Rechte, Besitzer und Zeit der Verzeichnisse (`<ordner>.fileinfo`).  Erst
+    // jetzt: jede Datei darin aendert die mtime des Verzeichnisses, und ein
+    // Verzeichnis mit Modus 0555 liesse sich vorher gar nicht fuellen (der Kern
+    // prueft keine Rechte, aber so bleibt die Reihenfolge die des echten `cpio`/`tar`).
+    if (istWega()) {
+        std::error_code ec;
+        for (const auto& e : fs::recursive_directory_iterator(src_dir, ec)) {
+            if (!e.is_directory()) continue;
+            FileAngaben ein;
+            if (!leseFileinfo(fileinfoPfad(e.path()), ein) || !ein.wega) continue;
+            UnixAttrs ua;
+            if (ein.x.mode_da)  { ua.set_mode = true; ua.mode = ein.x.mode & 07777; }
+            if (ein.x.owner_da) { ua.set_uid = ua.set_gid = true;
+                                  ua.uid = ein.x.uid; ua.gid = ein.x.gid; }
+            if (ein.x.mtime)    { ua.set_mtime = true; ua.mtime = ein.x.mtime; }
+            if (!volumes_[0].fs->setAttributes(wegaZielName(src_dir, e.path().string()), ua)) {
+                const std::string grund = volumes_[0].fs->lastError();
+                disk_->medium() = sicherung;
                 return fail(grund + " — die Diskette wurde nicht veraendert.");
             }
         }

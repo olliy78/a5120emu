@@ -83,6 +83,11 @@ struct Optionen {
     bool cpm_sys_gesetzt = false, cpm_sys = false;   ///< --sys / --no-sys
     bool cpm_arc_gesetzt = false, cpm_arc = false;   ///< --arc / --no-arc
     bool cpm_user_gesetzt = false; int cpm_user = 0; ///< --user N
+    // WEGA (UNIX): chmod/chown/touch an einer Datei — `attr --mode 0755 --uid 0 …`
+    bool unix_mode_gesetzt = false;  int unix_mode = 0;             ///< --mode (oktal)
+    bool unix_uid_gesetzt  = false;  int unix_uid  = 0;             ///< --uid
+    bool unix_gid_gesetzt  = false;  int unix_gid  = 0;             ///< --gid
+    bool unix_mtime_gesetzt = false; unsigned long unix_mtime = 0;  ///< --mtime (Sekunden seit 1970)
     int         volume  = 0; ///< --volume
     bool        text    = false;
     bool        binaer  = false;
@@ -129,6 +134,7 @@ void gebrauch() {
         "  create <abbild> --fs NAME [--label N]    leere Diskette anlegen\n"
         "         [--boot abbild.bin]               … mit Bootabbild in den Systemspuren\n"
         "  attr   <abbild> <datei> [--type …]       Dateiangaben zeigen/aendern\n"
+        "         [--mode 0755 --uid N --gid N --mtime S]  … WEGA: chmod/chown/touch\n"
         "         [--ro|--no-ro --sys|--no-sys]     … CP/M-Attribute\n"
         "         [--arc|--no-arc] [--user 3]       … und Nutzerbereich\n"
         "         [--prg 710|710-1]                 … Bootabbild muss fuer dieses PRG-Geraet sein\n"
@@ -212,6 +218,19 @@ bool zerlege(int argc, char** argv, int ab, Optionen& o, std::string& err) {
         else if (a == "--no-sys")  { o.cpm_sys_gesetzt = true; o.cpm_sys = false; }
         else if (a == "--arc")     { o.cpm_arc_gesetzt = true; o.cpm_arc = true; }
         else if (a == "--no-arc")  { o.cpm_arc_gesetzt = true; o.cpm_arc = false; }
+        else if (a == "--mode")    { if (!wert("--mode"))   return false;
+                                     o.unix_mode_gesetzt = true;
+                                     o.unix_mode = static_cast<int>(
+                                         std::strtol(argv[++i], nullptr, 8)); }
+        else if (a == "--uid")     { if (!wert("--uid"))    return false;
+                                     o.unix_uid_gesetzt = true;
+                                     o.unix_uid = std::atoi(argv[++i]); }
+        else if (a == "--gid")     { if (!wert("--gid"))    return false;
+                                     o.unix_gid_gesetzt = true;
+                                     o.unix_gid = std::atoi(argv[++i]); }
+        else if (a == "--mtime")   { if (!wert("--mtime"))  return false;
+                                     o.unix_mtime_gesetzt = true;
+                                     o.unix_mtime = std::strtoul(argv[++i], nullptr, 10); }
         else if (a == "--user")    { if (!wert("--user"))   return false;
                                      o.cpm_user_gesetzt = true;
                                      o.cpm_user = std::atoi(argv[++i]); }
@@ -1304,7 +1323,9 @@ int cmd_attr(const Optionen& o) {
                       || !o.udos_erst.empty() || !o.udos_geaend.empty();
     const bool aendern_cpm = o.cpm_ro_gesetzt || o.cpm_sys_gesetzt
                           || o.cpm_arc_gesetzt || o.cpm_user_gesetzt;
-    const bool aendern = aendern_udos || aendern_cpm;
+    const bool aendern_unix = o.unix_mode_gesetzt || o.unix_uid_gesetzt
+                           || o.unix_gid_gesetzt || o.unix_mtime_gesetzt;
+    const bool aendern = aendern_udos || aendern_cpm || aendern_unix;
 
     int rc = kOk;
     auto v = oeffne(o, o.rest[1], rc, /*schreibend=*/aendern);
@@ -1327,6 +1348,26 @@ int cmd_attr(const Optionen& o) {
     if (!suche(-1)) {
         std::cerr << "Fehler: '" << o.rest[2] << "' steht nicht im Verzeichnis\n";
         return kFehler;
+    }
+
+    if (aendern_unix) {
+        if (!v->istWega()) {
+            std::cerr << "Fehler: --mode/--uid/--gid/--mtime gibt es nur bei WEGA-Disketten\n";
+            return kFehler;
+        }
+        UnixAttrs u;
+        u.set_mode  = o.unix_mode_gesetzt;  u.mode  = static_cast<uint16_t>(o.unix_mode);
+        u.set_uid   = o.unix_uid_gesetzt;   u.uid   = o.unix_uid;
+        u.set_gid   = o.unix_gid_gesetzt;   u.gid   = o.unix_gid;
+        u.set_mtime = o.unix_mtime_gesetzt; u.mtime = static_cast<uint32_t>(o.unix_mtime);
+        if (o.unix_mode > 07777) {      // vor dem uint16-Abschneiden melden
+            std::cerr << "Fehler: --mode muss zwischen 0 und 7777 (oktal) liegen\n";
+            return kFehler;
+        }
+        if (!v->setAttributes(ref, u) || !v->flush()) {
+            std::cerr << "Fehler: " << v->lastError() << "\n";
+            return kFehler;
+        }
     }
 
     if (aendern_cpm) {
@@ -1382,6 +1423,24 @@ int cmd_attr(const Optionen& o) {
 
     const FileEntry* e = suche(o.cpm_user_gesetzt ? o.cpm_user : -1);
     if (!e) { std::cerr << "Fehler: Eintrag nach dem Aendern nicht mehr lesbar\n"; return kFehler; }
+    if (o.json && v->istWega()) {
+        char m[16];
+        std::snprintf(m, sizeof m, "0%06o", static_cast<unsigned>(e->unix_mode));
+        std::cout << "{\"name\":" << jsonText(e->name)
+                  << ",\"type\":" << jsonText(e->type)
+                  << ",\"attrs\":" << jsonText(e->attributes)
+                  << ",\"mode\":\"" << m << "\""
+                  << ",\"uid\":" << e->unix_uid
+                  << ",\"gid\":" << e->unix_gid
+                  << ",\"nlink\":" << e->unix_nlink
+                  << ",\"inode\":" << e->unix_inode
+                  << ",\"size\":" << e->size
+                  << ",\"mtime\":" << e->unix_mtime
+                  << ",\"atime\":" << e->unix_atime
+                  << ",\"ctime\":" << e->unix_ctime
+                  << ",\"blocks\":" << jsonText(v->blockList(ref)) << "}\n";
+        return kOk;
+    }
     if (o.json) {
         std::cout << "{\"name\":" << jsonText(e->name)
                   << ",\"type\":" << jsonText(e->type)
@@ -1401,6 +1460,23 @@ int cmd_attr(const Optionen& o) {
                   << ",\"extra\":" << e->extra
                   << ",\"created\":" << jsonText(e->created)
                   << ",\"date\":" << jsonText(e->date) << "}\n";
+        return kOk;
+    }
+    // WEGA: eine Inode, keine Kopfsektorangaben — und der `type` ist eine Dateiart
+    // (-/d/c), kein UDOS-Typ.  Die Art wird nach dem Dateisystem gefragt, nie am
+    // Typfeld erraten.
+    if (v->istWega()) {
+        std::printf("%-20s %s  %llu Byte\n", e->name.c_str(), e->attributes.c_str(),
+                    static_cast<unsigned long long>(e->size));
+        std::printf("  Modus 0%06o   uid %d   gid %d   Links %d   Inode %u\n",
+                    static_cast<unsigned>(e->unix_mode), e->unix_uid, e->unix_gid,
+                    e->unix_nlink, e->unix_inode);
+        std::printf("  mtime %u   atime %u   ctime %u   (Sekunden seit 1970, GMT)  %s\n",
+                    e->unix_mtime, e->unix_atime, e->unix_ctime, e->date.c_str());
+        if (e->type == "c" || e->type == "b")
+            std::printf("  Geraet major,minor %u,%u\n", e->unix_rdev >> 8, e->unix_rdev & 0xFF);
+        const std::string bl = v->blockList(ref);
+        if (!bl.empty()) std::printf("  Bloecke %s\n", bl.c_str());
         return kOk;
     }
     // CP/M fuehrt keine Kopfsektorangaben — dort waeren zehn Nullzeilen keine

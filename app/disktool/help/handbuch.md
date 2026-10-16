@@ -180,6 +180,13 @@ zeigt die Angaben, die ein Linux-Dateisystem nicht tragen kann:
   Das Feld **Segmente** trägt sie alle, durch Leerzeichen getrennt
   (`4000+06A7 62A7+0002 …`): ein Programm kann mehrere Speicherbereiche belegen.
 * **CP/M** — Nutzerbereich (0–15) und die Attribute R/O, SYS, ARC.
+* **WEGA** (UNIX des P8000) — die Inode: Dateiart, Modus (als Kästchen für
+  Besitzer/Gruppe/Andere, die Sonderbits setuid/setgid/sticky und als Oktalzahl wie bei
+  `chmod`), Besitzer (uid), Gruppe (gid), Änderungszeit (mtime, GMT), dazu als reine
+  Anzeige Inode-Nummer, Links, Zugriffs- und Inode-Zeit und die belegten Blöcke. Änderbar
+  sind Modus, uid, gid und mtime; Dateiart, Inode, Größe und Links sind Struktur. Das
+  Übernehmen ist **eine** Transaktion im Dateisystem. Die Inode-Zeit (ctime) setzt jede
+  Änderung auf „jetzt“, wie im echten System.
 
 Der Nutzerbereich gehört zur **Identität** einer CP/M-Datei: ihn zu ändern
 benennt die Datei um (`3:PIP.COM`).
@@ -207,6 +214,15 @@ wird: ohne die Angaben wüsste UDOS nicht, dass es ein Programm ist, wohin es ge
 gehört und wo es anfängt. Fehlen sie beim Zurückschreiben, wird deshalb **gefragt
 statt geraten** — ein Fenster erhebt Typ, Satzlänge und, bei einem Programm,
 Einsprung und Speicherangaben. Bei mehreren Dateien genügt „Für alle übernehmen".
+
+**Bei WEGA entsteht es immer** (`fs=wega`): `mode` (oktal, samt Dateiart), `uid`, `gid`,
+`mtime`, dazu zur Auskunft `art`, `nlink`, `inode`, `atime`, `ctime` und bei Geräten
+`rdev`. Beim Zurückschreiben gelten Modus (untere 12 Bit), uid, gid und mtime; Links und
+Inode-Nummer vergibt das Dateisystem neu. Auch jedes **Verzeichnis** bekommt eines
+(`usr.fileinfo` neben dem Ordner `usr`) — ohne Rechte wäre `/tmp` danach nicht mehr
+für alle beschreibbar. Das Sammelbeiblatt heißt `wega-dateiangaben.txt` und führt
+**alle** Inodes, auch Gerätedateien, die als Datei nicht existieren können; sie werden nicht
+ausgelesen. Ein `.fileinfo` anderer Herkunft (UDOS/CP/M) wird bei WEGA überlesen.
 
 **Bei CP/M entsteht es nur auf Wunsch** — *Übertragung ▸ Bei CP/M je Datei ein
 .fileinfo anlegen*. Dort gibt es nichts zu retten, was sonst verloren ginge:

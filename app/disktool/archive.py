@@ -82,8 +82,10 @@ def dateiname(bezeichnung: str) -> str:
     return name.strip("._")[:64]
 
 
-def _legende(hat_udos: bool, hat_cpm: bool) -> str:
+def _legende(hat_udos: bool, hat_cpm: bool, hat_wega: bool = False) -> str:
     """Erklärt die Kürzel — das macht das Archiv selbsterklärend."""
+    if hat_wega:
+        return _legende_wega()
     zeilen = ["LEGENDE", ""]
     if hat_udos:
         zeilen += [
@@ -148,6 +150,73 @@ def _legende(hat_udos: bool, hat_cpm: bool) -> str:
     return "\n".join(zeilen)
 
 
+def _legende_wega() -> str:
+    """Die Legende einer WEGA-Diskette — UNIX-Begriffe, keine UDOS-Kürzel."""
+    return "\n".join([
+        "LEGENDE",
+        "",
+        "  Modus        wie `ls -l`: erstes Zeichen die Dateiart, dann dreimal rwx",
+        "               fuer Besitzer, Gruppe, Andere.  Dateiart:",
+        "                 -  gewoehnliche Datei        d  Verzeichnis",
+        "                 c  Zeichen-Geraet            b  Block-Geraet",
+        "                 p  FIFO (Pipe)               m  gemultiplexte Geraete",
+        "               s/S an Stelle von x: setuid (Besitzer) bzw. setgid (Gruppe);",
+        "               t/T: sticky-Bit.  Gross = Ausfuehrungsrecht fehlt.",
+        "  Oktal        derselbe Modus als Zahl; 0100755 = Datei, rwxr-xr-x.",
+        "  Links        Zahl der Namen (Hard Links) auf diese Inode.",
+        "  uid / gid    numerischer Besitzer und Gruppe (0 = Superuser).  Die Namen",
+        "               stehen in /etc/passwd und /etc/group auf der Diskette selbst.",
+        "  Groesse      Bytes; bei Geraetedateien statt dessen `major,minor`.",
+        "  Datum        Zeit der letzten Aenderung des INHALTS (mtime, GMT).",
+        "  Inode        Nummer der Inode (Inode 2 = Wurzel).",
+        "  mtime/atime/ctime  Sekunden seit 1970 (GMT).  atime = letzter Zugriff,",
+        "               ctime = letzte Aenderung der Inode (chmod/chown setzen sie).",
+        "  [DEFEKT]     die Inode oder ihre Bloecke waren nicht lesbar.",
+        "",
+        "WAS DER ORDNER `dateien/` ZURUECKGIBT",
+        "",
+        "  Jede Datei hat ein `<datei>.fileinfo` (fs=wega) mit Modus, uid, gid und",
+        "  mtime; ebenso jedes Verzeichnis (`<ordner>.fileinfo` neben dem Ordner).",
+        "  Beim Einfuegen (`put <ordner>`) werden diese vier Angaben wiederhergestellt;",
+        "  Links, Inode-Nummer, atime und ctime vergibt das Dateisystem neu.",
+        "  `wega-dateiangaben.txt` listet ALLE Inodes, auch Geraetedateien, die als",
+        "  Datei nicht existieren koennen — sie werden nicht ausgelesen.",
+    ])
+
+
+def _wega_zeit(t: int) -> str:
+    if not t:
+        return "-"
+    return datetime.datetime.fromtimestamp(
+        t, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+
+def _wega_tabelle(eintraege) -> list:
+    """Die Dateien im Stil von `ls -l` (Modus, Links, uid, gid, Größe, Datum, Name)."""
+    kopf = (f"{'Modus':<11}{'Links':>5} {'uid':>5} {'gid':>5} {'Groesse':>9}  "
+            f"{'Datum (GMT)':<17} Name")
+    z = [kopf, "-" * 70]
+    for e in eintraege:
+        groesse = e.unix_rdev_text or str(e.size)
+        marke = "  [DEFEKT]" if e.damaged else ""
+        z.append(f"{e.attrs or '?':<11}{e.unix_nlink:>5} {e.unix_uid:>5} {e.unix_gid:>5} "
+                 f"{groesse:>9}  {e.date or '-':<17} {e.name}{marke}")
+    z.append("-" * 70)
+    return z
+
+
+def _wega_angaben(eintraege) -> list:
+    """Oktalmodus, Inode und alle drei Zeiten — das, was `ls -l` nicht zeigt."""
+    kopf = f"{'Oktal':<9}{'Inode':>6}  {'mtime':<17}{'atime':<17}{'ctime':<17} Name"
+    z = ["DATEIANGABEN IM EINZELNEN", "", kopf, "-" * len(kopf)]
+    for e in eintraege:
+        z.append(f"{'0%06o' % e.unix_mode:<9}{e.unix_inode:>6}  "
+                 f"{_wega_zeit(e.unix_mtime):<17}{_wega_zeit(e.unix_atime):<17}"
+                 f"{_wega_zeit(e.unix_ctime):<17} {e.name}")
+    z.append("-" * len(kopf))
+    return z
+
+
 def _udos_angaben(eintraege, mehrseitig: bool) -> list:
     """Die Kopfsektorangaben aller Dateien als Tabelle (eine Zeile je Datei)."""
     kopf = f"{'Seite':<6}" if mehrseitig else ""
@@ -200,9 +269,14 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
             „Echtes Laufwerk A am Greaseweazle").
     """
     eintraege = tool.list()
-    hat_udos = any(e.type for e in eintraege)
-    hat_cpm = any(e.user or e.attrs in ("RO", "SYS", "ARC") for e in eintraege) \
-        or not hat_udos
+    # Die Art kommt aus dem Dateisystem, nicht aus der Typspalte: bei UDOS ist `type`
+    # ein Dateityp (P1), bei WEGA eine Dateiart (-/d/c), bei CP/M leer — „hat einen
+    # Typ => UDOS" machte aus jeder WEGA-Diskette eine UDOS-Diskette.
+    hat_wega = tool.ist_wega
+    hat_udos = (not hat_wega) and (tool.ist_udos or any(e.type for e in eintraege))
+    hat_cpm = (not hat_wega) and (
+        any(e.user or e.attrs in ("RO", "SYS", "ARC") for e in eintraege)
+        or not hat_udos)
     mehrseitig = tool.volume_count > 1
 
     z = []
@@ -236,26 +310,33 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
                  + f"  (von {v.total // 1024} KB)")
     z.append("")
 
-    kopf = f"{'Seite':<6}" if mehrseitig else ""
-    z.append(f"{kopf}{'Name':<34}{'Typ':<4}{'Groesse':>9}  {'Eigensch.':<10}{'Datum':<8}")
-    z.append("-" * 70)
-    for e in eintraege:
-        seite = f"{e.side_dir:<6}" if mehrseitig else ""
-        marke = "  [DEFEKT]" if e.damaged else ""
-        z.append(f"{seite}{e.name:<34}{e.type:<4}{e.size:>9}  "
-                 f"{e.attrs:<10}{e.date:<8}{marke}")
-    z.append("-" * 70)
-    z.append(f"{len(eintraege)} Dateien")
-    z.append("")
+    if hat_wega:
+        z += _wega_tabelle(eintraege)
+        z.append(f"{sum(1 for e in eintraege if e.type != 'd')} Eintraege, "
+                 f"{sum(1 for e in eintraege if e.type == 'd')} davon Verzeichnisse")
+        z.append("")
+    else:
+        kopf = f"{'Seite':<6}" if mehrseitig else ""
+        z.append(f"{kopf}{'Name':<34}{'Typ':<4}{'Groesse':>9}  {'Eigensch.':<10}{'Datum':<8}")
+        z.append("-" * 70)
+        for e in eintraege:
+            seite = f"{e.side_dir:<6}" if mehrseitig else ""
+            marke = "  [DEFEKT]" if e.damaged else ""
+            z.append(f"{seite}{e.name:<34}{e.type:<4}{e.size:>9}  "
+                     f"{e.attrs:<10}{e.date:<8}{marke}")
+        z.append("-" * 70)
+        z.append(f"{len(eintraege)} Dateien")
+        z.append("")
 
     # Alles, was das Verzeichnis sonst noch ueber die Dateien weiss — die
     # Grundlage dafuer, die Diskette von Hand wiederherstellen zu koennen.
     if eintraege:
-        z += (_udos_angaben(eintraege, mehrseitig) if hat_udos
+        z += (_wega_angaben(eintraege) if hat_wega
+              else _udos_angaben(eintraege, mehrseitig) if hat_udos
               else _cpm_angaben(eintraege))
         z.append("")
 
-    z.append(_legende(hat_udos, hat_cpm))
+    z.append(_legende(hat_udos, hat_cpm, hat_wega))
     z.append("")
     z.append("Der Unterordner `" + DATEI_ORDNER + "/` enthaelt dieselben Dateien als")
     z.append("gewoehnliche Dateien; das beiliegende .hfe-Abbild ist die verlustfreie")
@@ -265,9 +346,14 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
              + DATEI_ORDNER + "/`")
     z.append("auf eine leere Diskette einfuegen.  Die Angaben oben gehen dabei nicht")
     z.append("verloren — sie stehen im Ordner nochmals maschinenlesbar als Beiblatt")
-    z.append("(`udos-dateiangaben.txt` bzw. `cpm-dateiangaben.txt`), und das Werkzeug")
-    z.append("liest es beim Einfuegen von selbst.  Ohne Beiblatt stellt man sie ueber")
-    z.append("„Eigenschaften…“ im Diskettenfenster ein.")
+    if hat_wega:
+        z.append("(`<datei>.fileinfo` je Datei und Verzeichnis, `wega-dateiangaben.txt`),")
+        z.append("und das Werkzeug liest die `.fileinfo` beim Einfuegen von selbst.  Ohne")
+        z.append("sie stellt man Modus und Besitzer ueber „Eigenschaften…“ ein.")
+    else:
+        z.append("(`udos-dateiangaben.txt` bzw. `cpm-dateiangaben.txt`), und das Werkzeug")
+        z.append("liest es beim Einfuegen von selbst.  Ohne Beiblatt stellt man sie ueber")
+        z.append("„Eigenschaften…“ im Diskettenfenster ein.")
     return "\n".join(z) + "\n"
 
 
@@ -308,6 +394,8 @@ INVENTAR_KOPF = """\
 #                 ARCHIV, nicht der Laengenangabe des Verzeichnisses.
 #     disk_name   nur wenn der Name auf der Diskette ein anderer ist als der
 #                 Dateiname (CP/M-Nutzerbereich: '3:X.COM' -> '3_X.COM').
+#     unix        nur bei WEGA-(UNIX-)Disketten: mode (oktal, samt Dateiart,
+#                 z. B. "0100755"), uid, gid, mtime (Sekunden seit 1970, GMT).
 #     damaged     nur wenn wahr: die Datei war nicht vollstaendig lesbar; ihr
 #                 Inhalt ist unvollstaendig und zaehlt nicht als Fassung.
 #   attachments   Beiblaetter des Auszugs — Angaben ueber die Dateien, aber
@@ -344,6 +432,8 @@ def _erwartete_namen(eintraege) -> dict:
     for e in eintraege:
         if e.type == "D":
             continue
+        if e.ist_unix and e.type != "-":
+            continue            # WEGA: Verzeichnisse/Geraete sind keine Dateien des Auszugs
         datei = e.name.replace(":", "_")
         erwartet[f"{e.side_dir}/{datei}" if e.side_dir else datei] = e
     return erwartet
@@ -381,8 +471,13 @@ def inventar(eintraege, dateien_ordner: Path, *, abbild: Path, abbild_name: str,
         ordner, _, name = rel.rpartition("/")
         eintrag = {"path": angabe["path"], "dir": ordner, "name": name,
                    "size": angabe["size"], "sha256": angabe["sha256"]}
-        if e.name != name:
+        # Bei WEGA ist der Name ein Pfad ("bin/ls") und steht schon in `dir`/`name`.
+        if e.name != name and e.name != rel:
             eintrag["disk_name"] = e.name
+        if e.ist_unix:
+            # Additiv (diskarchive bleibt 1): was ein Linux-Dateisystem nicht traegt.
+            eintrag["unix"] = {"mode": f"0{e.unix_mode:06o}", "uid": e.unix_uid,
+                               "gid": e.unix_gid, "mtime": e.unix_mtime}
         if e.damaged:
             eintrag["damaged"] = True
         dateien.append(eintrag)

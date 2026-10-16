@@ -206,6 +206,9 @@ public:
     bool write(const std::string& name, const std::vector<uint8_t>& data,
                const WriteOptions& opt) override;
     bool erase(const std::string& name) override;
+    bool setAttributes(const std::string& name, const UnixAttrs& a) override;
+    std::string blockList(const std::string& name) const override;
+    using FileSystem::setAttributes;   // die Ueberladungen fuer UDOS/CP/M bleiben sichtbar
     bool makeDirectory(const std::string& name) override;
     bool wouldFit(const std::vector<PlannedFile>& files, FitReport& out) const override;
     bool mkfs() override;
