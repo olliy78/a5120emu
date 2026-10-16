@@ -965,5 +965,13 @@ vorformatierte Weg; **leerer** Formatname legt seit dem Medium-Umbau eine echte 
 ## Conventions
 
 - Code comments and many log strings are in German; match the surrounding language of the file you edit.
+- **Keine Umlaute im Code** (festgelegt 2026-10-16): Quelltext, Kommentare, Log-, Fehler- und Testtexte in `core/`,
+  `tools/`, `tests/`, `cmake/`, `packaging/`, `.github/` und die Kommentare der Python-Dateien in `app/` werden mit
+  **ae/oe/ue/ss** geschrieben (`Groesse`, `fuer`, `Aenderung`; in Versalien `UEBER`).  Umlaute bleiben nur in
+  **Oberflaechentexten** (Zeichenketten in `app/` fuer Menues, Dialoge, Statuszeile, Handbuch `app/help/`),
+  in der Dokumentation (`*.md`, `doc/`) und in Daten/Belegen (`data/`, `tests/fixtures/`).  Grund: Die
+  Windows-/MSVC-Gegenprobe (`/utf-8`) und Werkzeuge ohne UTF-8-Annahme stolpern sonst; ein Umlaut im Code ist
+  nie noetig.  Gilt auch fuer Agenten.  Waechter `py_keine_umlaute` (Ausnahmenliste dort).  Ein Python-Test, der gegen
+  einen Oberflaechentext prueft, darf den Umlaut des Oberflaechentextes enthalten.
 - Card classes encode DIP switches / backplane bridges as compile-time config structs (e.g. `K2526::A5120Config`), not runtime settings.
 - `cparun/` is an independent sub-project (own `CMakeLists.txt`) and is kept unchanged.
