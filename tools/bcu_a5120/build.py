@@ -71,7 +71,7 @@ GEBAUT = {
         (os.path.join(BELEGE, 'satz2_SYL_auf_Spur1', 'disk.img'), 'bcu880_syl',
          os.path.join(BOOTSEKTOREN, 'boot_bcu12_syl_k7023.bin')),
     # EIGENBAU (kein Beleg, doc/a5120_alt/bcu.md §12): Startdiskette MIT Dateisystem (nur als A:)
-    'a5120_bcu12_k5600-10_kombi-eigenbau.hfe':
+    'a5120_bcu12_k5600-10_kombi40-eigenbau.hfe':
         (None, 'bcu880_kombi', os.path.join(BOOTSEKTOREN, 'boot_bcu12_kombi_k7023.bin')),
     # dasselbe fuer 80 Spuren (K5600.20, 96 tpi)
     'a5120_bcu12_k5600-20_kombi80-eigenbau.hfe':
@@ -79,6 +79,8 @@ GEBAUT = {
 }
 #: Arbeitsdiskette 80 Spuren (EIGENBAU): `create --fs bcu880_80 --boot` + die Dateien der Beleg-Arbeitsdiskette
 ARBEIT80 = 'a5120_bcu12_k5600-20_arbeit80-eigenbau.hfe'
+#: Arbeitsdiskette 40 Spuren (EIGENBAU, K5600.10): `create --fs bcu880 --boot` + dieselben Dateien
+ARBEIT40 = 'a5120_bcu12_k5600-10_arbeit40-eigenbau.hfe'
 #: Kombi-Bootabbild -> (Startabbild, Spurzahl) fuer tools/bcu_kombi_bau.py
 KOMBI_ABBILDER = {
     'boot_bcu12_kombi_k7023.bin': ('boot_bcu12_syl_k7023.bin', 40),
@@ -164,8 +166,8 @@ def _bootabbilder_ok(tool, tmp):
     return ok
 
 
-def _arbeit80(tool, ziel, tmp):
-    """Leere 80-Spur-Arbeitsdiskette (EIGENBAU) mit den Dateien der Beleg-Arbeitsdiskette fuellen."""
+def _arbeit_neu(tool, ziel, tmp, fs):
+    """Arbeitsdiskette (EIGENBAU; 40 oder 80 Spuren je nach @p fs) mit den Dateien der Beleg-Arbeitsdiskette."""
     beleg = os.path.join(tmp, 'arbeit_beleg.img')
     shutil.copyfile(DISKETTEN['a5120_bcu12_k5600-10_arbeit-sys1.hfe'][0], beleg)
     dateien = os.path.join(tmp, 'arbeit_dateien')
@@ -174,7 +176,7 @@ def _arbeit80(tool, ziel, tmp):
     _lauf(tool, 'get', beleg, '*', '--to', dateien)
     if os.path.exists(ziel):
         os.remove(ziel)
-    _lauf(tool, 'create', ziel, '--fs', 'bcu880_80', '--boot', os.path.join(BOOTSEKTOREN, 'boot_bcu12_ohnesyl.bin'))
+    _lauf(tool, 'create', ziel, '--fs', fs, '--boot', os.path.join(BOOTSEKTOREN, 'boot_bcu12_ohnesyl.bin'))
     _lauf(tool, 'put', ziel, dateien)
 
 
@@ -229,8 +231,11 @@ def bauen(tool, wurzel):
             _bauen(tool, beleg, fs, boot, ziel, tmp)
             print(f'{name}: gebaut aus {os.path.relpath(boot, REPO)}')
         ziel = _db.diskpfad(wurzel, ARBEIT80)
-        _arbeit80(tool, ziel, tmp)
-        print(f'{ARBEIT80}: gebaut (leer + Dateien der Arbeitsdiskette)')
+        _arbeit_neu(tool, ziel, tmp, 'bcu880_80')
+        print(f'{ARBEIT80}: gebaut (System + Dateien der Arbeitsdiskette)')
+        ziel = _db.diskpfad(wurzel, ARBEIT40)
+        _arbeit_neu(tool, ziel, tmp, 'bcu880')
+        print(f'{ARBEIT40}: gebaut (System + Dateien der Arbeitsdiskette)')
     ziel = _db.diskpfad(wurzel, BOOTBAND)
     os.makedirs(os.path.dirname(ziel), exist_ok=True)
     shutil.copyfile(BOOTBAND_QUELLE, ziel)
@@ -268,13 +273,14 @@ def pruefen(tool, wurzel):
                 print(f'{name}: ok')
             else:
                 print(f'{name}: ist nicht der Bau aus {os.path.relpath(boot, REPO)}'); ok = False
-        ist = _db.diskpfad(wurzel, ARBEIT80)
-        soll = os.path.join(tmp, ARBEIT80)
-        _arbeit80(tool, soll, tmp)
-        if os.path.isfile(ist) and filecmp.cmp(ist, soll, shallow=False):
-            print(f'{ARBEIT80}: ok')
-        else:
-            print(f'{ARBEIT80}: fehlt oder weicht vom Bau ab'); ok = False
+        for name, fs in ((ARBEIT80, 'bcu880_80'), (ARBEIT40, 'bcu880')):
+            ist = _db.diskpfad(wurzel, name)
+            soll = os.path.join(tmp, name)
+            _arbeit_neu(tool, soll, tmp, fs)
+            if os.path.isfile(ist) and filecmp.cmp(ist, soll, shallow=False):
+                print(f'{name}: ok')
+            else:
+                print(f'{name}: fehlt oder weicht vom Bau ab'); ok = False
     band = _db.diskpfad(wurzel, BOOTBAND)
     if os.path.isfile(band) and filecmp.cmp(band, BOOTBAND_QUELLE, shallow=False):
         print(f'{BOOTBAND}: ok')
