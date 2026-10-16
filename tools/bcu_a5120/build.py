@@ -59,6 +59,11 @@ BOOTSEKTOREN = os.path.join(REPO, 'disks', 'bootsektoren')
 DISKETTEN = {
     'a5120_bcu12_k5600-10_arbeit-sys1.hfe':
         (os.path.join(BELEGE, 'satz2_OhneSYL.1', 'disk.img'), []),
+    # EIGENBAU (bcu.md §9, tools/bcu_v21_eigenbau.py --treiber): V2.1-System im SYL-Aufbau; die Fixture
+    # ist der Beleg des Baus, nicht einer Originaldiskette
+    'a5120_bcu21_k5600-10_eigenbau-syl-v21.hfe':
+        (os.path.join(REPO, 'tests', 'fixtures', 'disks',
+                      'bcu21_ss40-26x128_k5600-10_eigenbau-syl-v21.img'), ['--fs', 'bcu880_syl']),
 }
 #: Diskette in disks/ -> (Beleg, Dateisystem, Bootabbild) — mit `create --boot` GEBAUT
 GEBAUT = {

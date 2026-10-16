@@ -131,6 +131,7 @@ ORDNER = {
     'a5120_bcu12_k5600-10_start-syl.hfe': 'a5120_bcu',
     'a5120_bcu12_k5600-10_arbeit-sys1.hfe': 'a5120_bcu',
     'a5120_bcu12_k5600-10_kombi-eigenbau.hfe': 'a5120_bcu',
+    'a5120_bcu21_k5600-10_eigenbau-syl-v21.hfe': 'a5120_bcu',
     'a5120_bcu12_k5600-20_kombi80-eigenbau.hfe': 'a5120_bcu',
     'a5120_bcu12_k5600-20_arbeit80-eigenbau.hfe': 'a5120_bcu',
     'bcu_kassette_formatiert.k52': 'a5120_bcu',

@@ -49,11 +49,12 @@ Erklärung der Segmente in `tests/fixtures/README.md`.
 | `a5120_bcu/a5120_bcu12_k5600-10_kombi-eigenbau.hfe` | **EIGENBAU, kein Original** (`doc/a5120_alt/bcu.md` §12): Startdiskette **mit** Dateisystem — bootet wie die Startdiskette, Verzeichnis ab Zylinder 5 (nur in **A:** sichtbar), Warmstart funktioniert. Gebaut mit `create --fs bcu880_kombi --boot bootsektoren/boot_bcu12_kombi_k7023.bin`. Nicht im Paket | A: K5600.10 |
 | `a5120_bcu/a5120_bcu12_k5600-20_kombi80-eigenbau.hfe` | **EIGENBAU**: wie die Kombidiskette, aber **80 Spuren** für K5600.20 (A: Verzeichnis ab Zylinder 5, 243 KB). Nicht im Paket | A: K5600.20 |
 | `a5120_bcu/a5120_bcu12_k5600-20_arbeit80-eigenbau.hfe` | **EIGENBAU**: 80-Spur-Arbeitsdiskette für B: neben der 80-Spur-Kombidiskette (Verzeichnis ab Zylinder 2, 248 KB nutzbar), die 19 Dateien der Arbeitsdiskette. Nicht im Paket | B: K5600.20 |
+| `a5120_bcu/a5120_bcu21_k5600-10_eigenbau-syl-v21.hfe` | **EIGENBAU, kein Original** (`doc/a5120_alt/bcu.md` §9): BCU 880 **V2.1** im SYL-Aufbau (V1.2-Lader und -Plattentreiber), bootet im Modell BCU bis `A>`; Nur Startdiskette. Nicht im Paket | A: K5600.10 |
 | `a5120_bcu/bcu_kassette_formatiert.k52` | Kassette, formatiert von BCU-INIT (eine Bandmarke); unter BCU Gerät 2 = F: | Kassette (K5020) |
 | `a5120_bandtest/bandtest_boot.k52` | **Demo, Eigenbau**: Bootband für das Lade-ROM des A5120 (`tools/kassette/bandtest/`), schreibt `KASSETTE OK` — Kassette in Gerät 1, keine Diskette, Kaltstart | Kassette (K5020) |
 | `bootsektoren/bootsec_cpa780.bin` | Bootsektor einer cpa780-Diskette (512 B) | — |
 
-Die BCU-Disketten und die beiden Bänder legt `tools/bcu_a5120/build.py` an (Wächter `cli_bcu_a5120`; die formatierte
+Die BCU-Disketten (vier davon Eigenbau: Kombi 40/80 Spuren, Arbeitsdiskette 80 Spuren, V2.1) und die beiden Bänder legt `tools/bcu_a5120/build.py` an (Wächter `cli_bcu_a5120`; die formatierte
 Kassette entsteht im Test `BcuKassette.FormatiertSchreibtLiest` mit `K1520_BEISPIELBAND=<pfad>`, Herkunft und Bedienung
 in `a5120_bcu/README.md` und `doc/a5120_alt/bcu.md` §10).
 Alle Systemdisketten werden von Skripten gebaut (`tools/<…>/build.py`, Wächter `cli_*`) und tragen eine `LIESMICH.TXT`; Inventur und
