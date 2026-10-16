@@ -45,9 +45,9 @@ void K7637::serialize(std::vector<uint8_t>& out) const {
     putPod(out, pressed_scancode_);
     putPod(out, shift_);
     putPod(out, ctrl_);
-    // Früher zwei int-Zähler (ms) an dieser Stelle — gleich breit, das
-    // Snapshot-Layout bleibt damit unverändert.  Gespeichert wird weiter der
-    // Fälligkeitstakt (0 = keine Dauerfunktion), in Nenntakten ab cur_cycle_.
+    // Frueher zwei int-Zaehler (ms) an dieser Stelle — gleich breit, das
+    // Snapshot-Layout bleibt damit unveraendert.  Gespeichert wird weiter der
+    // Faelligkeitstakt (0 = keine Dauerfunktion), in Nenntakten ab cur_cycle_.
     const uint64_t repeat_due_cycle = repeat_aktiv_
         ? cur_cycle_ + static_cast<uint64_t>(std::max<int64_t>(repeat_rest_, 1)) : 0;
     putPod(out, repeat_due_cycle);
@@ -93,7 +93,7 @@ bool K7637::deserialize(const uint8_t*& p, const uint8_t* end) {
 bool K7637::isRepeatCode(uint8_t code) {
     // ROM robotron-k7637_50-2716.bin, 650H (CTAB1) = 760H (CTAB2):
     //   20 95 96 94 97 5F 00 … — Leertaste, Kursor ab/links/auf/rechts, 5FH.
-    // Die 00-Einträge sind unbelegt (Code 00H wird nie ausgegeben).
+    // Die 00-Eintraege sind unbelegt (Code 00H wird nie ausgegeben).
     switch (code) {
         case 0x20: case 0x94: case 0x95: case 0x96: case 0x97: case 0x5F:
             return true;
@@ -105,7 +105,7 @@ bool K7637::isRepeatCode(uint8_t code) {
 void K7637::keyPress(int qt_keycode, bool shift, bool ctrl) {
     uint8_t code = translateKey(qt_keycode, shift, ctrl);
 
-    // „Jede weitere zu einer Dauerfunktion gedrückte Taste beendet die
+    // „Jede weitere zu einer Dauerfunktion gedrueckte Taste beendet die
     // Dauerfunktion" — die neue Taste ersetzt die gehaltene.
     pressed_key_      = qt_keycode;
     pressed_scancode_ = code;
@@ -128,7 +128,7 @@ void K7637::keyRelease(int qt_keycode) {
 
 int K7637::fallingEdges(uint8_t byte) {
     // Leitung: Ruhe 1 → Startbit 0 (eine fallende Flanke) → d0…d7 (LSB zuerst)
-    // → Stoppbit 1 (steigend, zählt nicht).
+    // → Stoppbit 1 (steigend, zaehlt nicht).
     int edges = 1;
     int prev  = 0;                       // Startbit
     for (int i = 0; i < 8; ++i) {
@@ -140,8 +140,8 @@ int K7637::fallingEdges(uint8_t byte) {
 }
 
 void K7637::applyCommandByte(uint8_t byte) {
-    // Der Zähler D7:1 ist auf 15 voreingestellt und zählt je Flanke herunter;
-    // sein (negierter) Stand ist das Kommando.  Über zwei Bytes hinweg zählt er
+    // Der Zaehler D7:1 ist auf 15 voreingestellt und zaehlt je Flanke herunter;
+    // sein (negierter) Stand ist das Kommando.  Ueber zwei Bytes hinweg zaehlt er
     // weiter — daher die Zweibyte-Kommandos mit dem Vorkommando 55H.
     edge_acc_ = static_cast<uint8_t>(edge_acc_ + fallingEdges(byte));
     const uint8_t counter = static_cast<uint8_t>((15 - edge_acc_) & 0x0F);
@@ -153,7 +153,7 @@ void K7637::applyCommandByte(uint8_t byte) {
         case 14:                          // 00H      Software-RESET
         case 9:                           // 55H 00H  Grundzustand
             // Grundzustand nach Handbuch §2.1: alle Funktionsanzeigen aus
-            // (die Betriebsanzeige E54 hängt an der Spannung, nicht am Kommando).
+            // (die Betriebsanzeige E54 haengt an der Spannung, nicht am Kommando).
             led_mask_         = 0;
             beep_until_cycle_ = 0;
             break;
@@ -168,14 +168,14 @@ void K7637::applyCommandByte(uint8_t byte) {
             beep_until_cycle_ = cur_cycle_ + BEEP_CYCLES;
             break;
 
-        // Die fünf LED-Kommandos schalten UM ("vorheriger Zustand wird negiert").
+        // Die fuenf LED-Kommandos schalten UM ("vorheriger Zustand wird negiert").
         case 11: led_mask_ ^= LED_G00; break;   // 52H
         case 8:  led_mask_ ^= LED_G01; break;   // 55H 20H
         case 7:  led_mask_ ^= LED_G02; break;   // 55H 44H
         case 6:  led_mask_ ^= LED_G03; break;   // 55H 52H
         case 5:  led_mask_ ^= LED_G04; break;   // 55H 55H
 
-        default: break;                   // kein gültiges Kommando
+        default: break;                   // kein gueltiges Kommando
     }
 }
 
@@ -188,7 +188,7 @@ bool K7637::processTxCommands() {
         touched = true;
         uint8_t byte = ch.txGet();
 
-        // Die echte K7637 quittiert ein als gültig erkanntes Kommando mit dem
+        // Die echte K7637 quittiert ein als gueltig erkanntes Kommando mit dem
         // Zeichen TYP (hohes Nibble 0x8x).  Wir quittieren JEDES Byte: das BIOS
         // wartet nach jedem gesendeten Byte auf diese Antwort — bei der
         // Tastaturerkennung (`coityp`: Reset senden, Typcode erwarten) wie im
@@ -218,8 +218,8 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     // different keys on the K7637: ET1 sends 0xFF (recoded to CR) while ENTER
     // sends 0xC0 (recoded to the programmable pf0c code).
     // Rohcode: die Bildschirmtastatur bildet die echte K7637 nach und kennt
-    // für jede Taste ihren physischen Code (auch für die, die eine PC-Tastatur
-    // gar nicht hat — CE, PA1..PA3, SEL0..3, EREOF, …).  Unverändert senden.
+    // fuer jede Taste ihren physischen Code (auch fuer die, die eine PC-Tastatur
+    // gar nicht hat — CE, PA1..PA3, SEL0..3, EREOF, …).  Unveraendert senden.
     if ((qt_keycode & ~0xFF) == QK_RAW_BASE) {
         return static_cast<uint8_t>(qt_keycode & 0xFF);
     }
@@ -227,33 +227,33 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     switch (qt_keycode) {
         case QK_RETURN:    return 0xFF;   // ET1 (main Return)   → cp37: 0xFF→0x0D (CR)
         case QK_ENTER:     return 0xC0;   // numeric ENTER       → cp37: 0xC0→pf0c
-        // Die Rücktaste des PC spricht die RÜCKTASTE der K7637 an — das ist
+        // Die Ruecktaste des PC spricht die RUECKTASTE der K7637 an — das ist
         // `|<-|` (Reihe 2, Position 14, physisch 0x9F), nicht DEL CH.  Welche
-        // Taste ein Zeichen löscht, entscheidet das Betriebssystem, und die
+        // Taste ein Zeichen loescht, entscheidet das Betriebssystem, und die
         // drei widersprechen sich (am laufenden System nachgemessen, jeweils
-        // „ABCD" getippt und die Taste gedrückt):
+        // „ABCD" getippt und die Taste gedrueckt):
         //
         //     Code          CP/A            UDOS 4.3        SCPX 1526
-        //     0x9F  |<-|    Tab (nichts)    nichts          löscht ein Zeichen
-        //     0xBB  DEL CH  löscht          löscht          echot das Zeichen
-        //     0x96  <-      löscht          nichts          löscht ein Zeichen
+        //     0x9F  |<-|    Tab (nichts)    nichts          loescht ein Zeichen
+        //     0xBB  DEL CH  loescht          loescht          echot das Zeichen
+        //     0x96  <-      loescht          nichts          loescht ein Zeichen
         //
         // Deshalb bildet die Tastatur die HARDWARE ab und nicht eine Wirkung:
         // jede PC-Taste spricht die K7637-Taste an, die an IHRER Stelle sitzt
-        // und ihr Zeichen trägt.  Rücktaste → `|<-|` (Reihe 2, Position 14),
-        // Entf → DEL CH; der Anwender hat damit beide Löschtasten unter den
+        // und ihr Zeichen traegt.  Ruecktaste → `|<-|` (Reihe 2, Position 14),
+        // Entf → DEL CH; der Anwender hat damit beide Loeschtasten unter den
         // Fingern und nimmt die, die sein Gast erwartet (CP/A und UDOS: Entf,
-        // SCPX: Rücktaste).  Ebenso Tab → `->|` und Umschalt+Tab → `|<-` (die
+        // SCPX: Ruecktaste).  Ebenso Tab → `->|` und Umschalt+Tab → `|<-` (die
         // beiden Tasten an der Tabulatorstelle, Reihe 3).  Dass CP/A seinen
-        // Tabulator (0x09) ausgerechnet auf die RÜCKTASTE legt (`cp37`:
+        // Tabulator (0x09) ausgerechnet auf die RUECKTASTE legt (`cp37`:
         // „|<-| als Ersatz Tab"), ist Sache des BIOS und keine Eigenschaft der
-        // Tastatur — ein echter 0x09 kommt weiterhin über Strg+I.
-        // ESC schickt 0x1B (ASCII, in cp37 nicht enthalten); 0xB3 (DEL L) wäre
+        // Tastatur — ein echter 0x09 kommt weiterhin ueber Strg+I.
+        // ESC schickt 0x1B (ASCII, in cp37 nicht enthalten); 0xB3 (DEL L) waere
         // nach cp37 ebenfalls ESC, aber dann leuchtet die falsche Taste auf,
         // und andere Betriebssysteme kodieren 0xB3 anders.
-        case QK_BACKSPACE: return 0x9F;   // |<-| Rücktaste      → cp37: 0x9F→0x09 (TAB)
+        case QK_BACKSPACE: return 0x9F;   // |<-| Ruecktaste      → cp37: 0x9F→0x09 (TAB)
         case QK_TAB:       return 0x91;   // ->|  Tabulator      → cp37: 0x91→kcurwr
-        case QK_BACKTAB:   return 0x9B;   // |<-  Tab rückwärts  → cp37: 0x9B→kcurwl
+        case QK_BACKTAB:   return 0x9B;   // |<-  Tab rueckwaerts  → cp37: 0x9B→kcurwl
         case QK_ESCAPE:    return 0x1B;   // ESC-Taste (ASCII)
         case QK_DELETE:    return 0xBB;   // DELCH key           → cp37: 0xBB→spcdel
         case QK_UP:        return 0x94;   // cursor up           → cp37: 0x94→kcurup
@@ -264,8 +264,8 @@ uint8_t K7637::translateKey(int qt_keycode, bool shift, bool ctrl) {
     }
 
     // Funktionstasten F1..F12 → physische Codes 0xC1..0xCC (cp37: 0xC1→pf1c …).
-    // Die K7637 hat zwölf davon; F11 fängt die Oberfläche für das Vollbild ab
-    // (PF 11 bleibt über die Bildschirmtastatur erreichbar), der Kern bildet
+    // Die K7637 hat zwoelf davon; F11 faengt die Oberflaeche fuer das Vollbild ab
+    // (PF 11 bleibt ueber die Bildschirmtastatur erreichbar), der Kern bildet
     // sie hier trotzdem ab — er kennt kein Vollbild.
     if (qt_keycode >= QK_F1 && qt_keycode <= QK_F12) {
         return static_cast<uint8_t>(0xC1 + (qt_keycode - QK_F1));
@@ -308,14 +308,14 @@ bool K7637::service(uint64_t now_cycles) {
         repeat_rest_ -= static_cast<int64_t>(repeat_uhr_.schritt(now_cycles));
         while (repeat_rest_ <= 0) {
             if (repeat_uhr_.echtzeit()) {
-                // Echtzeit: genau EIN Byte, jetzt.  Wirtszeit lässt sich nicht in
-                // Maschinentakte zurückrechnen, und nach einer Pause (Rechner
-                // angehalten, Wirt ausgelastet) käme sonst ein ganzer Schwall.
+                // Echtzeit: genau EIN Byte, jetzt.  Wirtszeit laesst sich nicht in
+                // Maschinentakte zurueckrechnen, und nach einer Pause (Rechner
+                // angehalten, Wirt ausgelastet) kaeme sonst ein ganzer Schwall.
                 sendByteAt(pressed_scancode_, now_cycles);
                 repeat_rest_ = static_cast<int64_t>(REPEAT_PERIOD_CYCLES);
                 break;
             }
-            // Maschinenzeit: ab dem FÄLLIGKEITStakt senden, nicht ab „jetzt" —
+            // Maschinenzeit: ab dem FAeLLIGKEITStakt senden, nicht ab „jetzt" —
             // sonst hinge die Wiederholzeit davon ab, wie oft service() gerufen wird.
             const uint64_t ueber = static_cast<uint64_t>(-repeat_rest_);
             sendByteAt(pressed_scancode_, now_cycles - std::min(ueber, now_cycles));

@@ -13,18 +13,18 @@
  * @endcode
  *
  * **Die Karte entscheidet nicht selbst, ob sie antwortet.**  Auf der echten Karte
- * antwortet der Speicher bei AB12–AB15 = 0, /RFSH high und /MEMDI high (Wickelbrücke
+ * antwortet der Speicher bei AB12–AB15 = 0, /RFSH high und /MEMDI high (Wickelbruecke
  * X8–X9); im PRG 710 erzeugt die Speicherverwaltung E8H–EBH die Seitenumschaltung
- * (§4b, AP-P1b).  Deshalb meldet die Karte ihren Speicher NICHT über
+ * (§4b, AP-P1b).  Deshalb meldet die Karte ihren Speicher NICHT ueber
  * K1520Bus::registerMem an, sondern bietet @ref belegt / @ref memRead / @ref memWrite
- * für 0000H–0FFFH an; wer sie einblendet, entscheidet die Speicherverwaltung.
- * Die CPU der Karte greift über einen von außen gesetzten Speicherweg
+ * fuer 0000H–0FFFH an; wer sie einblendet, entscheidet die Speicherverwaltung.
+ * Die CPU der Karte greift ueber einen von aussen gesetzten Speicherweg
  * (@ref setSpeicherweg) zu, Vorgabe = Systembus.
  *
  * **E/A mit voller 16-Bit-Adresse** (`bus.ioRead(p)`, nicht `p & 0xFF` wie am K8915):
  * die Speicherverwaltung braucht AB12–AB15 (K1520Bus::ioAddress()).
  *
- * **Brückenfelder** als Config-Struct: X10–X11 (CTC-Kaskade), X14–X15 (IEI).
+ * **Brueckenfelder** als Config-Struct: X10–X11 (CTC-Kaskade), X14–X15 (IEI).
  * X6–X7 (Takt TAKTO auf den Koppelbus trennbar) und X8–X9 (welches /MEMDI) wirken
  * nur im Zusammenspiel mit der Maschine bzw. der Speicherverwaltung und stehen hier
  * nur als Kommentar.
@@ -32,7 +32,7 @@
  * **PIO-Adressierung [?]:** die Kartenbeschreibung nennt „A = 84H, B = 85H, Steuer
  * 86H/87H" (B/A = AB0, C/D = AB1).  Der Baustein @ref Z80PIO ist wie am K2526 mit
  * 0 = A-Daten, 1 = A-Steuer, 2 = B-Daten, 3 = B-Steuer nummeriert; die Karte
- * übersetzt die Busadresse entsprechend (Config::pio_ab_an_a0).  Das ROM spricht die
+ * uebersetzt die Busadresse entsprechend (Config::pio_ab_an_a0).  Das ROM spricht die
  * PIO nicht an; **belegt durch `PROG`** (EPROMmer, AP-P7a): Steuerwort `FFH, 00H` an
  * 86H, danach `IN/OUT (84H)` Bit 0 = PROM-Typ (doc/prg710/eprommer.md §1).
  */
@@ -48,17 +48,17 @@
 
 class K2521 : public BusDevice, public InterruptSlave {
 public:
-    /** @brief Woher der IEI der Karte kommt (Brücken X14–X15). */
+    /** @brief Woher der IEI der Karte kommt (Bruecken X14–X15). */
     enum class IeiQuelle : uint8_t {
         HoechstePrioritaet,   ///< /IODI: Karte steht an der Spitze der Kette (PRG: so)
         System,               ///< IEI vom Systembus (Kette von der vorigen Karte)
         // Sonderfall MRES (dritte Stellung) wird wie System behandelt [?]
     };
 
-    /** @brief Brückenstellungen der Karte (Vorgabe = PRG 710). */
+    /** @brief Brueckenstellungen der Karte (Vorgabe = PRG 710). */
     struct Config {
-        const uint8_t* rom     = nullptr;   ///< Inhalt der U555 ab 0000H (nullptr = keine bestückt)
-        size_t         rom_len = 0;         ///< Länge in Byte, höchstens 0x0C00
+        const uint8_t* rom     = nullptr;   ///< Inhalt der U555 ab 0000H (nullptr = keine bestueckt)
+        size_t         rom_len = 0;         ///< Laenge in Byte, hoechstens 0x0C00
         uint8_t        ctc_base = 0x80;     ///< CTC 80H–83H
         uint8_t        pio_base = 0x84;     ///< PIO 84H–87H
         bool kaskade_to0_clk1 = false;      ///< X10–X11: ZC/TO0 → CLK/TRG1
@@ -67,9 +67,9 @@ public:
         IeiQuelle iei_quelle  = IeiQuelle::HoechstePrioritaet;
         bool pio_ab_an_a0     = true;       ///< PIO: B/A = AB0, C/D = AB1 (s. Kopf; belegt durch PROG)
 
-        /// ROM PRG 710 (1 KB, 0000–03FF), Kaskade TO2→CLK3, IEI höchste Priorität.
+        /// ROM PRG 710 (1 KB, 0000–03FF), Kaskade TO2→CLK3, IEI hoechste Prioritaet.
         static Config prg710();
-        /// ROM PRG 710-1 (1 KB); Brücken wie PRG 710.
+        /// ROM PRG 710-1 (1 KB); Bruecken wie PRG 710.
         static Config prg710_1();
         /// ROM der K8915 Gen 2 (3 × 1 KB, 175/176/177, 0000–0BFF), Kaskaden alle offen,
         /// IEI vom Systembus (Kette wie der V3, doc/design/24_k8915_varianten.md R2) [?, F22].
@@ -95,11 +95,11 @@ public:
     // ─── Lebenslauf ──────────────────────────────────────────────────────────
     /** @brief I/O-Ports anmelden (CTC, PIO).  Speicher wird NICHT angemeldet (s. o.). */
     void attachToBus(K1520Bus& bus);
-    /** @brief /RESET: CTC, PIO und CPU zurück; RAM bleibt. */
+    /** @brief /RESET: CTC, PIO und CPU zurueck; RAM bleibt. */
     void reset();
     /** @brief Netz-Ein: RAM mit @p fill vorbelegen, dann reset(). */
     void powerOn(uint8_t fill = 0x00);
-    /** @brief CTC um @p ticks Systemtakte weiterzählen; true bei ZC/TO-Flanke. */
+    /** @brief CTC um @p ticks Systemtakte weiterzaehlen; true bei ZC/TO-Flanke. */
     bool clockTick(int ticks) { return ctc_.clockTick(ticks); }
 
     // ─── CPU ─────────────────────────────────────────────────────────────────
@@ -108,23 +108,23 @@ public:
     Z80CTC&    ctc()       { return ctc_; }
     Z80PIO&    pio()       { return pio_; }
 
-    /** @brief Speicherweg der CPU (z. B. über die Speicherverwaltung).  Leere Funktion = Systembus. */
+    /** @brief Speicherweg der CPU (z. B. ueber die Speicherverwaltung).  Leere Funktion = Systembus. */
     using LeseFn   = std::function<uint8_t(uint16_t)>;
     using SchreibFn = std::function<void(uint16_t, uint8_t)>;
     void setSpeicherweg(LeseFn lesen, SchreibFn schreiben);
 
     /**
-     * @brief ZC/TO-Ausgänge 0–2 nach außen (Koppelbus, X2); die Kaskade X10–X11 wird
-     *        zusätzlich intern bedient.
+     * @brief ZC/TO-Ausgaenge 0–2 nach aussen (Koppelbus, X2); die Kaskade X10–X11 wird
+     *        zusaetzlich intern bedient.
      */
-    /// @p kanalmaske: Kanäle, deren Flanke der äußere Rückruf braucht (s. Z80CTC::setZCTOCallback)
+    /// @p kanalmaske: Kanaele, deren Flanke der aeussere Rueckruf braucht (s. Z80CTC::setZCTOCallback)
     void setZCTOCallback(Z80CTC::ZCTOCallback cb, uint8_t kanalmaske = 0x0F)
     { zcto_ext_ = std::move(cb); zcto_ext_maske_ = kanalmaske; zctoVerdrahten(); }
 
     // ─── Speicher der Karte (0000H–0FFFH) ────────────────────────────────────
     /** @brief Liegt @p a im Adressbereich der Karte (0000H–0FFFH)?  Nicht: ob sie antwortet. */
     bool    belegt(uint16_t a) const { return a < 0x1000; }
-    /** @brief ROM / leere Fassung (FFH) / RAM; außerhalb der Karte FFH. */
+    /** @brief ROM / leere Fassung (FFH) / RAM; ausserhalb der Karte FFH. */
     uint8_t memRead(uint16_t a) const;
     /** @brief Nur das RAM 0C00–0FFF; ROM und leere Fassungen schlucken den Schreibzyklus. */
     void    memWrite(uint16_t a, uint8_t d);
@@ -151,5 +151,5 @@ private:
     SchreibFn schreiben_;
     Z80CTC::ZCTOCallback zcto_ext_;
     uint8_t zcto_ext_maske_ = 0x0F;
-    void zctoVerdrahten();   ///< Rückruf der CTC samt Kanalmaske (Kaskade ∪ außen)
+    void zctoVerdrahten();   ///< Rueckruf der CTC samt Kanalmaske (Kaskade ∪ aussen)
 };

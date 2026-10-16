@@ -1,0 +1,12 @@
+# k1520tape bootband: 4 Bloecke zu 128 B Daten (132 B roh), CRC stimmt, SYL-Pflicht (treiber.md 6.1).
+tool:   k1520tape
+tmpfile band.k52:
+file boot.bin:
+  SYL boot
+setup_run: bootband %boot.bin% %band.k52%
+run:    ls %band.k52% --side A
+expect: Seite A: 4 Bloecke
+expect: 132 Bytes, 128 Daten, CRC ok
+forbid: FALSCH
+forbid: Bandmarke
+exit:   0

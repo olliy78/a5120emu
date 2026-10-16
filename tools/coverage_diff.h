@@ -1,6 +1,6 @@
 /**
  * @file coverage_diff.h
- * @brief Lädt boot_trace `--coverage`-CSVs (cpu,pc,hits) und difft zwei Läufe.
+ * @brief Laedt boot_trace `--coverage`-CSVs (cpu,pc,hits) und difft zwei Laeufe.
  *
  * Der CSV-Export von `boot_trace --coverage <file>` hat das Format
  *   cpu,pc,hits         (Kopfzeile)  z.B.  ZVE1,0x0135,42
@@ -8,7 +8,7 @@
  * zwei davon: welche Adressen lief nur Lauf A, nur Lauf B, und wo unterscheiden sich
  * die Trefferzahlen. Das ist der eingebaute Run-Diff (`boot_trace --diff a b`).
  *
- * Header-only & über `std::istream` parsebar → ohne Maschine unit-testbar.
+ * Header-only & ueber `std::istream` parsebar → ohne Maschine unit-testbar.
  *
  * @license MIT
  */
@@ -25,8 +25,8 @@
 namespace covdiff {
 
 /**
- * Eine Bool-Abdeckungskarte (true = Byte ausgeführt) in zusammenhängende
- * [start,end]-Bereiche (inklusiv) zusammenfassen. Für `boot_trace --coverage`.
+ * Eine Bool-Abdeckungskarte (true = Byte ausgefuehrt) in zusammenhaengende
+ * [start,end]-Bereiche (inklusiv) zusammenfassen. Fuer `boot_trace --coverage`.
  */
 inline std::vector<std::pair<int,int>> collapseRanges(const std::vector<bool>& cov) {
     std::vector<std::pair<int,int>> ranges;
@@ -74,10 +74,10 @@ inline bool loadCsv(const std::string& path, CovMap& out) {
     return true;
 }
 
-/// Diff-Ergebnis für eine CPU.
+/// Diff-Ergebnis fuer eine CPU.
 struct CpuDiff {
-    std::vector<uint16_t> only_a;   ///< PCs nur in Lauf A ausgeführt
-    std::vector<uint16_t> only_b;   ///< PCs nur in Lauf B ausgeführt
+    std::vector<uint16_t> only_a;   ///< PCs nur in Lauf A ausgefuehrt
+    std::vector<uint16_t> only_b;   ///< PCs nur in Lauf B ausgefuehrt
     std::vector<uint16_t> changed;  ///< PCs in beiden, aber mit anderer Trefferzahl
     size_t a_count = 0, b_count = 0, common = 0;
 };

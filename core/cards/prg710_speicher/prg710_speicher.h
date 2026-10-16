@@ -3,7 +3,7 @@
  * @brief Speicherverwaltung E8H–EBH + 64-KB-OPS-RAM des PRG 710 / PRG 710-1.
  *
  * Quelle: doc/design/20_prg710.md §4, §4b (Arbeitsmodell Punkte 1–4), §7.2, AP-P1b.
- * **Hypothese [?]**: welche Karte die Register wirklich trägt, ist offen (§8.1); der
+ * **Hypothese [?]**: welche Karte die Register wirklich traegt, ist offen (§8.1); der
  * Name wird umgestellt, sobald der Kartenbefund ihn nennt.
  *
  * @code
@@ -16,7 +16,7 @@
  * @endcode
  *
  * Die Speicherverwaltung kennt weder die K2521 noch die K7024: ZRE- und VRAM-Zugriffe
- * gehen über zwei von außen gesetzte Zugriffswege (die Maschine verdrahtet sie).
+ * gehen ueber zwei von aussen gesetzte Zugriffswege (die Maschine verdrahtet sie).
  * Gelesen werden die Register nirgends (ROM und UDOS schreiben nur).
  */
 

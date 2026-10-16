@@ -68,8 +68,8 @@ def befund_zeilen(tool) -> list:
                  f" angesehen)")
     zeilen = [kopf]
     if not bericht.findings:
-        # Der Unterschied ist wichtig genug für ein eigenes Wort: an einer
-        # physischen Diskette heißt „nichts gefunden" nur „bislang nichts".
+        # Der Unterschied ist wichtig genug fuer ein eigenes Wort: an einer
+        # physischen Diskette heisst „nichts gefunden" nur „bislang nichts".
         zeilen.append("  ohne Befund" if bericht.complete else "  bislang ohne Befund")
         return zeilen
 
@@ -96,7 +96,7 @@ class DiskInfoDialog(QDialog):
         self.setWindowTitle("Diskettenangaben")
         self.resize(620, 420)
         self.tool = tool
-        #: Wurde hier eine Prüfung gefahren?  Dann muss das Fenster dahinter seine
+        #: Wurde hier eine Pruefung gefahren?  Dann muss das Fenster dahinter seine
         #: Anzeige auffrischen — der Befund ist ein Zustand der Diskette.
         self.geprueft = False
 
@@ -111,18 +111,18 @@ class DiskInfoDialog(QDialog):
             "Jede Spur ansehen: Ketten, Kreuzbelegungen, Belegungsplan und "
             "Prüfsummen.  Die Schnellprüfung beim Öffnen kann das nicht leisten.")
         self.knopf_voll.clicked.connect(self._vollpruefung)
-        # An einer PHYSISCHEN Diskette zieht die Vollprüfung die ganze Scheibe ein
+        # An einer PHYSISCHEN Diskette zieht die Vollpruefung die ganze Scheibe ein
         # (0,5–0,8 s je Spur) und blockierte das Fenster ein bis zwei Minuten.  Das
-        # gehört in einen Arbeitsfaden mit Fortschritt — bis es den gibt, ist der
+        # gehoert in einen Arbeitsfaden mit Fortschritt — bis es den gibt, ist der
         # Knopf gesperrt und sagt warum.
         if not tool.has_filesystem:
             self.knopf_voll.setEnabled(False)
             self.knopf_voll.setToolTip("Ohne erkanntes Dateisystem gibt es nichts "
                                        "zu prüfen")
         elif not abbild_vollstaendig:
-            # Gefragt wird nach der VOLLSTÄNDIGKEIT des Speicherabbilds, nicht danach,
-            # ob eine Datei vorliegt: der Prüfdialog lädt fehlende Spuren mit
-            # Fortschrittsanzeige nach, und danach kostet die Vollprüfung nichts mehr.
+            # Gefragt wird nach der VOLLSTAENDIGKEIT des Speicherabbilds, nicht danach,
+            # ob eine Datei vorliegt: der Pruefdialog laedt fehlende Spuren mit
+            # Fortschrittsanzeige nach, und danach kostet die Vollpruefung nichts mehr.
             self.knopf_voll.setEnabled(False)
             self.knopf_voll.setToolTip(
                 "Das Speicherabbild ist unvollständig — für die Vollprüfung müsste "

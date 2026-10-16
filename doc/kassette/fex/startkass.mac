@@ -1,0 +1,265 @@
+;Programmausschnitt aus dem V0.9-Lade-ROM zur Kassettenarbeit
+;
+	.z80
+	aseg
+	org	0100h
+;
+;
+;PIO-Grundadressen der AKB
+padr	equ	0d0h			;fuer K8915
+;padr	equ	030h			;fuer A5120
+;
+pio1ad	equ	padr+0			;PIO1 A Daten
+pio1as	equ	padr+2			;PIO1 A Steuer
+pio1bd	equ	padr+1			;PIO1 B Daten
+pio1bs	equ	padr+3			;PIO1 B Steuer
+;
+pio2ad	equ	padr+4			;PIO2 A Daten
+pio2as	equ	padr+6			;PIO2 A Steuer
+pio2bd	equ	padr+5			;PIO2 B Daten
+pio2bs	equ	padr+7			;PIO2 B Steuer
+;
+bdos	equ	5			;BDOS-Einsprungsadresse
+home    equ	0ch			;Bildschirm loeschen und Kursor Home
+;
+;
+	jp	ktest
+;
+merk1:	dw	0		;Merkzelle 1, original auf 003f0h
+ictc0:	dw	0		;Int.-Vektor CTC Kanal 0, original auf 003f2h
+merk3:	dw	0		;Merkzelle 3, original auf 003f4h
+;
+; Ansprung, wenn SE2 und SE4 aktiv
+; kein Diskettenlaufwerk gefunden, Test auf Kassettenbetrieb
+KTEST:  ld      hl,X03bc        ; 0282  21 bc 03	Interrupthandler setzen
+	ld      (merk1),hl      ; 0285  22 f0 03	
+	ld      hl,X03d4        ; 0288  21 d4 03
+	ld      (ictc0),hl      ; 028b  22 f2 03
+	ld      hl,X03c7        ; 028e  21 c7 03
+	ld      (merk3),hl      ; 0291  22 f4 03
+;
+	ld      a,3             ; 0294  3e 03
+	ld      i,a             ; 0296  ed 47		Interruptregister auf $03 setzen
+;
+	ld      a,7fh           ; 0298  3e 7f
+	out     (33h),a         ; 029a  d3 33		PIO1 Port B auf Byteeingabe
+	out     (36h),a         ; 029c  d3 36		PIO2 Port A auf Byteeingabe
+	out     (37h),a         ; 029e  d3 37		PIO2 Port B auf Byteeingabe
+;
+	ld      a,3             ; 02a0  3e 03		&0000 0011
+	out     (34h),a         ; 02a2  d3 34		PIO2 Port A Daten
+;kein LW reserviert, alle anderen Funktionen aus
+;
+	inc     a               ; 02a4  3c		&0000 0100
+	out     (35h),a         ; 02a5  d3 35		PIO2 Port B Daten  ?????
+;
+	ld      a,0ffh          ; 02a7  3e ff		&1111 1111
+	out     (37h),a         ; 02a9  d3 37		PIO2 Port B Steuerwort
+;umstellen PIO2 Port B auf Mode 3, Bit-E/A
+;
+	ld      a,0fdh          ; 02ab  3e fd		&1111 1101
+	out     (37h),a         ; 02ad  d3 37		PIO2 Port B Steuerwort
+;Bit 1 Ausgang, alle anderen Bit's Eingaenge
+;
+	ld      a,0ffh          ; 02af  3e ff		&1111 1111
+	out     (36h),a         ; 02b1  d3 36
+;PIO2 Port A auf Mode 3, Bit-E/A
+;
+	ld      a,80h           ; 02b3  3e 80		&1000 0000
+	out     (36h),a         ; 02b5  d3 36
+;PIO2 Port A, Bit 7 Eingabe, Bit 6-0 Ausgabe
+;
+	in      a,(34h)         ; 02b7  db 34		PIO2 Port A Daten
+	and     7ch             ; 02b9  e6 7c		&0111 1100
+;
+	jp      nz,NOLW         ; 02bb  c2 b0 03	kein Kassettenlaufwerk gefunden, Fehlerlampe an,
+;							Endlosschleife
+	ld      e,9             ; 02be  1e 09
+	ld      a,0f2h          ; 02c0  3e f2		&1111 0010
+	out     (0ch),a         ; 02c2  d3 0c		ZVE-CTC Kanal 0 - Interruptvektor $f2
+;							$03f2 Int.-Vektor Kanal 0 CTC
+X02c4:  ld      a,5             ; 02c4  3e 05
+	ld      (X03fa),a       ; 02c6  32 fa 03
+X02c9:  ld      a,e             ; 02c9  7b		$09 (s.o.), &1000 0001
+;
+	out     (34h),a         ; 02ca  d3 34		Kass.-LW1 anwaehlen
+	ld      b,0             ; 02cc  06 00
+	call    ZEIT            ; 02ce  cd b6 03	Zeitschleife, warten bis LW angelaufen ist
+	call    ZEIT            ; 02d1  cd b6 03	Zeitschleife
+	ld      hl,X0400        ; 02d4  21 00 04	Adresse RAM-Beginn $0400
+	ld      (X03f8),hl      ; 02d7  22 f8 03	merken
+	ld      d,10h           ; 02da  16 10		&0001 0000
+	in      a,(35h)         ; 02dc  db 35		Status Kass.-LW1
+	bit     0,e             ; 02de  cb 43
+	jr      nz,X02e4        ; 02e0  20 02
+	ld      d,8             ; 02e2  16 08
+X02e4:  and     d               ; 02e4  a2
+	jp      z,X0397         ; 02e5  ca 97 03
+	xor     a               ; 02e8  af		A=0
+	ld      (X03f6),a       ; 02e9  32 f6 03
+	ld      a,14h           ; 02ec  3e 14		&0001 0100
+	ld      (X03f7),a       ; 02ee  32 f7 03	merken
+	ld      a,0a7h          ; 02f1  3e a7		&1010 0111
+	out     (0dh),a         ; 02f3  d3 0d		ZVE-CTC Kanal 1 Steuerwort
+;							D7=1 - Interruptfreigabe
+;							D6=0 - Zeitgeber
+;							D5=1 - Teiler = 256
+;							D4=0 - neg. Flanke loest aus
+;							D3=0 - Triggerzeitpunkt
+;							D2=1 - Zeitkonstante folgt
+;							D1=1 - warten bis Zeitkonstante geladen
+;							D0=1 - Kanalsteuerwort
+;
+	ld      a,0ffh          ; 02f5  3e ff		&1111 1111 - Zeitkonstante
+	out     (0dh),a         ; 02f7  d3 0d		Ausgabe an ZVE-CTC Kanal 1
+X02f9:  in      a,(34h)         ; 02f9  db 34		PIO 2 Tor A K5020
+	bit     7,a             ; 02fb  cb 7f		Test auf Bandanfang erreicht
+	jr      nz,X0317        ; 02fd  20 18		Bandanfang gefunden
+	or      20h             ; 02ff  f6 20           
+	out     (34h),a         ; 0301  d3 34           
+	ld      l,3             ; 0303  2e 03           ..
+X0305:  call    zeit            ; 0305  cd b6 03        M6.
+	in      a,(34h)         ; 0308  db 34           [4
+	bit     7,a             ; 030a  cb 7f           K.
+	jr      nz,X0317        ; 030c  20 09            .
+	dec     l               ; 030e  2d              -
+	jr      nz,X0305        ; 030f  20 f4            t
+	and     0dfh            ; 0311  e6 df           f_
+	out     (34h),a         ; 0313  d3 34           S4
+	jr      X033b           ; 0315  18 24           .$
+;
+X0317:  and     0dfh            ; 0317  e6 df		&1101 1111
+	out     (34h),a         ; 0319  d3 34		Transport vorwärts einschalten
+	call    ZEIT            ; 031b  cd b6 03	warten
+	or      30h             ; 031e  f6 30		&0000 0011
+	out     (34h),a         ; 0320  d3 34		kein Kass.LW reservieren
+	and     0c3h            ; 0322  e6 c3		&1100 0011
+	out     (34h),a         ; 0324  d3 34		Transport abschalten
+X0326:  in      a,(35h)         ; 0326  db 35		LW-Zustand abfragen
+	and     d               ; 0328  a2		Bit 6 bis 0 ausblenden
+	jr      z,X0326         ; 0329  28 fb		Zeitfehler aufgetreten, noch einmal
+	in      a,(34h)         ; 032b  db 34
+	bit     0,a             ; 032d  cb 47           KG
+	jr      nz,X0335        ; 032f  20 04            .
+	add     a,4             ; 0331  c6 04           F.
+	jr      X0337           ; 0333  18 02           ..
+;
+X0335:  add     a,8             ; 0335  c6 08           F.
+X0337:  out     (34h),a         ; 0337  d3 34           S4
+	jr      X02f9           ; 0339  18 be           .>
+;
+X033b:  ld      c,a             ; 033b  4f              O
+	and     0f3h            ; 033c  e6 f3           fs
+	or      40h             ; 033e  f6 40           v@
+	out     (34h),a         ; 0340  d3 34           S4
+	ld      a,c             ; 0342  79              y
+	out     (34h),a         ; 0343  d3 34           S4
+	or      10h             ; 0345  f6 10           v.
+	out     (34h),a         ; 0347  d3 34           S4
+X0349:  in      a,(34h)         ; 0349  db 34           [4
+	rla                     ; 034b  17              .
+	jr      nc,X0349        ; 034c  30 fb           0{
+	ld      b,0             ; 034e  06 00           ..
+	call    zeit            ; 0350  cd b6 03        M6.
+	ld      d,4             ; 0353  16 04           ..
+X0355:  ld      a,0f0h          ; 0355  3e f0           >p
+	out     (33h),a         ; 0357  d3 33           S3
+	ld      bc,X8331        ; 0359  01 31 83        .1.
+	ld      a,97h           ; 035c  3e 97           >.
+	out     (33h),a         ; 035e  d3 33           S3
+	out     (33h),a         ; 0360  d3 33           S3
+	in      a,(31h)         ; 0362  db 31           [1
+	xor     a               ; 0364  af              /
+X0365:  cp      b               ; 0365  b8              8
+	jr      nz,X0365        ; 0366  20 fd            }
+	ld      a,3             ; 0368  3e 03           >.
+	out     (33h),a         ; 036a  d3 33           S3
+	ld      hl,(X03f8)      ; 036c  2a f8 03        *x.
+	dec     hl              ; 036f  2b              +
+	dec     hl              ; 0370  2b              +
+	dec     hl              ; 0371  2b              +
+	ld      (X03f8),hl      ; 0372  22 f8 03        "x.
+	dec     d               ; 0375  15              .
+	jr      nz,X0355        ; 0376  20 dd            ]
+	ld      bc,X0d00        ; 0378  01 00 0d        ...
+	call    zeit            ; 037b  cd b6 03        M6.
+	in      a,(34h)         ; 037e  db 34           [4
+	and     0efh            ; 0380  e6 ef           fo
+	out     (34h),a         ; 0382  d3 34           S4
+	ld      a,21h           ; 0384  3e 21           >!
+	out     (0dh),a         ; 0386  d3 0d           S.
+	call    X01b6           ; 0388  cd b6 01        M6.
+	jr      nz,X0398        ; 038b  20 0b            .
+	call    X0434           ; 038d  cd 34 04        M4.
+	jp      X0177           ; 0390  c3 77 01        Cw.
+;
+X0393:  ld      a,3             ; 0393  3e 03           >.
+	out     (33h),a         ; 0395  d3 33           S3
+X0397:  nop                     ; 0397  00              .
+X0398:  ld      a,21h           ; 0398  3e 21           >!
+	out     (0dh),a         ; 039a  d3 0d           S.
+	ld      hl,X03fa        ; 039c  21 fa 03        !z.
+	dec     (hl)            ; 039f  35              5
+	ld      a,3             ; 03a0  3e 03           >.
+	out     (34h),a         ; 03a2  d3 34           S4
+	jp      nz,X02c9        ; 03a4  c2 c9 02        BI.
+	bit     0,e             ; 03a7  cb 43           KC
+	jr      z,X03b0         ; 03a9  28 05           (.
+	ld      e,6             ; 03ab  1e 06           ..
+	jp      X02c4           ; 03ad  c3 c4 02        CD.
+;Ende der Kassettenroutine
+;
+;Interruptroutine von ???????????????
+X03bc:  ei                      ; 03bc  fb              {
+	push    af              ; 03bd  f5              u
+	in      a,(31h)         ; 03be  db 31           [1
+	ld      a,0f4h          ; 03c0  3e f4           >t
+	out     (33h),a         ; 03c2  d3 33           S3
+	pop     af              ; 03c4  f1              q
+	reti                    ; 03c5  ed 4d           mM
+;
+;Interruptroutine von ???????????????
+X03c7:  ei                      ; 03c7  fb              {
+	push    af              ; 03c8  f5              u
+	push    hl              ; 03c9  e5              e
+	ld      hl,(X03f8)      ; 03ca  2a f8 03        *x.
+	ini                     ; 03cd  ed a2           m"
+	ld      (X03f8),hl      ; 03cf  22 f8 03        "x.
+	jr      X03e1           ; 03d2  18 0d           ..
+;
+;Interruptroutine ZVE-CTC Kanal 0
+X03d4:  ei                      ; 03d4  fb              {
+	push    af              ; 03d5  f5              u
+	push    hl              ; 03d6  e5              e
+	ld      hl,X03f6        ; 03d7  21 f6 03        !v.
+	dec     (hl)            ; 03da  35              5
+	jr      nz,X03e1        ; 03db  20 04            .
+	inc     l               ; 03dd  2c              ,
+	dec     (hl)            ; 03de  35              5
+	jr      z,X03e5         ; 03df  28 04           (.
+X03e1:  pop     hl              ; 03e1  e1              a
+	pop     af              ; 03e2  f1              q
+	reti                    ; 03e3  ed 4d           mM
+
+;
+;********** Unterprogramme ***********************************
+;
+; Zeitschleife
+ZEIT:   dec     c               ; 03b6  0d
+	jr      nz,zeit         ; 03b7  20 fd
+	djnz    zeit            ; 03b9  10 fb
+	ret                     ; 03bb  c9
+; Ende Zeitschleife
+;
+;**************************************************************
+;Routine wird von $016f per CALL aufgerufen
+X01b6:  ld      hl,(0400h)      ; 01b6  2a 00 04
+	ld      bc,05953h       ; 01b9  01 53 59
+	sbc     hl,bc           ; 01bc  ed 42
+	ret     nz              ; 01be  c0
+	ld      hl,0402h        ; 01bf  21 02 04
+	ld      a,4ch           ; 01c2  3e 4c
+	cp      (hl)            ; 01c4  be
+	ret     nz              ; 01c5  c0
+	ret                     ; 01c6  c9
+;**************************************************************

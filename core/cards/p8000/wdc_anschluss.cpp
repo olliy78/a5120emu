@@ -61,7 +61,7 @@ void P8000WdcAnschluss::einmal()
 
 void P8000WdcAnschluss::astb()
 {
-    // Das Byte liegt an (WDC → Host) bzw. ist übernommen (Host → WDC): /ASTB-Impuls an PIO2-A.
+    // Das Byte liegt an (WDC → Host) bzw. ist uebernommen (Host → WDC): /ASTB-Impuls an PIO2-A.
     Z80PIO& p = k16_.pio2();
     if (p.pinsB(static_cast<uint8_t>(0xFF)) & 0x40) k16_.setzePinTreiber(2, 0, wdc_.datenZumHost(), 0xFF);
     p.setStbA(false);

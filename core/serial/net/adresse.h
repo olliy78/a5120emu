@@ -2,8 +2,8 @@
  * @file adresse.h
  * @brief Klassifikation des Host-Feldes einer seriellen Schnittstelle (Entwurf 19 §7.3).
  *
- * Rein textuell, ohne Netz und ohne Namensauflösung: entschieden wird an der Form.
- * Die Oberfläche zeigt das Ergebnis als kleines Etikett neben dem Feld; „ungültig"
+ * Rein textuell, ohne Netz und ohne Namensaufloesung: entschieden wird an der Form.
+ * Die Oberflaeche zeigt das Ergebnis als kleines Etikett neben dem Feld; „ungueltig"
  * sperrt den Verbinden-Knopf.
  *
  * @see doc/design/19_serielle_schnittstellen.md §7.3
@@ -22,7 +22,7 @@ enum class AdressArt {
 };
 
 /// Zerlegtes Host-Feld.  `host` ist bei IPv6 ohne `[…]` und ohne `%zone`, sonst
-/// das (an den Rändern von Leerraum befreite) Feld selbst.
+/// das (an den Raendern von Leerraum befreite) Feld selbst.
 struct Adresse {
     AdressArt   art = AdressArt::Ungueltig;
     std::string host;
@@ -30,7 +30,7 @@ struct Adresse {
 };
 
 /// Host-Feld klassifizieren und zerlegen.
-/// Reihenfolge: IPv4 → (`[…]` abstreifen, `%zone` abtrennen) IPv6 → Hostname → ungültig.
+/// Reihenfolge: IPv4 → (`[…]` abstreifen, `%zone` abtrennen) IPv6 → Hostname → ungueltig.
 Adresse adresseZerlegen(const std::string& feld);
 
 /// Kurzform: nur die Art.
@@ -39,9 +39,9 @@ inline AdressArt adresseKlassifizieren(const std::string& feld) {
 }
 
 /// Hostname nach RFC 1123: Labels 1–63 Zeichen `[A-Za-z0-9-]`, nicht mit `-` beginnend
-/// oder endend, gesamt ≤ 253 (ein einzelner Schlusspunkt ist zulässig).
-/// Zusätzlich gilt das letzte Label nicht als rein numerisch (RFC 1123 §2.1) —
-/// `300.1.1.1` ist damit ungültig statt ein „Hostname", den kein Resolver kennt.
+/// oder endend, gesamt ≤ 253 (ein einzelner Schlusspunkt ist zulaessig).
+/// Zusaetzlich gilt das letzte Label nicht als rein numerisch (RFC 1123 §2.1) —
+/// `300.1.1.1` ist damit ungueltig statt ein „Hostname", den kein Resolver kennt.
 bool hostnameGueltig(const std::string& name);
 
 } // namespace k1520::serial::net

@@ -1,0 +1,13 @@
+FEPR91
+Kaltstart SIOS 250
+-BAB2
+-CP/11-Tas
+-1157-II-Interf
+-5600.10 (40Sp)
+====================
+Datentraeger: Diskette 5,25"  DD DS, Doppelt gelocht
+Formatierung: 26x128x40x1
+Betriebssystem: BCU880 2.1
+Rechner: A5120?
+Hinweis: Auf der Rueckseite ist DISK.145
+Herkunft: VEB Halbleiterwerk Frankfurt/Oder

@@ -675,7 +675,7 @@ TEST(Z80CTC, ControlWord_ResetClearsCounter) {
     EXPECT_FALSE(ctc.isTimerMode(0) && ctc.getCount(0) > 0);        // not counting
 }
 
-/// Opt-in (P8000): der Software-Reset lädt den Zähler mit der Zeitkonstante; ohne TC bleibt es 0.
+/// Opt-in (P8000): der Software-Reset laedt den Zaehler mit der Zeitkonstante; ohne TC bleibt es 0.
 TEST(Z80CTC, ControlWord_ResetLaedtZeitkonstante_NurAufWunsch) {
     Z80CTC ctc;
     ctc.setResetLaedtZeitkonstante(true);
@@ -968,7 +968,7 @@ TEST(Z80CTC, TeilerTakte_Zeitgeber16Und256) {
     EXPECT_EQ(ctc.teilerTakte(0), 160u);
     EXPECT_EQ(ctc.teilerTakte(1), 768u);
 
-    // Der Wert stimmt mit dem tatsächlichen Abstand der ZC/TO-Impulse überein.
+    // Der Wert stimmt mit dem tatsaechlichen Abstand der ZC/TO-Impulse ueberein.
     uint64_t t = 0, erster = 0, zweiter = 0;
     ctc.setZCTOCallback([&](int ch, bool level) {
         if (ch != 0 || level) return;
@@ -979,35 +979,35 @@ TEST(Z80CTC, TeilerTakte_Zeitgeber16Und256) {
 }
 
 /**
- * @brief TC = 0 bedeutet 256 — beim Zeitgeber wie beim Zähler.
+ * @brief TC = 0 bedeutet 256 — beim Zeitgeber wie beim Zaehler.
  */
 TEST(Z80CTC, TeilerTakte_Zeitkonstante0Ist256) {
     Z80CTC ctc;
     configChannel(ctc, 0, 0x05, 0);       // ÷16 × 256
     EXPECT_EQ(ctc.teilerTakte(0), 16u * 256u);
-    configChannel(ctc, 1, 0x45, 0);       // Zähler, TC 0 = 256
+    configChannel(ctc, 1, 0x45, 0);       // Zaehler, TC 0 = 256
     ctc.setzeEingangsPeriode(1, 10);
     EXPECT_EQ(ctc.teilerTakte(1), 2560u);
 }
 
 /**
- * @brief Zähler: Zeitkonstante mal Periode des CLK/TRG-Eingangs.
+ * @brief Zaehler: Zeitkonstante mal Periode des CLK/TRG-Eingangs.
  */
 TEST(Z80CTC, TeilerTakte_ZaehlerMitBekannterEingangsperiode) {
     Z80CTC ctc;
-    configChannel(ctc, 2, 0x47, 4);       // Zähler, TC 4 (D1 = Reset)
+    configChannel(ctc, 2, 0x47, 4);       // Zaehler, TC 4 (D1 = Reset)
     ctc.setzeEingangsPeriode(2, 8);       // z. B. 307,2 kHz bei φ = 2,4576 MHz
     EXPECT_EQ(ctc.teilerTakte(2), 32u);
 }
 
 /**
- * @brief Zähler an einem Eingang unbekannter Herkunft → 0 = unbekannt; ebenso ein
+ * @brief Zaehler an einem Eingang unbekannter Herkunft → 0 = unbekannt; ebenso ein
  *        nicht programmierter Kanal und ein Zeitgeber, der noch auf seinen Trigger wartet.
  */
 TEST(Z80CTC, TeilerTakte_UnbekanntIstNull) {
     Z80CTC ctc;
     EXPECT_EQ(ctc.teilerTakte(0), 0u);    // nach dem Einschalten: nichts programmiert
-    configChannel(ctc, 1, 0x45, 4);       // Zähler ohne Angabe zur Quelle
+    configChannel(ctc, 1, 0x45, 4);       // Zaehler ohne Angabe zur Quelle
     EXPECT_EQ(ctc.teilerTakte(1), 0u);
     ctc.setzeEingangsPeriode(1, 5);
     EXPECT_EQ(ctc.teilerTakte(1), 20u);
@@ -1017,18 +1017,18 @@ TEST(Z80CTC, TeilerTakte_UnbekanntIstNull) {
     EXPECT_EQ(ctc.teilerTakte(2), 0u);
     ctc.ioWrite(3, 0x07);                 // Steuerwort mit Reset, TC folgt …
     EXPECT_EQ(ctc.teilerTakte(3), 0u);    // … aber noch nicht geschrieben
-    EXPECT_EQ(ctc.teilerTakte(7), 0u);    // Kanal außerhalb 0…3
+    EXPECT_EQ(ctc.teilerTakte(7), 0u);    // Kanal ausserhalb 0…3
 }
 
 /**
- * @brief Kaskade: Kanal 1 zählt die ZC/TO-Impulse von Kanal 0 — die Periode wird
- *        über eine Rückfrage rekursiv ermittelt und folgt einer Umprogrammierung.
+ * @brief Kaskade: Kanal 1 zaehlt die ZC/TO-Impulse von Kanal 0 — die Periode wird
+ *        ueber eine Rueckfrage rekursiv ermittelt und folgt einer Umprogrammierung.
  */
 TEST(Z80CTC, TeilerTakte_KaskadeRekursiv) {
     Z80CTC ctc;
     ctc.setzeEingangsQuelle(1, [&] { return ctc.teilerTakte(0); });
     configChannel(ctc, 0, 0x05, 2);       // Zeitgeber ÷16 × 2 = 32
-    configChannel(ctc, 1, 0x55, 3);       // Zähler, steigende Flanke, TC 3
+    configChannel(ctc, 1, 0x55, 3);       // Zaehler, steigende Flanke, TC 3
     EXPECT_EQ(ctc.teilerTakte(1), 96u);
 
     // Gegenprobe am laufenden Baustein: Abstand der Impulse von Kanal 1.
@@ -1040,10 +1040,70 @@ TEST(Z80CTC, TeilerTakte_KaskadeRekursiv) {
     for (t = 1; t <= 400; ++t) ctc.clockTick();
     EXPECT_EQ(zweiter - erster, 96u);
 
-    configChannel(ctc, 0, 0x25, 1);       // Kanal 0 neu: ÷256 × 1 (wirkt am nächsten Nulldurchgang)
+    configChannel(ctc, 0, 0x25, 1);       // Kanal 0 neu: ÷256 × 1 (wirkt am naechsten Nulldurchgang)
     EXPECT_EQ(ctc.teilerTakte(1), 768u);
 
     // Eine (falsch verdrahtete) Schleife endet nicht in einer Endlosrekursion.
     ctc.setzeEingangsQuelle(1, [&] { return ctc.teilerTakte(1); });
     EXPECT_EQ(ctc.teilerTakte(1), 0u);
+}
+
+/**
+ * Steuerwort mit D7 = 0 bei anstehender Anforderung: Vorgabe = Anforderung bleibt (Verhalten
+ * aller bisherigen Maschinen), mit setIntAusVerwirftAnforderung(true) wird sie verworfen
+ * (MC80-ASP, EGOS TASTE_ISR 046FH, AP M3).
+ */
+TEST(Z80CTC, IntAusVerwirftAnforderungNurMitSchalter) {
+    for (bool schalter : {false, true}) {
+        Z80CTC ctc;
+        ctc.setIntAusVerwirftAnforderung(schalter);
+        ctc.setIEI(true);
+        ctc.ioWrite(3, 0x87);   // Interrupt ein, Zeitgeber, ×16, ZK folgt
+        ctc.ioWrite(3, 0x01);
+        ctc.clockTick(16);
+        ASSERT_TRUE(ctc.hasInterrupt());
+        ctc.ioWrite(3, 0x01);   // Interrupt aus, kein Ruecksetzen
+        EXPECT_EQ(ctc.hasInterrupt(), !schalter) << "Schalter " << schalter;
+    }
+}
+
+TEST(Z80CTC, RetiNachIusLoeschtDenKanalInBedienung) {
+    // K2 in Bedienung, K0 fordert gerade an (MC80.2x-DPL: Zeichentakt beim RETI des TSI).
+    // Datenblatt: im ED-Holezyklus sperrt nur ein Kanal IN BEDIENUNG — das RETI gehoert K2.
+    // Seit A8b (2026-10-16) ist das die Vorgabe; der Schalter setRetiNachIus wirkt nicht mehr.
+    for (bool schalter : {false, true}) {
+        Z80CTC ctc;
+        ctc.setRetiNachIus(schalter);
+        ctc.setIEI(true);
+        ctc.ioWrite(0, 0x00);                         // Vektorbasis
+        ctc.ioWrite(0, 0xC7); ctc.ioWrite(0, 0x01);   // K0 Zaehler, Interrupt, ZK 1
+        ctc.ioWrite(2, 0xC7); ctc.ioWrite(2, 0x01);   // K2 ebenso
+        ctc.clkTrg(2, false);
+        ASSERT_TRUE(ctc.hasInterrupt());
+        EXPECT_EQ(ctc.getVector(), 0x04);             // K2 angenommen → in Bedienung
+        EXPECT_TRUE(ctc.inBedienung());
+        ctc.clkTrg(0, false);                         // K0 fordert an (hoehere Prioritaet)
+        ctc.setIEI(true);                             // Kette neu bewerten (wie die Karte es tut)
+        ctc.onRETI();
+        EXPECT_FALSE(ctc.debugState().ch[2].ius) << "Schalter " << schalter;
+        EXPECT_TRUE(ctc.debugState().ch[0].intPending);
+        EXPECT_FALSE(ctc.inBedienung());
+        EXPECT_EQ(ctc.getVector(), 0x00);             // jetzt K0
+        ctc.onRETI();
+        EXPECT_FALSE(ctc.inBedienung());
+    }
+}
+
+TEST(Z80CTC, RetiOhneIeiLoeschtKeinIus) {
+    // Ein hoeheres Geraet ist in Bedienung (IEI = 0): das RETI gehoert ihm, nicht dieser CTC.
+    Z80CTC ctc;
+    ctc.setIEI(true);
+    ctc.ioWrite(0, 0x00);
+    ctc.ioWrite(2, 0xC7); ctc.ioWrite(2, 0x01);
+    ctc.clkTrg(2, false);
+    ASSERT_EQ(ctc.getVector(), 0x04);
+    ASSERT_TRUE(ctc.inBedienung());
+    ctc.setIEI(false);
+    ctc.onRETI();
+    EXPECT_TRUE(ctc.inBedienung());
 }

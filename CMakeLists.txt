@@ -4,30 +4,30 @@ cmake_minimum_required(VERSION 3.16)
 # Version   (doc/ci_pipeline.md §7.1/§7.2)
 # ─────────────────────────────────────────────────────────────────────────────
 # EINE Quelle: die Datei VERSION im Wurzelverzeichnis (Basisversion, eine Zeile,
-# z. B. `0.3.0-beta`).  CMAKE_CONFIGURE_DEPENDS: eine geänderte Datei lässt
+# z. B. `0.3.0-beta`).  CMAKE_CONFIGURE_DEPENDS: eine geaenderte Datei laesst
 # CMake neu konfigurieren, damit core/version.h nicht veraltet.
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" K1520_VERSION_BASIS LIMIT_COUNT 1)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
 if(NOT K1520_VERSION_BASIS MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-(beta|rc))?$")
-    message(FATAL_ERROR "VERSION: '${K1520_VERSION_BASIS}' ist keine gültige Basisversion "
+    message(FATAL_ERROR "VERSION: '${K1520_VERSION_BASIS}' ist keine gueltige Basisversion "
                         "(MAJOR.MINOR.PATCH[-beta|-rc], doc/ci_pipeline.md §7.1)")
 endif()
 set(K1520_VERSION_ZAHL "${CMAKE_MATCH_1}")
 
 # C steht neben CXX, weil der Zeileneditor des Debuggers (third_party/isocline,
 # MIT) reines C ist — ohne das meldet CMake beim Erzeugen „Missing variable is:
-# CMAKE_C_CREATE_STATIC_LIBRARY". Eigener Kerncode ist unverändert C++.
+# CMAKE_C_CREATE_STATIC_LIBRARY". Eigener Kerncode ist unveraendert C++.
 project(a5120emu VERSION ${K1520_VERSION_ZAHL} LANGUAGES C CXX)
 
-# Bauversion.  Leer (Vorgabe) heisst `<Basis>+dev`; ein Paket setzt sie über
+# Bauversion.  Leer (Vorgabe) heisst `<Basis>+dev`; ein Paket setzt sie ueber
 # `-DK1520_VERSION_VOLL=$(tools/version.py --bau)`.  Der Commit-Hash wird
 # bewusst NICHT bei jedem Bau eingerechnet: er veraltete ohne Neukonfiguration
-# und zwänge bei jedem Commit zum Neubau des ganzen Kerns.  Absichtlich kein
-# Cache-Vorgabewert `<Basis>+dev`: der bliebe nach einer Änderung von VERSION
+# und zwaenge bei jedem Commit zum Neubau des ganzen Kerns.  Absichtlich kein
+# Cache-Vorgabewert `<Basis>+dev`: der bliebe nach einer Aenderung von VERSION
 # im Cache stehen.
 set(K1520_VERSION_VOLL "" CACHE STRING
-    "Bauversion für k1520_version(); leer = <Basis aus VERSION>+dev")
+    "Bauversion fuer k1520_version(); leer = <Basis aus VERSION>+dev")
 if(K1520_VERSION_VOLL STREQUAL "")
     set(K1520_VERSION_TEXT "${K1520_VERSION_BASIS}+dev")
 else()
@@ -35,7 +35,7 @@ else()
 endif()
 message(STATUS "Version: ${K1520_VERSION_TEXT}")
 # core/version.h entsteht im Bauverzeichnis; der Include-Pfad `core/version.h`
-# bleibt für Kern, DiskTool, Debugger und Tests derselbe.
+# bleibt fuer Kern, DiskTool, Debugger und Tests derselbe.
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/core/version.h.in"
                "${CMAKE_BINARY_DIR}/core/version.h" @ONLY)
 include_directories("${CMAKE_BINARY_DIR}")
@@ -43,8 +43,8 @@ include_directories("${CMAKE_BINARY_DIR}")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Default-Build-Type: OHNE dies baut GCC mit -O0 (keine Optimierung) — für einen
-# Z80-Interpreter der mit Abstand größte Performance-Verlust (~5-8x langsamer).
+# Default-Build-Type: OHNE dies baut GCC mit -O0 (keine Optimierung) — fuer einen
+# Z80-Interpreter der mit Abstand groesste Performance-Verlust (~5-8x langsamer).
 # Wird nur gesetzt, wenn der Aufrufer keinen expliziten Typ vorgibt.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING
@@ -59,7 +59,7 @@ if(WIN32)
     # NOMINMAX:            windows.h definiert sonst min/max als MAKRO und zerlegt
     #                      jedes std::min/std::max im Kern.
     # WIN32_LEAN_AND_MEAN: spart den halben Win32-Kopfdateibaum (Winsock, OLE, …).
-    # UNICODE:             die Modulpfad-Auflösung benutzt GetModuleFileNameW.
+    # UNICODE:             die Modulpfad-Aufloesung benutzt GetModuleFileNameW.
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
 endif()
 
@@ -67,20 +67,20 @@ if(MSVC)
     # /utf-8: die Quellen sind UTF-8 und stecken VOLLER deutscher Umlaute (Kommentare
     #         UND Zeichenketten).  Ohne das liest MSVC sie in der Systemcodepage —
     #         Umlaute in Log-/Fehlertexten kommen als Buchstabensalat heraus, und in
-    #         Kommentaren löst ein zerbrochenes Byte Warnung C4819 aus.
+    #         Kommentaren loest ein zerbrochenes Byte Warnung C4819 aus.
     add_compile_options(/utf-8)
-    # /permissive-: Zwei-Phasen-Namensauflösung wie GCC/Clang — sonst nimmt MSVC
+    # /permissive-: Zwei-Phasen-Namensaufloesung wie GCC/Clang — sonst nimmt MSVC
     #               Vorlagenfehler erst bei der Instanziierung wahr.
     add_compile_options(/permissive- /W3)
     # /bigobj: die Kartenmodelle erzeugen sehr grosse Objektdateien (Vorlagen +
     #          eingebettete EPROM-Felder) und reissen sonst das Sektionslimit.
     add_compile_options(/bigobj)
-    # C4996: MSVC hält halb POSIX für „unsicher" (fopen, getenv …).  Wir benutzen
+    # C4996: MSVC haelt halb POSIX fuer „unsicher" (fopen, getenv …).  Wir benutzen
     #        die Standardformen bewusst; der Kern soll auf allen drei Systemen
     #        DIESELBE Quelle sein.
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
-    # Statische CRT — NUR für Auslieferungsbauten.  Der Windows-Installer läuft
+    # Statische CRT — NUR fuer Auslieferungsbauten.  Der Windows-Installer laeuft
     # per-user ohne Administratorrechte und kann deshalb KEIN VC-Redist
     # nachinstallieren (§5.1); die ausgelieferte DLL muss ihre Laufzeit selbst
     # mitbringen.  Vorgabe OFF, weil GoogleTest im selben Baum die dynamische CRT
@@ -102,8 +102,8 @@ message(STATUS "Global LOG_LEVEL=${LOG_LEVEL}")
 
 # HINWEIS: Der alte monolithische A5120-Emulator (src/, Targets a5120emu / cparun /
 # a5120emu_test mit CP/M-BIOS-HALT-Traps) wurde entfernt — der modulare K1520-Kern
-# unter core/ ist die einzige Implementierung.  Der eigenständige CP/M-Runner lebt
-# unverändert als Unterprojekt in cparun/ (eigenes CMakeLists.txt, eigene Quellen).
+# unter core/ ist die einzige Implementierung.  Der eigenstaendige CP/M-Runner lebt
+# unveraendert als Unterprojekt in cparun/ (eigenes CMakeLists.txt, eigene Quellen).
 
 # ─────────────────────────────────────────────────────────────────────────────
 # K1520 core emulator (new modular implementation)
@@ -133,7 +133,7 @@ if(BUILD_K1520)
     target_include_directories(k1520_util PUBLIC ${CMAKE_SOURCE_DIR})
 
     # Gepackte Abbilder (.img.gz) — miniz ist BEIGELEGT (third_party/miniz, MIT, dort das Warum).
-    # Amalgamation: genau EINE Datei übersetzen.  MINIZ_NO_ZLIB_COMPATIBLE_NAMES ist Pflicht:
+    # Amalgamation: genau EINE Datei uebersetzen.  MINIZ_NO_ZLIB_COMPATIBLE_NAMES ist Pflicht:
     # libk1520core.so lebt im selben Prozess wie Qt (bringt zlib mit) — keine `deflate`/`crc32`.
     add_library(miniz STATIC third_party/miniz/miniz.c)
     target_include_directories(miniz PUBLIC third_party/miniz)
@@ -157,8 +157,8 @@ if(BUILD_K1520)
     target_include_directories(k1520_serial_codec PUBLIC ${CMAKE_SOURCE_DIR})
 
     # Netzschicht der seriellen Schnittstellen (Entwurf 19): Sockets POSIX/Winsock2,
-    # Adressklassifikation, Portsuche.  Eigene Bibliothek, damit Tests und der spätere
-    # SerialHub sie ohne den Rest des Kerns binden.  ws2_32 gilt für MinGW UND MSVC.
+    # Adressklassifikation, Portsuche.  Eigene Bibliothek, damit Tests und der spaetere
+    # SerialHub sie ohne den Rest des Kerns binden.  ws2_32 gilt fuer MinGW UND MSVC.
     add_library(k1520_serial_net STATIC
         core/serial/net/socket.cpp
         core/serial/net/adresse.cpp
@@ -205,13 +205,13 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/format_catalog.cpp
     )
     # ${CMAKE_DL_LIBS}: FormatCatalog fragt per dladdr(), in welchem Modul es selbst
-    # liegt — davon hängt ab, wo es formats.yaml sucht (siehe format_catalog.h).
+    # liegt — davon haengt ab, wo es formats.yaml sucht (siehe format_catalog.h).
     # Ab glibc 2.34 steckt dladdr in der libc, davor braucht es -ldl.
     # k1520_logger: FloppyDriveV2 meldet verworfene Schreibzugriffe (Spurdichte-Anpassung).
     target_link_libraries(k1520_floppy2 PUBLIC k1520_floppy k1520_util k1520_logger ${CMAKE_DL_LIBS})
     target_include_directories(k1520_floppy2 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # Fallback-Fundort des Diskettenformat-Katalogs (§8.6.4, Priorität 1).  Zeigt im
+    # Fallback-Fundort des Diskettenformat-Katalogs (§8.6.4, Prioritaet 1).  Zeigt im
     # Entwicklungsbaum auf die Quelldatei, damit ctest und die Tools den Katalog ohne
     # gesetzte Umgebungsvariable finden.
     set(K1520_FORMATS_DEFAULT "${CMAKE_SOURCE_DIR}/data/formats.yaml"
@@ -308,6 +308,15 @@ if(BUILD_K1520)
     add_library(k1520_k3526 STATIC core/cards/k3526/k3526.cpp)
     target_include_directories(k1520_k3526 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # K7636 parallele Tastatur am U-Bus der K2526 (fruehe A5120, doc/a5120_alt/k7636.md)
+    add_library(k1520_k7636 STATIC core/peripherals/k7636/k7636.cpp)
+    target_include_directories(k1520_k7636 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K3525 – 16-KB-dRAM-Karte der fruehen A5120 (doc/design/30, AP A2)
+    add_library(k1520_k3525 STATIC core/cards/k3525/k3525.cpp)
+    target_link_libraries(k1520_k3525 PUBLIC k1520_bus)
+    target_include_directories(k1520_k3525 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # K7637 serial keyboard peripheral
     add_library(k1520_k7637 STATIC
         core/peripherals/k7637/k7637.cpp
@@ -320,12 +329,17 @@ if(BUILD_K1520)
     target_link_libraries(k1520_k7024 PUBLIC k1520_bus)
     target_include_directories(k1520_k7024 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # K2526 ZRE – Zentrale Recheneinheit (CPU card, enthält jetzt ZVE1)
+    # K7023 / K7023.01 ABS (BAB1) – Bildschirm 16x64 der fruehen A5120 (doc/a5120_alt/k7023.md)
+    add_library(k1520_k7023 STATIC core/cards/k7023/k7023.cpp)
+    target_link_libraries(k1520_k7023 PUBLIC k1520_bus)
+    target_include_directories(k1520_k7023 PUBLIC ${CMAKE_SOURCE_DIR})
+
+    # K2526 ZRE – Zentrale Recheneinheit (CPU card, enthaelt jetzt ZVE1)
     add_library(k1520_k2526 STATIC core/cards/k2526/k2526.cpp)
     target_link_libraries(k1520_k2526 PUBLIC k1520_z80 k1520_pio k1520_ctc k1520_bus)
     target_include_directories(k1520_k2526 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # K8025 ASS – Anschlußsteuerung Seriell (serial interface card)
+    # K8025 ASS – Anschlusssteuerung Seriell (serial interface card)
     add_library(k1520_k8025 STATIC core/cards/k8025/k8025.cpp)
     target_link_libraries(k1520_k8025 PUBLIC k1520_sio k1520_ctc k1520_pio k1520_bus k1520_serial)
     target_include_directories(k1520_k8025 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -358,7 +372,8 @@ if(BUILD_K1520)
     )
     target_link_libraries(k1520_a5120 PUBLIC
         k1520_z80
-        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em k1520_raf k1520_k6022
+        k1520_k2526 k1520_k3526 k1520_k7024 k1520_k8025 k1520_k5122 k1520_laufwerke k1520_em k1520_raf k1520_k6022 k1520_k5020
+        k1520_k3525 k1520_k7023 k1520_k7636
         k1520_k7637 k1520_floppy k1520_floppy2 k1520_geometry k1520_bus k1520_logger k1520_serial
     )
     target_include_directories(k1520_a5120 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -408,7 +423,7 @@ if(BUILD_K1520)
     target_link_libraries(k1520_p8000_mmu_logik16 PUBLIC k1520_z8010)
     target_include_directories(k1520_p8000_mmu_logik16 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # P8000, 16-Bit-Teil: DRAM-Karten 256 K/1 M am Speicherbus, Moduladresse, Parität (AP P10a)
+    # P8000, 16-Bit-Teil: DRAM-Karten 256 K/1 M am Speicherbus, Moduladresse, Paritaet (AP P10a)
     add_library(k1520_p8000_dram16 STATIC core/cards/p8000/dram16.cpp)
     target_include_directories(k1520_p8000_dram16 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -456,18 +471,28 @@ if(BUILD_K1520)
     target_link_libraries(k1520_atp590068 PUBLIC k1520_i8279 k1520_pio k1520_bus k1520_logger)
     target_include_directories(k1520_atp590068 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # ADA K6022 (Lochband über SIF1000) und ASS 590069 (Fernschreiber) — PRG 710, AP-P8
+    # ADA K6022 (Lochband ueber SIF1000) und ASS 590069 (Fernschreiber) — PRG 710, AP-P8
     # Bandformate Roh / Intel HEX / ASCII-Art (doc/design/23_lochstreifen.md §4)
     add_library(k1520_lochstreifen STATIC core/peripherals/lochstreifen/band_format.cpp)
     target_include_directories(k1520_lochstreifen PUBLIC ${CMAKE_SOURCE_DIR})
+    # Kassettenband: Medium, `.k52`-Codec, Laufwerk (doc/design/29_kassette.md, AP K3)
+    add_library(k1520_kassette STATIC
+        core/peripherals/kassette/kassetten_medium.cpp
+        core/peripherals/kassette/k52_codec.cpp
+        core/peripherals/kassette/kassetten_laufwerk.cpp)
+    target_include_directories(k1520_kassette PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_k6022 STATIC core/cards/k6022/k6022.cpp)
     target_link_libraries(k1520_k6022 PUBLIC k1520_pio k1520_bus k1520_logger k1520_lochstreifen)
     target_include_directories(k1520_k6022 PUBLIC ${CMAKE_SOURCE_DIR})
+    # AKB K5020 (Kassettenanschluss: zwei PIOs + zwei Laufwerke) — doc/design/29, AP K4
+    add_library(k1520_k5020 STATIC core/cards/k5020/k5020.cpp)
+    target_link_libraries(k1520_k5020 PUBLIC k1520_pio k1520_bus k1520_logger k1520_kassette)
+    target_include_directories(k1520_k5020 PUBLIC ${CMAKE_SOURCE_DIR})
     add_library(k1520_ass590069 STATIC core/cards/ass590069/ass590069.cpp)
     target_link_libraries(k1520_ass590069 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_serial)
     target_include_directories(k1520_ass590069 PUBLIC ${CMAKE_SOURCE_DIR})
 
-    # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rückschleife als Option
+    # ATS K7028.30 (K8915): 2 × SIO, 2 × CTC, Anzeigelatch; Rueckschleife als Option
     add_library(k1520_k7028 STATIC core/cards/k7028/k7028.cpp)
     target_link_libraries(k1520_k7028 PUBLIC k1520_sio k1520_ctc k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k7028 PUBLIC ${CMAKE_SOURCE_DIR})
@@ -482,7 +507,7 @@ if(BUILD_K1520)
     # AP-V6a): K2521 + K3528 statt der ZRE 045-8762, Config::generation.
     add_library(k1520_k8915 STATIC core/machines/k8915/k8915.cpp)
     target_link_libraries(k1520_k8915 PUBLIC
-        k1520_zre8762 k1520_k2521 k1520_k3528 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf k1520_k6022
+        k1520_zre8762 k1520_k2521 k1520_k3528 k1520_k7028 k1520_k7672 k1520_k7024 k1520_k5122 k1520_laufwerke k1520_raf k1520_k6022 k1520_k5020
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_k8915 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -491,7 +516,7 @@ if(BUILD_K1520)
     add_library(k1520_prg710 STATIC core/machines/prg710/prg710.cpp)
     target_link_libraries(k1520_prg710 PUBLIC
         k1520_k2521 k1520_prg710_speicher k1520_k8025 k1520_k7024 k1520_k5122 k1520_laufwerke
-        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_ass590069 k1520_raf
+        k1520_atp590068 k1520_k7609 k1520_k7672 k1520_k6022 k1520_k5020 k1520_ass590069 k1520_raf
         k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_prg710 PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -528,6 +553,21 @@ if(BUILD_K1520)
     target_link_libraries(k1520_pc1715 PUBLIC k1520_pc1715_zre k1520_pc1715w_speicher k1520_z80dma k1520_upd765 k1520_tastatur1715 k1520_k5122 k1520_laufwerke k1520_floppy2 k1520_bus k1520_logger k1520_serial)
     target_include_directories(k1520_pc1715 PUBLIC ${CMAKE_SOURCE_DIR})
 
+    # MC80.3x (doc/design/31_mc80.md, AP M2): ZVE (U880, EGOS-ROM, CTC/PIO, Segmentregister 85H)
+    # + SPE 2 (ROM 2000H, RAM-Segment 4000H–BFFFH) + Segmentfenster; M3: VIS 2a, ASP, Tastatur
+    add_library(k1520_mc80_karten STATIC core/cards/mc80/zve3x.cpp core/cards/mc80/spe.cpp
+        core/cards/mc80/vis2a.cpp core/cards/mc80/asp.cpp core/cards/mc80/egos_text.cpp
+        core/peripherals/mc80_tastatur/mc80_tastatur.cpp)
+    target_link_libraries(k1520_mc80_karten PUBLIC k1520_z80 k1520_ctc k1520_pio k1520_sio k1520_bus k1520_logger)
+    target_include_directories(k1520_mc80_karten PUBLIC ${CMAKE_SOURCE_DIR})
+    # MC80.21/.22 (AP M11, doc/mc80/hardware_2x.md): Displaylogik DPL + Magnetbandinterface MBI
+    add_library(k1520_mc80_2x_karten STATIC core/cards/mc80/dpl.cpp core/cards/mc80/mbi.cpp)
+    target_link_libraries(k1520_mc80_2x_karten PUBLIC k1520_ctc k1520_pio k1520_bus k1520_logger k1520_kassette)
+    target_include_directories(k1520_mc80_2x_karten PUBLIC ${CMAKE_SOURCE_DIR})
+    add_library(k1520_mc80 STATIC core/machines/mc80/mc80.cpp core/machines/mc80/mc80_2x.cpp)
+    target_link_libraries(k1520_mc80 PUBLIC k1520_mc80_karten k1520_mc80_2x_karten k1520_k2521 k1520_k3820 k1520_k3525 k1520_raf k1520_k6022 k1520_k5020 k1520_floppy2 k1520_bus k1520_logger k1520_serial)
+    target_include_directories(k1520_mc80 PUBLIC ${CMAKE_SOURCE_DIR})
+
     # P8000 (doc/design/25_p8000.md §10, AP P7a): 8-Bit-Seite (Karte8 + Floppy8 + Kern-Terminal)
     # + Originalterminal an tty1 (Config::terminal) und „P8000 Terminal" als eigene Maschine (P20c/P20d)
     add_library(k1520_p8000 STATIC core/machines/p8000/p8000.cpp core/machines/p8000/p8000_terminal_machine.cpp)
@@ -539,7 +579,7 @@ if(BUILD_K1520)
         core/api/k1520_api.cpp
         core/api/k1520_sync_api.cpp   # physische Diskette — steht in BEIDEN Bibliotheken
     )
-    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_logger)
+    target_link_libraries(k1520core PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_mc80 k1520_logger)
     target_include_directories(k1520core PUBLIC ${CMAKE_SOURCE_DIR})
     # K1520_BUILD_SHARED schaltet K1520_API auf __declspec(dllexport).  OHNE das
     # exportiert eine MSVC-DLL GAR NICHTS und ctypes findet keine Funktion
@@ -572,13 +612,18 @@ if(BUILD_K1520)
     target_link_libraries(k1520disktool PRIVATE k1520_fs)
     target_include_directories(k1520disktool PRIVATE ${CMAKE_SOURCE_DIR})
 
+    # k1520tape: Kassettenbaender (.k52) anlegen/fuellen, Bootband (tools/k1520tape.md)
+    add_executable(k1520tape tools/k1520tape.cpp)
+    target_link_libraries(k1520tape PRIVATE k1520_kassette)
+    target_include_directories(k1520tape PRIVATE ${CMAKE_SOURCE_DIR})
+
     # z8kasm: Assembler/Disassembler fuer U8001/U8002 (header-only tools/z8000/)
     add_executable(z8kasm tools/z8kasm.cpp)
     target_include_directories(z8kasm PRIVATE ${CMAKE_SOURCE_DIR})
 
     # boot_trace: standalone boot diagnostic tool (LOG_LEVEL=5 for full trace)
-    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp tools/boot_trace_prg710.cpp tools/boot_trace_pc1715.cpp tools/boot_trace_p8000.cpp)
-    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_floppy k1520_logger)
+    add_executable(boot_trace tools/boot_trace.cpp tools/boot_trace_k8915.cpp tools/boot_trace_prg710.cpp tools/boot_trace_pc1715.cpp tools/boot_trace_mc80.cpp tools/boot_trace_mc80_2x.cpp tools/boot_trace_p8000.cpp)
+    target_link_libraries(boot_trace PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_mc80 k1520_p8000 k1520_floppy k1520_logger)
     target_include_directories(boot_trace PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(boot_trace PRIVATE LOG_LEVEL=5)
 
@@ -594,17 +639,17 @@ if(BUILD_K1520)
     target_compile_definitions(kbd_test PRIVATE LOG_LEVEL=3)
 
     # format_driver: scripted two-disk interactive driver (FORMAT.COM / FORMATB.COM)
-    # Für DEBUG/TRACE aus build_trace/ laufen lassen (dort ist der ganze Build inkl.
-    # Bibliotheken LOG_LEVEL=5); FD_GATE/FD_PCGATE + FD_LOGLEVEL öffnen zur Laufzeit
+    # Fuer DEBUG/TRACE aus build_trace/ laufen lassen (dort ist der ganze Build inkl.
+    # Bibliotheken LOG_LEVEL=5); FD_GATE/FD_PCGATE + FD_LOGLEVEL oeffnen zur Laufzeit
     # ein gezieltes Fenster.  In build/ (LOG_LEVEL=3) sind DEBUG/TRACE wegkompiliert.
     add_executable(format_driver tools/format_driver.cpp)
     target_link_libraries(format_driver PRIVATE k1520_a5120 k1520_floppy k1520_logger)
     target_include_directories(format_driver PRIVATE ${CMAKE_SOURCE_DIR})
 
-    # mk_disk_template: erzeugt gültig vorformatierte EINSEITIGE Leerdisketten (HFE)
-    # für die Boot-Pipeline der einseitigen Formate (MF3200 8″-FM, MF6400 8″-MFM,
+    # mk_disk_template: erzeugt gueltig vorformatierte EINSEITIGE Leerdisketten (HFE)
+    # fuer die Boot-Pipeline der einseitigen Formate (MF3200 8″-FM, MF6400 8″-MFM,
     # K5600.10/.20 5″-SS) — FORMAT.COM kann eine gap-leere .hfe nicht direkt formatieren
-    # (Gap-Blank-Hänger, doc/format.md §8.2/§8.6).
+    # (Gap-Blank-Haenger, doc/format.md §8.2/§8.6).
     add_executable(mk_disk_template tools/mk_disk_template.cpp)
     target_link_libraries(mk_disk_template PRIVATE k1520_floppy2 k1520_logger)
     target_include_directories(mk_disk_template PRIVATE ${CMAKE_SOURCE_DIR})
@@ -618,32 +663,32 @@ if(BUILD_K1520)
     # k1520dbg: interactive gdb-style debugger (breakpoints, marker-relative cycles,
     # memory dump/disasm, watchpoints, keystroke injection, screen view)
     add_executable(k1520dbg tools/k1520dbg.cpp)
-    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_p8000 k1520_p8000_terminal_hw k1520_z8 k1520_floppy k1520_logger)
+    target_link_libraries(k1520dbg PRIVATE k1520_a5120 k1520_k8915 k1520_prg710 k1520_pc1715 k1520_mc80 k1520_p8000 k1520_p8000_terminal_hw k1520_z8 k1520_floppy k1520_logger)
     target_include_directories(k1520dbg PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_definitions(k1520dbg PRIVATE LOG_LEVEL=5)
     # Zeilenbearbeitung der interaktiven Sitzung: Pfeiltasten, History,
-    # Tab-Vervollständigung, UTF-8 — über die BEIGELEGTE Quelle isocline
+    # Tab-Vervollstaendigung, UTF-8 — ueber die BEIGELEGTE Quelle isocline
     # (third_party/isocline, MIT, dort steht auch das Warum).
     #
-    # Vorgänger war GNU readline. Zwei Gründe für den Wechsel (voll:
+    # Vorgaenger war GNU readline. Zwei Gruende fuer den Wechsel (voll:
     # doc/design/13_distribution.md §10a.3):
     #   * LIZENZ — readline ist GPLv3+, dieses Projekt MIT. Ein ausgeliefertes
-    #     Binärabbild mit readline wäre ein Gesamtwerk unter GPLv3. isocline ist
+    #     Binaerabbild mit readline waere ein Gesamtwerk unter GPLv3. isocline ist
     #     ebenfalls MIT.
     #   * WINDOWS — readline gibt es dort nicht (es wurde gar nicht erst
     #     gesucht), die Sitzung hatte also KEINE Zeilenbearbeitung. isocline
-    #     bedient Windows über die Console-API.
-    # Nebenbei fällt die Laufzeitabhängigkeit von libreadline.so.8 + libtinfo.so.6
+    #     bedient Windows ueber die Console-API.
+    # Nebenbei faellt die Laufzeitabhaengigkeit von libreadline.so.8 + libtinfo.so.6
     # weg — ohne die startete das Programm bisher gar nicht.
     #
-    # src/isocline.c ist eine Amalgamation (inkludiert die übrigen .c selbst):
-    # genau EINE Datei übersetzen, sonst gibt es doppelte Symbole.
+    # src/isocline.c ist eine Amalgamation (inkludiert die uebrigen .c selbst):
+    # genau EINE Datei uebersetzen, sonst gibt es doppelte Symbole.
     add_library(isocline STATIC third_party/isocline/src/isocline.c)
     target_include_directories(isocline PUBLIC third_party/isocline/include)
     set_target_properties(isocline PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
     if (MSVC)
         # Die Fremdquelle wird nicht auf unsere Warnstufe gehoben; /utf-8 gilt
-        # global (die Quellen hier sind voller Umlaute) und stört sie nicht.
+        # global (die Quellen hier sind voller Umlaute) und stoert sie nicht.
         target_compile_options(isocline PRIVATE /w)
     else()
         target_compile_options(isocline PRIVATE -w)

@@ -1,11 +1,11 @@
 /**
  * @file z8_table.h
  * @brief Befehlstabelle des Z8 (Zilog Z8601/Z8611/Z8612, UB 8820/8821/8840/8841 M) —
- *        EINE Quelle für Kern (core/primitives/z8.cpp), Disassembler und Assembler (tools/z8/).
+ *        EINE Quelle fuer Kern (core/primitives/z8.cpp), Disassembler und Assembler (tools/z8/).
  *
  * Grundlage: Zilog UM0016 „Z8 CPU User Manual", Figure 134 (Op Code Map) und Table 39/40.
- * Jede Zeile: Operation, Operandenformat, Länge, Ausführungstakte (interner Takt = XTAL/2),
- * bei Sprüngen die Takte „genommen", dazu die Pipelinetakte aus der Karte (nur Doku).
+ * Jede Zeile: Operation, Operandenformat, Laenge, Ausfuehrungstakte (interner Takt = XTAL/2),
+ * bei Spruengen die Takte „genommen", dazu die Pipelinetakte aus der Karte (nur Doku).
  *
  * Operandenformate (Byte 1/2 nach dem Opcode, Schreibweise des Handbuchs):
  *  - r      4-Bit-Arbeitsregister (RP.7–4 | n),  R  8-Bit-Registeradresse (Ex = Arbeitsregister x)
@@ -76,7 +76,7 @@ struct Insn {
     Mn      mn = Mn::Ungueltig;
     Fmt     fmt = Fmt::Keins;
     uint8_t len = 1;
-    uint8_t takte = 6;        ///< Ausführungstakte (bei Sprüngen: nicht genommen)
+    uint8_t takte = 6;        ///< Ausfuehrungstakte (bei Spruengen: nicht genommen)
     uint8_t takteSprung = 0;  ///< Takte, wenn der Sprung genommen wird (0 = kein bedingter Sprung)
     uint8_t pipeline = 0;     ///< Pipelinetakte laut Opcode-Karte (Dokumentation)
 };
@@ -99,7 +99,7 @@ constexpr Insn mk(Mn m, Fmt f, uint8_t t, uint8_t p, uint8_t tj = 0) {
 /// Dekodierung eines Opcodes nach der Opcode-Karte (Figure 134).
 constexpr Insn decode(uint8_t op) {
     const unsigned hi = op >> 4, lo = op & 15;
-    // Spalten 8–E: Zeilenunabhängig
+    // Spalten 8–E: Zeilenunabhaengig
     switch (lo) {
     case 0x8: return mk(Mn::LD, Fmt::r1_R2, 6, 5);
     case 0x9: return mk(Mn::LD, Fmt::r2_R1, 6, 5);

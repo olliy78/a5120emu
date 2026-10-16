@@ -7,7 +7,7 @@
  * CPA-Workbench (em256 = 1, em256adr = 4000H, modadr = A8H), nur Laufwerke/Uhr/
  * Kaltstartkommando an die Testmaschine angepasst (tests/fixtures/README.md).
  * Die EM-Routinen (`biosremc.mac` emina, `biosrem.mac` ramon/ramoff) sind original —
- * Software, die am echten A5120.16 lief, ist damit der unabhängige Beleg der 8-Bit-Seite.
+ * Software, die am echten A5120.16 lief, ist damit der unabhaengige Beleg der 8-Bit-Seite.
  */
 #include <gtest/gtest.h>
 
@@ -50,8 +50,8 @@ bool kommando(A5120Machine& m, const std::string& cmd, const std::string& erwart
     return runSmallUntil(m, erwartet, kInputBudget);
 }
 
-/// Bildschirm löschen lassen wäre BIOS-abhängig — stattdessen auf eine Marke warten,
-/// die erst NACH dem Kommando entstehen kann: den nächsten Prompt hinter der Ausgabe.
+/// Bildschirm loeschen lassen waere BIOS-abhaengig — stattdessen auf eine Marke warten,
+/// die erst NACH dem Kommando entstehen kann: den naechsten Prompt hinter der Ausgabe.
 bool kommandoBisPrompt(A5120Machine& m, const std::string& cmd, const std::string& erwartet) {
     return kommando(m, cmd, erwartet) && runSmallUntil(m, "A>", kInputBudget);
 }
@@ -77,7 +77,7 @@ std::vector<uint8_t> dateiVonDiskette(const std::string& pfad, const std::string
 /**
  * @test Em256RamFloppy/KaltstartErkenntKarteUndBenutztM
  * @brief Kaltstart meldet „16-Bit Erweiterungsmodul als RAM-Floppy M: mit 256 kByte";
- *        M: ist frisch angelegt, PIP hin und zurück liefert die Datei bitgleich, und
+ *        M: ist frisch angelegt, PIP hin und zurueck liefert die Datei bitgleich, und
  *        nach der Reset-Taste findet das BIOS seine Kennung wieder (M: bleibt).
  */
 TEST(Em256RamFloppy, KaltstartErkenntKarteUndBenutztM) {
@@ -106,8 +106,8 @@ TEST(Em256RamFloppy, KaltstartErkenntKarteUndBenutztM) {
     ASSERT_TRUE(runSmallUntil(m, "A>", kInputBudget));
 
     // Reset-Taste: das BIOS findet seine Kennung und legt M: NICHT neu an.
-    // Schirm vorher wischen — sonst stünde der alte Prompt noch im Schattenram
-    // (k1520test::wipeVram, Wächter KbdNachReset.*).
+    // Schirm vorher wischen — sonst stuende der alte Prompt noch im Schattenram
+    // (k1520test::wipeVram, Waechter KbdNachReset.*).
     // Nach der Reset-Taste meldet sich CP/A ohne Banner/RAM-Test, nur mit `A>` —
     // gewartet wird auf den SICHTBAREN Prompt, nicht auf die Statuszeile (die steht
     // schon vor der Tastaturinitialisierung, s. KbdNachReset.*).
@@ -122,13 +122,13 @@ TEST(Em256RamFloppy, KaltstartErkenntKarteUndBenutztM) {
     const auto original = dateiVonDiskette(a.path(), "PIP.COM");
     const auto zurueck  = dateiVonDiskette(a.path(), "ZURUECK.COM");
     ASSERT_FALSE(original.empty());
-    EXPECT_EQ(original, zurueck) << "PIP A:→M:→A: hat die Datei verändert";
+    EXPECT_EQ(original, zurueck) << "PIP A:→M:→A: hat die Datei veraendert";
 }
 
 /**
  * @test Em256RamFloppy/OhneKarteMeldetBiosFragezeichen
- * @brief Dasselbe BIOS ohne EM: Erkennung schlägt fehl, Kaltstart zeigt „??? kByte",
- *        das System läuft trotzdem bis zum Prompt.
+ * @brief Dasselbe BIOS ohne EM: Erkennung schlaegt fehl, Kaltstart zeigt „??? kByte",
+ *        das System laeuft trotzdem bis zum Prompt.
  */
 TEST(Em256RamFloppy, OhneKarteMeldetBiosFragezeichen) {
     TempDisk a(kFixture, "k1520_em256_ohne.img");

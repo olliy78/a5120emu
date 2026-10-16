@@ -1,11 +1,11 @@
 /**
  * @file boot_trace_p8000.h
- * @brief `boot_trace --machine p8000` — Grundform für den P8000 (doc/design/25_p8000.md AP P7c;
+ * @brief `boot_trace --machine p8000` — Grundform fuer den P8000 (doc/design/25_p8000.md AP P7c;
  *        Muster tools/boot_trace_pc1715.h).
  *
  * Stand P7c: nur die 8-Bit-Seite (U880 + MON8 + Floppy, Kern-Terminal an tty1).  Optionen wie
  * beim K8915 (@ref K8915TraceOpts); `--keys` tippt blockweise bei Stillstand (`<CR>`/`<ET>` =
- * Return), `--skip-selftest`/`--no-cr`/`--raf`/`--ptape` sind wirkungslos.  Aktive CPU wählbar,
+ * Return), `--skip-selftest`/`--no-cr`/`--raf`/`--ptape` sind wirkungslos.  Aktive CPU waehlbar,
  * `--p8000 <konfig>` und `--hd` (Entwurf §10.10) kommen mit dem 16-Bit-Teil/WDC (P10/P12/P13).
  *
  * @license MIT
@@ -13,18 +13,18 @@
 #pragma once
 #include "tools/boot_trace_k8915.h"
 
-/** @brief Fährt den P8000 (8-Bit-Seite) und berichtet.
- *  Rückgabe = Exit-Code: 0 = Prompt (`>`/`%`) oder „Press RETURN" bei Stillstand bzw. `--until`
- *  erfüllt, 1 = nicht erreicht (Stillstand woanders, Taktgrenze), 2 = `--until` nicht erfüllt. */
+/** @brief Faehrt den P8000 (8-Bit-Seite) und berichtet.
+ *  Rueckgabe = Exit-Code: 0 = Prompt (`>`/`%`) oder „Press RETURN" bei Stillstand bzw. `--until`
+ *  erfuellt, 1 = nicht erreicht (Stillstand woanders, Taktgrenze), 2 = `--until` nicht erfuellt. */
 /// @p karte16: 16-Bit-Karte samt Kopplung stecken (`--machine p8000-16`, AP P11; Weiteres P12).
 /// @p wdc/@p hd (nur mit @p karte16, AP P13d): WDC-Firmware ("" = aus, mit @p hd 4.2) bzw.
-/// Winchesterabbild an Laufwerk 0 (wird direkt beschrieben — eine Kopie übergeben).
+/// Winchesterabbild an Laufwerk 0 (wird direkt beschrieben — eine Kopie uebergeben).
 /// @p originalTerminal (`--konsole original`, AP P20c): tty1 am Originalterminal Typ 2 statt am
-/// Kern-Terminal; Tasten gehen dann mit Haltezeit über die K7673.
+/// Kern-Terminal; Tasten gehen dann mit Haltezeit ueber die K7673.
 int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool karte16 = false,
                    const std::string& wdc = "", const std::string& hd = "", bool originalTerminal = false);
 /// `--machine p8000-terminal` (AP P20d): das Originalterminal ohne Rechner — Netz-Ein bis zur
-/// Einschaltmeldung („ADM31/9600 baud…"), `--keys` tippt über die K7673 (Zeichen, `<CR>`),
+/// Einschaltmeldung („ADM31/9600 baud…"), `--keys` tippt ueber die K7673 (Zeichen, `<CR>`),
 /// danach Bild, gesendete Bytes der Leitung XB5 und Zustand.  `-c` = Grenze in Z8-Takten
 /// (Vorgabe 2 s).  Exit 0 = Einschaltmeldung im Bild (und alle Tasten getippt).
 int bootTraceP8000Terminal(const K8915TraceOpts& o);

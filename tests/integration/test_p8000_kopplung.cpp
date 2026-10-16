@@ -3,7 +3,7 @@
  * @brief P8000 Kopplung 8-Bit ↔ 16-Bit (doc/design/25_p8000.md §10.3, AP P11): Leitungen K1–K15
  *        an den echten Karten, dazu der Save-State P8KS v2 der Maschine mit 16-Bit-Teil.
  *
- * Die Pegelfälle programmieren die PIOs so, wie MON8 (`K.MON8.S`) und MON16 (`p.init.s` ENTRY_)
+ * Die Pegelfaelle programmieren die PIOs so, wie MON8 (`K.MON8.S`) und MON16 (`p.init.s` ENTRY_)
  * es tun: 8-PIO0 A Byteeingabe (Modus 1), B Bitbetrieb B0–B6 Eingang/B7 Ausgang; 16-PIO0 A
  * Byteausgabe (Modus 0), B Bit 0–4 Ausgang/5–6 Eingang; 16-PIO1 A Byteeingabe, B Bitbetrieb Eingang.
  */
@@ -92,7 +92,7 @@ TEST(P8000Kopplung, B7HaeltSechzehnBitImReset) {
     p.out8(P0BD, 0x80);
     EXPECT_TRUE(p.k16.inReset());
     p.out8(P0BD, 0x00);
-    p.k8.reset();                                        // Taste /RESP: PIOs zurück ⇒ B7 offen
+    p.k8.reset();                                        // Taste /RESP: PIOs zurueck ⇒ B7 offen
     EXPECT_TRUE(p.k16.inReset());
 }
 
@@ -111,7 +111,7 @@ TEST(P8000Kopplung, B7NullGibtFreiUndLenktNmi) {
     EXPECT_EQ(p.k16.nmiIdentifier() & 1, 0);
 }
 
-// ─── K1–K5, K15: Byte 8 → 16 (Bit-Banging über die DS8282) ───────────────────
+// ─── K1–K5, K15: Byte 8 → 16 (Bit-Banging ueber die DS8282) ───────────────────
 
 TEST(P8000Kopplung, SoftwareStrobe8nach16) {
     Paar p;
@@ -138,12 +138,12 @@ TEST(P8000Kopplung, SoftwareStrobe8nach16) {
 }
 
 TEST(P8000Kopplung, OhneRueckfuehrungLesenB5B6EinsIndex1) {
-    Paar p(P8000Karte16::Config::Index::I1, /*rueck=*/false);   // Brücken 4XR1/5XR1 gezogen
+    Paar p(P8000Karte16::Config::Index::I1, /*rueck=*/false);   // Bruecken 4XR1/5XR1 gezogen
     p.init8();
     p.init16();
     p.out8(L1, 0x11); p.out8(L2, 0x00); p.out8(L2, 0x80);
     EXPECT_FALSE(p.k16.pio1().ardy());
-    EXPECT_EQ(p.in16(Q0DB) & 0x60, 0x60);                // offen ⇒ Pull-up, MON16 sähe nichts
+    EXPECT_EQ(p.in16(Q0DB) & 0x60, 0x60);                // offen ⇒ Pull-up, MON16 saehe nichts
 }
 
 // ─── K6–K10, K15: Byte 16 → 8 (PIO-Handschlag ARDY → /ASTB) ───────────────────
@@ -162,9 +162,9 @@ TEST(P8000Kopplung, PioPioHandschlag16nach8) {
     p.out16(Q0DB, 0x0A);                                 // K9/K10: Status, INT-8 = 0
     EXPECT_EQ(p.in8(P0BD) & 0x1F, 0x0A);
     p.out16(Q0DA, 0x55);                                 // K6 + K7: ARDY H ⇒ /ASTB ↑ an der 8-Bit-PIO
-    EXPECT_FALSE(p.k8.pio0().ardy());                    // übernommen
+    EXPECT_FALSE(p.k8.pio0().ardy());                    // uebernommen
     EXPECT_TRUE(p.int8());                               // Interrupt auf der 8-Bit-Seite
-    EXPECT_EQ(p.in8(P0BD) & 0x20, 0x20);                 // B5 liest DD-8 zurück
+    EXPECT_EQ(p.in8(P0BD) & 0x20, 0x20);                 // B5 liest DD-8 zurueck
     EXPECT_EQ(p.in16(Q0DB) & 0x40, 0x40);                // ENABLE OUTPUT weg
     EXPECT_FALSE(p.int16());
 
@@ -179,7 +179,7 @@ TEST(P8000Kopplung, PioPioHandschlag16nach8) {
     EXPECT_EQ(p.in8(P0BD) & 0x01, 0x01);
 }
 
-// ─── Reset-Taste: PIOs der 16-Bit-Seite (Index 4 bleiben, Index 1 zurück) ─────
+// ─── Reset-Taste: PIOs der 16-Bit-Seite (Index 4 bleiben, Index 1 zurueck) ─────
 
 TEST(P8000Kopplung, ResetTasteLaesstSechzehnBitPiosStehenIndex4) {
     Paar p(P8000Karte16::Config::Index::I4);
@@ -189,7 +189,7 @@ TEST(P8000Kopplung, ResetTasteLaesstSechzehnBitPiosStehenIndex4) {
     ASSERT_TRUE(p.k16.pio1().ardy());
     p.k8.reset();                                        // B7 offen ⇒ RESET ⇒ MRESET−
     EXPECT_TRUE(p.k16.inReset());
-    EXPECT_TRUE(p.k16.pio1().ardy());                    // PIORESET− hängt nicht an RESET
+    EXPECT_TRUE(p.k16.pio1().ardy());                    // PIORESET− haengt nicht an RESET
 }
 
 TEST(P8000Kopplung, ResetTasteSetztSechzehnBitPiosZurueckIndex1) {
@@ -211,7 +211,7 @@ P8000Machine::Config mit16() {
     return c;
 }
 std::string ersterUnterschied(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
-    if (a.size() != b.size()) return "Länge " + std::to_string(a.size()) + " ≠ " + std::to_string(b.size());
+    if (a.size() != b.size()) return "Laenge " + std::to_string(a.size()) + " ≠ " + std::to_string(b.size());
     for (size_t i = 0; i < a.size(); ++i)
         if (a[i] != b[i]) {
             std::string r = "erstes abweichendes Byte bei Versatz " + std::to_string(i);
@@ -226,9 +226,9 @@ std::string ersterUnterschied(const std::vector<uint8_t>& a, const std::vector<u
 }
 }  // namespace
 
-/// Lauf bis zum U8000-Monitor (Konsole über die Kopplung), speichern, in eine zweite Maschine laden,
-/// in beiden dasselbe Kommando tippen — danach Byte für Byte gleich.  Gespeichert wird erst am
-/// Prompt `*`: während der SIO-Tests 60/61 sind Zeichen an tty4–tty7 im Hub unterwegs, und der
+/// Lauf bis zum U8000-Monitor (Konsole ueber die Kopplung), speichern, in eine zweite Maschine laden,
+/// in beiden dasselbe Kommando tippen — danach Byte fuer Byte gleich.  Gespeichert wird erst am
+/// Prompt `*`: waehrend der SIO-Tests 60/61 sind Zeichen an tty4–tty7 im Hub unterwegs, und der
 /// Hub-Wandler steht nicht im Stand (P7e).
 TEST(P8000Stand, RundreiseMitSechzehnBitTeilIstBitgleich) {
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
@@ -249,7 +249,7 @@ TEST(P8000Stand, RundreiseMitSechzehnBitTeilIstBitgleich) {
     ASSERT_GT(stand.size(), 1'000'000u);                 // 1 MB DRAM des 16-Bit-Teils
     ASSERT_TRUE(b.restoreStateBytes(stand)) << b.stateError();
     EXPECT_TRUE(b.stateBytes() == stand) << ersterUnterschied(b.stateBytes(), stand);
-    // Ein Kommando über die Kopplung (Terminal → 8-Bit-SIO → Kopplung → MON16 → zurück).
+    // Ein Kommando ueber die Kopplung (Terminal → 8-Bit-SIO → Kopplung → MON16 → zurueck).
     tippeZeile(a, "D 8000");
     tippeZeile(b, "D 8000");
     for (int runde = 0; runde < 3; ++runde) {
@@ -263,8 +263,8 @@ TEST(P8000Stand, RundreiseMitSechzehnBitTeilIstBitgleich) {
     EXPECT_EQ(a.karte16()->cpu().pc, b.karte16()->cpu().pc);
 }
 
-/// Ein Stand P8KS v1 (ohne 16-Bit-Teil) lädt weiter in eine Maschine ohne 16-Bit-Karte und wird
-/// von einer Maschine mit 16-Bit-Karte abgelehnt; ein v2-Stand passt nur zur selben Bestückung.
+/// Ein Stand P8KS v1 (ohne 16-Bit-Teil) laedt weiter in eine Maschine ohne 16-Bit-Karte und wird
+/// von einer Maschine mit 16-Bit-Karte abgelehnt; ein v2-Stand passt nur zur selben Bestueckung.
 TEST(P8000Stand, StandV1LaedtNurOhneSechzehnBitTeil) {
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
     P8000Machine ohne, quelle;

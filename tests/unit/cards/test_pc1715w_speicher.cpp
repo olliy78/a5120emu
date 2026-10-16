@@ -85,7 +85,7 @@ TEST(Pc1715wSpeicher, Tabelle74S287FuerAlleBaenkeUndSeiten) {
 
 TEST(Pc1715wSpeicher, AbbildungWirktDurchBusUndBankRegister) {
     Fix f;
-    // Je Bank/Viertel ein Marker über den Bus schreiben (Lese- = Schreibbank), Block rückprüfen.
+    // Je Bank/Viertel ein Marker ueber den Bus schreiben (Lese- = Schreibbank), Block rueckpruefen.
     for (int bank = 1; bank < 6; ++bank) {
         f.br(uint8_t((bank << 4) | bank));
         for (int q = 0; q < 4; ++q) {
@@ -128,18 +128,18 @@ TEST(Pc1715wSpeicher, LesenUndSchreibenGetrennteBaenkeInterbankKopie) {
     f.br(0x33);
     for (int i = 0; i < 16; ++i) EXPECT_EQ(f.bus.memRead(uint16_t(0x2000 + i)), uint8_t(0x40 + i));
     f.br(0x22);
-    EXPECT_EQ(f.bus.memRead(0x2000), 0x00);       // Quelle nicht verändert, Ziel nicht dort
+    EXPECT_EQ(f.bus.memRead(0x2000), 0x00);       // Quelle nicht veraendert, Ziel nicht dort
     EXPECT_EQ(f.bus.memRead(0x1000), 0x40);
 }
 
 TEST(Pc1715wSpeicher, UrladerAblaufS550KopiertNachBank1) {
     Fix f;
-    // Wie S550 0024–003C: aus Bank 0 (Lesen S550) nach 4000H (B1), BR = 11H, zurück nach 0000H.
+    // Wie S550 0024–003C: aus Bank 0 (Lesen S550) nach 4000H (B1), BR = 11H, zurueck nach 0000H.
     for (int i = 0; i < 0x40; ++i) f.bus.memWrite(uint16_t(0x4000 + i), f.bus.memRead(uint16_t(i)));
     f.br(0x11);
     for (int i = 0; i < 0x40; ++i) f.bus.memWrite(uint16_t(i), f.bus.memRead(uint16_t(0x4000 + i)));
     for (int i = 0; i < 0x40; ++i) ASSERT_EQ(f.bus.memRead(uint16_t(i)), PC1715W_S550_URLADER[i]);
-    f.br(0x00);   // zurück: wieder das EPROM, der Block B1 behält die Kopie
+    f.br(0x00);   // zurueck: wieder das EPROM, der Block B1 behaelt die Kopie
     EXPECT_EQ(f.spk.blockRam(0, 0x0000), PC1715W_S550_URLADER[0]);
 }
 
@@ -201,7 +201,7 @@ TEST(Pc1715wBild, ZgRamLadenUndEinZeichenRastern) {
     for (int x = 0; x < 8; ++x) EXPECT_EQ(pixel(f.bild, 40 + x, 1), x == 3 || x == 4) << x;
     // Linie 6 = 7EH: Pixel 1–6
     for (int x = 0; x < 8; ++x) EXPECT_EQ(pixel(f.bild, 40 + x, 6), x >= 1 && x <= 6) << x;
-    EXPECT_FALSE(pixel(f.bild, 100, 1));   // (Zelle 0,0 trägt den Cursor)
+    EXPECT_FALSE(pixel(f.bild, 100, 1));   // (Zelle 0,0 traegt den Cursor)
     EXPECT_EQ(f.bild.framebuffer()[1 * f.bild.fbWidth() + 43], 0xB0);
 }
 
@@ -215,7 +215,7 @@ TEST(Pc1715wBild, BildRamZellenInFramebufferZeilenUndAdresszaehler) {
     EXPECT_EQ(f.bild.screenChar(79, 23), 0x41);
     EXPECT_TRUE(pixel(f.bild, 79 * 8 + 3, 23 * 12 + 1));
     EXPECT_EQ(f.bild.zaehler(), 1920);            // 80 × 24 Bytes geholt
-    // VRTC: nächstes Bild beginnt wieder bei 0
+    // VRTC: naechstes Bild beginnt wieder bei 0
     f.bild.frame();
     EXPECT_EQ(f.bild.zaehler(), 1920);
     EXPECT_EQ(f.bild.crt().lastFrameDmaBytes(), 1920);
@@ -256,7 +256,7 @@ TEST(Pc1715wBild, ZeichensatzWahl1AHXorGpa0) {
     EXPECT_TRUE(pixel(f.bild, 8 + 0, 1));         // Spalte 1 jetzt ZG 2 (voll)
     EXPECT_FALSE(pixel(f.bild, 24 + 0, 1));       // Spalte 3 jetzt ZG 1
     EXPECT_TRUE(pixel(f.bild, 24 + 3, 1));
-    // andere Bits von 1AH zählen nicht
+    // andere Bits von 1AH zaehlen nicht
     f.bus.ioWrite(0x1A, 0xEF);
     EXPECT_FALSE(f.bild.zg2());
 }

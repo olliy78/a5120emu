@@ -124,7 +124,7 @@ class _GesperrteBibliothek:
     def freigeben(self):
         self.sperre.release()
 
-    # Kontext für zusammenhängende Aufrufe (``with kern_sperre():``)
+    # Kontext fuer zusammenhaengende Aufrufe (``with kern_sperre():``)
     def __enter__(self):
         self.anfordern()
         return self
@@ -134,7 +134,7 @@ class _GesperrteBibliothek:
 
     def __getattr__(self, name):
         f = _GesperrteFunktion(getattr(self._roh, name), self)
-        self.__dict__[name] = f          # nächstes Mal ohne __getattr__
+        self.__dict__[name] = f          # naechstes Mal ohne __getattr__
         return f
 
 
@@ -324,7 +324,7 @@ _lib.k1520_head_loaded.argtypes = [K1520Handle]
 _lib.k1520_head_loaded.restype = ctypes.c_bool
 
 # ─── Bisher unbenutzte, aber exportierte C-API ──────────────────────────────
-# Vollständig deklariert, damit die ctypes-Signaturen NIE von k1520_api.h
+# Vollstaendig deklariert, damit die ctypes-Signaturen NIE von k1520_api.h
 # abdriften — tests/python/test_c_api.py vergleicht Header und Bindung.
 
 # k1520_stop(K1520Handle) -> void   (laufenden run() abbrechen)
@@ -408,6 +408,11 @@ _lib.k1520_create_p8000.restype = K1520Handle
 _lib.k1520_create_p8000_terminal.argtypes = [ctypes.c_char_p]
 _lib.k1520_create_p8000_terminal.restype = K1520Handle
 
+# k1520_create_mc80(variante, konfig) -> K1520Handle   (Entwurf 31, AP M2)
+#   variante 0 = MC80.30, 1 = MC80.31 (2 = .33 → NULL), 3/4 = .21/.22 (konfig muss NULL sein); sonst "spe=1|2"
+_lib.k1520_create_mc80.argtypes = [ctypes.c_int, ctypes.c_char_p]
+_lib.k1520_create_mc80.restype = K1520Handle
+
 # P8000-Terminals (k1520_term_*; andere Maschinen: 0 / -1 / False)
 _lib.k1520_term_count.argtypes = [K1520Handle]
 _lib.k1520_term_count.restype = ctypes.c_int
@@ -443,7 +448,7 @@ _lib.k1520_term_flags.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_flags.restype = ctypes.c_int
 _lib.k1520_term_bell_count.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_bell_count.restype = ctypes.c_uint32
-# Originalterminal (P20d): Pixelbild, Bildzähler, Matrix-/Scancode-Tasten, LEDs der K7673
+# Originalterminal (P20d): Pixelbild, Bildzaehler, Matrix-/Scancode-Tasten, LEDs der K7673
 _lib.k1520_term_framebuffer.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
                                         ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
 _lib.k1520_term_framebuffer.restype = ctypes.c_int
@@ -491,6 +496,15 @@ _lib.k1520_create_with_em.argtypes = [
 ]
 _lib.k1520_create_with_em.restype = K1520Handle
 
+# A5120-Ausfuehrungen (doc/design/30_a5120_fruehe_varianten.md, AP A5)
+# k1520_create_a5120_ausfuehrung(ausfuehrung, d0..d3) -> K1520Handle
+_lib.k1520_create_a5120_ausfuehrung.argtypes = [
+    ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.k1520_create_a5120_ausfuehrung.restype = K1520Handle
+_lib.k1520_a5120_ausfuehrung.argtypes = [K1520Handle]
+_lib.k1520_a5120_ausfuehrung.restype = ctypes.c_int
+
 # RAM-Floppy RAF (doc/design/22_raf512.md §6)
 _lib.k1520_raf_install.argtypes = [K1520Handle, ctypes.c_char_p]
 _lib.k1520_raf_install.restype = ctypes.c_bool
@@ -535,6 +549,10 @@ _lib.k1520_mem_read.restype = ctypes.c_uint8
 _lib.k1520_mem_write.argtypes = [K1520Handle, ctypes.c_uint16, ctypes.c_uint8]
 _lib.k1520_mem_write.restype = None
 
+# k1520_mem_load(K1520Handle, addr: uint16, path: const char*) -> int  (Bytes oder <0)
+_lib.k1520_mem_load.argtypes = [K1520Handle, ctypes.c_uint16, ctypes.c_char_p]
+_lib.k1520_mem_load.restype = ctypes.c_int
+
 # k1520_io_read(K1520Handle, port: uint8) -> uint8
 _lib.k1520_io_read.argtypes = [K1520Handle, ctypes.c_uint8]
 _lib.k1520_io_read.restype = ctypes.c_uint8
@@ -558,7 +576,7 @@ _lib.k1520_serial_send.restype = None
 
 # k1520_serial_set_rx_cb(K1520Handle, port: int, cb, user*) -> void
 # K1520SerialCallback = void (*)(void* ctx, uint8_t byte) — erst der Kontext, dann das
-# Byte (bis AP-T1b stand es hier vertauscht: ein Python-Rückruf bekam ctx als Byte).
+# Byte (bis AP-T1b stand es hier vertauscht: ein Python-Rueckruf bekam ctx als Byte).
 K1520SerialRxCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint8)
 _lib.k1520_serial_set_rx_cb.argtypes = [K1520Handle, ctypes.c_int,
                                         K1520SerialRxCb, ctypes.c_void_p]
@@ -677,6 +695,48 @@ _lib.k1520_ptape_punch_file.restype = ctypes.c_char_p
 _lib.k1520_ptape_punch_format.argtypes = [K1520Handle]
 _lib.k1520_ptape_punch_format.restype = ctypes.c_int
 
+# Kassette K5020/K5200 (Entwurf 29, AP K5)
+_lib.k1520_tape_install.argtypes = [K1520Handle]
+_lib.k1520_tape_install.restype = ctypes.c_bool
+_lib.k1520_tape_installed.argtypes = [K1520Handle]
+_lib.k1520_tape_installed.restype = ctypes.c_bool
+_lib.k1520_tape_error.argtypes = [K1520Handle]
+_lib.k1520_tape_error.restype = ctypes.c_char_p
+_lib.k1520_tape_load.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p]
+_lib.k1520_tape_load.restype = ctypes.c_bool
+_lib.k1520_tape_new.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_tape_new.restype = ctypes.c_bool
+_lib.k1520_tape_eject.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_tape_eject.restype = ctypes.c_bool
+_lib.k1520_tape_flush.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_tape_flush.restype = ctypes.c_bool
+_lib.k1520_tape_file.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_tape_file.restype = ctypes.c_char_p
+_lib.k1520_tape_side.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_tape_side.restype = ctypes.c_int
+_lib.k1520_tape_flip.argtypes = [K1520Handle, ctypes.c_int]
+_lib.k1520_tape_flip.restype = ctypes.c_bool
+_lib.k1520_tape_protect.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_bool]
+_lib.k1520_tape_protect.restype = ctypes.c_bool
+_lib.k1520_tape_protected.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int]
+_lib.k1520_tape_protected.restype = ctypes.c_int
+_lib.k1520_tape_set_position.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int64]
+_lib.k1520_tape_set_position.restype = ctypes.c_bool
+_lib.k1520_tape_status.argtypes = [
+    K1520Handle, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+    ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int),
+    ctypes.POINTER(ctypes.c_int)]
+_lib.k1520_tape_status.restype = ctypes.c_bool
+_lib.k1520_tape_block_count.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int]
+_lib.k1520_tape_block_count.restype = ctypes.c_int
+_lib.k1520_tape_block_info.argtypes = [
+    K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_int64),
+    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+_lib.k1520_tape_block_info.restype = ctypes.c_bool
+_lib.k1520_tape_block_data.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                       ctypes.c_char_p, ctypes.c_int]
+_lib.k1520_tape_block_data.restype = ctypes.c_int
+
 # Bandformate (K1520_PTAPE_FMT_* in core/api/k1520_api.h) — stabile Kennungen.
 PTAPE_FMT_RAW, PTAPE_FMT_IHEX, PTAPE_FMT_ASCII = 0, 1, 2
 PTAPE_FORMAT_NAMEN = {PTAPE_FMT_RAW: "Roh", PTAPE_FMT_IHEX: "Intel HEX",
@@ -688,17 +748,31 @@ def _utf8(path) -> bytes:
     return os.fspath(path).encode("utf-8")
 
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
-MACHINE_TYPES = {"a5120": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
-                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5}
-# (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
+MACHINE_TYPES = {"a5120": 0, "a5120-alt": 0, "a5120-kmbg": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
+                 "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5,
+                 "mc80": 6, "mc80-31": 6, "mc80-21": 6, "mc80-22": 6}
+# (Variante, Bildschirm) fuer k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
-# AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
+# AP-6: waehlbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
 PC1715_ZEICHENSAETZE = {"deutsch": 0, "polnisch": 1, "kyrillisch": 2}
 PC1715_TASTATUREN = {"s600": 0, "tast618": 1}
 PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
-# Variante für k1520_create_prg710 (nur die PRG-Namen).
+# Ausfuehrung des A5120 fuer k1520_create_a5120_ausfuehrung (Entwurf 30, AP A5).  "acht"
+# (8″, K5602) kennt der Kern, lehnt sie aber noch ab.
+A5120_AUSFUEHRUNGEN = {"neu": 0, "alt": 1, "kmbg": 2, "acht": 3}
+# Maschinennamen der fruehen Ausfuehrungen = machine="a5120" mit ausfuehrung=… .
+A5120_AUSFUEHRUNG_MASCHINE = {"a5120-alt": "alt", "a5120-kmbg": "kmbg"}
+# Bildschirm der fruehen Ausfuehrungen: K7023 64×16 (BAB1 ab FC00H).
+K7023_COLS, K7023_ROWS = 64, 16
+# Variante fuer k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
-# Bauform für k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
+# Variante fuer k1520_create_mc80 (Entwurf 31, AP M6/M12): "mc80" = MC80.30, "mc80-31" = MC80.31,
+# "mc80-21"/"mc80-22" = MC80.21/.22 (eigene Klasse Mc80_2xMachine, kennt keinen Schluessel
+# "spe=").  Die .33 (Variante 2) lehnt der Kern ab — die Oberflaeche fuehrt sie gesperrt.
+MC80_VARIANTEN = {"mc80": 0, "mc80-31": 1, "mc80-21": 3, "mc80-22": 4}
+#: Die Varianten des MC80.2x (Bild 528 × 256, 32 × 8 Zeichen, Tastatur als Matrix, MBI).
+MC80_2X = ("mc80-21", "mc80-22")
+# Bauform fuer k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
 K8915_GENERATIONEN = {"k8915": 0, "k8915-g2": 1}
 
 # Bildschirmtastatur: `QK_TASTE_BASE | Position` = physische Taste (K7609 am PRG 710,
@@ -710,14 +784,14 @@ K7609_ET1, K7609_ET2 = 0x37, 0x38
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
 
-# ── Tastendiagnose: was schickt die Oberfläche wirklich an die Maschine? ─────
+# ── Tastendiagnose: was schickt die Oberflaeche wirklich an die Maschine? ─────
 # Mit `K1520_TASTEN_LOG=1` schreibt JEDER Tastendruck eine Zeile nach stderr —
-# gleichgültig, ob er von der PC-Tastatur, der Bildschirmtastatur oder einem
+# gleichgueltig, ob er von der PC-Tastatur, der Bildschirmtastatur oder einem
 # Skript kommt (alle drei Wege laufen durch `key_press`).  Sie beantwortet die
 # drei Fragen, die man bei „die Taste tut etwas anderes als erwartet" hat:
 # WELCHER Code geht hinein, welches BYTE macht der K7637 daraus (das ist, was
 # das Betriebssystem sieht), und kommt der Druck EINMAL oder wiederholt an
-# (fehlendes Loslassen ⇒ die Tastenwiederholung des K7637 läuft weiter).
+# (fehlendes Loslassen ⇒ die Tastenwiederholung des K7637 laeuft weiter).
 _TASTEN_LOG = os.environ.get("K1520_TASTEN_LOG", "") not in ("", "0")
 
 
@@ -736,7 +810,7 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
                          ctrl: bool = False):
     try:
         byte = K1520Emulator.translate_key(keycode, shift, ctrl)
-    except Exception:                      # ältere Bibliothek ohne die Funktion
+    except Exception:                      # aeltere Bibliothek ohne die Funktion
         byte = None
     ziel = "" if byte is None else f"  → K7637 sendet 0x{byte:02X}"
     print(f"[taste] {was:11s} {_taste_klartext(keycode)}"
@@ -744,9 +818,9 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
           file=sys.stderr, flush=True)
 
 
-# ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────────
-# Zahlenwerte = k1520_api.h.  Die Strukturen müssen bytegleich zum Header sein;
-# test_c_api.py/test_serial_api.py prüfen sizeof gegen die Bibliothek.
+# ─── Serielle Schnittstellen nach aussen (Entwurf 19 §8) ──────────────────────
+# Zahlenwerte = k1520_api.h.  Die Strukturen muessen bytegleich zum Header sein;
+# test_c_api.py/test_serial_api.py pruefen sizeof gegen die Bibliothek.
 SER_TELNET, SER_RFC2217, SER_DATEI = 0, 1, 2          # K1520SerBetriebsart
 SER_SERVER, SER_CLIENT = 0, 1                          # K1520SerRolle
 SER_AUS, SER_VERBINDET, SER_LAUSCHT, SER_VERBUNDEN, SER_FEHLER = 0, 1, 2, 3, 4  # K1520SerZustand
@@ -953,8 +1027,9 @@ class K1520Emulator:
     
     def __init__(self, drive_types: Optional[list] = None, machine: str = "a5120",
                  em: Optional[str] = None, raf: Optional[str] = None,
-                 ptape: bool = False, zeichensatz: str = "deutsch",
-                 tastatur: str = "s600", p8000: Optional[dict] = None):
+                 ptape: bool = False, tape: bool = False, zeichensatz: str = "deutsch",
+                 tastatur: str = "s600", p8000: Optional[dict] = None,
+                 ausfuehrung: Optional[str] = None, spe=1):
         """Initialize emulator instance.
 
         Args:
@@ -965,7 +1040,8 @@ class K1520Emulator:
                 the standard machine (A5120: 4× K5601; K8915: K5601, K5601, none, none).
             machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"k8915-g2"`` (K8915 Gen 2), ``"prg710"`` oder
                 ``"prg710-1"``, ``"pc1715"``, ``"pc1715-k7221"`` (PC 1715 mit dem
-                Bildschirm K7221, 64×16) oder ``"pc1715w"`` — siehe :data:`MACHINE_TYPES`.
+                Bildschirm K7221, 64×16), ``"pc1715w"``, ``"mc80"`` (MC80.30) oder
+                ``"mc80-31"``, ``"mc80-21"``/``"mc80-22"`` — siehe :data:`MACHINE_TYPES`.
             zeichensatz: nur PC 1715 — Bestückung der ZG-EPROMs, ``"deutsch"``
                 (S619 + S602, Vorgabe), ``"polnisch"`` oder ``"kyrillisch"``; beim
                 ``"pc1715w"`` ohne Wirkung (der Satz kommt von Diskette).
@@ -984,9 +1060,18 @@ class K1520Emulator:
                 gesteckt (vor dem ersten Lauf); Fehler → ValueError.
             ptape: Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken; an jeder
                 Maschine, wie ``raf`` direkt nach dem Anlegen.  Fehler → ValueError.
+            tape: Kassettenkarte K5020 (zwei K5200; A5120 30H, K8915 D0H, PRG 710 30H,
+                PC 1715 D0H) stecken, wie ``ptape`` direkt nach dem Anlegen.  Fehler → ValueError.
+                Bei der Ausführung ``"kmbg"`` steckt sie ohnehin (dann ohne Wirkung).
+            spe: nur MC80 (``"mc80"`` = MC80.30, ``"mc80-31"`` = MC80.31) — Zahl der
+                Speichererweiterungen SPE 2, ``1`` (Vorgabe) oder ``2`` (auch als Text).
+            ausfuehrung: nur A5120 — ``None``/``"neu"`` (Vorgabe), ``"alt"`` (K7023.01 16×64,
+                4× K3525, K7636; Vorgabelaufwerke 3× K5600.10), ``"kmbg"`` (wie ``"alt"`` mit
+                fest gesteckter K5020); ``"acht"`` lehnt der Kern noch ab.  Gleichwertig:
+                ``machine="a5120-alt"`` bzw. ``"a5120-kmbg"``.
         """
-        # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
-        # darf nicht über ein fehlendes Attribut stolpern.
+        # Zuerst setzen: schlaegt die Erzeugung fehl, laeuft __del__ trotzdem und
+        # darf nicht ueber ein fehlendes Attribut stolpern.
         self._handle = None
         self._drive_types = list(drive_types) if drive_types else None
         if machine not in MACHINE_TYPES:
@@ -1004,8 +1089,27 @@ class K1520Emulator:
         self._em = em if em and em != "none" else None
         if self._em and machine != "a5120":
             raise ValueError(f"ein Erweiterungsmodul gibt es nur am A5120, nicht am {machine!r}")
+        ausf = A5120_AUSFUEHRUNG_MASCHINE.get(machine, ausfuehrung or "neu")
+        if ausfuehrung and machine in A5120_AUSFUEHRUNG_MASCHINE and ausfuehrung != ausf:
+            raise ValueError(f"machine={machine!r} widerspricht ausfuehrung={ausfuehrung!r}")
+        if ausf not in A5120_AUSFUEHRUNGEN:
+            raise ValueError(f"unbekannte A5120-Ausführung {ausf!r} "
+                             f"(bekannt: {', '.join(A5120_AUSFUEHRUNGEN)})")
+        if ausf != "neu" and MACHINE_TYPES[machine] != 0:
+            raise ValueError(f"eine Ausführung gibt es nur am A5120, nicht am {machine!r}")
+        if ausf != "neu" and self._em:
+            raise ValueError("ein Erweiterungsmodul gibt es nur am A5120 der Ausführung „neu“")
+        self._ausfuehrung = ausf
+        if ausf in ("alt", "kmbg"):
+            self._machine = "a5120-" + ausf
         try:
-            if machine in PRG_VARIANTEN:
+            if ausf != "neu":
+                names = (self._drive_types or [])[:4]
+                names = names + [None] * (4 - len(names))
+                enc = lambda n: n.encode("utf-8") if n else None
+                handle = _lib.k1520_create_a5120_ausfuehrung(
+                    A5120_AUSFUEHRUNGEN[ausf], enc(names[0]), enc(names[1]), enc(names[2]), enc(names[3]))
+            elif machine in PRG_VARIANTEN:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
                 enc = lambda n: n.encode("utf-8") if n else None
@@ -1026,6 +1130,10 @@ class K1520Emulator:
             elif machine == "p8000-terminal":
                 teile = [f"{k}={v}" for k, v in (p8000 or {}).items()]
                 handle = _lib.k1520_create_p8000_terminal(",".join(teile).encode("utf-8"))
+            elif machine in MC80_VARIANTEN:
+                # Der MC80.2x kennt keinen Konfigurationstext (k1520_create_mc80 lehnt ihn ab).
+                konfig = None if machine in MC80_2X else f"spe={int(spe)}".encode("ascii")
+                handle = _lib.k1520_create_mc80(MC80_VARIANTEN[machine], konfig)
             elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
@@ -1060,6 +1168,12 @@ class K1520Emulator:
             _lib.k1520_destroy(handle)
             self._handle = None
             raise ValueError(reason or "K6022 nicht steckbar")
+        if tape and not _lib.k1520_tape_installed(handle) and not _lib.k1520_tape_install(handle):
+            reason = _lib.k1520_last_init_error()
+            reason = reason.decode("utf-8", "replace") if reason else ""
+            _lib.k1520_destroy(handle)
+            self._handle = None
+            raise ValueError(reason or "K5020 nicht steckbar")
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -1068,7 +1182,7 @@ class K1520Emulator:
                        em: Optional[str] = None):
         """Create a core handle, configured with per-slot drive profiles if given."""
         if not drive_types and not em:
-            return _lib.k1520_create(machine_type)  # Vorgabebestückung der Maschine
+            return _lib.k1520_create(machine_type)  # Vorgabebestueckung der Maschine
 
         drive_types = list(drive_types or [])
         names = drive_types[:4] + [None] * (4 - len(drive_types[:4]))
@@ -1086,6 +1200,15 @@ class K1520Emulator:
     def machine(self) -> str:
         """Name der Maschine, mit der dieses Objekt erzeugt wurde (``"a5120"``/``"k8915"``)."""
         return self._machine
+
+    @property
+    def ausfuehrung(self) -> str:
+        """A5120-Ausführung laut Kern: ``"neu"``, ``"alt"``, ``"kmbg"`` (``""`` an anderen Maschinen)."""
+        n = _lib.k1520_a5120_ausfuehrung(self._handle)
+        for name, wert in A5120_AUSFUEHRUNGEN.items():
+            if wert == n:
+                return name
+        return ""
 
     @property
     def zeichensatz(self) -> str:
@@ -1121,9 +1244,9 @@ class K1520Emulator:
         return v if v >= 0 else None
 
     # ─── EPROMmer des PRG (virtueller Sockel, AP-P7b) ─────────────────────────
-    #: Typnamen des Sockels (0 = leer); Schlüssel wie k1520_eprom_type.
+    #: Typnamen des Sockels (0 = leer); Schluessel wie k1520_eprom_type.
     EPROM_TYPEN = {0: "", 1: "U555", 2: "U2716"}
-    #: Größe je Typ in Byte.
+    #: Groesse je Typ in Byte.
     EPROM_GROESSE = {1: 1024, 2: 2048}
 
     def has_eprommer(self) -> bool:
@@ -1294,6 +1417,84 @@ class K1520Emulator:
         """Stanzer ein?; ohne Karte ``None``."""
         v = int(_lib.k1520_ptape_punch_enabled(self._handle))
         return None if v < 0 else bool(v)
+
+    # ── Kassette an der K5020 (Entwurf 29, AP K5) ───────────────────────────
+
+    def tape_installed(self) -> bool:
+        """True, wenn die K5020 gesteckt ist (``K1520Emulator(tape=True)``)."""
+        return bool(_lib.k1520_tape_installed(self._handle))
+
+    def tape_error(self) -> str:
+        """Grund des letzten gescheiterten Kassettenaufrufs; "" nach einem Erfolg."""
+        return (_lib.k1520_tape_error(self._handle) or b"").decode("utf-8", "replace")
+
+    def tape_load(self, drive: int, path) -> bool:
+        """``.k52`` in Laufwerk ``drive`` (0/1) einlegen und BINDEN; eine fehlende Datei wird
+        als leere Kassette angelegt.  False → :meth:`tape_error`."""
+        return bool(_lib.k1520_tape_load(self._handle, int(drive), _utf8(path)))
+
+    def tape_new(self, drive: int) -> bool:
+        """Leere Kassette ohne Datei einlegen."""
+        return bool(_lib.k1520_tape_new(self._handle, int(drive)))
+
+    def tape_eject(self, drive: int) -> bool:
+        """Kassette entnehmen (gebundene Datei wird vorher geschrieben)."""
+        return bool(_lib.k1520_tape_eject(self._handle, int(drive)))
+
+    def tape_flush(self, drive: int) -> bool:
+        """Gebundene Datei sofort zurückschreiben."""
+        return bool(_lib.k1520_tape_flush(self._handle, int(drive)))
+
+    def tape_flip(self, drive: int) -> bool:
+        """Kassette wenden (Gerät stehend und nicht reserviert)."""
+        return bool(_lib.k1520_tape_flip(self._handle, int(drive)))
+
+    def tape_protect(self, drive: int, side: int, on: bool) -> bool:
+        """Schreibschutz der Seite ``side`` (0 = A, 1 = B) setzen/löschen."""
+        return bool(_lib.k1520_tape_protect(self._handle, int(drive), int(side), bool(on)))
+
+    def tape_protected(self, drive: int, side: int) -> Optional[bool]:
+        """Schreibschutz der Seite; ohne Karte/Kassette ``None``."""
+        v = int(_lib.k1520_tape_protected(self._handle, int(drive), int(side)))
+        return None if v < 0 else bool(v)
+
+    def tape_set_position(self, drive: int, um: int) -> bool:
+        """Kopfstelle in µm (Seitenkoordinate) setzen; nur bei stehendem Band."""
+        return bool(_lib.k1520_tape_set_position(self._handle, int(drive), int(um)))
+
+    def tape_status(self, drive: int) -> Optional[dict]:
+        """``{"loaded", "side", "pos_um", "len_um", "blocks", "moving", "file"}``; ohne Karte
+        ``None``.  ``file`` = "" ohne Bindung."""
+        ld, sd, bl, mv = ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+        pos, ln = ctypes.c_int64(), ctypes.c_int64()
+        if not _lib.k1520_tape_status(self._handle, int(drive), ctypes.byref(ld), ctypes.byref(sd),
+                                      ctypes.byref(pos), ctypes.byref(ln), ctypes.byref(bl),
+                                      ctypes.byref(mv)):
+            return None
+        datei = (_lib.k1520_tape_file(self._handle, int(drive)) or b"").decode("utf-8", "replace")
+        return {"loaded": bool(ld.value), "side": int(sd.value), "pos_um": int(pos.value),
+                "len_um": int(ln.value), "blocks": int(bl.value), "moving": bool(mv.value),
+                "file": datei}
+
+    def tape_blocks(self, drive: int, side: int) -> list:
+        """Blockliste einer Seite: ``[{"start_um", "bytes", "mark"}, …]``; leer ohne Karte/Kassette."""
+        n = int(_lib.k1520_tape_block_count(self._handle, int(drive), int(side)))
+        out = []
+        for i in range(max(n, 0)):
+            st, nb, mk = ctypes.c_int64(), ctypes.c_int(), ctypes.c_int()
+            if _lib.k1520_tape_block_info(self._handle, int(drive), int(side), i, ctypes.byref(st),
+                                          ctypes.byref(nb), ctypes.byref(mk)):
+                out.append({"start_um": int(st.value), "bytes": int(nb.value), "mark": bool(mk.value)})
+        return out
+
+    def tape_block_data(self, drive: int, side: int, i: int) -> Optional[bytes]:
+        """Rohbytes (Präambel … Postambel) von Block ``i``; ``None`` bei ungültigem Index."""
+        n = int(_lib.k1520_tape_block_data(self._handle, int(drive), int(side), int(i), None, 0))
+        if n < 0:
+            return None
+        buf = ctypes.create_string_buffer(max(n, 1))
+        _lib.k1520_tape_block_data(self._handle, int(drive), int(side), int(i), buf, n)
+        return buf.raw[:n]
 
     def machine_type(self) -> int:
         """K1520MachineType, wie der Kern ihn meldet (0 = A5120, 1 = PRG, 2 = K8915, 3 = PC 1715, 4 = P8000,
@@ -1884,6 +2085,15 @@ class K1520Emulator:
         """Write one byte through the bus."""
         _lib.k1520_mem_write(self._handle, ctypes.c_uint16(addr), ctypes.c_uint8(data))
 
+    def mem_load(self, addr: int, path) -> int:
+        """Binärdatei ab ``addr`` in den Speicher schreiben (wie ``mem_write``, also im
+        gerade sichtbaren Segment).  Liefert die Bytezahl; Fehler -> ``OSError``."""
+        n = _lib.k1520_mem_load(self._handle, ctypes.c_uint16(addr), os.fsencode(str(path)))
+        if n < 0:
+            raise OSError({-1: "ungueltige Argumente", -2: "Datei nicht lesbar",
+                           -3: "Datei passt nicht unter 10000H"}.get(n, str(n)))
+        return n
+
     def io_read(self, port: int) -> int:
         """Read one I/O port (non-destructive where the hardware allows it)."""
         return _lib.k1520_io_read(self._handle, ctypes.c_uint8(port))
@@ -1898,6 +2108,18 @@ class K1520Emulator:
         Beim K8915 über ``k1520_screen_char`` von der Karte: die CPU-Sicht
         (``mem_read``) zeigt bei 1000H je nach Port A8H das RAM der ZRE.
         """
+        if self._ausfuehrung in ("alt", "kmbg"):
+            # K7023: 16 Zeilen à 64 Zeichen (BAB1), Kursor in Bit 7.
+            return "\n".join(
+                "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)
+                        for c in range(K7023_COLS))
+                for r in range(min(zeilen, K7023_ROWS)))
+        if self._machine in MC80_2X:
+            # DPL-Bild: 8 Zeilen à 32 Zeichen (Zellen), Rest des Rasters gibt es nicht.
+            return "\n".join(
+                "".join(chr(_lib.k1520_screen_char(self._handle, c, r) or 0x20)
+                        for c in range(32)).rstrip()
+                for r in range(8))
         if self._machine != "a5120":
             return "\n".join(
                 "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)
@@ -1908,7 +2130,7 @@ class K1520Emulator:
         return "\n".join("".join(chars[r * VRAM_COLS:(r + 1) * VRAM_COLS])
                           for r in range(VRAM_ROWS))
 
-    # ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────
+    # ─── Serielle Schnittstellen nach aussen (Entwurf 19 §8) ──────────────────
 
     def serial_count(self) -> int:
         """Zahl der einstellbaren Schnittstellen (A5120, K8915 und PRG 710: 3; PRG 710-1: 2)."""

@@ -1,13 +1,13 @@
 /**
  * @file test_disk_medium.cpp
- * @brief GoogleTests für DiskMedium — das interne, bitstrom-orientierte Diskettenabbild.
+ * @brief GoogleTests fuer DiskMedium — das interne, bitstrom-orientierte Diskettenabbild.
  *
  * Schwerpunkte:
  *   - Geometrie / resize (Spuren behalten ihre (cyl, head)-Position)
  *   - Dirty-Bits je Spur
  *   - formatted() (Leerdiskette vs. beschriebene Diskette)
  *   - rawCompatible(): DAS Flag, das `.img` als Speicherziel sperrt, sobald etwas
- *     auf der Spur steht, das ein rohes Sektorimage nicht ausdrücken kann —
+ *     auf der Spur steht, das ein rohes Sektorimage nicht ausdruecken kann —
  *     unformatierte Spuren, CRC-Fehler und **Nutzdaten hinter der Daten-CRC**
  *     (UDOS-Sektorkontrollblock).
  *
@@ -118,7 +118,7 @@ TEST(DiskMedium, RawCompatible_StandardSpurenSindDarstellbar) {
 
 /**
  * @test DiskMedium/RawCompatible_LeerdisketteIstNichtDarstellbar
- * @brief Eine komplett unformatierte Diskette kann ein `.img` nicht ausdrücken —
+ * @brief Eine komplett unformatierte Diskette kann ein `.img` nicht ausdruecken —
  *        genau der Fall „neue Leerdiskette als .img speichern" muss scheitern.
  */
 TEST(DiskMedium, RawCompatible_LeerdisketteIstNichtDarstellbar) {
@@ -129,8 +129,8 @@ TEST(DiskMedium, RawCompatible_LeerdisketteIstNichtDarstellbar) {
 
 /**
  * @test DiskMedium/RawCompatible_LeereZusatzspurenSindErlaubt
- * @brief Einzelne leere Spuren (viele echte Images hängen 1–3 Gap-Spuren an) sperren
- *        `.img` NICHT — sie werden dort schlicht zu Füllbytes.
+ * @brief Einzelne leere Spuren (viele echte Images haengen 1–3 Gap-Spuren an) sperren
+ *        `.img` NICHT — sie werden dort schlicht zu Fuellbytes.
  */
 TEST(DiskMedium, RawCompatible_LeereZusatzspurenSindErlaubt) {
     DiskMedium m(3, 1, Encoding::MFM);
@@ -157,8 +157,8 @@ TEST(DiskMedium, RawCompatible_AnhangHinterDatenCrcSperrtImg) {
     ASSERT_NE(dam, SIZE_MAX);
     const size_t tail = dam + 1 + 128 + 2;      // Datenmarke + Nutzdaten + CRC
     ASSERT_LT(tail + 3, t.bytes.size());
-    t.bytes[tail + 0] = 0x1A;                   // Rückwärtszeiger
-    t.bytes[tail + 1] = 0x2B;                   // Vorwärtszeiger
+    t.bytes[tail + 0] = 0x1A;                   // Rueckwaertszeiger
+    t.bytes[tail + 1] = 0x2B;                   // Vorwaertszeiger
     t.bytes[tail + 2] = 0x3C;                   // eigene CRC
 
     EXPECT_FALSE(m.trackRawCompatible(1, 0));
@@ -168,8 +168,8 @@ TEST(DiskMedium, RawCompatible_AnhangHinterDatenCrcSperrtImg) {
 
 /**
  * @test DiskMedium/RawCompatible_CrcFehlerSperrtImg
- * @brief Ein Sektor mit kaputter Daten-CRC ist im `.img` nicht abbildbar (dort gäbe
- *        es beim Zurücklesen wieder eine gültige CRC — die Information ginge verloren).
+ * @brief Ein Sektor mit kaputter Daten-CRC ist im `.img` nicht abbildbar (dort gaebe
+ *        es beim Zuruecklesen wieder eine gueltige CRC — die Information ginge verloren).
  */
 TEST(DiskMedium, RawCompatible_CrcFehlerSperrtImg) {
     DiskMedium m(1, 1, Encoding::MFM);
@@ -186,7 +186,7 @@ TEST(DiskMedium, RawCompatible_CrcFehlerSperrtImg) {
 
 /**
  * @test DiskMedium/RawCompatible_CacheWirdBeiAenderungVerworfen
- * @brief Das Ergebnis wird je Spur gecacht; eine Änderung muss es invalidieren.
+ * @brief Das Ergebnis wird je Spur gecacht; eine Aenderung muss es invalidieren.
  */
 TEST(DiskMedium, RawCompatible_CacheWirdBeiAenderungVerworfen) {
     DiskMedium m(1, 1, Encoding::MFM);
@@ -200,7 +200,7 @@ TEST(DiskMedium, RawCompatible_CacheWirdBeiAenderungVerworfen) {
 
 namespace {
 
-/// @brief Spur aus zwei Sektoren, deren zweiter @p tail hinter der Daten-CRC trägt.
+/// @brief Spur aus zwei Sektoren, deren zweiter @p tail hinter der Daten-CRC traegt.
 TrackImage spurMitNachspann(const std::vector<uint8_t>& tail,
                             Encoding enc = Encoding::MFM) {
     std::vector<LogicalSector> secs;
@@ -227,9 +227,9 @@ bool imgFaehig(const TrackImage& t) {
 
 /**
  * @test DiskMedium/RawCompatible_SchreibnachlaufIstKeinInhalt
- * @brief AP-E5b: die Nachläufe vom Gerät (K8915-Disketten 900/901/904, Greaseweazle) —
- *        geschriebenes 4E, dann die Naht in die alte Lücke (verrutschter Byterahmen,
- *        Taktbits, Reste früherer Schreibläufe) — sperren den `.img`-Export nicht;
+ * @brief AP-E5b: die Nachlaeufe vom Geraet (K8915-Disketten 900/901/904, Greaseweazle) —
+ *        geschriebenes 4E, dann die Naht in die alte Luecke (verrutschter Byterahmen,
+ *        Taktbits, Reste frueherer Schreiblaeufe) — sperren den `.img`-Export nicht;
  *        ebenso der Nachlauf, den der Emulator selbst schreibt (`4E 4E 4E` + alt).
  */
 TEST(DiskMedium, RawCompatible_SchreibnachlaufIstKeinInhalt) {
@@ -248,11 +248,11 @@ TEST(DiskMedium, RawCompatible_SchreibnachlaufIstKeinInhalt) {
 
 /**
  * @test DiskMedium/RawCompatible_UdosKontrollblockBleibtGesperrt
- * @brief Gegenwächter zu AP-E5b: ein UDOS-Kontrollblock beginnt mit dem Sektorindex
- *        des Rückwärtszeigers (0…25) oder FFH — mit JEDEM solchen ersten Byte bleibt
- *        die Spur gesperrt, auch wenn dahinter dieselbe Naht in die alte Lücke folgt
+ * @brief Gegenwaechter zu AP-E5b: ein UDOS-Kontrollblock beginnt mit dem Sektorindex
+ *        des Rueckwaertszeigers (0…25) oder FFH — mit JEDEM solchen ersten Byte bleibt
+ *        die Spur gesperrt, auch wenn dahinter dieselbe Naht in die alte Luecke folgt
  *        wie beim K8915 (`05 16 05 16 41 F2 12 12` stammt von der Referenzdiskette).
- *        Ebenso gesperrt: 4E vorn, aber am Ende keine Lücke; und FM-Spuren (dort ist
+ *        Ebenso gesperrt: 4E vorn, aber am Ende keine Luecke; und FM-Spuren (dort ist
  *        kein Nachlauf gemessen).
  */
 TEST(DiskMedium, RawCompatible_UdosKontrollblockBleibtGesperrt) {
@@ -265,7 +265,7 @@ TEST(DiskMedium, RawCompatible_UdosKontrollblockBleibtGesperrt) {
         EXPECT_FALSE(imgFaehig(spurMitNachspann(t))) << "erstes Byte " << b0;
     }
     EXPECT_FALSE(imgFaehig(spurMitNachspann({0x4E, 0x05, 0x16, 0x05, 0x16, 0x00, 0x01, 0x07})))
-        << "4E vorn, aber keine Lücke am Ende";
+        << "4E vorn, aber keine Luecke am Ende";
     EXPECT_FALSE(imgFaehig(spurMitNachspann({0x4E, 0x43, 0xDC, 0x08, 0xF2, 0x12, 0x12, 0x12},
                                             Encoding::FM)))
         << "FM: kein Nachlauf gemessen, die Ausnahme gilt nicht";
@@ -281,12 +281,12 @@ TEST(DiskMedium, Geometry_UniformFalschBeiMischdichte) {
     EXPECT_TRUE(m.rawCompatible()) << "Mischdichte allein sperrt .img nicht";
 }
 
-// ─── Spurzustand: EIN Konzept für Datei und echtes Laufwerk ──────────────────
+// ─── Spurzustand: EIN Konzept fuer Datei und echtes Laufwerk ──────────────────
 //
-// Der Dreizustand (Unknown/Clean/Dirty) ist nicht nur für die physische Diskette
-// da — er gilt für JEDES Medium.  Bei einer dateigebundenen Diskette tritt
+// Der Dreizustand (Unknown/Clean/Dirty) ist nicht nur fuer die physische Diskette
+// da — er gilt fuer JEDES Medium.  Bei einer dateigebundenen Diskette tritt
 // `Unknown` schlicht nie auf, weil der Container-Codec beim Laden alle Spuren
-// füllt.  Die Aussagen `dirty()`/`trackDirty()`, mit denen der Autosave seit jeher
+// fuellt.  Die Aussagen `dirty()`/`trackDirty()`, mit denen der Autosave seit jeher
 // arbeitet, sind dieselben Bits (doc/design/09_floppy_drive.md §12.2).
 
 TEST(DiskMedium, ZustandGiltAuchOhneLaufwerk_UnknownKommtDortNieVor) {

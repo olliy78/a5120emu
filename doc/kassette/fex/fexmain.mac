@@ -1,0 +1,191 @@
+;Kassettenleseprogramm
+;H. Bretfeld
+;V0.1 - 17.03.2012
+;
+	.z80
+	aseg
+	org	0100h
+;
+;PIO-Grundadressen der AKB
+padr	equ	0d0h			;fuer K8915
+;padr	equ	030h			;fuer A5120
+;
+pio1ad	equ	padr+0			;PIO1 A Daten
+pio1as	equ	padr+2			;PIO1 A Steuer
+pio1bd	equ	padr+1			;PIO1 B Daten
+pio1bs	equ	padr+3			;PIO1 B Steuer
+;
+pio2ad	equ	padr+4			;PIO2 A Daten
+pio2as	equ	padr+6			;PIO2 A Steuer
+pio2bd	equ	padr+5			;PIO2 B Daten
+pio2bs	equ	padr+7			;PIO2 B Steuer
+;
+bdos	equ	5			;BDOS-Einsprungsadresse
+home    equ	0ch			;Bildschirm loeschen und Kursor Home
+;
+	jp	start
+;
+merk1:	dw	0000			;Merkzelle 1
+adrmrk:	dw	0000			;Adressmerkzelle RAM-Anzeige
+seite:	db	0			;Laufwerksstatus
+;seite = "A" --> Kassettenseite A
+;seite = "B" --> Kassettenseite B
+;seite = 0   --> keine Kassette eingelegt
+;
+status:	dw	0			;Statuswort
+;Status speichert die zuletzt ausgelesenen PIO 2 Ports
+; PIO 2:	Tor  A		Tor  B
+;		(status)			(status+1)
+;		0000 0000	0000 0000
+;		|		|||| || |--> AZV Aufzeichnungsverfahren
+;		|		|||| ||----> KSB =1 -> Kassettenseite B
+;		|		|||| |-----> /NIB2 nicht bereit LW2
+;		|		||||-------> /NIB1 nicht bereit LW1
+;		|		|||--------> BMS Blockmarkierungssignal
+;		|		||---------> STA Status 
+;		|		|----------> ZF Zeitfehler
+;		|--------------------------> AEB Anfang/Ende Band
+;alle nicht bezeichneten Bit's sind Ausgaenge
+;
+;***************
+;Initialisierung
+;***************
+;
+;PIO1 - Port A - Byte Ausgabe - Interruptgesteuert
+;PIO1 - Port B - Byte Eingabe - Interruptgesteuert
+;
+;PIO 2 - Steuer-PIO
+;PIO2 - Port A - Bit E/A
+;Bit 0-6 Ausgang, Bit 7 Eingang
+;
+;PIO2 - Port B - Bit E/A
+;Bit 0, 2-7 Eingang, Bit 1 Ausgang
+;
+	di				;Interrupt aus
+	ld	a, (0f7ebh)		;naechsten freien Platz in Interruptsaeule
+	ld	l, a
+	ld	h, 0f7h			;HL=naechste freie Adr.
+	ld	(hl), high(int1)	;PIO1A-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int1)
+	ld	a, l			;Int.-vektor PIO1 A
+	out	(pio1as), a
+	ld	a, 00fh			;Mode 0 Byte-Ausgabe
+	out	(pio1as), a
+	ld	a, 007h			;Interrupt aus
+	out	(pio1as), a
+	dec	hl
+;
+	ld	(hl), high(int2)	;PIO1B-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int2)
+	ld	a, l			;Int.-vektor PIO1 B
+	out	(pio1bs), a
+	ld	a, 04fh			;Mode 1 Byte-Eingabe
+	out	(pio1bs), a
+	ld	a, 007h			;Interrupt aus
+	out	(pio1bs), a
+	dec	hl
+;
+	ld	(hl), high(int3)	;PIO2A-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int3)
+	ld	a, l
+	out	(pio2as), a		;Int.-vektor PIO2 A
+	ld	a, 0cfh
+	out	(pio2as), a		;Mode 3 Bit-E/A
+	ld	a, 080h
+	out	(pio2as), a		;Bit 0-6 Ausg., Bit 7 Eing.
+	ld	a, 037h			;Interruptausloesung bei High
+	out	(pio2as), a		;Interruptmaske folgt
+	ld	a, 07fh			;nur Bit 7 interruptfaehig
+	out	(pio2as), a
+	dec	hl
+;
+	ld	(hl), high(int4)	;PIO2B-Int.-vektor eintragen
+	dec	hl
+	ld	(hl), low(int4)
+	ld	a, l
+	out	(pio2bs), a		;Int.-vektor PIO2 B
+	ld	a, 0cfh
+	out	(pio2bs), a		;Mode 3 Bit-E/A
+	ld	a, 0fdh
+	out	(pio2bs), a		;Bit 1 Ausg., alle anderen Eingang
+	ld	a, 037h			;Int. aus, OR verknuepft, Int. bei High
+	out	(pio2bs), a		;Maske folgt
+	ld	a, 01fh
+	out	(pio2bs), a		;Bit 7,6 u. 5 Interruptausloeser
+	dec	hl
+;
+	ld	a, l
+	ld	(0f7ebh), a		;Merkzelle in Interruptsaeule aktualisieren
+;
+	call	resall			;alle LW-Funktionen resetten
+	call	stread			;Status lesen und abspeichern
+;
+	ei				;Interrupts zulassen
+;
+
+;
+start:	ld	de, text1		;Ueberschrift ausgeben
+	ld	c, 9
+	call	bdos
+;
+	call	stzei			;Statuszeile ausgeben
+;
+	ld	hl, 00100h		;anzuzeigender Speicherbereich als Test
+	call	banzei
+	jp	fini
+;
+;
+fini:	jp	0000h			;Sprung zum Kaltstart
+;
+	include	ROUTINS.MAC
+;
+;***************************************
+;      Interruptroutinen
+;***************************************
+;
+;Interruptroutine PIO1A
+int1:
+	ei
+	reti
+;***************************************
+;Interruptroutine PIO1B
+int2:
+	ei
+	reti
+;***************************************
+;Interruptroutine PIO2A
+int3:
+	ei
+	reti
+;***************************************
+;Interruptroutine PIO2B
+int4:
+	ei
+	reti
+;****************************************
+;****************************************
+;       Ende Interruptroutinen
+;****************************************
+;
+;Merkzellen, Puffer und Deklarationen
+text1:	db	"Kassettenleseprogramm"
+	db	"=====================",0dh, 0ah, 024h
+crlf:	db	0dh, 0ah, 24h
+bantxt:	db	0dh, 0ah,"neue Adresse (0xxx) oder (q)uit ? : ",024h
+absta:	db	"   ",024h
+kopf1:	db	"Adresse : ",024h
+kopf2:	db	"      00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f", 0dh, 0ah
+	db	"=====================================================", 0dh, 0ah, 24h
+zloe:	db	018h,01ah,020h,008h,024h
+zahl:	db	"0123456789abcdef"
+kplen1:	dw	0				;Kassettenpuffer 1 Laenge 
+kplen2:	dw	0				;Kassettenpuffer 2 Laenge
+kplen3:	dw	0				;Kassettenpuffer 3 Laenge
+kpuf1:	ds	1024				;Kassettenpuffer 1
+kpuf2:	ds	1024				;Kassettenpuffer 2
+kpuf3:	ds	1024				;Kassettenpuffer 3
+;
+end

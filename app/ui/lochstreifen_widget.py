@@ -41,9 +41,9 @@ def _formatname(fmt) -> str:
 class LochstreifenWidget(QWidget):
     """Leser und Stanzer der K6022."""
 
-    #: Eine Bedienung hat Datei/Format geändert — gehört in die Konfiguration.
+    #: Eine Bedienung hat Datei/Format geaendert — gehoert in die Konfiguration.
     geaendert = Signal()
-    #: Eine Zeile für die Statuszeile des Fensters.
+    #: Eine Zeile fuer die Statuszeile des Fensters.
     meldung = Signal(str)
 
     def __init__(self, emulator, parent=None):

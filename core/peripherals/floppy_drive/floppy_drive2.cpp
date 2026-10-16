@@ -20,7 +20,7 @@ TrackImage       g_dummy{};
 
 // ─── Spurdichte (nur 5,25″) ──────────────────────────────────────────────────
 //
-// 48 tpi = 40 Spuren über den ganzen Radius, 96 tpi = 80.  Beides wird an der
+// 48 tpi = 40 Spuren ueber den ganzen Radius, 96 tpi = 80.  Beides wird an der
 // Spurzahl abgelesen.  Die Toleranz nach oben (45 statt 40) faengt die 1–3 leeren
 // Gap-Spuren ab, die viele HFE-Abbilder anhaengen; die Untergrenze 35 sorgt dafuer,
 // dass nur eine VOLLE Diskette so eingeordnet wird — ein Abbild mit ein paar Spuren

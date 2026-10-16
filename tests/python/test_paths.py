@@ -1,13 +1,13 @@
-"""Pfadauflösung (:mod:`app.paths`) — Quellbaum **und** Installationslayout.
+"""Pfadaufloesung (:mod:`app.paths`) — Quellbaum **und** Installationslayout.
 
-Die Auflösung entscheidet, ob ein verteiltes Paket überhaupt startet
-(``doc/design/13_distribution.md``).  Zwei Ebenen werden geprüft:
+Die Aufloesung entscheidet, ob ein verteiltes Paket ueberhaupt startet
+(``doc/design/13_distribution.md``).  Zwei Ebenen werden geprueft:
 
-* die reine Auflösungslogik in Python (Kandidatenreihenfolge, Layouterkennung,
+* die reine Aufloesungslogik in Python (Kandidatenreihenfolge, Layouterkennung,
   Benutzerverzeichnisse) — schnell, ohne Kern;
 * die **Verschiebbarkeit** des fertigen Pakets: eine nachgebaute Installation in
   einem Temp-Verzeichnis wird in einem eigenen Prozess geladen und muss ihre
-  eigene ``formats.yaml`` finden (das ist der Zweck der Modulpfad-Auflösung in
+  eigene ``formats.yaml`` finden (das ist der Zweck der Modulpfad-Aufloesung in
   ``FormatCatalog::searchPaths``, §6.2 des Konzepts).
 """
 
@@ -41,7 +41,7 @@ def _fake_install(root: Path, with_lib: bool = True) -> Path:
 
 @pytest.fixture
 def at_root(monkeypatch):
-    """Setzt ``K1520_HOME`` und räumt die übrigen Pfadvariablen ab."""
+    """Setzt ``K1520_HOME`` und raeumt die uebrigen Pfadvariablen ab."""
     def _apply(root: Path):
         monkeypatch.setenv(paths.ENV_HOME, str(root))
         for var in (paths.ENV_LIB, paths.ENV_FORMATS, paths.ENV_DISKS,
@@ -122,7 +122,7 @@ def test_fehlende_bibliothek_nennt_alle_kandidaten(tmp_path, at_root):
 # ─── Benutzerverzeichnisse ───────────────────────────────────────────────────
 
 def test_benutzerdaten_liegen_nie_in_der_installation(tmp_path, at_root):
-    """Arbeitsdisketten werden zurückgeschrieben — sie dürfen das Update nicht überleben müssen."""
+    """Arbeitsdisketten werden zurueckgeschrieben — sie duerfen das Update nicht ueberleben muessen."""
     root = _fake_install(tmp_path)
     at_root(root)
     assert root not in paths.user_disks_dir().parents
@@ -135,7 +135,7 @@ def test_konfigurationsverzeichnis_folgt_xdg(monkeypatch, tmp_path):
 
 
 def _leeres_heim(tmp_path, monkeypatch) -> Path:
-    """Ein HOME ohne alles — jede XDG-Variable von außen wäre sonst im Spiel."""
+    """Ein HOME ohne alles — jede XDG-Variable von aussen waere sonst im Spiel."""
     heim = tmp_path / "heim"
     heim.mkdir()
     monkeypatch.setenv("HOME", str(heim))
@@ -148,8 +148,8 @@ def _leeres_heim(tmp_path, monkeypatch) -> Path:
 
 
 #: ``user-dirs.dirs`` ist ein Freedesktop-Mechanismus.  Windows und macOS haben
-#: ihren Dokumentenordner an fester Stelle — die beiden folgenden Fälle prüfen
-#: die XDG-Auflösung und sind dort gegenstandslos (nicht „kaputt").
+#: ihren Dokumentenordner an fester Stelle — die beiden folgenden Faelle pruefen
+#: die XDG-Aufloesung und sind dort gegenstandslos (nicht „kaputt").
 nur_unix = pytest.mark.skipif(
     sys.platform.startswith("win") or sys.platform == "darwin",
     reason="XDG/user-dirs.dirs gibt es nur auf Freedesktop-Systemen")
@@ -157,10 +157,10 @@ nur_unix = pytest.mark.skipif(
 
 @nur_unix
 def test_arbeitsdisketten_liegen_im_dokumentenordner(tmp_path, monkeypatch):
-    """Der Ordnername ist sprachabhängig — verbindlich ist ``user-dirs.dirs``.
+    """Der Ordnername ist sprachabhaengig — verbindlich ist ``user-dirs.dirs``.
 
-    Ein fest verdrahtetes ``~/Documents`` läge auf einem deutschen System
-    daneben, und der Anwender fände seine Disketten nicht.
+    Ein fest verdrahtetes ``~/Documents`` laege auf einem deutschen System
+    daneben, und der Anwender faende seine Disketten nicht.
     """
     heim = _leeres_heim(tmp_path, monkeypatch)
     (heim / "Dokumente").mkdir()
@@ -175,24 +175,24 @@ def test_arbeitsdisketten_liegen_im_dokumentenordner(tmp_path, monkeypatch):
 
 @nur_unix
 def test_dokumentenordner_faellt_auf_den_datenpfad_zurueck(tmp_path, monkeypatch):
-    """Ohne Dokumentenordner (schlankes System) bleibt der plattformübliche Ort."""
+    """Ohne Dokumentenordner (schlankes System) bleibt der plattformuebliche Ort."""
     heim = _leeres_heim(tmp_path, monkeypatch)
     assert paths.documents_dir() is None
     assert paths.user_disks_dir() == heim / ".local" / "share" / "K1520emu" / "Disketten"
 
 
 def test_windows_dokumentenordner_folgt_der_registrierung(tmp_path, monkeypatch):
-    """OneDrive verschiebt „Dokumente" — die Auflösung muss mitgehen.
+    """OneDrive verschiebt „Dokumente" — die Aufloesung muss mitgehen.
 
     Verschoben wird der Ordner NICHT im Dateisystem, sondern in der
     Registrierung (``User Shell Folders`` → ``Personal``); ``~/Documents``
     existiert danach oft gar nicht mehr.  Ein fest verdrahtetes ``~/Documents``
     legte die Arbeitsdisketten also neben die Dateien des Anwenders — und
-    ``--purge`` räumte an derselben Stelle vorbei.
+    ``--purge`` raeumte an derselben Stelle vorbei.
 
-    Die Registrierung lässt sich nicht in ein Temp-Verzeichnis stellen; geprüft
-    wird deshalb über die Naht :func:`paths._windows_documents`, die genau
-    dafür eine eigene Funktion ist.
+    Die Registrierung laesst sich nicht in ein Temp-Verzeichnis stellen; geprueft
+    wird deshalb ueber die Naht :func:`paths._windows_documents`, die genau
+    dafuer eine eigene Funktion ist.
     """
     monkeypatch.setattr(paths, "_is_windows", lambda: True)
     monkeypatch.setattr(paths, "_is_macos", lambda: False)
@@ -237,8 +237,8 @@ def test_env_data_schlaegt_den_dokumentenordner(tmp_path, monkeypatch):
 def test_env_disks_ist_spezieller_als_env_data(tmp_path, monkeypatch):
     """Wer NUR die Disketten verschiebt, soll nicht den ganzen Datenordner mitnehmen.
 
-    Im Datenordner liegen auch Zustände und ``logs/`` — ``K1520_DISKS`` ist die
-    speziellere Angabe und schlägt deshalb ``K1520_DATA``.
+    Im Datenordner liegen auch Zustaende und ``logs/`` — ``K1520_DISKS`` ist die
+    speziellere Angabe und schlaegt deshalb ``K1520_DATA``.
     """
     _leeres_heim(tmp_path, monkeypatch)
     monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
@@ -248,13 +248,13 @@ def test_env_disks_ist_spezieller_als_env_data(tmp_path, monkeypatch):
     assert paths.user_disks_dir() == tmp_path / "nur_disketten"
 
 
-@nur_unix   # die Umbenennung prüft die XDG-/Namensauflösung; Windows hat „Documents" fest
+@nur_unix   # die Umbenennung prueft die XDG-/Namensaufloesung; Windows hat „Documents" fest
 def test_ohne_env_data_bleibt_die_aufloesung_dynamisch(tmp_path, monkeypatch):
     """Die VORGABE wird bewusst nicht festgeschrieben.
 
-    Der Installer trägt nur eine abweichende Wahl in den Starter ein.  Sonst
-    stünde dort ein fester Pfad, der einem später umbenannten Dokumentenordner
-    nicht mehr folgen könnte — hier nachgestellt, indem der Ordner wechselt.
+    Der Installer traegt nur eine abweichende Wahl in den Starter ein.  Sonst
+    stuende dort ein fester Pfad, der einem spaeter umbenannten Dokumentenordner
+    nicht mehr folgen koennte — hier nachgestellt, indem der Ordner wechselt.
     """
     heim = _leeres_heim(tmp_path, monkeypatch)
     monkeypatch.delenv(paths.ENV_DATA, raising=False)
@@ -285,7 +285,7 @@ def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):
     assert (ziel / "Beispieldisketten_v03-test" / "beispiel.hfe").exists()
 
     # Zweiter Aufruf fasst einen vorhandenen Beispielordner nicht mehr an:
-    # was der Anwender dort geändert hat, bleibt.
+    # was der Anwender dort geaendert hat, bleibt.
     geaendert = ziel / "Beispieldisketten_v03-test" / "beispiel.hfe"
     geaendert.write_bytes(b"vom anwender geaendert")
     assert paths.seed_user_disks() == 0
@@ -293,8 +293,8 @@ def test_seed_user_disks_kopiert_einmalig(tmp_path, at_root, monkeypatch):
 
 
 def test_seed_user_disks_packt_gepackte_beispiele_aus(tmp_path, at_root, monkeypatch):
-    """Im Paket liegen die Abbilder als ``*.hfe.gz`` — beim Anwender müssen sie
-    entpackt und bitgleich ankommen (sonst mountet der Emulator Müll)."""
+    """Im Paket liegen die Abbilder als ``*.hfe.gz`` — beim Anwender muessen sie
+    entpackt und bitgleich ankommen (sonst mountet der Emulator Muell)."""
     import gzip
 
     root = _mit_version(_fake_install(tmp_path), "0.3.0")
@@ -326,9 +326,9 @@ def test_beispielordner_folgt_der_fassung(tmp_path, at_root, monkeypatch, bau, o
 
 
 def test_seed_legt_den_ordner_auch_bei_vorhandenem_arbeitsordner_an(tmp_path, at_root, monkeypatch):
-    """Der Kern der Änderung: bis 0.2 kam nach einem Update nie etwas Neues an,
-    weil nur kopiert wurde, wenn der ARBEITSORDNER fehlte.  Jetzt zählt der
-    Unterordner der Fassung — und alles Vorhandene bleibt unberührt (auch die
+    """Der Kern der Aenderung: bis 0.2 kam nach einem Update nie etwas Neues an,
+    weil nur kopiert wurde, wenn der ARBEITSORDNER fehlte.  Jetzt zaehlt der
+    Unterordner der Fassung — und alles Vorhandene bleibt unberuehrt (auch die
     flach abgelegten Disketten aus 0.1/0.2)."""
     root = _mit_version(_fake_install(tmp_path), "0.3.0-beta.1")
     at_root(root)
@@ -349,7 +349,7 @@ def test_seed_legt_den_ordner_auch_bei_vorhandenem_arbeitsordner_an(tmp_path, at
     # Eine andere Fassung (Update) bekommt ihren eigenen Ordner dazu.
     _mit_version(root, "0.3.0-beta.2")
     from app import version
-    version._gemerkt.clear()        # im echten Lauf ändert sich die VERSION-Datei nicht
+    version._gemerkt.clear()        # im echten Lauf aendert sich die VERSION-Datei nicht
     assert paths.seed_user_disks() == 1
     assert (ziel / "Beispieldisketten_v03-beta.2" / "a5120_cpa" / "neu.hfe").exists()
     assert (ziel / "Beispieldisketten_v03-beta.1").is_dir()
@@ -364,8 +364,8 @@ def test_seed_user_disks_ist_im_quellbaum_wirkungslos(at_root, monkeypatch, tmp_
 
 # ─── Dateiordner des DiskTool ────────────────────────────────────────────────
 #
-# Das Gegenstück zu den Arbeitsdisketten für die Ordnerseite des Werkzeugs.  Er
-# muss aus demselben Grund außerhalb der Installation liegen: dort wird
+# Das Gegenstueck zu den Arbeitsdisketten fuer die Ordnerseite des Werkzeugs.  Er
+# muss aus demselben Grund ausserhalb der Installation liegen: dort wird
 # geschrieben (doc/design/13_k1520disktool.md §20.8).
 
 def test_dateiordner_liegt_neben_den_disketten(tmp_path, monkeypatch):
@@ -413,7 +413,7 @@ def test_dateiordner_entsteht_nur_in_einer_installation(tmp_path, at_root,
                                                         monkeypatch):
     monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
 
-    # Quellbaum: es darf nichts im Heimatverzeichnis angelegt werden, bloß weil
+    # Quellbaum: es darf nichts im Heimatverzeichnis angelegt werden, bloss weil
     # jemand das Werkzeug einmal gestartet hat.
     at_root(PROJECT_ROOT)
     assert paths.ensure_user_files_dir() is None
@@ -445,10 +445,10 @@ def test_describe_nennt_layout_und_alle_pfade(tmp_path, at_root):
 
 @requires_core
 def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
-    """Der Kern findet ``formats.yaml`` über den Pfad SEINES Moduls.
+    """Der Kern findet ``formats.yaml`` ueber den Pfad SEINES Moduls.
 
     Nachgebaute Installation in einem Temp-Verzeichnis: Bibliothek nach ``bin/``,
-    Katalog nach ``share/k1520emu/``.  Ein eigener Prozess lädt genau diese Kopie
+    Katalog nach ``share/k1520emu/``.  Ein eigener Prozess laedt genau diese Kopie
     (ohne ``K1520_FORMATS``) — er muss den Katalog daneben finden.  Damit ist
     belegt, dass eine Installation an einer beliebigen Stelle liegen darf.
     """
@@ -479,7 +479,7 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
                          text=True, env=env, timeout=120)
     assert out.returncode == 0, out.stderr
     # Der Kern meldet den Fundort so, wie er ihn zusammengesetzt hat
-    # („…/bin/../share/…") — für den Vergleich normalisieren.
+    # („…/bin/../share/…") — fuer den Vergleich normalisieren.
     geladen = {Path(p).resolve() for p in out.stdout.strip().split(":") if p}
     assert (root / "share" / "k1520emu" / "formats.yaml").resolve() in geladen, out.stdout
 
@@ -488,8 +488,8 @@ def test_installierte_bibliothek_findet_eigenen_formatkatalog(tmp_path):
 #
 # `default_config_a5120.yaml` (und `…_k8915.yaml`) reist mit dem Programm (nicht mit dem Anwender) und wird
 # an zwei Stellen gebraucht: beim ersten Start und bei *Ansicht ▸ Standard
-# zurücksetzen*.  Sie wird deshalb wie der Formatkatalog aufgelöst — mit EINEM
-# Unterschied, den der letzte Test festhält.
+# zuruecksetzen*.  Sie wird deshalb wie der Formatkatalog aufgeloest — mit EINEM
+# Unterschied, den der letzte Test festhaelt.
 
 def test_vorgabe_konfiguration_im_quellbaum(at_root):
     at_root(PROJECT_ROOT)
@@ -528,11 +528,11 @@ def test_vorgabe_konfiguration_ueber_umgebungsvariable(tmp_path, at_root,
 
 def test_vorgabe_konfiguration_ignoriert_den_benutzerordner(tmp_path, at_root,
                                                             monkeypatch):
-    """Der Konfigurationsordner des Anwenders zählt NICHT als Fundort.
+    """Der Konfigurationsordner des Anwenders zaehlt NICHT als Fundort.
 
-    Anders als beim Formatkatalog: was zurückgesetzt werden soll, darf die
-    Vorgabe nicht selbst liefern — sonst setzte *Standard zurücksetzen* auf den
-    Zustand zurück, den es gerade überschreiben will.
+    Anders als beim Formatkatalog: was zurueckgesetzt werden soll, darf die
+    Vorgabe nicht selbst liefern — sonst setzte *Standard zuruecksetzen* auf den
+    Zustand zurueck, den es gerade ueberschreiben will.
     """
     at_root(_fake_install(tmp_path))
     xdg = tmp_path / "xdg"

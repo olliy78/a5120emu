@@ -3,68 +3,68 @@
  * @brief UB8010 (≙ Zilog Z8010) — Speicherverwaltungseinheit (MMU), generisches Primitiv.
  *
  * Kennt keine Karte und keine Maschine (AP P9a, doc/design/25_p8000.md §10.1/§10.11).  Wer
- * welche MMU über /CS anspricht, wie der N/S-Eingang beschaltet ist, wohin SUP wirkt und wie
+ * welche MMU ueber /CS anspricht, wie der N/S-Eingang beschaltet ist, wohin SUP wirkt und wie
  * das Kennwort der Trap-Quittung auf dem Bus zusammenkommt, entscheidet die Karte (P9b).
- * Massgeblich: doc/p8000/z8010_mmu.md (mit Belegen); Primärquelle die UB8010-Beschreibung
+ * Massgeblich: doc/p8000/z8010_mmu.md (mit Belegen); Primaerquelle die UB8010-Beschreibung
  * [TB] doc/trascripted/MMU_8010.md.  Wo MAME (z8010.cpp) davon abweicht, gilt [TB]
  * (z8010_mmu.md §9: SAR-Umlauf 63→0, %15/%16 setzen immer, %10 vorhanden, FATL nur aus
- * einem späteren Befehl, Flags mehrerer Verletzungen eines Befehls werden gesammelt,
+ * einem spaeteren Befehl, Flags mehrerer Verletzungen eines Befehls werden gesammelt,
  * TRNS = 0 reicht vor URS/MST durch).
  *
  * Schnittstelle:
  *  - zyklus(): JEDER Buszyklus, den die MMU an ihren Pins sieht (CPU und DMA, auch nicht
- *    übersetzte) — die MMU braucht die Statusfolge für Befehlsgrenze, ISN/IOFF und SUP.
- *    Rückgabe: Adressausgabe A8–A23 (oder Tri-State) und /SUP für diesen Zyklus.
+ *    uebersetzte) — die MMU braucht die Statusfolge fuer Befehlsgrenze, ISN/IOFF und SUP.
+ *    Rueckgabe: Adressausgabe A8–A23 (oder Tri-State) und /SUP fuer diesen Zyklus.
  *  - kommandoLesen()/kommandoSchreiben(): Spezial-E/A (Status %3) bei aktivem /CS; Code =
  *    AD8–AD15 der E/A-Adresse, Daten = das hohe Byte.
  *  - segtQuittung(): Segmenttrap-Anerkennungszyklus (Status %4) — liefert das Kennwortbit.
  *  - segt()/onSegt: Pegel der /SEGT-Anforderung (true = aktiv).
  *
- * Benannte Annahmen (Lücken der Quellen, z8010_mmu.md §10):
- *  [A1] Befehlsgrenze für FATL/SWW („späterer Befehl"): jeder CPU-Zyklus mit Status %D
+ * Benannte Annahmen (Luecken der Quellen, z8010_mmu.md §10):
+ *  [A1] Befehlsgrenze fuer FATL/SWW („spaeterer Befehl"): jeder CPU-Zyklus mit Status %D
  *       (erstes Befehlswort, auch der unechte) und jede Trap-Quittung (%4) beginnen einen neuen
  *       Befehl.  [TB] nennt die Erkennung nicht; mit %4 als Grenze entsteht beim Statusretten
  *       die SWW, die [TB] §5.6 beschreibt.
  *  [A2] Unechter Befehlsholezyklus ([TB] A.3) = CPU-%D-Zyklus, solange die EIGENE /SEGT-
- *       Anforderung ansteht (SEGT ist nicht maskierbar, die CPU quittiert vor dem nächsten
- *       Befehl).  Er erzeugt bei Verletzung nur SUP, setzt keine Flags, ändert keinen Zustand und
+ *       Anforderung ansteht (SEGT ist nicht maskierbar, die CPU quittiert vor dem naechsten
+ *       Befehl).  Er erzeugt bei Verletzung nur SUP, setzt keine Flags, aendert keinen Zustand und
  *       wird nicht als ISN/IOFF vermerkt.  Steht nur die Anforderung einer ANDEREN MMU an,
- *       kann diese MMU ihn nicht erkennen und behandelt ihn als gewöhnliches Holen.
- *  [A3] SUP „für alle folgenden Zugriffe des Befehls" ([TB] §5.3) gilt für jeden folgenden
- *       CPU-Speicherzyklus bis zur nächsten Befehlsgrenze [A1], auch wenn diese MMU ihn nicht
- *       übersetzt; DMA-Zyklen dazwischen nur bei eigener Verletzung.
+ *       kann diese MMU ihn nicht erkennen und behandelt ihn als gewoehnliches Holen.
+ *  [A3] SUP „fuer alle folgenden Zugriffe des Befehls" ([TB] §5.3) gilt fuer jeden folgenden
+ *       CPU-Speicherzyklus bis zur naechsten Befehlsgrenze [A1], auch wenn diese MMU ihn nicht
+ *       uebersetzt; DMA-Zyklen dazwischen nur bei eigener Verletzung.
  *  [A4] Mehrere Ereignisse im SELBEN Befehl: weitere Verletzungsflags werden in den VTR
  *       geodert (Beispiel [TB] §8.1.2, VTR = %05), eine Schreibwarnung nach dem ersten Ereignis
  *       setzt nichts mehr; VSN/VOFF/BCSR/ISN/IOFF bleiben beim ersten Ereignis.  Hat der Befehl
- *       schon SWW/FATL gesetzt, folgt im selben Befehl kein weiterer Wechsel ([TB] A: höchstens
+ *       schon SWW/FATL gesetzt, folgt im selben Befehl kein weiterer Wechsel ([TB] A: hoechstens
  *       ein Zustandswechsel je Befehl), Verletzungen geben nur SUP.
  *  [A5] Verletzung UND Schreibwarnung im selben Zyklus (Normalzustand): beide Flags (z. B.
- *       RDV|PWW); in einem späteren Befehl zählt die Verletzung (→ FATL).
- *  [A6] Übergang in FATL (aus einfachem oder SWW-Zustand) zieht /SEGT einmal; im FATL- und
+ *       RDV|PWW); in einem spaeteren Befehl zaehlt die Verletzung (→ FATL).
+ *  [A6] Uebergang in FATL (aus einfachem oder SWW-Zustand) zieht /SEGT einmal; im FATL- und
  *       SWW/FATL-Zustand gibt es kein SEGT mehr, Verletzungen nur SUP, Schreibwarnungen nichts.
- *  [A7] REF/CHG: gesetzt bei jedem übersetzten CPU-Zugriff, der NICHT unterdrückt wird (auch
+ *  [A7] REF/CHG: gesetzt bei jedem uebersetzten CPU-Zugriff, der NICHT unterdrueckt wird (auch
  *       bei Schreibwarnung und bei bereits gesetztem VTR).  Nicht bei TRNS = 0 und nie bei DMA.
- *  [A8] ISN/IOFF: mitlaufend aus jedem CPU-%D-Zyklus bei MSEN = 1 (unabhängig von URS/MST/
- *       TRNS — am P8000 führt die Daten-MMU ISN/IOFF, obwohl sie Code nie übersetzt) und beim
- *       ersten Ereignis eingefroren; verletzt das %D-Holen selbst, bleibt der Vorgänger.
+ *  [A8] ISN/IOFF: mitlaufend aus jedem CPU-%D-Zyklus bei MSEN = 1 (unabhaengig von URS/MST/
+ *       TRNS — am P8000 fuehrt die Daten-MMU ISN/IOFF, obwohl sie Code nie uebersetzt) und beim
+ *       ersten Ereignis eingefroren; verletzt das %D-Holen selbst, bleibt der Vorgaenger.
  *  [A9] VSN = SN0–SN5 (Nummer innerhalb der MMU, [TB] §8.1.2 + MAME), ISN = SN0–SN6.
- *  [A10] Befehl %10 (nur [TB]) wird ausgeführt: MR, VTR, DSCR := 0, /SEGT zurück (wie
- *       Hardware-Reset ohne das /CS-Sonderverhalten).  %11 löscht nur den VTR; eine schon
+ *  [A10] Befehl %10 (nur [TB]) wird ausgefuehrt: MR, VTR, DSCR := 0, /SEGT zurueck (wie
+ *       Hardware-Reset ohne das /CS-Sonderverhalten).  %11 loescht nur den VTR; eine schon
  *       anstehende /SEGT-Anforderung bleibt bis zur Quittung.
  *  [A11] Unbenutzte Befehlscodes (%12, %17–%1F, %21–%FF) und Lesen der reinen Setzbefehle:
  *       Schreiben ohne Wirkung, Lesen liefert FFH (Bus nicht getrieben).  Lesen der
  *       Statusregister per Schreibbefehl (%02–%07 schreiben): ohne Wirkung.
  *  [A12] /CS bei /RESET: reset(csAktiv) bildet [TB] §7.2.1 nach (MSEN := 1, TRNS := 0); ob
- *       die Karte /CS dabei aktiv hält, ist Sache der Karte (am P8000 offen, Messfrage A2).
- *  [A13] DSCR: %08/%0C greifen auf Feld DSCR zu und zählen; ab 2 springt der Zähler auf 0
+ *       die Karte /CS dabei aktiv haelt, ist Sache der Karte (am P8000 offen, Messfrage A2).
+ *  [A13] DSCR: %08/%0C greifen auf Feld DSCR zu und zaehlen; ab 2 springt der Zaehler auf 0
  *       (bei %0C mit SAR+1).  Steht DSCR beim Beginn auf 2/3, wird das falsche Feld getroffen
- *       ([TB] §7.4).  Schreiben des SAR lässt den DSCR unverändert ([TB]; MAME löscht ihn).
- *  [A14] DMA-Zugriffe werden gegen RD (Schreiben), SYS (N/S = H), Länge, EXC (kein Holen) und
- *       DMAI geprüft, nicht gegen CPUI; Verletzung ⇒ nur SUP im eigenen Zyklus.
+ *       ([TB] §7.4).  Schreiben des SAR laesst den DSCR unveraendert ([TB]; MAME loescht ihn).
+ *  [A14] DMA-Zugriffe werden gegen RD (Schreiben), SYS (N/S = H), Laenge, EXC (kein Holen) und
+ *       DMAI geprueft, nicht gegen CPUI; Verletzung ⇒ nur SUP im eigenen Zyklus.
  *  [A15] Nach dem Einschalten (powerOn) sind alle Register und Deskriptoren 0; ein
- *       Hardware-Reset löscht nur MR, VTR, DSCR ([TB] §7.2.1).
+ *       Hardware-Reset loescht nur MR, VTR, DSCR ([TB] §7.2.1).
  *
- * Save-State: serialize()/deserialize() — Version 1, ein Block fester Länge (der ganze Zustand).
+ * Save-State: serialize()/deserialize() — Version 1, ein Block fester Laenge (der ganze Zustand).
  * Abdeckungsliste ([TB]-Inhalt → Test): doc/p8000/z8010_mmu.md §11.
  *
  * @license MIT
@@ -105,7 +105,7 @@ public:
     static constexpr uint8_t VTR_PWW   = 0x20;
     static constexpr uint8_t VTR_SWW   = 0x40;
     static constexpr uint8_t VTR_FATL  = 0x80;
-    static constexpr uint8_t VTR_PRIME = 0x3F;   ///< primäre Flags ([TB] A)
+    static constexpr uint8_t VTR_PRIME = 0x3F;   ///< primaere Flags ([TB] A)
 
     // ── BCSR ─────────────────────────────────────────────────────────────────
     static constexpr uint8_t BCSR_NS = 0x20;     ///< N/S-Pegel H (Normal)
@@ -129,7 +129,7 @@ public:
         uint8_t  attr = 0;
     };
 
-    /// Ein Buszyklus, wie er an den Eingängen der MMU anliegt.
+    /// Ein Buszyklus, wie er an den Eingaengen der MMU anliegt.
     struct Zyklus {
         uint8_t  status = 0;      ///< ST3..ST0 (Z8kStatus-Code)
         bool     nsHigh = false;  ///< Pegel am N/S-EINGANG: true = H (Normal).  Am P8000 ≠ CPU-Modus!
@@ -157,7 +157,7 @@ public:
 
     Z8010();
 
-    /// Pegeländerung /SEGT (true = Anforderung aktiv).
+    /// Pegelaenderung /SEGT (true = Anforderung aktiv).
     std::function<void(bool aktiv)> onSegt;
 
     // ── Pins ─────────────────────────────────────────────────────────────────
@@ -171,16 +171,16 @@ public:
 
     // ── Lebenslauf ───────────────────────────────────────────────────────────
     void powerOn();
-    /// Fallende Flanke /RESET; @p csAktiv = /CS während des Reset aktiv ([TB] §7.2.1).
+    /// Fallende Flanke /RESET; @p csAktiv = /CS waehrend des Reset aktiv ([TB] §7.2.1).
     void reset(bool csAktiv = false);
 
     // ── Einsicht ohne Nebenwirkung (Debugger, Tests) ─────────────────────────
-    /// Probeweise Übersetzung: was zyklus() für @p z an Adresse und Prüfbefund ermitteln würde —
-    /// ohne Zustand, Flags, REF/CHG, SEGT oder ISN zu berühren.  Der Befund ist der des
-    /// Deskriptors; ob daraus SUP/SEGT würde, hängt zusätzlich am Zustandsautomaten.
+    /// Probeweise Uebersetzung: was zyklus() fuer @p z an Adresse und Pruefbefund ermitteln wuerde —
+    /// ohne Zustand, Flags, REF/CHG, SEGT oder ISN zu beruehren.  Der Befund ist der des
+    /// Deskriptors; ob daraus SUP/SEGT wuerde, haengt zusaetzlich am Zustandsautomaten.
     struct Probe {
-        bool     adresse = false;     ///< A8–A23 würden getrieben
-        bool     geprueft = false;    ///< übersetzt mit Rechteprüfung (MSEN ∧ TRNS ∧ URS ∧ MST/NMS)
+        bool     adresse = false;     ///< A8–A23 wuerden getrieben
+        bool     geprueft = false;    ///< uebersetzt mit Rechtepruefung (MSEN ∧ TRNS ∧ URS ∧ MST/NMS)
         uint32_t phys = 0;
         uint8_t  verletzung = 0;      ///< VTR-Bits RDV/SYSV/SLV/CPUIV/EXCV dieses Zugriffs
         bool     dmaiVerletzung = false;
@@ -188,7 +188,7 @@ public:
     };
     Probe probe(const Zyklus& z) const;
 
-    /// Die festgehaltene (erste) Verletzung — Statusregister in einem Stück.
+    /// Die festgehaltene (erste) Verletzung — Statusregister in einem Stueck.
     struct Verletzung {
         uint8_t vtr, vsn, voff, bcsr, isn, ioff;
         bool    segtAnforderung;
@@ -196,7 +196,7 @@ public:
     Verletzung letzteVerletzung() const {
         return {s_.vtr, s_.vsn, s_.voff, s_.bcsr, s_.isn, s_.ioff, s_.segt != 0};
     }
-    /// Läuft gerade SUP bis zum Befehlsende ([A3])?
+    /// Laeuft gerade SUP bis zum Befehlsende ([A3])?
     bool supBisBefehlsende() const { return s_.supBisBefehlsende != 0; }
 
     Deskriptor deskriptor(int nr) const { return s_.sdr[nr & 63]; }

@@ -521,8 +521,8 @@ TEST(Z80PIO, SerializeRoundTrip) {
  * @test Z80PIO/FreigabewortAendertNurDieFreigabe
  * @brief Das Interrupt-Freigabewort xx03H schaltet nur EI (D7); UND/ODER und die aktive
  *        Flanke bleiben, wie das Steuerwort xx07H sie gesetzt hat (Zilog Z80 PIO, U855).
- *        Das BIOS des K8915 schreibt 37H („ODER, bei high“, Maske FDH) und später 83H —
- *        mit „bei low“ käme sofort ein falscher Marken-Interrupt (doc/design/16_k8915.md
+ *        Das BIOS des K8915 schreibt 37H („ODER, bei high“, Maske FDH) und spaeter 83H —
+ *        mit „bei low“ kaeme sofort ein falscher Marken-Interrupt (doc/design/16_k8915.md
  *        AP-E3).
  */
 TEST(Z80PIO, FreigabewortAendertNurDieFreigabe) {

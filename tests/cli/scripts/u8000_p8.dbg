@@ -1,4 +1,4 @@
-# AP P8: Pins, Buszyklus, Ausnahmeprotokoll, Statuszählung des U8001 im Debugger.
+# AP P8: Pins, Buszyklus, Ausnahmeprotokoll, Statuszaehlung des U8001 im Debugger.
 cpu u8000
 r
 btrap

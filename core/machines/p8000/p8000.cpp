@@ -48,7 +48,7 @@ P8000Karte16::Config P8000Machine::karte16Config(const Config& c)
     return k;
 }
 
-/// Soll-Zeit der 16-Bit-Karte zur 8-Bit-Zeit @p t8 (Entwurf §10.2, ganzzahlig ohne Überlauf).
+/// Soll-Zeit der 16-Bit-Karte zur 8-Bit-Zeit @p t8 (Entwurf §10.2, ganzzahlig ohne Ueberlauf).
 uint64_t P8000Machine::zeit16(uint64_t t8) const
 {
     const uint64_t f8 = cfg_.takt8_hz, f16 = cfg_.takt16_hz;
@@ -74,12 +74,12 @@ std::string mitLeerzeichen(uint64_t n)
     }
     return r;
 }
-/// "Firmware 3.4.05 gehört zu K5504.50 (1024/5/18 = 47 185 920 B)"
+/// "Firmware 3.4.05 gehoert zu K5504.50 (1024/5/18 = 47 185 920 B)"
 std::string romTypText(P8000Wdc::Config::Firmware f)
 {
     const auto* t = P8000Wdc::romLaufwerk(f);
     if (!t) return std::string("Firmware ") + P8000Wdc::firmwareName(f);
-    return std::string("Firmware ") + P8000Wdc::firmwareName(f) + " gehört zu " + t->name + " (" +
+    return std::string("Firmware ") + P8000Wdc::firmwareName(f) + " gehoert zu " + t->name + " (" +
            std::to_string(t->g.zylinder) + "/" + std::to_string(t->g.koepfe) + "/" +
            std::to_string(t->g.sektoren) + " = " + mitLeerzeichen(t->g.bytes()) + " B)";
 }
@@ -153,7 +153,7 @@ P8000Machine::P8000Machine(const Config& cfg)
     } else if (!cfg.platte.empty()) {
         throw std::invalid_argument("P8000: Platte ohne WDC (wdc=aus)");
     }
-    // tty0, tty2, tty3 (und tty4–tty7) nach außen (Reihenfolge = C-ABI-Index); tty1 hängt am
+    // tty0, tty2, tty3 (und tty4–tty7) nach aussen (Reihenfolge = C-ABI-Index); tty1 haengt am
     // Kern-Terminal.
     for (auto* a : serielleAnschluesse()) hub_.registriere(*a);
 }
@@ -184,10 +184,10 @@ void P8000Machine::powerOn()
 {
     lw().flushDisks();
     hdFlush();
-    karte_.powerOn();        // RAM/ADP/Latches vorbelegen, RESI = 1, /RES (Floppy über Reset-Haken)
-    if (wdc_) wdc_->powerOn();   // Netz-Ein des WDC; danach hält PIO2-B5 (Pull-up) ihn im Reset
+    karte_.powerOn();        // RAM/ADP/Latches vorbelegen, RESI = 1, /RES (Floppy ueber Reset-Haken)
+    if (wdc_) wdc_->powerOn();   // Netz-Ein des WDC; danach haelt PIO2-B5 (Pull-up) ihn im Reset
     if (k16_) {
-        k16_->powerOn();     // PRES−: MRESET− und PIORESET−; RESET (K11) hält den U8001
+        k16_->powerOn();     // PRES−: MRESET− und PIORESET−; RESET (K11) haelt den U8001
         kopplung_->rechne();
     }
     if (wdc_an_) wdc_an_->rechne();
@@ -246,8 +246,8 @@ uint8_t P8000Machine::screenChar(int col, int row) const
     return z.feld ? uint8_t(' ') : z.zeichen;
 }
 
-// Nur lesen: über die const-Überladungen, damit der Aufschub der Terminalkopplung bestehen bleibt
-// (die Oberfläche holt das Bild 60-mal je Sekunde).
+// Nur lesen: ueber die const-Ueberladungen, damit der Aufschub der Terminalkopplung bestehen bleibt
+// (die Oberflaeche holt das Bild 60-mal je Sekunde).
 const uint8_t* P8000Machine::framebuffer() const
 {
     return hwterm_ ? std::as_const(*hwterm_).einheit().hw().pixel().data() : fb_.data();
@@ -285,14 +285,14 @@ void P8000Machine::tastenAbgeben()
         t.swap(tasten_);
     }
     for (const Taste& e : t) {
-        // Matrixtasten der K7673 (nur Originalterminal): drücken bzw. loslassen, ohne Zeitplan —
-        // die Oberfläche hält sie so lange, wie der Anwender sie hält.
+        // Matrixtasten der K7673 (nur Originalterminal): druecken bzw. loslassen, ohne Zeitplan —
+        // die Oberflaeche haelt sie so lange, wie der Anwender sie haelt.
         if ((e.code & 0xFF000000u) == MATRIX_KODE) {
             if (hwterm_)
                 hwterm_->einheit().matrixDirekt({int((e.code >> 8) & 0x7F), int(e.code & 0xFF)}, !(e.code & LOSLASSEN));
             continue;
         }
-        // Caps lock an/aus (Rasttaste): Kern-Terminal setzt den Zustand, das Original drückt die Taste.
+        // Caps lock an/aus (Rasttaste): Kern-Terminal setzt den Zustand, das Original drueckt die Taste.
         if (e.code == 0x02000100 || e.code == 0x02000101) {
             const bool an = e.code == 0x02000100;
             if (kern_) kern_->terminal().setzeCapsLock(an);
@@ -337,7 +337,7 @@ bool P8000Machine::hdMountMit(int unit, const std::string& path, bool par_ergaen
     const auto* rom = P8000Wdc::romLaufwerk(fw);
     const k1520::winchester::Typ* konf = cfg_.platte_typ.empty() ? nullptr : k1520::winchester::typNachName(cfg_.platte_typ);
     if (rom) {
-        // P24: das EPROM legt Köpfe/Zylinder/Sektoren fest; die Firmware liest nie einen PAR-Sektor.
+        // P24: das EPROM legt Koepfe/Zylinder/Sektoren fest; die Firmware liest nie einen PAR-Sektor.
         pc.geometrie = rom->g;
         pc.par_ergaenzen = false;
         std::error_code ec;
@@ -352,7 +352,7 @@ bool P8000Machine::hdMountMit(int unit, const std::string& path, bool par_ergaen
     auto p = std::make_unique<k1520::winchester::Platte>();
     if (!p->oeffnen(path, pc)) { hd_fehler_ = p->fehler(); return false; }
     // 4.2 liest den PAR von der Platte: ein Parametersatz, der dem festgelegten Typ widerspricht,
-    // würde die Firmware mit anderen Maßen rechnen lassen als die Dateiablage (hier abweisen).
+    // wuerde die Firmware mit anderen Massen rechnen lassen als die Dateiablage (hier abweisen).
     if (!rom && konf && p->parImAbbild() && !(*p->parImAbbild() == konf->g)) {
         const auto& g = *p->parImAbbild();
         hd_fehler_ = "Der Parametersatz der Platte nennt " + std::to_string(g.zylinder) + "/" +
@@ -399,7 +399,7 @@ bool P8000Machine::hdUnmount(int unit)
 {
     if (unit < 0 || unit >= P8000Wdc::LAUFWERKE || !platten_[size_t(unit)]) return false;
     if (wdc_) wdc_->anschliessen(unit, nullptr);
-    platten_[size_t(unit)]->schliessen();   // zerlegt und schreibt geänderte Spuren zurück
+    platten_[size_t(unit)]->schliessen();   // zerlegt und schreibt geaenderte Spuren zurueck
     platten_[size_t(unit)].reset();
     return true;
 }
@@ -449,7 +449,7 @@ int P8000Machine::run(int max_cycles)
     int remaining = max_cycles;
     while (remaining > 0 && !stop_.load(std::memory_order_relaxed)) {
         k1520::logging::Logger::instance().update(total_cycles_, karte_.cpu().PC, 0);
-        const int n = karte_.schritt();      // DMA hält die CPU; EPROM-Wartetakte eingerechnet
+        const int n = karte_.schritt();      // DMA haelt die CPU; EPROM-Wartetakte eingerechnet
         if (n == 0) break;                   // Debugger-Halt
         karte_.takt(n);
         floppy_.takt(n);
@@ -567,7 +567,7 @@ std::vector<uint8_t> P8000Machine::stateBytes() const
 
 bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
 {
-    // Erst alle Abschnitte einsammeln und die Konfiguration prüfen, dann anwenden.
+    // Erst alle Abschnitte einsammeln und die Konfiguration pruefen, dann anwenden.
     if (b.size() < 5 || std::memcmp(b.data(), MAGIC, 4) != 0) { state_error_ = "Kein P8KS-Zustand"; return false; }
     if (b[4] < 1 || b[4] > P8000_STAND) { state_error_ = "P8KS-Version " + std::to_string(b[4]) + " unbekannt"; return false; }
     struct Teil { bool da = false; const uint8_t* p = nullptr; const uint8_t* e = nullptr; };
@@ -581,7 +581,7 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
         pos += 5;
         if (b.size() - pos < n) { state_error_ = "P8KS: Abschnitt abgeschnitten"; return false; }
         if (id >= 1 && id < ABS_ANZAHL) t[id] = {true, b.data() + pos, b.data() + pos + n};
-        pos += n;   // unbekannte Abschnitte überspringen
+        pos += n;   // unbekannte Abschnitte ueberspringen
     }
     const uint8_t stand = b[4];
     if (stand < 2 && k16_) { state_error_ = "P8KS v1 kennt keinen 16-Bit-Teil"; return false; }
@@ -591,24 +591,24 @@ bool P8000Machine::wendeAbschnitteAn(const std::vector<uint8_t>& b)
     configAbschnitt(cfg, stand);
     if (!t[ABS_CONFIG].da || cfg.size() != static_cast<size_t>(t[ABS_CONFIG].e - t[ABS_CONFIG].p) ||
         std::memcmp(cfg.data(), t[ABS_CONFIG].p, cfg.size()) != 0) {
-        state_error_ = "P8KS: Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) stimmt nicht überein";
+        state_error_ = "P8KS: Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) stimmt nicht ueberein";
         return false;
     }
     if (!t[ABS_KARTE].da) { state_error_ = "P8KS: Abschnitt Karte fehlt"; return false; }
     if (k16_ && !t[ABS_KARTE16].da) { state_error_ = "P8KS: Abschnitt 16-Bit-Karte fehlt"; return false; }
     if (wdc_ && !t[ABS_WDC].da) { state_error_ = "P8KS: Abschnitt WDC fehlt"; return false; }
 
-    // Fehlende Abschnitte (außer der Karte) lassen den Ist-Zustand stehen.
+    // Fehlende Abschnitte (ausser der Karte) lassen den Ist-Zustand stehen.
     auto lade = [&](uint8_t id, const char* name, auto&& f) {
         if (!t[id].da) return true;
         const uint8_t* p = t[id].p;
         if (!f(p, t[id].e)) { state_error_ = std::string("P8KS: Abschnitt ") + name + " unlesbar"; return false; }
         return true;
     };
-    // Reihenfolge: Floppy vor Karte (die FDC-Rückrufe schreiben in die PIO2, die die Karte danach
-    // endgültig setzt).
+    // Reihenfolge: Floppy vor Karte (die FDC-Rueckrufe schreiben in die PIO2, die die Karte danach
+    // endgueltig setzt).
     if (!lade(ABS_FLOPPY, "Floppy", [&](const uint8_t*& p, const uint8_t* e) { return floppy_.deserialize(p, e); })) return false;
-    // Die Kopplung rechnet während des Ladens nicht: die Karten stellen ihre Pins selbst her.
+    // Die Kopplung rechnet waehrend des Ladens nicht: die Karten stellen ihre Pins selbst her.
     struct Ruhig {
         P8000Kopplung* k;
         explicit Ruhig(P8000Kopplung* kk) : k(kk) { if (k) k->setRuhig(true); }
@@ -653,7 +653,7 @@ bool P8000Machine::restoreStateBytes(const std::vector<uint8_t>& b)
     const std::vector<uint8_t> sicherung = stateBytes();
     if (wendeAbschnitteAn(b)) return true;
     const std::string grund = state_error_;
-    wendeAbschnitteAn(sicherung);      // halb angewandt ⇒ alten Zustand zurück
+    wendeAbschnitteAn(sicherung);      // halb angewandt ⇒ alten Zustand zurueck
     state_error_ = grund;
     return false;
 }

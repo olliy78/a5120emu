@@ -1,11 +1,11 @@
-"""K8915 über die Python-Bindung — der Weg, den die Oberfläche nehmen wird.
+"""K8915 ueber die Python-Bindung — der Weg, den die Oberflaeche nehmen wird.
 
-doc/design/16_k8915.md §8a AP-E4b: `libk1520core` enthält seit dort die
-`K8915Machine`.  Die C++-Wächter (`k1520_test_k8915_scpx`) fahren die Maschine
-direkt; hier läuft derselbe Kaltstart durch ctypes, und die Taste kommt — wie aus
-der Oberfläche — aus einem ANDEREN Faden als dem, der `k1520_run` ruft.
+doc/design/16_k8915.md §8a AP-E4b: `libk1520core` enthaelt seit dort die
+`K8915Machine`.  Die C++-Waechter (`k1520_test_k8915_scpx`) fahren die Maschine
+direkt; hier laeuft derselbe Kaltstart durch ctypes, und die Taste kommt — wie aus
+der Oberflaeche — aus einem ANDEREN Faden als dem, der `k1520_run` ruft.
 
-Das Bild wird über `k1520_screen_char` gelesen (von der K7024), nicht über
+Das Bild wird ueber `k1520_screen_char` gelesen (von der K7024), nicht ueber
 `k1520_mem_read`: bei A8H = 87H liegt unter 1000H das RAM der ZRE.
 """
 
@@ -37,11 +37,11 @@ def test_k8915_boots_to_the_prompt_with_a_key_from_another_thread(temp_disk):
     assert run_until_text(emu, "* Coldstart *  Disk on A: ready", 80_000_000), (
         "Coldstart-Meldung nie erschienen:\n" + emu.screen_text())
 
-    # Diskette einlegen, wie der Anwender es an dieser Stelle täte (TempDisk-Kopie).
+    # Diskette einlegen, wie der Anwender es an dieser Stelle taete (TempDisk-Kopie).
     path = temp_disk("k8915scpx_boot1.hfe")
     assert emu.mount_disk(0, path, "cpa800", False), emu.last_error()
 
-    # CR aus einem zweiten Faden, während dieser Faden die Maschine fährt.
+    # CR aus einem zweiten Faden, waehrend dieser Faden die Maschine faehrt.
     los = threading.Event()
     fertig = threading.Event()
 
@@ -54,7 +54,7 @@ def test_k8915_boots_to_the_prompt_with_a_key_from_another_thread(temp_disk):
     faden = threading.Thread(target=taste, daemon=True)
     faden.start()
     los.set()
-    # Solange der Faden noch nicht gedrückt hat, weiterfahren — ohne Taste keine Ladung.
+    # Solange der Faden noch nicht gedrueckt hat, weiterfahren — ohne Taste keine Ladung.
     for _ in range(2000):
         emu.run(100_000)
         if fertig.is_set():
@@ -84,9 +84,9 @@ def test_k8915_boots_to_the_prompt_with_a_key_from_another_thread(temp_disk):
 
 def test_gen2_runs_the_self_test_through_to_the_coldstart_message():
     """AP-V7a: `machine="k8915-g2"` (K2521 + K3528).  Mit der Vorgabe (repariertes 177,
-    F9 gelöst 2026-10-05) läuft der Selbsttest ohne Fehler und OHNE Tastendruck bis zur
-    Kaltstartmeldung (≈ 14,5 Mio. Takte); `CR` — wie aus der Oberfläche aus einem
-    ANDEREN Faden — startet danach den Lader.  Bild über `k1520_screen_char`, nie
+    F9 geloest 2026-10-05) laeuft der Selbsttest ohne Fehler und OHNE Tastendruck bis zur
+    Kaltstartmeldung (≈ 14,5 Mio. Takte); `CR` — wie aus der Oberflaeche aus einem
+    ANDEREN Faden — startet danach den Lader.  Bild ueber `k1520_screen_char`, nie
     `mem_read`."""
     from app.core_binding.k1520 import K1520Emulator
 

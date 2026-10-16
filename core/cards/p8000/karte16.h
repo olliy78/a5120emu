@@ -2,16 +2,16 @@
  * @file karte16.h
  * @brief 16-Bit-Rechnerkarte des P8000 (P 8000/16.1 bzw. 16.4): U8001 (Z8001-Betrieb), MMU-
  *        Steuerlogik (drei UB8010), On-Board-EPROM 16 KB + SRAM 2 KB, Hauptspeicher (DRAM-Karten),
- *        CTC0/1, SIO0/1 (tty4–tty7), PIO0–2, E/A-Dekoder FF81–FFB7, NMI-Identifier, Paritäts-FF,
- *        Single-Step-Zähler, Reset-Bildung MRESET−/PIORESET−.
+ *        CTC0/1, SIO0/1 (tty4–tty7), PIO0–2, E/A-Dekoder FF81–FFB7, NMI-Identifier, Paritaets-FF,
+ *        Single-Step-Zaehler, Reset-Bildung MRESET−/PIORESET−.
  *
  * Quelle: doc/p8000/schaltplan_16bit.md (Rang 1, Index 4 Bl. 1–14), doc/p8000/hw_16bit.md,
  * doc/design/25_p8000.md §10.1–§10.6, AP P10b.  Ohne WDC (P13).  PIO0/1 und PIO2 sind nur
- * Leitungsanschlüsse (`setzePinTreiber`, `pio0()`…, `setzePioHaken`); die Kopplungsgegenseite
+ * Leitungsanschluesse (`setzePinTreiber`, `pio0()`…, `setzePioHaken`); die Kopplungsgegenseite
  * legt `P8000Kopplung` (P11) an.
  *
  * @code
- *   Speicher (über P8000MmuLogik16): Segment 0, 0000–7FFF bei SCR.0 = 0 On-Board (+1 Wartetakt):
+ *   Speicher (ueber P8000MmuLogik16): Segment 0, 0000–7FFF bei SCR.0 = 0 On-Board (+1 Wartetakt):
  *     0000–3FFF EPROM, 4000–5FFF SRAM 2 KB (4 Spiegel), 6000–7FFF leer; sonst Hauptspeicher
  *     (MMU aus: SN·64K + Offset, MMU ein: UB8010).  Reset-Vektor: FCW C000 aus 0002.
  *   E/A (Status 0010, A15–A7 = 1, A0 = 1; LAD3–5 = Baustein, A1/A2 an den Baustein, KEINE Spiegel):
@@ -22,7 +22,7 @@
  *   Interruptkette (Bl. 13): CTC0 – CTC1 – SIO0 – SIO1 – PIO0 – PIO1 – PIO2, alle an VI−.
  *   Vektor-Quittung (Status 0111): AD0–7 = Vektor, AD8–15 offen.  RETI: ED, 4D an FFE1 — und
  *   der SIO-Befehl 38H an Kanal A (MON16 `PTY_INT`).
- *   NMI-Identifier (Status 0101): Bit 0 MANUALNMI, 1 POWER FAIL (nie), 2 Paritäts-FF, 3 MSDOSNMI
+ *   NMI-Identifier (Status 0101): Bit 0 MANUALNMI, 1 POWER FAIL (nie), 2 Paritaets-FF, 3 MSDOSNMI
  *   (Index 4, ohne Karte 0; Index 1 Masse), Bit 4–15 nicht getrieben (offener Bus).
  * @endcode
  *
@@ -33,36 +33,36 @@
  * Speicherzyklus mit Status 1001 (Single-Step, MON16 `p.brk.s`).
  *
  * **Reset (Bl. 6):** MRESET− = PRES− ∨ RESET (X3:B1, high-aktiv, Pull-up ⇒ Vorgabe aktiv) ∨
- * SOFTRESET (FFE9, Impuls).  MRESET setzt CPU, MMU-Logik (SCR = 0), CTCs, SIOs, DRAM-LED, Paritäts-FF;
- * die PIOs nur bei Index 1 — bei Index 4 setzt sie PIORESET− = PRES− ∧ TRESET− (X3:A1) zurück.
+ * SOFTRESET (FFE9, Impuls).  MRESET setzt CPU, MMU-Logik (SCR = 0), CTCs, SIOs, DRAM-LED, Paritaets-FF;
+ * die PIOs nur bei Index 1 — bei Index 4 setzt sie PIORESET− = PRES− ∧ TRESET− (X3:A1) zurueck.
  *
- * **Zeitführung (Entwurf §10.2):** eigene Uhr `zeit()` in Takten des U8001; `schritt()` = ein
+ * **Zeitfuehrung (Entwurf §10.2):** eigene Uhr `zeit()` in Takten des U8001; `schritt()` = ein
  * Befehl samt Peripherie, `laufeBis(t)` zieht die Karte bis t nach (im Reset ohne Schritt).
  *
- * Benannte Annahmen (zusätzlich zu [L1]–[L12] der MMU-Logik und [D1]–[D5] des DRAM):
- *  [K1] Die Kopplungs-/WDC-Eingänge sind ohne Gegenseite offen: PIO0/PIO1-Eingänge lesen über
+ * Benannte Annahmen (zusaetzlich zu [L1]–[L12] der MMU-Logik und [D1]–[D5] des DRAM):
+ *  [K1] Die Kopplungs-/WDC-Eingaenge sind ohne Gegenseite offen: PIO0/PIO1-Eingaenge lesen ueber
  *       Pull-up 1 (K15), /ASTB H.  PIO2-B0/B1/B2/B7 treibt der invertierende DL540 (1D21) —
- *       ohne WDC sind seine Eingänge offen (TTL = H) ⇒ die Pins liegen auf 0 (MON16 `p.disk.s`
+ *       ohne WDC sind seine Eingaenge offen (TTL = H) ⇒ die Pins liegen auf 0 (MON16 `p.disk.s`
  *       meldet dann sofort Fehler C1 statt 16 × 65 535 Schleifen zu warten).
  *  [K2] Die NMI-Taste ist ein Impuls von `Config::nmi_impuls_takte` (6 µs = 24 Takte).  Bit 0 des
  *       Identifiers ist der PEGEL zur Quittung — ist der Impuls vorbei, steht dort 0; MON16
  *       `NMI_INT` behandelt „weder Bit 0 noch Bit 2" wie manuell, `AUTOBOOT` liest ihn nicht.
- *  [K3] /NMI des U8001 = MANUALNMI ∨ Paritäts-FF (Gatterfolge Bl. 2 F3–F5 nicht ganz verfolgbar);
+ *  [K3] /NMI des U8001 = MANUALNMI ∨ Paritaets-FF (Gatterfolge Bl. 2 F3–F5 nicht ganz verfolgbar);
  *       die CPU sieht die Flanke inaktiv → aktiv.
- *  [K4] Das Paritäts-FF übernimmt PE− am Ende eines Hauptspeicher-LESEzyklus mit SYSDS (also nicht
- *       bei unterdrücktem Zyklus), solange SCR.3 = 1; SCR.3 = 0 hält es gelöscht (/R = CLRPARITY−).
+ *  [K4] Das Paritaets-FF uebernimmt PE− am Ende eines Hauptspeicher-LESEzyklus mit SYSDS (also nicht
+ *       bei unterdruecktem Zyklus), solange SCR.3 = 1; SCR.3 = 0 haelt es geloescht (/R = CLRPARITY−).
  *  [K5] /CTS tty4 = RTS (Lokalschleife 2D4/2D6), tty5–7 fest aktiv; /DCD vom Anschluss; SIO-/W/RDY
  *       unbeschaltet (Bl. 11).
  *  [K6] Refresh- und interne Zyklen (Status 0000/0001), NVI-Quittung, EPU-Transfer: offener Bus.
- *  [K7] Ein durch /SUP unterdrückter Hauptspeicher-LESEzyklus liefert den Offset der Adressphase
+ *  [K7] Ein durch /SUP unterdrueckter Hauptspeicher-LESEzyklus liefert den Offset der Adressphase
  *       (AD-Leitungen halten ihn, wie am A5120.16 gemessen — em.cpp `read16Io`), nicht FFFFH.
  *       Beleg MON16 3.1 `CODE_TRAP` (Testschritt 97): `add r15,#8 (im Original %0009)` — das
- *       unterdrückte Holen bei N:9000 darf R15 nicht ändern; mit FFFFH (= DJNZ R15,…) liefe der
- *       Stapel je Segment um 2 Bytes ab und der Monitor stürzte nach Testschritt 97 ab.  Mit 9000H
- *       (CPL RR0,RR0) bleibt er stehen.  Abschaltbar über `Config::unterdrueckt_liest_offset`.
+ *       unterdrueckte Holen bei N:9000 darf R15 nicht aendern; mit FFFFH (= DJNZ R15,…) liefe der
+ *       Stapel je Segment um 2 Bytes ab und der Monitor stuerzte nach Testschritt 97 ab.  Mit 9000H
+ *       (CPL RR0,RR0) bleibt er stehen.  Abschaltbar ueber `Config::unterdrueckt_liest_offset`.
  *
  * Save-State: serialize()/deserialize() (Version 1): U8001 samt Ablaufzustand, MMU-Logik (stellt
- * den /SEGT-Pegel der CPU wieder her — `Z8kRunState` trägt ihn nicht), DRAM, SRAM, CTC0/1 samt
+ * den /SEGT-Pegel der CPU wieder her — `Z8kRunState` traegt ihn nicht), DRAM, SRAM, CTC0/1 samt
  * Bruchtakt-Phase, SIO0/1, PIO0–2 samt Handshake, Leitungen, Uhr.
  */
 
@@ -110,20 +110,20 @@ public:
     explicit P8000Karte16(const Config& cfg);
     ~P8000Karte16();
 
-    // ─── serielle Kanäle tty4–tty7 (SIO0-A/B, SIO1-A/B) — Index 0…3 ──────────
+    // ─── serielle Kanaele tty4–tty7 (SIO0-A/B, SIO1-A/B) — Index 0…3 ──────────
     k1520::serial::SerialAnschluss& anschluss(int i);
     bool nimmSeriellGeaendert() { const bool g = seriell_geaendert_; seriell_geaendert_ = false; return g; }
 
     // ─── Lebenslauf und Leitungen ────────────────────────────────────────────
-    void powerOn();                       ///< PRES−: MRESET− und PIORESET−; danach hält RESET
+    void powerOn();                       ///< PRES−: MRESET− und PIORESET−; danach haelt RESET
     /// X3:B1 RESET (high-aktiv; offen = Pull-up = aktiv).  Wegnehmen startet den U8001.
     void setResetEingang(bool aktiv);
     bool resetEingang() const { return reset_eingang_; }
-    /// X3:A1 TRESET− (Index 4: PIORESET−); aktiv setzt die PIOs zurück.
+    /// X3:A1 TRESET− (Index 4: PIORESET−); aktiv setzt die PIOs zurueck.
     void setTresetEingang(bool aktiv);
     /// MANUALNMI als Pegel (Kopplung K12, P11).
     void setManualNmi(bool aktiv);
-    /// NMI-Taste: MANUALNMI für `nmi_impuls_takte` Takte [K2].
+    /// NMI-Taste: MANUALNMI fuer `nmi_impuls_takte` Takte [K2].
     void nmiTaste();
     bool inReset() const { return mreset_; }
     bool runLed() const { return mmu_.runLed(); }
@@ -131,7 +131,7 @@ public:
 
     // ─── Zeit ────────────────────────────────────────────────────────────────
     /// Ein Befehl des U8001 (bzw. ein Wiederholungsdurchlauf, ein Ausnahmeeintritt) samt
-    /// Peripherietakt; im Reset 1 Takt.  Rückgabe: Takte.
+    /// Peripherietakt; im Reset 1 Takt.  Rueckgabe: Takte.
     int  schritt();
     /// Zieht die Karte bis @p ziel (Takte des U8001) nach; im Reset ohne Schritt.
     void laufeBis(uint64_t ziel);
@@ -160,7 +160,7 @@ public:
     /// Nach jedem CPU-Schreiben auf PIO2 und nach jedem PIO-Reset (WDC-Anschluss, P13d).
     void setzeWdcHaken(std::function<void()> h) { wdc_haken_ = std::move(h); }
 
-    // ─── Bus von außen (Debugger/Tests; ohne Wartetakt, mit allen Nebenwirkungen) ──
+    // ─── Bus von aussen (Debugger/Tests; ohne Wartetakt, mit allen Nebenwirkungen) ──
     uint16_t busLesen(const Z8kBusCycle& c);
     void     busSchreiben(const Z8kBusCycle& c, uint16_t daten);
     /// Was der Identifier in der NMI-Quittung jetzt zeigte.
@@ -169,7 +169,7 @@ public:
     uint8_t& sram(uint16_t i) { return sram_[i & 0x7FF]; }
 
     // ─── Debugger (P12; leer = kein Aufwand) ─────────────────────────────────
-    /// Vor jedem Befehl des U8001 (nicht im Reset): `true` = nicht ausführen, `schritt()` liefert 0
+    /// Vor jedem Befehl des U8001 (nicht im Reset): `true` = nicht ausfuehren, `schritt()` liefert 0
     /// (Debugger-Halt, die Zeit bleibt als Guthaben stehen — Muster `EM::setStepHook`).
     std::function<bool(const Z8000&)> schrittHaken;
     /// Nach jedem Buszyklus des U8001 (Lesen/Schreiben, mit Datum) — Beobachtung, keine Wirkung.

@@ -36,7 +36,7 @@ class JobKind(IntEnum):
     READ = 1
     WRITE = 2
     STOP = 3        #: kein Auftrag mehr; der Arbeitsfaden soll enden
-    #: Prüf-Lesen nach einem Schreibvorgang.  **Für den Arbeitsfaden dasselbe wie
+    #: Pruef-Lesen nach einem Schreibvorgang.  **Fuer den Arbeitsfaden dasselbe wie
     #: READ** — Spur lesen, Bitzellen abliefern; verglichen wird im Kern.
     VERIFY = 4
 
@@ -46,12 +46,12 @@ class Priority(IntEnum):
 
     NONE = 0
     DEMAND = 1      #: jemand wartet auf diese Spur
-    WRITEBACK = 2   #: geänderte Spur, zur Ruhe gekommen
+    WRITEBACK = 2   #: geaenderte Spur, zur Ruhe gekommen
     READAHEAD = 3   #: unbekannte Spur, niemand wartet
 
 
 class _Spec(ctypes.Structure):
-    # Spiegel von K1520SyncSpec (core/api/k1520_sync_api.h) — Reihenfolge zählt.
+    # Spiegel von K1520SyncSpec (core/api/k1520_sync_api.h) — Reihenfolge zaehlt.
     _fields_ = [
         ("num_cyls", ctypes.c_uint8),
         ("num_heads", ctypes.c_uint8),
@@ -79,7 +79,7 @@ class _Job(ctypes.Structure):
 
 
 class _Stats(ctypes.Structure):
-    # Spiegel von K1520SyncStats (core/api/k1520_sync_api.h) — Reihenfolge zählt.
+    # Spiegel von K1520SyncStats (core/api/k1520_sync_api.h) — Reihenfolge zaehlt.
     _fields_ = [
         ("tracks_total", ctypes.c_uint16),
         ("tracks_known", ctypes.c_uint16),
@@ -207,8 +207,8 @@ class Sync:
     Ein Handle lässt sich nur **einmal** anmelden.
     """
 
-    #: Größter Zellstrom einer Spurseite (8″ 500 kbit/s bei 300 U/min ≈ 12,5 KB;
-    #: großzügig gerundet, damit auch überabgetastete Aufnahmen hineinpassen).
+    #: Groesster Zellstrom einer Spurseite (8″ 500 kbit/s bei 300 U/min ≈ 12,5 KB;
+    #: grosszuegig gerundet, damit auch ueberabgetastete Aufnahmen hineinpassen).
     MAX_CELL_BYTES = 256 * 1024
 
     def __init__(self, *, num_cyls: int = 80, num_heads: int = 2,

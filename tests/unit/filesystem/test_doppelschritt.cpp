@@ -1,16 +1,16 @@
 /**
  * @file test_doppelschritt.cpp
- * @brief GoogleTests für `DiskFormat::step` — die Doppelschritt-Austauschformate.
+ * @brief GoogleTests fuer `DiskFormat::step` — die Doppelschritt-Austauschformate.
  *
- * Ein 96-tpi-Laufwerk (K5601, K5600.20) beschreibt für den Austausch mit einem
+ * Ein 96-tpi-Laufwerk (K5601, K5600.20) beschreibt fuer den Austausch mit einem
  * 48-tpi-K5600.10 nur **jeden zweiten** Zylinder.  Im Abbild sieht das aus wie eine
  * halb kaputte 80-Spur-Diskette — deshalb ist die Erkennung die eigentliche Arbeit,
- * und deshalb prüft dieser Test sie **in beide Richtungen**:
+ * und deshalb prueft dieser Test sie **in beide Richtungen**:
  *
  *  - eine Doppelschritt-Diskette darf **nur** vom `step: 2`-Format erkannt werden,
- *  - eine gewöhnliche 40-Spur-Diskette darf **nie** dafür gehalten werden.
+ *  - eine gewoehnliche 40-Spur-Diskette darf **nie** dafuer gehalten werden.
  *
- * Dazu die Abbildung selbst: logische Spur `n` liegt physisch auf `2n`, trägt im
+ * Dazu die Abbildung selbst: logische Spur `n` liegt physisch auf `2n`, traegt im
  * **ID-Feld** aber die logische Nummer `n` — nachgemessen an den von CP/A erzeugten
  * Abbildern (`out/formats/cpa/fmt_clock_B_U_4.hfe`: physisch c4h0 meldet `cyl=2`).
  *
@@ -57,7 +57,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Temporäre Datei, räumt sich weg.
+/// @brief Temporaere Datei, raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const char* name)
@@ -87,9 +87,9 @@ bool enthaelt(const std::vector<std::string>& v, const std::string& s) {
 // ─── Das Datenmodell ─────────────────────────────────────────────────────────
 
 /**
- * @test `step` rechnet logische Spuren in physische Zylinder um — und zurück.
+ * @test `step` rechnet logische Spuren in physische Zylinder um — und zurueck.
  * @par Kriterium  40 logische Spuren mit `step: 2` belegen 79 Zylinder (nicht 80:
- *                 hinter der letzten Spur kommt keine Lücke mehr), und ein ungerader
+ *                 hinter der letzten Spur kommt keine Luecke mehr), und ein ungerader
  *                 Zylinder hat keine logische Entsprechung.
  */
 TEST(Doppelschritt, RechnetLogischeSpurenInPhysischeZylinderUm) {
@@ -112,14 +112,14 @@ TEST(Doppelschritt, RechnetLogischeSpurenInPhysischeZylinderUm) {
     EXPECT_EQ(einzel->logicalCylinder(5), 5);
 }
 
-// ─── Schreiben: create lässt die ungeraden Zylinder frei ─────────────────────
+// ─── Schreiben: create laesst die ungeraden Zylinder frei ─────────────────────
 
 /**
- * @test Eine neu angelegte Doppelschritt-Diskette lässt jeden zweiten Zylinder leer
- *       und trägt im ID-Feld die LOGISCHE Spurnummer.
+ * @test Eine neu angelegte Doppelschritt-Diskette laesst jeden zweiten Zylinder leer
+ *       und traegt im ID-Feld die LOGISCHE Spurnummer.
  * @par Kriterium  Physisch c4h0 ist beschrieben und meldet `cyl=2`; c5h0 ist leer.
- * @par Warum      Genau so schreibt es CP/A.  Stünde dort der physische Zylinder,
- *                 verwürfe der Treiber des Gastsystems jeden Sektor als „falsche Spur".
+ * @par Warum      Genau so schreibt es CP/A.  Stuende dort der physische Zylinder,
+ *                 verwuerfe der Treiber des Gastsystems jeden Sektor als „falsche Spur".
  */
 TEST(Doppelschritt, NeueDisketteLaesstJedenZweitenZylinderLeer) {
     TempPfad pfad("k1520_dstep_create.hfe");
@@ -168,11 +168,11 @@ TEST(Doppelschritt, WirdNurVomDoppelschrittFormatErkannt) {
 }
 
 /**
- * @test Eine gewöhnliche 40-Spur-Diskette wird **nicht** für Doppelschritt gehalten.
+ * @test Eine gewoehnliche 40-Spur-Diskette wird **nicht** fuer Doppelschritt gehalten.
  * @par Kriterium  Das `_dstep`-Format ist NICHT unter den Treffern — sie hat keine
- *                 Lücken, und das Doppelschritt-Kriterium verlangt sie positiv.
+ *                 Luecken, und das Doppelschritt-Kriterium verlangt sie positiv.
  * @par Warum      Das ist die Verwechslungsgefahr aus §7 des Feature-Requests: ohne
- *                 diese Richtung läse das Werkzeug jede zweite Spur und lieferte Müll.
+ *                 diese Richtung laese das Werkzeug jede zweite Spur und lieferte Muell.
  */
 TEST(Doppelschritt, EinzelschrittDisketteWirdNichtVerwechselt) {
     TempPfad pfad("k1520_dstep_einzel.hfe");
@@ -190,10 +190,10 @@ TEST(Doppelschritt, EinzelschrittDisketteWirdNichtVerwechselt) {
 
 /**
  * @test Der @ref SectorSpace spricht logisch und schreibt physisch.
- * @par Kriterium  Ein über `writeSector(2, 0, 1, …)` geschriebener Sektor steht
+ * @par Kriterium  Ein ueber `writeSector(2, 0, 1, …)` geschriebener Sektor steht
  *                 anschliessend auf dem **physischen** Zylinder 4 im Medium.
  * @par Warum      Das ist die eine Stelle, an der die Dateisysteme Spuren adressieren;
- *                 stimmt sie, brauchen CP/M und UDOS keine Änderung.
+ *                 stimmt sie, brauchen CP/M und UDOS keine Aenderung.
  */
 TEST(Doppelschritt, SectorSpaceSchreibtAufDenPhysischenZylinder) {
     TempPfad pfad("k1520_dstep_space.hfe");
@@ -218,8 +218,8 @@ TEST(Doppelschritt, SectorSpaceSchreibtAufDenPhysischenZylinder) {
 }
 
 /**
- * @test Rundlauf über `.img`: das rohe Sektorabbild ist logisch (40 Spuren).
- * @par Kriterium  Die Datei ist genau `40·16·256` gross, und nach dem Zurücklesen
+ * @test Rundlauf ueber `.img`: das rohe Sektorabbild ist logisch (40 Spuren).
+ * @par Kriterium  Die Datei ist genau `40·16·256` gross, und nach dem Zuruecklesen
  *                 liegen die Daten wieder auf den geraden Zylindern.
  */
 TEST(Doppelschritt, ImgRundlaufBehaeltDieAbbildung) {
@@ -253,9 +253,9 @@ TEST(Doppelschritt, ImgRundlaufBehaeltDieAbbildung) {
 // ─── Bis nach oben durch: mounten und beschreiben ────────────────────────────
 
 /**
- * @test Eine Doppelschritt-Diskette lässt sich mounten und beschreiben.
+ * @test Eine Doppelschritt-Diskette laesst sich mounten und beschreiben.
  * @par Kriterium  @ref DiskVolume erkennt Format und (per CP/A-Regel) Dateisystem;
- *                 eine geschriebene Datei liest sich unverändert zurück.
+ *                 eine geschriebene Datei liest sich unveraendert zurueck.
  */
 TEST(Doppelschritt, LaesstSichMountenUndBeschreiben) {
     TempPfad pfad("k1520_dstep_volume.hfe");

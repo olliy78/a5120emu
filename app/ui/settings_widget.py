@@ -51,17 +51,20 @@ class SettingsWidget(QWidget):
     # Emitted when the model dropdown changes; carries the model key
     # (app.modell.A5120 / app.modell.A5120_16).
     modelChanged = Signal(str)
-    # Hardwarevariante (Profil.hardware) geändert: Schlüssel, Wert.
+    # Hardwarevariante (Profil.hardware) geaendert: Schluessel, Wert.
     hardwareChanged = Signal(str, str)
-    # RAM-Disk-Auswahl geändert (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``,
+    # RAM-Disk-Auswahl geaendert (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``,
     # `app/raf.py`) — wie der Modellwechsel ein Neuaufbau der Maschine.
     rafChanged = Signal(str)
-    # Stand-by-Kästchen der RAF umgeschaltet (kein Neuaufbau).
+    # Stand-by-Kaestchen der RAF umgeschaltet (kein Neuaufbau).
     rafStandbyChanged = Signal(bool)
-    # Kästchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
+    # Kaestchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
     # wie bei der RAF (doc/design/23_lochstreifen.md §7).
     ptapeChanged = Signal(bool)
-    # Mitschrift des Terminals: Dateiname geändert (leer = aus).  Nur Profile mit Terminal.
+    # Kaestchen „Kassette (K5221, AKB K5020)" umgeschaltet — Neuaufbau wie beim Lochstreifen
+    # (doc/design/29_kassette.md).
+    tapeChanged = Signal(bool)
+    # Mitschrift des Terminals: Dateiname geaendert (leer = aus).  Nur Profile mit Terminal.
     mitschriftChanged = Signal(str)
 
     #: (Beschriftung, Faktor).  Die Stufen
@@ -85,9 +88,10 @@ class SettingsWidget(QWidget):
         self._drive_combos: List[QComboBox] = []
         # Guards the model combo against emitting while set programmatically.
         self._model_guard = False
-        # Dito für RAM-Disk-Auswahl und Stand-by-Kästchen.
+        # Dito fuer RAM-Disk-Auswahl und Stand-by-Kaestchen.
         self._raf_guard = False
         self._ptape_guard = False
+        self._tape_guard = False
         self._mitschrift_guard = False
 
         layout = QVBoxLayout(self)
@@ -242,12 +246,12 @@ class SettingsWidget(QWidget):
 
         self.model_combo = QComboBox(inner)
         # Mit Betriebsart (P8000): das Feld zeigt nur die Modelle MIT Rechner („Rechnerausstattung“),
-        # das Modell „nur Terminal“ kommt über das zweite Feld.
+        # das Modell „nur Terminal“ kommt ueber das zweite Feld.
         zeilen = (self.profil.ausstattungen() if self.profil.betriebsart_wahl
                   else self.profil.modelle)
         for schluessel, _maschine, _em, beschriftung, _tastatur in zeilen:
             self.model_combo.addItem(beschriftung, schluessel)
-        # Modelle, die der Kern noch nicht fährt: sichtbar, aber nicht wählbar.
+        # Modelle, die der Kern noch nicht faehrt: sichtbar, aber nicht waehlbar.
         for schluessel, beschriftung, grund in self.profil.gesperrte_modelle:
             self.model_combo.addItem(beschriftung, schluessel)
             i = self.model_combo.count() - 1
@@ -307,7 +311,7 @@ class SettingsWidget(QWidget):
         self.raf_standby_box = QCheckBox("Inhalt beim Beenden behalten (Stand-by 5PG)", inner)
         self.raf_standby_box.setToolTip(raf.STANDBY_TIPP)
         self.raf_standby_box.toggled.connect(self._on_raf_standby_box)
-        self.raf_standby_box.setEnabled(False)          # erst mit gewählter RAF
+        self.raf_standby_box.setEnabled(False)          # erst mit gewaehlter RAF
         if self.profil.raf_wahl:
             form.addRow("RAM-Disk:", self.raf_combo)
             form.addRow("", self.raf_standby_box)
@@ -327,6 +331,20 @@ class SettingsWidget(QWidget):
             form.addRow("Peripherie:", self.ptape_box)
         else:
             self.ptape_box.setVisible(False)       # P8000: gibt es die Karte nicht
+
+        # Kassette: AKB K5020 mit zwei Laufwerken K5200 — wie der Lochstreifen eine
+        # Option, Vorgabe aus (doc/design/29_kassette.md).
+        self.tape_box = QCheckBox("Kassette (K5221, AKB K5020)", inner)
+        self.tape_box.setToolTip(
+            "Steckt den Anschlussbaustein K5020 mit zwei Kassettenlaufwerken K5200 "
+            "(A5120 und PRG 710: E/A 30H–37H, K8915 und PC 1715: D0H–D7H).  Bedient "
+            "werden sie im Kasten „Kassette“.  Ein Wechsel schaltet die Maschine aus "
+            "und neu ein.")
+        self.tape_box.toggled.connect(self._on_tape_box)
+        if self.profil.tape_wahl:
+            form.addRow("", self.tape_box)
+        else:
+            self.tape_box.setVisible(False)        # P8000: gibt es die Karte nicht
 
         # Mitschrift des Terminals (nur Profil mit Terminal): Dateiname + Ordnerknopf.
         self.mitschrift_edit = QLineEdit(inner)
@@ -400,7 +418,7 @@ class SettingsWidget(QWidget):
                 wert = (daten or {}).get(k)
                 i = box.findData(wert)
                 if i < 0 and k == "dram" and wert and p8000_ram.gueltig(wert):
-                    # eigene Bestückung aus der Konfiguration (P23b): als Eintrag zeigen
+                    # eigene Bestueckung aus der Konfiguration (P23b): als Eintrag zeigen
                     box.addItem(p8000_ram.anzeige(wert), wert)
                     i = box.count() - 1
                 box.setCurrentIndex(i if i >= 0 else 0)
@@ -412,6 +430,19 @@ class SettingsWidget(QWidget):
         modell = self.model_value()
         for k, box in self.hardware_combos.items():
             box.setEnabled(self.profil.hardware_wirkt(k, modell))
+        # MC80.2x: die Kassette (MBI) ist eingebaut — das Kaestchen steckt nichts.
+        fest = self.profil.modell_normalisieren(modell) in self.profil.tape_fest
+        if not hasattr(self, "tape_box"):      # beim ersten Aufruf (Aufbau) noch nicht da
+            return
+        self.tape_box.setEnabled(not fest)
+        if not hasattr(self, "_tape_tipp"):
+            self._tape_tipp = self.tape_box.toolTip()
+        if not fest:
+            self.tape_box.setToolTip(self._tape_tipp)
+        else:
+            self.tape_box.setToolTip(
+                "Beim MC80.21/.22 ist das Magnetbandinterface (MBI) mit dem Laufwerk SK 1200 "
+                "fest eingebaut; bedient wird es im Kasten „Kassette“.")
 
     # ── Lochstreifen (K6022) ─────────────────────────────────────────────────
 
@@ -419,6 +450,20 @@ class SettingsWidget(QWidget):
         if self._ptape_guard:
             return
         self.ptapeChanged.emit(bool(an))
+
+    def _on_tape_box(self, an: bool):
+        if self._tape_guard:
+            return
+        self.tapeChanged.emit(bool(an))
+
+    def tape_value(self) -> bool:
+        return self.tape_box.isChecked()
+
+    def set_tape_value(self, an: bool):
+        """Kästchen setzen, ohne ``tapeChanged`` auszulösen."""
+        self._tape_guard = True
+        self.tape_box.setChecked(bool(an))
+        self._tape_guard = False
 
     def ptape_value(self) -> bool:
         return self.ptape_box.isChecked()
@@ -464,6 +509,7 @@ class SettingsWidget(QWidget):
 
     def _on_model_combo(self, _idx: int):
         self._modus_anpassen()
+        self._hardware_gesperrt_nach_modell()
         if self._model_guard:
             return
         self.modelChanged.emit(self.model_value())
@@ -516,7 +562,7 @@ class SettingsWidget(QWidget):
         hat = self.profil.modell_hat_rechner(self.model_value())
         i = self.tabs.indexOf(self._drives_tab) if hasattr(self, "_drives_tab") else -1
         if i >= 0:
-            self.tabs.setTabVisible(i, hat)
+            self.tabs.setTabVisible(i, hat and self.profil.laufwerke)   # MC80: keine Laufwerke
 
     def set_nenntakt(self, text: str) -> None:
         """Beschriftung der Taktstufen nach dem Nenntakt des Modells (ohne Signal)."""

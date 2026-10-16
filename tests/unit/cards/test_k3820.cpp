@@ -1,7 +1,7 @@
 /**
  * @file test_k3820.cpp
- * @brief PFS K3820 (16 × 2708): Chip-Raster, Startadresse X8/X9, leere Sockel, Sperre über
- *        /MEMDI bzw. /MEMDI1/2, Beispielabzüge.  doc/design/24_k8915_varianten.md AP-V11,
+ * @brief PFS K3820 (16 × 2708): Chip-Raster, Startadresse X8/X9, leere Sockel, Sperre ueber
+ *        /MEMDI bzw. /MEMDI1/2, Beispielabzuege.  doc/design/24_k8915_varianten.md AP-V11,
  *        doc/k8915g2/karten.md §3.  Die Karte steckt in keiner Maschine.
  */
 
@@ -49,7 +49,7 @@ struct BusRam : MemDevice {
     void memWrite(uint16_t, uint8_t) override { ++schreib; }
 };
 
-/// Vorrangspeicher, der für ein Fenster die Bus-Leitung /MEMDI zieht (Muster EM256).
+/// Vorrangspeicher, der fuer ein Fenster die Bus-Leitung /MEMDI zieht (Muster EM256).
 struct Vorrang : MemdiDriver {
     uint16_t von, bis;
     Vorrang(uint16_t v, uint16_t b) : von(v), bis(b) {}
@@ -72,7 +72,7 @@ TEST(K3820, ChipRasterNachAbb7)
         EXPECT_EQ(bus.memRead(a), uint8_t(i)) << std::hex << a;
         EXPECT_EQ(bus.memRead(uint16_t(a + 0x3FF)), uint8_t(~i)) << std::hex << a;
     }
-    EXPECT_EQ(bus.memRead(0x4000), 0xFF);   // ausserhalb: kein Gerät
+    EXPECT_EQ(bus.memRead(0x4000), 0xFF);   // ausserhalb: kein Geraet
 }
 
 TEST(K3820, StartadresseIn4KbSchritten)
@@ -103,7 +103,7 @@ TEST(K3820, BrueckenX8X9)
     EXPECT_EQ(K3820::Config::ausBruecken(0x8).startadresse, 0x8000);
     EXPECT_EQ(K3820::Config::ausBruecken(0xC).startadresse, 0xC000);
     EXPECT_EQ(K3820::Config::ausBruecken(0xF).startadresse, 0xF000);
-    // Vorgaben: /MEMDI gebrückt (Normalkonfiguration), X10–X11 offen.
+    // Vorgaben: /MEMDI gebrueckt (Normalkonfiguration), X10–X11 offen.
     EXPECT_EQ(K3820::Config{}.memdi, L::Memdi);
     EXPECT_TRUE(K3820::Config{}.wait_m1);
 }
@@ -154,14 +154,14 @@ TEST(K3820, SchreibzugriffeWirkungslos)
     k.attachToBus(bus);
     EXPECT_FALSE(k.isWritable());
     bus.memWrite(0x4000, 0x12);
-    EXPECT_EQ(bus.memRead(0x4000), 0x00);   // Karte unverändert
+    EXPECT_EQ(bus.memRead(0x4000), 0x00);   // Karte unveraendert
     EXPECT_EQ(k.peek(0x0000), 0x00);
     EXPECT_EQ(ram.schreib, 1);              // der Schreibzyklus geht nur ans RAM
 }
 
 TEST(K3820, BusMemdiSperrt)
 {
-    // Bus-/MEMDI je Zugriff: ein Vorrangspeicher übernimmt, die Karte bleibt still.
+    // Bus-/MEMDI je Zugriff: ein Vorrangspeicher uebernimmt, die Karte bleibt still.
     K1520Bus bus;
     K3820 k(cfgAb(0xC000));
     kennmuster(k, 0);
@@ -212,7 +212,7 @@ TEST(K3820, WaitBruecke)
 
 TEST(K3820, BeispielabzuegeAnRichtigerAdresse)
 {
-    // Abzüge des Anwenders: nur „3000“ und „3C00“ programmiert.  Bei Start C000H
+    // Abzuege des Anwenders: nur „3000“ und „3C00“ programmiert.  Bei Start C000H
     // (Hypothese karten.md §3) liegen sie an F000H bzw. FC00H.
     const auto c3000 = lies("k8915g2_pfs3820_3000.bin");
     const auto c3c00 = lies("k8915g2_pfs3820_3C00.bin");
@@ -251,5 +251,5 @@ TEST(K3820, GesamtabzugGleichEinzelchips)
         }
         leer += alleFF;
     }
-    EXPECT_EQ(leer, 14);   // 14 von 16 Chips gelöscht (Entwurf 24 §10)
+    EXPECT_EQ(leer, 14);   // 14 von 16 Chips geloescht (Entwurf 24 §10)
 }

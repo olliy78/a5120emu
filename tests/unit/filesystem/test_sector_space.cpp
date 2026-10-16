@@ -1,10 +1,10 @@
 /**
  * @file test_sector_space.cpp
- * @brief GoogleTests für @ref SectorSpace — die Sicht der Dateisysteme auf das Medium.
+ * @brief GoogleTests fuer @ref SectorSpace — die Sicht der Dateisysteme auf das Medium.
  *
  * Die tragende Zusage des Entwurfs ist, dass der **lineare** Raum byteweise dem
  * `.img`-Abbild derselben Diskette entspricht (doc/design/13_k1520disktool.md §5).  Das
- * lässt sich hier hart prüfen, weil dieselbe CP/A-Diskette als `.img` **und** als `.hfe`
+ * laesst sich hier hart pruefen, weil dieselbe CP/A-Diskette als `.img` **und** als `.hfe`
  * committet ist: `cpa_cpa780_k5601_clock.img` / `.hfe`.
  *
  * @see core/filesystem/sector_space.h
@@ -40,7 +40,7 @@ std::vector<uint8_t> readFile(const std::string& path) {
                                  std::istreambuf_iterator<char>());
 }
 
-/// @brief Der ausgelieferte Katalog — dieselbe Quelle wie für den Emulator.
+/// @brief Der ausgelieferte Katalog — dieselbe Quelle wie fuer den Emulator.
 const FormatCatalog& katalog() {
     static FormatCatalog k = [] {
         std::string err;
@@ -75,7 +75,7 @@ TEST(SectorSpace, GroesseEntsprichtDemFormat) {
 TEST(SectorSpace, DateisystemBeginntBeiZylinder2Offset15104) {
     // Der Rechenweg aus doc/design/13_k1520disktool.md §6.2: die drei 128-B-Systemseiten
     // (3 × 3328) plus die 1024-B-Spur c1h1 (5120) ergeben 15104 — genau der `offset`,
-    // den cpmtools in seiner diskdefs für A5120_160 stehen hat.
+    // den cpmtools in seiner diskdefs fuer A5120_160 stehen hat.
     auto img = DiskImage::open(fixture("cpa_cpa780_k5601_clock.img"), cpa780(), true);
     ASSERT_NE(img, nullptr);
     SectorSpace raum(img->medium(), cpa780());
@@ -106,7 +106,7 @@ TEST(SectorSpace, MeldetGemischteGeometrieKorrekt) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Der lineare Raum IST das .img — an einer echten Diskette geprüft
+// Der lineare Raum IST das .img — an einer echten Diskette geprueft
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(SectorSpace, LinearerRaumIstBytegleichZumImgAbbild) {
@@ -148,12 +148,12 @@ TEST(SectorSpace, LesenUeberSektorUndSpurgrenzen) {
     ASSERT_NE(img, nullptr);
     SectorSpace raum(img->medium(), cpa780());
 
-    // Über die Grenze 128-B-Sektor → nächster Sektor …
+    // Ueber die Grenze 128-B-Sektor → naechster Sektor …
     std::vector<uint8_t> a(300);
     ASSERT_TRUE(raum.read(100, a.data(), a.size()));
     EXPECT_TRUE(std::equal(a.begin(), a.end(), datei.begin() + 100));
 
-    // … über die Spurgrenze c1h0 → c1h1 (128 B → 1024 B, Offset 9984) …
+    // … ueber die Spurgrenze c1h0 → c1h1 (128 B → 1024 B, Offset 9984) …
     std::vector<uint8_t> b(4096);
     ASSERT_TRUE(raum.read(9984 - 64, b.data(), b.size()));
     EXPECT_TRUE(std::equal(b.begin(), b.end(), datei.begin() + 9984 - 64));
@@ -163,7 +163,7 @@ TEST(SectorSpace, LesenUeberSektorUndSpurgrenzen) {
     ASSERT_TRUE(raum.read(raum.size() - c.size(), c.data(), c.size()));
     EXPECT_TRUE(std::equal(c.begin(), c.end(), datei.end() - 16));
 
-    // Ein Byte darüber hinaus ist ein Fehler, kein Absturz.
+    // Ein Byte darueber hinaus ist ein Fehler, kein Absturz.
     uint8_t eins = 0;
     EXPECT_FALSE(raum.read(raum.size(), &eins, 1));
 }
@@ -189,7 +189,7 @@ TEST(SectorSpace, PhysischerZugriffLiefertDieselbenBytes) {
 }
 
 TEST(SectorSpace, EchteDisketteIstDurchgaengigCrcGesund) {
-    // Zugleich ein Gesundheitsnachweis der Fixture: läuft das Dateisystem später auf
+    // Zugleich ein Gesundheitsnachweis der Fixture: laeuft das Dateisystem spaeter auf
     // CRC-Fehler, liegt es nicht am Medium.
     auto hfe = DiskImage::open(fixture("cpa_cpa780_k5601_clock.hfe"), std::nullopt, true);
     ASSERT_NE(hfe, nullptr);
@@ -213,7 +213,7 @@ TEST(SectorSpace, EchteDisketteIstDurchgaengigCrcGesund) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Kopf-Filter (UDOS: eine Seite = ein Datenträger)
+// Kopf-Filter (UDOS: eine Seite = ein Datentraeger)
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(SectorSpace, KopfFilterBeschraenktDenRaumAufEineSeite) {
@@ -256,7 +256,7 @@ TEST(SectorSpace, SchreibenUndZurueckgelesen) {
         EXPECT_EQ(zurueck.data, muster);
         EXPECT_TRUE(zurueck.ok()) << "CRC nach dem Schreiben nicht nachgezogen";
 
-        // Linearer Zugriff sieht dieselbe Änderung.
+        // Linearer Zugriff sieht dieselbe Aenderung.
         const int64_t off = raum.offsetOf(40, 1, 2);
         ASSERT_GE(off, 0);
         std::vector<uint8_t> linear(1024);
@@ -275,7 +275,7 @@ TEST(SectorSpace, LinearesSchreibenUeberSektorgrenzeHinweg) {
         ASSERT_NE(disk, nullptr);
         SectorSpace raum(disk->medium(), cpa780());
 
-        // Über die 128-B-Sektorgrenze in der Systemspur: ab Byte 100, 300 Bytes lang.
+        // Ueber die 128-B-Sektorgrenze in der Systemspur: ab Byte 100, 300 Bytes lang.
         std::vector<uint8_t> muster(300);
         for (size_t i = 0; i < muster.size(); ++i) muster[i] = static_cast<uint8_t>(0xA0 + i);
         ASSERT_TRUE(raum.write(100, muster.data(), muster.size())) << raum.lastError();

@@ -1,9 +1,9 @@
 # SCPX 1526 V1.7 — BIOS-Symbole im RAM (Branch scpx_boot)
 #
-# Adressen aus doc/analyse_scpx_com_load.md §7 ("Schlüssel-Adressen") + §9.
+# Adressen aus doc/analyse_scpx_com_load.md §7 ("Schluessel-Adressen") + §9.
 # Laden:  k1520dbg -s tools/scpx1526.sym disks/scpx17_cpa780_k5601.hfe
 # Danach bekommen Disasm, Trace, Backtrace, `where`/`hist` und PC-Histogramme die Namen
-# automatisch. (boot_trace hat KEINE Symboldatei-Option — dort `-l <listing.prn>` für .prn.)
+# automatisch. (boot_trace hat KEINE Symboldatei-Option — dort `-l <listing.prn>` fuer .prn.)
 # Companion: `-l doc/EPROMS/scpx_readpath.prn` = kommentiertes Listing des Lesepfads
 # (Matcher E9E6-EA1A mit Feld-/Fehler-Semantik), erzeugt von tools/gen_scpx_readpath_prn.py.
 #
@@ -20,7 +20,7 @@ D605  bios_read_3
 D5D4  bios_read_4
 DE24  bios_read_5
 E40D  bios_read_6
-DE03  warmstart_vec     # Warmstart-Vektor (JP DE03), verfrüht nach [0000] restauriert (Schicht 3)
+DE03  warmstart_vec     # Warmstart-Vektor (JP DE03), verfrueht nach [0000] restauriert (Schicht 3)
 
 # ── Read-Setup / Poll-Handshake ZVE1 (§7) ────────────────────────────────────
 E88C  read_setup        # Read-Setup-Block E88C–E8C0
@@ -39,7 +39,7 @@ E9FB  matcher_loop      # JR NZ E9E6  (Marke nicht gefunden → weiter suchen)
 E9FD  match_cyl         # Vergleich Zylinder
 EA02  match_head        # Vergleich Kopf
 EA07  match_sec         # Vergleich Sektor
-EA0C  match_size        # Vergleich Größe
+EA0C  match_size        # Vergleich Groesse
 EA12  match_crc_hi      # IDAM-CRC-Vergleich (hi)
 EA15  match_fail        # → Fail (Marke passt nicht)
 EA17  match_crc_lo      # IDAM-CRC-Vergleich (lo)
@@ -56,8 +56,8 @@ D098  bad_sector        # BAD-SECTOR-Handler
 D0BA  msg_table_1       # Meldungstabelle
 D0CA  msg_table_2
 
-# ── RAM-Variablen / Datenblöcke (§7) ─────────────────────────────────────────
-# (Als Symbole für wp/x/disp; keine Instruktionsadressen.)
+# ── RAM-Variablen / Datenbloecke (§7) ─────────────────────────────────────────
+# (Als Symbole fuer wp/x/disp; keine Instruktionsadressen.)
 EC00  template_blk      # Template-/Mini-Stack-Block EC00–EC0F: FE cyl head sec size CRChi CRClo
 EC01  tpl_cyl
 EC02  tpl_head

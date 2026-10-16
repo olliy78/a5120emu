@@ -1,23 +1,23 @@
 /**
  * @file test_udos1715_fs.cpp
- * @brief GoogleTests für @ref Udos1715FileSystem — UDOS1715/NDOS auf dem PC 1715.
+ * @brief GoogleTests fuer @ref Udos1715FileSystem — UDOS1715/NDOS auf dem PC 1715.
  *
  * ### Woher die Sollwerte stammen
- * Die Erwartungen stehen **wörtlich im Systemhandbuch, das auf der Referenzdiskette
+ * Die Erwartungen stehen **woertlich im Systemhandbuch, das auf der Referenzdiskette
  * selbst liegt** (`doc/original_docs/UDOS1715_Systemhandbuch.txt`, extrahiert als Datei
- * `UDOS.TEXT`) und sind zusätzlich an der Diskette nachgemessen:
+ * `UDOS.TEXT`) und sind zusaetzlich an der Diskette nachgemessen:
  *
  * | Sollwert | Quelle |
  * |---|---|
  * | Descriptor 16H/00, Zeigersektor 16H/02, 9 Records 05 0A 0F 04 09 0E 03 08 0D | Handbuch §1.2.1 |
- * | Belegungsplan 17H/00+01, 180H Byte, Zähler bei 177H/17AH/17BH/17CH | §1.3 |
+ * | Belegungsplan 17H/00+01, 180H Byte, Zaehler bei 177H/17AH/17BH/17CH | §1.3 |
  * | `UDOS-Sektor = (ID − 1) + Kopf · 16` | §2.6.2 |
  * | Zeigersektor: 125 Adressen, ADRCTR/BCKZGR/FORZGR bei FAH/FCH/FEH | §3.2.3 |
  * | Descriptorfelder, FIRSTBL bei 80H | §3.2.2 |
- * | Datenträger „SYSTEM": 1673 belegt, 887 frei, 67 Dateien | nachgemessen |
+ * | Datentraeger „SYSTEM": 1673 belegt, 887 frei, 67 Dateien | nachgemessen |
  *
- * Der schärfste Test ist @ref Udos1715Belegung.KarteUndDateienStimmenSektorgenau:
- * Er rechnet die Belegung aus **allen** Dateien nach und hält sie gegen den
+ * Der schaerfste Test ist @ref Udos1715Belegung.KarteUndDateienStimmenSektorgenau:
+ * Er rechnet die Belegung aus **allen** Dateien nach und haelt sie gegen den
  * Belegungsplan — in beide Richtungen, ohne Rest.
  *
  * @see core/filesystem/udos/udos1715_fs.h
@@ -47,13 +47,13 @@ constexpr const char* kFixture = "udos1715_640k_pc1715_system.img";
 ///
 /// Der P8000 ist keine Spielart des PC 1715 — andere Maschine, anderer Zweck der
 /// Diskette (sie startet WEGA).  Geteilt wird nur, wie eine Diskette angelegt ist;
-/// abweichend davon ist ein einziger Punkt, das Füllmuster hinter dem Belegungsplan.
+/// abweichend davon ist ein einziger Punkt, das Fuellmuster hinter dem Belegungsplan.
 ///
 /// Sie liegt als **`.hfe`** vor, nicht als `.img`: 13 Sektoren tragen hinter der
-/// Daten-CRC die **Schreibnaht** eines nachträglich überschriebenen Sektors
+/// Daten-CRC die **Schreibnaht** eines nachtraeglich ueberschriebenen Sektors
 /// (`4E xx yy yy …`).  Inhaltlich ist das nichts, aber `rawCompatible()` sieht dort
-/// zu Recht Bytes außerhalb der Nutzdaten und verweigert `.img` — eine Fixture, die
-/// das Werkzeug selbst nicht schreiben würde, wäre ein schlechter Prüfstein.
+/// zu Recht Bytes ausserhalb der Nutzdaten und verweigert `.img` — eine Fixture, die
+/// das Werkzeug selbst nicht schreiben wuerde, waere ein schlechter Pruefstein.
 constexpr const char* kFixtureP8000 = "udosP8000_640k_wega.hfe";
 
 std::string fixture(const char* name) {
@@ -80,7 +80,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Eine geöffnete UDOS1715-Diskette (Lebensdauer gebündelt).
+/// @brief Eine geoeffnete UDOS1715-Diskette (Lebensdauer gebuendelt).
 struct Diskette {
     std::unique_ptr<DiskImage>          disk;
     std::unique_ptr<SectorSpace>        space;
@@ -121,7 +121,7 @@ Diskette p8000(bool nur_lesen = true, const std::string& pfad = "") {
     return d;
 }
 
-/// @brief Frisch angelegte Diskette in einer Temp-Datei (räumt sich weg).
+/// @brief Frisch angelegte Diskette in einer Temp-Datei (raeumt sich weg).
 struct Leerdiskette {
     explicit Leerdiskette(const char* fsname = "udos1715",
                           const std::string& label = "TESTDISK") {
@@ -150,7 +150,7 @@ struct Leerdiskette {
     static inline int zaehler_ = 0;
 };
 
-/// @brief Alle Sektoren, die die Dateien der Diskette beanspruchen — unabhängig
+/// @brief Alle Sektoren, die die Dateien der Diskette beanspruchen — unabhaengig
 ///        nachgerechnet, nicht aus dem Belegungsplan gelesen.
 std::set<std::pair<int, int>> belegungAusDenDateien(Udos1715FileSystem& fs,
                                                     const FsProfile& prof) {
@@ -175,8 +175,8 @@ std::set<std::pair<int, int>> belegungAusDenDateien(Udos1715FileSystem& fs,
                 merke(UdosPointer{static_cast<uint8_t>(adressen[i].sector_index + k),
                                   adressen[i].track});
     }
-    // Der Belegungsplan (Handbuch §1.2.1) gehört ebenfalls zu den festen Sektoren;
-    // ebenso Spur 0 einer Systemdiskette — die zählen wir aus der Karte selbst dazu.
+    // Der Belegungsplan (Handbuch §1.2.1) gehoert ebenfalls zu den festen Sektoren;
+    // ebenso Spur 0 einer Systemdiskette — die zaehlen wir aus der Karte selbst dazu.
     s.insert({0, prof.bitmap_track});
     s.insert({1, prof.bitmap_track});
     return s;
@@ -185,7 +185,7 @@ std::set<std::pair<int, int>> belegungAusDenDateien(Udos1715FileSystem& fs,
 }  // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Erkennung und Grundzüge
+// Erkennung und Grundzuege
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(Udos1715, ReferenzdisketteWirdErkannt) {
@@ -332,7 +332,7 @@ TEST(Udos1715, MehrAls124RecordsBrauchenZweiZeigersektoren) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Der schärfste Test: Karte gegen die Dateien
+// Der schaerfste Test: Karte gegen die Dateien
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(Udos1715Belegung, KarteUndDateienStimmenSektorgenau) {
@@ -438,7 +438,7 @@ TEST(Udos1715, HandbuchLaesstSichLesen) {
 TEST(Udos1715, RecordUeberDieKopfgrenzeWirdRichtigZusammengesetzt) {
     // §5.3: ein 1024-B-Record belegt 4 Sektoren am Stueck — und darf dabei die
     // KOPFgrenze ueberschreiten, denn die Spur ist der ganze Zylinder.  `CAT` hat
-    // genau so einen Record (ab Sektor 0DH über 10H hinweg).
+    // genau so einen Record (ab Sektor 0DH ueber 10H hinweg).
     Diskette d = referenz();
     ASSERT_TRUE(d) << d.error;
 
@@ -620,19 +620,19 @@ TEST(Udos1715Schreiben, NamenMuessenMitEinemBuchstabenBeginnen) {
  * @test Udos1715Schreiben/SystembereichBleibtTabu
  * @brief Was das Dateisystem selbst belegt, vergibt der Allokator nie — und nur das.
  *
- * **Geändert am 2026-08-22.**  Bis dahin verlangte dieser Fall, dass auf Spur 17H
+ * **Geaendert am 2026-08-22.**  Bis dahin verlangte dieser Fall, dass auf Spur 17H
  * ausser den beiden Sektoren des Belegungsplans **nichts** liegt.  Das war die
  * Beschreibung einer zu strengen Umsetzung, nicht des Formats: NDOS belegt dort nur
  * den Kopf und benutzt den Rest wie jede andere Spur — auf der WEGA-Startdiskette
  * sind alle 32 Sektoren beider Verwaltungsspuren in Gebrauch, drei Dateien haben
  * ihren Kopfsektor auf Spur 16H.  Eine so beschriebene Diskette liess sich nach dem
- * Leeren nicht mehr zurückschreiben (`Diskette voll`, 8 Sektoren zu wenig).
+ * Leeren nicht mehr zurueckschreiben (`Diskette voll`, 8 Sektoren zu wenig).
  *
- * Der Maßstab ist deshalb jetzt der richtige: **was `format()` als belegt einträgt —
- * Descriptor, Zeigersektor, Verzeichnissätze, die beiden Kartensektoren, bei einer
- * Systemdiskette Spur 0 — muss belegt bleiben.**  Alles andere ist gewöhnlicher
- * Platz.  Seit die Spursperre gefallen ist, hängt der Schutz allein an diesem
- * Eintrag; genau das prüft der Fall.
+ * Der Massstab ist deshalb jetzt der richtige: **was `format()` als belegt eintraegt —
+ * Descriptor, Zeigersektor, Verzeichnissaetze, die beiden Kartensektoren, bei einer
+ * Systemdiskette Spur 0 — muss belegt bleiben.**  Alles andere ist gewoehnlicher
+ * Platz.  Seit die Spursperre gefallen ist, haengt der Schutz allein an diesem
+ * Eintrag; genau das prueft der Fall.
  */
 TEST(Udos1715Schreiben, SystembereichBleibtTabu) {
     Leerdiskette l;
@@ -663,7 +663,7 @@ TEST(Udos1715Schreiben, SystembereichBleibtTabu) {
             << "Spur " << int(o.t) << " Sektor " << int(o.s)
             << " gehoerte zur Verwaltung und wurde vergeben";
 
-    // Die Verwaltungsspuren sind jetzt MITBENUTZBAR — sonst prüfte der Fall nur,
+    // Die Verwaltungsspuren sind jetzt MITBENUTZBAR — sonst pruefte der Fall nur,
     // dass eine Sperre wirkt, die es nicht mehr gibt.
     int auf_verwaltung = 0;
     for (uint8_t s = 1; s <= 32; ++s) {
@@ -781,14 +781,14 @@ TEST(Udos1715Segmente, ZuVieleSegmenteWerdenAbgewiesen) {
 //
 // Nicht verwandt mit dem PC 1715 und nicht dessen Nachfolger: eine eigene Maschine,
 // deren Diskette hier das Hauptsystem WEGA startet.  Gemeinsam ist allein, wie eine
-// Diskette angelegt wird — und genau das prüfen diese Fälle.
+// Diskette angelegt wird — und genau das pruefen diese Faelle.
 //
-// Die WEGA-Startdiskette des P8000 (UDOS 2.2) trägt Descriptoren, Zeigersektoren
+// Die WEGA-Startdiskette des P8000 (UDOS 2.2) traegt Descriptoren, Zeigersektoren
 // und Verzeichnis genau dort, wo das PC-1715-Handbuch sie beschreibt.  Sie war
 // trotzdem unlesbar, weil ihr Formatierer den Platz zwischen Belegungsplan und
-// Zählern nicht mit `00` füllt, sondern mit dem **0x77-Rest der ZDOS-Sitte**.
-// Die Trennung zu ZDOS trägt deshalb nicht mehr dieses Füllmuster, sondern der
-// Zählerabgleich (`belegt + frei == Kapazität`) und die 0x33/0xF7 davor — die
+// Zaehlern nicht mit `00` fuellt, sondern mit dem **0x77-Rest der ZDOS-Sitte**.
+// Die Trennung zu ZDOS traegt deshalb nicht mehr dieses Fuellmuster, sondern der
+// Zaehlerabgleich (`belegt + frei == Kapazitaet`) und die 0x33/0xF7 davor — die
 // liegen bei ZDOS vor Offset 344 und damit hier mitten im Belegungsplan.
 
 TEST(Udos1715P8000, WegaStartdisketteWirdErkannt) {
@@ -838,7 +838,7 @@ TEST(Udos1715P8000, HinterDemBelegungsplanStehtDerZdosNachlauf) {
     EXPECT_NE(roh[377], 0x00) << "Byte 179H ist beim P8000 belegt — es darf nicht "
                                  "als Erkennungsmerkmal dienen";
 
-    // Und die Zähler sind trotzdem echt — daran haengt die Trennung zu ZDOS.
+    // Und die Zaehler sind trotzdem echt — daran haengt die Trennung zu ZDOS.
     EXPECT_EQ(d.fs->bitmap().storedUsed(), 2533);
     EXPECT_EQ(d.fs->bitmap().storedFree(),   27);
     EXPECT_EQ(d.fs->bitmap().countUsed(),  2533);
@@ -930,21 +930,21 @@ TEST(Udos1715P8000, SchreibenLesenLoeschenLaesstDenNachlaufStehen) {
 /**
  * @test Udos1715P8000/GeleerteDisketteNimmtAlleDateienWiederAuf
  * @brief Der Befund vom 2026-08-22: eine volle Diskette liess sich nicht
- *        zurückschreiben, obwohl dieselben Dateien vorher daraufpassten.
+ *        zurueckschreiben, obwohl dieselben Dateien vorher daraufpassten.
  *
  * `Diskette voll: 189 Records zu je 2 Sektoren noetig` — bei 41 von 41 Dateien und
  * 104 KB scheinbar freiem Platz.  Ursache war ein `reservedTrack()`, das Verzeichnis-
- * und Kartenspur **ganz** sperrte (64 Sektoren, 16 KB), während NDOS dort nur den
+ * und Kartenspur **ganz** sperrte (64 Sektoren, 16 KB), waehrend NDOS dort nur den
  * Kopf belegt: auf dieser Diskette liegen 34 Sektoren Nutzdaten auf den beiden
  * Spuren, drei Dateien haben ihren **Kopfsektor** auf Spur 22.  Der Belegungsplan
- * führte sie als frei, vergeben wurden sie nie — die Diskette war 7 Sektoren zu
- * klein für ihren eigenen Inhalt.
+ * fuehrte sie als frei, vergeben wurden sie nie — die Diskette war 7 Sektoren zu
+ * klein fuer ihren eigenen Inhalt.
  *
- * Seitdem entscheidet allein der Belegungsplan.  Er ist dafür genau genug: `mkfs`
- * trägt Descriptor, Zeigersektor, Verzeichnissätze, die beiden Kartensektoren und —
+ * Seitdem entscheidet allein der Belegungsplan.  Er ist dafuer genau genug: `mkfs`
+ * traegt Descriptor, Zeigersektor, Verzeichnissaetze, die beiden Kartensektoren und —
  * bei einer Systemdiskette — die ganze Spur 0 dort ein.
  *
- * @par Kriterium  Alle 41 Dateien kommen zurück, bytegleich, und die Vollprüfung
+ * @par Kriterium  Alle 41 Dateien kommen zurueck, bytegleich, und die Vollpruefung
  *                 bleibt ohne Befund (keine doppelt vergebenen Sektoren).
  */
 TEST(Udos1715P8000, GeleerteDisketteNimmtAlleDateienWiederAuf) {
@@ -960,7 +960,7 @@ TEST(Udos1715P8000, GeleerteDisketteNimmtAlleDateienWiederAuf) {
     ASSERT_TRUE(d) << d.error;
 
     // Alles herausholen — Name → Bytes und die Kopfsektorangaben, die beim
-    // Zurückschreiben mitmüssen.
+    // Zurueckschreiben mitmuessen.
     struct Datei { std::vector<uint8_t> bytes; WriteOptions wo; uint64_t groesse = 0; };
     std::map<std::string, Datei> vorher;
     for (const FileEntry& e : d.fs->list()) {
@@ -987,11 +987,11 @@ TEST(Udos1715P8000, GeleerteDisketteNimmtAlleDateienWiederAuf) {
     for (const auto& [name, f] : vorher) {
         std::vector<uint8_t> zurueck;
         ASSERT_TRUE(d.fs->read(name, zurueck)) << name << ": " << d.fs->lastError();
-        EXPECT_EQ(zurueck, f.bytes) << name << " kam verändert zurück";
+        EXPECT_EQ(zurueck, f.bytes) << name << " kam veraendert zurueck";
     }
-    EXPECT_EQ(d.fs->info().files, 42) << "die Verzeichnisdatei zählt mit";
+    EXPECT_EQ(d.fs->info().files, 42) << "die Verzeichnisdatei zaehlt mit";
 
-    // Und kein Sektor ist doppelt vergeben — das wäre die stille Variante desselben
+    // Und kein Sektor ist doppelt vergeben — das waere die stille Variante desselben
     // Fehlers: es „passt", aber die zuletzt geschriebene Datei frisst die davor.
     const FsCheckReport bericht = d.fs->check(FsCheckLevel::Voll, /*nachladen=*/true);
     EXPECT_TRUE(bericht.ohneBefund()) << bericht.kurzfassung();
@@ -999,15 +999,15 @@ TEST(Udos1715P8000, GeleerteDisketteNimmtAlleDateienWiederAuf) {
 
 /**
  * @test Udos1715P8000/DerSystembereichBleibtUnangetastet
- * @brief Die Gegenprobe zur gelockerten Regel: was keiner Datei gehört, bleibt belegt.
+ * @brief Die Gegenprobe zur gelockerten Regel: was keiner Datei gehoert, bleibt belegt.
  *
- * Seit die Spursperre gefallen ist, hängt der Schutz des Systembereichs **allein am
- * Belegungsplan**.  Beim P8000 ist er grösser als beim PC 1715 — Kopf 0 der Spuren 0,
+ * Seit die Spursperre gefallen ist, haengt der Schutz des Systembereichs **allein am
+ * Belegungsplan**.  Beim P8000 ist er groesser als beim PC 1715 — Kopf 0 der Spuren 0,
  * 21, 22 und 23 —, und er steht nirgends sonst geschrieben.  Ginge er verloren,
- * überschriebe die erste geschriebene Datei den Urlader, ohne jede Meldung.
+ * ueberschriebe die erste geschriebene Datei den Urlader, ohne jede Meldung.
  *
- * Maßstab ist deshalb: **was nach dem Leeren der Diskette noch als belegt dasteht,
- * gehört keiner Datei** — es ist Systembereich, Verzeichnis oder Karte.  Kein noch so
+ * Massstab ist deshalb: **was nach dem Leeren der Diskette noch als belegt dasteht,
+ * gehoert keiner Datei** — es ist Systembereich, Verzeichnis oder Karte.  Kein noch so
  * volles Beschreiben darf einen dieser Sektoren vergeben.
  */
 TEST(Udos1715P8000, DerSystembereichBleibtUnangetastet) {
@@ -1022,7 +1022,7 @@ TEST(Udos1715P8000, DerSystembereichBleibtUnangetastet) {
     Diskette d = p8000(/*nur_lesen=*/false, kopie);
     ASSERT_TRUE(d) << d.error;
 
-    // Leerräumen — danach steht nur noch belegt, was keiner Datei gehört.
+    // Leerraeumen — danach steht nur noch belegt, was keiner Datei gehoert.
     for (const FileEntry& e : d.fs->list()) {
         if (e.type == "D") continue;
         ASSERT_TRUE(d.fs->erase(e.name)) << d.fs->lastError();
@@ -1033,14 +1033,14 @@ TEST(Udos1715P8000, DerSystembereichBleibtUnangetastet) {
         for (uint8_t s = 1; s <= 32; ++s)
             if (d.fs->bitmap().used(t, s)) unantastbar.push_back(Ort{t, s});
     // Ohne diese Probe bewiese der Fall nichts: der Systembereich MUSS Sektoren auf
-    // Kopf 0 der Spuren 0/21/22/23 haben, sonst prüft der Test ins Leere.
+    // Kopf 0 der Spuren 0/21/22/23 haben, sonst prueft der Test ins Leere.
     int auf_systemspuren = 0;
     for (const Ort& o : unantastbar)
         if ((o.t == 0 || o.t == 21 || o.t == 22 || o.t == 23) && o.s <= 16)
             ++auf_systemspuren;
     ASSERT_GT(auf_systemspuren, 20) << "kein Systembereich auf Kopf 0 der Spuren 0/21/22/23";
 
-    // Und jetzt so voll wie möglich schreiben — der Allokator läuft dabei über die
+    // Und jetzt so voll wie moeglich schreiben — der Allokator laeuft dabei ueber die
     // ganze Diskette, Spur 0 zuerst.
     WriteOptions wo;
     wo.udos_type = "B";
@@ -1053,5 +1053,5 @@ TEST(Udos1715P8000, DerSystembereichBleibtUnangetastet) {
     for (const Ort& o : unantastbar)
         ASSERT_TRUE(d.fs->bitmap().used(o.t, o.s))
             << "Spur " << int(o.t) << " Sektor " << int(o.s)
-            << " gehörte keiner Datei und wurde trotzdem vergeben";
+            << " gehoerte keiner Datei und wurde trotzdem vergeben";
 }

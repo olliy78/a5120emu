@@ -2,15 +2,15 @@
  * @file img_codec.h
  * @brief ImgCodec – rohes Sektorimage (`.img`) ⇄ @ref DiskMedium.
  *
- * `.img` enthält **ausschließlich Sektor-Nutzdaten** an berechneten Offsets; alles
- * Weitere (Gaps, Marken, CRCs, Anhänge hinter der Daten-CRC) muss aus einem
+ * `.img` enthaelt **ausschliesslich Sektor-Nutzdaten** an berechneten Offsets; alles
+ * Weitere (Gaps, Marken, CRCs, Anhaenge hinter der Daten-CRC) muss aus einem
  * @ref DiskFormat rekonstruiert bzw. verworfen werden.  Deshalb:
- *   - **Laden**: je Spur die Sektoren lesen und über @ref TrackCodec::buildTrack eine
+ *   - **Laden**: je Spur die Sektoren lesen und ueber @ref TrackCodec::buildTrack eine
  *     normgerechte IBM-Spur mit echten Marken und CRCs synthetisieren;
  *   - **Speichern**: je Spur @ref TrackCodec::parseTrack und die Nutzdaten an ihren
  *     Offset schreiben — verlustbehaftet, siehe @ref DiskMedium::rawCompatible.
  *
- * Spurreihenfolge in der Datei (A5120-Layout): verschränkt `(0,0) (0,1) (1,0) (1,1) …`.
+ * Spurreihenfolge in der Datei (A5120-Layout): verschraenkt `(0,0) (0,1) (1,0) (1,1) …`.
  *
  * @see doc/design/09_floppy_drive.md §4.1
  * @author Olaf Krieger
@@ -42,10 +42,10 @@ bool save(const std::string& path, const DiskFormat& fmt, const DiskMedium& in, 
 int64_t sectorOffset(const DiskFormat& fmt, uint8_t cyl, uint8_t head, uint8_t sector_id);
 
 /**
- * @brief Prüft, ob das Medium zur Sektorgeometrie von @p fmt passt.
+ * @brief Prueft, ob das Medium zur Sektorgeometrie von @p fmt passt.
  *
- * Verglichen werden je nicht-leerer Spur Sektoranzahl, Sektorgröße und Sektor-IDs.
- * @return "" bei Übereinstimmung, sonst eine Beschreibung der ersten Abweichung.
+ * Verglichen werden je nicht-leerer Spur Sektoranzahl, Sektorgroesse und Sektor-IDs.
+ * @return "" bei Uebereinstimmung, sonst eine Beschreibung der ersten Abweichung.
  */
 std::string mismatchReason(const DiskFormat& fmt, const DiskMedium& in);
 

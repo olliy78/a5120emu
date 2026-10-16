@@ -3,7 +3,7 @@
  * @brief Speichersubsystem – Implementierung
  *
  * Implementiert den emulierten 64-KByte-Adressraum des Robotron A5120.
- * Alle Zugriffe erfolgen direkt auf ein zusammenhängendes Array ohne
+ * Alle Zugriffe erfolgen direkt auf ein zusammenhaengendes Array ohne
  * Bank-Switching oder Memory-Mapping, da der A5120 einen flachen
  * Adressraum verwendet.
  *
@@ -40,10 +40,10 @@ void Memory::write(uint16_t addr, uint8_t val) {
 }
 
 /**
- * @brief Lädt einen Datenblock in den Speicher ab der angegebenen Adresse.
+ * @brief Laedt einen Datenblock in den Speicher ab der angegebenen Adresse.
  *
- * Die Länge wird automatisch auf den verfügbaren Platz begrenzt,
- * um einen Pufferüberlauf zu verhindern.
+ * Die Laenge wird automatisch auf den verfuegbaren Platz begrenzt,
+ * um einen Pufferueberlauf zu verhindern.
  *
  * @param addr Startadresse im Speicher.
  * @param data Zeiger auf die Quelldaten.
@@ -56,7 +56,7 @@ void Memory::load(uint16_t addr, const uint8_t* data, size_t len) {
 }
 
 /**
- * @brief Lädt einen std::vector in den Speicher.
+ * @brief Laedt einen std::vector in den Speicher.
  * @param addr Startadresse.
  * @param data Quelldaten als Vektor.
  */
@@ -65,12 +65,12 @@ void Memory::load(uint16_t addr, const std::vector<uint8_t>& data) {
 }
 
 /**
- * @brief Lädt eine Binärdatei in den Speicher.
+ * @brief Laedt eine Binaerdatei in den Speicher.
  *
- * Die Datei wird binär geöffnet und vollständig eingelesen.
- * Die Dateigröße wird auf den ab addr verfügbaren Platz begrenzt.
+ * Die Datei wird binaer geoeffnet und vollstaendig eingelesen.
+ * Die Dateigroesse wird auf den ab addr verfuegbaren Platz begrenzt.
  *
- * @param filename Pfad zur Binärdatei.
+ * @param filename Pfad zur Binaerdatei.
  * @param addr Startadresse im Speicher.
  * @return true wenn die Datei erfolgreich gelesen wurde.
  */
@@ -90,17 +90,17 @@ bool Memory::loadFile(const std::string& filename, uint16_t addr) {
 }
 
 /**
- * @brief Löscht den gesamten Speicher (füllt mit 0x00).
+ * @brief Loescht den gesamten Speicher (fuellt mit 0x00).
  */
 void Memory::clear() {
     memset(ram_, 0, SIZE);
 }
 
 /**
- * @brief Füllt einen Speicherbereich mit einem konstanten Wert.
+ * @brief Fuellt einen Speicherbereich mit einem konstanten Wert.
  * @param start Startadresse (inklusive).
  * @param end Endadresse (inklusive).
- * @param val Füllwert.
+ * @param val Fuellwert.
  */
 void Memory::fill(uint16_t start, uint16_t end, uint8_t val) {
     for (uint32_t i = start; i <= end && i < SIZE; i++) {
@@ -112,8 +112,8 @@ void Memory::fill(uint16_t start, uint16_t end, uint8_t val) {
  * @brief Liest ein einzelnes Zeichen aus dem Bildschirmspeicher.
  *
  * Berechnet die Adresse als SCREEN_START + row*80 + col und gibt
- * das Zeichen ohne Inversmarker (Bit 7 maskiert) zurück.
- * Bei ungültigen Koordinaten wird ein Leerzeichen zurückgegeben.
+ * das Zeichen ohne Inversmarker (Bit 7 maskiert) zurueck.
+ * Bei ungueltigen Koordinaten wird ein Leerzeichen zurueckgegeben.
  *
  * @param row Zeile (0–23).
  * @param col Spalte (0–79).

@@ -17,7 +17,7 @@ void K1520Bus::registerIO(BusDevice* dev, uint8_t basePort, uint8_t numPorts) {
 void K1520Bus::registerMem(MemDevice* dev, uint16_t base, uint16_t size) {
     mem_regions_.push_back({base, size, dev});
     rebuildPageTable();
-    LOG_DEBUG("K1520Bus", "registerMem: Gerät @0x%04X-0x%04X (Größe=%u)",
+    LOG_DEBUG("K1520Bus", "registerMem: Geraet @0x%04X-0x%04X (Groesse=%u)",
               base, (uint16_t)(base + size - 1), size);
 }
 
@@ -27,15 +27,15 @@ void K1520Bus::unregisterMem(MemDevice* dev) {
             [dev](const MemRegion& r) { return r.dev == dev; }),
         mem_regions_.end());
     rebuildPageTable();
-    LOG_DEBUG("K1520Bus", "unregisterMem: Gerät entfernt");
+    LOG_DEBUG("K1520Bus", "unregisterMem: Geraet entfernt");
 }
 
 // Baut die 256-B-Seiten-Dispatch-Tabelle aus mem_regions_ neu auf.  Nur bei
 // register/unregisterMem aufgerufen (selten).  Repliziert exakt die Semantik
-// des linearen Scans: Lesen = LETZTES registriertes lesbares Gerät gewinnt;
-// Schreiben = Broadcast an ALLE schreibbaren Geräte.  Wird eine Region gefunden,
+// des linearen Scans: Lesen = LETZTES registriertes lesbares Geraet gewinnt;
+// Schreiben = Broadcast an ALLE schreibbaren Geraete.  Wird eine Region gefunden,
 // die nicht 256-B-ausgerichtet ist oder mehr als kMaxWriteFanout Schreiber auf
-// eine Seite legt, wird die Tabelle als ungültig markiert → Zugriffe nutzen den
+// eine Seite legt, wird die Tabelle als ungueltig markiert → Zugriffe nutzen den
 // linearen Fallback (immer korrekt).
 void K1520Bus::rebuildPageTable() {
     page_table_.fill(PageEntry{});
@@ -66,10 +66,10 @@ void K1520Bus::rebuildPageTable() {
 void K1520Bus::setInterruptChain(std::initializer_list<InterruptSlave*> chain) {
     int_chain_.assign(chain.begin(), chain.end());
     int_dirty_ = true;
-    LOG_DEBUG("K1520Bus", "Interrupt-Daisy-Chain: %zu Geräte gesetzt", int_chain_.size());
+    LOG_DEBUG("K1520Bus", "Interrupt-Daisy-Chain: %zu Geraete gesetzt", int_chain_.size());
 }
 
-// Welcher Vorrangspeicher zieht für @p addr /MEMDI?  nullptr = keiner (Normalfall).
+// Welcher Vorrangspeicher zieht fuer @p addr /MEMDI?  nullptr = keiner (Normalfall).
 MemdiDriver* K1520Bus::memdiDriverFor(uint16_t addr) {
     for (auto* d : memdi_drivers_)
         if (d->drivesMemdi(addr)) return d;
@@ -79,12 +79,12 @@ MemdiDriver* K1520Bus::memdiDriverFor(uint16_t addr) {
 uint8_t K1520Bus::memRead(uint16_t addr) {
     // Bus-/MEMDI (X1 C09) ist ein JE ZUGRIFF getriebenes Signal: ein Vorrangspeicher
     // (Erweiterungsmodul) zieht es allein aus der anliegenden Adresse und bedient den
-    // Zyklus selbst; die auf /MEMDI gebrückten K3526-Gruppen bleiben still.
+    // Zyklus selbst; die auf /MEMDI gebrueckten K3526-Gruppen bleiben still.
     //
-    // WÄCHTER: Der BS-PIO (K2526 Port A Bit7) treibt NICHT diese Leitung, sondern
-    // MEMDI1/2 der Rückverdrahtung (Koppelbus), auf die am A5120 keine Gruppe hört.
-    // Beides war früher EIN Flag — und weil HARDYs MEMDI-Test A7 setzt und danach
-    // weiterläuft (EI/RET, Stack, BDOS), war /MEMDI deshalb ganz wirkungslos gemacht
+    // WAECHTER: Der BS-PIO (K2526 Port A Bit7) treibt NICHT diese Leitung, sondern
+    // MEMDI1/2 der Rueckverdrahtung (Koppelbus), auf die am A5120 keine Gruppe hoert.
+    // Beides war frueher EIN Flag — und weil HARDYs MEMDI-Test A7 setzt und danach
+    // weiterlaeuft (EI/RET, Stack, BDOS), war /MEMDI deshalb ganz wirkungslos gemacht
     // worden.  Ein globales Lese-Gate hier liesse die CPU 0xFF (RST 38H) holen.
     // Ohne angemeldeten Vorrangspeicher kostet das genau einen Vergleich.
     if (!memdi_drivers_.empty()) {
@@ -101,7 +101,7 @@ uint8_t K1520Bus::memRead(uint16_t addr) {
     // Take the last READABLE device that covers this address.
     // Devices with isReadable()=false (e.g. K7024 with Lesesperre active)
     // do not drive the data bus and are skipped.
-    // Schnellpfad: O(1) über die Seiten-Dispatch-Tabelle (Aufbau s. rebuildPageTable).
+    // Schnellpfad: O(1) ueber die Seiten-Dispatch-Tabelle (Aufbau s. rebuildPageTable).
     MemDevice* hit;
     if (page_table_valid_) {
         hit = page_table_[addr >> kPageShift].read;
@@ -114,14 +114,14 @@ uint8_t K1520Bus::memRead(uint16_t addr) {
     }
     uint8_t val = hit ? hit->memRead(addr) : 0xFF;
     if (trace_cb_) trace_cb_(false, true, addr, val);
-    LOG_TRACE("K1520Bus", "MEM RD 0x%04X => 0x%02X%s", addr, val, hit ? "" : " (kein Gerät)");
+    LOG_TRACE("K1520Bus", "MEM RD 0x%04X => 0x%02X%s", addr, val, hit ? "" : " (kein Geraet)");
     return val;
 }
 
 void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
     // /MEMDI je Zugriff (s. memRead): zieht ein Vorrangspeicher es, bekommt er den
-    // Schreibzyklus; der Broadcast unten läuft trotzdem an alle, und wer auf /MEMDI
-    // hört (K3526-Gruppe am Bus-/MEMDI), verwirft ihn über memdiActive().
+    // Schreibzyklus; der Broadcast unten laeuft trotzdem an alle, und wer auf /MEMDI
+    // hoert (K3526-Gruppe am Bus-/MEMDI), verwirft ihn ueber memdiActive().
     MemdiDriver* md = memdi_drivers_.empty() ? nullptr : memdiDriverFor(addr);
     memdi_ = md != nullptr;
     // Write to ALL writable devices that cover this address.
@@ -147,7 +147,7 @@ void K1520Bus::memWrite(uint16_t addr, uint8_t data) {
     if (md) { md->memWrite(addr, data); wrote = true; }
     memdi_ = false;
     if (trace_cb_) trace_cb_(false, false, addr, data);
-    LOG_TRACE("K1520Bus", "MEM WR 0x%04X <= 0x%02X%s", addr, data, wrote ? "" : " (kein beschreibbares Gerät)");
+    LOG_TRACE("K1520Bus", "MEM WR 0x%04X <= 0x%02X%s", addr, data, wrote ? "" : " (kein beschreibbares Geraet)");
 }
 
 uint8_t K1520Bus::ioRead(uint16_t addr) {
@@ -158,10 +158,10 @@ uint8_t K1520Bus::ioRead(uint16_t addr) {
         return 0xFF;
     }
     uint8_t val = io_map_[port] ? io_map_[port]->ioRead(port) : 0xFF;
-    if (io_map_[port]) int_dirty_ = true;   // Status-/Daten-Read kann IRQ löschen
+    if (io_map_[port]) int_dirty_ = true;   // Status-/Daten-Read kann IRQ loeschen
     if (trace_cb_) trace_cb_(true, true, port, val);
     if (!io_map_[port])
-        LOG_DEBUG("K1520Bus", "I/O RD 0x%02X => 0xFF (kein Gerät registriert)", port);
+        LOG_DEBUG("K1520Bus", "I/O RD 0x%02X => 0xFF (kein Geraet registriert)", port);
     return val;
 }
 
@@ -173,15 +173,15 @@ void K1520Bus::ioWrite(uint16_t addr, uint8_t data) {
         return;
     }
     if (!io_map_[port])
-        LOG_DEBUG("K1520Bus", "I/O WR 0x%02X <= 0x%02X (kein Gerät registriert)", port, data);
+        LOG_DEBUG("K1520Bus", "I/O WR 0x%02X <= 0x%02X (kein Geraet registriert)", port, data);
     if (io_map_[port]) { io_map_[port]->ioWrite(port, data); int_dirty_ = true; }
     if (trace_cb_) trace_cb_(true, false, port, data);
 }
 
 void K1520Bus::updateInterruptChain() {
-    // Schnellpfad: Ohne Zustandsänderung (kein I/O, kein CTC-ZC/TO, keine
+    // Schnellpfad: Ohne Zustandsaenderung (kein I/O, kein CTC-ZC/TO, keine
     // serielle/Floppy-IRQ, keine Quittung/RETI seit dem letzten Walk) ist der
-    // gecachte Chain-Zustand (int_asserted_ + iei je Gerät) noch gültig.
+    // gecachte Chain-Zustand (int_asserted_ + iei je Geraet) noch gueltig.
     if (!int_dirty_) return;
     int_dirty_ = false;
 
@@ -206,7 +206,7 @@ uint8_t K1520Bus::interruptAcknowledge() {
     ++last_int_ack_.count;
     for (auto* dev : int_chain_)
         if (dev->hasInterrupt()) {
-            // Namen VOR getVector() holen — die Quittung löscht die Anforderung.
+            // Namen VOR getVector() holen — die Quittung loescht die Anforderung.
             const char* who = dev->intDeviceName();
             uint8_t vec = dev->getVector();
             last_int_ack_.vector   = vec;
@@ -215,13 +215,13 @@ uint8_t K1520Bus::interruptAcknowledge() {
             LOG_DEBUG("K1520Bus", "INT-Quittung: Vektor=0x%02X (%s)", vec, who);
             return vec;
         }
-    // Kein Gerät hat geantwortet: der 0xFF ist der offene Bus, KEIN programmierter
-    // Vektor.  Ein Fremd-OS ohne Tabelleneintrag für 0xFF läuft damit ins Leere —
-    // deshalb hier ausdrücklich als „spurious" protokolliert (Debugger `bint`).
+    // Kein Geraet hat geantwortet: der 0xFF ist der offene Bus, KEIN programmierter
+    // Vektor.  Ein Fremd-OS ohne Tabelleneintrag fuer 0xFF laeuft damit ins Leere —
+    // deshalb hier ausdruecklich als „spurious" protokolliert (Debugger `bint`).
     last_int_ack_.vector   = 0xFF;
     last_int_ack_.spurious = true;
     last_int_ack_.device   = nullptr;
-    LOG_DEBUG("K1520Bus", "INT-Quittung: SPURIOUS (kein Gerät) → 0xFF");
+    LOG_DEBUG("K1520Bus", "INT-Quittung: SPURIOUS (kein Geraet) → 0xFF");
     return 0xFF;
 }
 
@@ -250,10 +250,10 @@ void K1520Bus::assertRESET()  {
 }
 
 void K1520Bus::signalRETI() {
-    LOG_DEBUG("K1520Bus", "RETI-Signal: alle Geräte in Daisy-Chain benachrichtigt");
+    LOG_DEBUG("K1520Bus", "RETI-Signal: alle Geraete in Daisy-Chain benachrichtigt");
     for (auto* dev : int_chain_)
         dev->onRETI();
-    int_dirty_ = true;   // IUS gelöscht → Chain neu bewerten
+    int_dirty_ = true;   // IUS geloescht → Chain neu bewerten
     updateInterruptChain();
 }
 
@@ -272,6 +272,6 @@ void K1520Bus::assertBUSRQ() {
 }
 
 void K1520Bus::releaseBUSRQ() {
-    if (busrq_asserted_) LOG_DEBUG("K1520Bus", "releaseBUSRQ(): DMA abgeschlossen, ZVE1 übernimmt");
+    if (busrq_asserted_) LOG_DEBUG("K1520Bus", "releaseBUSRQ(): DMA abgeschlossen, ZVE1 uebernimmt");
     busrq_asserted_ = false;
 }

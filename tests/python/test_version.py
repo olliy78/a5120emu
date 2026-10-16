@@ -1,7 +1,7 @@
 """Versionen und Releases (doc/ci_pipeline.md §7) — ``VERSION``, ``tools/version.py``,
 ``app/version.py`` und der Befehl ``tools/dev.sh release``.
 
-Alles läuft ohne Kern und ohne Qt: die Ableitung der Bauversion wird an
+Alles laeuft ohne Kern und ohne Qt: die Ableitung der Bauversion wird an
 Wegwerf-Repositories in ``tmp_path`` durchgespielt, ``dev.sh release`` nur mit
 ``--trocken`` (nichts wird getaggt, nichts gepusht).
 """
@@ -19,7 +19,7 @@ from app import version as v
 
 VERSION_PY = PROJECT_ROOT / "tools" / "version.py"
 
-# Wegwerf-Repos dürfen weder signieren noch auf die Benutzerkonfiguration angewiesen sein.
+# Wegwerf-Repos duerfen weder signieren noch auf die Benutzerkonfiguration angewiesen sein.
 _GIT = ["git", "-c", "user.name=Test", "-c", "user.email=t@example.org",
         "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", "-c", "init.defaultBranch=main"]
 
@@ -52,7 +52,7 @@ def cli(*args: str, wurzel: Path = None):
 def test_version_datei_hat_eine_zeile_und_gueltige_grammatik():
     text = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8")
     assert text.endswith("\n") and text.count("\n") == 1, "genau eine Zeile"
-    assert v.zerlege_basis(text)                        # wirft bei ungültiger Grammatik
+    assert v.zerlege_basis(text)                        # wirft bei ungueltiger Grammatik
 
 
 @pytest.mark.parametrize("text", ["0.3.0", "0.3.0-beta", "10.20.30-rc", "1.0.0"])
@@ -165,7 +165,7 @@ def test_vorabversion_erkennung():
     assert not v.ist_vorabversion("0.3.0") and not v.ist_vorabversion("0.3.0+g1")
 
 
-# ─── Tag prüfen (release.yml) ────────────────────────────────────────────────
+# ─── Tag pruefen (release.yml) ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("basis, tag, passt", [
     ("0.3.0-beta", "v0.3.0-beta.1", True),
@@ -201,7 +201,7 @@ def test_vorab_ueber_die_kommandozeile(tmp_path):
     assert cli("--bau", wurzel=repo).stdout.strip() == "0.3.0"
 
 
-# ─── Ordnung und Release-Prüfung ─────────────────────────────────────────────
+# ─── Ordnung und Release-Pruefung ─────────────────────────────────────────────
 
 def test_ordnung_beta_rc_endfassung():
     ordnung = ["0.3.0-beta.1", "0.3.0-beta.2", "0.3.0-beta.10", "0.3.0-rc.1", "0.3.0",

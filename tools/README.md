@@ -91,6 +91,7 @@ Sie bilden die Innereien von `k1520dbg` und `boot_trace` und sind **einzeln gete
 | `fb_ocr.py` | Framebuffer-OCR: zerlegt den 640×288-Puffer der K7024 wieder in Text. Benutzt von `tests/python/test_gui_smoke.py` |
 | `capture_format_menus.py` | Greift die FORMAT.COM-Formatmenüs je Laufwerkstyp live aus dem Emulator ab (Grundlage der Format-Matrix) |
 | `gen_zre_prn.py` · `gen_scpx_readpath_prn.py` | Erzeugen die kommentierten `.prn`-Listings (`doc/EPROMS/zre.prn`, SCPX-Lesepfad) für die `-l`-Annotation |
+| `gen_mc8020_bsys_prn.py` | Erzeugt `doc/mc80/bsys_2x.prn` (Betriebssystem MC80.21/22, Fassung ver2) aus den Abzügen und der Abschrift `mc80/bsys_2x_abschrift.txt` des Original-Listings; `--check` = Wächter `cli_mc8020_bsys_prn_passt_zur_quelle` |
 | `analyze_eprom.py` · `disasm_k2526.py` · `analyze_vram.py` | Einzelanalysen am ZRE-EPROM bzw. am Bildwiederholspeicher |
 
 Zusatzabhängigkeit nur für `disasm_difftest.py`: `venv/bin/pip install -r tools/requirements.txt`.

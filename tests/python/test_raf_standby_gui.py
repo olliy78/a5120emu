@@ -1,24 +1,24 @@
-"""RAM-Floppy RAF in der Oberfläche: Stand-by-Ablage (AP-R4, doc/design/22_raf512.md §7.1).
+"""RAM-Floppy RAF in der Oberflaeche: Stand-by-Ablage (AP-R4, doc/design/22_raf512.md §7.1).
 
 Ausgelagert aus ``test_raf_gui.py`` (dort Auswahl, Konfiguration, Handbuch), damit
 kein ctest-Fall an die 300-s-Frist heranreicht.  Gemeinsamer Teil wie dort.
 
-Geprüft in allen drei Programmen (a5120emu, k8915emu, prg710emu):
+Geprueft in allen drei Programmen (a5120emu, k8915emu, prg710emu):
 
-* Auswahlfeld „RAM-Disk" und Stand-by-Kästchen unter *Einstellungen ▸ Allgemein*;
-  das Kästchen ist nur mit gesteckter RAF wählbar.
+* Auswahlfeld „RAM-Disk" und Stand-by-Kaestchen unter *Einstellungen ▸ Allgemein*;
+  das Kaestchen ist nur mit gesteckter RAF waehlbar.
 * Jeder Typ erzeugt die Maschine neu, mit passendem ``raf_variant``.
-* Stand-by: Inhalt übersteht Aus/Ein und einen Neustart des Programms (Ablage
-  ``raf_<programm>.bin`` im Konfigurationsordner); ohne Kästchen keine Datei.
-* Eine Ablage falscher Größe wird nicht geladen (Statuszeile, kein
-  Meldungsfenster — conftest lässt jedes unerwartete scheitern) und beim nächsten
+* Stand-by: Inhalt uebersteht Aus/Ein und einen Neustart des Programms (Ablage
+  ``raf_<programm>.bin`` im Konfigurationsordner); ohne Kaestchen keine Datei.
+* Eine Ablage falscher Groesse wird nicht geladen (Statuszeile, kein
+  Meldungsfenster — conftest laesst jedes unerwartete scheitern) und beim naechsten
   Sichern ersetzt.
 * Konfiguration ``machine.raf``/``machine.raf_standby``: schreiben, lesen,
   fehlend/unbekannt = aus; die Vorgabedateien tragen ``none``/``false``.
 * Das Handbuch beschreibt die RAF.
 
-Inhalt wird über ``raf_load`` einer präparierten Datei gesetzt und über
-``raf_peek`` geprüft — ohne Gastsystem.
+Inhalt wird ueber ``raf_load`` einer praeparierten Datei gesetzt und ueber
+``raf_peek`` geprueft — ohne Gastsystem.
 """
 
 import dataclasses
@@ -102,7 +102,7 @@ def test_standby_rundreise_ueber_aus_ein_und_neustart(qapp, konfig_ordner, tmp_p
         w.settings_widget.raf_standby_box.setChecked(True)
         qapp.processEvents()
         assert w.emulator.raf_load(quelle)
-        _aus_ein(w, qapp)                       # Netz-Ein verwirft — Stand-by hält
+        _aus_ein(w, qapp)                       # Netz-Ein verwirft — Stand-by haelt
         _stichproben(w.emulator, daten)
         assert ablage.read_bytes() == daten
     finally:
@@ -121,7 +121,7 @@ def test_standby_rundreise_ueber_aus_ein_und_neustart(qapp, konfig_ordner, tmp_p
 
 
 def test_standby_ueber_neuaufbau_der_maschine(qapp, konfig_ordner, tmp_path):
-    """Ein Neuaufbau (hier: Laufwerkswechsel) schreibt erst und lädt dann."""
+    """Ein Neuaufbau (hier: Laufwerkswechsel) schreibt erst und laedt dann."""
     daten = _muster(GROESSE["raf512"])
     quelle = tmp_path / "vorbereitet.bin"
     quelle.write_bytes(daten)
@@ -162,7 +162,7 @@ def test_ohne_standby_bleibt_eine_vorhandene_ablage_unberuehrt(qapp, konfig_ordn
     ablage.write_bytes(alt)
     w = _fenster(qapp)
     try:
-        _waehle(w, qapp, "raf128")              # andere Größe, kein Stand-by
+        _waehle(w, qapp, "raf128")              # andere Groesse, kein Stand-by
         assert w.emulator.raf_peek(1) == 0      # nicht geladen
         _aus_ein(w, qapp)
     finally:

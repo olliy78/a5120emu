@@ -43,7 +43,7 @@ private:
 
 // ─── Anschluss je tty (Entwurf 19, Entwurf 25 §10.6) ─────────────────────────
 // tty0/1/2/3 = SIO0-A, SIO0-B, SIO1-A, SIO1-B; Takt: CTC1 K0, CTC1 K1, CTC1 K2, CTC0 K0,
-// danach ÷ 2 (7474 8D11/7D11).  Namen und Stecker nach der Gerätebeschriftung (X4…X7)
+// danach ÷ 2 (7474 8D11/7D11).  Namen und Stecker nach der Geraetebeschriftung (X4…X7)
 // sind eine Annahme des Entwurfs („ttyN (X4…X7)").
 class P8000Karte8::Anschluss : public k1520::serial::SerialAnschluss {
 public:
@@ -67,7 +67,7 @@ public:
         uint8_t b = ch().txGet();
         const uint8_t bits = ch().format().tx_bits;
         if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
-        k_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt möglich
+        k_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt moeglich
         return b;
     }
     bool empfaengerFrei() const override { return ch().empfaengerFrei(); }
@@ -82,7 +82,7 @@ public:
     bool breakGesendet() const override { return ch().breakSenden(); }
     void breakEmpfang(bool aktiv) override { ch().setzeBreakEmpfang(aktiv); k_.seriell_geaendert_ = true; }
 
-    /// /CTS: tty0 = RTS (Lokalschleife), übrige fest aktiv [Annahme, Schaltplan §8]; /DCD vom Anschluss.
+    /// /CTS: tty0 = RTS (Lokalschleife), uebrige fest aktiv [Annahme, Schaltplan §8]; /DCD vom Anschluss.
     void wirke() {
         ch().setzeCTS(tty_ == 0 ? ch().rts() : true);
         ch().setzeDCD(dcd_);
@@ -124,10 +124,10 @@ P8000Karte8::P8000Karte8(K1520Bus& bus, const Config& cfg)
         case Config::Mon8::V2_1_Nur8Bit: sp_.setRom(P8K_MON8_2_1_NUR8BIT, sizeof P8K_MON8_2_1_NUR8BIT); break;
     }
 
-    ctc0_.setResetLaedtZeitkonstante(true);   // MON8-Hardwaretest Fehler 16: Reset ⇒ Zähler = TC
+    ctc0_.setResetLaedtZeitkonstante(true);   // MON8-Hardwaretest Fehler 16: Reset ⇒ Zaehler = TC
     ctc1_.setResetLaedtZeitkonstante(true);
     // Modus 3 nach Datenblatt flankengetriggert (U855 §6.4): KINIT (OS.INIT der WEGA-
-    // Startdiskette) gibt PIO0-B mit Maske FEH „aktiv high" frei, während INT_8 über den
+    // Startdiskette) gibt PIO0-B mit Maske FEH „aktiv high" frei, waehrend INT_8 ueber den
     // Pull-up auf 1 liegt — pegelbasiert sofort ein Interrupt auf den leeren Vektor 0F12H.
     pio0_.setModus3Flanke(true);
     pio1_.setModus3Flanke(true);
@@ -144,7 +144,7 @@ P8000Karte8::P8000Karte8(K1520Bus& bus, const Config& cfg)
     cpu_.writePort    = [this](uint16_t p, uint8_t d) { bus_.ioWrite(p, d); };
     cpu_.retiCallback = [this]()                      { bus_.signalRETI(); };
 
-    // 08H–3FH (ohne Lücken in der Registrierung; unbelegte Tore antworten FFH)
+    // 08H–3FH (ohne Luecken in der Registrierung; unbelegte Tore antworten FFH)
     sp_.attachToBus(bus_);
     bus_.registerIO(this, PORT_CTC0, PORT_ENDE - PORT_CTC0);
     ketteAnlegen();
@@ -159,7 +159,7 @@ void P8000Karte8::setzeDmaKettenglied(InterruptSlave* dma)
 void P8000Karte8::ketteAnlegen()
 {
     // Schaltplan §3: DMA – PIO2 – CTC0 – SIO0 – SIO1 – (XP6) – PIO0 – PIO1 – CTC1.
-    // Die 7411-Vorausschau ändert die Reihenfolge nicht.
+    // Die 7411-Vorausschau aendert die Reihenfolge nicht.
     bus_.setInterruptChain({dma_.get(), &pio2_, &ctc0_, &sio0_, &sio1_, &pio0_, &pio1_, &ctc1_});
 }
 
@@ -229,7 +229,7 @@ void P8000Karte8::nmiTaste()
 
 int P8000Karte8::schritt()
 {
-    if (bm_anfrage_ && bm_anfrage_()) {   // DMA hält die CPU (/BUSRQ → /BUSAK)
+    if (bm_anfrage_ && bm_anfrage_()) {   // DMA haelt die CPU (/BUSRQ → /BUSAK)
         int used = bm_schritt_();
         if (used == 0) used = 4;          // Bus gehalten, kein RDY
         if (const uint32_t w = sp_.nimmWartetakte(); w > 0) used += static_cast<int>(w);
@@ -240,7 +240,7 @@ int P8000Karte8::schritt()
     bus_.updateInterruptChain();
     // Nach EI erst nach dem folgenden Befehl annehmen (Befund P22): ohne die Sperre fiel ein
     // anstehender Interrupt zwischen `EI` und `RETI` der Koppelsoftware — das RETI lief nie,
-    // der Kanal blieb in Bedienung, und jede Runde ließ 2 Byte auf dem Stapel, bis er in den Code
+    // der Kanal blieb in Bedienung, und jede Runde liess 2 Byte auf dem Stapel, bis er in den Code
     // wuchs (MON8 „BREAK AD82", Koppelsoftware tot, alle tty der 8-Bit-Seite still).
     if (!ei_sperre_ && bus_.isINT() && cpu_.IFF1) {
         const uint8_t vec = bus_.interruptAcknowledge();
@@ -284,7 +284,7 @@ uint8_t P8000Karte8::ioRead(uint8_t port)
     if (in4(port, PORT_CTC1)) return ctc1_.ioRead(port & 3);
     if (in4(port, PORT_FDC))  return fdcLesen ? fdcLesen(port & 1) : 0xFF;
     if (uint8_t(port - PORT_DMA) < 4) return dmaLesen ? dmaLesen() : 0xFF;
-    // 10H–17H: DS8282 hat /OE fest Low und nur Ausgänge zur 16-Bit-Seite — nicht lesbar;
+    // 10H–17H: DS8282 hat /OE fest Low und nur Ausgaenge zur 16-Bit-Seite — nicht lesbar;
     // 30H–3FH: RES1..3 (nur X13) ⇒ offener Bus; 3CH–3FH = DMA (Haken)
     return 0xFF;
 }
@@ -296,7 +296,7 @@ void P8000Karte8::ioWrite(uint8_t port, uint8_t data)
     if (in4(port, PORT_PIO0) || in4(port, PORT_PIO1) || in4(port, PORT_PIO2)) {
         const int i = in4(port, PORT_PIO0) ? 0 : (in4(port, PORT_PIO1) ? 1 : 2);
         pio(i).ioWrite(port & 3, data);
-        pinsAnlegen(i);   // Moduswechsel lädt die Eingabebits nicht aus den Pins nach
+        pinsAnlegen(i);   // Moduswechsel laedt die Eingabebits nicht aus den Pins nach
         if (pio_haken_) pio_haken_(i);
         return;
     }
@@ -349,7 +349,7 @@ void P8000Karte8::serialize(std::vector<uint8_t>& out) const
     out.push_back(wait_gewarnt_ ? 1 : 0);
     for (auto& an : self->anschluesse_) out.push_back(an->dcdRef() ? 1 : 0);
     out.push_back(bus_.isNMI() ? 1 : 0);
-    // Seit P22 (an das Ende, damit ältere Stände — v3/v4 ohne dieses Byte — weiter laden).
+    // Seit P22 (an das Ende, damit aeltere Staende — v3/v4 ohne dieses Byte — weiter laden).
     out.push_back(ei_sperre_ ? 1 : 0);
 }
 
@@ -376,7 +376,7 @@ bool P8000Karte8::deserialize(const uint8_t*& p, const uint8_t* end)
     for (auto& an : anschluesse_) an->dcdRef() = *p++ != 0;
     const bool nmi = *p++ != 0;
     if (nmi) bus_.assertNMI(); else bus_.clearNMI();
-    ei_sperre_ = (p < end) ? (*p++ != 0) : false;   // fehlt in Ständen vor P22
+    ei_sperre_ = (p < end) ? (*p++ != 0) : false;   // fehlt in Staenden vor P22
     seriell_geaendert_ = true;
     bus_.markIntDirty();
     return true;

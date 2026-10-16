@@ -1,0 +1,17 @@
+# k1520tape: Datei -> Blockfolge (100 B/Block, 200 B plus Zeilenende, Rest mit E5 aufgefuellt) -> Band -> zurueck;
+# ls zeigt Blocklaenge und CRC, die Bandmarke steht dahinter.
+tool:   k1520tape
+tmpfile band.k52:
+tmpfile aus.bin:
+file ein.txt:
+  01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
+setup_run: create %band.k52%
+setup_run: put %band.k52% %ein.txt% --block 100
+setup_run: get %band.k52% %aus.bin%
+capture_file: aus.bin
+run:    ls %band.k52% --side A
+expect: Seite A: 4 Bloecke
+expect: 104 Bytes, 100 Daten, CRC ok
+expect: Bandmarke
+expect: 01234567890123456789012345678901234567890123456789
+exit:   0

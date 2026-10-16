@@ -27,20 +27,20 @@ std::string P8000Dram16::Karte::text() const {
 
 std::string P8000Dram16::pruefe(const Config& cfg) {
     if (cfg.karten.size() > size_t(MAX_KARTEN))
-        return "höchstens " + std::to_string(MAX_KARTEN) + " DRAM-Karten (Speicherbus X10–X13)";
+        return "hoechstens " + std::to_string(MAX_KARTEN) + " DRAM-Karten (Speicherbus X10–X13)";
     for (size_t i = 0; i < cfg.karten.size(); ++i) {
         const Karte& k = cfg.karten[i];
         if (uint8_t(k.typ) > uint8_t(Karte::Typ::R16)) return "unbekannter DRAM-Kartentyp";
         const int max = k.ramKarte() ? 0 : k.typ == Karte::Typ::M1 ? 15 : 63;
         if (k.modul > max)
             return k.ramKarte() ? std::string("die RAM-Karte 16 MB hat keine Moduladresse (liegt immer ab 0)")
-                                : "Moduladresse " + std::to_string(k.modul) + " außerhalb 0…" + std::to_string(max);
+                                : "Moduladresse " + std::to_string(k.modul) + " ausserhalb 0…" + std::to_string(max);
         for (size_t j = 0; j < i; ++j) {
             const Karte& o = cfg.karten[j];
             const uint64_t a0 = k.basis(), a1 = a0 + k.groesse(), b0 = o.basis(), b1 = b0 + o.groesse();
             if (a0 < b1 && b0 < a1) {
                 char t[160];
-                std::snprintf(t, sizeof t, "DRAM-Karten %zu und %zu überlappen (%s / %s)", j + 1, i + 1,
+                std::snprintf(t, sizeof t, "DRAM-Karten %zu und %zu ueberlappen (%s / %s)", j + 1, i + 1,
                               o.text().c_str(), k.text().c_str());
                 return t;
             }
@@ -107,7 +107,7 @@ std::string P8000Dram16::parse(const std::string& text, std::vector<Karte>& kart
             int m = 0;
             const int max = k.ramKarte() ? 0 : k.typ == Karte::Typ::M1 ? 15 : 63;
             if (!zahl(s.substr(at + 1), max, m))
-                return "dram-Moduladresse in '" + s + "' ungültig" +
+                return "dram-Moduladresse in '" + s + "' ungueltig" +
                        (k.ramKarte() ? std::string(" (RAM-Karte 16 MB nur @0 — sie hat keine Moduladresse)")
                                      : " (0–" + std::to_string(max) + ")");
             k.modul = uint8_t(m);
@@ -210,7 +210,7 @@ bool P8000Dram16::schreiben(uint32_t adr, bool wort, uint16_t daten) {
 bool P8000Dram16::paritaetsfehlerSetzen(uint32_t adr) {
     adr &= 0xFFFFFF;
     if (!zelle(adr)) return false;
-    for (const Karte& k : karten_)                  // RAM-Karte 16 MB: keine Paritätsbits
+    for (const Karte& k : karten_)                  // RAM-Karte 16 MB: keine Paritaetsbits
         if (k.waehlt(adr) && !k.paritaet()) return false;
     paritaetFalsch_.insert(adr);
     return true;
@@ -253,7 +253,7 @@ bool P8000Dram16::deserialize(const uint8_t*& p, const uint8_t* end) {
     auto a = k1520::ZAr::leser(q, end);
     uint8_t n = 0;
     a.num(n);
-    if (!a.ok || n != karten_.size()) return false;   // Bestückung gehört zur Konfiguration
+    if (!a.ok || n != karten_.size()) return false;   // Bestueckung gehoert zur Konfiguration
     std::vector<std::vector<uint8_t>> neu(karten_.size());
     for (size_t i = 0; i < karten_.size(); ++i) {
         uint8_t typ = 0, modul = 0;

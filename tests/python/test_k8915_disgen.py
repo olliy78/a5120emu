@@ -1,8 +1,8 @@
-"""K8915: Bootdiskette mit DISGEN.COM — über den Tastenweg der OBERFLÄCHE (AP-E4n).
+"""K8915: Bootdiskette mit DISGEN.COM — ueber den Tastenweg der OBERFLAECHE (AP-E4n).
 
 doc/design/16_k8915.md §8a AP-E4n und §4.4 („Bootdiskette mit DISGEN“).  Der
-C++-Wächter `K8915Format.LeerdisketteFormatDisgenKaltstart` tippt mit
-`K7672::sendeZeichen` und fährt nur „Read/Write system tracks“ auf Diskette 900.
+C++-Waechter `K8915Format.LeerdisketteFormatDisgenKaltstart` tippt mit
+`K7672::sendeZeichen` und faehrt nur „Read/Write system tracks“ auf Diskette 900.
 Hier geht jede Taste als ``QKeyEvent`` an das Bildschirm-Widget des Hauptfensters
 — genau der Weg einer PC-Taste im k8915emu (`ScreenWidget` → Bildschirmtastatur
 K7672 → `k1520_key_press` → DCP-Scancode → BIOS) — und zwar auf der
@@ -10,15 +10,15 @@ Systemdiskette 901, mit der der Anwender es versucht hat:
 
 1. Auf 901 ist B: per DISGEN **16 × 256** eingestellt.  Eine mit 5 × 1024
    formatierte Diskette in B: nimmt „Write system tracks“ deshalb NICHT an —
-   DISGEN meldet ``write error or device not ready``, wie am Gerät (Befund
+   DISGEN meldet ``write error or device not ready``, wie am Geraet (Befund
    AP-E4n: das ist der Anwenderbefund, kein Emulatorfehler).
-2. Weg dahin: „Change device properties“ für B:, ``sector length`` mit ESC auf
+2. Weg dahin: „Change device properties“ fuer B:, ``sector length`` mit ESC auf
    1024 weiterschalten (Sektoren je Spur folgen selbst: 5), dann schreiben —
    die neue Diskette startet bis ``A>``.
 
 Bedienung von DISGEN (am Lauf ermittelt): Auswahlfelder schalten mit dem
-Anfangsbuchstaben oder ESC weiter (klein genügt, DISGEN wandelt um), RETURN
-übernimmt ein Feld bzw. einen ganzen Block, ↑/↓/←/→ wandern zwischen den
+Anfangsbuchstaben oder ESC weiter (klein genuegt, DISGEN wandelt um), RETURN
+uebernimmt ein Feld bzw. einen ganzen Block, ↑/↓/←/→ wandern zwischen den
 Feldern eines Blocks.
 """
 
@@ -28,7 +28,7 @@ pytestmark = requires_core
 
 K8915_901 = "k8915scpx_boot1.hfe"
 
-# Vergleich über den Text: DISGEN räumt nach jedem Befehl ab, was darunter stand.
+# Vergleich ueber den Text: DISGEN raeumt nach jedem Befehl ab, was darunter stand.
 SCHRITT = 100_000
 PROBE_ALLE = 3                # Bildschirmprobe alle 300 000 Takte
 
@@ -39,13 +39,13 @@ def _fenster(qapp, disks):
     w = MainWindow(disks, profil=profil.profil("k8915"))
     w.show()
     qapp.processEvents()
-    w.run_timer.stop()              # der Test fährt die Maschine selbst
+    w.run_timer.stop()              # der Test faehrt die Maschine selbst
     return w
 
 
 class _Tipper:
     """PC-Tasten wie aus Qt: ``QKeyEvent`` an das Bildschirm-Widget, dazwischen
-    läuft die Maschine (gedrückt ≈ 0,1 s, Pause ≈ 0,4 s Maschinenzeit)."""
+    laeuft die Maschine (gedrueckt ≈ 0,1 s, Pause ≈ 0,4 s Maschinenzeit)."""
 
     def __init__(self, emu, widget=None):
         self.emu, self.widget = emu, widget
@@ -65,7 +65,7 @@ class _Tipper:
         self.emu.run(1_000_000)
 
     def strg_c(self):
-        """Strg+C — in DISGEN „eine Ebene zurück“ (am Befehlsfeld: Programmende)."""
+        """Strg+C — in DISGEN „eine Ebene zurueck“ (am Befehlsfeld: Programmende)."""
         from PySide6.QtCore import Qt
         self.taste(Qt.Key_C, "\x03", Qt.ControlModifier)
 
@@ -99,7 +99,7 @@ class _Tipper:
         return [z.rstrip(" \x00") for z in self.bild().split("\n") if z.strip(" \x00")]
 
     # Der Bildschirmtext kostet mehr als der Lauf dazwischen (2000 Einzelaufrufe) und die
-    # gesuchten Zustände bleiben stehen: geprüft wird nur nach jedem ``PROBE_ALLE``-ten Schritt.
+    # gesuchten Zustaende bleiben stehen: geprueft wird nur nach jedem ``PROBE_ALLE``-ten Schritt.
     def bis(self, text, frist=60_000_000):
         t = 0
         while t < frist:
@@ -154,7 +154,7 @@ def _starte_disgen(t: _Tipper):
 
 
 def _befehl(t: _Tipper, buchstabe: str, text: str):
-    """Befehl mit dem Anfangsbuchstaben wählen (klein genügt)."""
+    """Befehl mit dem Anfangsbuchstaben waehlen (klein genuegt)."""
     t.tippe(buchstabe)
     assert t.bis("command: " + text), t.bild()
 
@@ -171,7 +171,7 @@ def _lies_system_von_a(t: _Tipper):
 
 def _schreibe_system_nach_b(t: _Tipper) -> bool:
     """Write system tracks ⏎, B ⏎.  True = geschrieben, False = Fehlermeldung
-    (die dann schon quittiert ist, zurück im Befehlsfeld)."""
+    (die dann schon quittiert ist, zurueck im Befehlsfeld)."""
     _befehl(t, "w", "Write system tracks")
     t.return_()
     assert t.bis("write system to device:"), t.bild()
@@ -192,8 +192,8 @@ def _schreibe_system_nach_b(t: _Tipper) -> bool:
         t.emu.run(2_000_000)
         return True
     # RETURN quittiert nur und steht wieder im Laufwerksfeld — ein weiteres
-    # RETURN versucht es erneut, für den, der den Ausweg nicht kennt, eine
-    # Endlosschleife.  Heraus führt Strg+C, zurück ins Befehlsfeld.
+    # RETURN versucht es erneut, fuer den, der den Ausweg nicht kennt, eine
+    # Endlosschleife.  Heraus fuehrt Strg+C, zurueck ins Befehlsfeld.
     t.return_()
     assert t.bis_weg("write error"), t.bild()
     assert "write system to device: B" in t.cursor_feld(), t.bild()
@@ -223,9 +223,9 @@ def _b_auf_1024(t: _Tipper):
     assert t.bis("sector length:     512"), t.bild()
     t.esc()
     assert t.bis("sector length:     1024"), t.bild()
-    t.return_()                          # erster Block übernommen
+    t.return_()                          # erster Block uebernommen
     assert t.bis("sectors per track: 5"), "Sektoren je Spur folgen selbst\n" + t.bild()
-    t.return_()                          # zweiter Block ⇒ zurück ins Befehlsfeld
+    t.return_()                          # zweiter Block ⇒ zurueck ins Befehlsfeld
     assert t.bis_weg("sectors per track"), t.bild()
     t.emu.run(2_000_000)
 
@@ -245,7 +245,7 @@ def test_disgen_builds_a_boot_disk_on_901_through_the_ui_keys(qapp, temp_disk, t
         emu = w.emulator
         t = _Tipper(emu, w.screen_widget)
         # B: vorformatiert 5 × 1024 (= FORMAT.COM Verfahren 24/31, `cpa800`) — das
-        # FORMAT-Menü selbst bewacht K8915Format.* (test-format).
+        # FORMAT-Menue selbst bewacht K8915Format.* (test-format).
         assert emu.create_disk(1, b, "cpa800"), emu.last_error()
         _kaltstart(t)
 
@@ -254,9 +254,9 @@ def test_disgen_builds_a_boot_disk_on_901_through_the_ui_keys(qapp, temp_disk, t
         _lies_system_von_a(t)
         assert not _schreibe_system_nach_b(t), "5 × 1024 in B: bei 16 × 256"
         # Die Falle dahinter: B: JETZT auf 1024 zu stellen hilft nicht — der
-        # Hostpuffer des BIOS steht nach dem Fehlschlag noch „aktiv + geändert“
-        # für B: (F1D8H/F1D9H), das nächste Schreiben scheitert wieder.  Erst
-        # der Warmstart (WBOOT D945H: F1D8H = 0) räumt ihn.
+        # Hostpuffer des BIOS steht nach dem Fehlschlag noch „aktiv + geaendert“
+        # fuer B: (F1D8H/F1D9H), das naechste Schreiben scheitert wieder.  Erst
+        # der Warmstart (WBOOT D945H: F1D8H = 0) raeumt ihn.
         _b_auf_1024(t)
         assert not _schreibe_system_nach_b(t), "Hostpuffer des Fehlschlags"
         _beende_disgen(t)

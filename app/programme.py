@@ -1,7 +1,7 @@
 """Die Nachbarprogramme starten — DiskTool, Emulator, Werkzeugkonsole.
 
-Die Installation bringt sieben Programme mit, die dieselben Disketten anfassen:
-die sechs Oberflächen (``a5120emu``, ``k8915emu``, ``prg710emu``, ``pc1715emu``, ``p8000emu`` und ``k1520DiskTool``) und die
+Die Installation bringt neun Programme mit, die dieselben Disketten anfassen:
+die sieben Oberflächen (``a5120emu``, ``k8915emu``, ``prg710emu``, ``pc1715emu``, ``p8000emu``, ``mc80emu`` und ``k1520DiskTool``) und die
 beiden Konsolenwerkzeuge (``k1520dbg``, ``k1520disktool-cli``).  Wer eines davon offen
 hat, braucht regelmässig ein zweites — deshalb kann jede Oberfläche die andere
 aufrufen, und der Emulator zusätzlich eine **Eingabeaufforderung**, in der die
@@ -40,13 +40,14 @@ from typing import List, Optional, Sequence
 
 from app import paths
 
-#: Kennungen der Oberflächen für :func:`programm_starten`.  ``EMULATOR`` ist
+#: Kennungen der Oberflaechen fuer :func:`programm_starten`.  ``EMULATOR`` ist
 #: der A5120 Emulator (der Name stammt aus der Zeit, als es nur ihn gab).
 EMULATOR = "emulator"
 K8915EMU = "k8915emu"
 PRG710EMU = "prg710emu"
 PC1715EMU = "pc1715emu"
 P8000EMU = "p8000emu"
+MC80EMU = "mc80emu"
 DISKTOOL = "disktool"
 
 #: (Skript unterhalb der Wurzel, Anzeigename, feste Argumente) je Kennung.  Der
@@ -58,12 +59,13 @@ _PROGRAMME = {
     PRG710EMU: ("app/main.py", "prg710emu", ("--machine", "prg710")),
     PC1715EMU: ("app/main.py", "pc1715emu", ("--machine", "pc1715")),
     P8000EMU: ("app/main.py", "p8000emu", ("--machine", "p8000")),
+    MC80EMU: ("app/main.py", "mc80emu", ("--machine", "mc80")),
     DISKTOOL: ("app/disktool/main.py", "k1520DiskTool", ()),
 }
 
 #: Kennung des Emulators je Maschinenname des Programmprofils.
 EMULATOR_JE_MASCHINE = {"a5120": EMULATOR, "k8915": K8915EMU, "prg710": PRG710EMU,
-                       "pc1715": PC1715EMU, "p8000": P8000EMU}
+                       "pc1715": PC1715EMU, "p8000": P8000EMU, "mc80": MC80EMU}
 
 #: Name des Debugger-Handbuchs in :func:`app.paths.doc_dir`.
 HANDBUCH_DBG = "handbuch_k1520dbg.md"
@@ -80,7 +82,7 @@ def _ist_macos() -> bool:
     return sys.platform == "darwin"
 
 
-# ─── Oberflächen ─────────────────────────────────────────────────────────────
+# ─── Oberflaechen ─────────────────────────────────────────────────────────────
 
 def _interpreter() -> str:
     """Der Interpreter, mit dem das Kind läuft — unter Windows der fensterlose.
@@ -270,7 +272,7 @@ def _schreibe_startdatei(ordner: Optional[Path]) -> Path:
         zeilen.append("cmd /k")
         inhalt = "\r\n".join(zeilen) + "\r\n"
         # `mbcs` ist die ANSI-Kodepage des Rechners; der Text ist ohnehin ASCII,
-        # ein nicht-lateinischer Pfad käme so wenigstens noch durch.
+        # ein nicht-lateinischer Pfad kaeme so wenigstens noch durch.
         ziel.write_text(inhalt, encoding="mbcs", errors="replace")
         return ziel
 
@@ -288,7 +290,7 @@ def _schreibe_startdatei(ordner: Optional[Path]) -> Path:
         "cat <<'K1520_ENDE'",
         text,
         "K1520_ENDE",
-        # Eine INTERAKTIVE Shell zum Schluss — sonst schlösse sich das Fenster
+        # Eine INTERAKTIVE Shell zum Schluss — sonst schloesse sich das Fenster
         # sofort wieder.  `$SHELL` ist die des Anwenders samt seiner Einrichtung.
         'exec "${SHELL:-/bin/sh}" -i',
     ]
@@ -326,11 +328,11 @@ def terminalbefehl(startdatei: Path) -> Optional[List[str]]:
     if _ist_windows():
         # `cmd /c <batch>` in einem NEUEN Fenster (siehe :func:`konsole_starten`):
         # die Batchdatei endet auf `cmd /k`, der Anwender bleibt also in derselben
-        # Konsole sitzen.  Der Umweg über `start` täte dasselbe, öffnete aber
+        # Konsole sitzen.  Der Umweg ueber `start` taete dasselbe, oeffnete aber
         # kurz ein zweites Fenster, das sich gleich wieder schliesst.
         return ["cmd.exe", "/c", str(startdatei)]
     if _ist_macos():
-        # Terminal.app führt ein übergebenes Skript aus und bleibt offen.
+        # Terminal.app fuehrt ein uebergebenes Skript aus und bleibt offen.
         return ["open", "-a", "Terminal", str(startdatei)]
 
     eigenes = os.environ.get("TERMINAL")
@@ -363,8 +365,8 @@ def konsole_starten() -> Path:
             f"{datei}")
     try:
         # Unter Windows muss das Fenster hier entstehen (``CREATE_NEW_CONSOLE``) —
-        # der Emulator läuft unter ``pythonw.exe`` und hat selbst keine Konsole,
-        # die das Kind erben könnte.  Unter Linux/macOS bringt das Terminalprogramm
+        # der Emulator laeuft unter ``pythonw.exe`` und hat selbst keine Konsole,
+        # die das Kind erben koennte.  Unter Linux/macOS bringt das Terminalprogramm
         # sein Fenster mit.
         _abgekoppelt(befehl, cwd=ordner, neues_fenster=_ist_windows())
     except OSError as e:

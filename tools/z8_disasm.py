@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Z8-Disassembler (UB8820M / U881 / Z8601) mit rekursivem Abstieg.
 
-Geschrieben für die Firmware der Tastatur K7672 (UB8820M, Programm in zwei
-externen 2716, doc/design/16_k8915.md §3.5), taugt aber für jedes Z8-Abbild.
+Geschrieben fuer die Firmware der Tastatur K7672 (UB8820M, Programm in zwei
+externen 2716, doc/design/16_k8915.md §3.5), taugt aber fuer jedes Z8-Abbild.
 
     tools/z8_disasm.py 7672.03-D2.bin                  # Vektoren + Reset 000CH
     tools/z8_disasm.py fw.bin --entry 0x123,0x456 --org 0x800
@@ -51,7 +51,7 @@ def rreg(b):
 
 
 def decode(mem, pc, org):
-    """→ (Länge, Text, [Folgeadressen], [Sprungziele], endet_fluss)."""
+    """→ (Laenge, Text, [Folgeadressen], [Sprungziele], endet_fluss)."""
     def byte(i):
         a = pc - org + i
         return mem[a] if 0 <= a < len(mem) else 0
@@ -82,7 +82,7 @@ def decode(mem, pc, org):
     if lo == 0xE:
         return 1, f"INC r{hi}", [], [], False
 
-    # Sonderfälle der Spalten 0–7
+    # Sonderfaelle der Spalten 0–7
     if op == 0x30:
         return 2, f"JP @{rreg(b1)}", [], [], True
     if op == 0x31:
@@ -173,9 +173,9 @@ def main():
     ap.add_argument("image")
     ap.add_argument("--org", type=lambda s: int(s, 0), default=0)
     ap.add_argument("--entry", action="append", default=[],
-                    help="zusätzlicher Einsprung (mehrfach oder kommagetrennt)")
+                    help="zusaetzlicher Einsprung (mehrfach oder kommagetrennt)")
     ap.add_argument("--no-vectors", action="store_true",
-                    help="IRQ0–5 (0000H–000BH) nicht als Einsprünge werten")
+                    help="IRQ0–5 (0000H–000BH) nicht als Einspruenge werten")
     ap.add_argument("--linear", nargs=2, type=lambda s: int(s, 0), metavar=("VON", "BIS"))
     a = ap.parse_args()
 
@@ -215,7 +215,7 @@ def main():
             print(f"{pc:04X}  {bs:<9} {text}")
             pc += n
         else:
-            # Datenblock bis zum nächsten Code, höchstens 16 Byte je Zeile
+            # Datenblock bis zum naechsten Code, hoechstens 16 Byte je Zeile
             s = pc
             while pc < end and pc not in code and pc - s < 16:
                 pc += 1

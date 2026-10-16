@@ -506,7 +506,7 @@ FsCheckReport UdosFileSystem::check(FsCheckLevel level, bool nachladen) const {
         // Allokator fragt den Belegungsplan — der sagt genau, was frei ist.  Die
         // Pruefung dagegen darf nicht anklagen, was sie nicht sicher als verloren
         // erkennt, und was dort neben Karte und Verzeichnissaetzen liegt, kann auch
-        // Systembereich einer fremden Ausprägung sein.  Eine Falschmeldung wiegt
+        // Systembereich einer fremden Auspraegung sein.  Eine Falschmeldung wiegt
         // schwerer als eine fehlende (doc/design/15_dateisystempruefung.md E10).
         int verloren = 0;
         uint8_t erste_spur = 0;

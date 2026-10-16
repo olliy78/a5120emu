@@ -1,23 +1,23 @@
 /**
  * @file yaml_lite.h
- * @brief Minimaler YAML-Subset-Parser — bewusst ohne externe Abhängigkeit.
+ * @brief Minimaler YAML-Subset-Parser — bewusst ohne externe Abhaengigkeit.
  *
  * Deckt genau den Umfang ab, den die Konfigurationsdateien des Kerns brauchen
  * (`data/formats.yaml`, siehe @ref FormatCatalog).  Ergebnis ist ein generischer
  * @ref yaml::Node -Baum (Map/List/Skalar); die fachliche Abbildung auf Structs
  * macht der jeweilige Konsument.
  *
- * ### Unterstützt
- * - Kommentare `#` bis Zeilenende (auch am Zeilenende, außerhalb von Quotes)
- * - Einrückungs-Verschachtelung — **nur Leerzeichen**, Tabs sind ein Fehler
+ * ### Unterstuetzt
+ * - Kommentare `#` bis Zeilenende (auch am Zeilenende, ausserhalb von Quotes)
+ * - Einrueckungs-Verschachtelung — **nur Leerzeichen**, Tabs sind ein Fehler
  * - Block-Maps (`key: wert`) und Block-Listen (`- eintrag`)
  * - Flow-Maps `{ a: 1, b: 2 }` und Flow-Listen `[a, b, c]` (einzeilig, verschachtelbar)
  * - Skalare: bare, `'einfach'`, `"doppelt"` (mit `\"`/`\\`-Escapes)
  *
- * ### Nicht unterstützt (jeweils Ladefehler mit Zeilennummer)
+ * ### Nicht unterstuetzt (jeweils Ladefehler mit Zeilennummer)
  * - Anchors/Aliases (`&a` / `*a`), Merge-Keys (`<<:`)
  * - mehrzeilige Skalare (`|`, `>`), mehrere Dokumente (`---`), Tags (`!!str`)
- * - komplexe Keys (`? …`), Tabs als Einrückung, doppelte Keys in derselben Map
+ * - komplexe Keys (`? …`), Tabs als Einrueckung, doppelte Keys in derselben Map
  *
  * @see doc/K1520_architecture.md §8.6.2
  * @see core/peripherals/floppy_drive/format_catalog.h
@@ -40,7 +40,7 @@ enum class NodeType { Null, Scalar, Map, List };
  * @class Node
  * @brief Ein Knoten des YAML-Baums (Map/List/Skalar/Null).
  *
- * Maps behalten die Reihenfolge der Datei (wichtig für reproduzierbare
+ * Maps behalten die Reihenfolge der Datei (wichtig fuer reproduzierbare
  * Fehlermeldungen und stabile Katalogreihenfolge).
  */
 class Node {
@@ -66,15 +66,15 @@ public:
 struct Error {
     int         line = 0;
     std::string message;
-    /// @brief Als `pfad:zeile: meldung` formatieren (für Logausgaben).
+    /// @brief Als `pfad:zeile: meldung` formatieren (fuer Logausgaben).
     std::string format(const std::string& path) const;
 };
 
 /**
  * @brief Parst YAML-Text in einen Knotenbaum.
- * @param text Vollständiger Dateiinhalt
+ * @param text Vollstaendiger Dateiinhalt
  * @param out  Ergebnisbaum (bei Fehler undefiniert)
- * @param err  Fehlerbeschreibung, wenn false zurückgegeben wird
+ * @param err  Fehlerbeschreibung, wenn false zurueckgegeben wird
  * @return true bei Erfolg
  */
 bool parse(const std::string& text, Node& out, Error& err);

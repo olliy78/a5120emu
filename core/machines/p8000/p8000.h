@@ -1,6 +1,6 @@
 /**
  * @file p8000.h
- * @brief EAW P8000 — fünfte Maschine des Kerns: 8-Bit-Seite (U880-Rechnerkarte + Floppy +
+ * @brief EAW P8000 — fuenfte Maschine des Kerns: 8-Bit-Seite (U880-Rechnerkarte + Floppy +
  *        Kern-Terminal an tty1) und — mit `Config::karte16` — die 16-Bit-Karte samt Kopplung
  *        (AP P11) und — mit `Config::wdc` — der Winchester-Disk-Controller an der PIO2 der
  *        16-Bit-Karte samt bis zu drei Platten (AP P13d).
@@ -9,43 +9,43 @@
  * `P8000Floppy8` (P5f), Terminal `k1520::p8000::Terminal` (P6).
  *
  * **Zeitbasis** = Φ der 8-Bit-Karte (4 MHz, §10.2).  Laufschleife je Befehl:
- * `karte.schritt()` (DMA hält die CPU über /BUSRQ; EPROM-Wartetakte eingerechnet) →
+ * `karte.schritt()` (DMA haelt die CPU ueber /BUSRQ; EPROM-Wartetakte eingerechnet) →
  * `karte.takt(n)` (CTCs) → `floppy.takt(n)` (U8272, DRQ→RDY) → Terminal-Anschluss →
  * SerialHub.  Kein ZVE1/ZVE2-Mechanismus (§7 Risiko 5).  Mit 16-Bit-Karte wird sie nach jedem
  * 8-Bit-Befehl bis zur selben Maschinenzeit nachgezogen (`laufeBis`, Umrechnung f16/f8, im Reset
  * ohne Schritt) — feste Reihenfolge 8 → 16, deterministisch; Kopplungsflanken wirken sofort beim
  * schreibenden Zugriff (Leitungsmodell `P8000Kopplung`).
  *
- * **Serielle Kanäle (§10.6):** tty1 (SIO0-B) = Konsole, fest am Kern-Terminal
- * (`festeSchnittstellen()`); tty0/tty2/tty3 hängen am `SerialHub` — ohne Verbindung verfallen
+ * **Serielle Kanaele (§10.6):** tty1 (SIO0-B) = Konsole, fest am Kern-Terminal
+ * (`festeSchnittstellen()`); tty0/tty2/tty3 haengen am `SerialHub` — ohne Verbindung verfallen
  * ihre Zeichen in Zeichenzeit (sonst staut sich der Sender: MON8-Hardwaretest ERROR 21).
  *
- * **Ohne 16-Bit-Karte** sind die Kopplungseingänge offen (Pull-ups, §10.4 `karte16 = false`).
- * **Mit 16-Bit-Karte** hängen tty4–tty7 am `SerialHub` (nach tty0/2/3); die Konsole des
- * U8000-Monitors läuft über die Kopplung an tty1.  Reset: 8-PIO0-B7 (Pull-up) hält den U8001 im
+ * **Ohne 16-Bit-Karte** sind die Kopplungseingaenge offen (Pull-ups, §10.4 `karte16 = false`).
+ * **Mit 16-Bit-Karte** haengen tty4–tty7 am `SerialHub` (nach tty0/2/3); die Konsole des
+ * U8000-Monitors laeuft ueber die Kopplung an tty1.  Reset: 8-PIO0-B7 (Pull-up) haelt den U8001 im
  * Reset (K11); die NMI-Taste geht bei B7 = 0 an den U8001 (K12).
  *
  * **Save-State P8KS v2 (P7e/P11, Entwurf §10.2):** v1 + Abschnitte 16-Bit-Karte und Kopplung;
- * ein v1-Stand lädt in eine Maschine ohne 16-Bit-Karte. `saveState/loadState` (Datei) und
+ * ein v1-Stand laedt in eine Maschine ohne 16-Bit-Karte. `saveState/loadState` (Datei) und
  * `stateBytes/restoreStateBytes` (Speicher).  Nicht: Medieninhalt, EPROM, Hub-Verbindungen und
  * der Zustand der Hub-Wandler (Zeichen in Flug an tty0/2/3).
  *
  * **WDC (P13d):** eigene Uhr in WDC-Takten, nach der 16-Bit-Karte bis zur selben Maschinenzeit
- * nachgezogen (Reihenfolge 8 → 16 → WDC, Entwurf §10.2); Leitungen über `P8000WdcAnschluss`.
- * Platten gehören der Maschine (`hdMount/hdCreate/hdUnmount`), der WDC kennt nur Zeiger.
+ * nachgezogen (Reihenfolge 8 → 16 → WDC, Entwurf §10.2); Leitungen ueber `P8000WdcAnschluss`.
+ * Platten gehoeren der Maschine (`hdMount/hdCreate/hdUnmount`), der WDC kennt nur Zeiger.
  * Save-State P8KS v3 = v2 + Abschnitt WDC (samt Plattenmechanik, nicht dem Medieninhalt); v4 s. u.
  *
- * **Konsole tty1 (AP P20c, Entwurf 25 §11, Entwurf 28):** `Config::terminal` wählt das
+ * **Konsole tty1 (AP P20c, Entwurf 25 §11, Entwurf 28):** `Config::terminal` waehlt das
  * vereinfachte Kern-Terminal (P6, Vorgabe — Variante „P8000") oder das **Originalterminal Typ 2 +
- * K7673.09** (Variante „P8000 + P8000 Terminal": `P8000TerminalEinheit` über `TerminalHwKopplung`
+ * K7673.09** (Variante „P8000 + P8000 Terminal": `P8000TerminalEinheit` ueber `TerminalHwKopplung`
  * fest an tty1, Firmware P8T 5.0 auf dem Z8).  Beide hinter `TerminalGeraet`.  Das Original wird
  * beim Netz-Ein `terminal_vorlauf_ms` VOR dem Rechner eingeschaltet (es braucht ≈ 0,5 s bis zur
  * Bereitschaft, Merkposten 29/34); was es dabei sendet (00H der Firmware, Merkposten 30), geht ins
- * Leere wie am ausgeschalteten Rechner.  Die Reset-Taste des Rechners lässt das Terminal laufen.
- * Save-State **P8KS v4** = v3 + Terminalart im Fingerabdruck; ein v3-Stand lädt nur mit Kern-Terminal.
+ * Leere wie am ausgeschalteten Rechner.  Die Reset-Taste des Rechners laesst das Terminal laufen.
+ * Save-State **P8KS v4** = v3 + Terminalart im Fingerabdruck; ein v3-Stand laedt nur mit Kern-Terminal.
  *
  * Rahmenpuffer: mit Originalterminal das Pixelbild 640 × 312 (0 dunkel, 1 normal, 2 hell);
- * mit Kern-Terminal leer (die Oberfläche rastert aus `k1520_term_snapshot`).
+ * mit Kern-Terminal leer (die Oberflaeche rastert aus `k1520_term_snapshot`).
  */
 
 #pragma once
@@ -79,7 +79,7 @@ public:
         Index8   index8 = Index8::I3;
         Mon8     mon8   = Mon8::V3_1;
         uint32_t takt8_hz = 4'000'000;
-        /// Bestückung der Floppy-Anschlüsse (X8 = 0, X9 = 1, X10 extern = 2/3).
+        /// Bestueckung der Floppy-Anschluesse (X8 = 0, X9 = 1, X10 extern = 2/3).
         std::array<std::string, 4> laufwerke = {"K5601", "K5601", "none", "none"};
         uint8_t  latch_start = 0x00, adp_start = 0x00, ram_fuellwert = 0x00;
 
@@ -87,14 +87,14 @@ public:
         using Index16 = P8000Karte16::Config::Index;
         using Mon16   = P8000Karte16::Config::Mon16;
         /// 16-Bit-Karte gesteckt.  Vorgabe vorerst AUS (Entwurf §10.4 sieht EIN vor; umgestellt
-        /// wird mit der Oberfläche, damit die M1-Wächter den reinen 8-Bit-Teil behalten).
+        /// wird mit der Oberflaeche, damit die M1-Waechter den reinen 8-Bit-Teil behalten).
         bool     karte16 = false;
         Index16  index16 = Index16::I4;   ///< nur Paare (8: 1, 16: 1) oder (3, 4) — sonst Fehler
         Mon16    mon16   = Mon16::V3_1;
         std::vector<P8000Dram16::Karte> dram = {P8000Dram16::Karte{P8000Dram16::Karte::Typ::M1, 0}};
         bool     bruecken_4xr1_5xr1 = true;   ///< nur Index16 = I1 (Kopplung [KP1])
         uint32_t takt16_hz = 4'000'000;
-        /// MMU-Steuerlogik [L1]: Adresse-High = NBR wählt die Stack-MMU (Plan) bzw. die Data-MMU
+        /// MMU-Steuerlogik [L1]: Adresse-High = NBR waehlt die Stack-MMU (Plan) bzw. die Data-MMU
         /// (WEGA `nsseg`).  Siehe `P8000Karte16::Config::nbr_gleichheit_stack`.
         bool     nbr_gleichheit_stack = true;
 
@@ -102,22 +102,22 @@ public:
         /// Firmware des WDC bzw. kein WDC.  Vorgabe vorerst AUS (Entwurf §10.4: 4.2), wie `karte16`.
         enum class Wdc { Aus, V4_2, V4_0_05, V3_4_05 };
         Wdc      wdc = Wdc::Aus;
-        uint32_t taktwdc_hz = 4'000'000;   ///< 40 MHz ÷ 10; 41,4-MHz-Bestückung 4 140 000
+        uint32_t taktwdc_hz = 4'000'000;   ///< 40 MHz ÷ 10; 41,4-MHz-Bestueckung 4 140 000
         /// Abbild an Laufwerk 0 ("" = keins); Geometrie aus `platte_typ` (Name aus
-        /// `winchester::typen()`, z. B. "K5504.50"), sonst aus PAR-Sektor bzw. Dateigröße.
+        /// `winchester::typen()`, z. B. "K5504.50"), sonst aus PAR-Sektor bzw. Dateigroesse.
         std::string platte;
         std::string platte_typ;
-        /// [P5] der Platte: fehlt Z0/K0/S1 ein gültiger PAR-Sektor, liefert die Spursynthese einen
+        /// [P5] der Platte: fehlt Z0/K0/S1 ein gueltiger PAR-Sektor, liefert die Spursynthese einen
         /// erzeugten (WEGA-3.1-AVR-Abbild).  AUS = die Firmware sieht den Sektor, wie er ist.
         bool        platte_par_ergaenzen = true;
 
         // ── Konsole tty1 (AP P20c) ──
         enum class TerminalArt { Kern, Original };
-        /// Vorgabe Kern-Terminal, bis P21/P22 umstellen (M1/M2-Wächter bleiben unverändert).
+        /// Vorgabe Kern-Terminal, bis P21/P22 umstellen (M1/M2-Waechter bleiben unveraendert).
         TerminalArt terminal = TerminalArt::Kern;
-        /// Nur `Original`: Bestückung des Terminals (Zeichensätze, Zeichentakt-Teiler, Tastatur).
+        /// Nur `Original`: Bestueckung des Terminals (Zeichensaetze, Zeichentakt-Teiler, Tastatur).
         k1520::p8000::P8000TerminalEinheitConfig terminal_hw;
-        /// Nur `Original`: so lange läuft das Terminal vor dem Rechner (Netz-Ein-Reihenfolge am
+        /// Nur `Original`: so lange laeuft das Terminal vor dem Rechner (Netz-Ein-Reihenfolge am
         /// Arbeitsplatz).  Ohne Vorlauf fielen die ersten Zeilen des Hardwaretests in die
         /// Einschaltphase der Firmware (Tastaturwarte, Merkposten 29); die Einschaltmeldung steht
         /// nach ≈ 0,84 s, Tasten nimmt das Terminal ab ≈ 1,0 s an (Merkposten 35).
@@ -148,21 +148,21 @@ public:
     void fbClearDirty() override {}
     void setConsoleMode(bool) override {}
     bool consolePoll(int&, int&, char&) override { return false; }
-    /// Zeichen der Zelle (Spalte, Zeile) des Konsolen-Terminals (80 × 24); 0 außerhalb.
+    /// Zeichen der Zelle (Spalte, Zeile) des Konsolen-Terminals (80 × 24); 0 ausserhalb.
     uint8_t screenChar(int col, int row) const override;
 
     // ─── Tastatur des Terminals (fadensicher eingereiht) ────────────────────
     /// Druckbares ASCII (das Zeichen selbst), Steuerzeichen 01H–1FH, Qt-Return/Enter/Escape/
     /// Backspace/Tab/Delete, die Pfeiltasten (<BS> <VT> <FF> <LF>), Pos1 und Shift+Tab (BACKTAB)
-    /// sowie `0x02000000 + TerminalTaste` für alle Tasten ohne Qt-Gegenstück (Funktionstasten,
+    /// sowie `0x02000000 + TerminalTaste` fuer alle Tasten ohne Qt-Gegenstueck (Funktionstasten,
     /// BREAK, MODE, VIDEO, ON/OFF, SI/SO) und 0x02000100/0x02000101 = Caps lock an/aus.
     /// `ctrl` macht aus einem Buchstaben das Steuerzeichen.
     void keyPress(uint32_t qt_keycode, bool shift, bool ctrl) override;
     /// Nur Originalterminal: `0x04000000 | Zeile << 8 | Spalte` (Matrix der K7673) wird
-    /// gedrückt gehalten, bis derselbe Kode losgelassen wird; andere Kodes ohne Wirkung.
+    /// gedrueckt gehalten, bis derselbe Kode losgelassen wird; andere Kodes ohne Wirkung.
     void keyRelease(uint32_t code) override;
     void setKeyRepeatRealtime(bool an) override { if (hwterm_) hwterm_->einheit().setWiederholungEchtzeit(an); }
-    /// Kodes für Matrixtasten der K7673 (Originalterminal).
+    /// Kodes fuer Matrixtasten der K7673 (Originalterminal).
     static constexpr uint32_t MATRIX_KODE = 0x04000000u;
     static constexpr uint32_t matrixKode(int zeile, int spalte) {
         return MATRIX_KODE | (uint32_t(zeile) << 8) | uint32_t(spalte);
@@ -172,7 +172,7 @@ public:
     uint32_t bellCount() const override { return konsole_->klingel(); }
 
     int machineType() const override { return 4; }   // K1520_MACHINE_P8000 (Entwurf §10.9)
-    /// Bit 0 RUN-LED (K14), Bit 1 UNIT16 = U8001 läuft (nicht im Reset), Bit 2 Plattenzugriff
+    /// Bit 0 RUN-LED (K14), Bit 1 UNIT16 = U8001 laeuft (nicht im Reset), Bit 2 Plattenzugriff
     /// (WDC); ohne 16-Bit-Karte 0.
     uint8_t panelLamps() const override;
     /// Kein K1520-Bus: RAF und K6022 sind nicht steckbar (Entwurf §10.1).
@@ -218,20 +218,20 @@ public:
     std::vector<std::string> festeSchnittstellen() const override {
         return {hwterm_ ? "Terminal P8000 Typ 2 (tty1)" : "Terminal P8000 (tty1)"};
     }
-    // (mit 16-Bit-Karte zusätzlich tty4–tty7 am Hub)
-    /// Alter Unterbau (Rückruf/Einspeisen) gibt es am P8000 nicht — alle tty gehen über den
+    // (mit 16-Bit-Karte zusaetzlich tty4–tty7 am Hub)
+    /// Alter Unterbau (Rueckruf/Einspeisen) gibt es am P8000 nicht — alle tty gehen ueber den
     /// Hub bzw. das Kern-Terminal.
     void setDFUECallback(SerialCb) override {}
     void dfueSend(uint8_t) override {}
 
     // ─── Winchester (WDC, AP P13d; Laufwerk 0–2) ─────────────────────────────
-    /// Abbild roh/LBA anschließen (Geometrie: `platte_typ` bzw. PAR/Dateigröße).  Ein Winchester-
+    /// Abbild roh/LBA anschliessen (Geometrie: `platte_typ` bzw. PAR/Dateigroesse).  Ein Winchester-
     /// laufwerk kennt keinen Schreibschutz — @p wp = true wird abgewiesen.
     bool hdMount(int unit, const std::string& path, bool wp = false);
-    /// Neues Abbild des Typs @p typ anlegen und anschließen.  Ohne Suffix: E5 + gültiger PAR/BTT-
+    /// Neues Abbild des Typs @p typ anlegen und anschliessen.  Ohne Suffix: E5 + gueltiger PAR/BTT-
     /// Sektor.  Mit Suffix `:unformatiert`: wie ein neues Laufwerk — durchgehend E5, KEIN
     /// Parametersatz (der WDC meldet „Error in PAR&BTT", der Monitor bleibt bedienbar, `sa.format`
-    /// legt ihn an); die Platte wird dann OHNE Parametersatz-Ergänzung angeschlossen.
+    /// legt ihn an); die Platte wird dann OHNE Parametersatz-Ergaenzung angeschlossen.
     bool hdCreate(int unit, const std::string& path, const std::string& typ);
     bool hdUnmount(int unit);
 private:
@@ -239,23 +239,23 @@ private:
 public:
     bool hdFlush();
     std::string hdPath(int unit) const;
-    /// Lampe: Laufwerk gewählt und Disk-Schnittstelle in den letzten 0,1 s aktiv.
+    /// Lampe: Laufwerk gewaehlt und Disk-Schnittstelle in den letzten 0,1 s aktiv.
     bool hdLed(int unit) const;
     const std::string& hdError() const { return hd_fehler_; }
 
-    // ─── Diagnose (U880-Sicht: ADP/RFF wirksam, ohne Wartetakt-Zählung) ─────
+    // ─── Diagnose (U880-Sicht: ADP/RFF wirksam, ohne Wartetakt-Zaehlung) ─────
     uint8_t memReadDebug(uint16_t addr) override;
     void    memWriteDebug(uint16_t addr, uint8_t data) override;
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
     std::string lastError() const override { return lw().lastError(); }
 
     // ─── Save-State P8KS v4 (Entwurf 25 §10.2; v1/v2/v3 laden ohne 16-Bit-Teil/WDC/Originalterminal) ───────────────────────────────
-    /// Kennung „P8KS“, dann `P8000_STAND`, dann Abschnitte `[Kennung u8][Länge u32][Bytes]`
-    /// (unbekannte Abschnitte werden übersprungen).  Die Disketten werden NICHT gesichert — der
+    /// Kennung „P8KS“, dann `P8000_STAND`, dann Abschnitte `[Kennung u8][Laenge u32][Bytes]`
+    /// (unbekannte Abschnitte werden uebersprungen).  Die Disketten werden NICHT gesichert — der
     /// Aufrufer mountet vor dem Laden dieselben Abbilder (nur die Kopfposition wird gesetzt).
     static constexpr uint8_t P8000_STAND = 4;
     std::vector<uint8_t> stateBytes() const;
-    /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) übereinstimmt;
+    /// Nur laden, wenn die Konfiguration (Index, ROM-Satz, Takt, Laufwerke, 16-Bit-Teil) uebereinstimmt;
     /// scheitert das Laden mittendrin, wird der alte Zustand wiederhergestellt.
     bool restoreStateBytes(const std::vector<uint8_t>& b);
     bool saveState(const std::string& path) const;
@@ -319,7 +319,7 @@ private:
     P8000Floppy8 floppy_;
     std::unique_ptr<P8000Karte16>  k16_;
     std::unique_ptr<P8000Kopplung> kopplung_;
-    // Reihenfolge: Platten vor dem WDC (der hält nur Zeiger), Anschluss zuletzt (zuerst abgebaut).
+    // Reihenfolge: Platten vor dem WDC (der haelt nur Zeiger), Anschluss zuletzt (zuerst abgebaut).
     std::array<std::unique_ptr<k1520::winchester::Platte>, P8000Wdc::LAUFWERKE> platten_;
     std::unique_ptr<P8000Wdc>          wdc_;
     std::unique_ptr<P8000WdcAnschluss> wdc_an_;

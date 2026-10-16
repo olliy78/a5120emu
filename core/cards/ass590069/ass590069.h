@@ -8,22 +8,22 @@
  * E2F4H, Ausgabe E35BH — beide Fassungen gleich):
  * - **SIO C4H–C7H** in der Ordnung Daten A, Daten B, Steuer A, Steuer B (A0 = B/A,
  *   A1 = C/D): Kanal **B** = Fernschreiber (`OUT (C5H)` Daten, `IN (C7H)` RR0 D2).
- *   Programmiert: WR4 = F8H (×64, 1½ Stopp, ohne Parität), WR3 = 01H (5 Bit), WR5 = 88H
+ *   Programmiert: WR4 = F8H (×64, 1½ Stopp, ohne Paritaet), WR3 = 01H (5 Bit), WR5 = 88H
  *   (DTR, Sender ein, **5 Bit**), keine Interrupts.  Kanal A belegt kein Programm [?].
  * - **CTC CCH–CFH** [?] (nur `OUT (CDH)` = Kanal 1 belegt): 07H, 18H = Zeitgeber,
  *   Vorteiler 16, Zeitkonstante 24 → ZC/TO1 = φ/384 = 6400 Hz = Sende-/Empfangstakt von
  *   SIO-Kanal B [?] → bei ×64 **100 Bd**.
  * - Zeichen: **ITA2 (CCITT Nr. 2)**, 5 Bit, Buchstaben-/Ziffernumschaltung 1FH/1BH; die
- *   Umsetztabelle steht im BIOS bei E366H (64 Einträge, Index = Ziffernlage·20H + Code).
+ *   Umsetztabelle steht im BIOS bei E366H (64 Eintraege, Index = Ziffernlage·20H + Code).
  *
- * Nach außen (SerialHub, ein Anschluss „Fernschreiber“): die Karte bildet den
- * **Fernschreiber selbst** nach — sie nimmt die ITA2-Zeichen ab, führt die Umschaltung
+ * Nach aussen (SerialHub, ein Anschluss „Fernschreiber“): die Karte bildet den
+ * **Fernschreiber selbst** nach — sie nimmt die ITA2-Zeichen ab, fuehrt die Umschaltung
  * und gibt **Text (ASCII)** weiter: Telnet zeigt ihn, „Datei“ ist ein lesbares
  * Fernschreibprotokoll.  Umschaltzeichen (und ITA2 00H) verbrauchen ihre Zeichenzeit,
  * erscheinen aber nicht.  Der Wandler taktet im Zeichentakt der Gastleitung (100 Bd ≈
  * 75 ms je Zeichen); gemeldet wird deshalb dieses Tempo mit **8 Bit** (es geht Text
  * hinaus, keine 5-Bit-Zeichen).  Empfangsrichtung (Tastatur des Fernschreibers): ein
- * ankommendes ASCII-Zeichen wird als ITA2-Code in den Empfänger gelegt (ohne Umschaltung);
+ * ankommendes ASCII-Zeichen wird als ITA2-Code in den Empfaenger gelegt (ohne Umschaltung);
  * kein bekanntes Programm liest sie (READER des BIOS liefert 1AH).
  */
 
@@ -50,12 +50,12 @@ public:
 
     void attachToBus(K1520Bus& bus);
     void reset();
-    /// Maschinentakte fortschreiben (CTC, Umschaltzeichen); true = Interruptzustand evtl. geändert.
+    /// Maschinentakte fortschreiben (CTC, Umschaltzeichen); true = Interruptzustand evtl. geaendert.
     bool clockTick(int takte);
 
     Z80SIO& sio() { return sio_; }
     Z80CTC& ctc() { return ctc_; }
-    /// Der Anschluss „Fernschreiber“ für den SerialHub.
+    /// Der Anschluss „Fernschreiber“ fuer den SerialHub.
     k1520::serial::SerialAnschluss& anschluss();
 
     /// ITA2 → ASCII nach der BIOS-Tabelle (E366H); 0 = kein druckbares Zeichen.

@@ -1,11 +1,11 @@
 /**
  * @file test_rfc2217_codec.cpp
- * @brief Unit-Tests für den RFC-2217-Codec (`core/serial/rfc2217_codec.h`).
+ * @brief Unit-Tests fuer den RFC-2217-Codec (`core/serial/rfc2217_codec.h`).
  *
  * @details
  * Doc: doc/design/19_serielle_schnittstellen.md §7.5, §6.4, §11.
- * Gruppen: Anfangsverhandlung (WILL 44 / DO 44), jeder Befehl hin und zurück,
- * +100-Antworten, Baud in Netzreihenfolge, Masken, 0xFF in SB, Zerreißen.
+ * Gruppen: Anfangsverhandlung (WILL 44 / DO 44), jeder Befehl hin und zurueck,
+ * +100-Antworten, Baud in Netzreihenfolge, Masken, 0xFF in SB, Zerreissen.
  */
 #include <gtest/gtest.h>
 
@@ -75,7 +75,7 @@ TEST(Rfc2217Codec, BaudInNetzreihenfolge) {
 }
 
 TEST(Rfc2217Codec, BaudMitFF_WirdVerdoppeltUndFehlerfreiZurueckgelesen) {
-    // 0x000000FF = 255 Bd und 0xFF00FF00 zum Härten
+    // 0x000000FF = 255 Bd und 0xFF00FF00 zum Haerten
     for (uint32_t baud : {255u, 0xFF00FF00u, 115200u, 0u}) {
         Rfc2217Codec c(TelnetRolle::Client), s(TelnetRolle::Server);
         c.sendeBaud(baud);
@@ -97,7 +97,7 @@ TEST(Rfc2217Codec, ServerAntwortetMitGastwertAlsBefehlPlus100) {
     auto e = eins(s);
     ASSERT_EQ(e.art, Art::Baud);
     EXPECT_EQ(e.wert, 19200u);
-    // Der Gast läuft mit 9600 — die Antwort trägt den Gastwert, nicht den verlangten.
+    // Der Gast laeuft mit 9600 — die Antwort traegt den Gastwert, nicht den verlangten.
     s.sendeBaud(9600, /*alsAntwort=*/true);
     Bytes wire = s.nimmAusgabe();
     EXPECT_EQ(wire, (Bytes{IAC, SB, 44, 101, 0, 0, 0x25, 0x80, IAC, SE}));
@@ -232,7 +232,7 @@ TEST(Rfc2217Codec, ModemstateByteMitFFWirdVerdoppelt) {
 
 TEST(Rfc2217Codec, MaskenSteuernDieNotifies) {
     Rfc2217Codec c(TelnetRolle::Client), s(TelnetRolle::Server);
-    // Client setzt Masken: Modem nur CTS-Änderung (Bit 0x01), Line 0x02
+    // Client setzt Masken: Modem nur CTS-Aenderung (Bit 0x01), Line 0x02
     c.sendeModemStateMaske(MS_DELTA_CTS);
     c.sendeLineStateMaske(0x02);
     uebertrage(c, s);
@@ -334,7 +334,7 @@ TEST(Rfc2217Codec, ParitaetUndStoppbitsUmrechnungZurSerialFormat) {
 TEST(Rfc2217Codec, TelnetSchichtDarunterBleibtTransparent) {
     Rfc2217Codec c(TelnetRolle::Client), s(TelnetRolle::Server);
     verbinde(c, s);
-    // BINARY läuft → CR ohne NUL
+    // BINARY laeuft → CR ohne NUL
     s.sende(Bytes{0x0D, 0x0A});
     EXPECT_EQ(s.nimmAusgabe(), (Bytes{0x0D, 0x0A}));
     // Unbekannte Telnet-Option wird abgelehnt

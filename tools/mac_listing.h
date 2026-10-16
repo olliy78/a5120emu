@@ -2,31 +2,31 @@
  * @file mac_listing.h
  * @brief Fremdquellen (`.MAC`/`.ASM`) als Annotationsquelle — Adresse → Quellzeile.
  *
- * Gegenstück zu tools/prn_listing.h: Jenes braucht ein **Listing** (Adressspalte +
+ * Gegenstueck zu tools/prn_listing.h: Jenes braucht ein **Listing** (Adressspalte +
  * emittierte Objektbytes), wie es nur der eigene Assemblerlauf liefert. Fremd-
  * Betriebssysteme (UDOS, SCPX …) liegen dagegen als **reiner Quelltext** vor —
- * `ORG 0`, keine Adressspalte. Bisher hieß das: Opcode-Längen von Hand durchzählen,
+ * `ORG 0`, keine Adressspalte. Bisher hiess das: Opcode-Laengen von Hand durchzaehlen,
  * um zu wissen, welche Zeile bei welcher Adresse steht.
  *
  * Dieser Header assembliert den Quelltext so weit, dass jede Zeile eine Adresse
- * (und — für den Versatz-Abgleich, s. `Image`) ihre Objektbytes bekommt:
+ * (und — fuer den Versatz-Abgleich, s. `Image`) ihre Objektbytes bekommt:
  *
  *   - **Encoder aus dem Disassembler abgeleitet.** Statt einer handgepflegten
- *     Opcode-Tabelle wird tools/z80dis_min.h einmalig *rückwärts* aufgezogen:
+ *     Opcode-Tabelle wird tools/z80dis_min.h einmalig *rueckwaerts* aufgezogen:
  *     jede Opcode-Kombination wird mit Platzhalter-Operanden dekodiert, die
  *     Operandenfelder werden durch Byte-Variation ermittelt und der so
- *     normalisierte Mnemonik-Text wird zum Schlüssel („LD BC,$" → DD/Opcode +
+ *     normalisierte Mnemonik-Text wird zum Schluessel („LD BC,$" → DD/Opcode +
  *     Feldlage). Damit ist der Assembler per Konstruktion mit dem Disassembler
  *     konsistent und deckt denselben Befehlsvorrat ab.
  *   - **Mxxxx-Labelanker.** Disassemblat-Quellen tragen die Originaladresse im
- *     Labelnamen (`M03F8:`). Weicht der laufende Adresszähler davon ab, wird er
- *     nachgeführt und die Abweichung gemeldet — ein einzelner falsch gezählter
+ *     Labelnamen (`M03F8:`). Weicht der laufende Adresszaehler davon ab, wird er
+ *     nachgefuehrt und die Abweichung gemeldet — ein einzelner falsch gezaehlter
  *     Befehl verschiebt also nicht mehr alles Folgende.
- *   - **Wildcards.** Adressabhängige Operandenbytes (Symbol-Adressen, relative
- *     Sprünge) werden als „variabel" markiert. Der Versatz-Abgleich (`@auto`)
- *     vergleicht nur die relokationsunabhängigen Bytes.
+ *   - **Wildcards.** Adressabhaengige Operandenbytes (Symbol-Adressen, relative
+ *     Spruenge) werden als „variabel" markiert. Der Versatz-Abgleich (`@auto`)
+ *     vergleicht nur die relokationsunabhaengigen Bytes.
  *
- * Header-only, hängt nur an prn_listing.h/z80dis_min.h + STL → unit-testbar.
+ * Header-only, haengt nur an prn_listing.h/z80dis_min.h + STL → unit-testbar.
  *
  * @license MIT
  */
@@ -70,7 +70,7 @@ inline bool isIdentChar(char c){
 }
 
 /**
- * Zahl in MACRO-80-Schreibweise parsen: `0FFH`/`12H` (hex), `1011B` (binär),
+ * Zahl in MACRO-80-Schreibweise parsen: `0FFH`/`12H` (hex), `1011B` (binaer),
  * `17O`/`17Q` (oktal), `123`/`123D` (dezimal), `0x1F`, `'A'` (Zeichen).
  * @return false, wenn @p t keine reine Zahl ist.
  */
@@ -88,7 +88,7 @@ inline bool parseNum(const std::string& t, long& v){
     else if (suf=='O'||suf=='Q'){ base=8; body.pop_back(); }
     else if (suf=='D'){ base=10; body.pop_back(); }
     if (body.empty()) return false;
-    // Hex-Literale müssen mit einer Ziffer beginnen (MACRO-80-Konvention 0FFH).
+    // Hex-Literale muessen mit einer Ziffer beginnen (MACRO-80-Konvention 0FFH).
     if (!isdigit((unsigned char)body[0])) return false;
     char* e=nullptr; long x = strtol(body.c_str(), &e, base);
     if (!e || *e != '\0') return false;
@@ -96,14 +96,14 @@ inline bool parseNum(const std::string& t, long& v){
 }
 
 // ─── Ausdrucksauswertung ─────────────────────────────────────────────────────
-/// Symboltabelle des Assemblerlaufs (Labels + EQU-Werte), Namen in Großschreibung.
+/// Symboltabelle des Assemblerlaufs (Labels + EQU-Werte), Namen in Grossschreibung.
 using SymTab = std::map<std::string,long>;
 
 /**
  * Wertet einen MACRO-80-Ausdruck aus: Zahlen, Symbole, `$` (aktueller Adress-
- * zähler), unäres `+`/`-`/`NOT`, `* / MOD SHL SHR`, `+ -`, `AND OR XOR`.
+ * zaehler), unaeres `+`/`-`/`NOT`, `* / MOD SHL SHR`, `+ -`, `AND OR XOR`.
  * @param unresolved [out] wird gesetzt, wenn ein unbekanntes Symbol vorkam
- *                   (der Ausdruck gilt dann als adressabhängig/unsicher).
+ *                   (der Ausdruck gilt dann als adressabhaengig/unsicher).
  */
 inline long evalExpr(const std::string& expr, const SymTab& syms, long loc,
                      bool* unresolved = nullptr, bool* has_symbol = nullptr){
@@ -187,7 +187,7 @@ struct Enc {
 
 namespace detail {
 
-/// Text-Span (Anfang/Ende) auf Hexziffern + abschließendes 'H' ausdehnen.
+/// Text-Span (Anfang/Ende) auf Hexziffern + abschliessendes 'H' ausdehnen.
 inline void widenSpan(const std::string& t, size_t& a, size_t& b){
     auto hex=[&](char c){ return isxdigit((unsigned char)c)!=0; };
     while (a > 0 && hex(t[a-1])) --a;
@@ -237,10 +237,10 @@ inline z80dis::Insn decodeTemplate(const uint8_t* tpl, int n){
 }
 
 /**
- * Eine Opcode-Schablone in einen @ref Enc + Schlüssel übersetzen.
- * @param tpl   Schablone (Präfixe + Opcode + Füllbytes).
- * @param n     Schablonenlänge.
- * @param free  Positionen, die Operandenbytes sein KÖNNEN (nie Opcode-Bytes).
+ * Eine Opcode-Schablone in einen @ref Enc + Schluessel uebersetzen.
+ * @param tpl   Schablone (Praefixe + Opcode + Fuellbytes).
+ * @param n     Schablonenlaenge.
+ * @param free  Positionen, die Operandenbytes sein KOENNEN (nie Opcode-Bytes).
  */
 inline bool buildEntry(const uint8_t* tpl, int n, const std::vector<int>& free,
                        std::string& key, Enc& e){
@@ -250,7 +250,7 @@ inline bool buildEntry(const uint8_t* tpl, int n, const std::vector<int>& free,
     std::string text = ins.text;
     if (text.rfind("NOP*",0)==0) return false;           // undefinierter ED-Opcode
     // Welche freien Positionen liegen im Befehl — und welchen Textabschnitt
-    // steuern sie? Byte variieren und die Textänderung beobachten.
+    // steuern sie? Byte variieren und die Textaenderung beobachten.
     struct Field { int pos; size_t a, b; };
     std::vector<Field> fields;
     for (int p : free){
@@ -264,7 +264,7 @@ inline bool buildEntry(const uint8_t* tpl, int n, const std::vector<int>& free,
         widenSpan(text, a, b);
         fields.push_back({p,a,b});
     }
-    // Felder zusammenfassen: zwei benachbarte Bytes mit überlappendem Span = 16 Bit.
+    // Felder zusammenfassen: zwei benachbarte Bytes mit ueberlappendem Span = 16 Bit.
     e = Enc{}; e.len = ins.len;
     memcpy(e.bytes, base, (size_t)ins.len);
     std::vector<std::pair<size_t,size_t>> spans;
@@ -285,7 +285,7 @@ inline bool buildEntry(const uint8_t* tpl, int n, const std::vector<int>& free,
         spans.push_back({a,b});
         ++i;
     }
-    // Spans (von hinten) durch "$" ersetzen → Schlüsseltext.
+    // Spans (von hinten) durch "$" ersetzen → Schluesseltext.
     std::sort(spans.begin(), spans.end());
     for (auto it = spans.rbegin(); it != spans.rend(); ++it)
         text = text.substr(0,it->first) + "$" + text.substr(it->second);
@@ -294,7 +294,7 @@ inline bool buildEntry(const uint8_t* tpl, int n, const std::vector<int>& free,
     return true;
 }
 
-/// Die (einmalig gebaute) Schlüssel→Kodierung-Tabelle des Z80-Befehlssatzes.
+/// Die (einmalig gebaute) Schluessel→Kodierung-Tabelle des Z80-Befehlssatzes.
 inline const std::map<std::string,Enc>& table(){
     static const std::map<std::string,Enc> t = []{
         std::map<std::string,Enc> m;
@@ -304,7 +304,7 @@ inline const std::map<std::string,Enc>& table(){
             if (m.find(k)==m.end()) m.emplace(k,e);
             // Der Disassembler vereinfacht den kombinierten Fall DD/FD + (IX+d)
             // kosmetisch zu IXH/IXL (s. z80dis_min.h). Gemeint — und in jeder Quelle
-            // so geschrieben — ist dort das normale H/L. Zweitschlüssel eintragen.
+            // so geschrieben — ist dort das normale H/L. Zweitschluessel eintragen.
             if (e.p_disp >= 0){
                 std::string alias = k; bool changed=false;
                 for (const char* pat : {"IXH","IYH"}){
@@ -313,8 +313,8 @@ inline const std::map<std::string,Enc>& table(){
                     size_t p; while ((p=alias.find(pat))!=std::string::npos){ alias.replace(p,3,"L"); changed=true; } }
                 if (changed && m.find(alias)==m.end()) m.emplace(alias,e);
             } };
-        // Reihenfolge = Priorität: kürzeste/kanonische Kodierung gewinnt.
-        for (int op=0; op<256; ++op){                    // ohne Präfix
+        // Reihenfolge = Prioritaet: kuerzeste/kanonische Kodierung gewinnt.
+        for (int op=0; op<256; ++op){                    // ohne Praefix
             if (op==0xCB||op==0xED||op==0xDD||op==0xFD) continue;
             uint8_t tpl[4]={(uint8_t)op,0x05,0x06,0x07}; add(tpl,4,{1,2});
         }
@@ -326,9 +326,9 @@ inline const std::map<std::string,Enc>& table(){
                 uint8_t tpl[4]={pfx,(uint8_t)op,0x05,0x06}; add(tpl,4,{2,3});
             }
             for (int op=0; op<256; ++op){                 // DD CB d op
-                // Nur die dokumentierte Form (z==6): der Disassembler zeigt für alle
-                // acht z-Varianten denselben Text "(IX+d)" — ohne diese Auswahl würde
-                // der Schlüssel auf die undokumentierte Kopie z==0 zeigen.
+                // Nur die dokumentierte Form (z==6): der Disassembler zeigt fuer alle
+                // acht z-Varianten denselben Text "(IX+d)" — ohne diese Auswahl wuerde
+                // der Schluessel auf die undokumentierte Kopie z==0 zeigen.
                 if ((op & 7) != 6) continue;
                 uint8_t tpl[4]={pfx,0xCB,0x05,(uint8_t)op}; add(tpl,4,{2});
             }
@@ -343,14 +343,14 @@ inline const std::map<std::string,Enc>& table(){
 // ─── Quellzeile ──────────────────────────────────────────────────────────────
 struct SrcLine {
     std::string label;   ///< Label ohne ':' (leer, wenn keins)
-    std::string mnem;    ///< Mnemonik/Direktive in Großschreibung
+    std::string mnem;    ///< Mnemonik/Direktive in Grossschreibung
     std::string ops;     ///< Operandenfeld (roh, ohne Kommentar)
 };
 
 /// Eine Quellzeile in Label / Mnemonik / Operanden zerlegen (Kommentar entfernt).
 inline bool splitSource(const std::string& raw, SrcLine& out){
     out = SrcLine{};
-    // Kommentar abschneiden — ';' zählt nicht innerhalb von Zeichenketten.
+    // Kommentar abschneiden — ';' zaehlt nicht innerhalb von Zeichenketten.
     std::string s; char q=0;
     for (size_t i=0;i<raw.size();++i){
         char c = raw[i];
@@ -368,7 +368,7 @@ inline bool splitSource(const std::string& raw, SrcLine& out){
         std::string tok = upper(s.substr(a,i-a));
         bool colon = (i<s.size() && s[i]==':');
         // Ohne ':' kann in Spalte 1 auch eine Direktive stehen (TITLE, SUBTTL,
-        // .PHASE …). Sie als Label zu lesen, verschöbe den ganzen Rest.
+        // .PHASE …). Sie als Label zu lesen, verschoebe den ganzen Rest.
         static const std::set<std::string> col0_directives = {
             "TITLE","SUBTTL","NAME","PAGE","ORG","END",".PHASE",".DEPHASE",".Z80",".8080",
             "ASEG","CSEG","DSEG","PUBLIC","EXTRN","GLOBAL","ENTRY",".RADIX",".LIST",".XLIST",
@@ -396,12 +396,12 @@ inline bool isRegKeyword(const std::string& t){
     return k.count(t) != 0;
 }
 
-/// Ein Operand in der Schlüssel-Schreibweise + der zugehörige Ausdruck.
+/// Ein Operand in der Schluessel-Schreibweise + der zugehoerige Ausdruck.
 struct OpndForm {
     std::string key;      ///< "B" / "(HL)" / "$" / "($)" / "(IX+$)"
     std::string expr;     ///< auszuwertender Ausdruck (leer bei Registern)
     bool        is_disp = false;
-    bool        constant_ok = false;   ///< Ausdruck ist eine reine Zahl (Alternativschlüssel)
+    bool        constant_ok = false;   ///< Ausdruck ist eine reine Zahl (Alternativschluessel)
     long        constant = 0;
 };
 
@@ -444,9 +444,9 @@ inline std::vector<std::string> splitOperands(const std::string& ops){
 
 // ─── Assemblat ───────────────────────────────────────────────────────────────
 /**
- * Die assemblierten Bytes (für den Versatz-Abgleich `@auto` / `verify`).
- * `wild` markiert adressabhängige Bytes (Symboladressen, relative Sprünge) —
- * beim Musterabgleich mit dem RAM werden sie übersprungen.
+ * Die assemblierten Bytes (fuer den Versatz-Abgleich `@auto` / `verify`).
+ * `wild` markiert adressabhaengige Bytes (Symboladressen, relative Spruenge) —
+ * beim Musterabgleich mit dem RAM werden sie uebersprungen.
  */
 struct Image {
     std::map<uint16_t,uint8_t> byte;
@@ -457,9 +457,9 @@ struct Image {
 struct Result {
     int lines = 0;        ///< gelesene Zeilen
     int code  = 0;        ///< Zeilen mit Adresse (Code/Daten)
-    int unknown = 0;      ///< nicht erkannte Befehle (Adresszähler läuft weiter)
+    int unknown = 0;      ///< nicht erkannte Befehle (Adresszaehler laeuft weiter)
     int anchors = 0;      ///< erkannte Mxxxx-Adressanker
-    int resyncs = 0;      ///< davon: Adresszähler musste nachgeführt werden
+    int resyncs = 0;      ///< davon: Adresszaehler musste nachgefuehrt werden
     uint16_t first = 0xFFFF, last = 0;
     std::vector<std::string> problems;   ///< erste unbekannte Zeilen (Diagnose)
     std::string error;                   ///< gesetzt, wenn die Datei fehlt
@@ -476,7 +476,7 @@ inline bool anchorAddr(const std::string& label, uint16_t& a){
     return true;
 }
 
-/// Zeichenkette/Bytefolge eines DB-Operanden anhängen.
+/// Zeichenkette/Bytefolge eines DB-Operanden anhaengen.
 inline void emitDbItem(const std::string& item, const SymTab& syms, long loc,
                        std::vector<uint8_t>& out, std::vector<bool>& wild){
     std::string t = trim(item);
@@ -516,7 +516,7 @@ inline bool assemble(const std::string& path, long addr_offset,
     res.lines = (int)raw.size();
 
     SymTab syms;
-    // ── Zwei Durchläufe: erst Adressen/Labels, dann Bytes (Vorwärtsbezüge). ──
+    // ── Zwei Durchlaeufe: erst Adressen/Labels, dann Bytes (Vorwaertsbezuege). ──
     for (int pass = 0; pass < 2; ++pass){
         long loc = 0;
         bool ended = false;
@@ -529,7 +529,7 @@ inline bool assemble(const std::string& path, long addr_offset,
             // Label: EQU/SET definieren einen Wert, sonst die aktuelle Adresse.
             // Wertzuweisende Pseudobefehle. `SET` ist doppelt belegt: als MACRO-80-
             // Pseudobefehl (`NAME SET wert`) UND als Z80-Befehl `SET b,r` — letzterer
-            // steht ohne Label da. Ohne diese Unterscheidung verschwände jedes
+            // steht ohne Label da. Ohne diese Unterscheidung verschwaende jedes
             // `SET 0,(IY+1)` spurlos aus dem Assemblat.
             bool is_equ = (sl.mnem=="EQU")
                        || (!sl.label.empty() &&
@@ -588,7 +588,7 @@ inline bool assemble(const std::string& path, long addr_offset,
                 loc += (long)bytes.size();
                 continue;
             }
-            // Listing-/Segment-Pseudobefehle ohne Wirkung auf den Adresszähler.
+            // Listing-/Segment-Pseudobefehle ohne Wirkung auf den Adresszaehler.
             static const std::set<std::string> ignore = {
                 ".Z80",".8080",".DEPHASE","ASEG","CSEG","DSEG","TITLE","SUBTTL","NAME",
                 "PUBLIC","EXTRN","EXT","GLOBAL","ENTRY",".LIST",".XLIST",".RADIX",
@@ -601,7 +601,7 @@ inline bool assemble(const std::string& path, long addr_offset,
                 if (trim(o).empty()) continue;
                 forms.push_back(detail::classifyOperand(o));
             }
-            // Schlüsselkandidaten: erst mit "$"-Platzhaltern, dann mit den
+            // Schluesselkandidaten: erst mit "$"-Platzhaltern, dann mit den
             // Konstanten im Klartext (RST 38H / BIT 3,B — Zahl steckt im Opcode).
             std::vector<std::string> keys;
             {
@@ -635,7 +635,7 @@ inline bool assemble(const std::string& path, long addr_offset,
             if (!enc){
                 if (pass==1){ ++res.unknown;
                     if ((int)res.problems.size() < 20) res.problems.push_back(trim(line)); }
-                continue;                       // Adresszähler steht — Anker fangen das ab
+                continue;                       // Adresszaehler steht — Anker fangen das ab
             }
             if (pass==1){
                 uint16_t a = (uint16_t)(loc + addr_offset);
@@ -679,7 +679,7 @@ inline bool assemble(const std::string& path, long addr_offset,
 }
 
 // ─── Versatz-Abgleich (`@auto`) ──────────────────────────────────────────────
-/// Zahl der (nicht-wildcard) Bytes im Assemblat — Bezugsgröße für `matched`.
+/// Zahl der (nicht-wildcard) Bytes im Assemblat — Bezugsgroesse fuer `matched`.
 inline int fixedByteCount(const Image& img){
     int n=0; for (auto& kv : img.byte) if (!img.wild.count(kv.first)) ++n;
     return n;
@@ -689,14 +689,14 @@ inline int fixedByteCount(const Image& img){
 struct MatchResult {
     bool  found      = false;
     long  offset     = 0;     ///< zu addierender Versatz (Laufzeit = Quelle + offset)
-    int   anchor_len = 0;     ///< Länge der verglichenen Ankersequenz
-    int   matched    = 0;     ///< übereinstimmende Ankerbytes
-    int   candidates = 0;     ///< Zahl geprüfter Versatz-Kandidaten
+    int   anchor_len = 0;     ///< Laenge der verglichenen Ankersequenz
+    int   matched    = 0;     ///< uebereinstimmende Ankerbytes
+    int   candidates = 0;     ///< Zahl gepruefter Versatz-Kandidaten
     uint16_t anchor_src = 0;  ///< Quelladresse der Ankersequenz
     int   fixed      = 0;     ///< Zahl der verglichenen (nicht-wildcard) Bytes
     double ratio     = 0.0;   ///< matched/fixed — 1.0 = identischer Build
 
-    /// Klartext-Einschätzung des Treffers (für die Werkzeugausgabe).
+    /// Klartext-Einschaetzung des Treffers (fuer die Werkzeugausgabe).
     const char* verdict() const {
         if (!found)        return "kein Treffer";
         if (ratio >= 0.98) return "identischer Build";
@@ -709,19 +709,19 @@ struct MatchResult {
 /**
  * Den Ladeversatz eines Assemblats im Speicher bestimmen.
  *
- * Sucht die längste zusammenhängende Folge relokationsunabhängiger Bytes
+ * Sucht die laengste zusammenhaengende Folge relokationsunabhaengiger Bytes
  * (@ref Image::wild ausgenommen) und scannt damit den 64-KB-Adressraum;
- * anschließend wird die Trefferquote über das ganze Assemblat gemessen.
+ * anschliessend wird die Trefferquote ueber das ganze Assemblat gemessen.
  *
  * @param rd  Byte-Leser des Zielspeichers.
- * @param min_anchor  Mindestlänge der Ankersequenz (Voreinstellung 12 Bytes).
+ * @param min_anchor  Mindestlaenge der Ankersequenz (Voreinstellung 12 Bytes).
  */
 template <typename Reader>
 inline MatchResult findOffset(const Image& img, Reader rd, int min_anchor = 12){
     MatchResult r;
     if (img.byte.empty()) return r;
-    // Alle zusammenhängenden wildcard-freien Folgen sammeln (längste zuerst).
-    std::vector<std::pair<uint16_t,int>> runs;   // (Startadresse, Länge)
+    // Alle zusammenhaengenden wildcard-freien Folgen sammeln (laengste zuerst).
+    std::vector<std::pair<uint16_t,int>> runs;   // (Startadresse, Laenge)
     { int cur_len=0; uint16_t cur_start=0, prev=0; bool have_prev=false;
       for (auto& kv : img.byte){
         bool usable = !img.wild.count(kv.first);
@@ -735,17 +735,17 @@ inline MatchResult findOffset(const Image& img, Reader rd, int min_anchor = 12){
               [](const std::pair<uint16_t,int>& a, const std::pair<uint16_t,int>& b){
                   return a.second > b.second; });
 
-    // MEHRERE Ankerfenster über das ganze Assemblat abstimmen lassen. Ein
-    // einzelnes Fenster genügt nicht: Fremd-Builds sind oft nur STELLENWEISE
-    // verschoben (eingefügte/entfernte Befehle) — ein Fenster aus einem
-    // verschobenen Bereich stimmt dann für einen falschen Versatz. Erst die
+    // MEHRERE Ankerfenster ueber das ganze Assemblat abstimmen lassen. Ein
+    // einzelnes Fenster genuegt nicht: Fremd-Builds sind oft nur STELLENWEISE
+    // verschoben (eingefuegte/entfernte Befehle) — ein Fenster aus einem
+    // verschobenen Bereich stimmt dann fuer einen falschen Versatz. Erst die
     // Gesamtbewertung aller Kandidaten trennt Zufallstreffer vom Ladeversatz.
     std::set<long> cands;
     const int kMaxWindows = 24;
     int windows = 0;
     for (auto& run : runs){
         if (run.second < min_anchor || windows >= kMaxWindows) break;
-        // Fenster kleiner als die Folge wählen: so liegt bei einem einzelnen
+        // Fenster kleiner als die Folge waehlen: so liegt bei einem einzelnen
         // abweichenden Byte (anderer Build) noch ein Fenster daneben.
         int win = std::max(min_anchor, std::min(24, run.second/2));
         if (win > run.second) win = run.second;
@@ -766,7 +766,7 @@ inline MatchResult findOffset(const Image& img, Reader rd, int min_anchor = 12){
     }
     r.candidates = (int)cands.size();
     if (cands.empty()) return r;
-    // Kandidaten über das GANZE Assemblat bewerten; der beste gewinnt.
+    // Kandidaten ueber das GANZE Assemblat bewerten; der beste gewinnt.
     long best_off = *cands.begin(); int best_hit = -1;
     for (long off : cands){
         int hit = 0;

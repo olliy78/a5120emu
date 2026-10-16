@@ -58,7 +58,7 @@ TrackView scanTrack(const TrackImage& track) {
     const double n = static_cast<double>(track.bytes.size());
     const std::vector<LogicalSector> sektoren = TrackCodec::parseTrack(track);
 
-    // Markenloser Gap-Fluss (createBlank) zählt als unformatiert, nicht als ein
+    // Markenloser Gap-Fluss (createBlank) zaehlt als unformatiert, nicht als ein
     // einziger riesiger Gap: der Unterschied ist, ob ein Gast hier formatieren muss.
     if (sektoren.empty()) {
         v.spans.push_back(ganze_runde);
@@ -72,7 +72,7 @@ TrackView scanTrack(const TrackImage& track) {
     for (size_t i = 0; i < sektoren.size(); ++i) {
         const LogicalSector& s = sektoren[i];
         if (s.sync_pos == SIZE_MAX) continue;
-        // Ein Sektor ohne (vollständiges) Datenfeld endet hinter seinem ID-Feld —
+        // Ein Sektor ohne (vollstaendiges) Datenfeld endet hinter seinem ID-Feld —
         // sonst verschluckte er den Rest der Spur.
         const size_t bis = (s.end_pos != SIZE_MAX) ? s.end_pos
                          : std::min(s.id_pos + 1 + 4 + 2, track.bytes.size());
@@ -94,8 +94,8 @@ TrackView scanTrack(const TrackImage& track) {
 
     size_t pos = 0;
     for (const Bereich& b : bereiche) {
-        // Überlappende Sektoren (kaputte Spur) werden nicht doppelt gezeichnet —
-        // der Abschnitt beginnt dann erst dort, wo der vorige aufhörte.
+        // Ueberlappende Sektoren (kaputte Spur) werden nicht doppelt gezeichnet —
+        // der Abschnitt beginnt dann erst dort, wo der vorige aufhoerte.
         const size_t von = std::max(b.von, pos);
         const size_t bis = std::max(b.bis, von);
         if (bis <= pos) continue;
@@ -106,8 +106,8 @@ TrackView scanTrack(const TrackImage& track) {
         sp.end   = static_cast<double>(std::min(bis, track.bytes.size())) / n;
         v.spans.push_back(sp);
 
-        // Läuft der Sektor über den Index hinaus, gehört sein Rest an den ANFANG der
-        // Runde — als zweites Teilstück mit derselben Nummer (s. TrackView-Doku).
+        // Laeuft der Sektor ueber den Index hinaus, gehoert sein Rest an den ANFANG der
+        // Runde — als zweites Teilstueck mit derselben Nummer (s. TrackView-Doku).
         if (bis > track.bytes.size()) {
             TrackSpan naht = b.span;
             naht.start = 0.0;
@@ -118,8 +118,8 @@ TrackView scanTrack(const TrackImage& track) {
     }
     gap(pos, track.bytes.size());
 
-    // Die Naht vorn kann den ersten Gap überdecken — die Liste bleibt sortiert und
-    // überschneidungsfrei, indem das erste Teilstück den folgenden Gap kürzt.
+    // Die Naht vorn kann den ersten Gap ueberdecken — die Liste bleibt sortiert und
+    // ueberschneidungsfrei, indem das erste Teilstueck den folgenden Gap kuerzt.
     for (size_t i = 1; i < v.spans.size(); ++i)
         if (v.spans[i].start < v.spans[i - 1].end)
             v.spans[i].start = v.spans[i - 1].end;

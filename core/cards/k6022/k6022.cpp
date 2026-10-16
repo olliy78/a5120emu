@@ -54,7 +54,7 @@ K6022::K6022(const Config& cfg, uint32_t cpu_hz)
     , pause_takte_(static_cast<uint64_t>(cpu_hz * kStanzpauseS)) {}
 
 K6022::~K6022() {
-    // Wie das Aushängen einer Diskette: was gestanzt wurde, gehört in die Datei.
+    // Wie das Aushaengen einer Diskette: was gestanzt wurde, gehoert in die Datei.
     stanzerZurueckschreiben();
 }
 
@@ -109,14 +109,14 @@ void K6022::leserRuf() {
 void K6022::stanzerRuf(uint8_t byte) {
     std::lock_guard<std::mutex> l(m_);
     stanz_byte_ = byte;
-    if (!stanzer_ein_) return;                    // kein Gerät: RUF bleibt unbeantwortet
+    if (!stanzer_ein_) return;                    // kein Geraet: RUF bleibt unbeantwortet
     stanz_ruf_     = true;
     arbeit_.store(true, std::memory_order_release);
     stanz_faellig_ = zeit_ + stanzer_takte_;
 }
 
 void K6022::leserStatusSetzen() {
-    // Stanzer: STA = 0 (bereit, kein Fehler) — `PTAPE.6022` prüft nach END D5|D6 (F181H).
+    // Stanzer: STA = 0 (bereit, kein Fehler) — `PTAPE.6022` prueft nach END D5|D6 (F181H).
     if (stanz_sta_ != 0x00) {
         stanz_sta_ = 0x00;
         pio_st_.portBWrite(0x00);
@@ -124,7 +124,7 @@ void K6022::leserStatusSetzen() {
     const uint8_t sta = (!band_drin_ || bandende_) ? STA_BANDENDE : 0x00;
     if (sta == leser_sta_) return;
     leser_sta_ = sta;
-    pio_le_.portBWrite(sta);                      // D4–D7 Eingänge; D0–D3 bleiben Ausgänge
+    pio_le_.portBWrite(sta);                      // D4–D7 Eingaenge; D0–D3 bleiben Ausgaenge
 }
 
 bool K6022::clockTick(int takte) {
@@ -134,7 +134,7 @@ bool K6022::clockTick(int takte) {
         flush_ab_ = 0;
         flush_faellig_.store(true, std::memory_order_release);
     }
-    // Schneller Weg je Instruktion: nichts unterwegs, kein neuer Zustand von außen.
+    // Schneller Weg je Instruktion: nichts unterwegs, kein neuer Zustand von aussen.
     if (!arbeit_.load(std::memory_order_acquire)) return false;
     bool geaendert = false;
     std::lock_guard<std::mutex> l(m_);
@@ -145,7 +145,7 @@ bool K6022::clockTick(int takte) {
             const uint64_t i = pos_++;
             const uint8_t b = (i >= cfg_.vorlauf && i - cfg_.vorlauf < band_.size())
                                   ? band_[i - cfg_.vorlauf] : 0x00;
-            pio_le_.portAWrite(b);                // END: Byte übernommen, Interrupt
+            pio_le_.portAWrite(b);                // END: Byte uebernommen, Interrupt
             geaendert = true;
         } else if (band_drin_) {
             bandende_ = true;                     // Band ist durch: kein END mehr, STA D6
@@ -249,9 +249,9 @@ bool K6022::stanzbandSpeichern(const std::string& pfad, std::string& fehler, For
 // ─── Stanzer: Dateibindung (Entwurf 23 §5) ───────────────────────────────────
 
 bool K6022::zurueckschreibenGesperrt(bool loesen) {
-    // Schnappschuss und Freigabe in EINEM Griff unter m_; geschrieben wird außerhalb
+    // Schnappschuss und Freigabe in EINEM Griff unter m_; geschrieben wird ausserhalb
     // von m_ (der Lauffaden stanzt derweil weiter), aber unter datei_m_ — so kann kein
-    // zweiter Schreiber mit älterem Stand den neueren überholen.
+    // zweiter Schreiber mit aelterem Stand den neueren ueberholen.
     std::vector<uint8_t> band;
     std::string pfad;
     Format fmt;
@@ -275,7 +275,7 @@ bool K6022::zurueckschreibenGesperrt(bool loesen) {
     LOG_WARN("K6022", "%s", fehler.c_str());
     std::lock_guard<std::mutex> l(m_);
     stanz_fehler_ = fehler;
-    if (!loesen && stanz_pfad_ == pfad) stanz_dirty_ = true;   // beim nächsten Anlass erneut
+    if (!loesen && stanz_pfad_ == pfad) stanz_dirty_ = true;   // beim naechsten Anlass erneut
     return false;
 }
 
@@ -291,7 +291,7 @@ bool K6022::autoFlush() {
 
 bool K6022::stanzerBinden(const std::string& pfad, Format fmt, std::string& fehler) {
     std::lock_guard<std::mutex> dl(datei_m_);
-    // Wechsel der Datei: die alte bekommt zuerst, was für sie gestanzt wurde.
+    // Wechsel der Datei: die alte bekommt zuerst, was fuer sie gestanzt wurde.
     if (!zurueckschreibenGesperrt(false)) {
         fehler = stanzerFehler();
         return false;
@@ -308,7 +308,7 @@ bool K6022::stanzerBinden(const std::string& pfad, Format fmt, std::string& fehl
             return false;
         }
         band = std::move(*b);
-        // Schreibbar?  Anhängend öffnen ändert nichts am Inhalt.
+        // Schreibbar?  Anhaengend oeffnen aendert nichts am Inhalt.
         std::ofstream probe(dateiPfad(pfad), std::ios::binary | std::ios::app);
         if (!probe) {
             fehler = "Stanzband nicht schreibbar: " + pfad;

@@ -223,8 +223,8 @@ GeometryMatch match(const std::vector<MeasuredTrack>& tracks, const DiskFormat& 
         return m;
     }
 
-    // Regel 6: Kopfzahl des Mediums.  Ein zweiköpfiges Format kann auf einer
-    // einseitigen Diskette nicht liegen — ohne diese Prüfung „passt" z. B.
+    // Regel 6: Kopfzahl des Mediums.  Ein zweikoepfiges Format kann auf einer
+    // einseitigen Diskette nicht liegen — ohne diese Pruefung „passt" z. B.
     // k5601_ds40_26x128 auf jede einseitige 40-Spur-UDOS-Diskette.
     uint8_t medium_heads = 0;
     for (const auto& t : tracks)

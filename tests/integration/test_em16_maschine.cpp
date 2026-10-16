@@ -3,9 +3,9 @@
  * @brief A5120.16 in der Maschine (S4): U880 und U8001 auf gemeinsamer Maschinenzeit,
  *        ohne CP/A — Z80- und U8001-Code direkt in den Speicher.
  *
- * Der U880 lädt die U8001-Firmware über ein EM-Fenster (Seite 4 → Zelle 0), gibt
+ * Der U880 laedt die U8001-Firmware ueber ein EM-Fenster (Seite 4 → Zelle 0), gibt
  * RESET16 frei, fordert mit TRQ8 den 8-Bit-Mode an, wartet auf PIO A6 (8/16) und liest
- * das Ergebnis zurück.  Dazu Save-State v6 mitten im 16-Bit-Lauf.  Der Ende-zu-Ende-
+ * das Ergebnis zurueck.  Dazu Save-State v6 mitten im 16-Bit-Lauf.  Der Ende-zu-Ende-
  * Lauf unter CP/A steht in test_em16_abl.cpp.
  */
 #include <gtest/gtest.h>
@@ -31,7 +31,7 @@ const std::vector<uint8_t> kZ80 = {
     0x3E, 0x38, 0xD3, 0xA9,             // RESET16=1, /TRQ8=1, /STOP=1, /RAMEN=0
     0x01, 0xAF, 0x40, 0x3E, 0x0C, 0xED, 0x79,   // A22[4] <- 0CH (PEN, WE, Block 0)
     0x21, 0x00, 0x90, 0x11, 0x00, 0x40, 0x01, 0x00, 0x02, 0xED, 0xB0,  // LDIR 9000H→4000H, 512
-    0x3E, 0x28, 0xD3, 0xA9,             // RESET16=0 ⇒ 16-Bit-Mode, U8001 läuft
+    0x3E, 0x28, 0xD3, 0xA9,             // RESET16=0 ⇒ 16-Bit-Mode, U8001 laeuft
     0x06, 0x00, 0x10, 0xFE,             // kurz warten (DJNZ $)
     0x3E, 0x08, 0xD3, 0xA9,             // /TRQ8=0: 8-Bit-Mode anfordern
     0xDB, 0xA8, 0xCB, 0x77, 0x28, 0xFA, // W: IN A,(A8H); BIT 6,A; JR Z,W (8/16)
@@ -82,8 +82,8 @@ bool bisHalt(A5120Machine& m, long long max) {
 /**
  * @test Em16Maschine/U880StartetU8001UndHoltErgebnisZurueck
  * @brief Der ganze Ablauf in der Maschine: Laden im 8-Bit-Mode, RESET16 = 0, TRQ8 →
- *   MSET → BUSAK → A29 beim M1, Ergebnis über das Fenster.  Die U8001-Zeit folgt der
- *   Maschinenzeit im Verhältnis 4 : 2,45.
+ *   MSET → BUSAK → A29 beim M1, Ergebnis ueber das Fenster.  Die U8001-Zeit folgt der
+ *   Maschinenzeit im Verhaeltnis 4 : 2,45.
  */
 TEST(Em16Maschine, U880StartetU8001UndHoltErgebnisZurueck) {
     A5120Machine m(em256());
@@ -104,8 +104,8 @@ TEST(Em16Maschine, U880StartetU8001UndHoltErgebnisZurueck) {
 /**
  * @test Em16Maschine/SaveStateV6MittenIm16BitMode
  * @brief saveState mitten im 16-Bit-Lauf, loadState in eine frische Maschine: gleicher
- *   Fortgang bis aufs Taktende.  Ein EM-Stand lädt auch in eine Maschine ohne EM
- *   (der EM-Block wird übergangen).
+ *   Fortgang bis aufs Taktende.  Ein EM-Stand laedt auch in eine Maschine ohne EM
+ *   (der EM-Block wird uebergangen).
  */
 TEST(Em16Maschine, SaveStateV6MittenIm16BitMode) {
     A5120Machine a(em256());

@@ -137,10 +137,10 @@ bool TrackSync::ensureLoaded(uint8_t cyl, uint8_t head) {
     if (medium_->state(cyl, head) != TrackState::Unknown) return true;
 
     Eintrag& e = eintraege_[idx(cyl, head)];
-    e.failed   = false;                 // ein ausdrücklicher Zugriff versucht es erneut
+    e.failed   = false;                 // ein ausdruecklicher Zugriff versucht es erneut
     if (e.job_id == 0) {
         // Vorhandenen Vorratsauftrag heraufstufen statt einen zweiten einzustellen —
-        // sonst läse man dieselbe Spur zweimal (Feinentwurf §5.2).
+        // sonst laese man dieselbe Spur zweimal (Feinentwurf §5.2).
         if (e.prio != SyncPriority::Demand) e.seq = ++seq_zaehler_;
         e.kind = SyncJobKind::Read;
         e.prio = SyncPriority::Demand;
@@ -156,7 +156,7 @@ bool TrackSync::ensureLoaded(uint8_t cyl, uint8_t head) {
 
     if (medium_ && medium_->state(cyl, head) != TrackState::Unknown) return true;
     if (medium_ && !eintraege_[idx(cyl, head)].failed && !stop_) {
-        letzter_fehler_ = "Zeitüberschreitung beim Lesen von Spur " +
+        letzter_fehler_ = "Zeitueberschreitung beim Lesen von Spur " +
                           std::to_string(cyl) + "/" + std::to_string(head);
         ++zaehler_.errors;
     }
@@ -207,7 +207,7 @@ bool TrackSync::flushPending(int timeout_ms) {
         return true;
     }
 
-    // Ruhefrist überspringen: alles, was ansteht, soll sofort hinaus.
+    // Ruhefrist ueberspringen: alles, was ansteht, soll sofort hinaus.
     const auto lange_her = Uhr::now() - std::chrono::hours(1);
     bool etwas = false;
     for (size_t i = 0; i < eintraege_.size(); ++i) {
@@ -317,14 +317,14 @@ bool TrackSync::waehleAuftrag(SyncJob& out) {
         if (bester != SIZE_MAX) { art = SyncJobKind::Verify; prio = SyncPriority::Writeback; }
     }
 
-    // 2b) Rückführung — **Fahrstuhl**: in der laufenden Fahrtrichtung die nächste
-    // fällige Spur, und erst wenn dort keine mehr liegt, umkehren (Feinentwurf §7.3).
+    // 2b) Rueckfuehrung — **Fahrstuhl**: in der laufenden Fahrtrichtung die naechste
+    // faellige Spur, und erst wenn dort keine mehr liegt, umkehren (Feinentwurf §7.3).
     //
     // Nach der Eintreffreihenfolge zu gehen hiesse, immer die HINTERSTE Spur zu nehmen,
-    // während das Gastsystem vorn arbeitet: jedes Auftragspaar führe die ganze Strecke
-    // hin und zurück, und weil der Rückstand während eines Formatierlaufs wächst, würde
-    // die Strecke immer länger.  Der Fahrstuhl verhungert dabei niemanden — was in
-    // einer Fahrtrichtung übersprungen wird, holt die Rückfahrt ab.
+    // waehrend das Gastsystem vorn arbeitet: jedes Auftragspaar fuehre die ganze Strecke
+    // hin und zurueck, und weil der Rueckstand waehrend eines Formatierlaufs waechst, wuerde
+    // die Strecke immer laenger.  Der Fahrstuhl verhungert dabei niemanden — was in
+    // einer Fahrtrichtung uebersprungen wird, holt die Rueckfahrt ab.
     if (bester == SIZE_MAX && spec_.writable) {
         auto faellig = [&](const Eintrag& e) {
             return e.job_id == 0 && e.dirty_pending && (jetzt - e.dirty_since >= ruhe);
@@ -348,13 +348,13 @@ bool TrackSync::waehleAuftrag(SyncJob& out) {
         }
     }
 
-    // 3) Vorauslesen — unbekannte Spur mit dem kürzesten Kopfweg.
+    // 3) Vorauslesen — unbekannte Spur mit dem kuerzesten Kopfweg.
     //
-    // Es ruht, solange überhaupt etwas zurückzuschreiben ist (§5.3) — auch wenn diese
+    // Es ruht, solange ueberhaupt etwas zurueckzuschreiben ist (§5.3) — auch wenn diese
     // Spuren gerade noch ihre Ruhefrist absitzen.  Sonst liest der Adapter mitten in
-    // einem Formatierlauf Spuren ein, die im nächsten Augenblick überschrieben werden:
-    // dreifache Arbeit für nichts, und genau das Fenster, in dem ein Leseergebnis vom
-    // Gastsystem überholt wird (§5.2a).
+    // einem Formatierlauf Spuren ein, die im naechsten Augenblick ueberschrieben werden:
+    // dreifache Arbeit fuer nichts, und genau das Fenster, in dem ein Leseergebnis vom
+    // Gastsystem ueberholt wird (§5.2a).
     auto rueckstand = [this] {
         if (!spec_.writable) return false;
         for (const Eintrag& e : eintraege_)
@@ -430,7 +430,7 @@ bool TrackSync::takeJob(SyncJob& out, int timeout_ms) {
         }
         if (waehleAuftrag(out)) return true;
 
-        // Nichts zu tun: bis zur nächsten Ruhefrist schlafen, längstens bis @p frist.
+        // Nichts zu tun: bis zur naechsten Ruhefrist schlafen, laengstens bis @p frist.
         auto weckzeit = frist;
         if (spec_.writable) {
             const auto ruhe = std::chrono::milliseconds(spec_.write_settle_ms);
@@ -447,7 +447,7 @@ bool TrackSync::takeJob(SyncJob& out, int timeout_ms) {
         }
         cv_arbeit_.wait_until(sperre, weckzeit);
         if (!stop_ && Uhr::now() >= frist) {
-            // Frist abgelaufen; ein letzter Blick, dann zurück.
+            // Frist abgelaufen; ein letzter Blick, dann zurueck.
             if (waehleAuftrag(out)) return true;
             return false;
         }
@@ -467,7 +467,7 @@ bool TrackSync::fetchWrite(uint32_t id, std::vector<uint8_t>& cells, uint32_t& b
         }
         kopie = medium_->peek(c, h);
     }
-    // Codieren außerhalb der Sperre — der Vordergrund soll nicht darauf warten.
+    // Codieren ausserhalb der Sperre — der Vordergrund soll nicht darauf warten.
     bitcells = kopie.bitcells ? kopie.bitcells : nominalBitcells();
     cells    = BitCodec::encode(kopie, bitcells);
     // Eine Spur mit halber Datenrate (SCP1700-Bootspur) muss auch mit halber Rate auf
@@ -686,8 +686,8 @@ bool TrackSync::completeWrite(uint32_t id) {
         letzter_fehler_ = "completeWrite: unbekannter Auftrag";
         return false;
     }
-    // Wurde die Spur WÄHREND des Schreibens erneut geändert, bleibt sie schmutzig —
-    // sonst ginge die jüngste Änderung stillschweigend verloren.
+    // Wurde die Spur WAEHREND des Schreibens erneut geaendert, bleibt sie schmutzig —
+    // sonst ginge die juengste Aenderung stillschweigend verloren.
     const bool erneut = (e->changes != e->changes_at_handout);
     e->job_id = 0;
     e->kind   = SyncJobKind::None;
@@ -741,21 +741,21 @@ void TrackSync::failJob(uint32_t id, const std::string& msg) {
     } else if (e->write_attempts > spec_.write_verify_retries) {
         // Auch der SCHREIBVORGANG selbst wird nicht endlos wiederholt.  Scheitert er
         // nicht an der Diskette, sondern am Laufwerk (kein Indexsignal, Adapter weg,
-        // schreibgeschützt), kommt bei jedem Versuch derselbe Fehler zurück: der
-        // Arbeitsfaden käme nie zur Ruhe, @ref flushPending wartete auf ein Ende, das
-        // es nicht gibt, und das Abmelden sässe seine ganze Frist ab — von aussen
-        // sieht das aus, als hinge das Programm.  Gezählt wird mit demselben Zähler
-        // wie beim Pruef-Lesen (@ref TrackSyncSpec::write_verify_retries; er wächst
+        // schreibgeschuetzt), kommt bei jedem Versuch derselbe Fehler zurueck: der
+        // Arbeitsfaden kaeme nie zur Ruhe, @ref flushPending wartete auf ein Ende, das
+        // es nicht gibt, und das Abmelden saesse seine ganze Frist ab — von aussen
+        // sieht das aus, als hinge das Programm.  Gezaehlt wird mit demselben Zaehler
+        // wie beim Pruef-Lesen (@ref TrackSyncSpec::write_verify_retries; er waechst
         // bei der Ausgabe des Auftrags), und am Ende steht derselbe Befund: die Spur
-        // ist nicht beschreibbar.  Das Abbild im Speicher bleibt GEÄNDERT — auf einer
-        // heilen Diskette lässt es sich noch retten (§7.2).
+        // ist nicht beschreibbar.  Das Abbild im Speicher bleibt GEAENDERT — auf einer
+        // heilen Diskette laesst es sich noch retten (§7.2).
         e->defect        = true;
         e->dirty_pending = false;
         letzter_fehler_  = "Spur " + std::to_string(c) + "/" + std::to_string(h) +
                            " liess sich nicht schreiben: " + msg;
     } else {
-        // Nicht geschriebene Änderung: erneut einstellen — nach der Ruhefrist, damit
-        // ein hängendes Laufwerk nicht im Sekundentakt angefahren wird.
+        // Nicht geschriebene Aenderung: erneut einstellen — nach der Ruhefrist, damit
+        // ein haengendes Laufwerk nicht im Sekundentakt angefahren wird.
         e->dirty_pending = true;
         e->dirty_since   = Uhr::now();
     }

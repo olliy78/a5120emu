@@ -1,5 +1,5 @@
-# Fortsetzen hält nicht sofort wieder auf derselben Adresse — nach drei `g`
-# zählt der Haltepunkt drei Treffer.
+# Fortsetzen haelt nicht sofort wieder auf derselben Adresse — nach drei `g`
+# zaehlt der Haltepunkt drei Treffer.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

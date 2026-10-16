@@ -55,7 +55,7 @@ TEST(SerialFormat, RechnetZeichentakteUndNormbaud) {
     const SerialFormat g = serialFormatRechnen(64, 7, 2, 3, 3);
     EXPECT_TRUE(g.gueltig);
     EXPECT_EQ(g.zeichen_takte, 21u * 64 * 3 / 2);
-    EXPECT_EQ(g.baud_nenn, 12800u);   // keine Normrate in 2 % Nähe → ganzzahlig
+    EXPECT_EQ(g.baud_nenn, 12800u);   // keine Normrate in 2 % Naehe → ganzzahlig
 
     // ×1, CTC 21: 117028 Bd liegt 1,6 % neben 115200 → Normrate.
     EXPECT_EQ(serialFormatRechnen(1, 8, 0, 2, 21).baud_nenn, 115200u);
@@ -68,7 +68,7 @@ TEST(SerialFormat, UnbekannterCtcOderSynchronIstUngueltig) {
     EXPECT_FALSE(serialFormatRechnen(16, 8, 0, 2, 0).gueltig);   // CTC nicht programmiert
     const SerialFormat s = serialFormatRechnen(1, 8, 0, 0, 16);   // Synchronbetrieb
     EXPECT_FALSE(s.gueltig);
-    EXPECT_EQ(s.baud_nenn, 153600u);   // Anzeige bleibt möglich
+    EXPECT_EQ(s.baud_nenn, 153600u);   // Anzeige bleibt moeglich
 
     const SerialFormat e = ersatzFormat();
     EXPECT_TRUE(e.gueltig);
@@ -79,7 +79,7 @@ TEST(SerialFormat, UnbekannterCtcOderSynchronIstUngueltig) {
 TEST(SerialFormat, AusSioKanalUndCtcTeiler) {
     Z80SIO sio;
     auto& k = sio.channelA();
-    k.wr[4] = 0x44;   // ×16, 1 Stoppbit, keine Parität
+    k.wr[4] = 0x44;   // ×16, 1 Stoppbit, keine Paritaet
     k.wr[5] = 0x60;   // Tx 8 Bit
     k.wr[3] = 0xC0;   // Rx 8 Bit
     const SerialFormat f = serialFormatAusSio(k, 16);
@@ -88,7 +88,7 @@ TEST(SerialFormat, AusSioKanalUndCtcTeiler) {
     EXPECT_EQ(f.daten, 8);
     EXPECT_EQ(f.stopp_halbe, 2);
     EXPECT_EQ(f.zeichen_takte, Z9600);
-    k.wr[4] = 0xCF;   // ×64, 2 Stoppbits, gerade Parität
+    k.wr[4] = 0xCF;   // ×64, 2 Stoppbits, gerade Paritaet
     const SerialFormat g = serialFormatAusSio(k, 16);
     EXPECT_EQ(g.paritaet, 2);
     EXPECT_EQ(g.stopp_halbe, 4);
@@ -156,7 +156,7 @@ TEST(SerialWandler, RueckstauBeimSendenHaeltDenGastAn) {
     EXPECT_EQ(w.fernBelegt(), Wandler::PUFFER);
     EXPECT_EQ(a.gastSendet.size(), 5000 - Wandler::PUFFER);   // der Gast wartet auf TxEmpty
     EXPECT_EQ(w.sicht().bytes_gesendet, Wandler::PUFFER);
-    // Die Gegenseite nimmt 100 ab → genau 100 rücken nach, keines geht verloren.
+    // Die Gegenseite nimmt 100 ab → genau 100 ruecken nach, keines geht verloren.
     uint8_t buf[100];
     ASSERT_EQ(w.fernNimm(buf, sizeof buf), 100u);
     laufe(w, a, z, 200 * Z9600, false, 160);
@@ -174,7 +174,7 @@ TEST(SerialWandler, RueckstauBeimEmpfangenOhneUeberlauf) {
     EXPECT_EQ(w.fernGib(d.data(), d.size()), Wandler::PUFFER);
     EXPECT_EQ(w.fernFrei(), 0u);
 
-    // Der Gast liest NICHT: das FIFO füllt sich auf 3 — und nicht weiter.
+    // Der Gast liest NICHT: das FIFO fuellt sich auf 3 — und nicht weiter.
     uint64_t z = 0;
     laufe(w, a, z, 100 * Z9600, false);
     EXPECT_EQ(a.fifo.size(), 3u);
@@ -232,7 +232,7 @@ TEST(SerialWandler, XoffHaeltDenEmpfangAnBisXon) {
     laufe(w, a, z, 20 * Z9600);
     EXPECT_EQ(a.gelesenText(), "abc");
 
-    // Ohne „XON/XOFF beachten" läuft 0x13 einfach durch (Binärübertragung).
+    // Ohne „XON/XOFF beachten" laeuft 0x13 einfach durch (Binaeruebertragung).
     e.xonxoff = false;
     w.einstellen(e);
     a.sende(std::vector<uint8_t>{0x13});
@@ -334,7 +334,7 @@ TEST(SerialWandler, LoopBringtGesendetesNachEinerZeichenzeitZurueck) {
     EXPECT_EQ(a.gelesenText(), "hallo");
     EXPECT_GE(erstes, Z9600);
     EXPECT_EQ(w.sicht().bytes_gesendet, 5u);
-    // Prüfstecker bei V.24: RTS→CTS, DTR→DSR/DCD.
+    // Pruefstecker bei V.24: RTS→CTS, DTR→DSR/DCD.
     EXPECT_TRUE(a.cts);
     EXPECT_FALSE(a.dsr);
     EXPECT_FALSE(a.dcd);
@@ -353,7 +353,7 @@ TEST(SerialWandler, NichtsAngeschlossenLaesstZeichenImTaktVerfallen) {
     a.sende("abc");
     uint64_t z = 0;
     laufe(w, a, z, Z9600 - 32);
-    EXPECT_EQ(a.gastSendet.size(), 2u);   // eins weg, das nächste erst nach einer Zeichenzeit
+    EXPECT_EQ(a.gastSendet.size(), 2u);   // eins weg, das naechste erst nach einer Zeichenzeit
     laufe(w, a, z, 3 * Z9600);
     EXPECT_TRUE(a.gastSendet.empty());
     EXPECT_EQ(w.sicht().bytes_gesendet, 0u);
@@ -362,7 +362,7 @@ TEST(SerialWandler, NichtsAngeschlossenLaesstZeichenImTaktVerfallen) {
     EXPECT_FALSE(a.dsr);
     EXPECT_FALSE(a.dcd);
 
-    // RTS/CTS-Brücke: auch ohne Verbindung CTS := RTS, DSR = DCD := DTR.
+    // RTS/CTS-Bruecke: auch ohne Verbindung CTS := RTS, DSR = DCD := DTR.
     WandlerEinstellung e;
     e.rtscts_bruecke = true;
     w.einstellen(e);
@@ -497,7 +497,7 @@ TEST(SerialWandler, Rfc2217ServerKreuztDieLeitungenWieEinNullmodem) {
     EXPECT_TRUE(m->wert & r2::MS_CD);
     EXPECT_TRUE(m->wert & (r2::MS_DELTA_CTS | r2::MS_DELTA_DSR));
 
-    // Baud: die Anfrage ändert den Gast nie, die Antwort trägt den Gastwert.
+    // Baud: die Anfrage aendert den Gast nie, die Antwort traegt den Gastwert.
     cli.sendeBaud(9600);
     cli.sendeSignatur("");
     d.pumpe();
@@ -543,7 +543,7 @@ TEST(SerialWandler, Rfc2217ClientBelegtDieLeitungenGerade) {
     EXPECT_TRUE(dtrEin);
     EXPECT_TRUE(baud);
 
-    // NOTIFY-MODEMSTATE → Eingänge ohne Kreuzung.
+    // NOTIFY-MODEMSTATE → Eingaenge ohne Kreuzung.
     srv.sendeModemState(r2::MS_CTS | r2::MS_CD, true);
     d.pumpe();
     EXPECT_TRUE(a.cts);
@@ -565,10 +565,10 @@ TEST(SerialWandler, Rfc2217ClientBelegtDieLeitungenGerade) {
     EXPECT_TRUE(cli.baudAbweichend());
 }
 
-// ─── Ergänzt in AP-T1b ─────────────────────────────────────────────────────
+// ─── Ergaenzt in AP-T1b ─────────────────────────────────────────────────────
 
-/// Springt der Taktzähler zurück (Maschine neu, Zähler genullt), beginnen alle Fristen
-/// neu — sonst wartete der Wandler bis zur alten Taktzahl und der Gast stünde still.
+/// Springt der Taktzaehler zurueck (Maschine neu, Zaehler genullt), beginnen alle Fristen
+/// neu — sonst wartete der Wandler bis zur alten Taktzahl und der Gast stuende still.
 TEST(SerialWandler, RuecksprungDesTaktzaehlersStartetDieFristenNeu) {
     AttrappeAnschluss a;
     Wandler w(a);
@@ -578,9 +578,9 @@ TEST(SerialWandler, RuecksprungDesTaktzaehlersStartetDieFristenNeu) {
     laufe(w, a, z, Z9600 / 2);
     EXPECT_EQ(w.fernBelegt(), 1u);
     a.sende("bc");
-    z = 0;   // Zähler genullt
+    z = 0;   // Zaehler genullt
     laufe(w, a, z, 3 * Z9600);
-    EXPECT_EQ(w.fernBelegt(), 3u) << "nach dem Rücksprung nichts mehr gesendet";
+    EXPECT_EQ(w.fernBelegt(), 3u) << "nach dem Ruecksprung nichts mehr gesendet";
     const uint8_t rein[] = {'x', 'y'};
     ASSERT_EQ(w.fernGib(rein, 2), 2u);
     z = 0;
@@ -588,8 +588,8 @@ TEST(SerialWandler, RuecksprungDesTaktzaehlersStartetDieFristenNeu) {
     EXPECT_EQ(a.gelesenText(), "xy");
 }
 
-/// Break im Loop: der Prüfstecker gibt das Break des Gastes an seinen eigenen Empfänger
-/// zurück; angebunden kommt es von der Gegenseite, Kabel ab nimmt es weg.
+/// Break im Loop: der Pruefstecker gibt das Break des Gastes an seinen eigenen Empfaenger
+/// zurueck; angebunden kommt es von der Gegenseite, Kabel ab nimmt es weg.
 TEST(SerialWandler, BreakKommtUeberDenLoopUndVonDerGegenseite) {
     AttrappeAnschluss a;
     Wandler w(a);
@@ -614,10 +614,10 @@ TEST(SerialWandler, BreakKommtUeberDenLoopUndVonDerGegenseite) {
     w.abbinden();
     EXPECT_FALSE(w.angebunden());
     laufe(w, a, z, Z9600);
-    EXPECT_FALSE(a.brkEin) << "Kabel ab hält kein Break fest";
+    EXPECT_FALSE(a.brkEin) << "Kabel ab haelt kein Break fest";
 }
 
-/// Der Gast wird zurückgesetzt: ein XOFF- und ein RTS-Halt des alten Gastes gelten nicht
+/// Der Gast wird zurueckgesetzt: ein XOFF- und ein RTS-Halt des alten Gastes gelten nicht
 /// weiter (AP-S5), der Empfang geht sofort weiter.
 TEST(SerialWandler, GastResetLoestXoffUndRtsHalt) {
     AttrappeAnschluss a;
@@ -641,10 +641,10 @@ TEST(SerialWandler, GastResetLoestXoffUndRtsHalt) {
     EXPECT_FALSE(w.sicht().xoffHalt);
 }
 
-/// Wächter P22: nach einem Wechsel von einer LANGSAMEN auf 9600 Bd nimmt der Wandler ein
-/// Zeichen spätestens 1/16 der 9600-Zeichenzeit später ab — auch wenn die Maschine ihn (wie
-/// `P8000Machine::run`) nur zu den Zeiten taktet, die er selbst zurückgibt.  Vorher lag der
-/// nächste Blick 1/16 der ALTEN Zeichenzeit entfernt (MON16-Fehler 61).
+/// Waechter P22: nach einem Wechsel von einer LANGSAMEN auf 9600 Bd nimmt der Wandler ein
+/// Zeichen spaetestens 1/16 der 9600-Zeichenzeit spaeter ab — auch wenn die Maschine ihn (wie
+/// `P8000Machine::run`) nur zu den Zeiten taktet, die er selbst zurueckgibt.  Vorher lag der
+/// naechste Blick 1/16 der ALTEN Zeichenzeit entfernt (MON16-Fehler 61).
 TEST(SerialWandler, NachWechselAufSchnellesFormatKeinVerspaeteterBlick) {
     for (bool angebunden : {false, true}) {
         AttrappeAnschluss a;

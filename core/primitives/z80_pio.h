@@ -110,16 +110,18 @@ public:
     /**
      * @brief Ist die Interrupterzeugung von Port A scharf (IE-Bit im Steuerwort)?
      *
-     * Für Karten, die einen Eingangs-Strobe an Port A nur dann pulsen müssen,
-     * wenn er überhaupt einen Interrupt auslösen kann (heißer Pfad, s.
+     * Fuer Karten, die einen Eingangs-Strobe an Port A nur dann pulsen muessen,
+     * wenn er ueberhaupt einen Interrupt ausloesen kann (heisser Pfad, s.
      * K2526::pulseWriteStrobe()).
      */
     bool    portAIntEnabled() const { return porta_.ie; }
+    /// Ist ein Port in Bedienung (IUS)?  (RETI-Verteilung durch die Karte, MC80.2x AP M11)
+    bool    inBedienung() const { return porta_.ius || portb_.ius; }
 
     /**
      * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
      *
-     * Beide Ports gehen in den Einschaltzustand zurück (Eingabemodus, Interrupts
+     * Beide Ports gehen in den Einschaltzustand zurueck (Eingabemodus, Interrupts
      * gesperrt, keine anstehende/bediente Anforderung).  Ausgangs-Callbacks und
      * Name bleiben erhalten — die Karte bleibt also verdrahtet.
      */
@@ -295,19 +297,19 @@ public:
     // ─── Handshake (RDY/STB) und Pinpegel-Modell (P8000 P5c, Entwurf 25 §10.3) ──
     //
     // ADDITIV: Wer diese Methoden nie ruft, sieht exakt das bisherige Verhalten
-    // (setASTB/setBSTB/portAWrite bleiben unverändert).  Die RDY-Pegel werden
-    // zwar stets mitgeführt, haben aber ohne Rückruf/Abfrage keine Wirkung.
+    // (setASTB/setBSTB/portAWrite bleiben unveraendert).  Die RDY-Pegel werden
+    // zwar stets mitgefuehrt, haben aber ohne Rueckruf/Abfrage keine Wirkung.
     //
     // RDY nach Zilog-Datenblatt: Modus 0 — nach Moduswort L, CPU-Schreiben ⇒ H,
     // steigende /STB-Flanke (bei RDY = H) ⇒ RDY L + Interrupt.  Modus 1 — nach
-    // Moduswort H ("Register leer"); steigende /STB-Flanke bei RDY = H übernimmt
+    // Moduswort H ("Register leer"); steigende /STB-Flanke bei RDY = H uebernimmt
     // die Pins ins Eingaberegister, RDY ⇒ L + Interrupt; CPU-Lesen ⇒ RDY H.
     // Modus 2 — Port A gibt aus (ARDY/ASTB wie Modus 0, Pins nur bei /ASTB = L
-    // getrieben), Eingabe über BRDY/BSTB (wie Modus 1, Interrupt über Port B).
+    // getrieben), Eingabe ueber BRDY/BSTB (wie Modus 1, Interrupt ueber Port B).
     // Modus 3 — RDY L, /STB ohne Wirkung.  Reset: RDY L, /STB H.
 
     using RdyCallback = std::function<void(bool pegel)>;
-    /// Rückruf bei JEDER Änderung des RDY-Pegels von Port A/B (true = H).
+    /// Rueckruf bei JEDER Aenderung des RDY-Pegels von Port A/B (true = H).
     void    setARdyCallback(RdyCallback cb) { rdy_cb_[0] = std::move(cb); }
     void    setBRdyCallback(RdyCallback cb) { rdy_cb_[1] = std::move(cb); }
     bool    ardy() const { return hs_[0].rdy; }
@@ -318,45 +320,45 @@ public:
     void    setStbB(bool pegel) { stbEdge(1, pegel); }
 
     /// Externe Treiber an den Port-Pins: Bits in @p treibMask liegen auf @p pegel,
-    /// alle übrigen sind offen.  Im Modus 3 folgen die Eingabebits sofort
-    /// (Interruptprüfung wie portAWrite), in Modus 1/2 wirkt der Pegel erst beim
-    /// /STB-Übernehmen.  Vorgabe: nichts getrieben.
+    /// alle uebrigen sind offen.  Im Modus 3 folgen die Eingabebits sofort
+    /// (Interruptpruefung wie portAWrite), in Modus 1/2 wirkt der Pegel erst beim
+    /// /STB-Uebernehmen.  Vorgabe: nichts getrieben.
     void    setExternA(uint8_t pegel, uint8_t treibMask = 0xFF) { setExtern(0, pegel, treibMask); }
     void    setExternB(uint8_t pegel, uint8_t treibMask = 0xFF) { setExtern(1, pegel, treibMask); }
 
-    /// Pull-up-Maske der offenen Eingänge (1 = Pull-up; Vorgabe 0xFF, wie ein TTL-/
+    /// Pull-up-Maske der offenen Eingaenge (1 = Pull-up; Vorgabe 0xFF, wie ein TTL-/
     /// NMOS-Eingang ohne Treiber).  Offene Pins ohne Pull-up lesen 0.
     void    setPullupsA(uint8_t m) { hs_[0].pullups = m; }
     void    setPullupsB(uint8_t m) { hs_[1].pullups = m; }
 
-    /// Pinpegel, wie er an der Leitung steht (Rücklesen): vom PIO getriebene Bits aus
+    /// Pinpegel, wie er an der Leitung steht (Ruecklesen): vom PIO getriebene Bits aus
     /// dem Ausgaberegister, sonst externer Treiber, sonst Pull-up/0.  (portARead()
-    /// liefert dagegen wie bisher 0xFF für nicht getriebene Bits.)
+    /// liefert dagegen wie bisher 0xFF fuer nicht getriebene Bits.)
     uint8_t pinsA(uint8_t pullups) const { return pins(0, pullups); }
     uint8_t pinsB(uint8_t pullups) const { return pins(1, pullups); }
     uint8_t pinsA() const { return pins(0, hs_[0].pullups); }
     uint8_t pinsB() const { return pins(1, hs_[1].pullups); }
 
-    /// Handshake-Zustand (RDY, /STB, externe Treiber) für den Save-State der Karte —
-    /// bewusst NICHT in serialize() (Zeilenformat der Karten bleibt unverändert).
+    /// Handshake-Zustand (RDY, /STB, externe Treiber) fuer den Save-State der Karte —
+    /// bewusst NICHT in serialize() (Zeilenformat der Karten bleibt unveraendert).
     /**
-     * @brief Modus 3 flankengetriggert (U855-Beschreibung §6.4: „der Übergang von
-     *        Nichterfüllung in Erfüllung der logischen Konfiguration löst den Interrupt
+     * @brief Modus 3 flankengetriggert (U855-Beschreibung §6.4: „der Uebergang von
+     *        Nichterfuellung in Erfuellung der logischen Konfiguration loest den Interrupt
      *        aus").  Vorgabe AUS = bisheriges Verhalten (Bedingung beim Laden der Maske
-     *        und bei jeder Eingangsänderung pegelbasiert geprüft — HARDY auf dem A5120
+     *        und bei jeder Eingangsaenderung pegelbasiert geprueft — HARDY auf dem A5120
      *        braucht das, weil dort /M1 als Dauerpegel statt als Impulsfolge nachgebildet
      *        ist).  EIN: das Laden von Maske/Steuerwort merkt sich nur den Ist-Zustand,
      *        angefordert wird erst beim Wechsel falsch → wahr (P8000: KINIT gibt PIO0-B
-     *        mit erfüllter Bedingung frei, INT_8 liegt über den Pull-up auf 1).
+     *        mit erfuellter Bedingung frei, INT_8 liegt ueber den Pull-up auf 1).
      */
     void    setModus3Flanke(bool an) { modus3_flanke_ = an; }
     bool    modus3Flanke() const { return modus3_flanke_; }
 
     /**
      * @brief Modus 1: RDY bleibt nach dem Moduswort L und wird erst durch das erste
-     *        CPU-Lesen aktiv (U855-Beschreibung §5: „Für Operationen im Hand-shake-Betrieb
-     *        ist zunächst die READY-Leitung in den aktiven Zustand zu bringen (IN-Befehl der
-     *        CPU)"; Rücksetzen: „Ready … inaktiv").  Vorgabe AUS = bisheriges Verhalten (RDY
+     *        CPU-Lesen aktiv (U855-Beschreibung §5: „Fuer Operationen im Hand-shake-Betrieb
+     *        ist zunaechst die READY-Leitung in den aktiven Zustand zu bringen (IN-Befehl der
+     *        CPU)"; Ruecksetzen: „Ready … inaktiv").  Vorgabe AUS = bisheriges Verhalten (RDY
      *        nach dem Moduswort H).  P8000 (P13d): der WDC-Treiber liest nach dem Umschalten
      *        auf Eingabe ein „Scheinbyte", und der WDC schickt am Ende ein Byte mehr „nur zur
      *        Ready-Abschaltung PIO" — beides setzt dieses Verhalten voraus.
@@ -483,7 +485,7 @@ private:
      * @param new_input New external input value (for edge detection)
      */
     void    checkInterrupt(Port& p, uint8_t new_input);
-    /// Modus-3-Bedingung (Maske, UND/ODER, aktiver Pegel) für @p input.
+    /// Modus-3-Bedingung (Maske, UND/ODER, aktiver Pegel) fuer @p input.
     static bool bedingung(const Port& p, uint8_t input);
     bool    modus3_flanke_ = false;
     bool    modus1_rdy_nach_lesen_ = false;

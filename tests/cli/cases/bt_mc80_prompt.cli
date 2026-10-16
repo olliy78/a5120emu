@@ -1,0 +1,9 @@
+# boot_trace --machine mc80 (AP M8): EGOS durchlaeuft die RESET-Kette und steht in der
+# Kommandoschleife; Zeile 24 zeigt nur den Prompt `>` -> Exit 0.
+tool:    boot_trace
+run:     --machine mc80 --quiet --json
+timeout: 240
+exit:    0
+expect:  "machine":"mc80-30"
+expect:  "prompt":true
+expect:  "seg":"0x01"

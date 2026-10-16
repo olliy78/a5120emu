@@ -122,6 +122,59 @@ TEST(K2526, PowerOn_RomData_MatchesArray)
         EXPECT_EQ(bus.memRead(i), ZRE_BOOT_ROM[i]) << "mismatch at offset " << i;
 }
 
+// ─── Lade-ROM-Fassungen (AP A7, doc/a5120_alt/laderom.md) ───────────────────
+
+/**
+ * @test K2526/Laderom_VorgabeIstV09_2
+ * @brief Ohne Angabe steckt V0.9_2 (= zre.rom) — bitgleich zu vor AP A7.
+ */
+TEST(K2526, Laderom_VorgabeIstV09_2)
+{
+    K2526::A5120Config cfg;
+    EXPECT_EQ(cfg.laderom, K2526::Laderom::V09_2);
+    K1520Bus bus;
+    K2526 card(bus, cfg);
+    EXPECT_EQ(card.laderom(), K2526::Laderom::V09_2);
+    EXPECT_EQ(&K2526::laderomDaten(K2526::Laderom::V09_2), &ZRE_BOOT_ROM);
+}
+
+/**
+ * @test K2526/Laderom_JedeFassungLiegtBei0000
+ * @brief Jede Fassung liegt nach powerOn() byteweise bei 0000H–03FFH; die eingebetteten
+ *        Abzuege tragen ihre CRC-16/CCITT-FALSE in 03FEH/03FFH (laderom.md §1) — damit ist
+ *        auch belegt, dass `eprom_to_h.py` die richtige Datei eingebettet hat.
+ */
+TEST(K2526, Laderom_JedeFassungLiegtBei0000)
+{
+    struct F { K2526::Laderom l; uint16_t crc; };
+    const F faelle[] = { {K2526::Laderom::V09_2, 0xF76B},
+                         {K2526::Laderom::V09_1, 0x3FAE},
+                         {K2526::Laderom::V06,   0x07F1} };
+    for (const auto& f : faelle) {
+        K2526::A5120Config cfg;
+        cfg.laderom = f.l;
+        K1520Bus bus;
+        K2526 card(bus, cfg);
+        card.attachToBus(bus);
+        card.powerOn();
+        const uint8_t (&rom)[1024] = K2526::laderomDaten(f.l);
+        uint16_t crc = 0xFFFF;
+        for (uint16_t i = 0; i < 1024; ++i) {
+            ASSERT_EQ(bus.memRead(i), rom[i]) << "Fassung " << int(f.l) << " @" << i;
+            if (i >= 0x3FE) continue;
+            crc ^= static_cast<uint16_t>(rom[i] << 8);
+            for (int b = 0; b < 8; ++b)
+                crc = (crc & 0x8000) ? static_cast<uint16_t>((crc << 1) ^ 0x1021)
+                                     : static_cast<uint16_t>(crc << 1);
+        }
+        EXPECT_EQ(crc, f.crc) << "Fassung " << int(f.l);
+        EXPECT_EQ((rom[0x3FE] << 8) | rom[0x3FF], f.crc) << "Fassung " << int(f.l);
+    }
+    // V0.6 ist ein anderes Programm: Indexvektor 0BAH zeigt auf 01DDH statt 01C7H (§3 #1).
+    EXPECT_EQ(K2526::laderomDaten(K2526::Laderom::V06)[0xBA], 0xDD);
+    EXPECT_EQ(K2526::laderomDaten(K2526::Laderom::V09_2)[0xBA], 0xC7);
+}
+
 // ─── ROM: write is ignored (ROM is read-only) ─────────────────────────────────
 
 /**
@@ -209,9 +262,9 @@ TEST(K2526, BSPioPortB_Bit0High_RomStaysEnabled)
 
 /**
  * @test K2526/BSPioPortA_Bit7_TreibtMemdi12NichtBusMemdi
- * @brief BS-PIO Port A Bit 7 ist MEMDI1/2 der Rückverdrahtung (onMemdi12), NICHT die
+ * @brief BS-PIO Port A Bit 7 ist MEMDI1/2 der Rueckverdrahtung (onMemdi12), NICHT die
  *   Bus-Leitung /MEMDI — die zieht je Zugriff nur ein Vorrangspeicher (EM256).
- * @par Pass criterion  memdi12() und der Rückruf folgen A7; bus.memdiActive() bleibt
+ * @par Pass criterion  memdi12() und der Rueckruf folgen A7; bus.memdiActive() bleibt
  *   false, der Speicher bleibt erreichbar.
  */
 TEST(K2526, BSPioPortA_Bit7_TreibtMemdi12NichtBusMemdi)
@@ -1268,10 +1321,10 @@ TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsHead1FieldViaBus) {
     for (size_t i = 0; i < sizeof(prog); ++i)
         bus.memWrite(static_cast<uint16_t>(i), prog[i]);
 
-    // Head-1-Lesemodus über das Pfad-/Lese-Steuerwort 0x81 (MFM-Marke + bit2=0 → Kopf 1):
-    // es wählt die Seite (setHead), armiert den head-1-Read (startReadTransfer baut den
+    // Head-1-Lesemodus ueber das Pfad-/Lese-Steuerwort 0x81 (MFM-Marke + bit2=0 → Kopf 1):
+    // es waehlt die Seite (setHead), armiert den head-1-Read (startReadTransfer baut den
     // treuen 4×A1-MFM-Stream) und assertiert als /STR-Fallflanke BUSRQ.  Die Seitenwahl
-    // trägt seit dem Fix NUR das Pfad-Byte, nicht der /STR-Strobe (dessen bit2 inzidentell).
+    // traegt seit dem Fix NUR das Pfad-Byte, nicht der /STR-Strobe (dessen bit2 inzidentell).
     afs.ioWrite(0x10, 0xFF);
     afs.ioWrite(0x10, 0x81);   // MFM-Marke + /STR head1 (bit2=0) → head-1 Read armiert
     ASSERT_TRUE(bus.isBUSRQ());
@@ -1290,10 +1343,10 @@ TEST_F(K2526ZVE2FloppyChain, ZVE2ReadsHead1FieldViaBus) {
 // ─── BS-PIO Port A: /WR als Schreib-Strobe (A5) ──────────────────────────────
 //
 // Die Speicher-Ausbaumessung des Lade-ROMs (0040H–005AH) und HARDYs MEMDI-RDY-Test
-// schärfen Port A im Bitmodus mit Maske 9FH (A5 /WR AND A6 /RDY, aktiv-LOW), geben
+// schaerfen Port A im Bitmodus mit Maske 9FH (A5 /WR AND A6 /RDY, aktiv-LOW), geben
 // `EI` und erwarten den Interrupt DURCH den nachfolgenden Schreibbefehl; ihre ISR
-// prüft, ob das Testbyte im Speicher gelandet ist.  Lag /WR dauerhaft aktiv, kam
-// der Interrupt schon vor dem Schreiben — bei frischem DRAM (0xFF) unauffällig,
+// prueft, ob das Testbyte im Speicher gelandet ist.  Lag /WR dauerhaft aktiv, kam
+// der Interrupt schon vor dem Schreiben — bei frischem DRAM (0xFF) unauffaellig,
 // bei einem Neustart aus dem laufenden Betrieb meldete die Messung „kein Speicher".
 
 class K2526WriteStrobe : public ::testing::Test {
@@ -1318,7 +1371,7 @@ protected:
 
 /**
  * @test K2526WriteStrobe/ArmingAloneRequestsNoInterrupt
- * @brief Scharfschalten allein löst nichts aus — /WR ruht (HIGH), bis geschrieben wird.
+ * @brief Scharfschalten allein loest nichts aus — /WR ruht (HIGH), bis geschrieben wird.
  */
 TEST_F(K2526WriteStrobe, ArmingAloneRequestsNoInterrupt) {
     armPortA();
@@ -1346,7 +1399,7 @@ TEST_F(K2526WriteStrobe, Zve1WriteRequestsInterrupt) {
  *
  * Die ISR des Lade-ROMs sperrt Port A als erstes wieder — und wird damit die
  * Anforderung los, die der Stack-Push der Interruptannahme gerade neu gesetzt hat.
- * Ohne dieses Verwerfen bliebe sie stehen und schlüge beim nächsten `EI` los.
+ * Ohne dieses Verwerfen bliebe sie stehen und schluege beim naechsten `EI` los.
  */
 TEST_F(K2526WriteStrobe, DisablingClearsPendingRequest) {
     armPortA();

@@ -3,13 +3,13 @@
  * @brief P8000 Meilenstein M1 (doc/design/25_p8000.md §10.11 AP P7d): UDOS von der
  *        WEGA-Startdiskette auf der 8-Bit-Seite allein.
  *
- * Ablauf am Gerät: MON8 3.1 (Hardwaretest, „Press RETURN") → RETURN ⇒ `>` → RETURN ⇒ BOOT:
- * Urlader Z0/K0/S1 nach 0C00H („P8000SYS"), OSLOAD (Z22/S7 nach 7000H) lädt OS und NDOS,
- * OS führt OS.INIT aus (`0/DAY,` `0/GETDAY` `F 0/KINIT` `F 0/WEGA`).  Die Koppelsoftware WEGA
+ * Ablauf am Geraet: MON8 3.1 (Hardwaretest, „Press RETURN") → RETURN ⇒ `>` → RETURN ⇒ BOOT:
+ * Urlader Z0/K0/S1 nach 0C00H („P8000SYS"), OSLOAD (Z22/S7 nach 7000H) laedt OS und NDOS,
+ * OS fuehrt OS.INIT aus (`0/DAY,` `0/GETDAY` `F 0/KINIT` `F 0/WEGA`).  Die Koppelsoftware WEGA
  * findet ohne 16-Bit-Karte keine Gegenstelle und meldet „Hardware Error in Connection"; danach
  * steht UDOS am Prompt `%`.
  *
- * Disketten nur über `TempDisk` (der Emulator öffnet sie schreibend).  Getippt wird über das
+ * Disketten nur ueber `TempDisk` (der Emulator oeffnet sie schreibend).  Getippt wird ueber das
  * Kern-Terminal (Batch 5 000 Takte, `p8000_input.h`).
  */
 

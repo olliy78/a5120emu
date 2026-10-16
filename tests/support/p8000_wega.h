@@ -1,12 +1,12 @@
 /**
  * @file p8000_wega.h
- * @brief WEGA-Installation am P8000 (AP P15, doc/design/25_p8000.md): Zwischenstände der langen
+ * @brief WEGA-Installation am P8000 (AP P15, doc/design/25_p8000.md): Zwischenstaende der langen
  *        Installation als Dateien AUSSERHALB des Repos, damit Folgearbeiten (Kaltstart von der
  *        Platte, Mehrbenutzer) nicht jedes Mal neu formatieren und installieren.
  *
  * Ein Zwischenstand `<name>` liegt im Ablageordner als drei Dateien:
  *   - `<name>.platte.img`  Winchester-Abbild (K5504.50, roh/LBA) nach `hdFlush()`
- *   - `<name>.start.hfe`   die (veränderte) Kopie der UDOS-Startdiskette aus Laufwerk 0
+ *   - `<name>.start.hfe`   die (veraenderte) Kopie der UDOS-Startdiskette aus Laufwerk 0
  *   - `<name>.p8ks`        Save-State P8KS v3 (ohne Medieninhalt, Merkposten p8000 Nr. 6/20)
  * Laufwerk 1 (Quelldiskette) ist an jedem Zwischenstand LEER — gespeichert wird nur am Prompt.
  * Geladen wird in Temp-Kopien (`TempDisk`-Muster): ein Zwischenstand wird nie direkt gemountet.
@@ -43,7 +43,7 @@ inline std::string heimOrdner(const char* unter) {
     return std::string(h ? h : ".") + unter;
 }
 
-/// Ablageordner der Zwischenstände (wird angelegt).
+/// Ablageordner der Zwischenstaende (wird angelegt).
 inline std::string wegaAblage() {
     std::string d;
     if (const char* e = std::getenv("K1520_P8000_CACHE"); e && *e) d = e;
@@ -63,7 +63,7 @@ inline std::string wegaDisketten() {
 /// Pfad einer WEGA-Diskette (`"root1"` ⇒ `<ordner>/w30root1.img`).
 inline std::string wegaDiskette(const std::string& kurz) { return wegaDisketten() + "/w30" + kurz + ".img"; }
 
-/// Katalogformat der WEGA-Dateisystemdisketten: 80 Zylinder, 2 Köpfe, 9 × 512 B, MFM.
+/// Katalogformat der WEGA-Dateisystemdisketten: 80 Zylinder, 2 Koepfe, 9 × 512 B, MFM.
 inline constexpr const char* kWegaFormat = "k5601_9x512";
 
 inline bool dateiDa(const std::string& p) { std::error_code ec; return wega_fs::exists(p, ec); }
@@ -101,7 +101,7 @@ struct WegaLauf {
         for (const auto& p : {platte, start, quelle}) wega_fs::remove(p, ec);
     }
 
-    /// Quelldiskette wechseln (wie am Gerät: ausgeworfen, neue eingelegt) — immer eine Temp-Kopie.
+    /// Quelldiskette wechseln (wie am Geraet: ausgeworfen, neue eingelegt) — immer eine Temp-Kopie.
     bool diskettenwechsel(const std::string& kurz) {
         m->unmountDisk(1);
         if (!kopiere(wegaDiskette(kurz), quelle)) return false;
@@ -165,7 +165,7 @@ inline bool endetMit(const std::string& s, const std::string& e) {
     return s.size() >= e.size() && s.compare(s.size() - e.size(), e.size(), e) == 0;
 }
 
-/// Läuft, bis die Cursorzeile auf eine der @p fragen endet (rechts getrimmt verglichen); liefert
+/// Laeuft, bis die Cursorzeile auf eine der @p fragen endet (rechts getrimmt verglichen); liefert
 /// deren Index oder −1 nach @p grenze Takten.  Fortschrittszeile je 400 Mio. Takte.
 inline int warteAufFrage(P8000Machine& m, const std::vector<std::string>& fragen, long long grenze) {
     auto passt = [&]() -> int {

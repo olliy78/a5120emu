@@ -1,11 +1,11 @@
 /**
  * @file test_pc1715_tastatur.cpp
  * @brief PC 1715 Etappe 3 (doc/design/21_pc1715.md AP-3): die Tastatur (`Tastatur1715`, eigener
- *        U880 + S600) hängt am Kanal A der SIO0; Betriebssysteme nehmen Eingaben an.
+ *        U880 + S600) haengt am Kanal A der SIO0; Betriebssysteme nehmen Eingaben an.
  *
- * Disketten nur über `TempDisk`.  Batch 5 000 Takte (tests/support/pc1715_input.h).  Groß- und
- * Kleinschreibung: `Shift` wird vor der Zeichentaste einzeln gedrückt (das ROM sendet nichts,
- * wenn zwei Tasten im selben Abfragedurchlauf neu kommen) — beides wird hier ausgeübt.
+ * Disketten nur ueber `TempDisk`.  Batch 5 000 Takte (tests/support/pc1715_input.h).  Gross- und
+ * Kleinschreibung: `Shift` wird vor der Zeichentaste einzeln gedrueckt (das ROM sendet nichts,
+ * wenn zwei Tasten im selben Abfragedurchlauf neu kommen) — beides wird hier ausgeuebt.
  */
 
 #include <gtest/gtest.h>
@@ -47,8 +47,8 @@ TEST(Pc1715Tastatur, ZeichentasteLiefertStatusUndCode) {
     EXPECT_EQ(fifo(m), (std::vector<uint8_t>{0xE0, 0x61}));
 }
 
-/// Ein Anschlag der Oberfläche, der sofort wieder losgelassen wird, wird gestreckt statt verschluckt
-/// (die Warteschlange hält die Taste mindestens HALTE_MIN unten).
+/// Ein Anschlag der Oberflaeche, der sofort wieder losgelassen wird, wird gestreckt statt verschluckt
+/// (die Warteschlange haelt die Taste mindestens HALTE_MIN unten).
 TEST(Pc1715Tastatur, KurzerAnschlagWirdNichtVerschluckt) {
     stumm();
     Pc1715Machine m;
@@ -60,7 +60,7 @@ TEST(Pc1715Tastatur, KurzerAnschlagWirdNichtVerschluckt) {
     EXPECT_EQ(fifo(m), (std::vector<uint8_t>{0xE0, 0x78}));
 }
 
-/// Großbuchstabe: Shift allein vorweg, dann die Taste → Status E2H (Shift) + Code des Großbuchstaben.
+/// Grossbuchstabe: Shift allein vorweg, dann die Taste → Status E2H (Shift) + Code des Grossbuchstaben.
 TEST(Pc1715Tastatur, GrossbuchstabeDrueckteShiftVorher) {
     stumm();
     Pc1715Machine m;
@@ -71,7 +71,7 @@ TEST(Pc1715Tastatur, GrossbuchstabeDrueckteShiftVorher) {
     EXPECT_EQ(fifo(m), (std::vector<uint8_t>{0xE2, 0x41}));
 }
 
-/// Ctrl: Statusbit 0, der Code bleibt der der Taste (tastatur.md §5: CTRL verändert den Code nicht).
+/// Ctrl: Statusbit 0, der Code bleibt der der Taste (tastatur.md §5: CTRL veraendert den Code nicht).
 TEST(Pc1715Tastatur, CtrlSetztStatusbit0) {
     stumm();
     Pc1715Machine m;
@@ -93,7 +93,7 @@ TEST(Pc1715Tastatur, PhysischeTasteUeberMatrixposition) {
     EXPECT_EQ(fifo(m), (std::vector<uint8_t>{0xE0, 0x9E}));
 }
 
-/// Return/Escape/Tab aus der Oberfläche (Qt-Codes) gehen auf die richtigen Tasten.
+/// Return/Escape/Tab aus der Oberflaeche (Qt-Codes) gehen auf die richtigen Tasten.
 TEST(Pc1715Tastatur, SondertastenReturnEscapeTab) {
     stumm();
     Pc1715Machine m;
@@ -112,7 +112,7 @@ TEST(Pc1715Tastatur, SondertastenReturnEscapeTab) {
 
 // ─── Mit Betriebssystem ──────────────────────────────────────────────────────────────────────
 
-/// SCP 1715 V0006: DIR (klein getippt) listet die Dateien, STAT (groß) meldet das Laufwerk.
+/// SCP 1715 V0006: DIR (klein getippt) listet die Dateien, STAT (gross) meldet das Laufwerk.
 /// `PIP.COM` dieser Version bricht mit „REQUIRES SCP3" ab — sie braucht ein CP/M-3-BDOS; die
 /// Meldung ist selbst der Beleg, dass der Lader das Programm gestartet hat.
 TEST(Pc1715Tastatur, Scp1715DirStatPip) {
@@ -180,9 +180,9 @@ TEST(Pc1715Tastatur, Udos1715Cat) {
 // ─── AP-4e: zwei Befunde ─────────────────────────────────────────────────────────────────────
 
 /// CP/Z 2.2 nimmt die Tastatur an.  Es programmiert SIO-B (WR2 = C0H, WR1 = 04H „Status affects
-/// Vector"), setzt Kanal B danach für die V.24-Parameter erneut zurück (Channel Reset) und
-/// erwartet Vektor und Vektorbit unverändert — seine Tabelle liegt auf F7CCH (Rx von Kanal A).
-/// Ein Kanalreset, der WR2/WR1 D2 löschte, schickte jeden Tasteninterrupt in die Leere.
+/// Vector"), setzt Kanal B danach fuer die V.24-Parameter erneut zurueck (Channel Reset) und
+/// erwartet Vektor und Vektorbit unveraendert — seine Tabelle liegt auf F7CCH (Rx von Kanal A).
+/// Ein Kanalreset, der WR2/WR1 D2 loeschte, schickte jeden Tasteninterrupt in die Leere.
 TEST(Pc1715Tastatur, Cpz22NimmtTastaturAn) {
     stumm();
     Pc1715Machine m;
@@ -214,7 +214,7 @@ TEST(Pc1715Tastatur, Scp1715ErsteTasteNachPause) {
     }
 }
 
-/// Wie oben, aber wie die Oberfläche: Taste sofort wieder loslassen, Pausen mit wechselnder Phase
+/// Wie oben, aber wie die Oberflaeche: Taste sofort wieder loslassen, Pausen mit wechselnder Phase
 /// zum Abfragedurchlauf des Tastatur-ROMs.
 TEST(Pc1715Tastatur, Scp1715ErsteTasteNachPausePhasen) {
     stumm();
@@ -235,7 +235,7 @@ TEST(Pc1715Tastatur, Scp1715ErsteTasteNachPausePhasen) {
     }
 }
 
-// ─── AP-6: wählbares Tastatur-ROM ───────────────────────────────────────────────────────────
+// ─── AP-6: waehlbares Tastatur-ROM ───────────────────────────────────────────────────────────
 
 /// TAST_618 (QWERTZ): `keyPress('z')` liefert durch DAS ROM wieder z, `'y'` y — wie beim S600, nur an
 /// anderen Matrixpositionen (z auf (12,0), y auf (5,4)).  Bei beiden Varianten, beide Schreibweisen.
@@ -271,7 +271,7 @@ TEST(Pc1715Tastatur, Tast618PhysischePositionTragtAndereZeichen) {
     }
 }
 
-/// Konfiguration kommt an: ZG-Bestückung an der ZRE, Tastatur-ROM an der Tastatur (auch am 1715W).
+/// Konfiguration kommt an: ZG-Bestueckung an der ZRE, Tastatur-ROM an der Tastatur (auch am 1715W).
 TEST(Pc1715Tastatur, KonfigurationWirdUebernommen) {
     Pc1715Machine::Config cfg;
     cfg.zg_satz = Pc1715Zre::ZgSatz::Kyrillisch;

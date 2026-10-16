@@ -1,7 +1,7 @@
 """Handbuchanzeige (:mod:`app.ui_help`) — der Platzhalter ``{{VERSION}}``.
 
 Die ``handbuch.md`` beider Programme bleibt versionsfrei (``Version {{VERSION}}``
-unter der Überschrift) und kann nie veralten; ersetzt wird erst beim Anzeigen
+unter der Ueberschrift) und kann nie veralten; ersetzt wird erst beim Anzeigen
 (doc/ci_pipeline.md §7.2).
 """
 

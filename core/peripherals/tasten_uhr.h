@@ -2,24 +2,24 @@
  * @file tasten_uhr.h
  * @brief Zeitbasis der Tastenwiederholung (K7637, K7672): Maschinenzeit oder Echtzeit.
  *
- * Die echten Tastaturen haben ihren eigenen Quarz — Verzögerung und Abstand der
- * Wiederholung hängen NICHT vom Takt des Rechners ab.  Im Emulator ist der Rechnertakt
- * einstellbar (bis 10 × und unbegrenzt); in Maschinentakten gezählt, schrumpften die
+ * Die echten Tastaturen haben ihren eigenen Quarz — Verzoegerung und Abstand der
+ * Wiederholung haengen NICHT vom Takt des Rechners ab.  Im Emulator ist der Rechnertakt
+ * einstellbar (bis 10 × und unbegrenzt); in Maschinentakten gezaehlt, schrumpften die
  * ≈ 0,5 s bis zur ersten Wiederholung bei 10 × auf 50 ms, und jeder normale Anschlag
- * käme mehrfach an.  Die Oberfläche schaltet deshalb auf **Echtzeit** um
+ * kaeme mehrfach an.  Die Oberflaeche schaltet deshalb auf **Echtzeit** um
  * (`k1520_set_key_repeat_realtime`).
  *
  * **Vorgabe bleibt die Maschinenzeit**: Tests und Werkzeuge laufen ungebremst und
- * müssen wiederholbar sein (`KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot`,
+ * muessen wiederholbar sein (`KeyboardIntegration.HeldSpaceRepeatsHeldLetterDoesNot`,
  * `K8915Scpx.GehalteneTasteWiederholtAmPrompt`).
  *
- * Gezählt wird in beiden Fällen in **Nenntakten** der Tastatur-Konstanten: in
+ * Gezaehlt wird in beiden Faellen in **Nenntakten** der Tastatur-Konstanten: in
  * Echtzeit wird die verstrichene Wirtszeit mit dem Nenntakt in Takte umgerechnet, die
- * Konstanten der Tastaturen bleiben also unverändert gültig.  Die Uhr liefert nur
+ * Konstanten der Tastaturen bleiben also unveraendert gueltig.  Die Uhr liefert nur
  * DIFFERENZEN (@ref schritt); ein Wechsel der Zeitbasis setzt den Bezug neu, statt
  * Maschinen- und Wirtszeit zu vermischen.
  *
- * Die Wirtsuhr wird nur gelesen, solange eine Wiederholung läuft (@ref start /
+ * Die Wirtsuhr wird nur gelesen, solange eine Wiederholung laeuft (@ref start /
  * @ref schritt) — der Service-Pfad wird je Befehl gerufen.
  */
 #pragma once
@@ -29,7 +29,7 @@
 
 class TastenUhr {
 public:
-    /// Wirtsuhr in Nanosekunden (monoton).  Austauschbar für Tests.
+    /// Wirtsuhr in Nanosekunden (monoton).  Austauschbar fuer Tests.
     using Quelle = uint64_t (*)();
 
     explicit TastenUhr(double nenntakt_hz) : hz_(nenntakt_hz) {}
@@ -44,7 +44,7 @@ public:
         return *this;
     }
 
-    /// Fadensicher (Oberflächenfaden); wirkt beim nächsten @ref schritt.
+    /// Fadensicher (Oberflaechenfaden); wirkt beim naechsten @ref schritt.
     void setEchtzeit(bool an) { echtzeit_.store(an, std::memory_order_relaxed); }
     bool echtzeit() const     { return echtzeit_.load(std::memory_order_relaxed); }
     void setQuelle(Quelle q)  { quelle_ = q ? q : &wirtsuhrNs; bezug_gueltig_ = false; }
@@ -67,7 +67,7 @@ public:
         }
         maschine_ = maschine;
         const uint64_t jetzt = quelle_();
-        // Bruchteile eines Takts mitnehmen, sonst liefe die Uhr bei häufigem Abfragen
+        // Bruchteile eines Takts mitnehmen, sonst liefe die Uhr bei haeufigem Abfragen
         // (je Befehl ein paar hundert ns) zu langsam.
         const double takte = (static_cast<double>(jetzt - ns_) + rest_ns_) * hz_ * 1e-9;
         const uint64_t ganz = static_cast<uint64_t>(takte);

@@ -58,6 +58,7 @@ void Z80::reset() {
     SP = 0xFFFF;
     I = R = 0;
     IFF1 = IFF2 = false;
+    ei_schatten = false;
     IM = 0;
     halted = false;
     cycles = 0;
@@ -360,7 +361,7 @@ uint8_t Z80::dec8(uint8_t val) {
  * @brief 16-Bit-Addition: a + b.
  *
  * S, Z und PV bleiben erhalten. H bezieht sich auf Bit 11→12.
- * Bits 3 und 5 werden vom oberen Byte des Ergebnisses übernommen.
+ * Bits 3 und 5 werden vom oberen Byte des Ergebnisses uebernommen.
  *
  * @param a Erster Operand.
  * @param b Zweiter Operand.
@@ -872,12 +873,13 @@ int Z80::step() {
     if (traceCallback) {
         traceCallback(*this);
         // Hat der Callback einen Halt angefordert, wird die Instruktion NICHT mehr
-        // ausgeführt (break-before-execute, s. abortBeforeExecute): 0 Takte zurück,
-        // Zustand unverändert. Nur relevant, wenn ein Debugger mitläuft.
+        // ausgefuehrt (break-before-execute, s. abortBeforeExecute): 0 Takte zurueck,
+        // Zustand unveraendert. Nur relevant, wenn ein Debugger mitlaeuft.
         if (abortBeforeExecute && abortBeforeExecute())
             return 0;
     }
 
+    ei_schatten = false;   // der Befehl nach EI laeuft — danach ist ein Interrupt wieder annehmbar
     R = (R & 0x80) | ((R + 1) & 0x7F);
     uint8_t opcode = fetchByte();
     int c = execMain(opcode);
@@ -1102,7 +1104,7 @@ int Z80::execMain(uint8_t opcode) {
         case 0xF8: if (F & FLAG_S) { PC = pop(); return 11; } return 5;
         case 0xF9: SP = HL; return 6;
         case 0xFA: { uint16_t a = fetchWord(); if (F & FLAG_S) PC = a; return 10; }
-        case 0xFB: IFF1 = IFF2 = true; return 4; // EI
+        case 0xFB: IFF1 = IFF2 = true; ei_schatten = true; return 4; // EI
         case 0xFC: { uint16_t a = fetchWord(); if (F & FLAG_S) { push(PC); PC = a; return 17; } return 10; }
         case 0xFD: return execFD();
         case 0xFE: cp8(fetchByte()); return 7;

@@ -1,12 +1,12 @@
 /**
  * @file test_em256_adr.cpp
- * @brief G1-Prüfprogramm `em256adr.com` (doc/design/17_a5120_16.md §3 G1) gegen den
+ * @brief G1-Pruefprogramm `em256adr.com` (doc/design/17_a5120_16.md §3 G1) gegen den
  *        Emulator: Portbasis A8H, Attributspeicher A22 negiert, Lesart der Leseadresse.
  *
  * Das Programm stammt aus der CPA-Workbench (`tools/16bitTest/src/em256adr.mac`) und ist
- * für den echten A5120.16 geschrieben — es kennt den Emulator nicht.  Läuft es hier mit
- * dem erwarteten Ergebnis durch, stimmen Programm und Kartenmodell überein; die Messung
- * am Gerät ist die Gegenprobe beider.  Die `.com` liegt als Fixture unter
+ * fuer den echten A5120.16 geschrieben — es kennt den Emulator nicht.  Laeuft es hier mit
+ * dem erwarteten Ergebnis durch, stimmen Programm und Kartenmodell ueberein; die Messung
+ * am Geraet ist die Gegenprobe beider.  Die `.com` liegt als Fixture unter
  * `tests/fixtures/cpm/` (tests/fixtures/README.md), der Test braucht die Workbench nicht.
  *
  * Diskette: `cpa_cpa780_k5601_noclock.img` (BIOS OHNE `em256`) — das BIOS fasst die
@@ -87,14 +87,14 @@ std::string letzteZeile(A5120Machine& m) {
 /**
  * @brief EM256ADR starten und bis zum Prompt laufen lassen; jede Seitenpause wird mit
  *        einer Leertaste quittiert.  Liefert die Abschrift aller Bildschirme (je Pause
- *        einer, dazu der letzte) — der Bildschirm rollt, einzeln sähe man zu wenig.
+ *        einer, dazu der letzte) — der Bildschirm rollt, einzeln saehe man zu wenig.
  */
 std::string lasseLaufen(A5120Machine& m) {
     typeString(m, "EM256ADR");
     typeKey(m, k1520test::QK_RETURN);
     std::string abschrift;
     long long rest = kProgBudget;
-    // Erst den Start abwarten: das Banner verdrängt die Kommandozeile „A>EM256ADR".
+    // Erst den Start abwarten: das Banner verdraengt die Kommandozeile „A>EM256ADR".
     if (!runSmallUntil(m, "EM256ADR 1.0", kInputBudget)) return vramLines(m);
     while (rest > 0) {
         k1520test::runCycles(m, 200'000);
@@ -102,7 +102,7 @@ std::string lasseLaufen(A5120Machine& m) {
         if (vramText(m).find(kPause) != std::string::npos) {
             abschrift += vramLines(m) + "----\n";
             typeKey(m, ' ');
-            // Warten, bis die Pausenzeile gelöscht ist (M_DELL).
+            // Warten, bis die Pausenzeile geloescht ist (M_DELL).
             for (int i = 0; i < 200 && vramText(m).find(kPause) != std::string::npos; ++i) {
                 k1520test::runCycles(m, 100'000);
                 rest -= 100'000;
@@ -132,7 +132,7 @@ void starte(Lauf& l, const A5120Machine::Config& cfg, const char* tmp) {
     ASSERT_TRUE(runUntilVramContains(*l.m, "TPA ist OK!", kBootBudget)) << vramLines(*l.m);
     ASSERT_TRUE(runSmallUntil(*l.m, "A>", kInputBudget)) << vramLines(*l.m);
     l.abschrift = lasseLaufen(*l.m);
-    ASSERT_EQ(letzteZeile(*l.m), "A>") << "Programm kehrt nicht zurück:\n" << l.abschrift;
+    ASSERT_EQ(letzteZeile(*l.m), "A>") << "Programm kehrt nicht zurueck:\n" << l.abschrift;
 }
 
 A5120Machine::Config em256(EM::A22Lesart lesart) {
@@ -148,7 +148,7 @@ A5120Machine::Config em256(EM::A22Lesart lesart) {
  * @test Em256Adr/BelegteLesartFindetAttributspeicherBeiA8
  * @brief Vorgabe-Lesart (AB12–15 des E/A-Zyklus = B): „Attributspeicher bei A8H,
  *        16 Seiten x 4 Bit, negiert", Lesart „B aus IN A,(C)", alle Muster fehlerfrei,
- *        Aufräumen ok — danach stehen alle 16 A22-Einträge auf 07H (PEN = 0, WE = 0).
+ *        Aufraeumen ok — danach stehen alle 16 A22-Eintraege auf 07H (PEN = 0, WE = 0).
  */
 TEST(Em256Adr, BelegteLesartFindetAttributspeicherBeiA8) {
     Lauf l;
@@ -169,9 +169,9 @@ TEST(Em256Adr, BelegteLesartFindetAttributspeicherBeiA8) {
 
 /**
  * @test Em256Adr/HandbuchLesartWirdErkannt
- * @brief Gegenprobe mit der wörtlichen Handbuchlesart (A22 liest die Seite des letzten
- *        Speicherzugriffs): das Programm muss die ANDERE Lesart erkennen — sonst könnte
- *        es am Gerät die beiden nicht unterscheiden.
+ * @brief Gegenprobe mit der woertlichen Handbuchlesart (A22 liest die Seite des letzten
+ *        Speicherzugriffs): das Programm muss die ANDERE Lesart erkennen — sonst koennte
+ *        es am Geraet die beiden nicht unterscheiden.
  */
 TEST(Em256Adr, HandbuchLesartWirdErkannt) {
     Lauf l;
@@ -183,7 +183,7 @@ TEST(Em256Adr, HandbuchLesartWirdErkannt) {
     EXPECT_TRUE(enthaelt(t, "s0:0000000000000000 s1:1111111111111111")) << t;
     EXPECT_TRUE(enthaelt(t, "Lesart: Leseadresse = Seite des letzten Befehlsholens")) << t;
     EXPECT_TRUE(enthaelt(t, "Lesen adressiert: Seite des letzten Befehlsholens")) << t;
-    // Seiten ohne Lese-Stub (oberhalb der TPA) sind in dieser Lesart nicht prüfbar.
+    // Seiten ohne Lese-Stub (oberhalb der TPA) sind in dieser Lesart nicht pruefbar.
     EXPECT_TRUE(enthaelt(t, "Muster F,5         je Seite 0..F: ++++++++++++")) << t;
     EXPECT_TRUE(enthaelt(t, "Kontrolle ok")) << t;
     for (int p = 0; p < 16; ++p)
@@ -192,7 +192,7 @@ TEST(Em256Adr, HandbuchLesartWirdErkannt) {
 
 /**
  * @test Em256Adr/OhneKarteKeineKarte
- * @brief A5120 ohne EM: „ERGEBNIS: keine Karte", zurück am Prompt.
+ * @brief A5120 ohne EM: „ERGEBNIS: keine Karte", zurueck am Prompt.
  */
 TEST(Em256Adr, OhneKarteKeineKarte) {
     Lauf l;

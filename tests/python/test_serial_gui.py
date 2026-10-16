@@ -1,8 +1,8 @@
 """Reiter „Schnittstellen" im Einstellungen-Kasten, Statuszeile und Konfiguration (AP-S7, Entwurf 19 §9/§11).
 
-Beide Programme (A5120 und K8915 Emulator), headless über ``offscreen``.  Echte
+Beide Programme (A5120 und K8915 Emulator), headless ueber ``offscreen``.  Echte
 Loopback-Sockets, nie feste Ports (ein freier wird beim Test erfragt, ein Server
-meldet den tatsächlichen), kurze Fristen.  Namen und Fähigkeiten der Schnittstellen
+meldet den tatsaechlichen), kurze Fristen.  Namen und Faehigkeiten der Schnittstellen
 kommen aus dem Kern — die Tests fragen ihn, statt sie zu kennen.
 """
 
@@ -54,14 +54,14 @@ def _fenster(qapp, maschine):
 def _zu(qapp, fenster):
     """Fenster schliessen und stillegen.
 
-    ``close()`` allein lässt die Zeitgeber der Kästen (Laufwerkskasten: 120 ms und
+    ``close()`` allein laesst die Zeitgeber der Kaesten (Laufwerkskasten: 120 ms und
     1 s mit einer Formatmessung) weiterlaufen, solange das Python-Objekt lebt — und
     es lebt bis zum Testende.  Jedes liegengebliebene Fenster rechnet dann in jedem
     ``processEvents`` mit, und die Datei wird mit der Zahl der Tests immer
     langsamer (aufgefallen bei ~70 Fenstern: der Lauf stand scheinbar).  Auch der
-    Ereignisfilter des ``ScreenFocusGuard`` hängt an der Anwendung; er wird
-    abgehängt.  Das Fenster selbst wird NICHT zerstört (``deleteLater`` riss den
-    Filter mit und stürzte ab).
+    Ereignisfilter des ``ScreenFocusGuard`` haengt an der Anwendung; er wird
+    abgehaengt.  Das Fenster selbst wird NICHT zerstoert (``deleteLater`` riss den
+    Filter mit und stuerzte ab).
     """
     from PySide6.QtCore import QTimer
     fenster.close()
@@ -92,7 +92,7 @@ def w(qapp, konfig, maschine):
 
 
 def frei(block):
-    """Block betriebsbereit machen: der K8915 startet im Rx/Tx-Loop (Prüfstecker)."""
+    """Block betriebsbereit machen: der K8915 startet im Rx/Tx-Loop (Pruefstecker)."""
     block.loop.setChecked(False)
     return block
 
@@ -118,7 +118,7 @@ def sichtbar(widget, oben):
     return widget.isVisibleTo(oben)
 
 
-# ─── Aufbau: Blöcke, Namen, Fähigkeiten aus dem Kern ─────────────────────────
+# ─── Aufbau: Bloecke, Namen, Faehigkeiten aus dem Kern ─────────────────────────
 
 def test_one_block_per_interface_named_by_the_core(w):
     emu = w.emulator
@@ -193,12 +193,12 @@ def test_an_old_dock_state_with_serial_dock_does_no_harm(w, qapp):
     w._apply_config({"window": {"dock_state": zustand}})
     qapp.processEvents()
     assert w.settings_dock.objectName() == "settings_dock"
-    assert w.serial_widget.bloecke()                    # lebt und trägt Blöcke
+    assert w.serial_widget.bloecke()                    # lebt und traegt Bloecke
     w.serial_widget.aktualisieren()
 
 
 def test_the_widget_keeps_polling_with_another_tab_on_top(w, qapp):
-    """Die Statuszeile ist auch ohne sichtbaren Reiter aktuell: der Takt gehört dem Widget."""
+    """Die Statuszeile ist auch ohne sichtbaren Reiter aktuell: der Takt gehoert dem Widget."""
     w.settings_widget.tabs.setCurrentIndex(0)
     b = server_einstellen(w.serial_widget.bloecke()[0])
     b.knopf.click()
@@ -247,7 +247,7 @@ def test_button_is_locked_for_an_invalid_host_in_the_client(w):
     assert b.knopf.isEnabled()
     b.host.setText("-kaputt-")
     assert not b.knopf.isEnabled() and b.knopf.toolTip()
-    b.rolle.setCurrentIndex(0)                          # im Server zählt der Host nicht
+    b.rolle.setCurrentIndex(0)                          # im Server zaehlt der Host nicht
     assert b.knopf.isEnabled()
 
 
@@ -277,7 +277,7 @@ def test_server_runs_locks_fields_and_the_statusline_shows_the_real_port(w, qapp
     # Betrieb: gesperrt sind Betriebsart, Rolle, Host, Port, Datei …
     for gesperrt in (b.betriebsart, b.rolle, b.host, b.port, b.datei_knopf):
         assert not gesperrt.isEnabled()
-    # … frei bleiben Loop, Brücke, XON/XOFF, Takt (wirken sofort).
+    # … frei bleiben Loop, Bruecke, XON/XOFF, Takt (wirken sofort).
     for frei_ in (b.loop, b.xonxoff):
         assert frei_.isEnabled()
     b.xonxoff.setChecked(True)
@@ -332,7 +332,7 @@ def test_a_trying_client_never_shows_in_the_statusline_and_stays_stoppable(w, qa
     assert warte(qapp, lambda: w.emulator.serial_status(0).versuche >= 1)
     w.serial_widget.aktualisieren()
     assert w.emulator.serial_status(0).zustand == K.SER_VERBINDET
-    assert b.knopf.text() == "Trennen" and b.knopf.isEnabled()      # auch während der Versuche
+    assert b.knopf.text() == "Trennen" and b.knopf.isEnabled()      # auch waehrend der Versuche
     assert b.zustand_label.text().startswith("verbindet")
     assert not b.host.isEnabled() and not b.port.isEnabled()
     for feld in (w.status_widget.seriell_server, w.status_widget.seriell_verbindungen):
@@ -420,7 +420,7 @@ def test_dot_colours_follow_the_state(w, qapp):
     port = w.emulator.serial_status(0).port_aktiv
     with socket.create_connection(("127.0.0.1", port), timeout=3):
         assert warte(qapp, lambda: (w.serial_widget.aktualisieren(),
-                                    "35c43a" in b.punkt.styleSheet())[1])   # verbunden: grün
+                                    "35c43a" in b.punkt.styleSheet())[1])   # verbunden: gruen
 
 
 def test_setting_the_loop_ends_a_running_connection(w, qapp):
@@ -437,7 +437,7 @@ def test_the_timer_runs_at_about_four_hertz(w):
 
 
 def test_the_blocks_follow_changes_made_in_the_core(w, qapp):
-    """Quelle der Wahrheit ist der Kern: was dort geändert wird, zeigt der nächste Takt."""
+    """Quelle der Wahrheit ist der Kern: was dort geaendert wird, zeigt der naechste Takt."""
     assert w.emulator.serial_configure(0, xonxoff=True, host="kern.example", loop=False)
     w.serial_widget.aktualisieren()
     b = w.serial_widget.bloecke()[0]
@@ -475,7 +475,7 @@ def test_resume_a_server_on_its_set_port(w, qapp):
     st = w.emulator.serial_status(0)
     assert st.zustand == K.SER_LAUSCHT and st.port_aktiv == port
     assert w.serial_widget.block(name).knopf.text() == "Beenden"
-    # Die Statuszeile trägt den tatsächlichen Port.
+    # Die Statuszeile traegt den tatsaechlichen Port.
     assert w.status_widget.seriell_server.text.text().endswith(str(port))
 
 
@@ -516,10 +516,10 @@ def test_resume_a_file_appends(w, tmp_path):
     w._apply_config({"schnittstellen": {name: dict(
         betriebsart="datei", datei=str(ziel), loop=False, aktiv=True)}})
     assert w.emulator.serial_status(2).zustand == K.SER_VERBUNDEN
-    assert ziel.read_bytes() == b"alt\n"                       # nicht überschrieben
+    assert ziel.read_bytes() == b"alt\n"                       # nicht ueberschrieben
     w.emulator.serial_stop(2)
     assert ziel.read_bytes() == b"alt\n"
-    # Von Hand gestartet überschreibt dagegen (Gegenprobe für die Unterscheidung).
+    # Von Hand gestartet ueberschreibt dagegen (Gegenprobe fuer die Unterscheidung).
     assert w.emulator.serial_start(2)
     w.emulator.serial_stop(2)
     assert ziel.read_bytes() == b""
@@ -554,7 +554,7 @@ def test_unusable_values_are_skipped_not_fatal(w):
         "Gibt es nicht": dict(aktiv=True), "kaputt": 42}})
     assert w.emulator.serial_config(0) == vorher
     assert w.emulator.serial_status(0).zustand == K.SER_AUS
-    w._apply_config({"schnittstellen": [1, 2]})                # falsche Form: übergangen
+    w._apply_config({"schnittstellen": [1, 2]})                # falsche Form: uebergangen
 
 
 def test_closing_saves_the_state_and_the_next_start_resumes(qapp, konfig, maschine):
@@ -571,7 +571,7 @@ def test_closing_saves_the_state_and_the_next_start_resumes(qapp, konfig, maschi
     # Das Beenden hat den Port freigegeben …
     with socket.socket() as s:
         s.bind(("", port))
-    # … und der nächste Start nimmt den Server auf demselben Port wieder auf.
+    # … und der naechste Start nimmt den Server auf demselben Port wieder auf.
     w2 = _fenster(qapp, maschine)
     try:
         st = w2.emulator.serial_status(0)
@@ -602,7 +602,7 @@ def test_changing_the_drive_bay_keeps_a_running_server(w, qapp):
     port = w.emulator.serial_status(0).port_aktiv
     alt = w.emulator
     types = list(w._drive_types)
-    # Den letzten Schacht umstellen (bestückt ↔ leer) — ändert die Bestückung sicher.
+    # Den letzten Schacht umstellen (bestueckt ↔ leer) — aendert die Bestueckung sicher.
     types[-1] = dt.NO_DRIVE if dt.is_present(types[-1]) else dt.default_drive_types(w.maschine)[0]
     w._apply_drive_types(types, cold_restart=False)
     assert w.emulator is not alt
@@ -623,7 +623,7 @@ def test_closing_ends_every_interface(qapp, konfig, maschine):
     _zu(qapp, w1)
 
 
-# ─── Ein Gast sendet über die Schnittstelle (Rauchprobe) ─────────────────────
+# ─── Ein Gast sendet ueber die Schnittstelle (Rauchprobe) ─────────────────────
 
 def test_bytes_over_a_real_socket_do_not_disturb_a_running_machine(w, qapp):
     b = server_einstellen(w.serial_widget.bloecke()[0])
@@ -638,10 +638,10 @@ def test_bytes_over_a_real_socket_do_not_disturb_a_running_machine(w, qapp):
         assert w.emulator.serial_status(0).zustand == K.SER_VERBUNDEN
 
 
-# ─── Ergänzt in AP-T1b ───────────────────────────────────────────────────────
+# ─── Ergaenzt in AP-T1b ───────────────────────────────────────────────────────
 
 def _probe(w, b, **felder):
-    """Einen Probestatus in den Block geben (der Takt wird dafür angehalten)."""
+    """Einen Probestatus in den Block geben (der Takt wird dafuer angehalten)."""
     import dataclasses
     w.serial_widget._timer.stop()
     echt = w.emulator.serial_status(b.index)
@@ -672,7 +672,7 @@ def test_guest_format_uses_the_usual_notation_with_a_tooltip(w, qapp):
 
 def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
     from app.ui.serial_widget import LeitungsLed
-    # Telnet-Blöcke ohne V.24 haben keine Leitungsanzeige.
+    # Telnet-Bloecke ohne V.24 haben keine Leitungsanzeige.
     for b in w.serial_widget.bloecke():
         assert sichtbar(b.leitungen, b) == b.info.v24
     b = next(x for x in w.serial_widget.bloecke() if x.info.v24)
@@ -689,7 +689,7 @@ def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
                                                  DCD=True)
     assert "CTS aktiv" in anz["CTS"].toolTip() and "Eingang" in anz["CTS"].toolTip()
     assert "inaktiv" in anz["DTR"].toolTip() and "Ausgang" in anz["DTR"].toolTip()
-    # Die Leuchte zeichnet sich in verschiedenen Zuständen verschieden (Pixelprobe).
+    # Die Leuchte zeichnet sich in verschiedenen Zustaenden verschieden (Pixelprobe).
     def pixel(a):
         bild = a.led.grab().toImage()
         return bild.pixelColor(bild.width() // 2, bild.height() // 2).name()
@@ -697,8 +697,8 @@ def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
     assert an != aus
     anz["DSR"].setze(None)
     assert anz["DSR"].zustand is None and "unbekannt" in anz["DSR"].toolTip()
-    assert pixel(anz["DSR"]) not in (an, aus)               # Umriss: Mitte unausgefüllt
-    # Telnet: Vermerk „nicht übertragen“, bei RFC2217 weg.
+    assert pixel(anz["DSR"]) not in (an, aus)               # Umriss: Mitte unausgefuellt
+    # Telnet: Vermerk „nicht uebertragen“, bei RFC2217 weg.
     assert w.emulator.serial_configure(b.index, betriebsart=K.SER_TELNET)
     b.aktualisieren()
     assert sichtbar(b.leitungen_hinweis, b)
@@ -708,7 +708,7 @@ def test_the_lines_are_leds_with_directions_and_tooltips(w, qapp):
 
 
 
-# ─── LEDs: drei unterscheidbare Zustände, Ende-zu-Ende grün (AP-S12) ──────────
+# ─── LEDs: drei unterscheidbare Zustaende, Ende-zu-Ende gruen (AP-S12) ──────────
 
 def _led_mitte(led):
     """Farbe in der Mitte der LED (ohne den Glanzpunkt oben links)."""
@@ -717,7 +717,7 @@ def _led_mitte(led):
 
 
 def test_led_states_are_bright_green_dim_green_and_outline(qapp):
-    """Pixelprobe: aktiv = hell leuchtend grün, inaktiv = gedimmt dunkelgrün und
+    """Pixelprobe: aktiv = hell leuchtend gruen, inaktiv = gedimmt dunkelgruen und
     deutlich NICHT schwarz, unbekannt = nur Umriss (Mitte = Hintergrund)."""
     from PySide6.QtWidgets import QWidget
     from app.ui.serial_widget import LeitungsLed
@@ -732,22 +732,22 @@ def test_led_states_are_bright_green_dim_green_and_outline(qapp):
     led.setze(None)
     unbekannt = _led_mitte(led)
 
-    # aktiv: grün dominiert und ist hell
+    # aktiv: gruen dominiert und ist hell
     assert an.green() > 200 and an.green() > an.red() + 80 and an.green() > an.blue() + 80
-    # inaktiv: erkennbar grün (Farbton), aber gedimmt — nicht schwarz, nicht hell
+    # inaktiv: erkennbar gruen (Farbton), aber gedimmt — nicht schwarz, nicht hell
     assert aus.green() > aus.red() + 30 and aus.green() > aus.blue() + 30, aus.name()
     assert 70 <= aus.green() <= 150, aus.name()
     assert an.green() - aus.green() >= 80
-    # unbekannt: Mitte unausgefüllt
+    # unbekannt: Mitte unausgefuellt
     assert unbekannt == hintergrund
     assert len({an.name(), aus.name(), unbekannt.name()}) == 3
 
 
 def test_connecting_turns_the_input_leds_green_end_to_end(w, qapp):
     """Ein Telnet-Client verbindet sich mit dem Server der V.24-Schnittstelle: die
-    Eingänge (CTS/DSR/DCD) werden im laufenden Rechner aktiv (§6.4: Telnet =
+    Eingaenge (CTS/DSR/DCD) werden im laufenden Rechner aktiv (§6.4: Telnet =
     „verbunden") und der Kasten zieht sie im 4-Hz-Takt nach — ohne Probestatus.
-    Die Ausgänge bleiben aus: CP/A/SCPX setzen RTS/DTR nie."""
+    Die Ausgaenge bleiben aus: CP/A/SCPX setzen RTS/DTR nie."""
     b = next(x for x in w.serial_widget.bloecke() if x.info.v24)
     server_einstellen(b)
     b.knopf.click()
@@ -770,7 +770,7 @@ def test_connecting_turns_the_input_leds_green_end_to_end(w, qapp):
 
 
 def test_k8915_old_interface_names_in_a_config_still_apply(qapp, konfig):
-    """Vor AP-S12 hießen SIO1-B/SIO2-A „IFS 1"/„IFS 2"; eine solche Konfiguration
+    """Vor AP-S12 hiessen SIO1-B/SIO2-A „IFS 1"/„IFS 2"; eine solche Konfiguration
     wird beim Laden auf die heutigen Namen abgebildet, statt herrenlos zu bleiben."""
     from app import profil
     p = profil.profil("k8915")
@@ -845,7 +845,7 @@ def test_the_far_side_shows_format_and_lines_with_a_warning(w, qapp):
         assert "anderes Format" in b.gegenseite.toolTip()
         assert "Server" in b.gegenseite.toolTip() and "Client" in b.gegenseite.toolTip()
         if b.info.v24:
-            # Server sieht RTS/DTR des Clients; CTS/DSR/DCD/RI sind für ihn ohne Belang.
+            # Server sieht RTS/DTR des Clients; CTS/DSR/DCD/RI sind fuer ihn ohne Belang.
             z = b.gegen_leitungen.anzeigen
             assert z["RTS"].zustand is True and z["DTR"].zustand is False
             assert not z["RTS"].isHidden() and not z["DTR"].isHidden()

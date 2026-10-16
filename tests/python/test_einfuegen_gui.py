@@ -1,7 +1,7 @@
 """Rechtsklick auf das Bild (alle Maschinen): Bildschirminhalt als Text kopieren und
-Zwischenablage ZEICHENWEISE über die Tastatur einfügen (120 Zeichen/s, Zeichen ohne Taste entfallen).
+Zwischenablage ZEICHENWEISE ueber die Tastatur einfuegen (120 Zeichen/s, Zeichen ohne Taste entfallen).
 
-Der Emulator ist ein Aufzeichner: geprüft wird die Verdrahtung (Menü, Tempo, Auslassen, Abbildung
+Der Emulator ist ein Aufzeichner: geprueft wird die Verdrahtung (Menue, Tempo, Auslassen, Abbildung
 durch die Bildschirmtastatur), nicht der Gast.  Gegen den echten Kern: ``test_p8000_original_gui``.
 """
 
@@ -60,7 +60,7 @@ def test_kontextmenue_bietet_kopieren_und_einfuegen_ohne_kuerzel(qapp):
     menue = w.kontextmenue_bauen()
     assert [a.text() for a in menue.actions()] == ["Bildschirminhalt als Text kopieren",
                                                    "Zwischenablage über Tastatur einfügen"]
-    assert all(a.shortcut().isEmpty() for a in menue.actions())      # ^C/^V gehören dem Gast
+    assert all(a.shortcut().isEmpty() for a in menue.actions())      # ^C/^V gehoeren dem Gast
     assert all(a.isEnabled() for a in menue.actions())
 
 
@@ -91,7 +91,7 @@ def test_einfuegen_tippt_mit_120_zeichen_je_sekunde_und_laesst_zeichen_ohne_tast
     w = _widget(emu)
     fertig = []
     w.einfuegenFertig.connect(lambda e, u: fertig.append((e, u)))
-    text = "Ab 1!\täö\r\n" + "x" * 114                 # 6 + 1 + 2 übersprungen … s. u.
+    text = "Ab 1!\täö\r\n" + "x" * 114                 # 6 + 1 + 2 uebersprungen … s. u.
     w.einfuegen(text)
     assert w.einfuegen_laeuft()
     _warte(qapp, lambda: fertig)
@@ -99,7 +99,7 @@ def test_einfuegen_tippt_mit_120_zeichen_je_sekunde_und_laesst_zeichen_ohne_tast
     aus = [e for e in emu.ereignisse if e[0] == "aus"]
     codes = [e[1] for e in an]
     assert codes[:5] == [ord("A"), ord("b"), 0x20, ord("1"), ord("!")]
-    assert codes[5] == int(Qt.Key_Tab) and codes[6] == int(Qt.Key_Return)   # ä/ö entfallen
+    assert codes[5] == int(Qt.Key_Tab) and codes[6] == int(Qt.Key_Return)   # ae/oe entfallen
     assert fertig == [(len(an), 2)] and len(an) == len(aus)            # alles wieder losgelassen
     assert an[0][2] is True and an[1][2] is False                       # 'A' mit, 'b' ohne Umschalt
     # Tempo: 120/s — 121 Tasten brauchen rund eine Sekunde, weder 10 ms noch 5 s.

@@ -1,21 +1,21 @@
 /**
  * @file dbg_z8.h
- * @brief Z8-Kontext für k1520dbg (`cpu z8`, AP P19c): Register, Registerdatei, Zähler, UART,
+ * @brief Z8-Kontext fuer k1520dbg (`cpu z8`, AP P19c): Register, Registerdatei, Zaehler, UART,
  *        Interrupts, Ports, letzter Buszyklus; Schritt/Lauf/Haltepunkte, Disassembler und
  *        Assembler (tools/z8/).
  *
  * Maschinenfrei: ein `Kontext` arbeitet auf einem `Z8&` und einem `Speicher` (wie der Debugger
  * Programm- und Datenspeicher ohne Buswirkung sieht).  Heute benutzt von `k1520dbg --z8 <bild>`
- * (eigenständiger Prüfstand: Abzug am Programmbus, 64 KB externer Speicher je Raum); P20 hängt
- * den Terminal-Z8 über denselben Kontext ein.  Unit-getestet in tests/debugtools/test_dbg_z8.cpp.
+ * (eigenstaendiger Pruefstand: Abzug am Programmbus, 64 KB externer Speicher je Raum); P20 haengt
+ * den Terminal-Z8 ueber denselben Kontext ein.  Unit-getestet in tests/debugtools/test_dbg_z8.cpp.
  *
  * Kommandos (help z8):
  *   r                      Register, Flags, Arbeitsregister
- *   s [n] | n | g [adr] | fin    Schritt, Schritt über CALL, Lauf (bis Haltepunkt/adr), bis RET
+ *   s [n] | n | g [adr] | fin    Schritt, Schritt ueber CALL, Lauf (bis Haltepunkt/adr), bis RET
  *   b adr | bl | bd n|all  Haltepunkte
  *   u [adr [n]]            disassemblieren        a adr befehl   assemblieren (Programmspeicher)
  *   d [adr [n]] | de [adr [n]] | dr [von [bis]]   Programm-, Daten-, Registerdatei-Auszug
- *   e adr b… | ee adr b… | er reg v | set pc|sp|rp|flags|imr|irq|ipr v   ändern
+ *   e adr b… | ee adr b… | er reg v | set pc|sp|rp|flags|imr|irq|ipr v   aendern
  *   t | uart | irq | ports | bus | sicht           Peripherie
  *   pin p bit 0|1 | port p v   Eingangspegel      irqlog [n]   angenommene Interrupts
  *   reset | takte | q
@@ -43,7 +43,7 @@ namespace dbgz8 {
 
 struct Speicher {
     std::function<uint8_t(uint16_t)> prog;                 ///< Programmspeicher (Sicht)
-    std::function<void(uint16_t, uint8_t)> progSchreiben;  ///< z. B. RAM im Prüfstand
+    std::function<void(uint16_t, uint8_t)> progSchreiben;  ///< z. B. RAM im Pruefstand
     std::function<uint8_t(uint16_t)> daten;                ///< externer Datenspeicher
     std::function<void(uint16_t, uint8_t)> datenSchreiben;
 };
@@ -98,7 +98,7 @@ inline std::string zaehlerText(const Z8& c) {
         if (n == 1 && !(z.pre & 0x02)) quelle = tin[(c.tmr() >> 4) & 3];
         o += fmt("T%d: %s  %s  PRE%d=%02X (÷%u)  T%d=%02X (%u)  Stand=%02X  Vorteiler=%u  Endwerte=%llu\n"
                  "    Takt: %s%s  Periode = 4·%u·%u = %u interne Takte\n",
-                 n, en ? "zählt" : "steht", (z.pre & 1) ? "Dauer" : "Einzel", n, z.pre, p, n, z.anfang, t,
+                 n, en ? "zaehlt" : "steht", (z.pre & 1) ? "Dauer" : "Einzel", n, z.pre, p, n, z.anfang, t,
                  unsigned(z.zaehler & 0xFF), z.vorteiler, (unsigned long long)z.abgelaufen,
                  quelle.c_str(), (n == 1 && z.getriggert) ? " (getriggert)" : "", p, t, 4 * p * t);
     }
@@ -110,11 +110,11 @@ inline std::string uartText(const Z8& c) {
     const Z8Sicht s = c.sicht();
     const bool an = s.p3m & 0x40;
     const unsigned p = (s.t[0].pre >> 2) ? (s.t[0].pre >> 2) : 64, t = s.t[0].anfang ? s.t[0].anfang : 256;
-    std::string o = fmt("UART: %s, Parität %s, Bitzeit = 4·%u·%u·16 = %u interne Takte\n",
+    std::string o = fmt("UART: %s, Paritaet %s, Bitzeit = 4·%u·%u·16 = %u interne Takte\n",
                         an ? "ein (P30=SIN, P37=SOUT)" : "aus", (s.p3m & 0x80) ? "ungerade" : "aus", p, t, 64 * p * t);
     o += fmt("  Empfang: Puffer=%02X  %s (Schieber %03X, Teiler %u)\n", s.rxPuffer,
-             s.rxLaeuft ? "Zeichen läuft ein" : "wartet auf Startbit", s.rxSchieber, s.rxTeiler);
-    o += fmt("  Senden:  %s (Schieber %03X, Teiler %u), P37=%d\n", s.txSchieber ? "läuft" : "ruht",
+             s.rxLaeuft ? "Zeichen laeuft ein" : "wartet auf Startbit", s.rxSchieber, s.rxTeiler);
+    o += fmt("  Senden:  %s (Schieber %03X, Teiler %u), P37=%d\n", s.txSchieber ? "laeuft" : "ruht",
              s.txSchieber, s.txTeiler, (s.portPins[3] >> 7) & 1);
     return o;
 }
@@ -165,7 +165,7 @@ inline std::string portsText(const Z8& c) {
     o += fmt("P2: Pins=%02X aus=%02X treibt=%02X  P2M=%02X (1=Eingang), %s\n", c.portPegel(2), c.sicht().portAus[2],
              c.portTreibt(2), c.p2m(), (c.p3m() & 1) ? "Gegentakt" : "offener Drain");
     static const char* m34[4] = {"P34 Ausgang", "P34 = /DM", "P34 = /DM", "P33/P34 = Handshake Port 1"};
-    o += fmt("P3: Pins=%02X (Eingänge P30–P33=%X)  P3M=%02X: %s%s%s%s\n", c.portPegel(3), c.portPegel(3) & 15, c.p3m(),
+    o += fmt("P3: Pins=%02X (Eingaenge P30–P33=%X)  P3M=%02X: %s%s%s%s\n", c.portPegel(3), c.portPegel(3) & 15, c.p3m(),
              m34[(c.p3m() >> 3) & 3], (c.p3m() & 0x04) ? ", Handshake Port 0" : "",
              (c.p3m() & 0x20) ? ", Handshake Port 2" : "", (c.p3m() & 0x40) ? ", UART" : "");
     return o;
@@ -193,13 +193,13 @@ public:
     std::set<uint16_t> haltepunkte;
     uint64_t maxSchritte = 20000000;
     /// Ein Befehl im Zusammenhang einer Einheit (P20: Terminal samt Video/Tastatur/Watchdog);
-    /// ohne Rückruf `Z8::step()` allein (Prüfstand).
+    /// ohne Rueckruf `Z8::step()` allein (Pruefstand).
     std::function<void()> schritt;
-    /// Zusätzliche Kommandos des Gastgebers (z. B. `term`, `host`); true = erkannt.
+    /// Zusaetzliche Kommandos des Gastgebers (z. B. `term`, `host`); true = erkannt.
     std::function<bool(const std::vector<std::string>&, std::string&)> zusatz;
     std::string zusatzHilfe;
 
-    /// Eine Kommandozeile.  Rückgabe false = `q`.
+    /// Eine Kommandozeile.  Rueckgabe false = `q`.
     bool befehl(const std::string& zeile, std::string& out) {
         std::vector<std::string> t;
         { std::istringstream is(zeile); std::string w; while (is >> w) t.push_back(w); }
@@ -221,7 +221,7 @@ public:
             out += "-> " + zeileBei(c_.pc) + "\n";
             return true;
         }
-        if (k == "fin") {   // bis der Stapel über den jetzigen Stand steigt (RET/IRET)
+        if (k == "fin") {   // bis der Stapel ueber den jetzigen Stand steigt (RET/IRET)
             const uint16_t sp0 = c_.sp;
             uint64_t i = 0;
             bool weg = false;
@@ -346,14 +346,14 @@ public:
     static std::string hilfe() {
         return "Z8 (cpu z8):\n"
                "  r                       Register, Flags, Arbeitsregister\n"
-               "  s [n] | n | fin         Schritt | über CALL | bis RET/IRET\n"
+               "  s [n] | n | fin         Schritt | ueber CALL | bis RET/IRET\n"
                "  g [adr]                 laufen bis Haltepunkt (bzw. adr)\n"
                "  b adr | bl | bd n|all   Haltepunkte\n"
                "  u [adr [n]]             disassemblieren\n"
                "  a adr befehl            assemblieren in den Programmspeicher\n"
                "  d [adr [n]] | de …      Programm- | Datenspeicher\n"
                "  dr [von [bis]]          Registerdatei (Sicht ohne Wirkung)\n"
-               "  e adr b… | ee adr b…    Programm-/Datenspeicher ändern\n"
+               "  e adr b… | ee adr b…    Programm-/Datenspeicher aendern\n"
                "  er reg wert | set pc|sp|rp|flags|imr|irq|ipr wert\n"
                "  t | uart | irq | ports | bus | sicht   Peripherie\n"
                "  pin p bit 0|1 | port p wert            Eingangspegel setzen\n"
@@ -386,7 +386,7 @@ private:
     }
 };
 
-/// Eigenständiger Prüfstand für `k1520dbg --z8 <bild>[@org]`: Abzug am Programmbus (Rest FFH),
+/// Eigenstaendiger Pruefstand fuer `k1520dbg --z8 <bild>[@org]`: Abzug am Programmbus (Rest FFH),
 /// externer Programm- und Datenspeicher je 64 KB RAM.  Kommandos aus @p script, dann stdin.
 inline int pruefstand(const std::string& bildArg, const std::string& fassung, const char* script) {
     std::string pfad = bildArg;
@@ -419,7 +419,7 @@ inline int pruefstand(const std::string& bildArg, const std::string& fassung, co
     Kontext k(cpu, sp);
     cpu.reset();
     cpu.step();
-    std::printf("Z8-Prüfstand (%s): %s, %zu Byte ab %04lX — help für Kommandos\n",
+    std::printf("Z8-Pruefstand (%s): %s, %zu Byte ab %04lX — help fuer Kommandos\n",
                 fassung.empty() ? "ub8840" : fassung.c_str(), pfad.c_str(), n, org);
     auto quelle = [&](FILE* in, bool prompt) {
         char zeile[1024];

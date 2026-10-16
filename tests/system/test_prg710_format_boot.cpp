@@ -1,17 +1,17 @@
 /**
  * @file test_prg710_format_boot.cpp
- * @brief PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): die TIEFE der FORMAT-Wächter
+ * @brief PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): die TIEFE der FORMAT-Waechter
  *        (`format_integration`, `tools/dev.sh test-format`) — Leerdiskette → UDOS-`FORMAT`
  *        beider Seiten mit `SYSTEMDISK? Y` → Systemdateien kopieren → Kaltstart von der
  *        neuen Diskette bis zum `%`; dazu SCPX-`FORMAT.COM` mit 5 × 1024.  Die schnellen
- *        Fälle stehen in `tests/integration/test_prg710_format.cpp`.
+ *        Faelle stehen in `tests/integration/test_prg710_format.cpp`.
  *
  * **Warum beide Seiten:** am PRG ist Laufwerkstyp 5 (DISKCON 51H) zweiseitig — Laufwerk
  * 1 und 5 sind die zwei Seiten derselben Diskette, und UDOS liest beim ersten Zugriff auf
  * die Diskette (Start, `STATUS`, `COPY`) auch die andere Seite.  Eine Seite ohne Marken
- * hängt seit AP-P3b nicht mehr (Rauschen, `K5122::setRauschenAufLeererSpur`), kostet aber
+ * haengt seit AP-P3b nicht mehr (Rauschen, `K5122::setRauschenAufLeererSpur`), kostet aber
  * je Zugriff die Fehlerwiederholungen des Residenten; eine Systemdiskette vom Typ 5 hat
- * ohnehin zwei Seiten (wie `FORMAT` am Gerät).  `FORMAT` selbst schreibt immer nur eine Seite (Laufwerk 0–3 = Seite 0,
+ * ohnehin zwei Seiten (wie `FORMAT` am Geraet).  `FORMAT` selbst schreibt immer nur eine Seite (Laufwerk 0–3 = Seite 0,
  * 4–7 = Seite 1).
  */
 
@@ -34,7 +34,7 @@ using namespace prg710test;
 
 namespace {
 
-/// Temporäre Datei samt Sicherungskopie, räumt sich weg.
+/// Temporaere Datei samt Sicherungskopie, raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const std::string& name) : pfad_(k1520test::tempPath(name)) { weg(); }
@@ -66,12 +66,12 @@ protected:
 
 /**
  * @test Prg710FormatBoot.UdosBautBootfaehigeSystemdiskette
- * @brief Gerätediskette in Laufwerk 0, nach dem Start eine Leerdiskette in Laufwerk 1:
+ * @brief Geraetediskette in Laufwerk 0, nach dem Start eine Leerdiskette in Laufwerk 1:
  *        `FORMAT` SYSTEMDISK? Y / DRIVE? 1 / ID? SYSDISK (Seite 0 samt Bootsektor,
  *        Zweitlader und BOOT-Modul von Laufwerk 0), dann N / 5 / SYSDISK.B (Seite 1).
  *        `STATUS` zeigt beide Seiten (Systemseite 47 belegt, Datenseite 14), `COPY`
  *        bringt `OS`, `ZDOS`, `OS.INIT` und die Kommandos, die `OS.INIT` braucht
- *        (`OS.INIT` ist eine Textdatei (Typ A2) und läuft über `DO`; darin `DATE`), dazu
+ *        (`OS.INIT` ist eine Textdatei (Typ A2) und laeuft ueber `DO`; darin `DATE`), dazu
  *        `STATUS`.  Kaltstart einer
  *        neuen Maschine von dieser Diskette → Datumsabfrage → Systemzeile → `%`, und
  *        `STATUS` meldet die eigene Diskette als `SYSDISK`/`SYSDISK.B`.
@@ -121,7 +121,7 @@ TEST_P(Prg710FormatBoot, UdosBautBootfaehigeSystemdiskette) {
  * @test Prg710FormatBoot.ScpxFormatFuenfMal1024
  * @brief SCPX-`FORMAT.COM` mit Format 3 (DD-DS 5 × 1024) auf eine Leerdiskette in B: —
  *        eine Systemkopie bietet FORMAT dabei nicht an.  Das DiskTool erkennt danach
- *        `scpx798` (wie die PRG-Abzüge, §5.4) mit leerem Verzeichnis und ohne
+ *        `scpx798` (wie die PRG-Abzuege, §5.4) mit leerem Verzeichnis und ohne
  *        unformatierte Spur.
  */
 TEST_P(Prg710FormatBoot, ScpxFormatFuenfMal1024) {

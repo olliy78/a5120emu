@@ -13,7 +13,7 @@ namespace {
 
 using Q = K3528::Quelle;
 
-/// Bus-Gerät, das Schreibzyklen zählt (1000H–1FFFH, wie die K7024).
+/// Bus-Geraet, das Schreibzyklen zaehlt (1000H–1FFFH, wie die K7024).
 struct BusRam : MemDevice {
     int schreib = 0;
     uint8_t v[0x1000] = {};
@@ -76,7 +76,7 @@ TEST_F(K3528Test, RegisterHatVierPorts) {
         bus.ioWrite(p, uint8_t(p));            // A8H→A8, A9H→A9 …
         EXPECT_EQ(sp.reg(), p);
     }
-    // außerhalb: nicht dekodiert
+    // ausserhalb: nicht dekodiert
     sp.setReg(0x00);
     bus.ioWrite(0xAC, 0x87);
     EXPECT_EQ(sp.reg(), 0x00);
@@ -109,12 +109,12 @@ TEST_F(K3528Test, MemdiSperrtDieZre) {
     EXPECT_EQ(sp.memRead(0x0010), 0x77);
     sp.memWrite(0x0C10, 0x33);
     EXPECT_EQ(zre[0x0C10], 0x33);
-    bus.ioWrite(0xA8, 0x80);                    // /MEMDI, keine Seite gewählt
+    bus.ioWrite(0xA8, 0x80);                    // /MEMDI, keine Seite gewaehlt
     EXPECT_TRUE(sp.memdi());
     EXPECT_EQ(sp.ortVon(0x0000), Q::Bus);
     sp.memWrite(0x0C10, 0x44);                  // geht an den (leeren) Bus
     EXPECT_EQ(zre[0x0C10], 0x33);
-    EXPECT_EQ(sp.memRead(0x0010), 0xFF);        // Bus ohne Gerät
+    EXPECT_EQ(sp.memRead(0x0010), 0xFF);        // Bus ohne Geraet
 }
 
 TEST_F(K3528Test, Memdi1OhneWirkungAufDasBild) {
@@ -162,20 +162,20 @@ TEST(K3528Config, MemdiAnBit0ErgibtDasselbeBildFuerAlleBekanntenWerte) {
 }
 
 TEST(K3528Config, BelegungIstKonfiguration) {
-    // Abweichende Brücken ändern das Bild: Seite 1 an Bit 5, /MEMDI aktiv bei 0 an Bit 4.
+    // Abweichende Bruecken aendern das Bild: Seite 1 an Bit 5, /MEMDI aktiv bei 0 an Bit 4.
     K1520Bus bus;
     K3528::Config c;
     c.belegung.seite1 = 5;
     c.belegung.memdi_bit = 4;
     c.belegung.memdi_aktiv_h = false;
     K3528 sp(bus, c);
-    sp.setReg(0x10);     // Bit 4 = 1 → /MEMDI inaktiv, nichts gewählt
+    sp.setReg(0x10);     // Bit 4 = 1 → /MEMDI inaktiv, nichts gewaehlt
     EXPECT_EQ(sp.ortVon(0x0000), K3528::Quelle::Zre);
     EXPECT_EQ(sp.ortVon(0x4000), K3528::Quelle::Bus);
     sp.setReg(0x20);     // Bit 5: Seite 1; Bit 4 = 0 → /MEMDI aktiv
     EXPECT_EQ(sp.ortVon(0x4000), K3528::Quelle::Ram);
     EXPECT_EQ(sp.ortVon(0x0000), K3528::Quelle::Bus);
-    // nicht verdrahtet (0xFF): nie gewählt
+    // nicht verdrahtet (0xFF): nie gewaehlt
     c.belegung.seite0 = 0xFF;
     K3528 sp2(bus, c);
     sp2.setReg(0xFF);

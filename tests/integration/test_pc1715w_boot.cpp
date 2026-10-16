@@ -3,9 +3,9 @@
  * @brief PC 1715W Etappe 6+7 (doc/design/21_pc1715.md AP-W3): Urlader S550 → SCP-3.0-Lader →
  *        `SCP3.SYS` → `A>`; der Zeichensatz kommt aus dem ZG-RAM (vom Lader bzw. MODCS/LOADCS
  *        aus einer `.ZGF`-Datei geladen), das Bild aus dem Bild-RAM der CRT-Karte; Tastatur
- *        (`dir`) und INIT.COM (FORMAT TRACK über U8272 + UA858) auf einer Leerdiskette in B:.
+ *        (`dir`) und INIT.COM (FORMAT TRACK ueber U8272 + UA858) auf einer Leerdiskette in B:.
  *
- * Disketten nur über `TempDisk` (der Emulator öffnet sie schreibend).
+ * Disketten nur ueber `TempDisk` (der Emulator oeffnet sie schreibend).
  */
 
 #include <gtest/gtest.h>
@@ -48,7 +48,7 @@ std::string kompakt(Pc1715Machine& m) {
     return s;
 }
 
-/// Läuft, bis auf die Kommandozeile `A>`@p kommando der neue Prompt folgt.
+/// Laeuft, bis auf die Kommandozeile `A>`@p kommando der neue Prompt folgt.
 bool bisPromptNach(Pc1715Machine& m, const std::string& kommando, long long grenze) {
     const std::string nadel = "A>" + kommando + "\nA>\n";
     for (long long t = 0; t < grenze; t += 100'000) {
@@ -61,7 +61,7 @@ bool bisPromptNach(Pc1715Machine& m, const std::string& kommando, long long gren
 /// Wartet, bis PROFILE.SUB (`modcs sc619.zgf[1]`) durch ist und der Prompt danach steht.
 bool bisZumPrompt(Pc1715Machine& m) { return bisPromptNach(m, "modcs sc619.zgf[1]", 200'000'000); }
 
-/// Prüfsumme eines ZG-RAMs (0 = ZG 1 bei 2000H, 1 = ZG 2 bei 2800H).
+/// Pruefsumme eines ZG-RAMs (0 = ZG 1 bei 2000H, 1 = ZG 2 bei 2800H).
 unsigned summe(Pc1715Machine& m, int zg) {
     unsigned x = 0;
     for (int i = 0; i < 0x800; ++i) x = x * 31 + m.speicherW()->zgRam(zg, i);
@@ -74,7 +74,7 @@ int belegt(Pc1715Machine& m, int zg) {
     return n;
 }
 
-/// Stimmt die gerasterte Zelle (@p col, @p row) Pixel für Pixel mit dem ZG-RAM überein?
+/// Stimmt die gerasterte Zelle (@p col, @p row) Pixel fuer Pixel mit dem ZG-RAM ueberein?
 bool zelleWieZgRam(Pc1715Machine& m, int col, int row) {
     const I8275::Cell& c = m.bildW()->crt().cells(row, col);
     const uint8_t code = c.code & 0x7F;
@@ -96,9 +96,9 @@ bool zelleWieZgRam(Pc1715Machine& m, int col, int row) {
 }  // namespace
 
 /**
- * @test SCP 3.0 (cpa800, 5 × 1024): S550 → Lader (lädt SC619 nach 2000H, startet den 8275) →
+ * @test SCP 3.0 (cpa800, 5 × 1024): S550 → Lader (laedt SC619 nach 2000H, startet den 8275) →
  *       SCP3.SYS → PROFILE.SUB → `A>`.  Das Bild kommt aus dem Bild-RAM, gerastert mit dem
- *       ZG-RAM (Banner Pixel für Pixel).
+ *       ZG-RAM (Banner Pixel fuer Pixel).
  */
 TEST(Pc1715wBoot, Scp30BisPrompt) {
     Gebootet g("pc1715w_scp30_system.hfe");
@@ -112,17 +112,17 @@ TEST(Pc1715wBoot, Scp30BisPrompt) {
 }
 
 /**
- * @test `.ZGF` laden: MODCS (über LOADCS.RSX, BDOS 113) schreibt einen Zeichensatz der Diskette
+ * @test `.ZGF` laden: MODCS (ueber LOADCS.RSX, BDOS 113) schreibt einen Zeichensatz der Diskette
  *       in ZG 1 bzw. ZG 2 (Bank 0, 2000H/2800H); das Bild wird danach mit dem neuen Satz gerastert.
  */
 TEST(Pc1715wBoot, ZgfDateiLaedtDenZeichensatz) {
     Gebootet g("pc1715w_scp30_system.hfe");
     ASSERT_TRUE(bisZumPrompt(g.m)) << bild(g.m);
     const unsigned zg1 = summe(g.m, 0);
-    EXPECT_EQ(belegt(g.m, 1), 0) << "ZG 2 löscht der Lader";
+    EXPECT_EQ(belegt(g.m, 1), 0) << "ZG 2 loescht der Lader";
     tippeZeile(g.m, "modcs sc644.zgf[1]");
     ASSERT_TRUE(bisPromptNach(g.m, "modcs sc644.zgf[1]", 30'000'000)) << bild(g.m);
-    EXPECT_NE(summe(g.m, 0), zg1) << "SC644 hat ZG 1 nicht verändert";
+    EXPECT_NE(summe(g.m, 0), zg1) << "SC644 hat ZG 1 nicht veraendert";
     tippeZeile(g.m, "modcs sc602.zgf[2]");
     ASSERT_TRUE(bisPromptNach(g.m, "modcs sc602.zgf[2]", 30'000'000)) << bild(g.m);
     EXPECT_GT(belegt(g.m, 1), 500) << "SC602 nicht in ZG 2";
@@ -143,9 +143,9 @@ TEST(Pc1715wBoot, TastaturDir) {
 }
 
 /**
- * @test INIT.COM („FORMATW“, U8272 FORMAT TRACK über die DMA) formatiert eine Leerdiskette in B:
+ * @test INIT.COM („FORMATW“, U8272 FORMAT TRACK ueber die DMA) formatiert eine Leerdiskette in B:
  *       (5 × 1024 × 80 DS), danach `dir b:` = „No File“; PIP schreibt (WRITE DATA + SCAN EQUAL
- *       als Prüflesen) und `dir b:` zeigt die Datei.
+ *       als Prueflesen) und `dir b:` zeigt die Datei.
  */
 TEST(Pc1715wBoot, InitFormatiertLeerdisketteInB) {
     Gebootet g("pc1715w_scp30_system.hfe");
@@ -162,7 +162,7 @@ TEST(Pc1715wBoot, InitFormatiertLeerdisketteInB) {
     ASSERT_TRUE(laufeBisText(g.m, "FORMATTING COMPLETE", 400'000'000)) << bild(g.m);
     EXPECT_NE(bild(g.m).find("TRACK ( 79 )"), std::string::npos) << bild(g.m);
     ASSERT_TRUE(laufeBisText(g.m, "SELECT FUNCTION:", 10'000'000)) << bild(g.m);
-    tippe(g.m, "x");   // INIT beenden: Warmstart lädt CCP.COM nach
+    tippe(g.m, "x");   // INIT beenden: Warmstart laedt CCP.COM nach
     laufe(g.m, 20'000'000);
     tippeZeile(g.m, "dir b:");
     ASSERT_TRUE(laufeBisText(g.m, "No File", 30'000'000)) << bild(g.m);

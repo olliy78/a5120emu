@@ -4,8 +4,8 @@
  *
  * Maschinenkonfiguration (Konstruktorparameter), KEIN Runtime-Zustand — analog zu den
  * compile-time Config-Structs der Karten (CLAUDE.md-Konvention, z. B. K2526::A5120Config).
- * Jeder der 4 Laufwerks-Slots der K5122 erhält ein DriveProfile, das Zoll-Größe,
- * Spuren/Köpfe, Drehzahl und unterstützte Aufzeichnungsverfahren festlegt.
+ * Jeder der 4 Laufwerks-Slots der K5122 erhaelt ein DriveProfile, das Zoll-Groesse,
+ * Spuren/Koepfe, Drehzahl und unterstuetzte Aufzeichnungsverfahren festlegt.
  *
  * Die K5122 ist konstruktiv verfahrensagnostisch (Marken-ROM A2.2 erkennt MFM-Sync
  * *und* FM-Marken); das Verfahren ist Eigenschaft von Laufwerk + Medium + Format.
@@ -27,9 +27,9 @@
  * @struct DriveProfile
  * @brief Physisches Laufwerk an einem K5122-Slot.
  *
- * Die Profile heißen wie die realen Laufwerke:
+ * Die Profile heissen wie die realen Laufwerke:
  *
- * | Profil     | Zoll  | Spuren×Köpfe | Verfahren   | U/min | Kapazität |
+ * | Profil     | Zoll  | Spuren×Koepfe | Verfahren   | U/min | Kapazitaet |
  * |------------|-------|--------------|-------------|-------|-----------|
  * | K5601      | 5,25″ | 80×2         | MFM + FM(*) | 300   | 800 KB    |
  * | K5600.10   | 5,25″ | 40×1         | MFM         | 300   | 200 KB    |
@@ -38,34 +38,34 @@
  * | MF6400     | 8″    | 77×1         | FM + MFM    | 360   | ~600 KB   |
  * | none       | —     | —            | —           | —     | leerer Slot |
  *
- * (*) K5601 = das in der Standard-A5120-Bürokonfiguration dreifach verbaute 5,25″-
- *     Laufwerk.  Physisch MFM-fähig; der Boot-ROM-/Loader-Lesepfad ist jedoch **als FM
+ * (*) K5601 = das in der Standard-A5120-Buerokonfiguration dreifach verbaute 5,25″-
+ *     Laufwerk.  Physisch MFM-faehig; der Boot-ROM-/Loader-Lesepfad ist jedoch **als FM
  *     verdrahtet** (default_read_encoding = FM), siehe Feld-Doku unten.
  *
  * Beide 8″-Laufwerke sind **einseitig mit 77 Spuren** und unterscheiden sich allein im
- * beherrschten Verfahren: das MF3200 kann nur FM (Einfachdichte), das MF6400 zusätzlich
- * MFM und damit die doppelte Kapazität.  Das **K5602 ist zum MF3200 voll kompatibel**
+ * beherrschten Verfahren: das MF3200 kann nur FM (Einfachdichte), das MF6400 zusaetzlich
+ * MFM und damit die doppelte Kapazitaet.  Das **K5602 ist zum MF3200 voll kompatibel**
  * und hat deshalb kein eigenes Profil.
  *
- * Frühere technische Profilnamen (`K5600.10`, `K5600.20`, `MF3200`,
+ * Fruehere technische Profilnamen (`K5600.10`, `K5600.20`, `MF3200`,
  * `MF6400`, `MF6400`, `K5601`) werden von
- * @ref builtinDriveProfile weiterhin als **Alias** aufgelöst, damit gespeicherte
- * Konfigurationen nicht still auf ein anderes Laufwerk zurückfallen.
+ * @ref builtinDriveProfile weiterhin als **Alias** aufgeloest, damit gespeicherte
+ * Konfigurationen nicht still auf ein anderes Laufwerk zurueckfallen.
  *
  * ### K5601-Datenblatt (5,25″-DS-Standardlaufwerk, Default-Profil K5601)
- * | Größe | Wert |
+ * | Groesse | Wert |
  * |-------|------|
  * | Diskettendrehzahl | **300 min⁻¹ ± 2 %** (→ Index-Periode 490000 Takte @ 2,45 MHz) |
  * | Aufzeichnungsverfahren | FM / MFM (SD / DD) |
- * | Übertragungsrate | **125 / 250 kbit/s** (FM / MFM) → Byteperiode 156 / 78 Takte |
- * | Kapazität unformatiert | 1 MByte (MFM) |
+ * | Uebertragungsrate | **125 / 250 kbit/s** (FM / MFM) → Byteperiode 156 / 78 Takte |
+ * | Kapazitaet unformatiert | 1 MByte (MFM) |
  * | Motorstartzeit | ≤ 500 ms |
  * | Kopfzustellzeit | 0 ms |
  * | Kopfberuhigungszeit | 15 ms |
  * | Schrittzeit Spur/Spur | 3 ms |
  *
  * Die Drehzahl 300 min⁻¹ ist **datenblattbelegt** — Grundlage der Index-Periode 490000
- * (Boot-Invariant).  Übertragungsraten → @ref bytePeriodCycles.  Die Motor-/Kopf-Zeiten
+ * (Boot-Invariant).  Uebertragungsraten → @ref bytePeriodCycles.  Die Motor-/Kopf-Zeiten
  * sind bewusst nicht taktgenau modelliert (Boot-Timing, siehe K5122_MOTOR_SPINUP_MS).
  */
 struct DriveProfile {
@@ -73,7 +73,7 @@ struct DriveProfile {
     uint8_t  num_cyls       = 80;     ///< 40 / 77 / 80
     uint8_t  num_heads      = 2;      ///< 1 / 2
     uint16_t rpm            = 300;    ///< K5601: 300 min⁻¹ ±2 % (Datenblatt); 8″ = 360 → Index-Periode
-    uint8_t  medium_inch    = 5;      ///< 5 / 8 (für /HF-Frequenzwahl, informativ)
+    uint8_t  medium_inch    = 5;      ///< 5 / 8 (fuer /HF-Frequenzwahl, informativ)
     bool     supports_fm    = false;  ///< 8″-Laufwerke
     bool     supports_mfm   = true;
 
@@ -83,14 +83,14 @@ struct DriveProfile {
      * Die K5122 ist verfahrensneutral; das Verfahren ist Eigenschaft von Laufwerk +
      * Medium + Format (siehe Klassen-Doku).  Dieses Feld liefert das Verfahren, das der
      * Controller annimmt, **solange noch kein „Lesen-Marke"-Steuerwort gesehen wurde** —
-     * also in der frühesten ROM-Bootphase.  Der Boot-ROM liest die Systemspur als FM
-     * (`OUT 10H,0x87` → bit1=1), daher ist FM der sinnvolle Default für bootfähige
-     * Laufwerke (z. B. K5601 „für den Loader als FM verdrahtet").
+     * also in der fruehesten ROM-Bootphase.  Der Boot-ROM liest die Systemspur als FM
+     * (`OUT 10H,0x87` → bit1=1), daher ist FM der sinnvolle Default fuer bootfaehige
+     * Laufwerke (z. B. K5601 „fuer den Loader als FM verdrahtet").
      *
      * **Override zur Laufzeit:** Sobald die Software ein Lesen-Marke-Steuerwort schreibt
-     * (`0x85` = MFM / `0x87` = FM, K5122 latcht `(ctrlA & 0xFD) == 0x85`), übersteuert
-     * dieses das Default — so kann das OS später für die MFM-Datenspuren auf MFM
-     * umschalten, ohne dass ein zweiter Pfad nötig ist.
+     * (`0x85` = MFM / `0x87` = FM, K5122 latcht `(ctrlA & 0xFD) == 0x85`), uebersteuert
+     * dieses das Default — so kann das OS spaeter fuer die MFM-Datenspuren auf MFM
+     * umschalten, ohne dass ein zweiter Pfad noetig ist.
      *
      * @see K5122::startReadTransfer (Auswahl Default vs. Override)
      * @see doc/cpa_format_detection.md §„Lesen-Marke"-Steuerwort (0x85/0x87)
@@ -98,13 +98,13 @@ struct DriveProfile {
     Encoding default_read_encoding = Encoding::FM;
 
     /**
-     * @brief Ist an diesem K5122-Slot überhaupt ein Laufwerk gesteckt?
+     * @brief Ist an diesem K5122-Slot ueberhaupt ein Laufwerk gesteckt?
      *
      * `false` markiert einen **leeren Slot** („kein Laufwerk", Sonderprofil
      * `builtinDriveProfile("none")`).  Ein leerer Slot nimmt keine Diskette auf
      * (`A5120Machine::mountDisk`/`createDisk` verweigern) und die GUI blendet sein
-     * Bedien-Panel aus.  Der Boot-/Lesepfad ist unberührt, weil ein leerer Slot nie
-     * gemountet und im Normalbetrieb nicht selektiert wird.  Alle bestückten Profile
+     * Bedien-Panel aus.  Der Boot-/Lesepfad ist unberuehrt, weil ein leerer Slot nie
+     * gemountet und im Normalbetrieb nicht selektiert wird.  Alle bestueckten Profile
      * lassen dieses Feld auf dem Default `true`.
      */
     bool present = true;
@@ -126,15 +126,15 @@ struct DriveProfile {
      * @brief Byte-Periode in Z80-Takten aus der **Datenrate des Verfahrens** ableiten.
      *
      * Die Datenrate ist eine Eigenschaft der Aufzeichnungselektronik (Encoding),
-     * **nicht** der Drehzahl.  Werte aus dem **K5601-Datenblatt** (Übertragungsrate
+     * **nicht** der Drehzahl.  Werte aus dem **K5601-Datenblatt** (Uebertragungsrate
      * FM/MFM = 125 / 250 kbit/s): MFM 250 kbit/s = 31250 B/s, FM 125 kbit/s = 15625 B/s.
-     * Ein Datenbyte (8 Bit) belegt daher einen festen Zeitschlitz, unabhängig von @ref rpm;
+     * Ein Datenbyte (8 Bit) belegt daher einen festen Zeitschlitz, unabhaengig von @ref rpm;
      * bei schnellerer Drehung passen entsprechend weniger Bytes pro Umdrehung — genau wie
-     * auf realer HW, wo der Controller die 2. CPU (ZVE2) je Byte über den Daten-PIO-RDY per
+     * auf realer HW, wo der Controller die 2. CPU (ZVE2) je Byte ueber den Daten-PIO-RDY per
      * `/BUSRQ` an diesen Takt bindet (K5122-Handbuch §5.6.1, DMA-Betrieb/Simultanarbeit).
      *
-     * Damit ist das **Verhältnis Drehzahl↔Takt konstant** (siehe indexPeriodCycles),
-     * die **Datenrate FM vs. MFM aber unterschiedlich** — die Grundlage dafür, dass
+     * Damit ist das **Verhaeltnis Drehzahl↔Takt konstant** (siehe indexPeriodCycles),
+     * die **Datenrate FM vs. MFM aber unterschiedlich** — die Grundlage dafuer, dass
      * drehzahlmessende Programme (z. B. SCPX `INIT.COM`) die reale Byte-Rate sehen.
      *
      * @param enc    FM oder MFM
@@ -148,18 +148,18 @@ struct DriveProfile {
         return static_cast<int>(cpu_hz / bytes_per_sec);
     }
 
-    /// @brief Prüft, ob ein Verfahren von diesem Laufwerk unterstützt wird.
+    /// @brief Prueft, ob ein Verfahren von diesem Laufwerk unterstuetzt wird.
     bool supports(Encoding enc) const {
         return enc == Encoding::FM ? supports_fm : supports_mfm;
     }
 };
 
 /**
- * @brief Eingebautes Laufwerksprofil per Name auflösen.
+ * @brief Eingebautes Laufwerksprofil per Name aufloesen.
  *
  * Unbekannte Namen liefern das Standardprofil **K5601**.  Der Sondername `"none"`
- * liefert ein **leeres** Profil (present=false) — der Slot ist unbestückt.
- * Alte Profilnamen werden als Alias aufgelöst (siehe Klassen-Doku).
+ * liefert ein **leeres** Profil (present=false) — der Slot ist unbestueckt.
+ * Alte Profilnamen werden als Alias aufgeloest (siehe Klassen-Doku).
  *
  * @param name "K5601" | "K5600.10" | "K5600.20" | "MF3200" | "MF6400" | "none"
  * @return Referenz auf ein statisches DriveProfile.
@@ -167,20 +167,20 @@ struct DriveProfile {
 const DriveProfile& builtinDriveProfile(const std::string& name);
 
 /**
- * @brief Nenndrehzahl einer Diskette für die Laufwerke @p drives (Laufwerksliste eines
+ * @brief Nenndrehzahl einer Diskette fuer die Laufwerke @p drives (Laufwerksliste eines
  *        Katalogformats): 360 nur, wenn JEDES davon ein 8″-Laufwerk ist, sonst 300 —
  *        ein Format, das auch ein 5,25″-Laufwerk anbietet, landet im Zweifel dort.
- *        Gebraucht für die Umdrehungslänge eines Flussabbilds (DiskMedium::nominalRpm).
+ *        Gebraucht fuer die Umdrehungslaenge eines Flussabbilds (DiskMedium::nominalRpm).
  */
 uint16_t nominalRpmForDrives(const std::vector<std::string>& drives);
 
 /**
- * @brief Alle gültigen Profilnamen (inkl. `"none"`).
+ * @brief Alle gueltigen Profilnamen (inkl. `"none"`).
  *
- * Nötig für die Validierung des Formatkatalogs: @ref builtinDriveProfile liefert für
+ * Noetig fuer die Validierung des Formatkatalogs: @ref builtinDriveProfile liefert fuer
  * **unbekannte** Namen stillschweigend das Default-Profil — ein Tippfehler in
- * `formats.yaml` würde also unbemerkt als `K5601` durchgehen.  Gegen diese
- * Liste wird deshalb explizit geprüft.
+ * `formats.yaml` wuerde also unbemerkt als `K5601` durchgehen.  Gegen diese
+ * Liste wird deshalb explizit geprueft.
  *
  * @see FormatCatalog (Validierung V3)
  */

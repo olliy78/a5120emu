@@ -5,15 +5,15 @@
  * @details
  * Doc: doc/design/19_serielle_schnittstellen.md §7.5, §6.4.  Der Codec hat
  * dieselbe Schnittstelle zum Transport wie der TelnetCodec (`eingabe`,
- * `nimmNutzdaten`, `sende`, `nimmAusgabe`) und zusätzlich:
+ * `nimmNutzdaten`, `sende`, `nimmAusgabe`) und zusaetzlich:
  *   - `sendeXxx(...)`     kodiert einen COM-PORT-Befehl,
  *   - `nimmEreignisse()`  liefert die empfangenen Befehle dekodiert.
  *
- * **Er entscheidet nichts** (Leitsatz 4: der Gast ist maßgeblich).  Verlangt
+ * **Er entscheidet nichts** (Leitsatz 4: der Gast ist massgeblich).  Verlangt
  * die Gegenseite „Baud 9600", kommt ein Ereignis `Baud{wert=9600, antwort=false}`;
  * der Aufrufer (Wandler) antwortet mit dem *Gastwert*:
  * `sendeBaud(gastBaud, alsAntwort=true)`.  Im Client kommt die Antwort des
- * Servers als Ereignis mit `antwort=true` zurück — der Vergleich mit dem eigenen
+ * Servers als Ereignis mit `antwort=true` zurueck — der Vergleich mit dem eigenen
  * Wert (Hinweis „Gegenseite: 1200 Bd") ist Sache des Aufrufers.
  *
  * Antworten und Benachrichtigungen des Servers tragen Befehl + 100 (`antwort`
@@ -23,9 +23,9 @@
  * Anfragen ohne Wert (Abfrage) sind 0: `sendeBaud(0, false)` fragt die Baudrate
  * ab, `sendeSignatur("", false)` die Signatur usw.
  *
- * Die COM-PORT-Befehle gehen sofort nach dem Anstoß hinaus, ohne auf das
+ * Die COM-PORT-Befehle gehen sofort nach dem Anstoss hinaus, ohne auf das
  * Verhandlungsende zu warten (auch ser2net/pyserial verhandeln und senden
- * ohne Sperre).  Empfangen wird unabhängig vom Verhandlungszustand.
+ * ohne Sperre).  Empfangen wird unabhaengig vom Verhandlungszustand.
  */
 #pragma once
 
@@ -57,7 +57,7 @@ enum Steuerwert : uint8_t {
     FLUSS_DCD = 17, FLUSS_DTR = 18, FLUSS_DSR = 19
 };
 
-/// Bits des MODEMSTATE-Bytes (obere: Zustand, untere: „hat sich geändert").
+/// Bits des MODEMSTATE-Bytes (obere: Zustand, untere: „hat sich geaendert").
 enum Modem : uint8_t {
     MS_DELTA_CTS = 0x01, MS_DELTA_DSR = 0x02, MS_TERI = 0x04, MS_DELTA_CD = 0x08,
     MS_CTS = 0x10, MS_DSR = 0x20, MS_RI = 0x40, MS_CD = 0x80
@@ -68,7 +68,7 @@ enum Purge : uint8_t { PURGE_EMPFANG = 1, PURGE_SENDEN = 2, PURGE_BEIDE = 3 };
 
 // PARITY-Werte des Netzes (1 N, 2 O, 3 E, 4 Mark, 5 Space) ↔ SerialFormat (0 N, 1 O, 2 E).
 inline uint8_t paritaetNetz(uint8_t sio) { return sio == 1 ? 2 : sio == 2 ? 3 : 1; }
-/// Liefert 0/1/2 bzw. 255 für Mark/Space/ungültig.
+/// Liefert 0/1/2 bzw. 255 fuer Mark/Space/ungueltig.
 inline uint8_t paritaetSio(uint8_t netz) { return netz == 1 ? 0 : netz == 2 ? 1 : netz == 3 ? 2 : 255; }
 // STOPSIZE-Werte des Netzes (1 = 1, 2 = 2, 3 = 1,5) ↔ halbe Stoppbits (2, 4, 3) wie in SerialFormat.
 inline uint8_t stoppNetz(uint8_t halbe) { return halbe == 4 ? 2 : halbe == 3 ? 3 : 1; }
@@ -104,13 +104,13 @@ public:
     Rfc2217Codec& operator=(const Rfc2217Codec&) = delete;
 
     TelnetRolle rolle() const { return telnet_.rolle(); }
-    /// Der darunterliegende Telnet-Automat (nur lesend, z. B. für BINARY-Abfragen).
+    /// Der darunterliegende Telnet-Automat (nur lesend, z. B. fuer BINARY-Abfragen).
     const TelnetCodec& telnet() const { return telnet_; }
 
-    /// Gespräch eröffnen: Telnet-Anfangsverhandlung, dazu Client `WILL 44`,
+    /// Gespraech eroeffnen: Telnet-Anfangsverhandlung, dazu Client `WILL 44`,
     /// Server `DO 44`.
     void start();
-    /// Hat die Verhandlung Option 44 bestätigt (Client: WILL 44 von uns bestätigt, Server: WILL 44 des Clients)?
+    /// Hat die Verhandlung Option 44 bestaetigt (Client: WILL 44 von uns bestaetigt, Server: WILL 44 des Clients)?
     bool comPortAktiv() const;
 
     // --- wie TelnetCodec ---------------------------------------------------
@@ -136,18 +136,18 @@ public:
     void sendeFlussHalt(bool halt, bool alsAntwort = false);      // SUSPEND / RESUME
     void sendeLeeren(uint8_t purge, bool alsAntwort = false);
     /// Client → Server: SET-LINESTATE-MASK / SET-MODEMSTATE-MASK.  Die Antwort
-    /// des Servers (`alsAntwort`) ändert die Masken dieses Codecs nicht.
+    /// des Servers (`alsAntwort`) aendert die Masken dieses Codecs nicht.
     void sendeLineStateMaske(uint8_t maske, bool alsAntwort = false);
     void sendeModemStateMaske(uint8_t maske, bool alsAntwort = false);
 
     /// Server → Client: NOTIFY-LINESTATE/-MODEMSTATE (106/107).  Gesendet wird
     /// nur, wenn `wert & maske != 0` (Maske = die zuletzt vom Client per 10/11
     /// gesetzte; Vorgabe Line 0x00, Modem 0xFF wie bei pyserial); mit
-    /// `ungefiltert` immer (z. B. für den Anfangszustand).  Rückgabe: gesendet?
+    /// `ungefiltert` immer (z. B. fuer den Anfangszustand).  Rueckgabe: gesendet?
     bool sendeLineState(uint8_t wert, bool ungefiltert = false);
     bool sendeModemState(uint8_t wert, bool ungefiltert = false);
 
-    /// Vom Gegenüber gesetzte Masken (Vorgabe Line 0x00, Modem 0xFF).
+    /// Vom Gegenueber gesetzte Masken (Vorgabe Line 0x00, Modem 0xFF).
     uint8_t lineStateMaske() const { return lineMaske_; }
     uint8_t modemStateMaske() const { return modemMaske_; }
 

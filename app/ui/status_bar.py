@@ -62,7 +62,7 @@ from app import drive_types as dt
 from app import profil as profile
 from app import takt
 
-#: Zustände der Laufwerksleuchte.
+#: Zustaende der Laufwerksleuchte.
 LEER = "leer"          #: keine Diskette, kein Zugriff — nur der Umriss
 BELEGT = "belegt"      #: Diskette liegt im Laufwerk
 ZUGRIFF = "zugriff"    #: das Laufwerk ist angesprochen (auch ohne Diskette)
@@ -186,7 +186,7 @@ class DriveField(QLabel):
             return
         if physisch:
             # Eine echte Diskette hat keinen Dateinamen; sie ist trotzdem
-            # eingelegt, und der Schreibschutz gilt für sie erst recht.
+            # eingelegt, und der Schreibschutz gilt fuer sie erst recht.
             name, tip = "⟨echte Diskette⟩", "Echtes Laufwerk am Greaseweazle"
         elif path:
             name, tip = os.path.basename(path), path
@@ -204,12 +204,12 @@ class DriveField(QLabel):
 
 # ── Frontplatte des K8915 ─────────────────────────────────────────────────
 
-#: Farben der Lampen (Gerät, doc/design/16_k8915.md §3.6).
+#: Farben der Lampen (Geraet, doc/design/16_k8915.md §3.6).
 FARBE_GRUEN = "#35c43a"
 FARBE_GELB = "#f2c230"
 FARBE_ROT = "#e0352b"
 
-#: (Name, Farbe, Latch-Bit oder None, Bedeutung) in Gerätereihenfolge, oben → unten
+#: (Name, Farbe, Latch-Bit oder None, Bedeutung) in Geraetereihenfolge, oben → unten
 #: an der Frontplatte, hier links → rechts.  Bit = None: nicht am Latch 61H.
 #: Neben jeder Lampe steht ihre Beschriftung (:data:`BESCHRIFTUNG`) — an der
 #: Farbe allein erkennt man nicht, welche der drei gelben gerade leuchtet.
@@ -231,7 +231,7 @@ FRONTPLATTE = (
 
 
 #: Frontplatte des P8000 (``k1520_panel_lamps``, AKTIV HIGH): Bit 0 = RUN-LED der 16-Bit-Karte,
-#: Bit 1 = UNIT16 (der U8001 läuft, nicht im Reset), Bit 2 = Plattenzugriff am WDC.  Ohne
+#: Bit 1 = UNIT16 (der U8001 laeuft, nicht im Reset), Bit 2 = Plattenzugriff am WDC.  Ohne
 #: 16-Bit-Karte liefert der Kern 0 — dann bleiben Run/Unit16/Platte dunkel, ehrlich.
 FRONTPLATTE_P8000 = (
     ("Run", FARBE_GRUEN, 0,
@@ -247,7 +247,7 @@ FRONTPLATTE_P8000 = (
 #: Lampenreihen je Frontplattenart: (Lampen, aktiv low?).
 FRONTPLATTEN = {"k8915": (FRONTPLATTE, True), "p8000": (FRONTPLATTE_P8000, False)}
 
-#: Beschriftung neben der Lampe — kurz, damit die Statuszeile nicht überläuft,
+#: Beschriftung neben der Lampe — kurz, damit die Statuszeile nicht ueberlaeuft,
 #: aber eindeutig; der volle Name steht im Tooltip.
 BESCHRIFTUNG = {"Run": "Run", "Input File": "Input", "Output File": "Output",
                 "RUN Mode": "Mode", "ERROR": "Error", "Power": "Power",
@@ -393,8 +393,8 @@ class MachineStatus(QWidget):
         self._lay = QHBoxLayout(self)
         self._lay.setContentsMargins(0, 0, 0, 0)
         self._lay.setSpacing(4)
-        # Feste Einträge vorn (K8915: Frontplatte + Strich, dann der Takt);
-        # set_drive_types räumt nur, was dahinter kommt.
+        # Feste Eintraege vorn (K8915: Frontplatte + Strich, dann der Takt);
+        # set_drive_types raeumt nur, was dahinter kommt.
         self.frontplatte: Optional[Frontplatte] = None
         if self.profil.frontplatte:
             self.frontplatte = Frontplatte(art=self.profil.frontplatte_art)
@@ -402,7 +402,7 @@ class MachineStatus(QWidget):
             self._lay.addWidget(_trennstrich())
         self._lay.addWidget(self.takt)
         # Serielle Schnittstellen: hinter dem Takt, vor den Laufwerken (feste
-        # Einträge — `set_drive_types` räumt nur, was dahinter kommt).
+        # Eintraege — `set_drive_types` raeumt nur, was dahinter kommt).
         self.seriell_server = SeriellFeld()
         self.seriell_verbindungen = SeriellFeld()
         self._lay.addWidget(self.seriell_server)
@@ -413,9 +413,9 @@ class MachineStatus(QWidget):
         self._fest = self._lay.count()
 
         # A5120.16-Leuchten (V1/V2) + Modus — feste Stelle zwischen Takt und
-        # Laufwerken, standardmässig ausgeblendet (nur der A5120 ohne
+        # Laufwerken, standardmaessig ausgeblendet (nur der A5120 ohne
         # Erweiterung).  EIGENE Widget-Liste, damit `set_drive_types` (das
-        # alles nach dem Takt abräumt und neu aufbaut) sie nicht mit wegräumt.
+        # alles nach dem Takt abraeumt und neu aufbaut) sie nicht mit wegraeumt.
         self._em_strich = _trennstrich()
         self._em_v1_label = QLabel("V1")
         self._em_v1_label.setMargin(2)
@@ -517,7 +517,7 @@ class MachineStatus(QWidget):
     def set_drive_types(self, drive_types) -> None:
         """Felder neu aufbauen — je bestücktem K5122-Steckplatz eines."""
         # Alles ausser den festen Feldern (Frontplatte, Takt, serielle Felder) UND
-        # der EM-Anzeige abräumen — auch die Dehnfuge am Ende, sonst sammeln sich
+        # der EM-Anzeige abraeumen — auch die Dehnfuge am Ende, sonst sammeln sich
         # bei jedem Laufwerkswechsel weitere an.  Die EM-Widgets stehen an fester
         # Stelle direkt danach (siehe __init__) und bleiben hier unangetastet,
         # sichtbar oder nicht.

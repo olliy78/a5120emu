@@ -1,4 +1,4 @@
-# --itrace schreibt je angenommenem Interrupt eine Zeile mit Vektor und Gerät.
+# --itrace schreibt je angenommenem Interrupt eine Zeile mit Vektor und Geraet.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

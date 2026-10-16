@@ -3,11 +3,11 @@
  * @brief TrackCodec – IBM-Track (FM/MFM) aus logischen Sektoren bauen/parsen + CRC.
  *
  * Erzeugt aus logischen Sektoren einen normgerechten Track-Bytestrom (FM oder MFM)
- * mit echten Adressmarken, Gaps und CRCs und parst ihn zurück.  Wird vom
+ * mit echten Adressmarken, Gaps und CRCs und parst ihn zurueck.  Wird vom
  * @ref RawSectorImage -Backend benutzt (.img → @ref TrackImage) und in Tests.
  * **Hier ist die CRC zentralisiert** — es gibt genau eine CRC-Primitive
  * (@ref TrackCodec::crc16, Standard-IBM-CRC-16-CCITT, Poly 0x1021).  FM vs. MFM
- * unterscheiden sich nur durch die A1-Präambel im CRC-Bereich (FM: kein A1, MFM: 3×A1),
+ * unterscheiden sich nur durch die A1-Praeambel im CRC-Bereich (FM: kein A1, MFM: 3×A1),
  * nicht durch ein zweites Verfahren.
  *
  * @see doc/design/07_k5122_afs.md
@@ -74,67 +74,67 @@ inline constexpr size_t kSectorTailBytes = 8;
  * @brief Gap-/Sync-Parameter (Default je Verfahren via TrackCodec::gapsFor(), aus
  *        Sektoren gebaute Spuren via TrackCodec::normGaps()).
  *
- * MFM: Sync 12×00 + 3×A1, Gap-Füller 0x4E.  FM: Sync 6×00, kein A1, Gap-Füller 0xFF.
- * Die Vorgaben sind die **Normlücken** (IBM, wie FORMAT.COM des A5120/K8915 sie schreibt
- * und wie sie auf jeder am Gerät formatierten Diskette stehen): MFM 80/50/22, FM 40/26/11
- * (Lücke 4a / Lücke 1 / Lücke 2).  Lücke 3 hängt an Sektorgröße und Spurlänge
- * (@ref TrackCodec::normGaps).  Warum das zählt: doc/design/16_k8915.md AP-F1 — eine
- * Spur mit Lücke 2 = 11 las der Emulator, der echte A5120 nicht.
+ * MFM: Sync 12×00 + 3×A1, Gap-Fueller 0x4E.  FM: Sync 6×00, kein A1, Gap-Fueller 0xFF.
+ * Die Vorgaben sind die **Normluecken** (IBM, wie FORMAT.COM des A5120/K8915 sie schreibt
+ * und wie sie auf jeder am Geraet formatierten Diskette stehen): MFM 80/50/22, FM 40/26/11
+ * (Luecke 4a / Luecke 1 / Luecke 2).  Luecke 3 haengt an Sektorgroesse und Spurlaenge
+ * (@ref TrackCodec::normGaps).  Warum das zaehlt: doc/design/16_k8915.md AP-F1 — eine
+ * Spur mit Luecke 2 = 11 las der Emulator, der echte A5120 nicht.
  */
 struct GapParams {
     uint8_t  gap1     = 50;    ///< nach IAM
     uint8_t  gap2     = 22;    ///< zwischen ID-Feld und DAM
-    uint8_t  gap3     = 24;    ///< nach Datenfeld (vor nächstem IDAM)
+    uint8_t  gap3     = 24;    ///< nach Datenfeld (vor naechstem IDAM)
     uint16_t gap4a    = 80;    ///< Vor-Index-Gap (vor der Sync-Gruppe der IAM)
     uint8_t  sync_len = 12;    ///< 00-Sync vor jeder Markengruppe (MFM 12, FM 6)
     uint8_t  gap_fill = 0x4E;  ///< MFM 0x4E, FM 0xFF
     bool     with_iam = true;
-    /// Spurlänge in Bytes, auf die hinter dem letzten Sektor mit Füllbyte aufgefüllt wird
-    /// (Lücke 4b bis zum Index).  0 = nicht auffüllen.  Eine @ref TrackImage ist genau
-    /// eine Umdrehung — nur mit Lücke 4b stimmt `pos / size()` als Drehwinkel, und nur
-    /// so kommt die Spur in einem Flussabbild mit der richtigen Länge an.
+    /// Spurlaenge in Bytes, auf die hinter dem letzten Sektor mit Fuellbyte aufgefuellt wird
+    /// (Luecke 4b bis zum Index).  0 = nicht auffuellen.  Eine @ref TrackImage ist genau
+    /// eine Umdrehung — nur mit Luecke 4b stimmt `pos / size()` als Drehwinkel, und nur
+    /// so kommt die Spur in einem Flussabbild mit der richtigen Laenge an.
     uint16_t track_len = 0;
 };
 
 /**
  * @namespace TrackCodec
- * @brief Verfahrensabhängige Track-Synthese/-Analyse + CRC-Primitive.
+ * @brief Verfahrensabhaengige Track-Synthese/-Analyse + CRC-Primitive.
  */
 namespace TrackCodec {
 
-/// @brief Verfahrensabhängige Normlücken (MFM/FM) ohne Spurlänge; Lücke 3 ist hier nur
-///        ein Platzhalter — für eine ganze Spur @ref normGaps nehmen.
+/// @brief Verfahrensabhaengige Normluecken (MFM/FM) ohne Spurlaenge; Luecke 3 ist hier nur
+///        ein Platzhalter — fuer eine ganze Spur @ref normGaps nehmen.
 GapParams gapsFor(Encoding enc);
 
-/// @brief Nennlänge einer Umdrehung in Bytes für eine Spur aus @p sectors: die kleinste
-///        der üblichen Umdrehungen, in die die Spur mit Normlücken passt — MFM 6250
+/// @brief Nennlaenge einer Umdrehung in Bytes fuer eine Spur aus @p sectors: die kleinste
+///        der ueblichen Umdrehungen, in die die Spur mit Normluecken passt — MFM 6250
 ///        (5,25″, 250 kbit/s, 300 U/min) bzw. 10 416 (8″ DD, 500 kbit/s, 360 U/min),
 ///        FM 3125 (125 kbit/s, 5,25″), 5208 (8″ SD, 360 U/min), 6250 (FM mit 250 kbit/s
-///        am 5,25″-Laufwerk).  Passt keine, die größte.
+///        am 5,25″-Laufwerk).  Passt keine, die groesste.
 size_t nominalTrackBytes(const std::vector<LogicalSector>& sectors, Encoding enc);
 
 /**
- * @brief Normlücken für eine GANZE Spur aus @p sectors (IBM / FORMAT.COM).
+ * @brief Normluecken fuer eine GANZE Spur aus @p sectors (IBM / FORMAT.COM).
  *
- * Lücke 4a/1/2 und Sync aus @ref gapsFor; Lücke 3 = die Normlänge der Sektorgröße (MFM:
+ * Luecke 4a/1/2 und Sync aus @ref gapsFor; Luecke 3 = die Normlaenge der Sektorgroesse (MFM:
  * 128 → 32, 256 → 54, 512 → 84, 1024 → 116; FM: 128 → 27, 256 → 42, 512 → 58, 1024 →
- * 116), gekürzt, falls die Spur sonst nicht in eine Umdrehung (@ref nominalTrackBytes)
- * passt, nie unter @ref kSectorTailBytes.  `track_len` = diese Umdrehung (Lücke 4b füllt
- * bis zum Index).  Das Ergebnis passt damit in die Umdrehung, sobald das überhaupt geht.
+ * 116), gekuerzt, falls die Spur sonst nicht in eine Umdrehung (@ref nominalTrackBytes)
+ * passt, nie unter @ref kSectorTailBytes.  `track_len` = diese Umdrehung (Luecke 4b fuellt
+ * bis zum Index).  Das Ergebnis passt damit in die Umdrehung, sobald das ueberhaupt geht.
  */
 GapParams normGaps(const std::vector<LogicalSector>& sectors, Encoding enc);
 
 /**
- * @brief Baut eine vollständige Spur mit echten Marken und echten CRCs.
+ * @brief Baut eine vollstaendige Spur mit echten Marken und echten CRCs.
  *
  * Layout: gap4a, optional [Sync IAM], gap1, dann je Sektor
- * [Sync IDAM gap2 Sync DAM data CRC gap3], danach Lücke 4b bis `gaps.track_len`.
- * Das Ergebnis-TrackImage trägt @p enc als encoding-Tag und setzt @ref TrackImage::marks
- * auf den Mark-Bytes.  Sektorgröße/-anzahl frei gemischt.
+ * [Sync IDAM gap2 Sync DAM data CRC gap3], danach Luecke 4b bis `gaps.track_len`.
+ * Das Ergebnis-TrackImage traegt @p enc als encoding-Tag und setzt @ref TrackImage::marks
+ * auf den Mark-Bytes.  Sektorgroesse/-anzahl frei gemischt.
  *
  * @param sectors logische Sektoren (in Reihenfolge der physischen Spurlage)
  * @param enc     Aufzeichnungsverfahren (MFM = verifizierter Boot-Pfad, FM = 8″)
- * @param gaps    Gap-Parameter (Default: normGaps(sectors, enc) — Normlücken, eine Umdrehung)
+ * @param gaps    Gap-Parameter (Default: normGaps(sectors, enc) — Normluecken, eine Umdrehung)
  * @return decodiertes TrackImage (Bytes + Marken + Encoding)
  */
 TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
@@ -143,10 +143,10 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
 TrackImage buildTrack(const std::vector<LogicalSector>& sectors, Encoding enc);
 
 /**
- * @brief Parst eine Spur (FM oder MFM, aus track.encoding) in logische Sektoren zurück.
+ * @brief Parst eine Spur (FM oder MFM, aus track.encoding) in logische Sektoren zurueck.
  *
  * Verifiziert ID- und Daten-CRC; setzt bei CRC-Fehler @ref LogicalSector::id_crc_ok
- * bzw. @ref LogicalSector::data_crc_ok auf false.  Für Zurückschreiben in .img und Tests.
+ * bzw. @ref LogicalSector::data_crc_ok auf false.  Fuer Zurueckschreiben in .img und Tests.
  *
  * @param track decodierte Spur (mit marks[])
  * @return geparste logische Sektoren in Spurreihenfolge
@@ -156,7 +156,7 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track);
 /**
  * @brief Datenfeld eines EINZELNEN Sektors an Ort und Stelle ersetzen (Werkzeug-Schreibpfad).
  *
- * Sucht den Sektor über seine ID, schreibt @p data in sein Datenfeld, rechnet die Daten-CRC
+ * Sucht den Sektor ueber seine ID, schreibt @p data in sein Datenfeld, rechnet die Daten-CRC
  * neu und laesst **alles andere byteweise unangetastet** — Gaps, Sync, Marken, ID-Feld,
  * Spurlaenge und @ref TrackImage::bitcells.  Genau das braucht ein Dateisystem-Werkzeug, das
  * einzelne Sektoren beschreibt, ohne die Spur neu zu bauen.
@@ -211,28 +211,28 @@ bool sectorDataCrc(const TrackImage& track, size_t index,
  * @struct NewSectorSpec
  * @brief Ein Sektor, der auf einer VORHANDENEN Spur neu angelegt werden soll (§19.4).
  *
- * Für den Sektoreditor: eine Spur von Hand zusammensetzen, Sektor für Sektor —
- * etwa um eine schadhafte Diskette nachzubauen oder eine Lücke zu schliessen.
+ * Fuer den Sektoreditor: eine Spur von Hand zusammensetzen, Sektor fuer Sektor —
+ * etwa um eine schadhafte Diskette nachzubauen oder eine Luecke zu schliessen.
  */
 struct NewSectorSpec {
     uint8_t  id   = 1;      ///< Sektor-ID; bestimmt zugleich die LAGE (s. @ref newSectorPosition)
-    uint8_t  cyl  = 0;      ///< Zylinder- und Kopfangabe im ID-Feld (dürfen von der
-    uint8_t  head = 0;      ///< tatsächlichen Lage abweichen — das ist erlaubt und kommt vor)
+    uint8_t  cyl  = 0;      ///< Zylinder- und Kopfangabe im ID-Feld (duerfen von der
+    uint8_t  head = 0;      ///< tatsaechlichen Lage abweichen — das ist erlaubt und kommt vor)
     uint16_t size = 128;    ///< 128/256/512/1024
     uint16_t gap_before = 0;   ///< Gap-Bytes vor der Sync-Gruppe
     uint16_t tail_bytes = 0;   ///< Bytes hinter der Daten-CRC (UDOS-Kontrollblock: 4)
-    uint8_t  fill = 0xE5;      ///< Füllbyte der Nutzdaten
+    uint8_t  fill = 0xE5;      ///< Fuellbyte der Nutzdaten
 };
 
 /**
  * @brief Wo landet ein neuer Sektor mit dieser ID?  (Byte-Index der Sync-Gruppe)
  *
- * **Die Regel:** hinter dem vorhandenen Sektor mit der **nächstkleineren ID**, um
+ * **Die Regel:** hinter dem vorhandenen Sektor mit der **naechstkleineren ID**, um
  * @p gap_before Bytes versetzt; gibt es keinen kleineren, hinter dem Index (12 Uhr).
- * Damit legt man eine Spur in ID-Reihenfolge an, kann aber bewusst Lücken lassen —
- * wer Sektor 5 mit grossem Gap setzt, hat hinter Sektor 1 noch Platz für 2, 3 und 4.
- * Wer den Gap zu knapp wählt, überschreibt den Nachbarn; das ist gewollt und muss
- * eine Ebene höher erfragt werden.
+ * Damit legt man eine Spur in ID-Reihenfolge an, kann aber bewusst Luecken lassen —
+ * wer Sektor 5 mit grossem Gap setzt, hat hinter Sektor 1 noch Platz fuer 2, 3 und 4.
+ * Wer den Gap zu knapp waehlt, ueberschreibt den Nachbarn; das ist gewollt und muss
+ * eine Ebene hoeher erfragt werden.
  */
 size_t newSectorPosition(const TrackImage& track, uint8_t id, uint16_t gap_before);
 
@@ -243,8 +243,8 @@ size_t newSectorLength(Encoding enc, uint16_t size, uint16_t tail_bytes);
 /**
  * @brief Einen Sektor auf einer vorhandenen Spur anlegen.
  *
- * Die **Spurlänge bleibt fest** — geschrieben wird über vorhandenes Gap (und, wenn
- * es zu knapp ist, über den Nachbarn).  Das ist die physikalische Wahrheit: eine
+ * Die **Spurlaenge bleibt fest** — geschrieben wird ueber vorhandenes Gap (und, wenn
+ * es zu knapp ist, ueber den Nachbarn).  Das ist die physikalische Wahrheit: eine
  * Umdrehung hat so viele Bytes, wie sie hat.  Passt der Sektor nicht mehr vor das
  * Spurende, wird **nichts** geschrieben.
  *
@@ -252,28 +252,28 @@ size_t newSectorLength(Encoding enc, uint16_t size, uint16_t tail_bytes);
  * **Verfahren der Spur** fest (@p enc); sonst muss @p enc dazu passen — FM und MFM
  * lassen sich in einer Spur nicht mischen (@ref TrackImage::encoding).
  *
- * @param warum optional: Klartextgrund, wenn `false` zurückkommt.
+ * @param warum optional: Klartextgrund, wenn `false` zurueckkommt.
  */
 bool createSector(TrackImage& track, const NewSectorSpec& spec, Encoding enc,
                   std::string* warum = nullptr);
 
 /**
- * @brief Einen Sektor löschen — sein Bereich wird wieder Gap.
+ * @brief Einen Sektor loeschen — sein Bereich wird wieder Gap.
  *
- * Gelöscht wird von der Sync-Gruppe bis hinter die Daten-CRC, dazu @p tail_bytes
+ * Geloescht wird von der Sync-Gruppe bis hinter die Daten-CRC, dazu @p tail_bytes
  * weitere Bytes (UDOS-Kontrollblock).  Die Marken werden entfernt, die Bytes mit dem
- * Gap-Füllbyte des Verfahrens überschrieben; die Spurlänge bleibt.
+ * Gap-Fuellbyte des Verfahrens ueberschrieben; die Spurlaenge bleibt.
  */
 bool eraseSectorAt(TrackImage& track, size_t index, uint16_t tail_bytes = 0);
 
 /**
- * @brief Resync-Zielposition für den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).
+ * @brief Resync-Zielposition fuer den ZRE-ROM-Lesepfad (Kalibrierung, doc/design/07 §10.5.1).
  *
- * Findet ab @p fromPos die nächste Adressmarke und liefert die Position, auf die der
+ * Findet ab @p fromPos die naechste Adressmarke und liefert die Position, auf die der
  * K5122-Datenseparator re-synchronisiert, sodass der ROM-Read das Mark-Byte an der
  * erwarteten buf[]-Position findet (FM: buf[1]=FE, MFM: buf[4]=FE):
  *   - **Legacy single-A1-Layout** (Mark-Byte == 0xA1, @ref buildRobotronTrack): Resync direkt
- *     auf die Marke (kein Offset, kein Encoding-Gate) — für den aktuellen Boot-Pfad.
+ *     auf die Marke (kein Offset, kein Encoding-Gate) — fuer den aktuellen Boot-Pfad.
  *   - **Faithful-Layout** (Mark-Byte FE/FB, @ref buildTrack): nur wenn @p readEnc ==
  *     `track.encoding` (sonst feuert kein MKE → @c SIZE_MAX); Resync landet bei
  *     `markPos − (1 + nA1)` (FM: −1, MFM: −4) auf dem Sync-Byte vor der Markensequenz.
@@ -285,7 +285,7 @@ size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding rea
 /**
  * @brief Robotron-MFM-CRC-16 (verifizierte loaderCrc16, byte-genau).
  *
- * Byte-für-Byte-Übersetzung von sub_0407/sub_1E44.  @p seed_hi/@p seed_lo sind der
+ * Byte-fuer-Byte-Uebersetzung von sub_0407/sub_1E44.  @p seed_hi/@p seed_lo sind der
  * Startzustand (B,C).  Liefert (B<<8)|C (B = high, C = low CRC-Byte).
  *
  * @param data    Eingabebytes
@@ -297,7 +297,7 @@ size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding rea
 uint16_t crc16(const uint8_t* data, size_t n, uint8_t seed_hi, uint8_t seed_lo);
 
 /**
- * @brief Standard-CRC-16-CCITT (Poly 0x1021) für IBM-3740-FM-Tracks.
+ * @brief Standard-CRC-16-CCITT (Poly 0x1021) fuer IBM-3740-FM-Tracks.
  * @param data Eingabebytes
  * @param n    Anzahl Bytes
  * @param seed Startwert (Default 0xFFFF)
@@ -306,15 +306,15 @@ uint16_t crc16(const uint8_t* data, size_t n, uint8_t seed_hi, uint8_t seed_lo);
 uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed = 0xFFFF);
 
 /**
- * @brief Treuer FM/MFM-Lese-Stream für den K5122-Boot-Lesepfad (kein IAM, Marke auf FE/FB,
+ * @brief Treuer FM/MFM-Lese-Stream fuer den K5122-Boot-Lesepfad (kein IAM, Marke auf FE/FB,
  *        Standard-IBM-CCITT-CRC), mit 4×A1-Sync je MFM-Feld.
  *
- * Die 4×A1-Sync-Länge ist die, die ROM-Boot-Leseroutine UND SYL-Lader gleichzeitig bedienen:
+ * Die 4×A1-Sync-Laenge ist die, die ROM-Boot-Leseroutine UND SYL-Lader gleichzeitig bedienen:
  * der ROM-Z-Pfad liest 1 Wegwerf-Byte + 3 Bytes und vergleicht buf[4] mit FE; der SYL-Lader
- * überspringt A1-Bytes per Schleife und vergleicht dann mit FE.  Mit `[A1 A1 A1 A1 FE]` nach
- * dem Resync trifft buf[4]=FE für das ROM, und die Skip-Schleife findet FE für den Lader.
+ * ueberspringt A1-Bytes per Schleife und vergleicht dann mit FE.  Mit `[A1 A1 A1 A1 FE]` nach
+ * dem Resync trifft buf[4]=FE fuer das ROM, und die Skip-Schleife findet FE fuer den Lader.
  * Das 4. A1 ist reines Sync und geht NICHT in die CRC ein (Lader seeden ab der Marke), sodass
- * die echte 3×A1-Standard-CRC unverändert gilt.
+ * die echte 3×A1-Standard-CRC unveraendert gilt.
  *
  * Layout je Sektor (MFM; FM: ohne A1, Marke FE/FB direkt):
  *   [12×00][A1×4][FE c h id sc][idcrc][gap][12×00][A1×4][FB][data][crc][gap]
@@ -322,7 +322,7 @@ uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed = 0xFFFF);
  *
  * @param sectors Logische Sektoren in Spurreihenfolge.
  * @param enc     Aufzeichnungsverfahren (MFM = 4×A1-Sync, FM = ohne A1).
- * @param luecke2_vom_medium  Lücke 2 aus dem Abstand ID-CRC → Datenmarke der Sektoren
+ * @param luecke2_vom_medium  Luecke 2 aus dem Abstand ID-CRC → Datenmarke der Sektoren
  *        (LogicalSector::id_pos/data_pos) statt fest 18/27 — nur sinnvoll, wenn die
  *        Sektoren von einer MFM-Spur stammen und MFM gelesen wird (AP-F1).
  */

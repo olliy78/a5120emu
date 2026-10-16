@@ -15,7 +15,7 @@ constexpr uint16_t NORMAL_TAB = 0x056C;   ///< 89 Byte, Abtastcode 00–58H (p8t
 constexpr uint16_t SHIFT_TAB = 0x05C5;    ///< 54 Byte, Abtastcode 00–35H
 constexpr uint64_t RAHMEN = 11 * P8000TerminalHw::BIT_TAKTE;   ///< 8N2
 
-/// a · z / n ohne Überlauf für große a (z, n gekürzt und < 2^32).
+/// a · z / n ohne Ueberlauf fuer grosse a (z, n gekuerzt und < 2^32).
 uint64_t skaliere(uint64_t a, uint64_t z, uint64_t n) { return (a / n) * z + (a % n) * z / n; }
 }  // namespace
 
@@ -71,9 +71,9 @@ uint64_t P8000TerminalEinheit::zuKbd(uint64_t z8) const {
 }
 uint64_t P8000TerminalEinheit::zuZ8(uint64_t k) const { return kbdStart_ + skaliere(k, kbdN_, kbdZ_); }
 
-// Wiederholungs-Ticks der K7673 aus der Wirtsuhr: Verzögerung (500 ms) und Abstand (100 ms)
+// Wiederholungs-Ticks der K7673 aus der Wirtsuhr: Verzoegerung (500 ms) und Abstand (100 ms)
 // sind Eigenschaften der Tastatur (eigener Quarz), nicht des Rechnertakts.  Die Uhr wird nur
-// gelesen, solange eine Wiederholung läuft — dieser Pfad wird je Befehl gerufen.
+// gelesen, solange eine Wiederholung laeuft — dieser Pfad wird je Befehl gerufen.
 void P8000TerminalEinheit::echtzeitTicks() {
     if (!kb_.wiederholungLaeuft()) { ezBezug_ = false; return; }
     const uint64_t jetzt = TastenUhr::wirtsuhrNs();
@@ -140,7 +140,7 @@ void P8000TerminalEinheit::matrixTaste(MatrixTaste t, const std::vector<MatrixTa
     aktionen_.push_back({mods.empty() ? 0 : H, t, true});
     aktionen_.push_back({H, t, false});
     for (const auto& m : mods) aktionen_.push_back({P, m, false});
-    aktionen_.push_back({P, MatrixTaste{}, false});   // Pause bis zur nächsten Taste
+    aktionen_.push_back({P, MatrixTaste{}, false});   // Pause bis zur naechsten Taste
     if (leer) aktionZeit_ = hw_.takte() + aktionen_.front().warteZ8;
 }
 
@@ -202,7 +202,7 @@ bool P8000TerminalEinheit::tastenFuerZeichen(uint8_t c, bool ctrl, std::vector<M
         return false;
     };
     if (!ctrl && suche(c, mods, taste)) return true;
-    if (!ctrl && c < 0x20) {                     // Steuerzeichen über CTRL (AND 9FH)
+    if (!ctrl && c < 0x20) {                     // Steuerzeichen ueber CTRL (AND 9FH)
         const uint8_t basis = (c >= 1 && c <= 0x1A) ? uint8_t(c | 0x60) : uint8_t(c | 0x40);
         std::vector<MatrixTaste> m;
         if (!suche(basis, m, taste)) return false;
@@ -359,7 +359,7 @@ void TerminalHwKopplung::synchronisiere() {
 // ── Aufschub ────────────────────────────────────────────────────────────────
 
 /// Die Umrechnung Maschine → Z8 rechnet je Scheibe q = s·Z8_HZ + rest; ziel += q / phi; rest = q % phi.
-/// Über mehrere Scheiben ist das genau die Rechnung mit der Summe der Takte (Reste summieren sich
+/// Ueber mehrere Scheiben ist das genau die Rechnung mit der Summe der Takte (Reste summieren sich
 /// exakt) — deshalb darf ein Block von Takten auf einmal gefaltet werden.
 void TerminalHwKopplung::falten(uint64_t takte) {
     const uint64_t q = takte * P8000TerminalHw::Z8_HZ + rest_;
@@ -367,12 +367,12 @@ void TerminalHwKopplung::falten(uint64_t takte) {
     rest_ = q % phi_;
 }
 
-/// Holt alles Offene nach und lässt die Einheit auf dem Stand zurück, den Aufruf für Aufruf
-/// ergeben hätte — auch im Zustand der Tastatur: `P8000TerminalEinheit::laufeBis` läuft nur, wenn
-/// der Z8 das Ziel noch nicht erreicht hat (er übersteigt es um bis zu einen Befehl), und führt
-/// dann die Tastatur bis zu diesem Ziel nach.  Der Tastaturstand im Save-State hängt also daran,
-/// welcher Aufruf zuletzt wirklich lief.  Deshalb wird der Großteil in einem Zug gerechnet, die
-/// letzten Aufrufe (mindestens `SCHWANZ_TAKTE`, länger als jeder Z8-Befehl, also läuft darin
+/// Holt alles Offene nach und laesst die Einheit auf dem Stand zurueck, den Aufruf fuer Aufruf
+/// ergeben haette — auch im Zustand der Tastatur: `P8000TerminalEinheit::laufeBis` laeuft nur, wenn
+/// der Z8 das Ziel noch nicht erreicht hat (er uebersteigt es um bis zu einen Befehl), und fuehrt
+/// dann die Tastatur bis zu diesem Ziel nach.  Der Tastaturstand im Save-State haengt also daran,
+/// welcher Aufruf zuletzt wirklich lief.  Deshalb wird der Grossteil in einem Zug gerechnet, die
+/// letzten Aufrufe (mindestens `SCHWANZ_TAKTE`, laenger als jeder Z8-Befehl, also laeuft darin
 /// mindestens einer) dann wieder einzeln und in Scheiben wie `takt`.
 void TerminalHwKopplung::aufholen() {
     if (!offen_) return;
@@ -409,7 +409,7 @@ void TerminalHwKopplung::aufschubBeenden() {
 
 void TerminalHwKopplung::nachziehen(bool schreibend) {
     aufholen();
-    if (term_.hw_.hatAusgabe()) {   // dürfte nicht sein (s. Klassenkommentar): nicht liegen lassen
+    if (term_.hw_.hatAusgabe()) {   // duerfte nicht sein (s. Klassenkommentar): nicht liegen lassen
         ++verspaetet;
         aufschubBeenden();
     } else if (schreibend) {
@@ -446,12 +446,12 @@ void TerminalHwKopplung::takt(uint64_t n) {
             }
             return;
         }
-        aufschubBeenden();   // ein Zeichen für das Terminal: ab hier Scheibe für Scheibe wie ohne Aufschub
+        aufschubBeenden();   // ein Zeichen fuer das Terminal: ab hier Scheibe fuer Scheibe wie ohne Aufschub
     }
     auto& hw = term_.hw_;
     const serial::SerialFormat f = karte_.format();
     const int bits = f.gueltig ? 1 + f.daten + (f.paritaet ? 1 : 0) + (f.stopp_halbe + 1) / 2 : 11;
-    // Das Format ändert sich nur durch Gast-Zugriffe auf SIO/CTC, nie innerhalb dieser Schleife:
+    // Das Format aendert sich nur durch Gast-Zugriffe auf SIO/CTC, nie innerhalb dieser Schleife:
     // einmal je Aufruf holen (vorher dreimal, je Befehl).
     const uint64_t zt = zeichenTakte(f);
     const uint64_t scheibe = std::max<uint64_t>(1, zt / 8);

@@ -1,10 +1,10 @@
-"""Lochstreifen (K6022) über die C-ABI — Bandformate und Stanzer-Bindung
+"""Lochstreifen (K6022) ueber die C-ABI — Bandformate und Stanzer-Bindung
 (doc/design/23_lochstreifen.md §6, AP-L3).
 
-Die Formate selbst und das verzögerte Zurückschreiben prüfen die C++-Wächter
+Die Formate selbst und das verzoegerte Zurueckschreiben pruefen die C++-Waechter
 `Lochstreifenformat.*` und `K6022Bindung.*`; hier geht es um den Weg durch
 `k1520_ptape_*` und die ctypes-Bindung: Kennungen, Erkennung, Leser mit Format,
-Stanzer binden/neues Band/lösen/flush, Fehlertext, und „ohne Karte nichts“.
+Stanzer binden/neues Band/loesen/flush, Fehlertext, und „ohne Karte nichts“.
 Gestanzt wird ohne Gast nicht — das Stanzband entsteht hier aus einer vorhandenen
 Datei, die beim Binden der Anfang des Bandes wird (§5).
 """
@@ -17,7 +17,7 @@ pytestmark = requires_core
 
 MASCHINEN = ["a5120", "k8915", "prg710"]
 
-# Intel HEX: 41 42 43 ab Adresse 0, 55 an Adresse 5 → Band 41 42 43 00 00 55 (Lücke = 00H).
+# Intel HEX: 41 42 43 ab Adresse 0, 55 an Adresse 5 → Band 41 42 43 00 00 55 (Luecke = 00H).
 IHEX = b":03000000414243 37\n:0100050055A5\n:00000001FF\n".replace(b" ", b"")
 IHEX_BAND = bytes([0x41, 0x42, 0x43, 0x00, 0x00, 0x55])
 
@@ -36,7 +36,7 @@ def _ascii_art(band: bytes) -> bytes:
 
 
 def test_formatkennungen_stimmen_mit_dem_header_ueberein():
-    """Die Kennungen sind Teil der ABI — Header, Bindung und Kern zählen gleich."""
+    """Die Kennungen sind Teil der ABI — Header, Bindung und Kern zaehlen gleich."""
     import re
     from conftest import PROJECT_ROOT
     from app.core_binding import k1520 as b
@@ -61,7 +61,7 @@ def test_format_aus_dem_inhalt(tmp_path):
     from app.core_binding.k1520 import (K1520Emulator, PTAPE_FMT_ASCII, PTAPE_FMT_IHEX,
                                         PTAPE_FMT_RAW)
     f = K1520Emulator.ptape_detect_format
-    # Absichtlich irreführende Endungen: erkannt wird am Inhalt.
+    # Absichtlich irrefuehrende Endungen: erkannt wird am Inhalt.
     (tmp_path / "x.txt").write_bytes(IHEX)
     (tmp_path / "y.hex").write_bytes(_ascii_art(b"AB"))
     (tmp_path / "z.tape").write_bytes(b"\x00\x41\xff")
@@ -107,7 +107,7 @@ def test_leser_laedt_jedes_format(name, tmp_path):
     st = emu.ptape_reader_status()
     assert st["inserted"] is False and st["file"] == ""
 
-    hexdatei = tmp_path / "band ä.hex"      # Umlaut: UTF-8-Pfad bis in den Kern und zurück
+    hexdatei = tmp_path / "band ä.hex"      # Umlaut: UTF-8-Pfad bis in den Kern und zurueck
     hexdatei.write_bytes(IHEX)
     assert emu.ptape_load(hexdatei, PTAPE_FMT_IHEX), emu.ptape_error()
     assert emu.ptape_error() == ""
@@ -136,7 +136,7 @@ def test_leser_meldet_den_fehler_mit_zeile(tmp_path):
 
     emu = K1520Emulator(machine="a5120", ptape=True)
     kaputt = tmp_path / "kaputt.hex"
-    kaputt.write_bytes(b":0300000041424338\n:00000001FF\n")     # Prüfsumme falsch
+    kaputt.write_bytes(b":0300000041424338\n:00000001FF\n")     # Pruefsumme falsch
     assert not emu.ptape_load(kaputt, PTAPE_FMT_IHEX)
     assert "Zeile 1" in emu.ptape_error()
     assert emu.ptape_reader_status()["inserted"] is False
@@ -165,7 +165,7 @@ def test_stanzer_binden_neues_band_loesen(name, tmp_path):
     assert emu.ptape_punch_bind(hexdatei, PTAPE_FMT_IHEX), emu.ptape_error()
     assert emu.ptape_punch_status() == {"file": str(hexdatei), "format": PTAPE_FMT_IHEX,
                                         "len": len(IHEX_BAND), "enabled": True}
-    assert emu.ptape_punch_flush()                 # nichts geändert → nichts zu tun
+    assert emu.ptape_punch_flush()                 # nichts geaendert → nichts zu tun
     assert hexdatei.read_bytes() == IHEX
     # Neues Band: Datei SOFORT leer — im Format Intel HEX ist das nur der Endsatz.
     assert emu.ptape_punch_new_tape()
@@ -183,7 +183,7 @@ def test_stanzer_binden_neues_band_loesen(name, tmp_path):
     assert emu.ptape_punch_clear()                 # alter Name = neues Band
     leer = art.read_text("ascii")           # nur noch Kopf und Bandkanten (Kommentare)
     assert not [z for z in leer.splitlines() if z.strip() and not z.startswith(";")]
-    # Gelöst bleibt das (leere) Band im Speicher, die Datei bleibt wie sie ist.
+    # Geloest bleibt das (leere) Band im Speicher, die Datei bleibt wie sie ist.
     assert emu.ptape_punch_unbind()
     assert emu.ptape_punch_status()["len"] == 0
 

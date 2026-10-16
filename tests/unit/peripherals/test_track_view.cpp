@@ -1,10 +1,10 @@
 /**
  * @file test_track_view.cpp
- * @brief GoogleTests für @ref scanTrack — die zeichenbare Sicht auf eine Spur.
+ * @brief GoogleTests fuer @ref scanTrack — die zeichenbare Sicht auf eine Spur.
  *
- * Geprüft wird die eine Zusage, auf der die ganze Darstellung ruht: die Abschnitte
- * decken `[0,1)` **lückenlos und überschneidungsfrei** ab.  Nur dann ist der
- * Treffertest über den Winkel eindeutig, und nur dann bleibt kein Stück Spur
+ * Geprueft wird die eine Zusage, auf der die ganze Darstellung ruht: die Abschnitte
+ * decken `[0,1)` **lueckenlos und ueberschneidungsfrei** ab.  Nur dann ist der
+ * Treffertest ueber den Winkel eindeutig, und nur dann bleibt kein Stueck Spur
  * ungezeichnet.
  *
  * @see core/peripherals/floppy_drive/track_view.h

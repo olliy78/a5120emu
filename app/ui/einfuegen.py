@@ -20,8 +20,8 @@ from PySide6.QtCore import QElapsedTimer, QObject, QTimer, Signal
 
 #: Eingaberate in Zeichen je Sekunde (Wirtszeit).
 ZEICHEN_PRO_SEKUNDE = 120
-#: Mehr als so viele Zeichen holt ein Takt nie nach (ein träger Wirtsrechner soll keinen Stoss
-#: erzeugen — „ohne Tastatur und Computer zu überfordern").
+#: Mehr als so viele Zeichen holt ein Takt nie nach (ein traeger Wirtsrechner soll keinen Stoss
+#: erzeugen — „ohne Tastatur und Computer zu ueberfordern").
 MAX_NACHHOLEN = 2
 
 
@@ -33,7 +33,7 @@ def tippbare_zeichen(text: str) -> str:
 class TastenEinfueger(QObject):
     """Gibt einen Text mit fester Rate über ``druecken``/``loslassen`` ein."""
 
-    #: (eingegeben, übersprungen) — am Ende oder nach dem Abbruch.
+    #: (eingegeben, uebersprungen) — am Ende oder nach dem Abbruch.
     fertig = Signal(int, int)
 
     def __init__(self, druecken: Callable[[str], bool], loslassen: Callable[[], None],
@@ -47,7 +47,7 @@ class TastenEinfueger(QObject):
         self.uebersprungen = 0
         self._rate = rate
         self._uhr = QElapsedTimer()
-        self._soll = 0.0                       # so viele Zeichen sind nach der Uhr fällig
+        self._soll = 0.0                       # so viele Zeichen sind nach der Uhr faellig
         self._timer = QTimer(self)
         self._timer.setInterval(max(1, round(1000 / rate)))
         self._timer.timeout.connect(self._takt)
@@ -74,7 +74,7 @@ class TastenEinfueger(QObject):
         self._ende()
 
     def _takt(self):
-        # Fällige Zeichen nach der Uhr (Taktgenauigkeit der Qt-Timer ist grob), höchstens
+        # Faellige Zeichen nach der Uhr (Taktgenauigkeit der Qt-Timer ist grob), hoechstens
         # MAX_NACHHOLEN je Takt.  Das vorige Zeichen wird zuerst losgelassen.
         faellig = int(self._uhr.elapsed() * self._rate / 1000) + 1 - (self.eingegeben + self.uebersprungen)
         faellig = max(1, min(faellig, MAX_NACHHOLEN))
@@ -93,7 +93,7 @@ class TastenEinfueger(QObject):
             else:
                 self.uebersprungen += 1
             if self._gedrueckt and faellig > 1:
-                # Mehrere Zeichen in einem Takt: jedes für sich drücken UND loslassen.
+                # Mehrere Zeichen in einem Takt: jedes fuer sich druecken UND loslassen.
                 self._loslassen()
                 self._gedrueckt = False
         if self._pos >= len(self._text) and not self._gedrueckt:

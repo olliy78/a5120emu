@@ -2,21 +2,21 @@
  * @file test_disktool_neue_disketten.cpp
  * @brief Kreuzprobe auf **frisch angelegten** Disketten: DiskTool schreibt, CP/A liest.
  *
- * `test_disktool_cpm_roundtrip.cpp` prüft den Schreibpfad auf der **Referenz**diskette
+ * `test_disktool_cpm_roundtrip.cpp` prueft den Schreibpfad auf der **Referenz**diskette
  * `cpa780` — einer Diskette, deren Dateisystemprofil von Hand nachgemessen wurde.  Die
- * beiden Fälle hier prüfen genau das, was dort nicht drankommt: Disketten, deren
+ * beiden Faelle hier pruefen genau das, was dort nicht drankommt: Disketten, deren
  * Dateisystem das Werkzeug **selbst ausrechnen** muss.
  *
- *  1. **192 Verzeichnisplätze** auf einer 800K-Datendiskette.  Der Wert stand bis
- *     2026-08-11 mit 128 im Katalog — geschätzt.  FORMAT.COM nennt im Menü selbst 192
+ *  1. **192 Verzeichnisplaetze** auf einer 800K-Datendiskette.  Der Wert stand bis
+ *     2026-08-11 mit 128 im Katalog — geschaetzt.  FORMAT.COM nennt im Menue selbst 192
  *     (doc/format.md §3.1, Wahl 0), und die nachgebildete BIOS-Regel rechnet dasselbe
  *     aus (@ref CpaDpbRule).  Beweisen kann das nur das echte CP/A: schreibt das
  *     Werkzeug in einen Platz jenseits von 128, muss der Gast die Datei trotzdem sehen.
  *  2. **Doppelschritt** (`step: 2`).  Die logische Spur `n` liegt physisch auf `2n`.
- *     Dass diese Abbildung in sich schlüssig ist, prüfen die Unit-Tests; dass sie mit
- *     der des Gastsystems übereinstimmt, kann nur der Gast sagen.
+ *     Dass diese Abbildung in sich schluessig ist, pruefen die Unit-Tests; dass sie mit
+ *     der des Gastsystems uebereinstimmt, kann nur der Gast sagen.
  *
- * Beide Fälle hängen eine **neu angelegte** Diskette als B: an eine echte Bootdiskette.
+ * Beide Faelle haengen eine **neu angelegte** Diskette als B: an eine echte Bootdiskette.
  *
  * @see doc/design/13_k1520disktool.md §15, doc/feature_requests/doppelschritt_disketten.md
  */
@@ -70,7 +70,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Temporäre Datei, räumt sich weg.
+/// @brief Temporaere Datei, raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const char* name)
@@ -116,10 +116,10 @@ void legeAnUndBeschreibe(const std::string& pfad, const char* format_name,
 
 /**
  * @test DiskToolNeueDisketten/CpaFindetDateiJenseitsVonPlatz128
- * @brief Eine 800K-Datendiskette hat **192** Verzeichnisplätze — CP/A muss eine Datei
+ * @brief Eine 800K-Datendiskette hat **192** Verzeichnisplaetze — CP/A muss eine Datei
  *        finden, die auf Platz 130 liegt.
  * @par Pass criterion  `TYPE B:SPAET.TXT` gibt den Inhalt aus.
- * @par Warum           Mit den früher eingetragenen 128 Plätzen läge Platz 130 für das
+ * @par Warum           Mit den frueher eingetragenen 128 Plaetzen laege Platz 130 fuer das
  *                      Werkzeug ausserhalb des Verzeichnisses; es schriebe die Datei
  *                      entweder gar nicht oder in einen Datenblock.  Der Gast entscheidet.
  */
@@ -141,7 +141,7 @@ TEST(DiskToolNeueDisketten, CpaFindetDateiJenseitsVonPlatz128) {
         ASSERT_NE(dv, nullptr) << err;
         dv->setReadOnly(false);
 
-        // 130 Dateien anlegen: die letzte liegt zwangsläufig hinter Platz 128.
+        // 130 Dateien anlegen: die letzte liegt zwangslaeufig hinter Platz 128.
         TransferOptions o;
         o.text = true;
         for (int i = 0; i < 129; ++i)
@@ -175,7 +175,7 @@ TEST(DiskToolNeueDisketten, CpaFindetDateiJenseitsVonPlatz128) {
  * @par Pass criterion  `DIR B:` listet die Datei und `TYPE B:DSTEP.TXT` gibt sie aus.
  * @par Warum           Das ist der einzige Nachweis, dass logische Spur `n` bei uns und
  *                      beim Gast auf demselben physischen Zylinder liegt — und dass die
- *                      Spurnummer im ID-Feld die logische ist.  Alles andere prüft nur
+ *                      Spurnummer im ID-Feld die logische ist.  Alles andere prueft nur
  *                      unsere Rechnung gegen sich selbst.
  */
 TEST(DiskToolNeueDisketten, CpaLiestDoppelschrittDiskette) {

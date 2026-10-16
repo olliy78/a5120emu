@@ -1,0 +1,17 @@
+;Kennbuchstaben der KMBG-Befehle
+A - Bandlaufwerk verriegeln
+B - Band schnell zurueckspulen
+C - Band schnell vorspulen
+D - einen Block vorspulen
+E - einen Block rueckspulen
+F - eine Bandmarke vorspulen
+G - eine Bandmarke rueckspulen
+H - einen Block lesen
+I - einen Block schreiben
+J - eine Bandmarke schreiben
+K - Band loeschen
+L - Bandlaufwerk entriegeln
+M - gelesenen Block inkl. Status auf Disk schreiben
+N - ganze Kassette lesen und speichern
+O - gelesenen Block anzeigen
+Q - Programmende

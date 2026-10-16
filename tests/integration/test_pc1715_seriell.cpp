@@ -2,9 +2,9 @@
  * @file test_pc1715_seriell.cpp
  * @brief PC 1715 Etappe 4 (doc/design/21_pc1715.md AP-4a): „Drucker X4" (SIO0-A, nur Sender)
  *        und „V.24 X5" (SIO0-B) am `SerialHub`, Leitung 107 an 2DH/2FH, V.24-Boot des Urladers
- *        S502 (BootV24, s502.prn) über Telnet, Drucken unter CP/A in eine Datei.
+ *        S502 (BootV24, s502.prn) ueber Telnet, Drucken unter CP/A in eine Datei.
  *
- * Nie feste Ports: Server auf Port 0, der tatsächliche Port kommt aus dem Status.
+ * Nie feste Ports: Server auf Port 0, der tatsaechliche Port kommt aus dem Status.
  */
 
 #include <gtest/gtest.h>
@@ -37,7 +37,7 @@ std::string dateiInhalt(const std::string& pfad) {
     return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
 }
 
-/// Nur die Wandler takten (für Tests, die die SIO von Hand bedienen).
+/// Nur die Wandler takten (fuer Tests, die die SIO von Hand bedienen).
 struct Takter {
     Pc1715Machine& m;
     uint64_t z = 0;
@@ -51,7 +51,7 @@ void ctc9600(Pc1715Machine& m, int k) {
     m.bus().ioWrite(uint8_t(0x08 + k), 0x05);
     m.bus().ioWrite(uint8_t(0x08 + k), 0x01);
 }
-/// SIO0-Steuerport @p steuer (0EH = A, 0FH = B): WR4 ×16/1 Stopp/ohne Parität, WR3 Rx 8 Bit,
+/// SIO0-Steuerport @p steuer (0EH = A, 0FH = B): WR4 ×16/1 Stopp/ohne Paritaet, WR3 Rx 8 Bit,
 /// WR5 Tx 8 Bit + RTS/DTR.
 void sioInit(Pc1715Machine& m, uint8_t steuer) {
     for (uint8_t b : {uint8_t(4), uint8_t(0x44), uint8_t(3), uint8_t(0xC1), uint8_t(5), uint8_t(0xEA)})
@@ -75,8 +75,8 @@ TEST(Pc1715Seriell, HubNamenUndLeitungen) {
     EXPECT_EQ(m.festeSchnittstellen().size(), 1u);   // Tastatur bleibt fest an SIO-A
 }
 
-/// V.24 X5 mit Loop: ein Byte, das der Gast an SIO-B sendet, kommt im Empfänger von SIO-B an —
-/// in der Zeichenzeit; Baud aus CTC0 K1 × SIO ×16.  Leitung 107 folgt DTR (Prüfstecker).
+/// V.24 X5 mit Loop: ein Byte, das der Gast an SIO-B sendet, kommt im Empfaenger von SIO-B an —
+/// in der Zeichenzeit; Baud aus CTC0 K1 × SIO ×16.  Leitung 107 folgt DTR (Pruefstecker).
 TEST(Pc1715Seriell, V24LoopSendenUndEmpfangenSamtLeitung107) {
     stumm();
     Pc1715Machine m;
@@ -92,14 +92,14 @@ TEST(Pc1715Seriell, V24LoopSendenUndEmpfangenSamtLeitung107) {
     const auto f = m.serielleAnschluesse()[1]->format();
     EXPECT_TRUE(f.gueltig);
     EXPECT_EQ(f.baud_nenn, 9600u);
-    // Prüfstecker 320-032: 108 → 107 liegt an /DCDA (§1.2.8.5) — sofort, ohne Wandlerblick.
+    // Pruefstecker 320-032: 108 → 107 liegt an /DCDA (§1.2.8.5) — sofort, ohne Wandlerblick.
     EXPECT_EQ(m.bus().ioRead(0x0E) & 0x08, 0x08) << "Loop: DTR-B → 107 → RR0 D3 von Kanal A";
     EXPECT_EQ(m.bus().ioRead(0x0F) & 0x20, 0x20) << "Loop: RTS-B → CTS-B";
     EXPECT_EQ(m.bus().ioRead(0x0F) & 0x08, 0x00) << "109 AUS, solange 111 AUS";
     m.bus().ioWrite(0x30, 0x02);
     EXPECT_EQ(m.bus().ioRead(0x0F) & 0x08, 0x08) << "Loop: 111 (30H DB1) → 109 → RR0 D3 von Kanal B";
     m.bus().ioWrite(0x30, 0x00);
-    EXPECT_EQ(m.bus().ioRead(0x2D), 0xFF) << "2DH = Zusatzkarte, nicht bestückt";
+    EXPECT_EQ(m.bus().ioRead(0x2D), 0xFF) << "2DH = Zusatzkarte, nicht bestueckt";
     t.lauf(20'000);
 
     m.bus().ioWrite(0x0D, 0x5A);           // SIO-B Daten
@@ -108,8 +108,8 @@ TEST(Pc1715Seriell, V24LoopSendenUndEmpfangenSamtLeitung107) {
     EXPECT_EQ(m.bus().ioRead(0x0D), 0x5A);
 }
 
-/// Prüfstecker 330-042 am Drucker X4 (EFS10 hat nur 102/103/106): 103 → 106, d. h. CTS-A folgt
-/// dem Break (Sendedaten dauernd „0"), nicht RTS — so prüft PCTEST „PRINTER Ltg.103---106".
+/// Pruefstecker 330-042 am Drucker X4 (EFS10 hat nur 102/103/106): 103 → 106, d. h. CTS-A folgt
+/// dem Break (Sendedaten dauernd „0"), nicht RTS — so prueft PCTEST „PRINTER Ltg.103---106".
 /// Sofort nach dem Steuerwort, ohne Wandlerblick.
 TEST(Pc1715Seriell, DruckerPruefsteckerBruecktSendedatenAufCts) {
     stumm();
@@ -131,8 +131,8 @@ TEST(Pc1715Seriell, DruckerPruefsteckerBruecktSendedatenAufCts) {
     EXPECT_EQ(m.bus().ioRead(0x0E) & 0x20, 0x00);
 }
 
-/// Drucker X4: was der Gast an SIO-A sendet, geht in die Datei; der Empfänger von SIO-A (Tastatur)
-/// bleibt unberührt.  CTS (106) kommt mit der Verbindung.
+/// Drucker X4: was der Gast an SIO-A sendet, geht in die Datei; der Empfaenger von SIO-A (Tastatur)
+/// bleibt unberuehrt.  CTS (106) kommt mit der Verbindung.
 TEST(Pc1715Seriell, DruckerSenderLandetInDerDatei) {
     stumm();
     const std::string pfad = k1520test::tempPath("pc1715_drucker_direkt.txt");
@@ -159,7 +159,7 @@ TEST(Pc1715Seriell, DruckerSenderLandetInDerDatei) {
     fs::remove(fs::u8path(pfad));
 }
 
-/// Alter Unterbau: DFÜ-Rückruf = V.24 X5, Einspeisen geht in den Empfänger von SIO-B.
+/// Alter Unterbau: DFUE-Rueckruf = V.24 X5, Einspeisen geht in den Empfaenger von SIO-B.
 TEST(Pc1715Seriell, AlterUnterbauV24) {
     stumm();
     Pc1715Machine m;
@@ -204,8 +204,8 @@ TEST(Pc1715Seriell, Cpa1715DruckenInDieDatei) {
     fs::remove(fs::u8path(pfad));
 }
 
-/// V.24-Boot des Urladers S502 (BootV24, s502.prn): ohne Diskette erwartet er über SIO-B
-/// 11H 11H, antwortet 12H 12H, lädt Pakete `0AH adr anz daten` und springt bei `AAH adr`.
+/// V.24-Boot des Urladers S502 (BootV24, s502.prn): ohne Diskette erwartet er ueber SIO-B
+/// 11H 11H, antwortet 12H 12H, laedt Pakete `0AH adr anz daten` und springt bei `AAH adr`.
 /// Ein Telnet-Client auf „V.24 X5" speist ein Programm ein, das eine Kennung ins RAM schreibt.
 TEST(Pc1715Seriell, V24BootLaedtUndStartetEinProgramm) {
     stumm();
@@ -235,11 +235,11 @@ TEST(Pc1715Seriell, V24BootLaedtUndStartetEinProgramm) {
     }
     ASSERT_TRUE(drin) << "PC = " << std::hex << m.cpuPC();
 
-    // Telnet-Rahmen ohne 0DH/FFH (CR und IAC würden umgeschrieben):
+    // Telnet-Rahmen ohne 0DH/FFH (CR und IAC wuerden umgeschrieben):
     //   11 11 | 0A 00 80 06 00  3E 5A 32 00 90 76 | AA 00 80
     // Programm @8000H: LD A,5AH / LD (9000H),A / HALT.
     const std::string rahmen("\x11\x11\x0A\x00\x80\x06\x00\x3E\x5A\x32\x00\x90\x76\xAA\x00\x80", 16);
-    // Die Bytes liegen im Wandler, bevor die Maschine weiterläuft (sie läuft viel schneller als
+    // Die Bytes liegen im Wandler, bevor die Maschine weiterlaeuft (sie laeuft viel schneller als
     // die Uhr); gelesen wird erst mit der Zeichenzeit.
     ASSERT_GT(net::senden(s.fd(), rahmen.data(), rahmen.size()).n, 0u);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -254,7 +254,7 @@ TEST(Pc1715Seriell, V24BootLaedtUndStartetEinProgramm) {
         geladen = m.zre().ramPeek(0x9000) == 0x5A;
     }
     EXPECT_TRUE(geladen) << "PC = " << std::hex << m.cpuPC();
-    // Die Antwort geht über den I/O-Faden hinaus: nach dem Lauf noch eine Weile einsammeln.
+    // Die Antwort geht ueber den I/O-Faden hinaus: nach dem Lauf noch eine Weile einsammeln.
     for (int i = 0; i < 50 && zurueck.find("\x12\x12") == std::string::npos; ++i) {
         m.run(20'000);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

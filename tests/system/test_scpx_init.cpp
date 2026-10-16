@@ -1,24 +1,24 @@
 /**
  * @file test_scpx_init.cpp
- * @brief Langsamer End-to-End-Regressionswächter: SCPX INIT.COM formatiert
- *        Laufwerk A: vollständig OHNE „BAD TRACKS".
+ * @brief Langsamer End-to-End-Regressionswaechter: SCPX INIT.COM formatiert
+ *        Laufwerk A: vollstaendig OHNE „BAD TRACKS".
  *
- * Eigenes Executable (nicht in test_boot_integration.cpp), damit der Test über das
+ * Eigenes Executable (nicht in test_boot_integration.cpp), damit der Test ueber das
  * ctest-Label „format_integration" aus dem Default-`tools/dev.sh test` ausgeschlossen
- * werden kann (er formatiert+verifiziert 160 Spuren und läuft ~35 s).  Er läuft mit
+ * werden kann (er formatiert+verifiziert 160 Spuren und laeuft ~35 s).  Er laeuft mit
  * `tools/dev.sh test-format` / `test-all`.
  *
- * Guard für den K5122-Index-Phasen-Fix (commitFormatTrack setzt index_cycle_acc_ = 0;
- * doc/analyse_scpx_init_verify_handoff.md).  INIT.COM ist SCPXs FORMAT.COM-Gegenstück:
+ * Guard fuer den K5122-Index-Phasen-Fix (commitFormatTrack setzt index_cycle_acc_ = 0;
+ * doc/analyse_scpx_init_verify_handoff.md).  INIT.COM ist SCPXs FORMAT.COM-Gegenstueck:
  * es programmiert den K5122 DIREKT (kein BIOS-Call), formatiert alle 80 Zylinder ×2
- * Köpfe und VERIFIZIERT jede Spur.  Der Verify synchronisiert per Index-Interrupt-
- * Flag [12A8]: ZVE1 löscht es pro Spur (0x0EF0), ZVE2 verlangt es am Spur-Beginn clear
+ * Koepfe und VERIFIZIERT jede Spur.  Der Verify synchronisiert per Index-Interrupt-
+ * Flag [12A8]: ZVE1 loescht es pro Spur (0x0EF0), ZVE2 verlangt es am Spur-Beginn clear
  * (0x1115) und wartet dann auf den Index (0x111B).  Lief der Index-Puls frei relativ
  * zum Byte-Takt, fiel er zwischen Clear und Check → [12A8] gesetzt → der „index-flag
  * muss clear"-Test scheiterte → BAD TRACKS auf Kopf 1 / ungeraden Zylindern.  Der Fix
  * koppelt die Index-Phase ans Spur-Ende (der Vollspur-FORMAT-Write endet auf echter HW
- * GENAU am Index), sodass der nächste Index wieder hinter den Check in INITs
- * Warteschleife fällt.  VOR dem Fix: „BAD TRACKS: 00,01,03,05,…"; danach: „- NO -".
+ * GENAU am Index), sodass der naechste Index wieder hinter den Check in INITs
+ * Warteschleife faellt.  VOR dem Fix: „BAD TRACKS: 00,01,03,05,…"; danach: „- NO -".
  */
 
 #include <gtest/gtest.h>
@@ -45,12 +45,12 @@ using k1520test::vramText;
 /**
  * @test ScpxInit/CreateFormatBThenPipCopyFromBootDisk
  * @brief Voller SCPX-Formatier-Workflow end-to-end: eine FRISCH erzeugte, leere `.hfe`
- *        wird mit INIT.COM formatiert und anschließend per PIP beschrieben.
+ *        wird mit INIT.COM formatiert und anschliessend per PIP beschrieben.
  *
  * Ablauf:
- *   1. A: = beschreibbare Kopie der Bootdiskette (Quelle für STAT.COM).
+ *   1. A: = beschreibbare Kopie der Bootdiskette (Quelle fuer STAT.COM).
  *   2. B: = frisch via `A5120Machine::createDisk(..., "k5601_16x256", ...)` erzeugte LEERE
- *      Diskette (Geometrie DD-DS 16×256 = 80 Zyl ×2 Köpfe ×16 Sekt ×256 B).
+ *      Diskette (Geometrie DD-DS 16×256 = 80 Zyl ×2 Koepfe ×16 Sekt ×256 B).
  *   3. SCPX booten, mit INIT B: **formatieren** (Default DD-DS 16×256) → `BAD TRACKS: - NO -`.
  *   4. Ctrl-C-Warmstart, damit CP/A B: nach dem Direkt-Format neu einloggt (sonst R/O).
  *   5. `PIP B:=A:STAT.COM` kopiert STAT.COM von der Bootdiskette auf die neue Diskette.
@@ -85,7 +85,7 @@ TEST(ScpxInit, CreateFormatBThenPipCopyFromBootDisk) {
     typeString(machine, "B");
     typeKey(machine, QK_RETURN);
     ASSERT_TRUE(runSmallUntil(machine, "HIT <ENTER> FOR DEFAULT", 20'000'000))
-        << "Format-Menü nach Laufwerkswahl B: nicht erschienen:\n" << vramText(machine);
+        << "Format-Menue nach Laufwerkswahl B: nicht erschienen:\n" << vramText(machine);
     typeKey(machine, QK_RETURN);   // Default-Format DD-DS 16×256
     ASSERT_TRUE(runSmallUntil(machine, "PRESS <ENTER>", 20'000'000))
         << "Disk-einlegen-Prompt nicht erschienen:\n" << vramText(machine);
@@ -103,11 +103,11 @@ TEST(ScpxInit, CreateFormatBThenPipCopyFromBootDisk) {
         << "INIT meldete BAD TRACKS beim Formatieren von B::\n" << vramText(machine);
 
     // ── INIT verlassen (ONCE MORE? → N) + Ctrl-C-Warmstart ───────────────────
-    // Der Warmstart lässt CP/A B: nach dem BIOS-fremden Direkt-Format neu einloggen
+    // Der Warmstart laesst CP/A B: nach dem BIOS-fremden Direkt-Format neu einloggen
     // (sonst bleibt B: als „gewechselte" Diskette R/O → PIP-Write scheiterte).
     typeString(machine, "N");
     typeKey(machine, QK_RETURN);
-    runCycles(machine, 5'000'000);          // INIT kehrt zum CCP zurück
+    runCycles(machine, 5'000'000);          // INIT kehrt zum CCP zurueck
     typeCtrl(machine, 'C');                  // Warmstart → Laufwerke neu einloggen
     runCycles(machine, 5'000'000);
 
@@ -137,12 +137,12 @@ TEST(ScpxInit, CreateFormatBThenPipCopyFromBootDisk) {
  * @brief Kompletter „5×1024-Systemdiskette erzeugen"-Workflow end-to-end.
  *
  * Deckt die im Merkzettel [[project_scpx_5x1024_read_freeze]] beschriebene EINZIG
- * gültige Nutzung von 5×1024 ab: NICHT per MODF ein 16×256-System umbiegen, sondern
- * mit SYSP ein System FÜR 5×1024 generieren.  Ablauf (alle Prompts am realen SCPX-
+ * gueltige Nutzung von 5×1024 ab: NICHT per MODF ein 16×256-System umbiegen, sondern
+ * mit SYSP ein System FUER 5×1024 generieren.  Ablauf (alle Prompts am realen SCPX-
  * Dialog verifiziert):
  *   1. A: = beschreibbare Kopie von scpx17_cpa780_k5601.hfe; B: = frische Leerdisk (createDisk).
  *   2. INIT B: mit **Option 3 = DD-DS 5×1024** formatieren → `BAD TRACKS: - NO -`.
- *   3. MODF B: auf Format 3 (5×1024) umstellen; Wechsel auf B: löst EINMALIG
+ *   3. MODF B: auf Format 3 (5×1024) umstellen; Wechsel auf B: loest EINMALIG
  *      `SCPX ERR ON B: BAD SECTOR` aus (erwartet — Diskettenwechsel-Erkennung), nach
  *      <ENTER> geht es weiter; `DIR` zeigt `NO FILE` (leere, LESBARE 5×1024-Disk).
  *   4. **SYSP** generiert ein 5×1024-System nach B:: Tastatur K7637 (2), Bildschirm
@@ -154,11 +154,11 @@ TEST(ScpxInit, CreateFormatBThenPipCopyFromBootDisk) {
  *   6. Von der frisch generierten B:-Disk (bPath) in einer NEUEN Maschine booten →
  *      SCPX-Banner + `A>`  (der Boot-Lader liest die 5×1024-Systemspuren).
  *   7. Nach einmaliger BAD-SECTOR-Quittung: `DIR` listet die kopierten Dateien
- *      (STAT/INIT), `STAT` läuft (`A: R/W`) → das generierte 5×1024-System läuft.
+ *      (STAT/INIT), `STAT` laeuft (`A: R/W`) → das generierte 5×1024-System laeuft.
  *
  * Langsam (2× Vollformat 160 Spuren + SYSP + PIP) → Label `format_integration`.
- * Zugleich ein starker Wächter für die zyklengenaue Peripherie (K5122-Index-IRQ,
- * CTC/Tastatur-Timing) bei Höchstgeschwindigkeit.
+ * Zugleich ein starker Waechter fuer die zyklengenaue Peripherie (K5122-Index-IRQ,
+ * CTC/Tastatur-Timing) bei Hoechstgeschwindigkeit.
  */
 TEST(ScpxInit, Builds5x1024SystemViaInitModfSyspAndBoots) {
     TempDisk a("scpx17_cpa780_k5601.hfe");                    // A: beschreibbare Kopie
@@ -185,7 +185,7 @@ TEST(ScpxInit, Builds5x1024SystemViaInitModfSyspAndBoots) {
     ASSERT_TRUE(runSmallUntil(machine, "PRESS <ENTER>", 20'000'000)) << vramText(machine);
     typeKey(machine, QK_RETURN);                                    // Disk eingelegt
     ASSERT_TRUE(runSmallUntil(machine, "(Y/N)", 20'000'000)) << vramText(machine);
-    typeString(machine, "Y"); typeKey(machine, QK_RETURN);          // Scratch bestätigen
+    typeString(machine, "Y"); typeKey(machine, QK_RETURN);          // Scratch bestaetigen
     ASSERT_TRUE(runSmallUntil(machine, "FORMATTING COMPLETE", 300'000'000)) << vramText(machine);
     ASSERT_TRUE(runSmallUntil(machine, "ONCE MORE", 10'000'000)) << vramText(machine);
     EXPECT_NE(vramText(machine).find("BAD TRACKS: - NO -"), std::string::npos)
@@ -296,15 +296,15 @@ TEST(ScpxInit, Builds5x1024SystemViaInitModfSyspAndBoots) {
     typeString(boot, "DIR"); typeKey(boot, QK_RETURN);
     ASSERT_TRUE(runSmallUntil(boot, "STAT     COM", 25'000'000))
         << "DIR listete die kopierten Dateien nicht (System nicht lesbar):\n" << vramText(boot);
-    runCycles(boot, 10'000'000);                                   // DIR fertig, zurück zum A>-Prompt
+    runCycles(boot, 10'000'000);                                   // DIR fertig, zurueck zum A>-Prompt
 
-    // STAT lädt STAT.COM von der 5×1024-Disk und meldet den Laufwerksstatus.  Der
-    // erste Zugriff löst nochmals einmalig BAD SECTOR aus (Diskettenwechsel-Erkennung);
-    // das ist eine „retry"-Aufforderung — nach <ENTER> läuft STAT durch und zeigt den
+    // STAT laedt STAT.COM von der 5×1024-Disk und meldet den Laufwerksstatus.  Der
+    // erste Zugriff loest nochmals einmalig BAD SECTOR aus (Diskettenwechsel-Erkennung);
+    // das ist eine „retry"-Aufforderung — nach <ENTER> laeuft STAT durch und zeigt den
     // Status `A: R/W, Space: …`.
     typeString(boot, "STAT"); typeKey(boot, QK_RETURN);
     runCycles(boot, 25'000'000);
-    typeKey(boot, QK_RETURN);                                       // BAD SECTOR quittieren → STAT läuft durch
+    typeKey(boot, QK_RETURN);                                       // BAD SECTOR quittieren → STAT laeuft durch
     ASSERT_TRUE(runSmallUntil(boot, "R/W", 30'000'000))
         << "STAT lief nicht auf dem generierten 5×1024-System (.COM-Laden gebrochen):\n" << vramText(boot);
 

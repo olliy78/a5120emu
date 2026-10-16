@@ -1,16 +1,16 @@
 /**
  * @file test_prg710_seriell.cpp
- * @brief PRG 710 / 710-1 Etappe 4 (doc/design/20_prg710.md AP-P4): die K8025 führt ihre
- *        Kanäle über den `SerialHub` nach außen, benannt nach der Gerätebeschriftung
+ * @brief PRG 710 / 710-1 Etappe 4 (doc/design/20_prg710.md AP-P4): die K8025 fuehrt ihre
+ *        Kanaele ueber den `SerialHub` nach aussen, benannt nach der Geraetebeschriftung
  *        (`DRUCK.DOK`, §3.7/§3.9).
  *
  * Belegung (Index = C-ABI):
  * - PRG 710:   0 „V.24“ X4 (A33-A, 50H/51H) · 1 „IFSS Hauptdrucker“ X6 (A32-B, 5EH/5FH) ·
  *              2 „ZIFSS Zusatzdrucker“ X5 (A32-A, 5CH/5DH)
- * - PRG 710-1: 0 „V.24“ · 1 „ZIFSS Zusatzdrucker“ (A32-B trägt die Tastatur K7672: fest)
+ * - PRG 710-1: 0 „V.24“ · 1 „ZIFSS Zusatzdrucker“ (A32-B traegt die Tastatur K7672: fest)
  * - dahinter in beiden Varianten „Fernschreiber“ (ASS 590069, AP-P8c)
  *
- * Wie UDOS den Drucker anschaltet: `SET PRI TO V24` lädt `DRUCK.V24` (der Treiber heisst
+ * Wie UDOS den Drucker anschaltet: `SET PRI TO V24` laedt `DRUCK.V24` (der Treiber heisst
  * `DRUCK.<Typ>`, `NOTE.TO.UDOS.4.3`), `SET PRI ON` spiegelt die Bildschirmausgabe dorthin.
  */
 
@@ -116,7 +116,7 @@ protected:
     }
 };
 
-/// Namen, Stecker, Anzahl je Variante; nur V.24 trägt Steuerleitungen; Takt fest (CTC A34).
+/// Namen, Stecker, Anzahl je Variante; nur V.24 traegt Steuerleitungen; Takt fest (CTC A34).
 TEST_P(Prg710Seriell, HubNamenUndAnzahl) {
     Prg710Machine m(cfgFuer(GetParam()));
     auto* hub = m.serialHub();
@@ -143,14 +143,14 @@ TEST_P(Prg710Seriell, HubNamenUndAnzahl) {
     }
 }
 
-/// Ein Byte von aussen kommt im Empfänger der richtigen SIO an (und nur dort).
+/// Ein Byte von aussen kommt im Empfaenger der richtigen SIO an (und nur dort).
 TEST_P(Prg710Seriell, EmpfangLandetImRichtigenKanal) {
     Prg710Machine m(cfgFuer(GetParam()));
     auto& ass = m.ass();
     struct Kanal { K8025::Schnittstelle s; uint8_t daten, steuer; };
     std::vector<Kanal> kanaele = {{K8025::DfueV24, 0x50, 0x51}, {K8025::ZifssA32A, 0x5C, 0x5D}};
     if (GetParam() == V::Prg710) kanaele.push_back({K8025::Drucker, 0x5E, 0x5F});
-    for (auto& k : kanaele) {   // WR3: Empfänger frei, 8 Bit
+    for (auto& k : kanaele) {   // WR3: Empfaenger frei, 8 Bit
         ass.ioWrite(k.steuer, 0x03);
         ass.ioWrite(k.steuer, 0xC1);
     }
@@ -164,7 +164,7 @@ TEST_P(Prg710Seriell, EmpfangLandetImRichtigenKanal) {
 }
 
 /// UDOS: `SET PRI TO V24` + `SET PRI ON`; `DATE` erscheint am V.24-Anschluss, den der
-/// Wandler „Datei“ fängt (Gast programmiert Baud/Format selbst).
+/// Wandler „Datei“ faengt (Gast programmiert Baud/Format selbst).
 TEST_P(Prg710Seriell, UdosDruckV24LandetInDerDatei) {
     k1520test::TempDisk disk(diskette(GetParam()));
     const std::string pfad = k1520test::tempPath("prg710_v24_ausgabe.txt");
@@ -191,10 +191,10 @@ TEST_P(Prg710Seriell, UdosDruckV24LandetInDerDatei) {
     ASSERT_TRUE(kommando(m, "DATE")) << bild(m);
     lauf(m, 20'000'000);   // Zeichenzeit des Wandlers abwarten (9600 Bd)
 
-    // Der Wandler schreibt höchstens alle 0,5 s; Beenden schreibt den Rest.
+    // Der Wandler schreibt hoechstens alle 0,5 s; Beenden schreibt den Rest.
     m.serialHub()->stop(0);
     std::string aus = dateiInhalt(pfad);
-    aus.erase(std::remove(aus.begin(), aus.end(), '\0'), aus.end());   // Treiber füllt mit NUL auf
+    aus.erase(std::remove(aus.begin(), aus.end(), '\0'), aus.end());   // Treiber fuellt mit NUL auf
     EXPECT_NE(aus.find("%DATE"), std::string::npos) << aus;
     EXPECT_NE(aus.find("Donnerstag, der 2. Oktober 1986"), std::string::npos)
         << "Datei: [" << aus << "]\n" << bild(m);
@@ -204,7 +204,7 @@ TEST_P(Prg710Seriell, UdosDruckV24LandetInDerDatei) {
     const auto f = m.serielleAnschluesse()[0]->format();
     EXPECT_TRUE(f.gueltig);
     EXPECT_EQ(f.daten, 8);
-    // Befund: DRUCK.V24 programmiert WR4 ohne Parität (DRUCK.DOK nennt „ungerade“ als Druckereinstellung).
+    // Befund: DRUCK.V24 programmiert WR4 ohne Paritaet (DRUCK.DOK nennt „ungerade“ als Druckereinstellung).
     EXPECT_EQ(f.paritaet, 0);
     EXPECT_EQ(f.stopp_halbe, 4);
     EXPECT_EQ(f.baud_nenn, 9600u) << f.baud_nenn;

@@ -11,7 +11,7 @@ Basis sind die bisherigen Bootdisketten (Systemspuren `bootabbild_*.bin`, Dateie
 SERTEST.  Alle Programme wurden am PC-1715-Emulator unter dem jeweiligen System gestartet (Nachweis: README.md).
 
   python3 tools/scp_pc1715/build.py --tool build/k1520disktool            # bauen
-  python3 tools/scp_pc1715/build.py --tool build/k1520disktool --check    # Wächter cli_scp_pc1715
+  python3 tools/scp_pc1715/build.py --tool build/k1520disktool --check    # Waechter cli_scp_pc1715
 """
 import os
 import sys

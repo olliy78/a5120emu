@@ -48,7 +48,7 @@ struct Aufbau {
         out(0xD1, uint8_t(a));
         return in(0xD0);
     }
-    /// PROG 6DCA: Port A auf Ausgang; 6DC3: zurück.
+    /// PROG 6DCA: Port A auf Ausgang; 6DC3: zurueck.
     void datenAus()   { out(0xD2, 0xCF); out(0xD2, 0x00); out(0xD3, 0xCF); out(0xD3, 0x00); }
     void datenEin()   { out(0xD2, 0xCF); out(0xD2, 0xFF); out(0xD3, 0xCF); out(0xD3, 0x00); }
     /// PROG 6C09 + 6B4D: Adresse und Daten anlegen, Impuls von @p breite Takten.
@@ -97,7 +97,7 @@ TEST(Eprommer590068, LiestAdresseAusPortBUndSteuerregister) {
 }
 
 TEST(Eprommer590068, PioIstBaAnAb0CdAnAb1) {
-    // D2H/D3H sind Steuerwörter: nach „CF 00“ an D3H treibt Port B (D1H) die Adresse.
+    // D2H/D3H sind Steuerwoerter: nach „CF 00“ an D3H treibt Port B (D1H) die Adresse.
     Aufbau a;
     a.out(0xD1, 0x5A);
     const auto st = a.e.pio().debugState();
@@ -133,7 +133,7 @@ TEST(Eprommer590068, BrenntNurEinsZuNullUndNurMitSpannung) {
     const std::string p = alles(a.e);
     EXPECT_NE(p.find("Programmierspannung ein"), std::string::npos) << p;
     EXPECT_NE(p.find("Programmierphase: 4 Impulse (4 wirksam) an 3 Adressen"), std::string::npos) << p;
-    EXPECT_NE(p.find("2 Byte geändert"), std::string::npos) << p;
+    EXPECT_NE(p.find("2 Byte geaendert"), std::string::npos) << p;
     EXPECT_NE(p.find("50.9 ms"), std::string::npos) << p;
     EXPECT_NE(p.find("ohne Wirkung"), std::string::npos) << p;
 }
@@ -199,14 +199,14 @@ TEST(Eprommer590068, AbbildDateiEinlegenSpeichernUndLoeschen) {
     EXPECT_EQ(e.typ(), Typ::U555);                        // ≤ 1 KB
     EXPECT_EQ(e.inhalt().size(), 1024u);
     EXPECT_EQ(e.inhalt()[999], uint8_t(999));
-    EXPECT_EQ(e.inhalt()[1000], 0xFF);                    // aufgefüllt
+    EXPECT_EQ(e.inhalt()[1000], 0xFF);                    // aufgefuellt
     EXPECT_EQ(e.datei(), pfad);
     e.uvLoeschen();
     EXPECT_TRUE(e.geaendert());
     ASSERT_TRUE(e.speichern("", &fehler)) << fehler;
     EXPECT_FALSE(e.geaendert());
     EXPECT_EQ(std::filesystem::file_size(pfad), 1024u);
-    // Zu groß für den Typ.
+    // Zu gross fuer den Typ.
     std::vector<uint8_t> gross(2048);
     EXPECT_FALSE(e.einlegen(gross, Typ::U555, "", &fehler));
     EXPECT_NE(fehler.find("fasst 1024"), std::string::npos);

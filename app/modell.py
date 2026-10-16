@@ -16,18 +16,26 @@ angelegt (§6 des Plans), hat hier aber bewusst noch keinen eigenen Eintrag:
 geprüft ist bislang nur EM256.
 """
 
-#: Interne Modellschlüssel — stehen so in der Konfiguration (``general.model``).
+#: Interne Modellschluessel — stehen so in der Konfiguration (``general.model``).
 A5120 = "a5120"
 A5120_16 = "a5120.16"
 
-#: Vorgabe: der unveränderte A5120, ohne Erweiterungsmodul.
+#: Vorgabe: der unveraenderte A5120, ohne Erweiterungsmodul.
 DEFAULT_MODEL = A5120
 
-#: (Schlüssel, core-``em``-Parameter oder ``None``, Anzeigename für die Auswahl)
+#: (Schluessel, core-``em``-Parameter oder ``None``, Anzeigename fuer die Auswahl)
 MODELS = [
     (A5120, None, "A5120 (ohne Erweiterung)"),
     (A5120_16, "em256", "A5120.16 (EM256 + U8001)"),
 ]
+
+#: Fruehe Ausfuehrungen (doc/design/30_a5120_fruehe_varianten.md, AP A5) — eigene Kern-
+#: Maschine (``K1520Emulator(machine="a5120-alt")`` = ``ausfuehrung="alt"``), kein EM.
+#: Stehen nicht in :data:`MODELS` (dort nur die EM-Bestueckung), sondern als Zeilen im
+#: Programmprofil (`app/profil.py`).  Fehlt ``general.model``, bleibt es der A5120 „neu“.
+A5120_ALT = "a5120-alt"
+A5120_KMBG = "a5120-kmbg"
+A5120_ACHT = "a5120-8"
 
 _EM_FOR = {schluessel: em for schluessel, em, _ in MODELS}
 _LABEL_FOR = {schluessel: label for schluessel, _, label in MODELS}
@@ -55,7 +63,7 @@ def label(model) -> str:
 
 # ── PRG 710 / PRG 710-1 (prg710emu) ─────────────────────────────────────────
 # Dort ist die Modellwahl keine Erweiterung, sondern die Maschine selbst; die
-# Zuordnung Schlüssel → Kern steht im Programmprofil (`app/profil.py`), hier nur
-# die Schlüssel, damit Konfiguration und Tests dieselben Namen benutzen.
+# Zuordnung Schluessel → Kern steht im Programmprofil (`app/profil.py`), hier nur
+# die Schluessel, damit Konfiguration und Tests dieselben Namen benutzen.
 PRG710 = "prg710"
 PRG710_1 = "prg710-1"

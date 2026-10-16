@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 Position = Tuple[int, int]
 
-#: Kodierung einer Matrixtaste für ``key_press``/``key_release`` (``k1520_term_matrix_key`` gleichwertig).
+#: Kodierung einer Matrixtaste fuer ``key_press``/``key_release`` (``k1520_term_matrix_key`` gleichwertig).
 MATRIX_KODE = 0x04000000
 
 
@@ -61,7 +61,7 @@ _SCANCODE: Dict[Position, int] = {
 # Beschriftung der Tastenkappen nach dem Foto des Anwenders (2026-10-08, `doc/p8000/bilder/
 # tastatur_k7673_foto.jpg`; Zuordnung und Annahmen: `doc/p8000/tastatur_k7673.md` §8).
 #: Position → (Kappe unten/Haupt, Kappe oben, Tooltip).  „Oben“ ist die Umschaltbelegung der Kappe
-#: (bei Zeichentasten das Zeichen mit SHIFT); die Zeichensatz-2-Belegung (DIN 66003: §, ß, Ä Ö Ü …)
+#: (bei Zeichentasten das Zeichen mit SHIFT); die Zeichensatz-2-Belegung (DIN 66003: §, ss, Ae Oe Ue …)
 #: steht im Tooltip.  Tasten, die das Foto nicht zeigt, tragen ihren Scancode.
 BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
     # Zeile 0
@@ -135,7 +135,7 @@ BESCHRIFTUNG: Dict[Position, Tuple[str, str, str]] = {
 TASTEN: Dict[Position, Tuple[int, str, str, str]] = {
     p: (_SCANCODE[p],) + BESCHRIFTUNG[p] for p in _SCANCODE}
 
-#: Positionen, die der Kern NICHT als belegt zählt (Scancode 00H), die aber eine Taste tragen: das „+“.
+#: Positionen, die der Kern NICHT als belegt zaehlt (Scancode 00H), die aber eine Taste tragen: das „+“.
 OHNE_KERNZAEHLUNG: Tuple[Position, ...] = ((1, 7),)
 
 #: Tasten, die im Terminal 5.0 keine Wirkung haben (kein Zeichen, keine Funktion).
@@ -149,7 +149,7 @@ LED_TASTEN: Dict[int, Position] = {0x01: (7, 12), 0x02: (2, 6), 0x04: (7, 14)}
 #: Rasttasten (die Tastatur rastet nicht mechanisch; die LED zeigt den Zustand des Terminals).
 RASTTASTEN = frozenset(LED_TASTEN.values())
 
-#: Tasten, die als Umschalter wirken und von der Bildschirmtastatur „gehalten“ werden können.
+#: Tasten, die als Umschalter wirken und von der Bildschirmtastatur „gehalten“ werden koennen.
 UMSCHALTER: Tuple[Position, ...] = ((1, 6), (3, 6), (6, 6), (6, 13))
 
 
@@ -171,14 +171,14 @@ def _erste_position() -> Dict[int, Position]:
 
 #: Scancode → erste Position, die ihn sendet (SHIFT sitzt dreimal, die „9“ zweimal).
 SCANCODE_POS: Dict[int, Position] = _erste_position()
-# Der Wirts-SHIFT geht über die linke Shift-Kappe des Fotos = (1, 6) (die erste der drei 2AH-Positionen).
+# Der Wirts-SHIFT geht ueber die linke Shift-Kappe des Fotos = (1, 6) (die erste der drei 2AH-Positionen).
 assert SCANCODE_POS[0x2A] == (1, 6)
 
 # ── Tastenbild: Position, x, y, Breite in Tasteneinheiten ───────────────────────────────────────
-# Dasselbe Gehäuse und Raster wie die K7672 (`keyboard_k7672.py`) — nur die Kappen sind anders
+# Dasselbe Gehaeuse und Raster wie die K7672 (`keyboard_k7672.py`) — nur die Kappen sind anders
 # beschriftet.  Funktionsreihe oben (OFF | SI/SO MOD VIDEO BREAK | F1–F4 | F5–F8 | F9–F11 |
 # Anzeigefeld), darunter Haupt-, Bearbeitungs- und Ziffernblock, Cursorkreuz.
-#: Bildhöhe/-breite in Tasteneinheiten (Höhe einer Taste = 1), ohne Rand.
+#: Bildhoehe/-breite in Tasteneinheiten (Hoehe einer Taste = 1), ohne Rand.
 BILD_BREITE = 23.0
 BILD_HOEHE = 6.5
 
@@ -212,15 +212,15 @@ def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
     fkeys = [(3, 15), (6, 14), (6, 15), (2, 14), (5, 14), (5, 15), (4, 15), (1, 14), (1, 15), (4, 14), (0, 14)]
     for p, x in zip(fkeys, (6.5, 7.5, 8.5, 9.5, 11.0, 12.0, 13.0, 14.0, mb, mb + 1, mb + 2)):
         t.append((p, x, 0.0, 1.0))
-    # Zifferntasten-Reihe: ESC 1 2 … 0 ß ´ BS DEL
+    # Zifferntasten-Reihe: ESC 1 2 … 0 ss ´ BS DEL
     t += _reihe(1.5, 0.0, [((5, 6), 1.0)] + _gleich(
         [(0, 0), (4, 0), (0, 1), (4, 1), (0, 2), (4, 2), (0, 3), (4, 3), (0, 4), (4, 4),
          (0, 5), (4, 5)]) + [((6, 7), 1.0), ((4, 7), 1.0)])
-    # TAB Q W E R T Z U I O P Ü + BACKTAB
+    # TAB Q W E R T Z U I O P Ue + BACKTAB
     t += _reihe(2.5, 0.0, [((0, 6), 1.5)] + _gleich(
         [(1, 0), (5, 0), (1, 1), (5, 1), (1, 2), (5, 2), (1, 3), (5, 3), (1, 4), (5, 4),
          (1, 5), (5, 5)]) + [((5, 7), 1.5)])
-    # CAPS LOCK A S D F G H J K L Ö Ä # RETURN (RETURN zweizeilig hoch); links ein Blindstück
+    # CAPS LOCK A S D F G H J K L Oe Ae # RETURN (RETURN zweizeilig hoch); links ein Blindstueck
     t += _reihe(3.5, 0.5, [((2, 6), 1.25)] + _gleich(
         [(2, 0), (6, 0), (2, 1), (6, 1), (2, 2), (6, 2), (2, 3), (6, 3), (2, 4), (6, 4),
          (2, 5), (6, 5)]))
@@ -228,7 +228,7 @@ def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
     t += _reihe(4.5, 0.0, [((1, 6), 1.25), ((4, 6), 1.0)] + _gleich(
         [(3, 0), (7, 0), (3, 1), (7, 1), (3, 2), (7, 2), (3, 3), (7, 3), (3, 4), (7, 4)])
         + [((6, 6), 1.5)])
-    t += [((3, 8), 13.75, 3.5, 1.25)]        # RETURN: Höhe 2 (siehe HOEHE2)
+    t += [((3, 8), 13.75, 3.5, 1.25)]        # RETURN: Hoehe 2 (siehe HOEHE2)
     # CTRL, Leertaste, CTRL
     t += [((6, 13), 2.5, 5.5, 1.0), ((7, 7), 3.5, 5.5, 8.0), ((7, 13), 11.5, 5.5, 1.0)]
     # Bearbeitungsblock: Zeile 1: |←| CLEAR |→| ; Zeile 2: ⤒ HOME ⤓
@@ -245,11 +245,11 @@ def _bildaufbau() -> List[Tuple[Position, float, float, float]]:
                      (5.5, [(4, 8), (5, 8), (6, 8)])):
         for k, p in enumerate(zeile):
             t.append((p, nb + k, y, 1.0))
-    t.append(((3, 7), nb + 3, 4.5, 1.0))     # ENTER: Höhe 2
+    t.append(((3, 7), nb + 3, 4.5, 1.0))     # ENTER: Hoehe 2
     return t
 
 
-#: ``(Position, x, y, breite)`` — jede Position aus ``TASTEN`` (106) außer ``OHNE_KAPPE`` genau einmal.
+#: ``(Position, x, y, breite)`` — jede Position aus ``TASTEN`` (106) ausser ``OHNE_KAPPE`` genau einmal.
 BILD: List[Tuple[Position, float, float, float]] = _bildaufbau()
 
 #: Tasten, die zwei Zeilen hoch sind (RETURN, ENTER des Ziffernblocks).
@@ -296,7 +296,7 @@ def _zeichentabelle() -> Dict[str, Tuple[Position, bool]]:
 ZEICHEN: Dict[str, Tuple[Position, bool]] = _zeichentabelle()
 
 #: Umlaute der Wirtstastatur → das ASCII-Zeichen der Taste, die im Zeichensatz 2 (SI/SO, deutsch)
-#: das Umlautzeichen liefert (Firmware `TGET8`: `[ \ ]` +20H = `{ | }` = ä ö ü; `{ | }` −20H = Ä Ö Ü).
+#: das Umlautzeichen liefert (Firmware `TGET8`: `[ \ ]` +20H = `{ | }` = ae oe ue; `{ | }` −20H = Ae Oe Ue).
 UMLAUTE = {"ä": "[", "ö": "\\", "ü": "]", "Ä": "{", "Ö": "|", "Ü": "}", "ß": "~", "§": "@"}
 
 

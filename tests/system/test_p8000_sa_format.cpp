@@ -2,19 +2,19 @@
  * @file test_p8000_sa_format.cpp
  * @brief P8000 Meilenstein M3, Anfang (doc/design/25_p8000.md §10.11 AP P13d): WDC mit echter
  *        Firmware 4.2 an der PIO2 der 16-Bit-Karte, `sa.format`/`sa.verify` von der
- *        WEGA-Startdiskette formatieren und prüfen eine `TempPlatte`.
+ *        WEGA-Startdiskette formatieren und pruefen eine `TempPlatte`.
  *
  * Soll = `~/projects/robotron/P8000/doc/install_WEGA_3.1.log` Z. 1–80:
  *   `O U` ⇒ „BOOTING FROM UDOS FLOPPY" ⇒ `> boot` ⇒ `:` ⇒ `ud(0,0)sa.format` ⇒
  *   „>>>  Format Hard-Disk 4.1  <<<", „Firmwareversion 'WDC_4.2'", Laufwerksliste, „Which Typ ?" 4 …
  * Die Platte ist wie im Protokoll formatiert, aber ohne PAR/BTT-Sektor („Error in PAR&BTT"): die
- * `TempPlatte` bekommt Z0/K0/S1 = E5, die Spursynthese ergänzt ihn nicht (`platte_par_ergaenzen`).
+ * `TempPlatte` bekommt Z0/K0/S1 = E5, die Spursynthese ergaenzt ihn nicht (`platte_par_ergaenzen`).
  * Deshalb meldet auch der Hardwaretest U8001 `*** ERROR 52   39` (Init-Fehler 38 + LW 0) — das
  * Protokoll zeigt den Hardwaretest nicht.  `sa.format`/`sa.verify` 4.1 stehen nicht auf der
- * WEGA-3.0-Startdiskette (dort V1.4 für Firmware 3.x) und kommen aus tests/fixtures/p8000/.
- * Abweichung (zugelassen): die drei BTT-Einträge des Protokolls stammen vom echten Datenträger.
+ * WEGA-3.0-Startdiskette (dort V1.4 fuer Firmware 3.x) und kommen aus tests/fixtures/p8000/.
+ * Abweichung (zugelassen): die drei BTT-Eintraege des Protokolls stammen vom echten Datentraeger.
  *
- * Disketten nur über `TempDisk`, Platten nur über `TempPlatte`; getippt über das Kern-Terminal.
+ * Disketten nur ueber `TempDisk`, Platten nur ueber `TempPlatte`; getippt ueber das Kern-Terminal.
  */
 
 #include <gtest/gtest.h>
@@ -35,13 +35,13 @@ using namespace k1520test::p8000;
 namespace {
 void stumm() { k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR); }
 constexpr const char* FIXTURE = "udosP8000_640k_wega.hfe";
-/// Harte Grenzen in Maschinentakten (4 MHz): wer sie reißt, scheitert mit Bild statt zu hängen.
+/// Harte Grenzen in Maschinentakten (4 MHz): wer sie reisst, scheitert mit Bild statt zu haengen.
 constexpr long long kFormatGrenze = 8'000'000'000LL;
 constexpr long long kVerifyGrenze = 8'000'000'000LL;
 
 /// `sa.format`/`sa.verify` 4.1 (WEGA 3.1, tests/fixtures/p8000/) anstelle der V1.4 der
 /// WEGA-3.0-Startdiskette auf die Temp-Kopie legen — V1.4 erwartet den Parameterblock der Firmware 3.x.
-/// Dafür weichen die Kernvarianten `wega.n26`/`wega.n52` (die Diskette ist voll).
+/// Dafuer weichen die Kernvarianten `wega.n26`/`wega.n52` (die Diskette ist voll).
 ::testing::AssertionResult saFassung41(const std::string& diskette) {
     std::string f, err;
     static const FormatCatalog fk = FormatCatalog::loadDefault(&f);
@@ -82,7 +82,7 @@ P8000Machine::Config mitWdc(const std::string& platte) {
     return c;
 }
 
-/// Lange Wartezeit (Formatieren/Prüfen der ganzen Platte) mit Fortschrittszeile je 400 Mio. Takte.
+/// Lange Wartezeit (Formatieren/Pruefen der ganzen Platte) mit Fortschrittszeile je 400 Mio. Takte.
 bool langBisText(P8000Machine& m, const std::string& nadel, long long grenze) {
     for (long long t = 0; t < grenze; t += 400'000'000) {
         if (laufeBisText(m, nadel, 400'000'000, 1'000'000)) return true;
@@ -93,7 +93,7 @@ bool langBisText(P8000Machine& m, const std::string& nadel, long long grenze) {
     return false;
 }
 
-/// Wartet auf @p frage und tippt dann @p antwort (die Eingabe kommt wie am Gerät erst, wenn die
+/// Wartet auf @p frage und tippt dann @p antwort (die Eingabe kommt wie am Geraet erst, wenn die
 /// Frage ganz da ist).
 ::testing::AssertionResult frage(P8000Machine& m, const std::string& text, const std::string& antwort,
                                  long long grenze = 400'000'000) {
@@ -148,7 +148,7 @@ TEST(P8000SaFormat, FormatiertUndPrueftEineTempPlatte) {
     ASSERT_TRUE(frage(m, "Manual Input of bad Track of Drive 0 (y/n/q) ?", "n"));
     ASSERT_TRUE(frage(m, "Format Begin: Cylinder (a/Start-Cylinder)", "a"));
     ASSERT_TRUE(frage(m, "to Cyl 1023 Hd 4 ? (y/n/q)", "y"));
-    // Formatieren: 5120 Spuren mit Rücklesen ≈ 5 Mrd. Takte (≈ 21 min Maschinenzeit, wie am Gerät).
+    // Formatieren: 5120 Spuren mit Ruecklesen ≈ 5 Mrd. Takte (≈ 21 min Maschinenzeit, wie am Geraet).
     ASSERT_TRUE(frage(m, "Rewrite PAR&BTT from WDC-RAM to HD-Drive 0 ? (y/n)", "y", kFormatGrenze));
     EXPECT_EQ(bild(m).find("New Entry in BTT"), std::string::npos) << bild(m);
     EXPECT_EQ(bild(m).find("Error"), std::string::npos) << bild(m);
@@ -167,8 +167,8 @@ TEST(P8000SaFormat, FormatiertUndPrueftEineTempPlatte) {
     EXPECT_EQ(bild(m).find("Error"), std::string::npos) << bild(m);
     ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
 
-    // Folgeschritt des Protokolls (Z. 86–103): Dateisysteme /usr (md(0,0), 13000 Blöcke) und
-    // / (md(0,16000), 7000 Blöcke) anlegen.  Der volle WEGA-Install ist P15.
+    // Folgeschritt des Protokolls (Z. 86–103): Dateisysteme /usr (md(0,0), 13000 Bloecke) und
+    // / (md(0,16000), 7000 Bloecke) anlegen.  Der volle WEGA-Install ist P15.
     struct Fs { const char* groesse; const char* name; const char* isize; };
     for (const Fs& fs : {Fs{"13000", "md(0,0)", "isize = 4176"}, Fs{"7000", "md(0,16000)", "isize = 2256"}}) {
         tippeZeile(m, "ud(0,0)sa.mkfs");
@@ -181,11 +181,11 @@ TEST(P8000SaFormat, FormatiertUndPrueftEineTempPlatte) {
 }
 
 /// Der Anwenderweg des Plattenkastens „Neue Platte…" (Standard „unformatiert"): `hdCreate` mit dem
-/// Suffix ":unformatiert", danach Abtrennen und „Anschließen…" derselben Datei, an einer Maschine mit der
-/// Programmvorgabe `platte_par_ergaenzen = false` (seit P24), führt bis zum ersten Bild von sa.format —
+/// Suffix ":unformatiert", danach Abtrennen und „Anschliessen…" derselben Datei, an einer Maschine mit der
+/// Programmvorgabe `platte_par_ergaenzen = false` (seit P24), fuehrt bis zum ersten Bild von sa.format —
 /// ohne Parametersatz meldet der WDC „Error in PAR&BTT" und der Monitor bleibt bedienbar.  (Mit
-/// Parametersatz + E5-Inhalt startete AUTOBOOT die E5-Bytes; die Kern-Vorgabe `true` ergänzte ihn
-/// beim Anschließen wieder.)
+/// Parametersatz + E5-Inhalt startete AUTOBOOT die E5-Bytes; die Kern-Vorgabe `true` ergaenzte ihn
+/// beim Anschliessen wieder.)
 TEST(P8000SaFormat, NeuePlatteUnformatiertKommtBisZumFormatDialog) {
     stumm();
     k1520test::TempDisk disk{FIXTURE};
@@ -197,7 +197,7 @@ TEST(P8000SaFormat, NeuePlatteUnformatiertKommtBisZumFormatDialog) {
     ASSERT_TRUE(m.mountDisk(0, disk.path(), m.defaultFormatName(0), false)) << m.lastError();
     ASSERT_TRUE(m.hdCreate(0, pfad.path(), "K5504.50:unformatiert")) << m.hdError();
     ASSERT_TRUE(m.hdUnmount(0));
-    ASSERT_TRUE(m.hdMount(0, pfad.path())) << m.hdError();   // „Anschließen…": kein erzeugter Parametersatz
+    ASSERT_TRUE(m.hdMount(0, pfad.path())) << m.hdError();   // „Anschliessen…": kein erzeugter Parametersatz
     m.powerOn();
     ASSERT_NO_FATAL_FAILURE(bisBootPrompt(m));
     tippeZeile(m, "ud(0,0)sa.format");
@@ -209,7 +209,7 @@ TEST(P8000SaFormat, NeuePlatteUnformatiertKommtBisZumFormatDialog) {
 
 
 /// P24: `sa.format` V1.4 der WEGA-3.0-Startdiskette gegen WDC 3.4.05 und eine K5504.50-Platte
-/// (1024/5/18, das Laufwerk des EPROMs; Mitschnitt des Anwenders: `WDC_V.3.4.05`).  Der Dialog läuft
+/// (1024/5/18, das Laufwerk des EPROMs; Mitschnitt des Anwenders: `WDC_V.3.4.05`).  Der Dialog laeuft
 /// wie dort bis zum Formatieren; formatiert wird nur EINE Spur (Rechenzeit), danach schreibt die
 /// Firmware die BTT (Kommando C2) nach Z0/K0/S1.  Ohne BTT auf der Platte meldet der Hardwaretest
 /// `ERROR 52 06` (Init-Fehler „DEFEKT" fehlt) — wie bei der 4.2 ohne PAR.

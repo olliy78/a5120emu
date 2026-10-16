@@ -1,8 +1,8 @@
 /**
  * @file temp_platte.h
- * @brief Winchester-Abbild für einen Test (Muster `TempDisk`, Entwurf 25 §10.11): legt ein frisches
- *        LBA-Abbild des gewünschten Typs im Temp-Verzeichnis an (`Platte::neu`: E5 + gültiger
- *        PAR/BTT-Sektor Z0/K0/S1) und räumt es wieder weg.  Plattenabbilder werden NIE eingecheckt.
+ * @brief Winchester-Abbild fuer einen Test (Muster `TempDisk`, Entwurf 25 §10.11): legt ein frisches
+ *        LBA-Abbild des gewuenschten Typs im Temp-Verzeichnis an (`Platte::neu`: E5 + gueltiger
+ *        PAR/BTT-Sektor Z0/K0/S1) und raeumt es wieder weg.  Plattenabbilder werden NIE eingecheckt.
  *
  * Header-only; der Test linkt `k1520_winchester`.
  * @code

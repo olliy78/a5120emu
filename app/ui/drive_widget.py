@@ -89,15 +89,15 @@ class DriveWidget(QWidget):
         # Per-slot core DriveProfile names (length dt.NUM_SLOTS).
         self.drive_types = dt.normalize_list(drive_types or dt.DEFAULT_DRIVE_TYPES)
         self._drive_leds = {}
-        # Laufwerks-Panels je Laufwerk (für programmatisches Restore aus Config).
+        # Laufwerks-Panels je Laufwerk (fuer programmatisches Restore aus Config).
         self._panels = {}
         # Aktuell gemountete Images je Laufwerk: drive -> (path, fmt, wp).
         # Wird beim Kaltstart (Power ON) neu gemountet, weil das den K5122-
-        # Laufwerkszustand zurücksetzt (nötig, damit das Boot-ROM neu bootet).
+        # Laufwerkszustand zuruecksetzt (noetig, damit das Boot-ROM neu bootet).
         self._mounts = {}
         # Laufende Sitzungen an ECHTEN Laufwerken: drive -> PhysicalSession.
         # Sie stehen bewusst NICHT in _mounts: eine physische Diskette hat keinen
-        # Pfad, lässt sich also weder in der Konfiguration merken noch beim
+        # Pfad, laesst sich also weder in der Konfiguration merken noch beim
         # Kaltstart „neu einlegen" (das Handle ist dann verbraucht).
         self._physical = {}
         self.setup_ui()
@@ -114,10 +114,10 @@ class DriveWidget(QWidget):
         self._format_timer.timeout.connect(self._refresh_format_labels)
         self._format_timer.start(1000)
 
-    # Dateifilter für Öffnen: alle drei Container.
+    # Dateifilter fuer Oeffnen: alle drei Container.
     DISK_FILTER = "Disk Images (*.img *.hfe *.dmk);;All Files (*)"
     # Neue Leerdiskette: nur self-describing Container — ein rohes Sektorimage
-    # kann "nicht formatiert" nicht ausdrücken (doc/design/09_floppy_drive.md §5).
+    # kann "nicht formatiert" nicht ausdruecken (doc/design/09_floppy_drive.md §5).
     BLANK_FILTER = ("Bitstrom-Images (*.hfe *.dmk);;"
                     "Vorformatiertes Sektorimage (*.img);;All Files (*)")
     # Speichern unter: .img nur, wenn das Medium sektorweise darstellbar ist.
@@ -250,7 +250,7 @@ class DriveWidget(QWidget):
 
         self._main_layout.addStretch()
 
-        # Die frisch erzeugten Bedienelemente dürfen dem emulierten Rechner den
+        # Die frisch erzeugten Bedienelemente duerfen dem emulierten Rechner den
         # Tastaturfokus nicht abnehmen (siehe app/ui/focus.py).
         release_focus(self)
 
@@ -335,7 +335,7 @@ class DriveWidget(QWidget):
         format_layout.addStretch()
         layout.addLayout(format_layout)
 
-        # Füllstand einer physischen Diskette („47 von 160 Spuren gelesen").
+        # Fuellstand einer physischen Diskette („47 von 160 Spuren gelesen").
         # Kein Fehler und keine Meldung — ein Zustand, also eine eigene Zeile.
         phys_label = QLabel()
         phys_label.setStyleSheet("color: #4a8;")
@@ -394,7 +394,7 @@ class DriveWidget(QWidget):
 
         def on_toggle():
             # Physisches Laufwerk: erst die Sitzung beenden (schreibt Ausstehendes
-            # zurück und hält den Arbeitsfaden an), dann aushängen.
+            # zurueck und haelt den Arbeitsfaden an), dann aushaengen.
             if drive in self._physical:
                 self._stop_physical(drive)
                 self.emulator.unmount_disk(drive)
@@ -438,9 +438,9 @@ class DriveWidget(QWidget):
 
         def on_create():
             # Standardfall: ECHTE Leerdiskette (.hfe/.dmk) in Laufwerksgeometrie —
-            # unformatiert, damit das Gastsystem sie selbst formatieren kann.  Wählt
-            # der Bediener bewusst .img, entsteht wie früher eine VORFORMATIERTE
-            # Diskette im ausgewählten Katalogformat (ein rohes Sektorimage kann
+            # unformatiert, damit das Gastsystem sie selbst formatieren kann.  Waehlt
+            # der Bediener bewusst .img, entsteht wie frueher eine VORFORMATIERTE
+            # Diskette im ausgewaehlten Katalogformat (ein rohes Sektorimage kann
             # "unformatiert" nicht darstellen).
             path, _ = QFileDialog.getSaveFileName(
                 self, f"Neue Diskette — Laufwerk {chr(65 + drive)}:",
@@ -469,7 +469,7 @@ class DriveWidget(QWidget):
         def on_save_as():
             # Das interne Abbild in einen beliebigen Container schreiben und
             # umbinden.  `.img` wird nur angeboten, wenn das Medium sektorweise
-            # darstellbar ist — sonst gingen Gap-Anhänge (z. B. der
+            # darstellbar ist — sonst gingen Gap-Anhaenge (z. B. der
             # UDOS-Sektorkontrollblock) oder unformatierte Spuren verloren.
             try:
                 raw_ok = self.emulator.disk_raw_compatible(drive)
@@ -527,10 +527,10 @@ class DriveWidget(QWidget):
             # Im EMULATOR ist der Haken gesetzt: hier wird die Diskette nicht
             # angesehen, sondern BENUTZT — ein Gastsystem, das nicht schreiben kann,
             # ist kein Rechner mit Laufwerk.  Der Schreibschutz sitzt trotzdem nicht
-            # im Dialog, sondern wie am echten Gerät am LAUFWERK: der Haken
+            # im Dialog, sondern wie am echten Geraet am LAUFWERK: der Haken
             # „Write-Protect" im Kasten bleibt bedienbar und wirkt sofort.  (Das
-            # DiskTool bleibt bei „schreibgeschützt, bis jemand widerspricht" — dort
-            # ist Öffnen ein Lesevorgang.)
+            # DiskTool bleibt bei „schreibgeschuetzt, bis jemand widerspricht" — dort
+            # ist Oeffnen ein Lesevorgang.)
             wahl = PhysicalDiskDialog.frage(
                 self, num_cyls=cyls, num_heads=heads, writable=True,
                 drive_label=dt.short_label(self.drive_types[drive]))
@@ -538,7 +538,7 @@ class DriveWidget(QWidget):
                 return
             wahl.setdefault("cell_rate_kbps", rate)
 
-            # Vorher aushängen, damit kein Abbild im Laufwerk hängenbleibt.
+            # Vorher aushaengen, damit kein Abbild im Laufwerk haengenbleibt.
             if drive in self._mounts:
                 try:
                     self.emulator.unmount_disk(drive)
@@ -567,7 +567,7 @@ class DriveWidget(QWidget):
 
             self._physical[drive] = sitzung
             # Eingelegt wurde mit `not writable` als Schreibschutz — der Haken muss
-            # das zeigen, sonst steht im Kasten „beschreibbar", während die Maschine
+            # das zeigen, sonst steht im Kasten „beschreibbar", waehrend die Maschine
             # keinen einzigen Sektor schreiben darf.  Ohne Signal, denn im Kern ist
             # es schon gesetzt.
             self._wp_haken_nachziehen(drive, not wahl["writable"])
@@ -641,7 +641,7 @@ class DriveWidget(QWidget):
 
     # ── Anpassungs-Hinweise (Spurdichte / Seitenzahl) ────────────────────────
 
-    #: Erläuterung je Hinweiszeile des Kerns — erscheint als Tooltip am Hinweis.
+    #: Erlaeuterung je Hinweiszeile des Kerns — erscheint als Tooltip am Hinweis.
     NOTICE_HELP = {
         "Double Step aktiviert":
             "40-Spur-Diskette in einem 80-Spur-Laufwerk: die Spuren liegen doppelt so "
@@ -934,7 +934,7 @@ class DriveWidget(QWidget):
         Fehlende Dateien werden übersprungen.  Aktualisiert die UI (Pfad, Toggle-
         Beschriftung, Format, Write-Protect) ohne die mount/unmount-Signale
         auszulösen — das Restore ist keine Nutzeraktion."""
-        # 1) Alles aushängen, damit ein Config-Wechsel nicht alte Disks stehen lässt.
+        # 1) Alles aushaengen, damit ein Config-Wechsel nicht alte Disks stehen laesst.
         self.close_physical_sessions()
         for drive in list(self._mounts):
             try:

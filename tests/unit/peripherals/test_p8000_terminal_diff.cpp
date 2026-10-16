@@ -1,9 +1,9 @@
 /**
  * @file test_p8000_terminal_diff.cpp
- * @brief Differenzialtest (AP P20a, Entwurf 28 §8): die Fälle des vereinfachten Kern-Terminals
+ * @brief Differenzialtest (AP P20a, Entwurf 28 §8): die Faelle des vereinfachten Kern-Terminals
  *        (test_p8000_terminal.cpp, doc/p8000/hw_terminal.md §3–§6) laufen DURCH DIE ORIGINAL-
- *        FIRMWARE P8T 5.0 — Zeichen vom Rechner über die serielle Leitung (9600 Bd, XON/XOFF
- *        beachtet), Tasten über die K7673 (Matrix).  Jeder Fall prüft die Erwartung am Original
+ *        FIRMWARE P8T 5.0 — Zeichen vom Rechner ueber die serielle Leitung (9600 Bd, XON/XOFF
+ *        beachtet), Tasten ueber die K7673 (Matrix).  Jeder Fall prueft die Erwartung am Original
  *        und vergleicht mit dem Kern-Terminal; Abweichungen stehen beim Fall
  *        („ABWEICHUNG": das Original gewinnt, auch gegen das Handbuch).
  */
@@ -24,7 +24,7 @@ namespace {
 
 constexpr uint64_t MS = P8000TerminalHw::Z8_HZ / 1000;
 
-/// Originalterminal am Prüfstand: Rechner sendet mit 9600 Bd und hält bei XOFF an.
+/// Originalterminal am Pruefstand: Rechner sendet mit 9600 Bd und haelt bei XOFF an.
 struct Orig {
     P8000TerminalEinheit e;
     std::deque<uint8_t> host;
@@ -118,7 +118,7 @@ std::string kzl(const Terminal& t, int z) {
 
 #define CURSOR(o, z, s) do { EXPECT_EQ((o).zeile(), (z)); EXPECT_EQ((o).spalte(), (s)); } while (0)
 
-/// Bild beider Terminals vergleichen (Zeilen und Cursor).  Rückgabe: Anzahl abweichender Zeilen.
+/// Bild beider Terminals vergleichen (Zeilen und Cursor).  Rueckgabe: Anzahl abweichender Zeilen.
 int unterschiede(const Orig& o, const Terminal& k, bool cursorAuch = true) {
     int n = 0;
     for (int z = 0; z < 24; ++z) n += o.zl(z) != kzl(k, z);
@@ -192,11 +192,11 @@ TEST(P8000TerminalDiff, ZeichensatzUmschaltungSiSo)
     EXPECT_TRUE(o.e.hw().zeichensatz2());
     o.eingabe("b");
     EXPECT_EQ(o.nimm(), "");
-    // ABWEICHUNG (Kern: Zeichensatz je Zeichen): das RS-Flipflop wählt das 2716 für das GANZE
+    // ABWEICHUNG (Kern: Zeichensatz je Zeichen): das RS-Flipflop waehlt das 2716 fuer das GANZE
     // Bild — auch das vorher geschriebene „a" erscheint aus Zeichensatz 2.
     EXPECT_TRUE(o.e.hw().zelle(0, 0).zg2);
     EXPECT_TRUE(o.e.hw().zelle(0, 1).zg2);
-    // ABWEICHUNG (Kern: <MODE> wählt wieder ZG1): MODE lässt den Zeichensatz stehen
+    // ABWEICHUNG (Kern: <MODE> waehlt wieder ZG1): MODE laesst den Zeichensatz stehen
     // (TOUT1 schreibt nur Meldung + Bild neu, kein Strobe 4000H).
     o.taste(T::MODE);
     EXPECT_TRUE(o.e.hw().zeichensatz2());
@@ -218,7 +218,7 @@ TEST(P8000TerminalDiff, OnOffLineLokaleAnzeige)
     EXPECT_EQ(o.nimm(), "q");
 }
 
-// ═════ Tastatur §3 (über die K7673-Matrix) ═════════════════════════════════
+// ═════ Tastatur §3 (ueber die K7673-Matrix) ═════════════════════════════════
 
 TEST(P8000TerminalDiff, TastaturZeichenUndDel)
 {
@@ -246,7 +246,7 @@ TEST(P8000TerminalDiff, TastaturCtrlTabelle45)
 {
     Orig o;
     frisch(o);
-    // ABWEICHUNG (Kern: CTRL-@ sendet 00H): SIO_OUT unterdrückt NUL — es geht nichts hinaus.
+    // ABWEICHUNG (Kern: CTRL-@ sendet 00H): SIO_OUT unterdrueckt NUL — es geht nichts hinaus.
     o.zeichen('@', true);
     EXPECT_EQ(o.nimm(), "");
     for (char c : std::string("AGMZ")) {
@@ -504,7 +504,7 @@ TEST(P8000TerminalDiff, Adm31_CHT_ESC_i)
     o.eingabe("\x1b" "i");
     CURSOR(o, 0, 8);
     // ABWEICHUNG (Kern: endet am Bildschirmende): ESC i in Spalte 80 der letzten Zeile bricht wie
-    // HT in die nächste Zeile um und rollt.
+    // HT in die naechste Zeile um und rollt.
     o.eingabe("oben");
     o.eingabe("\x1b=" "7o\x1b" "i");
     CURSOR(o, 23, 0);
@@ -543,7 +543,7 @@ TEST(P8000TerminalDiff, Adm31_HVP_ESC_Gleich)
     o.eingabe("\x1b=" "7o");
     CURSOR(o, 23, 79);
     o.eingabe("\x1b=" "~~");
-    CURSOR(o, 23, 79);                     // zu groß → letzte Position
+    CURSOR(o, 23, 79);                     // zu gross → letzte Position
     // ABWEICHUNG (Kern: 7FH als Koordinate): der Empfang verwirft DEL (IRP30) — „ESC = DEL DEL"
     // wartet danach noch auf zwei Zeichen.
     o.eingabe("\x1b=" "\x7f\x7f");
@@ -657,7 +657,7 @@ TEST(P8000TerminalDiff, FeldregelAttributWirktNurInnerhalbDerZeile)
     o.eingabe("a\x1b" "G4" "bc\n\r" "d");
     EXPECT_EQ(o.e.hw().wirksamesAttribut(0, 0), 0);
     EXPECT_EQ(o.e.hw().wirksamesAttribut(0, 3), ATTR_INVERS);
-    // Spalte 79 trägt das 80H der Firmware: Feld endet dort (8275: bis zum nächsten Attribut)
+    // Spalte 79 traegt das 80H der Firmware: Feld endet dort (8275: bis zum naechsten Attribut)
     EXPECT_EQ(o.e.hw().wirksamesAttribut(0, 78), ATTR_INVERS);
     EXPECT_EQ(o.e.hw().wirksamesAttribut(1, 0), 0);
     EXPECT_TRUE(o.e.hw().bildZelle(0, 3).rvv);
@@ -917,7 +917,7 @@ TEST(P8000TerminalDiff, Vt100_SteuerzeichenInnerhalbEinerFolge)
 {
     Orig o;
     vt(o);
-    // ABWEICHUNG (Kern: CR läuft mit, die Folge bleibt intakt): CR wird ausgeführt, der Rest
+    // ABWEICHUNG (Kern: CR laeuft mit, die Folge bleibt intakt): CR wird ausgefuehrt, der Rest
     // der Folge („;4H") verschluckt — der Cursor bleibt am Zeilenanfang, nichts erscheint.
     o.eingabe("\x1b[3\r;4H");
     CURSOR(o, 0, 0);
@@ -939,20 +939,20 @@ TEST(P8000TerminalDiff, Adm31UndVt100DeutenEscEUnterschiedlich)
     CURSOR(v, 1, 0);
 }
 
-// ═════ Firmware-Eigenschaften ohne Gegenstück im Kern-Terminal ══════════════
+// ═════ Firmware-Eigenschaften ohne Gegenstueck im Kern-Terminal ══════════════
 
 TEST(P8000TerminalDiff, XoffBei36ZeichenImPufferXonWennLeer)
 {
     Orig o;
     frisch(o);
-    // Löschen dauert ≈ 65 ms (≈ 62 Zeichenzeiten): fünfmal ESC * und Text dahinter füllt den Puffer
+    // Loeschen dauert ≈ 65 ms (≈ 62 Zeichenzeiten): fuenfmal ESC * und Text dahinter fuellt den Puffer
     std::string s;
     for (int i = 0; i < 5; ++i) s += "\x1b*";
     s += std::string(60, 'q');
     o.eingabe(s);
     EXPECT_GE(o.xoffs, 1);
     EXPECT_EQ(o.xons, o.xoffs);
-    EXPECT_EQ(o.zl(0), std::string(60, 'q'));   // nichts verloren, weil der Rechner anhält
+    EXPECT_EQ(o.zl(0), std::string(60, 'q'));   // nichts verloren, weil der Rechner anhaelt
 }
 
 TEST(P8000TerminalDiff, OhneXoffBeachtungGehenZeichenVerloren)
@@ -963,7 +963,7 @@ TEST(P8000TerminalDiff, OhneXoffBeachtungGehenZeichenVerloren)
     for (int i = 0; i < 5; ++i) { hw.hostByte(0x1b); hw.hostByte('*'); }
     for (int i = 0; i < 60; ++i) hw.hostByte('q');
     o.e.ruheAbwarten(5000);
-    // Puffer 45: nach dem Überlauf verwirft die Firmware bis der Puffer leer ist (Fehlermerker)
+    // Puffer 45: nach dem Ueberlauf verwirft die Firmware bis der Puffer leer ist (Fehlermerker)
     EXPECT_LT(o.zl(0).size(), 60u);
 }
 
@@ -996,8 +996,8 @@ namespace {
 struct Vergleich { const char* name; TerminalModus modus; std::string eingabe; bool gleich; const char* grund; };
 }
 
-/// Jede Eingabe der Fälle oben geht durch BEIDE Terminals; verglichen werden alle 24 Zeilen und
-/// der Cursor.  `gleich = false` nur mit Begründung (die Erwartung am Original steht im Fall oben).
+/// Jede Eingabe der Faelle oben geht durch BEIDE Terminals; verglichen werden alle 24 Zeilen und
+/// der Cursor.  `gleich = false` nur mit Begruendung (die Erwartung am Original steht im Fall oben).
 TEST(P8000TerminalDiff, BildvergleichMitDemKernTerminal)
 {
     using M = TerminalModus;
@@ -1069,7 +1069,7 @@ TEST(P8000TerminalDiff, BildvergleichMitDemKernTerminal)
                     if (o.zl(z) != kzl(k, z)) ADD_FAILURE() << f.name << " Zeile " << z << ": Original '" << o.zl(z) << "' Kern '" << kzl(k, z) << "'";
             if (n) ADD_FAILURE() << f.name << " Cursor Original " << o.zeile() << "," << o.spalte() << " Kern " << k.zeile() << "," << k.spalte();
         } else {
-            EXPECT_GT(n, 0) << f.name << " — als Abweichung geführt (" << f.grund << "), ist aber gleich";
+            EXPECT_GT(n, 0) << f.name << " — als Abweichung gefuehrt (" << f.grund << "), ist aber gleich";
         }
     }
 }

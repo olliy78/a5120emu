@@ -45,7 +45,7 @@ bool runUntilPC(A5120Machine& m, uint16_t target, long long max_cycles) {
     });
     for (long long done = 0; done < max_cycles && !reached; done += kCoarseBatch)
         m.run(static_cast<int>(kCoarseBatch));
-    m.setCpuTraceCallback({});   // Lambda fallenlassen (es hält lokale Referenzen)
+    m.setCpuTraceCallback({});   // Lambda fallenlassen (es haelt lokale Referenzen)
     return reached;
 }
 

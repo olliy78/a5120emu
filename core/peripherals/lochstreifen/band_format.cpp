@@ -1,6 +1,6 @@
 /**
  * @file band_format.cpp
- * @brief Roh, Intel HEX und ASCII-Art für 8-Spur-Lochstreifen, siehe band_format.h.
+ * @brief Roh, Intel HEX und ASCII-Art fuer 8-Spur-Lochstreifen, siehe band_format.h.
  */
 
 #include "core/peripherals/lochstreifen/band_format.h"
@@ -14,8 +14,8 @@ namespace {
 
 // ─── Zeilen ──────────────────────────────────────────────────────────────────
 
-/// Inhalt in Zeilen zerlegen (LF; ein CR davor fällt weg).  Eine abschließende leere
-/// Zeile nach dem letzten LF zählt nicht.
+/// Inhalt in Zeilen zerlegen (LF; ein CR davor faellt weg).  Eine abschliessende leere
+/// Zeile nach dem letzten LF zaehlt nicht.
 std::vector<std::string> zeilen(const std::vector<uint8_t>& inhalt) {
     std::vector<std::string> z;
     std::string akt;
@@ -75,7 +75,7 @@ std::optional<std::vector<uint8_t>> hexLesen(const std::vector<uint8_t>& inhalt,
             return std::nullopt;
         }
         if ((s.size() - 1) % 2 != 0 || s.size() < 11) {
-            fehler = zeileFehler(nr, "Satz unvollständig");
+            fehler = zeileFehler(nr, "Satz unvollstaendig");
             return std::nullopt;
         }
         std::vector<uint8_t> b;
@@ -89,14 +89,14 @@ std::optional<std::vector<uint8_t>> hexLesen(const std::vector<uint8_t>& inhalt,
         }
         const std::size_t n = b[0];
         if (b.size() != n + 5) {
-            fehler = zeileFehler(nr, "Längenangabe " + std::to_string(n) +
+            fehler = zeileFehler(nr, "Laengenangabe " + std::to_string(n) +
                                          " passt nicht zum Satz");
             return std::nullopt;
         }
         uint8_t summe = 0;
         for (uint8_t v : b) summe = static_cast<uint8_t>(summe + v);
         if (summe != 0) {
-            fehler = zeileFehler(nr, "Prüfsumme falsch");
+            fehler = zeileFehler(nr, "Pruefsumme falsch");
             return std::nullopt;
         }
         const uint32_t adr = (static_cast<uint32_t>(b[1]) << 8) | b[2];
@@ -112,7 +112,7 @@ std::optional<std::vector<uint8_t>> hexLesen(const std::vector<uint8_t>& inhalt,
             for (std::size_t k = 0; k < n; ++k) band[static_cast<std::size_t>(basis + adr + k)] = b[4 + k];
             break;
         }
-        case 0x01:                                      // Dateiende: Rest überlesen
+        case 0x01:                                      // Dateiende: Rest ueberlesen
             return band;
         case 0x02:                                      // erweiterte Segmentadresse
         case 0x04:                                      // erweiterte lineare Adresse
@@ -122,7 +122,7 @@ std::optional<std::vector<uint8_t>> hexLesen(const std::vector<uint8_t>& inhalt,
             }
             basis = ((static_cast<uint64_t>(b[4]) << 8) | b[5]) << (art == 0x02 ? 4 : 16);
             break;
-        case 0x03:                                      // Startadressen: für ein Band
+        case 0x03:                                      // Startadressen: fuer ein Band
         case 0x05:                                      // bedeutungslos
             break;
         default: {
@@ -153,7 +153,7 @@ std::vector<uint8_t> hexSchreiben(const std::vector<uint8_t>& band) {
         anhaengen(out, buf);
     };
     for (std::size_t pos = 0; pos < band.size(); pos += 16) {
-        // 16 teilt 65536: ein Satz überschreitet nie eine 64-KiB-Grenze.
+        // 16 teilt 65536: ein Satz ueberschreitet nie eine 64-KiB-Grenze.
         if (pos != 0 && (pos & 0xFFFF) == 0) {
             const uint8_t hoch[2] = {static_cast<uint8_t>(pos >> 24), static_cast<uint8_t>(pos >> 16)};
             satz(0x04, 0, hoch, 2);
@@ -169,7 +169,7 @@ std::vector<uint8_t> hexSchreiben(const std::vector<uint8_t>& band) {
 //
 // Feste Spalten (Spalte 0 = Zeilenanfang):
 //
-//   ;    8 7 6 5 4   3 2 1          ← Kopf: Spurnummern genau über den Löchern
+//   ;    8 7 6 5 4   3 2 1          ← Kopf: Spurnummern genau ueber den Loechern
 //   ;  +-------------------+          ← Bandkante (Kommentar)
 //      | . O . . . o . . O |  41  A   ← `|` in Spalte 3 und 23, Wert ab 26, Zeichen 30
 //
@@ -215,7 +215,7 @@ std::vector<uint8_t> artSchreiben(const std::vector<uint8_t>& band) {
 }
 
 /// Erste Zeile, die weder leer noch Kommentar ist, ist eine Lochbildzeile `|…|`?
-/// Nur Kommentare (ein leeres Band, wie es @ref artSchreiben anlegt) zählen auch.
+/// Nur Kommentare (ein leeres Band, wie es @ref artSchreiben anlegt) zaehlen auch.
 bool artErkannt(const std::vector<std::string>& z) {
     bool kommentar = false;
     for (const std::string& roh : z) {
@@ -270,7 +270,7 @@ std::optional<std::vector<uint8_t>> artLesen(const std::vector<uint8_t>& inhalt,
                     return std::nullopt;
                 }
             } else if (c != ' ') {
-                // Ein verrutschtes Loch zwischen den Spuren würde sonst still verloren.
+                // Ein verrutschtes Loch zwischen den Spuren wuerde sonst still verloren.
                 fehler = zeileFehler(nr, "Zeichen zwischen den Spuren (Spalten verrutscht?)");
                 return std::nullopt;
             }
@@ -305,7 +305,7 @@ std::optional<std::vector<uint8_t>> artLesen(const std::vector<uint8_t>& inhalt,
 
 }  // namespace
 
-// ─── Öffentlich ──────────────────────────────────────────────────────────────
+// ─── Oeffentlich ──────────────────────────────────────────────────────────────
 
 std::vector<Format> alleFormate() { return {Format::Roh, Format::IntelHex, Format::AsciiArt}; }
 

@@ -5,7 +5,7 @@
  *
  * Quelle: doc/design/25_p8000.md §10.3 (Leitungen K1–K15), doc/p8000/schaltplan_8bit.md §7,
  * doc/p8000/schaltplan_16bit.md §5 (Rang 1).  Kein Protokollwissen, kein Puffer: bei jeder
- * Änderung einer Quelle (PIO-Schreiben/-Reset beider Karten, RDY-Flanke, DS8282-Schreiben)
+ * Aenderung einer Quelle (PIO-Schreiben/-Reset beider Karten, RDY-Flanke, DS8282-Schreiben)
  * werden ALLE Leitungen aus den Pinpegeln der Quellen neu gerechnet und an die Senken gelegt.
  *
  * @code
@@ -23,17 +23,17 @@
  *   K12  NMIU8000−   NMI-Weiche der 8-Bit-Karte → 16-Bit MANUALNMI (Tastenimpuls)
  *   K13  TRESET−     —                         (Pull-up ⇒ inaktiv; nicht nachgebildet)
  *   K14  RUN-LED     16-Bit RS-FF             → `runLed()` (Anzeige)
- *   K15  DD-16/E0-16 Rückführung              → 16-PIO0 B5 = E0-8, B6 = DD-8  (s. [KP1]); B7 offen
+ *   K15  DD-16/E0-16 Rueckfuehrung              → 16-PIO0 B5 = E0-8, B6 = DD-8  (s. [KP1]); B7 offen
  * @endcode
  *
- * **[KP1] Rückführung 16-PIO0 B5/B6.** MON16 `ENTRY_` (`p.init.s` KP1–KP9) liest B5 als
+ * **[KP1] Rueckfuehrung 16-PIO0 B5/B6.** MON16 `ENTRY_` (`p.init.s` KP1–KP9) liest B5 als
  * „DATEN DA" (0 = Byte von der 8-Bit-Seite liegt in PIO1 A) und B6 als „ENABLE OUTPUT"
  * (0 = 8-Bit-Seite hat das letzte Byte abgeholt) — das sind genau E0-8 (16-PIO1 ARDY) und
- * DD-8 (16-PIO0 ARDY).  Index 1 der 16-Bit-Karte führt sie über die Wickelbrücken 4XR1/5XR1
- * zurück (`Config::rueckfuehrung` = Brücken gesteckt); beim Paar Index 3/4 kommen DD-16/E0-16
- * über X2:A11/A9 von der 8-Bit-Karte, deren Plan fehlt — **Annahme**: dieselben Signale.  Ohne
- * Rückführung (Pull-up) liefe MON16 in die Wartezeit und nähme die Konsole an tty5 (P10c);
- * das Geräteprotokoll zeigt sie aber an tty1.
+ * DD-8 (16-PIO0 ARDY).  Index 1 der 16-Bit-Karte fuehrt sie ueber die Wickelbruecken 4XR1/5XR1
+ * zurueck (`Config::rueckfuehrung` = Bruecken gesteckt); beim Paar Index 3/4 kommen DD-16/E0-16
+ * ueber X2:A11/A9 von der 8-Bit-Karte, deren Plan fehlt — **Annahme**: dieselben Signale.  Ohne
+ * Rueckfuehrung (Pull-up) liefe MON16 in die Wartezeit und naehme die Konsole an tty5 (P10c);
+ * das Geraeteprotokoll zeigt sie aber an tty1.
  *
  * Save-State: die zuletzt gerechneten Pegel (Anzeige/Flankenerkennung K11).  Die Senken selbst
  * stehen im Zustand der Karten (PIO-Pins, Handshake, Reset-Eingang).
@@ -49,11 +49,11 @@ class P8000Karte16;
 class P8000Kopplung {
 public:
     struct Config {
-        /// [KP1] 16-PIO0 B5/B6 lesen E0-8/DD-8 zurück (Index 1: Brücken 4XR1/5XR1; Index 3/4: X2).
+        /// [KP1] 16-PIO0 B5/B6 lesen E0-8/DD-8 zurueck (Index 1: Bruecken 4XR1/5XR1; Index 3/4: X2).
         bool rueckfuehrung = true;
     };
 
-    /// Gerechnete Leitungspegel (true = H), für Debugger/Tests (`kopp`, P12).
+    /// Gerechnete Leitungspegel (true = H), fuer Debugger/Tests (`kopp`, P12).
     struct Pegel {
         uint8_t d8_16  = 0xFF;   ///< K1
         uint8_t l2     = 0xFF;   ///< K2–K4 (Bit 0 INT-16, 1–6 V1–6, 7 RDY/8-16)
@@ -72,12 +72,12 @@ public:
     P8000Kopplung(const P8000Kopplung&) = delete;
     P8000Kopplung& operator=(const P8000Kopplung&) = delete;
 
-    /// Alle Leitungen neu rechnen und an die Senken legen (Rückrufe der Karten rufen es selbst).
+    /// Alle Leitungen neu rechnen und an die Senken legen (Rueckrufe der Karten rufen es selbst).
     void rechne();
     const Pegel& pegel() const { return pegel_; }
     const Config& config() const { return cfg_; }
 
-    /// Während des Ladens eines Zustands nichts rechnen (die Karten stellen ihre Pins selbst her).
+    /// Waehrend des Ladens eines Zustands nichts rechnen (die Karten stellen ihre Pins selbst her).
     void setRuhig(bool r) { ruhig_ = r; }
 
     void serialize(std::vector<uint8_t>& out) const;

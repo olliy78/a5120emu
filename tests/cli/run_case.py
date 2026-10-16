@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Führt einen CLI-Testfall aus einer `.cli`-Datei aus.
+"""Fuehrt einen CLI-Testfall aus einer `.cli`-Datei aus.
 
-Ersetzt die bis 2026-08-07 üblichen escapten Shell-Einzeiler im CMake.  Deren
+Ersetzt die bis 2026-08-07 ueblichen escapten Shell-Einzeiler im CMake.  Deren
 Probleme, die dieses Skript beseitigt:
 
   * Erwartungen mussten als CMake-Regex durch zwei Ebenen Escaping — Klammern
-    und eckige Klammern überlebten das nicht, weshalb im CMake der Kommentar
+    und eckige Klammern ueberlebten das nicht, weshalb im CMake der Kommentar
     stand: „regex uses '.' for literal []()*+".  Hier sind Erwartungen normale
-    Zeichenketten (`expect:`), Regex nur, wo wirklich nötig (`expect_re:`).
+    Zeichenketten (`expect:`), Regex nur, wo wirklich noetig (`expect_re:`).
   * Das `mktemp; cp …; …; rm -f`-Ritual stand 15x kopiert da; jetzt einmal hier.
-  * Bricht ein Lauf ab, blieben Kopien der Diskette liegen — hier räumt ein
+  * Bricht ein Lauf ab, blieben Kopien der Diskette liegen — hier raeumt ein
     `finally` auf.
 
 Dateiformat (Zeilenweise, `#` ist Kommentar):
@@ -23,13 +23,13 @@ Dateiformat (Zeilenweise, `#` ist Kommentar):
     file <n>:                               Block → Temp-Datei, Pfad als %n%
       <inhalt…>
     capture_file: <n>                       Inhalt dieser Datei NACH dem Lauf an die
-                                            geprüfte Ausgabe anhängen (für Kommandos,
+                                            gepruefte Ausgabe anhaengen (fuer Kommandos,
                                             die ihr Ergebnis in eine Datei schreiben)
     stdin:                                  Block → auf die Standardeingabe
       <zeilen…>
 
     poke:       %DATEI% <off> <bytes>       Bytes in eine Datei schreiben, hex,
-                                            VOR allen Läufen (Schadensinjektion)
+                                            VOR allen Laeufen (Schadensinjektion)
     setup_run:  <argumente>                 Vorlauf, Ausgabe wird verworfen
                 @<werkzeug> <argumente>     … mit einem ANDEREN Werkzeug (z. B.
                                             `@k1520disktool put %DISK% …`, um vor
@@ -38,25 +38,25 @@ Dateiformat (Zeilenweise, `#` ist Kommentar):
     run:        <argumente>                 der gemessene Lauf
 
     expect:     <text>                      muss in der Ausgabe vorkommen
-    expect_re:  <ERE>                       dito, als regulärer Ausdruck
+    expect_re:  <ERE>                       dito, als regulaerer Ausdruck
                                             (Python-`re`: `.` deckt KEINEN
                                             Zeilenumbruch ab — anders als CMakes
-                                            Regex, aus dem die Fälle stammen)
+                                            Regex, aus dem die Faelle stammen)
     forbid:     <text>                      darf NICHT vorkommen
     forbid_re:  <ERE>
     exit:       <n>                         erwarteter Exit-Code
 
-`expect*`/`forbid*` sind wiederholbar; geprüft wird die zusammengefasste
+`expect*`/`forbid*` sind wiederholbar; geprueft wird die zusammengefasste
 Standard- und Fehlerausgabe des `run:`-Laufs (plus der Inhalt aller
 `capture_file:`-Dateien).
 
 Platzhalter: `%DISK%`, jeder `file`-/`tmpfile`-Name, sowie `%CLI_DIR%` (das
-Verzeichnis `tests/cli`, z. B. für `-x %CLI_DIR%/scripts/…`).  Der Lauf findet in
+Verzeichnis `tests/cli`, z. B. fuer `-x %CLI_DIR%/scripts/…`).  Der Lauf findet in
 einem Temp-Verzeichnis statt, damit Dateien, die das Werkzeug nebenbei anlegt,
-mit aufgeräumt werden.
+mit aufgeraeumt werden.
 
 Bewusst KEINE Golden-Volldateien: die Ausgaben enthalten Taktzahlen und
-Zeitstempel, ein Vollvergleich wäre bei jeder Timing-Änderung rot.  Die
+Zeitstempel, ein Vollvergleich waere bei jeder Timing-Aenderung rot.  Die
 Erwartung ist die inhaltliche Aussage — und die steht jetzt im Testverzeichnis
 statt im Build-System.
 """
@@ -74,16 +74,16 @@ import tempfile
 #: Die Werkzeuge geben UTF-8 aus (deutsche Meldungen, „—", „→").  `text=True`
 #: allein dekodiert mit der Gebietsschema-Kodierung — unter Windows cp1252, und
 #: das erste Byte 0x90 sprengt den Lesethread mit einem UnicodeDecodeError.
-#: Deshalb wird die Kodierung überall ausdrücklich mitgegeben.
+#: Deshalb wird die Kodierung ueberall ausdruecklich mitgegeben.
 TEXT = {"encoding": "utf-8", "errors": "replace"}
 
 
 class CaseError(Exception):
-    """Fehler in der Falldatei selbst (nicht im geprüften Werkzeug)."""
+    """Fehler in der Falldatei selbst (nicht im geprueften Werkzeug)."""
 
 
 def parse_case(path):
-    """`.cli`-Datei → dict.  Blockdirektiven sammeln eingerückte Folgezeilen."""
+    """`.cli`-Datei → dict.  Blockdirektiven sammeln eingerueckte Folgezeilen."""
     case = {"expect": [], "expect_re": [], "forbid": [], "forbid_re": [],
             "setup_run": [], "capture_file": [], "poke": [], "files": {}, "tmpfiles": [], "stdin": None,
             "tool": None, "disk": None, "disk_path": None, "run": None,
@@ -190,7 +190,7 @@ def main():
             subst[name] = os.path.join(tmpdir, name)
         for name in case["capture_file"]:
             subst.setdefault(name, os.path.join(tmpdir, name))
-        # Verzeichnis tests/cli — für Skripte, die mitgeliefert werden.
+        # Verzeichnis tests/cli — fuer Skripte, die mitgeliefert werden.
         subst["CLI_DIR"] = os.path.dirname(os.path.dirname(os.path.abspath(args.case)))
 
         def expand(text):
@@ -198,7 +198,7 @@ def main():
                 text = text.replace("%" + key + "%", value)
             left = re.findall(r"%[A-Za-z_][A-Za-z0-9_.]*%", text)
             if left:
-                raise CaseError(f"unaufgelöste Platzhalter: {', '.join(left)}")
+                raise CaseError(f"unaufgeloeste Platzhalter: {', '.join(left)}")
             return text
 
         def argv(text):
@@ -206,23 +206,23 @@ def main():
 
             ERST zerlegen, DANN je Wort einsetzen — nie umgekehrt.  `shlex.split`
             arbeitet in POSIX-Bedeutung und frisst dabei jeden Backslash als
-            Fluchtzeichen; ein eingesetzter Windows-Pfad käme als
-            ``C:UsersRUNNER~1…`` beim Werkzeug an.  In der unaufgelösten Zeile
+            Fluchtzeichen; ein eingesetzter Windows-Pfad kaeme als
+            ``C:UsersRUNNER~1…`` beim Werkzeug an.  In der unaufgeloesten Zeile
             stehen nur `%NAME%`-Platzhalter, die kein Zerlegen brauchen.  Als
-            Zugabe überleben so auch Pfade mit Leerzeichen.
+            Zugabe ueberleben so auch Pfade mit Leerzeichen.
             """
             return [expand(word) for word in shlex.split(text)]
 
         exe = tools[case["tool"]]
-        # Das Startprogramm gehört VOR das Werkzeug, nicht in die Argumentliste.
+        # Das Startprogramm gehoert VOR das Werkzeug, nicht in die Argumentliste.
         vorspann = [args.emulator] if args.emulator else []
         # Platzhalter gelten auch in der Standardeingabe — Debugger-Kommandos wie
         # `trace %datei%` oder `lst %quelle.mac%` brauchen den echten Pfad.
         stdin = expand(case["stdin"]) if case["stdin"] else None
 
-        # Schadensinjektion.  Die Prüfung soll gerade das melden, was auf einer
-        # gesunden Diskette NICHT vorkommt — dafür muss der Fall eine kaputt
-        # machen dürfen.  Über die Datei, nie über den Prüfcode: ein `.img` IST
+        # Schadensinjektion.  Die Pruefung soll gerade das melden, was auf einer
+        # gesunden Diskette NICHT vorkommt — dafuer muss der Fall eine kaputt
+        # machen duerfen.  Ueber die Datei, nie ueber den Pruefcode: ein `.img` IST
         # der lineare Sektorraum, ein Byte an der richtigen Stelle ist der
         # ganze Schaden.
         for zeile in case["poke"]:
@@ -269,13 +269,13 @@ def main():
                 problems.append(f"fehlt in der Ausgabe: {needle!r}")
         for pattern in case["expect_re"]:
             if not re.search(pattern, output):
-                problems.append(f"kein Treffer für /{pattern}/")
+                problems.append(f"kein Treffer fuer /{pattern}/")
         for needle in case["forbid"]:
             if needle in output:
                 problems.append(f"unerwartet in der Ausgabe: {needle!r}")
         for pattern in case["forbid_re"]:
             if re.search(pattern, output):
-                problems.append(f"unerwarteter Treffer für /{pattern}/")
+                problems.append(f"unerwarteter Treffer fuer /{pattern}/")
         if case["exit"] is not None and proc.returncode != case["exit"]:
             problems.append(f"Exit-Code {proc.returncode}, erwartet {case['exit']}")
 
@@ -300,5 +300,5 @@ if __name__ == "__main__":
         print(f"FALLDATEI FEHLERHAFT: {e}", file=sys.stderr)
         sys.exit(2)
     except subprocess.TimeoutExpired as e:
-        print(f"ZEITÜBERSCHREITUNG nach {e.timeout}s: {e.cmd}", file=sys.stderr)
+        print(f"ZEITUEBERSCHREITUNG nach {e.timeout}s: {e.cmd}", file=sys.stderr)
         sys.exit(3)

@@ -1,18 +1,18 @@
 /**
  * @file z8_asm.h
- * @brief Kleiner Z8-Assembler (header-only) für Testprogramme und den Debugger (`a`).
+ * @brief Kleiner Z8-Assembler (header-only) fuer Testprogramme und den Debugger (`a`).
  *
  * Liest die Schreibweise von tools/z8/z8_disasm.h und die Zilog-Schreibweise:
  *   marke:  LD r3,#12H        ; Kommentar
  *           ADD 45H,@r6       JP NZ,marke    DJNZ r2,marke    LDC r1,@rr4
  *           LD r10,24H(r0)    CALL @rr2      SRP #70H
  *   ORG 1000H   DB 1,2,'Text'   DW marke   name EQU 7FH
- * Zahlen: 12H, 0x12, %12, 0b101 / 101B, dezimal, 'c'.  Ausdrücke: Summen/Differenzen
+ * Zahlen: 12H, 0x12, %12, 0b101 / 101B, dezimal, 'c'.  Ausdruecke: Summen/Differenzen
  * aus Zahlen, Marken und Registernamen (P0 … SPL).
  *
- * Die Kodierung wird nicht von Hand geschrieben: für jeden Befehl werden alle 256 Zeilen der
- * Befehlstabelle mit gleichem Namen durchprobiert, die kürzeste passende gewinnt (so passen
- * Assembler, Disassembler und Kern zwangsläufig zusammen).
+ * Die Kodierung wird nicht von Hand geschrieben: fuer jeden Befehl werden alle 256 Zeilen der
+ * Befehlstabelle mit gleichem Namen durchprobiert, die kuerzeste passende gewinnt (so passen
+ * Assembler, Disassembler und Kern zwangslaeufig zusammen).
  *
  * @license MIT
  */
@@ -35,7 +35,7 @@ struct Ergebnis {
     std::vector<Fehler> fehler;
     std::map<std::string, long> marken;
     bool ok() const { return fehler.empty(); }
-    /// Bytes ab @p von bis zur höchsten belegten Adresse (Lücken = FFH).
+    /// Bytes ab @p von bis zur hoechsten belegten Adresse (Luecken = FFH).
     std::vector<uint8_t> flach(uint16_t von = 0) const {
         std::vector<uint8_t> v;
         if (bild.empty()) return v;
@@ -319,7 +319,7 @@ inline std::vector<std::string> teile(const std::string& s) {
 
 }  // namespace detail
 
-/// Eine Zeile (ohne Marke/Direktive) zu Bytes; für den Debugger (`a`).
+/// Eine Zeile (ohne Marke/Direktive) zu Bytes; fuer den Debugger (`a`).
 inline bool befehl(const std::string& text, uint16_t pc, std::vector<uint8_t>& out, std::string& err,
                    const std::map<std::string, long>* marken = nullptr, bool letzter = true) {
     using namespace detail;
@@ -357,7 +357,7 @@ inline bool befehl(const std::string& text, uint16_t pc, std::vector<uint8_t>& o
     return true;
 }
 
-/// Ganzer Quelltext (zwei Durchläufe).
+/// Ganzer Quelltext (zwei Durchlaeufe).
 inline Ergebnis assemble(const std::string& src) {
     using namespace detail;
     Ergebnis r;
@@ -430,7 +430,7 @@ inline Ergebnis assemble(const std::string& src) {
             std::string err;
             if (!befehl(z, uint16_t(pc), bytes, err, &r.marken, letzter)) {
                 fehler(err);
-                // im ersten Durchlauf dennoch Platz lassen (3 Byte schätzen)
+                // im ersten Durchlauf dennoch Platz lassen (3 Byte schaetzen)
                 if (!letzter) pc += 3;
                 continue;
             }

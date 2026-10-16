@@ -3,10 +3,10 @@
  * @brief TrackCodec – IBM-Track (FM/MFM) aufbauen/parsen und CRC-Primitive.
  *
  * TrackCodec::crc16 IST die Standard-IBM-CRC-16-CCITT (Poly 0x1021) — die ror-basierte
- * Implementierung (byte-genau zur Lader-Routine sub_0407) ist äquivalent zum Standard-CCITT.
+ * Implementierung (byte-genau zur Lader-Routine sub_0407) ist aequivalent zum Standard-CCITT.
  * Die echten A5120-Disks sind Standard-IBM-MFM.  buildTrack berechnet die komplette CRC immer
- * über [A1,A1,A1,FE/FB, ...] (MFM) bzw. [FE/FB, ...] (FM) mit Seed 0xFF,0xFF — die natürliche
- * IBM-FM-vs-MFM-Differenz (FM ohne, MFM mit A1-Präambel im CRC-Bereich).
+ * ueber [A1,A1,A1,FE/FB, ...] (MFM) bzw. [FE/FB, ...] (FM) mit Seed 0xFF,0xFF — die natuerliche
+ * IBM-FM-vs-MFM-Differenz (FM ohne, MFM mit A1-Praeambel im CRC-Bereich).
  *
  * @see core/peripherals/floppy_drive/track_codec.h
  * @see doc/design/07_k5122_afs.md
@@ -26,9 +26,9 @@ namespace TrackCodec {
 // ─── CRC ──────────────────────────────────────────────────────────────────────
 
 /**
- * Byte-genaue Übersetzung der verifizierten Robotron-Z80-Routine sub_0407 /
- * sub_1E44 (Sekundär- und Tertiärlader).  Unverändert aus loaderCrc16 in
- * core/cards/k5122/k5122.cpp übernommen.
+ * Byte-genaue Uebersetzung der verifizierten Robotron-Z80-Routine sub_0407 /
+ * sub_1E44 (Sekundaer- und Tertiaerlader).  Unveraendert aus loaderCrc16 in
+ * core/cards/k5122/k5122.cpp uebernommen.
  */
 uint16_t crc16(const uint8_t* data, size_t n, uint8_t b, uint8_t c) {
     auto ror = [](uint8_t x, int k) -> uint8_t {
@@ -55,7 +55,7 @@ uint16_t crc16(const uint8_t* data, size_t n, uint8_t b, uint8_t c) {
 }
 
 /**
- * Standard-CRC-16-CCITT, Polynom 0x1021, MSB-first.  Für IBM-3740-FM-Tracks.
+ * Standard-CRC-16-CCITT, Polynom 0x1021, MSB-first.  Fuer IBM-3740-FM-Tracks.
  */
 uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed) {
     uint16_t crc = seed;
@@ -72,28 +72,28 @@ uint16_t crc16Ccitt(const uint8_t* data, size_t n, uint16_t seed) {
 }
 
 /**
- * Geht die gespeicherte CRC eines MFM-Feldes auf?  Prüft BEIDE bekannten Sitten.
+ * Geht die gespeicherte CRC eines MFM-Feldes auf?  Prueft BEIDE bekannten Sitten.
  *
- * @param feld  Feld OHNE die A1-Präambel: Marken-Byte + Inhalt (`FE cyl head sec sc`
+ * @param feld  Feld OHNE die A1-Praeambel: Marken-Byte + Inhalt (`FE cyl head sec sc`
  *              bzw. `FB` + Datenbytes).
  * @param gespeichert  die zwei CRC-Bytes vom Medium, als Wort (hi<<8|lo).
  *
- * **Standard-IBM** rechnet die drei 0xA1 der Sync-Präambel mit — gleichbedeutend mit
+ * **Standard-IBM** rechnet die drei 0xA1 der Sync-Praeambel mit — gleichbedeutend mit
  * Startwert `crc16([A1,A1,A1], 0xFFFF) = 0xCDB4` ab dem Marken-Byte.
  *
- * **Der Dialekt** lässt die Präambel weg und setzt das Register erst bei der Marke auf
- * 0xFFFF; die Rechnung ist dann dieselbe wie bei FM, wo es keine Präambel gibt.  Er ist
+ * **Der Dialekt** laesst die Praeambel weg und setzt das Register erst bei der Marke auf
+ * 0xFFFF; die Rechnung ist dann dieselbe wie bei FM, wo es keine Praeambel gibt.  Er ist
  * kein Schaden und keine Vermutung, sondern nachgemessen: auf
  * `udos_ds77_k5601_fremdsync.hfe` folgen ihm **alle 4004 ID-Felder ausnahmslos**,
- * während die 4004 **Datenfelder derselben Diskette Standard-IBM** sind.  Der Bruch
+ * waehrend die 4004 **Datenfelder derselben Diskette Standard-IBM** sind.  Der Bruch
  * genau an dieser Kante passt zur Arbeitsteilung im schreibenden Controller: die
  * ID-CRC entsteht beim FORMATIEREN und muss vorab berechnet in den Schreibstrom
- * eingefügt werden (dort fehlt die Präambel in der Rechnung), die Datenfeld-CRC
- * dagegen läuft beim Schreiben in der Hardware ab dem ersten Sync-Byte mit.
+ * eingefuegt werden (dort fehlt die Praeambel in der Rechnung), die Datenfeld-CRC
+ * dagegen laeuft beim Schreiben in der Hardware ab dem ersten Sync-Byte mit.
  *
- * Beide Sitten zu akzeptieren kostet Trennschärfe im Umfang von einem Bit: statt einem
+ * Beide Sitten zu akzeptieren kostet Trennschaerfe im Umfang von einem Bit: statt einem
  * gehen zwei von 65536 Zufallswerten durch.  Der Gegenwert ist eine Diskette, deren
- * Sektoren nicht mehr sämtlich als CRC-fehlerhaft gelten — sie wären im Diskeditor rot,
+ * Sektoren nicht mehr saemtlich als CRC-fehlerhaft gelten — sie waeren im Diskeditor rot,
  * obwohl an ihnen nichts fehlt.
  *
  * @see doc/design/14_physische_diskette.md §8.1c
@@ -113,15 +113,15 @@ bool mfmFieldCrcOk(const std::vector<uint8_t>& feld, uint16_t gespeichert) {
 // ─── Gap-Parameter ────────────────────────────────────────────────────────────
 
 GapParams gapsFor(Encoding enc) {
-    // Normlücken (IBM; so schreibt FORMAT.COM des A5120 und des K8915, so stehen sie auf
-    // jeder am Gerät formatierten Diskette — gemessen an den Greaseweazle-Abzügen in
+    // Normluecken (IBM; so schreibt FORMAT.COM des A5120 und des K8915, so stehen sie auf
+    // jeder am Geraet formatierten Diskette — gemessen an den Greaseweazle-Abzuegen in
     // tests/fixtures/disks: 50 / 22 / 32 bzw. 116).  Bis 2026-09-29 standen hier knappe
-    // Werte (Vorspann 16, Lücke 1 16, Lücke 2 11, Lücke 3 24, keine Lücke 4b).  Die las der
+    // Werte (Vorspann 16, Luecke 1 16, Luecke 2 11, Luecke 3 24, keine Luecke 4b).  Die las der
     // Emulator ohne Klage, der echte A5120 nicht: die ZVE2-Routine 1F7DH des
-    // CP/A-Bootsystems liest nach der ID-CRC noch 25 Lückenbytes (1FD8H: 1 + 17 + 1,
-    // 2038H: 1 + 6), bevor sie MK1 neu scharf macht — mit Lücke 2 = 11 × 4E + 12 × 00 ist
+    // CP/A-Bootsystems liest nach der ID-CRC noch 25 Lueckenbytes (1FD8H: 1 + 17 + 1,
+    // 2038H: 1 + 6), bevor sie MK1 neu scharf macht — mit Luecke 2 = 11 × 4E + 12 × 00 ist
     // die Sync-Gruppe des Datenfelds dann schon unter dem Kopf (doc/design/16_k8915.md
-    // AP-F1).  Beim K8915 dasselbe (AP-E5a: BIOS F780H liest 6 Lückenbytes nach).
+    // AP-F1).  Beim K8915 dasselbe (AP-E5a: BIOS F780H liest 6 Lueckenbytes nach).
     GapParams g;
     if (enc == Encoding::MFM) {
         g.gap_fill  = 0x4E;
@@ -145,7 +145,7 @@ GapParams gapsFor(Encoding enc) {
 }
 
 namespace {
-/// Normlänge von Lücke 3 je Sektorgröße (IBM-Formatiertabellen; A5120 FORMAT.COM:
+/// Normlaenge von Luecke 3 je Sektorgroesse (IBM-Formatiertabellen; A5120 FORMAT.COM:
 /// 26 × 128 → 32, 5 × 1024 → 116, am Abzug gemessen).
 size_t normGap3(Encoding enc, uint16_t size) {
     const bool mfm = enc == Encoding::MFM;
@@ -157,7 +157,7 @@ size_t normGap3(Encoding enc, uint16_t size) {
     }
 }
 
-/// Bytes einer Spur mit den Lücken @p g OHNE Lücke 3 und Lücke 4b.
+/// Bytes einer Spur mit den Luecken @p g OHNE Luecke 3 und Luecke 4b.
 size_t festeSpurBytes(const std::vector<LogicalSector>& sectors, Encoding enc,
                       const GapParams& g) {
     const bool   mfm = enc == Encoding::MFM;
@@ -171,9 +171,9 @@ size_t festeSpurBytes(const std::vector<LogicalSector>& sectors, Encoding enc,
 } // namespace
 
 size_t nominalTrackBytes(const std::vector<LogicalSector>& sectors, Encoding enc) {
-    // Die kleinste Umdrehung, in die die Spur mit einer brauchbaren Lücke 3 (≥ 16) passt.
-    // Eine 5,25″-Spur mit gekürzter Lücke 3 (10 × 512) bleibt so eine 5,25″-Spur; erst was
-    // auch dann nicht passt (8″ DD 26 × 256), bekommt die längere Umdrehung.
+    // Die kleinste Umdrehung, in die die Spur mit einer brauchbaren Luecke 3 (≥ 16) passt.
+    // Eine 5,25″-Spur mit gekuerzter Luecke 3 (10 × 512) bleibt so eine 5,25″-Spur; erst was
+    // auch dann nicht passt (8″ DD 26 × 256), bekommt die laengere Umdrehung.
     constexpr size_t kMindestLuecke3 = 16;
     const GapParams g = gapsFor(enc);
     const size_t    n = festeSpurBytes(sectors, enc, g) + sectors.size() * kMindestLuecke3;
@@ -184,7 +184,7 @@ size_t nominalTrackBytes(const std::vector<LogicalSector>& sectors, Encoding enc
     const size_t  zahl = mfm ? 2 : 3;
     for (size_t i = 0; i < zahl; ++i)
         if (n <= kand[i]) return kand[i];
-    return kand[zahl - 1];   // überlange Spur: die größte (sie läuft dann über den Index)
+    return kand[zahl - 1];   // ueberlange Spur: die groesste (sie laeuft dann ueber den Index)
 }
 
 GapParams normGaps(const std::vector<LogicalSector>& sectors, Encoding enc) {
@@ -195,7 +195,7 @@ GapParams normGaps(const std::vector<LogicalSector>& sectors, Encoding enc) {
     for (const auto& s : sectors) g3 = std::max(g3, normGap3(enc, s.size));
     if (g3 == 0) g3 = g.gap3;
     if (!sectors.empty() && fest + sectors.size() * g3 > umdrehung) {
-        // Kürzen, bis die Spur in die Umdrehung passt — nie unter den Nachlauf hinter
+        // Kuerzen, bis die Spur in die Umdrehung passt — nie unter den Nachlauf hinter
         // der CRC (UDOS-Sektorkontrollblock, @ref kSectorTailBytes).
         const size_t rest = umdrehung > fest ? umdrehung - fest : 0;
         g3 = std::max<size_t>(kSectorTailBytes, rest / sectors.size());
@@ -205,7 +205,7 @@ GapParams normGaps(const std::vector<LogicalSector>& sectors, Encoding enc) {
     return g;
 }
 
-// ─── Hilfsfunktion: size_code aus Sektorgröße ──────────────────────────────
+// ─── Hilfsfunktion: size_code aus Sektorgroesse ──────────────────────────────
 
 static uint8_t sizeCode(uint16_t size) {
     switch (size) {
@@ -214,8 +214,8 @@ static uint8_t sizeCode(uint16_t size) {
         case 512:  return 2;
         case 1024: return 3;
         default:
-            // Ungültige Sektorgröße — Laufzeitfehler
-            throw std::invalid_argument("TrackCodec: ungültige Sektorgröße");
+            // Ungueltige Sektorgroesse — Laufzeitfehler
+            throw std::invalid_argument("TrackCodec: ungueltige Sektorgroesse");
     }
 }
 
@@ -227,7 +227,7 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
     TrackImage t;
     t.encoding = enc;
 
-    // Hilfslambdas: Byte ohne Markierung / mit Markierung anfügen
+    // Hilfslambdas: Byte ohne Markierung / mit Markierung anfuegen
     auto push = [&](uint8_t byte) {
         t.bytes.push_back(byte);
         t.marks.push_back(MarkType::None);
@@ -240,12 +240,12 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
         for (size_t i = 0; i < count; ++i) push(byte);
     };
 
-    // ── Spur-Präambel (gap4a + optional IAM + gap1) ──────────────────────────
+    // ── Spur-Praeambel (gap4a + optional IAM + gap1) ──────────────────────────
     fill(gaps.gap_fill, gaps.gap4a);
 
     if (gaps.with_iam) {
         // Sync-Feld vor der Indexmarke (IBM: 12 × 00 bzw. 6 × 00) — so schreibt es
-        // FORMAT.COM; ohne es sähe der Datenseparator die C2-Gruppe unvorbereitet.
+        // FORMAT.COM; ohne es saehe der Datenseparator die C2-Gruppe unvorbereitet.
         fill(0x00, gaps.sync_len);
         if (enc == Encoding::MFM) {
             // 3×0xC2 (ohne Marke) + 0xFC (Index-Marke)
@@ -270,10 +270,10 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
             fill(0x00, gaps.sync_len);      // 12×00 Sync
             push(0xA1);                     // Standard-IBM-MFM: 3× A1-Sync (fehlendes
             push(0xA1);                     // Clock-Bit) VOR dem Mark-Byte. Stimmt mit
-            push(0xA1);                     // der CRC-Annahme {A1,A1,A1,FE,…} überein.
-            pushMark(0xFE, MarkType::Id);   // Mark-Byte FE trägt die Id-Marke
+            push(0xA1);                     // der CRC-Annahme {A1,A1,A1,FE,…} ueberein.
+            pushMark(0xFE, MarkType::Id);   // Mark-Byte FE traegt die Id-Marke
 
-            // ID-CRC über [A1,A1,A1,FE,cyl,head,id,sc], Seed 0xFF,0xFF
+            // ID-CRC ueber [A1,A1,A1,FE,cyl,head,id,sc], Seed 0xFF,0xFF
             const uint8_t idam_preamble[] = {0xA1, 0xA1, 0xA1, 0xFE,
                                               sec.cyl, sec.head, sec.id, sc};
             uint16_t idCrc = crc16(idam_preamble, sizeof(idam_preamble), 0xFF, 0xFF);
@@ -293,12 +293,12 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
             push(0xA1);                     // 3× A1-Sync vor dem Data-Mark-Byte (wie IDAM)
             push(0xA1);
             push(0xA1);
-            pushMark(0xFB, MarkType::Data); // Mark-Byte FB trägt die Data-Marke
+            pushMark(0xFB, MarkType::Data); // Mark-Byte FB traegt die Data-Marke
 
-            // Standard-IBM-MFM-Daten-CRC (CRC-16-CCITT) über [A1,A1,A1,FB] + Daten,
+            // Standard-IBM-MFM-Daten-CRC (CRC-16-CCITT) ueber [A1,A1,A1,FB] + Daten,
             // Seed 0xFFFF — exakt wie die echten A5120-Disks (disks/cpadisk_*, z.B.
             // Sektor 0 = 0x233D) und wie der Lader im MFM-Modus ([03FD] bit1=0,
-            // Seed 0xE295 = crc16([A1A1A1 FB],0xFFFF) über die Datenbytes).
+            // Seed 0xE295 = crc16([A1A1A1 FB],0xFFFF) ueber die Datenbytes).
             std::vector<uint8_t> dataCrcIn = {0xA1, 0xA1, 0xA1, 0xFB};
             dataCrcIn.insert(dataCrcIn.end(), sec.data.begin(), sec.data.end());
             uint16_t dataCrc = crc16(dataCrcIn.data(), dataCrcIn.size(), 0xFF, 0xFF);
@@ -313,7 +313,7 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
             fill(0x00, gaps.sync_len);      // 6×00 Sync
             pushMark(0xFE, MarkType::Id);
 
-            // CRC-CCITT über [FE,cyl,head,id,sc]
+            // CRC-CCITT ueber [FE,cyl,head,id,sc]
             const uint8_t idam_fm[] = {0xFE, sec.cyl, sec.head, sec.id, sc};
             uint16_t idCrc = crc16Ccitt(idam_fm, sizeof(idam_fm));
 
@@ -330,7 +330,7 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
             fill(0x00, gaps.sync_len);      // 6×00 Sync
             pushMark(0xFB, MarkType::Data);
 
-            // CRC-CCITT über [FB, <data>]
+            // CRC-CCITT ueber [FB, <data>]
             std::vector<uint8_t> dataCrcInput;
             dataCrcInput.reserve(1 + sec.data.size());
             dataCrcInput.push_back(0xFB);
@@ -358,7 +358,7 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors,
         fill(gaps.gap_fill, gaps.gap3 - tail_n);
     }
 
-    // Lücke 4b: bis zum Index auffüllen (eine TrackImage ist genau eine Umdrehung).
+    // Luecke 4b: bis zum Index auffuellen (eine TrackImage ist genau eine Umdrehung).
     if (t.bytes.size() < gaps.track_len)
         fill(gaps.gap_fill, gaps.track_len - t.bytes.size());
 
@@ -374,11 +374,11 @@ TrackImage buildTrack(const std::vector<LogicalSector>& sectors, Encoding enc) {
 /**
  * Liefert den Byte-Offset der drei A1-Bytes VOR der Marke (MFM) bzw. den
  * Offset des Mark-Bytes selbst (FM), von dem ab die CRC berechnet wird.
- * Für MFM: marks[markPos] liegt auf dem Mark-Byte (nach drei A1-Bytes);
+ * Fuer MFM: marks[markPos] liegt auf dem Mark-Byte (nach drei A1-Bytes);
  *          die CRC-Berechnung beginnt beim ersten A1, also markPos - 2
  *          (zwei A1 ohne Marke stehen vor dem Mark-Byte-A1+Marke: insgesamt
- *          3 A1 => markPos-2 ist Byte #1 der Präambel).
- * Für FM:  keine A1-Sync; CRC beginnt beim Mark-Byte selbst.
+ *          3 A1 => markPos-2 ist Byte #1 der Praeambel).
+ * Fuer FM:  keine A1-Sync; CRC beginnt beim Mark-Byte selbst.
  */
 std::vector<LogicalSector> parseTrack(const TrackImage& track) {
     std::vector<LogicalSector> result;
@@ -387,10 +387,10 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
 
     const bool isMfm = (track.encoding == Encoding::MFM);
 
-    // Iteriere über alle Id-Marken in der Spur
+    // Iteriere ueber alle Id-Marken in der Spur
     size_t pos = 0;
     while (true) {
-        // Nächste IDAM-Position (Id-Marke)
+        // Naechste IDAM-Position (Id-Marke)
         size_t idPos = SIZE_MAX;
         for (size_t i = pos; i < n; ++i) {
             if (track.marks[i] == MarkType::Id) { idPos = i; break; }
@@ -407,40 +407,40 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
         const uint8_t crcHi     = track.bytes[idPos + 5];
         const uint8_t crcLo     = track.bytes[idPos + 6];
 
-        // ID-CRC prüfen
+        // ID-CRC pruefen
         const uint16_t idCrcGespeichert = static_cast<uint16_t>((crcHi << 8) | crcLo);
         bool id_crc_ok = false;
         if (isMfm) {
             // Layout: ...A1 A1 [A1] FE cyl head id sc CRC CRC... — marks[idPos] IST das
             // Marken-Byte 0xFE, die drei A1-Sync liegen davor (marks[]=None).
-            // mfmFieldCrcOk() prüft beide Sitten: mit Präambel (Standard-IBM) und ohne
+            // mfmFieldCrcOk() prueft beide Sitten: mit Praeambel (Standard-IBM) und ohne
             // (Dialekt des fremden Controllers, s. dort).
             const std::vector<uint8_t> feld = {0xFE, cyl, head, id, sizeCode};
             id_crc_ok = mfmFieldCrcOk(feld, idCrcGespeichert);
         } else {
-            // FM: CRC über [FE, cyl, head, id, sizeCode] — hier gibt es keine Präambel,
+            // FM: CRC ueber [FE, cyl, head, id, sizeCode] — hier gibt es keine Praeambel,
             // die Frage stellt sich also nicht.
             const uint8_t crcIn[] = {0xFE, cyl, head, id, sizeCode};
             id_crc_ok = (crc16Ccitt(crcIn, sizeof(crcIn)) == idCrcGespeichert);
         }
 
-        // Das Größenfeld der IBM-Adressmarke ist 2 Bit breit (0..3 = 128..1024 B).
-        // Vom MEDIUM gelesene Bytes können beliebige Werte tragen — bei einer
-        // gestörten Spur (halb formatiert, Schreibabbruch) steht dort Müll.  Ohne
-        // Maske ergäbe das eine unmögliche Sektorgröße, an der buildTrack später
+        // Das Groessenfeld der IBM-Adressmarke ist 2 Bit breit (0..3 = 128..1024 B).
+        // Vom MEDIUM gelesene Bytes koennen beliebige Werte tragen — bei einer
+        // gestoerten Spur (halb formatiert, Schreibabbruch) steht dort Muell.  Ohne
+        // Maske ergaebe das eine unmoegliche Sektorgroesse, an der buildTrack spaeter
         // mit std::invalid_argument abbricht und den ganzen Emulator mitnimmt;
-        // ab Schiebeweiten ≥ 32 wäre es sogar undefiniertes Verhalten.
-        // Die K5122 maskiert an ihren beiden Auswertestellen längst genauso
+        // ab Schiebeweiten ≥ 32 waere es sogar undefiniertes Verhalten.
+        // Die K5122 maskiert an ihren beiden Auswertestellen laengst genauso
         // (parseFormatStream, beginWriteField) — hier wird nur nachgezogen.
-        // Für die CRC zählt weiterhin das ROHE Byte (siehe crcIn oben), sodass
-        // ein verfälschtes Größenfeld korrekt als CRC-Fehler auffällt.
+        // Fuer die CRC zaehlt weiterhin das ROHE Byte (siehe crcIn oben), sodass
+        // ein verfaelschtes Groessenfeld korrekt als CRC-Fehler auffaellt.
         const uint16_t secSize = static_cast<uint16_t>(128u << (sizeCode & 0x03));
 
-        // Nächste Data-Marke nach dem ID-Feld suchen
+        // Naechste Data-Marke nach dem ID-Feld suchen
         size_t dataPos = SIZE_MAX;
         for (size_t i = idPos + 1; i < n; ++i) {
             if (track.marks[i] == MarkType::Data) { dataPos = i; break; }
-            // Stop, wenn eine weitere Id-Marke kommt (kein Data-Feld für diesen Sektor)
+            // Stop, wenn eine weitere Id-Marke kommt (kein Data-Feld fuer diesen Sektor)
             if (track.marks[i] == MarkType::Id)   break;
         }
 
@@ -455,7 +455,7 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
             const uint8_t dCrcLo = track.bytes[dataPos + 1 + secSize + 1];
 
             // Das Marken-Byte geht in die CRC ein, und es ist NICHT immer 0xFB: ein
-            // gelöschter Sektor trägt 0xF8 (marks[] macht da keinen Unterschied, die
+            // geloeschter Sektor traegt 0xF8 (marks[] macht da keinen Unterschied, die
             // CRC schon).  Deshalb das Byte vom Medium nehmen, nicht 0xFB annehmen.
             const uint8_t markByte = track.bytes[dataPos];
             const uint16_t dataCrcGespeichert =
@@ -468,10 +468,10 @@ std::vector<LogicalSector> parseTrack(const TrackImage& track) {
 
             if (isMfm) {
                 // Standard-IBM rechnet [A1,A1,A1] mit; der Dialekt (s. mfmFieldCrcOk)
-                // lässt die Präambel weg.  Beide gelten.
+                // laesst die Praeambel weg.  Beide gelten.
                 data_crc_ok = mfmFieldCrcOk(feld, dataCrcGespeichert);
             } else {
-                // FM: CRC über [Marke, <data>] — keine Präambel.
+                // FM: CRC ueber [Marke, <data>] — keine Praeambel.
                 data_crc_ok =
                     (crc16Ccitt(feld.data(), feld.size()) == dataCrcGespeichert);
             }
@@ -776,9 +776,9 @@ bool eraseSectorAt(TrackImage& track, size_t index, uint16_t tail_bytes) {
 
 /**
  * Zielposition des Lesekopfs nach einem MK/MK1-Resync-Strobe.  Der Marken-FF erkennt die
- * nächste Adressmarke (FE/FB) und rückt davor, sodass der Lese-Stream danach
+ * naechste Adressmarke (FE/FB) und rueckt davor, sodass der Lese-Stream danach
  * `[A1×4][FE/FB]` (MFM, markPos-4) bzw. `[sync][FE/FB]` (FM, markPos-1) liefert.  Diese
- * Ausrichtung passt für ROM-Boot-Read (1 Wegwerf-Byte + Vergleich) UND SYL-Lader
+ * Ausrichtung passt fuer ROM-Boot-Read (1 Wegwerf-Byte + Vergleich) UND SYL-Lader
  * (skip-A1-Schleife).  Der Lese-Stream stammt aus @ref buildFaithfulReadTrack.
  */
 size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding readEnc) {
@@ -794,12 +794,12 @@ size_t romReadResyncTarget(const TrackImage& track, size_t fromPos, Encoding rea
 // ─── buildFaithfulReadTrack ─────────────────────────────────────────────────────
 
 /**
- * Treuer FM/MFM-Lese-Stream für den K5122-Boot-Lesepfad — siehe track_codec.h für die
- * Begründung der 4×A1-Sync-Länge (gemeinsamer Modus für ROM-Boot-Read und SYL-Lader).
+ * Treuer FM/MFM-Lese-Stream fuer den K5122-Boot-Lesepfad — siehe track_codec.h fuer die
+ * Begruendung der 4×A1-Sync-Laenge (gemeinsamer Modus fuer ROM-Boot-Read und SYL-Lader).
  *
  * Layout je Sektor (FM: kein A1-Sync, Marke FE/FB direkt; MFM: 4×A1 vor FE/FB):
  *   [12×00 sync][A1×4][FE][cyl][head][id][sc][idcrc][gap][12×00][A1×4][FB][data][crc][gap]
- * marks[] liegt auf dem FE/FB-Byte (wie buildTrack); CRC ist Standard-IBM-CCITT über die
+ * marks[] liegt auf dem FE/FB-Byte (wie buildTrack); CRC ist Standard-IBM-CCITT ueber die
  * 3×A1-Spanne (identisch zu buildTrack/parseTrack).
  */
 TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Encoding enc,
@@ -820,7 +820,7 @@ TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Enc
 
     const bool isMfm = (enc == Encoding::MFM);
     const size_t kSync = isMfm ? 12u : 6u;
-    const size_t kReadA1 = 4u;          // 4×A1 = der für ROM UND SYL gemeinsame Modus
+    const size_t kReadA1 = 4u;          // 4×A1 = der fuer ROM UND SYL gemeinsame Modus
 
     for (const auto& sec : sectors) {
         const uint8_t sc = sizeCode(sec.size);
@@ -829,7 +829,7 @@ TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Enc
         fill(0x00, kSync);
         if (isMfm) fill(0xA1, kReadA1);
         pushMark(0xFE, MarkType::Id);
-        // ID-CRC: Standard-IBM-MFM über [A1,A1,A1,FE,…] bzw. FM über [FE,…]
+        // ID-CRC: Standard-IBM-MFM ueber [A1,A1,A1,FE,…] bzw. FM ueber [FE,…]
         uint16_t idCrc;
         if (isMfm) {
             const uint8_t in[] = {0xA1, 0xA1, 0xA1, 0xFE, sec.cyl, sec.head, sec.id, sc};
@@ -842,10 +842,10 @@ TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Enc
         push(static_cast<uint8_t>(idCrc >> 8));
         push(static_cast<uint8_t>(idCrc & 0xFF));
 
-        // Lücke 2 = der Abstand, den das MEDIUM zwischen ID-CRC und Datenmarke hat (AP-F1).
-        // Das Leseprogramm liest nach dem Kennfeld eine feste Zahl Lückenbytes, bevor es
+        // Luecke 2 = der Abstand, den das MEDIUM zwischen ID-CRC und Datenmarke hat (AP-F1).
+        // Das Leseprogramm liest nach dem Kennfeld eine feste Zahl Lueckenbytes, bevor es
         // MK1 neu scharf macht (CP/A-Bootsystem 1F7DH: 25) — ob die Sync-Gruppe des
-        // Datenfelds dann noch vor dem Kopf liegt, entscheidet die Lücke auf der SCHEIBE.
+        // Datenfelds dann noch vor dem Kopf liegt, entscheidet die Luecke auf der SCHEIBE.
         // Bis 2026-09-29 stand hier fest 18/27: jede Diskette war gleich gut, auch eine,
         // die der echte A5120 nicht lesen kann.  Die Datenmarke steht im Strom an
         // derselben Stelle wie auf dem Medium (Sync und 4 × A1 davor, das vierte A1 auf
@@ -853,7 +853,7 @@ TrackImage buildFaithfulReadTrack(const std::vector<LogicalSector>& sectors, Enc
         //
         // NUR MFM-Spur, MFM gelesen (@p luecke2_vom_medium, K5122 entscheidet): der Strom
         // wird im LESE-Verfahren gebaut, auch wenn die Spur im anderen liegt (die
-        // FM/MFM-Probe des BIOS) — die Abstände einer FM-Spur (11 × FF + 6 × 00) passen
+        // FM/MFM-Probe des BIOS) — die Abstaende einer FM-Spur (11 × FF + 6 × 00) passen
         // dann nicht zum MFM-Strom (bootdisk_mf3200_fmt7 lief so in RC auf Spur 3).  Der
         // FM-Lesepfad ist nicht nachgemessen; FM bleibt beim alten Strom.
         {

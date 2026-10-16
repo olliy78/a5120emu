@@ -28,16 +28,16 @@ from PySide6.QtGui import QAction, QKeySequence
 
 from app.ui_icons import icon
 
-#: (Name, Beschriftung, Symbol, Kürzel, Statustext, Methode des Fensters, rastend)
+#: (Name, Beschriftung, Symbol, Kuerzel, Statustext, Methode des Fensters, rastend)
 #:
-#: Die Beschriftung ist die des MENÜS; die Symbolleiste bekommt über :data:`KURZ`
-#: ein kürzeres Wort, sonst wird die Leiste breiter als das Fenster.
+#: Die Beschriftung ist die des MENUES; die Symbolleiste bekommt ueber :data:`KURZ`
+#: ein kuerzeres Wort, sonst wird die Leiste breiter als das Fenster.
 _SPEC: List[Tuple] = [
     # ── Datei ───────────────────────────────────────────────────────────────
-    # „Einlegen"/„Auswerfen" tragen ein Untermenü je bestücktem Laufwerk (das
-    # Fenster füllt es in `_disk_menues_bauen`) — ohne Laufwerk wäre die Frage
-    # „welches?" unbeantwortbar, und ein Dialog, der sie stellt, wäre ein
-    # Umweg um ein Menü herum.
+    # „Einlegen"/„Auswerfen" tragen ein Untermenue je bestuecktem Laufwerk (das
+    # Fenster fuellt es in `_disk_menues_bauen`) — ohne Laufwerk waere die Frage
+    # „welches?" unbeantwortbar, und ein Dialog, der sie stellt, waere ein
+    # Umweg um ein Menue herum.
     ("einlegen", "Diskette &einlegen", "open", None,
      "Ein Diskettenabbild (.hfe, .dmk, .img) in eines der Laufwerke einlegen",
      None, False),
@@ -60,15 +60,15 @@ _SPEC: List[Tuple] = [
      "Systemweites /RESET — die Maschine startet neu vom Boot-ROM, bleibt aber an",
      "_on_reset", False),
     # NMI-Taster der K8915-Frontplatte (nur im Profil K8915, siehe NUR_FUER).
-    # KEIN Kürzel: selten gebraucht, und jedes Strg+Umschalt+… müsste in die
-    # Kürzeltabelle des Handbuchs (ein Vertrag).
+    # KEIN Kuerzel: selten gebraucht, und jedes Strg+Umschalt+… muesste in die
+    # Kuerzeltabelle des Handbuchs (ein Vertrag).
     ("nmi", "&NMI-Taster", "nmi", None,
      "NMI-Taster der Frontplatte — K8915: solange das Boot-ROM eingeblendet ist: Lampen "
      "aus, Selbsttest von vorn.  Unter SCPX springt die CPU ins RAM bei 0066H "
      "(wie am Gerät, meist ein Absturz).  P8000: NMI-Taste (U880 bzw. — bei "
      "angeschalteter 16-Bit-Karte — U8001, dort „Press NMI“)", "_on_nmi", False),
-    # Zwischenstand der Maschine (nur P8000, P8KS).  KEIN Kürzel (die Kürzeltabelle des
-    # Handbuchs ist ein Vertrag); zuverlässig nur am Prompt, siehe Handbuch.
+    # Zwischenstand der Maschine (nur P8000, P8KS).  KEIN Kuerzel (die Kuerzeltabelle des
+    # Handbuchs ist ein Vertrag); zuverlaessig nur am Prompt, siehe Handbuch.
     ("stand_speichern", "Zwischenstand &sichern…", "config-save", None,
      "Den Zustand der laufenden Maschine in eine Datei sichern (P8KS) — zuverlässig nur am "
      "Prompt; Disketten und Platte müssen beim Laden dieselben sein", "_stand_speichern", False),
@@ -76,25 +76,32 @@ _SPEC: List[Tuple] = [
      "Einen gesicherten Zwischenstand laden — nur bei gleicher Konfiguration und mit "
      "denselben Disketten/derselben Platte", "_stand_laden", False),
 
-    # Verbindung der Terminaleinheit (P8000 Terminal) zum Rechner.  KEIN Kürzel (die Kürzeltabelle
-    # des Handbuchs ist ein Vertrag); nur im Modell „P8000 Terminal“ wählbar.
+    # Verbindung der Terminaleinheit (P8000 Terminal) zum Rechner.  KEIN Kuerzel (die Kuerzeltabelle
+    # des Handbuchs ist ein Vertrag); nur im Modell „P8000 Terminal“ waehlbar.
     ("verbindung", "&Verbindung zum Rechner…", "serial", None,
      "Telnet-/RFC-2217-Verbindung des Terminals zu einem Rechner herstellen oder trennen "
      "(nur im Modell „P8000 Terminal“)", "_verbindung_dialog", False),
 
+    # Speicherabzug in den RAM laden (nur MC80, AP M6: Spiele und Programme ohne Kassette).
+    # KEIN Kuerzel (die Kuerzeltabelle des Handbuchs ist ein Vertrag).
+    ("speicherabzug_laden", "&Speicherabzug laden…", "open", None,
+     "Eine Binärdatei ab einer Adresse in den Arbeitsspeicher laden (k1520_mem_load) — "
+     "vorher INIT eingeben, gestartet wird mit dem EGOS-Kommando des Programms",
+     "_speicherabzug_laden", False),
+
     # Bildschirminhalt des Originalterminals als reiner Text in die Zwischenablage (auch im
-    # Kontextmenü des Bildes).  KEIN Kürzel: ^C gehört dem Gast.
+    # Kontextmenue des Bildes).  KEIN Kuerzel: ^C gehoert dem Gast.
     ("text_kopieren", "Bildschirminhalt als &Text kopieren", None, None,
      "Den Text des Terminalbildes (80 × 24, nicht gerendert) in die Zwischenablage kopieren",
      "_text_kopieren", False),
 
     # ── EPROMmer (nur PRG 710, AP-P7c) ──────────────────────────────────────
-    # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kürzel:
-    # jedes Strg+Umschalt+… müsste in die Kürzeltabelle des Handbuchs (ein Vertrag).
+    # Der virtuelle Sockel der ATP 590068 (doc/prg710/eprommer.md).  KEIN Kuerzel:
+    # jedes Strg+Umschalt+… muesste in die Kuerzeltabelle des Handbuchs (ein Vertrag).
     ("eprom_einlegen", "PROM-Abbild &einlegen…", "open", None,
      "Ein PROM-Abbild (rohes .bin; bis 1 KB = U555, bis 2 KB = U2716) in den Sockel "
      "des EPROMmers stecken", "_eprom_einlegen", False),
-    # Das Untermenü (U555 / U2716) füllt das Fenster.
+    # Das Untermenue (U555 / U2716) fuellt das Fenster.
     ("eprom_leer", "&Leeres PROM einlegen", None, None,
      "Ein gelöschtes PROM (alle Zellen FFH, ohne Datei) in den Sockel stecken",
      None, False),
@@ -114,7 +121,7 @@ _SPEC: List[Tuple] = [
     ("leiste_einrichten", "Symbolleiste &einrichten…", None, None,
      "Welche Schaltflächen die Symbolleiste zeigt und in welcher Reihenfolge",
      "_leiste_einrichten", False),
-    # Kein Kürzel: ein Griff, den man selten und mit Bedacht tut — und jedes
+    # Kein Kuerzel: ein Griff, den man selten und mit Bedacht tut — und jedes
     # weitere Strg+Umschalt+… ist eines mehr, das im Handbuch stehen muss.
     ("standard", "&Standard zurücksetzen", "reset-view", None,
      "Bildröhre, Tempo, Laufwerke, Fenster, Kästen und Symbolleiste auf die "
@@ -123,8 +130,8 @@ _SPEC: List[Tuple] = [
 
     # ── Werkzeuge ───────────────────────────────────────────────────────────
     # Die Nachbarprogramme derselben Installation.  Sie fassen dieselben
-    # Disketten an, also gehören sie erreichbar — und zwar aus dem laufenden
-    # Programm heraus, nicht nur aus dem Startmenü.
+    # Disketten an, also gehoeren sie erreichbar — und zwar aus dem laufenden
+    # Programm heraus, nicht nur aus dem Startmenue.
     ("disktool", "&k1520DiskTool starten", None, None,
      "Das Diskettenwerkzeug öffnen — Dateien von einer Diskette holen und auf "
      "sie schreiben; es läuft neben dem Emulator weiter",
@@ -150,6 +157,10 @@ _SPEC: List[Tuple] = [
      "Den P8000 Emulator öffnen (P8000) — ein eigenes Programm "
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_p8000emu_starten", False),
+    ("mc80emu", "&MC80 Emulator starten", None, None,
+     "Den MC80 Emulator öffnen (MC80.30/31/21/22) — ein eigenes Programm "
+     "mit eigener Konfiguration; es läuft neben diesem weiter",
+     "_mc80emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,
      "Ein Konsolenfenster, in dem der Debugger k1520dbg und die Kommandozeile "
      "des DiskTool ohne Pfadangabe laufen — es steht im Diskettenordner",
@@ -176,6 +187,8 @@ KURZ = {
     "prg710emu": "PRG710",
     "pc1715emu": "PC1715",
     "p8000emu": "P8000",
+    "mc80emu": "MC80",
+    "speicherabzug_laden": "Abzug laden",
     "stand_speichern": "Stand sichern",
     "stand_laden": "Stand laden",
     "verbindung": "Verbindung",
@@ -192,28 +205,30 @@ KURZ = {
     "hilfe": "Hilfe",
 }
 
-#: Name im Einrichtdialog der Symbolleiste, wo die gewöhnliche Beschriftung
+#: Name im Einrichtdialog der Symbolleiste, wo die gewoehnliche Beschriftung
 #: nicht taugt — der Netzschalter heisst mal so und mal so.
 DIALOG_NAME = {"power": "Rechner ein-/ausschalten"}
 
 #: Beschriftung des Netzschalters je Zustand — die Leiste zeigt immer „Power",
-#: das Menü sagt, was ein Klick TUT.
+#: das Menue sagt, was ein Klick TUT.
 POWER_TEXT = {True: "Rechner &ausschalten", False: "Rechner &einschalten"}
 
 #: Aktionen, die nicht jedes Programm hat (Name → Maschinen der Profile,
-#: `app/profil.py`, die sie haben).  Alle übrigen haben alle.
+#: `app/profil.py`, die sie haben).  Alle uebrigen haben alle.
 NUR_FUER = {
     "nmi": ("k8915", "p8000"),           # NMI-Taster der Frontplatte
     "stand_speichern": ("p8000",),       # Zwischenstand (P8KS)
     "stand_laden": ("p8000",),
     "verbindung": ("p8000",),
-    "text_kopieren": ("p8000",),
+    "text_kopieren": ("p8000", "mc80"),
+    "speicherabzug_laden": ("mc80",),    # Speicherabzug laden (AP M6)
     # Die jeweils ANDEREN Emulatoren.
-    "k8915emu": ("a5120", "prg710", "pc1715", "p8000"),
-    "a5120emu": ("k8915", "prg710", "pc1715", "p8000"),
-    "prg710emu": ("a5120", "k8915", "pc1715", "p8000"),
-    "pc1715emu": ("a5120", "k8915", "prg710", "p8000"),
-    "p8000emu": ("a5120", "k8915", "prg710", "pc1715"),
+    "k8915emu": ("a5120", "prg710", "pc1715", "p8000", "mc80"),
+    "a5120emu": ("k8915", "prg710", "pc1715", "p8000", "mc80"),
+    "prg710emu": ("a5120", "k8915", "pc1715", "p8000", "mc80"),
+    "pc1715emu": ("a5120", "k8915", "prg710", "p8000", "mc80"),
+    "p8000emu": ("a5120", "k8915", "prg710", "pc1715", "mc80"),
+    "mc80emu": ("a5120", "k8915", "prg710", "pc1715", "p8000"),
     # EPROMmer (Kasten und Bedienung) — nur der PRG 710 hat einen.
     "eprom_einlegen": ("prg710",),
     "eprom_leer": ("prg710",),
@@ -223,13 +238,13 @@ NUR_FUER = {
     "dock_eprom": ("prg710",),
 }
 
-#: Die Bedienung des EPROMmer-Sockels, in der Reihenfolge von Kasten und Menü.
+#: Die Bedienung des EPROMmer-Sockels, in der Reihenfolge von Kasten und Menue.
 EPROM: List[str] = ["eprom_einlegen", "eprom_leer", "eprom_speichern",
                     "eprom_loeschen", "eprom_entnehmen"]
 
 #: Was die Symbolleiste aufnehmen kann, in der Reihenfolge des Einrichtdialogs.
 #: ``None`` ist ein Trennstrich zwischen zwei Gruppen.  Die Namen der
-#: Kastenschalter (``dock_*``) gehören keinem Eintrag in :data:`_SPEC` — sie
+#: Kastenschalter (``dock_*``) gehoeren keinem Eintrag in :data:`_SPEC` — sie
 #: kommen von Qt selbst (``QDockWidget.toggleViewAction``) und werden vom
 #: Fenster unter diesen Namen abgelegt.
 REIHENFOLGE: List = [
@@ -239,7 +254,7 @@ REIHENFOLGE: List = [
     None,
     "einlegen", "auswerfen",
     None,
-    "stand_speichern", "stand_laden", "verbindung", "text_kopieren",
+    "stand_speichern", "stand_laden", "verbindung", "text_kopieren", "speicherabzug_laden",
     None,
     "dock_drives", "dock_settings", "dock_screen", "dock_keyboard", "dock_eprom",
     None,
@@ -248,8 +263,8 @@ REIHENFOLGE: List = [
     "vollbild", "standard", "hilfe",
 ]
 
-#: Was beim ersten Start darin steht — genau die Wege, die man täglich geht.
-#: Alles Übrige lässt sich über *Ansicht ▸ Symbolleiste einrichten* dazuholen.
+#: Was beim ersten Start darin steht — genau die Wege, die man taeglich geht.
+#: Alles Uebrige laesst sich ueber *Ansicht ▸ Symbolleiste einrichten* dazuholen.
 STANDARD: List = [
     "konfig_laden", "konfig_speichern",
     None,
@@ -262,13 +277,27 @@ STANDARD: List = [
 
 
 #: Die Standardleiste des K8915: dieselbe, mit dem NMI-Taster neben Reset — wie
-#: an der Frontplatte des Geräts.
+#: an der Frontplatte des Geraets.
 STANDARD_K8915: List = [
     "konfig_laden", "konfig_speichern",
     None,
     "power", "reset", "nmi",
     None,
     "dock_settings", "dock_drives", "dock_keyboard",
+    None,
+    "hilfe",
+]
+
+
+#: Die Standardleiste des MC80: keine Laufwerke, dafuer der Speicherabzug (AP M6).
+STANDARD_MC80: List = [
+    "konfig_laden", "konfig_speichern",
+    None,
+    "power", "reset",
+    None,
+    "speicherabzug_laden",
+    None,
+    "dock_settings", "dock_keyboard",
     None,
     "hilfe",
 ]
@@ -292,6 +321,8 @@ def reihenfolge(maschine: str = "a5120", programm: str = "") -> List:
 
 def standard(maschine: str = "a5120") -> List:
     """Inhalt der Symbolleiste beim ersten Start (Programmprofil *maschine*)."""
+    if maschine == "mc80":
+        return list(STANDARD_MC80)
     return list(STANDARD_K8915 if maschine in ("k8915", "p8000") else STANDARD)
 
 
@@ -314,9 +345,9 @@ def erzeuge_aktionen(fenster, maschine: str = "a5120", programm: str = "") -> No
         a.setToolTip(tipp)
         a.setIconText(KURZ.get(name, text.replace("&", "").rstrip("…")))
         a.setCheckable(rastend)
-        # Ohne `addAction` gilt ein Kürzel nur, solange die Aktion in einem
-        # SICHTBAREN Menü oder einer sichtbaren Leiste hängt — im Vollbild (beide
-        # verborgen) oder nach dem Ausräumen der Leiste wäre es still weg.
+        # Ohne `addAction` gilt ein Kuerzel nur, solange die Aktion in einem
+        # SICHTBAREN Menue oder einer sichtbaren Leiste haengt — im Vollbild (beide
+        # verborgen) oder nach dem Ausraeumen der Leiste waere es still weg.
         fenster.addAction(a)
         if methode is not None:
             ziel = getattr(fenster, methode)

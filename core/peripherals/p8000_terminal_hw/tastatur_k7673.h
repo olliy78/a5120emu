@@ -5,24 +5,24 @@
  *
  * @details
  * Die Codetabelle wird zur Laufzeit aus dem EPROM-Abzug gelesen (02E3H: 128 × [Merker, Code],
- * Index = Zeile·16 + Port·8 + Bit; Folgen ab (Merker & 7)·256 + Code, Länge Merker >> 4).
+ * Index = Zeile·16 + Port·8 + Bit; Folgen ab (Merker & 7)·256 + Code, Laenge Merker >> 4).
  * Der Ablauf bildet die Firmware 0048H–0285H nach — nicht den Prozessor:
  *  - Abtastung 8 Zeilen × 16 Spalten, zwischen den Zeilen 0–6 je ein Sendeversuch aus dem
  *    Puffer (ein ganzes Byte), Zeile 7 mit Auswertung;
- *  - 41 gleiche Abtastungen hintereinander = stabil; > 3 gedrückte Tasten ⇒ verworfen;
+ *  - 41 gleiche Abtastungen hintereinander = stabil; > 3 gedrueckte Tasten ⇒ verworfen;
  *  - je Spaltenbyte (aufsteigend) erst Make, dann Break, Bits aufsteigend;
- *  - Sonderfälle 02EFH (1DH-Taste gemerkt), 02FFH (PAUSE: Break nichts, mit 1DH ⇒ 03EDH, keine
+ *  - Sonderfaelle 02EFH (1DH-Taste gemerkt), 02FFH (PAUSE: Break nichts, mit 1DH ⇒ 03EDH, keine
  *    Wiederholung), LED-Tasten 03DBH/032FH/03DFH (P2.4/5/6, einmal je Druck umschalten);
- *  - Wiederholung der zuletzt gedrückten Taste: Zähler 0DH bis 50, 0CH bis 10 im T1-Takt
- *    (40 · 250 · 4 interne Takte), geprüft am Rundenende;
- *  - Puffer 16 Byte + FF als Überlaufmarke; AA beim Einschalten.
+ *  - Wiederholung der zuletzt gedrueckten Taste: Zaehler 0DH bis 50, 0CH bis 10 im T1-Takt
+ *    (40 · 250 · 4 interne Takte), geprueft am Rundenende;
+ *  - Puffer 16 Byte + FF als Ueberlaufmarke; AA beim Einschalten.
  * Zeit in **internen Takten der Tastatur** (Quarz / 2).  Die Zeitkonstanten (Zeilenabstand,
- * Byte-Rahmen) sind an der Firmware auf dem Z8-Kern gemessen (Wächter
+ * Byte-Rahmen) sind an der Firmware auf dem Z8-Kern gemessen (Waechter
  * `TastaturK7673Diff.*`).  **Quarz unbekannt** [U, Beschaffung B3/B6]: Vorgabe 8 MHz
- * ⇒ Wiederholung nach 500 ms, dann alle 100 ms (am Rundenende, also etwas später).
+ * ⇒ Wiederholung nach 500 ms, dann alle 100 ms (am Rundenende, also etwas spaeter).
  *
  * Leitung: Ruhe Takt 0 / Daten 1; je Byte Takt hoch, Startbit Daten 0, je Bit Daten = ¬Bit
- * (LSB zuerst), Takt low → high mit stabilen Daten; danach Ruhe.  Kein Rückkanal; die
+ * (LSB zuerst), Takt low → high mit stabilen Daten; danach Ruhe.  Kein Rueckkanal; die
  * „Sendefreigabe" P3.0 gilt als immer frei [U].
  */
 #pragma once
@@ -58,7 +58,7 @@ public:
     static constexpr uint64_t ZEILE_TAKTE = 445;      ///< Zeile → Zeile (ohne Senden)
     static constexpr uint64_t RUNDE_REST = 449;       ///< Zeile 7 → Zeile 0 (Vergleich)
     static constexpr uint64_t KOPIE_EXTRA = 90;       ///< 38H = 0: Abtastung als Kandidat kopieren
-    static constexpr uint64_t AUSWERT_EXTRA = 9782;   ///< 38H = 40: Tasten zählen, Unterschiede, Kopie
+    static constexpr uint64_t AUSWERT_EXTRA = 9782;   ///< 38H = 40: Tasten zaehlen, Unterschiede, Kopie
     static constexpr uint64_t BYTE_TAKTE = 5344;      ///< ein gesendetes Byte (Schleife 0240H)
     static constexpr uint64_t TICK_TAKTE = 40000;     ///< T1-Endwert (PRE1 = 40, T1 = 250, ×4)
     static constexpr int STABIL = 40;                 ///< 38H bis 28H
@@ -73,14 +73,14 @@ public:
     bool gedrueckt(int zeile, int spalte) const;
 
     /// Bis @p takt (interne Tastaturtakte) laufen; erzeugte Flanken liegen danach bereit
-    /// (sie können über @p takt hinausreichen — ein Byte wird als Ganzes geplant).
+    /// (sie koennen ueber @p takt hinausreichen — ein Byte wird als Ganzes geplant).
     void laufeBis(uint64_t takt);
     uint64_t takte() const { return jetzt_; }
 
     /// Zeitbasis der Tastenwiederholung (T1-Tick, 10 ms bei 8 MHz): intern aus den
-    /// Tastaturtakten (Vorgabe, wiederholbar für Tests) oder von außen über @ref tickExtern.
-    /// Die Oberfläche speist die Ticks aus der Wirtsuhr, damit Verzögerung und Abstand nicht
-    /// mit dem eingestellten Rechnertakt schrumpfen.  Beim Zurückschalten beginnt ein
+    /// Tastaturtakten (Vorgabe, wiederholbar fuer Tests) oder von aussen ueber @ref tickExtern.
+    /// Die Oberflaeche speist die Ticks aus der Wirtsuhr, damit Verzoegerung und Abstand nicht
+    /// mit dem eingestellten Rechnertakt schrumpfen.  Beim Zurueckschalten beginnt ein
     /// voller Tick, kein Schwall.
     void setTickExtern(bool an) {
         if (externTick_ && !an) tick_ = jetzt_ + TICK_TAKTE;
@@ -93,7 +93,7 @@ public:
             if (z0C_ != ABSTAND) ++z0C_;
         }
     }
-    /// Läuft gerade eine Wiederholung (Taste gehalten, die wiederholt)?  Nur dann zählt die Uhr.
+    /// Laeuft gerade eine Wiederholung (Taste gehalten, die wiederholt)?  Nur dann zaehlt die Uhr.
     bool wiederholungLaeuft() const { return (letzte_ >> 8) != 0 && letzte_ != 0x2FF; }
     /// Dauer eines Ticks in Nanosekunden (Echtzeit).
     uint64_t tickNs() const { return TICK_TAKTE * 1'000'000'000ull / taktHz(); }
@@ -102,19 +102,19 @@ public:
     /// Flanken mit Zeit ≤ @p bis abholen (in Reihenfolge).
     std::vector<TastaturFlanke> holeFlanken(uint64_t bis);
     bool flankenAnstehend() const { return !flanken_.empty(); }
-    /// Protokoll aller fertig geplanten Bytes (Prüfung).
+    /// Protokoll aller fertig geplanten Bytes (Pruefung).
     const std::vector<uint8_t>& gesendet() const { return log_; }
     void gesendetLeeren() { log_.clear(); }
     /// LEDs: Bit 0 ON/OFF (P2.4), Bit 1 CAPS LOCK (P2.5), Bit 2 MODE (P2.6); 1 = umgeschaltet.
     uint8_t leds() const { return uint8_t((p2_ >> 4) & 7); }
     size_t pufferBelegung() const { return puffer_.size(); }
-    /// Prüfhilfe: Byte wie die Firmware-Routine 0209H einreihen (Überlauf ⇒ FF).
+    /// Pruefhilfe: Byte wie die Firmware-Routine 0209H einreihen (Ueberlauf ⇒ FF).
     void einreihen(uint8_t b);
 
     /// Tabelleneintrag (Merker, Code) einer Matrixposition.
     uint8_t merker(int zeile, int spalte) const;
     uint8_t code(int zeile, int spalte) const;
-    /// Make-Folge, wie sie ohne Sonderzustand gesendet würde (Tabelle).
+    /// Make-Folge, wie sie ohne Sonderzustand gesendet wuerde (Tabelle).
     std::vector<uint8_t> makeFolge(int zeile, int spalte) const;
 
     static constexpr uint8_t SAVE_VERSION = 1;
@@ -123,8 +123,8 @@ public:
 
 private:
     void visit(k1520::ZAr& a);
-    void schritt();                       ///< eine Zeile (bzw. Sendeversuch) ausführen
-    uint64_t runde();                     ///< Auswertung nach Zeile 7; Rückgabe = Zusatztakte
+    void schritt();                       ///< eine Zeile (bzw. Sendeversuch) ausfuehren
+    uint64_t runde();                     ///< Auswertung nach Zeile 7; Rueckgabe = Zusatztakte
     void ausgeben(uint16_t adr, bool brk);  ///< Firmware 0146H
     void senden(uint8_t b);               ///< Flanken eines Bytes ab jetzt_
     uint16_t adresse(int index) const { return uint16_t(0x2E3 + 2 * index); }
@@ -132,18 +132,18 @@ private:
 
     Config cfg_;
     std::vector<uint8_t> rom_;
-    std::array<uint16_t, ZEILEN> matrix_{};   ///< gedrückt = 1, Bit = Spalte
+    std::array<uint16_t, ZEILEN> matrix_{};   ///< gedrueckt = 1, Bit = Spalte
     // Firmwarezustand
     std::array<uint8_t, 16> scan_{}, kandidat_{}, gueltig_{};
     int zaehler38_ = 0;
-    int zeile_ = 0;                  ///< nächste abzutastende Zeile
+    int zeile_ = 0;                  ///< naechste abzutastende Zeile
     bool lTakt_ = true, lDaten_ = true;   ///< zuletzt geplanter Leitungszustand
     uint16_t letzte_ = 0;            ///< 20H/21H (Hi = 0 ⇒ keine Wiederholung)
     bool held1D_ = false;            ///< 3AH
     uint8_t ledMerker_ = 0;          ///< 39H
     uint8_t p2_ = 0x8F;
     int z0D_ = 0, z0C_ = 0;
-    bool externTick_ = false;        ///< Ticks kommen von außen (nicht serialisiert)
+    bool externTick_ = false;        ///< Ticks kommen von aussen (nicht serialisiert)
     std::deque<uint8_t> puffer_;
     // Zeit
     uint64_t jetzt_ = 0, naechst_ = 0, tick_ = 0;

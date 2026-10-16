@@ -1,6 +1,6 @@
 /**
  * @file test_dbg_z8.cpp
- * @brief Debuggerkontext des Z8 (tools/dbg_z8.h): jedes Kommando auf einem kleinen Prüfstand.
+ * @brief Debuggerkontext des Z8 (tools/dbg_z8.h): jedes Kommando auf einem kleinen Pruefstand.
  */
 #include "tools/dbg_z8.h"
 
@@ -64,7 +64,7 @@ TEST(DbgZ8, HaltepunktLaufNextFin) {
     EXPECT_TRUE(hat(s.run("u 1FH 1"), "CALL 0025H"));
     s.run("b 1FH");
     EXPECT_TRUE(hat(s.run("g"), "Haltepunkt 001F"));
-    s.run("n");                                  // über CALL
+    s.run("n");                                  // ueber CALL
     EXPECT_EQ(s.cpu.pc, 0x0022);
     EXPECT_EQ(s.cpu.reg[0x40], 0x42);
     s.run("bd all");
@@ -81,7 +81,7 @@ TEST(DbgZ8, PeripherieSichten) {
     Stand s;
     s.k.maxSchritte = 3000;
     s.run("g");
-    EXPECT_TRUE(hat(s.run("t"), "T1: zählt"));
+    EXPECT_TRUE(hat(s.run("t"), "T1: zaehlt"));
     EXPECT_TRUE(hat(s.run("t"), "÷3"));
     EXPECT_TRUE(hat(s.run("irq"), "Rangfolge"));
     EXPECT_TRUE(hat(s.run("irqlog"), "IRQ5"));

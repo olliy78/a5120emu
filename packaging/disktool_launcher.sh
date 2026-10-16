@@ -19,14 +19,14 @@ ROOT="@ROOT@"
 
 K1520_HOME="$ROOT"; export K1520_HOME
 
-# Derselbe Datenordner wie beim Emulator-Starter — sonst öffnete der
+# Derselbe Datenordner wie beim Emulator-Starter — sonst oeffnete der
 # Dateidialog woanders, als der Emulator seine Disketten ablegt.  Leer =
-# Vorgabe, dann löst app/paths.py den Dokumentenordner selbst auf.
+# Vorgabe, dann loest app/paths.py den Dokumentenordner selbst auf.
 K1520_DATA="@DATEN@"
 [ -n "$K1520_DATA" ] && export K1520_DATA || unset K1520_DATA
 
 # Arbeitsverzeichnis = Benutzerdaten, damit der Dateidialog dort aufgeht, wo die
-# Disketten liegen.  Dieselbe Auflösung wie beim Emulator-Starter.
+# Disketten liegen.  Dieselbe Aufloesung wie beim Emulator-Starter.
 DATEN=$("$ROOT/venv/bin/python3" -c \
     'import sys; sys.path.insert(0, sys.argv[1]); from app import paths; print(paths.user_data_dir())' \
     "$ROOT" 2>/dev/null) || DATEN=

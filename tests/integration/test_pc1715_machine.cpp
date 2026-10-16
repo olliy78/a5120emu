@@ -3,7 +3,7 @@
  * @brief Pc1715Machine (AP-1b, doc/design/21_pc1715.md §10/§11): bauen, Netz-Ein, Rauchtest mit
  *        dem echten Urlader S502 (kopiert sich ins RAM unter dem ROM und blendet es mit
  *        OUT 28H aus), Bildaufbau alle 20 ms Maschinenzeit, PC 1715W abgelehnt.
- *        Ohne Floppy hängt der Urlader in der Laufwerkssuche bzw. im V.24-Boot — das
+ *        Ohne Floppy haengt der Urlader in der Laufwerkssuche bzw. im V.24-Boot — das
  *        untersucht AP-1c.
  */
 
@@ -44,7 +44,7 @@ TEST(Pc1715Maschine, Pc1715WBautUndLehntNurK7221Ab) {
     c.bild = Pc1715Zre::Bildschirm::K7221;
     try {
         Pc1715Machine k(c);
-        FAIL() << "PC 1715W mit K7221 hätte abgelehnt werden müssen";
+        FAIL() << "PC 1715W mit K7221 haette abgelehnt werden muessen";
     } catch (const std::runtime_error& e) {
         EXPECT_NE(std::string(e.what()).find("PC 1715W"), std::string::npos) << e.what();
     }
@@ -52,7 +52,7 @@ TEST(Pc1715Maschine, Pc1715WBautUndLehntNurK7221Ab) {
 
 /**
  * @test Der echte S502 kopiert sich (LDIR auf dieselbe Adresse: Lesen ROM, Schreiben RAM) in das
- *       RAM unter dem ROM und blendet das ROM mit OUT (28H) aus; danach läuft er aus dem RAM.
+ *       RAM unter dem ROM und blendet das ROM mit OUT (28H) aus; danach laeuft er aus dem RAM.
  */
 TEST(Pc1715Maschine, UrladerKopiertSichInsRamUndBlendetDasRomAus) {
     stumm();
@@ -73,7 +73,7 @@ TEST(Pc1715Maschine, UrladerKopiertSichInsRamUndBlendetDasRomAus) {
     m.run(1000);
     EXPECT_FALSE(m.zre().romEin());
 
-    // Kopie komplett: das RAM unter dem ROM trägt jetzt den Urladerinhalt (Programmteil).
+    // Kopie komplett: das RAM unter dem ROM traegt jetzt den Urladerinhalt (Programmteil).
     for (int a = 0; a < 0x400; ++a)
         ASSERT_EQ(m.zre().ramPeek(uint16_t(a)), PC1715_S502_URLADER[a]) << "Adresse " << a;
     // Kennung „121715 031285" an 000EH [ROM]
@@ -85,7 +85,7 @@ TEST(Pc1715Maschine, UrladerKopiertSichInsRamUndBlendetDasRomAus) {
 /**
  * @test Rauchtest mit dem echten S502, ohne Floppy (Befund AP-1b, Takte bei 2,458 MHz):
  *       ~0,04 Mio. OUT 28H (ROM aus) · ~4,0 Mio. Laufwerkssuche: PIOs 00H–07H programmiert,
- *       KRFD 20H/21H · ~13,2 Mio. Boot über V.24: CTC1 (09H) und SIO-B (0FH) · danach wartet
+ *       KRFD 20H/21H · ~13,2 Mio. Boot ueber V.24: CTC1 (09H) und SIO-B (0FH) · danach wartet
  *       er in der Empfangsschleife bei 0411H auf Zeichen.  Nichts davon ist Absturz; was die
  *       Laufwerkssuche genau erwartet, untersucht AP-1c/AP-2.
  */
@@ -110,7 +110,7 @@ TEST(Pc1715Maschine, UrladerLaeuftOhneFloppyBisZumV24Boot) {
 }
 
 /// Alle 20 ms Maschinenzeit ein Bild: nach 3 Bildzeiten hat der 8275 frame() erlebt und der
-/// Framebuffer ist als geändert markiert.
+/// Framebuffer ist als geaendert markiert.
 TEST(Pc1715Maschine, BildwechselAlle20msMaschinenzeit) {
     stumm();
     Pc1715Machine m;

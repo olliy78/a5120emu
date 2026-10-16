@@ -1,16 +1,16 @@
-"""`k1520disktool --physical` — die Kommandozeile fürs echte Laufwerk.
+"""`k1520disktool --physical` — die Kommandozeile fuers echte Laufwerk.
 
 **Ohne Hardware**: das Ersatzlaufwerk aus :mod:`gw_fake` (eine ``.hfe`` statt eines
 Greaseweazle) wird an die Stelle von :meth:`app.gw.PhysicalSession.start` gesetzt.
-Damit läuft derselbe Weg wie an der Scheibe — Sitzung, Arbeitsfaden, Erkennung,
-Dateizugriff, Rückführung —, nur ohne USB.
+Damit laeuft derselbe Weg wie an der Scheibe — Sitzung, Arbeitsfaden, Erkennung,
+Dateizugriff, Rueckfuehrung —, nur ohne USB.
 
-Geprüft wird das, was eine Kommandozeile ausmacht und was an der Hardware zu spät
+Geprueft wird das, was eine Kommandozeile ausmacht und was an der Hardware zu spaet
 auffiele:
 
-* die **Sperre**: verändernde Befehle brauchen ``--write``, und zwar **bevor** der
-  Motor anläuft — sonst wäre das erste, was ein Tippfehler tut, ein Schreibvorgang;
-* **Exit-Kennungen** (0 ok · 1 Fehler · 2 nicht erkannt) — davon hängt jedes Skript ab;
+* die **Sperre**: veraendernde Befehle brauchen ``--write``, und zwar **bevor** der
+  Motor anlaeuft — sonst waere das erste, was ein Tippfehler tut, ein Schreibvorgang;
+* **Exit-Kennungen** (0 ok · 1 Fehler · 2 nicht erkannt) — davon haengt jedes Skript ab;
 * dass stdout **maschinenlesbar** bleibt: der Fortschritt geht auf stderr;
 * dass die Befehle dasselbe liefern wie an einer Datei.
 
@@ -39,7 +39,7 @@ def hfe(fixture_disks):
 def cli(monkeypatch, hfe):
     """`main()` mit einem Ersatzlaufwerk statt eines Adapters.
 
-    Gibt eine Funktion zurück, die die Kommandozeile fährt und
+    Gibt eine Funktion zurueck, die die Kommandozeile faehrt und
     ``(exit, stdout, stderr)`` liefert.
     """
     from app.disktool import physical_cli
@@ -76,11 +76,11 @@ def cli(monkeypatch, hfe):
 
 @pytest.mark.parametrize("befehl", ["put", "rm", "rewrite"])
 def test_veraendernde_befehle_brauchen_write(cli, capsys, befehl, tmp_path):
-    """Ohne ``--write`` wird abgelehnt — und das Laufwerk bleibt unberührt.
+    """Ohne ``--write`` wird abgelehnt — und das Laufwerk bleibt unberuehrt.
 
-    Der zweite Teil ist der eigentliche Punkt: die Prüfung steht VOR dem Öffnen der
+    Der zweite Teil ist der eigentliche Punkt: die Pruefung steht VOR dem Oeffnen der
     Sitzung.  Ein Tippfehler soll nicht erst nach zwei Minuten Einlesen auffallen,
-    und er soll die Diskette überhaupt nicht anfassen.
+    und er soll die Diskette ueberhaupt nicht anfassen.
     """
     rc = cli(befehl, str(tmp_path / "x"))
     aus = capsys.readouterr()
@@ -125,7 +125,7 @@ def test_ls_nennt_die_dateien_auf_stdout(cli, capsys):
     zeilen = [z for z in aus.out.splitlines() if z.strip()]
     assert "Side1/HELP.DAT.00" in zeilen
     assert len(zeilen) == 69, f"69 Dateien erwartet, {len(zeilen)}"
-    # stdout ist die Nutzlast — Fortschritt und Befund gehören auf stderr.
+    # stdout ist die Nutzlast — Fortschritt und Befund gehoeren auf stderr.
     assert "erkannt" not in aus.out
 
 
@@ -201,7 +201,7 @@ def test_wer_eine_datei_anlegt_ueberschreibt_sie_nicht(cli, capsys, tmp_path,
 
     Beide legen eine Datei an, beide werden im Stapel gefahren: derselbe Zielname
     zweimal ist ein Tippfehler, und die Diskette davor liegt dann schon wieder im
-    Schrank.  Geprüft wird deshalb, bevor eingelesen wird — sonst kämen zwei
+    Schrank.  Geprueft wird deshalb, bevor eingelesen wird — sonst kaemen zwei
     Minuten Lesen und danach der Abbruch.
     """
     p = tmp_path / ziel
@@ -273,7 +273,7 @@ def test_archive_ohne_label_nimmt_den_datentraegernamen(cli, capsys, tmp_path):
 
 
 def test_put_schreibt_und_fuehrt_zurueck(cli, capsys, tmp_path):
-    """Der ganze Schreibweg — samt Prüf-Lesen und Rückführung ans Laufwerk."""
+    """Der ganze Schreibweg — samt Pruef-Lesen und Rueckfuehrung ans Laufwerk."""
     quelle = tmp_path / "CLI.TXT"
     quelle.write_bytes(b"aus der Kommandozeile\r\n" * 4)
 
@@ -295,7 +295,7 @@ def test_put_schreibt_und_fuehrt_zurueck(cli, capsys, tmp_path):
 def test_schadstelle_wird_gemeldet_und_der_ausweg_genannt(cli, capsys, tmp_path):
     """Eine Spur, die nichts annimmt: Exit 1, Spurnummer und der Ausweg im Text.
 
-    Ohne diese Meldung sähe ein Skript einen Erfolg, wo die Diskette die Daten gar
+    Ohne diese Meldung saehe ein Skript einen Erfolg, wo die Diskette die Daten gar
     nicht angenommen hat (§7.1/§7.2).
     """
     quelle = tmp_path / "DEFEKT.TXT"

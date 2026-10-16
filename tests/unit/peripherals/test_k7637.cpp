@@ -16,7 +16,7 @@
  *  - Ctrl+key is mapped to the control code (e.g. Ctrl+A → 0x01).
  *  - Main Return = ET1 → 0xFF (BIOS → CR); numeric ENTER → 0xC0 (distinct key).
  *  - Cursor Up/Down/Left/Right → 0x94/0x95/0x96/0x97; Escape → 0x1B (ESC-Taste);
- *    Backspace → 0x9F (Rücktaste |<-|); Tab → 0x91 (->|) und Umschalt+Tab →
+ *    Backspace → 0x9F (Ruecktaste |<-|); Tab → 0x91 (->|) und Umschalt+Tab →
  *    0x9B (|<-); Delete → 0xBB (DEL CH).
  *  - Funktionstasten F1–F12 → 0xC1–0xCC (PF 1 … PF 12).
  *
@@ -45,8 +45,8 @@
  * | Funktionstasten           | F1 → 0xC1; F8 → 0xC8; F12 → 0xCC                       |
  * | Serial timing             | Byte delivered only after one 9600-baud byte-time; FIFO order |
  * | Key repeat                | Initial delay, repeat period, key release stops repeat  |
- * | Rohcodes                  | `QK_RAW_BASE | code` unverändert, auch mit Ctrl          |
- * | processTxCommands         | Flankenzählung, die fünf LED-Kommandos (umschaltend), Fehleranzeige + Ton, Reset, Quittung |
+ * | Rohcodes                  | `QK_RAW_BASE | code` unveraendert, auch mit Ctrl          |
+ * | processTxCommands         | Flankenzaehlung, die fuenf LED-Kommandos (umschaltend), Fehleranzeige + Ton, Reset, Quittung |
  * | Channel B connectivity    | Keyboard can inject into SIO channel B                  |
  * | No connection             | keyPress/tick/processTxCommands without connect() = no crash |
  *
@@ -210,9 +210,9 @@ TEST(K7637, KeyPress_Enter_Sends_PF0) {
 
 /**
  * @test K7637/KeyPress_Backspace_Sends_BS
- * @brief Die Rücktaste des PC spricht die RÜCKTASTE der K7637 an: `|<-|`
+ * @brief Die Ruecktaste des PC spricht die RUECKTASTE der K7637 an: `|<-|`
  *        (Reihe 2, Position 14, physisch 0x9F) — nicht DEL CH.  Welche Taste
- *        ein Zeichen löscht, ist Sache des Gastes und je OS verschieden
+ *        ein Zeichen loescht, ist Sache des Gastes und je OS verschieden
  *        (SCPX: `|<-|`, CP/A und UDOS: DEL CH = die Entf-Taste des PC).
  * @par Pass criterion  drainRx returns one byte == 0x9F.
  */
@@ -268,10 +268,10 @@ TEST(K7637, KeyPress_Escape_Sends_ESC) {
 /**
  * @test K7637/KeyPress_Tab_Sends_0x91
  * @brief Die Tabulatortaste des PC spricht die Taste an IHRER Stelle an: `->|`
- *        (Reihe 3, Position 1, physisch 0x91), Umschalt+Tab deren Gegenstück
- *        `|<-` (0x9B).  Dass CP/A seinen Tabulator auf die RÜCKTASTE legt
+ *        (Reihe 3, Position 1, physisch 0x91), Umschalt+Tab deren Gegenstueck
+ *        `|<-` (0x9B).  Dass CP/A seinen Tabulator auf die RUECKTASTE legt
  *        (cp37: „|<-| als Ersatz Tab"), ist BIOS-Sache — ein echter 0x09 kommt
- *        über Strg+I.
+ *        ueber Strg+I.
  * @par Pass criterion  drainRx returns one byte == 0x91 bzw. 0x9B.
  */
 TEST(K7637, KeyPress_Tab_Sends_0x91) {
@@ -314,8 +314,8 @@ TEST(K7637, CursorUp_Sends_0x94) {
     kb.connect(sio, 0);
 
     // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
-    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
-    // hinweg als länger als 500 ms gehalten.
+    // Testuhr stellen, sonst gaelte die Taste ueber den Sprung in drainRx()
+    // hinweg als laenger als 500 ms gehalten.
     kb.service(g_clk);
     kb.keyPress(QK_UP, false, false);
 
@@ -336,8 +336,8 @@ TEST(K7637, CursorDown_Sends_0x95) {
     kb.connect(sio, 0);
 
     // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
-    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
-    // hinweg als länger als 500 ms gehalten.
+    // Testuhr stellen, sonst gaelte die Taste ueber den Sprung in drainRx()
+    // hinweg als laenger als 500 ms gehalten.
     kb.service(g_clk);
     kb.keyPress(QK_DOWN, false, false);
 
@@ -358,8 +358,8 @@ TEST(K7637, CursorLeft_Sends_0x96) {
     kb.connect(sio, 0);
 
     // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
-    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
-    // hinweg als länger als 500 ms gehalten.
+    // Testuhr stellen, sonst gaelte die Taste ueber den Sprung in drainRx()
+    // hinweg als laenger als 500 ms gehalten.
     kb.service(g_clk);
     kb.keyPress(QK_LEFT, false, false);
 
@@ -380,8 +380,8 @@ TEST(K7637, CursorRight_Sends_0x97) {
     kb.connect(sio, 0);
 
     // Kursortasten sind Dauerfunktionstasten: die Tastaturuhr erst auf die
-    // Testuhr stellen, sonst gälte die Taste über den Sprung in drainRx()
-    // hinweg als länger als 500 ms gehalten.
+    // Testuhr stellen, sonst gaelte die Taste ueber den Sprung in drainRx()
+    // hinweg als laenger als 500 ms gehalten.
     kb.service(g_clk);
     kb.keyPress(QK_RIGHT, false, false);
 
@@ -430,8 +430,8 @@ TEST(K7637, FunctionKey_F8_Sends_0xC8) {
 
 /**
  * @test K7637/FunctionKey_F12_Sends_0xCC
- * @brief Die K7637 hat ZWÖLF Funktionstasten — F9…F12 gehören ebenso dazu
- *        (PF 9 … PF 12 = 0xC9 … 0xCC).  Nur F11 fängt die Oberfläche für das
+ * @brief Die K7637 hat ZWOELF Funktionstasten — F9…F12 gehoeren ebenso dazu
+ *        (PF 9 … PF 12 = 0xC9 … 0xCC).  Nur F11 faengt die Oberflaeche fuer das
  *        Vollbild ab; der Kern kennt kein Vollbild und bildet sie mit ab.
  * @par Pass criterion  F9 → 0xC9, F12 → 0xCC.
  */
@@ -455,8 +455,8 @@ TEST(K7637, FunctionKey_F12_Sends_0xCC) {
  * @brief `QK_RAW_BASE | code` sendet genau dieses Byte.
  * @details Die Bildschirmtastatur bildet die echte K7637 nach und kennt Tasten,
  *          die eine PC-Tastatur nicht hat (CE 0xB9, SEL0 0xA0, PF10 0xCA, …).
- *          Ohne den Rohcode-Weg wären sie über die Qt-Abbildung unerreichbar.
- * @par Pass criterion  drainRx liefert je ein Byte == dem übergebenen Code.
+ *          Ohne den Rohcode-Weg waeren sie ueber die Qt-Abbildung unerreichbar.
+ * @par Pass criterion  drainRx liefert je ein Byte == dem uebergebenen Code.
  */
 TEST(K7637, RawCode_IsSentVerbatim) {
     for (uint8_t code : {uint8_t(0xB9), uint8_t(0xA0), uint8_t(0xCA),
@@ -477,8 +477,8 @@ TEST(K7637, RawCode_IsSentVerbatim) {
 /**
  * @test K7637/RawCode_IgnoresCtrl
  * @brief Ein Rohcode ist der physische Tastencode — Ctrl rechnet nicht daran.
- * @details `& 0x1F` gilt nur für druckbares ASCII; ein Rohcode 0xC1 (PF1) bliebe
- *          sonst als 0x01 liegen und käme im Gast als Steuerzeichen an.
+ * @details `& 0x1F` gilt nur fuer druckbares ASCII; ein Rohcode 0xC1 (PF1) bliebe
+ *          sonst als 0x01 liegen und kaeme im Gast als Steuerzeichen an.
  * @par Pass criterion  drainRx liefert 0xC1, nicht 0x01.
  */
 TEST(K7637, RawCode_IgnoresCtrl) {
@@ -503,9 +503,9 @@ TEST(K7637, RawCode_IgnoresCtrl) {
 namespace {
 constexpr uint64_t kMs = K7637::CYCLES_PER_MS;
 
-// Tastatur + SIO mit eigener Uhr.  bis() lässt die Zeit in 1-ms-Schritten
-// laufen und holt jedes angekommene Byte sofort ab — wie das BIOS am Gerät;
-// in einem Sprung liefe der dreistufige SIO-Empfangspuffer über.
+// Tastatur + SIO mit eigener Uhr.  bis() laesst die Zeit in 1-ms-Schritten
+// laufen und holt jedes angekommene Byte sofort ab — wie das BIOS am Geraet;
+// in einem Sprung liefe der dreistufige SIO-Empfangspuffer ueber.
 struct Leitung {
     Z80SIO   sio;
     K7637    kb;
@@ -544,7 +544,7 @@ TEST(K7637, Dauerfunktion_LeertasteWiederholtNach500msAlle100ms) {
     l.bis(10);
     l.kb.keyPress(' ', false, false);              // bei t = 10 ms
     EXPECT_EQ(l.bis(20).size(), 1u);               // der Anschlag
-    EXPECT_EQ(l.bis(509).size(), 0u);              // Schwelle läuft noch
+    EXPECT_EQ(l.bis(509).size(), 0u);              // Schwelle laeuft noch
     auto b = l.bis(512);                           // 510 ms + 1 Bytezeit
     ASSERT_EQ(b.size(), 1u);
     EXPECT_EQ(b[0], 0x20);
@@ -566,7 +566,7 @@ TEST(K7637, Dauerfunktion_KursortastenWiederholen) {
 
 /**
  * @test K7637/Dauerfunktion_BuchstabeWiederholtNicht
- * @brief Eine gehaltene Buchstabentaste wird genau EINMAL gesendet (Befund am Gerät).
+ * @brief Eine gehaltene Buchstabentaste wird genau EINMAL gesendet (Befund am Geraet).
  */
 TEST(K7637, Dauerfunktion_BuchstabeWiederholtNicht) {
     for (int key : {int('A'), int('a'), int('7'), QK_RETURN, QK_F1}) {
@@ -577,7 +577,7 @@ TEST(K7637, Dauerfunktion_BuchstabeWiederholtNicht) {
 }
 
 // ── Zeitbasis Echtzeit (tasten_uhr.h) ──────────────────────────────────────
-// Die Oberfläche zählt die Dauerfunktion in Wirtszeit: bei 10 × Rechnertakt darf
+// Die Oberflaeche zaehlt die Dauerfunktion in Wirtszeit: bei 10 × Rechnertakt darf
 // die Leertaste nicht schon nach 50 ms (= 500 ms Maschinenzeit) wiederholen.
 namespace {
 uint64_t g_wirt_ns = 0;
@@ -611,7 +611,7 @@ TEST(K7637, Dauerfunktion_EchtzeitUnabhaengigVomRechnertakt) {
     Zeitraffer l(10);
     l.kb.keyPress(' ', false, false);
     EXPECT_EQ(l.wirtBis(10).size(), 1u);           // der Anschlag
-    EXPECT_EQ(l.wirtBis(499).size(), 0u) << "in Maschinenzeit wären das ~50 Wiederholungen";
+    EXPECT_EQ(l.wirtBis(499).size(), 0u) << "in Maschinenzeit waeren das ~50 Wiederholungen";
     EXPECT_EQ(l.wirtBis(501).size(), 1u);
     EXPECT_EQ(l.wirtBis(599).size(), 0u);
     EXPECT_EQ(l.wirtBis(1001).size(), 5u);         // 600, 700, … 1000 ms
@@ -621,8 +621,8 @@ TEST(K7637, Dauerfunktion_EchtzeitUnabhaengigVomRechnertakt) {
 
 /**
  * @test K7637/Dauerfunktion_EchtzeitNachPauseKeinSchwall
- * @brief Steht der Rechner (Wirtszeit läuft weiter), kommt danach EINE Wiederholung,
- *        nicht der ganze Rückstand auf einmal.
+ * @brief Steht der Rechner (Wirtszeit laeuft weiter), kommt danach EINE Wiederholung,
+ *        nicht der ganze Rueckstand auf einmal.
  */
 TEST(K7637, Dauerfunktion_EchtzeitNachPauseKeinSchwall) {
     Zeitraffer l(1);
@@ -658,7 +658,7 @@ TEST(K7637, KeyRelease_WrongKey_DoesNotClearRepeat) {
 
 /**
  * @test K7637/Dauerfunktion_WeitereTasteBeendetSie
- * @brief „Jede weitere zu einer Dauerfunktion gedrückte Taste beendet die
+ * @brief „Jede weitere zu einer Dauerfunktion gedrueckte Taste beendet die
  *        Dauerfunktion" (Handbuch §2.2.2).
  */
 TEST(K7637, Dauerfunktion_WeitereTasteBeendetSie) {
@@ -694,12 +694,12 @@ TEST(K7637, TxCommand_Beep_NoCrash) {
 
 /**
  * @test K7637/CommandDecoding_CountsFallingEdges
- * @brief Die Kommandoerkennung zählt Flanken, nicht Bytewerte.
- * @details Handbuch §2.2.3: die Impulse des empfangenen Bytes zählen einen auf
- *          15 voreingestellten Zähler herunter; sein Stand IST das Kommando.
- *          Die Tabelle dort nennt neun Zählerstände — sie müssen sich alle aus
+ * @brief Die Kommandoerkennung zaehlt Flanken, nicht Bytewerte.
+ * @details Handbuch §2.2.3: die Impulse des empfangenen Bytes zaehlen einen auf
+ *          15 voreingestellten Zaehler herunter; sein Stand IST das Kommando.
+ *          Die Tabelle dort nennt neun Zaehlerstaende — sie muessen sich alle aus
  *          der Zahl der fallenden Flanken ergeben, sonst stimmt das Modell nicht.
- * @par Pass criterion  15 − Flanken == der im Handbuch angegebene Zählerstand.
+ * @par Pass criterion  15 − Flanken == der im Handbuch angegebene Zaehlerstand.
  */
 TEST(K7637, CommandDecoding_CountsFallingEdges) {
     EXPECT_EQ(15 - K7637::fallingEdges(0x00), 14);   // Software-RESET
@@ -707,7 +707,7 @@ TEST(K7637, CommandDecoding_CountsFallingEdges) {
     EXPECT_EQ(15 - K7637::fallingEdges(0x44), 12);   // akustisches Signal
     EXPECT_EQ(15 - K7637::fallingEdges(0x52), 11);   // LED G00
     EXPECT_EQ(15 - K7637::fallingEdges(0x55), 10);   // Vorkommando
-    // Zweibyte-Kommandos: der Zähler läuft über beide Bytes weiter.
+    // Zweibyte-Kommandos: der Zaehler laeuft ueber beide Bytes weiter.
     const int pre = K7637::fallingEdges(0x55);
     EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x00)), 9);   // Grundzustand
     EXPECT_EQ(15 - (pre + K7637::fallingEdges(0x20)), 8);   // LED G01
@@ -723,10 +723,10 @@ static void sendCmd(K7637& kb, Z80SIO& sio, std::initializer_list<uint8_t> bytes
 
 /**
  * @test K7637/LedCommands_ToggleTheirDisplay
- * @brief Die fünf LED-Kommandos schalten je eine Funktionsanzeige UM.
+ * @brief Die fuenf LED-Kommandos schalten je eine Funktionsanzeige UM.
  * @details „Ein- bzw. Ausschalten von LED-Anzeigen (vorheriger Zustand wird
  *          negiert)" — ein zweites gleiches Kommando schaltet wieder aus.
- * @par Pass criterion  Jedes Kommando setzt genau sein Bit und löscht es wieder.
+ * @par Pass criterion  Jedes Kommando setzt genau sein Bit und loescht es wieder.
  */
 TEST(K7637, LedCommands_ToggleTheirDisplay) {
     struct { std::initializer_list<uint8_t> cmd; uint8_t bit; } cases[] = {
@@ -772,7 +772,7 @@ TEST(K7637, ErrorDisplay_TogglesAndBeepsWhenSwitchedOn) {
 
 /**
  * @test K7637/BeepCommand_RunsForAboutOneSecond
- * @brief Kommando 44H löst ein akustisches Signal von ca. 1 s aus — ohne Anzeige.
+ * @brief Kommando 44H loest ein akustisches Signal von ca. 1 s aus — ohne Anzeige.
  * @par Pass criterion  beeping() ist an, nach 1 s Maschinenzeit aus; leds() bleibt 0.
  */
 TEST(K7637, BeepCommand_RunsForAboutOneSecond) {
@@ -813,13 +813,13 @@ TEST(K7637, ResetCommand_ClearsAllDisplays) {
 /**
  * @test K7637/CommandDecoding_IgnoresTheByteValue
  * @brief Ein Byte mit derselben Flankenzahl wirkt wie das Kommando aus der Tabelle.
- * @details Die Bytes der Handbuchtabelle sind nur die übliche Schreibweise; die
- *          Hardware zählt Flanken.  0xFF hat wie 0x00 genau eine fallende
+ * @details Die Bytes der Handbuchtabelle sind nur die uebliche Schreibweise; die
+ *          Hardware zaehlt Flanken.  0xFF hat wie 0x00 genau eine fallende
  *          Flanke (nur das Startbit) und ist damit derselbe Software-RESET.
- *          Ein Modell, das auf den Bytewert schaut, verwürfe es als unbekanntes
- *          Kommando — und träfe die Hardware nur dort, wo die Systemsoftware
- *          zufällig das kanonische Byte sendet.
- * @par Pass criterion  0xFF löscht die Anzeigen wie 0x00.
+ *          Ein Modell, das auf den Bytewert schaut, verwuerfe es als unbekanntes
+ *          Kommando — und traefe die Hardware nur dort, wo die Systemsoftware
+ *          zufaellig das kanonische Byte sendet.
+ * @par Pass criterion  0xFF loescht die Anzeigen wie 0x00.
  */
 TEST(K7637, CommandDecoding_IgnoresTheByteValue) {
     Z80SIO sio; sio.setIEI(true);
@@ -834,7 +834,7 @@ TEST(K7637, CommandDecoding_IgnoresTheByteValue) {
 
 /**
  * @test K7637/PreCommand_NeedsTheSecondByte
- * @brief Nach dem Vorkommando 55H allein passiert nichts — der Zähler wartet.
+ * @brief Nach dem Vorkommando 55H allein passiert nichts — der Zaehler wartet.
  * @par Pass criterion  leds() bleibt 0, bis das zweite Byte kommt.
  */
 TEST(K7637, PreCommand_NeedsTheSecondByte) {
@@ -850,7 +850,7 @@ TEST(K7637, PreCommand_NeedsTheSecondByte) {
 /**
  * @test K7637/EveryCommandByteIsAcknowledged
  * @brief Die Tastatur quittiert JEDES empfangene Byte mit dem Typcode 0x80.
- * @details Daran hängt die Tastaturerkennung des BIOS und der LED-Handschlag;
+ * @details Daran haengt die Tastaturerkennung des BIOS und der LED-Handschlag;
  *          ohne die Quittung wartet `lmpout` ewig.
  * @par Pass criterion  Nach zwei Kommandobytes stehen zwei 0x80 im RX.
  */

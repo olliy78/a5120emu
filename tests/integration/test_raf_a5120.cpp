@@ -4,10 +4,10 @@
  *        Original-Treiber `RAFCPM.COM` (Laufwerk M:, 11.10.87) und `RAF512.COM`
  *        (Laufwerk P:, DKt 26.07.08) unter CP/A gegen die Nachbildung der Karte.
  *
- * Die Treiber kennen den Emulator nicht: Kapazitätstest (`raftst`, §3.3), DPB-Wahl,
- * `RAFvalid.SYS`-Kennung und die BIOS-Einbindung laufen so, wie sie am Gerät liefen.
- * Geprüft wird über das, was der Treiber selbst auf den Schirm schreibt (Texte wörtlich
- * aus `RAFCPM.COM`/`RAF512.COM`), und über `PIP`/`DIR` des laufenden CP/A.
+ * Die Treiber kennen den Emulator nicht: Kapazitaetstest (`raftst`, §3.3), DPB-Wahl,
+ * `RAFvalid.SYS`-Kennung und die BIOS-Einbindung laufen so, wie sie am Geraet liefen.
+ * Geprueft wird ueber das, was der Treiber selbst auf den Schirm schreibt (Texte woertlich
+ * aus `RAFCPM.COM`/`RAF512.COM`), und ueber `PIP`/`DIR` des laufenden CP/A.
  *
  * Disketten: `cpa_cpa780_k5601_noclock.img` (BIOS ohne EM) bzw. `…-em256.img` (BIOS mit
  * `em256 = 1`, M: im EM) — als TempDisk, die Treiber legt `DiskVolume::insert` darauf.
@@ -39,11 +39,11 @@ using k1520test::visibleText;
 namespace {
 
 constexpr long long kBootBudget  = 90'000'000;
-constexpr long long kBefehl      = 120'000'000;   // je Kommando bis zum nächsten `A>`
+constexpr long long kBefehl      = 120'000'000;   // je Kommando bis zum naechsten `A>`
 const char*         kCpa         = "cpa_cpa780_k5601_noclock.img";
 const char*         kCpaEm256    = "cpa_cpa780_k5601_noclock-em256.img";
 
-// Texte wörtlich aus RAFCPM.COM / RAF512.COM.
+// Texte woertlich aus RAFCPM.COM / RAF512.COM.
 const char* kKapazitaet = "RAF-Gesamtkapazitaet 512K Bytes (32 Spuren zu 128 Sektoren)";
 const char* kUndef      = "RAF ist undefiniert, es folgt Loeschen Directory";
 const char* kGeladen    = "RAF ist noch wie bei letzter Benutzung geladen!";
@@ -87,8 +87,8 @@ bool bisPrompt(A5120Machine& m, long long frist) {
     return false;
 }
 
-/// Kommando tippen, RETURN, bis zum nächsten `A>` — die getippte Zeile `A>KOMMANDO`
-/// ist selbst nicht `A>`, ein alter Prompt zählt also nicht.
+/// Kommando tippen, RETURN, bis zum naechsten `A>` — die getippte Zeile `A>KOMMANDO`
+/// ist selbst nicht `A>`, ein alter Prompt zaehlt also nicht.
 bool kommando(A5120Machine& m, const std::string& cmd) {
     typeString(m, cmd);
     typeKey(m, k1520test::QK_RETURN);
@@ -108,7 +108,7 @@ void kaltstart(A5120Machine& m) {
 }
 
 /// Reset-Taste (systemweiter /RESET) bis zum Prompt; Schattenram vorher wischen
-/// (k1520test::wipeVram, Wächter KbdNachReset.*).
+/// (k1520test::wipeVram, Waechter KbdNachReset.*).
 void resetTaste(A5120Machine& m) {
     k1520test::wipeVram(m);
     m.reset();
@@ -117,7 +117,7 @@ void resetTaste(A5120Machine& m) {
 }
 
 /// Verzeichniseintrag `RAFvalid.SYS` (User 32 = 20H) in Spur 0 der Karte.  Die Karte
-/// zählt nicht selbst weiter, `OTIR`/`INIR` laufen mit B rückwärts (§3.2): Byte i eines
+/// zaehlt nicht selbst weiter, `OTIR`/`INIR` laufen mit B rueckwaerts (§3.2): Byte i eines
 /// Sektors, wie das BIOS ihn sieht, liegt in der Karte bei Sektor × 128 + 127 − i.
 bool kennungInSpur0(const RAF& raf) {
     auto byte = [&](uint32_t sektor, uint32_t i) { return raf.peek(sektor * 128 + 127 - i); };
@@ -199,7 +199,7 @@ TEST_F(RafA5120, RafcpmLegtMAnUndUeberstehtReset) {
 
 /**
  * @test RafA5120.RafcpmOhneKarte
- * @brief Ohne gesteckte RAF: „Keine RAF-Karte vorhanden!", zurück am Prompt.
+ * @brief Ohne gesteckte RAF: „Keine RAF-Karte vorhanden!", zurueck am Prompt.
  */
 TEST_F(RafA5120, RafcpmOhneKarte) {
     Aufbau x(kCpa, "k1520_raf_a5120_ohne.img", {}, false, "RAFCPM.COM");

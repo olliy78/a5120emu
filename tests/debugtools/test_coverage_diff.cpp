@@ -1,4 +1,4 @@
-// Unit-Tests für den boot_trace --coverage/--diff CSV-Parser + Run-Diff
+// Unit-Tests fuer den boot_trace --coverage/--diff CSV-Parser + Run-Diff
 // (tools/coverage_diff.h).
 #include "tools/coverage_diff.h"
 #include <gtest/gtest.h>
@@ -60,7 +60,7 @@ TEST(CoverageDiff, DiffHandlesCpuPresentInOnlyOneRun){
     ASSERT_EQ(d["ZVE2"].only_a.size(), 1u); EXPECT_EQ(d["ZVE2"].only_a[0], 0x01DD);
 }
 
-// ── collapseRanges: Abdeckungskarte → zusammenhängende Bereiche ──────────────
+// ── collapseRanges: Abdeckungskarte → zusammenhaengende Bereiche ──────────────
 
 namespace {
 std::vector<bool> covmap(size_t n, std::initializer_list<int> set){

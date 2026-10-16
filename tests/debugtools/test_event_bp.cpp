@@ -1,4 +1,4 @@
-// Unit-Tests für die Ereignis-Breakpoint-Erkennung (tools/event_bp.h).
+// Unit-Tests fuer die Ereignis-Breakpoint-Erkennung (tools/event_bp.h).
 #include "tools/event_bp.h"
 #include <gtest/gtest.h>
 
@@ -6,7 +6,7 @@ using eventbp::Event;
 using eventbp::Prev;
 using eventbp::classify;
 
-// armInt, armNmi, armReti = alle scharf, sofern nicht anders nötig.
+// armInt, armNmi, armReti = alle scharf, sofern nicht anders noetig.
 static Event C(uint16_t pc, uint16_t sp, bool iff1, const Prev& prev,
                bool ai=true, bool an=true, bool ar=true, uint8_t o0=0, uint8_t o1=0){
     return classify(pc, sp, iff1, prev, ai, an, ar, o0, o1);
@@ -35,7 +35,7 @@ TEST(EventBp, NmiNormal){
 }
 
 // Der wichtige Grenzfall: NMI feuert auch, wenn IFF1 vorher SCHON 0 war
-// (die maskierbare IFF1-Signatur würde ihn verpassen).
+// (die maskierbare IFF1-Signatur wuerde ihn verpassen).
 TEST(EventBp, NmiWhenInterruptsAlreadyDisabled){
     Prev prev{true, 0x8000, /*iff1=*/false};     // Interrupts waren bereits aus
     EXPECT_EQ(C(0x0066, 0x7FFE, false, prev), Event::NMI);
@@ -61,12 +61,12 @@ TEST(EventBp, NoPrevGivesNoneForIntNmi){
 
 TEST(EventBp, OrdinaryInstructionNone){
     Prev prev{true, 0x8000, true};
-    // normaler Folgebefehl: SP unverändert, IFF1 unverändert
+    // normaler Folgebefehl: SP unveraendert, IFF1 unveraendert
     EXPECT_EQ(C(0x1235, 0x8000, true, prev), Event::None);
 }
 
 TEST(EventBp, PriorityNmiOverInterrupt){
-    // Am NMI-Vektor schließt die Interrupt-Regel pc==0x0066 ohnehin aus → NMI gewinnt.
+    // Am NMI-Vektor schliesst die Interrupt-Regel pc==0x0066 ohnehin aus → NMI gewinnt.
     Prev prev{true, 0x8000, true};
     EXPECT_EQ(C(0x0066, 0x7FFE, false, prev), Event::NMI);
 }

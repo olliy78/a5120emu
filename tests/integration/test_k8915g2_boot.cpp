@@ -2,16 +2,16 @@
  * @file test_k8915g2_boot.cpp
  * @brief K8915 Generation 2 (doc/design/24_k8915_varianten.md AP-V6a): ZRE K2521 mit dem
  *        ROM 175/176/177, Speicher K3528 (A8H), sonst die Karten des V3 — vom Netz-Ein
- *        über den Selbsttest zur Kaltstartmeldung und mit der V3-Systemdiskette 901 bis
+ *        ueber den Selbsttest zur Kaltstartmeldung und mit der V3-Systemdiskette 901 bis
  *        zum Prompt.
  *
  * Ablauf und Belege: doc/k8915g2/zre_rom.md §4 (Selbsttest ROM → KEY → CTC → SIO → RAM,
  * Statuszeile wie V3: „DIAGNOSTIC“ bei 1740H, Testname 1770H, Kennbuchstabe 1776H) und §5
- * (Bootablauf).  **F9 (gelöst 2026-10-05):** der Abzug 177 trägt die Summe 00A67CH,
+ * (Bootablauf).  **F9 (geloest 2026-10-05):** der Abzug 177 traegt die Summe 00A67CH,
  * errechnet wird 00A680H (gekipptes Bit bei 0A33H).  Die Vorgabe des Kerns ist die
- * REPARIERTE Fassung (0A33H = 00H) — der Selbsttest läuft durch.  Den Abzug, wie er ist
- * (Selbsttestfehler „ROM“ mit `C`), setzt nur der Fall AbzugRomFehlerC… über
- * `Config::gen2_rom`; der Repo-Abzug bleibt unverändert.
+ * REPARIERTE Fassung (0A33H = 00H) — der Selbsttest laeuft durch.  Den Abzug, wie er ist
+ * (Selbsttestfehler „ROM“ mit `C`), setzt nur der Fall AbzugRomFehlerC… ueber
+ * `Config::gen2_rom`; der Repo-Abzug bleibt unveraendert.
  */
 
 #include <gtest/gtest.h>
@@ -37,7 +37,7 @@ constexpr int kSpalteFehler = 0x776 - kZeile * 80;  // 1776H → Spalte 70
 constexpr long long kFrist  = 60'000'000;
 constexpr int kSchritt      = 20'000;
 
-/// @p abzug: statt der Vorgabe (repariertes 177) den unveränderten Abzug (F9, 0A33H = 04H).
+/// @p abzug: statt der Vorgabe (repariertes 177) den unveraenderten Abzug (F9, 0A33H = 04H).
 K8915Machine::Config gen2(bool abzug = false) {
     K8915Machine::Config c;
     c.generation = K8915Machine::Generation::Gen2;
@@ -67,7 +67,7 @@ bool enthaelt(K8915Machine& m, const std::string& s) {
 
 bool coldstart(K8915Machine& m) { return enthaelt(m, "* Coldstart *  Disk on A: ready"); }
 
-/// Läuft, bis @p text im Bild steht; false nach @p frist Takten.
+/// Laeuft, bis @p text im Bild steht; false nach @p frist Takten.
 bool bis(K8915Machine& m, const std::string& text, long long frist, int schritt = kSchritt) {
     for (long long t = 0; t < frist; t += m.run(schritt))
         if (enthaelt(m, text)) return true;
@@ -81,7 +81,7 @@ struct Verlauf {
     long long takte = -1;
 };
 
-/// Läuft bis Fehlerbuchstabe oder Kaltstartmeldung (oder Frist); zeichnet die Namen auf.
+/// Laeuft bis Fehlerbuchstabe oder Kaltstartmeldung (oder Frist); zeichnet die Namen auf.
 Verlauf selbsttest(K8915Machine& m) {
     Verlauf v;
     long long done = 0;
@@ -155,16 +155,16 @@ TEST(K8915Gen2Boot, AbzugRomFehlerCDannCrZurKaltstartmeldung)
     ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 3'000'000, 5'000)) << vramLines(m);
     EXPECT_EQ(m.ats().anzeige(), 0xB0) << "0907H meldet mit 61H = B0H";
     // 0EH, nicht 06H: der Stub (0400H) hat vor dem Kopierer 0EH gesetzt, und erst der
-    // RAM-Test schaltet über 87H auf 06H — den überspringt der ROM-Fehler.
+    // RAM-Test schaltet ueber 87H auf 06H — den ueberspringt der ROM-Fehler.
     EXPECT_EQ(m.ops().reg(), 0x0E) << "ROM-Fehler: kein RAM-Test, A8H bleibt 0EH vom Stub";
 }
 
 /**
  * @test K8915Gen2Boot.VorgabeSelbsttestFehlerfreiBisColdstart
- * @brief Vorgabe-ROM (repariertes 177, 0A33H = 00H, F9 gelöst): ROM → KEY → CTC → SIO → RAM
+ * @brief Vorgabe-ROM (repariertes 177, 0A33H = 00H, F9 geloest): ROM → KEY → CTC → SIO → RAM
  *        ohne Fehlerbuchstaben, ohne Tastendruck zur Kaltstartmeldung; A8H am Ende 06H
  *        (FDDC/FDE2 nach dem RAM-Test).  KEY: zwei `DC1` der K7672; CTC: drei CTCs (K2521,
- *        ATS-CTC1, ATS-CTC2) quittiert, A = 4; SIO: Echo auf drei Kanälen, drei Runden;
+ *        ATS-CTC1, ATS-CTC2) quittiert, A = 4; SIO: Echo auf drei Kanaelen, drei Runden;
  *        RAM: 64 KB durchgehend (87H), auch unter ROM, K2521-RAM und Bild.
  */
 TEST(K8915Gen2Boot, VorgabeSelbsttestFehlerfreiBisColdstart)
@@ -187,7 +187,7 @@ TEST(K8915Gen2Boot, VorgabeSelbsttestFehlerfreiBisColdstart)
 
 /**
  * @test K8915Gen2Boot.OhnePruefsteckerScheitertSio
- * @brief Ohne Rückschleife auf SIO1-A, SIO1-B, SIO2-A: Fehler unter „SIO“, Bitmaske
+ * @brief Ohne Rueckschleife auf SIO1-A, SIO1-B, SIO2-A: Fehler unter „SIO“, Bitmaske
  *        111B | 40H = `G` (wie V3).  Danach `CR` ⇒ Kaltstartmeldung.
  */
 TEST(K8915Gen2Boot, OhnePruefsteckerScheitertSio)
@@ -242,13 +242,13 @@ TEST(K8915Gen2Boot, SystemImRamFuehrtZumLader)
     EXPECT_EQ(m.ops().reg(), 0x00) << "/RESET ⇒ A8H := 00H";
     ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 5'000'000)) << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "DIAGNOSTIC")) << "kein Selbsttest erwartet\n" << vramLines(m);
-    EXPECT_EQ(m.ops().reg(), 0x0E) << "Weg über den Stub: A8H = 0EH";
+    EXPECT_EQ(m.ops().reg(), 0x0E) << "Weg ueber den Stub: A8H = 0EH";
 }
 
 /**
  * @test K8915Gen2Boot.EOderEscCStartetNeu
- * @brief An der Kaltstartmeldung führen `E` und `ESC c` zu `JP 03F3H` = Neubeginn bei
- *        0400H (neu gegenüber V3, ZRE 0956–096B); ohne System im RAM ⇒ Selbsttest
+ * @brief An der Kaltstartmeldung fuehren `E` und `ESC c` zu `JP 03F3H` = Neubeginn bei
+ *        0400H (neu gegenueber V3, ZRE 0956–096B); ohne System im RAM ⇒ Selbsttest
  *        erscheint wieder.
  */
 TEST(K8915Gen2Boot, EOderEscCStartetNeu)
@@ -259,7 +259,7 @@ TEST(K8915Gen2Boot, EOderEscCStartetNeu)
         K8915Machine m(gen2());
         m.powerOn();
         selbsttestZurKaltstartmeldung(m);
-        ASSERT_FALSE(enthaelt(m, "DIAGNOSTIC")) << "Kaltstart löscht das Bild";
+        ASSERT_FALSE(enthaelt(m, "DIAGNOSTIC")) << "Kaltstart loescht das Bild";
         for (uint8_t t : tasten) m.keyboard().sendeZeichen(t);
         EXPECT_TRUE(bis(m, "DIAGNOSTIC", 5'000'000, 5'000)) << vramLines(m);
     }
@@ -267,8 +267,8 @@ TEST(K8915Gen2Boot, EOderEscCStartetNeu)
 
 /**
  * @test K8915Gen2Boot.NmiImRomWirkungslos
- * @brief 0066H = `RETN` im ROM 175: ein NMI während des Selbsttests (unter „KEY“) wird
- *        angenommen und ändert nichts — der Selbsttest läuft fehlerfrei bis zur
+ * @brief 0066H = `RETN` im ROM 175: ein NMI waehrend des Selbsttests (unter „KEY“) wird
+ *        angenommen und aendert nichts — der Selbsttest laeuft fehlerfrei bis zur
  *        Kaltstartmeldung (V3: Selbsttest von vorn).
  */
 TEST(K8915Gen2Boot, NmiImRomWirkungslos)
@@ -296,8 +296,8 @@ TEST(K8915Gen2Boot, NmiImRomWirkungslos)
  * @test K8915Gen2Boot.RamTestSiehtUnterRomUndBild
  * @brief Der RAM-Test (A8H = 87H) legt `ED 45` (RETN) nach 0066H — ins K3528-RAM UNTER
  *        dem ROM; danach ist das Bild wieder eingeblendet (06H) und der ROM-Inhalt bei
- *        0066H ist unverändert sichtbar.  Wächter für Bit0/Bit7 der K3528 und die
- *        ausgeblendete K7024 bei 87H (zerstörungsfreier Test über 0068–FDC7H).
+ *        0066H ist unveraendert sichtbar.  Waechter fuer Bit0/Bit7 der K3528 und die
+ *        ausgeblendete K7024 bei 87H (zerstoerungsfreier Test ueber 0068–FDC7H).
  */
 TEST(K8915Gen2Boot, RamTestSiehtUnterRomUndBild)
 {
@@ -318,7 +318,7 @@ TEST(K8915Gen2Boot, RamTestSiehtUnterRomUndBild)
  * @brief Diskette 901 (V3-System SCPX 8915 V5.3, `TempDisk`): Selbsttest ohne Fehler →
  *        Kaltstartmeldung → `CR` → der mit dem V3 byteidentische Lader liest C000–EFEFH
  *        und springt nach D600H → stabiles `A>`; danach listet `dir` die Diskette.
- *        **[?] F13:** der Autostart `rade` (Bank 2) darf scheitern — geprüft wird der
+ *        **[?] F13:** der Autostart `rade` (Bank 2) darf scheitern — geprueft wird der
  *        Prompt danach, nicht RADE.
  */
 TEST(K8915Gen2Scpx, LaedtDieV3SystemdisketteBisZumPrompt)
@@ -342,7 +342,7 @@ TEST(K8915Gen2Scpx, LaedtDieV3SystemdisketteBisZumPrompt)
     EXPECT_TRUE(enthaelt(m, "SCPX 8915  V 5.3")) << vramLines(m);
     EXPECT_EQ(m.ops().reg(), 0x87) << "BIOS im Betrieb: alles RAM";
     // Beobachtet (2026-10-05): RADE meldet „no RAM-device configurated or fatal RAM-error“
-    // — keine Bank 2 (F13).  Bewusst NICHT geprüft: das Ergebnis ist eine offene Frage.
+    // — keine Bank 2 (F13).  Bewusst NICHT geprueft: das Ergebnis ist eine offene Frage.
 
     for (char ch : std::string("dir")) m.keyboard().sendeZeichen(static_cast<uint8_t>(ch));
     m.keyboard().sendeZeichen(0x0D);

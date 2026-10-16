@@ -1,0 +1,38 @@
+23.10.2012
+Nach Erprobung auf realem Rechner sind noch folgende énderungen zu machen:
+Block auf Disk speichern funktioniert nicht. Datei wird zwar angelegt, ist
+aber leer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+04.11.2012
+Speicherung auf Disk:
+Nicht nur die drei normalen Laufwerke berÅcksichtigen. Auch die Mîglichkeit
+der Speicherung auf RAF (P:) ins Auge fassen. Mîglichkeit finden, die RAF
+zu erkennen.
+
+Feststellen durch Versuche, ob man durch reservieren der einzelnen LW fest-
+stellen kann, ob sie physikalisch vorhanden sind. Dazu dann jeweils den
+Status auswerten.
+

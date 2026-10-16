@@ -2,13 +2,13 @@
 # Systemtests: echte DDR-Programme unter dem Emulator (langsam)
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Diese Ebene fährt vollständige Anwenderabläufe mit den originalen Programmen
+# Diese Ebene faehrt vollstaendige Anwenderablaeufe mit den originalen Programmen
 # (FORMAT.COM, CPABCGEN.COM, SCPX INIT/MODF/SYSP, HARDY) — je Fall ein oder
 # mehrere komplette Kaltstarts, Laufzeit Minuten statt Millisekunden.
 #
 # Labels: "system;slow" plus das historische "format_integration", auf das
 # tools/dev.sh (test / test-all / test-format) und die Dokumentation verweisen.
-# `tools/dev.sh test` schließt sie via `-LE format_integration` aus.
+# `tools/dev.sh test` schliesst sie via `-LE format_integration` aus.
 
 set(_libs k1520_a5120 k1520_floppy k1520_logger k1520_testsupport)
 set(_lbl  "system;slow;format_integration")
@@ -17,6 +17,18 @@ set(_lbl  "system;slow;format_integration")
 # MODF/SYSP erzeugen ein 5x1024-System, PIP kopiert, davon wird gebootet.
 k1520_add_test(scpx_init SRC test_scpx_init.cpp LIBS ${_libs}
                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 120)
+
+# SCPX + Robotron-Kassettenbibliothek KMBG.REL (doc/design/29_kassette.md AP K8): KMBGTEST.COM
+# schreibt mit gesteckter K5020 einen Block, setzt zurueck, liest ihn wieder.
+k1520_add_test(scpx_kmbg SRC test_scpx_kmbg.cpp LIBS ${_libs} k1520_fs
+                         LABELS "${_lbl}" DEFS LOG_LEVEL=2
+                         K1520_KMBGTEST_COM="${CMAKE_SOURCE_DIR}/tools/kassette/kmbgtest/kmbgtest.com"
+                         TIMEOUT 300)
+
+# BCU 880 V1.2 auf dem A5120 „KMBG“ (doc/design/32_… AP A8): INIT formatiert die Kassette in
+# Laufwerk F:, PIP schreibt eine Datei dorthin und liest sie zurueck.
+k1520_add_test(bcu_kassette SRC test_bcu_kassette.cpp LIBS ${_libs} k1520_fs
+                            LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 600)
 
 # UDOS-4.3-Schreibpfad (origin/main 69b7445): 8212-Laufwerksauswahl und
 # Sektorkontrollblock — langsam, daher dasselbe Label.
@@ -34,17 +46,17 @@ k1520_add_test(disktool_udos_roundtrip SRC test_disktool_udos_roundtrip.cpp
 k1520_add_test(hardy     SRC test_hardy.cpp     LIBS ${_libs}
                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 180)
 
-# ─── Boot-Disk-Erstellung: leere Diskette → formatieren → bootfähig → boot ──
-# Voller Anwender-Workflow (Tastatur-getrieben über format_driver): eine leere,
-# als Systemformat formatierte Diskette wird mit CPABCGEN.COM bootfähig gemacht
+# ─── Boot-Disk-Erstellung: leere Diskette → formatieren → bootfaehig → boot ──
+# Voller Anwender-Workflow (Tastatur-getrieben ueber format_driver): eine leere,
+# als Systemformat formatierte Diskette wird mit CPABCGEN.COM bootfaehig gemacht
 # und der Rechner davon kalt gebootet (make_bootdisk.py, Exit 0 = "BOOTDISK OK").
 # Diese Tests dauern LANGE (voller Boot je Schritt) → LABEL "format_integration";
-# sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schließt
-# sie via `-LE format_integration` aus; `tools/dev.sh test-format` führt nur sie aus).
+# sie laufen bei den Standard-Regressionstests NICHT mit (tools/dev.sh test schliesst
+# sie via `-LE format_integration` aus; `tools/dev.sh test-format` fuehrt nur sie aus).
 # FORMAT_DRIVER zeigt auf das Tool DIESES Build-Verzeichnisses.
 set(_mkboot "${CMAKE_CURRENT_SOURCE_DIR}/drivers/make_bootdisk.py")
 # Ein Boot-Disk-Test je Preset: Leerdiskette → FORMAT → CPABCGEN → Kaltboot-Verify.
-# (Bis 2026-08-07 wurde hier zusätzlich MK_DISK_TEMPLATE gereicht — der Treiber legt
+# (Bis 2026-08-07 wurde hier zusaetzlich MK_DISK_TEMPLATE gereicht — der Treiber legt
 # die Diskette seit dem Medium-Umbau selbst unformatiert an und liest die Variable
 # nicht mehr; mk_disk_template bleibt als Handwerkzeug bestehen.)
 macro(add_bootdisk_test name preset)
@@ -61,13 +73,13 @@ add_bootdisk_test(bootdisk_mf6400_fmt1   mf6400_fmt1)    # 8″-DD Mischd. 26×1
 add_bootdisk_test(bootdisk_k5600_10_fmt1 k5600_10_fmt1)  # 5¼″-40-SS 26×128+5×1024
 add_bootdisk_test(bootdisk_k5600_20_fmt1 k5600_20_fmt1)  # 5¼″-80-SS 26×128+5×1024 (C:)
 # HINWEIS: Preset mf3200_fmt1 (8″-SD/FM 26×128+4×1024) ist bewusst NICHT als Test
-# registriert — die 1024-B-FM-Datensektoren werden korrekt geschrieben (CRC gültig),
+# registriert — die 1024-B-FM-Datensektoren werden korrekt geschrieben (CRC gueltig),
 # aber das laufende OS liest sie nicht (256-B-FM funktioniert): offener 1024-B-FM-SD-
-# Lesepfad, seltenes Format.  Preset bleibt für manuelle Analyse verfügbar (§8.6).
+# Lesepfad, seltenes Format.  Preset bleibt fuer manuelle Analyse verfuegbar (§8.6).
 
-# ─── Format-Matrix: jeder FORMAT.COM-Menüeintrag jedes Laufwerkstyps ────────
+# ─── Format-Matrix: jeder FORMAT.COM-Menueeintrag jedes Laufwerkstyps ────────
 # Die Matrix kommt per `--list-matrix` aus format_all.py selbst — dort stehen die
-# Formattabellen, also wächst der Testsatz beim nächsten `cmake` automatisch mit.
+# Formattabellen, also waechst der Testsatz beim naechsten `cmake` automatisch mit.
 # Eigenes LABEL "format_matrix": weder in der Standard-Regression noch in
 # `dev.sh test-format` (das nur die Boot-Disk-Kette meint) → `dev.sh test-matrix`.
 set(_fmtall "${CMAKE_CURRENT_SOURCE_DIR}/drivers/format_all.py")
@@ -111,7 +123,7 @@ endif()
 # ─── K8915 (doc/design/16_k8915.md §8a AP-E4f): FORMAT.COM + DISGEN.COM im /WAIT-Betrieb ──
 # Die Kette Leerdiskette → FORMAT (80 Zylinder) → DISGEN → Kaltstart ist die TIEFE
 # (format_integration, ≈ 500 Mio. Takte); jedes zweiseitige 80-Zylinder-Verfahren des
-# FORMAT-Menüs auf Zylinder 00–02 die BREITE (format_matrix, wie die A5120-Matrix).
+# FORMAT-Menues auf Zylinder 00–02 die BREITE (format_matrix, wie die A5120-Matrix).
 k1520_add_test(k8915_format SRC test_k8915_format.cpp
                             LIBS k1520_k8915 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
@@ -121,8 +133,8 @@ k1520_add_test(k8915_format_verfahren SRC test_k8915_format_verfahren.cpp
 
 # ─── SERTEST.COM (Entwurf 19 §14.8, AP-ST2): Serial Test unter CP/A und SCPX 8915 ──
 # Erkennung + Schnittstellenliste, Kurzhilfe, Ergebniszeilen, Ctrl+C → bedienbar.
-# Gerüst: sertest_hilfen.h.  Die eingecheckte .com kommt über K1520_SERTEST_COM;
-# ob sie zur Quelle passt, prüft cli_sertest_com_passt_zur_quelle.
+# Geruest: sertest_hilfen.h.  Die eingecheckte .com kommt ueber K1520_SERTEST_COM;
+# ob sie zur Quelle passt, prueft cli_sertest_com_passt_zur_quelle.
 k1520_add_test(sertest SRC test_sertest.cpp
                        LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                        LABELS "system;fast" DEFS LOG_LEVEL=2
@@ -130,7 +142,7 @@ k1520_add_test(sertest SRC test_sertest.cpp
                        K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM"
                        K1520_SERTEST_V02="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V02.COM")
 # AP-ST5: Tester gegen Gegenstelle auf zwei gekoppelten Maschinen (RFC 2217, Loopback).
-# Ein schneller Fall (A5120 ↔ A5120 V.24) in der Standardregression, die übrigen
+# Ein schneller Fall (A5120 ↔ A5120 V.24) in der Standardregression, die uebrigen
 # (je zwei Kaltstarts, K8915, gemischt, Gegenfall) unter format_integration.
 k1520_add_test(sertest_kopplung SRC test_sertest_kopplung.cpp
                        LIBS k1520_a5120 k1520_k8915 k1520_pc1715 k1520_prg710 k1520_fs k1520_logger k1520_testsupport
@@ -145,16 +157,16 @@ k1520_add_test(sertest_kopplung_lang SRC test_sertest_kopplung.cpp
                        K1520_SERTEST_V01="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V01.COM"
                        K1520_SERTEST_V02="${CMAKE_SOURCE_DIR}/tests/fixtures/cpm/SERTEST_V02.COM" TIMEOUT 300)
 
-# ─── PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): FORMAT → bootfähige Diskette ──
+# ─── PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): FORMAT → bootfaehige Diskette ──
 # Die TIEFE: UDOS-FORMAT beider Seiten mit SYSTEMDISK? Y, Systemdateien kopieren, Kaltstart
-# von der neuen Diskette; SCPX-FORMAT.COM 5 × 1024.  Die schnellen Fälle:
+# von der neuen Diskette; SCPX-FORMAT.COM 5 × 1024.  Die schnellen Faelle:
 # tests/integration/test_prg710_format.cpp.
 k1520_add_test(prg710_format_boot SRC test_prg710_format_boot.cpp
                             LIBS k1520_prg710 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 300)
 
 # ─── PC 1715 (doc/design/21_pc1715.md AP-4f): Werkstest PCTEST.COM unter SCP 1715 mit
-# Prüfsteckern (Loop am Hub), wie HARDY — Testzeit 1 min Maschinenzeit.
+# Pruefsteckern (Loop am Hub), wie HARDY — Testzeit 1 min Maschinenzeit.
 k1520_add_test(pc1715_pctest_scp SRC test_pc1715_pctest_scp.cpp
                             LIBS k1520_pc1715 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
@@ -165,7 +177,7 @@ k1520_add_test(pc1715_format SRC test_pc1715_format.cpp
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 TIMEOUT 600)
 
 # ─── P8000 M3-Anfang (doc/design/25_p8000.md §10.11 AP P13d): WDC 4.2 an der 16-Bit-PIO2,
-# sa.format + sa.verify von der WEGA-Startdiskette formatieren und prüfen eine TempPlatte
+# sa.format + sa.verify von der WEGA-Startdiskette formatieren und pruefen eine TempPlatte
 # (K5504.50, 5120 Spuren) — Minuten, daher format_integration.
 set(_p8000_dir "P8000_FIXTURE_DIR=\"${CMAKE_SOURCE_DIR}/tests/fixtures/p8000\"")
 k1520_add_test(p8000_sa_format SRC test_p8000_sa_format.cpp
@@ -173,19 +185,19 @@ k1520_add_test(p8000_sa_format SRC test_p8000_sa_format.cpp
                             LABELS "system;slow;format_integration" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 3600)
 
 # ─── P8000 M3 (doc/design/25_p8000.md AP P15): WEGA 3.0 auf die Platte installieren und von ihr
-# starten.  Braucht die WEGA-Disketten außerhalb des Repos (sonst übersprungen) und rechnet
+# starten.  Braucht die WEGA-Disketten ausserhalb des Repos (sonst uebersprungen) und rechnet
 # Milliarden Takte — eigenes Label `wega_install` (NICHT in test/test-format; tools/dev.sh test-wega).
-# Zwischenstände in ~/.cache/k1520emu/p8000_wega (tests/support/p8000_wega.h).
+# Zwischenstaende in ~/.cache/k1520emu/p8000_wega (tests/support/p8000_wega.h).
 k1520_add_test(p8000_wega_install SRC test_p8000_wega_install.cpp
                             LIBS k1520_p8000 k1520_fs k1520_logger k1520_testsupport
                             LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 ${_p8000_dir} TIMEOUT 14400 RUN_SERIAL)
 
 # ─── P8000 Mehrplatz-Abnahme (doc/design/25_p8000.md §11 AP P22): Kaltstart von der Platte aus
-# p15_7_sync mit der Konsole am Originalterminal und zwei Arbeitsplätzen („P8000 Terminal") über
-# Loopback-Telnet.  Ohne Zwischenstand übersprungen; Label wie die Installation.
+# p15_7_sync mit der Konsole am Originalterminal und zwei Arbeitsplaetzen („P8000 Terminal") ueber
+# Loopback-Telnet.  Ohne Zwischenstand uebersprungen; Label wie die Installation.
 k1520_add_test(p8000_wega_mehrplatz SRC test_p8000_wega_mehrplatz.cpp
                             LIBS k1520_p8000 k1520_logger k1520_testsupport
                             LABELS "system;slow;wega_install" DEFS LOG_LEVEL=2 TIMEOUT 7200 RUN_SERIAL)
 
-# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+# Zeitgrenzen der add_test()-Faelle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()

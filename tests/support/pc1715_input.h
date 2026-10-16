@@ -1,11 +1,11 @@
 /**
  * @file pc1715_input.h
- * @brief Bildschirm lesen, auf Text warten und tippen am PC 1715 (Tastatur1715 über SIO-A).
+ * @brief Bildschirm lesen, auf Text warten und tippen am PC 1715 (Tastatur1715 ueber SIO-A).
  *
- * Header-only: `k1520_testsupport` linkt die 1715-Bibliothek bewusst nicht mit.  Gegenstück zu
- * `keyboard.h`/`machine_run.h` (A5120Machine).  Die Batchgröße ist die der anderen Tastaturtests
- * (5 000 Takte); eine Taste braucht Entprellung (3 Abfragedurchläufe ≈ 50 000 Takte) und eine
- * Pause bis zum nächsten Anschlag — die Zeiten stehen hier zentral.
+ * Header-only: `k1520_testsupport` linkt die 1715-Bibliothek bewusst nicht mit.  Gegenstueck zu
+ * `keyboard.h`/`machine_run.h` (A5120Machine).  Die Batchgroesse ist die der anderen Tastaturtests
+ * (5 000 Takte); eine Taste braucht Entprellung (3 Abfragedurchlaeufe ≈ 50 000 Takte) und eine
+ * Pause bis zum naechsten Anschlag — die Zeiten stehen hier zentral.
  */
 #pragma once
 
@@ -16,7 +16,7 @@
 namespace k1520test::pc1715 {
 
 inline constexpr long long kBatch = 5'000;
-/// Taste gedrückt halten: sicher über Entprellung (≈ 50 000 Takte) plus Phase des Abfragedurchlaufs.
+/// Taste gedrueckt halten: sicher ueber Entprellung (≈ 50 000 Takte) plus Phase des Abfragedurchlaufs.
 inline constexpr long long kHalten = 150'000;
 /// Nach dem Loslassen: Rahmen laufen aus, Gast holt das Zeichen, Taste gilt als losgelassen.
 inline constexpr long long kPause = 100'000;
@@ -38,7 +38,7 @@ inline void laufe(Pc1715Machine& m, long long takte) {
     for (long long t = 0; t < takte; t += kBatch) m.run(int(kBatch));
 }
 
-/// Läuft, bis @p nadel irgendwo im Bild steht (höchstens @p grenze Takte).
+/// Laeuft, bis @p nadel irgendwo im Bild steht (hoechstens @p grenze Takte).
 inline bool laufeBisText(Pc1715Machine& m, const std::string& nadel, long long grenze,
                          long long pruefe_alle = 100'000) {
     long long t = 0, seit = 0;
@@ -53,7 +53,7 @@ inline bool laufeBisText(Pc1715Machine& m, const std::string& nadel, long long g
     return bild(m).find(nadel) != std::string::npos;
 }
 
-/// Läuft, bis eine Bildzeile genau @p prompt lautet (Prompt-Zeile des Betriebssystems).
+/// Laeuft, bis eine Bildzeile genau @p prompt lautet (Prompt-Zeile des Betriebssystems).
 inline bool laufeBisPrompt(Pc1715Machine& m, const std::string& prompt, long long grenze) {
     long long t = 0;
     while (t < grenze) {
@@ -64,7 +64,7 @@ inline bool laufeBisPrompt(Pc1715Machine& m, const std::string& prompt, long lon
     return false;
 }
 
-/// Zeichenkette über die Maschinen-API tippen (keyPress/keyRelease, ASCII wie der Gast es sieht).
+/// Zeichenkette ueber die Maschinen-API tippen (keyPress/keyRelease, ASCII wie der Gast es sieht).
 inline void tippe(Pc1715Machine& m, const std::string& text) {
     for (char c : text) {
         const uint32_t k = (c == '\r' || c == '\n') ? 0x01000004u : uint8_t(c);
@@ -75,7 +75,7 @@ inline void tippe(Pc1715Machine& m, const std::string& text) {
     }
 }
 
-/// Zeile tippen und mit Return abschließen.
+/// Zeile tippen und mit Return abschliessen.
 inline void tippeZeile(Pc1715Machine& m, const std::string& text) { tippe(m, text + "\r"); }
 
 }  // namespace k1520test::pc1715

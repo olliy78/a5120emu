@@ -18,7 +18,7 @@ std::string signaturText() { return std::string("k1520emu ") + K1520_VERSION_TEX
 
 void TelnetTransport::start(Wandler& w) {
     codec_.start();
-    w.anbinden();   // keine Leitungen: Eingänge = „verbunden" (§6.4)
+    w.anbinden();   // keine Leitungen: Eingaenge = „verbunden" (§6.4)
 }
 
 // ─── RFC 2217 ───────────────────────────────────────────────────────────────
@@ -28,8 +28,8 @@ Rfc2217Transport::Rfc2217Transport(TelnetRolle rolle, std::string signatur)
 
 uint8_t Rfc2217Transport::flussWert(bool xonxoff) const {
     // Flussart aus den Wandler-Einstellungen (§7.5).  Hardware (3) wird bewusst NICHT
-    // gemeldet: die RTS/CTS-Brücke ist ein Stecker, kein Protokoll, und ein ser2net mit
-    // Hardware-Fluss hielte an einem Gerät ohne CTS-Treiber an.  Den RTS-Halt leistet
+    // gemeldet: die RTS/CTS-Bruecke ist ein Stecker, kein Protokoll, und ein ser2net mit
+    // Hardware-Fluss hielte an einem Geraet ohne CTS-Treiber an.  Den RTS-Halt leistet
     // der Wandler selbst (§6.4), RTS geht als SET-CONTROL ohnehin hinaus.
     return xonxoff ? r2::FLUSS_XONXOFF : r2::FLUSS_KEINE;
 }
@@ -119,7 +119,7 @@ void Rfc2217Transport::start(Wandler& w) {
 void Rfc2217Transport::abgleich(Wandler& w) {
     const WandlerSicht s = w.sicht();
     const WandlerEinstellung e = w.einstellung();
-    const SerialFormat& gast = s.wirksam;   // Leitsatz 4: der Gast ist maßgeblich
+    const SerialFormat& gast = s.wirksam;   // Leitsatz 4: der Gast ist massgeblich
 
     for (const Rfc2217Ereignis& ev : codec_.nimmEreignisse()) {
         using A = Rfc2217Ereignis::Art;
@@ -162,7 +162,7 @@ void Rfc2217Transport::abgleich(Wandler& w) {
             }
             continue;
         }
-        // Server: jede Anfrage wird mit dem TATSÄCHLICHEN Wert beantwortet.
+        // Server: jede Anfrage wird mit dem TATSAECHLICHEN Wert beantwortet.
         if (ev.antwort) continue;
         switch (ev.art) {
             case A::Signatur:
@@ -203,7 +203,7 @@ void Rfc2217Transport::abgleich(Wandler& w) {
                     case r2::FLUSS_ABFRAGE: case r2::FLUSS_KEINE: case r2::FLUSS_XONXOFF:
                     case r2::FLUSS_HARDWARE: case r2::FLUSS_DCD: case r2::FLUSS_DTR:
                     case r2::FLUSS_DSR:
-                        antwort = flussWert(e.xonxoff);   // Einstellung ändert nur der Anwender
+                        antwort = flussWert(e.xonxoff);   // Einstellung aendert nur der Anwender
                         break;
                     case r2::EINFLUSS_ABFRAGE: case r2::EINFLUSS_KEINE:
                     case r2::EINFLUSS_XONXOFF: case r2::EINFLUSS_HARDWARE:
@@ -227,9 +227,9 @@ void Rfc2217Transport::abgleich(Wandler& w) {
                 codec_.sendeFlussHalt(false, true);
                 break;
             case A::Leeren:
-                // Sicht des Zugangsservers: „Empfangspuffer" = was vom Gerät (unserem
+                // Sicht des Zugangsservers: „Empfangspuffer" = was vom Geraet (unserem
                 // Gast) kam und zum Netz will = unser Sendepuffer; „Sendepuffer" = was
-                // zum Gerät will = unser Empfangspuffer.
+                // zum Geraet will = unser Empfangspuffer.
                 w.leeren(ev.wert & r2::PURGE_EMPFANG, ev.wert & r2::PURGE_SENDEN);
                 codec_.sendeLeeren(static_cast<uint8_t>(ev.wert), true);
                 break;
@@ -259,7 +259,7 @@ void Rfc2217Transport::abgleich(Wandler& w) {
     } else {
         const uint8_t m = modemByte(s, w.v24());
         if (m != modemGemeldet_) {
-            // Deltabits (untere Hälfte) zu den geänderten Zuständen.
+            // Deltabits (untere Haelfte) zu den geaenderten Zustaenden.
             const uint8_t diff = m ^ modemGemeldet_;
             uint8_t delta = 0;
             if (diff & r2::MS_CTS) delta |= r2::MS_DELTA_CTS;
@@ -290,12 +290,12 @@ bool DateiTransport::oeffnen(const std::string& pfad, bool anhaengen, std::strin
     puffer_.clear();
     auto modus = std::ios::binary | std::ios::out | (anhaengen ? std::ios::app : std::ios::trunc);
     errno = 0;
-    // u8path: der Pfad kommt als UTF-8 aus der Oberfläche; unter Windows öffnet
-    // std::ofstream dann über den Breitzeichenweg (Umlaute im Dokumentenordner).
+    // u8path: der Pfad kommt als UTF-8 aus der Oberflaeche; unter Windows oeffnet
+    // std::ofstream dann ueber den Breitzeichenweg (Umlaute im Dokumentenordner).
     f_.open(std::filesystem::u8path(pfad), modus);
     if (!f_.is_open()) {
         if (fehler) {
-            *fehler = "Datei lässt sich nicht öffnen: " + pfad;
+            *fehler = "Datei laesst sich nicht oeffnen: " + pfad;
             if (errno) *fehler += std::string(" (") + std::strerror(errno) + ")";
         }
         return false;

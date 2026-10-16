@@ -1,7 +1,7 @@
 /**
  * @file test_k6022_bindung.cpp
  * @brief K6022: Leser aus Datei im Bandformat, Stanzer an eine Datei gebunden mit
- *        verzögertem Zurückschreiben (doc/design/23_lochstreifen.md §5, AP-L2).
+ *        verzoegertem Zurueckschreiben (doc/design/23_lochstreifen.md §5, AP-L2).
  */
 
 #include <gtest/gtest.h>
@@ -31,7 +31,7 @@ void dateiAnlegen(const std::string& p, const std::vector<uint8_t>& d) {
     f.write(reinterpret_cast<const char*>(d.data()), static_cast<std::streamsize>(d.size()));
 }
 
-/// Räumt eine Temp-Datei am Ende des Tests weg (auch wenn er scheitert).
+/// Raeumt eine Temp-Datei am Ende des Tests weg (auch wenn er scheitert).
 struct TempDatei {
     std::string pfad;
     explicit TempDatei(const std::string& name) : pfad(k1520test::tempPath(name)) {
@@ -73,8 +73,8 @@ struct K6022Bindung : ::testing::Test {
 
 }  // namespace
 
-/// Gebundener Stanzer: während des Stanzens bleibt die Datei, wie sie war; nach der
-/// Stanzpause (0,5 s Maschinenzeit) steht das Band im gewählten Format darin.
+/// Gebundener Stanzer: waehrend des Stanzens bleibt die Datei, wie sie war; nach der
+/// Stanzpause (0,5 s Maschinenzeit) steht das Band im gewaehlten Format darin.
 TEST_F(K6022Bindung, StanzerSchreibtNachDerStanzpause) {
     TempDatei d("k6022_bindung.hex");
     std::string fehler;
@@ -94,7 +94,7 @@ TEST_F(K6022Bindung, StanzerSchreibtNachDerStanzpause) {
     EXPECT_EQ(k->stanzerFehler(), "");
 }
 
-/// Eine vorhandene Datei ist der Bandanfang: weiterstanzen hängt an.
+/// Eine vorhandene Datei ist der Bandanfang: weiterstanzen haengt an.
 TEST_F(K6022Bindung, WeiterstanzenHaengtAnVorhandeneDateiAn) {
     TempDatei d("k6022_anhaengen.txt");
     dateiAnlegen(d.pfad, lochstreifen::schreiben({0x01, 0x02}, Format::AsciiArt));
@@ -125,8 +125,8 @@ TEST_F(K6022Bindung, NeuesBandLeertDieDatei) {
     EXPECT_EQ(std::filesystem::file_size(d.pfad), 0u);
 }
 
-/// Lösen schreibt sofort (ohne Pause) zurück; danach sammelt der Stanzer im Speicher.
-/// Der Wechsel der Datei und das Zerstören der Karte schreiben ebenso.
+/// Loesen schreibt sofort (ohne Pause) zurueck; danach sammelt der Stanzer im Speicher.
+/// Der Wechsel der Datei und das Zerstoeren der Karte schreiben ebenso.
 TEST_F(K6022Bindung, LoesenWechselUndDestruktorSchreiben) {
     TempDatei a("k6022_loesen_a.ptp");
     TempDatei b("k6022_loesen_b.ptp");
@@ -138,7 +138,7 @@ TEST_F(K6022Bindung, LoesenWechselUndDestruktorSchreiben) {
     EXPECT_EQ(k->stanzerDatei(), "");
     stanze({0x66});
     lauf(HZ);
-    EXPECT_EQ(dateiInhalt(a.pfad), (std::vector<uint8_t>{0x55})) << "gelöst: Datei bleibt";
+    EXPECT_EQ(dateiInhalt(a.pfad), (std::vector<uint8_t>{0x55})) << "geloest: Datei bleibt";
 
     ASSERT_TRUE(k->stanzerBinden(a.pfad, Format::Roh, fehler)) << fehler;
     stanze({0x77});
@@ -162,7 +162,7 @@ TEST_F(K6022Bindung, LeserLiestIntelHexUndAsciiArt) {
         EXPECT_EQ(k->leserFormat(), f);
         EXPECT_EQ(k->leserStand().laenge, band.size());
 
-        // Über die PIO abholen (Betriebsart 1): Vorlauf, dann das Band.
+        // Ueber die PIO abholen (Betriebsart 1): Vorlauf, dann das Band.
         for (uint8_t v : {0xCF, 0xF0}) bus.ioWrite(0xE7, v);
         for (uint8_t v : {0xEC, 0x4F, 0x83}) bus.ioWrite(0xE6, v);
         std::vector<uint8_t> gelesen;

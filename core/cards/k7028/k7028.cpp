@@ -1,6 +1,6 @@
 /**
  * @file k7028.cpp
- * @brief ATS K7028.30 des K8915 — Dekodierung, Interruptkette, Anschlüsse nach außen.
+ * @brief ATS K7028.30 des K8915 — Dekodierung, Interruptkette, Anschluesse nach aussen.
  * @see k7028.h, doc/design/16_k8915.md §3.2, §8a AP-E2
  */
 
@@ -12,41 +12,41 @@ using k1520::serial::SerialFormat;
 
 // ─── Anschluss je Kanal (Entwurf 19 §3.2, §5.1, AP-S5, AP-S12) ──────────────
 //
-// Namen und Stecker nach der BESCHRIFTUNG AM GERÄT (Anwender, 2026-10-01; AP-S12):
-//   X3 „Drucker/IFSS1"  = SIO1-B — fest steht unabhängig von jeder Beschriftung: der
+// Namen und Stecker nach der BESCHRIFTUNG AM GERAET (Anwender, 2026-10-01; AP-S12):
+//   X3 „Drucker/IFSS1"  = SIO1-B — fest steht unabhaengig von jeder Beschriftung: der
 //                         BIOS-Drucker (LIST) liegt auf SIO1-B (42H/43H, CTC1 K2).
 //   X4 „V.24"           = SIO1-A — die einzige Schnittstelle mit Steuerleitungen
-//                         (Stecker X4 am Gerät nur „vermutlich", Anwender).
+//                         (Stecker X4 am Geraet nur „vermutlich", Anwender).
 //   X5 „DFÜ/IFSS2"      = SIO2-A — die IFSS-Stromschleife der Karte.
 //
-// Der Stromlaufplan 1.45.518732.4/04 Blatt 1 (k8915schaltung.pdf S. 11) zählt die
+// Der Stromlaufplan 1.45.518732.4/04 Blatt 1 (k8915schaltung.pdf S. 11) zaehlt die
 // Stecker der KARTE anders — dort liegt die volle V.24 an X3 und SIO1-B an X4; X5
-// stimmt überein.  Die Gerätebeschriftung geht vor (sie ist, was der Anwender sieht);
+// stimmt ueberein.  Die Geraetebeschriftung geht vor (sie ist, was der Anwender sieht);
 // der Widerspruch steht in doc/design/16_k8915.md §3.2.  Elektrisch laut Plan:
-//   SIO1-A  → Karten-X3: volle V.24, Empfänger D17:01/02 für 104/106/107/109/114/115/
-//             125, Treiber D14:03/02 für 103/105/108/113, 111 über X18; Rx-/Tx-Takt
-//             über Multiplexer D13:01/02 (DL153) aus CTC1 ZC/TO0 (über D9:02
+//   SIO1-A  → Karten-X3: volle V.24, Empfaenger D17:01/02 fuer 104/106/107/109/114/115/
+//             125, Treiber D14:03/02 fuer 103/105/108/113, 111 ueber X18; Rx-/Tx-Takt
+//             ueber Multiplexer D13:01/02 (DL153) aus CTC1 ZC/TO0 (ueber D9:02
 //             invertiert), ZC/TO1 oder den Schrittakten 114/115 — nachgebildet ist
-//             CTC1 K0.  /CTSA und /DCDA laufen NICHT über D13 und über keine
-//             Brücke (Entwurf 19 §14.5, ausgewertet 2026-10-01): /DCDA = D17:01 1Y
+//             CTC1 K0.  /CTSA und /DCDA laufen NICHT ueber D13 und ueber keine
+//             Bruecke (Entwurf 19 §14.5, ausgewertet 2026-10-01): /DCDA = D17:01 1Y
 //             = V109 direkt; /CTSA = D3:02 Pin 11 = NAND(NAND(¬/RTSA, V106), V107),
-//             d. h. CTS aktiv ⇔ V107 ∧ (¬RTS ∨ V106) — „Senden erlaubt, wenn die DÜE
+//             d. h. CTS aktiv ⇔ V107 ∧ (¬RTS ∨ V106) — „Senden erlaubt, wenn die DUEE
 //             bereit ist und, falls gesendet werden soll, CTS meldet".  RTS ist der
 //             EIGENE Ausgang RTSA der SIO: /CTSA wird deshalb auch bei jedem
 //             Schreiben in SIO 1 neu gebildet (@ref K7028::bildeCtsA), nicht nur bei
-//             einem Wechsel am Stecker.  Mit Loop/Prüfstecker (RTS→V106, DTR→V107+
-//             V109) folgt CTS = DTR.  Polarität der Empfänger P184 angenommen
-//             (invertierend wie jeder V.24-Empfänger).
-//   SIO1-B  → Karten-X4 (V.24-Pegel, nur 103/104): TxDB über X16:1–3 und D12:02 an
-//             D14:01 1A; RxTxCB = CTC1 ZC/TO2 über D9:02 (BIOS: CTC1-K2 = 4AH für den
-//             Drucker); CTSB/DCDB nur an Wickelbrücken X15:3/4, DCDB mit R1:02
-//             hochgezogen ⇒ beide inaktiv (Brücken offen, wie gezeichnet).  Eine
-//             Stromschleife hat die Karte für SIO1-B NICHT — „IFSS1" am Gerät setzt
-//             einen Wandler außerhalb der ATS voraus [?].
-//   SIO2-A  → Karten-X5 (IFSS-Stromschleife Blatt 2, S. 16, über Q1/Q2; zusätzlich
+//             einem Wechsel am Stecker.  Mit Loop/Pruefstecker (RTS→V106, DTR→V107+
+//             V109) folgt CTS = DTR.  Polaritaet der Empfaenger P184 angenommen
+//             (invertierend wie jeder V.24-Empfaenger).
+//   SIO1-B  → Karten-X4 (V.24-Pegel, nur 103/104): TxDB ueber X16:1–3 und D12:02 an
+//             D14:01 1A; RxTxCB = CTC1 ZC/TO2 ueber D9:02 (BIOS: CTC1-K2 = 4AH fuer den
+//             Drucker); CTSB/DCDB nur an Wickelbruecken X15:3/4, DCDB mit R1:02
+//             hochgezogen ⇒ beide inaktiv (Bruecken offen, wie gezeichnet).  Eine
+//             Stromschleife hat die Karte fuer SIO1-B NICHT — „IFSS1" am Geraet setzt
+//             einen Wandler ausserhalb der ATS voraus [?].
+//   SIO2-A  → Karten-X5 (IFSS-Stromschleife Blatt 2, S. 16, ueber Q1/Q2; zusaetzlich
 //             103/104), Takt CTC2 K0 (ROM/BIOS).  Keine Steuerleitungen.
-//   (SIO2-B → Karten-X6: Tastatur K7672, Stromschleife SD/ED und 5 P über Si.)
-// IFSS-Kanäle ohne Steuerleitungen lassen /CTS und /DCD, wie sie seit AP-S3 sind:
+//   (SIO2-B → Karten-X6: Tastatur K7672, Stromschleife SD/ED und 5 P ueber Si.)
+// IFSS-Kanaele ohne Steuerleitungen lassen /CTS und /DCD, wie sie seit AP-S3 sind:
 // inaktiv — der Gast sieht dasselbe RR0 wie vorher.
 
 class K7028::Anschluss : public k1520::serial::SerialAnschluss {
@@ -81,8 +81,8 @@ public:
     bool senderHatZeichen() const override { return ch().senderHatZeichen(); }
     uint8_t senderNimm() override {
         uint8_t b = ch().txGet();
-        // Die Leitung trägt nur die programmierten Datenbits (AP-E4c: Fassung „55 K"
-        // des BIOS sendet 7 Bit) — Parität selbst bleibt unnachgebildet.
+        // Die Leitung traegt nur die programmierten Datenbits (AP-E4c: Fassung „55 K"
+        // des BIOS sendet 7 Bit) — Paritaet selbst bleibt unnachgebildet.
         const uint8_t bits = ch().format().tx_bits;
         if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
         k_.updateInternalChain();
@@ -159,7 +159,7 @@ void K7028::attachToBus(K1520Bus& bus)
 }
 
 // ─── E/A ─────────────────────────────────────────────────────────────────────
-// Relativ zu io_base: AB3/AB4 wählen den Baustein, AB2 fällt weg (Spiegel),
+// Relativ zu io_base: AB3/AB4 waehlen den Baustein, AB2 faellt weg (Spiegel),
 // AB1/AB0 gehen an den Baustein.
 
 uint8_t K7028::ioRead(uint8_t port)
@@ -188,7 +188,7 @@ void K7028::ioWrite(uint8_t port, uint8_t data)
     }
     const uint8_t sub = port & 0x03;
     switch ((rel >> 3) & 3) {
-        case 0: sio1_.ioWrite(sub, data); bildeCtsA(); break;   // WR5 kann RTSA ändern
+        case 0: sio1_.ioWrite(sub, data); bildeCtsA(); break;   // WR5 kann RTSA aendern
         case 1: ctc1_.ioWrite(sub, data); break;
         case 2: sio2_.ioWrite(sub, data); break;
         case 3: ctc2_.ioWrite(sub, data); break;
@@ -197,7 +197,7 @@ void K7028::ioWrite(uint8_t port, uint8_t data)
 }
 
 // /CTSA aus der Plan-Logik (Kopfkommentar, Entwurf 19 §14.5): V107 ∧ (¬RTSA ∨ V106).
-// Hängt am eigenen Ausgang RTSA — daher nach jedem Schreiben in SIO 1 und bei jedem
+// Haengt am eigenen Ausgang RTSA — daher nach jedem Schreiben in SIO 1 und bei jedem
 // Wechsel am Stecker neu gebildet.  `setzeCTS` meldet nur echte Wechsel (Ext/Status).
 void K7028::bildeCtsA()
 {

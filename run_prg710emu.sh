@@ -1,5 +1,5 @@
 #!/bin/bash
-# prg710emu — Starter des PRG710 Emulators (Gegenstück zu run_a5120emu.sh)
+# prg710emu — Starter des PRG710 Emulators (Gegenstueck zu run_a5120emu.sh)
 # Dasselbe Programm wie der A5120 Emulator, mit dem Programmprofil des PRG 710 (Modellwahl 710/710-1)
 # (app/profil.py): eigene Konfiguration prg710emu.yaml, Tastatur K7609/K7672.
 # Automatically activates venv and starts the GUI
@@ -21,12 +21,12 @@ if [ ! -d "$VENV_DIR" ]; then
     exit 1
 fi
 
-# Den Interpreter des venv DIREKT aufrufen, nicht über `source .../activate`.
-# `activate` trägt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
+# Den Interpreter des venv DIREKT aufrufen, nicht ueber `source .../activate`.
+# `activate` traegt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
 # ein kopiertes oder mitverschobenes venv stellt damit das Verzeichnis eines
 # FREMDEN venv in den PATH, und `python3` ist dann ein anderer Interpreter mit
-# anderen Paketen — Fehlerbild: eine installierte Abhängigkeit gilt als fehlend.
-# Der direkt aufgerufene Interpreter findet sein venv über den eigenen Pfad.
+# anderen Paketen — Fehlerbild: eine installierte Abhaengigkeit gilt als fehlend.
+# Der direkt aufgerufene Interpreter findet sein venv ueber den eigenen Pfad.
 PY="$VENV_DIR/bin/python3"
 
 # Set library path

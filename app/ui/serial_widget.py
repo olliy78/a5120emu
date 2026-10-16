@@ -49,16 +49,16 @@ from app.ui.focus import release_focus
 #: Aktualisierung des Docks aus dem Kern (Entwurf §9: ≈ 4 Hz).
 TAKT_MS = 250
 
-#: Zustände, in denen die Schnittstelle „aktiv" ist (Felder gesperrt, ``aktiv: true``).
+#: Zustaende, in denen die Schnittstelle „aktiv" ist (Felder gesperrt, ``aktiv: true``).
 AKTIV = (K.SER_VERBINDET, K.SER_LAUSCHT, K.SER_VERBUNDEN)
 
-#: Anzeigenamen und Konfigurationswörter der Aufzählungen.
+#: Anzeigenamen und Konfigurationswoerter der Aufzaehlungen.
 BETRIEBSARTEN = ((K.SER_TELNET, "Telnet", "telnet"),
                  (K.SER_RFC2217, "RFC2217", "rfc2217"),
                  (K.SER_DATEI, "Datei", "datei"))
 ROLLEN = ((K.SER_SERVER, "Server", "server"), (K.SER_CLIENT, "Client", "client"))
 
-#: Farben des Zustandspunkts: grau aus, gelb lauscht/verbindet, grün verbunden, rot Fehler.
+#: Farben des Zustandspunkts: grau aus, gelb lauscht/verbindet, gruen verbunden, rot Fehler.
 PUNKT_FARBE = {K.SER_AUS: "#8a8a8a", K.SER_VERBINDET: "#e0b020", K.SER_LAUSCHT: "#e0b020",
                K.SER_VERBUNDEN: "#35c43a", K.SER_FEHLER: "#e0352b"}
 FARBE_WARNUNG = "#c08a00"      # dieselbe Hinweisfarbe wie im Laufwerkskasten
@@ -83,7 +83,7 @@ def _aus_wort(tabelle, wert):
     return None
 
 
-#: Erklärung der Formatschreibweise (``8N1``) — Tooltip der Formatanzeigen.
+#: Erklaerung der Formatschreibweise (``8N1``) — Tooltip der Formatanzeigen.
 FORMAT_ERKLAERUNG = (
     "Format wie üblich: Datenbits, Parität, Stoppbits — z. B. 8N1.\n"
     "Parität: N = keine, E = gerade (even), O = ungerade (odd), "
@@ -146,7 +146,7 @@ def _abweichend(st) -> bool:
     return bool(st.baud_abweichend or st.format_abweichend)
 
 
-#: Gast: Ausgänge (RTS, DTR) und Eingänge (CTS, DSR, DCD) der V.24-Schnittstelle.
+#: Gast: Ausgaenge (RTS, DTR) und Eingaenge (CTS, DSR, DCD) der V.24-Schnittstelle.
 GAST_AUSGAENGE = (("RTS", "Anforderung zum Senden"), ("DTR", "Endgerät bereit"))
 GAST_EINGAENGE = (("CTS", "Sendebereit"), ("DSR", "Gegenstelle bereit"),
                   ("DCD", "Träger erkannt"))
@@ -158,7 +158,7 @@ GEGEN_CLIENT = (("CTS", K.SER_L_CTS), ("DSR", K.SER_L_DSR), ("DCD", K.SER_L_DCD)
                 ("RI", K.SER_L_RI))
 
 #: Gruppenbeschriftung der LED-Reihen (AP-S12): „Aus:"/„Ein:" las sich wie ein
-#: ZUSTAND — gemeint ist die Richtung.  Der Pfeil zeigt sie, der Tooltip erklärt sie.
+#: ZUSTAND — gemeint ist die Richtung.  Der Pfeil zeigt sie, der Tooltip erklaert sie.
 TITEL_AUSGAENGE = "Ausgänge →"
 TITEL_EINGAENGE = "Eingänge ←"
 TIPP_AUSGAENGE = ("Ausgänge: vom Rechner getrieben — der Gast setzt sie über die SIO "
@@ -310,7 +310,7 @@ def betriebsart_text(st) -> str:
 class SerialBlock(QFrame):
     """Ein Schnittstellenblock — Bedienelemente einer einstellbaren Schnittstelle."""
 
-    #: Der Anwender hat etwas geändert, das in die Konfiguration gehört.
+    #: Der Anwender hat etwas geaendert, das in die Konfiguration gehoert.
     changed = Signal()
 
     def __init__(self, emulator, index: int, info, parent=None):
@@ -392,7 +392,7 @@ class SerialBlock(QFrame):
         self._datei_zeile = zd
         lay.addLayout(zd)
 
-        # Zeile 2: Loop, RTS/CTS-Brücke (nur V.24), XON/XOFF, Takt (nur mit Quellen).
+        # Zeile 2: Loop, RTS/CTS-Bruecke (nur V.24), XON/XOFF, Takt (nur mit Quellen).
         z2 = QHBoxLayout()
         self.loop = QCheckBox("Rx/Tx-Loop")
         self.loop.setToolTip("Prüfstecker: TxD → RxD am Stecker.  Schließt jede "
@@ -418,15 +418,15 @@ class SerialBlock(QFrame):
         z2.addStretch()
         lay.addLayout(z2)
 
-        # Zeile 3: Gastformat (8N1 mit Erklärung im Tooltip).
+        # Zeile 3: Gastformat (8N1 mit Erklaerung im Tooltip).
         z3 = QHBoxLayout()
         self.format_label = QLabel()
         z3.addWidget(self.format_label)
         z3.addStretch()
         lay.addLayout(z3)
 
-        # Zeile 4 (nur V.24): die Leitungen des Gastes als LEDs — Ausgänge RTS/DTR
-        # (der Gast setzt sie), Eingänge CTS/DSR/DCD (der Gast liest sie).
+        # Zeile 4 (nur V.24): die Leitungen des Gastes als LEDs — Ausgaenge RTS/DTR
+        # (der Gast setzt sie), Eingaenge CTS/DSR/DCD (der Gast liest sie).
         self.leitungen = QWidget()
         z4 = QVBoxLayout(self.leitungen)
         z4.setContentsMargins(0, 0, 0, 0)
@@ -495,8 +495,8 @@ class SerialBlock(QFrame):
             self._setze_combo(self.rolle, [z[0] for z in ROLLEN].index(k.rolle))
             if not self.host.hasFocus() and self.host.text() != k.host:
                 self.host.setText(k.host)
-            # Im Betrieb zeigt das (gesperrte) Feld den TATSÄCHLICH benutzten Port —
-            # der kann vom eingestellten abweichen (belegt → nächster freier, §7.2).
+            # Im Betrieb zeigt das (gesperrte) Feld den TATSAECHLICH benutzten Port —
+            # der kann vom eingestellten abweichen (belegt → naechster freier, §7.2).
             # Gespeichert wird immer der eingestellte (``konfig_lesen`` liest den Kern).
             st = self._status
             benutzt = st.port_aktiv if (st is not None and st.zustand in AKTIV
@@ -546,7 +546,7 @@ class SerialBlock(QFrame):
         art = BETRIEBSARTEN[i][0]
         if art == K.SER_DATEI:
             # Der Speichern-Dialog erscheint SOFORT beim Umschalten (§6.6); ohne
-            # Datei gibt es nichts zu starten, also zurück auf die vorige Art.
+            # Datei gibt es nichts zu starten, also zurueck auf die vorige Art.
             vorher = self._konfig.betriebsart
             pfad = self._datei_dialog()
             if not pfad:
@@ -637,7 +637,7 @@ class SerialBlock(QFrame):
         self.datei.setEnabled(frei)
         self.datei_knopf.setEnabled(frei)
 
-        # Der Knopf: gesperrt bei Loop, ungültigem Host oder fehlender Datei —
+        # Der Knopf: gesperrt bei Loop, ungueltigem Host oder fehlender Datei —
         # aber nie, solange er etwas beenden kann.
         grund = ""
         if not aktiv:
@@ -691,12 +691,12 @@ class SerialBlock(QFrame):
         warn = _abweichend(st)
         self.gegenseite.setText(text)
         self.gegenseite.setStyleSheet(f"color: {FARBE_WARNUNG};" if warn else "")
-        gründe = []
+        gruende = []
         if st.baud_abweichend:
-            gründe.append("eine andere Baudrate")
+            gruende.append("eine andere Baudrate")
         if st.format_abweichend:
-            gründe.append("ein anderes Format")
-        tipp = ("Die Gegenseite arbeitet mit " + " und ".join(gründe) + " als der Gast — "
+            gruende.append("ein anderes Format")
+        tipp = ("Die Gegenseite arbeitet mit " + " und ".join(gruende) + " als der Gast — "
                 "die Zeichen kommen, aber im falschen Takt bzw. falsch gedeutet."
                 if warn else "Baudrate und Format der Gegenseite (RFC 2217).")
         tipp += ("\n\nFormat: Datenbits, Parität (N keine, E gerade, O ungerade, "
@@ -705,7 +705,7 @@ class SerialBlock(QFrame):
                  "ein Client CTS, DSR, DCD und RI des Servers; "
                  "unbekannte Leitungen stehen als Umriss.")
         self.gegenseite.setToolTip(tipp)
-        # Nur die Leitungen, die diese Rolle überhaupt sehen kann.
+        # Nur die Leitungen, die diese Rolle ueberhaupt sehen kann.
         sichtbar = GEGEN_SERVER if st.rolle == K.SER_SERVER else GEGEN_CLIENT
         self.gegen_leitungen.zeige_nur(n for n, _b in sichtbar)
         zust = {}
@@ -754,8 +754,8 @@ class SerialBlock(QFrame):
         übergangen, nicht als Fehler behandelt (ältere/fremde Konfigurationen)."""
         if not isinstance(d, dict):
             return
-        # Eine laufende Schnittstelle erst anhalten: die gesperrten Felder ließen
-        # sich im Betrieb nicht ändern.
+        # Eine laufende Schnittstelle erst anhalten: die gesperrten Felder liessen
+        # sich im Betrieb nicht aendern.
         self.emulator.serial_stop(self.index)
         f = {}
         art = _aus_wort(BETRIEBSARTEN, d.get("betriebsart"))
@@ -790,7 +790,7 @@ class SerialBlock(QFrame):
         k = self.emulator.serial_config(self.index)
         if d.get("aktiv") is True and k is not None and not k.loop:
             # Server: nur der eingestellte Port (belegt → nicht gestartet, Vorschlag
-            # ins Port-Feld); Client: Dauerversuch; Datei: anhängend.
+            # ins Port-Feld); Client: Dauerversuch; Datei: anhaengend.
             if not self.emulator.serial_start_auto(self.index):
                 st = self.emulator.serial_status(self.index)
                 if st is not None and st.port_vorschlag:
@@ -802,19 +802,19 @@ class SerialBlock(QFrame):
 class SerialWidget(QWidget):
     """Der Inhalt des Docks „Schnittstellen"."""
 
-    #: Der Anwender hat etwas geändert, das gespeichert werden soll.
+    #: Der Anwender hat etwas geaendert, das gespeichert werden soll.
     changed = Signal()
     #: Statuszeile: (Servertext, Servertipp, Verbindungstext, Verbindungstipp);
-    #: ein leerer Text heißt „Feld ausblenden".
+    #: ein leerer Text heisst „Feld ausblenden".
     statuszeile = Signal(str, str, str, str)
 
     def __init__(self, emulator, parent=None, ports=(), hinweis: str = ""):
         super().__init__(parent)
         self.emulator = None
-        #: Port-Vorschläge je Schnittstellenname (``(name, port)``); gelten nur für eine Schnittstelle,
-        #: die noch auf dem Kernvorgabe-Port steht (eine gespeicherte Wahl überschreibt sie danach).
+        #: Port-Vorschlaege je Schnittstellenname (``(name, port)``); gelten nur fuer eine Schnittstelle,
+        #: die noch auf dem Kernvorgabe-Port steht (eine gespeicherte Wahl ueberschreibt sie danach).
         self.ports = dict(ports)
-        #: Hinweistext über den Blöcken (Mehrplatzbetrieb am P8000); leer = keiner.
+        #: Hinweistext ueber den Bloecken (Mehrplatzbetrieb am P8000); leer = keiner.
         self.hinweis = hinweis
         self._bloecke: List[SerialBlock] = []
         self._lay = QVBoxLayout(self)
@@ -855,7 +855,7 @@ class SerialWidget(QWidget):
             block = SerialBlock(emulator, i, info)
             block.changed.connect(self.changed)
             # Ein Knopfdruck soll die Statuszeile sofort nachziehen, nicht erst im
-            # nächsten 4-Hz-Takt.
+            # naechsten 4-Hz-Takt.
             block.changed.connect(self._statuszeile_melden)
             self._lay.addWidget(block)
             self._bloecke.append(block)

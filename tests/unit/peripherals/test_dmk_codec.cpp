@@ -1,13 +1,13 @@
 /**
  * @file test_dmk_codec.cpp
- * @brief GoogleTests für DmkCodec (David Keil's Disk Image).
+ * @brief GoogleTests fuer DmkCodec (David Keil's Disk Image).
  *
  * Schwerpunkte:
- *   - Header-Aufbau (Zylinderzahl, Spurlänge, Seiten-/Dichte-Flags)
+ *   - Header-Aufbau (Zylinderzahl, Spurlaenge, Seiten-/Dichte-Flags)
  *   - IDAM-Tabelle: Positionen + Dichte-Bit; Datenmarke wird beim Laden gefunden
  *   - FM-Byte-Verdopplung (und ihr Wegfall bei reinen SD-Disketten)
- *   - Roundtrip: Nutzdaten, Mischdichte, unformatierte Spuren, Gap-Anhänge
- *   - Erkennung (looksLikeDmk) und Container-Sniffing über ImageCodec::detect
+ *   - Roundtrip: Nutzdaten, Mischdichte, unformatierte Spuren, Gap-Anhaenge
+ *   - Erkennung (looksLikeDmk) und Container-Sniffing ueber ImageCodec::detect
  *
  * @see core/peripherals/floppy_drive/dmk_codec.h
  * @see doc/design/09_floppy_drive.md §4.3
@@ -79,11 +79,11 @@ TEST(DmkCodec, Header_ZweiseitigMfm) {
 
     const auto f = readFile(path);
     ASSERT_GE(f.size(), 16u);
-    EXPECT_EQ(f[0], 0x00);                                  // nicht schreibgeschützt
+    EXPECT_EQ(f[0], 0x00);                                  // nicht schreibgeschuetzt
     EXPECT_EQ(f[1], 2);                                     // 2 Zylinder
     const uint16_t track_len = static_cast<uint16_t>(f[2] | (f[3] << 8));
     EXPECT_GT(track_len, 128);
-    EXPECT_EQ(track_len % 256, 0) << "Spurlänge auf 256 aufgerundet";
+    EXPECT_EQ(track_len % 256, 0) << "Spurlaenge auf 256 aufgerundet";
     EXPECT_EQ(f[4] & 0x10, 0) << "zweiseitig → Bit4 = 0";
     EXPECT_EQ(f[4] & 0x40, 0) << "MFM → kein SD-Flag";
     EXPECT_EQ(f.size(), 16u + 2u * 2u * track_len);
@@ -128,7 +128,7 @@ TEST(DmkCodec, IdamTabelle_EnthaeltAlleSektorenMitDichteBit) {
         ++belegt;
         EXPECT_TRUE(e & 0x8000) << "MFM-Sektor muss Bit15 tragen";
         const uint16_t off = e & 0x3FFF;
-        EXPECT_GE(off, 128) << "Offset zählt ab Spuranfang (inkl. IDAM-Tabelle)";
+        EXPECT_GE(off, 128) << "Offset zaehlt ab Spuranfang (inkl. IDAM-Tabelle)";
         EXPECT_LT(off, track_len);
         EXPECT_EQ(f[16 + off], 0xFE) << "Eintrag muss auf das IDAM-Byte zeigen";
     }
@@ -222,8 +222,8 @@ TEST(DmkCodec, Roundtrip_ReinesFmOhneVerdopplung) {
 
 /**
  * @test DmkCodec/Roundtrip_AnhangHinterDatenCrcBleibtErhalten
- * @brief Der eigentliche Grund für `.dmk`/`.hfe`: der UDOS-Sektorkontrollblock hinter
- *        der Daten-CRC muss den Roundtrip überleben (ein `.img` verlöre ihn).
+ * @brief Der eigentliche Grund fuer `.dmk`/`.hfe`: der UDOS-Sektorkontrollblock hinter
+ *        der Daten-CRC muss den Roundtrip ueberleben (ein `.img` verloere ihn).
  */
 TEST(DmkCodec, Roundtrip_AnhangHinterDatenCrcBleibtErhalten) {
     DiskMedium m(1, 1, Encoding::MFM);
@@ -306,7 +306,7 @@ TEST(DmkCodec, LooksLikeDmk_ErkenntEigeneDatei) {
     EXPECT_TRUE(ImageCodec::selfDescribing(ContainerType::Dmk));
     EXPECT_FALSE(ImageCodec::needsDiskFormat(ContainerType::Dmk));
 
-    // Und über die Fabrik ohne DiskFormat öffenbar.
+    // Und ueber die Fabrik ohne DiskFormat oeffenbar.
     auto img = DiskImage::open(path, std::nullopt, false);
     ASSERT_NE(img, nullptr);
     EXPECT_EQ(img->container(), ContainerType::Dmk);

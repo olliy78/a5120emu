@@ -1,0 +1,9 @@
+# boot_trace --machine mc80-31 --spe 2 (AP M8): zwei SPE 2, Banner nennt Modell und Kartenzahl.
+tool:    boot_trace
+run:     --machine mc80-31 --spe 2 --events /dev/null
+timeout: 240
+exit:    0
+expect:  === MC80.31 Boot Trace (SPE 2 x2) ===
+expect:  Prompt:      JA
+expect:  Segmentregister
+expect:  Bild (VIS 2a, Text):

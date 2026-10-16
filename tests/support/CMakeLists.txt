@@ -5,7 +5,7 @@
 # „Boote bis zum Prompt", „warte auf Text im Bildschirm", „tippe ein Kommando",
 # „kopiere die Diskette nach /tmp" war bis 2026-08-07 in
 # test_boot_integration.cpp, test_scpx_init.cpp und test_hardy.cpp jeweils
-# eigenständig implementiert.  Diese Bibliothek ist die eine Fassung davon.
+# eigenstaendig implementiert.  Diese Bibliothek ist die eine Fassung davon.
 #
 # Benutzung in einem Test:
 #     k1520_add_test(hardy SRC test_hardy.cpp

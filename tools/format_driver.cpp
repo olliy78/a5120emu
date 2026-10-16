@@ -23,8 +23,8 @@
 //   FD_GATE=from:to[:level]    raise the level (default TRACE) only in a cycle window
 //   FD_PCGATE=lo:hi[:level]    raise the level while either CPU PC is in [lo,hi] (hex)
 //   FD_PCHIST=1        per-boot-batch ZVE1/busMaster PC histogram + /BUSRQ share to stderr
-//   FD_DISKC=<path>    zusätzlich Laufwerk C: (Index 2) mounten (für FORMAT auf C:).
-//                      FD_DISKC_FMT=<DiskFormat> → C: via create NEU anlegen statt öffnen.
+//   FD_DISKC=<path>    zusaetzlich Laufwerk C: (Index 2) mounten (fuer FORMAT auf C:).
+//                      FD_DISKC_FMT=<DiskFormat> → C: via create NEU anlegen statt oeffnen.
 //   FD_PHYSICAL_B=<ms> B: als PHYSISCHE Diskette (TrackSync + Ersatz-Arbeitsfaden statt
 //                      Datei) — <ms> = simulierte Umdrehungsdauer, Kopfweg 3 ms/Spur.
 //                      Jeder Auftrag geht nach stderr ([gw t] ART cCC hH prioP Kopfweg);
@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
         fprintf(stderr,
             "usage: %s <diskA> <diskB> <script> [createB_format]\n"
             "  createB_format: wenn angegeben, wird diskB NEU angelegt (create) statt\n"
-            "                  geöffnet — .hfe = leeres Template (Format egal, z.B. '-'),\n"
+            "                  geoeffnet — .hfe = leeres Template (Format egal, z.B. '-'),\n"
             "                  .img = 0xE5-Image in der Geometrie des DiskFormat-Namens.\n",
             argv[0]);
         return 1;
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
     const char* diskA = argv[1];
     const char* diskB = argv[2];
     const char* script = argv[3];
-    const char* createB = (argc >= 5) ? argv[4] : nullptr;   // nullptr = B: öffnen
+    const char* createB = (argc >= 5) ? argv[4] : nullptr;   // nullptr = B: oeffnen
 
     Level lvl = Level::ERROR;
     if (const char* e = std::getenv("FD_LOGLEVEL")) {
@@ -225,8 +225,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Optionale Laufwerksbestückung je Slot (A,B,C,D) via FD_PROFILES="p0,p1,p2,p3".
-    // Default = 4× K5601 (5,25"-MFM).  Für 8"-Combo-Tests: die B:/C:-Slots auf die
+    // Optionale Laufwerksbestueckung je Slot (A,B,C,D) via FD_PROFILES="p0,p1,p2,p3".
+    // Default = 4× K5601 (5,25"-MFM).  Fuer 8"-Combo-Tests: die B:/C:-Slots auf die
     // vom Combo-BIOS gemeldeten Fremdtypen (MF3200 / MF6400) setzen,
     // damit die PHYSISCHE Laufwerksgeometrie (Kopfzahl/Spuren/Verfahren) zum BIOS passt.
     A5120Machine::Config cfg;
@@ -291,7 +291,7 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "Mounted A=%s  B=%s\n", diskA, diskB);
 
-    // Optionales Laufwerk C: (Index 2) — für Menü-Capture / Format auf C:.
+    // Optionales Laufwerk C: (Index 2) — fuer Menue-Capture / Format auf C:.
     if (const char* diskC = std::getenv("FD_DISKC")) {
         const char* createC = std::getenv("FD_DISKC_FMT");
         if (createC) {

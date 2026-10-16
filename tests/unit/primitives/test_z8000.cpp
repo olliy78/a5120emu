@@ -6,17 +6,17 @@
  * | Gruppe          | Inhalt                                                        |
  * |-----------------|---------------------------------------------------------------|
  * | Reset           | FCW/PC aus 0002/0004[/0006], Segment 0, Systemmodus, MO       |
- * | Register        | Bänke R14/R15 (Tabelle 4.1), RR/RQ, ungerade Paare            |
- * | Arithmetik      | Handbuch-Beispiele, Flags, DAB, MULT/MULTL, DIV/DIVL alle Fälle|
+ * | Register        | Baenke R14/R15 (Tabelle 4.1), RR/RQ, ungerade Paare            |
+ * | Arithmetik      | Handbuch-Beispiele, Flags, DAB, MULT/MULTL, DIV/DIVL alle Faelle|
  * | Logik/Bit/Schieben | AND/OR/XOR/COM/TEST/TSET/BIT/RES/SET/Rotate/Shift/RLDB     |
  * | Laden/Stapel    | LD-Arten seg/unseg, LDA/LDAR/LDR, LDM, EX, PUSH/POP, LDPS     |
- * | Sprünge         | JP/JR/CALL/CALR/RET/DJNZ, Takte genommen/nicht genommen       |
+ * | Spruenge         | JP/JR/CALL/CALR/RET/DJNZ, Takte genommen/nicht genommen       |
  * | Blockbefehle    | LDIR/LDD/CPIR/CPSD/TRTIRB/INIR/OTDR, Wiederholung, Unterbrechung |
  * | Traps           | privilegiert, SC, EPA (EPA=0 Trap, EPA=1 NOP), Rahmen, PC     |
- * | Interrupts      | NMI (Flanke), VI (Vektortabelle), NVI, Masken, IRET, Priorität|
- * | Bus             | Status je Zugriff, N/S, SN, Byte-Hälften, E/A, Refresh        |
+ * | Interrupts      | NMI (Flanke), VI (Vektortabelle), NVI, Masken, IRET, Prioritaet|
+ * | Bus             | Status je Zugriff, N/S, SN, Byte-Haelften, E/A, Refresh        |
  * | Pins            | HALT, STOP, BUSREQ, RESET-Leitung, µI/µ0 (MBIT/MREQ/MSET/MRES)|
- * | Z8002           | FCW ohne SEG, PSA mit 2-Wort-Einträgen                        |
+ * | Z8002           | FCW ohne SEG, PSA mit 2-Wort-Eintraegen                        |
  */
 #include "tests/unit/primitives/z8k_rig.h"
 
@@ -28,7 +28,7 @@ namespace {
 constexpr uint16_t SEGSYS = 0xC000;     // FCW: segmentiert, System
 constexpr uint16_t SYS = 0x4000;        // FCW: nichtsegmentiert, System
 
-/// Nichtsegmentiertes Programm ab %0100 (Z8002 oder Z8001 unseg), läuft bis HALT.
+/// Nichtsegmentiertes Programm ab %0100 (Z8002 oder Z8001 unseg), laeuft bis HALT.
 Rig& runNonseg(Rig& r, const std::string& body, uint16_t fcw = SYS) {
     r.load("  NONSEG\n  ORG %0100\n" + body + "\n  HALT\n", false);
     r.boot(fcw, 0, 0x0100);
@@ -333,7 +333,7 @@ TEST(Z8000Arith, Divl) {
     r.cpu.step();
     EXPECT_EQ(r.cpu.rr(2), uint32_t(-14)); EXPECT_EQ(r.cpu.rr(0), uint32_t(-2));
     EXPECT_TRUE(F(r, Z8000::F_S));
-    r.cpu.pc = 0x100; r.cpu.setRQ(0, 0x8000000000000000ull); r.cpu.setRR(4, 0xFFFFFFFF);  // Überlauf
+    r.cpu.pc = 0x100; r.cpu.setRQ(0, 0x8000000000000000ull); r.cpu.setRR(4, 0xFFFFFFFF);  // Ueberlauf
     int c = r.cpu.step();
     EXPECT_TRUE(F(r, Z8000::F_PV)); EXPECT_FALSE(F(r, Z8000::F_C));
     EXPECT_EQ(c, 744 - 693);
@@ -368,7 +368,7 @@ TEST(Z8000Logic, WortLogikLaesstPStehen) {
     Rig r(M::Z8002);
     runNonseg(r, "  SETFLG P\n  LD R1,#%00FF\n  XOR R1,#%00FF\n  COM R2");
     EXPECT_EQ(r.cpu.r(1), 0);
-    EXPECT_TRUE(F(r, Z8000::F_PV));        // XOR/COM (Wort): P unverändert
+    EXPECT_TRUE(F(r, Z8000::F_PV));        // XOR/COM (Wort): P unveraendert
 }
 
 TEST(Z8000Logic, BitResSetStatischUndDynamisch) {
@@ -408,7 +408,7 @@ TEST(Z8000Shift, StatischHandbuchSlal) {
     runNonseg(r, "  LDL RR2,#%1234ABCD\n  SLAL RR2,#8");
     EXPECT_EQ(r.cpu.rr(2), 0x34ABCD00u);
     EXPECT_FALSE(F(r, Z8000::F_C));
-    EXPECT_TRUE(F(r, Z8000::F_PV));   // Vorzeichen änderte sich unterwegs (Bit 31 von 0x92.. usw.)
+    EXPECT_TRUE(F(r, Z8000::F_PV));   // Vorzeichen aenderte sich unterwegs (Bit 31 von 0x92.. usw.)
 }
 
 TEST(Z8000Shift, RechtsArithmetischUndLogisch) {
@@ -417,14 +417,14 @@ TEST(Z8000Shift, RechtsArithmetischUndLogisch) {
     EXPECT_EQ(r.cpu.r(1), 0xC001);
     EXPECT_EQ(r.cpu.r(2), 0x2000);
     EXPECT_EQ(r.cpu.rb(3), 0xFF);
-    EXPECT_FALSE(F(r, Z8000::F_PV));   // SRA: V gelöscht
+    EXPECT_FALSE(F(r, Z8000::F_PV));   // SRA: V geloescht
     EXPECT_FALSE(F(r, Z8000::F_C));    // zuletzt hinausgeschoben: Bit 6 von %81 = 0
 }
 
-/// Statisches Byte-Schieben: nur das LOW-Byte des Anzahlworts zählt (MAME `GET_IMM8(OP1)`).
+/// Statisches Byte-Schieben: nur das LOW-Byte des Anzahlworts zaehlt (MAME `GET_IMM8(OP1)`).
 /// Beleg Gastsoftware: der WEGA-Kern 3.2 (`koppel.s` _kint, `srlb rl4,#3`) steht als
 /// B2C1 FFFD im Speicher; vorher kannte der Kern das Wort nicht, schob gar nicht und _kint
-/// sprang für jedes Empfangszeichen in `_xint` statt `_rint` (P15: keine Eingabe an WEGA).
+/// sprang fuer jedes Empfangszeichen in `_xint` statt `_rint` (P15: keine Eingabe an WEGA).
 TEST(Z8000Shift, ByteSchiebenWertetNurDasLowByteDerAnzahlAus) {
     Rig r(M::Z8002);
     runNonseg(r, "  LDB RL4,#%85\n  DW %B2C1,%FFFD\n  LDB RH4,#%04\n  DW %B241,%7F03\n"
@@ -581,7 +581,7 @@ TEST(Z8000Load, FlagbefehleUndDiEi) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Sprünge
+// Spruenge
 // ═════════════════════════════════════════════════════════════════════════════
 
 TEST(Z8000Jump, CallHandbuchUnsegmentiert) {
@@ -660,8 +660,8 @@ TEST(Z8000Block, LddHandbuch) {
     EXPECT_FALSE(F(r, Z8000::F_PV));
 }
 
-/// LD/IN/OUT-Blockbefehle setzen Z gemeinsam mit V (Zähler = 0) — MAME und WEGA-Kern 3.2
-/// (`_copyout`: `LDIB @RR4,@RR6,R3` + `JR Z`; ohne Z folgte ein LDIR mit Zähler 0, P15
+/// LD/IN/OUT-Blockbefehle setzen Z gemeinsam mit V (Zaehler = 0) — MAME und WEGA-Kern 3.2
+/// (`_copyout`: `LDIB @RR4,@RR6,R3` + `JR Z`; ohne Z folgte ein LDIR mit Zaehler 0, P15
 /// „/bin/csh: Bad address").  Vergleichsbefehle (CPI …) behalten ihre eigene Z-Bedeutung.
 TEST(Z8000Block, LdIndOutSetzenZWieV) {
     Rig r(M::Z8002);
@@ -733,7 +733,7 @@ TEST(Z8000Block, TranslateUndTest) {
                  "  LD R5,#%3000\n  LD R6,#%1100\n  LD R7,#4\n  TRTIRB @R5,@R6,R7");
     EXPECT_EQ(r.b(0, 0x2000), 'A'); EXPECT_EQ(r.b(0, 0x2001), 'B');
     EXPECT_EQ(r.cpu.r(5), 0x3003);        // stoppt hinter dem Komma
-    EXPECT_EQ(r.cpu.rb(1), 9);            // RH1 = Übersetzungswert
+    EXPECT_EQ(r.cpu.rb(1), 9);            // RH1 = Uebersetzungswert
     EXPECT_FALSE(F(r, Z8000::F_Z));
     EXPECT_EQ(r.cpu.r(7), 1);
 }
@@ -780,7 +780,7 @@ TEST(Z8000Block, LdirIstUnterbrechbarUndLaeuftNachIretWeiter) {
     r.setW(0, 0x103A, SEGSYS);                   // VI-FCW
     r.setW(0, 0x103C + 2 * 4, 0x0000); r.setW(0, 0x103E + 2 * 4, 0x2000);   // Vektor 4
     r.cpu.setRR(2, 0x02000200); r.cpu.setRR(4, 0x01000100); r.cpu.setR(6, 6);
-    r.cpu.step(); r.cpu.step(); r.cpu.step();     // drei Durchläufe
+    r.cpu.step(); r.cpu.step(); r.cpu.step();     // drei Durchlaeufe
     EXPECT_TRUE(r.cpu.inRepeat());
     EXPECT_EQ(r.cpu.r(6), 3);
     r.ackValue = 0x0004;
@@ -824,12 +824,12 @@ TEST(Z8000Trap, PrivilegierterBefehlImNormalmodus) {
     EXPECT_EQ(r.cpu.pc, 0x3000);
     EXPECT_EQ(r.cpu.fcw, SEGSYS);
     EXPECT_EQ(r.cpu.R15[1], 0xF000 - 8);         // Systemstapel
-    EXPECT_EQ(r.cpu.R15[0], 0x8000);             // Normalstapel unberührt
+    EXPECT_EQ(r.cpu.R15[0], 0x8000);             // Normalstapel unberuehrt
     EXPECT_EQ(r.w(0, 0xEFF8), w0);               // Kennung = erstes Befehlswort
     EXPECT_EQ(r.w(0, 0xEFFA), 0x8000);           // alte FCW
     EXPECT_EQ(r.w(0, 0xEFFC), 0x0000);           // PC-Segment
     EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);           // Wort hinter dem ersten
-    EXPECT_EQ(r.count(Z8kStatus::Io), 0);        // nicht ausgeführt
+    EXPECT_EQ(r.count(Z8kStatus::Io), 0);        // nicht ausgefuehrt
     // Normalmodus-Zugriffe laufen mit N/S = Normal, der Trap-Rahmen mit System
     EXPECT_FALSE(r.log[0].first.system);
     for (auto& e : r.log) if (e.first.st == Z8kStatus::MemStack) EXPECT_TRUE(e.first.system);
@@ -842,8 +842,8 @@ TEST(Z8000Trap, SystemCall) {
     EXPECT_EQ(c, 39);
     EXPECT_EQ(r.cpu.pc, 0x3000);
     EXPECT_EQ(r.w(0, 0xEFF8), 0x7F42);
-    EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);           // nächster Befehl
-    // IRET zurück in den Normalmodus
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);           // naechster Befehl
+    // IRET zurueck in den Normalmodus
     r.setW(0, 0x3000, 0x7B00);                   // IRET
     r.cpu.step();
     EXPECT_EQ(r.cpu.fcw, 0x8000);
@@ -945,7 +945,7 @@ TEST(Z8000Irq, NmiIstFlankengetriggertUndHatVorrang) {
     EXPECT_EQ(r.count(Z8kStatus::NviAck), 0);
     r.cpu.setNVI(false);
     r.runToHalt();
-    EXPECT_EQ(r.count(Z8kStatus::NmiAck), 1);   // Pegel hält, aber keine neue Flanke
+    EXPECT_EQ(r.count(Z8kStatus::NmiAck), 1);   // Pegel haelt, aber keine neue Flanke
     EXPECT_EQ(r.cpu.r(7), 1);
 }
 
@@ -1030,13 +1030,13 @@ TEST(Z8000Bus, ByteHaelftenSpeicherUndEa) {
     EXPECT_EQ(r.cpu.rb(3), 0xCD);                // Spezial-E/A: AD8..15
     ASSERT_EQ(r.ioWrites.size(), 2u);
     EXPECT_FALSE(r.ioWrites[0].first.word);
-    EXPECT_EQ(r.ioWrites[0].second, 0x5A5A);     // Byte auf beiden Hälften (Annahme §8)
+    EXPECT_EQ(r.ioWrites[0].second, 0x5A5A);     // Byte auf beiden Haelften (Annahme §8)
     EXPECT_EQ(r.ioWrites[1].second, 0xBEEF);
     EXPECT_EQ(r.ioWrites[1].first.addr, 0x00AF);
     bool seen = false;
     for (auto& e : r.log)
         if (!e.first.read && e.first.isMemory() && !e.first.word && e.first.addr == 0x0501) {
-            EXPECT_EQ(e.second, 0x5A5A); seen = true;   // Speicher: beide Hälften (§9.4.2)
+            EXPECT_EQ(e.second, 0x5A5A); seen = true;   // Speicher: beide Haelften (§9.4.2)
         }
     EXPECT_TRUE(seen);
 }
@@ -1153,7 +1153,7 @@ TEST(Z8000Pins, MultiMicroMsetMresMbit) {
 }
 
 TEST(Z8000Pins, MreqGewaehrtUndAbgelehnt) {
-    // Nicht gewährt: µI bleibt inaktiv → S=0, Z=1, MO zurück auf H
+    // Nicht gewaehrt: µI bleibt inaktiv → S=0, Z=1, MO zurueck auf H
     Rig r;
     r.load("  SEG\n  ORG <<0>>%0100\n  LD R2,#5\n  MREQ R2\n  HALT\n", true);
     r.boot(SEGSYS, 0, 0x100);
@@ -1163,7 +1163,7 @@ TEST(Z8000Pins, MreqGewaehrtUndAbgelehnt) {
     EXPECT_TRUE(F(r, Z8000::F_Z)); EXPECT_FALSE(F(r, Z8000::F_S));
     EXPECT_FALSE(r.cpu.moActive());
     EXPECT_EQ(r.cpu.r(2), 0);
-    // Gewährt: die Gegenseite zieht µI, sobald MO aktiv wird
+    // Gewaehrt: die Gegenseite zieht µI, sobald MO aktiv wird
     Rig g;
     g.cpu.onMO = [&](bool a) { g.cpu.setMI(a); };
     g.load("  SEG\n  ORG <<0>>%0100\n  LD R2,#5\n  MREQ R2\n  HALT\n", true);
@@ -1202,11 +1202,11 @@ TEST(Z8000Cycles, Stichproben) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Festlegungen, die das MAME-Orakel geschärft hat (README „Befunde")
+// Festlegungen, die das MAME-Orakel geschaerft hat (README „Befunde")
 // ═════════════════════════════════════════════════════════════════════════════
 
 TEST(Z8000Befund, DabNeunundsechzigPlusVierundsechzig) {
-    // 96 + 64 = 160: binär %FA, H = 0, C = 0 → Handbuch-Zeile „0, 9-F, 0, A-F → 66, C=1".
+    // 96 + 64 = 160: binaer %FA, H = 0, C = 0 → Handbuch-Zeile „0, 9-F, 0, A-F → 66, C=1".
     // MAME (Stand 741d827a) liefert %00/C=0 — bekannte Abweichung im Orakel.
     Rig r(M::Z8002);
     runNonseg(r, "  LDB RL0,#%96\n  ADDB RL0,#%64\n  DAB RL0");
@@ -1215,7 +1215,7 @@ TEST(Z8000Befund, DabNeunundsechzigPlusVierundsechzig) {
 }
 
 TEST(Z8000Befund, PcUeberlaeuftImSegment) {
-    // Adressrechnung ohne Übertrag ins Segment (Handbuch §5.5); MAME trägt über.
+    // Adressrechnung ohne Uebertrag ins Segment (Handbuch §5.5); MAME traegt ueber.
     Rig r;
     r.setW(2, 0xFFFE, 0x8D07);                   // NOP an <<2>>%FFFE
     r.setW(2, 0x0000, 0x7A00);                   // HALT an <<2>>%0000
@@ -1303,13 +1303,13 @@ TEST(Z8000Segt, RahmenQuittung0100PsaUndIret) {
     r.ackValue = 0x0102;                                 // Kennwort der MMU(s)
     r.cpu.setSEGT(true);
     int c = r.cpu.step();
-    EXPECT_FALSE(r.cpu.segtLine());                      // MMU nahm die Anforderung mit der Quittung zurück
+    EXPECT_FALSE(r.cpu.segtLine());                      // MMU nahm die Anforderung mit der Quittung zurueck
     EXPECT_EQ(r.cpu.pc, 0x3000);
     EXPECT_EQ(r.cpu.fcw, SEGSYS);
     EXPECT_EQ(r.w(0, 0xEFF8), 0x0102);                   // Kennung = Quittungswort
     EXPECT_EQ(r.w(0, 0xEFFA), SEGSYS);                   // alte FCW
     EXPECT_EQ(r.w(0, 0xEFFC), 0x0000);                   // PC-Segment
-    EXPECT_EQ(r.w(0, 0xEFFE), 0x0100);                   // nächster Befehl (§7.6.2)
+    EXPECT_EQ(r.w(0, 0xEFFE), 0x0100);                   // naechster Befehl (§7.6.2)
     EXPECT_EQ(c, 39 - 3 + 3 + 8);                        // Eintritt + Scheinholen + Quittung
     // Bus: Scheinholen, Quittung (Status 0100, System, Wort, Lesen), 4 Stapel, PSA %1022..%1026
     ASSERT_GE(r.log.size(), 9u);
@@ -1335,8 +1335,8 @@ TEST(Z8000Segt, RahmenQuittung0100PsaUndIret) {
 
 TEST(Z8000Segt, WirdErstAmBefehlsendeAngenommen) {
     // Die MMU zieht /SEGT im Datenzyklus; der Z8001 bricht nicht ab (das kann erst der
-    // Z8003): der Befehl läuft zu Ende (Schreiben unterdrückt die KARTE über SUP, nicht
-    // die CPU), gesichert wird der PC des NÄCHSTEN Befehls.
+    // Z8003): der Befehl laeuft zu Ende (Schreiben unterdrueckt die KARTE ueber SUP, nicht
+    // die CPU), gesichert wird der PC des NAECHSTEN Befehls.
     Rig r;
     segtRig(r, "  LD @RR2,R1\n  LD R5,#7", SEGSYS);
     r.cpu.setRR(2, 0x05000400); r.cpu.setR(1, 0xBEEF);
@@ -1359,9 +1359,9 @@ TEST(Z8000Segt, WirdErstAmBefehlsendeAngenommen) {
 }
 
 TEST(Z8000Segt, UnterbrichtWiederholungsbefehlZwischenDurchlaeufen) {
-    // Tabelle §7.6.2, Fussnote †: läuft ein unterbrechbarer Befehl noch, ist der
+    // Tabelle §7.6.2, Fussnote †: laeuft ein unterbrechbarer Befehl noch, ist der
     // gesicherte PC der Befehl selbst — seine Register stehen nach dem letzten GANZEN
-    // Durchlauf (der verletzende Durchlauf ist am Z8001 vollständig ausgeführt).
+    // Durchlauf (der verletzende Durchlauf ist am Z8001 vollstaendig ausgefuehrt).
     Rig r;
     for (int i = 0; i < 4; ++i) r.setW(1, uint16_t(0x100 + 2 * i), uint16_t(0xA0 + i));
     segtRig(r, "  LDIR @RR2,@RR4,R6", SEGSYS);
@@ -1380,7 +1380,7 @@ TEST(Z8000Segt, UnterbrichtWiederholungsbefehlZwischenDurchlaeufen) {
     EXPECT_EQ(r.cpu.rr(2), 0x02000204u);
     EXPECT_TRUE(r.cpu.lastException().leftRepeat);
     EXPECT_EQ(c, 7 + 39 - 3 + 3 + 8);
-    r.runToHalt();                                       // IRET → LDIR neu geholt, läuft fertig
+    r.runToHalt();                                       // IRET → LDIR neu geholt, laeuft fertig
     for (int i = 0; i < 4; ++i) EXPECT_EQ(r.w(2, uint16_t(0x200 + 2 * i)), 0xA0 + i);
     EXPECT_EQ(r.cpu.r(6), 0);
     EXPECT_EQ(r.cpu.r(9), 1);
@@ -1446,7 +1446,7 @@ TEST(Z8000Segt, AusNichtsegmentiertemNormalmodusUndZurueck) {
     EXPECT_EQ(r.log[0].first.seg, 3);
     EXPECT_TRUE(r.log[1].first.system);                  // Quittung schon System
     EXPECT_EQ(r.cpu.R15[1], 0xF000 - 8);
-    EXPECT_EQ(r.cpu.R15[0], 0x8000);                     // Normalstapel unberührt
+    EXPECT_EQ(r.cpu.R15[0], 0x8000);                     // Normalstapel unberuehrt
     EXPECT_EQ(r.w(0, 0xEFFA), 0x0000);
     EXPECT_EQ(r.w(0, 0xEFFC), 0x0300);                   // PC-Segment auch aus dem nichtseg. Modus
     EXPECT_EQ(r.w(0, 0xEFFE), 0x0102);
@@ -1454,14 +1454,14 @@ TEST(Z8000Segt, AusNichtsegmentiertemNormalmodusUndZurueck) {
     EXPECT_EQ(r.cpu.fcw, 0x0000);
     EXPECT_EQ(r.cpu.pcSeg, 3);
     EXPECT_EQ(r.cpu.pc, 0x0102);
-    r.cpu.step();                                        // LD R4,#4 (HALT wäre hier privilegiert)
+    r.cpu.step();                                        // LD R4,#4 (HALT waere hier privilegiert)
     EXPECT_EQ(r.cpu.r(4), 4);
     EXPECT_EQ(r.cpu.r(9), 1);
 }
 
 TEST(Z8000Rangfolge, NmiVorSegtVorViVorNvi) {
-    // §7.7: alle vier stehen an; je Schritt wird die ranghöchste angenommen, die nächste
-    // kellert dann den Status der vorigen Behandlung — ausgeführt wird in umgekehrter Folge.
+    // §7.7: alle vier stehen an; je Schritt wird die ranghoechste angenommen, die naechste
+    // kellert dann den Status der vorigen Behandlung — ausgefuehrt wird in umgekehrter Folge.
     Rig r;
     const char* h =
         "  ORG <<0>>%3000\n  LD R1,R0\n  INC R0\n  IRET\n"      // NMI
@@ -1502,7 +1502,7 @@ TEST(Z8000Rangfolge, NmiVorSegtVorViVorNvi) {
     EXPECT_EQ(r.w(0, 0xEFEE), 0x3100);
     EXPECT_EQ(r.w(0, 0xEFE6), 0x3200);
     r.runToHalt();
-    EXPECT_EQ(r.cpu.r(4), 1);                            // NVI zuerst ausgeführt …
+    EXPECT_EQ(r.cpu.r(4), 1);                            // NVI zuerst ausgefuehrt …
     EXPECT_EQ(r.cpu.r(3), 2);
     EXPECT_EQ(r.cpu.r(2), 3);
     EXPECT_EQ(r.cpu.r(1), 4);                            // … NMI zuletzt
@@ -1510,7 +1510,7 @@ TEST(Z8000Rangfolge, NmiVorSegtVorViVorNvi) {
 }
 
 TEST(Z8000Rangfolge, InternerTrapVorNmi) {
-    // NMI-Flanke während des SC: der SC-Trap gehört zum Befehl, die NMI folgt mit dem
+    // NMI-Flanke waehrend des SC: der SC-Trap gehoert zum Befehl, die NMI folgt mit dem
     // Status der SC-Behandlung (§7.7 „Internal Trap" vor „Non-Maskable Interrupt").
     Rig r;
     segtRig(r, "  SC #%11", 0x8000);                     // Normalmodus
@@ -1610,7 +1610,7 @@ TEST(Z8000Bus, JederStatuscodeDenDerKernAusgibt) {
     EXPECT_EQ(r.cpu.lastCycle().st, Z8kStatus::MemInstr);
     EXPECT_EQ(r.cpu.lastCycle().addr, 0x1026);
     EXPECT_EQ(r.cpu.lastCycleData(), 0x3000);
-    // Zählerstände = Busprotokoll des Prüfstands
+    // Zaehlerstaende = Busprotokoll des Pruefstands
     for (int s = 0; s < 16; ++s)
         EXPECT_EQ(r.cpu.statusCount(Z8kStatus(s)), uint64_t(r.count(Z8kStatus(s)))) << s;
 }
@@ -1647,7 +1647,7 @@ TEST(Z8000Unseg, Z8001CallKellertNurDenOffset) {
     r.cpu.fcw = SYS;                                     // System, nichtsegmentiert
     r.cpu.R15[1] = 0x8000;
     r.runToHalt();
-    EXPECT_EQ(r.cpu.r(3), 0x0104);                       // ein Wort Rückkehradresse
+    EXPECT_EQ(r.cpu.r(3), 0x0104);                       // ein Wort Rueckkehradresse
     EXPECT_EQ(r.cpu.pcSeg, 4);
     EXPECT_EQ(r.cpu.R15[1], 0x8000);
     for (auto& e : r.log) if (e.first.isMemory()) EXPECT_EQ(e.first.seg, 4);

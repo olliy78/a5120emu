@@ -1,7 +1,7 @@
 /**
  * @file em_trace.h
  * @brief Eine Textzeile je Kommunikationstransaktion des Erweiterungsmoduls —
- *        gemeinsam für `boot_trace --em` und `k1520dbg emlog` (S5).
+ *        gemeinsam fuer `boot_trace --em` und `k1520dbg emlog` (S5).
  *
  * Quelle ist @ref EM::setEventHook; hier steht nur, wie ein Ereignis aussieht.
  *

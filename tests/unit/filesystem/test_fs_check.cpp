@@ -844,8 +844,8 @@ TEST(FsCheckUdosSchaden, EinGeloeschtesKartenbitIstGefahr) {
 //
 // Der Fall, um den es geht, ist **richtige Geometrie, falsches Profil**: die
 // Diskette mountet, die Dateiliste sieht plausibel aus — aber der Verzeichnisbereich
-// stimmt nicht.  Die Prüfung meldet dann eine Handvoll unverständlicher Befunde auf
-// einer völlig gesunden Diskette, und der Anwender sucht einen Schaden, den es nicht
+// stimmt nicht.  Die Pruefung meldet dann eine Handvoll unverstaendlicher Befunde auf
+// einer voellig gesunden Diskette, und der Anwender sucht einen Schaden, den es nicht
 // gibt.
 //
 // Getestet werden kann das nur mit einem EIGENEN Katalog: `data/formats.yaml` wird
@@ -873,17 +873,17 @@ const FsCatalog& dateisysteme_mehrdeutig() {
 }  // namespace
 
 /// @test Ein zu KLEINER Verzeichnisbereich versteckt Dateien, ohne dass etwas
-///       auffällt — genau davor warnt die Gegenprobe.
+///       auffaellt — genau davor warnt die Gegenprobe.
 ///
 /// Der Fall in Zahlen: das Testprofil `scp1700_dir64` unterscheidet sich vom echten
-/// `scp1700` in einer einzigen Angabe — 64 statt 128 Verzeichniseinträge.  Beide
+/// `scp1700` in einer einzigen Angabe — 64 statt 128 Verzeichniseintraege.  Beide
 /// mounten, beide melden dieselben zwei (echten) Systemspurbefunde.  Sichtbar sind
-/// aber **43 statt 46 Dateien**: drei Verzeichnisplätze liegen jetzt in einem
-/// Bereich, den das Profil für Daten hält.
+/// aber **43 statt 46 Dateien**: drei Verzeichnisplaetze liegen jetzt in einem
+/// Bereich, den das Profil fuer Daten haelt.
 ///
-/// An der Zahl der BEFUNDE ist das nicht zu erkennen — deshalb zählt die Gegenprobe
-/// beides, Befunde und sichtbare Dateien.  Ein zu GROSSER Wert wäre harmlos: den
-/// fängt schon `cpmVerzeichnisPlausibel`, weil die überzähligen Plätze in Dateidaten
+/// An der Zahl der BEFUNDE ist das nicht zu erkennen — deshalb zaehlt die Gegenprobe
+/// beides, Befunde und sichtbare Dateien.  Ein zu GROSSER Wert waere harmlos: den
+/// faengt schon `cpmVerzeichnisPlausibel`, weil die ueberzaehligen Plaetze in Dateidaten
 /// liegen und dort fast sicher ein Nutzerbereich > 15 steht.
 TEST(FsCheckGegenprobe, EinZuKleinesVerzeichnisVerstecktDateien) {
     std::string err;
@@ -891,10 +891,10 @@ TEST(FsCheckGegenprobe, EinZuKleinesVerzeichnisVerstecktDateien) {
                               dateisysteme_mehrdeutig(), err, /*read_only=*/true);
     ASSERT_TRUE(v) << err;
 
-    // Vorbedingung: die Erkennung ist mehrdeutig, und gewählt ist das FALSCHE Profil
+    // Vorbedingung: die Erkennung ist mehrdeutig, und gewaehlt ist das FALSCHE Profil
     // (es hat den kleineren `detect_rank`).
     ASSERT_FALSE(v->detection().unambiguous)
-        << "ohne Mehrdeutigkeit prüft dieser Fall gar nichts";
+        << "ohne Mehrdeutigkeit prueft dieser Fall gar nichts";
     ASSERT_EQ("scp1700_dir64", v->detection().filesystem);
     ASSERT_EQ(43u, v->list().size()) << "drei Dateien sind unsichtbar";
 
@@ -902,15 +902,15 @@ TEST(FsCheckGegenprobe, EinZuKleinesVerzeichnisVerstecktDateien) {
     const std::vector<FsFinding> g = mitId(r, "erkennung.alternative");
     ASSERT_EQ(1u, g.size()) << kennungen(r);
     EXPECT_EQ(FsSeverity::Info, g[0].severity)
-        << "die Diskette ist völlig in Ordnung — das ist keine Warnung";
+        << "die Diskette ist voellig in Ordnung — das ist keine Warnung";
     EXPECT_EQ(FsLayer::Erkennung, g[0].layer);
     EXPECT_EQ("scp1700", g[0].object) << g[0].text;
     EXPECT_NE(std::string::npos, g[0].text.find("46 statt 43")) << g[0].text;
     EXPECT_NE(std::string::npos, g[0].text.find("--fs scp1700")) << g[0].text;
 
-    // Und die Kernzusage: die WAHL bleibt, wie sie war.  Eine Automatik daraus könnte
-    // bei ähnlichen Profilen hin und her springen — der Anwender sähe bei jedem
-    // Öffnen ein anderes Dateisystem.
+    // Und die Kernzusage: die WAHL bleibt, wie sie war.  Eine Automatik daraus koennte
+    // bei aehnlichen Profilen hin und her springen — der Anwender saehe bei jedem
+    // Oeffnen ein anderes Dateisystem.
     EXPECT_EQ("scp1700_dir64", v->detection().filesystem);
 }
 
@@ -918,7 +918,7 @@ TEST(FsCheckGegenprobe, EinZuKleinesVerzeichnisVerstecktDateien) {
 ///
 /// Die Gegenrichtung, und sie ist die wichtigere: die Meldung darf nur kommen, wenn
 /// das andere Profil ECHT besser ist.  Bei Gleichstand sind beide brauchbar, und
-/// eine Meldung wäre bloßes Rauschen (E10).
+/// eine Meldung waere blosses Rauschen (E10).
 TEST(FsCheckGegenprobe, DasRichtigeProfilBekommtKeineMeldung) {
     std::string err;
     auto v = DiskVolume::open(fixture("scp1700_640k_a7100_system.hfe"), "scp1700",
@@ -933,12 +933,12 @@ TEST(FsCheckGegenprobe, DasRichtigeProfilBekommtKeineMeldung) {
     EXPECT_EQ(2, r.zaehlerAb(FsSeverity::Warnung)) << kennungen(r);
 }
 
-/// @test Mit dem ausgelieferten Katalog läuft die Gegenprobe NIE.
+/// @test Mit dem ausgelieferten Katalog laeuft die Gegenprobe NIE.
 ///
-/// Der Wächter für die Entscheidung, sie nicht in `data/formats.yaml` prüfbar zu
+/// Der Waechter fuer die Entscheidung, sie nicht in `data/formats.yaml` pruefbar zu
 /// machen: der Katalog wird eindeutig gehalten, und solange das so bleibt, kostet
-/// die Gegenprobe im Betrieb keinen einzigen Dateizugriff.  Schlägt dieser Fall an,
-/// ist ein mehrdeutiger Eintrag hinzugekommen — dann gehört er geprüft, nicht der
+/// die Gegenprobe im Betrieb keinen einzigen Dateizugriff.  Schlaegt dieser Fall an,
+/// ist ein mehrdeutiger Eintrag hinzugekommen — dann gehoert er geprueft, nicht der
 /// Test angepasst.
 TEST(FsCheckGegenprobe, DerAusgelieferteKatalogIstEindeutig) {
     static const char* disketten[] = {
@@ -956,20 +956,20 @@ TEST(FsCheckGegenprobe, DerAusgelieferteKatalogIstEindeutig) {
         auto v = oeffne(fixture(name));
         ASSERT_TRUE(v) << name;
         EXPECT_TRUE(v->detection().unambiguous)
-            << name << ": auch möglich " << v->detection().alternatives.size();
+            << name << ": auch moeglich " << v->detection().alternatives.size();
     }
 }
 
 /// @test Ein kaputter Sektor AUSSERHALB jeder Datei wird bei UDOS gefunden.
 ///
-/// Die Ebene Medium war bei UDOS bis 2026-08-19 schmaler als bei CP/M: geprüft wurde
+/// Die Ebene Medium war bei UDOS bis 2026-08-19 schmaler als bei CP/M: geprueft wurde
 /// nur, was in einer KETTE steht.  Ein schadhafter Sektor, der zu keiner Datei
-/// gehört, ist aber nicht nichts — **dort liegen die gelöschten Dateien** (§13), und
-/// dorthin schreibt UDOS als nächstes.
+/// gehoert, ist aber nicht nichts — **dort liegen die geloeschten Dateien** (§13), und
+/// dorthin schreibt UDOS als naechstes.
 ///
-/// Angefasst wird ein Sektor, den die Belegungskarte als FREI führt: nur so ist
-/// sicher, dass keine Kette darüber läuft und der Befund wirklich aus dem Reihenlauf
-/// stammt und nicht aus der Dateiprüfung.
+/// Angefasst wird ein Sektor, den die Belegungskarte als FREI fuehrt: nur so ist
+/// sicher, dass keine Kette darueber laeuft und der Befund wirklich aus dem Reihenlauf
+/// stammt und nicht aus der Dateipruefung.
 TEST(FsCheckUdosSchaden, EinKaputterSektorAusserhalbJederDateiWirdGefunden) {
     const std::string d = kopie("udos_boot_scp.hfe", "fscheck_udos_frei.hfe");
 
@@ -980,7 +980,7 @@ TEST(FsCheckUdosSchaden, EinKaputterSektorAusserhalbJederDateiWirdGefunden) {
         ASSERT_TRUE(v) << err;
         UdosSeite s = udosOeffne(d, 0, /*schreibbar=*/false);
         ASSERT_TRUE(s) << s.err;
-        // Einen freien Sektor auf einer gewöhnlichen Datenspur suchen — die
+        // Einen freien Sektor auf einer gewoehnlichen Datenspur suchen — die
         // Systemspuren bleiben aussen vor, dort steht Sitte statt Struktur (§9.1).
         for (uint8_t t = 3; t < 77 && spur < 0; ++t) {
             if (t == 21 || t == 22 || t == 23) continue;      // reservierte Spuren
@@ -1018,7 +1018,7 @@ TEST(FsCheckUdosSchaden, EinKaputterSektorAusserhalbJederDateiWirdGefunden) {
     EXPECT_EQ(FsLayer::Medium, f[0].layer);
     EXPECT_EQ(spur, f[0].cyl);
     EXPECT_EQ(kennung, f[0].sector_index);
-    // Er darf NICHT als Dateischaden durchgehen — dann wäre er der falschen Datei
+    // Er darf NICHT als Dateischaden durchgehen — dann waere er der falschen Datei
     // zugeschrieben.
     EXPECT_TRUE(mitId(r, "udos.medium.crc").empty()) << kennungen(r);
     fs::remove(d);
@@ -1027,9 +1027,9 @@ TEST(FsCheckUdosSchaden, EinKaputterSektorAusserhalbJederDateiWirdGefunden) {
 
 /// @test Ein FEHLENDER Sektor ausserhalb jeder Datei ist KEIN Befund.
 ///
-/// Die Gegenprobe zum vorigen Fall, und sie hält eine Entscheidung fest: auf einer
+/// Die Gegenprobe zum vorigen Fall, und sie haelt eine Entscheidung fest: auf einer
 /// 35 Jahre alten Diskette ist ein unbenutzter Sektor, der die Formatierung nicht
-/// überlebt hat, der Normalfall — `udos_boot_scp.hfe` hat einen auf Spur 51.  Es ist
+/// ueberlebt hat, der Normalfall — `udos_boot_scp.hfe` hat einen auf Spur 51.  Es ist
 /// nichts verloren, nichts zu tun, und die Erkennung sagt es ohnehin als
 /// Medienhinweis („1 Spur mit fehlenden Sektoren").  Wer die Referenzdiskette
 /// deswegen anmahnt, wird zu Recht weggeklickt (E10).
@@ -1039,20 +1039,20 @@ TEST(FsCheckKeineFalschmeldungen, EinFehlenderFreierSektorIstKeinBefund) {
     const FsCheckReport& r = v->check(FsCheckLevel::Voll, true);
     EXPECT_EQ(0, r.zaehlerAb(FsSeverity::Warnung)) << kennungen(r);
     // Dass die Diskette den fehlenden Sektor HAT, steht in den Medienhinweisen —
-    // verschwiegen wird also nichts, es ist nur kein Prüfbefund.
+    // verschwiegen wird also nichts, es ist nur kein Pruefbefund.
     EXPECT_NE(std::string::npos, v->detection().remarks.find("fehlenden Sektoren"))
         << v->detection().remarks;
 }
 
 /// @test Jeder ortbare Befund nennt auch den SEKTOR, nicht nur die Spur.
 ///
-/// Der Wächter für E9 über alle Familien: der Befundtext nennt fast immer einen
+/// Der Waechter fuer E9 ueber alle Familien: der Befundtext nennt fast immer einen
 /// Sektor („Spur 21 Sektor 6"), und genau den soll der Sprung in den Diskeditor
-/// aufschlagen.  Bis 2026-08-19 gaben alle drei Prüfer nur Spur und Kopf mit — der
+/// aufschlagen.  Bis 2026-08-19 gaben alle drei Pruefer nur Spur und Kopf mit — der
 /// Sprung landete auf dem ersten Sektor der Spur, und niemand merkte es, weil die
 /// Anzeige ja etwas zeigte.
 ///
-/// Ausgenommen sind Befunde über eine GANZE Spur (unformatiert, Systemspur ohne
+/// Ausgenommen sind Befunde ueber eine GANZE Spur (unformatiert, Systemspur ohne
 /// Marken) — dort gibt es keinen Sektor, und -1 ist die ehrliche Auskunft.
 TEST(FsCheckOrt, EinOrtbarerBefundNenntAuchDenSektor) {
     static const char* kOhneSektor[] = {"cpm.medium.unformatiert",

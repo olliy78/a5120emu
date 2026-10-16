@@ -2,19 +2,19 @@
  * @file test_disktool_udos_roundtrip.cpp
  * @brief Kreuzprobe: das DiskTool schreibt UDOS — das ECHTE UDOS liest.
  *
- * Die Unit-Tests prüfen unsere Lesart des UDOS-Dateisystems gegen die am laufenden
- * System gemessenen Sollwerte der Dokumentation.  Diese Ebene prüft den **Schreibpfad**
+ * Die Unit-Tests pruefen unsere Lesart des UDOS-Dateisystems gegen die am laufenden
+ * System gemessenen Sollwerte der Dokumentation.  Diese Ebene prueft den **Schreibpfad**
  * gegen das Betriebssystem selbst: eine Datei wird mit @ref UdosFileSystem auf die
  * Systemdiskette geschrieben, danach bootet der Emulator sie und `CAT` bzw. `PRINT`
- * müssen die Datei finden und ihren Inhalt zeigen.
+ * muessen die Datei finden und ihren Inhalt zeigen.
  *
  * Trifft die Satzverkettung, der Kopfsektor, der Verzeichniseintrag oder die
  * Belegungskarte auch nur um ein Byte daneben, meldet UDOS `POINTER CHECK ERROR`,
  * `BAD POINTER IN OS` oder listet die Datei gar nicht erst — es gibt keinen Weg,
- * das hier zufällig zu bestehen.
+ * das hier zufaellig zu bestehen.
  *
- * Laufzeit: ein vollständiger UDOS-Kaltstart je Fall (zweistellige Sekunden) →
- * Label `format_integration`, läuft in der schnellen Regression NICHT mit
+ * Laufzeit: ein vollstaendiger UDOS-Kaltstart je Fall (zweistellige Sekunden) →
+ * Label `format_integration`, laeuft in der schnellen Regression NICHT mit
  * (`tools/dev.sh test-format`).
  *
  * ⚠ Die UDOS-Konsole ist schreibungsinvertiert: KLEIN tippen ergibt GROSS auf dem

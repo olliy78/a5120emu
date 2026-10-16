@@ -10,45 +10,45 @@
  *   RAM   64 KB, 0000H–FFFFH; ROM-Overlay S502 2 KB auf 0000H–07FFH:
  *         lesen = ROM, schreiben = RAM darunter (§1.2.5); aus mit OUT 28H–2BH,
  *         ein mit OUT 24H–27H und bei /RESET
- *   CTC0  08H–0BH (Takt für SIO)
+ *   CTC0  08H–0BH (Takt fuer SIO)
  *   SIO0  0CH Daten A, 0DH Daten B, 0EH Steuer A, 0FH Steuer B       [Doku §1.2.4, Tabelle
  *         „I/O-Toradressen"]: AB0 = Kanal (A = 0, B = 1), AB1 = Steuer/Daten
  *   8275  18H/1AH Parameter, 19H/1BH Befehl/Status (AB0 = Befehl)
  *   LT107 2DH/2FH lesen, LT111 2CH/2EH schreiben: Leitungen 107/111 der ZUSATZKARTE (§1.3.3,
- *         DB0 = Kanal A, DB2 = B) — nicht bestückt, 2DH liest FFH, 2CH ist nur ein Latch
+ *         DB0 = Kanal A, DB2 = B) — nicht bestueckt, 2DH liest FFH, 2CH ist nur ein Latch
  *   LT111 30H–33H schreiben: Leitung 111 am Stecker X5, DB1 = EIN (§1.2.8.5)
- *   BWS   34H–37H: Bildspeicher-Anfangsadresse (höherwertiger Teil) + DB6 = Zeichengenerator
+ *   BWS   34H–37H: Bildspeicher-Anfangsadresse (hoeherwertiger Teil) + DB6 = Zeichengenerator
  * @endcode
  *
  * **BWS-Register 34H (Beleg).**  Servicehandbuch §1.2.7.3: der niederwertige Teil der DMA-Adresse
- * kommt aus dem Adresszähler (10 Bit bei K7221.25, 11 Bit bei K7222.25), der höherwertige aus dem
- * Register A23.2 (OUT 34H); „bei K7221.25 wird das 11. Adressbit über Br. X12 auch von A23.2
- * übernommen".  Die Lage der Bits ergibt das CP/A-BIOS (`biopcrt.mac`, `bsanf1 = F800H`,
+ * kommt aus dem Adresszaehler (10 Bit bei K7221.25, 11 Bit bei K7222.25), der hoeherwertige aus dem
+ * Register A23.2 (OUT 34H); „bei K7221.25 wird das 11. Adressbit ueber Br. X12 auch von A23.2
+ * uebernommen".  Die Lage der Bits ergibt das CP/A-BIOS (`biopcrt.mac`, `bsanf1 = F800H`,
  * `OUT (34H), high(bsanf1 SHR 2)`): Registerwert = Adresse >> 10, also **DB0 = A10 … DB5 = A15**.
- * Beim 80×24 (11-Bit-Zähler) liefert der Zähler A10; DB0 wird dort nicht ausgewertet, die
- * Basis ist 2-KB-ausgerichtet.  **DB6** wählt den Zeichengenerator (§1.2.7.4: „DB6 = low/high";
+ * Beim 80×24 (11-Bit-Zaehler) liefert der Zaehler A10; DB0 wird dort nicht ausgewertet, die
+ * Basis ist 2-KB-ausgerichtet.  **DB6** waehlt den Zeichengenerator (§1.2.7.4: „DB6 = low/high";
  * BIOS `crt2zs: LD A,40H` = 2. Zeichensatz, `crt1zs: XOR A` = 1.).  DB7 ungenutzt.
- * Lesen des Registers: ungeklärt [?] — hier FFH wie ein unbelegtes Tor.
+ * Lesen des Registers: ungeklaert [?] — hier FFH wie ein unbelegtes Tor.
  *
  * **Zeichengenerator.**  2 × 2 KB (A25.2 = S619 = „ZG1", A25.1 = S602 = „ZG2"), Byte =
- * ROM[Linie · 80H + Code], MSB = linkes Pixel, nur Linien 0–11 belegt.  Gewählt wird je Zelle
- * mit (DB6 XOR GPA0 des Feldattributs) [?: ob die Verknüpfung ein XOR ist, geht aus dem
+ * ROM[Linie · 80H + Code], MSB = linkes Pixel, nur Linien 0–11 belegt.  Gewaehlt wird je Zelle
+ * mit (DB6 XOR GPA0 des Feldattributs) [?: ob die Verknuepfung ein XOR ist, geht aus dem
  * Handbuch nur als „auf den jeweils anderen ZG umschalten" hervor].  Welcher Baustein bei
  * DB6 = 0 gilt, steht in @ref Config::zg_bei_db6_low.
  *
- * **Bild.**  Kein eigener Bildspeicher: @ref frame() lässt den 8275 die Zeilenpuffer aus dem
- * Haupt-RAM füllen (Adresse = Basis | Zähler, Zähler bei VRTC auf 0) und rastert das Ergebnis
+ * **Bild.**  Kein eigener Bildspeicher: @ref frame() laesst den 8275 die Zeilenpuffer aus dem
+ * Haupt-RAM fuellen (Adresse = Basis | Zaehler, Zaehler bei VRTC auf 0) und rastert das Ergebnis
  * in einen Grauwert-Framebuffer (1 Byte je Pixel wie die K7024; 0 dunkel, 0xB0 normal,
  * 0xFF hell).  80×24: 640 × 288, 64×16: 512 × 240.  Die Maschine ruft frame() alle 20 ms
- * Maschinenzeit.  Der IRQ-Ausgang des 8275 ist im Grundgerät nicht in der Interruptkette [?].
+ * Maschinenzeit.  Der IRQ-Ausgang des 8275 ist im Grundgeraet nicht in der Interruptkette [?].
  *
- * **Schnittstellen nach außen (AP-4a, Entwurf 19).**  Zwei `SerialAnschluss`, Namen nach der
- * Gerätebeschriftung: „Drucker X4" = SIO0-A **nur Sender** (der Empfänger von SIO-A ist die
+ * **Schnittstellen nach aussen (AP-4a, Entwurf 19).**  Zwei `SerialAnschluss`, Namen nach der
+ * Geraetebeschriftung: „Drucker X4" = SIO0-A **nur Sender** (der Empfaenger von SIO-A ist die
  * Tastatur und bleibt fest verdrahtet), Sendetakt CTC0 K0, CTSA = Leitung 106; „V.24 X5" =
  * SIO0-B (Senden + Empfangen), Takt CTC0 K1, CTSB/DCDB = 106/109.  Leitung 107 (DSR) des
- * Steckers X5 liegt an `/DCDA` (§1.2.8.5, AP-4f — vorher fälschlich an 2DH); Leitung 111
- * (30H–33H) ist ein Ausgang des Gastes, den der Hub nicht kennt (`lt111X5`).  Prüfstecker
- * (Loop am Hub): die Karte bildet die Brücken von 330-042/320-032 selbst und sofort nach.
+ * Steckers X5 liegt an `/DCDA` (§1.2.8.5, AP-4f — vorher faelschlich an 2DH); Leitung 111
+ * (30H–33H) ist ein Ausgang des Gastes, den der Hub nicht kennt (`lt111X5`).  Pruefstecker
+ * (Loop am Hub): die Karte bildet die Bruecken von 330-042/320-032 selbst und sofort nach.
  *
  * **Nicht in dieser Karte:** Floppy (PIOs 00H–07H, KRFD 20H–23H: AP-2, vorn in der
  * Interruptkette), Tastatur (AP-3).  Unbelegte Ports lesen FFH, Schreiben wird verschluckt.
@@ -70,15 +70,15 @@
 
 class Pc1715Zre : public BusDevice, public InterruptSlave {
 public:
-    /// Bildschirmtyp (feste Parametersätze des BIOS, §3.4): Hardwarevariante, kein Laufzeitschalter.
+    /// Bildschirmtyp (feste Parametersaetze des BIOS, §3.4): Hardwarevariante, kein Laufzeitschalter.
     enum class Bildschirm : uint8_t {
-        K7222,   ///< 80 × 24, Zeichenfeld 8 × 12, 11-Bit-Adresszähler (Vorgabe)
-        K7221,   ///< 64 × 16, Zeichenfeld 8 × 15, 10-Bit-Adresszähler
+        K7222,   ///< 80 × 24, Zeichenfeld 8 × 12, 11-Bit-Adresszaehler (Vorgabe)
+        K7221,   ///< 64 × 16, Zeichenfeld 8 × 15, 10-Bit-Adresszaehler
     };
     /// Baustein-Platz: S619 = ZG1 (A25.2), S602 = ZG2 (A25.1) im deutschen Satz; welcher Inhalt
-    /// dort steckt, bestimmt @ref ZgSatz.  Dieser Wert wählt nur, welcher Platz bei DB6 = 0 gilt.
+    /// dort steckt, bestimmt @ref ZgSatz.  Dieser Wert waehlt nur, welcher Platz bei DB6 = 0 gilt.
     enum class Zeichensatz : uint8_t { S619, S602 };
-    /// Bestückung der beiden ZG-EPROMs (AP-6): Deutsch = S619 + S602, Polnisch = S641 + S619 [?],
+    /// Bestueckung der beiden ZG-EPROMs (AP-6): Deutsch = S619 + S602, Polnisch = S641 + S619 [?],
     /// Kyrillisch = S643 + S605 (so MAME `rt1715lc`).
     enum class ZgSatz : uint8_t { Deutsch, Polnisch, Kyrillisch };
 
@@ -90,11 +90,11 @@ public:
          * PC 1715W (AP-W3, doc/pc1715/pc1715w_hardware.md §1): dieselbe CPU mit CTC0 08H und
          * SIO0 0CH (Tastatur, Drucker X4, V.24 X5) und LT107/LT111 — aber Takt 3,9936 MHz,
          * CTC0 **ohne Interrupt** (nur Baudtakte), und 18H–1BH (8275), 24H–2BH (BR/MOS),
-         * 34H (KON) gehören anderen Bausteinen der Maschine.  Speicher, ROM-Overlay, BWS und
+         * 34H (KON) gehoeren anderen Bausteinen der Maschine.  Speicher, ROM-Overlay, BWS und
          * Bild der Karte sind dann unbenutzt (die Maschine biegt den Speicherweg der CPU um).
          */
         bool w = false;
-        /// Zeichengenerator-Bestückung (AP-6); Vorgabe Deutsch = bisheriges Verhalten.
+        /// Zeichengenerator-Bestueckung (AP-6); Vorgabe Deutsch = bisheriges Verhalten.
         ZgSatz zg_satz = ZgSatz::Deutsch;
     };
 
@@ -102,23 +102,23 @@ public:
     static constexpr uint32_t CPU_HZ = 2'458'000;
     /// Systemtakt des PC 1715W: 15,9744 MHz / 4 (doc/pc1715/pc1715w_hardware.md §5).
     static constexpr uint32_t CPU_HZ_W = 3'993'600;
-    /// Bildwechsel alle 20 ms Maschinenzeit (50 Hz) [?: Bildfrequenz aus den Parametersätzen nicht gerechnet].
+    /// Bildwechsel alle 20 ms Maschinenzeit (50 Hz) [?: Bildfrequenz aus den Parametersaetzen nicht gerechnet].
     static constexpr uint32_t FRAME_TAKTE = CPU_HZ / 50;
 
     explicit Pc1715Zre(K1520Bus& bus);
     Pc1715Zre(K1520Bus& bus, const Config& cfg);
     ~Pc1715Zre() override;
 
-    /// Serielle Kanäle, die nach außen gehen; zugleich Hub-Reihenfolge (= C-ABI-Index).
+    /// Serielle Kanaele, die nach aussen gehen; zugleich Hub-Reihenfolge (= C-ABI-Index).
     enum Kanal : int { Drucker = 0, V24 = 1, KanalAnzahl = 2 };
     k1520::serial::SerialAnschluss& anschluss(Kanal k);
-    /// Ein Anschluss hat SIO-Zustand geändert — Interruptkette neu bewerten.  Liest und löscht.
+    /// Ein Anschluss hat SIO-Zustand geaendert — Interruptkette neu bewerten.  Liest und loescht.
     bool nimmSeriellGeaendert() { const bool g = seriell_geaendert_; seriell_geaendert_ = false; return g; }
     /// Alter Unterbau (`K1520Machine::setPrinterCallback`/`setDFUECallback`): Abnehmer der Bytes,
     /// die der Gast an Kanal @p k SENDET, solange kein Transport/Loop den Stecker belegt.
     using Abnehmer = std::function<void(uint8_t)>;
     void setAbnehmer(Kanal k, Abnehmer cb);
-    /// Ein Byte von außen in den Empfänger (nur V.24; am Drucker gibt es keinen); ins Leere,
+    /// Ein Byte von aussen in den Empfaenger (nur V.24; am Drucker gibt es keinen); ins Leere,
     /// wenn ein Transport/Loop den Stecker belegt.
     void einspeisen(Kanal k, uint8_t byte);
     /// Leitung 107 (DSR) des Steckers X5, wie vom Hub gemeldet (liegt an /DCDA, §1.2.8.5).
@@ -158,7 +158,7 @@ public:
     void    ramPoke(uint16_t a, uint8_t d) { ram_[a] = d; }
 
     // ─── Bild ────────────────────────────────────────────────────────────────
-    /// Ein Bild: 8275-DMA aus dem RAM, Zellen füllen, rastern, IRQ.
+    /// Ein Bild: 8275-DMA aus dem RAM, Zellen fuellen, rastern, IRQ.
     void frame();
     const uint8_t* framebuffer() const { return fb_.data(); }
     int  fbWidth()  const { return fb_w_; }
@@ -170,7 +170,7 @@ public:
     int  textCols() const { return cfg_.bild == Bildschirm::K7222 ? 80 : 64; }
     int  textRows() const { return cfg_.bild == Bildschirm::K7222 ? 24 : 16; }
     int  zeichenLinien() const { return cfg_.bild == Bildschirm::K7222 ? 12 : 15; }
-    /// Höchstens auswertbare Zeilen: Textzeilen + 1 Statuszeile.  CP/A programmiert den 8275 auf
+    /// Hoechstens auswertbare Zeilen: Textzeilen + 1 Statuszeile.  CP/A programmiert den 8275 auf
     /// 25 bzw. 17 Zeilen (`biopcrt.mac`, `cpastz = 1`: inverse Statuszeile, doc/pc1715/cpa_bios.md
     /// §2).  screenChar() liefert sie (Zeile textRows()); der Framebuffer hat seit AP-5a
     /// maxZeilen() Zeilen (640 × 300 bzw. 512 × 255), die Statuszeile wird mitgerastert.
@@ -178,7 +178,7 @@ public:
     /// Vom 8275 programmierte Zeilenzahl, begrenzt auf maxZeilen() (vor dem Programmieren 0).
     int  bildZeilen() const { return std::min(crt_.rows(), maxZeilen()); }
 
-    /// BWS-Register (34H): roh, Basis der DMA-Adresse und gewählter Zeichengenerator.
+    /// BWS-Register (34H): roh, Basis der DMA-Adresse und gewaehlter Zeichengenerator.
     uint8_t  bwsRegister() const { return bws_; }
     uint16_t bildBasis() const;
     bool     bwsZg2() const { return (bws_ & 0x40) != 0; }
@@ -212,7 +212,7 @@ private:
     uint16_t dma_zaehler_ = 0;
     bool     lt111_[2] = {false, false};
     bool     lt111_x5_ = false;
-    /// Prüfstecker: Brücken der gesteckten Stecker sofort an die SIO legen.
+    /// Pruefstecker: Bruecken der gesteckten Stecker sofort an die SIO legen.
     void     leitungenAnlegen();
 
     class Anschluss;   // pc1715_zre.cpp

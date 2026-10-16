@@ -1,13 +1,13 @@
 /**
  * @file terminal_anschluss.h
- * @brief Gegenstelle eines `SerialAnschluss`: hängt ein `Terminal` fest an einen
+ * @brief Gegenstelle eines `SerialAnschluss`: haengt ein `Terminal` fest an einen
  *        Kanal der Karte (Entwurf 25 §10.6, wie die Tastatur am PC 1715).
  *
  * @details
- * `takt()` läuft im Emulationsfaden.  Zeichen werden im Takt des GASTFORMATS
- * (`SerialFormat::zeichen_takte`) übernommen bzw. geliefert; zum Host nur bei
- * `empfaengerFrei()` — kein Überlauf, daher kein XOFF.  Ohne gültiges Format gilt
- * 9600 Bd 8N2 (11 Bit).  BREAK-Taste ⇒ `breakEmpfang(true)` für eine Zeichenzeit.
+ * `takt()` laeuft im Emulationsfaden.  Zeichen werden im Takt des GASTFORMATS
+ * (`SerialFormat::zeichen_takte`) uebernommen bzw. geliefert; zum Host nur bei
+ * `empfaengerFrei()` — kein Ueberlauf, daher kein XOFF.  Ohne gueltiges Format gilt
+ * 9600 Bd 8N2 (11 Bit).  BREAK-Taste ⇒ `breakEmpfang(true)` fuer eine Zeichenzeit.
  */
 #pragma once
 

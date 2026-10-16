@@ -1,13 +1,13 @@
-"""prg710emu — durchgängige Bedienung wie ein Anwender (AP-P9).
+"""prg710emu — durchgaengige Bedienung wie ein Anwender (AP-P9).
 
-Alles läuft über die Wege der Oberfläche: Diskette über den Laufwerkskasten
+Alles laeuft ueber die Wege der Oberflaeche: Diskette ueber den Laufwerkskasten
 (``DriveWidget.toggle_mount``, Dateiauswahl ersetzt), Starttaste als Qt-Tastenereignis an
-das Bildschirm-Widget bzw. Klick auf ET der Bildschirmtastatur, Modellwechsel über das
-Auswahlfeld der Einstellungen, Sockel über die ``QAction``s, Lochstreifen über seinen Kasten.  Gelaufen wird mit
-dem Takt des Fensters (``_run_emulator``); geprüft wird der **Text** des Bildschirms
+das Bildschirm-Widget bzw. Klick auf ET der Bildschirmtastatur, Modellwechsel ueber das
+Auswahlfeld der Einstellungen, Sockel ueber die ``QAction``s, Lochstreifen ueber seinen Kasten.  Gelaufen wird mit
+dem Takt des Fensters (``_run_emulator``); geprueft wird der **Text** des Bildschirms
 (``screen_text()``) — der ``QOpenGLWidget`` hat offscreen keinen FBO.
 
-Es gelten ausgelieferte Disketten aus ``disks/`` (Kopie im tmp: der Emulator öffnet r/w).
+Es gelten ausgelieferte Disketten aus ``disks/`` (Kopie im tmp: der Emulator oeffnet r/w).
 """
 
 import shutil
@@ -49,7 +49,7 @@ def _zu(w, qapp):
 
 
 def _einlegen(w, tmp_path, monkeypatch, name, laufwerk=0):
-    """Eine ausgelieferte Diskette (Kopie) über den Weg des Laufwerkskastens einlegen."""
+    """Eine ausgelieferte Diskette (Kopie) ueber den Weg des Laufwerkskastens einlegen."""
     from PySide6.QtWidgets import QFileDialog
     kopie = tmp_path / f"l{laufwerk}_{name}"
     shutil.copy(ausgelieferte_diskette(name), kopie)
@@ -77,7 +77,7 @@ def _lauf(w, text, rahmen=1500):
     """Fensterweise rechnen (49 000 Takte je Bild), bis *text* auf dem Bildschirm steht."""
     for i in range(rahmen):
         w._run_emulator()
-        # Der Bildschirmtext kostet mehr als ein Bild Lauf: nur jedes vierte Bild prüfen
+        # Der Bildschirmtext kostet mehr als ein Bild Lauf: nur jedes vierte Bild pruefen
         # (der Text bleibt stehen); das letzte Bild immer.
         if (i % 4 == 3 or i == rahmen - 1) and text in w.emulator.screen_text():
             return True
@@ -96,7 +96,7 @@ def _taste(w, key):
 
 
 def _tippen(w, text):
-    """Zeichen für Zeichen als Qt-Tastenereignis an den Bildschirm (Host-Tastatur)."""
+    """Zeichen fuer Zeichen als Qt-Tastenereignis an den Bildschirm (Host-Tastatur)."""
     from PySide6.QtTest import QTest
     for z in text:
         QTest.keyClicks(w.screen_widget, z)
@@ -104,7 +104,7 @@ def _tippen(w, text):
 
 
 def _et_knopf(w):
-    """ET1 der Bildschirmtastatur K7609 anklicken (Maus drücken/loslassen)."""
+    """ET1 der Bildschirmtastatur K7609 anklicken (Maus druecken/loslassen)."""
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
     kw = w.keyboard_widget
@@ -117,7 +117,7 @@ def _et_knopf(w):
 
 
 def _starten(w, tmp_path, monkeypatch, name, per_knopf=False):
-    """Diskette einlegen, Netz aus/an, NKM-LOADER abwarten, Starttaste der Oberfläche."""
+    """Diskette einlegen, Netz aus/an, NKM-LOADER abwarten, Starttaste der Oberflaeche."""
     from PySide6.QtCore import Qt
     _einlegen(w, tmp_path, monkeypatch, name)
     _kaltstart(w, qapp=w._qapp) if hasattr(w, "_qapp") else _kaltstart(w, _App.app)
@@ -189,7 +189,7 @@ def test_scpx_710_1_und_710_dir(qapp, konfig_ordner, tmp_path, monkeypatch):
         _starten(w, tmp_path, monkeypatch, SCPX_710_1)
         assert _lauf(w, "A>", 1500), w.emulator.screen_text()
         _zeile(w, "DIR", "SYSPRG")
-        # Modellwechsel in der laufenden Oberfläche: 710 mit seiner SCPX-Diskette.
+        # Modellwechsel in der laufenden Oberflaeche: 710 mit seiner SCPX-Diskette.
         _auswerfen(w)
         w.settings_widget.model_combo.setCurrentIndex(
             w.settings_widget.model_combo.findData("prg710"))
@@ -202,7 +202,7 @@ def test_scpx_710_1_und_710_dir(qapp, konfig_ordner, tmp_path, monkeypatch):
 
 
 def test_modellwechsel_laufend_und_neu_booten(qapp, konfig_ordner, tmp_path, monkeypatch):
-    """710 läuft in UDOS; Wechsel auf 710-1 → neue Maschine, Tastatur getauscht, bootet neu."""
+    """710 laeuft in UDOS; Wechsel auf 710-1 → neue Maschine, Tastatur getauscht, bootet neu."""
     from app.ui.keyboard_k7672 import KeyboardK7672Widget
     w = _fenster(qapp)
     try:
@@ -222,10 +222,10 @@ def test_modellwechsel_laufend_und_neu_booten(qapp, konfig_ordner, tmp_path, mon
         _zu(w, qapp)
 
 
-# ─── EPROMmer: Sockel wird gemerkt, Rückfrage bei ungespeichertem Inhalt ──────
+# ─── EPROMmer: Sockel wird gemerkt, Rueckfrage bei ungespeichertem Inhalt ──────
 
 def _dialoge(monkeypatch, oeffnen=None, speichern=None, frage=None):
-    """Datei- und Rückfragedialoge ersetzen; *frage* = Liste der Antworten (der Reihe nach)."""
+    """Datei- und Rueckfragedialoge ersetzen; *frage* = Liste der Antworten (der Reihe nach)."""
     from PySide6.QtWidgets import QFileDialog, QMessageBox
     if oeffnen is not None:
         monkeypatch.setattr(QFileDialog, "getOpenFileName",
@@ -293,7 +293,7 @@ def test_eprom_rueckfrage_beim_beenden(qapp, konfig_ordner, tmp_path, monkeypatc
     try:
         w.act_eprom_einlegen.trigger()
         assert not w.emulator.eprom_modified()
-        w.act_eprom_loeschen.trigger()                # UV-löschen = Inhalt geändert
+        w.act_eprom_loeschen.trigger()                # UV-loeschen = Inhalt geaendert
         assert w.emulator.eprom_modified()
         # Abbrechen: das Fenster bleibt offen.
         gefragt = _dialoge(monkeypatch, frage=[QMessageBox.Cancel])
@@ -308,7 +308,7 @@ def test_eprom_rueckfrage_beim_beenden(qapp, konfig_ordner, tmp_path, monkeypatc
         assert ziel.read_bytes() == b"\xff" * 2048
     finally:
         _zu(w, qapp)
-    # Verwerfen: schließt ohne Datei zu schreiben; beim nächsten Start der Stand der Datei.
+    # Verwerfen: schliesst ohne Datei zu schreiben; beim naechsten Start der Stand der Datei.
     w = _fenster(qapp)
     try:
         assert w.emulator.eprom_path() == str(tmp_path / "gebrannt.bin")
@@ -317,7 +317,7 @@ def test_eprom_rueckfrage_beim_beenden(qapp, konfig_ordner, tmp_path, monkeypatc
         assert w.close() is True and len(gefragt) == 1
     finally:
         _zu(w, qapp)
-    # Ohne Änderung fragt niemand (die Frage-Sperre der conftest würde sonst anschlagen).
+    # Ohne Aenderung fragt niemand (die Frage-Sperre der conftest wuerde sonst anschlagen).
     w = _fenster(qapp)
     try:
         assert w.close() is True
@@ -340,7 +340,7 @@ def test_eprom_rueckfrage_beim_modellwechsel(qapp, konfig_ordner, monkeypatch):
         _dialoge(monkeypatch, frage=[QMessageBox.Discard])
         box.setCurrentIndex(box.findData("prg710-1"))
         assert w.emulator.prg_variant == 1 and w.emulator.eprom_type() == 0
-        # Ein gespeichertes (unverändertes) PROM wandert ohne Frage mit.
+        # Ein gespeichertes (unveraendertes) PROM wandert ohne Frage mit.
         w.emulator.eprom_insert_data(b"\x01\x02\x03", 1, "", False)
         box.setCurrentIndex(box.findData("prg710"))
         assert w.emulator.prg_variant == 0 and w.emulator.eprom_type() == 1
@@ -348,7 +348,7 @@ def test_eprom_rueckfrage_beim_modellwechsel(qapp, konfig_ordner, monkeypatch):
         _zu(w, qapp)
 
 
-# ─── Lochstreifen über den Kasten (Entwurf 23 AP-L4) ─────────────────────────
+# ─── Lochstreifen ueber den Kasten (Entwurf 23 AP-L4) ─────────────────────────
 
 def test_lochstreifen_einlegen_und_entnehmen_ueber_den_kasten(qapp, konfig_ordner, tmp_path,
                                                               monkeypatch):
@@ -375,7 +375,7 @@ def test_lochstreifen_einlegen_und_entnehmen_ueber_den_kasten(qapp, konfig_ordne
         _zu(w, qapp)
 
 
-# ─── Rückstellen, Netzschalter, Standardansicht ──────────────────────────────
+# ─── Rueckstellen, Netzschalter, Standardansicht ──────────────────────────────
 
 def test_rueckstellen_und_netzschalter_starten_neu_und_standard_laesst_das_prom(
         qapp, konfig_ordner, tmp_path, monkeypatch):
@@ -386,12 +386,12 @@ def test_rueckstellen_und_netzschalter_starten_neu_und_standard_laesst_das_prom(
         _starten(w, tmp_path, monkeypatch, UDOS_710)
         _udos_bis_prompt(w)
         w.emulator.eprom_insert_data(b"\x01", 1, "", False)
-        # Rückstellen (Strg+Umschalt+R): zurück ins Boot-ROM, mit der Diskette bootet es wieder.
+        # Rueckstellen (Strg+Umschalt+R): zurueck ins Boot-ROM, mit der Diskette bootet es wieder.
         w.act_reset.trigger()
         assert _lauf(w, "NKM-LOADER", 300), w.emulator.screen_text()
         _warten(w, 60)
         _taste(w, Qt.Key_Return)
-        # Das Datum steht noch im RAM (Rückstellen löscht es nicht): UDOS fragt je nach
+        # Das Datum steht noch im RAM (Rueckstellen loescht es nicht): UDOS fragt je nach
         # Stand nach „Neues Datum“ oder geht gleich zum Prompt.
         for _ in range(3000):
             w._run_emulator()
@@ -405,7 +405,7 @@ def test_rueckstellen_und_netzschalter_starten_neu_und_standard_laesst_das_prom(
         assert not w.run_timer.isActive()
         w.act_power.setChecked(True)
         assert _lauf(w, "NKM-LOADER", 300)
-        # Ansicht ▸ Standard zurücksetzen (nach Rückfrage): Diskette und PROM bleiben.
+        # Ansicht ▸ Standard zuruecksetzen (nach Rueckfrage): Diskette und PROM bleiben.
         monkeypatch.setattr(QMessageBox, "question",
                             staticmethod(lambda *a, **k: QMessageBox.Yes))
         w._standard_zuruecksetzen()

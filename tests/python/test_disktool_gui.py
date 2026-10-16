@@ -1,9 +1,9 @@
-"""Oberfläche des k1520DiskTool (PySide6, headless).
+"""Oberflaeche des k1520DiskTool (PySide6, headless).
 
-Geprüft wird die **Verdrahtung**, nicht das Aussehen: dass die Liste nach dem
-Laden gefüllt ist, nach jeder schreibenden Aktion neu gelesen wird, dass beide
+Geprueft wird die **Verdrahtung**, nicht das Aussehen: dass die Liste nach dem
+Laden gefuellt ist, nach jeder schreibenden Aktion neu gelesen wird, dass beide
 UDOS-Seiten als Gruppen erscheinen und dass eine gescheiterte Erkennung die
-Schaltflächen sperrt statt eine Dateiliste zu erfinden
+Schaltflaechen sperrt statt eine Dateiliste zu erfinden
 (doc/design/13_k1520disktool.md §11.2).
 
 Die Aktionen sind bewusst ohne Dialog aufrufbar (``open_image``, ``extract_all``,
@@ -25,7 +25,7 @@ pytest.importorskip("PySide6")
 
 @pytest.fixture(scope="module")
 def qt_app():
-    """Eine QApplication je Modul (Qt verträgt keine zweite)."""
+    """Eine QApplication je Modul (Qt vertraegt keine zweite)."""
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
     yield app
@@ -46,7 +46,7 @@ def gruppen(view) -> list:
 
 
 def alle_namen(view) -> set:
-    """Alle Dateinamen im Baum, über beide Ebenen."""
+    """Alle Dateinamen im Baum, ueber beide Ebenen."""
     tree = view.tree
     out = set()
     for i in range(tree.topLevelItemCount()):
@@ -88,7 +88,7 @@ def test_udos_disk_is_shown_as_one_carrier_with_two_side_groups(window, fixture_
     assert "HELP.DAT.00" in namen
     # Die Belegung ist ein Dauerzustand — sie steht rechts in der Statuszeile.
     assert "69 Dateien" in window.st_inhalt.text()
-    # Auffälligkeiten des Mediums werden angezeigt, nicht verschwiegen.
+    # Auffaelligkeiten des Mediums werden angezeigt, nicht verschwiegen.
     assert window.info_bar.isVisibleTo(window)
     assert "Altbestand" in window.info_bar.text()
     assert window.info_bar.stufe == "warnung"
@@ -98,9 +98,9 @@ def test_unrecognised_image_opens_raw_and_locks_the_file_actions(window,
                                                                  fixture_disks):
     """Ohne Erkennung: das Abbild ist DA, nur ohne Dateisystem (§12.6).
 
-    Früher gab es gar nichts — kein Medium, kein Diskeditor.  Eine gemischte oder
-    unbekannte Geometrie ist aber kein Grund, das Abbild zurückzuhalten: ansehen,
-    sichern und zurechtschneiden bleiben möglich.  Gesperrt ist, was DATEIEN
+    Frueher gab es gar nichts — kein Medium, kein Diskeditor.  Eine gemischte oder
+    unbekannte Geometrie ist aber kein Grund, das Abbild zurueckzuhalten: ansehen,
+    sichern und zurechtschneiden bleiben moeglich.  Gesperrt ist, was DATEIEN
     braucht.
     """
     assert window.open_image(fixture_disks / "cpa_mini.hfe")
@@ -119,12 +119,12 @@ def test_unrecognised_image_opens_raw_and_locks_the_file_actions(window,
 
 
 def test_forcing_a_filesystem_reopens_the_image(window, fixture_disks):
-    """Die Erkennung ist übersteuerbar — `cpa_auto` rechnet statt nachzuschlagen.
+    """Die Erkennung ist uebersteuerbar — `cpa_auto` rechnet statt nachzuschlagen.
 
     Das benannte Profil `scpx640` wurde von Hand nachgemessen; `cpa_auto` leitet
     dieselben Werte aus der Geometrie ab, wie es das CP/A-BIOS beim LOGIN tut
-    (doc/design/13_k1520disktool.md §6.4).  Beide müssen deshalb **denselben**
-    Inhalt zeigen — das ist die Gegenprobe der Regel von der Oberfläche aus.
+    (doc/design/13_k1520disktool.md §6.4).  Beide muessen deshalb **denselben**
+    Inhalt zeigen — das ist die Gegenprobe der Regel von der Oberflaeche aus.
     """
     bild = fixture_disks / "scpx17_cpa780_k5601.hfe"
 
@@ -140,7 +140,7 @@ def test_forcing_a_filesystem_reopens_the_image(window, fixture_disks):
 
 
 def test_unknown_filesystem_name_is_refused(window, fixture_disks):
-    """Ein Tippfehler bei --fs öffnet nichts und sagt, woran es liegt."""
+    """Ein Tippfehler bei --fs oeffnet nichts und sagt, woran es liegt."""
     assert not window.open_image(fixture_disks / "scpx17_cpa780_k5601.hfe", "gibtsnicht")
     assert window.tool is None
 
@@ -159,12 +159,12 @@ def test_view_refreshes_after_every_write(window, fixture_disks, tmp_path):
     quelle.write_text("Inhalt vom DiskTool\n")
     assert window.insert_paths([str(quelle)])
 
-    # Kein Aktualisieren nötig — insert_paths liest die Liste neu.
+    # Kein Aktualisieren noetig — insert_paths liest die Liste neu.
     namen = alle_namen(window.disk_view)
     assert "NEU.TXT" in namen
     assert len(namen) == vorher + 1
-    # Die Änderungsmarke ist Qts eigene (`[*]` im Titel + setWindowModified),
-    # damit jede Plattform ihr übliches Zeichen zeigt.
+    # Die Aenderungsmarke ist Qts eigene (`[*]` im Titel + setWindowModified),
+    # damit jede Plattform ihr uebliches Zeichen zeigt.
     assert window.isWindowModified(), "ungespeicherte Änderung wird angezeigt"
     assert "cpa.img" in window.windowTitle()
 
@@ -229,7 +229,7 @@ def test_insert_all_refuses_when_it_does_not_fit(window, fixture_disks, tmp_path
 
 
 def test_round_trip_through_the_window(window, fixture_disks, tmp_path):
-    """Neue Diskette anlegen, Ordner einfügen, wieder extrahieren."""
+    """Neue Diskette anlegen, Ordner einfuegen, wieder extrahieren."""
     abbild = tmp_path / "neu.hfe"
     assert window.create_disk(abbild, "udos_ds77", "GUI.TEST")
     assert window.tool.volume_count == 2
@@ -239,8 +239,8 @@ def test_round_trip_through_the_window(window, fixture_disks, tmp_path):
     (quelle / "Side1").mkdir(parents=True)
     (quelle / "Side0" / "EINS.DAT").write_bytes(b"\x01" * 500)
     (quelle / "Side1" / "ZWEI.DAT").write_bytes(b"\x02" * 300)
-    # Seit dem `.fileinfo` rät das Werkzeug die Kopfsektorangaben nicht mehr; bei
-    # UDOS gehören sie zur Datei dazu (doc/bug_disktool_Programmdatei.md §2.2).
+    # Seit dem `.fileinfo` raet das Werkzeug die Kopfsektorangaben nicht mehr; bei
+    # UDOS gehoeren sie zur Datei dazu (doc/bug_disktool_Programmdatei.md §2.2).
     (quelle / "Side0" / "EINS.DAT.fileinfo").write_text(
         "fs=udos\nname=EINS.DAT\ntyp=B\nsatz=128\n")
     (quelle / "Side1" / "ZWEI.DAT.fileinfo").write_text(
@@ -277,8 +277,8 @@ def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks
                                                            tmp_path, monkeypatch):
     """Beim blossen Lesen soll nichts kaputtgehen koennen.
 
-    Der Haken „Nur lesen" ist beim Öffnen gesetzt; Schreiben verlangt, ihn zu
-    entfernen — ein bewusster Schritt, bei dem einem einfällt, dass man von einer
+    Der Haken „Nur lesen" ist beim Oeffnen gesetzt; Schreiben verlangt, ihn zu
+    entfernen — ein bewusster Schritt, bei dem einem einfaellt, dass man von einer
     unersetzlichen Diskette lieber erst eine Kopie anlegt.
     """
     from PySide6.QtCore import Qt
@@ -306,8 +306,8 @@ def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks
     assert not window.tool.dirty
     assert abbild.read_bytes() == original
 
-    # Nach dem bewussten Schritt geht es — sobald im Ordner etwas ausgewählt ist
-    # (die Übertragung ist auswahlabhängig, §20.3).
+    # Nach dem bewussten Schritt geht es — sobald im Ordner etwas ausgewaehlt ist
+    # (die Uebertragung ist auswahlabhaengig, §20.3).
     window.set_read_only(False)
     window.folder_view.set_folder(tmp_path)
     assert not window.act_schreiben.isEnabled(), "ohne Auswahl gibt es nichts zu tun"
@@ -321,7 +321,7 @@ def test_opens_read_only_and_write_needs_a_deliberate_step(window, fixture_disks
 
 def test_save_as_writes_a_copy_and_leaves_the_source_untouched(window, fixture_disks,
                                                                tmp_path):
-    """Der empfohlene Weg: schreibgeschützt öffnen, Arbeitskopie anlegen, dort ändern."""
+    """Der empfohlene Weg: schreibgeschuetzt oeffnen, Arbeitskopie anlegen, dort aendern."""
     quelle = fixture_disks / "cpa_cpa780_k5601_clock.img"
     original = quelle.read_bytes()
 
@@ -334,12 +334,12 @@ def test_save_as_writes_a_copy_and_leaves_the_source_untouched(window, fixture_d
     assert window.tool.path == str(kopie), "ab jetzt wird an der Kopie gearbeitet"
     assert quelle.read_bytes() == original, "die Quelle darf sich nicht geändert haben"
 
-    # Die Kopie trägt denselben Inhalt — im anderen Container.
+    # Die Kopie traegt denselben Inhalt — im anderen Container.
     assert len(alle_namen(window.disk_view)) == 24
 
 
 def test_archive_bundles_image_files_and_catalogue(window, fixture_disks, tmp_path):
-    """Die .zip enthält Abbild, Dateien und das Inhaltsverzeichnis mit den
+    """Die .zip enthaelt Abbild, Dateien und das Inhaltsverzeichnis mit den
     Angaben, die ein Linux-Dateisystem nicht tragen kann."""
     import zipfile
 
@@ -374,10 +374,10 @@ def test_archive_traegt_ein_maschinenlesbares_verzeichnis(window, fixture_disks,
                                                           tmp_path):
     """`diskarchive.yaml` — die Inventur einer Sammlung ohne Auspacken.
 
-    Geprüft wird das, worauf sich ein Auswerter verlassen können muss: die
+    Geprueft wird das, worauf sich ein Auswerter verlassen koennen muss: die
     Formatfassung, dass jeder `path` wirklich ein Eintrag der .zip ist, dass
-    Größe und Prüfsumme zu dessen Inhalt passen, und dass `dir`/`name` denselben
-    Pfad zerlegen (die Form, die auch FAT/Unix-Unterverzeichnisse tragen würde).
+    Groesse und Pruefsumme zu dessen Inhalt passen, und dass `dir`/`name` denselben
+    Pfad zerlegen (die Form, die auch FAT/Unix-Unterverzeichnisse tragen wuerde).
     """
     import hashlib
     import zipfile
@@ -400,7 +400,7 @@ def test_archive_traegt_ein_maschinenlesbares_verzeichnis(window, fixture_disks,
         assert daten["label"] == "UDOS 4.3 System"
         assert daten["files_root"] == "dateien"
 
-        # Das Abbild kennzeichnet die DISKETTE — daran hängt „auf welcher lag es".
+        # Das Abbild kennzeichnet die DISKETTE — daran haengt „auf welcher lag es".
         for teil in (daten["image"], daten["catalogue"]):
             assert teil["path"] in namen
             inhalt = z.read(teil["path"])
@@ -423,8 +423,8 @@ def test_archive_traegt_ein_maschinenlesbares_verzeichnis(window, fixture_disks,
     assert not any(f["name"] == "DIRECTORY" for f in daten["files"])
     assert {f["dir"] for f in daten["files"]} == {"Side0", "Side1"}
 
-    # Beiblatt und `.fileinfo` sind Angaben ÜBER die Dateien, keine Dateien der
-    # Diskette — in der Inventur wären sie sonst auf jeder Diskette eine „Fassung".
+    # Beiblatt und `.fileinfo` sind Angaben UEBER die Dateien, keine Dateien der
+    # Diskette — in der Inventur waeren sie sonst auf jeder Diskette eine „Fassung".
     anhang = {a["path"] for a in daten["attachments"]}
     assert "dateien/udos-dateiangaben.txt" in anhang
     assert anhang - {"dateien/udos-dateiangaben.txt"} == {p + ".fileinfo"
@@ -432,7 +432,7 @@ def test_archive_traegt_ein_maschinenlesbares_verzeichnis(window, fixture_disks,
         "zu jeder Datei gehört ihre Angabendatei — und keine mehr"
     assert not (pfade & anhang)
 
-    # Nichts fällt unter den Tisch: jedes Mitglied der .zip ist erklärt.
+    # Nichts faellt unter den Tisch: jedes Mitglied der .zip ist erklaert.
     erklaert = pfade | anhang | {daten["image"]["path"], daten["catalogue"]["path"],
                                  INVENTAR_DATEI}
     assert {n for n in namen if not n.endswith("/")} == erklaert
@@ -443,7 +443,7 @@ def test_archive_verzeichnis_nennt_den_namen_auf_der_diskette(window, temp_disk,
     """Der CP/M-Nutzerbereich steht im Namen — auf der Diskette mit `:`.
 
     Im Dateisystem des Wirts wird daraus ein `_` (ein `:` geht auf FAT nicht).
-    Das Verzeichnis führt beides, sonst wäre in der Inventur weder die Datei
+    Das Verzeichnis fuehrt beides, sonst waere in der Inventur weder die Datei
     wiederzufinden noch der Bereich zu rekonstruieren.
     """
     import zipfile
@@ -500,8 +500,8 @@ def test_archive_converts_an_img_source_to_hfe(window, fixture_disks, tmp_path):
 def test_archive_is_named_after_the_disk_label(window, fixture_disks, tmp_path):
     """Die Beschriftung benennt die Dateien IM Archiv und steht im Verzeichnis.
 
-    Bei einer physischen Diskette ist sie die einzige Auskunft darüber, welche
-    Diskette das war — der Dateiname des Archivs allein wäre nach dem Umbenennen
+    Bei einer physischen Diskette ist sie die einzige Auskunft darueber, welche
+    Diskette das war — der Dateiname des Archivs allein waere nach dem Umbenennen
     verloren.
     """
     import zipfile
@@ -526,7 +526,7 @@ def test_disk_label_becomes_a_usable_file_name():
     assert dateiname("   ") == ""
     assert dateiname("") == ""
     assert len(dateiname("x" * 200)) <= 64
-    assert NAMENLOS                       # der letzte Rückfall hat einen Namen
+    assert NAMENLOS                       # der letzte Rueckfall hat einen Namen
 
 
 # ─── Bootdiskette ────────────────────────────────────────────────────────────
@@ -645,7 +645,7 @@ def test_properties_dialog_edits_cpm_user_area_and_attributes(window, fixture_di
     assert d.aenderungen() == {"user": 4, "system": True}
     assert d.uebernehmen()
 
-    # Der Nutzerbereich gehört zur Identität: die Datei heißt jetzt anders.
+    # Der Nutzerbereich gehoert zur Identitaet: die Datei heisst jetzt anders.
     namen = {e.name: e for e in window.tool.list()}
     assert "PIP.COM" not in namen
     assert namen["4:PIP.COM"].attrs == "SYS"
@@ -698,7 +698,7 @@ def test_archive_catalogue_lists_every_udos_header_field(window, fixture_disks,
     assert window.archive(ziel)
     with zipfile.ZipFile(ziel) as z:
         text = z.read("udos_boot_scp.txt").decode("utf-8")
-        # Das maschinenlesbare Gegenstück liegt daneben.
+        # Das maschinenlesbare Gegenstueck liegt daneben.
         assert "dateien/udos-dateiangaben.txt" in z.namelist()
 
     assert "DATEIANGABEN IM EINZELNEN" in text
@@ -707,9 +707,9 @@ def test_archive_catalogue_lists_every_udos_header_field(window, fixture_disks,
                    "Block", "Zusatz"):
         assert spalte in angaben, spalte
 
-    # Die Zeile zu `OS` trägt genau das, was EXTRACT im laufenden System meldet.
+    # Die Zeile zu `OS` traegt genau das, was EXTRACT im laufenden System meldet.
     zeile = next(z for z in angaben.split("\n") if z.split()[1:2] == ["OS"])
-    assert "1000+5632" in zeile, zeile      # Segment: Anfang + Abbildlänge
+    assert "1000+5632" in zeile, zeile      # Segment: Anfang + Abbildlaenge
     assert "25FF" in zeile, zeile           # HIGH ADDRESS
     assert "0080" in zeile, zeile           # STACK SIZE
     assert " 512 " in zeile or "512" in zeile
@@ -729,7 +729,7 @@ def test_archive_catalogue_lists_cpm_user_area_and_flags(window, fixture_disks,
     assert window.archive(ziel)
     with zipfile.ZipFile(ziel) as z:
         text = z.read("cpa.txt").decode("utf-8")
-        # Ohne dieses Beiblatt ginge der Nutzerbereich beim Zurückschreiben verloren.
+        # Ohne dieses Beiblatt ginge der Nutzerbereich beim Zurueckschreiben verloren.
         assert "dateien/cpm-dateiangaben.txt" in z.namelist()
 
     assert "DATEIANGABEN IM EINZELNEN" in text
@@ -740,7 +740,7 @@ def test_archive_catalogue_lists_cpm_user_area_and_flags(window, fixture_disks,
 
 # ─── Diskeditor: die Diskette als Scheibe ────────────────────────────────────
 #
-# Eine Ebene unter dem Dateisystem. Geprüft wird die Verdrahtung und das, was ein
+# Eine Ebene unter dem Dateisystem. Geprueft wird die Verdrahtung und das, was ein
 # Bildvergleich nicht kann: dass der Treffertest wirklich den Sektor findet, der
 # an dieser Stelle gezeichnet wurde, und dass der Schreibweg tut, was er sagt.
 
@@ -754,15 +754,15 @@ def _editor(window, abbild):
 
 def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
         window, fixture_disks, monkeypatch):
-    """Der Anhang hängt am SEKTOR, nicht am erkannten Dateisystem.
+    """Der Anhang haengt am SEKTOR, nicht am erkannten Dateisystem.
 
-    Eine gemischte oder gar nicht erkannte Diskette trägt ihre UDOS-Sektoren
-    genauso — wer sie im Editor ansieht, will die Verkettung sehen.  Früher
+    Eine gemischte oder gar nicht erkannte Diskette traegt ihre UDOS-Sektoren
+    genauso — wer sie im Editor ansieht, will die Verkettung sehen.  Frueher
     entschied das `tool.filesystem_type`; bei einer rohen Diskette blieb das Feld
     dann leer, obwohl der Kontrollblock danebenstand.
     """
     ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
-    ed.udos = False              # so, als wäre nichts erkannt worden
+    ed.udos = False              # so, als waere nichts erkannt worden
 
     ed._springe(seite=0, spur=25, sektor_id=1)
     assert ed.tail_feld.isVisible(), "der Anhang wird verschwiegen"
@@ -770,7 +770,7 @@ def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
     assert "UDOS" in ed.info.text()
 
     # Und umgekehrt: bei CP/M steht dort nichts — weder Inhalt noch Dateisystem
-    # sprechen dafür.
+    # sprechen dafuer.
     ed2 = _editor(window, fixture_disks / "cpa_cpa780_k5601_noclock.hfe")
     assert not ed2.udos
     ed2._springe(seite=0, spur=25, sektor_id=1)
@@ -780,14 +780,14 @@ def test_disk_editor_zeigt_den_udos_anhang_auch_ohne_erkanntes_udos(
 
 def test_gemischte_diskette_oeffnet_roh_und_laesst_sich_zurechtschneiden(
         window, temp_disk):
-    """Der ganze Weg an der gemischten Diskette — dem Fall, für den es gebaut ist.
+    """Der ganze Weg an der gemischten Diskette — dem Fall, fuer den es gebaut ist.
 
-    `mixed_udos_ss40_over_cpa800.hfe` entstand am echten Laufwerk: erst vollständig
-    als cpa800 formatiert, dann mit UDOS `ss40` im **Doppelschritt** überschrieben.
-    Kopf 0 trägt auf den geraden Zylindern 26×128 (UDOS) und auf den ungeraden noch
+    `mixed_udos_ss40_over_cpa800.hfe` entstand am echten Laufwerk: erst vollstaendig
+    als cpa800 formatiert, dann mit UDOS `ss40` im **Doppelschritt** ueberschrieben.
+    Kopf 0 traegt auf den geraden Zylindern 26×128 (UDOS) und auf den ungeraden noch
     5×1024, Kopf 1 durchgehend 5×1024.  Kein Katalogformat beschreibt das.
 
-    Geprüft wird die Kette: roh öffnen → schneiden → erkannt.
+    Geprueft wird die Kette: roh oeffnen → schneiden → erkannt.
     """
     from app.core_binding.k1520disk import SECTOR
 
@@ -798,7 +798,7 @@ def test_gemischte_diskette_oeffnet_roh_und_laesst_sich_zurechtschneiden(
     assert window.act_diskeditor.isEnabled(), "der Sektoreditor muss gehen"
     assert window.info_bar.text().count("\n") == 0, "die Meldung ist eine Wand"
 
-    # Das Layout ist wirklich gemischt — sonst prüft der Test etwas anderes.
+    # Das Layout ist wirklich gemischt — sonst prueft der Test etwas anderes.
     def art(c, h):
         sp = [x for x in t.track(c, h).spans if x.kind == SECTOR]
         return (len(sp), sp[0].size) if sp else (0, 0)
@@ -818,15 +818,15 @@ def test_gemischte_diskette_oeffnet_roh_und_laesst_sich_zurechtschneiden(
 
 
 def test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge(window, tmp_path):
-    """Auch eine **frisch angelegte** UDOS-Diskette hat Kontrollblöcke.
+    """Auch eine **frisch angelegte** UDOS-Diskette hat Kontrollbloecke.
 
     Auf einer frisch formatierten UDOS-Diskette lautet der Kontrollblock nie
     beschriebener Sektoren `4E 4E 4E 4E` (`doc/udos_diskettenformat.md` §1.1) — vom
-    Gap-Füllbyte nicht zu unterscheiden.  Am Inhalt allein war er deshalb nicht zu
+    Gap-Fuellbyte nicht zu unterscheiden.  Am Inhalt allein war er deshalb nicht zu
     sehen; dass UDOS erkannt ist, weiss es aber besser.
 
     Die Diskette selbst ist dabei in Ordnung: das Anlegen schreibt genau das, was
-    ein UDOS-FORMAT hinterlässt.
+    ein UDOS-FORMAT hinterlaesst.
     """
     ziel = tmp_path / "neu.hfe"
     assert window.create_disk(ziel, "udos_ss40", "TESTDISK")
@@ -839,18 +839,18 @@ def test_frisch_angelegte_udos_diskette_zeigt_ihre_anhaenge(window, tmp_path):
         f"unerwarteter Inhalt: {ed.tail_feld.text()!r}"
     assert "UDOS" in ed.info.text()
 
-    # Der Kopfsektor der Verzeichnisdatei trägt einen ECHTEN Zeiger — Beleg dafür,
-    # dass das Anlegen die Verkettung schreibt, nicht nur Füllbytes.
+    # Der Kopfsektor der Verzeichnisdatei traegt einen ECHTEN Zeiger — Beleg dafuer,
+    # dass das Anlegen die Verkettung schreibt, nicht nur Fuellbytes.
     ed._springe(seite=0, spur=22, sektor_id=1)
     assert ed.tail_feld.text().replace(" ", "") != "4E4E4E4E"
 
 
 def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
-    """Ganze Spuren löschen und einfügen (§19.6).
+    """Ganze Spuren loeschen und einfuegen (§19.6).
 
-    Anders als „Sektor löschen" verschiebt das die Diskette dahinter — der Weg,
+    Anders als „Sektor loeschen" verschiebt das die Diskette dahinter — der Weg,
     ein Abbild mit zu vielen Spuren zurechtzustutzen (82 statt 80) oder auf eine
-    Zielgeometrie zu bringen (77 für 8″).
+    Zielgeometrie zu bringen (77 fuer 8″).
     """
     from PySide6.QtWidgets import QMessageBox
     from app.core_binding.k1520disk import SECTOR
@@ -870,7 +870,7 @@ def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
         ed._springe(seite=0, spur=5)
         assert ed.delete_track()
         assert window.tool.medium_cylinders == vorher - 1, "nicht gelöscht"
-        # Alles dahinter ist aufgerückt: die alte Spur 6 ist jetzt die 5.
+        # Alles dahinter ist aufgerueckt: die alte Spur 6 ist jetzt die 5.
         assert len(sektoren(5)) == inhalt_dahinter
 
         # Der Dialog fragt Stelle und Verfahren — hier beantwortet.
@@ -895,10 +895,10 @@ def test_disk_editor_loescht_und_fuegt_ganze_spuren_ein(window, temp_disk):
 
 
 def test_disk_editor_sperrt_spuraenderungen_bei_schreibschutz(window, fixture_disks):
-    """Ganze Spuren ändern die Geometrie — erst recht nichts für „nur lesen".
+    """Ganze Spuren aendern die Geometrie — erst recht nichts fuer „nur lesen".
 
-    Die beiden Knöpfe hingen an gar nichts und liessen sich auch an einer
-    schreibgeschützt geöffneten Diskette auslösen.
+    Die beiden Knoepfe hingen an gar nichts und liessen sich auch an einer
+    schreibgeschuetzt geoeffneten Diskette ausloesen.
     """
     ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
     assert window.tool.read_only, "Fixture wird schreibgeschützt geöffnet"
@@ -913,13 +913,13 @@ def test_disk_editor_sperrt_spuraenderungen_bei_schreibschutz(window, fixture_di
 
 
 def test_eine_eingefuegte_spur_laesst_sich_von_hand_formatieren(window, temp_disk):
-    """Die eingefügte Spur ist unformatiert — aber NICHT leer.
+    """Die eingefuegte Spur ist unformatiert — aber NICHT leer.
 
     Der Unterschied entscheidet alles: eine Spur ohne Bytes gibt es in dieser
-    Geometrie gar nicht, und in eine solche lässt sich kein Sektor legen — das
-    Anlegen landete dann auf der nächsten formatierten Spur.  Eine gelöschte echte
-    Spur trägt Fluss, nur ohne Marken; genau so wird die neue gebaut, und darin
-    lässt sich von Hand formatieren.
+    Geometrie gar nicht, und in eine solche laesst sich kein Sektor legen — das
+    Anlegen landete dann auf der naechsten formatierten Spur.  Eine geloeschte echte
+    Spur traegt Fluss, nur ohne Marken; genau so wird die neue gebaut, und darin
+    laesst sich von Hand formatieren.
     """
     from PySide6.QtWidgets import QMessageBox
     from app.core_binding.k1520disk import SECTOR
@@ -961,10 +961,10 @@ def test_eine_fm_spur_laesst_sich_vor_mfm_spuren_setzen(window, temp_disk):
     """Der Zweck der beiden Abfragen: **gemischte** Formate (§19.6).
 
     In der K1520-Welt gibt es Disketten mit FM-Systemspuren vor MFM-Daten.  Beides
-    muss deshalb wählbar sein — die **Stelle** (auch 0, vor allen bestehenden) und
+    muss deshalb waehlbar sein — die **Stelle** (auch 0, vor allen bestehenden) und
     das **Verfahren** (es folgt bewusst NICHT dem Nachbarn).
 
-    Und die Länge muss zum Verfahren passen: dieselbe Umdrehung trägt in FM halb so
+    Und die Laenge muss zum Verfahren passen: dieselbe Umdrehung traegt in FM halb so
     viele Bytes wie in MFM.  Stimmte das nicht, passte die Spur nicht auf die
     Scheibe.
     """
@@ -987,7 +987,7 @@ def test_eine_fm_spur_laesst_sich_vor_mfm_spuren_setzen(window, temp_disk):
     assert verschoben.encoding == "MFM", "die alte Spur 0 ist nicht nachgerückt"
     assert verschoben.bytes == mfm_bytes
 
-    # Und sie lässt sich von Hand formatieren — in FM.
+    # Und sie laesst sich von Hand formatieren — in FM.
     t.sector_create(0, 0, id=1, size=128, gap=40, mfm=False)
     sek = [x for x in t.track(0, 0).spans if x.kind == SECTOR]
     assert [x.id for x in sek] == [1]
@@ -995,7 +995,7 @@ def test_eine_fm_spur_laesst_sich_vor_mfm_spuren_setzen(window, temp_disk):
 
 
 def test_der_spurdialog_sagt_vorher_was_geschieht(window, fixture_disks):
-    """Der Dialog nennt Stelle, Verfahren und Folge — vor dem Bestätigen."""
+    """Der Dialog nennt Stelle, Verfahren und Folge — vor dem Bestaetigen."""
     from app.disktool.ui.disk_editor import NewTrackDialog
 
     _editor(window, fixture_disks / "udos_boot_scp.hfe")
@@ -1017,11 +1017,11 @@ def test_der_spurdialog_sagt_vorher_was_geschieht(window, fixture_disks):
 
 
 def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):
-    """Beschrieben oder nur formatiert? — dunkelgrün gegen hellgrün.
+    """Beschrieben oder nur formatiert? — dunkelgruen gegen hellgruen.
 
     Ohne die Unterscheidung sieht eine frisch formatierte Diskette genauso aus wie
-    eine volle.  „Leer" heisst: das **Datenfeld** trägt nichts Unterscheidbares;
-    der UDOS-Anhang hinter der Daten-CRC zählt nicht mit — er ist auch auf einer
+    eine volle.  „Leer" heisst: das **Datenfeld** traegt nichts Unterscheidbares;
+    der UDOS-Anhang hinter der Daten-CRC zaehlt nicht mit — er ist auch auf einer
     leeren Diskette belegt.
     """
     from app.disktool.ui.disk_editor import FARBE_OK, FARBE_OK_LEER
@@ -1043,17 +1043,17 @@ def test_disk_editor_faerbt_leere_sektoren_heller(window, fixture_disks):
 
     assert ed.surface._farbe(leer) == FARBE_OK_LEER
     assert ed.surface._farbe(voll) == FARBE_OK
-    # Heller, aber DASSELBE Grün: es ist kein anderer Zustand, nur weniger Inhalt.
+    # Heller, aber DASSELBE Gruen: es ist kein anderer Zustand, nur weniger Inhalt.
     assert FARBE_OK_LEER.lightness() > FARBE_OK.lightness()
     assert abs(FARBE_OK_LEER.hue() - FARBE_OK.hue()) < 25
 
-    # Und der Tooltip sagt es in Worten — Farbe allein trägt keine Erklärung.
+    # Und der Tooltip sagt es in Worten — Farbe allein traegt keine Erklaerung.
     assert "leer" in ed.surface.beschreibung((0, 0, leer))
     assert "leer" not in ed.surface.beschreibung((0, 0, voll))
     # In der Legende steht beides.
     from PySide6.QtWidgets import QLabel
-    # Die Legende festhalten, solange gelesen wird: gäbe man `_legende().findChildren()`
-    # heraus, stürbe der Wrapper und risse die Beschriftungen mit (PySide-Eigentum).
+    # Die Legende festhalten, solange gelesen wird: gaebe man `_legende().findChildren()`
+    # heraus, stuerbe der Wrapper und risse die Beschriftungen mit (PySide-Eigentum).
     legende = ed._legende()
     beschriftungen = [w.text() for w in legende.findChildren(QLabel)]
     assert any("leer" == t for t in beschriftungen), beschriftungen
@@ -1065,7 +1065,7 @@ def test_disk_editor_shows_both_sides_of_the_medium(window, fixture_disks):
     assert ed.surface.heads == window.tool.medium_heads
     spur = ed.surface.tracks[0][0]
     assert spur.formatted and spur.sectors > 0
-    # Die Abschnitte decken die Umdrehung lückenlos ab — sonst bliebe Fläche leer.
+    # Die Abschnitte decken die Umdrehung lueckenlos ab — sonst bliebe Flaeche leer.
     assert spur.spans[0].start == 0.0
     for a, b in zip(spur.spans, spur.spans[1:]):
         assert a.end == b.start
@@ -1073,11 +1073,11 @@ def test_disk_editor_shows_both_sides_of_the_medium(window, fixture_disks):
 
 
 def test_disk_editor_hit_test_finds_the_drawn_sector(window, fixture_disks):
-    """Für jeden Sektor den gezeichneten Mittelpunkt zurückrechnen und treffen.
+    """Fuer jeden Sektor den gezeichneten Mittelpunkt zurueckrechnen und treffen.
 
-    Das ist die einzige Prüfung, die die Grafik wirklich absichert: Winkelrichtung
-    (Seite 1 ist gespiegelt), Ringlage (Spur 0 außen) und Nullpunkt (12 Uhr)
-    müssen zwischen Zeichnen und Treffertest übereinstimmen.
+    Das ist die einzige Pruefung, die die Grafik wirklich absichert: Winkelrichtung
+    (Seite 1 ist gespiegelt), Ringlage (Spur 0 aussen) und Nullpunkt (12 Uhr)
+    muessen zwischen Zeichnen und Treffertest uebereinstimmen.
     """
     from PySide6.QtCore import QPointF
     ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
@@ -1133,7 +1133,7 @@ def test_disk_editor_hexdump_round_trips(window):
     from app.disktool.ui.disk_editor import hexdump, parse_hexdump
     daten = bytes(range(256)) * 4
     assert parse_hexdump(hexdump(daten)) == daten
-    # Der Offset ist Anzeige: ihn zu verbiegen ändert die Nutzdaten NICHT.
+    # Der Offset ist Anzeige: ihn zu verbiegen aendert die Nutzdaten NICHT.
     verbogen = hexdump(daten).replace("0000  ", "AFFE  ", 1)
     assert parse_hexdump(verbogen) == daten
     with pytest.raises(ValueError):
@@ -1176,7 +1176,7 @@ def test_disk_editor_can_leave_a_sector_deliberately_broken(window, fixture_disk
                                                             tmp_path):
     """Der Sinn der mitschreibbaren CRC: eine schadhafte Diskette nachbilden.
 
-    Das geht nur in einem Container, der eine CRC überhaupt führt — deshalb `.hfe`
+    Das geht nur in einem Container, der eine CRC ueberhaupt fuehrt — deshalb `.hfe`
     (ein `.img` ist ein reines Sektorabbild, s. u.).
     """
     abbild = tmp_path / "cpa.hfe"
@@ -1221,7 +1221,7 @@ def test_disk_editor_opens_once_per_window(window, fixture_disks):
 
 
 def test_disk_editor_jumps_to_a_typed_track_and_sector(window, fixture_disks):
-    """Wer weiß, dass er Spur 25 will, tippt sie — statt auf der Grafik zu suchen."""
+    """Wer weiss, dass er Spur 25 will, tippt sie — statt auf der Grafik zu suchen."""
     ed = _editor(window, fixture_disks / "cpa_cpa780_k5601_clock.img")
 
     ed.w_spur.feld.setText("25")
@@ -1268,13 +1268,13 @@ def test_disk_editor_refuses_an_impossible_sector_and_says_so(window, fixture_di
     ed.w_sektor._eingegeben()
     assert ed.aktuell == vorher, "die Anzeige darf nicht wegspringen"
     assert "99" in ed.hinweis.text() and "vorhanden" in ed.hinweis.text()
-    # Das Feld wird auf den WIRKLICH gezeigten Sektor zurückgesetzt.
+    # Das Feld wird auf den WIRKLICH gezeigten Sektor zurueckgesetzt.
     assert ed.w_sektor.value() != 99
 
 
 def test_disk_editor_ascii_column_follows_the_hex_column(window, fixture_disks,
                                                          tmp_path):
-    """Ein geänderter Bytewert muss sofort auch rechts lesbar werden."""
+    """Ein geaenderter Bytewert muss sofort auch rechts lesbar werden."""
     abbild = tmp_path / "cpa.img"
     shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
     ed = _editor(window, abbild)
@@ -1288,7 +1288,7 @@ def test_disk_editor_ascii_column_follows_the_hex_column(window, fixture_disks,
     erste = ed.hex.toPlainText().split("\n")[0]
     ascii_spalte = erste[6 + 32 * 3 - 1 + 2:]
     assert ascii_spalte.startswith("ABCD"), ascii_spalte
-    # Und die Nutzdaten selbst stimmen weiterhin mit der Hexspalte überein.
+    # Und die Nutzdaten selbst stimmen weiterhin mit der Hexspalte ueberein.
     from app.disktool.ui.disk_editor import parse_hexdump
     assert parse_hexdump(ed.hex.toPlainText())[:4] == b"ABCD"
 
@@ -1318,15 +1318,15 @@ def test_disk_editor_says_when_img_cannot_hold_a_broken_crc(window, fixture_disk
 
     assert gemeldet and ".hfe" in gemeldet[0], gemeldet
     assert "NICHT in die Datei" in ed.hinweis.text()
-    # Im Speicher steht die Änderung trotzdem — sie ist über „Speichern unter…" zu retten.
+    # Im Speicher steht die Aenderung trotzdem — sie ist ueber „Speichern unter…" zu retten.
     assert window.tool.sector_crc(5, 0, span.index) == 0xBEEF
 
 
-# ─── UDOS-Anhang und Sektoren anlegen/löschen ────────────────────────────────
+# ─── UDOS-Anhang und Sektoren anlegen/loeschen ────────────────────────────────
 
 def test_disk_editor_names_the_udos_extension(window, fixture_disks):
-    """Bei UDOS hängt hinter der Daten-CRC ein 4-Byte-Kontrollblock — das muss
-    an Format, Größe UND als entschlüsselte Verkettung sichtbar sein."""
+    """Bei UDOS haengt hinter der Daten-CRC ein 4-Byte-Kontrollblock — das muss
+    an Format, Groesse UND als entschluesselte Verkettung sichtbar sein."""
     ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
     ed._springe(seite=0, spur=22)
 
@@ -1335,7 +1335,7 @@ def test_disk_editor_names_the_udos_extension(window, fixture_disks):
     # Nutzdaten + Kontrollblock; die Daten-CRC zaehlt hier so wenig mit wie bei
     # CP/M — sie hat ihr eigenes Feld.
     assert "128+4 Byte" in text, text
-    # Die Verkettung selbst steht im eigenen, ÄNDERBAREN Feld darunter.
+    # Die Verkettung selbst steht im eigenen, AENDERBAREN Feld darunter.
     assert ed.tail_feld.text() == "05 16 05 16"
     assert "zurück" in ed.tail_deutung.text() and "vor" in ed.tail_deutung.text()
     assert "Spur 22/Sektor" in ed.tail_deutung.text()
@@ -1378,7 +1378,7 @@ def test_disk_editor_deletes_and_recreates_a_sector(window, fixture_disks, tmp_p
     assert len(ed._sektoren(0, 0)) == len(vorher) - 1
     assert not any(s.id == 13 for s in ed._sektoren(0, 0))
 
-    # … und wieder anlegen: der Dialog schlägt den auf dieser Spur üblichen Gap vor,
+    # … und wieder anlegen: der Dialog schlaegt den auf dieser Spur ueblichen Gap vor,
     # der Sektor landet wieder an derselben Stelle.
     from app.disktool.ui.disk_editor import NewSectorDialog
     monkeypatch.setattr(NewSectorDialog, "exec", lambda self: QDialog.Accepted)
@@ -1407,7 +1407,7 @@ def _dialog_mit(**werte):
 
 
 def test_new_sector_dialog_warns_before_overwriting(window, fixture_disks, tmp_path):
-    """Ihr Modell erlaubt das Überschreiben — unbeabsichtigt darf es nicht sein."""
+    """Ihr Modell erlaubt das Ueberschreiben — unbeabsichtigt darf es nicht sein."""
     from app.disktool.ui.disk_editor import NewSectorDialog
 
     abbild = tmp_path / "cpa.hfe"
@@ -1464,14 +1464,14 @@ def test_new_sector_dialog_defaults_the_gap_from_the_track(window, fixture_disks
 # ─── UDOS-Anhang bearbeiten ──────────────────────────────────────────────────
 
 def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_disks):
-    """Die vier Rohbytes zum Ändern, daneben was sie bedeuten — Spur/Sektor dezimal."""
+    """Die vier Rohbytes zum Aendern, daneben was sie bedeuten — Spur/Sektor dezimal."""
     ed = _editor(window, fixture_disks / "udos_boot_scp.hfe")
     ed._springe(seite=0, spur=22)
 
     assert ed.tail_feld.text() == "05 16 05 16"
     assert ed.tail_bytes() == b"\x05\x16\x05\x16"
-    # Der Text ist seit §7.1b Rich Text mit anklickbaren Verweisen; geprüft wird
-    # hier die AUSSAGE, nicht das Markup (dafür `…sind_verweise`).
+    # Der Text ist seit §7.1b Rich Text mit anklickbaren Verweisen; geprueft wird
+    # hier die AUSSAGE, nicht das Markup (dafuer `…sind_verweise`).
     def klartext(html):
         import re
         return re.sub(r"<[^>]+>", "", html).replace("&nbsp;", " ")
@@ -1479,11 +1479,11 @@ def test_udos_tail_is_an_editable_field_with_decimal_reading(window, fixture_dis
     assert klartext(ed.tail_deutung.text()) == \
         "zurück: Spur 22/Sektor 6    vor: Spur 22/Sektor 6"
 
-    # Beim Tippen läuft die Deutung mit.
+    # Beim Tippen laeuft die Deutung mit.
     ed.tail_feld.setText("07 15 FF FF")
     assert klartext(ed.tail_deutung.text()) == "zurück: Spur 21/Sektor 8    vor: Ende"
 
-    # Unvollständige Eingabe wird benannt, nicht geraten.
+    # Unvollstaendige Eingabe wird benannt, nicht geraten.
     ed.tail_feld.setText("07 15")
     assert ed.tail_bytes() is None
     assert "erwartet" in ed.tail_deutung.text()
@@ -1498,7 +1498,7 @@ def test_udos_tail_row_is_absent_on_cpm(window, fixture_disks):
 
 def test_udos_tail_is_saved_without_touching_data_or_crc(window, fixture_disks,
                                                          tmp_path):
-    """Die Verkettung zu ändern ist etwas anderes, als die Nutzdaten zu ändern."""
+    """Die Verkettung zu aendern ist etwas anderes, als die Nutzdaten zu aendern."""
     abbild = tmp_path / "udos.hfe"
     shutil.copy(fixture_disks / "udos_boot_scp.hfe", abbild)
     ed = _editor(window, abbild)
@@ -1510,7 +1510,7 @@ def test_udos_tail_is_saved_without_touching_data_or_crc(window, fixture_disks,
     # Sektor absichtlich defekt lassen …
     ed.crc_feld.setText("BEEF")
     assert ed.save_sector()
-    # … und danach NUR die Verkettung ändern.
+    # … und danach NUR die Verkettung aendern.
     ed.tail_feld.setText("07 15 FF FF")
     assert ed.save_sector()
 
@@ -1550,7 +1550,7 @@ def test_udos_tail_is_locked_on_a_protected_disk(window, fixture_disks):
     assert ed.tail_feld.isReadOnly()
 
 
-# ─── Randfälle der Scheibenansicht ───────────────────────────────────────────
+# ─── Randfaelle der Scheibenansicht ───────────────────────────────────────────
 
 def test_disk_editor_shows_an_empty_track_and_still_offers_a_new_sector(
         window, tmp_path):
@@ -1564,7 +1564,7 @@ def test_disk_editor_shows_an_empty_track_and_still_offers_a_new_sector(
 
     # Eine Spur jenseits des Formats gibt es nicht …
     ed._springe(seite=0, spur=ed.surface.cylinders - 1)
-    # … eine leergeräumte dagegen schon: alle Sektoren entfernen.
+    # … eine leergeraeumte dagegen schon: alle Sektoren entfernen.
     ed._springe(seite=0, spur=5)
     while ed._sektoren(0, 5):
         window.tool.sector_erase(5, 0, ed._sektoren(0, 5)[0].index)
@@ -1579,7 +1579,7 @@ def test_disk_editor_shows_an_empty_track_and_still_offers_a_new_sector(
 
 
 def test_disk_editor_leaves_the_back_of_a_single_sided_disk_empty(window, tmp_path):
-    """Einseitige Diskette: die Rückseite bleibt leer — nur die beiden Kreise."""
+    """Einseitige Diskette: die Rueckseite bleibt leer — nur die beiden Kreise."""
     from app.core_binding.k1520disk import DiskTool
 
     abbild = tmp_path / "einseitig.hfe"
@@ -1590,22 +1590,22 @@ def test_disk_editor_leaves_the_back_of_a_single_sided_disk_empty(window, tmp_pa
     assert ed.surface.tracks[0], "Seite 0 hat Spuren"
     assert ed.surface.tracks[1] == [], "Seite 1 gibt es nicht"
 
-    # Ein Klick auf die rechte Hälfte findet nichts — und stürzt nicht ab.
+    # Ein Klick auf die rechte Haelfte findet nichts — und stuerzt nicht ab.
     from PySide6.QtCore import QPointF
     ed.resize(1000, 800)
     cx, cy, r, _ = ed.surface._mitte(1)
     assert ed.surface.treffer(QPointF(cx, cy - r * 0.5)) is None
 
 
-# ─── Fensteraufbau: Menüleiste, Symbolleiste, Meldungsorte ───────────────────
+# ─── Fensteraufbau: Menueleiste, Symbolleiste, Meldungsorte ───────────────────
 #
 # Der Umbau von 2026-08-14 (doc/design/13_k1520disktool.md §20) hat die zwei
-# Knopfleisten auf halber Höhe durch Menü + ausblendbare Symbolleiste ersetzt und
-# die vier Meldungsorte auf klare Rollen verteilt.  Diese Prüfungen halten beides
-# fest — vor allem, dass eine NEUE Aktion nicht heimlich menülos bleibt.
+# Knopfleisten auf halber Hoehe durch Menue + ausblendbare Symbolleiste ersetzt und
+# die vier Meldungsorte auf klare Rollen verteilt.  Diese Pruefungen halten beides
+# fest — vor allem, dass eine NEUE Aktion nicht heimlich menuelos bleibt.
 
 def _menue_aktionen(fenster) -> set:
-    """Alle Aktionen, die über die Menüleiste erreichbar sind (rekursiv)."""
+    """Alle Aktionen, die ueber die Menueleiste erreichbar sind (rekursiv)."""
     gefunden = set()
 
     def sammle(menue):
@@ -1620,9 +1620,9 @@ def _menue_aktionen(fenster) -> set:
 
 
 def test_every_action_is_reachable_from_the_menu_bar(window):
-    """Jede Aktion steht in der Menüleiste — die Symbolleiste ist nur die Abkürzung.
+    """Jede Aktion steht in der Menueleiste — die Symbolleiste ist nur die Abkuerzung.
 
-    Sie lässt sich ausblenden; wäre eine Aktion nur dort, wäre sie danach weg.
+    Sie laesst sich ausblenden; waere eine Aktion nur dort, waere sie danach weg.
     """
     im_menue = _menue_aktionen(window)
     fehlend = [name for name in dir(window)
@@ -1634,7 +1634,7 @@ def test_toolbar_shows_actions_that_all_exist_in_the_menu(window):
     in_leiste = [a for a in window.leiste.actions() if not a.isSeparator()]
     assert len(in_leiste) >= 10, "die Leiste soll die häufigen Wege tragen"
     assert set(in_leiste) <= _menue_aktionen(window)
-    # Und jede trägt ein Symbol — eine leere Leiste wäre das Gegenteil des Zwecks.
+    # Und jede traegt ein Symbol — eine leere Leiste waere das Gegenteil des Zwecks.
     for a in in_leiste:
         assert not a.icon().isNull(), a.text()
 
@@ -1643,7 +1643,7 @@ def test_toolbar_can_be_hidden_from_the_view_menu(window):
     """Der Umschalter kommt von Qt selbst (QToolBar.toggleViewAction).
 
     Er spiegelt die *wirkliche* Sichtbarkeit, deshalb muss das Fenster hier
-    tatsächlich angezeigt werden (offscreen genügt).
+    tatsaechlich angezeigt werden (offscreen genuegt).
     """
     assert window.act_leiste_zeigen in _menue_aktionen(window)
     assert window.act_leiste_zeigen.isCheckable()
@@ -1706,7 +1706,7 @@ def test_the_protection_button_shows_which_state_it_is_in(window, fixture_disks)
 
 
 def test_the_status_bar_cannot_be_switched_off(window):
-    """Sie trägt den Zustand — wer sie ausblenden könnte, arbeitete blind."""
+    """Sie traegt den Zustand — wer sie ausblenden koennte, arbeitete blind."""
     assert not hasattr(window, "act_statusleiste")
     assert not any("tatus" in a.text() for a in window.menue_ansicht.actions())
     assert window.statusBar().isVisibleTo(window)
@@ -1727,10 +1727,10 @@ def test_both_panes_are_the_same_width(window):
 
 
 def test_both_lists_begin_at_the_same_height(window, qt_app):
-    """Links eine Überschrift, rechts eine Adresszeile — die Listen darunter fluchten.
+    """Links eine Ueberschrift, rechts eine Adresszeile — die Listen darunter fluchten.
 
-    Die Adresszeile ist höher als die Überschrift; ohne Bindung begänne die
-    rechte Liste ein paar Pixel tiefer, und die beiden Hälften sähen aus wie
+    Die Adresszeile ist hoeher als die Ueberschrift; ohne Bindung begaenne die
+    rechte Liste ein paar Pixel tiefer, und die beiden Haelften saehen aus wie
     zwei verschiedene Dinge.
     """
     from PySide6.QtCore import QPoint
@@ -1747,7 +1747,7 @@ def test_both_lists_begin_at_the_same_height(window, qt_app):
 
 
 def test_the_folder_pane_has_no_footer_line(window, tmp_path):
-    """Beide Hälften sind gleich gebaut: Adress-/Überschriftzeile + Liste, sonst nichts."""
+    """Beide Haelften sind gleich gebaut: Adress-/Ueberschriftzeile + Liste, sonst nichts."""
     assert not hasattr(window.folder_view, "fuss")
     (tmp_path / "EINS.TXT").write_text("x")
     window.folder_view.set_folder(tmp_path)
@@ -1758,7 +1758,7 @@ def test_the_folder_pane_has_no_footer_line(window, tmp_path):
 # ─── Die Ordnerseite ist ein kleiner Dateibrowser (§20.10) ───────────────────
 
 def test_the_folder_pane_is_never_empty_at_start(window):
-    """Es gibt keinen Zustand „kein Ordner gewählt" mehr."""
+    """Es gibt keinen Zustand „kein Ordner gewaehlt" mehr."""
     from app import paths
 
     assert window.folder_view.folder == paths.default_folder_dir()
@@ -1766,7 +1766,7 @@ def test_the_folder_pane_is_never_empty_at_start(window):
 
 
 def test_the_folder_pane_navigates_up_and_down(window, tmp_path):
-    """`..` führt hinauf, ein Verzeichniseintrag hinein — beides beim Aktivieren."""
+    """`..` fuehrt hinauf, ein Verzeichniseintrag hinein — beides beim Aktivieren."""
     unten = tmp_path / "unten"
     unten.mkdir()
     (unten / "DREIN.TXT").write_text("x")
@@ -1784,15 +1784,15 @@ def test_the_folder_pane_navigates_up_and_down(window, tmp_path):
     ansicht.tree.itemActivated.emit(ansicht.tree.topLevelItem(0), 0)
     assert ansicht.folder == tmp_path
 
-    # … und die Rücktaste tut dasselbe wie `..`.
+    # … und die Ruecktaste tut dasselbe wie `..`.
     ansicht.hinauf()
     assert ansicht.folder == tmp_path.parent
 
 
 def test_only_side_folders_are_unfolded(window, tmp_path):
-    """`SideN/` ist die Darstellung des Datenträgers — jeder andere Ordner ein Wegpunkt.
+    """`SideN/` ist die Darstellung des Datentraegers — jeder andere Ordner ein Wegpunkt.
 
-    Sonst stünde in einem Heimatverzeichnis der Inhalt sämtlicher Unterordner.
+    Sonst stuende in einem Heimatverzeichnis der Inhalt saemtlicher Unterordner.
     """
     (tmp_path / "Side0").mkdir()
     (tmp_path / "Side0" / "AUF.SEITE").write_text("x")
@@ -1818,7 +1818,7 @@ def test_the_address_line_takes_a_typed_path(window, tmp_path):
     ansicht.adresse.returnPressed.emit()
     assert ansicht.folder == ziel
 
-    # Eine DATEI ist kein Fehler: gemeint ist ihr Ordner, sie steht ausgewählt da.
+    # Eine DATEI ist kein Fehler: gemeint ist ihr Ordner, sie steht ausgewaehlt da.
     datei = ziel / "EINE.TXT"
     datei.write_text("x")
     ansicht.adresse.setText(str(datei))
@@ -1828,7 +1828,7 @@ def test_the_address_line_takes_a_typed_path(window, tmp_path):
 
 
 def test_a_nonsense_address_is_reported_and_taken_back(window, tmp_path):
-    """Keine Fehlerbox — die Statuszeile sagt es, das Protokoll behält es (§20.4)."""
+    """Keine Fehlerbox — die Statuszeile sagt es, das Protokoll behaelt es (§20.4)."""
     ansicht = window.folder_view
     ansicht.set_folder(tmp_path)
 
@@ -1842,7 +1842,7 @@ def test_a_nonsense_address_is_reported_and_taken_back(window, tmp_path):
 
 def test_the_folder_button_opens_the_same_dialog_as_the_menu(window, tmp_path,
                                                              monkeypatch):
-    """Der Knopf neben der Adresszeile ist derselbe Weg wie *Zielordner wählen*."""
+    """Der Knopf neben der Adresszeile ist derselbe Weg wie *Zielordner waehlen*."""
     from PySide6.QtWidgets import QFileDialog
     monkeypatch.setattr(QFileDialog, "getExistingDirectory",
                         lambda *a, **k: str(tmp_path))
@@ -1852,7 +1852,7 @@ def test_the_folder_button_opens_the_same_dialog_as_the_menu(window, tmp_path,
 
 
 def test_the_empty_disk_says_that_it_is_empty(window, fixture_disks, tmp_path):
-    """Eine Diskette ohne Dateien sieht sonst aus wie „noch nichts geöffnet"."""
+    """Eine Diskette ohne Dateien sieht sonst aus wie „noch nichts geoeffnet"."""
     import shutil
     abbild = tmp_path / "leer.img"
     shutil.copy(fixture_disks / "cpa_cpa780_k5601_clock.img", abbild)
@@ -1870,7 +1870,7 @@ def test_the_empty_disk_says_that_it_is_empty(window, fixture_disks, tmp_path):
 
 
 def test_a_disk_without_a_filesystem_says_it_too(window, fixture_disks):
-    """Roh geöffnet (kein erkanntes Dateisystem) — dieselbe Lage, derselbe Satz."""
+    """Roh geoeffnet (kein erkanntes Dateisystem) — dieselbe Lage, derselbe Satz."""
     assert window.open_image(fixture_disks / "cpa_mini.hfe")
     assert not window.tool.has_filesystem
     assert window.disk_view.tree.leer_text == "Keine Dateien gefunden"
@@ -1892,7 +1892,7 @@ def test_a_new_folder_is_created_and_goes_straight_into_the_editor(window, tmp_p
 
 
 def test_renaming_happens_in_place_for_files_and_folders(window, tmp_path):
-    """Übernommen wird, was im Feld steht — Datei wie Ordner."""
+    """Uebernommen wird, was im Feld steht — Datei wie Ordner."""
     (tmp_path / "ALT.TXT").write_text("x")
     (tmp_path / "altordner").mkdir()
     ansicht = window.folder_view
@@ -1905,7 +1905,7 @@ def test_renaming_happens_in_place_for_files_and_folders(window, tmp_path):
 
     ordner = ansicht._finde(str(tmp_path / "altordner"))
     ansicht.umbenennen_starten(ordner)
-    assert ordner.text(0) == "altordner"      # der Schrägstrich ist Darstellung
+    assert ordner.text(0) == "altordner"      # der Schraegstrich ist Darstellung
     ordner.setText(0, "neuordner")
     assert (tmp_path / "neuordner").is_dir()
     assert gruppen(ansicht) == ["..", "neuordner/", "NEU.TXT"]
@@ -1914,9 +1914,9 @@ def test_renaming_happens_in_place_for_files_and_folders(window, tmp_path):
 def test_the_name_is_taken_with_enter_and_with_a_click_beside_the_field(window,
                                                                         tmp_path,
                                                                         qt_app):
-    """Der ECHTE Editor, nicht ein gesetzter Text: beide Wege der Übernahme.
+    """Der ECHTE Editor, nicht ein gesetzter Text: beide Wege der Uebernahme.
 
-    Dafür muss das Fenster wirklich angezeigt werden (offscreen genügt) — ohne
+    Dafuer muss das Fenster wirklich angezeigt werden (offscreen genuegt) — ohne
     das legt Qt kein Eingabefeld an.
     """
     from PySide6.QtCore import Qt
@@ -1937,7 +1937,7 @@ def test_the_name_is_taken_with_enter_and_with_a_click_beside_the_field(window,
         qt_app.processEvents()
         assert (tmp_path / "Fotos").is_dir()
 
-        # … und ein Klick daneben (= Fokusverlust) übernimmt genauso.
+        # … und ein Klick daneben (= Fokusverlust) uebernimmt genauso.
         (tmp_path / "ALT.TXT").write_text("x")
         ansicht.refresh()
         ansicht.umbenennen_starten(ansicht._finde(str(tmp_path / "ALT.TXT")))
@@ -1988,7 +1988,7 @@ def test_the_folder_actions_are_in_the_context_menu_and_gated(window, tmp_path):
     window._aktionen_pruefen()
     assert window.act_umbenennen.isEnabled()
 
-    # `..` ist kein Eintrag, den man umbenennen könnte.
+    # `..` ist kein Eintrag, den man umbenennen koennte.
     ansicht.tree.clearSelection()
     auf = ansicht.tree.topLevelItem(0)
     auf.setSelected(True)
@@ -1998,13 +1998,13 @@ def test_the_folder_actions_are_in_the_context_menu_and_gated(window, tmp_path):
 
 
 def test_a_double_click_navigates_and_does_not_open_the_editor(window, tmp_path):
-    """Beides hängt am Doppelklick — deshalb hat der Baum keine Editier-Auslöser."""
+    """Beides haengt am Doppelklick — deshalb hat der Baum keine Editier-Ausloeser."""
     from PySide6.QtWidgets import QAbstractItemView
     assert window.folder_view.tree.editTriggers() == QAbstractItemView.NoEditTriggers
 
 
 def test_the_middle_column_offers_selection_and_everything(window):
-    """Vier Knöpfe: aussen die Stapel, innen die Auswahl (→→| →| |← |←←)."""
+    """Vier Knoepfe: aussen die Stapel, innen die Auswahl (→→| →| |← |←←)."""
     knoepfe = [window.btn_alles_holen, window.btn_holen,
                window.btn_schreiben, window.btn_alles_schreiben]
     aktionen = [b.defaultAction() for b in knoepfe]
@@ -2016,7 +2016,7 @@ def test_the_middle_column_offers_selection_and_everything(window):
 
 
 def test_header_carries_path_and_format(window, fixture_disks):
-    """Der Kopfbereich trägt die DAUERHAFTEN Angaben — nicht die Statuszeile."""
+    """Der Kopfbereich traegt die DAUERHAFTEN Angaben — nicht die Statuszeile."""
     assert window.open_image(fixture_disks / "cpa_cpa780_k5601_clock.img")
     assert "cpa_cpa780_k5601_clock.img" in window.kopf.pfad.text()
     assert "cpa780" in window.kopf.angaben.text()
@@ -2025,7 +2025,7 @@ def test_header_carries_path_and_format(window, fixture_disks):
 
 def test_filesystem_choice_stays_in_step_between_header_and_menu(window,
                                                                  fixture_disks):
-    """Feld und Menüpunkt zeigen dieselbe Wahl — gesetzt wird sie an einer Stelle."""
+    """Feld und Menuepunkt zeigen dieselbe Wahl — gesetzt wird sie an einer Stelle."""
     bild = fixture_disks / "scpx17_cpa780_k5601.hfe"
     assert window.open_image(bild, "cpa_auto")
 
@@ -2035,7 +2035,7 @@ def test_filesystem_choice_stays_in_step_between_header_and_menu(window,
 
 
 def test_context_menus_use_the_same_actions_as_the_menu_bar(window):
-    """Wer eine Aktion sperrt, sperrt sie überall — dafür gibt es sie nur einmal."""
+    """Wer eine Aktion sperrt, sperrt sie ueberall — dafuer gibt es sie nur einmal."""
     assert window.act_eigenschaften in window.disk_view._aktionen
     assert window.act_loeschen in window.disk_view._aktionen
     assert window.act_schreiben in window.folder_view._aktionen
@@ -2112,10 +2112,10 @@ def test_every_bundled_icon_can_be_rendered(qt_app):
 
 
 def test_a_single_recent_file_survives_qsettings(window):
-    """QSettings gibt eine einelementige Liste als ZEICHENKETTE zurück.
+    """QSettings gibt eine einelementige Liste als ZEICHENKETTE zurueck.
 
-    Ohne Behandlung zerfiel der eine zuletzt geöffnete Pfad in seine Buchstaben
-    und „Zuletzt geöffnet" hatte 80 Einträge (§20.5).
+    Ohne Behandlung zerfiel der eine zuletzt geoeffnete Pfad in seine Buchstaben
+    und „Zuletzt geoeffnet" hatte 80 Eintraege (§20.5).
     """
     assert window._als_liste("/pfad/zur/diskette.hfe") == ["/pfad/zur/diskette.hfe"]
     assert window._als_liste(["/a.hfe", "/b.hfe"]) == ["/a.hfe", "/b.hfe"]
@@ -2125,11 +2125,11 @@ def test_a_single_recent_file_survives_qsettings(window):
 
 # ─── Handbuch (F1) ───────────────────────────────────────────────────────────
 #
-# Die Hilfe ist eine gewöhnliche `.md`-Datei, die Qt selbst setzt (§20.7) — kein
-# Bauschritt, keine Abhängigkeit.  Geprüft wird, dass sie mitgeliefert wird, dass
+# Die Hilfe ist eine gewoehnliche `.md`-Datei, die Qt selbst setzt (§20.7) — kein
+# Bauschritt, keine Abhaengigkeit.  Geprueft wird, dass sie mitgeliefert wird, dass
 # das Inhaltsverzeichnis zum Text passt und — das Wichtigste — dass die dort
-# genannten Tastenkürzel WIRKLICH an den Aktionen hängen.  Eine Hilfe, die mit der
-# Oberfläche auseinanderläuft, ist schlimmer als keine.
+# genannten Tastenkuerzel WIRKLICH an den Aktionen haengen.  Eine Hilfe, die mit der
+# Oberflaeche auseinanderlaeuft, ist schlimmer als keine.
 
 #: Deutsche Tastennamen des Handbuchs → was QKeySequence versteht.
 _TASTEN = {"Strg": "Ctrl", "Umschalt": "Shift", "Entf": "Del",
@@ -2143,7 +2143,7 @@ def _als_kuerzel(deutsch: str):
 
 
 def _handbuch_kuerzel() -> dict:
-    """Die Tabelle „Tastenkürzel" des Handbuchs als {Kürzel: Wirkung}."""
+    """Die Tabelle „Tastenkuerzel" des Handbuchs als {Kuerzel: Wirkung}."""
     from app.disktool.ui.help_window import lade_handbuch
     text = lade_handbuch()
     tabelle = text.split("## Tastenkürzel", 1)[1].split("\n## ", 1)[0]
@@ -2175,7 +2175,7 @@ def test_help_window_lists_every_section_and_jumps_to_it(window):
     im_verzeichnis = [h.inhalt.item(i).text() for i in range(h.inhalt.count())]
     assert im_verzeichnis == erwartet
 
-    # Qt vergibt keine Anker; gesprungen wird auf den Überschriften-BLOCK.
+    # Qt vergibt keine Anker; gesprungen wird auf den Ueberschriften-BLOCK.
     assert [t for t, _ in h.ueberschriften()] == erwartet
     for name in erwartet:
         assert h.springe_zu(name), name
@@ -2203,7 +2203,7 @@ def test_help_search_finds_wraps_and_reports_a_miss(window):
 
 
 def test_every_shortcut_in_the_manual_really_exists(window):
-    """Jedes Kürzel der Handbuchtabelle hängt an einer Aktion des Fensters."""
+    """Jedes Kuerzel der Handbuchtabelle haengt an einer Aktion des Fensters."""
     from PySide6.QtGui import QAction
 
     vorhanden = {}
@@ -2219,7 +2219,7 @@ def test_every_shortcut_in_the_manual_really_exists(window):
 
 
 def test_every_shortcut_of_the_window_is_in_the_manual(window):
-    """Und die Gegenrichtung: kein Kürzel bleibt unerwähnt."""
+    """Und die Gegenrichtung: kein Kuerzel bleibt unerwaehnt."""
     from PySide6.QtGui import QAction
 
     im_handbuch = {_als_kuerzel(k).toString() for k in _handbuch_kuerzel()}
@@ -2233,18 +2233,18 @@ def test_every_shortcut_of_the_window_is_in_the_manual(window):
 # ─── Wo die Dialoge aufgehen ─────────────────────────────────────────────────
 #
 # Im Installationsordner liegt das Programm, nicht die Arbeit des Anwenders.
-# Aufgelöst wird über `app.paths` — dieselbe Stelle, die auch der Emulator
+# Aufgeloest wird ueber `app.paths` — dieselbe Stelle, die auch der Emulator
 # benutzt, damit beide Programme auf dieselben Ordner zeigen (§20.8).
 
 def _dialog_startpunkte(window, monkeypatch) -> dict:
     """Alle Dateidialoge einmal aufrufen und ihren Startpfad einsammeln.
 
-    Jeder Dialog wird sofort „abgebrochen" (leerer Rückgabewert), es passiert
+    Jeder Dialog wird sofort „abgebrochen" (leerer Rueckgabewert), es passiert
     also nichts weiter.
 
     Die Frage nach der Beschriftung (Archivieren) wird mitbeantwortet — sonst
-    stünde der Testlauf an einem modalen Fenster, und der Dateidialog dahinter
-    käme nie zum Zuge.
+    stuende der Testlauf an einem modalen Fenster, und der Dateidialog dahinter
+    kaeme nie zum Zuge.
     """
     from PySide6.QtWidgets import QFileDialog, QInputDialog
     gesehen = {}
@@ -2272,7 +2272,7 @@ def test_every_file_dialog_gets_a_start_directory(window, fixture_disks,
                                                   monkeypatch):
     """Der Kern der Sache: kein Dialog ohne Startpunkt.
 
-    Ein leerer Startpfad heisst für Qt „Arbeitsverzeichnis" — und das ist beim
+    Ein leerer Startpfad heisst fuer Qt „Arbeitsverzeichnis" — und das ist beim
     installierten Programm der INSTALLATIONSORDNER.  Dort liegt das Programm,
     nicht die Arbeit des Anwenders.
     """
@@ -2293,11 +2293,11 @@ def test_every_file_dialog_gets_a_start_directory(window, fixture_disks,
 
 def test_folder_side_never_starts_in_the_installation(window, tmp_path,
                                                       monkeypatch):
-    """Für die Ordnerseite gilt es ausnahmslos: dort gehören keine Anwenderdateien hin.
+    """Fuer die Ordnerseite gilt es ausnahmslos: dort gehoeren keine Anwenderdateien hin.
 
     (Bei den Abbildern gibt es eine gewollte Ausnahme — passt kein
     Benutzerordner, bietet ``default_disk_dir`` die MITGELIEFERTEN Beispiele an,
-    und die liegen naturgemäß im Programmordner.  Der Emulator macht es ebenso.)
+    und die liegen naturgemaess im Programmordner.  Der Emulator macht es ebenso.)
     """
     from app import paths
 
@@ -2309,7 +2309,7 @@ def test_folder_side_never_starts_in_the_installation(window, tmp_path,
     monkeypatch.setenv(paths.ENV_HOME, str(prog))
     monkeypatch.setenv(paths.ENV_DATA, str(tmp_path / "daten"))
 
-    # Ohne gewählten Ordner greift der Rückfall — und genau um den geht es hier.
+    # Ohne gewaehlten Ordner greift der Rueckfall — und genau um den geht es hier.
     window.folder_view.set_folder(None)
     gesehen = _dialog_startpunkte(window, monkeypatch)
     window._ordner_dialog()
@@ -2330,7 +2330,7 @@ def test_image_dialogs_start_where_the_emulator_looks(window, monkeypatch):
 
 
 def test_save_as_starts_next_to_the_open_disk(window, fixture_disks, monkeypatch):
-    """Eine Arbeitskopie gehört dorthin, wo das Original liegt."""
+    """Eine Arbeitskopie gehoert dorthin, wo das Original liegt."""
     from app import paths
 
     # Ohne Diskette: der Diskettenordner.
@@ -2345,14 +2345,14 @@ def test_save_as_starts_next_to_the_open_disk(window, fixture_disks, monkeypatch
 
 def test_folder_dialog_starts_in_the_users_file_directory(window, tmp_path,
                                                           monkeypatch):
-    """Ordnerseite: der Dateiordner des Anwenders — und danach der gewählte."""
+    """Ordnerseite: der Dateiordner des Anwenders — und danach der gewaehlte."""
     from app import paths
 
     # Beim Start steht der Standardordner darin (§20.10), also auch im Dialog.
     assert window.folder_view.folder == paths.default_folder_dir()
     assert window._ordner_startpunkt() == str(paths.default_folder_dir())
 
-    # Sobald einer gewählt ist, geht der nächste Dialog dort auf.
+    # Sobald einer gewaehlt ist, geht der naechste Dialog dort auf.
     window.folder_view.set_folder(tmp_path)
     assert window._ordner_startpunkt() == str(tmp_path)
 
@@ -2361,10 +2361,10 @@ def test_folder_dialog_starts_in_the_users_file_directory(window, tmp_path,
     assert gesehen["Ordner wählen"] == str(tmp_path)
 
 
-# ─── Dateisystemprüfung: die sechs Meldungsorte (§16.1) ──────────────────────
+# ─── Dateisystempruefung: die sechs Meldungsorte (§16.1) ──────────────────────
 
 def _mit_kreuzbelegung(quelle, ziel):
-    """Eine cpa780-Kopie, in der zwei Verzeichnisplätze denselben Block nennen."""
+    """Eine cpa780-Kopie, in der zwei Verzeichnisplaetze denselben Block nennen."""
     import shutil
     shutil.copy(quelle, ziel)
     roh = bytearray(ziel.read_bytes())
@@ -2381,7 +2381,7 @@ def test_eine_heile_diskette_meldet_ohne_befund_und_verstellt_den_streifen_nicht
         window, fixture_disks):
     """Die Statuszeile sagt „ohne Befund", der Streifen bleibt frei.
 
-    Wichtig, weil der Streifen die knappste Fläche im Fenster ist: eine Meldung,
+    Wichtig, weil der Streifen die knappste Flaeche im Fenster ist: eine Meldung,
     die immer dasteht, verdeckt die eine, auf die es ankommt.
     """
     assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.img")
@@ -2391,10 +2391,10 @@ def test_eine_heile_diskette_meldet_ohne_befund_und_verstellt_den_streifen_nicht
 
 def test_ein_gefahrbefund_verdraengt_alles_andere_im_streifen(window, fixture_disks,
                                                               tmp_path):
-    """Rangfolge aus §16.1: `Gefahr` steht über jeder anderen Einschränkung.
+    """Rangfolge aus §16.1: `Gefahr` steht ueber jeder anderen Einschraenkung.
 
-    Sie sagt, dass der NÄCHSTE Schreibvorgang Daten zerstört, und das duldet
-    keinen Aufschub.  Der Knopf muss zum vollständigen Befund führen.
+    Sie sagt, dass der NAECHSTE Schreibvorgang Daten zerstoert, und das duldet
+    keinen Aufschub.  Der Knopf muss zum vollstaendigen Befund fuehren.
     """
     abbild = _mit_kreuzbelegung(
         fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz.img")
@@ -2435,7 +2435,7 @@ def test_die_diskettenangaben_tragen_den_ganzen_bericht(window, fixture_disks,
 
 
 def test_der_befund_verschwindet_mit_der_diskette(window, fixture_disks, tmp_path):
-    """Ein stehengebliebener Befund gehörte zur vorigen Diskette — irreführend."""
+    """Ein stehengebliebener Befund gehoerte zur vorigen Diskette — irrefuehrend."""
     abbild = _mit_kreuzbelegung(
         fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "kreuz4.img")
     assert window.open_image(abbild, "cpa780")
@@ -2448,12 +2448,12 @@ def test_der_befund_verschwindet_mit_der_diskette(window, fixture_disks, tmp_pat
 def test_die_vollpruefung_ist_aus_den_diskettenangaben_erreichbar(window,
                                                                   fixture_disks,
                                                                   tmp_path):
-    """Der ernsteste Befund bei UDOS ist nur der VOLLEN Prüfung zugänglich.
+    """Der ernsteste Befund bei UDOS ist nur der VOLLEN Pruefung zugaenglich.
 
-    Die Schnellprüfung beim Öffnen kann nicht sagen, dass ein Sektor einer Datei
-    im Belegungsplan als frei steht — dafür müsste sie jede Kette lesen. Ohne
-    einen Weg zur Vollprüfung wäre der wichtigste Befund des ganzen Vorhabens in
-    der Oberfläche gar nicht erreichbar.
+    Die Schnellpruefung beim Oeffnen kann nicht sagen, dass ein Sektor einer Datei
+    im Belegungsplan als frei steht — dafuer muesste sie jede Kette lesen. Ohne
+    einen Weg zur Vollpruefung waere der wichtigste Befund des ganzen Vorhabens in
+    der Oberflaeche gar nicht erreichbar.
     """
     import shutil
     from app.core_binding.k1520disk import DiskTool, GEFAHR
@@ -2491,14 +2491,14 @@ def test_die_vollpruefung_ist_aus_den_diskettenangaben_erreichbar(window,
 
 # ─── Reparaturdialog (Entwurf §16.3) ─────────────────────────────────────────
 #
-# Prüfen und Reparieren stehen in EINEM Fenster.  Die Fälle hier sichern die drei
+# Pruefen und Reparieren stehen in EINEM Fenster.  Die Faelle hier sichern die drei
 # Festlegungen, die den Dialog tragen — Vorauswahl, Auskunft ohne Ankreuzfeld,
 # Schreibschutz — und den vollen Kreislauf Befund → Reparatur → neuer Befund.
 
 
 def _udos_mit_gefahr(quelle, ziel):
-    """Ein Bit im UDOS-Belegungsplan löschen: der Sektor gehört einer Datei,
-    steht aber frei.  Der wichtigste Befund überhaupt — und der einzige, dessen
+    """Ein Bit im UDOS-Belegungsplan loeschen: der Sektor gehoert einer Datei,
+    steht aber frei.  Der wichtigste Befund ueberhaupt — und der einzige, dessen
     Reparatur ohne Datenverlust auskommt."""
     import shutil
     from app.core_binding.k1520disk import DiskTool
@@ -2517,7 +2517,7 @@ def _udos_mit_gefahr(quelle, ziel):
 
 
 def test_nichts_ist_vorausgewaehlt_was_daten_verwirft(window, fixture_disks, tmp_path):
-    """Die schärfste Zusage des Dialogs.
+    """Die schaerfste Zusage des Dialogs.
 
     Bei der Kreuzbelegung ist die einzige Reparatur `empfohlen` UND verwirft
     einen Verweis.  Angekreuzt darf sie trotzdem nicht sein — ein blindes
@@ -2540,7 +2540,7 @@ def test_nichts_ist_vorausgewaehlt_was_daten_verwirft(window, fixture_disks, tmp
 
 
 def test_ein_befund_ohne_reparatur_hat_kein_ankreuzfeld(window, fixture_disks):
-    """Eine Auskunft ist kein Versäumnis — ein leeres Kästchen läse sich so."""
+    """Eine Auskunft ist kein Versaeumnis — ein leeres Kaestchen laese sich so."""
     from PySide6.QtCore import Qt
     from app.disktool.ui.fsck_dialog import FsckDialog
 
@@ -2574,7 +2574,7 @@ def test_eine_schreibgeschuetzte_diskette_sperrt_den_reparaturknopf_mit_begruend
 
 def test_der_ganze_kreislauf_befund_reparatur_neuer_befund(window, fixture_disks,
                                                            tmp_path, monkeypatch):
-    """Vollprüfung im Dialog, Reparatur ausführen, danach ohne Befund.
+    """Vollpruefung im Dialog, Reparatur ausfuehren, danach ohne Befund.
 
     Und das Ergebnis muss bis in Statuszeile und Streifen des Hauptfensters
     durchschlagen: der Befund ist ein Zustand der Diskette, kein Ergebnis eines
@@ -2592,8 +2592,8 @@ def test_der_ganze_kreislauf_befund_reparatur_neuer_befund(window, fixture_disks
                               tmp_path / "udos_reparieren.hfe")
     assert window.open_image(abbild)
 
-    # Der Dialog prüft beim Öffnen selbst, und zwar VOLL (§5a) — die Gefahr steht
-    # also da, ohne dass jemand einen Knopf drücken musste.
+    # Der Dialog prueft beim Oeffnen selbst, und zwar VOLL (§5a) — die Gefahr steht
+    # also da, ohne dass jemand einen Knopf druecken musste.
     dlg = FsckDialog(window.tool, window, log=window.log)
     assert dlg.bericht.voll, "beim Öffnen läuft die Vollprüfung"
     assert dlg.bericht.hoechste == GEFAHR
@@ -2643,7 +2643,7 @@ def test_eine_datei_laesst_sich_im_diskeditor_aufschlagen(window, fixture_disks)
     """Von der Datei zu ihren Bytes — ohne Zahlen abzutippen (§7.1b).
 
     Der Sprung geht auf den ERSTEN Sektor: bei CP/M der erste Block von Extent 0,
-    bei UDOS der Kopfsektor, in dem Typ, Länge und Segmente stehen.
+    bei UDOS der Kopfsektor, in dem Typ, Laenge und Segmente stehen.
     """
     assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
 
@@ -2663,13 +2663,13 @@ def test_eine_datei_laesst_sich_im_diskeditor_aufschlagen(window, fixture_disks)
     window.act_datei_im_editor.trigger()
     editor = window._diskeditor
     assert editor is not None
-    # (Kopf, Zylinder, laufende Nummer) — der Sprung ging über die Sektorkennung.
+    # (Kopf, Zylinder, laufende Nummer) — der Sprung ging ueber die Sektorkennung.
     assert editor.aktuell[0] == ort[1] and editor.aktuell[1] == ort[0]
     assert f"Zylinder {ort[0]}" in window.protokoll.toPlainText()
 
 
 def test_die_udos_zeiger_im_diskeditor_sind_verweise(window, fixture_disks):
-    """Die Sätze einer UDOS-Datei liegen verstreut — der Kette folgt man klickend.
+    """Die Saetze einer UDOS-Datei liegen verstreut — der Kette folgt man klickend.
 
     Vorher musste man Spur und Sektor aus der Deutung abtippen oder sich mit den
     Pfeiltasten hinnavigieren.
@@ -2685,12 +2685,12 @@ def test_die_udos_zeiger_im_diskeditor_sind_verweise(window, fixture_disks):
     assert len(ziele) == 2, editor.tail_deutung.text()
 
     vorher = editor.aktuell
-    editor._zeiger_folgen(ziele[1])            # dem Vorwärtszeiger folgen
+    editor._zeiger_folgen(ziele[1])            # dem Vorwaertszeiger folgen
     assert editor.aktuell != vorher
     spur, sektor = (int(x) for x in ziele[1].split(":"))
     assert editor.aktuell[1] == spur
 
-    # Und zurück: der Rückwärtszeiger des Nachfolgers zeigt auf den Kopfsektor.
+    # Und zurueck: der Rueckwaertszeiger des Nachfolgers zeigt auf den Kopfsektor.
     zurueck = re.findall(r'href="([^"]+)"', editor.tail_deutung.text())[0]
     assert zurueck == f"{kopf[0]}:{kopf[2]}"
 
@@ -2701,10 +2701,10 @@ def test_die_udos_zeiger_im_diskeditor_sind_verweise(window, fixture_disks):
 
 
 def test_der_diskeditor_ist_neben_einem_modalen_dialog_bedienbar(window, fixture_disks):
-    """E9: „Im Diskeditor zeigen" muss AUS DEM DIALOG HERAUS etwas nützen.
+    """E9: „Im Diskeditor zeigen" muss AUS DEM DIALOG HERAUS etwas nuetzen.
 
-    Prüf- und Rettungsdialog laufen modal, und ein modaler Dialog sperrt jedes
-    Fenster derselben Anwendung, das nicht unter ihm hängt: der Editor erschien,
+    Pruef- und Rettungsdialog laufen modal, und ein modaler Dialog sperrt jedes
+    Fenster derselben Anwendung, das nicht unter ihm haengt: der Editor erschien,
     rutschte hinter das Hauptfenster und nahm keine Eingabe an — nachsehen ging
     erst nach dem Schliessen des Dialogs, also nach der Entscheidung.  Qt meldet
     die Sperre als ``WindowBlocked``; genau daran wird hier gemessen und nicht an
@@ -2740,8 +2740,8 @@ def test_der_diskeditor_ist_neben_einem_modalen_dialog_bedienbar(window, fixture
     assert editor.isVisible()
     assert editor.aktuell[:2] == (0, 3), "und er muss auf dem genannten Ort stehen"
 
-    # Nach dem Dialog gehört er wieder dem Hauptfenster — sonst stürbe er mit einem
-    # Dialog, den er überleben soll.
+    # Nach dem Dialog gehoert er wieder dem Hauptfenster — sonst stuerbe er mit einem
+    # Dialog, den er ueberleben soll.
     dlg.done(0)
     QApplication.processEvents()
     assert editor.parent() is window
@@ -2751,7 +2751,7 @@ def test_der_diskeditor_ist_neben_einem_modalen_dialog_bedienbar(window, fixture
 
 
 def test_der_diskeditor_springt_wirklich_auf_den_genannten_ort(window, fixture_disks):
-    """Der Rückruf des Hauptfensters muss im Editor auch ankommen."""
+    """Der Rueckruf des Hauptfensters muss im Editor auch ankommen."""
     assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.img")
     editor = window.open_disk_editor()
     assert editor is not None
@@ -2766,7 +2766,7 @@ def test_der_diskeditor_springt_wirklich_auf_den_genannten_ort(window, fixture_d
 
 def _ohne_erkennbares_dateisystem(quelle, ziel):
     """Eine cpa780-Kopie, deren erster Verzeichnisplatz einen Nutzerbereich > 15
-    trägt.  Daran scheitert die CP/M-Probe — die Diskette wird roh geöffnet."""
+    traegt.  Daran scheitert die CP/M-Probe — die Diskette wird roh geoeffnet."""
     import shutil
     shutil.copy(quelle, ziel)
     roh = bytearray(ziel.read_bytes())
@@ -2779,8 +2779,8 @@ def test_eine_roh_geoeffnete_diskette_nennt_die_ablehnungsgruende(window, fixtur
                                                                   tmp_path):
     """Der unangenehmste Fall bekommt eine Diagnose statt eines Satzes.
 
-    Jede Positivprobe der Erkennung weiss, woran es lag; früher verfiel der Grund.
-    Er gehört ins Protokoll — dort schlägt man nach.
+    Jede Positivprobe der Erkennung weiss, woran es lag; frueher verfiel der Grund.
+    Er gehoert ins Protokoll — dort schlaegt man nach.
     """
     from app.core_binding.k1520disk import EBENE_ERKENNUNG
 
@@ -2801,7 +2801,7 @@ def test_eine_roh_geoeffnete_diskette_nennt_die_ablehnungsgruende(window, fixtur
 
 
 def test_der_pruefdialog_geht_auch_ohne_dateisystem(window, fixture_disks, tmp_path):
-    """Gerade die Diskette, auf der nichts erkannt wurde, ist die, über die man
+    """Gerade die Diskette, auf der nichts erkannt wurde, ist die, ueber die man
     etwas erfahren will — der Dialog zeigt dort die Ebene 0."""
     from PySide6.QtCore import Qt
     from app.disktool.ui.fsck_dialog import FsckDialog
@@ -2819,11 +2819,11 @@ def test_der_pruefdialog_geht_auch_ohne_dateisystem(window, fixture_disks, tmp_p
     assert not dlg.b_reparieren.isEnabled(), "hier gibt es nichts zu reparieren"
 
 
-# ═══ Gelöschte Dateien suchen (Entwurf §13, Etappe 5) ════════════════════════
+# ═══ Geloeschte Dateien suchen (Entwurf §13, Etappe 5) ════════════════════════
 
 
 def _mit_geloeschter_datei(quelle, ziel, name="PIP.COM"):
-    """Eine Diskette, auf der genau eine Datei gelöscht ist — der Regelfall."""
+    """Eine Diskette, auf der genau eine Datei geloescht ist — der Regelfall."""
     import shutil
     from app.core_binding.k1520disk import DiskTool
 
@@ -2840,7 +2840,7 @@ def test_retten_geht_auch_an_einer_schreibgeschuetzten_diskette(window, fixture_
                                                                 tmp_path, monkeypatch):
     """Die Kernzusage des Dialogs (E7): retten geht vor wiederherstellen.
 
-    Der häufigste Fall ist „einmal alles retten, was noch da ist, dann die
+    Der haeufigste Fall ist „einmal alles retten, was noch da ist, dann die
     Diskette in Ruhe lassen" — und der muss ohne jedes Schreibrecht durchlaufen.
     """
     from PySide6.QtWidgets import QFileDialog
@@ -2903,14 +2903,14 @@ def test_udos_fund_laesst_sich_retten_aber_nicht_eintragen(window, fixture_disks
                                                            tmp_path, monkeypatch):
     """Die UDOS-Seite des Dialogs — und der eine Unterschied zu CP/M.
 
-    Bei UDOS löscht das System den VERZEICHNISEINTRAG, nicht ein Byte: der Name ist
-    fort, alles andere steht noch da.  Zurückgeschrieben wird deshalb nicht (Entwurf
-    §13.3a) — der Dialog sperrt den Knopf und muss den **Weg über `put`** nennen.
-    Eine Absage ohne Ausweg wäre hier das eigentliche Ärgernis.
+    Bei UDOS loescht das System den VERZEICHNISEINTRAG, nicht ein Byte: der Name ist
+    fort, alles andere steht noch da.  Zurueckgeschrieben wird deshalb nicht (Entwurf
+    §13.3a) — der Dialog sperrt den Knopf und muss den **Weg ueber `put`** nennen.
+    Eine Absage ohne Ausweg waere hier das eigentliche Aergernis.
 
     Und `--to` legt neben der geretteten Datei das Beiblatt an: ohne die
-    Kopfsektorangaben käme sie beim Zurückspielen mit falschem Typ und falscher
-    Satzlänge an.
+    Kopfsektorangaben kaeme sie beim Zurueckspielen mit falschem Typ und falscher
+    Satzlaenge an.
     """
     from PySide6.QtWidgets import QFileDialog
     from app.disktool.ui.recover_dialog import RecoverDialog
@@ -2921,8 +2921,8 @@ def test_udos_fund_laesst_sich_retten_aber_nicht_eintragen(window, fixture_disks
     assert window.open_image(abbild)
 
     dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log)
-    # Gesucht wird beim Öffnen über die GANZE Oberfläche (§5a); die gelöschte Datei
-    # ist der eine Fund mit Kopfsektor, die übrigen sind Rohbereiche.
+    # Gesucht wird beim Oeffnen ueber die GANZE Oberflaeche (§5a); die geloeschte Datei
+    # ist der eine Fund mit Kopfsektor, die uebrigen sind Rohbereiche.
     assert dlg.bericht.voll
     kopffunde = [f for f in dlg.bericht.finds if f.suggestion == "GERETTET.001"]
     assert len(kopffunde) == 1, [f.suggestion for f in dlg.bericht.finds]
@@ -2953,10 +2953,10 @@ def test_der_fund_laesst_sich_sektorweise_im_diskeditor_ansehen(window, fixture_
                                                                 tmp_path):
     """Erst ansehen, dann handeln — und zwar SEKTORWEISE.
 
-    Der Schritt vor jeder Rettung ist die Frage „ist das überhaupt, was ich suche?".
-    Bei UDOS gibt es dafür nicht einmal einen Namen, und die Sätze einer Datei liegen
-    verkettet über die Diskette verstreut — der Bediener fände den zweiten Satz von
-    Hand nie.  Deshalb führt der Dialog die ganze Sektorliste und schlägt jeden
+    Der Schritt vor jeder Rettung ist die Frage „ist das ueberhaupt, was ich suche?".
+    Bei UDOS gibt es dafuer nicht einmal einen Namen, und die Saetze einer Datei liegen
+    verkettet ueber die Diskette verstreut — der Bediener faende den zweiten Satz von
+    Hand nie.  Deshalb fuehrt der Dialog die ganze Sektorliste und schlaegt jeden
     Eintrag im Diskeditor auf.
     """
     from app.disktool.ui.recover_dialog import RecoverDialog
@@ -2970,7 +2970,7 @@ def test_der_fund_laesst_sich_sektorweise_im_diskeditor_ansehen(window, fixture_
     dlg = RecoverDialog(window.tool, window, zielordner=str(tmp_path), log=window.log,
                         zeige_ort=lambda *ort: gesprungen.append(ort))
     fund = dlg.bericht.finds[0]
-    # Kopfsektor + 16 Sätze — und sie liegen nicht hintereinander.
+    # Kopfsektor + 16 Saetze — und sie liegen nicht hintereinander.
     assert len(fund.parts) == 17, fund.parts
     assert dlg.sektoren.count() == 17
     assert dlg.b_editor.isEnabled()
@@ -2980,7 +2980,7 @@ def test_der_fund_laesst_sich_sektorweise_im_diskeditor_ansehen(window, fixture_
     dlg._springen()
     assert gesprungen == [(fund.cyl, fund.head, fund.sector)]
 
-    # … und jeder weitere lässt sich genauso aufschlagen.
+    # … und jeder weitere laesst sich genauso aufschlagen.
     dlg.sektoren.setCurrentIndex(3)
     dlg._springen()
     assert gesprungen[-1] == fund.parts[3]
@@ -2989,14 +2989,14 @@ def test_der_fund_laesst_sich_sektorweise_im_diskeditor_ansehen(window, fixture_
 
 def test_ein_unvollstaendiges_abbild_sperrt_die_teuren_laeufe(window, fixture_disks,
                                                               tmp_path):
-    """Die Sperre hängt an der VOLLSTÄNDIGKEIT, nicht daran, ob eine Datei vorliegt.
+    """Die Sperre haengt an der VOLLSTAENDIGKEIT, nicht daran, ob eine Datei vorliegt.
 
-    Vollprüfung und Oberflächensuche wollen jede Spur sehen.  An einem echten
-    Laufwerk kostet das 0,5–0,8 s je Spur — deshalb lädt das Hauptfenster sie VOR
-    dem Öffnen nach (``_abbild_vervollstaendigen``, mit Fortschrittsanzeige) und
-    sagt den Dialogen anschließend, dass alles da ist.  Bis 2026-08-19 fragten die
+    Vollpruefung und Oberflaechensuche wollen jede Spur sehen.  An einem echten
+    Laufwerk kostet das 0,5–0,8 s je Spur — deshalb laedt das Hauptfenster sie VOR
+    dem Oeffnen nach (``_abbild_vervollstaendigen``, mit Fortschrittsanzeige) und
+    sagt den Dialogen anschliessend, dass alles da ist.  Bis 2026-08-19 fragten die
     Dialoge stattdessen ``tool.path`` — eine physische Diskette blieb damit auch
-    dann gesperrt, wenn sie längst vollständig im Speicher lag.
+    dann gesperrt, wenn sie laengst vollstaendig im Speicher lag.
     """
     from app.disktool.ui.fsck_dialog import FsckDialog
     from app.disktool.ui.recover_dialog import RecoverDialog
@@ -3004,7 +3004,7 @@ def test_ein_unvollstaendiges_abbild_sperrt_die_teuren_laeufe(window, fixture_di
     abbild = _mit_geloeschter_datei(
         fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_sperre.img")
     assert window.open_image(abbild)
-    # Eine Datei ist immer vollständig — und das sagt das Hauptfenster auch.
+    # Eine Datei ist immer vollstaendig — und das sagt das Hauptfenster auch.
     assert window._abbild_vollstaendig()
     assert window._abbild_vervollstaendigen("den Test"), "hier ist nichts nachzuladen"
 
@@ -3026,9 +3026,9 @@ def test_beide_dialoge_laufen_beim_oeffnen_los_und_zeigen_ihre_checkliste(
         window, fixture_disks, tmp_path):
     """§5a: Wer den Dialog aufruft, hat den Lauf verlangt — er startet sofort.
 
-    Vorher zeigte der Prüfdialog nur den Befund der Schnellprüfung vom Mounten
+    Vorher zeigte der Pruefdialog nur den Befund der Schnellpruefung vom Mounten
     und der Suchdialog stand auf „Verzeichnisreste"; an einer gesunden Diskette
-    sah beides aus, als täte die Funktion nichts.
+    sah beides aus, als taete die Funktion nichts.
     """
     from app.disktool.ui.fsck_dialog import FsckDialog
     from app.disktool.ui.recover_dialog import RecoverDialog
@@ -3042,7 +3042,7 @@ def test_beide_dialoge_laufen_beim_oeffnen_los_und_zeigen_ihre_checkliste(
     assert pruef.bericht.voll, "der Dialog prüft beim Öffnen selbst, und zwar voll"
     assert pruef.geprueft, "das Hauptfenster muss den neuen Befund nachziehen"
     assert pruef.liste.topLevelItemCount() == len(pruef.bericht.schritte) > 0
-    # Jede Zeile trägt ihr Zeichen und ihr Ergebnis — nichts steht leer da.
+    # Jede Zeile traegt ihr Zeichen und ihr Ergebnis — nichts steht leer da.
     for i in range(pruef.liste.topLevelItemCount()):
         zeile = pruef.liste.topLevelItem(i)
         assert zeile.text(0) and zeile.text(1) and zeile.text(2), i
@@ -3055,10 +3055,10 @@ def test_beide_dialoge_laufen_beim_oeffnen_los_und_zeigen_ihre_checkliste(
 
 def test_ein_uebersprungener_schritt_steht_mit_seinem_grund_da(window, fixture_disks,
                                                                tmp_path):
-    """„Nicht geprüft" ist eine Auskunft — „fehlt in der Liste" ist keine.
+    """„Nicht geprueft" ist eine Auskunft — „fehlt in der Liste" ist keine.
 
-    Bleibt das Speicherabbild unvollständig (physische Diskette), läuft nur die
-    Schnellprüfung; die teuren Schritte stehen trotzdem in der Checkliste.
+    Bleibt das Speicherabbild unvollstaendig (physische Diskette), laeuft nur die
+    Schnellpruefung; die teuren Schritte stehen trotzdem in der Checkliste.
     """
     from app.disktool.ui.fsck_dialog import FsckDialog
 
@@ -3082,8 +3082,8 @@ def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
     """Zwei Festlegungen auf einmal.
 
     Die Suche kostet und beantwortet eine Frage, die niemand gestellt hat — sie
-    läuft deshalb nicht beim Öffnen.  Und sie braucht ein Dateisystem: ohne eines
-    gibt es kein Verzeichnis mit gelöschten Plätzen.
+    laeuft deshalb nicht beim Oeffnen.  Und sie braucht ein Dateisystem: ohne eines
+    gibt es kein Verzeichnis mit geloeschten Plaetzen.
     """
     abbild = _mit_geloeschter_datei(
         fixture_disks / "cpa_cpa780_k5601_noclock.img", tmp_path / "rec_leer.img")
@@ -3105,7 +3105,7 @@ def test_die_suche_laeuft_nicht_von_selbst_und_braucht_ein_dateisystem(window,
 
 def test_extrahieren_legt_bei_udos_immer_ein_fileinfo_an(window, fixture_disks,
                                                          tmp_path):
-    """Bei UDOS ist es der Unterschied zwischen lauffähig und nicht."""
+    """Bei UDOS ist es der Unterschied zwischen lauffaehig und nicht."""
     assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
     ziel = tmp_path / "einzeln"
     assert window.extract_refs(["Side0/ACTIVATE"], ziel)
@@ -3138,7 +3138,7 @@ def test_eingabedialog_blendet_die_programmfelder_bei_typ_a_ab(qt_app, tmp_path)
 
     Bei Typ ``A``/``B`` sind ENTRY, Segmente und LOW/HIGH/STACK kein
     Anwenderinhalt, sondern schlicht unbelegt — sie werden abgeblendet UND auf 0
-    gesetzt, nicht bloß ignoriert.
+    gesetzt, nicht bloss ignoriert.
     """
     from app.disktool.ui.fileinfo_dialog import FileinfoDialog
 
@@ -3177,14 +3177,14 @@ def test_eingabedialog_schreibt_eine_lesbare_angabendatei(qt_app, tmp_path):
     assert "satz=1024" in text
     assert "start=2600" in text
     assert "eig=W" in text
-    # `rest=` darf NICHT dastehen: 0 ist dort ein gültiger Wert, und der
+    # `rest=` darf NICHT dastehen: 0 ist dort ein gueltiger Wert, und der
     # Schreibpfad rechnet ihn selbst aus dem Datenstrom aus.
     assert "rest=" not in text
 
 
 def test_eingabedialog_geht_auf_wenn_die_angaben_fehlen(window, fixture_disks,
                                                         tmp_path, monkeypatch):
-    """Geraten wird nicht — was ohne Typ entstünde, liefe nicht (§2.2)."""
+    """Geraten wird nicht — was ohne Typ entstuende, liefe nicht (§2.2)."""
     from PySide6.QtWidgets import QDialog
     from app.disktool.ui import main_window as mw
 
@@ -3204,7 +3204,7 @@ def test_eingabedialog_geht_auf_wenn_die_angaben_fehlen(window, fixture_disks,
         def __init__(self, pfad, mehrere=False, parent=None):
             gesehen.append((Path(pfad).name, mehrere))
             self.merken = False
-            self.fuer_alle = True     # „Für alle übernehmen"
+            self.fuer_alle = True     # „Fuer alle uebernehmen"
 
         def exec(self):
             return QDialog.Accepted
@@ -3244,7 +3244,7 @@ def test_eine_einzelne_fileinfo_wird_erfragt_mehrere_nicht(window, fixture_disks
     assert not window.insert_paths([str(unter / "ACTIVATE.fileinfo")])
     assert len(gefragt) == 1
 
-    # Mehrere: stillschweigend überspringen und ZÄHLEN — keine Rückfrage.
+    # Mehrere: stillschweigend ueberspringen und ZAEHLEN — keine Rueckfrage.
     gefragt.clear()
     assert window.insert_paths([str(unter / "ACTIVATE"),
                                 str(unter / "ACTIVATE.fileinfo"),
@@ -3258,7 +3258,7 @@ def test_eine_einzelne_fileinfo_wird_erfragt_mehrere_nicht(window, fixture_disks
 
 def test_archiv_einer_udos_diskette_enthaelt_die_fileinfo(window, fixture_disks,
                                                           tmp_path):
-    """Die einzelne Datei soll auch aus dem Archiv heraus vollständig sein."""
+    """Die einzelne Datei soll auch aus dem Archiv heraus vollstaendig sein."""
     import zipfile
 
     assert window.open_image(fixture_disks / "udos_boot_scp.hfe")
@@ -3278,7 +3278,7 @@ def test_archiv_einer_udos_diskette_enthaelt_die_fileinfo(window, fixture_disks,
 
 def test_archiv_einer_cpm_diskette_kommt_ohne_fileinfo_aus(window, fixture_disks,
                                                            tmp_path):
-    """Bei CP/M genügt das Sammelbeiblatt — die Angaben sind dort kein Verlust."""
+    """Bei CP/M genuegt das Sammelbeiblatt — die Angaben sind dort kein Verlust."""
     import zipfile
 
     assert window.open_image(fixture_disks / "cpa_cpa780_k5601_noclock.hfe")

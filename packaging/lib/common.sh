@@ -5,13 +5,13 @@
 #
 # Einbinden:  . "$(dirname "$0")/lib/common.sh"
 
-# Python-Fassung der Laufzeitumgebung.  Dieselbe beim Schnüren (requirements.lock
-# wird dafür aufgelöst) wie beim Installieren — sonst passen die Wheels nicht.
+# Python-Fassung der Laufzeitumgebung.  Dieselbe beim Schnueren (requirements.lock
+# wird dafuer aufgeloest) wie beim Installieren — sonst passen die Wheels nicht.
 K1520_PY_VERSION=${K1520_PY_VERSION:-3.12}
 
 # ─── Meldungen ───────────────────────────────────────────────────────────────
 # Farben nur, wenn die Ausgabe wirklich ein Terminal ist — in Protokollen und
-# Installer-Fenstern stören Steuerzeichen.
+# Installer-Fenstern stoeren Steuerzeichen.
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_INFO='\033[1;34m'; C_OK='\033[1;32m'; C_WARN='\033[1;33m'
@@ -27,11 +27,11 @@ die()   { printf "${C_ERR}Fehler:${C_OFF} %s\n" "$*" >&2; exit 1; }
 
 # ─── Plattform ───────────────────────────────────────────────────────────────
 
-# ist_windows — läuft dieses Skript unter Git-Bash/MSYS auf Windows?
+# ist_windows — laeuft dieses Skript unter Git-Bash/MSYS auf Windows?
 #
-# Nur fürs SCHNÜREN gedacht (build_payload.sh).  Der Anwender bekommt unter
+# Nur fuers SCHNUEREN gedacht (build_payload.sh).  Der Anwender bekommt unter
 # Windows ein Installationsprogramm und sieht nie eine .sh; bauen ist dagegen kein
-# Anwenderschritt, und die Liste „was gehört ins Paket" soll es nicht zweimal
+# Anwenderschritt, und die Liste „was gehoert ins Paket" soll es nicht zweimal
 # geben — deshalb hier ein Zweig statt eines zweiten Skripts.
 ist_windows() {
     case "$(uname -s 2>/dev/null || echo unknown)" in
@@ -47,13 +47,13 @@ uv_target() {
     case "$_arch" in
         x86_64|amd64)  _arch=x86_64 ;;
         aarch64|arm64) _arch=aarch64 ;;
-        *) die "nicht unterstützte Architektur: $_arch" ;;
+        *) die "nicht unterstuetzte Architektur: $_arch" ;;
     esac
     case "$_os" in
         Linux)  echo "${_arch}-unknown-linux-gnu" ;;
         Darwin) echo "${_arch}-apple-darwin" ;;
         MINGW*|MSYS*|CYGWIN*) echo "${_arch}-pc-windows-msvc" ;;
-        *) die "nicht unterstütztes System: $_os" ;;
+        *) die "nicht unterstuetztes System: $_os" ;;
     esac
 }
 
@@ -82,16 +82,16 @@ disk_cli_name() {
     if ist_windows; then echo "k1520disktool.exe"; else echo "k1520disktool"; fi
 }
 
-# kerne — Anzahl der Prozessorkerne fürs parallele Bauen.
+# kerne — Anzahl der Prozessorkerne fuers parallele Bauen.
 # `getconf` gibt es in der Git-Bash nicht; Windows setzt NUMBER_OF_PROCESSORS.
 kerne() {
     getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null \
         || echo "${NUMBER_OF_PROCESSORS:-4}"
 }
 
-# abs_path <pfad> — Tilde und Relativangaben auflösen.
+# abs_path <pfad> — Tilde und Relativangaben aufloesen.
 #
-# Die Tilde muss dabei GESCHÜTZT werden: unquotiert dehnt die Shell sie in der
+# Die Tilde muss dabei GESCHUETZT werden: unquotiert dehnt die Shell sie in der
 # Musterangabe selbst zu $HOME aus, das Muster passt dann nie, und im Ergebnis
 # bliebe ein Verzeichnis namens „~" stehen.
 abs_path() {
@@ -110,28 +110,28 @@ abs_path() {
 # Dateiname des Merkmals, an dem eine Installation zu erkennen ist.
 INSTALL_MARKER=".k1520emu-installation"
 
-# ist_installation <verzeichnis> — trägt das Verzeichnis unsere Installation?
+# ist_installation <verzeichnis> — traegt das Verzeichnis unsere Installation?
 #
-# Das Deinstallieren LÖSCHT sein Ziel, und seit das Ziel erfragt wird, kann dort
-# alles stehen — im schlimmsten Fall das Heimatverzeichnis.  Gelöscht wird
+# Das Deinstallieren LOESCHT sein Ziel, und seit das Ziel erfragt wird, kann dort
+# alles stehen — im schlimmsten Fall das Heimatverzeichnis.  Geloescht wird
 # deshalb nur, was sich ausweisen kann.  Installationen aus der Zeit vor dem
-# Merkmal werden am Inventar erkannt, damit ein Update über sie hinweg geht.
+# Merkmal werden am Inventar erkannt, damit ein Update ueber sie hinweg geht.
 ist_installation() {
     [ -f "$1/$INSTALL_MARKER" ] && return 0
     [ -f "$1/VERSION" ] && [ -f "$1/app/paths.py" ] && [ -d "$1/share/k1520emu" ]
 }
 
-# ersetze_platzhalter <vorlage> <wurzel> [<daten>] — Vorlage ausfüllen und ausgeben.
+# ersetze_platzhalter <vorlage> <wurzel> [<daten>] — Vorlage ausfuellen und ausgeben.
 #
 # Ersetzt @ROOT@ durch die Installationswurzel und @DATEN@ durch den vom Anwender
-# gewählten Datenordner.  @DATEN@ bleibt LEER, wenn er die Vorgabe genommen hat —
-# der Starter setzt K1520_DATA dann gar nicht, und app/paths.py löst den
-# Dokumentenordner weiter dynamisch auf (folgt also einem späteren Umbenennen).
+# gewaehlten Datenordner.  @DATEN@ bleibt LEER, wenn er die Vorgabe genommen hat —
+# der Starter setzt K1520_DATA dann gar nicht, und app/paths.py loest den
+# Dokumentenordner weiter dynamisch auf (folgt also einem spaeteren Umbenennen).
 #
 # Bewusst ohne `sed`: der Installationspfad kommt seit der Zielabfrage vom
-# Anwender und darf jedes Zeichen enthalten — „|" wäre dort das Trennzeichen des
+# Anwender und darf jedes Zeichen enthalten — „|" waere dort das Trennzeichen des
 # Ausdrucks, „&" und „\" in der Ersetzung wieder etwas anderes.  Je Zeile ein
-# Platzhalter genügt (alle Vorlagen halten sich daran).
+# Platzhalter genuegt (alle Vorlagen halten sich daran).
 ersetze_platzhalter() {
     _vorlage=$1; _wurzel=$2; _daten=${3:-}
     while IFS= read -r _zeile || [ -n "$_zeile" ]; do
@@ -145,13 +145,13 @@ ersetze_platzhalter() {
 
 # dokumente_dir — Dokumentenordner des Anwenders ausgeben, sonst mit 1 enden.
 #
-# Sein Name ist sprachabhängig (~/Dokumente, ~/Documents, ~/Documenti);
+# Sein Name ist sprachabhaengig (~/Dokumente, ~/Documents, ~/Documenti);
 # verbindlich ist XDG_DOCUMENTS_DIR aus ~/.config/user-dirs.dirs, die die
-# Desktop-Umgebung selbst pflegt.  Gelesen wird die Datei direkt, nicht über das
+# Desktop-Umgebung selbst pflegt.  Gelesen wird die Datei direkt, nicht ueber das
 # Programm `xdg-user-dir` — das fehlt auf schlanken Systemen.
 #
 # ACHTUNG: dieselbe Regel steht in app/paths.py (`documents_dir`).  Beide
-# müssen dasselbe liefern, sonst räumt `--purge` woanders auf, als der Emulator
+# muessen dasselbe liefern, sonst raeumt `--purge` woanders auf, als der Emulator
 # schreibt; Guard: `test_dokumentenordner_shell_und_python_stimmen_ueberein`.
 dokumente_dir() {
     if [ -n "${XDG_DOCUMENTS_DIR:-}" ]; then
@@ -162,7 +162,7 @@ dokumente_dir() {
     if [ -f "$_ud" ]; then
         _wert=$(sed -n 's/^[[:space:]]*XDG_DOCUMENTS_DIR=//p' "$_ud" | tail -n 1)
         _wert=$(printf '%s' "$_wert" | tr -d "\"'")
-        # In der Datei steht „$HOME/Dokumente" — die Variable gehört zum Format,
+        # In der Datei steht „$HOME/Dokumente" — die Variable gehoert zum Format,
         # eine Shell hat sie nie gesehen.  Ersetzt wird sie ohne `sed`, damit ein
         # Sonderzeichen im Heimatpfad nicht zum Ausdruck wird.
         case "$_wert" in
@@ -199,7 +199,7 @@ ist_leer() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# fetch <url> <ziel> — lädt eine Datei (curl oder wget, je nachdem was da ist).
+# fetch <url> <ziel> — laedt eine Datei (curl oder wget, je nachdem was da ist).
 fetch() {
     if have curl; then
         curl -fsSL --retry 3 --connect-timeout 20 -o "$2" "$1" \
@@ -212,17 +212,17 @@ fetch() {
     fi
 }
 
-# sha256_of <datei> — Prüfsumme, egal ob sha256sum (Linux) oder shasum (macOS).
+# sha256_of <datei> — Pruefsumme, egal ob sha256sum (Linux) oder shasum (macOS).
 sha256_of() {
     if have sha256sum; then sha256sum "$1" | awk '{print $1}'
     elif have shasum;   then shasum -a 256 "$1" | awk '{print $1}'
-    else die "kein sha256sum/shasum gefunden — Prüfsummen nicht überprüfbar"
+    else die "kein sha256sum/shasum gefunden — Pruefsummen nicht ueberpruefbar"
     fi
 }
 
 # ─── uv ──────────────────────────────────────────────────────────────────────
 
-# uv_pin <pins-datei> <schlüssel> — Wert aus packaging/uv_pins.txt lesen.
+# uv_pin <pins-datei> <schluessel> — Wert aus packaging/uv_pins.txt lesen.
 uv_pin() {
     awk -v key="$2" '$1 == key { print $2; exit }' "$1"
 }
@@ -230,11 +230,11 @@ uv_pin() {
 # ensure_uv <zielverzeichnis> <pins-datei>
 #
 # Legt <zielverzeichnis>/uv an und gibt den Pfad aus.  Ist dort schon ein uv,
-# wird es benutzt.  Sonst: gepinnte Fassung laden, Prüfsumme gegen die
+# wird es benutzt.  Sonst: gepinnte Fassung laden, Pruefsumme gegen die
 # MITGELIEFERTE Erwartung halten, entpacken.
 #
 # Ein systemweit vorhandenes uv wird bewusst NICHT verwendet: die Installation
-# soll auf jedem Rechner dieselbe, geprüfte Fassung benutzen und beim
+# soll auf jedem Rechner dieselbe, gepruefte Fassung benutzen und beim
 # Deinstallieren restlos verschwinden.
 ensure_uv() {
     _dir=$1
@@ -247,40 +247,40 @@ ensure_uv() {
     _target=$(uv_target)
     _want=$(uv_pin "$_pins" "$_target")
     [ -n "$_ver" ] || die "keine uv-Version in $_pins"
-    [ -n "$_want" ] || die "keine uv-Prüfsumme für $_target in $_pins"
+    [ -n "$_want" ] || die "keine uv-Pruefsumme fuer $_target in $_pins"
 
-    _tmp=$(mktemp -d) || die "kein temporäres Verzeichnis anlegbar"
+    _tmp=$(mktemp -d) || die "kein temporaeres Verzeichnis anlegbar"
     _archive="$_tmp/uv.tar.gz"
     _url="https://github.com/astral-sh/uv/releases/download/$_ver/uv-$_target.tar.gz"
 
-    info "uv $_ver für $_target laden (~15 MB)" >&2
+    info "uv $_ver fuer $_target laden (~15 MB)" >&2
     fetch "$_url" "$_archive"
 
     _got=$(sha256_of "$_archive")
     [ "$_got" = "$_want" ] || {
         rm -rf "$_tmp"
-        die "Prüfsumme von uv stimmt nicht:
+        die "Pruefsumme von uv stimmt nicht:
   erwartet $_want
   erhalten $_got
-Abbruch — die heruntergeladene Datei wird nicht ausgeführt."
+Abbruch — die heruntergeladene Datei wird nicht ausgefuehrt."
     }
 
     ( cd "$_tmp" && tar xzf uv.tar.gz ) || { rm -rf "$_tmp"; die "uv-Archiv nicht entpackbar"; }
     mkdir -p "$_dir"
-    # Das Archiv enthält ein Verzeichnis uv-<tripel>/ mit uv und uvx.
+    # Das Archiv enthaelt ein Verzeichnis uv-<tripel>/ mit uv und uvx.
     cp "$_tmp/uv-$_target/uv" "$_uv" || { rm -rf "$_tmp"; die "uv nicht auffindbar im Archiv"; }
     chmod +x "$_uv"
     rm -rf "$_tmp"
 
     # Virenscanner und Sicherheitsrichtlinien greifen sich gelegentlich frisch
-    # heruntergeladene Binärdateien — das hier ist die verständliche Meldung.
+    # heruntergeladene Binaerdateien — das hier ist die verstaendliche Meldung.
     [ -x "$_uv" ] || die "uv wurde nach dem Entpacken entfernt (Virenscanner? Richtlinie?)"
     echo "$_uv"
 }
 
 # ─── Greaseweazle ────────────────────────────────────────────────────────────
 
-# gw_pin <pins-datei> <schlüssel> — Wert aus packaging/gw_pins.txt lesen.
+# gw_pin <pins-datei> <schluessel> — Wert aus packaging/gw_pins.txt lesen.
 gw_pin() {
     awk -v key="$2" '$1 == key { print $2; exit }' "$1"
 }

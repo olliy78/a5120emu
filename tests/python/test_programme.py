@@ -1,12 +1,12 @@
 """Die Nachbarprogramme starten (:mod:`app.programme`).
 
-Der Emulator öffnet das DiskTool, das DiskTool den Emulator, und der Emulator
-zusätzlich eine **Werkzeugkonsole** — ein Konsolenfenster, in dem ``k1520dbg``
+Der Emulator oeffnet das DiskTool, das DiskTool den Emulator, und der Emulator
+zusaetzlich eine **Werkzeugkonsole** — ein Konsolenfenster, in dem ``k1520dbg``
 und die Kommandozeile des DiskTool ohne Pfadangabe laufen.
 
 Hier wird nichts wirklich gestartet: ``subprocess.Popen`` wird ersetzt und die
-abgesetzte Befehlszeile geprüft.  Das ist die einzige Stelle, an der sich der
-Aufruf überhaupt festhalten lässt — ein wirklich gestartetes Fenster würde die
+abgesetzte Befehlszeile geprueft.  Das ist die einzige Stelle, an der sich der
+Aufruf ueberhaupt festhalten laesst — ein wirklich gestartetes Fenster wuerde die
 Testebene aufhalten und liesse sich headless nicht wieder schliessen.
 """
 
@@ -46,7 +46,7 @@ def eigener_ordner(tmp_path, monkeypatch):
     return disketten
 
 
-# ─── Werkzeuge und Handbücher finden (app/paths.py) ──────────────────────────
+# ─── Werkzeuge und Handbuecher finden (app/paths.py) ──────────────────────────
 
 def test_werkzeuge_liegen_im_quellbaum_unter_build():
     """Im Quellbaum stehen Debugger und DiskTool-CLI neben der Bibliothek."""
@@ -58,10 +58,10 @@ def test_werkzeuge_liegen_im_quellbaum_unter_build():
 
 
 def test_die_cli_des_disktool_geht_der_oberflaeche_vor(tmp_path, monkeypatch):
-    """In einer Installation heisst ``bin/k1520disktool`` die OBERFLÄCHE.
+    """In einer Installation heisst ``bin/k1520disktool`` die OBERFLAECHE.
 
-    Die Kommandozeile liegt dort als ``k1520disktool-cli``.  Wer den kürzeren
-    Namen zuerst nähme, startete aus der Konsole heraus ein Fenster.
+    Die Kommandozeile liegt dort als ``k1520disktool-cli``.  Wer den kuerzeren
+    Namen zuerst naehme, startete aus der Konsole heraus ein Fenster.
     """
     (tmp_path / "bin").mkdir()
     for name in ("k1520disktool", "k1520disktool-cli"):
@@ -79,7 +79,7 @@ def test_handbuch_des_debuggers_wird_gefunden():
     assert paths.doc_file("gibt-es-nicht.md") is None
 
 
-# ─── Die andere Oberfläche starten ───────────────────────────────────────────
+# ─── Die andere Oberflaeche starten ───────────────────────────────────────────
 
 @pytest.mark.parametrize("kennung,skript", [
     (programme.EMULATOR, "app/main.py"),
@@ -100,13 +100,13 @@ def test_das_andere_programm_startet_mit_dem_eigenen_interpreter(
     if sys.platform.startswith("win"):
         assert kw["creationflags"] & subprocess.CREATE_NEW_PROCESS_GROUP
     else:
-        # Ohne eigene Sitzung nähme das Beenden des Elternteils das Kind mit.
+        # Ohne eigene Sitzung naehme das Beenden des Elternteils das Kind mit.
         assert kw["start_new_session"] is True
 
 
 def test_ein_fehlendes_programm_meldet_den_erwarteten_pfad(tmp_path, monkeypatch,
                                                            aufrufe):
-    """Die Meldung muss sagen, WO gesucht wurde — sonst rät der Anwender."""
+    """Die Meldung muss sagen, WO gesucht wurde — sonst raet der Anwender."""
     monkeypatch.setenv(paths.ENV_HOME, str(tmp_path))
     with pytest.raises(RuntimeError) as fehler:
         programme.programm_starten(programme.DISKTOOL)
@@ -132,7 +132,7 @@ def test_konsolentext_nennt_aufruf_arbeitsordner_und_handbuch(eigener_ordner):
     assert re.search(r"k1520dbg(\.exe)? meine\.hfe", text)
     assert " ls meine.hfe" in text               # und die zweite Richtung
     assert str(eigener_ordner) in text           # wo man steht
-    assert programme.HANDBUCH_DBG in text        # wo es ausführlich steht
+    assert programme.HANDBUCH_DBG in text        # wo es ausfuehrlich steht
 
 
 def test_konsolenumgebung_nennt_wurzel_und_formatkatalog():
@@ -156,7 +156,7 @@ def test_startdatei_setzt_umgebung_wechselt_ordner_und_bleibt_offen(eigener_ordn
     assert "K1520_HOME=" in inhalt and "export K1520_HOME" in inhalt
     assert f"PATH={paths.tools_dir()}" in inhalt or str(paths.tools_dir()) in inhalt
     assert str(eigener_ordner) in inhalt
-    # Ohne die interaktive Shell am Ende schlösse sich das Fenster sofort wieder.
+    # Ohne die interaktive Shell am Ende schloesse sich das Fenster sofort wieder.
     assert 'exec "${SHELL:-/bin/sh}" -i' in inhalt
 
 
@@ -202,7 +202,7 @@ def test_unter_windows_oeffnet_cmd_die_startdatei_im_neuen_fenster(monkeypatch,
     """``cmd /c <batch>``, nicht ``start``: die Batchdatei endet auf ``cmd /k``.
 
     Das Fenster muss dabei von uns kommen (``CREATE_NEW_CONSOLE``) — die
-    Oberfläche läuft unter ``pythonw.exe`` und hat selbst keine Konsole.
+    Oberflaeche laeuft unter ``pythonw.exe`` und hat selbst keine Konsole.
     """
     monkeypatch.setattr(programme, "_ist_windows", lambda: True)
     befehl = programme.terminalbefehl(tmp_path / "werkzeugkonsole.cmd")
@@ -212,22 +212,22 @@ def test_unter_windows_oeffnet_cmd_die_startdatei_im_neuen_fenster(monkeypatch,
 def test_die_windows_startdatei_bleibt_ascii():
     """``cmd.exe`` liest eine Batchdatei in der Kodepage, nicht in UTF-8.
 
-    Geprüft wird die Umschrift selbst — die Datei entsteht nur unter Windows,
-    ihr Text wird aber überall gleich gebaut.
+    Geprueft wird die Umschrift selbst — die Datei entsteht nur unter Windows,
+    ihr Text wird aber ueberall gleich gebaut.
     """
     umgeschrieben = programme._nur_ascii(programme.konsolentext())
     assert umgeschrieben.isascii()
     assert "?" not in umgeschrieben, "ein Zeichen fehlt in der Umschrifttabelle"
 
 
-# ─── Verdrahtung in den beiden Oberflächen ───────────────────────────────────
+# ─── Verdrahtung in den beiden Oberflaechen ───────────────────────────────────
 
 def _menueeintraege(fenster, titel):
-    """Die Aktionen des Untermenüs ``titel`` der Menüleiste.
+    """Die Aktionen des Untermenues ``titel`` der Menueleiste.
 
-    Es werden die EINTRÄGE geliefert, nicht das Menü: die Python-Hülle eines
-    ``QMenu`` aus ``QAction.menu()`` überlebt die Schleifenrunde nicht, in der
-    sie geholt wurde — ein zurückgegebenes Menü läuft beim nächsten Zugriff in
+    Es werden die EINTRAEGE geliefert, nicht das Menue: die Python-Huelle eines
+    ``QMenu`` aus ``QAction.menu()`` ueberlebt die Schleifenrunde nicht, in der
+    sie geholt wurde — ein zurueckgegebenes Menue laeuft beim naechsten Zugriff in
     „Internal C++ object (QMenu) already deleted".
     """
     for aktion in fenster.menuBar().actions():
@@ -239,10 +239,10 @@ def _menueeintraege(fenster, titel):
 
 
 def test_der_emulator_hat_beide_eintraege_im_werkzeugmenue(monkeypatch):
-    """Menüeintrag vorhanden, verdrahtet und ohne Tastenkürzel.
+    """Menueeintrag vorhanden, verdrahtet und ohne Tastenkuerzel.
 
-    Ohne Kürzel bewusst: jedes weitere ``Strg+Umschalt+…`` müsste in die
-    Kürzeltabelle des Handbuchs, und die ist ein Vertrag.
+    Ohne Kuerzel bewusst: jedes weitere ``Strg+Umschalt+…`` muesste in die
+    Kuerzeltabelle des Handbuchs, und die ist ein Vertrag.
     """
     pytest.importorskip("PySide6")
     from conftest import _core_lib

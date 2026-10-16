@@ -15,7 +15,7 @@ uint8_t umkehren(uint8_t b) {
     return r;
 }
 
-/// Feldattribut 10URGGBH → ATTR_*-Bits des Kern-Terminals (GG ohne Gegenstück).
+/// Feldattribut 10URGGBH → ATTR_*-Bits des Kern-Terminals (GG ohne Gegenstueck).
 uint8_t attrVon(uint8_t b) {
     uint8_t a = 0;
     if (b & 0x02) a |= ATTR_BLINK;
@@ -25,7 +25,7 @@ uint8_t attrVon(uint8_t b) {
     return a;
 }
 
-/// Ein Teil-Zustand als [Länge u32][Bytes].
+/// Ein Teil-Zustand als [Laenge u32][Bytes].
 template <class F> void blob(ZAr& a, F&& schreiben, std::function<bool(const uint8_t*&, const uint8_t*)> lesen) {
     if (a.save) {
         std::vector<uint8_t> b;
@@ -121,7 +121,7 @@ void P8000TerminalHw::busSchreiben(const Z8BusZyklus& c, uint8_t v) {
     case 1: zg2_ = true; break;                    // 2000H: Zeichensatz 2
     case 2: zg2_ = false; break;                   // 4000H: Zeichensatz 1
     case 4: ++klingel_; break;                     // 8000H: Signalton
-    case 6:                                        // C000H: Tastatur-Schieberegister zurück
+    case 6:                                        // C000H: Tastatur-Schieberegister zurueck
         sr_ = 0; srVoll_ = false;
         z8_.setPin(3, 3, true);
         break;
@@ -258,8 +258,8 @@ uint64_t ereignisZt(int nr, int R, int V, uint64_t zeile) {
 void P8000TerminalHw::ereignis(int nr) {
     const int R = zeilenImBild_;
     auto drq = [&](int zeile) {
-        // Nach START DISPLAY beginnt der DMA mit dem nächsten Bild: erste Anforderung = Zeile 0
-        // in der letzten VRTC-Zeichenzeile (Datenblatt).  Die Firmware zählt ihre Zeilentabelle
+        // Nach START DISPLAY beginnt der DMA mit dem naechsten Bild: erste Anforderung = Zeile 0
+        // in der letzten VRTC-Zeichenzeile (Datenblatt).  Die Firmware zaehlt ihre Zeilentabelle
         // ab genau dieser Anforderung (IRP31).
         if (!crt_.displayEnabled()) { dmaLauf_ = false; return; }
         if (zeile == 0) dmaLauf_ = true;
@@ -321,7 +321,7 @@ void P8000TerminalHw::pixAktuell() const {
     rastern();
 }
 
-// Aufrufer hält pixSperre_.
+// Aufrufer haelt pixSperre_.
 void P8000TerminalHw::rastern() const {
     const int cols = bild_.cols, rows = bild_.rows, lin = bild_.lin;
     pixB_ = cols * 8;
@@ -369,7 +369,7 @@ void P8000TerminalHw::laufeBis(uint64_t ziel) {
             const uint64_t t = zeitVon(ereignisZt(naechstes_, zeilenImBild_, vrtcZeilen_, zeileZt_));
             if (z8_.takte < t) break;
             const int nr = naechstes_++;
-            ereignis(nr);   // Bildende setzt naechstes_ zurück
+            ereignis(nr);   // Bildende setzt naechstes_ zurueck
         }
         if (p31Ende_ && z8_.takte >= p31Zeit_) { z8_.setPin(3, 1, true); p31Ende_ = 0; }
         watchdogPruefen();

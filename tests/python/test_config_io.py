@@ -1,8 +1,8 @@
 """`app/config_io.py` — Speichern/Laden der Anwendungskonfiguration.
 
-Die Konfiguration überlebt Programmläufe: Bildschirmparameter, gemountete
-Disketten, Laufwerksbestückung, Fenstergeometrie.  Bricht der Rundlauf, verliert
-der Nutzer beim nächsten Start seine Einrichtung — ohne Fehlermeldung.
+Die Konfiguration ueberlebt Programmlaeufe: Bildschirmparameter, gemountete
+Disketten, Laufwerksbestueckung, Fenstergeometrie.  Bricht der Rundlauf, verliert
+der Nutzer beim naechsten Start seine Einrichtung — ohne Fehlermeldung.
 """
 
 import sys
@@ -86,7 +86,7 @@ def test_crt_params_survive_the_roundtrip(tmp_path):
 
 
 def test_crt_update_ignores_unknown_and_broken_input():
-    """Eine ältere/neuere/kaputte Konfiguration darf das Laden nicht sprengen."""
+    """Eine aeltere/neuere/kaputte Konfiguration darf das Laden nicht sprengen."""
     data = CRTParams().to_dict()
     data["ein_feld_das_es_nicht_gibt"] = 42
     params = CRTParams()
@@ -116,8 +116,8 @@ def test_fehlende_formatversion_gilt_als_1(tmp_path):
 
 
 def test_hoehere_formatversion_wird_nicht_ueberschrieben(tmp_path, capsys):
-    """Ein älteres Programm darf die Datei eines neueren nicht zerstören —
-    weder beim Autosave noch beim Beenden (beide laufen über ``save_config``)."""
+    """Ein aelteres Programm darf die Datei eines neueren nicht zerstoeren —
+    weder beim Autosave noch beim Beenden (beide laufen ueber ``save_config``)."""
     p = tmp_path / "neu.yaml"
     original = f"version: {cfg.CONFIG_VERSION + 1}\ngeschrieben_von: 9.9.9\nzukunft: {{a: 1}}\n"
     p.write_text(original, encoding="utf-8")
@@ -128,7 +128,7 @@ def test_hoehere_formatversion_wird_nicht_ueberschrieben(tmp_path, capsys):
     assert p.read_text(encoding="utf-8") == original
     assert "neueren Programm" in capsys.readouterr().out
 
-    # Die ausdrückliche Wahl des Anwenders (Speichern unter …) darf.
+    # Die ausdrueckliche Wahl des Anwenders (Speichern unter …) darf.
     assert cfg.save_config(str(p), cfg.build_config(CRTParams(), {}, [], {}, []),
                            erzwingen=True) is True
     assert cfg.format_version(cfg.load_config(str(p))) == cfg.CONFIG_VERSION
@@ -140,11 +140,11 @@ def test_gleiche_und_fehlende_datei_wird_geschrieben(tmp_path):
     assert cfg.save_config(str(p), daten) is True            # fehlt noch
     assert cfg.save_config(str(p), daten) is True            # gleiche Formatversion
     p.write_text("das: [ist kein yaml", encoding="utf-8")
-    assert cfg.save_config(str(p), daten) is True            # defekt: nichts zu schützen
+    assert cfg.save_config(str(p), daten) is True            # defekt: nichts zu schuetzen
 
 
 def test_migrationskette_laeuft_von_der_gelesenen_bis_zur_eigenen_version(tmp_path, monkeypatch):
-    """Format 1 → 2 → 3: jede Stufe läuft genau einmal, in der Reihenfolge."""
+    """Format 1 → 2 → 3: jede Stufe laeuft genau einmal, in der Reihenfolge."""
     reihenfolge = []
 
     def eins_zu_zwei(d):
@@ -166,7 +166,7 @@ def test_migrationskette_laeuft_von_der_gelesenen_bis_zur_eigenen_version(tmp_pa
     assert reihenfolge == [1, 2]
     assert daten["version"] == 3 and daten["drei"] is True and daten["general"] == {"speed": 1.5}
 
-    # Eine Datei, die schon Format 2 hat, durchläuft nur die zweite Stufe.
+    # Eine Datei, die schon Format 2 hat, durchlaeuft nur die zweite Stufe.
     reihenfolge.clear()
     p.write_text("version: 2\ngeneral: {neu_in_2: false}\n", encoding="utf-8")
     assert cfg.load_config(str(p))["version"] == 3 and reihenfolge == [2]

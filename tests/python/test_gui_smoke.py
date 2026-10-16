@@ -1,12 +1,12 @@
-"""GUI-Rauchtest (PySide6, headless über ``QT_QPA_PLATFORM=offscreen``).
+"""GUI-Rauchtest (PySide6, headless ueber ``QT_QPA_PLATFORM=offscreen``).
 
-Was hier geprüft wird, ist die **Verdrahtung**: Baut sich das Fenster mit allen
-Panels auf, hängt ein Emulator daran, greifen Konfigurations- und
-Laufwerksfunktionen ineinander, lässt sich alles wieder schließen.
+Was hier geprueft wird, ist die **Verdrahtung**: Baut sich das Fenster mit allen
+Panels auf, haengt ein Emulator daran, greifen Konfigurations- und
+Laufwerksfunktionen ineinander, laesst sich alles wieder schliessen.
 
-Was hier NICHT geprüft wird: gerenderte Pixel.  Der Bildschirm ist ein
+Was hier NICHT geprueft wird: gerenderte Pixel.  Der Bildschirm ist ein
 ``QOpenGLWidget``; offscreen gibt es keinen Framebuffer-Objekt-Kontext (Qt meldet
-„QOpenGLWidget: No fbo, cannot render").  Bildinhalte prüft die C++-Seite über
+„QOpenGLWidget: No fbo, cannot render").  Bildinhalte prueft die C++-Seite ueber
 das VRAM bzw. ``tools/fb_ocr.py``.
 """
 
@@ -27,9 +27,9 @@ def window(qapp):
 
     **Ohne gemerkte Konfiguration.** Das Fenster schreibt seine Einrichtung
     fortlaufend nach ``$XDG_CONFIG_HOME`` (conftest zeigt das auf ein
-    Testverzeichnis) — Laufwerksbestückung, eingelegte Disketten, Inhalt der
+    Testverzeichnis) — Laufwerksbestueckung, eingelegte Disketten, Inhalt der
     Symbolleiste.  Damit erbte jeder Testlauf den Stand des vorigen: ein Test,
-    der die Bestückung ändert, liess den ersten Test des NÄCHSTEN Laufs
+    der die Bestueckung aendert, liess den ersten Test des NAECHSTEN Laufs
     scheitern, und ein abgebrochener Lauf hinterliess eine Leiste, die niemand
     zusammengestellt hatte.  Jeder Test beginnt deshalb im Werkszustand.
     """
@@ -69,7 +69,7 @@ def test_main_window_owns_a_working_emulator(window):
 
 
 def test_default_drive_configuration_is_applied(window):
-    """Die Laufwerksleiste zeigt genau die bestückten Slots (A:/B:/C:, D: leer)."""
+    """Die Laufwerksleiste zeigt genau die bestueckten Slots (A:/B:/C:, D: leer)."""
     import app.drive_types as dt
 
     assert window._drive_types == list(dt.DEFAULT_DRIVE_TYPES)
@@ -93,14 +93,14 @@ def test_screen_widget_geometry_matches_the_core_framebuffer(window):
     from app.ui.screen_widget import FB_WIDTH, FB_HEIGHT
 
     assert (FB_WIDTH, FB_HEIGHT) == (640, 288), "Framebuffer-Geometrie geändert"
-    # Die C-API muss dieselbe Geometrie melden, sonst zeigt die GUI Müll.
+    # Die C-API muss dieselbe Geometrie melden, sonst zeigt die GUI Muell.
     from app.core_binding.k1520 import _lib
     assert _lib.k1520_fb_width(window.emulator._handle) == FB_WIDTH
     assert _lib.k1520_fb_height(window.emulator._handle) == FB_HEIGHT
 
 
 def test_config_roundtrip_through_the_window(window, tmp_path):
-    """Konfiguration aus dem laufenden Fenster speichern und zurücklesen."""
+    """Konfiguration aus dem laufenden Fenster speichern und zuruecklesen."""
     import app.config_io as cfg
 
     path = tmp_path / "gui-config.yaml"
@@ -111,15 +111,15 @@ def test_config_roundtrip_through_the_window(window, tmp_path):
 
 
 def test_window_survives_event_processing(window, qapp):
-    """Ein paar Runden Eventloop ohne Ausnahme — fängt Timer-/Signalfehler."""
+    """Ein paar Runden Eventloop ohne Ausnahme — faengt Timer-/Signalfehler."""
     for _ in range(10):
         qapp.processEvents()
 
 
 def test_a_closed_window_no_longer_filters_application_events(qapp, monkeypatch):
-    """Der Fokuswächter hängt sich beim Schließen vom ANWENDUNGSWEITEN Filter ab.
+    """Der Fokuswaechter haengt sich beim Schliessen vom ANWENDUNGSWEITEN Filter ab.
 
-    Vorher blieb er an der QApplication hängen: jedes je gebaute Fenster sah
+    Vorher blieb er an der QApplication haengen: jedes je gebaute Fenster sah
     weiter jedes Ereignis.  In diesem Modul (ein Fenster je Test) wurde dadurch
     jeder Aufbau teurer als der vorige — 142 s statt 14 s, nahe am ctest-Limit.
     """
@@ -166,7 +166,7 @@ def test_drive_panel_shows_the_adaptation_notice(window, qapp, tmp_path):
     assert window.emulator.create_disk(0, path, fmt, False), window.emulator.last_error()
     assert window.emulator.unmount_disk(0)
 
-    # Über den Wiederherstellungsweg mounten — derselbe Pfad wie beim Programmstart.
+    # Ueber den Wiederherstellungsweg mounten — derselbe Pfad wie beim Programmstart.
     drives.load_mounts([{"drive": 0, "path": path, "format": fmt,
                          "write_protect": False}])
     qapp.processEvents()
@@ -176,7 +176,7 @@ def test_drive_panel_shows_the_adaptation_notice(window, qapp, tmp_path):
     assert "Double Step aktiviert" in label.text()
     assert "schrittverdoppelt" in label.toolTip(), "Tooltip erklärt den Hinweis"
 
-    # Nach dem Aushängen verschwindet er wieder.
+    # Nach dem Aushaengen verschwindet er wieder.
     drives.load_mounts([])
     qapp.processEvents()
     assert not drives._panels[0]._notice_label.isVisibleTo(drives)
@@ -185,18 +185,18 @@ def test_drive_panel_shows_the_adaptation_notice(window, qapp, tmp_path):
 # ─── Symbolleiste ────────────────────────────────────────────────────────────
 #
 # Sie ist einrichtbar und ausblendbar (app/ui/actions.py + app/ui/toolbar_config.py).
-# Zwei Dinge müssen dabei halten: die Leiste lässt sich aus einer Namensliste
+# Zwei Dinge muessen dabei halten: die Leiste laesst sich aus einer Namensliste
 # beliebig oft NEU aufbauen — daran ist sie schon einmal gescheitert, weil PySide
-# beim Leeren die Hülle eines Kastenschalters freigibt —, und was der Anwender
+# beim Leeren die Huelle eines Kastenschalters freigibt —, und was der Anwender
 # zusammengestellt hat, steht nach einem Neustart wieder da.
 
 def test_toolbar_shows_the_default_buttons(window):
     """Jeder Name der Werksbelegung muss auf eine wirkliche Aktion zeigen.
 
-    Geprüft wird die Liste selbst: ein Tippfehler in ``STANDARD`` fiele sonst
-    nicht auf — die Leiste übergeht einen unbekannten Namen absichtlich (eine
-    ältere Konfiguration darf nicht zum Absturz führen).  Dass hier wirklich der
-    Werkszustand steht, sichert die Fixture (sie räumt die gemerkte
+    Geprueft wird die Liste selbst: ein Tippfehler in ``STANDARD`` fiele sonst
+    nicht auf — die Leiste uebergeht einen unbekannten Namen absichtlich (eine
+    aeltere Konfiguration darf nicht zum Absturz fuehren).  Dass hier wirklich der
+    Werkszustand steht, sichert die Fixture (sie raeumt die gemerkte
     Konfiguration weg).
     """
     from app.ui import actions
@@ -209,12 +209,12 @@ def test_toolbar_shows_the_default_buttons(window):
 
 
 def test_toolbar_can_be_rebuilt_repeatedly(window, qapp):
-    """Zweimal füllen darf nicht scheitern — der Kastenschalter ist der Prüfstein.
+    """Zweimal fuellen darf nicht scheitern — der Kastenschalter ist der Pruefstein.
 
-    ``QToolBar.clear()`` gibt die Python-Hülle eines ``toggleViewAction()`` frei
-    (das C++-Objekt überlebt).  Ein gemerkter Verweis darauf war beim zweiten
+    ``QToolBar.clear()`` gibt die Python-Huelle eines ``toggleViewAction()`` frei
+    (das C++-Objekt ueberlebt).  Ein gemerkter Verweis darauf war beim zweiten
     Aufbau tot — und der zweite Aufbau ist genau der, den eine gespeicherte
-    Konfiguration auslöst.
+    Konfiguration ausloest.
     """
     for _ in range(3):
         window._leiste_fuellen(["power", None, "dock_drives", "dock_settings",
@@ -225,7 +225,7 @@ def test_toolbar_can_be_rebuilt_repeatedly(window, qapp):
 
 
 def test_toolbar_ignores_names_from_an_older_configuration(window):
-    """Ein Name, den es nicht mehr gibt, wird übergangen statt zu stürzen."""
+    """Ein Name, den es nicht mehr gibt, wird uebergangen statt zu stuerzen."""
     window._leiste_fuellen(["power", "gibt_es_nicht", "reset"])
     gezeigt = [a for a in window.controls_bar.actions() if not a.isSeparator()]
     assert gezeigt == [window.act_power, window.act_reset]
@@ -279,7 +279,7 @@ def test_toolbar_dialog_keeps_order_and_drops_stray_separators(qapp):
     # Angehakt ist nur, was hereingegeben wurde; der Rest steht ungehakt darunter.
     assert dlg.auswahl() == ["power"], "führende/doppelte Trennstriche fallen weg"
 
-    # Ein Trennstrich ZWISCHEN zwei Knöpfen bleibt — nur die am Rand und die
+    # Ein Trennstrich ZWISCHEN zwei Knoepfen bleibt — nur die am Rand und die
     # doppelten fallen weg.
     for i in range(dlg.liste.count()):
         if dlg.liste.item(i).data(Qt.UserRole) == "hilfe":
@@ -290,7 +290,7 @@ def test_toolbar_dialog_keeps_order_and_drops_stray_separators(qapp):
 # ─── Statuszeile ─────────────────────────────────────────────────────────────
 
 def test_status_bar_shows_a_field_per_present_drive(window):
-    """Je bestücktem Steckplatz eine Leuchte und ein Feld — der vierte bekommt keins."""
+    """Je bestuecktem Steckplatz eine Leuchte und ein Feld — der vierte bekommt keins."""
     from app.ui import status_bar
 
     felder = window.status_widget.felder()
@@ -303,12 +303,12 @@ def test_status_bar_shows_a_field_per_present_drive(window):
 
 
 def test_drive_lamp_tells_empty_from_mounted_from_busy(window, qapp, temp_disk):
-    """Die drei Zustände der Leuchte: leerer Ring, gefüllt, rot.
+    """Die drei Zustaende der Leuchte: leerer Ring, gefuellt, rot.
 
     Die Leuchte des Kerns wird dabei stillgelegt: sie folgt dem ZUGRIFF, und die
-    anlaufende Maschine fragt von sich aus nach Laufwerk A: — „leer" wäre sonst
+    anlaufende Maschine fragt von sich aus nach Laufwerk A: — „leer" waere sonst
     ein Wettlauf gegen das Boot-ROM (und bei zehnfachem Takt einer, den der Test
-    verliert).  Geprüft wird hier der Übergang, nicht das Abtasten.
+    verliert).  Geprueft wird hier der Uebergang, nicht das Abtasten.
     """
     from app.ui import status_bar
 
@@ -324,14 +324,14 @@ def test_drive_lamp_tells_empty_from_mounted_from_busy(window, qapp, temp_disk):
     assert window.status_widget.lampe(0).zustand() in (status_bar.BELEGT,
                                                        status_bar.ZUGRIFF)
 
-    # „rot" hängt an der Leuchte des Kerns; hier wird nur der Übergang geprüft.
+    # „rot" haengt an der Leuchte des Kerns; hier wird nur der Uebergang geprueft.
     window.status_widget.lampe(0).set_zustand(status_bar.ZUGRIFF)
     assert window.status_widget.lampe(0).zustand() == status_bar.ZUGRIFF
 
 
 def test_status_bar_names_the_mounted_image_and_its_write_state(window, qapp,
                                                                 temp_disk):
-    """Dateiname und R/O ↔ R/W — die beiden Angaben, die beim Arbeiten zählen."""
+    """Dateiname und R/O ↔ R/W — die beiden Angaben, die beim Arbeiten zaehlen."""
     import os
 
     path = temp_disk("cpa_cpa780_k5601_clock.img")
@@ -345,7 +345,7 @@ def test_status_bar_names_the_mounted_image_and_its_write_state(window, qapp,
     assert feld.text().endswith("R/W")
     assert path in feld.toolTip(), "der volle Pfad steht im Tooltip"
 
-    # Der Schreibschutz wirkt SOFORT, nicht erst beim nächsten Einlegen.
+    # Der Schreibschutz wirkt SOFORT, nicht erst beim naechsten Einlegen.
     window.drives_widget._panels[0]._wp_check.setChecked(True)
     qapp.processEvents()
     window._update_drive_status()
@@ -409,10 +409,10 @@ def test_clock_labels_are_the_same_in_the_dropdown_and_the_status_bar(window):
         assert window.status_widget.takt.text() == f"Takt: {beschriftung}"
 
 
-@pytest.mark.parametrize("programm", ["a5120", "k8915", "prg710", "pc1715", "p8000"])
+@pytest.mark.parametrize("programm", ["a5120", "k8915", "prg710", "pc1715", "p8000", "mc80"])
 def test_no_machine_offers_unlimited_speed(qapp, programm):
     """„unbegrenzt“ ist aus der Taktauswahl ALLER Programme verschwunden (nur in der
-    Oberfläche — der Emulationstakt kennt den Faktor 0.0 weiter)."""
+    Oberflaeche — der Emulationstakt kennt den Faktor 0.0 weiter)."""
     from app import profil, takt
     from app.ui.screen_widget import ScreenWidget
     from app.ui.settings_widget import SettingsWidget
@@ -431,24 +431,24 @@ def test_an_old_unlimited_speed_in_the_config_becomes_the_fastest_step():
 
 
 def test_status_bar_has_no_cycle_counter_any_more(window):
-    """Zykluszähler und Bildrate sind bewusst weg — sie sagten nichts."""
+    """Zykluszaehler und Bildrate sind bewusst weg — sie sagten nichts."""
     text = " ".join([window.status_widget.takt.text()]
                     + [f.text() for f in window.status_widget.felder()])
     assert "Cycles" not in text and "FPS" not in text
 
 
-# ─── Menü ────────────────────────────────────────────────────────────────────
+# ─── Menue ────────────────────────────────────────────────────────────────────
 
 def test_the_file_menu_can_actually_mount_a_disk(window, qapp, monkeypatch,
                                                  temp_disk):
-    """*Datei ▸ Diskette einlegen ▸ A:* legt wirklich ein — früher tat es nichts."""
+    """*Datei ▸ Diskette einlegen ▸ A:* legt wirklich ein — frueher tat es nichts."""
     # Bekannter Ausgangszustand: eine gespeicherte Konfiguration kann A: schon
     # belegt haben, und dann ist „einlegen" dort zu Recht gesperrt.
     window.drives_widget.load_mounts([])
     qapp.processEvents()
 
     # BEWUSST ein `.hfe`: ein rohes `.img` fragt beim Einlegen nach seinem Format
-    # (eigener Wächter unten), und das hat mit dem Menüweg nichts zu tun.
+    # (eigener Waechter unten), und das hat mit dem Menueweg nichts zu tun.
     path = temp_disk("cpa_cpa780_k5601_clock.hfe")
     monkeypatch.setattr("app.ui.drive_widget.QFileDialog.getOpenFileName",
                         staticmethod(lambda *a, **k: (path, "")))
@@ -494,11 +494,11 @@ def test_power_action_is_the_switch_and_says_what_it_does(window, qapp):
 
 
 def test_no_shortcut_steals_a_key_from_the_emulated_machine(window):
-    """Jedes Kürzel trägt Strg+Umschalt — außer F11, das der Bildschirm abfängt.
+    """Jedes Kuerzel traegt Strg+Umschalt — ausser F11, das der Bildschirm abfaengt.
 
-    Die Tastatur gehört dem Gast: ``^S`` hält bei CP/M die Ausgabe an, ``^P``
+    Die Tastatur gehoert dem Gast: ``^S`` haelt bei CP/M die Ausgabe an, ``^P``
     schaltet den Drucker zu, die Funktionstasten gehen an die K7637.  Qt wertet
-    ein Kürzel VOR dem Widget aus — was das Fenster beansprucht, kommt dort nie
+    ein Kuerzel VOR dem Widget aus — was das Fenster beansprucht, kommt dort nie
     an.
     """
     from PySide6.QtGui import QAction
@@ -514,10 +514,10 @@ def test_no_shortcut_steals_a_key_from_the_emulated_machine(window):
 # ─── Handbuch ────────────────────────────────────────────────────────────────
 #
 # Wie beim DiskTool: eine `.md`-Datei, die Qt selbst setzt — kein Bauschritt,
-# keine Abhängigkeit.  Geprüft wird, dass sie mitgeliefert wird, dass das
-# Inhaltsverzeichnis zum Text passt und dass die dort genannten Tastenkürzel
-# WIRKLICH an den Aktionen hängen.  Eine Hilfe, die mit der Oberfläche
-# auseinanderläuft, ist schlimmer als keine.
+# keine Abhaengigkeit.  Geprueft wird, dass sie mitgeliefert wird, dass das
+# Inhaltsverzeichnis zum Text passt und dass die dort genannten Tastenkuerzel
+# WIRKLICH an den Aktionen haengen.  Eine Hilfe, die mit der Oberflaeche
+# auseinanderlaeuft, ist schlimmer als keine.
 
 _TASTEN = {"Strg": "Ctrl", "Umschalt": "Shift", "Entf": "Del", "Eingabe": "Return"}
 
@@ -528,7 +528,7 @@ def _als_kuerzel(deutsch: str):
 
 
 def _handbuch_kuerzel() -> dict:
-    """Die Tabelle „Tastenkürzel" des Handbuchs als {Kürzel: Wirkung}."""
+    """Die Tabelle „Tastenkuerzel" des Handbuchs als {Kuerzel: Wirkung}."""
     from app.ui.help_window import lade_handbuch
 
     tabelle = lade_handbuch().split("## Tastenkürzel", 1)[1].split("\n## ", 1)[0]
@@ -583,7 +583,7 @@ def test_help_search_finds_and_reports_a_miss(window):
 
 
 def test_every_shortcut_in_the_manual_really_exists(window):
-    """Jedes Kürzel der Handbuchtabelle hängt an einer Aktion des Fensters."""
+    """Jedes Kuerzel der Handbuchtabelle haengt an einer Aktion des Fensters."""
     from PySide6.QtGui import QAction
 
     vorhanden = {a.shortcut().toString() for a in window.findChildren(QAction)
@@ -594,7 +594,7 @@ def test_every_shortcut_in_the_manual_really_exists(window):
 
 
 def test_every_shortcut_of_the_window_is_in_the_manual(window):
-    """Und die Gegenrichtung: kein Kürzel bleibt unerwähnt."""
+    """Und die Gegenrichtung: kein Kuerzel bleibt unerwaehnt."""
     from PySide6.QtGui import QAction
 
     im_handbuch = {_als_kuerzel(k).toString() for k in _handbuch_kuerzel()}
@@ -619,20 +619,20 @@ def test_every_bundled_icon_can_be_rendered(qapp):
 
 # ─── Fensterzustand ──────────────────────────────────────────────────────────
 #
-# Fenstergröße, „maximiert" und die Aufteilung der Kästen stehen in der
-# Konfiguration.  Der Zug an einer Trennlinie ist der heikle Fall: er ändert nur
-# die Kästen, nicht das Fenster — daran hing das Speichern, und die Aufteilung
+# Fenstergroesse, „maximiert" und die Aufteilung der Kaesten stehen in der
+# Konfiguration.  Der Zug an einer Trennlinie ist der heikle Fall: er aendert nur
+# die Kaesten, nicht das Fenster — daran hing das Speichern, und die Aufteilung
 # ging deshalb bei jedem Start verloren.
 
 def test_dragging_a_dock_separator_schedules_a_save(window, qapp):
-    """Eine Größenänderung eines Kastens muss gespeichert werden."""
+    """Eine Groessenaenderung eines Kastens muss gespeichert werden."""
     from PySide6.QtCore import QEvent, QSize
     from PySide6.QtGui import QResizeEvent
 
     window._autosave_timer.stop()
     assert not window._autosave_timer.isActive()
 
-    # Genau das Ereignis, das ein Zug an der Trennlinie auslöst.
+    # Genau das Ereignis, das ein Zug an der Trennlinie ausloest.
     qapp.sendEvent(window.drives_dock,
                    QResizeEvent(QSize(320, 400), window.drives_dock.size()))
     assert window._autosave_timer.isActive(), \
@@ -640,7 +640,7 @@ def test_dragging_a_dock_separator_schedules_a_save(window, qapp):
 
 
 def test_window_state_carries_size_maximized_and_dock_layout(window):
-    """Was gespeichert wird: Größe, Maximierung, Kastenaufteilung, Leiste."""
+    """Was gespeichert wird: Groesse, Maximierung, Kastenaufteilung, Leiste."""
     zustand = window._gather_window_state()
     for schluessel in ("geometry", "width", "height", "maximized", "dock_state",
                        "toolbar", "toolbar_style"):
@@ -652,8 +652,8 @@ def test_window_state_carries_size_maximized_and_dock_layout(window):
 def test_maximized_survives_a_config_roundtrip(window, qapp):
     """Maximiert speichern und am SICHTBAREN Fenster wiederherstellen.
 
-    Das ist der Weg von *Konfiguration laden* und *Standard zurücksetzen*.  Den
-    Weg des Programmstarts — Konfiguration anwenden, DANN anzeigen — prüfen die
+    Das ist der Weg von *Konfiguration laden* und *Standard zuruecksetzen*.  Den
+    Weg des Programmstarts — Konfiguration anwenden, DANN anzeigen — pruefen die
     beiden Tests darunter.
     """
     window.showMaximized()
@@ -673,22 +673,22 @@ def test_maximized_survives_a_config_roundtrip(window, qapp):
     assert window.isMaximized(), "maximiert muss wiederkommen"
 
 
-# Der Weg des ANWENDERS beim Programmstart: `_apply_window_state` läuft im
+# Der Weg des ANWENDERS beim Programmstart: `_apply_window_state` laeuft im
 # `__init__`, also am noch UNSICHTBAREN Fenster, und `show()` kommt erst danach.
 # Zweimal ist daran schon ein maximiert beendetes Fenster im Fenstermodus wieder
-# aufgegangen, und beide Male lief die Prüfung am sichtbaren Fenster vorbei:
+# aufgegangen, und beide Male lief die Pruefung am sichtbaren Fenster vorbei:
 #
-#   * Qts ``restoreGeometry`` meldet Erfolg, stellt die Größe her und lässt
+#   * Qts ``restoreGeometry`` meldet Erfolg, stellt die Groesse her und laesst
 #     ``isMaximized()`` falsch (gemessen mit Qt 6.11/X11).  Unter
-#     ``offscreen`` scheitert es dagegen, und der Rückfallzweig setzte den
-#     Zustand von Hand — grün geprüft, kaputt beim Anwender.
-#   * Ein Zustandswechsel am unsichtbaren Fenster verfällt: der
-#     Fensterverwalter (GNOME Shell/X11) zeigt das Fenster normal und lässt den
-#     Zustand binnen 200 ms zurückfallen.  Erst ein Zug NACH dem Anzeigen hält.
+#     ``offscreen`` scheitert es dagegen, und der Rueckfallzweig setzte den
+#     Zustand von Hand — gruen geprueft, kaputt beim Anwender.
+#   * Ein Zustandswechsel am unsichtbaren Fenster verfaellt: der
+#     Fensterverwalter (GNOME Shell/X11) zeigt das Fenster normal und laesst den
+#     Zustand binnen 200 ms zurueckfallen.  Erst ein Zug NACH dem Anzeigen haelt.
 #
-# Beide Tests stellen das ohne Fensterverwalter nach: der erste lässt
+# Beide Tests stellen das ohne Fensterverwalter nach: der erste laesst
 # ``restoreGeometry`` gelingen, ohne etwas zu tun (genau das reale Verhalten),
-# der zweite prüft, dass der Zug nicht im `__init__` verpufft.
+# der zweite prueft, dass der Zug nicht im `__init__` verpufft.
 
 def test_maximized_comes_back_even_when_qt_drops_it_from_its_geometry(window, qapp,
                                                                       monkeypatch):
@@ -712,9 +712,9 @@ def test_maximized_comes_back_even_when_qt_drops_it_from_its_geometry(window, qa
 def test_maximized_is_applied_after_the_window_is_shown(window, qapp):
     """Am unsichtbaren Fenster wird nur GEMERKT, gesetzt wird beim Anzeigen.
 
-    Ein ``setWindowState`` vor dem Anzeigen verfällt beim Fensterverwalter —
-    das Fenster ginge normal auf, und der gespeicherte Zustand wäre beim
-    nächsten Beenden „nicht maximiert": der Fehler löschte seine eigene Spur.
+    Ein ``setWindowState`` vor dem Anzeigen verfaellt beim Fensterverwalter —
+    das Fenster ginge normal auf, und der gespeicherte Zustand waere beim
+    naechsten Beenden „nicht maximiert": der Fehler loeschte seine eigene Spur.
     """
     window.showNormal()
     qapp.processEvents()
@@ -735,7 +735,7 @@ def test_maximized_is_applied_after_the_window_is_shown(window, qapp):
 
 
 def test_an_older_config_without_geometry_still_restores(window, qapp):
-    """Rückfall für Konfigurationen aus einer Fassung ohne ``geometry``."""
+    """Rueckfall fuer Konfigurationen aus einer Fassung ohne ``geometry``."""
     window.showNormal()
     qapp.processEvents()
 
@@ -753,9 +753,9 @@ def Qt_WindowMaximized():
 
 
 def test_the_remembered_size_is_the_one_of_the_restored_window(window, qapp):
-    """Maximiert überschreibt die gemerkte Größe NICHT.
+    """Maximiert ueberschreibt die gemerkte Groesse NICHT.
 
-    Sonst landete ein Entmaximieren beim nächsten Start auf Bildschirmgröße
+    Sonst landete ein Entmaximieren beim naechsten Start auf Bildschirmgroesse
     statt dort, wo der Anwender sein Fenster zuletzt hatte.
     """
     from PySide6.QtCore import QSize
@@ -774,7 +774,7 @@ def test_the_remembered_size_is_the_one_of_the_restored_window(window, qapp):
 
 
 def test_closing_always_writes_the_state(window, qapp, tmp_path, monkeypatch):
-    """Beim Beenden wird IMMER gesichert, nicht nur eine anstehende Änderung."""
+    """Beim Beenden wird IMMER gesichert, nicht nur eine anstehende Aenderung."""
     geschrieben = []
     monkeypatch.setattr(window, "_autosave_now",
                         lambda: geschrieben.append(True))
@@ -785,9 +785,9 @@ def test_closing_always_writes_the_state(window, qapp, tmp_path, monkeypatch):
 
 
 def test_drive_lamps_are_polled_at_led_speed(window):
-    """Die Leuchte hängt an einem eigenen, SCHNELLEN Takt.
+    """Die Leuchte haengt an einem eigenen, SCHNELLEN Takt.
 
-    Im Sekundentakt des übrigen Statuszeilen-Aufbaus abgetastet blitzte sie
+    Im Sekundentakt des uebrigen Statuszeilen-Aufbaus abgetastet blitzte sie
     praktisch nie auf: ein Sektorzugriff ist in wenigen Zehntelsekunden vorbei.
     Derselbe Takt wie die Leuchten im Laufwerkskasten.
     """
@@ -797,10 +797,10 @@ def test_drive_lamps_are_polled_at_led_speed(window):
 
 
 def test_a_disk_access_turns_the_lamp_red(window, qapp, temp_disk):
-    """Der eigentliche Fall: während eines Zugriffs ist die Leuchte rot.
+    """Der eigentliche Fall: waehrend eines Zugriffs ist die Leuchte rot.
 
-    Geprüft wird die Verdrahtung Kern → Leuchte, nicht die Zeit: der Zustand des
-    Kerns wird vorgegeben, damit der Test nicht am Zufall eines Bootlaufs hängt.
+    Geprueft wird die Verdrahtung Kern → Leuchte, nicht die Zeit: der Zustand des
+    Kerns wird vorgegeben, damit der Test nicht am Zufall eines Bootlaufs haengt.
     """
     from app.ui import status_bar
 
@@ -821,10 +821,10 @@ def test_a_disk_access_turns_the_lamp_red(window, qapp, temp_disk):
 def test_a_dragged_separator_is_not_pushed_back(window, qapp):
     """Ein Zug an einer Trennlinie schaltet die Startaufteilung ab.
 
-    Die Startaufteilung (`_shrink_keyboard`: Tastatur auf Inhaltshöhe,
-    Seitenkästen schmal) lief nach JEDEM Fenster-Resize und holte die Tastatur
-    wieder auf ihre Minimalhöhe — die waagerechte Trennlinie liess sich dann
-    scheinbar nicht verschieben.  Jetzt tritt sie zurück, sobald der Anwender
+    Die Startaufteilung (`_shrink_keyboard`: Tastatur auf Inhaltshoehe,
+    Seitenkaesten schmal) lief nach JEDEM Fenster-Resize und holte die Tastatur
+    wieder auf ihre Minimalhoehe — die waagerechte Trennlinie liess sich dann
+    scheinbar nicht verschieben.  Jetzt tritt sie zurueck, sobald der Anwender
     selbst gezogen hat; gespeichert wird sein Zug ohnehin.
     """
     from PySide6.QtCore import QSize
@@ -834,7 +834,7 @@ def test_a_dragged_separator_is_not_pushed_back(window, qapp):
     window._nutzer_layout = False
     window._layout_laeuft = False
 
-    # Ein Zug an der Trennlinie: Größenänderung eines Kastens, ohne dass wir
+    # Ein Zug an der Trennlinie: Groessenaenderung eines Kastens, ohne dass wir
     # gerade selbst umbauen.
     qapp.sendEvent(window.keyboard_dock,
                    QResizeEvent(QSize(600, 300), window.keyboard_dock.size()))
@@ -851,7 +851,7 @@ def test_showing_a_panel_is_not_mistaken_for_a_drag(window, qapp):
     """Ein- und Ausblenden ordnet die Nachbarn um — das ist kein Zug.
 
     Sonst schaltete schon der erste Klick auf „Tastatur" die Startaufteilung ab,
-    und die Tastatur ginge in voller Kastenhöhe auf.
+    und die Tastatur ginge in voller Kastenhoehe auf.
     """
     from PySide6.QtCore import QSize
     from PySide6.QtGui import QResizeEvent
@@ -864,7 +864,7 @@ def test_showing_a_panel_is_not_mistaken_for_a_drag(window, qapp):
                    QResizeEvent(QSize(600, 300), window.keyboard_dock.size()))
     assert not window._nutzer_layout
 
-    # Nach einer Runde der Ereignisschleife zählt ein Zug wieder als Zug.
+    # Nach einer Runde der Ereignisschleife zaehlt ein Zug wieder als Zug.
     qapp.processEvents()
     qapp.sendEvent(window.keyboard_dock,
                    QResizeEvent(QSize(600, 260), window.keyboard_dock.size()))
@@ -872,7 +872,7 @@ def test_showing_a_panel_is_not_mistaken_for_a_drag(window, qapp):
 
 
 def test_a_window_resize_is_not_mistaken_for_a_drag(window, qapp):
-    """Die Kästen wachsen mit dem Fenster — auch das ist kein Zug des Anwenders."""
+    """Die Kaesten wachsen mit dem Fenster — auch das ist kein Zug des Anwenders."""
     from PySide6.QtCore import QSize
     from PySide6.QtGui import QResizeEvent
 
@@ -886,14 +886,14 @@ def test_a_window_resize_is_not_mistaken_for_a_drag(window, qapp):
 
 
 def test_the_keyboard_dock_can_be_resized_at_all(qapp):
-    """Der Kasten der Tastatur darf nicht in der Höhe festgenagelt sein.
+    """Der Kasten der Tastatur darf nicht in der Hoehe festgenagelt sein.
 
-    Mit ``QSizePolicy.Fixed`` (so war es) nimmt Qt die Wunschhöhe zugleich als
-    Mindest- UND Höchsthöhe: ``min == max``, und damit lässt sich die Trennlinie
-    über dem Kasten **überhaupt nicht** ziehen.  Sichtbar wurde das, als die
+    Mit ``QSizePolicy.Fixed`` (so war es) nimmt Qt die Wunschhoehe zugleich als
+    Mindest- UND Hoechsthoehe: ``min == max``, und damit laesst sich die Trennlinie
+    ueber dem Kasten **ueberhaupt nicht** ziehen.  Sichtbar wurde das, als die
     Tastatur unter die Laufwerke gedockt wurde — dort stand sie auf ihrer
-    Wunschhöhe, mit schwarzen Balken über und unter dem Tastenfeld (die
-    Zeichnung hält ihr Seitenverhältnis), und drückte die Laufwerke in den
+    Wunschhoehe, mit schwarzen Balken ueber und unter dem Tastenfeld (die
+    Zeichnung haelt ihr Seitenverhaeltnis), und drueckte die Laufwerke in den
     Rollbalken.
     """
     from PySide6.QtCore import Qt
@@ -921,7 +921,7 @@ def test_the_keyboard_dock_can_be_resized_at_all(qapp):
 
 
 def test_the_keyboard_is_refitted_when_it_is_docked_elsewhere(window, qapp):
-    """Umdocken ändert die Breite — und damit die Höhe, die die Tastatur braucht."""
+    """Umdocken aendert die Breite — und damit die Hoehe, die die Tastatur braucht."""
     from PySide6.QtCore import Qt
 
     window.keyboard_dock.show()
@@ -940,9 +940,9 @@ def test_the_keyboard_is_refitted_when_it_is_docked_elsewhere(window, qapp):
 
 # ─── Diskettenformat: erfragt statt eingestellt ──────────────────────────────
 #
-# Im Laufwerkskasten stand einmal ein Auswahlfeld „Format:".  Es galt für ALLE
+# Im Laufwerkskasten stand einmal ein Auswahlfeld „Format:".  Es galt fuer ALLE
 # Dateiarten, obwohl nur das rohe Sektorimage eine Formatangabe braucht, und es
-# stand VOR der Dateiauswahl.  Jetzt fragt ein Dialog nach dem Öffnen und nur
+# stand VOR der Dateiauswahl.  Jetzt fragt ein Dialog nach dem Oeffnen und nur
 # bei `.img`; an der Stelle des Auswahlfeldes steht das ERKANNTE Format.
 
 def test_the_drive_panel_has_no_format_dropdown_any_more(window):
@@ -958,7 +958,7 @@ def test_the_drive_panel_has_no_format_dropdown_any_more(window):
 def test_a_raw_image_asks_for_its_format(window, qapp, monkeypatch, temp_disk):
     """`.img` einlegen → Formatdialog; die Antwort geht an den Kern.
 
-    Ein rohes Sektorabbild enthält nur Sektorinhalte — die Einteilung steht
+    Ein rohes Sektorabbild enthaelt nur Sektorinhalte — die Einteilung steht
     nirgends darin und darf deshalb nicht geraten werden.
     """
     window.drives_widget.load_mounts([])
@@ -1032,7 +1032,7 @@ def test_the_drive_panel_shows_the_detected_format(window, qapp, temp_disk):
 def test_an_unrecognisable_disk_is_called_unknown(window, qapp, tmp_path):
     """Passt kein Katalogformat, heisst das „unbekannt" — nicht der beste Rat.
 
-    Eine echte Leerdiskette trägt keine Adressmarke; es gibt nichts zu messen.
+    Eine echte Leerdiskette traegt keine Adressmarke; es gibt nichts zu messen.
     """
     drives = window.drives_widget
     path = str(tmp_path / "leerdiskette.hfe")
@@ -1066,7 +1066,7 @@ def test_saving_as_a_raw_image_uses_the_detected_format(window, qapp, monkeypatc
 
 def test_an_unknown_format_cannot_be_exported_as_a_raw_image(window, qapp,
                                                              monkeypatch, tmp_path):
-    """Unbekanntes Format → kein `.img`: die Sektorreihenfolge wäre geraten."""
+    """Unbekanntes Format → kein `.img`: die Sektorreihenfolge waere geraten."""
     drives = window.drives_widget
     quelle = str(tmp_path / "leer.hfe")
     assert window.emulator.create_disk(0, quelle, "", False), window.emulator.last_error()
@@ -1095,7 +1095,7 @@ def test_the_blank_disk_button_says_that_it_makes_a_blank_one(window):
 
 
 def test_an_access_to_an_empty_drive_turns_the_lamp_red(window, qapp):
-    """Ein angesprochenes LEERES Laufwerk leuchtet — wie am echten Gerät.
+    """Ein angesprochenes LEERES Laufwerk leuchtet — wie am echten Geraet.
 
     Vorher blieb der Ring leer, und die Anzeige schwieg genau dann, wenn sie
     etwas zu sagen hatte: das Gastsystem wartet auf eine Diskette, die niemand
@@ -1116,13 +1116,13 @@ def test_an_access_to_an_empty_drive_turns_the_lamp_red(window, qapp):
     assert window.status_widget.lampe(1).zustand() == status_bar.LEER
 
 
-# ─── Auslieferungskonfiguration und „Standard zurücksetzen" ──────────────────
+# ─── Auslieferungskonfiguration und „Standard zuruecksetzen" ──────────────────
 #
-# Zwei Wege führen zu derselben Datei (`data/default_config_a5120.yaml`): der
+# Zwei Wege fuehren zu derselben Datei (`data/default_config_a5120.yaml`): der
 # ERSTE Start nach der Installation, wo es noch keine `a5120emu.yaml` gibt, und
-# *Ansicht ▸ Standard zurücksetzen*, das die vorhandene überschreibt.  Was beide
+# *Ansicht ▸ Standard zuruecksetzen*, das die vorhandene ueberschreibt.  Was beide
 # tragen muss: die Datei wird wirklich gefunden und angewandt, die eingelegten
-# Disketten bleiben dabei liegen, und ohne die Datei stürzt nichts ab.
+# Disketten bleiben dabei liegen, und ohne die Datei stuerzt nichts ab.
 
 def test_the_shipped_default_config_is_found_and_complete():
     """Die ausgelieferte Vorgabe muss da sein — und keine Pfade fremder Rechner tragen."""
@@ -1135,7 +1135,7 @@ def test_the_shipped_default_config_is_found_and_complete():
     for abschnitt in ("crt", "general", "drive_types", "window"):
         assert abschnitt in vorgabe, f"'{abschnitt}' fehlt in der Vorgabe"
     # Diskettenpfade sind rechnerspezifisch — und ihr Fehlen ist es, was das
-    # Zurücksetzen die eingelegten Disketten in Ruhe lassen lässt.
+    # Zuruecksetzen die eingelegten Disketten in Ruhe lassen laesst.
     assert "disks" not in vorgabe
     assert "geometry" not in vorgabe["window"], \
         "die Bildschirmposition des Baurechners gehört nicht in die Auslieferung"
@@ -1146,7 +1146,7 @@ def test_the_shipped_default_config_is_found_and_complete():
 def test_a_fresh_installation_starts_from_the_shipped_default(window):
     """Erster Start ohne ``a5120emu.yaml``: die Vorgabe zieht — und wird geschrieben.
 
-    Die Fixture räumt die gemerkte Konfiguration weg, das Fenster steht also im
+    Die Fixture raeumt die gemerkte Konfiguration weg, das Fenster steht also im
     Zustand nach der Erstinstallation.
     """
     from app import config_io
@@ -1159,12 +1159,12 @@ def test_a_fresh_installation_starts_from_the_shipped_default(window):
 
 def test_a_fresh_installation_writes_the_config_it_started_from(window, tmp_path,
                                                                 monkeypatch):
-    """Und sie gehört ab jetzt dem Anwender: die ``a5120emu.yaml`` wird angelegt.
+    """Und sie gehoert ab jetzt dem Anwender: die ``a5120emu.yaml`` wird angelegt.
 
-    Geprüft an einem EIGENEN Pfad, nicht an ``$XDG_CONFIG_HOME`` selbst: das
-    Verzeichnis ist zwar seit der PID-Trennung (conftest.py) nicht mehr über
-    ctest-Fälle hinweg geteilt, wohl aber über die anderen Tests DIESES Moduls
-    (``window`` räumt nur die eine gemerkte Datei weg) — ein eigener ``tmp_path``
+    Geprueft an einem EIGENEN Pfad, nicht an ``$XDG_CONFIG_HOME`` selbst: das
+    Verzeichnis ist zwar seit der PID-Trennung (conftest.py) nicht mehr ueber
+    ctest-Faelle hinweg geteilt, wohl aber ueber die anderen Tests DIESES Moduls
+    (``window`` raeumt nur die eine gemerkte Datei weg) — ein eigener ``tmp_path``
     ist hier einfacher als sich auf die Reihenfolge zu verlassen.
     """
     from app import config_io
@@ -1184,10 +1184,10 @@ def test_a_fresh_installation_writes_the_config_it_started_from(window, tmp_path
 
 def test_reset_to_default_restores_the_shipped_look_and_overwrites_the_config(
         window, qapp, monkeypatch, tmp_path):
-    """*Ansicht ▸ Standard zurücksetzen* — die Rückfrage bejaht, alles steht wieder.
+    """*Ansicht ▸ Standard zuruecksetzen* — die Rueckfrage bejaht, alles steht wieder.
 
     Geschrieben wird auf einen EIGENEN Pfad statt auf die gemerkte Konfiguration
-    dieses Moduls, damit dieser Test unabhängig von der Reihenfolge der anderen
+    dieses Moduls, damit dieser Test unabhaengig von der Reihenfolge der anderen
     ``window``-Tests bleibt.
     """
     from PySide6.QtWidgets import QMessageBox
@@ -1200,7 +1200,7 @@ def test_reset_to_default_restores_the_shipped_look_and_overwrites_the_config(
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: QMessageBox.Yes))
 
-    # Vom Standard wegdrehen — Tempo, Bildröhre und Symbolleiste.
+    # Vom Standard wegdrehen — Tempo, Bildroehre und Symbolleiste.
     window._apply_speed(1.0)
     window.screen_widget.params.brightness = 0.25
     window._leiste_fuellen(["power"])
@@ -1213,8 +1213,8 @@ def test_reset_to_default_restores_the_shipped_look_and_overwrites_the_config(
     assert window.screen_widget.params.brightness == vorgabe["crt"]["brightness"]
     gezeigt = [a for a in window.controls_bar.actions() if not a.isSeparator()]
     assert len(gezeigt) == len([n for n in vorgabe["window"]["toolbar"] if n])
-    # Und die gespeicherte Konfiguration ist überschrieben, nicht erst beim
-    # nächsten Autosave.
+    # Und die gespeicherte Konfiguration ist ueberschrieben, nicht erst beim
+    # naechsten Autosave.
     gemerkt = config_io.load_config(config_io.default_config_path())
     assert gemerkt["general"]["speed"] == vorgabe["general"]["speed"]
 
@@ -1232,11 +1232,11 @@ def test_reset_to_default_can_be_declined(window, monkeypatch):
 
 def test_reset_to_default_leaves_the_mounted_disks_alone(window, qapp, monkeypatch,
                                                          temp_disk):
-    """Zurückgesetzt wird die EINRICHTUNG, nicht die Maschine.
+    """Zurueckgesetzt wird die EINRICHTUNG, nicht die Maschine.
 
-    Ein Zurücksetzen der Ansicht, das die Diskette auswirft, wäre eine böse
-    Überraschung — und die Vorgabe könnte gar nicht sagen, welche Diskette
-    stattdessen hineingehört.
+    Ein Zuruecksetzen der Ansicht, das die Diskette auswirft, waere eine boese
+    Ueberraschung — und die Vorgabe koennte gar nicht sagen, welche Diskette
+    stattdessen hineingehoert.
     """
     from pathlib import Path
 
@@ -1273,10 +1273,10 @@ def test_reset_to_default_without_the_shipped_file_says_so(window, monkeypatch):
 
 def test_reset_to_default_restarts_only_when_the_drive_bay_changed(window, qapp,
                                                                    monkeypatch):
-    """Neue Bestückung = neue Maschine, und die muss eingeschaltet werden.
+    """Neue Bestueckung = neue Maschine, und die muss eingeschaltet werden.
 
-    Ohne Bestückungswechsel bleibt die laufende Maschine dagegen unangetastet —
-    ein Zurücksetzen der Ansicht soll kein laufendes CP/A abwürgen.
+    Ohne Bestueckungswechsel bleibt die laufende Maschine dagegen unangetastet —
+    ein Zuruecksetzen der Ansicht soll kein laufendes CP/A abwuergen.
     """
     from PySide6.QtWidgets import QMessageBox
 
@@ -1287,7 +1287,7 @@ def test_reset_to_default_restarts_only_when_the_drive_bay_changed(window, qapp,
     monkeypatch.setattr(window, "_cold_restart",
                         lambda: kaltstarts.append(list(window._drive_types)))
 
-    window._standard_zuruecksetzen()          # Bestückung schon die der Vorgabe
+    window._standard_zuruecksetzen()          # Bestueckung schon die der Vorgabe
     assert kaltstarts == [], "ohne Bestückungswechsel kein Kaltstart"
 
     window._apply_drive_types(["K5601", "none", "none", "none"], cold_restart=False)
@@ -1300,10 +1300,10 @@ def test_reset_to_default_restarts_only_when_the_drive_bay_changed(window, qapp,
 #
 # Das Erweiterungsmodul ist am Kern ein Konstruktorparameter
 # (``K1520Emulator(em=…)``), ein Modellwechsel bedeutet also — wie ein
-# geänderter Laufwerksschacht — eine neue Maschine.  Geprüft wird: die Auswahl
+# geaenderter Laufwerksschacht — eine neue Maschine.  Geprueft wird: die Auswahl
 # erzeugt wirklich eine EM-Maschine, die Leuchten erscheinen nur dann, eine
 # alte Konfiguration ohne den Eintrag bleibt beim A5120, und *Standard
-# zurücksetzen* dreht ein zwischenzeitlich gewähltes A5120.16 zurück.
+# zuruecksetzen* dreht ein zwischenzeitlich gewaehltes A5120.16 zurueck.
 
 def test_window_starts_as_plain_a5120_without_em(window):
     import app.modell as modell
@@ -1326,7 +1326,7 @@ def test_selecting_a5120_16_rebuilds_the_machine_with_the_em(window, qapp):
     assert window.emulator.em_variant() == "em256"
     assert window.status_widget.em_sichtbar()
 
-    # Zurück zum A5120 — die Leuchten verschwinden wieder.
+    # Zurueck zum A5120 — die Leuchten verschwinden wieder.
     idx0 = window.settings_widget.model_combo.findData(modell.A5120)
     window.settings_widget.model_combo.setCurrentIndex(idx0)
     qapp.processEvents()
@@ -1366,11 +1366,11 @@ def test_em_status_reads_v1_v2_and_mode_from_the_core(window, qapp, monkeypatch)
 
 
 def test_old_configuration_without_model_key_falls_back_to_the_plain_a5120(window, qapp):
-    """Eine Konfiguration von vor S6 hat kein `general.model` — läuft als A5120.
+    """Eine Konfiguration von vor S6 hat kein `general.model` — laeuft als A5120.
 
     Angewandt wird sie ausgehend von einem Fenster, das GERADE auf A5120.16
-    steht: erst das zeigt, dass das fehlende Feld tatsächlich auf die Vorgabe
-    zurückfällt, statt bloß den Ausgangszustand zu wiederholen.
+    steht: erst das zeigt, dass das fehlende Feld tatsaechlich auf die Vorgabe
+    zurueckfaellt, statt bloss den Ausgangszustand zu wiederholen.
     """
     import app.modell as modell
 
@@ -1390,7 +1390,7 @@ def test_old_configuration_without_model_key_falls_back_to_the_plain_a5120(windo
 
 
 def test_config_roundtrip_carries_the_model(window, qapp, tmp_path):
-    """Modell A5120.16 übersteht Speichern und Laden."""
+    """Modell A5120.16 uebersteht Speichern und Laden."""
     import app.config_io as cfg
     import app.modell as modell
 
@@ -1410,11 +1410,11 @@ def test_config_roundtrip_carries_the_model(window, qapp, tmp_path):
 
 def test_reset_to_default_switches_the_model_back_and_restarts(window, qapp,
                                                                 monkeypatch, tmp_path):
-    """*Standard zurücksetzen* dreht ein zwischenzeitlich gewähltes A5120.16 zurück.
+    """*Standard zuruecksetzen* dreht ein zwischenzeitlich gewaehltes A5120.16 zurueck.
 
     Die Auslieferung ist der A5120 ohne Erweiterung (`data/default_config.yaml`):
-    ein geändertes MODELL zählt genauso als "die Bestückung hat sich geändert"
-    wie ein geänderter Laufwerksschacht — die neue Maschine muss eingeschaltet
+    ein geaendertes MODELL zaehlt genauso als "die Bestueckung hat sich geaendert"
+    wie ein geaenderter Laufwerksschacht — die neue Maschine muss eingeschaltet
     werden.
     """
     from PySide6.QtWidgets import QMessageBox

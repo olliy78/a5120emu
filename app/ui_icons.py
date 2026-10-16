@@ -20,14 +20,14 @@ from PySide6.QtGui import QGuiApplication, QIcon, QPalette, QPixmap
 #: ``app/icons`` — neben diesem Modul.
 ICON_DIR = Path(__file__).resolve().parent / "icons"
 
-#: Kantenlängen, in denen jedes Symbol gerastert wird (Leiste, Menü, HiDPI).
+#: Kantenlaengen, in denen jedes Symbol gerastert wird (Leiste, Menue, HiDPI).
 GROESSEN = (16, 22, 32, 48)
 
 
 def _vordergrund() -> str:
     """Textfarbe der laufenden Palette als ``#rrggbb``."""
     app = QGuiApplication.instance()
-    if app is None:                       # ohne QApplication (reine Importprüfung)
+    if app is None:                       # ohne QApplication (reine Importpruefung)
         return "#303030"
     return app.palette().color(QPalette.ButtonText).name()
 
@@ -40,8 +40,8 @@ def _gebaut(name: str, farbe: str) -> QIcon:
     quelle = datei.read_text(encoding="utf-8").replace("currentColor", farbe)
     symbol = QIcon()
     for kante in GROESSEN:
-        # Je Größe neu rastern statt eine Pixmap zu skalieren — sonst franst der
-        # 1,6-px-Strich in der Menüzeile aus.
+        # Je Groesse neu rastern statt eine Pixmap zu skalieren — sonst franst der
+        # 1,6-px-Strich in der Menuezeile aus.
         skaliert = quelle.replace('width="24" height="24"',
                                   f'width="{kante}" height="{kante}"')
         bild = QPixmap()

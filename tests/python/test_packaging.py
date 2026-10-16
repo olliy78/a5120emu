@@ -1,13 +1,13 @@
 """Paketierung (``packaging/``) — was das verteilte Paket enthalten muss.
 
-Die schnellen Fälle laufen **ohne Netz** und in Sekunden: Syntax der Skripte,
-Optionen, und ein vollständiger Durchlauf von ``build_payload.sh`` gegen die
+Die schnellen Faelle laufen **ohne Netz** und in Sekunden: Syntax der Skripte,
+Optionen, und ein vollstaendiger Durchlauf von ``build_payload.sh`` gegen die
 bereits gebaute Bibliothek (``--skip-build``).  Sie fangen genau das ab, was
-beim Schnüren schiefgehen kann, ohne dass es jemand merkt — eine Datei, die
+beim Schnueren schiefgehen kann, ohne dass es jemand merkt — eine Datei, die
 nicht mehr mitkopiert wird.
 
-Der **vollständige** Durchlauf (installieren, Python und Qt laden, starten)
-lädt ~120 MB und dauert Minuten; er läuft nur mit ``K1520_PACKAGING_FULL=1``:
+Der **vollstaendige** Durchlauf (installieren, Python und Qt laden, starten)
+laedt ~120 MB und dauert Minuten; er laeuft nur mit ``K1520_PACKAGING_FULL=1``:
 
     K1520_PACKAGING_FULL=1 venv/bin/python3 -m pytest tests/python/test_packaging.py
 
@@ -39,7 +39,7 @@ def _sh(*args, **kw):
 
 
 def _slim():
-    """``packaging/slim.py`` als Modul laden (es liegt außerhalb des Pakets)."""
+    """``packaging/slim.py`` als Modul laden (es liegt ausserhalb des Pakets)."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("slim", PACKAGING / "slim.py")
     modul = importlib.util.module_from_spec(spec)
@@ -47,12 +47,12 @@ def _slim():
     return modul
 
 
-#: ``packaging/install.sh`` ist der **Unix**-Installer.  Unter Windows läuft er
+#: ``packaging/install.sh`` ist der **Unix**-Installer.  Unter Windows laeuft er
 #: zwar in der Git-Bash, bekommt aber Windows-Pfade herein, die MSYS als
-#: ``/c/Users/…`` zurückgibt und relativ zum Arbeitsverzeichnis auflöst — das
-#: Ergebnis ist ``D:/a/repo/C:\Users\…`` und prüft nichts.  Windows bekommt
+#: ``/c/Users/…`` zurueckgibt und relativ zum Arbeitsverzeichnis aufloest — das
+#: Ergebnis ist ``D:/a/repo/C:\Users\…`` und prueft nichts.  Windows bekommt
 #: seinen eigenen Weg (``packaging/k1520emu.iss``, der Assistent installiert
-#: selbst); hier laufen dann nur die Fälle, die die Skripte *lesen*.
+#: selbst); hier laufen dann nur die Faelle, die die Skripte *lesen*.
 nur_unix_installer = pytest.mark.skipif(
     sys.platform.startswith("win"),
     reason="Unix-Installer — Windows installiert über k1520emu.iss")
@@ -68,7 +68,7 @@ nur_elf = pytest.mark.skipif(
 
 @pytest.mark.parametrize("script", SCRIPTS)
 def test_skript_ist_syntaktisch_gueltig(script):
-    """`sh -n` über jedes Skript — Bourne-Syntax, keine Bashismen."""
+    """`sh -n` ueber jedes Skript — Bourne-Syntax, keine Bashismen."""
     out = _sh("sh", "-n", str(PACKAGING / script))
     assert out.returncode == 0, out.stderr
 
@@ -103,8 +103,8 @@ def test_disktool_launcher_hat_den_platzhalter():
 def test_starter_haben_ihre_platzhalter(starter, einstieg):
     """@ROOT@/@DATEN@ setzt der Installer ein — bleibt einer stehen, startet nichts.
 
-    Beide Starter brauchen BEIDE Platzhalter: @DATEN@ trägt die abweichende Wahl
-    des Anwenders (K1520_DATA).  Fehlte er im Diskettenwerkzeug, öffnete dessen
+    Beide Starter brauchen BEIDE Platzhalter: @DATEN@ traegt die abweichende Wahl
+    des Anwenders (K1520_DATA).  Fehlte er im Diskettenwerkzeug, oeffnete dessen
     Dateidialog woanders, als der Emulator seine Disketten ablegt.
     """
     text = (PACKAGING / starter).read_text(encoding="utf-8")
@@ -122,7 +122,7 @@ def test_launcher_wechselt_ins_datenverzeichnis():
 
 
 def test_uv_pins_vollstaendig():
-    """Version und je eine Prüfsumme für alle Zielplattformen des Entwurfs."""
+    """Version und je eine Pruefsumme fuer alle Zielplattformen des Entwurfs."""
     zeilen = [z.split() for z in (PACKAGING / "uv_pins.txt").read_text(encoding="utf-8").splitlines()
               if z.strip() and not z.startswith("#")]
     pins = {z[0]: z[1] for z in zeilen if len(z) == 2}
@@ -135,7 +135,7 @@ def test_uv_pins_vollstaendig():
 
 
 def test_lock_nagelt_mit_hashes_fest():
-    """Der Installer installiert mit --require-hashes — ohne Hashes schlüge das fehl."""
+    """Der Installer installiert mit --require-hashes — ohne Hashes schluege das fehl."""
     lock = (PACKAGING / "requirements.lock").read_text(encoding="utf-8")
     assert "--hash=sha256:" in lock
     assert "pyside6-essentials==" in lock.lower(), "Qt-Vollausbau statt Essentials?"
@@ -148,6 +148,7 @@ def test_lock_nagelt_mit_hashes_fest():
     ("prg710emu.desktop.in", "prg710emu"),
     ("pc1715emu.desktop.in", "pc1715emu"),
     ("p8000emu.desktop.in", "p8000emu"),
+    ("mc80emu.desktop.in", "mc80emu"),
     ("k1520disktool.desktop.in", "k1520disktool"),
 ])
 def test_desktop_eintrag_ist_gueltig(datei, starter):
@@ -250,10 +251,41 @@ def test_die_p8000_programme_sind_in_allen_paketwegen():
         assert f"default_config_{maschine}.yaml" in bp
         assert (PROJECT_ROOT / "data" / p.vorgabe_datei).is_file()
     assert '#define Programm5 "P8000 Emulator"' in iss
-    assert "Programm6" not in iss and "p8000term" not in iss      # P23a: eine GUI
+    assert "p8000term" not in iss      # P23a: eine GUI (Programm6 ist seit M6 der MC80)
     # Zur Laufzeit wird nichts aus doc/ gebraucht: ROM-, Zeichensatz- und
     # Firmwaredaten sind einkompiliert bzw. liegen unter app/.
     assert "k1520_create(nr)" in text or "k1520_create(_nr)" in text
+
+
+def test_der_mc80_emulator_ist_in_allen_paketwegen():
+    """AP M6 (Entwurf 31): sechster Starter aus DERSELBEN Vorlage; der Name waehlt das
+    Profil.  Beide Richtungen wie beim P8000: was die Pakete kennen, kennt das Profil."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from app import profil as _profil
+    text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
+    bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
+    iss = (PACKAGING / "k1520emu.iss").read_text(encoding="utf-8")
+    cmd = (PACKAGING / "launcher.cmd").read_text(encoding="utf-8")
+    sh = (PACKAGING / "launcher.sh").read_text(encoding="utf-8")
+    assert re.search(r'^MASCHINEN="[^"]*\bmc80emu\b', text, re.M), \
+        "ohne Eintrag in MASCHINEN bleibt der Starter beim Deinstallieren liegen"
+    assert '> "$PREFIX/bin/mc80emu"' in text and "mc80emu.desktop.in" in text
+    assert '"$SELF_DIR/mc80emu.desktop.in"' in bp and "default_config_mc80.yaml" in bp
+    desk = (PACKAGING / "mc80emu.desktop.in").read_text(encoding="utf-8")
+    assert "Name=MC80 Emulator\n" in desk
+    assert '#define Programm6 "MC80 Emulator"' in iss
+    eintrag = iss[iss.index('Name: "{group}\\{#Programm6}"'):]
+    eintrag = eintrag[:eintrag.index("\nName:")]
+    assert "--machine mc80" in eintrag and "a5120emu.ico" in eintrag
+    assert "bin\\mc80emu.cmd" in iss
+    assert '"%~n0"=="mc80emu"' in cmd and "--machine mc80" in cmd
+    assert "mc80emu*)" in sh and "--machine mc80" in sh
+    p = _profil.profil("mc80")
+    assert p.programm == "mc80emu" and p.titel == "MC80 Emulator"
+    assert (PROJECT_ROOT / "data" / p.vorgabe_datei).is_file()
+    # Keine Laufwerke: die Vorgabe traegt weder Disketten noch eine Laufwerksbestueckung.
+    vorgabe = (PROJECT_ROOT / "data" / p.vorgabe_datei).read_text(encoding="utf-8")
+    assert not re.search(r"^(disks|drive_types):", vorgabe, re.M)
 
 
 def test_pc1715_disketten_sind_in_der_vorgabeauswahl():
@@ -301,12 +333,14 @@ def test_rauchtests_pruefen_beide_maschinen():
         assert '(1, "PRG710")' in text, name
         assert '(3, "PC1715")' in text, name
         assert '(4, "P8000")' in text and '(5, "P8000-Terminal")' in text, name
+        assert '(6, "MC80")' in text, name
         assert "k1520_destroy" in text, name
     # release.yml hat zwei Rauchtests (Linux, Windows): beide.
     assert quellen["release.yml"].count('(2, "K8915")') == 2
     assert quellen["release.yml"].count('(1, "PRG710")') == 2
     assert quellen["release.yml"].count('(3, "PC1715")') == 2
     assert quellen["release.yml"].count('(4, "P8000")') == 2
+    assert quellen["release.yml"].count('(6, "MC80")') == 2
     # Installer und Setup bauen auch das Fenster des zweiten Profils.
     assert 'profil("k8915")' in quellen["install.sh"]
     assert 'profil("k8915")' in quellen["k1520emu.iss"]
@@ -314,15 +348,15 @@ def test_rauchtests_pruefen_beide_maschinen():
     assert 'profil("prg710")' in quellen["k1520emu.iss"]
     assert 'profil("pc1715")' in quellen["install.sh"]
     assert 'profil("pc1715")' in quellen["k1520emu.iss"]
-    for programm in ("p8000",):
+    for programm in ("p8000", "mc80"):
         assert f'profil("{programm}")' in quellen["install.sh"]
         assert f'profil("{programm}")' in quellen["k1520emu.iss"]
 
 
 def test_k8915_systemdiskette_ist_in_der_vorgabeauswahl():
     """16_k8915.md §6.23, Entscheid des Anwenders 2026-10-01: die Systemdiskette
-    901 (``k8915_scpx8915_v24_system.hfe``) gehört zur Vorgabeauswahl — ohne sie startet der
-    K8915 Emulator einer frischen Installation ins Leere.  Sie trägt auch
+    901 (``k8915_scpx8915_v24_system.hfe``) gehoert zur Vorgabeauswahl — ohne sie startet der
+    K8915 Emulator einer frischen Installation ins Leere.  Sie traegt auch
     SERTEST.COM (Entwurf 19 §14)."""
     text = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     block = text[text.index('DISKS_DEFAULT="'):]
@@ -364,9 +398,10 @@ def test_launcher_cmd_waehlt_die_maschine_am_dateinamen():
     ("prg710emu", ["--machine", "prg710"]),
     ("pc1715emu", ["--machine", "pc1715"]),
     ("p8000emu", ["--machine", "p8000"]),
+    ("mc80emu", ["--machine", "mc80"]),
 ])
 def test_launcher_sh_waehlt_die_maschine_am_namen(tmp_path, name, erwartet):
-    """EINE Vorlage, zwei Starter: der Name entscheidet über das Profil."""
+    """EINE Vorlage, zwei Starter: der Name entscheidet ueber das Profil."""
     wurzel = tmp_path / "inst"
     (wurzel / "venv" / "bin").mkdir(parents=True)
     py = wurzel / "venv" / "bin" / "python3"
@@ -405,7 +440,7 @@ def test_abs_path_loest_tilde_auf(eingabe, erwartet, tmp_path):
 
 @pytest.mark.parametrize("wurzel", [
     "/opt/a5120emu",
-    "/home/anna/Emulator Test",          # Leerzeichen — seit der Zielabfrage üblich
+    "/home/anna/Emulator Test",          # Leerzeichen — seit der Zielabfrage ueblich
     "/home/anna/a&b|c",                  # Sonderzeichen, an denen `sed` zerbrach
 ])
 def test_ersetze_platzhalter_vertraegt_jeden_pfad(tmp_path, wurzel):
@@ -425,9 +460,9 @@ def test_ersetze_platzhalter_vertraegt_jeden_pfad(tmp_path, wurzel):
 def test_ersetze_platzhalter_traegt_den_datenordner_ein(tmp_path, daten, erwartet):
     """@DATEN@ bleibt LEER, wenn der Anwender die Vorgabe genommen hat.
 
-    Der Starter setzt ``K1520_DATA`` dann gar nicht, und ``app/paths.py`` löst
-    den Dokumentenordner weiter zur Laufzeit auf — nur so folgt er einem später
-    umbenannten Ordner.  Stünde dort immer ein fester Pfad, wäre genau das weg.
+    Der Starter setzt ``K1520_DATA`` dann gar nicht, und ``app/paths.py`` loest
+    den Dokumentenordner weiter zur Laufzeit auf — nur so folgt er einem spaeter
+    umbenannten Ordner.  Stuende dort immer ein fester Pfad, waere genau das weg.
     """
     vorlage = tmp_path / "vorlage"
     vorlage.write_text('ROOT="@ROOT@"\nK1520_DATA="@DATEN@"\n')
@@ -441,11 +476,11 @@ def test_ersetze_platzhalter_traegt_den_datenordner_ein(tmp_path, daten, erwarte
 @pytest.mark.parametrize("aufbau", ["user-dirs.dirs", "nur ~/Documents", "gar nichts"])
 @nur_unix_installer
 def test_dokumentenordner_shell_und_python_stimmen_ueberein(tmp_path, aufbau):
-    """`--purge` muss dort aufräumen, wo der Emulator schreibt.
+    """`--purge` muss dort aufraeumen, wo der Emulator schreibt.
 
-    Die Regel steht zweimal — in ``lib/common.sh`` für den Installer und in
-    ``app/paths.py`` für den Emulator.  Laufen sie auseinander, löscht das
-    Deinstallieren am Datenverzeichnis vorbei, ohne dass es jemandem auffällt.
+    Die Regel steht zweimal — in ``lib/common.sh`` fuer den Installer und in
+    ``app/paths.py`` fuer den Emulator.  Laufen sie auseinander, loescht das
+    Deinstallieren am Datenverzeichnis vorbei, ohne dass es jemandem auffaellt.
     """
     heim = tmp_path / "heim"
     heim.mkdir()
@@ -494,11 +529,11 @@ def test_desktop_exec_ist_gequotet(datei, starter):
 # ─── slim.py: PE-Importtabelle ───────────────────────────────────────────────
 
 def test_pe_imports_liest_die_importtabelle():
-    """`slim.py` liest DLL-Abhängigkeiten selbst — beim Anwender gibt es kein dumpbin.
+    """`slim.py` liest DLL-Abhaengigkeiten selbst — beim Anwender gibt es kein dumpbin.
 
     `ldd` ist auf jedem Linux da, `dumpbin` auf keinem normalen Windows; slim.py
-    läuft aber genau dort, beim Installieren.  Geprüft wird gegen eine PE-Datei,
-    die es überall gibt, wo es darauf ankommt: den laufenden Python.
+    laeuft aber genau dort, beim Installieren.  Geprueft wird gegen eine PE-Datei,
+    die es ueberall gibt, wo es darauf ankommt: den laufenden Python.
     """
     slim = _slim()
     if sys.platform.startswith("win"):
@@ -512,7 +547,7 @@ def test_pe_imports_liest_die_importtabelle():
 
 
 def test_pe_imports_vertraegt_unsinn(tmp_path):
-    """Kaputte, fremde und fehlende Dateien dürfen nicht werfen.
+    """Kaputte, fremde und fehlende Dateien duerfen nicht werfen.
 
     Wirft es doch, bricht das Schlankmachen mitten in der Installation ab — und
     zwar nachdem schon etwas entfernt wurde.
@@ -532,7 +567,7 @@ def test_slim_windows_kehrt_nur_qt_dlls_aus(tmp_path, monkeypatch):
     Unter Windows ist das Verzeichnis `PySide6/` selbst, und darin stehen
     `QtCore.pyd` (die Bindung, mit der der Kehraus gerade gerechnet hat),
     `opengl32sw.dll` und Python-Dateien.  Ein blindes „weg, was nicht erreichbar
-    ist" löschte genau die.  Deshalb fasst er dort ausschließlich `Qt6*.dll` an.
+    ist" loeschte genau die.  Deshalb fasst er dort ausschliesslich `Qt6*.dll` an.
     """
     slim = _slim()
     monkeypatch.setattr(slim, "IST_WINDOWS", True)
@@ -547,7 +582,7 @@ def test_slim_windows_kehrt_nur_qt_dlls_aus(tmp_path, monkeypatch):
     (ps / "plugins" / "platforms").mkdir(parents=True)
     (ps / "qml").mkdir()
 
-    # „Erreichbar" sind nur die beiden Kern-DLLs — so, als hätte die
+    # „Erreichbar" sind nur die beiden Kern-DLLs — so, als haette die
     # Importtabelle das ergeben.
     behalten = {(ps / "Qt6Core.dll").resolve(), (ps / "Qt6Widgets.dll").resolve()}
     monkeypatch.setattr(slim, "linked_libraries", lambda b, i: behalten)
@@ -570,7 +605,7 @@ def test_slim_windows_kehrt_nur_qt_dlls_aus(tmp_path, monkeypatch):
 def test_slim_findet_cpython_in_BEIDEN_anordnungen(tmp_path):
     """`uv` legt Python in ein versioniertes Unterverzeichnis, das Setup nicht.
 
-    Der Kehraus lief bis 2026-08-14 nur über `<root>/python/*/` — die Anordnung,
+    Der Kehraus lief bis 2026-08-14 nur ueber `<root>/python/*/` — die Anordnung,
     die `uv python install` erzeugt.  Der Windows-Assistent packt den Baum
     direkt nach `<root>/python/`; dort traf dann KEIN Muster mehr, und Tcl/Tk,
     IDLE, ensurepip, die Header und ein zweites pip blieben stehen: 163 statt
@@ -656,10 +691,10 @@ def test_slim_findet_site_packages_beider_plattformen(tmp_path):
 
 
 def test_release_notizen_nennen_jede_ausgelieferte_datei():
-    """Die Release-Beschreibung muss die Dateien erklären, die auch entstehen.
+    """Die Release-Beschreibung muss die Dateien erklaeren, die auch entstehen.
 
     Ohne sie steht am Release nur „Full Changelog", und ein Anwender sieht drei
-    Dateien ohne Hinweis, welche er braucht.  Läuft die Vorlage von den echten
+    Dateien ohne Hinweis, welche er braucht.  Laeuft die Vorlage von den echten
     Namen weg — etwa wenn `build_payload.sh` das Archiv anders benennt —, ist
     das schlimmer als gar kein Text: sie beschriebe dann Dateien, die es nicht
     gibt.
@@ -668,16 +703,16 @@ def test_release_notizen_nennen_jede_ausgelieferte_datei():
     for muster in ("K1520emu-@VERSION@-win-x64-setup.exe",
                    "k1520emu-@TAG@-linux-x86_64.tar.gz"):
         assert muster in vorlage, f"{muster} fehlt in der Release-Beschreibung"
-    # Ein Verweis auf die Projektseite gehört dazu — das Release ist für viele
+    # Ein Verweis auf die Projektseite gehoert dazu — das Release ist fuer viele
     # der erste Kontakt mit dem Projekt.
     assert "github.com/olliy78/k1520emu" in vorlage
     assert vorlage.lstrip().startswith("# "), "keine Überschrift"
 
 
 def test_release_notizen_passen_zu_den_erzeugten_dateinamen():
-    """Die Namen in der Vorlage müssen die sein, die build_payload.sh bildet.
+    """Die Namen in der Vorlage muessen die sein, die build_payload.sh bildet.
 
-    Dort heißt das Archiv `k1520emu-<version>-<plattform>` und das Setup
+    Dort heisst das Archiv `k1520emu-<version>-<plattform>` und das Setup
     `K1520emu-<version>-win-x64-setup` (aus der .iss).  Zwei Schreibweisen, und
     genau deshalb leicht zu verwechseln.
     """
@@ -691,8 +726,8 @@ def test_release_notizen_passen_zu_den_erzeugten_dateinamen():
 def test_cmd_starter_sind_reines_ascii():
     """`cmd.exe` liest Batchdateien in der OEM-Codepage (850/437), nicht UTF-8.
 
-    Ein Gedankenstrich im Kommentar käme dort als Kauderwelsch heraus — und
-    stünde damit ausgerechnet in der Fehlermeldung, die ein Anwender zu sehen
+    Ein Gedankenstrich im Kommentar kaeme dort als Kauderwelsch heraus — und
+    stuende damit ausgerechnet in der Fehlermeldung, die ein Anwender zu sehen
     bekommt, wenn etwas schiefgeht.
     """
     for name in ("launcher.cmd", "disktool_launcher.cmd"):
@@ -707,7 +742,7 @@ def test_iss_kommentare_enthalten_keine_geschweifte_klammer():
 
     Ein Inno-Platzhalter wie ``app`` in geschweiften Klammern beendet deshalb
     mitten im Kommentar den Kommentar, und der Rest der Zeile wird Code —
-    „Syntax error", einen CI-Lauf später.  Am 2026-08-12 genau so passiert,
+    „Syntax error", einen CI-Lauf spaeter.  Am 2026-08-12 genau so passiert,
     einen Lauf nach dem Abschnittskopf-Fehler unten.
     """
     # Nur der Code-Abschnitt: davor ist eine geschweifte Klammer ein ganz
@@ -744,11 +779,11 @@ def test_iss_kommentare_enthalten_keine_geschweifte_klammer():
 
 
 def test_iss_hat_keine_versehentlichen_abschnittskoepfe():
-    """In einer `.iss` ist jede Zeile mit führendem `[` ein ABSCHNITTSKOPF.
+    """In einer `.iss` ist jede Zeile mit fuehrendem `[` ein ABSCHNITTSKOPF.
 
-    Auch mitten in einem Pascal-Kommentar: ein umgebrochener Satz, der zufällig
+    Auch mitten in einem Pascal-Kommentar: ein umgebrochener Satz, der zufaellig
     mit ``[Run]`` beginnt, bricht den Bau mit „Invalid section tag" ab — genau so
-    am 2026-08-12 passiert.  Der Fehler kostet einen ganzen CI-Lauf, die Prüfung
+    am 2026-08-12 passiert.  Der Fehler kostet einen ganzen CI-Lauf, die Pruefung
     hier kostet nichts.
     """
     erlaubt = {"[Setup]", "[Languages]", "[Files]", "[Icons]", "[Run]",
@@ -761,9 +796,9 @@ def test_iss_hat_keine_versehentlichen_abschnittskoepfe():
                 f"k1520emu.iss:{nr} beginnt mit '[' und ist kein Abschnittskopf: "
                 f"{zeile.strip()!r}")
 
-#: Namen, die unter MSVC die SUCHPFADE von Übersetzer und Binder sind.  Ein
-#: Shell-Skript, das sie als eigene Variable benutzt, überschreibt sie für jedes
-#: Kindprogramm — unter Linux folgenlos, unter Windows tödlich.
+#: Namen, die unter MSVC die SUCHPFADE von Uebersetzer und Binder sind.  Ein
+#: Shell-Skript, das sie als eigene Variable benutzt, ueberschreibt sie fuer jedes
+#: Kindprogramm — unter Linux folgenlos, unter Windows toedlich.
 MSVC_NAMEN = ("LIB", "INCLUDE", "LIBPATH", "CL", "LINK", "PATH")
 
 
@@ -772,9 +807,9 @@ def test_kein_skript_ueberschreibt_msvc_suchpfade(script):
     """`LIB=$(core_lib_name)` hat am 2026-08-12 den Windows-Paketbau zerlegt.
 
     `link.exe` suchte `kernel32.lib` danach in einem „Verzeichnis" namens
-    `k1520core.dll` und meldete `LNK1104` — mitten im Übersetzertest von cmake,
+    `k1520core.dll` und meldete `LNK1104` — mitten im Uebersetzertest von cmake,
     also lange bevor eine Zeile eigener Code dran war.  Unter Linux bedeutet
-    `LIB` nichts, deshalb fiel es dort nie auf.  Diese Prüfung ist billiger als
+    `LIB` nichts, deshalb fiel es dort nie auf.  Diese Pruefung ist billiger als
     die Stunde Eingrenzung, die es gekostet hat.
     """
     text = (PACKAGING / script).read_text(encoding="utf-8")
@@ -787,10 +822,10 @@ def test_kein_skript_ueberschreibt_msvc_suchpfade(script):
 # ─── Windows-Installationsprogramm (k1520emu.iss) ────────────────────────────
 #
 # Seit 2026-08-14 installiert der Assistent SELBST — kein install.ps1 mehr, kein
-# PowerShell im Installationsweg (Kopf der .iss).  Ausführen lässt sich eine
-# .iss hier nicht; geprüft wird deshalb, dass die Eigenschaften, an denen der
-# Weg hängt, im Text noch stehen.  Der wirkliche Lauf steckt in
-# .github/workflows/windows-ci.yml (Auslöser `paket=true`).
+# PowerShell im Installationsweg (Kopf der .iss).  Ausfuehren laesst sich eine
+# .iss hier nicht; geprueft wird deshalb, dass die Eigenschaften, an denen der
+# Weg haengt, im Text noch stehen.  Der wirkliche Lauf steckt in
+# .github/workflows/windows-ci.yml (Ausloeser `paket=true`).
 
 ISS = PACKAGING / "k1520emu.iss"
 PY_PINS = PACKAGING / "python_pins.txt"
@@ -809,14 +844,14 @@ def _iss_code() -> str:
 def test_iss_ruft_kein_powershell():
     """Der ganze Punkt des Umbaus: der Installationsweg kommt ohne PowerShell aus.
 
-    Auf dem Testgerät am 2026-08-14 war das Skript zweimal im Weg — als
-    schwarzes Fenster ohne Rückmeldung und als „Ausführung von Skripts ist auf
-    diesem System deaktiviert".  Wer hier wieder ein `powershell.exe` einträgt,
-    holt sich beides zurück.
+    Auf dem Testgeraet am 2026-08-14 war das Skript zweimal im Weg — als
+    schwarzes Fenster ohne Rueckmeldung und als „Ausfuehrung von Skripts ist auf
+    diesem System deaktiviert".  Wer hier wieder ein `powershell.exe` eintraegt,
+    holt sich beides zurueck.
     """
-    # Kommentare zählen nicht — dort steht PowerShell als BEGRÜNDUNG, warum es
-    # weg ist.  Beide Arten müssen raus: `;` (Inno) und geschweifte Klammern
-    # (Pascal), Letztere auch über mehrere Zeilen.
+    # Kommentare zaehlen nicht — dort steht PowerShell als BEGRUENDUNG, warum es
+    # weg ist.  Beide Arten muessen raus: `;` (Inno) und geschweifte Klammern
+    # (Pascal), Letztere auch ueber mehrere Zeilen.
     ohne_kommentar = [z for z in _iss().splitlines() if not z.lstrip().startswith(";")]
     text = re.sub(r"\{[^}]*\}", " ", "\n".join(ohne_kommentar)).lower()
     for wort in ("powershell", "pwsh"):
@@ -832,11 +867,11 @@ def test_iss_ruft_kein_powershell():
 
 
 def test_iss_laedt_und_richtet_ein_bevor_kopiert_wird():
-    """Fehlschlag = nichts installiert.  Das hängt am ZEITPUNKT.
+    """Fehlschlag = nichts installiert.  Das haengt am ZEITPUNKT.
 
-    Eine Ausnahme in `ssPostInstall` räumt NICHTS zurück: der Probelauf am
-    2026-08-14 hinterließ eine halbe Installation samt drei
-    Startmenü-Einträgen, die ins Leere zeigten.  Das Nachladen gehört deshalb
+    Eine Ausnahme in `ssPostInstall` raeumt NICHTS zurueck: der Probelauf am
+    2026-08-14 hinterliess eine halbe Installation samt drei
+    Startmenue-Eintraegen, die ins Leere zeigten.  Das Nachladen gehoert deshalb
     in `PrepareToInstall` — davor ist keine Datei kopiert, kein Symbol angelegt,
     kein Deinstallierer eingetragen.
     """
@@ -854,7 +889,7 @@ def test_iss_laedt_und_richtet_ein_bevor_kopiert_wird():
 
 
 def test_iss_raeumt_auf_wenn_das_nachladen_scheitert():
-    """Nach einem Fehlschlag soll kein 150-MB-Bruchstück beim Anwender bleiben."""
+    """Nach einem Fehlschlag soll kein 150-MB-Bruchstueck beim Anwender bleiben."""
     code = _iss_code()
     vorbereiten = code[code.index("function PrepareToInstall"):]
     vorbereiten = vorbereiten[:vorbereiten.index("procedure VorlageSchreiben")]
@@ -864,11 +899,11 @@ def test_iss_raeumt_auf_wenn_das_nachladen_scheitert():
 
 
 def test_iss_entfernt_verknuepfungen_wenn_der_rauchtest_scheitert():
-    """Eine Verknüpfung, die ins Leere zeigt, ist schlimmer als gar keine.
+    """Eine Verknuepfung, die ins Leere zeigt, ist schlimmer als gar keine.
 
     Der Rauchtest ist der einzige Schritt, der nach dem Kopieren laufen MUSS
-    (er braucht die Payload) — dort gibt es keine Rücknahme mehr, also wird
-    wenigstens das Startmenü geräumt.
+    (er braucht die Payload) — dort gibt es keine Ruecknahme mehr, also wird
+    wenigstens das Startmenue geraeumt.
     """
     code = _iss_code()
     assert "procedure VerknuepfungenEntfernen" in code
@@ -880,7 +915,7 @@ def test_iss_holt_frueh_gebrauchte_dateien_mit_dontcopy():
     """`DestDir: <tmp>` liegt erst NACH PrepareToInstall da — dontcopy nicht.
 
     Der Abschnitt mit den Dateien wird beim Kopieren abgearbeitet; wer eine
-    Datei schon im Bootstrap braucht (requirements.lock für pip, slim.py, die
+    Datei schon im Bootstrap braucht (requirements.lock fuer pip, slim.py, die
     Startervorlagen), muss sie mit `dontcopy` einpacken und mit
     ExtractTemporaryFile holen.  Sonst fehlt sie genau dann, wenn sie gebraucht
     wird.
@@ -901,15 +936,15 @@ def test_iss_deinstalliert_was_der_bootstrap_anlegt():
 
     `python\\` und `venv\\` entstehen im Bootstrap, `bin\\` bekommt die
     geschriebenen Starter, und die Protokolle entstehen beim ersten Start.  Ohne
-    diese Einträge bleiben nach dem Deinstallieren ~150 MB liegen.
+    diese Eintraege bleiben nach dem Deinstallieren ~150 MB liegen.
     """
     text = _iss()
     abschnitt = text[text.index("[UninstallDelete]"):text.index("[Code]")]
     for pfad in ("{app}\\python", "{app}\\venv", "{app}\\bin", "{app}\\logs",
                  "{app}\\bootstrap.log", "{app}\\.k1520emu-installation"):
         assert f'Name: "{pfad}"' in abschnitt, f"{pfad} bleibt beim Deinstallieren liegen"
-    # Und der Riegel: das Ziel ist im Assistenten änderbar, dort kann Fremdes
-    # liegen.  Ein pauschales Löschen der Wurzel nähme es mit.
+    # Und der Riegel: das Ziel ist im Assistenten aenderbar, dort kann Fremdes
+    # liegen.  Ein pauschales Loeschen der Wurzel naehme es mit.
     assert 'Type: filesandordirs; Name: "{app}"' not in abschnitt, (
         "die Wurzel darf nicht pauschal gelöscht werden — sie ist im Assistenten wählbar")
     assert 'Type: dirifempty;     Name: "{app}"' in abschnitt
@@ -918,7 +953,7 @@ def test_iss_deinstalliert_was_der_bootstrap_anlegt():
 def test_iss_fragt_denselben_dokumentenordner_wie_python():
     """`<userdocs>` ist die Known-Folder-API — dieselbe Quelle wie app/paths.py.
 
-    Ein fest verdrahtetes `<userprofile>\\Documents` läge bei nach OneDrive
+    Ein fest verdrahtetes `<userprofile>\\Documents` laege bei nach OneDrive
     umgeleitetem Ordner daneben, und der Emulator schriebe woandershin, als der
     Assistent angeboten hat.
     """
@@ -928,11 +963,11 @@ def test_iss_fragt_denselben_dokumentenordner_wie_python():
 
 
 def test_python_pins_sind_vollstaendig_und_passen_zur_wheel_fassung():
-    """Der Assistent lädt Python selbst — Fassung, Größe und Prüfsumme reisen mit.
+    """Der Assistent laedt Python selbst — Fassung, Groesse und Pruefsumme reisen mit.
 
     Die Nebenversion MUSS zu den Wheels aus requirements.lock passen; sonst
-    findet pip nichts Passendes.  `build_payload.sh` prüft dasselbe beim Bauen,
-    aber erst auf dem Windows-Läufer — hier fällt es sofort auf.
+    findet pip nichts Passendes.  `build_payload.sh` prueft dasselbe beim Bauen,
+    aber erst auf dem Windows-Laeufer — hier faellt es sofort auf.
     """
     text = PY_PINS.read_text(encoding="utf-8")
     version = re.search(r"^version\s+(\S+)", text, re.M).group(1)
@@ -949,17 +984,17 @@ def test_python_pins_sind_vollstaendig_und_passen_zur_wheel_fassung():
 
 
 def test_iss_baut_die_adresse_aus_den_pins():
-    """Die Adresse darf NICHT über die Kommandozeile kommen.
+    """Die Adresse darf NICHT ueber die Kommandozeile kommen.
 
     Die MSYS-Shell, mit der gebaut wird, rechnet Argumente, die wie Pfade
-    aussehen, in Windows-Pfade um — aus `https://…` würde `https:\…`.  Die .iss
+    aussehen, in Windows-Pfade um — aus `https://…` wuerde `https:\…`.  Die .iss
     setzt sie deshalb selbst zusammen und bekommt nur Fassung und Release.
     """
     text = _iss()
     assert "#define PyUrl" in text
     assert "python-build-standalone/releases/download/" in text
     # `_stripped`: ohne die Fehlersuchdateien.  Mit ihnen belegt die Installation
-    # 245 statt ~120 MB — der Größenwächter der CI hat das gefangen (2026-08-14).
+    # 245 statt ~120 MB — der Groessenwaechter der CI hat das gefangen (2026-08-14).
     assert "-x86_64-pc-windows-msvc-install_only_stripped.tar.gz" in text
     for pflicht in ("PyVersion", "PyRelease", "PySha256", "PySize"):
         assert f"#ifndef {pflicht}" in text, f"{pflicht} ist nicht als Pflichtangabe abgesichert"
@@ -987,7 +1022,7 @@ def test_windows_starter_haben_ihre_platzhalter(starter, einstieg):
 def test_iss_laesst_den_ort_waehlen_statt_ihn_zu_verstecken():
     """`%LOCALAPPDATA%\\K1520emu` war der falsche Ort — versteckt und ungewohnt.
 
-    Wer die Rechte hat, soll nach „Programme" installieren können; wer nicht,
+    Wer die Rechte hat, soll nach „Programme" installieren koennen; wer nicht,
     bekommt `%LOCALAPPDATA%\\Programs` — den Ort, den sich per-user-Installationen
     unter Windows teilen. Beides leistet `{autopf}`, sobald der Assistent nach
     der Betriebsart fragen darf.
@@ -1004,10 +1039,10 @@ def test_iss_laesst_den_ort_waehlen_statt_ihn_zu_verstecken():
 
 
 def test_iss_sagt_vorher_was_geladen_wird_und_was_unberuehrt_bleibt():
-    """Zwei Dinge muss der Anwender wissen, BEVOR er auf „Weiter" drückt.
+    """Zwei Dinge muss der Anwender wissen, BEVOR er auf „Weiter" drueckt.
 
     Dass mitten in der Installation ~120 MB aus dem Netz kommen (sonst sieht
-    ein minutenlanger Balken wie ein hängendes Setup aus), und dass nichts
+    ein minutenlanger Balken wie ein haengendes Setup aus), und dass nichts
     ausserhalb des Installationsordners angefasst wird — die Frage stellt sich
     jeder bei einem unbekannten Programm.  Beides steht auf einer eigenen Seite
     und noch einmal in der Zusammenfassung vor dem Zugriff.
@@ -1024,8 +1059,8 @@ def test_iss_sagt_vorher_was_geladen_wird_und_was_unberuehrt_bleibt():
 def test_iss_raeumt_die_hinterlassenschaft_des_alten_installers_weg():
     """Bis 2026-08-14 lag `install.ps1` im Zielverzeichnis.
 
-    Wer darüber hinweg aktualisiert, soll die Datei nicht behalten — sie ist
-    dann das einzige Überbleibsel eines Weges, den es nicht mehr gibt.
+    Wer darueber hinweg aktualisiert, soll die Datei nicht behalten — sie ist
+    dann das einzige Ueberbleibsel eines Weges, den es nicht mehr gibt.
     """
     iss = _iss()
     abschnitt = iss[iss.index("[UninstallDelete]"):iss.index("[Code]")]
@@ -1033,12 +1068,12 @@ def test_iss_raeumt_die_hinterlassenschaft_des_alten_installers_weg():
 
 
 def test_windows_symbol_ist_eine_echte_ico_mit_mehreren_groessen():
-    """Das Startmenü braucht ein `.ico`, und darin mehrere Auflösungen.
+    """Das Startmenue braucht ein `.ico`, und darin mehrere Aufloesungen.
 
-    Die Verknüpfung zeigt auf `pythonw.exe` — ohne eigenes Symbol steht dort das
-    Python-Symbol.  Und liegt nur EINE Größe in der Datei, rechnet der Explorer
-    sie für die Titelleiste herunter; das sieht man.  Erzeugt wird sie aus dem
-    SVG mit `tools/svg_to_ico.py`; sie ist eingecheckt, weil der Windows-Läufer
+    Die Verknuepfung zeigt auf `pythonw.exe` — ohne eigenes Symbol steht dort das
+    Python-Symbol.  Und liegt nur EINE Groesse in der Datei, rechnet der Explorer
+    sie fuer die Titelleiste herunter; das sieht man.  Erzeugt wird sie aus dem
+    SVG mit `tools/svg_to_ico.py`; sie ist eingecheckt, weil der Windows-Laeufer
     kein Qt hat.
     """
     ico = PACKAGING / "icon.ico"
@@ -1057,7 +1092,7 @@ def test_windows_symbol_ist_eine_echte_ico_mit_mehreren_groessen():
 
 
 def test_iss_und_paket_kennen_das_symbol():
-    """Vier Stellen brauchen es — eine vergessene fällt sonst erst beim Anwender auf."""
+    """Vier Stellen brauchen es — eine vergessene faellt sonst erst beim Anwender auf."""
     iss = _iss()
     assert "SetupIconFile=" in iss, "das Setup selbst hat kein Symbol"
     assert "UninstallDisplayIcon={app}\\share\\icons\\a5120emu.ico" in iss, \
@@ -1084,9 +1119,9 @@ def test_windows_starter_nennen_kein_verschwundenes_skript():
 
 # ─── Schutz des Zielverzeichnisses ───────────────────────────────────────────
 #
-# `--uninstall` löscht sein Ziel mit `rm -rf`.  Seit das Ziel ERFRAGT wird, ist
+# `--uninstall` loescht sein Ziel mit `rm -rf`.  Seit das Ziel ERFRAGT wird, ist
 # ein Tippfehler („~") eine Katastrophe — diese Tests halten beide Riegel fest.
-# Sie brauchen kein Netz: der Installer prüft, bevor er irgendetwas tut.
+# Sie brauchen kein Netz: der Installer prueft, bevor er irgendetwas tut.
 
 def _install_sh(prefix, heim, *extra):
     umgebung = {k: v for k, v in os.environ.items()
@@ -1121,7 +1156,7 @@ def test_installer_verweigert_fremdes_verzeichnis(tmp_path):
 
 
 def _fake_installation(wurzel: Path, inventar=("bin", "app", "share", "venv")) -> Path:
-    """Baut nach, was der Installer hinterlässt — samt Ausweis mit Inventar."""
+    """Baut nach, was der Installer hinterlaesst — samt Ausweis mit Inventar."""
     wurzel.mkdir(parents=True, exist_ok=True)
     for eintrag in inventar:
         (wurzel / eintrag).mkdir()
@@ -1138,8 +1173,8 @@ def test_deinstallieren_laesst_eigene_dateien_stehen(tmp_path):
     """Entfernt wird das Inventar des Ausweises — nicht das Verzeichnis.
 
     Wer seine eigenen Disketten oder Notizen neben den Emulator legt, soll sie
-    nach dem Deinstallieren wiederfinden.  Ein `rm -rf` auf die Wurzel wäre
-    einfacher und nähme alles mit.
+    nach dem Deinstallieren wiederfinden.  Ein `rm -rf` auf die Wurzel waere
+    einfacher und naehme alles mit.
     """
     heim = tmp_path / "heim"
     heim.mkdir()
@@ -1191,12 +1226,12 @@ def test_deinstallieren_folgt_keinem_pfad_im_ausweis(tmp_path):
     out = _install_sh(wurzel, heim, "--uninstall")
     assert out.returncode == 0, out.stderr
     assert (daneben / "unbeteiligt.txt").exists(), "Ausweis führte aus der Installation heraus"
-    assert "fragwürdiger Eintrag" in out.stdout + out.stderr
+    assert "fragwuerdiger Eintrag" in out.stdout + out.stderr
 
 
 @nur_unix_installer
 def test_deinstallieren_findet_die_installation_ueber_den_starter(tmp_path):
-    """Ohne --prefix verrät der Starter in ~/.local/bin die Wurzel."""
+    """Ohne --prefix verraet der Starter in ~/.local/bin die Wurzel."""
     heim = tmp_path / "heim"
     (heim / ".local" / "bin").mkdir(parents=True)
     wurzel = _fake_installation(tmp_path / "woanders" / "K1520emu")
@@ -1215,7 +1250,7 @@ def test_deinstallieren_findet_die_installation_ueber_den_starter(tmp_path):
 
 @nur_unix_installer
 def test_deinstallieren_loescht_nur_eine_installation(tmp_path):
-    """Ohne Ausweis wird nichts gelöscht — auch nicht, wenn der Starter dorthin zeigt."""
+    """Ohne Ausweis wird nichts geloescht — auch nicht, wenn der Starter dorthin zeigt."""
     heim = tmp_path / "heim"
     heim.mkdir()
     fremd = tmp_path / "Dokumente"
@@ -1236,8 +1271,8 @@ def test_slim_ist_gueltiges_python():
 def test_slim_liest_ldd_auch_bei_leerzeichen_im_pfad(tmp_path, monkeypatch):
     """Abgetrennt wird die Ladeadresse am Ende, nicht am ersten Leerzeichen.
 
-    Am ersten Leerzeichen geschnitten blieb die Hülle leer, der
-    Sicherheitsrückfall griff — und die Installation behielt ganz Qt (223 statt
+    Am ersten Leerzeichen geschnitten blieb die Huelle leer, der
+    Sicherheitsrueckfall griff — und die Installation behielt ganz Qt (223 statt
     146 MB), sobald der Anwender „~/Emulator Test" als Ziel angab.
     """
     slim = _slim()
@@ -1260,10 +1295,10 @@ def test_slim_liest_ldd_auch_bei_leerzeichen_im_pfad(tmp_path, monkeypatch):
 @pytest.mark.skipif(not shutil.which("strip"), reason="strip nicht vorhanden")
 @nur_elf   # `strip` fasst ELF an; unter Windows steigt slim_symbole gleich aus
 def test_slim_strippt_bibliotheken_aber_keine_programme(tmp_path, monkeypatch):
-    """`strip` zerstört den Interpreter von python-build-standalone.
+    """`strip` zerstoert den Interpreter von python-build-standalone.
 
     Er meldet „allocated section `.dynstr' not in segment", schreibt trotzdem
-    eine Datei — und die startet nicht mehr.  Das gilt für jede Variante,
+    eine Datei — und die startet nicht mehr.  Das gilt fuer jede Variante,
     ``--strip-debug`` spart dort nicht einmal Platz.  Deshalb werden nur
     gemeinsame Bibliotheken angefasst.
     """
@@ -1288,7 +1323,7 @@ def test_slim_strippt_bibliotheken_aber_keine_programme(tmp_path, monkeypatch):
 
 
 def test_slim_verweigert_fremdes_verzeichnis(tmp_path):
-    """Ohne venv/ ist es keine Installation — slim.py darf dort nichts löschen."""
+    """Ohne venv/ ist es keine Installation — slim.py darf dort nichts loeschen."""
     opfer = tmp_path / "wichtig.txt"
     opfer.write_text("nicht loeschen")
     out = _sh(sys.executable, str(PACKAGING / "slim.py"), str(tmp_path))
@@ -1298,7 +1333,7 @@ def test_slim_verweigert_fremdes_verzeichnis(tmp_path):
 
 
 def test_slim_behaelt_was_die_gui_importiert():
-    """Die Bindungsliste muss decken, was `app/` tatsächlich importiert."""
+    """Die Bindungsliste muss decken, was `app/` tatsaechlich importiert."""
     import re
     quelle = " ".join(p.read_text(encoding="utf-8") for p in (PROJECT_ROOT / "app").rglob("*.py"))
     benutzt = set(re.findall(r"PySide6\.([A-Za-z]+)", quelle))
@@ -1308,15 +1343,15 @@ def test_slim_behaelt_was_die_gui_importiert():
     assert not fehlt, f"slim.py wuerde entfernen, was die GUI importiert: {sorted(fehlt)}"
 
 
-# ─── Payload schnüren ────────────────────────────────────────────────────────
+# ─── Payload schnueren ────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module")
 def payload(tmp_path_factory):
-    """EIN Schnür-Lauf (``build_payload.sh``, Bauversion, Beispieldisketten) für alle Fälle des Moduls.
+    """EIN Schnuer-Lauf (``build_payload.sh``, Bauversion, Beispieldisketten) fuer alle Faelle des Moduls.
 
-    Vorher schnürte jeder der vier Fälle sein eigenes Paket (je ~10 s, vor allem Archiv und
-    gzip der Disketten); sie prüfen alle nur verschiedene Seiten desselben Ergebnisses.
-    Zurück kommt das Ausgabeverzeichnis; das Paket darin heisst ``k1520emu-<Bauversion>-…``.
+    Vorher schnuerte jeder der vier Faelle sein eigenes Paket (je ~10 s, vor allem Archiv und
+    gzip der Disketten); sie pruefen alle nur verschiedene Seiten desselben Ergebnisses.
+    Zurueck kommt das Ausgabeverzeichnis; das Paket darin heisst ``k1520emu-<Bauversion>-…``.
     """
     ziel = tmp_path_factory.mktemp("payload")
     out = _sh("sh", str(PACKAGING / "build_payload.sh"),
@@ -1331,17 +1366,17 @@ def _stage(ziel):
 
 @requires_core
 def test_payload_enthaelt_alles_zum_starten(payload):
-    """Ein vollständiger Schnür-Lauf gegen die gebaute Bibliothek.
+    """Ein vollstaendiger Schnuer-Lauf gegen die gebaute Bibliothek.
 
-    Prüft den Inhalt gegen die Liste dessen, was der Emulator zum Start
-    braucht — fällt eine Datei aus dem Skript, schlägt das hier fehl und nicht
+    Prueft den Inhalt gegen die Liste dessen, was der Emulator zum Start
+    braucht — faellt eine Datei aus dem Skript, schlaegt das hier fehl und nicht
     erst beim Anwender.
     """
     stage = _stage(payload)
     for pflicht in [
         "install.sh", "launcher.sh", "slim.py", "a5120emu.desktop.in",
         "k8915emu.desktop.in", "prg710emu.desktop.in", "pc1715emu.desktop.in", "p8000emu.desktop.in",
-        "uv_pins.txt",
+        "mc80emu.desktop.in", "uv_pins.txt",
         "lib/common.sh", "requirements.lock", "VERSION", "README.md",
         "payload/bin/libk1520core.so",
         "payload/app/main.py", "payload/app/paths.py",
@@ -1356,6 +1391,7 @@ def test_payload_enthaelt_alles_zum_starten(payload):
         "payload/share/k1520emu/default_config_prg710.yaml",
         "payload/share/k1520emu/default_config_pc1715.yaml",
         "payload/share/k1520emu/default_config_p8000.yaml",
+        "payload/share/k1520emu/default_config_mc80.yaml",
         "payload/share/icons/a5120emu.svg",
         # k1520DiskTool: Bibliothek, Kommandozeile, Oberflaeche, Starter.
         # Ohne diese Zeilen laege app/disktool/ zwar im Paket (die ganze app/-
@@ -1379,16 +1415,16 @@ def test_payload_enthaelt_alles_zum_starten(payload):
         namen = tf.getnames()
     assert all(n.startswith(stage.name) for n in namen), \
         "Archiv entpackt ohne gemeinsames Wurzelverzeichnis"
-    # Seit 2026-10-11 bewusst KEINE .sha256 daneben (GitHub zeigt die Prüfsumme der
+    # Seit 2026-10-11 bewusst KEINE .sha256 daneben (GitHub zeigt die Pruefsumme der
     # Release-Assets selbst an).
     assert not list(payload.glob("*.sha256")), "eine .sha256-Datei neben dem Archiv"
 
 
 @requires_core
 def test_beispieldisketten_liegen_gepackt_im_paket(payload):
-    """Abbilder sind zu ~90 % Füllmuster und werden genau einmal gebraucht.
+    """Abbilder sind zu ~90 % Fuellmuster und werden genau einmal gebraucht.
 
-    Ungepackt lägen sie nach dem Erststart doppelt auf der Platte — in der
+    Ungepackt laegen sie nach dem Erststart doppelt auf der Platte — in der
     Installation und beim Anwender.  Ausgepackt wird beim Seeden
     (``paths.seed_user_disks``), und zwar bitgleich.
     """
@@ -1416,14 +1452,14 @@ def test_paket_traegt_keinen_pfad_des_baurechners(tmp_path):
 
     Sonst schleppte jede ausgelieferte Bibliothek den absoluten Pfad des
     Baurechners als Suchkandidaten mit sich herum (`K1520_FORMATS_DEFAULT`).
-    Geprüft wird an einer frisch als Release gebauten Bibliothek.
+    Geprueft wird an einer frisch als Release gebauten Bibliothek.
     """
     build = tmp_path / "build"
     cfg = _sh("cmake", "-S", str(PROJECT_ROOT), "-B", str(build),
               "-DCMAKE_BUILD_TYPE=Release", "-DK1520_FORMATS_DEFAULT=",
-              # -O0: geprüft wird, was an Zeichenketten im Binärabbild steht, und das hängt
+              # -O0: geprueft wird, was an Zeichenketten im Binaerabbild steht, und das haengt
               # nicht an der Optimierung.  -O3 kostete gut 100 s Rechenzeit je Lauf; der echte
-              # Release-Bau (release.yml, Rauchtest "kein Baurechner-Pfad") prüft es zusätzlich.
+              # Release-Bau (release.yml, Rauchtest "kein Baurechner-Pfad") prueft es zusaetzlich.
               "-DCMAKE_CXX_FLAGS_RELEASE=-O0", "-DCMAKE_C_FLAGS_RELEASE=-O0",
               "-DBUILD_K1520_TESTS=OFF")
     assert cfg.returncode == 0, cfg.stderr
@@ -1452,7 +1488,7 @@ def test_paket_traegt_keinen_pfad_des_baurechners(tmp_path):
         lib.k1520_destroy(h)
 
 
-# ─── Vollständige Installation (langsam, braucht Netz) ───────────────────────
+# ─── Vollstaendige Installation (langsam, braucht Netz) ───────────────────────
 
 voll = pytest.mark.skipif(
     not os.environ.get("K1520_PACKAGING_FULL"),
@@ -1463,7 +1499,7 @@ voll = pytest.mark.skipif(
 @requires_core
 @voll
 def test_installation_laeuft_durch_und_startet(tmp_path):
-    """Paket schnüren, in ein eigenes HOME installieren, GUI headless starten."""
+    """Paket schnueren, in ein eigenes HOME installieren, GUI headless starten."""
     out = _sh("sh", str(PACKAGING / "build_payload.sh"),
               "--skip-build", "--build-dir", str(PROJECT_ROOT / "build"),
               "--out", str(tmp_path / "dist"), "--version", "test")
@@ -1472,8 +1508,8 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
 
     heim = tmp_path / "heim"
     heim.mkdir()
-    # Ein Dokumentenordner wie auf einem eingerichteten Desktop — dorthin gehören
-    # die Arbeitsdisketten, und der Name ist sprachabhängig.
+    # Ein Dokumentenordner wie auf einem eingerichteten Desktop — dorthin gehoeren
+    # die Arbeitsdisketten, und der Name ist sprachabhaengig.
     (heim / "Dokumente").mkdir()
     (heim / ".config").mkdir()
     (heim / ".config" / "user-dirs.dirs").write_text('XDG_DOCUMENTS_DIR="$HOME/Dokumente"\n')
@@ -1483,7 +1519,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
 
     # Eigenes Ziel — und zwar eines, das NICHT der Vorschlag ist: so ist zugleich
     # belegt, dass das Deinstallieren weiter unten die Installation ohne --prefix
-    # wiederfindet (über den Starter in ~/.local/bin).
+    # wiederfindet (ueber den Starter in ~/.local/bin).
     ziel = heim / "Programme" / "A5120"
     inst = subprocess.run(["sh", str(stage / "install.sh"), "--prefix", str(ziel)],
                           capture_output=True, text=True, env=umgebung, timeout=1800)
@@ -1491,7 +1527,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert "läuft" in inst.stdout, "Rauchtest des Installers hat nicht bestätigt"
     assert "Oberfläche: baut auf" in inst.stdout, \
         "Rauchtest hat das Fenster nicht gebaut — Qt-Plugins ungeprüft"
-    # Der Rauchtest muss die INSTALLATION geprüft haben, nicht zufällig den
+    # Der Rauchtest muss die INSTALLATION geprueft haben, nicht zufaellig den
     # Baum, aus dem heraus er gestartet wurde (sys.path[0] = Arbeitsverzeichnis).
     assert str(ziel) in inst.stdout, "Rauchtest prüfte nicht die Installation"
 
@@ -1506,6 +1542,8 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert (heim / ".local" / "share" / "applications" / "pc1715emu.desktop").is_file()
     assert os.access(ziel / "bin" / "p8000emu", os.X_OK)
     assert (heim / ".local" / "share" / "applications" / "p8000emu.desktop").is_file()
+    assert os.access(ziel / "bin" / "mc80emu", os.X_OK)
+    assert (heim / ".local" / "share" / "applications" / "mc80emu.desktop").is_file()
     # Beispieldisketten liegen beim Anwender, nicht in der Installation — und
     # kommen dort AUSGEPACKT und bitgleich an (im Paket liegen sie gepackt).
     nutzer_disks = heim / "Dokumente" / "K1520emu" / "Disketten"
@@ -1516,7 +1554,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
         assert f.read_bytes() == ausgelieferte_diskette(f.name).read_bytes(), \
             f"{f.name} kam beschädigt beim Anwender an"
 
-    # Platzbedarf: ohne das Schlankmachen wären es ~400 MB.  Gezählt wird wie
+    # Platzbedarf: ohne das Schlankmachen waeren es ~400 MB.  Gezaehlt wird wie
     # `du` — Verzeichnis-Symlinks nicht verfolgen, jede Datei nur einmal (uv legt
     # neben cpython-3.12.13-… einen Verweis cpython-3.12-… an).
     gesehen, bytes_ = set(), 0
@@ -1531,7 +1569,7 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert belegt < MAX_INSTALL_MB, f"Installation belegt {belegt:.0f} MB"
     assert not (ziel / "tools").exists(), "uv blieb nach der Installation liegen"
 
-    # Der Starter läuft aus der Installation heraus und löst alles dorthin auf.
+    # Der Starter laeuft aus der Installation heraus und loest alles dorthin auf.
     umgebung["QT_QPA_PLATFORM"] = "offscreen"
     ausk = subprocess.run([str(starter), "--paths"], capture_output=True, text=True,
                           env=umgebung, timeout=60)
@@ -1540,8 +1578,8 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
 
     # Der Starter wechselt ins Benutzerdatenverzeichnis, bevor er den Emulator
     # startet: der Kern legt sein Protokoll unter `logs/` im ARBEITSVERZEICHNIS
-    # an, und das wäre sonst der Ort, an dem der Anwender gerade zufällig steht
-    # — beim Start über das Startmenü das Heimatverzeichnis.
+    # an, und das waere sonst der Ort, an dem der Anwender gerade zufaellig steht
+    # — beim Start ueber das Startmenue das Heimatverzeichnis.
     von_wo = tmp_path / "irgendwo"
     von_wo.mkdir()
     daten = nutzer_disks.parent
@@ -1558,20 +1596,20 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
     assert not (von_wo / "logs").exists(), \
         "Protokoll landete im Arbeitsverzeichnis des Aufrufers"
 
-    # Der Ausweis sagt, was dem Installer gehört — daran hängt das Deinstallieren.
+    # Der Ausweis sagt, was dem Installer gehoert — daran haengt das Deinstallieren.
     ausweis = (ziel / ".k1520emu-installation").read_text(encoding="utf-8")
     for eintrag in ("bin", "app", "share", "venv", "python"):
         assert f"eintrag {eintrag}" in ausweis, f"{eintrag} fehlt im Inventar"
 
-    # Eine frische Installation enthält nichts, was nicht hineingehört — der Kern
+    # Eine frische Installation enthaelt nichts, was nicht hineingehoert — der Kern
     # legt sein Protokoll im Arbeitsverzeichnis an, und das ist beim Rauchtest
     # genau hier.
     assert not (ziel / "logs").exists(), "Protokollverzeichnis des Rauchtests blieb liegen"
     assert not list(ziel.glob("k1520_*.log")), "Protokoll des Rauchtests blieb liegen"
 
     # Noch einmal — und zwar OHNE --prefix: das ist der Update-Fall.  Der
-    # Installer muss die bestehende Installation über den Starter finden, sonst
-    # legte er eine zweite am Standardort an und ließe die alte verwaisen.
+    # Installer muss die bestehende Installation ueber den Starter finden, sonst
+    # legte er eine zweite am Standardort an und liesse die alte verwaisen.
     # `uv venv` verweigert ein vorhandenes venv, deshalb wird es erneuert.
     erneut = subprocess.run(["sh", str(stage / "install.sh"), "-y"],
                             capture_output=True, text=True, env=umgebung, timeout=1800)
@@ -1600,12 +1638,12 @@ def test_installation_laeuft_durch_und_startet(tmp_path):
 
 @requires_core
 def test_disktool_findet_seine_bibliothek_im_installationslayout(tmp_path):
-    """Die Auflösung muss ``<wurzel>/bin`` finden, nicht nur ``build/``.
+    """Die Aufloesung muss ``<wurzel>/bin`` finden, nicht nur ``build/``.
 
     Der eigentliche Fallstrick: die Bindung suchte ihre Bibliothek anfangs
     selbst in ``build/`` — in einer Installation liegt sie in ``bin/``, und die
-    Suche liefe ins Leere.  Seit sie über :mod:`app.paths` geht, gilt für beide
-    Bibliotheken derselbe Weg; dieser Test hält das fest.
+    Suche liefe ins Leere.  Seit sie ueber :mod:`app.paths` geht, gilt fuer beide
+    Bibliotheken derselbe Weg; dieser Test haelt das fest.
     """
     wurzel = tmp_path / "installation"
     (wurzel / "bin").mkdir(parents=True)
@@ -1633,7 +1671,7 @@ def test_disktool_findet_seine_bibliothek_im_installationslayout(tmp_path):
 def test_disktool_kommandozeile_laeuft_aus_dem_paket(payload):
     """Das mitgelieferte Programm muss ohne den Quellbaum arbeiten.
 
-    Geprüft wird der geschnürte Stand, nicht ``build/``: Läuft `formats`, dann
+    Geprueft wird der geschnuerte Stand, nicht ``build/``: Laeuft `formats`, dann
     hat das Programm auch den Formatkatalog des Pakets gefunden.
     """
     stage = _stage(payload)
@@ -1661,11 +1699,11 @@ def test_installer_legt_beide_starter_an():
 
 
 def test_deinstallieren_raeumt_auch_das_werkzeug_weg():
-    """Die Aufräumliste muss beide Namen kennen.
+    """Die Aufraeumliste muss beide Namen kennen.
 
-    `--uninstall` entfernt genau die Namen aus einer Liste. Stünde dort nur die
-    Maschine, bliebe der Starter des Werkzeugs samt Startmenü-Eintrag als Leiche
-    zurück und zeigte auf ein gelöschtes Verzeichnis.
+    `--uninstall` entfernt genau die Namen aus einer Liste. Stuende dort nur die
+    Maschine, bliebe der Starter des Werkzeugs samt Startmenue-Eintrag als Leiche
+    zurueck und zeigte auf ein geloeschtes Verzeichnis.
     """
     text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
     assert 'WERKZEUGE="k1520disktool"' in text
@@ -1677,15 +1715,15 @@ def test_deinstallieren_raeumt_auch_das_werkzeug_weg():
 # ─── Der Debugger im Paket (Entwurf §10a) ────────────────────────────────────
 #
 # `k1520dbg` ist das dritte Programm der Auslieferung — und das einzige ohne
-# Oberfläche.  Genau daran hängen die Fallen: es steht in keinem Startmenü, es
+# Oberflaeche.  Genau daran haengen die Fallen: es steht in keinem Startmenue, es
 # bringt eine einkompilierte Fremdquelle mit (isocline), und es linkt den Kern
-# statisch, trägt also dieselbe `formats.yaml`-Falle wie die Bibliothek.
+# statisch, traegt also dieselbe `formats.yaml`-Falle wie die Bibliothek.
 
 GW_PINS = PACKAGING / "gw_pins.txt"
 
 
 def test_der_debugger_wird_gebaut_und_kommt_ins_paket():
-    """Bauen UND kopieren — beides, sonst liegt nur eine Hälfte im Paket."""
+    """Bauen UND kopieren — beides, sonst liegt nur eine Haelfte im Paket."""
     bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     assert "k1520disktool k1520dbg" in bp, "k1520dbg fehlt in der Zielliste des Bauschritts"
     assert '"$BUILD_DIR/$K1520_DBG" "$STAGE/payload/bin/$K1520_DBG"' in bp, \
@@ -1699,7 +1737,7 @@ def test_handbuch_und_lizenzen_reisen_mit():
 
     Die Zeilenbearbeitung des Debuggers steckt EINKOMPILIERT in der Programmdatei
     (third_party/isocline, MIT).  Man sieht es ihr nicht an; genau deshalb muss der
-    Lizenztext daneben liegen.  Dasselbe gilt für Greaseweazle (Unlicence).
+    Lizenztext daneben liegen.  Dasselbe gilt fuer Greaseweazle (Unlicence).
     """
     bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     assert (PROJECT_ROOT / "doc/handbuch_k1520dbg.md").is_file(), \
@@ -1717,11 +1755,11 @@ def test_handbuch_und_lizenzen_reisen_mit():
 
 
 def test_lizenz_bleibt_reines_mit_und_die_begleitdatei_reist_mit():
-    """LICENSE = NUR der englische MIT-Text; Übersetzung und Beigabenhinweis in LIZENZ.txt.
+    """LICENSE = NUR der englische MIT-Text; Uebersetzung und Beigabenhinweis in LIZENZ.txt.
 
-    GitHubs Lizenzerkennung (licensee) verlangt 98 % Übereinstimmung mit dem
-    Mustertext; schon ein angehängter Absatz macht aus „MIT" ein „NOASSERTION"
-    (am 2026-10-10 mit licensee nachgeprüft).  Deshalb steht der deutsche Text samt
+    GitHubs Lizenzerkennung (licensee) verlangt 98 % Uebereinstimmung mit dem
+    Mustertext; schon ein angehaengter Absatz macht aus „MIT" ein „NOASSERTION"
+    (am 2026-10-10 mit licensee nachgeprueft).  Deshalb steht der deutsche Text samt
     Hinweis zu den Beigaben Dritter in LIZENZ.txt — und das Setup zeigt DIESE.
     """
     lizenz = (PROJECT_ROOT / "LICENSE").read_text(encoding="utf-8")
@@ -1746,7 +1784,7 @@ def test_lizenz_bleibt_reines_mit_und_die_begleitdatei_reist_mit():
 def test_installer_verweist_den_debugger_und_raeumt_ihn_wieder_weg():
     """Ein Verweis in ~/.local/bin — und er muss beim Deinstallieren verschwinden.
 
-    Der Debugger bekommt bewusst KEINEN Startmenü-Eintrag (§10a.2): er wird in
+    Der Debugger bekommt bewusst KEINEN Startmenue-Eintrag (§10a.2): er wird in
     einen vorhandenen Arbeitsablauf eingebunden, nicht doppelgeklickt.  Bleibt
     er beim Deinstallieren als toter Verweis stehen, ist das schlimmer als gar
     kein Verweis — genau das war `k1520disktool-cli` bis 2026-08-18.
@@ -1766,10 +1804,10 @@ def test_installer_verweist_den_debugger_und_raeumt_ihn_wieder_weg():
 
 @nur_unix_installer
 def test_installer_sagt_wo_der_debugger_liegt():
-    """Wer nicht erfährt, dass es ihn gibt, benutzt ihn nie.
+    """Wer nicht erfaehrt, dass es ihn gibt, benutzt ihn nie.
 
-    Der Debugger taucht in keinem Menü auf.  Die Schlussmeldung der Installation
-    ist damit der EINZIGE Ort, an dem ein Anwender von ihm erfährt — sie muss
+    Der Debugger taucht in keinem Menue auf.  Die Schlussmeldung der Installation
+    ist damit der EINZIGE Ort, an dem ein Anwender von ihm erfaehrt — sie muss
     Programm, Handbuch und Ablageort nennen.
     """
     text = (PACKAGING / "install.sh").read_text(encoding="utf-8")
@@ -1780,10 +1818,10 @@ def test_installer_sagt_wo_der_debugger_liegt():
 
 
 def test_iss_sagt_wo_der_debugger_liegt():
-    """Dasselbe unter Windows — und dort ZUSÄTZLICH die Eingabeaufforderung.
+    """Dasselbe unter Windows — und dort ZUSAETZLICH die Eingabeaufforderung.
 
-    Der Assistent bekommt dafür eine eigene Seite NACH dem Kopieren: vorher
-    wären die genannten Pfade noch leer.
+    Der Assistent bekommt dafuer eine eigene Seite NACH dem Kopieren: vorher
+    waeren die genannten Pfade noch leer.
     """
     text = _iss()
     assert "CreateOutputMsgPage(wpInfoAfter" in text, \
@@ -1796,7 +1834,7 @@ def test_iss_sagt_wo_der_debugger_liegt():
 
 
 def test_iss_schreibt_die_werkzeug_eingabeaufforderung():
-    """Sie ist eine VORLAGE — ohne ausgefüllten Installationsordner nützt sie nichts."""
+    """Sie ist eine VORLAGE — ohne ausgefuellten Installationsordner nuetzt sie nichts."""
     vorlage = (PACKAGING / "k1520dbg.cmd.in").read_text(encoding="utf-8")
     assert 'set "K1520_ROOT=@ROOT@"' in vorlage
     assert "cmd /k" in vorlage, "ohne `cmd /k` ginge das Fenster sofort wieder zu"
@@ -1805,10 +1843,10 @@ def test_iss_schreibt_die_werkzeug_eingabeaufforderung():
     assert "ExtractTemporaryFile('k1520dbg.cmd')" in text
     assert r"ExpandConstant('{app}\bin\k1520dbg.cmd')" in text, \
         "die Vorlage wird nicht in die Installation geschrieben"
-    # Verknüpft wird die EINGABEAUFFORDERUNG, nie k1520dbg.exe selbst: ein Symbol
-    # auf den Debugger öffnete ein Fenster, das mangels Diskette sofort zuginge.
+    # Verknuepft wird die EINGABEAUFFORDERUNG, nie k1520dbg.exe selbst: ein Symbol
+    # auf den Debugger oeffnete ein Fenster, das mangels Diskette sofort zuginge.
     icons = text[text.index("[Icons]"):text.index("[UninstallDelete]")]
-    # Ohne die Kommentare: die erklären genau diesen Unterschied und nennen
+    # Ohne die Kommentare: die erklaeren genau diesen Unterschied und nennen
     # `k1520dbg.exe` dabei beim Namen.
     eintraege = "\n".join(z for z in icons.splitlines() if not z.lstrip().startswith(";"))
     assert "bin\\k1520dbg.cmd" in eintraege
@@ -1827,9 +1865,9 @@ def test_windows_paket_bekommt_die_vorlage_und_unix_nicht():
 # ─── Greaseweazle: die Anbindung an echte Laufwerke ──────────────────────────
 
 def test_gw_pins_sind_vollstaendig():
-    """Fassung, Größe und Prüfsumme reisen MIT dem Paket.
+    """Fassung, Groesse und Pruefsumme reisen MIT dem Paket.
 
-    Eine nebenher geladene Prüfsummendatei deckte nur Übertragungsfehler ab,
+    Eine nebenher geladene Pruefsummendatei deckte nur Uebertragungsfehler ab,
     nicht eine ausgetauschte Quelle — dieselbe Sitte wie bei uv und Python.
     """
     text = GW_PINS.read_text(encoding="utf-8")
@@ -1842,10 +1880,10 @@ def test_gw_pins_sind_vollstaendig():
 
 
 def test_die_abhaengigkeiten_der_anbindung_stehen_im_lock():
-    """greaseweazle selbst kommt als wheel — seine vier Abhängigkeiten von PyPI.
+    """greaseweazle selbst kommt als wheel — seine vier Abhaengigkeiten von PyPI.
 
-    Ohne sie ist das wheel ein Paket, das sich einspielen lässt und beim ersten
-    Import auseinanderfällt.  `--require-hashes` verlangt dabei, dass sie
+    Ohne sie ist das wheel ein Paket, das sich einspielen laesst und beim ersten
+    Import auseinanderfaellt.  `--require-hashes` verlangt dabei, dass sie
     festgenagelt sind.
     """
     lock = (PACKAGING / "requirements.lock").read_text(encoding="utf-8")
@@ -1858,26 +1896,26 @@ def test_die_abhaengigkeiten_der_anbindung_stehen_im_lock():
 
 
 def test_das_rad_wird_plattformunabhaengig_gebaut():
-    """py3-none-any — sonst hätte der Anwender einen Übersetzer zu stellen.
+    """py3-none-any — sonst haette der Anwender einen Uebersetzer zu stellen.
 
-    `setup.py` von greaseweazle erklärt eine C-Erweiterung.  Sie ist reine
-    Beschleunigung (beide Aufrufstellen fallen auf Python zurück), aber solange
+    `setup.py` von greaseweazle erklaert eine C-Erweiterung.  Sie ist reine
+    Beschleunigung (beide Aufrufstellen fallen auf Python zurueck), aber solange
     `ext_modules` gesetzt ist, wird das wheel an Plattform UND Python-Nebenversion
-    gebunden — auch wenn gar nichts übersetzt wurde.
+    gebunden — auch wenn gar nichts uebersetzt wurde.
     """
     bp = (PACKAGING / "build_payload.sh").read_text(encoding="utf-8")
     assert "kw.pop('ext_modules', None)" in bp, "der Aufsatz nimmt die C-Erweiterung nicht heraus"
     assert "*-py3-none-any.whl)" in bp, "das Ergebnis wird nicht auf Plattformunabhängigkeit geprüft"
-    # Und die Prüfsumme wird wirklich geprüft, nicht nur mitgeschleppt.
+    # Und die Pruefsumme wird wirklich geprueft, nicht nur mitgeschleppt.
     assert '[ "$_got" = "$GW_SHA" ]' in bp
 
 
 def test_der_installer_spielt_das_rad_ohne_netz_ein():
-    """`--no-deps`: die Abhängigkeiten kamen mit requirements.lock.
+    """`--no-deps`: die Abhaengigkeiten kamen mit requirements.lock.
 
     Und ein Fehlschlag darf die Installation NICHT hinwerfen — Emulator und
     Diskettenwerkzeug laufen ohne, es fehlt nur der Zugriff auf ein echtes
-    Laufwerk (app/gw/session.py sperrt den Menüpunkt mit dem Grund im Tooltip).
+    Laufwerk (app/gw/session.py sperrt den Menuepunkt mit dem Grund im Tooltip).
     """
     sh = (PACKAGING / "install.sh").read_text(encoding="utf-8")
     assert "wheels/greaseweazle-*.whl" in sh
@@ -1897,7 +1935,7 @@ def test_der_installer_spielt_das_rad_ohne_netz_ein():
 
 
 def test_der_assistent_sagt_vorher_dass_greaseweazle_dazukommt():
-    """Er richtet etwas ein, das der Anwender nicht bestellt hat — das gehört angesagt.
+    """Er richtet etwas ein, das der Anwender nicht bestellt hat — das gehoert angesagt.
 
     Und zwar mit dem GRUND: „Greaseweazle" allein sagt niemandem etwas, „echte
     Disketten in einem angeschlossenen Laufwerk" schon.
@@ -1913,13 +1951,13 @@ def test_der_assistent_sagt_vorher_dass_greaseweazle_dazukommt():
 
 
 def test_der_kern_bindet_nichts_von_greaseweazle_ein():
-    """Entwurf §14: kein USB, kein Import, kein Rückruf in die Anwendung.
+    """Entwurf §14: kein USB, kein Import, kein Rueckruf in die Anwendung.
 
-    Der Arbeitsfaden ist Python (app/gw/), der Kern sieht nur Aufträge und
-    HFE-Bitzellen.  Ein anderer Adapter wäre damit ein anderes `device`, keine
-    Kernänderung.  Geprüft werden die EINBINDUNGEN, nicht das Wort: in
-    Kommentaren steht `greaseweazle` völlig zu Recht (der Entwurf erklärt ja,
-    wofür `TrackSync` da ist) — eine `#include`-Zeile wäre der Bruch.
+    Der Arbeitsfaden ist Python (app/gw/), der Kern sieht nur Auftraege und
+    HFE-Bitzellen.  Ein anderer Adapter waere damit ein anderes `device`, keine
+    Kernaenderung.  Geprueft werden die EINBINDUNGEN, nicht das Wort: in
+    Kommentaren steht `greaseweazle` voellig zu Recht (der Entwurf erklaert ja,
+    wofuer `TrackSync` da ist) — eine `#include`-Zeile waere der Bruch.
     `serial` meint eine Schnittstellenbibliothek (`<serial/…>`, `"serial.h"`),
     nicht den eigenen Zweig `core/serial/` (Entwurf 19, Telnet/RFC 2217).
     """
@@ -1981,6 +2019,6 @@ def test_release_workflow_prueft_tag_und_unterscheidet_vorabversion():
     assert len(re.findall(r"run: python3? tools/version\.py --pruefe-tag", wf)) == 2   # Linux- UND Windows-Job
     assert wf.count("--prerelease") >= 2 and "--draft" in wf
     assert len(re.findall(r"if python3? tools/version\.py --vorab", wf)) == 2
-    # Der Rauchtest sucht die Disketten gegliedert und prüft die Bibliotheksversion.
+    # Der Rauchtest sucht die Disketten gegliedert und prueft die Bibliotheksversion.
     assert 'share/disks"/*/*.gz' in wf
     assert len(re.findall(r"tools/version\.py --bau", wf)) == 2

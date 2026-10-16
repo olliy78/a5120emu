@@ -1,0 +1,9 @@
+# boot_trace --machine mc80-31 --tape-card (AP M8): Karte vor dem ersten Lauf gesteckt; EGOS
+# erreicht trotzdem den Prompt, die K5020-Tore 30H-37H stehen im Ereignisprotokoll.
+tool:    boot_trace
+run:     --machine mc80-31 --tape-card --events /dev/null
+timeout: 240
+exit:    0
+expect:  Prompt:      JA
+expect:  K5020 Kassette
+forbid:  --tape:

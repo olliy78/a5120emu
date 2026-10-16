@@ -1,19 +1,19 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Cross-Bau nach Windows x64 mit MinGW-w64 — LOKALE VORPRÜFUNG, nicht die Zusage
+# Cross-Bau nach Windows x64 mit MinGW-w64 — LOKALE VORPRUEFUNG, nicht die Zusage
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Wofür das gut ist: der Entwicklungsrechner ist Linux, MSVC gibt es hier nicht.
-# Jede Portierungsfrage über die CI zu klären kostet 10 Minuten je Runde.  MinGW
-# übersetzt hier in Sekunden gegen die WINDOWS-Kopfdateien und findet damit alles,
-# was plattformabhängig ist: fehlende `#include <windows.h>`-Zweige, POSIX-Aufrufe,
-# `_WIN32`-Pfade, Pfadtrennzeichen, Zeilenenden.  Die Tests laufen anschließend
+# Wofuer das gut ist: der Entwicklungsrechner ist Linux, MSVC gibt es hier nicht.
+# Jede Portierungsfrage ueber die CI zu klaeren kostet 10 Minuten je Runde.  MinGW
+# uebersetzt hier in Sekunden gegen die WINDOWS-Kopfdateien und findet damit alles,
+# was plattformabhaengig ist: fehlende `#include <windows.h>`-Zweige, POSIX-Aufrufe,
+# `_WIN32`-Pfade, Pfadtrennzeichen, Zeilenenden.  Die Tests laufen anschliessend
 # unter `wine`.
 #
-# Was es NICHT findet — MinGW ist GCC, MSVC ist ein anderer Übersetzer:
+# Was es NICHT findet — MinGW ist GCC, MSVC ist ein anderer Uebersetzer:
 #   * fehlende Ausfuhrkennzeichnung (MinGW exportiert wie Linux per Vorgabe alles!)
-#   * MSVC-eigene Strenge (Zwei-Phasen-Auflösung, C2065 bei abhängigen Namen)
+#   * MSVC-eigene Strenge (Zwei-Phasen-Aufloesung, C2065 bei abhaengigen Namen)
 #   * /utf-8, statische CRT, Sektionslimits (/bigobj)
-# Die verbindliche Prüfung bleibt der Windows-Workflow (.github/workflows/windows-ci.yml).
+# Die verbindliche Pruefung bleibt der Windows-Workflow (.github/workflows/windows-ci.yml).
 #
 # Benutzung:   tools/dev.sh win  [ctest-args]
 # Vorbedingung: sudo apt install g++-mingw-w64-x86-64 wine
@@ -24,7 +24,7 @@ set(CMAKE_SYSTEM_PROCESSOR x86_64)
 set(_triple x86_64-w64-mingw32)
 
 # Debian liefert zwei Threadmodelle.  Der Kern benutzt std::mutex/std::atomic —
-# die gibt es nur im POSIX-Modell; das win32-Modell übersetzt <mutex> gar nicht.
+# die gibt es nur im POSIX-Modell; das win32-Modell uebersetzt <mutex> gar nicht.
 find_program(_mingw_cxx NAMES ${_triple}-g++-posix ${_triple}-g++)
 find_program(_mingw_cc  NAMES ${_triple}-gcc-posix ${_triple}-gcc)
 if(NOT _mingw_cxx)
@@ -45,7 +45,7 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_EXE_LINKER_FLAGS_INIT    "-static -static-libgcc -static-libstdc++")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "-static-libgcc -static-libstdc++")
 
-# ctest (und gtest_discover_tests beim Bauen) starten die .exe hierüber.
+# ctest (und gtest_discover_tests beim Bauen) starten die .exe hierueber.
 find_program(_wine NAMES wine64 wine)
 if(_wine)
     set(CMAKE_CROSSCOMPILING_EMULATOR "${_wine}")

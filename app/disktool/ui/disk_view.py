@@ -28,10 +28,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-#: Eigener MIME-Typ für das Ziehen von der Diskette in einen Ordner.
+#: Eigener MIME-Typ fuer das Ziehen von der Diskette in einen Ordner.
 DISK_MIME = "application/x-k1520-diskfiles"
 
-#: Rolle, unter der die eindeutige Bezeichnung („Side1/NAME") am Eintrag hängt.
+#: Rolle, unter der die eindeutige Bezeichnung („Side1/NAME") am Eintrag haengt.
 REF_ROLE = Qt.UserRole + 1
 VOLUME_ROLE = Qt.UserRole + 2
 
@@ -41,7 +41,7 @@ class _Tree(QTreeWidget):
 
     files_dropped = Signal(list, int)   # (Pfade, Ziel-Seite)
 
-    #: Satz für die leere Liste — gesetzt von :meth:`DiskView.set_disk`.
+    #: Satz fuer die leere Liste — gesetzt von :meth:`DiskView.set_disk`.
     leer_text = ""
 
     def __init__(self, parent=None):
@@ -70,7 +70,7 @@ class _Tree(QTreeWidget):
         maler.setPen(self.palette().color(QPalette.Disabled, QPalette.Text))
         maler.drawText(self.viewport().rect(), Qt.AlignCenter, self.leer_text)
 
-    # ── Ziehen: die ausgewählten Dateien als Referenzliste ──────────────────
+    # ── Ziehen: die ausgewaehlten Dateien als Referenzliste ──────────────────
 
     def startDrag(self, actions):  # noqa: N802 (Qt-Namensschema)
         refs = [r for r in (i.data(0, REF_ROLE) for i in self.selectedItems()) if r]
@@ -132,9 +132,9 @@ class DiskView(QWidget):
 
         self.tree = _Tree()
         self.tree.setHeaderLabels(["Name", "Typ", "Größe", "Eigensch.", "Datum"])
-        # Der Name nimmt, was übrig ist; die vier schmalen Spalten richten sich
+        # Der Name nimmt, was uebrig ist; die vier schmalen Spalten richten sich
         # nach ihrem Inhalt — sonst wird das Datum abgeschnitten und die Liste
-        # bekommt einen waagerechten Rollbalken, obwohl Platz da wäre.
+        # bekommt einen waagerechten Rollbalken, obwohl Platz da waere.
         kopfzeile = self.tree.header()
         kopfzeile.setSectionResizeMode(0, QHeaderView.Stretch)
         for spalte in (1, 2, 3, 4):
@@ -178,7 +178,7 @@ class DiskView(QWidget):
             return
 
         self.titel.setText(f"Diskette — {tool.filesystem}")
-        # Leer formatiert oder mit unpassendem Format geöffnet: beides sieht hier
+        # Leer formatiert oder mit unpassendem Format geoeffnet: beides sieht hier
         # gleich aus, und beides muss beim Namen genannt werden.
         self.tree.leer_text = "" if entries else "Keine Dateien gefunden"
 
@@ -201,9 +201,9 @@ class DiskView(QWidget):
             item.setData(0, VOLUME_ROLE, e.volume)
             if e.damaged:
                 item.setText(1, "DEFEKT")
-            # Zeile über die LAUFENDE NUMMER merken: genau darüber spricht die
+            # Zeile ueber die LAUFENDE NUMMER merken: genau darueber spricht die
             # Bibliothek beim Nachtragen (`load_entry_details(i)`), und Namen sind
-            # bei UDOS über beide Seiten hinweg nicht eindeutig.
+            # bei UDOS ueber beide Seiten hinweg nicht eindeutig.
             self._zeilen[nr] = item
 
     @staticmethod
@@ -228,7 +228,7 @@ class DiskView(QWidget):
         if e.damaged:
             item.setText(1, "DEFEKT")
 
-    # ── Kontextmenü ─────────────────────────────────────────────────────────
+    # ── Kontextmenue ─────────────────────────────────────────────────────────
 
     def _kontextmenue(self, punkt) -> None:
         """Rechtsklick auf eine Datei — dieselben Aktionen wie im Menü.
@@ -238,7 +238,7 @@ class DiskView(QWidget):
         """
         item = self.tree.itemAt(punkt)
         if item is not None and item.data(0, REF_ROLE):
-            # Der angeklickte Eintrag zählt, auch wenn die Auswahl woanders steht.
+            # Der angeklickte Eintrag zaehlt, auch wenn die Auswahl woanders steht.
             if item.data(0, REF_ROLE) not in self.selected_refs():
                 self.tree.clearSelection()
                 item.setSelected(True)

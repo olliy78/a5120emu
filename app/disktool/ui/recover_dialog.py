@@ -51,10 +51,10 @@ from PySide6.QtWidgets import (
 from app.core_binding.k1520disk import BRUCHSTUECK, SICHER
 from app.disktool.ui.checkliste import Checkliste
 
-#: Zeichen je Güte — dieselbe Sprache wie die Schwerezeichen des Prüfdialogs.
+#: Zeichen je Guete — dieselbe Sprache wie die Schwerezeichen des Pruefdialogs.
 ZEICHEN = {SICHER: "✔", 1: "≈", BRUCHSTUECK: "✂"}
 
-#: Rolle, unter der die Fundnummer am Baumeintrag hängt (Index in ``bericht.finds``).
+#: Rolle, unter der die Fundnummer am Baumeintrag haengt (Index in ``bericht.finds``).
 ROLLE_FUND = int(Qt.UserRole) + 1
 
 
@@ -98,7 +98,7 @@ class RecoverDialog(QDialog):
         #: Wurde etwas auf der Diskette eingetragen?  Dann muss das Fenster dahinter
         #: die Dateiliste neu lesen.
         self.wiederhergestellt = 0
-        #: Von der Liste vergebene Namen (Fundnummer → Name), für namenlose Funde.
+        #: Von der Liste vergebene Namen (Fundnummer → Name), fuer namenlose Funde.
         self._namen = {}
 
         self.kopf = QLabel("")
@@ -111,11 +111,11 @@ class RecoverDialog(QDialog):
         # jede Umstellung sucht sofort neu.
         self.tiefe.setCurrentIndex(1 if abbild_vollstaendig else 0)
         self.tiefe.currentIndexChanged.connect(lambda *_: self._suchen())
-        # An einer PHYSISCHEN Diskette zöge die Oberflächensuche die ganze Scheibe
-        # ein (0,5–0,8 s je Spur).  Gefragt wird deshalb nach der VOLLSTÄNDIGKEIT des
-        # Speicherabbilds, nicht danach, ob eine Datei vorliegt: das Hauptfenster lädt
-        # fehlende Spuren vor dem Öffnen nach (`_abbild_vervollstaendigen`), und
-        # danach ist die Oberflächensuche so billig wie an einer Datei.
+        # An einer PHYSISCHEN Diskette zoege die Oberflaechensuche die ganze Scheibe
+        # ein (0,5–0,8 s je Spur).  Gefragt wird deshalb nach der VOLLSTAENDIGKEIT des
+        # Speicherabbilds, nicht danach, ob eine Datei vorliegt: das Hauptfenster laedt
+        # fehlende Spuren vor dem Oeffnen nach (`_abbild_vervollstaendigen`), und
+        # danach ist die Oberflaechensuche so billig wie an einer Datei.
         if not abbild_vollstaendig:
             self.tiefe.model().item(1).setEnabled(False)
             self.tiefe.setToolTip(
@@ -158,7 +158,7 @@ class RecoverDialog(QDialog):
         # Die Vorschau zeigt den ANFANG der zusammengesetzten Datei; hier steht,
         # woraus sie besteht.  Bei UDOS ist der erste Eintrag der Kopfsektor — dort
         # stehen Typ, ENTRY und die Segmente, also genau das, woran sich eine
-        # namenlose Datei erkennen lässt.
+        # namenlose Datei erkennen laesst.
         self.sektoren = QComboBox()
         self.sektoren.setToolTip(
             "Die Sektoren dieses Fundes in Lesereihenfolge.  Einen auswählen und "
@@ -181,7 +181,7 @@ class RecoverDialog(QDialog):
         teiler.setStretchFactor(0, 3)
         teiler.setStretchFactor(1, 2)
 
-        # Die Checkliste über beiden Spalten: sie gehört zum LAUF, nicht zur
+        # Die Checkliste ueber beiden Spalten: sie gehoert zum LAUF, nicht zur
         # Fundliste — und der Lauf hat auch dann etwas zu sagen, wenn nichts kam.
         senkrecht = QSplitter(Qt.Vertical)
         senkrecht.addWidget(self.liste)
@@ -189,8 +189,8 @@ class RecoverDialog(QDialog):
         senkrecht.setStretchFactor(0, 0)
         senkrecht.setStretchFactor(1, 3)
 
-        #: Warum gerade nicht wiederhergestellt werden kann — über den Knöpfen,
-        #: nicht im Tooltip: ein gesperrter Knopf ohne Begründung ist eine Sackgasse.
+        #: Warum gerade nicht wiederhergestellt werden kann — ueber den Knoepfen,
+        #: nicht im Tooltip: ein gesperrter Knopf ohne Begruendung ist eine Sackgasse.
         self.hinweis = QLabel("")
         self.hinweis.setWordWrap(True)
 
@@ -329,7 +329,7 @@ class RecoverDialog(QDialog):
         for n, (cyl, kopf_nr, sektor) in enumerate(f.parts, start=1):
             self.sektoren.addItem(f"{n}.  Spur {cyl}  Kopf {kopf_nr}  Sektor {sektor}",
                                   (cyl, kopf_nr, sektor))
-        # Kein `parts` (älterer Fund, ortloser Rest)?  Dann wenigstens der Anfang.
+        # Kein `parts` (aelterer Fund, ortloser Rest)?  Dann wenigstens der Anfang.
         if not self.sektoren.count() and f.ortbar:
             self.sektoren.addItem(
                 f"Spur {f.cyl}  Kopf {f.head}  Sektor {f.sector}",
@@ -348,7 +348,7 @@ class RecoverDialog(QDialog):
     def _knoepfe_nachziehen(self) -> None:
         f = self._aktueller_fund()
         etwas = f is not None
-        # Retten geht IMMER — auch schreibgeschützt, auch bei Bruchstücken (E7).
+        # Retten geht IMMER — auch schreibgeschuetzt, auch bei Bruchstuecken (E7).
         self.b_retten.setEnabled(etwas)
         # Ansehen erst recht: es ist der Schritt VOR jeder Entscheidung.
         self.b_editor.setEnabled(bool(etwas and self.sektoren.count()))
@@ -440,7 +440,7 @@ class RecoverDialog(QDialog):
         self.wiederhergestellt += 1
         self._log(f"wiederhergestellt: {name} ({f.origin})")
         # recover_restore hat schon neu gesucht — die Liste neu lesen, jeder
-        # bisherige Index ist hinfällig.
+        # bisherige Index ist hinfaellig.
         self.bericht = self.tool.recover_finds()
         self._namen.clear()
         self._fuellen()

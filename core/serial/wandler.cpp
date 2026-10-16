@@ -17,11 +17,11 @@ Wandler::Wandler(SerialAnschluss& anschluss, uint64_t phiNenn)
     wirksam_ = kandidat_ = gemeldet_ = ersatz_;
 }
 
-/// Abstand bis zum nächsten Blick: 1/16 Zeichenzeit, aber höchstens 1/16 der Ersatz-Zeichenzeit
-/// (9600 Bd).  Der Wandler sieht ein neues Format erst beim nächsten Blick; stand der Gast vorher
-/// auf einer langsamen Rate (oder einer, die ein stehender Zähler-Kanal fast auf null drückt), lag
-/// der nächste Blick sonst um 1/16 der ALTEN Zeichenzeit entfernt — ein dann mit 9600 Bd
-/// geschriebenes Zeichen galt erst zig Millisekunden später als gesendet (MON16-Hardwaretest
+/// Abstand bis zum naechsten Blick: 1/16 Zeichenzeit, aber hoechstens 1/16 der Ersatz-Zeichenzeit
+/// (9600 Bd).  Der Wandler sieht ein neues Format erst beim naechsten Blick; stand der Gast vorher
+/// auf einer langsamen Rate (oder einer, die ein stehender Zaehler-Kanal fast auf null drueckt), lag
+/// der naechste Blick sonst um 1/16 der ALTEN Zeichenzeit entfernt — ein dann mit 9600 Bd
+/// geschriebenes Zeichen galt erst zig Millisekunden spaeter als gesendet (MON16-Hardwaretest
 /// Fehler 61 „SIO-Port interruptet nicht", Befund P22).
 uint64_t Wandler::blickAbstand(uint64_t zt) const {
     const uint64_t deckel = ersatz_.zeichen_takte ? ersatz_.zeichen_takte : zt;
@@ -30,7 +30,7 @@ uint64_t Wandler::blickAbstand(uint64_t zt) const {
 
 uint64_t Wandler::takt(uint64_t zyklus) {
     if (zyklus < letzterZyklus_) {
-        // Taktzähler zurückgesetzt (neue Maschine, Reset des Zählers): alle Fristen neu.
+        // Taktzaehler zurueckgesetzt (neue Maschine, Reset des Zaehlers): alle Fristen neu.
         naechsterBlick_ = 0;
         std::lock_guard<std::mutex> l(m_);
         naechstesSenden_ = naechsteZustellung_ = 0;
@@ -49,7 +49,7 @@ uint64_t Wandler::takt(uint64_t zyklus) {
     const SerialFormat wirk = fmt.gueltig && fmt.zeichen_takte ? fmt : ersatz_;
     const uint64_t zt = wirk.zeichen_takte;
     // Ein Blick je 1/16 Zeichenzeit: die Zeichenzeit wird damit auf ~6 % genau
-    // eingehalten, und die Sperre fällt bei 9600 Bd nur alle 160 Takte an statt je
+    // eingehalten, und die Sperre faellt bei 9600 Bd nur alle 160 Takte an statt je
     // Instruktion.
     naechsterBlick_ = zyklus + blickAbstand(zt);
     ztLetzte_       = zt;
@@ -77,7 +77,7 @@ uint64_t Wandler::takt(uint64_t zyklus) {
         wecken = true;
     }
 
-    // ── Ausgänge des Gastes ────────────────────────────────────────────────
+    // ── Ausgaenge des Gastes ────────────────────────────────────────────────
     if (rts) rtsBenutzt_ = true;
     if (rts != rts_ || dtr != dtr_ || brk != brk_) {
         rts_ = rts;
@@ -98,10 +98,10 @@ uint64_t Wandler::takt(uint64_t zyklus) {
         steckerGemeldet_ = stecker;
     }
 
-    // ── Eingänge am Stecker (§6.4/§6.5) ─────────────────────────────────────
+    // ── Eingaenge am Stecker (§6.4/§6.5) ─────────────────────────────────────
     bool cts, dsr, dcd;
     if (v24_ && (einst_.loop || einst_.rtscts_bruecke)) {
-        // Prüfstecker bzw. Brücke: RTS→CTS, DTR→DSR/DCD — überstimmt die Gegenseite.
+        // Pruefstecker bzw. Bruecke: RTS→CTS, DTR→DSR/DCD — ueberstimmt die Gegenseite.
         cts = rts;
         dsr = dcd = dtr;
     } else if (angebunden_) {
@@ -127,19 +127,19 @@ uint64_t Wandler::takt(uint64_t zyklus) {
     // ── Senden: Gast → Sendepuffer (bzw. Loop / Verfall) ────────────────────
     if (zyklus >= naechstesSenden_ && a_.senderHatZeichen()) {
         bool nehmen;
-        if (einst_.loop)      nehmen = !empf_.voll();   // Rückstau über den Empfangsweg
-        else if (angebunden_) nehmen = !send_.voll();   // Rückstau: der Gast wartet
-        else                  nehmen = true;            // Kabel ab: Zeichen verfällt
+        if (einst_.loop)      nehmen = !empf_.voll();   // Rueckstau ueber den Empfangsweg
+        else if (angebunden_) nehmen = !send_.voll();   // Rueckstau: der Gast wartet
+        else                  nehmen = true;            // Kabel ab: Zeichen verfaellt
         if (nehmen) {
             const uint8_t b = a_.senderNimm();
             naechstesSenden_ = zyklus + zt;
-            // §6.3: das Zeichen geht trotzdem hinaus — XOFF hält nur UNSEREN Empfang an.
+            // §6.3: das Zeichen geht trotzdem hinaus — XOFF haelt nur UNSEREN Empfang an.
             if (einst_.xonxoff) {
                 if (b == XOFF) xoff_ = true;
                 else if (b == XON) xoff_ = false;
             }
             if (einst_.loop) {
-                // Das Zeichen kommt erst an, wenn es ganz über den Prüfstecker ist.
+                // Das Zeichen kommt erst an, wenn es ganz ueber den Pruefstecker ist.
                 if (empf_.leer()) naechsteZustellung_ = std::max(naechsteZustellung_, zyklus + zt);
                 empf_.rein(b);
                 ++bytesGesendet_;
@@ -153,10 +153,10 @@ uint64_t Wandler::takt(uint64_t zyklus) {
 
     // ── Empfangen: Empfangspuffer → Gast ──────────────────────────────────
     // Halt bei XOFF (§6.3) und bei weggenommenem RTS (§6.4, nur V.24; nicht im Loop —
-    // der Prüfstecker hat keine Gegenstelle, die auf CTS hören könnte).  Der RTS-Halt
-    // gilt erst, wenn der Gast RTS überhaupt benutzt (AP-S5): SCPX 8915 schreibt
-    // WR5 = 68H (RTS und DTR aus) und CP/A fasst den V.24-Kanal gar nicht an — wörtlich
-    // genommen empfinge ein solcher Gast nie etwas, obwohl am Gerät die Gegenstelle
+    // der Pruefstecker hat keine Gegenstelle, die auf CTS hoeren koennte).  Der RTS-Halt
+    // gilt erst, wenn der Gast RTS ueberhaupt benutzt (AP-S5): SCPX 8915 schreibt
+    // WR5 = 68H (RTS und DTR aus) und CP/A fasst den V.24-Kanal gar nicht an — woertlich
+    // genommen empfinge ein solcher Gast nie etwas, obwohl am Geraet die Gegenstelle
     // (Drucker mit XON/XOFF, Terminal ohne Handshake) trotzdem sendet.
     const bool halt = (einst_.xonxoff && xoff_) ||
                       (v24_ && !einst_.loop && rtsBenutzt_ && !rts);
@@ -178,7 +178,7 @@ uint64_t Wandler::takt(uint64_t zyklus) {
 void Wandler::einstellen(const WandlerEinstellung& e) {
     std::lock_guard<std::mutex> l(m_);
     ruhig_.store(false, std::memory_order_release);
-    if (!e.xonxoff) xoff_ = false;   // ausgeschaltet → kein hängender Halt
+    if (!e.xonxoff) xoff_ = false;   // ausgeschaltet → kein haengender Halt
     const bool wurdeLoop = !einst_.loop && e.loop;
     einst_ = e;
     // Loop an: Kabel ist ab (die Verbindung beendet der Hub, §6.5); Liegengebliebenes

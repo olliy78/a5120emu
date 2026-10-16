@@ -4,28 +4,28 @@
  *
  * Wie `Z80`: kennt keine Karte, keinen Bus, keine Maschine.  Jeder Zugriff nach
  * aussen ist EIN Buszyklus mit vollem Status (ST0..3, N/S, B/W, R/W, SN0..6,
- * AD0..15) über die Rückrufe `read`/`write` — so kann eine Karte (S4: die
+ * AD0..15) ueber die Rueckrufe `read`/`write` — so kann eine Karte (S4: die
  * Segmentweiche der EM-Steuerkarte) aus Status und Adresse entscheiden, wohin
  * der Zugriff geht.
  *
  * Dekodierung und Takte kommen aus DER Befehlstabelle
- * (core/primitives/z8000/z8k_table.h, S2); hier steht nur die Ausführung.
+ * (core/primitives/z8000/z8k_table.h, S2); hier steht nur die Ausfuehrung.
  * Befunde, Annahmen und offene Punkte: core/primitives/z8000/README.md.
  *
  * Datenbus wie am Baustein (Zilog §9.4): `read` liefert die 16 Leitungen AD0..15.
  *  - Speicher, Byte:  gerade Adresse → AD8..15, ungerade → AD0..7; die CPU nimmt
- *    die Hälfte selbst.  Beim Schreiben liegt das Byte auf BEIDEN Hälften.
- *  - Speicher, Wort:  Adresse immer gerade (A0 wird von der CPU gelöscht).
+ *    die Haelfte selbst.  Beim Schreiben liegt das Byte auf BEIDEN Haelften.
+ *  - Speicher, Wort:  Adresse immer gerade (A0 wird von der CPU geloescht).
  *  - E/A, Byte: Lage nach A0 wie beim Speicher (ungerade AD0..7, gerade AD8..15;
- *    zulässig sind Standard ungerade, Spezial gerade — §9.4.3).  Beim Schreiben
+ *    zulaessig sind Standard ungerade, Spezial gerade — §9.4.3).  Beim Schreiben
  *    doppelt (Config::ioByteOnBothHalves; am A5120.16 belegt, siehe README).
- *    Was auf einer Hälfte liegt, die beim Lesen niemand treibt, entscheidet die
+ *    Was auf einer Haelfte liegt, die beim Lesen niemand treibt, entscheidet die
  *    Karte (`read`): am A5120.16 die Portadresse aus der Adressphase (EM::read16).
  *
- * Takte: step() führt einen Befehl (bzw. einen Durchlauf eines Wiederholungs-
+ * Takte: step() fuehrt einen Befehl (bzw. einen Durchlauf eines Wiederholungs-
  * befehls, einen Interrupt-/Trapeintritt, einen Stop-/Halt-/Bus-Takt) aus und
- * gibt die Takte zurück — Tabellenwert + Zusatz je Einheit + WAIT-Takte, die
- * die Karte über addWaitCycles() meldet.
+ * gibt die Takte zurueck — Tabellenwert + Zusatz je Einheit + WAIT-Takte, die
+ * die Karte ueber addWaitCycles() meldet.
  *
  * @license MIT
  */
@@ -55,7 +55,7 @@ enum class Z8kStatus : uint8_t {
     Reserved      = 0xF,
 };
 
-/// Kurzname für Protokolle/Debugger ("IF1", "DATA", "STACK", "IO", …).
+/// Kurzname fuer Protokolle/Debugger ("IF1", "DATA", "STACK", "IO", …).
 inline const char* z8kStatusName(Z8kStatus st) {
     static const char* const k[16] = {"INT", "REFR", "IO", "SIO", "SEGTA", "NMIA", "NVIA", "VIA",
                                       "DATA", "STACK", "EDATA", "ESTACK", "INSTR", "IF1", "EPU", "RSV"};
@@ -105,8 +105,8 @@ enum class Z8kModel : uint8_t { Z8001, Z8002 };
 
 struct Z8kConfig {
     Z8kModel model = Z8kModel::Z8001;
-    /// Byte-OUT (Standard- wie Spezial-E/A): Byte auf beiden Bushälften.
-    /// Das Handbuch sagt es nur für Speicher-Schreibzyklen (§9.4.2).  **Am A5120.16
+    /// Byte-OUT (Standard- wie Spezial-E/A): Byte auf beiden Bushaelften.
+    /// Das Handbuch sagt es nur fuer Speicher-Schreibzyklen (§9.4.2).  **Am A5120.16
     /// gemessen (2026-09-29): `OUTB %0081,#01` schreibt A35 (AD8..15) = 01H.**
     bool ioByteOnBothHalves = true;
     /// Refresh-Zyklen (Status 0001) als Buszyklus melden, wenn RE = 1.
@@ -115,7 +115,7 @@ struct Z8kConfig {
     bool spuriousFetchBeforeAck = true;
 };
 
-/// Ablaufzustand neben den Registern — für Save-State/Snapshot (S4/S5).
+/// Ablaufzustand neben den Registern — fuer Save-State/Snapshot (S4/S5).
 struct Z8kRunState {
     bool resetLine = false, resetPending = false;
     bool nmiLine = false, nmiPending = false, vi = false, nvi = false;
@@ -159,20 +159,20 @@ public:
     // ── Bus (Pflicht: read/write) ───────────────────────────────────────────
     std::function<uint16_t(const Z8kBusCycle&)>       read;
     std::function<void(const Z8kBusCycle&, uint16_t)> write;
-    /// Pegeländerung an MO (true = aktiv = L).  MSET/MREQ/MRES, Reset.
+    /// Pegelaenderung an MO (true = aktiv = L).  MSET/MREQ/MRES, Reset.
     std::function<void(bool active)> onMO;
     /// BUSAK geht an/aus.
     std::function<void(bool active)> onBusAck;
-    /// Eine Kodierung ohne Tabellenzeile wurde ausgeführt (als NOP, README §8).
+    /// Eine Kodierung ohne Tabellenzeile wurde ausgefuehrt (als NOP, README §8).
     std::function<void(uint8_t seg, uint16_t pc, uint16_t w0)> onIllegal;
     /// Eine Ausnahme (Reset, Trap, Interrupt) ist angenommen und der neue Programmstatus
-    /// geladen — für Debugger/Trace; ohne Rückruf kostet es nichts.
+    /// geladen — fuer Debugger/Trace; ohne Rueckruf kostet es nichts.
     std::function<void(const Z8kExceptionInfo&)> onException;
 
-    /// Aus einem Busrückruf heraus: der laufende Zyklus bekommt n WAIT-Takte.
+    /// Aus einem Busrueckruf heraus: der laufende Zyklus bekommt n WAIT-Takte.
     void addWaitCycles(int n) { waits_ += n; }
 
-    // ── Eingänge (Pins) ─────────────────────────────────────────────────────
+    // ── Eingaenge (Pins) ─────────────────────────────────────────────────────
     /// /RESET: solange aktiv, steht die CPU (step() = 1 Takt); beim Loslassen
     /// folgt die Resetsequenz (FCW aus 0002, PC aus 0004[/0006], Segment 0).
     void setResetLine(bool active);
@@ -182,21 +182,21 @@ public:
     void setVI(bool active) { vi_ = active; }    ///< pegelgetriggert
     void setNVI(bool active) { nvi_ = active; }  ///< pegelgetriggert
     /// /SEGT (nur Z8001): pegelgetriggert, nicht maskierbar, wie VI/NVI am Befehlsende
-    /// abgetastet (§9.6.1).  Die MMU hält die Anforderung bis zur Quittung (Status 0100).
-    /// Am Z8002 ohne Wirkung (kein Pin).  Nicht in Z8kRunState (dessen Aufbau trägt den
+    /// abgetastet (§9.6.1).  Die MMU haelt die Anforderung bis zur Quittung (Status 0100).
+    /// Am Z8002 ohne Wirkung (kein Pin).  Nicht in Z8kRunState (dessen Aufbau traegt den
     /// A5120-Save-State v7) — die Karte stellt den Pegel beim Laden selbst wieder her.
     void setSEGT(bool active) { segt_ = active; }
     void setStop(bool active) { stopLine_ = active; }
     void setBusReq(bool active) { busReq_ = active; }
     void setMI(bool active) { mi_ = active; }    ///< µI, aktiv = L
 
-    // ── Ausgänge / Zustand ──────────────────────────────────────────────────
+    // ── Ausgaenge / Zustand ──────────────────────────────────────────────────
     bool moActive() const { return mo_; }        ///< µ0, aktiv = L (nach Reset inaktiv)
     bool busAck() const { return busAck_; }
     bool halted() const { return halted_; }
     bool stopped() const { return stopped_; }    ///< im Stop/Refresh-Zustand
     bool inReset() const { return resetLine_ || resetPending_; }
-    bool inRepeat() const { return inRepeat_; }  ///< Wiederholungsbefehl läuft
+    bool inRepeat() const { return inRepeat_; }  ///< Wiederholungsbefehl laeuft
     // Eingangspegel und Merker (Debugger)
     bool nmiLine() const { return nmiLine_; }
     bool nmiPending() const { return nmiPending_; }  ///< NMI-Flanke gemerkt, noch nicht angenommen
@@ -220,7 +220,7 @@ public:
     bool segMode() const { return isZ8001() && (fcw & FCW_SEG); }
     bool systemMode() const { return (fcw & FCW_SN) != 0; }
 
-    /// Einen Schritt ausführen; Rückgabe = Takte (auch in `cycles` aufaddiert).
+    /// Einen Schritt ausfuehren; Rueckgabe = Takte (auch in `cycles` aufaddiert).
     int step();
 
     // ── Register ────────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ public:
     uint16_t R14[2] = {};
     uint16_t R15[2] = {};
     uint16_t fcw = 0;
-    uint16_t pc = 0;          ///< PC-Offset (Adresse des nächsten Befehls)
+    uint16_t pc = 0;          ///< PC-Offset (Adresse des naechsten Befehls)
     uint8_t  pcSeg = 0;       ///< PC-Segment (Z8002: 0)
     uint16_t psapSeg = 0;     ///< wie LDCTL PSAPSEG: Segment in Bit 14..8
     uint16_t psapOff = 0;     ///< Bit 7..0 immer 0
@@ -249,11 +249,11 @@ public:
     /// Segmentierte Adresse wie im Registerpaar: 0sss ssss 0000 0000 | offset.
     uint32_t pcLong() const { return (uint32_t(pcSeg & 0x7F) << 24) | pc; }
 
-    /// Ablaufzustand lesen/setzen (Register sind öffentliche Member).
+    /// Ablaufzustand lesen/setzen (Register sind oeffentliche Member).
     Z8kRunState runState() const;
     void setRunState(const Z8kRunState& s);
 
-    /// Beginn des laufenden/letzten Befehls (für Debugger/Trace).
+    /// Beginn des laufenden/letzten Befehls (fuer Debugger/Trace).
     uint16_t lastPc() const { return lastPc_; }
     uint8_t  lastPcSeg() const { return lastPcSeg_; }
 

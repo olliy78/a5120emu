@@ -1,10 +1,10 @@
 /**
  * @file test_pc1715_boot.cpp
  * @brief PC 1715 Etappe 2 (doc/design/21_pc1715.md AP-2): Floppy-Ansteuerung als K5122 in der
- *        Konfiguration „1715" (`/WAIT`), der echte Urlader S502 lädt Spur 0 Sektor 1 und das
+ *        Konfiguration „1715" (`/WAIT`), der echte Urlader S502 laedt Spur 0 Sektor 1 und das
  *        Betriebssystem startet bis zum Prompt — noch ohne Tastatur.
  *
- * Disketten nur über `TempDisk` (der Emulator öffnet sie schreibend).
+ * Disketten nur ueber `TempDisk` (der Emulator oeffnet sie schreibend).
  */
 
 #include <gtest/gtest.h>
@@ -32,7 +32,7 @@ std::string bild(Pc1715Machine& m) {
     return s;
 }
 
-/// Läuft, bis eine Bildzeile mit @p prompt beginnt (Cursorzeile), höchstens @p grenze Takte.
+/// Laeuft, bis eine Bildzeile mit @p prompt beginnt (Cursorzeile), hoechstens @p grenze Takte.
 bool laufeBisPrompt(Pc1715Machine& m, const std::string& prompt, long long grenze) {
     long long t = 0;
     while (t < grenze) {
@@ -55,7 +55,7 @@ struct Gebootet {
 }  // namespace
 
 /// SCP 1715 V0006 (cpa800, 5 × 1024): Urlader → Systemspuren → `A>`.  Zugleich die
-/// Bildprüfung: Banner in Zeile 1/2 im Zeichensatz S619, keine verschobenen Zeilen.
+/// Bildpruefung: Banner in Zeile 1/2 im Zeichensatz S619, keine verschobenen Zeilen.
 TEST(Pc1715Boot, Scp1715BisPrompt) {
     Gebootet g("pc1715_scp1715_v0006_boot.hfe");
     ASSERT_TRUE(laufeBisPrompt(g.m, "A>", 40'000'000)) << bild(g.m);
@@ -89,7 +89,7 @@ TEST(Pc1715Boot, Scp1715V0007Cpa640BisPrompt) {
 }
 
 /// CP/A 1715 (Bootdiskette ohne Systemspuren, Bootkopf im Verzeichnis): bootet ohne
-/// Uhrzeitfrage bis `A>`; der 8275 fährt 25 Zeilen, Zeile 24 ist die Statuszeile.
+/// Uhrzeitfrage bis `A>`; der 8275 faehrt 25 Zeilen, Zeile 24 ist die Statuszeile.
 TEST(Pc1715Boot, Cpa1715BisPrompt) {
     Gebootet g("pc1715_cpa1715_boot_4lw.hfe");
     ASSERT_TRUE(laufeBisPrompt(g.m, "A>", 40'000'000)) << bild(g.m);
@@ -108,7 +108,7 @@ TEST(Pc1715Boot, Cpz22BisPrompt) {
     EXPECT_EQ(zeile(g.m, 3), "vorhandene Laufwerke :  A,B");
 }
 
-/// UDOS 1715 bis `%`.  Hängt am MO-Register: UDOS schreibt `20H := FFH, 21H := 00H` und
+/// UDOS 1715 bis `%`.  Haengt am MO-Register: UDOS schreibt `20H := FFH, 21H := 00H` und
 /// wartet nach der Laufwerkswahl ohne weiteres 21H auf den Index (DB4–7 = /MO).
 TEST(Pc1715Boot, Udos1715BisPrompt) {
     Gebootet g("pc1715_udos1715_system.hfe");
@@ -117,9 +117,9 @@ TEST(Pc1715Boot, Udos1715BisPrompt) {
 }
 
 /// CP/A 1715, gebaut von der CPA_Workbench (Variante `pc_1715`, M80/LINKMT, Diskette `cpa800`
-/// mit dem Bootkopf `F003H` aus `prebuilt/pc_1715`).  Wächter für AP-3b: die Workbench nahm für
-/// den Diskettenbau früher immer den SYL-Kopf des A5120 — eine so gebaute Diskette bootet am
-/// 1715 nicht (der Urlader S502 prüft das Wort F003H).  Zugleich trägt die Diskette `PCTEST.COM`.
+/// mit dem Bootkopf `F003H` aus `prebuilt/pc_1715`).  Waechter fuer AP-3b: die Workbench nahm fuer
+/// den Diskettenbau frueher immer den SYL-Kopf des A5120 — eine so gebaute Diskette bootet am
+/// 1715 nicht (der Urlader S502 prueft das Wort F003H).  Zugleich traegt die Diskette `PCTEST.COM`.
 TEST(Pc1715Boot, CpaWorkbenchBisPrompt) {
     Gebootet g("pc1715_cpa1715_workbench.hfe");
     // Die Vorgabe der Workbench fragt nach der Uhrzeit (unser BC-Boot-Fixture tut es nicht).

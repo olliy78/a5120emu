@@ -1,15 +1,15 @@
 /**
  * @file test_cpa_dpb.cpp
- * @brief GoogleTests für @ref CpaDpbRule — die nachgebildete CP/A-Formaterkennung.
+ * @brief GoogleTests fuer @ref CpaDpbRule — die nachgebildete CP/A-Formaterkennung.
  *
- * Zwei Sorten Prüfung:
+ * Zwei Sorten Pruefung:
  *
  * 1. **Vertrag mit `biosdsk.mac`.**  Die Tabellen `dtrsl0..3` sind abgeschrieben; ein
- *    Zahlendreher fällt sonst erst an einer echten Diskette auf.  Geprüft werden die
- *    Zeilen, die im Alltag vorkommen — und die 192→128-Kürzung, die im Original eine
+ *    Zahlendreher faellt sonst erst an einer echten Diskette auf.  Geprueft werden die
+ *    Zeilen, die im Alltag vorkommen — und die 192→128-Kuerzung, die im Original eine
  *    eigene Sonderbehandlung ist (`selddr`).
  * 2. **Gegenprobe an den committeten Disketten.**  Die Regel muss genau das ausrechnen,
- *    was für `cpa780` / `scpx798` von Hand NACHGEMESSEN und in `data/formats.yaml`
+ *    was fuer `cpa780` / `scpx798` von Hand NACHGEMESSEN und in `data/formats.yaml`
  *    eingetragen wurde.  Weichen beide voneinander ab, ist eines von beiden falsch.
  *
  * @see core/filesystem/cpm/cpa_dpb.h, doc/cpa_format_detection.md
@@ -53,7 +53,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Diskette öffnen, Geometrie erkennen, Regel anwenden.
+/// @brief Diskette oeffnen, Geometrie erkennen, Regel anwenden.
 struct Erkannt {
     std::unique_ptr<DiskImage>   disk;
     std::unique_ptr<SectorSpace> raum;
@@ -84,10 +84,10 @@ Erkannt erkenne(const std::string& pfad) {
 // ─── 1. Tabellenwerte ────────────────────────────────────────────────────────
 
 /**
- * @test Die abgeschriebenen `dtrsl`-Zeilen stimmen mit `biosdsk.mac` überein.
- * @par Kriterium  Stichproben aller vier Sektorlängen in der 80-Spur-DS-Zeile plus
+ * @test Die abgeschriebenen `dtrsl`-Zeilen stimmen mit `biosdsk.mac` ueberein.
+ * @par Kriterium  Stichproben aller vier Sektorlaengen in der 80-Spur-DS-Zeile plus
  *                 die Eigenheiten: 256 B hat ein FESTES Offset, 512 B kennt auf 5″
- *                 gar kein Verzeichnis, 1024 B/80 DS trägt 192 Plätze.
+ *                 gar kein Verzeichnis, 1024 B/80 DS traegt 192 Plaetze.
  */
 TEST(CpaDpb, TabellenzeilenEntsprechenDemBios) {
     // 128 B, 80 Tr. DS: 160,26,127,2*0+dslfo,dbl2k0
@@ -116,7 +116,7 @@ TEST(CpaDpb, TabellenzeilenEntsprechenDemBios) {
     EXPECT_FALSE(e1k.fixed_off);
     EXPECT_EQ(e1k.block_size, 2048u);
 
-    // 1024 B, 40 Tr. SS: 40,40,63,2*2+dslvo,dbl1k — die einzige 1-KB-Blockgröße hier
+    // 1024 B, 40 Tr. SS: 40,40,63,2*2+dslvo,dbl1k — die einzige 1-KB-Blockgroesse hier
     EXPECT_EQ(CpaDpbRule::entry(3, CpaDpb::Ss40).block_size, 1024u);
     EXPECT_EQ(CpaDpbRule::entry(3, CpaDpb::Ss40).dir_entries, 64);
 }
@@ -125,9 +125,9 @@ TEST(CpaDpb, TabellenzeilenEntsprechenDemBios) {
 
 /**
  * @test Die Regel reproduziert das von Hand nachgemessene Profil `cpa780`.
- * @par Kriterium  4 Systemspuren (= c2h0), 2-KB-Blöcke, **128** Plätze — die 192 aus
- *                 der Tabelle werden gekürzt, weil Systemspuren vorhanden sind.
- * @par Warum      Das ist der Beweis, dass die Regel nicht bloß plausibel rechnet,
+ * @par Kriterium  4 Systemspuren (= c2h0), 2-KB-Bloecke, **128** Plaetze — die 192 aus
+ *                 der Tabelle werden gekuerzt, weil Systemspuren vorhanden sind.
+ * @par Warum      Das ist der Beweis, dass die Regel nicht bloss plausibel rechnet,
  *                 sondern dasselbe wie die Handmessung an `cpa_cpa780_k5601_clock`.
  */
 TEST(CpaDpb, ReproduziertNachgemessenesProfilCpa780) {
@@ -153,8 +153,8 @@ TEST(CpaDpb, ReproduziertNachgemessenesProfilCpa780) {
 }
 
 /**
- * @test Dasselbe für die SCPX-Diskette `scpx798` (Systemzylinder in 16×256).
- * @par Kriterium  Die gemischte Geometrie ändert nichts: Sektorlängencode kommt von der
+ * @test Dasselbe fuer die SCPX-Diskette `scpx798` (Systemzylinder in 16×256).
+ * @par Kriterium  Die gemischte Geometrie aendert nichts: Sektorlaengencode kommt von der
  *                 DATENspur (logische Spur 3 = c1h1, 1024 B), also wieder 4/2048/128.
  */
 TEST(CpaDpb, ReproduziertNachgemessenesProfilScpx798) {
@@ -171,11 +171,11 @@ TEST(CpaDpb, ReproduziertNachgemessenesProfilScpx798) {
 }
 
 /**
- * @test Eine **fabrikfrische** 800K-Diskette bekommt 0 Systemspuren und 192 Plätze.
- * @par Kriterium  Spur 0 ist durchgehend 0xE5 → das BIOS sieht auf der ersten möglichen
+ * @test Eine **fabrikfrische** 800K-Diskette bekommt 0 Systemspuren und 192 Plaetze.
+ * @par Kriterium  Spur 0 ist durchgehend 0xE5 → das BIOS sieht auf der ersten moeglichen
  *                 Datenspur nach (`seldo0`), findet auch dort 0xE5 und entscheidet
- *                 „keine Systemspuren".  Ohne Systemspuren entfällt die Kürzung, es
- *                 bleiben die 192 Plätze, die FORMAT.COM im Menü selbst nennt
+ *                 „keine Systemspuren".  Ohne Systemspuren entfaellt die Kuerzung, es
+ *                 bleiben die 192 Plaetze, die FORMAT.COM im Menue selbst nennt
  *                 (doc/format.md §3.1, Wahl 0).
  */
 TEST(CpaDpb, LeereAchthundertkDisketteHatKeineSystemspurenUnd192Plaetze) {
@@ -199,7 +199,7 @@ TEST(CpaDpb, LeereAchthundertkDisketteHatKeineSystemspurenUnd192Plaetze) {
 /**
  * @test 26×128-Disketten bekommen den Sektorversatz der Tabelle `xlt` (1,7,13,…).
  * @par Kriterium  `skew == 6` — genau diese Schrittweite erzeugt die Reihenfolge des
- *                 BIOS.  Fehlt sie, liest das Werkzeug die Sätze in falscher Folge.
+ *                 BIOS.  Fehlt sie, liest das Werkzeug die Saetze in falscher Folge.
  */
 TEST(CpaDpb, HundertachtundzwanzigByteSpurenBekommenVersatzSechs) {
     const std::string pfad =
@@ -218,8 +218,8 @@ TEST(CpaDpb, HundertachtundzwanzigByteSpurenBekommenVersatzSechs) {
 }
 
 /**
- * @test Eine Sektorlänge, die CP/A nicht kennt, wird abgelehnt statt geraten.
- * @par Kriterium  `derive` liefert false und nennt die Länge.
+ * @test Eine Sektorlaenge, die CP/A nicht kennt, wird abgelehnt statt geraten.
+ * @par Kriterium  `derive` liefert false und nennt die Laenge.
  */
 TEST(CpaDpb, UnbekannteSektorlaengeWirdAbgelehnt) {
     DiskFormat fmt;

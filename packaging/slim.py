@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Schlankmachen einer Installation — entfernt, was der Emulator nie lädt.
+Schlankmachen einer Installation — entfernt, was der Emulator nie laedt.
 
 Aufruf (mit dem Python DER INSTALLATION, `install.sh` macht das):
 
@@ -9,23 +9,23 @@ Aufruf (mit dem Python DER INSTALLATION, `install.sh` macht das):
 Eine frische Installation belegt ~400 MB, davon entfallen keine 15 MB auf den
 Emulator selbst.  Der Rest sind Python und Qt — und beide bringen sehr viel mit,
 was eine Widgets-Anwendung nicht braucht: den QML/Quick-Stapel, die
-Qt-Entwicklungswerkzeuge (Designer, Linguist, qmlls …), die Bindungen für
+Qt-Entwicklungswerkzeuge (Designer, Linguist, qmlls …), die Bindungen fuer
 Module, die nie importiert werden, Typstubs und shiboken-Baumaterial, die
 Testsuite und Tcl/Tk von CPython.  Danach sind es ~146 MB.
 
 Unter **Windows** gilt dasselbe mit drei Unterschieden, die gemessen und nicht
 geraten sind (Erkundungsstufe im Paketjob, 2026-08-12): die Qt-DLLs liegen
-direkt in `PySide6/` statt in `PySide6/Qt/lib`, die Bindungen heißen `.pyd`,
+direkt in `PySide6/` statt in `PySide6/Qt/lib`, die Bindungen heissen `.pyd`,
 und CPython liegt als `Lib/`+`DLLs/`+`tcl/` statt `lib/pythonX.Y/`.  Die
-Abhängigkeiten liest dort kein `ldd`, sondern :func:`pe_imports` — `slim.py`
-läuft beim ANWENDER, und der hat kein Visual Studio und damit kein `dumpbin`.
+Abhaengigkeiten liest dort kein `ldd`, sondern :func:`pe_imports` — `slim.py`
+laeuft beim ANWENDER, und der hat kein Visual Studio und damit kein `dumpbin`.
 
 Der Schnitt ist bewusst **beweisbar** statt geraten: welche Qt-Bibliotheken
 bleiben, entscheidet nicht eine Liste, sondern `ldd` — ausgehend von den
 Bindungen, die die GUI importiert, und den Plugins, die Qt zur Laufzeit
-nachlädt.  Alles, was von dort aus nicht erreichbar ist, fliegt raus.  Direkt
-danach fährt `install.sh` seinen Rauchtest (Fenster bauen, Emulator starten);
-schlägt der fehl, war der Schnitt zu tief und die Installation bricht ab, statt
+nachlaedt.  Alles, was von dort aus nicht erreichbar ist, fliegt raus.  Direkt
+danach faehrt `install.sh` seinen Rauchtest (Fenster bauen, Emulator starten);
+schlaegt der fehl, war der Schnitt zu tief und die Installation bricht ab, statt
 den Anwender damit allein zu lassen.
 
 Entwurf und die drei Regeln dahinter: doc/design/13_distribution.md §8.1.
@@ -43,32 +43,32 @@ from pathlib import Path
 BINDINGS_KEEP = {
     "QtCore", "QtGui", "QtWidgets", "QtOpenGL", "QtOpenGLWidgets",
     # QtDBus/QtNetwork werden nicht importiert, aber von Plugins nachgeladen —
-    # darüber entscheidet die ldd-Hülle, nicht diese Liste.
+    # darueber entscheidet die ldd-Huelle, nicht diese Liste.
 }
 
-#: Qt-Plugin-Verzeichnisse, die zur Laufzeit gebraucht werden.  Das Plugin für
-#: die Fensterumgebung (`platforms/`) ist überlebenswichtig, `imageformats/`
+#: Qt-Plugin-Verzeichnisse, die zur Laufzeit gebraucht werden.  Das Plugin fuer
+#: die Fensterumgebung (`platforms/`) ist ueberlebenswichtig, `imageformats/`
 #: und `iconengines/` liefern Symbole und Bilder, `platformthemes/` die
 #: Dateidialoge des Desktops.
 PLUGINS_KEEP = {
     "platforms", "platforminputcontexts", "platformthemes", "xcbglintegrations",
     "egldeviceintegrations", "wayland-decoration-client", "wayland-graphics-integration-client",
     "wayland-shell-integration", "imageformats", "iconengines", "generic", "styles", "tls",
-    # Windows: Qt fragt darüber, ob eine Netzverbindung besteht.  Winzig, und
+    # Windows: Qt fragt darueber, ob eine Netzverbindung besteht.  Winzig, und
     # ohne die Gruppe meldet Qt beim Start eine Warnung.
     "networkinformation",
 }
 
 #: Einzelne Plugins, die trotz passender Gruppe rausfliegen.  Die
-#: Bildschirmtastatur ist für einen Emulator mit eigener Tastaturmatrix ohne
+#: Bildschirmtastatur ist fuer einen Emulator mit eigener Tastaturmatrix ohne
 #: Sinn — und sie ist der EINZIGE Grund, warum sonst der ganze QML/Quick-Stapel
-#: (~16 MB) über die ldd-Hülle stehenbliebe.
+#: (~16 MB) ueber die ldd-Huelle stehenbliebe.
 PLUGIN_FILES_DROP = (
     "platforminputcontexts/libqtvirtualkeyboardplugin.so",
 )
 
-#: Qt-Übersetzungen: nur diese Sprachen bleiben (die Standarddialoge sollen
-#: deutsch bleiben, alles andere sind ~13 MB für nichts).
+#: Qt-Uebersetzungen: nur diese Sprachen bleiben (die Standarddialoge sollen
+#: deutsch bleiben, alles andere sind ~13 MB fuer nichts).
 TRANSLATIONS_KEEP_PREFIX = ("qt_de", "qtbase_de", "qt_en", "qtbase_en")
 
 #: Verzeichnisse in `PySide6/Qt/`, die nur Entwicklung/QML betreffen.
@@ -79,7 +79,7 @@ QT_DIRS_DROP = ("qml", "metatypes", "libexec", "mkspecs", "include", "doc", "res
 #: importiert bzw. gelinkt.
 PYSIDE_DIRS_DROP = ("include", "typesystems", "glue", "doc", "scripts")
 
-#: Qt-Werkzeuge, die als ausführbare Dateien im Wheel liegen.
+#: Qt-Werkzeuge, die als ausfuehrbare Dateien im Wheel liegen.
 TOOLS_DROP = (
     "assistant", "designer", "linguist", "lupdate", "lrelease", "lconvert",
     "qmlformat", "qmlls", "qmllint", "qmlimportscanner", "qmlcachegen",
@@ -95,10 +95,10 @@ CPYTHON_DIRS_DROP = (
     "lib/python*/test", "lib/python*/idlelib", "lib/python*/tkinter",
     "lib/python*/turtledemo", "lib/python*/ensurepip", "lib/python*/pydoc_data",
     "lib/python*/lib2to3", "lib/python*/distutils",
-    # config-3.x-…: Makefile, python.o und libpython.a — nur zum ÜBERSETZEN
+    # config-3.x-…: Makefile, python.o und libpython.a — nur zum UEBERSETZEN
     # eigener Erweiterungen da.
     "lib/python*/config-*",
-    # pip im Basis-Python: das venv ist eigenständig und wird von uv bestückt.
+    # pip im Basis-Python: das venv ist eigenstaendig und wird von uv bestueckt.
     "lib/python*/site-packages/pip", "lib/python*/site-packages/pip-*.dist-info",
 )
 
@@ -202,18 +202,18 @@ class Cutter:
 
 
 def strip_datei(datei: Path, cut: Cutter) -> None:
-    """Symboltabelle aus @p datei entfernen — über eine Kopie, die eingewechselt wird.
+    """Symboltabelle aus @p datei entfernen — ueber eine Kopie, die eingewechselt wird.
 
-    Gearbeitet wird auf einer Kopie, und zwar aus zwei Gründen.  Erstens läuft
-    slim.py mit dem Python DER Installation; an manchen Dateien säße `strip`
+    Gearbeitet wird auf einer Kopie, und zwar aus zwei Gruenden.  Erstens laeuft
+    slim.py mit dem Python DER Installation; an manchen Dateien saesse `strip`
     damit an etwas Laufendem („Text file busy").  Zweitens — und wichtiger —
-    lässt sich ein misslungener Schnitt so folgenlos verwerfen: **eine Warnung
-    von `strip` genügt, um die Kopie wegzuwerfen**.
+    laesst sich ein misslungener Schnitt so folgenlos verwerfen: **eine Warnung
+    von `strip` genuegt, um die Kopie wegzuwerfen**.
 
-    Der Grund für diese Strenge steht im Interpreter von
+    Der Grund fuer diese Strenge steht im Interpreter von
     python-build-standalone: `strip` meldet dort „allocated section `.dynstr'
     not in segment", schreibt trotzdem eine Datei — und die startet nicht mehr
-    („undefined symbol: , version").  Das gilt für *jede* Schaltervariante,
+    („undefined symbol: , version").  Das gilt fuer *jede* Schaltervariante,
     `--strip-debug` spart dort nicht einmal Platz.  Deshalb werden hier auch nur
     gemeinsame Bibliotheken angefasst, keine Programme.
     """
@@ -242,15 +242,15 @@ def strip_datei(datei: Path, cut: Cutter) -> None:
 def pe_imports(datei: Path) -> list:
     """Die DLL-Namen aus der Importtabelle einer PE-Datei — ohne fremde Werkzeuge.
 
-    Warum von Hand statt `dumpbin /dependents`: **`slim.py` läuft beim
+    Warum von Hand statt `dumpbin /dependents`: **`slim.py` laeuft beim
     ANWENDER**, und dort gibt es kein Visual Studio.  `ldd` ist auf jedem Linux
     da, `dumpbin` auf keinem normalen Windows.  Die Importtabelle zu lesen ist
-    dafür überschaubar — Header, Datenverzeichnis 1, dann je Eintrag den Namen.
+    dafuer ueberschaubar — Header, Datenverzeichnis 1, dann je Eintrag den Namen.
 
-    Anders als `ldd` löst das **nicht rekursiv** auf; den Baum läuft
+    Anders als `ldd` loest das **nicht rekursiv** auf; den Baum laeuft
     :func:`linked_libraries` ab.
 
-    Gibt eine Liste von Dateinamen zurück (ohne Pfad, Schreibweise wie in der
+    Gibt eine Liste von Dateinamen zurueck (ohne Pfad, Schreibweise wie in der
     Datei).  Bei allem, was nicht lesbar oder kein PE ist: leere Liste — der
     Aufrufer behandelt das wie „nichts gefunden" und fasst dann nichts an.
     """
@@ -265,7 +265,7 @@ def pe_imports(datei: Path) -> list:
         pe = struct.unpack_from("<I", roh, 0x3C)[0]
         if roh[pe:pe + 4] != b"PE\0\0":
             return []
-        # COFF-Header: Sektionszahl und Größe des optionalen Headers.
+        # COFF-Header: Sektionszahl und Groesse des optionalen Headers.
         anzahl_sektionen = struct.unpack_from("<H", roh, pe + 6)[0]
         opt_groesse      = struct.unpack_from("<H", roh, pe + 20)[0]
         opt = pe + 24
@@ -276,12 +276,12 @@ def pe_imports(datei: Path) -> list:
             dd = opt + 96
         else:
             return []
-        # Datenverzeichnis 1 = Importtabelle (RVA, Größe).
+        # Datenverzeichnis 1 = Importtabelle (RVA, Groesse).
         import_rva = struct.unpack_from("<I", roh, dd + 8)[0]
         if not import_rva:
             return []
 
-        # Sektionstabelle, um RVAs in Dateiversätze umzurechnen.
+        # Sektionstabelle, um RVAs in Dateiversaetze umzurechnen.
         sektionen = []
         st = opt + opt_groesse
         for i in range(anzahl_sektionen):
@@ -318,14 +318,14 @@ def pe_imports(datei: Path) -> list:
 
 
 def _linked_windows(binary: Path, inside: Path) -> set:
-    """Wie :func:`linked_libraries`, aber über die PE-Importtabelle.
+    """Wie :func:`linked_libraries`, aber ueber die PE-Importtabelle.
 
-    Der Unterschied zu `ldd` ist die REKURSION: `ldd` löst den ganzen Baum auf,
+    Der Unterschied zu `ldd` ist die REKURSION: `ldd` loest den ganzen Baum auf,
     die Importtabelle nennt nur die direkten Nachbarn.  Also selbst ablaufen —
     Breitensuche, jeder Name wird neben der jeweiligen Datei und in @p inside
     gesucht (so sucht auch Windows: zuerst im Verzeichnis des Moduls).
 
-    Groß-/Kleinschreibung ist unter Windows egal, in einem Verzeichnisvergleich
+    Gross-/Kleinschreibung ist unter Windows egal, in einem Verzeichnisvergleich
     hier aber nicht — deshalb wird ein Kleinbuchstaben-Verzeichnis der
     vorhandenen Dateien angelegt statt je Name im Dateisystem zu raten.
     """
@@ -356,8 +356,8 @@ def _linked_windows(binary: Path, inside: Path) -> set:
 def linked_libraries(binary: Path, inside: Path) -> set:
     """Alle Bibliotheken **unterhalb** von @p inside, die @p binary (transitiv) braucht.
 
-    Unter Linux/macOS über `ldd` (löst rekursiv auf, ein Durchlauf je Wurzel
-    genügt), unter Windows über die PE-Importtabelle (siehe
+    Unter Linux/macOS ueber `ldd` (loest rekursiv auf, ein Durchlauf je Wurzel
+    genuegt), unter Windows ueber die PE-Importtabelle (siehe
     :func:`_linked_windows`).  Interessant sind nur Treffer innerhalb der
     Installation — die Systembibliotheken des Wirts gehen uns nichts an.
     """
@@ -376,7 +376,7 @@ def linked_libraries(binary: Path, inside: Path) -> set:
         # LADEADRESSE am Ende, nicht am ersten Leerzeichen: der
         # Installationspfad kommt vom Anwender und darf Leerzeichen enthalten
         # („~/Emulator Test").  Am ersten Leerzeichen geschnitten blieb die
-        # Hülle leer, und der Sicherheitsrückfall unten ließ dann ganz Qt stehen.
+        # Huelle leer, und der Sicherheitsrueckfall unten liess dann ganz Qt stehen.
         ziel = zeile.split("=>", 1)[1].strip()
         if ziel.endswith(")") and " (" in ziel:
             ziel = ziel.rsplit(" (", 1)[0].strip()
@@ -395,11 +395,11 @@ def linked_libraries(binary: Path, inside: Path) -> set:
 # ─── Die eigentlichen Schnitte ───────────────────────────────────────────────
 
 def cpython_baeume(root: Path) -> list:
-    """Die CPython-Bäume unter `<root>/python` — es gibt ZWEI Anordnungen.
+    """Die CPython-Baeume unter `<root>/python` — es gibt ZWEI Anordnungen.
 
     `uv python install` legt den Baum in ein VERSIONIERTES Unterverzeichnis
     (`<root>/python/cpython-3.12.11-linux-x86_64-gnu/`), der Windows-Assistent
-    packt ihn dagegen direkt nach `<root>/python/` (das Archiv trägt `python`
+    packt ihn dagegen direkt nach `<root>/python/` (das Archiv traegt `python`
     als oberste Ebene).
 
     Wer nur die erste Anordnung kennt, findet unter Windows **nichts**: die
@@ -431,8 +431,8 @@ def slim_symbole(root: Path, cut: Cutter) -> None:
     """Symboltabellen aus den **Bibliotheken** entfernen, wo noch welche drin sind.
 
     Qt kommt bereits gestrippt aus dem Wheel, C-Erweiterungen fremder Pakete
-    nicht (PyYAML: 2,6 → 0,4 MB).  Deshalb wird nicht aufgezählt, sondern über
-    alles gelaufen — künftige Abhängigkeiten sind damit gleich mit erfasst.
+    nicht (PyYAML: 2,6 → 0,4 MB).  Deshalb wird nicht aufgezaehlt, sondern ueber
+    alles gelaufen — kuenftige Abhaengigkeiten sind damit gleich mit erfasst.
     Programme bleiben unangetastet, siehe `strip_datei`.
     """
     # Unter Windows gegenstandslos: `strip` ist ein ELF-Werkzeug, und MSVC legt
@@ -453,14 +453,14 @@ def slim_libpython(root: Path, cut: Cutter) -> None:
     """`libpython3.x.so` entfernen — **falls** sie wirklich niemand braucht.
 
     python-build-standalone liefert den Interpreter *statisch gelinkt* aus und
-    legt die gemeinsame Bibliothek zusätzlich bei, für Programme, die Python
+    legt die gemeinsame Bibliothek zusaetzlich bei, fuer Programme, die Python
     einbetten. Wir betten nichts ein: weder `bin/python3.x` noch die
     Erweiterungsmodule (shiboken/PySide6, `lib-dynload`) verweisen darauf — dann
-    sind das 30 MB für nichts.
+    sind das 30 MB fuer nichts.
 
-    Geprüft wird das, statt es anzunehmen: erst wenn kein einziges geladenes
-    Objekt die Bibliothek anzieht, fliegt sie raus.  Zieht eine künftige
-    Abhängigkeit sie doch, bleibt sie liegen.
+    Geprueft wird das, statt es anzunehmen: erst wenn kein einziges geladenes
+    Objekt die Bibliothek anzieht, fliegt sie raus.  Zieht eine kuenftige
+    Abhaengigkeit sie doch, bleibt sie liegen.
     """
     # Windows kennt das Problem nicht: dort ist `python312.dll` die Laufzeit
     # selbst und wird von `python.exe` gebraucht — es gibt keine ueberzaehlige
@@ -476,13 +476,13 @@ def slim_libpython(root: Path, cut: Cutter) -> None:
             continue
         lib_dir = (base / "lib").resolve()
 
-        prüflinge = list(base.glob("bin/python3*"))
-        prüflinge += list(base.glob("lib/python*/lib-dynload/*.so"))
-        prüflinge += list((root / "venv" / "lib").glob("python*/site-packages/**/*.so"))
-        prüflinge += list((root / "venv" / "lib").glob("python*/site-packages/**/*.so.*"))
+        pruefling = list(base.glob("bin/python3*"))
+        pruefling += list(base.glob("lib/python*/lib-dynload/*.so"))
+        pruefling += list((root / "venv" / "lib").glob("python*/site-packages/**/*.so"))
+        pruefling += list((root / "venv" / "lib").glob("python*/site-packages/**/*.so.*"))
 
         gebraucht = set()
-        for p in prüflinge:
+        for p in pruefling:
             if p.is_file():
                 gebraucht |= {q for q in linked_libraries(p, lib_dir)
                               if q.name.startswith("libpython")}
@@ -510,7 +510,7 @@ def _pyside_dir(root: Path):
 
 
 def slim_pyside(root: Path, cut: Cutter) -> None:
-    """Qt auf das eindampfen, was die GUI (Widgets + OpenGL) tatsächlich lädt."""
+    """Qt auf das eindampfen, was die GUI (Widgets + OpenGL) tatsaechlich laedt."""
     pyside = _pyside_dir(root)
     if pyside is None:
         return
@@ -526,9 +526,9 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
         if datei.name.split(".")[0] not in BINDINGS_KEEP:
             cut.drop(datei)
 
-    # 1a. Typstubs (~3 MB) und das Baumaterial für EIGENE Bindungen.  Beides
+    # 1a. Typstubs (~3 MB) und das Baumaterial fuer EIGENE Bindungen.  Beides
     #     liest zur Laufzeit niemand: `.pyi` wendet sich an Editor und
-    #     Typprüfer, `include/`+`typesystems/`+`glue/` an shiboken.
+    #     Typpruefer, `include/`+`typesystems/`+`glue/` an shiboken.
     for stub in pyside.glob("*.pyi"):
         cut.drop(stub)
     cut.drop(pyside / "py.typed")
@@ -548,7 +548,7 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
     for name in QT_DIRS_DROP:
         cut.drop(qt / name)
 
-    # 4. Übersetzungen bis auf Deutsch/Englisch.
+    # 4. Uebersetzungen bis auf Deutsch/Englisch.
     trans = qt / "translations"
     if trans.is_dir():
         for datei in trans.iterdir():
@@ -565,8 +565,8 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
             cut.drop(plugins / rel)
 
     # 6. Qt-Bibliotheken: alles, was von den verbliebenen Bindungen und Plugins
-    #    aus nicht erreichbar ist.  DAS ist der große Posten (~130 MB), und er
-    #    wird nicht geraten, sondern aus den Abhängigkeiten bestimmt (ldd bzw.
+    #    aus nicht erreichbar ist.  DAS ist der grosse Posten (~130 MB), und er
+    #    wird nicht geraten, sondern aus den Abhaengigkeiten bestimmt (ldd bzw.
     #    die PE-Importtabelle).
     lib = pyside if IST_WINDOWS else qt / "lib"
     if not lib.is_dir():
@@ -585,16 +585,16 @@ def slim_pyside(root: Path, cut: Cutter) -> None:
         gebraucht |= linked_libraries(w, lib_resolved)
 
     if not gebraucht:
-        # Nichts aufgelöst — dann lieber nichts anfassen, als die Installation zu
+        # Nichts aufgeloest — dann lieber nichts anfassen, als die Installation zu
         # zerlegen.
-        print("     (keine Abhängigkeiten aufgelöst — Qt-Bibliotheken bleiben unangetastet)")
+        print("     (keine Abhaengigkeiten aufgeloest — Qt-Bibliotheken bleiben unangetastet)")
         return
 
     # UNTER WINDOWS ist `lib` das Verzeichnis PySide6/ SELBST, in dem auch die
     # Bindungen (`QtCore.pyd`), Python-Dateien und `opengl32sw.dll` liegen.  Ein
-    # blindes „weg, was nicht erreichbar ist" löschte hier die Bindung, mit der
+    # blindes „weg, was nicht erreichbar ist" loeschte hier die Bindung, mit der
     # der Kehraus gerade erst gerechnet hat.  Deshalb fasst er dort
-    # ausschließlich `Qt6*.dll` an.
+    # ausschliesslich `Qt6*.dll` an.
     kandidaten = sorted(lib.glob(QT_DLL_MUSTER_WIN)) if IST_WINDOWS else \
                  [d for d in lib.iterdir() if not d.is_dir()]
 
@@ -636,7 +636,7 @@ def slim_venv_paketverwaltung(root: Path, cut: Cutter) -> None:
 def slim_tools(root: Path, cut: Cutter) -> None:
     """`uv` entfernen — es wird nur beim Installieren und Aktualisieren gebraucht.
 
-    Beides läuft aus dem Paket heraus, das dabei sein eigenes `uv` mitbringt.
+    Beides laeuft aus dem Paket heraus, das dabei sein eigenes `uv` mitbringt.
     """
     cut.drop(root / "tools")
     cut.drop(root / ".cache-uv")
@@ -666,7 +666,7 @@ def main(argv) -> int:
     if not keep_tools:
         slim_tools(root, cut)
 
-    print(f"     {cut.removed} Einträge entfernt, "
+    print(f"     {cut.removed} Eintraege entfernt, "
           f"{cut.freed / (1024 * 1024):.0f} MB frei{' (Probelauf)' if dry else ''}")
     return 0
 

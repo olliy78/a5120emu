@@ -2,10 +2,10 @@
  * @file k5122_wait.cpp
  * @brief K5122 im **`/WAIT`-Betrieb** (K8915) — drehgekoppelter Datenweg und Marken-FF.
  *
- * Im K8915 gibt es keine ZVE2.  Die Karte ist auf `/WAIT` gebrückt (am Gerät abgelesen,
+ * Im K8915 gibt es keine ZVE2.  Die Karte ist auf `/WAIT` gebrueckt (am Geraet abgelesen,
  * doc/design/16_k8915.md §3.4): Boot-ROM und BIOS lesen bzw. schreiben den Datenport
- * **ausgerollt, ohne Statusabfrage** — jeder Zugriff hält die einzige CPU an, bis das
- * nächste Byte unter dem Kopf ist (Doku K5122 §5.6, Decoder-Ausgang 00).
+ * **ausgerollt, ohne Statusabfrage** — jeder Zugriff haelt die einzige CPU an, bis das
+ * naechste Byte unter dem Kopf ist (Doku K5122 §5.6, Decoder-Ausgang 00).
  *
  * Das Modell dazu (doc/design/07_k5122_afs.md §7.7):
  *
@@ -13,40 +13,40 @@
  *   das Bytefenster `phase(T) / Byteperiode`; die Phase ist die des Indexpulses
  *   (`index_cycle_acc_`), also ist Byte 0 der Spur das erste nach dem Index.  Jedes
  *   Fenster ist eine Byteperiode lang (MFM 78 Takte bei 2,4576 MHz), das letzte vor dem
- *   Index ist kürzer.  Hinter dem Ende der Spur liegt Lücke (4EH).
- * - **Was unter dem Kopf liegt, ist die Spur des Mediums, Byte für Byte** (seit AP-E4f):
- *   Lücken, 3 × A1, Indexmarke, Nachlauf hinter der CRC — so, wie sie auf der Scheibe
- *   steht.  FORMAT.COM vergleicht beim Prüf-Lesen die GANZE Spur mit dem Geschriebenen,
- *   eine nachgebaute Spur (`buildFaithfulReadTrack`, 4 × A1, eigene Lücken) bestünde das
+ *   Index ist kuerzer.  Hinter dem Ende der Spur liegt Luecke (4EH).
+ * - **Was unter dem Kopf liegt, ist die Spur des Mediums, Byte fuer Byte** (seit AP-E4f):
+ *   Luecken, 3 × A1, Indexmarke, Nachlauf hinter der CRC — so, wie sie auf der Scheibe
+ *   steht.  FORMAT.COM vergleicht beim Pruef-Lesen die GANZE Spur mit dem Geschriebenen,
+ *   eine nachgebaute Spur (`buildFaithfulReadTrack`, 4 × A1, eigene Luecken) bestuende das
  *   nicht.  Die Byteperiode folgt dem Verfahren der Spur (bzw. MFM, wenn das Laufwerk es
- *   kann und die Spur leer ist), NICHT dem MK-Bit: MK wählt nur die Markenerkennung.
+ *   kann und die Spur leer ist), NICHT dem MK-Bit: MK waehlt nur die Markenerkennung.
  * - **Daten-PIO mit einem Zwischenspeicher:** ein Zugriff bekommt das zuletzt fertig
  *   gewordene Byte, wenn es noch nicht abgeholt wurde (dann ohne Warten), sonst wartet er
- *   bis zum Ende des laufenden Fensters.  Wer zu spät kommt, verliert die Bytes dazwischen
- *   (Überlauf, Handbuch §5.7).  Die Wartetakte gehen über @ref K1520Bus::addWaitCycles an
- *   die Laufschleife, die währenddessen Zeitgeber, SIO und Index weitertaktet.
+ *   bis zum Ende des laufenden Fensters.  Wer zu spaet kommt, verliert die Bytes dazwischen
+ *   (Ueberlauf, Handbuch §5.7).  Die Wartetakte gehen ueber @ref K1520Bus::addWaitCycles an
+ *   die Laufschleife, die waehrenddessen Zeitgeber, SIO und Index weitertaktet.
  * - **Kein Warten ohne Datenfluss:** bei `/STR` = 1 oder stehender Scheibe liefert der
- *   Datenport sofort den alten Inhalt — sonst hinge die CPU für immer.
+ *   Datenport sofort den alten Inhalt — sonst hinge die CPU fuer immer.
  * - **Marken-FF (MKE, Tor B Bit1)**: scharf, solange `/STR` = 0 **und** MR (Bit5) = 0
- *   (Handbuch §5.5: zurückgesetzt „durch MR oder Abschalten von /STR“).  Gesetzt, sobald
+ *   (Handbuch §5.5: zurueckgesetzt „durch MR oder Abschalten von /STR“).  Gesetzt, sobald
  *   nach dem Scharfmachen das erste Byte einer Sync-Gruppe ganz unter dem Kopf durch ist.
  *   Welche Gruppe, entscheidet MK (Tor A Bit1; Handbuch §4.3 „/MK“, am Port invertiert):
  *   MK = 0 ⇒ MFM-Synchronisationsbyte A1 (vor Kennfeld/Datenfeld), MK = 1 ⇒
  *   MFM-Indexmarke C2 bzw. FM-Marken.  Ruhepegel 0; das BIOS stellt sich beim Kaltstart
- *   auf die Polarität ein (E2B6H).  Das erste `IN (16H)` danach liefert das erkannte
- *   Sync-Byte selbst („Datenbyte der Marke, welches als erstes Byte zur CPU übertragen
+ *   auf die Polaritaet ein (E2B6H).  Das erste `IN (16H)` danach liefert das erkannte
+ *   Sync-Byte selbst („Datenbyte der Marke, welches als erstes Byte zur CPU uebertragen
  *   wird“, Handbuch §5.3).
  * - **Schreiben** zwischen den `/WE`-Flanken (Bit0): gesammelt wird, was an 14H geht (je
  *   Byte ein Fenster, mit Warten), samt dem Fenster, in dem es auf die Scheibe ging.
- *   Übernommen wird beim Loslassen von `/WE` (oder `/STR` = 1), und der Strom entscheidet
+ *   Uebernommen wird beim Loslassen von `/WE` (oder `/STR` = 1), und der Strom entscheidet
  *   (@ref waitSchreibenUebernehmen):
- *   - **ganze Spur (FORMAT.COM, AP-E4f)** — enthält er Kennfelder (A1 A1 A1 FE …), wird
+ *   - **ganze Spur (FORMAT.COM, AP-E4f)** — enthaelt er Kennfelder (A1 A1 A1 FE …), wird
  *     jedes Byte an SEIN Fenster der Umdrehung gelegt (@ref waitSpurSchreiben) und die
  *     Spur so ins Medium geschrieben, an der beim Beginn gemerkten Kopfposition und Seite
  *     (/FR des Schreib-Steuerworts);
  *   - **Datenfeld (BIOS, DISGEN)** — sonst: der Sektor, dessen Kennfeld zuletzt unter dem
  *     Kopf durchlief, bekommt das Datenfeld an Ort und Stelle (`TrackCodec::writeSector`,
- *     Lücken und Spurlänge bleiben).
+ *     Luecken und Spurlaenge bleiben).
  */
 
 #include "core/cards/k5122/k5122.h"
@@ -77,7 +77,7 @@ Encoding K5122::waitVerfahrenGemerkt() const
 {
     // Die Datenrate liegt an Laufwerk und Aufzeichnung, nicht am MK-Bit (/HF, Handbuch
     // §4.3): eine beschriebene Spur dreht in ihrem Verfahren, eine leere in dem, das das
-    // Laufwerk schreiben würde.
+    // Laufwerk schreiben wuerde.
     if (w_strom_gilt_ && !w_strom_.empty()) return w_strom_.encoding;
     const DriveProfile& pr = drives_[selected_drive_].profile();
     return pr.supports_mfm ? Encoding::MFM : Encoding::FM;
@@ -91,8 +91,8 @@ int K5122::waitByteperiode()
 
 // PC 1715: Datenrate/Takt ist keine ganze Zahl (2,458 MHz / 31 250 B/s = 78,66).  Die
 // Schreibschleife von FORMATP/SCP-INIT (OUTI + CALL + 6 NOP + RET + JR = 79 Takte) ist auf
-// die ECHTE Bytezeit abgestimmt; auf 78 abgerundet läuft sie je Byte 1 Takt zu langsam und
-// verliert pro 128-Byte-Block ein Fenster (Daten-CRC dann 8 Byte zu spät → 'C' SPUR DEFEKT).
+// die ECHTE Bytezeit abgestimmt; auf 78 abgerundet laeuft sie je Byte 1 Takt zu langsam und
+// verliert pro 128-Byte-Block ein Fenster (Daten-CRC dann 8 Byte zu spaet → 'C' SPUR DEFEKT).
 // Daher am 1715 AUFgerundet; andere Maschinen bleiben bitgleich.
 int K5122::waitByteperiodeFuer(Encoding enc) const
 {
@@ -124,17 +124,17 @@ const TrackImage& K5122::waitStrom()
         const TrackImage& spur = drv.track(current_head_);
         if (!spur.empty()) {
             if (spur.bitcells != 0) {
-                // Die Spur selbst, Byte für Byte — keine nachgebaute (s. Dateikopf).
+                // Die Spur selbst, Byte fuer Byte — keine nachgebaute (s. Dateikopf).
                 // bitcells ≠ 0: sie hat eine echte Aufzeichnung (Flussabbild, oder von
                 // FORMAT.COM im /WAIT-Betrieb geschrieben, waitSpurSchreiben).
                 w_strom_ = spur;
             } else {
                 // Aus logischen Sektoren gebaute Spur (.img, .dmk-Kopie, BusRq-Weg):
-                // seit AP-F1 hat sie selbst Normlücken (TrackCodec::normGaps); bis dahin
-                // Vorspann 16, Lücke 3 = 24 und bis AP-E5a Lücke 2 = 11 × 4E — zu knapp: das
-                // BIOS liest nach dem Kennfeld (F780H) − 6 Lückenbytes, bevor es neu scharf
-                // macht.  Unter dem Kopf liegt weiter die Spur mit den Lücken von
-                // FORMAT.COM (Lücke 3 auf die Umdrehung dieses Laufwerks, §4.4 in
+                // seit AP-F1 hat sie selbst Normluecken (TrackCodec::normGaps); bis dahin
+                // Vorspann 16, Luecke 3 = 24 und bis AP-E5a Luecke 2 = 11 × 4E — zu knapp: das
+                // BIOS liest nach dem Kennfeld (F780H) − 6 Lueckenbytes, bevor es neu scharf
+                // macht.  Unter dem Kopf liegt weiter die Spur mit den Luecken von
+                // FORMAT.COM (Luecke 3 auf die Umdrehung dieses Laufwerks, §4.4 in
                 // doc/design/16_k8915.md).
                 w_strom_ = waitNormspur(spur);
             }
@@ -147,7 +147,7 @@ const TrackImage& K5122::waitStrom()
                 if (m == MarkType::None) continue;
                 if (m == MarkType::Id) ++sektoren;
                 if (w_strom_.encoding == Encoding::FM) {
-                    // FM: die Marke trägt ihr Taktmuster selbst; erkannt ist sie, wenn
+                    // FM: die Marke traegt ihr Taktmuster selbst; erkannt ist sie, wenn
                     // das Byte davor durch ist (wie romReadResyncTarget, markPos − 1).
                     if (i > 0) w_sync_fm_.push_back(i - 1);
                     continue;
@@ -166,7 +166,7 @@ const TrackImage& K5122::waitStrom()
                      static_cast<unsigned>(current_head_), sektoren, w_strom_.size(),
                      w_strom_.encoding == Encoding::FM ? "FM" : "MFM");
         } else {
-            LOG_INFO("K5122", "WAIT: Spur D%d C=%u H=%u unformatiert (Lücke ohne MKE bzw. Rauschen, setRauschenAufLeererSpur)",
+            LOG_INFO("K5122", "WAIT: Spur D%d C=%u H=%u unformatiert (Luecke ohne MKE bzw. Rauschen, setRauschenAufLeererSpur)",
                      selected_drive_, static_cast<unsigned>(zyl),
                      static_cast<unsigned>(current_head_));
         }
@@ -185,13 +185,13 @@ TrackImage K5122::waitNormspur(const TrackImage& spur) const
     const auto sektoren = TrackCodec::parseTrack(spur);
     const bool mfm = spur.encoding == Encoding::MFM;
     GapParams g = TrackCodec::gapsFor(spur.encoding);
-    // Normlücken nach FORMAT.COM des K8915 (MFM: 80 × 4E, IAM, 50 × 4E, Lücke 2 22 × 4E,
-    // Synchron 12 × 00) bzw. IBM 3740 (FM: 40, IAM, 26, Lücke 2 11, Synchron 6).
+    // Normluecken nach FORMAT.COM des K8915 (MFM: 80 × 4E, IAM, 50 × 4E, Luecke 2 22 × 4E,
+    // Synchron 12 × 00) bzw. IBM 3740 (FM: 40, IAM, 26, Luecke 2 11, Synchron 6).
     g.gap4a = mfm ? 80 : 40;
     g.gap1  = mfm ? 50 : 26;
     g.gap2  = mfm ? 22 : 11;
     g.with_iam = true;
-    // Lücke 3 so, dass die Spur in eine Umdrehung passt (Nenndatenrate), höchstens
+    // Luecke 3 so, dass die Spur in eine Umdrehung passt (Nenndatenrate), hoechstens
     // die von FORMAT.COM (116 bei 5 × 1024), mindestens der Nachlauf hinter der CRC.
     const DriveProfile& pr = drives_[selected_drive_].profile();
     const size_t umdrehung = static_cast<size_t>((mfm ? 31250u : 15625u) * 60u / pr.rpm);
@@ -213,8 +213,8 @@ bool K5122::waitRauschen()
 
 uint64_t K5122::rauschHash(uint64_t umdr, size_t slot) const
 {
-    // splitmix64 über Laufwerk, Zylinder, Seite, Umdrehung und Fenster: reproduzierbar,
-    // aber jede Umdrehung anders (am Gerät ist Rauschen nie zweimal gleich).
+    // splitmix64 ueber Laufwerk, Zylinder, Seite, Umdrehung und Fenster: reproduzierbar,
+    // aber jede Umdrehung anders (am Geraet ist Rauschen nie zweimal gleich).
     uint64_t x = (static_cast<uint64_t>(selected_drive_) << 56)
                ^ (static_cast<uint64_t>(drives_[selected_drive_].currentCylinder()) << 48)
                ^ (static_cast<uint64_t>(current_head_) << 40)
@@ -240,7 +240,7 @@ uint8_t K5122::waitByte(size_t slot)
 {
     if (waitRauschen()) return rauschByte(w_fenster_umdr_, slot);
     const TrackImage& s = waitStrom();
-    if (slot >= s.size())                          // hinter der Spur: Lücke
+    if (slot >= s.size())                          // hinter der Spur: Luecke
         return waitVerfahrenGemerkt() == Encoding::FM ? 0xFF : 0x4E;
     return s.bytes[slot];
 }
@@ -307,13 +307,13 @@ void K5122::waitSchreibenUebernehmen()
 {
     we_writing_ = false;
     // Ganze Spur oder Datenfeld?  Entschieden am Strom selbst: nur FORMAT schreibt
-    // Kennfelder (A1 A1 A1 FE …); ein Datenfeld-Strom des BIOS enthält keins.
+    // Kennfelder (A1 A1 A1 FE …); ein Datenfeld-Strom des BIOS enthaelt keins.
     Encoding enc = Encoding::MFM;
     const auto sektoren = parseFormatStream(write_buf_, &enc);
     FloppyDriveV2& drv = drives_[selected_drive_];
     if (!drv.isMounted() || drv.isWriteProtect()) {
         LOG_WARN("K5122", "WAIT: Schreiben D%d verworfen (%s)", selected_drive_,
-                 drv.isMounted() ? "schreibgeschützt" : "keine Diskette");
+                 drv.isMounted() ? "schreibgeschuetzt" : "keine Diskette");
     } else if (!sektoren.empty()) {
         waitSpurSchreiben(enc, sektoren.size());
     } else {
@@ -321,7 +321,7 @@ void K5122::waitSchreibenUebernehmen()
     }
     write_buf_.clear();
     w_schreib_fenster_.clear();
-    cur_track_        = nullptr;   // gehört dem BusRq-Weg
+    cur_track_        = nullptr;   // gehoert dem BusRq-Weg
     post_write_grace_ = 0;
     w_strom_gilt_     = false;     // Spur neu aus dem Medium
 }
@@ -329,9 +329,9 @@ void K5122::waitSchreibenUebernehmen()
 void K5122::waitSpurSchreiben(Encoding enc, size_t kennfelder)
 {
     FloppyDriveV2& drv = drives_[selected_drive_];
-    // Eine Umdrehung hat so viele Bytefenster wie waitFenster zählt; jedes geschriebene
+    // Eine Umdrehung hat so viele Bytefenster wie waitFenster zaehlt; jedes geschriebene
     // Byte liegt in SEINEM Fenster — was nach dem Index weitergeschrieben wurde,
-    // überschreibt den Anfang der Spur (bei FORMAT.COM: Lücke über Lücke).
+    // ueberschreibt den Anfang der Spur (bei FORMAT.COM: Luecke ueber Luecke).
     const uint64_t P = static_cast<uint64_t>(drv.indexPeriodCycles(cpu_hz_));
     const uint64_t p = static_cast<uint64_t>(waitByteperiodeFuer(enc));
     const size_t   n = static_cast<size_t>((P + p - 1) / p);
@@ -341,7 +341,7 @@ void K5122::waitSpurSchreiben(Encoding enc, size_t kennfelder)
     spur.encoding = enc;
     spur.bytes.assign(n, luecke);
     spur.marks.assign(n, MarkType::None);
-    // Was nicht überschrieben wird, bleibt stehen (dieselbe Seite, dasselbe Verfahren).
+    // Was nicht ueberschrieben wird, bleibt stehen (dieselbe Seite, dasselbe Verfahren).
     const uint8_t alt_zyl = drv.currentCylinder();
     if (alt_zyl == w_schreib_zyl_) {
         const TrackImage& alt = drv.track(w_schreib_kopf_);
@@ -362,7 +362,7 @@ void K5122::waitSpurSchreiben(Encoding enc, size_t kennfelder)
         neu[pos] = true;
         ++auf_der_scheibe;
     }
-    // Marken setzen, wo der Strom sie trägt: MFM = Markenbyte hinter A1 (FE/FB/F8)
+    // Marken setzen, wo der Strom sie traegt: MFM = Markenbyte hinter A1 (FE/FB/F8)
     // bzw. C2 (FC); FM = Markenbyte hinter mindestens drei 00H (wie parseFormatStream).
     for (size_t pos = 0; pos < n; ++pos) {
         if (!neu[pos]) continue;
@@ -417,15 +417,15 @@ void K5122::waitFeldSchreiben()
                                 write_buf_.begin() + static_cast<long>(daten + take));
     inhalt.resize(wr_size_, 0x00);
     // Hinter der Daten-CRC: der Nachlauf des Schreibkopfs (DISGEN: 4 Byte, §4.4) bzw.
-    // ein Sektorkontrollblock — wie im BusRq-Weg bis kSectorTailBytes übernehmen.
+    // ein Sektorkontrollblock — wie im BusRq-Weg bis kSectorTailBytes uebernehmen.
     std::vector<uint8_t> nachlauf;
     const size_t nach_crc = daten + take + 2;
     for (size_t i = nach_crc; i < write_buf_.size() && nachlauf.size() < kSectorTailBytes; ++i)
         nachlauf.push_back(write_buf_[i]);
 
     TrackImage& spur = drv.mutableTrack(current_head_);
-    // An Ort und Stelle (Lücken, Spurlänge, Nachbarsektoren bleiben; die CRC rechnet
-    // writeSector neu).  Stösst der Nachlauf an eine Marke, ohne ihn.
+    // An Ort und Stelle (Luecken, Spurlaenge, Nachbarsektoren bleiben; die CRC rechnet
+    // writeSector neu).  Stoesst der Nachlauf an eine Marke, ohne ihn.
     bool ok = !spur.empty() && TrackCodec::writeSector(spur, wr_id_, inhalt, nachlauf);
     if (!ok && !spur.empty()) ok = TrackCodec::writeSector(spur, wr_id_, inhalt, {});
     if (!ok) {
@@ -450,10 +450,10 @@ void K5122::waitMkePlanen(bool neu_scharf)
         w_mke_time_ = UINT64_MAX;
         return;
     }
-    // Schon scharf, Spur unverändert, Marke gefunden oder Zeitpunkt geplant: nichts tun.
-    // (Neu geplant wird beim Scharfmachen und wenn sich die Spur unter dem Kopf ändert —
+    // Schon scharf, Spur unveraendert, Marke gefunden oder Zeitpunkt geplant: nichts tun.
+    // (Neu geplant wird beim Scharfmachen und wenn sich die Spur unter dem Kopf aendert —
     // ein beliebiger anderer Schreibzugriff auf 10H darf eine gerade durchlaufende
-    // Sync-Gruppe nicht „überspringen“.)
+    // Sync-Gruppe nicht „ueberspringen“.)
     const bool mk = (prev_ctrl_a_ & 0x02) != 0;   // Markenerkennung: 0 = A1, 1 = C2/FM
     const bool strom_alt = w_strom_gilt_ && w_strom_lw_ == selected_drive_
         && w_strom_zyl_ == drives_[selected_drive_].currentCylinder()
@@ -492,9 +492,9 @@ void K5122::waitMkePlanen(bool neu_scharf)
     for (size_t s0 : gruppen) {
         if (s0 >= j0 && (s0 + 1) * p <= P) {
             // setMkeJedesSyncByte: ist das zuletzt fertig gewordene Byte (j_lauf − 1, es
-            // liegt noch im Daten-PIO) ein Sync-Byte, gilt die Marke sofort — Ersatz für den
-            // Gleichlauf-Zufall, mit dem die Abfrageschleife des PRG-710-ROMs am Gerät
-            // früher oder später ein Sync-Byte im Abfragefenster erwischt
+            // liegt noch im Daten-PIO) ein Sync-Byte, gilt die Marke sofort — Ersatz fuer den
+            // Gleichlauf-Zufall, mit dem die Abfrageschleife des PRG-710-ROMs am Geraet
+            // frueher oder spaeter ein Sync-Byte im Abfragefenster erwischt
             // (doc/design/20_prg710.md AP-P1d).  Ohne ihn liefe das starre Zeitraster des
             // Emulators immer an denselben Gruppen vorbei.
             // Bis AP-P3 galt „sofort“ schon, wenn der Kopf IN einem Sync-Byte stand: beim
@@ -506,7 +506,7 @@ void K5122::waitMkePlanen(bool neu_scharf)
             return;
         }
     }
-    w_mke_time_ = rs + P + std::min((gruppen.front() + 1) * p, P);   // nächste Umdrehung
+    w_mke_time_ = rs + P + std::min((gruppen.front() + 1) * p, P);   // naechste Umdrehung
 }
 
 void K5122::waitRauschMarkePlanen()
@@ -579,9 +579,9 @@ void K5122::waitCtrlPortAWrite(uint8_t data)
                 }
             }
         }
-        // Für den Fall einer ganzen Spur (FORMAT.COM): Ort und Seite JETZT festhalten.
-        // Die Seite trägt das Schreib-Steuerwort selbst (/FR, Bit2: 1 = Kopf 0) — anders
-        // als beim Datenfeld, dessen Seite das vorangehende Lese-Steuerwort gewählt hat.
+        // Fuer den Fall einer ganzen Spur (FORMAT.COM): Ort und Seite JETZT festhalten.
+        // Die Seite traegt das Schreib-Steuerwort selbst (/FR, Bit2: 1 = Kopf 0) — anders
+        // als beim Datenfeld, dessen Seite das vorangehende Lese-Steuerwort gewaehlt hat.
         w_schreib_zyl_   = drives_[selected_drive_].currentCylinder();
         w_schreib_kopf_  = (drives_[selected_drive_].profile().num_heads <= 1)
                          ? 0 : ((data & 0x04) ? 0 : 1);
@@ -590,15 +590,15 @@ void K5122::waitCtrlPortAWrite(uint8_t data)
                   wr_cyl_, wr_head_, wr_id_, wr_size_);
     } else if (we_writing_ && ((!we_now && we_prev) || ((data & 0x08) && !(prev & 0x08)))) {
         // Ende des Schreibens: /WE wieder 1 — oder /STR = 1, dann fliesst ohnehin nichts
-        // mehr zur Scheibe.  Übernommen wird SOFORT (Regel „Lese-Strobe committet
+        // mehr zur Scheibe.  Uebernommen wird SOFORT (Regel „Lese-Strobe committet
         // anstehenden Schreibstrom“, 2026-08-06): was der Kopf geschrieben hat, liegt auf
-        // der Scheibe, bevor die CPU den nächsten Befehl ausführt.
+        // der Scheibe, bevor die CPU den naechsten Befehl ausfuehrt.
         waitSchreibenUebernehmen();
     }
 
     prev_ctrl_a_ = data;
 
-    // Marken-FF: scharf bei /STR = 0 und MR = 0; der Übergang dahin macht neu scharf.
+    // Marken-FF: scharf bei /STR = 0 und MR = 0; der Uebergang dahin macht neu scharf.
     const bool scharf_jetzt = !(data & 0x08) && !(data & 0x20);
     const bool scharf_vorher = !(prev & 0x08) && !(prev & 0x20);
     waitMkePlanen(scharf_jetzt && !scharf_vorher);

@@ -1,11 +1,15 @@
-# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu — Kurzhandbuch
+# a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / mc80emu — Kurzhandbuch
 
 Version {{VERSION}}
 
-Dieses Programm ist ein Emulator für Bürocomputer. Es enthällt den **A5120 Emulator**
+Dieses Programm ist ein Emulator für Bürocomputer. Es enthält den **A5120 Emulator**
 (`a5120emu`), den **K8915 Emulator** (`k8915emu`), den **PRG710 Emulator**
-(`prg710emu`), den **PC1715 Emulator** (`pc1715emu`) und den **P8000 Emulator**
-(`p8000emu`) — mit eigener Konfiguration und eigener Tastatur. 
+(`prg710emu`), den **PC1715 Emulator** (`pc1715emu`), den **P8000 Emulator**
+(`p8000emu`) und den **MC80 Emulator** (`mc80emu`) — mit eigener Konfiguration und eigener Tastatur.
+Was nur den K8915, den PRG, den PC 1715, den P8000 bzw. den MC80 betrifft, steht in den Abschnitten
+„Der K8915 Emulator", „Der PRG710 Emulator", „Der PC1715 Emulator", „Der P8000 Emulator" und
+„Der MC80 Emulator" (die Bedienung des P8000 selbst — Selbsttest, Monitore, UDOS, WEGA — beschreibt das
+Kapitel „Bedienung des P8000").
 Nachgebildet werden **Bus und Steckkarten** — Z80,
 Speicher, Bildschirmkarte, Tastatur und Diskettensteuerung; der Z80-Code von
 Boot-ROM, BIOS und Betriebssystem läuft darin **unverändert**. Es gibt deshalb
@@ -55,7 +59,10 @@ Speichern unter und für die echte Diskette.
 **Lochstreifen** — Leser und Stanzer, nur solange die Lochstreifen-Karte steckt
 (siehe *Lochstreifen* unten).
 
-**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk, Lochstreifen), *Laufwerke*
+**Kassette** — die beiden Kassettenlaufwerke, nur solange die Kassetten-Karte steckt
+(siehe *Kassette* unten).
+
+**Einstellungen** — vier Reiter: *Allgemein* (Modell, Takt, RAM-Disk, Lochstreifen, Kassette), *Laufwerke*
 (welcher Laufwerkstyp in welchem Steckplatz steckt), *Schnittstellen* (die seriellen
 Anschlüsse des Rechners nach außen, ein Block je Schnittstelle — siehe *Serielle
 Schnittstellen* unten) und *CRT* (das Aussehen der Bildröhre).
@@ -592,6 +599,77 @@ dafür Platz hätte — nach dem Schaltplan hängt sie an RAMEN. Daneben steht
 `Modus: 8-Bit` oder `Modus: 16-Bit`, je nachdem, welcher Prozessor gerade den
 Bus hat. Beim schlichten A5120 fehlen beide Leuchten.
 
+## Frühe A5120
+
+Neben dem A5120 „neu“ (K7024 mit 80×24 Zeichen, K7637) kennt das Programm zwei
+ältere Ausführungen. Sie stehen unter *Einstellungen ▸ Allgemein ▸ Modell*:
+
+* **A5120 (64×16, K7636)** — Bildschirmkarte K7023 mit 16 Zeilen zu 64 Zeichen,
+  Tastatur K7636 parallel an der Zentralen Recheneinheit, vier RAM-Karten K3525
+  (je 16 KB).
+* **A5120 Kassette** — wie vorstehend, dazu fest die Kassettenkarte K5020 mit
+  zwei Laufwerken K5200 (Geräte 1 und 2; unter BCU 880 sind das E: und F:). Das
+  Feld *Kassette* in den Einstellungen entfällt, die Karte ist Teil des Modells.
+
+Ein Wechsel baut die Maschine neu auf (Kaltstart). Eine Konfiguration ohne Modell
+bleibt der A5120 „neu“. Das Modell **A5120 8″** (K5602) steht im Auswahlfeld
+ausgegraut: es ist nicht nachgebildet.
+
+**Laufwerke werden beim Modellwechsel nicht umgestellt.** Die alten Geräte hatten
+drei Laufwerke K5600.10 (5¼″, 40 Spuren, einseitig), die Vorgabe der Ausführung
+beim Anlegen. Ein Wechsel im laufenden Programm lässt die gewählte Bestückung
+(*Einstellungen ▸ Laufwerke*) und die eingelegten Disketten aber stehen — sie
+gehören dem Anwender. Wer ein altes Gerät nachstellen will, stellt die Laufwerke
+selbst ein. Auch das Doppelschritt-Verfahren (40-Spur-Diskette im 80-Spur-Laufwerk
+und umgekehrt) kommt aus dem Abschnitt *Wenn die Diskette nicht zum Laufwerk
+passt*. **Viele alte Geräte sind später auf K5601/K5122 umgerüstet worden**; wer
+Disketten aus einem solchen Gerät hat, nimmt eher die 80-Spur-Laufwerke.
+
+**Bild:** 64×16 Zeichen, die Zelle ist 8×16 Punkte groß, das Bild 512×256. Der
+Kursor ist ein Balken in den untersten Zeilen der Zelle. Die K7023.01 kennt
+Helligkeitsmarken (04H–0FH), die der Emulator nicht darstellt.
+
+**Tastatur K7636** (Bildschirmtastatur wechselt mit dem Modell):
+
+* Kleinschrift ist die Grundstellung; SHIFT und LOCK liefern selbst keinen Code und
+  schalten auf Großschrift (anders als an der K7634).
+* **ET2** ist die Steuertaste (Control-Ersatz), **ET1** liefert FFH — ob daraus ein
+  Zeilenende wird, hängt vom System ab (BCU 880 Satz 2: nur die Taste ↵).
+* **DEL LINE** (13H) liefert ESC-Code, **INS LINE** (03H) ein eigenes Zeichen;
+  die Tasten S…S9 sind PF0…PF9, INS MODE ist das numerische Minus.
+* Die Lampen (Wahl 0–3, INS MODE, Fehler) setzt der Gast per Kommando.
+* Nach dem Einschalten schickt die Tastatur ein Typzeichen (80H); BCU 880 holt es
+  nicht ab — es erscheint als erstes Zeichen der ersten Eingabezeile. Erst eine
+  leere Zeile eingeben.
+
+**CP/A** (die vorhandenen Disketten von 1989) läuft auf dem Modell unverändert bis
+`A>`; es erkennt die K7023 an einer Brücke der Zentralen Recheneinheit und die
+K7636 selbst.
+
+### BCU 880
+
+Das Betriebssystem BCU 880 (V1.2) bootet auf dem Modell von den Disketten
+„SYL auf Spur 1“ bis `A>`. Das Lade-ROM wählt dafür die passende Fassung (V0.6);
+Bestückung und Lade-ROM stellt in dieser Fassung das Programm nicht zur Wahl —
+BCU-Disketten starten über die Werkzeuge `boot_trace`/`k1520dbg` mit
+`--ausfuehrung alt|kmbg --laderom v06 --format …`. Die Bedienung:
+
+* **Warmstart braucht die Diskette „ohne SYL“ in A:** — nach dem Kaltstart von
+  der SYL-Diskette also die Arbeitsdiskette einlegen, bevor ^C oder ein Programm
+  endet, sonst stürzt das System ab.
+* **Kassette:** `OPEN B:KMBG` lädt den Treiber (Meldung „kmbg opened“, `KMBG.REL`
+  liegt auf der Arbeitsdiskette). Die Kassette im Gerät 2 ist **F:**, Gerät 1 ist E:.
+  `B:INIT` formatiert sie (Antwort Y), danach `PIP F:=B:STAT.COM` und zurück. BCU
+  wartet im Vorspann ohne Frist; eine frische Kassette muss man nicht erst
+  zurückspulen.
+* **INIT verlassen:** INIT fragt nach dem Formatieren „AGAIN?“ und endet nur mit
+  Return (0DH), den die K7636.01 nicht liefert. Ausweg: während des Formatierens
+  **DEL LINE** drücken (entspricht ^S), danach **INS LINE** (entspricht ^C) —
+  Warmstart.
+* **Version V2.1:** vom Gerät liegt kein Lade-ROM vor, das sie startet. Ein
+  V2.1-System läuft nur als **Eigenbau** (V1.2-Lader mit V2.1-System und
+  V1.2-Plattentreiber, `tools/bcu_v21_eigenbau.py`) — **kein Original**.
+
 ## RAM-Floppy RAF
 
 *Einstellungen ▸ Allgemein ▸ RAM-Disk* steckt eine RAM-Floppy des ZWG der AdW
@@ -688,6 +766,41 @@ zurück (`ERROR C9`). `ERROR C2` beim Lesen heisst: kein Band im Leser. Für
 **A5120** und **K8915** liegt kein Treiber bei — die Karte steckt (E/A E0H–E7H),
 ein Programm muss sie selbst bedienen.
 
+## Kassette
+
+*Einstellungen ▸ Allgemein ▸ Kassette (K5221, AKB K5020)* steckt den
+Anschlussbaustein K5020 mit zwei Kassettenlaufwerken K5200 — in allen Programmen
+außer dem P8000, ab Werk aus. Ein Wechsel schaltet die Maschine aus und baut sie neu
+auf, wie beim Lochstreifen. Die Karte liegt am A5120 und am PRG 710 auf E/A
+30H–37H, am K8915 und am PC 1715 auf D0H–D7H (am PC 1715 nur mechanisch: es gibt
+dort keinen Gasttreiber), am MC80 auf 30H–37H (Bedienung unter *Der MC80 Emulator*).
+
+**Zurückspulen vor KMBG/FEX:** Programme, die die Kassette über `KMBG.REL` (SCPX)
+oder FEX bedienen, warten nur rund 2,5 s auf das Magnetband. Eine frisch eingelegte
+Kassette steht noch im Vorspann und wird in dieser Zeit nicht erreicht (Status 04);
+sie muss deshalb vorher zurückgespult werden (UMS bzw. das Rückspulkommando des
+Programms).
+
+Mit gesteckter Karte erscheint der Kasten **Kassette** (neben *Laufwerke*,
+*Ansicht ▸ Kassette* holt ihn zurück), mit einem Block je Laufwerk (Gerät 1 und 2):
+
+* **Lampe und Datei** — die Lampe leuchtet, solange das Band läuft. Darunter stehen
+  die Seite (A oder B) und die Kopfstelle (`12,3 von 90,0 mm, 4 Blöcke`).
+* **Einlegen…** legt eine `.k52`-Datei ein und **bindet** sie: was das Programm
+  schreibt, landet nach einer Schreibpause in der Datei, wie bei einer Diskette. Eine
+  Datei, die es noch nicht gibt, wird als leere Kassette angelegt.
+* **Neue** legt eine leere Kassette ohne Datei ein (sie bleibt im Speicher und wird
+  nicht gemerkt). **Auswerfen** schreibt die Datei zurück und nimmt die Kassette
+  heraus; läuft das Band oder hat der Rechner das Gerät reserviert, geht es nicht.
+* **Wenden** dreht die Kassette (Seite A ↔ B), nur bei stehendem Band.
+* **Seite A / B schreibgeschützt** — der Schreibschutz je Seite.
+
+Gemerkt werden je Laufwerk Datei und Schreibschutz; beim nächsten Start wird die
+Kassette wieder eingelegt (eine fehlende Datei entsteht leer neu). Die Bänder
+überstehen ein Rückstellen des Rechners, aber keinen Zwischenstand (*Maschine ▸
+Zwischenstand* sichert die Karte nicht). Für die Kassette gibt es kein
+Tastenkürzel.
+
 ## Rechtsklick auf das Bild: Text kopieren, Zwischenablage einfügen
 
 Das Menü der rechten Maustaste auf dem Bildschirm gibt es bei **allen** Maschinen:
@@ -741,7 +854,7 @@ Alles, was man einstellt, landet fortlaufend in
 kann also den A5120 mit drei Laufwerken und sichtbarer Tastatur und den K8915 mit
 zwei Laufwerken ohne Tastatur nebeneinander führen. Gemerkt werden Bildröhre,
 Takt, Modell, RAM-Disk (samt Stand-by), Lochstreifen-Karte samt Leser- und
-Stanzerdatei, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
+Stanzerdatei, Kassetten-Karte samt den Dateien beider Laufwerke, Laufwerksbestückung, eingelegte Disketten, die seriellen Schnittstellen
 (samt dem, was lief), Größe und Lage des Fensters
 (auch „maximiert"), die Lage und Breite der Kästen samt der Trennlinien
 dazwischen, und der Inhalt der Symbolleiste.
@@ -1062,6 +1175,90 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
   fest an SIO-A und steht nicht im Reiter. Ein Drucker ohne Verbindung gilt als
   besetzt.
 
+## Der MC80 Emulator
+
+`mc80emu` ist derselbe Emulator für die Mikrorechner **MC80.30** und **MC80.31** des
+VEB Elektronik Gera (U880 mit 2,4576 MHz, Betriebssystem **EGOS** im ROM, Grafikkarte
+VIS 2a mit 512 × 256 Bildpunkten, abgesetzte Tastatur mit eigenem Prozessor) sowie für
+die älteren **MC80.21** und **MC80.22** (eigener Abschnitt am Ende des Kapitels). Was
+anders ist:
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **MC80.30** (Vorgabe) oder
+  **MC80.31** (zusätzlich die EPROM-Programmsegmente 10H/20H). Ein
+  Wechsel erzeugt die Maschine neu (Kaltstart) und wird in `mc80emu.yaml` gemerkt. Die
+  **MC80.21/.22** sind wählbar (siehe unten); die **MC80.33** (vom Treiber-ROM der AKM
+  liegt nur die Hälfte vor) steht ausgegraut in der Auswahl.
+* **Speichererweiterung** — *Einstellungen ▸ Allgemein*: eine oder zwei Karten **SPE 2**
+  (die zweite bringt das RAM-Segment 02H). Ein Wechsel startet die Maschine kalt.
+* **Keine Laufwerke** — der Kasten „Laufwerke“, die Diskettenmenüs und die
+  Laufwerksfelder der Statuszeile fehlen. RAM-Disk und Lochstreifen gibt es am MC80
+  nicht.
+* **Kassette** — *Einstellungen ▸ Allgemein ▸ Kassette* steckt die Kassettenkarte
+  K5020 an E/A 30H (MC80.30: Laufwerk LW 1200, MC80.31: K5200; siehe *Kassette*).
+  EGOS bedient nur **Laufwerk 1**. Nach `INIT`: `KINIT 1` formatiert die Kassette
+  (gut eine Minute Bandzeit), `WRITE 1,NAME,01,4000,40FF` schreibt den Bereich
+  4000H–40FFH aus Segment 01 unter NAME, `READ 1,NAME,R` holt ihn an dieselbe Adresse
+  zurück und hängt ihn in die Kommandokette — steht dort ein Programm mit Kennbyte,
+  ist es danach wieder ein Kommando. Eine neu angelegte Kassette hat am MC80 einen
+  kurzen Vorspann (sie ist eine Kompaktkassette) und keine Anfangs-/Endmarke (die verträgt EGOS nicht); man muss sie
+  nicht vorher zurückspulen.
+* **Einschalten** — EGOS meldet sich nach gut einer Sekunde mit
+  „mc 80.30. microcomputer“ und „Version 3.0“, unten steht `OK` und der Prompt `>`.
+  **Erst `INIT` eingeben** (mit ENTER): das legt die Kommandokette im RAM an; Tasten,
+  die vor dem Ende von INIT kommen, gehen verloren.
+* **Programme laden** — *Maschine ▸ Speicherabzug laden…* lädt eine Binärdatei ab einer
+  Adresse in den Arbeitsspeicher (erfragt wird die Adresse; steht sie im Dateinamen wie
+  bei `tetris_4000_4fff.bin`, ist sie vorgeschlagen). Gestartet wird mit dem
+  EGOS-Kommando des Programms, z. B. **TETRIS**: nach `INIT` ab 4000H laden, dann
+  `te` + ENTER; **HASI** ebenso ab 4000H mit `hasi`. **Spiele und andere Programme erst nach
+  `INIT` laden** — vorher gibt es die Kommandokette nicht, in die sie sich einhängen.
+  Kein Tastenkürzel.
+* **Die Bildschirmtastatur** zeichnet das Tastenbild der Betriebsdokumentation
+  (Bild A5): Hauptfeld mit **CTRL**, Feststeller **⇩** und den beiden Umschalttasten
+  **⇧**, darunter **OFF**, Leertaste und **ENTER**; rechts die acht **Steuertasten**
+  S0–S7 (Sondertasten 0–7 von EGOS) und der Ziffernblock. Die Tastatur sendet
+  **Zeichen**, nicht Tastenpositionen. Kursortasten, **CL**, **CRLF**, **÷** und **00**
+  lassen sich drücken, senden aber nichts — ihre Codes sind nicht überliefert. Die
+  Leuchten links zeigen CTRL und Umschaltung, die rechts neben CL die Bereitschaft.
+* Die **PC-Tastatur**: Zeichen als Zeichen (EGOS tauscht in der Vorgabe Groß und
+  Klein — „a“ erscheint als „A“), **Enter** = ENTER, **Esc** = OFF (Abbruch),
+  **Tab** = Tabulator, **F1–F8** = Steuertasten S0–S7. Die Pfeiltasten wirken nicht.
+* **Text kopieren** — der Bildschirm ist eine Grafik; *Maschine ▸ Bildschirminhalt als
+  Text kopieren* (oder Rechtsklick) erkennt die EGOS-Schrift wieder und liefert 25
+  Textzeilen.
+
+### MC80.21 und MC80.22
+
+Die Geräte der älteren Reihe haben **nichts mit dem MC80.3x gemeinsam außer dem Takt**:
+andere Zentraleinheit (K2521, Betriebssystem **BSYS** statt EGOS), Programmspeicher aus
+steckbaren EPROM-Sockeln (PFS), und **kein Bildwiederholspeicher mit Grafikkarte**. Das
+Bild ist eine **Oszilloskop-Darstellung**: die Display-Logik (DPL) lenkt den Strahl zeilenweise
+ab, schreibt acht Textzeilen zu je 32 Zeichen (5 × 7-Punktraster) und kann statt einer Zeile
+eine **Analogkurve** zeichnen. Der Emulator bildet das als Bild von 528 × 256 Punkten ab; die
+Bildwechselfrequenz liegt bei etwa 50 Hz.
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **MC80.21** oder **MC80.22**. Beide
+  verhalten sich im Emulator gleich (ein Unterschied ist nicht belegt). Die Wahl der
+  Speicherkarten SPE 2 gilt nur für die .30/.31 und ist hier ausgegraut.
+* **Einschalten** — das BSYS zeigt ein **Menü**: `TASTENTEST`, `INIT`, `BAND`, `EDITOR`,
+  `BASIC-80.2` … mit Adresse vor jeder Zeile. Mit **Kursor ↓/↑** wählt man eine Zeile,
+  **ENTER** startet sie, **OFF** führt zurück. Die Zeichenform kommt aus einem Ersatz-
+  Zeichengenerator (5 × 7-Satz); einzelne Zeichen (`@ & ^ \`) sehen am Gerät anders aus.
+* **Kassette** — fest eingebaut: das Magnetbandinterface (MBI) mit Laufwerk SK 1200. Das
+  Kästchen *Kassette* ist deshalb ausgegraut; der Kasten „Kassette“ zeigt das eine
+  Laufwerk. Neue Bänder sind Kompaktkassetten. Im Menü `BAND` speichert und lädt man
+  Programme (Name, Blocknummer, Anfangs- und Endadresse eingeben, je mit ENTER).
+* **Bildschirmtastatur** — die Tasten der 8 × 7-Matrix mit BK, CL, CTR, UC (zweite Ebene)
+  und Kursor. **Die Lage der Tasten ist nicht belegt** (das Tastaturfoto der Unterlagen ist
+  zu klein): die Nachbildung ordnet sie logisch nach der Codetabelle des BSYS an (QWERTZ).
+  Die PC-Tastatur wirkt wie üblich; **Esc** = OFF, **Rück/Entf** = CL, **Pause** = BK,
+  Pfeile = Kursor, **Strg** = CTR.
+* **Programme laden** — *Speicherabzug laden…* schreibt eine Datei ab einer Adresse in den
+  Speicher; wirksam ist das nur im RAM (Bereich ab C000H, die OPS-Karte). Wie ein Programm
+  gestartet wird, ist für den MC80.2x nicht überliefert [?].
+* **Nicht vorhanden** am MC80.2x: Lochstreifen, RAM-Disk, Laufwerke.
+* **Text kopieren** — liefert die acht Textzeilen des Bildes (Analogzeilen erscheinen leer).
+
 ## Der P8000 Emulator
 
 `p8000emu` ist derselbe Emulator für den 16-Bit-Arbeitsplatzcomputer **EAW P8000**:
@@ -1161,7 +1358,7 @@ die *Betriebsart*. Was anders ist:
 * **Bootweg** — Hardwaretest, „U880-Softwaremonitor … Press RETURN", RETURN, danach bootet MON8
   von der eingelegten UDOS-Systemdiskette (A:). Mit 16-Bit-Karte startet `x` bzw. die
   Koppelsoftware von UDOS den U8000-Monitor an tty1.
-* Eine **RAM-Disk** (RAF) und den **Lochstreifen** gibt es am P8000 nicht; die Einstellungen
+* Eine **RAM-Disk** (RAF), den **Lochstreifen** und die **Kassette** gibt es am P8000 nicht; die Einstellungen
   bieten sie dort nicht an.
 
 ### Das Originalterminal und der Mehrplatzbetrieb

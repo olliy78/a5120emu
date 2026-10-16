@@ -64,7 +64,7 @@ TEST(K7672, FolgeDesBootRoms)
     a.sende({ESC});
     a.laufe(213'000);
     a.sende({'c'});
-    EXPECT_FALSE(a.kbd.sendenGesperrt()) << "ESC c löscht 60H bis auf Bit3/4 — auch DC3";
+    EXPECT_FALSE(a.kbd.sendenGesperrt()) << "ESC c loescht 60H bis auf Bit3/4 — auch DC3";
     a.laufe(850'000);
     EXPECT_EQ(a.lies(), DC1);
     for (uint8_t b : {ESC, uint8_t('['), uint8_t('2'), uint8_t(';'), uint8_t('1'), uint8_t('y')}) {
@@ -109,8 +109,8 @@ TEST(K7672, Dc3SperrtTastenScpZeichen)
     EXPECT_EQ(a.lies(), 0x7F);
 }
 
-/// ESC [?22h ⇒ DCP-Modus (Scancodes: Etappe 3, hier nur der Zustand); ESC c zurück.
-/// Unbekannte Folgen und die übrigen Tabellenbefehle bleiben ohne Antwort.
+/// ESC [?22h ⇒ DCP-Modus (Scancodes: Etappe 3, hier nur der Zustand); ESC c zurueck.
+/// Unbekannte Folgen und die uebrigen Tabellenbefehle bleiben ohne Antwort.
 TEST(K7672, DcpZustandUndUnbekannteFolgen)
 {
     Aufbau a;
@@ -129,7 +129,7 @@ TEST(K7672, DcpZustandUndUnbekannteFolgen)
 // ─── DCP-Modus: Scancodes Satz 1 (AP-E3b) ─────────────────────────────────────
 
 namespace {
-/// Alle bis jetzt gesendeten Bytes abholen (Zeit genug für jede Zeichenzeit).
+/// Alle bis jetzt gesendeten Bytes abholen (Zeit genug fuer jede Zeichenzeit).
 std::vector<int> alles(Aufbau& a) {
     std::vector<int> v;
     for (int i = 0; i < 64; ++i) {
@@ -144,7 +144,7 @@ void dcp(Aufbau& a) { a.sende({ESC, '[', '?', '2', '2', 'h'}); }
 
 /**
  * @test K7672.DcpBuchstabeDrueckenUndLoslassen
- * @brief Host-Taste 'a' ⇒ 1EH beim Drücken, 9EH beim Loslassen.  DIN-Belegung nach
+ * @brief Host-Taste 'a' ⇒ 1EH beim Druecken, 9EH beim Loslassen.  DIN-Belegung nach
  *        der BIOS-Tabelle DC1CH: 'z' auf 15H, 'y' auf 2CH; 'Y' = Umschalt + 2CH.
  */
 TEST(K7672, DcpBuchstabeDrueckenUndLoslassen)
@@ -163,7 +163,7 @@ TEST(K7672, DcpBuchstabeDrueckenUndLoslassen)
 /**
  * @test K7672.DcpUmschaltUndStrg
  * @brief Ein Zeichen, das auf der K7672 Umschalt braucht ('!' = Umschalt + 1), bekommt
- *        2AH/AAH darum; Strg+C = 1DH 2EH AEH 9DH; Enter 1CH, F1 3BH (Rücktaste:
+ *        2AH/AAH darum; Strg+C = 1DH 2EH AEH 9DH; Enter 1CH, F1 3BH (Ruecktaste:
  *        DcpRuecktasteIstKursorLinks).
  */
 TEST(K7672, DcpUmschaltUndStrg)
@@ -173,7 +173,7 @@ TEST(K7672, DcpUmschaltUndStrg)
     a.kbd.keyPress('!', true, false);
     a.kbd.keyRelease('!');
     EXPECT_EQ(alles(a), (std::vector<int>{0x2A, 0x02, 0x82, 0xAA}));
-    a.kbd.keyPress('c', false, true);   // so liefert die Oberfläche Strg+C (keyboard.py)
+    a.kbd.keyPress('c', false, true);   // so liefert die Oberflaeche Strg+C (keyboard.py)
     a.kbd.keyRelease('c');
     EXPECT_EQ(alles(a), (std::vector<int>{0x1D, 0x2E, 0xAE, 0x9D}));
     a.kbd.keyPress(0x01000004, false, false);   // Return
@@ -185,9 +185,9 @@ TEST(K7672, DcpUmschaltUndStrg)
 
 /**
  * @test K7672.DcpUmschalttasteSelbstUndGehalteneUmschaltung
- * @brief Die Umschalttaste des Hosts meldet sich als 2AH/AAH.  Hält der Host Umschalt
- *        für ein Zeichen, das ohne Umschalt entsteht ('+' liegt auf 1BH), wird sie
- *        für diese Taste losgelassen und danach wieder gedrückt.
+ * @brief Die Umschalttaste des Hosts meldet sich als 2AH/AAH.  Haelt der Host Umschalt
+ *        fuer ein Zeichen, das ohne Umschalt entsteht ('+' liegt auf 1BH), wird sie
+ *        fuer diese Taste losgelassen und danach wieder gedrueckt.
  */
 TEST(K7672, DcpUmschalttasteSelbstUndGehalteneUmschaltung)
 {
@@ -218,12 +218,12 @@ TEST(K7672, DcpSendeZeichenTipptDieTaste)
 }
 
 /// AP-E4b: Anzeige-LEDs als Abbild des Firmware-Registers 21H — Bit 3 folgt DC1/DC3
-/// (XON/XOFF-Lampe), Bit 0 `ESC [?13h`/`l`; `ESC c` löscht 21H (Speicherlöscher
-/// 04H…7FH); `BEL` zählt den Summer fortlaufend, auch über einen Neustart.
+/// (XON/XOFF-Lampe), Bit 0 `ESC [?13h`/`l`; `ESC c` loescht 21H (Speicherloescher
+/// 04H…7FH); `BEL` zaehlt den Summer fortlaufend, auch ueber einen Neustart.
 TEST(K7672, LedsRegister21HUndSummer)
 {
     Aufbau a;
-    EXPECT_EQ(a.kbd.leds(), 0x00) << "Einschalten löscht 21H";
+    EXPECT_EQ(a.kbd.leds(), 0x00) << "Einschalten loescht 21H";
     a.sende({DC1});
     EXPECT_EQ(a.kbd.leds(), 0x08);
     a.sende({ESC, '[', '?', '1', '3', 'h'});
@@ -237,9 +237,9 @@ TEST(K7672, LedsRegister21HUndSummer)
     a.sende({0x07, 0x07});
     EXPECT_EQ(a.kbd.summerZaehler(), 2u);
     a.sende({ESC, 'c'});
-    EXPECT_EQ(a.kbd.leds(), 0x00) << "Neustart löscht 21H";
+    EXPECT_EQ(a.kbd.leds(), 0x00) << "Neustart loescht 21H";
     a.sende({0x07});
-    EXPECT_EQ(a.kbd.summerZaehler(), 3u) << "Summerzähler läuft über den Neustart weiter";
+    EXPECT_EQ(a.kbd.summerZaehler(), 3u) << "Summerzaehler laeuft ueber den Neustart weiter";
 }
 
 // ─── Physische Tasten der Nachbildung (AP-UI1) ──────────────────────────────
@@ -255,8 +255,8 @@ void tippe(Aufbau& a, uint8_t m, bool shift = false, bool ctrl = false) {
 /**
  * @test K7672.MatrixDcpScancodesAusDerFirmware
  * @brief Die Bildschirmtastatur spricht Matrixpositionen an; im DCP-Modus kommt der
- *        Scancode aus D3 0080H: A (20H) = 1EH, ß (05H) = 0CH, RETURN (38H) = 1CH,
- *        PF1 (3EH) = 3BH, Umschalttaste (36H) = 2AH.  Bit 7 im Scancode heißt Vorsatz:
+ *        Scancode aus D3 0080H: A (20H) = 1EH, ss (05H) = 0CH, RETURN (38H) = 1CH,
+ *        PF1 (3EH) = 3BH, Umschalttaste (36H) = 2AH.  Bit 7 im Scancode heisst Vorsatz:
  *        ↑ (79H, C8H, Tastenart ED = Umschalt) = 2A 48 / C8 AA, ^S (7EH, C5H, Art 08
  *        = Strg) = 1D 45 / 9D C5 — kein E0 (Firmware 0326H–035FH, 05C2H).
  */
@@ -311,7 +311,7 @@ TEST(K7672, MatrixKlickUndUnbelegteTastenSendenNichts)
 /**
  * @test K7672.MatrixFeststellSchaltetCapsLampe
  * @brief Firmware 0303H: die Feststelltaste (26H) schaltet LED 21H Bit 7 (CAPS) beim
- *        Drücken um und sendet 3AH/BAH; `ESC [?11h/l` setzt bzw. löscht dasselbe Bit,
+ *        Druecken um und sendet 3AH/BAH; `ESC [?11h/l` setzt bzw. loescht dasselbe Bit,
  *        `ESC [?18h/l` Bit 6 (GRAPH [?]).
  */
 TEST(K7672, MatrixFeststellSchaltetCapsLampe)
@@ -336,8 +336,8 @@ TEST(K7672, MatrixFeststellSchaltetCapsLampe)
 
 /**
  * @test K7672.ScpHostzeichenBeachtenDieFeststellung
- * @brief Firmware 0223H gilt auch für Zeichen vom Host: nach `ESC [?11h` (Zweitlader
- *        PRG 710-1 schaltet so die Feststellung ein) wird ein Kleinbuchstabe groß,
+ * @brief Firmware 0223H gilt auch fuer Zeichen vom Host: nach `ESC [?11h` (Zweitlader
+ *        PRG 710-1 schaltet so die Feststellung ein) wird ein Kleinbuchstabe gross,
  *        Ziffern/Steuerzeichen bleiben; nach `ESC [?11l` wieder klein. Sonst lehnt
  *        UDOS am PRG 710-1 jede klein getippte Eingabe ab („NONEXISTENT COMMAND“).
  */
@@ -362,7 +362,7 @@ TEST(K7672, ScpHostzeichenBeachtenDieFeststellung)
 /**
  * @test K7672.MatrixScpZeichenAusDerFirmware
  * @brief SCP-Modus (Boot-ROM): Zeichen aus D3 0400H/0480H — A = 'a', mit Umschalt 'A',
- *        ß = E1H, RETURN = CR; die Feststellung macht nur Buchstaben groß; eine
+ *        ss = E1H, RETURN = CR; die Feststellung macht nur Buchstaben gross; eine
  *        Funktionstaste (PF1, FFH) sendet nichts.
  */
 TEST(K7672, MatrixScpZeichenAusDerFirmware)
@@ -382,10 +382,10 @@ TEST(K7672, MatrixScpZeichenAusDerFirmware)
 
 /**
  * @test K7672.DcpRuecktasteIstKursorLinks
- * @brief AP-E4m: die PC-Rücktaste trifft im DCP-Modus die Taste Kursor ← (Matrix 28H,
+ * @brief AP-E4m: die PC-Ruecktaste trifft im DCP-Modus die Taste Kursor ← (Matrix 28H,
  *        Scancode CBH = Umschalt-Vorsatz + 4BH) — daraus macht das BIOS 08H (Tabelle
- *        DCC2H), und das BDOS löscht das Zeichen sichtbar.  Die Taste |←| (67H, 0EH)
- *        ergäbe 7FH (DC1CH) = Rubout mit Echo.  Entf = Taste DEL (47H, D3H: 2AH 53H).
+ *        DCC2H), und das BDOS loescht das Zeichen sichtbar.  Die Taste |←| (67H, 0EH)
+ *        ergaebe 7FH (DC1CH) = Rubout mit Echo.  Entf = Taste DEL (47H, D3H: 2AH 53H).
  *        Qt-Code und Matrixposition liefern byteweise dasselbe.
  */
 TEST(K7672, DcpRuecktasteIstKursorLinks)
@@ -416,7 +416,7 @@ TEST(K7672, DcpRuecktasteIstKursorLinks)
     EXPECT_EQ(K7672::scpZeichen(0x67, false), 0x08) << "SCP-Modus: |←| = BS";
 }
 
-// ─── AP-T1a: Host-Tasten, die der Abdeckungsbau ungeprüft fand ───────────────
+// ─── AP-T1a: Host-Tasten, die der Abdeckungsbau ungeprueft fand ───────────────
 
 namespace {
 constexpr uint32_t QK_TAB = 0x01000001, QK_BACKTAB = 0x01000002, QK_BACKSPACE = 0x01000003,
@@ -426,7 +426,7 @@ constexpr uint32_t QK_TAB = 0x01000001, QK_BACKTAB = 0x01000002, QK_BACKSPACE = 
                    QK_PGDN = 0x01000017, QK_HOME = 0x01000010;
 
 /// Die Taste der K7672-Matrix mit diesem Scancode, -1 = keine.  In der Firmwaretabelle
-/// heißt Bit 7 „mit Vorsatz"; @p vorsatz verlangt zusätzlich den Vorsatz 2AH (nicht 1DH).
+/// heisst Bit 7 „mit Vorsatz"; @p vorsatz verlangt zusaetzlich den Vorsatz 2AH (nicht 1DH).
 int matrixMit(uint8_t code, bool vorsatz) {
     const uint8_t soll = vorsatz ? static_cast<uint8_t>(code | 0x80) : code;
     for (int m = 0; m < 128; ++m)
@@ -442,7 +442,7 @@ int matrixMit(uint8_t code, bool vorsatz) {
  * @brief Die Host-Zuordnung in `tasteDcp` ist von Hand geschrieben ({Code, Umschalt});
  *        jede Kursortaste muss eine echte Taste der Matrix treffen, die in den
  *        Firmware-Tabellen (EPROM D3 0080H/0100H) denselben Scancode MIT Vorsatz 2AH
- *        trägt — und byteweise dasselbe senden wie diese Taste der Nachbildung.
+ *        traegt — und byteweise dasselbe senden wie diese Taste der Nachbildung.
  */
 TEST(K7672, DcpKursortastenDesHostsSindTastenDerFirmware)
 {
@@ -459,7 +459,7 @@ TEST(K7672, DcpKursortastenDesHostsSindTastenDerFirmware)
         EXPECT_EQ(host, (std::vector<int>{0x2A, z.code, z.code | 0x80, 0xAA}))
             << std::hex << "Qt " << z.qk;
         const int m = matrixMit(z.code, true);
-        ASSERT_GE(m, 0) << std::hex << "keine Matrixtaste mit Vorsatz für " << int(z.code);
+        ASSERT_GE(m, 0) << std::hex << "keine Matrixtaste mit Vorsatz fuer " << int(z.code);
         tippe(a, static_cast<uint8_t>(m));
         EXPECT_EQ(alles(a), host) << std::hex << "Matrix " << m;
     }
@@ -468,7 +468,7 @@ TEST(K7672, DcpKursortastenDesHostsSindTastenDerFirmware)
 /**
  * @test K7672.DcpUmschalttastenDesHostsUndFeststellLampe
  * @brief Strg 1DH/9DH, Alt 38H/B8H, Feststell 3AH/BAH; die Feststelltaste des Hosts
- *        schaltet LED 21H Bit 7 beim DRÜCKEN um (Firmware 0303H) wie die Taste der
+ *        schaltet LED 21H Bit 7 beim DRUECKEN um (Firmware 0303H) wie die Taste der
  *        Nachbildung.  Eine Taste ohne Zuordnung (Pos1) sendet nichts.
  */
 TEST(K7672, DcpUmschalttastenDesHostsUndFeststellLampe)
@@ -485,7 +485,7 @@ TEST(K7672, DcpUmschalttastenDesHostsUndFeststellLampe)
     a.kbd.keyPress(QK_CAPSLOCK, false, false);
     EXPECT_EQ(a.kbd.leds() & 0x80, 0x80);
     a.kbd.keyRelease(QK_CAPSLOCK);
-    EXPECT_EQ(a.kbd.leds() & 0x80, 0x80) << "Loslassen schaltet nicht zurück";
+    EXPECT_EQ(a.kbd.leds() & 0x80, 0x80) << "Loslassen schaltet nicht zurueck";
     a.kbd.keyPress(QK_CAPSLOCK, false, false);
     a.kbd.keyRelease(QK_CAPSLOCK);
     EXPECT_EQ(a.kbd.leds() & 0x80, 0);
@@ -518,7 +518,7 @@ TEST(K7672, DcpSteuerzeichenOhneBuchstabe)
 
 /**
  * @test K7672.ScpTabRuecktasteUndUnbekannteTaste
- * @brief SCP-Modus (Boot-ROM, Monitor): Tab und Umschalt+Tab ⇒ 09H, Rücktaste ⇒ 08H;
+ * @brief SCP-Modus (Boot-ROM, Monitor): Tab und Umschalt+Tab ⇒ 09H, Ruecktaste ⇒ 08H;
  *        eine Host-Taste ohne Zeichen (Umschalt allein, Kursor) sendet nichts.
  */
 TEST(K7672, ScpTabRuecktasteUndUnbekannteTaste)
@@ -533,7 +533,7 @@ TEST(K7672, ScpTabRuecktasteUndUnbekannteTaste)
 
 // ─── Tastenwiederholung (AP-E4g) ──────────────────────────────────────────────
 // Die Regeln stehen in der Firmware (k7672.h, „Tastenwiederholung“), die Zeit ist
-// gerechnet [?].  Alle Fälle laufen in 1000-Takt-Schritten durch service() — wie die
+// gerechnet [?].  Alle Faelle laufen in 1000-Takt-Schritten durch service() — wie die
 // Laufschleife der Maschine — und nicht durch einen Aufruf, den nur der Test macht.
 
 namespace {
@@ -560,7 +560,7 @@ std::vector<int> bytes(const std::vector<Ankunft>& v) {
 }
 }  // namespace
 
-/// DCP: gehaltenes 'a' ⇒ nach der Verzögerung der Drücken-Code wieder und wieder,
+/// DCP: gehaltenes 'a' ⇒ nach der Verzoegerung der Druecken-Code wieder und wieder,
 /// OHNE Loslassen dazwischen, im Abstand FOLGE; Loslassen beendet.
 TEST(K7672, WiederholungDcpNachVerzoegerungUndRate)
 {
@@ -570,7 +570,7 @@ TEST(K7672, WiederholungDcpNachVerzoegerungUndRate)
     a.kbd.keyPress('a', false, false);
     const uint64_t t0 = a.t;
     const auto vor = fahre(a, VERZ - 10'000);
-    EXPECT_EQ(bytes(vor), (std::vector<int>{0x1E})) << "vor Ablauf der Verzögerung nur der Druck";
+    EXPECT_EQ(bytes(vor), (std::vector<int>{0x1E})) << "vor Ablauf der Verzoegerung nur der Druck";
 
     const auto v = fahre(a, 10'000 + 3 * FOLGE + 10'000);
     ASSERT_EQ(v.size(), 4u);
@@ -613,8 +613,8 @@ TEST(K7672, WiederholungOhneModifikatorenAberMitFunktionstasten)
     }
 }
 
-/// Nur die zuletzt gedrückte Taste wiederholt.  Eine neue Taste beginnt mit voller
-/// Verzögerung, ein Modifikator dazwischen stört nicht, das Loslassen einer ANDEREN
+/// Nur die zuletzt gedrueckte Taste wiederholt.  Eine neue Taste beginnt mit voller
+/// Verzoegerung, ein Modifikator dazwischen stoert nicht, das Loslassen einer ANDEREN
 /// Taste auch nicht.
 TEST(K7672, WiederholungNurDieZuletztGedrueckteTaste)
 {
@@ -629,9 +629,9 @@ TEST(K7672, WiederholungNurDieZuletztGedrueckteTaste)
     ASSERT_GE(v.size(), 3u);
     EXPECT_EQ(v[0].byte, 0x30);
     for (size_t i = 1; i < v.size(); ++i) EXPECT_EQ(v[i].byte, 0x30) << "kein a mehr";
-    EXPECT_GE(v[1].zeit - tb, VERZ) << "die neue Taste beginnt mit voller Verzögerung";
+    EXPECT_GE(v[1].zeit - tb, VERZ) << "die neue Taste beginnt mit voller Verzoegerung";
 
-    // Loslassen der alten Taste und ein Modifikator ändern nichts.
+    // Loslassen der alten Taste und ein Modifikator aendern nichts.
     a.kbd.keyRelease('a');
     EXPECT_TRUE(a.kbd.wiederholtGerade());
     a.kbd.keyPress(QK_SHIFT, false, false);
@@ -640,8 +640,8 @@ TEST(K7672, WiederholungNurDieZuletztGedrueckteTaste)
     EXPECT_FALSE(a.kbd.wiederholtGerade());
 }
 
-// Zeitbasis Echtzeit (tasten_uhr.h): die Oberfläche zählt in Wirtszeit, damit ein
-// auf 10 × gestellter Rechner nicht zehnmal so früh und schnell wiederholt.
+// Zeitbasis Echtzeit (tasten_uhr.h): die Oberflaeche zaehlt in Wirtszeit, damit ein
+// auf 10 × gestellter Rechner nicht zehnmal so frueh und schnell wiederholt.
 namespace {
 uint64_t g_wirt_ns = 0;
 uint64_t falscheWirtsuhr() { return g_wirt_ns; }
@@ -667,7 +667,7 @@ TEST(K7672, WiederholungInEchtzeitUnabhaengigVomRechnertakt)
         return r;
     };
     EXPECT_EQ(fahreRaffer(VERZ - 20'000), (std::vector<int>{'x'}))
-        << "in Maschinenzeit gezählt wäre die Verzögerung nach 1/10 abgelaufen";
+        << "in Maschinenzeit gezaehlt waere die Verzoegerung nach 1/10 abgelaufen";
     EXPECT_EQ(fahreRaffer(40'000 + 2 * FOLGE), (std::vector<int>{'x', 'x', 'x'}));
     a.kbd.keyRelease('x');
     EXPECT_TRUE(fahreRaffer(3 * FOLGE).empty());
@@ -687,8 +687,8 @@ TEST(K7672, WiederholungScpWiederholtDasZeichen)
     EXPECT_EQ(bytes(fahre(a, VERZ + 2 * FOLGE)), (std::vector<int>{0x09}));
 }
 
-/// Unter DC3 steht der Zähler still (0168H): weder wiederholt die Taste, noch läuft
-/// die Verzögerung weiter.  Nach DC1 geht es mit dem Rest weiter.
+/// Unter DC3 steht der Zaehler still (0168H): weder wiederholt die Taste, noch laeuft
+/// die Verzoegerung weiter.  Nach DC1 geht es mit dem Rest weiter.
 TEST(K7672, WiederholungStehtUnterDc3Still)
 {
     Aufbau a;
@@ -699,7 +699,7 @@ TEST(K7672, WiederholungStehtUnterDc3Still)
     EXPECT_TRUE(fahre(a, 3 * VERZ).empty()) << "gesperrt: nichts";
     a.sende({DC1});
     const auto v = fahre(a, 40'000);
-    EXPECT_EQ(bytes(v), (std::vector<int>{0x1E})) << "nach XON der Rest der Verzögerung";
+    EXPECT_EQ(bytes(v), (std::vector<int>{0x1E})) << "nach XON der Rest der Verzoegerung";
 }
 
 /// Physische Tasten (Bildschirmtastatur): Cursor ↑ (Matrix 79H) hat in der Firmware
@@ -720,7 +720,7 @@ TEST(K7672, WiederholungMatrixtasteMitVorsatz)
     EXPECT_EQ(fahre(b, VERZ + 2 * FOLGE).size(), 1u);
 }
 
-/// `ESC [?19h/20h/21h` wählen in der Firmware die Zeichentabellenseite (Register 2DH,
+/// `ESC [?19h/20h/21h` waehlen in der Firmware die Zeichentabellenseite (Register 2DH,
 /// 0263H), NICHT die Wiederholung: Zeit und Wirkung bleiben, wie sie sind.
 TEST(K7672, WiederholungHatMitEsc19Bis21Nichts)
 {

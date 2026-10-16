@@ -1,17 +1,17 @@
 /**
  * @file test_z8_mame.cpp
- * @brief Differenzprüfung des Z8-Kerns (core/primitives/z8.h, AP P19c) gegen MAMEs z8ops.hxx.
+ * @brief Differenzpruefung des Z8-Kerns (core/primitives/z8.h, AP P19c) gegen MAMEs z8ops.hxx.
  *
- * MAMEs Befehlssemantik (z8ops.hxx + Opcodetabelle aus z8.cpp, fester Stand, Prüfsumme —
- * tests/oracle/CMakeLists.txt) läuft in einer Hülle (mame_shim_z8/).  Je Opcode viele
- * Zufallszustände (Allzweckregister, Flags, RP, SP, IMR, Speicher als Hash der Adresse),
+ * MAMEs Befehlssemantik (z8ops.hxx + Opcodetabelle aus z8.cpp, fester Stand, Pruefsumme —
+ * tests/oracle/CMakeLists.txt) laeuft in einer Huelle (mame_shim_z8/).  Je Opcode viele
+ * Zufallszustaende (Allzweckregister, Flags, RP, SP, IMR, Speicher als Hash der Adresse),
  * Stapel intern und extern; je Seite EIN Befehl; verglichen werden PC, FLAGS, RP, SP, IMR,
  * IRQ-Freigabe, Register 04–7F, alle Speicherschreibzugriffe (Programm- und Datenraum) und
  * die Takte.
  *
- * Ausgeblendet (gezählt, nicht verglichen):
- *  - Fälle, die Port- oder Steuerregister (00–03, F0–FF) als Operand berühren — dort hat der
- *    Kern Peripheriewirkung, die Hülle nicht; abgedeckt in tests/unit/primitives/test_z8*.
+ * Ausgeblendet (gezaehlt, nicht verglichen):
+ *  - Faelle, die Port- oder Steuerregister (00–03, F0–FF) als Operand beruehren — dort hat der
+ *    Kern Peripheriewirkung, die Huelle nicht; abgedeckt in tests/unit/primitives/test_z8*.
  *  - unbelegte Opcodes (MAME: 0 Takte, Kern: NOP 6 Takte [Z8-B1]).
  *  - LD r,X(r)/LD X(r),r mit Basis E0–EF: MAME bildet die Basis als Arbeitsregister ab,
  *    der Kern nimmt sie als Registeradresse [Z8-A3].
@@ -174,7 +174,7 @@ TEST(Z8Mame, AlleBelegtenOpcodesGegenMame) {
                                      "70 MAME 10 Kern 12 (ext. Stapel)", "71 MAME 12 Kern 14 (ext. Stapel)",
                                      "02 MAME 10 Kern 6 (ext. Stapel)", "03 MAME 10 Kern 6 (ext. Stapel)"};
     for (auto& kv : taktAbw) {
-        std::printf("  Takte: %s  (%d Fälle)%s\n", kv.first.c_str(), kv.second, erlaubt.count(kv.first) ? "  [bekannt]" : "");
+        std::printf("  Takte: %s  (%d Faelle)%s\n", kv.first.c_str(), kv.second, erlaubt.count(kv.first) ? "  [bekannt]" : "");
         EXPECT_TRUE(erlaubt.count(kv.first)) << "unerwartete Taktabweichung " << kv.first;
     }
     std::printf("  verglichen %d, ausgeblendet: Port/Steuerregister %d, X-Basis E0–EF %d\n", verglichen, beruehrt, xBasis);

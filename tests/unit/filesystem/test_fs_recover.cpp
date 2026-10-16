@@ -356,10 +356,10 @@ TEST(FsRecoverCpm, NeuVergebeneBloeckeMachenAusDemFundEinBruchstueck) {
 
 /// @test Zwei nacheinander geloeschte Dateien GLEICHEN NAMENS sind zwei Funde.
 ///
-/// Der Name ist der einzige Schlüssel, der das Löschen überlebt — der Nutzerbereich
+/// Der Name ist der einzige Schluessel, der das Loeschen ueberlebt — der Nutzerbereich
 /// stand in ebendem Byte, das `0xE5` wurde.  Beide Dateien landen deshalb beim
 /// Gruppieren im selben Topf, und bis 2026-08-21 wurden sie zu **einem** Fund
-/// zusammengeworfen: 7424 Byte, Güte „sicher", und die ersten 2048 Byte davon
+/// zusammengeworfen: 7424 Byte, Guete „sicher", und die ersten 2048 Byte davon
 /// stammten aus der ANDEREN Datei.  Eine Mischdatei, die sich sicher nennt — genau
 /// das, was E10 verbietet.
 ///
@@ -367,8 +367,8 @@ TEST(FsRecoverCpm, NeuVergebeneBloeckeMachenAusDemFundEinBruchstueck) {
 /// einer Datei genau einmal vor.  Hier tragen beide Extent 0.
 ///
 /// Der Aufbau stellt nach, wie es im Betrieb dazu kommt — und er ist nicht
-/// selbstverständlich: normalerweise belegt die neue Datei den Verzeichnisplatz der
-/// gelöschten gleich wieder, und dann gibt es gar keine zwei Einträge.  Es braucht
+/// selbstverstaendlich: normalerweise belegt die neue Datei den Verzeichnisplatz der
+/// geloeschten gleich wieder, und dann gibt es gar keine zwei Eintraege.  Es braucht
 /// einen FREIEN Platz WEITER VORN, den die neue Datei stattdessen nimmt.
 TEST(FsRecoverCpm, ZweiGleichnamigeGeloeschteDateienSindZweiFunde) {
     const std::string pfad   = kopie("cpa_cpa780_k5601_noclock.img", "fsrec_zwei.img");
@@ -386,13 +386,13 @@ TEST(FsRecoverCpm, ZweiGleichnamigeGeloeschteDateienSindZweiFunde) {
     ASSERT_FALSE(original.empty());
 
     // Einen Verzeichnisplatz WEITER VORN frei machen, damit die neue Datei nicht den
-    // Platz der gelöschten wiederbekommt.
+    // Platz der geloeschten wiederbekommt.
     const std::string frueh = v->list().front().name;
     ASSERT_NE(frueh, kOpfer);
     ASSERT_TRUE(v->erase(FileRef::parse(frueh, 0))) << v->lastError();
     ASSERT_TRUE(v->erase(FileRef::parse(kOpfer, 0))) << v->lastError();
 
-    // Eine ANDERE Datei unter demselben Namen — und auch die wieder löschen.
+    // Eine ANDERE Datei unter demselben Namen — und auch die wieder loeschen.
     {
         std::ofstream f(ordner + "/neu.bin", std::ios::binary);
         const std::vector<char> d(3000, 'A');
@@ -408,10 +408,10 @@ TEST(FsRecoverCpm, ZweiGleichnamigeGeloeschteDateienSindZweiFunde) {
     for (const FsRecoverFind& f : r.funde)
         if (f.name == kOpfer) gleich.push_back(&f);
     ASSERT_EQ(2u, gleich.size())
-        << "zusammengeworfen ergäbe das eine Mischdatei aus zwei Quellen: " << namen(r);
+        << "zusammengeworfen ergaebe das eine Mischdatei aus zwei Quellen: " << namen(r);
 
     // Beide tragen denselben Namen — aber NICHT denselben Vorschlag, sonst
-    // überschriebe „alles retten" den einen mit dem anderen.
+    // ueberschriebe „alles retten" den einen mit dem anderen.
     EXPECT_NE(gleich[0]->vorschlag, gleich[1]->vorschlag);
     for (const FsRecoverFind* f : gleich) {
         EXPECT_NE(std::string::npos, f->detail.find("2 geloeschte Eintraege"))
@@ -604,7 +604,7 @@ TEST(FsRecoverUdos, EineGeloeschteDateiKommtByteFuerByteZurueck) {
 
 /// @test Ein Kopfsektor auf einer SYSTEMSPUR wird trotzdem gefunden.
 ///
-/// Der Wächter gegen den naheliegendsten Fehlgriff: „auf Spur 0–2, 21, 22, 23 legt
+/// Der Waechter gegen den naheliegendsten Fehlgriff: „auf Spur 0–2, 21, 22, 23 legt
 /// UDOS keine Datei an, also gar nicht erst hinsehen".  An der echten
 /// Referenzdiskette ist das **falsch** — `NOTE.TO.SD` hat ihren Kopfsektor auf Spur
 /// 21, weil Seite 1 eine reine Datenseite ohne Urlader ist.  Mit dem Spurfilter fand
@@ -785,11 +785,11 @@ TEST(FsRecoverUdos, DerSuchlaufSchreibtNie) {
 // ═══ 7. Die Sektorliste eines Fundes ═════════════════════════════════════════
 //
 // Sie ist die Antwort auf die Frage, die vor jeder Rettung steht: *ist das
-// überhaupt, was ich suche?*  Ohne sie bliebe nur der Anfang — und bei UDOS liegen
-// die Sätze einer Datei nicht hintereinander, sondern verkettet über die Diskette
+// ueberhaupt, was ich suche?*  Ohne sie bliebe nur der Anfang — und bei UDOS liegen
+// die Saetze einer Datei nicht hintereinander, sondern verkettet ueber die Diskette
 // verstreut.
 
-/// @test Ein UDOS-Fund führt Kopfsektor UND alle Sätze auf, in Lesereihenfolge.
+/// @test Ein UDOS-Fund fuehrt Kopfsektor UND alle Saetze auf, in Lesereihenfolge.
 TEST(FsRecoverUdos, DerFundFuehrtSeineSektorenAuf) {
     const std::string pfad = kopie("udos_boot_scp.hfe", "fsrec_udos_orte.hfe");
     auto v = oeffneSchreibend(pfad);
@@ -800,8 +800,8 @@ TEST(FsRecoverUdos, DerFundFuehrtSeineSektorenAuf) {
     ASSERT_EQ(1u, r.funde.size()) << namen(r);
     const FsRecoverFind& f = r.funde.front();
 
-    // 16 Sätze zu 128 B — und davor der Kopfsektor.
-    ASSERT_EQ(17u, f.orte.size()) << "Kopfsektor + 16 Sätze";
+    // 16 Saetze zu 128 B — und davor der Kopfsektor.
+    ASSERT_EQ(17u, f.orte.size()) << "Kopfsektor + 16 Saetze";
     // Der erste Eintrag IST der Ort des Fundes — sonst zeigte der Sprung woandershin
     // als die Liste.
     EXPECT_EQ(f.cyl,          f.orte.front().cyl);
@@ -809,23 +809,23 @@ TEST(FsRecoverUdos, DerFundFuehrtSeineSektorenAuf) {
     EXPECT_EQ(f.sector_index, f.orte.front().sector);
 
     // Und sie liegen NICHT hintereinander: genau deshalb braucht der Bediener die
-    // Liste — von Hand fände er den zweiten Satz nicht.
+    // Liste — von Hand faende er den zweiten Satz nicht.
     bool verstreut = false;
     for (size_t i = 1; i < f.orte.size(); ++i)
         if (f.orte[i].sector != f.orte[i - 1].sector + 1) verstreut = true;
-    EXPECT_TRUE(verstreut) << "Die Sätze dieser Datei sind verkettet, nicht fortlaufend";
+    EXPECT_TRUE(verstreut) << "Die Saetze dieser Datei sind verkettet, nicht fortlaufend";
 
     for (const FsRecoverOrt& o : f.orte) {
         EXPECT_GE(o.cyl, 0);
         EXPECT_GE(o.head, 0);
-        EXPECT_GT(o.sector, 0) << "Die Liste führt Sektor-KENNUNGEN, keine Versätze";
+        EXPECT_GT(o.sector, 0) << "Die Liste fuehrt Sektor-KENNUNGEN, keine Versaetze";
     }
 
     v.reset();
     fs::remove(pfad);
 }
 
-/// @test Auch ein CP/M-Fund führt seine Sektoren auf — und der erste ist sein Ort.
+/// @test Auch ein CP/M-Fund fuehrt seine Sektoren auf — und der erste ist sein Ort.
 TEST(FsRecoverCpm, DerFundFuehrtSeineSektorenAuf) {
     const std::string pfad = kopie("cpa_cpa780_k5601_noclock.img", "fsrec_cpm_orte.img");
     auto v = oeffneSchreibend(pfad);
@@ -840,9 +840,9 @@ TEST(FsRecoverCpm, DerFundFuehrtSeineSektorenAuf) {
     EXPECT_EQ(f.cyl,          f.orte.front().cyl);
     EXPECT_EQ(f.head,         f.orte.front().head);
     EXPECT_EQ(f.sector_index, f.orte.front().sector);
-    // Die Liste deckt die Datei ab.  Die Sektorgröße kennt der Test nicht (cpa780
+    // Die Liste deckt die Datei ab.  Die Sektorgroesse kennt der Test nicht (cpa780
     // hat 1024er-Sektoren, andere Profile 128er) — gerechnet wird deshalb mit der
-    // GRÖSSTEN im Katalog, dann gilt die Aussage für jedes Profil.
+    // GROESSTEN im Katalog, dann gilt die Aussage fuer jedes Profil.
     EXPECT_GE(f.orte.size() * 1024u, f.size);
     EXPECT_GT(f.orte.size(), 1u) << "Eine 7 KB grosse Datei belegt mehr als einen Sektor";
     for (const FsRecoverOrt& o : f.orte) EXPECT_GT(o.sector, 0);

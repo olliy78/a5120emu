@@ -1,10 +1,10 @@
 /**
  * @file dbg_commands.h
- * @brief Kanonische Liste der k1520dbg-Kommandos + Präfix-Vervollständigung.
+ * @brief Kanonische Liste der k1520dbg-Kommandos + Praefix-Vervollstaendigung.
  *
- * Nur die Kommando-Schlüsselwörter und ein einfacher Präfix-Matcher — getrennt vom
- * großen Dispatch in k1520dbg.cpp, damit die Tab-Vervollständigung (isocline) ohne Maschine
- * unit-testbar ist. Bei neuen Kommandos hier den Namen ergänzen (rein kosmetisch für
+ * Nur die Kommando-Schluesselwoerter und ein einfacher Praefix-Matcher — getrennt vom
+ * grossen Dispatch in k1520dbg.cpp, damit die Tab-Vervollstaendigung (isocline) ohne Maschine
+ * unit-testbar ist. Bei neuen Kommandos hier den Namen ergaenzen (rein kosmetisch fuer
  * die Completion; die eigentliche Wirkung steckt im Dispatch).
  *
  * @license MIT
@@ -15,7 +15,7 @@
 
 namespace dbgcmd {
 
-/// Alle Kommando-Schlüsselwörter (inkl. gebräuchlicher Kurzformen).
+/// Alle Kommando-Schluesselwoerter (inkl. gebraeuchlicher Kurzformen).
 inline const std::vector<std::string>& names() {
     static const std::vector<std::string> n = {
         // run / step / reverse
@@ -33,10 +33,12 @@ inline const std::vector<std::string>& names() {
         // misc
         "mark","keys","keyuntil","screen","gscreen","bscreen","dialog","console",
         "reset","disk","alias","unalias","source","help","q","quit",
-        // K8915 (--machine k8915): A8H-Speicherbild, DRAM-Bänke direkt
+        // K8915 (--machine k8915): A8H-Speicherbild, DRAM-Baenke direkt
         "map","bank",
         // RAM-Floppy (--raf)
         "raf",
+        // Kassette (--tape)
+        "tape",
         // A5120.16 (U8001-Kontext)
         "cpu","a","fcw","psa","bmode","bvi","bint16","emlog",
         // P8000 (--machine p8000|p8000-16): ADP, UA858, Kopplung, MMU, Terminal
@@ -45,7 +47,7 @@ inline const std::vector<std::string>& names() {
     return n;
 }
 
-/// Alle Kommandonamen, die mit @p prefix beginnen (für Tab-Completion).
+/// Alle Kommandonamen, die mit @p prefix beginnen (fuer Tab-Completion).
 inline std::vector<std::string> match(const std::string& prefix) {
     std::vector<std::string> out;
     for (const auto& s : names())

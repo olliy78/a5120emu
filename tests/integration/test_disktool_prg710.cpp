@@ -1,15 +1,15 @@
 /**
  * @file test_disktool_prg710.cpp
- * @brief DiskTool: bootfähige Disketten für PRG 710 / 710-1 (doc/design/20_prg710.md AP-P6).
+ * @brief DiskTool: bootfaehige Disketten fuer PRG 710 / 710-1 (doc/design/20_prg710.md AP-P6).
  *
- * Maßstab ist wie bei `DiskToolBootdiskette.*` allein, ob die Maschine von der gebauten
+ * Massstab ist wie bei `DiskToolBootdiskette.*` allein, ob die Maschine von der gebauten
  * Diskette startet — hier der PRG, beide Varianten:
- *  - UDOS: Bootabbild + Dateien aus einer Gerätediskette (`get`/`boot-get`), `create --boot`
+ *  - UDOS: Bootabbild + Dateien aus einer Geraetediskette (`get`/`boot-get`), `create --boot`
  *    + `insertAll`; Kaltstart bis zum `%`.
  *  - SCPX: Systemspuren aus den **Modulen** (`SYL17` + `CCPBD17` + BIOS, `prg_boot::scpxBand`
  *    = `k1520disktool boot-scpx`); Kaltstart bis `A>`.
  * Dazu: die Fassung eines Bootabbilds (710 ↔ 710-1) wird erkannt und eine falsche beim
- * Einspielen abgewiesen; A5120-Abbilder bleiben unberührt.
+ * Einspielen abgewiesen; A5120-Abbilder bleiben unberuehrt.
  */
 
 #include <gtest/gtest.h>
@@ -57,7 +57,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// Temporärer Pfad samt Sicherungskopie des DiskTools, räumt sich weg.
+/// Temporaerer Pfad samt Sicherungskopie des DiskTools, raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const char* name) : pfad_(k1520test::tempPath(name)) { weg(); }
@@ -138,7 +138,7 @@ class DisktoolPrg710 : public ::testing::TestWithParam<V> {};
 
 /**
  * @test DisktoolPrg710.ErkenntSystemUndFassungAnDenGeraetedisketten
- * @brief Alle sechs Systemdisketten des PRG (UDOS und SCPX, je beide Geräte) werden an
+ * @brief Alle sechs Systemdisketten des PRG (UDOS und SCPX, je beide Geraete) werden an
  *        ihrem Bootabbild richtig eingeordnet; A5120-Abbilder sind kein PRG.
  */
 TEST(DisktoolPrg710, ErkenntSystemUndFassungAnDenGeraetedisketten) {
@@ -170,8 +170,8 @@ TEST(DisktoolPrg710, ErkenntSystemUndFassungAnDenGeraetedisketten) {
 
 /**
  * @test DisktoolPrg710.ScpxBandAusDenModulenGleichtDemGeraetband
- * @brief `SYL17` + `CCPBD17` + BIOS ergeben bytegleich die Systemspuren der Gerätedisketten
- *        (bis zum Ende des BIOS; dahinter bleibt Leerspur).  Das Gerät wird am BIOS
+ * @brief `SYL17` + `CCPBD17` + BIOS ergeben bytegleich die Systemspuren der Geraetedisketten
+ *        (bis zum Ende des BIOS; dahinter bleibt Leerspur).  Das Geraet wird am BIOS
  *        abgelesen: V1.5 (`B15x`) und V1.7 mit K7672 (`B17x72`) in allen Ausstattungen;
  *        ein BIOS der anderen Fassung als verlangt wird abgewiesen.
  */
@@ -205,7 +205,7 @@ TEST(DisktoolPrg710, ScpxBandAusDenModulenGleichtDemGeraetband) {
             << b.name << ": " << err;
         EXPECT_EQ(erkannt, b.geraet) << b.name;
         EXPECT_EQ(aus.size() % 256, 0u);
-        // Die Gerätedisketten tragen B152V24 bzw. B17272V2.
+        // Die Geraetedisketten tragen B152V24 bzw. B17272V2.
         const std::string n = b.name;
         if (n == "B152V24.SYS" || n == "B17272V2.SYS") {
             const auto& soll = (n == "B152V24.SYS") ? soll710 : soll710_1;
@@ -231,8 +231,8 @@ TEST(DisktoolPrg710, ScpxBandAusDenModulenGleichtDemGeraetband) {
 
 /**
  * @test DisktoolPrg710.UdosBootdisketteBootetBisZumPrompt
- * @brief Boot­abbild + Dateien einer Gerätediskette → `create --boot` → `insert` (OS, ZDOS, OS.INIT, DO, DATE, CAT) → die
- *        neue Diskette startet am selben Gerät bis Datumsabfrage und `%` (Systemzeile der
+ * @brief Boot­abbild + Dateien einer Geraetediskette → `create --boot` → `insert` (OS, ZDOS, OS.INIT, DO, DATE, CAT) → die
+ *        neue Diskette startet am selben Geraet bis Datumsabfrage und `%` (Systemzeile der
  *        Variante), `CAT` listet.  Beide Seiten sind formatiert (AP-P5f, Befund 4).
  */
 TEST_P(DisktoolPrg710, UdosBootdisketteBootetBisZumPrompt) {
@@ -269,12 +269,12 @@ TEST_P(DisktoolPrg710, UdosBootdisketteBootetBisZumPrompt) {
 /**
  * @test DisktoolPrg710.ScpxBootdisketteAusModulenBootetBisA
  * @brief Systemspuren aus den Modulen (`boot-scpx`), `create --fs scpx640 --boot`, die
- *        Programme der Gerätediskette dazu → Kaltstart bis `A>` mit dem Gruß des BIOS
+ *        Programme der Geraetediskette dazu → Kaltstart bis `A>` mit dem Gruss des BIOS
  *        (710: V1.5, 710-1: V1.7), `DIR` listet, `STAT` wird von der Diskette geladen.
  */
 TEST_P(DisktoolPrg710, ScpxBootdisketteAusModulenBootetBisA) {
     const V v = GetParam();
-    k1520test::TempDisk quelle("prg710-1_scpx17_cpa640_boot.hfe");   // trägt alle Module
+    k1520test::TempDisk quelle("prg710-1_scpx17_cpa640_boot.hfe");   // traegt alle Module
     std::string err;
     auto q = DiskVolume::open(quelle, "scpx640", formate(), dateisysteme(), err);
     ASSERT_NE(q, nullptr) << err;
@@ -321,8 +321,8 @@ TEST_P(DisktoolPrg710, ScpxBootdisketteAusModulenBootetBisA) {
 /**
  * @test DisktoolPrg710.LieferdisketteBootet
  * @brief AP-P5h: die vier PRG-Systemdisketten, die ins Paket kommen (`disks/`, Liste
- *        `DISKS_DEFAULT` in `packaging/build_payload.sh`), starten je am passenden Gerät bis
- *        `%` bzw. `A>`.  Gemountet wird eine TEMP-KOPIE (der Emulator öffnet r/w).
+ *        `DISKS_DEFAULT` in `packaging/build_payload.sh`), starten je am passenden Geraet bis
+ *        `%` bzw. `A>`.  Gemountet wird eine TEMP-KOPIE (der Emulator oeffnet r/w).
  */
 TEST(DisktoolPrg710, LieferdisketteBootet) {
     struct Fall { V v; bool udos; const char* disk; };
@@ -360,9 +360,9 @@ INSTANTIATE_TEST_SUITE_P(Varianten, DisktoolPrg710, ::testing::Values(V::Prg710,
 
 /**
  * @test DisktoolPrg710.FremdeFassungWirdBeimEinspielenAbgewiesen
- * @brief Das Bootabbild des 710 auf eine Diskette, die schon ein 710-1-System trägt (und
- *        umgekehrt), wird vor dem Schreiben abgewiesen — die Diskette bleibt unverändert.
- *        Dasselbe für UDOS.  Das Abbild derselben Fassung geht durch.
+ * @brief Das Bootabbild des 710 auf eine Diskette, die schon ein 710-1-System traegt (und
+ *        umgekehrt), wird vor dem Schreiben abgewiesen — die Diskette bleibt unveraendert.
+ *        Dasselbe fuer UDOS.  Das Abbild derselben Fassung geht durch.
  */
 TEST(DisktoolPrg710, FremdeFassungWirdBeimEinspielenAbgewiesen) {
     struct Paar { const char* ziel; const char* fremd; const char* fs; const char* gleich; };
@@ -388,7 +388,7 @@ TEST(DisktoolPrg710, FremdeFassungWirdBeimEinspielenAbgewiesen) {
         EXPECT_NE(dv->lastError().find("PRG 710"), std::string::npos) << dv->lastError();
         std::vector<uint8_t> danach;
         ASSERT_TRUE(dv->readBootImage(danach));
-        EXPECT_EQ(danach, vorher) << "die Systemspuren blieben nicht unberührt";
+        EXPECT_EQ(danach, vorher) << "die Systemspuren blieben nicht unberuehrt";
         EXPECT_TRUE(dv->writeBootImage(gleichband)) << dv->lastError();
     }
 }
@@ -397,7 +397,7 @@ TEST(DisktoolPrg710, FremdeFassungWirdBeimEinspielenAbgewiesen) {
  * @test DisktoolPrg710.UnvollstaendigesPrgAbbildLegtKeineDisketteAn
  * @brief Ein Abbild mit PRG-Lader, aber ohne BIOS (SCPX) bzw. ohne Zweitlader (UDOS) wird
  *        beim Anlegen abgewiesen, bevor eine Datei entsteht.  Ein A5120-Abbild
- *        (`disks/boot_scpx640.bin`) geht durch — dort ändert sich nichts.
+ *        (`disks/boot_scpx640.bin`) geht durch — dort aendert sich nichts.
  */
 TEST(DisktoolPrg710, UnvollstaendigesPrgAbbildLegtKeineDisketteAn) {
     struct Fall { const char* disk; const char* fs; size_t laenge; };
@@ -424,7 +424,7 @@ TEST(DisktoolPrg710, UnvollstaendigesPrgAbbildLegtKeineDisketteAn) {
         EXPECT_FALSE(fs::exists(ziel.get())) << "es blieb eine halbe Diskette liegen";
     }
     {
-        // A5120-Abbild (SCPX-Systemspuren der A5120-Fixture): keine PRG-Prüfung.
+        // A5120-Abbild (SCPX-Systemspuren der A5120-Fixture): keine PRG-Pruefung.
         k1520test::TempDisk d("scpx17_cpa780_k5601.hfe");
         const auto b = band(d, "scpx640");
         const std::string bootbin = k1520test::tempPath("k1520_prgboot_a5120.bin");

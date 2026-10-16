@@ -2,8 +2,8 @@
  * @file test_p8000_wdc.cpp
  * @brief WDC des P8000 (AP P13c): Original-Firmware auf UA880 + CTC, Hostschnittstelle mit einem
  *        Stub-Host, Disk-Schnittstelle gegen eine TempPlatte — Start (ohne Fehler 20), Init-Fehler,
- *        Lesen/Schreiben/Formatieren (Inhalt im Abbild geprüft), Fehlercodes, RAM-Kommandos, RST,
- *        41,4-MHz-Bestückung, ältere Firmware, Save-State.  Quelle: core/cards/p8000/wdc.h,
+ *        Lesen/Schreiben/Formatieren (Inhalt im Abbild geprueft), Fehlercodes, RAM-Kommandos, RST,
+ *        41,4-MHz-Bestueckung, aeltere Firmware, Save-State.  Quelle: core/cards/p8000/wdc.h,
  *        doc/p8000/wdc_firmware.md (Kommandos §4.3, Fehler §5, Init §6, PAR §7, Spur §8).
  */
 #include "core/cards/p8000/rom_wdc.h"
@@ -25,9 +25,9 @@ using k1520test::TempPlatte;
 namespace {
 
 /// Host-Seite wie MON16 (`p.disk.s`) und der WEGA-Treiber: wartet auf den Status, schickt die
-/// 9 Kommandobytes, liest nach einem Scheinbyte bzw. schreibt Daten Byte für Byte über ARDY/ASTB.
+/// 9 Kommandobytes, liest nach einem Scheinbyte bzw. schreibt Daten Byte fuer Byte ueber ARDY/ASTB.
 /// Zwischen zwei Bytes vergehen `takte_je_byte` WDC-Takte (INIR/OTIR des Hosts) — ein unendlich
-/// schneller Host ließe der Firmware keine Zeit für den Zwischeninterrupt `isr_h1`.
+/// schneller Host liesse der Firmware keine Zeit fuer den Zwischeninterrupt `isr_h1`.
 struct StubHost {
     P8000Wdc& w;
     bool ardy = false;
@@ -54,7 +54,7 @@ struct StubHost {
         }
         return f();
     }
-    /// Status @p s mit bereitgestellter Übertragung (HEN-FF gesetzt).
+    /// Status @p s mit bereitgestellter Uebertragung (HEN-FF gesetzt).
     bool warteStatus(uint8_t s, uint64_t max = 400'000'000)
     {
         return warteBis([&] { return w.status() == s && w.uebertragungAktiv(); }, max);
@@ -93,7 +93,7 @@ struct StubHost {
     }
 
     struct Antwort {
-        int fehler = -1;                 ///< 0 = Status 1 danach, > 0 = Fehlerbyte, < 0 = Zeitüberlauf
+        int fehler = -1;                 ///< 0 = Status 1 danach, > 0 = Fehlerbyte, < 0 = Zeitueberlauf
         std::vector<uint8_t> daten;
     };
     Antwort ausfuehren(const std::vector<uint8_t>& k, size_t lesen = 0,
@@ -151,7 +151,7 @@ std::array<uint8_t, 512> muster(int n)
     return d;
 }
 
-/// Block b → (Zylinder, Kopf, Sektor) für 5 Köpfe × 18 Sektoren (FW Z. 1461–1506, ohne BTT).
+/// Block b → (Zylinder, Kopf, Sektor) fuer 5 Koepfe × 18 Sektoren (FW Z. 1461–1506, ohne BTT).
 std::array<int, 3> blockLage(uint32_t b)
 {
     return {int(b / 90 + 1), int((b % 90) / 18), int(b % 18 + 1)};
@@ -174,7 +174,7 @@ struct Aufbau {
 
 }  // namespace
 
-// ─── Abzüge ──────────────────────────────────────────────────────────────────
+// ─── Abzuege ──────────────────────────────────────────────────────────────────
 
 TEST(P8000WdcRom, HeaderGleichAbzug)
 {
@@ -195,7 +195,7 @@ TEST(P8000WdcRom, HeaderGleichAbzug)
 
 TEST(P8000WdcRom, Firmware42PruefsummenWieCrcBr)
 {
-    // crc_br: CRC-CCITT, Start FFFF, über 0000–0FFF bzw. 1000–1FF7; abgelegt byteweise vertauscht
+    // crc_br: CRC-CCITT, Start FFFF, ueber 0000–0FFF bzw. 1000–1FF7; abgelegt byteweise vertauscht
     auto crc = [](const uint8_t* d, size_t n) {
         uint16_t c = 0xFFFF;
         for (size_t i = 0; i < n; ++i) c = k1520::winchester::crcCcitt(c, d[i]);
@@ -211,7 +211,7 @@ TEST(P8000WdcRom, Firmware42PruefsummenWieCrcBr)
 TEST(P8000WdcRom, KommandosucheLaeuftImAbzugUeberDasTabellenende)
 {
     // wdc_firmware.md §12 Frage 8: com_ts = CP (HL); JR Z; CP 0FFH; INC HL; JR NZ — der Vergleich
-    // mit FFH prüft A (Kommandocode), nicht das Tabellenbyte.  Im Abzug 4.2 bei 0786H.
+    // mit FFH prueft A (Kommandocode), nicht das Tabellenbyte.  Im Abzug 4.2 bei 0786H.
     const uint8_t schleife[] = {0xBE, 0x28, 0x08, 0xFE, 0xFF, 0x23, 0x20, 0xF8};
     EXPECT_EQ(std::memcmp(P8K_WDC_4_2 + 0x786, schleife, sizeof schleife), 0);
 }
@@ -227,9 +227,9 @@ TEST(P8000Wdc_, StartetOhneFehler20BisBereitZumKommandoempfang)
     EXPECT_GT(a.wdc.takte(), 14'000'000u);
     EXPECT_LT(a.wdc.takte(), 22'000'000u);
     // d_rdy: LW 0 bereit; das INIT-Bit (87H) nimmt `begin` schon vor dem Warten auf das Kommando
-    // zurück (die Init-Fehlerprüfung läuft vorab, gemeldet wird beim ersten Kommando)
+    // zurueck (die Init-Fehlerpruefung laeuft vorab, gemeldet wird beim ersten Kommando)
     EXPECT_EQ(a.wdc.lesen(0x3138), 0x01);
-    EXPECT_EQ(a.wdc.lesen(0x3137), 0x09);   // s_rdy: PAR + BTT von LW 0 gültig
+    EXPECT_EQ(a.wdc.lesen(0x3137), 0x09);   // s_rdy: PAR + BTT von LW 0 gueltig
     EXPECT_EQ(a.wdc.lesen(0x312F), 0x00);   // err_in
     EXPECT_EQ(a.platte.zylinder(), 0);
 }
@@ -242,17 +242,17 @@ TEST(P8000Wdc_, ParameterblockWieSaFormatIhnLiest)
     ASSERT_EQ(r.daten.size(), 50u);
     const auto& d = r.daten;
     EXPECT_EQ(std::string(d.begin(), d.begin() + 7), "WDC_4.2");   // rd_pb kopiert 7 Zeichen
-    EXPECT_EQ(d[7], 0x81);                                           // 8. Byte = RAM-Füllwert nach Reset
+    EXPECT_EQ(d[7], 0x81);                                           // 8. Byte = RAM-Fuellwert nach Reset
     EXPECT_EQ(std::string(d.begin() + 8, d.begin() + 20), "ROB K5504.50");
     EXPECT_EQ(d[23] | (d[24] << 8), 1024);    // Zylinder (30E7)
-    EXPECT_EQ(d[25], 5);                      // Köpfe
+    EXPECT_EQ(d[25], 5);                      // Koepfe
     EXPECT_EQ(d[26], 18);                     // Sektoren
     EXPECT_EQ(d[27] | (d[28] << 8), 1024);    // Vorkompensation
     EXPECT_EQ(d[29], 1);                      // rp_mod
     EXPECT_EQ(d[36], 203); EXPECT_EQ(d[37], 209);
     EXPECT_EQ(d[38], 251); EXPECT_EQ(d[39], 253); EXPECT_EQ(d[40], 241); EXPECT_EQ(d[41], 243);
-    EXPECT_EQ(d[42] | (d[43] << 8) | (d[44] << 16) | (d[45] << 24), 92069);   // höchste Blocknummer
-    EXPECT_EQ(d[46], 0x01);   // d_rdy (INIT-Bit nach dem ersten Kommando gelöscht)
+    EXPECT_EQ(d[42] | (d[43] << 8) | (d[44] << 16) | (d[45] << 24), 92069);   // hoechste Blocknummer
+    EXPECT_EQ(d[46], 0x01);   // d_rdy (INIT-Bit nach dem ersten Kommando geloescht)
     EXPECT_EQ(d[47], 0x09);   // s_rdy
     EXPECT_EQ(d[48], 0x00);   // err_in
     EXPECT_EQ(d[49], 1);      // Laufwerksanzahl
@@ -267,7 +267,7 @@ TEST(P8000Wdc_, EpromPruefsummenfehlerGibtStatus6UndHaelt)
     cfg.rom_groesse = rom.size();
     Aufbau a(cfg);
     a.host.lauf(4'000'000);
-    EXPECT_EQ(a.wdc.status(), 6);             // MON16 meldet dafür „Fehler 20"
+    EXPECT_EQ(a.wdc.status(), 6);             // MON16 meldet dafuer „Fehler 20"
     EXPECT_TRUE(a.wdc.cpu().halted);
     EXPECT_FALSE(a.wdc.uebertragungAktiv());
 }
@@ -279,7 +279,7 @@ TEST(P8000Wdc_, OhneLaufwerkMeldetDasErsteKommandoFehler27)
     // LW 0 bis 32 s, LW 1 und 2 je 2 s — Status 1 erst nach ≈ 36 s
     ASSERT_TRUE(h.warteStatus(1, 160'000'000));
     EXPECT_GT(w.takte(), 120'000'000u);
-    EXPECT_EQ(w.lesen(0x3138), 0x40);         // ERR_IN, kein LW (INIT-Bit schon geprüft)
+    EXPECT_EQ(w.lesen(0x3138), 0x40);         // ERR_IN, kein LW (INIT-Bit schon geprueft)
     auto r = h.ausfuehren(sektorKommando(0x01, 0, 0, 0, 1));
     EXPECT_EQ(r.fehler, 0x27);
     r = h.ausfuehren(sektorKommando(0x01, 0, 0, 0, 1));   // danach: LW nicht bereit
@@ -295,10 +295,10 @@ TEST(P8000Wdc_, UngueltigerParSektorMeldetFehler39UndArbeitetVorlaeufig)
         ASSERT_TRUE(p.sektorSchreiben(0, 0, 1, null.data()));
     });
     auto r = a.host.ausfuehren({0x28, 0, 0, 0, 0, 0, 50, 0, 0}, 50);
-    EXPECT_EQ(r.fehler, 0x39);                // 38H + LW 0: PAR/BTT fehlerhaft — Kommando nicht ausgeführt
+    EXPECT_EQ(r.fehler, 0x39);                // 38H + LW 0: PAR/BTT fehlerhaft — Kommando nicht ausgefuehrt
     r = a.host.ausfuehren({0x28, 0, 0, 0, 0, 0, 50, 0, 0}, 50);
     ASSERT_EQ(r.fehler, 0);
-    EXPECT_EQ(r.daten[23] | (r.daten[24] << 8), 100);   // vorläufige Parameter 100/2/18
+    EXPECT_EQ(r.daten[23] | (r.daten[24] << 8), 100);   // vorlaeufige Parameter 100/2/18
     EXPECT_EQ(r.daten[25], 2);
     EXPECT_EQ(r.daten[47], 0x00);             // s_rdy
     EXPECT_EQ(r.daten[48], 0x08);             // err_in Bit 3 = PAR/BTT LW 0
@@ -317,8 +317,8 @@ TEST(P8000Wdc_, UnlesbarerParSektorMeldetFehler31)
 TEST(P8000Wdc_, ReadyTestCode00UndUnbekannteCodes)
 {
     Aufbau a;
-    // 00 steht nicht in com_tb; com_ts sucht über das Tabellenende hinaus und findet die 00
-    // im Kennfeld id_df (FE 00 00 00 01) — der Ready-Test läuft (Frage 8).
+    // 00 steht nicht in com_tb; com_ts sucht ueber das Tabellenende hinaus und findet die 00
+    // im Kennfeld id_df (FE 00 00 00 01) — der Ready-Test laeuft (Frage 8).
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x00, 0, 0, 0, 1)).fehler, 0);
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0xFF, 0, 0, 0, 1)).fehler, 0x01);
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x00, 1, 0, 0, 1)).fehler, 0x03);
@@ -331,7 +331,7 @@ TEST(P8000Wdc_, FehlercodesFuerUnzulaessigeAdressen)
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x01, 1, 1, 0, 1)).fehler, 0x03);    // LW 1 fehlt
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x01, 0, 1, 5, 1)).fehler, 0x02);    // Kopf 5
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x01, 0, 1024, 0, 1)).fehler, 0x04); // Zylinder 1024
-    EXPECT_EQ(a.host.ausfuehren(blockKommando(0x21, 0, 92070)).fehler, 0x05);       // Block zu groß
+    EXPECT_EQ(a.host.ausfuehren(blockKommando(0x21, 0, 92070)).fehler, 0x05);       // Block zu gross
     EXPECT_EQ(a.host.ausfuehren(sektorKommando(0x01, 0, 1, 0, 19)).fehler, 0x0A);   // Sektor 19 fehlt
 }
 
@@ -371,7 +371,7 @@ TEST(P8000Wdc_, BlockLesenEinzelnUndUeberSpurUndZylindergrenze)
     };
     pruefe(0, 1);                  // Block 0 = Z1/K0/S1
     pruefe(500, 1);
-    pruefe(14, 8);                 // 4 KB über die Spurgrenze K0 → K1
+    pruefe(14, 8);                 // 4 KB ueber die Spurgrenze K0 → K1
     pruefe(89, 2);                 // Zylinderwechsel Z1/K4/S18 → Z2/K0/S1 (step1)
     EXPECT_EQ(a.platte.zylinder(), 2);
 }
@@ -398,7 +398,7 @@ TEST(P8000Wdc_, BlockSchreibenLandetImAbbild)
     const auto m = muster(42);
     const std::vector<uint8_t> d(m.begin(), m.end());
     ASSERT_EQ(a.host.ausfuehren(blockKommando(0x22, 0, 3), 0, &d).fehler, 0);
-    // drei Blöcke über die Spurgrenze (Block 17 = Z1/K0/S18, 18/19 = Z1/K1/S1–2)
+    // drei Bloecke ueber die Spurgrenze (Block 17 = Z1/K0/S18, 18/19 = Z1/K1/S1–2)
     std::vector<uint8_t> drei;
     for (int i = 0; i < 3; ++i) { const auto x = muster(100 + i); drei.insert(drei.end(), x.begin(), x.end()); }
     ASSERT_EQ(a.host.ausfuehren(blockKommando(0x22, 0, 17, 3 * 512), 0, &drei).fehler, 0);
@@ -411,9 +411,9 @@ TEST(P8000Wdc_, BlockSchreibenLandetImAbbild)
         ASSERT_TRUE(a.platte.sektorLesen(l[0], l[1], l[2], x.data()));
         EXPECT_EQ(x, muster(100 + i)) << i;
     }
-    ASSERT_TRUE(a.platte.sektorLesen(1, 0, 5, x.data()));   // Nachbar unberührt
+    ASSERT_TRUE(a.platte.sektorLesen(1, 0, 5, x.data()));   // Nachbar unberuehrt
     EXPECT_EQ(x[0], 0xE5);
-    auto r = a.host.ausfuehren(blockKommando(0x21, 0, 17, 3 * 512), 3 * 512);   // und zurücklesen
+    auto r = a.host.ausfuehren(blockKommando(0x21, 0, 17, 3 * 512), 3 * 512);   // und zuruecklesen
     ASSERT_EQ(r.fehler, 0);
     EXPECT_EQ(r.daten, drei);
 }
@@ -442,9 +442,9 @@ TEST(P8000Wdc_, FormatierenSpur04Und14Und24)
     for (int s = 1; s <= 18; ++s) ASSERT_TRUE(a.platte.sektorSchreiben(5, 2, s, muster(s).data()));
     ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x04, 0, 5, 2, 1)).fehler, 0);
     EXPECT_EQ(a.wdc.lesen(0x3380), 203);      // Umdrehungsmessung ⇒ 40-MHz-Zeitkonstante
-    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x14, 0, 5, 3, 1)).fehler, 0);   // + Rücklesen
-    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x24, 0, 5, 4, 1)).fehler, 0);   // + Defektprüfung
-    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x44, 0, 5, 2, 1)).fehler, 0);   // Spur rücklesen
+    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x14, 0, 5, 3, 1)).fehler, 0);   // + Ruecklesen
+    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x24, 0, 5, 4, 1)).fehler, 0);   // + Defektpruefung
+    ASSERT_EQ(a.host.ausfuehren(sektorKommando(0x44, 0, 5, 2, 1)).fehler, 0);   // Spur ruecklesen
     a.platte.flush();
     std::array<uint8_t, 512> x{};
     for (int k = 2; k <= 4; ++k) {
@@ -454,7 +454,7 @@ TEST(P8000Wdc_, FormatierenSpur04Und14Und24)
             for (uint8_t b : x) ASSERT_EQ(b, 0xE5) << k << "/" << s;
         }
     }
-    // BTT unverändert leer (kein Defekt): 58 liefert Zähler 0 und die Endekennung
+    // BTT unveraendert leer (kein Defekt): 58 liefert Zaehler 0 und die Endekennung
     auto r = a.host.ausfuehren({0x58, 0, 0, 0, 0, 0, 5, 0, 0}, 5);
     ASSERT_EQ(r.fehler, 0);
     EXPECT_EQ(r.daten, (std::vector<uint8_t>{0, 0, 0xFF, 0xFF, 0xFF}));
@@ -482,7 +482,7 @@ TEST(P8000Wdc_, FormatierteSpurHatDieLageDerFirmware)
     for (size_t i = 0; i < 18; ++i) {          // Datenmarke ≥ 34 Byte hinter der Kennfeldmarke [W11]
         EXPECT_GE(df[i] - id[i], 34) << i;
         EXPECT_LE(df[i] - id[i], 40) << i;
-        if (i + 1 < 18) EXPECT_LT(df[i] + 520, id[i + 1] - 2) << i;   // Datenfeld vor den nächsten Marken
+        if (i + 1 < 18) EXPECT_LT(df[i] + 520, id[i + 1] - 2) << i;   // Datenfeld vor den naechsten Marken
     }
     // Kopf 1: Sektorfolge 18 1 10 … (Kopfversatz)
     EXPECT_EQ(s[size_t(id[0] + 5)], 18);
@@ -541,7 +541,7 @@ TEST(P8000Wdc_, WdcRamSchreibenUndLesen)
     EXPECT_EQ(r.daten, d);
 }
 
-// ─── RST, ältere Firmware, Save-State ────────────────────────────────────────
+// ─── RST, aeltere Firmware, Save-State ────────────────────────────────────────
 
 TEST(P8000Wdc_, RstHaeltImResetUndStartetNeu)
 {
@@ -586,8 +586,8 @@ Platte::Config spur3xFuerStart()
 
 TEST(P8000Wdc_, Firmware3_4_05StartetOhneZweitenEprom)
 {
-    // Abzug „3.4.05" (Gerät des Anwenders): nur EPROM 1, Prüfsummen bei 0FF8H, EPROM 2 unbestückt.
-    // Läuft bis „bereit"; ihr Spurformat ist ein anderes als das der 4.2 (Tests `P8000Wdc3x.*`, §12 Nr. 11),
+    // Abzug „3.4.05" (Geraet des Anwenders): nur EPROM 1, Pruefsummen bei 0FF8H, EPROM 2 unbestueckt.
+    // Laeuft bis „bereit"; ihr Spurformat ist ein anderes als das der 4.2 (Tests `P8000Wdc3x.*`, §12 Nr. 11),
     // darum hier die 3.x-Spur — auf einer 4.2-Spur meldet das erste Kommando Fehler 05.
     P8000Wdc::Config cfg;
     cfg.firmware = P8000Wdc::Config::Firmware::V3_4_05;
@@ -641,7 +641,7 @@ TEST(P8000Wdc_, SaveStateRundreiseMittenImLesen)
     w2.serialize(e2);
     EXPECT_EQ(e1, e2);
 
-    P8000Wdc w3;                              // andere Bestückung (kein Laufwerk) ⇒ abgelehnt
+    P8000Wdc w3;                              // andere Bestueckung (kein Laufwerk) ⇒ abgelehnt
     q = st.data();
     EXPECT_FALSE(w3.deserialize(q, st.data() + st.size()));
 }
@@ -652,8 +652,8 @@ TEST(P8000Wdc_, SaveStateRundreiseMittenImLesen)
 
 namespace {
 
-/// WDC mit einem Mini-ROM (DI; HALT) — die CPU steht, die Hardware wird über die E/A- und
-/// Speicherrückrufe der CPU getrieben wie von einem Befehl.
+/// WDC mit einem Mini-ROM (DI; HALT) — die CPU steht, die Hardware wird ueber die E/A- und
+/// Speicherrueckrufe der CPU getrieben wie von einem Befehl.
 struct Hw {
     std::vector<uint8_t> rom = std::vector<uint8_t>(0x2000, 0x00);
     TempPlatte tp{"K5504.50", "wdc_hw.img"};
@@ -669,7 +669,7 @@ struct Hw {
         w = std::make_unique<P8000Wdc>(cfg);
         EXPECT_TRUE(platte.oeffnen(tp));
         w->anschliessen(0, &platte);
-        w->laufeBis(20);                 // DI; HALT ausgeführt
+        w->laufeBis(20);                 // DI; HALT ausgefuehrt
     }
     void out(uint8_t p, uint8_t v) { w->cpu().writePort(p, v); }
     uint8_t in(uint8_t p) { return static_cast<uint8_t>(w->cpu().readPort(p)); }
@@ -727,7 +727,7 @@ TEST(P8000WdcHw, StatusportOhneUndMitLaufwerkSchrittUndSeekComplete)
     pc.seek_takte = 1000;
     Hw h;
     h.platte.oeffnen(h.tp, pc);
-    EXPECT_EQ(h.in(0x88), 0xFF);               // kein Laufwerk gewählt: alles inaktiv, CRC gut
+    EXPECT_EQ(h.in(0x88), 0xFF);               // kein Laufwerk gewaehlt: alles inaktiv, CRC gut
     h.out(0x58, 0x12);                         // LW 0
     EXPECT_EQ(h.in(0x88), 0xB3);               // /READY 0, /SEEKC 0, /TR0 0 (= Mitschnitt der Firmware)
     h.out(0x58, 0x22);                         // LW 1 nicht angeschlossen
@@ -735,10 +735,10 @@ TEST(P8000WdcHw, StatusportOhneUndMitLaufwerkSchrittUndSeekComplete)
     h.out(0x58, 0x12);
     h.out(0x48, 0x08); h.out(0x48, 0x09); h.out(0x48, 0x08);   // ein Schritt nach innen
     EXPECT_EQ(h.platte.zylinder(), 1);
-    EXPECT_EQ(h.in(0x88) & 0x48, 0x48);        // nicht Spur 0, Suche läuft
+    EXPECT_EQ(h.in(0x88) & 0x48, 0x48);        // nicht Spur 0, Suche laeuft
     h.lauf(1100);
     EXPECT_EQ(h.in(0x88) & 0x48, 0x40);
-    h.out(0x48, 0x01); h.out(0x48, 0x00);      // nach außen
+    h.out(0x48, 0x01); h.out(0x48, 0x00);      // nach aussen
     EXPECT_EQ(h.platte.zylinder(), 0);
     h.out(0x48, 0x01);                         // Pegel bleibt 1: kein weiterer Schritt
     h.out(0x48, 0x01);
@@ -752,7 +752,7 @@ TEST(P8000WdcHw, StatusportOhneUndMitLaufwerkSchrittUndSeekComplete)
 TEST(P8000WdcHw, IndeximpulsJeUmdrehungAnCtcK3NurVomGewaehltenLaufwerk)
 {
     Hw h;
-    h.out(0x73, 0x47); h.out(0x73, 0x00);      // Zähler, ohne Interrupt, TC 256
+    h.out(0x73, 0x47); h.out(0x73, 0x00);      // Zaehler, ohne Interrupt, TC 256
     h.out(0x58, 0x12);
     h.lauf(uint64_t(UMDREHUNG * 10));
     const int nach10 = h.in(0x73);
@@ -772,7 +772,7 @@ TEST(P8000WdcHw, LesenSynchronisiertAufDreiMarkenUndPrueftDieKennfeldCrc)
         for (int i = 0; i < 20000 && (h.w->plattenPosition() < p - 8 || h.w->plattenPosition() > p); ++i) h.lauf(6);
     };
     auto kennfeldLesen = [&] {
-        h.mem(Hw::diskAdr(0x603), 0);          // Zähler → 3603H
+        h.mem(Hw::diskAdr(0x603), 0);          // Zaehler → 3603H
         h.out(0x08, 0x0A);                     // Endadresse CRC2, Bit 2–0 = 2 ⇒ 3 Marken
         h.out(0x58, 0x15);                     // LW 0, DEN, /MEN = 0, CRCEN
         const int k0 = h.in(0x70);
@@ -780,8 +780,8 @@ TEST(P8000WdcHw, LesenSynchronisiertAufDreiMarkenUndPrueftDieKennfeldCrc)
         h.lauf(uint64_t(9 * 6.4));             // FE … CRC2
         h.out(0x58, 0x12); h.out(0x68, 0);     // aus (IMPAUS)
     };
-    h.out(0x70, 0x47); h.out(0x70, 0x00);      // K0 zählt MAERK
-    h.out(0x71, 0x47); h.out(0x71, 0x00);      // K1 zählt /DEND
+    h.out(0x70, 0x47); h.out(0x70, 0x00);      // K0 zaehlt MAERK
+    h.out(0x71, 0x47); h.out(0x71, 0x00);      // K1 zaehlt /DEND
     h.out(0x38, 0xA1); h.out(0x28, 0x0A);
     h.out(0x18, 0x40);                         // Lesen, DA12 = 1
     h.mem(0x3603, 0x77);
@@ -792,18 +792,18 @@ TEST(P8000WdcHw, LesenSynchronisiertAufDreiMarkenUndPrueftDieKennfeldCrc)
     EXPECT_EQ(h.w->lesen(0x3603), 0x77);       // die Marke belegt die Adresse, wird nicht geschrieben
     const uint8_t soll[] = {0xFE, 0, 0, 0, 10};
     for (int i = 0; i < 5; ++i) EXPECT_EQ(h.w->lesen(uint16_t(0x3604 + i)), soll[i]) << i;
-    EXPECT_GE(h.w->diskZaehler(), 0x60B);      // nach CRC2 (360AH) steht der Zähler dahinter
+    EXPECT_GE(h.w->diskZaehler(), 0x60B);      // nach CRC2 (360AH) steht der Zaehler dahinter
     EXPECT_EQ(h.in(0x71), 255);                // /DEND an 360AH
     EXPECT_EQ(h.in(0x88) & 0x80, 0x80);        // CRC gut
 
-    // verfälschte Kennfeld-CRC in Slot 2: Fehler-FF an /DEND mit CRCEN, Lesen löscht es
+    // verfaelschte Kennfeld-CRC in Slot 2: Fehler-FF an /DEND mit CRCEN, Lesen loescht es
     h.platte.schreibe(0, 2 * Platte::SLOT + 27, 0x00, 0);
     bisLage(2 * Platte::SLOT);
     kennfeldLesen();
     EXPECT_EQ(h.w->lesen(0x3608), 2);          // Slot 2 = Sektor 2
     EXPECT_EQ(h.in(0x88) & 0x80, 0x00);
     EXPECT_EQ(h.in(0x88) & 0x80, 0x80);
-    // ohne CRCEN keine Prüfung
+    // ohne CRCEN keine Pruefung
     bisLage(2 * Platte::SLOT);
     h.mem(Hw::diskAdr(0x603), 0);
     h.out(0x58, 0x11);                         // LW 0, DEN, /MEN = 0, CRCEN aus
@@ -837,7 +837,7 @@ TEST(P8000WdcHw, MarkenzahlAusDskeaUndKeinAblegenOhneMarkensuche)
 TEST(P8000WdcHw, SchreibenBlendetMarkeUndCrcEinUndMitDerVerzoegerung)
 {
     Hw h;
-    // Puffer wie wrt_dt (dt_br = 2FF5H): FF×11, A1 (2000H), FB, 512 Daten, Platz für die CRC
+    // Puffer wie wrt_dt (dt_br = 2FF5H): FF×11, A1 (2000H), FB, 512 Daten, Platz fuer die CRC
     const auto d = muster(5);
     for (int i = 0; i < 11; ++i) h.mem(uint16_t(0x2FF5 + i), 0xFF);
     h.mem(0x2000, 0xA1); h.mem(0x2001, 0xFB);
@@ -851,7 +851,7 @@ TEST(P8000WdcHw, SchreibenBlendetMarkeUndCrcEinUndMitDerVerzoegerung)
     h.out(0x08, 0x00);                         // /DEND an 2000H: Marke, Bit 2–0 = 0 ⇒ eine
     const int start = h.w->plattenPosition();
     h.out(0x58, 0x1D);                         // DEN, /MEN = 0 (scharf), CRCEN, WG
-    h.out(0x58, 0x1B);                         // /MEN zurück vor der Endadresse — bleibt scharf [W5]
+    h.out(0x58, 0x1B);                         // /MEN zurueck vor der Endadresse — bleibt scharf [W5]
     for (int i = 0; i < 2000 && (h.w->diskZaehler() < 0x1F0 || h.w->diskZaehler() >= 0xF00); ++i) h.lauf(6);
     h.out(0x08, 0x02);                         // /DEND an 2202H: CRC-Einblendung
     h.out(0x58, 0x1F);
@@ -864,7 +864,7 @@ TEST(P8000WdcHw, SchreibenBlendetMarkeUndCrcEinUndMitDerVerzoegerung)
     for (int i = 0; i < 40; ++i)
         if (s[size_t((start + i) % Platte::BYTES_JE_SPUR)] == (0xA1 | Platte::MARKE)) { m = i; break; }
     ASSERT_GE(m, 0);
-    EXPECT_GE(m, 11 + 2 - 1);                  // 11 Byte Vorspann + 2 Byte Verzögerung [W11]
+    EXPECT_GE(m, 11 + 2 - 1);                  // 11 Byte Vorspann + 2 Byte Verzoegerung [W11]
     EXPECT_LE(m, 11 + 2 + 1);
     std::vector<uint8_t> feld;
     for (int i = 0; i < 516; ++i) feld.push_back(uint8_t(s[size_t((start + m + i) % Platte::BYTES_JE_SPUR)]));
@@ -891,7 +891,7 @@ TEST(P8000WdcHw, OhneWgBleibtDiePlatteUnberuehrtDerZaehlerLaeuft)
     EXPECT_GE(h.w->diskZaehler(), 0x160);
     EXPECT_EQ(h.platte.spur(0, 0), vorher);
     EXPECT_FALSE(h.platte.schmutzig());
-    h.out(0x58, 0x16);                         // Schreiben: /MEN = 0 ohne DEN ⇒ Zähler steht [W3]
+    h.out(0x58, 0x16);                         // Schreiben: /MEN = 0 ohne DEN ⇒ Zaehler steht [W3]
     const uint16_t z = h.w->diskZaehler();
     h.lauf(uint64_t(100 * 6.4));
     EXPECT_EQ(h.w->diskZaehler(), z);
@@ -940,7 +940,7 @@ TEST(P8000WdcHw, HostHandshakeHenFfUndCtcK2)
     EXPECT_EQ(host.latch, 0x5A);
     EXPECT_FALSE(h.w->uebertragungAktiv());
 
-    // RST löscht CNTST/DSKC2 und das FF [H4]
+    // RST loescht CNTST/DSKC2 und das FF [H4]
     h.out(0x58, 0x15);
     h.out(0x18, 0x0F);
     h.w->setzeRst(true);
@@ -954,7 +954,7 @@ TEST(P8000WdcHw, EinByteJeArdyAktivierung)
 {
     Hw h;
     int strobes = 0;
-    h.w->setzeAstbRueckruf([&] { ++strobes; });   // eine PIO, die ARDY nicht zurücknimmt
+    h.w->setzeAstbRueckruf([&] { ++strobes; });   // eine PIO, die ARDY nicht zuruecknimmt
     h.out(0x72, 0xD7); h.out(0x72, 100);
     h.mem(Hw::hostAdr(0x100), 0);
     h.out(0x18, 0x09); h.out(0x18, 0x01);
@@ -973,7 +973,7 @@ TEST(P8000WdcHw, EinByteJeArdyAktivierung)
 // ─── Firmware 3.x (P24) ──────────────────────────────────────────────────────
 //
 // Die 3.4.05 schreibt und erwartet eine andere Spurlage als die 4.2 (wdc_firmware.md §12 Nr. 11):
-// Sektoren physisch der Reihe nach 1…18 (kein Interleave 2:1, kein Kopfversatz), Lücke hinter der
+// Sektoren physisch der Reihe nach 1…18 (kein Interleave 2:1, kein Kopfversatz), Luecke hinter der
 // Kennfeld-CRC FF×2 · 00×18 · FF×8, Kennfeldabstand ≈ 570 Byte; der Interleave steckt in der
 // LOGISCHEN Blockreihenfolge (Tabelle `01 09 11 07 0F 05 0D 03 0B 02 0A 12 08 10 06 0E 04 0C` im Abzug).
 
@@ -998,7 +998,7 @@ TEST(P8000Wdc3x, SpurformatJeFirmware)
 {
     using F = P8000Wdc::Config::Firmware;
     EXPECT_EQ(P8000Wdc::spurformat(F::V3_4_05), Platte::Spurformat::V3x);
-    EXPECT_EQ(P8000Wdc::spurformat(F::V4_0_05), Platte::Spurformat::V4_2);   // trägt die 2:1-Tabelle der 4.2
+    EXPECT_EQ(P8000Wdc::spurformat(F::V4_0_05), Platte::Spurformat::V4_2);   // traegt die 2:1-Tabelle der 4.2
     EXPECT_EQ(P8000Wdc::spurformat(F::V4_2), Platte::Spurformat::V4_2);
 }
 
@@ -1023,8 +1023,8 @@ TEST(P8000Wdc3x, LiestUndSchreibtBloeckeInDerLogischenReihenfolge)
 {
     Aufbau a(firmware3x(), spur3x());
     for (int s = 1; s <= 18; ++s) ASSERT_TRUE(a.platte.sektorSchreiben(1, 0, s, muster(s).data()));
-    // Block 0 liegt auf Zylinder 1 / Kopf 0 (Zylinder 0 ist für die BTT reserviert); Block k → Sektor Tabelle[k].
-    // Je Kommando kommt genau EIN Block (512 B) — auch bei Längenfeld 1024 (anders als 4.2, nachgemessen).
+    // Block 0 liegt auf Zylinder 1 / Kopf 0 (Zylinder 0 ist fuer die BTT reserviert); Block k → Sektor Tabelle[k].
+    // Je Kommando kommt genau EIN Block (512 B) — auch bei Laengenfeld 1024 (anders als 4.2, nachgemessen).
     for (int k = 0; k < 8; ++k) {
         auto r = a.host.ausfuehren(blockKommando(0x21, 0, uint32_t(k)), 512, nullptr, 800'000'000);
         ASSERT_EQ(r.fehler, 0) << "Block " << k;
@@ -1048,7 +1048,7 @@ TEST(P8000Wdc3x, LiestUndSchreibtBloeckeInDerLogischenReihenfolge)
 }
 
 /// Formatieren mit der 3.x: Sektoren 1…18 der Reihe nach auf JEDEM Kopf, Spur wird zerlegt und gilt als
-/// formatiert; Kommando 04 allein (ohne Rücklesen) geht ebenfalls.
+/// formatiert; Kommando 04 allein (ohne Ruecklesen) geht ebenfalls.
 TEST(P8000Wdc3x, FormatiertSpurenMitSektorenDerReihe)
 {
     Aufbau a(firmware3x(), spur3x(), [](Platte& p) { p.setzeFormatiert(7, 0, false); p.setzeFormatiert(7, 1, false); });

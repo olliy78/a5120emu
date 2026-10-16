@@ -6,16 +6,16 @@
  * Emulator component under test: **K8025** (`core/cards/k8025/k8025.h`)
  *
  * The K8025 is the combined I/O peripherals card of the Robotron A5120.  It
- * provides the host-visible keyboard, DFÜ (serial data exchange), and printer
+ * provides the host-visible keyboard, DFUE (serial data exchange), and printer
  * interfaces, plus CTC and PIO sub-chips.  Internally it contains:
  *  - **SIO A32** – keyboard (Ch A, RX/TX) and printer (Ch B, TX only)
- *  - **SIO A33** – DFÜ (Ch A, RX/TX) and a spare channel (Ch B)
+ *  - **SIO A33** – DFUE (Ch A, RX/TX) and a spare channel (Ch B)
  *  - **CTC A34** – four-channel timer (ports 0x58–0x5B)
  *  - **PIO A35** – parallel I/O (ports 0x54–0x57)
  *
  * I/O port map (relative to the K8025 card; absolute addresses on the K1520
  * bus depend on the system configuration):
- *  - 0x50–0x53: SIO A33 (DFÜ)  — data A, ctrl A, data B, ctrl B
+ *  - 0x50–0x53: SIO A33 (DFUE)  — data A, ctrl A, data B, ctrl B
  *  - 0x54–0x57: PIO A35
  *  - 0x58–0x5B: CTC A34 (channels 0–3)
  *  - 0x5C–0x5F: SIO A32 (keyboard/printer) — data A, ctrl A, data B, ctrl B
@@ -25,7 +25,7 @@
  * | Group                  | What is tested                                           |
  * |------------------------|----------------------------------------------------------|
  * | Keyboard interface     | keyboardRxByte() triggers SIO A32 Ch A interrupt        |
- * | DFÜ interface          | dfueRxByte(), dfueTxAvailable(), dfueTxGet()            |
+ * | DFUE interface          | dfueRxByte(), dfueTxAvailable(), dfueTxGet()            |
  * | Printer interface      | printerTxAvailable(), printerTxGet()                    |
  * | CTC / clockTick        | clockTick() does not crash                              |
  * | I/O port dispatch      | Write/read to CTC, PIO, all ports in range              |
@@ -85,7 +85,7 @@ TEST(K8025, KeyboardTxAvailable_FalseInitially)
     EXPECT_FALSE(card.keyboardTxAvailable());
 }
 
-// ─── DFÜ interface ────────────────────────────────────────────────────────────
+// ─── DFUE interface ────────────────────────────────────────────────────────────
 
 /**
  * @test K8025/DfueRxByte_SioA33_ChA_HasRxData
@@ -106,7 +106,7 @@ TEST(K8025, DfueRxByte_SioA33_ChA_HasRxData)
 
 /**
  * @test K8025/DfueTxAvailable_FalseInitially
- * @brief No DFÜ TX data is available before the firmware writes to SIO A33.
+ * @brief No DFUE TX data is available before the firmware writes to SIO A33.
  * @par Pass criterion  dfueTxAvailable() == false.
  */
 TEST(K8025, DfueTxAvailable_FalseInitially)
@@ -338,7 +338,7 @@ TEST(K8025, GetVector_Returns0xFF_WhenNoInterrupt)
     EXPECT_EQ(card.getVector(), 0xFF);
 }
 
-// ─── DFÜ interrupt ────────────────────────────────────────────────────────────
+// ─── DFUE interrupt ────────────────────────────────────────────────────────────
 
 /**
  * @test K8025/DfueRxByte_TriggersInterrupt_WhenEnabled
@@ -350,7 +350,7 @@ TEST(K8025, DfueRxByte_TriggersInterrupt_WhenEnabled)
     K1520Bus bus;
     K8025 card(bus);
 
-    // Enable RX interrupts on SIO A33 channel A (DFÜ, ctrl port = 0x51)
+    // Enable RX interrupts on SIO A33 channel A (DFUE, ctrl port = 0x51)
     enableRxInterrupts(card, 0x51);
 
     card.setIEI(true);
@@ -362,8 +362,8 @@ TEST(K8025, DfueRxByte_TriggersInterrupt_WhenEnabled)
 
 /**
  * @test K8025/RetiGibtDenSioWiederFrei
- * @brief Nach Quittung (IUS gesetzt) fordert die DFÜ-SIO erst wieder an, wenn das RETI
- *   über die Karte bei ihr ankommt — bis AP-ST5 reichte die K8025 das RETI nicht weiter,
+ * @brief Nach Quittung (IUS gesetzt) fordert die DFUE-SIO erst wieder an, wenn das RETI
+ *   ueber die Karte bei ihr ankommt — bis AP-ST5 reichte die K8025 das RETI nicht weiter,
  *   jeder zweite Empfangsinterrupt blieb aus (SERTEST-Gegenstelle am A5120).
  * @par Pass criterion  zweites Zeichen ohne RETI: keine Anforderung; nach
  *   `bus.signalRETI()`: Anforderung, Vektor erneut quittierbar.
@@ -471,7 +471,7 @@ TEST(K8025, SetDFUERxCallback_NoCrash)
     EXPECT_NO_FATAL_FAILURE(card.dfueRxByte(0x01));
 }
 
-// ─── K8025Seriell: Anschlüsse nach außen (Entwurf 19 §3.1, AP-S5) ───────────
+// ─── K8025Seriell: Anschluesse nach aussen (Entwurf 19 §3.1, AP-S5) ───────────
 
 namespace {
 
@@ -485,7 +485,7 @@ void sio8N1(K8025& card, uint8_t ctrl) {
 /**
  * @test K8025Seriell.Kanalzuordnung
  * @brief DFÜ/V.24 = A33-A (X6, mit Steuerleitungen), DFÜ/IFSS = A33-B (X5, bis AP-S5
- *        als „unused" geführt), Drucker = A32-B (X3); die Tastatur (A32-A, X4) ist
+ *        als „unused" gefuehrt), Drucker = A32-B (X3); die Tastatur (A32-A, X4) ist
  *        fest und hat keinen Anschluss.  Taktquellen: W1:7 bzw. X7–X9, Drucker fest.
  */
 TEST(K8025Seriell, Kanalzuordnung)
@@ -529,7 +529,7 @@ TEST(K8025Seriell, Kanalzuordnung)
 
 /**
  * @test K8025Seriell.Taktquelle
- * @brief Gezeichnete Stellung = ZRE-CTC K0 (über `setzeZreTakt`), versetzt = CTC A34
+ * @brief Gezeichnete Stellung = ZRE-CTC K0 (ueber `setzeZreTakt`), versetzt = CTC A34
  *        K2 (V.24) bzw. K1 (IFSS); Drucker fest CTC A34 K0.
  */
 TEST(K8025Seriell, Taktquelle)
@@ -562,8 +562,8 @@ TEST(K8025Seriell, Taktquelle)
     zre = 16;
     EXPECT_EQ(v24.format().baud_nenn, 9600u);
 
-    // Die CTC A34 zählt im Emulator ZC/TO0 der ZRE (Koppelbus): ihre Eingangsperiode
-    // kommt aus derselben Quelle.  Zähler (47H), ZK 2 → 2 × 16 Takte.
+    // Die CTC A34 zaehlt im Emulator ZC/TO0 der ZRE (Koppelbus): ihre Eingangsperiode
+    // kommt aus derselben Quelle.  Zaehler (47H), ZK 2 → 2 × 16 Takte.
     card.ioWrite(0x58, 0x47);
     card.ioWrite(0x58, 2);
     EXPECT_EQ(card.ctcA34().teilerTakte(0), 32u);
@@ -572,7 +572,7 @@ TEST(K8025Seriell, Taktquelle)
 /**
  * @test K8025Seriell.V24Verknuepfungen
  * @brief Kartenlogik A23 (Transkription §2.3.2): /CTSA = V106 ∧ V107, /DCDA = V109 ∧
- *        V107, V107 zusätzlich allein an DCDB; RTSA/DTRA aus WR5.  Der IFSS-Anschluss
+ *        V107, V107 zusaetzlich allein an DCDB; RTSA/DTRA aus WR5.  Der IFSS-Anschluss
  *        treibt keine Leitungen.
  */
 TEST(K8025Seriell, V24Verknuepfungen)
@@ -597,7 +597,7 @@ TEST(K8025Seriell, V24Verknuepfungen)
     card.anschluss(K8025::Drucker).setzeEingaenge(true, true, true);
     EXPECT_EQ(rr0(0x53) & 0x20, 0x00) << "CTSB bleibt inaktiv";
     EXPECT_EQ(rr0(0x5F) & 0x28, 0x00) << "A32-B ohne Steuerleitungen";
-    EXPECT_EQ(rr0(0x5D) & 0x28, 0x00) << "Tastaturkanal unberührt";
+    EXPECT_EQ(rr0(0x5D) & 0x28, 0x00) << "Tastaturkanal unberuehrt";
 
     EXPECT_FALSE(v24.rts());
     card.ioWrite(0x51, 0x05);
@@ -608,8 +608,8 @@ TEST(K8025Seriell, V24Verknuepfungen)
 
 /**
  * @test K8025Seriell.TastaturUnberuehrt
- * @brief Wandler an allen drei Anschlüssen (auch mit Loop) fassen den Tastaturkanal
- *        A32-A nie an: ein LED-Kommando des BIOS bleibt für die K7637 liegen.
+ * @brief Wandler an allen drei Anschluessen (auch mit Loop) fassen den Tastaturkanal
+ *        A32-A nie an: ein LED-Kommando des BIOS bleibt fuer die K7637 liegen.
  */
 TEST(K8025Seriell, TastaturUnberuehrt)
 {
@@ -632,7 +632,7 @@ TEST(K8025Seriell, TastaturUnberuehrt)
 /**
  * @test K8025Seriell.AlterUnterbau
  * @brief `setAbnehmer`/`einspeisen` (hinter `K1520Machine::setDFUECallback`/`dfueSend`,
- *        `setPrinterCallback`/`printerSend`): das Byte kommt über den Wandler in seiner
+ *        `setPrinterCallback`/`printerSend`): das Byte kommt ueber den Wandler in seiner
  *        Zeichenzeit; belegt ein Transport den Stecker, schweigen beide.
  */
 TEST(K8025Seriell, AlterUnterbau)
@@ -659,7 +659,7 @@ TEST(K8025Seriell, AlterUnterbau)
     laufe(64);
     card.ioWrite(0x50, 0x42);
     laufe(3000);
-    EXPECT_EQ(ab.size(), 1u) << "Transport angebunden: Rückruf ins Leere";
+    EXPECT_EQ(ab.size(), 1u) << "Transport angebunden: Rueckruf ins Leere";
     card.einspeisen(K8025::DfueV24, 0x66);
     EXPECT_EQ(card.ioRead(0x50), 0x55) << "Einspeisen ins Leere";
 }
@@ -692,5 +692,5 @@ TEST(K8025Seriell, BreakInBeideRichtungen)
         an.breakEmpfang(false);
         EXPECT_EQ(rr0(f.ctrl) & 0x80, 0x00);
     }
-    EXPECT_EQ(rr0(0x5D) & 0x80, 0x00) << "Tastaturkanal unberührt";
+    EXPECT_EQ(rr0(0x5D) & 0x80, 0x00) << "Tastaturkanal unberuehrt";
 }

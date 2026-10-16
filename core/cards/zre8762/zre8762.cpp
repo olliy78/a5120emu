@@ -13,7 +13,7 @@ K8915Zre::K8915Zre(K1520Bus& bus) : K8915Zre(bus, Config{}) {}
 K8915Zre::K8915Zre(K1520Bus& bus, const Config& cfg)
     : bus_(bus), cfg_(cfg)
 {
-    // Die CPU sieht zuerst die Karte (ROM/Bank 1/Bank 2), erst nicht gewählte
+    // Die CPU sieht zuerst die Karte (ROM/Bank 1/Bank 2), erst nicht gewaehlte
     // Adressen gehen auf den Systembus (D12 → D28, s. Kopf von zre8762.h).
     cpu_.readByte     = [this](uint16_t a)            { return memRead(a); };
     cpu_.writeByte    = [this](uint16_t a, uint8_t d) { memWrite(a, d); };
@@ -70,8 +70,8 @@ void K8915Zre::ioWrite(uint8_t port, uint8_t data)
 bool K8915Zre::klemme(uint8_t nr, uint8_t r)
 {
     switch (nr) {
-        case 9:  return !(r & 0x80);   // /DO8 (über D17)
-        case 11: return !(r & 0x01);   // /DO1 (über D7)
+        case 9:  return !(r & 0x80);   // /DO8 (ueber D17)
+        case 11: return !(r & 0x01);   // /DO1 (ueber D7)
         case 13: return  (r & 0x80);
         case 15: return  (r & 0x01);
         case 17: return  (r & 0x40);
@@ -92,7 +92,7 @@ void K8915Zre::setReg(uint8_t v)
     memdi1_ = !klemme(f.x12_memdi1, v);
     // /MEMDI bleibt Zustand der Karte (memdi()): seit dem A5120.16 ist die Bus-Leitung
     // ein JE ZUGRIFF getriebenes Signal (K1520Bus::MemdiDriver), kein statischer Pegel,
-    // und am K8915 hört kein Gerät darauf.
+    // und am K8915 hoert kein Geraet darauf.
     rebuildMap();
     LOG_DEBUG("ZRE8762", "A8H := %02X  /MEMDI=%d /MEMDI1=%d", v, (int)memdi_, (int)memdi1_);
 }
@@ -117,8 +117,8 @@ void K8915Zre::rebuildMap()
             slot = {Quelle::Rom, 0};
         } else if (p == 1 && bank2) {
             // D6 = NAND(63, P1, /ROM); D32 legt 61/62 statt AB14/AB15 an die RAM-
-            // Adressen ⇒ Viertel von Bank 2.  (Wäre zugleich Seite 1 von Bank 1
-            // gewählt, lägen beide Bänke parallel am Datenbus — das Gerät tut das
+            // Adressen ⇒ Viertel von Bank 2.  (Waere zugleich Seite 1 von Bank 1
+            // gewaehlt, laegen beide Baenke parallel am Datenbus — das Geraet tut das
             // nie; hier gewinnt Bank 2.)
             slot = {Quelle::Bank2, (viertel << 14) | (addr & 0x3FFF)};
         } else if (seite[p]) {
@@ -162,6 +162,6 @@ void K8915Zre::memWrite(uint16_t addr, uint8_t data)
         default:            bus_.memWrite(addr, data); return;   // Bus meldet selbst
     }
     // Auch der folgenlose ROM-Schreibzyklus wird gemeldet: die CPU HAT geschrieben
-    // (ein Watchpoint auf 0000H soll das sehen, wie am A5120 über den Bus).
+    // (ein Watchpoint auf 0000H soll das sehen, wie am A5120 ueber den Bus).
     if (mem_trace_) mem_trace_(false, false, addr, data);
 }

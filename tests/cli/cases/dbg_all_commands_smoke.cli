@@ -1,6 +1,6 @@
-# Deckungsnetz für die ~90-Zweige-Dispatchkette in k1520dbg: fährt JEDES Kommando
-# einmal an.  Fällt eines aus der Kette, meldet der Debugger "unknown command".
-# Neue Kommandos gehören in dieses Skript UND in einen gezielten Fall unten.
+# Deckungsnetz fuer die ~90-Zweige-Dispatchkette in k1520dbg: faehrt JEDES Kommando
+# einmal an.  Faellt eines aus der Kette, meldet der Debugger "unknown command".
+# Neue Kommandos gehoeren in dieses Skript UND in einen gezielten Fall unten.
 tool:    k1520dbg
 disk:    cpa_cpa780_k5601_clock.img
 run:     %DISK% -x %CLI_DIR%/scripts/all_commands_smoke.dbg
@@ -11,3 +11,4 @@ expect:  [3] watch-rw [6009..6009]
 expect:  [4] break-read [600A..600A]
 expect:  [5] break-rw [600B..600C] != 00
 expect:  keine RAF gesteckt
+expect:  keine Kassettenkarte gesteckt

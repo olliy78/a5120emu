@@ -27,22 +27,22 @@ constexpr uint8_t PORT_LT107 = 0x2C;   // 2CH–2FH (lesen 2DH/2FH = 107, schrei
 constexpr uint8_t PORT_LT111 = 0x30;   // 30H–33H
 constexpr uint8_t PORT_BWS   = 0x34;   // 34H–37H
 
-constexpr uint8_t PIXEL_NORMAL = 0xB0;   // [?] zwei Helligkeitsstufen (HLGT), Zahlenwerte frei gewählt
+constexpr uint8_t PIXEL_NORMAL = 0xB0;   // [?] zwei Helligkeitsstufen (HLGT), Zahlenwerte frei gewaehlt
 constexpr uint8_t PIXEL_HELL   = 0xFF;
 }  // namespace
 
 // ─── Anschluss je Kanal (Entwurf 19, AP-4a) ──────────────────────────────────
 //
-// „Drucker X4" (EFS10, nur Ausgabe 102/103/106): SIO0-A, nur der SENDER — der Empfänger von
-//   SIO-A gehört der Tastatur und wird nie aus dem Hub gespeist.  Takt CTC0 K0 (BIOS 08H).
+// „Drucker X4" (EFS10, nur Ausgabe 102/103/106): SIO0-A, nur der SENDER — der Empfaenger von
+//   SIO-A gehoert der Tastatur und wird nie aus dem Hub gespeist.  Takt CTC0 K0 (BIOS 08H).
 //   /CTSA = Leitung 106.  Der CP/A-Druckertreiber im Verfahren „DTR" fragt CTS (RR0 D5) vor
-//   jedem Zeichen: ohne Gegenstelle (Kabel ab) gilt der Drucker als besetzt — wie am Gerät.
+//   jedem Zeichen: ohne Gegenstelle (Kabel ab) gilt der Drucker als besetzt — wie am Geraet.
 // „V.24 X5" (EFS26): SIO0-B, Senden + Empfangen, Takt CTC0 K1 (09H).  CTSB = 106, DCDB = 109,
 //   DTR/RTS gehen an den Hub, **107 (DSR) liegt an /DCDA** (Servicehandbuch §1.2.8.5/§1.2.8.6;
-//   PCTEST prüft „Ltg 107-108" über RR0 D3 von Kanal A), 111 setzt /LT111CS 30H–33H DB1.
-//   LT107/LT111 an 2CH–2FH gehören zur Zusatzkarte (§1.3.3, DB0 = Kanal A, DB2 = B).
-// Prüfstecker (Loop am Hub, AP-4f): 330-042 am X4 brückt 103→106 (EFS10 hat nur 102/103/106),
-//   CTS-A folgt also dem Break (Sendedaten dauernd „0"); 320-032 am X5 brückt 103→104,
+//   PCTEST prueft „Ltg 107-108" ueber RR0 D3 von Kanal A), 111 setzt /LT111CS 30H–33H DB1.
+//   LT107/LT111 an 2CH–2FH gehoeren zur Zusatzkarte (§1.3.3, DB0 = Kanal A, DB2 = B).
+// Pruefstecker (Loop am Hub, AP-4f): 330-042 am X4 brueckt 103→106 (EFS10 hat nur 102/103/106),
+//   CTS-A folgt also dem Break (Sendedaten dauernd „0"); 320-032 am X5 brueckt 103→104,
 //   105→106, 108→107, 111→109.  Die Karte bildet das SOFORT nach (`leitungenAnlegen`) — PCTEST
 //   liest eine Leitung ≈ 40 Takte nach dem Setzen, der Wandler blickt nur alle 1/16 Zeichenzeit.
 
@@ -62,8 +62,8 @@ public:
     bool senderHatZeichen() const override { return schieb_.has_value() || ch().senderHatZeichen(); }
     // Schieberegister vor dem Tx-Puffer: die echte SIO nimmt das erste Zeichen sofort aus dem
     // Puffer ins Schieberegister, ein zweites Schreiben direkt danach geht verlustfrei in den
-    // Puffer (S502 `SendChar` ruft zweimal hintereinander ohne Tx-Empty-Prüfung: 12H 12H).
-    // `Z80SIO` hat nur den Puffer; die Karte merkt sich das verdrängte Zeichen hier.
+    // Puffer (S502 `SendChar` ruft zweimal hintereinander ohne Tx-Empty-Pruefung: 12H 12H).
+    // `Z80SIO` hat nur den Puffer; die Karte merkt sich das verdraengte Zeichen hier.
     void vorDatenSchreiben() {
         if (!schieb_ && ch().tx_buf.has_value()) { schieb_ = *ch().tx_buf; ch().tx_buf.reset(); }
     }
@@ -71,14 +71,14 @@ public:
         uint8_t b;
         if (schieb_) { b = *schieb_; schieb_.reset(); }
         else         b = ch().txGet();
-        // Die Leitung trägt nur die programmierten Datenbits; Parität bleibt unnachgebildet.
+        // Die Leitung traegt nur die programmierten Datenbits; Paritaet bleibt unnachgebildet.
         const uint8_t bits = ch().format().tx_bits;
         if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
-        z_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt möglich
+        z_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt moeglich
         if (!belegt_ && abnehmer_) abnehmer_(b);
         return b;
     }
-    // Am Drucker nimmt der Empfänger nie etwas: er hängt an der Tastatur.
+    // Am Drucker nimmt der Empfaenger nie etwas: er haengt an der Tastatur.
     bool empfaengerFrei() const override { return k_ == V24 && ch().empfaengerFrei(); }
     void empfange(uint8_t b) override {
         if (k_ != V24) return;
@@ -111,10 +111,10 @@ public:
 private:
     Z80SIO::Channel& ch() const { return k_ == Drucker ? z_.sio_.channelA() : z_.sio_.channelB(); }
 public:
-    /// Eingänge an die SIO-Pins legen.  Alter Unterbau am Drucker: ein Abnehmer ohne Transport
+    /// Eingaenge an die SIO-Pins legen.  Alter Unterbau am Drucker: ein Abnehmer ohne Transport
     /// ersetzt den Drucker und meldet „bereit" (106), sonst bliebe der DTR-Treiber an der
-    /// fehlenden Leitung hängen.  Mit Prüfstecker gelten die Brücken des Steckers (s. oben),
-    /// die Eingänge des Hubs nicht.
+    /// fehlenden Leitung haengen.  Mit Pruefstecker gelten die Bruecken des Steckers (s. oben),
+    /// die Eingaenge des Hubs nicht.
     void wirke() {
         Z80SIO::Channel& a = z_.sio_.channelA();
         Z80SIO::Channel& b = z_.sio_.channelB();
@@ -139,9 +139,9 @@ private:
     Pc1715Zre& z_;
     Kanal      k_;
     bool       cts_ = false, dsr_ = false, dcd_ = false;
-    bool       stecker_ = false;   ///< Prüfstecker (Loop am Hub)
+    bool       stecker_ = false;   ///< Pruefstecker (Loop am Hub)
     bool       belegt_ = false;
-    std::optional<uint8_t> schieb_;   ///< Zeichen im Schieberegister (verdrängt aus dem Tx-Puffer)
+    std::optional<uint8_t> schieb_;   ///< Zeichen im Schieberegister (verdraengt aus dem Tx-Puffer)
     Abnehmer   abnehmer_;
 };
 
@@ -162,7 +162,7 @@ void Pc1715Zre::einspeisen(Kanal k, uint8_t byte)
 bool Pc1715Zre::lt107V24() const { return anschluesse_[V24]->dsr(); }
 void Pc1715Zre::leitungenAnlegen()
 {
-    // Nur mit Prüfstecker hängen SIO-Eingänge von Ausgängen des Gastes ab.
+    // Nur mit Pruefstecker haengen SIO-Eingaenge von Ausgaengen des Gastes ab.
     for (auto& a : anschluesse_)
         if (a && a->gesteckt()) a->wirke();
 }
@@ -186,7 +186,7 @@ Pc1715Zre::Pc1715Zre(K1520Bus& bus, const Config& cfg)
     cpu_.writePort    = [this](uint16_t p, uint8_t d) { bus_.ioWrite(p, d); };
     cpu_.retiCallback = [this]()                      { bus_.signalRETI(); };
 
-    // DMA-Quelle des 8275: Basis aus BWS-Register | Adresszähler; Zähler bei VRTC auf 0,
+    // DMA-Quelle des 8275: Basis aus BWS-Register | Adresszaehler; Zaehler bei VRTC auf 0,
     // 10 Bit (K7221) bzw. 11 Bit (K7222), §1.2.7.3.
     crt_.dmaRead = [this]() -> uint8_t {
         const uint16_t mask = cfg_.bild == Bildschirm::K7222 ? 0x07FF : 0x03FF;
@@ -199,7 +199,7 @@ Pc1715Zre::Pc1715Zre(K1520Bus& bus, const Config& cfg)
 
 uint16_t Pc1715Zre::bildBasis() const
 {
-    // Registerwert = Adresse >> 10 (DB0 = A10 … DB5 = A15); beim 80×24 liefert der Zähler A10.
+    // Registerwert = Adresse >> 10 (DB0 = A10 … DB5 = A15); beim 80×24 liefert der Zaehler A10.
     const uint8_t maske = cfg_.bild == Bildschirm::K7222 ? 0x3E : 0x3F;
     return static_cast<uint16_t>((bws_ & maske) << 10);
 }
@@ -208,7 +208,7 @@ void Pc1715Zre::attachToBus(K1520Bus& bus)
 {
     bus.registerIO(this, PORT_CTC, 4);
     bus.registerIO(this, PORT_SIO, 4);
-    if (cfg_.w) {                            // 1715W: 18H/24H/28H/34H gehören der Maschine
+    if (cfg_.w) {                            // 1715W: 18H/24H/28H/34H gehoeren der Maschine
         bus.registerIO(this, PORT_LT107, 8);
         return;
     }
@@ -256,8 +256,8 @@ uint8_t Pc1715Zre::ioRead(uint8_t port)
     if (uint8_t(port - PORT_CRT) < 4) return crt_.read((port & 1) != 0);
     // Leitung 107 (§1.2.8: EIN = 0, AUS = 1): DB2 = V.24 X5 aus dem Hub; DB0 = Drucker X4
     // kennt keine 107 (nur 102/103/106) → AUS [?: DB1/3–7]
-    // 2DH/2FH: LT107 der Zusatzkarte (§1.3.3, DB0 = Kanal A, DB2 = B) — nicht bestückt → AUS.
-    // Die 107 des Grundgeräts (X5) liegt an /DCDA (§1.2.8.5).
+    // 2DH/2FH: LT107 der Zusatzkarte (§1.3.3, DB0 = Kanal A, DB2 = B) — nicht bestueckt → AUS.
+    // Die 107 des Grundgeraets (X5) liegt an /DCDA (§1.2.8.5).
     if (port == 0x2D || port == 0x2F) return 0xFF;
     return 0xFF;                                      // unbelegt (auch BWS lesend [?])
 }
@@ -268,7 +268,7 @@ void Pc1715Zre::ioWrite(uint8_t port, uint8_t data)
     if (uint8_t(port - PORT_SIO) < 4) {
         if ((port & 2) == 0) anschluesse_[(port & 1) ? V24 : Drucker]->vorDatenSchreiben();   // 0CH/0DH = Daten
         sio_.ioWrite(sioPort(port), data);
-        leitungenAnlegen();   // WR5 (RTS/DTR/Break) wirkt am Prüfstecker sofort
+        leitungenAnlegen();   // WR5 (RTS/DTR/Break) wirkt am Pruefstecker sofort
         return;
     }
     if (uint8_t(port - PORT_CRT) < 4) { crt_.write((port & 1) != 0, data); return; }
@@ -341,9 +341,9 @@ uint8_t Pc1715Zre::screenChar(int col, int row) const
 
 const uint8_t* Pc1715Zre::zgRom(bool zweiter_satz) const
 {
-    // zweiter_satz = false: der bei DB6 = 0 gewählte Baustein
+    // zweiter_satz = false: der bei DB6 = 0 gewaehlte Baustein
     const bool s619 = (cfg_.zg_bei_db6_low == Zeichensatz::S619) != zweiter_satz;
-    // s619 = Platz ZG1 (A25.2), sonst Platz ZG2 (A25.1) — Inhalt je nach Bestückung
+    // s619 = Platz ZG1 (A25.2), sonst Platz ZG2 (A25.1) — Inhalt je nach Bestueckung
     switch (cfg_.zg_satz) {
         case ZgSatz::Polnisch:   return s619 ? PC1715_S641_ZG1 : PC1715_S619_ZG1;
         case ZgSatz::Kyrillisch: return s619 ? PC1715_S643_ZG1 : PC1715_S605_ZG2;

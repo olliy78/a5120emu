@@ -105,13 +105,13 @@ void Z80SIO::Channel::reset() {
     rx_fifo.clear();
     tx_buf.reset();
     irq_rx = irq_tx = irq_ext = false;
-    // Die aus WR1 abgeleiteten Freigaben gehören zu WR1 und gehen mit ihm (sonst
-    // unterbräche ein Kanal nach Channel Reset weiter im alten Empfangsmodus).
+    // Die aus WR1 abgeleiteten Freigaben gehoeren zu WR1 und gehen mit ihm (sonst
+    // unterbraeche ein Kanal nach Channel Reset weiter im alten Empfangsmodus).
     ext_int_enable = tx_int_enable = status_affects_vector = false;
     rx_int_mode = SIORxIntMode::DISABLED;
     rx_int_first_only = false;
     last_rx = 0x00;
-    // Die Eingänge (cts_, dcd_, break_rx_) sind Pins und bleiben; nur das Latch
+    // Die Eingaenge (cts_, dcd_, break_rx_) sind Pins und bleiben; nur das Latch
     // geht.  rr0 = 04H wie bisher, solange kein Eingang aktiv ist (Vorgabe).
     ext_latch_ = false;
     rr0 |= extStatusEingaenge();
@@ -122,13 +122,13 @@ void Z80SIO::Channel::updateRR0() {
     if (!rx_fifo.empty()) rr0 |= 0x01;  // Rx Character Available
     if (!tx_buf.has_value()) rr0 |= 0x04; // Tx Buffer Empty
     // D3 DCD, D5 CTS, D7 Break/Abort: festgehalten seit der letzten Ext/Status-
-    // Änderung, sonst der Eingang.  Mit der Vorgabe (alle inaktiv) bleiben die
+    // Aenderung, sonst der Eingang.  Mit der Vorgabe (alle inaktiv) bleiben die
     // Bits 0 — genau das RR0 von vor AP-S3.
     rr0 |= ext_latch_ ? ext_rr0_ : extStatusEingaenge();
 }
 
 void Z80SIO::Channel::extStatusGeaendert() {
-    // Datenblatt (U856, Befehl 2 und RR0 D3): eine Änderung hält die Statusbits
+    // Datenblatt (U856, Befehl 2 und RR0 D3): eine Aenderung haelt die Statusbits
     // fest und fordert Ext/Status an; erst „Reset Ext/Status“ gibt sie wieder frei.
     // Ohne Freigabe (WR1 D0) kein Interrupt, RR0 folgt dem Eingang.
     if (ext_int_enable && !ext_latch_) {
@@ -162,8 +162,8 @@ bool Z80SIO::Channel::empfaengerFrei() const {
 }
 
 bool Z80SIO::Channel::rxIntEnabled() const {
-    // WR1 D4–D3: 10 = jedes Zeichen (Parität beeinflusst den Vektor), 11 = jedes
-    // Zeichen (Parität ohne Einfluss) — beide unterbrechen bei jedem Zeichen.
+    // WR1 D4–D3: 10 = jedes Zeichen (Paritaet beeinflusst den Vektor), 11 = jedes
+    // Zeichen (Paritaet ohne Einfluss) — beide unterbrechen bei jedem Zeichen.
     return rx_int_mode == SIORxIntMode::ALL_CHARS ||
            rx_int_mode == SIORxIntMode::SPECIAL_CONDITION;
 }
@@ -182,18 +182,18 @@ bool Z80SIO::Channel::txIntEnabled() const {
 }
 
 void Z80SIO::Channel::rxByte(uint8_t byte) {
-    // Auto Enables (WR3 D5): der Empfänger ist nur bei aktivem /DCD frei — ein
+    // Auto Enables (WR3 D5): der Empfaenger ist nur bei aktivem /DCD frei — ein
     // Zeichen bei inaktivem /DCD kommt nie an (Datenblatt, asynchroner Empfang).
-    // Kein bekannter Gast setzt das Bit (s. h-Datei), die Tastaturwege sind unberührt.
+    // Kein bekannter Gast setzt das Bit (s. h-Datei), die Tastaturwege sind unberuehrt.
     if (autoEnables() && !dcd_) return;
-    last_rx = byte;  // Datenpfad hinter dem Schieberegister, unabhängig vom FIFO (s. h-Datei).
+    last_rx = byte;  // Datenpfad hinter dem Schieberegister, unabhaengig vom FIFO (s. h-Datei).
     if (rx_fifo.size() < RX_FIFO_DEPTH) {
         rx_fifo.push_back(byte);
         if (rx_fifo.size() == 1) {
             // Parity error detection not emulated — clear parity/framing/overrun
         }
     } else {
-        rr1 |= 0x20; // Rx Overrun Error = RR1 D5 (Zilog; bis AP-ST3 fälschlich D3)
+        rr1 |= 0x20; // Rx Overrun Error = RR1 D5 (Zilog; bis AP-ST3 faelschlich D3)
     }
     updateRR0();
     if (rxIntFaellig())
@@ -255,13 +255,13 @@ bool Z80SIO::hasInterrupt() const {
     // WICHTIG: dieselbe Bedingung wie getVector() — inklusive `!ius`.  Ein Kanal,
     // der bereits bedient wird, darf keinen Interrupt mehr anfordern, auch wenn
     // inzwischen ein neues Zeichen aufgelaufen ist.  Sonst zieht die Karte /INT,
-    // die Quittung findet in getVector() aber keinen vektorfähigen Kanal und
+    // die Quittung findet in getVector() aber keinen vektorfaehigen Kanal und
     // liefert die reine Vektorbasis → die ISR wird endlos erneut angesprungen.
     // Analog zu Z80CTC::anyServiceable() und Z80PIO::hasInterrupt() (f3b7ab1).
     //
-    // NUR die Anforderungsseite.  getIEO() bleibt bewusst unverändert: die
+    // NUR die Anforderungsseite.  getIEO() bleibt bewusst unveraendert: die
     // Kettenseite ist bei allen drei Bausteinen gleich („sperrt bei ANSTEHENDEM,
-    // nicht bei laufendem Interrupt") — sie hier allein umzustellen, würde die
+    // nicht bei laufendem Interrupt") — sie hier allein umzustellen, wuerde die
     // Bausteine gegeneinander verstimmen.  Bewertung: doc/testsystem_rework.md §8.
     return channelRequests(ch_a_) || channelRequests(ch_b_);
 }
@@ -399,7 +399,7 @@ uint8_t Z80SIO::getVector() const {
     // Kanal B) ersetzt die SIO die Bits 3…1 durch die Quelle (Zilog Z80 SIO, WR1/WR2;
     // U856 gleich):  B: Tx 000, Ext/Status 001, Rx 010, Sonderfall 011 —
     //                A: Tx 100, Ext/Status 101, Rx 110, Sonderfall 111.
-    // Ohne das Bit bleibt der Vektor unverändert.  (Bis 2026-09-28 waren A-Ext/Status
+    // Ohne das Bit bleibt der Vektor unveraendert.  (Bis 2026-09-28 waren A-Ext/Status
     // und B-Tx vertauscht (000/101) und das Bit wurde nicht beachtet; das BIOS des
     // K8915 legt seine Tx-Routine auf D0H und lief dadurch in die Leere, AP-E3.)
     const uint8_t basis = ch_b_.wr[2];
@@ -458,11 +458,13 @@ uint8_t Z80SIO::rr2Vektor() const {
 }
 
 void Z80SIO::onRETI() {
-    // Clear IUS for whichever channel was being serviced
-    // Channel A has higher priority, check it first
-    if (ch_a_.iei && ch_a_.ius) {
+    // Wie Z80CTC/Z80PIO::onRETI (A8b): RETI loescht das IUS-Bit des Kanals in Bedienung,
+    // wenn kein hoeheres Geraet in Bedienung ist (iei_).  Eine bloss anstehende Anforderung
+    // von Kanal A darf B nicht an der Freigabe hindern.
+    if (!iei_) return;
+    if (ch_a_.ius) {
         ch_a_.ius = false;
-    } else if (ch_b_.iei && ch_b_.ius) {
+    } else if (ch_b_.ius) {
         ch_b_.ius = false;
     }
 }
@@ -485,18 +487,18 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
             case 2: // Reset Ext/Status Interrupts
                 ch.rr1 &= ~0x1C;
                 ch.irq_ext = false;
-                ch.ext_latch_ = false;   // RR0 D3/D5/D7 zeigen wieder die Eingänge
+                ch.ext_latch_ = false;   // RR0 D3/D5/D7 zeigen wieder die Eingaenge
                 ch.updateRR0();
                 break;
             case 3: { // Channel Reset (full initialization)
-                // WR2 (Interruptvektor) und „Status affects Vector" (WR1 D2) gehören beiden
-                // Kanälen (nur Kanal B trägt sie) und überleben den Kanalreset von B.
+                // WR2 (Interruptvektor) und „Status affects Vector" (WR1 D2) gehoeren beiden
+                // Kanaelen (nur Kanal B traegt sie) und ueberleben den Kanalreset von B.
                 // Beleg (AP-4e): CP/Z 2.2 (PC 1715) programmiert WR2 = C0H + WR1 = 04H
-                // und setzt Kanal B danach für die V.24-Parameter (18H, WR4, WR3, WR5)
-                // erneut zurück; seine Vektortabelle liegt auf F7CCH (C0H | 110b<<1 =
+                // und setzt Kanal B danach fuer die V.24-Parameter (18H, WR4, WR3, WR5)
+                // erneut zurueck; seine Vektortabelle liegt auf F7CCH (C0H | 110b<<1 =
                 // Rx von Kanal A).  Ohne das Beibehalten ginge jeder Tasteninterrupt
-                // ins Leere.  Kein Handbuchzitat im Haus; die Entscheidung stützt sich
-                // auf das lauffähige Gastsystem (wie beim Zeigerbit-Befund AP-4a).
+                // ins Leere.  Kein Handbuchzitat im Haus; die Entscheidung stuetzt sich
+                // auf das lauffaehige Gastsystem (wie beim Zeigerbit-Befund AP-4a).
                 const uint8_t wr2 = ch.wr[2];
                 const bool    sav = ch.status_affects_vector;
                 ch.reset();
@@ -516,7 +518,7 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
                 break;
             case 7: // Return from Interrupt
                 // Datenblatt (Zilog Z80-SIO, WR0 CMD 7, „Channel A only"): wirkt wie ein RETI
-                // auf dem Datenbus — löscht das IUS der HÖCHSTEN internen Quelle in Bedienung,
+                // auf dem Datenbus — loescht das IUS der HOECHSTEN internen Quelle in Bedienung,
                 // also auch das von Kanal B.  Bisher nur das des beschriebenen Kanals; der
                 // MON16 des P8000 bedient SIO0-B und schreibt 38H an SIO0-A (`PTY_INT`,
                 // `SIO_ISR`) — sonst bliebe Kanal B in Bedienung und sperrte die Kette.
@@ -540,12 +542,12 @@ void Z80SIO::writeControl(Channel& ch, uint8_t data, bool is_b) {
                 break;
         }
 
-        // Channel Reset (Befehl 3) setzt auch den Registerzeiger zurück: die Zeigerbits
+        // Channel Reset (Befehl 3) setzt auch den Registerzeiger zurueck: die Zeigerbits
         // D2–D0 DESSELBEN Bytes gelten danach nicht mehr.  Beleg (AP-4a): der Urlader S502
         // des PC 1715 initialisiert SIO-B mit 1CH,04H,49H,03H,C1H,01H,00H,05H,68H — nur mit
         // Zeiger 0 nach 1CH ergibt das WR4=49H, WR3=C1H, WR1=00H, WR5=68H (sonst ginge 04H
         // selbst nach WR4, WR3 bliebe unprogrammiert und die Empfangsfreigabe fehlte; das
-        // Gerät bootet über V.24).  Alle anderen Gäste schreiben 18H (Zeigerbits 0).
+        // Geraet bootet ueber V.24).  Alle anderen Gaeste schreiben 18H (Zeigerbits 0).
         if (reg_sel != 0 && cmd != 3)
             ch.reg_ptr = reg_sel;
 
@@ -590,8 +592,8 @@ uint8_t Z80SIO::readControl(Channel& ch, bool is_b) const {
         case 2:
             // Channel B returns modified vector; channel A returns raw WR2 of B.
             // Lesen ist KEINE Quittung (bis AP-ST3 stand hier getVector(): ein
-            // Lesen von RR2 setzte IUS und löschte die Anforderung — am K8915 nahm
-            // das der Tastatur ihren nächsten Interrupt).
+            // Lesen von RR2 setzte IUS und loeschte die Anforderung — am K8915 nahm
+            // das der Tastatur ihren naechsten Interrupt).
             if (is_b) return rr2Vektor();
             return ch_b_.wr[2];
         default: return 0xFF;
@@ -604,16 +606,16 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
             if (!ch_a_.rx_fifo.empty()) {
                 uint8_t b = ch_a_.rx_fifo.front();
                 ch_a_.rx_fifo.pop_front();
-                // „Jedes Zeichen": solange der FIFO noch Zeichen hält, bleibt die
-                // Anforderung stehen (das nächste Zeichen unterbricht erneut, sobald
-                // IUS per RETI fällt).  Vorher ging sie mit dem ersten Lesen verloren —
-                // eine Tastatur, deren Zeichen sich während eines langen DI stauten,
+                // „Jedes Zeichen": solange der FIFO noch Zeichen haelt, bleibt die
+                // Anforderung stehen (das naechste Zeichen unterbricht erneut, sobald
+                // IUS per RETI faellt).  Vorher ging sie mit dem ersten Lesen verloren —
+                // eine Tastatur, deren Zeichen sich waehrend eines langen DI stauten,
                 // blieb stumm (K8915, AP-ST3).
                 ch_a_.irq_rx = !ch_a_.rx_fifo.empty() && ch_a_.rxIntEnabled();
                 ch_a_.updateRR0();
                 return b;
             }
-            // Leerer Empfänger: keine eigene Ruhelage am Datenregister — die echte
+            // Leerer Empfaenger: keine eigene Ruhelage am Datenregister — die echte
             // U856 liefert das zuletzt empfangene Byte (last_rx), nicht FFH.
             return ch_a_.last_rx;
         }
@@ -623,10 +625,10 @@ uint8_t Z80SIO::ioRead(uint8_t port) {
             if (!ch_b_.rx_fifo.empty()) {
                 uint8_t b = ch_b_.rx_fifo.front();
                 ch_b_.rx_fifo.pop_front();
-                // „Jedes Zeichen": solange der FIFO noch Zeichen hält, bleibt die
-                // Anforderung stehen (das nächste Zeichen unterbricht erneut, sobald
-                // IUS per RETI fällt).  Vorher ging sie mit dem ersten Lesen verloren —
-                // eine Tastatur, deren Zeichen sich während eines langen DI stauten,
+                // „Jedes Zeichen": solange der FIFO noch Zeichen haelt, bleibt die
+                // Anforderung stehen (das naechste Zeichen unterbricht erneut, sobald
+                // IUS per RETI faellt).  Vorher ging sie mit dem ersten Lesen verloren —
+                // eine Tastatur, deren Zeichen sich waehrend eines langen DI stauten,
                 // blieb stumm (K8915, AP-ST3).
                 ch_b_.irq_rx = !ch_b_.rx_fifo.empty() && ch_b_.rxIntEnabled();
                 ch_b_.updateRR0();
@@ -680,7 +682,7 @@ void Z80SIO::processWR1(Channel& ch, uint8_t data, bool is_b) {
     // Rx Int Mode (D4:D3)
     uint8_t rx_mode = (data >> 3) & 0x03;
     ch.rx_int_mode = static_cast<SIORxIntMode>(rx_mode);
-    // Betriebsart 01 ist nach dem Setzen für das nächste Zeichen scharf (Datenblatt).
+    // Betriebsart 01 ist nach dem Setzen fuer das naechste Zeichen scharf (Datenblatt).
     ch.rx_int_first_only = (ch.rx_int_mode == SIORxIntMode::FIRST_CHAR);
 
     // WAIT/READY mode (D7:D5) - not implemented in basic emulation

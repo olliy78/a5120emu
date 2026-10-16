@@ -70,16 +70,16 @@ from app.ui.physical_disk import mit_fortschritt
 #: Endungen, die im Textmodus vorgeschlagen werden.
 TEXT_ENDUNGEN = {".txt", ".text", ".asm", ".mac", ".doc", ".md", ".log", ".dat"}
 
-#: So lange steht eine Rückmeldung in der Statuszeile (ms) — sie ist flüchtig.
+#: So lange steht eine Rueckmeldung in der Statuszeile (ms) — sie ist fluechtig.
 STATUS_DAUER = 8000
 
-#: Höchstzahl der Einträge unter „Zuletzt geöffnet".
+#: Hoechstzahl der Eintraege unter „Zuletzt geoeffnet".
 ZULETZT_MAX = 8
 
 #: Anstrich der Statuszeile, solange auf eine echte Diskette geschrieben wird.
 #: Rot heisst hier **nicht** „Fehler", sondern „Finger weg": die Diskette darf
 #: nicht aus dem Laufwerk, bis es fertig ist.  Es ist derselbe Rotton wie im
-#: Meldungsstreifen — zwei verschiedene Rots wären schlechter als eine Doppelrolle.
+#: Meldungsstreifen — zwei verschiedene Rots waeren schlechter als eine Doppelrolle.
 SCHREIBT_STIL = ("background: #c0504d; color: white; font-weight: bold;"
                  " padding: 1px 6px; border-radius: 3px;")
 
@@ -90,22 +90,22 @@ class MainWindow(QMainWindow):
 
     #: Laufende Sitzung an einem echten Laufwerk (None = Abbilddatei/leer).
     _physisch = None
-    #: Welches Laufwerk diese Sitzung bedient (für Kopfzeile und Fenstertitel).
+    #: Welches Laufwerk diese Sitzung bedient (fuer Kopfzeile und Fenstertitel).
     _physisch_laufwerk = "a"
-    #: Womit das echte Laufwerk zuletzt geöffnet wurde (Laufwerk, Geometrie, …).
-    #: Gemerkt, weil ein Sync-Handle nach dem Öffnen VERBRAUCHT ist: wer das
-    #: Dateisystem übersteuern will, braucht eine neue Sitzung mit denselben Angaben.
+    #: Womit das echte Laufwerk zuletzt geoeffnet wurde (Laufwerk, Geometrie, …).
+    #: Gemerkt, weil ein Sync-Handle nach dem Oeffnen VERBRAUCHT ist: wer das
+    #: Dateisystem uebersteuern will, braucht eine neue Sitzung mit denselben Angaben.
     _physisch_wahl = None
     #: Laufender Schreibvorgang auf eine echte Diskette (None = keiner).  Er ist
-    #: UNABHAENGIG von der geöffneten Diskette: die ist nur die Quelle.
+    #: UNABHAENGIG von der geoeffneten Diskette: die ist nur die Quelle.
     _schreib_sitzung = None
     _schreib_gesamt = 0
 
     def __init__(self, image: Optional[str] = None, folder: Optional[str] = None):
         super().__init__()
-        # Das `[*]` ist Qts Platzhalter für die Änderungsmarke; er wird durch
-        # `setWindowModified()` gefüllt und trägt auf jeder Plattform das dort
-        # übliche Zeichen (§20.4).
+        # Das `[*]` ist Qts Platzhalter fuer die Aenderungsmarke; er wird durch
+        # `setWindowModified()` gefuellt und traegt auf jeder Plattform das dort
+        # uebliche Zeichen (§20.4).
         self.setWindowTitle("k1520DiskTool[*]")
         self.setWindowIcon(icon("disk-editor"))
         self.resize(1150, 700)
@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         self._zuletzt: List[str] = []
 
         erzeuge_aktionen(self)
-        # Läuft nur, solange ein echtes Laufwerk offen ist (siehe _physisch_tick).
+        # Laeuft nur, solange ein echtes Laufwerk offen ist (siehe _physisch_tick).
         self._physisch_uhr = QTimer(self)
         self._physisch_uhr.setInterval(500)
         self._physisch_uhr.timeout.connect(self._physisch_tick)
@@ -146,18 +146,18 @@ class MainWindow(QMainWindow):
 
         self.disk_view = DiskView()
         self.folder_view = FolderView()
-        # Beide Listen sollen auf derselben Höhe beginnen.  Links steht eine
-        # Überschrift, rechts eine Adresszeile mit Knopf — die ist höher, und der
-        # Unterschied fiel als Versatz zwischen den beiden Hälften auf.  Gebunden
-        # wird an die GRÖSSERE der beiden, damit nichts abgeschnitten wird.
+        # Beide Listen sollen auf derselben Hoehe beginnen.  Links steht eine
+        # Ueberschrift, rechts eine Adresszeile mit Knopf — die ist hoeher, und der
+        # Unterschied fiel als Versatz zwischen den beiden Haelften auf.  Gebunden
+        # wird an die GROESSERE der beiden, damit nichts abgeschnitten wird.
         hoehe = max(self.disk_view.titel.sizeHint().height(),
                     self.folder_view.kopfzeile.sizeHint().height())
         self.disk_view.titel.setFixedHeight(hoehe)
         self.folder_view.kopfzeile.setFixedHeight(hoehe)
 
-        # Die Mittelspalte bleibt: räumlich ist „von hier nach dort" eindeutiger
-        # als jeder Menüpunkt.  Sie zeigt dieselben Aktionen wie Menü und Leiste.
-        # Aussen die Stapel (alles), innen die Auswahl — die Pfeillänge sagt, wie
+        # Die Mittelspalte bleibt: raeumlich ist „von hier nach dort" eindeutiger
+        # als jeder Menuepunkt.  Sie zeigt dieselben Aktionen wie Menue und Leiste.
+        # Aussen die Stapel (alles), innen die Auswahl — die Pfeillaenge sagt, wie
         # viel wandert:  →→| / →|  ·  |← / |←←
         self.btn_alles_holen = QToolButton()
         self.btn_alles_holen.setDefaultAction(self.act_alles_raus)
@@ -188,8 +188,8 @@ class MainWindow(QMainWindow):
         self.teiler.addWidget(self.disk_view)
         self.teiler.addWidget(mitte_w)
         self.teiler.addWidget(self.folder_view)
-        # Beide Hälften gleich gross: keine der beiden Listen ist die wichtigere,
-        # und ungleiche Spalten lesen sich wie eine Aussage darüber.
+        # Beide Haelften gleich gross: keine der beiden Listen ist die wichtigere,
+        # und ungleiche Spalten lesen sich wie eine Aussage darueber.
         self.teiler.setStretchFactor(0, 1)
         self.teiler.setStretchFactor(1, 0)
         self.teiler.setStretchFactor(2, 1)
@@ -239,7 +239,7 @@ class MainWindow(QMainWindow):
 
         m = leiste.addMenu("Dis&kette")
         # Beide Richtungen der echten Diskette zuerst und beieinander: laden und
-        # überschreiben sind derselbe Weg, einmal herein und einmal hinaus.
+        # ueberschreiben sind derselbe Weg, einmal herein und einmal hinaus.
         m.addAction(self.act_physisch)
         m.addAction(self.act_physisch_schreiben)
         m.addSeparator()
@@ -250,8 +250,8 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_alles_raus)
         m.addAction(self.act_alles_rein)
         m.addSeparator()
-        # Eigenes Untermenü: das sind Eingriffe ins ABBILD, nicht in die Diskette —
-        # der Unterschied gehört sichtbar gemacht.
+        # Eigenes Untermenue: das sind Eingriffe ins ABBILD, nicht in die Diskette —
+        # der Unterschied gehoert sichtbar gemacht.
         self.menue_schnitt = m.addMenu("Speicherabbild &ändern")
         self.menue_schnitt.addAction(self.act_gerade_spuren)
         self.menue_schnitt.addAction(self.act_seite1_weg)
@@ -274,11 +274,11 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_neuer_ordner)
         m.addAction(self.act_umbenennen)
 
-        self.menue_ansicht = leiste.addMenu("&Ansicht")   # gefüllt in _baue_leiste
+        self.menue_ansicht = leiste.addMenu("&Ansicht")   # gefuellt in _baue_leiste
 
-        # Das Nachbarprogramm derselben Installation.  Eigenes Menü, weil es
+        # Das Nachbarprogramm derselben Installation.  Eigenes Menue, weil es
         # weder die Diskette noch den Ordner betrifft: hier wird ein ZWEITES
-        # Programm gestartet, das neben diesem weiterläuft.
+        # Programm gestartet, das neben diesem weiterlaeuft.
         m = leiste.addMenu("&Werkzeuge")
         m.addAction(self.act_emulator)
         m.addAction(self.act_k8915emu)
@@ -309,7 +309,7 @@ class MainWindow(QMainWindow):
     def _baue_leiste(self) -> None:
         """Symbolleiste — ausblendbar über ihre eigene ``toggleViewAction()``."""
         self.leiste = QToolBar("Symbolleiste", self)
-        self.leiste.setObjectName("haupt")           # für saveState()
+        self.leiste.setObjectName("haupt")           # fuer saveState()
         self.leiste.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         self.leiste.setMovable(True)
         self.addToolBar(Qt.TopToolBarArea, self.leiste)
@@ -326,22 +326,22 @@ class MainWindow(QMainWindow):
                 self.leiste.addAction(a)
             self.leiste.addSeparator()
 
-        # ── Ansicht-Menü: die Umschalter kommen von Qt selbst ────────────────
+        # ── Ansicht-Menue: die Umschalter kommen von Qt selbst ────────────────
         self.act_leiste_zeigen = self.leiste.toggleViewAction()
         self.act_leiste_zeigen.setText("&Symbolleiste")
         self.menue_ansicht.addAction(self.act_leiste_zeigen)
-        # Das Protokoll-Dock hängt sich in _baue_protokoll() an derselben Stelle ein;
-        # den Platz dafür merken wir uns über die Reihenfolge der Aufrufe.
+        # Das Protokoll-Dock haengt sich in _baue_protokoll() an derselben Stelle ein;
+        # den Platz dafuer merken wir uns ueber die Reihenfolge der Aufrufe.
 
     def _baue_status(self) -> None:
         """Links die letzte Aktion (flüchtig), rechts der Zustand (dauerhaft)."""
         self.st_inhalt = QLabel("")
-        # Füllstand des echten Laufwerks — eigenes Feld, weil es sich LAUFEND ändert,
-        # während `st_inhalt` nur nach einer Aktion neu gesetzt wird.
+        # Fuellstand des echten Laufwerks — eigenes Feld, weil es sich LAUFEND aendert,
+        # waehrend `st_inhalt` nur nach einer Aktion neu gesetzt wird.
         self.st_physisch = QLabel("")
         self.st_physisch.hide()
         # Befund der Dateisystempruefung — ein ZUSTAND der Diskette, deshalb rechts
-        # und nicht als flüchtige Meldung (§20.4).
+        # und nicht als fluechtige Meldung (§20.4).
         self.st_befund = QLabel("")
         self.st_befund.hide()
         self.st_modus = QLabel("binär")
@@ -364,7 +364,7 @@ class MainWindow(QMainWindow):
             w.setFrameShape(QFrame.NoFrame)
             w.setMargin(2)
             leiste.addPermanentWidget(w)
-        # Schloss und Wort gehören zusammen — zwischen sie kommt kein Trennstrich.
+        # Schloss und Wort gehoeren zusammen — zwischen sie kommt kein Trennstrich.
         self.st_schutz.setMargin(2)
         leiste.addPermanentWidget(self.st_schutz)
         leiste.showMessage("Bereit")
@@ -373,7 +373,7 @@ class MainWindow(QMainWindow):
         self.log_dock = LogDock(self)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
         self.log_dock.hide()                         # Historie, kein Dauerplatz
-        # Ohne Vorgabe nimmt sich das Dock beim Aufklappen die halbe Fensterhöhe.
+        # Ohne Vorgabe nimmt sich das Dock beim Aufklappen die halbe Fensterhoehe.
         self.resizeDocks([self.log_dock], [170], Qt.Vertical)
 
         self.act_protokoll_zeigen = self.log_dock.toggleViewAction()
@@ -381,9 +381,9 @@ class MainWindow(QMainWindow):
         self.act_protokoll_zeigen.setShortcut(QKeySequence("F8"))
         self.menue_ansicht.addAction(self.act_protokoll_zeigen)
 
-        # Die Statuszeile ist NICHT abschaltbar: sie trägt den Zustand der
-        # geöffneten Diskette (Schreibschutz, freier Platz, Übertragungsart).
-        # Wer sie ausblenden könnte, arbeitete blind (§20.4).
+        # Die Statuszeile ist NICHT abschaltbar: sie traegt den Zustand der
+        # geoeffneten Diskette (Schreibschutz, freier Platz, Uebertragungsart).
+        # Wer sie ausblenden koennte, arbeitete blind (§20.4).
         self.menue_ansicht.addSeparator()
         stil_menue = self.menue_ansicht.addMenu("Symbolleisten&stil")
         self.gruppe_stil = QActionGroup(self)
@@ -409,7 +409,7 @@ class MainWindow(QMainWindow):
             lambda name: self._fs_setzen(name, neu_oeffnen=True))
         self.folder_view.choose_requested.connect(self._ordner_dialog)
         self.folder_view.hinweis.connect(self.log)
-        # Der Ordnerwechsel entscheidet mit über „Neuer Ordner"/„Umbenennen".
+        # Der Ordnerwechsel entscheidet mit ueber „Neuer Ordner"/„Umbenennen".
         self.folder_view.folder_changed.connect(lambda _: self._aktionen_pruefen())
         self.folder_view.disk_files_dropped.connect(self._extrahieren_refs)
         self.disk_view.files_dropped.connect(self._einfuegen_pfade)
@@ -419,7 +419,7 @@ class MainWindow(QMainWindow):
         self.disk_view.tree.itemSelectionChanged.connect(self._aktionen_pruefen)
         self.folder_view.tree.itemSelectionChanged.connect(self._aktionen_pruefen)
 
-        # Beide Listen zeigen dieselben Aktionen im Kontextmenü.
+        # Beide Listen zeigen dieselben Aktionen im Kontextmenue.
         self.disk_view.setze_aktionen(self.act_eigenschaften, self.act_datei_im_editor,
                                       None, self.act_holen, self.act_loeschen)
         self.folder_view.setze_aktionen(self.act_schreiben, None,
@@ -428,7 +428,7 @@ class MainWindow(QMainWindow):
 
         self.gruppe_modus.triggered.connect(lambda *_: self._modus_geaendert())
 
-    # ── Fensterzustand (nur für den echten Programmlauf) ─────────────────────
+    # ── Fensterzustand (nur fuer den echten Programmlauf) ─────────────────────
 
     def _einstellungen(self) -> Optional[QSettings]:
         """``QSettings`` — nur, wenn die Anwendung sich benannt hat.
@@ -479,8 +479,8 @@ class MainWindow(QMainWindow):
             s.value("uebertragung/cpm_fileinfo", "0") == "1")
         self._zuletzt = self._als_liste(s.value("zuletzt", []))
         self._menue_zuletzt_bauen()
-        # `restoreState()` kann die Statuszeile verborgen haben (ältere Fassung
-        # konnte das) — sie gehört unbedingt sichtbar.
+        # `restoreState()` kann die Statuszeile verborgen haben (aeltere Fassung
+        # konnte das) — sie gehoert unbedingt sichtbar.
         self.statusBar().show()
 
     def _zustand_sichern(self) -> None:
@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
     def _leistenstil(self, stil, merken: bool = True) -> None:
         self.leiste.setToolButtonStyle(stil)
 
-    # ── Zuletzt geöffnet ────────────────────────────────────────────────────
+    # ── Zuletzt geoeffnet ────────────────────────────────────────────────────
 
     def _zuletzt_merken(self, pfad: str) -> None:
         pfad = str(Path(pfad).resolve())
@@ -559,7 +559,7 @@ class MainWindow(QMainWindow):
         „Keine Datei ausgewählt" gar nicht mehr (§20.3).
         """
         offen = self.tool is not None
-        # Roh geöffnet: es GIBT eine Diskette (Medium, Spuren, Sektoren), nur kein
+        # Roh geoeffnet: es GIBT eine Diskette (Medium, Spuren, Sektoren), nur kein
         # Dateisystem.  Alles, was am Abbild arbeitet, bleibt darum bedienbar —
         # gesperrt wird nur, was Dateien braucht.
         mit_fs = offen and self.tool.has_filesystem
@@ -572,9 +572,9 @@ class MainWindow(QMainWindow):
             a.setEnabled(offen)
         for a in (self.act_archivieren, self.act_alles_raus):
             a.setEnabled(mit_fs)            # braucht Dateien
-        # Prüfen geht auch OHNE Dateisystem: an einer roh geöffneten Diskette ist
-        # der Bericht die Begründung, warum keines erkannt wurde (Ebene 0, §11) —
-        # und das ist genau die Diskette, über die man etwas erfahren will.
+        # Pruefen geht auch OHNE Dateisystem: an einer roh geoeffneten Diskette ist
+        # der Bericht die Begruendung, warum keines erkannt wurde (Ebene 0, §11) —
+        # und das ist genau die Diskette, ueber die man etwas erfahren will.
         self.act_reparieren.setEnabled(offen)
         # Suchen braucht dagegen ein Dateisystem: ohne eines gibt es weder ein
         # Verzeichnis mit geloeschten Plaetzen noch einen Belegungsplan, gegen den
@@ -586,47 +586,47 @@ class MainWindow(QMainWindow):
         self.act_holen.setEnabled(offen and disk_auswahl)
         self.act_eigenschaften.setEnabled(offen and len(
             self.disk_view.selected_refs()) == 1)
-        # Genau EINE Datei — ein Sprung führt an einen Ort, nicht an drei.
+        # Genau EINE Datei — ein Sprung fuehrt an einen Ort, nicht an drei.
         self.act_datei_im_editor.setEnabled(
             mit_fs and len(self.disk_view.selected_refs()) == 1)
         self.act_loeschen.setEnabled(schreibbar and disk_auswahl)
         self.act_schreiben.setEnabled(schreibbar and ordner_auswahl)
 
-        # Die beiden Ordner-Aktionen hängen NICHT an der Diskette: sie arbeiten im
+        # Die beiden Ordner-Aktionen haengen NICHT an der Diskette: sie arbeiten im
         # Wirtsystem und gelten auch dann, wenn gar keine Diskette offen ist.
         self.act_neuer_ordner.setEnabled(self.folder_view.folder is not None)
         self.act_umbenennen.setEnabled(self.folder_view.umbenennbar() is not None)
 
-        # Systemspuren gibt es nicht überall — eine Datendiskette (cpa800) beginnt
+        # Systemspuren gibt es nicht ueberall — eine Datendiskette (cpa800) beginnt
         # auf Zylinder 0 und hat nichts zu sichern.
         self.act_bootabbild.setEnabled(mit_fs and self.tool.boot_area_size(0) > 0)
         self.act_schreibschutz.setEnabled(offen)
-        # Auch ohne offene Diskette wählbar, wenn ein physisches Laufwerk im Spiel
-        # ist: bei einer nicht erkannten Diskette ist das Übersteuern der einzige Weg
-        # hinein, und ein gesperrtes Menü verstellte genau ihn.
+        # Auch ohne offene Diskette waehlbar, wenn ein physisches Laufwerk im Spiel
+        # ist: bei einer nicht erkannten Diskette ist das Uebersteuern der einzige Weg
+        # hinein, und ein gesperrtes Menue verstellte genau ihn.
         self.menue_fs.setEnabled(offen or bool(self._physisch_wahl))
 
         # Der Ausweg (§7.2) ist an einer Datei sinnlos — dort gibt es keine
-        # Schadstelle, gegen die ein erneutes Wegschreiben helfen würde.  Deshalb
+        # Schadstelle, gegen die ein erneutes Wegschreiben helfen wuerde.  Deshalb
         # ist er nicht bloss gesperrt, sondern gar nicht da.
         self.act_neu_beschreiben.setVisible(self._physisch is not None)
         self.act_neu_beschreiben.setEnabled(schreibbar and self._physisch is not None)
 
-        # Überschreiben braucht eine QUELLE (die offene Diskette), aber keinen
-        # aufgehobenen Schreibschutz: der schützt die geöffnete Diskette, und die
+        # Ueberschreiben braucht eine QUELLE (die offene Diskette), aber keinen
+        # aufgehobenen Schreibschutz: der schuetzt die geoeffnete Diskette, und die
         # wird hier nur gelesen.  Was Schutz braucht, ist die Diskette im Laufwerk —
-        # dafür steht die Rückfrage.
+        # dafuer steht die Rueckfrage.
         # Solange geschrieben wird, ist das Laufwerk belegt — beide Wege dorthin
         # bleiben zu, bis es fertig ist.
         laeuft = self._schreib_sitzung is not None
         self.act_physisch_schreiben.setEnabled(offen and not laeuft)
-        # Schneiden geht an JEDEM Abbild — auch an einem roh geöffneten; gerade dort
+        # Schneiden geht an JEDEM Abbild — auch an einem roh geoeffneten; gerade dort
         # ist es der Weg zur Erkennung.  Nur etwas da sein muss.
         self.act_gerade_spuren.setEnabled(offen and self.tool.medium_cylinders > 1)
         self.act_seite1_weg.setEnabled(offen and self.tool.medium_heads > 1)
         self.menue_schnitt.setEnabled(offen)
-        # Laden bleibt sonst IMMER möglich — es ist der Weg, überhaupt eine Diskette
-        # zu bekommen; nur während des Schreibens ist das Laufwerk belegt.
+        # Laden bleibt sonst IMMER moeglich — es ist der Weg, ueberhaupt eine Diskette
+        # zu bekommen; nur waehrend des Schreibens ist das Laufwerk belegt.
         self.act_physisch.setEnabled(not laeuft)
 
         self._schutz_anzeigen()
@@ -652,7 +652,7 @@ class MainWindow(QMainWindow):
             self.st_schutz.setText("R/W  schreibbar" if schreibbar
                                    else "R/O  nur lesen")
 
-    #: Alter Name — das Freigeben hängt nicht mehr an einem Argument.
+    #: Alter Name — das Freigeben haengt nicht mehr an einem Argument.
     def _enable_write(self, offen: bool = True) -> None:
         self._aktionen_pruefen()
 
@@ -668,7 +668,7 @@ class MainWindow(QMainWindow):
             return
 
         # An einer physischen Diskette zweistufig: erst die Namen (bei UDOS drei
-        # Spuren), die Angaben aus den Kopfsektoren trägt `_details_nachtragen`
+        # Spuren), die Angaben aus den Kopfsektoren traegt `_details_nachtragen`
         # nach, sobald ihre Spuren da sind (§11.2b).  Bei einer Datei ist
         # `list_names()` ohnehin dasselbe wie `list()` — nur bei CP/M immer, bei
         # UDOS deshalb, weil dort jeder Zugriff sofort geht.
@@ -700,9 +700,9 @@ class MainWindow(QMainWindow):
 
         500 ms genügen: eine Spur dauert 0,5–0,8 s, häufiger gäbe es nichts Neues.
         """
-        # Zwei Sitzungsarten, ein Zeitgeber: die geöffnete physische Diskette und ein
-        # laufender Schreibvorgang.  Beide brauchen dieselbe Nachführung, und zwei
-        # Zeitgeber nebeneinander wären zwei Stellen, die aus dem Tritt geraten können.
+        # Zwei Sitzungsarten, ein Zeitgeber: die geoeffnete physische Diskette und ein
+        # laufender Schreibvorgang.  Beide brauchen dieselbe Nachfuehrung, und zwei
+        # Zeitgeber nebeneinander waeren zwei Stellen, die aus dem Tritt geraten koennen.
         if self._schreib_tick():
             return
         sitzung = self._physisch
@@ -738,8 +738,8 @@ class MainWindow(QMainWindow):
         self.st_physisch.setStyleSheet(SCHREIBT_STIL)
         self.st_physisch.show()
 
-        # Fertig ist es, wenn keine Spur mehr aussteht UND gerade nichts läuft.
-        # Beides ist nötig: `tracks_dirty` fällt schon vor dem Prüf-Lesen.
+        # Fertig ist es, wenn keine Spur mehr aussteht UND gerade nichts laeuft.
+        # Beides ist noetig: `tracks_dirty` faellt schon vor dem Pruef-Lesen.
         if st.tracks_dirty == 0 and not st.busy:
             self._schreib_fertig(st)
         return True
@@ -766,7 +766,7 @@ class MainWindow(QMainWindow):
         self._aktionen_pruefen()
 
         if schaden:
-            # Kein Meldungsfenster im Rücken des Bedieners — aber auch nichts, was
+            # Kein Meldungsfenster im Ruecken des Bedieners — aber auch nichts, was
             # sich wegscrollt: eine Schadstelle ist eine dauerhafte Auskunft.
             self.log(f"SCHREIBFEHLER auf Spur {schaden}", stufe="fehler")
             self.info_bar.zeige(
@@ -870,8 +870,8 @@ class MainWindow(QMainWindow):
         if self.tool.remarks:
             teile.append("Medium: " + self._kurzgefasst(self.tool.remarks))
 
-        # Ein Gefahr-Befund verdrängt alles: er sagt, dass der NÄCHSTE
-        # Schreibvorgang Daten zerstört, und das duldet keinen Aufschub.
+        # Ein Gefahr-Befund verdraengt alles: er sagt, dass der NAECHSTE
+        # Schreibvorgang Daten zerstoert, und das duldet keinen Aufschub.
         if befund is not None and befund.severity >= GEFAHR:
             self._befund_streifen(befund)
             return
@@ -928,7 +928,7 @@ class MainWindow(QMainWindow):
         return schwerster
 
     # ════════════════════════════════════════════════════════════════════════
-    # Diskette öffnen / anlegen / schließen
+    # Diskette oeffnen / anlegen / schliessen
     # ════════════════════════════════════════════════════════════════════════
 
     def open_image(self, path, filesystem: str = "") -> bool:
@@ -997,22 +997,22 @@ class MainWindow(QMainWindow):
         from app.gw import GreaseweazleFehlt
         from app.ui.physical_disk import PhysicalSession, verfuegbarkeit
 
-        # **Hier steht KEINE Verfügbarkeitsprüfung mehr.**  Sie gehört an die
+        # **Hier steht KEINE Verfuegbarkeitspruefung mehr.**  Sie gehoert an die
         # Bedienwege davor (`_physisch_dialog`, `_physisch_schreiben_dialog`,
-        # Laufwerkskasten des Emulators — „erst prüfen, dann fragen") und an die
+        # Laufwerkskasten des Emulators — „erst pruefen, dann fragen") und an die
         # Stelle, die die Hosttools wirklich braucht: `PhysicalSession.start`.
-        # Zwischen beiden war sie überflüssig — und schädlich: sie hing an einer
-        # FREIWILLIGEN Abhängigkeit, während diese Methode auch mit einer
-        # eingesetzten Ersatzsitzung gerufen wird (so prüft die Testebene das
+        # Zwischen beiden war sie ueberfluessig — und schaedlich: sie hing an einer
+        # FREIWILLIGEN Abhaengigkeit, waehrend diese Methode auch mit einer
+        # eingesetzten Ersatzsitzung gerufen wird (so prueft die Testebene das
         # Laufwerk ohne Hardware).  Ohne `greaseweazle` lief sie dort in ein
         # modales Meldungsfenster, das headless niemand wegklickt: aus einem
-        # Fehlschlag wurde ein 300-s-Hänger (`py_gw_gui`).
+        # Fehlschlag wurde ein 300-s-Haenger (`py_gw_gui`).
         drive = optionen.get("drive", "a")
         writable = bool(optionen.get("writable", False))
         self._close_tool()
         try:
             sitzung = PhysicalSession.start(**optionen)
-        except TypeError as e:                       # Signaturdrift, kein Gerätefehler
+        except TypeError as e:                       # Signaturdrift, kein Geraetefehler
             self._fehler("Physisches Laufwerk",
                          f"Die Angaben passen nicht zum Laufwerkszugriff:\n{e}")
             return False
@@ -1050,7 +1050,7 @@ class MainWindow(QMainWindow):
             sie einzeln nachzutragen ist Sache von `_details_nachtragen`, sobald ihre
             Spuren ohnehin gelesen sind.  Bei CP/M ist das ein und dasselbe.
             """
-            # ROH öffnen: wird nichts erkannt, kommt die Diskette trotzdem heraus —
+            # ROH oeffnen: wird nichts erkannt, kommt die Diskette trotzdem heraus —
             # ohne Dateisystem, aber mit Medium.  Sie im Sektoreditor ansehen, ihr
             # Abbild sichern oder sie zurechtschneiden geht dann weiter (§12.6).
             werkzeug = DiskTool.open_physical_raw(sitzung, filesystem or None,
@@ -1073,7 +1073,7 @@ class MainWindow(QMainWindow):
             if fehler is not None:
                 # Eine Diskette, die keiner Erkennung folgt, ist nicht verloren —
                 # sie ist nur nicht ERKANNT.  Deshalb hier nicht bloss der Grund,
-                # sondern der Ausweg: das Dateisystem von Hand wählen.  Genau das
+                # sondern der Ausweg: das Dateisystem von Hand waehlen.  Genau das
                 # rettet gemischte Formate (26×128 auf Kopf 0, 5×1024 auf Kopf 1),
                 # die es in keinem Katalog gibt.
                 self.info_bar.zeige(
@@ -1097,7 +1097,7 @@ class MainWindow(QMainWindow):
         self._reload()
         self._medium_meldungen()
         # ZULETZT: ohne Dateisystem ist das die wichtigere Auskunft, und sie darf
-        # nicht vom Medium-Befund überschrieben werden.
+        # nicht vom Medium-Befund ueberschrieben werden.
         if not werkzeug.has_filesystem:
             self._roh_melden()
         self.log_dock.append(f"Physisches Laufwerk {drive.upper()}: "
@@ -1184,9 +1184,9 @@ class MainWindow(QMainWindow):
         """
         if self.tool is None:
             return
-        # Vorher VOLLSTÄNDIG einlesen.  Der Schnitt löst vom Laufwerk; was jetzt noch
-        # fehlt, fehlt dann für immer — und Lücken im Abbild machen jede spätere
-        # Erkennung unmöglich (eine ungelesene Spur sieht aus wie eine unformatierte).
+        # Vorher VOLLSTAENDIG einlesen.  Der Schnitt loest vom Laufwerk; was jetzt noch
+        # fehlt, fehlt dann fuer immer — und Luecken im Abbild machen jede spaetere
+        # Erkennung unmoeglich (eine ungelesene Spur sieht aus wie eine unformatierte).
         if not self._vollstaendig_einlesen(titel):
             return
         hinweis = was
@@ -1206,7 +1206,7 @@ class MainWindow(QMainWindow):
             self._fehler(titel, str(e))
             return
 
-        # Die Sitzung ist jetzt nur noch Ballast — das Abbild hängt nicht mehr daran.
+        # Die Sitzung ist jetzt nur noch Ballast — das Abbild haengt nicht mehr daran.
         if self._physisch is not None:
             self._close_physisch()
             self._physisch_uhr.stop()
@@ -1242,13 +1242,13 @@ class MainWindow(QMainWindow):
         grund = (self.tool.remarks or "").strip()
         self.log_dock.append("Kein Dateisystem erkannt. " + grund)
         # Ebene 0 (§11): die Erkennung hat jeden Kandidaten befragt und jeder hat
-        # gesagt, woran es lag — das ist oft schon die ganze Diagnose.  Sie gehört
-        # ins Protokoll, denn dort schlägt man nach; der Streifen fasst zusammen.
+        # gesagt, woran es lag — das ist oft schon die ganze Diagnose.  Sie gehoert
+        # ins Protokoll, denn dort schlaegt man nach; der Streifen fasst zusammen.
         abgelehnt = [f for f in self.tool.findings().findings
                      if f.layer == EBENE_ERKENNUNG]
         for f in abgelehnt:
             self.log_dock.append(f"  geprüft: {f.object} — {f.text}")
-        # Am Laufwerk läuft das Lesen weiter, bei einer Datei ist schon alles da —
+        # Am Laufwerk laeuft das Lesen weiter, bei einer Datei ist schon alles da —
         # ein Satz, der das Falsche verspricht, ist schlimmer als keiner.
         laeuft = self._physisch is not None
         self.info_bar.zeige(
@@ -1436,7 +1436,7 @@ class MainWindow(QMainWindow):
             return
 
         # Die Geometrie der offenen Diskette vorschlagen — auf eine kleinere passt
-        # sie ohnehin nicht, und der Bediener soll nicht raten müssen.
+        # sie ohnehin nicht, und der Bediener soll nicht raten muessen.
         wahl = PhysicalDiskDialog.frage(
             self, writable=True,
             titel="Diskette zum Überschreiben einlegen",
@@ -1448,7 +1448,7 @@ class MainWindow(QMainWindow):
         wahl["read_ahead"] = False       # gelesen wird hier nichts, nur geschrieben
 
         # „Nur Seite 0" bei einem ZWEISEITIGEN Abbild ist erlaubt — es kann genau
-        # gewollt sein (Seite 1 trägt Altlasten, die niemand haben will).  Aber es
+        # gewollt sein (Seite 1 traegt Altlasten, die niemand haben will).  Aber es
         # geht dabei etwas verloren, und das muss dastehen, bevor es passiert.
         if wahl.get("num_heads", 2) < self.tool.medium_heads:
             if QMessageBox.question(
@@ -1475,7 +1475,7 @@ class MainWindow(QMainWindow):
             sitzung.close()
             return
 
-        # **Und das war's schon.**  Die Spuren stehen jetzt als „geändert" im Medium
+        # **Und das war's schon.**  Die Spuren stehen jetzt als „geaendert" im Medium
         # des Laufwerks; der Arbeitsfaden schreibt sie von selbst hinaus (§7) — es
         # gibt hier nichts zu warten und darum auch kein Meldungsfenster.  Wie weit
         # er ist, sagt die Statuszeile; fertig meldet `_schreib_tick`.
@@ -1548,7 +1548,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _close_tool(self) -> None:
-        # Der Diskeditor hält dieselbe Diskette; er MUSS vorher zu sein, sonst
+        # Der Diskeditor haelt dieselbe Diskette; er MUSS vorher zu sein, sonst
         # arbeitete er auf einem geschlossenen Griff weiter.
         editor = getattr(self, "_diskeditor", None)
         if editor is not None:
@@ -1557,11 +1557,11 @@ class MainWindow(QMainWindow):
         if self.tool is not None:
             self.tool.close()
             self.tool = None
-        # Der Befund gehört zur geschlossenen Diskette und darf nicht stehenbleiben.
+        # Der Befund gehoert zur geschlossenen Diskette und darf nicht stehenbleiben.
         if hasattr(self, "st_befund"):
             self.st_befund.hide()
         # Erst das Werkzeug, DANN die Sitzung: ~DiskImage schreibt Ausstehendes noch
-        # über den Arbeitsfaden zurück und löst sich erst danach vom Medium.
+        # ueber den Arbeitsfaden zurueck und loest sich erst danach vom Medium.
         self._close_physisch()
 
     def _darf_verwerfen(self) -> bool:
@@ -1579,7 +1579,7 @@ class MainWindow(QMainWindow):
         return True
 
     # ════════════════════════════════════════════════════════════════════════
-    # Übertragung — ohne Dialog aufrufbar (Tests)
+    # Uebertragung — ohne Dialog aufrufbar (Tests)
     # ════════════════════════════════════════════════════════════════════════
 
     def extract_all(self, dest_dir) -> bool:
@@ -1611,7 +1611,7 @@ class MainWindow(QMainWindow):
             text = str(e)
             # Der Stapel ist eine Transaktion — ein Eingabedialog mittendrin ginge
             # nicht, ohne sie aufzubrechen.  Also der ehrliche Weg: sagen, wo die
-            # Angaben erfragt werden (dort gibt es „Für alle übernehmen“).
+            # Angaben erfragt werden (dort gibt es „Fuer alle uebernehmen“).
             if self.tool.last_insert_problem == DiskTool.INSERT_ANGABEN_FEHLEN:
                 text += ("\n\nDateien, die keine Angaben mitbringen, einzeln "
                          "einfügen: im Ordner auswählen und „Auf die Diskette "
@@ -1621,8 +1621,8 @@ class MainWindow(QMainWindow):
             self._reload()
             return False
         self._reload()
-        # Stillschweigend heisst nicht heimlich: wer nachzählt, soll die Differenz
-        # zwischen Ordnerinhalt und Diskette erklärt bekommen (§2.5).
+        # Stillschweigend heisst nicht heimlich: wer nachzaehlt, soll die Differenz
+        # zwischen Ordnerinhalt und Diskette erklaert bekommen (§2.5).
         zubehoer = self.tool.last_accessory_count
         self.log(f"Eingefügt aus {src_dir}"
                  + (f" ({zubehoer} .fileinfo ausgewertet)" if zubehoer else ""))
@@ -1680,7 +1680,7 @@ class MainWindow(QMainWindow):
         praefix = ""
         if self.tool.volume_count > 1:
             praefix = f"{self.tool.volume_dir(volume)}/"
-        # Die Angaben, die im Dialog für ALLE gelten sollen; None = noch keine.
+        # Die Angaben, die im Dialog fuer ALLE gelten sollen; None = noch keine.
         vorlage: Optional[dict] = None
         geschrieben = 0
         with tempfile.TemporaryDirectory(prefix="k1520_fileinfo_") as tmp:
@@ -1727,10 +1727,10 @@ class MainWindow(QMainWindow):
         if not zubehoer:
             return list(paths), 0
 
-        # EINE ausgewählte Angabendatei ist fast sicher ein Versehen — jemand hat
+        # EINE ausgewaehlte Angabendatei ist fast sicher ein Versehen — jemand hat
         # in der Auswahl die falsche der beiden gleichnamigen Zeilen erwischt.
-        # Stillschweigend zu überspringen wäre hier falsch: der Anwender bekäme
-        # weder eine Datei auf die Diskette noch einen Grund dafür.
+        # Stillschweigend zu ueberspringen waere hier falsch: der Anwender bekaeme
+        # weder eine Datei auf die Diskette noch einen Grund dafuer.
         if len(paths) == 1:
             grund = self.tool.accessory_reason(paths[0])
             frage = QMessageBox(QMessageBox.Question, "Das ist eine .fileinfo-Datei",
@@ -1743,8 +1743,8 @@ class MainWindow(QMainWindow):
                 return None, 0
             return list(paths), 0
 
-        # Mehrere: der Anwender meint den INHALT, nicht das Zubehör.  Eine
-        # Rückfrage käme bei dreißig Dateien dreißigmal, und die Antwort wäre
+        # Mehrere: der Anwender meint den INHALT, nicht das Zubehoer.  Eine
+        # Rueckfrage kaeme bei dreissig Dateien dreissigmal, und die Antwort waere
         # jedes Mal dieselbe.
         return [p for p in paths if not self.tool.accessory_reason(p)], len(zubehoer)
 
@@ -1763,14 +1763,14 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return None, vorlage
         angaben = dlg.angaben()
-        # „Speichern" schreibt neben die Datei — dann steht beim nächsten Mal
-        # nichts mehr zu tippen an; sonst reicht eine flüchtige Datei.
+        # „Speichern" schreibt neben die Datei — dann steht beim naechsten Mal
+        # nichts mehr zu tippen an; sonst reicht eine fluechtige Datei.
         ziel = (Path(pfad).with_name(f"{name}.fileinfo") if dlg.merken
                 else tmp / f"{name}.fileinfo")
         try:
             info = schreibe_fileinfo(ziel, angaben, name)
         except OSError as e:
-            # Ein schreibgeschützter Ordner darf das Einfügen nicht verhindern.
+            # Ein schreibgeschuetzter Ordner darf das Einfuegen nicht verhindern.
             self.log(f"Angaben nicht neben der Datei speicherbar ({e}) — "
                      "sie gelten trotzdem für diesen Vorgang")
             info = schreibe_fileinfo(tmp / f"{name}.fileinfo", angaben, name)
@@ -1823,7 +1823,7 @@ class MainWindow(QMainWindow):
             return False
         # Das Archiv soll sich wie ein Auszug verhalten: bei UDOS liegt neben jeder
         # Datei ihr `.fileinfo` (ohne das ist eine einzeln entnommene Programmdatei
-        # unbrauchbar), bei CP/M nur, wenn der Anwender es verlangt — dort genügt
+        # unbrauchbar), bei CP/M nur, wenn der Anwender es verlangt — dort genuegt
         # das Sammelbeiblatt, das ohnehin mit ins Archiv geht.
         self._fileinfo_anwenden()
         try:
@@ -1922,7 +1922,7 @@ class MainWindow(QMainWindow):
         if not pfad:
             return
 
-        # Bootfähig? — nur, wo es Systemspuren gibt (eine Datendiskette wie cpa800
+        # Bootfaehig? — nur, wo es Systemspuren gibt (eine Datendiskette wie cpa800
         # beginnt auf Zylinder 0 und kann gar nicht booten).
         boot = self._bootabbild_waehlen(fs)
         if boot is False:          # Auswahl abgebrochen → gar nichts anlegen
@@ -2042,8 +2042,8 @@ class MainWindow(QMainWindow):
         dlg = DiskInfoDialog(self.tool, self,
                              abbild_vollstaendig=self._abbild_vollstaendig())
         dlg.exec()
-        # Wurde dort eine Vollprüfung gefahren, gilt jetzt ein anderer Befund — und
-        # der ist ein ZUSTAND der Diskette, also gehört er in Streifen, Statuszeile
+        # Wurde dort eine Vollpruefung gefahren, gilt jetzt ein anderer Befund — und
+        # der ist ein ZUSTAND der Diskette, also gehoert er in Streifen, Statuszeile
         # und Protokoll (§20.4).
         if dlg.geprueft:
             self._medium_meldungen()
@@ -2120,7 +2120,7 @@ class MainWindow(QMainWindow):
 
         def laden():
             # `track()` holt eine unbekannte Spur (und blockiert dabei); `track_state`
-            # fragt, OHNE sie zu beschaffen — sonst zöge schon das Nachsehen die
+            # fragt, OHNE sie zu beschaffen — sonst zoege schon das Nachsehen die
             # ganze Scheibe ein.
             for zylinder in range(self.tool.medium_cylinders):
                 for kopf in range(self.tool.medium_heads):
@@ -2136,7 +2136,7 @@ class MainWindow(QMainWindow):
             self._fehler("Diskette einlesen", str(fehler))
             return False
         # Abgebrochen: `mit_fortschritt` liefert (None, None) und hat die Sitzung
-        # beendet — dann gibt es nichts mehr zu prüfen.
+        # beendet — dann gibt es nichts mehr zu pruefen.
         return self._physisch is None or bool(self._physisch.stats())
 
     def _datei_im_editor(self) -> None:
@@ -2257,7 +2257,7 @@ class MainWindow(QMainWindow):
     # ── Wo die Dialoge aufgehen (§20.8) ─────────────────────────────────────
     #
     # Nie im Installationsordner: dort liegt das Programm, nicht die Arbeit des
-    # Anwenders.  Aufgelöst wird ausschließlich über `app.paths` — dieselbe
+    # Anwenders.  Aufgeloest wird ausschliesslich ueber `app.paths` — dieselbe
     # Stelle, die auch der Emulator benutzt, damit beide Programme auf dieselben
     # Ordner zeigen.
 
@@ -2294,7 +2294,7 @@ class MainWindow(QMainWindow):
             self.folder_view.set_folder(pfad)
 
     # Anlegen und Umbenennen geschehen im ORDNER; das Fenster reicht nur durch,
-    # damit es die eine Aktion für Menü und Kontextmenü gibt (§20.3).
+    # damit es die eine Aktion fuer Menue und Kontextmenue gibt (§20.3).
     def _neuer_ordner(self) -> None:
         self.folder_view.neuer_ordner()
 
@@ -2315,17 +2315,17 @@ class MainWindow(QMainWindow):
         if not neu_oeffnen:
             return
         # Eine physische Diskette hat KEINEN Pfad — `open_image("")` warf hier alles
-        # weg, und beim Übersteuern blieb die Anzeige leer.  Sie braucht eine neue
+        # weg, und beim Uebersteuern blieb die Anzeige leer.  Sie braucht eine neue
         # Sitzung mit denselben Angaben; die stehen in `_physisch_wahl`.  Das gilt
         # auch, wenn die Erkennung gerade gescheitert ist (dann gibt es kein `tool`,
-        # aber sehr wohl etwas zu übersteuern) — es ist sogar der Hauptfall.
+        # aber sehr wohl etwas zu uebersteuern) — es ist sogar der Hauptfall.
         if self.tool is not None and not self.tool.path:
-            # Physische Diskette (oder ein davon abgelöstes Abbild): sie liegt bereits
-            # im Speicher — noch einmal einzulesen wäre Zeitverschwendung und läse
-            # womöglich anderes.  Die Erkennung läuft deshalb auf dem Abbild.
+            # Physische Diskette (oder ein davon abgeloestes Abbild): sie liegt bereits
+            # im Speicher — noch einmal einzulesen waere Zeitverschwendung und laese
+            # womoeglich anderes.  Die Erkennung laeuft deshalb auf dem Abbild.
             self._am_abbild_erkennen(name)
         elif self.tool is None and self._physisch_wahl:
-            self._physisch_erneut(name)      # gescheitertes Öffnen: neue Sitzung
+            self._physisch_erneut(name)      # gescheitertes Oeffnen: neue Sitzung
         elif self.tool is not None:
             self.open_image(self.tool.path, name)
 
@@ -2484,8 +2484,8 @@ class MainWindow(QMainWindow):
             return vorhanden
 
         self._diskeditor = DiskEditorWindow(self.tool, self)
-        # Ein geschriebener Sektor ist eine Änderung wie jede andere: Titelmarke,
-        # und die Dateiliste kann sich mitgeändert haben.
+        # Ein geschriebener Sektor ist eine Aenderung wie jede andere: Titelmarke,
+        # und die Dateiliste kann sich mitgeaendert haben.
         self._diskeditor.disk_changed.connect(self._reload)
         self._editor_an_modalen_dialog(self._diskeditor)
         self._diskeditor.show()
@@ -2513,8 +2513,8 @@ class MainWindow(QMainWindow):
             return
         self._fenster_umhaengen(editor, dialog)
         # Der Dialog ist nach `exec()` nicht tot, nur unsichtbar (er bleibt Kind des
-        # Hauptfensters).  `finished` kommt vor jedem Abräumen — hier genügt es, den
-        # Editor zurückzuholen.  Eine Verbindung je Dialog: solange der Editor sein
+        # Hauptfensters).  `finished` kommt vor jedem Abraeumen — hier genuegt es, den
+        # Editor zurueckzuholen.  Eine Verbindung je Dialog: solange der Editor sein
         # Kind ist, kehrt der Aufruf oben schon vorher um.
         dialog.finished.connect(self._diskeditor_zurueckhaengen)
 
@@ -2540,7 +2540,7 @@ class MainWindow(QMainWindow):
         if sichtbar:
             fenster.show()
 
-    # ── Schließen ───────────────────────────────────────────────────────────
+    # ── Schliessen ───────────────────────────────────────────────────────────
 
     def closeEvent(self, event):  # noqa: N802
         # Ein laufender Schreibvorgang ist der einzige Grund, das Schliessen

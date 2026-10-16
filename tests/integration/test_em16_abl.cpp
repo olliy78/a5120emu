@@ -1,18 +1,18 @@
 /**
  * @file test_em16_abl.cpp
- * @brief Abnahme S4 (doc/design/17_a5120_16.md §3 S4): Prüfprogramm `em16abl.com` unter
+ * @brief Abnahme S4 (doc/design/17_a5120_16.md §3 S4): Pruefprogramm `em16abl.com` unter
  *        CP/A gegen EM256 + U8001 — Ende-zu-Ende.
  *
  * Das Programm stammt aus der CPA-Workbench (`tools/16bitTest/src/em16abl.mac` +
- * `fw16abl.s`, U8001-Teil mit z8kasm) und ist für den echten A5120.16 geschrieben
- * (Vorlage für G2).  Es fährt die in §7 belegten Abläufe: Start aus Reset, Rechnen,
- * A33/A35/Status-8, Rückweg TRQ8 → MSET → TREN → BUSRQ/BUSAK → A29 beim M1, alle drei
+ * `fw16abl.s`, U8001-Teil mit z8kasm) und ist fuer den echten A5120.16 geschrieben
+ * (Vorlage fuer G2).  Es faehrt die in §7 belegten Ablaeufe: Start aus Reset, Rechnen,
+ * A33/A35/Status-8, Rueckweg TRQ8 → MSET → TREN → BUSRQ/BUSAK → A29 beim M1, alle drei
  * Segmentmodi, VI vom U880, INT-16 zum U880 (IM 2), A53 → NVI, STOP, RESET16.
  *
  * Diskette: `cpa_cpa780_k5601_noclock.img` (BIOS OHNE `em256`), wie Em256Adr.
  *
  * Dazu `em256ful.com` v2.0 (Workbench, Plan §3 G2b: nach §7 repariert) als feste Fixture
- * (Em256Ful.*) — Gruppen A–E grün, Gegenprobe ohne EM.
+ * (Em256Ful.*) — Gruppen A–E gruen, Gegenprobe ohne EM.
  */
 #include <gtest/gtest.h>
 
@@ -93,14 +93,14 @@ std::string letzteZeile(A5120Machine& m) {
 /**
  * @brief EM16ABL starten und bis zum Prompt laufen lassen; jede Seitenpause wird mit
  *        einer Leertaste quittiert.  Liefert die Abschrift aller Bildschirme (je Pause
- *        einer, dazu der letzte) — der Bildschirm rollt, einzeln sähe man zu wenig.
+ *        einer, dazu der letzte) — der Bildschirm rollt, einzeln saehe man zu wenig.
  */
 std::string lasseLaufen(A5120Machine& m) {
     typeString(m, "EM16ABL");
     typeKey(m, k1520test::QK_RETURN);
     std::string abschrift;
     long long rest = kProgBudget;
-    // Erst den Start abwarten: das Banner verdrängt die Kommandozeile „A>EM256ADR".
+    // Erst den Start abwarten: das Banner verdraengt die Kommandozeile „A>EM256ADR".
     if (!runSmallUntil(m, "EM16ABL 1.", kInputBudget)) return vramLines(m);
     while (rest > 0) {
         k1520test::runCycles(m, 200'000);
@@ -108,7 +108,7 @@ std::string lasseLaufen(A5120Machine& m) {
         if (vramText(m).find(kPause) != std::string::npos) {
             abschrift += vramLines(m) + "----\n";
             typeKey(m, ' ');
-            // Warten, bis die Pausenzeile gelöscht ist (M_DELL).
+            // Warten, bis die Pausenzeile geloescht ist (M_DELL).
             for (int i = 0; i < 200 && vramText(m).find(kPause) != std::string::npos; ++i) {
                 k1520test::runCycles(m, 100'000);
                 rest -= 100'000;
@@ -138,7 +138,7 @@ void starte(Lauf& l, const A5120Machine::Config& cfg, const char* tmp) {
     ASSERT_TRUE(runUntilVramContains(*l.m, "TPA ist OK!", kBootBudget)) << vramLines(*l.m);
     ASSERT_TRUE(runSmallUntil(*l.m, "A>", kInputBudget)) << vramLines(*l.m);
     l.abschrift = lasseLaufen(*l.m);
-    ASSERT_EQ(letzteZeile(*l.m), "A>") << "Programm kehrt nicht zurück:\n" << l.abschrift;
+    ASSERT_EQ(letzteZeile(*l.m), "A>") << "Programm kehrt nicht zurueck:\n" << l.abschrift;
 }
 
 A5120Machine::Config em256() {
@@ -151,12 +151,12 @@ A5120Machine::Config em256() {
 
 /**
  * @test Em16Abl/AlleAblaeufeOk
- * @brief Jede Zeile A–G „OK", Ergebnis „alle Abläufe OK"; dazu die Messwerte so, wie
- *   das Gerät sie 2026-09-29 zeigte (OUTB auf beiden Hälften ⇒ A35 = 01H; INB an
+ * @brief Jede Zeile A–G „OK", Ergebnis „alle Ablaeufe OK"; dazu die Messwerte so, wie
+ *   das Geraet sie 2026-09-29 zeigte (OUTB auf beiden Haelften ⇒ A35 = 01H; INB an
  *   gerader Adresse liest Status-8 = C3H; A53-Vorlast 11 ⇒ NVI nach 4 Stapelzugriffen)
- *   und die Zusätze aus v1.1/v1.2 (INB ungerade = Adressbyte 81H wie am Gerät; Vorlauf
- *   ohne NVI, weil A54 im Emulator nach Netz-Ein geladen hält; Parität überall 1 — ohne
- *   Paritätsbits im DRAM kann das Lesen nie beschriebener Zellen keinen Fehler setzen);
+ *   und die Zusaetze aus v1.1/v1.2 (INB ungerade = Adressbyte 81H wie am Geraet; Vorlauf
+ *   ohne NVI, weil A54 im Emulator nach Netz-Ein geladen haelt; Paritaet ueberall 1 — ohne
+ *   Paritaetsbits im DRAM kann das Lesen nie beschriebener Zellen keinen Fehler setzen);
  *   danach Ruhezustand der Karte.
  */
 TEST(Em16Abl, AlleAblaeufeOk) {
@@ -197,7 +197,7 @@ TEST(Em16Abl, AlleAblaeufeOk) {
 
 /**
  * @test Em16Abl/OhneKarte
- * @brief A5120 ohne EM: „keine Karte an A8H", zurück am Prompt.
+ * @brief A5120 ohne EM: „keine Karte an A8H", zurueck am Prompt.
  */
 TEST(Em16Abl, OhneKarte) {
     Lauf l;
@@ -207,7 +207,7 @@ TEST(Em16Abl, OhneKarte) {
 
 namespace {
 
-/// Programm @p name (8.3, groß) mit Inhalt @p prog auf die Diskette @p pfad schreiben.
+/// Programm @p name (8.3, gross) mit Inhalt @p prog auf die Diskette @p pfad schreiben.
 ::testing::AssertionResult comAufDiskette(const std::string& pfad, const std::string& name,
                                           const std::string& prog) {
     std::string e;
@@ -229,7 +229,7 @@ namespace {
 
 /**
  * @brief Programm @p name starten, jede Tastenpause mit Leertaste quittieren und die
- *        Abschrift über das Rollen hinweg sammeln (je Blick nur die neu hinzugekommenen
+ *        Abschrift ueber das Rollen hinweg sammeln (je Blick nur die neu hinzugekommenen
  *        Zeilen).  @p rest = Taktbudget, danach der Rest.
  */
 std::string abschriftRollend(A5120Machine& m, const char* name, long long& rest) {
@@ -254,7 +254,7 @@ std::string abschriftRollend(A5120Machine& m, const char* name, long long& rest)
         auto neu = zeilen();
         k1520test::runCycles(m, 5'000);
         if (zeilen() != neu) return;
-        size_t k = 0;   // größte Überdeckung: Anfang von neu == Ende von alt
+        size_t k = 0;   // groesste Ueberdeckung: Anfang von neu == Ende von alt
         for (size_t n = std::min(neu.size(), alt.size()); n > 0; --n)
             if (std::equal(neu.begin(), neu.begin() + long(n), alt.end() - long(n))) { k = n; break; }
         for (size_t i = k; i < neu.size(); ++i) abschrift += neu[i] + "\n";
@@ -320,7 +320,7 @@ void starteFul(FulLauf& l, const A5120Machine::Config& cfg, const char* tmp) {
     ASSERT_TRUE(runSmallUntil(*l.m, "A>", kInputBudget)) << vramLines(*l.m);
     long long rest = kProgBudget;
     l.abschrift = abschriftRollend(*l.m, "EM256FUL", rest);
-    ASSERT_EQ(letzteZeile(*l.m), "A>") << "Programm kehrt nicht zurück:\n" << l.abschrift;
+    ASSERT_EQ(letzteZeile(*l.m), "A>") << "Programm kehrt nicht zurueck:\n" << l.abschrift;
 }
 
 }  // namespace
@@ -328,9 +328,9 @@ void starteFul(FulLauf& l, const A5120Machine::Config& cfg, const char* tmp) {
 /**
  * @test Em256Ful/AlleGruppenOk
  * @brief `em256ful.com` v2.0 (Workbench, nach §7 repariert — Plan §3 G2b): Gruppen A–E
- *   laufen durch, jede Prüfung [OK], kein Zeitgrenzen- oder Ablauffehler.  Das ist die
- *   Vorlage für den Gegenlauf am echten A5120.16: dort rote Zeilen sind Befunde über die
- *   Hardware (oder §7), nicht über den Emulator.
+ *   laufen durch, jede Pruefung [OK], kein Zeitgrenzen- oder Ablauffehler.  Das ist die
+ *   Vorlage fuer den Gegenlauf am echten A5120.16: dort rote Zeilen sind Befunde ueber die
+ *   Hardware (oder §7), nicht ueber den Emulator.
  */
 TEST(Em256Ful, AlleGruppenOk) {
     FulLauf l;
@@ -346,7 +346,7 @@ TEST(Em256Ful, AlleGruppenOk) {
     }
     for (const char* z : {"A1 ", "A2 ", "A3 ", "A4 ", "A5 ", "A9 ", "B8 ", "E1 ", "E2 "})
         EXPECT_TRUE(endetMit(zeileMit(t, z), "[INFO]")) << z << "\n" << t;
-    // Kapazität und /PE (PIO B7 = 1: kein Paritätsfehler) so, wie der Emulator sie hat.
+    // Kapazitaet und /PE (PIO B7 = 1: kein Paritaetsfehler) so, wie der Emulator sie hat.
     EXPECT_TRUE(enthaelt(t, "B8 Kapazitaet 0x0100 KB [INFO]")) << t;
     EXPECT_TRUE(enthaelt(t, "E2 Parity-Latch Reset 0x94 [INFO]")) << t;
     for (const char* z : {"--- 3/3 bestanden, 0 Fehler, 6 Info ---",
@@ -371,7 +371,7 @@ TEST(Em256Ful, AlleGruppenOk) {
 /**
  * @test Em256Ful/OhneKarte
  * @brief Gegenprobe: A5120 ohne EM — `em256ful` erkennt am Attributspeicher keine Karte,
- *   beschreibt nichts an A8H–AFH weiter und kehrt zum Prompt zurück.
+ *   beschreibt nichts an A8H–AFH weiter und kehrt zum Prompt zurueck.
  */
 TEST(Em256Ful, OhneKarte) {
     FulLauf l;
@@ -384,7 +384,7 @@ TEST(Em256Ful, OhneKarte) {
  * @test Em16Abl/AltePruefprogrammeAbschrift
  * @brief Nur von Hand: mit `K1520_EM256_ALT=<Verzeichnis mit em256tst.com>` wird das alte
  *   Workbench-Programm gestartet und seine Abschrift ausgegeben.  Keine Erwartung: es ist
- *   eine Hypothese (lief nie am Gerät); Abweichungen sind Befunde über ES.  `em256ful`
+ *   eine Hypothese (lief nie am Geraet); Abweichungen sind Befunde ueber ES.  `em256ful`
  *   ist seit v2.0 (G2b) repariert und steht oben als feste Fixture (Em256Ful.*); liegt
  *   eine `em256ful.com` im Verzeichnis, wird sie ebenfalls abgeschrieben.
  */

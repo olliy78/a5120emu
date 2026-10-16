@@ -1,5 +1,5 @@
 # Unit-Tests der header-only Bausteine, aus denen k1520dbg und boot_trace
-# zusammengesetzt sind (tools/*.h).  Kein Emulator, keine Bibliothek nötig —
+# zusammengesetzt sind (tools/*.h).  Kein Emulator, keine Bibliothek noetig —
 # die Header werden direkt inkludiert.
 
 set(_lbl "debugtools;fast")
@@ -26,5 +26,5 @@ k1520_add_test(z8k_asm           SRC test_z8k_asm.cpp           LABELS "${_lbl}"
 k1520_add_test(z8_asm            SRC test_z8_asm.cpp            LABELS "${_lbl}")  # tools/z8/z8_disasm.h + z8_asm.h
 k1520_add_test(dbg_z8            SRC test_dbg_z8.cpp            LIBS k1520_z8 LABELS "${_lbl}")  # tools/dbg_z8.h
 
-# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+# Zeitgrenzen der add_test()-Faelle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()

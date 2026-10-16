@@ -6,6 +6,8 @@
 #include "core/machines/pc1715/pc1715.h"
 #include "core/machines/p8000/p8000.h"
 #include "core/machines/p8000/p8000_terminal_machine.h"
+#include "core/machines/mc80/mc80.h"
+#include "core/machines/mc80/mc80_2x.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -27,7 +29,7 @@
 #define VERSION K1520_VERSION_TEXT
 
 // Das Handle zeigt IMMER auf die Basisklasse — erzeugt wird es in makeMachine()
-// ausdrücklich als K1520Machine*, damit der Rückweg über void* kein Zeigerversatz
+// ausdruecklich als K1520Machine*, damit der Rueckweg ueber void* kein Zeigerversatz
 // einer Mehrfachvererbung verfehlen kann.
 static K1520Machine* toMachine(K1520Handle h) {
     return static_cast<K1520Machine*>(h);
@@ -64,8 +66,8 @@ static void setup_logging() {
     std::error_code ec;
     std::filesystem::create_directories("logs", ec);
 
-    // Schlägt das Anlegen fehl (schreibgeschütztes CWD), bleibt es beim
-    // Arbeitsverzeichnis; scheitert auch das, behält der Logger stderr.
+    // Schlaegt das Anlegen fehl (schreibgeschuetztes CWD), bleibt es beim
+    // Arbeitsverzeichnis; scheitert auch das, behaelt der Logger stderr.
     auto& logger = k1520::logging::Logger::instance();
     if (ec || !logger.setOutputFile(std::string("logs/") + stamp))
         logger.setOutputFile(stamp);
@@ -81,11 +83,11 @@ K1520Handle k1520_create(K1520MachineType type) {
 K1520Handle k1520_create_configured(K1520MachineType type,
                                     const char* d0, const char* d1,
                                     const char* d2, const char* d3) {
-    // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 wählt.
+    // PRG710 ohne Variantenangabe = PRG 710 (Variante 0); k1520_create_prg710 waehlt.
     if (type == K1520_MACHINE_PRG710) return k1520_create_prg710(0, d0, d1, d2, d3);
     if (type == K1520_MACHINE_PC1715) return k1520_create_pc1715(0, 0, 0, d0, d1, d2, d3);
     if (type == K1520_MACHINE_P8000) {
-        // Laufwerksnamen (falls gegeben) als lwN-Schlüssel an die Konfiguration des P8000.
+        // Laufwerksnamen (falls gegeben) als lwN-Schluessel an die Konfiguration des P8000.
         std::string k;
         const char* names[4] = { d0, d1, d2, d3 };
         for (int i = 0; i < 4; ++i)
@@ -93,11 +95,12 @@ K1520Handle k1520_create_configured(K1520MachineType type,
         return k1520_create_p8000(k.c_str());
     }
     if (type == K1520_MACHINE_P8000_TERMINAL) return k1520_create_p8000_terminal(nullptr);
+    if (type == K1520_MACHINE_MC80) return k1520_create_mc80(0, nullptr);
     g_init_error.clear();
     if (type != K1520_MACHINE_A5120 && type != K1520_MACHINE_K8915) {
-        // Kein stilles NULL: die Oberfläche soll sagen können, warum.
+        // Kein stilles NULL: die Oberflaeche soll sagen koennen, warum.
         g_init_error = "Maschinentyp " + std::to_string(static_cast<int>(type)) +
-                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000, P8000-Terminal)";
+                       " ist noch nicht implementiert (nur A5120, K8915, PRG710, PC1715, P8000, P8000-Terminal, MC80)";
         return nullptr;
     }
 
@@ -107,8 +110,8 @@ K1520Handle k1520_create_configured(K1520MachineType type,
         const char* names[4] = { d0, d1, d2, d3 };
         K1520Machine* m = nullptr;
         if (type == K1520_MACHINE_K8915) {
-            // doc/design/16_k8915.md §8a AP-E4b.  Vorgabe = Gerät des Anwenders:
-            // K5601/K5601/none/none; NULL/"" behält den Platz bei dieser Vorgabe.
+            // doc/design/16_k8915.md §8a AP-E4b.  Vorgabe = Geraet des Anwenders:
+            // K5601/K5601/none/none; NULL/"" behaelt den Platz bei dieser Vorgabe.
             K8915Machine::Config cfg;
             for (int i = 0; i < 4; ++i)
                 if (names[i] && names[i][0]) cfg.laufwerke[i] = names[i];
@@ -249,7 +252,7 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
             else { fehler = "P8000: mon16 = " + val + " unbekannt (3.0 | 3.1 | 3.3)"; return false; }
         } else if (key == "dram") {
             // Langform "1M@0+256K@4" (Moduladressen), Kurzform "4x256K" | "4x1M" | "16M" (RAM-Karte
-            // 16 MB) — Regeln und Prüfung (Überlappung, Anzahl, Moduladresse): P8000Dram16::parse.
+            // 16 MB) — Regeln und Pruefung (Ueberlappung, Anzahl, Moduladresse): P8000Dram16::parse.
             std::vector<P8000Dram16::Karte> karten;
             const std::string f = P8000Dram16::parse(val, karten);
             if (!f.empty()) { fehler = "P8000: " + f; return false; }
@@ -263,7 +266,7 @@ static bool p8000Konfig(const char* text, P8000Machine::Config& cfg, std::string
         } else if (key == "platte") {
             cfg.platte = val;          // Pfad des Abbilds an Laufwerk 0 (roh/LBA)
         } else if (key == "plattepar") {
-            // P24: Parametersatz ergänzen (nur das WEGA-3.1-AVR-Abbild braucht das); Kern-Vorgabe
+            // P24: Parametersatz ergaenzen (nur das WEGA-3.1-AVR-Abbild braucht das); Kern-Vorgabe
             // "ergaenzen" (Bestandstests), das Programm schickt "aus".
             if (val == "ergaenzen") cfg.platte_par_ergaenzen = true;
             else if (val == "aus") cfg.platte_par_ergaenzen = false;
@@ -290,6 +293,70 @@ K1520Handle k1520_create_p8000_terminal(const char* konfig) {
     } catch (const std::exception& e) {
         g_init_error = e.what();
         std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    }
+}
+
+K1520Handle k1520_create_mc80(int variante, const char* konfig) {
+    g_init_error.clear();
+    Mc80Machine::Config cfg;
+    switch (variante) {
+        case 0: cfg.variante = Mc80Machine::Config::Variante::Mc8030; break;
+        case 1: cfg.variante = Mc80Machine::Config::Variante::Mc8031; break;
+        case 2: cfg.variante = Mc80Machine::Config::Variante::Mc8033; break;
+        case 3: cfg.variante = Mc80Machine::Config::Variante::Mc8021; break;
+        case 4: cfg.variante = Mc80Machine::Config::Variante::Mc8022; break;
+        default:
+            g_init_error = "Unbekannte MC80-Variante " + std::to_string(variante) +
+                           " (0 = .30, 1 = .31, 2 = .33, 3 = .21, 4 = .22)";
+            return nullptr;
+    }
+    // MC80.21/.22 (AP M11): eigene Maschine, keine Schluessel (SPE gibt es dort nicht).
+    if (variante == 3 || variante == 4) {
+        if (konfig && *konfig) {
+            g_init_error = std::string("MC80.2x: keine Konfigurationsschluessel ('") + konfig + "')";
+            return nullptr;
+        }
+        Mc80_2xMachine::Config c2;
+        c2.variante = variante == 3 ? Mc80_2xMachine::Config::Variante::Mc8021
+                                    : Mc80_2xMachine::Config::Variante::Mc8022;
+        setup_logging();
+        try {
+            K1520Machine* m = new Mc80_2xMachine(c2);   // Handle = K1520Machine*
+            return m;
+        } catch (const std::exception& e) {
+            g_init_error = e.what();
+            return nullptr;
+        }
+    }
+    // Schluessel=Wert-Liste wie beim P8000 (Entwurf 31; M2 kennt nur `spe`).
+    const std::string text = konfig ? konfig : "";
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t ende = text.find(',', pos);
+        if (ende == std::string::npos) ende = text.size();
+        const std::string teil = text.substr(pos, ende - pos);
+        pos = ende + 1;
+        if (teil.empty()) continue;
+        const size_t gl = teil.find('=');
+        const std::string key = teil.substr(0, gl);
+        const std::string val = gl == std::string::npos ? "" : teil.substr(gl + 1);
+        if (key == "spe" && (val == "1" || val == "2")) {
+            cfg.spe_karten = val == "1" ? 1 : 2;
+        } else if (key == "spe") {
+            g_init_error = "MC80: spe = " + val + " unbekannt (1 | 2)";
+            return nullptr;
+        } else {
+            g_init_error = "MC80: unbekannter Schluessel '" + key + "'";
+            return nullptr;
+        }
+    }
+    setup_logging();
+    try {
+        K1520Machine* m = new Mc80Machine(cfg);   // Handle = K1520Machine* (s. toMachine)
+        return m;
+    } catch (const std::exception& e) {
+        g_init_error = e.what();
         return nullptr;
     }
 }
@@ -346,7 +413,7 @@ K1520Handle k1520_create_k8915(int generation,
                                const char* d2, const char* d3) {
     g_init_error.clear();
     if (generation != 0 && generation != 1) {
-        // doc/design/24_k8915_varianten.md R5: Gen 1 (2) hat keinen startfähigen Urlader.
+        // doc/design/24_k8915_varianten.md R5: Gen 1 (2) hat keinen startfaehigen Urlader.
         g_init_error = generation == 2
             ? "Gen 1: kein startfaehiger Urlader (F11)"
             : "Unbekannte K8915-Generation " + std::to_string(generation) +
@@ -408,6 +475,39 @@ K1520Handle k1520_create_with_em(K1520MachineType type,
         g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
         return nullptr;
     }
+}
+
+K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
+                                           const char* d0, const char* d1,
+                                           const char* d2, const char* d3) {
+    using A = A5120Machine::Config::Ausfuehrung;
+    g_init_error.clear();
+    if (ausfuehrung < 0 || ausfuehrung > 3) {
+        g_init_error = "Unbekannte A5120-Ausfuehrung " + std::to_string(ausfuehrung) +
+                       " (0 neu, 1 alt, 2 KMBG, 3 8 Zoll)";
+        return nullptr;
+    }
+    setup_logging();
+    try {
+        A5120Machine::Config cfg = A5120Machine::Config::fuerAusfuehrung(static_cast<A>(ausfuehrung));
+        const char* names[4] = { d0, d1, d2, d3 };
+        for (int i = 0; i < 4; ++i)
+            if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
+        K1520Machine* m = new A5120Machine(cfg);   // Acht wirft (noch nicht umgesetzt)
+        return m;
+    } catch (const std::exception& ex) {
+        g_init_error = ex.what();
+        std::fprintf(stderr, "k1520: %s\n", g_init_error.c_str());
+        return nullptr;
+    } catch (...) {
+        g_init_error = "Unbekannter Fehler beim Erzeugen der Maschine";
+        return nullptr;
+    }
+}
+
+int k1520_a5120_ausfuehrung(K1520Handle h) {
+    auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
+    return a ? static_cast<int>(a->ausfuehrung()) : -1;
 }
 
 const char* k1520_em_variant(K1520Handle h) {
@@ -660,10 +760,10 @@ void k1520_set_write_protect(K1520Handle h, int drive, bool wp) {
 void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                               K1520SerialCallback cb, void* ctx) {
     auto m = toMachine(h);
-    // Alter Unterbau (Entwurf 19 §8, seit AP-S5 über die Anschlüsse der Karten): der
-    // Rückruf bekommt die Bytes, die der Gast sendet, in ihrer Zeichenzeit — aber nur,
+    // Alter Unterbau (Entwurf 19 §8, seit AP-S5 ueber die Anschluesse der Karten): der
+    // Rueckruf bekommt die Bytes, die der Gast sendet, in ihrer Zeichenzeit — aber nur,
     // solange weder ein Transport (k1520_serial_start) noch der Rx/Tx-Loop die
-    // Schnittstelle belegt; sonst geht er ins Leere.  Ein leerer Rückruf (cb == NULL)
+    // Schnittstelle belegt; sonst geht er ins Leere.  Ein leerer Rueckruf (cb == NULL)
     // meldet ab.  A5120: DFU = DFÜ/V.24, PRINTER = Drucker (A32-B);
     // K8915: DFU = DFÜ/IFSS2, PRINTER = Drucker/IFSS1.
     K1520Machine::SerialCb f;
@@ -674,7 +774,7 @@ void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
         m->setPrinterCallback(std::move(f));
 }
 
-// Alter Unterbau: das Byte landet sofort im Empfänger — ins Leere, solange ein
+// Alter Unterbau: das Byte landet sofort im Empfaenger — ins Leere, solange ein
 // Transport oder der Loop die Schnittstelle belegt (Entwurf 19 §8).
 void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
     auto m = toMachine(h);
@@ -684,7 +784,7 @@ void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte) {
         m->printerSend(byte);
 }
 
-// ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ─────────────────────────
+// ─── Serielle Schnittstellen nach aussen (Entwurf 19 §8) ─────────────────────────
 
 // Die ganze Datei steht in extern "C" — Vorlagen brauchen C++-Bindung.
 extern "C++" {
@@ -694,14 +794,14 @@ using k1520::serial::SerialHub;
 
 SerialHub* hubOf(K1520Handle h) { return toMachine(h)->serialHub(); }
 
-// Gültiger Index → Hub, sonst nullptr.
+// Gueltiger Index → Hub, sonst nullptr.
 SerialHub* hubFor(K1520Handle h, int i) {
     SerialHub* hub = hubOf(h);
     return (hub && i >= 0 && i < hub->anzahl()) ? hub : nullptr;
 }
 
-// Nullterminiert und höchstens n-1 Bytes; ein UTF-8-Zeichen wird nie zerschnitten
-// (Fortsetzungsbytes 10xxxxxx am Schnitt gehören zum davor begonnenen Zeichen).
+// Nullterminiert und hoechstens n-1 Bytes; ein UTF-8-Zeichen wird nie zerschnitten
+// (Fortsetzungsbytes 10xxxxxx am Schnitt gehoeren zum davor begonnenen Zeichen).
 template <size_t N>
 void copyStr(char (&dst)[N], const std::string& src) {
     size_t n = src.size() < N - 1 ? src.size() : N - 1;
@@ -711,7 +811,7 @@ void copyStr(char (&dst)[N], const std::string& src) {
     dst[n] = '\0';
 }
 
-// Feld mit Nullterminator-Sicherung lesen (ein Aufrufer könnte unterminiert füllen).
+// Feld mit Nullterminator-Sicherung lesen (ein Aufrufer koennte unterminiert fuellen).
 template <size_t N>
 std::string readStr(const char (&src)[N]) {
     size_t n = 0;
@@ -720,7 +820,7 @@ std::string readStr(const char (&src)[N]) {
 }
 
 // Ausgabestruktur nach der groesse-Regel (Header): nur so viele Bytes, wie der Aufrufer
-// angibt; groesse trägt zurück, wie viel geschrieben wurde.  false bei groesse < 4.
+// angibt; groesse traegt zurueck, wie viel geschrieben wurde.  false bei groesse < 4.
 template <class S>
 bool deliver(S* out, const S& full) {
     if (!out || out->groesse < sizeof(uint32_t)) return false;
@@ -789,12 +889,12 @@ bool k1520_serial_get_config(K1520Handle h, int i, K1520SerKonfig* out) {
 bool k1520_serial_configure(K1520Handle h, int i, const K1520SerKonfig* k) {
     SerialHub* hub = hubFor(h, i);
     if (!hub || !k || k->groesse < sizeof(uint32_t)) return false;
-    // Felder jenseits von groesse (ältere Aufrufer) behalten ihren aktuellen Wert.
+    // Felder jenseits von groesse (aeltere Aufrufer) behalten ihren aktuellen Wert.
     K1520SerKonfig full = toAbi(hub->konfig(i));
     const size_t n = k->groesse < sizeof full ? k->groesse : sizeof full;
     std::memcpy(reinterpret_cast<char*>(&full) + sizeof(uint32_t),
                 reinterpret_cast<const char*>(k) + sizeof(uint32_t), n - sizeof(uint32_t));
-    if (full.port == 0) return false;   // „vom System gewählt" gibt es nur im Kern (Tests)
+    if (full.port == 0) return false;   // „vom System gewaehlt" gibt es nur im Kern (Tests)
     k1520::serial::SerialKonfig c;
     c.betriebsart = static_cast<k1520::serial::Betriebsart>(full.betriebsart);
     c.rolle = static_cast<k1520::serial::Rolle>(full.rolle);
@@ -805,7 +905,7 @@ bool k1520_serial_configure(K1520Handle h, int i, const K1520SerKonfig* k) {
     c.xonxoff = full.xonxoff;
     c.taktquelle = full.taktquelle;
     c.datei = readStr(full.datei);
-    return hub->konfigurieren(i, c);   // prüft Aufzählungen, Taktquelle, Sperren
+    return hub->konfigurieren(i, c);   // prueft Aufzaehlungen, Taktquelle, Sperren
 }
 
 bool k1520_serial_start(K1520Handle h, int i) {
@@ -877,6 +977,18 @@ void k1520_mem_write(K1520Handle h, uint16_t addr, uint8_t data) {
     toMachine(h)->memWriteDebug(addr, data);
 }
 
+int k1520_mem_load(K1520Handle h, uint16_t addr, const char* path) {
+    if (!h || !path) return -1;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return -2;
+    const std::vector<char> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (static_cast<size_t>(addr) + data.size() > 0x10000u) return -3;
+    auto* m = toMachine(h);
+    for (size_t i = 0; i < data.size(); ++i)
+        m->memWriteDebug(static_cast<uint16_t>(addr + i), static_cast<uint8_t>(data[i]));
+    return static_cast<int>(data.size());
+}
+
 uint8_t k1520_io_read(K1520Handle h, uint8_t port) {
     return toMachine(h)->ioReadDebug(port);
 }
@@ -898,9 +1010,11 @@ int k1520_machine_type(K1520Handle h) {
 }
 
 uint8_t k1520_screen_char(K1520Handle h, int col, int row) {
-    // PC 1715: CP/A fährt 25 bzw. 17 Zeilen — die 25. (Index 24) ist die Statuszeile.
+    // PC 1715: CP/A faehrt 25 bzw. 17 Zeilen — die 25. (Index 24) ist die Statuszeile.
     // Die Karte begrenzt selbst auf ihr Format (K7221: 64 Spalten) und liefert sonst 20H.
-    const int zeilen = toMachine(h)->machineType() == K1520_MACHINE_PC1715 ? 25 : 24;
+    // MC80: 25 EGOS-Textzeilen (Textrueckgewinnung aus dem VIS-2a-Bild, AP M3).
+    const int typ = toMachine(h)->machineType();
+    const int zeilen = (typ == K1520_MACHINE_PC1715 || typ == K1520_MACHINE_MC80) ? 25 : 24;
     if (col < 0 || col >= 80 || row < 0 || row >= zeilen) return 0;
     return toMachine(h)->screenChar(col, row);
 }
@@ -1214,6 +1328,168 @@ const char* k1520_ptape_punch_file(K1520Handle h) {
 int k1520_ptape_punch_format(K1520Handle h) {
     auto* k = ptapeOf(h);
     return k ? static_cast<int>(k->stanzerFormat()) : -1;
+}
+
+// ─── Kassette K5020/K5200 (Entwurf 29, AP K5) ───────────────────────────────────
+namespace {
+thread_local std::string tape_fehler;
+bool tapeErgebnis(bool ok, const std::string& fehler) {
+    tape_fehler = ok ? std::string() : fehler;
+    return ok;
+}
+/// Karte und Laufwerk @p drive (0/1) oder nullptr (+ Fehlertext).
+kassette::KassettenLaufwerk* tapeLw(K1520Handle h, int drive) {
+    if (!h) { tape_fehler = "kein Handle"; return nullptr; }
+    K1520Machine* m = toMachine(h);
+    if (!m->kassettenLaufwerk(0)) { tape_fehler = "keine Kassettenkarte (K5020) gesteckt"; return nullptr; }
+    if (drive != 0 && drive != 1) { tape_fehler = "Laufwerk muss 0 oder 1 sein"; return nullptr; }
+    // MC80.2x: nur Laufwerk 0 (SK 1200 an der MBI, AP M11); sonst die Laufwerke der K5020.
+    auto* lw = m->kassettenLaufwerk(drive);
+    if (!lw) tape_fehler = "Laufwerk " + std::to_string(drive) + " gibt es an dieser Maschine nicht";
+    return lw;
+}
+/// Das eingelegte Medium oder nullptr (+ Fehlertext).
+std::shared_ptr<kassette::KassettenMedium> tapeMedium(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return nullptr;
+    auto m = lw->medium();
+    if (!m) tape_fehler = "keine Kassette eingelegt";
+    return m;
+}
+}  // namespace
+
+bool k1520_tape_install(K1520Handle h) {
+    if (!h) return tapeErgebnis(false, "kein Handle");
+    g_init_error.clear();
+    K1520Machine* m = toMachine(h);
+    if (!m->installK5020()) {
+        g_init_error = m->k5020Fehler();
+        return tapeErgebnis(false, g_init_error);
+    }
+    return tapeErgebnis(true, {});
+}
+
+bool k1520_tape_installed(K1520Handle h) { return h && toMachine(h)->kassettenLaufwerk(0) != nullptr; }
+
+const char* k1520_tape_error(K1520Handle) { return tape_fehler.c_str(); }
+
+bool k1520_tape_load(K1520Handle h, int drive, const char* path) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    if (!path || !*path) return tapeErgebnis(false, "kein Pfad");
+    std::string fehler;
+    const bool ok = lw->dateiBinden(path, fehler);
+    return tapeErgebnis(ok, fehler);
+}
+
+bool k1520_tape_new(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    return tapeErgebnis(lw->kassetteEinlegen(std::make_shared<kassette::KassettenMedium>(lw->neueKassette())),
+                        "Es liegt schon eine Kassette im Laufwerk");
+}
+
+bool k1520_tape_eject(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    if (!lw->medium()) return tapeErgebnis(false, "keine Kassette eingelegt");
+    // Eine gebundene Datei schreibt das Laufwerk vorher; scheitert das, bleibt die Kassette liegen.
+    const bool ok = lw->kassetteAuswerfen(false);
+    return tapeErgebnis(ok, lw->letzterDateifehler().empty()
+                                ? std::string("Entladen gesperrt (Geraet reserviert oder Band laeuft)")
+                                : lw->letzterDateifehler());
+}
+
+bool k1520_tape_flush(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    std::string fehler;
+    const bool ok = lw->speichern(fehler);
+    return tapeErgebnis(ok, fehler);
+}
+
+const char* k1520_tape_file(K1520Handle h, int drive) {
+    auto* lw = h ? toMachine(h)->kassettenLaufwerk(drive) : nullptr;
+    static thread_local std::string buf;
+    buf = lw ? lw->pfad() : std::string();
+    return buf.c_str();
+}
+
+int k1520_tape_side(K1520Handle h, int drive) {
+    auto m = tapeMedium(h, drive);
+    return m ? static_cast<int>(m->aktiveSeite()) : -1;
+}
+
+bool k1520_tape_flip(K1520Handle h, int drive) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    return tapeErgebnis(lw->wenden(),
+                        "Wenden nur bei eingelegter Kassette, stehendem und nicht reserviertem Geraet");
+}
+
+bool k1520_tape_protect(K1520Handle h, int drive, int side, bool on) {
+    auto m = tapeMedium(h, drive);
+    if (!m) return false;
+    if (side != 0 && side != 1) return tapeErgebnis(false, "Seite muss 0 oder 1 sein");
+    m->setSchreibschutz(static_cast<kassette::Seite>(side), on);
+    return tapeErgebnis(true, {});
+}
+
+int k1520_tape_protected(K1520Handle h, int drive, int side) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return -1;
+    return m->schreibgeschuetzt(static_cast<kassette::Seite>(side)) ? 1 : 0;
+}
+
+bool k1520_tape_set_position(K1520Handle h, int drive, int64_t um) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    return tapeErgebnis(lw->positionSetzen(um),
+                        "Position nur bei eingelegter Kassette und stehendem Band setzbar");
+}
+
+bool k1520_tape_status(K1520Handle h, int drive, int* loaded, int* side,
+                       int64_t* pos_um, int64_t* len_um, int* blocks, int* moving) {
+    auto* lw = tapeLw(h, drive);
+    if (!lw) return false;
+    auto m = lw->medium();
+    if (loaded) *loaded = m ? 1 : 0;
+    if (side)   *side = m ? static_cast<int>(m->aktiveSeite()) : -1;
+    if (pos_um) *pos_um = static_cast<int64_t>(lw->positionMm() * 1000.0);
+    if (len_um) *len_um = m ? static_cast<int64_t>(m->geometrie().laenge_um) : 0;
+    if (blocks) *blocks = m ? static_cast<int>(m->anzahlBloecke(m->aktiveSeite())) : 0;
+    if (moving) *moving = lw->bewegt() ? 1 : 0;
+    return true;
+}
+
+int k1520_tape_block_count(K1520Handle h, int drive, int side) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return -1;
+    return static_cast<int>(m->anzahlBloecke(static_cast<kassette::Seite>(side)));
+}
+
+bool k1520_tape_block_info(K1520Handle h, int drive, int side, int i,
+                           int64_t* start_um, int* bytes, int* mark) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return false;
+    const auto s = static_cast<kassette::Seite>(side);
+    if (i < 0 || static_cast<size_t>(i) >= m->anzahlBloecke(s)) return false;
+    const auto& b = m->block(s, static_cast<size_t>(i));
+    if (start_um) *start_um = m->blockStart(s, static_cast<size_t>(i));
+    if (bytes)    *bytes = static_cast<int>(b.bytes.size());
+    if (mark)     *mark = b.bandmarke() ? 1 : 0;
+    return true;
+}
+
+int k1520_tape_block_data(K1520Handle h, int drive, int side, int i, uint8_t* buf, int cap) {
+    auto m = tapeMedium(h, drive);
+    if (!m || (side != 0 && side != 1)) return -1;
+    const auto s = static_cast<kassette::Seite>(side);
+    if (i < 0 || static_cast<size_t>(i) >= m->anzahlBloecke(s)) return -1;
+    const auto& b = m->block(s, static_cast<size_t>(i));
+    if (buf && cap > 0)
+        std::copy_n(b.bytes.begin(), std::min<size_t>(b.bytes.size(), static_cast<size_t>(cap)), buf);
+    return static_cast<int>(b.bytes.size());
 }
 
 bool k1520_ptape_punch_enable(K1520Handle h, bool on) {
@@ -1557,7 +1833,7 @@ int k1520_term_log_read(K1520Handle h, int i, char* buf, int cap) {
     const TermSicht t = termOf(h, i);
     auto* o = t ? t.original() : nullptr;
     if (!o || !buf || cap <= 0) return 0;
-    const std::string s = o->hw().holeMitschrift(size_t(cap));   // der Rest bleibt für den nächsten Aufruf
+    const std::string s = o->hw().holeMitschrift(size_t(cap));   // der Rest bleibt fuer den naechsten Aufruf
     std::memcpy(buf, s.data(), s.size());
     return int(s.size());
 }

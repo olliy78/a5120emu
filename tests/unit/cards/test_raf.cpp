@@ -1,7 +1,7 @@
 /**
  * @file test_raf.cpp
  * @brief RAM-Floppy RAF 128/512/2M: Registermodell, Sperre, Spiegelung, Lebenslauf — mit einem
- *        echten Z80, der OUT (C),r / IN r,(C) / INIR / INI / OTIR fährt (A8–A15 = Register B).
+ *        echten Z80, der OUT (C),r / IN r,(C) / INIR / INI / OTIR faehrt (A8–A15 = Register B).
  *        doc/design/22_raf512.md §3, §5.1, AP-R1.
  */
 
@@ -17,7 +17,7 @@
 
 namespace {
 
-/// Bus + Karte + Z80 mit eigenem 64-KB-Speicher (der Speicher läuft NICHT über den Bus).
+/// Bus + Karte + Z80 mit eigenem 64-KB-Speicher (der Speicher laeuft NICHT ueber den Bus).
 struct Rig {
     K1520Bus bus;
     RAF      raf;
@@ -85,10 +85,10 @@ TEST(Raf, SektorSchreibenUndLesenMitOtirInir) {
     const auto m = muster(0x11);
     r.sektorSchreiben(0x0123, m);
     EXPECT_EQ(r.sektorLesen(0x0123), m);
-    // Rückwärtsreihenfolge: das erste Puffer-Byte landet auf Byte 127 des Sektors.
+    // Rueckwaertsreihenfolge: das erste Puffer-Byte landet auf Byte 127 des Sektors.
     EXPECT_EQ(r.raf.peek(0x123 * 128 + 127), m[0]);
     EXPECT_EQ(r.raf.peek(0x123 * 128 + 0), m[127]);
-    // Nachbarsektoren unberührt.
+    // Nachbarsektoren unberuehrt.
     EXPECT_EQ(r.raf.peek(0x122 * 128 + 5), 0x00);
     EXPECT_EQ(r.raf.peek(0x124 * 128 + 5), 0x00);
 }
@@ -154,7 +154,7 @@ TEST(Raf, Sektor8192SpiegeltAufSektor0_A13A14WerdenNichtAusgewertet) {
     EXPECT_EQ(r.sektorLesen(0x2000), muster(0x01));   // A13
     EXPECT_EQ(r.sektorLesen(0x4000), muster(0x01));   // A14
     EXPECT_EQ(r.sektorLesen(0x6000), muster(0x01));
-    r.sektorSchreiben(0x2005, muster(0x99));          // Schreiben über den Spiegel
+    r.sektorSchreiben(0x2005, muster(0x99));          // Schreiben ueber den Spiegel
     EXPECT_EQ(r.sektorLesen(0x0005), muster(0x99));
 }
 
@@ -172,7 +172,7 @@ TEST(Raf, ResetErhaeltInhaltPowerOnNicht) {
     EXPECT_EQ(r.raf.peek(0x10 * 128 + 127), 0x00);
 }
 
-/// raftst aus RAF2X24O.MAC (Ports 88H/8AH/8CH/8EH), Byte für Byte als Z80-Code.
+/// raftst aus RAF2X24O.MAC (Ports 88H/8AH/8CH/8EH), Byte fuer Byte als Z80-Code.
 /// Ergebnis je Karte (Spuren zu 16 KB) ab 0200H.
 TEST(Raf, RaftstFindet32SpurenAn88HUndNullAnDenLeerenPorts) {
     Rig r;
@@ -283,7 +283,7 @@ TEST(Raf, AbweichendeBasisUndPortbelegung) {
     // An 88H/89H liegt nichts: der Bus liefert FFH.
     r.run({0xED, 0x78, 0x76}, 0x0088);
     EXPECT_EQ(r.cpu.A, 0xFF);
-    // Doppelbelegung: ein ANDERES Gerät auf demselben Port -> Ausnahme; dieselbe Karte erneut: still.
+    // Doppelbelegung: ein ANDERES Geraet auf demselben Port -> Ausnahme; dieselbe Karte erneut: still.
     RAF zweite({RAF::Typ::RAF512, 0x91});
     EXPECT_THROW(zweite.attachToBus(r.bus), std::runtime_error);
     EXPECT_NO_THROW(r.raf.attachToBus(r.bus));
@@ -302,7 +302,7 @@ TEST(Raf, SaveStateUndRohdatei) {
     EXPECT_EQ(s.raf.latch(), r.raf.latch());
     EXPECT_EQ(s.sektorLesen(0x0042), muster(0x71));
 
-    // Falscher/zu kurzer Block ändert nichts.
+    // Falscher/zu kurzer Block aendert nichts.
     Rig t;
     const uint8_t* q = blob.data();
     EXPECT_FALSE(t.raf.loadState(q, blob.data() + blob.size() - 1));
@@ -317,7 +317,7 @@ TEST(Raf, SaveStateUndRohdatei) {
     Rig u;
     ASSERT_TRUE(u.raf.ladeInhalt(pfad));
     EXPECT_EQ(u.raf.peek(0x42 * 128 + 127), muster(0x71)[0]);
-    // Falsche Größe: false, Inhalt unverändert.
+    // Falsche Groesse: false, Inhalt unveraendert.
     { std::ofstream f(pfad, std::ios::binary | std::ios::trunc); f << "zu klein"; }
     EXPECT_FALSE(u.raf.ladeInhalt(pfad));
     EXPECT_EQ(u.raf.peek(0x42 * 128 + 127), muster(0x71)[0]);
@@ -326,7 +326,7 @@ TEST(Raf, SaveStateUndRohdatei) {
 }
 
 TEST(Raf, SaveStateOhneInhaltSetztNurDasLatch) {
-    // Für die Rückwärts-Historie des Debuggers (AP-R2): Typ + Latch, Inhaltslänge 0.
+    // Fuer die Rueckwaerts-Historie des Debuggers (AP-R2): Typ + Latch, Inhaltslaenge 0.
     Rig r;
     r.sektorSchreiben(0x0007, muster(0x10));
     std::vector<uint8_t> blob;

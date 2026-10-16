@@ -1,4 +1,4 @@
-// Unit-Tests für das Speicher-Watchpoint-Matching (tools/mem_watch.h).
+// Unit-Tests fuer das Speicher-Watchpoint-Matching (tools/mem_watch.h).
 #include "tools/mem_watch.h"
 #include <gtest/gtest.h>
 
@@ -9,10 +9,10 @@ MemWatch wpWrite(uint16_t lo, uint16_t hi){ MemWatch w; w.lo=lo; w.hi=hi; w.wr=t
 }
 
 TEST(MemWatch, RangeAndDirection){
-    MemWatch w = wpWrite(0x6000, 0x6003);        // write-watch über Bereich
+    MemWatch w = wpWrite(0x6000, 0x6003);        // write-watch ueber Bereich
     EXPECT_TRUE (w.matches(false, 0x6000, 0x11)); // im Bereich, Schreiben
     EXPECT_TRUE (w.matches(false, 0x6003, 0x22));
-    EXPECT_FALSE(w.matches(false, 0x6004, 0x33)); // außerhalb
+    EXPECT_FALSE(w.matches(false, 0x6004, 0x33)); // ausserhalb
     EXPECT_FALSE(w.matches(false, 0x5FFF, 0x33));
     EXPECT_FALSE(w.matches(true,  0x6000, 0x11)); // Lesen, aber nur Schreib-Watch
 }
@@ -34,9 +34,9 @@ TEST(MemWatch, ConditionEqNe){
 
 TEST(MemWatch, ConditionChanged){
     MemWatch w = wpWrite(0x20,0x20); w.cond=MemWatch::CHG;
-    EXPECT_TRUE (w.matches(false, 0x20, 0x05));    // erstes Mal: gilt als geändert
-    EXPECT_FALSE(w.matches(false, 0x20, 0x05));    // gleicher Wert: nicht geändert
-    EXPECT_TRUE (w.matches(false, 0x20, 0x06));    // anderer Wert: geändert
+    EXPECT_TRUE (w.matches(false, 0x20, 0x05));    // erstes Mal: gilt als geaendert
+    EXPECT_FALSE(w.matches(false, 0x20, 0x05));    // gleicher Wert: nicht geaendert
+    EXPECT_TRUE (w.matches(false, 0x20, 0x06));    // anderer Wert: geaendert
     EXPECT_FALSE(w.matches(false, 0x20, 0x06));    // wieder gleich
 }
 
@@ -44,8 +44,8 @@ TEST(MemWatch, ChangedTracksPerAddress){
     MemWatch w; w.lo=0x30; w.hi=0x31; w.wr=true; w.cond=MemWatch::CHG;
     EXPECT_TRUE (w.matches(false, 0x30, 0xAA));    // 0x30 erstmals
     EXPECT_TRUE (w.matches(false, 0x31, 0xBB));    // 0x31 erstmals (eigene Historie)
-    EXPECT_FALSE(w.matches(false, 0x30, 0xAA));    // 0x30 unverändert
-    EXPECT_TRUE (w.matches(false, 0x31, 0xCC));    // 0x31 geändert
+    EXPECT_FALSE(w.matches(false, 0x30, 0xAA));    // 0x30 unveraendert
+    EXPECT_TRUE (w.matches(false, 0x31, 0xCC));    // 0x31 geaendert
 }
 
 TEST(MemWatch, AnyConditionAlwaysFires){

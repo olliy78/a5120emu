@@ -2,17 +2,17 @@
  * @file test_reti.cpp
  * @brief RETI-Erkennung und IUS/IEO-Verhalten von CTC, PIO und SIO.
  *
- * Im IM2-Betrieb hängen die Bausteine in einer Prioritätskette.  Wer eine
+ * Im IM2-Betrieb haengen die Bausteine in einer Prioritaetskette.  Wer eine
  * Interruptquittung bekommt (`getVector()`), setzt sein IUS-Bit („interrupt
- * under service") und nimmt es beim `RETI` der ISR wieder zurück
+ * under service") und nimmt es beim `RETI` der ISR wieder zurueck
  * (`onRETI()` / `K1520Bus::signalRETI()`).  Solange IUS steht, quittiert der
  * Baustein KEINEN weiteren Interrupt derselben Quelle — bricht das, wird eine
  * ISR von ihrer eigenen Quelle unterbrochen, und der Fehler zeigt sich erst
- * viel später als verschluckter Handshake.
+ * viel spaeter als verschluckter Handshake.
  *
  * Vorgeschichte: entstanden als loses `test_reti.cpp` im Projektwurzel-
- * verzeichnis (printf-Prüfungen, kein Build-Target, lief nie mit).  Am
- * 2026-08-07 nach GoogleTest überführt und registriert — dabei kam heraus, dass
+ * verzeichnis (printf-Pruefungen, kein Build-Target, lief nie mit).  Am
+ * 2026-08-07 nach GoogleTest ueberfuehrt und registriert — dabei kam heraus, dass
  * seine IEO-Erwartung nicht dem implementierten Verhalten entspricht, siehe
  * `IeoBlocksOnPendingNotOnService` am Dateiende.
  */
@@ -47,7 +47,7 @@ void armSio(Z80SIO& sio) {
     sio.setIEI(true);
     sio.ioWrite(1, 0x01);   // WR0 (Kanal A): Zeiger auf WR1
     // WR1 D4–D3 = 10 → Interrupt bei JEDEM Zeichen.  Bis 2026-10-01 stand hier 08H
-    // („erstes Zeichen"); die Fälle unten erwarten aber, dass das zweite Zeichen nach
+    // („erstes Zeichen"); die Faelle unten erwarten aber, dass das zweite Zeichen nach
     // dem RETI wieder anfordert — das trug nur die falsche Lesart D3–D2 der SIO.
     sio.ioWrite(1, 0x10);
     sio.ioWrite(3, 0x01);   // WR0 (Kanal B): Zeiger auf WR1
@@ -74,7 +74,7 @@ TEST(RetiChain, CtcHoldsIusUntilRetiAndOnlyThenAcknowledgesAgain) {
 
     EXPECT_EQ(ctc.getVector(), 0x20) << "Vektor Kanal 0 = Basis|0";
 
-    // Zweiter Zeitablauf WÄHREND der ISR: IUS steht, also keine neue Quittung.
+    // Zweiter Zeitablauf WAEHREND der ISR: IUS steht, also keine neue Quittung.
     for (int i = 0; i < 80; ++i) ctc.clockTick();
     EXPECT_EQ(ctc.getVector(), 0xFF)
         << "CTC quittierte trotz gesetztem IUS erneut — ISR unterbricht sich selbst";
@@ -82,7 +82,7 @@ TEST(RetiChain, CtcHoldsIusUntilRetiAndOnlyThenAcknowledgesAgain) {
     ctc.onRETI();
     bus.updateInterruptChain();
     EXPECT_EQ(ctc.getVector(), 0x20)
-        << "nach RETI muss der wartende Interrupt quittiert werden (IUS gelöscht)";
+        << "nach RETI muss der wartende Interrupt quittiert werden (IUS geloescht)";
 }
 
 // ─── PIO ─────────────────────────────────────────────────────────────────────
@@ -101,13 +101,44 @@ TEST(RetiChain, PioHoldsIusUntilRetiAndOnlyThenAcknowledgesAgain) {
 
     EXPECT_EQ(pio.getVector(), 0xC4);
 
-    pio.portAWrite(0x02);                     // neue Daten während der ISR
+    pio.portAWrite(0x02);                     // neue Daten waehrend der ISR
     EXPECT_EQ(pio.getVector(), 0xFF)
         << "PIO quittierte trotz gesetztem IUS erneut";
 
     pio.onRETI();
     bus.updateInterruptChain();
     EXPECT_EQ(pio.getVector(), 0xC4) << "nach RETI wieder quittierbar";
+}
+
+/// RETI der Port-B-ISR, waehrend Port A schon ANFORDERT (noch nicht quittiert): bei der
+/// RETI-Dekodierung gibt ein nur anstehender Kanal IEO frei — B muss aus der Bedienung, sonst
+/// sperrt B sich selbst bis zum naechsten RETI (Befund A8, BCU-KMBG: Kassettenecho ueber B,
+/// Ausgabe ueber A, beide Interrupts abwechselnd).
+TEST(RetiChain, PioRetiVonBLoeschtIusAuchWennAAnfordert) {
+    K1520Bus bus;
+    Z80PIO pio("PIO");
+    bus.registerIO(&pio, 0x00, 4);
+    bus.setInterruptChain({&pio});
+    armPio(pio, 0xC4);
+    pio.ioWrite(3, 0xC8);   // Port B: Vektor
+    pio.ioWrite(3, 0x4F);   // Modus 1 (Eingabe)
+    pio.ioWrite(3, 0x87);   // IE=1
+    bus.updateInterruptChain();
+
+    pio.portBWrite(0x11);
+    bus.updateInterruptChain();
+    ASSERT_EQ(bus.interruptAcknowledge(), 0xC8) << "B quittiert";
+    bus.updateInterruptChain();
+    pio.portAWrite(0x22);                     // A fordert an, waehrend B bedient wird
+    bus.updateInterruptChain();
+    bus.signalRETI();                         // RETI der B-ISR
+    EXPECT_EQ(bus.interruptAcknowledge(), 0xC4) << "A quittiert";
+    bus.updateInterruptChain();
+    bus.signalRETI();                         // RETI der A-ISR
+    pio.portBWrite(0x33);
+    bus.updateInterruptChain();
+    EXPECT_EQ(bus.interruptAcknowledge(), 0xC8)
+        << "B blieb nach seinem RETI in Bedienung (IUS) und sperrt sich selbst";
 }
 
 // ─── SIO ─────────────────────────────────────────────────────────────────────
@@ -126,9 +157,9 @@ TEST(RetiChain, SioHoldsIusUntilRetiAndOnlyThenAcknowledgesAgain) {
 
     // Kanal A / Rx codiert 110 in den Vektorbits [3:1] → Basis 0x60 wird zu 0x6C.
     const uint8_t kChARx = 0x6C, kBase = 0x60;
-    EXPECT_EQ(sio.getVector(), kChARx) << "Vektor für Kanal A Rx falsch codiert";
+    EXPECT_EQ(sio.getVector(), kChARx) << "Vektor fuer Kanal A Rx falsch codiert";
 
-    sio.channelA().rxByte(0x43);              // zweites Zeichen während der ISR
+    sio.channelA().rxByte(0x43);              // zweites Zeichen waehrend der ISR
     // Anders als CTC/PIO liefert der SIO bei „nichts quittierbar" die reine
     // Vektorbasis statt 0xFF — beides bedeutet „kein Quellcode gesetzt".
     EXPECT_EQ(sio.getVector(), kBase)
@@ -234,22 +265,22 @@ TEST(RetiChain, SioRequestIsIusGatedUntilReti) {
 
 /**
  * @test RetiChain/IeoBlocksOnPendingNotOnService
- * @brief Hält fest, dass IEO NUR bei anstehendem, nicht bei laufendem Interrupt sperrt.
+ * @brief Haelt fest, dass IEO NUR bei anstehendem, nicht bei laufendem Interrupt sperrt.
  *
  * Alle drei Bausteine implementieren `getIEO()` als „IEI && kein Interrupt
  * ANSTEHEND" (`z80_ctc.cpp:381`, `z80_pio.cpp:382`, `z80_sio.cpp:192`).  Nach
- * der Quittung ist `pending` gelöscht und `ius` gesetzt — IEO gibt also wieder
- * frei, obwohl die ISR noch läuft.  Auf echter Hardware bliebe IEO gesperrt,
- * bis `RETI` das IUS zurücknimmt; nachrangige Bausteine könnten die laufende
+ * der Quittung ist `pending` geloescht und `ius` gesetzt — IEO gibt also wieder
+ * frei, obwohl die ISR noch laeuft.  Auf echter Hardware bliebe IEO gesperrt,
+ * bis `RETI` das IUS zuruecknimmt; nachrangige Bausteine koennten die laufende
  * ISR also nicht unterbrechen.
  *
  * Der Schutz greift hier eine Ebene tiefer: `getVector()` verweigert die
  * Quittung, solange IUS steht (die Tests oben) — die Verschachtelung wird also
- * je Baustein verhindert, nicht über die Kette.  Für den A5120 hat sich das als
- * ausreichend erwiesen (voller CP/A-Boot + alle Integrationstests grün).
+ * je Baustein verhindert, nicht ueber die Kette.  Fuer den A5120 hat sich das als
+ * ausreichend erwiesen (voller CP/A-Boot + alle Integrationstests gruen).
  *
- * Dieser Test ist bewusst ein WÄCHTER DES IST-ZUSTANDS: schlägt er fehl, wurde
- * das IEO-Verhalten geändert — dann gehört dieser Kommentar korrigiert und die
+ * Dieser Test ist bewusst ein WAECHTER DES IST-ZUSTANDS: schlaegt er fehl, wurde
+ * das IEO-Verhalten geaendert — dann gehoert dieser Kommentar korrigiert und die
  * Kette braucht neue Tests.  Bewertung: `doc/testsystem_rework.md` §8.
  */
 TEST(RetiChain, IeoBlocksOnPendingNotOnService) {

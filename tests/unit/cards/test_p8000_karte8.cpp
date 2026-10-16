@@ -17,11 +17,11 @@ namespace {
 struct P8000Karte8_ : ::testing::Test {
     K1520Bus     bus;
     P8000Karte8  k{bus};
-    std::array<std::string, 4> tty;   ///< was die Kanäle gesendet haben (Wandler-Stub: sofort)
+    std::array<std::string, 4> tty;   ///< was die Kanaele gesendet haben (Wandler-Stub: sofort)
 
     void SetUp() override { k.powerOn(); }
 
-    /// Wandler-Stub: gesendete Zeichen aller vier Kanäle einsammeln.
+    /// Wandler-Stub: gesendete Zeichen aller vier Kanaele einsammeln.
     void abholen() {
         for (int i = 0; i < 4; ++i)
             while (k.anschluss(i).senderHatZeichen())
@@ -94,7 +94,7 @@ TEST_F(P8000Karte8_, Latches_10H_14H_VierfachGespiegelt_NurSchreibend) {
     for (int i = 0; i < 4; ++i) { EXPECT_EQ(ereignisse[i].first, 0); EXPECT_EQ(ereignisse[4 + i].first, 1); }
     EXPECT_EQ(k.latch1(), 0x13);
     EXPECT_EQ(k.latch2(), 0x23);
-    // nicht lesbar (DS8282 nur Ausgänge), auch nicht im Spiegel
+    // nicht lesbar (DS8282 nur Ausgaenge), auch nicht im Spiegel
     for (int i = 0; i < 8; ++i) EXPECT_EQ(in(uint8_t(0x10 + i)), 0xFF) << i;
 }
 
@@ -106,7 +106,7 @@ TEST_F(P8000Karte8_, LatchStartwertAusConfig) {
     k2.powerOn();
     EXPECT_EQ(k2.latch1(), 0xA5);
     EXPECT_EQ(k2.latch2(), 0xA5);
-    k2.reset();   // /RES setzt die DS8282 nicht zurück (kein Reset-Pin)
+    k2.reset();   // /RES setzt die DS8282 nicht zurueck (kein Reset-Pin)
     EXPECT_EQ(k2.latch1(), 0xA5);
 }
 
@@ -195,11 +195,11 @@ TEST_F(P8000Karte8_, KetteDmaPio2Ctc0Sio0Sio1Pio0Pio1Ctc1) {
     EXPECT_EQ(folge, (std::vector<int>{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70}));
 }
 
-/// Wächter P22 (Merkposten p8000 Nr. 40): nach EI nimmt der U880 erst nach dem FOLGENDEN Befehl
+/// Waechter P22 (Merkposten p8000 Nr. 40): nach EI nimmt der U880 erst nach dem FOLGENDEN Befehl
 /// einen Interrupt an.  `EI; RETI` am Ende jeder ISR der Koppelsoftware — ohne die Sperre fiel ein
 /// anstehender Interrupt zwischen beide, RETI lief nie, und unter Last wuchs der Stapel in den Code.
 TEST_F(P8000Karte8_, NachEiErstNachDemFolgendenBefehlEinInterrupt) {
-    // `EI; RETI` (FB ED 4D) aus dem EPROM (nach Reset überall eingeblendet).
+    // `EI; RETI` (FB ED 4D) aus dem EPROM (nach Reset ueberall eingeblendet).
     uint16_t ei = 0;
     for (uint32_t a = 0; a + 2 < 0x2000 && !ei; ++a)
         if (k.speicher().peek(uint16_t(a)) == 0xFB && k.speicher().peek(uint16_t(a + 1)) == 0xED &&
@@ -223,7 +223,7 @@ TEST_F(P8000Karte8_, NachEiErstNachDemFolgendenBefehlEinInterrupt) {
     ASSERT_GT(k.schritt(), 0);                     // EI
     EXPECT_TRUE(c.IFF1);
     EXPECT_EQ(c.PC, uint16_t(ei + 1));
-    ASSERT_GT(k.schritt(), 0);                     // RETI läuft — noch keine Annahme
+    ASSERT_GT(k.schritt(), 0);                     // RETI laeuft — noch keine Annahme
     EXPECT_NE(c.PC, uint16_t(ei + 1)) << "Interrupt zwischen EI und RETI angenommen";
     EXPECT_EQ(c.SP, 0xF002) << "RETI hat den Stapel nicht abgebaut";
     EXPECT_TRUE(c.IFF1);
@@ -289,7 +289,7 @@ TEST_F(P8000Karte8_, NmiWeicheFolgtPio0B7) {
 }
 
 TEST_F(P8000Karte8_, NmiTasteLaeuftBisInDenU880) {
-    // NMI-Annahme: Einsprung 0066H (EPROM ist nach Reset überall), dort steht MON8 3.1 `JP 4000H`
+    // NMI-Annahme: Einsprung 0066H (EPROM ist nach Reset ueberall), dort steht MON8 3.1 `JP 4000H`
     k.nmiTaste();
     EXPECT_GT(k.schritt(), 0);
     EXPECT_FALSE(bus.isNMI());
@@ -300,7 +300,7 @@ TEST_F(P8000Karte8_, NmiTasteLaeuftBisInDenU880) {
 // ─── Baudtakt (P2a §5) ───────────────────────────────────────────────────────
 
 TEST_F(P8000Karte8_, BaudTty1_CTC1K1_Teilt1229000DurchZkUndZwei) {
-    // CTC1 K1: Zähler (D6), Zeitkonstante folgt (D2), Steuerwort (D0); ZK = 1
+    // CTC1 K1: Zaehler (D6), Zeitkonstante folgt (D2), Steuerwort (D0); ZK = 1
     out(0x2D, 0x47); out(0x2D, 0x01);
     // SIO0 B: ×32, 1 Stoppbit, 8 Bit senden
     out(0x27, 0x04); out(0x27, 0x84);
@@ -327,7 +327,7 @@ TEST_F(P8000Karte8_, BaudTty3_CTC0K0_Tty0_2_CTC1K0_K2) {
 }
 
 TEST_F(P8000Karte8_, ZaehlerAm1229MHzEingangLaeuftMitPhi) {
-    // Zähler-Kanal, ZK = 100 ⇒ ein ZC/TO je 100 Eingangsimpulse (je 3,2547 Takte)
+    // Zaehler-Kanal, ZK = 100 ⇒ ein ZC/TO je 100 Eingangsimpulse (je 3,2547 Takte)
     int ereignisse = 0;
     k.ctc1().setZCTOCallback([&](int c, bool lvl) { if (c == 0 && lvl) ++ereignisse; });
     out(0x2C, 0x47); out(0x2C, 100);
@@ -346,7 +346,7 @@ TEST_F(P8000Karte8_, Mon8_3_1_MeldetSichAufTty1MitDemHardwaretestBanner) {
     const bool ok = laufeBisText(1, "P8000 Hardwaretest U880 - Version 3.1", 60'000'000);
     EXPECT_TRUE(ok) << "tty1: [" << tty[1] << "]  PC=" << std::hex << k.cpu().PC
                     << " tty0=[" << tty[0] << "] tty2=[" << tty[2] << "] tty3=[" << tty[3] << "]";
-    // die Konsole ist tty1; die übrigen Kanäle bleiben stumm
+    // die Konsole ist tty1; die uebrigen Kanaele bleiben stumm
     EXPECT_TRUE(tty[0].empty() && tty[2].empty() && tty[3].empty());
 }
 

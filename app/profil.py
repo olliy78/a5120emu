@@ -33,11 +33,11 @@ class Programmprofil:
     maschine: str
     #: Programmname — Starter, ``.desktop``, Meldungen auf der Konsole.
     programm: str
-    #: Fenstertitel, Startmenü-Eintrag, ``.desktop``-Name, Kopf der Startskripte.
+    #: Fenstertitel, Startmenue-Eintrag, ``.desktop``-Name, Kopf der Startskripte.
     titel: str
-    #: Rechner, wie er im Text genannt wird („Der A5120 läuft mit …").
+    #: Rechner, wie er im Text genannt wird („Der A5120 laeuft mit …").
     rechner: str
-    #: Einzeiler für „Über“ und ``--help``.
+    #: Einzeiler fuer „Ueber“ und ``--help``.
     beschreibung: str
     #: Konfiguration des Anwenders in :func:`app.paths.config_dir`.
     konfig_datei: str
@@ -55,74 +55,83 @@ class Programmprofil:
     #: Modellwahl unter *Einstellungen ▸ Allgemein*: A5120 / A5120.16 (Erweiterungs-
     #: modul, `app/modell.py`), K8915 V3 / V2, PRG 710 / PRG 710-1, PC 1715 / 1715W.
     modellwahl: bool = False
-    #: Die wählbaren Modelle: ``(Schlüssel, Kern-Maschine, Kern-``em``, Anzeigename,
-    #: Tastatur)``.  Leer = ein Modell, die Maschine des Profils.  Der Schlüssel steht
+    #: Die waehlbaren Modelle: ``(Schluessel, Kern-Maschine, Kern-``em``, Anzeigename,
+    #: Tastatur)``.  Leer = ein Modell, die Maschine des Profils.  Der Schluessel steht
     #: in der Konfiguration (``general.model``); ein unbekannter wird zum ersten.
     modelle: Tuple[Tuple[str, str, Optional[str], str, str], ...] = ()
     #: Hinweistext am Auswahlfeld des Modells.
     modell_tipp: str = ""
-    #: Abweichender Nenntakt einzelner Modelle: ``(Schlüssel, Hertz, Text)``.  Alle
+    #: Abweichender Nenntakt einzelner Modelle: ``(Schluessel, Hertz, Text)``.  Alle
     #: anderen Modelle laufen mit :attr:`nenntakt_hz` (PC 1715W: 3,9936 MHz).
     modell_takte: Tuple[Tuple[str, int, str], ...] = ()
-    #: Modelle, die das Profil kennt, der Kern aber noch nicht fährt:
-    #: ``(Schlüssel, Anzeigename, Begründung)``.  Sie stehen ausgegraut im
-    #: Auswahlfeld (mit der Begründung als Hinweis), sind nicht wählbar und gelten
+    #: Modelle, die das Profil kennt, der Kern aber noch nicht faehrt:
+    #: ``(Schluessel, Anzeigename, Begruendung)``.  Sie stehen ausgegraut im
+    #: Auswahlfeld (mit der Begruendung als Hinweis), sind nicht waehlbar und gelten
     #: in einer Konfiguration als unbekannt.  Wer das Modell im Kern freischaltet,
     #: verschiebt die Zeile nach :attr:`modelle`.
     gesperrte_modelle: Tuple[Tuple[str, str, str], ...] = ()
-    #: Wählbare Hardwarevarianten unter *Einstellungen ▸ Allgemein* (Kaltstart nötig, wie die
-    #: Modellwahl): ``(Schlüssel, Beschriftung, Hinweis, ((Wert, Anzeige), …), Modelle)``.
-    #: Der erste Wert ist die Vorgabe (fehlender Schlüssel in der Konfiguration = Vorgabe).
-    #: ``Modelle`` = die Modellschlüssel, an denen die Wahl wirkt; sonst ist das Feld
+    #: Waehlbare Hardwarevarianten unter *Einstellungen ▸ Allgemein* (Kaltstart noetig, wie die
+    #: Modellwahl): ``(Schluessel, Beschriftung, Hinweis, ((Wert, Anzeige), …), Modelle)``.
+    #: Der erste Wert ist die Vorgabe (fehlender Schluessel in der Konfiguration = Vorgabe).
+    #: ``Modelle`` = die Modellschluessel, an denen die Wahl wirkt; sonst ist das Feld
     #: ausgegraut (PC 1715W: der Zeichensatz kommt von Diskette).  ``()`` = alle.
     hardware: Tuple[Tuple[str, str, str, Tuple[Tuple[str, str], ...], Tuple[str, ...]], ...] = ()
-    #: Terminal-Maschine (P8000): statt der Bildröhre ein Textbildschirm je Kern-Terminal
+    #: Terminal-Maschine (P8000): statt der Bildroehre ein Textbildschirm je Kern-Terminal
     #: (`app/ui/p8000_terminal.py`), Funktionstastenleiste statt Bildschirmtastatur.
     terminal: bool = False
     #: Kasten „Winchester" mit Plattenabbild (P8000, `app/ui/platten_widget.py`).
     platte: bool = False
-    #: Port-Vorschläge der seriellen Schnittstellen: ``(Schnittstellenname, Port)`` (P8000: tty0 …
-    #: tty7 als Server für Arbeitsplatz-Terminals, XB5 der Terminaleinheit als Client).
+    #: Port-Vorschlaege der seriellen Schnittstellen: ``(Schnittstellenname, Port)`` (P8000: tty0 …
+    #: tty7 als Server fuer Arbeitsplatz-Terminals, XB5 der Terminaleinheit als Client).
     schnittstellen_ports: Tuple[Tuple[str, int], ...] = ()
-    #: Terminalart je Modell (P8000, Entwurf 25 §11): ``(Schlüssel, Art)`` mit Art ``"kern"`` (Rechner
+    #: Terminalart je Modell (P8000, Entwurf 25 §11): ``(Schluessel, Art)`` mit Art ``"kern"`` (Rechner
     #: mit dem Kern-Terminal), ``"original"`` (Rechner mit dem Originalterminal Typ 2 an tty1) oder
-    #: ``"einheit"`` (nur das Terminal, ohne Rechner, Leitung über den Hub).  Fehlt ein Modell: ``"kern"``.
+    #: ``"einheit"`` (nur das Terminal, ohne Rechner, Leitung ueber den Hub).  Fehlt ein Modell: ``"kern"``.
     modell_arten: Tuple[Tuple[str, str], ...] = ()
     #: Zwei Auswahlfelder statt einem: *Rechnerausstattung* (die Modelle mit Rechner) und
     #: *Betriebsart* („Computer mit Terminal“ | „nur Terminal“ = das Modell der Art ``"einheit"``).
-    #: Der Modellschlüssel in der Konfiguration bleibt EINER (bei „nur Terminal“ der der Einheit);
-    #: die gemerkte Ausstattung steht zusätzlich als ``general.ausstattung`` (P23a).
+    #: Der Modellschluessel in der Konfiguration bleibt EINER (bei „nur Terminal“ der der Einheit);
+    #: die gemerkte Ausstattung steht zusaetzlich als ``general.ausstattung`` (P23a).
     betriebsart_wahl: bool = False
-    #: Frühere Modellschlüssel → heutige (alte Konfigurationen des P8000: die Kern-Terminal-Modelle
-    #: ``p8000``/``p8000-16``/``p8000-8`` gibt es in der Oberfläche nicht mehr).
+    #: Fruehere Modellschluessel → heutige (alte Konfigurationen des P8000: die Kern-Terminal-Modelle
+    #: ``p8000``/``p8000-16``/``p8000-8`` gibt es in der Oberflaeche nicht mehr).
     modell_alt: Tuple[Tuple[str, str], ...] = ()
-    #: Kästchen „Lochstreifen" unter *Allgemein* (K6022): am P8000 gibt es die Karte nicht.
+    #: Kaestchen „Lochstreifen" unter *Allgemein* (K6022): am P8000 gibt es die Karte nicht.
     ptape_wahl: bool = True
+    #: Kaestchen „Kassette (K5221, AKB K5020)" unter *Allgemein*: wie der Lochstreifen
+    #: nicht am P8000 (kein K1520-Bus).
+    tape_wahl: bool = True
+    #: Modelle mit fest eingebauter Kassette: das Kaestchen „Kassette“ ist dort ohne Wirkung
+    #: (ausgegraut, der Kasten steht immer da) — MC80.21/.22 (MBI).
+    tape_fest: Tuple[str, ...] = ()
     #: Lampen der Frontplatte: ``"k8915"`` (Latch 61H, aktiv low) oder ``"p8000"``
     #: (Run/Unit16/Platte, aktiv high) — nur mit :attr:`frontplatte`.
     frontplatte_art: str = "k8915"
-    #: Kernparameter je Modell: ``(Schlüssel, ((Name, Wert), …))`` — Einträge des
+    #: Kernparameter je Modell: ``(Schluessel, ((Name, Wert), …))`` — Eintraege des
     #: Konfigurationstextes (P8000: ``karte16``, ``wdc``).  Leer = keine.
     modell_kern: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = ()
-    #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kästchen
+    #: Auswahl „RAM-Disk" (RAF 128/512/2M, `app/raf.py`) samt Stand-by-Kaestchen
     #: unter *Einstellungen ▸ Allgemein* (doc/design/22_raf512.md §7).  Alle drei
-    #: Programme bieten sie an; ohne sie läuft die Maschine stets ohne RAF.
+    #: Programme bieten sie an; ohne sie laeuft die Maschine stets ohne RAF.
     raf_wahl: bool = True
-    #: Satzteil für „Über …“ (HTML): „des Bürocomputers <b>robotron A5120</b>“.
+    #: Diskettenlaufwerke (K5122 o. ae.): ohne sie (MC80) fallen Kasten „Laufwerke“, die
+    #: Diskettenmenues und die Laufwerksfelder der Statuszeile weg.
+    laufwerke: bool = True
+    #: Satzteil fuer „Ueber …“ (HTML): „des Buerocomputers <b>robotron A5120</b>“.
     ueber_rechner: str = ""
-    #: Weitere Emulatoren neben :attr:`andere` (Menü *Werkzeuge*) — Maschinenname
+    #: Weitere Emulatoren neben :attr:`andere` (Menue *Werkzeuge*) — Maschinenname
     #: des Profils.
     weitere: Tuple[str, ...] = ()
     #: Aktionen, die nur dieses Programm hat (Namen aus `app/ui/actions.py`).
     eigene_aktionen: Tuple[str, ...] = field(default_factory=tuple)
-    #: Die jeweils ANDERE Maschine (für *Werkzeuge ▸ … starten*).
+    #: Die jeweils ANDERE Maschine (fuer *Werkzeuge ▸ … starten*).
     andere: str = ""
-    #: Frühere Namen serieller Schnittstellen → heutiger Name (Kern).  Die
-    #: Konfiguration ist über den NAMEN verschlüsselt; ohne diese Abbildung wären
+    #: Fruehere Namen serieller Schnittstellen → heutiger Name (Kern).  Die
+    #: Konfiguration ist ueber den NAMEN verschluesselt; ohne diese Abbildung waeren
     #: Einstellungen unter einem alten Namen herrenlos (K8915: AP-S12).
     alte_schnittstellen: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
 
-    # ── Modellwahl: Schlüssel → Kern-Maschine / EM / Tastatur ───────────────
+    # ── Modellwahl: Schluessel → Kern-Maschine / EM / Tastatur ───────────────
     # Ein Profil ohne `modelle` hat genau ein Modell: seine Maschine.
 
     def standard_modell(self) -> str:
@@ -173,11 +182,11 @@ class Programmprofil:
         aus = self.hardware_standard()
         for k, _b, _t, werte, _m in self.hardware:
             v = str(daten.get(k, "")).strip().lower()
-            for w, _a in werte:        # Groß-/Kleinschreibung egal ("1M@0"), Wert wie im Profil
+            for w, _a in werte:        # Gross-/Kleinschreibung egal ("1M@0"), Wert wie im Profil
                 if v == w.lower():
                     aus[k] = w
                     break
-            if k == "dram":            # P8000: Umzug alter Werte, eigene Bestückung bleibt
+            if k == "dram":            # P8000: Umzug alter Werte, eigene Bestueckung bleibt
                 aus[k] = _p8000_ram.normalisieren(daten.get(k))
         return aus
 
@@ -219,7 +228,7 @@ class Programmprofil:
                 kern.update(dict(paare))
         mit16 = kern.get("karte16") == "1"
         mit_wdc = kern.get("wdc", "aus") != "aus"
-        # Platinenindex: ein Schalter für beide Karten (nur 1/1 oder 3/4 sind zulässig).
+        # Platinenindex: ein Schalter fuer beide Karten (nur 1/1 oder 3/4 sind zulaessig).
         index = hardware.get("index", "34")
         kern["index8"] = index[0]
         if mit16:
@@ -320,7 +329,7 @@ class Programmprofil:
         return neu
 
     # Laufwerke stehen in `app/drive_types.py` (je Maschine) — dort ist der
-    # Laufwerkskatalog; das Profil reicht nur durch.  Spät importiert: die
+    # Laufwerkskatalog; das Profil reicht nur durch.  Spaet importiert: die
     # Bindung (und damit die Kernbibliothek) soll hier nicht mitkommen.
     def standard_laufwerke(self) -> list:
         """Laufwerksbestückung ab Werk, je K5122-Steckplatz ein Kernprofil."""
@@ -345,13 +354,22 @@ A5120 = Programmprofil(
     nenntakt_text="2,45 MHz",
     tastatur="k7637",
     modellwahl=True,
-    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS),
+    modelle=tuple((k, "a5120", em, label, "k7637") for k, em, label in _modell.MODELS) + (
+        # Fruehe Ausfuehrungen (Entwurf 30, AP A5): K7023.01 16×64, 4× K3525, Tastatur K7636.
+        (_modell.A5120_ALT, "a5120-alt", None, "A5120 (64×16, K7636)", "k7636"),
+        (_modell.A5120_KMBG, "a5120-kmbg", None, "A5120 Kassette", "k7636"),
+    ),
+    gesperrte_modelle=((_modell.A5120_ACHT, "A5120 8″ (K5602)",
+                        "Die 8″-Ausführung mit der Floppy-Einheit K5602 ist noch nicht "
+                        "nachgebildet."),),
     modell_tipp=("A5120.16 fügt dem A5120 die Steuerkarte und das Erweiterungsmodul "
-                 "EM256 mit dem U8001 hinzu.  Ein Wechsel erzeugt die Maschine neu "
-                 "(wie ein Kaltstart)."),
+                 "EM256 mit dem U8001 hinzu.  „A5120 (64×16, K7636)“ ist die frühe "
+                 "Ausführung mit dem Bildschirm K7023 und der Tastatur K7636, "
+                 "„A5120 Kassette“ dieselbe mit der Kassettenkarte K5020 (KMBG).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Bürocomputers <b>robotron A5120</b>",
     andere="k8915",
-    weitere=("prg710", "pc1715", "p8000"),
+    weitere=("prg710", "pc1715", "p8000", "mc80"),
 )
 
 K8915 = Programmprofil(
@@ -369,24 +387,24 @@ K8915 = Programmprofil(
     frontplatte=True,
     eigene_aktionen=("nmi",),
     modellwahl=True,
-    # doc/design/24_k8915_varianten.md R5: die Schlüssel sind technisch und bleiben,
-    # nur die Anzeigetexte tragen die Gerätenamen V3/V2 (F1, 2026-10-05: „Gen 2“ = V2).  Fehlt ``general.model`` (Vorgabe-
-    # datei, ältere Konfigurationen), ist es der V3.  Ein EM gibt es hier nicht
+    # doc/design/24_k8915_varianten.md R5: die Schluessel sind technisch und bleiben,
+    # nur die Anzeigetexte tragen die Geraetenamen V3/V2 (F1, 2026-10-05: „Gen 2“ = V2).  Fehlt ``general.model`` (Vorgabe-
+    # datei, aeltere Konfigurationen), ist es der V3.  Ein EM gibt es hier nicht
     # (``em`` = None in jeder Zeile) — ``a5120.16`` ist am K8915 unbekannt → V3.
     modelle=(("k8915", "k8915", None, "K8915 V3 (ZRE 045-8762, 128 KB)", "k7672"),
              ("k8915-g2", "k8915-g2", None, "K8915 V2 (ZRE K2521, 64 KB)", "k7672")),
-    # V1 (Tastatur K7634) fährt der Kern nicht: kein Urlader-Baustein für 0400H
-    # (F11, AP-V9 zurückgestellt).  Die Bildschirmtastatur K7634 liegt bereit
-    # (`app/ui/keyboard_k7634.py`), ist aber bewusst nicht eingehängt.
+    # V1 (Tastatur K7634) faehrt der Kern nicht: kein Urlader-Baustein fuer 0400H
+    # (F11, AP-V9 zurueckgestellt).  Die Bildschirmtastatur K7634 liegt bereit
+    # (`app/ui/keyboard_k7634.py`), ist aber bewusst nicht eingehaengt.
     gesperrte_modelle=(("k8915-g1", "K8915 V1 (Tastatur K7634)",
                         "Nicht wählbar: kein Urlader-Baustein für 0400H (F11)."),),
     modell_tipp=("K8915 V3 (ZRE 045-8762, 128 KB) oder V2 (ZRE K2521 mit RAM-Karte "
                  "K3528, 64 KB).  Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="des Arbeitsplatzcomputers <b>robotron K8915</b>",
     andere="a5120",
-    weitere=("prg710", "pc1715", "p8000"),
-    # Bis AP-S12 hießen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
-    # nach der Beschriftung am Gerät.  „V.24" (SIO1-A) blieb.
+    weitere=("prg710", "pc1715", "p8000", "mc80"),
+    # Bis AP-S12 hiessen SIO1-B und SIO2-A nach dem Entwurf „IFS 1"/„IFS 2"; seitdem
+    # nach der Beschriftung am Geraet.  „V.24" (SIO1-A) blieb.
     alte_schnittstellen=(("IFS 1", "Drucker/IFSS1"), ("IFS 2", "DFÜ/IFSS2")),
 )
 
@@ -404,7 +422,7 @@ PRG710 = Programmprofil(
     tastatur="k7609",
     eprommer=True,
     modellwahl=True,
-    # Beide Geräte laufen auf derselben ZRE/ABS/AFS; das 710 hat die Tastatur
+    # Beide Geraete laufen auf derselben ZRE/ABS/AFS; das 710 hat die Tastatur
     # K7609 an einem 8279 (ATP), das 710-1 die K7672 an der K8025 (§3.9/§3.10).
     modelle=(("prg710", "prg710", None, "PRG 710 (Tastatur K7609)", "k7609"),
              ("prg710-1", "prg710-1", None, "PRG 710-1 (Tastatur K7672)", "k7672")),
@@ -413,7 +431,7 @@ PRG710 = Programmprofil(
                  "(wie ein Kaltstart)."),
     ueber_rechner="der Programmiergeräte <b>robotron PRG 710 und PRG 710-1</b>",
     andere="a5120",
-    weitere=("k8915", "pc1715", "p8000"),
+    weitere=("k8915", "pc1715", "p8000", "mc80"),
 )
 
 PC1715 = Programmprofil(
@@ -424,24 +442,24 @@ PC1715 = Programmprofil(
     beschreibung="Emulator der Bürocomputer robotron PC 1715 und PC 1715W",
     konfig_datei="pc1715emu.yaml",
     vorgabe_datei="default_config_pc1715.yaml",
-    # 2,458 MHz (Pc1715Zre::CPU_HZ); der 1715W läuft mit 3,9936 MHz (`modell_takte`).
+    # 2,458 MHz (Pc1715Zre::CPU_HZ); der 1715W laeuft mit 3,9936 MHz (`modell_takte`).
     nenntakt_hz=2_458_000,
     nenntakt_text="2,458 MHz",
     tastatur="pc1715",
     modellwahl=True,
     # Der Bildschirm (K7222 80 × 24 / K7221 64 × 16) ist eine Hardwarevariante der
-    # ZRE-Bestückung, im Kern ein Konstruktorparameter (`bild`) → ein Wechsel ist ein
+    # ZRE-Bestueckung, im Kern ein Konstruktorparameter (`bild`) → ein Wechsel ist ein
     # Kaltstart wie der Modellwechsel; er steht deshalb als Modell in der Auswahl.
     modelle=(("pc1715", "pc1715", None, "PC 1715 (Bildschirm K7222, 80 × 24)", "pc1715"),
              ("pc1715-k7221", "pc1715-k7221", None,
               "PC 1715 (Bildschirm K7221, 64 × 16)", "pc1715"),
              # Der 1715W hat nur den 8275-Bildschirm mit ladbarem Zeichensatz (kein
-             # K7221) — als eigenes Modell ist die Kombination gar nicht wählbar.
+             # K7221) — als eigenes Modell ist die Kombination gar nicht waehlbar.
              ("pc1715w", "pc1715w", None, "PC 1715W (SCP 3.0, 256 KB, 80 × 24)",
               "pc1715")),
     modell_takte=(("pc1715w", 3_993_600, "3,9936 MHz"),),
-    # ROM-Varianten, die technisch etwas ändern (AP-6): die ZG-EPROMs der ZRE (nur PC 1715;
-    # der 1715W lädt seinen Satz von Diskette) und das Tastatur-ROM (beide).
+    # ROM-Varianten, die technisch etwas aendern (AP-6): die ZG-EPROMs der ZRE (nur PC 1715;
+    # der 1715W laedt seinen Satz von Diskette) und das Tastatur-ROM (beide).
     hardware=(
         ("zeichensatz", "Zeichensatz:",
          "Bestückung der Zeichengenerator-EPROMs A25.2/A25.1 der ZRE.  Wirkt nur am PC 1715 — "
@@ -461,11 +479,11 @@ PC1715 = Programmprofil(
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     ueber_rechner="der Bürocomputer <b>robotron PC 1715</b>",
     andere="a5120",
-    weitere=("k8915", "prg710", "p8000"),
+    weitere=("k8915", "prg710", "p8000", "mc80"),
 )
 
 #: Modelle des P8000 mit einem Rechner / mit der 16-Bit-Karte (Wirkungsbereich der Hardwarewahl).
-#: Die Kern-Terminal-Modelle (``p8000``, ``p8000-16``, ``p8000-8``) gibt es in der Oberfläche nicht
+#: Die Kern-Terminal-Modelle (``p8000``, ``p8000-16``, ``p8000-8``) gibt es in der Oberflaeche nicht
 #: mehr (P23a); im Kern bleiben sie als Testgegenstelle.
 _RECHNER = ("p8000-ot", "p8000-16-ot", "p8000-8-ot")
 _MIT16 = ("p8000-ot", "p8000-16-ot")
@@ -488,16 +506,17 @@ P8000 = Programmprofil(
     terminal=True,
     platte=True,
     ptape_wahl=False,
+    tape_wahl=False,
     raf_wahl=False,                 # die RAF ist eine K1520-Karte; der P8000 hat keinen K1520-Bus
     modellwahl=True,
     betriebsart_wahl=True,
-    # Das Vollgerät (16-Bit-Teil + Winchester) steht vorn und ist damit die Vorgabe.  Alle sind
+    # Das Vollgeraet (16-Bit-Teil + Winchester) steht vorn und ist damit die Vorgabe.  Alle sind
     # dieselbe Kernmaschine mit dem ORIGINALTERMINAL (Typ 2, Z8 + Firmware P8T 5.0 + Flachtastatur
     # K7673.09) an tty1 (Entwurf 25 §11, 28); sie unterscheiden sich in `karte16`/`wdc`.
     modelle=(("p8000-ot", "p8000", None, "Vollgerät (16-Bit-Teil und Winchester)", "k7673"),
              ("p8000-16-ot", "p8000", None, "ohne Winchester (16-Bit-Teil, nur UDOS)", "k7673"),
              ("p8000-8-ot", "p8000", None, "nur 8-Bit-Teil (UDOS, erste Baustufe)", "k7673"),
-             # Nur das Terminal: ein Arbeitsplatz, der sich über seine serielle Leitung mit dem
+             # Nur das Terminal: ein Arbeitsplatz, der sich ueber seine serielle Leitung mit dem
              # Rechner eines anderen Programms verbindet (Mehrplatzbetrieb).
              ("p8000-term", "p8000-terminal", None,
               "nur Terminal (Arbeitsplatz, ohne Rechner)", "k7673")),
@@ -553,13 +572,65 @@ P8000 = Programmprofil(
                           ("Terminal (XB5)", 5004)),
     ueber_rechner="des 16-Bit-Arbeitsplatzcomputers <b>EAW P8000</b>",
     andere="a5120",
-    weitere=("k8915", "prg710", "pc1715"),
+    weitere=("k8915", "prg710", "pc1715", "mc80"),
 )
 
-#: Alle Profile nach Name (Schlüssel = Maschinenname).
-PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715, P8000)}
+MC80 = Programmprofil(
+    maschine="mc80",
+    programm="mc80emu",
+    titel="MC80 Emulator",
+    rechner="MC80",
+    beschreibung="Emulator der Mikrorechner MC80.30, .31, .21 und .22 (VEB Elektronik Gera)",
+    konfig_datei="mc80emu.yaml",
+    vorgabe_datei="default_config_mc80.yaml",
+    # 2,4576 MHz (Mc80Machine::CPU_HZ = Mc80Zve::CPU_HZ).
+    nenntakt_hz=2_457_600,
+    nenntakt_text="2,4576 MHz",
+    tastatur="mc80",
+    modellwahl=True,
+    # .30 und .31 laufen im Kern bis M7 gleich (die .31 hat zusaetzlich die EPROM-Segmente
+    # 10H/20H, M4); sie unterscheiden sich erst am Kassettenanschluss (M7).
+    modelle=(("mc80", "mc80", None, "MC80.30", "mc80"),
+             ("mc80-31", "mc80-31", None, "MC80.31 (Programmsegmente 10H/20H)", "mc80"),
+             # MC80.2x (AP M11/M12): eigene Klasse, Bild 528 × 256 (Oszilloskop-Darstellung),
+             # Matrixtastatur an der DPL, Kassette (MBI) fest eingebaut.  .21 und .22 sind im
+             # Kern gleich (Unterschied nicht belegt, hardware_2x.md) [?].
+             ("mc80-21", "mc80-21", None, "MC80.21 (Oszilloskop-Bild, BSYS)", "mc80-2x"),
+             ("mc80-22", "mc80-22", None, "MC80.22 (Oszilloskop-Bild, BSYS)", "mc80-2x")),
+    # Der Kern lehnt diese Variante ab (Mc80Machine → std::invalid_argument).
+    gesperrte_modelle=(
+        ("mc80-33", "MC80.33 (AKM + PK 3)",
+         "Nicht wählbar: vom Treiber-ROM der AKM liegt nur die Hälfte vor (doc/mc80/egos.md §3)."),
+    ),
+    # Beim MC80.2x ist die Kassette (MBI) fest eingebaut: das Kaestchen ist ohne Wirkung.
+    tape_fest=("mc80-21", "mc80-22"),
+    hardware=(
+        ("spe", "Speichererweiterung:",
+         "Zahl der Speicherkarten SPE 2: die erste trägt ROM und RAM-Segment 01H, eine zweite "
+         "nur RAM (Segment 02H).  Ein Wechsel startet die Maschine kalt.",
+         (("1", "eine SPE 2"), ("2", "zwei SPE 2")),
+         ("mc80", "mc80-31")),
+    ),
+    modell_tipp=("MC80.30 oder MC80.31 (mit den EPROM-Programmsegmenten 10H/20H), MC80.21/.22 "
+                 "(Mikrorechner mit Oszilloskop-Bild und Betriebssystem BSYS).  "
+                 "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
+    eigene_aktionen=("speicherabzug_laden",),
+    laufwerke=False,
+    # Lochstreifen K6022 (E0H–E7H) kollidiert mit dem EPROM-Programmierer E0H–EFH; die RAF
+    # (88H/89H) liegt im E/A-Bereich der ZVE (80H–8FH) [?].  Kassette seit AP M7: K5020 an
+    # 30H (.30 LW 1200 mit Takt aus der ASP, .31 K5200), EGOS bedient nur Laufwerk 1.
+    ptape_wahl=False,
+    tape_wahl=True,
+    raf_wahl=False,
+    ueber_rechner="der Mikrorechner <b>MC80.30/31/21/22</b> des VEB Elektronik Gera",
+    andere="a5120",
+    weitere=("k8915", "prg710", "pc1715", "p8000"),
+)
 
-#: Das Profil ohne Angabe — ältere Starter, Tests, ``app/main.py`` ohne Schalter.
+#: Alle Profile nach Name (Schluessel = Maschinenname).
+PROFILE = {p.maschine: p for p in (A5120, K8915, PRG710, PC1715, P8000, MC80)}
+
+#: Das Profil ohne Angabe — aeltere Starter, Tests, ``app/main.py`` ohne Schalter.
 VORGABE = A5120
 
 

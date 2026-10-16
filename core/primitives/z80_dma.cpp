@@ -10,7 +10,7 @@ Z80Dma::Z80Dma(const std::string& name) : name_(name) {}
 
 void Z80Dma::reset() {
     // Einschalten/Systemreset: C3 und dazu, was C3 laut Datenblatt NICHT anfasst (Lesesequenz,
-    // RDY-Polarität, Betriebsart) — so wie der Baustein nach dem Einschalten dasteht [Annahme:
+    // RDY-Polaritaet, Betriebsart) — so wie der Baustein nach dem Einschalten dasteht [Annahme:
     // Lesemaske 7FH, Betriebsart Byte, RDY low-aktiv].
     befehlReset();
     s_.wr5 = 0; s_.wr4 &= ~0x60;
@@ -20,7 +20,7 @@ void Z80Dma::reset() {
 }
 
 void Z80Dma::befehlReset() {
-    // C3: Interrupts sperren (IP/IUS zurück), Busanforderung sperren, Auto-Restart und WAIT aus,
+    // C3: Interrupts sperren (IP/IUS zurueck), Busanforderung sperren, Auto-Restart und WAIT aus,
     // Zeitverhalten Standard, Force Ready aus.  Lesesequenz und Adressen bleiben (Datenblatt).
     s_.enabled = s_.started = s_.forceReady = false;
     s_.intEnable = s_.intPending = s_.ius = s_.enableAfterReti = false;
@@ -136,13 +136,13 @@ void Z80Dma::befehl(uint8_t d) {
     case 0xC7: s_.timingA = 4; x_.variabelA = false; break;
     case 0xCB: s_.timingB = 4; x_.variabelB = false; break;
     case 0xCF: load(); break;
-    case 0xD3:                                            // Continue: Zähler 0, Adressen laufen weiter
+    case 0xD3:                                            // Continue: Zaehler 0, Adressen laufen weiter
         s_.counter = 0; s_.started = false;
         s_.status |= 0x20;
         x_.nachlauf = false;
         setEndLevel(false);
         break;
-    case 0x87:                                            // Enable DMA: setzt nichts zurück
+    case 0x87:                                            // Enable DMA: setzt nichts zurueck
         s_.enabled = true; s_.started = false; x_.byteFreigabe = false;
         setEndLevel(false);
         break;
@@ -165,7 +165,7 @@ void Z80Dma::befehl(uint8_t d) {
 
 void Z80Dma::load() {
     // Quell-Port immer; Ziel-Port nur, wenn nicht fest (Zilog „Fixed-Address Programming“).
-    // Bytezähler 0, Force Ready aus, Status D0 (Transfer erfolgt) und D5 (Blockende) zurück.
+    // Bytezaehler 0, Force Ready aus, Status D0 (Transfer erfolgt) und D5 (Blockende) zurueck.
     const bool a2b = quelleIstA();
     const bool zielFest = ((a2b ? s_.wr2 : s_.wr1) & 0x20) != 0;
     if (a2b) { s_.aCur = s_.aStart; if (!zielFest) s_.bCur = s_.bStart; }
@@ -179,7 +179,7 @@ void Z80Dma::load() {
 }
 
 uint8_t Z80Dma::ioRead(uint8_t) {
-    // Lesesequenz in Maskenreihenfolge: Status, Zähler L/H, A L/H, B L/H; danach wieder von vorn.
+    // Lesesequenz in Maskenreihenfolge: Status, Zaehler L/H, A L/H, B L/H; danach wieder von vorn.
     for (int i = 0; i < 7; i++) {
         int pos = (s_.readPos + i) % 7;
         if (!(s_.readMask & (1 << pos))) continue;
@@ -202,21 +202,21 @@ int32_t Z80Dma::zaehlerLesen() const {
 }
 
 uint8_t Z80Dma::status() const {
-    // D1 folgt dem RDY-Pin (aktiv nach WR5-Polarität; Force Ready zählt nicht), D3 dem
-    // anstehenden Interrupt — beides Leitungszustände, kein gespeichertes Bit.
+    // D1 folgt dem RDY-Pin (aktiv nach WR5-Polaritaet; Force Ready zaehlt nicht), D3 dem
+    // anstehenden Interrupt — beides Leitungszustaende, kein gespeichertes Bit.
     uint8_t st = static_cast<uint8_t>(s_.status & ~0x0A);
     if (!pinAktiv()) st |= 0x02;
     if (!s_.intPending) st |= 0x08;
     return st;
 }
 
-// ─── Ausführung ──────────────────────────────────────────────────────────────
+// ─── Ausfuehrung ──────────────────────────────────────────────────────────────
 
 void Z80Dma::setReady(bool pegel) {
     const bool vorher = ready();
     s_.readyPin = pegel;
-    // Burst gibt den Bus bei RDY inaktiv ab — das zählt als Busfreigabe (Interrupt bei RDY
-    // wieder scharf); Continuous hält ihn.
+    // Burst gibt den Bus bei RDY inaktiv ab — das zaehlt als Busfreigabe (Interrupt bei RDY
+    // wieder scharf); Continuous haelt ihn.
     if (vorher && !ready() && s_.started && !modeCont()) x_.rdyFreigabe = false;
     pruefeRdyInterrupt();
 }
@@ -229,7 +229,7 @@ bool Z80Dma::busRequest() const {
     if (!s_.enabled || s_.ius || s_.enableAfterReti || x_.byteFreigabe) return false;
     if (rdyInterruptGewaehlt() && !x_.rdyFreigabe) return false;   // erst der Interrupt [A6]
     if (ready()) return true;
-    return modeCont() && s_.started;      // Continuous hält den Bus auch ohne RDY
+    return modeCont() && s_.started;      // Continuous haelt den Bus auch ohne RDY
 }
 
 void Z80Dma::cpuZyklus() { x_.byteFreigabe = false; pruefeRdyInterrupt(); }
@@ -282,7 +282,7 @@ int Z80Dma::step() {
     const uint8_t art = s_.wr0 & 0x03;                    // 1 Transfer, 2 Search, 3 beides
     const bool schreiben = art != 2;
 
-    // Impuls VOR dem Byte mit dem bisherigen Zählerstand [A7]
+    // Impuls VOR dem Byte mit dem bisherigen Zaehlerstand [A7]
     if ((s_.intCtl & 0x04) && (s_.counter & 0xFF) == x_.impulsCtl) {
         ++x_.impulse;
         if (impuls) impuls();
@@ -303,14 +303,14 @@ int Z80Dma::step() {
     s_.status |= 0x01;
     ++s_.counter;
 
-    // Vergleich (Search, Search/Transfer): Maske 0 = Bit zählt.  Das Nachlaufbyte nach einem
+    // Vergleich (Search, Search/Transfer): Maske 0 = Bit zaehlt.  Das Nachlaufbyte nach einem
     // Treffer (Search Burst/Continuous) wird nicht mehr verglichen [A8].
     bool treffer = false;
     if (art & 2) {
         if (x_.nachlauf) {
             x_.nachlauf = false;
             if (s_.counter > blockEndeBei()) blockEndeBehandeln(false);
-            s_.enabled = false;                           // Stopp bei Treffer schlägt Auto-Restart
+            s_.enabled = false;                           // Stopp bei Treffer schlaegt Auto-Restart
             busFreigabe();
             return takte;
         }
@@ -334,7 +334,7 @@ int Z80Dma::step() {
 }
 
 void Z80Dma::busFreigabe() {
-    // Bus zurück an die CPU: Force Ready fällt (Datenblatt), Interrupt bei RDY wieder scharf.
+    // Bus zurueck an die CPU: Force Ready faellt (Datenblatt), Interrupt bei RDY wieder scharf.
     s_.forceReady = false;
     s_.started = false;
     x_.rdyFreigabe = false;
@@ -349,7 +349,7 @@ void Z80Dma::blockEndeBehandeln(bool treffer) {
     if (s_.intCtl & 0x02) grund |= 2;
     if (grund) interrupt(grund);
     busFreigabe();
-    if (treffer && (x_.wr3 & 0x04)) {     // Stopp bei Treffer schlägt Auto-Restart
+    if (treffer && (x_.wr3 & 0x04)) {     // Stopp bei Treffer schlaegt Auto-Restart
         s_.enabled = false;
     } else if (s_.wr5 & 0x20) {           // Auto-Restart: beide Ports neu, weiter [A10]
         s_.aCur = s_.aStart; s_.bCur = s_.bStart;
@@ -368,7 +368,7 @@ uint8_t Z80Dma::vektor() const {
 }
 
 uint8_t Z80Dma::getVector() const {
-    Z80Dma* self = const_cast<Z80Dma*>(this);   // wie Z80CTC: die Quittung löscht die Anforderung
+    Z80Dma* self = const_cast<Z80Dma*>(this);   // wie Z80CTC: die Quittung loescht die Anforderung
     const uint8_t v = vektor();
     if (intLeitung()) { self->s_.intPending = false; self->s_.ius = true; }
     return v;
@@ -410,8 +410,8 @@ Z80Dma::Sicht Z80Dma::sicht() const {
 }
 
 // ─── Savestate ───────────────────────────────────────────────────────────────
-// Aufbau: Rohkopie S (unverändert seit AP-W2a), IEI-Byte, dann der Erweiterungsblock
-// 'D' 'M' '2' + Rohkopie X.  Ein Stand ohne Kennung (vor P9c) lädt mit X-Vorgaben.
+// Aufbau: Rohkopie S (unveraendert seit AP-W2a), IEI-Byte, dann der Erweiterungsblock
+// 'D' 'M' '2' + Rohkopie X.  Ein Stand ohne Kennung (vor P9c) laedt mit X-Vorgaben.
 
 void Z80Dma::serialize(std::vector<uint8_t>& out) const {
     static_assert(std::is_trivially_copyable_v<S>, "S muss POD sein");

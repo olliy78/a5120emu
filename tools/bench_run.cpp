@@ -1,9 +1,9 @@
-// bench_run — Fixed-workload Performance-Benchmark für den A5120-Core.
+// bench_run — Fixed-workload Performance-Benchmark fuer den A5120-Core.
 //
 // Bootet die Maschine bis zum interaktiven Prompt (oder bis zu einem Cutoff)
-// und misst danach die reine Emulationsrate von A5120Machine::run() über eine
+// und misst danach die reine Emulationsrate von A5120Machine::run() ueber eine
 // feste Zahl emulierter Takte im laufenden Zustand — genau der Pfad, den die
-// GUI im "N× Echtzeit"-Betrieb ausführt.  Gibt Mcycles/s und den Faktor gegen
+// GUI im "N× Echtzeit"-Betrieb ausfuehrt.  Gibt Mcycles/s und den Faktor gegen
 // 2,5 MHz (A5120-Takt) aus.  Kein Logging, keine Trace-Callbacks.
 #include "core/machines/a5120/a5120.h"
 #include "core/logger.h"
@@ -15,14 +15,14 @@
 int main(int argc, char** argv) {
     const char* disk = "tests/fixtures/disks/cpa_cpa780_k5601_clock.hfe";
     long long bench_cycles = 300000000LL;   // gemessener Workload (~120 s @2,5 MHz)
-    long long boot_budget  = 20000000LL;     // Takte bis zum Prompt (großzügig)
+    long long boot_budget  = 20000000LL;     // Takte bis zum Prompt (grosszuegig)
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-c") && i + 1 < argc) bench_cycles = atoll(argv[++i]);
         else if (!strcmp(argv[i], "-d") && i + 1 < argc) disk = argv[++i];
         else if (!strcmp(argv[i], "--boot") && i + 1 < argc) boot_budget = atoll(argv[++i]);
     }
 
-    // Logging aus dem Messfenster halten (Floppy-INFO-Zeilen verfälschen die Rate).
+    // Logging aus dem Messfenster halten (Floppy-INFO-Zeilen verfaelschen die Rate).
     k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR);
 
     A5120Machine machine;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fb_ocr.py — Framebuffer-OCR für die K7024-Bildschirmkarte
+fb_ocr.py — Framebuffer-OCR fuer die K7024-Bildschirmkarte
 =========================================================
 
 Zerlegt den 640×288-Pixel-Framebuffer der K7024 (`k1520_framebuffer`) wieder in
@@ -8,15 +8,15 @@ die einzelnen 80×24 Zeichen und rekonstruiert je Zelle den ausgegebenen ASCII-C
 
 Idee: `K7024::renderChar` malt jede Zelle deterministisch aus dem Zeichen-
 generator (Latein: zweistufig zg1=Zeilen 0–7 / zg2=Zeilen 8–11 aus v171/v172,
-roh nach code*8 adressiert, mit echten Klein- und Großbuchstaben). Kehrt man das
-um — Zelle → 12-Zeilen-Bitmap → Rück-Lookup im selben Modell — bekommt man das
-angezeigte Zeichen zurück. Der Cursor (invertiert Zeilen 10–11) wird beim
-Matchen rückgängig gemacht. Trifft eine Zelle *keine* Glyphe exakt, ist die
+roh nach code*8 adressiert, mit echten Klein- und Grossbuchstaben). Kehrt man das
+um — Zelle → 12-Zeilen-Bitmap → Rueck-Lookup im selben Modell — bekommt man das
+angezeigte Zeichen zurueck. Der Cursor (invertiert Zeilen 10–11) wird beim
+Matchen rueckgaengig gemacht. Trifft eine Zelle *keine* Glyphe exakt, ist die
 Rendering-Kette (VRAM → Chargen → Framebuffer) an der Stelle kaputt; solche
 Zellen werden als `?` markiert und im Report aufgelistet.
 
 Betriebsarten:
-  * live booten (lädt libk1520core.so per ctypes) und Framebuffer auslesen (--boot DISK)
+  * live booten (laedt libk1520core.so per ctypes) und Framebuffer auslesen (--boot DISK)
   * gedumpten Rohframebuffer (640*288 Bytes) einlesen  (--fb-file F)
   * kompletten Zeichensatz 0x20–0x7F rendern (kein Boot)  (--font-sheet [--png F])
 
@@ -44,7 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COLS, ROWS = 80, 24
 CELL_W, CELL_H = 8, 12          # Zellraster 8×12
 # Zum Matchen werten wir alle 12 Zeilen aus (Zeilen 0–7 aus zg1/v171, 8–11 aus
-# zg2/v172) — nötig, weil sich z.B. g/q erst in der Descender-Zeile 10 unter-
+# zg2/v172) — noetig, weil sich z.B. g/q erst in der Descender-Zeile 10 unter-
 # scheiden. Den Cursor (invertiert Zeilen 10–11) behandelt decode_framebuffer.
 MATCH_ROWS = 12
 FB_W, FB_H = COLS * CELL_W, ROWS * CELL_H   # 640 × 288
@@ -85,9 +85,9 @@ def build_font():
 def build_glyph_map(glyph_of) -> dict[tuple, list[int]]:
     """Glyphe → *alle* Codes mit dieser Glyphe (Codes 0x20..0x7F).
 
-    Ein Zeichengenerator ist nicht zwingend injektiv: mehrere Codes können
+    Ein Zeichengenerator ist nicht zwingend injektiv: mehrere Codes koennen
     dieselbe Glyphe tragen (leere Glyphen — oder, wie beim reinen Versal-ROM
-    zg1/zg2, die auf Großbuchstaben gefalteten Kleinbuchstaben). Für »wird das
+    zg1/zg2, die auf Grossbuchstaben gefalteten Kleinbuchstaben). Fuer »wird das
     *richtige* Zeichen ausgegeben?« ist genau diese Mehrdeutigkeit relevant,
     darum sammeln wir alle Codes je Glyphe.
     """
@@ -124,7 +124,7 @@ def cell_glyph(fb: bytes, col: int, row: int) -> tuple:
         base = (row * CELL_H + pr) * FB_W + col * CELL_W
         byte = 0
         for pc in range(CELL_W):
-            if fb[base + pc]:                 # 0xFF gesetzt, 0x00 gelöscht
+            if fb[base + pc]:                 # 0xFF gesetzt, 0x00 geloescht
                 byte |= 1 << (7 - pc)
         glyph.append(byte)
     return tuple(glyph)
@@ -133,9 +133,9 @@ def cell_glyph(fb: bytes, col: int, row: int) -> tuple:
 def decode_framebuffer(fb: bytes, gmap: dict[tuple, list[int]]):
     """Framebuffer → (Zeichenraster, unbekannte Zellen, mehrdeutige Zellen).
 
-    Pro Zelle wird die Glyphe im ROM-Modell zurückgeschlagen. Trägt eine Glyphe
+    Pro Zelle wird die Glyphe im ROM-Modell zurueckgeschlagen. Traegt eine Glyphe
     mehrere Codes, wird der kleinste als Anzeigezeichen genommen und die Zelle
-    als *mehrdeutig* vermerkt — dort lässt sich aus den Pixeln allein nicht
+    als *mehrdeutig* vermerkt — dort laesst sich aus den Pixeln allein nicht
     entscheiden, welches Zeichen der OS eigentlich geschrieben hat.
     """
     blank = tuple([0] * MATCH_ROWS)
@@ -148,7 +148,7 @@ def decode_framebuffer(fb: bytes, gmap: dict[tuple, list[int]]):
             glyph = cell_glyph(fb, col, row)
             codes = gmap.get(glyph)
             if codes is None:
-                # Cursor invertiert Zeilen 10–11 → rückgängig machen und erneut suchen
+                # Cursor invertiert Zeilen 10–11 → rueckgaengig machen und erneut suchen
                 dec = list(glyph)
                 dec[10] ^= 0xFF
                 dec[11] ^= 0xFF
@@ -182,7 +182,7 @@ def render_report(grid, unknown, ambiguous, gmap, truth=None, *,
                   show_grid: bool) -> str:
     out = []
     border = "+" + "-" * COLS + "+"
-    out.append("Rekonstruierter Bildschirm (Framebuffer → ROM-Rückschlag):")
+    out.append("Rekonstruierter Bildschirm (Framebuffer → ROM-Rueckschlag):")
     out.append(border)
     non_space = 0
     for line in grid:
@@ -235,7 +235,7 @@ def render_report(grid, unknown, ambiguous, gmap, truth=None, *,
                 if t != o:
                     mismatches.append((c, r, t, o))
                     wrong_letters[t] = o
-        out.append(f"  geprüfte (beschriebene) Zellen: {checked}")
+        out.append(f"  gepruefte (beschriebene) Zellen: {checked}")
         out.append(f"  Abweichungen Pixel≠Code:        {len(mismatches)}")
         if wrong_letters:
             summary = ", ".join(
@@ -249,7 +249,7 @@ def render_report(grid, unknown, ambiguous, gmap, truth=None, *,
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Live-Boot über libk1520core.so
+# Live-Boot ueber libk1520core.so
 # ────────────────────────────────────────────────────────────────────────────
 
 def find_lib() -> Path:
@@ -261,11 +261,11 @@ def find_lib() -> Path:
 
 
 def font_sheet_via_lib(png_path: str | None):
-    """Rendert jeden Code 0x20–0x7F über die *echte* Lib (VRAM-Write → Render-
-    Pfad → Framebuffer) und gibt ihn als ASCII zurück; optional als PNG.
+    """Rendert jeden Code 0x20–0x7F ueber die *echte* Lib (VRAM-Write → Render-
+    Pfad → Framebuffer) und gibt ihn als ASCII zurueck; optional als PNG.
 
-    Beweist den kompletten Render-Pfad K7024::renderChar für den ganzen Zeichen-
-    satz, unabhängig davon welche Codes im Boot-Banner vorkommen.
+    Beweist den kompletten Render-Pfad K7024::renderChar fuer den ganzen Zeichen-
+    satz, unabhaengig davon welche Codes im Boot-Banner vorkommen.
     """
     lib = ctypes.CDLL(str(find_lib()), use_errno=True)
     lib.k1520_create.argtypes = [ctypes.c_int]
@@ -287,7 +287,7 @@ def font_sheet_via_lib(png_path: str | None):
     PER = 16
     positions = {}                       # code -> (col, row)
     for i, code in enumerate(range(0x20, 0x80)):
-        col = (i % PER) * 3              # 3 Spalten Abstand → Lücke zwischen Glyphen
+        col = (i % PER) * 3              # 3 Spalten Abstand → Luecke zwischen Glyphen
         row = i // PER
         positions[code] = (col, row)
         lib.k1520_mem_write(h, 0xF800 + row * 80 + col, code)
@@ -297,7 +297,7 @@ def font_sheet_via_lib(png_path: str | None):
     lib.k1520_destroy(h)
 
     # ASCII-Sheet
-    out = ["Kompletter Zeichensatz (jeder Code über den echten Render-Pfad):", ""]
+    out = ["Kompletter Zeichensatz (jeder Code ueber den echten Render-Pfad):", ""]
     for base in range(0x20, 0x80, PER):
         codes = list(range(base, min(base + PER, 0x80)))
         out.append(" ".join(f"0x{c:02X}  " for c in codes))
@@ -320,7 +320,7 @@ def font_sheet_via_lib(png_path: str | None):
 
 
 def _write_font_png(fb, positions, w, png_path):
-    """Skaliertes PNG des gerenderten Zeichensatzes (grün auf schwarz)."""
+    """Skaliertes PNG des gerenderten Zeichensatzes (gruen auf schwarz)."""
     from PIL import Image
     PER, SC, PAD = 16, 6, 4               # Skalierung, Rand
     cell_w, cell_h = CELL_W + 1, CELL_H + 2      # inkl. Zwischenraum
@@ -439,7 +439,7 @@ def main() -> int:
     ap.add_argument("--chunk", type=int, default=1_000_000,
                     help="Zyklen pro run()-Aufruf (default 1M)")
     ap.add_argument("--dump-fb", metavar="FILE",
-                    help="gelesenen Rohframebuffer zusätzlich hierhin schreiben")
+                    help="gelesenen Rohframebuffer zusaetzlich hierhin schreiben")
     ap.add_argument("--grid", action="store_true",
                     help="Roh-Bitmaps unbekannter Zellen mit ausgeben")
     ap.add_argument("--no-verify", action="store_true",

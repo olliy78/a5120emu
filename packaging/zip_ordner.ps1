@@ -1,33 +1,33 @@
 <#
 .SYNOPSIS
-    Einen Ordner in ein .zip packen — mit Schrägstrichen, wie die Spezifikation es verlangt.
+    Einen Ordner in ein .zip packen — mit Schraegstrichen, wie die Spezifikation es verlangt.
 
 .DESCRIPTION
     Klingt nach einer Zeile `Compress-Archive`, ist aber keine.  Unter **Windows
     PowerShell 5.1** schreiben sowohl `Compress-Archive` als auch
     `[IO.Compression.ZipFile]::CreateFromDirectory` den PLATTFORM-Trenner in die
     Eintragsnamen, also einen Backslash.  Die ZIP-Spezifikation (APPNOTE 4.4.17.1)
-    verlangt Schrägstriche; behoben ist das erst in .NET 5, und die Laufzeit von
+    verlangt Schraegstriche; behoben ist das erst in .NET 5, und die Laufzeit von
     5.1 ist .NET Framework.
 
     Der Explorer verzeiht Backslashes — andere Werkzeuge nicht: Pythons `zipfile`
     sieht dann gar keine Verzeichnisse, `unzip` unter Linux und macOS legt
-    Dateien mit einem Backslash IM NAMEN an.  Für ein Archiv, das an einem
-    öffentlichen Release hängt, ist das nicht hinnehmbar.
+    Dateien mit einem Backslash IM NAMEN an.  Fuer ein Archiv, das an einem
+    oeffentlichen Release haengt, ist das nicht hinnehmbar.
 
     Deshalb werden die Eintragsnamen hier SELBST gebildet.  Das ist auf jeder
-    .NET-Fassung richtig und hängt an keiner PowerShell-Version.
+    .NET-Fassung richtig und haengt an keiner PowerShell-Version.
 
     Eigene Datei statt einer `-Command`-Zeile aus dem Shell-Skript heraus, weil
-    das Escaping durch zwei Ebenen (Bourne-Shell → PowerShell) nicht überlebt:
-    aus `-replace '\\','/'` wurde dabei ein ungültiger regulärer Ausdruck.
+    das Escaping durch zwei Ebenen (Bourne-Shell → PowerShell) nicht ueberlebt:
+    aus `-replace '\\','/'` wurde dabei ein ungueltiger regulaerer Ausdruck.
 
 .PARAMETER Quelle
     Der zu packende Ordner.  Sein NAME wird oberster Eintrag im Archiv, damit
     das Auspacken nicht alles ins aktuelle Verzeichnis streut.
 
 .PARAMETER Ziel
-    Die zu erzeugende .zip-Datei (wird überschrieben).
+    Die zu erzeugende .zip-Datei (wird ueberschrieben).
 
 .EXAMPLE
     powershell -File zip_ordner.ps1 -Quelle D:\dist\paket -Ziel D:\dist\paket.zip
@@ -50,8 +50,8 @@ if (Test-Path -LiteralPath $Ziel) { Remove-Item -LiteralPath $Ziel -Force }
 $zip = [System.IO.Compression.ZipFile]::Open($Ziel, 'Create')
 try {
     foreach ($datei in Get-ChildItem -Recurse -File -LiteralPath $Quelle) {
-        # Relativ zum Quellordner, mit dessen Namen davor — und ausdrücklich
-        # mit Schrägstrichen.  Genau das ist der Zweck dieser Datei.
+        # Relativ zum Quellordner, mit dessen Namen davor — und ausdruecklich
+        # mit Schraegstrichen.  Genau das ist der Zweck dieser Datei.
         $rel = $datei.FullName.Substring($Quelle.Length).TrimStart('\', '/')
         $eintrag = ($oben + '/' + $rel) -replace '\\', '/'
         [void] [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
@@ -62,7 +62,7 @@ try {
     $zip.Dispose()
 }
 
-# Sofort nachsehen, statt es anzunehmen: der Weg über CreateFromDirectory sah
+# Sofort nachsehen, statt es anzunehmen: der Weg ueber CreateFromDirectory sah
 # ebenfalls richtig aus und war es nicht.
 $pruef = [System.IO.Compression.ZipFile]::OpenRead($Ziel)
 try {

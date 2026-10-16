@@ -43,12 +43,12 @@ from typing import List, Optional
 ENV_HOME = "K1520_HOME"        # Wurzel der Installation bzw. des Quellbaums
 ENV_LIB = "K1520_LIB"          # Kernbibliothek (Datei oder Verzeichnis)
 ENV_FORMATS = "K1520_FORMATS"  # Formatkatalog (Datei oder Verzeichnis)
-ENV_DATA = "K1520_DATA"        # Datenordner des Anwenders (enthält Disketten/)
+ENV_DATA = "K1520_DATA"        # Datenordner des Anwenders (enthaelt Disketten/)
 ENV_DISKS = "K1520_DISKS"      # Verzeichnis der Arbeitsdisketten
 ENV_DEFAULT_CONFIG = "K1520_DEFAULT_CONFIG"   # Auslieferungskonfiguration (Datei oder Verzeichnis)
-# ENV_DISKS ist die SPEZIELLERE Angabe und schlägt deshalb ENV_DATA: wer nur die
-# Disketten woanders haben will, soll dafür nicht den ganzen Datenordner
-# verschieben müssen (dort liegen auch Zustände und `logs/`).
+# ENV_DISKS ist die SPEZIELLERE Angabe und schlaegt deshalb ENV_DATA: wer nur die
+# Disketten woanders haben will, soll dafuer nicht den ganzen Datenordner
+# verschieben muessen (dort liegen auch Zustaende und `logs/`).
 
 #: Name des Formatkatalogs (identisch mit ``kCatalogFileName`` im Kern).
 FORMATS_FILE = "formats.yaml"
@@ -56,33 +56,33 @@ FORMATS_FILE = "formats.yaml"
 #: Name der mitgelieferten Auslieferungskonfiguration des A5120 Emulators
 #: (``data/default_config_a5120.yaml`` im Quellbaum, ``share/k1520emu/`` in einer
 #: Installation).  Sie ist der Zustand nach der Erstinstallation UND das Ziel von
-#: *Ansicht ▸ Standard zurücksetzen*; die Konfiguration des Anwenders heisst dagegen
+#: *Ansicht ▸ Standard zuruecksetzen*; die Konfiguration des Anwenders heisst dagegen
 #: ``a5120emu.yaml`` und liegt in :func:`config_dir`.  Der K8915 Emulator hat seine
 #: eigenen beiden Dateien (``default_config_k8915.yaml``/``k8915emu.yaml``) —
 #: der Name steht im Programmprofil (`app/profil.py`), gesucht wird hier.
 DEFAULT_CONFIG_FILE = "default_config_a5120.yaml"
 
 #: Verzeichnisname der Benutzerkonfiguration — historisch ``k1520emu``,
-#: NICHT ``a5120emu``; eine Umbenennung würde bestehende Konfigurationen
+#: NICHT ``a5120emu``; eine Umbenennung wuerde bestehende Konfigurationen
 #: unsichtbar machen.
 CONFIG_DIRNAME = "k1520emu"
 
-#: Verzeichnisname der Benutzerdaten im Dokumentenordner.  Das Projekt heißt
+#: Verzeichnisname der Benutzerdaten im Dokumentenordner.  Das Projekt heisst
 #: nach der Rechnerfamilie, nicht nach einer Maschine: der A5120 ist die erste,
 #: weitere K1520-Rechner bekommen eigene Programme in derselben Installation.
 DATA_DIRNAME = "K1520emu"
 
-#: Unterordner der Arbeitsdisketten.  Bewusst eine Ebene tiefer, damit später
-#: Druckausgaben o. Ä. danebenpassen, ohne die Disketten umziehen zu müssen.
+#: Unterordner der Arbeitsdisketten.  Bewusst eine Ebene tiefer, damit spaeter
+#: Druckausgaben o. Ae. danebenpassen, ohne die Disketten umziehen zu muessen.
 DISKS_DIRNAME = "Disketten"
 
-#: Unterordner für Dateien, die das DiskTool von Disketten holt bzw. auf sie
+#: Unterordner fuer Dateien, die das DiskTool von Disketten holt bzw. auf sie
 #: schreibt — der Platz „daneben", den DISKS_DIRNAME oben vorsieht.  Getrennt
 #: von den Disketten, weil es zwei verschiedene Dinge sind: hier liegen einzelne
-#: Dateien und die Beiblätter, dort die Abbilder ganzer Datenträger.
+#: Dateien und die Beiblaetter, dort die Abbilder ganzer Datentraeger.
 FILES_DIRNAME = "Dateien"
 
-#: Verzeichnisname unter Windows/macOS, wo Programmnamen großgeschrieben sind.
+#: Verzeichnisname unter Windows/macOS, wo Programmnamen grossgeschrieben sind.
 APP_DIRNAME = "K1520emu"
 
 
@@ -147,8 +147,8 @@ def library_candidates(stem: str = CORE_STEM) -> List[Path]:
     names = library_filenames(stem)
     out: List[Path] = []
 
-    # 1) explizite Vorgabe — Datei oder Verzeichnis.  Sie gilt nur für den
-    #    Emulatorkern; eine Vorgabe für BEIDE Bibliotheken zugleich wäre
+    # 1) explizite Vorgabe — Datei oder Verzeichnis.  Sie gilt nur fuer den
+    #    Emulatorkern; eine Vorgabe fuer BEIDE Bibliotheken zugleich waere
     #    zweideutig (dieselbe Datei kann nicht beides sein).
     env = os.environ.get(ENV_LIB) if stem == CORE_STEM else None
     if env:
@@ -394,7 +394,7 @@ def documents_dir() -> Optional[Path]:
                     continue
                 wert = zeile.split("=", 1)[1].strip().strip('"').strip("'")
                 # In der Datei steht „$HOME/Dokumente" — die Variable ist Teil
-                # des Formats, nicht der Shell, die sie sonst aufgelöst hätte.
+                # des Formats, nicht der Shell, die sie sonst aufgeloest haette.
                 wert = wert.replace("$HOME", str(Path.home()))
                 if wert:
                     return Path(wert).expanduser()
@@ -601,8 +601,8 @@ def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img", "*.img.gz")) -> int:
         return any(fnmatch.fnmatch(name, p) for p in patterns)
 
     # In einem Zwischenordner aufbauen und erst am Ende umbenennen: ein
-    # abgebrochener Lauf hinterliesse sonst einen halb gefüllten Ordner, den
-    # der nächste Start wegen `target.exists()` nie mehr vervollständigte.
+    # abgebrochener Lauf hinterliesse sonst einen halb gefuellten Ordner, den
+    # der naechste Start wegen `target.exists()` nie mehr vervollstaendigte.
     target.parent.mkdir(parents=True, exist_ok=True)
     teil = target.parent / (target.name + ".teil")
     if teil.exists():
@@ -635,20 +635,20 @@ def seed_user_disks(patterns=("*.hfe", "*.dmk", "*.img", "*.img.gz")) -> int:
     return count
 
 
-# ─── Konsolenwerkzeuge und ihre Handbücher ───────────────────────────────────
+# ─── Konsolenwerkzeuge und ihre Handbuecher ───────────────────────────────────
 #
-# Neben den beiden Oberflächen liegen zwei Programme für die Kommandozeile: der
+# Neben den beiden Oberflaechen liegen zwei Programme fuer die Kommandozeile: der
 # Debugger ``k1520dbg`` und die Kommandozeilenfassung des DiskTool.  Der Emulator
-# öffnet für sie ein Konsolenfenster (*Werkzeuge ▸ Werkzeugkonsole*,
-# :mod:`app.programme`) und muss dafür wissen, wo sie liegen — dieselbe Frage wie
+# oeffnet fuer sie ein Konsolenfenster (*Werkzeuge ▸ Werkzeugkonsole*,
+# :mod:`app.programme`) und muss dafuer wissen, wo sie liegen — dieselbe Frage wie
 # bei der Bibliothek, deshalb dieselbe Stelle.
 
-#: Der Debugger.  Ein Name, aber :func:`tool` hängt unter Windows ``.exe`` an.
+#: Der Debugger.  Ein Name, aber :func:`tool` haengt unter Windows ``.exe`` an.
 DEBUGGER_NAMEN = ("k1520dbg",)
 
 #: Die Kommandozeile des DiskTool.  In einer **Installation** heisst sie
 #: ``k1520disktool-cli``, weil ``bin/k1520disktool`` dort der Starter der
-#: OBERFLÄCHE ist; im Quellbaum gibt es nur das eine gebaute Programm.  Die
+#: OBERFLAECHE ist; im Quellbaum gibt es nur das eine gebaute Programm.  Die
 #: Reihenfolge ist deshalb bindend — andersherum startete die Konsole eine GUI.
 DISKTOOL_CLI_NAMEN = ("k1520disktool-cli", "k1520disktool")
 
@@ -729,6 +729,7 @@ def describe() -> str:
     vorgabe_prg710 = default_config_file("default_config_prg710.yaml")
     vorgabe_pc1715 = default_config_file("default_config_pc1715.yaml")
     vorgabe_p8000 = default_config_file("default_config_p8000.yaml")
+    vorgabe_mc80 = default_config_file("default_config_mc80.yaml")
     bundled = bundled_disks_dir()
     dbg = debugger()
     cli = disktool_cli()
@@ -747,6 +748,7 @@ def describe() -> str:
         f"Vorgabe (PRG710):  {vorgabe_prg710 if vorgabe_prg710 else 'NICHT GEFUNDEN'}",
         f"Vorgabe (PC1715):  {vorgabe_pc1715 if vorgabe_pc1715 else 'NICHT GEFUNDEN'}",
         f"Vorgabe (P8000):   {vorgabe_p8000 if vorgabe_p8000 else 'NICHT GEFUNDEN'}",
+        f"Vorgabe (MC80):    {vorgabe_mc80 if vorgabe_mc80 else 'NICHT GEFUNDEN'}",
         f"Debugger:          {dbg if dbg else '— (nicht mitgeliefert)'}",
         f"DiskTool (CLI):    {cli if cli else '— (nicht mitgeliefert)'}",
         f"Handbücher:        {doc_dir() if doc_dir() else '—'}",

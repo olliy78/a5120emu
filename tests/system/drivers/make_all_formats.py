@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Alle Diskettenformate aller drei Systeme als `.hfe` erzeugen — und vermessen.
 
-Zweck: den Formatkatalog `data/formats.yaml` **empirisch** vervollständigen.  Jedes
+Zweck: den Formatkatalog `data/formats.yaml` **empirisch** vervollstaendigen.  Jedes
 Format wird vom Originalprogramm des jeweiligen Betriebssystems im Emulator
 geschrieben, danach mit `k1520disktool measure` vermessen und gegen den Katalog
 gehalten.  Was nicht passt, ist ein fehlender Eintrag — und die Messung ist zugleich
 seine Vorlage.
 
-    CP/A   FORMAT.COM (V19.05.89)   — interaktives Menü; das Laufwerk bestimmt die
-                                      Formatliste.  Fremde Laufwerkstypen kommen über
+    CP/A   FORMAT.COM (V19.05.89)   — interaktives Menue; das Laufwerk bestimmt die
+                                      Formatliste.  Fremde Laufwerkstypen kommen ueber
                                       Combo-Bootdisketten ins Spiel (B:/C: sind dort
                                       K5600.10/.20 bzw. MF3200/MF6400).
     SCPX   INIT.COM V1.5             — 5 Formate (0-4); MODF stellt sie je Laufwerk ein.
     UDOS   FORMAT + SET DISKCON      — der Laufwerkstyp bestimmt das Format;
-                                      Sektorlänge ≠ 128 ist bei UDOS ein *Build*,
+                                      Sektorlaenge ≠ 128 ist bei UDOS ein *Build*,
                                       kein Laufzeitschalter (udos_diskettenformat §12.3).
 
 Aufrufe::
@@ -47,9 +47,9 @@ DISKS    = os.path.join(ROOT, 'tests', 'fixtures', 'disks')
 OUTDIR   = os.path.join(ROOT, 'out', 'formats')
 
 # ─── Laufwerksprofile des Emulators ──────────────────────────────────────────
-# FD_PROFILES setzt die Bestückung der vier K5122-Steckplätze.  Bei CP/A macht das
+# FD_PROFILES setzt die Bestueckung der vier K5122-Steckplaetze.  Bei CP/A macht das
 # die Combo-Bootdiskette selbst (ihr BIOS kennt die Typen); SCPX und UDOS brauchen
-# die Bestückung von außen.
+# die Bestueckung von aussen.
 PROFILE = {
     'K5601':    'K5601',      # 5,25" 80 Spuren DS
     'K5600.10': 'K5600.10',   # 5,25" 40 Spuren SS
@@ -60,11 +60,11 @@ PROFILE = {
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# CP/A — die Matrix steht bereits in format_all.py (Live-Mitschnitte der Menüs)
+# CP/A — die Matrix steht bereits in format_all.py (Live-Mitschnitte der Menues)
 # ═════════════════════════════════════════════════════════════════════════════
 
 def cpa_matrix():
-    """(tag, argv-Liste für format_all.py) je Kombination."""
+    """(tag, argv-Liste fuer format_all.py) je Kombination."""
     aufgaben = []
     for boot, drive, geo, key in fa.format_matrix():
         tag = f"cpa_{boot}_{drive}_{geo or 'DS'}_{key}"
@@ -76,7 +76,7 @@ def cpa_matrix():
 
 
 def run_cpa(tag, argv, outdir):
-    """Ein CP/A-Format über format_all.py erzeugen."""
+    """Ein CP/A-Format ueber format_all.py erzeugen."""
     ziel = os.path.join(outdir, 'cpa')
     os.makedirs(ziel, exist_ok=True)
     r = subprocess.run([sys.executable, os.path.join(HERE, 'format_all.py')]
@@ -106,15 +106,15 @@ SCPX_FORMATS = {
     '3': 'DD-DS 5x1024',
     '4': 'DD-SS 5x1024',
 }
-# Auf welchen Laufwerken wird geprüft?  B: ist das Ziel; sein Typ kommt aus dem Profil.
+# Auf welchen Laufwerken wird geprueft?  B: ist das Ziel; sein Typ kommt aus dem Profil.
 SCPX_DRIVES = ['K5601', 'K5600.20', 'K5600.10', 'MF6400', 'MF3200']
 
 
 def scpx_script(fmt_key):
-    """INIT B: mit dem gewählten Format fahren.
+    """INIT B: mit dem gewaehlten Format fahren.
 
     Die Promptfolge ist die des echten INIT 1520 V1.5 (nachgestellt aus
-    tests/system/test_scpx_init.cpp und am Bildschirm nachgeprüft)::
+    tests/system/test_scpx_init.cpp und am Bildschirm nachgeprueft)::
 
         PLEASE ENTER DRIVE NAME:        → B
         … HIT <ENTER> FOR DEFAULT:      → Formatziffer
@@ -128,7 +128,7 @@ def scpx_script(fmt_key):
         "type B", "enter", "run 60",
         f"type {fmt_key}", "enter", "run 30",
         "enter", "run 30",                 # PLACE DISK … PRESS <ENTER>
-        "type Y", "enter",                 # Scratch bestätigen
+        "type Y", "enter",                 # Scratch bestaetigen
         "run 900",                         # 160 Spuren formatieren + verify
         "dump init-fertig",
         "type N", "enter", "run 20",       # ONCE MORE? → N
@@ -139,10 +139,10 @@ def scpx_script(fmt_key):
 # UDOS — FORMAT; das Format kommt aus SET DISKCON (udos_diskettenformat §12.3)
 # ═════════════════════════════════════════════════════════════════════════════
 #
-# Nur das TYP-Nibble wirkt: FORMAT.COM formatiert immer 26x128 und wählt daraus nur
-# die Spurzahl (Typ 3 → 40 Spuren, sonst 77).  Sektorlänge ≠ 128 ist bei UDOS ein
-# Build, kein Laufzeitschalter — die zugehörigen Typen sind hier bewusst NICHT
-# aufgeführt, sie erzeugen dokumentiert defekte Spuren.
+# Nur das TYP-Nibble wirkt: FORMAT.COM formatiert immer 26x128 und waehlt daraus nur
+# die Spurzahl (Typ 3 → 40 Spuren, sonst 77).  Sektorlaenge ≠ 128 ist bei UDOS ein
+# Build, kein Laufzeitschalter — die zugehoerigen Typen sind hier bewusst NICHT
+# aufgefuehrt, sie erzeugen dokumentiert defekte Spuren.
 UDOS_BOOT = os.path.join(DISKS, 'udos_boot_scp.hfe')
 UDOS_TYPES = {
     '41': ('K5600.20', '5,25" 80 Spuren SS, 77 Spuren 26x128'),
@@ -217,7 +217,7 @@ def run_driver(tag, boot_disk, script_text, outdir, unterordner, profiles=None,
 # ═════════════════════════════════════════════════════════════════════════════
 
 def measure(path):
-    """`k1520disktool measure --json` — Geometrie und passende Katalogeinträge."""
+    """`k1520disktool measure --json` — Geometrie und passende Katalogeintraege."""
     r = subprocess.run([DISKTOOL, 'measure', path, '--json'],
                        capture_output=True, text=True)
     if not r.stdout.strip():
@@ -318,9 +318,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--system', choices=['cpa', 'scpx', 'udos'], action='append',
-                   help="nur dieses System (mehrfach möglich); ohne Angabe: alle")
+                   help="nur dieses System (mehrfach moeglich); ohne Angabe: alle")
     p.add_argument('--all', action='store_true', help="alle Systeme (Vorgabe)")
-    p.add_argument('-j', '--jobs', type=int, default=4, help="parallele Läufe")
+    p.add_argument('-j', '--jobs', type=int, default=4, help="parallele Laeufe")
     p.add_argument('--outdir', default=OUTDIR)
     p.add_argument('--list', action='store_true', help="Matrix zeigen, nichts tun")
     p.add_argument('--measure-only', action='store_true',

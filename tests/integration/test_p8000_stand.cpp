@@ -2,11 +2,11 @@
  * @file test_p8000_stand.cpp
  * @brief P8000 Save-State P8KS v1 (doc/design/25_p8000.md §10.2, AP P7e).
  *
- * Wächter `P8000Stand.RundreiseIstBitgleich`: Lauf bis mitten ins Laden des Betriebssystems
- * (UA858 hält die CPU, U8272 liest, Terminal und SIO sind in Bewegung), speichern, in eine
+ * Waechter `P8000Stand.RundreiseIstBitgleich`: Lauf bis mitten ins Laden des Betriebssystems
+ * (UA858 haelt die CPU, U8272 liest, Terminal und SIO sind in Bewegung), speichern, in eine
  * zweite Maschine mit demselben Abbild laden, beide N Takte weiterlaufen lassen — der Zustand
- * beider ist danach Byte für Byte derselbe (`stateBytes()` umfasst alle Speicher, CPU, Bausteine,
- * Terminal; zusätzlich Speicher in U880-Sicht und Bild).
+ * beider ist danach Byte fuer Byte derselbe (`stateBytes()` umfasst alle Speicher, CPU, Bausteine,
+ * Terminal; zusaetzlich Speicher in U880-Sicht und Bild).
  */
 
 #include <gtest/gtest.h>
@@ -36,7 +36,7 @@ struct Rechner {
     }
 };
 
-/// Hardwaretest → `>` → BOOT, dann bis die UA858 den Bus hält (Betriebssystem wird geladen).
+/// Hardwaretest → `>` → BOOT, dann bis die UA858 den Bus haelt (Betriebssystem wird geladen).
 void bisMittenImLaden(P8000Machine& m) {
     ASSERT_TRUE(laufeBisText(m, "Press RETURN", 200'000'000)) << bild(m);
     tippe(m, "\r");
@@ -50,7 +50,7 @@ void bisMittenImLaden(P8000Machine& m) {
 }
 
 std::string ersterUnterschied(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
-    if (a.size() != b.size()) return "Länge " + std::to_string(a.size()) + " ≠ " + std::to_string(b.size());
+    if (a.size() != b.size()) return "Laenge " + std::to_string(a.size()) + " ≠ " + std::to_string(b.size());
     for (size_t i = 0; i < a.size(); ++i)
         if (a[i] != b[i]) return "erstes abweichendes Byte bei Versatz " + std::to_string(i);
     return "gleich";
@@ -84,7 +84,7 @@ TEST(P8000Stand, RundreiseIstBitgleich) {
     EXPECT_NE(a.m.totalCycles(), 0u);
 }
 
-/// Die Rundreise überlebt auch den Weg über eine Datei.
+/// Die Rundreise ueberlebt auch den Weg ueber eine Datei.
 TEST(P8000Stand, DateiRundreise) {
     Rechner a, b;
     ASSERT_NO_FATAL_FAILURE(bisMittenImLaden(a.m));
@@ -95,7 +95,7 @@ TEST(P8000Stand, DateiRundreise) {
     EXPECT_EQ(a.m.stateBytes(), b.m.stateBytes());
 }
 
-/// Andere Konfiguration (ROM-Satz) ⇒ abgelehnt, Maschine bleibt unverändert; ein beschädigter
+/// Andere Konfiguration (ROM-Satz) ⇒ abgelehnt, Maschine bleibt unveraendert; ein beschaedigter
 /// Zustand ebenso (alter Stand wird wiederhergestellt).
 TEST(P8000Stand, AbweichendeKonfigurationUndDefektWerdenAbgelehnt) {
     Rechner a;

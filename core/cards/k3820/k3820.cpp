@@ -1,6 +1,6 @@
 /**
  * @file k3820.cpp
- * @brief PFS K3820 — Adressauswahl, Sockel, Sperre über /MEMDI1/2.
+ * @brief PFS K3820 — Adressauswahl, Sockel, Sperre ueber /MEMDI1/2.
  * @see k3820.h, doc/k8915g2/karten.md §3, doc/design/24_k8915_varianten.md AP-V11
  */
 
@@ -33,8 +33,8 @@ void K3820::attachToBus(K1520Bus& bus)
 
 void K3820::anmelden()
 {
-    // intern = AB12…AB15 − Start (4 Bit, Übertrag verworfen): ein Fenster ab D000H
-    // läuft über FFFFH hinaus und belegt 0000–0FFFH mit [?, Subtrahierer 74LS83].
+    // intern = AB12…AB15 − Start (4 Bit, Uebertrag verworfen): ein Fenster ab D000H
+    // laeuft ueber FFFFH hinaus und belegt 0000–0FFFH mit [?, Subtrahierer 74LS83].
     const uint32_t start = cfg_.startadresse;
     const uint32_t ende  = start + kGroesse;
     if (ende <= 0x10000u) {
@@ -71,14 +71,14 @@ void K3820::setMemdi2(bool aktiv) { memdi2_ = aktiv; sperreNeuBewerten(); }
 uint8_t K3820::memRead(uint16_t addr)
 {
     const uint16_t rel = uint16_t(addr - cfg_.startadresse);
-    if (rel >= kGroesse) return 0xFF;   // nicht gewählt (AB14K/AB15K ≠ 0)
+    if (rel >= kGroesse) return 0xFF;   // nicht gewaehlt (AB14K/AB15K ≠ 0)
     return chip_[rel >> 10][rel & (kChipSize - 1)];
 }
 
 void K3820::setChip(int idx, const uint8_t* data, std::size_t len)
 {
     if (idx < 0 || idx >= kChips || len > kChipSize)
-        throw std::out_of_range("K3820::setChip: Sockel 0…15, höchstens 1 KB");
+        throw std::out_of_range("K3820::setChip: Sockel 0…15, hoechstens 1 KB");
     chip_[idx].fill(0xFF);
     if (data && len) std::copy(data, data + len, chip_[idx].begin());
     belegt_[idx] = true;
@@ -93,7 +93,7 @@ void K3820::leereChip(int idx)
 
 void K3820::ladeAbbild(const uint8_t* data, std::size_t len)
 {
-    if (len > kGroesse) throw std::out_of_range("K3820::ladeAbbild: höchstens 16 KB");
+    if (len > kGroesse) throw std::out_of_range("K3820::ladeAbbild: hoechstens 16 KB");
     for (int i = 0; i < kChips; ++i) {
         const std::size_t ab = std::size_t(i) * kChipSize;
         if (ab >= len) { leereChip(i); continue; }

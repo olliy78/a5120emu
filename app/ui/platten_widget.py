@@ -37,16 +37,16 @@ from app import instanz, paths
 from app.ui import status_bar
 
 #: Plattentypen des Kerns (`core/peripherals/winchester/platte.cpp`):
-#: (Name für ``hd_create``, Beschriftung, Zylinder, Köpfe, Sektoren je Spur).
+#: (Name fuer ``hd_create``, Beschriftung, Zylinder, Koepfe, Sektoren je Spur).
 TYPEN = (
     ("K5504.50", "K5504.50 (ROB, 1024 Zyl., 5 Köpfe)", 1024, 5, 18),
     ("D5126", "D5126 (NEC, 615 Zyl., 4 Köpfe)", 615, 4, 18),
     ("D5146", "D5146 (NEC, 615 Zyl., 8 Köpfe)", 615, 8, 18),
     ("VS", "VS (Robotron, 820 Zyl., 6 Köpfe)", 820, 6, 18),
 )
-#: Dateinamenkürzel je Typ (Kern: `winchester::typen()`, geprüft durch `k1520_hd_typ_kuerzel`):
-#: Plattenabbilder heißen ``<name>.<kürzel>.img`` (P24) — die Endung bleibt ``.img``, damit
-#: DiskTool und Dateimanager sie weiter erkennen; gepackt ``<name>.<kürzel>.img.gz``.
+#: Dateinamenkuerzel je Typ (Kern: `winchester::typen()`, geprueft durch `k1520_hd_typ_kuerzel`):
+#: Plattenabbilder heissen ``<name>.<kuerzel>.img`` (P24) — die Endung bleibt ``.img``, damit
+#: DiskTool und Dateimanager sie weiter erkennen; gepackt ``<name>.<kuerzel>.img.gz``.
 KUERZEL = {"K5504.50": "k5504", "D5126": "d5126", "D5146": "d5146", "VS": "vs"}
 #: WDC-Fassungen, die noch nicht belegt sind (3.x-Spurformat, wdc_firmware.md §12 Nr. 11).
 EXPERIMENTELL = ("4.0.05", "3.4.05")
@@ -64,7 +64,7 @@ def typ_mit_inhalt(typ: str, inhalt: str) -> str:
 GZ = ".gz"
 GZIP_KENNUNG = b"\x1f\x8b"
 
-UNIT = 0          # nur Laufwerk 0 — die Maschine führt drei, der Kasten bedient das erste
+UNIT = 0          # nur Laufwerk 0 — die Maschine fuehrt drei, der Kasten bedient das erste
 
 
 def rom_typ(firmware: str) -> str:
@@ -217,7 +217,7 @@ class PlattenDialog(QDialog):
         for name, text, z, k, s in TYPEN:
             self.typ.addItem(f"{text} — {groesse_text(z, k, s)}", name)
         form.addRow("Plattentyp:", self.typ)
-        # Bis WDC 4.0 steckt das Laufwerk im EPROM: die Wahl entfällt, der Typ des ROMs steht fest.
+        # Bis WDC 4.0 steckt das Laufwerk im EPROM: die Wahl entfaellt, der Typ des ROMs steht fest.
         self.rom = rom_typ(firmware)
         self.typ_hinweis = QLabel()
         self.typ_hinweis.setWordWrap(True)
@@ -274,9 +274,9 @@ class PlattenDialog(QDialog):
 class PlattenWidget(QWidget):
     """Anschließen, Neu anlegen und Abtrennen der Winchesterplatte (Laufwerk 0)."""
 
-    #: Die Belegung hat sich geändert (für die Konfiguration).
+    #: Die Belegung hat sich geaendert (fuer die Konfiguration).
     geaendert = Signal()
-    #: Hinweis für die Statuszeile des Fensters.
+    #: Hinweis fuer die Statuszeile des Fensters.
     meldung = Signal(str)
 
     def __init__(self, emulator=None, parent=None):
@@ -286,7 +286,7 @@ class PlattenWidget(QWidget):
         self._verfuegbar = True
         #: WDC-Firmware der Maschine ("4.2" | "4.0.05" | "3.4.05"); bis 4.0 legt das EPROM den Typ fest.
         self.firmware = "4.2"
-        #: Hat der Anwender (oder die Konfiguration) schon über die Platte entschieden?
+        #: Hat der Anwender (oder die Konfiguration) schon ueber die Platte entschieden?
         #: Erst dann legt das Programm beim Start keine Standardplatte mehr an.
         self.entschieden = False
 
@@ -567,7 +567,7 @@ class PlattenWidget(QWidget):
                 "Rechner ein." if neu_angeschlossen else
                 "Kein Schreibschutz; Änderungen gehen von selbst in die Datei.")
             if ohne_startblock(self._pfad):
-                # Fehlerbericht „kein * nach MAXSEG" (Merkposten p8000 Nr. 54): eine früher
+                # Fehlerbericht „kein * nach MAXSEG" (Merkposten p8000 Nr. 54): eine frueher
                 # angelegte Standardplatte mit PAR, aber ohne WEGA, schickt MON16 in den AUTOBOOT.
                 self.hinweis.setText(self.hinweis.text() + "\n" + HINWEIS_OHNE_START)
         if self._verfuegbar and self.firmware in EXPERIMENTELL:

@@ -201,7 +201,7 @@ def pruefe_neue_version(version: str, vorhandene_tags: List[str]) -> None:
         try:
             vorhanden = sortierschluessel(t)
         except VersionsFehler:
-            continue            # fremde Tags (z. B. „vor-merge-…") zählen nicht
+            continue            # fremde Tags (z. B. „vor-merge-…") zaehlen nicht
         if vorhanden == schluessel:
             raise VersionsFehler(f"Tag v{version} existiert bereits")
         if vorhanden > schluessel:

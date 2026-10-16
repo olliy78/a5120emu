@@ -1,0 +1,5 @@
+# boot_trace --laderom mit unbekannter Fassung (AP A7): Abbruch mit Grund.
+tool:    boot_trace
+run:     -L /dev/null --laderom v07 --ausfuehrung alt
+expect:  --laderom: unbekannt 'v07' (v06|v09_1|v09_2)
+exit:    2

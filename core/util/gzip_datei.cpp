@@ -1,6 +1,6 @@
 /**
  * @file gzip_datei.cpp
- * @brief s. gzip_datei.h.  Die gzip-Hülle (RFC 1952) steht hier, miniz liefert rohes Deflate.
+ * @brief s. gzip_datei.h.  Die gzip-Huelle (RFC 1952) steht hier, miniz liefert rohes Deflate.
  */
 #include "core/util/gzip_datei.h"
 
@@ -33,7 +33,7 @@ void le32(std::vector<uint8_t>& v, uint32_t x)
 
 void setze(std::string* fehler, const std::string& s) { if (fehler) *fehler = s; }
 
-/// Länge des Kopfs ab @p d; 0 = kein gültiger gzip-Kopf.
+/// Laenge des Kopfs ab @p d; 0 = kein gueltiger gzip-Kopf.
 size_t kopfLaenge(const uint8_t* d, size_t n)
 {
     if (n < 10 || d[0] != ID1 || d[1] != ID2 || d[2] != CM_DEFLATE || (d[3] & FRESERVIERT)) return 0;
@@ -86,12 +86,12 @@ bool packen(const uint8_t* d, size_t n, std::vector<uint8_t>& aus, int stufe)
     aus.reserve(n / 8 + 1024);
     // Kopf: keine Flags, keine Zeit (Abbilder sollen bei gleichem Inhalt gleich sein), OS = unbekannt
     aus.insert(aus.end(), {ID1, ID2, CM_DEFLATE, 0, 0, 0, 0, 0, static_cast<uint8_t>(stufe <= 1 ? 4 : 0), 0xFF});
-    // negative Fensterbreite = rohes Deflate ohne zlib-Hülle
+    // negative Fensterbreite = rohes Deflate ohne zlib-Huelle
     const int flags = static_cast<int>(
         tdefl_create_comp_flags_from_zip_params(std::clamp(stufe, 1, 9), -MZ_DEFAULT_WINDOW_BITS, MZ_DEFAULT_STRATEGY));
     if (!tdefl_compress_mem_to_output(d, n, deflatePut, &aus, flags)) return false;
     le32(aus, static_cast<uint32_t>(mz_crc32(MZ_CRC32_INIT, d, n)));
-    le32(aus, static_cast<uint32_t>(n));   // ISIZE = Länge mod 2^32
+    le32(aus, static_cast<uint32_t>(n));   // ISIZE = Laenge mod 2^32
     return true;
 }
 
@@ -99,15 +99,15 @@ bool entpacken(const uint8_t* d, size_t n, std::vector<uint8_t>& aus, std::strin
 {
     aus.clear();
     if (!istGzip(d, n)) { setze(fehler, "keine gzip-Datei"); return false; }
-    // Vorab-Größe aus der Länge des letzten Teils — bei einer einteiligen Datei genau richtig
+    // Vorab-Groesse aus der Laenge des letzten Teils — bei einer einteiligen Datei genau richtig
     if (n >= 18) aus.reserve(le32(d + n - 4));
     size_t pos = 0;
     while (pos < n) {
         const size_t kopf = kopfLaenge(d + pos, n - pos);
         if (kopf == 0) {
-            // Nach dem ersten Teil: Nullbytes (Auffüllung von Bandarchiven) sind erlaubt, sonst Müll
+            // Nach dem ersten Teil: Nullbytes (Auffuellung von Bandarchiven) sind erlaubt, sonst Muell
             if (pos > 0 && std::all_of(d + pos, d + n, [](uint8_t b) { return b == 0; })) break;
-            setze(fehler, pos == 0 ? "gzip-Kopf ungültig" : "unerwartete Daten hinter dem gzip-Ende");
+            setze(fehler, pos == 0 ? "gzip-Kopf ungueltig" : "unerwartete Daten hinter dem gzip-Ende");
             return false;
         }
         pos += kopf;
@@ -126,15 +126,15 @@ bool entpacken(const uint8_t* d, size_t n, std::vector<uint8_t>& aus, std::strin
             if (st == TINFL_STATUS_HAS_MORE_OUTPUT) { aus.resize(aus.size() * 2); continue; }
             aus.clear();
             setze(fehler, st == TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS || st == TINFL_STATUS_NEEDS_MORE_INPUT
-                              ? "gzip-Datei abgeschnitten" : "gzip-Daten beschädigt");
+                              ? "gzip-Datei abgeschnitten" : "gzip-Daten beschaedigt");
             return false;
         }
         aus.resize(laenge);
-        if (pos + 8 > n) { aus.clear(); setze(fehler, "gzip-Datei abgeschnitten (Prüfsumme fehlt)"); return false; }
+        if (pos + 8 > n) { aus.clear(); setze(fehler, "gzip-Datei abgeschnitten (Pruefsumme fehlt)"); return false; }
         const uint32_t crc = static_cast<uint32_t>(mz_crc32(MZ_CRC32_INIT, aus.data() + anfang, laenge - anfang));
         if (crc != le32(d + pos) || static_cast<uint32_t>(laenge - anfang) != le32(d + pos + 4)) {
             aus.clear();
-            setze(fehler, "gzip-Prüfsumme falsch — Datei beschädigt");
+            setze(fehler, "gzip-Pruefsumme falsch — Datei beschaedigt");
             return false;
         }
         pos += 8;
@@ -206,13 +206,13 @@ bool speichern(const std::string& pfad, const uint8_t* d, size_t n, Art art, int
         if (!f) {
             std::error_code ec;
             std::filesystem::remove(tmp, ec);
-            setze(fehler, "nicht vollständig geschrieben: " + tmp);
+            setze(fehler, "nicht vollstaendig geschrieben: " + tmp);
             return false;
         }
     }
     // Ersetzt das Original atomar.  Unter Windows scheitert das, solange ein anderer die Datei offen
-    // hält (Virenscanner, Dateibetrachter, ein ifstream im Test) — erst kurz wiederholen, dann als
-    // letzter Ausweg direkt überschreiben (nicht atomar, aber so, wie es vor gzip immer war).
+    // haelt (Virenscanner, Dateibetrachter, ein ifstream im Test) — erst kurz wiederholen, dann als
+    // letzter Ausweg direkt ueberschreiben (nicht atomar, aber so, wie es vor gzip immer war).
     std::error_code ec;
     for (int versuch = 0; versuch < 5; ++versuch) {
         std::filesystem::rename(tmp, pfad, ec);

@@ -1,9 +1,9 @@
 /**
  * @file prn_listing.h
- * @brief Parser für MACRO-80 ".prn"-Listings (Adresse → kommentierte Quellzeile).
+ * @brief Parser fuer MACRO-80 ".prn"-Listings (Adresse → kommentierte Quellzeile).
  *
  * Die CP/A-Quellen (BIOS, BDOS, …) liegen als gut kommentierte MACRO-80-Listings
- * vor (z.B. CPA_Workbench/build/bios.prn).  Jede emittierte Zeile trägt links die
+ * vor (z.B. CPA_Workbench/build/bios.prn).  Jede emittierte Zeile traegt links die
  * absolute Lade-Adresse + die erzeugten Objektbytes und rechts die Original-
  * Quellzeile mit Label, Mnemonic und ;Kommentar:
  *
@@ -11,19 +11,19 @@
  *     D271    04             C      <TAB>DB<TAB>4<TAB>;;(2)<TAB>;BLOCK SHIFT
  *
  * Dieser Header baut daraus eine `Adresse → Quelltext`-Tabelle, mit der Debugger/
- * Trace-Werkzeuge ihre Disassembler-Ausgabe annotieren können — kein Disassemblieren
- * nötig, Mnemonic *und* Kommentar stehen schon im Listing.
+ * Trace-Werkzeuge ihre Disassembler-Ausgabe annotieren koennen — kein Disassemblieren
+ * noetig, Mnemonic *und* Kommentar stehen schon im Listing.
  *
  * Parse-Regel (robust gegen die "db == zwei Hexziffern"-Falle):
- *   - Erstes Token = 4-stellige Hex-Adresse (optional ' für relozierbar) → Loc-Counter.
+ *   - Erstes Token = 4-stellige Hex-Adresse (optional ' fuer relozierbar) → Loc-Counter.
  *   - Es muss mindestens EIN emittiertes Objektbyte folgen (Token = exakt 2 Hexziffern);
  *     dadurch fallen equ/aset/set/Makro-Definitions-/Leerzeilen automatisch heraus
- *     (deren führende 4-Hex ist ein *Wert*, kein Loc-Counter, und es folgen keine Bytes).
- *   - Die linke Marge (Adresse + Objektbytes + Listing-Flag) enthält NIE Tab und NIE ':'.
+ *     (deren fuehrende 4-Hex ist ein *Wert*, kein Loc-Counter, und es folgen keine Bytes).
+ *   - Die linke Marge (Adresse + Objektbytes + Listing-Flag) enthaelt NIE Tab und NIE ':'.
  *     Das Quellfeld beginnt deshalb entweder beim Label (Bezeichner, der vor dem ersten
  *     Tab mit ':' endet) oder — wenn label-los — beim ersten Tab.
  *
- * Header-only, keine Abhängigkeiten außer der STL → direkt unit-testbar.
+ * Header-only, keine Abhaengigkeiten ausser der STL → direkt unit-testbar.
  *
  * @license MIT
  */
@@ -40,7 +40,7 @@ namespace prnlst {
 inline bool isHexDigit(char c){
     return (c>='0'&&c<='9')||(c>='A'&&c<='F')||(c>='a'&&c<='f');
 }
-// Zeichen, die in einem MACRO-80-Bezeichner (Label) vorkommen dürfen.
+// Zeichen, die in einem MACRO-80-Bezeichner (Label) vorkommen duerfen.
 inline bool isIdentChar(char c){
     return (c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')
         || c=='@'||c=='?'||c=='$'||c=='.'||c=='_';
@@ -54,7 +54,7 @@ inline bool isIdentChar(char c){
  * @return true, wenn die Zeile eine emittierte Code-/Daten-Zeile ist.
  */
 /**
- * Das führende Label einer aufbereiteten Quellzeile extrahieren (oder "").
+ * Das fuehrende Label einer aufbereiteten Quellzeile extrahieren (oder "").
  * Eine Zeile "BIOS27: JP read ;…" liefert "BIOS27". Labels beginnen mit einem
  * Bezeichner-Zeichen (kein Ziffernanfang) und enden mit ':'.
  */
@@ -68,8 +68,8 @@ inline std::string labelOf(const std::string& src){
 }
 
 /**
- * Wie @ref parseLine, liefert zusätzlich die emittierten Objektbytes der Zeile.
- * @param bytes [out] die Bytes der linken Marge (für den Versatz-Abgleich `@auto`).
+ * Wie @ref parseLine, liefert zusaetzlich die emittierten Objektbytes der Zeile.
+ * @param bytes [out] die Bytes der linken Marge (fuer den Versatz-Abgleich `@auto`).
  */
 inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
                       std::vector<uint8_t>* bytes);
@@ -93,10 +93,10 @@ inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
     if (i<n && line[i]!=' ' && line[i]!='\t') return false;  // Token muss enden
     uint16_t a = (uint16_t)strtol(line.substr(a0, alen).c_str(), nullptr, 16);
 
-    // --- Gen-2-Listings (k8915g2_*.prn, AP-V3a/V6b): zweite Adressspalte „LAUF“ überspringen ---
+    // --- Gen-2-Listings (k8915g2_*.prn, AP-V3a/V6b): zweite Adressspalte „LAUF“ ueberspringen ---
     // „0055 FC55  ED A1 <Tab>CPI“: erst LADE-, dann LAUF-Adresse (4 Hexziffern), dann die Bytes.
-    // Maßgeblich bleibt die erste (LADE); `@0xFC00:0021-03FF` legt sie auf die Laufadresse.
-    // Nur wenn auf das 4-stellige Token ein 2-stelliges Byte-Token folgt — sonst unverändert.
+    // Massgeblich bleibt die erste (LADE); `@0xFC00:0021-03FF` legt sie auf die Laufadresse.
+    // Nur wenn auf das 4-stellige Token ein 2-stelliges Byte-Token folgt — sonst unveraendert.
     skipSp();
     {
         size_t k = i, s0 = k;
@@ -117,10 +117,10 @@ inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
     bool byteFollows = (blen==2) && (i>=n || line[i]==' ' || line[i]=='\t');
     if (!byteFollows) return false;                  // equ/aset/Makro-Def/leer → raus
 
-    // --- Objektbytes einsammeln (optional; für den Versatz-Abgleich `@auto`) --
-    // Die linke Marge enthält NIE Tab/':' — die Byte-Tokens (exakt 2 Hexziffern)
-    // enden also spätestens am Quellfeld.
-    // MACRO-80 druckt 16-Bit-Operanden als EIN Wort ("C3 E860" für JP 0E860H) —
+    // --- Objektbytes einsammeln (optional; fuer den Versatz-Abgleich `@auto`) --
+    // Die linke Marge enthaelt NIE Tab/':' — die Byte-Tokens (exakt 2 Hexziffern)
+    // enden also spaetestens am Quellfeld.
+    // MACRO-80 druckt 16-Bit-Operanden als EIN Wort ("C3 E860" fuer JP 0E860H) —
     // ein 4-stelliges Token liefert also zwei Bytes (lo, hi).
     if (bytes){
         bytes->clear();
@@ -147,7 +147,7 @@ inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
     size_t colon = line.find(':');
     if (colon != std::string::npos &&
         (tabPos == std::string::npos || colon < tabPos)) {
-        // Label-Anfang = zurücklaufen über den Bezeichner vor dem ':'.
+        // Label-Anfang = zuruecklaufen ueber den Bezeichner vor dem ':'.
         size_t s = colon;
         while (s > 0 && isIdentChar(line[s-1])) --s;
         srcStart = s;
@@ -182,8 +182,8 @@ inline bool parseLine(const std::string& line, uint16_t& addr, std::string& src,
 /**
  * Offset-Argument parsen ("@OFFSET"-Spezifikation eines `-l`-Listings).
  * Akzeptiert vorzeichenbehaftet: `0x1F00`, `-0x100`, `1800h`, `512`, `-256`.
- * @param str  Offset-Text (ohne führendes '@').
- * @param ok   [out] true bei gültiger Zahl.
+ * @param str  Offset-Text (ohne fuehrendes '@').
+ * @param ok   [out] true bei gueltiger Zahl.
  * @return     der Offset (0 bei Fehler).
  */
 inline long parseOffset(const std::string& str, bool& ok){
@@ -201,7 +201,7 @@ inline long parseOffset(const std::string& str, bool& ok){
 
 /**
  * Eine `-l`-Spezifikation "PFAD[@OFFSET]" in Pfad + Offset aufteilen.
- * @return false, wenn ein @OFFSET angegeben, aber ungültig ist.
+ * @return false, wenn ein @OFFSET angegeben, aber ungueltig ist.
  */
 inline bool splitSpec(const std::string& spec, std::string& path, long& offset){
     offset = 0;
@@ -216,12 +216,12 @@ inline bool splitSpec(const std::string& spec, std::string& path, long& offset){
  * Eine `-l`-Spezifikation mit optionalem Quellbereich aufteilen:
  * "PFAD[@OFFSET][:VON-BIS]" — genauer: hinter dem '@' steht `OFFSET`, `OFFSET:VON-BIS`
  * oder `:VON-BIS` (Versatz 0).  VON/BIS sind LISTING-Adressen (vor dem Versatz), hex
- * mit oder ohne `0x`/`H`.  Damit lässt sich ein Teil eines Listings an eine andere
- * Laufzeitadresse legen, ohne den Rest mitzuverschieben — beim K8915-Boot-ROM läuft
+ * mit oder ohne `0x`/`H`.  Damit laesst sich ein Teil eines Listings an eine andere
+ * Laufzeitadresse legen, ohne den Rest mitzuverschieben — beim K8915-Boot-ROM laeuft
  * 00D0H–03FFH als Kopie bei F0D0H, 0000H–00CFH und 0400H–09FFH aber an Ort und Stelle
  * (`k8915_zre.prn@0xF000:00D0-03FF`).  §8a AP-E4d.
  * @param lo,hi [out] Quellbereich, -1/-1 = ganzes Listing.
- * @return false bei ungültigem Versatz oder Bereich.
+ * @return false bei ungueltigem Versatz oder Bereich.
  */
 inline bool splitSpecRange(const std::string& spec, std::string& path, long& offset,
                            int& lo, int& hi){
@@ -258,19 +258,19 @@ inline bool splitSpecRange(const std::string& spec, std::string& path, long& off
 /// Eine geladene .prn-Tabelle: Adresse → kommentierte Quellzeile.
 struct Listing {
     std::map<uint16_t, std::string> by_addr;
-    /// Objektbytes je (Laufzeit-)Adresse — nur gefüllt, wenn load(…, want_bytes=true).
+    /// Objektbytes je (Laufzeit-)Adresse — nur gefuellt, wenn load(…, want_bytes=true).
     std::map<uint16_t, uint8_t>     bytes_by_addr;
     /// Labels, die im Listing auf einer EIGENEN Zeile stehen ("L055E:" ohne Code, wie in
-    /// den selbst erzeugten K8915-Listings) — gelten für die nächste Codezeile.  Nur für
-    /// @ref labelNear; by_addr/Symbolimport bleiben davon unberührt.
+    /// den selbst erzeugten K8915-Listings) — gelten fuer die naechste Codezeile.  Nur fuer
+    /// @ref labelNear; by_addr/Symbolimport bleiben davon unberuehrt.
     std::map<uint16_t, std::string> labels_by_addr;
 
     /**
-     * Lädt eine .prn-Datei.
+     * Laedt eine .prn-Datei.
      * @param path         Listing-Datei.
-     * @param addr_offset  zu jeder Listing-Adresse addiert (für reloziert geladenen Code);
+     * @param addr_offset  zu jeder Listing-Adresse addiert (fuer reloziert geladenen Code);
      *                     die Tabelle wird also unter der LAUFZEIT-Adresse abgelegt.
-     * @param want_bytes   zusätzlich die Objektbytes in @ref bytes_by_addr ablegen
+     * @param want_bytes   zusaetzlich die Objektbytes in @ref bytes_by_addr ablegen
      *                     (Versatz-Abgleich `@auto`).
      * @return Zahl aufgenommener Code-Zeilen (-1 = Datei fehlt).
      */
@@ -314,18 +314,18 @@ struct Listing {
     /**
      * Stehen an @p a gerade die Objektbytes der Listingzeile im Speicher?
      *
-     * Für Maschinen, deren Speicherbild umschaltet (K8915: 0000H–0FFFH ist je nach A8H
+     * Fuer Maschinen, deren Speicherbild umschaltet (K8915: 0000H–0FFFH ist je nach A8H
      * das Boot-ROM ODER RAM mit dem TPA) — eine ROM-Zeile darf dann nur annotieren,
      * solange das ROM auch eingeblendet ist.  Verglichen werden die Bytes der Zeile
-     * (höchstens 4, bis zur nächsten Listingzeile).  Ohne Objektbytes (geladen ohne
-     * `want_bytes`) gibt es nichts zu prüfen → true.
+     * (hoechstens 4, bis zur naechsten Listingzeile).  Ohne Objektbytes (geladen ohne
+     * `want_bytes`) gibt es nichts zu pruefen → true.
      */
     template <class ReadByte>
     bool matches(uint16_t a, ReadByte rd) const {
         if (bytes_by_addr.empty()) return true;
         for (int k = 0; k < 4; ++k){
             const uint16_t x = (uint16_t)(a + k);
-            if (k > 0 && by_addr.count(x)) break;          // nächste Zeile beginnt
+            if (k > 0 && by_addr.count(x)) break;          // naechste Zeile beginnt
             auto it = bytes_by_addr.find(x);
             if (it == bytes_by_addr.end()) break;
             if (rd(x) != it->second) return false;
@@ -334,8 +334,8 @@ struct Listing {
     }
 
     /**
-     * Nächstes Label an oder vor @p a (höchstens @p max_back Byte zurück) als
-     * "NAME" bzw. "NAME+n" — für PC-Histogramme, deren Adressen meist mitten in einer
+     * Naechstes Label an oder vor @p a (hoechstens @p max_back Byte zurueck) als
+     * "NAME" bzw. "NAME+n" — fuer PC-Histogramme, deren Adressen meist mitten in einer
      * Routine liegen.  "" wenn keins in Reichweite.
      */
     std::string labelNear(uint16_t a, int max_back = 256) const {

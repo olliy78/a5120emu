@@ -4,12 +4,12 @@
  *        nach dem Kaltstart ohne Nachladen bereit.
  *
  * Diskette `cpa_cpa780_k5601_noclock-raf.img` — `cpa_cpa780_k5601_noclock.img` mit einem
- * `@OS.COM` aus `bios_org.mac` mit `raf = 1`, `rafpar = 1` (Software-Parität, 127 Sektoren
+ * `@OS.COM` aus `bios_org.mac` mit `raf = 1`, `rafpar = 1` (Software-Paritaet, 127 Sektoren
  * je Spur), `raf_d = 88H`, `raf_nb = 4` (Bau: tests/fixtures/README.md).  Das BIOS misst die
- * Karte selbst (`raftst`, §3.3), wählt den DPB nach der Kapazität und meldet im
- * Kaltstartblock „- RAF mit Parity als RAM-Floppy M:" samt Kapazitätszeile (Texte wörtlich
- * aus `bioscld3.mac`/`biosrafi.mac`).  Die drei Kartentypen prüfen die DPB-Wahl:
- * RAF128 → 8 Spuren/127 kByte (1-K-Blöcke), RAF512 → 32/508 (2 K), RAF-2M → 128/2032 (4 K).
+ * Karte selbst (`raftst`, §3.3), waehlt den DPB nach der Kapazitaet und meldet im
+ * Kaltstartblock „- RAF mit Parity als RAM-Floppy M:" samt Kapazitaetszeile (Texte woertlich
+ * aus `bioscld3.mac`/`biosrafi.mac`).  Die drei Kartentypen pruefen die DPB-Wahl:
+ * RAF128 → 8 Spuren/127 kByte (1-K-Bloecke), RAF512 → 32/508 (2 K), RAF-2M → 128/2032 (4 K).
  */
 #include <gtest/gtest.h>
 
@@ -35,11 +35,11 @@ using k1520test::visibleText;
 namespace {
 
 constexpr long long kBootBudget = 90'000'000;
-constexpr long long kFormat     = 600'000'000;    // nichtzerstörende Formatierung, RAF-2M
+constexpr long long kFormat     = 600'000'000;    // nichtzerstoerende Formatierung, RAF-2M
 constexpr long long kBefehl     = 120'000'000;
 const char*         kCpaRaf     = "cpa_cpa780_k5601_noclock-raf.img";
 
-// Texte wörtlich aus bioscld3.mac / biosrafi.mac (rafpar = 1).
+// Texte woertlich aus bioscld3.mac / biosrafi.mac (rafpar = 1).
 const char* kBlock   = "- RAF mit Parity als RAM-Floppy M:";
 const char* kOhne    = "- RAF mit Parity als RAM-Floppy ??";
 const char* kUndef   = "M: ist undefiniert, es folgt nichtzerstoerende Formatierung ...";
@@ -77,7 +77,7 @@ bool steht(A5120Machine& m, const std::string& s) {
     return k1520test::vramText(m).find(s) != std::string::npos;
 }
 
-/// Netz-Ein bis zum Prompt; die Formatierung von M: läuft VOR dem Prompt.
+/// Netz-Ein bis zum Prompt; die Formatierung von M: laeuft VOR dem Prompt.
 void kaltstart(A5120Machine& m) {
     m.powerOn();
     ASSERT_TRUE(runUntilVramContains(m, "TPA ist OK!", kBootBudget)) << vramLines(m);
@@ -93,7 +93,7 @@ void resetTaste(A5120Machine& m) {
     ASSERT_TRUE(bisPrompt(m, kBefehl)) << vramLines(m);
 }
 
-/// Kennung `RFPvalid.SYS` (User 32) in Spur 0 der Karte.  Die Paritätsfassung liest mit
+/// Kennung `RFPvalid.SYS` (User 32) in Spur 0 der Karte.  Die Paritaetsfassung liest mit
 /// `IN D,(C)` / `DJNZ` ab B = 128: Byte 0 des Puffers liegt bei Index 0, Byte k ≥ 1 bei
 /// Index 128 − k (§3.2, kein Autoinkrement).
 bool kennungInSpur0(const RAF& raf) {
@@ -166,7 +166,7 @@ TEST_F(RafCpaBios, MStehtBereitUndUeberstehtReset) {
 
 /**
  * @test RafCpaBios.OhneKarteKeinM
- * @brief Dieselbe Diskette ohne gesteckte RAF: „RAM-Floppy ??" (das BIOS trägt M: aus der
+ * @brief Dieselbe Diskette ohne gesteckte RAF: „RAM-Floppy ??" (das BIOS traegt M: aus der
  *        DPH-Tabelle aus), keine Formatierung, keine Kennungsmeldung.
  */
 TEST_F(RafCpaBios, OhneKarteKeinM) {
@@ -191,7 +191,7 @@ class RafCpaBiosKapazitaet : public RafCpaBios,
 
 /**
  * @test RafCpaBiosKapazitaet.DpbNachKapazitaet
- * @brief Je Kartentyp die Kapazitätszeile des Kaltstarts (DPB-Wahl des BIOS, §3.3) und ein
+ * @brief Je Kartentyp die Kapazitaetszeile des Kaltstarts (DPB-Wahl des BIOS, §3.3) und ein
  *        benutzbares M: (`PIP`, `DIR`).
  */
 TEST_P(RafCpaBiosKapazitaet, DpbNachKapazitaet) {

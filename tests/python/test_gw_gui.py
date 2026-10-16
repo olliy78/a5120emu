@@ -1,8 +1,8 @@
-"""Oberflächen der physischen Diskette — Emulator und k1520DiskTool, **ohne Hardware**.
+"""Oberflaechen der physischen Diskette — Emulator und k1520DiskTool, **ohne Hardware**.
 
-Geprüft wird die Verdrahtung, nicht das Aussehen: dass der Weg „Knopf → Sitzung →
+Geprueft wird die Verdrahtung, nicht das Aussehen: dass der Weg „Knopf → Sitzung →
 angemeldete Diskette → Anzeige → sauberes Abmelden" in beiden Programmen wirklich
-zusammenhängt.  Das echte Laufwerk vertritt dabei das Ersatzlaufwerk aus
+zusammenhaengt.  Das echte Laufwerk vertritt dabei das Ersatzlaufwerk aus
 :mod:`gw_fake` (eine ``.hfe``-Aufnahme).
 
 Siehe doc/design/14_physische_diskette.md §12.
@@ -40,16 +40,16 @@ def app():
 def hosttools_gelten_als_vorhanden(monkeypatch):
     """Das Ersatzlaufwerk vertritt **Adapter und Paket** — also auch deren Vorhandensein.
 
-    Die Bedienwege prüfen vor dem Auswahldialog, ob die Hosttools da sind („erst
-    prüfen, dann fragen"); das ist richtig und wird eigens geprüft.  Für die Tests,
+    Die Bedienwege pruefen vor dem Auswahldialog, ob die Hosttools da sind („erst
+    pruefen, dann fragen"); das ist richtig und wird eigens geprueft.  Fuer die Tests,
     die eine ERSATZSITZUNG einsetzen, ist es aber eine Falle: dort steht kein
-    Greaseweazle, das Paket ist eine freiwillige Abhängigkeit — und in der CI ist es
-    **nie** installiert.  Die Prüfung schlug dann zu, noch bevor die Ersatzsitzung
-    zum Zug kam, und die Fälle scheiterten (bzw. hingen an einem modalen Fenster).
+    Greaseweazle, das Paket ist eine freiwillige Abhaengigkeit — und in der CI ist es
+    **nie** installiert.  Die Pruefung schlug dann zu, noch bevor die Ersatzsitzung
+    zum Zug kam, und die Faelle scheiterten (bzw. hingen an einem modalen Fenster).
 
-    Gesetzt wird die UNTERSTE Stufe (`app.gw.verfuegbar`), damit die beiden Fälle,
-    die das Fehlen ausdrücklich vorführen, sie im Testkörper weiter auf ``False``
-    ziehen können — ihr ``monkeypatch`` greift später und gewinnt.
+    Gesetzt wird die UNTERSTE Stufe (`app.gw.verfuegbar`), damit die beiden Faelle,
+    die das Fehlen ausdruecklich vorfuehren, sie im Testkoerper weiter auf ``False``
+    ziehen koennen — ihr ``monkeypatch`` greift spaeter und gewinnt.
     """
     import app.gw as gw
     monkeypatch.setattr(gw, "verfuegbar", lambda: True)
@@ -63,7 +63,7 @@ def _warte(pred, frist=30.0):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Gemeinsames Stück: Auswahl und Sitzung
+# Gemeinsames Stueck: Auswahl und Sitzung
 # ════════════════════════════════════════════════════════════════════════════
 
 
@@ -88,10 +88,10 @@ def test_auswahl_liefert_genau_die_argumente_der_sitzung(app):
 
 
 def test_disktool_oeffnet_mit_der_vollen_dialogauswahl(app, hfe, monkeypatch):
-    """Der Weg, den der Bediener geht: Dialogauswahl **unverändert** ins Fenster.
+    """Der Weg, den der Bediener geht: Dialogauswahl **unveraendert** ins Fenster.
 
     Die Tests riefen ``open_physical`` bisher mit einer Handvoll Argumente auf und
-    sahen deshalb nicht, dass die Auswahl inzwischen mehr enthält, als das Fenster
+    sahen deshalb nicht, dass die Auswahl inzwischen mehr enthaelt, als das Fenster
     entgegennimmt (``verify_writes`` → ``TypeError`` beim Klick auf „Einlegen").
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
@@ -115,8 +115,8 @@ def test_disktool_oeffnet_mit_der_vollen_dialogauswahl(app, hfe, monkeypatch):
 def test_beide_programme_nehmen_die_ganze_auswahl_entgegen(app):
     """Die Auswahl muss auch durch die Fenster passen, nicht nur in die Sitzung.
 
-    Der Emulator reicht sie mit ``**wahl`` durch und wächst dadurch von selbst mit.
-    Das DiskTool zählte die Argumente einmal einzeln auf — und als ``verify_writes``
+    Der Emulator reicht sie mit ``**wahl`` durch und waechst dadurch von selbst mit.
+    Das DiskTool zaehlte die Argumente einmal einzeln auf — und als ``verify_writes``
     zum Dialog kam, warf der Klick auf „Einlegen" ein ``TypeError``.  Beide Wege
     werden deshalb hier gegen denselben Dialog gehalten.
     """
@@ -150,12 +150,12 @@ def test_ohne_paket_kommt_der_grund_vor_dem_auswahldialog(app, monkeypatch):
 
     Zwei Fallen, in die diese Stelle schon getappt ist:
 
-    * Ein **gesperrter** Menüpunkt hilft nicht: ``QMenu`` zeigt Tooltips gesperrter
-      Einträge von Haus aus nicht an (``setToolTipsVisible`` ist aus), man sähe nur
-      Grau ohne Erklärung.  Er bleibt deshalb auslösbar.
-    * Prüft erst ``open_physical`` (also hinter dem Auswahldialog), füllt der
+    * Ein **gesperrter** Menuepunkt hilft nicht: ``QMenu`` zeigt Tooltips gesperrter
+      Eintraege von Haus aus nicht an (``setToolTipsVisible`` ist aus), man saehe nur
+      Grau ohne Erklaerung.  Er bleibt deshalb ausloesbar.
+    * Prueft erst ``open_physical`` (also hinter dem Auswahldialog), fuellt der
       Bediener Laufwerk und Geometrie aus, klickt „Einlegen" — und bekommt dann
-      erst zu hören, dass es von vornherein nicht gehen konnte.
+      erst zu hoeren, dass es von vornherein nicht gehen konnte.
     """
     import app.gw as gw
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
@@ -226,7 +226,7 @@ def test_emulator_legt_eine_physische_diskette_ein_und_zeigt_sie_an(app, hfe,
     # isVisible() waere hier immer False — das Fenster wird nie gezeigt.
     assert not panel._phys_label.isHidden()
 
-    # Auswerfen beendet die Sitzung UND hängt aus.
+    # Auswerfen beendet die Sitzung UND haengt aus.
     panel._toggle_btn.click()
     assert 0 not in w._physical
     assert panel._toggle_btn.text() == "Mount"
@@ -236,12 +236,12 @@ def test_emulator_legt_eine_physische_diskette_ein_und_zeigt_sie_an(app, hfe,
 
 def test_der_emulator_legt_physisch_schreibend_ein_und_der_haken_sperrt_sofort(
         app, hfe, monkeypatch):
-    """Zwei Schlösser hintereinander — und beide müssen im Kasten zu sehen sein.
+    """Zwei Schloesser hintereinander — und beide muessen im Kasten zu sehen sein.
 
     Im Emulator wird die Diskette nicht angesehen, sondern **benutzt**: der Haken im
-    Dialog ist deshalb gesetzt.  Der Schreibschutz sitzt dafür am LAUFWERK, wie die
+    Dialog ist deshalb gesetzt.  Der Schreibschutz sitzt dafuer am LAUFWERK, wie die
     Kerbe am Rand der echten Diskette — er wirkt sofort, das Gastsystem sieht ihn,
-    und es entsteht keine geänderte Spur, die an den Adapter ginge.
+    und es entsteht keine geaenderte Spur, die an den Adapter ginge.
     """
     from app.core_binding.k1520 import K1520Emulator
     from app.ui import physical_disk
@@ -315,7 +315,7 @@ def test_emulator_merkt_sich_kein_physisches_laufwerk_in_der_konfiguration(
         app, hfe, monkeypatch):
     """Eine physische Diskette hat keinen Pfad — sie darf nicht in die Config.
 
-    Sonst stünde beim nächsten Start ein Eintrag da, den niemand einlösen kann
+    Sonst stuende beim naechsten Start ein Eintrag da, den niemand einloesen kann
     (das Sync-Handle ist nach dem Einlegen verbraucht).
     """
     from app.core_binding.k1520 import K1520Emulator
@@ -371,11 +371,11 @@ def test_disktool_oeffnet_ueber_die_oberflaeche_und_zeigt_die_dateien(
 
 
 def test_disktool_fuehrt_den_fuellstand_nach(app, hfe, monkeypatch):
-    """Die Statuszeile darf nicht auf dem Stand vom Öffnen stehenbleiben.
+    """Die Statuszeile darf nicht auf dem Stand vom Oeffnen stehenbleiben.
 
-    Beim Vorauslesen wächst die Zahl gelesener Spuren weiter; ohne Zeitgeber blieb
+    Beim Vorauslesen waechst die Zahl gelesener Spuren weiter; ohne Zeitgeber blieb
     die Anzeige auf dem Wert des letzten `_reload` stehen (beobachtet: „59" bis zum
-    Schluss).  Der Emulator führt seine Füllstandszeile aus demselben Grund nach.
+    Schluss).  Der Emulator fuehrt seine Fuellstandszeile aus demselben Grund nach.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
@@ -403,7 +403,7 @@ def test_disktool_fuehrt_den_fuellstand_nach(app, hfe, monkeypatch):
         sitzung.worker.stop()
         fenster._physisch_tick()
         assert fenster.st_physisch.text(), "nach dem Tick ist die Anzeige leer"
-        # Der Wert muss dem Sync folgen, nicht einem Stand von früher.
+        # Der Wert muss dem Sync folgen, nicht einem Stand von frueher.
         assert fenster.st_physisch.text() == sitzung.status_text()
     finally:
         fenster._close_tool()
@@ -412,11 +412,11 @@ def test_disktool_fuehrt_den_fuellstand_nach(app, hfe, monkeypatch):
 
 
 def test_oberflaeche_laedt_nach_dem_oeffnen_keine_spur_mehr_nach(app, hfe, monkeypatch):
-    """Nach dem Fortschrittsdialog darf der Oberflächenfaden nicht mehr warten.
+    """Nach dem Fortschrittsdialog darf der Oberflaechenfaden nicht mehr warten.
 
-    `_reload()` ruft `tool.list()`, und bei UDOS hängt an jedem Verzeichniseintrag
+    `_reload()` ruft `tool.list()`, und bei UDOS haengt an jedem Verzeichniseintrag
     ein Kopfsektor irgendwo auf der Diskette — zwei Dutzend einzeln nachzuladende
-    Spuren.  Lief das im Oberflächenfaden, verarbeitete Qt so lange keine Ereignisse:
+    Spuren.  Lief das im Oberflaechenfaden, verarbeitete Qt so lange keine Ereignisse:
     Dateiliste leer, und ein Klick auf den Diskeditor wurde erst danach abgearbeitet
     (sah aus wie ein eingefrorenes Programm).  Deshalb holt der Arbeitsfaden das
     Verzeichnis gleich mit — und `_reload()` findet alles vor.
@@ -424,7 +424,7 @@ def test_oberflaeche_laedt_nach_dem_oeffnen_keine_spur_mehr_nach(app, hfe, monke
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
 
-    sitzung = fake_session(hfe, read_ahead=False)   # nur was ausdrücklich geholt wird
+    sitzung = fake_session(hfe, read_ahead=False)   # nur was ausdruecklich geholt wird
     monkeypatch.setattr(physical_disk.PhysicalSession, "start",
                         classmethod(lambda cls, **kw: sitzung))
 
@@ -442,16 +442,16 @@ def test_oberflaeche_laedt_nach_dem_oeffnen_keine_spur_mehr_nach(app, hfe, monke
 
 
 def test_dateiliste_kommt_zweistufig(app, hfe, monkeypatch):
-    """Namen sofort, Größe und Datum nachgetragen — wie `CAT` gegen `CAT F=L`.
+    """Namen sofort, Groesse und Datum nachgetragen — wie `CAT` gegen `CAT F=L`.
 
-    Bei UDOS steht im Verzeichnis nur Name und SECRET-Bit; Länge, Typ und Datum
-    liegen im Kopfsektor jeder Datei, verstreut über die Diskette.  Alles vorab zu
-    lesen kostete drei Dutzend Spuren, bevor der Bediener überhaupt etwas sah.
+    Bei UDOS steht im Verzeichnis nur Name und SECRET-Bit; Laenge, Typ und Datum
+    liegen im Kopfsektor jeder Datei, verstreut ueber die Diskette.  Alles vorab zu
+    lesen kostete drei Dutzend Spuren, bevor der Bediener ueberhaupt etwas sah.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
 
-    sitzung = fake_session(hfe, read_ahead=False)   # nur was ausdrücklich geholt wird
+    sitzung = fake_session(hfe, read_ahead=False)   # nur was ausdruecklich geholt wird
     monkeypatch.setattr(physical_disk.PhysicalSession, "start",
                         classmethod(lambda cls, **kw: sitzung))
 
@@ -465,7 +465,7 @@ def test_dateiliste_kommt_zweistufig(app, hfe, monkeypatch):
         assert eintraege, "keine Dateien"
         # Die Namen sind da …
         assert all(e.name for e in eintraege)
-        # … die teuren Angaben noch nicht (sonst wäre nichts gespart).
+        # … die teuren Angaben noch nicht (sonst waere nichts gespart).
         assert any(not e.details_loaded for e in eintraege)
         assert fuers_verzeichnis < len(eintraege) // 2, (
             f"{fuers_verzeichnis} Spuren für {len(eintraege)} Dateien — "
@@ -480,7 +480,7 @@ def test_dateiliste_kommt_zweistufig(app, hfe, monkeypatch):
         assert any(not e.details_loaded for e in fenster._eintraege), \
             "es wurde nachgeladen, statt dem Laufwerk zu folgen"
 
-        # … und sobald die Spuren da sind, füllt sich die Tabelle.
+        # … und sobald die Spuren da sind, fuellt sich die Tabelle.
         for kopf in range(sitzung.num_heads or 2):
             for c in range(sitzung.num_cyls or 80):
                 fenster.tool.track(c, kopf)
@@ -494,10 +494,10 @@ def test_dateiliste_kommt_zweistufig(app, hfe, monkeypatch):
 
 
 def test_befund_gilt_erst_der_stichprobe_und_wird_dann_ersetzt(app, hfe, monkeypatch):
-    """Ein Befund aus acht Spuren ist kein Befund über die Diskette.
+    """Ein Befund aus acht Spuren ist kein Befund ueber die Diskette.
 
-    Die Zählungen („2 Spuren hinter dem Format") sind Aussagen über die ANGESEHENEN
-    Spuren; auf der Referenzdiskette sind es tatsächlich sechs.  Der Satz muss das
+    Die Zaehlungen („2 Spuren hinter dem Format") sind Aussagen ueber die ANGESEHENEN
+    Spuren; auf der Referenzdiskette sind es tatsaechlich sechs.  Der Satz muss das
     sagen — und verschwinden, sobald die ganze Diskette gelesen ist.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
@@ -515,7 +515,7 @@ def test_befund_gilt_erst_der_stichprobe_und_wird_dann_ersetzt(app, hfe, monkeyp
         assert "Stichprobe" in stichprobe, \
             f"der Vorbehalt fehlt, der Satz liest sich wie ein Befund: {stichprobe!r}"
 
-        # Solange etwas fehlt, wird NICHT neu bewertet (das wäre die Nachladeorgie,
+        # Solange etwas fehlt, wird NICHT neu bewertet (das waere die Nachladeorgie,
         # die die Stichprobe gerade vermeidet).
         fenster._befund_auffrischen()
         assert fenster.tool.remarks == stichprobe
@@ -528,17 +528,17 @@ def test_befund_gilt_erst_der_stichprobe_und_wird_dann_ersetzt(app, hfe, monkeyp
         assert fenster.tool.examined_tracks == 0, "der Vorbehalt steht immer noch"
         assert "Stichprobe" not in fenster.tool.remarks
         assert "Stichprobe" not in fenster.info_bar.text()
-        # Und die vollständige Messung sieht mehr als die Stichprobe.
+        # Und die vollstaendige Messung sieht mehr als die Stichprobe.
         assert fenster.tool.remarks != stichprobe
     finally:
         fenster._close_tool()
 
 
 def test_ohne_befund_verschwindet_der_streifen_wieder(app, monkeypatch, fixture_disks):
-    """Eine unauffällige Diskette darf am Ende NICHTS mehr melden.
+    """Eine unauffaellige Diskette darf am Ende NICHTS mehr melden.
 
     Vorher blieb „an 8 Spuren erkannt (Stichprobe)" bis zum Schluss stehen — an einer
-    längst vollständig gelesenen Diskette ein Vorbehalt, der nicht mehr gilt.
+    laengst vollstaendig gelesenen Diskette ein Vorbehalt, der nicht mehr gilt.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
@@ -566,10 +566,10 @@ def test_ohne_befund_verschwindet_der_streifen_wieder(app, monkeypatch, fixture_
 
 
 def test_beide_richtungen_stehen_im_diskettenmenue(app):
-    """Laden und Überschreiben gehören zur DISKETTE, nicht zu „Datei".
+    """Laden und Ueberschreiben gehoeren zur DISKETTE, nicht zu „Datei".
 
-    „Datei" meint das Abbild; hier geht es um den Datenträger im Laufwerk — und die
-    beiden Richtungen desselben Wegs sucht man beieinander.  Beide sind zusätzlich
+    „Datei" meint das Abbild; hier geht es um den Datentraeger im Laufwerk — und die
+    beiden Richtungen desselben Wegs sucht man beieinander.  Beide sind zusaetzlich
     in der Symbolleiste, mit Symbol.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
@@ -577,10 +577,10 @@ def test_beide_richtungen_stehen_im_diskettenmenue(app):
     fenster = DiskToolWindow()
     try:
         def menue(titel):
-            """Beschriftungen eines Menüs.
+            """Beschriftungen eines Menues.
 
-            Die Texte werden gelesen, solange das QMenu noch lebt.  Gäbe man
-            `a.menu().actions()` heraus, stürbe der QMenu-Wrapper beim Verlassen
+            Die Texte werden gelesen, solange das QMenu noch lebt.  Gaebe man
+            `a.menu().actions()` heraus, stuerbe der QMenu-Wrapper beim Verlassen
             der Funktion und risse die Aktionen mit — PySide reicht das Eigentum
             an `QAction.menu()` durch, und man bekommt „Internal C++ object
             already deleted" an einer Stelle, die damit nichts zu tun hat.
@@ -607,11 +607,11 @@ def test_beide_richtungen_stehen_im_diskettenmenue(app):
 
 
 def test_ueberschreiben_fragt_vorher_und_bricht_bei_nein_ab(app, hfe, monkeypatch):
-    """Vor dem Überschreiben steht die Rückfrage — und ein Nein tut gar nichts.
+    """Vor dem Ueberschreiben steht die Rueckfrage — und ein Nein tut gar nichts.
 
     Hier geht kein Abbild verloren, sondern eine **Diskette**, unwiederbringlich.
-    Die Rückfrage kommt deshalb VOR dem Laufwerksdialog: wer abbricht, soll nicht
-    erst Laufwerk und Geometrie ausgefüllt haben.
+    Die Rueckfrage kommt deshalb VOR dem Laufwerksdialog: wer abbricht, soll nicht
+    erst Laufwerk und Geometrie ausgefuellt haben.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
@@ -645,12 +645,12 @@ def test_ueberschreiben_fragt_vorher_und_bricht_bei_nein_ab(app, hfe, monkeypatc
 
 
 def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
-    """Der Klick kehrt sofort zurück — geschrieben wird nebenher.
+    """Der Klick kehrt sofort zurueck — geschrieben wird nebenher.
 
     Es gibt hier **nichts zu warten**: `write_to_physical` stellt die Spuren nur als
-    geändert ein, hinausgeschrieben werden sie vom Arbeitsfaden (§7).  Ein modales
-    Fenster davorzusetzen hielte die Oberfläche für Minuten an, ohne etwas zu
-    gewinnen.  Die Statuszeile zählt mit, der Streifen meldet Beginn und Ende.
+    geaendert ein, hinausgeschrieben werden sie vom Arbeitsfaden (§7).  Ein modales
+    Fenster davorzusetzen hielte die Oberflaeche fuer Minuten an, ohne etwas zu
+    gewinnen.  Die Statuszeile zaehlt mit, der Streifen meldet Beginn und Ende.
     """
     import shutil
 
@@ -680,7 +680,7 @@ def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
                             "writable": True, "read_ahead": False}))
     monkeypatch.setattr("app.disktool.ui.main_window.QMessageBox.question",
                         lambda *a, **k: QMessageBox.Ok)
-    # Ein Meldungsfenster wäre hier der Fehler — es darf keines geben.
+    # Ein Meldungsfenster waere hier der Fehler — es darf keines geben.
     fenster_auf = []
     for name in ("information", "warning", "critical"):
         monkeypatch.setattr(f"app.disktool.ui.main_window.QMessageBox.{name}",
@@ -696,11 +696,11 @@ def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
         assert "beschrieben" in fenster.st_physisch.text(), \
             f"Statuszeile sagt nichts: {fenster.st_physisch.text()!r}"
         # Rot hinterlegt: „Diskette jetzt nicht entnehmen" — die Zeile muss sich
-        # von einer beiläufigen Statusmeldung unterscheiden.
+        # von einer beilaeufigen Statusmeldung unterscheiden.
         assert "#c0504d" in fenster.st_physisch.styleSheet(), \
             "der Warnanstrich fehlt"
         assert "Spuren" in fenster.info_bar.text()
-        # Solange es läuft, ist das Laufwerk belegt.
+        # Solange es laeuft, ist das Laufwerk belegt.
         assert not fenster.act_physisch.isEnabled()
         assert not fenster.act_physisch_schreiben.isEnabled()
 
@@ -721,22 +721,22 @@ def test_ueberschreiben_laeuft_im_hintergrund(app, hfe, tmp_path, monkeypatch):
 
 
 def test_dateisystem_laesst_sich_auch_physisch_uebersteuern(app, hfe, monkeypatch):
-    """Eine nicht erkannte Diskette muss von Hand zu öffnen sein — auch physisch.
+    """Eine nicht erkannte Diskette muss von Hand zu oeffnen sein — auch physisch.
 
-    Das Übersteuern rief `open_image(tool.path, name)`.  Eine physische Diskette hat
+    Das Uebersteuern rief `open_image(tool.path, name)`.  Eine physische Diskette hat
     **keinen Pfad**: der Aufruf ging auf `""`, warf alles weg und liess die Anzeige
-    leer.  Und war die Erkennung schon beim Öffnen gescheitert, gab es gar kein
-    `tool` — dann tat die Wahl überhaupt nichts, obwohl genau dann übersteuert
+    leer.  Und war die Erkennung schon beim Oeffnen gescheitert, gab es gar kein
+    `tool` — dann tat die Wahl ueberhaupt nichts, obwohl genau dann uebersteuert
     werden soll.
 
-    Der Fall ist real: eine cpa800-Diskette, über die UDOS geschrieben wurde
-    (Kopf 0 26×128, Kopf 1 5×1024), steht in keinem Katalog — von Hand gewählt
+    Der Fall ist real: eine cpa800-Diskette, ueber die UDOS geschrieben wurde
+    (Kopf 0 26×128, Kopf 1 5×1024), steht in keinem Katalog — von Hand gewaehlt
     liest sie sich einwandfrei.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
 
-    # Jede Öffnung braucht eine FRISCHE Sitzung — ein Sync-Handle ist verbraucht.
+    # Jede Oeffnung braucht eine FRISCHE Sitzung — ein Sync-Handle ist verbraucht.
     sitzungen = []
 
     def neue_sitzung(cls, **kw):
@@ -753,9 +753,9 @@ def test_dateisystem_laesst_sich_auch_physisch_uebersteuern(app, hfe, monkeypatc
         erkannt = fenster.tool.filesystem
         assert fenster._physisch_wahl, "die Angaben wurden nicht gemerkt"
 
-        # Umstellen: darf NICHT über open_image("") laufen (leerer Pfad) — und darf
+        # Umstellen: darf NICHT ueber open_image("") laufen (leerer Pfad) — und darf
         # die Diskette auch nicht noch einmal einlesen.  Sie liegt im Speicher; die
-        # Erkennung gehört dorthin.
+        # Erkennung gehoert dorthin.
         fenster._fs_setzen(erkannt, neu_oeffnen=True)
         assert fenster.tool is not None, "beim Übersteuern ging die Diskette verloren"
         assert fenster.tool.filesystem == erkannt
@@ -770,9 +770,9 @@ def test_dateisystem_laesst_sich_auch_physisch_uebersteuern(app, hfe, monkeypatc
 def test_nicht_erkannt_wird_roh_geoeffnet(app, hfe, monkeypatch):
     """Eine unerkannte Diskette ist nicht verloren — sie ist nur ungedeutet.
 
-    Früher gab es dann GAR NICHTS: kein Medium, kein Diskeditor, kein Abbild.
+    Frueher gab es dann GAR NICHTS: kein Medium, kein Diskeditor, kein Abbild.
     Jetzt liegt die Diskette im Speicher, nur ohne Dateisystem; der Editor geht,
-    das Abbild lässt sich sichern, und die Deutung kann später nachkommen —
+    das Abbild laesst sich sichern, und die Deutung kann spaeter nachkommen —
     wenn mehr gelesen ist oder das Abbild zurechtgeschnitten wurde (§12.6).
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
@@ -788,7 +788,7 @@ def test_nicht_erkannt_wird_roh_geoeffnet(app, hfe, monkeypatch):
     roh = bind.DiskTool.open_physical_raw
 
     class OhneDateisystem:
-        """Hülle um die echte Diskette, die `has_filesystem` verneint."""
+        """Huelle um die echte Diskette, die `has_filesystem` verneint."""
         def __init__(self, t): object.__setattr__(self, "_t", t)
         def __getattr__(self, n): return getattr(self._t, n)
         @property
@@ -810,11 +810,11 @@ def test_nicht_erkannt_wird_roh_geoeffnet(app, hfe, monkeypatch):
         # Der Diskeditor MUSS gehen — das ist der Sinn der Sache.
         assert fenster.act_diskeditor.isEnabled()
         assert fenster.act_speichern_unter.isEnabled(), "Abbild sichern gesperrt"
-        # Dateiabhängiges bleibt zu.
+        # Dateiabhaengiges bleibt zu.
         assert not fenster.act_alles_raus.isEnabled()
 
         # Und die Meldung ist KOMPAKT — 160 Zeilen sind keine Meldung, sondern
-        # eine Wand.  Vollständig steht sie im Protokoll.
+        # eine Wand.  Vollstaendig steht sie im Protokoll.
         text = fenster.info_bar.text()
         assert text.count("\n") == 0 and len(text) < 500, \
             f"Meldung zu lang ({len(text)} Zeichen, {text.count(chr(10))+1} Zeilen)"
@@ -828,7 +828,7 @@ def test_nicht_erkannt_wird_roh_geoeffnet(app, hfe, monkeypatch):
 def test_diskeditor_oeffnet_sofort_und_waechst_mit(app, hfe, monkeypatch):
     """Der Editor darf nicht auf die ganze Diskette warten.
 
-    Er las beim Öffnen jede Spur über ``tool.track()`` — an einem echten Laufwerk
+    Er las beim Oeffnen jede Spur ueber ``tool.track()`` — an einem echten Laufwerk
     heisst das: das Fenster steht anderthalb Minuten.  Jetzt zeigt er, was bekannt
     ist; ungelesene Spuren sind ``None`` (schwarz gezeichnet) und werden
     nachgetragen, sobald sie da sind.
@@ -838,7 +838,7 @@ def test_diskeditor_oeffnet_sofort_und_waechst_mit(app, hfe, monkeypatch):
     from app.ui import physical_disk
 
     # OHNE Vorauslesen: sonst ist beim Ersatzlaufwerk schon alles gelesen, bevor
-    # der Editor aufgeht — und der Fall, um den es hier geht, käme nie vor.
+    # der Editor aufgeht — und der Fall, um den es hier geht, kaeme nie vor.
     sitzung = fake_session(hfe, read_ahead=False)
     monkeypatch.setattr(physical_disk.PhysicalSession, "start",
                         classmethod(lambda cls, **kw: sitzung))
@@ -853,7 +853,7 @@ def test_diskeditor_oeffnet_sofort_und_waechst_mit(app, hfe, monkeypatch):
             assert unbekannt > 0, "kein ungelesener Teil — der Fall wird nicht geprüft"
             assert editor._nachlauf.isActive(), "die Ansicht wird nicht nachgeführt"
 
-            # Eine unbekannte Spur trägt keine Abschnitte, ist aber anklickbar:
+            # Eine unbekannte Spur traegt keine Abschnitte, ist aber anklickbar:
             # der Tooltip sagt, dass sie noch nicht gelesen ist.
             seite, nr = next((h, c) for h in range(len(editor.surface.tracks))
                              for c, t in enumerate(editor.surface.tracks[h])
@@ -905,9 +905,9 @@ def test_disktool_schliesst_die_sitzung_beim_naechsten_oeffnen(app, hfe, tmp_pat
 
 
 def test_disktool_archiviert_eine_physische_diskette(app, hfe, tmp_path, monkeypatch):
-    """Archivieren muss auch ohne Abbilddatei gehen — über die Beschriftung.
+    """Archivieren muss auch ohne Abbilddatei gehen — ueber die Beschriftung.
 
-    Vorher stürzte der Klickweg ab: ``Path(tool.path).with_suffix(".zip")`` mit
+    Vorher stuerzte der Klickweg ab: ``Path(tool.path).with_suffix(".zip")`` mit
     leerem Pfad wirft ``ValueError: has an empty name``.  Jetzt fragt das Werkzeug
     nach dem Aufkleber, und der benennt die Dateien im Archiv.
     """
@@ -942,8 +942,8 @@ def test_disktool_archiviert_eine_physische_diskette(app, hfe, tmp_path, monkeyp
 
     assert gefragt, "es wurde nicht nach der Beschriftung gefragt"
     assert "Aufkleber" in gefragt[0][1]
-    # Ohne Dateinamen schlägt das Werkzeug den Datenträgernamen vor — das Einzige,
-    # was die Diskette selbst über sich sagt.
+    # Ohne Dateinamen schlaegt das Werkzeug den Datentraegernamen vor — das Einzige,
+    # was die Diskette selbst ueber sich sagt.
     assert gefragt[0][2] == datentraeger and datentraeger
 
     assert ziel.exists(), "kein Archiv geschrieben"
@@ -957,7 +957,7 @@ def test_disktool_archiviert_eine_physische_diskette(app, hfe, tmp_path, monkeyp
     assert "Greaseweazle" in text, "die Herkunft steht nicht im Inhaltsverzeichnis"
 
     # Dasselbe maschinenlesbar: eine physische Diskette hat keinen Dateinamen —
-    # `label` ist der Aufkleber, `source` die Herkunft im Klartext.  Stünde dort
+    # `label` ist der Aufkleber, `source` die Herkunft im Klartext.  Stuende dort
     # nichts, waere in der Inventur nicht mehr zu sagen, WO diese Diskette lag.
     assert inventar["label"] == "UDOS 4.3 Nr. 7"
     assert "Greaseweazle" in inventar["source"]
@@ -1005,10 +1005,10 @@ def _mit_schadstelle(hfe, **kw):
 
 def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
                                                         monkeypatch):
-    """Der ganze Weg durch die Oberfläche: schreiben → prüfen → Warnung → Ausweg.
+    """Der ganze Weg durch die Oberflaeche: schreiben → pruefen → Warnung → Ausweg.
 
     Die Diskette nimmt nichts mehr an; der Verify-Lauf des Gastsystems liefe hier
-    gegen das Speicherabbild und sähe nichts.  Das Prüf-Lesen sieht es.
+    gegen das Speicherabbild und saehe nichts.  Das Pruef-Lesen sieht es.
     """
     from app.disktool.ui.main_window import MainWindow as DiskToolWindow
     from app.ui import physical_disk
@@ -1017,7 +1017,7 @@ def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
     monkeypatch.setattr(physical_disk.PhysicalSession, "start",
                         classmethod(lambda cls, **kw: sitzung))
 
-    # Warnungen abfangen statt anzeigen (headless gäbe es sonst ein modales Fenster).
+    # Warnungen abfangen statt anzeigen (headless gaebe es sonst ein modales Fenster).
     gemeldet = []
     monkeypatch.setattr("app.disktool.ui.main_window.QMessageBox.warning",
                         lambda parent, titel, text, *a, **k: gemeldet.append(text))
@@ -1030,13 +1030,13 @@ def test_disktool_meldet_die_schadstelle_beim_speichern(app, hfe, tmp_path,
         assert fenster.act_neu_beschreiben.isVisible(), "Ausweg fehlt"
         assert fenster.act_neu_beschreiben.isEnabled(), "Ausweg gesperrt"
 
-        # Ab jetzt trägt die Diskette nicht mehr.
+        # Ab jetzt traegt die Diskette nicht mehr.
         sitzung.device.schadhaft = {(c, h) for c in range(sitzung.device.num_cyls)
                                     for h in range(sitzung.device.num_heads)}
 
         quelle = tmp_path / "PROBE.TXT"
         quelle.write_bytes(b"schadstelle\r\n" * 4)
-        # Bei UDOS gehören die Kopfsektorangaben zur Datei; ohne sie wird
+        # Bei UDOS gehoeren die Kopfsektorangaben zur Datei; ohne sie wird
         # nicht mehr geraten (doc/bug_disktool_Programmdatei.md §2.2).
         (tmp_path / "PROBE.TXT.fileinfo").write_text(
             "fs=udos\\nname=PROBE.TXT\\ntyp=A\\nsatz=128\\n")
@@ -1056,13 +1056,13 @@ def test_defektmeldung_erscheint_nur_einmal_je_spur(app, hfe, monkeypatch):
     """Der Zeitgeber fragt zehnmal je Sekunde — melden darf er trotzdem nur einmal."""
     sitzung = fake_session(hfe, writable=True, read_ahead=False)
     try:
-        # Zwei Schadstellen vortäuschen, ohne echten Schreibweg.
+        # Zwei Schadstellen vortaeuschen, ohne echten Schreibweg.
         folge = ["5/1", "5/1", "5/1, 12/0", "5/1, 12/0"]
         monkeypatch.setattr(type(sitzung), "defect_tracks",
                             property(lambda self: folge.pop(0) if folge else "5/1, 12/0"))
 
         assert sitzung.neue_defekte() == "5/1"          # erste Meldung
-        assert sitzung.neue_defekte() == ""             # unverändert → still
+        assert sitzung.neue_defekte() == ""             # unveraendert → still
         assert sitzung.neue_defekte() == "5/1, 12/0"    # neue Spur → wieder melden
         assert sitzung.neue_defekte() == ""
     finally:
@@ -1070,9 +1070,9 @@ def test_defektmeldung_erscheint_nur_einmal_je_spur(app, hfe, monkeypatch):
 
 
 def test_die_meldung_nennt_den_grund_des_adapters(app, hfe):
-    """Schadstelle oder Gerät? — das trennt nur der Wortlaut des Adapters.
+    """Schadstelle oder Geraet? — das trennt nur der Wortlaut des Adapters.
 
-    Ohne ihn stünde im Fenster „Schadstelle der Diskette", waehrend in Wahrheit das
+    Ohne ihn stuende im Fenster „Schadstelle der Diskette", waehrend in Wahrheit das
     Laufwerk nicht dreht; der Bediener suchte dann bei der Diskette.
     """
     sitzung = fake_session(hfe)
@@ -1098,7 +1098,7 @@ def test_die_meldung_sagt_was_zu_tun_ist(app, hfe):
 
 
 def test_emulator_zeigt_den_rettungsknopf_erst_beim_schreiben(app, hfe, monkeypatch):
-    """Ohne Schreibrecht gibt es nichts zurückzuschreiben — der Knopf bleibt weg."""
+    """Ohne Schreibrecht gibt es nichts zurueckzuschreiben — der Knopf bleibt weg."""
     from app.core_binding.k1520 import K1520Emulator
     from app.ui import physical_disk
     from app.ui.drive_widget import DriveWidget
@@ -1127,14 +1127,14 @@ def test_neu_beschreiben_stellt_die_bekannten_spuren_ein(app, hfe):
     sitzung = fake_session(hfe, writable=True, read_ahead=True)
     try:
         assert _warte(lambda: (sitzung.stats().tracks_known or 0) > 5)
-        # Vorauslesen ANHALTEN, bevor gezählt wird: sonst kommen zwischen dem Ablesen
+        # Vorauslesen ANHALTEN, bevor gezaehlt wird: sonst kommen zwischen dem Ablesen
         # und dem rewrite_all() weitere Spuren herein und die Zahlen weichen ab
         # (unter Last durchaus zu beobachten).
         sitzung.sync.set_read_ahead(False)
         time.sleep(0.2)                       # laufenden Leseauftrag auslaufen lassen
         bekannt = sitzung.stats().tracks_known
         assert sitzung.rewrite_all() == bekannt
-        # Und der Vermerk „schon gemeldet" ist zurückgesetzt — auf der neuen
+        # Und der Vermerk „schon gemeldet" ist zurueckgesetzt — auf der neuen
         # Diskette gilt nichts von der alten.
         assert sitzung.gemeldete_defekte == ""
     finally:
@@ -1146,7 +1146,7 @@ def test_das_pruef_lesen_steht_in_der_statuszeile(app, hfe):
 
     sitzung = fake_session(hfe, read_ahead=False)
     try:
-        # busy_kind 4 = Verify; der Bediener soll „prüft" lesen, nicht „arbeitet an".
+        # busy_kind 4 = Verify; der Bediener soll „prueft" lesen, nicht „arbeitet an".
         original = type(sitzung).stats
         werte = Stats(tracks_total=160, tracks_known=8, tracks_dirty=1, tracks_failed=0,
                       tracks_defect=0, reads_done=8, writes_done=1, verifies_done=0,

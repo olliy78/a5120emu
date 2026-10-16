@@ -1,4 +1,4 @@
-// Unit-Tests für die boot_trace --until-Bedingung (tools/until_cond.h).
+// Unit-Tests fuer die boot_trace --until-Bedingung (tools/until_cond.h).
 #include "tools/until_cond.h"
 #include <gtest/gtest.h>
 
@@ -52,7 +52,7 @@ TEST(UntilCond, OperatorDisambiguation){
     EXPECT_EQ(P("[0x10]!=5").op, UntilCond::NE);
 }
 
-// ── Ungültige Eingaben ───────────────────────────────────────────────────────
+// ── Ungueltige Eingaben ───────────────────────────────────────────────────────
 
 TEST(UntilCond, RejectsBadInput){
     UntilCond u;
@@ -70,7 +70,7 @@ TEST(UntilCond, ParsesScreenSubstring){
     ASSERT_TRUE(parse("screen ~ \"A>\"", u));
     EXPECT_EQ(u.kind, UntilCond::SCREEN);
     EXPECT_EQ(u.pattern, "A>");
-    // Ohne Tilde und ohne Anführungszeichen ebenso zulässig.
+    // Ohne Tilde und ohne Anfuehrungszeichen ebenso zulaessig.
     UntilCond v; ASSERT_TRUE(parse("screen READY", v));
     EXPECT_EQ(v.pattern, "READY");
 }

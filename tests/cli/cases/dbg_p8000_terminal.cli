@@ -1,6 +1,6 @@
 # k1520dbg --terminal (AP P20a): Originalterminal P8000 Typ 2 als Einheit — Firmware P8T 5.0
 # auf dem Z8, Tastatur K7673.09.  Einschaltmeldung, 8275-Zustand, Host-Zeichen und
-# Escape-Folge, Tastendruck über die Matrix, VT100-Umschaltung mit DSR-Antwort, Kontext
+# Escape-Folge, Tastendruck ueber die Matrix, VT100-Umschaltung mit DSR-Antwort, Kontext
 # `cpu z8` (Register, Disassembler, Schritt durch die Einheit).
 tool:    k1520dbg
 run:     --terminal

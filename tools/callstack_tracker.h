@@ -2,17 +2,17 @@
  * @file callstack_tracker.h
  * @brief Exakter Z80-Aufrufstapel aus dem Instruktionsstrom (History-Backtrace).
  *
- * Statt den Stack heuristisch nach `CALL`-Vorbytes zu durchsuchen, führt dieser
- * Tracker einen *mitlaufenden* Aufrufstapel: zu jeder ausgeführten Instruktion wird
+ * Statt den Stack heuristisch nach `CALL`-Vorbytes zu durchsuchen, fuehrt dieser
+ * Tracker einen *mitlaufenden* Aufrufstapel: zu jeder ausgefuehrten Instruktion wird
  * die VORIGE klassifiziert (CALL/RST → push, RET/RETI/RETN → pop) und der „taken"-Fall
- * exakt am tatsächlich erreichten PC erkannt. Ergebnis ist ein präziser Backtrace für
- * gewöhnliche CALL/RET-Verschachtelung.
+ * exakt am tatsaechlich erreichten PC erkannt. Ergebnis ist ein praeziser Backtrace fuer
+ * gewoehnliche CALL/RET-Verschachtelung.
  *
  * **Grenze:** Interrupt-Eintritte (IM2-Vektor/NMI) pushen keinen Frame (es gibt keinen
- * CALL-Opcode); der zugehörige `RETI` poppt nur, wenn sein Rücksprung zufällig einen
+ * CALL-Opcode); der zugehoerige `RETI` poppt nur, wenn sein Ruecksprung zufaellig einen
  * getrackten Frame trifft — er korrumpiert den Stack also nicht, ISR-Frames fehlen aber.
  *
- * Header-only & Template über den Byte-Leser → ohne Maschine unit-testbar.
+ * Header-only & Template ueber den Byte-Leser → ohne Maschine unit-testbar.
  *
  * @license MIT
  */
@@ -22,9 +22,9 @@
 
 namespace cstrack {
 
-/// Ein Aufruf-Frame: Rücksprungadresse, Aufrufstelle (CALL/RST-PC), Sprungziel.
+/// Ein Aufruf-Frame: Ruecksprungadresse, Aufrufstelle (CALL/RST-PC), Sprungziel.
 struct Frame {
-    uint16_t ret;     ///< Rücksprungadresse (Adresse nach dem CALL/RST)
+    uint16_t ret;     ///< Ruecksprungadresse (Adresse nach dem CALL/RST)
     uint16_t site;    ///< PC des CALL/RST-Befehls
     uint16_t target;  ///< angesprungene Unterprogramm-Adresse
 };
@@ -32,9 +32,9 @@ struct Frame {
 class CallStackTracker {
 public:
     /**
-     * Eine ausgeführte Instruktion melden (PC = Startadresse, in Ausführungsreihenfolge).
+     * Eine ausgefuehrte Instruktion melden (PC = Startadresse, in Ausfuehrungsreihenfolge).
      * @param pc  Start-PC der gerade beginnenden Instruktion.
-     * @param rd  Byte-Leser `uint8_t(uint16_t addr)` für den Opcode der Vorinstruktion.
+     * @param rd  Byte-Leser `uint8_t(uint16_t addr)` fuer den Opcode der Vorinstruktion.
      */
     template <class ReadByte>
     void onInstruction(uint16_t pc, ReadByte rd) {
@@ -58,7 +58,7 @@ public:
                     if (stack_.size() < cap_) stack_.push_back({ret, prev_pc_, target});
                 }
             } else if (isRet || isEdRet) {
-                // Nur poppen, wenn der Rücksprung einen getrackten Frame trifft →
+                // Nur poppen, wenn der Ruecksprung einen getrackten Frame trifft →
                 // niemals Korruption durch Interrupt-RETIs.
                 if (!stack_.empty() && pc == stack_.back().ret) stack_.pop_back();
             }
@@ -67,11 +67,11 @@ public:
         have_prev_ = true;
     }
 
-    /// Frames von außen (älteste) nach innen (jüngste/aktuelle).
+    /// Frames von aussen (aelteste) nach innen (juengste/aktuelle).
     const std::vector<Frame>& frames() const { return stack_; }
     std::size_t depth() const { return stack_.size(); }
 
-    /// Tracker zurücksetzen (z.B. nach restore/reverse — Stack wird neu aufgebaut).
+    /// Tracker zuruecksetzen (z.B. nach restore/reverse — Stack wird neu aufgebaut).
     void clear() { stack_.clear(); have_prev_ = false; prev_pc_ = 0; }
 
 private:

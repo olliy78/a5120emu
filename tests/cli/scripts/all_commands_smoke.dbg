@@ -8,8 +8,8 @@
 # ACHTUNG: in dieser Datei darf die Zeichenfolge nicht woertlich vorkommen, sonst
 # schlaegt der Test an der eigenen Kommentarzeile fehl.
 #
-# Reihenfolge so gewählt, dass nichts hängt: erst statische Kommandos, dann
-# kurze Läufe, am Ende die aufräumenden Varianten.
+# Reihenfolge so gewaehlt, dass nichts haengt: erst statische Kommandos, dann
+# kurze Laeufe, am Ende die aufraeumenden Varianten.
 
 # ── Hilfe/Themen ────────────────────────────────────────────────────────────
 help
@@ -49,7 +49,7 @@ disp 2*3+4
 disp
 undisp 1
 
-# ── Breakpoints (setzen, listen, deaktivieren, löschen) ─────────────────────
+# ── Breakpoints (setzen, listen, deaktivieren, loeschen) ─────────────────────
 b 0x0135
 b2 0x0269
 tb 0x0137
@@ -64,7 +64,7 @@ bd 0x0137
 bd 0x0135
 bl
 
-# ── Ereignis-Breakpoints (nur scharf/entschärft, kein Lauf) ─────────────────
+# ── Ereignis-Breakpoints (nur scharf/entschaerft, kein Lauf) ─────────────────
 bint on
 bint off
 bnmi on
@@ -103,7 +103,7 @@ trace off
 itrace dbg_smoke_itrace.txt
 itrace off
 
-# ── Chip-/Geräte-Zustand ────────────────────────────────────────────────────
+# ── Chip-/Geraete-Zustand ────────────────────────────────────────────────────
 dev
 dev ctc
 dev pio
@@ -123,6 +123,9 @@ clock zve1
 clock machine
 raf
 raf 0
+tape
+tape 1
+tape 1 A 0
 mark
 s
 s 2

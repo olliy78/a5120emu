@@ -1,6 +1,6 @@
 /**
  * @file bit_codec.cpp
- * @brief BitCodec – MFM/FM-Bitzellen-Codec für das HFE-Floppy-Backend.
+ * @brief BitCodec – MFM/FM-Bitzellen-Codec fuer das HFE-Floppy-Backend.
  *
  * Implementierung von @ref BitCodec::decode und @ref BitCodec::encode.
  * Arbeitet MSB-first intern; HFE-Bytes sind LSB-first und werden an der
@@ -75,9 +75,9 @@ static uint16_t get16(const std::vector<uint8_t>& stream, uint32_t pos,
 
 // ─── MFM-Zellencodierung ──────────────────────────────────────────────────────
 
-/// Encodiert @p data_byte als reguläres MFM-Zellwort (16 Bit, MSB-first).
-/// @p prev_d_bit ist das letzte Datenbit des Vorgänger-Bytes (über Bytegrenzen
-/// fortgeführt); wird auf das letzte Datenbit dieses Bytes aktualisiert.
+/// Encodiert @p data_byte als regulaeres MFM-Zellwort (16 Bit, MSB-first).
+/// @p prev_d_bit ist das letzte Datenbit des Vorgaenger-Bytes (ueber Bytegrenzen
+/// fortgefuehrt); wird auf das letzte Datenbit dieses Bytes aktualisiert.
 static uint16_t mfm_cell_word(uint8_t data_byte, bool& prev_d_bit) {
     uint16_t w = 0;
     bool prev  = prev_d_bit;
@@ -107,7 +107,7 @@ static uint8_t mfm_decode_word(uint16_t w) {
 
 // ─── FM-Zellencodierung ───────────────────────────────────────────────────────
 
-/// Encodiert @p data_byte als reguläres FM-Zellwort: Clock-Bits immer 1.
+/// Encodiert @p data_byte als regulaeres FM-Zellwort: Clock-Bits immer 1.
 static uint16_t fm_cell_word(uint8_t data_byte) {
     uint16_t w = 0;
     for (int i = 7; i >= 0; --i) {
@@ -120,7 +120,7 @@ static uint16_t fm_cell_word(uint8_t data_byte) {
 }
 
 /// Encodiert ein FM-Marken-Byte mit Sonder-Clock als Zellwort.
-/// Verschränkt @p clock_byte und @p data_byte bitweise (MSB-first):
+/// Verschraenkt @p clock_byte und @p data_byte bitweise (MSB-first):
 ///   c7 d7 c6 d6 … c0 d0
 static uint16_t fm_sync_word(uint8_t data_byte, uint8_t clock_byte) {
     uint16_t w = 0;
@@ -150,22 +150,22 @@ static uint8_t fm_extract_clock(uint16_t w) {
     return c;
 }
 
-// ─── Bekannte FM-Sync-Zellwörter (für Sync-Suche in decode) ──────────────────
+// ─── Bekannte FM-Sync-Zellwoerter (fuer Sync-Suche in decode) ──────────────────
 
 // FM-Marken-Bytes mit ihren Sonder-Clock-Bytes:
-//   FE/FB/F8 → Clock 0xC7   (IDAM / DAM / Gelöschter DAM)
+//   FE/FB/F8 → Clock 0xC7   (IDAM / DAM / Geloeschter DAM)
 //   FC       → Clock 0xD7   (IAM Index-Adressmarke)
 static const uint16_t kFmSyncFE = fm_sync_word(0xFE, 0xC7);  // IDAM
 static const uint16_t kFmSyncFB = fm_sync_word(0xFB, 0xC7);  // DAM
-static const uint16_t kFmSyncF8 = fm_sync_word(0xF8, 0xC7);  // gelöschter DAM
+static const uint16_t kFmSyncF8 = fm_sync_word(0xF8, 0xC7);  // geloeschter DAM
 static const uint16_t kFmSyncFC = fm_sync_word(0xFC, 0xD7);  // IAM
 
-/// Prüft, ob ein 16-Bit-Zellwort ein bekanntes FM-Sync-Wort ist.
+/// Prueft, ob ein 16-Bit-Zellwort ein bekanntes FM-Sync-Wort ist.
 static bool isFmSyncWord(uint16_t w) {
     return w == kFmSyncFE || w == kFmSyncFB || w == kFmSyncF8 || w == kFmSyncFC;
 }
 
-/// Liefert den MarkType für ein FM-Datenbyte (anhand Sonder-Clock erkannt).
+/// Liefert den MarkType fuer ein FM-Datenbyte (anhand Sonder-Clock erkannt).
 /// @p clock ist das aus dem Zellwort extrahierte Clock-Byte.
 static MarkType fmMarkFromClock(uint8_t data, uint8_t clock) {
     if (clock == 0xC7) {
@@ -177,11 +177,11 @@ static MarkType fmMarkFromClock(uint8_t data, uint8_t clock) {
     return MarkType::None;
 }
 
-// ─── Sync-Karte (für den re-synchronisierenden Decoder) ──────────────────────
+// ─── Sync-Karte (fuer den re-synchronisierenden Decoder) ──────────────────────
 
 /// Klassifiziert JEDE Bitposition der Spur per 16-Bit-Schieberegister: @p classify
 /// bekommt das Zellwort ab der Position und liefert 0 (kein Sync) oder eine
-/// verfahrensabhängige Sync-Kennung.  Positionen ab `bitcell_count-15` bleiben 0.
+/// verfahrensabhaengige Sync-Kennung.  Positionen ab `bitcell_count-15` bleiben 0.
 template <typename Fn>
 static std::vector<uint8_t> buildSyncMap(const std::vector<uint8_t>& stream,
                                          uint32_t bitcell_count, Fn classify) {
@@ -209,10 +209,10 @@ static std::vector<uint32_t> collectStrong(uint32_t bitcell_count, Fn is_strong)
     return v;
 }
 
-/// Gap-Füllbyte für MFM (encodiertes 0x4E ergibt 0x9254 als Zellwort; als
-/// direkter Füller im HFE-Byte-Stream wählen wir das kompakteste Muster).
-/// Greaseweazle verwendet 0x88 als rohen Gap-Füller im Zellstrom.
-/// Wir kodieren reguläre 0x4E-Bytes (passt zum Roundtrip-Verhalten).
+/// Gap-Fuellbyte fuer MFM (encodiertes 0x4E ergibt 0x9254 als Zellwort; als
+/// direkter Fueller im HFE-Byte-Stream waehlen wir das kompakteste Muster).
+/// Greaseweazle verwendet 0x88 als rohen Gap-Fueller im Zellstrom.
+/// Wir kodieren regulaere 0x4E-Bytes (passt zum Roundtrip-Verhalten).
 
 }  // anonymous namespace
 
@@ -236,15 +236,15 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
     stream.reserve(needed_bytes);
     for (uint32_t i = 0; i < needed_bytes && i < cells.size(); ++i)
         stream.push_back(bitreverse8(cells[i]));
-    // Falls cells kürzer als needed_bytes, mit 0 auffüllen
+    // Falls cells kuerzer als needed_bytes, mit 0 auffuellen
     while (stream.size() < needed_bytes)
         stream.push_back(0x00);
 
     if (enc == Encoding::MFM) {
         // ── MFM-Decode ────────────────────────────────────────────────────────
 
-        // Schritt 2a: Sync-Karte über die GANZE Spur (0x4489 = A1-Sync für IDAM/DAM,
-        // 0x5224 = C2-Sync für IAM), bitweise per Schieberegister.
+        // Schritt 2a: Sync-Karte ueber die GANZE Spur (0x4489 = A1-Sync fuer IDAM/DAM,
+        // 0x5224 = C2-Sync fuer IAM), bitweise per Schieberegister.
         auto sync_map = buildSyncMap(stream, bitcell_count, [](uint16_t w) -> uint8_t {
             if (w == 0x4489u) return 1;   // A1
             if (w == 0x5224u) return 2;   // C2
@@ -253,8 +253,8 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
 
         // "Starke" Sync-Position = Teil einer Gruppe aus ≥2 gleichen Sync-Zellworten.
         // Nur an solchen Stellen ist ein NICHT-byte-alignter Re-Sync erlaubt: 0x4489 ist
-        // zwar phasenrichtig ein Codeverstoß, als reines Bitmuster aber auch verschoben
-        // in gültigem MFM möglich — die Doppelung schließt Zufallstreffer praktisch aus.
+        // zwar phasenrichtig ein Codeverstoss, als reines Bitmuster aber auch verschoben
+        // in gueltigem MFM moeglich — die Doppelung schliesst Zufallstreffer praktisch aus.
         auto strong = [&](uint32_t p) -> bool {
             if (!sync_map[p]) return false;
             if (p + 32 <= bitcell_count && sync_map[p + 16] == sync_map[p]) return true;
@@ -264,11 +264,11 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
         std::vector<uint32_t> strongs = collectStrong(bitcell_count, strong);
 
         // EINZELNE Sync-Marken (nur ein 0x4489, weil der schreibende Controller die
-        // übrigen A1 der Gruppe regulär kodiert hat — s. u.) sind als Einrastpunkt zu
-        // schwach, um sie unbesehen zu nehmen: ein verschoben zufälliges 0x4489 in
-        // Nutzdaten würde die Phase mitten im Datenfeld verschieben, und schwache Reste
-        // einer alten Formatierung würden als Sektoren gelten (eine 80-Spur-Diskette
-        // bekäme „82 Spuren mit Daten" und passte in kein Laufwerk mehr).  Sie werden
+        // uebrigen A1 der Gruppe regulaer kodiert hat — s. u.) sind als Einrastpunkt zu
+        // schwach, um sie unbesehen zu nehmen: ein verschoben zufaelliges 0x4489 in
+        // Nutzdaten wuerde die Phase mitten im Datenfeld verschieben, und schwache Reste
+        // einer alten Formatierung wuerden als Sektoren gelten (eine 80-Spur-Diskette
+        // bekaeme „82 Spuren mit Daten" und passte in kein Laufwerk mehr).  Sie werden
         // deshalb gesammelt, aber erst im ZWEITEN Durchlauf benutzt — und nur dort, wo
         // ein Sektorkopf ohne Datenfeld dasteht (s. unten).
         auto einzelsync = [&](uint32_t p) -> bool {
@@ -276,14 +276,14 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
             // Die Gruppe ab p: bis zu drei weitere 0xA1, dann MUSS eine Marke kommen.
             for (uint32_t q = p + 16, i = 0; i < 4 && q + 16 <= bitcell_count; ++i, q += 16) {
                 const uint8_t b = mfm_decode_word(get16(stream, q, bitcell_count));
-                if (b == 0xA1) continue;                      // Gruppe läuft weiter
+                if (b == 0xA1) continue;                      // Gruppe laeuft weiter
                 return b == 0xFB || b == 0xF8;                // nur Datenfeld-Marken
             }
             return false;
         };
         const std::vector<uint32_t> einzelne = collectStrong(bitcell_count, einzelsync);
 
-        // Startpunkt: erste starke Sync-Gruppe; ersatzweise das erste Sync überhaupt.
+        // Startpunkt: erste starke Sync-Gruppe; ersatzweise das erste Sync ueberhaupt.
         uint32_t lock_pos = bitcell_count;
         if (!strongs.empty()) {
             lock_pos = strongs.front();
@@ -293,15 +293,15 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
         }
         if (lock_pos == bitcell_count) {
             // Kein Sync gefunden — Rohdaten ohne Marken ausgeben
-            // (leere Spur zurückgeben; realer HFE-Tracker würde trotzdem decodieren)
+            // (leere Spur zurueckgeben; realer HFE-Tracker wuerde trotzdem decodieren)
             return result;
         }
 
-        // Vor die erste Sync-Gruppe ZURÜCKGEHEN, solange dort Lücke (0x4E) oder Sync (0x00)
-        // steht — wie im FM-Zweig.  Sonst begänne die decodierte Spur mit der Indexmarke:
-        // Lücke 4a und das Sync-Feld davor gingen bei jedem Laden verloren, und das
-        // nächste Speichern legte die Indexmarke genau auf das Indexloch (AP-F1).  Ein
-        // flussloser Bereich (Zellwort 0) ist keine Lücke und beendet das Zurückgehen.
+        // Vor die erste Sync-Gruppe ZURUECKGEHEN, solange dort Luecke (0x4E) oder Sync (0x00)
+        // steht — wie im FM-Zweig.  Sonst begaenne die decodierte Spur mit der Indexmarke:
+        // Luecke 4a und das Sync-Feld davor gingen bei jedem Laden verloren, und das
+        // naechste Speichern legte die Indexmarke genau auf das Indexloch (AP-F1).  Ein
+        // flussloser Bereich (Zellwort 0) ist keine Luecke und beendet das Zurueckgehen.
         while (lock_pos >= 16) {
             const uint16_t davor = get16(stream, lock_pos - 16, bitcell_count);
             if (davor == 0) break;
@@ -323,13 +323,13 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
             TrackImage img;
             img.encoding = enc;
             img.bitcells = bitcell_count;
-            bool after_sync = false;  // nächstes Nicht-A1-Byte ist das Marken-Byte
+            bool after_sync = false;  // naechstes Nicht-A1-Byte ist das Marken-Byte
             uint32_t pos = lock_pos;
             size_t   si  = 0;         // Laufindex in punkte (monoton)
 
             while (pos + 16 <= bitcell_count) {
-                // Liegt eine starke Sync-Gruppe INNERHALB des nächsten Bytes (also
-                // phasenverschoben)? Dann dorthin springen; die ≤15 übersprungenen
+                // Liegt eine starke Sync-Gruppe INNERHALB des naechsten Bytes (also
+                // phasenverschoben)? Dann dorthin springen; die ≤15 uebersprungenen
                 // Gap-Zellen tragen keine Information.
                 while (si < punkte.size() && punkte[si] < pos) ++si;
                 if (si < punkte.size() && punkte[si] > pos && punkte[si] < pos + 16) {
@@ -355,16 +355,16 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
                     uint8_t b = mfm_decode_word(w);
                     MarkType mt = MarkType::None;
                     if (after_sync && b == 0xA1) {
-                        // Ein 0xA1 MITTEN in der Sync-Gruppe, aber REGULÄR kodiert
+                        // Ein 0xA1 MITTEN in der Sync-Gruppe, aber REGULAER kodiert
                         // (0x44A9 statt 0x4489, also MIT dem Taktbit, das der Sync
-                        // auslässt).  Es gehört zur Gruppe und ist nicht das Marken-Byte:
-                        // die Gruppe läuft weiter, die Marke ist das erste Byte, das KEIN
+                        // auslaesst).  Es gehoert zur Gruppe und ist nicht das Marken-Byte:
+                        // die Gruppe laeuft weiter, die Marke ist das erste Byte, das KEIN
                         // 0xA1 ist — genau so sucht ein echter Datenseparator sie.
                         //
                         // Das ist keine Spitzfindigkeit: der Controller, der
                         // `udos_ds77_k5601_fremdsync.hfe` beschrieben hat, schreibt die
-                        // Datenfeld-Sync-Gruppe als A1(Sync) A1(Sync) A1(regulär) FB.  Wer
-                        // das dritte A1 als Marken-Byte verbraucht, findet für JEDEN von
+                        // Datenfeld-Sync-Gruppe als A1(Sync) A1(Sync) A1(regulaer) FB.  Wer
+                        // das dritte A1 als Marken-Byte verbraucht, findet fuer JEDEN von
                         // diesem Rechner geschriebenen Sektor kein Datenfeld mehr — die
                         // Diskette liest sich dann als „26 Sektoren, alle ohne Daten", und
                         // die UDOS-Erkennung scheitert an der Belegungskarte.
@@ -389,17 +389,17 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
         std::vector<uint32_t> zellpos;
         result = dekodiere(strongs, zellpos);
 
-        // Schritt 2c: Nachlese für Sektorköpfe OHNE Datenfeld.  Nur hier sind die
-        // einzelnen Sync-Marken zugelassen: ein Sektorkopf, dem bis zum nächsten Kopf
+        // Schritt 2c: Nachlese fuer Sektorkoepfe OHNE Datenfeld.  Nur hier sind die
+        // einzelnen Sync-Marken zugelassen: ein Sektorkopf, dem bis zum naechsten Kopf
         // kein Datenfeld folgt, ist der eine Fall, in dem eine schwache Sync-Stelle
-        // etwas erklärt, statt etwas zu erfinden.  Alles andere bleibt unangetastet —
+        // etwas erklaert, statt etwas zu erfinden.  Alles andere bleibt unangetastet —
         // Reste einer alten Formatierung werden dadurch NICHT zu Sektoren.
         if (!einzelne.empty()) {
             std::vector<uint32_t> zusatz;
             const size_t n = result.marks.size();
             for (size_t i = 0; i < n; ++i) {
                 if (result.marks[i] != MarkType::Id) continue;
-                // Fenster: hinter dem ID-Feld (Marke + 4 Byte + CRC) bis zum nächsten Kopf
+                // Fenster: hinter dem ID-Feld (Marke + 4 Byte + CRC) bis zum naechsten Kopf
                 size_t j = i + 1;
                 bool hat_daten = false;
                 for (; j < n; ++j) {
@@ -424,12 +424,12 @@ TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count,
     } else {
         // ── FM-Decode ─────────────────────────────────────────────────────────
 
-        // Schritt 3a: Sync-Karte über die ganze Spur (FM-Marken-Zellworte mit Sondertakt).
+        // Schritt 3a: Sync-Karte ueber die ganze Spur (FM-Marken-Zellworte mit Sondertakt).
         auto sync_map = buildSyncMap(stream, bitcell_count, [](uint16_t w) -> uint8_t {
             return isFmSyncWord(w) ? 1u : 0u;
         });
 
-        // FM kennt keine Sync-GRUPPE (die Marke steht allein), daher ist das Kriterium für
+        // FM kennt keine Sync-GRUPPE (die Marke steht allein), daher ist das Kriterium fuer
         // einen phasenverschobenen Re-Sync das normgerechte 00-Sync-Feld davor
         // (FM-Zellwort von 0x00 mit vollem Takt = 0xAAAA).
         auto strong = [&](uint32_t p) -> bool {
@@ -497,7 +497,7 @@ std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells) {
     const Encoding enc = track.encoding;
     const size_t n     = track.bytes.size();
 
-    // Zielgröße des Ausgabepuffers (Bits, aufgerundet auf Bytes)
+    // Zielgroesse des Ausgabepuffers (Bits, aufgerundet auf Bytes)
     const uint32_t target_bytes = (target_bitcells + 7) / 8;
 
     // Intern MSB-first arbeiten; am Ende bitreverse8 je Byte.
@@ -510,17 +510,17 @@ std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells) {
     };
 
     if (enc == Encoding::MFM) {
-        // Letztes Datenbit des Vorgänger-Bytes (für Clock-Berechnung über Grenzen)
+        // Letztes Datenbit des Vorgaenger-Bytes (fuer Clock-Berechnung ueber Grenzen)
         bool prev_d = false;
 
-        // Hilfsfunktion: ist bytes[i] ein Sync-A1 (d. h. er gehört zur Sync-Gruppe
-        // direkt vor einem markierten Byte)?  Sucht vorwärts: falls alle Bytes
+        // Hilfsfunktion: ist bytes[i] ein Sync-A1 (d. h. er gehoert zur Sync-Gruppe
+        // direkt vor einem markierten Byte)?  Sucht vorwaerts: falls alle Bytes
         // i..j-1 == 0xA1 und marks[j] != None → ja.  Daten-A1 (innerhalb eines
-        // Feldes) haben kein solches Marken-Byte in unmittelbarer Nähe.
+        // Feldes) haben kein solches Marken-Byte in unmittelbarer Naehe.
         // Greaseweazle/HFE-Konvention: Sync-Gruppen haben max. 3 A1-Bytes.
         auto isSyncA1 = [&](size_t idx) -> bool {
             if (track.bytes[idx] != 0xA1) return false;
-            // Vorwärtssuche: alle folgenden 0xA1 der Gruppe
+            // Vorwaertssuche: alle folgenden 0xA1 der Gruppe
             for (size_t j = idx; j < n && j <= idx + 3; ++j) {
                 if (track.bytes[j] != 0xA1) {
                     // j ist das erste Nicht-A1 — ist es markiert?
@@ -557,14 +557,14 @@ std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells) {
                 // Letztes Datenbit von 0xC2 = Bit0 = 0 → prev_d = false
                 prev_d = false;
             } else {
-                // Reguläres MFM-Byte (auch Mark-Bytes FE/FB/FC hinter den Syncs,
+                // Regulaeres MFM-Byte (auch Mark-Bytes FE/FB/FC hinter den Syncs,
                 // sowie Daten-0xA1/0xFE/0xFB, die keine Marke tragen sollen)
                 (void)mt;
                 emitWord(mfm_cell_word(b, prev_d));
             }
         }
-        // Lücke 4b bis zur Zielänge: reguläres 0x4E, taktrichtig an das letzte Datenbit
-        // angeschlossen.  Bis 2026-09-29 wurde hier mit 0-Zellen aufgefüllt — einem
+        // Luecke 4b bis zur Zielaenge: regulaeres 0x4E, taktrichtig an das letzte Datenbit
+        // angeschlossen.  Bis 2026-09-29 wurde hier mit 0-Zellen aufgefuellt — einem
         // FLUSSLOSEN Bereich (kein einziger Flusswechsel), den kein Laufwerk so schreibt.
         while (internal_buf.size() < target_bytes)
             emitWord(mfm_cell_word(0x4E, prev_d));
@@ -582,13 +582,13 @@ std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells) {
                 emitWord(fm_cell_word(b));
             }
         }
-        // Lücke 4b: reguläres 0xFF mit vollem Takt (s. MFM-Zweig).
+        // Luecke 4b: regulaeres 0xFF mit vollem Takt (s. MFM-Zweig).
         while (internal_buf.size() < target_bytes)
             emitWord(fm_cell_word(0xFF));
     }
 
-    // Auf target_bytes bringen: aufgefüllt ist oben (Lücke 4b), eine überlange Spur wird
-    // hier gekürzt.
+    // Auf target_bytes bringen: aufgefuellt ist oben (Luecke 4b), eine ueberlange Spur wird
+    // hier gekuerzt.
     internal_buf.resize(target_bytes);
 
     // MSB-first → HFE-LSB-first: bitreverse8 je Byte
@@ -626,7 +626,7 @@ std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
 
         uint32_t cell;
         if (!have_prev) {
-            cell = (p + factor / 2) / factor;   // führende Null-Zellen bis zur 1. Flanke
+            cell = (p + factor / 2) / factor;   // fuehrende Null-Zellen bis zur 1. Flanke
             have_prev = true;
         } else {
             uint32_t n = (p - prev + factor / 2) / factor;

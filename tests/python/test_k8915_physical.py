@@ -1,10 +1,10 @@
 """K8915 an einer „physischen“ Diskette — Ersatzsitzung ohne Greaseweazle (AP-E4k).
 
-Das Gegenstück zu `k1520_test_k8915_physical` (C++) auf der Python-Seite: derselbe
-Weg wie im Programm — `app.gw.Sync` + `TrackWorker` mit einem Ersatzlaufwerk über
-`k8915scpx_boot1.hfe`, angemeldet über `K1520Emulator.mount_physical` (bzw. den
+Das Gegenstueck zu `k1520_test_k8915_physical` (C++) auf der Python-Seite: derselbe
+Weg wie im Programm — `app.gw.Sync` + `TrackWorker` mit einem Ersatzlaufwerk ueber
+`k8915scpx_boot1.hfe`, angemeldet ueber `K1520Emulator.mount_physical` (bzw. den
 „Physisch…“-Knopf im Laufwerkskasten des k8915emu).  `greaseweazle` wird nicht
-importiert; die Verfügbarkeitsprüfung der Bedienwege ist durch den Ersatz ersetzt
+importiert; die Verfuegbarkeitspruefung der Bedienwege ist durch den Ersatz ersetzt
 (`hosttools_gelten_als_vorhanden`, wie in test_gw_gui.py).
 """
 
@@ -37,7 +37,7 @@ def _letzte_zeile(emu) -> str:
 
 
 def test_k8915_kaltstart_von_einer_spurweisen_scheibe_bis_zum_prompt(hfe):
-    """Spuren kommen einzeln und mit 60 ms Verzögerung; die Maschinenzeit steht dabei."""
+    """Spuren kommen einzeln und mit 60 ms Verzoegerung; die Maschinenzeit steht dabei."""
     from app.core_binding.k1520 import K1520Emulator
 
     sitzung = fake_session(hfe, read_ahead=False, for_emulator=True, verzoegerung=0.06)
@@ -71,7 +71,7 @@ def test_k8915_kaltstart_von_einer_spurweisen_scheibe_bis_zum_prompt(hfe):
 
 
 def test_der_k8915_legt_im_laufwerkskasten_physisch_ein(qapp, hfe, monkeypatch, tmp_path):
-    """Der „Physisch…“-Knopf gehört auch dem k8915emu (Profil, nicht `if machine`)."""
+    """Der „Physisch…“-Knopf gehoert auch dem k8915emu (Profil, nicht `if machine`)."""
     from app import profil
     from app.ui import physical_disk
     from app.ui.main_window import MainWindow
@@ -91,7 +91,7 @@ def test_der_k8915_legt_im_laufwerkskasten_physisch_ein(qapp, hfe, monkeypatch, 
         panel._phys_btn.click()
         assert 0 in w.drives_widget._physical
         assert "Greaseweazle" in panel._path_display.text()
-        # Zwei Schlösser: Sitzung schreibend (Dialog: writable) <=> Laufwerk frei.
+        # Zwei Schloesser: Sitzung schreibend (Dialog: writable) <=> Laufwerk frei.
         assert not w.emulator.is_disk_write_protected(0)
         panel._toggle_btn.click()                  # Auswerfen
         assert 0 not in w.drives_widget._physical

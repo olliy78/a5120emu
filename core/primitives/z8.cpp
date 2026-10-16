@@ -1,6 +1,6 @@
 /**
  * @file z8.cpp
- * @brief Z8-Einchiprechner — Ausführung, Registerdatei, Ports, Zähler, UART, Interrupts.
+ * @brief Z8-Einchiprechner — Ausfuehrung, Registerdatei, Ports, Zaehler, UART, Interrupts.
  *
  * Datenblattstellen (Zilog UM0016) und Annahmen [Z8-…]: doc/p8000/z8_abdeckung.md.
  *
@@ -69,7 +69,7 @@ void Z8::tuReset() {
 
 int Z8::step() {
     waits_ = 0;
-    if (resetLine_) {                       // /RESET gehalten: Takt läuft, nichts geschieht
+    if (resetLine_) {                       // /RESET gehalten: Takt laeuft, nichts geschieht
         takte += 1;
         befehlsEnde_ = takte;
         syncTo(takte);
@@ -98,7 +98,7 @@ int Z8::step() {
     } else {
         lastPc_ = pc;
         // Zugriffe des Befehls wirken zur Zeit „Befehlsende" (Annahme [Z8-T1]).
-        befehlsEnde_ = takte + 6;           // vorläufig für das Holen
+        befehlsEnde_ = takte + 6;           // vorlaeufig fuer das Holen
         const uint8_t op = holen();
         befehlsEnde_ = takte + z8::tabelle()[op].takte;
         c = ausfuehren(op);
@@ -161,15 +161,15 @@ int Z8::interruptAnnehmen(int n) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Zähler T0/T1 und UART
+// Zaehler T0/T1 und UART
 // ═════════════════════════════════════════════════════════════════════════════
 
 bool Z8::t1Intern() const {
     if (t_[1].pre & 0x02) return true;          // PRE1.1 = 1: interner Takt, TIN aus
     switch ((tmr_ >> 4) & 3) {
     case 0: return false;                       // externer Takt an TIN
-    case 1: return (pinIn_[3] & 0x02) != 0;     // Torbetrieb: zählt bei TIN = H
-    default: return t_[1].getriggert;           // (Re-)Trigger: läuft nach der Flanke
+    case 1: return (pinIn_[3] & 0x02) != 0;     // Torbetrieb: zaehlt bei TIN = H
+    default: return t_[1].getriggert;           // (Re-)Trigger: laeuft nach der Flanke
     }
 }
 
@@ -182,7 +182,7 @@ void Z8::laufPruefen(uint64_t jetzt, bool anker0, bool anker1) {
     for (int n = 0; n < 2; ++n) {
         const bool l = laeuft(n);
         if (l && (!lief_[n] || (n == 0 ? anker0 : anker1)))
-            t_[n].naechster = jetzt + 4;        // erste Zählung 4 Takte später (UM0016 S. 83)
+            t_[n].naechster = jetzt + 4;        // erste Zaehlung 4 Takte spaeter (UM0016 S. 83)
         lief_[n] = l;
     }
 }
@@ -203,7 +203,7 @@ void Z8::syncTo(uint64_t t) {
 void Z8::zaehlerTakt(int n, uint64_t zeit) {
     Z8Zaehler& z = t_[n];
     if (z.vorteiler > 1) { --z.vorteiler; return; }
-    z.vorteiler = uint8_t(teiler(z.pre));       // Vorteiler läuft immer im Dauerbetrieb
+    z.vorteiler = uint8_t(teiler(z.pre));       // Vorteiler laeuft immer im Dauerbetrieb
     z.zaehler = uint16_t((z.zaehler - 1) & 0xFF);
     if (z.zaehler == 0) endwert(n, zeit);
 }
@@ -238,7 +238,7 @@ void Z8::uartTakt(uint64_t zeit) {
             ausgaengeMelden();
         }
     }
-    // Empfänger: 16-fache Abtastung, Startbitprüfung in der Bitmitte (UM0016 S. 118).
+    // Empfaenger: 16-fache Abtastung, Startbitpruefung in der Bitmitte (UM0016 S. 118).
     const bool L = p30Quelle ? p30Quelle(zeit) : (pinIn_[3] & 0x01) != 0;
     if (!rxStart_) {
         if (rxAlt_ && !L) { rxStart_ = true; rxDiv_ = 0; rxBits_ = 0; rxSr_ = 0; }
@@ -260,11 +260,11 @@ void Z8::uartTakt(uint64_t zeit) {
         ++rxBits_;
         return;
     }
-    // Stoppbitmitte: Zeichen fertig (keine Rahmenprüfung, UM0016 S. 119)
+    // Stoppbitmitte: Zeichen fertig (keine Rahmenpruefung, UM0016 S. 119)
     uint8_t d = uint8_t(rxSr_);
     if (p3m_ & P3M_PAR) {
         const bool einsen = paritaetUngerade7(d) != ((d & 0x80) != 0);   // ungerade Gesamtzahl?
-        d = uint8_t((d & 0x7F) | (einsen ? 0x00 : 0x80));                 // Bit 7 = Paritätsfehler
+        d = uint8_t((d & 0x7F) | (einsen ? 0x00 : 0x80));                 // Bit 7 = Paritaetsfehler
     }
     rxBuf_ = d;
     rxStart_ = false;
@@ -288,7 +288,7 @@ void Z8::t1Flanke() {
             laufPruefen(jetzt, false, true);
         }
         break;
-    case 3:                                     // Retrigger: jede Flanke lädt neu
+    case 3:                                     // Retrigger: jede Flanke laedt neu
         if (tmr_ & TMR_EN1) {
             t_[1].zaehler = t_[1].anfang; t_[1].vorteiler = uint8_t(teiler(t_[1].pre));
             t_[1].getriggert = true;
@@ -421,7 +421,7 @@ uint8_t Z8::portLesen(int port) {
 
 void Z8::portSchreiben(int port, uint8_t v) {
     port &= 3;
-    if (port == 3) out_[3] = uint8_t((out_[3] & 0x0F) | (v & 0xF0));   // P30–P33 sind Eingänge
+    if (port == 3) out_[3] = uint8_t((out_[3] & 0x0F) | (v & 0xF0));   // P30–P33 sind Eingaenge
     else out_[port] = v;
     if (port < 3 && hsRichtung(port) == 1) {
         const int rdyBit = port == 0 ? 2 : port == 1 ? 3 : 1;
@@ -895,7 +895,7 @@ int Z8::ausfuehren(uint8_t op) {
         } else {
             const uint8_t v = regLesen(ra);
             if (ext) extSchreiben(adr, true, Z8Zugriff::Extern, v); else progSchreiben(adr, v);
-            // Überlappen r und rr, entscheidet die Reihenfolge: erst das Paar, dann r [Z8-A4]
+            // Ueberlappen r und rr, entscheidet die Reihenfolge: erst das Paar, dann r [Z8-A4]
             paarSchreiben(rr, uint16_t(adr + 1));
             regSchreiben(r, uint8_t(ra + 1));
         }
@@ -1000,7 +1000,7 @@ bool Z8::deserialize(const uint8_t*& p, const uint8_t* end) {
     auto ar = k1520::ZAr::leser(q, end);
     tmp.visit(ar);
     if (!ar.ok) return false;
-    // Zustand übernehmen, Rückrufe behalten
+    // Zustand uebernehmen, Rueckrufe behalten
     auto keep = [&](Z8& d) {
         d.programmLesen = programmLesen; d.busLesen = busLesen; d.busSchreiben = busSchreiben;
         d.portEingang = portEingang; d.portAusgang = portAusgang; d.p30Quelle = p30Quelle;

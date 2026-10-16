@@ -88,7 +88,7 @@ def sperre_nehmen(pfad: str) -> Optional[int]:
             if _lebt(pid):
                 return pid
             try:
-                os.unlink(sperre)              # verwaist (Prozess tot): übernehmen
+                os.unlink(sperre)              # verwaist (Prozess tot): uebernehmen
             except OSError:
                 return None
             continue

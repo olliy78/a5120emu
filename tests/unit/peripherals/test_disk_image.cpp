@@ -1,14 +1,14 @@
 /**
  * @file test_disk_image.cpp
- * @brief GoogleTests für DiskImage — Dateibindung, Autosave und „Speichern unter".
+ * @brief GoogleTests fuer DiskImage — Dateibindung, Autosave und „Speichern unter".
  *
  * Schwerpunkte:
  *   - createBlank(): echte Leerdiskette in Laufwerksgeometrie, ohne Datei
- *   - Autosave: geänderte Spuren landen VERZÖGERT in der gebundenen Datei
+ *   - Autosave: geaenderte Spuren landen VERZOEGERT in der gebundenen Datei
  *   - saveAs(): Containerwechsel (.hfe ⇄ .dmk ⇄ .img) inklusive Umbinden —
  *     ab dann folgt der Autosave der NEUEN Datei
  *   - `.img` als Ziel wird abgelehnt, solange das Medium nicht darstellbar ist
- *   - Für `.hfe`/`.dmk` wird KEIN Diskettenformat verlangt (self-describing)
+ *   - Fuer `.hfe`/`.dmk` wird KEIN Diskettenformat verlangt (self-describing)
  *
  * @see core/peripherals/floppy_drive/disk_image.h
  * @see doc/design/09_floppy_drive.md §6
@@ -92,7 +92,7 @@ TEST(DiskImageBlank, UnplausibleGeometrie_gibtNullptr) {
 
 /**
  * @test DiskImageSaveAs/LeerdisketteNachHfeUndZurueck
- * @brief Eine Leerdiskette lässt sich als `.hfe` sichern; danach ist sie an diese
+ * @brief Eine Leerdiskette laesst sich als `.hfe` sichern; danach ist sie an diese
  *        Datei gebunden und der Autosave schreibt dorthin.
  */
 TEST(DiskImageSaveAs, LeerdisketteNachHfeUndZurueck) {
@@ -118,7 +118,7 @@ TEST(DiskImageSaveAs, LeerdisketteNachHfeUndZurueck) {
 
 /**
  * @test DiskImageSaveAs/LehntImgFuerLeerdisketteAb
- * @brief „Ein Abspeichern dieses Abbildes als .img muss zu einer Fehlermeldung führen."
+ * @brief „Ein Abspeichern dieses Abbildes als .img muss zu einer Fehlermeldung fuehren."
  */
 TEST(DiskImageSaveAs, LehntImgFuerLeerdisketteAb) {
     const auto path = tmpPath("k1520_test_di_blank.img");
@@ -136,7 +136,7 @@ TEST(DiskImageSaveAs, LehntImgFuerLeerdisketteAb) {
 
 /**
  * @test DiskImageSaveAs/ImgOhneFormat_wirdAbgelehnt
- * @brief Das Diskettenformat ist NUR für `.img` nötig — und dort Pflicht.
+ * @brief Das Diskettenformat ist NUR fuer `.img` noetig — und dort Pflicht.
  */
 TEST(DiskImageSaveAs, ImgOhneFormat_wirdAbgelehnt) {
     auto img = DiskImage::createBlank(2, 1, Encoding::MFM);
@@ -152,7 +152,7 @@ TEST(DiskImageSaveAs, ImgOhneFormat_wirdAbgelehnt) {
 
 /**
  * @test DiskImageSaveAs/ContainerwechselHfeNachDmkNachImg
- * @brief Dieselbe Diskette durch alle drei Container — die Nutzdaten überleben, und
+ * @brief Dieselbe Diskette durch alle drei Container — die Nutzdaten ueberleben, und
  *        die Bindung folgt jeweils der neuen Datei.
  */
 TEST(DiskImageSaveAs, ContainerwechselHfeNachDmkNachImg) {
@@ -202,8 +202,8 @@ TEST(DiskImageSaveAs, ContainerwechselHfeNachDmkNachImg) {
 
 /**
  * @test DiskImageAutoFlush/SchreibtErstNachDerRuhezeit
- * @brief Der Autosave fasst Schreibbursts zusammen: erst wenn die letzte Änderung
- *        @ref kAutoFlushDelayCycles Takte zurückliegt, geht sie in die Datei.
+ * @brief Der Autosave fasst Schreibbursts zusammen: erst wenn die letzte Aenderung
+ *        @ref kAutoFlushDelayCycles Takte zurueckliegt, geht sie in die Datei.
  */
 TEST(DiskImageAutoFlush, SchreibtErstNachDerRuhezeit) {
     const auto path = tmpPath("k1520_test_di_autoflush.hfe");
@@ -214,15 +214,15 @@ TEST(DiskImageAutoFlush, SchreibtErstNachDerRuhezeit) {
     img->writeTrack(0, 0, makeTrack(0, 2, 128, 0x11));
     ASSERT_TRUE(img->saveAs(path, std::nullopt)) << img->lastError();
 
-    // Änderung, die noch nicht geschrieben sein darf.
+    // Aenderung, die noch nicht geschrieben sein darf.
     img->writeTrack(1, 0, makeTrack(1, 2, 128, 0x77));
-    EXPECT_FALSE(img->autoFlush(1000)) << "erste Prüfung merkt sich nur den Zeitpunkt";
+    EXPECT_FALSE(img->autoFlush(1000)) << "erste Pruefung merkt sich nur den Zeitpunkt";
     EXPECT_FALSE(img->autoFlush(1000 + kAutoFlushDelayCycles / 2));
     {
         auto zwischen = DiskImage::open(path, std::nullopt, false);
         ASSERT_NE(zwischen, nullptr);
         EXPECT_TRUE(zwischen->readTrack(1, 0).empty())
-            << "Änderung zu früh in der Datei";
+            << "Aenderung zu frueh in der Datei";
     }
 
     // Nach Ablauf der Ruhezeit wird geschrieben.
@@ -236,7 +236,7 @@ TEST(DiskImageAutoFlush, SchreibtErstNachDerRuhezeit) {
         EXPECT_EQ(secs[0].data[0], 0x77);
     }
 
-    // Ohne weitere Änderung passiert nichts mehr.
+    // Ohne weitere Aenderung passiert nichts mehr.
     EXPECT_FALSE(img->autoFlush(1000 + 10 * kAutoFlushDelayCycles));
 
     std::filesystem::remove(path);

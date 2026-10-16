@@ -2,17 +2,17 @@
  * @file test_p8000_wega_mehrplatz.cpp
  * @brief P8000 Mehrplatz-Abnahme (AP P22, doc/design/25_p8000.md §11): WEGA 3.0 von der Platte
  *        mit der Administrator-Konsole am ORIGINALTERMINAL (Variante „P8000 + P8000 Terminal",
- *        tty1: K7673 → Z8-Firmware P8T 5.0 → SIO0-B) und drei reinen Arbeitsplätzen (tty0, tty2, tty4)
+ *        tty1: K7673 → Z8-Firmware P8T 5.0 → SIO0-B) und drei reinen Arbeitsplaetzen (tty0, tty2, tty4)
  *        („P8000 Terminal" = `P8000TerminalMachine`, Typ 2 + K7673) als Telnet-Clients am
  *        `SerialHub` des Rechners (Loopback, freie Ports).
  *
  * Ausgangspunkt ist die installierte Platte des Zwischenstands `p15_7_sync`
  * (`test_p8000_wega_install.cpp`, `tests/support/p8000_wega.h`) — KEIN Save-State: Kaltstart wie
- * am Gerät (Netz ein → MON8 → UDOS-Koppelsoftware → MON16 → NMI → AUTOBOOT → `boot` →
- * `md(0,16000)wega` → Mehrbenutzerbetrieb).  Fehlt der Zwischenstand, wird übersprungen.
+ * am Geraet (Netz ein → MON8 → UDOS-Koppelsoftware → MON16 → NMI → AUTOBOOT → `boot` →
+ * `md(0,16000)wega` → Mehrbenutzerbetrieb).  Fehlt der Zwischenstand, wird uebersprungen.
  *
  * Alles wird getippt (Matrixdruck an der K7673, 80 ms halten + 80 ms Pause je Zeichen) und aus dem
- * Bildspeicher des jeweiligen Terminals gelesen — nichts über Abkürzungen am Gast vorbei.
+ * Bildspeicher des jeweiligen Terminals gelesen — nichts ueber Abkuerzungen am Gast vorbei.
  * Gleichschritt: 5 000 Rechnertakte (1,25 ms) ≙ 4 608 Z8-Takte je Arbeitsplatz.
  *
  * Ablauf und gesehene Bildschirmtexte: doc/p8000/mehrplatz_abnahme.md.
@@ -44,9 +44,9 @@ using namespace k1520::serial;
 namespace {
 void stumm() { k1520::logging::Logger::instance().setBaseLevel(k1520::logging::Level::ERROR); }
 
-/// Arbeitsplatz-Kanäle (Vorgabe tty0/tty2 = SIO0-A/SIO1-A der 8-Bit-Seite über die Koppelsoftware,
+/// Arbeitsplatz-Kanaele (Vorgabe tty0/tty2 = SIO0-A/SIO1-A der 8-Bit-Seite ueber die Koppelsoftware,
 /// tty4 = SIO0-A der 16-Bit-Seite direkt im WEGA-Kern;
-/// `K1520_P22_TTYS=tty4,tty5` o. ä. zum Nachstellen).
+/// `K1520_P22_TTYS=tty4,tty5` o. ae. zum Nachstellen).
 std::vector<std::string> arbeitsplatzTtys() {
     std::string s = "tty0,tty2,tty4";
     if (const char* e = std::getenv("K1520_P22_TTYS"); e && *e) s = e;
@@ -93,7 +93,7 @@ struct Platz {
 
 struct Anlage {
     WegaLauf l;
-    std::deque<Platz> plaetze;   ///< [0] = Konsole (deque: Verweise bleiben gültig)
+    std::deque<Platz> plaetze;   ///< [0] = Konsole (deque: Verweise bleiben gueltig)
 
     P8000Machine& m() { return *l.m; }
     Platz& konsole() { return plaetze[0]; }
@@ -143,7 +143,7 @@ struct Anlage {
             std::fprintf(stderr, "  [%6.0f Mio. Takte] %s\n", double(m().totalCycles()) / 1e6, z.c_str());
         }
     }
-    /// Tippt @p text an @p p ('\r' = RETURN) und läuft, bis die Tastatur alles abgegeben hat.
+    /// Tippt @p text an @p p ('\r' = RETURN) und laeuft, bis die Tastatur alles abgegeben hat.
     void tippe(Platz& p, const std::string& text) {
         for (char c : text) p.taste((c == '\r' || c == '\n') ? 0x01000004u : uint8_t(c));
         for (long long t = 0; t < 400'000'000 && !p.tastenFertig(); t += kBatch) schritt();
@@ -159,7 +159,7 @@ struct Anlage {
     void gib(Platz& p, const std::string& cmd) {
         for (char c : cmd + "\r") p.taste(c == '\r' ? 0x01000004u : uint8_t(c));
     }
-    /// Läuft, bis jede Station in @p ps wieder am Prompt steht (Cursorzeile = Prompt, Tasten fertig).
+    /// Laeuft, bis jede Station in @p ps wieder am Prompt steht (Cursorzeile = Prompt, Tasten fertig).
     bool bisPrompts(const std::vector<Platz*>& ps, long long grenze) {
         auto fertig = [&] {
             for (Platz* p : ps)
@@ -177,7 +177,7 @@ struct Anlage {
         }
         return fertig();
     }
-    /// Kommando an @p p und auf den nächsten Prompt warten.
+    /// Kommando an @p p und auf den naechsten Prompt warten.
     ::testing::AssertionResult kommando(Platz& p, const std::string& cmd, long long grenze = 800'000'000) {
         if (!istPrompt(p.cursorZeile()))
             return ::testing::AssertionFailure() << p.name << ": kein Prompt\n" << p.bild();
@@ -276,9 +276,9 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
     ASSERT_TRUE(a.anmelden(k, "wega", "root"));
     std::fprintf(stderr, "  [Konsole angemeldet nach %.1f s Maschinenzeit]\n", double(m.totalCycles()) / 4e6);
 
-    // Arbeitsplätze: Kanäle als Telnet-Server (freie Loopback-Ports), je ein „P8000 Terminal" als
+    // Arbeitsplaetze: Kanaele als Telnet-Server (freie Loopback-Ports), je ein „P8000 Terminal" als
     // Client.  Eingeschaltet wird das Terminal ERST mit stehender Verbindung — so trifft sein
-    // Einschalt-00H (Merkposten 30) den laufenden getty, wie am Gerät.
+    // Einschalt-00H (Merkposten 30) den laufenden getty, wie am Geraet.
     for (const std::string& tty : ttys) {
         const uint16_t port = ttyAlsServer(m, tty);
         ASSERT_NE(port, 0) << tty;
@@ -325,8 +325,8 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
                      double(m.totalCycles()) / 4e6);
     }
 
-    // Diagnose (kein Wächter, `K1520_P22_DIAG2=1`): PC-Verlauf des U880 bis zum Einsprung in MON8
-    // (RST 30H / RST 38H / NMI 66H) — so wurde der Stapelüberlauf der Koppelsoftware gefunden
+    // Diagnose (kein Waechter, `K1520_P22_DIAG2=1`): PC-Verlauf des U880 bis zum Einsprung in MON8
+    // (RST 30H / RST 38H / NMI 66H) — so wurde der Stapelueberlauf der Koppelsoftware gefunden
     // (fehlende EI-Sperre, Merkposten p8000 Nr. 40).
     struct Spur { uint16_t pc, sp; bool iff; uint64_t t; };
     std::vector<Spur> ring(65536);
@@ -359,7 +359,7 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
     for (Platz* p : alle) a.gib(*p, "ls -l /bin");
     ASSERT_TRUE(a.bisPrompts(alle, 4'000'000'000LL)) << alleBilder();
     for (Platz* p : alle) {
-        // Letzte Zeile vollständig: kein Zeichen verloren (XON/XOFF der Firmware bei 36 Zeichen
+        // Letzte Zeile vollstaendig: kein Zeichen verloren (XON/XOFF der Firmware bei 36 Zeichen
         // Puffer gegen den Dauerstrom von drei gleichzeitigen Ausgaben).
         EXPECT_NE(p->bild().find("-rwxr-x--x 1 bin      system     7346 May 30 08:00 write\n"), std::string::npos)
             << p->name << "\n" << p->bild();
@@ -374,10 +374,10 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
         EXPECT_NE(p->bild().find(soll), std::string::npos) << p->name << "\n" << p->bild();
     }
 
-    // Flusssteuerung: 30 × `ESC *` (Bild löschen im ADM31-Betrieb, je ≈ 65 ms Firmwarezeit, Merkposten
-    // 28) kommen im Zeichenabstand von ≈ 1 ms — der Empfangspuffer der Firmware (45 Zeichen) füllt
+    // Flusssteuerung: 30 × `ESC *` (Bild loeschen im ADM31-Betrieb, je ≈ 65 ms Firmwarezeit, Merkposten
+    // 28) kommen im Zeichenabstand von ≈ 1 ms — der Empfangspuffer der Firmware (45 Zeichen) fuellt
     // sich, bei 36 sendet das Terminal DC3.  Nur wenn WEGA (Kern-tty bzw. Koppelsoftware) es beachtet, kommt
-    // die folgende Zeile vollständig an.
+    // die folgende Zeile vollstaendig an.
     if (std::getenv("K1520_P22_OHNE_IXON")) {   // Gegenprobe: ohne XON/XOFF am Gast gehen Zeichen verloren
         for (Platz* p : alle) a.gib(*p, "stty -ixon");
         ASSERT_TRUE(a.bisPrompts(alle, 800'000'000)) << alleBilder();
@@ -406,7 +406,7 @@ TEST(P8000WegaMehrplatz, KonsoleAmOriginalterminalUndArbeitsplaetzeUeberTelnet) 
     ASSERT_TRUE(a.kommando(k, "who"));
     EXPECT_NE(k.bild().find("wega     " + p1.name), std::string::npos) << k.bild();
 
-    // Saubere Abschaltung: Puffer zurückschreiben.
+    // Saubere Abschaltung: Puffer zurueckschreiben.
     ASSERT_TRUE(a.kommando(k, "sync;sync"));
     a.laufe(400'000'000);
     m.hdFlush();

@@ -27,7 +27,7 @@ struct K2521Test : ::testing::Test {
     }
 };
 
-/// Hört auf einen Port und merkt sich die volle E/A-Adresse des Zyklus.
+/// Hoert auf einen Port und merkt sich die volle E/A-Adresse des Zyklus.
 struct Lauscher : BusDevice {
     uint16_t adr = 0;
     uint8_t  wert = 0;
@@ -77,7 +77,7 @@ TEST(K2521Rom, BeideFassungenSindEingebaut) {
 }
 
 TEST(K2521Rom, BestuecktesRomBisBFFUndDarueberRam) {
-    // Drei bestückte Fassungen: Länge wird auf 0C00H begrenzt.
+    // Drei bestueckte Fassungen: Laenge wird auf 0C00H begrenzt.
     static uint8_t gross[0x1000];
     for (auto& b : gross) b = 0x77;
     K1520Bus bus;
@@ -90,9 +90,9 @@ TEST(K2521Rom, BestuecktesRomBisBFFUndDarueberRam) {
 }
 
 TEST_F(K2521Test, CtcAn80UndPioAn84SindErreichbar) {
-    // CTC: Vektorbasis E0H an Kanal 0, dann Kanal 1 lesen = Zählerstand (Zeitkonstante).
+    // CTC: Vektorbasis E0H an Kanal 0, dann Kanal 1 lesen = Zaehlerstand (Zeitkonstante).
     bus.ioWrite(0x80, 0xE0);
-    bus.ioWrite(0x81, 0x45);        // Zähler, TC folgt
+    bus.ioWrite(0x81, 0x45);        // Zaehler, TC folgt
     bus.ioWrite(0x81, 0x07);
     EXPECT_EQ(bus.ioRead(0x81), 0x07);
 
@@ -154,15 +154,15 @@ TEST_F(K2521Test, KaskadeTo2ZaehltKanal3) {
     bus.ioWrite(0x80, 0xE0);
     bus.ioWrite(0x82, 0x05);
     bus.ioWrite(0x82, 0x02);
-    // Kanal 3: Zähler (CLK/TRG3 = ZC/TO2), fallende Flanke, IE, TC = 3.
+    // Kanal 3: Zaehler (CLK/TRG3 = ZC/TO2), fallende Flanke, IE, TC = 3.
     bus.ioWrite(0x83, 0xC5);
     bus.ioWrite(0x83, 0x03);
 
     zre.clockTick(32 * 2 + 4);
-    EXPECT_FALSE(zre.ctc().hasInterrupt()) << "erst zwei Nulldurchgänge";
+    EXPECT_FALSE(zre.ctc().hasInterrupt()) << "erst zwei Nulldurchgaenge";
     zre.clockTick(32);
     bus.updateInterruptChain();
-    ASSERT_TRUE(zre.ctc().hasInterrupt()) << "dritter Nulldurchgang zählt Kanal 3 aus";
+    ASSERT_TRUE(zre.ctc().hasInterrupt()) << "dritter Nulldurchgang zaehlt Kanal 3 aus";
     EXPECT_EQ(zre.getVector(), 0xE6);       // Basis E0H | Kanal 3 << 1
 }
 
@@ -201,7 +201,7 @@ TEST_F(K2521Test, VolleEaAdresseKommtAmBusAn) {
     bus.ioWrite(0x30E8, 0x0F);
     EXPECT_EQ(l.adr, 0x30E8);
 
-    // Über die CPU: OUT (C),A mit BC = 70E8H und OUT (E8H),A mit A = F0H (→ AB8–15 = A).
+    // Ueber die CPU: OUT (C),A mit BC = 70E8H und OUT (E8H),A mit A = F0H (→ AB8–15 = A).
     const uint8_t prog[] = {
         0x01, 0xE8, 0x70,       // LD BC,70E8H
         0x3E, 0x0F,             // LD A,0FH
@@ -265,24 +265,24 @@ uint32_t bausteinGespeichert(const uint8_t* rom, int i) {
 }
 }  // namespace
 
-/// Der Abzug wie gelesen (F9): 177 trägt das gekippte Bit, die Summe stimmt nicht.  Der
+/// Der Abzug wie gelesen (F9): 177 traegt das gekippte Bit, die Summe stimmt nicht.  Der
 /// Abzug ist NICHT die Vorgabe (siehe K8915Gen2VorgabeIstRepariertesRom), bleibt aber
-/// als Beleg eingebettet und wird nie geändert.
+/// als Beleg eingebettet und wird nie geaendert.
 TEST(K2521Rom, K8915Gen2AbzugUnveraendert) {
     EXPECT_EQ(sizeof(K8915G2_ZRE_ROM), 0x0C00u);
     EXPECT_EQ(bausteinSumme(K8915G2_ZRE_ROM, 0), bausteinGespeichert(K8915G2_ZRE_ROM, 0));  // 175
     EXPECT_EQ(bausteinSumme(K8915G2_ZRE_ROM, 1), bausteinGespeichert(K8915G2_ZRE_ROM, 1));  // 176
-    EXPECT_EQ(bausteinSumme(K8915G2_ZRE_ROM, 2), 0x00A680u);   // 177: Prüfsummenfehler im Abzug
+    EXPECT_EQ(bausteinSumme(K8915G2_ZRE_ROM, 2), 0x00A680u);   // 177: Pruefsummenfehler im Abzug
     EXPECT_EQ(bausteinGespeichert(K8915G2_ZRE_ROM, 2), 0x00A67Cu);
-    EXPECT_EQ(K8915G2_ZRE_ROM[0x0A33], 0x04);   // F9: Byte im Abzug bleibt unverändert
+    EXPECT_EQ(K8915G2_ZRE_ROM[0x0A33], 0x04);   // F9: Byte im Abzug bleibt unveraendert
 }
 
-/// Vorgabe = Abzug mit genau einem geänderten Byte 0A33H := 00H (F9 gelöst, 2026-10-05);
+/// Vorgabe = Abzug mit genau einem geaenderten Byte 0A33H := 00H (F9 geloest, 2026-10-05);
 /// danach stimmt die 24-Bit-Summe JEDES der drei Bausteine.
 TEST(K2521Rom, K8915Gen2VorgabeIstRepariertesRom) {
     const auto cfg = K2521::Config::k8915g2();
     ASSERT_NE(cfg.rom, nullptr);
-    // Inhalt, nicht Zeiger: `static constexpr` im Kopf ⇒ eine Kopie je Übersetzungseinheit.
+    // Inhalt, nicht Zeiger: `static constexpr` im Kopf ⇒ eine Kopie je Uebersetzungseinheit.
     EXPECT_EQ(std::memcmp(cfg.rom, K8915G2_ZRE_ROM_REPARIERT, sizeof(K8915G2_ZRE_ROM_REPARIERT)), 0);
     EXPECT_EQ(cfg.rom_len, 0x0C00u);
     ASSERT_EQ(sizeof(K8915G2_ZRE_ROM_REPARIERT), sizeof(K8915G2_ZRE_ROM));

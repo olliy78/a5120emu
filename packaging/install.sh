@@ -5,14 +5,14 @@
 #
 # Installiert die mitgelieferte Payload (Kernbibliothek + GUI + Daten) in ein
 # benutzereigenes Verzeichnis und richtet dort eine eigene Laufzeitumgebung ein:
-# uv holt einen Python und legt ein venv mit PySide6 an.  Nichts davon berührt
+# uv holt einen Python und legt ein venv mit PySide6 an.  Nichts davon beruehrt
 # das System — kein sudo, kein Systempython, keine Systempakete.
 #
 # Aufruf (aus dem entpackten Paket heraus):
 #
 #     ./install.sh                    # fragt nach dem Zielverzeichnis
-#     ./install.sh --prefix DIR       # ohne Rückfrage dorthin
-#     ./install.sh -y                 # ohne Rückfrage in den Vorschlag
+#     ./install.sh --prefix DIR       # ohne Rueckfrage dorthin
+#     ./install.sh -y                 # ohne Rueckfrage in den Vorschlag
 #     ./install.sh --uninstall        # entfernen (Benutzerdaten bleiben)
 #     ./install.sh --uninstall --purge   # samt Disketten und Konfiguration
 #
@@ -25,16 +25,16 @@ SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # ─── Vorgaben ────────────────────────────────────────────────────────────────
 
 # Vorgeschlagenes Ziel: **sichtbar im Heimatverzeichnis**.  Ein Pfad unter
-# ~/.local ist zwar der übliche Ort für benutzereigene Software, aber dort
+# ~/.local ist zwar der uebliche Ort fuer benutzereigene Software, aber dort
 # findet ihn niemand wieder — gefragt wird ohnehin (siehe unten), das hier ist
 # nur der Vorschlag.  Die Benutzerdaten liegen davon getrennt im
 # Dokumentenordner (~/Dokumente/K1520emu): Arbeitsdisketten werden
-# zurückgeschrieben und sollen ein Update überleben (app/paths.py).
+# zurueckgeschrieben und sollen ein Update ueberleben (app/paths.py).
 PREFIX="$HOME/K1520emu"
 
-# Datenordner des Anwenders (Arbeitsdisketten, Zustände, logs/).  LEER heißt
-# „Vorgabe" — dann löst app/paths.py den Dokumentenordner zur Laufzeit auf und
-# folgt einem späteren Umbenennen.  Nur eine ABWEICHENDE Wahl wird in den
+# Datenordner des Anwenders (Arbeitsdisketten, Zustaende, logs/).  LEER heisst
+# „Vorgabe" — dann loest app/paths.py den Dokumentenordner zur Laufzeit auf und
+# folgt einem spaeteren Umbenennen.  Nur eine ABWEICHENDE Wahl wird in den
 # Starter eingetragen (K1520_DATA).
 DATEN=
 DATEN_SET=no
@@ -44,12 +44,12 @@ ICONDIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 DATADIR=$(benutzerdaten_dir)
 CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}/k1520emu"
 
-# Maschinen dieser Familie, für die Starter und Startmenü-Einträge entstehen.
-# Das Projekt heißt nach dem Bus, nicht nach einem Rechner: der A5120 ist die
+# Maschinen dieser Familie, fuer die Starter und Startmenue-Eintraege entstehen.
+# Das Projekt heisst nach dem Bus, nicht nach einem Rechner: der A5120 ist die
 # erste Maschine, weitere K1520-Rechner bekommen ein eigenes Programm in
-# derselben Installation.  Eine neue gehört hier hinein UND braucht eine
-# <name>.desktop.in; das Deinstallieren räumt danach von selbst mit auf.
-MASCHINEN="a5120emu k8915emu prg710emu pc1715emu p8000emu"
+# derselben Installation.  Eine neue gehoert hier hinein UND braucht eine
+# <name>.desktop.in; das Deinstallieren raeumt danach von selbst mit auf.
+MASCHINEN="a5120emu k8915emu prg710emu pc1715emu p8000emu mc80emu"
 
 # Werkzeuge der Installation — keine Maschinen, aber ebenfalls mit Starter und
 # Startmenue-Eintrag: das k1520DiskTool tauscht Dateien mit Disketten aus
@@ -68,10 +68,10 @@ KONSOLENWERKZEUGE="k1520dbg k1520disktool-cli"
 # Alles, was einen Starter/Eintrag bekommt — nur fuer das Aufraeumen gedacht.
 STARTER="$MASCHINEN $WERKZEUGE"
 
-# Was der Installer im Zielverzeichnis anlegt — und ausschließlich das entfernt
+# Was der Installer im Zielverzeichnis anlegt — und ausschliesslich das entfernt
 # das Deinstallieren wieder.  Die Liste wandert beim Installieren in den Ausweis
-# (siehe unten), sodass eine ältere Installation nach ihrer EIGENEN Liste
-# abgeräumt wird und nicht nach der einer neueren Fassung.
+# (siehe unten), sodass eine aeltere Installation nach ihrer EIGENEN Liste
+# abgeraeumt wird und nicht nach der einer neueren Fassung.
 INVENTAR="bin app share venv python tools .cache-uv VERSION requirements.lock LICENSE LIZENZ.txt"
 
 MODE=install
@@ -89,19 +89,19 @@ K1520-Emulator — Installation
 
   --prefix DIR     Installationsverzeichnis (ohne Angabe wird gefragt,
                    Vorschlag: $PREFIX)
-  --data DIR       Ordner für Arbeitsdisketten und Zustände (ohne Angabe wird
+  --data DIR       Ordner fuer Arbeitsdisketten und Zustaende (ohne Angabe wird
                    gefragt, Vorschlag: <Dokumente>/K1520emu)
-  -y, --yes        nicht fragen, Vorschläge verwenden
+  -y, --yes        nicht fragen, Vorschlaege verwenden
   --python X.Y     Python-Fassung der Laufzeitumgebung (Vorgabe: $PY_VERSION)
-  --no-shortcut    keinen Startmenü-Eintrag und keinen Starter in ~/.local/bin
-  --no-slim        Python und Qt vollständig lassen (~400 statt ~146 MB)
+  --no-shortcut    keinen Startmenue-Eintrag und keinen Starter in ~/.local/bin
+  --no-slim        Python und Qt vollstaendig lassen (~400 statt ~146 MB)
   --keep-cache     uv und seinen Download-Cache behalten (schnellere
                    Neuinstallation, belegt einige hundert MB mehr)
   --uninstall      Installation entfernen
-  --purge          zusätzlich Disketten und Konfiguration löschen
+  --purge          zusaetzlich Disketten und Konfiguration loeschen
   -h, --help       diese Hilfe
 
-Erstinstallation lädt einmalig ~120 MB (uv, Python, Qt) und braucht daher
+Erstinstallation laedt einmalig ~120 MB (uv, Python, Qt) und braucht daher
 eine Internetverbindung; danach startet der Emulator ohne Netz.
 EOF
 }
@@ -127,12 +127,12 @@ done
 
 # vorhandene_installation — Wurzel einer bereits eingerichteten Installation.
 #
-# Der Starter in ~/.local/bin zeigt darauf; es genügt irgendeiner der
+# Der Starter in ~/.local/bin zeigt darauf; es genuegt irgendeiner der
 # Maschinen-Starter, sie zeigen alle in dieselbe Installation.  Zwei Aufgaben
-# hängen daran: das Deinstallieren ohne --prefix und — wichtiger — der
-# Vorschlag beim Aktualisieren.  Ohne ihn schlüge der Installer beim Update den
-# Standardort vor; wer damals woanders installiert hat und Enter drückt, bekäme
-# eine ZWEITE Installation, während die alte verwaist liegen bliebe.
+# haengen daran: das Deinstallieren ohne --prefix und — wichtiger — der
+# Vorschlag beim Aktualisieren.  Ohne ihn schluege der Installer beim Update den
+# Standardort vor; wer damals woanders installiert hat und Enter drueckt, bekaeme
+# eine ZWEITE Installation, waehrend die alte verwaist liegen bliebe.
 vorhandene_installation() {
     for _m in $MASCHINEN; do
         [ -L "$BINDIR/$_m" ] || continue
@@ -156,7 +156,7 @@ fi
 
 # ─── Ziel erfragen ───────────────────────────────────────────────────────────
 #
-# Ohne --prefix wird gefragt, sofern ein Terminal da ist.  Läuft der Installer
+# Ohne --prefix wird gefragt, sofern ein Terminal da ist.  Laeuft der Installer
 # unbeaufsichtigt (Skript, CI, Pipe), gilt kommentarlos der Vorschlag.
 
 if [ "$MODE" = install ] && [ "$PREFIX_SET" = no ] && [ "$ASSUME_YES" = no ] \
@@ -165,7 +165,7 @@ if [ "$MODE" = install ] && [ "$PREFIX_SET" = no ] && [ "$ASSUME_YES" = no ] \
         printf "\nEs gibt bereits eine Installation — Enter aktualisiert sie.\n"
     else
         printf "\nWohin soll der K1520-Emulator installiert werden?\n"
-        printf "  (Enter übernimmt den Vorschlag; das Verzeichnis wird angelegt)\n"
+        printf "  (Enter uebernimmt den Vorschlag; das Verzeichnis wird angelegt)\n"
     fi
     printf "Ziel [%s]: " "$PREFIX"
     if IFS= read -r _antwort < /dev/tty; then
@@ -174,18 +174,18 @@ if [ "$MODE" = install ] && [ "$PREFIX_SET" = no ] && [ "$ASSUME_YES" = no ] \
     printf "\n"
 fi
 
-# Der Starter braucht einen festen Pfad — „~/…" und Relativangaben auflösen.
+# Der Starter braucht einen festen Pfad — „~/…" und Relativangaben aufloesen.
 PREFIX=$(abs_path "$PREFIX")
 
 # ─── Datenordner erfragen ────────────────────────────────────────────────────
 #
 # Getrennt vom Installationsziel, und das aus einem inhaltlichen Grund: hier
-# liegen die ARBEITSDISKETTEN, in die der Emulator per Autosave zurückschreibt.
-# Sie sollen ein Update überleben und in der Datensicherung des Anwenders
+# liegen die ARBEITSDISKETTEN, in die der Emulator per Autosave zurueckschreibt.
+# Sie sollen ein Update ueberleben und in der Datensicherung des Anwenders
 # auftauchen — deshalb der Dokumentenordner als Vorschlag und nicht die
 # Installation.
 #
-# Warum überhaupt gefragt wird: unter Windows ist „Dokumente" häufig nach
+# Warum ueberhaupt gefragt wird: unter Windows ist „Dokumente" haeufig nach
 # OneDrive umgeleitet, und ein Autosave in einen synchronisierten Ordner ist eine
 # Entscheidung des Anwenders, keine des Entwurfs.  Unter Linux trifft es den, der
 # sein Heimatverzeichnis klein halten will.
@@ -194,7 +194,7 @@ _daten_vorgabe=$(dokumente_dir 2>/dev/null)/K1520emu || _daten_vorgabe=
 if [ "$MODE" = install ] && [ "$DATEN_SET" = no ] && [ "$ASSUME_YES" = no ] \
    && [ -n "$_daten_vorgabe" ] && [ -r /dev/tty ] && [ -t 1 ]; then
     printf "Wo sollen die Arbeitsdisketten liegen?\n"
-    printf "  (dort schreibt der Emulator Änderungen zurück; ein Update fasst sie nie an)\n"
+    printf "  (dort schreibt der Emulator Aenderungen zurueck; ein Update fasst sie nie an)\n"
     printf "Disketten [%s]: " "$_daten_vorgabe"
     if IFS= read -r _antwort < /dev/tty; then
         [ -n "$_antwort" ] && DATEN=$_antwort
@@ -208,12 +208,12 @@ if [ -n "$DATEN" ]; then
     [ "$DATEN" = "$_daten_vorgabe" ] && DATEN=
 fi
 
-# ─── Ziel prüfen ─────────────────────────────────────────────────────────────
+# ─── Ziel pruefen ─────────────────────────────────────────────────────────────
 #
-# Das Deinstallieren löscht sein Ziel mit `rm -rf`.  Solange das Ziel fest
+# Das Deinstallieren loescht sein Ziel mit `rm -rf`.  Solange das Ziel fest
 # verdrahtet war, war das harmlos; seit danach GEFRAGT wird, ist ein Tippfehler
 # („~", „~/Dokumente") eine Katastrophe.  Deshalb zwei Riegel: hier darf nur ein
-# leeres oder bereits von uns belegtes Verzeichnis Ziel werden, und beim Löschen
+# leeres oder bereits von uns belegtes Verzeichnis Ziel werden, und beim Loeschen
 # muss sich das Verzeichnis ausweisen (ist_installation).
 
 case "$PREFIX" in
@@ -221,44 +221,44 @@ case "$PREFIX" in
 esac
 
 if [ "$MODE" = install ] && ! ist_leer "$PREFIX" && ! ist_installation "$PREFIX"; then
-    die "$PREFIX ist nicht leer und enthält keine Installation des Emulators.
-     Bitte einen eigenen Ordner angeben — beim Deinstallieren würde dieser
-     hier samt Inhalt gelöscht."
+    die "$PREFIX ist nicht leer und enthaelt keine Installation des Emulators.
+     Bitte einen eigenen Ordner angeben — beim Deinstallieren wuerde dieser
+     hier samt Inhalt geloescht."
 fi
 
 # ─── Deinstallieren ──────────────────────────────────────────────────────────
 
-# entferne_installation <wurzel> — nur das wegräumen, was der Installer anlegte.
+# entferne_installation <wurzel> — nur das wegraeumen, was der Installer anlegte.
 #
-# Ein `rm -rf` auf die Wurzel wäre einfacher, nähme dem Anwender aber alles mit,
-# was er DANEBEN abgelegt hat — eigene Disketten, Notizen, ein Skript.  Gelöscht
-# wird deshalb nach dem Inventar aus dem Ausweis (eine ältere Installation nach
+# Ein `rm -rf` auf die Wurzel waere einfacher, naehme dem Anwender aber alles mit,
+# was er DANEBEN abgelegt hat — eigene Disketten, Notizen, ein Skript.  Geloescht
+# wird deshalb nach dem Inventar aus dem Ausweis (eine aeltere Installation nach
 # ihrer eigenen Liste, nicht nach der dieser Fassung); bleibt danach etwas
-# übrig, bleibt auch das Verzeichnis stehen und der Anwender erfährt es.
+# uebrig, bleibt auch das Verzeichnis stehen und der Anwender erfaehrt es.
 entferne_installation() {
     _wurzel=$1
     _liste=$(sed -n 's/^eintrag //p' "$_wurzel/$INSTALL_MARKER" 2>/dev/null || true)
     [ -n "$_liste" ] || _liste=$INVENTAR
 
     for _e in $_liste; do
-        # Ein Eintrag ist ein NAME, kein Pfad — sonst zeigte ein verfälschter
+        # Ein Eintrag ist ein NAME, kein Pfad — sonst zeigte ein verfaelschter
         # Ausweis („../..") aus der Installation heraus.
         case "$_e" in
-            */*|..|.|"") warn "übergangen: fragwürdiger Eintrag im Ausweis ($_e)"; continue ;;
+            */*|..|.|"") warn "uebergangen: fragwuerdiger Eintrag im Ausweis ($_e)"; continue ;;
         esac
         rm -rf "$_wurzel/$_e"
     done
     # Protokolle des Emulators — sie entstehen im ARBEITSVERZEICHNIS (seit
     # e6db12c in dessen Unterverzeichnis `logs/`, siehe k1520_api.cpp), also
-    # hier, sobald jemand aus der Installation heraus startet.  Die ältere
-    # Schreibweise direkt im Verzeichnis bleibt berücksichtigt, damit auch eine
+    # hier, sobald jemand aus der Installation heraus startet.  Die aeltere
+    # Schreibweise direkt im Verzeichnis bleibt beruecksichtigt, damit auch eine
     # damit angelegte Installation sauber verschwindet.
     rm -rf "$_wurzel/logs"
     rm -f "$_wurzel"/k1520_*.log
     rm -f "$_wurzel/$INSTALL_MARKER"
 
     if rmdir "$_wurzel" 2>/dev/null; then
-        ok "Verzeichnis gelöscht"
+        ok "Verzeichnis geloescht"
     else
         ok "Programmdateien entfernt"
         printf "     %s bleibt stehen — darin liegt, was nicht vom Installer stammt:\n" "$_wurzel"
@@ -269,7 +269,7 @@ entferne_installation() {
 if [ "$MODE" = uninstall ]; then
     info "Installation entfernen: $PREFIX"
     if [ ! -d "$PREFIX" ]; then
-        warn "nichts zu löschen — $PREFIX gibt es nicht"
+        warn "nichts zu loeschen — $PREFIX gibt es nicht"
     elif ist_installation "$PREFIX"; then
         entferne_installation "$PREFIX"
     else
@@ -278,24 +278,24 @@ if [ "$MODE" = uninstall ]; then
     for _m in $STARTER; do
         rm -f "$BINDIR/$_m" "$APPDIR/$_m.desktop" "$ICONDIR/$_m.svg"
     done
-    # Nur der Verweis — Startmenü-Eintrag und Symbol gibt es dafür nicht.
+    # Nur der Verweis — Startmenue-Eintrag und Symbol gibt es dafuer nicht.
     for _m in $KONSOLENWERKZEUGE; do
         rm -f "$BINDIR/$_m"
     done
-    ok "Starter und Startmenü-Einträge entfernt"
+    ok "Starter und Startmenue-Eintraege entfernt"
     if [ "$PURGE" = yes ]; then
         rm -rf "$DATADIR" "$CONFDIR"
-        ok "Disketten und Konfiguration gelöscht"
+        ok "Disketten und Konfiguration geloescht"
     else
         printf "     Behalten: %s (Disketten), %s (Konfiguration)\n" "$DATADIR" "$CONFDIR"
-        printf "     Mit --purge löschen.\n"
+        printf "     Mit --purge loeschen.\n"
     fi
     exit 0
 fi
 
-# ─── Vorprüfungen ────────────────────────────────────────────────────────────
+# ─── Vorpruefungen ────────────────────────────────────────────────────────────
 
-[ -d "$SELF_DIR/payload" ] || die "payload/ fehlt neben $0 — ist das Paket vollständig entpackt?"
+[ -d "$SELF_DIR/payload" ] || die "payload/ fehlt neben $0 — ist das Paket vollstaendig entpackt?"
 [ -f "$SELF_DIR/requirements.lock" ] || die "requirements.lock fehlt im Paket"
 
 VERSION=$(cat "$SELF_DIR/VERSION" 2>/dev/null || echo unbekannt)
@@ -317,7 +317,7 @@ fi
 # ─── 1. Payload kopieren ─────────────────────────────────────────────────────
 
 info "Programmdateien kopieren"
-# Eine ältere Installation wird ersetzt; python/ (der geladene Interpreter)
+# Eine aeltere Installation wird ersetzt; python/ (der geladene Interpreter)
 # bleibt stehen, die Laufzeitumgebung wird weiter unten neu aufgebaut.
 for d in bin app share; do
     rm -rf "$PREFIX/$d"
@@ -328,11 +328,11 @@ for _l in LICENSE LIZENZ.txt; do
     if [ -f "$SELF_DIR/$_l" ]; then cp "$SELF_DIR/$_l" "$PREFIX/"; fi
 done
 
-# Ausweis für das Deinstallieren.  Er beantwortet zwei Fragen: ob dieses
-# Verzeichnis überhaupt uns gehört (sonst wird nichts gelöscht) und WAS darin
-# uns gehört — nur diese Einträge werden entfernt, alles andere bleibt liegen.
-# Die Liste reist mit der Installation, damit eine ältere Fassung nach ihrem
-# eigenen Inventar abgeräumt wird und nicht nach dem einer neueren.
+# Ausweis fuer das Deinstallieren.  Er beantwortet zwei Fragen: ob dieses
+# Verzeichnis ueberhaupt uns gehoert (sonst wird nichts geloescht) und WAS darin
+# uns gehoert — nur diese Eintraege werden entfernt, alles andere bleibt liegen.
+# Die Liste reist mit der Installation, damit eine aeltere Fassung nach ihrem
+# eigenen Inventar abgeraeumt wird und nicht nach dem einer neueren.
 {
     printf 'k1520emu %s\n' "$VERSION"
     printf '# Vom Installer angelegt — nur das entfernt --uninstall wieder.\n'
@@ -345,14 +345,14 @@ ok "Kern, GUI und Daten in $PREFIX"
 UV=$(ensure_uv "$PREFIX/tools" "$SELF_DIR/uv_pins.txt")
 
 # Alles, was uv anlegt, landet INNERHALB der Installation: der Python unter
-# python/, der Cache unter .cache-uv/.  Deinstallieren = Verzeichnis löschen.
+# python/, der Cache unter .cache-uv/.  Deinstallieren = Verzeichnis loeschen.
 UV_PYTHON_INSTALL_DIR="$PREFIX/python"; export UV_PYTHON_INSTALL_DIR
 UV_CACHE_DIR="$PREFIX/.cache-uv";       export UV_CACHE_DIR
 UV_NO_MODIFY_PATH=1;                    export UV_NO_MODIFY_PATH
 
 # --no-bin: uv legt sonst ~/.local/bin/python3.x an — ein Symlink im PATH des
-# Anwenders, der unser Deinstallieren überlebte und dann ins Leere zeigte.
-# Der Emulator ruft seinen Python ohnehin über den vollen Pfad auf.
+# Anwenders, der unser Deinstallieren ueberlebte und dann ins Leere zeigte.
+# Der Emulator ruft seinen Python ohnehin ueber den vollen Pfad auf.
 info "Python $PY_VERSION bereitstellen"
 "$UV" python install --no-bin "$PY_VERSION" >/dev/null 2>&1 \
     || "$UV" python install --no-bin "$PY_VERSION" \
@@ -360,9 +360,9 @@ info "Python $PY_VERSION bereitstellen"
 ok "Python bereit"
 
 # Eine vorhandene Laufzeitumgebung wird ERNEUERT, nicht weiterbenutzt: `uv venv`
-# verweigert sonst schlicht den Dienst, und weiterbenutzen wäre auch nicht
-# richtig — das Schlankmachen einer älteren Fassung kann etwas entfernt haben,
-# das die neue braucht, und nachträglich wiederherstellen kann uv das nicht.
+# verweigert sonst schlicht den Dienst, und weiterbenutzen waere auch nicht
+# richtig — das Schlankmachen einer aelteren Fassung kann etwas entfernt haben,
+# das die neue braucht, und nachtraeglich wiederherstellen kann uv das nicht.
 # Der heruntergeladene Python unter python/ bleibt dabei liegen.
 info "Laufzeitumgebung anlegen"
 VENV_CLEAR=
@@ -375,9 +375,9 @@ fi
     "$PREFIX/venv" >/dev/null \
     || die "venv konnte nicht angelegt werden"
 
-info "Qt und Abhängigkeiten installieren (~70 MB, dauert einen Moment)"
+info "Qt und Abhaengigkeiten installieren (~70 MB, dauert einen Moment)"
 "$UV" pip install --python "$PREFIX/venv" --require-hashes -r "$PREFIX/requirements.lock" \
-    || die "Abhängigkeiten konnten nicht installiert werden (kein Netz? Proxy?)"
+    || die "Abhaengigkeiten konnten nicht installiert werden (kein Netz? Proxy?)"
 ok "Laufzeitumgebung fertig"
 
 # ── Greaseweazle: der Zugriff auf ECHTE Diskettenlaufwerke ───────────────────
@@ -397,7 +397,7 @@ if [ -n "$_gw_wheel" ]; then
     if "$UV" pip install --python "$PREFIX/venv" --no-deps "$_gw_wheel" >/dev/null 2>&1; then
         ok "$(basename "$_gw_wheel")"
     else
-        warn "Greaseweazle liess sich nicht einspielen — der Emulator läuft,
+        warn "Greaseweazle liess sich nicht einspielen — der Emulator laeuft,
      aber der Zugriff auf ein echtes Diskettenlaufwerk fehlt."
     fi
 else
@@ -410,29 +410,29 @@ fi
 
 # ─── 3. Schlankmachen ────────────────────────────────────────────────────────
 #
-# Python und Qt bringen ~400 MB mit, keine 15 davon gehören dem Emulator.  Der
+# Python und Qt bringen ~400 MB mit, keine 15 davon gehoeren dem Emulator.  Der
 # Rest ist QML/Quick, Qt-Entwicklungswerkzeug, ungenutzte Bindungen, CPythons
 # Testsuite und Tcl/Tk.  slim.py schneidet das heraus — welche Qt-Bibliotheken
 # bleiben, bestimmt dabei `ldd` und keine Vermutung.  Der Rauchtest gleich
 # danach ist die Gegenprobe.
 
 if [ "$SLIM" = yes ]; then
-    info "Überflüssiges entfernen"
+    info "Ueberfluessiges entfernen"
     if [ "$KEEP_CACHE" = yes ]; then
         "$PREFIX/venv/bin/python3" "$SELF_DIR/slim.py" "$PREFIX" --keep-tools \
-            || warn "Schlankmachen fehlgeschlagen — die Installation bleibt vollständig"
+            || warn "Schlankmachen fehlgeschlagen — die Installation bleibt vollstaendig"
     else
         "$PREFIX/venv/bin/python3" "$SELF_DIR/slim.py" "$PREFIX" \
-            || warn "Schlankmachen fehlgeschlagen — die Installation bleibt vollständig"
+            || warn "Schlankmachen fehlgeschlagen — die Installation bleibt vollstaendig"
     fi
 fi
 
 # ─── 4. Starter ──────────────────────────────────────────────────────────────
 
-# Angelegt wird je Maschine EINZELN und nicht über $MASCHINEN in einer Schleife:
-# jede braucht ihren eigenen Einstiegspunkt, eine Schleife über dieselbe Vorlage
-# schriebe lauter gleiche Starter unter verschiedenen Namen.  Kommt der nächste
-# K1520-Rechner, entsteht hier ein zweiter Block — und sein Name gehört zusätzlich
+# Angelegt wird je Maschine EINZELN und nicht ueber $MASCHINEN in einer Schleife:
+# jede braucht ihren eigenen Einstiegspunkt, eine Schleife ueber dieselbe Vorlage
+# schriebe lauter gleiche Starter unter verschiedenen Namen.  Kommt der naechste
+# K1520-Rechner, entsteht hier ein zweiter Block — und sein Name gehoert zusaetzlich
 # in $MASCHINEN, damit das Deinstallieren ihn findet.
 info "Starter schreiben"
 mkdir -p "$PREFIX/bin"
@@ -440,7 +440,7 @@ ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/a5
 chmod +x "$PREFIX/bin/a5120emu"
 
 # Der K8915 Emulator: DIESELBE Vorlage — der Starter erkennt an seinem Namen,
-# welches Programmprofil er übergibt (launcher.sh, `--machine k8915`).
+# welches Programmprofil er uebergibt (launcher.sh, `--machine k8915`).
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/k8915emu"
 chmod +x "$PREFIX/bin/k8915emu"
 
@@ -457,6 +457,10 @@ chmod +x "$PREFIX/bin/pc1715emu"
 # `p8000emu*` => `--machine p8000`.
 ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/p8000emu"
 chmod +x "$PREFIX/bin/p8000emu"
+
+# Der MC80 Emulator (MC80.30/31 per Modellwahl): ebenso, `mc80emu*` => `--machine mc80`.
+ersetze_platzhalter "$SELF_DIR/launcher.sh" "$PREFIX" "$DATEN" > "$PREFIX/bin/mc80emu"
+chmod +x "$PREFIX/bin/mc80emu"
 
 # Das Diskettenwerkzeug ist ein eigenes Programm mit eigenem Starter.  Die
 # Kommandozeile liegt bereits als bin/k1520disktool-cli in der Payload; hier
@@ -484,11 +488,14 @@ if [ "$SHORTCUTS" = yes ]; then
     ln -sf "$PREFIX/bin/p8000emu" "$BINDIR/p8000emu"
     ersetze_platzhalter "$SELF_DIR/p8000emu.desktop.in" "$PREFIX" > "$APPDIR/p8000emu.desktop"
 
+    ln -sf "$PREFIX/bin/mc80emu" "$BINDIR/mc80emu"
+    ersetze_platzhalter "$SELF_DIR/mc80emu.desktop.in" "$PREFIX" > "$APPDIR/mc80emu.desktop"
+
     ln -sf "$PREFIX/bin/k1520disktool" "$BINDIR/k1520disktool"
     ersetze_platzhalter "$SELF_DIR/k1520disktool.desktop.in" "$PREFIX" \
         > "$APPDIR/k1520disktool.desktop"
 
-    # Die Konsolenwerkzeuge: nur ein Verweis, kein Eintrag im Startmenü.  Ein
+    # Die Konsolenwerkzeuge: nur ein Verweis, kein Eintrag im Startmenue.  Ein
     # Debugger, der per Doppelklick startet, oeffnete ein Fenster, das mangels
     # Diskette sofort wieder zuginge (§10a.2 des Entwurfs).
     for _w in $KONSOLENWERKZEUGE; do
@@ -498,31 +505,31 @@ if [ "$SHORTCUTS" = yes ]; then
     if have update-desktop-database; then
         update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
     fi
-    ok "Startmenü-Einträge und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,p8000emu,k1520disktool}"
+    ok "Startmenue-Eintraege und $BINDIR/{a5120emu,k8915emu,prg710emu,pc1715emu,p8000emu,mc80emu,k1520disktool}"
     case ":$PATH:" in
         *":$BINDIR:"*) ;;
-        *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem über das Startmenü" ;;
+        *) warn "$BINDIR liegt nicht im PATH — der Emulator startet trotzdem ueber das Startmenue" ;;
     esac
 fi
 
 # ─── 5. Rauchtest ────────────────────────────────────────────────────────────
 #
-# Ein kaputter Startmenü-Eintrag ist schlimmer als eine abgebrochene
-# Installation: hier wird geladen, was der Emulator beim Start lädt — Kern,
+# Ein kaputter Startmenue-Eintrag ist schlimmer als eine abgebrochene
+# Installation: hier wird geladen, was der Emulator beim Start laedt — Kern,
 # Formatkatalog, Qt samt Plattform-Plugin und das Hauptfenster.  Letzteres ist
-# zugleich die Gegenprobe zum Schlankmachen: fehlte ein Qt-Plugin, käme man
+# zugleich die Gegenprobe zum Schlankmachen: fehlte ein Qt-Plugin, kaeme man
 # hier nicht durch.
 
 # Das `cd` ist nicht kosmetisch: bei einem Skript aus der Standardeingabe steht
-# das ARBEITSVERZEICHNIS vorn in sys.path.  Ohne den Wechsel prüfte ein aus dem
+# das ARBEITSVERZEICHNIS vorn in sys.path.  Ohne den Wechsel pruefte ein aus dem
 # Quellbaum heraus gestarteter Installer dessen app/ statt der Installation —
-# und meldete „läuft", obwohl er nie angefasst hatte, was er ausliefert.
+# und meldete „laeuft", obwohl er nie angefasst hatte, was er ausliefert.
 info "Rauchtest"
 cd "$PREFIX"
-# K1520_DATA MUSS hier mit: der Rauchtest legt über seed_user_disks() die
+# K1520_DATA MUSS hier mit: der Rauchtest legt ueber seed_user_disks() die
 # Beispieldisketten beim Anwender an.  Ohne die Variable landen sie an der
-# VORGABEstelle statt in dem Ordner, den er gerade gewählt hat — und er sucht
-# sie dann vergeblich, während der Starter längst woanders hinzeigt.
+# VORGABEstelle statt in dem Ordner, den er gerade gewaehlt hat — und er sucht
+# sie dann vergeblich, waehrend der Starter laengst woanders hinzeigt.
 [ -n "$DATEN" ] && export K1520_DATA="$DATEN"
 QT_QPA_PLATFORM=offscreen PYTHONPATH="$PREFIX" "$PREFIX/venv/bin/python3" - "$PREFIX" <<'PYEOF' || die "Rauchtest fehlgeschlagen — die Installation ist unbrauchbar"
 import ctypes, sys
@@ -545,12 +552,12 @@ if lib.k1520_version().decode() != version.fassung():
 lib.k1520_create.argtypes = [ctypes.c_int]
 lib.k1520_create.restype = ctypes.c_void_p
 lib.k1520_destroy.argtypes = [ctypes.c_void_p]
-for _nr, _name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715"), (4, "P8000"), (5, "P8000-Terminal")):
+for _nr, _name in ((0, "A5120"), (1, "PRG710"), (2, "K8915"), (3, "PC1715"), (4, "P8000"), (5, "P8000-Terminal"), (6, "MC80")):
     _h = lib.k1520_create(_nr)
     if not _h:
         sys.exit(_name + ": k1520_create schlug fehl")
     lib.k1520_destroy(_h)
-print("     Maschinen:  A5120, PRG710, K8915, PC1715, P8000, P8000-Terminal")
+print("     Maschinen:  A5120, PRG710, K8915, PC1715, P8000, P8000-Terminal, MC80")
 
 import PySide6
 print("     PySide6:   ", PySide6.__version__)
@@ -567,7 +574,7 @@ print("     Disketten: ", paths.seed_user_disks(), "kopiert nach", paths.beispie
 from app.gw import verfuegbar
 print("     Greaseweazle:", "einsatzbereit" if verfuegbar() else "NICHT installiert")
 
-# Das Fenster wirklich bauen (unsichtbar) und sofort wieder abräumen.
+# Das Fenster wirklich bauen (unsichtbar) und sofort wieder abraeumen.
 from PySide6.QtWidgets import QApplication
 from app.ui.main_window import MainWindow
 qt = QApplication([])
@@ -583,11 +590,13 @@ fenster = MainWindow(profil=_profil.profil("pc1715"))
 fenster.close()
 fenster = MainWindow(profil=_profil.profil("p8000"))
 fenster.close()
-print("     Oberfläche: baut auf (A5120, K8915, PRG710, PC1715, P8000)")
+fenster = MainWindow(profil=_profil.profil("mc80"))
+fenster.close()
+print("     Oberflaeche: baut auf (A5120, K8915, PRG710, PC1715, P8000, MC80)")
 PYEOF
 # Der Kern legt beim Erzeugen einer Maschine ein Protokoll unter `logs/` im
 # ARBEITSVERZEICHNIS an (k1520_api.cpp) — das ist hier die frische Installation.
-# Eine frische Installation soll aber nur enthalten, was hineingehört.
+# Eine frische Installation soll aber nur enthalten, was hineingehoert.
 rm -rf "$PREFIX/logs"
 rm -f "$PREFIX"/k1520_*.log
 # Der Debugger ist ein eigenes Programm ohne Python und ohne Qt — er wird
@@ -603,17 +612,17 @@ if [ -x "$PREFIX/bin/k1520dbg" ]; then
         warn "der Debugger startet nicht — $PREFIX/bin/k1520dbg"
     fi
 fi
-ok "läuft"
+ok "laeuft"
 
 printf "\n"
 info "Fertig."
 printf "     Installiert:  %s (%s)\n" "$PREFIX" \
     "$(du -sh "$PREFIX" 2>/dev/null | awk '{print $1}')"
-printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s, P8000: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu" "$PREFIX/bin/p8000emu"
+printf "     Starten:      %s  (K8915: %s, PRG710: %s, PC1715: %s, P8000: %s, MC80: %s)\n" "$PREFIX/bin/a5120emu" "$PREFIX/bin/k8915emu" "$PREFIX/bin/prg710emu" "$PREFIX/bin/pc1715emu" "$PREFIX/bin/p8000emu" "$PREFIX/bin/mc80emu"
 printf "     Diskettenwerkzeug: %s  (Kommandozeile: %s)\n" \
     "$PREFIX/bin/k1520disktool" "$PREFIX/bin/k1520disktool-cli"
 if [ "$SHORTCUTS" = yes ]; then
-    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu   (bzw. über das Startmenü)\n"
+    printf "     oder einfach: a5120emu / k8915emu / prg710emu / pc1715emu / p8000emu / mc80emu   (bzw. ueber das Startmenue)\n"
 fi
 
 # Der Debugger bekommt einen eigenen Absatz — er ist das dritte Programm im
@@ -623,9 +632,9 @@ fi
 if [ -x "$PREFIX/bin/k1520dbg" ]; then
     printf "\n"
     info "Mitgeliefert: der Debugger k1520dbg"
-    printf "     Er untersucht fremde Programme Schritt für Schritt — Haltepunkte,\n"
-    printf "     Register, Speicher, Rückwärtslaufen.  Kein Fenster, sondern ein\n"
-    printf "     Werkzeug für die Konsole:\n\n"
+    printf "     Er untersucht fremde Programme Schritt fuer Schritt — Haltepunkte,\n"
+    printf "     Register, Speicher, Rueckwaertslaufen.  Kein Fenster, sondern ein\n"
+    printf "     Werkzeug fuer die Konsole:\n\n"
     printf "       Programm:  %s\n" "$PREFIX/bin/k1520dbg"
     if [ "$SHORTCUTS" = yes ]; then
         printf "                  (oder einfach: k1520dbg)\n"

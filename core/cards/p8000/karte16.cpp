@@ -128,7 +128,7 @@ P8000Karte16::P8000Karte16(const Config& cfg)
     ctc1_.setzeEingangsTakt(0, baud, cfg.takt_hz);
     ctc1_.setzeEingangsTakt(2, baud, cfg.takt_hz);
     ctc1_.setZCTOCallback([this](int ch, bool lvl) { if (ch == 2) ctc1_.clkTrg(3, lvl); },
-                          0x04);   // nur K2 → K3; K0/K1/K3 hört niemand
+                          0x04);   // nur K2 → K3; K0/K1/K3 hoert niemand
     ctc1_.setzeEingangsQuelleQ16(3, [this] { return ctc1_.teilerTakteQ16(2); });
 
     peri_.setInterruptChain({&ctc0_, &ctc1_, &sio0_, &sio1_, &pio0_, &pio1_, &pio2_});
@@ -145,8 +145,8 @@ P8000Karte16::P8000Karte16(const Config& cfg)
     mmu_.onSegt = [this](bool aktiv) { cpu_.setSEGT(aktiv); };
     mmu_.onReti = [this] { peri_.signalRETI(); };
     mmu_.onSoftreset = [this] {
-        // FFE9: SOFTRESET− ist ein Impuls ⇒ MRESET− bis zum nächsten Takt (Bl. 6), die CPU
-        // startet danach aus dem Reset-Vektor.  PIOs bleiben (PIORESET− hängt nicht daran).
+        // FFE9: SOFTRESET− ist ein Impuls ⇒ MRESET− bis zum naechsten Takt (Bl. 6), die CPU
+        // startet danach aus dem Reset-Vektor.  PIOs bleiben (PIORESET− haengt nicht daran).
         LOG_INFO("P8000", "16-Bit-Karte: SOFTRESET");
         mresetBausteine();
         cpu_.reset();
@@ -180,7 +180,7 @@ void P8000Karte16::piosZuruecksetzen() {
 }
 
 void P8000Karte16::mresetBausteine() {
-    mmu_.reset();                     // SCR := 0, LED an, UB8010 zurück
+    mmu_.reset();                     // SCR := 0, LED an, UB8010 zurueck
     ctc0_.reset(); ctc1_.reset();
     sio0_.reset(); sio1_.reset();
     dram_.reset();                    // BUSMRESET− an RES− der Karten
@@ -249,7 +249,7 @@ void P8000Karte16::nmiNachfuehren() {
 }
 
 void P8000Karte16::paritaetNachSCR() {
-    // /R des Paritäts-FF = CLRPARITY− = SCR Bit 3 (Bl. 10); dieselbe Leitung geht als CL_PAR− an
+    // /R des Paritaets-FF = CLRPARITY− = SCR Bit 3 (Bl. 10); dieselbe Leitung geht als CL_PAR− an
     // den Speicherbus.
     const bool clr = (mmu_.scr() & P8000MmuLogik16::SCR_PARITAET) == 0;
     dram_.setzeClrParitaet(clr);
@@ -280,7 +280,7 @@ void P8000Karte16::takt(int n) {
 }
 
 int P8000Karte16::schritt() {
-    if (mreset_) {   // CPU, CTC, SIO stehen; die Zeit läuft
+    if (mreset_) {   // CPU, CTC, SIO stehen; die Zeit laeuft
         ++zeit_;
         return 1;
     }
@@ -382,7 +382,7 @@ void P8000Karte16::ioSchreibenByte(uint16_t port, uint8_t d) {
         case PIO0: case PIO1: case PIO2: {
             const int i = b - PIO0;
             pio(i).ioWrite(z80Reg(port), d);
-            pinsAnlegen(i);   // Moduswechsel lädt die Eingabebits nicht aus den Pins nach
+            pinsAnlegen(i);   // Moduswechsel laedt die Eingabebits nicht aus den Pins nach
             if (pio_haken_) pio_haken_(i);
             if (i == 2 && wdc_haken_) wdc_haken_();
             break;

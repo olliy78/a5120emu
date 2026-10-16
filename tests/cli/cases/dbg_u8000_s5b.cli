@@ -51,7 +51,7 @@ expect:    WR <<0>>%008C (em:0008C)=53  U8001 PC=<<0>>%0114 <START+%14> (DATA, S
 expect:    ** bp U8001 [R2==%60] : U8001 PC=<<0>>%0132 <SUMME>
 expect:    disp[0] U8001  R1+R2=
 expect:    ** io16 IN %0081=81 : U8001 PC=<<0>>%016E <SUMME+%3C>
-# bint16: die Flanke kommt vom OUT des U8001 — Halt vor seinem NÄCHSTEN Befehl
+# bint16: die Flanke kommt vom OUT des U8001 — Halt vor seinem NAECHSTEN Befehl
 expect:    ** INT-16 (A33 Bit 4 → PIO A4) : U8001 PC=<<0>>%026C
 expect:    ausgeloest: U8001, Befehl <<0>>%0268: 3B06 0080                 OUT %0080,R0 — Halt vor dem naechsten U8001-Befehl
 expect:    => <<0>>%026C: 5F00 8000 030E            CALL <<0>>%030E <UP_TEST>

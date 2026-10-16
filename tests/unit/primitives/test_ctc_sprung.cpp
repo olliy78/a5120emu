@@ -1,11 +1,11 @@
 /**
  * @file test_ctc_sprung.cpp
- * @brief Wächter für den Sprungpfad von Z80CTC::clockTick(int): er muss Einzeltakten
- *        gleichen — Zustand byte-gleich (serialize, auch zcto_active), Rückrufe der
- *        beobachteten Kanäle in gleicher Folge, Zählerlesen zwischen den Fenstern exakt,
+ * @brief Waechter fuer den Sprungpfad von Z80CTC::clockTick(int): er muss Einzeltakten
+ *        gleichen — Zustand byte-gleich (serialize, auch zcto_active), Rueckrufe der
+ *        beobachteten Kanaele in gleicher Folge, Zaehlerlesen zwischen den Fenstern exakt,
  *        Dirty-Meldung gleich dem Wechsel von „Interrupt anstehend".
- *        Zufällige Konfigurationen: Zeitgeber/Zähler, Vorteiler 16/256, Zeitkonstante 0 (= 256),
- *        Trigger-Betrieb, Bruchtakt-Eingänge, Kaskade ZC/TO(n) → CLK/TRG(n+1) im Rückruf,
+ *        Zufaellige Konfigurationen: Zeitgeber/Zaehler, Vorteiler 16/256, Zeitkonstante 0 (= 256),
+ *        Trigger-Betrieb, Bruchtakt-Eingaenge, Kaskade ZC/TO(n) → CLK/TRG(n+1) im Rueckruf,
  *        Kanalmaske, Neuprogrammierung und Kanal-Reset mitten im Lauf.
  */
 #include <gtest/gtest.h>
@@ -18,12 +18,12 @@ namespace {
 
 struct Rig {
     Z80CTC ctc;
-    std::vector<int> ereignisse;   // 2*Kanal + Pegel, nur Kanäle der Maske
+    std::vector<int> ereignisse;   // 2*Kanal + Pegel, nur Kanaele der Maske
 
     Rig(uint8_t maske, bool kaskade, const uint64_t hz[4], uint64_t phi) {
         for (int k = 0; k < 4; ++k) if (hz[k]) ctc.setzeEingangsTakt(k, hz[k], phi);
         ctc.setZCTOCallback([this, maske, kaskade](int ch, bool lvl) {
-            if (!((maske >> ch) & 1)) return;      // wie jede Verdrahtung: nur Maskenkanäle
+            if (!((maske >> ch) & 1)) return;      // wie jede Verdrahtung: nur Maskenkanaele
             ereignisse.push_back(2 * ch + (lvl ? 1 : 0));
             if (kaskade && ch < 3) ctc.clkTrg(ch + 1, lvl);
         }, maske);
@@ -54,7 +54,7 @@ TEST(CtcSprung, ZufallskonfigurationenGleichEinzeltakten) {
         auto programmiere = [&](int k) {
             uint8_t ctrl = 0x01 | 0x04;
             if (zufall(3) == 0) ctrl |= 0x80;                 // Interrupt
-            if (zufall(2) == 0) ctrl |= 0x40;                 // Zähler
+            if (zufall(2) == 0) ctrl |= 0x40;                 // Zaehler
             if (zufall(2) == 0) ctrl |= 0x20;                 // Vorteiler 256
             if (zufall(5) == 0) ctrl |= 0x08;                 // Trigger-Betrieb
             if (zufall(2) == 0) ctrl |= 0x10;
@@ -78,7 +78,7 @@ TEST(CtcSprung, ZufallskonfigurationenGleichEinzeltakten) {
             ASSERT_EQ(a.zustand(), b.zustand()) << "Lauf " << lauf << " Schritt " << schritt << " n=" << n;
             ASSERT_EQ(a.ereignisse, b.ereignisse) << "Lauf " << lauf << " Schritt " << schritt;
             ASSERT_EQ(dirty, a.pending() != p0) << "Lauf " << lauf << " Schritt " << schritt;
-            for (int c = 0; c < 4; ++c)                       // Zählerlesen zwischen Fenstern
+            for (int c = 0; c < 4; ++c)                       // Zaehlerlesen zwischen Fenstern
                 ASSERT_EQ(a.ctc.ioRead(c), b.ctc.ioRead(c));
             a.ereignisse.clear(); b.ereignisse.clear();
             if (a.pending() && zufall(2)) {                   // Interrupt quittieren: Zustand weiterlaufen lassen
@@ -89,7 +89,7 @@ TEST(CtcSprung, ZufallskonfigurationenGleichEinzeltakten) {
 }
 
 TEST(CtcSprung, UnbeobachteterBaudkanalSpringtUndLiestExakt) {
-    // Baudkanal: Zähler an 1,229 MHz, ZK 2, kein Interrupt, Kanal nicht in der Maske.
+    // Baudkanal: Zaehler an 1,229 MHz, ZK 2, kein Interrupt, Kanal nicht in der Maske.
     constexpr uint64_t HZ = 1229000, PHI = 4000000;
     Z80CTC a, b;
     int rufe = 0;
@@ -103,11 +103,11 @@ TEST(CtcSprung, UnbeobachteterBaudkanalSpringtUndLiestExakt) {
     b.clockTick(1000003);
     EXPECT_EQ(a.getCount(1), b.getCount(1));
     EXPECT_EQ(a.ioRead(1), b.ioRead(1));
-    EXPECT_EQ(rufe, 0);   // Kanal 1 liegt außerhalb der Maske: kein Rückruf im Sprungpfad
+    EXPECT_EQ(rufe, 0);   // Kanal 1 liegt ausserhalb der Maske: kein Rueckruf im Sprungpfad
 }
 
-// Aufgeschobenes Takten: viele KLEINE Fenster (Befehlsgröße), der Zustand von b wird nur
-// gelegentlich angesehen.  Rückrufe und Dirty-Meldung müssen trotzdem im selben Fenster
+// Aufgeschobenes Takten: viele KLEINE Fenster (Befehlsgroesse), der Zustand von b wird nur
+// gelegentlich angesehen.  Rueckrufe und Dirty-Meldung muessen trotzdem im selben Fenster
 // fallen wie beim Einzeltakt (der Interrupt ist im selben Befehl sichtbar), und jeder
 // Zugriff dazwischen (Lesen, Schreiben, clkTrg, Reset, Save-State) sieht den Einzeltakt-Zustand.
 TEST(CtcSprung, AufgeschobenesTaktenGleichEinzeltaktenBeiZugriffenDazwischen) {

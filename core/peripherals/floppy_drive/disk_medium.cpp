@@ -14,11 +14,11 @@
 #include <utility>
 
 namespace {
-/// Statische Rückfallwerte für Zugriffe außerhalb der Geometrie.
+/// Statische Rueckfallwerte fuer Zugriffe ausserhalb der Geometrie.
 const TrackImage kLeer{};
 TrackImage       g_dummy{};
 
-/// @brief Zählt ein Byte als reiner Gap-Füller hinter der Daten-CRC?
+/// @brief Zaehlt ein Byte als reiner Gap-Fueller hinter der Daten-CRC?
 ///
 /// 0x4E = MFM-Gap, 0xFF = FM-Gap, 0x00 = Sync/Null-Auslauf.  Alles andere ist
 /// Nutzinhalt, den ein rohes Sektorimage nicht speichern kann.
@@ -28,7 +28,7 @@ bool istGapFueller(uint8_t b) {
 
 /// @brief Ein Byte aus dem MFM-Gap 4E, gelesen mit verrutschtem Byterahmen?
 ///
-/// Nach einer Schreibnaht liest der Decoder die ALTE Lücke im Rahmen der neuen
+/// Nach einer Schreibnaht liest der Decoder die ALTE Luecke im Rahmen der neuen
 /// Aufzeichnung weiter: um 0–7 Bit versetzt (die acht Drehungen von 4E) oder um eine
 /// halbe Zelle, dann sieht er die Taktbits des 4E-Stroms (die acht Drehungen von 90H).
 bool istVersetzteLuecke(uint8_t b) {
@@ -44,23 +44,23 @@ bool istVersetzteLuecke(uint8_t b) {
 /**
  * @brief Ist @p tail ein reiner **Schreibnachlauf** (doc/design/16_k8915.md AP-E5b)?
  *
- * Ein Treiber, der ein Datenfeld an Ort und Stelle schreibt, hängt an die CRC noch ein
- * Lückenbyte und schaltet dann `/WE` ab; dahinter liegt die ALTE Aufzeichnung — mit
- * anderer Bitlage und, bei oft beschriebenen Sektoren, mit Resten früherer Schreibläufe.
- * Am Gerät (K8915, SCPX-8915-BIOS und DISGEN, Greaseweazle-Abzüge) sieht das so aus:
+ * Ein Treiber, der ein Datenfeld an Ort und Stelle schreibt, haengt an die CRC noch ein
+ * Lueckenbyte und schaltet dann `/WE` ab; dahinter liegt die ALTE Aufzeichnung — mit
+ * anderer Bitlage und, bei oft beschriebenen Sektoren, mit Resten frueherer Schreiblaeufe.
+ * Am Geraet (K8915, SCPX-8915-BIOS und DISGEN, Greaseweazle-Abzuege) sieht das so aus:
  * `4E 43 DC 08 F2 12 12 12`, `4E C2 42 42 42 42 42 42`, `4F E4 24 24 …`.
  *
  * Bewusst ENG, denn ein falsches Zulassen verliert Daten, ein falsches Sperren nicht:
  *   1. nur MFM-Spuren (nur dort gemessen);
- *   2. das ERSTE Byte ist das geschriebene Lückenbyte 4E — mindestens seine oberen
- *      7 Bit (4E/4F: die Naht fällt in das letzte Bit).  Das ist der Riegel gegen UDOS:
- *      dort steht an dieser Stelle der Rückwärtszeiger, Byte 0 = Sektorindex (0…25)
+ *   2. das ERSTE Byte ist das geschriebene Lueckenbyte 4E — mindestens seine oberen
+ *      7 Bit (4E/4F: die Naht faellt in das letzte Bit).  Das ist der Riegel gegen UDOS:
+ *      dort steht an dieser Stelle der Rueckwaertszeiger, Byte 0 = Sektorindex (0…25)
  *      oder FFH — nie 4EH/4FH, ausser bei einem nie beschriebenen Sektor, dessen
- *      Block ohnehin `4E 4E 4E 4E` lautet und nichts trägt;
- *   3. das LETZTE Byte ist wieder Lücke, wenn auch versetzt (@ref istVersetzteLuecke):
- *      die Naht ist vorbei, die alte Lücke läuft.
- * Was dazwischen steht, wird nicht gedeutet: Nahtbits oder Reste früherer
- * Schreibläufe (alte CRC, altes 4E) — auf keinem bekannten System liest sie jemand.
+ *      Block ohnehin `4E 4E 4E 4E` lautet und nichts traegt;
+ *   3. das LETZTE Byte ist wieder Luecke, wenn auch versetzt (@ref istVersetzteLuecke):
+ *      die Naht ist vorbei, die alte Luecke laeuft.
+ * Was dazwischen steht, wird nicht gedeutet: Nahtbits oder Reste frueherer
+ * Schreiblaeufe (alte CRC, altes 4E) — auf keinem bekannten System liest sie jemand.
  */
 bool istSchreibnachlauf(const std::vector<uint8_t>& tail) {
     if (tail.size() < 2) return false;
@@ -83,7 +83,7 @@ void DiskMedium::resize(uint8_t num_cyls, uint8_t num_heads) {
     std::vector<uint8_t>    neu_dirty(n, 0);
     std::vector<uint8_t>    neu_known(n, 1);   // Vorgabe: bekannt (Dateibindung)
 
-    // Vorhandene Spuren an ihrer (cyl, head)-Position übernehmen.
+    // Vorhandene Spuren an ihrer (cyl, head)-Position uebernehmen.
     for (uint8_t c = 0; c < num_cyls && c < num_cyls_; ++c) {
         for (uint8_t h = 0; h < num_heads && h < num_heads_; ++h) {
             neu[static_cast<size_t>(c) * num_heads + h] = std::move(tracks_[index(c, h)]);
@@ -106,7 +106,7 @@ DiskGeometry DiskMedium::geometry() const {
     g.num_heads = num_heads_;
     g.encoding  = default_enc_;
 
-    // uniform = alle nicht-leeren Spuren tragen dasselbe Verfahren und dieselbe Länge.
+    // uniform = alle nicht-leeren Spuren tragen dasselbe Verfahren und dieselbe Laenge.
     bool   erster = true;
     bool   gleich = true;
     Encoding enc  = default_enc_;
@@ -125,7 +125,7 @@ DiskGeometry DiskMedium::geometry() const {
 const TrackImage& DiskMedium::track(uint8_t cyl, uint8_t head) const {
     if (!valid(cyl, head)) return kLeer;
     // Der Nachladepunkt: unbekannte Spur beschaffen (blockiert).  Scheitert es, bleibt
-    // sie unbekannt und der Aufrufer sieht die leere Spur — für ihn nicht von einer
+    // sie unbekannt und der Aufrufer sieht die leere Spur — fuer ihn nicht von einer
     // unlesbaren Spur am echten Laufwerk zu unterscheiden.
     if (loader_ && known_[index(cyl, head)] == 0) loader_->ensureLoaded(cyl, head);
     return tracks_[index(cyl, head)];
@@ -138,8 +138,8 @@ const TrackImage& DiskMedium::peek(uint8_t cyl, uint8_t head) const {
 
 TrackImage& DiskMedium::mutableTrack(uint8_t cyl, uint8_t head) {
     if (!valid(cyl, head)) { g_dummy = {}; return g_dummy; }
-    // Ändern heißt Lesen-Ändern-Schreiben: ohne den alten Inhalt entstünde eine Spur
-    // aus dem Nichts.  setTrack() dagegen ersetzt sie ganz und lädt darum NICHT nach.
+    // Aendern heisst Lesen-Aendern-Schreiben: ohne den alten Inhalt entstuende eine Spur
+    // aus dem Nichts.  setTrack() dagegen ersetzt sie ganz und laedt darum NICHT nach.
     if (loader_ && known_[index(cyl, head)] == 0) loader_->ensureLoaded(cyl, head);
     markDirty(cyl, head);
     return tracks_[index(cyl, head)];
@@ -155,11 +155,11 @@ void DiskMedium::markDirty(uint8_t cyl, uint8_t head) {
     if (!valid(cyl, head)) return;
     const size_t i = index(cyl, head);
     dirty_[i]  = 1;
-    known_[i]  = 1;                   // geschrieben heißt bekannt (Vollspur-FORMAT)
+    known_[i]  = 1;                   // geschrieben heisst bekannt (Vollspur-FORMAT)
     raw_ok_[i] = -1;                  // Tauglichkeit neu bestimmen
     dirty_any_ = true;
     ++revision_;                      // Autosave: Schreibpause erkennen
-    if (loader_) loader_->trackChanged(cyl, head);   // Rückführung anmelden
+    if (loader_) loader_->trackChanged(cyl, head);   // Rueckfuehrung anmelden
 }
 
 bool DiskMedium::trackDirty(uint8_t cyl, uint8_t head) const {
@@ -202,7 +202,7 @@ void DiskMedium::loadTrack(uint8_t cyl, uint8_t head, TrackImage t) {
     const size_t i = index(cyl, head);
     tracks_[i] = std::move(t);
     known_[i]  = 1;
-    dirty_[i]  = 0;      // gelesen ist nicht geändert — sonst schriebe man es zurück
+    dirty_[i]  = 0;      // gelesen ist nicht geaendert — sonst schriebe man es zurueck
     raw_ok_[i] = -1;
 }
 
@@ -216,7 +216,7 @@ void DiskMedium::clearTrackDirty(uint8_t cyl, uint8_t head) {
 
 void DiskMedium::restoreFrom(const DiskMedium& snapshot) {
     if (snapshot.num_cyls_ != num_cyls_ || snapshot.num_heads_ != num_heads_) {
-        *this = snapshot;   // andere Geometrie: nichts zu retten, ganz übernehmen
+        *this = snapshot;   // andere Geometrie: nichts zu retten, ganz uebernehmen
         return;
     }
     for (uint8_t c = 0; c < num_cyls_; ++c)
@@ -227,9 +227,9 @@ void DiskMedium::restoreFrom(const DiskMedium& snapshot) {
                 continue;
             tracks_[i] = snapshot.tracks_[i];
             known_[i]  = snapshot.known_[i];
-            // Der Inhalt hat sich geändert — auch wenn er der ÄLTERE ist.  Bei einer
+            // Der Inhalt hat sich geaendert — auch wenn er der AELTERE ist.  Bei einer
             // physischen Diskette steht der neuere schon auf der Scheibe; nur eine
-            // erneute Rückführung stellt sie richtig.
+            // erneute Rueckfuehrung stellt sie richtig.
             if (known_[i]) markDirty(c, h);
         }
     default_enc_ = snapshot.default_enc_;
@@ -253,10 +253,10 @@ bool DiskMedium::computeRawCompatible(const TrackImage& t) {
 
     for (const LogicalSector& s : sektoren) {
         if (!s.id_crc_ok || !s.data_crc_ok) return false;
-        // Bytes hinter der Daten-CRC: nur Gap zulässig.  Alles andere (z. B. der
+        // Bytes hinter der Daten-CRC: nur Gap zulaessig.  Alles andere (z. B. der
         // UDOS-Sektorkontrollblock) ginge beim Speichern als .img verloren.
         // Ausnahme: der Schreibnachlauf eines an Ort und Stelle geschriebenen
-        // Datenfelds (MFM, AP-E5b) — Lücke mit Naht, keine Information.
+        // Datenfelds (MFM, AP-E5b) — Luecke mit Naht, keine Information.
         bool nurLuecke = true;
         for (uint8_t b : s.tail)
             if (!istGapFueller(b)) { nurLuecke = false; break; }
@@ -283,7 +283,7 @@ std::string DiskMedium::rawIncompatibleReason() const {
     if (!formatted())     return "unformatiert";
     for (uint8_t c = 0; c < num_cyls_; ++c)
         for (uint8_t h = 0; h < num_heads_; ++h) {
-            // Leere Spuren sind erlaubt (werden im .img zu Füllbytes); nur beschriebene
+            // Leere Spuren sind erlaubt (werden im .img zu Fuellbytes); nur beschriebene
             // Spuren muessen sich verlustfrei auf Sektor-Nutzdaten abbilden lassen.
             // peek(): ein medienweiter Reihenlauf darf NICHT nachladen (§12.3).
             if (peek(c, h).empty()) continue;

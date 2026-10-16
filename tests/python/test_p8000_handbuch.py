@@ -1,11 +1,11 @@
 """Das Handbuchkapitel „Bedienung des P8000" (AP P23c, Entwurf 25 §12 Punkt 8).
 
-Das Kapitel beschreibt, was man am P8000 tippt — und verweist dabei auf Menüeinträge, Reiter, Knöpfe und
-Auswahlwerte der Oberfläche.  Eine Hilfe, die von der Oberfläche abweicht, ist schlimmer als keine
-(dasselbe Prinzip wie bei der Kürzeltabelle): geprüft wird deshalb, dass das Kapitel da ist, dass jeder
-dort genannte Menüpfad ``*Menü ▸ Eintrag*`` wirklich im Fenster des P8000 steht und dass die
-Auswahlwerte der Rechnerausstattung und Betriebsart nicht erfunden sind.  Die Kürzeltabelle bleibt
-unberührt (die beiden Wächter in ``test_gui_smoke`` prüfen sie in beide Richtungen).
+Das Kapitel beschreibt, was man am P8000 tippt — und verweist dabei auf Menueeintraege, Reiter, Knoepfe und
+Auswahlwerte der Oberflaeche.  Eine Hilfe, die von der Oberflaeche abweicht, ist schlimmer als keine
+(dasselbe Prinzip wie bei der Kuerzeltabelle): geprueft wird deshalb, dass das Kapitel da ist, dass jeder
+dort genannte Menuepfad ``*Menue ▸ Eintrag*`` wirklich im Fenster des P8000 steht und dass die
+Auswahlwerte der Rechnerausstattung und Betriebsart nicht erfunden sind.  Die Kuerzeltabelle bleibt
+unberuehrt (die beiden Waechter in ``test_gui_smoke`` pruefen sie in beide Richtungen).
 """
 
 import re
@@ -53,7 +53,7 @@ def test_kapitel_ist_da_und_im_inhaltsverzeichnis():
     for name in ABSCHNITTE:
         assert f"### {name}\n" in k, name
     assert KAPITEL in abschnitte(lade_handbuch())
-    # Die Kürzeltabelle ist ein Vertrag und steht weiter hinter dem Kapitel.
+    # Die Kuerzeltabelle ist ein Vertrag und steht weiter hinter dem Kapitel.
     text = lade_handbuch()
     assert text.index(f"## {KAPITEL}") < text.index("## Tastenkürzel")
 
@@ -76,7 +76,7 @@ def test_kapitel_belegt_die_monitorbefehle():
 
 
 def test_jeder_genannte_menuepfad_steht_in_der_oberflaeche(qapp, umgebung):
-    """``*Menü ▸ Eintrag*`` im Kapitel → Menüleiste, Einstellungsreiter, Ansicht-Kästen, Modellwahl."""
+    """``*Menue ▸ Eintrag*`` im Kapitel → Menueleiste, Einstellungsreiter, Ansicht-Kaesten, Modellwahl."""
     from PySide6.QtWidgets import QLabel, QPushButton
     from app import profil
     from app.ui.main_window import MainWindow
@@ -132,12 +132,12 @@ def test_jeder_genannte_menuepfad_steht_in_der_oberflaeche(qapp, umgebung):
                 fehlend.append(pfad)
         assert fehlend == [], f"im Handbuch genannt, aber nicht in der Oberfläche: {fehlend}"
 
-        # Knöpfe und Kästen, die das Kapitel beim Namen nennt
+        # Knoepfe und Kaesten, die das Kapitel beim Namen nennt
         knoepfe = {_glatt(b.text()) for b in w.findChildren(QPushButton)}
         for name in ("Anschließen", "Neue Platte", "Abtrennen", "Leere Diskette"):
             assert f"*{name}" in k, name
             assert name in knoepfe or any(name in b for b in knoepfe), name
-        # Betriebsart- und Ausstattungswerte, wie sie im Kapitel in Anführungs-/Kursivform stehen
+        # Betriebsart- und Ausstattungswerte, wie sie im Kapitel in Anfuehrungs-/Kursivform stehen
         for name in ("Computer mit Terminal", "nur Terminal"):
             assert name in k and name in betriebsarten
         for name in ("Vollgerät", "ohne Winchester", "nur 8-Bit-Teil"):

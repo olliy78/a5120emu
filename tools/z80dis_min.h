@@ -1,8 +1,8 @@
 /**
  * @file z80dis_min.h
- * @brief Kompakter Ein-Instruktions-Z80-Disassembler (header-only) für k1520dbg.
+ * @brief Kompakter Ein-Instruktions-Z80-Disassembler (header-only) fuer k1520dbg.
  *
- * Dekodiert *eine* Z80-Instruktion ab einer Adresse und liefert Länge, Mnemonik
+ * Dekodiert *eine* Z80-Instruktion ab einer Adresse und liefert Laenge, Mnemonik
  * und eine Klassifikation (CALL/RET/JP/Block-Repeat) plus — falls vorhanden — die
  * absolute Zieladresse eines Sprung-/Call-Operanden. Damit baut der Debugger
  * `step-over` (n), `step-out` (fin), Inline-Disassembly an jedem Stopp und die
@@ -10,8 +10,8 @@
  *
  * Bewusst kompakt gehalten (Octal-Dekodierung x/y/z/p/q nach z80.info). Der
  * undokumentierte IXH/IXL-Sonderfall in kombinierten (IX+d)-Befehlen wird
- * kosmetisch vereinfacht; die *Länge* ist in allen Fällen korrekt (entscheidend
- * für step-over). Für vollständige Listings bleibt tools/z80_disasm2.py kanonisch.
+ * kosmetisch vereinfacht; die *Laenge* ist in allen Faellen korrekt (entscheidend
+ * fuer step-over). Fuer vollstaendige Listings bleibt tools/z80_disasm2.py kanonisch.
  *
  * @license MIT
  */
@@ -24,17 +24,17 @@
 namespace z80dis {
 
 struct Insn {
-    int       len = 1;          ///< Instruktionslänge in Bytes
+    int       len = 1;          ///< Instruktionslaenge in Bytes
     char      text[48] = {0};   ///< Mnemonik (Operanden als Hex)
     bool      is_call   = false;///< CALL / CALL cc / RST  → step-over setzt BP bei PC+len
     bool      is_ret    = false;///< RET / RET cc / RETI / RETN
     bool      is_jump   = false;///< JP / JR / DJNZ (jede Form)
     bool      is_repeat = false;///< auto-repetierende ED-Blockbefehle (LDIR/CPIR/INIR/OTIR …)
-    bool      has_target = false;///< 'target' enthält eine absolute Zieladresse
+    bool      has_target = false;///< 'target' enthaelt eine absolute Zieladresse
     uint16_t  target = 0;       ///< absolute Zieladresse (CALL/JP/JR/RST), falls has_target
 };
 
-/** Dekodiert eine Instruktion. rd(addr) liest ein Byte (über den Bus). */
+/** Dekodiert eine Instruktion. rd(addr) liest ein Byte (ueber den Bus). */
 inline Insn decode(const std::function<uint8_t(uint16_t)>& rd, uint16_t pc0) {
     Insn ins;
     uint16_t pc = pc0;
@@ -48,13 +48,13 @@ inline Insn decode(const std::function<uint8_t(uint16_t)>& rd, uint16_t pc0) {
     static const char* ALU[8] = {"ADD A,","ADC A,","SUB ","SBC A,","AND ","XOR ","OR ","CP "};
     static const char* ROT[8] = {"RLC ","RRC ","RL ","RR ","SLA ","SRA ","SLL ","SRL "};
 
-    const char* idx = nullptr;            // "IX"/"IY" bei aktivem DD/FD-Präfix
+    const char* idx = nullptr;            // "IX"/"IY" bei aktivem DD/FD-Praefix
     uint8_t op = fetch();
     while (op == 0xDD || op == 0xFD) { idx = (op == 0xDD) ? "IX" : "IY"; op = fetch(); }
 
     char buf[48];
 
-    // Liefert den 8-Bit-Registernamen für Index i; liest bei (HL)+idx den Displacement.
+    // Liefert den 8-Bit-Registernamen fuer Index i; liest bei (HL)+idx den Displacement.
     auto regname = [&](int i, char* out) {
         if (idx && i == 6) { int8_t d = (int8_t)fetch();
             snprintf(out, 16, "(%s%c%02XH)", idx, d < 0 ? '-' : '+', d < 0 ? -d : d); }
@@ -68,7 +68,7 @@ inline Insn decode(const std::function<uint8_t(uint16_t)>& rd, uint16_t pc0) {
     int x = op >> 6, y = (op >> 3) & 7, z = op & 7, p = y >> 1, q = y & 1;
 
     if (op == 0xCB) {
-        // ── CB-Präfix (bzw. DDCB/FDCB) ───────────────────────────────────────
+        // ── CB-Praefix (bzw. DDCB/FDCB) ───────────────────────────────────────
         char rn[16];
         if (idx) { int8_t d = (int8_t)fetch(); uint8_t cb = fetch();
             x = cb >> 6; y = (cb >> 3) & 7; z = cb & 7;
@@ -82,7 +82,7 @@ inline Insn decode(const std::function<uint8_t(uint16_t)>& rd, uint16_t pc0) {
             default:snprintf(buf, sizeof buf, "SET %d,%s", y, rn); break;
         }
     } else if (op == 0xED) {
-        // ── ED-Präfix ────────────────────────────────────────────────────────
+        // ── ED-Praefix ────────────────────────────────────────────────────────
         uint8_t e = fetch(); x = e >> 6; y = (e >> 3) & 7; z = e & 7; p = y >> 1; q = y & 1;
         idx = nullptr; // ED hebt Index-Wirkung auf
         if (x == 1) {

@@ -1,10 +1,10 @@
 """Emulationstakt (``app/emulationstakt.py``): die Maschine rechnet im eigenen Faden.
 
-Wächter für den Fehler „Oberfläche friert ein, wenn der Wirt den eingestellten Takt
+Waechter fuer den Fehler „Oberflaeche friert ein, wenn der Wirt den eingestellten Takt
 nicht schafft" (P8000 mit Originalterminal bei 10×).  Die Ersatzmaschine rechnet
-absichtlich LANGSAMER als verlangt und hält dabei die Kernsperre wie ``k1520_run``;
-die Oberfläche greift wie die echten Kästen in jedem Takt mehrmals auf den Kern zu.
-Geprüft wird, dass sie trotzdem im Takt bleibt UND die Maschine weiterrechnet — das
+absichtlich LANGSAMER als verlangt und haelt dabei die Kernsperre wie ``k1520_run``;
+die Oberflaeche greift wie die echten Kaesten in jedem Takt mehrmals auf den Kern zu.
+Geprueft wird, dass sie trotzdem im Takt bleibt UND die Maschine weiterrechnet — das
 erste ohne das zweite hiesse nur, das Einfrieren an den Kern weitergereicht zu haben.
 """
 
@@ -35,7 +35,7 @@ class LangsameMaschine:
         self.max_gleichzeitig = 0
 
     def run(self, n):
-        with B.kern_sperre():               # wie jeder echte Aufruf über _lib
+        with B.kern_sperre():               # wie jeder echte Aufruf ueber _lib
             self.gleichzeitig += 1
             self.max_gleichzeitig = max(self.max_gleichzeitig, self.gleichzeitig)
             time.sleep(3 * n / self.tempo)
@@ -64,7 +64,7 @@ def _abstaende(qapp, takt, emu, dauer_s=1.5):
         for _ in range(8):                  # Lampen, Laufwerke, Statuszeile …
             emu.abfrage()
             bis = time.perf_counter() + 0.0003
-            while time.perf_counter() < bis:  # Oberflächenarbeit zwischen den Abfragen
+            while time.perf_counter() < bis:  # Oberflaechenarbeit zwischen den Abfragen
                 pass
 
     t = QTimer()
@@ -99,7 +99,7 @@ def test_stop_kehrt_erst_nach_der_laufenden_scheibe_zurueck(qapp):
     takt.set_tempo(HZ, 0.0)                 # unbegrenzt: rechnet ohne Pause
     takt.start()
     time.sleep(0.05)
-    with B.kern_sperre():                   # Oberfläche hält die Sperre (Ereignis läuft)
+    with B.kern_sperre():                   # Oberflaeche haelt die Sperre (Ereignis laeuft)
         takt.stop()                         # darf sich nicht mit dem Faden verklemmen
         n = emu.laeufe
     time.sleep(0.1)
@@ -128,10 +128,10 @@ def test_eine_ausnahme_im_lauf_haelt_an_und_wird_gemeldet(qapp):
 
 def test_p8000_unbegrenzt_oberflaeche_bleibt_bedienbar(qapp, tmp_path, monkeypatch):
     """Der gemeldete Fall am echten Kern: P8000 mit Originalterminal, Faktor 0.0
-    (unbegrenzt — nur intern, in der Oberfläche nicht wählbar; auf JEDEM Wirt
-    überlastet).  Vor dem Umbau stand die Ereignisschleife; mit ungezählter Sperre
-    verhungerte sie.  Die Schwellen sind weit, weil ctest parallel fährt — ein
-    Einfrieren fängt das."""
+    (unbegrenzt — nur intern, in der Oberflaeche nicht waehlbar; auf JEDEM Wirt
+    ueberlastet).  Vor dem Umbau stand die Ereignisschleife; mit ungezaehlter Sperre
+    verhungerte sie.  Die Schwellen sind weit, weil ctest parallel faehrt — ein
+    Einfrieren faengt das."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("K1520_DISKS", str(tmp_path / "disks"))
     monkeypatch.delenv("K1520_INSTANZ", raising=False)

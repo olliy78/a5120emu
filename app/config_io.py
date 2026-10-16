@@ -82,14 +82,14 @@ from app import profil as profile
 from app.ui.screen_widget import CRTParams
 
 #: FORMATversion der Konfigurationsdatei — NICHT die Programmversion.  Sie steigt
-#: nur bei einer inkompatiblen Änderung des Aufbaus (doc/ci_pipeline.md §7.4);
-#: die meisten Fassungen ändern sie nicht.  Die Programmversion steht als
-#: ``geschrieben_von`` daneben (reine Auskunft für die Fehlersuche).
+#: nur bei einer inkompatiblen Aenderung des Aufbaus (doc/ci_pipeline.md §7.4);
+#: die meisten Fassungen aendern sie nicht.  Die Programmversion steht als
+#: ``geschrieben_von`` daneben (reine Auskunft fuer die Fehlersuche).
 CONFIG_VERSION = 1
 
 #: Migrationskette: ``{n: f}`` hebt eine Datei der Formatversion ``n`` auf
 #: ``n + 1`` (``f(data) -> data``).  Derzeit leer, weil es nur Format 1 gibt.
-#: Beim Laden läuft die Kette von der gelesenen bis zur eigenen Version.
+#: Beim Laden laeuft die Kette von der gelesenen bis zur eigenen Version.
 _MIGRATIONEN: Dict[int, Callable[[dict], dict]] = {}
 
 #: Name der Konfiguration des A5120 bis 2026-09 — Quelle des einmaligen Umzugs.
@@ -212,7 +212,7 @@ def _datei_ist_neuer(path: str) -> bool:
         with open(path, "r", encoding="utf-8") as f:
             vorhanden = yaml.safe_load(f)
     except Exception:
-        return False                 # fehlt oder defekt: nichts zu schützen
+        return False                 # fehlt oder defekt: nichts zu schuetzen
     return ist_neuer_als_dieses_programm(vorhanden)
 
 

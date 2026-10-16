@@ -1,0 +1,17 @@
+; A5120-Start-ROM V0.6
+; 02.11.2019
+;
+
+.z80
+org     0h
+;
+START:  nop                     ; 0000 00
+BEGIN:  ld      bc,0800h        ; 0001 01 00 08
+	ld      d,c             ; 0004 51
+	ld      e,c             ; 0005 59              DE = 0000h
+	ld      h,c             ; 0006 61
+	ld      l,c             ; 0007 69              HL = 0000h
+LADEN:  ldi                     ; 0008 ed a0
+        dec     hl              ; 000a 2b
+        jp      pe, LADEN       ; 000b ea 08 00
+;

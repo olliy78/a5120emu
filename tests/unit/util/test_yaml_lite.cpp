@@ -1,6 +1,6 @@
 /**
  * @file test_yaml_lite.cpp
- * @brief Unit-Tests für den minimalen YAML-Subset-Parser (`core/util/yaml_lite.h`).
+ * @brief Unit-Tests fuer den minimalen YAML-Subset-Parser (`core/util/yaml_lite.h`).
  *
  * @details
  * Getestete Komponente: **yaml::parse** — der handgeschriebene Parser, der die
@@ -9,10 +9,10 @@
  *
  * | Gruppe            | Inhalt                                                     |
  * |-------------------|------------------------------------------------------------|
- * | Skalare/Maps      | Schlüssel-Wert, Quotes, Kommentare, Zahlen, Bools          |
- * | Listen            | Block-Listen, Listen von Maps, verschachtelte Blöcke       |
- * | Flow-Ausdrücke    | `{a: 1}`, `[a, b]`, verschachtelt, in Listeneinträgen      |
- * | Fehlerfälle       | Tabs, doppelte Keys, Anchors, kaputte Flows — mit Zeile    |
+ * | Skalare/Maps      | Schluessel-Wert, Quotes, Kommentare, Zahlen, Bools          |
+ * | Listen            | Block-Listen, Listen von Maps, verschachtelte Bloecke       |
+ * | Flow-Ausdruecke    | `{a: 1}`, `[a, b]`, verschachtelt, in Listeneintraegen      |
+ * | Fehlerfaelle       | Tabs, doppelte Keys, Anchors, kaputte Flows — mit Zeile    |
  *
  * @see core/util/yaml_lite.h
  */
@@ -32,7 +32,7 @@ yaml::Node parseOk(const std::string& text) {
 yaml::Error parseFail(const std::string& text) {
     yaml::Node  n;
     yaml::Error e;
-    EXPECT_FALSE(yaml::parse(text, n, e)) << "Parser hätte scheitern müssen";
+    EXPECT_FALSE(yaml::parse(text, n, e)) << "Parser haette scheitern muessen";
     return e;
 }
 
@@ -43,7 +43,7 @@ yaml::Error parseFail(const std::string& text) {
 /**
  * @test YamlLite/Map_SchluesselWertUndKommentare
  * @brief Einfache Map; Kommentare und Leerzeilen werden ignoriert.
- * @par Kriterium  Beide Schlüssel vorhanden, Kommentar nicht Teil des Werts.
+ * @par Kriterium  Beide Schluessel vorhanden, Kommentar nicht Teil des Werts.
  */
 TEST(YamlLite, Map_SchluesselWertUndKommentare) {
     auto n = parseOk("# Kopfkommentar\n"
@@ -59,7 +59,7 @@ TEST(YamlLite, Map_SchluesselWertUndKommentare) {
 /**
  * @test YamlLite/Skalare_QuotesUndSonderzeichen
  * @brief Quotes werden entfernt; '#' und ':' innerhalb von Quotes bleiben erhalten.
- * @par Kriterium  Wert enthält Doppelpunkt und Rautenzeichen unverändert.
+ * @par Kriterium  Wert enthaelt Doppelpunkt und Rautenzeichen unveraendert.
  */
 TEST(YamlLite, Skalare_QuotesUndSonderzeichen) {
     auto n = parseOk("a: \"CP/A 780K: Boot # nicht kommentiert\"\n"
@@ -72,8 +72,8 @@ TEST(YamlLite, Skalare_QuotesUndSonderzeichen) {
 
 /**
  * @test YamlLite/Konvertierung_IntUndBool
- * @brief toInt akzeptiert dezimal und 0x…; toBool die üblichen Schreibweisen.
- * @par Kriterium  Gültige Werte konvertieren, ungültige werden abgelehnt.
+ * @brief toInt akzeptiert dezimal und 0x…; toBool die ueblichen Schreibweisen.
+ * @par Kriterium  Gueltige Werte konvertieren, ungueltige werden abgelehnt.
  */
 TEST(YamlLite, Konvertierung_IntUndBool) {
     long v = 0;
@@ -90,8 +90,8 @@ TEST(YamlLite, Konvertierung_IntUndBool) {
 
 /**
  * @test YamlLite/Map_VerschachtelterBlock
- * @brief Ein Schlüssel ohne Wert öffnet einen eingerückten Unterblock.
- * @par Kriterium  Verschachtelte Map ist über zwei Ebenen erreichbar.
+ * @brief Ein Schluessel ohne Wert oeffnet einen eingerueckten Unterblock.
+ * @par Kriterium  Verschachtelte Map ist ueber zwei Ebenen erreichbar.
  */
 TEST(YamlLite, Map_VerschachtelterBlock) {
     auto n = parseOk("aussen:\n"
@@ -109,7 +109,7 @@ TEST(YamlLite, Map_VerschachtelterBlock) {
 /**
  * @test YamlLite/Liste_EinfacheSkalare
  * @brief Block-Liste aus Skalaren.
- * @par Kriterium  Drei Einträge in Dateireihenfolge.
+ * @par Kriterium  Drei Eintraege in Dateireihenfolge.
  */
 TEST(YamlLite, Liste_EinfacheSkalare) {
     auto n = parseOk("drives:\n"
@@ -126,8 +126,8 @@ TEST(YamlLite, Liste_EinfacheSkalare) {
 
 /**
  * @test YamlLite/Liste_VonMaps_MehrzeiligeEintraege
- * @brief `- key: wert` startet eine Map, deren Folgezeilen zum selben Eintrag gehören.
- * @par Kriterium  Zwei Einträge mit je zwei Feldern; Felder korrekt zugeordnet.
+ * @brief `- key: wert` startet eine Map, deren Folgezeilen zum selben Eintrag gehoeren.
+ * @par Kriterium  Zwei Eintraege mit je zwei Feldern; Felder korrekt zugeordnet.
  */
 TEST(YamlLite, Liste_VonMaps_MehrzeiligeEintraege) {
     auto n = parseOk("formats:\n"
@@ -146,8 +146,8 @@ TEST(YamlLite, Liste_VonMaps_MehrzeiligeEintraege) {
 
 /**
  * @test YamlLite/Liste_MapMitVerschachtelterListe
- * @brief Ein Listeneintrag trägt selbst eine Liste (formats[].tracks[]).
- * @par Kriterium  Der innere Spurbereich ist über beide Ebenen erreichbar.
+ * @brief Ein Listeneintrag traegt selbst eine Liste (formats[].tracks[]).
+ * @par Kriterium  Der innere Spurbereich ist ueber beide Ebenen erreichbar.
  */
 TEST(YamlLite, Liste_MapMitVerschachtelterListe) {
     auto n = parseOk("formats:\n"
@@ -165,7 +165,7 @@ TEST(YamlLite, Liste_MapMitVerschachtelterListe) {
     EXPECT_EQ(tr->items[1].find("sectors")->scalar, "5");
 }
 
-// ─── Flow-Ausdrücke ──────────────────────────────────────────────────────────
+// ─── Flow-Ausdruecke ──────────────────────────────────────────────────────────
 
 /**
  * @test YamlLite/Flow_ListeUndMap
@@ -218,11 +218,11 @@ TEST(YamlLite, Flow_LeerUndVerschachtelt) {
     EXPECT_EQ(n.find("tief")->find("b")->find("c")->scalar, "3");
 }
 
-// ─── Fehlerfälle ─────────────────────────────────────────────────────────────
+// ─── Fehlerfaelle ─────────────────────────────────────────────────────────────
 
 /**
  * @test YamlLite/Fehler_TabInEinrueckung
- * @brief Tabulatoren in der Einrückung sind ein Fehler mit Zeilenangabe.
+ * @brief Tabulatoren in der Einrueckung sind ein Fehler mit Zeilenangabe.
  * @par Kriterium  parse() == false, Zeile 2, Meldung nennt „Tabulator".
  */
 TEST(YamlLite, Fehler_TabInEinrueckung) {
@@ -233,8 +233,8 @@ TEST(YamlLite, Fehler_TabInEinrueckung) {
 
 /**
  * @test YamlLite/Fehler_DoppelterSchluessel
- * @brief Ein doppelter Schlüssel in derselben Map wird abgelehnt.
- * @par Kriterium  parse() == false; Meldung nennt den Schlüsselnamen.
+ * @brief Ein doppelter Schluessel in derselben Map wird abgelehnt.
+ * @par Kriterium  parse() == false; Meldung nennt den Schluesselnamen.
  */
 TEST(YamlLite, Fehler_DoppelterSchluessel) {
     auto e = parseFail("name: a\nname: b\n");
@@ -245,7 +245,7 @@ TEST(YamlLite, Fehler_DoppelterSchluessel) {
 /**
  * @test YamlLite/Fehler_NichtUnterstuetzteKonstrukte
  * @brief Anchors, mehrzeilige Skalare und Dokumenttrenner werden klar abgelehnt.
- * @par Kriterium  Jeweils parse() == false mit erklärender Meldung.
+ * @par Kriterium  Jeweils parse() == false mit erklaerender Meldung.
  */
 TEST(YamlLite, Fehler_NichtUnterstuetzteKonstrukte) {
     EXPECT_NE(parseFail("basis: &anker\n").message.find("Anchors"), std::string::npos);

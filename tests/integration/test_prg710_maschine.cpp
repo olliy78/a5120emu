@@ -1,8 +1,8 @@
 /**
  * @file test_prg710_maschine.cpp
  * @brief Prg710Machine (AP-P1c, doc/design/20_prg710.md §10): beide Varianten bauen,
- *        Netz-Ein + Takte ohne Absturz, CPU läuft im ROM, Verdrahtung der
- *        Speicherverwaltung, Marken-FF-Polarität je Variante.
+ *        Netz-Ein + Takte ohne Absturz, CPU laeuft im ROM, Verdrahtung der
+ *        Speicherverwaltung, Marken-FF-Polaritaet je Variante.
  *        Das Verhalten des echten ROMs bis „NKM-LOADER“ ist AP-P1d.
  */
 
@@ -30,20 +30,20 @@ protected:
 
 /**
  * @test Prg710Maschine.BautLaeuftUndBleibtImRom
- * @brief Nach powerOn und einigen 10 000 Takten läuft die CPU (PC bewegt sich) und
- *        gehört noch dem ROM-Bereich oder seiner RAM-Kopie; kein Absturz.
+ * @brief Nach powerOn und einigen 10 000 Takten laeuft die CPU (PC bewegt sich) und
+ *        gehoert noch dem ROM-Bereich oder seiner RAM-Kopie; kein Absturz.
  */
 TEST_P(Prg710Maschine, BautLaeuftUndBleibtImRom) {
     Prg710Machine m(cfgFuer(GetParam()));
     EXPECT_EQ(m.machineType(), 1);
     m.powerOn();
     EXPECT_EQ(m.cpuPC(), 0x0000);
-    EXPECT_EQ(m.screenChar(0, 0), 0x20) << "Bildschirm nach Netz-Ein gelöscht";
+    EXPECT_EQ(m.screenChar(0, 0), 0x20) << "Bildschirm nach Netz-Ein geloescht";
     int gelaufen = 0;
     for (int i = 0; i < 10; ++i) gelaufen += m.run(10'000);
     EXPECT_GE(gelaufen, 100'000);
     EXPECT_NE(m.cpuPC(), 0x0000);
-    // Das ROM kopiert sich nach 1000H und läuft aus der RAM-Kopie weiter (§4a/§4b).
+    // Das ROM kopiert sich nach 1000H und laeuft aus der RAM-Kopie weiter (§4a/§4b).
     EXPECT_LT(m.cpuPC(), 0x2000);
     EXPECT_EQ(m.speicher().attr(0), 0x10) << "Seite 0 auf OPS-RAM umgeschaltet";
     // Befund beim Bau: das echte ROM schreibt schon „NKM-LOADER" in Zeile 0 (Vertiefung: AP-P1d).
@@ -63,7 +63,7 @@ TEST_P(Prg710Maschine, SpeicherverwaltungIstDerSpeicherweg) {
     m.powerOn();
     EXPECT_EQ(m.memReadDebug(0x0000), m.zre().memRead(0x0000));
     EXPECT_NE(m.memReadDebug(0x0000), 0xFF) << "ROM sichtbar";
-    // VRAM: Schreiben über die CPU-Sicht erreicht die K7024 (Abbildung aus: Seite F = VRAM).
+    // VRAM: Schreiben ueber die CPU-Sicht erreicht die K7024 (Abbildung aus: Seite F = VRAM).
     m.memWriteDebug(0xF800, 'A');
     EXPECT_EQ(m.screenChar(0, 0), 'A');
     EXPECT_EQ(m.memReadDebug(0xF800), 'A') << "K7024 ohne Lesesperre";
@@ -80,14 +80,14 @@ TEST_P(Prg710Maschine, SpeicherverwaltungIstDerSpeicherweg) {
 
 /**
  * @test Prg710Maschine.MarkenFFPolaritaetJeVariante
- * @brief Die K5122 trägt die Polarität des Marken-FF: 710 low-aktiv, 710-1 high-aktiv.
+ * @brief Die K5122 traegt die Polaritaet des Marken-FF: 710 low-aktiv, 710-1 high-aktiv.
  */
 TEST_P(Prg710Maschine, MarkenFFPolaritaetJeVariante) {
     Prg710Machine m(cfgFuer(GetParam()));
     m.powerOn();
     EXPECT_EQ(m.afs().mkeLowAktiv(), GetParam() == V::Prg710);
     EXPECT_FALSE(m.afs().markeErkannt());
-    // Der Pegel an Tor B selbst: Wächter in test_k5122_wait.cpp (MkeLowAktiv_…).
+    // Der Pegel an Tor B selbst: Waechter in test_k5122_wait.cpp (MkeLowAktiv_…).
 }
 
 INSTANTIATE_TEST_SUITE_P(Varianten, Prg710Maschine,

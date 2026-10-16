@@ -5,13 +5,13 @@
  *
  * @details
  * Die Karte kennt kein Netz (Leitsatz 6): sie stellt je einstellbarer Schnittstelle
- * einen Anschluss bereit — Bytes, Steuerleitungen, Leitungsparameter.  Was daran hängt
+ * einen Anschluss bereit — Bytes, Steuerleitungen, Leitungsparameter.  Was daran haengt
  * (Telnet, RFC 2217, Datei, nichts), entscheidet der `Wandler` bzw. der `SerialHub`.
  *
- * **Faden:** Alle Methoden, die Kartenzustand lesen oder ändern (`format`, `sender*`,
+ * **Faden:** Alle Methoden, die Kartenzustand lesen oder aendern (`format`, `sender*`,
  * `empfaenger*`, `empfange`, `rts`, `dtr`, `setzeEingaenge`, `break*`,
  * `waehleTaktquelle`), ruft der Wandler **nur aus dem Emulationsfaden** (`Wandler::takt`).
- * `name`, `stecker`, `v24` und `taktquellen` müssen feste Werte liefern — sie werden
+ * `name`, `stecker`, `v24` und `taktquellen` muessen feste Werte liefern — sie werden
  * auch aus dem GUI-Faden abgefragt.
  *
  * Die Kartenlogik der Leitungen (z. B. /CTSA = V106 ∧ V107 an der K8025) steckt in der
@@ -27,8 +27,8 @@
 
 namespace k1520::serial {
 
-/// Nenntakt φ der Maschinen (A5120 und K8915): 2,4576 MHz.  Maßstab für `baud_nenn`
-/// und für die Maschinenzeit-Fristen des Wandlers (Entprellen 100 ms).
+/// Nenntakt φ der Maschinen (A5120 und K8915): 2,4576 MHz.  Massstab fuer `baud_nenn`
+/// und fuer die Maschinenzeit-Fristen des Wandlers (Entprellen 100 ms).
 constexpr uint64_t PHI_NENN = 2457600;
 
 /// Zeichenformat einer Schnittstelle, wie es der Gast programmiert hat (§5.1, §6.2).
@@ -37,7 +37,7 @@ struct SerialFormat {
     uint8_t  daten         = 8;   ///< Datenbits 5..8
     uint8_t  paritaet      = 0;   ///< 0 keine, 1 ungerade, 2 gerade
     uint8_t  stopp_halbe   = 2;   ///< Stoppbits in halben Bits: 2 = 1, 3 = 1½, 4 = 2
-    uint64_t zeichen_takte = 0;   ///< Maschinentakte je Zeichen (Start + Daten + Parität + Stopp)
+    uint64_t zeichen_takte = 0;   ///< Maschinentakte je Zeichen (Start + Daten + Paritaet + Stopp)
     bool     gueltig       = false;
 
     bool operator==(const SerialFormat& o) const {
@@ -48,8 +48,8 @@ struct SerialFormat {
     bool operator!=(const SerialFormat& o) const { return !(*this == o); }
 };
 
-/// Ersatzformat bei ungültigem Format (§6.1): 9600 Bd 8N1 bei Nenntakt.
-/// `gueltig` ist hier TRUE — es ist das tatsächlich benutzte Format.
+/// Ersatzformat bei ungueltigem Format (§6.1): 9600 Bd 8N1 bei Nenntakt.
+/// `gueltig` ist hier TRUE — es ist das tatsaechlich benutzte Format.
 SerialFormat ersatzFormat(uint64_t phiNenn = PHI_NENN);
 
 /// Baudrate auf eine Normrate runden, wenn sie weniger als 2 % abweicht; sonst ganzzahlig
@@ -59,19 +59,19 @@ uint32_t normBaud(double baud);
 /**
  * @brief Format aus den Registerwerten rechnen (§6.2).
  *
- * `zeichen_takte = (1 + daten + (parität ? 1 : 0) + stopp) × sioTeiler × ctcTakte`
+ * `zeichen_takte = (1 + daten + (paritaet ? 1 : 0) + stopp) × sioTeiler × ctcTakte`
  * (1½ Stoppbits halbzahlig gerechnet), `baud_nenn = phiNenn / (sioTeiler × ctcTakte)`,
  * auf eine Normrate gerundet (`normBaud`).
  *
  * @param sioTeiler   SIO-Taktteiler 1/16/32/64 (WR4 D7–6)
  * @param daten       Datenbits (die SENDE-Bits, WR5 D6–5 — der Wandler taktet den Sender
- *                    und den Empfänger mit derselben Zeichenzeit)
+ *                    und den Empfaenger mit derselben Zeichenzeit)
  * @param paritaet    0 keine, 1 ungerade, 2 gerade
- * @param stopp_halbe 2/3/4; 0 = Synchronbetrieb → ungültig
+ * @param stopp_halbe 2/3/4; 0 = Synchronbetrieb → ungueltig
  * @param ctcTakte    Maschinentakte je ZC/TO-Impuls (`Z80CTC::teilerTakte`), 0 = unbekannt
- *                    → ungültig (CTC noch nicht programmiert, Fremdtakt)
- * @return Format; `gueltig == false`, wenn eine Größe unbekannt ist.  Die übrigen Felder
- *         sind dann so weit gefüllt, wie sie bekannt sind (Anzeige).
+ *                    → ungueltig (CTC noch nicht programmiert, Fremdtakt)
+ * @return Format; `gueltig == false`, wenn eine Groesse unbekannt ist.  Die uebrigen Felder
+ *         sind dann so weit gefuellt, wie sie bekannt sind (Anzeige).
  */
 SerialFormat serialFormatRechnen(uint8_t sioTeiler, uint8_t daten, uint8_t paritaet,
                                  uint8_t stopp_halbe, uint64_t ctcTakte,
@@ -84,7 +84,7 @@ SerialFormat serialFormatRechnenQ16(uint8_t sioTeiler, uint8_t daten, uint8_t pa
                                     uint64_t phiNenn = PHI_NENN);
 
 /// Merker vor serialFormatRechnenQ16: dieselbe Rechnung (reine Funktion der Eingaben, Ergebnis
-/// bitgleich), aber nur bei geänderten Eingaben neu — Teiler, Format und CTC-Periode ändern
+/// bitgleich), aber nur bei geaenderten Eingaben neu — Teiler, Format und CTC-Periode aendern
 /// sich nur, wenn der Gast SIO/CTC umprogrammiert; abgefragt wird je Befehl (Terminalkopplung,
 /// Wandler).  Nicht fadensicher: wie jedes format() nur aus dem Emulationsfaden.
 class SerialFormatMerker {
@@ -108,7 +108,7 @@ private:
     bool         gueltig_ = false;
 };
 
-/// Eine wählbare Taktquelle (Brücke auf der Karte), z. B. "ZRE-CTC K0 (W1:7)".
+/// Eine waehlbare Taktquelle (Bruecke auf der Karte), z. B. "ZRE-CTC K0 (W1:7)".
 struct Taktquelle {
     std::string name;
 };
@@ -122,27 +122,27 @@ public:
     virtual const char* name() const = 0;      ///< UI-Name, z. B. "DFÜ/V.24"
     virtual const char* stecker() const = 0;   ///< z. B. "X6"
     virtual bool v24() const = 0;              ///< Steuerleitungen vorhanden
-    /// Wählbare Taktquellen; leer = fest verdrahtet.
+    /// Waehlbare Taktquellen; leer = fest verdrahtet.
     virtual std::vector<Taktquelle> taktquellen() const { return {}; }
 
     // ── Emulationsfaden ─────────────────────────────────────────────────────
-    /// Taktquelle wählen (Index in `taktquellen()`); wirkt sofort (§4).
+    /// Taktquelle waehlen (Index in `taktquellen()`); wirkt sofort (§4).
     virtual void waehleTaktquelle(int /*index*/) {}
-    /// Aktuelles Format aus WR3/4/5 + CTC (§6.2) — typisch über `sio_format.h`.
+    /// Aktuelles Format aus WR3/4/5 + CTC (§6.2) — typisch ueber `sio_format.h`.
     virtual SerialFormat format() const = 0;
-    /// Der SIO-Sender hält ein Zeichen (Tx-Puffer belegt; bei Auto Enables nur mit /CTS).
+    /// Der SIO-Sender haelt ein Zeichen (Tx-Puffer belegt; bei Auto Enables nur mit /CTS).
     virtual bool senderHatZeichen() const = 0;
-    /// Das Zeichen verlässt das Schieberegister (Tx-Puffer wird frei → TxEmpty).
+    /// Das Zeichen verlaesst das Schieberegister (Tx-Puffer wird frei → TxEmpty).
     virtual uint8_t senderNimm() = 0;
-    /// Der SIO-Empfänger hat Platz (FIFO nicht voll).  Der Wandler liefert NUR dann —
-    /// deshalb gibt es nie einen Überlauf (Leitsatz 2).
+    /// Der SIO-Empfaenger hat Platz (FIFO nicht voll).  Der Wandler liefert NUR dann —
+    /// deshalb gibt es nie einen Ueberlauf (Leitsatz 2).
     virtual bool empfaengerFrei() const = 0;
     virtual void empfange(uint8_t byte) = 0;
 
-    /// Ausgänge des Gastes (nur V.24 von Bedeutung); true = aktiv.
+    /// Ausgaenge des Gastes (nur V.24 von Bedeutung); true = aktiv.
     virtual bool rts() const { return false; }
     virtual bool dtr() const { return false; }
-    /// Eingänge am STECKER (true = aktiv); die Karte verknüpft sie zu den SIO-Pins.
+    /// Eingaenge am STECKER (true = aktiv); die Karte verknuepft sie zu den SIO-Pins.
     virtual void setzeEingaenge(bool /*cts*/, bool /*dsr*/, bool /*dcd*/) {}
 
     /// Break (optional): der Gast sendet Break (WR5 D4) bzw. ein Break kommt an (RR0 D7).
@@ -150,20 +150,20 @@ public:
     virtual void breakEmpfang(bool /*aktiv*/) {}
 
     /// Belegung des Steckers (AP-S5): true, solange ein Transport angebunden ist ODER
-    /// der Rx/Tx-Loop (Prüfstecker) gesetzt ist.  Der Wandler meldet jeden Wechsel
+    /// der Rx/Tx-Loop (Pruefstecker) gesetzt ist.  Der Wandler meldet jeden Wechsel
     /// (und einmal beim ersten `takt`).  Die Karten schalten damit ihren alten
-    /// Test-Unterbau (Rückruf/Einspeisen, `K1520Machine::setDFUECallback` …) stumm:
+    /// Test-Unterbau (Rueckruf/Einspeisen, `K1520Machine::setDFUECallback` …) stumm:
     /// „ist ein Transport aktiv, geht er ins Leere" (Entwurf 19 §8).
     virtual void leitungBelegt(bool /*belegt*/) {}
 
-    /// Prüfstecker (Rx/Tx-Loop, §6.5) gesteckt bzw. gezogen; der Wandler meldet jeden
+    /// Pruefstecker (Rx/Tx-Loop, §6.5) gesteckt bzw. gezogen; der Wandler meldet jeden
     /// Wechsel (und einmal beim ersten `takt`).  Vorgabe: nichts — der Wandler bildet im
     /// Loop RTS→CTS und DTR→DSR/DCD nach, mit seinem Blickabstand (1/16 Zeichenzeit).
-    /// Eine Karte, deren Stecker ANDERS gebrückt ist (PC 1715: Drucker X4 hat nur
-    /// 102/103/106 → 103→106; V.24 X5 brückt 111→109 und 108→107, und 107 liegt an der
+    /// Eine Karte, deren Stecker ANDERS gebrueckt ist (PC 1715: Drucker X4 hat nur
+    /// 102/103/106 → 103→106; V.24 X5 brueckt 111→109 und 108→107, und 107 liegt an der
     /// SIO von Kanal A) oder deren Gast die Leitungen schneller nachliest, als der Wandler
-    /// blickt (PCTEST: ein Lesezugriff ≈ 40 Takte nach dem Setzen), bildet die Brücken
-    /// selbst und SOFORT nach und übergeht dann die Eingänge aus `setzeEingaenge`.
+    /// blickt (PCTEST: ein Lesezugriff ≈ 40 Takte nach dem Setzen), bildet die Bruecken
+    /// selbst und SOFORT nach und uebergeht dann die Eingaenge aus `setzeEingaenge`.
     virtual void pruefstecker(bool /*gesteckt*/) {}
 };
 

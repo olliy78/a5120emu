@@ -1,6 +1,6 @@
 /**
  * @file test_telnet_codec.cpp
- * @brief Unit-Tests für den Telnet-Zustandsautomaten (`core/serial/telnet_codec.h`).
+ * @brief Unit-Tests fuer den Telnet-Zustandsautomaten (`core/serial/telnet_codec.h`).
  *
  * @details
  * Doc: doc/design/19_serielle_schnittstellen.md §7.4, §11.
@@ -24,8 +24,8 @@ void speiseByteweise(TelnetCodec& c, const Bytes& b) {
     for (uint8_t x : b) c.eingabe(&x, 1);
 }
 
-// Zwei Codecs über Kreuz verbinden, bis beide still sind.  Liefert die Zahl
-// der Runden; mehr als ein paar heißt Pingpong.
+// Zwei Codecs ueber Kreuz verbinden, bis beide still sind.  Liefert die Zahl
+// der Runden; mehr als ein paar heisst Pingpong.
 int pumpe(TelnetCodec& a, TelnetCodec& b, Bytes* anB = nullptr, Bytes* anA = nullptr) {
     int runden = 0;
     while ((a.hatAusgabe() || b.hatAusgabe()) && runden < 100) {
@@ -85,7 +85,7 @@ TEST(TelnetCodec, ZerrissenBytewiseAnJederStelleGleichesErgebnis) {
     EXPECT_EQ(st[0].daten, (Bytes{1, 0xFF, 2}));
     EXPECT_EQ(sg[0].daten, st[0].daten);
 
-    // und an jeder einzelnen Schnittstelle in zwei Stücke gerissen
+    // und an jeder einzelnen Schnittstelle in zwei Stuecke gerissen
     for (size_t k = 0; k <= strom.size(); ++k) {
         TelnetCodec c(TelnetRolle::Client);
         c.eingabe(strom.data(), k);
@@ -125,7 +125,7 @@ TEST(TelnetCodec, UnbekannteOptionenWerdenAbgelehnt) {
 }
 
 TEST(TelnetCodec, GegenseiteDieJedeAntwortMitGegenfrageBeantwortetDrehtKeineSchleife) {
-    // Bösartige Gegenseite: auf jedes WONT/DONT ein neues WILL/DO.  Die
+    // Boesartige Gegenseite: auf jedes WONT/DONT ein neues WILL/DO.  Die
     // Q-Methode antwortet auf eine Ablehnung nie mit derselben Anfrage.
     TelnetCodec s(TelnetRolle::Server);
     int gesendet = 0;
@@ -177,7 +177,7 @@ TEST(TelnetCodec, MitBinaryKeineCrUebersetzungInBeideRichtungen) {
     c.start();
     pumpe(s, c);
     s.sende(Bytes{0x0D, 0x00, 0x0A});
-    EXPECT_EQ(s.nimmAusgabe(), (Bytes{0x0D, 0x00, 0x0A}));  // unverändert: CR, NUL, LF
+    EXPECT_EQ(s.nimmAusgabe(), (Bytes{0x0D, 0x00, 0x0A}));  // unveraendert: CR, NUL, LF
     speise(c, {0x0D, 0x00, 0x0A});
     EXPECT_EQ(c.nimmNutzdaten(), (Bytes{0x0D, 0x00, 0x0A}));  // NUL bleibt
 }
@@ -234,10 +234,10 @@ TEST(TelnetCodec, NopUndAndereEinzelbefehleWerdenUeberlesen) {
     EXPECT_EQ(c.nimmNutzdaten(), (Bytes{'a', 'b', 'c'}));
 }
 
-// ─── AP-T1a: Zustände der Q-Methode, die der Abdeckungsbau ungeprüft fand ──────
+// ─── AP-T1a: Zustaende der Q-Methode, die der Abdeckungsbau ungeprueft fand ──────
 
 /// RFC 1143: ein zweiter eigener Wunsch, solange der erste unbeantwortet ist, geht
-/// NICHT noch einmal hinaus; die Bestätigung schaltet ein, ohne Antwort.
+/// NICHT noch einmal hinaus; die Bestaetigung schaltet ein, ohne Antwort.
 TEST(TelnetCodec, WiederholterWunschVorDerAntwortGehtNurEinmalHinaus) {
     TelnetCodec c(TelnetRolle::Client);
     c.bieteAn(OPT_SGA);
@@ -248,13 +248,13 @@ TEST(TelnetCodec, WiederholterWunschVorDerAntwortGehtNurEinmalHinaus) {
     speise(c, Bytes{IAC, DO, OPT_SGA, IAC, WILL, OPT_ECHO});
     EXPECT_TRUE(c.lokalAktiv(OPT_SGA));
     EXPECT_TRUE(c.entferntAktiv(OPT_ECHO));
-    EXPECT_TRUE(c.nimmAusgabe().empty()) << "Bestätigung auf eigene Anfrage bleibt stumm";
+    EXPECT_TRUE(c.nimmAusgabe().empty()) << "Bestaetigung auf eigene Anfrage bleibt stumm";
     c.bieteAn(OPT_SGA);
     EXPECT_TRUE(c.nimmAusgabe().empty()) << "schon aktiv: nichts zu sagen";
 }
 
 /// Schaltet die Gegenseite eine aktive Option ab (WONT/DONT), wird das genau einmal
-/// bestätigt; ein wiederholtes WONT/DONT bleibt stumm (kein Pingpong).
+/// bestaetigt; ein wiederholtes WONT/DONT bleibt stumm (kein Pingpong).
 TEST(TelnetCodec, AbschaltenDurchDieGegenseiteWirdEinmalBestaetigt) {
     TelnetCodec c(TelnetRolle::Client);
     c.bieteAn(OPT_SGA);
@@ -270,7 +270,7 @@ TEST(TelnetCodec, AbschaltenDurchDieGegenseiteWirdEinmalBestaetigt) {
 }
 
 /// Lehnt die Gegenseite einen eigenen Wunsch ab (WillJa + WONT/DONT), ist die Option
-/// aus, ohne Antwort — und ein späterer Wunsch fragt erneut.
+/// aus, ohne Antwort — und ein spaeterer Wunsch fragt erneut.
 TEST(TelnetCodec, AbgelehnterWunschIstAusUndDarfErneutGefragtWerden) {
     TelnetCodec c(TelnetRolle::Client);
     c.verlange(OPT_ECHO);

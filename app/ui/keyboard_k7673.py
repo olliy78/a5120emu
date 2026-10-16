@@ -44,7 +44,7 @@ class _Taste73(_Taste):
 
 
 #: Umlauttasten wie auf dem Foto: links oben/unten die ASCII-Zeichen derselben Codes
-#: (DIN 66003 ↔ ASCII), rechts groß der Umlaut — und ß mit „?“ oben, „~“ unten, ß unten rechts.
+#: (DIN 66003 ↔ ASCII), rechts gross der Umlaut — und ss mit „?“ oben, „~“ unten, ss unten rechts.
 _UMLAUTE = {
     (1, 5): ("}", "]", "Ü", False),
     (2, 5): ("{", "[", "Ä", False),
@@ -96,13 +96,13 @@ class KeyboardK7673Widget(KeyboardK7672Widget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._gedrueckt: Set[L.Position] = set()   # Maus drückt gerade
+        self._gedrueckt: Set[L.Position] = set()   # Maus drueckt gerade
         self._gehalten: Set[L.Position] = set()    # eingerastet (SHIFT/CTRL, rechte Maustaste)
-        self._host: Set[L.Position] = set()        # von der Wirtstastatur gedrückt (nur Anzeige)
+        self._host: Set[L.Position] = set()        # von der Wirtstastatur gedrueckt (nur Anzeige)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.setFocusPolicy(Qt.NoFocus)            # der Fokus gehört dem Terminalbild
+        self.setFocusPolicy(Qt.NoFocus)            # der Fokus gehoert dem Terminalbild
 
-    # ── Geometrie (für Tests und Treffer) ────────────────────────────────────
+    # ── Geometrie (fuer Tests und Treffer) ────────────────────────────────────
 
     def taste_rechteck(self, pos: L.Position) -> QRectF:
         """Rechteck der Kappe im Widget."""
@@ -223,11 +223,11 @@ class KeyboardK7673Widget(KeyboardK7672Widget):
                 self.loslassen(pos)
 
     def leaveEvent(self, event):
-        # Maus verlässt das Widget mit gedrückter Taste: nicht hängen lassen (Wiederholung!).
+        # Maus verlaesst das Widget mit gedrueckter Taste: nicht haengen lassen (Wiederholung!).
         for pos in list(self._gedrueckt):
             self.loslassen(pos)
 
-    # Die Wirtstastatur gehört dem Terminalbild; die Bildschirmtastatur nimmt keine Tasten an.
+    # Die Wirtstastatur gehoert dem Terminalbild; die Bildschirmtastatur nimmt keine Tasten an.
     def host_key_press(self, event):
         return None
 

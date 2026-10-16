@@ -1,7 +1,7 @@
 #!/bin/bash
-# p8000emu — Starter des P8000 Emulators (Gegenstück zu run_a5120emu.sh)
+# p8000emu — Starter des P8000 Emulators (Gegenstueck zu run_a5120emu.sh)
 # Dasselbe Programm wie der A5120 Emulator, mit dem Programmprofil des P8000
-# (app/profil.py): eigene Konfiguration p8000emu.yaml, Terminal statt Bildröhre,
+# (app/profil.py): eigene Konfiguration p8000emu.yaml, Terminal statt Bildroehre,
 # Winchesterplatte, Funktionstastenleiste.
 # Automatically activates venv and starts the GUI
 
@@ -22,7 +22,7 @@ if [ ! -d "$VENV_DIR" ]; then
     exit 1
 fi
 
-# Den Interpreter des venv DIREKT aufrufen (Begründung: run_k8915emu.sh).
+# Den Interpreter des venv DIREKT aufrufen (Begruendung: run_k8915emu.sh).
 PY="$VENV_DIR/bin/python3"
 
 # Set library path

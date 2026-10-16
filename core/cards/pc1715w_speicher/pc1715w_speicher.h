@@ -9,15 +9,15 @@
  *   BR (24H–27H, nach /RESET 00H)  Bit 2–0 Lesebank, Bit 6–4 Schreibbank (Bit 3/7 ohne Wirkung)
  *   74S287:  Adresse A0–A6 = AB12–AB18 (Seite 0–15, Bank 0–7), A7 = /MEMDI (1 = frei);
  *            Ausgang 4 Bit aktiv low = /CAS1…/CAS4 = Block B1…B4, 0FH = kein Block.
- *   Bank 0, 0000–3FFF (/EXTRAM, nur wenn der PROM keinen Block wählt):
+ *   Bank 0, 0000–3FFF (/EXTRAM, nur wenn der PROM keinen Block waehlt):
  *     0000–0FFF S550 (2 K, gespiegelt; nur Lesebank 0, Schreiben verpufft)
  *     1000–1FFF offen (FFH)         2000–27FF ZG-RAM 1     2800–2FFF ZG-RAM 2
  *     3000–37FF Bild-RAM (2 K)      3800–3FFF Spiegel des Bild-RAM [?]
  * @endcode
  *
  * Lesezyklen (CPU **und** DMA) benutzen die Lesebank, Schreibzyklen die Schreibbank — bei
- * jedem Zugriff neu, deshalb als @ref MemDevice über den ganzen Adressraum angemeldet
- * (@ref attachToBus); die Bank gehört nicht in die Seitentabelle des Busses.
+ * jedem Zugriff neu, deshalb als @ref MemDevice ueber den ganzen Adressraum angemeldet
+ * (@ref attachToBus); die Bank gehoert nicht in die Seitentabelle des Busses.
  * Bank 6/7 und offene Bereiche lesen FFH [?], Schreiben verpufft.
  */
 
@@ -33,14 +33,14 @@ public:
 
     Pc1715wSpeicher();
 
-    // ─── Bus: BR als E/A-Tor, Speicher über den ganzen Adressraum ────────────
+    // ─── Bus: BR als E/A-Tor, Speicher ueber den ganzen Adressraum ────────────
     uint8_t     ioRead(uint8_t) override { return 0xFF; }          ///< BR ist nur schreibbar
     void        ioWrite(uint8_t, uint8_t d) override { ioWrite24(d); }
     const char* deviceName() const override { return "PC1715W-Speicher"; }
     uint8_t     memRead(uint16_t a) override  { return read(a); }
     void        memWrite(uint16_t a, uint8_t d) override { write(a, d); }
 
-    /** @brief BR-Tor 24H–27H und 0000–FFFF anmelden (zwei Bereiche: die Größe ist 16 Bit). */
+    /** @brief BR-Tor 24H–27H und 0000–FFFF anmelden (zwei Bereiche: die Groesse ist 16 Bit). */
     void attachToBus(K1520Bus& bus) {
         bus.registerIO(this, PORT_BR, 4);
         bus.registerMem(this, 0x0000, 0x8000);
@@ -49,7 +49,7 @@ public:
 
     // ─── Lebenslauf ──────────────────────────────────────────────────────────
     void reset();                          ///< /RESET: BR = 00H; RAM bleibt
-    void powerOn(uint8_t fill = 0x00);     ///< alle RAM-Blöcke, ZG-/Bild-RAM füllen, dann reset()
+    void powerOn(uint8_t fill = 0x00);     ///< alle RAM-Bloecke, ZG-/Bild-RAM fuellen, dann reset()
 
     // ─── Speicherzugriff (Lesebank bzw. Schreibbank) ─────────────────────────
     uint8_t read(uint16_t addr) const;

@@ -4,12 +4,12 @@
  *
  * Der Kern ist bis auf `format_catalog.cpp` (Modulpfad) portabel — was blieb, sind
  * drei Kleinigkeiten aus Werkzeugen und Tests: die eigene Prozessnummer (eindeutige
- * Namen für Kopien in `/tmp`), „hängt an einem Terminal?" (interaktiver Zeileneditor)
+ * Namen fuer Kopien in `/tmp`), „haengt an einem Terminal?" (interaktiver Zeileneditor)
  * und das Setzen einer Umgebungsvariablen im Test.  Statt in jeder Datei ein
  * `#ifdef _WIN32` zu wiederholen, stehen sie hier **einmal**.
  *
  * Bewusst header-only und ohne `windows.h`: `<process.h>`/`<io.h>` sind winzig, und
- * `windows.h` würde `min`/`max` als Makro in jeden Übersetzungsvorgang schleppen.
+ * `windows.h` wuerde `min`/`max` als Makro in jeden Uebersetzungsvorgang schleppen.
  *
  * @see doc/design/13_distribution.md §6.1
  */
@@ -29,7 +29,7 @@
 
 namespace k1520::os {
 
-/// Prozessnummer — für eindeutige Namen von Arbeitskopien.
+/// Prozessnummer — fuer eindeutige Namen von Arbeitskopien.
 inline long processId() {
 #if defined(_WIN32)
     return static_cast<long>(::_getpid());
@@ -38,7 +38,7 @@ inline long processId() {
 #endif
 }
 
-/// Hängt der Dateideskriptor an einem Terminal?  (0 = Standardeingabe)
+/// Haengt der Dateideskriptor an einem Terminal?  (0 = Standardeingabe)
 inline bool isTerminal(int fd) {
 #if defined(_WIN32)
     return ::_isatty(fd) != 0;
@@ -47,7 +47,7 @@ inline bool isTerminal(int fd) {
 #endif
 }
 
-/// Umgebungsvariable setzen (überschreibt).  `true` bei Erfolg.
+/// Umgebungsvariable setzen (ueberschreibt).  `true` bei Erfolg.
 inline bool setEnv(const char* name, const char* value) {
 #if defined(_WIN32)
     return ::_putenv_s(name, value) == 0;
@@ -56,10 +56,10 @@ inline bool setEnv(const char* name, const char* value) {
 #endif
 }
 
-/// Umgebungsvariable löschen.  `true` bei Erfolg.
+/// Umgebungsvariable loeschen.  `true` bei Erfolg.
 inline bool unsetEnv(const char* name) {
 #if defined(_WIN32)
-    // Unter Windows löscht ein LEERER Wert den Eintrag — `_unsetenv` gibt es nicht.
+    // Unter Windows loescht ein LEERER Wert den Eintrag — `_unsetenv` gibt es nicht.
     return ::_putenv_s(name, "") == 0;
 #else
     return ::unsetenv(name) == 0;

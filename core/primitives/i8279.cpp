@@ -21,8 +21,8 @@ void I8279::writeCommand(uint8_t cmd)
         case 0:   // Betriebsart: 02H = kodierte Abtastung, N-Tasten-Rollover
             mode_ = cmd;
             break;
-        case 6:   // Clear (C1H = Clear All): FIFO und Zustandsbits löschen.
-                  // CF (Bit 1) und CA (Bit 0) löschen beide den FIFO; das Anzeige-RAM fehlt.
+        case 6:   // Clear (C1H = Clear All): FIFO und Zustandsbits loeschen.
+                  // CF (Bit 1) und CA (Bit 0) loeschen beide den FIFO; das Anzeige-RAM fehlt.
             if (cmd & 0x03) {
                 fifo_.clear();
                 unterlauf_ = ueberlauf_ = false;

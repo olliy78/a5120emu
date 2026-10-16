@@ -3,15 +3,15 @@
 Die Ebene testet, was die C++-Tests nicht erreichen: die **C-ABI**
 (`libk1520core.so` ↔ ctypes-Bindung) und die **GUI** (PySide6).
 
-Voraussetzungen (beides prüft `pytest` beim Start und meldet sonst klar):
+Voraussetzungen (beides prueft `pytest` beim Start und meldet sonst klar):
   * `libk1520core.so` gebaut (``tools/dev.sh build``)
   * `PySide6` + `PyYAML` installiert (``pip install -r requirements-dev.txt``)
 
-GUI-Tests laufen headless über ``QT_QPA_PLATFORM=offscreen`` — das wird hier
+GUI-Tests laufen headless ueber ``QT_QPA_PLATFORM=offscreen`` — das wird hier
 gesetzt, BEVOR PySide6 importiert wird.  Der Bildschirm ist ein
 ``QOpenGLWidget``; offscreen gibt es keinen FBO, das Widget wird also gebaut und
-verdrahtet, aber nicht gerendert.  Pixelprüfungen gehören deshalb nicht hierher,
-Verdrahtungsprüfungen schon.
+verdrahtet, aber nicht gerendert.  Pixelpruefungen gehoeren deshalb nicht hierher,
+Verdrahtungspruefungen schon.
 """
 
 import atexit
@@ -32,23 +32,23 @@ def ausgelieferte_diskette(name):
     assert treffer, f"{name} liegt in keinem Unterordner von disks/"
     return treffer[0]
 
-# `import app...` funktioniert damit unabhängig vom Aufrufverzeichnis.
+# `import app...` funktioniert damit unabhaengig vom Aufrufverzeichnis.
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Headless-Qt + eigenes Konfigurationsverzeichnis: Tests dürfen die echte
-# ~/.config/k1520emu/config.yaml des Nutzers weder lesen noch überschreiben.
+# Headless-Qt + eigenes Konfigurationsverzeichnis: Tests duerfen die echte
+# ~/.config/k1520emu/config.yaml des Nutzers weder lesen noch ueberschreiben.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 #
 # **Je PROZESS ein eigenes Verzeichnis, nicht ein gemeinsames.** Ein ctest-Fall
 # der Python-Ebene ist ein eigener `pytest`-Prozess je Testmodul (siehe
-# tests/python/CMakeLists.txt) und läuft unter `ctest -j$JOBS` PARALLEL zu den
+# tests/python/CMakeLists.txt) und laeuft unter `ctest -j$JOBS` PARALLEL zu den
 # anderen. Ein fester Pfad hier bedeutete: alle diese Prozesse teilen sich
 # dieselbe `config.yaml` — ein `MainWindow` in Prozess A (z. B.
 # `test_a5120emu_cli.py`, das per Kommandozeile eine Diskette mountet und dann
 # lange rechnet) schreibt per Autosave (jedes `resizeEvent` plant ihn, auch
 # ausserhalb der eigentlichen Diskettenmontage) SEINE Laufwerksbelegung in die
 # gemeinsame Datei; ein `MainWindow()` in Prozess B (z. B. `test_gui_smoke.py`)
-# liest sie beim Konstruieren zurück und findet eine fremde Diskette in einem
+# liest sie beim Konstruieren zurueck und findet eine fremde Diskette in einem
 # Laufwerk, das aus SEINER Sicht frisch und leer sein sollte
 # (`test_status_bar_shows_a_field_per_present_drive`, beobachtet unter Last,
 # reproduziert per zwei parallelen Prozessen auf denselben Pfad). Genau dieselbe
@@ -60,7 +60,7 @@ os.environ["XDG_CONFIG_HOME"] = str(_CONFIG_TESTRUN_DIR)
 atexit.register(shutil.rmtree, str(_CONFIG_TESTRUN_DIR), ignore_errors=True)
 
 
-# ─── Verfügbarkeit ───────────────────────────────────────────────────────────
+# ─── Verfuegbarkeit ───────────────────────────────────────────────────────────
 
 def pytest_report_header(config):
     return [f"K1520: core={_core_lib() or 'FEHLT'}", f"K1520: fixtures={FIXTURE_DISKS}"]
@@ -111,7 +111,7 @@ def temp_disk(tmp_path):
     """Beschreibbare Kopie einer Fixture-Diskette.
 
     Der Emulator mountet schreibend — eine committete Diskette darf ein Test
-    niemals direkt öffnen.  Aufruf: ``temp_disk("cpa_cpa780_k5601_clock.img")``.
+    niemals direkt oeffnen.  Aufruf: ``temp_disk("cpa_cpa780_k5601_clock.img")``.
     """
     def _copy(name: str) -> str:
         src = FIXTURE_DISKS / name
@@ -135,8 +135,8 @@ def emulator():
 def booted(emulator, temp_disk):
     """Emulator mit CP/A-Uhr-Bootdiskette in A:, eingeschaltet.
 
-    Läuft bis zum Bootloader-Banner — ab hier ist die Maschine in einem
-    definierten Zustand für weitere Schritte.
+    Laeuft bis zum Bootloader-Banner — ab hier ist die Maschine in einem
+    definierten Zustand fuer weitere Schritte.
     """
     path = temp_disk("cpa_cpa780_k5601_clock.img")
     assert emulator.mount_disk(0, path, "cpa780", False), emulator.last_error()
@@ -147,15 +147,15 @@ def booted(emulator, temp_disk):
 
 @pytest.fixture(scope="session")
 def qapp():
-    """Einmalige QApplication für alle GUI-Tests (Qt erlaubt nur eine)."""
+    """Einmalige QApplication fuer alle GUI-Tests (Qt erlaubt nur eine)."""
     pytest.importorskip("PySide6", reason="PySide6 nicht installiert")
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
     yield app
-    # Fenster VOR dem Interpreterende ordentlich abbauen: bleiben sie liegen, zerstört
+    # Fenster VOR dem Interpreterende ordentlich abbauen: bleiben sie liegen, zerstoert
     # der Abbau am Prozessende die QOpenGLWidgets in beliebiger Reihenfolge — in
     # test_gui_smoke endete das reproduzierbar mit „malloc_consolidate(): unaligned
-    # fastbin chunk" (rc 134/139) NACH den grünen Fällen.
+    # fastbin chunk" (rc 134/139) NACH den gruenen Faellen.
     import gc
     for w in app.topLevelWidgets():
         w.close()
@@ -167,18 +167,18 @@ def qapp():
 
 @pytest.fixture(autouse=True)
 def kein_unerwartetes_meldungsfenster(monkeypatch):
-    """Ein nicht abgefangenes modales Fenster ist ein **Fehlschlag**, kein Hänger.
+    """Ein nicht abgefangenes modales Fenster ist ein **Fehlschlag**, kein Haenger.
 
     ``QMessageBox.critical`` & Co. blockieren, bis jemand klickt — headless klickt
     niemand.  Ein Meldungsfenster auf einem Weg, den ein Test nicht erwartet hat,
-    liess den Fall deshalb bis zum ctest-Zeitüberlauf stehen (300 s) statt zu
+    liess den Fall deshalb bis zum ctest-Zeitueberlauf stehen (300 s) statt zu
     scheitern, und im Protokoll stand nur „Timeout" ohne den Grund.  Genau so lag
     ein echter Fehler eine Weile unbemerkt: ohne das freiwillige Paket
     ``greaseweazle`` zeigte ``open_physical`` eine Meldung — in der CI, wo das Paket
     nie installiert ist, hing die ganze Testebene.
 
     Tests, die ein Fenster ERWARTEN, setzen ihren eigenen ``monkeypatch`` im
-    Testkörper; der greift später und gewinnt.  Diese Sperre fängt nur das, woran
+    Testkoerper; der greift spaeter und gewinnt.  Diese Sperre faengt nur das, woran
     niemand gedacht hat.
     """
     try:
@@ -206,10 +206,10 @@ def run_until_text(emu, needle: str, max_cycles: int = 60_000_000,
                    chunk: int = 400_000) -> bool:
     """Emulieren, bis *needle* im Textbildschirm steht (oder das Budget endet).
 
-    Laufzeitregel: ``screen_text()`` kostet 2000 Einzelaufrufe über die Kernsperre
+    Laufzeitregel: ``screen_text()`` kostet 2000 Einzelaufrufe ueber die Kernsperre
     (~2–10 ms) und damit oft MEHR als der Lauf dazwischen.  Deshalb grobe Schritte; der Text
-    bleibt stehen, das Überlaufen um höchstens ``chunk`` Takte (~0,1 s Maschinenzeit) schadet nicht.
-    Wer eine flüchtige Meldung sucht, übergibt ein kleineres ``chunk``.
+    bleibt stehen, das Ueberlaufen um hoechstens ``chunk`` Takte (~0,1 s Maschinenzeit) schadet nicht.
+    Wer eine fluechtige Meldung sucht, uebergibt ein kleineres ``chunk``.
     """
     done = 0
     while done < max_cycles:

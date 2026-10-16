@@ -1,6 +1,6 @@
 /**
  * @file z8kasm.cpp
- * @brief z8kasm — Assembler/Disassembler für U8001/U8002 auf der Kommandozeile.
+ * @brief z8kasm — Assembler/Disassembler fuer U8001/U8002 auf der Kommandozeile.
  *
  *   z8kasm [-s] [-l] [-o abbild.bin] [--sym datei.sym] quelle.s   assemblieren
  *   z8kasm -d abbild.bin [-s] [--org ADR] [--len N]  disassemblieren

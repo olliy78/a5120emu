@@ -4,20 +4,20 @@
  *
  * @details
  * Das ist die Nagelprobe der physischen Anbindung (doc/design/14_physische_diskette.md):
- * die Diskette liegt nicht als Datei im Speicher, sondern kommt **Spur für Spur** über
+ * die Diskette liegt nicht als Datei im Speicher, sondern kommt **Spur fuer Spur** ueber
  * die Auftragswarteschlange herein — genau wie von einem echten Laufwerk am
  * Greaseweazle.  Der ganze Boot-Pfad (Lade-ROM → SYL-Lader → zweite Stufe → `@OS.COM`)
- * muss damit unverändert durchlaufen.
+ * muss damit unveraendert durchlaufen.
  *
- * **Ohne Hardware.**  Statt des Adapters bedient ein Ersatz-Arbeitsfaden die Aufträge
- * aus einer `.hfe`-Fixture — dieselben Bitzellen, die der Adapter liefern würde
- * (§14).  Was hier NICHT geprüft werden kann, ist einzig USB.
+ * **Ohne Hardware.**  Statt des Adapters bedient ein Ersatz-Arbeitsfaden die Auftraege
+ * aus einer `.hfe`-Fixture — dieselben Bitzellen, die der Adapter liefern wuerde
+ * (§14).  Was hier NICHT geprueft werden kann, ist einzig USB.
  *
  * | Fall | Inhalt |
  * |------|--------|
  * | `BootetVonEinerSpurweisenQuelle` | CP/A-Kaltstart bis zum Bereitschaftszeichen |
  * | `EsWirdNichtDieGanzeDisketteGelesen` | der Boot holt nur wenige Spuren, nicht 160 |
- * | `VorauslesenBremstDenKaltstartNicht` | Prio 1 verdrängt Prio 3 auch im Betrieb |
+ * | `VorauslesenBremstDenKaltstartNicht` | Prio 1 verdraengt Prio 3 auch im Betrieb |
  *
  * @see doc/design/14_physische_diskette.md §14
  * @see core/peripherals/floppy_drive/track_sync.h
@@ -48,7 +48,7 @@ using namespace std::chrono_literals;
 
 /**
  * @class Ersatzlaufwerk
- * @brief Steht für „Greaseweazle + K5601", liest aber aus einer `.hfe`-Fixture.
+ * @brief Steht fuer „Greaseweazle + K5601", liest aber aus einer `.hfe`-Fixture.
  *
  * Der Weg ist derselbe wie beim echten Adapter: Bitzellen in HFE-Konvention hinein,
  * @ref TrackSync::completeRead heraus.  Nur die USB-Strecke fehlt.

@@ -1,12 +1,12 @@
 /**
  * @file sertest_hilfen.h
- * @brief Testgerüst für SERTEST.COM (Entwurf 19 §14.8, AP-ST2): Systemdiskette mit
- *        SERTEST.COM, Kaltstart bis zum Prompt, Bedienung über die Tastatur und das
- *        Einsammeln der Ergebniszeilen (§14.3) — für A5120 (CP/A) und K8915 (SCPX 8915).
+ * @brief Testgeruest fuer SERTEST.COM (Entwurf 19 §14.8, AP-ST2): Systemdiskette mit
+ *        SERTEST.COM, Kaltstart bis zum Prompt, Bedienung ueber die Tastatur und das
+ *        Einsammeln der Ergebniszeilen (§14.3) — fuer A5120 (CP/A) und K8915 (SCPX 8915).
  *
  * Alle Maschinen (auch @ref SertestPc1715, PC 1715 mit CP/A 1715, V0.2, und @ref SertestPc1715W,
- * PC 1715W mit SCP 3.0, V0.3) haben dieselbe Oberfläche (@ref SertestA5120, @ref SertestK8915), ein
- * Fall kann also als Schablone über alle laufen:
+ * PC 1715W mit SCP 3.0, V0.3) haben dieselbe Oberflaeche (@ref SertestA5120, @ref SertestK8915), ein
+ * Fall kann also als Schablone ueber alle laufen:
  *
  * ```
  * SertestA5120 s;                       // TempDisk + SERTEST.COM + Laufwerk A:
@@ -16,23 +16,23 @@
  * EXPECT_EQ(s.protokoll().wert("DFUE/IFSS", "LEITUNGEN-LOOP"), "ENTFAELLT");
  * ```
  *
- * **Ergebniszeilen werden während des Laufs eingesammelt** (@ref SertestProtokoll): jedes
+ * **Ergebniszeilen werden waehrend des Laufs eingesammelt** (@ref SertestProtokoll): jedes
  * `bis…` liest das Bild nach jedem Schritt und merkt sich jede Zeile, die in Spalte 0 mit
- * `SERTEST ` beginnt — eine Zeile, die später aus dem Bild rollt, geht damit nicht verloren.
+ * `SERTEST ` beginnt — eine Zeile, die spaeter aus dem Bild rollt, geht damit nicht verloren.
  *
- * **Bild lesen:** A5120 über das VRAM (`vramText`), K8915 direkt aus der K7024 (dieselbe
- * Quelle wie `k1520_screen_char`) — nie über `memRead`, am K8915 ist 1000H nur bei
- * A8H-Bit0 = 0 für die CPU sichtbar.
+ * **Bild lesen:** A5120 ueber das VRAM (`vramText`), K8915 direkt aus der K7024 (dieselbe
+ * Quelle wie `k1520_screen_char`) — nie ueber `memRead`, am K8915 ist 1000H nur bei
+ * A8H-Bit0 = 0 fuer die CPU sichtbar.
  *
- * **Tastatur:** A5120 über `typeString` (K7637, 9600 Bd, kleine Batches à 5 000 Takte);
- * K8915 über `k8915test::tippe` (K7672 im DCP-Modus, Zeichen für Zeichen nach dem Abholen).
+ * **Tastatur:** A5120 ueber `typeString` (K7637, 9600 Bd, kleine Batches à 5 000 Takte);
+ * K8915 ueber `k8915test::tippe` (K7672 im DCP-Modus, Zeichen fuer Zeichen nach dem Abholen).
  * Ctrl+C: A5120 `typeCtrl(m,'c')` = `keyPress('c', false, true)`, K8915 Zeichen 03H
- * (die K7672 drückt dafür Strg + C).
+ * (die K7672 drueckt dafuer Strg + C).
  *
  * Zwei gekoppelte Maschinen (ST5/ST6): `tests/system/test_sertest_kopplung.cpp`
- * (`Paar`, `koppeln()`) — RFC 2217 Server ↔ Client über Loopback, Port 0, beide
+ * (`Paar`, `koppeln()`) — RFC 2217 Server ↔ Client ueber Loopback, Port 0, beide
  * Maschinen in EINEM Faden in gleichen Scheiben (`lauf(takte)`) abwechselnd, gedrosselt
- * auf ein Vielfaches der Echtzeit (die Leitungen laufen über den I/O-Faden, also in
+ * auf ein Vielfaches der Echtzeit (die Leitungen laufen ueber den I/O-Faden, also in
  * Uhrzeit), am Ende `stopAlle()`.
  */
 #pragma once
@@ -75,7 +75,7 @@ inline constexpr const char* kDisketteA5120 = "cpa_cpa780_k5601_noclock.img";
 inline constexpr const char* kDisketteK8915 = "k8915scpx_cpa800_k5601_bios55k-disk900.hfe";
 inline constexpr const char* kDisketteP1715 = "pc1715_cpa1715_boot_4lw.hfe";
 inline constexpr const char* kDisketteP1715W = "pc1715w_scp30_system.hfe";
-// PRG: prg710test::scpxDiskette(V) — SCPX V1.5 (710) bzw. V1.7 (710-1), bootfähig als Fixture.
+// PRG: prg710test::scpxDiskette(V) — SCPX V1.5 (710) bzw. V1.7 (710-1), bootfaehig als Fixture.
 
 /// `SERTEST.COM` mit dem k1520DiskTool (DiskVolume) auf die Diskette @p pfad schreiben.
 /// Dateisystem wird erkannt (CP/A bzw. SCPX 8915).  Liefert leer bei Erfolg, sonst den Grund.
@@ -87,7 +87,7 @@ inline std::string aufspielen(const std::string& pfad, const std::string& com = 
     std::string err;
     auto v = DiskVolume::open(pfad, fsName, formate, fs, err, /*read_only=*/false);
     if (!v) return "DiskVolume::open: " + err;
-    v->setBackup(false);   // TempDisk räumt nur die Kopie selbst weg, kein `…~` liegen lassen
+    v->setBackup(false);   // TempDisk raeumt nur die Kopie selbst weg, kein `…~` liegen lassen
     TransferOptions o;
     o.overwrite = true;
     if (!v->insert(com.empty() ? comPfad() : com, FileRef::parse("SERTEST.COM"), o)) return "insert: " + v->lastError();
@@ -110,7 +110,7 @@ inline std::optional<Zeile> zerlege(const std::string& z) {
     e.roh = z;
     const std::string rest = z.substr(kVor.size());
     const size_t dp = rest.find(": ");
-    if (dp == std::string::npos) {               // ENDE / INTERRUPT: zwei Wörter
+    if (dp == std::string::npos) {               // ENDE / INTERRUPT: zwei Woerter
         const size_t sp = rest.find(' ');
         if (sp == std::string::npos) return std::nullopt;
         e.teil = rest.substr(0, sp);
@@ -141,20 +141,20 @@ inline std::vector<std::string> zeilenAus(const std::string& bild) {
     return v;
 }
 
-/// Sammelt die Ergebniszeilen über den ganzen Lauf (auch herausgerollte).
+/// Sammelt die Ergebniszeilen ueber den ganzen Lauf (auch herausgerollte).
 ///
 /// Das Bild ist nicht immer eine fertige Seite: die Ausgabe kommt zeichenweise, und das
-/// Rollen ist ein Blockverschieben über mehrere zehntausend Takte — dazwischen abgetastet
+/// Rollen ist ein Blockverschieben ueber mehrere zehntausend Takte — dazwischen abgetastet
 /// steht in einer Zeile ein Gemisch aus neuem und altem Text
 /// (`SERTEST DFUE/IFSS DATEN-LOOPKanal A   (Tastatur)`).  Eine Zeile gilt deshalb erst,
 /// wenn sie @ref kStabil Takte lang ununterbrochen im Bild stand (an welcher Stelle, ist
 /// gleich — beim Rollen wandert sie).  Eine Ergebniszeile steht bis zum Herausrollen
-/// mehrere Millionen Takte da; ein Zwischenstand hält nur einige tausend.
+/// mehrere Millionen Takte da; ein Zwischenstand haelt nur einige tausend.
 class SertestProtokoll {
 public:
     static constexpr long long kStabil = 500'000;
 
-    /// Ein Bild zum Zeitpunkt @p takt (fortlaufender Taktzähler des Laufs) auswerten.
+    /// Ein Bild zum Zeitpunkt @p takt (fortlaufender Taktzaehler des Laufs) auswerten.
     void erfasse(const std::string& bild, long long takt) {
         std::map<std::string, long long> jetzt;
         for (const std::string& z : zeilenAus(bild)) {
@@ -216,7 +216,7 @@ class SertestBasis {
 public:
     SertestProtokoll& protokoll() { return protokoll_; }
 
-    /// Läuft, bis @p text im Bild steht (Protokoll wird mitgeführt).
+    /// Laeuft, bis @p text im Bild steht (Protokoll wird mitgefuehrt).
     bool bis(const std::string& text, long long frist) {
         for (long long t = 0;; ) {
             const std::string b = selbst().bild();
@@ -226,7 +226,7 @@ public:
             t += lauf();
         }
     }
-    /// Läuft, bis `SERTEST ENDE …` eingesammelt ist.
+    /// Laeuft, bis `SERTEST ENDE …` eingesammelt ist.
     bool bisEnde(long long frist) {
         for (long long t = 0;; ) {
             protokoll_.erfasse(selbst().bild(), takt_);
@@ -235,7 +235,7 @@ public:
             t += lauf();
         }
     }
-    /// Läuft, bis `A>` die letzte Bildzeile ist und die Tastatur nichts mehr anstehen hat.
+    /// Laeuft, bis `A>` die letzte Bildzeile ist und die Tastatur nichts mehr anstehen hat.
     bool bisPrompt(long long frist) {
         for (long long t = 0;; ) {
             const std::string b = selbst().bild();
@@ -245,13 +245,13 @@ public:
             t += lauf();
         }
     }
-    /// Kommando am Prompt + CR, dann zurück am Prompt (Echo erst abwarten).
+    /// Kommando am Prompt + CR, dann zurueck am Prompt (Echo erst abwarten).
     bool kommando(const std::string& cmd, long long frist = 100'000'000) {
         selbst().tippe(cmd + "\r");
         for (long long t = 0; t < frist && letzteZeile(selbst().bild()) == "A>"; t += lauf()) {}
         return bisPrompt(frist);
     }
-    /// Bedienbar? `dir sertest.com` listet die Datei und kehrt zum Prompt zurück.
+    /// Bedienbar? `dir sertest.com` listet die Datei und kehrt zum Prompt zurueck.
     bool dirFindetSertest() {
         if (!kommando("dir sertest.com")) return false;
         const std::string b = selbst().bild();
@@ -259,8 +259,8 @@ public:
     }
 
     /// Vor einem weiteren Programmlauf in derselben Sitzung: alte Ergebniszeilen aus dem
-    /// Bild rollen (CR am Prompt) und das Protokoll leeren.  Sonst fände `bisEnde` das
-    /// alte `SERTEST ENDE …` sofort wieder, und eine gleichlautende neue Zeile gälte als
+    /// Bild rollen (CR am Prompt) und das Protokoll leeren.  Sonst faende `bisEnde` das
+    /// alte `SERTEST ENDE …` sofort wieder, und eine gleichlautende neue Zeile gaelte als
     /// schon gesehen.
     bool neuerLauf(long long frist = 100'000'000) {
         for (int i = 0; i < 40; ++i) {
@@ -277,10 +277,10 @@ public:
         return false;
     }
 
-    /// Systemtakt der Maschine (φ) in Hz: Zeitbasis für gleich schnell laufende Paare.
+    /// Systemtakt der Maschine (φ) in Hz: Zeitbasis fuer gleich schnell laufende Paare.
     static constexpr double kPhi = 2'457'600.0;
 
-    /// Ein Schritt der Maschine; zählt die Takte für das Protokoll mit.
+    /// Ein Schritt der Maschine; zaehlt die Takte fuer das Protokoll mit.
     long long lauf() { const long long n = selbst().schritt(); takt_ += n; return n; }
     /// Wie lauf(), aber @p takte Takte — zwei gekoppelte Maschinen laufen damit in
     /// gleichen Scheiben Maschinenzeit (die Schrittweiten von A5120 und K8915 sind
@@ -290,7 +290,7 @@ public:
         takt_ += n;
         return n;
     }
-    /// Das aktuelle Bild ins Protokoll nehmen (für eigene Laufschleifen).
+    /// Das aktuelle Bild ins Protokoll nehmen (fuer eigene Laufschleifen).
     void erfasse() { protokoll_.erfasse(selbst().bild(), takt_); }
     long long takt() const { return takt_; }
 
@@ -304,7 +304,7 @@ private:
 
 /**
  * @brief A5120 mit CP/A (`cpa_cpa780_k5601_noclock.img`) und SERTEST.COM auf A:.
- * Die Diskette hat keine Uhr — der Kaltstart läuft ohne Rückfrage bis `A>`.
+ * Die Diskette hat keine Uhr — der Kaltstart laeuft ohne Rueckfrage bis `A>`.
  */
 class SertestA5120 : public SertestBasis<SertestA5120> {
 public:
@@ -343,7 +343,7 @@ private:
 
 /**
  * @brief K8915 mit SCPX 8915 V5.3 (Diskette 900, BIOS „55 K“) und SERTEST.COM auf A:.
- * Kaltstart = `k8915test::kaltstartBisPrompt` (ROM-Selbsttest übersprungen, `<ENTER>`
+ * Kaltstart = `k8915test::kaltstartBisPrompt` (ROM-Selbsttest uebersprungen, `<ENTER>`
  * an der Coldstart-Meldung, Autostart `rade` abwarten — vorher Getipptes ginge verloren).
  */
 class SertestK8915 : public SertestBasis<SertestK8915> {
@@ -375,8 +375,8 @@ private:
 
 /**
  * @brief PC 1715 mit CP/A 1715 (`pc1715_cpa1715_boot_4lw.hfe`, BIOS 24.05.88) und SERTEST.COM
- * auf A:.  Tastatur über die Tastatur1715 (`pc1715_input.h`: je Taste 150 000 Takte
- * gedrückt + 100 000 Pause), das Bild ohne die CP/A-Statuszeile (Zeile 25).
+ * auf A:.  Tastatur ueber die Tastatur1715 (`pc1715_input.h`: je Taste 150 000 Takte
+ * gedrueckt + 100 000 Pause), das Bild ohne die CP/A-Statuszeile (Zeile 25).
  * Die Maschine wird mit der Programmversion (@p fixture) der Wahl aufgespielt; SERTEST.COM
  * ist wahlweise die eingecheckte V0.2 oder eine andere (@p com, z. B. die alte V0.1).
  */
@@ -469,9 +469,9 @@ private:
 
 /**
  * @brief PRG 710 bzw. 710-1 mit SCPX (V1.5 / V1.7, `prg710test::scpxDiskette`) und SERTEST.COM auf A:.
- * Kaltstart wie die FORMAT-Wächter: Netz ein, 3 Mio. Takte, Return (710-1: ENTER startet das
- * Laden), SCPX-Gruß, `A>`.  Tastatur über `keyPress` (710: K7609/8279, 710-1: K7672 an A32-B —
- * deshalb ist diese Schnittstelle für SERTEST tabu); Ctrl+C = `keyPress('c', false, true)`.
+ * Kaltstart wie die FORMAT-Waechter: Netz ein, 3 Mio. Takte, Return (710-1: ENTER startet das
+ * Laden), SCPX-Gruss, `A>`.  Tastatur ueber `keyPress` (710: K7609/8279, 710-1: K7672 an A32-B —
+ * deshalb ist diese Schnittstelle fuer SERTEST tabu); Ctrl+C = `keyPress('c', false, true)`.
  */
 class SertestPrg : public SertestBasis<SertestPrg> {
 public:

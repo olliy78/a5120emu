@@ -96,25 +96,25 @@ public:
 };
 
 /**
- * @brief Speicher mit **Vorrang** über die Bus-Leitung /MEMDI (Speicherprioritätenkette).
+ * @brief Speicher mit **Vorrang** ueber die Bus-Leitung /MEMDI (Speicherprioritaetenkette).
  *
- * Ein solches Gerät entscheidet **je Zugriff allein aus der anliegenden Adresse**
- * (und seinem eigenen Zustand), ob es den Zugriff übernimmt.  Übernimmt es ihn, zieht
- * es für genau diesen Buszyklus /MEMDI (X1 C09) und bedient ihn selbst; jede Speicher-
- * gruppe, die auf die Bus-Leitung /MEMDI gebrückt ist, bleibt dann still
- * (K3526-Gruppe mit `memdi_source = false`).  Einziges solches Gerät ist heute das
+ * Ein solches Geraet entscheidet **je Zugriff allein aus der anliegenden Adresse**
+ * (und seinem eigenen Zustand), ob es den Zugriff uebernimmt.  Uebernimmt es ihn, zieht
+ * es fuer genau diesen Buszyklus /MEMDI (X1 C09) und bedient ihn selbst; jede Speicher-
+ * gruppe, die auf die Bus-Leitung /MEMDI gebrueckt ist, bleibt dann still
+ * (K3526-Gruppe mit `memdi_source = false`).  Einziges solches Geraet ist heute das
  * Erweiterungsmodul EM064/EM256 des A5120.16 (`core/cards/em/`, MEN → /MEMDI).
  *
- * Nicht zu verwechseln mit MEMDI1/2 der Rückverdrahtung (Koppelbus): das ist ein
- * *statischer* Pegel vom BS-PIO A7, auf den nur eigens gebrückte Gruppen hören.
+ * Nicht zu verwechseln mit MEMDI1/2 der Rueckverdrahtung (Koppelbus): das ist ein
+ * *statischer* Pegel vom BS-PIO A7, auf den nur eigens gebrueckte Gruppen hoeren.
  */
 class MemdiDriver : public MemDevice {
 public:
     /**
-     * @brief Übernimmt das Gerät den Zugriff auf @p addr (zieht es /MEMDI)?
+     * @brief Uebernimmt das Geraet den Zugriff auf @p addr (zieht es /MEMDI)?
      *
-     * Wird auf dem heißen Pfad bei JEDEM Speicherzugriff gefragt, solange das Gerät
-     * eingesteckt ist — muss also billig sein.  Nicht const: ein Gerät darf sich die
+     * Wird auf dem heissen Pfad bei JEDEM Speicherzugriff gefragt, solange das Geraet
+     * eingesteckt ist — muss also billig sein.  Nicht const: ein Geraet darf sich die
      * Adresse merken (Adresslatch).
      */
     virtual bool drivesMemdi(uint16_t addr) = 0;
@@ -137,12 +137,12 @@ public:
     virtual ~InterruptSlave() = default;
 
     /**
-     * @brief Name der Interruptquelle für Diagnose-Ausgaben (Debugger `bint`/`itrace`).
+     * @brief Name der Interruptquelle fuer Diagnose-Ausgaben (Debugger `bint`/`itrace`).
      *
      * Karten liefern hier den **gerade anfordernden Baustein** (z.B. "K5122 ctrl-PIO"),
      * nicht nur den Kartennamen — die Zuordnung Vektor→Baustein ist die eigentliche
      * Frage bei einer unerwarteten Quittung.  Muss VOR getVector() abgefragt werden
-     * (getVector() löscht die Anforderung).
+     * (getVector() loescht die Anforderung).
      */
     virtual const char* intDeviceName() const { return "?"; }
 
@@ -249,10 +249,10 @@ public:
     void unregisterMem(MemDevice* dev);
 
     /**
-     * @brief Ein Gerät mit Vorrang über /MEMDI anmelden (s. @ref MemdiDriver).
+     * @brief Ein Geraet mit Vorrang ueber /MEMDI anmelden (s. @ref MemdiDriver).
      *
      * Solange keines angemeldet ist, kostet das im Speicherpfad genau einen Vergleich
-     * — der A5120 ohne Erweiterungsmodul läuft unverändert.
+     * — der A5120 ohne Erweiterungsmodul laeuft unveraendert.
      */
     void addMemdiDriver(MemdiDriver* dev) { memdi_drivers_.push_back(dev); }
     
@@ -267,8 +267,8 @@ public:
      */
     void setInterruptChain(std::initializer_list<InterruptSlave*> chain);
     /**
-     * @brief Ein Gerät HINTEN an die Kette hängen (niedrigste Priorität) — für
-     *        nachträglich gesteckte Zusatzkarten (K6022, Entwurf 23 §3).
+     * @brief Ein Geraet HINTEN an die Kette haengen (niedrigste Prioritaet) — fuer
+     *        nachtraeglich gesteckte Zusatzkarten (K6022, Entwurf 23 §3).
      */
     void appendInterruptChain(InterruptSlave* dev) {
         int_chain_.push_back(dev);
@@ -282,8 +282,8 @@ public:
     /**
      * @brief Perform a memory read access.
      * 
-     * Zieht ein @ref MemdiDriver für diese Adresse /MEMDI, liefert ER das Byte;
-     * sonst das zuletzt registrierte lesbare Gerät der Adresse.
+     * Zieht ein @ref MemdiDriver fuer diese Adresse /MEMDI, liefert ER das Byte;
+     * sonst das zuletzt registrierte lesbare Geraet der Adresse.
      *
      * @param addr Address to read (0x0000–0xFFFF)
      * @return Data byte at that address
@@ -293,8 +293,8 @@ public:
     /**
      * @brief Perform a memory write access.
      * 
-     * Broadcast an alle beschreibbaren Geräte der Adresse; zieht ein @ref MemdiDriver
-     * /MEMDI, bekommt er den Zugriff zusätzlich, und Geräte, die auf /MEMDI hören
+     * Broadcast an alle beschreibbaren Geraete der Adresse; zieht ein @ref MemdiDriver
+     * /MEMDI, bekommt er den Zugriff zusaetzlich, und Geraete, die auf /MEMDI hoeren
      * (@ref memdiActive), verwerfen ihn.
      * 
      * @param addr Address to write
@@ -309,8 +309,8 @@ public:
      * If /IODI is asserted, returns 0xFF.
      * 
      * @param addr volle E/A-Adresse AB0–AB15 (IN r,(C): BC; IN A,(n): A·256+n).
-     *             Verteilt wird nach AB0–7; AB8–15 bleiben für die Dauer des
-     *             Zyklus über @ref ioAddress abfragbar.
+     *             Verteilt wird nach AB0–7; AB8–15 bleiben fuer die Dauer des
+     *             Zyklus ueber @ref ioAddress abfragbar.
      * @return Data byte from device
      */
     uint8_t ioRead(uint16_t addr);
@@ -329,8 +329,8 @@ public:
     /**
      * @brief Volle Adresse AB0–AB15 des laufenden (bzw. letzten) E/A-Zyklus.
      *
-     * Für Karten, die AB8–15 eines E/A-Zyklus auswerten — der Attributspeicher des
-     * EM256 wird über AB12–15 adressiert (`OUT (C),A` → Register B; Falle:
+     * Fuer Karten, die AB8–15 eines E/A-Zyklus auswerten — der Attributspeicher des
+     * EM256 wird ueber AB12–15 adressiert (`OUT (C),A` → Register B; Falle:
      * `OUT (n),A` legt **A** auf AB8–15).
      */
     uint16_t ioAddress() const { return io_addr_; }
@@ -351,15 +351,15 @@ public:
      * @brief Protokoll der letzten Interrupt-Quittung (Debugger `bint`/`itrace`).
      *
      * Der entscheidende Unterschied, den ein reines Vektor-Log verschluckt:
-     * `0xFF` kann ein **programmierter** Gerätevektor sein ODER der Bus-Fallback
-     * „kein Gerät hat geantwortet" (@ref spurious) — genau diese Verwechslung war
+     * `0xFF` kann ein **programmierter** Geraetevektor sein ODER der Bus-Fallback
+     * „kein Geraet hat geantwortet" (@ref spurious) — genau diese Verwechslung war
      * die Wurzel des UDOS-Interruptsturms.
      */
     struct IntAck {
         uint64_t    count    = 0;        ///< Zahl der Quittungen seit Reset
         uint8_t     vector   = 0xFF;     ///< zuletzt gelieferter Vektor
-        bool        spurious = true;     ///< true: kein Gerät hatte eine Anforderung
-        const char* device   = nullptr;  ///< Quellgerät (Kartenname) oder nullptr
+        bool        spurious = true;     ///< true: kein Geraet hatte eine Anforderung
+        const char* device   = nullptr;  ///< Quellgeraet (Kartenname) oder nullptr
     };
     /** @brief Letzte Interrupt-Quittung (siehe @ref IntAck). */
     const IntAck& lastIntAck() const { return last_int_ack_; }
@@ -425,14 +425,14 @@ public:
     void releaseWAIT();
 
     /**
-     * @brief Wartetakte, die ein Baustein WÄHREND des laufenden Zugriffs verlangt.
+     * @brief Wartetakte, die ein Baustein WAEHREND des laufenden Zugriffs verlangt.
      *
-     * `/WAIT` auf Zugriffsebene: die K5122 im `/WAIT`-Betrieb (K8915) hält die CPU
-     * bei `IN (16H)`/`OUT (14H)` an, bis das nächste Byte unter dem Kopf ist
+     * `/WAIT` auf Zugriffsebene: die K5122 im `/WAIT`-Betrieb (K8915) haelt die CPU
+     * bei `IN (16H)`/`OUT (14H)` an, bis das naechste Byte unter dem Kopf ist
      * (doc/design/07_k5122_afs.md §7.6, doc/design/16_k8915.md §3.4).  Der Baustein
-     * trägt die Takte hier ein; die Laufschleife holt sie nach dem Befehl mit
+     * traegt die Takte hier ein; die Laufschleife holt sie nach dem Befehl mit
      * @ref takeWaitCycles ab und verbucht sie wie Befehlstakte — so laufen Zeitgeber,
-     * Index und SIO während des Wartens weiter.  @ref pendingWaitCycles gibt dem
+     * Index und SIO waehrend des Wartens weiter.  @ref pendingWaitCycles gibt dem
      * Baustein die schon verlangten Takte desselben Befehls (Zeitpunkt des Zugriffs).
      */
     void addWaitCycles(int n) { wait_cycles_ += n; }
@@ -463,13 +463,13 @@ public:
     bool isBUSRQ() const { return busrq_asserted_; }
 
     /**
-     * @brief Welche CPU führt gerade den Buszyklus aus (ZVE1 oder der DMA-Prozessor ZVE2)?
+     * @brief Welche CPU fuehrt gerade den Buszyklus aus (ZVE1 oder der DMA-Prozessor ZVE2)?
      *
      * Die Maschine setzt das Flag um den ZVE2-Schritt herum.  Karten brauchen es, wenn
      * ein Portzugriff je nach Urheber eine andere Wirkung hat — beim K5122 beendet
-     * **nur ZVE2s eigenes** /STR=1 dessen Busbesitz sofort (ZVE1-Schreibzugriffe während
+     * **nur ZVE2s eigenes** /STR=1 dessen Busbesitz sofort (ZVE1-Schreibzugriffe waehrend
      * einer laufenden DMA gibt es auf echter Hardware nicht; sie sind ein Artefakt der
-     * verschränkten Ausführung, s. K5122::handleCtrlPortAWrite).
+     * verschraenkten Ausfuehrung, s. K5122::handleCtrlPortAWrite).
      */
     void setBusMasterZVE2(bool z2) { bus_master_zve2_ = z2; }
     bool busMasterIsZVE2() const   { return bus_master_zve2_; }
@@ -478,12 +478,12 @@ public:
      * @brief Ist die Bus-Leitung /MEMDI im **laufenden** Speicherzyklus aktiv?
      *
      * /MEMDI (X1 C09) ist KEIN statischer Pegel: ein @ref MemdiDriver zieht es je
-     * Zugriff aus der anliegenden Adresse (Erweiterungsmodul: MEN).  Gültig nur
-     * während memRead()/memWrite() — Speichergruppen, die auf /MEMDI hören, fragen
+     * Zugriff aus der anliegenden Adresse (Erweiterungsmodul: MEN).  Gueltig nur
+     * waehrend memRead()/memWrite() — Speichergruppen, die auf /MEMDI hoeren, fragen
      * es dort ab.  Ausserhalb eines Zyklus immer false.
      *
      * Der BS-PIO (K2526 A7) treibt NICHT diese Leitung, sondern MEMDI1/2 der
-     * Rückverdrahtung (Koppelbus) — beides war früher in einem Flag
+     * Rueckverdrahtung (Koppelbus) — beides war frueher in einem Flag
      * zusammengeworfen (doc/design/17_a5120_16.md §3 S1).
      */
     bool memdiActive() const { return memdi_; }
@@ -557,14 +557,14 @@ public:
      * @brief Markiert die Interrupt-Daisy-Chain als „neu zu berechnen".
      *
      * updateInterruptChain() lief bisher PRO INSTRUKTION den ganzen Chain-Walk
-     * ab (setIEI/hasInterrupt/getIEO über alle Geräte) — obwohl sich der
-     * Interruptzustand nur bei wenigen Ereignissen ändert.  Der Zustand kann
-     * sich ändern durch: I/O-Zugriff (Konfig/Status-Read löscht IRQ), CTC-ZC/TO,
-     * serielle Empfangs-IRQ (Tastatur/DFÜ), Floppy-Index-IRQ (K5122-PIO) sowie
+     * ab (setIEI/hasInterrupt/getIEO ueber alle Geraete) — obwohl sich der
+     * Interruptzustand nur bei wenigen Ereignissen aendert.  Der Zustand kann
+     * sich aendern durch: I/O-Zugriff (Konfig/Status-Read loescht IRQ), CTC-ZC/TO,
+     * serielle Empfangs-IRQ (Tastatur/DFUE), Floppy-Index-IRQ (K5122-PIO) sowie
      * INT-Quittung/RETI/NMI.  Die Bus-internen Pfade (I/O, ack, RETI, NMI/INT)
      * setzen das Flag selbst; die zeitgetriebenen Quellen (CTC, Tastatur,
-     * Floppy) meldet die Run-Loop über markIntDirty().  Solange das Flag nicht
-     * gesetzt ist, ist der gecachte Chain-Zustand gültig und der Walk entfällt.
+     * Floppy) meldet die Run-Loop ueber markIntDirty().  Solange das Flag nicht
+     * gesetzt ist, ist der gecachte Chain-Zustand gueltig und der Walk entfaellt.
      */
     void markIntDirty() { int_dirty_ = true; }
 
@@ -578,19 +578,19 @@ private:
     std::vector<MemRegion> mem_regions_;
 
     // ── Page-Dispatch-Tabelle (256-B-Seiten): O(1) statt Linearscan ──────────
-    // memRead/memWrite liefen bisher PRO BYTE linear über mem_regions_ (mit
+    // memRead/memWrite liefen bisher PRO BYTE linear ueber mem_regions_ (mit
     // virtuellem isReadable()/isWritable() je Region) — der teuerste Posten im
-    // Speicherpfad.  isReadable()/isWritable() sind pro Gerät statisch (DIP-
+    // Speicherpfad.  isReadable()/isWritable() sind pro Geraet statisch (DIP-
     // Konfiguration), der einzige Laufzeit-Wechsel der Regionenmenge ist das
     // Ein-/Ausblenden des Lade-ROMs (register/unregisterMem).  Daher wird die
     // Tabelle nur bei genau diesen (seltenen) Ereignissen neu aufgebaut.
-    // Gültig nur, wenn alle Regionen 256-B-ausgerichtet sind; sonst fällt der
-    // Zugriff auf den (immer korrekten) linearen Scan zurück.
+    // Gueltig nur, wenn alle Regionen 256-B-ausgerichtet sind; sonst faellt der
+    // Zugriff auf den (immer korrekten) linearen Scan zurueck.
     static constexpr int kPageShift      = 8;             ///< 256-B-Seiten
     static constexpr int kNumPages       = 1 << (16 - kPageShift);   // 256
     static constexpr int kMaxWriteFanout = 4;             ///< max. Broadcast-Ziele/Seite
     struct PageEntry {
-        MemDevice* read = nullptr;                        ///< letztes lesbares Gerät
+        MemDevice* read = nullptr;                        ///< letztes lesbares Geraet
         MemDevice* write[kMaxWriteFanout] = {};           ///< schreibbare Broadcast-Ziele
         uint8_t    write_count = 0;
     };

@@ -27,6 +27,10 @@ Im Beispielordner liegen **WEGA 3.0 und WEGA 3.1** (`p8000_wega30/`, `p8000_wega
 fertig installierte Platte (`*.img.gz` — im Plattenkasten über „Anschließen…" einbinden), die
 UDOS-Startdiskette und für WEGA 3.0 der ganze Installationssatz; die `README.md` im Ordner sagt,
 wie man davon startet. Eine leere Platte legen Sie über „Neue Platte…" an.
+Sechster ist der Mikrorechner **MC80.30/31** des VEB Elektronik Gera (`mc80emu`, Startmenü
+„MC80 Emulator"; Modell unter „Einstellungen ▸ Allgemein"). Er hat keine Diskettenlaufwerke:
+EGOS meldet sich nach dem Einschalten, Programme kommen über „Maschine ▸ Speicherabzug laden…"
+(nach `INIT`) in den Arbeitsspeicher.
 
 ### K8915: eine eigene Bootdiskette
 
@@ -83,7 +87,7 @@ Weitere Möglichkeiten:
 
 ## Starten
 
-Über das Startmenü („A5120 Emulator", „K8915 Emulator", „PRG710 Emulator", „PC1715 Emulator", „P8000 Emulator" bzw. „P8000 Terminal") oder auf der
+Über das Startmenü („A5120 Emulator", „K8915 Emulator", „PRG710 Emulator", „PC1715 Emulator", „P8000 Emulator" bzw. „P8000 Terminal", „MC80 Emulator") oder auf der
 Kommandozeile:
 
 ```sh
@@ -92,6 +96,7 @@ k8915emu
 prg710emu
 pc1715emu
 p8000emu
+mc80emu
 ```
 
 Das Paket enthält ein zweites Programm, das **k1520DiskTool**: es tauscht Dateien
@@ -148,7 +153,7 @@ Assembler stehen als Beispielzeilen darin).
 |---|---|
 | Programm | wohin bei der Installation gewählt (Vorschlag `~/K1520emu`) |
 | Arbeitsdisketten | `~/Dokumente/K1520emu/Disketten` |
-| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml`, `pc1715emu.yaml`, `p8000emu.yaml` (je Programm) |
+| Konfiguration | `~/.config/k1520emu/a5120emu.yaml`, `k8915emu.yaml`, `prg710emu.yaml`, `pc1715emu.yaml`, `p8000emu.yaml`, `mc80emu.yaml` (je Programm) |
 
 Die Beispieldisketten werden beim ersten Start einer Fassung in einen eigenen
 Unterordner des Diskettenordners ausgepackt (`Beispieldisketten_v03`, bei einer

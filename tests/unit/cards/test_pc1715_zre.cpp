@@ -35,7 +35,7 @@ struct ZreFixture {
         zre.powerOn(0x00);
     }
 
-    /// 8275 mit den Parametersätzen des BIOS (§3.4) programmieren und Start Display (20H).
+    /// 8275 mit den Parametersaetzen des BIOS (§3.4) programmieren und Start Display (20H).
     void crtStart() {
         const uint8_t p80[4] = {0x4F, 0x57, 0x6B, 0x6D};   // K7222.25: 80 × 24, 12 Linien
         const uint8_t p64[4] = {0x3F, 0x4F, 0x6E, 0x6B};   // K7221.25: 64 × 16, 15 Linien
@@ -43,7 +43,7 @@ struct ZreFixture {
         for (uint8_t p : (zre.config().bild == B::K7222 ? p80 : p64)) bus.ioWrite(0x18, p);
         bus.ioWrite(0x19, 0x20);
     }
-    /// Bildspeicher mit Leerzeichen füllen (nicht transparent: jede Zelle belegt ein Byte).
+    /// Bildspeicher mit Leerzeichen fuellen (nicht transparent: jede Zelle belegt ein Byte).
     void bildLoeschen(uint16_t basis) {
         for (int i = 0; i < 2048; ++i) zre.ramPoke(uint16_t(basis + i), 0x20);
     }
@@ -110,7 +110,7 @@ TEST(Pc1715Zre, ResetBlendetDasRomWiederEin) {
 }
 
 TEST(Pc1715Zre, CpuLiestAusDemOverlay) {
-    // LD HL,0000H; LD (0800H),HL ist egal — es genügt: CPU holt den ersten Befehl aus dem ROM.
+    // LD HL,0000H; LD (0800H),HL ist egal — es genuegt: CPU holt den ersten Befehl aus dem ROM.
     ZreFixture f;
     EXPECT_EQ(f.zre.cpu().readByte(0x0000), PC1715_S502_URLADER[0]);
     f.zre.cpu().writeByte(0x0001, 0x77);
@@ -123,7 +123,7 @@ TEST(Pc1715Zre, CpuLiestAusDemOverlay) {
 TEST(Pc1715Zre, SioAdressierungA0KanalA1Steuer) {
     // §1.2.4: 0CH Daten A, 0DH Daten B, 0EH Steuer A, 0FH Steuer B.
     ZreFixture f;
-    // Statusregister je Kanal: Steuer A (0EH) und Steuer B (0FH) liefern unabhängig RR0.
+    // Statusregister je Kanal: Steuer A (0EH) und Steuer B (0FH) liefern unabhaengig RR0.
     EXPECT_EQ(f.bus.ioRead(0x0E), f.zre.sio().ioRead(1));
     EXPECT_EQ(f.bus.ioRead(0x0F), f.zre.sio().ioRead(3));
     // Daten A/B: Senden an 0CH landet im Sender von Kanal A, an 0DH in dem von Kanal B.
@@ -141,7 +141,7 @@ TEST(Pc1715Zre, CtcAn08bis0B) {
     ZreFixture f;
     f.bus.ioWrite(0x08, 0x05);   // Kanal 0: Zeitgeber, Zeitkonstante folgt
     f.bus.ioWrite(0x08, 0x10);
-    // Gelesen wird der Zählerstand; er läuft nach der Konfiguration (≠ FFH-Platzhalter)
+    // Gelesen wird der Zaehlerstand; er laeuft nach der Konfiguration (≠ FFH-Platzhalter)
     f.zre.clockTick(100);
     EXPECT_NE(f.bus.ioRead(0x08), 0xFF);
 }
@@ -155,11 +155,11 @@ TEST(Pc1715Zre, UnbelegtLiestFFSchreibenWirdVerschluckt) {
     EXPECT_TRUE(f.zre.romEin());
 }
 
-/// Servicehandbuch §1.2.8.5 (Grundgerät) und §1.3.3 (Zusatzkarte 2 × V.24): 2CH–2FH sind
+/// Servicehandbuch §1.2.8.5 (Grundgeraet) und §1.3.3 (Zusatzkarte 2 × V.24): 2CH–2FH sind
 /// LT107/LT111 der Zusatzkarte (DB0 = Kanal A, DB2 = B), 30H–33H DB1 die 111 am X5.
 TEST(Pc1715Zre, Leitungen107Und111) {
     ZreFixture f;
-    EXPECT_EQ(f.bus.ioRead(0x2D), 0xFF) << "Zusatzkarte nicht bestückt: 107 AUS = 1";
+    EXPECT_EQ(f.bus.ioRead(0x2D), 0xFF) << "Zusatzkarte nicht bestueckt: 107 AUS = 1";
     EXPECT_EQ(f.bus.ioRead(0x2F), 0xFF);
     f.bus.ioWrite(0x2C, 0x01);
     EXPECT_TRUE(f.zre.lt111(0));
@@ -167,10 +167,10 @@ TEST(Pc1715Zre, Leitungen107Und111) {
     f.bus.ioWrite(0x2E, 0x04);
     EXPECT_FALSE(f.zre.lt111(0));
     EXPECT_TRUE(f.zre.lt111(1));
-    EXPECT_FALSE(f.zre.lt111X5()) << "2CH/2EH berühren X5 nicht";
+    EXPECT_FALSE(f.zre.lt111X5()) << "2CH/2EH beruehren X5 nicht";
     f.bus.ioWrite(0x30, 0x02);
     EXPECT_TRUE(f.zre.lt111X5());
-    EXPECT_TRUE(f.zre.lt111(1)) << "30H berührt die Zusatzkarte nicht";
+    EXPECT_TRUE(f.zre.lt111(1)) << "30H beruehrt die Zusatzkarte nicht";
     f.bus.ioWrite(0x33, 0x00);
     EXPECT_FALSE(f.zre.lt111X5());
 }
@@ -186,7 +186,7 @@ TEST(Pc1715Zre, BwsRegisterBasisUndZeichengenerator) {
         f.bus.ioWrite(0x34, 0x3E | 0x40);         // crt2zs: OR 40H
         EXPECT_EQ(f.zre.bildBasis(), 0xF800);
         EXPECT_TRUE(f.zre.bwsZg2());
-        f.bus.ioWrite(0x37, 0x3F);                // DB0 = A10 wird beim 80×24 vom Zähler geliefert
+        f.bus.ioWrite(0x37, 0x3F);                // DB0 = A10 wird beim 80×24 vom Zaehler geliefert
         EXPECT_EQ(f.zre.bildBasis(), 0xF800);
         f.bus.ioWrite(0x35, 0x10);
         EXPECT_EQ(f.zre.bildBasis(), 0x4000);
@@ -199,7 +199,7 @@ TEST(Pc1715Zre, BwsRegisterBasisUndZeichengenerator) {
     ZreFixture g;
     g.bus.ioWrite(0x34, 0x7E);
     g.zre.reset();
-    EXPECT_EQ(g.zre.bwsRegister(), 0) << "/RESET löscht das BWS-Register";
+    EXPECT_EQ(g.zre.bwsRegister(), 0) << "/RESET loescht das BWS-Register";
 }
 
 // ── 8275: DMA aus dem Haupt-RAM, Rastern ─────────────────────────────────────
@@ -254,7 +254,7 @@ TEST(Pc1715Zre, Statuszeile25IstImFramebufferGerastert) {
 }
 
 TEST(Pc1715Zre, DmaAdresseIstBasisPlusZaehlerZaehlerBeiVrtcNull) {
-    // Der Zähler beginnt bei jedem Bild bei 0: zwei Bilder zeigen dasselbe.
+    // Der Zaehler beginnt bei jedem Bild bei 0: zwei Bilder zeigen dasselbe.
     ZreFixture f;
     f.bildLoeschen(0xF800);
     f.text(0xF800, 0, 3, "AB");
@@ -288,7 +288,7 @@ TEST(Pc1715Zre, Bild64x16Mit15LinienUndDunklenLinien12bis14) {
     for (int l = 0; l < 12; ++l)
         EXPECT_EQ(f.zeile(1, 2, l), PC1715_S619_ZG1[l * 0x80 + 'H']) << "Linie " << l;
     for (int l = 12; l < 15; ++l) EXPECT_EQ(f.zeile(1, 2, l), 0) << "Linie " << l << " dunkel";
-    // Zeilenhöhe 15: die nächste Zeichenzeile beginnt bei y = 30.
+    // Zeilenhoehe 15: die naechste Zeichenzeile beginnt bei y = 30.
     f.text(0xFC00, 2, 0, "H");
     f.zre.frame();
     EXPECT_EQ(f.zeile(2, 0, 5), 0x7E);
@@ -338,8 +338,8 @@ TEST(Pc1715Zre, ConfigZeichensatzVorgabeS602) {
         EXPECT_EQ(f.zeile(3, 1, l), PC1715_S602_ZG2[l * 0x80 + 0x24]) << l;
 }
 
-// AP-6: die Bestückung der ZG-EPROMs.  Je Satz wird ein Zeichen gerastert, das sich zwischen den
-// Bausteinen unterscheidet, und gegen den richtigen Abzug geprüft; der Vorgabesatz bleibt
+// AP-6: die Bestueckung der ZG-EPROMs.  Je Satz wird ein Zeichen gerastert, das sich zwischen den
+// Bausteinen unterscheidet, und gegen den richtigen Abzug geprueft; der Vorgabesatz bleibt
 // bitgleich zum bisherigen Verhalten (S619 bei DB6 = 0, S602 bei GPA0).
 namespace {
 struct ZgFall { Pc1715Zre::ZgSatz satz; const uint8_t* zg1; const uint8_t* zg2; int code; };
@@ -358,12 +358,12 @@ void pruefeZgSatz(const ZgFall& f) {
         EXPECT_EQ(z.zeile(4, 1, l), f.zg2[l * 0x80 + f.code]) << "ZG2, Linie " << l;
         anders |= f.zg1[l * 0x80 + f.code] != f.zg2[l * 0x80 + f.code];
     }
-    EXPECT_TRUE(anders) << "Prüfzeichen muss sich zwischen den Bausteinen unterscheiden";
+    EXPECT_TRUE(anders) << "Pruefzeichen muss sich zwischen den Bausteinen unterscheiden";
 }
 }  // namespace
 
 TEST(Pc1715Zre, ZgSatzDeutschIstS619UndS602) {
-    pruefeZgSatz({Pc1715Zre::ZgSatz::Deutsch, PC1715_S619_ZG1, PC1715_S602_ZG2, 0x5B});   // [ / Ä
+    pruefeZgSatz({Pc1715Zre::ZgSatz::Deutsch, PC1715_S619_ZG1, PC1715_S602_ZG2, 0x5B});   // [ / Ae
 }
 TEST(Pc1715Zre, ZgSatzPolnischIstS641UndS619) {
     pruefeZgSatz({Pc1715Zre::ZgSatz::Polnisch, PC1715_S641_ZG1, PC1715_S619_ZG1, 0x5B});
@@ -372,7 +372,7 @@ TEST(Pc1715Zre, ZgSatzKyrillischIstS643UndS605) {
     pruefeZgSatz({Pc1715Zre::ZgSatz::Kyrillisch, PC1715_S643_ZG1, PC1715_S605_ZG2, 0x41});  // A: ZG1 und ZG2 verschieden
 }
 TEST(Pc1715Zre, ZgSatzKyrillischBeiDb6Eins) {
-    // Zeichen 61H ist in S643 kyrillisch, in S619 lateinisch: DB6 = 1 wählt den anderen Baustein
+    // Zeichen 61H ist in S643 kyrillisch, in S619 lateinisch: DB6 = 1 waehlt den anderen Baustein
     ZreFixture z(B::K7222, Pc1715Zre::Zeichensatz::S619, Pc1715Zre::ZgSatz::Kyrillisch);
     z.bildLoeschen(0xF800);
     z.zre.ramPoke(0xF800 + 3 * 80 + 1, 0x61);

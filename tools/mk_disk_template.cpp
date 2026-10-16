@@ -1,14 +1,14 @@
-// mk_disk_template – erzeugt eine GÜLTIG vorformatierte, EINSEITIGE Leerdiskette
-// (HFE v1) mit dem üblichen CP/A-Systemlayout:
+// mk_disk_template – erzeugt eine GUELTIG vorformatierte, EINSEITIGE Leerdiskette
+// (HFE v1) mit dem ueblichen CP/A-Systemlayout:
 //   <sys_cyls> Systemspuren  = <sys_nsec>×<sys_size>   (typ. 26×128)
 //   Restspuren  Datenbereich = <data_nsec>×<data_size> (z. B. 4×1024 / 5×1024 / 8×1024 / 16×256)
 // Alles im selben Verfahren (FM oder MFM), Sektordaten = 0xE5 (leere CP/M-Sektoren).
 //
-// Warum programmatisch?  Die Formatier-Pipeline braucht für die einseitigen Formate
+// Warum programmatisch?  Die Formatier-Pipeline braucht fuer die einseitigen Formate
 // (MF3200 8″-FM, MF6400 8″-MFM, K5600.10 5″-40-SS, K5600.20 5″-80-SS) eine bereits
-// gültig formatierte Vorlage, die nach B:/C: kopiert und dort neu formatiert wird.
-// Dieses Tool erzeugt sie über dieselbe Codec-Schicht (TrackCodec::buildTrack), die
-// auch der FORMAT.COM-Schreibpfad benutzt, und legt sie über den HFE-Container ab.
+// gueltig formatierte Vorlage, die nach B:/C: kopiert und dort neu formatiert wird.
+// Dieses Tool erzeugt sie ueber dieselbe Codec-Schicht (TrackCodec::buildTrack), die
+// auch der FORMAT.COM-Schreibpfad benutzt, und legt sie ueber den HFE-Container ab.
 //
 // Verwendung:
 //   mk_disk_template <out.hfe> <fm|mfm> <num_cyls> <sys_cyls> \
@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::string out = argv[1];
-    // Verfahren: "fm" | "mfm" (uniform) ODER "<sys>/<data>" für MISCHDICHTE
+    // Verfahren: "fm" | "mfm" (uniform) ODER "<sys>/<data>" fuer MISCHDICHTE
     // (z. B. "fm/mfm" = FM-Systemspuren + MFM-Datenspuren, 8″-DD System-34).
     std::string enc_s = argv[2];
     auto parse_enc = [](const std::string& s, bool& fm) -> bool {
@@ -79,8 +79,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Spuren in ein internes Medium bauen; der HFE-Codec bemisst die Spurlänge
-    // anschließend selbst nach der längsten Spur.
+    // Spuren in ein internes Medium bauen; der HFE-Codec bemisst die Spurlaenge
+    // anschliessend selbst nach der laengsten Spur.
     const Encoding sys_enc  = sys_fm  ? Encoding::FM : Encoding::MFM;
     const Encoding data_enc = data_fm ? Encoding::FM : Encoding::MFM;
 

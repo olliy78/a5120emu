@@ -49,7 +49,7 @@ from app.disktool.ui.checkliste import Checkliste
 #: Zeichen je Schwere — dieselben wie in der Statuszeile des Hauptfensters.
 ZEICHEN = {GEFAHR: "⛔", FEHLER: "✖", WARNUNG: "⚠"}
 
-#: Rolle, unter der die Befundnummer am Baumeintrag hängt (Index in `bericht.findings`).
+#: Rolle, unter der die Befundnummer am Baumeintrag haengt (Index in `bericht.findings`).
 ROLLE_BEFUND = int(Qt.UserRole) + 1
 
 
@@ -64,7 +64,7 @@ def kopfzeile(tool, bericht) -> str:
         n = sum(1 for f in bericht.findings if f.severity == schwere)
         if n:
             zahlen.append(f"{n} {wort}")
-    # Ohne Dateisystem (roh geöffnet) steht hier die Ebene 0: der Bericht sagt dann
+    # Ohne Dateisystem (roh geoeffnet) steht hier die Ebene 0: der Bericht sagt dann
     # nicht, wie es dem Dateisystem geht, sondern warum keines erkannt wurde (§11).
     was = tool.filesystem if tool.has_filesystem else "kein Dateisystem erkannt"
     gelaufen = sum(1 for s in bericht.schritte if s.ausgefuehrt)
@@ -111,11 +111,11 @@ class FsckDialog(QDialog):
         self.tool = tool
         self._zeige_ort = zeige_ort
         self._log = log or (lambda text: None)
-        #: Wurde geprüft oder repariert?  Dann muss das Fenster dahinter auffrischen.
+        #: Wurde geprueft oder repariert?  Dann muss das Fenster dahinter auffrischen.
         self.geprueft = False
-        #: Zahl der ausgeführten Reparaturen über die ganze Sitzung dieses Dialogs.
+        #: Zahl der ausgefuehrten Reparaturen ueber die ganze Sitzung dieses Dialogs.
         self.repariert = 0
-        #: Je Baumeintrag der Wähler, wenn es mehr als einen gangbaren Vorschlag gibt.
+        #: Je Baumeintrag der Waehler, wenn es mehr als einen gangbaren Vorschlag gibt.
         self._waehler = {}
 
         self.kopf = QLabel("")
@@ -152,19 +152,19 @@ class FsckDialog(QDialog):
             self._b_editor.hide()
         unten_lay.addWidget(self.knopf_editor)
         teiler.addWidget(unten)
-        # Die Checkliste ist die Nebensache: sie bekommt ihre natürliche Höhe, den
+        # Die Checkliste ist die Nebensache: sie bekommt ihre natuerliche Hoehe, den
         # Rest teilen sich Befundliste und Einzelheiten.
         teiler.setStretchFactor(0, 0)
         teiler.setStretchFactor(1, 3)
         teiler.setStretchFactor(2, 2)
 
-        #: Warum gerade nicht repariert werden kann — steht ÜBER den Knöpfen, nicht
-        #: in einem Tooltip: ein gesperrter Knopf ohne Begründung ist eine Sackgasse.
+        #: Warum gerade nicht repariert werden kann — steht UEBER den Knoepfen, nicht
+        #: in einem Tooltip: ein gesperrter Knopf ohne Begruendung ist eine Sackgasse.
         self.hinweis = QLabel("")
         self.hinweis.setWordWrap(True)
 
         self.knoepfe = QDialogButtonBox(QDialogButtonBox.Close)
-        # Geprüft wird beim Öffnen; der Knopf ist die WIEDERHOLUNG — nach einer
+        # Geprueft wird beim Oeffnen; der Knopf ist die WIEDERHOLUNG — nach einer
         # Reparatur von Hand, nach einem Eingriff im Diskeditor.
         self.b_voll = self.knoepfe.addButton("Noch einmal &prüfen",
                                              QDialogButtonBox.ActionRole)
@@ -172,12 +172,12 @@ class FsckDialog(QDialog):
             "Vollprüfung wiederholen: jede Spur ansehen — Ketten, Kreuzbelegungen, "
             "Belegungsplan und Prüfsummen.")
         self.b_voll.clicked.connect(self._vollpruefung)
-        # An einer PHYSISCHEN Diskette zöge die Vollprüfung die ganze Scheibe ein
+        # An einer PHYSISCHEN Diskette zoege die Vollpruefung die ganze Scheibe ein
         # (0,5–0,8 s je Spur) und liesse das Fenster ein bis zwei Minuten stehen.
         # Gefragt wird deshalb nicht „ist das eine Datei", sondern **liegt das
-        # Medium schon im Speicher**: das Hauptfenster lädt fehlende Spuren vor dem
-        # Öffnen nach (`_abbild_vervollstaendigen`, mit Fortschrittsanzeige), und
-        # danach kostet die Vollprüfung nichts mehr.  Nur wenn das nicht geschehen
+        # Medium schon im Speicher**: das Hauptfenster laedt fehlende Spuren vor dem
+        # Oeffnen nach (`_abbild_vervollstaendigen`, mit Fortschrittsanzeige), und
+        # danach kostet die Vollpruefung nichts mehr.  Nur wenn das nicht geschehen
         # ist, bleibt der Knopf gesperrt — und sagt warum.
         self._voll_moeglich = bool(abbild_vollstaendig)
         if not abbild_vollstaendig:
@@ -196,8 +196,8 @@ class FsckDialog(QDialog):
         lay.addWidget(self.hinweis)
         lay.addWidget(self.knoepfe)
 
-        # Wer diesen Dialog aufruft, hat die Prüfung verlangt — sie läuft sofort.
-        # An einer Datei kostet die Vollprüfung rund 70 ms; die Schnellprüfung
+        # Wer diesen Dialog aufruft, hat die Pruefung verlangt — sie laeuft sofort.
+        # An einer Datei kostet die Vollpruefung rund 70 ms; die Schnellpruefung
         # bleibt dem Fall vorbehalten, in dem nicht alle Spuren im Speicher sind.
         if self._voll_moeglich:
             self._vollpruefung()
@@ -224,8 +224,8 @@ class FsckDialog(QDialog):
             gangbar = [(j, r) for j, r in enumerate(f.repairs) if not r.blocked]
             gesperrt = [r for r in f.repairs if r.blocked]
             if not gangbar:
-                # Kein Ankreuzfeld: eine Auskunft ist kein Versäumnis.  Der Flag
-                # muss AUSDRÜCKLICH weg — ``QTreeWidgetItem`` bringt ihn mit.
+                # Kein Ankreuzfeld: eine Auskunft ist kein Versaeumnis.  Der Flag
+                # muss AUSDRUECKLICH weg — ``QTreeWidgetItem`` bringt ihn mit.
                 eintrag.setFlags(eintrag.flags() & ~Qt.ItemIsUserCheckable)
                 eintrag.setText(2, ("GESPERRT: " + gesperrt[0].blocked_why)
                                 if gesperrt else "")
@@ -242,7 +242,7 @@ class FsckDialog(QDialog):
                 eintrag.setToolTip(2, r.text)
                 eintrag.setData(2, ROLLE_BEFUND, j)
             else:
-                # Mehrere Wege: der Bediener wählt EINEN, vorgewählt ist der
+                # Mehrere Wege: der Bediener waehlt EINEN, vorgewaehlt ist der
                 # empfohlene ohne Datenverlust.
                 wahl = QComboBox()
                 for j, r in gangbar:
@@ -353,7 +353,7 @@ class FsckDialog(QDialog):
         try:
             getan = self.tool.apply_repairs(gewaehlt)
         except Exception as fehler:                      # K1520DiskError
-            # Die Bibliothek hat zurückgerollt — die Diskette ist unverändert.
+            # Die Bibliothek hat zurueckgerollt — die Diskette ist unveraendert.
             QMessageBox.critical(self, "Reparatur fehlgeschlagen",
                                  f"{fehler}\n\nDie Diskette ist unverändert.")
             self._log(f"Reparatur fehlgeschlagen: {fehler}")
@@ -361,7 +361,7 @@ class FsckDialog(QDialog):
 
         self.geprueft = True
         self.repariert += getan
-        self._fuellen()                    # apply_repairs hat schon neu geprüft
+        self._fuellen()                    # apply_repairs hat schon neu geprueft
         nachher = self.bericht
 
         def zaehle(bericht, schwere):

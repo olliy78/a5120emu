@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf ueberall liegen.
 ROOT = Path(__file__).resolve().parents[1]
 
 with open(ROOT / 'doc/EPROMS/Prozessoreinheit_ZRE_K2526_A26.bin', 'rb') as f:

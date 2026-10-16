@@ -1,4 +1,4 @@
-// Prüfstand für die U8001/U8002-Primitive: flacher Speicher (Segment·64K + Offset,
+// Pruefstand fuer die U8001/U8002-Primitive: flacher Speicher (Segment·64K + Offset,
 // big-endian), E/A-Tabellen, Busprotokoll, Assembler aus S2 (tools/z8000/z8k_asm.h).
 #pragma once
 #include "core/primitives/z8000.h"
@@ -19,12 +19,12 @@ struct Rig {
     std::map<uint16_t, uint16_t> io, sio;          ///< was E/A-Lesen liefert (AD0..15)
     std::vector<std::pair<Z8kBusCycle, uint16_t>> log;   ///< alle Zyklen (Lesen: gelieferter Wert)
     std::vector<std::pair<Z8kBusCycle, uint16_t>> ioWrites;
-    uint16_t ackValue = 0;                          ///< Kennung für Interrupt-/Segmenttrapquittungen
+    uint16_t ackValue = 0;                          ///< Kennung fuer Interrupt-/Segmenttrapquittungen
     bool logging = true;
-    /// Wie die MMU: /SEGT fällt mit der Segmenttrap-Quittung (Status 0100).
+    /// Wie die MMU: /SEGT faellt mit der Segmenttrap-Quittung (Status 0100).
     bool segtFaelltBeiQuittung = true;
     /// Wird VOR jedem Zyklus gerufen (Lesen und Schreiben) — um Pins mitten im Befehl zu
-    /// setzen, wie es eine MMU oder ein Peripheriebaustein täte.
+    /// setzen, wie es eine MMU oder ein Peripheriebaustein taete.
     std::function<void(const Z8kBusCycle&)> vorZyklus;
 
     explicit Rig(Z8000::Model m = Z8000::Model::Z8001) : cpu(cfg(m)) {
@@ -75,7 +75,7 @@ struct Rig {
         for (auto& kv : r.image) mem[kv.first & 0x7FFFFF] = kv.second;
     }
 
-    /// Resetvektor setzen und Reset ausführen (Z8001: FCW/Seg/Off, Z8002: FCW/PC).
+    /// Resetvektor setzen und Reset ausfuehren (Z8001: FCW/Seg/Off, Z8002: FCW/PC).
     void boot(uint16_t fcw, uint8_t seg, uint16_t pc) {
         setW(0, 2, fcw);
         if (cpu.isZ8001()) { setW(0, 4, uint16_t(seg << 8)); setW(0, 6, pc); }
@@ -85,7 +85,7 @@ struct Rig {
         log.clear();
     }
 
-    /// Schritte bis HALT (oder maxSteps).  Rückgabe: Summe der Takte.
+    /// Schritte bis HALT (oder maxSteps).  Rueckgabe: Summe der Takte.
     uint64_t runToHalt(int maxSteps = 100000) {
         uint64_t c = 0;
         for (int i = 0; i < maxSteps && !cpu.halted(); ++i) c += uint64_t(cpu.step());

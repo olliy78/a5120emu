@@ -1,15 +1,15 @@
 /**
  * @file test_z8_firmware.cpp
  * @brief Praxisprobe des Z8-Kerns (AP P19c): Original-Firmware des P8000-Terminals Typ 2
- *        (P8T_1_5.0) und der Tastatur K7673.09 auf einem Prüfstand nach
+ *        (P8T_1_5.0) und der Tastatur K7673.09 auf einem Pruefstand nach
  *        doc/p8000/terminal_typ2.md §3 bzw. tastatur_k7673.md §2/§3.
  *
  * Kein Kartenmodell (das ist P20a/b) — nur so viel Umgebung, dass die Firmware ihre
- * Initialisierung bis in die Hauptschleife fährt und ihre Interruptwege benutzt:
+ * Initialisierung bis in die Hauptschleife faehrt und ihre Interruptwege benutzt:
  *  - Terminal: 2 KB RAM 1000–17FF (BWS + Zeilentabelle), 8275 an 1C00/1C01 (nur Protokoll),
- *    Schreibstrobes per LDC (2000 ZG2, 4000 ZG1, 8000 Klingel, C000 Tastatur-Rücksetzen),
+ *    Schreibstrobes per LDC (2000 ZG2, 4000 ZG1, 8000 Klingel, C000 Tastatur-Ruecksetzen),
  *    Bildende an P32 (IRQ0), Zeilenanforderung an P31 (IRQ2), Tastaturbyte an P2 + P33 (IRQ1),
- *    Host über P30 (UART 9600 Bd).
+ *    Host ueber P30 (UART 9600 Bd).
  *  - Tastatur: Matrix an P0/P1 (Zeile = P2.0–2), Sendefreigabe P30 = 0, P31 = 0;
  *    Takt P36 / Daten P37 (invertiert) werden an steigenden Taktflanken dekodiert.
  */
@@ -72,7 +72,7 @@ struct Terminal {
         for (int i = 0; i < 0x780; ++i) s += (ram[size_t(i)] >= 0x20 && ram[size_t(i)] < 0x7F) ? char(ram[size_t(i)]) : ' ';
         return s;
     }
-    /// Läuft @p takte interne Takte; erzeugt Bild (62,8 Hz: Bildende + 24 Zeilenanforderungen).
+    /// Laeuft @p takte interne Takte; erzeugt Bild (62,8 Hz: Bildende + 24 Zeilenanforderungen).
     void lauf(uint64_t takte, bool video = true) {
         const uint64_t ende = cpu.takte + takte;
         constexpr uint64_t BILD = 58700, ZEILE = 2170;
@@ -115,14 +115,14 @@ TEST(Z8Firmware, TerminalInitialisierungBisZurTastaturwarte) {
     bool start = false;
     for (auto& w : t.crt) start |= w == std::pair<uint16_t, uint8_t>{0x1C01, 0x20};
     EXPECT_TRUE(start) << "Start Display 20H";
-    // Strobes: Zeichensatz 1 (4000) und Tastatur-Rücksetzen (C000) beim Start
+    // Strobes: Zeichensatz 1 (4000) und Tastatur-Ruecksetzen (C000) beim Start
     ASSERT_GE(t.strobes.size(), 2u);
     EXPECT_EQ(t.strobes[0], 0x4000);
     EXPECT_EQ(t.strobes[1], 0xC000);
     // Einschaltmeldung im Bildspeicher, Firmware wartet auf das erste Tastaturbyte
     EXPECT_NE(t.bws().find("ADM31/9600 baud/Video Attr. on (c)zft/keaw"), std::string::npos) << t.bws();
     EXPECT_GE(t.cpu.pc, 0x0268); EXPECT_LE(t.cpu.pc, 0x026D);
-    // Zeilentabelle 1780H: 24 Einträge (HI&0F)|LO, Zeile n bei 1000H + 50H·n
+    // Zeilentabelle 1780H: 24 Eintraege (HI&0F)|LO, Zeile n bei 1000H + 50H·n
     for (int z = 0; z < 24; ++z) {
         const unsigned adr = 0x1000 + 0x50 * unsigned(z);
         EXPECT_EQ(t.ram[size_t(0x780 + z)], uint8_t(((adr >> 8) & 0x0F) | (adr & 0xF0))) << z;
@@ -145,7 +145,7 @@ TEST(Z8Firmware, TerminalNachAAInDerHauptschleifeEchoUndKlingel) {
     t.lauf(3'000'000);
     t.taste(0xAA);                                         // Selbsttest gut
     t.lauf(500'000);
-    EXPECT_GE(t.tres, 2);                                  // IRQ1 hat das Register zurückgesetzt
+    EXPECT_GE(t.tres, 2);                                  // IRQ1 hat das Register zurueckgesetzt
     EXPECT_EQ(t.bws().find("Error"), std::string::npos);
     // Hauptschleife 0285–029A
     EXPECT_GE(t.cpu.pc, 0x0100);
@@ -225,7 +225,7 @@ TEST(Z8Firmware, TastaturSendetAANachDemEinschalten) {
     ASSERT_FALSE(k.bytes.empty());
     EXPECT_EQ(k.bytes[0], 0xAA);
     EXPECT_EQ(k.bytes.size(), 1u);
-    EXPECT_GT(k.cpu.zaehler(1).abgelaufen, 0u);          // T1-Takt der Wiederholung läuft
+    EXPECT_GT(k.cpu.zaehler(1).abgelaufen, 0u);          // T1-Takt der Wiederholung laeuft
 }
 
 TEST(Z8Firmware, TastaturMakeUndBreakEinerTaste) {

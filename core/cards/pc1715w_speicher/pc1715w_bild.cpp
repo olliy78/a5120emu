@@ -46,13 +46,13 @@ void Pc1715wBild::ioWrite(uint8_t port, uint8_t d)
     case 0: crt_.write(false, d); break;
     case 1: crt_.write(true, d);  break;
     case 2: zg2_ = (d & 0x10) != 0; break;   // Flipflop A07 (D = DB4)
-    case 3: zaehler_ = 0; break;             // /ZRES, Wert gleichgültig
+    case 3: zaehler_ = 0; break;             // /ZRES, Wert gleichgueltig
     }
 }
 
 void Pc1715wBild::frame()
 {
-    crt_.frame();   // ruft vrtc (Zähler 0) und je Zeichenzeile dmaRead
+    crt_.frame();   // ruft vrtc (Zaehler 0) und je Zeichenzeile dmaRead
     rastern();
     fb_dirty_ = true;
 }

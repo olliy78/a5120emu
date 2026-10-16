@@ -47,7 +47,7 @@ def test_hilfe_nennt_die_diskettenargumente():
 
 
 def test_machine_k8915_waehlt_das_programm_k8915emu():
-    """``--machine k8915`` (vom Starter fest übergeben) macht daraus k8915emu —
+    """``--machine k8915`` (vom Starter fest uebergeben) macht daraus k8915emu —
     Hilfe und Meldungen nennen das Programm, das der Anwender gestartet hat."""
     r = start("--machine", "k8915", "--help")
     assert r.returncode == 0, r.stderr
@@ -180,13 +180,13 @@ def test_die_ausgabe_ist_utf8_auch_wenn_die_umgebung_etwas_anderes_sagt():
 
     An einer echten Konsole schreibt Python unter Windows UTF-8; bei einer
     UMGELEITETEN Ausgabe (Pipe, Datei) nimmt es die Kodepage des Systems.  Der
-    Hilfetext trägt einen Gedankenstrich, und der ist in cp1252 das Byte 0x97 —
+    Hilfetext traegt einen Gedankenstrich, und der ist in cp1252 das Byte 0x97 —
     wer die Ausgabe einliest, bekam `UnicodeDecodeError` statt der Hilfe
     (windows-ci am 2026-08-18, `py_a5120emu_cli` rot mit
     „argument of type 'NoneType' is not iterable").
 
     Nachgestellt wird das mit ``PYTHONIOENCODING``: das ist genau der Hebel, mit
-    dem Python die Kodierung der Ströme bestimmt, und er wirkt auf jedem System.
+    dem Python die Kodierung der Stroeme bestimmt, und er wirkt auf jedem System.
     """
     umgebung = {**os.environ, "PYTHONIOENCODING": "cp1252"}
     r = subprocess.run([sys.executable, str(MAIN), "--help"],

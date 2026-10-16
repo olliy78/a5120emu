@@ -8,11 +8,11 @@
  * **Ebene (wdc_firmware.md §9):** die WDC-Firmware sieht nie Bits, sondern Bytes, die die
  * Kartenhardware zwischen Platte und RAM bewegt.  Deshalb ist eine Spur hier ein Ring aus
  * `BYTES_JE_SPUR` Worten: Bit 0–7 = Datenbyte, Bit 8 (`MARKE`) = Marke (A1 mit fehlendem Takt).
- * Position 0 = Indeximpuls.  Die Zeit (6,4 WDC-Takte je Byte) führt die Karte.
+ * Position 0 = Indeximpuls.  Die Zeit (6,4 WDC-Takte je Byte) fuehrt die Karte.
  *
  * **Abbild (Berichtigung §10.8 durch P13a §9.5):** ohne Kopf, Sektor (Z, K, S) mit S = Sektornummer
- * 1…n **aus dem Kennfeld** bei Byte `((Z·Köpfe + K)·n + S − 1)·512`; Z0/K0/S1 = PAR/BTT bei 0.
- * Interleave 2:1 und Kopfversatz gehören in die Spursynthese, nicht in die Datei.  Keine `.idmap`.
+ * 1…n **aus dem Kennfeld** bei Byte `((Z·Koepfe + K)·n + S − 1)·512`; Z0/K0/S1 = PAR/BTT bei 0.
+ * Interleave 2:1 und Kopfversatz gehoeren in die Spursynthese, nicht in die Datei.  Keine `.idmap`.
  *
  * **Spursynthese** (je formatierte Spur, Lage je Kennfeld `SLOT` Byte ab Index, Reihenfolge
  * `sc_tab` der Firmware um den Kopf rotiert, wie `ft_trk` sie schreibt):
@@ -20,44 +20,44 @@
  *   +0  FF×18   +18 A1* A1* A1*  +21 FE CL CH HD SC CRC CRC   +28 FF×10  +38 00×7
  *   +45 FF×11   +56 A1*  +57 FB  +58 512 Daten  +570 CRC CRC  +572 FF×6         (SLOT = 578)
  * @endcode
- * CRC-CCITT (0x1021, Start FFFF) über Marken + Kennzeichen + Inhalt.  Unformatierte Spur = 00 ohne
+ * CRC-CCITT (0x1021, Start FFFF) ueber Marken + Kennzeichen + Inhalt.  Unformatierte Spur = 00 ohne
  * Marke.  Lage des Datenfelds = wie die Firmware es schreibt: Datenmarke ≈ 35 Byte hinter der
- * letzten Kennfeldmarke (`isr_m2` ≈ 213 Takte + Schreibverzögerung der Karte); die Lese-ISR
+ * letzten Kennfeldmarke (`isr_m2` ≈ 213 Takte + Schreibverzoegerung der Karte); die Lese-ISR
  * `isr_m1` braucht ≈ 217 Takte (34 Byte), bis sie auf die Datenmarke wartet.  Der Slot ist so
- * lang, dass ein von der Firmware geschriebenes Datenfeld (≈ 533 Byte) das nächste Kennfeld nicht
+ * lang, dass ein von der Firmware geschriebenes Datenfeld (≈ 533 Byte) das naechste Kennfeld nicht
  * erreicht.
  *
- * **Zerlegung** (beim Rückschreiben): Kennfeld = Markenfolge + FE + 4 Byte + CRC, gültig mit CRC,
- * passendem Zylinder/Kopf und Sektor 1…n; Datenfeld = Marke + FB + 512 + CRC bis zum nächsten
- * Kennfeld.  Formatiert ⇔ alle n Kennfelder gültig; dann gehen alle gültigen Datenfelder ins
- * Abbild.  Sonst gilt die Spur als unformatiert, das Abbild bleibt unverändert.
+ * **Zerlegung** (beim Rueckschreiben): Kennfeld = Markenfolge + FE + 4 Byte + CRC, gueltig mit CRC,
+ * passendem Zylinder/Kopf und Sektor 1…n; Datenfeld = Marke + FB + 512 + CRC bis zum naechsten
+ * Kennfeld.  Formatiert ⇔ alle n Kennfelder gueltig; dann gehen alle gueltigen Datenfelder ins
+ * Abbild.  Sonst gilt die Spur als unformatiert, das Abbild bleibt unveraendert.
  *
- * **Zurückschreiben, Stufe 1 (Spur → Abbild):** geschriebene Spuren bleiben als Strom im
- * Zwischenspeicher (`eigen`), bis der Kamm den Zylinder verlässt; zerlegt und sektorweise ins
- * Abbild übernommen wird beim Zylinderwechsel, beim Schließen, bei `flush()` und nach einer
+ * **Zurueckschreiben, Stufe 1 (Spur → Abbild):** geschriebene Spuren bleiben als Strom im
+ * Zwischenspeicher (`eigen`), bis der Kamm den Zylinder verlaesst; zerlegt und sektorweise ins
+ * Abbild uebernommen wird beim Zylinderwechsel, beim Schliessen, bei `flush()` und nach einer
  * Schreibpause (`autoFlush`).
  *
  * **Stufe 2 (Abbild → Datei):** das Abbild liegt GANZ im Speicher, roh (`.img`) oder gzip-gepackt
  * (`.img.gz`, erkannt an den Magic Bytes, `core/util/gzip_datei.h`).  In die Datei geschrieben wird
  * in einem **eigenen Faden** — Packen kostet auf einer vollen Platte Sekunden, und der
- * Emulationsfaden ist bei erhöhtem Takt ohnehin ausgelastet.  Er übergibt nur eine Kopie (roh: die
- * geänderten Sektoren, gzip: das ganze Abbild).  `autoFlush` schreibt erst, wenn BEIDES gilt:
+ * Emulationsfaden ist bei erhoehtem Takt ohnehin ausgelastet.  Er uebergibt nur eine Kopie (roh: die
+ * geaenderten Sektoren, gzip: das ganze Abbild).  `autoFlush` schreibt erst, wenn BEIDES gilt:
  * `flush_pause` Takte Schreibpause (Maschinenzeit) UND `min_abstand_ms` seit dem letzten Schreiben
- * (WIRTSzeit — die Schranke schützt den Wirt, und bei 10× Takt wären 5 s Maschinenzeit nur 0,5 s).
+ * (WIRTSzeit — die Schranke schuetzt den Wirt, und bei 10× Takt waeren 5 s Maschinenzeit nur 0,5 s).
  * `flush()` und `schliessen()` (Abtrennen, Reset, Beenden) schreiben SOFORT und warten, bis die
  * Datei steht.  gzip wird atomar ersetzt (`<pfad>.tmp` + `rename`), roh sektorweise an Ort und
- * Stelle.  Ein gescheitertes Schreiben lässt die Änderung als ungesichert stehen (nächster Versuch).
+ * Stelle.  Ein gescheitertes Schreiben laesst die Aenderung als ungesichert stehen (naechster Versuch).
  *
  * **Annahmen** (benannt, Messfragen in wdc_firmware.md §12):
  *  - [P1] Zustand „unformatiert" lebt nur im Speicher (und im Save-State); ein vorhandenes
- *         Abbild gilt beim Öffnen als ganz formatiert.
+ *         Abbild gilt beim Oeffnen als ganz formatiert.
  *  - [P2] Unformatierte Spur = 00 ohne Marke (real: Rauschen) — die Firmware findet keine Marke.
  *  - [P3] READY nach `Config::startzeit_takte`, SEEK COMPLETE `Config::seek_takte` nach dem
  *         letzten Schrittimpuls, Kamm begrenzt auf 0 … Zylinder − 1; kein WRITE FAULT.
- *  - [P4] Spurlänge 10 416 Byte (3600 U/min, 5 Mbit/s), alle Laufwerke ohne Phasenversatz.
- *  - [P5] Ist Z0/K0/S1 kein gültiger PAR-Sektor, die Geometrie aber aus der Typentabelle
- *         bekannt (WEGA-3.1-Abbild für den AVR-Emulator, wdc_firmware.md §11), liefert die
- *         Synthese für diesen Sektor einen erzeugten PAR-Sektor (nur im Speicher), bis die
+ *  - [P4] Spurlaenge 10 416 Byte (3600 U/min, 5 Mbit/s), alle Laufwerke ohne Phasenversatz.
+ *  - [P5] Ist Z0/K0/S1 kein gueltiger PAR-Sektor, die Geometrie aber aus der Typentabelle
+ *         bekannt (WEGA-3.1-Abbild fuer den AVR-Emulator, wdc_firmware.md §11), liefert die
+ *         Synthese fuer diesen Sektor einen erzeugten PAR-Sektor (nur im Speicher), bis die
  *         Firmware ihn selbst schreibt (`Config::par_ergaenzen`).
  */
 #pragma once
@@ -96,21 +96,21 @@ struct Typ {
     uint16_t    vorkomp;      ///< Zylinder der Vorkompensation
     uint8_t     ramp;         ///< rp_mod
     uint8_t     ztk40, ztk41, zmn40, zmx40, zmn41, zmx41;
-    const char* name;         ///< kurzer Name für Konfiguration/Text („K5504.50")
-    const char* kuerzel = ""; ///< Dateinamenkürzel (klein): `<name>.<kuerzel>.img`, P24
+    const char* name;         ///< kurzer Name fuer Konfiguration/Text („K5504.50")
+    const char* kuerzel = ""; ///< Dateinamenkuerzel (klein): `<name>.<kuerzel>.img`, P24
 };
 
 /// K5504.50, NEC D5126, NEC D5146, ROBOTRON VS, WEGA-3.1-AVR (1380/10/18).
 const std::vector<Typ>& typen();
 const Typ* typNachName(const std::string& name);
-/// Typ zu einem Dateinamenkürzel (`k5504`, `d5126`, `d5146`, `vs`; Groß-/Kleinschreibung egal).
+/// Typ zu einem Dateinamenkuerzel (`k5504`, `d5126`, `d5146`, `vs`; Gross-/Kleinschreibung egal).
 const Typ* typNachKuerzel(const std::string& kuerzel);
-/// Kürzel aus einem Dateinamen: `platte.k5504.img` → `k5504`; sonst "" (Datei ohne Kürzel).
+/// Kuerzel aus einem Dateinamen: `platte.k5504.img` → `k5504`; sonst "" (Datei ohne Kuerzel).
 std::string kuerzelAusDateiname(const std::string& pfad);
 
 /// Erzeugt den PAR/BTT-Sektor Z0/K0/S1 (512 B): „DEFEKT", leere BTT mit Endekennung, „PARMTR"…
 std::array<uint8_t, 512> parSektor(const Typ& t);
-/// Prüft wie die Firmware 4.2 (`t_par` + `t_btt`) und liefert dann die Geometrie.
+/// Prueft wie die Firmware 4.2 (`t_par` + `t_btt`) und liefert dann die Geometrie.
 std::optional<Geometrie> parGeometrie(const uint8_t* sektor);
 
 class Platte {
@@ -121,17 +121,17 @@ public:
     static constexpr int      SEKTOR        = 512;
 
     /// Spurlage, wie die WDC-Firmware sie beim Formatieren schreibt (P24): 4.2 mit Interleave 2:1 und
-    /// Kopfversatz, die Serie 3.x mit Sektoren der Reihe nach und anderem Lückenaufbau.
+    /// Kopfversatz, die Serie 3.x mit Sektoren der Reihe nach und anderem Lueckenaufbau.
     enum class Spurformat { V4_2, V3x };
 
     struct Config {
-        std::optional<Geometrie> geometrie;       ///< fest; sonst PAR-Sektor bzw. Dateigröße
+        std::optional<Geometrie> geometrie;       ///< fest; sonst PAR-Sektor bzw. Dateigroesse
         Spurformat spurformat    = Spurformat::V4_2;
-        uint64_t startzeit_takte = 0;             ///< READY nach so vielen Takten ab Öffnen [P3]
+        uint64_t startzeit_takte = 0;             ///< READY nach so vielen Takten ab Oeffnen [P3]
         uint64_t seek_takte      = 4000;          ///< SEEK COMPLETE nach letztem Schritt (1 ms @ 4 MHz) [P3]
-        uint64_t flush_pause     = 2'000'000;     ///< Schreibpause vor dem Zurückschreiben (0,5 s @ 4 MHz)
+        uint64_t flush_pause     = 2'000'000;     ///< Schreibpause vor dem Zurueckschreiben (0,5 s @ 4 MHz)
         bool     par_ergaenzen   = true;          ///< [P5]
-        uint32_t min_abstand_ms  = 5000;          ///< Wirtszeit zwischen zwei Schreibvorgängen in die Datei
+        uint32_t min_abstand_ms  = 5000;          ///< Wirtszeit zwischen zwei Schreibvorgaengen in die Datei
         int      gzip_stufe      = gzip::STUFE_VORGABE;
     };
 
@@ -140,13 +140,13 @@ public:
     Platte(const Platte&) = delete;
     Platte& operator=(const Platte&) = delete;
 
-    /// Legt ein neues Abbild in voller Größe an: Datenbytes E5, Z0/K0/S1 = PAR/BTT von @p t.
+    /// Legt ein neues Abbild in voller Groesse an: Datenbytes E5, Z0/K0/S1 = PAR/BTT von @p t.
     /// Endet @p pfad auf `.gz`, wird es gzip-gepackt angelegt.
     /// @p mit_par = false: ein UNFORMATIERTES Laufwerk wie neu aus der Verpackung — die Datei ist
     /// durchgehend E5, auch Z0/K0/S1 (kein Parametersatz; der WDC meldet „Error in PAR&BTT",
     /// `sa.format` legt ihn an).
     static bool neu(const std::string& pfad, const Typ& t, std::string* fehler = nullptr, bool mit_par = true);
-    /// Geometrie zur Dateigröße (nur eindeutige Typen; 45 342 720 B ist D5146 oder VS ⇒ keine).
+    /// Geometrie zur Dateigroesse (nur eindeutige Typen; 45 342 720 B ist D5146 oder VS ⇒ keine).
     static std::optional<Geometrie> geometrieAusGroesse(uint64_t bytes);
 
     bool oeffnen(const std::string& pfad, const Config& cfg);
@@ -159,15 +159,15 @@ public:
     const std::string& pfad() const { return pfad_; }
     const Geometrie& geometrie() const { return geo_; }
     bool parErgaenzt() const { return par_ueberlagert_; }
-    /// Geometrie aus dem PAR-Sektor der DATEI (Z0/K0/S1), falls dort ein gültiger steht — auch wenn
-    /// eine feste Geometrie in `Config` gilt (P24: die Maschine prüft beide gegeneinander).
+    /// Geometrie aus dem PAR-Sektor der DATEI (Z0/K0/S1), falls dort ein gueltiger steht — auch wenn
+    /// eine feste Geometrie in `Config` gilt (P24: die Maschine prueft beide gegeneinander).
     const std::optional<Geometrie>& parImAbbild() const { return par_im_abbild_; }
 
     // ─── Mechanik (Zeitbasis: Takte des Controllers) ─────────────────────────
     bool bereit(uint64_t t) const { return offen() && t >= bereit_ab_; }
     int  zylinder() const { return zyl_; }
     bool spur0() const { return zyl_ == 0; }
-    /// Ein Schrittimpuls; Kamm bewegt sich sofort, SEEK COMPLETE erst `seek_takte` später.
+    /// Ein Schrittimpuls; Kamm bewegt sich sofort, SEEK COMPLETE erst `seek_takte` spaeter.
     void schritt(bool nach_innen, uint64_t t);
     bool seekFertig(uint64_t t) const { return t >= seek_ende_; }
 
@@ -178,40 +178,40 @@ public:
     const std::vector<uint16_t>& spur(int zyl, int kopf);
 
     bool formatiert(int zyl, int kopf) const;
-    /// Zustand setzen (Prüfungen; neue Abbilder „unformatiert" vorbereiten).
+    /// Zustand setzen (Pruefungen; neue Abbilder „unformatiert" vorbereiten).
     void setzeFormatiert(int zyl, int kopf, bool f);
 
     // ─── Sektorzugriff (Abbild im Speicher, ohne Spur-Zwischenspeicher) ─────
     bool sektorLesen(int zyl, int kopf, int sektor, uint8_t* daten512);
     bool sektorSchreiben(int zyl, int kopf, int sektor, const uint8_t* daten512);
 
-    // ─── Zurückschreiben ─────────────────────────────────────────────────────
-    /// Zerlegt alle geänderten Spuren, übernimmt sie ins Abbild und schreibt die Datei SOFORT;
-    /// kehrt erst zurück, wenn sie steht.  Ströme bleiben erhalten.  false = Datei nicht geschrieben.
+    // ─── Zurueckschreiben ─────────────────────────────────────────────────────
+    /// Zerlegt alle geaenderten Spuren, uebernimmt sie ins Abbild und schreibt die Datei SOFORT;
+    /// kehrt erst zurueck, wenn sie steht.  Stroeme bleiben erhalten.  false = Datei nicht geschrieben.
     bool flush();
     /// Nach `flush_pause` Takten Schreibpause UND `min_abstand_ms` Wirtszeit seit dem letzten
-    /// Schreiben: Spuren ins Abbild, Datei im Schreibfaden (kehrt sofort zurück).  true = angestoßen.
+    /// Schreiben: Spuren ins Abbild, Datei im Schreibfaden (kehrt sofort zurueck).  true = angestossen.
     bool autoFlush(uint64_t t);
-    /// Ungesichert: geänderte Spurströme oder Abbildänderungen, die noch nicht an den Schreibfaden
-    /// übergeben sind (was er gerade schreibt, zählt nicht — s. `schreibtGerade`).
+    /// Ungesichert: geaenderte Spurstroeme oder Abbildaenderungen, die noch nicht an den Schreibfaden
+    /// uebergeben sind (was er gerade schreibt, zaehlt nicht — s. `schreibtGerade`).
     bool schmutzig() const;
     bool schreibtGerade() const;
     /// Wartet auf den Schreibfaden (Tests); wertet sein Ergebnis aus.
     void warteAufSchreiben();
-    /// Letzter Fehler beim Schreiben der Datei ("" = keiner seit dem Öffnen).
+    /// Letzter Fehler beim Schreiben der Datei ("" = keiner seit dem Oeffnen).
     const std::string& schreibfehler() const { return schreibfehler_; }
 
-    /// Zerlegt einen Strom (öffentlich für Tests): Sektordaten je gültigem Datenfeld.
+    /// Zerlegt einen Strom (oeffentlich fuer Tests): Sektordaten je gueltigem Datenfeld.
     struct Zerlegung {
         bool formatiert = false;
         std::map<int, std::vector<uint8_t>> daten;   ///< Sektornummer → 512 B
-        int kennfelder = 0;                           ///< gültige, passende Kennfelder
+        int kennfelder = 0;                           ///< gueltige, passende Kennfelder
     };
     Zerlegung zerlege(int zyl, int kopf, const std::vector<uint16_t>& strom) const;
-    /// Synthese einer Spur aus dem Abbild (öffentlich für Tests).
+    /// Synthese einer Spur aus dem Abbild (oeffentlich fuer Tests).
     std::vector<uint16_t> synthetisiere(int zyl, int kopf);
 
-    // ─── Save-State: Mechanik, Formatzustand, eigene Spurströme ──────────────
+    // ─── Save-State: Mechanik, Formatzustand, eigene Spurstroeme ──────────────
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
@@ -219,12 +219,12 @@ private:
     struct Spur {
         std::vector<uint16_t> strom;
         bool eigen     = false;    ///< weicht von der Synthese ab (wurde beschrieben)
-        bool schmutzig = false;    ///< seit dem letzten Zurückschreiben geändert
+        bool schmutzig = false;    ///< seit dem letzten Zurueckschreiben geaendert
     };
     Spur& spurRef(int kopf);
     void  zylinderVerlassen();
     void  zurueckschreiben(int zyl, int kopf, Spur& s);
-    /// Sektorinhalt, wie die Synthese ihn liefert (PAR-Überlagerung [P5] eingerechnet).
+    /// Sektorinhalt, wie die Synthese ihn liefert (PAR-Ueberlagerung [P5] eingerechnet).
     bool  sektorSicht(int zyl, int kopf, int sektor, uint8_t* daten512);
     uint64_t offset(int zyl, int kopf, int sektor) const {
         return ((uint64_t(zyl) * geo_.koepfe + uint64_t(kopf)) * geo_.sektoren + uint64_t(sektor - 1)) * SEKTOR;
@@ -233,7 +233,7 @@ private:
 
     /// Datei schreiben: im Schreibfaden (@p warten = false) oder sofort und wartend.
     bool dateiSchreiben(bool warten);
-    /// Ergebnis des Schreibfadens abholen; bei einem Fehler die Änderung wieder als ungesichert führen.
+    /// Ergebnis des Schreibfadens abholen; bei einem Fehler die Aenderung wieder als ungesichert fuehren.
     void ergebnisAbholen();
     size_t sektorIndex(int zyl, int kopf, int sektor) const {
         return (size_t(zyl) * geo_.koepfe + size_t(kopf)) * geo_.sektoren + size_t(sektor - 1);
@@ -257,7 +257,7 @@ private:
     std::array<uint8_t, SEKTOR> par_{};
     std::vector<uint8_t> unformatiert_;            ///< je Spur 1 = unformatiert [P1]
     std::map<int, Spur> cache_;                    ///< Kopf → Spur des aktuellen Zylinders
-    std::vector<uint16_t> fremd_;                  ///< Rückgabepuffer von spur() für andere Zylinder
+    std::vector<uint16_t> fremd_;                  ///< Rueckgabepuffer von spur() fuer andere Zylinder
     int      zyl_        = 0;
     uint64_t seek_ende_  = 0;
     uint64_t bereit_ab_  = 0;

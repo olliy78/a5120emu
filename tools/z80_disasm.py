@@ -165,7 +165,7 @@ def is_printable_run(data, offset, min_len=5):
         return count
     return 0
 
-# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf ueberall liegen.
 ROOT = Path(__file__).resolve().parents[1]
 
 

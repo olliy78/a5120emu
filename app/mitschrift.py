@@ -68,7 +68,7 @@ class Mitschrift:
             return False
         p = Path(pfad).expanduser()
         try:
-            with open(p, "a", encoding="utf-8"):     # legt an, falls neu; ändert Vorhandenes nicht
+            with open(p, "a", encoding="utf-8"):     # legt an, falls neu; aendert Vorhandenes nicht
                 pass
         except OSError as e:
             self._pfad = None
@@ -118,7 +118,7 @@ class Mitschrift:
                 elif b == ord("="):                 # ADM31: Cursor setzen, 2 Parameterbytes
                     self._esc = ("rest", 2)
                 elif b in (ord("("), ord(")"), ord("#"), ord("*"), ord("+")):
-                    self._esc = ("rest", 1)         # Zeichensatzwahl o. ä.: ein Byte dahinter
+                    self._esc = ("rest", 1)         # Zeichensatzwahl o. ae.: ein Byte dahinter
                 else:
                     self._esc = None                # ESC + ein Zeichen (ADM31-Befehl) — fertig
                 return
@@ -135,13 +135,13 @@ class Mitschrift:
         elif b == 0x0A:
             fertig.append("".join(self._zeile) + "\n")
             self._zeile.clear()
-        elif b in (0x08, 0x7F):                     # Rückschritt/DEL: letztes Zeichen der Zeile
+        elif b in (0x08, 0x7F):                     # Rueckschritt/DEL: letztes Zeichen der Zeile
             if self._zeile:
                 self._zeile.pop()
         elif b == 0x09 or b >= 0x20:
             if b != 0x7F:
                 self._zeile.append(chr(b))
-        # alles andere (CR, BEL, übrige Steuerzeichen) fällt weg
+        # alles andere (CR, BEL, uebrige Steuerzeichen) faellt weg
 
     def _raus(self, text: str) -> None:
         if not text or self._pfad is None:

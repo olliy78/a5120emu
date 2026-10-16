@@ -1,40 +1,40 @@
 #!/usr/bin/env python3
-"""SVG → Windows-Symboldatei (`.ico`) mit allen gebrauchten Größen.
+"""SVG → Windows-Symboldatei (`.ico`) mit allen gebrauchten Groessen.
 
     QT_QPA_PLATFORM=offscreen venv/bin/python3 tools/svg_to_ico.py \
         packaging/icon.svg packaging/icon.ico
 
-Warum ein eigenes Skript: unter Windows braucht das Startmenü ein `.ico`, und
+Warum ein eigenes Skript: unter Windows braucht das Startmenue ein `.ico`, und
 das Symbol liegt im Repository als SVG.  Ein Bild pro Datei kann Qt selbst
-schreiben — eine `.ico` ist aber ein BEHÄLTER mit mehreren Auflösungen, und
-genau darauf kommt es an: Windows nimmt 16×16 für die Titelleiste, 32×32 fürs
-Startmenü, 256×256 für die große Kachelansicht.  Liegt nur eine Größe darin,
+schreiben — eine `.ico` ist aber ein BEHAELTER mit mehreren Aufloesungen, und
+genau darauf kommt es an: Windows nimmt 16×16 fuer die Titelleiste, 32×32 fuers
+Startmenue, 256×256 fuer die grosse Kachelansicht.  Liegt nur eine Groesse darin,
 rechnet der Explorer sie herunter und das Ergebnis ist matschig.
 
-Zwei Bildformate im selben Behälter, so wie es die üblichen Werkzeuge tun:
+Zwei Bildformate im selben Behaelter, so wie es die ueblichen Werkzeuge tun:
 
 * **≤ 48 px als BMP** (BITMAPINFOHEADER, 32 Bit BGRA, Zeilen von unten nach
   oben, dahinter die 1-Bit-Maske).  Das ist das klassische Format, das jede
   Windows-Fassung liest.  Die Maske bleibt leer — die Durchsichtigkeit steckt
-  im Alphakanal; nur die Länge muss stimmen, sonst rechnet der Explorer die
-  Bildhöhe falsch.
-* **≥ 64 px als PNG.**  Unkomprimiert wären allein 256×256 eine Viertelmillion
+  im Alphakanal; nur die Laenge muss stimmen, sonst rechnet der Explorer die
+  Bildhoehe falsch.
+* **≥ 64 px als PNG.**  Unkomprimiert waeren allein 256×256 eine Viertelmillion
   Byte; als PNG bleibt die Datei bei rund 30 KB.  Windows liest das seit Vista.
 
 Gerastert wird mit Qt (`QSvgRenderer`), weil PySide6 ohnehin in der
-Entwicklungsumgebung liegt — kein zusätzliches Werkzeug, keine
+Entwicklungsumgebung liegt — kein zusaetzliches Werkzeug, keine
 Systembibliothek.  Braucht `QT_QPA_PLATFORM=offscreen`, sonst sucht Qt einen
 Bildschirm.
 
 Das Ergebnis wird eingecheckt: gebaut wird das Setup auf dem
-Windows-Läufer, und der hat weder Qt noch dieses Skript.
+Windows-Laeufer, und der hat weder Qt noch dieses Skript.
 """
 
 import struct
 import sys
 from pathlib import Path
 
-#: Was in die Datei kommt.  Bis 48 klassisch, darüber PNG (siehe Kopf).
+#: Was in die Datei kommt.  Bis 48 klassisch, darueber PNG (siehe Kopf).
 GROESSEN = (16, 24, 32, 48, 64, 128, 256)
 PNG_AB = 64
 
@@ -47,7 +47,7 @@ def rastern(svg: Path, kante: int) -> "QImage":
     bild = QImage(QSize(kante, kante), QImage.Format_ARGB32)
     bild.fill(0)
     maler = QPainter(bild)
-    # Ohne Glättung wird aus einer 64er-Zeichnung bei 16 px ein Krümelbild.
+    # Ohne Glaettung wird aus einer 64er-Zeichnung bei 16 px ein Kruemelbild.
     maler.setRenderHint(QPainter.Antialiasing, True)
     maler.setRenderHint(QPainter.SmoothPixmapTransform, True)
     QSvgRenderer(str(svg)).render(maler)
@@ -71,7 +71,7 @@ def als_bmp(bild) -> bytes:
     """BITMAPINFOHEADER + BGRA-Zeilen (von unten) + leere 1-Bit-Maske."""
     b = bild.width()
     h = bild.height()
-    # Die Höhe im Kopf ist DOPPELT — Bild und Maske zusammen.  Das ist keine
+    # Die Hoehe im Kopf ist DOPPELT — Bild und Maske zusammen.  Das ist keine
     # Marotte des Formats, sondern woran Windows die Maske findet.
     kopf = struct.pack("<IiiHHIIiiII", 40, b, h * 2, 1, 32, 0, b * h * 4, 0, 0, 0, 0)
     zeilen = []
@@ -114,7 +114,7 @@ def main(argv) -> int:
         return 1
     ico_bauen(svg, ziel)
     print(f"{ziel}  ({ziel.stat().st_size / 1024:.0f} KB, "
-          f"{len(GROESSEN)} Größen: {', '.join(str(g) for g in GROESSEN)})")
+          f"{len(GROESSEN)} Groessen: {', '.join(str(g) for g in GROESSEN)})")
     return 0
 
 

@@ -3,17 +3,17 @@
  * @brief Upd765 – Floppy-Controller NEC µPD765 / Intel 8272A / U8272 (Robotron PC 1715W).
  *
  * Primitiv ohne Bus-Kenntnis, **auf Sektorebene**: der Baustein arbeitet nicht mit
- * Bitzellen, sondern sucht Sektoren über die ID-Felder der @ref TrackImage des Laufwerks
+ * Bitzellen, sondern sucht Sektoren ueber die ID-Felder der @ref TrackImage des Laufwerks
  * (@ref TrackCodec::parseTrack) und schreibt Datenfelder mit @ref TrackCodec::writeSectorAt.
- * Die Spurdichte-Übersetzung (40/80 Spuren) macht @ref FloppyDriveV2 selbst; die
- * Kopfposition bewegen SEEK/RECALIBRATE über @ref FloppyDriveV2::seek.
+ * Die Spurdichte-Uebersetzung (40/80 Spuren) macht @ref FloppyDriveV2 selbst; die
+ * Kopfposition bewegen SEEK/RECALIBRATE ueber @ref FloppyDriveV2::seek.
  *
  * ### Umfang (nur, was S550/Lader/BIOS/INIT.COM des 1715W benutzen — doc/pc1715/pc1715w_hardware.md §4.4)
  * SPECIFY 03, SENSE DRIVE STATUS 04, WRITE DATA 05, READ DATA 06, RECALIBRATE 07,
  * SENSE INTERRUPT STATUS 08, READ ID 0A, FORMAT TRACK 0D, SEEK 0F, SCAN EQUAL 11.
- * Alles andere (READ TRACK, DELETED-Befehle, SCAN LOW/HIGH, VERIFY …) → ungültiger
- * Befehl, Ergebnisbyte ST0 = 80H.  MT wird unterstützt (Seitenwechsel am EOT), SK nicht
- * (gelöschte Datenmarke: CM gesetzt, Sektor trotzdem gelesen, danach Ende).
+ * Alles andere (READ TRACK, DELETED-Befehle, SCAN LOW/HIGH, VERIFY …) → ungueltiger
+ * Befehl, Ergebnisbyte ST0 = 80H.  MT wird unterstuetzt (Seitenwechsel am EOT), SK nicht
+ * (geloeschte Datenmarke: CM gesetzt, Sektor trotzdem gelesen, danach Ende).
  *
  * ### Anschluss durch die Maschine
  *  - Bus: @ref read / @ref write (A0 = 0 Hauptstatus, A0 = 1 Daten), oder die Einzelzugriffe.
@@ -21,24 +21,24 @@
  *    Byte mit @ref dmaRead (FDC → Speicher: READ DATA) bzw. liefert es mit @ref dmaWrite
  *    (Speicher → FDC: WRITE DATA, SCAN, FORMAT TRACK).  Das **TC** gibt die Maschine mit
  *    @ref setTC(true) **NACH dem letzten Byte-Transfer** (so tut es auch das Blockende des
- *    Z80-DMA); ein TC mitten im Sektor beendet die Ausführung sofort (FORMAT TRACK
- *    ignoriert TC).  TC wird als Pegel übergeben, der Baustein hält die steigende Flanke
- *    bis zum nächsten Befehl.
- *  - Nicht-DMA (ND = 1): je Byte RQM+EXM im MSR und INT; Zugriff über das Datenregister.
+ *    Z80-DMA); ein TC mitten im Sektor beendet die Ausfuehrung sofort (FORMAT TRACK
+ *    ignoriert TC).  TC wird als Pegel uebergeben, der Baustein haelt die steigende Flanke
+ *    bis zum naechsten Befehl.
+ *  - Nicht-DMA (ND = 1): je Byte RQM+EXM im MSR und INT; Zugriff ueber das Datenregister.
  *  - @ref irq() = INT-Pin (der 1715W nutzt ihn nicht; er pollt MSR/SENSE INTERRUPT STATUS).
  *  - @ref setReset(true) = RESET-Pin (KRFD Bit 6 = 0).
- *  - READY je Laufwerk: Standard = Diskette eingelegt; die Maschine kann über @ref ready
- *    zusätzlich den Motor einrechnen.
+ *  - READY je Laufwerk: Standard = Diskette eingelegt; die Maschine kann ueber @ref ready
+ *    zusaetzlich den Motor einrechnen.
  *
  * ### Bewusste Vereinfachungen
  *  - Kein Overrun (OR): ein Byte wartet beliebig lange auf die Maschine, der Bytetakt
- *    zählt ab der Übernahme des vorigen Bytes — das macht den Ablauf von der Granularität
- *    der @ref tick -Aufrufe unabhängig.
+ *    zaehlt ab der Uebernahme des vorigen Bytes — das macht den Ablauf von der Granularitaet
+ *    der @ref tick -Aufrufe unabhaengig.
  *  - Keine Drehlage: der erste Sektor kommt nach einer festen Latenz, kein Warten auf
  *    den Index.  READ ID liefert die ID-Felder der Spur der Reihe nach.
- *  - Sektorgröße = 128 << N aus dem ID-Feld (DTL wird ignoriert).
+ *  - Sektorgroesse = 128 << N aus dem ID-Feld (DTL wird ignoriert).
  *  - SEEK/RECALIBRATE laufen auch ohne Diskette/READY (Mechanik), ohne Laufwerk → EC.
- *  - Im RESET ist das MSR 00H; nach dem Lösen 80H.
+ *  - Im RESET ist das MSR 00H; nach dem Loesen 80H.
  *
  * @see doc/design/21_pc1715.md §8.2, doc/pc1715/pc1715w_hardware.md §4
  * @author Olaf Krieger
@@ -57,10 +57,10 @@ class Upd765 {
 public:
     static constexpr int kUnits = 4;
 
-    /// @brief Übersetzung in Maschinentakte (Verdrahtungsangaben).
+    /// @brief Uebersetzung in Maschinentakte (Verdrahtungsangaben).
     struct Config {
-        uint32_t cpu_hz      = 4000000;  ///< Takt, in dem @ref tick zählt (1715W: 4 MHz)
-        uint32_t mfm_kbit    = 250;      ///< Datenrate MFM; FM läuft mit der Hälfte
+        uint32_t cpu_hz      = 4000000;  ///< Takt, in dem @ref tick zaehlt (1715W: 4 MHz)
+        uint32_t mfm_kbit    = 250;      ///< Datenrate MFM; FM laeuft mit der Haelfte
         uint32_t step_cycles = 0;        ///< Takte je Spurschritt; 0 = cpu_hz / 1000 (1 ms)
     };
 
@@ -68,20 +68,20 @@ public:
     explicit Upd765(Config cfg) : cfg_(cfg) {}
 
     // ── Verdrahtung ──────────────────────────────────────────────────────────
-    /// @brief Laufwerk @p unit anschließen (nullptr = kein Laufwerk).  Gehört dem Aufrufer.
+    /// @brief Laufwerk @p unit anschliessen (nullptr = kein Laufwerk).  Gehoert dem Aufrufer.
     void setDrive(int unit, FloppyDriveV2* d) { if (unit >= 0 && unit < kUnits) drive_[unit] = d; }
     /// @brief Optional: READY-Leitung je Laufwerk.  Leer = „Diskette eingelegt".
     std::function<bool(int unit)> ready;
     /// @brief Optional: Laufwerkswahl VON AUSSEN (P8000: US0/US1 unbeschaltet, die Mechanik
-    ///        wählt allein die PIO).  Liefert zum Befehls-Unit @p unit den Anschluss
-    ///        (0..kUnits-1) des tatsächlich angesprochenen Laufwerks, -1 = keines gewählt.
+    ///        waehlt allein die PIO).  Liefert zum Befehls-Unit @p unit den Anschluss
+    ///        (0..kUnits-1) des tatsaechlich angesprochenen Laufwerks, -1 = keines gewaehlt.
     ///        Leer (Vorgabe) = die Unit aus dem Befehl.  Die Unit-Nummer in ST0/ST3/PCN
     ///        bleibt die des Befehls.
     std::function<int(int unit)> unitAuswahl;
     /// @brief Datenrate MFM in kbit/s umschalten (P8000: PIO2-A4, 4/8 MHz Takt); FM halb so schnell.
     void setDatenrate(uint32_t mfm_kbit) { if (mfm_kbit) cfg_.mfm_kbit = mfm_kbit; }
     uint32_t datenrate() const { return cfg_.mfm_kbit; }
-    /// @brief Optional: Flankenmeldungen der Ausgänge DRQ und INT.
+    /// @brief Optional: Flankenmeldungen der Ausgaenge DRQ und INT.
     std::function<void(bool)> onDrq, onIrq;
 
     // ── Busseite ─────────────────────────────────────────────────────────────
@@ -93,8 +93,8 @@ public:
 
     // ── DMA-Seite ────────────────────────────────────────────────────────────
     bool    drq() const { return drq_; }
-    uint8_t dmaRead();            ///< Byte FDC → Speicher (READ DATA), löscht DRQ
-    void    dmaWrite(uint8_t b);  ///< Byte Speicher → FDC (WRITE/SCAN/FORMAT), löscht DRQ
+    uint8_t dmaRead();            ///< Byte FDC → Speicher (READ DATA), loescht DRQ
+    void    dmaWrite(uint8_t b);  ///< Byte Speicher → FDC (WRITE/SCAN/FORMAT), loescht DRQ
     void    setTC(bool level);    ///< Terminal-Count-Eingang
     bool    irq() const { return irq_; }
     void    setReset(bool level); ///< RESET-Pin; true = im Reset
@@ -106,13 +106,13 @@ public:
     uint8_t pcn(int unit) const { return pcn_[unit & 3]; }
     bool    nonDma() const { return nd_; }
     bool    seekBusy(int unit) const { return seek_left_[unit & 3] >= 0; }
-    /// @brief Laufwerk @p unit wird gerade angesprochen (Kommando läuft/Ergebnis steht an
+    /// @brief Laufwerk @p unit wird gerade angesprochen (Kommando laeuft/Ergebnis steht an
     ///        oder Positionierung) — Quelle der Laufwerkslampe am 1715W.
     bool    unitBusy(int unit) const {
         return !reset_ && (seekBusy(unit) || (phase_ != Phase::Idle && unit_ == (unit & 3)));
     }
 
-    // ── Save-State (Verdrahtung/Rückrufe nicht) ──────────────────────────────
+    // ── Save-State (Verdrahtung/Rueckrufe nicht) ──────────────────────────────
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
@@ -136,7 +136,7 @@ private:
     void senseInterrupt();
     void senseDrive();
 
-    bool prepare();                 // READY/WP-Prüfung; false = Ergebnis steht schon
+    bool prepare();                 // READY/WP-Pruefung; false = Ergebnis steht schon
     void startSector();
     void onDelay();
     void presentByte();
@@ -158,7 +158,7 @@ private:
     void setDrq(bool v);
     void setIrq(bool v);
     void resetState();
-    template <class A> void visit(A& a);   ///< Feldliste für Save-State (nur in upd765.cpp benutzt)
+    template <class A> void visit(A& a);   ///< Feldliste fuer Save-State (nur in upd765.cpp benutzt)
 
     Config cfg_;
     FloppyDriveV2* drive_[kUnits] = {nullptr, nullptr, nullptr, nullptr};
@@ -171,13 +171,13 @@ private:
     bool nd_     = false;           ///< SPECIFY ND (1 = Nicht-DMA)
     bool drq_ = false, irq_ = false, tc_ = false, tc_latch_ = false;
     bool byte_ready_ = false;       ///< Byte wartet (DMA: DRQ, Nicht-DMA: RQM)
-    int64_t delay_ = -1;            ///< Takte bis zum nächsten Ereignis (-1 = wartet auf Host)
+    int64_t delay_ = -1;            ///< Takte bis zum naechsten Ereignis (-1 = wartet auf Host)
 
     // Befehl
     uint8_t cmd_[9] = {0};
     int cmd_len_ = 0, cmd_pos_ = 0;
 
-    // Ausführung
+    // Ausfuehrung
     int     unit_ = 0;
     uint8_t head_ = 0;              ///< HD-Bit (Kopf an der Mechanik)
     bool    mfm_ = false, mt_ = false;
@@ -194,7 +194,7 @@ private:
     // Ergebnis
     std::vector<uint8_t> result_;
     size_t res_pos_ = 0;
-    bool   res_irq_ = false;        ///< INT löscht sich beim ersten Ergebnisbyte
+    bool   res_irq_ = false;        ///< INT loescht sich beim ersten Ergebnisbyte
 
     // je Laufwerk
     uint8_t pcn_[kUnits] = {0, 0, 0, 0};

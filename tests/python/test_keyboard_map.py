@@ -3,7 +3,7 @@
 `qt_event_to_core_key` sitzt zwischen der Host-Tastatur und dem emulierten
 K7637.  Die Abbildung ist die einzige Stelle, an der Ctrl-Kombinationen,
 Sondertasten und das Host-Layout auseinandersortiert werden — reine Funktion,
-also gut isoliert prüfbar.
+also gut isoliert pruefbar.
 """
 
 import pytest
@@ -32,7 +32,7 @@ class FakeKeyEvent:
 
 
 def test_printable_character_uses_the_event_text():
-    """Das erzeugte Zeichen zählt, nicht der Tastencode (Host-Layout!)."""
+    """Das erzeugte Zeichen zaehlt, nicht der Tastencode (Host-Layout!)."""
     assert qt_event_to_core_key(FakeKeyEvent(Qt.Key_A, "a")) == (ord("a"), False, False)
     assert qt_event_to_core_key(
         FakeKeyEvent(Qt.Key_A, "A", Qt.ShiftModifier)) == (ord("A"), True, False)
@@ -75,7 +75,7 @@ def test_bare_modifiers_produce_no_keycode(key):
 
 
 def test_space_without_text_still_maps():
-    """Manche Plattformen liefern für die Leertaste keinen Text."""
+    """Manche Plattformen liefern fuer die Leertaste keinen Text."""
     assert qt_event_to_core_key(FakeKeyEvent(Qt.Key_Space)) == (0x20, False, False)
 
 
@@ -114,7 +114,7 @@ def test_core_maps_host_keys_to_the_right_physical_key(qtkey, code, taste):
 
     Bis hierher war das nur am laufenden Gast zu sehen; `k1520_translate_key`
     beantwortet es ohne Maschine.  Abgebildet wird die HARDWARE, nicht eine
-    Wirkung: die Rücktaste des PC spricht die Rücktaste der K7637 an (`|←|`,
+    Wirkung: die Ruecktaste des PC spricht die Ruecktaste der K7637 an (`|←|`,
     Reihe 2 Position 14, 0x9F), die Entf-Taste DEL CH.  Welche von beiden ein
     Zeichen loescht, entscheidet der Gast und ist je OS verschieden (SCPX:
     `|←|`; CP/A und UDOS: DEL CH) — nachgemessen in

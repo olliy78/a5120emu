@@ -1,8 +1,8 @@
-# MAME-Orakel für die U8001/U8002-Primitive (Arbeitspaket S3).
+# MAME-Orakel fuer die U8001/U8002-Primitive (Arbeitspaket S3).
 #
 # MAMEs z8000 (BSD-3-Clause, Juergen Buchmueller / Ernesto Corvi) wird zu einem
-# FESTEN Stand heruntergeladen und gegen den Framework-Ersatz mame_shim/ übersetzt.
-# Nur Vergleich, nichts übernommen: kein MAME-Code liegt im Repository oder in core/.
+# FESTEN Stand heruntergeladen und gegen den Framework-Ersatz mame_shim/ uebersetzt.
+# Nur Vergleich, nichts uebernommen: kein MAME-Code liegt im Repository oder in core/.
 # 8000dasm.h wird absichtlich NICHT geladen — der Ersatz aus mame_shim/ gilt.
 
 set(_mame_commit 741d827a0b2748bc0892ebb3541799118161d6a7)   # 2026-08-15
@@ -42,10 +42,10 @@ k1520_add_test(z8000_mame SRC test_z8000_mame.cpp
                LABELS "mame_oracle;slow" TIMEOUT 600)
 
 # ── Z8/UB8840 (AP P19c) gegen MAMEs z8 ───────────────────────────────────────
-# Nur die BEFEHLSSEMANTIK wird verglichen: z8ops.hxx (unverändert) wird in eine Hülle
+# Nur die BEFEHLSSEMANTIK wird verglichen: z8ops.hxx (unveraendert) wird in eine Huelle
 # (mame_shim_z8/) eingebettet; Deklarationen und Opcodetabelle werden beim Konfigurieren
-# aus z8.h/z8.cpp herausgeschnitten.  Zähler/UART/Interrupts von MAME bleiben aussen vor
-# (dort deckt MAME weniger ab als der Kern; Wächter sind die Unit-Tests).
+# aus z8.h/z8.cpp herausgeschnitten.  Zaehler/UART/Interrupts von MAME bleiben aussen vor
+# (dort deckt MAME weniger ab als der Kern; Waechter sind die Unit-Tests).
 set(_mame_z8_dir ${CMAKE_BINARY_DIR}/mame_z8)
 set(_mame_z8_files
     "z8.cpp=3d13fcf174c1ef45f924d8478e2072dab44acf8103a4c6d332046857079eb1d4"
@@ -90,5 +90,5 @@ k1520_add_test(z8_mame SRC test_z8_mame.cpp
                LIBS k1520_z8 k1520_mame_z8_oracle
                LABELS "mame_oracle;slow" TIMEOUT 600)
 
-# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+# Zeitgrenzen der add_test()-Faelle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()

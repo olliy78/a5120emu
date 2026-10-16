@@ -1,0 +1,76 @@
+# MC80 Emulator — AUSLIEFERUNGSKONFIGURATION
+# ==========================================
+#
+# Das ist der Zustand, in dem der MC80 Emulator nach der Erstinstallation aufgeht
+# (die anderen Programme haben ihre eigenen Dateien):
+# Bildröhre, Tempo, Modell, Fenstergröße, Kastenaufteilung und
+# Symbolleiste.  Gelesen wird sie an genau zwei Stellen (`app/config_io.py`,
+# `standard_konfiguration()`):
+#
+#   * beim ERSTEN Start, solange es noch keine `mc80emu.yaml` des Anwenders gibt
+#     (`MainWindow._load_or_create_default_config`), und
+#   * bei *Ansicht ▸ Standard zurücksetzen* — dort überschreibt sie die
+#     Konfiguration des Anwenders.
+#
+# Der Aufbau ist derselbe wie in der gespeicherten `mc80emu.yaml`
+# (`app/config_io.py`), eine gesicherte Konfiguration lässt sich also
+# unverändert hierher kopieren.  ZWEI Abschnitte gehören aber bewusst NICHT
+# hinein:
+#
+#   * `disks:` — der MC80 hat keine Diskettenlaufwerke (Entwurf 31).
+#   * `window.geometry` — darin steckt die Bildschirmposition des Fensters.
+#     `width`/`height` reichen; wo das Fenster aufgeht, entscheidet der
+#     Fensterverwalter.
+version: 1
+
+# Bildröhre — der Standardlook (siehe app/ui/screen_widget.py::CRTParams).
+crt:
+  phosphor_on: '#78D41D'
+  phosphor_off: '#050F05'
+  brightness: 2.3
+  contrast: 0.9
+  mask_strength: 0.0
+  mask_pitch: 1.0
+  curvature:
+  - 0.16
+  - 0.16
+  corner_radius: 0.1
+  vignette_strength: 0.35
+  flicker_strength: 0.0
+  scale_x: 0.9
+  scale_y: 0.9
+  offset_x: 0.0
+  offset_y: 0.0
+
+# Tempo als Vielfaches des Nenntakts (app/takt.py: 1,0 = 2,4576 MHz).  EGOS braucht vom
+# Einschalten bis zur Meldung gut 1,5 s, jedes Bildkommando ~43 ms — Echtzeit ist angenehm.
+general:
+  speed: 1.0
+  # Modell: mc80 (MC80.30), mc80-31 (MC80.31, Programmsegmente 10H/20H) oder mc80-21 / mc80-22
+  # (MC80.21/.22: Oszilloskop-Bild, BSYS, Kassette fest eingebaut).
+  model: mc80
+  # Zahl der Speicherkarten SPE 2 (1 | 2; Kaltstart nötig, fehlend = 1; nur .30/.31).
+  spe: '1'
+  # Kassette (K5020 an 30H: .30 mit LW 1200, .31 mit K5200) gesteckt? doc/mc80/kassette.md.
+  tape: false
+
+window:
+  width: 1280
+  height: 860
+  maximized: false
+  # Inhalt der Symbolleiste: Aktionsnamen aus app/ui/actions.py, '' = Trennstrich.
+  toolbar:
+  - konfig_laden
+  - konfig_speichern
+  - ''
+  - power
+  - reset
+  - ''
+  - speicherabzug_laden
+  - ''
+  - dock_settings
+  - dock_keyboard
+  - ''
+  - hilfe
+  # Qt.ToolButtonStyle: 3 = Symbol mit Text darunter.
+  toolbar_style: 3

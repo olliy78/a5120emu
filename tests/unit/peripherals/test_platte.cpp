@@ -1,8 +1,8 @@
 /**
  * @file test_platte.cpp
- * @brief Winchesterlaufwerk am P8000-WDC (AP P13b): Typen/PAR, Geometrie aus der Größe, Abbild
- *        anlegen/öffnen, Spursynthese (Lage, Marken, CRC, Interleave, Kopfversatz), Zerlegung,
- *        Zurückschreiben, unformatiert, Mechanik, Save-State.  Quelle: core/peripherals/winchester/
+ * @brief Winchesterlaufwerk am P8000-WDC (AP P13b): Typen/PAR, Geometrie aus der Groesse, Abbild
+ *        anlegen/oeffnen, Spursynthese (Lage, Marken, CRC, Interleave, Kopfversatz), Zerlegung,
+ *        Zurueckschreiben, unformatiert, Mechanik, Save-State.  Quelle: core/peripherals/winchester/
  *        platte.h, doc/p8000/wdc_firmware.md §7–§10.
  */
 #include "core/peripherals/winchester/platte.h"
@@ -77,7 +77,7 @@ void kennfeldSchreiben(std::vector<uint16_t>& s, int pos, int z, int k, int sek)
 TEST(Platte, CrcCcittIstDerStandardMitStartwertFFFF)
 {
     EXPECT_EQ(crc({'1', '2', '3', '4', '5', '6', '7', '8', '9'}), 0x29B1);
-    // Kennfeld samt angehängter CRC ergibt 0 (so prüft die Kartenhardware)
+    // Kennfeld samt angehaengter CRC ergibt 0 (so prueft die Kartenhardware)
     std::vector<uint8_t> id = {0xA1, 0xA1, 0xA1, 0xFE, 0, 0, 0, 1};
     const uint16_t c = crc(id);
     id.push_back(c >> 8); id.push_back(c & 0xFF);
@@ -135,7 +135,7 @@ TEST(Platte, ParGeometrieVerwirftJedeVerletzteGrenzeWieTPar)
     struct Fall { const char* was; int off; int wert; };
     const Fall faelle[] = {
         {"Kenntext", 256, 'X'},          {"Name < 20H", 262, 0x1F},     {"Name > 7AH", 273, 0x7B},
-        {"Zylinder 99", 277, 99},        {"Köpfe 1", 279, 1},            {"Köpfe 17", 279, 17},
+        {"Zylinder 99", 277, 99},        {"Koepfe 1", 279, 1},            {"Koepfe 17", 279, 17},
         {"Sektoren 16", 280, 16},        {"Sektoren 19", 280, 19},      {"Ramp 0", 283, 0},
         {"Ramp 22", 283, 22},            {"ztk40 AFH", 290, 0xAF},      {"ztk40 = ztk41", 290, 209},
         {"zmx40 < zmn40", 293, 250},     {"zmx41 < zmn41", 295, 240},   {"zmn41 = zmn40", 294, 251},
@@ -152,10 +152,10 @@ TEST(Platte, ParGeometrieVerwirftJedeVerletzteGrenzeWieTPar)
     s = gut;        // Vorkompensation > Zylinder
     s[281] = 1025 & 0xFF; s[282] = 1025 >> 8;
     EXPECT_FALSE(parGeometrie(s.data()).has_value());
-    s = gut;        // ztk40 > F0H (mit ztk41 darüber)
+    s = gut;        // ztk40 > F0H (mit ztk41 darueber)
     s[290] = 0xF1; s[291] = 0xF2;
     EXPECT_FALSE(parGeometrie(s.data()).has_value());
-    s = gut;        // Grenzfälle, die gelten: 100 Zylinder, 2/16 Köpfe, 17 Sektoren, Ramp 21, ztk40 = B0H
+    s = gut;        // Grenzfaelle, die gelten: 100 Zylinder, 2/16 Koepfe, 17 Sektoren, Ramp 21, ztk40 = B0H
     s[277] = 100; s[278] = 0; s[281] = 100; s[282] = 0; s[279] = 16; s[280] = 17; s[283] = 21; s[290] = 0xB0;
     ASSERT_TRUE(parGeometrie(s.data()).has_value());
     EXPECT_EQ(parGeometrie(s.data())->zylinder, 100);
@@ -171,7 +171,7 @@ TEST(Platte, GeometrieAusDerGroesseNurWennEindeutig)
     EXPECT_FALSE(Platte::geometrieAusGroesse(0).has_value());
 }
 
-// ─── Anlegen und Öffnen ──────────────────────────────────────────────────────
+// ─── Anlegen und Oeffnen ──────────────────────────────────────────────────────
 
 TEST(Platte, NeuesAbbildHatVolleGroesseParUndE5)
 {
@@ -219,15 +219,15 @@ TEST(Platte, OeffnenScheitertBeiFehlenderDateiFalscherGroesseUndUnbekannterGeome
 
     auto leer = TempPlatte::leer("krumm.img");
     { std::ofstream f(leer.path(), std::ios::binary); f << std::string(512 * 7, '\0'); }
-    EXPECT_FALSE(p.oeffnen(leer));   // kein PAR, Größe unbekannt
+    EXPECT_FALSE(p.oeffnen(leer));   // kein PAR, Groesse unbekannt
     EXPECT_NE(p.fehler().find("Geometrie"), std::string::npos);
 
     Platte::Config cfg;
     cfg.geometrie = Geometrie{100, 2, 18};
-    EXPECT_FALSE(p.oeffnen(leer, cfg));   // feste Geometrie, Größe passt nicht
+    EXPECT_FALSE(p.oeffnen(leer, cfg));   // feste Geometrie, Groesse passt nicht
     EXPECT_NE(p.fehler().find("passt nicht"), std::string::npos);
 
-    TempPlatte tp;                        // gültiger PAR, aber Datei gekürzt
+    TempPlatte tp;                        // gueltiger PAR, aber Datei gekuerzt
     std::filesystem::resize_file(tp.path(), 47185920 - 512);
     EXPECT_FALSE(p.oeffnen(tp));
 }
@@ -242,7 +242,7 @@ TEST(Platte, ParMitFesterGeometrieWirdBefolgt)
     Platte p;
     ASSERT_TRUE(p.oeffnen(leer, cfg)) << p.fehler();
     EXPECT_EQ(p.geometrie().sektoren, 17);
-    EXPECT_TRUE(p.parErgaenzt());     // Nullen sind kein PAR — ergänzt [P5]
+    EXPECT_TRUE(p.parErgaenzt());     // Nullen sind kein PAR — ergaenzt [P5]
 }
 
 TEST(Platte, AvrAbbildBekommtParNurImSpeicher)
@@ -255,7 +255,7 @@ TEST(Platte, AvrAbbildBekommtParNurImSpeicher)
     ASSERT_TRUE(p.oeffnen(tp)) << p.fehler();
     EXPECT_TRUE(p.geometrie() == typNachName("WEGA31-AVR")->g);
     EXPECT_TRUE(p.parErgaenzt());
-    // die Synthese liefert den PAR-Sektor, die Datei bleibt unberührt
+    // die Synthese liefert den PAR-Sektor, die Datei bleibt unberuehrt
     const auto par = parSektor(*typNachName("WEGA31-AVR"));
     const auto z = p.zerlege(0, 0, p.spur(0, 0));
     ASSERT_TRUE(z.formatiert);
@@ -279,7 +279,7 @@ TEST(Platte, AvrAbbildUeberlagerungEndetWennDieFirmwareSektorEinsSchreibt)
     ASSERT_TRUE(p.parErgaenzt());
     auto neu = parSektor(*typNachName("WEGA31-AVR"));
     neu[300] = 0x42;
-    // Datenfeld von Sektor 1 (Kopf 0: Slot 0) überschreiben
+    // Datenfeld von Sektor 1 (Kopf 0: Slot 0) ueberschreiben
     datenfeldSchreiben(p, 0, 45, neu);
     p.flush();
     EXPECT_FALSE(p.parErgaenzt());
@@ -325,7 +325,7 @@ TEST(Platte, SyntheseLegtKennfelderUndDatenfelderAnDieFestenStellen)
         else
             EXPECT_EQ(s[size_t(b + 58)], 0xE5);
     }
-    // Ende hinter dem letzten Slot: Löschbyte
+    // Ende hinter dem letzten Slot: Loeschbyte
     for (int j = 18 * Platte::SLOT; j < N; ++j) EXPECT_EQ(s[size_t(j)], 0);
 }
 
@@ -367,7 +367,7 @@ TEST(Platte, SiebzehnSektorenNehmenDieErsten17DerTabelle)
     EXPECT_EQ(z.daten.size(), 17u);
 }
 
-// ─── Zerlegung und Zurückschreiben ───────────────────────────────────────────
+// ─── Zerlegung und Zurueckschreiben ───────────────────────────────────────────
 
 TEST(Platte, ZerlegungDerSyntheseLiefertAlleSektoren)
 {
@@ -401,12 +401,12 @@ TEST(Platte, GeschriebenesDatenfeldLandetNachFlushImAbbild)
     EXPECT_TRUE(p.schmutzig());
     std::array<uint8_t, 512> r{};
     ASSERT_TRUE(p.sektorLesen(0, 1, 18, r.data()));
-    EXPECT_EQ(r[0], 0xE5);             // noch nicht zurückgeschrieben
+    EXPECT_EQ(r[0], 0xE5);             // noch nicht zurueckgeschrieben
     p.flush();
     EXPECT_FALSE(p.schmutzig());
     ASSERT_TRUE(p.sektorLesen(0, 1, 18, r.data()));
     EXPECT_EQ(r, d);
-    ASSERT_TRUE(p.sektorLesen(0, 1, 1, r.data()));   // Nachbar unberührt
+    ASSERT_TRUE(p.sektorLesen(0, 1, 1, r.data()));   // Nachbar unberuehrt
     EXPECT_EQ(r[0], 0xE5);
     // der Strom bleibt (eigen) und wird nicht neu synthetisiert
     EXPECT_EQ(p.spur(0, 1)[56], 0xA1 | M);
@@ -419,7 +419,7 @@ TEST(Platte, DatenfeldMitFalscherCrcLaesstDenAltenInhalt)
     ASSERT_TRUE(p.oeffnen(tp));
     const auto d = muster(0, 0, 1);
     datenfeldSchreiben(p, 0, 45, d);
-    p.schreibe(0, 45 + 11 + 2 + 100, 0x00, 2);   // ein Datenbyte verfälschen
+    p.schreibe(0, 45 + 11 + 2 + 100, 0x00, 2);   // ein Datenbyte verfaelschen
     p.flush();
     std::array<uint8_t, 512> r{};
     ASSERT_TRUE(p.sektorLesen(0, 0, 1, r.data()));
@@ -432,11 +432,11 @@ TEST(Platte, GeloeschteSpurIstUnformatiertUndLiefertNullen)
     TempPlatte tp;
     Platte p;
     ASSERT_TRUE(p.oeffnen(tp));
-    for (int i = 0; i < N; ++i) p.schreibe(2, i, 0x00, 5);   // Spur löschen (Kommando 84)
+    for (int i = 0; i < N; ++i) p.schreibe(2, i, 0x00, 5);   // Spur loeschen (Kommando 84)
     p.flush();
     EXPECT_FALSE(p.formatiert(0, 2));
     EXPECT_TRUE(p.formatiert(0, 1));
-    // Abbild unverändert
+    // Abbild unveraendert
     std::array<uint8_t, 512> r{};
     ASSERT_TRUE(p.sektorLesen(0, 2, 5, r.data()));
     EXPECT_EQ(r[0], 0xE5);
@@ -493,7 +493,7 @@ TEST(Platte, KennfeldUeberDieIndexnahtWirdErkannt)
     Platte p;
     ASSERT_TRUE(p.oeffnen(tp));
     std::vector<uint16_t> s(p.spur(0, 4));
-    // ganze Spur um 10 400 Byte drehen: Slot 0 überspannt die Naht
+    // ganze Spur um 10 400 Byte drehen: Slot 0 ueberspannt die Naht
     std::vector<uint16_t> r(N);
     for (int i = 0; i < N; ++i) r[size_t((i + 10400) % N)] = s[size_t(i)];
     const auto z = p.zerlege(0, 4, r);
@@ -512,7 +512,7 @@ TEST(Platte, KopfJenseitsDerKopfzahlLiefertNichts)
     EXPECT_EQ(p.lies(-1, 21), 0);
 }
 
-// ─── Mechanik und Zurückschreiben bei Bewegung/Pause ─────────────────────────
+// ─── Mechanik und Zurueckschreiben bei Bewegung/Pause ─────────────────────────
 
 TEST(Platte, SchrittSpurNullSeekCompleteUndBereit)
 {
@@ -526,7 +526,7 @@ TEST(Platte, SchrittSpurNullSeekCompleteUndBereit)
     EXPECT_TRUE(p.bereit(1000));
     EXPECT_TRUE(p.spur0());
     EXPECT_TRUE(p.seekFertig(0));
-    p.schritt(false, 2000);            // nach außen an Spur 0: bleibt
+    p.schritt(false, 2000);            // nach aussen an Spur 0: bleibt
     EXPECT_EQ(p.zylinder(), 0);
     EXPECT_FALSE(p.seekFertig(2499));
     EXPECT_TRUE(p.seekFertig(2500));
@@ -621,7 +621,7 @@ TEST(Platte, SaveStateRundreise)
     b.serialize(st2);
     EXPECT_EQ(st, st2);
 
-    // andere Geometrie ⇒ abgelehnt, Zustand unverändert
+    // andere Geometrie ⇒ abgelehnt, Zustand unveraendert
     TempPlatte andere("D5126", "andere.img");
     Platte c;
     ASSERT_TRUE(c.oeffnen(andere));
@@ -660,7 +660,7 @@ TEST(Platte, Spurformat3xLegtDieSektorenDerReiheNachAufJedenKopf)
             std::vector<uint8_t> id;
             for (int j = 0; j < 10; ++j) id.push_back(static_cast<uint8_t>(s[size_t(b + j)]));
             EXPECT_EQ(crc(id), 0);
-            // Lücke FF×2 · 00×18 · FF×8, danach Datenmarke und Kennung FB
+            // Luecke FF×2 · 00×18 · FF×8, danach Datenmarke und Kennung FB
             for (int j = 10; j < 12; ++j) EXPECT_EQ(s[size_t(b + j)], 0xFF);
             for (int j = 12; j < 30; ++j) EXPECT_EQ(s[size_t(b + j)], 0x00);
             for (int j = 30; j < 38; ++j) EXPECT_EQ(s[size_t(b + j)], 0xFF);
@@ -723,7 +723,7 @@ TEST(Platte, GepacktesAbbildRundreise)
         ASSERT_TRUE(p.oeffnen(tp));
         datenfeldSchreiben(p, 4, 45, muster(0, 4, SC_TAB[(0 - 4 + 18) % 18]));
         ASSERT_TRUE(p.sektorSchreiben(700, 3, 9, muster(700, 3, 9).data()));
-    }   // Schließen schreibt sofort und wartet
+    }   // Schliessen schreibt sofort und wartet
     EXPECT_EQ(k1520::gzip::artVon(tp.path()), k1520::gzip::Art::Gzip);   // bleibt gepackt
     EXPECT_FALSE(std::filesystem::exists(tp.path() + ".tmp"));
     EXPECT_EQ(sektorDerDatei(tp, 700, 3, 9), muster(700, 3, 9));
@@ -749,7 +749,7 @@ TEST(Platte, SektorSchreibenErreichtDieDateiErstBeimFlush)
         EXPECT_FALSE(p.schmutzig());
         EXPECT_FALSE(p.schreibtGerade());              // flush() wartet
         EXPECT_EQ(sektorDerDatei(tp, 3, 2, 7), muster(3, 2, 7)) << name;
-        EXPECT_EQ(sektorDerDatei(tp, 3, 2, 8)[0], 0xE5) << name;   // Nachbar unberührt
+        EXPECT_EQ(sektorDerDatei(tp, 3, 2, 8)[0], 0xE5) << name;   // Nachbar unberuehrt
     }
 }
 
@@ -764,8 +764,8 @@ TEST(Platte, AutoFlushHaeltDenMindestabstandInWirtszeit)
     ASSERT_TRUE(p.sektorSchreiben(1, 0, 1, muster(1, 0, 1).data()));
     datenfeldSchreiben(p, 0, 45 + 578, muster(0, 0, 10), 5000);
     EXPECT_FALSE(p.autoFlush(5999));   // Schreibpause (Maschinenzeit) noch nicht um
-    EXPECT_TRUE(p.autoFlush(6000));    // erstes Schreiben: kein Abstand nötig
-    EXPECT_FALSE(p.schmutzig());       // übergeben; geschrieben wird im Faden
+    EXPECT_TRUE(p.autoFlush(6000));    // erstes Schreiben: kein Abstand noetig
+    EXPECT_FALSE(p.schmutzig());       // uebergeben; geschrieben wird im Faden
     p.warteAufSchreiben();
     EXPECT_EQ(sektorDerDatei(tp, 0, 0, 10), muster(0, 0, 10));
     EXPECT_EQ(sektorDerDatei(tp, 1, 0, 1), muster(1, 0, 1));
@@ -809,7 +809,7 @@ TEST(Platte, GescheitertesSchreibenBleibtUngesichertUndWirdWiederholt)
         EXPECT_FALSE(p.schreibfehler().empty());
         if (gz) std::filesystem::remove(tp.path() + ".tmp");
         else std::filesystem::rename(tp.path() + ".weg", tp.path());
-        EXPECT_TRUE(p.autoFlush(100'000'000)) << name;   // nächster Versuch
+        EXPECT_TRUE(p.autoFlush(100'000'000)) << name;   // naechster Versuch
         p.warteAufSchreiben();
         EXPECT_FALSE(p.schmutzig());
         EXPECT_EQ(sektorDerDatei(tp, 9, 1, 3), muster(9, 1, 3)) << name;

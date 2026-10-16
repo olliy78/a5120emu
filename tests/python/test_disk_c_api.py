@@ -1,7 +1,7 @@
 """C-ABI des DiskTools: `core/api/k1520_disk_api.h` ↔ `libk1520disk.so` ↔ ctypes.
 
-Dieselbe Mechanik wie `test_c_api.py` für den Emulator, und aus demselben Grund:
-der C++-Compiler prüft die Python-Seite nicht, und ctypes meldet eine falsche
+Dieselbe Mechanik wie `test_c_api.py` fuer den Emulator, und aus demselben Grund:
+der C++-Compiler prueft die Python-Seite nicht, und ctypes meldet eine falsche
 Signatur erst beim Aufruf — meist als Absturz statt als Fehlermeldung.  Die drei
 Seiten werden deshalb **mechanisch** verglichen.
 
@@ -52,7 +52,7 @@ def test_every_header_function_is_exported_by_the_library():
 def test_every_header_function_has_ctypes_signatures():
     """Ohne argtypes/restype konvertiert ctypes still nach `int` — der Handle-
     Zeiger wird dabei auf 64-Bit-Systemen abgeschnitten."""
-    import app.core_binding.k1520disk  # noqa: F401  (lädt die Bibliothek)
+    import app.core_binding.k1520disk  # noqa: F401  (laedt die Bibliothek)
 
     source = BINDING.read_text("utf-8")
     declared = set(re.findall(r"_lib\.(k1520d_[a-z0-9_]+)\.argtypes", source))
@@ -121,7 +121,7 @@ def test_open_treats_both_udos_sides_as_one_disk(fixture_disks):
 
         entries = d.list()
         assert len(entries) == 69
-        # Jede Datei kennt ihre Seite und ist darüber eindeutig adressierbar.
+        # Jede Datei kennt ihre Seite und ist darueber eindeutig adressierbar.
         help_dat = [e for e in entries if e.name == "HELP.DAT.00"]
         assert len(help_dat) == 1
         assert help_dat[0].ref == "Side1/HELP.DAT.00"
@@ -155,7 +155,7 @@ def test_create_write_read_roundtrip(tmp_path):
 
     quelle = tmp_path / "quelle.bin"
     quelle.write_bytes(bytes(range(256)) * 4)
-    # Bei UDOS gehören die Kopfsektorangaben zur Datei; ohne sie wird nicht mehr
+    # Bei UDOS gehoeren die Kopfsektorangaben zur Datei; ohne sie wird nicht mehr
     # geraten (doc/bug_disktool_Programmdatei.md §2.2).
     (tmp_path / "quelle.bin.fileinfo").write_text(
         "fs=udos\nname=quelle.bin\ntyp=B\nsatz=128\n")
@@ -252,7 +252,7 @@ def test_backup_copy_on_first_write(tmp_path, fixture_disks):
 # ─── Bootabbild (Systemspuren) ───────────────────────────────────────────────
 
 def test_boot_capacity_is_known_without_a_disk():
-    """Die Oberfläche muss schon bei der Auswahl wissen, ob eine Bootdiskette geht."""
+    """Die Oberflaeche muss schon bei der Auswahl wissen, ob eine Bootdiskette geht."""
     from app.core_binding.k1520disk import boot_capacity, filesystems
 
     assert boot_capacity("cpa780") == 15104
@@ -298,11 +298,11 @@ def test_boot_image_too_large_creates_nothing(tmp_path):
     assert not abbild.exists(), "trotz Fehler wurde eine Diskette angelegt"
 
 
-# ─── UDOS-Dateiangaben lesen und ändern ──────────────────────────────────────
+# ─── UDOS-Dateiangaben lesen und aendern ──────────────────────────────────────
 
 def test_udos_file_attributes_are_readable(fixture_disks):
-    """Alles, was den Ladevorgang steuert, muss sichtbar sein — die Oberfläche
-    soll es später anzeigen und ändern können."""
+    """Alles, was den Ladevorgang steuert, muss sichtbar sein — die Oberflaeche
+    soll es spaeter anzeigen und aendern koennen."""
     from app.core_binding.k1520disk import DiskTool
 
     with DiskTool.open(fixture_disks / "udos_boot_scp.hfe") as d:
@@ -318,7 +318,7 @@ def test_udos_file_attributes_are_readable(fixture_disks):
         assert (zdos.low_addr, zdos.high_addr, zdos.stack_size) == (0x2600, 0x3FD4, 0x80)
         assert zdos.created.startswith("V 4.2")
 
-        # Der Nukleus: Satzlänge 512, zweite Längenangabe 0 (nicht deren Kopie!).
+        # Der Nukleus: Satzlaenge 512, zweite Laengenangabe 0 (nicht deren Kopie!).
         os_ = nach_name["OS"]
         assert (os_.record_len, os_.block_len) == (512, 0)
         assert (os_.low_addr, os_.high_addr) == (0x1000, 0x25FF)
@@ -375,7 +375,7 @@ def test_cpm_has_no_such_attributes(fixture_disks, tmp_path):
 # ─── Sektoransicht (Diskeditor) ──────────────────────────────────────────────
 
 def test_track_view_covers_the_whole_revolution(fixture_disks):
-    """Die Abschnitte einer Spur decken [0,1) lückenlos ab — darauf ruht die Grafik."""
+    """Die Abschnitte einer Spur decken [0,1) lueckenlos ab — darauf ruht die Grafik."""
     from app.core_binding.k1520disk import DiskTool, GAP, SECTOR
 
     with DiskTool.open(fixture_disks / "cpa_cpa780_k5601_clock.img") as d:
@@ -406,7 +406,7 @@ def test_sector_data_and_crc_are_readable(fixture_disks):
     with DiskTool.open(fixture_disks / "cpa_cpa780_k5601_clock.img") as d:
         daten = d.sector_data(0, 0, 0)
         assert len(daten) == 128
-        # Die gespeicherte CRC ist die, die zu den Daten gehört — der Sektor ist heil.
+        # Die gespeicherte CRC ist die, die zu den Daten gehoert — der Sektor ist heil.
         assert d.sector_crc(0, 0, 0) == d.sector_crc_for(0, 0, 0, daten)
         # Andere Daten, andere CRC.
         assert d.sector_crc_for(0, 0, 0, bytes(128)) != d.sector_crc(0, 0, 0)
@@ -429,7 +429,7 @@ def test_sector_write_replaces_only_that_sector(tmp_path, fixture_disks):
     with DiskTool.open(abbild) as d:
         d.set_read_only(False)
         # cpa780 hat gemischte Geometrie: ab Zylinder 2 sind es 1024-B-Sektoren.
-        # Die Größe kommt deshalb aus dem Sektor selbst, nicht aus einer Annahme.
+        # Die Groesse kommt deshalb aus dem Sektor selbst, nicht aus einer Annahme.
         gross = next(s for s in d.track(2, 0).spans if s.is_sector).size
         nachbar = d.sector_data(2, 0, 1)
         neu = bytes(i & 0xFF for i in range(gross))
@@ -439,7 +439,7 @@ def test_sector_write_replaces_only_that_sector(tmp_path, fixture_disks):
         assert d.sector_data(2, 0, 1) == nachbar, "der Nachbarsektor bleibt unberührt"
         assert d.track(2, 0).spans[1].ok, "CRC wurde mitgerechnet"
 
-        # Eine wörtliche CRC macht den Sektor absichtlich defekt …
+        # Eine woertliche CRC macht den Sektor absichtlich defekt …
         d.sector_write(2, 0, 0, neu, crc=0x1234)
         assert d.sector_crc(2, 0, 0) == 0x1234
         kaputt = next(s for s in d.track(2, 0).spans if s.is_sector and s.index == 0)
@@ -482,7 +482,7 @@ def test_unformatted_track_is_told_apart_from_a_gap(tmp_path):
 
 
 def test_sector_tail_can_be_written_alone(tmp_path, fixture_disks):
-    """Die UDOS-Verkettung ändern, ohne Nutzdaten oder CRC anzufassen."""
+    """Die UDOS-Verkettung aendern, ohne Nutzdaten oder CRC anzufassen."""
     import shutil
     from app.core_binding.k1520disk import DiskTool, K1520DiskError
 
@@ -493,7 +493,7 @@ def test_sector_tail_can_be_written_alone(tmp_path, fixture_disks):
         daten = d.sector_data(22, 0, 0)
         assert d.sector_tail(22, 0, 0)[:4] == b"\x05\x16\x05\x16"
 
-        # Sektor absichtlich defekt machen, dann nur die Verkettung ändern.
+        # Sektor absichtlich defekt machen, dann nur die Verkettung aendern.
         d.sector_write(22, 0, 0, daten, crc=0xBEEF)
         d.sector_write_tail(22, 0, 0, b"\x07\x15\xFF\xFF")
 
@@ -560,9 +560,9 @@ def test_der_crc_dialekt_macht_die_sektoren_im_diskeditor_gruen(fixture_disks):
     """Genau die Schicht, aus der der Diskeditor seine Farben nimmt.
 
     `udos_ds77_k5601_fremdsync.hfe` wurde an einem fremden K1520-Rechner formatiert;
-    seine ID-CRC lässt die drei A1 der Sync-Präambel aus (alle 4004 ID-Felder, kein
+    seine ID-CRC laesst die drei A1 der Sync-Praeambel aus (alle 4004 ID-Felder, kein
     Ausreisser).  Wird der Dialekt nicht anerkannt, ist JEDER Sektor der Diskette rot,
-    obwohl an ihm nichts fehlt — und `check` meldet 4004 Schäden statt „ohne Befund".
+    obwohl an ihm nichts fehlt — und `check` meldet 4004 Schaeden statt „ohne Befund".
     """
     from app.core_binding.k1520disk import DiskTool
 
@@ -581,10 +581,10 @@ def test_der_crc_dialekt_macht_die_sektoren_im_diskeditor_gruen(fixture_disks):
         assert gruen == 7 * 2 * 26, "nicht jede Spurseite trug ihre 26 Sektoren"
 
 
-# ─── Dateisystemprüfung (doc/design/15_dateisystempruefung.md) ───────────────
+# ─── Dateisystempruefung (doc/design/15_dateisystempruefung.md) ───────────────
 
 def test_das_oeffnen_prueft_schon_und_meldet_nichts_bei_heilen_disketten(fixture_disks):
-    """Die Schnellprüfung läuft beim Öffnen — ohne dass jemand danach fragt.
+    """Die Schnellpruefung laeuft beim Oeffnen — ohne dass jemand danach fragt.
 
     Und sie schweigt: eine gesunde Diskette darf keinen Befund hervorbringen,
     sonst wird die ganze Anzeige weggeklickt (Entwurf E10).
@@ -602,9 +602,9 @@ def test_das_oeffnen_prueft_schon_und_meldet_nichts_bei_heilen_disketten(fixture
 def test_die_vollpruefung_findet_den_bekannten_schaden_des_a7100_traegers(fixture_disks):
     """Sie nennt den SEKTOR — die Erkennung sagt nur „1 Sektor mit CRC-Fehler".
 
-    Der Referenzdatenträger ist wirklich beschädigt (§22 des Werkzeugentwurfs);
-    hier wird geprüft, dass die Prüfung den Schaden verortet und dass die
-    Schnellprüfung ihn NICHT meldet — er liegt auf einer Systemspur, und die
+    Der Referenzdatentraeger ist wirklich beschaedigt (§22 des Werkzeugentwurfs);
+    hier wird geprueft, dass die Pruefung den Schaden verortet und dass die
+    Schnellpruefung ihn NICHT meldet — er liegt auf einer Systemspur, und die
     kostet einen eigenen Durchlauf.
     """
     from app.core_binding.k1520disk import DiskTool, EBENE_MEDIUM, WARNUNG
@@ -622,7 +622,7 @@ def test_die_vollpruefung_findet_den_bekannten_schaden_des_a7100_traegers(fixtur
 def test_eine_kreuzbelegung_ist_gefahr_und_wird_benannt(fixture_disks, tmp_path):
     """Der einzige `Gefahr`-Befund, den CP/M hervorbringen kann.
 
-    CP/M führt keinen gespeicherten Belegungsplan — „Block gehört niemandem" gibt
+    CP/M fuehrt keinen gespeicherten Belegungsplan — „Block gehoert niemandem" gibt
     es dort nicht.  Zwei Dateien auf demselben Block dagegen schon, und das
     Betriebssystem sagt nichts dazu.
     """
@@ -636,13 +636,13 @@ def test_eine_kreuzbelegung_ist_gefahr_und_wird_benannt(fixture_disks, tmp_path)
     dirbase = 15104                       # Verzeichnis von cpa780, nachgemessen
     belegt = [i for i in range(128) if roh[dirbase + i * 32] <= 15]
     a, b = belegt[0], belegt[1]
-    # Den ersten Blockzeiger von a auch in b eintragen (16 Bit, cpa780 hat 390 Blöcke).
+    # Den ersten Blockzeiger von a auch in b eintragen (16 Bit, cpa780 hat 390 Bloecke).
     roh[dirbase + b * 32 + 16: dirbase + b * 32 + 18] = \
         roh[dirbase + a * 32 + 16: dirbase + a * 32 + 18]
     abbild.write_bytes(bytes(roh))
 
     with DiskTool.open(abbild, "cpa780") as d:
-        bericht = d.findings()            # schon beim Öffnen da
+        bericht = d.findings()            # schon beim Oeffnen da
         treffer = [f for f in bericht.findings if f.id == "cpm.block.doppelt"]
         assert len(treffer) == 1, [f.text for f in bericht.findings]
         assert treffer[0].severity == GEFAHR
@@ -651,11 +651,11 @@ def test_eine_kreuzbelegung_ist_gefahr_und_wird_benannt(fixture_disks, tmp_path)
 
 def test_ein_befund_nennt_die_seite_der_udos_diskette(fixture_disks, tmp_path):
     """Bei UDOS ist jede **Seite** ein eigenes Dateisystem — der Befund muss sagen,
-    welche.  Sonst sucht man den Schaden auf der falschen Hälfte der Diskette.
+    welche.  Sonst sucht man den Schaden auf der falschen Haelfte der Diskette.
 
-    Beschädigt wird der Belegungsplan von Seite 1: ein Sektor, der zu einer Datei
-    gehört, wird als frei markiert.  Die Datei bleibt heil — und genau darum ist es
-    `Gefahr`: UDOS vergibt den Sektor beim nächsten Schreiben weiter.
+    Beschaedigt wird der Belegungsplan von Seite 1: ein Sektor, der zu einer Datei
+    gehoert, wird als frei markiert.  Die Datei bleibt heil — und genau darum ist es
+    `Gefahr`: UDOS vergibt den Sektor beim naechsten Schreiben weiter.
     """
     import shutil
     from app.core_binding.k1520disk import DiskTool, GEFAHR
@@ -665,8 +665,8 @@ def test_ein_befund_nennt_die_seite_der_udos_diskette(fixture_disks, tmp_path):
 
     with DiskTool.open(abbild) as d:
         d.set_read_only(False)
-        # Belegungsplan Seite 1: Spur 23, Sektor 1..3 à 128 B.  Ein Bit für einen
-        # Sektor löschen, der auf einer Datenspur wirklich belegt ist.
+        # Belegungsplan Seite 1: Spur 23, Sektor 1..3 à 128 B.  Ein Bit fuer einen
+        # Sektor loeschen, der auf einer Datenspur wirklich belegt ist.
         spur = d.track(23, 1)
         idx = {s.id: s.index for s in spur.spans if s.size}
         # Spur 30 (Datenbereich), Sektor 1 — Bit 31 des Spureintrags.  Die Karte ist

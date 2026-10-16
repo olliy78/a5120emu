@@ -4,15 +4,15 @@
  *        der eigenen Bootdiskette bis zum Prompt und arbeitet mit ihr.
  *
  * Die ganze Kette auf der K8915Machine: Boot-ROM (Selbsttest, Coldstart-Meldung, `CR`)
- * → Lader (liest die Systemspuren über die K5122 im `/WAIT`-Betrieb nach C000–EFEFH,
- * springt nach D600H) → BIOS-Kaltstart (Tastatur in den DCP-Modus, Marken-ISR für die
+ * → Lader (liest die Systemspuren ueber die K5122 im `/WAIT`-Betrieb nach C000–EFEFH,
+ * springt nach D600H) → BIOS-Kaltstart (Tastatur in den DCP-Modus, Marken-ISR fuer die
  * Diskette) → CCP mit dem vorbelegten Tastaturpuffer `rade` → RAM-Disk E: in Bank 2 →
- * Prompt.  Danach Kommandos über die Tastatur (K7672, Scancodes Satz 1).
+ * Prompt.  Danach Kommandos ueber die Tastatur (K7672, Scancodes Satz 1).
  *
  * Die Bootdiskette ist `tests/fixtures/disks/k8915scpx_boot1.hfe` (Diskette 901 des
- * Anwenders, BIOS-Fassung „V24 (XON/XOFF)“, `cpa800`); AP-B2 fügt die Disketten 900
+ * Anwenders, BIOS-Fassung „V24 (XON/XOFF)“, `cpa800`); AP-B2 fuegt die Disketten 900
  * (Fassung „55 K“) und 904 (langer Autostart) hinzu — immer als TempDisk, der Emulator
- * schreibt zurück.
+ * schreibt zurueck.
  */
 
 #include <gtest/gtest.h>
@@ -51,7 +51,7 @@ bool enthaelt(K8915Machine& m, const std::string& s) {
     return vramText(m).find(s) != std::string::npos;
 }
 
-/// Läuft, bis @p text im Bild steht; false nach @p frist Takten.
+/// Laeuft, bis @p text im Bild steht; false nach @p frist Takten.
 bool bis(K8915Machine& m, const std::string& text, long long frist) {
     for (long long t = 0; t < frist; t += m.run(kSchritt))
         if (enthaelt(m, text)) return true;
@@ -70,7 +70,7 @@ std::string letzteZeile(K8915Machine& m) {
     return letzte;
 }
 
-/// Kommando über die Tastatur tippen und warten, bis es abgearbeitet ist: alles
+/// Kommando ueber die Tastatur tippen und warten, bis es abgearbeitet ist: alles
 /// getippt (K7672 leer), der Tastaturpuffer des BIOS (F150H) leer und wieder „A>“ als
 /// letzte Zeile — nachdem sie zwischendurch eine andere war (das Echo).
 bool befehl(K8915Machine& m, const std::string& cmd, long long frist = 60'000'000) {
@@ -103,23 +103,23 @@ void ladenBisPrompt(K8915Machine& m) {
     ASSERT_EQ(letzteZeile(m), "A>") << vramLines(m);
 }
 
-/// Freie TPA-Adresse für die kleine Druckroutine unten (weit weg von CCP/BDOS/BIOS,
+/// Freie TPA-Adresse fuer die kleine Druckroutine unten (weit weg von CCP/BDOS/BIOS,
 /// weit weg vom eigenen Stapel).
 constexpr uint16_t kDruckCode  = 0x2000;
 constexpr uint16_t kDruckStack = 0x2F00;
 
 /**
- * @brief @p bytes über den stabilen BIOS-Sprungtabelleneintrag `JLIST` (D60FH) ausgeben
+ * @brief @p bytes ueber den stabilen BIOS-Sprungtabelleneintrag `JLIST` (D60FH) ausgeben
  *        lassen — dieselbe Adresse in BEIDEN BIOS-Fassungen (901: `JP DE99H`, 900:
  *        `JP DEABH`; §4.4/AP-B2), nur das Sprungziel dahinter unterscheidet sich.
  *
  * Pokt eine kleine Maschinencode-Schleife nach @ref kDruckCode (Bytezeichen bis 00H),
  * die je Zeichen `LD C,<Byte>` + `CALL 0D60FH` macht und danach in sich selbst springt;
  * setzt PC/SP der CPU direkt darauf. Kapert damit die laufende Maschine zwischen zwei
- * Tastatureingaben am Prompt — unabhängig vom CCP-Zustand, denn `LIST` selbst prüft nur
+ * Tastatureingaben am Prompt — unabhaengig vom CCP-Zustand, denn `LIST` selbst prueft nur
  * die SIO, nicht den Aufrufer. `HL` wird um den Aufruf herum gerettet (`PUSH`/`POP`) —
- * die Fassung „55 K“ benutzt `HL` selbst (F1B8H-Zähler, IOBYTE-Weiche) und liefert es
- * anders als die Fassung „V24 XON/XOFF“ nicht unangetastet zurück.
+ * die Fassung „55 K“ benutzt `HL` selbst (F1B8H-Zaehler, IOBYTE-Weiche) und liefert es
+ * anders als die Fassung „V24 XON/XOFF“ nicht unangetastet zurueck.
  */
 void druckeUeberBios(K8915Machine& m, const std::vector<uint8_t>& bytes) {
     const uint16_t msg = kDruckCode + 0x13;
@@ -150,10 +150,10 @@ void druckeUeberBios(K8915Machine& m, const std::vector<uint8_t>& bytes) {
 
 /**
  * @test K8915Scpx.KaltstartVomNetzEinBisZumPrompt
- * @brief Das Fertig-Kriterium von Etappe 3: vom Netz-Ein über Selbsttest und
- *        Coldstart-Meldung lädt der ROM-Lader SCPX 8915 V5.3 von der Diskette, das BIOS
+ * @brief Das Fertig-Kriterium von Etappe 3: vom Netz-Ein ueber Selbsttest und
+ *        Coldstart-Meldung laedt der ROM-Lader SCPX 8915 V5.3 von der Diskette, das BIOS
  *        meldet sich, der Autostart `rade` richtet die RAM-Disk E: (64 × 1 KB in Bank 2)
- *        ein, und der CCP steht am Prompt.  Die Tastatur läuft im DCP-Modus, die ZRE im
+ *        ein, und der CCP steht am Prompt.  Die Tastatur laeuft im DCP-Modus, die ZRE im
  *        Betrieb (A8H = 87H), die Anzeige meldet „bereit“ (61H = B0H).
  */
 TEST(K8915Scpx, KaltstartVomNetzEinBisZumPrompt)
@@ -179,13 +179,13 @@ TEST(K8915Scpx, KaltstartVomNetzEinBisZumPrompt)
 
 /**
  * @test K8915Scpx.DirSaveEraWarmstartUndRamDisk
- * @brief Am Prompt: `dir` listet die Bootdiskette; `save 2 test.com` schreibt über den
+ * @brief Am Prompt: `dir` listet die Bootdiskette; `save 2 test.com` schreibt ueber den
  *        Schreibpfad des BIOS (EA94H, `/WE` + `OUT (14H)` mit `/WAIT`) auf A: — das
- *        k1520DiskTool findet die Datei danach in der Abbilddatei; `era` löscht sie
+ *        k1520DiskTool findet die Datei danach in der Abbilddatei; `era` loescht sie
  *        wieder; Strg+C = Warmstart (das BIOS ruft den ROM-Lader bei 0406H, der CCP+BDOS
- *        nachlädt); `save 1 e:x.com` schreibt auf die RAM-Disk in Bank 2.
+ *        nachlaedt); `save 1 e:x.com` schreibt auf die RAM-Disk in Bank 2.
  *
- * Zeitsparend über den Weg nach einem Reset: steht bei 0000H/0005H ein `JP`, geht das
+ * Zeitsparend ueber den Weg nach einem Reset: steht bei 0000H/0005H ein `JP`, geht das
  * ROM ohne Selbsttest zur Coldstart-Meldung (vom Netz-Ein: Fall oben).
  */
 TEST(K8915Scpx, DirSaveEraWarmstartUndRamDisk)
@@ -208,7 +208,7 @@ TEST(K8915Scpx, DirSaveEraWarmstartUndRamDisk)
     EXPECT_TRUE(enthaelt(m, "TEST     COM")) << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 
-    // Gegenprobe außerhalb des Emulators: die Datei steht in der Abbilddatei.
+    // Gegenprobe ausserhalb des Emulators: die Datei steht in der Abbilddatei.
     ASSERT_TRUE(m.flushDisks());
     {
         std::string f, err;
@@ -227,7 +227,7 @@ TEST(K8915Scpx, DirSaveEraWarmstartUndRamDisk)
     const std::string nach_era = vramText(m).substr(vramText(m).rfind("A>dir"));
     EXPECT_EQ(nach_era.find("TEST     COM"), std::string::npos) << vramLines(m);
 
-    // Strg+C: Warmstart über den ROM-Lader (A8H = 06H, CALL 0406H), zurück am Prompt.
+    // Strg+C: Warmstart ueber den ROM-Lader (A8H = 06H, CALL 0406H), zurueck am Prompt.
     m.keyboard().sendeZeichen(0x03);
     for (long long t = 0; t < 30'000'000; t += m.run(kSchritt)) {
         if (enthaelt(m, "A>^C") && letzteZeile(m) == "A>") break;
@@ -243,12 +243,12 @@ TEST(K8915Scpx, DirSaveEraWarmstartUndRamDisk)
 
 /**
  * @test K8915Scpx.TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn
- * @brief AP-E4b: `keyPress`/`keyRelease` der Maschine sind der Weg der Oberfläche und
- *        werden aus DEREN Faden gerufen, während der Lauffaden `run()` fährt.  Sie
+ * @brief AP-E4b: `keyPress`/`keyRelease` der Maschine sind der Weg der Oberflaeche und
+ *        werden aus DEREN Faden gerufen, waehrend der Lauffaden `run()` faehrt.  Sie
  *        landen nur unter Sperre in einer Warteschlange; die K7672 bekommt sie erst im
- *        Lauffaden (vorher ein Wettlauf mit `kbd_.service()`).  Geprüft am Echo des
- *        CCP: jede Taste genau einmal, in der getippten Reihenfolge — über viele
- *        run()-Abschnitte verteilt (der Tippfaden schläft zwischen den Tasten).
+ *        Lauffaden (vorher ein Wettlauf mit `kbd_.service()`).  Geprueft am Echo des
+ *        CCP: jede Taste genau einmal, in der getippten Reihenfolge — ueber viele
+ *        run()-Abschnitte verteilt (der Tippfaden schlaeft zwischen den Tasten).
  *        Ohne Datenwettlauf auch unter TSan (einziger geteilter Zustand: die Schlange).
  */
 TEST(K8915Scpx, TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn)
@@ -275,7 +275,7 @@ TEST(K8915Scpx, TastenAusZweitemFadenKommenVollstaendigUndInFolgeAn)
         m.keyRelease(QK_RETURN);
         fertig.store(true);
     });
-    // Lauffaden: in kleinen Abschnitten, damit sich Tippen und run() verschränken.
+    // Lauffaden: in kleinen Abschnitten, damit sich Tippen und run() verschraenken.
     for (long long t = 0; t < 400'000'000 && !fertig.load(); t += m.run(20'000)) {}
     tipper.join();
     ASSERT_TRUE(fertig.load());
@@ -295,7 +295,7 @@ void ohneSelbsttestZurColdstartMeldung(K8915Machine& m);
 
 namespace {
 
-/// Tasten über den Weg der Oberfläche (`keyPress`/`keyRelease` mit Qt-Code bzw.
+/// Tasten ueber den Weg der Oberflaeche (`keyPress`/`keyRelease` mit Qt-Code bzw.
 /// Matrixposition) tippen, danach bis zum Prompt hinter der Ausgabe laufen.
 bool tippeUeberOberflaeche(K8915Machine& m, const std::vector<uint32_t>& codes) {
     for (uint32_t k : codes) {
@@ -318,15 +318,15 @@ constexpr uint32_t QK_BACKSPACE = 0x01000003, QK_RETURN_ = 0x01000004;
 
 /**
  * @test K8915Scpx.RuecktasteKorrigiertDieEingabezeile
- * @brief AP-E4m (Anwenderbefund: „Rücktaste geht nicht“): `dirx`, PC-Rücktaste, RETURN
- *        über den Tastenweg der Oberfläche.  Die Rücktaste trifft Kursor ← (2AH 4BH),
- *        das BIOS liefert 08H (DCC2H), das BDOS (Funktion 10, CA03H) löscht das `x`
- *        aus Puffer UND Bild — die Zeile steht als `A>dir` da, `dir` läuft.
+ * @brief AP-E4m (Anwenderbefund: „Ruecktaste geht nicht“): `dirx`, PC-Ruecktaste, RETURN
+ *        ueber den Tastenweg der Oberflaeche.  Die Ruecktaste trifft Kursor ← (2AH 4BH),
+ *        das BIOS liefert 08H (DCC2H), das BDOS (Funktion 10, CA03H) loescht das `x`
+ *        aus Puffer UND Bild — die Zeile steht als `A>dir` da, `dir` laeuft.
  *
  *        Gegenprobe mit der Taste |←| der Nachbildung (Matrix 67H, 0EH → 7FH, DC1CH):
  *        das BDOS nimmt das `x` aus dem Puffer, wiederholt es aber am Schirm (Rubout,
- *        CA14H) — `A>dirxx`, und trotzdem läuft `dir`.  Genau das sah der Anwender, als
- *        die PC-Rücktaste noch auf |←| lag.
+ *        CA14H) — `A>dirxx`, und trotzdem laeuft `dir`.  Genau das sah der Anwender, als
+ *        die PC-Ruecktaste noch auf |←| lag.
  */
 TEST(K8915Scpx, RuecktasteKorrigiertDieEingabezeile)
 {
@@ -347,8 +347,8 @@ TEST(K8915Scpx, RuecktasteKorrigiertDieEingabezeile)
         eingabe = zeile;
     }
     ASSERT_FALSE(eingabe.empty()) << vramLines(m);
-    EXPECT_EQ(eingabe, "A>dir") << "das x ist vom Schirm gelöscht\n" << vramLines(m);
-    EXPECT_TRUE(enthaelt(m, "A: RADE     COM")) << "dir ausgeführt\n" << vramLines(m);
+    EXPECT_EQ(eingabe, "A>dir") << "das x ist vom Schirm geloescht\n" << vramLines(m);
+    EXPECT_TRUE(enthaelt(m, "A: RADE     COM")) << "dir ausgefuehrt\n" << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "DIRX?")) << vramLines(m);
 
     // Gegenprobe: |←| der Nachbildung = Rubout mit Echo, Puffer trotzdem richtig.
@@ -360,19 +360,19 @@ TEST(K8915Scpx, RuecktasteKorrigiertDieEingabezeile)
     const std::string u = vramText(m);
     const size_t p = u.find("A>dirxx");
     ASSERT_NE(p, std::string::npos) << "Rubout wiederholt das x\n" << vramLines(m);
-    EXPECT_NE(u.find("A: RADE     COM", p), std::string::npos) << "dir läuft trotzdem\n"
+    EXPECT_NE(u.find("A: RADE     COM", p), std::string::npos) << "dir laeuft trotzdem\n"
                                                                 << vramLines(m);
     EXPECT_FALSE(enthaelt(m, "DIRX?")) << vramLines(m);
 }
 
 /**
  * @test K8915Scpx.GehalteneTasteWiederholtAmPrompt
- * @brief AP-E4g: SCPX läuft bis zum Prompt, `x` wird GEHALTEN — die K7672 wiederholt
- *        den Drücken-Code selbst (DCP-Modus, Firmware 0190H → 0320H) nach ≈ 0,9 s
+ * @brief AP-E4g: SCPX laeuft bis zum Prompt, `x` wird GEHALTEN — die K7672 wiederholt
+ *        den Druecken-Code selbst (DCP-Modus, Firmware 0190H → 0320H) nach ≈ 0,9 s
  *        und dann ≈ 10 Hz [?]; das BIOS echot jedes `x`.  Loslassen beendet es, ein
- *        gehaltenes Umschalt/Strg dagegen erzeugt nie etwas.  Läuft in 5 000-Takt-
+ *        gehaltenes Umschalt/Strg dagegen erzeugt nie etwas.  Laeuft in 5 000-Takt-
  *        Schritten durch die Maschine (K7672 = 9600 Baud + Zeitgeber-ISR) — die
- *        Wiederholung zählt also Maschinenzeit im Service-Pfad, nicht in einem Aufruf,
+ *        Wiederholung zaehlt also Maschinenzeit im Service-Pfad, nicht in einem Aufruf,
  *        den nur der Test macht (AP-S9 am A5120: dort wiederholte gar nichts).
  *        Ohne die Wiederholung steht hier genau ein `x` (Gegenprobe).
  */
@@ -393,7 +393,7 @@ TEST(K8915Scpx, GehalteneTasteWiederholtAmPrompt)
     constexpr long long VERZ = K7672::WDH_VERZOEGERUNG_DURCHLAEUFE * K7672::ABTASTDURCHLAUF_TAKTE;
     constexpr long long FOLGE = K7672::WDH_FOLGE_DURCHLAEUFE * K7672::ABTASTDURCHLAUF_TAKTE;
 
-    // Modifikatoren allein erzeugen nichts, so lange man sie auch hält.
+    // Modifikatoren allein erzeugen nichts, so lange man sie auch haelt.
     m.keyPress(0x01000020, false, false);              // Qt::Key_Shift
     m.keyPress(0x01000021, false, true);               // Qt::Key_Control
     fahre(VERZ + 4 * FOLGE);
@@ -404,7 +404,7 @@ TEST(K8915Scpx, GehalteneTasteWiederholtAmPrompt)
 
     m.keyPress('x', false, false);
     fahre(VERZ / 2);
-    EXPECT_EQ(zaehleX(), 1) << "vor Ablauf der Verzögerung nur der Druck\n" << vramLines(m);
+    EXPECT_EQ(zaehleX(), 1) << "vor Ablauf der Verzoegerung nur der Druck\n" << vramLines(m);
     fahre(VERZ / 2 + 4 * FOLGE);
     EXPECT_GE(zaehleX(), 4) << "gehalten: wiederholt\n" << vramLines(m);
     m.keyRelease('x');
@@ -416,7 +416,7 @@ TEST(K8915Scpx, GehalteneTasteWiederholtAmPrompt)
 }
 
 /// Kurzer Weg zur Coldstart-Meldung (s. DirSaveEraWarmstartUndRamDisk): `JP` bei
-/// 0000H/0005H im RAM ⇒ das ROM überspringt den Selbsttest wie nach einem Reset.
+/// 0000H/0005H im RAM ⇒ das ROM ueberspringt den Selbsttest wie nach einem Reset.
 void ohneSelbsttestZurColdstartMeldung(K8915Machine& m) {
     m.powerOn();
     m.zre().bankPoke(0, 0x0000, 0xC3);
@@ -426,12 +426,12 @@ void ohneSelbsttestZurColdstartMeldung(K8915Machine& m) {
 
 /**
  * @test K8915Scpx.Fassung55KVonDiskette900BisZumPrompt
- * @brief AP-B2: die Diskette 900 des Anwenders trägt die ANDERE BIOS-Fassung
+ * @brief AP-B2: die Diskette 900 des Anwenders traegt die ANDERE BIOS-Fassung
  *        „55 K SCPX 8915 BIOS-Version 5.3“ (IOBYTE-Weiche in CONST/CONIN/CONOUT/LIST/
- *        PUNCH/READER, Drucker 7 Bit ungerade Parität; §4.4 in 16_k8915.md).  Sie startet
- *        auf demselben Kern unverändert bis zum Prompt, `rade` richtet E: ein, `dir` listet
+ *        PUNCH/READER, Drucker 7 Bit ungerade Paritaet; §4.4 in 16_k8915.md).  Sie startet
+ *        auf demselben Kern unveraendert bis zum Prompt, `rade` richtet E: ein, `dir` listet
  *        die Diskette.  Die IOBYTE-Weiche ist dabei im Spiel: jedes Zeichen am Bildschirm
- *        geht über CONOUT DCF2H mit IOBYTE = 95H (CON: = CRT).
+ *        geht ueber CONOUT DCF2H mit IOBYTE = 95H (CON: = CRT).
  */
 TEST(K8915Scpx, Fassung55KVonDiskette900BisZumPrompt)
 {
@@ -454,14 +454,14 @@ TEST(K8915Scpx, Fassung55KVonDiskette900BisZumPrompt)
 
 /**
  * @test K8915Scpx.Grundsoftware904AutostartLaeuftInsLeere
- * @brief AP-B2: die Diskette 904 („Grundsoftware“) trägt dieselbe BIOS-Fassung wie 901,
- *        aber per DISGEN einen längeren Autostart: 33 Zeichen
+ * @brief AP-B2: die Diskette 904 („Grundsoftware“) traegt dieselbe BIOS-Fassung wie 901,
+ *        aber per DISGEN einen laengeren Autostart: 33 Zeichen
  *        `rade CR ␠dbase CR ␠CR ␠use lohn CR ␠do lohn CR` im Tastaturpuffer (D641H).
  *        Auf der Diskette fehlen **RADE.COM und DBASE.COM** (dBASE-Befehle `use`/`do`
- *        wären erst in dBASE sinnvoll) — der CCP antwortet der Reihe nach mit `RADE?`,
+ *        waeren erst in dBASE sinnvoll) — der CCP antwortet der Reihe nach mit `RADE?`,
  *        `DBASE?`, einer leeren Zeile, `USE?`, `DO?` und steht dann am Prompt, ohne
  *        RAM-Disk.  Beobachtetes Verhalten, festgehalten, nicht angepasst: die Diskette
- *        ist offenbar eine Kopie eines anders bestückten Arbeitssystems (REDABAS statt
+ *        ist offenbar eine Kopie eines anders bestueckten Arbeitssystems (REDABAS statt
  *        dBASE).
  */
 TEST(K8915Scpx, Grundsoftware904AutostartLaeuftInsLeere)
@@ -494,7 +494,7 @@ TEST(K8915Scpx, Grundsoftware904AutostartLaeuftInsLeere)
  * @test K8915Scpx.BootetUndSchreibtVonEinemImgAbbild
  * @brief AP-E4f: seit das `/WAIT`-Lesen die Spur „so, wie sie liegt“ liefert, bekommt eine
  *        Diskette OHNE eigene Aufzeichnung (`.img`: Spuren aus logischen Sektoren) die
- *        Normlücken von FORMAT.COM.  Mit den knappen Lücken von `gapsFor()` (Lücke 2 =
+ *        Normluecken von FORMAT.COM.  Mit den knappen Luecken von `gapsFor()` (Luecke 2 =
  *        11 × 4E) fand das BIOS kein Datenfeld mehr („SCPX ERR ON A: BAD SECTOR“).
  *        Das Abbild: die Systemspuren der Diskette 900, sonst E5H — Kaltstart bis zum
  *        Prompt, `save`/`dir` auf A:.
@@ -538,13 +538,13 @@ TEST(K8915Scpx, BootetUndSchreibtVonEinemImgAbbild)
 /**
  * @test K8915Scpx.ListGibtUeberV24AusUndHaeltBeiXoff
  * @brief AP-E4c (Fassung V24 XON/XOFF, Diskette 901): die BIOS-`LIST`-Routine (D60FH →
- *        DE99H) gibt Zeichen über SIO1-B (Drucker/IFSS1, V.24-Pegel) aus; `LISTST` (DEA2H) liest dafür das
- *        zuletzt empfangene Byte aus 42H OHNE RR0-Prüfung (Befund AP-E2). Ein vom Host
- *        gesendetes XOFF (13H) hält den Druck deshalb an — auch nachdem der
+ *        DE99H) gibt Zeichen ueber SIO1-B (Drucker/IFSS1, V.24-Pegel) aus; `LISTST` (DEA2H) liest dafuer das
+ *        zuletzt empfangene Byte aus 42H OHNE RR0-Pruefung (Befund AP-E2). Ein vom Host
+ *        gesendetes XOFF (13H) haelt den Druck deshalb an — auch nachdem der
  *        Empfangs-FIFO wieder leer ist, was ohne die `Z80SIO`-Korrektur dieses AP
- *        (leerer Empfänger liefert FFH statt des zuletzt empfangenen Bytes) das XOFF
- *        nach dem ersten Lesen verloren hätte. XON (11H) gibt frei. 8 Bit, keine
- *        Parität (WR5 68H) — der Abnehmer bekommt das volle Byte.
+ *        (leerer Empfaenger liefert FFH statt des zuletzt empfangenen Bytes) das XOFF
+ *        nach dem ersten Lesen verloren haette. XON (11H) gibt frei. 8 Bit, keine
+ *        Paritaet (WR5 68H) — der Abnehmer bekommt das volle Byte.
  */
 TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoff)
 {
@@ -558,9 +558,9 @@ TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoff)
     ASSERT_TRUE(bis(m, "* Coldstart *  Disk on A: ready", 5'000'000)) << vramLines(m);
     ladenBisPrompt(m);
 
-    // Leitung anhalten, BEVOR gedruckt wird: LISTST liest 13H zurück, LIST bleibt in
-    // seinem eigenen Wartezweig (JR Z,DE99H) hängen -- kein Byte geht hinaus, obwohl
-    // die CPU weiterläuft.
+    // Leitung anhalten, BEVOR gedruckt wird: LISTST liest 13H zurueck, LIST bleibt in
+    // seinem eigenen Wartezweig (JR Z,DE99H) haengen -- kein Byte geht hinaus, obwohl
+    // die CPU weiterlaeuft.
     m.printerSend(0x13);   // XOFF
     const std::vector<uint8_t> text = {'T', 'E', 'S', 'T', '-', '4', 'C', 0xC1};
     druckeUeberBios(m, text);
@@ -571,22 +571,22 @@ TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoff)
     m.printerSend(0x11);   // XON
     for (long long t = 0; t < 500'000 && empfangen.size() < text.size(); t += m.run(kSchritt)) {}
     ASSERT_EQ(empfangen.size(), text.size()) << "nach XON muss der Rest ankommen";
-    EXPECT_EQ(empfangen, text) << "8 Bit, keine Parität: das volle Byte kommt an";
+    EXPECT_EQ(empfangen, text) << "8 Bit, keine Paritaet: das volle Byte kommt an";
 }
 
 /**
  * @test K8915Scpx.ListGibtUeberV24AusUndHaeltBeiXoffFassung900
  * @brief AP-E4c (Fassung „55 K“, Diskette 900): eigener Druckertreiber — 7 Bit,
- *        ungerade Parität (WR5 28H), `DEL` (7FH) unaufgefordert beim Kaltstart
- *        (`DE82H`, unabhängig von XON/XOFF — vor jeder eigenen Ausgabe), `LISTST`
- *        (DEE4H) mit umgekehrter Polarität, ebenfalls ohne RR0-Prüfung.
+ *        ungerade Paritaet (WR5 28H), `DEL` (7FH) unaufgefordert beim Kaltstart
+ *        (`DE82H`, unabhaengig von XON/XOFF — vor jeder eigenen Ausgabe), `LISTST`
+ *        (DEE4H) mit umgekehrter Polaritaet, ebenfalls ohne RR0-Pruefung.
  *
  *        Solange der Drucker seit dem Kaltstart nie ein XON gesendet hat (Reset-
  *        Ruhewert von `Z80SIO::Channel::last_rx`, AP-E4c: 00H — eine Annahme, das
  *        Datenblatt macht dazu keine Aussage), schiebt `LIST` (DEABH) vor dem ERSTEN
  *        eigenen Zeichen ein LF+CR ein (F1B8H = 0, „zuletzt kein XON"; §4.4 [?], Zweck
  *        laut Listing unklar) — hier beobachtet und festgehalten, nicht weggetestet.
- *        Danach hält ein XOFF unabhängig davon an, ein XON gibt frei; der Abnehmer
+ *        Danach haelt ein XOFF unabhaengig davon an, ein XON gibt frei; der Abnehmer
  *        bekommt nur die unteren 7 Bit.
  */
 TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoffFassung900)
@@ -609,13 +609,13 @@ TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoffFassung900)
          t += m.run(kSchritt)) {}
     ASSERT_GE(empfangen.size(), nachDel + 2) << vramLines(m);
     EXPECT_EQ(empfangen[nachDel], 0x0A) << "eingeschobenes LF (direkt an 42H)";
-    EXPECT_EQ(empfangen[nachDel + 1], 0x0D) << "eingeschobenes CR (über LIST)";
+    EXPECT_EQ(empfangen[nachDel + 1], 0x0D) << "eingeschobenes CR (ueber LIST)";
     ASSERT_EQ(empfangen.size(), nachDel + 2 + text.size()) << vramLines(m);
     for (size_t i = 0; i < text.size(); ++i)
         EXPECT_EQ(empfangen[nachDel + 2 + i], text[i] & 0x7F) << "7 Bit, i=" << i;
 
     // Ab hier steht 42H auf einem "richtigen" Wert (kein XOFF) -- der LF/CR-Sonderfall
-    // ist unabhängig davon pruefbar: XOFF haelt an, XON gibt den Rest frei.
+    // ist unabhaengig davon pruefbar: XOFF haelt an, XON gibt den Rest frei.
     const size_t vorXoff = empfangen.size();
     m.printerSend(0x13);   // XOFF
     druckeUeberBios(m, text);
@@ -631,7 +631,7 @@ TEST(K8915Scpx, ListGibtUeberV24AusUndHaeltBeiXoffFassung900)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// K8915Seriell: die Schnittstellen der ATS über den SerialHub (Entwurf 19 §3.2, AP-S5)
+// K8915Seriell: die Schnittstellen der ATS ueber den SerialHub (Entwurf 19 §3.2, AP-S5)
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
@@ -657,7 +657,7 @@ constexpr int kDrucker = 0;
 
 /**
  * @test K8915Seriell.HubUndVorgaben
- * @brief Drei einstellbare Schnittstellen in Steckerreihenfolge (Gerätebeschriftung,
+ * @brief Drei einstellbare Schnittstellen in Steckerreihenfolge (Geraetebeschriftung,
  *        AP-S12) — Drucker/IFSS1 (SIO1-B, X3), V.24 (SIO1-A, X4), DFÜ/IFSS2 (SIO2-A,
  *        X5) — plus die feste Tastatur; die Maschinenvorgabe `pruefstecker` ist der
  *        Rx/Tx-Loop aller drei.
@@ -689,8 +689,8 @@ TEST(K8915Seriell, HubUndVorgaben)
     K8915Machine ohne(c);
     for (int i = 0; i < 3; ++i) EXPECT_FALSE(ohne.serialHub()->konfig(i).loop) << i;
 
-    // Alter Unterbau: ein Druckerrückruf zieht den Prüfstecker von Drucker/IFSS1
-    // (SIO1-B) ab, ein DFÜ-Rückruf den von DFÜ/IFSS2 (SIO2-A); ein leerer steckt ihn
+    // Alter Unterbau: ein Druckerrueckruf zieht den Pruefstecker von Drucker/IFSS1
+    // (SIO1-B) ab, ein DFUE-Rueckruf den von DFÜ/IFSS2 (SIO2-A); ein leerer steckt ihn
     // wieder.
     m.setPrinterCallback([](uint8_t) {});
     EXPECT_FALSE(hub->konfig(kDrucker).loop);
@@ -728,8 +728,8 @@ TEST(K8915Seriell, BiosLaeuftOhneLoopWeiter)
 /**
  * @test K8915Seriell.ListUeberIfs1InEineDatei
  * @brief Maschinenprobe: `LIST` des BIOS (SIO1-B = Drucker/IFSS1, Index 0) mit Betriebsart Datei — die
- *        Zeichen kommen über `hub.takt` im Lauf von `run()` in der Datei an; der alte
- *        Druckerrückruf schweigt, solange der Transport anliegt.
+ *        Zeichen kommen ueber `hub.takt` im Lauf von `run()` in der Datei an; der alte
+ *        Druckerrueckruf schweigt, solange der Transport anliegt.
  */
 TEST(K8915Seriell, ListUeberIfs1InEineDatei)
 {
@@ -763,15 +763,15 @@ TEST(K8915Seriell, ListUeberIfs1InEineDatei)
     EXPECT_TRUE(st.format_gueltig);
     hub->stop(kDrucker);
     EXPECT_EQ(dateiLesen(pfad), text);
-    EXPECT_TRUE(alt.empty()) << "alter Rückruf ins Leere, solange der Transport anliegt";
+    EXPECT_TRUE(alt.empty()) << "alter Rueckruf ins Leere, solange der Transport anliegt";
     std::filesystem::remove(std::filesystem::u8path(pfad));
 }
 
 /**
  * @test K8915Seriell.ListUeberTelnetMitXonXoff
- * @brief Dieselbe Strecke über Telnet (Server auf Loopback, Port vom System): ein
- *        Client empfängt die Druckausgabe; sein XOFF kommt über den Wandler im
- *        Empfänger von SIO1-B an und hält `LIST` an, XON gibt den Rest frei.
+ * @brief Dieselbe Strecke ueber Telnet (Server auf Loopback, Port vom System): ein
+ *        Client empfaengt die Druckausgabe; sein XOFF kommt ueber den Wandler im
+ *        Empfaenger von SIO1-B an und haelt `LIST` an, XON gibt den Rest frei.
  */
 TEST(K8915Seriell, ListUeberTelnetMitXonXoff)
 {
@@ -818,11 +818,11 @@ TEST(K8915Seriell, ListUeberTelnetMitXonXoff)
 
     const uint8_t xoff = 0x13, xon = 0x11;
     ASSERT_EQ(net::senden(s.fd(), &xoff, 1).status, net::IoStatus::Ok);
-    laufen(20);   // XOFF liegt im Empfänger von SIO1-B
+    laufen(20);   // XOFF liegt im Empfaenger von SIO1-B
     const std::string text = "TELNET";
     druckeUeberBios(m, {text.begin(), text.end()});
     laufen(30);
-    EXPECT_EQ(empf.find(text), std::string::npos) << "hält bei XOFF an: " << empf;
+    EXPECT_EQ(empf.find(text), std::string::npos) << "haelt bei XOFF an: " << empf;
     ASSERT_EQ(net::senden(s.fd(), &xon, 1).status, net::IoStatus::Ok);
     for (int n = 0; n < 300 && empf.find(text) == std::string::npos; ++n) laufen(1);
     EXPECT_NE(empf.find(text), std::string::npos) << empf;
@@ -832,8 +832,8 @@ TEST(K8915Seriell, ListUeberTelnetMitXonXoff)
 // ─────────────────────────────────────────────────────────────────────────────
 // AP-E5a: DiskTool ↔ K8915 auf einer Diskette OHNE Systemspuren (doc/design/16_k8915.md
 // §8a).  Das BIOS hat einen festen DPB (OFF 2, DRM 127) — das DiskTool muss dieselben
-// Plätze benutzen, sonst sieht die eine Seite die Dateien der anderen nicht oder
-// überschreibt sie.
+// Plaetze benutzen, sonst sieht die eine Seite die Dateien der anderen nicht oder
+// ueberschreibt sie.
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
@@ -919,8 +919,8 @@ void rundreise(const char* bootdiskette, const char* format, const char* temp) {
 /**
  * @test K8915Scpx.DiskToolRundreiseFuenfMal1024OhneSystemspuren
  * @brief Diskette 900 (B: = 5 × 1024 wie A:), leere Diskette in B:.  Vor AP-E5a hielt
- *        das DiskTool sie nach dem `save` des K8915 für eine LEERE CP/A-Datendiskette
- *        (`cpa800`, Verzeichnis ab c0h0) — jetzt gilt die CP/A-Regel (OFF 2, 128 Plätze),
+ *        das DiskTool sie nach dem `save` des K8915 fuer eine LEERE CP/A-Datendiskette
+ *        (`cpa800`, Verzeichnis ab c0h0) — jetzt gilt die CP/A-Regel (OFF 2, 128 Plaetze),
  *        und die Datei des DiskTools erscheint am K8915.
  */
 TEST(K8915Scpx, DiskToolRundreiseFuenfMal1024OhneSystemspuren)
@@ -940,11 +940,11 @@ TEST(K8915Scpx, DiskToolRundreiseSechzehnMal256)
 
 /**
  * @test K8915Scpx.DiskToolFuelltLeereDisketteNurMitFsScpx8915
- * @brief Die eine Mehrdeutigkeit, die das Medium nicht auflöst: eine LEERE 5 × 1024-
+ * @brief Die eine Mehrdeutigkeit, die das Medium nicht aufloest: eine LEERE 5 × 1024-
  *        Diskette.  Ohne `--fs` wird sie, was CP/A daraus macht (`cpa800`, Verzeichnis ab
  *        c0h0) — der K8915 sieht die Datei dann NICHT (sein Verzeichnis liegt ab c2h0).
  *        Mit `--fs scpx8915` liegt sie dort, wo das BIOS sucht.  Festgehalten, weil genau
- *        dieser Unterschied der Grund für den Katalogeintrag ist.
+ *        dieser Unterschied der Grund fuer den Katalogeintrag ist.
  */
 TEST(K8915Scpx, DiskToolFuelltLeereDisketteNurMitFsScpx8915)
 {
@@ -983,7 +983,7 @@ TEST(K8915Scpx, DiskToolFuelltLeereDisketteNurMitFsScpx8915)
 
 namespace {
 
-/// Sektoren eines Abbilds, deren Bytes hinter der Daten-CRC NICHT reine Lückenfüller
+/// Sektoren eines Abbilds, deren Bytes hinter der Daten-CRC NICHT reine Lueckenfueller
 /// (4E/FF/00) sind — je Sektor „c/h/id: hex“.
 std::vector<std::string> sektorenMitNachlauf(const DiskMedium& med) {
     std::vector<std::string> out;
@@ -1002,7 +1002,7 @@ std::vector<std::string> sektorenMitNachlauf(const DiskMedium& med) {
     return out;
 }
 
-/// Spuren, auf denen JEDE CRC stimmt und die trotzdem nicht `.img`-fähig sind — dann
+/// Spuren, auf denen JEDE CRC stimmt und die trotzdem nicht `.img`-faehig sind — dann
 /// sperrt allein der Inhalt hinter der Daten-CRC.
 int spurenGesperrtNurWegenNachspann(const DiskMedium& med) {
     int n = 0;
@@ -1021,12 +1021,12 @@ int spurenGesperrtNurWegenNachspann(const DiskMedium& med) {
 
 /**
  * @test K8915Scpx.ImgExportSchreibnachlaufJaUdosNein
- * @brief AP-E5b: die am Gerät vom SCPX-8915-BIOS und von DISGEN beschriebenen Sektoren
- *        tragen hinter der Daten-CRC ein 4E und danach die Schreibnaht (alte Lücke mit
+ * @brief AP-E5b: die am Geraet vom SCPX-8915-BIOS und von DISGEN beschriebenen Sektoren
+ *        tragen hinter der Daten-CRC ein 4E und danach die Schreibnaht (alte Luecke mit
  *        verrutschtem Byterahmen) — das sperrt den `.img`-Export nicht mehr.  Die
- *        Disketten 900 und 904 sind damit exportierbar; 901 bleibt es begründet NICHT
- *        (echter Daten-CRC-Fehler auf c48h0, §4.4).  Gegenwächter: jede UDOS-Fixture
- *        bleibt gesperrt, und zwar auf Spuren mit lauter gültigen CRCs — also allein
+ *        Disketten 900 und 904 sind damit exportierbar; 901 bleibt es begruendet NICHT
+ *        (echter Daten-CRC-Fehler auf c48h0, §4.4).  Gegenwaechter: jede UDOS-Fixture
+ *        bleibt gesperrt, und zwar auf Spuren mit lauter gueltigen CRCs — also allein
  *        wegen des Kontrollblocks.
  */
 TEST(K8915Scpx, ImgExportSchreibnachlaufJaUdosNein)
@@ -1037,7 +1037,7 @@ TEST(K8915Scpx, ImgExportSchreibnachlaufJaUdosNein)
         auto img = DiskImage::open(d.path(), std::nullopt, true);
         ASSERT_TRUE(img) << f;
         EXPECT_GT(sektorenMitNachlauf(img->medium()).size(), 20u)
-            << f << ": ohne Schreibnachlauf prüfte der Fall nichts";
+            << f << ": ohne Schreibnachlauf pruefte der Fall nichts";
         EXPECT_TRUE(img->rawCompatible()) << f << ": " << img->medium().rawIncompatibleReason();
     }
     {
@@ -1062,10 +1062,10 @@ TEST(K8915Scpx, ImgExportSchreibnachlaufJaUdosNein)
 
 /**
  * @test K8915Scpx.VomEmulatorGeschriebenerSektorIstImgFaehig
- * @brief AP-E5b: was das BIOS im Emulator schreibt (`save`), trägt hinter der CRC
+ * @brief AP-E5b: was das BIOS im Emulator schreibt (`save`), traegt hinter der CRC
  *        `4E 4E 4E` und danach den alten Nachspann des Sektors — dieselbe Art Naht wie
- *        am Gerät (dort überlebt nur das erste 4E, der Rest fällt in die Abschaltung
- *        von /WE).  Das Abbild bleibt `.img`-fähig.
+ *        am Geraet (dort ueberlebt nur das erste 4E, der Rest faellt in die Abschaltung
+ *        von /WE).  Das Abbild bleibt `.img`-faehig.
  */
 TEST(K8915Scpx, VomEmulatorGeschriebenerSektorIstImgFaehig)
 {
@@ -1085,7 +1085,7 @@ TEST(K8915Scpx, VomEmulatorGeschriebenerSektorIstImgFaehig)
 
     auto img = DiskImage::open(x.a.path(), std::nullopt, true);
     ASSERT_TRUE(img);
-    // Das BIOS schreibt hinter die CRC drei Lückenbytes (EAF7H–EB03H: 3 × OUT (14H),A;
+    // Das BIOS schreibt hinter die CRC drei Lueckenbytes (EAF7H–EB03H: 3 × OUT (14H),A;
     // das `LD A,00H` des Listings ist zur Laufzeit auf 4EH gepatcht) und schaltet dann
     // /WE ab.  Dahinter bleibt stehen, was vorher dort lag.
     EXPECT_EQ(m.memReadDebug(0xEAF8), 0x4E);
@@ -1095,7 +1095,7 @@ TEST(K8915Scpx, VomEmulatorGeschriebenerSektorIstImgFaehig)
         ++neu;
         EXPECT_EQ(s.substr(s.find(": ") + 2, 6), "4E4E4E") << s;
     }
-    EXPECT_GT(neu, 0) << "save hat keinen Sektor mit altem Nachlauf überschrieben";
+    EXPECT_GT(neu, 0) << "save hat keinen Sektor mit altem Nachlauf ueberschrieben";
     EXPECT_TRUE(img->rawCompatible()) << img->medium().rawIncompatibleReason();
 }
 
@@ -1126,7 +1126,7 @@ TEST(K8915Scpx, ImgRundreiseDerSystemdisketteBootet)
     EXPECT_FALSE(enthaelt(m, "ERR")) << vramLines(m);
 }
 
-// ─── AP-E5c: bootfähige K8915-Disketten mit dem DiskTool ─────────────────────
+// ─── AP-E5c: bootfaehige K8915-Disketten mit dem DiskTool ─────────────────────
 
 namespace {
 
@@ -1135,7 +1135,7 @@ const char* const kSys901 = "k8915scpx_boot1.hfe";                          // F
 const char* const kBanner900 = "55 K   SCPX 8915   BIOS-Version 5.3";
 const char* const kBanner901 = "SCPX 8915  V 5.3  Anpassung:  V24  (XON/XOFF)";
 
-/// Systemspuren (Bootabbild) einer Diskette aus den Fixtures — über eine TempDisk.
+/// Systemspuren (Bootabbild) einer Diskette aus den Fixtures — ueber eine TempDisk.
 std::vector<uint8_t> systemabbild(const char* fixture, const char* fs = "") {
     TempDisk q(fixture);
     DtKataloge k;
@@ -1182,7 +1182,7 @@ void bautBootdiskette(const char* quelle, const char* ext, const char* banner) {
         EXPECT_EQ(v->bootAreaSize(), 20480u);
     }
     {
-        // Maßstab: Systemspuren byteweise gleich der Quelle; das Dateisystem ist leer und heil.
+        // Massstab: Systemspuren byteweise gleich der Quelle; das Dateisystem ist leer und heil.
         auto v = DiskVolume::open(neu.path(), "scpx8915", k.formate, k.fs, err);
         ASSERT_TRUE(v) << err;
         std::vector<uint8_t> n;
@@ -1218,14 +1218,14 @@ void bautBootdiskette(const char* quelle, const char* ext, const char* banner) {
 TEST(K8915Scpx, DiskToolBautBootdisketteAus900Hfe) { bautBootdiskette(kSys900, "hfe", kBanner900); }
 /// @test Wie oben aus der Diskette 901 (BIOS-Fassung V24 XON/XOFF).
 TEST(K8915Scpx, DiskToolBautBootdisketteAus901Hfe) { bautBootdiskette(kSys901, "hfe", kBanner901); }
-/// @test Als `.img` (seit AP-E5b zulässig) — die aus Sektoren gebaute Spur bootet ebenso.
+/// @test Als `.img` (seit AP-E5b zulaessig) — die aus Sektoren gebaute Spur bootet ebenso.
 TEST(K8915Scpx, DiskToolBautBootdisketteAus900Img) { bautBootdiskette(kSys900, "img", kBanner900); }
 TEST(K8915Scpx, DiskToolBautBootdisketteAus901Img) { bautBootdiskette(kSys901, "img", kBanner901); }
 
 /**
  * @test K8915Scpx.BootPutMachtEineLeereDisketteBootfaehig
  * @brief `boot-put` auf eine leere, formatierte Diskette (ohne Systemspuren, wie nach
- *        FORMAT.COM): ohne `--fs scpx8915` sind das für das DiskTool eine CP/A-Datendiskette
+ *        FORMAT.COM): ohne `--fs scpx8915` sind das fuer das DiskTool eine CP/A-Datendiskette
  *        ohne Systemspuren (Meldung „keine Systemspuren“), mit dem Profil geht es.
  */
 TEST(K8915Scpx, BootPutMachtEineLeereDisketteBootfaehig)
@@ -1261,18 +1261,18 @@ TEST(K8915Scpx, BootPutMachtEineLeereDisketteBootfaehig)
 
 /**
  * @test K8915Scpx.FremdeSystemspurWirdFuerDenK8915Abgelehnt
- * @brief Ein A5120-CP/A-Bootabbild (kein Ladekopf), ein Abbild mit zerstörter Ladekopf-CRC
- *        und eines, das kürzer ist als der Ladekopf verlangt, werden abgewiesen — beim
+ * @brief Ein A5120-CP/A-Bootabbild (kein Ladekopf), ein Abbild mit zerstoerter Ladekopf-CRC
+ *        und eines, das kuerzer ist als der Ladekopf verlangt, werden abgewiesen — beim
  *        Anlegen (dann bleibt keine Datei liegen) wie bei `boot-put` (Systemspuren
- *        unverändert), auch wenn die Diskette nur an ihrem Ladekopf als K8915 kenntlich
- *        ist (Profil `cpa800`, ohne `--fs`).  Ein gültiges Abbild geht danach durch.
+ *        unveraendert), auch wenn die Diskette nur an ihrem Ladekopf als K8915 kenntlich
+ *        ist (Profil `cpa800`, ohne `--fs`).  Ein gueltiges Abbild geht danach durch.
  */
 TEST(K8915Scpx, FremdeSystemspurWirdFuerDenK8915Abgelehnt)
 {
     const std::vector<uint8_t> a5120 = systemabbild("cpa_cpa780_k5601_noclock.hfe");
     ASSERT_GT(a5120.size(), 0u);
     std::vector<uint8_t> kaputt = systemabbild(kSys900);
-    kaputt[3] ^= 0x01;                                  // Einsprung verändert, CRC bleibt
+    kaputt[3] ^= 0x01;                                  // Einsprung veraendert, CRC bleibt
     std::vector<uint8_t> kurz = systemabbild(kSys900);
     kurz.resize(5 * 1024);                              // Ladekopf verlangt 12 Sektoren
 
@@ -1300,7 +1300,7 @@ TEST(K8915Scpx, FremdeSystemspurWirdFuerDenK8915Abgelehnt)
         EXPECT_EQ(nachher, vorher) << "abgelehnt heisst: nichts geschrieben";
     }
 
-    // Gegenprobe: ein gültiges Abbild (auch das der anderen Fassung) geht auf 900.
+    // Gegenprobe: ein gueltiges Abbild (auch das der anderen Fassung) geht auf 900.
     TempDisk sys(kSys900);
     std::string err;
     auto v = DiskVolume::open(sys.path(), "", k.formate, k.fs, err, false);
@@ -1315,7 +1315,7 @@ TEST(K8915Scpx, FremdeSystemspurWirdFuerDenK8915Abgelehnt)
 /**
  * @test K8915Scpx.AusgelieferteBootabbilderSindDieSystemspurenDerDisketten
  * @brief `disks/bootsektoren/boot_scpx8915_{55k,v24}.bin` (README) = `boot-get` der Disketten 900/901 —
- *        sonst läge dort ein Abbild, dessen Herkunft niemand mehr belegen kann.
+ *        sonst laege dort ein Abbild, dessen Herkunft niemand mehr belegen kann.
  */
 TEST(K8915Scpx, AusgelieferteBootabbilderSindDieSystemspurenDerDisketten)
 {

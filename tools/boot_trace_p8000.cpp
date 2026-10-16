@@ -7,9 +7,9 @@
  *
  * Protokolliert werden ADP/RFF (00H–07H), Latches (10H–17H), PIO2/Floppy-Port (1CH–1FH),
  * U8272 (20H/21H), DMA (3CH–3FH) und Interrupts.  Gleiche aufeinanderfolgende Ereignisse
- * werden gefaltet (×N); bei den Datentoren (FDC 21H, DMA) zählt weder Wert noch PC.
+ * werden gefaltet (×N); bei den Datentoren (FDC 21H, DMA) zaehlt weder Wert noch PC.
  *
- * Abbruch: `--until`, Stillstand (`--stall` Takte ohne Terminaländerung und ohne
+ * Abbruch: `--until`, Stillstand (`--stall` Takte ohne Terminalaenderung und ohne
  * Schreibzugriff auf einen beobachteten Port) oder `-c`.  Steht beim Stillstand die Cursorzeile
  * `>`/`%` oder eine Zeile mit „Press RETURN", ist das das Ziel → Exit 0.
  *
@@ -227,7 +227,7 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
             }
         }
     });
-    // WDC (AP P13d): je Statuswechsel ein Ereignis; Kommandoblock (FW 30B7–30BF) bei Übernahme,
+    // WDC (AP P13d): je Statuswechsel ein Ereignis; Kommandoblock (FW 30B7–30BF) bei Uebernahme,
     // Fehlerbyte (30C7) bei Status 7.
     long wdc_kmd = 0, wdc_fehler = 0;
     if (P8000Wdc* w = m.wdc()) {
@@ -302,7 +302,7 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
             ++zeichen;
             if (t.cr) break;
         }
-        // Originalterminal: jede Taste geht mit Haltezeit über die K7673 (80 + 80 ms ≈ 640 000 Takte).
+        // Originalterminal: jede Taste geht mit Haltezeit ueber die K7673 (80 + 80 ms ≈ 640 000 Takte).
         laufe(zeichen * (m.hatOriginalTerminal() ? 700'000 : 10'000) + 200'000);
     };
 
@@ -321,7 +321,7 @@ int bootTraceP8000(const K8915TraceOpts& o, const prnlst::Listing& prn, bool kar
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
         }
         if (now - last_activity >= static_cast<uint64_t>(o.stall)) {
-            if (tasten_pos < tasten.size()) {   // Maschine steht: nächster Tastenblock
+            if (tasten_pos < tasten.size()) {   // Maschine steht: naechster Tastenblock
                 tippeBlock();
                 if (until_hit) break;
                 last_activity = m.totalCycles();
@@ -470,7 +470,7 @@ int bootTraceP8000Terminal(const K8915TraceOpts& o)
     };
     const uint64_t schritt = P8000TerminalMachine::einheitHz() / 100;   // 10 ms
     auto laufe = [&](uint64_t n) { for (uint64_t k = 0; k < n; k += schritt) { m.run(int(schritt)); sammle(); } };
-    // Bis zur Einschaltmeldung, dann die Tasten (über die K7673, je Taste mit Haltezeit).
+    // Bis zur Einschaltmeldung, dann die Tasten (ueber die K7673, je Taste mit Haltezeit).
     bool meldung = false;
     while (static_cast<long long>(m.totalCycles()) < o.limit && !(meldung = bild().find("baud") != std::string::npos))
         laufe(schritt);
@@ -508,7 +508,7 @@ int bootTraceP8000Terminal(const K8915TraceOpts& o)
         }
     }
     if (o.json) {
-        std::string gs;   // gesendete Bytes ohne führendes Leerzeichen, JSON-tauglich
+        std::string gs;   // gesendete Bytes ohne fuehrendes Leerzeichen, JSON-tauglich
         for (char c : gesendet) gs += c;
         if (!gs.empty() && gs[0] == ' ') gs.erase(0, 1);
         fprintf(stderr, "{\"machine\":\"p8000-terminal\",\"meldung\":%s,\"cycles\":%llu,\"keys\":%zu,"

@@ -1,4 +1,4 @@
-# `snap diff` nennt den geänderten RAM-Bereich zwischen zwei Schnappschüssen.
+# `snap diff` nennt den geaenderten RAM-Bereich zwischen zwei Schnappschuessen.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

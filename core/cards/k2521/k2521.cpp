@@ -30,14 +30,14 @@ K2521::Config K2521::Config::k8915g2()
 {
     Config c;
     // Vorgabe = 175 + 176 + REPARIERTES 177 (F9, Entscheidung 2026-10-05): der Abzug von
-    // 177 trägt bei 0A33H ein gekipptes Bit (04H statt 00H), mit ihm endet der Selbsttest
-    // mit „ROM C“.  Der Abzug selbst (rom_k8915g2.h) bleibt unverändert; Tests setzen ihn
-    // über K8915Machine::Config::gen2_rom.
+    // 177 traegt bei 0A33H ein gekipptes Bit (04H statt 00H), mit ihm endet der Selbsttest
+    // mit „ROM C“.  Der Abzug selbst (rom_k8915g2.h) bleibt unveraendert; Tests setzen ihn
+    // ueber K8915Machine::Config::gen2_rom.
     c.rom     = K8915G2_ZRE_ROM_REPARIERT;
     c.rom_len = sizeof(K8915G2_ZRE_ROM_REPARIERT);
-    // X10:1–4 / X11:1–4 am Gerät des Anwenders alle geschlossen (2026-10-05, F22):
+    // X10:1–4 / X11:1–4 am Geraet des Anwenders alle geschlossen (2026-10-05, F22):
     // die CTC-Kaskade ZC/TO0→CLK1, TO1→TRG2, TO2→TRG3 steht.  Der vierte Draht
-    // ist in der Beschreibung S.6 nicht erklärt [?] und hier nicht abgebildet.
+    // ist in der Beschreibung S.6 nicht erklaert [?] und hier nicht abgebildet.
     c.kaskade_to0_clk1 = true;
     c.kaskade_to1_clk2 = true;
     c.kaskade_to2_clk3 = true;
@@ -52,14 +52,14 @@ K2521::K2521(K1520Bus& bus, const Config& cfg)
 {
     if (cfg_.rom_len > 0x0C00) cfg_.rom_len = 0x0C00;   // 3 × U555
 
-    // Speicherweg: Vorgabe Systembus; setSpeicherweg() leitet über die Speicherverwaltung.
+    // Speicherweg: Vorgabe Systembus; setSpeicherweg() leitet ueber die Speicherverwaltung.
     cpu_.readByte  = [this](uint16_t a) {
         return lesen_ ? lesen_(a) : bus_.memRead(a);
     };
     cpu_.writeByte = [this](uint16_t a, uint8_t d) {
         if (schreiben_) schreiben_(a, d); else bus_.memWrite(a, d);
     };
-    // Volle 16-Bit-E/A-Adresse (AB8–15 für die Speicherverwaltung, AP-P1b).
+    // Volle 16-Bit-E/A-Adresse (AB8–15 fuer die Speicherverwaltung, AP-P1b).
     cpu_.readPort     = [this](uint16_t p)            { return bus_.ioRead(p); };
     cpu_.writePort    = [this](uint16_t p, uint8_t d) { bus_.ioWrite(p, d); };
     cpu_.retiCallback = [this]()                      { bus_.signalRETI(); };
@@ -69,9 +69,9 @@ K2521::K2521(K1520Bus& bus, const Config& cfg)
 
 void K2521::zctoVerdrahten()
 {
-    // CTC-Kaskade X10–X11: ZC/TO[n] → CLK/TRG[n+1]; zusätzlich nach außen (Koppelbus).
-    // Die Kanalmaske sagt der CTC, wessen Flanke überhaupt jemand braucht (Kaskadenquelle
-    // oder äußerer Rückruf) — nur die läuft in clockTick(int) als Einzeltakt.
+    // CTC-Kaskade X10–X11: ZC/TO[n] → CLK/TRG[n+1]; zusaetzlich nach aussen (Koppelbus).
+    // Die Kanalmaske sagt der CTC, wessen Flanke ueberhaupt jemand braucht (Kaskadenquelle
+    // oder aeusserer Rueckruf) — nur die laeuft in clockTick(int) als Einzeltakt.
     uint8_t maske = zcto_ext_ ? zcto_ext_maske_ : 0;
     if (cfg_.kaskade_to0_clk1) maske |= 0x01;
     if (cfg_.kaskade_to1_clk2) maske |= 0x02;
@@ -134,7 +134,7 @@ void K2521::ioWrite(uint8_t port, uint8_t data)
 
 void K2521::setIEI(bool iei)
 {
-    // X14–X15: bei /IODI hängt die Karte an der Spitze der Kette.
+    // X14–X15: bei /IODI haengt die Karte an der Spitze der Kette.
     if (cfg_.iei_quelle == IeiQuelle::HoechstePrioritaet) iei = true;
     ctc_.setIEI(iei);
     pio_.setIEI(ctc_.getIEO());

@@ -4,14 +4,14 @@
  *        FORMAT.COM (Hilfetabelle `[H]ELP`, §4.4 in doc/design/16_k8915.md) auf einer
  *        Leerdiskette in B:, Umfang Smoke (Zylinder 00–02, beide Seiten).
  *
- * Geprüft wird, was FORMAT.COM selbst prüft (sein Prüf-Lesen vergleicht die ganze Spur
+ * Geprueft wird, was FORMAT.COM selbst prueft (sein Pruef-Lesen vergleicht die ganze Spur
  * ⇒ „FUNCTION COMPLETE“ ohne „ERROR“; das KROS-Verfahren 33 fragt stattdessen nach dem
  * Informationsblock auf Spur 0 und geht mit `N` direkt zu EXIT) und was danach auf dem
  * Medium steht: je Spur die
- * Sektorzahl und -größe der Tabelle, beide CRCs gültig, und die Indexmarke genau bei den
- * Verfahren „WITH INDEXMARK“ (Fussnote 4) — die ohne (Fussnote 3) prüfen ihre erste
+ * Sektorzahl und -groesse der Tabelle, beide CRCs gueltig, und die Indexmarke genau bei den
+ * Verfahren „WITH INDEXMARK“ (Fussnote 4) — die ohne (Fussnote 3) pruefen ihre erste
  * Spur also ohne MK = 1.  Label `format_matrix` (`tools/dev.sh test-matrix`), wie die
- * Menü-Matrix des A5120.
+ * Menue-Matrix des A5120.
  */
 
 #include <gtest/gtest.h>

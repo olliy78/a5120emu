@@ -1,11 +1,11 @@
 /**
  * @file test_gzip_datei.cpp
- * @brief GoogleTests für `core/util/gzip_datei.h` — gzip-Hülle um miniz (third_party/miniz).
+ * @brief GoogleTests fuer `core/util/gzip_datei.h` — gzip-Huelle um miniz (third_party/miniz).
  *
  * | Sollwert | Quelle |
  * |---|---|
- * | Kopf 1F 8B 08 FLG MTIME(4) XFL OS, FNAME/FCOMMENT nullterminiert, FEXTRA mit Länge | RFC 1952 §2.3 |
- * | Ende: CRC-32 und ISIZE (Länge mod 2³²), je LSB zuerst; mehrere Teile hintereinander erlaubt | RFC 1952 §2.2/§2.3.1 |
+ * | Kopf 1F 8B 08 FLG MTIME(4) XFL OS, FNAME/FCOMMENT nullterminiert, FEXTRA mit Laenge | RFC 1952 §2.3 |
+ * | Ende: CRC-32 und ISIZE (Laenge mod 2³²), je LSB zuerst; mehrere Teile hintereinander erlaubt | RFC 1952 §2.2/§2.3.1 |
  * | `HALLO_GZ` = `gzip -9 hallo.txt` (GNU gzip 1.13, mit Dateiname im Kopf) | erzeugt 2026-10-09 |
  */
 #include "core/util/gzip_datei.h"
@@ -100,7 +100,7 @@ TEST(GzipDatei, BeschaedigtUndAbgeschnittenWerdenErkannt)
     auto kaputt = z;
     kaputt[kaputt.size() - 6] ^= 0x01;   // CRC-32
     EXPECT_FALSE(gzip::entpacken(kaputt.data(), kaputt.size(), r, &f));
-    EXPECT_NE(f.find("Prüfsumme"), std::string::npos) << f;
+    EXPECT_NE(f.find("Pruefsumme"), std::string::npos) << f;
 
     auto kurz = z;
     kurz.resize(z.size() / 2);
@@ -108,7 +108,7 @@ TEST(GzipDatei, BeschaedigtUndAbgeschnittenWerdenErkannt)
     EXPECT_TRUE(r.empty());
 
     auto ohne_ende = z;
-    ohne_ende.resize(z.size() - 8);       // Deflate vollständig, CRC/ISIZE fehlen
+    ohne_ende.resize(z.size() - 8);       // Deflate vollstaendig, CRC/ISIZE fehlen
     EXPECT_FALSE(gzip::entpacken(ohne_ende.data(), ohne_ende.size(), r, &f));
 
     auto muell = z;
@@ -146,7 +146,7 @@ TEST(GzipDatei, SpeichernIstAtomarUndLadenErkenntDieArt)
     EXPECT_EQ(dateiInhalt(p), vorher);
     std::filesystem::remove(p + ".tmp");
 
-    // Roh: dieselbe Datei wird roh überschrieben und roh gelesen
+    // Roh: dieselbe Datei wird roh ueberschrieben und roh gelesen
     ASSERT_TRUE(gzip::speichern(p, d.data(), d.size(), gzip::Art::Roh, 1, &f)) << f;
     EXPECT_EQ(gzip::artVon(p), gzip::Art::Roh);
     EXPECT_EQ(dateiInhalt(p), d);

@@ -3,15 +3,15 @@
 Dieses Projekt steht unter der **MIT-Lizenz**. Beigelegter Fremdcode wird mit
 ausgeliefert — seine Lizenz wird damit Teil der Auslieferung. Der Vorfall, aus dem
 diese Datei entstand: der Debugger hing an GNU **readline** (GPLv3+), was ein
-ausgeliefertes Binärabbild zu einem Gesamtwerk unter GPLv3 gemacht hätte
+ausgeliefertes Binaerabbild zu einem Gesamtwerk unter GPLv3 gemacht haette
 (`doc/design/13_distribution.md` §10a.3).
 
-Geprüft wird deshalb dreierlei, und zwar ohne Netz:
+Geprueft wird deshalb dreierlei, und zwar ohne Netz:
   1. Jede Fremdquelle hat eine LICENSE **und** eine README mit Herkunft und Stand.
   2. Ihre Lizenz ist permissiv (MIT/BSD/ISC/Apache) — keine Copyleft-Lizenz.
   3. Das Projekt selbst ist noch MIT (sonst gilt die Regel oben nicht mehr).
 
-Das ist bewusst eine TEXT-Prüfung: sie soll auffallen, wenn jemand eine Quelle
+Das ist bewusst eine TEXT-Pruefung: sie soll auffallen, wenn jemand eine Quelle
 beilegt, nicht juristisch beraten.
 """
 
@@ -23,7 +23,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 THIRD_PARTY = PROJECT_ROOT / "third_party"
 
-# Wortlaute, an denen sich eine Copyleft-Lizenz erkennen lässt.
+# Wortlaute, an denen sich eine Copyleft-Lizenz erkennen laesst.
 COPYLEFT = [
     "GNU GENERAL PUBLIC LICENSE",
     "GNU LESSER GENERAL PUBLIC LICENSE",

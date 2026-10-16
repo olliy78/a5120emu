@@ -2,9 +2,9 @@
  * @file z8k_codec.h
  * @brief Dekodieren und Kodieren einzelner U8001/U8002-Befehle anhand von z8k_table.h.
  *
- * decode() holt die Befehlsworte über einen Rückruf `fetch(i)` (i = 0, 1, 2 …,
- * immer in dieser Reihenfolge und nur so viele wie nötig) — so kann der
- * CPU-Kern (S3) jeden Abruf als eigenen Buszyklus fahren.  Das Ergebnis enthält
+ * decode() holt die Befehlsworte ueber einen Rueckruf `fetch(i)` (i = 0, 1, 2 …,
+ * immer in dieser Reihenfolge und nur so viele wie noetig) — so kann der
+ * CPU-Kern (S3) jeden Abruf als eigenen Buszyklus fahren.  Das Ergebnis enthaelt
  * die Tabellenzeile, alle gelesenen Worte und die Operandenwerte.
  * encode() ist die Umkehrung und wird vom Assembler und von den Rundlauf-Tests
  * benutzt.
@@ -27,7 +27,7 @@ namespace z8k {
 /// 32-Bit-Darstellung einer segmentierten Adresse (wie im Registerpaar).
 inline uint32_t segAddr(unsigned seg, unsigned off) { return (uint32_t(seg & 0x7F) << 24) | (off & 0xFFFF); }
 
-/// Ein dekodierter bzw. zu kodierender Operand.  Welche Felder gelten, hängt an `kind`.
+/// Ein dekodierter bzw. zu kodierender Operand.  Welche Felder gelten, haengt an `kind`.
 struct Operand {
     Kind     kind = Kind::None;
     uint8_t  reg = 0;         ///< Register (RB..RQ, RP, IR, IO), Index (X), Basis (BA, BX)
@@ -42,8 +42,8 @@ struct Operand {
 /// Ergebnis von decode().
 struct Decoded {
     const Insn* insn = nullptr;   ///< nullptr = keine Tabellenzeile passt
-    bool     seg = false;         ///< dekodiert für den segmentierten Modus
-    int      nwords = 0;          ///< gelesene Befehlsworte (= Länge / 2)
+    bool     seg = false;         ///< dekodiert fuer den segmentierten Modus
+    int      nwords = 0;          ///< gelesene Befehlsworte (= Laenge / 2)
     uint16_t w[6] = {};
     int      nops = 0;
     Operand  op[4];
@@ -58,7 +58,7 @@ struct Decoded {
     }
 
     /**
-     * Grundtakte laut Tabelle.  `condTrue=false` wählt die Takte „nicht
+     * Grundtakte laut Tabelle.  `condTrue=false` waehlt die Takte „nicht
      * genommen" (JP/RET …).  Zusatztakte `perN·n` kommen vom Aufrufer, der n kennt.
      */
     int cycles(bool condTrue = true) const {
@@ -112,7 +112,7 @@ bool decode(Fetch&& fetch, bool seg, Decoded& d) {
     }
     if (!in) return false;
     d.insn = in;
-    int next = in->hasW1 ? 2 : 1;          // nächstes zu lesendes Wort
+    int next = in->hasW1 ? 2 : 1;          // naechstes zu lesendes Wort
     int prefetched = d.nwords;             // schon gelesen (w1 evtl. ohne hasW1)
     auto word = [&]() -> uint16_t {
         uint16_t v;
@@ -171,8 +171,8 @@ inline bool decodeWords(const uint16_t* words, int count, bool seg, Decoded& d) 
 
 /**
  * Kodiert eine Tabellenzeile mit Operandenwerten (in Syntax-Reihenfolge).
- * Prüft nur, was die Kodierung verlangt (Feldbreiten, ≠0-Felder, Reichweiten);
- * die Syntaxprüfung (gerade Registerpaare usw.) macht der Assembler.
+ * Prueft nur, was die Kodierung verlangt (Feldbreiten, ≠0-Felder, Reichweiten);
+ * die Syntaxpruefung (gerade Registerpaare usw.) macht der Assembler.
  */
 inline bool encode(const Insn& in, const Operand* ops, int nops, bool seg,
                    std::vector<uint16_t>& out, std::string* err = nullptr) {

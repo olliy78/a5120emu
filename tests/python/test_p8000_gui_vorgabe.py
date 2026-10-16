@@ -1,16 +1,16 @@
 """P8000: die AUSLIEFERUNGSKONFIGURATION des p8000emu bis zum Prompt ``*`` des U8000-Monitors.
 
-Fehlerbericht (2026-10-09, Merkposten p8000 Nr. 54): „nach MAXSEG=<..> kein ``*``“.  Die M2-Wächter
+Fehlerbericht (2026-10-09, Merkposten p8000 Nr. 54): „nach MAXSEG=<..> kein ``*``“.  Die M2-Waechter
 (`test_p8000_monitor16.cpp`, `test_p8000_kopplung.cpp`) fahren den Kern mit Kern-Terminal, 1M@0 und
-ohne WDC — die Oberfläche aber mit Originalterminal, 4x256K, WDC 4.2 und ``plattepar=aus``.  Hier
-läuft GENAU das, was das Fenster baut (``MainWindow`` mit leerer Konfiguration ⇒
+ohne WDC — die Oberflaeche aber mit Originalterminal, 4x256K, WDC 4.2 und ``plattepar=aus``.  Hier
+laeuft GENAU das, was das Fenster baut (``MainWindow`` mit leerer Konfiguration ⇒
 `data/default_config_p8000.yaml` ⇒ ``Profil.kern_parameter``), bedient wie der Anwender:
 Hardwaretest U880 → ``x`` + RETURN → „Press NMI“ → NMI-Taster des Fensters (``_on_nmi``).
 
 * ohne Platte und mit unformatierter Platte (Vorgabe von „Neue Platte…“): ERROR 52 …, MAXSEG, ``*``;
-* mit Parametersatz, aber leerem Block 0 (frühere Standardplatte; die Ursache des Berichts):
-  MON16 bootet Block 0 (AUTOBOOT) — kein ``*``, wie am Gerät (``p.boot.s``) — Negativkontrolle;
-  der Plattenkasten sagt es, und RETURN statt NMI führt zum ``*``.
+* mit Parametersatz, aber leerem Block 0 (fruehere Standardplatte; die Ursache des Berichts):
+  MON16 bootet Block 0 (AUTOBOOT) — kein ``*``, wie am Geraet (``p.boot.s``) — Negativkontrolle;
+  der Plattenkasten sagt es, und RETURN statt NMI fuehrt zum ``*``.
 """
 
 import os
@@ -49,7 +49,7 @@ def _zu(w, qapp):
 
 
 def _bis(w, text, budget, schritt=500_000):
-    """Laufen, bis *text* (öfter als bisher) im Terminal steht — nach einem Rückstellen steht die
+    """Laufen, bis *text* (oefter als bisher) im Terminal steht — nach einem Rueckstellen steht die
     alte Meldung noch im Bild."""
     vorher = w.emulator.term_text(0).count(text)
     gelaufen = 0
@@ -78,10 +78,10 @@ def _bis_stern(w, budget, schritt=500_000):
 def _bis_press_nmi(w):
     """Einschalten → „Press RETURN“ → ``x`` + RETURN → „Press NMI“ (Bedienung des Anwenders)."""
     assert _bis(w, "U880-Softwaremonitor Version 3.1 - Press RETURN", 200_000_000), w.emulator.term_text(0)
-    w.emulator.run(20_000_000)                # MON8 liest erst später (Merkposten 26b)
+    w.emulator.run(20_000_000)                # MON8 liest erst spaeter (Merkposten 26b)
     w.emulator.term_send(0, "x\r")
     assert _bis(w, "U8000-Softwaremonitor Version 3.1 - Press NMI", 40_000_000), w.emulator.term_text(0)
-    w.emulator.run(2_000_000)                 # Meldung ganz über die Kopplung (Merkposten 15)
+    w.emulator.run(2_000_000)                 # Meldung ganz ueber die Kopplung (Merkposten 15)
 
 
 def _nmi_bis_maxseg(w):
@@ -134,9 +134,9 @@ def test_unformatierte_platte_kommt_zum_stern(qapp, umgebung, tmp_path):
 
 
 def test_platte_mit_parametersatz_ohne_urlader_bootet_statt_stern(qapp, umgebung, tmp_path):
-    """Die Ursache des Berichts: eine Platte mit PAR, sonst E5 (frühere Standardplatte bzw.
+    """Die Ursache des Berichts: eine Platte mit PAR, sonst E5 (fruehere Standardplatte bzw.
     „Formatiert mit Parametersatz“).  Der Hardwaretest besteht, MON16 startet Block 0 (AUTOBOOT,
-    ``p.boot.s``) und bleibt ohne ``*`` — Gastverhalten.  Der Kasten warnt; nach Rückstellen führt
+    ``p.boot.s``) und bleibt ohne ``*`` — Gastverhalten.  Der Kasten warnt; nach Rueckstellen fuehrt
     RETURN statt NMI zum ``*`` (``PTY_INT``/``KOPPEL_INT`` setzt den Prompt bei der ersten Eingabe)."""
     from app.ui import platten_widget as pw
     w = _fenster(qapp)
@@ -158,7 +158,7 @@ def test_platte_mit_parametersatz_ohne_urlader_bootet_statt_stern(qapp, umgebung
         assert _bis_stern(w, 20_000_000), w.emulator.term_text(0)
     finally:
         _zu(w, qapp)
-    # Beim nächsten Start mit dieser Platte meldet der Kasten es auch in der Statuszeile.
+    # Beim naechsten Start mit dieser Platte meldet der Kasten es auch in der Statuszeile.
     w = _fenster(qapp)
     try:
         assert w.platten_widget.pfad() == pfad

@@ -21,7 +21,7 @@ bool gen2(const K8915Machine::Config& cfg) {
 
 K2521::Config k2521Config(const K8915Machine::Config& cfg) {
     K2521::Config c = K2521::Config::k8915g2();
-    if (cfg.gen2_rom) c.rom = cfg.gen2_rom;   // nur Tests (F9: Abzug), Länge 0C00H
+    if (cfg.gen2_rom) c.rom = cfg.gen2_rom;   // nur Tests (F9: Abzug), Laenge 0C00H
     return c;
 }
 }  // namespace
@@ -42,9 +42,9 @@ K8915Machine::K8915Machine(const Config& cfg)
     if (zre8762_) {
         zre8762_->attachToBus(bus_);
     } else {
-        // Gen 2: K2521 (CTC 80H, PIO 84H) + K3528 (A8H–ABH).  Die CPU der K2521 greift über
-        // die K3528 zu; die bedient 0000–0FFF bei Bedarf über den Rückweg zur K2521
-        // (Vorrang R3), alles nicht Gewählte geht an den Systembus (K7024 bei 1000H).
+        // Gen 2: K2521 (CTC 80H, PIO 84H) + K3528 (A8H–ABH).  Die CPU der K2521 greift ueber
+        // die K3528 zu; die bedient 0000–0FFF bei Bedarf ueber den Rueckweg zur K2521
+        // (Vorrang R3), alles nicht Gewaehlte geht an den Systembus (K7024 bei 1000H).
         k2521_->attachToBus(bus_);
         ops_->attachToBus(bus_);
         k2521_->setSpeicherweg([this](uint16_t a) { return ops_->memRead(a); },
@@ -53,7 +53,7 @@ K8915Machine::K8915Machine(const Config& cfg)
                         [this](uint16_t a, uint8_t d) { k2521_->memWrite(a, d); });
     }
     ats_.attachToBus(bus_);
-    // K5122 062-8390 auf /WAIT gebrückt (am Gerät abgelesen, §3.4): keine ZVE2.
+    // K5122 062-8390 auf /WAIT gebrueckt (am Geraet abgelesen, §3.4): keine ZVE2.
     afs_.setSynchronisation(K5122::Synchronisation::Wait);
     bus_.registerIO(&afs_, 0x10, 9);
     if (cfg.tastatur) kbd_.connect(ats_.sio2(), 1);   // sonst: Kabel gezogen
@@ -61,12 +61,12 @@ K8915Machine::K8915Machine(const Config& cfg)
     // Folge mit der K2521 (CTC → PIO) an der Stelle der ZRE [?, F2/F22].
     bus_.setInterruptChain({&afs_, &zreInt(), &ats_});
     cpuRef().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
-    // Schnittstellen nach außen (Entwurf 19 §3.2): Reihenfolge = Stecker X3, X4, X5
+    // Schnittstellen nach aussen (Entwurf 19 §3.2): Reihenfolge = Stecker X3, X4, X5
     // (= Wert von K7028::Kanal, AP-S12).
     for (int k = 0; k < K7028::KanalAnzahl; ++k) {
         const int i = hub_.registriere(ats_.anschluss(static_cast<K7028::Kanal>(k)));
         k1520::serial::SerialKonfig c = hub_.konfig(i);
-        c.loop = pruefstecker_;   // Prüfstecker = Rx/Tx-Loop (§6.5)
+        c.loop = pruefstecker_;   // Pruefstecker = Rx/Tx-Loop (§6.5)
         hub_.konfigurieren(i, c);
     }
 }
@@ -95,7 +95,7 @@ void K8915Machine::altRueckruf(K7028::Kanal k, SerialCb cb)
 void K8915Machine::resetHardware()
 {
     stop_.store(false);
-    afs_.flushDisks();       // das interne Abbild überlebt den Reset, die Datei folgt ihm
+    afs_.flushDisks();       // das interne Abbild ueberlebt den Reset, die Datei folgt ihm
     if (zre8762_) {
         zre8762_->reset();   // A8H := 00H, CTC, CPU
     } else {
@@ -105,7 +105,8 @@ void K8915Machine::resetHardware()
     afs_.reset();            // K5122: PIOs, Marken-FF; Disketten und Kopfposition bleiben
     ats_.reset();            // SIOs, CTCs, Latch; die Tastatur hat eigenen Takt und Reset
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
-    k6022Reset();            // K6022 (gesteckt?): PIOs zurück, Band und Stanzband bleiben
+    k6022Reset();            // K6022 (gesteckt?): PIOs zurueck, Band und Stanzband bleiben
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurueck, Baender bleiben liegen
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
     bus_.clearNMI();
@@ -118,7 +119,7 @@ void K8915Machine::resetHardware()
 
 void K8915Machine::powerOn()
 {
-    // DRAM mit 00H, sonst meldet der Stub bei FFE0H womöglich zufällig „System im RAM".
+    // DRAM mit 00H, sonst meldet der Stub bei FFE0H womoeglich zufaellig „System im RAM".
     if (zre8762_) {
         zre8762_->powerOn(0x00);
     } else {
@@ -155,8 +156,8 @@ void K8915Machine::keyRelease(uint32_t k)
 
 void K8915Machine::tastenAbgeben()
 {
-    // Erst unter Sperre umhängen, dann ohne Sperre abgeben: die K7672 darf beim
-    // Einreihen nichts vom Oberflächenfaden aufhalten.
+    // Erst unter Sperre umhaengen, dann ohne Sperre abgeben: die K7672 darf beim
+    // Einreihen nichts vom Oberflaechenfaden aufhalten.
     std::deque<TastenEreignis> jetzt;
     {
         std::lock_guard<std::mutex> lk(tasten_sperre_);
@@ -196,7 +197,7 @@ int K8915Machine::run(int max_cycles)
         }
         bus_.updateInterruptChain();
 
-        if (bus_.isINT() && cpu.IFF1) {
+        if (bus_.isINT() && cpu.interruptAnnehmbar()) {
             const uint8_t vec = bus_.interruptAcknowledge();
             cpu.interrupt(vec);
         }
@@ -208,7 +209,7 @@ int K8915Machine::run(int max_cycles)
         int used = cpu.step();
         if (used == 0 && stop_.load(std::memory_order_relaxed)) break;   // Debugger-Halt
         // /WAIT der K5122: die CPU stand, bis das Byte unter dem Kopf war — die Zeit
-        // vergeht für alle anderen Bausteine mit (Zeitgeber, SIO, Index).
+        // vergeht fuer alle anderen Bausteine mit (Zeitgeber, SIO, Index).
         if (const int w = bus_.takeWaitCycles(); w > 0) {
             used += w;
             cpu.cycles += static_cast<uint64_t>(w);
@@ -220,7 +221,8 @@ int K8915Machine::run(int max_cycles)
         bool dirty = zreTakt(used);
         dirty |= ats_.clockTick(used);
         dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
-        // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
+        dirty |= k5020Takt(used);   // Kassette (gesteckt?)
+        // Schnittstellen nach aussen (Entwurf 19 §6): der Wandler arbeitet nur alle
         // 1/16 Zeichenzeit — dazwischen kostet es nur diesen Vergleich.
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
@@ -231,6 +233,7 @@ int K8915Machine::run(int max_cycles)
     }
     lw_.autoFlush(total_cycles_);
     k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
+    k5020AutoFlush();   // Kassettendateien nach der Schreibpause
     anzeigenSpiegeln();
     return max_cycles - remaining;
 }

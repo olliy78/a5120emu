@@ -1,23 +1,23 @@
 /**
  * @file expr_eval.h
- * @brief Ausdrucks-Evaluator für k1520dbg (rekursiv-absteigend), maschinenfrei.
+ * @brief Ausdrucks-Evaluator fuer k1520dbg (rekursiv-absteigend), maschinenfrei.
  *
- * Wertet Ausdrücke wie `(HL & 0xFF)==0xF7`, `[D1BE]w < 0x100`, `B*2+1`, `[HL+5]`
+ * Wertet Ausdruecke wie `(HL & 0xFF)==0xF7`, `[D1BE]w < 0x100`, `B*2+1`, `[HL+5]`
  * gegen einen Register-Snapshot + Speicher + Symboltabelle aus. Genutzt von
- * `b … if`, `disp`, `logpoint` und der `x`-Adresse — für ZVE1/ZVE2 (Z80-Sicht,
- * @ref eval) wie für den U8001 (@ref evalEnv mit eigenem Register-/Speicherleser,
+ * `b … if`, `disp`, `logpoint` und der `x`-Adresse — fuer ZVE1/ZVE2 (Z80-Sicht,
+ * @ref eval) wie fuer den U8001 (@ref evalEnv mit eigenem Register-/Speicherleser,
  * tools/dbg_u8000.h).
  *
- * Grammatik (niedrige → hohe Präzedenz):
+ * Grammatik (niedrige → hohe Praezedenz):
  *   cmp(== != < > <= >=) · `|` · `^` · `&` · shift(<< >>) · add(+ -) ·
- *   mul(* / %) · unär(- ~) · primary
+ *   mul(* / %) · unaer(- ~) · primary
  * primary: Zahl (0x../..h/dez, `%hex`) · `<<seg>>off` (Wert seg·2¹⁶+off) · Symbol ·
  *          Register · (HL)/(DE)/(BC)/(SP) (nur Z80) · ( expr ) ·
  *          [expr] / [expr]w / [expr]l (Speicher: Byte/Wort/Langwort, Index ist selbst
  *          ein Ausdruck) · [em:expr]… (roh ins DRAM des EM, Zahlen darin hex)
  * `%` und `<<` an der Stelle eines OPERANDEN sind eindeutig (sonst Rest/Schieben).
  *
- * Header-only & über Callbacks parametrisiert (Byte-Leser, Symbol-Resolver) →
+ * Header-only & ueber Callbacks parametrisiert (Byte-Leser, Symbol-Resolver) →
  * ohne Maschine unit-testbar. Bei Parse-/Bereichsfehlern wird `ok=false` gesetzt.
  * Gerechnet wird in 64 Bit (RQ-Register des U8001; `long` ist unter Windows 32 Bit).
  *
@@ -39,7 +39,7 @@ struct RegView {
     uint8_t  I=0, R=0;
 };
 
-/// Byte-Leser für [expr]/(rr): Adresse → Speicherbyte.
+/// Byte-Leser fuer [expr]/(rr): Adresse → Speicherbyte.
 using ReadByte = std::function<uint8_t(uint16_t)>;
 /// Symbol-Resolver: Name → Wert; @return true, wenn das Symbol existiert.
 using FindSym  = std::function<bool(const std::string&, uint16_t&)>;
@@ -62,7 +62,7 @@ struct Parser {
     const std::string& e;
     size_t i = 0;
     bool   ok = true;
-    bool   hexDefault = false;   ///< in [em:…]: Zahlen ohne Präfix sind hex
+    bool   hexDefault = false;   ///< in [em:…]: Zahlen ohne Praefix sind hex
 
     void ws(){ while(i<e.size() && e[i]==' ') ++i; }
     bool eat(const char* op){ ws(); size_t n=strlen(op);
@@ -162,10 +162,10 @@ inline long long evalEnv(const std::string& expr, const Env& env, bool& ok) {
 }
 
 /**
- * Einen vollständigen Ausdruck in der Z80-Sicht auswerten.
+ * Einen vollstaendigen Ausdruck in der Z80-Sicht auswerten.
  * @param expr      der Ausdruckstext.
  * @param r         Register-Snapshot.
- * @param readByte  Speicher-Byte-Leser (für [expr], (rr)); Worte little-endian.
+ * @param readByte  Speicher-Byte-Leser (fuer [expr], (rr)); Worte little-endian.
  * @param findSym   Symbol-Resolver (oder leer/`nullptr` → keine Symbole).
  * @param ok        [out] false bei Parse-/Bereichsfehler (Wert dann undefiniert/0).
  * @return          der ausgewertete (vorzeichenbehaftete) Wert.

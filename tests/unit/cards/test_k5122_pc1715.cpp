@@ -2,7 +2,7 @@
  * @file test_k5122_pc1715.cpp
  * @brief K5122 in der Konfiguration „1715" (doc/design/21_pc1715.md AP-2): Portlage
  *        Daten-PIO 00H–03H / Steuer-PIO 04H–07H, SE-Register 20H, MO-Register 21H
- *        (DB4–7 = /MO), Indexinterrupt über /ASTB im Mode 0, Markenlesen wie der Urlader S502.
+ *        (DB4–7 = /MO), Indexinterrupt ueber /ASTB im Mode 0, Markenlesen wie der Urlader S502.
  *
  * Belege: Servicehandbuch PC 1715 §1.5.2.1/§1.5.2.2, CP/A-BIOS `biopdskt.mac`
  * (doc/pc1715/cpa_bios.md §1), `doc/EPROMS/PC1715/s502.prn`.
@@ -76,14 +76,14 @@ TEST(K5122Portlage, VorgabeIstK1520) {
 /// Steuer-PIO an 04H–07H, Daten-PIO an 00H–03H (AB0 = Steuerwort, AB1 = Kanal); die
 /// K1520-Lage 10H–18H gibt es in dieser Konfiguration nicht.
 TEST_F(K5122Pc1715, PortlageDatenUndSteuerPio) {
-    card.ioWrite(0x20, 0xEE);   // LW 0 wählen
+    card.ioWrite(0x20, 0xEE);   // LW 0 waehlen
     card.ioWrite(0x21, 0xEE);   // Motor LW 0
-    // Steuer-PIO A Mode 0: Ausgaberegister zurücklesbar; Daten-PIO A ebenso, getrennt.
+    // Steuer-PIO A Mode 0: Ausgaberegister zuruecklesbar; Daten-PIO A ebenso, getrennt.
     card.ioWrite(0x04, 0xBF);
     card.ioWrite(0x00, 0x5A);
     EXPECT_EQ(card.ioRead(0x04), 0xBF);
     EXPECT_EQ(card.ioRead(0x00), 0x5A);
-    // Schritt nach innen über 04H (BFH, 3FH, BFH = /ST-Impuls, Bit5 = 1): Steuer-PIO A.
+    // Schritt nach innen ueber 04H (BFH, 3FH, BFH = /ST-Impuls, Bit5 = 1): Steuer-PIO A.
     EXPECT_EQ(card.drive(0).currentCylinder(), 0);
     card.ioWrite(0x04, 0x3F);
     card.ioWrite(0x04, 0xBF);
@@ -99,18 +99,18 @@ TEST_F(K5122Pc1715, PortlageDatenUndSteuerPio) {
     for (uint8_t p : {0x10, 0x12, 0x14, 0x16, 0x18, 0x20, 0x21}) EXPECT_EQ(card.ioRead(p), 0xFF) << int(p);
 }
 
-/// SE-Register 20H: DB4–7 /SE (Auswahl), DB0–3 /LCK = Türverriegelung — KEIN Motor.  Den
+/// SE-Register 20H: DB4–7 /SE (Auswahl), DB0–3 /LCK = Tuerverriegelung — KEIN Motor.  Den
 /// Motor schaltet das MO-Register 21H mit DB4–7 (/MO, low-aktiv); 22H/23H spiegeln.
 TEST_F(K5122Pc1715, SeRegisterWaehltMoRegisterSchaltetMotor) {
-    card.ioWrite(0x20, 0xDD);                 // LW 1 wählen, /LCK 1
+    card.ioWrite(0x20, 0xDD);                 // LW 1 waehlen, /LCK 1
     EXPECT_EQ(card.debugState().drive, 1);
     EXPECT_FALSE(card.isMotorOn(1)) << "20H schaltet am 1715 keinen Motor";
     card.ioWrite(0x21, 0xEF);                 // /MO0 = 0
     EXPECT_TRUE(card.isMotorOn(0));
     EXPECT_FALSE(card.isMotorOn(1));
-    card.ioWrite(0x20, 0xFF);                 // abwählen: Motoren laufen weiter (S502 0587H)
+    card.ioWrite(0x20, 0xFF);                 // abwaehlen: Motoren laufen weiter (S502 0587H)
     EXPECT_TRUE(card.isMotorOn(0));
-    // UDOS 1715: 20H := FFH, 21H := 00H ⇒ alle Motoren an (das Datenbyte zählt, nicht /SE).
+    // UDOS 1715: 20H := FFH, 21H := 00H ⇒ alle Motoren an (das Datenbyte zaehlt, nicht /SE).
     card.ioWrite(0x21, 0x00);
     for (int d = 0; d < 4; ++d) EXPECT_TRUE(card.isMotorOn(d)) << d;
     card.ioWrite(0x23, 0xFF);                 // Spiegel von 21H: alle aus
@@ -138,7 +138,7 @@ TEST_F(K5122Pc1715, JederIndexImpulsIstEinInterrupt) {
             bus.markIntDirty();
         }
     }
-    // 300 U/min = 5 Indexe/s; abzüglich Motoranlauf mindestens drei.
+    // 300 U/min = 5 Indexe/s; abzueglich Motoranlauf mindestens drei.
     EXPECT_GE(ints, 3);
     EXPECT_LE(ints, 5);
 }

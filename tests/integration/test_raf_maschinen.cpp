@@ -1,8 +1,8 @@
 /**
  * @file test_raf_maschinen.cpp
  * @brief RAM-Floppy RAF in den drei Maschinen (doc/design/22_raf512.md §5.2, AP-R2):
- *        Bestückung nach dem Anlegen, 88H/89H über den Systembus der Maschine (A8–A15
- *        wie bei `OUT (C),r`), Reset erhält / Netz-Ein verwirft, Save-State v8 des A5120
+ *        Bestueckung nach dem Anlegen, 88H/89H ueber den Systembus der Maschine (A8–A15
+ *        wie bei `OUT (C),r`), Reset erhaelt / Netz-Ein verwirft, Save-State v8 des A5120
  *        samt Ablehnung, A5120.16 + RAF.  Kein Gastcode — der kommt in AP-R5.
  */
 #include <gtest/gtest.h>
@@ -25,7 +25,7 @@ void latch(K1520Bus& bus, uint16_t l) { bus.ioWrite(uint16_t((l & 0xFF00) | 0x89
 void schreibe(K1520Bus& bus, uint8_t b, uint8_t v) { bus.ioWrite(uint16_t(b << 8 | 0x88), v); }
 uint8_t lies(K1520Bus& bus, uint8_t b) { return bus.ioRead(uint16_t(b << 8 | 0x88)); }
 
-/// Die drei Fälle je Maschine; @p neu liefert eine frische Maschine (ohne RAF).
+/// Die drei Faelle je Maschine; @p neu liefert eine frische Maschine (ohne RAF).
 template <class Neu>
 void pruefeMaschine(Neu neu) {
     // ── Ohne Option: niemand antwortet auf 88H/89H ─────────────────────────────
@@ -38,7 +38,7 @@ void pruefeMaschine(Neu neu) {
         EXPECT_EQ(lies(m->bus(), 0x05), 0xFF);
         EXPECT_EQ(m->bus().ioRead(0x0089), 0xFF);
     }
-    // ── Mit Option: Schreiben/Lesen, Reset erhält, Netz-Ein verwirft ─────────
+    // ── Mit Option: Schreiben/Lesen, Reset erhaelt, Netz-Ein verwirft ─────────
     {
         auto m = neu();
         ASSERT_TRUE(m->installRaf(RAF::Typ::RAF512)) << m->rafFehler();
@@ -60,7 +60,7 @@ void pruefeMaschine(Neu neu) {
         EXPECT_TRUE(m->raf()->gesperrt());
         EXPECT_EQ(lies(m->bus(), 0x00), 0xFF);
         latch(m->bus(), 0x0123);
-        EXPECT_EQ(lies(m->bus(), 0x00), 0xA5);                     // Inhalt überlebt
+        EXPECT_EQ(lies(m->bus(), 0x00), 0xA5);                     // Inhalt ueberlebt
         EXPECT_EQ(lies(m->bus(), 0x7F), 0x3C);
 
         EXPECT_FALSE(m->installRaf(RAF::Typ::RAF128));             // nach dem Reset fest
@@ -71,7 +71,7 @@ void pruefeMaschine(Neu neu) {
         EXPECT_EQ(lies(m->bus(), 0x00), 0x00);
         EXPECT_EQ(lies(m->bus(), 0x7F), 0x00);
     }
-    // ── Nach dem ersten Lauf ist die Bestückung fest ───────────────────────────
+    // ── Nach dem ersten Lauf ist die Bestueckung fest ───────────────────────────
     {
         auto m = neu();
         m->powerOn();
@@ -127,23 +127,23 @@ TEST(RafMaschine, A5120_16) { pruefeMaschine([] { return a5120(em256()); }); }
 /**
  * @test RafMaschine/A5120_16_EmUndRafKoexistieren
  * @brief Entwurf 22 §4: EM-Steuerkarte A8H–AFH und RAF 88H/89H nebeneinander — beide
- *        antworten, keiner stört den anderen.
+ *        antworten, keiner stoert den anderen.
  */
 TEST(RafMaschine, A5120_16_EmUndRafKoexistieren) {
     auto m = a5120MitDaten(em256());
     ASSERT_NE(m->em(), nullptr);
     m->bus().ioWrite(0x40AF, 0x0C);                    // A22[4] ← 0CH (Seite = AB12–15)
     EXPECT_EQ(m->em()->attribute(4), 0x0C);
-    EXPECT_EQ(m->bus().ioRead(0x40AF), 0xF3);          // invertiert zurück, DB4–7 offen
-    EXPECT_EQ(lies(m->bus(), 0x05), 0x85);             // RAF unberührt, Latch noch offen
+    EXPECT_EQ(m->bus().ioRead(0x40AF), 0xF3);          // invertiert zurueck, DB4–7 offen
+    EXPECT_EQ(lies(m->bus(), 0x05), 0x85);             // RAF unberuehrt, Latch noch offen
     latch(m->bus(), 0x0043);
     schreibe(m->bus(), 0x00, 0x11);
-    EXPECT_EQ(m->em()->attribute(4), 0x0C);            // EM unberührt
+    EXPECT_EQ(m->em()->attribute(4), 0x0C);            // EM unberuehrt
 }
 
 /**
  * @test RafMaschine/SaveStateRundreise
- * @brief Save-State v8: Inhalt und Latch kommen in einer gleich bestückten Maschine an —
+ * @brief Save-State v8: Inhalt und Latch kommen in einer gleich bestueckten Maschine an —
  *        auch zusammen mit dem EM-Block (A5120.16).
  */
 TEST(RafMaschine, SaveStateRundreise) {
@@ -169,7 +169,7 @@ TEST(RafMaschine, SaveStateRundreise) {
 /**
  * @test RafMaschine/SaveStateMitRafWirdOhnePassendeRafAbgelehnt
  * @brief Ein Stand mit RAF in eine Maschine ohne RAF oder mit anderer Bauart: false, Grund
- *        in stateError(), und NICHTS übernommen (auch kein RAM).
+ *        in stateError(), und NICHTS uebernommen (auch kein RAM).
  */
 TEST(RafMaschine, SaveStateMitRafWirdOhnePassendeRafAbgelehnt) {
     auto a = a5120MitDaten();
@@ -195,7 +195,7 @@ TEST(RafMaschine, SaveStateMitRafWirdOhnePassendeRafAbgelehnt) {
     EXPECT_EQ(andere->raf()->peek(0x42 * 128), 0x00);
     std::remove(pfad.c_str());
 
-    // Umgekehrt: ein Stand OHNE RAF lädt in eine Maschine mit RAF, die RAF bleibt.
+    // Umgekehrt: ein Stand OHNE RAF laedt in eine Maschine mit RAF, die RAF bleibt.
     const std::string pfad2 = k1520test::tempPath("k1520_raf_state_ohne.bin");
     ASSERT_TRUE(ohne->saveState(pfad2));
     auto mit = a5120MitDaten();
@@ -206,9 +206,9 @@ TEST(RafMaschine, SaveStateMitRafWirdOhnePassendeRafAbgelehnt) {
 
 /**
  * @test RafMaschine/SaveStateV7LaedtOhneRafAngabe
- * @brief Ein Stand v7 (vor der RAF) lädt weiter; eine gesteckte RAF behält ihren Inhalt.
+ * @brief Ein Stand v7 (vor der RAF) laedt weiter; eine gesteckte RAF behaelt ihren Inhalt.
  *        Der v7-Stand entsteht aus einem v8-Stand ohne RAF: Versionsbyte 7, RAF-Teil
- *        (Länge 4 B + Kennbyte 0) abgeschnitten.
+ *        (Laenge 4 B + Kennbyte 0) abgeschnitten.
  */
 TEST(RafMaschine, SaveStateV7LaedtOhneRafAngabe) {
     auto ohne = a5120();
@@ -238,8 +238,8 @@ TEST(RafMaschine, SaveStateV7LaedtOhneRafAngabe) {
 
 /**
  * @test RafMaschine/SnapshotOhneRafInhaltStelltNurDasLatchZurueck
- * @brief Die Rückwärts-Historie des Debuggers (`rs`) zieht Stände OHNE RAF-Inhalt
- *        (bis 2 MB je Stück); benannte Snapshots mit.  Hier beides am Maschinen-API.
+ * @brief Die Rueckwaerts-Historie des Debuggers (`rs`) zieht Staende OHNE RAF-Inhalt
+ *        (bis 2 MB je Stueck); benannte Snapshots mit.  Hier beides am Maschinen-API.
  */
 TEST(RafMaschine, SnapshotOhneRafInhaltStelltNurDasLatchZurueck) {
     auto m = a5120MitDaten();
@@ -254,7 +254,7 @@ TEST(RafMaschine, SnapshotOhneRafInhaltStelltNurDasLatchZurueck) {
     latch(m->bus(), 0x0099);
     ASSERT_TRUE(m->restoreState(leicht));
     EXPECT_EQ(m->raf()->latch(), 0x0042);
-    EXPECT_EQ(lies(m->bus(), 0x00), 0xEE);              // Inhalt NICHT zurückgedreht
+    EXPECT_EQ(lies(m->bus(), 0x00), 0xEE);              // Inhalt NICHT zurueckgedreht
     ASSERT_TRUE(m->restoreState(voll));
-    EXPECT_EQ(lies(m->bus(), 0x00), 0x80);              // benannter Snapshot: ganz zurück
+    EXPECT_EQ(lies(m->bus(), 0x00), 0x80);              // benannter Snapshot: ganz zurueck
 }

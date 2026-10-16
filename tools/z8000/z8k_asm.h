@@ -1,11 +1,11 @@
 /**
  * @file z8k_asm.h
- * @brief z8kasm — Zwei-Pass-Assembler für U8001/U8002 (Zilog-Syntax), header-only.
+ * @brief z8kasm — Zwei-Pass-Assembler fuer U8001/U8002 (Zilog-Syntax), header-only.
  *
- * Befehle kommen ausschließlich aus z8k_table.h: für eine Mnemonik werden die
+ * Befehle kommen ausschliesslich aus z8k_table.h: fuer eine Mnemonik werden die
  * Tabellenzeilen der Reihe nach probiert, die erste passende kodiert.  Die
- * Länge eines Befehls hängt nur von Zeile und Schreibweise ab (nie von einem
- * Symbolwert), deshalb genügen zwei Durchläufe.
+ * Laenge eines Befehls haengt nur von Zeile und Schreibweise ab (nie von einem
+ * Symbolwert), deshalb genuegen zwei Durchlaeufe.
  *
  * Quelltext:
  *   [marke:] [befehl|direktive operanden] [; kommentar | !kommentar!]
@@ -15,9 +15,9 @@
  * Zahlen: %1234 (hex), %(2)1010 (Basis 2..16), 0x1234, 1234H, 0b1010, 1010B,
  *   dezimal, 'A'/'AB', $ = aktuelle Adresse.  Operatoren: + - * / MOD & | ^
  *   AND OR XOR ~ NOT, Klammern, SEG(x), OFF(x).  <<s>>o = segmentierte Adresse
- *   (Wert s<<24 | o, wie im Registerpaar).  Groß-/Kleinschreibung egal.
+ *   (Wert s<<24 | o, wie im Registerpaar).  Gross-/Kleinschreibung egal.
  * Operanden: siehe z8k_disasm.h (dieselbe Schreibweise).  Kurzer segmentierter
- *   Offset nur ausdrücklich: |<<3>>%12|.  JP/JR/RET ohne Bedingung = T.
+ *   Offset nur ausdruecklich: |<<3>>%12|.  JP/JR/RET ohne Bedingung = T.
  *   INC/DEC, Rotieren, Schieben ohne Anzahl = 1.  LDB.L = Langform LDB Rbd,#data.
  *
  * @license MIT
@@ -38,7 +38,7 @@ namespace z8k {
 
 struct AsmOptions {
     bool seg = false;              ///< Startmodus (Direktiven SEG/NONSEG schalten um)
-    /// Kompatibilität zu z8001asm.py: @Rn und @RRn (ebenso Basis Rn/RRn) gelten in
+    /// Kompatibilitaet zu z8001asm.py: @Rn und @RRn (ebenso Basis Rn/RRn) gelten in
     /// beiden Modi, kodiert wird die Registernummer, wie sie dasteht — auch ungerade.
     bool laxPointers = false;
 };
@@ -59,14 +59,14 @@ struct AsmResult {
     std::vector<AsmMessage> errors;
     std::map<uint32_t, uint8_t> image;       ///< lineare Adresse (seg<<16 | off) → Byte
     std::vector<ListLine> listing;
-    std::map<std::string, int64_t> symbols;  ///< Namen in Großbuchstaben
+    std::map<std::string, int64_t> symbols;  ///< Namen in Grossbuchstaben
     /// Marken (Adresse eines Befehls/Datums) mit Segment — ohne EQU-Konstanten.
     /// Nichtsegmentiert steht hier das Segment 0 (`formatSymbols` setzt es ein).
     std::map<std::string, std::pair<bool, uint32_t>> labels;   ///< Name → (segmentiert, seg<<16|off)
     bool ok() const { return errors.empty(); }
 
-    /// Zusammenhängendes Abbild von der kleinsten bis zur größten belegten Adresse
-    /// (Lücken = 0).  base = lineare Startadresse.
+    /// Zusammenhaengendes Abbild von der kleinsten bis zur groessten belegten Adresse
+    /// (Luecken = 0).  base = lineare Startadresse.
     std::vector<uint8_t> flat(uint32_t* base = nullptr) const {
         std::vector<uint8_t> out;
         if (image.empty()) { if (base) *base = 0; return out; }
@@ -95,7 +95,7 @@ inline bool identChar(char c)  { return std::isalnum(static_cast<unsigned char>(
 
 /// Registername → Klasse ('B','W','L','Q') und Kodierung; false = kein Register.
 /// @p lax (AsmOptions::laxPointers): auch ungerade RRn/RQn — der Disassembler zeigt das
-/// Feld so, wie es kodiert ist (README Lücke 9), und der Rundlauf muss es zurücknehmen.
+/// Feld so, wie es kodiert ist (README Luecke 9), und der Rundlauf muss es zuruecknehmen.
 inline bool parseReg(const std::string& up, char& cls, int& num, std::string* err = nullptr, bool lax = false) {
     auto digits = [&](size_t from, int& v) {
         if (from >= up.size()) return false;
@@ -127,7 +127,7 @@ inline bool parseReg(const std::string& up, char& cls, int& num, std::string* er
     return false;
 }
 
-/// Symbolzugriff des Ausdrucksauswerters: Name (groß) → Wert; false = unbekannt.
+/// Symbolzugriff des Ausdrucksauswerters: Name (gross) → Wert; false = unbekannt.
 using SymFn = std::function<bool(const std::string&, int64_t&)>;
 
 /// Rekursiv-absteigender Ausdrucksauswerter.
@@ -149,7 +149,7 @@ public:
 
 private:
     void skip() { while (p_ < s_.size() && std::isspace(static_cast<unsigned char>(s_[p_]))) ++p_; }
-    bool kw(const char* w) {   // Schlüsselwort-Operator (AND, MOD …)
+    bool kw(const char* w) {   // Schluesselwort-Operator (AND, MOD …)
         skip();
         size_t n = std::strlen(w);
         if (p_ + n > s_.size()) return false;
@@ -308,7 +308,7 @@ struct PArg {
     int  reg2 = 0;         ///< BaseIdx: Index (Wortregister); Idx: Index
     bool shortSeg = false; ///< |…|
     std::string expr;      ///< Imm/Addr/Idx: Adresse; Base: Verschiebung
-    std::string text;      ///< Rohtext in Großbuchstaben (Schlüsselwörter)
+    std::string text;      ///< Rohtext in Grossbuchstaben (Schluesselwoerter)
 };
 
 /// Operandentext zerlegen.  false + err bei Syntaxfehler.
@@ -360,7 +360,7 @@ inline bool parseArg(const std::string& raw, PArg& a, std::string& err, bool lax
     return true;
 }
 
-/// Operanden an Kommas teilen (nicht in Klammern oder Anführungszeichen).
+/// Operanden an Kommas teilen (nicht in Klammern oder Anfuehrungszeichen).
 inline std::vector<std::string> splitArgs(const std::string& s) {
     std::vector<std::string> out;
     std::string cur; int depth = 0; char q = 0;
@@ -392,7 +392,7 @@ struct BindCtx {
     uint8_t pcSeg = 0;
     uint16_t pc = 0;          ///< Adresse des Befehls
     const SymFn* sym = nullptr;
-    bool final = true;        ///< Pass 2: Werte prüfen; Pass 1: Undefiniertes tolerieren
+    bool final = true;        ///< Pass 2: Werte pruefen; Pass 1: Undefiniertes tolerieren
     bool laxPtr = false;      ///< AsmOptions::laxPointers
 };
 
@@ -411,13 +411,13 @@ inline int instrWords(const Insn& in, const Operand* ops, bool seg) {
 
 /**
  * Operanden an eine Tabellenzeile binden.  Liefert false + Fehlertext, wenn
- * die Zeile nicht passt (`mismatch=true`: Form passt nicht — nächste Zeile
+ * die Zeile nicht passt (`mismatch=true`: Form passt nicht — naechste Zeile
  * probieren) oder ein Wert falsch ist (`mismatch=false`: Fehler melden).
  */
 inline bool bindRow(const Insn& in, std::vector<PArg> args, const BindCtx& cx,
                     Operand* ops, std::string& err, bool& mismatch) {
     mismatch = true;
-    // Flag- und Interruptlisten: alle Argumente sind Schlüsselwörter
+    // Flag- und Interruptlisten: alle Argumente sind Schluesselwoerter
     if (in.nops == 1 && (in.op[0].kind == Kind::FL || in.op[0].kind == Kind::INT)) {
         uint32_t v = in.op[0].kind == Kind::FL ? 0 : 3;
         for (auto& a : args) {
@@ -533,7 +533,7 @@ inline bool bindRow(const Insn& in, std::vector<PArg> args, const BindCtx& cx,
             if (a.t != PArg::Addr || a.shortSeg) { err = "Zieladresse erwartet"; return false; }
             int64_t v;
             if (!evalExpr(a.expr, v)) return false;
-            // Länge ist ohne Werte bekannt → Folgeadresse
+            // Laenge ist ohne Werte bekannt → Folgeadresse
             Operand tmp[4]; int words = instrWords(in, tmp, cx.seg);
             int64_t next = int64_t(cx.pc) + 2 * words;
             int64_t off = v & 0xFFFF;
@@ -574,9 +574,9 @@ inline bool bindRow(const Insn& in, std::vector<PArg> args, const BindCtx& cx,
             case Kind::IML: if (!range(-2147483648LL, 4294967295LL, "Langwort-Direktwert")) return false; o.value = uint32_t(v); break;
             case Kind::IM4: if (!range(0, 15, "Konstante")) return false; o.value = uint32_t(v); break;
             case Kind::N16: case Kind::LDMN: if (!range(1, 16, "Anzahl")) return false; o.value = uint32_t(v); break;
-            // --lax: auch, was das Handbuch verbietet, die CPU aber ausführt (Bytebit 8..15,
-            // Schiebeweite über die Breite) — damit der Disassemblertext jeder Kodierung
-            // zurück assembliert (Rundlauf über den ganzen Befehlssatz, AP P8).
+            // --lax: auch, was das Handbuch verbietet, die CPU aber ausfuehrt (Bytebit 8..15,
+            // Schiebeweite ueber die Breite) — damit der Disassemblertext jeder Kodierung
+            // zurueck assembliert (Rundlauf ueber den ganzen Befehlssatz, AP P8).
             case Kind::BIT: if (!range(0, (B && !cx.laxPtr) ? 7 : 15, "Bitnummer")) return false; o.value = uint32_t(v); break;
             case Kind::SHL: case Kind::SHR: {
                 int64_t mx = B ? 8 : Lw ? 32 : 16;
@@ -649,7 +649,7 @@ inline bool matchInstr(const std::string& mnemonic, const std::vector<std::strin
     return false;
 }
 
-/// Kommentar entfernen (';' bis Zeilenende, '!…!' nach Zilog), Anführungszeichen beachten.
+/// Kommentar entfernen (';' bis Zeilenende, '!…!' nach Zilog), Anfuehrungszeichen beachten.
 inline std::string stripComment(const std::string& line) {
     std::string out; char q = 0; bool bang = false;
     for (size_t i = 0; i < line.size(); ++i) {
@@ -671,7 +671,7 @@ inline std::string stripComment(const std::string& line) {
 
 /**
  * Einen einzelnen Befehl assemblieren (Tests, Inline-Assembler des Debuggers).
- * `pc`/`pcSeg`: Adresse des Befehls (für relative Ziele und $).
+ * `pc`/`pcSeg`: Adresse des Befehls (fuer relative Ziele und $).
  */
 inline bool assembleLine(const std::string& text, bool seg, uint8_t pcSeg, uint16_t pc,
                          std::vector<uint16_t>& words, std::string& err,
@@ -751,7 +751,7 @@ inline AsmResult assemble(const std::string& source, const AsmOptions& opt = {})
     for (int pass = 1; pass <= 2; ++pass) {
         bool seg = opt.seg;
         uint8_t curSeg = 0;
-        uint32_t off = 0;             // darf zum Prüfen über 0xFFFF laufen
+        uint32_t off = 0;             // darf zum Pruefen ueber 0xFFFF laufen
         bool ended = false;
         SymFn symFn = [&](const std::string& n, int64_t& v) {
             auto it = syms.find(n);
@@ -886,7 +886,7 @@ inline AsmResult assemble(const std::string& source, const AsmOptions& opt = {})
                 if (pass == 2) {
                     addErr(st.line, err);
                     res.listing.push_back(ll);
-                    // Länge wie in Pass 1 weiterzählen, sonst verschieben sich die Marken
+                    // Laenge wie in Pass 1 weiterzaehlen, sonst verschieben sich die Marken
                     BindCtx c1 = cx; c1.final = false;
                     std::string e1;
                     if (matchInstr(op, st.args, c1, in, ops, e1)) off += uint32_t(2 * instrWords(*in, ops, seg));
@@ -907,8 +907,8 @@ inline AsmResult assemble(const std::string& source, const AsmOptions& opt = {})
             res.listing.push_back(ll);
         }
         if (pass == 1 && !res.errors.empty()) {
-            // Pass-1-Fehler (doppelte Marken, ORG) melden; Pass 2 läuft trotzdem,
-            // damit alle übrigen Fehler auch erscheinen.
+            // Pass-1-Fehler (doppelte Marken, ORG) melden; Pass 2 laeuft trotzdem,
+            // damit alle uebrigen Fehler auch erscheinen.
         }
     }
     std::stable_sort(res.errors.begin(), res.errors.end(),
@@ -918,9 +918,9 @@ inline AsmResult assemble(const std::string& source, const AsmOptions& opt = {})
 }
 
 /**
- * @brief Symboldatei für k1520dbg (`sym`/`-s`): eine Marke je Zeile, `<<SEG>>%OFFS NAME`.
+ * @brief Symboldatei fuer k1520dbg (`sym`/`-s`): eine Marke je Zeile, `<<SEG>>%OFFS NAME`.
  *
- * Nur Marken (EQU-Konstanten nicht — sie sind keine Adressen und würden sonst jede
+ * Nur Marken (EQU-Konstanten nicht — sie sind keine Adressen und wuerden sonst jede
  * gleichlautende Zahl im Disassembler beschriften).  Nichtsegmentiert assemblierte
  * Marken haben kein Segment; sie bekommen @p nonsegSeg (dort, wohin das Programm
  * geladen wird).  Sortiert nach Adresse.
@@ -945,7 +945,7 @@ inline std::string formatSymbols(const AsmResult& r, uint8_t nonsegSeg = 0,
     return out;
 }
 
-/// Listing als Text: Adresse, Bytes (höchstens 8 je Zeile, Rest in Folgezeilen), Quelle.
+/// Listing als Text: Adresse, Bytes (hoechstens 8 je Zeile, Rest in Folgezeilen), Quelle.
 inline std::string formatListing(const AsmResult& r) {
     std::string out;
     char buf[64];

@@ -2,9 +2,9 @@
  * @file test_dbg_p8000.cpp
  * @brief tools/dbg_p8000.h — die Textbausteine des P8000-Debuggers (AP P12a/P12b): Speicherbild,
  *        UA858-Register und -Statusprotokoll, Kopplungsprotokoll, UB8010-Register/Deskriptoren,
- *        probeweise Übersetzung (`xlat`), logischer/physischer Speicherzugriff (`ml`/`mp`).
+ *        probeweise Uebersetzung (`xlat`), logischer/physischer Speicherzugriff (`ml`/`mp`).
  *
- * Wichtigste Eigenschaft von P12b: die Sicht ändert NICHTS (kein Violation-Latch, keine REF/CHG-Bits,
+ * Wichtigste Eigenschaft von P12b: die Sicht aendert NICHTS (kein Violation-Latch, keine REF/CHG-Bits,
  * kein SEGT) — `Xlat.OhneNebenwirkung`.
  */
 #include <gtest/gtest.h>
@@ -22,7 +22,7 @@ bool enthaelt(const std::vector<std::string>& v, const std::string& n) {
 }
 bool enthaelt(const std::string& h, const std::string& n) { return h.find(n) != std::string::npos; }
 
-// MON16/WEGA-Konstanten (p.test.s, mch.s): /CS-Auswahl der drei UB8010 über die Spezial-E/A-Adresse.
+// MON16/WEGA-Konstanten (p.test.s, mch.s): /CS-Auswahl der drei UB8010 ueber die Spezial-E/A-Adresse.
 constexpr uint16_t CODE_MMU = 0x00FC, DATA_MMU = 0x00FA, STACK_MMU = 0x00F6;
 
 void sout(L& l, uint16_t mmu, uint8_t cmd, uint8_t v) {
@@ -58,7 +58,7 @@ TEST(DbgP8000Dma, RegisterUndStatusSindLesbar) {
     Z80Dma d("T");
     d.setIEI(true);
     d.reset();
-    // WR0: Transfer A->B, alle vier Folgebytes (Start A, Blocklänge); WR1/WR2: Speicher aufsteigend
+    // WR0: Transfer A->B, alle vier Folgebytes (Start A, Blocklaenge); WR1/WR2: Speicher aufsteigend
     for (uint8_t b : {0x7D, 0x34, 0x12, 0x10, 0x00, 0x14, 0x10}) d.ioWrite(0, b);
     const auto z = dbgp8::dmaZeilen(d.sicht());
     EXPECT_TRUE(enthaelt(z, "WR0=7D  Transfer, A -> B  Blocklaenge=0010"));
@@ -83,7 +83,7 @@ TEST(DbgP8000Dma, ProtokollSchreibtNurAenderungen) {
     p.beobachte(2, 0x100, d.sicht());
     p.beobachte(3, 0x102, d.sicht());                 // gleich: keine zweite Zeile
     EXPECT_EQ(p.prot.gesamt(), 1u);
-    d.ioWrite(0, 0x87);                               // Freigabe ändert den Schlüssel
+    d.ioWrite(0, 0x87);                               // Freigabe aendert den Schluessel
     p.beobachte(4, 0x104, d.sicht());
     EXPECT_EQ(p.prot.gesamt(), 2u);
     p.port(5, 0x106, false, 0xC3);
@@ -155,7 +155,7 @@ TEST(DbgP8000Mmu, RegisterUndDeskriptorenDerDreiMmus) {
     EXPECT_TRUE(enthaelt(sdr[0], "SDR 05  Basis=123400 Limit=0F (4096 Byte)  Attr=01 [RD]"));
     // Code-MMU: nichts belegt
     EXPECT_TRUE(enthaelt(dbgp8::mmuDeskriptorZeilen(l.mmu(L::Mmu::Code), 0, 63, false), "keine belegten"));
-    // ausdrücklicher Bereich zeigt auch leere Deskriptoren
+    // ausdruecklicher Bereich zeigt auch leere Deskriptoren
     EXPECT_EQ(dbgp8::mmuDeskriptorZeilen(l.mmu(L::Mmu::Code), 2, 4, true).size(), size_t(3));
     const auto lg = dbgp8::mmuLogikZeilen(l);
     EXPECT_TRUE(enthaelt(lg, "SCR=03"));
@@ -179,7 +179,7 @@ TEST(DbgP8000Xlat, SystemZyklusGehtAnDieCodeMmu) {
 TEST(DbgP8000Xlat, VerletzungWirdGemeldetAberNichtAusgeloest) {
     L l;
     mmuEin(l);
-    ladeSdr(l, CODE_MMU, 6, 0x2000, 0xFF, Z8010::ATTR_RD);   // schreibgeschützt
+    ladeSdr(l, CODE_MMU, 6, 0x2000, 0xFF, Z8010::ATTR_RD);   // schreibgeschuetzt
     const auto vorher = l.sicht();
     const auto attrVorher = l.mmu(L::Mmu::Code).deskriptor(6).attr;
     const auto lesen = dbgp8::xlat(l, dbgp8::zyklusFuer(6, 0x0000, dbgp8::Art::Data, true, true));
@@ -187,7 +187,7 @@ TEST(DbgP8000Xlat, VerletzungWirdGemeldetAberNichtAusgeloest) {
     EXPECT_EQ(lesen.probe.mmu[0].verletzung, 0);
     EXPECT_NE(schreiben.probe.mmu[0].verletzung & Z8010::VTR_RDV, 0);
     EXPECT_TRUE(enthaelt(schreiben.zeilen, "Verletzung RDV"));
-    // OHNE Nebenwirkung: weder Verletzungsregister noch SEGT noch REF/CHG-Bits noch Zähler
+    // OHNE Nebenwirkung: weder Verletzungsregister noch SEGT noch REF/CHG-Bits noch Zaehler
     EXPECT_EQ(l.mmu(L::Mmu::Code).vtr(), 0);
     EXPECT_FALSE(l.segt());
     EXPECT_EQ(l.mmu(L::Mmu::Code).deskriptor(6).attr, attrVorher);
@@ -216,14 +216,14 @@ TEST(DbgP8000Speicher, LogischUndPhysischOhneNebenwirkung) {
     EXPECT_EQ(v, 0xAB);
     EXPECT_TRUE(dbgp8::physHaupt(k, 0x0A3410, v));
     EXPECT_EQ(v, 0xAB);
-    // `ml` = `mp` über die MMU
+    // `ml` = `mp` ueber die MMU
     uint8_t p = 0;
     ASSERT_TRUE(dbgp8::physHaupt(k, dbgp8::xlat(l, dbgp8::zyklusFuer(5, 0x0010, dbgp8::Art::Data, true)).phys, p));
     EXPECT_EQ(p, v);
     // Hauptspeicher ohne Karte: offener Bus, false
     EXPECT_FALSE(dbgp8::physHaupt(k, 0xF00000, v));
     EXPECT_EQ(v, 0xFF);
-    // On-Board nach SCR = 0: EPROM, Byte stimmt mit dem Abzug überein
+    // On-Board nach SCR = 0: EPROM, Byte stimmt mit dem Abzug ueberein
     l.ioSchreiben(L::P_SCR, 0);
     EXPECT_TRUE(dbgp8::logByte(k, 0, 0x0000, dbgp8::Art::Code, true, v));
     EXPECT_EQ(v, k.rom()[0]);

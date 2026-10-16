@@ -1,4 +1,4 @@
-# boot_trace --machine prg710 (Entwurf 20 AP-P1d): ohne Diskette läuft das echte ROM
+# boot_trace --machine prg710 (Entwurf 20 AP-P1d): ohne Diskette laeuft das echte ROM
 # bis in seine 8279-Abfrage; Abbruch als Stillstand dort = Ziel von Etappe 1, Exit 0.
 # Ereignisprotokoll: Speicherverwaltung mit Seite aus A12–A15 und Speicherbild.
 tool:    boot_trace

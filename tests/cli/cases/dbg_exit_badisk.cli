@@ -1,4 +1,4 @@
-# Nicht vorhandene Diskette → Exit-Code 1 (für Skripte/Agenten).
+# Nicht vorhandene Diskette → Exit-Code 1 (fuer Skripte/Agenten).
 tool:      k1520dbg
 disk_path: /gibt/es/nicht.img
 run:       %DISK%

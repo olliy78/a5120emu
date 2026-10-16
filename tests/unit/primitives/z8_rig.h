@@ -1,5 +1,5 @@
-// Prüfstand für die Z8-Primitive: Programmbus (64 KB), externer Programm- und Datenspeicher
-// (je 64 KB, getrennt über /DM), Busprotokoll, Assembler tools/z8/z8_asm.h.
+// Pruefstand fuer die Z8-Primitive: Programmbus (64 KB), externer Programm- und Datenspeicher
+// (je 64 KB, getrennt ueber /DM), Busprotokoll, Assembler tools/z8/z8_asm.h.
 #pragma once
 #include "core/primitives/z8.h"
 #include "tools/z8/z8_asm.h"
@@ -19,7 +19,7 @@ struct Rig {
     std::vector<uint8_t> extProg = std::vector<uint8_t>(65536, 0xFF);  ///< extern, /DM inaktiv
     std::vector<uint8_t> extDaten = std::vector<uint8_t>(65536, 0x00); ///< extern, /DM aktiv
     std::vector<BusEintrag> bus;          ///< alle externen Zyklen
-    std::vector<std::pair<int, uint8_t>> portLog;   ///< (Port, Pegel) bei jeder Ausgangsänderung
+    std::vector<std::pair<int, uint8_t>> portLog;   ///< (Port, Pegel) bei jeder Ausgangsaenderung
     std::vector<uint8_t> gesendet, empfangen;
     int wartetakte = 0;                   ///< je externem Zyklus
     z8asm::Ergebnis asmErg;
@@ -56,7 +56,7 @@ struct Rig {
         EXPECT_NE(it, asmErg.marken.end()) << "Marke " << m;
         return it == asmErg.marken.end() ? -1 : it->second;
     }
-    /// Reset ausführen (ein Schritt), Protokolle leeren.
+    /// Reset ausfuehren (ein Schritt), Protokolle leeren.
     void boot() { cpu.reset(); cpu.step(); bus.clear(); portLog.clear(); }
 
     /// Programm ab 000CH (Vektoren davor frei), endet mit `ENDE: JR ENDE`.
@@ -64,7 +64,7 @@ struct Rig {
         load(vorspann + "\n ORG 0CH\n" + body + "\nENDE: JR ENDE\n");
         boot();
     }
-    /// Bis PC = ENDE; Rückgabe = Takte.
+    /// Bis PC = ENDE; Rueckgabe = Takte.
     uint64_t lauf(int maxSchritte = 100000) {
         const long e = marke("ENDE");
         const uint64_t t0 = cpu.takte;
@@ -72,7 +72,7 @@ struct Rig {
         EXPECT_EQ(cpu.pc, e) << "ENDE nicht erreicht";
         return cpu.takte - t0;
     }
-    /// Einen Befehl als Bytes an PC ablegen und ausführen; Rückgabe = Takte.
+    /// Einen Befehl als Bytes an PC ablegen und ausfuehren; Rueckgabe = Takte.
     int eins(std::initializer_list<uint8_t> bytes, uint16_t at = 0x0100) {
         uint16_t a = at;
         for (uint8_t b : bytes) prog[a++] = b;

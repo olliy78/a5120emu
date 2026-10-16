@@ -1,10 +1,10 @@
 /**
  * @file test_fs_catalog.cpp
- * @brief GoogleTests für @ref FsCatalog — die Sektion `filesystems:` der formats.yaml.
+ * @brief GoogleTests fuer @ref FsCatalog — die Sektion `filesystems:` der formats.yaml.
  *
  * Zwei Blickrichtungen:
- *   1. der **ausgelieferte** Katalog `data/formats.yaml` ist vollständig und plausibel;
- *   2. das Schema wehrt fehlerhafte Definitionen ab, ohne den Rest mitzureißen.
+ *   1. der **ausgelieferte** Katalog `data/formats.yaml` ist vollstaendig und plausibel;
+ *   2. das Schema wehrt fehlerhafte Definitionen ab, ohne den Rest mitzureissen.
  *
  * @see core/filesystem/fs_catalog.h
  * @see doc/design/13_k1520disktool.md §6
@@ -34,7 +34,7 @@ const FormatCatalog& formate() {
     return c;
 }
 
-/// @brief Katalog aus einem YAML-Schnipsel bauen (Temp-Datei, räumt sich weg).
+/// @brief Katalog aus einem YAML-Schnipsel bauen (Temp-Datei, raeumt sich weg).
 class TempKatalog {
 public:
     explicit TempKatalog(const std::string& yaml) {
@@ -129,12 +129,12 @@ TEST(FsCatalog, Cpa780BeginntBeiZylinder2) {
  * @test Auf der 16×256-Geometrie liegt GENAU EIN Profil — und es beginnt bei c2h0.
  * @par Kriterium  `forFormat("cpa640")` liefert nur `scpx640`, mit `data_cyl == 2`.
  * @par Warum      Bis 2026-08-11 stand daneben ein `cpa640` mit `data_cyl == 0`,
- *                 gedacht als Beispiel für „mehrere Dateisysteme je Geometrie".  Das
+ *                 gedacht als Beispiel fuer „mehrere Dateisysteme je Geometrie".  Das
  *                 Beispiel war falsch: CP/A kann so eine Diskette nicht erzeugen, denn
- *                 für 256-B-Sektoren trägt `dtrsl1` ein FESTES Offset von 4 logischen
+ *                 fuer 256-B-Sektoren traegt `dtrsl1` ein FESTES Offset von 4 logischen
  *                 Spuren (`CpaDpb.TabellenzeilenEntsprechenDemBios`).  Der Eintrag
  *                 bewirkte nur, dass jede 16×256-Diskette „nicht eindeutig" meldete.
- *                 Dieser Test hält die Korrektur fest.
+ *                 Dieser Test haelt die Korrektur fest.
  */
 TEST(FsCatalog, SechzehnMalZweihundertsechsundfuenfzigHatNurEinProfilAbZylinderZwei) {
     std::string fatal;
@@ -275,7 +275,7 @@ TEST(FsCatalog, SpaetereDateiUeberschreibtGleichenNamen) {
  * @test FsCatalog.DetectUndBootHeaderWerdenGeprueft
  * @brief AP-T1a (Felder aus AP-E5a/E5c): `detect` nur true/false, `boot_header` nur
  *        `k8915` oder leer — alles andere wird mit Feldnamen beanstandet und der
- *        Eintrag übersprungen; ein gültiger Eintrag übernimmt beide Werte.
+ *        Eintrag uebersprungen; ein gueltiger Eintrag uebernimmt beide Werte.
  */
 TEST(FsCatalog, DetectUndBootHeaderWerdenGeprueft) {
     TempKatalog k("filesystems:\n"

@@ -79,7 +79,7 @@ bool ImgCodec::load(const std::string& path, const DiskFormat& fmt,
     // uebersprungenen Zylinder bleiben unformatiert — genau so, wie ein
     // 96-tpi-Laufwerk die Diskette beschreibt.
     out = DiskMedium(fmt.physicalCylinders(), nheads, fmt.predominantEncoding());
-    out.setNominalRpm(nominalRpmForDrives(fmt.drives));   // Umdrehungslänge (AP-F1)
+    out.setNominalRpm(nominalRpmForDrives(fmt.drives));   // Umdrehungslaenge (AP-F1)
 
     for (uint8_t c = 0; c < ncyls; ++c) {
         const uint8_t pc = fmt.physicalCylinder(c);

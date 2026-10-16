@@ -1,12 +1,12 @@
 """Gegenprobe des WEGA-Schreibpfads (AP P17, ``doc/design/27_wega_dateisystem.md``).
 
 Was ``libk1520disk`` auf eine WEGA-Diskette schreibt, liest hier ein ZWEITER,
-unabhängiger Leser: die Python-Vorstufe ``tools/p8000/wega_s3fs.py`` (P14), die nur
+unabhaengiger Leser: die Python-Vorstufe ``tools/p8000/wega_s3fs.py`` (P14), die nur
 den System-III-Aufbau kennt und mit dem C++-Code nichts teilt.  Liest sie dieselben
-Bytes zurück, stimmen Superblock-, Inode- und Verzeichnislage — eine
-Selbstbestätigung des Kerns wäre das nicht.
+Bytes zurueck, stimmen Superblock-, Inode- und Verzeichnislage — eine
+Selbstbestaetigung des Kerns waere das nicht.
 
-Die Vorstufe kann nur einfach indirekt (bis 69 KB) — größere Dateien prüft
+Die Vorstufe kann nur einfach indirekt (bis 69 KB) — groessere Dateien prueft
 ``k1520_test_wega_fs`` gegen den Kern selbst.
 """
 

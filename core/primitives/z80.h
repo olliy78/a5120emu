@@ -175,6 +175,16 @@ public:
     bool IFF2;     ///< Interrupt Flip-Flop 2 - backup of IFF1 during NMI
     uint8_t IM;    ///< Interrupt mode (0, 1, or 2)
     bool halted;   ///< True when CPU is halted by HALT instruction
+    /**
+     * @brief `EI` war der zuletzt ausgefuehrte Befehl.  Der Z80/U880 nimmt einen maskierbaren
+     *        Interrupt erst NACH dem auf `EI` folgenden Befehl an — sonst fiele er zwischen
+     *        `EI` und `RETI`, das RETI liefe nie, und der Baustein bliebe in Bedienung (IUS).
+     *        Gesetzt von `EI`, geloescht vom naechsten ausgefuehrten Befehl; wer Interrupts
+     *        zustellt, fragt @ref interruptAnnehmbar.
+     */
+    bool ei_schatten = false;
+    /// Maskierbarer Interrupt jetzt annehmbar (IFF1 und nicht unmittelbar nach `EI`).
+    bool interruptAnnehmbar() const { return IFF1 && !ei_schatten; }
     ///@}
 
     /**
@@ -224,18 +234,18 @@ public:
     std::function<void(const Z80&)> traceCallback;       ///< TRACE callback: called before each instruction (optional)
 
     /**
-     * @brief Optional: „Instruktion doch nicht ausführen"-Rückfrage (Debugger-Halt).
+     * @brief Optional: „Instruktion doch nicht ausfuehren"-Rueckfrage (Debugger-Halt).
      *
-     * Wird unmittelbar NACH @ref traceCallback gefragt und nur dann, wenn überhaupt
+     * Wird unmittelbar NACH @ref traceCallback gefragt und nur dann, wenn ueberhaupt
      * ein traceCallback installiert ist (im Produktivlauf also gar nicht → keine
-     * Kosten).  Liefert sie true, kehrt step() mit **0 Takten** zurück, ohne die
-     * Instruktion auszuführen: PC, Register, Speicher und der Refresh-Zähler bleiben
+     * Kosten).  Liefert sie true, kehrt step() mit **0 Takten** zurueck, ohne die
+     * Instruktion auszufuehren: PC, Register, Speicher und der Refresh-Zaehler bleiben
      * exakt so, wie der Callback sie gesehen hat.
      *
-     * Das ist die Grundlage für echtes **break-before-execute**: ein Debugger, der im
-     * traceCallback anhalten will, hält damit *vor* der Instruktion an statt nach ihr
+     * Das ist die Grundlage fuer echtes **break-before-execute**: ein Debugger, der im
+     * traceCallback anhalten will, haelt damit *vor* der Instruktion an statt nach ihr
      * (sonst zeigt die Haltezeile den einen Zustand und jede Folgeabfrage den
-     * nächsten).  Der Aufrufer muss `step() == 0` behandeln (keine Takte verbuchen,
+     * naechsten).  Der Aufrufer muss `step() == 0` behandeln (keine Takte verbuchen,
      * Lauf beenden) — s. A5120Machine::run().
      *
      * Signatur: bool callback()

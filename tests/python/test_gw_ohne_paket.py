@@ -1,22 +1,22 @@
 """Die physische Diskette **ohne das Paket `greaseweazle`** — die Lage der CI.
 
-``greaseweazle`` ist eine **freiwillige** Abhängigkeit: es liegt nicht auf PyPI, wird
+``greaseweazle`` ist eine **freiwillige** Abhaengigkeit: es liegt nicht auf PyPI, wird
 mit ``pip install "git+https://github.com/keirf/greaseweazle.git@v1.23"`` nachgezogen,
-und fehlt es, soll nur der Menüpunkt fehlen — sonst nichts.  Auf dem
+und fehlt es, soll nur der Menuepunkt fehlen — sonst nichts.  Auf dem
 Entwicklungsrechner ist es meist installiert, **in der CI nie**.
 
 Genau diese Differenz kostete am 2026-08-18 drei rote Tests auf ``main``, die lokal
-grün waren (``py_gw_gui`` lief 300 s in den Zeitüberlauf, ``py_gw_physical`` und
-``py_physical_cli`` fielen um).  Die Eigenschaft „läuft ohne das Paket" darf deshalb
-nicht davon abhängen, **welche** Umgebung gerade prüft: dieses Modul blendet das Paket
-aktiv aus und fährt die Wege, die damals brachen — es schlägt also auch auf einem
+gruen waren (``py_gw_gui`` lief 300 s in den Zeitueberlauf, ``py_gw_physical`` und
+``py_physical_cli`` fielen um).  Die Eigenschaft „laeuft ohne das Paket" darf deshalb
+nicht davon abhaengen, **welche** Umgebung gerade prueft: dieses Modul blendet das Paket
+aktiv aus und faehrt die Wege, die damals brachen — es schlaegt also auch auf einem
 Rechner an, auf dem ``greaseweazle`` installiert ist.
 
-Was es NICHT prüft: alles hinter :func:`app.gw.open_device`.  Dort steht in der
-zweiten Zeile ``util.usb_open`` — das braucht einen Adapter, und der hängt in der CI
-nie am Rechner.  Deshalb brächte es auch keine Abdeckung, das Paket dort zu
-installieren: kein einziger Testfall käme hinzu (die Hardwarefälle in
-``test_gw_hardware.py`` hängen an ``K1520_GW_HARDWARE=1``, nicht am Paket).
+Was es NICHT prueft: alles hinter :func:`app.gw.open_device`.  Dort steht in der
+zweiten Zeile ``util.usb_open`` — das braucht einen Adapter, und der haengt in der CI
+nie am Rechner.  Deshalb braechte es auch keine Abdeckung, das Paket dort zu
+installieren: kein einziger Testfall kaeme hinzu (die Hardwarefaelle in
+``test_gw_hardware.py`` haengen an ``K1520_GW_HARDWARE=1``, nicht am Paket).
 
 Siehe doc/design/14_physische_diskette.md §14 und tests/python/README.md.
 """
@@ -34,7 +34,7 @@ FIXTURE = "udos_boot_scp.hfe"
 
 
 class _Importsperre:
-    """Meta-Path-Finder, der ``import greaseweazle`` scheitern lässt."""
+    """Meta-Path-Finder, der ``import greaseweazle`` scheitern laesst."""
 
     def find_spec(self, fullname, path=None, target=None):
         if fullname == "greaseweazle" or fullname.startswith("greaseweazle."):
@@ -46,8 +46,8 @@ class _Importsperre:
 def ohne_greaseweazle():
     """Das Paket ist in diesem Block nicht importierbar — wie in der CI.
 
-    Schon geladene Teilmodule müssen dabei aus ``sys.modules`` verschwinden, sonst
-    fände ``import greaseweazle`` sie dort und die Sperre bliebe wirkungslos.
+    Schon geladene Teilmodule muessen dabei aus ``sys.modules`` verschwinden, sonst
+    faende ``import greaseweazle`` sie dort und die Sperre bliebe wirkungslos.
     """
     sperre = _Importsperre()
     gemerkt = {n: m for n, m in sys.modules.items()
@@ -68,7 +68,7 @@ def hfe(fixture_disks):
 
 
 def test_die_sperre_wirkt():
-    """Selbstprobe — ohne sie prüften die übrigen Fälle nichts."""
+    """Selbstprobe — ohne sie prueften die uebrigen Faelle nichts."""
     with ohne_greaseweazle():
         with pytest.raises(ImportError):
             import greaseweazle  # noqa: F401
@@ -83,8 +83,8 @@ def test_app_gw_laesst_sich_ohne_das_paket_benutzen():
     """`app.gw` rechnet mit Bitzellen — das braucht `bitarray`, nicht `greaseweazle`.
 
     ``bitarray`` kam bisher nur als Beipack von ``greaseweazle`` mit und steht
-    seitdem ausdrücklich in ``requirements-dev.txt``.  Fehlte es, starb der
-    Arbeitsfaden still und die wartenden Leser liefen in ihre Frist — ein Hänger
+    seitdem ausdruecklich in ``requirements-dev.txt``.  Fehlte es, starb der
+    Arbeitsfaden still und die wartenden Leser liefen in ihre Frist — ein Haenger
     ohne Fehlermeldung.
     """
     with ohne_greaseweazle():
@@ -112,10 +112,10 @@ def test_die_verfuegbarkeit_nennt_den_grund_statt_abzustuerzen():
 
 
 def test_argumentfehler_kommen_auch_ohne_das_paket(capsys, tmp_path):
-    """`put` ohne `--write` wird abgelehnt — die Aussage hing an einer Abhängigkeit.
+    """`put` ohne `--write` wird abgelehnt — die Aussage hing an einer Abhaengigkeit.
 
-    Die Verfügbarkeitsprüfung stand einmal VOR den Argumentprüfungen; damit bekam
-    man ohne die Hosttools nie zu hören, dass der eigentliche Fehler ein fehlendes
+    Die Verfuegbarkeitspruefung stand einmal VOR den Argumentpruefungen; damit bekam
+    man ohne die Hosttools nie zu hoeren, dass der eigentliche Fehler ein fehlendes
     ``--write`` war (doc/design/14_physische_diskette.md §12.3).
     """
     from app.disktool import physical_cli
@@ -140,16 +140,16 @@ def test_ein_befehl_am_laufwerk_meldet_das_fehlende_paket(capsys):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Oberfläche
+# Oberflaeche
 # ════════════════════════════════════════════════════════════════════════════
 
 
 def test_das_disktool_oeffnet_eine_ersatzsitzung_ohne_das_paket(hfe, monkeypatch):
     """Der Fall, der 300 s hing.
 
-    ``MainWindow.open_physical`` prüfte selbst, ob die Hosttools da sind — obwohl es
+    ``MainWindow.open_physical`` pruefte selbst, ob die Hosttools da sind — obwohl es
     auch mit einer **Ersatzsitzung** gerufen wird.  Ohne das Paket lief es in ein
-    modales Meldungsfenster, das headless niemand wegklickt.  Die Prüfung gehört an
+    modales Meldungsfenster, das headless niemand wegklickt.  Die Pruefung gehoert an
     die Bedienwege davor und an ``PhysicalSession.start``, nicht dazwischen.
     """
     pytest.importorskip("PySide6")

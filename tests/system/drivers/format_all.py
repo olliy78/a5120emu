@@ -4,26 +4,26 @@ format_all.py – Scriptgesteuertes Formatieren + Verifizieren aller nativen
 K5601-Diskettenformate (5¼″, 80 Spuren, doppelseitig) im A5120-Emulator.
 
 Der Emulator bootet CP/A von Laufwerk A: und formatiert mit FORMAT.COM (V19.05.89)
-in Laufwerk B: (bzw. C:) der Reihe nach die gewünschten Formate.  **Das Ziel ist immer
+in Laufwerk B: (bzw. C:) der Reihe nach die gewuenschten Formate.  **Das Ziel ist immer
 eine frisch angelegte, ECHTE LEERDISKETTE** (unformatiert, in der Geometrie des
 Laufwerks) — der Anwenderfall.  Ausnahme: `--type img`; ein rohes Sektorimage kennt
 keinen Zustand „unformatiert" und wird deshalb vorformatiert (0xE5) angelegt.
-Nach dem Formatieren prüft der Runner den End-Screen auf `FORMATIEREN beendet`
+Nach dem Formatieren prueft der Runner den End-Screen auf `FORMATIEREN beendet`
 OHNE `SPUR DEFEKT` (mit Verify = Vergleichs-Lesen).
 
 Die eigentliche Emulation macht `tools/format_driver` (Zwei-Disk-Treiber mit
 Tastatur-Script).  Dieses Skript erzeugt je Format das Treiber-Script, legt die
 Temp-/Ziel-Dateien an und wertet die Ausgabe aus.
 
-  ⚠️  format_driver mountet BEIDE Disks (A: und B:) schreibend.  Für A: wird IMMER
+  ⚠️  format_driver mountet BEIDE Disks (A: und B:) schreibend.  Fuer A: wird IMMER
       eine Temp-Kopie der Boot-Disk verwendet, damit das committete Boot-Image nie
       korrumpiert wird.
 
-Die vollständige Prüfmatrix (`--list-matrix`: 88 × `boot|drive|geo|key`) ist zugleich die
+Die vollstaendige Pruefmatrix (`--list-matrix`: 88 × `boot|drive|geo|key`) ist zugleich die
 Quelle der ctest-Registrierung: `CMakeLists.txt` legt beim Konfigurieren je Eintrag einen
 Test an (LABEL `format_matrix`, Smoke Spur 0-2) — `tools/dev.sh test-matrix`.  Neue Formate
-oder Geometrien einfach unten in die Tabellen eintragen, der Testsatz wächst beim nächsten
-`cmake` automatisch mit.  Voll-Läufe (`--full`) bleiben manuell.
+oder Geometrien einfach unten in die Tabellen eintragen, der Testsatz waechst beim naechsten
+`cmake` automatisch mit.  Voll-Laeufe (`--full`) bleiben manuell.
 
 Verwendung:
   tools/dev.sh tool format_driver          # zuerst den Treiber bauen
@@ -33,7 +33,7 @@ Verwendung:
   python3 tools/format_all.py --all --type img      # als .img (Phase B)
   python3 tools/format_all.py 0 --full --outdir out # Ergebnis-Images ablegen
 
-Menü-Navigation (FORMAT.COM):  Menü #1 (0-3) --X--> Menü #2 (4-7) --Y--> Menü #3 (E-K).
+Menue-Navigation (FORMAT.COM):  Menue #1 (0-3) --X--> Menue #2 (4-7) --Y--> Menue #3 (E-K).
 
 Autor: Olaf Krieger / 2026 / MIT
 """
@@ -67,28 +67,28 @@ BOOT_DISKS = {
 }
 
 # ─── Ausgangszustand des Ziels: ECHTE LEERDISKETTE ───────────────────────────
-# Alle Läufe starten auf einer unformatierten Leerdiskette — genau das, was ein
-# Anwender in das Laufwerk legt.  format_driver bekommt dafür den LEEREN Formatnamen
+# Alle Laeufe starten auf einer unformatierten Leerdiskette — genau das, was ein
+# Anwender in das Laufwerk legt.  format_driver bekommt dafuer den LEEREN Formatnamen
 # ('' → A5120Machine::createDisk legt ein unformatiertes Medium in der Geometrie des
 # LAUFWERKS an, CLAUDE.md §8.7).
 #
-# Historie: früher wurde eine gültige, bereits formatierte Disk als B:-Template kopiert,
-# weil eine gap-leere Diskette den Emulator hängen ließ bzw. `Fehler 'U' SPUR DEFEKT`
+# Historie: frueher wurde eine gueltige, bereits formatierte Disk als B:-Template kopiert,
+# weil eine gap-leere Diskette den Emulator haengen liess bzw. `Fehler 'U' SPUR DEFEKT`
 # provozierte (doc/format.md §8.2).  Beides ist behoben — der markenlose Gap-Fluss
-# terminiert über den Index-Timeout, und der FORMAT-Schreibstrom wird vor dem
-# Vergleichs-Lesen committet (doc/analyse_format_leerspur.md).  Ein Template würde die
-# Tests nur noch schwächen: die Vorlesungen fänden fremde Sektoren statt gar keiner.
-BLANK = ''      # createB/FD_DISKC_FMT-Formatname für „unformatierte Leerdiskette"
+# terminiert ueber den Index-Timeout, und der FORMAT-Schreibstrom wird vor dem
+# Vergleichs-Lesen committet (doc/analyse_format_leerspur.md).  Ein Template wuerde die
+# Tests nur noch schwaechen: die Vorlesungen faenden fremde Sektoren statt gar keiner.
+BLANK = ''      # createB/FD_DISKC_FMT-Formatname fuer „unformatierte Leerdiskette"
 
 # ─── §3-Formattabelle (FORMAT.COM V19.05.89, 5¼″ 80-Spur-DS) ─────────────────
 #
 # key: (menu_nav, format_key, beschreibung, .img-DiskFormat-Name-oder-None)
-#   menu_nav   : Tastenfolge, um von Menü #1 zur richtigen Menüseite zu blättern
+#   menu_nav   : Tastenfolge, um von Menue #1 zur richtigen Menueseite zu blaettern
 #   format_key : Auswahltaste in der Formatliste
-#   img_format : Name des DiskFormat (core FormatParser) für .img-Ziel; None = (noch)
-#                keine passende Geometrie definiert → .img für dieses Format übersprungen
+#   img_format : Name des DiskFormat (core FormatParser) fuer .img-Ziel; None = (noch)
+#                keine passende Geometrie definiert → .img fuer dieses Format uebersprungen
 #
-# Siehe doc/format.md §3 für Layout/Kapazität je Format.
+# Siehe doc/format.md §3 fuer Layout/Kapazitaet je Format.
 FORMATS = {
     '0': ([],          '0', 'CP/A        5x1024 Sp.0-159   800k', 'cpa800'),
     '1': ([],          '1', 'CP/A BC     26x128+5x1024     780k', 'cpa780'),
@@ -110,20 +110,20 @@ FORMATS = {
 
 # ─── §3.4-Geometrien (S/T/U/V/W) ─────────────────────────────────────────────
 #
-# Ein Geometrie-Umschalter (Taste S/T/U/V/W) im Format-Menü stellt die logische
+# Ein Geometrie-Umschalter (Taste S/T/U/V/W) im Format-Menue stellt die logische
 # Geometrie um; die Formatliste wechselt (doc/format.md §3.4).  Jede Geometrie:
 #   switch_key, header, {format_key: (submenu_nav, format_key, beschreibung, img_format)}
 #
 # .img-Regel — seit der Spurdichte-Anpassung (2026-08-12,
-# doc/design/09_floppy_drive.md §7.2) **umgekehrt zu früher**: ein 40-Zylinder-Abbild
+# doc/design/09_floppy_drive.md §7.2) **umgekehrt zu frueher**: ein 40-Zylinder-Abbild
 # IST eine 48-tpi-Diskette und wird im 80-Spur-Laufwerk schrittverdoppelt gelesen.
 #   - 40-Spur DOPPELschritt (U, T): der Gast schreibt auf die Positionen 0,2,…,78, die
 #     Anpassung bildet sie auf die Zylinder 0…39 ab → **sauberes 40-Zyl-.img**.  (Das war
 #     der offene Punkt „Doppelschritt-.img (Mapping)" aus doc/format.md §3.4.)
-#   - 40-Spur EINZELschritt (W, V): das wäre eine 96-tpi-Diskette, die nur auf der
-#     äußeren Hälfte beschrieben ist — in einer .img nicht darstellbar (die Positionen
+#   - 40-Spur EINZELschritt (W, V): das waere eine 96-tpi-Diskette, die nur auf der
+#     aeusseren Haelfte beschrieben ist — in einer .img nicht darstellbar (die Positionen
 #     1,3,5,… liegen zwischen den Spuren).  Solche Disketten brauchen ein
-#     **80-Zylinder**-Abbild mit unformatierter Innenhälfte, also `.hfe`.
+#     **80-Zylinder**-Abbild mit unformatierter Innenhaelfte, also `.hfe`.
 _SS40 = {'0': 'k5601_ss40_5x1024', '2': 'k5601_ss40_26x128', '3': 'k5601_ss40_26x128',
          '4': 'k5601_ss40_16x256', '5': 'k5601_ss40_16x256', '6': 'k5601_ss40_15x256',
          '7': 'k5601_ss40_5x1024'}
@@ -134,7 +134,7 @@ _SS80 = {'0': 'cpa200', '2': 'k5601_ss80_26x128', '3': 'k5601_ss80_26x128',
          '4': 'cpa640', '5': 'cpa640', '7': 'k5601_ss80_9x512'}
 
 def _geo_table(header, keys, img_map):
-    """Baut die Formattabelle einer Geometrie (Menü #1, keine Sub-Navigation)."""
+    """Baut die Formattabelle einer Geometrie (Menue #1, keine Sub-Navigation)."""
     return {k: ([], k, f'{header:22} Format {k}', img_map.get(k)) for k in keys}
 
 GEO_FORMATS = {
@@ -149,11 +149,11 @@ GEO_FORMATS = {
 
 # ─── Native Formattabellen der Fremd-Laufwerkstypen (doc/format.md §3.5/§5) ──
 #
-# Diese Menüs sind Live-Emulator-Mitschnitte (tools/capture_format_menus.py).  Anders
+# Diese Menues sind Live-Emulator-Mitschnitte (tools/capture_format_menus.py).  Anders
 # als die §3.4-Geometrie-Umschalter (die ein K5601 auf andere Geometrien zwingen)
-# präsentiert das echte Laufwerk seine Formatliste NATIV — ohne Umschalt-Buchstaben.
+# praesentiert das echte Laufwerk seine Formatliste NATIV — ohne Umschalt-Buchstaben.
 #   img_format=None ⇒ (noch) keine passende RawSectorImage-Geometrie in FormatParser
-#   definiert → nur .hfe (formatagnostisch).  Neue Geometrien in builtinFormats() ergänzen.
+#   definiert → nur .hfe (formatagnostisch).  Neue Geometrien in builtinFormats() ergaenzen.
 def _tbl(entries):
     """entries: Liste (key, menu_nav, beschreibung[, img_format])."""
     return {e[0]: (list(e[1]), e[0], e[2], e[3] if len(e) > 3 else None) for e in entries}
@@ -178,7 +178,7 @@ K5600_10 = _tbl([
     ('L', ['X'], '10x512 Sf.0,1 Sp.0-39     195k KAYPRO'),
 ])
 
-# K5600.20 — 5" 80 Sp. einseitig (DPB 10580); eine Menüseite, U/W-Umschalter.
+# K5600.20 — 5" 80 Sp. einseitig (DPB 10580); eine Menueseite, U/W-Umschalter.
 K5600_20 = _tbl([
     ('0', [], '5x1024 Sp.0-79            400k CP/A'),
     ('1', [], '26x128+5x1024 Sp.2-79     390k CP/A S'),
@@ -190,7 +190,7 @@ K5600_20 = _tbl([
     ('7', [], '9x512 Sp.0-79             360k'),
 ])
 
-# MF3200 — 8" 77 Sp. einfache Dichte (SD/FM, DPB 00877); eine Menüseite.
+# MF3200 — 8" 77 Sp. einfache Dichte (SD/FM, DPB 00877); eine Menueseite.
 MF3200 = _tbl([
     ('0', [], '4x1024 Sp.0-76            308k CP/A'),
     ('1', [], '26x128+4x1024 Sp.3-76     296k CP/A BC'),
@@ -226,15 +226,15 @@ DRIVE_TABLES = {
 
 def format_matrix():
     """
-    Liefert die VOLLSTÄNDIGE Prüfmatrix als Liste (boot, drive, geo, format_key).
+    Liefert die VOLLSTAENDIGE Pruefmatrix als Liste (boot, drive, geo, format_key).
 
-    Das ist die eine Quelle der Wahrheit für die ctest-Registrierung: CMake ruft
+    Das ist die eine Quelle der Wahrheit fuer die ctest-Registrierung: CMake ruft
     `--list-matrix` beim Konfigurieren auf und legt je Eintrag einen Test an
     (Label `format_matrix`).  Neue Formate/Geometrien hier oben in den Tabellen
-    ergänzen — der Testsatz wächst beim nächsten `cmake` automatisch mit.
+    ergaenzen — der Testsatz waechst beim naechsten `cmake` automatisch mit.
 
-    Kombiniert wird NICHT: die §3.4-Geometrie-Umschalter gelten nur für das
-    K5601-Default-Laufwerk (die Fremdtypen bringen ihr Menü nativ mit), s.
+    Kombiniert wird NICHT: die §3.4-Geometrie-Umschalter gelten nur fuer das
+    K5601-Default-Laufwerk (die Fremdtypen bringen ihr Menue nativ mit), s.
     resolve_drive().
     """
     rows = []
@@ -247,7 +247,7 @@ def format_matrix():
 
 
 def resolve_table(geo):
-    """Liefert (switch_key, formats_dict) für eine Geometrie ('' = Default 80 DS)."""
+    """Liefert (switch_key, formats_dict) fuer eine Geometrie ('' = Default 80 DS)."""
     if not geo:
         return (None, FORMATS)
     if geo not in GEO_FORMATS:
@@ -258,8 +258,8 @@ def resolve_table(geo):
 def resolve_drive(boot, drive, geo):
     """
     Liefert (boot_img, needs_clock, drive_letter, switch_key, table).
-    Für die Combo-Disks + B:/C: wird die native Fremd-Laufwerks-Tabelle gewählt;
-    sonst die K5601-Default/Geometrie-Tabelle (§3/§3.4) auf dem gewählten Laufwerk.
+    Fuer die Combo-Disks + B:/C: wird die native Fremd-Laufwerks-Tabelle gewaehlt;
+    sonst die K5601-Default/Geometrie-Tabelle (§3/§3.4) auf dem gewaehlten Laufwerk.
     """
     if boot not in BOOT_DISKS:
         raise ValueError(f"unbekannte Boot-Disk '{boot}' ({list(BOOT_DISKS)})")
@@ -268,8 +268,8 @@ def resolve_drive(boot, drive, geo):
     key = (boot, drive)
     if key in DRIVE_TABLES:
         if geo:
-            raise ValueError("--geo gilt nur für das K5601-Default-Laufwerk, "
-                             "nicht für native Fremdtypen (deren Menü ist bereits nativ)")
+            raise ValueError("--geo gilt nur fuer das K5601-Default-Laufwerk, "
+                             "nicht fuer native Fremdtypen (deren Menue ist bereits nativ)")
         _label, table = DRIVE_TABLES[key]
         return (boot_img, needs_clock, drive, None, table)
     switch_key, table = resolve_table(geo)
@@ -278,7 +278,7 @@ def resolve_drive(boot, drive, geo):
 
 def make_script(entry, switch_key, full, upto_track, dir_verify,
                 drive_letter='B', needs_clock=True):
-    """Erzeugt das format_driver-Tastatur-Script für ein Format."""
+    """Erzeugt das format_driver-Tastatur-Script fuer ein Format."""
     menu_nav, sel, _desc, _img = entry
     lines = ['boot 80']
     if needs_clock:
@@ -292,21 +292,21 @@ def make_script(entry, switch_key, full, upto_track, dir_verify,
     ]
     if switch_key:                              # §3.4: Geometrie umschalten
         lines += [f'type {switch_key}', 'boot 4']
-    for k in menu_nav:                          # zur richtigen Menüseite blättern
+    for k in menu_nav:                          # zur richtigen Menueseite blaettern
         lines += [f'type {k}', 'boot 3']
-    lines += [f'type {sel}', 'boot 6']          # Format auswählen
+    lines += [f'type {sel}', 'boot 6']          # Format auswaehlen
     lines += ['enter', 'boot 5']                # von Spur 0
     if full:
         lines += ['enter']                      # bis Spur = letzte
     else:
         lines += [f'type {upto_track}', 'enter']
-    lines += ['boot 6', 'type j']               # Warnung bestätigen
+    lines += ['boot 6', 'type j']               # Warnung bestaetigen
     # Formatier-Budget (Mio. Takte): eine Blank-Spur kostet ~90M (Vorlese-Index-
-    # Timeouts + Write + Verify).  Voll = großzügig; Smoke skaliert mit dem Bereich.
+    # Timeouts + Write + Verify).  Voll = grosszuegig; Smoke skaliert mit dem Bereich.
     budget = 3600 if full else max(400, (upto_track + 3) * 110)
     lines += [f'boot {budget}', 'dump result']
     if dir_verify:
-        # Zurück ins CCP und DIR B: als unabhängige Gültigkeitsprüfung.
+        # Zurueck ins CCP und DIR B: als unabhaengige Gueltigkeitspruefung.
         #   "Wiederholung mit gleichen Parametern? (j/n)"      -> n
         #   "Rueckkehr in Funktionsauswahl? (j, sonst Ende)"   -> n  (= Ende -> CCP)
         lines += ['type n', 'boot 20',
@@ -317,23 +317,23 @@ def make_script(entry, switch_key, full, upto_track, dir_verify,
 
 def prepare_target(path, filetype, img_format):
     """
-    Bereitet das Zielimage vor und liefert den `createB`-Formatnamen für format_driver.
+    Bereitet das Zielimage vor und liefert den `createB`-Formatnamen fuer format_driver.
 
     - **.hfe → IMMER `BLANK`**: eine echte, unformatierte Leerdiskette in der Geometrie
-      des Laufwerks.  Das ist der Anwenderfall und die schärfere Prüfung — FORMAT.COM
-      muss die Spurlänge auf markenlosem Gap-Fluss messen und darf sich beim
-      Vergleichs-Lesen nicht auf Restdaten stützen.  Eine `img_format`-Angabe wird für
+      des Laufwerks.  Das ist der Anwenderfall und die schaerfere Pruefung — FORMAT.COM
+      muss die Spurlaenge auf markenlosem Gap-Fluss messen und darf sich beim
+      Vergleichs-Lesen nicht auf Restdaten stuetzen.  Eine `img_format`-Angabe wird fuer
       .hfe nicht gebraucht (der Container ist formatagnostisch).
     - **.img → `img_format`** (vorformatiert, Nutzdaten 0xE5): ein rohes Sektorimage hat
-      keinen Zustand „unformatiert" — `createDisk` lehnt den leeren Formatnamen für .img
-      ab.  Der .img-Pfad prüft deshalb weiterhin das Umformatieren einer gültigen Disk.
+      keinen Zustand „unformatiert" — `createDisk` lehnt den leeren Formatnamen fuer .img
+      ab.  Der .img-Pfad prueft deshalb weiterhin das Umformatieren einer gueltigen Disk.
     """
     if os.path.exists(path):
         os.remove(path)              # Datei wird von format_driver (create) neu angelegt
     if filetype == 'hfe':
         return BLANK
     if not img_format:
-        raise ValueError("kein .img-DiskFormat für dieses Format definiert")
+        raise ValueError("kein .img-DiskFormat fuer dieses Format definiert")
     return img_format
 
 
@@ -345,7 +345,7 @@ def run_format(fmt_key, boot, drive, geo, filetype, full, upto_track, outdir,
 
     if filetype == 'img' and img_format is None:
         # Kein sauberes logisches .img (Doppelschritt-Geo T/U oder Fremdtyp ohne
-        # definierte RawSectorImage-Geometrie) → überspringen, .hfe verwenden.
+        # definierte RawSectorImage-Geometrie) → ueberspringen, .hfe verwenden.
         return {'key': fmt_key, 'desc': desc, 'status': 'SKIP(.img)',
                 'beendet': False, 'defekt': False, 'dir_ok': None,
                 'target': '-', 'stdout': '', 'stderr': ''}
@@ -367,7 +367,7 @@ def run_format(fmt_key, boot, drive, geo, filetype, full, upto_track, outdir,
     env = dict(os.environ, FD_LOGLEVEL=os.environ.get('FD_LOGLEVEL', 'warn'))
     if drive_letter == 'C':
         # Ziel liegt in Laufwerk C: (FD_DISKC).  Der B:-Slot muss nur BELEGT sein,
-        # damit FORMATs Laufwerkswahl sauber durchläuft — er bekommt ebenfalls eine
+        # damit FORMATs Laufwerkswahl sauber durchlaeuft — er bekommt ebenfalls eine
         # Leerdiskette (in der Geometrie des B:-Laufwerks, also passend zum Combo-BIOS).
         with tempfile.NamedTemporaryFile(suffix='.hfe', delete=False) as tb:
             diskB = tb.name
@@ -385,20 +385,20 @@ def run_format(fmt_key, boot, drive, geo, filetype, full, upto_track, outdir,
         os.unlink(script_path)
         if drive_letter == 'C':
             os.unlink(diskB)
-    diskB = target   # für Ergebnis-Reporting
+    diskB = target   # fuer Ergebnis-Reporting
 
     out = proc.stdout
     ok  = 'FORMATIEREN beendet' in out
     bad = 'SPUR DEFEKT' in out or 'DEFEKT' in out
     dir_ok = None
     if dir_verify:
-        # In einem gültigen leeren CP/A-Verzeichnis erscheint "No File".
-        # (Erscheint NUR in der DIR-B:-Ausgabe, daher genügt die Suche im ganzen out.)
+        # In einem gueltigen leeren CP/A-Verzeichnis erscheint "No File".
+        # (Erscheint NUR in der DIR-B:-Ausgabe, daher genuegt die Suche im ganzen out.)
         dir_ok = ('No File' in out) or ('NO FILE' in out.upper())
 
     status = 'OK' if (ok and not bad) else 'FEHLER'
     if not (ok and not bad) and not keep_bad:
-        # Fehlgeschlagenes Ziel für die Analyse behalten (nicht löschen).
+        # Fehlgeschlagenes Ziel fuer die Analyse behalten (nicht loeschen).
         pass
 
     return {
@@ -424,9 +424,9 @@ def main():
                    help="volle 160 Spuren (Default: Schnell-Smoke bis --upto)")
     p.add_argument('--upto', type=int, default=2, help="Smoke: bis Spur N (Default 2)")
     p.add_argument('--outdir', default=os.path.join(ROOT, 'out', 'formats'),
-                   help="Zielverzeichnis für formatierte Images")
+                   help="Zielverzeichnis fuer formatierte Images")
     p.add_argument('--dir-verify', action='store_true',
-                   help="nach Voll-Format DIR B: fahren und auf 'No File' prüfen")
+                   help="nach Voll-Format DIR B: fahren und auf 'No File' pruefen")
     p.add_argument('--list', action='store_true', help="Formattabelle zeigen und Ende")
     p.add_argument('--list-matrix', action='store_true',
                    help="ganze Pruefmatrix als 'boot|drive|geo|key' je Zeile (fuer CMake)")
@@ -446,7 +446,7 @@ def main():
         label = dtype or ('Geometrie ' + (args.geo or '(Default 80-Spur-DS)'))
         print(f"Boot={args.boot}  Laufwerk {drive_letter}:  →  {label}"
               + (f" — Umschalter '{switch_key}'" if switch_key else "") + "\n")
-        print("Taste  Menü-Nav  Beschreibung                          .img-Format")
+        print("Taste  Menue-Nav  Beschreibung                          .img-Format")
         for k, (nav, sel, desc, img) in table.items():
             print(f"  {k}     {''.join(nav) or '-':<6}  {desc:<38} {img or '-'}")
         return 0
@@ -459,7 +459,7 @@ def main():
     keys = list(table.keys()) if (args.all or not args.formats) else args.formats
     bad_keys = [k for k in keys if k not in table]
     if bad_keys:
-        print(f"FEHLER: unbekannte Format-Tasten für {dtype or ('Geometrie ' + (args.geo or 'DS'))}: "
+        print(f"FEHLER: unbekannte Format-Tasten fuer {dtype or ('Geometrie ' + (args.geo or 'DS'))}: "
               f"{bad_keys}", file=sys.stderr)
         return 2
 
@@ -490,7 +490,7 @@ def main():
     for r in results:
         print(f"  {r['key']}: {r['status']:<10} beendet={r['beendet']} defekt={r['defekt']}"
               + (f" dir_ok={r['dir_ok']}" if r['dir_ok'] is not None else ''))
-    print(f"\n{n_ok}/{n_eval} Formate OK" + (f" ({n_skip} übersprungen)" if n_skip else ""))
+    print(f"\n{n_ok}/{n_eval} Formate OK" + (f" ({n_skip} uebersprungen)" if n_skip else ""))
     return 0 if n_ok == n_eval else 1
 
 

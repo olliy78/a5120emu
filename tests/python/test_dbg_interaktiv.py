@@ -2,17 +2,17 @@
 
 Warum eigens: die Zeilenbearbeitung (third_party/isocline) greift **nur**, wenn
 stdin ein Terminal ist — genau der Pfad, den die ~30 `cli_dbg_`-Tests NICHT
-berühren, weil sie über eine Pipe fahren. Ohne diese Datei könnte die
-Vervollständigung kaputtgehen, ohne dass ein einziger Test rot wird.
+beruehren, weil sie ueber eine Pipe fahren. Ohne diese Datei koennte die
+Vervollstaendigung kaputtgehen, ohne dass ein einziger Test rot wird.
 
-Genau das ist beim Einbau passiert: `ic_add_completion()` allein FÜGT EIN, statt
+Genau das ist beim Einbau passiert: `ic_add_completion()` allein FUEGT EIN, statt
 zu ersetzen — aus „whe"+TAB wurde „whewhere". Sichtbar wurde es erst am
-Pseudoterminal; erst `ic_complete_word()` richtet die Vorschläge am zu
+Pseudoterminal; erst `ic_complete_word()` richtet die Vorschlaege am zu
 ersetzenden Wort aus.
 
-Geprüft wird das Verhalten am Terminal, nicht die Byte-für-Byte-Ausgabe:
+Geprueft wird das Verhalten am Terminal, nicht die Byte-fuer-Byte-Ausgabe:
 isocline zeichnet die Zeile mit ANSI-Sequenzen neu, und an deren genauer Form
-soll sich kein Test festbeißen.
+soll sich kein Test festbeissen.
 """
 
 import os

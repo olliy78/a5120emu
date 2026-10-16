@@ -2,9 +2,9 @@
 
 doc/design/21_pc1715.md §8.3: Programmprofil (Titel, Konfiguration, Takt 2,458 MHz),
 Modellwahl (Bildschirm K7222/K7221; der 1715W ist gesperrt), Bildschirmtastatur im
-1715-Tastenbild (physische Matrixpositionen, gemerkte Umschalter), Bildgröße samt
+1715-Tastenbild (physische Matrixpositionen, gemerkte Umschalter), Bildgroesse samt
 Statuszeile, Schnittstellenreiter Drucker X4 / V.24 X5, Konfiguration getrennt von den
-anderen Programmen und ein Lauf bis `A>` mit Eingabe über die Bildschirmtastatur.
+anderen Programmen und ein Lauf bis `A>` mit Eingabe ueber die Bildschirmtastatur.
 """
 
 from pathlib import Path
@@ -74,7 +74,7 @@ def test_profil_und_titel(qapp, konfig_ordner):
         assert w.CPU_HZ == 2_458_000
         assert w._drive_types[:2] == ["K5601", "K5601"]
         assert not hasattr(w, "act_nmi")
-        # Bildgröße samt Statuszeile (25. Zeile von CP/A).
+        # Bildgroesse samt Statuszeile (25. Zeile von CP/A).
         assert w.emulator.framebuffer_size() == (640, 300)
     finally:
         _zu(w, qapp)
@@ -85,7 +85,7 @@ def test_modellwahl_bildschirm_und_1715w(qapp, konfig_ordner):
     from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
 
     p = profil.profil("pc1715")
-    # PC 1715W: wählbar; K7221 am 1715W gibt es nicht (eigenes Modell, keine Kombination).
+    # PC 1715W: waehlbar; K7221 am 1715W gibt es nicht (eigenes Modell, keine Kombination).
     assert not p.gesperrte_modelle
     assert p.modell_normalisieren("pc1715w") == "pc1715w"
     assert p.modell_maschine("pc1715w") == "pc1715w"
@@ -124,7 +124,7 @@ def test_modellwahl_bildschirm_und_1715w(qapp, konfig_ordner):
     try:
         assert w._model == "pc1715-k7221"
         assert w.emulator.framebuffer_size() == (512, 255)
-        # Das Bild läuft mit der neuen Größe (Textur wird im GL-Kontext neu angelegt).
+        # Das Bild laeuft mit der neuen Groesse (Textur wird im GL-Kontext neu angelegt).
         w.emulator.power_on()
         w.emulator.run(200_000)
         w.screen_widget._on_update()
@@ -135,14 +135,14 @@ def test_modellwahl_bildschirm_und_1715w(qapp, konfig_ordner):
 
 def test_rom_varianten_zeichensatz_und_tastatur(qapp, konfig_ordner):
     """AP-6: Zeichensatz (nur PC 1715) und Tastatur-ROM sind Einstellungen mit Kaltstart; sie stehen in
-    der Konfiguration, ein fehlender Schlüssel ist die Vorgabe, der 1715W graut den Zeichensatz aus
+    der Konfiguration, ein fehlender Schluessel ist die Vorgabe, der 1715W graut den Zeichensatz aus
     und die Bildschirmtastatur beschriftet bei QWERTZ Y/Z entsprechend."""
     from app import config_io, profil
     from app.ui import keyboard_pc1715 as k
 
     p = profil.profil("pc1715")
     assert p.hardware_standard() == {"zeichensatz": "deutsch", "tastatur": "s600"}
-    # Alte Konfiguration ohne die Schlüssel / mit Unsinn → Vorgabe.
+    # Alte Konfiguration ohne die Schluessel / mit Unsinn → Vorgabe.
     assert p.hardware_normalisieren({}) == p.hardware_standard()
     assert p.hardware_normalisieren({"zeichensatz": "klingonisch", "tastatur": "tast618"}) == {
         "zeichensatz": "deutsch", "tastatur": "tast618"}
@@ -168,7 +168,7 @@ def test_rom_varianten_zeichensatz_und_tastatur(qapp, konfig_ordner):
         assert kw._by_pos[k.pos(3, 0)].low == "}" and kw.map_host_key is not None
         assert w.screen_widget.key_sink is kw
 
-        # 1715W: der Zeichensatz kommt von Diskette → ausgegraut; die Tastatur bleibt wählbar.
+        # 1715W: der Zeichensatz kommt von Diskette → ausgegraut; die Tastatur bleibt waehlbar.
         w._on_model_selected("pc1715w")
         qapp.processEvents()
         assert not sw.hardware_combos["zeichensatz"].isEnabled()
@@ -185,7 +185,7 @@ def test_rom_varianten_zeichensatz_und_tastatur(qapp, konfig_ordner):
     finally:
         _zu(w, qapp)
 
-    # Neustart: Wahl kommt aus der Konfiguration zurück, im Kern wie im Feld.
+    # Neustart: Wahl kommt aus der Konfiguration zurueck, im Kern wie im Feld.
     w = _fenster(qapp)
     try:
         assert w._hardware == {"zeichensatz": "kyrillisch", "tastatur": "tast618"}
@@ -195,7 +195,7 @@ def test_rom_varianten_zeichensatz_und_tastatur(qapp, konfig_ordner):
     finally:
         _zu(w, qapp)
 
-    # Konfiguration ohne die Schlüssel (älterer Stand) → Vorgabe.
+    # Konfiguration ohne die Schluessel (aelterer Stand) → Vorgabe.
     (konfig_ordner / "pc1715emu.yaml").write_text("version: 1\ngeneral: {speed: 5.0}\n", encoding="utf-8")
     w = _fenster(qapp)
     try:
@@ -269,11 +269,11 @@ def test_bildschirmtastatur_sendet_gemerkte_umschalter_vor_der_taste(qapp, konfi
         kw.resize(1200, 300)
         taste = lambda p: QK_TASTE_BASE | p
 
-        # Gewöhnliche Taste: 'a' = (7,5).
+        # Gewoehnliche Taste: 'a' = (7,5).
         _klick(kw, k.pos(7, 5))
         assert ereignis == [("v", taste(k.pos(7, 5))), ("^", taste(k.pos(7, 5)))]
 
-        # SHIFT merken (sendet noch nichts), dann 'a': erst Shift, dann a; lösen umgekehrt.
+        # SHIFT merken (sendet noch nichts), dann 'a': erst Shift, dann a; loesen umgekehrt.
         ereignis.clear()
         _klick(kw, k.SHIFT_L)
         assert ereignis == [] and kw._shift
@@ -322,7 +322,7 @@ def test_bildschirmtastatur_sendet_gemerkte_umschalter_vor_der_taste(qapp, konfi
 
 def test_scp_bootet_in_der_oberflaeche_und_nimmt_die_bildschirmtastatur_an(
         qapp, konfig_ordner, temp_disk):
-    """Echter Lauf im Fenster: SCP 1715 bis `A>`, dann „DIR“ über die Nachbildung."""
+    """Echter Lauf im Fenster: SCP 1715 bis `A>`, dann „DIR“ ueber die Nachbildung."""
     w = _fenster(qapp)
     try:
         emu = w.emulator
@@ -342,7 +342,7 @@ def test_scp_bootet_in_der_oberflaeche_und_nimmt_die_bildschirmtastatur_an(
             for _ in range(n // 5000):
                 emu.run(5000)
 
-        # Shift + 'd' → großes D, i, r, ET.
+        # Shift + 'd' → grosses D, i, r, ET.
         _klick(kw, k.SHIFT_L)
         QTest.mousePress(kw, Qt.LeftButton, Qt.NoModifier, _mitte(kw, kw._by_pos[k.pos(1, 5)]))
         laufe(400_000)
@@ -352,7 +352,7 @@ def test_scp_bootet_in_der_oberflaeche_und_nimmt_die_bildschirmtastatur_an(
         # Der Rest von „DIR“ und ET: jede Taste einzeln gehalten.
         for p in (k.pos(9, 0), k.pos(0, 0), k.ET):
             if p != k.ET:
-                _klick(kw, k.SHIFT_L)          # jeder Buchstabe einzeln groß (Shift wird je Klick gemerkt)
+                _klick(kw, k.SHIFT_L)          # jeder Buchstabe einzeln gross (Shift wird je Klick gemerkt)
             m = _mitte(kw, kw._by_pos[p])
             QTest.mousePress(kw, Qt.LeftButton, Qt.NoModifier, m)
             laufe(300_000)

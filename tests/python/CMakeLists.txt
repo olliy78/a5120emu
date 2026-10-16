@@ -4,10 +4,10 @@
 #
 # Deckt ab, was die C++-Tests nicht erreichen: die ctypes-Bindung gegen
 # libk1520core.so (Signatur-Drift bricht sonst STILL) und die PySide6-GUI
-# (headless über QT_QPA_PLATFORM=offscreen).  Je Testmodul ein ctest-Fall.
+# (headless ueber QT_QPA_PLATFORM=offscreen).  Je Testmodul ein ctest-Fall.
 #
 # Voraussetzungen (pytest, PySide6, PyYAML) werden EINMAL beim Konfigurieren
-# geprüft; fehlen sie, werden die Tests nicht registriert und CMake sagt warum.
+# geprueft; fehlen sie, werden die Tests nicht registriert und CMake sagt warum.
 # Installation:  venv/bin/python3 -m pip install -r requirements-dev.txt
 #
 # Einzelheiten und Grenzen der Ebene: tests/python/README.md
@@ -39,15 +39,15 @@ if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     #
     # Die Liste wird EINGELESEN, nicht gepflegt (bis 2026-08-16 stand sie hier
     # von Hand).  Eine handgepflegte Liste neben den Dateien ist dieselbe Falle
-    # wie die früher getrennte gtest_discover_tests-Zeile: wer test_neu.py
-    # anlegt und die Zeile vergisst, hat einen Test, der NIRGENDS läuft und
-    # dessen Fehlen niemandem auffällt — grün, weil ungefragt.
-    # CONFIGURE_DEPENDS lässt CMake beim Bauen nachsehen, ob Dateien dazukamen.
+    # wie die frueher getrennte gtest_discover_tests-Zeile: wer test_neu.py
+    # anlegt und die Zeile vergisst, hat einen Test, der NIRGENDS laeuft und
+    # dessen Fehlen niemandem auffaellt — gruen, weil ungefragt.
+    # CONFIGURE_DEPENDS laesst CMake beim Bauen nachsehen, ob Dateien dazukamen.
     #
-    # Damit ist auch test_gw_hardware.py registriert — es überspringt sich selbst
+    # Damit ist auch test_gw_hardware.py registriert — es ueberspringt sich selbst
     # ohne `K1520_GW_HARDWARE=1` (Modul-`skipif`), braucht also keinen Sonderweg
     # in dieser Datei (doc/design/14_physische_diskette.md §14).  Der Gegenpart
-    # OHNE Hardware ist gw_physical (Ersatzlaufwerk über einer .hfe).
+    # OHNE Hardware ist gw_physical (Ersatzlaufwerk ueber einer .hfe).
     file(GLOB _py_tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.py")
     set(_py_modules "")
     foreach(_f IN LISTS _py_tests)
@@ -58,15 +58,15 @@ if (K1520_PYTEST_PYTHON AND _k1520_pydeps EQUAL 0)
     list(SORT _py_modules)
 
     foreach(_mod IN LISTS _py_modules)
-        # -p no:cacheprovider: ALLE Fälle laufen im selben Arbeitsverzeichnis, und
-        # seit die Regression parallel fährt (`ctest -j`) auch gleichzeitig.  Der
-        # Cache-Anbieter legt dabei sein Verzeichnis über ein Temp-Verzeichnis plus
+        # -p no:cacheprovider: ALLE Faelle laufen im selben Arbeitsverzeichnis, und
+        # seit die Regression parallel faehrt (`ctest -j`) auch gleichzeitig.  Der
+        # Cache-Anbieter legt dabei sein Verzeichnis ueber ein Temp-Verzeichnis plus
         # Umbenennen an (`<rootdir>/pytest-cache-files-XXXX`) — zwei Prozesse
         # geraten sich dabei in die Quere, und der Verlierer bricht schon beim
         # EINSAMMELN ab („FileNotFoundError … pytest-cache-files-…"), also ohne
         # einen einzigen Test gefahren zu haben.  Genau so am 2026-08-12 auf
-        # windows-latest passiert.  Der Cache trägt hier ohnehin nichts bei: er
-        # speist `--lf`/`--ff`, und jeder ctest-Fall fährt genau ein Modul.
+        # windows-latest passiert.  Der Cache traegt hier ohnehin nichts bei: er
+        # speist `--lf`/`--ff`, und jeder ctest-Fall faehrt genau ein Modul.
         add_test(NAME py_${_mod}
             COMMAND "${K1520_PYTEST_PYTHON}" -m pytest -q --no-header
                     -p no:cacheprovider
@@ -86,5 +86,5 @@ else()
         "venv/bin/python3 -m pip install -r requirements-dev.txt")
 endif()
 
-# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+# Zeitgrenzen der add_test()-Faelle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()

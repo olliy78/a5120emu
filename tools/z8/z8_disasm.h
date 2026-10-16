@@ -2,8 +2,8 @@
  * @file z8_disasm.h
  * @brief Z8-Disassembler (header-only) aus der Befehlstabelle core/primitives/z8/z8_table.h.
  *
- * C++-Gegenstück zu tools/z8_disasm.py (das als Werkzeug mit rekursivem Abstieg für ganze
- * Abzüge bleibt).  Benutzt von k1520dbg (`cpu z8`), dem Assembler-Rundlauftest und dem
+ * C++-Gegenstueck zu tools/z8_disasm.py (das als Werkzeug mit rekursivem Abstieg fuer ganze
+ * Abzuege bleibt).  Benutzt von k1520dbg (`cpu z8`), dem Assembler-Rundlauftest und dem
  * MAME-Orakel.  Schreibweise (vom Assembler tools/z8/z8_asm.h wieder lesbar):
  *   r0..r15, rr0..rr14       Arbeitsregister/-paare
  *   P0..P3, SIO … SPL        Port- und Steuerregister mit Namen, sonst 7FH / 0A4H
@@ -32,7 +32,7 @@ struct Ergebnis {
     uint8_t     bytes[3] = {};
 };
 
-/// Hexzahl im Zilog-Stil: führende 0, wenn sie mit einem Buchstaben beginnt (0A4H).
+/// Hexzahl im Zilog-Stil: fuehrende 0, wenn sie mit einem Buchstaben beginnt (0A4H).
 inline std::string hex(unsigned v, int stellen) {
     char b[16];
     std::snprintf(b, sizeof b, "%0*XH", stellen, v);

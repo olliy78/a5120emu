@@ -1,9 +1,9 @@
-"""CopyQM-Wandler für die WEGA-Datenträger (``tools/p8000/cqm2img.py``, AP P14).
+"""CopyQM-Wandler fuer die WEGA-Datentraeger (``tools/p8000/cqm2img.py``, AP P14).
 
 Die Tests benutzen eine SELBST ERZEUGTE Mini-CQM (wenige Sektoren) — kein
-eingechecktes Abbild.  Die echten WEGA-3.0-Abbilder werden nur geprüft, wenn sie
+eingechecktes Abbild.  Die echten WEGA-3.0-Abbilder werden nur geprueft, wenn sie
 auf dem Rechner liegen (``K1520_WEGA_CQM`` oder ``~/projects/robotron/P8000/
-discs/WEGA3.0``); sonst werden diese Fälle übersprungen.
+discs/WEGA3.0``); sonst werden diese Faelle uebersprungen.
 """
 
 import importlib.util
@@ -22,7 +22,7 @@ _spec.loader.exec_module(cqm)
 
 
 def packen(daten):
-    """Wiederholungen ab 4 Byte als Lauf, Rest roh — blockweise über die ganze Datenmenge."""
+    """Wiederholungen ab 4 Byte als Lauf, Rest roh — blockweise ueber die ganze Datenmenge."""
     out = bytearray()
     i = 0
     roh = bytearray()
@@ -64,7 +64,7 @@ def mini_cqm(daten, ssz=256, spt=4, koepfe=2, spuren=2, kommentar=b"", label=b"M
 
 
 def beispieldaten(ssz=256, spt=4, koepfe=2, spuren=2):
-    # Läufe über Sektorgrenzen (E5-Füllung), rohe Strecken und ein Zählmuster
+    # Laeufe ueber Sektorgrenzen (E5-Fuellung), rohe Strecken und ein Zaehlmuster
     d = bytearray()
     d += bytes([0xE5]) * (ssz * 3 // 2)
     d += bytes(range(256)) * 2
@@ -90,7 +90,7 @@ def test_mini_cqm_rundlauf():
 def test_lauf_ueber_mehrere_sektoren_wird_nicht_je_sektor_neu_begonnen():
     roh = bytes([0xE5]) * (256 * 16)
     kopf_und_strom = mini_cqm(roh)
-    # Ein einziger Wiederholungsblock (int16 -4096 + 1 Byte) trägt die ganze Datenmenge
+    # Ein einziger Wiederholungsblock (int16 -4096 + 1 Byte) traegt die ganze Datenmenge
     assert len(kopf_und_strom) == cqm.HEADER_LEN + 3
     assert cqm.decode(kopf_und_strom)[1] == roh
 

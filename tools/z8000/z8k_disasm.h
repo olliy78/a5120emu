@@ -12,7 +12,7 @@
  *   relativ       Zieladresse absolut (%0208 bzw. <<13>>%0208)
  *   JP/JR/RET     Bedingung T wird weggelassen.
  *   Zweitkodierung (Z8K_ALT, LDB Rbd,#data im Langformat) → Mnemonik mit ".L".
- * Unbekannte Kodierung → ".WORD %xxxx" (Länge 2).
+ * Unbekannte Kodierung → ".WORD %xxxx" (Laenge 2).
  *
  * @license MIT
  */
@@ -50,7 +50,7 @@ inline std::string segText(unsigned seg, unsigned off, bool shortForm) {
 }
 } // namespace detail
 
-/// Text eines Operanden.  pcSeg/pcNext: Segment und Offset des Folgebefehls (für RA).
+/// Text eines Operanden.  pcSeg/pcNext: Segment und Offset des Folgebefehls (fuer RA).
 inline std::string formatOperand(const Operand& o, bool seg, unsigned pcSeg, uint16_t pcNext) {
     using namespace detail;
     auto addr = [&]() {
@@ -122,7 +122,7 @@ inline std::string formatDecoded(const Decoded& d, unsigned pcSeg, uint16_t pcNe
 
 /// Ergebnis einer Disassemblierzeile.
 struct Line {
-    int         bytes = 2;         ///< Befehlslänge in Bytes (unbekannt: 2)
+    int         bytes = 2;         ///< Befehlslaenge in Bytes (unbekannt: 2)
     std::string text;              ///< "LD R0,#%ED4D"
     Decoded     dec;               ///< Dekodierergebnis (insn == nullptr: unbekannt)
     bool        hasTarget = false; ///< Sprung-/Aufrufziel bekannt (RA, DA ohne Index)
@@ -133,7 +133,7 @@ struct Line {
 /**
  * Disassembliert einen Befehl an seg:off.  `readWord(off)` liefert das Wort am
  * (geraden) Offset im selben Segment — der Befehlsstrom bleibt im Segment, der
- * Offset läuft über 16 Bit um.
+ * Offset laeuft ueber 16 Bit um.
  */
 inline Line disasm(const std::function<uint16_t(uint16_t)>& readWord, uint16_t pc, bool seg,
                    uint8_t pcSeg = 0) {
@@ -162,7 +162,7 @@ inline Line disasm(const std::function<uint16_t(uint16_t)>& readWord, uint16_t p
     return l;
 }
 
-/// Bequemlichkeit für Tests und Werkzeuge: aus einem Bytepuffer (big-endian) ab base.
+/// Bequemlichkeit fuer Tests und Werkzeuge: aus einem Bytepuffer (big-endian) ab base.
 inline Line disasmBytes(const uint8_t* buf, size_t len, uint16_t base, uint16_t pc, bool seg,
                         uint8_t pcSeg = 0) {
     auto rd = [&](uint16_t a) -> uint16_t {

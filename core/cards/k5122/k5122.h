@@ -2,20 +2,20 @@
  * @file k5122.h
  * @brief K5122 AFS – formatagnostische Emulation des Floppy-Controllers (Lesekopf-Streaming).
  *
- * Emulation der K5122 „Anschlusssteuerung Floppy-disk Speicher" für das Robotron-
- * K1520/A5120-System.  Der Datenpfad arbeitet als **Lesekopf-über-rotierender-Spur-Modell**
+ * Emulation der K5122 „Anschlusssteuerung Floppy-disk Speicher" fuer das Robotron-
+ * K1520/A5120-System.  Der Datenpfad arbeitet als **Lesekopf-ueber-rotierender-Spur-Modell**
  * auf Basis der zentralen @ref TrackImage -Abstraktion (siehe
- * doc/design/07_k5122_afs.md): der Controller kennt **keine** Sektorgrößen,
+ * doc/design/07_k5122_afs.md): der Controller kennt **keine** Sektorgroessen,
  * Sektoranzahl, CRC-Verfahren oder Boot-Stadien.  Er bezieht von jedem @ref FloppyDriveV2
  * eine fertig decodierte Spur (Gaps, Sync, IDAM, DATA, echte CRCs) und streamt deren Bytes
- * über Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 rücken den Kopf auf
- * die nächste Adressmarke vor.  Das Verfahren (FM/MFM) steckt allein in der Spur — der
+ * ueber Port 0x16 wie ein echter Lesekopf; die Re-Sync-Strobes MK/MK1 ruecken den Kopf auf
+ * die naechste Adressmarke vor.  Das Verfahren (FM/MFM) steckt allein in der Spur — der
  * Controller ist verfahrensneutral.  Die gemountete Diskette liegt als internes
  * @ref DiskMedium im Speicher; die Dateiformate (`.img`, `.hfe`, `.dmk`) sind
  * Container-Codecs davor (@ref ImageCodec, doc/design/09_floppy_drive.md).
  *
- * Für den Boot-Lesepfad erzeugt @ref startReadTransfer() on-the-fly einen treuen FM/MFM-
- * Lese-Stream (@ref TrackCodec::buildFaithfulReadTrack, 4×A1-Sync) — die Sync-Länge, die
+ * Fuer den Boot-Lesepfad erzeugt @ref startReadTransfer() on-the-fly einen treuen FM/MFM-
+ * Lese-Stream (@ref TrackCodec::buildFaithfulReadTrack, 4×A1-Sync) — die Sync-Laenge, die
  * ROM-Boot-Leseroutine und SYL-Lader gemeinsam bedienen.
  *
  * I/O-Port-Belegung (Basis 0x10): zwei Z80-PIOs (Steuer 0x10–0x13, Daten 0x14–0x17) plus
@@ -46,21 +46,21 @@
 
 // Motor-Anlaufzeit (Spin-up): Dauer vom Motor-On (/LCK) bis „auf Drehzahl".  Erst dann
 // dreht die Scheibe → erst dann Index-Pulse und lesbare Daten.  Reale 5,25"-Laufwerke
-// (K5601/MFS) laufen in ~50 ms an; hier bewusst SEHR KLEIN gewählt, damit das getunte
-// Boot-/Format-Timing unberührt bleibt.  Über -DK5122_MOTOR_SPINUP_MS=<ms> übersteuerbar
-// (z. B. =50 für realistische Anlaufzeit).
+// (K5601/MFS) laufen in ~50 ms an; hier bewusst SEHR KLEIN gewaehlt, damit das getunte
+// Boot-/Format-Timing unberuehrt bleibt.  Ueber -DK5122_MOTOR_SPINUP_MS=<ms> uebersteuerbar
+// (z. B. =50 fuer realistische Anlaufzeit).
 #ifndef K5122_MOTOR_SPINUP_MS
 #define K5122_MOTOR_SPINUP_MS 2
 #endif
 
 /**
  * @class K5122
- * @brief Streaming-basierte K5122-Emulation (Lesekopf über rotierender Spur).
+ * @brief Streaming-basierte K5122-Emulation (Lesekopf ueber rotierender Spur).
  *
- * - Steuert bis zu 4 Laufwerke über zwei Z80-PIOs und ein 8212 (Port 0x18).
- * - Jeder Slot trägt ein @ref DriveProfile (physisches Laufwerk, Maschinenkonfig).
- * - Datenpfad: streamt die decodierte @ref TrackImage byteweise über Port 0x16;
- *   MK/MK1-Strobes synchronisieren auf die nächste Adressmarke.
+ * - Steuert bis zu 4 Laufwerke ueber zwei Z80-PIOs und ein 8212 (Port 0x18).
+ * - Jeder Slot traegt ein @ref DriveProfile (physisches Laufwerk, Maschinenkonfig).
+ * - Datenpfad: streamt die decodierte @ref TrackImage byteweise ueber Port 0x16;
+ *   MK/MK1-Strobes synchronisieren auf die naechste Adressmarke.
  * - Index-Periode aus der Laufwerksdrehzahl; /HF-Statusbit aus dem Spur-Encoding.
  * - BUSRQ-Arbitrierung (dmaUpdate/endDmaTransfer) und Interrupt-Daisy-Chain wie gehabt.
  */
@@ -68,24 +68,24 @@ class K5122 : public BusDevice, public InterruptSlave {
 public:
     /**
      * @brief Konstruiert die Karte mit je einem Laufwerksprofil pro Slot.
-     * @param bus      K1520-Systembus (für BUSRQ/BUSAK)
+     * @param bus      K1520-Systembus (fuer BUSRQ/BUSAK)
      * @param profiles Laufwerksprofile der 4 Slots (Default: 4× K5601)
-     * @param cpu_hz   effektive Z80-Taktfrequenz für die Index-Periode (Default 2.45 MHz)
+     * @param cpu_hz   effektive Z80-Taktfrequenz fuer die Index-Periode (Default 2.45 MHz)
      */
     explicit K5122(K1520Bus& bus,
                      std::array<DriveProfile, 4> profiles = {},
                      uint32_t cpu_hz = 2450000);
 
     /**
-     * @brief Brücke der Synchronisationssteuerung (Doku K5122 §5.6.3, Decoder A3.3).
+     * @brief Bruecke der Synchronisationssteuerung (Doku K5122 §5.6.3, Decoder A3.3).
      *
      * - **BusRq** (Werksbelegung, A5120): die Karte fordert je Byte `/BUSRQ` an, die
      *   ZVE2 der K2526 holt es ab (§7.2 des Feinentwurfs) — der eingespielte Weg.
-     * - **Wait** (K8915, am Gerät abgelesen): es gibt keine zweite CPU; ein Zugriff auf
-     *   den Datenport (`IN (16H)`/`OUT (14H)`) hält die EINZIGE CPU per `/WAIT` an,
-     *   bis das nächste Byte unter dem Kopf ist.  Eigener, drehgekoppelter Datenweg
+     * - **Wait** (K8915, am Geraet abgelesen): es gibt keine zweite CPU; ein Zugriff auf
+     *   den Datenport (`IN (16H)`/`OUT (14H)`) haelt die EINZIGE CPU per `/WAIT` an,
+     *   bis das naechste Byte unter dem Kopf ist.  Eigener, drehgekoppelter Datenweg
      *   samt Marken-FF (MKE, Tor B Bit1) — siehe k5122_wait.cpp und
-     *   doc/design/07_k5122_afs.md §7.7.  Der BusRq-Weg bleibt davon unberührt.
+     *   doc/design/07_k5122_afs.md §7.7.  Der BusRq-Weg bleibt davon unberuehrt.
      */
     enum class Synchronisation : uint8_t { BusRq, Wait };
     void setSynchronisation(Synchronisation s);
@@ -95,49 +95,49 @@ public:
     /// @brief Marken-FF (MKE): im Wait-Betrieb seit dem Scharfmachen eine Sync-Gruppe gesehen.
     bool markeErkannt() const { return w_mke_; }
     /**
-     * @brief Polarität des Marken-FF an Tor B Bit 1 (nur Wait-Betrieb): false = high-aktiv
+     * @brief Polaritaet des Marken-FF an Tor B Bit 1 (nur Wait-Betrieb): false = high-aktiv
      *        (Vorgabe, A5120/K8915/PRG 710-1), true = low-aktiv (PRG 710) — belegt durch
-     *        ROM, UDOS-Resident und SCPX-BIOS beider Geräte (doc/design/20_prg710.md §4a.1).
+     *        ROM, UDOS-Resident und SCPX-BIOS beider Geraete (doc/design/20_prg710.md §4a.1).
      *        `markeErkannt()` bleibt der logische Zustand.
      */
     void setMkeLowAktiv(bool low) { mke_low_aktiv_ = low; updateStatusPortB(); }
     bool mkeLowAktiv() const { return mke_low_aktiv_; }
     /**
-     * @brief Marken-FF an JEDEM Sync-Byte (nur Wait-Betrieb).  Vorgabe false: das FF fällt
+     * @brief Marken-FF an JEDEM Sync-Byte (nur Wait-Betrieb).  Vorgabe false: das FF faellt
      *        am Ende des ERSTEN Sync-Bytes einer Gruppe, und nur, wenn dessen Bytefenster
-     *        ganz nach dem Scharfmachen liegt (A5120/K8915 unverändert).  true: jedes A1
+     *        ganz nach dem Scharfmachen liegt (A5120/K8915 unveraendert).  true: jedes A1
      *        bzw. C2 der Gruppe setzt es (der Markendecoder erkennt den fehlenden Takt in
      *        jedem Sync-Byte); ist das zuletzt FERTIGE Byte beim Scharfmachen ein
      *        Sync-Byte, gilt die Marke sofort (nicht schon, wenn der Kopf erst IN einem
-     *        steht — dann läge noch das Lückenbyte im Daten-PIO, AP-P3).  Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P1d): sein ROM
-     *        schlägt `B5H/85H` (= MK-FF rücksetzen/scharf) in einer Schleife von 54 Takten
+     *        steht — dann laege noch das Lueckenbyte im Daten-PIO, AP-P3).  Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P1d): sein ROM
+     *        schlaegt `B5H/85H` (= MK-FF ruecksetzen/scharf) in einer Schleife von 54 Takten
      *        an und fragt Tor B nur 12 Takte danach ab (02DDH–02E5H) — mit nur der ersten
-     *        Gruppe und ganzen Fenstern fände es nie eine Marke.
+     *        Gruppe und ganzen Fenstern faende es nie eine Marke.
      */
     void setMkeJedesSyncByte(bool an) { mke_jedes_sync_ = an; w_strom_gilt_ = false; }
     bool mkeJedesSyncByte() const { return mke_jedes_sync_; }
     /**
      * @brief Rauschen auf einer UNFORMATIERTEN Spur (nur Wait-Betrieb).  Vorgabe false:
-     *        eine Spur ohne Aufzeichnung liefert Lücke (4EH) und nie ein MKE
-     *        (A5120/K8915 unverändert).  true: unter dem Kopf liegt, was ein echtes
+     *        eine Spur ohne Aufzeichnung liefert Luecke (4EH) und nie ein MKE
+     *        (A5120/K8915 unveraendert).  true: unter dem Kopf liegt, was ein echtes
      *        Laufwerk dort liest — Rauschen.  Der Markendecoder der Karte (Marken-ROM
      *        A2.2, Takt 0AH + Daten A1H, Handbuch §5.3) erkennt darin gelegentlich ein
      *        A1 („Scheinmarke“, im Mittel eine je @ref kRauschMarkenAbstand Bytefenster),
-     *        die Bytes dahinter sind zufällig.  Pseudozufällig, aber reproduzierbar:
+     *        die Bytes dahinter sind zufaellig.  Pseudozufaellig, aber reproduzierbar:
      *        jedes Byte ist eine Streufunktion aus Laufwerk, Zylinder, Seite, Umdrehung
-     *        und Fenster — jede Umdrehung liest sich anders, wie am Gerät.
+     *        und Fenster — jede Umdrehung liest sich anders, wie am Geraet.
      *        Gebraucht vom PRG 710 (doc/design/20_prg710.md AP-P3b): ROM und
      *        UDOS-Resident warten ohne jeden Zeitablauf auf eine Marke (ROM 02DDH,
-     *        Resident 0A5CH/0A85H, CTC-Kanal 3 dabei gestoppt); am Gerät endet das
+     *        Resident 0A5CH/0A85H, CTC-Kanal 3 dabei gestoppt); am Geraet endet das
      *        (Anwender), hier, weil irgendwann hinter einer Scheinmarke ein FEH steht und
-     *        der Spurvergleich scheitert — „DISKERROR C5“ bzw. Fehlerstatus statt Hänger.
-     *        [?] Die gleichverteilten Bytes sind eine ANNAHME: in den Greaseweazle-Abzügen
+     *        der Spurvergleich scheitert — „DISKERROR C5“ bzw. Fehlerstatus statt Haenger.
+     *        [?] Die gleichverteilten Bytes sind eine ANNAHME: in den Greaseweazle-Abzuegen
      *        folgt keiner der 11 465 Scheinmarken ein FEH (AP-P3b, Befund 2).
      */
     void setRauschenAufLeererSpur(bool an) { rauschen_ = an; w_strom_gilt_ = false; }
     bool rauschenAufLeererSpur() const { return rauschen_; }
     /// Mittlerer Abstand der Scheinmarken im Rauschen (Bytefenster): ≈ 49 je Umdrehung;
-    /// Greaseweazle-Abzüge unformatierter Spuren zeigen 16 im Mittel, 41–82 auf
+    /// Greaseweazle-Abzuege unformatierter Spuren zeigen 16 im Mittel, 41–82 auf
     /// verrauschten Spuren (doc/design/20_prg710.md AP-P3b).
     static constexpr uint32_t kRauschMarkenAbstand = 128;
 
@@ -149,9 +149,9 @@ public:
      * - **Pc1715** (Floppy-Ansteuerung 20-330-0102 des PC 1715, Servicehandbuch §1.5.2.1/
      *   §1.5.2.2): **Daten-PIO 00H–03H, Steuer-PIO 04H–07H** (AB0 = Daten/Steuerwort,
      *   AB1 = Kanal — dieselbe Unteradressierung wie an der K5122), **SE-Register 20H**
-     *   (A13:1: DB4–7 /SE, DB0–3 /LCK = Türverriegelung, KEIN Motor) und **MO-Register 21H**
+     *   (A13:1: DB4–7 /SE, DB0–3 /LCK = Tuerverriegelung, KEIN Motor) und **MO-Register 21H**
      *   (A13:2: DB4–7 = /MO0../MO3, low-aktiv — CP/A-BIOS `biopdskt.mac` „flmot equ 21h
-     *   ;Bit 7..4:/Mot on“; UDOS 1715 schreibt 21H = 00H bei abgewähltem SE-Register).  20H/21H sind nur beschreibbar (Lesen: FFH).  Der Rest der
+     *   ;Bit 7..4:/Mot on“; UDOS 1715 schreibt 21H = 00H bei abgewaehltem SE-Register).  20H/21H sind nur beschreibbar (Lesen: FFH).  Der Rest der
      *   Karte (Bitbelegung der PIOs, Marken-FF, `/WAIT`-Weg) ist gleich.
      */
     enum class Portlage : uint8_t { K1520, Pc1715 };
@@ -179,21 +179,21 @@ public:
     // ─── Disk management ─────────────────────────────────────────────────────
 
     /**
-     * @brief Mountet ein bereits geöffnetes DiskImage auf einem Slot.
+     * @brief Mountet ein bereits geoeffnetes DiskImage auf einem Slot.
      * @param drive 0–3
-     * @param img   DiskImage (Eigentum geht über)
+     * @param img   DiskImage (Eigentum geht ueber)
      * @param write_protect Schreibschutz
-     * @return false bei ungültigem Slot oder Inkompatibilität (siehe drive(d).lastError()).
+     * @return false bei ungueltigem Slot oder Inkompatibilitaet (siehe drive(d).lastError()).
      */
     bool mountDisk(int drive, std::unique_ptr<DiskImage> img, bool write_protect = false);
 
     /**
-     * @brief Komfort-Overload: öffnet ein .img über @ref DiskImage::open und mountet es.
+     * @brief Komfort-Overload: oeffnet ein .img ueber @ref DiskImage::open und mountet es.
      * @param drive 0–3
      * @param path  Pfad zur Image-Datei
-     * @param fmt   Geometrie (für Raw/.img)
+     * @param fmt   Geometrie (fuer Raw/.img)
      * @param write_protect Schreibschutz
-     * @return false bei Öffnungs-/Kompatibilitätsfehler
+     * @return false bei Oeffnungs-/Kompatibilitaetsfehler
      */
     bool mountDisk(int drive, const std::string& path, const DiskFormat& fmt,
                    bool write_protect = false);
@@ -201,15 +201,15 @@ public:
     bool unmountDisk(int drive);
 
     /**
-     * @brief Verzögerter Autosave aller Laufwerke (aus der Maschinen-Laufschleife).
+     * @brief Verzoegerter Autosave aller Laufwerke (aus der Maschinen-Laufschleife).
      *
-     * Schreibt geänderte Spuren in die gebundene Image-Datei zurück, sobald sie
+     * Schreibt geaenderte Spuren in die gebundene Image-Datei zurueck, sobald sie
      * @ref kAutoFlushDelayCycles Takte „geruht" haben.  So entspricht die Datei dem
      * internen Abbild stets mit leichtem Zeitversatz.
      */
     void autoFlushDisks(uint64_t now_cycles);
 
-    /// @brief Ausstehende Änderungen aller Laufwerke sofort schreiben.
+    /// @brief Ausstehende Aenderungen aller Laufwerke sofort schreiben.
     bool flushDisks();
 
     bool isDiskActive(int drive) const;
@@ -218,7 +218,7 @@ public:
     bool isDriveLedOn(int drive) const;
     /// @brief Motor-Zustand (Spindel) des Laufwerks — /LCK aus dem 8212 (Port 0x18).
     bool isMotorOn(int drive) const;
-    /// @brief True, wenn der Motor läuft UND den Spin-up beendet hat („auf Drehzahl").
+    /// @brief True, wenn der Motor laeuft UND den Spin-up beendet hat („auf Drehzahl").
     ///        Nur dann rotiert die Scheibe → Index-Pulse + lesbare Daten.
     bool motorAtSpeed(int drive) const;
     /// @brief Kopf aufgesetzt? — /HL (Head Load, Steuer-PIO Port A Bit 6, active-low).
@@ -229,7 +229,7 @@ public:
     const FloppyDriveV2& drive(int idx) const { return drives_[idx]; }
 
     /**
-     * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn über Port 0x14
+     * @brief Parst einen Vollspur-FORMAT-Schreibstrom (wie ZVE2 ihn ueber Port 0x14
      *        streamt) in logische Sektoren.
      *
      * Der Strom ist eine komplette IBM-Spur als Bytefolge; der Parser erkennt **beide
@@ -238,8 +238,8 @@ public:
      *     (DAM) — die Marke folgt auf eine A1-Sync-Folge.
      *   - **FM** (Gap 0xFF / Sync 0x00): je Sektor `00…00 FE …` (IDAM) + `00…00 FB …` (DAM) —
      *     die Marke folgt **ohne A1** direkt auf eine 0x00-Sync-Folge (FM hat kein A1-Sync);
-     *     ein `FC`-Indexmark wird übersprungen.
-     * Sektorgröße = 128 << (sizecode & 3).  Statisch + frei von Controller-Zustand (unit-testbar).
+     *     ein `FC`-Indexmark wird uebersprungen.
+     * Sektorgroesse = 128 << (sizecode & 3).  Statisch + frei von Controller-Zustand (unit-testbar).
      *
      * @param stream  gesammelter Schreibstrom (write_buf_)
      * @param out_enc optional: erkanntes Verfahren (MFM bei A1-Sync, FM bei reinem 0x00-Sync).
@@ -250,60 +250,60 @@ public:
 
     // ─── Snapshot-Serialisierung (savestate/loadstate) ───────────────────────
     /**
-     * @brief Hängt den restaurierbaren Controller-Zustand an @p out an: beide
+     * @brief Haengt den restaurierbaren Controller-Zustand an @p out an: beide
      *        PIOs (Steuer/Daten), die gelatchten Signale (Laufwerk/Seite/Step-
      *        Richtung) und je Laufwerk die **mechanische Kopfposition** (Zylinder).
      *
      * Gemountete Images, der Spur-Cache und ein laufender Streaming-Transfer
      * werden NICHT serialisiert: Letzterer wird beim deserialize() auf einen
-     * konsistenten Idle-Zustand zurückgesetzt (Checkpoints liegen im Leerlauf;
-     * der nächste /STR-Strobe streamt die Spur frisch aus dem Image). Callbacks
-     * und Bus-Wiring bleiben unberührt (durch Konstruktion/Registrierung gesetzt).
+     * konsistenten Idle-Zustand zurueckgesetzt (Checkpoints liegen im Leerlauf;
+     * der naechste /STR-Strobe streamt die Spur frisch aus dem Image). Callbacks
+     * und Bus-Wiring bleiben unberuehrt (durch Konstruktion/Registrierung gesetzt).
      */
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
-    /// @brief Läuft gerade ein Lese-Streaming-Transfer (kein FORMAT-Schreiben)?
+    /// @brief Laeuft gerade ein Lese-Streaming-Transfer (kein FORMAT-Schreiben)?
     ///        Genutzt vom os-gated „gehaltenen Bus" (SCPX-Laufzeit-Read, a5120.cpp).
     bool isReadTransferActive() const { return transferring_ && !write_mode_; }
 
     /// @brief Beendet den os-gated „gehaltenen" Laufzeit-Lese-Transfer (a5120.cpp §9.4b):
     ///        stoppt die Per-Byte-Drossel + gibt /BUSRQ frei, ohne die Interrupt-Freigabe
-    ///        zu verändern.  ZVE1 fährt danach mit JP (HL) fort.
+    ///        zu veraendern.  ZVE1 faehrt danach mit JP (HL) fort.
     void releaseHeldRead();
 
-    /// @brief Post-Write-Verify-Gnadenfenster schließen (a5120.cpp, sobald der os-Gate
-    ///        für die Verify-Runde engagiert hat).  Seine Aufgabe (transferring_ über die
-    ///        Dispatch-Lücke bis zum Verify-Engage am Leben halten) ist dann erfüllt; das
-    ///        sofortige Schließen verhindert, dass es in einen nachfolgenden normalen Read
-    ///        „leckt" und dort transferring_ fälschlich hält.
+    /// @brief Post-Write-Verify-Gnadenfenster schliessen (a5120.cpp, sobald der os-Gate
+    ///        fuer die Verify-Runde engagiert hat).  Seine Aufgabe (transferring_ ueber die
+    ///        Dispatch-Luecke bis zum Verify-Engage am Leben halten) ist dann erfuellt; das
+    ///        sofortige Schliessen verhindert, dass es in einen nachfolgenden normalen Read
+    ///        „leckt" und dort transferring_ faelschlich haelt.
     void endPostWriteGrace() { post_write_grace_ = 0; }
 
-    /// @brief Momentaufnahme des Controller-Zustands für Debugger (k1520dbg `dev`).
+    /// @brief Momentaufnahme des Controller-Zustands fuer Debugger (k1520dbg `dev`).
     struct DebugState {
-        int      drive;        ///< aktuell gewähltes Laufwerk (8212 /SELx)
-        unsigned cylinder;     ///< physischer Zylinder des gewählten Laufwerks
+        int      drive;        ///< aktuell gewaehltes Laufwerk (8212 /SELx)
+        unsigned cylinder;     ///< physischer Zylinder des gewaehlten Laufwerks
         unsigned head;         ///< am /STR gelatchte Seite (bit2 /FR)
         bool     transferring; ///< Lese-Stream aktiv (ioRead 0x16 liefert Spurbytes)
         bool     writeMode;    ///< Schreib-Transfer aktiv
         size_t   headPos;      ///< Lesekopf-Position (Byte) in der Spur
-        size_t   trackLen;     ///< Länge der aktuell gestreamten Spur (0 = keine)
-        unsigned sectorSize;   ///< Sektorgröße der aktiven Spur
+        size_t   trackLen;     ///< Laenge der aktuell gestreamten Spur (0 = keine)
+        unsigned sectorSize;   ///< Sektorgroesse der aktiven Spur
         bool     mounted;      ///< Laufwerk gemountet?
         bool     busrq;        ///< /STR-DMA ausstehend
-        std::string driveProfileName; ///< DriveProfile-Name des gewählten Laufwerks (Bestückung)
+        std::string driveProfileName; ///< DriveProfile-Name des gewaehlten Laufwerks (Bestueckung)
         Encoding readEncoding; ///< effektives Lesepfad-Verfahren (Override ?? Laufwerk-Default)
-        bool     readEncFromCtrlWord; ///< true: per Steuerwort gewählt; false: Laufwerk-Default
+        bool     readEncFromCtrlWord; ///< true: per Steuerwort gewaehlt; false: Laufwerk-Default
         Encoding trackEncoding;  ///< echte Codierung der gemounteten Diskette (aus dem Image)
-        bool     encodingMatch;  ///< readEncoding == trackEncoding (gemountet); Basis für den
-                                 ///< treuen Lesepfad: bei Mismatch findet ZVE2 später kein IDAM
+        bool     encodingMatch;  ///< readEncoding == trackEncoding (gemountet); Basis fuer den
+                                 ///< treuen Lesepfad: bei Mismatch findet ZVE2 spaeter kein IDAM
         int      indexAccum;     ///< aufgelaufene Index-Phase (Takte seit letztem Index-Puls);
                                  ///< commitFormatTrack setzt sie auf 0 (Index ans Spur-Ende koppeln)
         // ── /WAIT-Betrieb (K8915, AP-E4f) ──────────────────────────────────────
         // Im Wait-Betrieb wird nichts „gestreamt“; @ref transferring und @ref writeMode
         // bedeuten dort: Datenfluss zum Lesen (/STR = 0, /WE = 1, Scheibe dreht) bzw.
         // Schreiben (/WE = 0) — so gelten `bxfer`/`where` an beiden Maschinen.
-        bool     waitBetrieb;    ///< Brücke /WAIT gesetzt (K8915)
+        bool     waitBetrieb;    ///< Bruecke /WAIT gesetzt (K8915)
         bool     waitMke;        ///< Marken-FF (Tor B Bit1)
         size_t   waitSchreibBytes; ///< im laufenden Schreiben gesammelte Bytes
         uint64_t waitSpuren;     ///< ganze Spuren (FORMAT) seit dem Einschalten
@@ -351,7 +351,7 @@ public:
 
     // ─── DMA-Arbitrierung / Index ────────────────────────────────────────────
 
-    /// @brief ZVE2-Fallback: führt eine ausstehende DMA-Übertragung aus und gibt /BUSRQ frei.
+    /// @brief ZVE2-Fallback: fuehrt eine ausstehende DMA-Uebertragung aus und gibt /BUSRQ frei.
     void dmaUpdate();
     /// @brief Beendet einen aktiven Lese-DMA und gibt /BUSRQ frei (ZVE2-Completion).
     void endDmaTransfer();
@@ -363,40 +363,40 @@ public:
      *
      * Bricht einen laufenden Lese-/Schreibtransfer ab, gibt /BUSRQ frei und setzt
      * beide PIOs sowie die gelatchten Steuersignale in den Einschaltzustand.
-     * NICHT zurückgesetzt werden die eingelegten Disketten und die mechanische
+     * NICHT zurueckgesetzt werden die eingelegten Disketten und die mechanische
      * Kopfposition — ein Reset bewegt auf echter Hardware kein Laufwerk.
      */
     void reset();
 
 private:
     // ─── /WAIT-Betrieb (K8915, k5122_wait.cpp) ───────────────────────────────
-    /// Steuerport A im Wait-Betrieb (eigener Handler, BusRq-Weg bleibt unberührt).
+    /// Steuerport A im Wait-Betrieb (eigener Handler, BusRq-Weg bleibt unberuehrt).
     void waitCtrlPortAWrite(uint8_t data);
     /// PC 1715: Schreibzugriff auf das MO-Register 21H (DB4–7 = /MO0../MO3).
     void moRegisterSchreiben(uint8_t data);
-    /// `IN (16H)`: nächstes Byte unter dem Kopf, ggf. mit Wartetakten.
+    /// `IN (16H)`: naechstes Byte unter dem Kopf, ggf. mit Wartetakten.
     uint8_t waitRead();
-    /// `OUT (14H)`: Schreibbyte im nächsten Bytefenster (Wartetakte), sammeln.
+    /// `OUT (14H)`: Schreibbyte im naechsten Bytefenster (Wartetakte), sammeln.
     void waitWrite(uint8_t data);
     /// Zeitpunkt des laufenden Zugriffs (Uhr + schon verlangte Wartetakte).
     uint64_t waitJetzt() const;
-    /// Dreht die Scheibe des gewählten Laufwerks (eingelegt, Motor auf Drehzahl)?
+    /// Dreht die Scheibe des gewaehlten Laufwerks (eingelegt, Motor auf Drehzahl)?
     bool waitDreht() const;
     /// Lesestrom der Spur unter dem Kopf (zwischengespeichert, neu bei Spur-/Inhaltswechsel).
     const TrackImage& waitStrom();
     /// Byte des Bytefensters @p slot der laufenden Umdrehung.
     uint8_t waitByte(size_t slot);
-    /// Marken-FF neu bewerten: scharf?  wann läuft die nächste Sync-Gruppe durch?
+    /// Marken-FF neu bewerten: scharf?  wann laeuft die naechste Sync-Gruppe durch?
     void waitMkePlanen(bool neu_scharf);
-    /// Nächstes freies Bytefenster ab @p t belegen; liefert sein Ende und die Nummer.
+    /// Naechstes freies Bytefenster ab @p t belegen; liefert sein Ende und die Nummer.
     uint64_t waitFenster(uint64_t t, size_t& slot);
-    /// Schreiben beendet (/WE 0→1 oder /STR 0→1): ganze Spur oder Datenfeld übernehmen.
+    /// Schreiben beendet (/WE 0→1 oder /STR 0→1): ganze Spur oder Datenfeld uebernehmen.
     void waitSchreibenUebernehmen();
     /// Ganze Spur: jedes Byte an sein Fenster der Umdrehung, Marken setzen, ins Medium.
     void waitSpurSchreiben(Encoding enc, size_t kennfelder);
     /// Datenfeld an Ort und Stelle in den Sektor, dessen Kennfeld zuletzt durchlief.
     void waitFeldSchreiben();
-    /// Aus Sektoren gebaute Spur (bitcells = 0) mit den Normlücken von FORMAT.COM neu legen.
+    /// Aus Sektoren gebaute Spur (bitcells = 0) mit den Normluecken von FORMAT.COM neu legen.
     TrackImage waitNormspur(const TrackImage& spur) const;
     /// Verfahren der Spur unter dem Kopf (leer: MFM, wenn das Laufwerk es kann) — Datenrate.
     Encoding waitVerfahrenGemerkt() const;
@@ -407,7 +407,7 @@ private:
     bool     wait_betrieb_  = false;
     uint64_t w_now_         = 0;        ///< Takte seit dem Einschalten (update())
     uint64_t w_last_done_   = 0;        ///< Ende des zuletzt abgeholten Bytefensters
-    uint8_t  w_latch_       = 0xFF;     ///< zuletzt übergebenes Byte (Daten-PIO)
+    uint8_t  w_latch_       = 0xFF;     ///< zuletzt uebergebenes Byte (Daten-PIO)
     bool     w_scharf_      = false;    ///< /STR = 0 und MR = 0: Marken-FF sucht
     bool     mke_low_aktiv_ = false;     ///< Tor B Bit1 invertiert (PRG 710)
     bool     mke_jedes_sync_ = false;    ///< MKE an jedem Sync-Byte, Teilfenster (PRG 710)
@@ -420,10 +420,10 @@ private:
     /// Ist Fenster @p slot in Umdrehung @p umdr eine Scheinmarke (A1)?
     bool rauschMarke(uint64_t umdr, size_t slot) const;
     uint64_t rauschHash(uint64_t umdr, size_t slot) const;
-    /// MKE-Zeitpunkt der nächsten Scheinmarke im Rauschen planen (MK = 0).
+    /// MKE-Zeitpunkt der naechsten Scheinmarke im Rauschen planen (MK = 0).
     void waitRauschMarkePlanen();
     bool     w_mke_         = false;    ///< Marken-FF gesetzt (Tor B Bit1)
-    uint64_t w_mke_time_    = UINT64_MAX; ///< wann die nächste Sync-Gruppe durch ist
+    uint64_t w_mke_time_    = UINT64_MAX; ///< wann die naechste Sync-Gruppe durch ist
     uint8_t  w_status_      = 0x00;     ///< zuletzt an Tor B gelegter Status
     bool     w_status_gilt_ = false;
     // Lesestrom-Zwischenspeicher
@@ -459,9 +459,9 @@ private:
                       ? 0 : ((ctrl & 0x04) ? 0 : 1);
     }
 
-    /// @brief Wählt am /STR-Lese-Strobe die aktuelle Spur und armiert den Lesetransfer.
+    /// @brief Waehlt am /STR-Lese-Strobe die aktuelle Spur und armiert den Lesetransfer.
     void startReadTransfer();
-    /// @brief Rückt den Lesekopf auf die nächste Adressmarke (MK/MK1-Strobe).
+    /// @brief Rueckt den Lesekopf auf die naechste Adressmarke (MK/MK1-Strobe).
     void resyncToNextMark();
     /// @brief Effektives Lese-Verfahren: Steuerwort-Override (0x85/0x87) oder Laufwerk-Default.
     Encoding effReadEnc() const {
@@ -470,20 +470,20 @@ private:
     }
     /// @brief Aktuelle Byte-Periode (Takte/Datenbyte) — rotationsgekoppelt aus der
     ///        Datenrate des effektiven Verfahrens (MFM 78 / FM 156 @ 2,45 MHz).
-    ///        Ersetzt die frühere boot-getunte Konstante kBytePeriodCycles.
+    ///        Ersetzt die fruehere boot-getunte Konstante kBytePeriodCycles.
     int currentBytePeriod() const {
         return drives_[selected_drive_].profile().bytePeriodCycles(effReadEnc(), cpu_hz_);
     }
-    /// @brief /STR=1-Abtastschwelle für das Lese-Transfer-Ende — ~2 Byteperioden,
+    /// @brief /STR=1-Abtastschwelle fuer das Lese-Transfer-Ende — ~2 Byteperioden,
     ///        MITSKALIERT mit dem rotationsgekoppelten Byte-Takt (statt fix 320).
     ///        Muss > kurzer /STR=1-Blips (Boot-ROM-Setup-Strobes ≤ ~18 Takte) und
-    ///        << echte Track-Enden (≥30000) bleiben — beides gilt für 2×Byteperiode.
+    ///        << echte Track-Enden (≥30000) bleiben — beides gilt fuer 2×Byteperiode.
     int strEndSampleCycles() const {
         return 2 * currentBytePeriod();
     }
     /// @brief Speist den freilaufenden Byte-Takt fort (Spacing-Modell, §5.6.1).
-    ///        Wird pro update() aufgerufen: @ref byte_acc_ läuft KONTINUIERLICH (auch
-    ///        während ZVE2 seine Nicht-Port-Instruktionen ausführt) und rastet bei jedem
+    ///        Wird pro update() aufgerufen: @ref byte_acc_ laeuft KONTINUIERLICH (auch
+    ///        waehrend ZVE2 seine Nicht-Port-Instruktionen ausfuehrt) und rastet bei jedem
     ///        Byte-Slot ein. So wird der ZVE2-Schleifen-Overhead IM Slot absorbiert
     ///        (Spacing → 1 Zugriff/Byteperiode), statt nach dem Warten addiert zu werden.
     void advanceByteClock(int cycles) {
@@ -493,15 +493,15 @@ private:
             byte_ready_ = true;
             bus_.assertBUSRQ();
         }
-        // ── Überlauf (Handbuch §5.7) ────────────────────────────────────────
-        // „Das nächste Byte wird in den Daten-PIO übernommen, BEVOR die CPU die
+        // ── Ueberlauf (Handbuch §5.7) ────────────────────────────────────────
+        // „Das naechste Byte wird in den Daten-PIO uebernommen, BEVOR die CPU die
         // Daten abgefordert hat" — der Datenseparator wartet nicht, das nicht
         // abgeholte Byte geht verloren (/FA).  Auf einer Spur OHNE Adressmarken
-        // gibt es nichts, worauf sich das Programm synchronisieren könnte; hält
+        // gibt es nichts, worauf sich das Programm synchronisieren koennte; haelt
         // die Karte hier ihre Anforderung fest, bleibt /BUSRQ stehen und legt
-        // ZVE1 still — genau das ließ FORMAT.COM auf einer leeren Spur einfrieren.
-        // Die Anforderung verfällt daher mit dem nächsten Byte, der Kopf dreht
-        // weiter, und der Bus geht an ZVE1 zurück.
+        // ZVE1 still — genau das liess FORMAT.COM auf einer leeren Spur einfrieren.
+        // Die Anforderung verfaellt daher mit dem naechsten Byte, der Kopf dreht
+        // weiter, und der Bus geht an ZVE1 zurueck.
         if (byte_ready_ && transferring_ && !write_mode_ && !stream_has_marks_
             && byte_acc_ >= 2 * period) {
             byte_ready_ = false;
@@ -511,13 +511,13 @@ private:
             byte_acc_ = 0;
             return;
         }
-        // Gegen Überlauf/Runaway bei stehendem ZVE2 (Overrun) begrenzen — hält die
-        // Rasterphase beschränkt; die Schreib-Idle-Erkennung (byte_ready_ bleibt) läuft weiter.
+        // Gegen Ueberlauf/Runaway bei stehendem ZVE2 (Overrun) begrenzen — haelt die
+        // Rasterphase beschraenkt; die Schreib-Idle-Erkennung (byte_ready_ bleibt) laeuft weiter.
         if (byte_acc_ > 2 * period) byte_acc_ = 2 * period;
     }
     /// @brief Konsumiert einen Byte-Slot beim Datenport-Zugriff (Spacing):
-    ///        Phase um eine Byteperiode zurücksetzen (statt hart auf 0), damit die
-    ///        während des ZVE2-Fensters aufgelaufenen Overhead-Takte erhalten bleiben.
+    ///        Phase um eine Byteperiode zuruecksetzen (statt hart auf 0), damit die
+    ///        waehrend des ZVE2-Fensters aufgelaufenen Overhead-Takte erhalten bleiben.
     void consumeByteSlot() {
         const int period = currentBytePeriod();
         byte_acc_ -= period;
@@ -529,13 +529,13 @@ private:
     void commitWrite();
     /// @brief Beendet einen Vollspur-FORMAT-Schreibtransfer am Index-Puls: parst den
     ///        gesammelten Schreibstrom (IDAM/DAM/Daten) zu Sektoren, baut die Spur und
-    ///        schreibt sie ins Image; gibt /BUSRQ frei (ZVE1 wird über den Index-Int geweckt).
+    ///        schreibt sie ins Image; gibt /BUSRQ frei (ZVE1 wird ueber den Index-Int geweckt).
     void commitFormatTrack();
     /// @brief Beginnt das Sammeln eines Schreib-Datenfelds (/WE 1→0 im ZVE2-Streaming).
     ///        Ermittelt den Zielsektor aus der letzten Id-Marke vor head_pos_.
     void beginWriteField();
     /// @brief Committet ein gesammeltes Schreib-Datenfeld (/WE 0→1) in den Zielsektor:
-    ///        extrahiert das Datenfeld (A1 A1 A1 DAM …) und schreibt es zurück.
+    ///        extrahiert das Datenfeld (A1 A1 A1 DAM …) und schreibt es zurueck.
     void commitWriteField();
 
     // ─── Hardware-Objekte ────────────────────────────────────────────────────
@@ -543,21 +543,21 @@ private:
     Z80PIO        ctrl_pio_{"K5122-CTRL"};   ///< Steuer-PIO: Ports 0x10–0x13
     Z80PIO        data_pio_{"K5122-DATA"};   ///< Daten-PIO:  Ports 0x14–0x17
     FloppyDriveV2 drives_[4];                  ///< bis zu 4 Laufwerke (je mit DriveProfile)
-    uint32_t      cpu_hz_ = 2450000;           ///< Taktfrequenz für Index-Periode
+    uint32_t      cpu_hz_ = 2450000;           ///< Taktfrequenz fuer Index-Periode
 
     // ─── Controller-Zustand ──────────────────────────────────────────────────
     int     selected_drive_ = 0;
     uint8_t current_head_   = 0;               ///< am /STR gelatchte Seite (bit2/FR)
     uint8_t loaded_cyl_     = 0xFF;            ///< (Zyl,Kopf) der aktuell geladenen Lese-Spur —
-    uint8_t loaded_head_    = 0xFF;            ///<   /STR-Refresh lädt nur bei Wechsel neu (kein Rewind)
+    uint8_t loaded_head_    = 0xFF;            ///<   /STR-Refresh laedt nur bei Wechsel neu (kein Rewind)
     bool    step_dir_in_    = true;            ///< Step-Richtung (bit5 MR/SD, am /ST)
     uint8_t prev_ctrl_a_    = 0xFF;            ///< vorheriger Port-A-Wert (Kantenerkennung)
 
     // ── Aufzeichnungsverfahren des Lesepfads (Laufwerk-Default + Steuerwort-Override) ─
     // Default kommt aus DriveProfile::default_read_encoding (ROM-Phase); ein Lesen-
-    // Marke-Steuerwort 0x85(MFM)/0x87(FM) latcht read_enc_ und übersteuert ab dann.
+    // Marke-Steuerwort 0x85(MFM)/0x87(FM) latcht read_enc_ und uebersteuert ab dann.
     bool     read_enc_overridden_ = false;     ///< true, sobald ein 0x85/0x87-Steuerwort kam
-    Encoding read_enc_            = Encoding::FM; ///< gelatchtes Verfahren (gültig wenn overridden)
+    Encoding read_enc_            = Encoding::FM; ///< gelatchtes Verfahren (gueltig wenn overridden)
 
     // ─── Lesekopf-Streaming-Modell ──────────────────────────────────────────
     const TrackImage* cur_track_    = nullptr; ///< aktive Spur (Zeiger auf read_stream_track_)
@@ -568,19 +568,19 @@ private:
                                                ///< damit commitWrite()/parseTrack() funktioniert.
     size_t            head_pos_     = 0;        ///< Lesekopf-Position (Byte) in der Spur
     bool              locked_       = false;    ///< Datenseparator auf eine Marke synchronisiert
-    bool              transferring_ = false;    ///< Lesetransfer läuft
-    /// @brief Trägt der aktive Lese-Strom überhaupt Adressmarken?
+    bool              transferring_ = false;    ///< Lesetransfer laeuft
+    /// @brief Traegt der aktive Lese-Strom ueberhaupt Adressmarken?
     ///
-    /// Auf einer unbeschriebenen Spur läuft der Datenseparator zwar frei mit und
-    /// liefert Bytes (`IN (16H)` gibt Gap zurück), meldet aber nie MKE (Tor B, B1).
+    /// Auf einer unbeschriebenen Spur laeuft der Datenseparator zwar frei mit und
+    /// liefert Bytes (`IN (16H)` gibt Gap zurueck), meldet aber nie MKE (Tor B, B1).
     /// Ohne MKE entsteht keine DMA-Anforderung — /BUSRQ bliebe sonst stehen und
     /// hielte ZVE1 an, das den Strom gar nicht abholen will.
     bool              stream_has_marks_ = false;
-    bool              write_mode_   = false;    ///< Schreibtransfer läuft (alter /STR-Schreibpfad)
+    bool              write_mode_   = false;    ///< Schreibtransfer laeuft (alter /STR-Schreibpfad)
     std::vector<uint8_t> write_buf_;            ///< gesammelte Schreibdaten (Port 0x14)
-    uint16_t          cur_sector_size_ = 128;   ///< Sektorgröße der aktiven Spur (nur Debug-Info)
+    uint16_t          cur_sector_size_ = 128;   ///< Sektorgroesse der aktiven Spur (nur Debug-Info)
 
-    /// @brief Byte-Länge des synthetischen Gap-Stroms einer unformatierten Spur
+    /// @brief Byte-Laenge des synthetischen Gap-Stroms einer unformatierten Spur
     ///        (≈ eine Umdrehung; reiner 0x4E-Gap ohne Adressmarken).  Ein Lese-Strobe
     ///        auf eine leere/unformatierte Spur streamt diesen markenlosen Fluss, damit
     ///        die Leseroutine kein IDAM findet und per Index-Timeout terminiert (wie
@@ -603,40 +603,40 @@ private:
     bool dma_is_write_ = false;
 
     // ─── Per-Byte-/BUSRQ-Drossel (hardware-echt, K5122-Doku §5.5/§5.6.1) ──────
-    // /BUSRQ entsteht pro Byte aus dem RDY des Daten-PIO: ZVE2 erhält den Bus,
-    // wenn ein Byte bereitliegt, holt es über Port 0x16 ab und verliert den Bus
-    // wieder, bis das nächste Byte ~1 Byteperiode später bereitliegt.  In diesen
-    // Lücken läuft ZVE1.  ZVE2 verliert den Bus damit automatisch, sobald es
-    // aufhört zu lesen (fertig/idle) — das ersetzt JEDE programm-/größen-
+    // /BUSRQ entsteht pro Byte aus dem RDY des Daten-PIO: ZVE2 erhaelt den Bus,
+    // wenn ein Byte bereitliegt, holt es ueber Port 0x16 ab und verliert den Bus
+    // wieder, bis das naechste Byte ~1 Byteperiode spaeter bereitliegt.  In diesen
+    // Luecken laeuft ZVE1.  ZVE2 verliert den Bus damit automatisch, sobald es
+    // aufhoert zu lesen (fertig/idle) — das ersetzt JEDE programm-/groessen-
     // spezifische Completion-Erkennung ([0x03F8]=3-Watch, OUT(13H)-Hack).
-    bool byte_ready_ = false;   ///< ein Byte liegt für ZVE2 bereit → /BUSRQ aktiv
+    bool byte_ready_ = false;   ///< ein Byte liegt fuer ZVE2 bereit → /BUSRQ aktiv
     int  byte_acc_   = 0;       ///< Takte seit dem letzten Byte (bis zur Bereitschaft)
-    // Byte-Periode ist jetzt rotationsgekoppelt/encoding-abhängig → currentBytePeriod()
-    // (früher: feste boot-getunte Konstante kBytePeriodCycles = 150).
+    // Byte-Periode ist jetzt rotationsgekoppelt/encoding-abhaengig → currentBytePeriod()
+    // (frueher: feste boot-getunte Konstante kBytePeriodCycles = 150).
 
     // ─── /STR=1-Abtastung (Latch, formatagnostisches Transfer-Ende) ──────────
-    // K5122-Doku §5.5: „Beendigung der Datenübertragung … durch Abschalten von
+    // K5122-Doku §5.5: „Beendigung der Datenuebertragung … durch Abschalten von
     // /STR".  Der Datenseparator tastet /STR nur am Lesetakt ab — ein /STR=1-Puls
-    // kürzer als ~1 Byteperiode wird NICHT durchgetaktet (erklärt die kurzen
-    // Boot-ROM-Setup-Strobes ≤ ~18 Takte, gegenüber echten Track-Enden ≥ 30000).
+    // kuerzer als ~1 Byteperiode wird NICHT durchgetaktet (erklaert die kurzen
+    // Boot-ROM-Setup-Strobes ≤ ~18 Takte, gegenueber echten Track-Enden ≥ 30000).
     int  str_inactive_cycles_ = 0;              ///< Takte mit /STR=1 im aktiven Transfer
     // Lese-Transfer-Ende-Schwelle: jetzt mitskaliert → strEndSampleCycles() = 2×Byteperiode
-    // (früher fix 320 ≈ 2×150; bei Byte-Takt 78 wären 320 fälschlich ~4 Perioden).
+    // (frueher fix 320 ≈ 2×150; bei Byte-Takt 78 waeren 320 faelschlich ~4 Perioden).
 
     // ─── Post-Write-Verify-Gnadenfenster (SCPX-Laufzeit-Schreiben) ────────────
-    // Nach einem BIOS-Datenfeld-Write (commitWriteField) dispatcht SCPX' ZVE1 über
-    // eine längere Kette (E929→…→E88C) zum Nachfolge-„Verify-Read", bevor er dessen
-    // /STR ausgibt — deutlich länger als kStrEndSampleCycles.  Ohne Schutz beendet
-    // die /STR=1-Abtastung den Transfer in dieser Lücke (transferring_→false), ZVE2
+    // Nach einem BIOS-Datenfeld-Write (commitWriteField) dispatcht SCPX' ZVE1 ueber
+    // eine laengere Kette (E929→…→E88C) zum Nachfolge-„Verify-Read", bevor er dessen
+    // /STR ausgibt — deutlich laenger als kStrEndSampleCycles.  Ohne Schutz beendet
+    // die /STR=1-Abtastung den Transfer in dieser Luecke (transferring_→false), ZVE2
     // bleibt im Reset (kein Byte-Throttle-/BUSRQ, das ihn neu startet), und ein
-    // Index-ISR kapert schließlich den Handshake-Vektor [EC0B] → degradierter
+    // Index-ISR kapert schliesslich den Handshake-Vektor [EC0B] → degradierter
     // Blindscan → „BAD SECTOR" (doc/analyse_scpx_com_load.md §11).  Deshalb wird die
     // Abtastschwelle NUR in diesem Fenster (nach einem Write, nie beim Boot-Read)
-    // verlängert, sodass der Stream lebt, bis der Byte-Throttle ZVE2 aus dem Reset
+    // verlaengert, sodass der Stream lebt, bis der Byte-Throttle ZVE2 aus dem Reset
     // neu startet und der Verify-Read wieder Bytes zieht.
     int  post_write_grace_ = 0;                  ///< verbleibende Takte des Gnadenfensters
     static constexpr int kPostWriteGraceCycles   = 6000;  ///< Dauer des Fensters
-    static constexpr int kPostWriteStrEndCycles  = 4000;  ///< Schwelle darin (überbrückt die ~2000-Takt-Dispatch-Lücke, << echte Track-Enden ≥30000)
+    static constexpr int kPostWriteStrEndCycles  = 4000;  ///< Schwelle darin (ueberbrueckt die ~2000-Takt-Dispatch-Luecke, << echte Track-Enden ≥30000)
 
     // ─── Vollspur-FORMAT: Schreib-Idle-Erkennung (Transfer-Ende) ──────────────
     int  write_idle_acc_ = 0;                   ///< Takte mit angebotenem, aber nicht
@@ -653,13 +653,13 @@ private:
 
     // ─── Motor-/LED-Zustand (aus dem 8212, Port 0x18) ────────────────────────
     // Der 8212 (A4) latcht je Laufwerk ein /SE (Select) und ein /LCK (= /Motor On,
-    // MFS) — beide active-low (K5122-Doku §4.2).  Der Motor läuft, solange /LCK=0;
+    // MFS) — beide active-low (K5122-Doku §4.2).  Der Motor laeuft, solange /LCK=0;
     // die Laufwerks-LED leuchtet, solange das Laufwerk selektiert ODER sein Motor an
     // ist.  Beide werden allein aus dem letzten OUT(18H) abgeleitet (keine Wanduhr).
     std::array<bool, 4> drive_selected_{};   ///< /SE0../SE3 (low nibble, 0 = selektiert)
     std::array<bool, 4> motor_on_{};         ///< /LCK0../LCK3 (high nibble, 0 = Motor an)
     Portlage            portlage_ = Portlage::K1520;   ///< s. setPortlage()
-    std::array<int, 4>  motor_spinup_cycles_{};  ///< Restlaufzeit bis „auf Drehzahl" (>0 = läuft an)
+    std::array<int, 4>  motor_spinup_cycles_{};  ///< Restlaufzeit bis „auf Drehzahl" (>0 = laeuft an)
     bool                head_loaded_ = false;    ///< /HL (Port A Bit 6, active-low): Kopf aufgesetzt
 
     /// @brief Spin-up-Dauer in CPU-Takten (aus K5122_MOTOR_SPINUP_MS + cpu_hz_).

@@ -100,7 +100,7 @@ void TastaturK7673::ausgeben(uint16_t adr, bool brk) {
         ledMerker_ = uint8_t(ledMerker_ | m);
         p2_ = uint8_t(p2_ ^ m);
     };
-    if (adr == 0x2EF) held1D_ = !brk;                 // 1DH-Taste gedrückt merken (3AH)
+    if (adr == 0x2EF) held1D_ = !brk;                 // 1DH-Taste gedrueckt merken (3AH)
     if (adr == 0x2FF) {                               // PAUSE
         if (brk) return;
         if (held1D_) adr = 0x3ED;

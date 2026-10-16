@@ -4,29 +4,29 @@
  *
  * Stand AP-1b (doc/design/21_pc1715.md §8, §10/§11): die ZRE (`Pc1715Zre`: U880, 64 KB,
  * ROM-Overlay S502, CTC0, SIO0, 8275 mit Rastern) und die Laufschleife.  **Eine** Klasse
- * für beide Geräte.
+ * fuer beide Geraete.
  *
  * **PC 1715W (AP-W3, doc/pc1715/pc1715w_hardware.md):** dieselbe ZRE-Karte in der Betriebsart
  * `Pc1715Zre::Config::w` (CPU 3,9936 MHz, CTC0 08H ohne Interrupt, SIO0 0CH, LT107/111), dazu
  * `Pc1715wSpeicher` (256 KB, BR 24H, 74S287, S550/ZG-RAM/Bild-RAM in Bank 0) als Speicherweg
  * der CPU und der DMA, `Pc1715wBild` (8275 18H–1BH aus dem Bild-RAM), `Z80Dma` 00H–03H,
- * CTC2 04H–07H (K1 → C/TRG2), `Upd765` 1CH–1FH (und 40H/41H nur für die DMA), KRFD 20H,
+ * CTC2 04H–07H (K1 → C/TRG2), `Upd765` 1CH–1FH (und 40H/41H nur fuer die DMA), KRFD 20H,
  * MOS 28H, KON 34H.  Interruptkette DMA → CTC2 → SIO0.  Die K5122 ist dort nicht am Bus; sie
- * bleibt nur als Halter der vier `FloppyDriveV2` für den gemeinsamen Baustein `Laufwerke`.
+ * bleibt nur als Halter der vier `FloppyDriveV2` fuer den gemeinsamen Baustein `Laufwerke`.
  *
  * Floppy (AP-2): die K5122 in der Konfiguration „1715" (`K5122::Portlage::Pc1715`: Daten-PIO
  * 00H–03H, Steuer-PIO 04H–07H, SE-Register 20H, MO-Register 21H) im `/WAIT`-Betrieb, mit dem
  * gemeinsamen Baustein `Laufwerke` (Vorgabe 2 × K5601).  Interruptkette: Steuer-PIO vorn
  * (Servicehandbuch §1.2.3), dann CTC → SIO der ZRE.
  *
- * Tastatur (AP-3): `Tastatur1715` (eigener U880 + S600) läuft im Takt der Maschine, ihr
- * `byteOut` füllt den Empfänger von SIO0 Kanal A (Rahmen 8N1 an der Stoppbitgrenze, kein
- * Bitmodell der SIO; der 3-Byte-FIFO fängt Statusbyte + Code im Abstand von ≈ 0,7 ms).
+ * Tastatur (AP-3): `Tastatur1715` (eigener U880 + S600) laeuft im Takt der Maschine, ihr
+ * `byteOut` fuellt den Empfaenger von SIO0 Kanal A (Rahmen 8N1 an der Stoppbitgrenze, kein
+ * Bitmodell der SIO; der 3-Byte-FIFO faengt Statusbyte + Code im Abstand von ≈ 0,7 ms).
  *
  * Freie Stellen (nicht vergessen):
  *  - **Schnittstellen (AP-4a):** „Drucker X4" (SIO0-A Sender) und „V.24 X5" (SIO0-B) am
- *    SerialHub; der Empfänger von SIO0-A bleibt die Tastatur.  LT111 (Leitung 111) bleibt ein Latch.
- *  - Save-State: wie PRG 710 / K8915 gibt es keinen (die Grundlage wäre hier ohnehin nur
+ *    SerialHub; der Empfaenger von SIO0-A bleibt die Tastatur.  LT111 (Leitung 111) bleibt ein Latch.
+ *  - Save-State: wie PRG 710 / K8915 gibt es keinen (die Grundlage waere hier ohnehin nur
  *    CPU + RAM + Kartenregister).
  */
 
@@ -57,12 +57,12 @@ public:
     struct Config {
         enum class Variante { Pc1715, Pc1715W };
         Variante variante = Variante::Pc1715;
-        /// Bildschirm K7222 (80×24, Vorgabe) oder K7221 (64×16) — Hardwarevariante, Kaltstart nötig.
+        /// Bildschirm K7222 (80×24, Vorgabe) oder K7221 (64×16) — Hardwarevariante, Kaltstart noetig.
         Pc1715Zre::Bildschirm bild = Pc1715Zre::Bildschirm::K7222;
         /// Zeichengenerator, der bei BWS-Register DB6 = 0 gilt (S619 = A25.2, S602 = A25.1).
         Pc1715Zre::Zeichensatz zeichensatz = Pc1715Zre::Zeichensatz::S619;
-        /// Bestückung der Zeichengenerator-EPROMs (nur PC 1715; der 1715W lädt den Satz von
-        /// Diskette) — Hardwarevariante, Kaltstart nötig (AP-6).
+        /// Bestueckung der Zeichengenerator-EPROMs (nur PC 1715; der 1715W laedt den Satz von
+        /// Diskette) — Hardwarevariante, Kaltstart noetig (AP-6).
         Pc1715Zre::ZgSatz zg_satz = Pc1715Zre::ZgSatz::Deutsch;
         /// Tastatur-ROM: S600 (QWERTY, Vorgabe) oder TAST_618 (QWERTZ) — beide Varianten.
         Tastatur1715::Rom tastatur = Tastatur1715::Rom::S600;
@@ -94,25 +94,25 @@ public:
     void fbClearDirty() override;
     void setConsoleMode(bool) override {}
     bool consolePoll(int&, int&, char&) override { return false; }
-    /// Zeichencode der Zelle des letzten Bildes (von der Karte, nie über `mem_read`).
+    /// Zeichencode der Zelle des letzten Bildes (von der Karte, nie ueber `mem_read`).
     uint8_t screenChar(int col, int row) const override;
 
     // ─── Tastatur (AP-3) ─────────────────────────────────────────────────────
     /// Kennung einer physischen Taste: `QK_TASTE_BASE | (Spalte * 8 + Zeile)` (Matrix 13 × 8,
-    /// wie K7672/K7609 für ihre Matrizen) — für die Bildschirmtastatur.
+    /// wie K7672/K7609 fuer ihre Matrizen) — fuer die Bildschirmtastatur.
     static constexpr uint32_t QK_TASTE_BASE = 0x03000000;
     /**
-     * @brief Taste drücken.  Codes: druckbares ASCII (das Zeichen, das die Taste erzeugen soll —
-     *        die Umschaltung sucht sich der Rechner über @ref Tastatur1715::tasteFuer; `shift`
+     * @brief Taste druecken.  Codes: druckbares ASCII (das Zeichen, das die Taste erzeugen soll —
+     *        die Umschaltung sucht sich der Rechner ueber @ref Tastatur1715::tasteFuer; `shift`
      *        wird ignoriert), Qt-Return/Enter/Escape/Backspace, `QK_TASTE_BASE | Position`.
-     *        `ctrl` drückt zusätzlich CTRL (ein Code 1…26 gilt als Ctrl-Buchstabe).  Die
+     *        `ctrl` drueckt zusaetzlich CTRL (ein Code 1…26 gilt als Ctrl-Buchstabe).  Die
      *        Ereignisse werden eingereiht und im Lauffaden abgegeben; eine Umschalttaste wird
-     *        EINZELN vorausgedrückt (das ROM sendet nichts, wenn zwei Tasten im selben
+     *        EINZELN vorausgedrueckt (das ROM sendet nichts, wenn zwei Tasten im selben
      *        Abfragedurchlauf neu erkannt werden).
      */
     void keyPress(uint32_t k, bool shift, bool ctrl) override;
     void keyRelease(uint32_t k) override;
-    void setKeyRepeatRealtime(bool) override {}   ///< Autorepeat nur über die REP-Taste (ROM)
+    void setKeyRepeatRealtime(bool) override {}   ///< Autorepeat nur ueber die REP-Taste (ROM)
 
     int machineType() const override { return 3; }   // K1520_MACHINE_PC1715
     Config::Variante variante() const { return variante_; }
@@ -158,9 +158,9 @@ public:
     // ─── Serielle Schnittstellen (AP-4a): 0 „Drucker" X4, 1 „V.24" X5 ───────
     k1520::serial::SerialHub* serialHub() override { return &hub_; }
     std::vector<k1520::serial::SerialAnschluss*> serielleAnschluesse() override;
-    /// Die Tastatur hängt fest an SIO0-A (Empfänger) und geht nicht nach außen.
+    /// Die Tastatur haengt fest an SIO0-A (Empfaenger) und geht nicht nach aussen.
     std::vector<std::string> festeSchnittstellen() const override { return {"Tastatur S600 (SIO-A)"}; }
-    // Alter Unterbau: DFÜ = V.24 X5, Drucker = Drucker X4 (nur Senden).
+    // Alter Unterbau: DFUE = V.24 X5, Drucker = Drucker X4 (nur Senden).
     void setDFUECallback(SerialCb cb) override { zre_.setAbnehmer(Pc1715Zre::V24, std::move(cb)); }
     void dfueSend(uint8_t b) override { zre_.einspeisen(Pc1715Zre::V24, b); }
     void setPrinterCallback(SerialCb cb) override { zre_.setAbnehmer(Pc1715Zre::Drucker, std::move(cb)); }
@@ -197,15 +197,17 @@ protected:
     // anderen Maschinen nach dem Anlegen, vor dem ersten Lauf gesteckt, hinten in der Kette.
     K1520Bus& systemBus() override { return bus_; }
     uint32_t  k6022TaktHz() const override { return cpuHz(); }
+    /// 30H–37H liegt am PC 1715 unter LT107 (2CH–33H) und BWS (34H): Ausweichbasis D0H (nur mechanisch, Entwurf 29 §2).
+    int       k5020Basis() const override { return 0xD0; }
 
 private:
     void resetHardware();
-    void tastenAbgeben();                  ///< Oberflächen-Ereignisse in den Lauffaden holen
-    void tastenVerarbeiten();              ///< fällige Ereignisse in die Matrix (nur im Lauffaden)
+    void tastenAbgeben();                  ///< Oberflaechen-Ereignisse in den Lauffaden holen
+    void tastenVerarbeiten();              ///< faellige Ereignisse in die Matrix (nur im Lauffaden)
     static Config pruefe(const Config& cfg);
     void bauW();                           ///< Bausteine des 1715W anlegen und verdrahten
-    int  runW(int max_cycles);             ///< Laufschleife des PC 1715W (DMA hält die CPU an)
-    uint64_t durchlaeufe(uint64_t n) const;   ///< n Tastatur-Abfragedurchläufe in Rechnertakten
+    int  runW(int max_cycles);             ///< Laufschleife des PC 1715W (DMA haelt die CPU an)
+    uint64_t durchlaeufe(uint64_t n) const;   ///< n Tastatur-Abfragedurchlaeufe in Rechnertakten
     uint32_t frameTakte() const { return cpuHz() / 50; }
 
     const Config::Variante variante_;
@@ -218,17 +220,17 @@ private:
     struct TastenEreignis { uint32_t code; bool ctrl; bool gedrueckt; };
     struct Gehalten { int sp, ze; bool shift, ctrl; };
     std::mutex tasten_sperre_;
-    std::deque<TastenEreignis> tasten_;    ///< vom Oberflächenfaden eingereiht
+    std::deque<TastenEreignis> tasten_;    ///< vom Oberflaechenfaden eingereiht
     std::deque<TastenEreignis> arbeit_;    ///< im Lauffaden abzuarbeiten
-    std::map<uint32_t, Gehalten> gehalten_;///< gedrückte Zeichentasten → Matrixplatz samt Umschaltern
+    std::map<uint32_t, Gehalten> gehalten_;///< gedrueckte Zeichentasten → Matrixplatz samt Umschaltern
     bool     umschalter_gesetzt_ = false;  ///< Vorspann des vordersten Drucks ist erledigt
-    uint64_t tasten_frei_ab_ = 0;          ///< frühester Takt für das nächste Ereignis
+    uint64_t tasten_frei_ab_ = 0;          ///< fruehester Takt fuer das naechste Ereignis
     uint64_t kbd_rest_ = 0;                ///< noch nicht an die Tastatur-CPU abgegebene Takte
 
     k1520::serial::SerialHub hub_;
     struct W;                              ///< Bausteine des PC 1715W (pc1715.cpp)
     std::unique_ptr<W> w_;
-    uint64_t  serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
+    uint64_t  serial_naechst_ = 0;   ///< naechster Blick der Wandler (Taktzahl)
 
     std::atomic<bool> stop_{false};
     std::atomic<bool> nmi_taster_{false};

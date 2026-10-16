@@ -1,0 +1,11 @@
+# --tape-card am MC80 (AP M8): K5020 fest an 30H (doc/mc80/kassette.md); am .31 zwei EPROM-Segmente.
+tool:    k1520dbg
+run:     --machine mc80-31 --tape-card
+stdin:
+  tape
+  map
+  q
+expect:  K5020 Basis 30H
+expect:  EPROM-Segment 10H
+expect:  EPROM-Segment 20H
+forbid:  keine Kassettenkarte gesteckt

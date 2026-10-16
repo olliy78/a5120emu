@@ -1,9 +1,9 @@
 /**
  * @test P8000MmuLogik.* / P8000MmuLogikMatrix.* / P8000MmuLogikGegenprobe.* — MMU-Steuerlogik
  *       der 16-Bit-Karte (AP P9b): Auswahltabelle (alle 6 Zeilen), NBR-Vergleich, On-Board-
- *       Fenster, Adressbildung MMU ein/aus, SUP-Weg, /CS über LAD1–3, Register FFC1–FFF9,
- *       TRPL/IF1L, Trap-Quittung, Reset, Save-State, Debugger-Sicht; Matrix über alle
- *       Zyklusarten × Zustände; Gegenprobe MON16 `p.test.s` (Testschritte 84–90) und WEGA `mch.s`.
+ *       Fenster, Adressbildung MMU ein/aus, SUP-Weg, /CS ueber LAD1–3, Register FFC1–FFF9,
+ *       TRPL/IF1L, Trap-Quittung, Reset, Save-State, Debugger-Sicht; Matrix ueber alle
+ *       Zyklusarten × Zustaende; Gegenprobe MON16 `p.test.s` (Testschritte 84–90) und WEGA `mch.s`.
  *       Sollwerte aus doc/p8000/schaltplan_16bit.md (als TABELLE formuliert, nicht aus den
  *       Gattern des Codes); Abdeckung: doc/p8000/mmu_logik_abdeckung.md.
  */
@@ -25,12 +25,12 @@ constexpr uint8_t ST_DATA = 0x8, ST_STACK = 0x9, ST_EDATA = 0xA, ST_ESTACK = 0xB
                   ST_IF1 = 0xD;
 
 void sout(L& l, uint16_t mmu, uint8_t cmd, uint8_t v) {
-    l.spezialSchreiben(uint16_t((cmd << 8) | (mmu & 0xFF)), uint16_t((v << 8) | v));   // Byte auf beiden Hälften
+    l.spezialSchreiben(uint16_t((cmd << 8) | (mmu & 0xFF)), uint16_t((v << 8) | v));   // Byte auf beiden Haelften
 }
 uint8_t sin(L& l, uint16_t mmu, uint8_t cmd) {
     return uint8_t(l.spezialLesen(uint16_t((cmd << 8) | (mmu & 0xFF))) >> 8);
 }
-/// LD_3SDR-Weg: SAR := 0, dann je MMU 64 × 4 Byte über %0F (SDR + SAR-Inkrement).
+/// LD_3SDR-Weg: SAR := 0, dann je MMU 64 × 4 Byte ueber %0F (SDR + SAR-Inkrement).
 void ladeAlle(L& l, uint16_t mmu, const uint8_t sdr[4]) {
     sout(l, mmu, Z8010::CMD_SAR, 0);
     sout(l, mmu, Z8010::CMD_DSCR, 0);
@@ -89,7 +89,7 @@ struct Rig {
 
 }  // namespace
 
-// ═══ Auswahltabelle P2b §1.2 — je Zeile ein Fall, sichtbar an der übersetzten Adresse ═════════
+// ═══ Auswahltabelle P2b §1.2 — je Zeile ein Fall, sichtbar an der uebersetzten Adresse ═════════
 
 class P8000MmuLogikTabelle : public ::testing::Test {
 protected:
@@ -170,7 +170,7 @@ TEST_F(P8000MmuLogikTabelle, NbrGleichheitGehtAnStack) {
 }
 
 TEST(P8000MmuLogik, NbrGleichheitNachWegaGehtAnData) {
-    // [L1] Gegenstück: WEGA nsseg/getmem (`cpb rh7,NBREAK; jr ugt`) ⇒ Gleichheit = Data.
+    // [L1] Gegenstueck: WEGA nsseg/getmem (`cpb rh7,NBREAK; jr ugt`) ⇒ Gleichheit = Data.
     L::Config c;
     c.nbrGleichheitStack = false;
     L l(c);
@@ -184,14 +184,14 @@ TEST(P8000MmuLogik, NbrGleichheitNachWegaGehtAnData) {
 TEST_F(P8000MmuLogikTabelle, Status1001WirdNichtAusgewertet) {
     l.ioSchreiben(L::P_SCR, L::SCR_MMU_ON | L::SCR_BDMEM_AUS);
     EXPECT_EQ(z(ST_STACK, false, 0x3F, 0x1000).wahl, W::Data);    // Stackzyklus unter NBR
-    EXPECT_EQ(z(ST_DATA, false, 0x3F, 0xF000).wahl, W::Stack);    // Datenzyklus über NBR
+    EXPECT_EQ(z(ST_DATA, false, 0x3F, 0xF000).wahl, W::Stack);    // Datenzyklus ueber NBR
     l.ioSchreiben(L::P_SCR, L::SCR_MMU_ON | L::SCR_BDMEM_AUS | L::SCR_SEG_USR);
     EXPECT_EQ(z(ST_STACK, false, 0x05, 0xF000).wahl, W::Data);    // segmentiert: nur SN6
     EXPECT_EQ(z(ST_DATA, false, 0x45, 0x0000).wahl, W::Stack);
 }
 
 TEST_F(P8000MmuLogikTabelle, NbrLatchHochohmigInSegment0_1_64_65) {
-    // [L2] 4D16: Q = 1 bei SN1–SN5 = 0 ⇒ Vergleichereingänge offen ⇒ NBR wirkt als FFH.
+    // [L2] 4D16: Q = 1 bei SN1–SN5 = 0 ⇒ Vergleichereingaenge offen ⇒ NBR wirkt als FFH.
     l.ioSchreiben(L::P_SCR, L::SCR_MMU_ON | L::SCR_BDMEM_AUS);
     for (uint8_t seg : {0x00, 0x01, 0x40, 0x41}) {
         EXPECT_EQ(z(ST_DATA, false, seg, 0x9000).wahl, W::Data) << int(seg);
@@ -236,7 +236,7 @@ TEST(P8000MmuLogik, MmuEinOhneTreiberSchwebtAufEins) {
 }
 
 TEST(P8000MmuLogik, MehrereTreiberVerdrahtetesUnd) {
-    // [L7] Durchreichen (TRNS = 0) in Code und Data, Stack übersetzt: MON16 SEGMENT_TRAP_TEST.
+    // [L7] Durchreichen (TRNS = 0) in Code und Data, Stack uebersetzt: MON16 SEGMENT_TRAP_TEST.
     L l;
     sout(l, CODE_MMU, Z8010::CMD_MR, 0x80);
     sout(l, DATA_MMU, Z8010::CMD_MR, 0x81);
@@ -285,7 +285,7 @@ TEST(P8000MmuLogik, OnBoardNurSegment0Unter8000) {
 }
 
 TEST(P8000MmuLogik, OnBoardSperrtDieMmuAuswahl) {
-    // IMEML ⇒ alle drei N/S-Eingänge H: eine MST-MMU übersetzt nicht, setzt kein REF.
+    // IMEML ⇒ alle drei N/S-Eingaenge H: eine MST-MMU uebersetzt nicht, setzt kein REF.
     L l;
     kennaufbau(l);
     l.ioSchreiben(L::P_SCR, L::SCR_MMU_ON);
@@ -300,7 +300,7 @@ TEST(P8000MmuLogik, OnBoardSperrtDieMmuAuswahl) {
 
 TEST(P8000MmuLogik, SuppressVerhindertSchreibenNurAmHauptspeicher) {
     Rig r;
-    // Data-MMU ohne MST übersetzt jeden Zyklus (auch On-Board) — Segment 0 schreibgeschützt.
+    // Data-MMU ohne MST uebersetzt jeden Zyklus (auch On-Board) — Segment 0 schreibgeschuetzt.
     sout(r.l, DATA_MMU, Z8010::CMD_MR, 0xC1);
     ladeSdr(r.l, DATA_MMU, 0, 0x0000, 0xFF, Z8010::ATTR_RD);
     r.l.ioSchreiben(L::P_SCR, L::SCR_MMU_ON);
@@ -310,11 +310,11 @@ TEST(P8000MmuLogik, SuppressVerhindertSchreibenNurAmHauptspeicher) {
     EXPECT_EQ(a.sup, 2);
     EXPECT_FALSE(a.unterdrueckt);
     EXPECT_TRUE(r.l.segt());
-    // Hauptspeicher: derselbe Befehl, SUP bis Befehlsende ⇒ unterdrückt.
+    // Hauptspeicher: derselbe Befehl, SUP bis Befehlsende ⇒ unterdrueckt.
     a = r.l.zyklus(zyk(ST_DATA, true, 0, 0x9010, false));
     EXPECT_EQ(a.ziel, Z::Hauptspeicher);
     EXPECT_TRUE(a.unterdrueckt);
-    // Nächster Befehl, nach Quittung und VTR-Löschen: ohne Verletzung nichts unterdrückt.
+    // Naechster Befehl, nach Quittung und VTR-Loeschen: ohne Verletzung nichts unterdrueckt.
     r.l.zyklus(zyk(ST_IF1, true, 0, 0x0100));
     r.l.segtQuittung();
     sout(r.l, ALL_MMU, Z8010::CMD_VTR_LOESCHEN, 0);
@@ -324,7 +324,7 @@ TEST(P8000MmuLogik, SuppressVerhindertSchreibenNurAmHauptspeicher) {
 }
 
 TEST(P8000MmuLogik, SupWirktAuchBeiMmuAusUndBeimLesen) {
-    // [L8] SYSDS hängt nicht an MMU ON und sperrt den Datenstrobe in beide Richtungen.
+    // [L8] SYSDS haengt nicht an MMU ON und sperrt den Datenstrobe in beide Richtungen.
     L l;
     sout(l, DATA_MMU, Z8010::CMD_MR, 0xD1);
     ladeSdr(l, DATA_MMU, 0x3F, 0x0000, 0x10, 0);   // Limit 10H
@@ -350,7 +350,7 @@ TEST(P8000MmuLogik, CsAusLad123) {
         EXPECT_EQ(l.mmu(L::Mmu::Data).mr(), (erwartet & 2) ? 0x55 : 0) << lo;
         EXPECT_EQ(l.mmu(L::Mmu::Stack).mr(), (erwartet & 4) ? 0x55 : 0) << lo;
     }
-    // Lesen: nur AD8–15 getrieben; mehrere gewählt ⇒ UND; keine ⇒ offen.
+    // Lesen: nur AD8–15 getrieben; mehrere gewaehlt ⇒ UND; keine ⇒ offen.
     sout(l, CODE_MMU, Z8010::CMD_MR, 0xF1);
     sout(l, DATA_MMU, Z8010::CMD_MR, 0xE2);
     sout(l, STACK_MMU, Z8010::CMD_MR, 0xD4);
@@ -442,14 +442,14 @@ TEST(P8000MmuLogik, NbrLesenSchreibenStartwertUndUeberlebtReset) {
 }
 
 TEST(P8000MmuLogik, SbrFfc9SpeichertNichts) {
-    // [L3] MON16 Testschritt 84 schreibt AA/55 und liest zurück — nur auf Index-0-Hardware.
+    // [L3] MON16 Testschritt 84 schreibt AA/55 und liest zurueck — nur auf Index-0-Hardware.
     L l;
     l.ioSchreiben(L::P_NBR, 0x77);
     for (uint8_t v : {0xAA, 0x55, 0x00}) {
         l.ioSchreiben(L::P_SBR, v);
         EXPECT_EQ(l.ioLesen(L::P_SBR), 0xFF);
     }
-    EXPECT_EQ(l.nbr(), 0x77);   // FFC9 berührt das NBR nicht
+    EXPECT_EQ(l.nbr(), 0x77);   // FFC9 beruehrt das NBR nicht
 }
 
 TEST(P8000MmuLogik, NurSchreibbareUndNurLesbareAdressen) {
@@ -526,7 +526,7 @@ TEST(P8000MmuLogik, RetiFolgeEdDann4D) {
 // ═══ Reset ══════════════════════════════════════════════════════════════════════════════════
 
 TEST(P8000MmuLogik, MresetSetztMsenUndLaesstDeskriptoren) {
-    // [L5] Handbuch §2.2: „MMU-Steuerregister gelöscht, Master-Enable nicht auf Null".
+    // [L5] Handbuch §2.2: „MMU-Steuerregister geloescht, Master-Enable nicht auf Null".
     Rig r;
     kennaufbau(r.l);
     sout(r.l, DATA_MMU, Z8010::CMD_MR, 0xD1);
@@ -589,7 +589,7 @@ TEST_F(P8000MmuLogikTrap, TrplHaeltOffsetLowDesVerletzendenZyklus) {
     EXPECT_EQ(ev[0].wahl, W::Data);
     EXPECT_EQ(ev[0].nummer, 1u);
     EXPECT_EQ(r.l.sicht().letztesSegt.trpl, 0x78);
-    // Unechtes Holen danach ändert die Latches nicht (Stufe 2 friert ein).
+    // Unechtes Holen danach aendert die Latches nicht (Stufe 2 friert ein).
     r.l.zyklus(zyk(ST_IF1, false, 0x3F, 0x123A));
     EXPECT_EQ(r.l.ioLesen(L::P_IF1L), 0x34);
     EXPECT_EQ(r.l.sicht().if1lStufe1, 0x3A);
@@ -601,7 +601,7 @@ TEST_F(P8000MmuLogikTrap, If1lHaeltVorgaengerWennDasHolenVerletzt) {
     EXPECT_TRUE(r.l.segt());
     EXPECT_EQ(r.l.ioLesen(L::P_TRPL), 0xCD);
     EXPECT_EQ(r.l.ioLesen(L::P_IF1L), 0xAB);
-    // Gleiche Aussage wie IOFF der Code-MMU (Z8010: Vorgängerbefehl).
+    // Gleiche Aussage wie IOFF der Code-MMU (Z8010: Vorgaengerbefehl).
     EXPECT_EQ(sin(r.l, CODE_MMU, Z8010::CMD_IOFF), 0x11);
 }
 
@@ -612,7 +612,7 @@ TEST_F(P8000MmuLogikTrap, ZweiteMmuBeiGezogenerLeitungTaktetNicht) {
     EXPECT_TRUE(r.l.mmu(L::Mmu::Stack).segt());
     EXPECT_EQ(r.l.ioLesen(L::P_TRPL), 0x11);
     EXPECT_EQ(r.l.sicht().segtFlanken, 1u);
-    // Quittung: beide Kennwortbits, dann fällt die Leitung.
+    // Quittung: beide Kennwortbits, dann faellt die Leitung.
     const uint16_t kw = r.l.segtQuittung();
     EXPECT_EQ((kw >> 8) & 7, 6);
     EXPECT_FALSE(r.l.segt());
@@ -636,13 +636,13 @@ TEST_F(P8000MmuLogikTrap, If1lStufe1NurBeiStatus1101) {
 }
 
 TEST(P8000MmuLogik, SegtQuittungKennwort) {
-    // MSEN-MMUs treiben AD(8+ID): H die anfordernde, L die übrigen; Rest offen; UND bei gleicher ID.
+    // MSEN-MMUs treiben AD(8+ID): H die anfordernde, L die uebrigen; Rest offen; UND bei gleicher ID.
     for (int maskeMsen = 0; maskeMsen < 8; ++maskeMsen)
         for (int anfordernd = 0; anfordernd < 3; ++anfordernd) {
             L l;
             const uint16_t port[3] = {CODE_MMU, DATA_MMU, STACK_MMU};
             for (int i = 0; i < 3; ++i) ladeSdr(l, port[i], 0x3F, 0, 0x00, 0);   // Limit 0 ⇒ SLV ab 0100
-            // Anfordernde MMU: MSEN + TRNS ohne MST (übersetzt unabhängig von N/S), ID 4+i.
+            // Anfordernde MMU: MSEN + TRNS ohne MST (uebersetzt unabhaengig von N/S), ID 4+i.
             for (int i = 0; i < 3; ++i) {
                 const bool msen = (maskeMsen >> i) & 1;
                 const uint8_t mr = uint8_t((msen || i == anfordernd ? 0x80 : 0) |
@@ -662,7 +662,7 @@ TEST(P8000MmuLogik, SegtQuittungKennwort) {
         }
     // Gleiche ID (MON16 schreibt %D0 an ALL_MMU): L gewinnt.
     L l;
-    sout(l, ALL_MMU, Z8010::CMD_MR, 0xC0);   // ohne MST: alle übersetzen, alle ID 0
+    sout(l, ALL_MMU, Z8010::CMD_MR, 0xC0);   // ohne MST: alle uebersetzen, alle ID 0
     ladeSdr(l, CODE_MMU, 0x01, 0, 0x00, 0);
     ladeSdr(l, DATA_MMU, 0x01, 0, 0xFF, 0);
     ladeSdr(l, STACK_MMU, 0x01, 0, 0xFF, 0);
@@ -742,7 +742,7 @@ TEST(P8000MmuLogik, SaveStateRundreiseIstBitgleich) {
     std::vector<uint8_t> s2;
     b.l.serialize(s2);
     EXPECT_EQ(s1, s2);
-    // Gleiches Weiterlaufen: SUP läuft bis Befehlsende weiter, RETI-Folge wird vollendet.
+    // Gleiches Weiterlaufen: SUP laeuft bis Befehlsende weiter, RETI-Folge wird vollendet.
     int retiA = 0, retiB = 0;
     a.l.onReti = [&] { ++retiA; };
     b.l.onReti = [&] { ++retiB; };
@@ -842,7 +842,7 @@ TEST(P8000MmuLogikGegenprobe, Mon16ErkennungIndexAbEins) {
     // p.test.s vor Testschritt 84: MMU aus <01>0000 := 0001, <01>0100 := 0000; SDR Code/Data/Stack
     // Seg 0 = LISTE4/LISTE4/LISTE10, Seg 1 = LISTE8/LISTE9; MR alle %D0, S_BNK = 02; im System-
     // Mode segmentiert `ld r12, @rr10` mit rr10 = <01>0100.  r12 ≠ 0 ⇒ REM_MMU1 ≠ 0 ⇒ Index ≥ 1:
-    // SEG USR-Weg, Testschritt 84 (SBR-Rücklesen) entfällt.  Die Code-MMU (Seg 1, Limit 0)
+    // SEG USR-Weg, Testschritt 84 (SBR-Ruecklesen) entfaellt.  Die Code-MMU (Seg 1, Limit 0)
     // verletzt (SLV) ⇒ SUP ⇒ der Lesezyklus erreicht den Speicher nicht ⇒ offener Bus ≠ 0.
     L l;
     l.ioSchreiben(L::P_SCR, 0);
@@ -890,7 +890,7 @@ TEST(P8000MmuLogikGegenprobe, Mon16Testschritte85bis90) {
             }
             EXPECT_EQ(l.zyklus(zyk(ST_IF1, false, 0x00, 0x2520)).ziel, Z::OnBoardEprom);
             const auto w = l.zyklus(zyk(ST_DATA, false, uint8_t(seg), f.off, false));
-            l.zyklus(zyk(ST_IF1, false, 0x00, 0x2524));   // nächstes Holen (ggf. unecht)
+            l.zyklus(zyk(ST_IF1, false, 0x00, 0x2524));   // naechstes Holen (ggf. unecht)
             uint8_t id = 0;
             if (l.segt()) id = uint8_t((l.segtQuittung() >> 8) & 7);
             EXPECT_EQ(id, f.soll) << "Testschritt " << f.nr << " Segment " << seg;
@@ -903,8 +903,8 @@ TEST(P8000MmuLogikGegenprobe, Mon16Testschritte85bis90) {
 }
 
 TEST(P8000MmuLogikGegenprobe, WegaNichtsegmentierterAnwender) {
-    // mmu.h: TEXT/DATA = Segment 3F, STAK 7F; Anwender läuft nichtsegmentiert in <3F>, SEG USR = 0.
-    // Holen → Code-MMU Seg 3F, Daten unter NBR → Data-MMU Seg 3F, Stack über NBR → Stack-MMU Seg 3F.
+    // mmu.h: TEXT/DATA = Segment 3F, STAK 7F; Anwender laeuft nichtsegmentiert in <3F>, SEG USR = 0.
+    // Holen → Code-MMU Seg 3F, Daten unter NBR → Data-MMU Seg 3F, Stack ueber NBR → Stack-MMU Seg 3F.
     L l;
     kennaufbau(l);
     l.ioSchreiben(L::P_NBR, 0xC0);
@@ -913,6 +913,6 @@ TEST(P8000MmuLogikGegenprobe, WegaNichtsegmentierterAnwender) {
     EXPECT_EQ(l.zyklus(zyk(ST_DATA, false, 0x3F, 0x1234)).adresse, (uint32_t(kennbasis(1, 0x3F)) << 8) + 0x1234);
     EXPECT_EQ(l.zyklus(zyk(ST_STACK, false, 0x3F, 0xFFFE, false)).adresse,
               (uint32_t(kennbasis(2, 0x3F)) << 8) + 0xFFFE);
-    // Der Kern (System-Mode, segmentiert) sieht nur die Code-MMU — auch für sein Segment 3E.
+    // Der Kern (System-Mode, segmentiert) sieht nur die Code-MMU — auch fuer sein Segment 3E.
     EXPECT_EQ(l.zyklus(zyk(ST_STACK, true, 0x3E, 0xFFFE, false)).wahl, W::Code);
 }

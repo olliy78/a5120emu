@@ -1,6 +1,6 @@
 /**
  * @file test_z8_asm.cpp
- * @brief Z8-Disassembler/-Assembler (tools/z8/z8_disasm.h, z8_asm.h): Rundlauf über ALLE
+ * @brief Z8-Disassembler/-Assembler (tools/z8/z8_disasm.h, z8_asm.h): Rundlauf ueber ALLE
  *        Opcodes und Operandenbytes, Handbuchkodierungen (Zilog UM0016), Direktiven, Fehler.
  */
 #include "tools/z8/z8_asm.h"
@@ -78,7 +78,7 @@ TEST(Z8Asm, HandbuchKodierungen) {
 }
 
 TEST(Z8Asm, RundlaufAlleOpcodesAlleOperandenbytes) {
-    // disasm → Text → asm → disasm: gleicher Text, nicht länger (kürzere Form zulässig,
+    // disasm → Text → asm → disasm: gleicher Text, nicht laenger (kuerzere Form zulaessig,
     // z. B. ADD 40H,41H mit Ex-Feldern → ADD r0,r1).
     int faelle = 0, kuerzer = 0;
     for (int op = 0; op < 256; ++op) {
@@ -96,7 +96,7 @@ TEST(Z8Asm, RundlaufAlleOpcodesAlleOperandenbytes) {
                 ASSERT_EQ(dis(c, 0x0100), t) << std::hex << op << " " << b1;
                 if (int(c.size()) == in.len) {
                     std::vector<uint8_t> orig(b.begin(), b.begin() + in.len);
-                    // gleiche Länge, aber andere Bytes nur bei gleichwertigen Formen (LD R,r = r9 vs E4)
+                    // gleiche Laenge, aber andere Bytes nur bei gleichwertigen Formen (LD R,r = r9 vs E4)
                     if (c != orig) ++kuerzer;
                 } else ++kuerzer;
                 ++faelle;
@@ -124,7 +124,7 @@ TEST(Z8Asm, DirektivenMarkenAusdruecke) {
     ASSERT_TRUE(r.ok()) << r.fehler[0].zeile << ": " << r.fehler[0].text;
     const auto v = r.flach(0x0C);
     const std::vector<uint8_t> soll = {
-        0x2C, 0x12,             // LD r2,#12H (vorwärts aufgelöst)
+        0x2C, 0x12,             // LD r2,#12H (vorwaerts aufgeloest)
         0x3C, 0x04,             // LD r3,#04H (BWS+4 gekappt auf 8 Bit)
         0x2A, 0xFE,             // DJNZ r2,LOOP
         0x8D, 0x00, 0x0C,       // JP START

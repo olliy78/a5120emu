@@ -35,10 +35,10 @@ from PySide6.QtWidgets import (
 )
 
 #: Das Handbuch des DiskTool — neben dem Paket-Baum, nicht in `doc/` (das ist
-#: nicht dabei).  Der Emulator reicht seines über den Bauwert ``pfad`` herein.
+#: nicht dabei).  Der Emulator reicht seines ueber den Bauwert ``pfad`` herein.
 HANDBUCH = Path(__file__).resolve().parent / "disktool" / "help" / "handbuch.md"
 
-#: Qts CSS ist eine Teilmenge; das hier wirkt und reicht für Text und Tabellen.
+#: Qts CSS ist eine Teilmenge; das hier wirkt und reicht fuer Text und Tabellen.
 STIL = """
 h1 { font-size: 20pt; }
 h2 { font-size: 14pt; }
@@ -153,7 +153,7 @@ class HelpWindow(QWidget):
                 cursor.setPosition(pos)
                 self.browser.setTextCursor(cursor)
                 # Den Abschnitt an den oberen Rand holen: erst ans Ende der Sicht,
-                # dann zurück — sonst klebt die Überschrift unten.
+                # dann zurueck — sonst klebt die Ueberschrift unten.
                 self.browser.verticalScrollBar().setValue(
                     self.browser.verticalScrollBar().maximum())
                 self.browser.setTextCursor(cursor)

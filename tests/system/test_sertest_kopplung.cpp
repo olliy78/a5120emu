@@ -2,27 +2,27 @@
  * @file test_sertest_kopplung.cpp
  * @brief SertestKopplung.* — SERTEST.COM als Tester gegen SERTEST.COM als Gegenstelle auf
  *        einem zweiten Rechner (Entwurf 19 §14.6/§14.7/§14.8, AP-ST5): zwei Maschinen im
- *        selben Prozess über RFC 2217 (Server ↔ Client, Nullmodem-Kreuzung §6.4).
+ *        selben Prozess ueber RFC 2217 (Server ↔ Client, Nullmodem-Kreuzung §6.4).
  *
- * Je Fall zwei Kaltstarts; die Gegenstelle läuft mit `sertest g <n>`, der Tester mit
- * `sertest t <n> /g /a` (nur der Gegenstellentest — ohne Loop fiele der Prüfstecker
- * ohnehin durch).  Geprüft werden die Ergebniszeilen (§14.3) beider Seiten: LEITUNGEN
- * (nur V.24, über den Leitungsspiegel der Gegenstelle), ECHO (4096 Bytes, Bericht ohne
+ * Je Fall zwei Kaltstarts; die Gegenstelle laeuft mit `sertest g <n>`, der Tester mit
+ * `sertest t <n> /g /a` (nur der Gegenstellentest — ohne Loop fiele der Pruefstecker
+ * ohnehin durch).  Geprueft werden die Ergebniszeilen (§14.3) beider Seiten: LEITUNGEN
+ * (nur V.24, ueber den Leitungsspiegel der Gegenstelle), ECHO (4096 Bytes, Bericht ohne
  * Empfangsfehler), FLUSS-HW (nur V.24: Gegenstelle bremst mit RTS, Tester sendet mit
  * Auto Enables) und FLUSS-XON (Gegenstelle bremst mit XOFF/XON, „XON/XOFF beachten" an
  * ihrem Wandler) — Ende OK (AP-ST6).  Dazu, am Wandler beobachtet, dass wirklich gebremst
  * wurde und der Sender des Testers bei fehlendem CTS stand.
  *
- * **Uhr- und Maschinenzeit:** die Bytes laufen verlustfrei mit Rückstau durch die Wandler
- * (Maschinenzeit), die Steuerleitungen und das Netz aber durch die I/O-Fäden der beiden
- * Hubs (Uhrzeit).  Die Paarschleife (`Paar::bis`) lässt beide Maschinen deshalb in
- * gleichen Scheiben abwechselnd laufen und drosselt sie auf höchstens kFaktor-fache
- * Echtzeit — sonst lägen unter `ctest -j` die 2-s-Fristen des Testers (Maschinenzeit) in
- * der Größenordnung einer Faden-Weckzeit.
+ * **Uhr- und Maschinenzeit:** die Bytes laufen verlustfrei mit Rueckstau durch die Wandler
+ * (Maschinenzeit), die Steuerleitungen und das Netz aber durch die I/O-Faeden der beiden
+ * Hubs (Uhrzeit).  Die Paarschleife (`Paar::bis`) laesst beide Maschinen deshalb in
+ * gleichen Scheiben abwechselnd laufen und drosselt sie auf hoechstens kFaktor-fache
+ * Echtzeit — sonst laegen unter `ctest -j` die 2-s-Fristen des Testers (Maschinenzeit) in
+ * der Groessenordnung einer Faden-Weckzeit.
  *
  * Zwei Binaries aus dieser Quelle: `k1520_test_sertest_kopplung` (schneller Fall
  * A5120 ↔ A5120 V.24, Standardregression) und `…_lang` (`SERTEST_KOPPLUNG_LANG`, alle
- * übrigen, Label `format_integration` → `tools/dev.sh test-format`).
+ * uebrigen, Label `format_integration` → `tools/dev.sh test-format`).
  */
 #include <gtest/gtest.h>
 
@@ -57,7 +57,7 @@ using Uhr = std::chrono::steady_clock;
 namespace {
 
 constexpr long long kScheibe = 10'000;          ///< Takte je Maschine und Runde (≈ 4 ms)
-constexpr double    kFaktor  = 8.0;             ///< höchstens 8× Echtzeit gekoppelt
+constexpr double    kFaktor  = 8.0;             ///< hoechstens 8× Echtzeit gekoppelt
 // φ je Maschine: `T::kPhi` (A5120, K8915, PC 1715 2,4576 MHz; PC 1715W 3,9936 MHz).
 constexpr long long kFrist   = 150'000'000;     ///< ≈ 60 s Maschinenzeit je Lauf
 constexpr long long kBoot    = 100'000'000;
@@ -96,8 +96,8 @@ struct Paar {
     }
 };
 
-/// Schnittstelle @p i der Maschine @p s für RFC 2217 einstellen und starten.  Am K8915 ist
-/// der Loop vorgegeben (der ROM-Selbsttest braucht ihn) — Loop und Verbindung schließen
+/// Schnittstelle @p i der Maschine @p s fuer RFC 2217 einstellen und starten.  Am K8915 ist
+/// der Loop vorgegeben (der ROM-Selbsttest braucht ihn) — Loop und Verbindung schliessen
 /// sich aus (§6.5): erst `start` mit Loop muss scheitern, dann Loop aus.
 template <class S>
 void einstellen(S& s, int i, Rolle rolle, uint16_t port) {
@@ -133,7 +133,7 @@ void koppeln(A& server, int is, B& client, int ic) {
     ASSERT_EQ(hc.status(ic).zustand, Zustand::Verbunden) << hc.status(ic).meldung;
 }
 
-/// Wandlerstand einer Schnittstelle (für Fehlermeldungen).
+/// Wandlerstand einer Schnittstelle (fuer Fehlermeldungen).
 template <class S>
 std::string lage(S& s, int i) {
     const auto st = s.maschine().serialHub()->status(i);
@@ -145,7 +145,7 @@ std::string lage(S& s, int i) {
            " dcd=" + std::to_string(st.dcd) + " " + st.meldung;
 }
 
-/// CPU-Stand der 1715-Familie (PC, SP, IFF1) für Fehlermeldungen; für die anderen leer.
+/// CPU-Stand der 1715-Familie (PC, SP, IFF1) fuer Fehlermeldungen; fuer die anderen leer.
 template <class S>
 auto cpuLage(S& s, int) -> decltype(s.maschine().zre().cpu().PC, std::string()) {
     const auto& c = s.maschine().zre().cpu();
@@ -173,11 +173,11 @@ void xonxoff(S& s, int i, bool an) {
     ASSERT_TRUE(h.konfigurieren(i, k));
 }
 
-/// Was die Paarschleife während der FLUSS-Abschnitte beobachtet (§14.7 Schritte 3/4).
+/// Was die Paarschleife waehrend der FLUSS-Abschnitte beobachtet (§14.7 Schritte 3/4).
 struct FlussBeobachtung {
-    bool abschnittH = false, abschnittX = false;   ///< Ankündigung an der Gegenstelle gesehen
+    bool abschnittH = false, abschnittX = false;   ///< Ankuendigung an der Gegenstelle gesehen
     // FLUSS-HW, am Wandler des Testers: Runden mit CTS aus am Anfang UND Ende, und was
-    // der Tester in diesen Runden trotzdem abgab — mit Auto Enables (WR3 D5) höchstens das
+    // der Tester in diesen Runden trotzdem abgab — mit Auto Enables (WR3 D5) hoechstens das
     // Zeichen, das beim Fallen von CTS schon im Sender stand.
     int      ctsAusPhasen = 0;
     long     ctsAusRunden = 0;
@@ -191,8 +191,8 @@ struct FlussBeobachtung {
     bool verworfen = false, zeitueberlauf = false;
 };
 
-/// `Abschnitt fertig, Empfangsfehler xxxxH[, gebremst yyyyH]` — vollständige Zeile?
-/// Liefert {ue, bz} (bz = -1 ohne Bremszähler, Abschnitt E).
+/// `Abschnitt fertig, Empfangsfehler xxxxH[, gebremst yyyyH]` — vollstaendige Zeile?
+/// Liefert {ue, bz} (bz = -1 ohne Bremszaehler, Abschnitt E).
 inline std::optional<std::pair<int, int>> fertigZeile(const std::string& z) {
     static const std::regex re(
         "^Abschnitt fertig, Empfangsfehler ([0-9A-F]{4})H(, gebremst ([0-9A-F]{4})H)?$");
@@ -205,11 +205,11 @@ inline std::optional<std::pair<int, int>> fertigZeile(const std::string& z) {
 
 /// Ein Durchgang: Gegenstelle `sertest g <ng>` an @p g, Tester `sertest t <nt> /g /a` an
 /// @p t; erwartet LEITUNGEN (@p v24: OK, sonst ENTFAELLT), ECHO OK, FLUSS-HW (@p v24: OK,
-/// sonst ENTFAELLT), FLUSS-XON OK, Ende OK.  Für FLUSS-XON wird „XON/XOFF beachten" am
-/// Wandler der Gegenstelle eingeschaltet, sobald sie den Abschnitt X ankündigt (§14.8) —
-/// vorher nicht: ECHO und FLUSS-HW übertragen alle Bytewerte, ein zurückgeschicktes 13H
+/// sonst ENTFAELLT), FLUSS-XON OK, Ende OK.  Fuer FLUSS-XON wird „XON/XOFF beachten" am
+/// Wandler der Gegenstelle eingeschaltet, sobald sie den Abschnitt X ankuendigt (§14.8) —
+/// vorher nicht: ECHO und FLUSS-HW uebertragen alle Bytewerte, ein zurueckgeschicktes 13H
 /// hielte sonst den eigenen Empfang an.  Danach Ctrl+C an der Gegenstelle, beide wieder
-/// am Prompt (für einen weiteren Durchgang).
+/// am Prompt (fuer einen weiteren Durchgang).
 template <class T, class G>
 void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::string& nameG,
                bool v24) {
@@ -269,8 +269,8 @@ void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::
     EXPECT_EQ(bt.find("bestaetigt: NEIN"), std::string::npos) << bt;
 
     // FLUSS-HW: die Gegenstelle hat wirklich gebremst (CTS des Testers fiel), und der
-    // Sender des Testers hielt an (Auto Enables) — sonst wäre der Rückstau nur in den
-    // Wandlerpuffern gelandet und der Test grün geblieben.
+    // Sender des Testers hielt an (Auto Enables) — sonst waere der Rueckstau nur in den
+    // Wandlerpuffern gelandet und der Test gruen geblieben.
     if (v24) {
         EXPECT_TRUE(f.abschnittH);
         EXPECT_GT(f.ctsAusPhasen, 0) << "CTS am Tester fiel nie";
@@ -286,7 +286,7 @@ void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::
     EXPECT_TRUE(f.xoffHaltGesehen) << "Gegenstelle sandte nie XOFF";
 
     // Gegenstelle: einmal INTERRUPT OK, alle Abschnitte ohne Empfangsfehler, in H/X
-    // gebremst, nichts verworfen, kein Zeitüberlauf.
+    // gebremst, nichts verworfen, kein Zeitueberlauf.
     EXPECT_EQ(g.protokoll().wert("", "INTERRUPT").value_or("-"), "OK") << g.protokoll().text();
     bool eGesehen = false, gebremst = false;
     for (const std::string& z : f.fertig) {
@@ -313,7 +313,7 @@ void durchgang(T& t, int nt, const std::string& nameT, G& g, int ng, const std::
 /**
  * @test SertestKopplung.A5120_V24_LeitungenUndEcho
  * @brief Schneller Fall der Standardregression: A5120 (Tester, Client) ↔ A5120
- *        (Gegenstelle, Server) an DFÜ/V.24 — LEITUNGEN über den Leitungsspiegel, ECHO.
+ *        (Gegenstelle, Server) an DFÜ/V.24 — LEITUNGEN ueber den Leitungsspiegel, ECHO.
  */
 TEST(SertestKopplung, A5120_V24_LeitungenUndEcho) {
     SertestA5120 t, g;
@@ -329,7 +329,7 @@ TEST(SertestKopplung, A5120_V24_LeitungenUndEcho) {
  * @test SertestKopplung.Pc1715_V24_LeitungenUndEcho
  * @brief Schneller Fall der Standardregression, V0.3: PC 1715 (Tester, Client) ↔ PC 1715
  *        (Gegenstelle, Server) an der V.24 (SIO0 Kanal B; CP/A 1715).  Leitungen: CTS = RTS,
- *        107 (an /DCDA) = DTR über das Nullmodemkabel des Hubs.
+ *        107 (an /DCDA) = DTR ueber das Nullmodemkabel des Hubs.
  */
 TEST(SertestKopplung, Pc1715_V24_LeitungenUndEcho) {
     SertestPc1715 t, g;
@@ -345,7 +345,7 @@ TEST(SertestKopplung, Pc1715_V24_LeitungenUndEcho) {
  * @test SertestKopplung.Pc1715W_V24_LeitungenUndEcho
  * @brief Schneller Fall der Standardregression, V0.3: PC 1715W (Tester, Client) ↔ PC 1715W
  *        (Gegenstelle, Server) an der V.24 (SIO0 Kanal B; SCP 3.0 = CP/M 3).  Die
- *        Gegenstelle empfängt im Interrupt (Vektor 30H, ISR in der TPA-Bank, BDOS-Aufrufe
+ *        Gegenstelle empfaengt im Interrupt (Vektor 30H, ISR in der TPA-Bank, BDOS-Aufrufe
  *        mit gesperrter SIO), alle Abschnitte ohne Empfangsfehler.
  */
 TEST(SertestKopplung, Pc1715W_V24_LeitungenUndEcho) {
@@ -406,7 +406,7 @@ TEST(SertestKopplung, Pc1715W_DruckerSendetAnDieGegenstelle) {
  * @test SertestKopplung.Pc1715W_MitPc1715UndDerAltenV02_BeideRichtungen
  * @brief PC 1715W mit V0.3 ↔ PC 1715 mit der BISHERIGEN V0.2 (`SERTEST_V02.COM`, CP/A 1715) an
  *        der V.24, beide Richtungen.  Die Maschinen laufen mit verschiedenem Takt (3,9936 gegen
- *        2,4576 MHz), beide stellen 9600 Bd ein (1715W: Zähler 57H/ZK 13, 1715: Zeitgeber
+ *        2,4576 MHz), beide stellen 9600 Bd ein (1715W: Zaehler 57H/ZK 13, 1715: Zeitgeber
  *        17H/ZK 1) — die Leitungserwartung ist dieselbe (CTS = RTS, 107 = DTR).
  */
 TEST(SertestKopplung, Pc1715W_MitPc1715UndDerAltenV02_BeideRichtungen) {
@@ -457,7 +457,7 @@ TEST(SertestKopplung, Pc1715W_MitA5120UndDerAltenV01_BeideRichtungen) {
  * @brief PC 1715 Drucker (X4, nur Senden) → PC 1715 V.24 als Gegenstelle: SENDEN OK am
  *        Tester (LEITUNGEN/FLUSS-* ENTFAELLT); das Ergebnis liest man an der Gegenstelle:
  *        „Abschnitt E: 1000H Bytes“, „Abschnitt fertig, Empfangsfehler 0000H“.  Am
- *        Wandler des Testers: 1 Weckzeichen + 6 Ankündigung + 4096 Nutzbytes.
+ *        Wandler des Testers: 1 Weckzeichen + 6 Ankuendigung + 4096 Nutzbytes.
  */
 TEST(SertestKopplung, Pc1715_DruckerSendetAnDieGegenstelle) {
     SertestPc1715 t, g;
@@ -502,7 +502,7 @@ TEST(SertestKopplung, Pc1715_DruckerSendetAnDieGegenstelle) {
  *        (`tests/fixtures/cpm/SERTEST_V01.COM`).  Erst 1715 Tester / A5120 Gegenstelle,
  *        dann umgekehrt.  Beide Seiten 9600 8N1; die Leitungserwartungen sind verschieden
  *        (1715: CTS = RTS; A5120: CTS = V106 ∧ V107), die Schrittfolge der LEITUNGEN
- *        (00, DTR, RTS+DTR, DTR, 00) lässt beide aufgehen.
+ *        (00, DTR, RTS+DTR, DTR, 00) laesst beide aufgehen.
  */
 TEST(SertestKopplung, Pc1715_MitA5120UndDerAltenV01_BeideRichtungen) {
     SertestPc1715 p;
@@ -572,8 +572,8 @@ TEST(SertestKopplung, Prg710_V24_MitPrg710_1_BeideRichtungen) {
 
 /**
  * @test SertestKopplung.Prg710_1_Zifss_MitPrg710_1
- * @brief ZIFSS (A32 Kanal A) ↔ ZIFSS am 710-1: ECHO und FLUSS-XON über die IFSS; die Tastatur
- *        K7672 an A32 Kanal B bleibt unberührt (beide Rechner danach bedienbar).  Dann am 710 der
+ * @brief ZIFSS (A32 Kanal A) ↔ ZIFSS am 710-1: ECHO und FLUSS-XON ueber die IFSS; die Tastatur
+ *        K7672 an A32 Kanal B bleibt unberuehrt (beide Rechner danach bedienbar).  Dann am 710 der
  *        IFSS-Hauptdrucker (A32 Kanal B) gegen den ZIFSS (A32 Kanal A) eines anderen 710.
  */
 TEST(SertestKopplung, Prg710_1_Zifss_MitPrg710_1) {
@@ -702,10 +702,10 @@ TEST(SertestKopplung, A5120_K8915_V24_BeideRichtungen) {
 
 /**
  * @test SertestKopplung.OhneGegenstelleZeitueberlauf
- * @brief Gegenfall: verbunden, aber auf dem anderen Rechner läuft SERTEST nicht — an der
- *        V.24 bestätigt niemand die Leitungen (`FEHLER RTS=…`), ECHO, FLUSS-HW und
+ * @brief Gegenfall: verbunden, aber auf dem anderen Rechner laeuft SERTEST nicht — an der
+ *        V.24 bestaetigt niemand die Leitungen (`FEHLER RTS=…`), ECHO, FLUSS-HW und
  *        FLUSS-XON enden mit `FEHLER ZEITUEBERLAUF BESTAETIGUNG` (Auto Enables erst nach
- *        der Bestätigung — sonst hieße es hier `SENDER BLOCKIERT`); danach ist der
+ *        der Bestaetigung — sonst hiesse es hier `SENDER BLOCKIERT`); danach ist der
  *        Tester bedienbar.
  */
 TEST(SertestKopplung, OhneGegenstelleZeitueberlauf) {

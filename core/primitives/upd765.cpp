@@ -11,7 +11,7 @@
 
 namespace {
 
-/// Sektorgröße → N des ID-Felds (128 << N); -1 = keine Zweierpotenz 128…16384.
+/// Sektorgroesse → N des ID-Felds (128 << N); -1 = keine Zweierpotenz 128…16384.
 int sizeToN(uint16_t size)
 {
     for (int n = 0; n < 8; ++n)
@@ -19,7 +19,7 @@ int sizeToN(uint16_t size)
     return -1;
 }
 
-/// Befehlslänge (inkl. Opcode) und erlaubte Flag-Bits (MT 80, MFM 40, SK 20); 0 = ungültig.
+/// Befehlslaenge (inkl. Opcode) und erlaubte Flag-Bits (MT 80, MFM 40, SK 20); 0 = ungueltig.
 struct CmdInfo { int len; uint8_t flags; };
 CmdInfo cmdInfo(uint8_t op)
 {
@@ -38,7 +38,7 @@ CmdInfo cmdInfo(uint8_t op)
     }
 }
 
-/// Ein Durchlauf für Speichern und Laden, damit beide Richtungen dieselbe Feldliste haben.
+/// Ein Durchlauf fuer Speichern und Laden, damit beide Richtungen dieselbe Feldliste haben.
 struct Ar {
     bool save;
     std::vector<uint8_t>* out = nullptr;
@@ -155,7 +155,7 @@ uint8_t Upd765::readData()
     if (phase_ == Phase::Exec && nd_) return dmaRead();
     if (phase_ != Phase::Result) return 0xFF;
     const uint8_t b = result_[res_pos_];
-    if (res_pos_ == 0 && res_irq_) setIrq(false);   // INT fällt mit dem ersten Ergebnisbyte
+    if (res_pos_ == 0 && res_irq_) setIrq(false);   // INT faellt mit dem ersten Ergebnisbyte
     if (++res_pos_ >= result_.size()) { phase_ = Phase::Idle; result_.clear(); res_pos_ = 0; }
     return b;
 }
@@ -358,7 +358,7 @@ void Upd765::startSector()
     const TrackImage& tr = drv()->track(head_);
     const Encoding want = mfm_ ? Encoding::MFM : Encoding::FM;
     std::vector<LogicalSector> secs;
-    // Nur eine Spur im passenden Verfahren hat für diesen Befehl lesbare Marken.
+    // Nur eine Spur im passenden Verfahren hat fuer diesen Befehl lesbare Marken.
     if (!tr.empty() && tr.encoding == want) secs = TrackCodec::parseTrack(tr);
     if (secs.empty()) {
         st1_ |= kMA;
@@ -391,7 +391,7 @@ void Upd765::startSector()
     else { buf_ = s.data; buf_.resize(size_, 0); }
     pos_ = 0;
     stage_ = Stage::Latency;
-    delay_ = 20 * bytePeriod();       // Rest der ID + Lücke 2 bis zum Datenfeld
+    delay_ = 20 * bytePeriod();       // Rest der ID + Luecke 2 bis zum Datenfeld
 }
 
 void Upd765::startReadId()
@@ -425,7 +425,7 @@ void Upd765::startFormat()
     delay_ = 10 * bytePeriod();
 }
 
-// ─── Ausführung ───────────────────────────────────────────────────────────────
+// ─── Ausfuehrung ───────────────────────────────────────────────────────────────
 
 void Upd765::presentByte()
 {
@@ -451,7 +451,7 @@ void Upd765::byteTaken(uint8_t b)
     }
     ++pos_;
     if (pos_ < size_) {
-        // Beim FORMAT liegt zwischen zwei ID-Quadrupeln der Rest des Sektors samt Lücke.
+        // Beim FORMAT liegt zwischen zwei ID-Quadrupeln der Rest des Sektors samt Luecke.
         delay_ = (kind_ == Kind::Format && pos_ % 4 == 0) ? 40 * bp : bp;
     } else {
         stage_ = Stage::Tail;          // CRC-Bytes
@@ -535,7 +535,7 @@ void Upd765::commitFormat()
         finish(1);
         return;
     }
-    // Ergebnis: die zuletzt übergebene C/H/R/N
+    // Ergebnis: die zuletzt uebergebene C/H/R/N
     c_ = secs.back().cyl; h_ = secs.back().head; r_ = secs.back().id; n_ = fmt_ids_.back();
     finish(0);
 }
@@ -546,7 +546,7 @@ void Upd765::abortByTc()
     setDrq(false);
     if (nd_) setIrq(false);
     delay_ = -1;
-    if (kind_ == Kind::Write) {            // Rest des Datenfelds wird mit 00 aufgefüllt
+    if (kind_ == Kind::Write) {            // Rest des Datenfelds wird mit 00 aufgefuellt
         std::fill(buf_.begin() + static_cast<std::ptrdiff_t>(pos_), buf_.end(), 0);
         commitWrite();
     } else if (kind_ == Kind::Scan && !scan_equal_) {
@@ -580,7 +580,7 @@ void Upd765::endSector()
         return;
     }
     if (kind_ == Kind::Scan) st2_ |= kSN;
-    if (kind_ == Kind::Read && cur_deleted_) {     // SK = 0: gelöschter Sektor wird gelesen, dann Ende
+    if (kind_ == Kind::Read && cur_deleted_) {     // SK = 0: geloeschter Sektor wird gelesen, dann Ende
         st2_ |= kCM;
         advance();
         finish(0);
@@ -629,7 +629,7 @@ bool Upd765::deserialize(const uint8_t*& p, const uint8_t* end)
     tmp.visit(a);
     if (!a.ok) return false;
     p = a.p;
-    // Verdrahtung/Rückrufe behalten, Zustand übernehmen
+    // Verdrahtung/Rueckrufe behalten, Zustand uebernehmen
     FloppyDriveV2* d[kUnits];
     for (int u = 0; u < kUnits; ++u) d[u] = drive_[u];
     const bool drq = tmp.drq_, irq = tmp.irq_;

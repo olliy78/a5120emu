@@ -80,7 +80,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 
 from app.ui.keyboard import KeyboardWidget, _Key, qt_event_to_core_key
 
-#: Wie bei K7672/PC 1715; ein Gegenstück im Kern gibt es noch nicht [?].
+#: Wie bei K7672/PC 1715; ein Gegenstueck im Kern gibt es noch nicht [?].
 TASTE_BASE = 0x03000000
 
 
@@ -90,7 +90,7 @@ def taste(adresse: int) -> int:
 
 
 #: K7634.04 (k7634.md §5): je ROM-Gruppe (Leitung A0, A8, A1, A9 … A7, A15) die acht Zeilen
-#: Z0…Z7 als (Positionsname, Code a, Code b).  Leerer Name = Matrixpunkt unbestückt.
+#: Z0…Z7 als (Positionsname, Code a, Code b).  Leerer Name = Matrixpunkt unbestueckt.
 TABELLE = (
     (("G51", 0x00, 0x00), ("", 0x00, 0x00), ("D52", 0x38, 0x38), ("B52", 0x32, 0x32), ("C52", 0x35, 0x35), ("A52", 0x2D, 0x2D), ("E52", 0x00, 0x00), ("", 0x00, 0x00)),
     (("G04", 0xFD, 0xFD), ("B03", 0x43, 0x63), ("E02", 0x32, 0x33), ("C03", 0x44, 0x64), ("D03", 0x45, 0x65), ("A05", 0x20, 0x20), ("E03", 0x33, 0x23), ("B04", 0x56, 0x76)),
@@ -110,7 +110,7 @@ TABELLE = (
     (("SL1", 0xA9, 0xA9), ("SL2", 0xAA, 0xAA), ("SL3", 0xAB, 0xAB), ("SL4", 0xAC, 0xAC), ("SL5", 0xAD, 0xAD), ("SL6", 0xAE, 0xAE), ("", 0x00, 0x00), ("B11/B99", 0x00, 0x00)),
 )
 
-#: Berichtigungen gegenüber der gedruckten Vorlage: Position → (a, b).
+#: Berichtigungen gegenueber der gedruckten Vorlage: Position → (a, b).
 KORREKTUREN = {"E02": (0x32, 0x22)}   # Druckfehler 33H in der Vorlage [?]
 
 #: Taste mit Position: Name → (Rechenadresse, a, b).  ``B99`` ist die zweite
@@ -127,11 +127,11 @@ for _i, _gruppe in enumerate(TABELLE):
 del _i, _gruppe, _z, _pos, _a, _b, _adr, _p
 
 # ── Farben (dem Foto abgenommen) ─────────────────────────────────────────────
-_C_WANNE = QColor(0x9c, 0x9b, 0x93)      # graues Gehäuse
+_C_WANNE = QColor(0x9c, 0x9b, 0x93)      # graues Gehaeuse
 _C_CREME = QColor(0xe6, 0xd8, 0xb6)      # EDI/TKB/FOR/FLX/VFY
 _C_GRAU = QColor(0x8f, 0x92, 0x88)       # TAB←, CLEAR, CLEAR TAB, TAB→, CTRL
 _C_TXT = QColor(0x3a, 0x39, 0x35)
-_C_ERGAENZT = QColor(0xff, 0xa0, 0x20)   # Rahmen der ergänzten Kappen
+_C_ERGAENZT = QColor(0xff, 0xa0, 0x20)   # Rahmen der ergaenzten Kappen
 
 
 @dataclass
@@ -142,7 +142,7 @@ class _Taste(_Key):
     matrix: int = -1            # Rechenadresse; -1 = keine Position (CTRL)
     a: int = -1                 # Code Grundstellung (Tabelle K7634.04)
     b: int = -1                 # Code Umschaltstellung
-    ergaenzt: bool = False      # Kappe fehlt am Gerät, hier nach Doku ergänzt [?]
+    ergaenzt: bool = False      # Kappe fehlt am Geraet, hier nach Doku ergaenzt [?]
     zeichen: str = ""           # Host-Zeichen, bei denen diese Taste aufleuchtet
 
 
@@ -155,7 +155,7 @@ def _t(pos, x, y, low, up="", w=1.0, h=1.0, style="dark", shape="round", kind="n
         nm += " [?] ergänzt (Kappe fehlt am Gerät)"
     return _Taste(x=x, y=y, low=low, up=up, code=code, w=w, h=h, style=style, shape=shape,
                   kind=kind, name=nm, pos=pos, matrix=adr, a=a, b=b, ergaenzt=ergaenzt,
-                  # Nur EINZELzeichen-Beschriftungen: sonst träfe „o" die Kappe OFF, „h" HOLD, „p" PF7.
+                  # Nur EINZELzeichen-Beschriftungen: sonst traefe „o" die Kappe OFF, „h" HOLD, „p" PF7.
                   zeichen=zeichen or "".join(c for c in (low, up) if len(c) == 1))
 
 
@@ -315,7 +315,7 @@ class KeyboardK7634Widget(KeyboardWidget):
     def _draw_key(self, p: QPainter, key: _Key, unit: float, ox: float, oy: float):
         super()._draw_key(p, key, unit, ox, oy)
         if getattr(key, "ergaenzt", False):
-            # Die Kappe gibt es am Gerät nicht: gestrichelter Rahmen = ergänzt [?].
+            # Die Kappe gibt es am Geraet nicht: gestrichelter Rahmen = ergaenzt [?].
             z = self._rect_of(key, unit, ox, oy).adjusted(0.1 * unit, 0.1 * unit,
                                                           -0.1 * unit, -0.1 * unit)
             pen = QPen(_C_ERGAENZT, max(1.5, 0.05 * unit), Qt.DashLine)

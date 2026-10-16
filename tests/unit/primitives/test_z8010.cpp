@@ -1,5 +1,5 @@
 /**
- * @test Z8010.* — UB8010/Z8010-MMU (P8000 AP P9a): Register und Befehle, Übersetzung, jede
+ * @test Z8010.* — UB8010/Z8010-MMU (P8000 AP P9a): Register und Befehle, Uebersetzung, jede
  *       Verletzungsart, SUP/SEGT, Zustandsautomat ([TB] Anhang A), DMA, Mehrfach-MMU und die
  *       Kern-Initialisierung aus WEGA `uts/conf/mch.s` (`start`, `physaddr`, `invsdrs`, `resmmu`).
  *       Quelle der Sollwerte: doc/p8000/z8010_mmu.md, doc/trascripted/MMU_8010.md.
@@ -22,7 +22,7 @@ struct Rig {
     void w(uint8_t code, uint8_t d) { mmu.kommandoSchreiben(code, d); }
     uint8_t r(uint8_t code) { return mmu.kommandoLesen(code); }
 
-    /// SDR über SAR + %0B (4 Byte) laden — der Weg von WEGA.
+    /// SDR ueber SAR + %0B (4 Byte) laden — der Weg von WEGA.
     void sdr(uint8_t nr, uint16_t basis, uint8_t limit, uint8_t attr) {
         w(Z8010::CMD_SAR, nr);
         for (uint8_t b : {uint8_t(basis >> 8), uint8_t(basis), limit, attr}) w(Z8010::CMD_SDR, b);
@@ -40,7 +40,7 @@ struct Rig {
     }
 };
 
-/// Übersetzend, eine Tabelle (MST = 0), ID 2.
+/// Uebersetzend, eine Tabelle (MST = 0), ID 2.
 constexpr uint8_t MR_AN = Z8010::MR_MSEN | Z8010::MR_TRNS | 2;
 
 // ─── Lebenslauf und Register ────────────────────────────────────────────────
@@ -61,7 +61,7 @@ TEST(Z8010, ResetMitCsSchaltetDurchreichenEin) {
     t.mmu.reset(true);
     EXPECT_EQ(t.mmu.mr(), Z8010::MR_MSEN);   // MSEN, TRNS = 0
     EXPECT_EQ(t.mmu.dscr(), 0);
-    EXPECT_EQ(t.mmu.deskriptor(7).basis, 0x1234);   // SDR überleben den Reset
+    EXPECT_EQ(t.mmu.deskriptor(7).basis, 0x1234);   // SDR ueberleben den Reset
     auto e = t.cpu(DATA, 0x45, 0xABCD, true);
     ASSERT_TRUE(e.adresse);
     EXPECT_EQ(e.phys, 0x45ABCDu);                    // SN → A16–A22, A23 = L
@@ -175,7 +175,7 @@ TEST(Z8010, InkrementierendeBefehleLaufenVon63Auf0Um) {
     EXPECT_EQ(t.mmu.deskriptor(63).basis, 0xC0C1);
     EXPECT_EQ(t.mmu.deskriptor(0).basis, 0xC2C3);
     EXPECT_EQ(t.mmu.sar(), 1);
-    // Lesen zählt genauso.
+    // Lesen zaehlt genauso.
     t.w(Z8010::CMD_SAR, 63);
     EXPECT_EQ(t.r(Z8010::CMD_BASIS_INC), 0xC0);
     EXPECT_EQ(t.r(Z8010::CMD_BASIS_INC), 0xC1);
@@ -186,7 +186,7 @@ TEST(Z8010, InkrementierendeBefehleLaufenVon63Auf0Um) {
 TEST(Z8010, CpuiUndDmaiSetzenAlleUnabhaengigVomDatenbyte) {
     Rig t;
     t.sdr(10, 0, 0, Z8010::ATTR_RD);
-    t.w(Z8010::CMD_CPUI_SETZEN, 0x00);   // MAME würde bei 0 löschen — [TB] setzt immer
+    t.w(Z8010::CMD_CPUI_SETZEN, 0x00);   // MAME wuerde bei 0 loeschen — [TB] setzt immer
     t.w(Z8010::CMD_DMAI_SETZEN, 0x00);
     for (int i = 0; i < 64; ++i) {
         EXPECT_TRUE(t.mmu.deskriptor(i).attr & Z8010::ATTR_CPUI) << i;
@@ -195,7 +195,7 @@ TEST(Z8010, CpuiUndDmaiSetzenAlleUnabhaengigVomDatenbyte) {
     EXPECT_EQ(t.mmu.deskriptor(10).attr, Z8010::ATTR_RD | Z8010::ATTR_CPUI | Z8010::ATTR_DMAI);
 }
 
-// ─── Übersetzung ─────────────────────────────────────────────────────────────
+// ─── Uebersetzung ─────────────────────────────────────────────────────────────
 
 TEST(Z8010, UebersetzungBeispielBild43) {
     Rig t;
@@ -258,7 +258,7 @@ TEST(Z8010, NichtGewaehlteMmuErzeugtKeineVerletzung) {
     Rig t;
     t.sdr(1, 0, 0x00, Z8010::ATTR_CPUI);
     t.w(Z8010::CMD_MR, MR_AN | Z8010::MR_MST);
-    auto e = t.cpu(DATA, 1, 0x8000, false, true);   // N/S = H ⇒ nicht gewählt
+    auto e = t.cpu(DATA, 1, 0x8000, false, true);   // N/S = H ⇒ nicht gewaehlt
     EXPECT_FALSE(e.adresse);
     EXPECT_FALSE(e.sup);
     EXPECT_EQ(t.mmu.vtr(), 0);
@@ -310,7 +310,7 @@ TEST(Z8010, ErlaubteZugriffeAmRandDesSegments) {
 }
 
 TEST(Z8010, MehrereVerletzungenEinesZugriffsBeispiel812) {
-    // [TB] §8.1.2: MMU2 (URS = 1, ID 2), Schreiben auf <65>%9328 in ein RD-Segment über dem Limit.
+    // [TB] §8.1.2: MMU2 (URS = 1, ID 2), Schreiben auf <65>%9328 in ein RD-Segment ueber dem Limit.
     Rig t;
     t.sdr(1, 0x4000, 0x8F, Z8010::ATTR_RD);
     t.w(Z8010::CMD_MR, MR_AN | Z8010::MR_URS);
@@ -367,12 +367,12 @@ TEST(Z8010, SupGiltBisZumBefehlsende) {
     t.cpu(IF1, 2, 0x0100, true);
     EXPECT_TRUE(t.cpu(DATA, 1, 0x2000, false).sup);   // SLV
     EXPECT_TRUE(t.cpu(DATA, 2, 0x0010, false).sup);   // gleicher Befehl, an sich erlaubt
-    EXPECT_FALSE(t.dma(DATA, 2, 0x0010, false).sup);  // DMA dazwischen unberührt
+    EXPECT_FALSE(t.dma(DATA, 2, 0x0010, false).sup);  // DMA dazwischen unberuehrt
     EXPECT_TRUE(t.cpu(STACK, 2, 0x0FFE, false).sup);
-    EXPECT_EQ(t.mmu.deskriptor(2).attr & Z8010::ATTR_CHG, 0);   // unterdrückt ⇒ kein CHG
+    EXPECT_EQ(t.mmu.deskriptor(2).attr & Z8010::ATTR_CHG, 0);   // unterdrueckt ⇒ kein CHG
     EXPECT_FALSE(t.cpu(IF1, 2, 0x0104, true).sup);    // unechtes Holen ohne Verletzung
     t.mmu.segtQuittung();
-    EXPECT_FALSE(t.cpu(STACK, 2, 0x0FFC, false).sup); // Statusretten nicht unterdrückt
+    EXPECT_FALSE(t.cpu(STACK, 2, 0x0FFC, false).sup); // Statusretten nicht unterdrueckt
     EXPECT_EQ(t.mmu.vtr(), Z8010::VTR_SLV);
 }
 
@@ -414,13 +414,13 @@ TEST(Z8010, IsnIoffZeigenAufDenLetztenBefehl) {
     EXPECT_EQ(t.mmu.isn(), 3);
     EXPECT_EQ(t.mmu.ioff(), 0x12);
 
-    // Verletzt das Holen selbst, steht der Vorgänger (der Sprung) in ISN/IOFF.
+    // Verletzt das Holen selbst, steht der Vorgaenger (der Sprung) in ISN/IOFF.
     Rig u;
     u.sdr(3, 0, 0xFF, 0);
     u.sdr(4, 0, 0x00, 0);
     u.w(Z8010::CMD_MR, MR_AN);
     u.cpu(IF1, 3, 0x5600, true);
-    u.cpu(IF1, 4, 0x0700, true);    // Sprungziel außerhalb
+    u.cpu(IF1, 4, 0x0700, true);    // Sprungziel ausserhalb
     EXPECT_EQ(u.mmu.vtr(), Z8010::VTR_SLV);
     EXPECT_EQ(u.mmu.isn(), 3);
     EXPECT_EQ(u.mmu.ioff(), 0x56);
@@ -433,7 +433,7 @@ TEST(Z8010, IsnIoffZeigenAufDenLetztenBefehl) {
 
 struct Automat : Rig {
     Automat() {
-        sdr(1, 0x0000, 0x0F, 0);                     // Daten, Blöcke 0..F
+        sdr(1, 0x0000, 0x0F, 0);                     // Daten, Bloecke 0..F
         sdr(2, 0x0000, 0xFF, 0);                     // Code
         sdr(3, 0xFF10, 0xF8, Z8010::ATTR_DIRW);      // Systemstapel, Warnblock F8
         w(Z8010::CMD_MR, MR_AN);
@@ -456,9 +456,9 @@ TEST(Z8010, ZweiteVerletzungImFolgebefehlSetztFatl) {
     EXPECT_FALSE(e.sup);
     t.befehl();
     t.sdr(5, 0, 0xFF, Z8010::ATTR_RD);
-    e = t.cpu(DATA, 5, 0x0010, false);              // RDV im späteren Befehl
+    e = t.cpu(DATA, 5, 0x0010, false);              // RDV im spaeteren Befehl
     EXPECT_TRUE(e.sup);
-    EXPECT_TRUE(t.mmu.segt());                       // Übergang zieht SEGT einmal [A6]
+    EXPECT_TRUE(t.mmu.segt());                       // Uebergang zieht SEGT einmal [A6]
     EXPECT_EQ(t.mmu.vtr(), Z8010::VTR_SLV | Z8010::VTR_FATL);   // RDV nicht dazu
     EXPECT_EQ(t.mmu.vsn(), 1);                       // Register bleiben bei der ersten
     t.quittiere(2, 0x0208);
@@ -517,7 +517,7 @@ TEST(Z8010, SchreibwarnungAufDemSystemstapelSetztSww) {
     EXPECT_TRUE(t.cpu(DATA, 1, 0x4000, true).sup);
     EXPECT_FALSE(t.mmu.segt());
 
-    // Rückwege: %14 ⇒ SWW-Zustand, %13 ⇒ einfach, %11 ⇒ normal.
+    // Rueckwege: %14 ⇒ SWW-Zustand, %13 ⇒ einfach, %11 ⇒ normal.
     t.w(Z8010::CMD_FATL_LOESCHEN, 0);
     EXPECT_EQ(t.mmu.vtr(), Z8010::VTR_SLV | Z8010::VTR_SWW);
     t.w(Z8010::CMD_SWW_LOESCHEN, 0);
@@ -570,13 +570,13 @@ TEST(Z8010, DmaVerletzungNurSupKeinStatus) {
     t.sdr(2, 0, 0xFF, Z8010::ATTR_DMAI);
     t.sdr(3, 0x0100, 0xFF, Z8010::ATTR_RD);
     t.w(Z8010::CMD_MR, MR_AN);
-    EXPECT_FALSE(t.dma(DATA, 1, 0x0100, false).sup);   // CPUI gilt nicht für DMA
-    EXPECT_TRUE(t.dma(DATA, 1, 0x2000, true).sup);     // Länge
+    EXPECT_FALSE(t.dma(DATA, 1, 0x0100, false).sup);   // CPUI gilt nicht fuer DMA
+    EXPECT_TRUE(t.dma(DATA, 1, 0x2000, true).sup);     // Laenge
     EXPECT_TRUE(t.dma(DATA, 2, 0x0000, true).sup);     // DMAI
     auto e = t.dma(DATA, 3, 0x0000, false);            // RD
     EXPECT_TRUE(e.sup);
     EXPECT_EQ(e.phys, 0x010000u);
-    EXPECT_FALSE(t.dma(DATA, 3, 0x0000, true).sup);    // nur für den eigenen Zyklus
+    EXPECT_FALSE(t.dma(DATA, 3, 0x0000, true).sup);    // nur fuer den eigenen Zyklus
     EXPECT_EQ(t.mmu.vtr(), 0);
     EXPECT_FALSE(t.mmu.segt());
     EXPECT_TRUE(t.segtFlanken.empty());
@@ -590,7 +590,7 @@ TEST(Z8010, DmaVerletzungNurSupKeinStatus) {
 // ─── Mehrfach-MMU ────────────────────────────────────────────────────────────
 
 TEST(Z8010, DreiMmusMitMstWieAmP8000) {
-    // N/S-Eingang = Auswahlsignal (L = gewählt), Mode D0/D1/D2 (MON16 p.test.s).
+    // N/S-Eingang = Auswahlsignal (L = gewaehlt), Mode D0/D1/D2 (MON16 p.test.s).
     Z8010 code, data, stack;
     code.kommandoSchreiben(Z8010::CMD_MR, 0xD0);
     data.kommandoSchreiben(Z8010::CMD_MR, 0xD1);
@@ -660,7 +660,7 @@ TEST(Z8010, WegaKernstartMchS) {
     EXPECT_EQ(e.phys, uint32_t(0x0123) << 8);
     EXPECT_FALSE(e.sup);
     EXPECT_FALSE(code.segt());
-    // Block %F5 ist die Warnzone (pwwarn1 prüft VTR-Bit 5).
+    // Block %F5 ist die Warnzone (pwwarn1 prueft VTR-Bit 5).
     e = code.zyklus(zyk(STACK, 0xF5F0, false));
     EXPECT_FALSE(e.sup);
     EXPECT_TRUE(code.segt());
@@ -685,7 +685,7 @@ TEST(Z8010, WegaKernstartMchS) {
 }
 
 // ─── Systematische Matrizen ─────────────────────────────────────────────────
-// Erwartungen unabhängig von der Implementierung aus [TB] §3–§6 formuliert.
+// Erwartungen unabhaengig von der Implementierung aus [TB] §3–§6 formuliert.
 
 std::vector<uint8_t> zustand(const Z8010& m) {
     std::vector<uint8_t> v;
@@ -732,7 +732,7 @@ TEST(Z8010Matrix, JederBefehlscodeLesen) {
         EXPECT_EQ(r, soll) << "Code " << code;
         EXPECT_EQ(t.mmu.sar(), sarDanach) << "Code " << code;
         EXPECT_EQ(t.mmu.dscr(), dscrDanach) << "Code " << code;
-        EXPECT_EQ(t.mmu.vtr(), Z8010::VTR_SLV) << "Code " << code;   // Lesen löscht nichts
+        EXPECT_EQ(t.mmu.vtr(), Z8010::VTR_SLV) << "Code " << code;   // Lesen loescht nichts
         EXPECT_TRUE(t.mmu.segt()) << "Code " << code;
     }
 }
@@ -860,7 +860,7 @@ TEST(Z8010Matrix, BasisGrenzenUndSegmenteNullBis63) {
                     ASSERT_TRUE(p.adresse);
                     const uint32_t soll = ((uint32_t(b) << 8) + off) & 0xFFFFFF;   // „Umrunden"
                     ASSERT_EQ(p.phys, soll) << sdr << ' ' << b << ' ' << off;
-                    // Andere Hälfte der Segmentnummern: diese MMU schweigt.
+                    // Andere Haelfte der Segmentnummern: diese MMU schweigt.
                     ASSERT_FALSE(m.probe({DATA, false, true, uint8_t(seg ^ 0x40), off, false}).adresse);
                 }
                 // VSN = Nummer innerhalb der MMU [A9].
@@ -872,7 +872,7 @@ TEST(Z8010Matrix, BasisGrenzenUndSegmenteNullBis63) {
 }
 
 TEST(Z8010Matrix, ModusRegisterJederWert) {
-    // MR 0..255 × SN6 × N/S-Eingang: wann übersetzt, wann durchgereicht, wann Tri-State.
+    // MR 0..255 × SN6 × N/S-Eingang: wann uebersetzt, wann durchgereicht, wann Tri-State.
     for (int mr = 0; mr < 256; ++mr)
         for (int sn6 = 0; sn6 < 2; ++sn6)
             for (int ns = 0; ns < 2; ++ns) {
@@ -932,7 +932,7 @@ TEST(Z8010Matrix, ProbeHatKeineSeiteneffekte) {
 TEST(Z8010Matrix, NichtSpeicherzyklenLassenAllesUnberuehrt) {
     for (uint8_t st : {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0xE, 0xF}) {
         Automat t;
-        t.sdr(5, 0, 0x00, 0x3F);   // jede Prüfung schlägt an
+        t.sdr(5, 0, 0x00, 0x3F);   // jede Pruefung schlaegt an
         const auto vorher = zustand(t.mmu);
         for (int lesen = 0; lesen < 2; ++lesen)
             for (int dma = 0; dma < 2; ++dma) {
@@ -965,7 +965,7 @@ TEST(Z8010, SaveStateRundreiseIstBitgleich) {
     EXPECT_TRUE(b.segt());
     EXPECT_EQ(b.dscr(), 1);
     EXPECT_EQ(b.vtr(), Z8010::VTR_SLV);
-    // Fortsetzung: zweites Basisbyte trifft das Low-Byte, SUP läuft bis Befehlsende weiter.
+    // Fortsetzung: zweites Basisbyte trifft das Low-Byte, SUP laeuft bis Befehlsende weiter.
     b.kommandoSchreiben(Z8010::CMD_BASIS, 0x88);
     EXPECT_EQ(b.deskriptor(0x21).basis, 0x7788);
     EXPECT_TRUE(b.zyklus({DATA, false, true, 2, 0x0000, false}).sup);

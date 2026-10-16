@@ -1,4 +1,4 @@
-// Unit-Tests für die k1520dbg-Kommando-Vervollständigung (tools/dbg_commands.h).
+// Unit-Tests fuer die k1520dbg-Kommando-Vervollstaendigung (tools/dbg_commands.h).
 #include "tools/dbg_commands.h"
 #include <gtest/gtest.h>
 #include <algorithm>

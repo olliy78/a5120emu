@@ -4,11 +4,11 @@
  *        PIO0/1/2, DS8282-Latches, DMA-Platzhalter, Interruptkette, RESET/RESI/NMI-Weiche.
  *
  * Quelle: doc/p8000/schaltplan_8bit.md §2–§5, §7, §8 (Rang 1), doc/design/25_p8000.md §10.1–§10.4,
- * AP P5e.  Floppy (FDC/DMA/PIO2-Verdrahtung) hängt `floppy8` (P5f) ein, die Kopplungsgegenseite
- * `P8000Kopplung` (P11) über `setzePioHaken`, `setLatchRueckruf`, `setNmiU8000Rueckruf`.
+ * AP P5e.  Floppy (FDC/DMA/PIO2-Verdrahtung) haengt `floppy8` (P5f) ein, die Kopplungsgegenseite
+ * `P8000Kopplung` (P11) ueber `setzePioHaken`, `setLatchRueckruf`, `setNmiU8000Rueckruf`.
  *
  * @code
- *   E/A (nur IORQ ohne M1; A8–A15 egal)       00H–07H  Speicher8 (ADP/RES_RFF, eigenes Gerät)
+ *   E/A (nur IORQ ohne M1; A8–A15 egal)       00H–07H  Speicher8 (ADP/RES_RFF, eigenes Geraet)
  *   08H–0BH CTC0    0CH–0FH PIO0 (Kopplung)   10H–13H  Latch 1 (DS8282, nur schreibend, 4-fach)
  *   14H–17H Latch 2 (nur schreibend)          18H–1BH  PIO1 (EPROMmer, unbeschaltet)
  *   1CH–1FH PIO2 (Floppy-Port)                20H–23H  FDC (P5f; hier offen, 22H/23H spiegeln)
@@ -24,12 +24,12 @@
  * CLK/TRG von CTC0 K1–K3 und CTC1 K3 sind unbeschaltet (reine Zeitgeber).
  *
  * **RESET/RESI/NMI (§4):** `powerOn()` = Netz-Ein (RESI = 1), `reset()` = Taste /RESP (RESI = 0);
- * beide /RES an CPU, CTCs, SIOs, PIOs (über /PM1), Speicher8 (RFF Q = 0).  RESI liegt an PIO2-A7.
+ * beide /RES an CPU, CTCs, SIOs, PIOs (ueber /PM1), Speicher8 (RFF Q = 0).  RESI liegt an PIO2-A7.
  * NMI-Taste: `/NMI(U880) = NAND(/NMI-UM, NMIP)` mit /NMI-UM = Pinpegel von PIO0-B7 (offen = Pull-up
  * = 1); bei B7 = 0 geht die Taste statt an den U880 an die 16-Bit-Karte (`setNmiU8000Rueckruf`).
  *
  * **Annahmen** (Schaltplan §11): DS8282-Startwert `Config::latch_start` (Frage 6); /CTS tty0 =
- * RTS, übrige fest aktiv, /DCD vom Anschluss (Frage 8); SIO-/W/RDY an /WAIT nicht nachgebildet
+ * RTS, uebrige fest aktiv, /DCD vom Anschluss (Frage 8); SIO-/W/RDY an /WAIT nicht nachgebildet
  * (einmalige Warnung, falls ein Gast WR1 D7 setzt).
  */
 
@@ -66,9 +66,9 @@ public:
     P8000Karte8(K1520Bus& bus, const Config& cfg);
     ~P8000Karte8() override;
 
-    // ─── serielle Kanäle tty0–tty3 (SIO0-A/B, SIO1-A/B) ──────────────────────
+    // ─── serielle Kanaele tty0–tty3 (SIO0-A/B, SIO1-A/B) ──────────────────────
     k1520::serial::SerialAnschluss& anschluss(int tty);
-    /// Ein Anschluss hat SIO-Zustand geändert — Interruptkette neu bewerten.  Liest und löscht.
+    /// Ein Anschluss hat SIO-Zustand geaendert — Interruptkette neu bewerten.  Liest und loescht.
     bool nimmSeriellGeaendert() { const bool g = seriell_geaendert_; seriell_geaendert_ = false; return g; }
 
     // ─── Lebenslauf ──────────────────────────────────────────────────────────
@@ -77,9 +77,9 @@ public:
     void nmiTaste();   ///< NMI-Taste (/NMIP), Weiche nach PIO0-B7
 
     /// Ein Befehl (inkl. Interrupt-/NMI-Annahme); liefert Takte inkl. EPROM-Wartetakten.
-    /// 0 = Debugger-Halt.  Die Zeitbasis (CTCs) führt anschließend `takt(n)`.
+    /// 0 = Debugger-Halt.  Die Zeitbasis (CTCs) fuehrt anschliessend `takt(n)`.
     int  schritt();
-    /// Φ-Takte an die CTCs (und Interruptkette neu bewerten, wenn sich etwas geändert hat).
+    /// Φ-Takte an die CTCs (und Interruptkette neu bewerten, wenn sich etwas geaendert hat).
     void takt(int n);
 
     // ─── Bausteine ───────────────────────────────────────────────────────────
@@ -108,44 +108,44 @@ public:
     /// NMI-Taste bei B7eff = 0: geht an die 16-Bit-Karte (/NMI-U8000).
     void setNmiU8000Rueckruf(std::function<void()> cb) { nmi16_cb_ = std::move(cb); }
 
-    /// Externe Treiber an den Pins eines PIO-Ports (Kopplung, Floppy-Glue); bleiben über
+    /// Externe Treiber an den Pins eines PIO-Ports (Kopplung, Floppy-Glue); bleiben ueber
     /// einen PIO-Reset hinweg erhalten und werden nach jedem Steuerwort neu angelegt, weil
-    /// `Z80PIO` die Eingabebits nach einem Moduswechsel nicht aus den Pins nachlädt.
+    /// `Z80PIO` die Eingabebits nach einem Moduswechsel nicht aus den Pins nachlaedt.
     /// @p pio 0..2, @p port 0 = A, 1 = B.
     void setzePinTreiber(int pio, int port, uint8_t pegel, uint8_t treibMask);
 
-    /// FDC-Tore 20H–23H (P5f hängt hier ein; ohne Handler: Lesen FFH, Schreiben verschluckt).
+    /// FDC-Tore 20H–23H (P5f haengt hier ein; ohne Handler: Lesen FFH, Schreiben verschluckt).
     std::function<uint8_t(uint8_t reg /*0..1*/)>       fdcLesen;
     std::function<void(uint8_t reg, uint8_t wert)>     fdcSchreiben;
 
-    // ─── Haken für die Floppy-Seite (floppy8, P5f) ───────────────────────────
+    // ─── Haken fuer die Floppy-Seite (floppy8, P5f) ───────────────────────────
     /// DMA UA858 (3CH–3FH, 4-fach gespiegelt): Steuerport.  Ohne Handler: Lesen FFH.
     std::function<uint8_t()>        dmaLesen;
     std::function<void(uint8_t)>    dmaSchreiben;
     /// Echte DMA statt des Platzhalters in die Interruptkette (vorderstes Glied) einsetzen.
     void setzeDmaKettenglied(InterruptSlave* dma);
     /// DMA als Busmaster: fordert @p anfrage den Bus (/BUSRQ), steht die CPU still und
-    /// @p schritt bewegt ein Byte (Rückgabe Takte, 0 = Bus gehalten ohne RDY ⇒ 4 Takte);
+    /// @p schritt bewegt ein Byte (Rueckgabe Takte, 0 = Bus gehalten ohne RDY ⇒ 4 Takte);
     /// @p cpu_zyklus meldet jeden CPU-Befehl (Byte-Betrieb der DMA: Bus erst nach einem M1).
     void setzeBusmaster(std::function<bool()> anfrage, std::function<int()> schritt,
                         std::function<void()> cpu_zyklus = {}) {
         bm_anfrage_ = std::move(anfrage); bm_schritt_ = std::move(schritt);
         bm_cpu_ = std::move(cpu_zyklus);
     }
-    /// Nach jedem /RES der Karte (Netz-Ein und Taste), nachdem die PIOs zurückgesetzt sind.
+    /// Nach jedem /RES der Karte (Netz-Ein und Taste), nachdem die PIOs zurueckgesetzt sind.
     void setzeResetHaken(std::function<void()> h) { reset_haken_ = std::move(h); }
     /// Nach jedem CPU-Schreiben auf eine PIO (Daten oder Steuerwort) und nach dem PIO-Reset:
-    /// die Pinpegel können sich geändert haben (Kopplung, P11).  @p pio 0..2.
+    /// die Pinpegel koennen sich geaendert haben (Kopplung, P11).  @p pio 0..2.
     void setzePioHaken(std::function<void(int pio)> h) { pio_haken_ = std::move(h); }
 
     // ─── Save-State (P8KS, Entwurf 25 §10.2) ─────────────────────────────────
     /// U880, Speicher8, CTC0/1 (samt Bruchtakt-Phase), SIO0/1, PIO0–2 (samt Handshake/Pins),
-    /// Latches, RESI, DCD-Pegel, anstehender NMI.  Nicht: EPROM, Rückrufe, Verdrahtung.
+    /// Latches, RESI, DCD-Pegel, anstehender NMI.  Nicht: EPROM, Rueckrufe, Verdrahtung.
     void serialize(std::vector<uint8_t>& out) const;
     /// Teilweise angewandt, wenn @c false — der Aufrufer (Maschine) sichert vorher.
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
-    // ─── BusDevice: alle Tore der Karte außer 00H–07H (absolute Portnummer) ──
+    // ─── BusDevice: alle Tore der Karte ausser 00H–07H (absolute Portnummer) ──
     uint8_t     ioRead(uint8_t port) override;
     void        ioWrite(uint8_t port, uint8_t data) override;
     const char* deviceName() const override { return "P8000-Karte8"; }
@@ -182,7 +182,7 @@ private:
     struct Pins { uint8_t pegel = 0, maske = 0; };
     Pins pins_[3][2];
     bool wait_gewarnt_ = false;
-    /// Der zuletzt ausgeführte Befehl war EI: bis nach dem NÄCHSTEN Befehl keine maskierbare
+    /// Der zuletzt ausgefuehrte Befehl war EI: bis nach dem NAECHSTEN Befehl keine maskierbare
     /// Unterbrechung annehmen (Z80-Datenblatt; `EI; RETI` am Ende jeder ISR).  Wie
     /// `P8000Wdc::ei_sperre_`.  Befund P22, Merkposten p8000 Nr. 40.
     bool ei_sperre_ = false;

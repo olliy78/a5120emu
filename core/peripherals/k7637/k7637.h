@@ -27,11 +27,11 @@ public:
     void keyPress(int qt_keycode, bool shift, bool ctrl);
     void keyRelease(int qt_keycode);
 
-    // Die Dauerfunktion (Tastenwiederholung) läuft über service() — ein eigenes
+    // Die Dauerfunktion (Tastenwiederholung) laeuft ueber service() — ein eigenes
     // tick() gibt es nicht mehr: der laufende Rechner hat es nie aufgerufen,
     // gehaltene Tasten wiederholten deshalb gar nicht (AP-S9,
-    // doc/design/08_k7637_keyboard.md §2.2a).  Gezählt wird in Maschinenzeit
-    // (Vorgabe, Tests) oder — für die Oberfläche — in Echtzeit, damit ein
+    // doc/design/08_k7637_keyboard.md §2.2a).  Gezaehlt wird in Maschinenzeit
+    // (Vorgabe, Tests) oder — fuer die Oberflaeche — in Echtzeit, damit ein
     // schneller eingestellter Rechner nicht schneller wiederholt (tasten_uhr.h).
     void setRepeatRealtime(bool an) { repeat_uhr_.setEchtzeit(an); }
     bool repeatRealtime() const     { return repeat_uhr_.echtzeit(); }
@@ -41,7 +41,7 @@ public:
     /**
      * @brief Ist @p code ein Dauerfunktionscode (wiederholt beim Halten)?
      *
-     * Handbuch §2.2.2: „In jeder Codetabelle können bis zu 16 Tasten als
+     * Handbuch §2.2.2: „In jeder Codetabelle koennen bis zu 16 Tasten als
      * Dauerfunktionstasten festgelegt werden" — nur DIESE wiederholen, nach
      * ≈500 ms im Abstand von ≈100 ms.  Die Liste steht im ROM hinter jeder
      * Codetabelle (CTAB1: 650H, CTAB2: 760H, beide gleich belegt) und wird von
@@ -53,17 +53,17 @@ public:
     // Drain command bytes the K8025 sent to the keyboard (LED control,
     // beep, …).  Call whenever sio.channelX().txAvailable() is true.
     /// @return true, wenn mindestens ein Kommando-Byte verarbeitet wurde
-    ///         (kann den SIO-Interruptzustand ändern).
+    ///         (kann den SIO-Interruptzustand aendern).
     ///
     /// **Kommandos erkennt die K7637 an der Zahl der Impulsflanken, nicht am
-    /// Bytewert** (Handbuch §2.2.3): die empfangenen Flanken zählen einen auf
-    /// 15 voreingestellten Zähler herunter, und dessen Stand ist das Kommando.
+    /// Bytewert** (Handbuch §2.2.3): die empfangenen Flanken zaehlen einen auf
+    /// 15 voreingestellten Zaehler herunter, und dessen Stand ist das Kommando.
     /// Die Bytes der Handbuchtabelle (00H, 20H, 44H, 52H, 55H) sind nur die
-    /// übliche Schreibweise — jedes Byte mit derselben Flankenzahl wirkt gleich.
-    /// Ein Zählerstand 10 (ein einzelnes 55H) ist das **Vorkommando**: dann
-    /// zählt das nächste Byte weiter mit.
+    /// uebliche Schreibweise — jedes Byte mit derselben Flankenzahl wirkt gleich.
+    /// Ein Zaehlerstand 10 (ein einzelnes 55H) ist das **Vorkommando**: dann
+    /// zaehlt das naechste Byte weiter mit.
     ///
-    /// CP/A schickt je GEÄNDERTEM Bit seines Lampenpuffers ein Kommando
+    /// CP/A schickt je GEAENDERTEM Bit seines Lampenpuffers ein Kommando
     /// (BIOS-Routine `kbdmd2`, „Routine fuer K7637"): Selektor 0…3 → 52H bzw.
     /// 55H 20H/44H/52H, INS-Modus → 55H 55H, Fehlerlampe → 20H.  Das passt zu
     /// der umschaltenden Wirkung der Kommandos.
@@ -100,8 +100,8 @@ public:
      * @brief Hardware-Reset: Tastenwiederholung, LED-/Kommandozustand und die
      *        noch nicht zugestellten seriellen Bytes verwerfen.
      *
-     * Nach einem System-Reset wird auch der SIO zurückgesetzt; ein halb
-     * gesendetes Byte in der Warteschlange wäre dann verwaist.  Die Verbindung
+     * Nach einem System-Reset wird auch der SIO zurueckgesetzt; ein halb
+     * gesendetes Byte in der Warteschlange waere dann verwaist.  Die Verbindung
      * (sio_/ch_idx_) bleibt bestehen.
      */
     void reset() {
@@ -115,7 +115,7 @@ public:
 
     // ── Anzeigen und akustisches Signal ───────────────────────────────────
     // Die Tastatur hat acht Leuchtdioden (K7637-Doku §2.1, §2.2.3, §2.3):
-    // fünf frei belegbare Funktionsanzeigen G00…G04, die blinkende
+    // fuenf frei belegbare Funktionsanzeigen G00…G04, die blinkende
     // Fehleranzeige G53, die Betriebsanzeige E54 (leuchtet, solange die
     // Tastatur Spannung hat) und die LOCK-Anzeige C99 (folgt dem
     // Umschaltfeststeller, also der Tastatur selbst — kein Kommando).
@@ -130,15 +130,15 @@ public:
 
     /// Eingeschaltete Anzeigen als Bitmaske (LED_G00 … LED_ERROR).
     uint8_t leds() const { return led_mask_; }
-    /// Läuft gerade das akustische Signal (≈1 s nach Kommando 44H)?
+    /// Laeuft gerade das akustische Signal (≈1 s nach Kommando 44H)?
     bool beeping() const { return beep_until_cycle_ > cur_cycle_; }
 
     /**
      * @brief Welchen physischen Tastencode erzeugt dieser Qt-Tastencode?
      *
      * Dieselbe Abbildung, die :meth:`keyPress` benutzt — nur ohne Maschine und
-     * ohne Seiteneffekt.  Für Tests und für die Fehlersuche an der
-     * Bedienoberfläche („welche Taste schickt die Tastatur wirklich?").
+     * ohne Seiteneffekt.  Fuer Tests und fuer die Fehlersuche an der
+     * Bedienoberflaeche („welche Taste schickt die Tastatur wirklich?").
      */
     static uint8_t codeFor(int qt_keycode, bool shift = false, bool ctrl = false) {
         return translateKey(qt_keycode, shift, ctrl);
@@ -158,8 +158,8 @@ private:
     // (nur Konstanten), deshalb statisch — s. codeFor().
     static uint8_t translateKey(int qt_keycode, bool shift, bool ctrl);
 
-    // Ein Byte auf die serielle Leitung geben; es beginnt frühestens bei
-    // @p at_cycle (Vorgabe: jetzt) und kommt eine Bytezeit später beim SIO an.
+    // Ein Byte auf die serielle Leitung geben; es beginnt fruehestens bei
+    // @p at_cycle (Vorgabe: jetzt) und kommt eine Bytezeit spaeter beim SIO an.
     void sendByte(uint8_t byte) { sendByteAt(byte, cur_cycle_); }
     void sendByteAt(uint8_t byte, uint64_t at_cycle);
 
@@ -182,8 +182,8 @@ private:
     uint8_t pressed_scancode_ = 0;
     bool    shift_ = false;
     bool    ctrl_  = false;
-    // Dauerfunktion aktiv (Dauercode gehalten) und Nenntakte bis zur nächsten
-    // Wiederholung — gezählt mit repeat_uhr_ (Maschinen- oder Echtzeit).
+    // Dauerfunktion aktiv (Dauercode gehalten) und Nenntakte bis zur naechsten
+    // Wiederholung — gezaehlt mit repeat_uhr_ (Maschinen- oder Echtzeit).
     bool     repeat_aktiv_ = false;
     int64_t  repeat_rest_  = 0;
 
@@ -200,12 +200,12 @@ private:
     // ── Anzeigen / Kommandodekodierung ────────────────────────────────────
     uint8_t  led_mask_         = 0;   // LED_G00 … LED_ERROR
     uint8_t  edge_acc_         = 0;   // Flanken seit dem letzten Kommando
-    uint64_t beep_until_cycle_ = 0;   // akustisches Signal läuft bis …
+    uint64_t beep_until_cycle_ = 0;   // akustisches Signal laeuft bis …
 
     /// Dauer des akustischen Signals: ≈1 s bei 2,5 MHz ZVE1-Takt.
     static constexpr uint64_t BEEP_CYCLES = 2500000;
 
-    /// Ein empfangenes Kommandobyte auswerten (Flankenzählung).
+    /// Ein empfangenes Kommandobyte auswerten (Flankenzaehlung).
     void applyCommandByte(uint8_t byte);
 
     // ── Serial-transmit timing (keyboard → host) ──────────────────────────
@@ -217,12 +217,12 @@ private:
     uint64_t next_tx_cycle_  = 0;   // earliest cycle the line is free again
 
 public:
-    // Rohcode-Fluchtweg für eine Bedienoberfläche, die die ECHTE Tastatur
+    // Rohcode-Fluchtweg fuer eine Bedienoberflaeche, die die ECHTE Tastatur
     // nachbildet: `QK_RAW_BASE | <Byte>` sendet genau dieses Byte als
     // physischen K7637-Code (z.B. 0xB9 = CE, 0xCA = PF10, 0xA0 = SEL0).
-    // Über die Qt-Abbildung unten sind nur die Tasten erreichbar, die eine
+    // Ueber die Qt-Abbildung unten sind nur die Tasten erreichbar, die eine
     // PC-Tastatur auch hat — die Bildschirmtastatur hat alle.
-    // Der Bereich liegt über den Qt::Key_*-Werten (0x0100_0000), kollidiert
+    // Der Bereich liegt ueber den Qt::Key_*-Werten (0x0100_0000), kollidiert
     // also weder mit ihnen noch mit druckbarem ASCII.
     static constexpr int QK_RAW_BASE  = 0x02000000;
 

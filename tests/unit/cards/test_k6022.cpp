@@ -40,7 +40,7 @@ struct K6022Test : ::testing::Test {
         bus.markIntDirty();
         bus.updateInterruptChain();
     }
-    /// Interrupt annehmen wie die CPU (Vektor) und mit RETI abschließen.
+    /// Interrupt annehmen wie die CPU (Vektor) und mit RETI abschliessen.
     int quittiere() {
         if (!bus.isINT()) return -1;
         const int v = bus.interruptAcknowledge();
@@ -66,10 +66,10 @@ TEST_F(K6022Test, StanzerQuittiertMitEndUndVektorEE) {
     EXPECT_EQ(k.stanzband()[0], 0xC1);
     EXPECT_EQ(quittiere(), 0xEE);
     EXPECT_EQ(bus.ioRead(0xE1) & 0x60, 0x00) << "STA: kein Fehler";
-    EXPECT_EQ(bus.ioRead(0xE1) & 0x0F, 0x01) << "KOM-Ausgänge lesen sich zurück";
+    EXPECT_EQ(bus.ioRead(0xE1) & 0x0F, 0x01) << "KOM-Ausgaenge lesen sich zurueck";
 }
 
-/// Ausgeschalteter Stanzer: kein END — der Treiber läuft in seine Frist.
+/// Ausgeschalteter Stanzer: kein END — der Treiber laeuft in seine Frist.
 TEST_F(K6022Test, AusgeschalteterStanzerQuittiertNicht) {
     ptapeInit();
     k.setStanzerEin(false);
@@ -79,7 +79,7 @@ TEST_F(K6022Test, AusgeschalteterStanzerQuittiertNicht) {
     EXPECT_EQ(quittiere(), -1);
 }
 
-/// Lesen: RUF (Lesen von E4H) → nach der Lesezeit liegt das nächste Byte an (END,
+/// Lesen: RUF (Lesen von E4H) → nach der Lesezeit liegt das naechste Byte an (END,
 /// Vektor ECH).  Vorlauf aus Nullbytes, dann der Inhalt, dann Nachlauf; erst nachdem die
 /// CPU das letzte Byte abgeholt hat, meldet STA D6 „Bandende“.
 TEST_F(K6022Test, LeserLiefertVorlaufInhaltNachlaufUndBandende) {
@@ -109,7 +109,7 @@ TEST_F(K6022Test, LeserLiefertVorlaufInhaltNachlaufUndBandende) {
         ASSERT_TRUE(b2.isINT()) << i;
         EXPECT_EQ(b2.interruptAcknowledge(), 0xEC);
         b2.signalRETI();
-        gelesen.push_back(b2.ioRead(0xE4));                // Byte abholen = nächster RUF
+        gelesen.push_back(b2.ioRead(0xE4));                // Byte abholen = naechster RUF
     }
     EXPECT_EQ(gelesen, (std::vector<int>{0, 0, 0xC1, 0x42, 0, 0, 0}));
     auto s = kl.leserStand();
@@ -124,7 +124,7 @@ TEST_F(K6022Test, LeserLiefertVorlaufInhaltNachlaufUndBandende) {
     EXPECT_FALSE(kl.leserStand().eingelegt);
 }
 
-/// Band aus einer Datei, Stanzband in eine Datei; /RESET lässt beide Bänder liegen.
+/// Band aus einer Datei, Stanzband in eine Datei; /RESET laesst beide Baender liegen.
 TEST_F(K6022Test, BaenderAlsDateiUndResetLaesstSieLiegen) {
     const std::string p = k1520test::tempPath("k6022_band.bin");
     {

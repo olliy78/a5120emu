@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""Testprotokoll: aus ctest-/pytest-JUnit-XML wird EINE eigenständige HTML-Seite.
+"""Testprotokoll: aus ctest-/pytest-JUnit-XML wird EINE eigenstaendige HTML-Seite.
 
-Motivation: die CI meldet bisher nur „grün" oder „rot" plus ein Textprotokoll
+Motivation: die CI meldet bisher nur „gruen" oder „rot" plus ein Textprotokoll
 im Fehlerfall (`LastTest.log`, gigantisch).  Was fehlt, ist der Blick auf den
-LAUF als Ganzes — welche Ebene wie lange braucht, welche Fälle wackeln, was
+LAUF als Ganzes — welche Ebene wie lange braucht, welche Faelle wackeln, was
 genau ausgegeben hat, was fehlschlug.  Genau das erzeugt dieses Script.
 
     ctest --test-dir build --output-junit build/Testing/junit.xml ...
     python3 tools/test_report.py build/Testing/junit.xml -o testprotokoll.html
 
-Mehrere Läufe kommen nebeneinander in EIN Protokoll (Linux + Windows, oder
-schnelle Runde + Formatläufe); der Name vor dem Doppelpunkt ist die Spalte:
+Mehrere Laeufe kommen nebeneinander in EIN Protokoll (Linux + Windows, oder
+schnelle Runde + Formatlaeufe); der Name vor dem Doppelpunkt ist die Spalte:
 
     python3 tools/test_report.py Linux:linux.xml Windows:windows.xml -o p.html
 
 Gegliedert wird nach der Taxonomie des Projekts (tests/README.md): das
 ctest-LABEL ist die Ebene, der GoogleTest-Suitenname die Gruppe darin.  ctest
 schreibt die Label als `<property name="cmake_labels">` mit, pytest nicht — dort
-greift der Rückfall über den Dateinamen.
+greift der Rueckfall ueber den Dateinamen.
 
 Die Seite ist bewusst OHNE externe Mittel (kein CDN, kein Font, kein Bild):
-ein GitHub-Actions-Artefakt wird lokal aus dem ZIP heraus geöffnet, da lädt
-nichts nach.  Ausgabe eines Fehlschlags kommt vollständig hinein, Ausgabe eines
-bestandenen Falls NICHT — sonst wären es 850 KB XML statt 60 KB Seite.
+ein GitHub-Actions-Artefakt wird lokal aus dem ZIP heraus geoeffnet, da laedt
+nichts nach.  Ausgabe eines Fehlschlags kommt vollstaendig hinein, Ausgabe eines
+bestandenen Falls NICHT — sonst waeren es 850 KB XML statt 60 KB Seite.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ class Fall:
 
 @dataclass
 class Lauf:
-    """Alle Fälle einer XML-Datei plus die Kopfdaten des Laufs."""
+    """Alle Faelle einer XML-Datei plus die Kopfdaten des Laufs."""
 
     name: str
     quelle: str
@@ -99,11 +99,11 @@ def _ebene_und_querlabel(labels: list[str], quelle: str) -> tuple[str, list[str]
 
 
 def _gruppe(name: str, classname: str) -> str:
-    """GoogleTest: `Suite.Fall` → `Suite`.  ctest-Eigenbau: der Präfix bis `_`."""
+    """GoogleTest: `Suite.Fall` → `Suite`.  ctest-Eigenbau: der Praefix bis `_`."""
     basis = classname or name
     if "." in basis:
         return basis.split(".", 1)[0]
-    # cli_dbg_step_… / py_c_api / format_matrix_… → sprechender Präfix
+    # cli_dbg_step_… / py_c_api / format_matrix_… → sprechender Praefix
     for prefix in ("cli_", "py_", "format_matrix_", "bootdisk_"):
         if basis.startswith(prefix):
             return prefix.rstrip("_")
@@ -140,7 +140,7 @@ def lies_junit(pfad: Path, name: str) -> Lauf:
             else:
                 zustand = "bestanden"
 
-            # Ausgabe nur bei Fehlschlag mitführen (Größe!).  ctest legt sie in
+            # Ausgabe nur bei Fehlschlag mitfuehren (Groesse!).  ctest legt sie in
             # <system-out>, pytest in <system-err> bzw. den Text des <failure>.
             ausgabe = ""
             if zustand == "fehlgeschlagen":
@@ -266,15 +266,15 @@ def _lauf_abschnitt(lauf: Lauf, mehrere: bool) -> str:
         teile.append(f"<h2>{_e(lauf.name)} {marke}</h2>")
 
     teile.append('<div class="karten">')
-    teile.append(_karte(len(lauf.faelle), "Fälle"))
+    teile.append(_karte(len(lauf.faelle), "Faelle"))
     teile.append(_karte(lauf.zahl("bestanden"), "bestanden", "gut"))
     teile.append(_karte(len(fehl), "fehlgeschlagen", "schlecht" if fehl else ""))
     if uebe:
-        teile.append(_karte(len(uebe), "übersprungen", "mau"))
+        teile.append(_karte(len(uebe), "uebersprungen", "mau"))
     teile.append(_karte(_dauer(lauf.dauer), "Rechenzeit"))
     teile.append("</div>")
 
-    # ─ Fehlschläge zuerst und aufgeklappt: darum liest man ein Protokoll ─
+    # ─ Fehlschlaege zuerst und aufgeklappt: darum liest man ein Protokoll ─
     if fehl:
         teile.append("<h2>Fehlgeschlagen</h2>")
         for f in fehl:
@@ -297,7 +297,7 @@ def _lauf_abschnitt(lauf: Lauf, mehrere: bool) -> str:
 
     teile.append("<h2>Ebenen</h2>")
     teile.append('<div class="tabellenrahmen"><table><thead><tr>'
-                 '<th>Ebene</th><th class="zahl">Fälle</th><th class="zahl">Fehler</th>'
+                 '<th>Ebene</th><th class="zahl">Faelle</th><th class="zahl">Fehler</th>'
                  '<th class="zahl">Zeit</th><th>Anteil</th></tr></thead><tbody>')
     for e in ebenen:
         drin = [f for f in lauf.faelle if f.ebene == e]
@@ -312,8 +312,8 @@ def _lauf_abschnitt(lauf: Lauf, mehrere: bool) -> str:
             f'<td style="width:38%"><div class="balken" style="width:{breite}%"></div></td></tr>')
     teile.append("</tbody></table></div>")
 
-    # ─ Alle Fälle, nach Ebene → Gruppe geschachtelt ─
-    teile.append("<h2>Alle Fälle</h2>")
+    # ─ Alle Faelle, nach Ebene → Gruppe geschachtelt ─
+    teile.append("<h2>Alle Faelle</h2>")
     for e in ebenen:
         drin = [f for f in lauf.faelle if f.ebene == e]
         gruppen = sorted({f.gruppe for f in drin})
@@ -343,7 +343,7 @@ def _lauf_abschnitt(lauf: Lauf, mehrere: bool) -> str:
                 f'<table><tbody>{"".join(zeilen)}</tbody></table></div></details>')
         teile.append(
             f'<details{" open" if nfehl else ""}><summary>{_e(e)}'
-            f'<span class="rechts">{len(drin)} Fälle · {stand}</span></summary>'
+            f'<span class="rechts">{len(drin)} Faelle · {stand}</span></summary>'
             f'<div class="inhalt" style="padding:10px 12px">{"".join(innen)}</div></details>')
 
     # ─ Die langsamsten: wo die Wanduhr hingeht ─
@@ -374,7 +374,7 @@ def baue_html(laeufe: list[Lauf], titel: str) -> str:
 <style>{CSS}</style>
 <div class="huelle">
 <h1>{_e(titel)} {marke}</h1>
-<p class="kopfzeile">{gesamt} Fälle aus {len(laeufe)} Lauf/Läufen · erzeugt {jetzt}<br>
+<p class="kopfzeile">{gesamt} Faelle aus {len(laeufe)} Lauf/Laeufen · erzeugt {jetzt}<br>
 <span class="mono">{quellen}</span></p>
 {rumpf}
 <footer>Erzeugt von <span class="mono">tools/test_report.py</span> aus
@@ -385,8 +385,8 @@ Ebenen und Label: siehe <span class="mono">tests/README.md</span>.</footer>
 
 
 def baue_markdown(laeufe: list[Lauf]) -> str:
-    """Kurzfassung für die GitHub-Zusammenfassung (`$GITHUB_STEP_SUMMARY`)."""
-    zeilen = ["| Lauf | Fälle | bestanden | fehlgeschlagen | übersprungen | Zeit |",
+    """Kurzfassung fuer die GitHub-Zusammenfassung (`$GITHUB_STEP_SUMMARY`)."""
+    zeilen = ["| Lauf | Faelle | bestanden | fehlgeschlagen | uebersprungen | Zeit |",
               "|---|--:|--:|--:|--:|--:|"]
     for l in laeufe:
         zeichen = "✅" if l.gruen else "❌"
@@ -410,8 +410,8 @@ def zerlege_eintrag(eintrag: str) -> tuple[str, Path]:
     """`"Windows:lauf.xml"` → `("Windows", Path("lauf.xml"))`.
 
     Ein einzelner Buchstabe vor dem Doppelpunkt ist KEIN Name, sondern ein
-    Windows-Laufwerksbuchstabe (`C:\\lauf.xml`) — sonst hieße der Lauf „C" und
-    der Pfad wäre abgeschnitten.
+    Windows-Laufwerksbuchstabe (`C:\\lauf.xml`) — sonst hiesse der Lauf „C" und
+    der Pfad waere abgeschnitten.
     """
     name, sep, rest = eintrag.partition(":")
     if sep and len(name) > 1:
@@ -432,16 +432,16 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     p = argparse.ArgumentParser(
-        description="JUnit-XML (ctest/pytest) → eigenständiges HTML-Testprotokoll")
+        description="JUnit-XML (ctest/pytest) → eigenstaendiges HTML-Testprotokoll")
     p.add_argument("xml", nargs="+", metavar="[NAME:]DATEI",
                    help="JUnit-XML; optionaler Anzeigename vor dem Doppelpunkt")
     p.add_argument("-o", "--out", default="testprotokoll.html", help="Ausgabedatei (HTML)")
-    p.add_argument("--title", default="Testprotokoll", help="Überschrift der Seite")
+    p.add_argument("--title", default="Testprotokoll", help="Ueberschrift der Seite")
     p.add_argument("--summary-md", metavar="DATEI",
-                   help="zusätzlich eine Markdown-Kurzfassung schreiben "
-                        "(für $GITHUB_STEP_SUMMARY); '-' = stdout")
+                   help="zusaetzlich eine Markdown-Kurzfassung schreiben "
+                        "(fuer $GITHUB_STEP_SUMMARY); '-' = stdout")
     p.add_argument("--fail-on-error", action="store_true",
-                   help="Rückgabewert 1, wenn ein Fall fehlschlug")
+                   help="Rueckgabewert 1, wenn ein Fall fehlschlug")
     a = p.parse_args(argv)
 
     laeufe: list[Lauf] = []
@@ -453,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             laeufe.append(lies_junit(pfad, name))
         except ET.ParseError as e:
-            print(f"test_report: {pfad} ist keine gültige XML — {e}", file=sys.stderr)
+            print(f"test_report: {pfad} ist keine gueltige XML — {e}", file=sys.stderr)
             return 2
 
     ziel = Path(a.out)
@@ -472,8 +472,8 @@ def main(argv: list[str] | None = None) -> int:
     fehler = sum(l.zahl("fehlgeschlagen") for l in laeufe)
     groesse = ziel.stat().st_size / 1024
     # Auf stderr, damit `--summary-md -` reines Markdown auf stdout liefert und
-    # sich direkt an $GITHUB_STEP_SUMMARY anhängen lässt.
-    print(f"test_report: {ziel} — {gesamt} Fälle, {fehler} fehlgeschlagen "
+    # sich direkt an $GITHUB_STEP_SUMMARY anhaengen laesst.
+    print(f"test_report: {ziel} — {gesamt} Faelle, {fehler} fehlgeschlagen "
           f"({groesse:.0f} KB)", file=sys.stderr)
 
     return 1 if (a.fail_on_error and fehler) else 0

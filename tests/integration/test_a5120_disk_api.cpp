@@ -5,8 +5,8 @@
  * @details
  * Getestete Komponente: die Verdrahtung des YAML-Formatkatalogs in die Maschine
  * (`core/machines/a5120/a5120.cpp`, doc/K1520_architecture.md §8.6).  Diese Ebene
- * wurde bisher nur indirekt über die langsamen Boot-/Format-Integrationstests
- * berührt — ein Bruch zeigte sich dort als „CPABCGEN meldete kein OK" statt als
+ * wurde bisher nur indirekt ueber die langsamen Boot-/Format-Integrationstests
+ * beruehrt — ein Bruch zeigte sich dort als „CPABCGEN meldete kein OK" statt als
  * konkrete Meldung.
  *
  * | Gruppe                | Inhalt                                                     |
@@ -14,7 +14,7 @@
  * | Standardformat        | defaultFormatName() je Laufwerksprofil (aus `default_for:`) |
  * | Auswahl               | compatibleFormats() = explizite `drives:`-Liste             |
  * | createDisk            | leerer Name = Leerdiskette; vorformatiert mit Formatnamen   |
- * | saveDiskAs            | Containerwechsel + Umbinden; Format nur für `.img`          |
+ * | saveDiskAs            | Containerwechsel + Umbinden; Format nur fuer `.img`          |
  * | mountDisk             | erzwingt `drives:` BEWUSST NICHT (Combo-Boot, .hfe)         |
  * | Startabbruch          | kaputter Katalog → Konstruktor wirft mit klarer Meldung     |
  *
@@ -36,7 +36,7 @@
 
 namespace {
 
-/// Maschine mit expliziter Laufwerksbestückung je Slot.
+/// Maschine mit expliziter Laufwerksbestueckung je Slot.
 A5120Machine::Config withDrives(const char* d0, const char* d1 = "K5601",
                                 const char* d2 = "K5601", const char* d3 = "K5601") {
     A5120Machine::Config cfg;
@@ -44,7 +44,7 @@ A5120Machine::Config withDrives(const char* d0, const char* d1 = "K5601",
     return cfg;
 }
 
-/// Freier Temp-Pfad für ein Testziel; die Datei räumt sich am Testende weg.
+/// Freier Temp-Pfad fuer ein Testziel; die Datei raeumt sich am Testende weg.
 k1520test::TempDisk tmpPath(const std::string& name) {
     return k1520test::TempDisk::empty("diskapi_" + name);
 }
@@ -57,8 +57,8 @@ k1520test::TempDisk tmpPath(const std::string& name) {
  * @test A5120DiskApi/DefaultFormat_KommtAusDefaultFor
  * @brief Das Standardformat eines Slots stammt aus `default_for:` im Katalog.
  *
- * Ersetzt die früher hartkodierte if-Kette `defaultFormatFor()`; die Zuordnung muss
- * unverändert bleiben, sonst legt „Neue Diskette" plötzlich eine andere Geometrie an.
+ * Ersetzt die frueher hartkodierte if-Kette `defaultFormatFor()`; die Zuordnung muss
+ * unveraendert bleiben, sonst legt „Neue Diskette" ploetzlich eine andere Geometrie an.
  * @par Kriterium  K5601→cpa800, K5600.20→cpa200, K5600.10→k5601_ss40_5x1024,
  *                 MF3200→mf3200, MF6400→mf6400.
  */
@@ -90,8 +90,8 @@ TEST(A5120DiskApi, LeererSlot_HatWederStandardNochAuswahl) {
  * @test A5120DiskApi/CompatibleFormats_StandardZuerstUndNurPassende
  * @brief compatibleFormats() liefert die explizite `drives:`-Liste, Standard an Position 0.
  *
- * Das ist die Liste, aus der die GUI auswählen lässt — hier (und beim Anlegen) wird
- * die Laufwerks-Kompatibilität erzwungen, nicht beim Mounten (s. u.).
+ * Das ist die Liste, aus der die GUI auswaehlen laesst — hier (und beim Anlegen) wird
+ * die Laufwerks-Kompatibilitaet erzwungen, nicht beim Mounten (s. u.).
  * @par Kriterium  Erstes Element = Standardformat; ein einseitiges Laufwerk bekommt
  *                 kein doppelseitiges Format und kein 8″-Format angeboten.
  */
@@ -121,7 +121,7 @@ TEST(A5120DiskApi, CompatibleFormats_StandardZuerstUndNurPassende) {
  * @brief Ein leerer Formatname legt eine ECHTE Leerdiskette in Laufwerksgeometrie an
  *        (§8.7) — unformatiert, damit das Gastsystem sie selbst formatieren kann.
  * @par Kriterium  createDisk() == true; Datei entsteht; 40×1 Spuren; unformatiert;
- *                 nicht `.img`-fähig.
+ *                 nicht `.img`-faehig.
  */
 TEST(A5120DiskApi, CreateDisk_LeererNameLegtLeerdisketteAn) {
     A5120Machine m(withDrives("K5600.10"));
@@ -143,7 +143,7 @@ TEST(A5120DiskApi, CreateDisk_LeererNameLegtLeerdisketteAn) {
 
 /**
  * @test A5120DiskApi/CreateDisk_LeerdisketteAlsImgAbgelehnt
- * @brief Ein rohes Sektorimage kann „nicht formatiert" nicht ausdrücken.
+ * @brief Ein rohes Sektorimage kann „nicht formatiert" nicht ausdruecken.
  */
 TEST(A5120DiskApi, CreateDisk_LeerdisketteAlsImgAbgelehnt) {
     A5120Machine m(withDrives("K5600.10"));
@@ -179,7 +179,7 @@ TEST(A5120DiskApi, CreateDisk_MitFormatnamenVorformatiert) {
 /**
  * @test A5120DiskApi/SaveDiskAs_WechseltContainerUndBindetUm
  * @brief „Speichern unter" schreibt in einen beliebigen Container und bindet um;
- *        das Diskettenformat wird nur für `.img` verlangt.
+ *        das Diskettenformat wird nur fuer `.img` verlangt.
  */
 TEST(A5120DiskApi, SaveDiskAs_WechseltContainerUndBindetUm) {
     A5120Machine m(withDrives("K5600.10"));
@@ -222,11 +222,11 @@ TEST(A5120DiskApi, SaveDiskAs_ImgOhneFormatnamenAbgelehnt) {
 
 /**
  * @test A5120DiskApi/CreateDisk_LehntInkompatiblesFormatAb
- * @brief Ein Format, das der Slot nicht führt, wird beim ANLEGEN abgelehnt.
+ * @brief Ein Format, das der Slot nicht fuehrt, wird beim ANLEGEN abgelehnt.
  *
  * Genau der vom Nutzer geforderte Schutz: kein doppelseitiges Format an einem
  * einseitigen Laufwerk.  Beim Anlegen bestimmt das Format die Struktur, hier muss
- * die Prüfung greifen.
+ * die Pruefung greifen.
  * @par Kriterium  createDisk() == false; lastError() nennt Format und Laufwerk; die
  *                 Datei wird nicht angelegt.
  */
@@ -258,7 +258,7 @@ TEST(A5120DiskApi, CreateDisk_LehntUnbekanntesFormatAb) {
 /**
  * @test A5120DiskApi/CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium
  * @brief Das Verfahren kommt aus dem FORMAT, nicht mehr aus dem Laufwerkstyp.
- * @par Kriterium  Die für MF3200 angelegte Diskette meldet Encoding::FM.
+ * @par Kriterium  Die fuer MF3200 angelegte Diskette meldet Encoding::FM.
  */
 TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
     A5120Machine m(withDrives("MF3200"));
@@ -275,23 +275,23 @@ TEST(A5120DiskApi, CreateDisk_AchtZollFmLaufwerkErzeugtFmMedium) {
     m.unmountDisk(0);
 }
 
-// ─── mountDisk: bewusst KEINE drives:-Prüfung ────────────────────────────────
+// ─── mountDisk: bewusst KEINE drives:-Pruefung ────────────────────────────────
 
 /**
  * @test A5120DiskApi/MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht
- * @brief Ein vorhandenes .hfe lässt sich mit einem Platzhalter-Formatnamen mounten,
- *        der nicht zum Laufwerk des Slots gehört.
+ * @brief Ein vorhandenes .hfe laesst sich mit einem Platzhalter-Formatnamen mounten,
+ *        der nicht zum Laufwerk des Slots gehoert.
  *
- * **Das ist Absicht, keine vergessene Prüfung** (§8.6.6, Abweichung 2):
+ * **Das ist Absicht, keine vergessene Pruefung** (§8.6.6, Abweichung 2):
  *  - bei self-describing `.hfe` ist der Formatname bedeutungslos, die Geometrie steht
  *    in der Datei — `tools/format_driver` mountet deshalb ALLE Slots nominell als
  *    "cpa780", auch die 8″-Laufwerke der Combo-Boot-Tests;
  *  - der Laufwerkstyp ist auf der A5120 reine BIOS-Software, Combo-Disketten betreiben
  *    an B:/C: bewusst Fremdtypen.
  *
- * Wird hier eine `drives:`-Prüfung eingebaut, brechen die vier langsamen
+ * Wird hier eine `drives:`-Pruefung eingebaut, brechen die vier langsamen
  * `format_integration`-Bootdisk-Tests mit einer nichtssagenden Meldung.  Dieser Test
- * hält die Absicht fest und schlägt stattdessen sofort und erklärend fehl.
+ * haelt die Absicht fest und schlaegt stattdessen sofort und erklaerend fehl.
  * @par Kriterium  mountDisk() mit "cpa780" auf einem 8″-FM-Slot == true.
  */
 TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
@@ -299,11 +299,11 @@ TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
     k1520test::TempDisk path_disk = tmpPath("combo.hfe");
     const std::string& path = path_disk.path();
 
-    // Gültige 8″-FM-Diskette im Standardformat des Slots anlegen …
+    // Gueltige 8″-FM-Diskette im Standardformat des Slots anlegen …
     ASSERT_TRUE(m.createDisk(0, path, m.defaultFormatName(0), /*wp=*/false)) << m.lastError();
     ASSERT_TRUE(m.unmountDisk(0));
 
-    // … und wie format_driver nominell als "cpa780" mounten (5,25″-Format, das für
+    // … und wie format_driver nominell als "cpa780" mounten (5,25″-Format, das fuer
     // dieses Laufwerk NICHT gelistet ist).  Muss gelingen.
     EXPECT_TRUE(m.mountDisk(0, path, "cpa780", /*wp=*/false)) << m.lastError();
     EXPECT_TRUE(m.isDiskActive(0));
@@ -315,7 +315,7 @@ TEST(A5120DiskApi, MountDisk_ErzwingtLaufwerksKompatibilitaetBewusstNicht) {
  * @test A5120DiskApi/MountDisk_LehntUnbekanntesFormatWeiterhinAb
  * @brief Ein unbekannter Formatname bleibt auch beim Mounten ein Fehler.
  *
- * Abgrenzung zum Test darüber: nicht geprüft wird die Laufwerks-ZUORDNUNG, sehr wohl
+ * Abgrenzung zum Test darueber: nicht geprueft wird die Laufwerks-ZUORDNUNG, sehr wohl
  * aber die EXISTENZ des Formats.
  * @par Kriterium  mountDisk() == false; lastError() nennt den Namen.
  */
@@ -334,11 +334,11 @@ TEST(A5120DiskApi, MountDisk_LehntUnbekanntesFormatWeiterhinAb) {
 
 /**
  * @test A5120DiskApi/KaputterKatalog_BrichtStartMitKlarerMeldungAb
- * @brief Ein syntaktisch kaputter Katalog lässt die Maschine gar nicht erst entstehen.
+ * @brief Ein syntaktisch kaputter Katalog laesst die Maschine gar nicht erst entstehen.
  *
- * `K1520_FORMATS` hat die höchste Priorität im Suchpfad (§8.6.4).  Ein Syntaxfehler
+ * `K1520_FORMATS` hat die hoechste Prioritaet im Suchpfad (§8.6.4).  Ein Syntaxfehler
  * ist bewusst FATAL — sonst liefe der Emulator still mit einem halben Katalog weiter.
- * Der C-API-Aufrufer bekommt den Grund über `k1520_last_init_error()`, die GUI beendet
+ * Der C-API-Aufrufer bekommt den Grund ueber `k1520_last_init_error()`, die GUI beendet
  * sich damit.
  * @par Kriterium  Konstruktor wirft std::runtime_error; die Meldung nennt Datei und Zeile.
  */
@@ -354,7 +354,7 @@ TEST(A5120DiskApi, KaputterKatalog_BrichtStartMitKlarerMeldungAb) {
     std::string message;
     try {
         A5120Machine m;
-        ADD_FAILURE() << "Konstruktor hätte werfen müssen";
+        ADD_FAILURE() << "Konstruktor haette werfen muessen";
     } catch (const std::runtime_error& e) {
         message = e.what();
     }
@@ -369,10 +369,10 @@ TEST(A5120DiskApi, KaputterKatalog_BrichtStartMitKlarerMeldungAb) {
 
 /**
  * @test A5120DiskApi/NachStartabbruch_BleibtMaschineWeiterBaubar
- * @brief Der Startabbruch hinterlässt keinen kaputten globalen Zustand.
+ * @brief Der Startabbruch hinterlaesst keinen kaputten globalen Zustand.
  *
  * Absicherung gegen versehentlich statisch zwischengespeicherte Kataloge: nach einem
- * fehlgeschlagenen Konstruktor muss die nächste Maschine mit gültigem Katalog wieder
+ * fehlgeschlagenen Konstruktor muss die naechste Maschine mit gueltigem Katalog wieder
  * normal entstehen (relevant, weil die Tests in EINEM Prozess laufen).
  * @par Kriterium  Konstruktor gelingt; das Standardformat ist wieder da.
  */

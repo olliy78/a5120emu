@@ -14,22 +14,22 @@ namespace {
 constexpr uint16_t kZve2DoneFlagAddr = 0x03F8;
 constexpr uint8_t  kZve2DoneValue    = 0x03;
 
-// ── SCPX 1526 Laufzeit-Read: Adressen für den os-gated „gehaltenen Bus" ──────
+// ── SCPX 1526 Laufzeit-Read: Adressen fuer den os-gated „gehaltenen Bus" ──────
 // (doc/analyse_scpx_com_load.md §7/§9.4b).  ZVE1 erreicht den CONIN-Wartepunkt
-// E079, sobald der interaktive A>-Prompt bereit ist (= „OS läuft").  Der Laufzeit-
+// E079, sobald der interaktive A>-Prompt bereit ist (= „OS laeuft").  Der Laufzeit-
 // BIOS-Read poist eine ZVE2-Lese-Koroutine, setzt [EC0B]=E8B5 und wartet an der
 // Poll-Schleife E8B5; ZVE2 signalisiert das Read-Ende, indem es [EC0B] auf einen
 // Fortsetzungs-Vektor != E8B5 schreibt (ZVE1 macht dann JP (HL)).
 constexpr uint16_t kScpxPromptPC     = 0xE079;  // interaktiver Prompt erreicht → os_running_
 constexpr uint16_t kScpxPollWaitPC   = 0xE8B5;  // ZVE1-Poll-Wait auf [EC0B]
 constexpr uint16_t kScpxContVecAddr  = 0xEC0B;  // ZVE2→ZVE1 Fortsetzungs-Vektor (16-Bit)
-constexpr uint16_t kScpxPollWaitArm  = 0xE8B5;  // [EC0B]-Wert während des Wartens (== PollWaitPC)
+constexpr uint16_t kScpxPollWaitArm  = 0xE8B5;  // [EC0B]-Wert waehrend des Wartens (== PollWaitPC)
 // No-Progress-Watchdog: findet ZVE2 sein IDAM nicht (z. B. FM/MFM-Erkennung einer nicht
 // passenden Diskette), re-armt der Matcher (E9C8) endlos und signalisiert nie [EC0B]≠E8B5.
-// Nach so vielen gehaltenen Takten ohne Fortschritt geben wir den Bus frei, damit ZVE1 läuft
+// Nach so vielen gehaltenen Takten ohne Fortschritt geben wir den Bus frei, damit ZVE1 laeuft
 // und der Index-Interrupt (Record-not-found → [EC0B]=E998, FM/MFM-Retry) greift — wie beim Boot.
 // ~3 Umdrehungen (Index-Periode ≈490000 Takte); ein erfolgreicher Sektor-Read (inkl. IDAM-Suche
-// über max. 1 Umdrehung + 1024-B-Streaming) liegt deutlich darunter → Watchdog trifft nur Fehler.
+// ueber max. 1 Umdrehung + 1024-B-Streaming) liegt deutlich darunter → Watchdog trifft nur Fehler.
 constexpr long long kHeldReadWatchdogCycles = 1'500'000;
 }  // namespace
 
@@ -42,21 +42,60 @@ static std::array<DriveProfile, 4> profilesFromConfig(const A5120Machine::Config
              builtinDriveProfile(cfg.drive_profiles[3]) };
 }
 
+// K2526-Bruecken je Ausfuehrung: die fruehen Geraete haben die Wickelbruecke Port 0AH Bit 6
+// (BS-PIO B6 = config_bridges Bit 1) gesetzt — CP/A 25.09.89 waehlt damit BAB1 (K7023,
+// 16×64 ab FC00H) statt BAB2 (doc/design/30 §3.1, doc/a5120_alt/k7023.md).  `Neu`: 00H wie bisher.
+static K2526::A5120Config zreKonfig(const A5120Machine::Config& cfg) {
+    K2526::A5120Config z;
+    if (cfg.ausfuehrung != A5120Machine::Config::Ausfuehrung::Neu)
+        z.config_bridges = 0x02;
+    z.laderom = cfg.laderom;   // AP A7: Lade-ROM-Fassung (Vorgabe V0.9_2 = zre.rom)
+    return z;
+}
+
 // Default-Konstruktor delegiert an die Config-Variante (Default = 4× K5601).
 A5120Machine::A5120Machine() : A5120Machine(Config{}) {}
 
 A5120Machine::A5120Machine(const Config& cfg)
-    : zre_(bus_)
+    : zre_(bus_, zreKonfig(cfg))
     , ops_()
     , screen_(bus_)
     , ass_(bus_)
-    // Laufwerksbestückung aus der Config; Default = A5120-Standard-Bürokonfiguration
-    // (4× K5601, 5,25"-MFM). Per C-API/GUI/Config-Datei überschreibbar.
+    // Laufwerksbestueckung aus der Config; Default = A5120-Standard-Buerokonfiguration
+    // (4× K5601, 5,25"-MFM). Per C-API/GUI/Config-Datei ueberschreibbar.
     , afs_(bus_, profilesFromConfig(cfg))
     // Laufwerksverwaltung + Formatkatalog (wirft, wenn data/formats.yaml fehlt).
     , lw_(afs_, profilesFromConfig(cfg))
 {
-    // Erweiterungsmodul (A5120.16) — nur auf ausdrücklichen Wunsch.
+    using A = Config::Ausfuehrung;
+    ausf_ = cfg.ausfuehrung;
+    if (ausf_ == A::Acht)
+        throw std::invalid_argument("A5120 8 Zoll (K5602) ist noch nicht umgesetzt");
+    if (ausf_ != A::Neu && cfg.em != Config::Em::none)
+        throw std::invalid_argument("Ein Erweiterungsmodul gibt es nur am A5120 \u201e5\u00bc\u2033 neu\u201c");
+    if (ausf_ != A::Neu) {
+        // Kartenreihe „5¼″ alt“ (Entwurf 30 §1): vier K3525 zu je 16 KB, K7023.01 bei FC00H,
+        // K7636 an Stecker X1 der K2526 (vor powerOn anschliessen, sie wird dort eingeschaltet).
+        for (int i = 0; i < 4; ++i) {
+            K3525::Config rc;
+            rc.base_addr = static_cast<uint16_t>(i * K3525::kGroesse);
+            k3525_[i] = std::make_unique<K3525>(rc);
+        }
+        K7023::Config vc;
+        vc.variante_01 = true;
+        k7023_ = std::make_unique<K7023>(bus_, vc);
+    }
+    // Tastatur (AP A7): Vorgabe der Ausfuehrung, am `Neu` wahlweise die K7636 (BCU 880 V1.2:
+    // K7024 + K7636).  Ohne K7636 bleibt die K7637 an der K8025 wie bisher (bitgleich).
+    using T = Config::Tastatur;
+    if (ausf_ != A::Neu && cfg.tastatur == T::K7637)
+        throw std::invalid_argument("K7637 gibt es nur am A5120 „5¼″ neu“");
+    if (ausf_ != A::Neu || cfg.tastatur == T::K7636) {
+        k7636_ = std::make_unique<K7636>();
+        zre_.setUBusGeraet(k7636_.get());
+    }
+
+    // Erweiterungsmodul (A5120.16) — nur auf ausdruecklichen Wunsch.
     if (cfg.em != Config::Em::none) {
         EM::Config ec;
         ec.variante = cfg.em == Config::Em::em064 ? EM::Variante::EM064 : EM::Variante::EM256;
@@ -67,15 +106,26 @@ A5120Machine::A5120Machine(const Config& cfg)
     // ZVE1 (Haupt-CPU) lebt jetzt auf der K2526-Karte.
     // Verdrahtung mit dem Bus erfolgt im K2526-Konstruktor.
     wireBackplane();
+
+    // KMBG: die Kassettenkarte K5020 ist fest eingebaut (30H–37H, zwei K5200).
+    if (ausf_ == A::Kmbg && !installK5020())
+        throw std::runtime_error("K5020 der KMBG-Ausfuehrung: " + k5020Fehler());
 }
 
 void A5120Machine::wireBackplane() {
     // Register all cards on K1520 bus in slot order
+    if (k7023_) {
+        // Fruehe Ausfuehrung: RAM = 4× K3525, darueber der Bildspeicher der K7023 (FC00H);
+        // das Lade-ROM der K2526 kommt wie sonst danach (doc/design/32 §3, A1/A2).
+        for (auto& k : k3525_) k->attachToBus(bus_);
+        k7023_->attachToBus(bus_);
+    } else {
     // Slot 1: OPS (K3526) — full 64KB RAM, registered first (lowest priority)
     ops_.attachToBus(bus_);
 
     // Slot 5: ABS (K7024) — VRAM F800H-FFFFH, overlays OPS
     screen_.attachToBus(bus_);
+    }
 
     // Slot 4: ZRE (K2526) — I/O ports 00H-0FH, boot ROM 0000H-03FFH
     zre_.attachToBus(bus_);
@@ -90,7 +140,7 @@ void A5120Machine::wireBackplane() {
     // ZRE BS-PIO is on the second chain via Koppelbus (lowest priority)
     if (em_) {
         // A5120.16: E/A-Tore A8H–AFH + Vorrangspeicher (/MEMDI je Zugriff).  Die PIO
-        // A32 steht in der IEI/IEO-Kette; empfohlene Steckplätze (Handbuch §1.1):
+        // A32 steht in der IEI/IEO-Kette; empfohlene Steckplaetze (Handbuch §1.1):
         // ASS · ZRE16 · EM064/256 · ZRE — also zwischen ASS und ZRE.  Die Kette selbst
         // wird laut Handbuch nach Montagevorschrift gewickelt (liegt nicht vor).
         em_->attachToBus();
@@ -99,9 +149,9 @@ void A5120Machine::wireBackplane() {
         bus_.setInterruptChain({&afs_, &ass_, &zre_});
     }
 
-    // MEMDI1/2 der Rückverdrahtung (BS-PIO A7).  KoppelbusSignal führt den
-    // elektrischen Pegel der aktiv-LOW-Leitung (true = H = inaktiv).  Darauf hört nur
-    // eine K3526-Gruppe, die dorthin gebrückt ist (memdi_source = true) — am A5120
+    // MEMDI1/2 der Rueckverdrahtung (BS-PIO A7).  KoppelbusSignal fuehrt den
+    // elektrischen Pegel der aktiv-LOW-Leitung (true = H = inaktiv).  Darauf hoert nur
+    // eine K3526-Gruppe, die dorthin gebrueckt ist (memdi_source = true) — am A5120
     // keine; Bus-/MEMDI (K1520Bus::memdiActive) ist davon getrennt.
     zre_.onMemdi12([this](bool asserted) {
         koppel_.memdi1.drive(!asserted);
@@ -111,12 +161,12 @@ void A5120Machine::wireBackplane() {
         if (ops_.config().groups[g].memdi_source)
             koppel_.memdi1.connect([this, g](bool level) { ops_.setMemDI(g, !level); });
 
-    // Break-before-execute für Debugger (s. Z80::abortBeforeExecute): fordert ein
+    // Break-before-execute fuer Debugger (s. Z80::abortBeforeExecute): fordert ein
     // Trace-Callback mitten in der Instruktionsvorbereitung einen Halt an (stop()),
-    // wird die Instruktion NICHT mehr ausgeführt — PC/Register/Speicher bleiben genau
+    // wird die Instruktion NICHT mehr ausgefuehrt — PC/Register/Speicher bleiben genau
     // auf dem Stand, den der Callback gemeldet hat. Ohne das lief die Instruktion noch
     // zu Ende und jede Abfrage nach dem Halt sah den Folgezustand.
-    // Die Rückfrage kostet nur etwas, wenn überhaupt ein traceCallback installiert ist
+    // Die Rueckfrage kostet nur etwas, wenn ueberhaupt ein traceCallback installiert ist
     // (also nur unter Debugger/Tracer, nie im GUI-/Produktivlauf).
     auto abort_on_stop = [this]{ return stop_.load(std::memory_order_relaxed); };
     zre_.cpu().abortBeforeExecute  = abort_on_stop;
@@ -142,18 +192,19 @@ void A5120Machine::wireBackplane() {
             ass_.ctcA34().clkTrg(i, lvl);
     });
 
-    // Connect keyboard to K8025 SIO A32, Channel A
-    kbd_.connect(ass_.sioA32(), 0);
+    // Connect keyboard to K8025 SIO A32, Channel A — nur am `Neu`; die fruehen Geraete
+    // haben die parallele K7636 an der K2526 und keine K7637.
+    if (!k7636_) kbd_.connect(ass_.sioA32(), 0);
 
-    // Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5).  Taktquelle der Brücken W1:7
-    // und X7–X8 („gezeichnet"): ZRE-CTC K0 — derselbe ZC/TO0, der oben über den
+    // Schnittstellen nach aussen (Entwurf 19 §3.1, AP-S5).  Taktquelle der Bruecken W1:7
+    // und X7–X8 („gezeichnet"): ZRE-CTC K0 — derselbe ZC/TO0, der oben ueber den
     // Koppelbus an die CTC A34 geht.
     ass_.setzeZreTakt([this] { return zre_.ctc().teilerTakte(0); });
     for (int i = 0; i < K8025::SchnittstellenAnzahl; ++i)
         hub_.registriere(ass_.anschluss(static_cast<K8025::Schnittstelle>(i)));
 }
 
-// Ausgelagert, damit die heiße Laufschleife nur den Vergleich trägt (Laufzeit, AP-S5).
+// Ausgelagert, damit die heisse Laufschleife nur den Vergleich traegt (Laufzeit, AP-S5).
 void A5120Machine::serielleSchnittstellen() {
     serial_naechst_ = hub_.takt(total_cycles_);
     if (ass_.nimmSeriellGeaendert()) bus_.markIntDirty();
@@ -168,13 +219,13 @@ std::vector<k1520::serial::SerialAnschluss*> A5120Machine::serielleAnschluesse()
 
 // Systemweiter /RESET des K1520-Backplane: ZVE1 + ALLE peripheren Bausteine.
 //
-// Nur die CPU zurückzusetzen genügt nicht.  Ein Reset aus dem laufenden Betrieb
-// liess sonst den System-CTC mit den IM2-Vektoren des alten OS weiterzählen
+// Nur die CPU zurueckzusetzen genuegt nicht.  Ein Reset aus dem laufenden Betrieb
+// liess sonst den System-CTC mit den IM2-Vektoren des alten OS weiterzaehlen
 // (`vecBase=F8`, Interrupts frei): sobald das Lade-ROM `IM 2`/`LD I,0` setzt und
 // `EI` gibt, landet der erste Timer-Interrupt auf einem Fantasie-Vektor aus der
-// ROM-Seite 0 → die Boot-Kette entgleist.  Dasselbe gilt für die SIOs (halb
+// ROM-Seite 0 → die Boot-Kette entgleist.  Dasselbe gilt fuer die SIOs (halb
 // gesendete Tastaturbytes, IUS in der Daisy-Chain) und den K5122 (offener
-// Lesetransfer + gehaltenes /BUSRQ).  Auf echter Hardware räumt die /RESET-
+// Lesetransfer + gehaltenes /BUSRQ).  Auf echter Hardware raeumt die /RESET-
 // Leitung des Backplane genau das ab.
 void A5120Machine::resetHardware() {
     stop_.store(false);
@@ -182,41 +233,44 @@ void A5120Machine::resetHardware() {
     // Controller ab, aber das interne Abbild ueberlebt — die gebundene Datei soll
     // ihm auch ueber einen Reset/Power-Cycle hinweg entsprechen.
     afs_.flushDisks();
-    zre_.powerOn();     // K2526: Lade-ROM mappen, BS-PIO/CTC/Q240 zurücksetzen
+    zre_.powerOn();     // K2526: Lade-ROM mappen, BS-PIO/CTC/Q240 zuruecksetzen
     zre_.cpuReset();
-    afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurück
+    afs_.reset();       // K5122: Transfer abbrechen, /BUSRQ frei, PIOs zurueck
     ass_.reset();       // K8025: Baud-CTC + beide SIOs
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
     kbd_.reset();       // K7637: Tastenwiederholung/LEDs/serielle Warteschlange
     if (em_) em_->reset();  // EM: PIO hochohmig ⇒ RESET16/Pull-ups; DRAM + A22 bleiben
     rafReset();             // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
-    k6022Reset();           // K6022 (gesteckt?): PIOs zurück, Band und Stanzband bleiben
+    k6022Reset();           // K6022 (gesteckt?): PIOs zurueck, Band und Stanzband bleiben
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurueck, Baender bleiben liegen
     bus_.clearNMI();
     bus_.releaseINT();
     bus_.releaseWAIT();
     bus_.markIntDirty();   // Daisy-Chain nach dem Reset neu bewerten
 
-    // Run-Loop-Koppelzustand ZVE1↔ZVE2 auf Kaltstart bringen, sonst hängt ein
+    // Run-Loop-Koppelzustand ZVE1↔ZVE2 auf Kaltstart bringen, sonst haengt ein
     // Neustart aus laufendem Betrieb im halb offenen DMA-Handshake fest.
     busrq_active_     = false;
     dma_saw_progress_ = false;
     prev_floppy_int_  = false;
     bus_master_zve2_  = false;
-    os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zurücksetzen
+    os_running_       = false;   // (SCPX) os-gated Laufzeit-Read-Gate zuruecksetzen
     held_read_active_ = false;
     held_read_cycles_   = 0;
     held_read_watchdog_ = false;
-    screen_.clearScreen();   // Bildschirm sichtbar löschen
+    screen_.clearScreen();   // Bildschirm sichtbar loeschen
+    if (k7023_) k7023_->clearScreen();
     boot_trace_count_ = 0;
 }
 
 void A5120Machine::powerOn() {
     // Echter Netz-Aus/Ein: das DRAM verliert seinen Inhalt (K3526 modelliert den
     // unbestimmten Einschaltzustand als 0xFF, s. K3526-Konstruktor). Ohne dieses
-    // Löschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
+    // Loeschen liefe ein Power-Cycle aus dem laufenden Betrieb auf altem RAM-Inhalt
     // weiter — inklusive der Reste des vorherigen OS.
     ops_.fill(0xFF);
+    for (auto& k : k3525_) if (k) k->fill(0xFF);
     if (em_) em_->powerOn();
     rafPowerOn();       // RAF ohne Stand-by-Pufferung: Inhalt weg (Entwurf 22 §3.4)
     resetHardware();
@@ -241,7 +295,7 @@ void A5120Machine::reset() {
 
 // ─── Interrupt-Diagnose (Debugger `ivt`) ─────────────────────────────────────
 // Die Daisy-Chain wird hier baustein-fein aufgefaltet (Karte → Chip → Port/Kanal),
-// in genau der Prioritätsreihenfolge, in der interruptAcknowledge() sie abläuft:
+// in genau der Prioritaetsreihenfolge, in der interruptAcknowledge() sie ablaeuft:
 //   K5122 (ctrl-PIO → data-PIO) → K8025 (SIO A33 → SIO A32 → CTC A34)
 //   → K2526 (CTC → BS-PIO).
 // Vektoren: PIO je Port programmiert, CTC = Basisvektor | (Kanal<<1), SIO = WR2
@@ -320,7 +374,12 @@ static void loadZ80(Z80& z, const A5120Machine::MachineSnapshot::Z80Regs& r) {
 }
 
 void A5120Machine::captureState(MachineSnapshot& s, bool raf_inhalt) const {
-    std::memcpy(s.ram.data(), ops_.rawPtr(), s.ram.size());
+    if (k7023_) {
+        for (const auto& k : k3525_)
+            std::memcpy(s.ram.data() + k->config().base_addr, k->rawPtr(), K3525::kGroesse);
+    } else {
+        std::memcpy(s.ram.data(), ops_.rawPtr(), s.ram.size());
+    }
     saveZ80(zre_.cpu(),  s.zve1);
     saveZ80(zre_.zve2(), s.zve2);
     s.rom_enabled     = zre_.isRomEnabled();
@@ -349,6 +408,12 @@ void A5120Machine::captureState(MachineSnapshot& s, bool raf_inhalt) const {
     // (DRAM, Attributspeicher, PIO, Register, U8001 mit Ablaufzustand).
     s.device_state.push_back(em_ ? 1 : 0);
     if (em_) em_->serialize(s.device_state);
+    // Fruehe Ausfuehrung: Kennbyte 1 + Bildspeicher der K7023 (die K7636 ist nicht im Stand).
+    // Am `Neu` fehlt das Byte ganz — dessen Stand bleibt bitgleich.
+    if (k7023_) {
+        s.device_state.push_back(1);
+        k7023_->serialize(s.device_state);
+    }
     // v8: RAF — eigenes Feld, s. MachineSnapshot::raf_state.
     s.raf_state.assign(1, raf_ ? 1 : 0);
     if (raf_) raf_->saveState(s.raf_state, raf_inhalt);
@@ -366,10 +431,10 @@ const char* rafName(uint8_t typ) {
 }  // namespace
 
 bool A5120Machine::rafZustandLaden(const std::vector<uint8_t>& st) {
-    // Leer: Stand älter als v8 — die RAF bleibt, wie sie ist.  Kennbyte 0: der Stand
-    // kennt keine RAF; eine gesteckte behält ihren Inhalt (wie ein älterer Stand).
+    // Leer: Stand aelter als v8 — die RAF bleibt, wie sie ist.  Kennbyte 0: der Stand
+    // kennt keine RAF; eine gesteckte behaelt ihren Inhalt (wie ein aelterer Stand).
     if (st.empty() || st[0] == 0) return true;
-    // Aufbau des Blocks: Kennbyte, dann RAF::saveState (Version, Typ, Latch, Länge, Inhalt).
+    // Aufbau des Blocks: Kennbyte, dann RAF::saveState (Version, Typ, Latch, Laenge, Inhalt).
     if (st.size() < 3) { state_error_ = "Zustand: RAF-Block beschaedigt"; return false; }
     if (!raf_) {
         state_error_ = std::string("Zustand enthaelt eine ") + rafName(st[2]) +
@@ -391,13 +456,17 @@ bool A5120Machine::rafZustandLaden(const std::vector<uint8_t>& st) {
 
 bool A5120Machine::restoreState(const MachineSnapshot& s) {
     state_error_.clear();
-    // Zuerst die RAF: passt sie nicht zur Bestückung, wird NICHTS übernommen
-    // (RAF::loadState ändert bei false auch an der Karte nichts).
+    // Zuerst die RAF: passt sie nicht zur Bestueckung, wird NICHTS uebernommen
+    // (RAF::loadState aendert bei false auch an der Karte nichts).
     if (!rafZustandLaden(s.raf_state)) {
         LOG_WARN("A5120", "Zustand abgelehnt: %s", state_error_.c_str());
         return false;
     }
-    ops_.restore(s.ram.data());
+    if (k7023_) {
+        for (auto& k : k3525_) k->restore(s.ram.data() + k->config().base_addr);
+    } else {
+        ops_.restore(s.ram.data());
+    }
     loadZ80(zre_.cpu(),  s.zve1);
     loadZ80(zre_.zve2(), s.zve2);
     busrq_active_    = s.busrq_active;
@@ -420,13 +489,17 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
         kbd_.deserialize(p, end);
         afs_.deserialize(p, end);
         // v4+: K7024 VRAM. Fehlt bei v2/v3-Snapshots (p==end) → Bildschirm bleibt
-        // wie er ist; deserialize prüft die Länge selbst.
+        // wie er ist; deserialize prueft die Laenge selbst.
         if (p < end) screen_.deserialize(p, end);
-        // v7+: EM.  Fehlt bei älteren Ständen (p==end) → das EM behält seinen Zustand.
-        // Ein EM-Block für eine Maschine ohne EM (oder umgekehrt) wird übergangen.
+        // v7+: EM.  Fehlt bei aelteren Staenden (p==end) → das EM behaelt seinen Zustand.
+        // Ein EM-Block fuer eine Maschine ohne EM (oder umgekehrt) wird uebergangen.
         if (p < end) {
             const uint8_t mit_em = *p++;
             if (mit_em && em_) em_->deserialize(p, end);
+        }
+        if (p < end && *p == 1 && k7023_) {
+            ++p;
+            k7023_->deserialize(p, end);
         }
     }
     return true;
@@ -439,19 +512,19 @@ bool A5120Machine::restoreState(const MachineSnapshot& s) {
 // loads fine — trailing chips simply keep their current state. Versions:
 //   1 = no device state, 2 = + keyboard subsystem, 3 = + K5122 floppy controller,
 //   4 = + K7024 VRAM (2 KB), so `screen`/framebuffer survive a loadstate,
-//   5 = K7637-Block umgebaut (LED-Maske + Flankenzähler statt der erfundenen
-//       Caps/Scroll/Num-Rasten).  Der Blob trägt keine Längen je Chip, also
-//       verschöbe ein v4-Block alles dahinter — ein älterer Stand wird deshalb
-//       OHNE Geräteteil geladen (Geräte behalten ihren Zustand, wie bei v1).
+//   5 = K7637-Block umgebaut (LED-Maske + Flankenzaehler statt der erfundenen
+//       Caps/Scroll/Num-Rasten).  Der Blob traegt keine Laengen je Chip, also
+//       verschoebe ein v4-Block alles dahinter — ein aelterer Stand wird deshalb
+//       OHNE Geraeteteil geladen (Geraete behalten ihren Zustand, wie bei v1).
 //   6 = (Zweig K8915) Z80SIO-Kanal um Break-Eingang und Ext/Status-Latch erweitert
 //       (AP-S3, doc/design/19 §6.4) — bzw. (Zweig a5120.16) + Erweiterungsmodul.
-//       Beide Zweige haben unabhängig v6 vergeben, die Stände sind nicht unterscheidbar.
+//       Beide Zweige haben unabhaengig v6 vergeben, die Staende sind nicht unterscheidbar.
 //   7 = beides zusammen: neuer SIO-Block UND Kennbyte + EM-Block am Ende des
-//       Geräteteils (A5120.16, doc/design/17_a5120_16.md S4).  Ältere Stände (≤ v6)
-//       werden ohne Geräteteil geladen.
-//   8 = + RAF-Block (doc/design/22_raf512.md §5.2) als eigener längenpräfixierter Teil
-//       HINTER dem Geräteteil (MachineSnapshot::raf_state, immer mit Inhalt).  Ein
-//       v7-Stand lädt ohne RAF-Angabe (die RAF bleibt); ein Stand mit RAF in eine
+//       Geraeteteils (A5120.16, doc/design/17_a5120_16.md S4).  Aeltere Staende (≤ v6)
+//       werden ohne Geraeteteil geladen.
+//   8 = + RAF-Block (doc/design/22_raf512.md §5.2) als eigener laengenpraefixierter Teil
+//       HINTER dem Geraeteteil (MachineSnapshot::raf_state, immer mit Inhalt).  Ein
+//       v7-Stand laedt ohne RAF-Angabe (die RAF bleibt); ein Stand mit RAF in eine
 //       Maschine ohne bzw. mit anderer RAF wird abgelehnt (stateError()).
 namespace {
 const char    kStateMagicPrefix[7] = {'K','1','5','2','0','S','S'};
@@ -459,6 +532,17 @@ constexpr uint8_t kStateVersion    = 8;
 }
 
 uint8_t A5120Machine::keyboardLeds() const {
+    if (k7636_) {
+        // K7636: Bit 0–3 Wahllampen A58…D58, Bit 4 INS MODE (E15), Bit 5 Fehlerlampe,
+        // Bit 6 SHIFT/LOCK (C99), Bit 7 akustisches Signal.
+        uint8_t m = 0;
+        for (int n = 0; n < 4; ++n) if (k7636_->wahlLampe(n)) m |= uint8_t(1u << n);
+        if (k7636_->insModeLampe()) m |= 0x10;
+        if (k7636_->fehlerLampe())  m |= 0x20;
+        if (k7636_->shiftLampe())   m |= 0x40;
+        if (k7636_->signalAktiv())  m |= 0x80;
+        return m;
+    }
     uint8_t mask = kbd_.leds();
     if (kbd_.beeping()) mask |= 0x80;
     return mask;
@@ -514,8 +598,8 @@ bool A5120Machine::loadState(const std::string& path) {
         if (dev_len) f.read(reinterpret_cast<char*>(s.device_state.data()), dev_len);
         if (!f) return false;
         // Vor v5 hat der K7637-Block, vor v7 der SIO-Block ein anderes Format
-        // (ein v6 kann beides sein, s. o.); sequentiell gelesen verschöbe das jeden
-        // folgenden Chip.  Lieber ohne Geräteteil laden.
+        // (ein v6 kann beides sein, s. o.); sequentiell gelesen verschoebe das jeden
+        // folgenden Chip.  Lieber ohne Geraeteteil laden.
         if (version < 7) s.device_state.clear();
     }
     if (version >= 8) {
@@ -536,7 +620,10 @@ int A5120Machine::run(int max_cycles) {
         std::lock_guard<std::mutex> lk(key_mutex_);
         while (!key_queue_.empty()) {
             auto& ev = key_queue_.front();
-            if (ev.is_press)
+            if (k7636_) {
+                if (ev.is_press) k7636_->keyPress(ev.keycode, ev.shift, ev.ctrl);
+                else             k7636_->keyRelease(ev.keycode);
+            } else if (ev.is_press)
                 kbd_.keyPress(ev.keycode, ev.shift, ev.ctrl);
             else
                 kbd_.keyRelease(ev.keycode);
@@ -554,8 +641,8 @@ int A5120Machine::run(int max_cycles) {
 
         // Zeitgetriebene Floppy-Interrupt-Flanke (K5122-Index-IRQ) erkennen: sie
         // entsteht ausserhalb von I/O innerhalb von afs_.update() und muss die
-        // Interrupt-Chain dirty markieren (sonst würde updateInterruptChain sie
-        // im Schnellpfad überspringen). Der Read ist billig (zwei PIO-Flags).
+        // Interrupt-Chain dirty markieren (sonst wuerde updateInterruptChain sie
+        // im Schnellpfad ueberspringen). Der Read ist billig (zwei PIO-Flags).
         {
             const bool fi = afs_.hasInterrupt();
             if (fi != prev_floppy_int_) { bus_.markIntDirty(); prev_floppy_int_ = fi; }
@@ -572,21 +659,21 @@ int A5120Machine::run(int max_cycles) {
         }
 
         if (bus_.isRESET()) {
-            LOG_INFO("A5120", "RESET-Leitung gesetzt, ZVE1 wird zurückgesetzt");
+            LOG_INFO("A5120", "RESET-Leitung gesetzt, ZVE1 wird zurueckgesetzt");
             zre_.cpuReset();
             bus_.markIntDirty();
         }
 
-        // ── Os-gated „gehaltener Bus" für den SCPX-Laufzeit-Read (§9.4b) ──────────
+        // ── Os-gated „gehaltener Bus" fuer den SCPX-Laufzeit-Read (§9.4b) ──────────
         // Der Boot nutzt die Per-Byte-Drossel (getunt, s. project_per_byte_busrq_model);
-        // Laufzeit-.COM-Reads scheitern aber daran, weil ZVE1 in den Byte-Lücken mitläuft
-        // (Kopf-Divergenz, Matcher-INT-Korruption, verfrühter [0x0000]-Restore — analyse §4/5/9).
+        // Laufzeit-.COM-Reads scheitern aber daran, weil ZVE1 in den Byte-Luecken mitlaeuft
+        // (Kopf-Divergenz, Matcher-INT-Korruption, verfruehter [0x0000]-Restore — analyse §4/5/9).
         // Sobald der interaktive Prompt (ZVE1 @E079) einmal erreicht ist, fahren wir den
-        // Laufzeit-Read wie echte HW: /BUSRQ über den GANZEN Transfer halten (nur ZVE2 liest).
-        // Während des Boots (os_running_==false) ist dieser Block komplett inert → keine Regression.
+        // Laufzeit-Read wie echte HW: /BUSRQ ueber den GANZEN Transfer halten (nur ZVE2 liest).
+        // Waehrend des Boots (os_running_==false) ist dieser Block komplett inert → keine Regression.
         if (!os_running_ && zre_.cpuPC() == kScpxPromptPC) {
             os_running_ = true;
-            LOG_INFO("A5120", "SCPX: Prompt E079 erreicht → gehaltener Bus für Laufzeit-Reads aktiv");
+            LOG_INFO("A5120", "SCPX: Prompt E079 erreicht → gehaltener Bus fuer Laufzeit-Reads aktiv");
         }
         if (os_running_) {
             const uint16_t contVec = (uint16_t)(bus_.memRead(kScpxContVecAddr) |
@@ -596,12 +683,12 @@ int A5120Machine::run(int max_cycles) {
             if (held_read_active_) {
                 if (contVec != kScpxPollWaitArm) {
                     // ZVE2 hat das Read-Ende signalisiert ([EC0B]!=E8B5) → Bus freigeben;
-                    // ZVE1 fährt mit JP (HL) fort und verarbeitet die gelesenen Daten.
+                    // ZVE1 faehrt mit JP (HL) fort und verarbeitet die gelesenen Daten.
                     held_read_active_ = false;
     held_read_cycles_   = 0;
     held_read_watchdog_ = false;
                     afs_.releaseHeldRead();
-                    LOG_DEBUG("A5120", "SCPX gehaltener Read fertig ([EC0B]=%04X): ZVE1 fährt fort", contVec);
+                    LOG_DEBUG("A5120", "SCPX gehaltener Read fertig ([EC0B]=%04X): ZVE1 faehrt fort", contVec);
                 } else if (held_read_cycles_ > kHeldReadWatchdogCycles) {
                     // No-Progress-Watchdog: ZVE2 findet sein IDAM nicht (Endlos-Re-Arm im
                     // Matcher E9C8, z. B. FM-Probe auf MFM-Spur).  Bus freigeben und Re-Engage
@@ -621,13 +708,13 @@ int A5120Machine::run(int max_cycles) {
                        contVec == kScpxPollWaitArm &&
                        afs_.isReadTransferActive()) {
                 // ZVE1 parkt read-eindeutig am Poll-Wait (Setup fertig, [EC0B]=E8B5) und ein
-                // Lese-Transfer läuft → ab hier den Bus halten (nur ZVE2 bis zur Completion).
+                // Lese-Transfer laeuft → ab hier den Bus halten (nur ZVE2 bis zur Completion).
                 held_read_active_ = true;
                 held_read_cycles_ = 0;   // Watchdog-Fenster neu starten
                 bus_.assertBUSRQ();
                 // Der Verify-Read hat engagiert → das Post-Write-Gnadenfenster hat seinen
-                // Zweck erfüllt und wird sofort geschlossen, damit es nicht in einen
-                // späteren normalen Read leckt (sonst hinge dort transferring_ fälschlich).
+                // Zweck erfuellt und wird sofort geschlossen, damit es nicht in einen
+                // spaeteren normalen Read leckt (sonst hinge dort transferring_ faelschlich).
                 afs_.endPostWriteGrace();
                 LOG_DEBUG("A5120", "SCPX gehaltener Read: ZVE1@E8B5 eingefroren, ZVE2 liest");
             }
@@ -636,12 +723,12 @@ int A5120Machine::run(int max_cycles) {
         // BUSRQ: Bus-Verriegelung ZVE1↔ZVE2 (hardware-echt, K5122-Doku §5.6.1).
         //
         // /BUSRQ entsteht in der K5122 PRO BYTE aus dem RDY des Daten-PIO: ZVE2
-        // erhält den Bus, wenn ein Byte bereitliegt, holt es ab (Port 0x16) und
-        // verliert den Bus wieder, bis das nächste Byte ~1 Byteperiode später
-        // bereitliegt.  Während /BUSRQ aktiv ist, läuft AUSSCHLIESSLICH ZVE2; in
-        // den Byte-Lücken (BUSRQ frei) läuft ZVE1.  ZVE2 verliert den Bus damit
-        // automatisch, sobald es aufhört zu lesen (fertig/idle) bzw. /STR=1 zieht —
-        // es braucht KEINE programm-/größenspezifische Completion-Erkennung mehr
+        // erhaelt den Bus, wenn ein Byte bereitliegt, holt es ab (Port 0x16) und
+        // verliert den Bus wieder, bis das naechste Byte ~1 Byteperiode spaeter
+        // bereitliegt.  Waehrend /BUSRQ aktiv ist, laeuft AUSSCHLIESSLICH ZVE2; in
+        // den Byte-Luecken (BUSRQ frei) laeuft ZVE1.  ZVE2 verliert den Bus damit
+        // automatisch, sobald es aufhoert zu lesen (fertig/idle) bzw. /STR=1 zieht —
+        // es braucht KEINE programm-/groessenspezifische Completion-Erkennung mehr
         // ([0x03F8]=3-Watch und OUT(13H)-Hack sind entfernt).
         //
         // Ist ZVE2 in Reset oder /WAIT (Legacy-ZVE1-Byte-Poll), gibt es keine
@@ -650,9 +737,9 @@ int A5120Machine::run(int max_cycles) {
             if (!busrq_active_) {            // neue DMA-Runde beginnt
                 busrq_active_     = true;
                 dma_saw_progress_ = false;   // ein altes [0x03F8]=3 der Vorrunde ignorieren,
-            }                                // bis ZVE1 es löscht (CALL 0194, 0x01B3)
-            // /BUSRQ assertiert während ZVE2 noch in Reset: der 3.-Stufen-Lader
-            // (0x1F36) poist ZVE2 via [0x0000]=JP-Routine + OUT(04)=0 und löst /STR
+            }                                // bis ZVE1 es loescht (CALL 0194, 0x01B3)
+            // /BUSRQ assertiert waehrend ZVE2 noch in Reset: der 3.-Stufen-Lader
+            // (0x1F36) poist ZVE2 via [0x0000]=JP-Routine + OUT(04)=0 und loest /STR
             // aus — das /BUSRQ startet ZVE2 ab PC=0 (holt das aktuelle [0x0000]),
             // bevor ZVE1 [0x0000] restauriert.
             if (zre_.isZVE2InReset()) {   // also clears any /WAIT-ZVE2
@@ -666,7 +753,7 @@ int A5120Machine::run(int max_cycles) {
                 bus_master_zve2_ = false;
                 bus_.setBusMasterZVE2(false);
                 // Debugger-Halt VOR der Instruktion (abortBeforeExecute): nichts
-                // ausgeführt, nichts zu verbuchen — Lauf hier beenden.
+                // ausgefuehrt, nichts zu verbuchen — Lauf hier beenden.
                 if (used2 == 0 && stop_.load(std::memory_order_relaxed)) break;
                 if (used2 <= 0) used2 = 1;   // Sicherung gegen Endlosschleife
                 remaining     -= used2;
@@ -674,28 +761,28 @@ int A5120Machine::run(int max_cycles) {
                 if (em_) em_->advance(used2);   // A5120.16: U8001 auf Maschinenzeit nachziehen
                 if (held_read_active_) held_read_cycles_ += used2;   // No-Progress-Watchdog
                 afs_.update(used2);          // Floppy-Timer (Byte-Bereitschaft, /STR-Abtastung)
-                // ZVE2-Completion-Handshake [0x03F8]=3 (Boot-ROM 0x026B; Sekundär- und
-                // 3.-Stufen-Lader nutzen denselben Flag).  Dies ist KEIN sektorgrößen-
-                // abhängiges Signal mehr (der OUT(13H)-Hack ist entfernt), sondern der
-                // programmweite „DMA fertig"-Handshake.  Nötig, weil der Chained Loader
+                // ZVE2-Completion-Handshake [0x03F8]=3 (Boot-ROM 0x026B; Sekundaer- und
+                // 3.-Stufen-Lader nutzen denselben Flag).  Dies ist KEIN sektorgroessen-
+                // abhaengiges Signal mehr (der OUT(13H)-Hack ist entfernt), sondern der
+                // programmweite „DMA fertig"-Handshake.  Noetig, weil der Chained Loader
                 // (round 2) die DMA per ZEITSCHLEIFE (0x0441 DEC C;JR NZ) abwartet; unter
-                // der Per-Byte-Verschränkung verschiebt sich das ZVE1:ZVE2-Tempo, sodass
-                // ZVE1s Zeitschleife vor ZVE2s DMA-Ende abläuft → /STR=1 zu früh → Retry.
+                // der Per-Byte-Verschraenkung verschiebt sich das ZVE1:ZVE2-Tempo, sodass
+                // ZVE1s Zeitschleife vor ZVE2s DMA-Ende ablaeuft → /STR=1 zu frueh → Retry.
                 // Der Flag-Watcher gibt den Bus exakt bei ZVE2-Completion frei (Transition
-                // 0→3 innerhalb der Runde; das Level allein träfe ein altes =3).
-                // Der SCPX-Laufzeit-Read („gehaltener Bus") signalisiert sein Ende über [EC0B],
-                // nicht über [0x03F8]; der Boot-ROM/CP-A-Watcher darf ihm nicht dazwischenfunken.
+                // 0→3 innerhalb der Runde; das Level allein traefe ein altes =3).
+                // Der SCPX-Laufzeit-Read („gehaltener Bus") signalisiert sein Ende ueber [EC0B],
+                // nicht ueber [0x03F8]; der Boot-ROM/CP-A-Watcher darf ihm nicht dazwischenfunken.
                 uint8_t df = held_read_active_ ? kZve2DoneValue
                                                : bus_.memRead(kZve2DoneFlagAddr);
                 if (held_read_active_) {
-                    // Watcher inaktiv während des gehaltenen Reads (Completion via [EC0B] oben).
+                    // Watcher inaktiv waehrend des gehaltenen Reads (Completion via [EC0B] oben).
                 } else if (df != kZve2DoneValue) {
                     dma_saw_progress_ = true;
                 } else if (dma_saw_progress_) {
                     afs_.endDmaTransfer();
                     LOG_DEBUG("A5120", "ZVE2 DMA fertig ([0x03F8]=3): BUSRQ frei, ZVE1.PC=%04X", zre_.cpuPC());
                 }
-                continue;                    // Verriegelung: ZVE1 läuft NICHT während /BUSRQ
+                continue;                    // Verriegelung: ZVE1 laeuft NICHT waehrend /BUSRQ
             } else {
                 afs_.dmaUpdate();
                 remaining--;
@@ -704,25 +791,29 @@ int A5120Machine::run(int max_cycles) {
                 continue;
             }
         } else {
-            busrq_active_ = false;          // Bus frei → nächste Assertion ist neue Runde
+            busrq_active_ = false;          // Bus frei → naechste Assertion ist neue Runde
         }
 
         // Deliver INT if CPU can accept.
         //
         // SCPX-Mini-Stack-Guard (doc/analyse_scpx_com_load.md §5/§11, „Schicht 2"): SCPX
-        // ruft die IDAM-Matcher-Routine u.a. DIREKT auf ZVE1 auf (nicht nur über die
+        // ruft die IDAM-Matcher-Routine u.a. DIREKT auf ZVE1 auf (nicht nur ueber die
         // ZVE2-DMA-Koroutine) — z.B. aus PIP.COMs Kopier-Verify beim Laufwerkswechsel
         // Write B: → Read A:.  Deren Setup biegt SP auf den Mini-Stack `0xEC0D` und liest
         // von dort per POP den CRC-Sollwert.  Wird in diesem Fenster ein Interrupt
-        // zugestellt, PUSHt der Z80 die Rücksprungadresse auf `[0xEC0D/0E]` und überschreibt
-        // genau diesen Sollwert → der CRC-Vergleich schlägt ewig fehl → Endlos-Retry (Hänger).
-        // Solange SP im Mini-Stack-Fenster liegt, wird die Zustellung daher verzögert (der
-        // Interrupt bleibt anstehend und kommt zu, sobald SP das Fenster verlässt — kein
-        // Verlust).  ZVE2 und der held-bus-Lesepfad sind unberührt (dort steht ZVE1 auf
+        // zugestellt, PUSHt der Z80 die Ruecksprungadresse auf `[0xEC0D/0E]` und ueberschreibt
+        // genau diesen Sollwert → der CRC-Vergleich schlaegt ewig fehl → Endlos-Retry (Haenger).
+        // Solange SP im Mini-Stack-Fenster liegt, wird die Zustellung daher verzoegert (der
+        // Interrupt bleibt anstehend und kommt zu, sobald SP das Fenster verlaesst — kein
+        // Verlust).  ZVE2 und der held-bus-Lesepfad sind unberuehrt (dort steht ZVE1 auf
         // seinem normalen BIOS-Stack, nie in `[0xEC00,0xEC10]`) → keine Regression.
         const uint16_t zve1_sp = zre_.cpuSP();
         const bool sp_in_scpx_mini_stack = (zve1_sp >= 0xEC00 && zve1_sp <= 0xEC10);
-        if (bus_.isINT() && zre_.cpuIFF1() && !sp_in_scpx_mini_stack) {
+        // Nach `EI` erst nach dem folgenden Befehl (Z80::ei_schatten): sonst faellt ein
+        // anstehender Interrupt zwischen `EI` und `RETI` — das RETI laeuft nie, der Baustein
+        // bleibt in Bedienung und sperrt alle nachrangigen (Befund A8: BCU-KMBG verlor das
+        // Kassettenecho, „7xWRITE“).
+        if (bus_.isINT() && zre_.cpuInterruptAnnehmbar() && !sp_in_scpx_mini_stack) {
             uint8_t vec = bus_.interruptAcknowledge();
             LOG_DEBUG("A5120", "INT zugestellt: Vektor=0x%02X PC=%04X", vec, zre_.cpuPC());
             zre_.cpuInterrupt(vec);
@@ -743,7 +834,7 @@ int A5120Machine::run(int max_cycles) {
         if (used == 0 && stop_.load(std::memory_order_relaxed)) break;
         remaining -= used;
         total_cycles_ += used;
-        // A5120.16: der U8001 läuft befehlsweise verschränkt auf derselben Maschinenzeit
+        // A5120.16: der U8001 laeuft befehlsweise verschraenkt auf derselben Maschinenzeit
         // (U880 2,45 MHz, U8001 4 MHz; EM::advance rechnet um).  Ohne EM: nichts.
         if (em_) em_->advance(used);
 
@@ -759,12 +850,13 @@ int A5120Machine::run(int max_cycles) {
         // instruction actually took — the CTC prescaler divides the system
         // clock, so ticking once per instruction (avg ~6 T-states) ran the
         // real-time clock and baud generators ~6x too slow.
-        // clockTick meldet zurück, ob ein CTC in diesem Fenster eine ZC/TO-Flanke
-        // erzeugte (→ Interruptzustand kann sich geändert haben). Nur dann muss die
+        // clockTick meldet zurueck, ob ein CTC in diesem Fenster eine ZC/TO-Flanke
+        // erzeugte (→ Interruptzustand kann sich geaendert haben). Nur dann muss die
         // Interrupt-Chain neu berechnet werden.
         bool ctc_fired = zre_.clockTick(used);
         ctc_fired      = ass_.clockTick(used) || ctc_fired;
         ctc_fired      = k6022Takt(used) || ctc_fired;   // Lochstreifen (gesteckt?)
+        ctc_fired      = k5020Takt(used) || ctc_fired;   // Kassette (gesteckt?)
         if (ctc_fired) bus_.markIntDirty();
 
         // Service the keyboard: advance the 9600-baud serial-transmit timing
@@ -776,24 +868,27 @@ int A5120Machine::run(int max_cycles) {
         // handshake for the ack and the loser reads an empty SIO (0xFF → CR),
         // which floods the keyboard buffer and drops real keystrokes at the CCP.
         // Tastatur-Service kann ein Empfangsbyte an den SIO zustellen (irq_rx) oder
-        // ein Kommando verarbeiten (irq_tx) — beides ändert den Interruptzustand.
-        if (kbd_.service(total_cycles_)) bus_.markIntDirty();
+        // ein Kommando verarbeiten (irq_tx) — beides aendert den Interruptzustand.
+        // Fruehe Ausfuehrung: die K7636 am U-Bus (abgefragt, kein Interrupt).
+        if (k7636_) k7636_->service(total_cycles_);
+        else if (kbd_.service(total_cycles_)) bus_.markIntDirty();
 
-        // Schnittstellen nach außen (Entwurf 19 §6): der Wandler arbeitet nur alle
+        // Schnittstellen nach aussen (Entwurf 19 §6): der Wandler arbeitet nur alle
         // 1/16 Zeichenzeit — dazwischen kostet es nur diesen Vergleich.
         if (total_cycles_ >= serial_naechst_) serielleSchnittstellen();
     }
 
     // Verzoegertes Zurueckschreiben geaenderter Spuren (Laufwerksbaustein, §6.1 des
-    // Floppy-Entwurfs; prüft nur alle 100 000 Takte).
+    // Floppy-Entwurfs; prueft nur alle 100 000 Takte).
     lw_.autoFlush(total_cycles_);
     k6022AutoFlush();   // Stanzdatei nach der Stanzpause (Entwurf 23 §5)
+    k5020AutoFlush();   // Kassettendateien nach der Schreibpause
 
     return max_cycles - remaining;
 }
 
 // ─── Disketten: durchgereicht an den gemeinsamen Laufwerksbaustein ───────────
-// (core/machines/laufwerke.h — bis AP-E3 stand der Code hier, unverändert verschoben)
+// (core/machines/laufwerke.h — bis AP-E3 stand der Code hier, unveraendert verschoben)
 bool A5120Machine::mountDiskImage(int d, std::unique_ptr<DiskImage> img, bool wp) {
     return lw_.mountDiskImage(d, std::move(img), wp);
 }
@@ -840,7 +935,7 @@ void A5120Machine::keyRelease(uint32_t kc) {
 }
 
 const uint8_t* A5120Machine::framebuffer() const {
-    return screen_.getFramebuffer();
+    return k7023_ ? k7023_->getFramebuffer() : screen_.getFramebuffer();
 }
 
 void A5120Machine::setDFUECallback(SerialCb cb) {

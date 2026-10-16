@@ -140,19 +140,19 @@ public:
      * @brief Advance the internal timer counters by @p ticks system-clock cycles.
      *
      * Semantik-identisch zu @p ticks aufeinanderfolgenden clockTick()-Aufrufen,
-     * aber schnell: nur die Flanken BEOBACHTETER Kanäle (Interrupt-Freigabe, Trigger-
-     * Betrieb oder Rückruf-Maske, s. setZCTOCallback) laufen als exakter Einzeltakt;
-     * bis kurz davor — und für unbeobachtete Kanäle, die Nulldurchgänge nur nachladen
-     * (Baudraten-Teiler) — werden Prescaler/Zähler rein arithmetisch fortgeschrieben.
+     * aber schnell: nur die Flanken BEOBACHTETER Kanaele (Interrupt-Freigabe, Trigger-
+     * Betrieb oder Rueckruf-Maske, s. setZCTOCallback) laufen als exakter Einzeltakt;
+     * bis kurz davor — und fuer unbeobachtete Kanaele, die Nulldurchgaenge nur nachladen
+     * (Baudraten-Teiler) — werden Prescaler/Zaehler rein arithmetisch fortgeschrieben.
      * Der Zustand am Fensterende ist byte-gleich zu Einzeltakten (auch zcto_active),
-     * Zähler lesen zwischen zwei Fenstern liefert also den Einzeltakt-Wert.
+     * Zaehler lesen zwischen zwei Fenstern liefert also den Einzeltakt-Wert.
      *
      * @return true, wenn in diesem Fenster eine ZC/TO-Flanke fallen konnte
      *         (Slow-Path) — der Aufrufer markiert die Interrupt-Chain dann dirty.
      */
     bool    clockTick(int ticks) {
         // Aufgeschobenes Takten: nur aufsummieren; abgerechnet wird erst, wenn die Summe
-        // den Horizont überschreitet (die vorausberechnete nächste BEOBACHTETE Flanke liegt
+        // den Horizont ueberschreitet (die vorausberechnete naechste BEOBACHTETE Flanke liegt
         // dann im Fenster) oder wenn ein Zugriff den Zustand sieht (ioRead/ioWrite/clkTrg/
         // getCount/debugState/serialize/reset ...).  Ergebnis bitgleich zum sofortigen Takten.
         aufgeschoben_ += ticks;
@@ -163,11 +163,11 @@ public:
     /**
      * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
      *
-     * Versetzt alle vier Kanäle in den Einschaltzustand: Zähler gestoppt,
+     * Versetzt alle vier Kanaele in den Einschaltzustand: Zaehler gestoppt,
      * Interrupts gesperrt, keine anstehende/bediente Anforderung, Vektorbasis 0.
-     * Verdrahtung (ZC/TO-Callback, Name) bleibt erhalten.  Ohne dieses Zurück-
+     * Verdrahtung (ZC/TO-Callback, Name) bleibt erhalten.  Ohne dieses Zurueck-
      * setzen liefe nach einem Reset aus dem Betrieb der System-Timer mit den
-     * IM2-Vektoren des alten OS weiter und würde die neu startende Boot-Kette
+     * IM2-Vektoren des alten OS weiter und wuerde die neu startende Boot-Kette
      * auf einen Fantasie-Vektor schicken.
      */
     void    reset();
@@ -187,9 +187,9 @@ public:
     /**
      * @brief Set global callback for all ZC/TO output pulses.
      * @param cb Callback function.
-     * @param kanalmaske Bit n = der Rückruf wertet die Flanke von Kanal n aus.  Vorgabe 0x0F
-     *        (alle) ist die sichere Wahl; ein Kanal außerhalb der Maske darf von
-     *        clockTick(int) rein rechnerisch fortgeschrieben werden (kein Rückruf für ihn).
+     * @param kanalmaske Bit n = der Rueckruf wertet die Flanke von Kanal n aus.  Vorgabe 0x0F
+     *        (alle) ist die sichere Wahl; ein Kanal ausserhalb der Maske darf von
+     *        clockTick(int) rein rechnerisch fortgeschrieben werden (kein Rueckruf fuer ihn).
      *        Wer die Maske verkleinert, muss wissen, dass NIEMAND sonst die Flanke des Kanals
      *        braucht (Kaskade, Koppelbus, SIO-Takt als Flanke).
      */
@@ -214,21 +214,21 @@ public:
     /**
      * @brief Maschinentakte (φ-Perioden) zwischen zwei ZC/TO-Impulsen des Kanals.
      *
-     * Zeitgeber: Vorteiler (16/256) × Zeitkonstante.  Zähler: Zeitkonstante ×
-     * Periode des CLK/TRG-Eingangs, die über setzeEingangsQuelle()/
+     * Zeitgeber: Vorteiler (16/256) × Zeitkonstante.  Zaehler: Zeitkonstante ×
+     * Periode des CLK/TRG-Eingangs, die ueber setzeEingangsQuelle()/
      * setzeEingangsPeriode() bekannt gemacht wird — bei einer Kaskade fragt die
      * Quelle den vorgeschalteten Kanal ab (rekursiv).  Zeitkonstante 0 = 256.
-     * @return 0 = unbekannt: Kanal läuft nicht (nicht programmiert, Reset, Zeitgeber
-     *         wartet auf seinen Trigger) oder Zähler an einem Eingang ohne bekannte
-     *         Periode.  Reine Abfrage, ändert keinen Zustand.
+     * @return 0 = unbekannt: Kanal laeuft nicht (nicht programmiert, Reset, Zeitgeber
+     *         wartet auf seinen Trigger) oder Zaehler an einem Eingang ohne bekannte
+     *         Periode.  Reine Abfrage, aendert keinen Zustand.
      */
     uint64_t teilerTakte(int kanal) const;
 
-    /// Rückfrage nach der Periode (Maschinentakte je Impuls) am CLK/TRG-Eingang;
-    /// 0 = unbekannt.  Die Karte verdrahtet damit, was an CLK/TRG hängt.
+    /// Rueckfrage nach der Periode (Maschinentakte je Impuls) am CLK/TRG-Eingang;
+    /// 0 = unbekannt.  Die Karte verdrahtet damit, was an CLK/TRG haengt.
     using PeriodenQuelle = std::function<uint64_t()>;
 
-    /// Quelle des CLK/TRG-Eingangs von @p kanal — z. B. für eine Kaskade
+    /// Quelle des CLK/TRG-Eingangs von @p kanal — z. B. fuer eine Kaskade
     /// `[&]{ return ctc.teilerTakte(0); }`.  Leere Funktion = unbekannt.
     void setzeEingangsQuelle(int kanal, PeriodenQuelle quelle);
 
@@ -236,31 +236,50 @@ public:
     /// 0 = unbekannt) — z. B. ein Quarzteiler auf der Karte.
     void setzeEingangsPeriode(int kanal, uint64_t takte);
 
-    // ─── Bruchtakt am Zähleingang (P8000 P5d, doc/design/25_p8000.md §10.6) ───
+    // ─── Bruchtakt am Zaehleingang (P8000 P5d, doc/design/25_p8000.md §10.6) ───
 
     /**
-     * @brief Periodische Zählquelle mit gebrochener Periode am CLK/TRG-Eingang.
+     * @brief Periodische Zaehlquelle mit gebrochener Periode am CLK/TRG-Eingang.
      *
      * @p zaehler_hz Frequenz der Quelle (z. B. 1 229 000 Hz = 9,832 MHz ÷ 8),
      * @p phi_hz Systemtakt, mit dem clockTick() gerufen wird (z. B. 4 000 000).
      * Ein ganzzahliger Phasenakkumulator addiert je Systemtakt @p zaehler_hz und
-     * zieht bei Überlauf über @p phi_hz einen Zählimpuls ab — keine Fließkomma-
-     * Drift, im Mittel exakt zaehler_hz/phi_hz Impulse je Takt (Zähler-Kanäle,
+     * zieht bei Ueberlauf ueber @p phi_hz einen Zaehlimpuls ab — keine Fliesskomma-
+     * Drift, im Mittel exakt zaehler_hz/phi_hz Impulse je Takt (Zaehler-Kanaele,
      * laufend).  @p zaehler_hz == 0 schaltet die Quelle ab (Vorgabe: aus; dann
-     * zählt der Kanal nur über clkTrg() wie bisher).  Setzt zugleich die
-     * Perioden-Auskünfte (teilerTakte/teilerTakteQ16).  Der Akkumulator steht
+     * zaehlt der Kanal nur ueber clkTrg() wie bisher).  Setzt zugleich die
+     * Perioden-Auskuenfte (teilerTakte/teilerTakteQ16).  Der Akkumulator steht
      * nicht in serialize(), sondern in serializeTakt() (P8000-Save-State).
      */
     void setzeEingangsTakt(int kanal, uint64_t zaehler_hz, uint64_t phi_hz);
 
     /**
-     * @brief Software-Reset (Steuerwort D1 = 1) lädt den Abwärtszähler mit der Zeitkonstante
-     *        statt ihn zu löschen (Vorgabe aus: Zähler = 0, wie bisher).  Der MON8-Hardwaretest des
+     * @brief Software-Reset (Steuerwort D1 = 1) laedt den Abwaertszaehler mit der Zeitkonstante
+     *        statt ihn zu loeschen (Vorgabe aus: Zaehler = 0, wie bisher).  Der MON8-Hardwaretest des
      *        P8000 schreibt TC = AAH, Reset 03H und erwartet beim Lesen AAH (Fehler 16 sonst).
      */
     void setResetLaedtZeitkonstante(bool an) { reset_laedt_tc_ = an; }
+    /**
+     * Steuerwort mit D7 = 0 (Interrupt aus) verwirft eine ANSTEHENDE Anforderung des Kanals.
+     * Vorgabe aus (bisheriges Verhalten aller Maschinen).  MC80 (AP M3): EGOS stoesst CTC-ASP K3
+     * mit `91H` (Zeitgeber, Vorteiler 16, ZK 1 = alle 16 Takte) an und schaltet ihn in der
+     * eigenen ISR erst nach ~70 Takten mit `01H` ab — ohne Verwerfen kaeme die ISR ein zweites
+     * Mal und jedes Tastenzeichen erschiene doppelt; am Geraet tut es das nicht [Befund;
+     * Datenblattlage [?]].  Waechter `Z80CTC.IntAusVerwirftAnforderungNurMitSchalter`.
+     */
+    void setIntAusVerwirftAnforderung(bool an) { int_aus_verwirft_ = an; }
+    /**
+     * RETI-Lesart nach dem Datenblatt — seit A8b (2026-10-16) IMMER wirksam: onRETI() loescht
+     * das IUS-Bit des hoechsten Kanals in Bedienung, sofern die CTC ihren IEI-Eingang hat; eine
+     * bloss ANSTEHENDE Anforderung eines hoeheren Kanals sperrt dabei nicht (Fund A8/M11).
+     * Der Schalter bleibt nur der Quellkompatibilitaet halber und hat keine Wirkung mehr.
+     * Waechter `Z80CTC.RetiNachIusLoeschtDenKanalInBedienung`.
+     */
+    void setRetiNachIus(bool an) { reti_nach_ius_ = an; }
+    /// Ist irgendein Kanal in Bedienung (IUS)?
+    bool inBedienung() const { for (const auto& c : ch_) if (c.ius) return true; return false; }
 
-    /// Wie teilerTakte(), aber in Q16 (Maschinentakte × 65536) — für Bruchtakte;
+    /// Wie teilerTakte(), aber in Q16 (Maschinentakte × 65536) — fuer Bruchtakte;
     /// bei ganzzahligen Teilern exakt `teilerTakte() << 16`.
     uint64_t teilerTakteQ16(int kanal) const;
 
@@ -298,9 +317,9 @@ public:
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
-    /// Phasenakkumulatoren der Bruchtakt-Eingänge (@ref setzeEingangsTakt) für den Save-State
-    /// der P8000-Karte — bewusst NICHT in serialize() (Zeilenformat der übrigen Karten bleibt);
-    /// ohne sie begänne die Phase nach dem Laden neu und der Lauf wäre nicht bitgleich.
+    /// Phasenakkumulatoren der Bruchtakt-Eingaenge (@ref setzeEingangsTakt) fuer den Save-State
+    /// der P8000-Karte — bewusst NICHT in serialize() (Zeilenformat der uebrigen Karten bleibt);
+    /// ohne sie begaenne die Phase nach dem Laden neu und der Lauf waere nicht bitgleich.
     void serializeTakt(std::vector<uint8_t>& out) const;
     bool deserializeTakt(const uint8_t*& p, const uint8_t* end);
 
@@ -354,7 +373,7 @@ private:
     uint8_t     vec_base_ = 0;         ///< Interrupt vector base address
     bool        iei_      = false;     ///< Interrupt Enable Input
     std::string name_;                 ///< Device name
-    uint8_t      zcto_mask_ = 0x0F;    ///< Kanäle, deren Flanke der Rückruf auswertet
+    uint8_t      zcto_mask_ = 0x0F;    ///< Kanaele, deren Flanke der Rueckruf auswertet
     ZCTOCallback zcto_cb_;             ///< Output pulse callback
     PeriodenQuelle eingang_[4];        ///< CLK/TRG-Quellen (Verdrahtung, nicht im Savestate)
     PeriodenQuelleQ16 eingangQ16_[4];  ///< dasselbe in Q16 (Bruchtakt-Kaskaden)
@@ -364,33 +383,35 @@ private:
     mutable QMerker q16Merker_[4];
     uint64_t takt_acc_[4] = {0, 0, 0, 0};  ///< Phasenakkumulator (0 ≤ acc < phi)
     bool     reset_laedt_tc_ = false;   ///< s. setResetLaedtZeitkonstante
+    bool     int_aus_verwirft_ = false; ///< s. setIntAusVerwirftAnforderung
+    bool     reti_nach_ius_ = false;    ///< s. setRetiNachIus
     bool     takt_any_    = false;         ///< irgendein Kanal mit Bruchtakt (schneller Ausstieg)
 
     // ─── Aufgeschobenes Takten ────────────────────────────────────────────────
     long long aufgeschoben_ = 0;   ///< noch nicht verrechnete Takte
-    long long horizont_     = 0;   ///< so viele Takte dürfen sich ansammeln, ohne dass eine beobachtete Flanke fällt
-    bool      dirty_rest_   = false; ///< Interrupt-Änderung aus einer Zugriffs-Abrechnung (s. abrechnen)
+    long long horizont_     = 0;   ///< so viele Takte duerfen sich ansammeln, ohne dass eine beobachtete Flanke faellt
+    bool      dirty_rest_   = false; ///< Interrupt-Aenderung aus einer Zugriffs-Abrechnung (s. abrechnen)
 
     /// Verrechnet die angesammelten Takte (bisheriges clockTick(int)) und bestimmt den Horizont neu.
     bool abrechnen();
     /// Abrechnung vor einem lesenden/schreibenden Zugriff; schadet nie (Zustand byte-gleich zum Einzeltakt).
     void sichtbar() const { if (aufgeschoben_) const_cast<Z80CTC*>(this)->abrechnenZugriff(); }
     void abrechnenZugriff() { dirty_rest_ |= abrechnen(); }
-    /// Takte bis vor die nächste beobachtete Flanke (0 = keine Reserve), gedeckelt.
+    /// Takte bis vor die naechste beobachtete Flanke (0 = keine Reserve), gedeckelt.
     long long berechneHorizont() const;
     /// Das bisherige clockTick(int): sofort verrechnen.
     bool tickSofort(int ticks);
 
-    /// Hat die ZC/TO-Flanke von Kanal @p i eine Wirkung (Interrupt, Trigger-Betrieb, Rückruf)?
+    /// Hat die ZC/TO-Flanke von Kanal @p i eine Wirkung (Interrupt, Trigger-Betrieb, Rueckruf)?
     bool zcto_beobachtet(int i) const {
         return (ch_[i].control & (CTRL_INT_EN | CTRL_CLK_TRG)) ||
                (zcto_cb_ && ((zcto_mask_ >> i) & 1));
     }
 
-    /// Schreibt @p skip Takte für die Kanäle der Maske @p kanaele rein rechnerisch fort (nur wenn kein beobachteter Kanal in dieser
+    /// Schreibt @p skip Takte fuer die Kanaele der Maske @p kanaele rein rechnerisch fort (nur wenn kein beobachteter Kanal in dieser
     /// Strecke eine Flanke hat); Zustand danach wie nach @p skip Einzeltakten (s. clockTick(int)).
     void springe(long long skip, uint8_t kanaele);
 
-    /// Ein Zählimpuls am Eingang eines laufenden Zähler-Kanals (Bruchtakt-Weg).
+    /// Ein Zaehlimpuls am Eingang eines laufenden Zaehler-Kanals (Bruchtakt-Weg).
     void zaehleImpuls(int ch);
 };

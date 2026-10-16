@@ -42,10 +42,10 @@
  *     A2 /NMI     – NMI source (input, driven by Q240 on violation)
  *     A3 SPS-Ind  – memory-protect violation indicator (input, from Q240)
  *     A4 /EBF     – single-step end (input)
- *     A5 /WR      – memory test WR signal (input, Strobe: nur während eines
+ *     A5 /WR      – memory test WR signal (input, Strobe: nur waehrend eines
  *                   ZVE1-Schreibzyklus aktiv-LOW → pulseWriteStrobe())
  *     A6 /RDY     – memory/peripheral ready (input)
- *     A7 MEMDI1/2 – memory-disable output (active high) auf die Rückverdrahtung
+ *     A7 MEMDI1/2 – memory-disable output (active high) auf die Rueckverdrahtung
  *                   (Koppelbus MEMDI1/2), NICHT auf Bus-/MEMDI → onMemdi12()
  *   Port B (mixed):
  *     B0 /LD-ROM    – boot ROM control (output): 1=ROM active, 0=ROM disabled
@@ -79,12 +79,15 @@
  */
 
 #pragma once
+#include "core/cards/k2526/ubus_geraet.h"
 #include "core/bus/k1520_bus.h"
 #include "core/primitives/z80.h"
 #include "core/primitives/z80_pio.h"
 #include "core/primitives/z80_ctc.h"
 #include "core/primitives/eprom_device.h"
 #include "core/cards/k2526/rom_data.h"
+#include "core/cards/k2526/laderom_v06_data.h"
+#include "core/cards/k2526/laderom_v09_1_data.h"
 #include <array>
 #include <cstdint>
 
@@ -275,10 +278,37 @@ private:
 class K2526 : public BusDevice, public InterruptSlave {
 public:
     /** @brief Hardware configuration (bridge settings, fixed I/O base). */
+    /**
+     * @brief Gesteckte Lade-ROM-Fassung (doc/a5120_alt/laderom.md, AP A0/A7).
+     *
+     * - `V09_2` — `doc/EPROMS/zre.rom` (Vorgabe, bitgleich zu bisher): liest Zylinder 0,
+     *             4×128 B, Einsprung 0437H — CP/A, UDOS, SCPX.
+     * - `V09_1` — `doc/EPROMS/K2526/laderom_v09_1.bin`: wie V0.9_2, nur kuerzere
+     *             Zeitgrenze (5 statt 16 Indexpulse) und 8 statt 9 Schrittschleifen.
+     * - `V06`   — `doc/EPROMS/K2526/laderom_v06.bin`: anderes Programm — liest
+     *             **Zylinder 1**, 6×128 B, Einsprung 042EH; startet die BCU-880-Disketten
+     *             „SYL auf Spur 1“ (AP A7).
+     */
+    enum class Laderom { V09_2 = 0, V09_1 = 1, V06 = 2 };
+
+    /// ROM-Inhalt einer Fassung (eingebettete Abzuege, `tools/eprom_to_h.py`).
+    static const uint8_t (&laderomDaten(Laderom l))[1024] {
+        switch (l) {
+            case Laderom::V09_1: return ZRE_LADEROM_V09_1;
+            case Laderom::V06:   return ZRE_LADEROM_V06;
+            case Laderom::V09_2: break;
+        }
+        return ZRE_BOOT_ROM;
+    }
+
     struct A5120Config {
         uint8_t io_base        = 0x00;   ///< I/O base address (fixed 0x00 in A5120)
         uint8_t config_bridges = 0x00;   ///< BS-PIO B5–B7 hardware bridge encoding
+        Laderom laderom        = Laderom::V09_2;  ///< gestecktes Lade-ROM (Vorgabe zre.rom)
     };
+
+    /// Gesteckte Lade-ROM-Fassung (A5120Config::laderom).
+    Laderom laderom() const { return cfg_.laderom; }
 
     /**
      * @brief Construct a K2526 with default A5120 configuration.
@@ -478,6 +508,8 @@ public:
      * @return true when ZVE1 will accept a maskable interrupt
      */
     bool     cpuIFF1()  const         { return cpu_.IFF1; }
+    /// IFF1 und nicht unmittelbar nach `EI` (Z80::ei_schatten).
+    bool     cpuInterruptAnnehmbar() const { return cpu_.interruptAnnehmbar(); }
 
     /**
      * @brief Read ZVE1's current program counter (for diagnostics).
@@ -545,11 +577,11 @@ public:
     bool isZVE2InReset() const { return zve2_reset_; }
 
     /**
-     * @brief Ausgang MEMDI1/2 (BS-PIO Port A Bit7) — Rückverdrahtung, nicht Bus-/MEMDI.
+     * @brief Ausgang MEMDI1/2 (BS-PIO Port A Bit7) — Rueckverdrahtung, nicht Bus-/MEMDI.
      *
-     * Die Maschine verdrahtet ihn mit Koppelbus `memdi1/2`; darauf hören nur
-     * K3526-Gruppen, die dorthin gebrückt sind (`memdi_source = true`).  Früher trieb
-     * A7 fälschlich die Bus-Leitung /MEMDI (doc/design/17_a5120_16.md §3 S1).
+     * Die Maschine verdrahtet ihn mit Koppelbus `memdi1/2`; darauf hoeren nur
+     * K3526-Gruppen, die dorthin gebrueckt sind (`memdi_source = true`).  Frueher trieb
+     * A7 faelschlich die Bus-Leitung /MEMDI (doc/design/17_a5120_16.md §3 S1).
      * @param cb wird bei jeder Ausgabe an Port A mit dem Pegel von A7 gerufen
      *           (true = MEMDI1/2 aktiv)
      */
@@ -653,6 +685,16 @@ public:
      */
     void setKbdValid(uint8_t val)  { ubus_kbd_valid_ = val;  }
 
+    /**
+     * @brief Ein Geraet an den U-Bus (Stecker X1) schalten — zuschaltbare Konfiguration.
+     *
+     * Vorgabe nullptr: U-Bus wie bisher (K7637-Verdrahtung des A5120 unveraendert).
+     * Mit Geraet bedient dieses die Ports 00H–07H selbst (Lesen) bzw. sieht alle
+     * Schreibzugriffe.  Das Geraet gehoert dem Aufrufer.  Vor @ref powerOn anschliessen.
+     */
+    void setUBusGeraet(UBusGeraet* g) { ubus_geraet_ = g; }
+    UBusGeraet* ubusGeraet() const    { return ubus_geraet_; }
+
 private:
     /**
      * @brief BS-PIO Port B output callback – decodes all output signals.
@@ -689,18 +731,18 @@ private:
     void updatePortAInputs();
 
     /**
-     * @brief /WR-Strobe (BS-PIO Port A, A5) für einen ZVE1-Schreibzyklus pulsen.
+     * @brief /WR-Strobe (BS-PIO Port A, A5) fuer einen ZVE1-Schreibzyklus pulsen.
      *
-     * A5 ist auf der ZRE der **Schreib-Strobe** — er liegt nur WÄHREND eines
+     * A5 ist auf der ZRE der **Schreib-Strobe** — er liegt nur WAEHREND eines
      * Speicher-Schreibzyklus aktiv (LOW), nicht dauernd.  Genau darauf beruht die
      * Speicher-Ausbaumessung des Lade-ROMs (0040H–005AH) und HARDYs MEMDI-RDY-Test:
-     * beide schärfen Port A mit Maske 9FH (A5 /WR AND A6 /RDY, aktiv-LOW), geben
-     * `EI` und lösen den Interrupt **durch den nachfolgenden Schreibbefehl** aus;
-     * die ISR prüft dann, ob das Testbyte im Speicher gelandet ist.
+     * beide schaerfen Port A mit Maske 9FH (A5 /WR AND A6 /RDY, aktiv-LOW), geben
+     * `EI` und loesen den Interrupt **durch den nachfolgenden Schreibbefehl** aus;
+     * die ISR prueft dann, ob das Testbyte im Speicher gelandet ist.
      *
-     * Modellierte man A5 als dauerhaft aktiv, käme der Interrupt schon beim `EI`
-     * — also VOR dem Schreibzugriff — und die ISR sähe den alten Speicherinhalt.
-     * Bei frisch eingeschaltetem DRAM (0xFF) fällt das nicht auf, nach einem Reset
+     * Modellierte man A5 als dauerhaft aktiv, kaeme der Interrupt schon beim `EI`
+     * — also VOR dem Schreibzugriff — und die ISR saehe den alten Speicherinhalt.
+     * Bei frisch eingeschaltetem DRAM (0xFF) faellt das nicht auf, nach einem Reset
      * aus dem laufenden Betrieb (echte Daten im RAM) meldet die Messung dagegen
      * „kein Speicher" und der Neustart scheitert.
      */
@@ -724,9 +766,9 @@ private:
     Z80    cpu_;                            ///< ZVE1: Haupt-Z80-CPU (U880D, 2.4576 MHz)
     Z80    zve2_;                           ///< ZVE2: DMA-CPU (second Z80, shares bus_)
     Z80PIO bs_pio_{"K2526-BS-PIO"};        ///< Q301: BS-PIO (Betriebssystem-PIO), ports 08H–0BH
-    Z80CTC ctc_   {"K2526-CTC"};           ///< Q302: CTC (Zähler/Zeitgeber),       ports 0CH–0FH
+    Z80CTC ctc_   {"K2526-CTC"};           ///< Q302: CTC (Zaehler/Zeitgeber),       ports 0CH–0FH
 
-    EPROMDevice<1024> rom_{ZRE_BOOT_ROM};  ///< 1 KB boot EPROM at 0x0000–0x03FF
+    EPROMDevice<1024> rom_{laderomDaten(cfg_.laderom)};  ///< 1 KB boot EPROM at 0x0000–0x03FF
 
     MemIOProtect spa_{};         ///< Q240: Speicher-/E/A-Schutz (1024 segments × 64 bytes)
 
@@ -737,7 +779,7 @@ private:
     bool    sps_ind_     = false;   ///< true = Q240 violation occurred (SPS-Ind, A3)
     bool    shutdown_req_= false;   ///< true = /SA asserted (B4=0, power-off request)
     bool    int_bs_active_= false;  ///< true = /INT-BS active (B1=0 input to BS-PIO)
-    bool    memdi12_     = false;   ///< BS-PIO A7 → MEMDI1/2 der Rückverdrahtung
+    bool    memdi12_     = false;   ///< BS-PIO A7 → MEMDI1/2 der Rueckverdrahtung
     std::function<void(bool)> memdi12_cb_;  ///< Koppelbus-Anschluss (Maschine)
 
     uint8_t port_a_inputs_ = 0xFF;  ///< Current Port A input values (bits 0–6)
@@ -747,4 +789,5 @@ private:
     uint8_t ubus_kbd_valid_  = 0x00;  ///< Port 01H IN:  key valid flag      (/UCS2)
     uint8_t ubus_lamp_       = 0x00;  ///< Port 05H OUT: status lamp output  (/UCS3)
     uint8_t ubus_error_lamp_ = 0x00;  ///< Port 03H OUT: error  lamp output  (/UCS4)
+    UBusGeraet* ubus_geraet_ = nullptr; ///< optionales Geraet an X1 (K7636); nullptr = Standard
 };

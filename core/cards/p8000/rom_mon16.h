@@ -1,6 +1,6 @@
-// Generated from: doc/p8000/eproms/16BIT/MON16_{1H,1L,2H,2L}_3.0 — Byte-Verschränkung wie make_full.sh
+// Generated from: doc/p8000/eproms/16BIT/MON16_{1H,1L,2H,2L}_3.0 — Byte-Verschraenkung wie make_full.sh
 // (gerade Adresse = nH = D8–15, ungerade = nL = D0–7; n = 1: 0000–1FFF, n = 2: 2000–3FFF).
-// NICHT aus full/: full/MON16_3.3 ist in 2L ab 3001H falsch (MON16-Prüfsumme stimmt nur für die Einzelabzüge).
+// NICHT aus full/: full/MON16_3.3 ist in 2L ab 3001H falsch (MON16-Pruefsumme stimmt nur fuer die Einzelabzuege).
 // Size: 16384 bytes
 #pragma once
 #include <cstdint>
@@ -1030,9 +1030,9 @@ static constexpr uint8_t P8K_MON16_3_0[16384] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x07, 0xCE, 0xF8, 0x31, 0x63, 0xA4, 0x9C, 0x5B, 0xB3, 0x18, 0x4C, 0xE7, 0xAE, 0x40, 0x51, 0xBF,
 };
-// Generated from: doc/p8000/eproms/16BIT/MON16_{1H,1L,2H,2L}_3.1 — Byte-Verschränkung wie make_full.sh
+// Generated from: doc/p8000/eproms/16BIT/MON16_{1H,1L,2H,2L}_3.1 — Byte-Verschraenkung wie make_full.sh
 // (gerade Adresse = nH = D8–15, ungerade = nL = D0–7; n = 1: 0000–1FFF, n = 2: 2000–3FFF).
-// NICHT aus full/: full/MON16_3.3 ist in 2L ab 3001H falsch (MON16-Prüfsumme stimmt nur für die Einzelabzüge).
+// NICHT aus full/: full/MON16_3.3 ist in 2L ab 3001H falsch (MON16-Pruefsumme stimmt nur fuer die Einzelabzuege).
 // Size: 16384 bytes
 static constexpr uint8_t P8K_MON16_3_1[16384] = {
     0x00, 0x00, 0xC0, 0x00, 0x80, 0x00, 0x01, 0xD0, 0x28, 0x43, 0x29, 0x20, 0x5A, 0x46, 0x54, 0x2F,
@@ -2060,9 +2060,9 @@ static constexpr uint8_t P8K_MON16_3_1[16384] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x6D, 0x61, 0x92, 0x9E, 0x9E, 0x74, 0x61, 0x8B, 0xD0, 0xDD, 0x2F, 0x22, 0xCE, 0xA3, 0x31, 0x5C,
 };
-// Generated from: doc/p8000/eproms/16BIT/MON16_{1H,1L,2H,2L}_3.3 — Byte-Verschränkung wie make_full.sh
+// Generated from: doc/p8000/eproms/16BIT/MON16_{1H,1L,2H,2L}_3.3 — Byte-Verschraenkung wie make_full.sh
 // (gerade Adresse = nH = D8–15, ungerade = nL = D0–7; n = 1: 0000–1FFF, n = 2: 2000–3FFF).
-// NICHT aus full/: full/MON16_3.3 ist in 2L ab 3001H falsch (MON16-Prüfsumme stimmt nur für die Einzelabzüge).
+// NICHT aus full/: full/MON16_3.3 ist in 2L ab 3001H falsch (MON16-Pruefsumme stimmt nur fuer die Einzelabzuege).
 // Size: 16384 bytes
 static constexpr uint8_t P8K_MON16_3_3[16384] = {
     0x00, 0x00, 0xC0, 0x00, 0x80, 0x00, 0x02, 0x12, 0x28, 0x43, 0x29, 0x20, 0x5A, 0x46, 0x54, 0x2F,

@@ -1503,12 +1503,12 @@ TEST_F(Z80Test, Timing_CyclesAccumulate) {
 
 /**
  * @test Z80Test/AbortBeforeExecute_LeavesStateUntouched
- * @brief abortBeforeExecute==true → step() führt die Instruktion NICHT aus.
+ * @brief abortBeforeExecute==true → step() fuehrt die Instruktion NICHT aus.
  * @details Grundlage des Debugger-Halts: der Trace-Callback sieht den Zustand vor
  *   der Instruktion; fordert er einen Halt an, muss genau dieser Zustand stehen
  *   bleiben (sonst zeigt die Haltezeile den einen und jede Folgeabfrage den
- *   nächsten Zustand).
- * @par Pass criterion  step() liefert 0; PC, A, R und cycles unverändert.
+ *   naechsten Zustand).
+ * @par Pass criterion  step() liefert 0; PC, A, R und cycles unveraendert.
  */
 TEST_F(Z80Test, AbortBeforeExecute_LeavesStateUntouched) {
     load({0x3E, 0xAB});                       // LD A,0xAB
@@ -1523,13 +1523,13 @@ TEST_F(Z80Test, AbortBeforeExecute_LeavesStateUntouched) {
     EXPECT_EQ(pc_seen, 0x0000);               // Callback hat die Instruktion gesehen …
     EXPECT_EQ(cpu.PC, 0x0000);                // … sie ist aber nicht gelaufen
     EXPECT_EQ(cpu.A, 0x11);
-    EXPECT_EQ(cpu.R, r_before);               // auch der Refresh-Zähler steht still
+    EXPECT_EQ(cpu.R, r_before);               // auch der Refresh-Zaehler steht still
     EXPECT_EQ(cpu.cycles, cyc_before);
 }
 
 /**
  * @test Z80Test/AbortBeforeExecute_FalseRunsNormally
- * @brief Liefert die Rückfrage false, läuft die Instruktion wie immer.
+ * @brief Liefert die Rueckfrage false, laeuft die Instruktion wie immer.
  * @par Pass criterion  A=0xAB, PC=2, 7 Takte.
  */
 TEST_F(Z80Test, AbortBeforeExecute_FalseRunsNormally) {
@@ -1545,10 +1545,10 @@ TEST_F(Z80Test, AbortBeforeExecute_FalseRunsNormally) {
 
 /**
  * @test Z80Test/AbortBeforeExecute_IgnoredWithoutTraceCallback
- * @brief Ohne traceCallback wird die Rückfrage gar nicht erst gestellt.
+ * @brief Ohne traceCallback wird die Rueckfrage gar nicht erst gestellt.
  * @details Der Produktivlauf (GUI/Emulation) installiert keinen Trace-Callback und
- *   soll die Kosten der Rückfrage nicht tragen — und keinesfalls anhalten.
- * @par Pass criterion  Instruktion läuft; die Rückfrage wurde nie aufgerufen.
+ *   soll die Kosten der Rueckfrage nicht tragen — und keinesfalls anhalten.
+ * @par Pass criterion  Instruktion laeuft; die Rueckfrage wurde nie aufgerufen.
  */
 TEST_F(Z80Test, AbortBeforeExecute_IgnoredWithoutTraceCallback) {
     load({0x3E, 0xAB});
@@ -1557,4 +1557,33 @@ TEST_F(Z80Test, AbortBeforeExecute_IgnoredWithoutTraceCallback) {
     EXPECT_EQ(cpu.step(), 7);
     EXPECT_EQ(asked, 0);
     EXPECT_EQ(cpu.A, 0xAB);
+}
+
+/**
+ * @test Z80Test/EiSchatten_InterruptErstNachDemFolgendenBefehl
+ * @brief Nach `EI` ist ein maskierbarer Interrupt erst nach dem naechsten Befehl annehmbar
+ *        (`EI; RETI` muss das RETI noch ausfuehren; Befund A8, doc/design/32_…).
+ * @par Pass criterion  Nach EI: IFF1 = 1, aber nicht annehmbar; nach dem folgenden NOP annehmbar;
+ *      DI/Reset loeschen den Schatten.
+ */
+TEST_F(Z80Test, EiSchatten_InterruptErstNachDemFolgendenBefehl) {
+    load({0xFB, 0x00, 0x00, 0xFB, 0xF3});     // EI; NOP; NOP; EI; DI
+    EXPECT_FALSE(cpu.interruptAnnehmbar());  // IFF1 = 0 nach Reset
+    cpu.step();                               // EI
+    EXPECT_TRUE(cpu.IFF1);
+    EXPECT_TRUE(cpu.ei_schatten);
+    EXPECT_FALSE(cpu.interruptAnnehmbar());  // zwischen EI und dem Folgebefehl: nein
+    cpu.step();                               // NOP
+    EXPECT_TRUE(cpu.interruptAnnehmbar());
+    cpu.step();                               // NOP
+    EXPECT_TRUE(cpu.interruptAnnehmbar());
+    cpu.step();                               // EI
+    EXPECT_FALSE(cpu.interruptAnnehmbar());
+    cpu.step();                               // DI
+    EXPECT_FALSE(cpu.ei_schatten);
+    EXPECT_FALSE(cpu.interruptAnnehmbar());
+    cpu.IFF1 = true;
+    cpu.ei_schatten = true;
+    cpu.reset();
+    EXPECT_FALSE(cpu.ei_schatten);
 }

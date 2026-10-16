@@ -1,4 +1,4 @@
-# Lauf-Budgets zählen die Maschinenuhr; `clock` zeigt beide Stände.
+# Lauf-Budgets zaehlen die Maschinenuhr; `clock` zeigt beide Staende.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%
