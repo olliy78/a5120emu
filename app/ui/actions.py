@@ -158,7 +158,7 @@ _SPEC: List[Tuple] = [
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_p8000emu_starten", False),
     ("mc80emu", "&MC80 Emulator starten", None, None,
-     "Den MC80 Emulator öffnen (MC80.30/31) — ein eigenes Programm "
+     "Den MC80 Emulator öffnen (MC80.30/31/21/22) — ein eigenes Programm "
      "mit eigener Konfiguration; es läuft neben diesem weiter",
      "_mc80emu_starten", False),
     ("konsole", "&Werkzeugkonsole öffnen", None, None,

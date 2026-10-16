@@ -1179,14 +1179,15 @@ K5601, Tastatur mit eigenem Prozessor). Was anders ist:
 
 `mc80emu` ist derselbe Emulator für die Mikrorechner **MC80.30** und **MC80.31** des
 VEB Elektronik Gera (U880 mit 2,4576 MHz, Betriebssystem **EGOS** im ROM, Grafikkarte
-VIS 2a mit 512 × 256 Bildpunkten, abgesetzte Tastatur mit eigenem Prozessor). Was
+VIS 2a mit 512 × 256 Bildpunkten, abgesetzte Tastatur mit eigenem Prozessor) sowie für
+die älteren **MC80.21** und **MC80.22** (eigener Abschnitt am Ende des Kapitels). Was
 anders ist:
 
 * **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **MC80.30** (Vorgabe) oder
   **MC80.31** (zusätzlich die EPROM-Programmsegmente 10H/20H). Ein
   Wechsel erzeugt die Maschine neu (Kaltstart) und wird in `mc80emu.yaml` gemerkt. Die
-  **MC80.33** (vom Treiber-ROM der AKM liegt nur die Hälfte vor) und die **MC80.21/.22**
-  stehen ausgegraut in der Auswahl.
+  **MC80.21/.22** sind wählbar (siehe unten); die **MC80.33** (vom Treiber-ROM der AKM
+  liegt nur die Hälfte vor) steht ausgegraut in der Auswahl.
 * **Speichererweiterung** — *Einstellungen ▸ Allgemein*: eine oder zwei Karten **SPE 2**
   (die zweite bringt das RAM-Segment 02H). Ein Wechsel startet die Maschine kalt.
 * **Keine Laufwerke** — der Kasten „Laufwerke“, die Diskettenmenüs und die
@@ -1225,6 +1226,38 @@ anders ist:
 * **Text kopieren** — der Bildschirm ist eine Grafik; *Maschine ▸ Bildschirminhalt als
   Text kopieren* (oder Rechtsklick) erkennt die EGOS-Schrift wieder und liefert 25
   Textzeilen.
+
+### MC80.21 und MC80.22
+
+Die Geräte der älteren Reihe haben **nichts mit dem MC80.3x gemeinsam außer dem Takt**:
+andere Zentraleinheit (K2521, Betriebssystem **BSYS** statt EGOS), Programmspeicher aus
+steckbaren EPROM-Sockeln (PFS), und **kein Bildwiederholspeicher mit Grafikkarte**. Das
+Bild ist eine **Oszilloskop-Darstellung**: die Display-Logik (DPL) lenkt den Strahl zeilenweise
+ab, schreibt acht Textzeilen zu je 32 Zeichen (5 × 7-Punktraster) und kann statt einer Zeile
+eine **Analogkurve** zeichnen. Der Emulator bildet das als Bild von 528 × 256 Punkten ab; die
+Bildwechselfrequenz liegt bei etwa 50 Hz.
+
+* **Modell** — *Einstellungen ▸ Allgemein ▸ Modell*: **MC80.21** oder **MC80.22**. Beide
+  verhalten sich im Emulator gleich (ein Unterschied ist nicht belegt). Die Wahl der
+  Speicherkarten SPE 2 gilt nur für die .30/.31 und ist hier ausgegraut.
+* **Einschalten** — das BSYS zeigt ein **Menü**: `TASTENTEST`, `INIT`, `BAND`, `EDITOR`,
+  `BASIC-80.2` … mit Adresse vor jeder Zeile. Mit **Kursor ↓/↑** wählt man eine Zeile,
+  **ENTER** startet sie, **OFF** führt zurück. Die Zeichenform kommt aus einem Ersatz-
+  Zeichengenerator (5 × 7-Satz); einzelne Zeichen (`@ & ^ \`) sehen am Gerät anders aus.
+* **Kassette** — fest eingebaut: das Magnetbandinterface (MBI) mit Laufwerk SK 1200. Das
+  Kästchen *Kassette* ist deshalb ausgegraut; der Kasten „Kassette“ zeigt das eine
+  Laufwerk. Neue Bänder sind Kompaktkassetten. Im Menü `BAND` speichert und lädt man
+  Programme (Name, Blocknummer, Anfangs- und Endadresse eingeben, je mit ENTER).
+* **Bildschirmtastatur** — die Tasten der 8 × 7-Matrix mit BK, CL, CTR, UC (zweite Ebene)
+  und Kursor. **Die Lage der Tasten ist nicht belegt** (das Tastaturfoto der Unterlagen ist
+  zu klein): die Nachbildung ordnet sie logisch nach der Codetabelle des BSYS an (QWERTZ).
+  Die PC-Tastatur wirkt wie üblich; **Esc** = OFF, **Rück/Entf** = CL, **Pause** = BK,
+  Pfeile = Kursor, **Strg** = CTR.
+* **Programme laden** — *Speicherabzug laden…* schreibt eine Datei ab einer Adresse in den
+  Speicher; wirksam ist das nur im RAM (Bereich ab C000H, die OPS-Karte). Wie ein Programm
+  gestartet wird, ist für den MC80.2x nicht überliefert [?].
+* **Nicht vorhanden** am MC80.2x: Lochstreifen, RAM-Disk, Laufwerke.
+* **Text kopieren** — liefert die acht Textzeilen des Bildes (Analogzeilen erscheinen leer).
 
 ## Der P8000 Emulator
 

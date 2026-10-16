@@ -46,9 +46,10 @@ crt:
 # Einschalten bis zur Meldung gut 1,5 s, jedes Bildkommando ~43 ms — Echtzeit ist angenehm.
 general:
   speed: 1.0
-  # Modell: mc80 (MC80.30) oder mc80-31 (MC80.31, Programmsegmente 10H/20H).
+  # Modell: mc80 (MC80.30), mc80-31 (MC80.31, Programmsegmente 10H/20H) oder mc80-21 / mc80-22
+  # (MC80.21/.22: Oszilloskop-Bild, BSYS, Kassette fest eingebaut).
   model: mc80
-  # Zahl der Speicherkarten SPE 2 (1 | 2; Kaltstart nötig, fehlend = 1).
+  # Zahl der Speicherkarten SPE 2 (1 | 2; Kaltstart nötig, fehlend = 1; nur .30/.31).
   spe: '1'
   # Kassette (K5020 an 30H: .30 mit LW 1200, .31 mit K5200) gesteckt? doc/mc80/kassette.md.
   tape: false

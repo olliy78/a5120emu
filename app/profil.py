@@ -101,6 +101,9 @@ class Programmprofil:
     #: Kästchen „Kassette (K5221, AKB K5020)" unter *Allgemein*: wie der Lochstreifen
     #: nicht am P8000 (kein K1520-Bus).
     tape_wahl: bool = True
+    #: Modelle mit fest eingebauter Kassette: das Kästchen „Kassette“ ist dort ohne Wirkung
+    #: (ausgegraut, der Kasten steht immer da) — MC80.21/.22 (MBI).
+    tape_fest: Tuple[str, ...] = ()
     #: Lampen der Frontplatte: ``"k8915"`` (Latch 61H, aktiv low) oder ``"p8000"``
     #: (Run/Unit16/Platte, aktiv high) — nur mit :attr:`frontplatte`.
     frontplatte_art: str = "k8915"
@@ -577,7 +580,7 @@ MC80 = Programmprofil(
     programm="mc80emu",
     titel="MC80 Emulator",
     rechner="MC80",
-    beschreibung="Emulator der Mikrorechner MC80.30 und MC80.31 (VEB Elektronik Gera)",
+    beschreibung="Emulator der Mikrorechner MC80.30, .31, .21 und .22 (VEB Elektronik Gera)",
     konfig_datei="mc80emu.yaml",
     vorgabe_datei="default_config_mc80.yaml",
     # 2,4576 MHz (Mc80Machine::CPU_HZ = Mc80Zve::CPU_HZ).
@@ -588,24 +591,28 @@ MC80 = Programmprofil(
     # .30 und .31 laufen im Kern bis M7 gleich (die .31 hat zusätzlich die EPROM-Segmente
     # 10H/20H, M4); sie unterscheiden sich erst am Kassettenanschluss (M7).
     modelle=(("mc80", "mc80", None, "MC80.30", "mc80"),
-             ("mc80-31", "mc80-31", None, "MC80.31 (Programmsegmente 10H/20H)", "mc80")),
-    # Der Kern lehnt diese Varianten ab (Mc80Machine → std::invalid_argument).
+             ("mc80-31", "mc80-31", None, "MC80.31 (Programmsegmente 10H/20H)", "mc80"),
+             # MC80.2x (AP M11/M12): eigene Klasse, Bild 528 × 256 (Oszilloskop-Darstellung),
+             # Matrixtastatur an der DPL, Kassette (MBI) fest eingebaut.  .21 und .22 sind im
+             # Kern gleich (Unterschied nicht belegt, hardware_2x.md) [?].
+             ("mc80-21", "mc80-21", None, "MC80.21 (Oszilloskop-Bild, BSYS)", "mc80-2x"),
+             ("mc80-22", "mc80-22", None, "MC80.22 (Oszilloskop-Bild, BSYS)", "mc80-2x")),
+    # Der Kern lehnt diese Variante ab (Mc80Machine → std::invalid_argument).
     gesperrte_modelle=(
         ("mc80-33", "MC80.33 (AKM + PK 3)",
          "Nicht wählbar: vom Treiber-ROM der AKM liegt nur die Hälfte vor (doc/mc80/egos.md §3)."),
-        ("mc80-21", "MC80.21",
-         "Noch nicht nachgebildet (MC80.2x, Arbeitspakete M10–M12)."),
-        ("mc80-22", "MC80.22",
-         "Noch nicht nachgebildet (MC80.2x, Arbeitspakete M10–M12)."),
     ),
+    # Beim MC80.2x ist die Kassette (MBI) fest eingebaut: das Kästchen ist ohne Wirkung.
+    tape_fest=("mc80-21", "mc80-22"),
     hardware=(
         ("spe", "Speichererweiterung:",
          "Zahl der Speicherkarten SPE 2: die erste trägt ROM und RAM-Segment 01H, eine zweite "
          "nur RAM (Segment 02H).  Ein Wechsel startet die Maschine kalt.",
          (("1", "eine SPE 2"), ("2", "zwei SPE 2")),
-         ()),
+         ("mc80", "mc80-31")),
     ),
-    modell_tipp=("MC80.30 oder MC80.31 (mit den EPROM-Programmsegmenten 10H/20H).  "
+    modell_tipp=("MC80.30 oder MC80.31 (mit den EPROM-Programmsegmenten 10H/20H), MC80.21/.22 "
+                 "(Mikrorechner mit Oszilloskop-Bild und Betriebssystem BSYS).  "
                  "Ein Wechsel erzeugt die Maschine neu (wie ein Kaltstart)."),
     eigene_aktionen=("speicherabzug_laden",),
     laufwerke=False,
@@ -615,7 +622,7 @@ MC80 = Programmprofil(
     ptape_wahl=False,
     tape_wahl=True,
     raf_wahl=False,
-    ueber_rechner="der Mikrorechner <b>MC80.30/31</b> des VEB Elektronik Gera",
+    ueber_rechner="der Mikrorechner <b>MC80.30/31/21/22</b> des VEB Elektronik Gera",
     andere="a5120",
     weitere=("k8915", "prg710", "pc1715", "p8000"),
 )

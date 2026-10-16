@@ -31,6 +31,7 @@
 #include "core/machines/prg710/prg710.h"
 #include "core/machines/pc1715/pc1715.h"
 #include "core/machines/mc80/mc80.h"   // AP M8
+#include "core/machines/mc80/mc80_2x.h" // AP M12
 #include "core/machines/p8000/p8000.h"
 #include <memory>
 #include <set>
@@ -43,7 +44,7 @@ namespace dbgm {
 using IntSource = A5120Machine::IntSource;
 
 /** @brief Maschinenwahl aus `--machine`; false bei unbekanntem Namen. */
-enum class Art { A5120, K8915, K8915G2, Prg710, Prg710_1, Pc1715, Pc1715W, P8000, P8000_16, Mc80_30, Mc80_31 };
+enum class Art { A5120, K8915, K8915G2, Prg710, Prg710_1, Pc1715, Pc1715W, P8000, P8000_16, Mc80_30, Mc80_31, Mc80_21, Mc80_22 };
 inline bool parseMachine(const std::string& s, Art& art) {
     if (s == "a5120" || s == "A5120")       { art = Art::A5120;    return true; }
     if (s == "k8915" || s == "K8915")       { art = Art::K8915;    return true; }
@@ -54,6 +55,8 @@ inline bool parseMachine(const std::string& s, Art& art) {
     if (s == "pc1715w" || s == "PC1715W")   { art = Art::Pc1715W;  return true; }   // AP-W3
     if (s == "mc80" || s == "mc80-30" || s == "MC80" || s == "MC80.30") { art = Art::Mc80_30; return true; }   // AP M8
     if (s == "mc80-31" || s == "MC80.31")   { art = Art::Mc80_31;  return true; }
+    if (s == "mc80-21" || s == "MC80.21")   { art = Art::Mc80_21;  return true; }   // AP M12
+    if (s == "mc80-22" || s == "MC80.22")   { art = Art::Mc80_22;  return true; }
     if (s == "p8000" || s == "P8000")       { art = Art::P8000;    return true; }   // AP P12a: nur 8-Bit-Seite
     if (s == "p8000-16" || s == "P8000-16") { art = Art::P8000_16; return true; }   // mit 16-Bit-Karte + Kopplung
     return false;
@@ -94,6 +97,11 @@ inline bool steckeK5020(K1520Machine& m, bool an, const std::string& d1, const s
                         std::string& err) {
     if (!an) return true;
     // Am KMBG (--ausfuehrung kmbg) steckt sie schon fest — dann nur die Dateien binden.
+    // MC80.2x (AP M12): das Laufwerk SK 1200 der MBI ist fest eingebaut (kein K5020, nur Gerät 1).
+    if (!m.k5020() && m.kassettenLaufwerk(0)) {
+        if (!d2.empty()) { err = "dieses Geraet hat nur ein Kassettenlaufwerk (--tape2 entfaellt)"; return false; }
+        return d1.empty() || m.kassettenLaufwerk(0)->dateiBinden(d1, err);
+    }
     if (!m.k5020() && !m.installK5020()) { err = m.k5020Fehler(); return false; }
     const std::string* d[2] = {&d1, &d2};
     for (int i = 0; i < 2; ++i)
@@ -281,6 +289,12 @@ public:
             c.spe_karten = mc80_spe;
             mc_ = std::make_unique<Mc80Machine>(c);
         }
+        else if (art == Art::Mc80_21 || art == Art::Mc80_22) {   // AP M12: eigene Klasse, kein --spe
+            Mc80_2xMachine::Config c;
+            c.variante = art == Art::Mc80_21 ? Mc80_2xMachine::Config::Variante::Mc8021
+                                             : Mc80_2xMachine::Config::Variante::Mc8022;
+            m2_ = std::make_unique<Mc80_2xMachine>(c);
+        }
         else if (art == Art::Pc1715) pc_ = std::make_unique<Pc1715Machine>();
         else if (art == Art::Pc1715W) {   // dieselbe Klasse, Variante 1715W (AP-W3)
             Pc1715Machine::Config c;
@@ -300,21 +314,24 @@ public:
     bool isPrg() const { return p7_ != nullptr; }
     bool isPc1715() const { return pc_ != nullptr; }
     bool isP8000() const { return p8_ != nullptr; }
-    bool isMc80() const { return mc_ != nullptr; }
+    bool isMc80() const { return mc_ != nullptr; }          // MC80.3x
+    bool isMc80_2x() const { return m2_ != nullptr; }       // MC80.21/.22 (AP M12)
     /// P8000 mit 16-Bit-Karte (U8001, MMU, Kopplung).
     bool hasP8000Karte16() const { return p8_ && p8_->karte16() != nullptr; }
     bool isPrg1() const { return p7_ && p7_->variante() == Prg710Machine::Config::Variante::Prg710_1; }
     /// Eine CPU, keine ZVE2/BUSRQ/Snapshots (K8915 und PRG).
     bool einCpu() const { return a5_ == nullptr; }
     const char* name() const {
+        if (m2_) return Mc80_2xMachine::variantenName(m2_->variante());
         return mc_ ? (mc_->variante() == Mc80Machine::Config::Variante::Mc8031 ? "MC80.31" : "MC80.30") : p8_ ? "P8000" : k8_ ? (gen2(*k8_) ? "K8915 Gen 2" : "K8915") : pc_ ? "PC 1715" : p7_ ? (isPrg1() ? "PRG 710-1" : "PRG 710") : "A5120"; }
     /// Anzeigename der (Haupt-)CPU in Meldungen: am A5120 „ZVE1“ (es gibt zwei).
-    const char* cpuName() const { return a5_ ? "ZVE1" : p8_ ? "U880" : mc_ ? "ZVE" : "CPU"; }
+    const char* cpuName() const { return a5_ ? "ZVE1" : p8_ ? "U880" : mc_ ? "ZVE" : m2_ ? "ZRE" : "CPU"; }
     A5120Machine* a5120() { return a5_.get(); }
     K8915Machine* k8915() { return k8_.get(); }
     Prg710Machine* prg() { return p7_.get(); }
     Pc1715Machine* pc1715() { return pc_.get(); }
     Mc80Machine* mc80() { return mc_.get(); }
+    Mc80_2xMachine* mc80_2x() { return m2_.get(); }
     P8000Machine* p8000() { return p8_.get(); }
     /// Erweiterungsmodul (A5120.16); nullptr ohne `--em` und immer am K8915.
     EM* em() { return a5_ ? a5_->em() : nullptr; }
@@ -324,6 +341,7 @@ public:
         if (pc_) return *pc_;
         if (p8_) return *p8_;
         if (mc_) return *mc_;
+        if (m2_) return *m2_;
         return *a5_;
     }
 
@@ -332,7 +350,7 @@ public:
     void reset()   { base().reset(); }
     int  run(int n) { return base().run(n); }
     void stop()    { base().stop(); }
-    void clearStop() { if (k8_) k8_->clearStop(); else if (p7_) p7_->clearStop(); else if (pc_) pc_->clearStop(); else if (p8_) p8_->clearStop(); else if (mc_) mc_->clearStop(); else a5_->clearStop(); }
+    void clearStop() { if (k8_) k8_->clearStop(); else if (p7_) p7_->clearStop(); else if (pc_) pc_->clearStop(); else if (p8_) p8_->clearStop(); else if (mc_) mc_->clearStop(); else if (m2_) m2_->clearStop(); else a5_->clearStop(); }
 
     // ─── Disketten ───────────────────────────────────────────────────────────
     bool mountDisk(int d, const std::string& p, const std::string& f, bool wp) {
@@ -362,6 +380,7 @@ public:
         if (pc_) return (uint8_t)(pc_->screenChar(col, row) & 0x7F);   // Bild kommt per DMA, nie über mem_read
         if (p8_) return (uint8_t)(p8_->screenChar(col, row) & 0x7F);   // Kern-Terminal tty1 (80 × 24)
         if (mc_) return (uint8_t)(mc_->screenChar(col, row) & 0x7F);   // MC80: Mustervergleich des VIS-Bilds, nie mem_read
+        if (m2_) return (uint8_t)(m2_->screenChar(col, row) & 0x7F);   // MC80.2x: Zelle der DPL (32 × 8), nie mem_read
         if (a5_->k7023()) {   // altes Gerät (AP A6): K7023 64×16 ab FC00H; außerhalb = Leerzeichen
             if (row >= 16 || col >= 64) return 0x20;
             return (uint8_t)(a5_->screenChar(col, row) & 0x7F);
@@ -369,8 +388,8 @@ public:
         return a5_->memReadDebug((uint16_t)(0xF800 + row * 80 + col));
     }
     /// Sichtbares Textbild: 64×16 an der K7023 (A5120 alt), sonst 80×24.
-    int screenCols() const { return (a5_ && a5_->k7023()) ? 64 : 80; }
-    int screenRows() const { return (a5_ && a5_->k7023()) ? 16 : mc_ ? 25 : 24; }
+    int screenCols() const { return (a5_ && a5_->k7023()) ? 64 : m2_ ? 32 : 80; }
+    int screenRows() const { return (a5_ && a5_->k7023()) ? 16 : mc_ ? 25 : m2_ ? 8 : 24; }
 
     // ─── CPU ─────────────────────────────────────────────────────────────────
     Z80& cpuDebug() {
@@ -379,6 +398,7 @@ public:
         if (pc_) return pc_->zre().cpu();
         if (p8_) return p8_->karte8().cpu();
         if (mc_) return mc_->zve().cpu();
+        if (m2_) return m2_->zre().cpu();
         return a5_->cpuDebug();
     }
     uint16_t cpuPC() { return cpuDebug().PC; }
@@ -391,6 +411,7 @@ public:
         if (pc_) return pc_->totalCycles();
         if (p8_) return p8_->totalCycles();
         if (mc_) return mc_->totalCycles();
+        if (m2_) return m2_->totalCycles();
         return a5_->machineCycles();
     }
     bool isRomEnabled() {
@@ -398,6 +419,7 @@ public:
         if (p7_) return p7_->speicher().ortVon(0x0000).quelle == Prg710Speicher::Quelle::Zre;
         if (pc_) return pc_->zre().romEin();
         if (p8_) return (p8_->karte8().speicher().selekt(0x0000) & 1) != 0;   // EPROM bei 0000H selektiert
+        if (m2_) return true;   // BSYS-ROM 0000H–0FFFH ist fest
         if (mc_) return true;   // EGOS-ROM 0000H–1FFFH ist fest (kein Overlay)
         return a5_->isRomEnabled();
     }
@@ -408,6 +430,7 @@ public:
         else if (pc_) pc_->setCpuTraceCallback(std::move(cb));
         else if (p8_) p8_->setCpuTraceCallback(std::move(cb));
         else if (mc_) mc_->setCpuTraceCallback(std::move(cb));
+        else if (m2_) m2_->setCpuTraceCallback(std::move(cb));
         else     a5_->setCpuTraceCallback(std::move(cb));
     }
     void setZVE2TraceCallback(std::function<void(const Z80&)> cb) {
@@ -419,6 +442,7 @@ public:
         else if (pc_) pc_->setBusTrace(std::move(cb));
         else if (p8_) p8_->setBusTrace(std::move(cb));
         else if (mc_) mc_->setBusTrace(std::move(cb));
+        else if (m2_) m2_->setBusTrace(std::move(cb));
         else     a5_->setBusTrace(std::move(cb));
     }
 
@@ -445,21 +469,21 @@ public:
         if (k8_) return k8_->afs().debugState();
         if (p7_) return p7_->afs().debugState();
         if (pc_) return pc_->afs().debugState();
-        if (p8_ || mc_) return K5122::DebugState{};   // P8000: U8272, kein K5122; MC80: keine Diskette
+        if (p8_ || mc_ || m2_) return K5122::DebugState{};   // P8000: U8272, kein K5122; MC80: keine Diskette
         return a5_->k5122State();
     }
     Z80PIO::DebugState k5122CtrlPioState() {
         if (k8_) return k8_->afs().ctrlPio().debugState();
         if (p7_) return p7_->afs().ctrlPio().debugState();
         if (pc_) return pc_->afs().ctrlPio().debugState();
-        if (p8_ || mc_) return Z80PIO::DebugState{};
+        if (p8_ || mc_ || m2_) return Z80PIO::DebugState{};
         return a5_->k5122CtrlPioState();
     }
     Z80PIO::DebugState k5122DataPioState() {
         if (k8_) return k8_->afs().dataPio().debugState();
         if (p7_) return p7_->afs().dataPio().debugState();
         if (pc_) return pc_->afs().dataPio().debugState();
-        if (p8_ || mc_) return Z80PIO::DebugState{};
+        if (p8_ || mc_ || m2_) return Z80PIO::DebugState{};
         return a5_->k5122DataPioState();
     }
     const K1520Bus::IntAck& lastIntAck() {
@@ -468,6 +492,7 @@ public:
         if (pc_) return pc_->bus().lastIntAck();
         if (p8_) return p8_->bus().lastIntAck();
         if (mc_) return mc_->bus().lastIntAck();
+        if (m2_) return m2_->bus().lastIntAck();
         return a5_->lastIntAck();
     }
 
@@ -565,6 +590,36 @@ public:
             }
             addCtc(mc_->asp().ctc(), "ASP CTC");
             addPio(mc_->asp().pio().debugState(), "ASP PIO");
+            return out;
+        }
+        if (m2_) {   // MC80.2x: DPL (CTC → PIO), MBI (CTC → PIO), ZRE (CTC → PIO) [? Kette DPL → MBI → ZRE]
+            auto addPio = [&](const Z80PIO::DebugState& st, const char* name) {
+                for (int p = 0; p < 2; ++p) {
+                    IntSource s;
+                    s.device = std::string(name) + " " + (p ? "B" : "A");
+                    s.vector = st.port[p].vector; s.ie = st.port[p].ie;
+                    s.pending = st.port[p].pending; s.ius = st.port[p].ius;
+                    s.iei = st.port[p].iei; s.chain = pos++;
+                    out.push_back(std::move(s));
+                }
+            };
+            auto addCtc = [&](Z80CTC& ctc, const char* name) {
+                auto st = ctc.debugState();
+                for (int c = 0; c < 4; ++c) {
+                    IntSource s;
+                    s.device = std::string(name) + " ch" + char('0' + c);
+                    s.vector = (uint8_t)(st.vecBase | (c << 1));
+                    s.ie = st.ch[c].intEn; s.pending = st.ch[c].intPending;
+                    s.ius = st.ch[c].ius; s.iei = st.ch[c].iei; s.chain = pos++;
+                    out.push_back(std::move(s));
+                }
+            };
+            addCtc(m2_->dpl().ctc(), "DPL CTC");
+            addPio(m2_->dpl().pio().debugState(), "DPL PIO");
+            addCtc(m2_->mbi().ctc(), "MBI CTC");
+            addPio(m2_->mbi().pio().debugState(), "MBI PIO");
+            addCtc(m2_->zre().ctc(), "ZRE CTC");
+            addPio(m2_->zre().pio().debugState(), "ZRE PIO");
             return out;
         }
         if (pc_) {   // Kette Steuer-PIO → Daten-PIO → CTC0 → SIO0 (Plan §3.5, Merkposten)
@@ -696,6 +751,7 @@ private:
     std::unique_ptr<Pc1715Machine> pc_;
     std::unique_ptr<P8000Machine> p8_;
     std::unique_ptr<Mc80Machine> mc_;
+    std::unique_ptr<Mc80_2xMachine> m2_;
     Z80 dummy_zve2_;   ///< K8915: Platzhalter, nie ausgeführt (Kommandos sind abgefangen)
 };
 

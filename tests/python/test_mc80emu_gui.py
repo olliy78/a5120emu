@@ -154,8 +154,8 @@ def test_profil_und_titel(qapp, konfig_ordner):
 def test_modellwahl_gesperrte_modelle_und_spe(qapp, konfig_ordner):
     from app import config_io, profil
     p = profil.profil("mc80")
-    assert [m[0] for m in p.modelle] == ["mc80", "mc80-31"]
-    assert [g[0] for g in p.gesperrte_modelle] == ["mc80-33", "mc80-21", "mc80-22"]
+    assert [m[0] for m in p.modelle] == ["mc80", "mc80-31", "mc80-21", "mc80-22"]
+    assert [g[0] for g in p.gesperrte_modelle] == ["mc80-33"]       # .21/.22 seit AP M12 frei
     assert p.modell_normalisieren("mc80-33") == "mc80"      # gesperrt = unbekannt
     assert p.kern_parameter("mc80", {"spe": "2"}) == {"spe": "2"}
     assert p.kern_parameter("mc80", {}) == {"spe": "1"}
@@ -164,11 +164,12 @@ def test_modellwahl_gesperrte_modelle_und_spe(qapp, konfig_ordner):
     try:
         combo = w.settings_widget.model_combo
         assert not combo.isHidden()
-        for gesperrt in ("mc80-33", "mc80-21", "mc80-22"):
+        for gesperrt in ("mc80-33",):
             i = combo.findData(gesperrt)
             assert i >= 0 and not combo.model().item(i).isEnabled(), gesperrt
-        i31 = combo.findData("mc80-31")
-        assert i31 >= 0 and combo.model().item(i31).isEnabled()
+        for frei in ("mc80-31", "mc80-21", "mc80-22"):
+            i = combo.findData(frei)
+            assert i >= 0 and combo.model().item(i).isEnabled(), frei
         w._on_model_selected("mc80-31")
         qapp.processEvents()
         assert w.emulator.machine == "mc80-31"
@@ -189,6 +190,7 @@ def test_modellwahl_gesperrte_modelle_und_spe(qapp, konfig_ordner):
 def test_bindung_kennt_beide_varianten_und_die_spe_zahl():
     from app.core_binding.k1520 import K1520Emulator, MACHINE_TYPES
     assert MACHINE_TYPES["mc80"] == MACHINE_TYPES["mc80-31"] == 6
+    assert MACHINE_TYPES["mc80-21"] == MACHINE_TYPES["mc80-22"] == 6
     for maschine, spe in (("mc80", 1), ("mc80-31", 2), ("mc80", "2")):
         emu = K1520Emulator(machine=maschine, spe=spe)
         assert emu.machine == maschine and emu.machine_type() == 6
@@ -327,6 +329,147 @@ def test_kassette_folgt_der_karte_und_legt_kompaktkassetten_an(qapp, konfig_ordn
         assert (vorspann, abstand, marke) == (80_000, 0, 0)
         assert w.emulator.tape_eject(0)
         assert w.emulator.tape_new(0) and w.emulator.tape_status(0)["loaded"]
+    finally:
+        _zu(w, qapp)
+
+
+# ── MC80.21/.22 in mc80emu (AP M12) ──────────────────────────────────────────
+
+def _bis_menue(emu, nadel, takte=20_000_000):
+    """Fährt, bis *nadel* im Text der DPL (8 × 32) steht."""
+    n = 0
+    while n < takte:
+        n += emu.run(200_000)
+        if nadel in emu.screen_text():
+            return True
+    return False
+
+
+def _taste_2x(emu, code, nach=400_000):
+    """Eine Taste über die Kern-Schnittstelle; die Maschine hält 60 ms + 60 ms Pause je Taste."""
+    emu.key_press(code, False, False)
+    _laufe(emu, nach)
+
+
+@pytest.mark.parametrize("modell", ["mc80-21", "mc80-22"])
+def test_mc80_2x_modell_bild_tastatur_und_kassettenkasten(qapp, konfig_ordner, modell):
+    """Modellwahl .21/.22: Bild 528 × 256, BSYS-Menü im Text, Matrixtastatur, Kassette fest."""
+    from PySide6.QtCore import Qt
+    from app.ui.keyboard_mc80_2x import KeyboardMc80_2xWidget
+    w = _fenster(qapp)
+    try:
+        w._on_model_selected(modell)
+        qapp.processEvents()
+        emu = _gestoppt(w)
+        assert emu.machine == modell and emu.machine_type() == 6
+        assert emu.framebuffer_size() == (528, 256)
+        assert isinstance(w.keyboard_widget, KeyboardMc80_2xWidget)
+        # SPE-Wahl gilt nicht für die .2x; die Kassette ist fest eingebaut (Kasten da, Kästchen aus).
+        assert not w.settings_widget.hardware_combos["spe"].isEnabled()
+        assert not w.settings_widget.tape_box.isEnabled()
+        assert emu.tape_installed() and w.kassette_dock.toggleViewAction().isVisible()
+        assert w.kassette_widget.laufwerke[1].isHidden()             # nur das SK 1200
+        assert not w.kassette_widget.laufwerke[0].isHidden()
+        assert w.drives_dock.isHidden()
+        # BSYS meldet sich als Menü; Text über k1520_screen_char (32 × 8).
+        assert _bis_menue(emu, "TASTENTEST"), emu.screen_text()
+        zeilen = emu.screen_text().split("\n")
+        assert len(zeilen) == 8 and zeilen[1].strip() == "049D  INIT", zeilen
+        assert w.screen_widget.bildschirmtext().split("\n")[2] == "0600  BAND"
+        # Taste über die Bildschirmtastatur: Kursor ↓ ↓ ENTER öffnet das Bandmenü.
+        kw = w.keyboard_widget
+        for name in ("↓", "↓", "ENTER"):
+            _taste(kw, qapp, next(k for k in kw._keys if k.low == name))
+            _laufe(emu, 400_000)
+        assert _bis_menue(emu, "MAGNETBAND :", 5_000_000), emu.screen_text()
+        _taste(kw, qapp, next(k for k in kw._keys if k.low == "OFF"))
+        assert _bis_menue(emu, "TASTENTEST", 8_000_000), emu.screen_text()
+    finally:
+        _zu(w, qapp)
+
+
+def test_mc80_2x_tastenbild_nach_der_codetabelle():
+    """Logische Anordnung: jede Taste der Matrix kommt einmal vor, Zeichen laut TTA."""
+    from PySide6.QtCore import Qt
+    from app.ui import keyboard_mc80_2x as k
+    tasten = k._layout_mc80_2x()
+    nach = {t.low: t for t in tasten}
+    assert nach["ENTER"].code == int(Qt.Key_Return) and nach["OFF"].code == int(Qt.Key_Escape)
+    assert nach["CL"].code == int(Qt.Key_Backspace) and nach["BK"].code == int(Qt.Key_Pause)
+    assert [nach[x].code for x in ("↑", "↓", "←", "→")] == [
+        int(Qt.Key_Up), int(Qt.Key_Down), int(Qt.Key_Left), int(Qt.Key_Right)]
+    # Zweitbelegungen laut hardware_2x.md §6: 0 / ", 8 / (, + / *, = / ?, [ / ].
+    for low, up in (("0", '"'), ("8", "("), ("+", "*"), ("=", "?"), ("[", "]"), (";", ":"),
+                    ("-", "/"), (",", "<"), (".", ">"), ("\\", "^")):
+        assert (nach[low].code, nach[low].shift_code) == (ord(low), ord(up)), low
+    zeichen = {t.low for t in tasten if t.code is not None and t.code < 0x100 and len(t.low) == 1}
+    assert set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") <= zeichen
+    assert sum(1 for t in tasten if t.kind == "shift") == 2 and sum(1 for t in tasten if t.kind == "ctrl") == 1
+
+
+def test_mc80_2x_kassette_speichern_und_laden(qapp, konfig_ordner, tmp_path):
+    """BSYS-Bandmenü: 128 Byte aus dem RAM auf eine neue .k52 schreiben, RAM löschen, zurücklesen.
+
+    Der Weg des Anwenders (Menü ▸ Kassette einlegen ▸ BAND ▸ SCHREIBEN/LESEN) über die API;
+    der Kern-Test ``Mc80_2x.KassetteSpeichernLaden`` prüft den Bandinhalt blockweise."""
+    w = _fenster(qapp)
+    try:
+        w._on_model_selected("mc80-22")
+        qapp.processEvents()
+        emu = _gestoppt(w)
+        from PySide6.QtCore import Qt
+        band = tmp_path / "msb.k52"
+        assert w.kassette_widget.laufwerke[0].einlegen(str(band))
+        assert emu.tape_status(0)["loaded"]
+        for i in range(0x80):
+            emu.mem_write(0xC000 + i, (i * 7 + 3) & 0xFF)
+        assert _bis_menue(emu, "TASTENTEST")
+
+        def tippe(text):
+            for ch in text:
+                _taste_2x(emu, ord(ch), 350_000)
+
+        def enter(nach=1_000_000):
+            _taste_2x(emu, int(Qt.Key_Return), nach)
+
+        for _ in range(2):
+            _taste_2x(emu, int(Qt.Key_Down))
+        enter(2_000_000)
+        assert _bis_menue(emu, "MAGNETBAND :", 5_000_000), emu.screen_text()
+        enter()                                               # > SCHREIBEN
+        assert "MB-SCHREIBEN" in emu.screen_text()
+        for feld in ("0001", "C000", "C07F"):
+            tippe(feld)
+            enter()
+        tippe("PROGRAMM TEST")
+        enter()
+        n = 0
+        while n < 200_000_000:                                # Vorlücke ≈ 27 s Bandzeit
+            n += emu.run(1_000_000)
+            t = emu.screen_text()
+            if "MAGNETBAND :" in t and "LOESCHEN" in t:
+                break
+        else:
+            raise AssertionError(emu.screen_text())
+        assert emu.tape_status(0)["blocks"] == 4              # Marke, Kennung, Block 0001, Marke
+        for i in range(0x80):
+            emu.mem_write(0xC000 + i, 0)
+        _taste_2x(emu, int(Qt.Key_Down))                       # > LESEN
+        enter()
+        assert "MB-LESEN" in emu.screen_text()
+        for feld in ("0001", "C000", "C07F"):
+            tippe(feld)
+            enter()
+        n = 0
+        while n < 400_000_000:
+            n += emu.run(1_000_000)
+            t = emu.screen_text()
+            if "MAGNETBAND :" in t and "LOESCHEN" in t:
+                break
+        else:
+            raise AssertionError(emu.screen_text())
+        assert [emu.mem_read(0xC000 + i) for i in range(0x80)] == [(i * 7 + 3) & 0xFF for i in range(0x80)]
+        assert emu.tape_flush(0) and band.stat().st_size > 0
     finally:
         _zu(w, qapp)
 

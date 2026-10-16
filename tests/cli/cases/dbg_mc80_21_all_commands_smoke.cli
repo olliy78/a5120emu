@@ -1,0 +1,12 @@
+# Dispatch-Smoke am MC80.21 (AP M12): dasselbe Skript wie am MC80.30, jedes Kommando einmal; was es nur
+# am A5120 gibt, meldet "nicht vorhanden" statt abzustuerzen (eine Maschine ohne a5120()/mc80()-Zeiger).
+tool:    k1520dbg
+run:     --machine mc80-21 -x %CLI_DIR%/scripts/all_commands_smoke_mc80.dbg
+timeout: 300
+exit:    0
+forbid:  unknown command
+expect:  's2' gibt es am MC80.21 nicht
+expect:  'snap' gibt es am MC80.21 nicht
+expect:  'savestate' gibt es am MC80.21 nicht
+expect:  ZVE2 ('r 2') gibt es am MC80.21 nicht
+expect:  "machine":"MC80.21"

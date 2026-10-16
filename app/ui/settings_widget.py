@@ -430,6 +430,19 @@ class SettingsWidget(QWidget):
         modell = self.model_value()
         for k, box in self.hardware_combos.items():
             box.setEnabled(self.profil.hardware_wirkt(k, modell))
+        # MC80.2x: die Kassette (MBI) ist eingebaut — das Kästchen steckt nichts.
+        fest = self.profil.modell_normalisieren(modell) in self.profil.tape_fest
+        if not hasattr(self, "tape_box"):      # beim ersten Aufruf (Aufbau) noch nicht da
+            return
+        self.tape_box.setEnabled(not fest)
+        if not hasattr(self, "_tape_tipp"):
+            self._tape_tipp = self.tape_box.toolTip()
+        if not fest:
+            self.tape_box.setToolTip(self._tape_tipp)
+        else:
+            self.tape_box.setToolTip(
+                "Beim MC80.21/.22 ist das Magnetbandinterface (MBI) mit dem Laufwerk SK 1200 "
+                "fest eingebaut; bedient wird es im Kasten „Kassette“.")
 
     # ── Lochstreifen (K6022) ─────────────────────────────────────────────────
 
@@ -496,6 +509,7 @@ class SettingsWidget(QWidget):
 
     def _on_model_combo(self, _idx: int):
         self._modus_anpassen()
+        self._hardware_gesperrt_nach_modell()
         if self._model_guard:
             return
         self.modelChanged.emit(self.model_value())

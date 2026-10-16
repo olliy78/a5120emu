@@ -409,7 +409,7 @@ _lib.k1520_create_p8000_terminal.argtypes = [ctypes.c_char_p]
 _lib.k1520_create_p8000_terminal.restype = K1520Handle
 
 # k1520_create_mc80(variante, konfig) -> K1520Handle   (Entwurf 31, AP M2)
-#   variante 0 = MC80.30, 1 = MC80.31 (2/3/4 = .33/.21/.22 → NULL); konfig "spe=1|2"
+#   variante 0 = MC80.30, 1 = MC80.31 (2 = .33 → NULL), 3/4 = .21/.22 (konfig muss NULL sein); sonst "spe=1|2"
 _lib.k1520_create_mc80.argtypes = [ctypes.c_int, ctypes.c_char_p]
 _lib.k1520_create_mc80.restype = K1520Handle
 
@@ -750,7 +750,7 @@ def _utf8(path) -> bytes:
 # Maschinentypen (K1520MachineType in core/api/k1520_api.h) — Name → Wert.
 MACHINE_TYPES = {"a5120": 0, "a5120-alt": 0, "a5120-kmbg": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
                  "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5,
-                 "mc80": 6, "mc80-31": 6}
+                 "mc80": 6, "mc80-31": 6, "mc80-21": 6, "mc80-22": 6}
 # (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
 # AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
@@ -766,9 +766,12 @@ A5120_AUSFUEHRUNG_MASCHINE = {"a5120-alt": "alt", "a5120-kmbg": "kmbg"}
 K7023_COLS, K7023_ROWS = 64, 16
 # Variante für k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
-# Variante für k1520_create_mc80 (Entwurf 31, AP M6): "mc80" = MC80.30, "mc80-31" = MC80.31.
-# .33/.21/.22 lehnt der Kern noch ab (Variante 2/3/4) — die Oberfläche führt sie gesperrt.
-MC80_VARIANTEN = {"mc80": 0, "mc80-31": 1}
+# Variante für k1520_create_mc80 (Entwurf 31, AP M6/M12): "mc80" = MC80.30, "mc80-31" = MC80.31,
+# "mc80-21"/"mc80-22" = MC80.21/.22 (eigene Klasse Mc80_2xMachine, kennt keinen Schlüssel
+# "spe=").  Die .33 (Variante 2) lehnt der Kern ab — die Oberfläche führt sie gesperrt.
+MC80_VARIANTEN = {"mc80": 0, "mc80-31": 1, "mc80-21": 3, "mc80-22": 4}
+#: Die Varianten des MC80.2x (Bild 528 × 256, 32 × 8 Zeichen, Tastatur als Matrix, MBI).
+MC80_2X = ("mc80-21", "mc80-22")
 # Bauform für k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
 K8915_GENERATIONEN = {"k8915": 0, "k8915-g2": 1}
 
@@ -1038,7 +1041,7 @@ class K1520Emulator:
             machine: ``"a5120"`` (Vorgabe), ``"k8915"``, ``"k8915-g2"`` (K8915 Gen 2), ``"prg710"`` oder
                 ``"prg710-1"``, ``"pc1715"``, ``"pc1715-k7221"`` (PC 1715 mit dem
                 Bildschirm K7221, 64×16), ``"pc1715w"``, ``"mc80"`` (MC80.30) oder
-                ``"mc80-31"`` — siehe :data:`MACHINE_TYPES`.
+                ``"mc80-31"``, ``"mc80-21"``/``"mc80-22"`` — siehe :data:`MACHINE_TYPES`.
             zeichensatz: nur PC 1715 — Bestückung der ZG-EPROMs, ``"deutsch"``
                 (S619 + S602, Vorgabe), ``"polnisch"`` oder ``"kyrillisch"``; beim
                 ``"pc1715w"`` ohne Wirkung (der Satz kommt von Diskette).
@@ -1128,8 +1131,9 @@ class K1520Emulator:
                 teile = [f"{k}={v}" for k, v in (p8000 or {}).items()]
                 handle = _lib.k1520_create_p8000_terminal(",".join(teile).encode("utf-8"))
             elif machine in MC80_VARIANTEN:
-                handle = _lib.k1520_create_mc80(MC80_VARIANTEN[machine],
-                                                f"spe={int(spe)}".encode("ascii"))
+                # Der MC80.2x kennt keinen Konfigurationstext (k1520_create_mc80 lehnt ihn ab).
+                konfig = None if machine in MC80_2X else f"spe={int(spe)}".encode("ascii")
+                handle = _lib.k1520_create_mc80(MC80_VARIANTEN[machine], konfig)
             elif machine in PC1715_MODELLE:
                 names = (self._drive_types or [])[:4]
                 names = names + [None] * (4 - len(names))
@@ -2110,6 +2114,12 @@ class K1520Emulator:
                 "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)
                         for c in range(K7023_COLS))
                 for r in range(min(zeilen, K7023_ROWS)))
+        if self._machine in MC80_2X:
+            # DPL-Bild: 8 Zeilen à 32 Zeichen (Zellen), Rest des Rasters gibt es nicht.
+            return "\n".join(
+                "".join(chr(_lib.k1520_screen_char(self._handle, c, r) or 0x20)
+                        for c in range(32)).rstrip()
+                for r in range(8))
         if self._machine != "a5120":
             return "\n".join(
                 "".join(chr(_lib.k1520_screen_char(self._handle, c, r) & 0x7F)

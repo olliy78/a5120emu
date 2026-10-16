@@ -147,7 +147,7 @@ bash run_k8915emu.sh      # the same with --machine k8915 (K8915 Emulator)
 ```
 
 > **Vier Programme, eine Oberfläche** (2026-09-30, AP-UI1; drittes Programm 2026-10-02, AP-P5d, viertes 2026-10-04, AP-5a; seither auch `p8000emu` und **`mc80emu`**
-> (MC80 Emulator, `--machine mc80`, Modelle MC80.30/.31 über `general.model`, `mc80emu.yaml`, `data/default_config_mc80.yaml`, Profilfeld `laufwerke=False`, `app/ui/keyboard_mc80.py`),
+> (MC80 Emulator, `--machine mc80`, Modelle MC80.30/.31/.21/.22 über `general.model`, `mc80emu.yaml`, `data/default_config_mc80.yaml`, Profilfeld `laufwerke=False`, `app/ui/keyboard_mc80.py`, `app/ui/keyboard_mc80_2x.py`),
 > `doc/design/18_k8915emu_oberflaeche.md`, `doc/design/11_python_app.md` §10.9):
 > **A5120 Emulator** (`a5120emu`), **K8915 Emulator** (`k8915emu`, `app/main.py
 > --machine k8915`) und **PRG710 Emulator** (`prg710emu`, `--machine prg710`, Modellwahl PRG 710 /
@@ -638,7 +638,11 @@ Editor/BASIC nicht belegbar.  **MC80.21/.22 im Kern (M11, 2026-10-16):** eigene 
 (`core/machines/mc80/mc80_2x.*`, gleicher Typ 6, `k1520_create_mc80(3|4)`): K2521 + PFS K3820 + OPS K3525 +
 Displaylogik **DPL** (`cards/mc80/dpl.*`: Zeilenautomat, Bild 528 × 256 aus den PIO-Ausgängen, 8 × 32 Zeichen +
 Analogkurven, Tastenmatrix) + Magnetbandinterface **MBI** (`cards/mc80/mbi.*`, SK 1200 = `k1520_tape_*` Laufwerk 0);
-BSYS (ROM ver2) meldet sich mit dem Menü, speichert/lädt über die Kassette.  M12 (`mc80emu`) offen.
+BSYS (ROM ver2) meldet sich mit dem Menü, speichert/lädt über die Kassette.  **M12 (2026-10-16): in `mc80emu`** —
+`mc80-21`/`mc80-22` wählbar (nur `mc80-33` gesperrt), Bild 528 × 256, `screen_text()` 8 × 32, Bildschirmtastatur
+`keyboard_mc80_2x.py` (Tastenlage [?], logisch nach der Codetabelle), Kassette fest eingebaut (`tape_fest`, nur Laufwerk 1),
+`k1520_create_mc80(3|4)` ohne Konfigurationstext; `boot_trace`/`k1520dbg --machine mc80-21|mc80-22` (Abbruch am BSYS-Menü,
+Marke in Spalte 5 zählt nicht als Bildänderung).
 **Vor Arbeiten daran: `doc/merkposten/mc80.md` lesen** (Segmentport 85H, Leerbereich 00H, `Z80CTC::setIntAusVerwirftAnforderung`
 nur an der ASP-CTC, EPROM-Segmente, Kassettentakt-Annahmen, MC80.2x-Zeitmodell und RETI-Verteilung, offene Fragen).
 Plan: `doc/design/31_mc80.md`.

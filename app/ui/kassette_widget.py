@@ -92,6 +92,8 @@ class _Laufwerk(QGroupBox):
 
     def aktualisieren(self, gesteckt: bool) -> None:
         st = self.emu.tape_status(self.nr) if gesteckt else None
+        # Ein Laufwerk, das die Maschine nicht hat (MC80.2x: nur das SK 1200), entfällt.
+        self.setVisible(not (gesteckt and st is None))
         geladen = bool(st and st["loaded"])
         self.einlegen_knopf.setEnabled(gesteckt)
         self.neu_knopf.setEnabled(gesteckt)

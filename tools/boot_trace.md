@@ -40,6 +40,7 @@ boot_trace [DISK] [optionen]
 | `--ptape` | Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) vor dem ersten Lauf stecken, an allen Maschinen (§10a) |
 | `--tape <k52>` / `--tape2 <k52>` / `--tape-card` | Kassettenkarte K5020 (zwei K5200; A5120/PRG 710/MC80 30H, K8915 D0H) vor dem ersten Lauf stecken; `.k52` an Gerät 1 bzw. 2 binden (fehlende Datei = leere Kassette), `--tape-card` nur die Karte (`doc/merkposten/kassette.md`) |
 | `--machine mc80\|mc80-30\|mc80-31` / `--spe 1\|2` | MC80 (.30/.31) mit 1 oder 2 SPE 2; `-c` 60 Mio., Stillstand 8 Mio. Takte (§9b) |
+| `--machine mc80-21\|mc80-22` | MC80.21/.22: DPL-Bild 8 × 32, Ziel = BSYS-Menü, Stillstand 4 Mio. Takte (§9c) |
 | `--until <cond>` | **anhalten, sobald `<cond>` gilt** (läuft über den Boot-Handoff hinaus bis zur Bedingung oder zum `-c`-Limit), dann Report (§3) |
 | `--coverage [file]` | **Code-Coverage**: ausgeführte ZVE1-Byte-Ranges + ZVE2-Adresszahl; mit `file` zusätzlich CSV `cpu,pc,hits` (§4) |
 | `--diff a.csv b.csv` | **Run-Diff** zweier `--coverage`-CSVs (nur-A/nur-B/hit-diff je CPU) — **ohne** Emulation (§4) |
@@ -386,6 +387,34 @@ tools/dev.sh tool boot_trace --machine mc80 --keys 'init<ET>' --until 'screen ~ 
   `-l doc/mc80/egos.prn` (Listing des EGOS-ROM, `tools/gen_mc80_egos_prn.py`).
 - Wächter: `bt_mc80_prompt.cli`, `bt_mc80_31_spe2.cli`, `bt_mc80_tastatur.cli`, `bt_mc80_tape.cli`.
 - Nicht vorhanden: Savestates, ZVE2-Schalter, `--disk`.
+
+## 9c. MC80.21/.22 (`--machine mc80-21|mc80-22`)
+
+AP M12 (`doc/mc80/hardware_2x.md`). Eigene Klasse `Mc80_2xMachine` (K2521, BSYS-ROM ver2), Bild = DPL-Oszilloskop
+als Text (**8 Zeilen × 32 Zeichen**, `screenChar`), Kassette = fest eingebautes MBI-Laufwerk (SK 1200). Kein
+`--spe`, kein Datenträger-Argument; `--ptape` scheitert (E0H gehört der PPE).
+
+```sh
+tools/dev.sh tool boot_trace --machine mc80-21 --quiet --json                     # Exit 0 = BSYS-Menü
+tools/dev.sh tool boot_trace --machine mc80-22 --keys '<DN><DN><ET>' --until 'screen ~ "MAGNETBAND :"'
+tools/dev.sh tool boot_trace --machine mc80-21 -l doc/mc80/bsys_2x.prn --events /dev/null
+```
+
+- **Abbruchkriterium (Menü statt Prompt):** das BSYS zeichnet sein Menü alle ≈ 20 ms neu, und die Menümarke in
+  Spalte 5 (`>` / `_`) blinkt mit ≈ 320 ms. Sie zählt deshalb **nicht** als Bildänderung; sonst gäbe es nie
+  einen Stillstand. **Exit 0**, wenn bei Stillstand (Vorgabe **4 Mio.** Takte ohne Bildänderung/Steuerzugriff)
+  eine Bildzeile `TASTENTEST` enthält (Kopf der Tabelle 1); das Menü steht nach < 2 Mio. Takten. JSON
+  `{"machine":"mc80-21"|"mc80-22","menue":true,…}`; `--until` wie üblich (`screen ~ "…"` sieht auch die Marke).
+- **`--keys`**: Matrixtasten über die DPL (`Mc80_2xMachine::keyPress`). Marken `<ET>` (ENTER), `<OFF>`,
+  `<UP>` `<DN>` `<LT>` `<RT>` (Kursor), `<CL>`, `<BK>`, `<TAB>`; sonst das Zeichen selbst (Buchstaben groß
+  oder klein, UC wird abgeleitet). Blockweise: ein Block endet mit `<ET>` und wird bei Stillstand getippt;
+  je Taste 300 000 Takte (60 ms halten + 60 ms Pause in Maschinenzeit [?]).
+- Protokolliert: Laufwerksteuerung EFH, PPE E0H–E8H, MBI-PIO FCH–FFH (FCH/FDH gefaltet), Interrupts. Die DPL
+  (F0H–F7H) unterbricht alle 64,5 µs und läuft im Leerlauf mit — sie zählt **nicht** als Aktivität (`--watchio`
+  holt sie ins Protokoll).
+- **`--tape <k52>` / `--tape-card`**: bindet die Datei an das eingebaute Laufwerk (nur Gerät 1; `--tape2` wird
+  abgewiesen). Der Bandbetrieb (Vorlücke ≈ 27 s Bandzeit) braucht `-c` ≥ 200 Mio.
+- Wächter: `bt_mc80_21_menue.cli`, `bt_mc80_22_tastatur.cli`.
 
 ## 10. RAM-Floppy (`--raf`)
 

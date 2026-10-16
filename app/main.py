@@ -9,7 +9,7 @@ Konfiguration, Tastatur K7672, Frontplatte, NMI-Taster — `app/profil.py`),
 ``--machine prg710`` das des PRG710 Emulators (PRG 710 / PRG 710-1, Modellwahl),
 ``--machine pc1715`` das des PC1715 Emulators (PC 1715, Modellwahl),
 ``--machine p8000`` das des P8000 Emulators (Terminal, Winchester, Modellwahl),
-``--machine mc80`` das des MC80 Emulators (MC80.30/31, ohne Laufwerke),
+``--machine mc80`` das des MC80 Emulators (MC80.30/31/21/22, ohne Laufwerke),
 (``--mode terminal`` stellt dort die Betriebsart „nur Terminal“ ein, ``--mode computer`` „Computer mit
 Terminal“); ohne Schalter ist es der A5120 Emulator.  Die Starter übergeben den Schalter
 fest (``run_k8915emu.sh``, ``run_prg710emu.sh``, ``run_pc1715emu.sh``, ``run_p8000emu.sh``, ``run_mc80emu.sh``, ``bin/k8915emu``, Startmenü).
@@ -124,7 +124,7 @@ _KOPF = {"a5120": "Emulator des Buerocomputers A5120 (K1520-Bus)",
          "prg710": "Emulator der Programmiergeraete PRG 710 und PRG 710-1 (K1520-Bus)",
          "pc1715": "Emulator der Buerocomputer PC 1715 und PC 1715W",
          "p8000": "Emulator des 16-Bit-Arbeitsplatzcomputers P8000 (U880 + U8001, UDOS und WEGA)",
-         "mc80": "Emulator der Mikrorechner MC80.30 und MC80.31 (VEB Elektronik Gera)"}
+         "mc80": "Emulator der Mikrorechner MC80.30, .31, .21 und .22 (VEB Elektronik Gera)"}
 _P = PROFIL.programm
 _MODUS_HILFE = ("  {p} --mode MODUS      Betriebsart: computer (Rechner mit Terminal) oder terminal\n"
                 "                        (nur das Terminal, Verbindung zu einem anderen Rechner)\n"

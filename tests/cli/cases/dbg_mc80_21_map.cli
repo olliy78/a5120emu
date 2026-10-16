@@ -1,0 +1,29 @@
+# k1520dbg --machine mc80-21 (AP M12): BSYS-Menue im DPL-Bild, Tastatur ueber `keys`, Bausteine der
+# DPL/MBI/ZRE, Interruptkette, Kassette (fest eingebautes SK 1200 an der MBI); ZVE2 "nicht vorhanden".
+tool:    k1520dbg
+run:     --machine mc80-21 --tape-card
+timeout: 240
+exit:    0
+stdin:
+  map
+  g 4000000
+  screen find "TASTENTEST"
+  keys \e
+  rj
+  dev
+  ivt
+  tape
+  where
+  s2
+  q
+expect:  BSYS-ROM (K2521, ver2)
+expect:  found at row 0
+expect:  "machine":"MC80.21"
+expect:  DPL, F0H-F3H
+expect:  MBI-PIO (FCH-FFH)
+expect:  ZRE-PIO (84H-87H)
+expect:  DPL CTC ch0
+expect:  MBI-Laufwerk
+expect:  keine Kassette
+expect:  's2' gibt es am MC80.21 nicht
+forbid:  unknown command

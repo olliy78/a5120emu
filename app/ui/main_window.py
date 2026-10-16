@@ -624,6 +624,10 @@ class MainWindow(QMainWindow):
         if self._tastatur_art in ("pc1715", "pc1715-tast618"):
             from app.ui.keyboard_pc1715 import KeyboardPc1715Widget
             return KeyboardPc1715Widget(qwertz=self._tastatur_art == "pc1715-tast618")
+        if self._tastatur_art == "mc80-2x":
+            # MC80.21/.22: Matrixtastatur an der DPL, logische Anordnung (AP M12).
+            from app.ui.keyboard_mc80_2x import KeyboardMc80_2xWidget
+            return KeyboardMc80_2xWidget()
         if self._tastatur_art == "mc80":
             # MC80.3x: abgesetzte Tastatur auf Zeichenebene (Entwurf 31, AP M6).
             from app.ui.keyboard_mc80 import KeyboardMc80Widget

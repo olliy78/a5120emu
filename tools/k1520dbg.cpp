@@ -204,7 +204,7 @@ int main(int argc, char** argv){
     // original writable (writes persist); `--read-only`/`--ro` mounts write-protected.
     enum { MOUNT_COW=0, MOUNT_RW=1, MOUNT_RO=2 } mount_mode = MOUNT_COW;
     bool start_console = false;   // --console: sofort in den Konsolenmodus (§9)
-    dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|k8915-g2|prg710|prg710-1|pc1715|pc1715w|p8000|p8000-16|mc80[-30|-31] (Vorgabe a5120)
+    dbgm::Art art = dbgm::Art::A5120;   // --machine a5120|k8915|k8915-g2|prg710|prg710-1|pc1715|pc1715w|p8000|p8000-16|mc80[-30|-31|-21|-22] (Vorgabe a5120)
     int mc80_spe = 1;             // --spe 1|2: Zahl der SPE 2 am MC80 (AP M8)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
@@ -227,7 +227,7 @@ int main(int argc, char** argv){
     for (int i=1;i<argc;++i){
         if (!strcmp(argv[i],"--machine") && i+1<argc){
             if (!dbgm::parseMachine(argv[++i], art)){
-                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16 | mc80 | mc80-30 | mc80-31)\n",argv[i]); return 2; } }
+                fprintf(stderr,"unbekannte Maschine '%s' (a5120 | k8915 | k8915-g2 | prg710 | prg710-1 | pc1715 | pc1715w | p8000 | p8000-16 | mc80 | mc80-30 | mc80-31 | mc80-21 | mc80-22)\n",argv[i]); return 2; } }
         else if (!strcmp(argv[i],"--spe") && i+1<argc){ mc80_spe=atoi(argv[++i]);
             if (mc80_spe<1 || mc80_spe>2){ fprintf(stderr,"--spe: 1 oder 2\n"); return 2; } }
         else if (!strcmp(argv[i],"--skip-selftest")) skip_selftest=true;
@@ -350,7 +350,8 @@ int main(int argc, char** argv){
     const bool KC = m.isPc1715();    // PC 1715: eine CPU, 8275-Bild aus dem Haupt-RAM, ROM-Overlay 24H/28H
     const bool KP1 = m.isPrg1();     // 710-1: Tastatur K7672 an A32-B, Return = 0DH
     EM* em = m.em();          // nullptr ohne --em (und immer am K8915)
-    const bool KM = m.isMc80();    // MC80 (AP M8): eine CPU (ZVE), Segmentfenster 4000H–BFFFH, VIS-Bild als Text
+    const bool KM = m.isMc80();    // MC80.3x (AP M8): eine CPU (ZVE), Segmentfenster 4000H–BFFFH, VIS-Bild als Text
+    const bool KM2 = m.isMc80_2x();   // MC80.21/.22 (AP M12): K2521 + PFS/OPS, DPL-Bild 32 x 8, Matrixtastatur, MBI
     const bool KQ = m.isP8000();   // P8000 (AP P12): U880 + MON8, mit p8000-16 auch U8001/MMU/Kopplung
     // 16-Bit-Karte des P8000 (U8001-Kontext wie beim EM, aber MMU statt Segmentweiche); nullptr ohne `p8000-16`.
     P8000Karte16* p16 = KQ ? m.p8000()->karte16() : nullptr;
@@ -1433,6 +1434,10 @@ int main(int argc, char** argv){
                 rcpfx(), rc(m.cpuCycles()), rel_armed?" (rel)":"");
             return;
         }
+        if (KM2){   // MC80.2x: Speicher fest (ROM/PFS/OPS), kein Banking
+            fprintf(stderr,"  state: %s  %c-cyc=%lld%s\n", m.name(), rcpfx(), rc(m.cpuCycles()), rel_armed?" (rel)":"");
+            return;
+        }
         if (KM){   // MC80: Segmentregister (85H) und RAM-Schutz
             Mc80Machine& k=*m.mc80();
             fprintf(stderr,"  state: SEG=%02X schutz=%s  %c-cyc=%lld%s\n", k.zve().segmentRegister(),
@@ -1737,6 +1742,20 @@ int main(int argc, char** argv){
             rst38Hint();
             return;
         }
+        if (KM2){   // MC80.2x: Bild = 8 Zeilen DPL
+            Mc80_2xMachine& k=*m.mc80_2x();
+            uint16_t pc=m.cpuPC();
+            if (json){
+                fprintf(stderr,"\n{\"machine\":\"%s\",\"pc\":\"0x%04X\",\"zeile0\":\"%s\"}\n", m.name(), pc, k.textZeile(0).c_str());
+                return;
+            }
+            char l1[120]; disasmAt(pc,l1,sizeof l1); std::string p1=prnFor(pc);
+            fprintf(stderr,"  CPU  %s%s%s\n",l1,p1.empty()?"":"  ; ",p1.c_str());
+            fprintf(stderr,"  Bild (DPL, 8 x 32): |%s| |%s| |%s|\n", k.textZeile(0).c_str(), k.textZeile(1).c_str(), k.textZeile(2).c_str());
+            fprintf(stderr,"  Takte=%llu\n",(unsigned long long)m.machineCycles());
+            rst38Hint();
+            return;
+        }
         if (KM){   // MC80: eine CPU, kein Laufwerk; Segmentfenster, Zeile 23/24 des Bildes
             Mc80Machine& k=*m.mc80();
             uint16_t pc=m.cpuPC();
@@ -1854,6 +1873,9 @@ int main(int argc, char** argv){
                  return; }
         if (KC){ fprintf(stderr,"  … %llu cyc  PC=%04X  BWS=%02X  [Ctrl-C bricht ab]\n",
                          (unsigned long long)(runClock()-start), m.cpuPC(), m.pc1715()->zre().bwsRegister());
+                 return; }
+        if (KM2){ fprintf(stderr,"  … %llu cyc  PC=%04X  [Ctrl-C bricht ab]\n",
+                         (unsigned long long)(runClock()-start), m.cpuPC());
                  return; }
         if (KM){ fprintf(stderr,"  … %llu cyc  PC=%04X  SEG=%02X  [Ctrl-C bricht ab]\n",
                          (unsigned long long)(runClock()-start), m.cpuPC(), m.mc80()->zve().segmentRegister());
@@ -2037,6 +2059,25 @@ int main(int argc, char** argv){
                 m.keyRelease(code);           ran+=goSilent(100000);
                 if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
             }
+            fprintf(stderr,"   keys: %d Zeichen getippt, %llu cyc (PC=%04X)\n",n,
+                    (unsigned long long)ran,m.cpuPC());
+            return;
+        }
+        if (KM2){
+            // MC80.2x: Matrixtaste je Zeichen.  Die Maschine haelt jede Taste 60 ms und pausiert 60 ms
+            // (Maschinenzeit, Mc80_2xMachine::TASTE_*) — je Taste 300 000 Takte Luft.  \r/\n = ENTER,
+            // \e = OFF; Strg+Buchstabe = CTR; Pfeile ueber Qt-Codes (decodeKey).
+            uint64_t ran=0; int n=0;
+            for (size_t i=0;i<t.size();++i){
+                uint32_t code=decodeKey(t,i); ++n;
+                bool strg=false;
+                if (code==0x0A || code==0x0D) code=0x01000004u;
+                else if (code==0x1B) code=0x01000000u;
+                else if (code>=0x01 && code<=0x1A && code!=0x08 && code!=0x09){ code+=0x60; strg=true; }
+                m.mc80_2x()->keyPress(code,false,strg); ran+=goSilent(300000);
+                if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
+            }
+            ran+=goSilent(200000);
             fprintf(stderr,"   keys: %d Zeichen getippt, %llu cyc (PC=%04X)\n",n,
                     (unsigned long long)ran,m.cpuPC());
             return;
@@ -2903,6 +2944,7 @@ int main(int argc, char** argv){
 
     signal(SIGINT, dbgSigInt);      // §7: Ctrl-C bricht einen laufenden `g` ab, nicht die Sitzung
     if (KQ) fprintf(stderr,"k1520dbg — Maschine P8000 (U880%s; 'help p8000').  Disassembler: built-in.\n",p16?" + U8001/MMU/Kopplung":"");
+    else if (KM2) fprintf(stderr,"k1520dbg — Maschine %s (eine CPU; 'help mc80-2x').  Disassembler: built-in.\n",m.name());
     else if (KM) fprintf(stderr,"k1520dbg — Maschine %s (eine CPU; 'help mc80').  Disassembler: built-in.\n",m.name());
     else if (KC) fprintf(stderr,"k1520dbg — Maschine PC 1715 (eine CPU; 'help pc1715').  Disassembler: built-in.\n");
     else if (KP) fprintf(stderr,"k1520dbg — Maschine %s (eine CPU; 'help prg').  Disassembler: built-in.\n",m.name());
@@ -3044,6 +3086,17 @@ int main(int argc, char** argv){
               "    savestate <f> | loadstate <f>   P8KS (nicht: Medieninhalt) ; snap/rs/bbusrq: nicht vorhanden\n"
               "    wdc [r|u|d|log]     WDC (--wdc 4.2 / --hd abbild): Zustand, Register, Disassembler, Speicher, Kommando-Protokoll\n"
               "    Adressen der 16-Bit-Seite: <<seg>>off; `em:ADR` = physischer Hauptspeicher A0-A23 (roh)\n");
+        }
+        else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="mc80-2x"||t[1]=="mc8020"||t[1]=="MC80.2x")){
+            fprintf(stderr,
+              "  MC80.2x (--machine mc80-21|mc80-22)  eine CPU (K2521, BSYS-ROM 0000H-0FFFH), kein Segmentregister\n"
+              "    map               festes Speicherbild und Tore\n"
+              "    screen/gscreen    DPL-Bild als Text (8 Zeilen x 32 Zeichen); Zeile 0 = Menuekopf \"0270 >TASTENTEST\"\n"
+              "    keys <text>       Matrixtasten (je 300 000 Takte): \\r = ENTER, \\e = OFF, Strg+Buchstabe = CTR\n"
+              "    dev [dpl|mbi|zre] CTC/PIO der Karten;  ivt = Interruptkette DPL -> MBI -> ZRE [?]\n"
+              "    --tape <k52> / --tape-card   das fest eingebaute Laufwerk SK 1200 (nur Geraet 1); Befehl `tape`\n"
+              "    Listings: -l doc/mc80/bsys_2x.prn  (BSYS-ROM)\n"
+              "    Nicht vorhanden: ZVE2, bbusrq, snap/restore/rs/rc, savestate/loadstate, bank, Laufwerke\n");
         }
         else if ((cmd=="help"||cmd=="h"||cmd=="?") && t.size()>1 && (t[1]=="mc80"||t[1]=="MC80")){
             fprintf(stderr,
@@ -3395,6 +3448,12 @@ int main(int argc, char** argv){
                 z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,z.R, z.IFF1?"true":"false",
                 (unsigned long long)m.cpuCycles(), m.isRomEnabled()?"true":"false",
                 pz.bwsRegister(), pz.bildBasis()); }
+        else if (cmd=="rj" && KM2){ const Z80& z=m.cpuDebug();
+            fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
+                "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
+                "\"i\":\"0x%02X\",\"r\":\"0x%02X\",\"iff1\":%s,\"cyc\":%llu,\"rom\":true,\"machine\":\"%s\"}\n",
+                z.PC,z.SP,z.AF,z.BC,z.DE,z.HL,z.IX,z.IY,z.I,z.R, z.IFF1?"true":"false",
+                (unsigned long long)m.cpuCycles(), m.name()); }
         else if (cmd=="rj" && KM){ const Z80& z=m.cpuDebug(); Mc80Machine& k=*m.mc80();
             fprintf(stderr,"\n{\"pc\":\"0x%04X\",\"sp\":\"0x%04X\",\"af\":\"0x%04X\",\"bc\":\"0x%04X\","
                 "\"de\":\"0x%04X\",\"hl\":\"0x%04X\",\"ix\":\"0x%04X\",\"iy\":\"0x%04X\","
@@ -3704,6 +3763,10 @@ int main(int argc, char** argv){
                 for(auto& v: var_watch){ uint16_t a=std::get<1>(v);
                     if(std::get<2>(v)) fprintf(stderr,"  %-14s [%04X] = %04X\n",std::get<0>(v).c_str(),a,wd(a));
                     else               fprintf(stderr,"  %-14s [%04X] = %02X\n",std::get<0>(v).c_str(),a,m.memReadDebug(a)); } }
+            else if (KM2){   // MC80.2x: nur das Bild statt Handschlag-RAM/CP/A-DPB
+                Mc80_2xMachine& k=*m.mc80_2x();
+                fprintf(stderr,"  Zeile 0: |%s|  Zeile 1: |%s|\n  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
+                        k.textZeile(0).c_str(), k.textZeile(1).c_str()); }
             else if (KM){   // MC80: Segment und Eingabezeile statt Handschlag-RAM/CP/A-DPB
                 Mc80Machine& k=*m.mc80();
                 fprintf(stderr,"  SEG=%02X schutz=%s  Zeile 23: |%s|  Zeile 24: |%s|\n  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
@@ -3739,6 +3802,28 @@ int main(int argc, char** argv){
             else fprintf(stderr,"  [03F8]done=%02X  DPB: [D1B2]=%04X [D1B4]=%04X [D1B8]=%04X [D1BE]=%04X [D1CD]=%04X\n"
                                 "  (vars -f <datei> | vars add <name> <addr> [w] | vars clear)\n",
                     m.memReadDebug(0x03F8),wd(0xD1B2),wd(0xD1B4),wd(0xD1B8),wd(0xD1BE),wd(0xD1CD)); }
+        else if (cmd=="dev" && KM2){   // MC80.2x: DPL, MBI (je CTC + PIO) und ZRE (CTC 80H, PIO 84H)
+            std::string w = t.size()>1? t[1] : "all";
+            Mc80_2xMachine& k=*m.mc80_2x();
+            auto Y=[&](bool b){ return b?"1":"0"; };
+            auto showCtc=[&](const char* name, const Z80CTC::DebugState& c){
+                fprintf(stderr,"  CTC (%s)  vecBase=%02X  IEI=%s IEO=%s\n",name,c.vecBase,Y(c.iei),Y(c.ieo));
+                for(int i=0;i<4;++i){ auto& ch=c.ch[i];
+                    fprintf(stderr,"    ch%d ctl=%02X TC=%02X cnt=%-3d run=%s  INT(en=%s pend=%s ius=%s iei=%s)\n",
+                        i,ch.control,ch.timeConst,ch.counter,Y(ch.running),Y(ch.intEn),Y(ch.intPending),Y(ch.ius),Y(ch.iei)); } };
+            auto showPio=[&](const char* name, const Z80PIO::DebugState& p){
+                fprintf(stderr,"  %s  IEI=%s IEO=%s\n",name,Y(p.iei),Y(p.ieo));
+                for(int i=0;i<2;++i){ auto& pt=p.port[i];
+                    fprintf(stderr,"    %c mode=%u out=%02X in=%02X dir=%02X vec=%02X  INT(en=%s pend=%s ius=%s iei=%s)\n",
+                        i?'B':'A',pt.mode,pt.out,pt.in,pt.dir,pt.vector,Y(pt.ie),Y(pt.pending),Y(pt.ius),Y(pt.iei)); } };
+            bool any=false; const bool all=(w=="all");
+            if (all||w=="dpl"){ showCtc("DPL, F0H-F3H",k.dpl().ctc().debugState());
+                                showPio("DPL-PIO (F4H-F7H; A = Zeichen/Zeile, B = Zeilenposition/Matrix)",k.dpl().pio().debugState()); any=true; }
+            if (all||w=="mbi"){ showCtc("MBI, F8H-FBH",k.mbi().ctc().debugState());
+                                showPio("MBI-PIO (FCH-FFH)",k.mbi().pio().debugState()); any=true; }
+            if (all||w=="zre"){ showCtc("ZRE, 80H-83H",k.zre().ctc().debugState());
+                                showPio("ZRE-PIO (84H-87H)",k.zre().pio().debugState()); any=true; }
+            if (!any) fprintf(stderr,"  dev [all|dpl|mbi|zre]   (MC80.2x)\n"); }
         else if (cmd=="dev" && KM){   // MC80: ZVE (CTC 80H, PIO 84H) und ASP (SIO D0H, CTC D4H, PIO D8H)
             std::string w = t.size()>1? t[1] : "all";
             Mc80Machine& k=*m.mc80();
@@ -3971,6 +4056,13 @@ int main(int argc, char** argv){
                     fprintf(stderr,"    %X      %04X-%04X    %02X   %-8s  %X    %s\n",n,(n<<12),(n<<12)|0x0FFF,a,her,sp.seite(n),q);
                 }
             }
+            else if (KM2){   // MC80.2x: festes Speicherbild
+                fprintf(stderr,"  0000-0FFF  BSYS-ROM (K2521, ver2) / RAM 0C00-0FFF (BWS, Systemzellen, Stapel)\n"
+                               "  2000-5FFF  PFS K3820: 16 Sockel zu 1 KB ab 2000H (Sockel 0 mo01, 1 leer, 2-15 mo03..mo16)\n"
+                               "  C000-...   OPS K3525 (RAM, FFH beim Einschalten)\n"
+                               "  E/A: ZRE 80H-87H, DPL F0H-F7H, MBI EFH + F8H-FFH, Senken 00H-0FH und E0H-E8H (PPE)\n"
+                               "  Bild: DPL 528x256, Zelle 16x32 (8 Zeilen x 32 Zeichen), Text per Zellenvergleich (screen/gscreen)\n");
+            }
             else if (KM){   // MC80: festes Speicherbild + Segmentfenster 4000H–BFFFH (85H)
                 Mc80Machine& k=*m.mc80();
                 const uint8_t seg=k.zve().segmentRegister();
@@ -4058,7 +4150,22 @@ int main(int argc, char** argv){
                         asc[16]=0; fprintf(stderr," |%s|\n",asc); } } } }
         else if (cmd=="tape"){   // Kassette K5020/K5200 (--tape): Status, Blockliste, Blockinhalt
             K5020* kk = m.base().k5020();
-            if (!kk){ fprintf(stderr,"  keine Kassettenkarte gesteckt (--tape <k52> | --tape-card)\n"); }
+            if (!kk && KM2){   // MC80.2x: das fest eingebaute Laufwerk SK 1200 der MBI
+                auto* lw = m.base().kassettenLaufwerk(0);
+                auto md = lw ? lw->medium() : nullptr;
+                fprintf(stderr,"  MBI-Laufwerk (%s): ", lw ? lw->profil().name : "-");
+                if (!md) fprintf(stderr,"keine Kassette\n");
+                else {
+                    fprintf(stderr,"Seite %c  Kopf %.1f mm von %.1f m  Bloecke A/B: %zu/%zu  %s%s\n",
+                            md->aktiveSeite()==kassette::Seite::A?'A':'B',lw->positionMm(),md->geometrie().laenge_um/1e6,
+                            md->anzahlBloecke(kassette::Seite::A),md->anzahlBloecke(kassette::Seite::B),
+                            lw->bewegt()?"Band laeuft ":"Band steht ",lw->gebunden()?lw->pfad().c_str():"(ohne Datei)");
+                    for (size_t i=0;i<md->anzahlBloecke(md->aktiveSeite());++i)
+                        fprintf(stderr,"  [%zu] ab %.1f mm  %zu Bytes\n",i,md->blockStart(md->aktiveSeite(),i)/1000.0,
+                                md->block(md->aktiveSeite(),i).bytes.size());
+                }
+            }
+            else if (!kk){ fprintf(stderr,"  keine Kassettenkarte gesteckt (--tape <k52> | --tape-card)\n"); }
             else if (t.size()<2){
                 fprintf(stderr,"  K5020 Basis %02XH  angewaehlt: %d  ZF=%d  verlorene Bytes: %llu\n",
                         (unsigned)kk->config().basis,kk->angewaehlt()+1,kk->zeitfehler()?1:0,(unsigned long long)kk->verloreneBytes());

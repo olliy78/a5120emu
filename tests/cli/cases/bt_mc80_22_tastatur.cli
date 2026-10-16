@@ -1,0 +1,8 @@
+# boot_trace --machine mc80-22 --keys (AP M12): Matrixtasten ueber die DPL.  Kursor ab, ab, ENTER oeffnet
+# das Bandmenue (dritte Zeile "0600  BAND"); --until beendet den Lauf, sobald "MAGNETBAND :" im Bild steht.
+tool:    boot_trace
+run:     --machine mc80-22 --quiet --json --keys <DN><DN><ET> --until "screen ~ \"MAGNETBAND :\""
+timeout: 240
+exit:    0
+expect:  "machine":"mc80-22"
+expect:  "until":{"set":true,"met":true
