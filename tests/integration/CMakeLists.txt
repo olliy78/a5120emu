@@ -188,6 +188,12 @@ k1520_add_test(mc80_segmente SRC test_mc80_segmente.cpp
                           LIBS k1520_mc80 k1520_logger
                           LABELS "${_lbl}" DEFS LOG_LEVEL=2)
 
+# MC80.21/.22 (AP M11, doc/mc80/hardware_2x.md): BSYS meldet sich über die DPL, Tasten über die
+# Matrix, Programm über die MBI auf die Kassette und zurück.
+k1520_add_test(mc80_2x SRC test_mc80_2x.cpp
+                          LIBS k1520_mc80 k1520_logger
+                          LABELS "${_lbl}" DEFS LOG_LEVEL=2 TIMEOUT 300)
+
 # PC 1715 (doc/design/21_pc1715.md AP-1b): Maschine bauen, echter Urlader S502 (kopiert sich,
 # blendet das ROM aus), Bildwechsel.  Ohne Floppy; das Verhalten danach ist AP-1c.
 k1520_add_test(pc1715_maschine SRC test_pc1715_machine.cpp

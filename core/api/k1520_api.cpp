@@ -7,6 +7,7 @@
 #include "core/machines/p8000/p8000.h"
 #include "core/machines/p8000/p8000_terminal_machine.h"
 #include "core/machines/mc80/mc80.h"
+#include "core/machines/mc80/mc80_2x.h"
 #include "core/machines/machine.h"
 #include "core/peripherals/k7637/k7637.h"
 #include "core/logger.h"
@@ -309,6 +310,24 @@ K1520Handle k1520_create_mc80(int variante, const char* konfig) {
             g_init_error = "Unbekannte MC80-Variante " + std::to_string(variante) +
                            " (0 = .30, 1 = .31, 2 = .33, 3 = .21, 4 = .22)";
             return nullptr;
+    }
+    // MC80.21/.22 (AP M11): eigene Maschine, keine Schlüssel (SPE gibt es dort nicht).
+    if (variante == 3 || variante == 4) {
+        if (konfig && *konfig) {
+            g_init_error = std::string("MC80.2x: keine Konfigurationsschluessel ('") + konfig + "')";
+            return nullptr;
+        }
+        Mc80_2xMachine::Config c2;
+        c2.variante = variante == 3 ? Mc80_2xMachine::Config::Variante::Mc8021
+                                    : Mc80_2xMachine::Config::Variante::Mc8022;
+        setup_logging();
+        try {
+            K1520Machine* m = new Mc80_2xMachine(c2);   // Handle = K1520Machine*
+            return m;
+        } catch (const std::exception& e) {
+            g_init_error = e.what();
+            return nullptr;
+        }
     }
     // Schlüssel=Wert-Liste wie beim P8000 (Entwurf 31; M2 kennt nur `spe`).
     const std::string text = konfig ? konfig : "";
@@ -1314,19 +1333,20 @@ int k1520_ptape_punch_format(K1520Handle h) {
 // ─── Kassette K5020/K5200 (Entwurf 29, AP K5) ───────────────────────────────────
 namespace {
 thread_local std::string tape_fehler;
-K5020* tapeOf(K1520Handle h) {
-    return h ? toMachine(h)->k5020() : nullptr;
-}
 bool tapeErgebnis(bool ok, const std::string& fehler) {
     tape_fehler = ok ? std::string() : fehler;
     return ok;
 }
 /// Karte und Laufwerk @p drive (0/1) oder nullptr (+ Fehlertext).
 kassette::KassettenLaufwerk* tapeLw(K1520Handle h, int drive) {
-    K5020* k = tapeOf(h);
-    if (!k) { tape_fehler = "keine Kassettenkarte (K5020) gesteckt"; return nullptr; }
+    if (!h) { tape_fehler = "kein Handle"; return nullptr; }
+    K1520Machine* m = toMachine(h);
+    if (!m->kassettenLaufwerk(0)) { tape_fehler = "keine Kassettenkarte (K5020) gesteckt"; return nullptr; }
     if (drive != 0 && drive != 1) { tape_fehler = "Laufwerk muss 0 oder 1 sein"; return nullptr; }
-    return &k->laufwerk(drive);
+    // MC80.2x: nur Laufwerk 0 (SK 1200 an der MBI, AP M11); sonst die Laufwerke der K5020.
+    auto* lw = m->kassettenLaufwerk(drive);
+    if (!lw) tape_fehler = "Laufwerk " + std::to_string(drive) + " gibt es an dieser Maschine nicht";
+    return lw;
 }
 /// Das eingelegte Medium oder nullptr (+ Fehlertext).
 std::shared_ptr<kassette::KassettenMedium> tapeMedium(K1520Handle h, int drive) {
@@ -1349,7 +1369,7 @@ bool k1520_tape_install(K1520Handle h) {
     return tapeErgebnis(true, {});
 }
 
-bool k1520_tape_installed(K1520Handle h) { return tapeOf(h) != nullptr; }
+bool k1520_tape_installed(K1520Handle h) { return h && toMachine(h)->kassettenLaufwerk(0) != nullptr; }
 
 const char* k1520_tape_error(K1520Handle) { return tape_fehler.c_str(); }
 
@@ -1389,9 +1409,9 @@ bool k1520_tape_flush(K1520Handle h, int drive) {
 }
 
 const char* k1520_tape_file(K1520Handle h, int drive) {
-    K5020* k = tapeOf(h);
+    auto* lw = h ? toMachine(h)->kassettenLaufwerk(drive) : nullptr;
     static thread_local std::string buf;
-    buf = (k && (drive == 0 || drive == 1)) ? k->laufwerk(drive).pfad() : std::string();
+    buf = lw ? lw->pfad() : std::string();
     return buf.c_str();
 }
 

@@ -181,10 +181,19 @@ K1520_API K1520Handle k1520_create_p8000_terminal(const char* konfig);
  *        F1…F8 = Sondertaste 0…7), `k1520_bell_count` = Summer 07H, `k1520_keyboard_leds`
  *        Bit 0 = Anzeige (14H/12H) [?].
  *
- * @param variante  0 = MC80.30, 1 = MC80.31; 2 = MC80.33, 3 = MC80.21, 4 = MC80.22 sind noch
+ *        Seit AP M11: **MC80.21/.22** (variante 3/4, doc/mc80/hardware_2x.md) — K2521 +
+ *        PFS K3820 + OPS K3525 + Displaylogik DPL + Magnetbandinterface MBI:
+ *        `k1520_framebuffer` 528 × 256 (8 × 32 Zeichen in 16 × 32-Zellen, Analogkurven),
+ *        `k1520_screen_char(col 0…31, row 0…7)` = Zeichen, wie die DPL sie gezeichnet hat,
+ *        `k1520_key_press` (ASCII/Qt → Tastenmatrix; Escape = OFF, Return = ENTER, Pause = BK),
+ *        Kassette = `k1520_tape_*` mit Laufwerk 0 (SK 1200 der MBI; `k1520_tape_installed` = 1
+ *        ohne `k1520_tape_install`).
+ *
+ * @param variante  0 = MC80.30, 1 = MC80.31, 3 = MC80.21, 4 = MC80.22; 2 = MC80.33 ist noch
  *                  nicht nachgebildet → NULL mit Grund.
- * @param konfig    Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel:
- *                  `spe` (1 | 2: Zahl der SPE 2; die zweite = RAM-Segment 02H).
+ * @param konfig    Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel
+ *                  (nur .30/.31): `spe` (1 | 2: Zahl der SPE 2; die zweite = RAM-Segment 02H).
+ *                  Der MC80.2x kennt keine Schlüssel.
  *                  Unbekannte Schlüssel/Werte → NULL, Grund in k1520_last_init_error.
  * k1520_machine_type() = 6.  Keine Laufwerke.  `k1520_create(K1520_MACHINE_MC80)` = MC80.30.
  */

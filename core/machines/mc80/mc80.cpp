@@ -34,7 +34,7 @@ Mc80Machine::Config Mc80Machine::pruefe(const Config& cfg)
         case Config::Variante::Mc8021:
         case Config::Variante::Mc8022:
             throw std::invalid_argument(std::string(variantenName(cfg.variante)) +
-                                        " ist noch nicht nachgebildet (MC80.2x = Etappe 3)");
+                                        " ist eine eigene Maschine (Mc80_2xMachine, mc80_2x.h)");
     }
     if (cfg.spe_karten < 1 || cfg.spe_karten > 2)
         throw std::invalid_argument("MC80: spe_karten muss 1 oder 2 sein");

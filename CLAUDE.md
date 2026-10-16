@@ -634,9 +634,14 @@ nie `mem_read`).  `boot_trace`/`k1520dbg --machine mc80[-30|-31]`, Programm **mc
 Speicherabzug laden via `k1520_mem_load`, Kassette K5020 fest auf 30H als **Kompaktkassette**, Paket).
 **Stand 2026-10-15:** M0–M9 für MC80.3x fertig (EGOS meldet sich, Spiele Pharao/Wall/Tetris/Hasi laufen **nach `INIT`**,
 `KINIT`/`WRITE`/`READ` auf Band); **MC80.33 gesperrt** (zweite ROM-Hälfte des PK-3-Treibers fehlt), Sondertasten →
-Editor/BASIC nicht belegbar.  **MC80.2x (M10–M12) in Planung** (Entwurf 31, `doc/design/32_...` §6).
+Editor/BASIC nicht belegbar.  **MC80.21/.22 im Kern (M11, 2026-10-16):** eigene Klasse `Mc80_2xMachine`
+(`core/machines/mc80/mc80_2x.*`, gleicher Typ 6, `k1520_create_mc80(3|4)`): K2521 + PFS K3820 + OPS K3525 +
+Displaylogik **DPL** (`cards/mc80/dpl.*`: Zeilenautomat, Bild 528 × 256 aus den PIO-Ausgängen, 8 × 32 Zeichen +
+Analogkurven, Tastenmatrix) + Magnetbandinterface **MBI** (`cards/mc80/mbi.*`, SK 1200 = `k1520_tape_*` Laufwerk 0);
+BSYS (ROM ver2) meldet sich mit dem Menü, speichert/lädt über die Kassette.  M12 (`mc80emu`) offen.
 **Vor Arbeiten daran: `doc/merkposten/mc80.md` lesen** (Segmentport 85H, Leerbereich 00H, `Z80CTC::setIntAusVerwirftAnforderung`
-nur an der ASP-CTC, EPROM-Segmente, Kassettentakt-Annahmen, offene Fragen).  Plan: `doc/design/31_mc80.md`.
+nur an der ASP-CTC, EPROM-Segmente, Kassettentakt-Annahmen, MC80.2x-Zeitmodell und RETI-Verteilung, offene Fragen).
+Plan: `doc/design/31_mc80.md`.
 
 ## Boot-ROM debugging workflow
 

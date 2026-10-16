@@ -301,6 +301,15 @@ public:
     const K5020* k5020() const { return k5020_.get(); }
     /** @brief Grund des letzten gescheiterten @ref installK5020 ("" = keiner). */
     const std::string& k5020Fehler() const { return k5020_fehler_; }
+    /**
+     * @brief Kassettenlaufwerk @p drive der Maschine (C-ABI `k1520_tape_*`), nullptr = keins.
+     *        Vorgabe: die beiden Laufwerke einer gesteckten K5020 (0/1).  Der MC80.2x liefert
+     *        das fest eingebaute SK 1200 seiner MBI als Laufwerk 0 (AP M11).
+     */
+    virtual kassette::KassettenLaufwerk* kassettenLaufwerk(int drive) {
+        if (!k5020_ || drive < 0 || drive > 1) return nullptr;
+        return &k5020_->laufwerk(drive);
+    }
 
 protected:
     /** @brief Der Systembus, auf dem Zusatzkarten (RAF) ihre E/A-Tore anmelden. */
