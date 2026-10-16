@@ -1,20 +1,20 @@
 /**
  * @file test_k8915_boot.cpp
  * @brief K8915 Etappe 1 und 2 (doc/design/16_k8915.md §8a AP-E1/AP-E2): das Boot-ROM
- *        läuft auf der K8915Machine (ZRE 045-8762 + ATS K7028.30 mit K7672 + K7024)
+ *        laeuft auf der K8915Machine (ZRE 045-8762 + ATS K7028.30 mit K7672 + K7024)
  *        durch den Selbsttest bis zur Coldstart-Meldung des Laders.
  *
  * **Wie die Statuszeile wirklich aussieht** (am Lauf festgestellt, §4.3): Das ROM
  * zeigt KEINE Zeile „ROM RAM SIO KEY CTC" auf einmal.  `sub_FC19` schreibt
  * „DIAGNOSTIC" nach 1740H und den Namen des **gerade laufenden** Tests (3 Zeichen)
  * nach 1770H; ein Fehler setzt einen Kennbuchstaben nach 1776H.  Die Reihenfolge ist
- * ROM → RAM → RAZ (Bank 2) → KEY → CTC → SIO.  Nach bestandener Prüfsumme macht das
+ * ROM → RAM → RAZ (Bank 2) → KEY → CTC → SIO.  Nach bestandener Pruefsumme macht das
  * ROM aus „ROM" per `LD (1771H),'A'` einfach „RAM".
  *
- * Etappe 2: mit Tastatur und Prüfstecker besteht der Selbsttest ohne Buchstaben und
- * geht über F3F3H in den Lader („* Coldstart *  Disk on A: ready ? --> <ENTER>").
+ * Etappe 2: mit Tastatur und Pruefstecker besteht der Selbsttest ohne Buchstaben und
+ * geht ueber F3F3H in den Lader („* Coldstart *  Disk on A: ready ? --> <ENTER>").
  * Gegenproben: ohne Tastatur scheitert KEY mit 'A' (keine Antwort auf `ESC c`), ohne
- * Prüfstecker SIO mit 'G' (kein Echo auf SIO1-A, SIO1-B, SIO2-A).  Nach einem Fehler
+ * Pruefstecker SIO mit 'G' (kein Echo auf SIO1-A, SIO1-B, SIO2-A).  Nach einem Fehler
  * wartet das ROM in F3C0H auf eine Taste; `CR` startet den Lader trotzdem.
  */
 
@@ -66,8 +66,8 @@ bool coldstart(K8915Machine& m) {
     return vramText(m).find("* Coldstart *  Disk on A: ready") != std::string::npos;
 }
 
-/// Läuft, bis ein Fehlerbuchstabe oder die Coldstart-Meldung steht (oder die Frist
-/// abläuft); zeichnet die Namen auf.
+/// Laeuft, bis ein Fehlerbuchstabe oder die Coldstart-Meldung steht (oder die Frist
+/// ablaeuft); zeichnet die Namen auf.
 Verlauf selbsttest(K8915Machine& m) {
     Verlauf v;
     long long done = 0;
@@ -99,12 +99,12 @@ K8915Machine::Config ohnePruefstecker() { K8915Machine::Config c; c.pruefstecker
 
 /**
  * @test K8915Boot.SelbsttestFehlerfreiBisColdstart
- * @brief Fertig-Kriterium Etappe 2 (AP-E2): mit K7672 und Prüfstecker zeigt die
+ * @brief Fertig-Kriterium Etappe 2 (AP-E2): mit K7672 und Pruefstecker zeigt die
  *        Statuszeile nacheinander ROM, RAM, RAZ, KEY, CTC, SIO, kein Test setzt einen
  *        Fehlerbuchstaben, und das ROM geht ohne Tastendruck in den Lader —
  *        „* Coldstart *  Disk on A: ready".  KEY: zwei `DC1` der Tastatur (nach `ESC c`
  *        und `ESC [2;1y`); CTC: je CTC genau ein Interrupt in ihrem DJNZ-Fenster (A = 4);
- *        SIO: Echo auf allen drei Kanälen.  Danach `CR` ⇒ Lader ⇒ ohne Diskette
+ *        SIO: Echo auf allen drei Kanaelen.  Danach `CR` ⇒ Lader ⇒ ohne Diskette
  *        „Drive A: not ready, check".
  */
 TEST(K8915Boot, SelbsttestFehlerfreiBisColdstart)
@@ -136,10 +136,10 @@ TEST(K8915Boot, SelbsttestFehlerfreiBisColdstart)
 
 /**
  * @test K8915Boot.OhnePruefsteckerScheitertSioMitG
- * @brief Ohne Rückschleife kommt auf keinem der drei Kanäle ein Echo: Fehlermaske
+ * @brief Ohne Rueckschleife kommt auf keinem der drei Kanaele ein Echo: Fehlermaske
  *        111B | 40H = 'G' unter „SIO".  Das ROM wartet dann in F3C0H; ein `CR` von der
- *        Tastatur startet den Lader trotzdem.  Welche Vorgabe dem Gerät entspricht,
- *        klärt §6.10.
+ *        Tastatur startet den Lader trotzdem.  Welche Vorgabe dem Geraet entspricht,
+ *        klaert §6.10.
  */
 TEST(K8915Boot, OhnePruefsteckerScheitertSioMitG)
 {
@@ -152,7 +152,7 @@ TEST(K8915Boot, OhnePruefsteckerScheitertSioMitG)
     EXPECT_FALSE(coldstart(m));
 
     // F167H: 16 × BEL (BC = 1040H, je ≈ 213 000 Takte Pause — die 64 × gelten nur
-    // für den ROM-/RAM-Fehlerweg 005AH), dann F3C0H: CR ⇒ Lader.
+    // fuer den ROM-/RAM-Fehlerweg 005AH), dann F3C0H: CR ⇒ Lader.
     m.run(4'000'000);
     EXPECT_EQ(m.keyboard().summerZaehler(), 16u);
     m.keyboard().sendeZeichen(0x0D);
@@ -187,9 +187,9 @@ TEST(K8915Boot, OhneTastaturScheitertKeyMitA)
 
 /**
  * @test K8915Boot.RomPruefsummeBestanden
- * @brief Die ROM-eigene 24-Bit-Prüfsumme (0000–0FFB gegen 0FFD–0FFF) besteht: 0083H
+ * @brief Die ROM-eigene 24-Bit-Pruefsumme (0000–0FFB gegen 0FFD–0FFF) besteht: 0083H
  *        schreibt 'A' nach 1771H, aus „ROM" wird „RAM", 1776H bleibt leer.  Bei einem
- *        Fehlschlag stünde „ROM" mit 'F' bei 1776H.  Billiger Wächter dafür, dass
+ *        Fehlschlag stuende „ROM" mit 'F' bei 1776H.  Billiger Waechter dafuer, dass
  *        EPROM-Inhalt und ROM-Abbildung (Bit0 = 0 ⇒ ROM bei 0000–0FFF) stimmen.
  */
 TEST(K8915Boot, RomPruefsummeBestanden)
@@ -204,7 +204,7 @@ TEST(K8915Boot, RomPruefsummeBestanden)
     }
     ASSERT_TRUE(rom_gesehen) << vramLines(m);
     EXPECT_EQ(testname(m), "RAM") << vramLines(m);
-    // Leer heißt hier 20H ODER 08H: der erste Bildlöscher nach 001BH füllt mit dem
+    // Leer heisst hier 20H ODER 08H: der erste Bildloescher nach 001BH fuellt mit dem
     // Wert aus FCF8H, und den hat die Kopie 00C0H gerade wieder auf den ROM-Wert 08H
     // gesetzt (das `LD (FCF8H),20H` bei 0025H davor ist wirkungslos).  08H ist im
     // Zeichensatz der 012-6820 ein leeres Feld.
@@ -216,8 +216,8 @@ TEST(K8915Boot, RomPruefsummeBestanden)
  * @test K8915Boot.SystemImRamFuehrtZumLader
  * @brief Steht bei 0000H und 0005H je ein `JP` (C3H) im RAM, meldet der Stub bei FFE0H
  *        (ROM aus bei 87H) „System im RAM" und das ROM geht ohne Selbsttest in den
- *        Lader: „* Coldstart *  Disk on A: ready".  Wächter für Bit0 (Seite 0 RAM
- *        statt ROM) und den Rückweg auf 06H.
+ *        Lader: „* Coldstart *  Disk on A: ready".  Waechter fuer Bit0 (Seite 0 RAM
+ *        statt ROM) und den Rueckweg auf 06H.
  */
 TEST(K8915Boot, SystemImRamFuehrtZumLader)
 {
@@ -231,15 +231,15 @@ TEST(K8915Boot, SystemImRamFuehrtZumLader)
     EXPECT_NE(vramText(m).find("* Coldstart *  Disk on A: ready"), std::string::npos)
         << vramLines(m);
     EXPECT_EQ(vramText(m).find("DIAGNOSTIC"), std::string::npos) << "kein Selbsttest erwartet";
-    EXPECT_EQ(m.zre().reg(), 0x06) << "Lader läuft bei 06H aus dem ROM";
+    EXPECT_EQ(m.zre().reg(), 0x06) << "Lader laeuft bei 06H aus dem ROM";
 }
 
 /**
  * @test K8915Boot.ZreCtcLiefertIm2Interrupt
- * @brief Die CTC der ZRE bei 80H–83H liefert Interrupts über die Kette (IM 2, I = FFH,
+ * @brief Die CTC der ZRE bei 80H–83H liefert Interrupts ueber die Kette (IM 2, I = FFH,
  *        Vektor F0H, Kanal 3 als Zeitgeber, Steuerwort A7H/Zeitkonstante 0CH — wie der
  *        CTC-Test des ROMs bei F208H, der in Etappe 1 hinter dem scheiternden KEY-Test
- *        liegt).  Die ISR zählt A hoch (wie FC64H).
+ *        liegt).  Die ISR zaehlt A hoch (wie FC64H).
  */
 TEST(K8915Boot, ZreCtcLiefertIm2Interrupt)
 {
@@ -282,7 +282,7 @@ TEST(K8915Boot, NmiImRomStartetDenSelbsttestNeu)
 {
     K8915Machine m;
     m.powerOn();
-    m.zre().bankPoke(0, 0x0000, 0xC3);    // Abkürzung wie SystemImRamFuehrtZumLader
+    m.zre().bankPoke(0, 0x0000, 0xC3);    // Abkuerzung wie SystemImRamFuehrtZumLader
     m.zre().bankPoke(0, 0x0005, 0xC3);
     long long done = 0;
     while (done < 5'000'000 && !coldstart(m)) done += m.run(kSchritt);
@@ -293,7 +293,7 @@ TEST(K8915Boot, NmiImRomStartetDenSelbsttestNeu)
     m.nmi();
     m.run(200);                            // ein paar Befehle: 0066H ist durchlaufen
     EXPECT_EQ(m.ats().anzeige(), 0xFF) << "0066H: OUT (61H),FFH — alle Lampen aus";
-    EXPECT_EQ(m.panelLamps(), 0xFF) << "Spiegel für die Oberfläche";
+    EXPECT_EQ(m.panelLamps(), 0xFF) << "Spiegel fuer die Oberflaeche";
 
     done = 0;
     while (done < 5'000'000 && vramText(m).find("DIAGNOSTIC") == std::string::npos)

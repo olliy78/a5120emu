@@ -1,21 +1,21 @@
 /**
  * @file test_disktool_bootdiskette.cpp
- * @brief Kreuzprobe: das DiskTool baut eine **bootfähige** Diskette, der Emulator bootet sie.
+ * @brief Kreuzprobe: das DiskTool baut eine **bootfaehige** Diskette, der Emulator bootet sie.
  *
- * Eine leere Diskette anzulegen konnte das Werkzeug schon; bootfähig wird sie erst durch
+ * Eine leere Diskette anzulegen konnte das Werkzeug schon; bootfaehig wird sie erst durch
  * die **Systemspuren** vor dem Dateisystem — das Lade-ROM liest Spur 0 blind ein, lange
  * bevor es ein Dateisystem gibt.  Dass ein solches Byteband richtig herausgeholt und
- * wieder eingespielt wird, kann kein Unit-Test beweisen: Maßstab ist allein, ob die
+ * wieder eingespielt wird, kann kein Unit-Test beweisen: Massstab ist allein, ob die
  * Maschine davon startet.
  *
  * Der Weg hier ist genau der des Anwenders (`tools/k1520disktool.md` §Bootdiskette):
  *
  *   1. Bootabbild aus einer echten CP/A-Diskette holen (@ref DiskVolume::readBootImage),
  *   2. neue Diskette **mit** diesem Abbild anlegen (`create --boot`),
- *   3. die Systemdateien hineinkopieren (`@OS.COM` und die übrigen),
+ *   3. die Systemdateien hineinkopieren (`@OS.COM` und die uebrigen),
  *   4. kalt davon starten — bis zur Uhrzeitabfrage und weiter zum `A>`-Prompt.
  *
- * Schritt 4 durchläuft die ganze Kette Lade-ROM → SYL-Lader → Sekundärlader →
+ * Schritt 4 durchlaeuft die ganze Kette Lade-ROM → SYL-Lader → Sekundaerlader →
  * CP/A-Bootsystem → `@OS.COM` (doc/K1520_architecture.md §14.5).
  *
  * @see doc/design/13_k1520disktool.md §15
@@ -72,7 +72,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Temporärer Ordner, räumt sich weg.
+/// @brief Temporaerer Ordner, raeumt sich weg.
 class TempOrdner {
 public:
     explicit TempOrdner(const char* name) : pfad_(k1520test::tempPath(name)) {
@@ -86,7 +86,7 @@ private:
     std::string pfad_;
 };
 
-/// @brief Temporäre Diskette samt der Sicherungskopie, die das Werkzeug anlegt.
+/// @brief Temporaere Diskette samt der Sicherungskopie, die das Werkzeug anlegt.
 class TempPfad {
 public:
     explicit TempPfad(const char* name) : pfad_(k1520test::tempPath(name)) {
@@ -107,7 +107,7 @@ private:
  * @brief Eine Bootdiskette bauen — genau die drei Schritte des Anwenders.
  *
  * Bootabbild und Dateien kommen aus @p referenz, hinein gehen sie in eine frisch
- * angelegte Diskette des Profils @p fs_name.  Schlägt etwas fehl, bricht der
+ * angelegte Diskette des Profils @p fs_name.  Schlaegt etwas fehl, bricht der
  * aufrufende Test ab (die ASSERTs stehen deshalb hier drin).
  */
 void baueBootdiskette(const std::string& referenz, const std::string& fs_name,
@@ -183,10 +183,10 @@ TEST(DiskToolBootdiskette, GebauteCpaDisketteBootetKalt) {
 
 /**
  * @test DiskToolBootdiskette/GebauteScpxDisketteBootetKalt
- * @brief Dasselbe für SCPX 1526 — anderes Betriebssystem, andere Geometrie.
+ * @brief Dasselbe fuer SCPX 1526 — anderes Betriebssystem, andere Geometrie.
  * @par Kriterium  Banner und `A>`-Prompt wie beim Original (SCPX fragt keine Uhrzeit).
  *                 SCPX' Systemspuren sind 16384 Byte gross (4 × 16×256) — dass die
- *                 Grenze pro Dateisystem stimmt, prüft dieser Fall mit.
+ *                 Grenze pro Dateisystem stimmt, prueft dieser Fall mit.
  */
 TEST(DiskToolBootdiskette, GebauteScpxDisketteBootetKalt) {
     TempPfad ziel("k1520_bootdisk_scpx.hfe");
@@ -220,9 +220,9 @@ TEST(DiskToolBootdiskette, GebauteScpxDisketteBootetKalt) {
 /**
  * @test DiskToolBootdiskette/GebauteScpx798DisketteBootetKalt
  * @brief SCPX auf GEMISCHTER Geometrie — 2 × 16×256 Systemspuren, dann 5×1024.
- * @par Kriterium  Derselbe Banner.  Dieser Fall prüft, dass die Systemspuren auch
- *                 dort richtig abgegrenzt werden, wo sich die Sektorgrösse mitten
- *                 im Bereich ändert (18432 = 2×4096 + 2×5120).
+ * @par Kriterium  Derselbe Banner.  Dieser Fall prueft, dass die Systemspuren auch
+ *                 dort richtig abgegrenzt werden, wo sich die Sektorgroesse mitten
+ *                 im Bereich aendert (18432 = 2×4096 + 2×5120).
  */
 TEST(DiskToolBootdiskette, GebauteScpx798DisketteBootetKalt) {
     TempPfad ziel("k1520_bootdisk_scpx798.hfe");
@@ -243,7 +243,7 @@ TEST(DiskToolBootdiskette, GebauteScpx798DisketteBootetKalt) {
 
 /**
  * @test DiskToolBootdiskette/GebauteUdosDisketteBootetUndFuehrtBefehleAus
- * @brief UDOS: selbst gebaute Diskette, vollständiger Start und laufende Befehle.
+ * @brief UDOS: selbst gebaute Diskette, vollstaendiger Start und laufende Befehle.
  *
  * Der Weg dorthin war die eigentliche Arbeit (doc/udos_diskettenformat.md §14).  Drei
  * Dinge einer UDOS-Datei stehen **nicht** in ihren Bytes und mussten mitkopiert werden:
@@ -252,8 +252,8 @@ TEST(DiskToolBootdiskette, GebauteScpx798DisketteBootetKalt) {
  *     hinter der Daten-CRC (ohne ihn: `ERROR: 45`);
  *  2. der **Kopfsektor** mit LOW/HIGH ADDRESS und STACK SIZE (Offset 122…127), aus
  *     denen der Lader die Speicherzuteilung nimmt (ohne sie:
- *     `MEMORY PROTECT VIOLATION`), sowie die zweite Längenangabe (Offset 17);
- *  3. das **ganze Speicherabbild**: bei `OS` reicht es 128 Byte über das logische
+ *     `MEMORY PROTECT VIOLATION`), sowie die zweite Laengenangabe (Offset 17);
+ *  3. das **ganze Speicherabbild**: bei `OS` reicht es 128 Byte ueber das logische
  *     Dateiende hinaus, und dort steht Programmcode, in den der Nukleus selbst springt
  *     (ohne ihn: `BREAK 4150` beim ersten Befehl).
  *
@@ -274,7 +274,7 @@ TEST(DiskToolBootdiskette, GebauteUdosDisketteBootetUndFuehrtBefehleAus) {
     const size_t anzahl = quelle->list().size();
     quelle.reset();
 
-    // Das Beiblatt trägt die Kopfsektorangaben — ohne es wäre die Diskette tot.
+    // Das Beiblatt traegt die Kopfsektorangaben — ohne es waere die Diskette tot.
     ASSERT_TRUE(fs::exists(fs::path(dateien.path()) / "udos-dateiangaben.txt"));
 
     TempPfad ziel("k1520_bootdisk_udos.hfe");
@@ -291,7 +291,7 @@ TEST(DiskToolBootdiskette, GebauteUdosDisketteBootetUndFuehrtBefehleAus) {
         if (e.name != "OS" || e.volume != 0) continue;
         EXPECT_EQ(e.size, 5504u);
         EXPECT_EQ(e.segment_len, 5632);
-        EXPECT_EQ(e.block_len, 0) << "Offset 17 ist bei Satzlänge 512 NULL, nicht deren Kopie";
+        EXPECT_EQ(e.block_len, 0) << "Offset 17 ist bei Satzlaenge 512 NULL, nicht deren Kopie";
         EXPECT_EQ(e.low_addr, 0x1000);
         EXPECT_EQ(e.high_addr, 0x25FF);
     }
@@ -303,7 +303,7 @@ TEST(DiskToolBootdiskette, GebauteUdosDisketteBootetUndFuehrtBefehleAus) {
         << machine.lastError();
     machine.powerOn();
 
-    // 1. Die Startdatei OS.INIT läuft: Banner, dann fragt DATE nach dem Datum.
+    // 1. Die Startdatei OS.INIT laeuft: Banner, dann fragt DATE nach dem Datum.
     ASSERT_TRUE(runSmallUntil(machine, "UDOS 4.3", 150'000'000))
         << "die selbst gebaute UDOS-Diskette startete OS.INIT nicht:\n" << vramText(machine);
     ASSERT_TRUE(runSmallUntil(machine, "Neues Datum", 40'000'000))
@@ -316,31 +316,31 @@ TEST(DiskToolBootdiskette, GebauteUdosDisketteBootetUndFuehrtBefehleAus) {
     ASSERT_TRUE(runSmallUntil(machine, "UDOS BC.5120", 60'000'000))
         << "nach der Datumseingabe kam das System nicht hoch:\n" << vramText(machine);
 
-    // 3. Und ein Befehl läuft wirklich: CAT wird von Diskette geladen und listet.
+    // 3. Und ein Befehl laeuft wirklich: CAT wird von Diskette geladen und listet.
     runCycles(machine, 4'000'000);
     typeString(machine, "cat");
     typeKey(machine, QK_RETURN);
-    // `ZDOS` & Co. sind SECRET und erscheinen ohne `P=&` nicht — auf eine gewöhnliche
-    // Datei prüfen.
+    // `ZDOS` & Co. sind SECRET und erscheinen ohne `P=&` nicht — auf eine gewoehnliche
+    // Datei pruefen.
     ASSERT_TRUE(runSmallUntil(machine, "HELP.DAT.00", 60'000'000))
         << "CAT lud/lief nicht:\n" << vramText(machine);
 }
 
 /**
  * @test DiskToolBootdiskette/UdosSystemspurenGehenMitUndZwarBeideSeiten
- * @brief UDOS: die Systemspuren wandern vollständig mit — die Grenze steht dabei.
+ * @brief UDOS: die Systemspuren wandern vollstaendig mit — die Grenze steht dabei.
  *
  * Bei UDOS sind die Systemspuren anders geschnitten als bei CP/M: Spuren 0–2
- * (Urlader + Nukleus) **und** die Bootspur 21, je Seite ein eigener Datenträger.
- * Dass die Bootspur dazugehört, ist am laufenden System belegt — ohne sie bricht der
+ * (Urlader + Nukleus) **und** die Bootspur 21, je Seite ein eigener Datentraeger.
+ * Dass die Bootspur dazugehoert, ist am laufenden System belegt — ohne sie bricht der
  * Kaltstart mit `ERROR: 45` ab (Stand 2026-08-12).
  *
- * @par Kriterium  13312 Byte je Seite, unverändert wieder auslesbar, und Seite 1
- *                 bleibt unberührt, solange man ihr nichts gibt.
+ * @par Kriterium  13312 Byte je Seite, unveraendert wieder auslesbar, und Seite 1
+ *                 bleibt unberuehrt, solange man ihr nichts gibt.
  * @par Grenze  Eine so gebaute UDOS-Diskette **bootet trotzdem nicht** von allein:
  *              nach dem Urlader landet sie im UDOS-Debugger (`BREAK F10E`).  UDOS
- *              legt sein Systemabbild nicht allein in den Systemspuren ab — dafür
- *              gibt es unter dem laufenden System eigene Werkzeuge.  Der Test hält
+ *              legt sein Systemabbild nicht allein in den Systemspuren ab — dafuer
+ *              gibt es unter dem laufenden System eigene Werkzeuge.  Der Test haelt
  *              deshalb fest, was das Werkzeug leistet, und behauptet nicht mehr.
  */
 TEST(DiskToolBootdiskette, UdosSystemspurenGehenMitUndZwarBeideSeiten) {
@@ -359,7 +359,7 @@ TEST(DiskToolBootdiskette, UdosSystemspurenGehenMitUndZwarBeideSeiten) {
     ASSERT_TRUE(quelle->readBootImage(q0, 0)) << quelle->lastError();
     ASSERT_TRUE(neu->readBootImage(n0, 0))   << neu->lastError();
     ASSERT_TRUE(neu->readBootImage(n1, 1))   << neu->lastError();
-    EXPECT_EQ(q0, n0) << "die Systemspuren der Seite 0 kamen nicht unverändert an";
+    EXPECT_EQ(q0, n0) << "die Systemspuren der Seite 0 kamen nicht unveraendert an";
     EXPECT_EQ(n1.size(), 13728u);
     // Seite 1 blieb Leerdiskette: je Satz 128 Datenbytes 0xE5, dahinter der noch
     // unbeschriebene Kontrollblock (Gap-Fuellbytes 0x4E) — das Abbild ging nur auf
@@ -374,27 +374,27 @@ TEST(DiskToolBootdiskette, UdosSystemspurenGehenMitUndZwarBeideSeiten) {
 
 /**
  * @test DiskToolBootdiskette/GeleerteUndZurueckgeschriebeneUdosDisketteBootet
- * @brief Die schärfste Probe auf den Belegungsplan: leeren, zurückschreiben, booten.
+ * @brief Die schaerfste Probe auf den Belegungsplan: leeren, zurueckschreiben, booten.
  *
  * Anlass war eine fremd beschriebene NDOS-Diskette (P8000), die sich nach dem Leeren
- * **nicht mehr vollständig** zurückschreiben liess: `Diskette voll`, acht Sektoren zu
+ * **nicht mehr vollstaendig** zurueckschreiben liess: `Diskette voll`, acht Sektoren zu
  * wenig, obwohl dieselben Dateien vorher daraufgepasst hatten.  Ursache war ein
- * `reservedTrack()`, das Verzeichnis- und Kartenspur GANZ sperrte, während das echte
+ * `reservedTrack()`, das Verzeichnis- und Kartenspur GANZ sperrte, waehrend das echte
  * Betriebssystem dort nur den Kopf belegt und den Rest wie jede andere Spur benutzt —
  * auf der A5120-Referenzdiskette liegen elf Kopfsektoren auf Spur 22.
  *
  * Seitdem entscheidet allein der **Belegungsplan**, welcher Sektor frei ist.  Genau
- * das prüft dieser Fall, und zwar am schärfstmöglichen Maßstab: nicht „die Zahlen
+ * das prueft dieser Fall, und zwar am schaerfstmoeglichen Massstab: nicht „die Zahlen
  * stimmen", sondern **die Maschine startet davon**.  Ein Fehler im Plan fiele hier
- * sofort auf — er vergäbe einen Sektor doppelt, und die zuletzt geschriebene Datei
- * überschriebe die Systemdatei, die davor dort lag.
+ * sofort auf — er vergaebe einen Sektor doppelt, und die zuletzt geschriebene Datei
+ * ueberschriebe die Systemdatei, die davor dort lag.
  *
- * @par Kriterium  Alle Dateien kommen zurück, die Diskette bootet bis zum
+ * @par Kriterium  Alle Dateien kommen zurueck, die Diskette bootet bis zum
  *                 UDOS-Prompt, und `CAT` wird von ihr nachgeladen und listet.
  * @par Abgrenzung  @ref GebauteUdosDisketteBootetUndFuehrtBefehleAus baut auf einer
- *                  FRISCHEN Diskette auf — dort ist der Plan jungfräulich.  Hier ist
+ *                  FRISCHEN Diskette auf — dort ist der Plan jungfraeulich.  Hier ist
  *                  er der gewachsene der Originaldiskette, mit allem, was das echte
- *                  UDOS über die Jahre hineingeschrieben hat.
+ *                  UDOS ueber die Jahre hineingeschrieben hat.
  */
 TEST(DiskToolBootdiskette, GeleerteUndZurueckgeschriebeneUdosDisketteBootet) {
     TempPfad ziel("k1520_udos_neu_beschrieben.hfe");
@@ -415,7 +415,7 @@ TEST(DiskToolBootdiskette, GeleerteUndZurueckgeschriebeneUdosDisketteBootet) {
     TempOrdner ordner("k1520_udos_neu_dateien");
     ASSERT_TRUE(dv->extractAll(ordner.path(), TransferOptions{})) << dv->lastError();
 
-    // Sollstand: Name → Größe.  Jede Datei muss zurückkommen, keine darf schrumpfen.
+    // Sollstand: Name → Groesse.  Jede Datei muss zurueckkommen, keine darf schrumpfen.
     std::map<std::string, uint64_t> vorher;
     for (const FileEntry& e : dv->list()) {
         if (e.type == "D") continue;
@@ -442,11 +442,11 @@ TEST(DiskToolBootdiskette, GeleerteUndZurueckgeschriebeneUdosDisketteBootet) {
         ++gezaehlt;
     }
     EXPECT_EQ(vorher.size(), static_cast<size_t>(gezaehlt))
-        << "es sind nicht alle Dateien zurückgekommen";
+        << "es sind nicht alle Dateien zurueckgekommen";
 
     // Und der Fall muss die gelockerte Regel WIRKLICH anfassen: liegt keine einzige
-    // Datei auf Verzeichnis- oder Kartenspur, prüft er nur noch, dass 106 KB freier
-    // Platz für 67 Dateien reichen — das täte er auch mit der alten Sperre.
+    // Datei auf Verzeichnis- oder Kartenspur, prueft er nur noch, dass 106 KB freier
+    // Platz fuer 67 Dateien reichen — das taete er auch mit der alten Sperre.
     int auf_verwaltungsspur = 0;
     for (const FileEntry& e : dv->list()) {
         if (e.type == "D") continue;
@@ -455,9 +455,9 @@ TEST(DiskToolBootdiskette, GeleerteUndZurueckgeschriebeneUdosDisketteBootet) {
         if (cyl == 22 || cyl == 23) ++auf_verwaltungsspur;   // udos_ds77: 16H/17H
     }
     EXPECT_GT(auf_verwaltungsspur, 0)
-        << "keine Datei liegt auf Spur 22/23 — der Fall prüft die gelockerte Regel nicht";
+        << "keine Datei liegt auf Spur 22/23 — der Fall prueft die gelockerte Regel nicht";
 
-    // Die Prüfung muss die neu beschriebene Diskette ohne Befund durchlassen —
+    // Die Pruefung muss die neu beschriebene Diskette ohne Befund durchlassen —
     // insbesondere ohne doppelt vergebene Sektoren.
     const FsCheckReport bericht = dv->check(FsCheckLevel::Voll, /*nachladen=*/true);
     EXPECT_TRUE(bericht.ohneBefund()) << bericht.kurzfassung();

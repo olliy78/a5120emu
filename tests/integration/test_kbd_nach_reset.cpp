@@ -7,18 +7,18 @@
  * KEIN Emulatorfehler; zwei Fallen im Test, und dahinter echtes Gastverhalten:
  *
  *  1. Der K7024 ist am A5120 schreib-only (Lesesperre); vramText() liest das
- *     K3526-Schattenram unter 0xF800, und das behält über reset() den alten Schirm.
- *     Ohne k1520test::wipeVram() ist jedes Warten sofort erfüllt.
+ *     K3526-Schattenram unter 0xF800, und das behaelt ueber reset() den alten Schirm.
+ *     Ohne k1520test::wipeVram() ist jedes Warten sofort erfuellt.
  *  2. vramText() umfasst auch den Rest hinter Zeile 24, in den das CP/A-BIOS seine
  *     Statuszeile „A0\A>|0:780 …**CP/A**" schreibt — ~0,15 Mio. Takte BEVOR es die
  *     Tastatur initialisiert und ~7,6 Mio. Takte vor dem Prompt (gemessen nach
  *     reset(), @OS.COM der S1-Diskette: Statuszeile @12,60 M, `OUT 5DH` Kanal-Reset 18H @12,75 M,
  *     `OUT 5CH,00H` Tastatur-Reset @12,75 M, Prompt @20,20 M).
  *  3. Gastverhalten (bioskbdc.mac, Tastaturerkennung): `k37par: db 0,18h`
- *     (SIO-Kanal-Reset — leert den Empfänger), `xor a / out (c),a` (Reset an die
+ *     (SIO-Kanal-Reset — leert den Empfaenger), `xor a / out (c),a` (Reset an die
  *     Tastatur), danach `coityp` — ein Zeichen, das kein Typcode ist, wird gelesen
  *     und verworfen.  Ein Anschlag VOR dieser Initialisierung geht damit auch am
- *     echten Gerät verloren; einer danach wird gepuffert (Vorwegtippen geht).
+ *     echten Geraet verloren; einer danach wird gepuffert (Vorwegtippen geht).
  */
 #include <gtest/gtest.h>
 
@@ -57,8 +57,8 @@ void kaltstartBisZumPrompt(A5120Machine& m, TempDisk& a) {
 /**
  * @test KbdNachReset/SchattenramBehaeltDenAltenSchirm
  * @brief Unmittelbar nach reset() liefert vramText() noch den Schirm des vorigen
- *        Laufs — deshalb wipeVram() vor reset().  Fällt der Test, löscht reset()
- *        das Schattenram, und der Helfer wäre zu überdenken.
+ *        Laufs — deshalb wipeVram() vor reset().  Faellt der Test, loescht reset()
+ *        das Schattenram, und der Helfer waere zu ueberdenken.
  */
 TEST(KbdNachReset, SchattenramBehaeltDenAltenSchirm) {
     TempDisk a(kFixture, "k1520_kbdrst_schatten.img");
@@ -67,7 +67,7 @@ TEST(KbdNachReset, SchattenramBehaeltDenAltenSchirm) {
 
     m.reset();
     EXPECT_NE(vramText(m).find("TPA ist OK!"), std::string::npos)
-        << "Schattenram nach reset() leer — wipeVram() nicht mehr nötig?";
+        << "Schattenram nach reset() leer — wipeVram() nicht mehr noetig?";
     wipeVram(m);
     EXPECT_EQ(vramText(m).find("TPA ist OK!"), std::string::npos);
 }
@@ -75,7 +75,7 @@ TEST(KbdNachReset, SchattenramBehaeltDenAltenSchirm) {
 /**
  * @test KbdNachReset/ErsteEingabeNachResetWirdAusgefuehrt
  * @brief Nach Kaltstart UND nach (zweimal) Reset-Taste wird das erste Kommando am
- *        sichtbaren Prompt ausgeführt — ohne vorgeschaltete Leerzeile.
+ *        sichtbaren Prompt ausgefuehrt — ohne vorgeschaltete Leerzeile.
  */
 TEST(KbdNachReset, ErsteEingabeNachResetWirdAusgefuehrt) {
     TempDisk a(kFixture, "k1520_kbdrst.img");
@@ -92,7 +92,7 @@ TEST(KbdNachReset, ErsteEingabeNachResetWirdAusgefuehrt) {
         // Nach der Reset-Taste meldet sich CP/A OHNE Banner und RAM-Test — nur `A>`.
         ASSERT_TRUE(runSmallUntilVisible(m, "A>", kBootBudget)) << vramLines(m);
         ASSERT_TRUE(kommando(m, "DIR PIP.COM", kDirTreffer))
-            << "erste Eingabe nach reset() nicht ausgeführt:\n" << vramLines(m);
+            << "erste Eingabe nach reset() nicht ausgefuehrt:\n" << vramLines(m);
         ASSERT_TRUE(runSmallUntil(m, "A>", kInputBudget));
     }
 }

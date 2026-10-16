@@ -75,7 +75,7 @@ void meldeFehler(Fehler* f, int code) {
     if (f) *f = macheFehler(code);
 }
 
-/// Socket anlegen; unter macOS zusätzlich SO_NOSIGPIPE (dort gibt es kein MSG_NOSIGNAL).
+/// Socket anlegen; unter macOS zusaetzlich SO_NOSIGPIPE (dort gibt es kein MSG_NOSIGNAL).
 SockFd neuerSocket(int familie) {
     const auto s = ::socket(familie, SOCK_STREAM, 0);
 #if defined(_WIN32)
@@ -117,14 +117,14 @@ bool lauschenIn(int familie, int port, Lauscher& r) {
     if (!s) { r.fehler = macheFehler(letzterFehler()); return false; }
 
     if (familie == AF_INET6) {
-        // Dual-Stack: ohne das hörte der Socket nur auf IPv6 (Windows-Vorgabe: an).
+        // Dual-Stack: ohne das hoerte der Socket nur auf IPv6 (Windows-Vorgabe: an).
         if (!setzeOption(s.fd(), IPPROTO_IPV6, IPV6_V6ONLY, 0)) {
             r.fehler = macheFehler(letzterFehler());
             return false;
         }
     }
 #if defined(_WIN32)
-    // SO_REUSEADDR hieße hier „doppelt binden erlaubt" — das Gegenteil von dem, was die
+    // SO_REUSEADDR hiesse hier „doppelt binden erlaubt" — das Gegenteil von dem, was die
     // Portsuche braucht.
     setzeOption(s.fd(), SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
 #else
@@ -217,8 +217,8 @@ Lauscher lauschen(int port) {
     if (!netzStarten(&r.fehler)) return r;
 
     if (lauschenIn(AF_INET6, port, r)) return r;
-    // Belegt heißt belegt: der Dual-Stack-Bind scheitert auch, wenn nur IPv4 den Port
-    // hält — ein Rückfall auf 0.0.0.0 würde ihn dann fälschlich als frei melden.
+    // Belegt heisst belegt: der Dual-Stack-Bind scheitert auch, wenn nur IPv4 den Port
+    // haelt — ein Rueckfall auf 0.0.0.0 wuerde ihn dann faelschlich als frei melden.
     if (r.fehler.belegt) return r;
     // Sonst fehlt IPv6 (kein Protokoll, kein Adresskonfig., V6ONLY nicht abschaltbar): IPv4.
     Lauscher v4;
@@ -232,7 +232,7 @@ Lauscher lauschenMitSuche(int ab) {
     for (int p = ab; p <= 65535; ++p) {
         r = lauschen(p);
         if (r.sock) return r;
-        if (!r.fehler.belegt) return r;   // anderer Fehler: weitersuchen würde nichts ändern
+        if (!r.fehler.belegt) return r;   // anderer Fehler: weitersuchen wuerde nichts aendern
     }
     return r;   // alles belegt: letzter Fehler (belegt)
 }
@@ -240,8 +240,8 @@ Lauscher lauschenMitSuche(int ab) {
 PortPruefung portPruefen(int port) {
     PortPruefung r;
     if (port < 1 || port > 65535) { r.fehler = macheFehler(kFehlerUngueltig); return r; }
-    // Probe = wirklich lauschen und sofort wieder schließen (der Lauscher zerstört sich
-    // am Schleifenende): „frei" heißt dann genau „bindbar".
+    // Probe = wirklich lauschen und sofort wieder schliessen (der Lauscher zerstoert sich
+    // am Schleifenende): „frei" heisst dann genau „bindbar".
     for (int p = port; p <= 65535; ++p) {
         Lauscher l = lauschen(p);
         if (l.sock) {
@@ -269,7 +269,7 @@ Socket annehmen(SockFd lauscher, Fehler* f) {
 #if defined(SO_NOSIGPIPE)
     setzeOption(neu.fd(), SOL_SOCKET, SO_NOSIGPIPE, 1);
 #endif
-    // Ein angenommener Socket erbt O_NONBLOCK nicht überall (Linux: nein) — immer setzen.
+    // Ein angenommener Socket erbt O_NONBLOCK nicht ueberall (Linux: nein) — immer setzen.
     nichtBlockierend(neu.fd());
     keinVerzoegern(neu.fd());
     return neu;
@@ -296,7 +296,7 @@ std::string gegenstelle(SockFd fd) {
     return host + ":" + p;
 }
 
-// ── Auflösung und Verbinden ──────────────────────────────────────────────────
+// ── Aufloesung und Verbinden ──────────────────────────────────────────────────
 
 bool Ziel::ist6() const { return familie == AF_INET6; }
 
@@ -305,13 +305,13 @@ std::vector<Ziel> aufloesen(const std::string& host, int port, Fehler* f) {
     if (!netzStarten(f)) return aus;
 
     const Adresse a = adresseZerlegen(host);
-    if (a.art == AdressArt::Ungueltig) { meldeFehler(f, kFehlerUngueltig); if (f) f->text = "ungültiger Host"; return aus; }
+    if (a.art == AdressArt::Ungueltig) { meldeFehler(f, kFehlerUngueltig); if (f) f->text = "ungueltiger Host"; return aus; }
     const std::string name = a.zone.empty() ? a.host : a.host + "%" + a.zone;
 
     addrinfo hints{};
     hints.ai_family   = AF_UNSPEC;       // v6 UND v4 (§7.1)
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags    = AI_NUMERICSERV;  // bewusst KEIN AI_ADDRCONFIG: es lässt ::1 fallen,
+    hints.ai_flags    = AI_NUMERICSERV;  // bewusst KEIN AI_ADDRCONFIG: es laesst ::1 fallen,
                                          // wenn nur Loopback-IPv6 konfiguriert ist
     addrinfo* erg = nullptr;
     const int rc = ::getaddrinfo(name.c_str(), std::to_string(port).c_str(), &hints, &erg);
@@ -319,7 +319,7 @@ std::vector<Ziel> aufloesen(const std::string& host, int port, Fehler* f) {
         if (f) {
             f->code = rc;
 #if defined(_WIN32)
-            f->text = ::gai_strerrorA(rc);   // gai_strerror würde unter UNICODE zur W-Variante
+            f->text = ::gai_strerrorA(rc);   // gai_strerror wuerde unter UNICODE zur W-Variante
 #else
             f->text = ::gai_strerror(rc);
 #endif
@@ -359,9 +359,9 @@ Socket verbinden(const Ziel& ziel, int fristMs, Fehler* f) {
         pe[0].schreiben = true;
         const int n = warten(pe, fristMs);
         if (n < 0) { meldeFehler(f, letzterFehler()); return Socket(); }
-        // Hinweis Windows: ältere WSAPoll melden ein gescheitertes connect gar nicht
-        // (bekannter Fehler bis Win10 2004) — dann läuft die Frist ab und es zählt als
-        // gescheitert, was für den Dauerversuch dasselbe ist (nur langsamer).
+        // Hinweis Windows: aeltere WSAPoll melden ein gescheitertes connect gar nicht
+        // (bekannter Fehler bis Win10 2004) — dann laeuft die Frist ab und es zaehlt als
+        // gescheitert, was fuer den Dauerversuch dasselbe ist (nur langsamer).
         if (n == 0 || !(pe[0].beschreibbar || pe[0].fehler || pe[0].lesbar)) {
             meldeFehler(f, kFehlerZeit);
             return Socket();
@@ -424,7 +424,7 @@ IoErgebnis empfangen(SockFd fd, void* puffer, std::size_t max) {
     if (rc == 0) { r.status = IoStatus::Geschlossen; return r; }
     const int e = letzterFehler();
     if (istWarten(e) || e == EINTR) { r.status = IoStatus::Warten; return r; }
-    if (istAbbruch(e)) { r.status = IoStatus::Geschlossen; return r; }   // RST = Ende für uns
+    if (istAbbruch(e)) { r.status = IoStatus::Geschlossen; return r; }   // RST = Ende fuer uns
     r.status = IoStatus::Fehler;
     r.fehler = macheFehler(e);
     return r;
@@ -438,8 +438,8 @@ int warten(std::vector<PollEintrag>& eintraege, int timeoutMs) {
 #else
     using PFD = pollfd;
 #endif
-    // Einträge ohne gültigen Socket auslassen (poll würde POLLNVAL melden; WSAPoll
-    // verhält sich dort uneinheitlich).
+    // Eintraege ohne gueltigen Socket auslassen (poll wuerde POLLNVAL melden; WSAPoll
+    // verhaelt sich dort uneinheitlich).
     std::vector<PFD>         pfds;
     std::vector<std::size_t> index;
     for (std::size_t i = 0; i < eintraege.size(); ++i) {
@@ -464,7 +464,7 @@ int warten(std::vector<PollEintrag>& eintraege, int timeoutMs) {
     for (std::size_t k = 0; k < pfds.size(); ++k) {
         PollEintrag& e = eintraege[index[k]];
         const short  r = pfds[k].revents;
-        // POLLHUP zählt als „lesbar": erst `empfangen` erfährt daraus das Ende.
+        // POLLHUP zaehlt als „lesbar": erst `empfangen` erfaehrt daraus das Ende.
         e.lesbar       = (r & (POLLIN | POLLHUP)) != 0;
         e.beschreibbar = (r & POLLOUT) != 0;
         e.fehler       = (r & (POLLERR | POLLNVAL)) != 0;
@@ -479,7 +479,7 @@ Wecker::Wecker() {
     if (!netzStarten()) return;
 #if defined(_WIN32)
     // Winsock hat kein socketpair: Loopback-Listener auf Port 0, verbinden, annehmen,
-    // Listener schließen.  Das Paar ist dann ein gewöhnliches TCP-Paar.
+    // Listener schliessen.  Das Paar ist dann ein gewoehnliches TCP-Paar.
     Socket l(neuerSocket(AF_INET));
     if (!l) return;
     sockaddr_in a{};
@@ -505,7 +505,7 @@ Wecker::Wecker() {
     lese_    = Socket(fds[0]);
     schreib_ = Socket(fds[1]);
 #endif
-    // Beide nicht blockierend: `wecken` darf nie hängen (volles Paar), `leeren` liest bis EAGAIN.
+    // Beide nicht blockierend: `wecken` darf nie haengen (volles Paar), `leeren` liest bis EAGAIN.
     if (!nichtBlockierend(lese_.fd()) || !nichtBlockierend(schreib_.fd())) {
         lese_.schliessen();
         schreib_.schliessen();
@@ -515,7 +515,7 @@ Wecker::Wecker() {
 void Wecker::wecken() {
     if (!gueltig()) return;
     const char b = 1;
-    senden(schreib_.fd(), &b, 1);   // Ergebnis gleichgültig: Puffer voll heißt „Wecker steht schon"
+    senden(schreib_.fd(), &b, 1);   // Ergebnis gleichgueltig: Puffer voll heisst „Wecker steht schon"
 }
 
 void Wecker::leeren() {

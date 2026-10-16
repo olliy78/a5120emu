@@ -4,64 +4,64 @@
  *        Tastenmatrix 7 × 8 und das „oszillografische“ Bild (8 × 32 Zeichen + Analogkurven).
  *
  * Quellen: doc/mc80/hardware_2x.md §4–§6 (AP M10), doc/mc80/bsys_2x.prn 0000H–0340H (DPI, TSI,
- * ANL, TST).  Einen Schaltplan der DPL gibt es nicht (hardware_2x.md §11) — alles, was hier über
+ * ANL, TST).  Einen Schaltplan der DPL gibt es nicht (hardware_2x.md §11) — alles, was hier ueber
  * die Verdrahtung gesagt wird, ist aus dem Code des Betriebssystems erschlossen und mit [?]
  * markiert, wo es eine Annahme ist.
  *
  * **Bausteine** (Reihenfolge Daten/Steuer/Daten/Steuer, = Z80PIO-Nummerierung):
- *   - F0H–F3H CTC: K0 = Zeichentakt-Interrupt (DPI), K1 = Strahlrücklauf/Zeilenanfang (TI1),
- *     K2 = Zeichenzähler → Zeilenende (TSI, ZK 21H = 33), K3 = Taste BK (BREAK, Anwender).
- *   - F4H PIO A: Zeichencode Bit 0–5, **Bit 7 = Z-Signal „analog“**; außerhalb der Bildausgabe
+ *   - F0H–F3H CTC: K0 = Zeichentakt-Interrupt (DPI), K1 = Strahlruecklauf/Zeilenanfang (TI1),
+ *     K2 = Zeichenzaehler → Zeilenende (TSI, ZK 21H = 33), K3 = Taste BK (BREAK, Anwender).
+ *   - F4H PIO A: Zeichencode Bit 0–5, **Bit 7 = Z-Signal „analog“**; ausserhalb der Bildausgabe
  *     Zeilenwahl der Tastenmatrix (40H … 01H).
  *   - F6H PIO B: Ausgabe = Y-Ablenkung (8-Bit-DAC [?]: Zeilenlage = `CPL` der BWS-Zeilenadresse,
  *     Bit 7–5; Analogwert 00H…FFH), Eingabe (Betriebsart 3) = Spalten der Tastenmatrix.
  *
  * **Zeitmodell — Zeilenautomat (zeichenweise, [?] wo nicht belegt):**
- *   - **Text:** Zeichentakt alle **64,5 µs** [HB III-7] = 158,5 Systemtakte; jeder Takt zählt
- *     CTC K0 (DPI) und K2 (CLK/TRG0, CLK/TRG2 [? K2 könnte ebenso an ZC/TO0 hängen — gleiche
+ *   - **Text:** Zeichentakt alle **64,5 µs** [HB III-7] = 158,5 Systemtakte; jeder Takt zaehlt
+ *     CTC K0 (DPI) und K2 (CLK/TRG0, CLK/TRG2 [? K2 koennte ebenso an ZC/TO0 haengen — gleiche
  *     Wirkung]).  ZC/TO2 (33 Zeichen, TSI) beendet die Zeile.
- *   - **Strahlrücklauf:** kein Zeichentakt; K1 zählt Φ/4 [?] („Auszählen der Strahlrücklaufzeit“,
- *     ZK D0H → 832 Takte = 0,34 ms).  ZC/TO1 beendet den Rücklauf („Zeilenanfang“, TI1): bei
- *     Z-Signal „analog“ (PIO A Bit 7) beginnt eine Analogbahn, sonst die nächste Textzeile.
- *     Belege für die Annahmen: (a) der TSI samt Tastaturabfrage (~350 Takte) liegt ganz im
- *     Rücklauf — liefe der Zeichentakt weiter, käme die DPI einen Schritt zu früh und jede Zeile
+ *   - **Strahlruecklauf:** kein Zeichentakt; K1 zaehlt Φ/4 [?] („Auszaehlen der Strahlruecklaufzeit“,
+ *     ZK D0H → 832 Takte = 0,34 ms).  ZC/TO1 beendet den Ruecklauf („Zeilenanfang“, TI1): bei
+ *     Z-Signal „analog“ (PIO A Bit 7) beginnt eine Analogbahn, sonst die naechste Textzeile.
+ *     Belege fuer die Annahmen: (a) der TSI samt Tastaturabfrage (~350 Takte) liegt ganz im
+ *     Ruecklauf — liefe der Zeichentakt weiter, kaeme die DPI einen Schritt zu frueh und jede Zeile
  *     erschiene um eine Spalte verschoben (so im Emulator beobachtet); (b) Zeile = 33 · 158,5 +
- *     832 = 6062 Takte → Bild 19,7 ms = **50,7 Hz**, das Listing nennt für die im TSI je Bild
- *     gezählten Zähler „FREQUENZ CA. 50 HERTZ“ [BS Bl. 4]; (c) ANL wartet mit HALT auf TI1
- *     „Zeilenanfang“ — genau das Ende des Rücklaufs, der mit dem TSI begann; (d) eine Analogzeile
+ *     832 = 6062 Takte → Bild 19,7 ms = **50,7 Hz**, das Listing nennt fuer die im TSI je Bild
+ *     gezaehlten Zaehler „FREQUENZ CA. 50 HERTZ“ [BS Bl. 4]; (c) ANL wartet mit HALT auf TI1
+ *     „Zeilenanfang“ — genau das Ende des Ruecklaufs, der mit dem TSI begann; (d) eine Analogzeile
  *     kostet so 0,34 + 2,17 ms ≈ 2,5 ms und die Last bei vier Analogzeilen ≈ 70 % — das Handbuch
  *     nennt „bis 2,7 ms“ und „bis 72 %“ [HB VI-8].  Beim Start schaltet BSYS K2 kurz als
- *     Zeitgeber (`07H/07H`, „Impuls f. Strahlrückl., Tastatur freigeben“) — dessen ZC/TO löst
- *     ebenso einen Rücklauf aus.
- *   - **Analogbahn:** dauert T_Z = 33 Zeichentakte = 2,13 ms [?], danach Rücklauf.  Werte, die
- *     das OTIR später liefert, fallen rechts aus dem Bild (OTIR gibt 254 Werte in 2,17 ms aus →
+ *     Zeitgeber (`07H/07H`, „Impuls f. Strahlrueckl., Tastatur freigeben“) — dessen ZC/TO loest
+ *     ebenso einen Ruecklauf aus.
+ *   - **Analogbahn:** dauert T_Z = 33 Zeichentakte = 2,13 ms [?], danach Ruecklauf.  Werte, die
+ *     das OTIR spaeter liefert, fallen rechts aus dem Bild (OTIR gibt 254 Werte in 2,17 ms aus →
  *     ≈ 249 sichtbar; Handbuch: 253 Abszissenwerte [?]).
- *   - Notbremse: steht der Rücklauf länger als vier Zeilen (K1 nicht programmiert), beginnt die
- *     nächste Textzeile trotzdem [?].
+ *   - Notbremse: steht der Ruecklauf laenger als vier Zeilen (K1 nicht programmiert), beginnt die
+ *     naechste Textzeile trotzdem [?].
  *
- * **Bildmodell:** Die Karte sieht NICHT in den BWS — sie zeichnet, was an den PIO-Ausgängen
+ * **Bildmodell:** Die Karte sieht NICHT in den BWS — sie zeichnet, was an den PIO-Ausgaengen
  * anliegt.  Je Zeichentakt (vor der DPI-Antwort) wird PIO A in die Zelle `Schritt` der laufenden
- * Bahn übernommen; ein Schreiben auf PIO B (Textbetrieb) beginnt eine neue Bahn auf der Zeile
+ * Bahn uebernommen; ein Schreiben auf PIO B (Textbetrieb) beginnt eine neue Bahn auf der Zeile
  * `(~B >> 5) & 7` mit Schritt 0.  Schritt 0 ist das Leerzeichen „bei Strahlvorlauf“ (TSI), die
  * Schritte 1…32 sind die Spalten 0…31; der 33. Takt (mit dem TSI) liegt hinter dem Zeilenende
  * und wird verworfen.  Eine Analogbahn ersetzt die
  * Zeile, die auf die zuletzt gezeichnete Textzeile folgt (ANL: Zeilen 2/4/6/8).  Je der acht
- * Zeilenplätze gilt die zuletzt gezeichnete Bahn (Text oder Kurve) — so bleibt das Bild wie auf
+ * Zeilenplaetze gilt die zuletzt gezeichnete Bahn (Text oder Kurve) — so bleibt das Bild wie auf
  * dem Leuchtschirm stehen, solange das Programm es auffrischt.
  *
  * **Framebuffer** 528 × 256, ein Byte je Bildpunkt (00H/FFH), Zeile 0 oben: 33 Schritte à 16
  * Bildpunkte, Zeichenzeile k = Bildzeilen 32k…32k+31 (Y-DAC: oben = FFH), Zeichen 5 × 7 doppelt
- * groß (10 × 14) ab (3, 9) in der Zelle; Analogwert y → Bildzeile 255 − y, Abszisse
- * (t − t₀)/T_Z · 528, gezeichnet als Treppenzug (der PIO-Ausgang hält den Wert bis zum nächsten).
+ * gross (10 × 14) ab (3, 9) in der Zelle; Analogwert y → Bildzeile 255 − y, Abszisse
+ * (t − t₀)/T_Z · 528, gezeichnet als Treppenzug (der PIO-Ausgang haelt den Wert bis zum naechsten).
  *
  * **Zeichengenerator U402 [?]:** kein Abzug (hardware_2x.md §5.2).  Ersatz: der 5×7-Satz des
  * 2513 (64 Zeichen ASCII 20H–5FH, 6-Bit-Adresse wie der BWS-Code: 00–1F = @…_, 20–3F = Leer…?);
- * der U402 ist nach Code und Umfang (63/64 Zeichen, 6 Bit, 5 × 7) dessen Gegenstück.  Laut
- * Tastaturfoto [HB Bild 2.3] zeigt der U402 für `@ & ^ \` andere Bilder — hier nicht nachgebildet.
+ * der U402 ist nach Code und Umfang (63/64 Zeichen, 6 Bit, 5 × 7) dessen Gegenstueck.  Laut
+ * Tastaturfoto [HB Bild 2.3] zeigt der U402 fuer `@ & ^ \` andere Bilder — hier nicht nachgebildet.
  *
- * **Tastatur:** Matrix 7 Zeilen × 8 Spalten (hardware_2x.md §6), gedrückt = 1 [ROM: TST prüft
+ * **Tastatur:** Matrix 7 Zeilen × 8 Spalten (hardware_2x.md §6), gedrueckt = 1 [ROM: TST prueft
  * `AND 3FH` ≠ 0].  Tastennummer = 8 · Zeilenindex + Bit, Zeilenindex 0 = PIO-A-Wert 40H … 6 = 01H;
- * Nummer 36H = CTR, 37H = UC.  PIO B (Betriebsart 3) liest das ODER der gewählten Zeilen.
+ * Nummer 36H = CTR, 37H = UC.  PIO B (Betriebsart 3) liest das ODER der gewaehlten Zeilen.
  */
 
 #pragma once
@@ -99,9 +99,9 @@ public:
     void attachToBus(K1520Bus& bus);
     /// Netz ein: Bild leer (alle Zellen @ref NIE), keine Taste, dann reset().
     void powerOn();
-    /// /RESET: CTC und PIO zurück, Zeichentakt-Phase 0; das Bild bleibt stehen.
+    /// /RESET: CTC und PIO zurueck, Zeichentakt-Phase 0; das Bild bleibt stehen.
     void reset();
-    /// @p ticks Systemtakte weiter.  @return true, wenn sich der Interruptzustand ändern konnte.
+    /// @p ticks Systemtakte weiter.  @return true, wenn sich der Interruptzustand aendern konnte.
     bool clockTick(int ticks);
 
     // ─── BusDevice ───────────────────────────────────────────────────────────
@@ -117,15 +117,15 @@ public:
     void        onRETI() override;
     /**
      * @brief RETI nach dem Datenblatt: ist ein Kanal/Port der Karte in Bedienung, nimmt die Karte
-     *        das RETI an (höchster Kanal in Bedienung, auch wenn ein höherer gerade anfordert)
-     *        und meldet true.  Die Maschine gibt das RETI so nur dem obersten Gerät in Bedienung
+     *        das RETI an (hoechster Kanal in Bedienung, auch wenn ein hoeherer gerade anfordert)
+     *        und meldet true.  Die Maschine gibt das RETI so nur dem obersten Geraet in Bedienung
      *        (Z80CTC::setRetiNachIus, AP M11).
      */
     bool        retiAnnehmen();
     const char* intDeviceName() const override;
 
     // ─── Tastatur ────────────────────────────────────────────────────────────
-    /// Taste Nummer @p nr (0…37H, s. Kopf) drücken/loslassen.
+    /// Taste Nummer @p nr (0…37H, s. Kopf) druecken/loslassen.
     void setTaste(int nr, bool gedrueckt);
     bool taste(int nr) const;
     void alleTastenLos();
@@ -133,14 +133,14 @@ public:
     void breakTaste();
 
     // ─── Bild ────────────────────────────────────────────────────────────────
-    /// Framebuffer (neu zusammengesetzt, wenn sich das Bild geändert hat).
+    /// Framebuffer (neu zusammengesetzt, wenn sich das Bild geaendert hat).
     const uint8_t* framebuffer() const;
     bool     dirty() const { return dirty_; }
     void     clearDirty() { dirty_ = false; }
     uint64_t revision() const { return revision_; }
     /// 6-Bit-Code der Zelle (Zeile 0…7, Spalte 0…31) aus der letzten Textbahn; @ref NIE sonst.
     uint8_t  zelle(int zeile, int spalte) const;
-    /// Dasselbe als ASCII (00–1F → 40–5F); ' ' für NIE oder eine Analogzeile.
+    /// Dasselbe als ASCII (00–1F → 40–5F); ' ' fuer NIE oder eine Analogzeile.
     char     zeichen(int zeile, int spalte) const;
     /// Zuletzt auf Zeilenplatz @p zeile gezeichnete Bahn war eine Analogkurve?
     bool     analogZeile(int zeile) const { return art_.at(static_cast<size_t>(zeile)) == Art::Analog; }
@@ -151,8 +151,8 @@ public:
     uint64_t bahnen() const { return bahnen_; }
     /// 5×7-Bild des Codes @p code (Spalte 0…4, Bit 0 = oberste Reihe) — Ersatz-U402 [?].
     static const uint8_t* glyphe(uint8_t code);
-    /// Textrückgewinnung aus dem Framebuffer per Mustervergleich: Zeichen der Zelle oder 0, wenn
-    /// das Bild keiner Glyphe gleicht (Analogkurve darüber, nie gezeichnet …).
+    /// Textrueckgewinnung aus dem Framebuffer per Mustervergleich: Zeichen der Zelle oder 0, wenn
+    /// das Bild keiner Glyphe gleicht (Analogkurve darueber, nie gezeichnet …).
     char     zeichenAusBild(int zeile, int spalte) const;
 
     Z80CTC& ctc() { return ctc_; }
@@ -187,13 +187,13 @@ private:
     uint64_t takte_zeichen_ = 0;
 
     uint8_t a_ = 0, b_ = 0;           ///< zuletzt geschriebene PIO-Ausgabewerte
-    std::array<uint8_t, 7> matrix_{}; ///< gedrückte Tasten je Zeilenindex
+    std::array<uint8_t, 7> matrix_{}; ///< gedrueckte Tasten je Zeilenindex
 
     // Zeilenautomat und Bahnen
     enum class Zustand : uint8_t { Text, Ruecklauf, Analog };
     Zustand zustand_ = Zustand::Ruecklauf;
     uint32_t rl_acc_ = 0;             ///< Takte seit dem letzten Φ/4-Impuls an K1
-    uint64_t rl_seit_ = 0;            ///< Beginn des Rücklaufs (Notbremse)
+    uint64_t rl_seit_ = 0;            ///< Beginn des Ruecklaufs (Notbremse)
     int zeile_ = 0;                   ///< Zeile der laufenden Textbahn
     int schritt_ = SCHRITTE;          ///< Schritt in der Textbahn (≥ SCHRITTE = hinter dem Ende)
     int  analog_zeile_ = 1;

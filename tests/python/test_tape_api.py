@@ -1,6 +1,6 @@
-"""Kassette (K5020/K5200) über die C-ABI — Entwurf 29, AP K5.
+"""Kassette (K5020/K5200) ueber die C-ABI — Entwurf 29, AP K5.
 
-Die Karte, die Laufwerke und das Band prüfen die C++-Wächter (`K5020Test.*`, `Kassette*`,
+Die Karte, die Laufwerke und das Band pruefen die C++-Waechter (`K5020Test.*`, `Kassette*`,
 `K5020Maschine.*`); hier geht es um den Weg durch `k1520_tape_*` und die ctypes-Bindung:
 Stecken je Maschine, Fehlertext, Einlegen/Binden/Auswerfen/Wenden/Schreibschutz, Status,
 Blockliste, und „ohne Karte nichts“.  Beschrieben wird ohne Gast nicht — die Kassette
@@ -83,7 +83,7 @@ def test_zweites_geraet_ist_unabhaengig(tmp_path):
     e = _emu("k8915", tape=True)
     assert e.tape_new(1) is True
     assert e.tape_status(1)["loaded"] is True and e.tape_status(0)["loaded"] is False
-    assert e.tape_load(2, tmp_path / "x.k52") is False      # Gerät 0/1
+    assert e.tape_load(2, tmp_path / "x.k52") is False      # Geraet 0/1
     assert "0 oder 1" in e.tape_error()
 
 
@@ -131,7 +131,7 @@ def test_kaputte_datei_wird_mit_grund_abgelehnt(tmp_path):
 
 def test_header_funktionen_stimmen_mit_dem_kern_ueberein():
     """Alle `k1520_tape_*` des Headers sind exportiert und tragen ctypes-Signaturen
-    (die Gesamtprüfung steht in test_c_api.py; hier nur die Kassettengruppe)."""
+    (die Gesamtpruefung steht in test_c_api.py; hier nur die Kassettengruppe)."""
     import re
     from conftest import PROJECT_ROOT
     from app.core_binding import k1520 as b

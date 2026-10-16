@@ -40,7 +40,7 @@ def auswahlliste() -> List[Tuple[str, str]]:
 class DiskHeader(QFrame):
     """Kopfzeile über beiden Hälften."""
 
-    #: Der Anwender hat ein anderes Dateisystem gewählt ('' = automatisch).
+    #: Der Anwender hat ein anderes Dateisystem gewaehlt ('' = automatisch).
     filesystem_gewaehlt = Signal(str)
 
     def __init__(self, parent=None):

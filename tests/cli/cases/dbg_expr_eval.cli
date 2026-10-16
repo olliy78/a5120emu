@@ -1,4 +1,4 @@
-# Ausdrucksauswertung (tools/expr_eval.h) über die Anzeige-Kommandos.
+# Ausdrucksauswertung (tools/expr_eval.h) ueber die Anzeige-Kommandos.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

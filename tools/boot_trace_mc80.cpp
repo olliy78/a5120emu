@@ -47,7 +47,7 @@ bool beobachtet(uint8_t p) {
 }
 
 /// VIS-Ports: Bildkommandos in grosser Zahl -> nach Port gefaltet, weder Wert noch PC zaehlen.
-bool datenport(uint8_t p) { return (p >= 0xC0 && p <= 0xCF) || p == 0x8C || p == 0x8D; }   // 8CH/8DH: der RESET-Test zählt sie durch
+bool datenport(uint8_t p) { return (p >= 0xC0 && p <= 0xCF) || p == 0x8C || p == 0x8D; }   // 8CH/8DH: der RESET-Test zaehlt sie durch
 
 std::string bildText(Mc80Machine& m, int cols, int rows) {
     std::string s; s.reserve(static_cast<size_t>(cols * rows));
@@ -282,7 +282,7 @@ int bootTraceMc80(const K8915TraceOpts& o, const prnlst::Listing& prn, bool v31)
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
         }
         if (now - last_activity >= static_cast<uint64_t>(o.stall)) {
-            if (tasten_pos < tasten.size()) {   // Maschine steht: nächster Tastenblock
+            if (tasten_pos < tasten.size()) {   // Maschine steht: naechster Tastenblock
                 tippeBlock();
                 if (until_hit) break;
                 last_activity = m.totalCycles();

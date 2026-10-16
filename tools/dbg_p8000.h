@@ -1,6 +1,6 @@
 /**
  * @file dbg_p8000.h
- * @brief Textbausteine des P8000 für k1520dbg (doc/design/25_p8000.md AP P12a/P12b).
+ * @brief Textbausteine des P8000 fuer k1520dbg (doc/design/25_p8000.md AP P12a/P12b).
  *
  * Reine Funktionen auf den Beobachtungsschnittstellen der Karten (`Z80Dma::sicht()`,
  * `P8000MmuLogik16::sicht()/probe()`, `Z8010::probe()/deskriptor()/letzteVerletzung()`,
@@ -10,10 +10,10 @@
  *  - Z80-Seite (P12a): Speicherbild je 4-KB-Seite (ADP), UA858-Register und Statusprotokoll,
  *    Kopplungsleitungen K1–K15 samt Protokoll der Zugriffe.
  *  - Z8000-Seite (P12b): UB8010-Register/Deskriptoren der drei MMUs, Steuerlogik (SCR, NBR,
- *    TRPL, IF1L), probeweise Übersetzung `xlat` und logischer/physischer Speicherzugriff
+ *    TRPL, IF1L), probeweise Uebersetzung `xlat` und logischer/physischer Speicherzugriff
  *    (`ml`/`mp`) ohne Nebenwirkung, SEGT-Protokoll.
  *
- * Nichts davon schreibt in einen Baustein: die Übersetzung läuft über `probe()`, der Speicher
+ * Nichts davon schreibt in einen Baustein: die Uebersetzung laeuft ueber `probe()`, der Speicher
  * wird mit `peek` gelesen.
  *
  * @license MIT
@@ -38,7 +38,7 @@
 
 namespace dbgp8 {
 
-// Formatprüfung nur unter GCC/Clang — MSVC kennt __attribute__ nicht
+// Formatpruefung nur unter GCC/Clang — MSVC kennt __attribute__ nicht
 // (Release-Bau Windows schlug 2026-10-10 daran fehl; MinGW merkt es nicht).
 #if defined(__GNUC__)
 inline std::string fmt(const char* f, ...) __attribute__((format(printf, 1, 2)));
@@ -52,13 +52,13 @@ inline std::string fmt(const char* f, ...) {
     return b;
 }
 
-/// Ringprotokoll mit Zeitstempel (Maschinentakte t8) — für `dma log`, `kopp log`, `segt`.
+/// Ringprotokoll mit Zeitstempel (Maschinentakte t8) — fuer `dma log`, `kopp log`, `segt`.
 class Protokoll {
 public:
     struct Eintrag { uint64_t takt; std::string text; uint32_t n = 1; };
     explicit Protokoll(size_t kapazitaet = 512) : cap_(kapazitaet) {}
-    /// Gleicher Text wie der letzte Eintrag: gefaltet (Zähler, Zeit des ersten) — Warteschleifen
-    /// (`16-PIO0 rd B-Daten 23` tausendfach) füllen sonst den Ring.
+    /// Gleicher Text wie der letzte Eintrag: gefaltet (Zaehler, Zeit des ersten) — Warteschleifen
+    /// (`16-PIO0 rd B-Daten 23` tausendfach) fuellen sonst den Ring.
     void add(uint64_t takt, std::string text) {
         ++gesamt_;
         if (!e_.empty() && e_.back().text == text) { ++e_.back().n; return; }
@@ -68,7 +68,7 @@ public:
     void clear() { e_.clear(); gesamt_ = 0; }
     const std::deque<Eintrag>& eintraege() const { return e_; }
     uint64_t gesamt() const { return gesamt_; }
-    /// Die letzten @p n Einträge als Zeilen "t8=… text [×N]"; @p nurSchreiben lässt Lesezugriffe
+    /// Die letzten @p n Eintraege als Zeilen "t8=… text [×N]"; @p nurSchreiben laesst Lesezugriffe
     /// (" rd ") weg — Schreiben und Latch-Ausgaben sind die Information, Warteschleifen nicht.
     std::vector<std::string> zeilen(size_t n, bool nurSchreiben = false) const {
         std::vector<std::string> out;
@@ -178,9 +178,9 @@ inline std::vector<std::string> dmaZeilen(const Z80Dma::Sicht& s) {
 }
 
 /**
- * @brief Statusprotokoll des UA858: wird je U880-Befehl (und je Portzugriff) mit der Sicht gefüttert
+ * @brief Statusprotokoll des UA858: wird je U880-Befehl (und je Portzugriff) mit der Sicht gefuettert
  *        und schreibt eine Zeile, sobald sich Status, Freigabe, Lauf, Interrupt, Bus oder die
- *        Betriebsart ändern — nicht bei jedem Byte (Zähler und Adressen laufen ohnehin).
+ *        Betriebsart aendern — nicht bei jedem Byte (Zaehler und Adressen laufen ohnehin).
  */
 class DmaProtokoll {
 public:
@@ -317,7 +317,7 @@ inline std::vector<std::string> mmuDeskriptorZeilen(const Z8010& z, int von, int
     for (int n = von; n <= bis && n < 64; ++n) {
         const Z8010::Deskriptor d = z.deskriptor(n);
         if (!alle && !d.basis && !d.limit && !d.attr) continue;
-        // Basis = Bit 23..8 der Anfangsadresse, Limit = Anzahl 256-B-Blöcke − 1 (Segmentgröße (limit+1)·256, [TB])
+        // Basis = Bit 23..8 der Anfangsadresse, Limit = Anzahl 256-B-Bloecke − 1 (Segmentgroesse (limit+1)·256, [TB])
         const uint32_t basis = uint32_t(d.basis) << 8;
         o.push_back(fmt("  SDR %02d  Basis=%06X Limit=%02X (%u Byte)  Attr=%02X [%s]", n, basis, d.limit,
                         (unsigned)(d.limit + 1) * 256u, d.attr, attrText(d.attr).c_str()));
@@ -326,7 +326,7 @@ inline std::vector<std::string> mmuDeskriptorZeilen(const Z8010& z, int von, int
     return o;
 }
 
-/// SCR/NBR/TRPL/IF1L, Zähler, letzter Zyklus (Steuerlogik der drei MMUs).
+/// SCR/NBR/TRPL/IF1L, Zaehler, letzter Zyklus (Steuerlogik der drei MMUs).
 inline std::vector<std::string> mmuLogikZeilen(const P8000MmuLogik16& l) {
     const auto s = l.sicht();
     std::vector<std::string> o;
@@ -353,7 +353,7 @@ inline bool parseArt(const std::string& s, Art& a) {
     if (s == "stack" || s == "s") { a = Art::Stack; return true; }
     return false;
 }
-/// Buszyklus-Status für die Zugriffsart: Befehl 1100 (erstes Wort 1101 bei @p erstes), Daten 1000, Stapel 1001.
+/// Buszyklus-Status fuer die Zugriffsart: Befehl 1100 (erstes Wort 1101 bei @p erstes), Daten 1000, Stapel 1001.
 inline Z8kBusCycle zyklusFuer(uint8_t seg, uint16_t off, Art art, bool system, bool lesen = true, bool erstes = false) {
     Z8kBusCycle c;
     c.st = art == Art::Code ? (erstes ? Z8kStatus::MemInstrFirst : Z8kStatus::MemInstr)
@@ -366,7 +366,7 @@ inline Z8kBusCycle zyklusFuer(uint8_t seg, uint16_t off, Art art, bool system, b
     return c;
 }
 
-/// Ergebnis einer probeweisen Übersetzung samt Text.
+/// Ergebnis einer probeweisen Uebersetzung samt Text.
 struct Xlat {
     P8000MmuLogik16::Probe probe;
     bool onBoard = false;       ///< Ziel liegt auf der Karte (EPROM/SRAM/leer)
@@ -403,7 +403,7 @@ inline Xlat xlat(const P8000MmuLogik16& l, const Z8kBusCycle& c) {
     return x;
 }
 
-/// Ein Byte hinter einer Übersetzung ohne Nebenwirkung; false = kein Baustein antwortet (offener Bus).
+/// Ein Byte hinter einer Uebersetzung ohne Nebenwirkung; false = kein Baustein antwortet (offener Bus).
 inline bool physByte(P8000Karte16& k, const P8000MmuLogik16::Zugriff& z, uint32_t byteOffset, uint8_t& v) {
     using L = P8000MmuLogik16;
     v = 0xFF;
@@ -419,7 +419,7 @@ inline bool physByte(P8000Karte16& k, const P8000MmuLogik16::Zugriff& z, uint32_
     }
 }
 
-/// `ml`: ein Byte logisch (über die Auswahllogik und die MMUs) — Offset wird je Byte neu übersetzt.
+/// `ml`: ein Byte logisch (ueber die Auswahllogik und die MMUs) — Offset wird je Byte neu uebersetzt.
 inline bool logByte(P8000Karte16& k, uint8_t seg, uint16_t off, Art art, bool system, uint8_t& v) {
     const auto z = k.mmu().probe(zyklusFuer(seg, off, art, system)).zugriff;
     return physByte(k, z, 0, v);

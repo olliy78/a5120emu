@@ -1,10 +1,10 @@
 """`app/ui/keyboard_k7634.py` — Bildschirmtastatur K7634 (K8915 Gen 1).
 
-Wie bei der K7637 (`test_keyboard_layout.py`) wird die TABELLE geprüft, nicht das
+Wie bei der K7637 (`test_keyboard_layout.py`) wird die TABELLE geprueft, nicht das
 Aussehen: ein falscher Code sieht auf dem Bild richtig aus.  Die Codetabelle der
-Nachbildung muss mit `doc/k8915g2/k7634.md` §5 übereinstimmen, jede Taste muss
+Nachbildung muss mit `doc/k8915g2/k7634.md` §5 uebereinstimmen, jede Taste muss
 eine Position haben, keine Position darf doppelt belegt sein, und die drei am
-Gerät fehlenden Kappen sind als ergänzt markiert.
+Geraet fehlenden Kappen sind als ergaenzt markiert.
 """
 
 import re
@@ -19,7 +19,7 @@ from app.ui import keyboard_k7634 as k34
 
 REPO = Path(__file__).resolve().parents[2]
 
-#: Positionen, die die K7634.04 als unbestückt (00H) führt, auf denen das Foto aber
+#: Positionen, die die K7634.04 als unbestueckt (00H) fuehrt, auf denen das Foto aber
 #: beschriftete Kappen zeigt (STRG CHOI PICK LOC, UPDATE ⇑ ⇓) — Zuordnung [?].
 UNBESTUECKT_MIT_KAPPE = {"G17", "G51", "G52", "G53", "E51", "E52", "E53"}
 
@@ -87,7 +87,7 @@ def test_keine_doppelbelegung(keys):
 
 
 def test_alle_bestueckten_positionen_haben_eine_kappe(by_pos):
-    """Jeder belegte Matrixpunkt der K7634.04 (außer G53 Betriebsbereitschaft, SL) liegt
+    """Jeder belegte Matrixpunkt der K7634.04 (ausser G53 Betriebsbereitschaft, SL) liegt
     unter einer Kappe — sonst fehlte eine Taste der Nachbildung."""
     fehlend = {p for p in k34.POSITIONEN if p not in by_pos and p != "G53"}
     assert not fehlend

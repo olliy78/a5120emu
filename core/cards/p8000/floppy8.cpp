@@ -23,21 +23,21 @@ P8000Floppy8::P8000Floppy8(P8000Karte8& karte, const Config& cfg)
     // FDC-Tore 20H–23H (CPU am Bus; 22H/23H spiegeln)
     karte_.fdcLesen = [this](uint8_t reg) { pinsAuswerten(); return fdc_.read((reg & 1) != 0); };
     karte_.fdcSchreiben = [this](uint8_t reg, uint8_t d) { pinsAuswerten(); fdc_.write((reg & 1) != 0, d); };
-    // PIO2-Ausgänge wirken sofort (Leitungen, kein Takt); Moduswechsel fängt die Auswertung beim
+    // PIO2-Ausgaenge wirken sofort (Leitungen, kein Takt); Moduswechsel faengt die Auswertung beim
     // FDC-Zugriff und in takt() auf
     karte_.pio2().setPortAOutputCallback([this](uint8_t) { pinsAuswerten(); });
     karte_.pio2().setPortBOutputCallback([this](uint8_t) { pinsAuswerten(); });
     // DMA-Steuerport 3CH–3FH
     karte_.dmaLesen = [this]() { return dma_.ioRead(0); };
     karte_.dmaSchreiben = [this](uint8_t d) { dma_.ioWrite(0, d); karte_.bus().markIntDirty(); };
-    dma_.setZaehlerLiestBlocklaenge(true);   // MON8-Hardwaretest 26 (UA858: Zähler = N nach Blockende)
+    dma_.setZaehlerLiestBlocklaenge(true);   // MON8-Hardwaretest 26 (UA858: Zaehler = N nach Blockende)
     dma_.setIEI(true);   // IEI fest High (Schaltplan §6.3): vorderstes Glied der Kette
     karte_.setzeDmaKettenglied(&dma_);
     karte_.setzeBusmaster([this] { return dma_.busRequest(); }, [this] { return dma_.step(); },
                           [this] { dma_.cpuZyklus(); });
     karte_.setzeResetHaken([this] { reset(); });
 
-    // UA858-Zyklen über den Bus; DACK = Portadresse 20H–23H (der Dekoder läuft im DMA-Zyklus mit)
+    // UA858-Zyklen ueber den Bus; DACK = Portadresse 20H–23H (der Dekoder laeuft im DMA-Zyklus mit)
     K1520Bus& bus = karte_.bus();
     dma_.memRead  = [&bus](uint16_t a) { return bus.memRead(a); };
     dma_.memWrite = [&bus](uint16_t a, uint8_t d) { bus.memWrite(a, d); };
@@ -61,7 +61,7 @@ P8000Floppy8::P8000Floppy8(P8000Karte8& karte, const Config& cfg)
         karte_.bus().markIntDirty();
     };
     for (int u = 0; u < 4; ++u) fdc_.setDrive(u, &afs_.drive(u));
-    // US0/US1 unbeschaltet: angesprochen wird allein das per PB0–3 gewählte Laufwerk
+    // US0/US1 unbeschaltet: angesprochen wird allein das per PB0–3 gewaehlte Laufwerk
     fdc_.unitAuswahl = [this](int) { return gewaehlt(); };
     fdc_.ready = [this](int) {
         const int d = gewaehlt();
@@ -72,7 +72,7 @@ P8000Floppy8::P8000Floppy8(P8000Karte8& karte, const Config& cfg)
 
 P8000Floppy8::~P8000Floppy8()
 {
-    // Rückrufe der Karte lösen (die Karte kann länger leben)
+    // Rueckrufe der Karte loesen (die Karte kann laenger leben)
     karte_.pio2().setPortAOutputCallback(nullptr);
     karte_.pio2().setPortBOutputCallback(nullptr);
     karte_.fdcLesen = nullptr;  karte_.fdcSchreiben = nullptr;
@@ -83,7 +83,7 @@ P8000Floppy8::~P8000Floppy8()
 
 int P8000Floppy8::gewaehlt() const
 {
-    const uint8_t se = karte_.pio2().pinsB() & 0x0F;   // /SE0..3, 0 = gewählt
+    const uint8_t se = karte_.pio2().pinsB() & 0x0F;   // /SE0..3, 0 = gewaehlt
     switch (se) {
         case 0x0E: return 0;
         case 0x0D: return 1;
@@ -116,10 +116,10 @@ void P8000Floppy8::reset()
 void P8000Floppy8::pinsAuswerten()
 {
     const uint8_t a = karte_.pio2().pinsA(), b = karte_.pio2().pinsB();
-    // Die Auswertung ist eine reine Funktion von (PA, PB, Blockende) und für den U8272 idempotent
+    // Die Auswertung ist eine reine Funktion von (PA, PB, Blockende) und fuer den U8272 idempotent
     // (setTC wirkt nur an der Flanke, setReset nur bei Wechsel, Datenrate setzt nur ab) — bei
-    // gleichen Eingängen entfällt sie.  takt() läuft je Rechnerbefehl.  Reset und Laden
-    // verwerfen den Merker, weil sie den FDC unabhängig von den Pins setzen.
+    // gleichen Eingaengen entfaellt sie.  takt() laeuft je Rechnerbefehl.  Reset und Laden
+    // verwerfen den Merker, weil sie den FDC unabhaengig von den Pins setzen.
     if (pins_gueltig_ && a == pins_a_ && b == pins_b_ && dma_ende_ == pins_ende_) return;
     pins_gueltig_ = true; pins_a_ = a; pins_b_ = b; pins_ende_ = dma_ende_;
     fdc_.setDatenrate((a & 0x10) ? 250 : 500);                       // PA4: 1 = 4 MHz / 0 = 8 MHz

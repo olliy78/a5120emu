@@ -6,7 +6,7 @@
 
 namespace {
 // Codetabelle des S600 je Position {unverschoben, Shift}; Spalte 8 (Sondertasten)
-// trägt nur ESC.  Aus doc/pc1715/tastatur.md §6; der Test prüft sie gegen das ROM.
+// traegt nur ESC.  Aus doc/pc1715/tastatur.md §6; der Test prueft sie gegen das ROM.
 struct Paar { uint8_t n, s; };
 constexpr Paar T(char n, char s) { return {uint8_t(n), uint8_t(s)}; }
 constexpr Paar G(uint8_t c) { return {c, c}; }
@@ -41,7 +41,7 @@ Tastatur1715::Tastatur1715(Rom art, uint32_t tastaturHz, uint32_t rechnerHz)
 Tastatur1715::Tastatur1715(const uint8_t* rom, uint32_t tastaturHz, uint32_t rechnerHz)
     : rom_(rom ? rom : PC1715_S600_TASTATUR),
       art_(rom == PC1715_TAST618_TASTATUR ? Rom::Tast618 : Rom::S600), tastaturHz_(tastaturHz), rechnerHz_(rechnerHz) {
-    // ROM über den ganzen Adressraum gespiegelt, kein RAM (Schreiben findet nicht statt)
+    // ROM ueber den ganzen Adressraum gespiegelt, kein RAM (Schreiben findet nicht statt)
     cpu_.readByte  = [this](uint16_t a) -> uint8_t { return rom_[a & 0x7FF]; };
     cpu_.writeByte = [](uint16_t, uint8_t) {};
     cpu_.readPort  = [this](uint16_t p) -> uint8_t { return lesePort(p); };
@@ -67,7 +67,7 @@ uint8_t Tastatur1715::lesePort(uint16_t p) {
         return r;
     }
     // Leuchtenwert gilt nur bei A15 = 0 (die Abfrage-INs tragen A13 = A14 = 0);
-    // den Rückgabewert verwirft das ROM.
+    // den Rueckgabewert verwirft das ROM.
     ledSiSo_ = (p >> 13) & 1;
     ledLock_ = (p >> 14) & 1;
     return 0xFF;
@@ -118,7 +118,7 @@ void Tastatur1715::runTastaturTakte(uint64_t takte) {
 
 void Tastatur1715::run(uint64_t hostTakte) {
     // Ziel aus der Summe der Rechnertakte, nicht je Aufruf gerundet; die
-    // Überschreitung der letzten Instruktion holt der nächste Aufruf wieder ein.
+    // Ueberschreitung der letzten Instruktion holt der naechste Aufruf wieder ein.
     hostSumme_ += hostTakte;
     const uint64_t ziel = hostSumme_ * tastaturHz_ / rechnerHz_;
     while (cpuTakte_ < ziel) {
@@ -131,7 +131,7 @@ void Tastatur1715::run(uint64_t hostTakte) {
 namespace {
 // Codetabelle einer ROM-Fassung aus dem ROM selbst: je Position (unverschoben / Shift) die Taste
 // durch eine frische Tastatur fahren und den Code des Rahmens lesen.  Spalte 8 (Sondertasten)
-// trägt nur ESC; (4,3) schaltet im ROM einen Zustand um (tastatur.md §6) und bleibt aus.
+// traegt nur ESC; (4,3) schaltet im ROM einen Zustand um (tastatur.md §6) und bleibt aus.
 struct Abgeleitet { Paar t[Tastatur1715::SPALTEN][Tastatur1715::ZEILEN]; };
 Abgeleitet ableiten(Tastatur1715::Rom art) {
     Abgeleitet a{};
@@ -167,7 +167,7 @@ const Paar (&tabelleFuer(Tastatur1715::Rom art))[Tastatur1715::SPALTEN][Tastatur
 bool Tastatur1715::tasteFuer(char c, Taste& out, Rom art) {
     const auto& tabelle = tabelleFuer(art);
     // ET (Eingabetaste, 3/4): CP/A biopkbd.mac macht 9EH zu CR; 9DH ist die Cursortaste <-'.
-    // (3,1) trägt im ROM ebenfalls ET, hat aber keine Taste (tastatur.md §6) — deshalb fest (3,4).
+    // (3,1) traegt im ROM ebenfalls ET, hat aber keine Taste (tastatur.md §6) — deshalb fest (3,4).
     if (c == '\r') { out = {3, 4, false}; return true; }
     const uint8_t code = uint8_t(c);
     for (int pass = 0; pass < 2; pass++)  // erst unverschoben, dann mit Shift
@@ -186,7 +186,7 @@ bool Tastatur1715::pressKeyFor(char c) {
     Taste t;
     if (!tasteFuerDiese(c, t)) return false;
     // Shift zuerst und einzeln: zwei im selben Durchlauf neu erkannte Tasten
-    // sendet das ROM nicht (Fehlbedienungsunterdrückung).
+    // sendet das ROM nicht (Fehlbedienungsunterdrueckung).
     if (t.shift) {
         press(SHIFT_L_SP, SHIFT_L_ZE);
         runTastaturTakte(4 * DURCHLAUF_TAKTE);
@@ -198,7 +198,7 @@ bool Tastatur1715::pressKeyFor(char c) {
 void Tastatur1715::tippe(const std::string& text) {
     for (char c : text) {
         if (!pressKeyFor(c)) continue;
-        runTastaturTakte(6 * DURCHLAUF_TAKTE);   // Entprellung (3 Durchläufe) plus Reserve für die Phase
+        runTastaturTakte(6 * DURCHLAUF_TAKTE);   // Entprellung (3 Durchlaeufe) plus Reserve fuer die Phase
         releaseAll();
         runTastaturTakte(4 * DURCHLAUF_TAKTE);   // Pause: Rahmen laufen aus, Taste gilt als losgelassen
     }
@@ -224,7 +224,7 @@ bool get64(const uint8_t*& p, const uint8_t* e, uint64_t& v) {
 
 void Tastatur1715::serialize(std::vector<uint8_t>& o) const {
     // Das ROM nutzt weder Interrupts noch Speicher: Register, Takte, Matrix und
-    // Rahmenzustand genügen.
+    // Rahmenzustand genuegen.
     for (uint16_t r : {cpu_.AF, cpu_.BC, cpu_.DE, cpu_.HL, cpu_.AF_, cpu_.BC_, cpu_.DE_, cpu_.HL_,
                        cpu_.IX, cpu_.IY, cpu_.PC, cpu_.SP})
         put16(o, r);

@@ -1,5 +1,5 @@
-# S5b: roher Watchpoint auf das EM-DRAM (em:) erfasst auch den U880 über das
-# Fenster — em256ful.com schreibt in Gruppe B über Seite 4 (4000H) in die Zelle 0.
+# S5b: roher Watchpoint auf das EM-DRAM (em:) erfasst auch den U880 ueber das
+# Fenster — em256ful.com schreibt in Gruppe B ueber Seite 4 (4000H) in die Zelle 0.
 tool:      k1520dbg
 disk:      cpa_cpa780_k5601_noclock.img
 setup_run: @k1520disktool put %DISK% %CLI_DIR%/../fixtures/cpm/em256ful.com

@@ -6,14 +6,14 @@
  * Was protokolliert wird (§8a AP-E4d, Schritt 3):
  *  - **E/A**: jeder Zugriff auf die K5122 (10H–18H), das Anzeigefeld 61H und das
  *    Speicherregister A8H.  Gleiche aufeinanderfolgende Ereignisse werden gefaltet
- *    („×N“); bei den Datenports 14H/16H zählt dabei weder Wert noch PC — der Lese-ISR
- *    E965H liest ausgerollt von vielen Adressen, sonst gäbe jedes Byte eine Zeile.
+ *    („×N“); bei den Datenports 14H/16H zaehlt dabei weder Wert noch PC — der Lese-ISR
+ *    E965H liest ausgerollt von vielen Adressen, sonst gaebe jedes Byte eine Zeile.
  *  - **Interrupts** mit Vektor, Quellbaustein und ISR-Adresse.
  *  - A8H mit dem entstehenden Speicherbild (`map=R...1111…`), 61H mit den Lampen.
  *
- * Abbruch: stabiler Prompt (letzte Bildzeile `X>` und das Bild 2 Mio. Takte unverändert
- * — der Autostart `rade` tippt sonst schon, während `A>` kurz letzte Zeile ist),
- * `--until`, Stillstand (`--stall` Takte ohne Bildänderung und ohne Schreibzugriff
+ * Abbruch: stabiler Prompt (letzte Bildzeile `X>` und das Bild 2 Mio. Takte unveraendert
+ * — der Autostart `rade` tippt sonst schon, waehrend `A>` kurz letzte Zeile ist),
+ * `--until`, Stillstand (`--stall` Takte ohne Bildaenderung und ohne Schreibzugriff
  * auf 10H–13H/18H/61H/A8H) oder `-c`.
  *
  * @license MIT
@@ -125,8 +125,8 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
     }
     const bool ev_on = !o.quiet || ev != stderr;
     long ev_lines = 0, ev_total = 0; bool ev_capped = false;
-    // Die Annotation wird beim ENTSTEHEN festgehalten: ausgegeben wird erst beim nächsten
-    // anderen Ereignis, und bis dahin hat ein OUT (A8H) das Speicherbild womöglich umgelegt.
+    // Die Annotation wird beim ENTSTEHEN festgehalten: ausgegeben wird erst beim naechsten
+    // anderen Ereignis, und bis dahin hat ein OUT (A8H) das Speicherbild womoeglich umgelegt.
     struct Ev { std::string key, text; uint64_t cyc = 0; uint16_t pc_lo = 0, pc_hi = 0; long n = 0;
                 std::string tail; };
     Ev cur; bool have = false;
@@ -156,8 +156,8 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
     };
 
     // ── Beobachter ───────────────────────────────────────────────────────────
-    // Schlüssel = PC | 10000H, wenn der Befehl aus dem Boot-ROM kam: 0100H im ROM und
-    // 0100H im TPA sind verschiedener Code.  Die Annotation (Listingzeile + nächstes Label)
+    // Schluessel = PC | 10000H, wenn der Befehl aus dem Boot-ROM kam: 0100H im ROM und
+    // 0100H im TPA sind verschiedener Code.  Die Annotation (Listingzeile + naechstes Label)
     // wird beim ersten Auftreten festgehalten — am Ende steht das ROM oft nicht mehr da.
     std::unordered_map<uint32_t, uint32_t> hist;
     std::unordered_map<uint32_t, std::string> hist_note;
@@ -269,7 +269,7 @@ int bootTraceK8915(const K8915TraceOpts& o, const prnlst::Listing& prn)
     // ── Lauf ─────────────────────────────────────────────────────────────────
     const int batch = 20000;
     std::string bild = bildText(m), bild_alt = bild;
-    uint64_t bild_seit = 0;             // Takt der letzten Bildänderung
+    uint64_t bild_seit = 0;             // Takt der letzten Bildaenderung
     bool cr_gesendet = false, fehler_cr = false, prompt = false, stillstand = false;
     std::string prompt_zeile;
     uint64_t next_progress = 10'000'000;

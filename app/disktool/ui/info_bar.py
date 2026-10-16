@@ -17,7 +17,7 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton
 
-#: Schweregrad → (Rahmen, Fläche, Schrift, Zeichen)
+#: Schweregrad → (Rahmen, Flaeche, Schrift, Zeichen)
 STUFEN = {
     "hinweis": ("#5b8db8", "rgba(91,141,184,0.13)", "#1d4d73", "ℹ"),
     "warnung": ("#c08a2e", "rgba(192,138,46,0.15)", "#7a5205", "⚠"),
@@ -77,7 +77,7 @@ class InfoBar(QFrame):
         self._zeichen.setText(zeichen)
         self._text.setText(text)
 
-        # Qt beschwert sich über ein `disconnect()` ins Leere — deshalb wird nur
+        # Qt beschwert sich ueber ein `disconnect()` ins Leere — deshalb wird nur
         # getrennt, was auch verbunden wurde.
         if self._verbunden:
             self._knopf.clicked.disconnect()
@@ -95,7 +95,7 @@ class InfoBar(QFrame):
         self._text.setText("")
         self.hide()
 
-    # ── Abfragen (für Tests und Statusmeldungen) ────────────────────────────
+    # ── Abfragen (fuer Tests und Statusmeldungen) ────────────────────────────
 
     def text(self) -> str:
         return self._text.text()

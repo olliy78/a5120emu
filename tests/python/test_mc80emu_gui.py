@@ -2,8 +2,8 @@
 
 doc/design/31_mc80.md, doc/design/32_… §6 M6: Programmprofil (Titel, Konfiguration, Takt
 2,4576 MHz, Modelle .30/.31, .33/.21/.22 gesperrt, SPE-Zahl), Bild 512 × 256 aus
-``k1520_framebuffer`` über dasselbe CRT-Widget, keine Laufwerke, Bildschirmtastatur auf
-Zeichenebene (Bild A5 der BDA), Speicherabzug laden, Werkzeugmenü, Konfiguration getrennt
+``k1520_framebuffer`` ueber dasselbe CRT-Widget, keine Laufwerke, Bildschirmtastatur auf
+Zeichenebene (Bild A5 der BDA), Speicherabzug laden, Werkzeugmenue, Konfiguration getrennt
 von den anderen Programmen, Starter und Handbuch.
 """
 
@@ -137,7 +137,7 @@ def test_profil_und_titel(qapp, konfig_ordner):
         assert w.CPU_HZ == 2_457_600
         assert w.emulator.framebuffer_size() == (512, 256)
         assert not hasattr(w, "act_nmi") and not hasattr(w, "act_stand_speichern")
-        # Keine Laufwerke: Kasten, Menüeinträge, Reiter und Statusfelder fehlen.
+        # Keine Laufwerke: Kasten, Menueeintraege, Reiter und Statusfelder fehlen.
         assert w.drives_dock.isHidden()
         assert not w.drives_dock.toggleViewAction().isVisible()
         assert not w.act_einlegen.isVisible() and not w.act_auswerfen.isVisible()
@@ -202,7 +202,7 @@ def test_bindung_kennt_beide_varianten_und_die_spe_zahl():
 
 def test_egos_meldung_erscheint_im_framebuffer(qapp, konfig_ordner):
     """Das Bild kommt als Bitmap (00H/FFH je Bildpunkt) aus k1520_framebuffer; der Text der
-    Meldung ist über k1520_screen_char (Mustervergleich) und das Kontextmenü lesbar."""
+    Meldung ist ueber k1520_screen_char (Mustervergleich) und das Kontextmenue lesbar."""
     w = _fenster(qapp)
     try:
         emu = _gestoppt(w)
@@ -213,7 +213,7 @@ def test_egos_meldung_erscheint_im_framebuffer(qapp, konfig_ordner):
         text = w.screen_widget.bildschirmtext()
         assert "mc 80.30. microcomputer" in text and "Version 3.0" in text
         assert len(text.split("\n")) == 25
-        # Das Widget holt das Bild ab (Größe aus dem Kern, ohne GL im Offscreen-Betrieb).
+        # Das Widget holt das Bild ab (Groesse aus dem Kern, ohne GL im Offscreen-Betrieb).
         w.screen_widget._bild_holen()
         assert (w.screen_widget._fb_w, w.screen_widget._fb_h) == (512, 256)
         assert w.act_text_kopieren.shortcut().isEmpty()
@@ -226,8 +226,8 @@ def test_taste_kommt_an_bildschirmtastatur_und_pc_tastatur(qapp, konfig_ordner):
     from PySide6.QtTest import QTest
     w = _fenster(qapp)
     try:
-        emu = _init(w, qapp)                   # INIT über die Bildschirmtastatur
-        # Die PC-Tastatur: über das Bild, durch die Nachbildung (EGOS: „a“ → „A“).
+        emu = _init(w, qapp)                   # INIT ueber die Bildschirmtastatur
+        # Die PC-Tastatur: ueber das Bild, durch die Nachbildung (EGOS: „a“ → „A“).
         w.screen_widget.setFocus()
         for ch in "cat":
             QTest.keyClick(w.screen_widget, getattr(Qt, f"Key_{ch.upper()}"), Qt.NoModifier, 1)
@@ -248,7 +248,7 @@ def test_tastenbild_der_bildschirmtastatur():
     assert nach_text["⇥"].code == int(Qt.Key_Tab)
     s = [t for t in tasten if t.low.startswith("S") and len(t.low) == 2]
     assert sorted(t.code - int(Qt.Key_F1) for t in s) == list(range(8))
-    # Buchstaben: klein ohne, groß mit Umschaltung; Ziffern mit Zweitbelegung.
+    # Buchstaben: klein ohne, gross mit Umschaltung; Ziffern mit Zweitbelegung.
     assert (nach_text["Q"].code, nach_text["Q"].shift_code) == (ord("q"), ord("Q"))
     assert (nach_text["1"].code, nach_text["1"].shift_code) == (ord("1"), ord("!"))
     # Unbekannte Codes senden nichts.
@@ -271,8 +271,8 @@ def test_ladeadresse_aus_dem_dateinamen():
 
 
 def test_speicherabzug_laden_und_tetris_starten(qapp, konfig_ordner):
-    """Menü *Maschine ▸ Speicherabzug laden…* (kein Kürzel): TETRIS nach INIT ab 4000H,
-    gestartet mit `te` + ENTER — das Bild ändert sich (Entwurf 31 §4, Wächter Mc80Spiele)."""
+    """Menue *Maschine ▸ Speicherabzug laden…* (kein Kuerzel): TETRIS nach INIT ab 4000H,
+    gestartet mit `te` + ENTER — das Bild aendert sich (Entwurf 31 §4, Waechter Mc80Spiele)."""
     datei = SPIELE / "tetris_4000_4fff.bin"
     w = _fenster(qapp)
     try:
@@ -336,7 +336,7 @@ def test_kassette_folgt_der_karte_und_legt_kompaktkassetten_an(qapp, konfig_ordn
 # ── MC80.21/.22 in mc80emu (AP M12) ──────────────────────────────────────────
 
 def _bis_menue(emu, nadel, takte=20_000_000):
-    """Fährt, bis *nadel* im Text der DPL (8 × 32) steht."""
+    """Faehrt, bis *nadel* im Text der DPL (8 × 32) steht."""
     n = 0
     while n < takte:
         n += emu.run(200_000)
@@ -346,14 +346,14 @@ def _bis_menue(emu, nadel, takte=20_000_000):
 
 
 def _taste_2x(emu, code, nach=400_000):
-    """Eine Taste über die Kern-Schnittstelle; die Maschine hält 60 ms + 60 ms Pause je Taste."""
+    """Eine Taste ueber die Kern-Schnittstelle; die Maschine haelt 60 ms + 60 ms Pause je Taste."""
     emu.key_press(code, False, False)
     _laufe(emu, nach)
 
 
 @pytest.mark.parametrize("modell", ["mc80-21", "mc80-22"])
 def test_mc80_2x_modell_bild_tastatur_und_kassettenkasten(qapp, konfig_ordner, modell):
-    """Modellwahl .21/.22: Bild 528 × 256, BSYS-Menü im Text, Matrixtastatur, Kassette fest."""
+    """Modellwahl .21/.22: Bild 528 × 256, BSYS-Menue im Text, Matrixtastatur, Kassette fest."""
     from PySide6.QtCore import Qt
     from app.ui.keyboard_mc80_2x import KeyboardMc80_2xWidget
     w = _fenster(qapp)
@@ -364,19 +364,19 @@ def test_mc80_2x_modell_bild_tastatur_und_kassettenkasten(qapp, konfig_ordner, m
         assert emu.machine == modell and emu.machine_type() == 6
         assert emu.framebuffer_size() == (528, 256)
         assert isinstance(w.keyboard_widget, KeyboardMc80_2xWidget)
-        # SPE-Wahl gilt nicht für die .2x; die Kassette ist fest eingebaut (Kasten da, Kästchen aus).
+        # SPE-Wahl gilt nicht fuer die .2x; die Kassette ist fest eingebaut (Kasten da, Kaestchen aus).
         assert not w.settings_widget.hardware_combos["spe"].isEnabled()
         assert not w.settings_widget.tape_box.isEnabled()
         assert emu.tape_installed() and w.kassette_dock.toggleViewAction().isVisible()
         assert w.kassette_widget.laufwerke[1].isHidden()             # nur das SK 1200
         assert not w.kassette_widget.laufwerke[0].isHidden()
         assert w.drives_dock.isHidden()
-        # BSYS meldet sich als Menü; Text über k1520_screen_char (32 × 8).
+        # BSYS meldet sich als Menue; Text ueber k1520_screen_char (32 × 8).
         assert _bis_menue(emu, "TASTENTEST"), emu.screen_text()
         zeilen = emu.screen_text().split("\n")
         assert len(zeilen) == 8 and zeilen[1].strip() == "049D  INIT", zeilen
         assert w.screen_widget.bildschirmtext().split("\n")[2] == "0600  BAND"
-        # Taste über die Bildschirmtastatur: Kursor ↓ ↓ ENTER öffnet das Bandmenü.
+        # Taste ueber die Bildschirmtastatur: Kursor ↓ ↓ ENTER oeffnet das Bandmenue.
         kw = w.keyboard_widget
         for name in ("↓", "↓", "ENTER"):
             _taste(kw, qapp, next(k for k in kw._keys if k.low == name))
@@ -408,10 +408,10 @@ def test_mc80_2x_tastenbild_nach_der_codetabelle():
 
 
 def test_mc80_2x_kassette_speichern_und_laden(qapp, konfig_ordner, tmp_path):
-    """BSYS-Bandmenü: 128 Byte aus dem RAM auf eine neue .k52 schreiben, RAM löschen, zurücklesen.
+    """BSYS-Bandmenue: 128 Byte aus dem RAM auf eine neue .k52 schreiben, RAM loeschen, zuruecklesen.
 
-    Der Weg des Anwenders (Menü ▸ Kassette einlegen ▸ BAND ▸ SCHREIBEN/LESEN) über die API;
-    der Kern-Test ``Mc80_2x.KassetteSpeichernLaden`` prüft den Bandinhalt blockweise."""
+    Der Weg des Anwenders (Menue ▸ Kassette einlegen ▸ BAND ▸ SCHREIBEN/LESEN) ueber die API;
+    der Kern-Test ``Mc80_2x.KassetteSpeichernLaden`` prueft den Bandinhalt blockweise."""
     w = _fenster(qapp)
     try:
         w._on_model_selected("mc80-22")
@@ -444,7 +444,7 @@ def test_mc80_2x_kassette_speichern_und_laden(qapp, konfig_ordner, tmp_path):
         tippe("PROGRAMM TEST")
         enter()
         n = 0
-        while n < 200_000_000:                                # Vorlücke ≈ 27 s Bandzeit
+        while n < 200_000_000:                                # Vorluecke ≈ 27 s Bandzeit
             n += emu.run(1_000_000)
             t = emu.screen_text()
             if "MAGNETBAND :" in t and "LOESCHEN" in t:
@@ -474,7 +474,7 @@ def test_mc80_2x_kassette_speichern_und_laden(qapp, konfig_ordner, tmp_path):
         _zu(w, qapp)
 
 
-# ── Werkzeugmenü, Kürzel, Konfiguration, Starter ─────────────────────────────
+# ── Werkzeugmenue, Kuerzel, Konfiguration, Starter ─────────────────────────────
 
 def test_werkzeugmenue_kennt_alle_emulatoren(qapp, konfig_ordner, monkeypatch):
     from app import programme
@@ -565,5 +565,5 @@ def test_starter_und_handbuch():
     assert "--machine mc80" in starter
     hb = (PROJECT_ROOT / "app" / "help" / "handbuch.md").read_text(encoding="utf-8")
     assert "## Der MC80 Emulator" in hb and "Speicherabzug laden" in hb and "INIT" in hb
-    # Die Kürzeltabelle bleibt hinter dem Kapitel (Vertrag).
+    # Die Kuerzeltabelle bleibt hinter dem Kapitel (Vertrag).
     assert hb.index("## Der MC80 Emulator") < hb.index("## Tastenkürzel")

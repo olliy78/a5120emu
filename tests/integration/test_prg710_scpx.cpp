@@ -2,26 +2,26 @@
  * @file test_prg710_scpx.cpp
  * @brief PRG 710 / 710-1 Etappe 5 (doc/design/20_prg710.md AP-P5e): SCPX 1526 am 710-1
  *        bis `A>`, `DIR`/`STAT`/`PIP` nach B:, und mit `SYSPRG` eine SCPX-Bootdiskette
- *        für den PRG 710.
+ *        fuer den PRG 710.
  *
  * Ladekette (§4a): Starttaste → ROM liest den Bootsektor `SYL17` nach 0400H → `SYL17`
- * lädt die Systemspuren über die ROM-Schnittstelle `03FDH` ab C600H (Spur 0 Seite 0 ab
+ * laedt die Systemspuren ueber die ROM-Schnittstelle `03FDH` ab C600H (Spur 0 Seite 0 ab
  * Sektor 1, also `SYL17` selbst nach C600H, CCP+BDOS `CCPBD17` ab C800H, BIOS ab DE00H),
  * schaltet `E8H[F]` und springt nach DE00H.
  *
  * **Befunde aus AP-P5e:**
- * - Am 710-1 läuft `PRG710-1_SCPX_Boot` ohne jede Kernänderung bis `A>` („SCPX 1526 -
+ * - Am 710-1 laeuft `PRG710-1_SCPX_Boot` ohne jede Kernaenderung bis `A>` („SCPX 1526 -
  *   V 1.7 (52K)“), ≈ 12 Mio. Takte nach ENTER; `DIR`, `STAT`, `PIP` nach B: laufen.
  * - Die Systemspuren (`scpx640`, 16384 B) sind genau `SYL17.SYS` (Bootsektor, 256 B,
  *   Rest des ersten 512-B-Blocks AAH) + `CCPBD17.SYS` (ab Byte 512) + BIOS (ab Byte 6144,
  *   hier `B17272V2.SYS`), danach AAH.  `SYSPRG` (Bildschirm 2, Tastatur 2, Drucker 3,
  *   Format 0, Laufwerk B) schreibt im Emulator **bytegleich dieselben** Systemspuren.
- * - `SYSPRG` wählt das BIOS nur über den Dateinamen `B17<Bild><Tastatur><Drucker>.SYS`
+ * - `SYSPRG` waehlt das BIOS nur ueber den Dateinamen `B17<Bild><Tastatur><Drucker>.SYS`
  *   (Tastatur 09 = K7609/PRG 710, 72 = K7672/PRG 710-1).  Die PRG-710-Module
  *   `B17109xx`/`B17209xx` liegen auf **keiner** vorhandenen Diskette — mit Tastatur 1
- *   meldet `SYSPRG` „DATEI B17209V2.SYS NICHT AUF DISKETTE“.  Für den 710 gibt es nur
- *   die älteren BIOS-Fassungen `B151V24`, `B152V24`, `B152IFSS` („SCPX V 1.5
- *   B. Daehmlow“, gleiche Basis DE00H, gleiche Länge).  Die 710-Diskette
+ *   meldet `SYSPRG` „DATEI B17209V2.SYS NICHT AUF DISKETTE“.  Fuer den 710 gibt es nur
+ *   die aelteren BIOS-Fassungen `B151V24`, `B152V24`, `B152IFSS` („SCPX V 1.5
+ *   B. Daehmlow“, gleiche Basis DE00H, gleiche Laenge).  Die 710-Diskette
  *   entsteht deshalb mit `SYSPRG` im Emulator, nachdem `B152V24.SYS` unter dem erwarteten
  *   Namen `B17209V2.SYS` bereitliegt — `SYSPRG` setzt nur zusammen, das Ergebnis ist
  *   `SYL17` + `CCPBD17` (V1.7) + `B152V24` (V1.5) und bootet am 710 bis `A>`.
@@ -103,7 +103,7 @@ bool bisPrompt(Prg710Machine& m, long long frist) {
     return false;
 }
 
-/// Eine Taste drücken und loslassen (die K7672 wiederholt eine gehaltene Taste).
+/// Eine Taste druecken und loslassen (die K7672 wiederholt eine gehaltene Taste).
 void taste(Prg710Machine& m, uint32_t k) {
     m.keyPress(k, false, false);
     lauf(m, 100'000);
@@ -113,7 +113,7 @@ void taste(Prg710Machine& m, uint32_t k) {
 void tippe(Prg710Machine& m, const std::string& s) {
     for (char c : s) taste(m, static_cast<uint8_t>(c));
 }
-/// Kommando + ET bzw. ENTER, dann bis zum nächsten `A>`.
+/// Kommando + ET bzw. ENTER, dann bis zum naechsten `A>`.
 bool kommando(Prg710Machine& m, const std::string& k) {
     tippe(m, k);
     taste(m, QK_RETURN);
@@ -146,7 +146,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// Temporäre Datei (samt Sicherungskopie und Beiblatt des DiskTools), räumt sich weg.
+/// Temporaere Datei (samt Sicherungskopie und Beiblatt des DiskTools), raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const char* name) : pfad_(k1520test::tempPath(name)) { weg(); }
@@ -175,7 +175,7 @@ void leereDiskette(const std::string& pfad) {
     ASSERT_TRUE(neu->flush()) << neu->lastError();
 }
 
-/// Inhalt einer Datei einer `scpx640`-Diskette (über das DiskTool).
+/// Inhalt einer Datei einer `scpx640`-Diskette (ueber das DiskTool).
 std::vector<uint8_t> scpxDatei(const std::string& abbild, const std::string& name) {
     std::string err;
     auto dv = DiskVolume::open(abbild, "scpx640", formate(), dateisysteme(), err);
@@ -198,7 +198,7 @@ std::vector<uint8_t> systemspuren(const std::string& abbild) {
     return b;
 }
 
-/// Netz-Ein → Starttaste → Begrüssung → `A>`.
+/// Netz-Ein → Starttaste → Begruessung → `A>`.
 void booteBisPrompt(Prg710Machine& m, const char* gruss) {
     m.powerOn();
     lauf(m, 3'000'000);                              // ROM bis zur Tastaturabfrage
@@ -291,7 +291,7 @@ TEST_F(Prg710Scpx, Prg710_1DirStatUndKopieNachB) {
  * @test Prg710Scpx.SysprgSchreibtDieSystemspurenDes710_1
  * @brief `SYSPRG` (2K-Bild, K7672, Drucker V.24, 16 × 256, Laufwerk B) im Emulator:
  *        „DISKETTE FERTIG GENERIERT !“, und die Systemspuren der leeren Diskette in B:
- *        sind danach **bytegleich** denen der Gerätediskette — `SYSPRG` setzt nur
+ *        sind danach **bytegleich** denen der Geraetediskette — `SYSPRG` setzt nur
  *        `SYL17` + `CCPBD17` + `B17272V2` zusammen.
  */
 TEST_F(Prg710Scpx, SysprgSchreibtDieSystemspurenDes710_1) {
@@ -313,7 +313,7 @@ TEST_F(Prg710Scpx, SysprgSchreibtDieSystemspurenDes710_1) {
  * @test Prg710Scpx.SysprgOhnePrg710ModulMeldetFehlendeDatei
  * @brief Mit Tastatur 1 (K7609, PRG 710) sucht `SYSPRG` das BIOS `B17209V2.SYS` —
  *        das liegt auf keiner vorhandenen Diskette (Dateikopf).  `SYSPRG` meldet es
- *        und kehrt zum `A>` zurück; deshalb geht die 710-Diskette den Umweg über
+ *        und kehrt zum `A>` zurueck; deshalb geht die 710-Diskette den Umweg ueber
  *        `B152V24.SYS` (`SysprgBautBootdisketteFuerDen710`).
  */
 TEST_F(Prg710Scpx, SysprgOhnePrg710ModulMeldetFehlendeDatei) {

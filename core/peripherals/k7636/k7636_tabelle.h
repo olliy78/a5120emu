@@ -1,4 +1,4 @@
-// ERZEUGT von tools/k7636_tabelle.py aus doc/a5120_alt/k7636_01_codes.csv - nicht von Hand ändern.
+// ERZEUGT von tools/k7636_tabelle.py aus doc/a5120_alt/k7636_01_codes.csv - nicht von Hand aendern.
 #pragma once
 #include <cstdint>
 

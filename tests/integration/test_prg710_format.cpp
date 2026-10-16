@@ -2,22 +2,22 @@
  * @file test_prg710_format.cpp
  * @brief PRG 710 / 710-1 (doc/design/20_prg710.md AP-P5f): `FORMAT` unter UDOS und
  *        SCPX auf einer **Leerdiskette** (`createDisk` mit leerem Formatnamen) in
- *        Laufwerk 1 — die schnellen Wächter.  Die ganze Kette bis zur bootfähigen
+ *        Laufwerk 1 — die schnellen Waechter.  Die ganze Kette bis zur bootfaehigen
  *        UDOS-Diskette steht in `tests/system/test_prg710_format_boot.cpp`
  *        (`format_integration`).
  *
- * **Befunde aus AP-P5f — keine Kernänderung nötig:**
+ * **Befunde aus AP-P5f — keine Kernaenderung noetig:**
  * - UDOS-`FORMAT` (V 4.3, „FORMAT 870507“, auf allen PRG-Disketten bitgleich) schreibt
- *   die Spur **selbst** im `/WAIT`-Betrieb (Segment 5897H–5A5BH: Indexinterrupt über die
+ *   die Spur **selbst** im `/WAIT`-Betrieb (Segment 5897H–5A5BH: Indexinterrupt ueber die
  *   Steuer-PIO A, Vektor E8H → 5A52H; Strom `B4H`/`B6H` an 10H, Bytes an 14H, 26 × 128 B,
  *   Sektorkontrollblock `FF FF FF FF`, Ende `ADH`) — anders als am A5120 (ZVE2-Koroutine).
- *   Es formatiert **eine Seite**: Laufwerk 0–3 = Seite 0, 4–7 = Seite 1; geprüft wird
- *   anschließend über den Resident (`0BFDH`, Lesen jeder Spur).
- * - Der Befund (b) aus AP-P3 („FORMAT kehrt sofort ohne Meldung zurück“) war die
+ *   Es formatiert **eine Seite**: Laufwerk 0–3 = Seite 0, 4–7 = Seite 1; geprueft wird
+ *   anschliessend ueber den Resident (`0BFDH`, Lesen jeder Spur).
+ * - Der Befund (b) aus AP-P3 („FORMAT kehrt sofort ohne Meldung zurueck“) war die
  *   **Bedienung im Test**: Zeichen vor der Frage gehen verloren, und `READY? Y` innerhalb
  *   des Motornachlaufs vom Laden des Programms gibt „ERROR C2“ (Kopf von
- *   `tests/system/prg710_bedienung.h`) — Gastverhalten, am Gerät ebenso.
- * - SCPX-`FORMAT.COM` („FORMAT 1520(SCPX) V 1.5“) läuft an beiden Varianten auf Anhieb,
+ *   `tests/system/prg710_bedienung.h`) — Gastverhalten, am Geraet ebenso.
+ * - SCPX-`FORMAT.COM` („FORMAT 1520(SCPX) V 1.5“) laeuft an beiden Varianten auf Anhieb,
  *   auch mit Systemkopie; die Kopie bootet an derselben Variante.
  */
 
@@ -63,7 +63,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// Temporäre Datei (samt Sicherungskopie und Beiblatt des DiskTools), räumt sich weg.
+/// Temporaere Datei (samt Sicherungskopie und Beiblatt des DiskTools), raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const std::string& name) : pfad_(k1520test::tempPath(name)) { weg(); }
@@ -126,15 +126,15 @@ protected:
 
 /**
  * @test Prg710Format.UdosFormatiertLeerdiskette
- * @brief UDOS bootet von der Gerätediskette, danach kommt eine Leerdiskette in Laufwerk 1
- *        (erst nach dem Start: vorher läsen ROM bzw. Resident die leere Diskette, bis das
+ * @brief UDOS bootet von der Geraetediskette, danach kommt eine Leerdiskette in Laufwerk 1
+ *        (erst nach dem Start: vorher laesen ROM bzw. Resident die leere Diskette, bis das
  *        Rauschen einen Fehler liefert — beim 710 ≈ 80 s Maschinenzeit, AP-P3b).  `FORMAT`
  *        SYSTEMDISK? N auf Laufwerk 1 (Seite 0, ID TEST) und 5 (Seite 1, ID TEST.B)
- *        meldet keine defekte Spur, `STATUS 1` sieht den neuen Datenträger mit
+ *        meldet keine defekte Spur, `STATUS 1` sieht den neuen Datentraeger mit
  *        77 × 26 − 14 = 1988 freien Sektoren, `COPY` schreibt darauf, `CAT` sieht die
  *        Kopie, und das DiskTool liest sie bytegleich.  Beide Seiten werden formatiert
  *        (Laufwerkstyp 5 ist zweiseitig): UDOS liest beim ersten Zugriff auf die Diskette
- *        auch die andere Seite — eine leere Rückseite hängt seit AP-P3b nicht mehr, kostet
+ *        auch die andere Seite — eine leere Rueckseite haengt seit AP-P3b nicht mehr, kostet
  *        aber je Zugriff die Fehlerwiederholungen im Rauschen
  *        (`Prg710Udos.StatusMitEinseitigerDisketteInLaufwerk1`).
  */
@@ -170,7 +170,7 @@ TEST_P(Prg710Format, UdosFormatiertLeerdiskette) {
 
 /**
  * @test Prg710Format.ScpxFormatMitSystemkopieBootet
- * @brief SCPX von der Gerätediskette (710-1: `PRG710-1_SCPX_Boot`, 710: die
+ * @brief SCPX von der Geraetediskette (710-1: `PRG710-1_SCPX_Boot`, 710: die
  *        `SYSPRG`-Diskette aus AP-P5e), Leerdiskette in B:, `FORMAT` (Vorgabe 0 = DD-DS
  *        16 × 256) mit Systemkopie.  Das DiskTool erkennt `scpx640` mit leerem Verzeichnis
  *        und denselben Systemspuren wie die Quelle; die neue Diskette bootet an derselben
@@ -204,7 +204,7 @@ TEST_P(Prg710Format, ScpxFormatMitSystemkopieBootet) {
     const auto quelle = systemspuren(disk, "scpx640");
     ASSERT_EQ(quelle.size(), 16384u);
     // FORMAT.COM legt in die Kopie seinen Urheberstempel (32 Byte ab Systemspur-Byte 2FE0H,
-    // in FORMAT.COM ab Dateiversatz 065FH mit +C0H verschlüsselt): Gastverhalten.
+    // in FORMAT.COM ab Dateiversatz 065FH mit +C0H verschluesselt): Gastverhalten.
     auto kopie = systemspuren(leer.get(), "scpx640");
     ASSERT_EQ(kopie.size(), quelle.size());
     const std::string stempel(kopie.begin() + 0x2FE0, kopie.begin() + 0x2FE0 + 14);

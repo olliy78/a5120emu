@@ -1,5 +1,5 @@
 /**
- * @test I8275.* — CRT-Controller 8275 (doc/design/21_pc1715.md §3.4): Reset-Parametersätze,
+ * @test I8275.* — CRT-Controller 8275 (doc/design/21_pc1715.md §3.4): Reset-Parametersaetze,
  *       Start/Cursor/Status, Sondercodes F0–F3 (Zahl der DMA-Bytes!), Feldattribute,
  *       Cursor-Blinken, Interrupt am Bildende.
  */
@@ -28,7 +28,7 @@ struct Rig {
         crt.write(false, a); crt.write(false, b); crt.write(false, c); crt.write(false, d);
     }
     void start() { crt.write(true, 0x20); }
-    // Ein Bild mit n Zeichen je Zeile aus ASCII-Text füllen
+    // Ein Bild mit n Zeichen je Zeile aus ASCII-Text fuellen
     void fill(int n, const char* z) { for (int i = 0; i < n; ++i) src.push_back(z[i]); }
 };
 
@@ -85,9 +85,9 @@ TEST(I8275, StartDisplayUndStatus)
 {
     Rig r;
     EXPECT_EQ(r.crt.read(true), 0);
-    r.crt.write(true, 0x20);            // vor Reset: unzulässig → IC
+    r.crt.write(true, 0x20);            // vor Reset: unzulaessig → IC
     EXPECT_EQ(r.crt.read(true) & 0x08, 0x08);
-    EXPECT_EQ(r.crt.read(true) & 0x08, 0);     // Lesen löscht IC
+    EXPECT_EQ(r.crt.read(true) & 0x08, 0);     // Lesen loescht IC
     r.params(0x3F, 0x4F, 0x6E, 0x6B);
     r.start();                           // 20H: 1 Zyklus, 0 Takte Abstand
     EXPECT_EQ(r.crt.burstLength(), 1);
@@ -151,7 +151,7 @@ TEST(I8275, OhneStartKeinDmaUndLeereZellen)
     EXPECT_TRUE(r.crt.cells(0, 0).empty);
 }
 
-// F0: Zeilenende, Rest-DMA läuft weiter → je Zeile genau 64 Bytes, Rest leer.
+// F0: Zeilenende, Rest-DMA laeuft weiter → je Zeile genau 64 Bytes, Rest leer.
 TEST(I8275, F0ZeilenendeLiestRestDerZeileWeiter)
 {
     Rig r;
@@ -164,11 +164,11 @@ TEST(I8275, F0ZeilenendeLiestRestDerZeileWeiter)
     EXPECT_TRUE(r.crt.cells(0, 1).empty);
     EXPECT_TRUE(r.crt.cells(0, 2).empty);
     EXPECT_TRUE(r.crt.cells(0, 3).empty);
-    EXPECT_EQ(r.crt.cells(1, 0).code, 0x20);   // nächste Zeile beginnt hinter den 64 Bytes
+    EXPECT_EQ(r.crt.cells(1, 0).code, 0x20);   // naechste Zeile beginnt hinter den 64 Bytes
 }
 
-// F1: Zeilenende + Stop-DMA → in dieser Zeile nur bis einschließlich F1 gelesen;
-// die nächste Zeile beginnt direkt mit dem folgenden Byte.
+// F1: Zeilenende + Stop-DMA → in dieser Zeile nur bis einschliesslich F1 gelesen;
+// die naechste Zeile beginnt direkt mit dem folgenden Byte.
 TEST(I8275, F1ZeilenendeStopDmaLiestNichtWeiter)
 {
     Rig r;
@@ -182,7 +182,7 @@ TEST(I8275, F1ZeilenendeStopDmaLiestNichtWeiter)
     EXPECT_EQ(r.crt.cells(1, 0).code, 'Y');
 }
 
-// F2: Bildende, DMA läuft weiter (alle 16 Zeilen × 64 Bytes), Rest des Bildes leer.
+// F2: Bildende, DMA laeuft weiter (alle 16 Zeilen × 64 Bytes), Rest des Bildes leer.
 TEST(I8275, F2BildendeLiestWeiterUndLeertRest)
 {
     Rig r;
@@ -207,7 +207,7 @@ TEST(I8275, F3BildendeStopDmaHaeltDmaAn)
     EXPECT_EQ(r.gelesen, 2);
     EXPECT_EQ(r.crt.lastFrameDmaBytes(), 2);
     EXPECT_TRUE(r.crt.cells(1, 0).empty);
-    // nächstes Bild beginnt wieder normal (VRTC)
+    // naechstes Bild beginnt wieder normal (VRTC)
     r.src = {'Q'};
     r.crt.frame();
     EXPECT_EQ(r.vrtcs, 2);
@@ -254,7 +254,7 @@ TEST(I8275, FeldattributGiltUeberZeilenUndWirdAmBildanfangZurueckgesetzt)
     r.src = {0x80 | 0x20 /*U*/};         // Zelle (0,0) = Attribut, danach Leerzeichen
     r.crt.frame();
     EXPECT_TRUE(r.crt.cells(0, 5).lten);
-    EXPECT_TRUE(r.crt.cells(7, 5).lten);      // über Zeilengrenzen
+    EXPECT_TRUE(r.crt.cells(7, 5).lten);      // ueber Zeilengrenzen
     r.src.clear();
     r.crt.frame();                            // neues Bild ohne Attribut
     EXPECT_FALSE(r.crt.cells(0, 5).lten);
@@ -288,7 +288,7 @@ TEST(I8275, CursorBlinktAlle16Bilder)
 }
 
 // P8000-Terminal (Firmware RESET_DISPLAY sendet E0H zweimal): Preset Counters setzt den
-// Bildzähler zurück — die Blinkphasen beginnen von vorn.
+// Bildzaehler zurueck — die Blinkphasen beginnen von vorn.
 TEST(I8275, PresetCountersSetztDieBlinkzaehlerZurueck)
 {
     Rig r;
@@ -311,7 +311,7 @@ TEST(I8275, ZeichenBlinkphase32Bilder)
     r.params(0x3F, 0x4F, 0x6E, 0x6B);
     r.start();
     for (int i = 0; i < 32; ++i) r.crt.frame();
-    EXPECT_FALSE(r.crt.charBlinkOn());     // 32 Bilder gezählt → zweite Hälfte
+    EXPECT_FALSE(r.crt.charBlinkOn());     // 32 Bilder gezaehlt → zweite Haelfte
     for (int i = 0; i < 32; ++i) r.crt.frame();
     EXPECT_TRUE(r.crt.charBlinkOn());
 }
@@ -338,7 +338,7 @@ TEST(I8275, InterruptAmBildendeWennIE)
     r.crt.frame();
     EXPECT_TRUE(r.crt.irq());
     EXPECT_EQ(r.crt.read(true) & 0x20, 0x20);   // IR sichtbar …
-    EXPECT_FALSE(r.crt.irq());                  // … und durch Lesen gelöscht
+    EXPECT_FALSE(r.crt.irq());                  // … und durch Lesen geloescht
     EXPECT_EQ(r.crt.read(true) & 0x20, 0);
     ASSERT_EQ(pegel.size(), 2u);
     EXPECT_TRUE(pegel[0]);

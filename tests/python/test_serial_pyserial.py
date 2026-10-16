@@ -1,20 +1,20 @@
 """pyserial gegen den Emulator-Server (Entwurf 19 §11 `py_serial_pyserial`, AP-S8).
 
 Interop-Probe mit einem fremden RFC-2217-Client: `serial.serial_for_url("rfc2217://…")`
-verbindet sich mit der DFÜ/V.24 eines laufenden A5120.  Geprüft wird, was ein
-Anwender mit pyserial tut — Baud lesen/setzen (Leitsatz 4: der Gast ist maßgeblich,
+verbindet sich mit der DFÜ/V.24 eines laufenden A5120.  Geprueft wird, was ein
+Anwender mit pyserial tut — Baud lesen/setzen (Leitsatz 4: der Gast ist massgeblich,
 eine abweichende Anfrage beantwortet der Server mit dem Gastwert, pyserial lehnt dann
 ab), Bytes in beide Richtungen (auch FFH = IAC), Steuerleitungen mit
 Nullmodem-Kreuzung (§6.4) in beide Richtungen.
 
 Der Gast ist ein kleines Z80-Programm im RAM: CP/A wird bis zum Prompt
 gebootet, dann zeigen CONST/CONIN der BIOS-Sprungleiste auf das Programm — der
-nächste Konsolenaufruf landet dort (die Bindung hat bewusst keinen Zugriff auf den
-PC).  Es programmiert A33-A auf 9600 Bd 8N1 mit RTS/DTR und schickt jedes Byte zurück;
+naechste Konsolenaufruf landet dort (die Bindung hat bewusst keinen Zugriff auf den
+PC).  Es programmiert A33-A auf 9600 Bd 8N1 mit RTS/DTR und schickt jedes Byte zurueck;
 F1H nimmt DTR weg, F2H setzt DTR und RTS, F3H nimmt RTS weg.
 
-Ohne `pyserial` wird übersprungen (es steht in requirements-dev.txt, ist aber keine
-Laufzeitabhängigkeit).
+Ohne `pyserial` wird uebersprungen (es steht in requirements-dev.txt, ist aber keine
+Laufzeitabhaengigkeit).
 """
 
 import socket
@@ -52,7 +52,7 @@ def _warte(bedingung, frist=5.0):
 def gast(booted_bis_uhrzeit):
     """A5120 mit laufendem Echo-Gast und RFC-2217-Server auf der DFÜ/V.24.
 
-    Liefert (emu, port); die Maschine läuft in einem eigenen Faden (1× ist hier
+    Liefert (emu, port); die Maschine laeuft in einem eigenen Faden (1× ist hier
     unwichtig — pyserial wartet ohnehin auf jede Antwort).
     """
     from app.core_binding import k1520 as B
@@ -107,7 +107,7 @@ def test_baud_der_gast_ist_massgeblich(gast):
         assert _warte(lambda: emu.serial_status(V24).baud_gegenseite == 9600)
         assert not emu.serial_status(V24).baud_abweichend
         # pyserial verlangt 1200 Bd — der Server antwortet mit dem Gastwert 9600,
-        # pyserial lehnt das ab (Leitsatz 4: eine Anfrage ändert den Gast nie).
+        # pyserial lehnt das ab (Leitsatz 4: eine Anfrage aendert den Gast nie).
         with pytest.raises((ValueError, serial.SerialException)):
             s.baudrate = 1200
         st = emu.serial_status(V24)
@@ -141,7 +141,7 @@ def test_steuerleitungen_nullmodem(gast):
         assert s.cts and not emu.serial_status(V24).dtr
         s.write(b"\xF2")                    # und setzt es wieder
         assert _warte(lambda: s.cts and s.dsr and s.cd)
-        s.write(b"\xF3")                    # Gast nimmt RTS weg → CTS fällt
+        s.write(b"\xF3")                    # Gast nimmt RTS weg → CTS faellt
         assert _warte(lambda: not s.cts)
         assert s.dsr and not emu.serial_status(V24).rts
         # RTS-Halt (§6.4): der eigene Wandler stellt dem Gast jetzt nichts mehr zu —

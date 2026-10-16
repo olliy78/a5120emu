@@ -34,14 +34,14 @@ const char* P8000Wdc::firmwareName(Config::Firmware f)
 
 const k1520::winchester::Typ* P8000Wdc::romLaufwerkNachEndung(int endung)
 {
-    // Aus den Bytes der Abzüge (Wächter P8000WdcRomLaufwerk.*): Köpfe/Zylinder−1/Vorkompensation
-    // als Konstanten, Sektoren je Spur überall 18.  Die Endung ist die Beschriftung des Abzugs,
+    // Aus den Bytes der Abzuege (Waechter P8000WdcRomLaufwerk.*): Koepfe/Zylinder−1/Vorkompensation
+    // als Konstanten, Sektoren je Spur ueberall 18.  Die Endung ist die Beschriftung des Abzugs,
     // die Werte sind nachgelesen — nicht umgekehrt.
     switch (endung) {
-        case 1: return k1520::winchester::typNachName("D5126");     // 615 Zyl., 4 Köpfe, Vork. 128
-        case 2: return k1520::winchester::typNachName("D5146");     // 615 Zyl., 8 Köpfe, Vork. 128
-        case 4: return k1520::winchester::typNachName("VS");        // 820 Zyl., 6 Köpfe, Vork. 820
-        case 5: return k1520::winchester::typNachName("K5504.50");  // 1024 Zyl., 5 Köpfe, Vork. 1024
+        case 1: return k1520::winchester::typNachName("D5126");     // 615 Zyl., 4 Koepfe, Vork. 128
+        case 2: return k1520::winchester::typNachName("D5146");     // 615 Zyl., 8 Koepfe, Vork. 128
+        case 4: return k1520::winchester::typNachName("VS");        // 820 Zyl., 6 Koepfe, Vork. 820
+        case 5: return k1520::winchester::typNachName("K5504.50");  // 1024 Zyl., 5 Koepfe, Vork. 1024
         default: return nullptr;
     }
 }
@@ -50,7 +50,7 @@ const k1520::winchester::Typ* P8000Wdc::romLaufwerk(Config::Firmware f)
 {
     switch (f) {
         case Config::Firmware::V4_0_05:
-        case Config::Firmware::V3_4_05: return romLaufwerkNachEndung(5);   // beide Abzüge tragen _05
+        case Config::Firmware::V3_4_05: return romLaufwerkNachEndung(5);   // beide Abzuege tragen _05
         default:                        return nullptr;                    // 4.2: PAR von der Platte
     }
 }
@@ -70,12 +70,12 @@ P8000Wdc::P8000Wdc(const Config& cfg) : cfg_(cfg)
         switch (cfg.firmware) {
             case Config::Firmware::V4_2:    r = P8K_WDC_4_2;    n = sizeof P8K_WDC_4_2; break;
             case Config::Firmware::V4_0_05: r = P8K_WDC_4_0_05; n = sizeof P8K_WDC_4_0_05; break;
-            case Config::Firmware::V3_4_05: r = P8K_WDC_3_4_05; n = sizeof P8K_WDC_3_4_05; break;   // EPROM 2 unbestückt
+            case Config::Firmware::V3_4_05: r = P8K_WDC_3_4_05; n = sizeof P8K_WDC_3_4_05; break;   // EPROM 2 unbestueckt
         }
     }
     std::memcpy(rom_.data(), r, std::min(n, rom_.size()));
 
-    // Plattenbytes je Takt = 625 000 / takt_hz (5 Mbit/s), gekürzt
+    // Plattenbytes je Takt = 625 000 / takt_hz (5 Mbit/s), gekuerzt
     const uint64_t g = std::gcd<uint64_t>(625'000, cfg.takt_hz);
     rate_z_ = 625'000 / g;
     rate_n_ = cfg.takt_hz / g;
@@ -86,7 +86,7 @@ P8000Wdc::P8000Wdc(const Config& cfg) : cfg_(cfg)
     cpu_.writePort    = [this](uint16_t p, uint8_t v) { ioSchreiben(static_cast<uint8_t>(p), v); };
     cpu_.retiCallback = [this]()                      { kette_.signalRETI(); };
     kette_.setInterruptChain({&ctc_});
-    // [H1] Nulldurchgang K2 beendet die Hostübertragung, wenn HEN schon zurückgenommen ist
+    // [H1] Nulldurchgang K2 beendet die Hostuebertragung, wenn HEN schon zurueckgenommen ist
     ctc_.setZCTOCallback([this](int ch, bool pegel) {
         if (ch == 2 && !pegel && !(cntst_ & 0x08)) host_aktiv_ = false;
     }, 0x04);   // nur K2 wird ausgewertet
@@ -152,8 +152,8 @@ int P8000Wdc::schritt()
     if (rst_) return 0;
     diskBis(tw_);
     // Kein pauschales markIntDirty() je Befehl mehr (kostete einen vollen Kettengang pro Schritt,
-    // ≈ 4 % der Laufzeit): die Kette hängt allein an der CTC, und jede Stelle, die deren Zustand
-    // ändert, meldet es selbst — ioSchreiben/ioLesen (CTC-Tore), impuls() und hostHandshake()
+    // ≈ 4 % der Laufzeit): die Kette haengt allein an der CTC, und jede Stelle, die deren Zustand
+    // aendert, meldet es selbst — ioSchreiben/ioLesen (CTC-Tore), impuls() und hostHandshake()
     // (clkTrg), clockTick() unten, hardwareReset, Quittung/RETI (K1520Bus) und deserialize.
     kette_.updateInterruptChain();
     const uint64_t c0 = cpu_.cycles;
@@ -194,7 +194,7 @@ uint8_t P8000Wdc::lesen(uint16_t addr) const
     const uint16_t a = addr & 0x3FFF;   // [W1]
     if (a < 0x2000) return rom_[a];
     if (a < 0x3800) return ram_[size_t(a - 0x2000)];
-    return 0xFF;                        // Adresszählerbereich: keine Zelle
+    return 0xFF;                        // Adresszaehlerbereich: keine Zelle
 }
 
 void P8000Wdc::schreiben(uint16_t addr, uint8_t v)
@@ -202,7 +202,7 @@ void P8000Wdc::schreiben(uint16_t addr, uint8_t v)
     const uint16_t a = addr & 0x3FFF;
     if (a < 0x2000) return;
     if (a < 0x3800) { ram_[size_t(a - 0x2000)] = v; return; }
-    // A13–A11 = 111: Adresszähler laden (b_daz/p_h_1), Datenbyte ohne Bedeutung
+    // A13–A11 = 111: Adresszaehler laden (b_daz/p_h_1), Datenbyte ohne Bedeutung
     diskBis(tw_ + MEM_VERSATZ);
     const uint16_t wert = static_cast<uint16_t>((((addr >> 14) & 3) << 10) | (addr & 0x03FF));
     if (addr & 0x0400) dz_ = wert;
@@ -231,7 +231,7 @@ uint8_t P8000Wdc::ioLesen(uint8_t port)
 {
     diskBis(tw_ + IO_VERSATZ);
     if ((port & 0xFC) == 0x70) {
-        kette_.markIntDirty();   // wie ioSchreiben: ein CTC-Zugriff kann die Kette ändern
+        kette_.markIntDirty();   // wie ioSchreiben: ein CTC-Zugriff kann die Kette aendern
         return ctc_.ioRead(port & 3);
     }
     if ((port & 0x08) && (port >> 4) == PORT_ST_PRT) {
@@ -243,7 +243,7 @@ uint8_t P8000Wdc::ioLesen(uint8_t port)
             if (p->seekFertig(t)) v &= static_cast<uint8_t>(~0x08);
             if (p->spur0())       v &= static_cast<uint8_t>(~0x40);
         }
-        crc_fehler_ = false;                                  // Lesen löscht das CRC-Fehler-FF
+        crc_fehler_ = false;                                  // Lesen loescht das CRC-Fehler-FF
         return v;
     }
     return 0xFF;   // Ausgabetore lesen den offenen Bus
@@ -306,7 +306,7 @@ void P8000Wdc::diskBis(uint64_t t)
         Platte* p = gewaehlt();
         const uint64_t bt = bytes_ * rate_n_ / rate_z_;      // Zeitpunkt des Bytes
         const bool bereit = p && p->bereit(bt);
-        if (!dssLaeuft() || rst_) {                          // nur der Index zählt
+        if (!dssLaeuft() || rst_) {                          // nur der Index zaehlt
             const uint64_t naechster = (bytes_ / N + 1) * N;
             if (naechster > ziel) { bytes_ = ziel; break; }
             bytes_ = naechster;

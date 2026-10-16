@@ -10,7 +10,7 @@ using namespace telnet;
 
 TelnetCodec::TelnetCodec(TelnetRolle rolle) : rolle_(rolle) {
     // Annahmebereitschaft (§7.4).  Der Server bietet ECHO/SGA/BINARY an und
-    // wünscht BINARY vom Client; der Client stimmt dem zu und nimmt auch ein
+    // wuenscht BINARY vom Client; der Client stimmt dem zu und nimmt auch ein
     // angebotenes ECHO an.  Alles andere bleibt auf "abgelehnt".
     if (rolle == TelnetRolle::Server) {
         for (uint8_t o : {OPT_ECHO, OPT_SGA, OPT_BINARY}) opt_[o].lokalOk = true;
@@ -40,7 +40,7 @@ void TelnetCodec::erlaube(uint8_t option, bool lokal, bool entfernt) {
 void TelnetCodec::bieteAn(uint8_t option) { wunsch(opt_[option].us, true, WILL, WONT, option); }
 void TelnetCodec::verlange(uint8_t option) { wunsch(opt_[option].him, true, DO, DONT, option); }
 
-// Eigener Wunsch, RFC 1143 §7.  Der "Gegenwunsch"-Merker (gegen) fängt einen
+// Eigener Wunsch, RFC 1143 §7.  Der "Gegenwunsch"-Merker (gegen) faengt einen
 // Wunsch ab, der eintrifft, solange die vorige Anfrage noch unbeantwortet ist.
 void TelnetCodec::wunsch(Q& q, bool ein, uint8_t jaVerb, uint8_t neinVerb, uint8_t opt) {
     if (ein) {
@@ -61,7 +61,7 @@ void TelnetCodec::wunsch(Q& q, bool ein, uint8_t jaVerb, uint8_t neinVerb, uint8
 }
 
 // Antwort der Gegenseite, RFC 1143 §7.  ja = WILL/DO, sonst WONT/DONT.
-// Eine Bestätigung auf eigene Anfrage (WillJa → Ja) bleibt stumm — das ist
+// Eine Bestaetigung auf eigene Anfrage (WillJa → Ja) bleibt stumm — das ist
 // der Schleifenschutz: nie dieselbe Mitteilung zweimal beantworten.
 void TelnetCodec::antwort(Q& q, bool ja, bool erlaubt, uint8_t jaVerb, uint8_t neinVerb,
                           uint8_t opt) {
@@ -135,7 +135,7 @@ void TelnetCodec::eingabe(const uint8_t* d, size_t n) {
                 if (b == IAC) { crGesehen_ = false; ein_.push_back(0xFF); }
                 else if (b >= WILL && b <= DONT) { verb_ = b; zst_ = Zst::Verb; }
                 else if (b == SB) zst_ = Zst::SbOpt;
-                // alles übrige (NOP, AYT, SE ohne SB, …) wird überlesen
+                // alles uebrige (NOP, AYT, SE ohne SB, …) wird ueberlesen
                 break;
             case Zst::Verb:
                 zst_ = Zst::Daten;
@@ -159,8 +159,8 @@ void TelnetCodec::eingabe(const uint8_t* d, size_t n) {
                     zst_ = Zst::Daten;
                     sbAbschluss();
                 } else {
-                    // Kein gültiges Ende: Unterverhandlung verwerfen, Byte als
-                    // gewöhnlichen IAC-Befehl lesen (RFC 855 lässt das offen).
+                    // Kein gueltiges Ende: Unterverhandlung verwerfen, Byte als
+                    // gewoehnlichen IAC-Befehl lesen (RFC 855 laesst das offen).
                     sbBuf_.clear();
                     sbZuLang_ = false;
                     goto iac_befehl;

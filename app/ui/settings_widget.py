@@ -51,20 +51,20 @@ class SettingsWidget(QWidget):
     # Emitted when the model dropdown changes; carries the model key
     # (app.modell.A5120 / app.modell.A5120_16).
     modelChanged = Signal(str)
-    # Hardwarevariante (Profil.hardware) geändert: Schlüssel, Wert.
+    # Hardwarevariante (Profil.hardware) geaendert: Schluessel, Wert.
     hardwareChanged = Signal(str, str)
-    # RAM-Disk-Auswahl geändert (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``,
+    # RAM-Disk-Auswahl geaendert (``"none"``/``"raf128"``/``"raf512"``/``"raf2m"``,
     # `app/raf.py`) — wie der Modellwechsel ein Neuaufbau der Maschine.
     rafChanged = Signal(str)
-    # Stand-by-Kästchen der RAF umgeschaltet (kein Neuaufbau).
+    # Stand-by-Kaestchen der RAF umgeschaltet (kein Neuaufbau).
     rafStandbyChanged = Signal(bool)
-    # Kästchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
+    # Kaestchen „Lochstreifen (SIF1000, K6022)" umgeschaltet — Neuaufbau der Maschine
     # wie bei der RAF (doc/design/23_lochstreifen.md §7).
     ptapeChanged = Signal(bool)
-    # Kästchen „Kassette (K5221, AKB K5020)" umgeschaltet — Neuaufbau wie beim Lochstreifen
+    # Kaestchen „Kassette (K5221, AKB K5020)" umgeschaltet — Neuaufbau wie beim Lochstreifen
     # (doc/design/29_kassette.md).
     tapeChanged = Signal(bool)
-    # Mitschrift des Terminals: Dateiname geändert (leer = aus).  Nur Profile mit Terminal.
+    # Mitschrift des Terminals: Dateiname geaendert (leer = aus).  Nur Profile mit Terminal.
     mitschriftChanged = Signal(str)
 
     #: (Beschriftung, Faktor).  Die Stufen
@@ -88,7 +88,7 @@ class SettingsWidget(QWidget):
         self._drive_combos: List[QComboBox] = []
         # Guards the model combo against emitting while set programmatically.
         self._model_guard = False
-        # Dito für RAM-Disk-Auswahl und Stand-by-Kästchen.
+        # Dito fuer RAM-Disk-Auswahl und Stand-by-Kaestchen.
         self._raf_guard = False
         self._ptape_guard = False
         self._tape_guard = False
@@ -246,12 +246,12 @@ class SettingsWidget(QWidget):
 
         self.model_combo = QComboBox(inner)
         # Mit Betriebsart (P8000): das Feld zeigt nur die Modelle MIT Rechner („Rechnerausstattung“),
-        # das Modell „nur Terminal“ kommt über das zweite Feld.
+        # das Modell „nur Terminal“ kommt ueber das zweite Feld.
         zeilen = (self.profil.ausstattungen() if self.profil.betriebsart_wahl
                   else self.profil.modelle)
         for schluessel, _maschine, _em, beschriftung, _tastatur in zeilen:
             self.model_combo.addItem(beschriftung, schluessel)
-        # Modelle, die der Kern noch nicht fährt: sichtbar, aber nicht wählbar.
+        # Modelle, die der Kern noch nicht faehrt: sichtbar, aber nicht waehlbar.
         for schluessel, beschriftung, grund in self.profil.gesperrte_modelle:
             self.model_combo.addItem(beschriftung, schluessel)
             i = self.model_combo.count() - 1
@@ -311,7 +311,7 @@ class SettingsWidget(QWidget):
         self.raf_standby_box = QCheckBox("Inhalt beim Beenden behalten (Stand-by 5PG)", inner)
         self.raf_standby_box.setToolTip(raf.STANDBY_TIPP)
         self.raf_standby_box.toggled.connect(self._on_raf_standby_box)
-        self.raf_standby_box.setEnabled(False)          # erst mit gewählter RAF
+        self.raf_standby_box.setEnabled(False)          # erst mit gewaehlter RAF
         if self.profil.raf_wahl:
             form.addRow("RAM-Disk:", self.raf_combo)
             form.addRow("", self.raf_standby_box)
@@ -418,7 +418,7 @@ class SettingsWidget(QWidget):
                 wert = (daten or {}).get(k)
                 i = box.findData(wert)
                 if i < 0 and k == "dram" and wert and p8000_ram.gueltig(wert):
-                    # eigene Bestückung aus der Konfiguration (P23b): als Eintrag zeigen
+                    # eigene Bestueckung aus der Konfiguration (P23b): als Eintrag zeigen
                     box.addItem(p8000_ram.anzeige(wert), wert)
                     i = box.count() - 1
                 box.setCurrentIndex(i if i >= 0 else 0)
@@ -430,7 +430,7 @@ class SettingsWidget(QWidget):
         modell = self.model_value()
         for k, box in self.hardware_combos.items():
             box.setEnabled(self.profil.hardware_wirkt(k, modell))
-        # MC80.2x: die Kassette (MBI) ist eingebaut — das Kästchen steckt nichts.
+        # MC80.2x: die Kassette (MBI) ist eingebaut — das Kaestchen steckt nichts.
         fest = self.profil.modell_normalisieren(modell) in self.profil.tape_fest
         if not hasattr(self, "tape_box"):      # beim ersten Aufruf (Aufbau) noch nicht da
             return

@@ -1,9 +1,9 @@
-"""Kassette in der Oberfläche (doc/design/29_kassette.md, AP K9).
+"""Kassette in der Oberflaeche (doc/design/29_kassette.md, AP K9).
 
-Das Kästchen *Einstellungen ▸ Allgemein ▸ Kassette (K5221, AKB K5020)* gibt es in jedem
-Programm außer dem P8000 (Vorgabe aus); es steckt die K5020 über einen Neuaufbau der
+Das Kaestchen *Einstellungen ▸ Allgemein ▸ Kassette (K5221, AKB K5020)* gibt es in jedem
+Programm ausser dem P8000 (Vorgabe aus); es steckt die K5020 ueber einen Neuaufbau der
 Maschine.  Der Kasten „Kassette“ erscheint nur mit gesteckter Karte.  Dateidialoge werden
-umgangen (``einlegen(pfad)``) — ein ``exec()`` stünde headless bis zum Zeitüberlauf.
+umgangen (``einlegen(pfad)``) — ein ``exec()`` stuende headless bis zum Zeitueberlauf.
 """
 
 from pathlib import Path

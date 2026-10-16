@@ -1,4 +1,4 @@
-# --quiet unterdrückt die Erzählung: JSON ja, Banner/Fortschritt/Zusammenfassung nein.
+# --quiet unterdrueckt die Erzaehlung: JSON ja, Banner/Fortschritt/Zusammenfassung nein.
 tool:   boot_trace
 disk:   cpa_cpa780_k5601_clock.img
 run:    -L /dev/null --quiet --until [0x03F8]==3 --json %DISK%

@@ -1,6 +1,6 @@
 /**
  * @file p8000_terminal_machine.cpp
- * @brief „P8000 Terminal" als eigenständige Maschine (AP P20c/P20d).  @see p8000_terminal_machine.h
+ * @brief „P8000 Terminal" als eigenstaendige Maschine (AP P20c/P20d).  @see p8000_terminal_machine.h
  */
 
 #include "core/machines/p8000/p8000_terminal_machine.h"
@@ -27,14 +27,14 @@ void trim(std::string& t) {
 int P8000TerminalMachine::hwSchluessel(const std::string& key, const std::string& val,
                                        k1520::p8000::P8000TerminalEinheitConfig& c, std::string& fehler) {
     if (key == "firmware") {
-        // 6.0 gehört zu anderer Hardware (BWS 3000H, 4-KB-ZG, Befund P19a) — nur 5.0.
+        // 6.0 gehoert zu anderer Hardware (BWS 3000H, 4-KB-ZG, Befund P19a) — nur 5.0.
         if (val != "5.0") { fehler = "P8000-Terminal: firmware = " + val + " nicht moeglich (nur 5.0; 6.0 gehoert zu anderer Hardware)"; return -1; }
         c.hw.firmware = nullptr;
         c.hw.firmwareGroesse = 0;
         return 1;
     }
     if (key == "zeichensatz") {
-        // Bestückung ZG1-ZG2 [U, Befund §4.3]: Vorgabe Z61 = P8TEZS (Strobe 4000H), Z62 = P8TDZS.
+        // Bestueckung ZG1-ZG2 [U, Befund §4.3]: Vorgabe Z61 = P8TEZS (Strobe 4000H), Z62 = P8TDZS.
         if (val == "ezs-dzs") { c.hw.zg1 = P8T_ZG_EZS; c.hw.zg2 = P8T_ZG_DZS; }
         else if (val == "dzs-ezs") { c.hw.zg1 = P8T_ZG_DZS; c.hw.zg2 = P8T_ZG_EZS; }
         else { fehler = "P8000-Terminal: zeichensatz = " + val + " unbekannt (ezs-dzs | dzs-ezs)"; return -1; }

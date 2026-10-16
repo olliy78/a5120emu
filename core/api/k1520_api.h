@@ -57,7 +57,7 @@ K1520_API K1520Handle k1520_create_configured(K1520MachineType type,
                                               const char* drive2, const char* drive3);
 
 /**
- * @brief PRG 710 / PRG 710-1 (K1520_MACHINE_PRG710) mit gewählter Variante.
+ * @brief PRG 710 / PRG 710-1 (K1520_MACHINE_PRG710) mit gewaehlter Variante.
  *
  * @param variante   0 = PRG 710 (Marken-FF low-aktiv, 8279-Tastatur), 1 = PRG 710-1.
  *                   Anderes → NULL (Grund in k1520_last_init_error).
@@ -72,11 +72,11 @@ K1520_API K1520Handle k1520_create_prg710(int variante,
                                           const char* drive2, const char* drive3);
 
 /**
- * @brief K8915 mit gewählter Bauform (doc/design/24_k8915_varianten.md R5, AP-V7a).
+ * @brief K8915 mit gewaehlter Bauform (doc/design/24_k8915_varianten.md R5, AP-V7a).
  *
  * @param generation 0 = V3 (ZRE 045-8762, 128 KB; wie k1520_create(K1520_MACHINE_K8915)),
  *                   1 = Gen 2 (K2521 + K3528, 64 KB).  2 (Gen 1) und alles andere → NULL,
- *                   Grund in k1520_last_init_error (Gen 1: kein startfähiger Urlader, F11).
+ *                   Grund in k1520_last_init_error (Gen 1: kein startfaehiger Urlader, F11).
  * @param drive0..3  wie bei k1520_create_configured (Vorgabe K5601, K5601, none, none).
  * k1520_machine_type() = 2; Bauform: k1520_k8915_generation().
  */
@@ -85,23 +85,23 @@ K1520_API K1520Handle k1520_create_k8915(int generation,
                                          const char* drive2, const char* drive3);
 
 /**
- * @brief A5120 in einer Ausführung (doc/design/30_a5120_fruehe_varianten.md, AP A5).
+ * @brief A5120 in einer Ausfuehrung (doc/design/30_a5120_fruehe_varianten.md, AP A5).
  *
  * @param ausfuehrung 0 = „5¼″ neu“ (K3526, K7024 24×80, K7637; wie k1520_create_configured),
  *                    1 = „5¼″ alt“ (4× K3525, K7023.01 16×64 ab FC00H — Framebuffer 512×256,
- *                    `k1520_screen_char` 64×16 —, Tastatur K7636 am U-Bus der K2526, Brücke
+ *                    `k1520_screen_char` 64×16 —, Tastatur K7636 am U-Bus der K2526, Bruecke
  *                    Port 0AH Bit 6 = 1), 2 = KMBG (wie 1, dazu die K5020 fest auf 30H–37H),
  *                    3 = 8″ (K5602, noch nicht umgesetzt) und alles andere → NULL mit Grund in
  *                    k1520_last_init_error.
- * @param drive0..3   wie bei k1520_create_configured; NULL/"" = Vorgabe der Ausführung
+ * @param drive0..3   wie bei k1520_create_configured; NULL/"" = Vorgabe der Ausfuehrung
  *                    (neu: K5601; alt/KMBG: K5600.10, K5600.10, K5600.10, none).
- * k1520_machine_type() = 0; Ausführung: k1520_a5120_ausfuehrung().  Tastaturanzeigen der
- * K7636 über k1520_keyboard_leds.
+ * k1520_machine_type() = 0; Ausfuehrung: k1520_a5120_ausfuehrung().  Tastaturanzeigen der
+ * K7636 ueber k1520_keyboard_leds.
  */
 K1520_API K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
                                                      const char* drive0, const char* drive1,
                                                      const char* drive2, const char* drive3);
-/** @brief Ausführung eines A5120 (0 neu, 1 alt, 2 KMBG); -1 bei einer anderen Maschine. */
+/** @brief Ausfuehrung eines A5120 (0 neu, 1 alt, 2 KMBG); -1 bei einer anderen Maschine. */
 K1520_API int k1520_a5120_ausfuehrung(K1520Handle h);
 
 /**
@@ -118,15 +118,15 @@ K1520_API K1520Handle k1520_create_pc1715(int variante, int bildschirm, int zeic
                                           const char* drive2, const char* drive3);
 
 /**
- * @brief PC 1715 mit wählbaren ROM-Fassungen (AP-6) — Obermenge von k1520_create_pc1715, das
+ * @brief PC 1715 mit waehlbaren ROM-Fassungen (AP-6) — Obermenge von k1520_create_pc1715, das
  *        mit zg_satz = 0, tastatur = 0 gleich bleibt (bitgleich).
  *
- * @param zg_satz   Bestückung der Zeichengenerator-EPROMs (nur PC 1715; beim 1715W ohne Wirkung,
+ * @param zg_satz   Bestueckung der Zeichengenerator-EPROMs (nur PC 1715; beim 1715W ohne Wirkung,
  *                  der Satz kommt von Diskette): 0 = deutsch (S619 + S602), 1 = polnisch
  *                  (S641 + S619), 2 = kyrillisch (S643 + S605)
  * @param zg_db6    Platz, der bei BWS-Register DB6 = 0 gilt: 0 = ZG1 (A25.2), 1 = ZG2 (A25.1)
  * @param tastatur  Tastatur-ROM (beide Varianten): 0 = S600 (QWERTY), 1 = TAST_618 (QWERTZ)
- * Übrige Parameter wie k1520_create_pc1715.  Unbekannte Werte → NULL mit Grund.
+ * Uebrige Parameter wie k1520_create_pc1715.  Unbekannte Werte → NULL mit Grund.
  */
 K1520_API K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int zg_satz, int zg_db6,
                                              int tastatur,
@@ -137,16 +137,16 @@ K1520_API K1520Handle k1520_create_pc1715_ex(int variante, int bildschirm, int z
  * @brief P8000 (K1520_MACHINE_P8000), doc/design/25_p8000.md §10.9 — Stand AP P7b: nur die
  *        8-Bit-Seite (U880-Karte + Floppy + Kern-Terminal an tty1).
  *
- * @param konfig  Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel:
+ * @param konfig  Schluessel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schluessel:
  *                `index8` (1|3), `mon8` (3.0|3.1|3.1n = nur 8 Bit|2.1n), `lw0`..`lw3`
  *                (Laufwerksprofil, "none" = leer), `terminals` (nur "1"), `karte16` (nur "0"),
  *                **`terminal`** (`kern` = vereinfachtes Kern-Terminal, Vorgabe | `original` =
- *                Originalterminal Typ 2 + K7673.09 fest an tty1, AP P20c) und für das Original
- *                `firmware` (nur 5.0), `zeichensatz` (ezs-dzs | dzs-ezs = Bestückung ZG1-ZG2),
+ *                Originalterminal Typ 2 + K7673.09 fest an tty1, AP P20c) und fuer das Original
+ *                `firmware` (nur 5.0), `zeichensatz` (ezs-dzs | dzs-ezs = Bestueckung ZG1-ZG2),
  *                `teiler` (7 | 8, Zeichentakt), `vorlauf` (ms, die das Terminal vor dem Rechner
  *                eingeschaltet wird; Vorgabe 1500).
- *                Schlüssel der noch nicht gebauten Teile (`index16`, `mon16`, `dram`, `wdc`,
- *                `platte`) und unbekannte Schlüssel/Werte → NULL, Grund in k1520_last_init_error.
+ *                Schluessel der noch nicht gebauten Teile (`index16`, `mon16`, `dram`, `wdc`,
+ *                `platte`) und unbekannte Schluessel/Werte → NULL, Grund in k1520_last_init_error.
  * k1520_machine_type() = 4.  `k1520_create(K1520_MACHINE_P8000)` = Vorgabe-Konfiguration.
  */
 K1520_API K1520Handle k1520_create_p8000(const char* konfig);
@@ -157,11 +157,11 @@ K1520_API K1520Handle k1520_create_p8000(const char* konfig);
  *
  * Die serielle Leitung XB5 ist Schnittstelle 0 der `k1520_serial_*`-Funktionen (eigener Hub);
  * Vorgabe Telnet-Client auf 127.0.0.1:5000, verbunden wird mit `verbinden=1` oder
- * `k1520_serial_start`.  `k1520_run` zählt Z8-Takte (3 686 400 Hz).  Bild: `k1520_framebuffer`
+ * `k1520_serial_start`.  `k1520_run` zaehlt Z8-Takte (3 686 400 Hz).  Bild: `k1520_framebuffer`
  * bzw. `k1520_term_framebuffer` (640 × 312, 0 dunkel / 1 normal / 2 hell) und die `k1520_term_*`
- * mit i = 0; LEDs `k1520_keyboard_leds`/`k1520_term_leds`; Save-State „P8TM" über `k1520_state_*`.
+ * mit i = 0; LEDs `k1520_keyboard_leds`/`k1520_term_leds`; Save-State „P8TM" ueber `k1520_state_*`.
  * Keine Laufwerke.
- * @param konfig  wie bei k1520_create_p8000: `firmware` (5.0; 6.0 gehört zu anderer Hardware),
+ * @param konfig  wie bei k1520_create_p8000: `firmware` (5.0; 6.0 gehoert zu anderer Hardware),
  *                `zeichensatz` (ezs-dzs | dzs-ezs), `teiler` (7 | 8), `art` (telnet | rfc2217 |
  *                datei), `rolle` (client | server), `host`, `port`, `datei`, `verbinden` (0 | 1).
  *                Fehler → NULL, Grund in k1520_last_init_error.
@@ -172,9 +172,9 @@ K1520_API K1520Handle k1520_create_p8000_terminal(const char* konfig);
  * @brief MC80 (K1520_MACHINE_MC80), doc/design/31_mc80.md — Stand AP M2: ZVE (U880 2,4576 MHz,
  *        EGOS 0000H–1FFFH, RAM C000H–FFFFH, CTC 80H, PIO 84H, Segmentregister = PIO B 85H)
  *        und SPE 2 (ROM 2000H–27FFH, leer bis 3FFFH = 00H, RAM-Segment 4000H–BFFFH).
- *        Seit AP M3: VIS 2a (C0H) — **Bitmap-Bild über k1520_framebuffer** (512 × 256, ein
+ *        Seit AP M3: VIS 2a (C0H) — **Bitmap-Bild ueber k1520_framebuffer** (512 × 256, ein
  *        Byte je Bildpunkt 00H/FFH, Zeile 0 = oben; es gibt kein eigenes Bitmap-ABI),
- *        `k1520_screen_char(col,row)` über Textrückgewinnung (Mustervergleich gegen den
+ *        `k1520_screen_char(col,row)` ueber Textrueckgewinnung (Mustervergleich gegen den
  *        EGOS-Zeichengenerator; 25 Zeilen, Spalte = Zeichenindex der Zeile, da
  *        Proportionalschrift), ASP (SIO D0H, CTC D4H, PIO D8H) und Tastatur an SIO A:
  *        `k1520_key_press` (Qt-Code oder ASCII; Return = ENTER 11H, Escape = OFF 13H,
@@ -191,10 +191,10 @@ K1520_API K1520Handle k1520_create_p8000_terminal(const char* konfig);
  *
  * @param variante  0 = MC80.30, 1 = MC80.31, 3 = MC80.21, 4 = MC80.22; 2 = MC80.33 ist noch
  *                  nicht nachgebildet → NULL mit Grund.
- * @param konfig    Schlüssel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schlüssel
+ * @param konfig    Schluessel=Wert-Liste, durch Komma getrennt (NULL/"" = Vorgabe); Schluessel
  *                  (nur .30/.31): `spe` (1 | 2: Zahl der SPE 2; die zweite = RAM-Segment 02H).
- *                  Der MC80.2x kennt keine Schlüssel.
- *                  Unbekannte Schlüssel/Werte → NULL, Grund in k1520_last_init_error.
+ *                  Der MC80.2x kennt keine Schluessel.
+ *                  Unbekannte Schluessel/Werte → NULL, Grund in k1520_last_init_error.
  * k1520_machine_type() = 6.  Keine Laufwerke.  `k1520_create(K1520_MACHINE_MC80)` = MC80.30.
  */
 K1520_API K1520Handle k1520_create_mc80(int variante, const char* konfig);
@@ -234,10 +234,10 @@ K1520_API void k1520_console_key(K1520Handle h, char c);
 /**
  * @brief Zeitbasis der Tastenwiederholung: Echtzeit (true) oder Maschinentakte.
  *
- * Die echten Tastaturen (K7637, K7672) haben ihren eigenen Quarz.  Läuft der
+ * Die echten Tastaturen (K7637, K7672) haben ihren eigenen Quarz.  Laeuft der
  * Rechner schneller als im Nenntakt, wiederholten sie in Maschinentakten
- * gezählt entsprechend früher und schneller — bei 10 × käme schon ein
- * gewöhnlicher Anschlag mehrfach an.  Die Oberfläche schaltet deshalb Echtzeit
+ * gezaehlt entsprechend frueher und schneller — bei 10 × kaeme schon ein
+ * gewoehnlicher Anschlag mehrfach an.  Die Oberflaeche schaltet deshalb Echtzeit
  * ein; Vorgabe ist Maschinenzeit (wiederholbare Tests).  Fadensicher.
  */
 K1520_API void k1520_set_key_repeat_realtime(K1520Handle h, bool realtime);
@@ -249,23 +249,23 @@ K1520_API void k1520_set_key_repeat_realtime(K1520Handle h, bool realtime);
  *
  * **A5120 (K7637):**
  *
- * Bit 0…4 = Funktionsanzeigen G00…G04 (der Rechner schaltet sie mit den fünf
+ * Bit 0…4 = Funktionsanzeigen G00…G04 (der Rechner schaltet sie mit den fuenf
  * LED-Kommandos UM), Bit 5 = Fehleranzeige G53 — sie **blinkt**, solange das
- * Bit gesetzt ist —, Bit 7 = akustisches Signal läuft (≈1 s).  Die
+ * Bit gesetzt ist —, Bit 7 = akustisches Signal laeuft (≈1 s).  Die
  * Betriebsanzeige E54 und die LOCK-Anzeige C99 stehen nicht darin: die eine
- * hängt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
+ * haengt an der Spannung, die andere am Umschaltfeststeller der Tastatur.
  *
  * **A5120 „alt“/KMBG (K7636):** Bit 0…3 = Wahllampen A58…D58, Bit 4 = INS MODE (E15),
- * Bit 5 = Fehlerlampe, Bit 6 = SHIFT/LOCK (C99), Bit 7 = akustisches Signal läuft.
+ * Bit 5 = Fehlerlampe, Bit 6 = SHIFT/LOCK (C99), Bit 7 = akustisches Signal laeuft.
  */
 K1520_API uint32_t k1520_keyboard_leds(K1520Handle h);
 /**
  * @brief Welchen physischen K7637-Code erzeugt dieser Tastencode?
  *
  * Dieselbe Abbildung, die `k1520_key_press` benutzt — ohne Maschine und ohne
- * Seiteneffekt.  Gedacht für Tests und für die Fehlersuche an der Oberfläche:
+ * Seiteneffekt.  Gedacht fuer Tests und fuer die Fehlersuche an der Oberflaeche:
  * beantwortet „welche Taste der echten Tastatur spricht dieser Anschlag an?"
- * ohne den Umweg über einen laufenden Gast.  0 heißt: keine.
+ * ohne den Umweg ueber einen laufenden Gast.  0 heisst: keine.
  */
 K1520_API uint8_t k1520_translate_key(uint32_t keycode, bool shift, bool ctrl);
 
@@ -375,8 +375,8 @@ K1520_API bool k1520_head_loaded(K1520Handle h);
 K1520_API void k1520_set_write_protect(K1520Handle h, int drive, bool wp);
 
 /* ─── Serial ports ───────────────────────────────────────────────────────── */
-/* Alter Unterbau für Tests (Entwurf 19 §8): set_rx_cb liefert die Bytes, die der Gast
- * SENDET (cb == NULL meldet ab), send legt ein Byte in seinen Empfänger.  Belegt ein
+/* Alter Unterbau fuer Tests (Entwurf 19 §8): set_rx_cb liefert die Bytes, die der Gast
+ * SENDET (cb == NULL meldet ab), send legt ein Byte in seinen Empfaenger.  Belegt ein
  * Transport oder der Rx/Tx-Loop die Schnittstelle, gehen beide ins Leere.
  * A5120: DFU = DFÜ/V.24 (K8025 A33-A), PRINTER = Drucker (A32-B);
  * K8915: DFU = DFÜ/IFSS2 (SIO2-A), PRINTER = Drucker/IFSS1 (SIO1-B). */
@@ -384,23 +384,23 @@ K1520_API void k1520_serial_set_rx_cb(K1520Handle h, K1520SerialPort port,
                                        K1520SerialCallback cb, void* ctx);
 K1520_API void k1520_serial_send(K1520Handle h, K1520SerialPort port, uint8_t byte);
 
-/* ─── Serielle Schnittstellen nach außen (Entwurf 19 §8, AP-S6) ───────────────
+/* ─── Serielle Schnittstellen nach aussen (Entwurf 19 §8, AP-S6) ───────────────
  * Je Maschine eine Liste einstellbarer Schnittstellen (Index = Reihenfolge der Karten,
  * A5120: 0 DFÜ/V.24, 1 DFÜ/IFSS, 2 Drucker; K8915: 0 Drucker/IFSS1, 1 V.24, 2 DFÜ/IFSS2).
- * Die Betriebsart (Telnet / RFC 2217 / Datei) läuft in einem eigenen I/O-Faden des
+ * Die Betriebsart (Telnet / RFC 2217 / Datei) laeuft in einem eigenen I/O-Faden des
  * Kerns; die GUI FRAGT AB
- * (k1520_serial_status), es gibt keinen Rückruf aus dem I/O-Faden.  Alle Funktionen dürfen
- * aus jedem Faden gerufen werden, auch während k1520_run() läuft.
+ * (k1520_serial_status), es gibt keinen Rueckruf aus dem I/O-Faden.  Alle Funktionen duerfen
+ * aus jedem Faden gerufen werden, auch waehrend k1520_run() laeuft.
  *
- * Regel für `groesse` (ABI-Erweiterung ohne Bruch): der Aufrufer setzt vor dem Aufruf
+ * Regel fuer `groesse` (ABI-Erweiterung ohne Bruch): der Aufrufer setzt vor dem Aufruf
  * `groesse = sizeof(Struktur)` seiner Fassung des Headers.
  *   - Ausgabestrukturen (Info, Status): der Kern schreibt nur so viele Bytes, wie `groesse`
- *     angibt (nie über das Ende), und trägt in `groesse` die Zahl der tatsächlich
- *     geschriebenen Bytes zurück.  `groesse` < 4 → false, nichts geschrieben.
+ *     angibt (nie ueber das Ende), und traegt in `groesse` die Zahl der tatsaechlich
+ *     geschriebenen Bytes zurueck.  `groesse` < 4 → false, nichts geschrieben.
  *   - Eingabestruktur (Konfig): Felder jenseits von `groesse` behalten ihren aktuellen Wert;
  *     `groesse` < 4 → false.
  * Zeichenketten: UTF-8, nullterminiert, bei zu kleinem Feld an einer Zeichengrenze
- * abgeschnitten.  Aufzählungen sind `int` (Zahlenwerte = Entwurf 19 §8). */
+ * abgeschnitten.  Aufzaehlungen sind `int` (Zahlenwerte = Entwurf 19 §8). */
 typedef enum { K1520_SER_TELNET = 0, K1520_SER_RFC2217 = 1, K1520_SER_DATEI = 2 } K1520SerBetriebsart;
 typedef enum { K1520_SER_SERVER = 0, K1520_SER_CLIENT = 1 } K1520SerRolle;
 typedef enum { K1520_SER_AUS = 0, K1520_SER_VERBINDET, K1520_SER_LAUSCHT,
@@ -413,7 +413,7 @@ typedef struct {
     char     name[32];
     char     stecker[8];
     bool     v24;                       /* Steuerleitungen RTS/CTS/DTR/DSR/DCD vorhanden */
-    int      taktquellen;               /* 0 = fester Takt; sonst Zahl der Einträge (max. 4) */
+    int      taktquellen;               /* 0 = fester Takt; sonst Zahl der Eintraege (max. 4) */
     char     taktquelle_name[4][32];
 } K1520SerInfo;
 
@@ -431,7 +431,7 @@ typedef struct {
 typedef struct {
     uint32_t groesse;
     int      zustand;                   /* K1520SerZustand */
-    uint16_t port_aktiv;                /* Server: tatsächlicher Port */
+    uint16_t port_aktiv;                /* Server: tatsaechlicher Port */
     char     gegenstelle[96];
     char     meldung[160];
     uint32_t baud_nenn;
@@ -481,16 +481,16 @@ K1520_API bool k1520_serial_info(K1520Handle h, int i, K1520SerInfo* out);
 /** @brief Name der @p i-ten FESTEN Schnittstelle (Tastatur-Zeilen; nicht einstellbar).
  *         false jenseits der Liste — so wird sie durchlaufen. */
 K1520_API bool k1520_serial_fixed_name(K1520Handle h, int i, char* buf, int n);
-/** @brief Einstellungen lesen (die zuletzt übernommenen). */
+/** @brief Einstellungen lesen (die zuletzt uebernommenen). */
 K1520_API bool k1520_serial_get_config(K1520Handle h, int i, K1520SerKonfig* out);
-/** @brief Einstellungen übernehmen.  false (nichts übernommen) bei: ungültigem Index,
- *         Port 0 oder ungültiger Betriebsart/Rolle/Taktquelle, oder wenn die Schnittstelle
- *         aktiv ist und ein gesperrtes Feld (Betriebsart, Rolle, Host, Port, Datei) geändert wird. */
+/** @brief Einstellungen uebernehmen.  false (nichts uebernommen) bei: ungueltigem Index,
+ *         Port 0 oder ungueltiger Betriebsart/Rolle/Taktquelle, oder wenn die Schnittstelle
+ *         aktiv ist und ein gesperrtes Feld (Betriebsart, Rolle, Host, Port, Datei) geaendert wird. */
 K1520_API bool k1520_serial_configure(K1520Handle h, int i, const K1520SerKonfig* k);
-/** @brief Start von Hand: Server mit Portsuche, Client im Dauerversuch, Datei überschreibend. */
+/** @brief Start von Hand: Server mit Portsuche, Client im Dauerversuch, Datei ueberschreibend. */
 K1520_API bool k1520_serial_start(K1520Handle h, int i);
 /** @brief Wiederaufnahme beim Programmstart: Server NUR auf dem eingestellten Port (belegt →
- *         false, Status AUS mit `port_vorschlag`), Datei anhängend. */
+ *         false, Status AUS mit `port_vorschlag`), Datei anhaengend. */
 K1520_API bool k1520_serial_start_auto(K1520Handle h, int i);
 K1520_API void k1520_serial_stop(K1520Handle h, int i);
 K1520_API bool k1520_serial_status(K1520Handle h, int i, K1520SerStatus* out);
@@ -502,7 +502,7 @@ K1520_API int  k1520_serial_classify_host(const char* host);
  * alle k1520_em_* „nichts": Variante "", LEDs aus, Zustand false. */
 
 /**
- * @brief Wie k1520_create_configured, zusätzlich mit Erweiterungsmodul.
+ * @brief Wie k1520_create_configured, zusaetzlich mit Erweiterungsmodul.
  *
  * @param em  "none" / NULL / "" = A5120 ohne EM, "em064" (U8002, 64 KB),
  *            "em256" (U8001, 256 KB) = A5120.16.  Unbekannter Name → NULL
@@ -512,13 +512,13 @@ K1520_API K1520Handle k1520_create_with_em(K1520MachineType type,
                                            const char* drive0, const char* drive1,
                                            const char* drive2, const char* drive3,
                                            const char* em);
-/** @brief Bestückung: "" (kein EM), "em064" oder "em256". */
+/** @brief Bestueckung: "" (kein EM), "em064" oder "em256". */
 K1520_API const char* k1520_em_variant(K1520Handle h);
-/** @brief LED V1 der Steuerkarte — zeigt RAMEN (nicht den Paritätsfehler). */
+/** @brief LED V1 der Steuerkarte — zeigt RAMEN (nicht den Paritaetsfehler). */
 K1520_API bool k1520_em_led_v1(K1520Handle h);
 /** @brief LED V2 der Steuerkarte — leuchtet im 8-Bit-Mode (FF A29). */
 K1520_API bool k1520_em_led_v2(K1520Handle h);
-/** @brief true im 16-Bit-Mode (FF A29 zurückgesetzt, der U8001 hat den Bus). */
+/** @brief true im 16-Bit-Mode (FF A29 zurueckgesetzt, der U8001 hat den Bus). */
 K1520_API bool k1520_em_mode16(K1520Handle h);
 
 /** Zustand von U8001 und Steuerkarte (Momentaufnahme, nur lesen). */
@@ -542,25 +542,25 @@ typedef struct {
     uint8_t  a33, a35, status8, vector8, a53, segment, seg_mode, reserved;
 } K1520EmState;
 
-/** @brief sizeof(K1520EmState) — damit die Bindung ihren Aufbau prüfen kann. */
+/** @brief sizeof(K1520EmState) — damit die Bindung ihren Aufbau pruefen kann. */
 K1520_API int  k1520_em_state_size(void);
-/** @brief Zustand lesen; false ohne EM (dann bleibt @p out unverändert). */
+/** @brief Zustand lesen; false ohne EM (dann bleibt @p out unveraendert). */
 K1520_API bool k1520_em_state(K1520Handle h, K1520EmState* out);
 
 /* ─── RAM-Floppy RAF 128/512/2M (doc/design/22_raf512.md §6) ────────────────
- * Bestückung nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset; A5120
+ * Bestueckung nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset; A5120
  * (auch A5120.16), K8915 und PRG 710/710-1.  Ohne RAF: Variante "", peek 0xFF,
  * load/save false. */
 
 /** @brief Steckt eine RAF auf 88H/89H.  @p typ "raf128"/"raf512"/"raf2m";
- *  NULL/""/"none" = keine (true, ohne Karte).  Unbekannter Typ oder zu spät:
+ *  NULL/""/"none" = keine (true, ohne Karte).  Unbekannter Typ oder zu spaet:
  *  false, Grund in k1520_last_init_error. */
 K1520_API bool        k1520_raf_install(K1520Handle h, const char* typ);
 /** @brief "" = keine RAF, sonst "raf128"/"raf512"/"raf2m". */
 K1520_API const char* k1520_raf_variant(K1520Handle h);
 /** @brief Byte an linearer Adresse des RAF-Inhalts (Test/Debug). */
 K1520_API uint8_t     k1520_raf_peek(K1520Handle h, uint32_t adr);
-/** @brief Stand-by-Ablage laden; false ohne RAF oder bei Größe != Kapazität. */
+/** @brief Stand-by-Ablage laden; false ohne RAF oder bei Groesse != Kapazitaet. */
 K1520_API bool        k1520_raf_load(K1520Handle h, const char* pfad);
 /** @brief Inhalt als Rohdatei sichern; false ohne RAF. */
 K1520_API bool        k1520_raf_save(K1520Handle h, const char* pfad);
@@ -630,34 +630,34 @@ K1520_API int      k1520_prg710_variant(K1520Handle h);
  */
 K1520_API int      k1520_k8915_generation(K1520Handle h);
 /**
- * @brief Speicherverwaltung des PRG (Ports E8H/EAH), Diagnose für Debugger/Oberfläche.
+ * @brief Speicherverwaltung des PRG (Ports E8H/EAH), Diagnose fuer Debugger/Oberflaeche.
  * @param n      Seite 0…15 (A12–A15).
  * @param attr   E8H dieser Seite (unteres Halbbyte 0 = OPS-RAM, sonst Systemkarte); darf NULL sein.
  * @param seite  EAH dieser Seite (physische OPS-Seite, 4 Bit); darf NULL sein.
- * @return false bei anderer Maschine oder n ausserhalb 0…15 (Ausgaben unberührt).
+ * @return false bei anderer Maschine oder n ausserhalb 0…15 (Ausgaben unberuehrt).
  */
 K1520_API bool     k1520_prg710_page(K1520Handle h, int n, uint8_t* attr, uint8_t* seite);
 /** @brief Freigabe-Register EBH (0 = Abbildung aus); -1 bei anderer Maschine. */
 K1520_API int      k1520_prg710_freigabe(K1520Handle h);
 
 /* ─── EPROMmer des PRG (ATP 590068, virtueller Sockel; doc/prg710/eprommer.md, AP-P7b) ───
- * Typ: 1 = U555 (1 KB, 2708-artig), 2 = U2716 (2 KB); 0 beim Einlegen = aus der Dateigröße.
+ * Typ: 1 = U555 (1 KB, 2708-artig), 2 = U2716 (2 KB); 0 beim Einlegen = aus der Dateigroesse.
  * Andere Maschinen: false bzw. -1 bzw. "".  Thread-sicher (Sockel unter Sperre). */
-/** @brief Rohes `.bin` einlegen (kürzer = mit FFH aufgefüllt).  Fehlertext: k1520_eprom_error. */
+/** @brief Rohes `.bin` einlegen (kuerzer = mit FFH aufgefuellt).  Fehlertext: k1520_eprom_error. */
 K1520_API bool        k1520_eprom_insert(K1520Handle h, const char* path, int type);
 /**
- * @brief PROM aus dem Speicher einlegen (Hinübertragen auf eine neu erzeugte Maschine):
- *        @p len ≤ Größe des Typs, @p path = gebundene Datei (NULL/""), @p modified = „geändert“.
+ * @brief PROM aus dem Speicher einlegen (Hinuebertragen auf eine neu erzeugte Maschine):
+ *        @p len ≤ Groesse des Typs, @p path = gebundene Datei (NULL/""), @p modified = „geaendert“.
  */
 K1520_API bool        k1520_eprom_insert_data(K1520Handle h, const uint8_t* data, int len, int type,
                                               const char* path, bool modified);
-/** @brief Leeres (gelöschtes) PROM des Typs einlegen, ohne Datei. */
+/** @brief Leeres (geloeschtes) PROM des Typs einlegen, ohne Datei. */
 K1520_API bool        k1520_eprom_insert_blank(K1520Handle h, int type);
-/** @brief PROM entnehmen (ungespeicherte Änderungen gehen verloren). */
+/** @brief PROM entnehmen (ungespeicherte Aenderungen gehen verloren). */
 K1520_API bool        k1520_eprom_remove(K1520Handle h);
 /** @brief Inhalt als `.bin` schreiben; NULL/"" = an die gebundene Datei.  Bindet neu. */
 K1520_API bool        k1520_eprom_save(K1520Handle h, const char* path);
-/** @brief UV-Löschen (Bedienung): alles FFH. */
+/** @brief UV-Loeschen (Bedienung): alles FFH. */
 K1520_API bool        k1520_eprom_erase(K1520Handle h);
 /** @brief Gesteckter Typ: 0 = Sockel leer, 1 = U555, 2 = U2716; -1 = kein EPROMmer. */
 K1520_API int         k1520_eprom_type(K1520Handle h);
@@ -665,15 +665,15 @@ K1520_API int         k1520_eprom_type(K1520Handle h);
 K1520_API int         k1520_eprom_selected_type(K1520Handle h);
 /** @brief Steuerregister D4H (Bit 0+1 Programmierspannung, 2 Impuls, 3/4 Versorgung, 5–7 A8–A10); -1. */
 K1520_API int         k1520_eprom_control(K1520Handle h);
-/** @brief Inhalt nach @p buf (höchstens @p len Byte); Rückgabe = Größe des PROM (0 = leer, -1). */
+/** @brief Inhalt nach @p buf (hoechstens @p len Byte); Rueckgabe = Groesse des PROM (0 = leer, -1). */
 K1520_API int         k1520_eprom_read(K1520Handle h, uint8_t* buf, int len);
-/** @brief Seit Einlegen/Speichern gebrannt oder gelöscht. */
+/** @brief Seit Einlegen/Speichern gebrannt oder geloescht. */
 K1520_API bool        k1520_eprom_modified(K1520Handle h);
 /** @brief Gebundene Datei ("" = keine). */
 K1520_API const char* k1520_eprom_path(K1520Handle h);
 /**
  * @brief Protokoll als Zeilen ("[  12.345 s] Text\n…").  @p only_new: nur Zeilen seit dem
- *        letzten Aufruf mit only_new (EIN Abnehmer, die Oberfläche); sonst der ganze
+ *        letzten Aufruf mit only_new (EIN Abnehmer, die Oberflaeche); sonst der ganze
  *        Ringpuffer (≤ 1000 Zeilen).
  */
 K1520_API const char* k1520_eprom_log(K1520Handle h, bool only_new);
@@ -686,7 +686,7 @@ K1520_API const char* k1520_eprom_error(K1520Handle h);
  * k1520_ptape_install nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset.  Alle
  * Funktionen sind thread-sicher; ohne gesteckte Karte: false/-1. */
 
-/** @brief Steckt die K6022 auf E0H–E7H.  Zu spät, doppelt oder Tor belegt: false,
+/** @brief Steckt die K6022 auf E0H–E7H.  Zu spaet, doppelt oder Tor belegt: false,
  *  Grund in k1520_last_init_error. */
 K1520_API bool     k1520_ptape_install(K1520Handle h);
 /** @brief true = K6022 gesteckt. */
@@ -698,14 +698,14 @@ K1520_API bool     k1520_ptape_load(K1520Handle h, const char* path);
 K1520_API bool     k1520_ptape_eject(K1520Handle h);
 /**
  * @brief Stand des Lesers.
- * @param inserted 1 = Band eingelegt; @param pos gelesene Bytes der Datei; @param len Länge der
- *        Datei; @param at_end 1 = ganz durchgelaufen (STA Bandende).  Ausgaben dürfen NULL sein.
+ * @param inserted 1 = Band eingelegt; @param pos gelesene Bytes der Datei; @param len Laenge der
+ *        Datei; @param at_end 1 = ganz durchgelaufen (STA Bandende).  Ausgaben duerfen NULL sein.
  */
 K1520_API bool     k1520_ptape_reader_status(K1520Handle h, int* inserted, uint64_t* pos,
                                              uint64_t* len, int* at_end);
-/** @brief Länge des Stanzbandes in Bytes; -1 ohne Karte. */
+/** @brief Laenge des Stanzbandes in Bytes; -1 ohne Karte. */
 K1520_API int64_t  k1520_ptape_punch_length(K1520Handle h);
-/** @brief Stanzband in eine Datei schreiben (überschreibt); false bei Schreibfehler. */
+/** @brief Stanzband in eine Datei schreiben (ueberschreibt); false bei Schreibfehler. */
 K1520_API bool     k1520_ptape_punch_save(K1520Handle h, const char* path);
 /** @brief Stanzband leeren — wie k1520_ptape_punch_new_tape (leert auch eine gebundene Datei). */
 K1520_API bool     k1520_ptape_punch_clear(K1520Handle h);
@@ -744,13 +744,13 @@ K1520_API int      k1520_ptape_reader_format(K1520Handle h);
  *  vorhandene Datei ist der Anfang des Bandes, eine fehlende wird leer angelegt.  false
  *  (+ k1520_ptape_error; eine alte Bindung bleibt dann bestehen). */
 K1520_API bool     k1520_ptape_punch_bind(K1520Handle h, const char* path, int fmt);
-/** @brief Bindung lösen (zuvor zurückschreiben; das Band bleibt im Speicher).  false ohne
- *  Karte oder wenn das Zurückschreiben scheiterte (gelöst wird trotzdem). */
+/** @brief Bindung loesen (zuvor zurueckschreiben; das Band bleibt im Speicher).  false ohne
+ *  Karte oder wenn das Zurueckschreiben scheiterte (geloest wird trotzdem). */
 K1520_API bool     k1520_ptape_punch_unbind(K1520Handle h);
 /** @brief „Neues Band": Stanzband leeren, eine gebundene Datei sofort leer schreiben. */
 K1520_API bool     k1520_ptape_punch_new_tape(K1520Handle h);
-/** @brief Gebundene Datei sofort zurückschreiben (sonst nach ≈ 0,5 s Stanzpause).  true
- *  auch ohne Bindung oder ohne Änderung; false ohne Karte oder bei Schreibfehler. */
+/** @brief Gebundene Datei sofort zurueckschreiben (sonst nach ≈ 0,5 s Stanzpause).  true
+ *  auch ohne Bindung oder ohne Aenderung; false ohne Karte oder bei Schreibfehler. */
 K1520_API bool     k1520_ptape_punch_flush(K1520Handle h);
 /** @brief Gebundene Datei des Stanzers ("" = nicht gebunden, ohne Karte ebenfalls ""). */
 K1520_API const char* k1520_ptape_punch_file(K1520Handle h);
@@ -760,27 +760,27 @@ K1520_API int      k1520_ptape_punch_format(K1520Handle h);
 /* ─── Kassette: AKB K5020 + zwei K5200 (Entwurf 29, AP K5; steckbar wie die K6022) ───────────
  * Gesteckt wird nach dem Anlegen, VOR dem ersten k1520_run/k1520_reset: A5120 (auch .16) 30H–37H,
  * K8915 D0H–D7H, PRG 710 30H–37H; am PC 1715 nur wenn die Tore frei sind (BWS 34H liegt dort).
- * @p drive ist 0 oder 1 (Geräte X3/X4).  Bandpositionen in µm der Seitenkoordinate; Seite 0 = A,
+ * @p drive ist 0 oder 1 (Geraete X3/X4).  Bandpositionen in µm der Seitenkoordinate; Seite 0 = A,
  * 1 = B.  Fehlertext in k1520_tape_error.  Ohne Karte: false / -1 / "". */
 K1520_API bool     k1520_tape_install(K1520Handle h);
 K1520_API bool     k1520_tape_installed(K1520Handle h);
 /** @brief Grund des letzten gescheiterten k1520_tape_*-Aufrufs ("" nach Erfolg). */
 K1520_API const char* k1520_tape_error(K1520Handle h);
 /** @brief Kassettendatei (.k52) einlegen und BINDEN; gibt es sie nicht, entsteht eine leere.
- *  Änderungen werden nach ≈ 0,5 s Schreibpause zurückgeschrieben. */
+ *  Aenderungen werden nach ≈ 0,5 s Schreibpause zurueckgeschrieben. */
 K1520_API bool     k1520_tape_load(K1520Handle h, int drive, const char* path);
 /** @brief Leere Kassette ohne Datei einlegen (nur im Speicher). */
 K1520_API bool     k1520_tape_new(K1520Handle h, int drive);
 /** @brief Kassette entnehmen (gebundene Datei wird vorher geschrieben); false, solange das
- *  Gerät reserviert ist oder das Band läuft. */
+ *  Geraet reserviert ist oder das Band laeuft. */
 K1520_API bool     k1520_tape_eject(K1520Handle h, int drive);
-/** @brief Gebundene Datei sofort zurückschreiben (true auch ohne Bindung). */
+/** @brief Gebundene Datei sofort zurueckschreiben (true auch ohne Bindung). */
 K1520_API bool     k1520_tape_flush(K1520Handle h, int drive);
 /** @brief Gebundene Datei von @p drive ("" = keine). */
 K1520_API const char* k1520_tape_file(K1520Handle h, int drive);
 /** @brief Aktive Seite (0 = A, 1 = B); -1 ohne Karte/Kassette. */
 K1520_API int      k1520_tape_side(K1520Handle h, int drive);
-/** @brief Kassette wenden (nur bei stehendem, nicht reserviertem Gerät). */
+/** @brief Kassette wenden (nur bei stehendem, nicht reserviertem Geraet). */
 K1520_API bool     k1520_tape_flip(K1520Handle h, int drive);
 /** @brief Schreibschutz einer Seite setzen. */
 K1520_API bool     k1520_tape_protect(K1520Handle h, int drive, int side, bool on);
@@ -788,82 +788,82 @@ K1520_API bool     k1520_tape_protect(K1520Handle h, int drive, int side, bool o
 K1520_API int      k1520_tape_protected(K1520Handle h, int drive, int side);
 /** @brief Kopfstelle (µm) setzen; nur bei stehendem Band. */
 K1520_API bool     k1520_tape_set_position(K1520Handle h, int drive, int64_t um);
-/** @brief Zustand: eingelegt, Seite, Kopfstelle (µm), Bandlänge (µm), Blöcke der aktiven Seite,
+/** @brief Zustand: eingelegt, Seite, Kopfstelle (µm), Bandlaenge (µm), Bloecke der aktiven Seite,
  *  Band bewegt sich (alle Zeiger optional); false ohne Karte. */
 K1520_API bool     k1520_tape_status(K1520Handle h, int drive, int* loaded, int* side,
                                      int64_t* pos_um, int64_t* len_um, int* blocks, int* moving);
-/** @brief Zahl der Blöcke (einschließlich Bandmarken) einer Seite; -1 ohne Karte/Kassette. */
+/** @brief Zahl der Bloecke (einschliesslich Bandmarken) einer Seite; -1 ohne Karte/Kassette. */
 K1520_API int      k1520_tape_block_count(K1520Handle h, int drive, int side);
-/** @brief Block i einer Seite: Startstelle (µm), Bytezahl, 1 = Bandmarke; false bei ungültigem i. */
+/** @brief Block i einer Seite: Startstelle (µm), Bytezahl, 1 = Bandmarke; false bei ungueltigem i. */
 K1520_API bool     k1520_tape_block_info(K1520Handle h, int drive, int side, int i,
                                          int64_t* start_um, int* bytes, int* mark);
-/** @brief Rohbytes von Block i (höchstens @p cap); Rückgabe = Blocklänge, -1 ungültig. */
+/** @brief Rohbytes von Block i (hoechstens @p cap); Rueckgabe = Blocklaenge, -1 ungueltig. */
 K1520_API int      k1520_tape_block_data(K1520Handle h, int drive, int side, int i,
                                          uint8_t* buf, int cap);
 
 /* ─── Terminals des P8000 (Entwurf 25 §10.9, P20d; andere Maschinen: 0 / -1 / false) ───────
- * Index i zählt die Terminals: am P8000 die Konsole tty1 (Kern- ODER Originalterminal, je nach
+ * Index i zaehlt die Terminals: am P8000 die Konsole tty1 (Kern- ODER Originalterminal, je nach
  * `terminal=`), an „P8000 Terminal" das Terminal selbst (i = 0).  80 × 24 Zellen, 0-basiert. */
 
 /** @brief Zahl der Terminals (0 an Maschinen ohne). */
 K1520_API int      k1520_term_count(K1520Handle h);
-/** @brief Kanalnummer (ttyN) des Terminals i; -2 = eigenständiges Terminal (Leitung XB5 am Hub),
- *  -1 bei ungültigem i. */
+/** @brief Kanalnummer (ttyN) des Terminals i; -2 = eigenstaendiges Terminal (Leitung XB5 am Hub),
+ *  -1 bei ungueltigem i. */
 K1520_API int      k1520_term_tty(K1520Handle h, int i);
-/** @brief Art des Terminals i: 0 = Kern-Terminal (P6), 1 = Originalterminal Typ 2; -1 ungültig. */
+/** @brief Art des Terminals i: 0 = Kern-Terminal (P6), 1 = Originalterminal Typ 2; -1 ungueltig. */
 K1520_API int      k1520_term_kind(K1520Handle h, int i);
-/** @brief Zeichen der Zelle (Attributfeld = Leerzeichen); 0 außerhalb oder bei ungültigem i. */
+/** @brief Zeichen der Zelle (Attributfeld = Leerzeichen); 0 ausserhalb oder bei ungueltigem i. */
 K1520_API uint8_t  k1520_term_char(K1520Handle h, int i, int col, int row);
 /** @brief Wirksames Attribut der Zelle (Bit 0 blink, 1 invers, 2 leer, 3 hell, 4 unterstrichen). */
 K1520_API uint8_t  k1520_term_attr(K1520Handle h, int i, int col, int row);
-/** @brief Zeile @p row als Text (80 Zeichen) nach @p buf (höchstens @p cap-1 Zeichen + NUL);
- *  Rückgabe = Länge, 0 bei ungültigem i/row. */
+/** @brief Zeile @p row als Text (80 Zeichen) nach @p buf (hoechstens @p cap-1 Zeichen + NUL);
+ *  Rueckgabe = Laenge, 0 bei ungueltigem i/row. */
 K1520_API int      k1520_term_text(K1520Handle h, int i, int row, char* buf, int cap);
-/** @brief Cursor des Terminals; false bei ungültigem i. */
+/** @brief Cursor des Terminals; false bei ungueltigem i. */
 K1520_API bool     k1520_term_cursor(K1520Handle h, int i, int* col, int* row);
 /** @brief Betriebsart: 0 ADM31, 1 VT100, 2 = unbekannt (Originalterminal: Zustand der Firmware),
- *  -1 bei ungültigem i. */
+ *  -1 bei ungueltigem i. */
 K1520_API int      k1520_term_mode(K1520Handle h, int i);
-/** @brief Taste des Terminals (Qt-Code oder ASCII wie k1520_key_press); false bei ungültigem i.
- *  Am Originalterminal wird sie über die K7673 getippt (Matrixdruck mit Haltezeit 80 ms +
+/** @brief Taste des Terminals (Qt-Code oder ASCII wie k1520_key_press); false bei ungueltigem i.
+ *  Am Originalterminal wird sie ueber die K7673 getippt (Matrixdruck mit Haltezeit 80 ms +
  *  80 ms Pause, SHIFT/CTRL aus den Tabellen der Firmware); ohne Taste auf der K7673.09 (NL,
  *  LINE ERASE) ohne Wirkung. */
 K1520_API bool     k1520_term_key(K1520Handle h, int i, uint32_t keycode, bool shift, bool ctrl);
-/** @brief @p len Zeichen wie getippt senden ('\r'/'\n' = Return); false bei ungültigem i. */
+/** @brief @p len Zeichen wie getippt senden ('\r'/'\n' = Return); false bei ungueltigem i. */
 K1520_API bool     k1520_term_send(K1520Handle h, int i, const char* text, int len);
 
 /** @brief Das ganze Bild des Terminals auf einmal (P16): 80 × 24 Zellen, zeilenweise, je Zelle 3 Byte —
  *  Zeichen (Attributfeld = Leerzeichen), wirksames Attribut (wie k1520_term_attr) und Flags
  *  (Bit 0 = mit Zeichensatz 2 geschrieben, Bit 1 = Attributfeld).  Ein Aufruf statt 3840, damit die
- *  Oberfläche im Bildtakt abfragen kann.  Rückgabe = 5760 bei ausreichendem @p cap, sonst 0
- *  (auch bei ungültigem i). */
+ *  Oberflaeche im Bildtakt abfragen kann.  Rueckgabe = 5760 bei ausreichendem @p cap, sonst 0
+ *  (auch bei ungueltigem i). */
 K1520_API int      k1520_term_snapshot(K1520Handle h, int i, uint8_t* buf, int cap);
 /** @brief Zustand des Terminals: Bit 0 On-Line, 1 Video-Attribute an, 2 Programm-Mode, 3 Zeichensatz 2
- *  (SI/SO), 4 Caps lock; -1 bei ungültigem i.  Originalterminal: nur Bit 3 (RS-Flipflop des ZG),
+ *  (SI/SO), 4 Caps lock; -1 bei ungueltigem i.  Originalterminal: nur Bit 3 (RS-Flipflop des ZG),
  *  Bit 4 (LED CAPS LOCK) und Bit 5 = 1 (Originalterminal). */
 K1520_API int      k1520_term_flags(K1520Handle h, int i);
-/** @brief Anzahl BEL des Terminals seit dem Einschalten (Piezophon); 0 bei ungültigem i. */
+/** @brief Anzahl BEL des Terminals seit dem Einschalten (Piezophon); 0 bei ungueltigem i. */
 K1520_API uint32_t k1520_term_bell_count(K1520Handle h, int i);
 
 /* Nur Originalterminal (k1520_term_kind = 1; sonst 0 / false / -1): Pixelbild und Tastatur K7673. */
 
 /** @brief Pixelbild des letzten Bildes (Firmware + 8275 + Zeichengenerator) nach @p buf: Breite ×
- *  Höhe Byte zeilenweise (640 × 312), je Punkt 0 dunkel, 1 normal, 2 hell (Highlight).  @p breite
- *  /@p hoehe (dürfen NULL sein) erhalten die Größe auch bei zu kleinem @p cap.  Rückgabe =
+ *  Hoehe Byte zeilenweise (640 × 312), je Punkt 0 dunkel, 1 normal, 2 hell (Highlight).  @p breite
+ *  /@p hoehe (duerfen NULL sein) erhalten die Groesse auch bei zu kleinem @p cap.  Rueckgabe =
  *  Bytezahl, 0 bei zu kleinem Puffer oder ohne Originalterminal. */
 K1520_API int      k1520_term_framebuffer(K1520Handle h, int i, uint8_t* buf, int cap, int* breite, int* hoehe);
-/** @brief Zahl der gezeigten Bilder seit dem Einschalten (62,8 Hz) — ändert sie sich nicht, ist das
- *  Pixelbild unverändert. */
+/** @brief Zahl der gezeigten Bilder seit dem Einschalten (62,8 Hz) — aendert sie sich nicht, ist das
+ *  Pixelbild unveraendert. */
 K1520_API uint32_t k1520_term_frame_count(K1520Handle h, int i);
-/** @brief Taste der K7673-Matrix (Zeile 0–7, Spalte 0–15) drücken bzw. loslassen — gehalten, bis
+/** @brief Taste der K7673-Matrix (Zeile 0–7, Spalte 0–15) druecken bzw. loslassen — gehalten, bis
  *  sie losgelassen wird (Wiederholung macht die Tastatur selbst).  Gleichwertig: k1520_key_press
  *  bzw. k1520_key_release mit `0x04000000 | Zeile << 8 | Spalte`. */
 K1520_API bool     k1520_term_matrix_key(K1520Handle h, int i, int zeile, int spalte, bool gedrueckt);
-/** @brief Wie k1520_term_matrix_key, die Taste über ihre Make-Folge (IBM-XT Satz 1, robotron-
- *  Belegung) gewählt: 1CH = RETURN, E048H = Pfeil hoch, …; false, wenn keine Taste sie sendet. */
+/** @brief Wie k1520_term_matrix_key, die Taste ueber ihre Make-Folge (IBM-XT Satz 1, robotron-
+ *  Belegung) gewaehlt: 1CH = RETURN, E048H = Pfeil hoch, …; false, wenn keine Taste sie sendet. */
 K1520_API bool     k1520_term_scancode_key(K1520Handle h, int i, uint32_t scancode, bool gedrueckt);
-/** @brief Make-Folge der Matrixtaste (wie k1520_term_scancode_key; 0 = keine Taste) — für das
- *  Tastaturbild der Oberfläche, aus dem EPROM-Abzug der K7673.09 gelesen. */
+/** @brief Make-Folge der Matrixtaste (wie k1520_term_scancode_key; 0 = keine Taste) — fuer das
+ *  Tastaturbild der Oberflaeche, aus dem EPROM-Abzug der K7673.09 gelesen. */
 K1520_API uint32_t k1520_term_matrix_scancode(K1520Handle h, int i, int zeile, int spalte);
 /** @brief LEDs der K7673: Bit 0 ON/OFF, 1 CAPS LOCK, 2 MODE; -1 ohne Originalterminal. */
 K1520_API int      k1520_term_leds(K1520Handle h, int i);
@@ -871,18 +871,18 @@ K1520_API int      k1520_term_leds(K1520Handle h, int i);
 /** @brief Mitschrift der vom Rechner EMPFANGENEN Zeichen am Originalterminal ein-/ausschalten
  *  (Rohbytes; ausgeschaltet wird ein Rest verworfen).  false ohne Originalterminal. */
 K1520_API bool     k1520_term_log_enable(K1520Handle h, int i, bool an);
-/** @brief Holt die seit dem letzten Aufruf mitgeschriebenen Bytes nach @p buf (höchstens @p cap;
- *  der Rest bleibt für den nächsten Aufruf).  Rückgabe = Bytezahl, 0 = nichts/ungültig. */
+/** @brief Holt die seit dem letzten Aufruf mitgeschriebenen Bytes nach @p buf (hoechstens @p cap;
+ *  der Rest bleibt fuer den naechsten Aufruf).  Rueckgabe = Bytezahl, 0 = nichts/ungueltig. */
 K1520_API int      k1520_term_log_read(K1520Handle h, int i, char* buf, int cap);
 
 /* ─── Save-State des P8000 (P8KS v4) und des „P8000 Terminal" (P8TM v1), Entwurf 25 §10.2; andere
  * Maschinen: false.  Gesichert wird der
- * Maschinenzustand, nicht der Medieninhalt (Disketten und Platten vor dem Laden anschließen). */
+ * Maschinenzustand, nicht der Medieninhalt (Disketten und Platten vor dem Laden anschliessen). */
 
 /** @brief Zustand in eine Datei schreiben; false bei Schreibfehler oder an anderen Maschinen. */
 K1520_API bool        k1520_state_save(K1520Handle h, const char* path);
-/** @brief Zustand laden — nur bei übereinstimmender Konfiguration; sonst false, die Maschine
- *  bleibt unverändert.  Grund: k1520_state_error. */
+/** @brief Zustand laden — nur bei uebereinstimmender Konfiguration; sonst false, die Maschine
+ *  bleibt unveraendert.  Grund: k1520_state_error. */
 K1520_API bool        k1520_state_load(K1520Handle h, const char* path);
 /** @brief Grund des letzten gescheiterten k1520_state_load ("" = keiner). */
 K1520_API const char* k1520_state_error(K1520Handle h);
@@ -890,30 +890,30 @@ K1520_API const char* k1520_state_error(K1520Handle h);
 /* ─── Winchesterplatten am WDC (P8000, Entwurf 25 §10.9; andere Maschinen bzw. ohne WDC:
  * false / "") — Laufwerk 0–2, Abbild roh/LBA (Sektor Z/K/S bei ((Z·K+K)·S+S−1)·512). */
 
-/** @brief Abbild an Laufwerk @p unit anschließen.  @p wp = true wird abgewiesen (ein
+/** @brief Abbild an Laufwerk @p unit anschliessen.  @p wp = true wird abgewiesen (ein
  *  Winchesterlaufwerk hat keinen Schreibschutz).  Grund: k1520_hd_error. */
 K1520_API bool        k1520_hd_mount(K1520Handle h, int unit, const char* path, bool wp);
 /** @brief Neues Abbild des Typs @p typ ("K5504.50", "D5126", …; NULL/"" = K5504.50) anlegen
- *  — Datenbytes E5, Z0/K0/S1 = gültiger PAR/BTT-Sektor — und anschließen.  Mit dem Suffix
+ *  — Datenbytes E5, Z0/K0/S1 = gueltiger PAR/BTT-Sektor — und anschliessen.  Mit dem Suffix
  *  ":unformatiert" ("K5504.50:unformatiert") entsteht ein Laufwerk wie neu: durchgehend E5,
  *  KEIN Parametersatz (WDC: "Error in PAR&BTT"; sa.format legt ihn an). */
 K1520_API bool        k1520_hd_create(K1520Handle h, int unit, const char* path, const char* typ);
-/** @brief Laufwerk lösen; geänderte Spuren werden vorher zurückgeschrieben. */
+/** @brief Laufwerk loesen; geaenderte Spuren werden vorher zurueckgeschrieben. */
 K1520_API bool        k1520_hd_unmount(K1520Handle h, int unit);
-/** @brief Alle geänderten Spuren sofort zurückschreiben; false ohne Platte. */
+/** @brief Alle geaenderten Spuren sofort zurueckschreiben; false ohne Platte. */
 K1520_API bool        k1520_hd_flush(K1520Handle h);
 /** @brief Pfad des Abbilds an @p unit ("" = keins). */
 K1520_API const char* k1520_hd_path(K1520Handle h, int unit);
-/** @brief Zugriffslampe des Laufwerks (gewählt und in den letzten 0,1 s Maschinenzeit aktiv). */
+/** @brief Zugriffslampe des Laufwerks (gewaehlt und in den letzten 0,1 s Maschinenzeit aktiv). */
 K1520_API bool        k1520_hd_led(K1520Handle h, int unit);
 /** @brief Grund des letzten gescheiterten k1520_hd_mount/k1520_hd_create. */
 K1520_API const char* k1520_hd_error(K1520Handle h);
 /** @brief Plattentyp, den das WDC-EPROM der Fassung @p firmware ("4.2" | "4.0.05" | "3.4.05")
- *  festlegt ("K5504.50"); "" bei 4.2 (laufwerksunabhängig, PAR von der Platte) oder unbekannter
- *  Fassung.  Ohne Handle — eine Eigenschaft der Abzüge (P24). */
+ *  festlegt ("K5504.50"); "" bei 4.2 (laufwerksunabhaengig, PAR von der Platte) oder unbekannter
+ *  Fassung.  Ohne Handle — eine Eigenschaft der Abzuege (P24). */
 K1520_API const char* k1520_hd_rom_typ(const char* firmware);
-/** @brief Dateinamenkürzel eines Plattentyps ("K5504.50" → "k5504"); "" bei unbekanntem Typ.
- *  Plattenabbilder heißen `<name>.<kürzel>.img` (P24). */
+/** @brief Dateinamenkuerzel eines Plattentyps ("K5504.50" → "k5504"); "" bei unbekanntem Typ.
+ *  Plattenabbilder heissen `<name>.<kuerzel>.img` (P24). */
 K1520_API const char* k1520_hd_typ_kuerzel(const char* typ);
 
 #ifdef __cplusplus

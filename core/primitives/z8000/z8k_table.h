@@ -5,7 +5,7 @@
  * Eine Zeile je Kodierung (Mnemonik × Adressierungsart × Datenbreite).  Aus
  * derselben Tabelle arbeiten Dekoder/Kodierer (z8k_codec.h), Disassembler
  * (z8k_disasm.h), Assembler (z8k_asm.h) — und der CPU-Kern (S3), der die
- * Takte übernimmt.  Quelle: Zilog Z8000 CPU User's Reference Manual (Kap. 6,
+ * Takte uebernimmt.  Quelle: Zilog Z8000 CPU User's Reference Manual (Kap. 6,
  * Anhang C „Clock Cycles", Opcode-Map); Abweichungen und Unsicherheiten:
  * tools/z8000/README.md (Befunde) und
  * core/primitives/z8000/README.md (CPU-Kern).
@@ -13,17 +13,17 @@
  * Aufbau einer Zeile (RowSrc):
  *   mn     Mnemonik in Zilog-Schreibweise
  *   w0/w1  Bitmuster des ersten/zweiten Befehlsworts, Bit 15 links, Leerzeichen
- *          sind Zierde.  '0'/'1' = fest, Kleinbuchstabe = Feld (zusammenhängend;
- *          ein Buchstabe gehört genau einem Wort), 'X' = beliebig (vom Kern nicht
+ *          sind Zierde.  '0'/'1' = fest, Kleinbuchstabe = Feld (zusammenhaengend;
+ *          ein Buchstabe gehoert genau einem Wort), 'X' = beliebig (vom Kern nicht
  *          ausgewertet, der Assembler schreibt 0).  w1 = "" → kein festes
  *          zweites Wort.
  *   ops    Operanden in Syntax-Reihenfolge, Komma-getrennt:  ART[:feld[:feld2]]
  *          (Arten siehe enum Kind).  Operanden mit Erweiterungsworten (DA, X,
- *          BA, RA16, IMB/IMW/IML, PORT) hängen ihre Worte in dieser Reihenfolge
+ *          BA, RA16, IMB/IMW/IML, PORT) haengen ihre Worte in dieser Reihenfolge
  *          hinter w0 [w1] an.
  *   ns/ss/sl     Takte nichtsegmentiert / segmentiert mit kurzem bzw. langem
  *          Offset (bei Zeilen ohne DA/X gilt ss == sl).
- *   ans/ass/asl  Takte, wenn die Bedingung NICHT erfüllt ist (JP/JR/RET/DJNZ);
+ *   ans/ass/asl  Takte, wenn die Bedingung NICHT erfuellt ist (JP/JR/RET/DJNZ);
  *          0 = keine Unterscheidung.
  *   perN   Zusatztakte je Einheit n.  Was n ist, sagt der Befehl: Wieder-
  *          holungsbefehle je Durchlauf (11 + 9n usw.), statisches/dynamisches
@@ -77,7 +77,7 @@ struct RowSrc {
 //   IMB/IMW/IML Direktwert im Erweiterungswort   IM8/IM4 Direktwert im Feld
 //   N16  #1..16 (Feld n-1)   BIT  Bitnummer   SHL/SHR Schiebeweite (links/rechts)
 //   CC  Bedingung   FL  Flagliste   INT  VI,NVI   CTL  Steuerregister
-//   FLAGS  wörtlich   PORT  E/A-Adresse   LDMN  #1..16   RAW  EPU-Feld roh
+//   FLAGS  woertlich   PORT  E/A-Adresse   LDMN  #1..16   RAW  EPU-Feld roh
 //   #1/#2  feste Anzahl (Rotieren)
 inline constexpr RowSrc kRows[] = {
 //   mn        w0                     w1                       ops                     ns  ss  sl  ans ass asl perN flags
@@ -365,7 +365,7 @@ inline constexpr RowSrc kRows[] = {
     {"RRC",   "10110011 dddd 1100",  "",                      "RW:d,#1",               6,  6,  6,   0,  0,  0,  0, 0},
     {"RRC",   "10110011 dddd 1110",  "",                      "RW:d,#2",               7,  7,  7,   0,  0,  0,  0, 0},
     // ---- Statisches Schieben (Anzahl im 2. Wort, rechts = negativ; Takte 13 + 3n)
-    //      Byte-Schieben: nur das LOW-Byte des 2. Worts zählt (MAME `GET_IMM8(OP1)`); der WEGA-
+    //      Byte-Schieben: nur das LOW-Byte des 2. Worts zaehlt (MAME `GET_IMM8(OP1)`); der WEGA-
     //      Kern 3.2 (`koppel.s` _kint: `srlb rl4,#3` = B2C1 FFFD) setzt das High-Byte auf FFH.
     {"SLLB",  "10110010 dddd 0001",  "XXXX XXXX 0ccc cccc",   "RB:d,SHL:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
     {"SRLB",  "10110010 dddd 0001",  "XXXX XXXX 1ccc cccc",   "RB:d,SHR:c",           13, 13, 13,   0,  0,  0,  3, Z8K_B},
@@ -571,11 +571,11 @@ enum class Kind : uint8_t {
     BX,               ///< Basis-Index Rn(Rm) / RRn(Rm), Basis ≠ 0 (Feld 1), Index Feld 2
     RA16,             ///< relativ, 16 Bit Byteabstand im Erweiterungswort (LDR/LDAR)
     RA8,              ///< JR: Ziel = PC + 2·disp8 (vorzeichenbehaftet)
-    RA7,              ///< DJNZ: Ziel = PC − 2·disp7 (nur rückwärts)
+    RA7,              ///< DJNZ: Ziel = PC − 2·disp7 (nur rueckwaerts)
     RA12,             ///< CALR: Ziel = PC − 2·disp12 (vorzeichenbehaftet)
     IMB,              ///< Direktwert Byte (Erweiterungswort, Byte doppelt)
     IMW,              ///< Direktwert Wort
-    IML,              ///< Direktwert Langwort (zwei Worte, höherwertiges zuerst)
+    IML,              ///< Direktwert Langwort (zwei Worte, hoeherwertiges zuerst)
     IM8,              ///< Direktwert 8 Bit im Feld (LDB kurz, SC)
     IM4,              ///< Direktwert 0..15 im Feld (LDK)
     N16,              ///< Anzahl 1..16, Feld = n−1 (INC/DEC)
@@ -619,7 +619,7 @@ struct Insn {
     int      nops = 0;
     OpSpec   op[4];
     uint16_t cyc[3] = {};      ///< ns, ss, sl
-    uint16_t alt[3] = {};      ///< Bedingung nicht erfüllt (0 = wie cyc)
+    uint16_t alt[3] = {};      ///< Bedingung nicht erfuellt (0 = wie cyc)
     uint8_t  perN = 0;
     uint32_t flags = 0;
 
@@ -753,7 +753,7 @@ inline Insn buildInsn(const RowSrc& r, int index) {
 
 } // namespace detail
 
-/// Erfüllen die Felder von w0 (und, falls haveW1, w1) die Nebenbedingungen der
+/// Erfuellen die Felder von w0 (und, falls haveW1, w1) die Nebenbedingungen der
 /// Zeile?  (IR/X/BA/BX-Basis ≠ 0, Steuerregister 2..7.)
 inline bool fieldsOk(const Insn& in, uint16_t w0, uint16_t w1, bool haveW1) {
     for (int i = 0; i < in.nops; ++i) {
@@ -775,11 +775,11 @@ inline bool fieldsOk(const Insn& in, uint16_t w0, uint16_t w1, bool haveW1) {
 }
 
 /**
- * Die aufbereitete Tabelle plus Schnellsuche über das erste Befehlswort:
+ * Die aufbereitete Tabelle plus Schnellsuche ueber das erste Befehlswort:
  * `candidates(w0)` liefert die Zeilen (in Tabellenreihenfolge), deren w0-Muster
- * und w0-Nebenbedingungen passen.  Mehr als ein Kandidat heißt: das zweite Wort
+ * und w0-Nebenbedingungen passen.  Mehr als ein Kandidat heisst: das zweite Wort
  * entscheidet (LDI/LDIR, SLL/SRL, TRIB/TRIRB, …).  Aufbau einmal je Prozess
- * (~0,1 Mio. Einträge), danach nur Lesen — threadsicher.
+ * (~0,1 Mio. Eintraege), danach nur Lesen — threadsicher.
  */
 class Table {
 public:
@@ -788,7 +788,7 @@ public:
     const std::vector<Insn>& insns() const { return insns_; }
     const Insn& at(int i) const { return insns_[size_t(i)]; }
 
-    /// Kandidaten für das erste Befehlswort w0.
+    /// Kandidaten fuer das erste Befehlswort w0.
     const uint16_t* candidates(uint16_t w0, int& count) const {
         uint32_t b = start_[w0], e = start_[size_t(w0) + 1];
         count = int(e - b);
@@ -830,7 +830,7 @@ inline const char* ccName(unsigned cc) {
     return k[cc & 15];
 }
 
-/// Name (Großbuchstaben) → Bedingungskode inkl. Synonyme (EQ NE ULT UGE PE PO), -1 = keiner.
+/// Name (Grossbuchstaben) → Bedingungskode inkl. Synonyme (EQ NE ULT UGE PE PO), -1 = keiner.
 inline int ccFromName(const std::string& up) {
     static const struct { const char* n; int v; } k[] = {
         {"F",0},{"LT",1},{"LE",2},{"ULE",3},{"OV",4},{"PE",4},{"MI",5},{"Z",6},{"EQ",6},
@@ -840,7 +840,7 @@ inline int ccFromName(const std::string& up) {
     return -1;
 }
 
-/// Steuerregister nach Kodierung (LDCTL); nichtsegmentiert heißen 5/7 PSAP/NSP.
+/// Steuerregister nach Kodierung (LDCTL); nichtsegmentiert heissen 5/7 PSAP/NSP.
 inline const char* ctlName(unsigned code, bool seg) {
     switch (code & 7) {
     case 2: return "FCW";

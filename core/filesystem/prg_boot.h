@@ -3,16 +3,16 @@
  * @brief Bootabbilder der PRG 710 / PRG 710-1 erkennen und zusammensetzen
  *        (doc/design/20_prg710.md AP-P6).
  *
- * Eine Systemdiskette des PRG kommt in zwei Bauarten (UDOS 4.3, SCPX 1526), je Gerät
+ * Eine Systemdiskette des PRG kommt in zwei Bauarten (UDOS 4.3, SCPX 1526), je Geraet
  * in einer eigenen Fassung: Tastatur und MKE-Treiber unterscheiden sich (710: 8279 an
  * C8H/C9H, 710-1: K7672 an der K8025 5CH–5FH).  Ein Bootabbild der falschen Fassung
- * liest sich fehlerfrei und scheitert erst am Gerät — deshalb wird VOR dem Schreiben
- * erkannt, für welches Gerät ein Abbild gebaut ist.
+ * liest sich fehlerfrei und scheitert erst am Geraet — deshalb wird VOR dem Schreiben
+ * erkannt, fuer welches Geraet ein Abbild gebaut ist.
  *
- * Erkannt wird am **Ladesektor**: Byte 0–4 = `18 03 "SYL"` (JR +3 über die Kennung) —
+ * Erkannt wird am **Ladesektor**: Byte 0–4 = `18 03 "SYL"` (JR +3 ueber die Kennung) —
  * der A5120-Lader beginnt mit `"SYL"` selbst (UDOS) bzw. `"SYL" 95H` (SCPX).  Die Fassung
  * steht je System an einer anderen Stelle (Belege in der .cpp).  Das Abbild ist das
- * rohe Byteband von `DiskVolume::readBootImage`; UDOS trägt dort je Sektor 4 Byte
+ * rohe Byteband von `DiskVolume::readBootImage`; UDOS traegt dort je Sektor 4 Byte
  * Kontrollblock — die Suche ist deshalb nicht an Sektorgrenzen gebunden.
  *
  * @author Olaf Krieger
@@ -47,13 +47,13 @@ Variante ausName(const std::string& s);
 Kennung erkenne(const std::vector<uint8_t>& img, System sys);
 
 /**
- * @brief Urteil über ein Bootabbild gegen das Gerät, für das es gebaut sein soll.
+ * @brief Urteil ueber ein Bootabbild gegen das Geraet, fuer das es gebaut sein soll.
  * @param img        das Abbild
- * @param sys        das System, das das Dateisystem der Zieldiskette erwarten lässt
- * @param erwartet   Unbekannt = kein Wunsch (nur die Strukturprüfung)
+ * @param sys        das System, das das Dateisystem der Zieldiskette erwarten laesst
+ * @param erwartet   Unbekannt = kein Wunsch (nur die Strukturpruefung)
  * @param vorhanden  Fassung des Systems, das schon auf der Diskette steht (oder Unbekannt)
- * @return "" = in Ordnung, sonst die Begründung.  Ein Abbild OHNE PRG-Lader wird ohne
- *         Wunsch nie beanstandet (A5120/K8915 bleiben unberührt); mit Wunsch ist es ein Fehler.
+ * @return "" = in Ordnung, sonst die Begruendung.  Ein Abbild OHNE PRG-Lader wird ohne
+ *         Wunsch nie beanstandet (A5120/K8915 bleiben unberuehrt); mit Wunsch ist es ein Fehler.
  */
 std::string problem(const std::vector<uint8_t>& img, System sys, Variante erwartet,
                     Variante vorhanden);
@@ -64,8 +64,8 @@ std::string problem(const std::vector<uint8_t>& img, System sys, Variante erwart
  * Byte 0 = C600H: `SYL17.SYS` (256 B, Lader) + 256 × AAH + `CCPBD17.SYS` (ab C800H)
  * + BIOS (ab DE00H = Byte 6144), danach AAH bis zum vollen 256-B-Sektor.  Das ist
  * bytegleich das, was `SYSPRG` im Emulator schreibt (AP-P5e, Befund 2).
- * @param bios_name  Dateiname des BIOS (nur für die Meldung)
- * @param ziel       Gerät; Unbekannt = aus dem BIOS ablesen
+ * @param bios_name  Dateiname des BIOS (nur fuer die Meldung)
+ * @param ziel       Geraet; Unbekannt = aus dem BIOS ablesen
  * @param[out] erkannt  die am BIOS erkannte Fassung
  */
 bool scpxBand(const std::vector<uint8_t>& syl, const std::vector<uint8_t>& ccp,

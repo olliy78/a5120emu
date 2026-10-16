@@ -1,6 +1,6 @@
 /**
  * @file terminal_geraet.h
- * @brief Gemeinsame Außenschnittstelle der P8000-Terminals (Entwurf 28 §6): das vereinfachte
+ * @brief Gemeinsame Aussenschnittstelle der P8000-Terminals (Entwurf 28 §6): das vereinfachte
  *        Kern-Terminal (P6) und das Originalterminal Typ 2 (P20) sind gegeneinander austauschbar.
  *
  * Die Maschine kennt nur `TerminalGeraet`: `takt()` im Emulationsfaden koppelt das Terminal an
@@ -28,7 +28,7 @@ public:
     virtual uint8_t attribut(int z, int s) const = 0;
     virtual int zeile() const = 0;    ///< Cursor, 0-basiert
     virtual int spalte() const = 0;
-    /// Zeichentaste (wie `Terminal::zeichenTaste`).  Rückgabe false = auf diesem Terminal nicht tippbar.
+    /// Zeichentaste (wie `Terminal::zeichenTaste`).  Rueckgabe false = auf diesem Terminal nicht tippbar.
     virtual bool zeichenTaste(uint8_t c, bool ctrl = false) = 0;
     virtual bool taste(TerminalTaste t) = 0;
     virtual unsigned klingel() const = 0;

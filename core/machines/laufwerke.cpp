@@ -1,7 +1,7 @@
 /**
  * @file laufwerke.cpp
- * @brief Laufwerksverwaltung (gemeinsam für A5120 und K8915) — aus A5120Machine
- *        herausgelöst, Verhalten unverändert.  @see laufwerke.h
+ * @brief Laufwerksverwaltung (gemeinsam fuer A5120 und K8915) — aus A5120Machine
+ *        herausgeloest, Verhalten unveraendert.  @see laufwerke.h
  */
 
 #include "core/machines/laufwerke.h"
@@ -17,13 +17,13 @@ Laufwerke::Laufwerke(K5122& afs, const std::array<DriveProfile, 4>& profile)
     // Diskettenformate aus data/formats.yaml laden (§8.6).  Fehlt die Datei oder ist
     // sie syntaktisch kaputt, kann die Maschine keine Diskette mounten/anlegen — das
     // ist ein Startabbruch mit klarer Meldung, kein stiller Weiterlauf.  Einzelne
-    // FEHLERHAFTE Formatdefinitionen sind dagegen nicht fatal: sie werden übersprungen
-    // und über formatCatalog().issues() gemeldet.
+    // FEHLERHAFTE Formatdefinitionen sind dagegen nicht fatal: sie werden uebersprungen
+    // und ueber formatCatalog().issues() gemeldet.
     std::string fatal;
     katalog_ = FormatCatalog::loadDefault(&fatal);
     if (!fatal.empty()) throw std::runtime_error(fatal);
 
-    // Übersprungene Definitionen zusätzlich auf stderr — eine Konfigurationspanne
+    // Uebersprungene Definitionen zusaetzlich auf stderr — eine Konfigurationspanne
     // muss sichtbar sein, auch wenn das Logging aus ist oder in eine Datei geht.
     for (const auto& issue : katalog_.issues()) {
         LOG_WARN("Formate", "%s", issue.c_str());
@@ -69,22 +69,22 @@ bool Laufwerke::mountDisk(int drive, const std::string& path,
         last_error_ = "Unbekanntes Format: " + format_name;
         return false;
     }
-    // BEWUSST KEINE drives:-Prüfung beim Mounten eines VORHANDENEN Images:
+    // BEWUSST KEINE drives:-Pruefung beim Mounten eines VORHANDENEN Images:
     //  - bei self-describing Containern (.hfe) ist der Formatname nur ein Platzhalter,
     //    die Geometrie kommt aus der Datei (so mountet z. B. tools/format_driver alle
     //    Slots nominell als "cpa780");
     //  - der Laufwerkstyp ist auf der A5120 reine BIOS-Software, Combo-Boot-Disketten
     //    betreiben an B:/C: bewusst Fremdtypen (CLAUDE.md, doc/format.md §11).
-    // Die Kompatibilität wird dort erzwungen, wo das Format die Struktur wirklich
+    // Die Kompatibilitaet wird dort erzwungen, wo das Format die Struktur wirklich
     // bestimmt: in createDisk() und in der angebotenen Auswahl (compatibleFormats()).
     std::lock_guard<std::mutex> lk(mutex_);
     if (afs_.mountDisk(drive, path, *fmt, wp)) { last_error_.clear(); return true; }
 
-    // Grund aus dem Laufwerk übernehmen (Geometrie-/Verfahrenskonflikt); wurde das
-    // Image gar nicht erst geöffnet, ist die Laufwerks-Meldung leer → Fallback.
+    // Grund aus dem Laufwerk uebernehmen (Geometrie-/Verfahrenskonflikt); wurde das
+    // Image gar nicht erst geoeffnet, ist die Laufwerks-Meldung leer → Fallback.
     const std::string drv_err = afs_.drive(drive).lastError();
     last_error_ = drv_err.empty()
-                      ? ("Image konnte nicht geöffnet werden: " + path)
+                      ? ("Image konnte nicht geoeffnet werden: " + path)
                       : drv_err;
     return false;
 }
@@ -104,9 +104,9 @@ bool Laufwerke::createDisk(int drive, const std::string& path,
     if (format_name.empty()) {
         // ── Echte Leerdiskette ──────────────────────────────────────────────
         // Geometrie kommt vom LAUFWERK (nicht von einem Format): eine unformatierte
-        // Diskette hat kein Sektorlayout.  Sie wird anschließend vom Gastsystem
+        // Diskette hat kein Sektorlayout.  Sie wird anschliessend vom Gastsystem
         // formatiert — inklusive Fremdformaten, die Nutzdaten hinter die Daten-CRC
-        // hängen (UDOS-Sektorkontrollblock), was ein .img nicht speichern könnte.
+        // haengen (UDOS-Sektorkontrollblock), was ein .img nicht speichern koennte.
         if (!path.empty()
             && ImageCodec::fromExtension(path) == ContainerType::Img) {
             last_error_ = "Eine leere Diskette kann nicht als rohes Sektorimage (.img) "
@@ -116,7 +116,7 @@ bool Laufwerke::createDisk(int drive, const std::string& path,
         }
 
         // Vorschlagsverfahren des Laufwerks (reines FM-Laufwerk → FM, sonst MFM);
-        // je Spur überschreibt es der Formatierlauf ohnehin.
+        // je Spur ueberschreibt es der Formatierlauf ohnehin.
         const Encoding enc = (prof.supports_mfm ? Encoding::MFM : Encoding::FM);
         img = DiskImage::createBlank(prof.num_cyls, prof.num_heads, enc);
         if (!img) {
@@ -125,7 +125,7 @@ bool Laufwerke::createDisk(int drive, const std::string& path,
             return false;
         }
         // Drehzahl des Laufwerks mitgeben: eine .hfe-Spur ist genau eine Umdrehung lang,
-        // beim 8″-Laufwerk (360 U/min) also kürzer als beim 5,25″ (AP-F1).
+        // beim 8″-Laufwerk (360 U/min) also kuerzer als beim 5,25″ (AP-F1).
         img->medium().setNominalRpm(prof.rpm);
         // Sofort in die Zieldatei schreiben, damit sie ab dem ersten Moment existiert
         // und der Autosave eine Bindung hat.  Leerer Pfad = nur im Speicher.
@@ -146,8 +146,8 @@ bool Laufwerke::createDisk(int drive, const std::string& path,
                           + prof.name + "'";
             return false;
         }
-        // Verfahren kommt aus dem FORMAT (pro Spurbereich).  Für den Container-Header
-        // und rohe .img zählt das vorherrschende Verfahren.
+        // Verfahren kommt aus dem FORMAT (pro Spurbereich).  Fuer den Container-Header
+        // und rohe .img zaehlt das vorherrschende Verfahren.
         img = DiskImage::create(path, *fmt, write_protect, fmt->predominantEncoding());
         if (!img) {
             last_error_ = "createDisk fehlgeschlagen (Format '" + fmt->name + "'): " + path;
@@ -319,7 +319,7 @@ std::vector<std::string> Laufwerke::compatibleFormats(int drive) const {
     std::vector<std::string> out;
     if (drive < 0 || drive > 3) return out;
 
-    // Kompatibilität ist jetzt EXPLIZIT im Katalog deklariert (`drives:`), keine
+    // Kompatibilitaet ist jetzt EXPLIZIT im Katalog deklariert (`drives:`), keine
     // Geometrie-Heuristik mehr — das Standardformat des Slots steht an erster Stelle.
     for (const DiskFormat* f : katalog_.forDrive(profile_[drive]))
         out.push_back(f->name);

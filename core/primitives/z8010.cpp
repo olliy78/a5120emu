@@ -1,6 +1,6 @@
 /**
  * @file z8010.cpp
- * @brief UB8010/Z8010-MMU — Übersetzung, Verletzungslogik, Befehle.  Annahmen [A1]–[A15]
+ * @brief UB8010/Z8010-MMU — Uebersetzung, Verletzungslogik, Befehle.  Annahmen [A1]–[A15]
  *        und Quellen: z8010.h, doc/p8000/z8010_mmu.md.
  * @license MIT
  */
@@ -54,7 +54,7 @@ Z8010::Probe Z8010::probe(const Zyklus& z) const {
     const uint8_t seg = z.seg & 0x7F;
     const uint8_t offHi = uint8_t(z.offset >> 8);
 
-    // TRNS = 0: Durchreichen ohne jede Prüfung, URS/MST ignoriert ([TB] §4.1 Nr. 3).
+    // TRNS = 0: Durchreichen ohne jede Pruefung, URS/MST ignoriert ([TB] §4.1 Nr. 3).
     if (!(s_.mr & MR_TRNS)) {
         p.adresse = true;
         p.phys = (uint32_t(seg) << 16) | z.offset;   // A23 = L
@@ -89,7 +89,7 @@ Z8010::Probe Z8010::probe(const Zyklus& z) const {
 Z8010::Ergebnis Z8010::zyklus(const Zyklus& z) {
     Ergebnis e;
     const uint8_t st = z.status & 0x0F;
-    if (!istSpeicherzyklus(st)) return e;   // Spezial-E/A über kommando*, Quittung über segtQuittung()
+    if (!istSpeicherzyklus(st)) return e;   // Spezial-E/A ueber kommando*, Quittung ueber segtQuittung()
 
     const bool msen = (s_.mr & MR_MSEN) != 0;
     const uint8_t seg = z.seg & 0x7F;
@@ -102,10 +102,10 @@ Z8010::Ergebnis Z8010::zyklus(const Zyklus& z) {
         befehlsgrenze();
     }
 
-    // SUP aus einer früheren Verletzung desselben Befehls [A3].
+    // SUP aus einer frueheren Verletzung desselben Befehls [A3].
     if (!z.dma && s_.supBisBefehlsende) e.sup = true;
 
-    // Erst nach der Prüfung übernehmen: verletzt dieses Holen, bleibt der Vorgänger in ISN/IOFF.
+    // Erst nach der Pruefung uebernehmen: verletzt dieses Holen, bleibt der Vorgaenger in ISN/IOFF.
     auto merkeHolen = [&] {
         if (!z.dma && st == ST_IF1 && !unecht && msen) {
             s_.if1Seg = seg;
@@ -146,7 +146,7 @@ Z8010::Ergebnis Z8010::zyklus(const Zyklus& z) {
         } else if (s_.befehl == BEFEHL_ERSTMELDUNG) {
             s_.vtr |= v;                            // [A4] gleicher Befehl: Flags sammeln
         } else if (s_.befehl == BEFEHL_FREI) {
-            // Späterer Befehl ([TB] §5.1/5.2, Anhang A).
+            // Spaeterer Befehl ([TB] §5.1/5.2, Anhang A).
             const bool fatl = (vtr & VTR_FATL) != 0;
             const bool sww = (vtr & VTR_SWW) != 0;
             if (!fatl) {

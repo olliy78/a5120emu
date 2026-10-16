@@ -1,19 +1,19 @@
 /**
  * @file test_hfe_codec.cpp
- * @brief GoogleTests für HfeCodec (HFE-v1-Container) und die DiskImage-Fabrik.
+ * @brief GoogleTests fuer HfeCodec (HFE-v1-Container) und die DiskImage-Fabrik.
  *
  * Getestete Komponenten:
- *   1. Cross-Check: HfeCodec::load liefert dieselben Sektoren mit gültigen CRCs
+ *   1. Cross-Check: HfeCodec::load liefert dieselben Sektoren mit gueltigen CRCs
  *      wie ImgCodec::load auf derselben Fixture.
  *   2. Geometrie (num_cyls=2, num_heads=2, MFM).
- *   3. Save/Load-Roundtrip inklusive Änderung — Header/LUT werden neu berechnet.
+ *   3. Save/Load-Roundtrip inklusive Aenderung — Header/LUT werden neu berechnet.
  *   4. Neuanlage OHNE Vorlage (Medium → .hfe) und unformatierte Spuren.
  *   5. DiskImage::open akzeptiert `.hfe`, auch unformatiert (Leerdiskette).
  *   6. FloppyDriveV2::mount mit HFE-Diskette.
- *   7. Real gelesene Aufnahmen: Phasensprünge je Feld, Überabtastung 500 kbit/s.
+ *   7. Real gelesene Aufnahmen: Phasenspruenge je Feld, Ueberabtastung 500 kbit/s.
  *
  * Fixture-Pfad: FIXTURE_DIR (CMake-Define) / cpa_mini.hfe + cpa_mini.img
- * Geometrie: 2 Zylinder × 2 Köpfe × 4 Sektoren × 128 B (MFM, 250 kbit/s, 300 U/min)
+ * Geometrie: 2 Zylinder × 2 Koepfe × 4 Sektoren × 128 B (MFM, 250 kbit/s, 300 U/min)
  *
  * @see core/peripherals/floppy_drive/hfe_codec.h
  * @see tools/img_to_hfe.py  (erzeugt cpa_mini.hfe aus cpa_mini.img)
@@ -55,7 +55,7 @@ static const std::string kImgPath = std::string(FIXTURE_DIR) + "/cpa_mini.img";
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 /**
- * DiskFormat für die Mini-Fixture: 2 Zylinder × 2 Köpfe × 4 Sektoren × 128 B.
+ * DiskFormat fuer die Mini-Fixture: 2 Zylinder × 2 Koepfe × 4 Sektoren × 128 B.
  */
 static DiskFormat makeMiniFormat() {
     DiskFormat fmt;
@@ -121,10 +121,10 @@ TEST(HfeCodec, Geometry_KorrekteFelderMiniFixture) {
 
 /**
  * @test HfeCodec/SaveLoad_RoundtripMitAenderung
- * @brief Medium ändern → speichern → neu laden: die Änderung ist da, die übrigen
- *        Spuren sind unverändert.  Header und LUT werden dabei NEU berechnet — das
- *        ist der Unterschied zum früheren In-place-Backend und die Voraussetzung
- *        dafür, dass ein Medium beliebiger Herkunft als .hfe geschrieben werden kann.
+ * @brief Medium aendern → speichern → neu laden: die Aenderung ist da, die uebrigen
+ *        Spuren sind unveraendert.  Header und LUT werden dabei NEU berechnet — das
+ *        ist der Unterschied zum frueheren In-place-Backend und die Voraussetzung
+ *        dafuer, dass ein Medium beliebiger Herkunft als .hfe geschrieben werden kann.
  */
 TEST(HfeCodec, SaveLoad_RoundtripMitAenderung) {
     DiskMedium m = loadHfe(kHfePath);
@@ -148,19 +148,19 @@ TEST(HfeCodec, SaveLoad_RoundtripMitAenderung) {
 
     auto secs00 = TrackCodec::parseTrack(back.track(0, 0));
     ASSERT_GE(secs00.size(), 1u);
-    EXPECT_EQ(secs00[0].data[0], modified) << "Geändertes Byte nicht gespeichert";
+    EXPECT_EQ(secs00[0].data[0], modified) << "Geaendertes Byte nicht gespeichert";
     for (const auto& s : secs00) {
         EXPECT_TRUE(s.id_crc_ok);
         EXPECT_TRUE(s.data_crc_ok);
     }
 
-    // Spur (0,1) unverändert gegenüber der Ausgangs-Fixture.
+    // Spur (0,1) unveraendert gegenueber der Ausgangs-Fixture.
     const DiskMedium ref = loadHfe(kHfePath);
     auto mod01 = TrackCodec::parseTrack(back.track(0, 1));
     auto ref01 = TrackCodec::parseTrack(ref.track(0, 1));
     ASSERT_EQ(mod01.size(), ref01.size());
     for (size_t i = 0; i < mod01.size(); ++i)
-        EXPECT_EQ(mod01[i].data, ref01[i].data) << "Spur (0,1) Sektor " << i << " verändert";
+        EXPECT_EQ(mod01[i].data, ref01[i].data) << "Spur (0,1) Sektor " << i << " veraendert";
 
     std::filesystem::remove(tmp);
 }
@@ -169,8 +169,8 @@ TEST(HfeCodec, SaveLoad_RoundtripMitAenderung) {
 
 /**
  * @test HfeCodec/SaveOhneVorlage_BemisstSpurlaengeSelbst
- * @brief Ein frisch gebautes Medium (nie aus einer .hfe geladen) lässt sich direkt
- *        als .hfe schreiben; die Spurlänge folgt der längsten Spur.
+ * @brief Ein frisch gebautes Medium (nie aus einer .hfe geladen) laesst sich direkt
+ *        als .hfe schreiben; die Spurlaenge folgt der laengsten Spur.
  */
 TEST(HfeCodec, SaveOhneVorlage_BemisstSpurlaengeSelbst) {
     DiskMedium m(3, 1, Encoding::MFM);
@@ -207,7 +207,7 @@ TEST(HfeCodec, SaveOhneVorlage_BemisstSpurlaengeSelbst) {
 
 /**
  * @test HfeCodec/LeerdisketteBleibtUnformatiert
- * @brief Eine komplett leere Diskette überlebt den Roundtrip als **unformatiertes**
+ * @brief Eine komplett leere Diskette ueberlebt den Roundtrip als **unformatiertes**
  *        Medium — sie muss mountbar bleiben, damit das Gastsystem sie formatieren kann.
  */
 TEST(HfeCodec, LeerdisketteBleibtUnformatiert) {
@@ -224,9 +224,9 @@ TEST(HfeCodec, LeerdisketteBleibtUnformatiert) {
     EXPECT_TRUE(back.track(0, 0).empty());
     EXPECT_FALSE(back.rawCompatible());
 
-    // Und die Fabrik akzeptiert sie (früher lehnte sie markenlose Images ab).
+    // Und die Fabrik akzeptiert sie (frueher lehnte sie markenlose Images ab).
     auto img = DiskImage::open(tmp, std::nullopt, false);
-    ASSERT_NE(img, nullptr) << "Leerdiskette wurde beim Öffnen abgelehnt";
+    ASSERT_NE(img, nullptr) << "Leerdiskette wurde beim Oeffnen abgelehnt";
     EXPECT_FALSE(img->rawCompatible());
 
     std::filesystem::remove(tmp);
@@ -236,7 +236,7 @@ TEST(HfeCodec, LeerdisketteBleibtUnformatiert) {
 
 TEST(HfeCodec, DiskImageOpen_HFE_LiefertGueltigesImage) {
     auto img = DiskImage::open(kHfePath, std::nullopt, false);
-    ASSERT_NE(img, nullptr) << "DiskImage::open lieferte nullptr für " << kHfePath;
+    ASSERT_NE(img, nullptr) << "DiskImage::open lieferte nullptr fuer " << kHfePath;
 
     EXPECT_EQ(img->container(), ContainerType::Hfe);
     EXPECT_EQ(img->diskFormat(), nullptr) << ".hfe ist self-describing";
@@ -260,14 +260,14 @@ TEST(HfeCodec, FloppyDriveV2_Mount_HFE_ErfolgreicherMount) {
     auto img = DiskImage::open(kHfePath, std::nullopt, false);
     ASSERT_NE(img, nullptr);
 
-    FloppyDriveV2 drv(builtinDriveProfile("K5601"));   // 80 Zylinder × 2 Köpfe, MFM
+    FloppyDriveV2 drv(builtinDriveProfile("K5601"));   // 80 Zylinder × 2 Koepfe, MFM
     ASSERT_TRUE(drv.mount(std::move(img)))
         << "FloppyDriveV2::mount fehlgeschlagen: " << drv.lastError();
     ASSERT_TRUE(drv.isMounted());
     EXPECT_FALSE(drv.track(0).empty());
 }
 
-// ─── Test 7: Schreibschutz + ungültige Spur ──────────────────────────────────
+// ─── Test 7: Schreibschutz + ungueltige Spur ──────────────────────────────────
 
 TEST(HfeCodec, WriteProtect_VerhindertSchreiben) {
     auto img = DiskImage::open(kHfePath, std::nullopt, /*wp=*/true);
@@ -281,16 +281,16 @@ TEST(HfeCodec, ReadTrack_UngueltigerZylinder_Leer) {
     EXPECT_TRUE(m.track(99, 0).empty());
 }
 
-// ─── Tests 8/9: real gelesene Disketten (Phasensprünge / Überabtastung) ──────
+// ─── Tests 8/9: real gelesene Disketten (Phasenspruenge / Ueberabtastung) ──────
 //
 // Von echter Hardware eingelesene HFEs (Greaseweazle & Co.) verletzen zwei stille
-// Annahmen, die synthetisch erzeugte Images erfüllen:
+// Annahmen, die synthetisch erzeugte Images erfuellen:
 //   (a) Die ganze Spur liegt NICHT in einer Bytephase.  Jedes Feld wurde einzeln
 //       geschrieben; Schreib-Splices und Drehzahl-Jitter verschieben die Folgefelder
 //       um beliebige Zellzahlen (auch halbe Bytes).
 //   (b) Manche Exporte tasten eine DD-Diskette mit doppelter Rate ab (Header-bitrate
 //       500 statt 250 kbit/s) — jede Zelle belegt dann zwei Bits.
-// Beides ergab früher „Spur ohne Marken"; die folgenden Fixtures halten das fest.
+// Beides ergab frueher „Spur ohne Marken"; die folgenden Fixtures halten das fest.
 
 /// Zellstrom (HFE-Konvention: LSB-first je Byte) → Bitfolge in Leserichtung.
 static std::vector<bool> hfeCellsToBits(const std::vector<uint8_t>& cells, uint32_t n) {
@@ -329,7 +329,7 @@ static std::vector<size_t> findSyncGroups(const std::vector<bool>& b) {
     return groups;
 }
 
-/// Schreibt ein HFE v1 mit einem Zylinder × 2 Seiten aus fertigen Zellströmen.
+/// Schreibt ein HFE v1 mit einem Zylinder × 2 Seiten aus fertigen Zellstroemen.
 static void writeMiniHfe(const std::string& path,
                          const std::vector<uint8_t>& side0,
                          const std::vector<uint8_t>& side1,
@@ -369,7 +369,7 @@ static void writeMiniHfe(const std::string& path,
             static_cast<std::streamsize>(file.size()));
 }
 
-/// 4 Sektoren × 128 B als Zellstrom (Referenz für beide Tests).
+/// 4 Sektoren × 128 B als Zellstrom (Referenz fuer beide Tests).
 static std::vector<uint8_t> buildMiniCells(uint32_t& bitcells_out) {
     std::vector<LogicalSector> secs;
     for (uint8_t s = 1; s <= 4; ++s) {
@@ -385,7 +385,7 @@ static std::vector<uint8_t> buildMiniCells(uint32_t& bitcells_out) {
     return BitCodec::encode(t, target);
 }
 
-/// Prüft, dass die Spur alle 4 Sektoren mit gültigen CRCs liefert.
+/// Prueft, dass die Spur alle 4 Sektoren mit gueltigen CRCs liefert.
 static void expectFourGoodSectors(const TrackImage& t, const char* what) {
     const auto secs = TrackCodec::parseTrack(t);
     ASSERT_EQ(secs.size(), 4u) << what << ": nicht alle Sektoren gefunden";
@@ -398,7 +398,7 @@ static void expectFourGoodSectors(const TrackImage& t, const char* what) {
     }
 }
 
-// Test 8: Felder mit eigener Bitphase (halbes Byte Versatz je Feld) müssen sich
+// Test 8: Felder mit eigener Bitphase (halbes Byte Versatz je Feld) muessen sich
 // alle decodieren lassen — der Decoder muss an jeder Sync-Gruppe neu einrasten.
 TEST(BitCodecDecode, PhasenversetzteFelderWerdenAlleDecodiert) {
     uint32_t bitcells = 0;
@@ -417,9 +417,9 @@ TEST(BitCodecDecode, PhasenversetzteFelderWerdenAlleDecodiert) {
     expectFourGoodSectors(t, "phasenversetzt");
 }
 
-// Test 9: 2x überabgetastete Aufnahme (HFE-bitrate 500) — der Codec muss sie auf die
-// Nominalrate herunterrechnen und lesen können; die Bindung ist dann nur lesend, ein
-// „Speichern unter" in eine neue Datei bleibt aber möglich.
+// Test 9: 2x ueberabgetastete Aufnahme (HFE-bitrate 500) — der Codec muss sie auf die
+// Nominalrate herunterrechnen und lesen koennen; die Bindung ist dann nur lesend, ein
+// „Speichern unter" in eine neue Datei bleibt aber moeglich.
 TEST(HfeCodec, UeberabgetasteteAufnahme500kbitWirdGelesen) {
     uint32_t bitcells = 0;
     const auto cells = buildMiniCells(bitcells);
@@ -440,7 +440,7 @@ TEST(HfeCodec, UeberabgetasteteAufnahme500kbitWirdGelesen) {
     expectFourGoodSectors(m.track(0, 0), "500 kbit/s Seite 0");
     expectFourGoodSectors(m.track(0, 1), "500 kbit/s Seite 1");
 
-    // Die Bindung ist nur lesend — ein Rückschreiben in die Originalrate gibt es nicht.
+    // Die Bindung ist nur lesend — ein Rueckschreiben in die Originalrate gibt es nicht.
     auto img = DiskImage::open(path, std::nullopt, false);
     ASSERT_NE(img, nullptr);
     EXPECT_FALSE(img->bindingWritable());
@@ -450,13 +450,13 @@ TEST(HfeCodec, UeberabgetasteteAufnahme500kbitWirdGelesen) {
 
 /**
  * @test HfeCodec/UeberabtastungTrotzFalscherHeaderRate
- * @brief Ein überabgetasteter Mitschnitt wird auch dann gelesen, wenn der Header
+ * @brief Ein ueberabgetasteter Mitschnitt wird auch dann gelesen, wenn der Header
  *        eine FALSCHE Bitrate meldet.
  *
  * Reale Greaseweazle-Exporte tragen im Header gelegentlich Unsinn — beobachtet an
- * einer echten Leerdiskette: `bitrate = 311` kbit/s bei tatsächlich ~2,4-facher
- * Abtastung.  Die frühere Erkennung schloss allein aus dem Header-Wert auf den
- * Faktor und ließ alles unter 375 kbit/s ungefiltert durch → der Decoder fand
+ * einer echten Leerdiskette: `bitrate = 311` kbit/s bei tatsaechlich ~2,4-facher
+ * Abtastung.  Die fruehere Erkennung schloss allein aus dem Header-Wert auf den
+ * Faktor und liess alles unter 375 kbit/s ungefiltert durch → der Decoder fand
  * keine einzige Adressmarke.  Jetzt entscheidet der INHALT: der Faktor, unter dem
  * Marken auftauchen, gewinnt.
  */
@@ -487,14 +487,14 @@ TEST(HfeCodec, UeberabtastungTrotzFalscherHeaderRate) {
 
 /**
  * @test HfeCodec/FmSpurMitHalberRate_UeberlebtDenRundlauf
- * @brief Eine FM-Spur mit **halber Datenrate** kommt vollständig zurück.
+ * @brief Eine FM-Spur mit **halber Datenrate** kommt vollstaendig zurueck.
  *
  * Die Bootspur (c0h0) der SCP1700-Disketten des A7100 ist so aufgezeichnet: FM,
- * 16×128 B, 125 kbit/s — auf derselben Diskette, deren übrige Spuren MFM mit
- * 250 kbit/s tragen (`data/formats.yaml`, `scp1700_640`).  Zwei Dinge müssen halten:
- * **jeder** Sektor kommt zurück (auch der erste, der unmittelbar hinter dem
- * Index liegt), und die Spur behält ihren @ref TrackImage::cell_factor — sonst
- * ginge sie beim Zurückschreiben mit doppelter Rate auf die Diskette.
+ * 16×128 B, 125 kbit/s — auf derselben Diskette, deren uebrige Spuren MFM mit
+ * 250 kbit/s tragen (`data/formats.yaml`, `scp1700_640`).  Zwei Dinge muessen halten:
+ * **jeder** Sektor kommt zurueck (auch der erste, der unmittelbar hinter dem
+ * Index liegt), und die Spur behaelt ihren @ref TrackImage::cell_factor — sonst
+ * ginge sie beim Zurueckschreiben mit doppelter Rate auf die Diskette.
  */
 TEST(HfeCodec, FmSpurMitHalberRate_UeberlebtDenRundlauf) {
     // Wie die echte Diskette: Kopf 0 die FM-Bootspur, Kopf 1 (und alles Weitere)
@@ -570,20 +570,20 @@ TEST(HfeCodec, FmSpurMitHalberRate_UeberlebtDenRundlauf) {
  * @test HfeCodec/EinseitigeAufnahmeMitSeitenschlitzen
  * @brief Eine EINSEITIGE Datei nach Greaseweazle-/HxC-Sitte wird richtig gelesen.
  *
- * HFE verschränkt zwei Seiten zu je 256 B je 512-B-Block.  Greaseweazle legt auch
+ * HFE verschraenkt zwei Seiten zu je 256 B je 512-B-Block.  Greaseweazle legt auch
  * eine einseitige Aufnahme so ab (`gw read --tracks c=0:h=0`): Seite 0 in den ersten
  * 256 B, der Rest Gap.  Dieses Projekt schrieb einseitige Spuren dagegen
- * **kontinuierlich** über den ganzen Block — beide Sitten müssen gelesen werden.
+ * **kontinuierlich** ueber den ganzen Block — beide Sitten muessen gelesen werden.
  *
- * Wer eine verschränkte Datei kontinuierlich liest, zieht sich alle 256 B einen
- * Schwung Gap-Bytes mitten in den Datenstrom.  Das Tückische daran: die kurzen
- * ID-Felder überleben es meistens, ein 131-B-Datenfeld nie — die Diskette sieht
- * vollständig aus („alle Sektoren gefunden") und trägt doch **keine einzige gültige
+ * Wer eine verschraenkte Datei kontinuierlich liest, zieht sich alle 256 B einen
+ * Schwung Gap-Bytes mitten in den Datenstrom.  Das Tueckische daran: die kurzen
+ * ID-Felder ueberleben es meistens, ein 131-B-Datenfeld nie — die Diskette sieht
+ * vollstaendig aus („alle Sektoren gefunden") und traegt doch **keine einzige gueltige
  * Daten-CRC**.  Genau so verlor eine einspurige Aufnahme der SCP1700-Bootspur ihren
  * ganzen Inhalt.
  */
 TEST(HfeCodec, EinseitigeAufnahmeMitSeitenschlitzen) {
-    // 1. Eine einseitige Spur bauen und regulär speichern (kontinuierliche Sitte).
+    // 1. Eine einseitige Spur bauen und regulaer speichern (kontinuierliche Sitte).
     DiskMedium m(1, 1, Encoding::MFM);
     std::vector<LogicalSector> secs;
     for (uint8_t s = 1; s <= 8; ++s) {
@@ -598,7 +598,7 @@ TEST(HfeCodec, EinseitigeAufnahmeMitSeitenschlitzen) {
     std::string err;
     ASSERT_TRUE(HfeCodec::save(durchgehend, m, err)) << err;
 
-    // Kontinuierlich abgelegt: liest sich (wie bisher) vollständig.
+    // Kontinuierlich abgelegt: liest sich (wie bisher) vollstaendig.
     {
         const DiskMedium back = loadHfe(durchgehend);
         const auto zurueck = TrackCodec::parseTrack(back.track(0, 0));
@@ -606,7 +606,7 @@ TEST(HfeCodec, EinseitigeAufnahmeMitSeitenschlitzen) {
         for (const auto& s : zurueck) EXPECT_TRUE(s.data_crc_ok);
     }
 
-    // 2. Dieselbe Datei in die VERSCHRÄNKTE Sitte umbauen: jeder 512-B-Block traegt
+    // 2. Dieselbe Datei in die VERSCHRAENKTE Sitte umbauen: jeder 512-B-Block traegt
     //    nur noch 256 B Nutzzellen, dahinter Gap — so schreibt es Greaseweazle.
     std::vector<uint8_t> roh;
     {

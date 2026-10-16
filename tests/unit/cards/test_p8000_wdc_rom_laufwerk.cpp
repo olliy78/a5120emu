@@ -1,11 +1,11 @@
 /**
  * @file test_p8000_wdc_rom_laufwerk.cpp
  * @brief AP P24: Tabelle „Firmware-Fassung → Laufwerkstyp" des Kerns gegen die BYTES der
- *        EPROM-Abzüge.  Bis WDC 4.0 stehen Köpfe, Zylinder−1, Vorkompensationsbeginn und
+ *        EPROM-Abzuege.  Bis WDC 4.0 stehen Koepfe, Zylinder−1, Vorkompensationsbeginn und
  *        Sektoren je Spur als Konstanten im Abzug (`doc/p8000/eproms/WDC/eprom_diffs.txt`, dort
  *        „Sektoren" als Zylinder falsch beschriftet: 0x03FF = 1023 = Zylinder − 1).  Die Fundstellen
- *        gelten für 3.0 … 3.4 und getrennt für 4.0; die Endung des Abzugsnamens (`_01/_02/_04/_05`)
- *        wählt das Laufwerk.
+ *        gelten fuer 3.0 … 3.4 und getrennt fuer 4.0; die Endung des Abzugsnamens (`_01/_02/_04/_05`)
+ *        waehlt das Laufwerk.
  */
 #include "core/cards/p8000/rom_wdc.h"
 #include "core/cards/p8000/wdc.h"
@@ -36,7 +36,7 @@ constexpr Fundstellen k40 = {{0x12A, 0x14D}, 0x149, 0x11F, {0x12E, 0x147}};
 
 unsigned wort(const std::vector<uint8_t>& r, int a) { return r[size_t(a)] | (r[size_t(a) + 1] << 8); }
 
-/// Alle Parameter an den Fundstellen müssen zum Laufwerk der Endung passen.
+/// Alle Parameter an den Fundstellen muessen zum Laufwerk der Endung passen.
 void pruefe(const std::string& datei, const Fundstellen& f, int endung)
 {
     SCOPED_TRACE(datei);
@@ -69,7 +69,7 @@ TEST(P8000WdcRomLaufwerk, TabelleStimmtMitDemAbzug4_0Ueberein)
 
 TEST(P8000WdcRomLaufwerk, EingebundeneAbzuegeLiefernDieTabelle)
 {
-    // Dieselben Fundstellen im ERZEUGTEN Header, den der Emulator wirklich ausführt.
+    // Dieselben Fundstellen im ERZEUGTEN Header, den der Emulator wirklich ausfuehrt.
     const std::vector<uint8_t> a(std::begin(P8K_WDC_3_4_05), std::end(P8K_WDC_3_4_05));
     const std::vector<uint8_t> b(std::begin(P8K_WDC_4_0_05), std::end(P8K_WDC_4_0_05));
     const auto* t34 = P8000Wdc::romLaufwerk(P8000Wdc::Config::Firmware::V3_4_05);

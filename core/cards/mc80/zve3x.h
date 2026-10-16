@@ -8,22 +8,22 @@
  *
  * **Segmentregister = ZVE-PIO Kanal B** (Datenport 85H, Steuerport 87H; A = Einsernummer
  * 01H, 02H, 04H … 80H) — NICHT Kanal A (Berichtigung M0 zu Entwurf 31 §3.1).  Die Karte
- * meldet jede Ausgabe von Tor B über @ref setSegmentCallback; wer welches Bit auswertet
- * (SPE-Karten, später EPROM-Segmente), ist Sache der Maschine.  Nach /RESET steht das
- * Register auf 00H (Ausgaberegister der PIO gelöscht, Tor B im Eingabebetrieb — ob die
- * offenen Leitungen am Gerät als „alle Segmente frei“ wirken, ist offen [?]); EGOS schreibt
+ * meldet jede Ausgabe von Tor B ueber @ref setSegmentCallback; wer welches Bit auswertet
+ * (SPE-Karten, spaeter EPROM-Segmente), ist Sache der Maschine.  Nach /RESET steht das
+ * Register auf 00H (Ausgaberegister der PIO geloescht, Tor B im Eingabebetrieb — ob die
+ * offenen Leitungen am Geraet als „alle Segmente frei“ wirken, ist offen [?]); EGOS schreibt
  * erst `0FH` → 87H und dann bei jedem Objekt der RESET-Kette `OUT (85H)`.
  *
  * **PIO-Adressierung:** B/A = AB0, C/D = AB1 (84H A-Daten, 85H B-Daten, 86H A-Steuer,
- * 87H B-Steuer [BDA S.15]); der Baustein @ref Z80PIO zählt 0 = A-D, 1 = A-S, 2 = B-D,
- * 3 = B-S — die Karte übersetzt wie die K2521.
+ * 87H B-Steuer [BDA S.15]); der Baustein @ref Z80PIO zaehlt 0 = A-D, 1 = A-S, 2 = B-D,
+ * 3 = B-S — die Karte uebersetzt wie die K2521.
  *
  * **Schreibschutz FC00H–FFFFH (8CH/8DH):** EGOS schreibt nur in der RESET-Schleife
  * 256-mal nach 8CH und beschreibt danach FC00H–FFFFH ungehindert (egos.md §1.6).  Darum:
  * nach /RESET AUS, und 8CH/8DH sind vorerst reine **Schreibsenken** (Wirkung der einzelnen
  * Ausgaben unbekannt [?]).  Der Schutz selbst ist als Zustand nachgebildet
- * (@ref setSchreibschutz) — geschützte Schreibzugriffe sind wirkungslos, eine NMI ist nicht
- * belegt und wird nicht ausgelöst.
+ * (@ref setSchreibschutz) — geschuetzte Schreibzugriffe sind wirkungslos, eine NMI ist nicht
+ * belegt und wird nicht ausgeloest.
  *
  * **Interruptkette in der Karte:** IEI → CTC → PIO → IEO [? — Reihenfolge innerhalb der
  * ZVE nicht belegt; wie K2521].  EGOS programmiert beide Bausteine nie (egos.md §1, Punkt 9).
@@ -53,7 +53,7 @@ public:
 
     struct Config {
         const uint8_t* rom = nullptr;   ///< nullptr = MAME-Satz zve_1…4 (EGOS 3.0)
-        uint16_t rom_len = 0;           ///< höchstens 2000H; unbestückte Fassungen lesen FFH
+        uint16_t rom_len = 0;           ///< hoechstens 2000H; unbestueckte Fassungen lesen FFH
         uint8_t  ctc_base = 0x80;       ///< Wickel X4, Vorgabe 80H
         uint8_t  pio_base = 0x84;
         uint8_t  ramst_base = 0x8C;     ///< RAM-Steuerung 8CH/8DH
@@ -93,7 +93,7 @@ public:
     /// Segmentregister (letzte Ausgabe an ZVE-PIO Tor B; 00H nach /RESET).
     uint8_t segmentRegister() const { return segment_; }
     using SegmentCallback = std::function<void(uint8_t maske)>;
-    /// Rückruf bei jeder Ausgabe an Tor B und beim /RESET (mit 00H).
+    /// Rueckruf bei jeder Ausgabe an Tor B und beim /RESET (mit 00H).
     void setSegmentCallback(SegmentCallback cb) { segment_cb_ = std::move(cb); }
 
     bool schreibschutz() const { return schreibschutz_; }

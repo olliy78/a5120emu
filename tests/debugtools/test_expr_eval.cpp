@@ -1,4 +1,4 @@
-// Unit-Tests für den k1520dbg-Ausdrucks-Evaluator (tools/expr_eval.h).
+// Unit-Tests fuer den k1520dbg-Ausdrucks-Evaluator (tools/expr_eval.h).
 #include "tools/expr_eval.h"
 #include <gtest/gtest.h>
 #include <map>
@@ -19,7 +19,7 @@ struct Env {
 };
 } // namespace
 
-// ── Arithmetik + Präzedenz ───────────────────────────────────────────────────
+// ── Arithmetik + Praezedenz ───────────────────────────────────────────────────
 
 TEST(ExprEval, ArithmeticPrecedence){
     Env e;
@@ -50,7 +50,7 @@ TEST(ExprEval, BitwiseAndShift){
     EXPECT_EQ(e.ev("0xFF ^ 0x0F"), 0xF0);
     EXPECT_EQ(e.ev("1 << 8"), 256);
     EXPECT_EQ(e.ev("0x100 >> 4"), 0x10);
-    // Präzedenz: shift > | ; & > | ; + > <<
+    // Praezedenz: shift > | ; & > | ; + > <<
     EXPECT_EQ(e.ev("1 | 2 & 3"), 3);       // & vor | : 1 | (2&3)=1|2=3
     EXPECT_EQ(e.ev("1 + 1 << 4"), 32);     // (1+1)<<4
 }
@@ -114,7 +114,7 @@ TEST(ExprEval, MemoryAccess){
     EXPECT_EQ(e.ev("[0x6000]w + 1"), 0x1235);
 }
 
-// ── Fehlerfälle: ok=false ────────────────────────────────────────────────────
+// ── Fehlerfaelle: ok=false ────────────────────────────────────────────────────
 
 TEST(ExprEval, ErrorsSetOkFalse){
     Env e; bool ok;
@@ -124,7 +124,7 @@ TEST(ExprEval, ErrorsSetOkFalse){
     e.evOk("5/0", ok);       EXPECT_FALSE(ok);     // Division durch 0
     e.evOk("@@@", ok);       EXPECT_FALSE(ok);     // weder Zahl noch Symbol
     e.evOk("", ok);          EXPECT_FALSE(ok);     // leer
-    // Gegenprobe: gültiger Ausdruck → ok
+    // Gegenprobe: gueltiger Ausdruck → ok
     e.evOk("1+2*3", ok);     EXPECT_TRUE(ok);
 }
 
@@ -135,7 +135,7 @@ TEST(ExprEval, ProzentHexUndSegmentLiteral){
     EXPECT_EQ(e.ev("%1A"), 0x1A);                  // % an Operandenstelle = hex
     EXPECT_EQ(e.ev("17 % %5"), 2);                 // dazwischen weiter der Rest
     EXPECT_EQ(e.ev("<<3>>%1234"), 0x31234);        // seg·2^16 + off
-    EXPECT_EQ(e.ev("1 << 4"), 16);                 // Schieben unverändert
+    EXPECT_EQ(e.ev("1 << 4"), 16);                 // Schieben unveraendert
     bool ok; e.evOk("<<200>>%0", ok); EXPECT_FALSE(ok);   // Segment > 127
 }
 

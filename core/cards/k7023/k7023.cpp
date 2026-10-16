@@ -12,7 +12,7 @@ K7023::K7023(K1520Bus& bus) : K7023(bus, Config{}) {}
 
 K7023::K7023(K1520Bus& bus, const Config& cfg) : bus_(bus), cfg_(cfg)
 {
-    cfg_.vram_base &= 0xFC00;   // nur A10-A15 sind wählbar
+    cfg_.vram_base &= 0xFC00;   // nur A10-A15 sind waehlbar
     if (!cfg_.chargen_lines0_7)  cfg_.chargen_lines0_7  = CHARGEN_K7023_ZG1;
     if (!cfg_.chargen_lines8_15) cfg_.chargen_lines8_15 = CHARGEN_K7023_ZG2;
     // Einschaltzustand 0xFF wie bei der K7024: das Lade-ROM liest seinen Stapel bei FFFFH.
@@ -36,7 +36,7 @@ void K7023::memWrite(uint16_t addr, uint8_t data)
     if (off >= kVramSize) return;
     bool marke_alt = istMarke(vram_[off]);
     vram_[off] = data;
-    // Eine Marke (alt oder neu) ändert den Zustand aller folgenden Zellen.
+    // Eine Marke (alt oder neu) aendert den Zustand aller folgenden Zellen.
     if (cfg_.variante_01 && (marke_alt || istMarke(data))) renderAll();
     else renderCell(off);
     dirty_ = true;

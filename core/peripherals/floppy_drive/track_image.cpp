@@ -15,8 +15,8 @@ size_t TrackImage::nextMark(size_t pos, MarkType type) const {
     const size_t n = marks.size();
     if (n == 0) return SIZE_MAX;
 
-    // Zyklische Vorwärtssuche ab pos (inklusive pos selbst).
-    // Ein vollständiger Umlauf wird abgebrochen, sobald eine passende Marke
+    // Zyklische Vorwaertssuche ab pos (inklusive pos selbst).
+    // Ein vollstaendiger Umlauf wird abgebrochen, sobald eine passende Marke
     // gefunden oder die Startposition erneut erreicht wird.
     for (size_t i = 0; i < n; ++i) {
         const size_t idx = (pos + i) % n;

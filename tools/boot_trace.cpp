@@ -22,28 +22,28 @@
  *                    Quittungen, Moduswechsel, TREN/BUSRQ/BUSAK, RESET16, NVI) wird
  *                    eine Zeile "EM …" (Vorgabe em256)
  *     --raf <typ>    RAM-Floppy stecken (raf128|raf512|raf2m|none), vor dem ersten Lauf;
- *                    gilt für alle Maschinen (A5120, --em, --machine k8915|prg710[-1])
+ *                    gilt fuer alle Maschinen (A5120, --em, --machine k8915|prg710[-1])
  *     --ptape        Lochstreifen-Karte K6022 (SIF1000, E0H–E7H) stecken, alle Maschinen
  *     --tape <k52>   Kassettenkarte K5020 stecken (A5120 30H, K8915 D0H, PRG 30H) und die
- *                    Kassettendatei <k52> an Gerät 1 binden (fehlt sie: leere Kassette);
- *                    --tape2 <k52> = Gerät 2; --tape-card = nur die Karte
+ *                    Kassettendatei <k52> an Geraet 1 binden (fehlt sie: leere Kassette);
+ *                    --tape2 <k52> = Geraet 2; --tape-card = nur die Karte
  *     --cpu u8000    jeden Befehl des U8001 als Zeile "U8 …" (Deckel -W); impliziert --em
- *     --ausfuehrung neu|alt|kmbg  A5120-Ausführung (Entwurf 30): alt = K7023 64×16 ab FC00H,
+ *     --ausfuehrung neu|alt|kmbg  A5120-Ausfuehrung (Entwurf 30): alt = K7023 64×16 ab FC00H,
  *                    K7636, 4× K3525, 3× K5600.10; kmbg = alt + K5020 fest.  Bildschirm-
  *                    ausgabe/--until screen lesen dann die K7023 (64×16)
- *     --laufwerke P0,P1,..  Laufwerksprofile ab A: ersetzen (z. B. K5601,K5601 für ein
- *                    umgerüstetes altes Gerät); gilt auch ohne --ausfuehrung
+ *     --laufwerke P0,P1,..  Laufwerksprofile ab A: ersetzen (z. B. K5601,K5601 fuer ein
+ *                    umgeruestetes altes Geraet); gilt auch ohne --ausfuehrung
  *     --laderom v06|v09_1|v09_2  gestecktes Lade-ROM der K2526 (Vorgabe v09_2 = zre.rom;
  *                    v06 startet BCU 880 „SYL auf Spur 1“, doc/a5120_alt/laderom.md, AP A7)
- *     --tastatur k7636|k7637  Tastatur abweichend von der Ausführung (BCU 880 V1.2:
+ *     --tastatur k7636|k7637  Tastatur abweichend von der Ausfuehrung (BCU 880 V1.2:
  *                    neu + k7636 = K7024 80×24 + K7636 am U-Bus)
  *     --format NAME  Katalogformat, mit dem die Diskette zuerst gemountet wird (bei .img
- *                    maßgeblich, z. B. k5601_ss40_26x128; sonst cpa780, dann cpa800)
+ *                    massgeblich, z. B. k5601_ss40_26x128; sonst cpa780, dann cpa800)
  *
- * --machine k8915 (| k8915-g2, Generation 2) fährt statt des A5120 einen K8915 (eigener Zweig,
+ * --machine k8915 (| k8915-g2, Generation 2) faehrt statt des A5120 einen K8915 (eigener Zweig,
  * tools/boot_trace_k8915.cpp): Ereignisprotokoll K5122/61H/A8H/Interrupts,
  * PC-Histogramm mit Listing-Namen, Abbruch bei `A>` oder Stillstand.
- * --machine prg710|prg710-1 fährt einen PRG 710 / 710-1 (tools/boot_trace_prg710.cpp,
+ * --machine prg710|prg710-1 faehrt einen PRG 710 / 710-1 (tools/boot_trace_prg710.cpp,
  * Grundform AP-P1d): Ereignisprotokoll K5122/CTC/E8H–EBH/Tastatur, Abbruch an der
  * Tastaturabfrage des ROMs oder bei Stillstand.
  *
@@ -268,7 +268,7 @@ int main(int argc, char** argv) {
     int   post_cycles       = 0;         // -p: cycles to keep tracing after boot reached
     int   dump_start        = -1;        // -d start:end: dump live RAM to file at end
     int   dump_end          = -1;
-    // Vorgabeziel im TEMPORÄRVERZEICHNIS des Systems — "/tmp" gibt es unter
+    // Vorgabeziel im TEMPORAERVERZEICHNIS des Systems — "/tmp" gibt es unter
     // Windows nicht (dort landete es als C:\tmp\… und der fopen scheiterte).
     const std::string dump_default =
         (std::filesystem::temp_directory_path() / "ram_dump.bin").string();
@@ -309,7 +309,7 @@ int main(int argc, char** argv) {
     const char* ausf_opt    = nullptr;        // --ausfuehrung neu|alt|kmbg (AP A6)
     const char* lw_opt      = nullptr;        // --laufwerke P0,P1,…  (AP A6)
     const char* laderom_opt = nullptr;        // --laderom v06|v09_1|v09_2 (AP A7)
-    const char* format_opt  = nullptr;        // --format NAME: Katalogformat für .img (AP A7)
+    const char* format_opt  = nullptr;        // --format NAME: Katalogformat fuer .img (AP A7)
     const char* tastatur_opt = nullptr;       // --tastatur k7636|k7637 (AP A7)
     // Disk-mount mode (§6): COW default → the disk is copied to a temp file and that copy
     // is mounted, so a committed fixture is never modified (no more `mktemp; cp` ritual).
@@ -507,7 +507,7 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "WARN: %s\n", mr.error.c_str());
             else
                 fprintf(stderr, "Quelle:     %s — %d Zeile(n) assembliert (%04X..%04X), "
-                                "%d Anker/%d Nachführung(en), %d unbekannt%s\n",
+                                "%d Anker/%d Nachfuehrung(en), %d unbekannt%s\n",
                         path.c_str(), mr.code, mr.first, mr.last, mr.anchors, mr.resyncs,
                         mr.unknown, "");
             continue;
@@ -518,7 +518,7 @@ int main(int argc, char** argv) {
         else if (off) fprintf(stderr, "Listing:    %s — %d line(s), offset %+ld (0x%04X)\n", path.c_str(), n, off, (uint16_t)off);
         else fprintf(stderr, "Listing:    %s — %d line(s)\n", path.c_str(), n);
     }
-    // Fertiger Annotations-Anhang "  ; <quelle>" für eine (Laufzeit-)Adresse, oder
+    // Fertiger Annotations-Anhang "  ; <quelle>" fuer eine (Laufzeit-)Adresse, oder
     // "" wenn keine .prn-Quelle vorliegt. Direkt als printf-"%s" am Zeilenende.
     auto prnTail = [&](uint16_t a) -> std::string {
         const std::string* s = prn.find(a); return s ? ("  ; " + *s) : std::string();
@@ -558,7 +558,7 @@ int main(int argc, char** argv) {
         }
         if (machine_p8000) {
             // P8000 (AP P7c): Hardwaretest ≈ 64 Mio. Takte (16 s), danach „Press RETURN"; mit
-            // `--keys "<CR><CR>"` weiter über `>` in den BOOT (UDOS bis `%` ≈ 100 Mio. Takte).
+            // `--keys "<CR><CR>"` weiter ueber `>` in den BOOT (UDOS bis `%` ≈ 100 Mio. Takte).
             if (!limit_set) k8o.limit = 400'000'000;
             if (!stall_set) k8o.stall = 20'000'000;
         }
@@ -623,7 +623,7 @@ int main(int argc, char** argv) {
     catch (const std::exception& e) { fprintf(stderr, "Maschine: %s\n", e.what()); return 2; }
     A5120Machine& machine = *machine_p;
     // Textbild: am `Neu` der Bildspeicher F800H in CPU-Sicht (80×24, wie bisher), am alten
-    // Gerät die K7023 (64×16 ab FC00H, Bit 7 = Kursor ausgeblendet).
+    // Geraet die K7023 (64×16 ab FC00H, Bit 7 = Kursor ausgeblendet).
     const int scr_cols = machine.k7023() ? 64 : 80;
     const int scr_rows = machine.k7023() ? 16 : 24;
     auto scrByte = [&](int r, int c) -> uint8_t {
@@ -801,8 +801,8 @@ int main(int argc, char** argv) {
             if (e == eventbp::Event::Interrupt || e == eventbp::Event::NMI) {
                 uint16_t ret = (uint16_t)(machine.memReadDebug(z.SP) |
                                           (machine.memReadDebug((uint16_t)(z.SP + 1)) << 8));
-                // §5: Vektor + Quellgerät mit protokollieren. `SPURIOUS` heißt: kein
-                // Gerät hat die Quittung beantwortet, der 0xFF ist der offene Bus —
+                // §5: Vektor + Quellgeraet mit protokollieren. `SPURIOUS` heisst: kein
+                // Geraet hat die Quittung beantwortet, der 0xFF ist der offene Bus —
                 // NICHT ein programmierter Vektor 0xFF (das war der UDOS-Trugschluss).
                 const auto& ia = machine.lastIntAck();
                 const char* dev = (e == eventbp::Event::NMI) ? "-"
@@ -946,7 +946,7 @@ int main(int argc, char** argv) {
             if (isRead) io_rd[addr & 0xFF]++;
             else        io_wr[addr & 0xFF]++;
             // §8: ab Takt 0 aufzeichnen (nicht erst ab `boot_reached`) — sonst fehlen
-            // genau die Boot-ROM-Zugriffe, und die Zählung weicht vom Port-Histogramm ab.
+            // genau die Boot-ROM-Zugriffe, und die Zaehlung weicht vom Port-Histogramm ab.
             // Und: WER geschrieben hat, steht mit dabei (Bus-Master), statt nur beide PCs.
             if (!isRead) {
                 bool z2 = machine.busMasterIsZVE2();
@@ -994,7 +994,7 @@ int main(int argc, char** argv) {
                if (!quiet) fprintf(stderr, "COW: '%s' → %s (writes discarded; --rw to persist)\n",
                                    disk_path, mount_path.c_str()); }
     }
-    // --format NAME (AP A7): ein .img anderer Geometrie (z. B. k5601_ss40_26x128 für BCU 880).
+    // --format NAME (AP A7): ein .img anderer Geometrie (z. B. k5601_ss40_26x128 fuer BCU 880).
     bool mounted = machine.mountDisk(mount_drive, mount_path, format_opt ? format_opt : "cpa780", wp);
     if (!mounted) {
         mounted = machine.mountDisk(mount_drive, mount_path, "cpa800", wp);

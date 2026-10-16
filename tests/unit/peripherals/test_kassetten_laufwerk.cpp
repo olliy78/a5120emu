@@ -1,7 +1,7 @@
 /**
  * @file test_kassetten_laufwerk.cpp
- * @brief Kassettenlaufwerk: Bereitschaft, Bandlauf mit Rampen, AEB/BMS, Lesen vor-/rückwärts,
- *        Schreiben mit Echo, Umspulen, Schreibschutz, Datei mit verzögertem Zurückschreiben
+ * @brief Kassettenlaufwerk: Bereitschaft, Bandlauf mit Rampen, AEB/BMS, Lesen vor-/rueckwaerts,
+ *        Schreiben mit Echo, Umspulen, Schreibschutz, Datei mit verzoegertem Zurueckschreiben
  *        (doc/kassette/k5200.md, doc/kassette/treiber.md, AP K3).
  */
 
@@ -38,7 +38,7 @@ std::shared_ptr<KassettenMedium> dreiBloecke() {
     return m;
 }
 
-/// Laufwerk + Kassette, nach dem Einlegen reserviert und angewählt.
+/// Laufwerk + Kassette, nach dem Einlegen reserviert und angewaehlt.
 struct Lauf {
     KassettenLaufwerk d;
     std::shared_ptr<KassettenMedium> m;
@@ -61,7 +61,7 @@ struct Lauf {
         }
         return aus;
     }
-    /// Laufen, bis die Kopfstelle @p um_ziel (µm, vorwärts) erreicht ist.
+    /// Laufen, bis die Kopfstelle @p um_ziel (µm, vorwaerts) erreicht ist.
     std::vector<uint8_t> laufeBis(int64_t um_ziel, double hoechstens = 20.0) {
         std::vector<uint8_t> o;
         for (double t = 0; t < hoechstens && d.positionMm() * 1000.0 < static_cast<double>(um_ziel); t += 0.0005) {
@@ -90,7 +90,7 @@ uint8_t bitrev(uint8_t b) {
     return r;
 }
 
-/// Einen Block ab der aktuellen Kopfstelle schreiben (Laufwerk bereit, AUF an, Band läuft).  Liefert das Echo.
+/// Einen Block ab der aktuellen Kopfstelle schreiben (Laufwerk bereit, AUF an, Band laeuft).  Liefert das Echo.
 std::vector<uint8_t> schreibe(Lauf& l, const std::vector<uint8_t>& bytes) {
     std::vector<uint8_t> echo;
     for (uint8_t b : bytes) {
@@ -173,7 +173,7 @@ TEST(KassettenLaufwerk, VorUndRueckZugleichMeldetFehlerBisRESFaellt) {
     l.d.vor(false);
     l.d.rueck(false);
     l.d.advance(1.0);
-    EXPECT_TRUE(l.d.nib()) << "bleibt bis RES zurückgenommen wird";
+    EXPECT_TRUE(l.d.nib()) << "bleibt bis RES zurueckgenommen wird";
     l.d.reservieren(false);
     EXPECT_FALSE(l.d.fehler());
     l.bereitMachen();
@@ -259,7 +259,7 @@ TEST(KassettenLaufwerk, AebWechseltAnVorspannUndBotMarke) {
     l.bereitMachen();
     EXPECT_TRUE(l.d.aebAktiv()) << "Anfangsvorspann";
     l.d.vor(true);
-    // Lichtschranke liegt 14 mm vor der Kopfmitte: AEB fällt, wenn Kopf + 14 mm den Vorspann verlässt.
+    // Lichtschranke liegt 14 mm vor der Kopfmitte: AEB faellt, wenn Kopf + 14 mm den Vorspann verlaesst.
     auto warteAufAeb = [&](bool soll) {
         for (int i = 0; i < 20000 && l.d.aebAktiv() != soll; ++i) l.d.advance(0.0005);
         ASSERT_EQ(l.d.aebAktiv(), soll);
@@ -325,7 +325,7 @@ TEST(KassettenLaufwerk, BytesKommenImBittaktDerBandlaenge) {
     l.d.vor(true);
     l.laufeBis(l.m->blockStart(A, 0));
     l.laufe(0.0001);  // erstes Byte noch unterwegs
-    // Ein Byte dauert 666,7 µs; nach 10 ms müssen etwa 15 da sein, nie mehr als 16.
+    // Ein Byte dauert 666,7 µs; nach 10 ms muessen etwa 15 da sein, nie mehr als 16.
     std::vector<uint8_t> o;
     l.laufe(0.010, &o);
     EXPECT_GE(o.size(), 13u);
@@ -338,7 +338,7 @@ TEST(KassettenLaufwerk, EinBlockWirdNurGelesenWennDerKopfSeinenAnfangUeberfaehrt
     l.bereitMachen();
     l.d.vor(true);
     const auto gelesen = l.laufeBis(l.m->blockEnde(A, 2) + 5'000);
-    EXPECT_EQ(gelesen, verkettet(*l.m, 1, 3)) << "Block 0 wird übergangen";
+    EXPECT_EQ(gelesen, verkettet(*l.m, 1, 3)) << "Block 0 wird uebergangen";
 }
 
 TEST(KassettenLaufwerk, AnhaltenMitteImBlockLiefertNurDieBisdahinKommendenBytes) {
@@ -417,7 +417,7 @@ TEST(KassettenLaufwerk, OhneAnwahlOderMitAufzeichnenKommenKeineLesedaten) {
     l.d.positionSetzen(l.m->blockStart(A, 0) - 30'000);
     l.d.reservieren(true);
     l.d.advance(0.4);
-    l.d.vor(true);  // nicht angewählt: Band steht
+    l.d.vor(true);  // nicht angewaehlt: Band steht
     EXPECT_TRUE(l.laufe(0.5).empty());
     l.d.anwaehlen(true);
     l.d.advance(0.01);
@@ -433,9 +433,9 @@ TEST(KassettenLaufwerk, UmspulenLaeuftSelbsttaetigBisZumVorspannUndBlendetAebAus
     l.bereitMachen();
     l.d.umspulen();
     EXPECT_TRUE(l.d.umspulenAktiv());
-    EXPECT_TRUE(l.d.nib()) << "während des Umspulens nicht bereit";
+    EXPECT_TRUE(l.d.nib()) << "waehrend des Umspulens nicht bereit";
     EXPECT_FALSE(l.d.aebAktiv()) << "AEB ist ausgeblendet";
-    l.d.reservieren(false);  // RES darf danach fallen: das Gerät spult zu Ende
+    l.d.reservieren(false);  // RES darf danach fallen: das Geraet spult zu Ende
     l.d.anwaehlen(false);
     double t = 0;
     while (l.d.umspulenAktiv() && t < 30.0) {
@@ -490,7 +490,7 @@ TEST(KassettenLaufwerk, SchreibenLegtBlockAnDerKopfstelleAbUndLiefertEcho) {
 
     const int64_t start = static_cast<int64_t>(l.d.positionMm() * 1000.0);
     ASSERT_TRUE(l.d.schreibeByte(bytes[0]));
-    EXPECT_EQ(l.d.bytesBereit(), 0u) << "das Echo kommt erst am Lesespalt, 3,81 mm (≈ 10 ms) später";
+    EXPECT_EQ(l.d.bytesBereit(), 0u) << "das Echo kommt erst am Lesespalt, 3,81 mm (≈ 10 ms) spaeter";
     l.d.advance(l.d.profil().byteZeitS());
     for (size_t i = 1; i < bytes.size(); ++i) {
         ASSERT_TRUE(l.d.schreibeByte(bytes[i]));
@@ -508,7 +508,7 @@ TEST(KassettenLaufwerk, SchreibenLegtBlockAnDerKopfstelleAbUndLiefertEcho) {
     EXPECT_EQ(m->block(A, 0).bytes, bytes);
     EXPECT_NEAR(static_cast<double>(m->blockStart(A, 0)), static_cast<double>(start), 2.0);
     EXPECT_TRUE(crcStimmt(m->block(A, 0).bytes));
-    EXPECT_EQ(echo, bytes) << "Lese-nach-Schreiben: alles kommt zurück, auch Prä- und Postambel";
+    EXPECT_EQ(echo, bytes) << "Lese-nach-Schreiben: alles kommt zurueck, auch Prae- und Postambel";
 }
 
 TEST(KassettenLaufwerk, EchoFehltBeiAusgeschalteterWiedergabe) {
@@ -538,7 +538,7 @@ TEST(KassettenLaufwerk, ZweiBloeckeHintereinanderMitLuecke) {
     l.d.advance(0.05);
     const auto b1 = blockBauen(daten(30, 1)), b2 = blockBauen(daten(30, 2));
     schreibe(l, b1);
-    l.laufe(0.04);  // Lücke ≈ 15 mm
+    l.laufe(0.04);  // Luecke ≈ 15 mm
     schreibe(l, b2);
     l.halt();
     l.d.aufzeichnen(false);
@@ -605,7 +605,7 @@ TEST(KassettenLaufwerk, SchreibenNurBeiAufzeichnenUndArbeitsgeschwindigkeit) {
     l.d.advance(0.1);
     l.d.rueck(true);
     l.d.advance(0.3);
-    EXPECT_FALSE(l.d.schreibeByte(0xAA)) << "rückwärts wird nicht geschrieben";
+    EXPECT_FALSE(l.d.schreibeByte(0xAA)) << "rueckwaerts wird nicht geschrieben";
 }
 
 TEST(KassettenLaufwerk, SchreibschutzVerhindertSchreibenUndLoeschen) {
@@ -733,7 +733,7 @@ TEST(KassettenLaufwerkDatei, NeueDateiWirdAngelegtUndSpaeterZurueckgeschrieben) 
     d.advance(0.0);
     ASSERT_EQ(d.medium()->anzahlBloecke(A), 1u);
 
-    // Der Block wurde schon beim Schreiben abgelegt; fällig wird die Datei erst nach ≥ 0,5 s Pause.
+    // Der Block wurde schon beim Schreiben abgelegt; faellig wird die Datei erst nach ≥ 0,5 s Pause.
     double zeit = 0;
     bool geschrieben = false;
     while (zeit < 2.0 && !(geschrieben = d.autoFlush())) {
@@ -741,7 +741,7 @@ TEST(KassettenLaufwerkDatei, NeueDateiWirdAngelegtUndSpaeterZurueckgeschrieben) 
         zeit += 0.01;
     }
     EXPECT_TRUE(geschrieben);
-    EXPECT_LE(zeit, 0.61) << "spätestens 0,5 s nach der letzten Änderung";
+    EXPECT_LE(zeit, 0.61) << "spaetestens 0,5 s nach der letzten Aenderung";
     EXPECT_FALSE(d.autoFlush()) << "und nur einmal";
     EXPECT_EQ(dateiInhalt(t.pfad), k52::kodieren(*d.medium())) << "Datei ist bitgleich zum Medium";
 }
@@ -756,7 +756,7 @@ TEST(KassettenLaufwerkDatei, WeitereAenderungSchiebtDasZurueckschreibenHinaus) {
     d.medium()->haengeAn(A, 40'000, blockBauen(daten(4)));
     d.advance(0.4);
     d.advance(0.4);
-    EXPECT_FALSE(d.autoFlush()) << "die zweite Änderung beginnt die Pause von vorn";
+    EXPECT_FALSE(d.autoFlush()) << "die zweite Aenderung beginnt die Pause von vorn";
     d.advance(0.2);
     EXPECT_TRUE(d.autoFlush());
 }
@@ -819,7 +819,7 @@ TEST(KassettenLaufwerkDatei, SchreibenInUnbeschreibbarenOrtMeldetDenFehlerUndHae
     std::filesystem::create_directory(t.pfad);
     EXPECT_FALSE(d.speichern(fehler));
     EXPECT_FALSE(fehler.empty());
-    EXPECT_FALSE(d.kassetteAuswerfen()) << "Änderungen nicht gesichert: nicht auswerfen";
+    EXPECT_FALSE(d.kassetteAuswerfen()) << "Aenderungen nicht gesichert: nicht auswerfen";
     EXPECT_TRUE(d.kassetteGeladen());
     EXPECT_TRUE(d.kassetteAuswerfen(true)) << "erzwungen geht es";
     std::filesystem::remove_all(t.pfad);

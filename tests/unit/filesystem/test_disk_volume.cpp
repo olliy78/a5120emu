@@ -1,9 +1,9 @@
 /**
  * @file test_disk_volume.cpp
- * @brief GoogleTests für @ref DiskVolume — die Diskette als Ganzes.
+ * @brief GoogleTests fuer @ref DiskVolume — die Diskette als Ganzes.
  *
- * Geprüft werden die vier Zusagen aus doc/design/13_k1520disktool.md §1:
- * beidseitiges UDOS ist EIN Datenträger mit `Side0/`+`Side1/`, die Ansicht ist
+ * Geprueft werden die vier Zusagen aus doc/design/13_k1520disktool.md §1:
+ * beidseitiges UDOS ist EIN Datentraeger mit `Side0/`+`Side1/`, die Ansicht ist
  * immer frisch, „passt nicht" schreibt gar nicht erst, und ein Abbild ohne
  * Katalogeintrag wird mit Diagnose abgelehnt.
  *
@@ -105,7 +105,7 @@ void schreibe(const fs::path& p, const std::string& inhalt) {
 }  // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Erkennung beim Öffnen
+// Erkennung beim Oeffnen
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(DiskVolume, ErkenntCpaBootdisketteVonSelbst) {
@@ -150,9 +150,9 @@ TEST(DiskVolume, ErkenntUdosUndOeffnetBeideSeitenAlsEinenDatentraeger) {
 TEST(DiskVolume, LiestEineDisketteMitFremderSyncSitte) {
     // Diese Diskette wurde an einem ANDEREN K1520-Rechner (K5601) beschrieben.  Sein
     // Controller schreibt die Sync-Gruppe vor dem Datenfeld mit nur ein bis zwei
-    // echten Sync-Marken (die übrigen 0xA1 regulär kodiert) und rechnet die ID-CRC
-    // OHNE die A1-Präambel.  Bis der Decoder die Gruppe wie ein echter Datenseparator
-    // liest (erstes Byte, das kein 0xA1 ist, IST die Marke), fand er für JEDEN
+    // echten Sync-Marken (die uebrigen 0xA1 regulaer kodiert) und rechnet die ID-CRC
+    // OHNE die A1-Praeambel.  Bis der Decoder die Gruppe wie ein echter Datenseparator
+    // liest (erstes Byte, das kein 0xA1 ist, IST die Marke), fand er fuer JEDEN
     // beschriebenen Sektor kein Datenfeld: die Diskette galt als unerkannt, weil die
     // Belegungskarte auf Spur 23 „kuerzer als 128 B" war.
     std::string err;
@@ -170,7 +170,7 @@ TEST(DiskVolume, LiestEineDisketteMitFremderSyncSitte) {
     EXPECT_EQ(s1, 12);
 
     // Die abweichende ID-CRC-Sitte ist ein DIALEKT, kein Schaden: sie wird wie die
-    // Standard-Sitte akzeptiert (TrackCodec::mfmFieldCrcOk), sonst wären alle 4004
+    // Standard-Sitte akzeptiert (TrackCodec::mfmFieldCrcOk), sonst waeren alle 4004
     // Sektoren im Diskeditor rot, obwohl an ihnen nichts fehlt.
     EXPECT_EQ(dv->detection().remarks.find("CRC"), std::string::npos)
         << "der CRC-Dialekt wird als Schaden gemeldet: " << dv->detection().remarks;
@@ -324,12 +324,12 @@ TEST(DiskVolume, JedesKatalogformatLaesstSichAnlegenUndWiederOeffnen) {
 /**
  * @test DiskVolume/JedesKatalogformatHatNormspurenMitEinerUmdrehung (AP-F1)
  *
- * Eine vom DiskTool/Emulator angelegte `.hfe` muss so aussehen wie eine am Gerät
- * formatierte Diskette: je Spur Lücke 2 = 22 × 4E + 12 × 00 (FM 11 + 6), und die Spur ist
+ * Eine vom DiskTool/Emulator angelegte `.hfe` muss so aussehen wie eine am Geraet
+ * formatierte Diskette: je Spur Luecke 2 = 22 × 4E + 12 × 00 (FM 11 + 6), und die Spur ist
  * in der Datei genau eine Umdrehung lang (5,25″: 100 000 Zellen, aufgerundet auf 256 B
  * je Seite; 8″ 360 U/min: FM 83 334).  Bis 2026-09-29 war eine cpa780-Spur 94 208 Zellen
  * lang — `gw write` streckt das auf die Umdrehung, schrieb also mit −6 % Datenrate — und
- * Lücke 2 = 11: die Diskette lief im Emulator, am echten A5120 nicht.
+ * Luecke 2 = 11: die Diskette lief im Emulator, am echten A5120 nicht.
  */
 TEST(DiskVolume, JedesKatalogformatHatNormspurenMitEinerUmdrehung) {
     const std::string pfad = k1520test::tempPath("k1520_dv_norm.hfe");
@@ -354,13 +354,13 @@ TEST(DiskVolume, JedesKatalogformatHatNormspurenMitEinerUmdrehung) {
                 const bool dd8 = !fm && TrackCodec::nominalTrackBytes(sek, t.encoding) > 6250;
                 const size_t rev = dd8 ? 166667 : !acht_zoll ? 100000 : (fm ? 83334 : 166667);
                 const size_t zellen = t.bitcells * (t.cell_factor ? t.cell_factor : 1);
-                EXPECT_GE(zellen, rev) << "Spur " << int(c) << "/" << int(h) << " kürzer als eine Umdrehung";
-                EXPECT_LE(zellen, rev + 2048) << "Spur " << int(c) << "/" << int(h) << " länger als eine Umdrehung";
+                EXPECT_GE(zellen, rev) << "Spur " << int(c) << "/" << int(h) << " kuerzer als eine Umdrehung";
+                EXPECT_LE(zellen, rev + 2048) << "Spur " << int(c) << "/" << int(h) << " laenger als eine Umdrehung";
                 const size_t soll = fm ? 11 + 6 : 22 + 12 + 3;
                 for (const auto& s : sek) {
                     ASSERT_NE(s.data_pos, SIZE_MAX);
                     EXPECT_EQ(s.data_pos - (s.id_pos + 7), soll)
-                        << "Lücke 2 auf Spur " << int(c) << "/" << int(h) << " Sektor " << int(s.id);
+                        << "Luecke 2 auf Spur " << int(c) << "/" << int(h) << " Sektor " << int(s.id);
                 }
             }
         ++geprueft;
@@ -464,7 +464,7 @@ TEST(DiskVolume, LoseDateienNebenDenSideOrdnernSindEinFehler) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Transaktion und Platzprüfung
+// Transaktion und Platzpruefung
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(DiskVolume, StapelPasstNichtUndSchreibtDeshalbGarNichts) {
@@ -643,23 +643,23 @@ TEST(DiskVolume, CpmBeiblattEntstehtNurWennEsEtwasZuSagenGibt) {
     EXPECT_FALSE(fs::exists(ordner / "cpm-dateiangaben.txt"));
 }
 
-/// @test Der Rundlauf `extractAll` → `insertAll` erhält den UDOS-Kopfsektor —
+/// @test Der Rundlauf `extractAll` → `insertAll` erhaelt den UDOS-Kopfsektor —
 ///       **auch die Felder, die 0 sind.**
 ///
 /// Bis 2026-08-21 verlor er zwei davon, und zwar an derselben Ursache: der
 /// Schreibpfad las die 0 als „nicht angegeben" und setzte einen Ersatzwert.
 ///
-///   * „Bytes im letzten Satz" (Offset 22): aus 0 wurde die volle Satzlänge.
+///   * „Bytes im letzten Satz" (Offset 22): aus 0 wurde die volle Satzlaenge.
 ///     Gleichbedeutend, aber nicht dasselbe Byte.
 ///   * LOW/HIGH ADDRESS und STACK SIZE (Offset 122/124/126): waren alle drei 0,
 ///     lief der Schreibblock gar nicht — und der Kopfsektor behielt seine
 ///     0xFF-Vorbelegung.  **Aus 0000 wurde FFFF**, und das ist bei einer
-///     PROGRAMMdatei kein Schönheitsfehler: UDOS weist sie beim Starten mit
+///     PROGRAMMdatei kein Schoenheitsfehler: UDOS weist sie beim Starten mit
 ///     `MEMORY PROTECT VIOLATION` ab (doc/udos_diskettenformat.md §14), und unsere
-///     eigene Prüfung meldet sie als `udos.kopf.speicher`.
+///     eigene Pruefung meldet sie als `udos.kopf.speicher`.
 ///
 /// Aufgefallen ist es nie, weil der vorhandene Rundlauftest den **Dateiinhalt**
-/// vergleicht.  Dieser hier vergleicht die Kopfsektorangaben, und zwar über ALLE
+/// vergleicht.  Dieser hier vergleicht die Kopfsektorangaben, und zwar ueber ALLE
 /// Dateien der Referenzdiskette — auf ihr haben 11 Dateien alle drei Speicherwerte
 /// auf 0 und eine „letzter Satz" = 0.
 TEST(DiskVolume, UdosRundlaufErhaeltAuchDieNullenImKopfsektor) {
@@ -698,7 +698,7 @@ TEST(DiskVolume, UdosRundlaufErhaeltAuchDieNullenImKopfsektor) {
     ASSERT_TRUE(fs::exists(ordner / "udos-dateiangaben.txt"))
         << "ohne Beiblatt ist der Rundlauf von vornherein verloren";
 
-    // Alles löschen und aus dem Ordner zurückspielen.
+    // Alles loeschen und aus dem Ordner zurueckspielen.
     for (const FileEntry& e : dv->list()) {
         if (e.type == "D") continue;
         ASSERT_TRUE(dv->erase(FileRef{e.volume, e.name})) << dv->lastError();
@@ -730,7 +730,7 @@ TEST(DiskVolume, UdosRundlaufErhaeltAuchDieNullenImKopfsektor) {
         }
     }
     EXPECT_EQ(vorher.size(), static_cast<size_t>(geprueft))
-        << "es sind nicht alle Dateien zurückgekommen";
+        << "es sind nicht alle Dateien zurueckgekommen";
 }
 
 TEST(DiskVolume, SideNPraefixImDateinamen) {
@@ -1076,14 +1076,14 @@ TEST(DiskVolume, SystemspurenFassenEineFesteZahlBytes) {
  * @test DiskVolume/KurzesBootabbildLaesstDenRestDerSystemspurenInRuhe
  * @brief `boot-put` schreibt so viele Sektoren, wie das Abbild Bytes hat — nicht mehr.
  *
- * Der Nachbar darüber prüft das auf einer FRISCHEN Diskette (dahinter steht 0xE5).
- * Hier ist die schärfere Frage gestellt: auf einer **bestehenden** Diskette muss der
- * Rest der Systemspuren *unverändert* bleiben, nicht bloss leer sein.  Daran hängt,
+ * Der Nachbar darueber prueft das auf einer FRISCHEN Diskette (dahinter steht 0xE5).
+ * Hier ist die schaerfere Frage gestellt: auf einer **bestehenden** Diskette muss der
+ * Rest der Systemspuren *unveraendert* bleiben, nicht bloss leer sein.  Daran haengt,
  * ob ein Bootabbild ein Werkzeug ist, das man gezielt einsetzen kann — oder eine
- * Abrissbirne für den ganzen Systembereich.
+ * Abrissbirne fuer den ganzen Systembereich.
  *
- * @par Kriterium  Ein Abbild über 5 Sätze fasst genau 5 Sektoren der Spur 0 an; die
- *                 übrigen 21 dieser Spur und die Spuren 1, 2 und 21 bleiben Byte für
+ * @par Kriterium  Ein Abbild ueber 5 Saetze fasst genau 5 Sektoren der Spur 0 an; die
+ *                 uebrigen 21 dieser Spur und die Spuren 1, 2 und 21 bleiben Byte fuer
  *                 Byte, wie sie waren.
  */
 TEST(DiskVolume, KurzesBootabbildLaesstDenRestDerSystemspurenInRuhe) {
@@ -1105,7 +1105,7 @@ TEST(DiskVolume, KurzesBootabbildLaesstDenRestDerSystemspurenInRuhe) {
     const std::vector<uint8_t> erster = vorher[std::make_pair(uint8_t{0}, 0)];
     ASSERT_FALSE(erster.empty()) << "Systemspur nicht lesbar";
 
-    // Ein Abbild über 5 Sätze (128 B Daten + 4 B Nachspann je Satz).
+    // Ein Abbild ueber 5 Saetze (128 B Daten + 4 B Nachspann je Satz).
     const std::vector<uint8_t> kurz(5 * (128 + 4), 0x5A);
     ASSERT_TRUE(dv->writeBootImage(kurz)) << dv->lastError();
 
@@ -1118,7 +1118,7 @@ TEST(DiskVolume, KurzesBootabbildLaesstDenRestDerSystemspurenInRuhe) {
         }
     }
     EXPECT_EQ(angefasst, 5) << "es wurden mehr Sektoren geschrieben als das Abbild fasst";
-    EXPECT_EQ(fremd, 0) << "ausserhalb der ersten fünf Sektoren wurde etwas verändert";
+    EXPECT_EQ(fremd, 0) << "ausserhalb der ersten fuenf Sektoren wurde etwas veraendert";
 }
 
 TEST(DiskVolume, BootabbildGehtUnveraendertInDieSystemspuren) {
@@ -1228,11 +1228,11 @@ TEST(DiskVolume, SchreibgeschuetzteDisketteNimmtKeinBootabbild) {
 }
 
 /**
- * @test UDOS-Kopfsektorangaben überleben den Rundlauf über den Linux-Ordner.
- * @par Kriterium  Typ, Eigenschaften, Startadresse, Satzlänge und das Speicherabbild
- *                 (Ladeadresse + Länge) stehen NICHT in der Datei — sie kommen über
- *                 das Beiblatt zurück.  Ohne sie wird aus `ZDOS` (P1, 1024er Sätze,
- *                 lädt 5521 Byte nach 2600H) eine gewöhnliche Binärdatei, und die
+ * @test UDOS-Kopfsektorangaben ueberleben den Rundlauf ueber den Linux-Ordner.
+ * @par Kriterium  Typ, Eigenschaften, Startadresse, Satzlaenge und das Speicherabbild
+ *                 (Ladeadresse + Laenge) stehen NICHT in der Datei — sie kommen ueber
+ *                 das Beiblatt zurueck.  Ohne sie wird aus `ZDOS` (P1, 1024er Saetze,
+ *                 laedt 5521 Byte nach 2600H) eine gewoehnliche Binaerdatei, und die
  *                 Diskette bootet nicht mehr.
  */
 TEST(DiskVolume, UdosKopfsektorangabenUeberlebenDenRundlauf) {
@@ -1423,10 +1423,10 @@ TEST(DiskVolume, SektorAnlegenUndLoeschenUeberDieFassade) {
 // ─────────────────────────────────────────────────────────────────────────────
 // `.fileinfo` — die Angaben JE DATEI (doc/bug_disktool_Programmdatei.md)
 //
-// Ohne diese Wächter wäre der Fehler in einem Jahr wieder da — er WAR schon
+// Ohne diese Waechter waere der Fehler in einem Jahr wieder da — er WAR schon
 // einmal da, und niemand hat es bemerkt, weil nur der Dateiinhalt verglichen
 // wurde.  Genau darin liegt seine Bosheit: die Bytes stimmen, es gibt keine
-// Meldung, und die Dateisystemprüfung kann ihn grundsätzlich nicht sehen.
+// Meldung, und die Dateisystempruefung kann ihn grundsaetzlich nicht sehen.
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
@@ -1442,8 +1442,8 @@ FileEntry eintrag(const DiskVolume& dv, int volume, const std::string& name) {
 
 TEST(DiskToolFileinfo, EinzelneProgrammdateiUeberlebtDenRundlauf) {
     // Genau der Fall aus dem Fehlerbericht §1: EINE Programmdatei herausholen und
-    // auf eine zweite Diskette zurückschreiben.  Vorher wurde daraus Typ B mit
-    // 128er-Sätzen ohne Startadresse und LOW/HIGH = FFFF — eine Datei, die UDOS
+    // auf eine zweite Diskette zurueckschreiben.  Vorher wurde daraus Typ B mit
+    // 128er-Saetzen ohne Startadresse und LOW/HIGH = FFFF — eine Datei, die UDOS
     // mit MEMORY PROTECT VIOLATION abweist.
     Kopie q("udos_boot_scp.hfe", "k1520_test_fi_quelle.hfe");
     Kopie z("udos_boot_scp.hfe", "k1520_test_fi_ziel.hfe");
@@ -1454,7 +1454,7 @@ TEST(DiskToolFileinfo, EinzelneProgrammdateiUeberlebtDenRundlauf) {
     ASSERT_NE(ziel, nullptr) << err;
 
     const FileEntry vorher = eintrag(*quelle, 0, "ACTIVATE");
-    ASSERT_EQ(vorher.type, "P") << "die Fixture trägt keine Programmdatei mehr";
+    ASSERT_EQ(vorher.type, "P") << "die Fixture traegt keine Programmdatei mehr";
 
     TempOrdner o("k1520_test_fi_o");
     ASSERT_TRUE(quelle->extract(FileRef{0, "ACTIVATE"}, (o / "ACTIVATE").string(),
@@ -1507,8 +1507,8 @@ TEST(DiskToolFileinfo, JedeExtrahierteDateiHatEinFileinfo) {
 
 TEST(DiskToolFileinfo, CpmSchreibtNurAufVerlangenEinFileinfo) {
     // Bei CP/M ist „Nutzerbereich 0, keine Attribute" der Normalfall — es geht
-    // nichts verloren, und eine Zubehördatei je Datei wäre blosser Ballast.  Also
-    // Vorgabe AUS; wer eine Sammlung führt, schaltet sie ein.
+    // nichts verloren, und eine Zubehoerdatei je Datei waere blosser Ballast.  Also
+    // Vorgabe AUS; wer eine Sammlung fuehrt, schaltet sie ein.
     Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_cpm.hfe");
     std::string err;
     auto dv = oeffne(k.path(), "", err);
@@ -1533,8 +1533,8 @@ TEST(DiskToolFileinfo, CpmSchreibtNurAufVerlangenEinFileinfo) {
 }
 
 TEST(DiskToolFileinfo, CpmBrauchtKeineAngaben) {
-    // Die Gegenrichtung und ein Wächter gegen Übereifer (§2.4): eine Datei OHNE
-    // jede Angabe auf eine CP/M-Diskette einfügen GELINGT, landet im Nutzerbereich
+    // Die Gegenrichtung und ein Waechter gegen Uebereifer (§2.4): eine Datei OHNE
+    // jede Angabe auf eine CP/M-Diskette einfuegen GELINGT, landet im Nutzerbereich
     // 0 ohne Attribute und ist kein Sonderfall.
     Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_cpm_put.hfe");
     std::string err;
@@ -1553,8 +1553,8 @@ TEST(DiskToolFileinfo, CpmBrauchtKeineAngaben) {
 }
 
 TEST(DiskToolFileinfo, UdosOhneAngabenWirdAbgelehnt) {
-    // Geraten wird nicht: was ohne Typ und Satzlänge entstünde, wäre eine Datei,
-    // die nicht läuft — und man sähe es ihr nicht an.
+    // Geraten wird nicht: was ohne Typ und Satzlaenge entstuende, waere eine Datei,
+    // die nicht laeuft — und man saehe es ihr nicht an.
     Kopie k("udos_boot_scp.hfe", "k1520_test_fi_ohne.hfe");
     std::string err;
     auto dv = oeffneSchreibbar(k.path(), "", err);
@@ -1568,7 +1568,7 @@ TEST(DiskToolFileinfo, UdosOhneAngabenWirdAbgelehnt) {
     EXPECT_NE(dv->lastError().find("--type"), std::string::npos)
         << "die Meldung muss den Ausweg nennen: " << dv->lastError();
 
-    // Mit ausdrücklichen Angaben geht es durch — sie gehen allem vor.
+    // Mit ausdruecklichen Angaben geht es durch — sie gehen allem vor.
     TransferOptions mit;
     mit.udos_type = "B";
     mit.udos_record_len = 128;
@@ -1642,7 +1642,7 @@ TEST(DiskToolFileinfo, NurZubehoerImOrdnerIstEineMeldung) {
 
 TEST(DiskToolFileinfo, EinzelneAngabendateiWirdAbgelehnt) {
     // Fast sicher ein Versehen — jemand hat in der Auswahl die falsche der beiden
-    // gleichnamigen Zeilen erwischt.  Es GIBT einen zulässigen Grund dafür,
+    // gleichnamigen Zeilen erwischt.  Es GIBT einen zulaessigen Grund dafuer,
     // deshalb ein Schalter und kein Verbot (§2.5).
     Kopie k("cpa_cpa780_k5601_noclock.hfe", "k1520_test_fi_einzeln.hfe");
     std::string err;

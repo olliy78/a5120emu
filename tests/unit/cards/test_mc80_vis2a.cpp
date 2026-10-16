@@ -1,7 +1,7 @@
 /**
  * @file test_mc80_vis2a.cpp
- * @brief VIS 2a des MC80.3x (AP M3): Bildpunkte über `OUT (C),r` (Y auf A8–A15), Bildhälfte,
- *        IN-Register (Polarität [?]), Bildkommandos Löschen/Aus/Ein/Rollen, Anzeige mit Y = 0
+ * @brief VIS 2a des MC80.3x (AP M3): Bildpunkte ueber `OUT (C),r` (Y auf A8–A15), Bildhaelfte,
+ *        IN-Register (Polaritaet [?]), Bildkommandos Loeschen/Aus/Ein/Rollen, Anzeige mit Y = 0
  *        unten.  Quellen: doc/mc80/hardware_3x.md §5, egos.md §1.8/§1.9.
  */
 
@@ -29,7 +29,7 @@ TEST(Mc80Vis2a, NachDemEinschaltenDunkelUndEin) {
 
 TEST(Mc80Vis2a, PunktHellUndDunkelMitYAusDemHochbyte) {
     Vis v;
-    v.out(0xC1, 0x10, 0x20);   // Funktion 1: hell, Y = 10H, X = 20H, linke Hälfte
+    v.out(0xC1, 0x10, 0x20);   // Funktion 1: hell, Y = 10H, X = 20H, linke Haelfte
     EXPECT_TRUE(v.vis.punkt(0x20, 0x10));
     EXPECT_FALSE(v.vis.punkt(0x20, 0x11));
     // Y = 0 ist unten: Y = 10H steht in der Anzeigezeile 255 − 16 = 239
@@ -41,7 +41,7 @@ TEST(Mc80Vis2a, PunktHellUndDunkelMitYAusDemHochbyte) {
 
 TEST(Mc80Vis2a, Bit3WaehltDieRechteBildhaelfte) {
     Vis v;
-    v.out(0xC9, 0x00, 0x05);   // rechte Hälfte, X = 5 → Bildspalte 261
+    v.out(0xC9, 0x00, 0x05);   // rechte Haelfte, X = 5 → Bildspalte 261
     EXPECT_TRUE(v.vis.punkt(256 + 5, 0));
     EXPECT_FALSE(v.vis.punkt(5, 0));
     EXPECT_EQ(v.fb(261, 255), 0xFF);
@@ -56,7 +56,7 @@ TEST(Mc80Vis2a, NurDieKarteAufC0BisCFAntwortet) {
     EXPECT_FALSE(v.vis.punkt(256, 0));
 }
 
-// [?] Polarität: Festlegung (vis2a.h) — Funktion 3 liefert den Bildpunkt, 2 den negierten;
+// [?] Polaritaet: Festlegung (vis2a.h) — Funktion 3 liefert den Bildpunkt, 2 den negierten;
 // nur so ist die Routine 4C40H der MC80.31E-Segmente ein „Bild invertieren“.
 TEST(Mc80Vis2a, LesenFunktion3LiefertDenBildpunkt) {
     Vis v;
@@ -67,7 +67,7 @@ TEST(Mc80Vis2a, LesenFunktion3LiefertDenBildpunkt) {
     EXPECT_EQ(v.in(0xC3, 0x40) & 1, 0);
     v.out(0xC3, 0x41, 0x07);   // dunkler Nachbar
     EXPECT_EQ(v.in(0xC3, 0x41), 0xFE);
-    // IN an jedem Port der Karte; die Ausgabe hat den Punkt nicht verändert
+    // IN an jedem Port der Karte; die Ausgabe hat den Punkt nicht veraendert
     EXPECT_EQ(v.in(0xC0, 0x00) & 1, 0);
     EXPECT_TRUE(v.vis.punkt(7, 0x40));
 }
@@ -93,11 +93,11 @@ TEST(Mc80Vis2a, LoeschenDunkelUndHellSetztDenRollzaehlerZurueck) {
     Vis v;
     v.out(0xC4, 0x1A, 0);      // rollen, R = −10
     EXPECT_EQ(v.vis.rollzaehler(), 0xF6);
-    v.out(0xC5, 0x00, 0);      // B = 00H, C0 = 1: hell löschen
+    v.out(0xC5, 0x00, 0);      // B = 00H, C0 = 1: hell loeschen
     EXPECT_EQ(v.vis.rollzaehler(), 0);
     EXPECT_TRUE(v.vis.punkt(100, 100));
     EXPECT_EQ(v.fb(0, 0), 0xFF);
-    v.out(0xCC, 0x04, 0);      // Bit 3 egal, B = 04H: dunkel löschen (n & 3 = 0)
+    v.out(0xCC, 0x04, 0);      // Bit 3 egal, B = 04H: dunkel loeschen (n & 3 = 0)
     EXPECT_FALSE(v.vis.punkt(100, 100));
     EXPECT_EQ(v.fb(511, 255), 0x00);
 }
@@ -120,9 +120,9 @@ TEST(Mc80Vis2a, RollenNachObenVerschiebtDieAnzeigeUndFuelltUnten) {
     EXPECT_EQ(v.fb(3, 245), 0xFF);
     v.out(0xC4, 0x1A, 0);      // 10 Zeilen nach oben, Hintergrund dunkel (EGOS ROL 0050H)
     EXPECT_EQ(v.vis.rollzaehler(), 0xF6);
-    EXPECT_EQ(v.fb(3, 235), 0xFF) << "Inhalt 10 Zeilen höher";
+    EXPECT_EQ(v.fb(3, 235), 0xFF) << "Inhalt 10 Zeilen hoeher";
     EXPECT_EQ(v.fb(3, 245), 0x00);
-    // die oberste Zeile ist unten wieder erschienen und gelöscht
+    // die oberste Zeile ist unten wieder erschienen und geloescht
     EXPECT_FALSE(v.vis.punkt(4, 0xFF));
     for (int x = 0; x < 512; ++x) ASSERT_EQ(v.fb(x, 255), 0);
     // EGOS rechnet Y = F8H − 10·Zeile + R: Zeile 0 liegt jetzt bei Y = EEH, oberste Anzeigezeile
@@ -140,7 +140,7 @@ TEST(Mc80Vis2a, RollenNachUntenHellUndZaehlerLoeschen) {
     EXPECT_EQ(v.fb(1, 255), 0x00);
     // die alte unterste Zeile (Y = 0) ist unten hinausgerollt und oben hell wiedergekommen
     EXPECT_TRUE(v.vis.punkt(300, 0));
-    v.out(0xC4, 0x20, 0);      // n = 0: Rollzähler löschen
+    v.out(0xC4, 0x20, 0);      // n = 0: Rollzaehler loeschen
     EXPECT_EQ(v.vis.rollzaehler(), 0);
     v.out(0xC4, 0x10, 0);
     EXPECT_EQ(v.vis.rollzaehler(), 0);
@@ -152,7 +152,7 @@ TEST(Mc80Vis2a, RevisionUndDirtyFolgenJederAenderung) {
     Vis v;
     v.vis.clearDirty();
     const auto r = v.vis.revision();
-    v.out(0xC0, 0x00, 0x00);   // schon dunkel: keine Änderung
+    v.out(0xC0, 0x00, 0x00);   // schon dunkel: keine Aenderung
     EXPECT_FALSE(v.vis.dirty());
     EXPECT_EQ(v.vis.revision(), r);
     v.out(0xC1, 0x00, 0x00);

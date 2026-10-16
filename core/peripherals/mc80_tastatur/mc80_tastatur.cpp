@@ -16,8 +16,8 @@ void Mc80Tastatur::reset()
 
 void Mc80Tastatur::anschlag(uint8_t praefix, uint8_t code)
 {
-    // Präfix vor JEDEM Anschlag [Annahme]: INIT setzt die Präfixzelle FB7CH zurück, eine
-    // Tastatur, die nur bei Wechsel sendete, wäre danach stumm (Mc80Boot.Kommando…).
+    // Praefix vor JEDEM Anschlag [Annahme]: INIT setzt die Praefixzelle FB7CH zurueck, eine
+    // Tastatur, die nur bei Wechsel sendete, waere danach stumm (Mc80Boot.Kommando…).
     queue_.push_back({praefix, true});
     queue_.push_back({code, false});
 }
@@ -74,7 +74,7 @@ bool Mc80Tastatur::takt(int takte)
     queue_.pop_front();
     if (senden) senden(e.byte);
     bis_zeichen_ = TAKTE_JE_ZEICHEN;
-    if (queue_.empty() || queue_.front().tastenanfang)   // Anschlag vollständig
+    if (queue_.empty() || queue_.front().tastenanfang)   // Anschlag vollstaendig
         bis_taste_ = TAKTE_JE_TASTE;
     return true;
 }

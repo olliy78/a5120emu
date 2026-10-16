@@ -1,16 +1,16 @@
 /**
  * @file test_img_codec.cpp
- * @brief GoogleTests für ImgCodec (rohes Sektorimage) und die DiskImage-Fabriken.
+ * @brief GoogleTests fuer ImgCodec (rohes Sektorimage) und die DiskImage-Fabriken.
  *
  * Getestete Komponenten:
  *   - ImgCodec::load  → DiskMedium (Bitgleichheit mit der .img-Datei als Ground-Truth)
- *   - ImgCodec::save  → Rückschreiben, inkl. Ablehnung nicht darstellbarer Medien
+ *   - ImgCodec::save  → Rueckschreiben, inkl. Ablehnung nicht darstellbarer Medien
  *   - ImgCodec::mismatchReason (Geometrie-/Sektorlayout-Abgleich)
  *   - DiskImage::open (Container-Sniffing) und DiskImage::create (vorformatiert)
  *
- * Der Bitgleichheits-Vergleich beweist, dass load + parseTrack für jede
+ * Der Bitgleichheits-Vergleich beweist, dass load + parseTrack fuer jede
  * (cyl, head, id)-Kombination exakt die Nutzdaten an dem Byte-Offset liefert, den das
- * verschränkte Spurlayout (cyl außen, head innen) in der .img-Datei vorgibt.
+ * verschraenkte Spurlayout (cyl aussen, head innen) in der .img-Datei vorgibt.
  *
  * @see core/peripherals/floppy_drive/img_codec.h
  * @see core/peripherals/floppy_drive/disk_image.h
@@ -46,8 +46,8 @@ static DiskFormat makeSimpleFormat() {
 }
 
 /**
- * Temporäre .img-Datei anlegen.  Jeder Sektor wird mit seinem sektor-id-Wert
- * in allen Bytes gefüllt (Erkennungsmuster für Roundtrip-Tests).
+ * Temporaere .img-Datei anlegen.  Jeder Sektor wird mit seinem sektor-id-Wert
+ * in allen Bytes gefuellt (Erkennungsmuster fuer Roundtrip-Tests).
  */
 static std::string makeTmpImg(const DiskFormat& fmt) {
     const auto path = k1520test::tempPath("k1520_test_img_codec.img");
@@ -69,7 +69,7 @@ static std::string makeTmpImg(const DiskFormat& fmt) {
     return path;
 }
 
-/// @brief Lädt ein .img in ein Medium (kurz).
+/// @brief Laedt ein .img in ein Medium (kurz).
 static DiskMedium loadImg(const std::string& path, const DiskFormat& fmt) {
     DiskMedium m;
     std::string err;
@@ -114,9 +114,9 @@ TEST(ImgCodec, WriteProtect_BlocktSchreiben) {
 // ─── Gruppe 2: load → parseTrack bitgleich zur .img-Datei ────────────────────
 
 /**
- * @brief Byte-Offset von Sektor (cyl, head, id) in der .img — verschränktes Layout
- *        (cyl außen, head innen), 1-basiertes id.  Ground-Truth-Referenz, unabhängig
- *        von ImgCodec::sectorOffset (deren Korrektheit hier gerade geprüft wird).
+ * @brief Byte-Offset von Sektor (cyl, head, id) in der .img — verschraenktes Layout
+ *        (cyl aussen, head innen), 1-basiertes id.  Ground-Truth-Referenz, unabhaengig
+ *        von ImgCodec::sectorOffset (deren Korrektheit hier gerade geprueft wird).
  */
 static uint64_t expectedOffset(const DiskFormat& fmt, uint8_t cyl, uint8_t head, uint8_t id) {
     uint64_t off = 0;
@@ -200,14 +200,14 @@ TEST(ImgCodec, Load_ErkennungsmusterErhalten) {
 
 /**
  * @test ImgCodec/SaveLoad_Roundtrip
- * @brief Medium → .img → Medium erhält alle Nutzdaten.
+ * @brief Medium → .img → Medium erhaelt alle Nutzdaten.
  */
 TEST(ImgCodec, SaveLoad_Roundtrip) {
     auto fmt  = makeSimpleFormat();
     auto path = makeTmpImg(fmt);
     DiskMedium m = loadImg(path, fmt);
 
-    // Ein Byte ändern und zurückschreiben.
+    // Ein Byte aendern und zurueckschreiben.
     {
         auto secs = TrackCodec::parseTrack(m.track(1, 0));
         ASSERT_EQ(secs.size(), 2u);
@@ -232,8 +232,8 @@ TEST(ImgCodec, SaveLoad_Roundtrip) {
 
 /**
  * @test ImgCodec/Save_LehntUnformatiertesMediumAb
- * @brief Eine Leerdiskette lässt sich nicht als rohes Sektorimage speichern —
- *        `.img` kann „nicht formatiert" nicht ausdrücken.
+ * @brief Eine Leerdiskette laesst sich nicht als rohes Sektorimage speichern —
+ *        `.img` kann „nicht formatiert" nicht ausdruecken.
  */
 TEST(ImgCodec, Save_LehntUnformatiertesMediumAb) {
     const DiskMedium leer(2, 1, Encoding::MFM);
@@ -359,7 +359,7 @@ TEST(DiskImageOpen, NichtExistenteDatei_gibtNullptr) {
 }
 
 TEST(DiskImageOpen, RawVerfahren_KommtAusDemSpurbereich) {
-    // Ein rohes .img trägt kein Verfahren in sich — es steht im DiskFormat, und zwar
+    // Ein rohes .img traegt kein Verfahren in sich — es steht im DiskFormat, und zwar
     // PRO SPURBEREICH (§8.6).  Die synthetisierte Spur muss dieses Verfahren tragen.
     auto fmt  = makeSimpleFormat();
     auto path = makeTmpImg(fmt);
@@ -472,14 +472,14 @@ TEST(DiskImageCreate, ImgOhneFmt_gibtNullptr) {
 TEST(DiskImageCreate, HfeOhneFmt_gibtNullptr) {
     std::string path = k1520test::tempPath("create_nofmt.hfe");
     std::filesystem::remove(path);
-    // create() ist der VORFORMATIERTE Weg und braucht das Sektorlayout.  Für eine
+    // create() ist der VORFORMATIERTE Weg und braucht das Sektorlayout.  Fuer eine
     // unformatierte Leerdiskette gibt es createBlank().
     auto img = DiskImage::create(path, std::nullopt, false);
     EXPECT_EQ(img, nullptr);
     std::filesystem::remove(path);
 }
 
-// Zählt IDAM/DAM-Marken einer Spur.
+// Zaehlt IDAM/DAM-Marken einer Spur.
 static size_t countMarks(const TrackImage& t) {
     size_t n = 0;
     for (MarkType m : t.marks)
@@ -487,8 +487,8 @@ static size_t countMarks(const TrackImage& t) {
     return n;
 }
 
-// Gemeinsame Prüfung: frisch erzeugtes .hfe ist gültig formatiert (Marken vorhanden,
-// parseTrack liefert die erwarteten 0xE5-Sektoren) und übersteht open().
+// Gemeinsame Pruefung: frisch erzeugtes .hfe ist gueltig formatiert (Marken vorhanden,
+// parseTrack liefert die erwarteten 0xE5-Sektoren) und uebersteht open().
 static void checkFormattedHfe(Encoding enc) {
     auto fmt = makeSimpleFormat();  // 2 Zyl × 1 Kopf × 2 × 128
     for (auto& t : fmt.tracks) t.encoding = enc;
@@ -515,7 +515,7 @@ static void checkFormattedHfe(Encoding enc) {
                                 [](uint8_t b){ return b == 0xE5; }));
     }
 
-    // Öffnen akzeptiert die formatierte Datei.
+    // Oeffnen akzeptiert die formatierte Datei.
     auto reopened = DiskImage::open(path, std::nullopt, false);
     EXPECT_NE(reopened, nullptr);
 
@@ -527,8 +527,8 @@ TEST(DiskImageCreate, HfeFm_GueltigFormatiert)  { checkFormattedHfe(Encoding::FM
 
 /**
  * @test DiskImageCreate/HfeMischdichte_BeideVerfahrenLesbar
- * @brief Eine Mischdichte-Diskette (FM-Systemspur + MFM-Datenspuren) lässt sich als
- *        .hfe ANLEGEN und danach spurweise korrekt zurücklesen.
+ * @brief Eine Mischdichte-Diskette (FM-Systemspur + MFM-Datenspuren) laesst sich als
+ *        .hfe ANLEGEN und danach spurweise korrekt zuruecklesen.
  */
 TEST(DiskImageCreate, HfeMischdichte_BeideVerfahrenLesbar) {
     DiskFormat fmt;
@@ -543,10 +543,10 @@ TEST(DiskImageCreate, HfeMischdichte_BeideVerfahrenLesbar) {
     {
         auto img = DiskImage::create(path, fmt, /*wp=*/false, fmt.predominantEncoding());
         ASSERT_NE(img, nullptr);
-    }   // schließen → flush
+    }   // schliessen → flush
 
     auto img = DiskImage::open(path, std::nullopt, /*wp=*/false);
-    ASSERT_NE(img, nullptr) << "Mischdichte-HFE wurde beim Öffnen abgelehnt";
+    ASSERT_NE(img, nullptr) << "Mischdichte-HFE wurde beim Oeffnen abgelehnt";
 
     struct Erwartung { uint8_t cyl; Encoding enc; size_t nsecs; uint16_t size; };
     const Erwartung erw[] = {

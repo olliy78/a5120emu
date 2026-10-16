@@ -9,7 +9,7 @@
 using kassette::KassettenLaufwerk;
 
 namespace {
-constexpr int kAbtastTakte = 64;          // Rückleitungen/Daten höchstens alle 26 µs abfragen
+constexpr int kAbtastTakte = 64;          // Rueckleitungen/Daten hoechstens alle 26 µs abfragen
 constexpr double kBmsHalteS = 108e-6;     // BD S.14: BMS = 1, solange mindestens alle 108 µs ein Flusswechsel
 }  // namespace
 
@@ -17,7 +17,7 @@ K5020::K5020(const Config& cfg) : cfg_(cfg) {
     lw_[0] = std::make_unique<KassettenLaufwerk>(cfg.profil1, cfg.takt_hz);
     lw_[1] = std::make_unique<KassettenLaufwerk>(cfg.profil2, cfg.takt_hz);
     for (auto& lw : lw_) lw->setNeueKassette(cfg.neue_kassette);
-    // Blindeingabe nötig, um BRDY zu aktivieren (BD S.13; ROM 0362); Steuer-PIO flankengetriggert.
+    // Blindeingabe noetig, um BRDY zu aktivieren (BD S.13; ROM 0362); Steuer-PIO flankengetriggert.
     daten_.setModus1ReadyNachLesen(true);
     steuer_.setModus3Flanke(true);
 }
@@ -48,7 +48,7 @@ double K5020::byteTakte() const {
 uint8_t K5020::Tor::ioRead(uint8_t port) {
     const uint8_t rel = relativ(port & 3);
     Z80PIO& pio = steuer ? karte.steuer_ : karte.daten_;
-    if (steuer && (rel == 0 || rel == 2)) karte.eingaenge();   // Rückleitungen aktuell machen
+    if (steuer && (rel == 0 || rel == 2)) karte.eingaenge();   // Rueckleitungen aktuell machen
     return pio.ioRead(rel);
 }
 
@@ -58,26 +58,26 @@ void K5020::Tor::ioWrite(uint8_t port, uint8_t d) {
     pio.ioWrite(rel, d);
     if (steuer) {
         karte.leitungen();
-        // Nach einem Steuerwort die Rückleitungen NEU anlegen, auch wenn sie sich nicht
-        // geändert haben: `Z80PIO::setExtern` übernimmt die Pegel nur im Modus 3 ins
+        // Nach einem Steuerwort die Rueckleitungen NEU anlegen, auch wenn sie sich nicht
+        // geaendert haben: `Z80PIO::setExtern` uebernimmt die Pegel nur im Modus 3 ins
         // Eingaberegister, der Moduswechsel selbst holt sie nicht nach.  Ohne das las das
         // Lade-ROM nach `CFH`/`FDH` (ROM 02A7–02AD) das Vorgaberegister FFH statt der beim
-        // Reset (noch Modus 1) angelegten Pegel — /NIB1 = 1 bei LEEREM Gerät 1, das ROM
-        // spulte dort endlos statt auf Gerät 2 zu wechseln (AP K7, KassetteBoot.*Geraet2).
+        // Reset (noch Modus 1) angelegten Pegel — /NIB1 = 1 bei LEEREM Geraet 1, das ROM
+        // spulte dort endlos statt auf Geraet 2 zu wechseln (AP K7, KassetteBoot.*Geraet2).
         if (rel == 1 || rel == 3) karte.ext_neu_ = true;
         karte.eingaenge();   // STA = AUF ∧ AVE sofort (treiber.md §3.2: BCU fragt ohne Bandlauf ab)
     } else if (rel == 0 && pio.debugState().port[0].mode == 0) {
-        if (!karte.tx_busy_) {                      // Schieberegister leer: sofort übernehmen
+        if (!karte.tx_busy_) {                      // Schieberegister leer: sofort uebernehmen
             if (karte.taktLiegtAn()) karte.uebernehmen();
             else karte.tx_wartet_ = true;           // ohne externen Takt bleibt es im Register
         }
     }
 }
 
-// ─── Steuer-PIO → Geräte ─────────────────────────────────────────────────────
+// ─── Steuer-PIO → Geraete ─────────────────────────────────────────────────────
 
 void K5020::rsi() {
-    // Internes Rücksetzen der Anschlusssteuerung (beide Auswahlbits 0): Ablauf und Merker löschen.
+    // Internes Ruecksetzen der Anschlusssteuerung (beide Auswahlbits 0): Ablauf und Merker loeschen.
     tx_busy_ = false;
     tx_wartet_ = false;
     zf_ = false;
@@ -108,11 +108,11 @@ void K5020::leitungen() {
         l.vor   = sel && trv && !trr;
         l.rueck = sel && trr && !trv;
         l.auf   = sel && auf && !d.schreibsperre();   // AUF nur bei „Aufzeichnung erlaubt“ (BD S.10)
-        l.hge   = sel && hge && !auf;                 // HGE nach AUF löst keinen Suchlauf aus …
+        l.hge   = sel && hge && !auf;                 // HGE nach AUF loest keinen Suchlauf aus …
         l.wid   = !(sel && auf && hge);               // … sondern sperrt die Wiedergabe (BD S.9)
         const Leit alt = leit_[n];
         if (l == alt) continue;
-        // Erst fallende, dann steigende Flanken (kein kurzzeitiges VOR+RCK = Fehler am Gerät).
+        // Erst fallende, dann steigende Flanken (kein kurzzeitiges VOR+RCK = Fehler am Geraet).
         if (!l.vor && alt.vor) d.vor(false);
         if (!l.rueck && alt.rueck) d.rueck(false);
         if (!l.auf && alt.auf) d.aufzeichnen(false);
@@ -124,13 +124,13 @@ void K5020::leitungen() {
         if (l.auf && !alt.auf) d.aufzeichnen(true);
         if (l.vor && !alt.vor) d.vor(true);
         if (l.rueck && !alt.rueck) d.rueck(true);
-        // UMS ist im Gerät gespeichert; das ROM nimmt es eine Instruktion später wieder zurück (0320/0322).
+        // UMS ist im Geraet gespeichert; das ROM nimmt es eine Instruktion spaeter wieder zurueck (0320/0322).
         if (l.ums && !alt.ums) d.umspulen();
         leit_[n] = l;
     }
 }
 
-// ─── Geräte → Steuer-PIO ─────────────────────────────────────────────────────
+// ─── Geraete → Steuer-PIO ─────────────────────────────────────────────────────
 
 bool K5020::eingaenge() {
     const KassettenLaufwerk* s = sel_ >= 0 ? lw_[sel_].get() : nullptr;
@@ -161,7 +161,7 @@ void K5020::uebernehmen() {
     tx_busy_ = true;
     tx_ende_ = static_cast<double>(zeit_) + byteTakte();
     zf_ = false;
-    daten_.setStbA(false);   // ASTB: Byte übernommen → ARDY aus, Interrupt
+    daten_.setStbA(false);   // ASTB: Byte uebernommen → ARDY aus, Interrupt
     daten_.setStbA(true);
 }
 
@@ -183,7 +183,7 @@ bool K5020::clockTick(int takte) {
         bms_pin_ = false;
     }
 
-    // Eingabe: Bytes vom Gerät in Daten-PIO B (nur das angewählte Gerät; die Bytes des anderen verfallen)
+    // Eingabe: Bytes vom Geraet in Daten-PIO B (nur das angewaehlte Geraet; die Bytes des anderen verfallen)
     for (int n = 0; n < 2; ++n) {
         while (auto b = lw_[n]->holeByte()) {
             if (n != sel_) continue;
@@ -204,7 +204,7 @@ bool K5020::clockTick(int takte) {
         if (daten_.ardy() && taktLiegtAn()) {
             const double ende = tx_ende_;
             uebernehmen();
-            tx_ende_ = ende + byteTakte();   // lückenlos anschließen (kein Drift)
+            tx_ende_ = ende + byteTakte();   // lueckenlos anschliessen (kein Drift)
             geaendert = true;
         } else if (daten_.ardy()) {
             tx_wartet_ = true;               // Takt weg: Byte bleibt im Ausgaberegister

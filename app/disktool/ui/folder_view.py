@@ -55,7 +55,7 @@ class _Tree(QTreeWidget):
     """Baum, der von der Diskette gezogene Dateien annimmt."""
 
     disk_files_dropped = Signal(list)   # Referenzen ("Side1/NAME")
-    nach_oben = Signal()                # Rücktaste
+    nach_oben = Signal()                # Ruecktaste
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,8 +63,8 @@ class _Tree(QTreeWidget):
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setUniformRowHeights(True)
         self.setAlternatingRowColors(True)
-        # Umbenannt wird nur auf Ansage (`editItem`).  Mit den Vorgabe-Auslösern
-        # öffnete der Doppelklick das Eingabefeld statt den Ordner.
+        # Umbenannt wird nur auf Ansage (`editItem`).  Mit den Vorgabe-Ausloesern
+        # oeffnete der Doppelklick das Eingabefeld statt den Ordner.
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
     def dragEnterEvent(self, event):  # noqa: N802
@@ -85,7 +85,7 @@ class _Tree(QTreeWidget):
         event.acceptProposedAction()
 
     def keyPressEvent(self, event):  # noqa: N802
-        # Rücktaste = eine Ebene hinauf, wie in jedem Dateimanager.  In dieser
+        # Ruecktaste = eine Ebene hinauf, wie in jedem Dateimanager.  In dieser
         # Liste hat sie sonst keine Bedeutung (nichts wird hier getippt).
         if event.key() == Qt.Key_Backspace:
             self.nach_oben.emit()
@@ -99,14 +99,14 @@ class FolderView(QWidget):
     folder_changed = Signal(str)
     disk_files_dropped = Signal(list)
     choose_requested = Signal()
-    #: Einzeiler fürs Protokoll/die Statuszeile (unlesbarer Ordner, Fehleingabe).
+    #: Einzeiler fuers Protokoll/die Statuszeile (unlesbarer Ordner, Fehleingabe).
     hinweis = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._folder: Optional[Path] = None
         self._aktionen = []
-        #: Zeile, die gerade im Eingabefeld steht (sonst ``None``) — nur für sie
+        #: Zeile, die gerade im Eingabefeld steht (sonst ``None``) — nur fuer sie
         #: gilt ein `itemChanged` als Umbenennung.
         self._umbenennen_item = None
         self._umbenennen_alt = ""
@@ -123,9 +123,9 @@ class FolderView(QWidget):
         self.knopf_ordner.setToolTip("Ordner im Dialog wählen")
         self.knopf_ordner.clicked.connect(self.choose_requested)
 
-        # Die Kopfzeile ist ein eigenes Widget, damit das Fenster sie in der Höhe
-        # an die Überschrift der Diskettenseite binden kann (§20.10) — sonst
-        # begännen die beiden Listen ein paar Pixel versetzt.
+        # Die Kopfzeile ist ein eigenes Widget, damit das Fenster sie in der Hoehe
+        # an die Ueberschrift der Diskettenseite binden kann (§20.10) — sonst
+        # begaennen die beiden Listen ein paar Pixel versetzt.
         kopf = QHBoxLayout()
         kopf.setContentsMargins(0, 0, 0, 0)
         kopf.setSpacing(2)
@@ -255,7 +255,7 @@ class FolderView(QWidget):
             return
         name = item.text(0)
         if name.endswith("/"):
-            # Der Schrägstrich ist Darstellung, kein Namensteil — er gehört nicht
+            # Der Schraegstrich ist Darstellung, kein Namensteil — er gehoert nicht
             # ins Eingabefeld.  `refresh()` baut ihn danach wieder auf.
             item.setText(0, name[:-1])
         item.setFlags(item.flags() | Qt.ItemIsEditable)
@@ -337,8 +337,8 @@ class FolderView(QWidget):
         if not self._folder or not self._folder.is_dir():
             return
 
-        # `..` zuerst und IMMER, wenn es eine Ebene darüber gibt — auch dann,
-        # wenn der Ordner sich gleich als unlesbar erweist: sonst sässe der
+        # `..` zuerst und IMMER, wenn es eine Ebene darueber gibt — auch dann,
+        # wenn der Ordner sich gleich als unlesbar erweist: sonst saesse der
         # Anwender dort fest.
         eltern = self._folder.parent
         if eltern != self._folder:
@@ -379,14 +379,14 @@ class FolderView(QWidget):
             item.setData(0, PATH_ROLE, str(kind))
         gruppe.setExpanded(True)
 
-    # ── Kontextmenü ─────────────────────────────────────────────────────────
+    # ── Kontextmenue ─────────────────────────────────────────────────────────
 
     def _kontextmenue(self, punkt) -> None:
         if not self._aktionen:
             return
         item = self.tree.itemAt(punkt)
-        # Der angeklickte Eintrag zählt — Datei ODER Ordner (`Umbenennen` gilt für
-        # beide), sofern er nicht ohnehin schon ausgewählt ist.
+        # Der angeklickte Eintrag zaehlt — Datei ODER Ordner (`Umbenennen` gilt fuer
+        # beide), sofern er nicht ohnehin schon ausgewaehlt ist.
         if item is not None and self._pfad_von(item) and not item.isSelected():
             self.tree.clearSelection()
             item.setSelected(True)

@@ -1,15 +1,15 @@
 /**
  * @file test_cpm_fs.cpp
- * @brief GoogleTests für @ref CpmFileSystem — Lesepfad an den echten CP/A-/SCPX-Disketten.
+ * @brief GoogleTests fuer @ref CpmFileSystem — Lesepfad an den echten CP/A-/SCPX-Disketten.
  *
  * ### Woher die Sollwerte stammen
- * Die Dateilisten und die Prüfsummen in diesem Test sind **gegen `cpmtools` verifiziert**:
+ * Die Dateilisten und die Pruefsummen in diesem Test sind **gegen `cpmtools` verifiziert**:
  * `cpmls -f A5120_160` liefert dieselben 24 Namen, und `cpmcp -f A5120_160 … '0:*'`
- * liefert für **jede** Datei byteweise denselben Inhalt (2026-08-10, cpmtools 2.23,
+ * liefert fuer **jede** Datei byteweise denselben Inhalt (2026-08-10, cpmtools 2.23,
  * `diskdef A5120_160` mit `offset 15104` — genau der Offset, den unser `data_start:
- * {cyl: 2, head: 0}` ausrechnet).  Der Vergleich lässt sich jederzeit wiederholen, ist
- * aber bewusst **nicht** Teil des Testlaufs: cpmtools ist keine Abhängigkeit des Projekts.
- * Die Prüfsummen frieren das damals verglichene Ergebnis ein.
+ * {cyl: 2, head: 0}` ausrechnet).  Der Vergleich laesst sich jederzeit wiederholen, ist
+ * aber bewusst **nicht** Teil des Testlaufs: cpmtools ist keine Abhaengigkeit des Projekts.
+ * Die Pruefsummen frieren das damals verglichene Ergebnis ein.
  *
  * @see core/filesystem/cpm/cpm_fs.h
  * @see doc/design/13_k1520disktool.md §7
@@ -54,7 +54,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Diskette + Sektorraum + Dateisystem in einem Rutsch (Lebensdauer gebündelt).
+/// @brief Diskette + Sektorraum + Dateisystem in einem Rutsch (Lebensdauer gebuendelt).
 struct Volume {
     std::unique_ptr<DiskImage>     disk;
     std::unique_ptr<SectorSpace>   space;
@@ -83,7 +83,7 @@ Volume oeffne(const char* datei, const char* fsname) {
     return v;
 }
 
-/// @brief FNV-1a-64 — stabile Prüfsumme für die eingefrorenen Dateiinhalte.
+/// @brief FNV-1a-64 — stabile Pruefsumme fuer die eingefrorenen Dateiinhalte.
 uint64_t fnv1a(const std::vector<uint8_t>& d) {
     uint64_t h = 0xcbf29ce484222325ULL;
     for (uint8_t b : d) { h ^= b; h *= 0x100000001b3ULL; }

@@ -127,7 +127,7 @@ TEST(P8000Karte16Ram, Hardwaretest_VierMal1M_MaxSeg3F) {
 }
 
 TEST(P8000Karte16Ram, Hardwaretest_16MBKarte_MaxSeg7E) {
-    // MMU aus: A23 = 0 ⇒ MON16 sieht nur die untere Hälfte, U16 nimmt Segment 7FH weg.
+    // MMU aus: A23 = 0 ⇒ MON16 sieht nur die untere Haelfte, U16 nimmt Segment 7FH weg.
     P8000Karte16 k(mitDram("16M"));
     const std::string t = hardwaretest(k, 6'000'000'000);
     EXPECT_NE(t.find("MAXSEG=<7E>"), std::string::npos) << t;

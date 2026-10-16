@@ -1,11 +1,11 @@
 /**
  * @file test_prg710_fernschreiber.cpp
  * @brief PRG 710-1 (doc/design/20_prg710.md AP-P8c): SCPX 1526 V1.7 mit dem Fernschreiber-
- *        BIOS `B17272FS` druckt über die ASS 590069 (SIO-Kanal B, C5H/C7H) — der Anschluss
- *        „Fernschreiber“ des SerialHub fängt den Text in einer Datei.
+ *        BIOS `B17272FS` druckt ueber die ASS 590069 (SIO-Kanal B, C5H/C7H) — der Anschluss
+ *        „Fernschreiber“ des SerialHub faengt den Text in einer Datei.
  *
  * Die Systemdiskette entsteht im Test wie mit `k1520disktool boot-scpx` (AP-P6): `SYL17` +
- * `CCPBD17` + `B17272FS` von der Gerätediskette `prg710-1_scpx17_cpa640_boot.hfe`.  Gedruckt
+ * `CCPBD17` + `B17272FS` von der Geraetediskette `prg710-1_scpx17_cpa640_boot.hfe`.  Gedruckt
  * wird mit ^P (Druckerecho des CCP) und `DIR`.
  */
 
@@ -106,7 +106,7 @@ TEST(Prg710Fernschreiber, ScpxDrucktUeberDieAss590069) {
     Prg710Machine::Config cfg;
     cfg.variante = V::Prg710_1;
     Prg710Machine m(cfg);
-    // Der Fernschreiber hängt hinter den K8025-Anschlüssen (710-1: Index 2).
+    // Der Fernschreiber haengt hinter den K8025-Anschluessen (710-1: Index 2).
     const auto an = m.serielleAnschluesse();
     ASSERT_EQ(an.size(), 3u);
     const int fsIdx = 2;
@@ -136,11 +136,11 @@ TEST(Prg710Fernschreiber, ScpxDrucktUeberDieAss590069) {
     const auto roh = datei(pfad);
     const std::string aus(roh.begin(), roh.end());
     EXPECT_NE(aus.find("DIR"), std::string::npos) << "[" << aus << "]";
-    // Die Diskette trägt nur die Systemspuren; '>' gibt es in ITA2 nicht — das BIOS
-    // schickt dafür einen Zwischenraum (Tabellensuche erfolglos → 04H, E332H).
+    // Die Diskette traegt nur die Systemspuren; '>' gibt es in ITA2 nicht — das BIOS
+    // schickt dafuer einen Zwischenraum (Tabellensuche erfolglos → 04H, E332H).
     EXPECT_NE(aus.find("NO FILE"), std::string::npos) << "[" << aus << "]";
     EXPECT_NE(aus.find("\r\nA "), std::string::npos) << "[" << aus << "]";
-    EXPECT_NE(aus.find("\r\n"), std::string::npos) << "Wagenrücklauf + Zeilenvorschub";
+    EXPECT_NE(aus.find("\r\n"), std::string::npos) << "Wagenruecklauf + Zeilenvorschub";
 
     const auto f = an[fsIdx]->format();
     EXPECT_TRUE(f.gueltig);

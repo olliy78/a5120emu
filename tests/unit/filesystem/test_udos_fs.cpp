@@ -1,20 +1,20 @@
 /**
  * @file test_udos_fs.cpp
- * @brief GoogleTests für @ref UdosFileSystem und @ref UdosBitmap.
+ * @brief GoogleTests fuer @ref UdosFileSystem und @ref UdosBitmap.
  *
  * ### Woher die Sollwerte stammen
- * Alle Erwartungen dieses Tests stehen **wörtlich in `doc/udos_diskettenformat.md`** und
+ * Alle Erwartungen dieses Tests stehen **woertlich in `doc/udos_diskettenformat.md`** und
  * sind dort am **laufenden UDOS** gemessen (`CAT`, `STATUS`, `EXTRACT`), nicht abgeleitet:
  *
  * | Sollwert | Quelle |
  * |---|---|
- * | 69 Verzeichniseinträge, davon 39 ohne SECRET | §5 (`CAT` ohne `P=&` listet 39 von 69) |
+ * | 69 Verzeichniseintraege, davon 39 ohne SECRET | §5 (`CAT` ohne `P=&` listet 39 von 69) |
  * | Seite 0: 850 freie Sektoren · Seite 1: 1310 | §2 (`STATUS` beider Laufwerke) |
- * | `SD`: Typ P1, 7 Sätze à 128 B, ENTRY E800, Kopf auf Spur 31 Sektor 9 | §6 (`EXTRACT SD`) |
- * | Datenträgername `UDOS.SYS.4.3` beidseitig | §2 |
+ * | `SD`: Typ P1, 7 Saetze à 128 B, ENTRY E800, Kopf auf Spur 31 Sektor 9 | §6 (`EXTRACT SD`) |
+ * | Datentraegername `UDOS.SYS.4.3` beidseitig | §2 |
  * | Belegungskarte: Nachlauf 11×0x33 · 0xF7 · 27×0x77 | §4 (aus `FORMATPC.MAC`) |
  *
- * Damit prüft dieser Test unsere Lesart nicht gegen sich selbst, sondern gegen das
+ * Damit prueft dieser Test unsere Lesart nicht gegen sich selbst, sondern gegen das
  * Betriebssystem, das die Diskette geschrieben hat.
  *
  * @see core/filesystem/udos/udos_fs.h
@@ -61,7 +61,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Eine Seite der UDOS-Referenzdiskette (Lebensdauer gebündelt).
+/// @brief Eine Seite der UDOS-Referenzdiskette (Lebensdauer gebuendelt).
 struct Seite {
     std::unique_ptr<DiskImage>      disk;
     std::unique_ptr<SectorSpace>    space;
@@ -742,16 +742,16 @@ TEST(UdosVerzeichnisZweistufig, NachtragenLiefertGenauDasselbeWieList) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * @test Offset 44–47 ist kein Rätsel, sondern das zweite Speichersegment.
+ * @test Offset 44–47 ist kein Raetsel, sondern das zweite Speichersegment.
  * @par Kriterium  `FORMAT`, `ESPRO` und `UPRO` der Referenzdiskette melden je zwei
  *                 Segmente; Typ A meldet keine.
- * @par Warum      §6 führte die vier Bytes lange als „Bedeutung offen, unverändert
- *                 übernehmen".  Das UDOS1715-Handbuch (§3.2.2, dieselbe
- *                 Betriebssystemfamilie) sagt es wörtlich: „mehrere Segmente möglich;
+ * @par Warum      §6 fuehrte die vier Bytes lange als „Bedeutung offen, unveraendert
+ *                 uebernehmen".  Das UDOS1715-Handbuch (§3.2.2, dieselbe
+ *                 Betriebssystemfamilie) sagt es woertlich: „mehrere Segmente moeglich;
  *                 abgeschlossen mit `00 00 00 00`", und `2AH…7FH` sind „nur bei
- *                 P-Dateien vom System verwendet, sonst frei für Anwender".  Beides
+ *                 P-Dateien vom System verwendet, sonst frei fuer Anwender".  Beides
  *                 deckt sich mit dieser Diskette — auch mit dem alten Befund, dass
- *                 Typ A dort Text trägt.
+ *                 Typ A dort Text traegt.
  */
 TEST(UdosFileSystem, VierundvierzigBisSiebenundvierzigIstDasZweiteSegment) {
     Seite s0 = oeffne(0);
@@ -778,16 +778,16 @@ TEST(UdosFileSystem, VierundvierzigBisSiebenundvierzigIstDasZweiteSegment) {
 
 /**
  * @test UdosFileSystemWrite/VersionstextImAenderungsfeldUeberlebt
- * @brief Das Änderungsfeld trägt nicht immer ein Datum — und das darf nicht auffallen.
+ * @brief Das Aenderungsfeld traegt nicht immer ein Datum — und das darf nicht auffallen.
  *
  * Auf fremd beschriebenen Disketten steht bei Offset 32 statt `JJMMTT` ein
  * **Versionstext** („V 4.3 "). Sein Leerzeichen am Ende geht beim Lesen verloren, der
- * Wert kommt also mit fünf Zeichen zurück — und der Schreibpfad verwarf ihn dann als
+ * Wert kommt also mit fuenf Zeichen zurueck — und der Schreibpfad verwarf ihn dann als
  * „kein Datum" und setzte stillschweigend den heutigen Tag. Auf
- * `udos_ds77_k5601_fremdsync.hfe` traf das 13 von 44 Dateien; gemerkt hätte es
+ * `udos_ds77_k5601_fremdsync.hfe` traf das 13 von 44 Dateien; gemerkt haette es
  * niemand, denn der Dateiinhalt war korrekt.
  *
- * Für den Erstellungsvermerk daneben wurde genau das schon berücksichtigt
+ * Fuer den Erstellungsvermerk daneben wurde genau das schon beruecksichtigt
  * (`erstellt.resize(6, ' ')`) — hier fehlte es.
  */
 TEST(UdosFileSystemWrite, VersionstextImAenderungsfeldUeberlebt) {
@@ -797,7 +797,7 @@ TEST(UdosFileSystemWrite, VersionstextImAenderungsfeldUeberlebt) {
 
     const std::vector<uint8_t> daten(300, 0x41);
     WriteOptions o;
-    o.date = "V 4.3";                    // fünf Zeichen — so kommt er vom Lesen zurück
+    o.date = "V 4.3";                    // fuenf Zeichen — so kommt er vom Lesen zurueck
     o.udos_created = "V 4.3";
     ASSERT_TRUE(s.fs->write("VERSION.TXT", daten, o)) << s.fs->lastError();
 
@@ -824,20 +824,20 @@ TEST(UdosFileSystemWrite, VersionstextImAenderungsfeldUeberlebt) {
  * @test UdosFileSystem/DerBelegungsplanSchuetztDenUrladerNICHT
  * @brief Der Grund, warum Spur 0–2 und die Bootspur bei ZDOS gesperrt bleiben.
  *
- * Seit 2026-08-22 entscheidet sonst überall der Belegungsplan, welcher Sektor frei
+ * Seit 2026-08-22 entscheidet sonst ueberall der Belegungsplan, welcher Sektor frei
  * ist — bei NDOS ohne jede Ausnahme. Bei ZDOS bleiben vier Spuren ausgenommen, und
- * dieser Fall hält fest, **warum**: auf der bootfähigen Seite der Referenzdiskette
- * führt der Plan 35 Sektoren der Systemspuren als *frei*, und **alle 35 tragen
+ * dieser Fall haelt fest, **warum**: auf der bootfaehigen Seite der Referenzdiskette
+ * fuehrt der Plan 35 Sektoren der Systemspuren als *frei*, und **alle 35 tragen
  * Inhalt** — die Meldungstabelle des Nukleus („MEMORY PROTECT VIOLATION" …).
  *
- * UDOS schützt seinen eigenen Urlader dort also nicht. Liesse man den Plan
- * entscheiden, überschriebe die nächste geschriebene Datei diese Sektoren; die
- * Diskette bootete weiter und fiele erst später auf merkwürdige Weise um. Die
- * Spursperre ist hier keine Vorsicht, sondern das Einzige, was den Bereich hält —
+ * UDOS schuetzt seinen eigenen Urlader dort also nicht. Liesse man den Plan
+ * entscheiden, ueberschriebe die naechste geschriebene Datei diese Sektoren; die
+ * Diskette bootete weiter und fiele erst spaeter auf merkwuerdige Weise um. Die
+ * Spursperre ist hier keine Vorsicht, sondern das Einzige, was den Bereich haelt —
  * sie kostet 35 von 850 Sektoren (4 %).
  *
  * @par Bricht der Fall, ist das kein Fehler dieses Tests: dann hat jemand die
- *      Sperre gelockert, und die Begründung dafür muss neu erbracht werden.
+ *      Sperre gelockert, und die Begruendung dafuer muss neu erbracht werden.
  */
 TEST(UdosFileSystem, DerBelegungsplanSchuetztDenUrladerNICHT) {
     Seite s = oeffne(/*head=*/0);

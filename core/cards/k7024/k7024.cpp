@@ -42,9 +42,9 @@ K7024::A5120Config K7024::A5120Config::forK8915()
     cfg.chargen_rows0_7  = CHARGEN_K8915_ZG1_LATIN;
     cfg.chargen_rows8_11 = CHARGEN_K8915_ZG2_LATIN;
     // Keine Lesesperre: im K8915 liegt unter 1000H kein RAM auf dem Systembus, das
-    // an Stelle der Karte antworten könnte — der Bildspeicher MUSS lesbar sein.  Das
-    // Boot-ROM prüft ihn beim Selbsttest als RAM (F0EDH: 1000H, 07F0H Bytes, bei
-    // A8H = 06H) und löscht das Cursorbit per `RES 7,(HL)` (doc/design/16_k8915.md §3.3).
+    // an Stelle der Karte antworten koennte — der Bildspeicher MUSS lesbar sein.  Das
+    // Boot-ROM prueft ihn beim Selbsttest als RAM (F0EDH: 1000H, 07F0H Bytes, bei
+    // A8H = 06H) und loescht das Cursorbit per `RES 7,(HL)` (doc/design/16_k8915.md §3.3).
     cfg.read_protect     = false;
     return cfg;
 }
@@ -69,7 +69,7 @@ K7024::A5120Config K7024::A5120Config::forPrg710()
 // ─── Character-generator lookup ───────────────────────────────────────────────
 
 /**
- * @brief Zeichengenerator-Lookup für den konfigurierten lateinischen Zeichensatz.
+ * @brief Zeichengenerator-Lookup fuer den konfigurierten lateinischen Zeichensatz.
  *
  * Zweistufiger Zeichengenerator, roh nach 7-Bit-Code adressiert (Design-Doc §4:
  * `EPROM-Adresse = (code & 0x7F) << 3 | zeile`):
@@ -77,10 +77,10 @@ K7024::A5120Config K7024::A5120Config::forPrg710()
  *   - Pixelzeilen 8–11: untere Ebene cfg_.chargen_rows8_11 (deren Zeilen 0–3, liefert
  *                       Descender g/j/p/q/y + Punkt/Komma)
  *
- * Standardmässig (chargen_rows0_7/8_11 == nullptr) der A5120-Satz v171/v172 — der
- * **vollständige** Satz mit echten Klein- **und** Grossbuchstaben (Codes 0x20–0x7F
+ * Standardmaessig (chargen_rows0_7/8_11 == nullptr) der A5120-Satz v171/v172 — der
+ * **vollstaendige** Satz mit echten Klein- **und** Grossbuchstaben (Codes 0x20–0x7F
  * direkt programmiert), daher kein Versal-Fold. Andere Karten (K8915 012-6820) haben
- * eine eigene EPROM-Bestückung mit derselben Adressierung, siehe
+ * eine eigene EPROM-Bestueckung mit derselben Adressierung, siehe
  * doc/design/16_k8915.md §3.3. Steuerzeichen < 0x20 bleiben leer.
  *
  * @param charCode  Zeichencode (0x00–0x7F)

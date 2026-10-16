@@ -80,7 +80,7 @@ TEST(DbgU8000, AufrufstapelFolgtCallUndRet) {
 TEST(DbgU8000, BedingterCallOhneSprungErzeugtKeinenRahmen) {
     dbg16::CallStack16 cs;
     cs.noteCall(0x100, 0x104, 0x2000);
-    cs.onInstruction(0x104, 0x2000);             // Bedingung falsch: SP unverändert
+    cs.onInstruction(0x104, 0x2000);             // Bedingung falsch: SP unveraendert
     EXPECT_TRUE(cs.frames().empty());
 }
 
@@ -170,7 +170,7 @@ TEST(DbgU8000Snap, DiffZeigtRegisterKarteUndDramBereiche) {
     EXPECT_NE(all.find("3 EM-DRAM-Byte(s) in 2 Bereich(en)"), std::string::npos) << all;
 }
 
-// ── AP P8: Pins, Buszyklus, Ausnahmeprotokoll, Statuszählung ─────────────────
+// ── AP P8: Pins, Buszyklus, Ausnahmeprotokoll, Statuszaehlung ─────────────────
 
 TEST(DbgU8000P8, BuszyklusAlsText) {
     Z8kBusCycle c;

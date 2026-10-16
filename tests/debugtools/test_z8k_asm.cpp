@@ -1,5 +1,5 @@
 // Assembler-Tests (tools/z8000/z8k_asm.h):
-//  * Rundlauf Kodierung → Disassembler → Assembler über JEDE Tabellenzeile, beide Modi
+//  * Rundlauf Kodierung → Disassembler → Assembler ueber JEDE Tabellenzeile, beide Modi
 //  * Assembler-Eigenschaften (Marken, Direktiven, Fehler)
 //  * Nebenprobe gegen z8001asm.py an den EM256-Firmwares (tests/fixtures/z8000/)
 #include "tools/z8000/z8k_asm.h"
@@ -22,7 +22,7 @@ using namespace z8k;
 
 namespace {
 
-/// Repräsentative Operandenwerte für Zeile `in`, Operand i.  variant 1 = zweite Sorte
+/// Repraesentative Operandenwerte fuer Zeile `in`, Operand i.  variant 1 = zweite Sorte
 /// (kurze Segmentadresse, cc = T, leere Flagliste, Grenzwerte …).
 Operand synth(const Insn& in, int i, bool seg, int variant) {
     const OpSpec& s = in.op[i];
@@ -89,7 +89,7 @@ std::string readFile(const std::string& p) {
 
 } // namespace
 
-// ── Rundlauf über die ganze Tabelle ──────────────────────────────────────────
+// ── Rundlauf ueber die ganze Tabelle ──────────────────────────────────────────
 
 class Z8kRoundTrip : public ::testing::TestWithParam<bool> {};
 
@@ -286,7 +286,7 @@ TEST(Z8kFirmware, AssemblesLikeZ8001AsmExceptKnownBugs) {
     }
 }
 
-// Die Firmwares so disassemblieren, wie der U8001 sie ausführt (FCW = %C000 →
+// Die Firmwares so disassemblieren, wie der U8001 sie ausfuehrt (FCW = %C000 →
 // segmentiert): jedes Wort ab %0040 bis zum Ende ist ein bekannter Befehl.
 TEST(Z8kFirmware, DisassemblesReadablySegmented) {
     for (const char* name : {"fw_add", "fw_add32", "fw_byte", "fw_logic", "fw_loop",
@@ -311,7 +311,7 @@ TEST(Z8kFirmware, DisassemblesReadablySegmented) {
     }
 }
 
-// S5b: Symboldatei für k1520dbg (`z8kasm --sym`) — nur Marken, mit Segment.
+// S5b: Symboldatei fuer k1520dbg (`z8kasm --sym`) — nur Marken, mit Segment.
 TEST(Z8kAsm, SymboldateiNurMarkenMitSegment) {
     AsmOptions o; o.seg = true;
     AsmResult r = assemble("        ORG <<3>>%0100\nSTART:  LD R0,#1\nLOOP:   JR LOOP\nK EQU 5\n", o);
@@ -326,14 +326,14 @@ TEST(Z8kAsm, SymboldateiNurMarkenMitSegment) {
     EXPECT_NE(formatSymbols(n, 5).find("<<5>>%0200 HIER\n"), std::string::npos);
 }
 
-// ── AP P8: Rundlauf über den GANZEN Befehlssatz (jedes erste Wort, beide Modi) ──
+// ── AP P8: Rundlauf ueber den GANZEN Befehlssatz (jedes erste Wort, beide Modi) ──
 //
-// Für jedes der 65 536 ersten Worte, das eine Tabellenzeile trifft, mit zufälligen
+// Fuer jedes der 65 536 ersten Worte, das eine Tabellenzeile trifft, mit zufaelligen
 // Folgeworten: dekodieren → Disassembler-Text → Assembler → wieder dekodieren.  Verlangt
 // wird dieselbe Zeile und derselbe Operandeninhalt (Register, Segment, Kurzform, Wert,
-// Abstand) und derselbe Text.  Bitgleichheit der Worte wird gezählt, aber nicht verlangt:
+// Abstand) und derselbe Text.  Bitgleichheit der Worte wird gezaehlt, aber nicht verlangt:
 // Felder, die die CPU nicht auswertet (unteres Byte des ersten Worts einer langen
-// Segmentadresse, oberes Byte einer Byte-Direktgrösse in der Langform `LDB.L`), schreibt
+// Segmentadresse, oberes Byte einer Byte-Direktgroesse in der Langform `LDB.L`), schreibt
 // der Assembler als 0 bzw. verdoppelt.
 namespace {
 bool sameOperand(const Operand& a, const Operand& b) {
@@ -361,7 +361,7 @@ TEST_P(Z8kRoundTrip, JedesErsteWortMitZufallsfolgeworten) {
             std::vector<uint16_t> back;
             std::string err;
             const Insn* chosen = nullptr;
-            // Ungerade Registerpaare (README Lücke 9) nimmt nur --lax an.
+            // Ungerade Registerpaare (README Luecke 9) nimmt nur --lax an.
             bool ok = assembleLine(text, seg, pcSeg, pc, back, err, nullptr, &chosen);
             if (!ok) ok = assembleLine(text, seg, pcSeg, pc, back, err, nullptr, &chosen, true);
             Decoded e;

@@ -6,16 +6,16 @@
  * das Modell setzt deshalb nur **Host-Taste → 8279-Code** `S C RRR CCC` um
  * (`doc/prg710/k7609_codes.csv`): Bit 6 = Umschaltstufe, Bit 7 (Strg) kommt in keiner
  * Tabelle vor und wird nie gesetzt.  **Ein Code je Tastendruck**, kein Loslass-Code,
- * keine Hardware-Wiederholung (die macht die Oberfläche bzw. das OS).
+ * keine Hardware-Wiederholung (die macht die Oberflaeche bzw. das OS).
  *
- * **Host-Tastencodes** (`keyPress(k, shift, ctrl)`, wie die übrigen Maschinen):
+ * **Host-Tastencodes** (`keyPress(k, shift, ctrl)`, wie die uebrigen Maschinen):
  * - `QK_TASTE_BASE | c` — **physische Taste** der Matrix (Code 00H–3FH ohne Umschaltbit;
- *   `shift` setzt Bit 6).  Für die Bildschirmtastatur: erreicht jede Taste, auch die
+ *   `shift` setzt Bit 6).  Fuer die Bildschirmtastatur: erreicht jede Taste, auch die
  *   ohne Zeichen (Merker/Umschalter 10H/18H/28H, S1–S9, CL).
  * - Druckbares ASCII (20H–7EH) = **Zeichen**: Ziffern/Satzzeichen suchen die Taste, auf
  *   der das Zeichen steht (Umschaltstufe ergibt sich daraus, `shift` bleibt unbeachtet);
- *   **Buchstaben** gelten als physische Taste, Groß-/Kleinschreibung unbeachtet, die
- *   Stufe liefert `shift` — wie am Gerät, wo erst das OS aus Taste + Umschaltung + eigenen
+ *   **Buchstaben** gelten als physische Taste, Gross-/Kleinschreibung unbeachtet, die
+ *   Stufe liefert `shift` — wie am Geraet, wo erst das OS aus Taste + Umschaltung + eigenen
  *   Merkern (UDOS: ohne Umschalt GROSS, SCPX: klein) das Zeichen macht.  Leertaste = 16H [?].
  * - Qt-Sondertasten: Return/Enter = ET1 (37H, CR), Escape = ET2/ST (38H), Tab = 3CH,
  *   Backspace = 08H [?], Cursor hoch/rechts/links/runter = 19H/39H/3AH/3BH.
@@ -37,12 +37,12 @@ public:
                              CODE_HOCH = 0x19, CODE_RECHTS = 0x39, CODE_LINKS = 0x3A,
                              CODE_RUNTER = 0x3B, UMSCHALT_BIT = 0x40;
 
-    /** @brief An den 8279 anschließen (nullptr = Kabel gezogen). */
+    /** @brief An den 8279 anschliessen (nullptr = Kabel gezogen). */
     void connect(I8279* kbc) { kbc_ = kbc; }
 
-    /** @brief Taste gedrückt; Codes werden eingereiht, @ref service stellt sie zu. */
+    /** @brief Taste gedrueckt; Codes werden eingereiht, @ref service stellt sie zu. */
     void keyPress(uint32_t k, bool shift, bool ctrl);
-    /** @brief Loslassen erzeugt keinen Code (§3.10) — nur der Vollständigkeit halber. */
+    /** @brief Loslassen erzeugt keinen Code (§3.10) — nur der Vollstaendigkeit halber. */
     void keyRelease(uint32_t) {}
 
     /**
@@ -56,8 +56,8 @@ public:
     bool sendetNoch() const { return !wartend_.empty(); }
 
     /**
-     * @brief Codes (ohne Strg-Vorsatz) für einen Host-Tastencode.
-     * @param out Platz für zwei Codes (Strg-Einmaltaste, Taste)
+     * @brief Codes (ohne Strg-Vorsatz) fuer einen Host-Tastencode.
+     * @param out Platz fuer zwei Codes (Strg-Einmaltaste, Taste)
      * @return Anzahl 0–2
      */
     static int codesFuer(uint32_t k, bool shift, bool ctrl, uint8_t out[2]);

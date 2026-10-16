@@ -1,6 +1,6 @@
 /**
  * @file test_kassette_medium.cpp
- * @brief Kassettenband als Medium: CRC-Hilfen, Geometrie, Blockfolge, Überschreiben, Wenden
+ * @brief Kassettenband als Medium: CRC-Hilfen, Geometrie, Blockfolge, Ueberschreiben, Wenden
  *        (doc/design/29_kassette.md §5, doc/kassette/treiber.md, AP K3).
  */
 
@@ -21,7 +21,7 @@ std::vector<uint8_t> daten(size_t n, uint8_t start = 0) {
     return d;
 }
 
-/// Medium mit drei Blöcken à 100 Datenbytes auf Seite A.
+/// Medium mit drei Bloecken à 100 Datenbytes auf Seite A.
 KassettenMedium dreiBloecke() {
     KassettenMedium m;
     m.haengeAn(Seite::A, m.geometrie().initialluecke_um, blockBauen(daten(100, 0)));
@@ -77,7 +77,7 @@ TEST(KassettenMedium, FalscheCrcUndFremdePraeambelLassenSichSpeichern) {
     auto kaputt = blockBauen(daten(20));
     kaputt[3] ^= 0x01;  // Datenbyte kippt: CRC stimmt nicht mehr
     EXPECT_FALSE(crcStimmt(kaputt));
-    auto fremd = blockBauen(daten(20), 0xAB, 0x55);  // EGOS/K5261 lassen ABH als Präambel zu
+    auto fremd = blockBauen(daten(20), 0xAB, 0x55);  // EGOS/K5261 lassen ABH als Praeambel zu
     ASSERT_TRUE(m.haengeAn(Seite::A, 40'000, kaputt));
     ASSERT_TRUE(m.haengeAn(Seite::A, 20'000, fremd));
     EXPECT_EQ(m.block(Seite::A, 0).bytes, kaputt);
@@ -148,7 +148,7 @@ TEST(KassettenMedium, SuchenNachPosition) {
     const Seite A = Seite::A;
     EXPECT_EQ(m.blockBei(A, m.blockStart(A, 1)), 1);
     EXPECT_EQ(m.blockBei(A, m.blockEnde(A, 1) - 1), 1);
-    EXPECT_EQ(m.blockBei(A, m.blockEnde(A, 1)), -1) << "Lücke";
+    EXPECT_EQ(m.blockBei(A, m.blockEnde(A, 1)), -1) << "Luecke";
     EXPECT_EQ(m.blockBei(A, 0), -1);
     EXPECT_EQ(m.ersterBlockAb(A, 0), 0u);
     EXPECT_EQ(m.ersterBlockAb(A, m.blockStart(A, 1)), 1u);
@@ -169,7 +169,7 @@ TEST(KassettenMedium, AnhaengenWeistUnzulaessigesAb) {
     EXPECT_EQ(m.anzahlBloecke(Seite::A), 1u);
 }
 
-// ─── Schreiben und Löschen ───────────────────────────────────────────────────
+// ─── Schreiben und Loeschen ───────────────────────────────────────────────────
 
 TEST(KassettenMedium, SchreibenGleicherLaengeErsetztInPlaceUndLaesstNachbarnStehen) {
     KassettenMedium m = dreiBloecke();
@@ -179,7 +179,7 @@ TEST(KassettenMedium, SchreibenGleicherLaengeErsetztInPlaceUndLaesstNachbarnSteh
     ASSERT_EQ(m.anzahlBloecke(Seite::A), 3u);
     EXPECT_EQ(m.block(Seite::A, 1).bytes, neu);
     EXPECT_EQ(m.blockStart(Seite::A, 1), s1);
-    EXPECT_EQ(m.blockStart(Seite::A, 2), s2) << "spätere Blöcke behalten ihre Lage auf dem Band";
+    EXPECT_EQ(m.blockStart(Seite::A, 2), s2) << "spaetere Bloecke behalten ihre Lage auf dem Band";
 }
 
 TEST(KassettenMedium, SchreibenInDieLueckeFuegtEin) {
@@ -202,7 +202,7 @@ TEST(KassettenMedium, UeberlappendesSchreibenZerstoertDieBetroffenenBloecke) {
     // Ein langer Block ab Mitte von Block 1 reicht in Block 2 hinein: beide gehen verloren.
     const int64_t ort = (m.blockStart(A, 1) + m.blockEnde(A, 1)) / 2;
     ASSERT_TRUE(m.schreibeBlock(A, ort, blockBauen(daten(200, 5))));
-    ASSERT_EQ(m.anzahlBloecke(A), 2u) << "Block 0 und der neue; 1 und 2 sind überschrieben";
+    ASSERT_EQ(m.anzahlBloecke(A), 2u) << "Block 0 und der neue; 1 und 2 sind ueberschrieben";
     EXPECT_EQ(m.blockStart(A, 1), ort);
     EXPECT_LT(m.blockEnde(A, 0), ort);
     EXPECT_GT(m.blockEnde(A, 1), s2);
@@ -212,9 +212,9 @@ TEST(KassettenMedium, SchreibenWeistAuszerhalbDesBeschreibbarenBandsAb) {
     KassettenMedium m = dreiBloecke();
     const auto rev = m.revision();
     EXPECT_FALSE(m.schreibeBlock(Seite::A, m.botEnde() - 1, blockBauen(daten(4)))) << "auf der BOT-Marke";
-    EXPECT_FALSE(m.schreibeBlock(Seite::A, m.magnetbandEnde() - 10, blockBauen(daten(100)))) << "ragt über das Magnetband";
+    EXPECT_FALSE(m.schreibeBlock(Seite::A, m.magnetbandEnde() - 10, blockBauen(daten(100)))) << "ragt ueber das Magnetband";
     EXPECT_FALSE(m.schreibeBlock(Seite::A, m.botEnde(), {}));
-    EXPECT_EQ(m.revision(), rev) << "ein abgewiesenes Schreiben ändert nichts";
+    EXPECT_EQ(m.revision(), rev) << "ein abgewiesenes Schreiben aendert nichts";
     EXPECT_EQ(m.anzahlBloecke(Seite::A), 3u);
 }
 
@@ -227,7 +227,7 @@ TEST(KassettenMedium, LoeschenZerstoertNurUeberlappendeBloecke) {
     ASSERT_EQ(m.anzahlBloecke(A), 2u);
     EXPECT_EQ(m.block(A, 0).luecke_vor_um, b0);
     EXPECT_EQ(m.blockStart(A, 1), s2) << "der Nachfolger bleibt, wo er war";
-    EXPECT_EQ(m.loesche(A, m.blockEnde(A, 0), m.blockStart(A, 1)), 0u) << "nur Lücke: nichts zu löschen";
+    EXPECT_EQ(m.loesche(A, m.blockEnde(A, 0), m.blockStart(A, 1)), 0u) << "nur Luecke: nichts zu loeschen";
     EXPECT_EQ(m.loesche(A, 10, 10), 0u);
 }
 
@@ -279,7 +279,7 @@ TEST(KassettenMedium, RevisionZaehltInhaltNichtPosition) {
     EXPECT_GT(m.revision(), r1);
     const auto r2 = m.revision();
     m.setSchreibschutz(Seite::B, true);
-    EXPECT_EQ(m.revision(), r2) << "gleicher Wert ist keine Änderung";
+    EXPECT_EQ(m.revision(), r2) << "gleicher Wert ist keine Aenderung";
 }
 
 TEST(KassettenMedium, GleichInhaltIgnoriertDiePosition) {

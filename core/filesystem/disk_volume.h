@@ -631,8 +631,8 @@ public:
     /**
      * @brief Nur den Nachspann schreiben — Nutzdaten und CRC bleiben, wie sie sind.
      *
-     * Bei UDOS ist das die **Dateiverkettung**: sie zu ändern ist etwas anderes, als
-     * die Nutzdaten zu ändern.  Die vorhandene Daten-CRC wird woertlich uebernommen,
+     * Bei UDOS ist das die **Dateiverkettung**: sie zu aendern ist etwas anderes, als
+     * die Nutzdaten zu aendern.  Die vorhandene Daten-CRC wird woertlich uebernommen,
      * damit ein absichtlich defekter Sektor defekt bleibt (§19.2).
      */
     bool writeSectorTail(uint8_t cyl, uint8_t head, int index,

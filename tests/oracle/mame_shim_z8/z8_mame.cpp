@@ -1,5 +1,5 @@
-// Übersetzt MAMEs z8ops.hxx (unverändert) in der Hülle z8_shim.h; Opcodetabelle aus
-// MAMEs z8.cpp (beim Konfigurieren herausgeschnitten, z8_table.inc).  Nur Prüfstand.
+// Uebersetzt MAMEs z8ops.hxx (unveraendert) in der Huelle z8_shim.h; Opcodetabelle aus
+// MAMEs z8.cpp (beim Konfigurieren herausgeschnitten, z8_table.inc).  Nur Pruefstand.
 #include "z8_shim.h"
 
 #define Z8_IMR_ENABLE 0x80

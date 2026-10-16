@@ -1,18 +1,18 @@
 /**
  * @file format_catalog.h
- * @brief FormatCatalog — lädt die Diskettenformate aus `formats.yaml`.
+ * @brief FormatCatalog — laedt die Diskettenformate aus `formats.yaml`.
  *
- * Löst die früher einkompilierten `FormatParser::builtinFormats()` ab: der Katalog ist
- * eine **reine Laufzeitdatei**.  Geladen wird über eine Pfadliste in aufsteigender
- * Priorität (@ref FormatCatalog::searchPaths); ein späteres Format gleichen Namens
- * ersetzt ein früheres (User-Override).
+ * Loest die frueher einkompilierten `FormatParser::builtinFormats()` ab: der Katalog ist
+ * eine **reine Laufzeitdatei**.  Geladen wird ueber eine Pfadliste in aufsteigender
+ * Prioritaet (@ref FormatCatalog::searchPaths); ein spaeteres Format gleichen Namens
+ * ersetzt ein frueheres (User-Override).
  *
  * ### Fehlerverhalten (bewusst zweistufig)
- * - **Fatal** (Rückgabe über @p fatal_error, Katalog unbrauchbar): keine Katalogdatei
+ * - **Fatal** (Rueckgabe ueber @p fatal_error, Katalog unbrauchbar): keine Katalogdatei
  *   gefunden, Datei nicht lesbar, YAML-Syntaxfehler, oder am Ende kein einziges
- *   gültiges Format.  Der Aufrufer (`A5120Machine`) bricht damit den Start ab.
- * - **Pro Format** (Rückgabe über @ref issues): eine fehlerhafte Formatdefinition wird
- *   mit Datei, Zeile, Name und Grund gemeldet und **übersprungen** — die übrigen,
+ *   gueltiges Format.  Der Aufrufer (`A5120Machine`) bricht damit den Start ab.
+ * - **Pro Format** (Rueckgabe ueber @ref issues): eine fehlerhafte Formatdefinition wird
+ *   mit Datei, Zeile, Name und Grund gemeldet und **uebersprungen** — die uebrigen,
  *   korrekt spezifizierten Formate bleiben nutzbar.
  *
  * @see doc/K1520_architecture.md §8.6
@@ -31,8 +31,8 @@
 /**
  * @brief Passt @p fmt geometrisch/verfahrensseitig auf @p prof? (Validierung V4)
  *
- * Prüft Kopfzahl, Zylinderzahl und ob das Laufwerk **jedes** im Format verwendete
- * Aufzeichnungsverfahren beherrscht.  @p why erhält bei `false` den konkreten Grund.
+ * Prueft Kopfzahl, Zylinderzahl und ob das Laufwerk **jedes** im Format verwendete
+ * Aufzeichnungsverfahren beherrscht.  @p why erhaelt bei `false` den konkreten Grund.
  */
 bool formatFitsDrive(const DiskFormat& fmt, const DriveProfile& prof, std::string* why);
 
@@ -43,7 +43,7 @@ bool formatFitsDrive(const DiskFormat& fmt, const DriveProfile& prof, std::strin
 class FormatCatalog {
 public:
     /**
-     * @brief Kandidatenpfade in **aufsteigender** Priorität.
+     * @brief Kandidatenpfade in **aufsteigender** Prioritaet.
      *
      * 1. `K1520_FORMATS_DEFAULT` (CMake-Compile-Define — Quell- bzw. Installbaum)
      * 2. `<Verzeichnis des eigenen Moduls>/../share/a5120emu/formats.yaml`
@@ -56,15 +56,15 @@ public:
      * `ctypes` geladene Kern neben dem Python-Interpreter des venv.  Eine
      * Installation ist dadurch frei verschiebbar.
      *
-     * Die Liste enthält **alle** Kandidaten, auch nicht existierende — für die
+     * Die Liste enthaelt **alle** Kandidaten, auch nicht existierende — fuer die
      * Fehlermeldung „keine Katalogdatei gefunden, gesucht in: …".
      */
     static std::vector<std::string> searchPaths();
 
     /**
-     * @brief Lädt alle existierenden Dateien aus @p paths (aufsteigende Priorität).
-     * @param paths        Kandidatenpfade (nicht existierende werden übersprungen)
-     * @param fatal_error  bei Rückgabe eines unbrauchbaren Katalogs gesetzt (sonst leer)
+     * @brief Laedt alle existierenden Dateien aus @p paths (aufsteigende Prioritaet).
+     * @param paths        Kandidatenpfade (nicht existierende werden uebersprungen)
+     * @param fatal_error  bei Rueckgabe eines unbrauchbaren Katalogs gesetzt (sonst leer)
      * @return Katalog; bei fatalem Fehler leer
      */
     static FormatCatalog load(const std::vector<std::string>& paths,
@@ -79,13 +79,13 @@ public:
     /// @brief Alle Formate, die @p prof in ihrer `drives:`-Liste nennen (Standard zuerst).
     std::vector<const DiskFormat*> forDrive(const DriveProfile& prof) const;
 
-    /// @brief Standardformat für @p prof (`default_for:`); nullptr, wenn keines benannt.
+    /// @brief Standardformat fuer @p prof (`default_for:`); nullptr, wenn keines benannt.
     const DiskFormat* defaultFor(const DriveProfile& prof) const;
 
     const std::vector<DiskFormat>&  formats() const { return formats_; }
-    /// @brief Übersprungene/auffällige Definitionen (bereits formatierte Meldungen).
+    /// @brief Uebersprungene/auffaellige Definitionen (bereits formatierte Meldungen).
     const std::vector<std::string>& issues()  const { return issues_; }
-    /// @brief Tatsächlich gelesene Dateien (Diagnose, C-API).
+    /// @brief Tatsaechlich gelesene Dateien (Diagnose, C-API).
     const std::vector<std::string>& sources() const { return sources_; }
 
 private:

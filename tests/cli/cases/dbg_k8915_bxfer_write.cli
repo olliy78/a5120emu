@@ -1,6 +1,6 @@
-# K8915 (§8a AP-E4f, Befund E4d): `bxfer` gibt es seit dem DebugState-Feld für den
+# K8915 (§8a AP-E4f, Befund E4d): `bxfer` gibt es seit dem DebugState-Feld fuer den
 # /WAIT-Betrieb auch am K8915 — „write“ ist dort der Datenfluss mit /WE = 0.  `save`
-# schreibt über den BIOS-Schreibpfad (EA94H) auf A:; der Haltepunkt greift an der
+# schreibt ueber den BIOS-Schreibpfad (EA94H) auf A:; der Haltepunkt greift an der
 # ersten /WE-Flanke, `dev` zeigt den laufenden Schreibvorgang.
 tool:    k1520dbg
 disk:    k8915scpx_boot1.hfe

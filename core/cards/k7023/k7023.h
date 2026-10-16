@@ -1,9 +1,9 @@
 /**
  * @file k7023.h
- * @brief K7023 / K7023.01 ABS (BAB1) – Anschlußsteuerung Bildschirm 16 x 64 (frühe A5120).
+ * @brief K7023 / K7023.01 ABS (BAB1) – Anschlusssteuerung Bildschirm 16 x 64 (fruehe A5120).
  *
  * Reine Speicherkarte (keine E/A, keine Interrupts): 1 KB Bildspeicher an einer
- * 1-KB-Adresse (Vorgabe FC00H, alle sechs Brücken geschlossen), 16 Zeilen x 64 Zeichen,
+ * 1-KB-Adresse (Vorgabe FC00H, alle sechs Bruecken geschlossen), 16 Zeilen x 64 Zeichen,
  * Zelle 8 x 16 Punkte, Bild 512 x 256.  Beleg und alle Offenpunkte: doc/a5120_alt/k7023.md.
  *
  * Festlegungen (Belegstelle jeweils im Merkblatt):
@@ -11,12 +11,12 @@
  *  - KEINE Lesesperre (anders als K7024.40): isReadable() == true (§2).
  *  - Zeichengenerator: 2 x 1 KB, Linien 0-7 aus BAB1-46-2, 8-15 aus BAB1-47-1;
  *    Adresse = Code * 8 + Linie; D7 = linker Punkt, D0 (8. Punkt) stets dunkel (§6).
- *  - Linien 0-10 aus dem Abzug, Linie 11 leer, Linien 12-15: Kursorbalken über die volle
+ *  - Linien 0-10 aus dem Abzug, Linie 11 leer, Linien 12-15: Kursorbalken ueber die volle
  *    Zellbreite (§6, §7); der Kursor ist stets hell.
- *  - Nur K7023.01: Marken 04H-0FH im Bildspeicher setzen (DB1 = 1) bzw. löschen (DB1 = 0)
- *    die Helligkeit "hell"; der Zustand läuft zeilenübergreifend, Anfang = normal.
- *    Die Marke selbst ist dunkel (Abzug liefert für Codes < 20H nichts).  Zurücksetzen am
- *    Zeilen-/Bildende ist am Original nicht geklärt [?] -> hier: kein Zurücksetzen.
+ *  - Nur K7023.01: Marken 04H-0FH im Bildspeicher setzen (DB1 = 1) bzw. loeschen (DB1 = 0)
+ *    die Helligkeit "hell"; der Zustand laeuft zeilenuebergreifend, Anfang = normal.
+ *    Die Marke selbst ist dunkel (Abzug liefert fuer Codes < 20H nichts).  Zuruecksetzen am
+ *    Zeilen-/Bildende ist am Original nicht geklaert [?] -> hier: kein Zuruecksetzen.
  *  - Blinkteiler des Kursors ist unbekannt [?]; Blinken wird deshalb nur als Phase
  *    (setBlinkPhase) bereitgestellt, getaktet vom Aufrufer.
  *
@@ -38,11 +38,11 @@ public:
     static constexpr int kVramSize = kCols * kRows; ///< 1024
 
     struct Config {
-        uint16_t vram_base = 0xFC00;   ///< 1-KB-Raster (A10-A15 = Brücken/Schalter); FC00H = alle zu
+        uint16_t vram_base = 0xFC00;   ///< 1-KB-Raster (A10-A15 = Bruecken/Schalter); FC00H = alle zu
         bool     variante_01 = false;  ///< true = K7023.01 (zwei Helligkeitsstufen, Marken)
         bool     cursor_blink = false; ///< X21/S7: false = ruhend, true = blinkend (Phase: setBlinkPhase)
         uint8_t  helligkeit_normal = 0xB4; ///< Pixelwert "normal" der .01 (hell = 0xFF)
-        /// Zeichengenerator Linien 0-7 / 8-15 (je 1024 B); nullptr = eingebaute Abzüge BAB1-46-2 / -47-1.
+        /// Zeichengenerator Linien 0-7 / 8-15 (je 1024 B); nullptr = eingebaute Abzuege BAB1-46-2 / -47-1.
         const uint8_t* chargen_lines0_7  = nullptr;
         const uint8_t* chargen_lines8_15 = nullptr;
     };
@@ -64,7 +64,7 @@ public:
     bool fbDirty() const { return dirty_; }
     void fbClearDirty() { dirty_ = false; }
 
-    /// Bildspeicherbyte der Zelle (Quelle für `k1520_screen_char`: Bit 0-6 Zeichen, Bit 7 Kursor).
+    /// Bildspeicherbyte der Zelle (Quelle fuer `k1520_screen_char`: Bit 0-6 Zeichen, Bit 7 Kursor).
     uint8_t vramRead(int col, int row) const;
     void    vramWrite(int col, int row, uint8_t v);
     void    clearScreen(uint8_t blank = 0x20);

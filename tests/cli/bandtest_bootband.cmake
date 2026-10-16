@@ -1,4 +1,4 @@
-# Wächter cli_bandtest_bootband (AP K7): das eingecheckte Bootband
+# Waechter cli_bandtest_bootband (AP K7): das eingecheckte Bootband
 # tests/fixtures/kassette/bandtest_boot.k52 ist genau `k1520tape bootband` von
 # tools/kassette/bandtest/bandtest.bin.  Aufruf: cmake -DTOOL=… -DBIN=… -DSOLL=… -DTMP=… -P
 execute_process(COMMAND "${TOOL}" bootband "${BIN}" "${TMP}" RESULT_VARIABLE rc)

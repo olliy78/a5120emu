@@ -4,7 +4,7 @@
  *
  * Gebraucht vom PC 1715 (Ports 18H Parameter / 19H Befehl+Status, doc/design/21_pc1715.md
  * §3.4, §8.2).  Nachgebildet ist die *Logik* des Bausteins, nicht sein Zeitverhalten:
- * eine Methode @ref frame() erzeugt ein ganzes Bild, ruft dafür je Zeichenzeile die
+ * eine Methode @ref frame() erzeugt ein ganzes Bild, ruft dafuer je Zeichenzeile die
  * DMA-Quelle der Maschine (@ref dmaRead) und liefert je Zeichenposition eine @ref Cell.
  * Das Rastern in Pixel ist Sache der Karte.
  *
@@ -14,23 +14,23 @@
  * - **Reset-Parameter** (Datenblatt): P1 = S HHHHHHH (Zeichen/Zeile = H+1);
  *   P2 = VV RRRRRR (Vertikal-Retrace-Zeilen = V+1, Zeilen/Bild = R+1);
  *   P3 = UUUU LLLL (Unterstrichlinie U, Linien/Zeichenzeile = L+1);
- *   P4 = M F CC ZZZZ (M = versetzter Linienzähler, F = 0 transparent / 1 nicht transparent,
+ *   P4 = M F CC ZZZZ (M = versetzter Linienzaehler, F = 0 transparent / 1 nicht transparent,
  *   CC = Cursorform 00 Block blinkend / 01 Unterstrich blinkend / 10 Block / 11 Unterstrich,
  *   ZZZZ: Horizontal-Retrace = 2·(Z+1) Zeichentakte).
- * - **Status** (Port 19H lesen): Bit 6 IE, 5 IR, 4 LP, 3 IC, 2 VE, 1 DU, 0 FO.  Lesen löscht
+ * - **Status** (Port 19H lesen): Bit 6 IE, 5 IR, 4 LP, 3 IC, 2 VE, 1 DU, 0 FO.  Lesen loescht
  *   IR/LP/IC/DU/FO.  IR entsteht am Bildende, wenn IE gesetzt ist.
- * - **Zeichencodes**: 0xxxxxxx Zeichen; 10URGGBH Feldattribut (gilt bis zum nächsten
- *   Feldattribut, am Bildanfang zurückgesetzt; nicht transparent = belegt eine Zelle,
+ * - **Zeichencodes**: 0xxxxxxx Zeichen; 10URGGBH Feldattribut (gilt bis zum naechsten
+ *   Feldattribut, am Bildanfang zurueckgesetzt; nicht transparent = belegt eine Zelle,
  *   dargestellt leer; transparent = belegt keine Zelle, der Baustein holt ein Byte mehr);
  *   11CCCCBH Zeichenattribut (durchgereicht, Linienbild macht die Karte);
  *   F0 Zeilenende, F1 Zeilenende+Stop-DMA, F2 Bildende, F3 Bildende+Stop-DMA.
- *   Nach F0/F2 läuft der Rest-DMA weiter (Bytes gelesen und verworfen), nach F1 stoppt er für
- *   den Rest der Zeile, nach F3 für den Rest des Bildes.  F2/F3 lassen den Rest des Bildes leer.
+ *   Nach F0/F2 laeuft der Rest-DMA weiter (Bytes gelesen und verworfen), nach F1 stoppt er fuer
+ *   den Rest der Zeile, nach F3 fuer den Rest des Bildes.  F2/F3 lassen den Rest des Bildes leer.
  * - **Blinken**: Cursor halbperiodisch 16 Bilder, Zeichenblinken 32 Bilder [?: aus „Cursor
  *   Bildfrequenz/32, Zeichen /64" des Datenblatts abgeleitet, 50 % Tastgrad].
  *
  * Nicht nachgebildet: Lichtgriffel (liefert 0/0), Burst-Zeitverhalten (nur gespeichert),
- * FIFO-Überlauf (FO bleibt 0), DMA-Unterlauf nur, wenn keine DMA-Quelle gesetzt ist.
+ * FIFO-Ueberlauf (FO bleibt 0), DMA-Unterlauf nur, wenn keine DMA-Quelle gesetzt ist.
  */
 
 #pragma once
@@ -53,36 +53,36 @@ public:
         bool gpa1       = false;  ///< Feldattribut GPA1
         bool hlgt       = false;  ///< Feldattribut H bzw. Zeichenattribut H: hell
         bool blink      = false;  ///< Attribut B (Rohbit; Phase siehe @ref charBlinkOn)
-        bool cursor     = false;  ///< Cursor sichtbar an dieser Position (Phase berücksichtigt)
+        bool cursor     = false;  ///< Cursor sichtbar an dieser Position (Phase beruecksichtigt)
         bool charAttr   = false;  ///< Zeichenattribut 11CCCCBH
         uint8_t cca     = 0;      ///< CCCC des Zeichenattributs
     };
 
-    /// DMA-Quelle: nächstes Byte aus dem Speicher der Maschine (Adresszähler bei der Maschine).
+    /// DMA-Quelle: naechstes Byte aus dem Speicher der Maschine (Adresszaehler bei der Maschine).
     std::function<uint8_t()> dmaRead;
-    /// Bildbeginn (VRTC): die Maschine setzt ihren Adresszähler auf 0.
+    /// Bildbeginn (VRTC): die Maschine setzt ihren Adresszaehler auf 0.
     std::function<void()> vrtc;
     /// IRQ-Ausgang hat den Pegel gewechselt.
     std::function<void(bool)> irqChanged;
 
-    /// /RESET (Hardware): wie Reset-Befehl, dazu Cursor und Zähler.
+    /// /RESET (Hardware): wie Reset-Befehl, dazu Cursor und Zaehler.
     void reset();
 
     /// Port A0=0 (Parameter) bzw. A0=1 (Befehl) schreiben.
     void write(bool a0, uint8_t d);
-    /// Port A0=0: Parameter lesen (Lichtgriffel), A0=1: Status (löscht IR/LP/IC/DU/FO).
+    /// Port A0=0: Parameter lesen (Lichtgriffel), A0=1: Status (loescht IR/LP/IC/DU/FO).
     uint8_t read(bool a0);
-    /// Status ohne Löschen (Debug).
+    /// Status ohne Loeschen (Debug).
     uint8_t peekStatus() const;
 
-    /** @brief Ein Bild: VRTC, je Zeichenzeile DMA, Zellen füllen, Blinkzähler, IR. */
+    /** @brief Ein Bild: VRTC, je Zeichenzeile DMA, Zellen fuellen, Blinkzaehler, IR. */
     void frame();
 
     // ── Ausgabe ──
     const Cell& cells(int row, int col) const;
     int  cols() const { return cols_; }
     int  rows() const { return rows_; }
-    int  lineCount() const { return lines_; }          ///< Linien je Zeichenzeile (Zeichenhöhe)
+    int  lineCount() const { return lines_; }          ///< Linien je Zeichenzeile (Zeichenhoehe)
     int  underlineLine() const { return underline_; }
     int  vrtcRows() const { return vrtc_rows_; }
     int  hrtcChars() const { return hrtc_; }
@@ -100,10 +100,10 @@ public:
     int  burstLength() const { return burst_len_; }     ///< Zyklen je DMA-Anforderung
     bool irq() const { return ir_; }
     bool interruptEnabled() const { return ie_; }
-    /// DMA-Bytes, die das letzte frame() geholt hat (Wächter gegen verschobene Zeilen).
+    /// DMA-Bytes, die das letzte frame() geholt hat (Waechter gegen verschobene Zeilen).
     int  lastFrameDmaBytes() const { return dma_bytes_; }
 
-    // ── Save-State (Verdrahtung/Rückrufe nicht, Zellen werden im nächsten frame() neu gebildet) ──
+    // ── Save-State (Verdrahtung/Rueckrufe nicht, Zellen werden im naechsten frame() neu gebildet) ──
     void serialize(std::vector<uint8_t>& out) const;
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
@@ -124,7 +124,7 @@ private:
 
     // Befehls-/Parameterzustand
     int      cmd_ = -1;       ///< laufender Befehl mit Parametern (-1 = keiner)
-    int      pcount_ = 0;     ///< bisher übernommene/gelesene Parameter
+    int      pcount_ = 0;     ///< bisher uebernommene/gelesene Parameter
     uint8_t  cur_x_tmp_ = 0;
 
     int      cur_x_ = 0, cur_y_ = 0;

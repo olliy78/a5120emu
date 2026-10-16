@@ -38,7 +38,7 @@ std::vector<Rfc2217Ereignis> Rfc2217Codec::nimmEreignisse() {
     return r;
 }
 
-// Dekodieren.  Zu kurze/fremde Befehle werden überlesen (Toleranz gegenüber
+// Dekodieren.  Zu kurze/fremde Befehle werden ueberlesen (Toleranz gegenueber
 // Gegenstellen mit Erweiterungen); Anfragen haben bei 1-Byte-Befehlen den Wert 0.
 void Rfc2217Codec::verarbeite(const TelnetSub& sub) {
     const auto& d = sub.daten;

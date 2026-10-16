@@ -2,10 +2,10 @@
  * @file drive_profile.cpp
  * @brief Implementierung von builtinDriveProfile (statische Laufwerksprofile).
  *
- * Die Profile heißen wie die realen Laufwerke: K5601, K5600.10, K5600.20, MF3200,
- * MF6400 (+ `"none"` für den leeren Slot).  Ältere, technisch beschreibende Namen
- * (`ss_525_40`, `mf6400_8_ss77`, …) werden als Alias weiterhin aufgelöst, damit
- * gespeicherte GUI-Konfigurationen nicht still auf ein anderes Laufwerk zurückfallen.
+ * Die Profile heissen wie die realen Laufwerke: K5601, K5600.10, K5600.20, MF3200,
+ * MF6400 (+ `"none"` fuer den leeren Slot).  Aeltere, technisch beschreibende Namen
+ * (`ss_525_40`, `mf6400_8_ss77`, …) werden als Alias weiterhin aufgeloest, damit
+ * gespeicherte GUI-Konfigurationen nicht still auf ein anderes Laufwerk zurueckfallen.
  *
  * @see core/peripherals/floppy_drive/drive_profile.h
  * @author Olaf Krieger
@@ -21,9 +21,9 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
 
     // ── 5,25″ ────────────────────────────────────────────────────────────────
 
-    // K5601 — das in der Standard-A5120-Bürokonfiguration dreifach verbaute 5,25″-
-    // Laufwerk (80 Spuren, doppelseitig, 800 KB/Diskette).  Physisch MFM-fähig, aber
-    // auch FM-lesefähig; der Boot-ROM-/Loader-Lesepfad ist als FM verdrahtet
+    // K5601 — das in der Standard-A5120-Buerokonfiguration dreifach verbaute 5,25″-
+    // Laufwerk (80 Spuren, doppelseitig, 800 KB/Diskette).  Physisch MFM-faehig, aber
+    // auch FM-lesefaehig; der Boot-ROM-/Loader-Lesepfad ist als FM verdrahtet
     // (default_read_encoding = FM).  Das OS schaltet zur Laufzeit per Steuerwort um.
     static const DriveProfile k5601 = {
         "K5601",
@@ -49,7 +49,7 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
 
     // K5600.20 — 5,25″, 80 Spuren, EINSEITIG, MFM (400 KB, DPB 10580).  Wie K5601,
     // aber nur ein Kopf; die einseitigen CP/A-Formate adressieren nur Kopf 0.
-    // FM-lesefähig wie K5601 (Boot-Lesepfad startet FM), daher Default-FM.
+    // FM-lesefaehig wie K5601 (Boot-Lesepfad startet FM), daher Default-FM.
     static const DriveProfile k5600_20 = {
         "K5600.20",
         /*num_cyls=*/    80,
@@ -62,7 +62,7 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
 
     // ── 8″ ───────────────────────────────────────────────────────────────────
     // Beide 8″-Laufwerke sind EINSEITIG mit 77 Spuren; sie unterscheiden sich allein
-    // im beherrschten Aufzeichnungsverfahren (und damit in der Kapazität).
+    // im beherrschten Aufzeichnungsverfahren (und damit in der Kapazitaet).
 
     // MF3200 — 8″, 77 Spuren, einseitig, **nur FM** (Einfachdichte) → bis ~300 KB.
     // Das K5602 ist hierzu voll kompatibel und braucht kein eigenes Profil.
@@ -91,7 +91,7 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
     // ── Leerer Slot ──────────────────────────────────────────────────────────
 
     // "none" — kein Laufwerk gesteckt.  Geometrie bleibt auf sinnvollen Defaults
-    // (falls der Slot doch selektiert würde, keine Division/Bereichsfehler);
+    // (falls der Slot doch selektiert wuerde, keine Division/Bereichsfehler);
     // entscheidend ist present=false: mountDisk/createDisk verweigern, GUI blendet aus.
     static const DriveProfile none = {
         "none",
@@ -112,9 +112,9 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
     if (name == "MF3200")   return mf3200;
     if (name == "MF6400")   return mf6400;
 
-    // ── Alias: frühere technische Profilnamen ────────────────────────────────
-    // Gespeicherte GUI-Konfigurationen (app/config_io.py) und ältere Skripte tragen
-    // noch diese Namen; ohne Alias fielen sie still auf das Standardprofil zurück.
+    // ── Alias: fruehere technische Profilnamen ────────────────────────────────
+    // Gespeicherte GUI-Konfigurationen (app/config_io.py) und aeltere Skripte tragen
+    // noch diese Namen; ohne Alias fielen sie still auf das Standardprofil zurueck.
     // `mfs_525_ds80` war ein Duplikat des K5601 ohne FM-Lesepfad, `mf6400_8_ds77` ein
     // zweiseitiges 8″-Profil, das es als Hardware nicht gibt — beide entfallen.
     if (name == "ss_525_40")     return k5600_10;
@@ -124,12 +124,12 @@ const DriveProfile& builtinDriveProfile(const std::string& name) {
     if (name == "mf6400_8_ds77") return mf6400;
     if (name == "mfs_525_ds80")  return k5601;
 
-    // Standardprofil für unbekannte Namen
+    // Standardprofil fuer unbekannte Namen
     return k5601;
 }
 
 const std::vector<std::string>& knownDriveProfileNames() {
-    // Nur die REALEN Laufwerksnamen — Aliase gehören bewusst nicht dazu, damit
+    // Nur die REALEN Laufwerksnamen — Aliase gehoeren bewusst nicht dazu, damit
     // data/formats.yaml auf die aktuellen Namen festgelegt ist (Validierung V3).
     static const std::vector<std::string> names = {
         "K5601", "K5600.10", "K5600.20", "MF3200", "MF6400", "none"

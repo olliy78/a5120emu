@@ -1,7 +1,7 @@
 /**
  * @file test_mc80_tastatur.cpp
- * @brief Tastatur des MC80.3x auf Zeichenebene (AP M3): Präfixe, Zeichenabstand 9600 Bd 7O2,
- *        Anschlagabstand, Rückstau bei vollem Empfänger, Qt-Abbildung, Summer/Anzeige.
+ * @brief Tastatur des MC80.3x auf Zeichenebene (AP M3): Praefixe, Zeichenabstand 9600 Bd 7O2,
+ *        Anschlagabstand, Rueckstau bei vollem Empfaenger, Qt-Abbildung, Summer/Anzeige.
  *        Quelle: doc/mc80/egos.md §3.
  */
 
@@ -39,9 +39,9 @@ TEST(Mc80Tastatur, ZeichenabstandUndAnschlagabstand) {
     l.t.tippe("ab");
     l.lauf(200'000, 1);
     ASSERT_EQ(l.empfangen.size(), 4u);
-    // Präfix → Code: ein Zeichen (11 Bit × 256 Takte)
+    // Praefix → Code: ein Zeichen (11 Bit × 256 Takte)
     EXPECT_EQ(l.zeit[1] - l.zeit[0], static_cast<uint64_t>(Mc80Tastatur::TAKTE_JE_ZEICHEN));
-    // Code → nächster Anschlag: 20 ms [Annahme]
+    // Code → naechster Anschlag: 20 ms [Annahme]
     EXPECT_EQ(l.zeit[2] - l.zeit[1], static_cast<uint64_t>(Mc80Tastatur::TAKTE_JE_TASTE));
 }
 
@@ -70,12 +70,12 @@ TEST(Mc80Tastatur, SondertastenAlsBitmaske) {
 TEST(Mc80Tastatur, QtAbbildung) {
     Leitung l;
     EXPECT_TRUE(l.t.qtTaste('A', false, false));           // Kappe ohne Umschalter: klein
-    EXPECT_TRUE(l.t.qtTaste('A', true, false));            // mit: groß
+    EXPECT_TRUE(l.t.qtTaste('A', true, false));            // mit: gross
     EXPECT_TRUE(l.t.qtTaste('C', false, true));            // Strg+C = 03H
     EXPECT_TRUE(l.t.qtTaste(0x01000004, false, false));    // Return = ENTER
     EXPECT_TRUE(l.t.qtTaste(0x01000000, false, false));    // Escape = OFF
     EXPECT_TRUE(l.t.qtTaste(0x01000031, false, false));    // F2 = Sondertaste 1
-    EXPECT_TRUE(l.t.qtTaste('1', true, false));            // Ziffern/Zeichen unverändert
+    EXPECT_TRUE(l.t.qtTaste('1', true, false));            // Ziffern/Zeichen unveraendert
     EXPECT_FALSE(l.t.qtTaste(0x01000012, false, false));   // Kursor links: Code unbekannt [?]
     l.lauf(1'000'000);
     EXPECT_EQ(l.empfangen, (std::vector<uint8_t>{0x1C, 'a', 0x1C, 'A', 0x1C, 0x03, 0x1C, 0x11,

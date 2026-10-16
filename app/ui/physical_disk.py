@@ -88,7 +88,7 @@ class PhysicalDiskDialog(QDialog):
 
         # Wie weit nach innen gegangen wird.  Das ist zweierlei zugleich: die Bauart
         # des Laufwerks am Kabel (die kennt nur der Bediener) UND eine Begrenzung —
-        # 40 zu wählen, obwohl ein 80er dranhängt, liest genau die äusseren 40
+        # 40 zu waehlen, obwohl ein 80er dranhaengt, liest genau die aeusseren 40
         # Zylinder.  Genau das braucht eine 40-Spur-Diskette, die einmal in einem
         # 80-Spur-Laufwerk beschrieben wurde: dahinter steht nur noch Altbestand.
         self._laufwerkspuren = QComboBox()
@@ -108,9 +108,9 @@ class PhysicalDiskDialog(QDialog):
             form.addRow("Abbild:", QLabel(abbild))
 
         # Doppelschritt: Spur n liegt auf Zylinder 2n.  Beim LESEN blendet das die
-        # ungeraden Zylinder aus — genau dort sitzen die Altlasten einer früheren
+        # ungeraden Zylinder aus — genau dort sitzen die Altlasten einer frueheren
         # 80-Spur-Formatierung.  Beim SCHREIBEN entscheidet er, ob die Diskette
-        # später in einem 40- oder in einem 80-Spur-Laufwerk lesbar ist.
+        # spaeter in einem 40- oder in einem 80-Spur-Laufwerk lesbar ist.
         self._doppelschritt = QCheckBox("Doppelschritt erzwingen (40-Spur-Diskette)")
         self._doppelschritt.setChecked(False)
         self._doppelschritt.setToolTip(
@@ -269,7 +269,7 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
         zaehler = lambda st: st.tracks_known      # noqa: E731
     st = sitzung.stats()
     ganze_diskette = st.tracks_total if st else 0
-    # Von wo aus gezählt wird: was VOR dieser Arbeit schon geschafft war, ist kein
+    # Von wo aus gezaehlt wird: was VOR dieser Arbeit schon geschafft war, ist kein
     # Fortschritt DIESER Arbeit.
     beginn = zaehler(st) if st else 0
     gesamt = ziel if ziel else ganze_diskette
@@ -297,7 +297,7 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
                 dlg.setValue(getan)
                 dlg.setLabelText(f"{text}\n{getan} von {ziel} {was}")
             else:
-                # Darüber hinaus weiss niemand, wie viele es werden (beim Öffnen: das
+                # Darueber hinaus weiss niemand, wie viele es werden (beim Oeffnen: das
                 # Verzeichnis, bei UDOS je Datei ein Kopfsektor irgendwo).  Deshalb
                 # ein UNBESTIMMTER Balken statt einer erfundenen Zielzahl — eine
                 # Umschaltung auf die Spurzahl der Diskette behauptete eine
@@ -305,7 +305,7 @@ def mit_fortschritt(parent, sitzung: PhysicalSession, arbeit, *,
                 dlg.setMaximum(0)
                 dlg.setLabelText(f"{text}\n{getan} {was}")
         if dlg.wasCanceled() and not abgebrochen["ja"]:
-            # Der Kern löst jeden Wartenden; die Arbeit endet dann von selbst.
+            # Der Kern loest jeden Wartenden; die Arbeit endet dann von selbst.
             abgebrochen["ja"] = True
             dlg.setLabelText("Wird abgebrochen…")
             sitzung.sync.shutdown()

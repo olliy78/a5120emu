@@ -39,18 +39,18 @@ from app.disktool.ui.properties_dialog import (
     UDOS_EIGENSCHAFTEN, _hex16, _parse_hex,
 )
 
-#: Auswahl für den Dateityp.  ``D`` fehlt mit Absicht: die Verzeichnisdatei ist
-#: Dateisystemstruktur, keine Nutzdatei — sie lässt sich nicht einfügen.
+#: Auswahl fuer den Dateityp.  ``D`` fehlt mit Absicht: die Verzeichnisdatei ist
+#: Dateisystemstruktur, keine Nutzdatei — sie laesst sich nicht einfuegen.
 UDOS_TYPEN_EINGABE = [
     ("A",  "A — ASCII (Textdatei)"),
     ("B",  "B — BINARY"),
     ("P",  "P — PROCEDURE (ausführbares Programm)"),
 ] + [(f"P{n}", f"P{n} — Procedure Untertyp {n}") for n in range(1, 16)]
 
-#: Satzlängen, die UDOS kennt (Vielfache von 128, doc/udos_diskettenformat.md §6).
+#: Satzlaengen, die UDOS kennt (Vielfache von 128, doc/udos_diskettenformat.md §6).
 SATZLAENGEN = [128, 256, 512, 1024]
 
-#: Typen, bei denen ENTRY, Segmente und Speicheranforderung überhaupt belegt sind.
+#: Typen, bei denen ENTRY, Segmente und Speicheranforderung ueberhaupt belegt sind.
 PROGRAMMTYPEN = {"P"} | {f"P{n}" for n in range(1, 16)}
 
 
@@ -93,7 +93,7 @@ class FileinfoDialog(QDialog):
         self.pfad = Path(pfad)
         self.setWindowTitle(f"Angaben zu {self.pfad.name}")
         self.setMinimumWidth(560)
-        #: „Für alle übernehmen" angekreuzt?  Liest der Aufrufer nach `exec()`.
+        #: „Fuer alle uebernehmen" angekreuzt?  Liest der Aufrufer nach `exec()`.
         self.fuer_alle = False
 
         lay = QVBoxLayout(self)
@@ -293,9 +293,9 @@ class FileinfoDialog(QDialog):
             "satz": str(satz),
             "block": str(satz if block < 0 else block),
             # `rest=` („Bytes im letzten Satz") kommt hier BEWUSST nicht vor.  Es ist
-            # eine Aussage über den Inhalt, nicht über den Anwenderwillen, und 0 ist
-            # dort ein GÜLTIGER Wert — stünde die Zeile da, hielte der Leser die 0
-            # für eine Angabe und der Schreibpfad rechnete sie nicht mehr aus.
+            # eine Aussage ueber den Inhalt, nicht ueber den Anwenderwillen, und 0 ist
+            # dort ein GUELTIGER Wert — stuende die Zeile da, hielte der Leser die 0
+            # fuer eine Angabe und der Schreibpfad rechnete sie nicht mehr aus.
             "segment": _segment_erstes(segs),
             "mem": ":".join((_hex16(_parse_hex(self.f_low.text(), "LOW")),
                              _hex16(_parse_hex(self.f_high.text(), "HIGH")),

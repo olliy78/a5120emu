@@ -1,14 +1,14 @@
 /**
  * @file test_bit_codec.cpp
- * @brief GoogleTests für BitCodec (MFM/FM-Bitzellen encode/decode).
+ * @brief GoogleTests fuer BitCodec (MFM/FM-Bitzellen encode/decode).
  *
  * Getestete Eigenschaften:
- *   1. encode∘decode-Identität (MFM)
- *   2. encode∘decode-Identität (FM)
+ *   1. encode∘decode-Identitaet (MFM)
+ *   2. encode∘decode-Identitaet (FM)
  *   3. Sync-Erkennung und Marken-Tagging
- *   4. Daten-0xA1/0xFE werden NICHT fälschlich als Marke erkannt
+ *   4. Daten-0xA1/0xFE werden NICHT faelschlich als Marke erkannt
  *      (Kernbeweis des Cell-Level-Marken-Modells)
- *   5. bitcells/Längen-Invarianten
+ *   5. bitcells/Laengen-Invarianten
  *
  * @see core/peripherals/floppy_drive/bit_codec.h
  * @see core/peripherals/floppy_drive/track_codec.h
@@ -37,7 +37,7 @@ static LogicalSector makeSector(uint8_t cyl, uint8_t head, uint8_t id,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 1: encode∘decode-Identität (MFM)
+// GRUPPE 1: encode∘decode-Identitaet (MFM)
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(BitCodecMfm, EncodeDecodeIdentitaet_1Sektor128B) {
@@ -106,7 +106,7 @@ TEST(BitCodecMfm, EncodeDecodeIdentitaet_2Sektoren128B) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 2: encode∘decode-Identität (FM)
+// GRUPPE 2: encode∘decode-Identitaet (FM)
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(BitCodecFm, EncodeDecodeIdentitaet_1Sektor128B) {
@@ -126,7 +126,7 @@ TEST(BitCodecFm, EncodeDecodeIdentitaet_1Sektor128B) {
     ASSERT_FALSE(back.bytes.empty());
     ASSERT_EQ(back.encoding, Encoding::FM);
 
-    // parseTrack muss den Sektor korrekt zurückliefern
+    // parseTrack muss den Sektor korrekt zurueckliefern
     auto parsed = TrackCodec::parseTrack(back);
     ASSERT_GE(parsed.size(), 1u);
 
@@ -206,7 +206,7 @@ TEST(BitCodecMarks, MfmIndexMarkAuf0xFC) {
 }
 
 TEST(BitCodecMarks, MfmA1SyncBytesOhneMarke) {
-    // Die 0xA1-Bytes VOR dem Marken-Byte dürfen keine Marke tragen
+    // Die 0xA1-Bytes VOR dem Marken-Byte duerfen keine Marke tragen
     LogicalSector sec = makeSector(0, 0, 1, 128);
     TrackImage track  = TrackCodec::buildTrack({sec}, Encoding::MFM);
     const uint32_t bc = static_cast<uint32_t>(track.bytes.size()) * 16u;
@@ -243,10 +243,10 @@ TEST(BitCodecMarks, FmIdMarkKorrektGetaggt) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 4: Daten-0xA1/0xFE werden NICHT fälschlich als Marke erkannt
+// GRUPPE 4: Daten-0xA1/0xFE werden NICHT faelschlich als Marke erkannt
 //
 // KERNBEWEIS des Cell-Level-Marken-Modells: Datenbytes 0xA1/0xFE/0xFB in einem
-// Datenfeld erscheinen nach encode→decode mit mark==None, weil sie regulär
+// Datenfeld erscheinen nach encode→decode mit mark==None, weil sie regulaer
 // MFM-kodiert werden (kein Sonder-Clock, kein 0x4489-Muster).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -267,7 +267,7 @@ TEST(BitCodecMarkModell, Daten_A1_FE_FB_nicht_als_Marke_erkannt) {
     auto cells = BitCodec::encode(track, bc);
     auto back  = BitCodec::decode(cells, bc, Encoding::MFM);
 
-    // parseTrack muss den Sektor korrekt (CRC-grün) liefern
+    // parseTrack muss den Sektor korrekt (CRC-gruen) liefern
     auto parsed = TrackCodec::parseTrack(back);
     ASSERT_GE(parsed.size(), 1u);
     bool found = false;
@@ -276,20 +276,20 @@ TEST(BitCodecMarkModell, Daten_A1_FE_FB_nicht_als_Marke_erkannt) {
             found = true;
             ASSERT_GE(ps.data.size(), 13u);
 
-            // Datenbytes müssen erhalten bleiben
-            EXPECT_EQ(ps.data[0],  0xA1u) << "Datenbyte 0xA1 verfälscht";
-            EXPECT_EQ(ps.data[1],  0xFEu) << "Datenbyte 0xFE verfälscht";
-            EXPECT_EQ(ps.data[2],  0xFBu) << "Datenbyte 0xFB verfälscht";
-            EXPECT_EQ(ps.data[10], 0xA1u) << "Datenbyte 0xA1 [10] verfälscht";
-            EXPECT_EQ(ps.data[11], 0xA1u) << "Datenbyte 0xA1 [11] verfälscht";
-            EXPECT_EQ(ps.data[12], 0xFEu) << "Datenbyte 0xFE [12] verfälscht";
+            // Datenbytes muessen erhalten bleiben
+            EXPECT_EQ(ps.data[0],  0xA1u) << "Datenbyte 0xA1 verfaelscht";
+            EXPECT_EQ(ps.data[1],  0xFEu) << "Datenbyte 0xFE verfaelscht";
+            EXPECT_EQ(ps.data[2],  0xFBu) << "Datenbyte 0xFB verfaelscht";
+            EXPECT_EQ(ps.data[10], 0xA1u) << "Datenbyte 0xA1 [10] verfaelscht";
+            EXPECT_EQ(ps.data[11], 0xA1u) << "Datenbyte 0xA1 [11] verfaelscht";
+            EXPECT_EQ(ps.data[12], 0xFEu) << "Datenbyte 0xFE [12] verfaelscht";
 
-            EXPECT_TRUE(ps.data_crc_ok) << "Daten-CRC fehlerhaft (Datenbytes verfälscht?)";
+            EXPECT_TRUE(ps.data_crc_ok) << "Daten-CRC fehlerhaft (Datenbytes verfaelscht?)";
         }
     }
     EXPECT_TRUE(found) << "Sektor nicht in parseTrack gefunden";
 
-    // Direkt: Im decodierten Strom dürfen Datenbytes 0xA1/0xFE/0xFB nach der
+    // Direkt: Im decodierten Strom duerfen Datenbytes 0xA1/0xFE/0xFB nach der
     // Data-Marke (im Datenbereich) keine Marke tragen.
     size_t data_mark_pos = SIZE_MAX;
     for (size_t i = 0; i < back.bytes.size(); ++i) {
@@ -304,13 +304,13 @@ TEST(BitCodecMarkModell, Daten_A1_FE_FB_nicht_als_Marke_erkannt) {
         if (b == 0xA1 || b == 0xFE || b == 0xFB) {
             EXPECT_EQ(m, MarkType::None)
                 << "Datenbyte 0x" << std::hex << static_cast<int>(b)
-                << " hat fälschlich Marke an Datenfeld-Position " << std::dec << j;
+                << " hat faelschlich Marke an Datenfeld-Position " << std::dec << j;
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 5: bitcells/Längen-Invarianten
+// GRUPPE 5: bitcells/Laengen-Invarianten
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(BitCodecLaenge, DecodeGibtBitcellCountZurueck) {
@@ -328,12 +328,12 @@ TEST(BitCodecLaenge, EncodePrueftZielGroesse) {
     LogicalSector sec = makeSector(0, 0, 1, 128);
     TrackImage track  = TrackCodec::buildTrack({sec}, Encoding::MFM);
 
-    // Verschiedene Zielgrößen: kleiner, gleich, größer
+    // Verschiedene Zielgroessen: kleiner, gleich, groesser
     for (uint32_t bc : {100u, 500u, 10000u, 50000u}) {
         auto cells = BitCodec::encode(track, bc);
         uint32_t expected_bytes = (bc + 7) / 8;
         EXPECT_EQ(cells.size(), expected_bytes)
-            << "Falsche Ausgabelänge für bitcells=" << bc;
+            << "Falsche Ausgabelaenge fuer bitcells=" << bc;
     }
 }
 
@@ -358,7 +358,7 @@ TEST(BitCodecLaenge, DecodeLeererStrom_gibtLeereSpur) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 6: MFM-Roundtrip über TrackCodec::parseTrack (voller Datenpfad)
+// GRUPPE 6: MFM-Roundtrip ueber TrackCodec::parseTrack (voller Datenpfad)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MfmBitCodecRoundtrip : public ::testing::TestWithParam<uint16_t> {};
@@ -397,7 +397,7 @@ INSTANTIATE_TEST_SUITE_P(
 //
 // Fremde Controller schreiben die Sync-Gruppe vor dem Datenfeld nicht immer als
 // drei echte Sync-Marken (0x4489 = 0xA1 mit ausgelassenem Taktbit).  Auf
-// `udos_ds77_k5601_fremdsync.hfe` ist das dritte A1 REGULÄR kodiert (0x44A9) und
+// `udos_ds77_k5601_fremdsync.hfe` ist das dritte A1 REGULAER kodiert (0x44A9) und
 // bei einem Teil der Sektoren auch noch das erste — die Gruppe hat dann nur EINE
 // echte Sync-Marke.  Beides muss lesbar sein: die Marke ist das erste Byte der
 // Gruppe, das kein 0xA1 ist, nicht einfach „das Byte nach dem Sync".
@@ -405,8 +405,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 namespace {
 
-/// Ersetzt im Zellstrom das Sync-Zellwort des @p nth 0xA1 (0-basiert, gezählt ab
-/// Spuranfang) durch die REGULÄRE Kodierung desselben Bytes: 0x4489 -> 0x44A9.
+/// Ersetzt im Zellstrom das Sync-Zellwort des @p nth 0xA1 (0-basiert, gezaehlt ab
+/// Spuranfang) durch die REGULAERE Kodierung desselben Bytes: 0x4489 -> 0x44A9.
 /// Wirkt auf HFE-Zellbytes (LSB zuerst), 16 Zellen = 2 Bytes je Spur-Byte.
 void machtSyncZuGewoehnlichemA1(std::vector<uint8_t>& cells, const TrackImage& track,
                                 size_t nth) {
@@ -439,15 +439,15 @@ TEST(BitCodecFremdeSyncgruppe, DrittesA1RegulaerKodiert_DatenfeldWirdGefunden) {
     const uint32_t bc = static_cast<uint32_t>(track.bytes.size()) * 16u;
     auto cells = BitCodec::encode(track, bc);
 
-    // Sync-A1 Nr. 0..2 gehören zum IDAM, Nr. 3..5 zum Datenfeld.  Das DRITTE A1 des
-    // Datenfelds (Nr. 5) wird regulär kodiert — genau wie auf der Fremddiskette.
+    // Sync-A1 Nr. 0..2 gehoeren zum IDAM, Nr. 3..5 zum Datenfeld.  Das DRITTE A1 des
+    // Datenfelds (Nr. 5) wird regulaer kodiert — genau wie auf der Fremddiskette.
     machtSyncZuGewoehnlichemA1(cells, track, 5);
 
     auto back   = BitCodec::decode(cells, bc, Encoding::MFM);
     auto parsed = TrackCodec::parseTrack(back);
     ASSERT_EQ(parsed.size(), 1u);
     EXPECT_TRUE(parsed[0].data_crc_ok)
-        << "Datenfeld hinter einer Sync-Gruppe mit regulär kodiertem A1 nicht gelesen";
+        << "Datenfeld hinter einer Sync-Gruppe mit regulaer kodiertem A1 nicht gelesen";
     EXPECT_EQ(parsed[0].data, sec.data);
 }
 
@@ -461,7 +461,7 @@ TEST(BitCodecFremdeSyncgruppe, NurEineEchteSyncmarke_DatenfeldWirdGefunden) {
     const uint32_t bc = static_cast<uint32_t>(track.bytes.size()) * 16u;
     auto cells = BitCodec::encode(track, bc);
 
-    // Erstes UND drittes A1 des Datenfelds regulär: nur die Mitte bleibt Sync.
+    // Erstes UND drittes A1 des Datenfelds regulaer: nur die Mitte bleibt Sync.
     machtSyncZuGewoehnlichemA1(cells, track, 3);
     machtSyncZuGewoehnlichemA1(cells, track, 5);
 
@@ -474,20 +474,20 @@ TEST(BitCodecFremdeSyncgruppe, NurEineEchteSyncmarke_DatenfeldWirdGefunden) {
 }
 
 // Die GEGENrichtung — „die Nachlese erfindet keine Sektoren" — hat keinen eigenen
-// Test hier, weil sie sich synthetisch nicht ehrlich nachbauen lässt: ein von Hand
+// Test hier, weil sie sich synthetisch nicht ehrlich nachbauen laesst: ein von Hand
 // ins Gap kopierter Sektorkopf liegt auf dem Byteraster und wird schon von der
-// gewöhnlichen Dekodierung gefunden, ganz ohne Re-Sync.  Bewacht wird sie von den
+// gewoehnlichen Dekodierung gefunden, ganz ohne Re-Sync.  Bewacht wird sie von den
 // echten Disketten: `ScpxIntegration.*` liefen auf „82 Spuren mit Daten" (Laufwerk
-// K5601 erreicht nur 80) auf, als die Regel für einzelne Sync-Marken noch pauschal
-// galt statt nur für Datenfelder hinter einem Sektorkopf ohne Datenfeld.
+// K5601 erreicht nur 80) auf, als die Regel fuer einzelne Sync-Marken noch pauschal
+// galt statt nur fuer Datenfelder hinter einem Sektorkopf ohne Datenfeld.
 
-// ─── Lücke 4b im Flussabbild (AP-F1) ─────────────────────────────────────────────
+// ─── Luecke 4b im Flussabbild (AP-F1) ─────────────────────────────────────────────
 //
-// Ist die Zielzellenzahl größer als der Inhalt, wird mit regulärem 0x4E aufgefüllt —
+// Ist die Zielzellenzahl groesser als der Inhalt, wird mit regulaerem 0x4E aufgefuellt —
 // nicht mit 0-Zellen.  Ein flussloser Bereich ist nichts, was ein Laufwerk schreibt;
 // Greaseweazle legt dort einen „No Flux Area“ an.
 TEST(BitCodecLuecke4b, AufgefuelltWirdMitLueckenbytesNichtFlusslos) {
-    // Ohne Lücke 4b gebaut (track_len = 0) — so kurz wie die Spuren bis 2026-09-29.
+    // Ohne Luecke 4b gebaut (track_len = 0) — so kurz wie die Spuren bis 2026-09-29.
     GapParams g = TrackCodec::gapsFor(Encoding::MFM);
     g.track_len = 0;
     const TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::MFM, g);
@@ -495,7 +495,7 @@ TEST(BitCodecLuecke4b, AufgefuelltWirdMitLueckenbytesNichtFlusslos) {
     ASSERT_LT(t.size() * 16, ziel);
     const auto cells = BitCodec::encode(t, ziel);
     ASSERT_EQ(cells.size(), ziel / 8);
-    // Längster Lauf ohne Flusswechsel: im MFM höchstens 3 Nullzellen.
+    // Laengster Lauf ohne Flusswechsel: im MFM hoechstens 3 Nullzellen.
     size_t lauf = 0, laengster = 0;
     for (uint32_t p = 0; p < ziel; ++p) {
         const bool eins = (cells[p / 8] >> (p % 8)) & 1u;   // HFE: LSB zuerst
@@ -507,8 +507,8 @@ TEST(BitCodecLuecke4b, AufgefuelltWirdMitLueckenbytesNichtFlusslos) {
     EXPECT_EQ(back.bytes.back(), 0x4E);
 }
 
-// Decodiert beginnt die Spur VOR der Indexmarke (Lücke 4a + Sync bleiben erhalten) —
-// sonst rückte jede Rundreise durch die Datei die Indexmarke auf das Indexloch.
+// Decodiert beginnt die Spur VOR der Indexmarke (Luecke 4a + Sync bleiben erhalten) —
+// sonst rueckte jede Rundreise durch die Datei die Indexmarke auf das Indexloch.
 TEST(BitCodecLuecke4b, RundreiseBehaeltLuecke4aUndIstStabil) {
     const TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 1024)}, Encoding::MFM);
     const uint32_t zellen = static_cast<uint32_t>(t.size()) * 16;

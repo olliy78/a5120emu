@@ -64,12 +64,12 @@ bool K7636::ubusRead(uint8_t port, uint8_t& wert)
         case 0x01: wert = out_valid_ ? STATUS_BEREIT : STATUS_RUHE; return true;
         case 0x06:
             wert = out_code_;
-            if (out_valid_) {            // Lesen quittiert (/UINT zurück) [?]
+            if (out_valid_) {            // Lesen quittiert (/UINT zurueck) [?]
                 out_valid_ = false;
-                liefere();               // nächster Code, wenn der Abstand schon verstrichen ist
+                liefere();               // naechster Code, wenn der Abstand schon verstrichen ist
             }
             return true;
-        default: return false;           // übrige Ports wie ohne Gerät
+        default: return false;           // uebrige Ports wie ohne Geraet
     }
 }
 
@@ -148,7 +148,7 @@ bool K7636::service(uint64_t now)
     if (repeat_aktiv_) {
         repeat_rest_ -= static_cast<int64_t>(repeat_uhr_.schritt(now));
         while (repeat_rest_ <= 0) {
-            // Bei vollem Puffer fällt der Wiederholcode weg (kein Zählen als „verloren“).
+            // Bei vollem Puffer faellt der Wiederholcode weg (kein Zaehlen als „verloren“).
             int n = 0;
             for (const auto& e : puffer_) n += !e.antwort;
             if (n < PUFFER_TIEFE) puffer_.push_back({cur_cycle_, halte_code_, false});
@@ -196,7 +196,7 @@ bool K7636::aufloesen(uint32_t k, bool shift, uint8_t& c) const
         if (adr < 0) return false;
     }
     if (adr == ADR_SHIFT || adr == ADR_LOCK || adr == ADR_CTRL || adr >= 0x78) return false;
-    // Netzschalter F59 und Steuertaste F57 sind auf der .01 nicht bestückt bzw. senden nichts (k7636.md §2).
+    // Netzschalter F59 und Steuertaste F57 sind auf der .01 nicht bestueckt bzw. senden nichts (k7636.md §2).
     if (adr == 0x58 || adr == 0x59) return false;
     c = code(static_cast<uint8_t>(adr), stufe);
     return c != 0;

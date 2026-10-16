@@ -1,15 +1,15 @@
 /**
  * @file k8025.h
- * @brief K8025 ASS – Anschlußsteuerung Seriell (serial interface card) emulation.
+ * @brief K8025 ASS – Anschlusssteuerung Seriell (serial interface card) emulation.
  *
  * Emulates the K8025 serial interface card for the Robotron K1520/A5120 system.
  * The physical card contains two Z80 SIOs, one Z80 CTC (baud-rate generator),
- * and one Z80 PIO (DIL-switch readout for DFÜ configuration).
+ * and one Z80 PIO (DIL-switch readout for DFUE configuration).
  *
  * I/O port assignment (base 0x50):
  * @code
- *   0x50–0x53  SIO A33 (sio_dfue_):         DFÜ ch A = V.24 (X6), ch B = IFSS (X5)
- *   0x54–0x57  PIO A31 (pio_a31_):          DIL switch readout (DFÜ config input)
+ *   0x50–0x53  SIO A33 (sio_dfue_):         DFUE ch A = V.24 (X6), ch B = IFSS (X5)
+ *   0x54–0x57  PIO A31 (pio_a31_):          DIL switch readout (DFUE config input)
  *   0x58–0x5B  CTC A34 (ctc_a34_):          Baud-rate generator (4 channels)
  *   0x5C–0x5F  SIO A32 (sio_kbd_printer_):  ch A = keyboard K7637 (X4), ch B = printer (X3)
  * @endcode
@@ -21,16 +21,16 @@
  *
  * External interfaces (Transkription §2.3/§2.4; X1/X2 sind der Rechnerbus):
  *   Keyboard : K7637 serial keyboard on SIO A32 channel A (connector X4 — laut
- *              Kartendoku der Zusatzdrucker; im A5120 hängt dort die Tastatur)
+ *              Kartendoku der Zusatzdrucker; im A5120 haengt dort die Tastatur)
  *   Printer  : Hauptdrucker (IFSS) on SIO A32 channel B (connector X3), Takt CTC A34 K0
  *   DFÜ/V.24 : SIO A33 channel A (connector X6) mit Steuerleitungen
  *              (/CTSA = V106 ∧ V107, /DCDA = V109 ∧ V107, RTSA = V105, DTRA = V108),
  *              Takt W1:7 = ZRE-CTC K0 (gezeichnet) / CTC A34 K2
- *   DFÜ/IFSS : SIO A33 channel B (connector X5), Takt RxTxCB über X7–X8 = ZRE-CTC K0
+ *   DFÜ/IFSS : SIO A33 channel B (connector X5), Takt RxTxCB ueber X7–X8 = ZRE-CTC K0
  *              (gezeichnet) / X8–X9 = CTC A34 K1; DCDB = V107 der V.24 (Abfrage der
  *              Betriebsbereitschaft allein)
  *
- * Nach außen geht jede einstellbare Schnittstelle über einen `SerialAnschluss`
+ * Nach aussen geht jede einstellbare Schnittstelle ueber einen `SerialAnschluss`
  * (Entwurf 19 §3.1, §5.1, AP-S5): @ref anschluss.  Die Tastatur bleibt fest verdrahtet.
  *
  * @note clockTick() must be called from the machine run loop to drive the CTC
@@ -56,13 +56,13 @@
 
 /**
  * @class K8025
- * @brief Emulation of the K8025 ASS (Anschlußsteuerung Seriell) serial interface card.
+ * @brief Emulation of the K8025 ASS (Anschlusssteuerung Seriell) serial interface card.
  *
  * Features:
- * - SIO A33: DFÜ (data-transmission) serial channel, injects/extracts bytes via callbacks
+ * - SIO A33: DFUE (data-transmission) serial channel, injects/extracts bytes via callbacks
  * - SIO A32: Keyboard (channel A) and printer (channel B) serial channels
  * - CTC A34: Four-channel baud-rate generator; must be clocked by clockTick()
- * - PIO A31: DIL-switch readout for DFÜ configuration (input-only, read by BIOS)
+ * - PIO A31: DIL-switch readout for DFUE configuration (input-only, read by BIOS)
  * - InterruptSlave: SIO A33 → SIO A32 → CTC A34 → PIO A31 daisy-chain
  *
  * Typical usage:
@@ -88,7 +88,7 @@ public:
          * Default 0xAE = 0b10101110:
          *   SW1=EIN(0) Schirmerdung,  SW2=AUS(1), SW3=AUS(1), SW4=AUS(1),
          *   SW5=EIN(0) 1024B-block,   SW6=AUS(1), SW7=EIN(0) 1024B-block,
-         *   SW8=AUS(1) → 9600 Baud, 1024-Byte Blocklänge (SIOS 1526 Standard).
+         *   SW8=AUS(1) → 9600 Baud, 1024-Byte Blocklaenge (SIOS 1526 Standard).
          */
         uint8_t dil_a41;
         A5120Config() : io_base(0x50), dil_a41(0xAE) {}
@@ -163,15 +163,15 @@ public:
     /**
      * @brief RETI an die Bausteine weiterreichen (SIO A33, SIO A32, CTC A34).
      *
-     * Bis AP-ST5 (2026-10-01) fehlte diese Überschreibung: das RETI kam bei keinem
-     * Baustein der Karte an, ein einmal quittierter SIO-/CTC-Interrupt blieb für immer
-     * „under service" — jeder weitere Empfangsinterrupt der DFÜ blieb aus.  CP/A
-     * betreibt die Kanäle gepollt (nur ein UC1:-Treiber nutzt den Interrupt), deshalb
-     * fiel es erst mit SERTEST.COM auf.  Wächter `K8025.RetiGibtDenSioWiederFrei`.
+     * Bis AP-ST5 (2026-10-01) fehlte diese Ueberschreibung: das RETI kam bei keinem
+     * Baustein der Karte an, ein einmal quittierter SIO-/CTC-Interrupt blieb fuer immer
+     * „under service" — jeder weitere Empfangsinterrupt der DFUE blieb aus.  CP/A
+     * betreibt die Kanaele gepollt (nur ein UC1:-Treiber nutzt den Interrupt), deshalb
+     * fiel es erst mit SERTEST.COM auf.  Waechter `K8025.RetiGibtDenSioWiederFrei`.
      */
     void    onRETI() override;
 
-    /// @brief Anfordernder Baustein (Debugger): SIO A33 (DFÜ), SIO A32 (Tastatur) oder CTC A34.
+    /// @brief Anfordernder Baustein (Debugger): SIO A33 (DFUE), SIO A32 (Tastatur) oder CTC A34.
     const char* intDeviceName() const override {
         if (sio_dfue_.hasInterrupt())         return "K8025 SIO-A33 (DFUE)";
         if (sio_kbd_printer_.hasInterrupt())  return "K8025 SIO-A32 (Tastatur)";
@@ -209,19 +209,19 @@ public:
      */
     uint8_t keyboardTxGet();
 
-    // ─── Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5) ─────────────────
+    // ─── Schnittstellen nach aussen (Entwurf 19 §3.1, AP-S5) ─────────────────
 
     /// Einstellbare Schnittstellen in der Reihenfolge, in der die Maschine sie im
     /// `SerialHub` anmeldet (= Index der C-ABI).
-    /// `SchnittstellenAnzahl` ist der A5120-Satz (A32-A trägt dort die Tastatur K7637);
+    /// `SchnittstellenAnzahl` ist der A5120-Satz (A32-A traegt dort die Tastatur K7637);
     /// `ZifssA32A` (SIO A32 Kanal A, Takt CTC A34 K0 wie der Hauptdrucker) gibt es nur
-    /// für Maschinen, die dort eine IFSS herausführen (PRG 710/710-1, AP-P4) — sie
+    /// fuer Maschinen, die dort eine IFSS herausfuehren (PRG 710/710-1, AP-P4) — sie
     /// melden den vierten Anschluss selbst an.  A5120 und `K8025.*` sehen ihn nicht.
     enum Schnittstelle : int { DfueV24 = 0, DfueIfss = 1, Drucker = 2, SchnittstellenAnzahl = 3,
                                ZifssA32A = 3, GesamtAnzahl = 4 };
 
-    /// Name und Steckerbezeichnung einer Schnittstelle überschreiben (die Gerätebeschriftung
-    /// gehört der Maschine, nicht der Karte; AP-P4).  Leer = Vorgabe der Karte.
+    /// Name und Steckerbezeichnung einer Schnittstelle ueberschreiben (die Geraetebeschriftung
+    /// gehoert der Maschine, nicht der Karte; AP-P4).  Leer = Vorgabe der Karte.
     void benenne(Schnittstelle s, std::string name, std::string stecker);
 
     /// Anschluss je Schnittstelle (lebt so lange wie die Karte).
@@ -231,60 +231,60 @@ public:
     static constexpr const char* TASTATUR_NAME = "Tastatur K7637 (X4)";
 
     /**
-     * @brief Takt der ZRE-CTC K0 (K2526, Ports 0CH) als Quelle der Brücken W1:7 und
+     * @brief Takt der ZRE-CTC K0 (K2526, Ports 0CH) als Quelle der Bruecken W1:7 und
      *        X7–X8: Maschinentakte je ZC/TO0-Impuls, 0 = unbekannt.
      *
-     * Die Maschine verdrahtet damit, was über den Rechnerbus (ZC/TO, X1) kommt; im
-     * Emulator geht ZC/TO0 schon über den Koppelbus an CLK/TRG0–3 der CTC A34 —
+     * Die Maschine verdrahtet damit, was ueber den Rechnerbus (ZC/TO, X1) kommt; im
+     * Emulator geht ZC/TO0 schon ueber den Koppelbus an CLK/TRG0–3 der CTC A34 —
      * deren Eingangsperiode wird mit derselben Quelle bekannt gemacht (§6.2).
      */
     void setzeZreTakt(Z80CTC::PeriodenQuelle quelle);
 
-    /// Ein Anschluss hat SIO-Zustand geändert (Zeichen genommen/zugestellt, Leitung,
-    /// Break) — die Maschine bewertet dann die Interruptkette neu.  Liest und löscht.
+    /// Ein Anschluss hat SIO-Zustand geaendert (Zeichen genommen/zugestellt, Leitung,
+    /// Break) — die Maschine bewertet dann die Interruptkette neu.  Liest und loescht.
     bool nimmSeriellGeaendert() { const bool g = seriell_geaendert_; seriell_geaendert_ = false; return g; }
 
     /** @brief Callback type for serial bytes (alter Unterbau, Entwurf 19 §8). */
     using SerialCallback = std::function<void(uint8_t)>;
 
     /**
-     * @brief Alter Unterbau für Tests/`k1520_serial_*`: Abnehmer der Bytes, die der
+     * @brief Alter Unterbau fuer Tests/`k1520_serial_*`: Abnehmer der Bytes, die der
      *        Gast an Schnittstelle @p s SENDET.  Das Byte kommt in seiner Zeichenzeit
      *        (der Wandler taktet), aber nur, solange weder ein Transport noch der Loop
      *        den Stecker belegt — sonst geht es dorthin und der Abnehmer schweigt.
      */
     void setAbnehmer(Schnittstelle s, SerialCallback cb);
-    /// Ein Byte von außen in den Empfänger von @p s (alter Unterbau).  Belegt ein
+    /// Ein Byte von aussen in den Empfaenger von @p s (alter Unterbau).  Belegt ein
     /// Transport/Loop den Stecker, geht es ins Leere.
     void einspeisen(Schnittstelle s, uint8_t byte);
 
-    // ─── DFÜ interface (SIO A33, channel A, connector X6) — Kartentest-Zugriff ───
+    // ─── DFUE interface (SIO A33, channel A, connector X6) — Kartentest-Zugriff ───
 
     /**
-     * @brief Inject one byte received from the DFÜ (modem/host) interface.
+     * @brief Inject one byte received from the DFUE (modem/host) interface.
      *
      * Pushes the byte into the SIO A33 channel A RX FIFO.
      *
-     * @param byte Received byte from DFÜ device
+     * @param byte Received byte from DFUE device
      */
     void    dfueRxByte(uint8_t byte);
 
     /**
-     * @brief Check whether the CPU has sent a byte to the DFÜ interface.
+     * @brief Check whether the CPU has sent a byte to the DFUE interface.
      * @return true if a TX byte is waiting in SIO A33 channel A
      */
     bool    dfueTxAvailable();
 
     /**
      * @brief Retrieve one TX byte from the SIO A33 channel A TX FIFO.
-     * @return Byte that the CPU sent to the DFÜ device
+     * @return Byte that the CPU sent to the DFUE device
      */
     uint8_t dfueTxGet();
 
     /**
      * @brief Gleichbedeutend mit `setAbnehmer(DfueV24, cb)`: Bytes, die der Gast an die
-     *        DFÜ/V.24 sendet (aus Sicht des Rechners draußen „empfangen" — daher der
-     *        Name).  Bis AP-S5 wurde der Rückruf gespeichert, aber nie gerufen.
+     *        DFÜ/V.24 sendet (aus Sicht des Rechners draussen „empfangen" — daher der
+     *        Name).  Bis AP-S5 wurde der Rueckruf gespeichert, aber nie gerufen.
      */
     void    setDFUERxCallback(SerialCallback cb) { setAbnehmer(DfueV24, std::move(cb)); }
 
@@ -320,7 +320,7 @@ public:
     // ─── Sub-chip accessors ─────────────────────────────────────────────────
 
     /**
-     * @brief Return a reference to SIO A33 (DFÜ / modem channel).
+     * @brief Return a reference to SIO A33 (DFUE / modem channel).
      *
      * Used by A5120Machine wiring and unit tests.
      *
@@ -377,7 +377,7 @@ private:
     friend class Anschluss;
 
     A5120Config    cfg_;                              ///< Hardware configuration
-    Z80SIO         sio_dfue_        {"K8025-SIO-A33"}; ///< DFÜ SIO (ports 0x50–0x53)
+    Z80SIO         sio_dfue_        {"K8025-SIO-A33"}; ///< DFUE SIO (ports 0x50–0x53)
     Z80SIO         sio_kbd_printer_ {"K8025-SIO-A32"}; ///< Keyboard/printer SIO (ports 0x5C–0x5F)
     Z80CTC         ctc_a34_         {"K8025-CTC-A34"}; ///< Baud-rate CTC (ports 0x58–0x5B)
     Z80PIO         pio_a31_         {"K8025-PIO-A31"}; ///< DIL-switch PIO (ports 0x54–0x57)

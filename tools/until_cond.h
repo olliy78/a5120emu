@@ -1,11 +1,11 @@
 /**
  * @file until_cond.h
- * @brief Bedingung für `boot_trace --until <cond>` (Parsen + Auswerten).
+ * @brief Bedingung fuer `boot_trace --until <cond>` (Parsen + Auswerten).
  *
- * Hält den Trace-Lauf an, sobald die Bedingung gilt. Unterstützte Formen:
+ * Haelt den Trace-Lauf an, sobald die Bedingung gilt. Unterstuetzte Formen:
  *   PC<op>ADDR, [ADDR]<op>VAL, [ADDR]w<op>VAL   mit op ∈ == != < > <= >=
  *   screen ~ "text"  /  screen ~ /regex/        Bildschirm-Text (80×24 VRAM)
- * ADDR/VAL base-0 (0x.. hex oder dezimal). Pro ZVE1-Instruktion geprüft.
+ * ADDR/VAL base-0 (0x.. hex oder dezimal). Pro ZVE1-Instruktion geprueft.
  *
  * Header-only → Parser + Operator-Auswertung ohne Maschine unit-testbar.
  *
@@ -26,10 +26,10 @@ struct UntilCond {
     bool        word = false;   ///< MEM: 16-bit little-endian
     uint16_t    addr = 0;       ///< MEM-Adresse oder PC-Ziel
     long        val  = 0;       ///< Vergleichswert (bei PC: die Zieladresse)
-    std::string text;           ///< Original-Spezifikation (für Report)
+    std::string text;           ///< Original-Spezifikation (fuer Report)
     std::string pattern;        ///< SCREEN: Substring oder /regex/
 
-    /// SCREEN: den (bereits gerenderten) 80×24-Bildschirmtext gegen das Muster prüfen.
+    /// SCREEN: den (bereits gerenderten) 80×24-Bildschirmtext gegen das Muster pruefen.
     bool screenMatch(const std::string& scr) const {
         if (pattern.size() >= 2 && pattern.front()=='/' && pattern.back()=='/') {
             try { std::regex re(pattern.substr(1, pattern.size()-2));
@@ -39,7 +39,7 @@ struct UntilCond {
         return scr.find(pattern) != std::string::npos;
     }
 
-    /// Den aktuellen Wert (Speicher bzw. PC) gegen die Bedingung prüfen.
+    /// Den aktuellen Wert (Speicher bzw. PC) gegen die Bedingung pruefen.
     bool compare(long cur) const {
         switch (op) {
             case EQ: return cur == val;

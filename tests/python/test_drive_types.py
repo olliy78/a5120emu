@@ -2,7 +2,7 @@
 
 Reine Python-Logik ohne Kern und ohne Qt.  Wichtig ist vor allem die Abbildung
 alter Profilnamen: eine gespeicherte Konfiguration darf beim Laden nicht still
-auf K5601 zurückfallen und damit die Laufwerksbestückung des Nutzers ändern.
+auf K5601 zurueckfallen und damit die Laufwerksbestueckung des Nutzers aendern.
 """
 
 import app.drive_types as dt
@@ -48,7 +48,7 @@ def test_normalize_maps_legacy_profile_names():
     assert dt.normalize("mf6400_8_ss77") == "MF6400"
     assert dt.normalize("mf6400_8_ds77") == "MF6400"
     assert dt.normalize("mfs_525_ds80") == "K5601"
-    # Vollständigkeit: jeder Eintrag der Tabelle zeigt auf ein bekanntes Profil.
+    # Vollstaendigkeit: jeder Eintrag der Tabelle zeigt auf ein bekanntes Profil.
     for old, new in dt.LEGACY_PROFILE_NAMES.items():
         assert dt.normalize(old) == new
         assert dt.is_present(new)
@@ -65,7 +65,7 @@ def test_normalize_list_always_yields_all_slots():
     assert dt.normalize_list([]) == [dt.NO_DRIVE] * dt.NUM_SLOTS
     assert dt.normalize_list(None) == [dt.NO_DRIVE] * dt.NUM_SLOTS
     assert dt.normalize_list(["K5601"]) == ["K5601"] + [dt.NO_DRIVE] * 3
-    # Zu lange Listen werden auf NUM_SLOTS gekürzt.
+    # Zu lange Listen werden auf NUM_SLOTS gekuerzt.
     assert len(dt.normalize_list(["K5601"] * 9)) == dt.NUM_SLOTS
 
 

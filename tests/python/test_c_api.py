@@ -1,7 +1,7 @@
 """C-ABI: `core/api/k1520_api.h` ↔ `libk1520core.so` ↔ ctypes-Bindung.
 
 Das ist die einzige Schnittstelle zwischen Kern und GUI und die einzige Stelle,
-an der eine Änderung **still** bricht: der C++-Compiler prüft die Python-Seite
+an der eine Aenderung **still** bricht: der C++-Compiler prueft die Python-Seite
 nicht, und ctypes meldet eine falsche Signatur erst beim Aufruf — oft als
 Absturz statt als Fehlermeldung.  Diese Tests vergleichen die drei Seiten
 mechanisch miteinander.
@@ -22,14 +22,14 @@ HEADER = PROJECT_ROOT / "core" / "api" / "k1520_api.h"
 def header_functions() -> set:
     """Alle im Header deklarierten `k1520_*`-Funktionen."""
     text = HEADER.read_text(encoding="utf-8")
-    # Kommentare entfernen, damit Erwähnungen im Fließtext nicht mitzählen.
+    # Kommentare entfernen, damit Erwaehnungen im Fliesstext nicht mitzaehlen.
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
     text = re.sub(r"//[^\n]*", " ", text)
     return set(re.findall(r"\b(k1520_[a-z0-9_]+)\s*\(", text))
 
 
 def test_header_declares_the_expected_api():
-    """Grundplausibilität: der Header wird gefunden und ist nicht leer."""
+    """Grundplausibilitaet: der Header wird gefunden und ist nicht leer."""
     funcs = header_functions()
     assert HEADER.exists(), f"C-API-Header fehlt: {HEADER}"
     assert len(funcs) >= 30, f"nur {len(funcs)} Funktionen im Header gefunden"
@@ -54,7 +54,7 @@ def test_every_header_function_has_ctypes_signatures():
 
     Fehlt die Deklaration, konvertiert ctypes stillschweigend nach `int` — auf
     64-Bit-Systemen wird der Handle-Zeiger dabei abgeschnitten und der Aufruf
-    stürzt ab oder liefert Unsinn.  Wer die C-API erweitert, muss die Bindung
+    stuerzt ab oder liefert Unsinn.  Wer die C-API erweitert, muss die Bindung
     mitziehen; genau das erzwingt dieser Test.
     """
     from app.core_binding import k1520 as binding
@@ -90,11 +90,11 @@ def test_create_and_destroy_roundtrip():
 
 
 def test_unbuilt_machine_type_is_refused_with_a_reason():
-    """Ein Wert außerhalb der Aufzählung gibt NULL zurück — mit einem Grund in
+    """Ein Wert ausserhalb der Aufzaehlung gibt NULL zurueck — mit einem Grund in
     `k1520_last_init_error`, nicht still.
 
     Bis AP-E4b stand hier der K8915 (= 2), bis AP-P1c der PRG710 (= 1); beide sind
-    gebaut, übrig bleibt ein Wert außerhalb der Aufzählung.
+    gebaut, uebrig bleibt ein Wert ausserhalb der Aufzaehlung.
     """
     from app.core_binding.k1520 import _lib, K1520Handle
 
@@ -105,7 +105,7 @@ def test_unbuilt_machine_type_is_refused_with_a_reason():
         assert not _lib.k1520_create_configured(typ, None, None, None, None), typ
         assert "nicht implementiert" in _lib.k1520_last_init_error().decode()
 
-    # Der Grund darf einen folgenden, erfolgreichen Aufruf nicht überdauern.
+    # Der Grund darf einen folgenden, erfolgreichen Aufruf nicht ueberdauern.
     handle = _lib.k1520_create(0)
     assert handle
     assert _lib.k1520_last_init_error() == b""
@@ -146,10 +146,10 @@ def test_p8000_terminal_als_maschine_und_originalterminal_am_p8000(tmp_path):
     assert any(buf.raw)
     assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (640, 312)
     assert _lib.k1520_term_frame_count(h, 0) > 200
-    # Tastaturbild: jede Make-Folge gehört zu einer Matrixposition; RETURN = 1CH
+    # Tastaturbild: jede Make-Folge gehoert zu einer Matrixposition; RETURN = 1CH
     folgen = {_lib.k1520_term_matrix_scancode(h, 0, z, s) for z in range(8) for s in range(16)}
     assert 0x1C in folgen and 0xE048 in folgen
-    assert _lib.k1520_term_scancode_key(h, 0, 0x3A, True)            # CAPS LOCK drücken …
+    assert _lib.k1520_term_scancode_key(h, 0, 0x3A, True)            # CAPS LOCK druecken …
     for _ in range(4):
         _lib.k1520_run(h, 36_864)
     assert _lib.k1520_term_scancode_key(h, 0, 0x3A, False)           # … und loslassen
@@ -189,7 +189,7 @@ def test_p8000_terminal_als_maschine_und_originalterminal_am_p8000(tmp_path):
 
 def test_p8000_can_be_created_configured_and_refused():
     """`k1520_create_p8000` (AP P7b): Typ 4, Terminal-Funktionen, Konfigurationstext;
-    unbekannte/noch nicht gebaute Schlüssel und unzulässige Bestückung → NULL mit Grund
+    unbekannte/noch nicht gebaute Schluessel und unzulaessige Bestueckung → NULL mit Grund
     (16-Bit-Teil seit AP P11)."""
     import ctypes
     from app.core_binding.k1520 import _lib, K1520Handle
@@ -229,7 +229,7 @@ def test_p8000_can_be_created_configured_and_refused():
         assert not _lib.k1520_create_p8000(schlecht), schlecht
         assert _lib.k1520_last_init_error().decode().startswith("P8000"), schlecht
 
-    # WDC (AP P13d): Platte anlegen, anschließen, lösen; ohne WDC bzw. an anderen Maschinen Ruhewerte
+    # WDC (AP P13d): Platte anlegen, anschliessen, loesen; ohne WDC bzw. an anderen Maschinen Ruhewerte
     import os
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -259,7 +259,7 @@ def test_p8000_can_be_created_configured_and_refused():
         handle = _lib.k1520_create_p8000(f"karte16=1,wdc=4.2,platte={pfad}".encode())
         assert handle and _lib.k1520_hd_path(handle, 0) == pfad.encode()
         _lib.k1520_destroy(K1520Handle(handle))
-    # P24: das EPROM der Firmware bis 4.0 legt den Typ fest; Kürzel; plattepar=aus
+    # P24: das EPROM der Firmware bis 4.0 legt den Typ fest; Kuerzel; plattepar=aus
     assert _lib.k1520_hd_rom_typ(b"3.4.05") == b"K5504.50" and _lib.k1520_hd_rom_typ(b"4.0.05") == b"K5504.50"
     assert _lib.k1520_hd_rom_typ(b"4.2") == b"" and _lib.k1520_hd_rom_typ(None) == b""
     assert _lib.k1520_hd_typ_kuerzel(b"K5504.50") == b"k5504" and _lib.k1520_hd_typ_kuerzel(b"VS") == b"vs"
@@ -269,7 +269,7 @@ def test_p8000_can_be_created_configured_and_refused():
         handle = _lib.k1520_create_p8000(b"karte16=1,wdc=3.4.05,plattepar=aus")
         assert handle, _lib.k1520_last_init_error()
         assert not _lib.k1520_hd_create(handle, 0, klein.encode(), b"D5126")
-        assert "Firmware 3.4.05 gehört zu K5504.50" in _lib.k1520_hd_error(handle).decode()
+        assert "Firmware 3.4.05 gehoert zu K5504.50" in _lib.k1520_hd_error(handle).decode()
         assert _lib.k1520_hd_create(handle, 0, klein.encode(), b"")   # leer = Typ des ROMs
         assert os.path.getsize(klein) == 1024 * 5 * 18 * 512
         _lib.k1520_destroy(K1520Handle(handle))
@@ -354,7 +354,7 @@ def test_pc1715_can_be_created_and_run():
 
 
 def test_pc1715_ex_waehlt_rom_fassungen():
-    """`k1520_create_pc1715_ex` (AP-6): ZG-Bestückung und Tastatur-ROM wählbar; mit 0/0 gleich der
+    """`k1520_create_pc1715_ex` (AP-6): ZG-Bestueckung und Tastatur-ROM waehlbar; mit 0/0 gleich der
     alten Funktion; unbekannte Werte → NULL mit Grund; der 1715W nimmt die Tastatur, ignoriert den ZG-Satz."""
     from app.core_binding.k1520 import _lib, K1520Handle
 
@@ -379,7 +379,7 @@ def test_pc1715_ex_waehlt_rom_fassungen():
 
 def test_mc80_can_be_created_and_reports_its_type():
     """`k1520_create_mc80` (Entwurf 31, AP M2): MC80.30/.31 liefern eine Maschine vom Typ 6,
-    die EGOS ab 0000H ausführt; .33/.21/.22 und unbekannte Schlüssel → NULL mit Grund."""
+    die EGOS ab 0000H ausfuehrt; .33/.21/.22 und unbekannte Schluessel → NULL mit Grund."""
     from app.core_binding.k1520 import _lib, K1520Handle
 
     for variante, konfig in ((0, None), (1, b"spe=2")):
@@ -412,7 +412,7 @@ def test_mc80_can_be_created_and_reports_its_type():
 
 def test_mc80_2x_through_the_c_abi():
     """AP M11: MC80.21/.22 (`k1520_create_mc80(3|4)`) — Typ 6, Bild 528 × 256 aus der
-    Displaylogik, `k1520_screen_char` = Zeichen der DPL (8 × 32), Menü des Betriebssystems;
+    Displaylogik, `k1520_screen_char` = Zeichen der DPL (8 × 32), Menue des Betriebssystems;
     Kassette = Laufwerk 0 der eingebauten MBI ohne `k1520_tape_install`."""
     from app.core_binding.k1520 import _lib, K1520Handle
 
@@ -437,8 +437,8 @@ def test_mc80_2x_through_the_c_abi():
 
 
 def test_mc80_screen_and_keyboard_through_the_c_abi():
-    """AP M3: Bitmap-Bild über `k1520_framebuffer` (512 × 256, 00H/FFH), Text über
-    `k1520_screen_char` (Mustervergleich gegen den EGOS-Zeichengenerator), Tasten über
+    """AP M3: Bitmap-Bild ueber `k1520_framebuffer` (512 × 256, 00H/FFH), Text ueber
+    `k1520_screen_char` (Mustervergleich gegen den EGOS-Zeichengenerator), Tasten ueber
     `k1520_key_press` (ASCII/Qt) an die Tastatur an SIO A."""
     import ctypes
     from app.core_binding.k1520 import _lib, K1520Handle
@@ -462,7 +462,7 @@ def test_mc80_screen_and_keyboard_through_the_c_abi():
         werte = {fb[i] for i in range(512 * 256)}
         assert werte == {0x00, 0xFF}
         for k in b"init":                      # Tastenkappe ohne Umschalter
-            _lib.k1520_key_press(h, k - 0x20, False, False)   # Qt-Code = Großbuchstabe
+            _lib.k1520_key_press(h, k - 0x20, False, False)   # Qt-Code = Grossbuchstabe
             _lib.k1520_key_release(h, k - 0x20)
         fahre(400_000)
         assert zeile(24) == b">INIT"
@@ -485,13 +485,13 @@ def test_k8915_can_be_created_and_reports_its_type():
         assert _lib.k1520_panel_lamps(h) == 0xFF, "Latch 61H nach /RESET: alles dunkel"
         assert _lib.k1520_bell_count(h) == 0
         assert _lib.k1520_run(h, 100_000) > 0
-        # Vorgabebestückung des Geräts: 2 × K5601, Platz 2/3 leer.
+        # Vorgabebestueckung des Geraets: 2 × K5601, Platz 2/3 leer.
         assert _lib.k1520_drive_format_count(h, 0) > 0
         assert _lib.k1520_drive_format_count(h, 2) == 0
     finally:
         _lib.k1520_destroy(h)
 
-    # Bestückung über create_configured, wie beim A5120.
+    # Bestueckung ueber create_configured, wie beim A5120.
     handle = _lib.k1520_create_configured(2, b"K5601", b"K5600.20", None, None)
     assert handle, _lib.k1520_last_init_error()
     h = K1520Handle(handle)
@@ -514,7 +514,7 @@ def test_nmi_button_restarts_the_k8915_self_test_and_does_nothing_on_the_a5120()
     try:
         _lib.k1520_power_on(h)
         _lib.k1520_run(h, 1_000_000)
-        # Die volle Wirkung (Selbsttest von vorn, „DIAGNOSTIC") prüft
+        # Die volle Wirkung (Selbsttest von vorn, „DIAGNOSTIC") prueft
         # K8915Boot.NmiImRomStartetDenSelbsttestNeu; hier geht es um die ABI.
         _lib.k1520_nmi(h)
         _lib.k1520_run(h, 200)
@@ -535,9 +535,9 @@ def test_nmi_button_restarts_the_k8915_self_test_and_does_nothing_on_the_a5120()
 
 
 def test_a5120_answers_the_machine_neutral_indicators(booted):
-    """Die angehängten Anzeigefunktionen ändern am A5120 nichts: Typ 0, kein
-    Anzeigefeld, kein Summerzähler; `k1520_screen_char` liest dasselbe Bild wie
-    der bisherige Weg über den Bus (F800H) — sobald das Bild steht (vorher kann
+    """Die angehaengten Anzeigefunktionen aendern am A5120 nichts: Typ 0, kein
+    Anzeigefeld, kein Summerzaehler; `k1520_screen_char` liest dasselbe Bild wie
+    der bisherige Weg ueber den Bus (F800H) — sobald das Bild steht (vorher kann
     der Bus bei F800H etwas anderes zeigen als die Karte)."""
     from app.core_binding.k1520 import _lib
 
@@ -557,7 +557,7 @@ def test_framebuffer_geometry_matches_pointer_size(emulator):
     """`k1520_fb_width/height` und der Zeigerinhalt passen zusammen.
 
     Der Framebuffer des K7024 ist monochrom: EIN Byte Helligkeit je Pixel
-    (640x288 = 184320 Byte).  Die GUI verlässt sich auf genau diese Geometrie
+    (640x288 = 184320 Byte).  Die GUI verlaesst sich auf genau diese Geometrie
     (`app/ui/screen_widget.FB_WIDTH/FB_HEIGHT`).
     """
     from app.core_binding.k1520 import _lib
@@ -569,12 +569,12 @@ def test_framebuffer_geometry_matches_pointer_size(emulator):
 
     ptr = _lib.k1520_framebuffer(handle)
     assert ptr, "k1520_framebuffer lieferte einen Nullzeiger"
-    # Letztes Byte lesbar → der Puffer ist wirklich width*height groß.
+    # Letztes Byte lesbar → der Puffer ist wirklich width*height gross.
     ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint8))[width * height - 1]
 
 
 def test_missing_disk_file_raises_before_reaching_the_core(emulator):
-    """Der Wrapper prüft den Pfad selbst — die C-API sieht ihn gar nicht."""
+    """Der Wrapper prueft den Pfad selbst — die C-API sieht ihn gar nicht."""
     with pytest.raises(FileNotFoundError):
         emulator.mount_disk(0, "/gibt/es/nicht.img", "cpa780", False)
 
@@ -589,7 +589,7 @@ def test_error_string_is_set_after_a_failed_mount(emulator, temp_disk):
 
 
 def test_mem_read_write_roundtrip(emulator):
-    """Speicherzugriff über die C-API (RAM, nicht ROM-Bereich)."""
+    """Speicherzugriff ueber die C-API (RAM, nicht ROM-Bereich)."""
     emulator.power_on()
     emulator.mem_write(0x6000, 0xA5)
     assert emulator.mem_read(0x6000) == 0xA5
@@ -613,7 +613,7 @@ def test_mem_load_schreibt_eine_datei_in_den_speicher(emulator, tmp_path):
 
 @pytest.mark.parametrize("drive", [0, 1, 2])
 def test_format_catalogue_is_reachable_per_drive(emulator, drive):
-    """Der Formatkatalog (data/formats.yaml) kommt über die C-API an."""
+    """Der Formatkatalog (data/formats.yaml) kommt ueber die C-API an."""
     formats = emulator.drive_formats(drive)
     assert formats, f"Laufwerk {drive} meldet keine Formate"
     assert emulator.drive_default_format(drive) in formats
@@ -628,7 +628,7 @@ def test_formats_source_points_at_a_real_file(emulator):
     assert "formats.yaml" in source
 
 
-# ─── Strukturen und Aufzählungen der seriellen Schnittstellen (Entwurf 19 §8) ──
+# ─── Strukturen und Aufzaehlungen der seriellen Schnittstellen (Entwurf 19 §8) ──
 
 _C_TYP = {
     "uint8_t": ctypes.c_uint8, "uint16_t": ctypes.c_uint16, "uint32_t": ctypes.c_uint32,
@@ -649,9 +649,9 @@ def _c_feldtyp(typ: str, dims: list):
 
 
 def test_serial_structs_match_the_header_field_by_field():
-    """Name, Typ und Feldgröße jedes Feldes der `K1520Ser*`-Strukturen stimmen mit der
-    ctypes-Seite überein — gleiche Felderfolge heisst gleiches Layout.  Ein fehlendes
-    oder verschobenes Feld bräche sonst still (falsche Werte statt eines Fehlers)."""
+    """Name, Typ und Feldgroesse jedes Feldes der `K1520Ser*`-Strukturen stimmen mit der
+    ctypes-Seite ueberein — gleiche Felderfolge heisst gleiches Layout.  Ein fehlendes
+    oder verschobenes Feld braeche sonst still (falsche Werte statt eines Fehlers)."""
     from app.core_binding import k1520 as B
     text = _header_text()
     gefunden = 0
@@ -701,7 +701,7 @@ def test_em_state_struct_matches_the_c_layout():
     """`K1520EmState` in ctypes hat genau den Aufbau des C-Headers.
 
     Eine vergessene oder verschobene Komponente fiele sonst erst in der
-    Oberfläche auf — als falsche Registerwerte, nicht als Fehler.
+    Oberflaeche auf — als falsche Registerwerte, nicht als Fehler.
     """
     from app.core_binding.k1520 import _lib, K1520EmState
     assert ctypes.sizeof(K1520EmState) == _lib.k1520_em_state_size()
@@ -736,7 +736,7 @@ def test_machine_with_em_after_power_on(variant, model):
         assert st.model == model
         assert st.mode8 and st.reset16 and st.in_reset
         assert st.a33 == 0 and st.seg_mode == 0
-        # Ein kurzer Lauf ändert daran nichts (das Boot-ROM fasst das EM nicht an).
+        # Ein kurzer Lauf aendert daran nichts (das Boot-ROM fasst das EM nicht an).
         emu.run(20000)
         assert emu.em_leds()[1]
     finally:

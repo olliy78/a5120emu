@@ -5,24 +5,24 @@
  * - Adressen der 16-Bit-Seite: `<<seg>>off` (Zilog-Schreibweise des Disassemblers),
  *   `em:ZELLE` (roh ins DRAM, an der Segmentweiche vorbei) oder eine schlichte Zahl
  *   (Segment = Vorgabe, meist das PC-Segment).  Zahlen: `%1234`/`0x1234`/`1234h` hex,
- *   sonst dezimal — wie im übrigen Debugger.
+ *   sonst dezimal — wie im uebrigen Debugger.
  * - FCW als Text.
  * - Aufrufstapel des U8001 aus der Befehlsfolge (CALL/CALR und SP-Anstieg), das
- *   Gegenstück zu tools/callstack_tracker.h für den Z80.
- * - (S5b) Register-Sicht für Ausdrücke (`b … if`, `lp`, `disp`), Adressbereiche für
+ *   Gegenstueck zu tools/callstack_tracker.h fuer den Z80.
+ * - (S5b) Register-Sicht fuer Ausdruecke (`b … if`, `lp`, `disp`), Adressbereiche fuer
  *   Watchpoints, Symbole mit Segment (Symboldatei aus `z8kasm --sym`) und der
- *   Vergleich zweier EM-Zustände für `snap diff`.
+ *   Vergleich zweier EM-Zustaende fuer `snap diff`.
  *
  * - (P8) Zustand der CPU-Pins und der Ausnahmelogik als Text, der letzte Buszyklus
  *   (Status ST3..0, N/S, B/W, R/W, SN0..6, AD), das Ausnahmeprotokoll (`trap`) und die
- *   Zyklenzählung je Statuscode (`status`).
+ *   Zyklenzaehlung je Statuscode (`status`).
  *
  * Ohne Emulator unit-getestet (tests/debugtools/test_dbg_u8000.cpp).
  *
  * @license MIT
  */
 #pragma once
-#include "core/primitives/z8000.h"   // nur Typen und Inline-Abfragen, kein Binden nötig
+#include "core/primitives/z8000.h"   // nur Typen und Inline-Abfragen, kein Binden noetig
 
 #include <algorithm>
 #include <cctype>
@@ -43,7 +43,7 @@ struct Addr16 {
     uint8_t  seg = 0;      ///< Kind::Seg: Segmentnummer (0..127)
     uint16_t off = 0;      ///< Kind::Seg: Offset
     uint32_t cell = 0;     ///< Kind::Raw: DRAM-Zelle
-    bool     explicitSeg = false;   ///< `<<n>>` stand ausdrücklich da
+    bool     explicitSeg = false;   ///< `<<n>>` stand ausdruecklich da
     uint32_t key() const { return (uint32_t(seg) << 16) | off; }
 };
 
@@ -62,8 +62,8 @@ inline bool parseNumber(const std::string& t, long& v) {
 }
 
 /**
- * @brief `<<seg>>off` | `em:ZELLE` | Zahl | Symbol (über @p sym) → Addr16.
- * @param defSeg Segment für eine Zahl ohne `<<…>>` (PC-Segment).
+ * @brief `<<seg>>off` | `em:ZELLE` | Zahl | Symbol (ueber @p sym) → Addr16.
+ * @param defSeg Segment fuer eine Zahl ohne `<<…>>` (PC-Segment).
  */
 inline bool parseAddr(const std::string& tok, uint8_t defSeg, Addr16& a,
                       const std::function<bool(const std::string&, long&)>& sym = nullptr) {
@@ -96,7 +96,7 @@ inline bool parseAddr(const std::string& tok, uint8_t defSeg, Addr16& a,
     }
     long v;
     if (parseNumber(rest, v)) { a.off = uint16_t(v); return true; }
-    if (sym) {                              // Symbol (NAME[+OFF] löst der Rufer auf)
+    if (sym) {                              // Symbol (NAME[+OFF] loest der Rufer auf)
         long sv;
         if (sym(rest, sv)) {
             if (!a.explicitSeg && sv > 0xFFFF) a.seg = uint8_t((sv >> 16) & 0x7F);
@@ -135,17 +135,17 @@ inline std::string fcwText(uint16_t fcw) {
 struct Frame16 {
     uint32_t site;      ///< seg<<16|off des CALL
     uint32_t target;    ///< Ziel
-    uint32_t ret;       ///< Rückkehradresse
-    uint16_t sp;        ///< SP-Offset NACH dem Kellern der Rückkehradresse
+    uint32_t ret;       ///< Rueckkehradresse
+    uint16_t sp;        ///< SP-Offset NACH dem Kellern der Rueckkehradresse
 };
 
 /**
  * @brief Aufrufstapel aus der Befehlsfolge.
  *
  * Vor jedem Befehl: @ref onInstruction mit dem jetzigen SP-Offset.  Ein CALL/CALR
- * wird vorgemerkt und beim nächsten Befehl als Rahmen übernommen (SP ist dann um
- * 2/4 gefallen); jeder Rahmen, über dessen SP der Stapel wieder gestiegen ist,
- * ist zurückgekehrt (RET, IRET, Stapelabbau von Hand).
+ * wird vorgemerkt und beim naechsten Befehl als Rahmen uebernommen (SP ist dann um
+ * 2/4 gefallen); jeder Rahmen, ueber dessen SP der Stapel wieder gestiegen ist,
+ * ist zurueckgekehrt (RET, IRET, Stapelabbau von Hand).
  */
 class CallStack16 {
 public:
@@ -159,7 +159,7 @@ public:
             }
         }
     }
-    /// Der gerade anstehende Befehl ist ein Aufruf (vor seiner Ausführung melden).
+    /// Der gerade anstehende Befehl ist ein Aufruf (vor seiner Ausfuehrung melden).
     void noteCall(uint32_t site, uint32_t ret, uint16_t sp) {
         pending_ = true; pendSite_ = site; pendRet_ = ret; pendSp_ = sp;
     }
@@ -173,7 +173,7 @@ private:
     uint16_t pendSp_ = 0;
 };
 
-// ─── S5b: Ausdrücke ──────────────────────────────────────────────────────────
+// ─── S5b: Ausdruecke ──────────────────────────────────────────────────────────
 
 /// Was ein Ausdruck in der U8001-Sicht lesen kann (Register so, wie der laufende
 /// Modus sie sieht, dazu optional der Zustand der EM-Steuerkarte).
@@ -241,7 +241,7 @@ inline bool reg16(const RegView16& v, const std::string& U, long long& out) {
  * @brief Ausdruckswert → Segment + Offset.
  *
  * Drei Formen: Registerpaar-Form (Segment in Bit 24..30, Bit 16..23 = 0 — so steht
- * eine Adresse in RRn), Schlüssel-/Literalform `<<s>>off` (Segment in Bit 16..22)
+ * eine Adresse in RRn), Schluessel-/Literalform `<<s>>off` (Segment in Bit 16..22)
  * und eine 16-Bit-Zahl (Segment = @p defSeg).
  */
 inline void decodeAddr(long long v, uint8_t defSeg, uint8_t& seg, uint16_t& off) {
@@ -255,11 +255,11 @@ inline void decodeAddr(long long v, uint8_t defSeg, uint8_t& seg, uint16_t& off)
 // ─── S5b: Symbole mit Segment ────────────────────────────────────────────────
 
 /**
- * @brief Symboltabelle der 16-Bit-Seite (Schlüssel seg·2¹⁶+off).
+ * @brief Symboltabelle der 16-Bit-Seite (Schluessel seg·2¹⁶+off).
  *
  * Zeilenformat (wie `z8kasm --sym` schreibt, `#` = Kommentar):
  *   `<<SEG>>%OFFS NAME`   — auch `NAME <<SEG>>%OFFS` und `NAME = <<SEG>>%OFFS`.
- * Eine Zeile ohne `<<…>>` ist KEIN U8001-Symbol (sie gehört der Z80-Tabelle).
+ * Eine Zeile ohne `<<…>>` ist KEIN U8001-Symbol (sie gehoert der Z80-Tabelle).
  */
 class SymTab16 {
 public:
@@ -274,7 +274,7 @@ public:
     const std::map<uint32_t, std::string>& byKey() const { return byKey_; }
     const std::map<std::string, uint32_t>& byName() const { return byName_; }
 
-    /// Name oder NAME+OFF / NAME-OFF → Schlüssel.
+    /// Name oder NAME+OFF / NAME-OFF → Schluessel.
     bool find(const std::string& tok, uint32_t& key) const {
         size_t p = tok.find_first_of("+-", 1);
         std::string base = p == std::string::npos ? tok : tok.substr(0, p);
@@ -288,13 +288,13 @@ public:
         key = (it->second & 0x7F0000u) | uint16_t(uint16_t(it->second) + d);
         return true;
     }
-    /// Genau dieser Schlüssel → Name (sonst leer).
+    /// Genau dieser Schluessel → Name (sonst leer).
     std::string at(uint32_t key) const {
         auto it = byKey_.find(key);
         return it == byKey_.end() ? std::string() : it->second;
     }
-    /// Nächstes Symbol darunter im selben Segment, höchstens @p maxDist entfernt:
-    /// "NAME" bzw. "NAME+%1A" (für bt/where/hist); sonst leer.
+    /// Naechstes Symbol darunter im selben Segment, hoechstens @p maxDist entfernt:
+    /// "NAME" bzw. "NAME+%1A" (fuer bt/where/hist); sonst leer.
     std::string nearest(uint32_t key, uint32_t maxDist = 0x400) const {
         auto it = byKey_.upper_bound(key);
         if (it == byKey_.begin()) return {};
@@ -306,7 +306,7 @@ public:
     }
     /**
      * @brief Eine Zeile lesen.
-     * @return 1 = U8001-Symbol übernommen, 0 = keine U8001-Zeile (leer, Kommentar,
+     * @return 1 = U8001-Symbol uebernommen, 0 = keine U8001-Zeile (leer, Kommentar,
      *         Z80-Form), -1 = U8001-Form, aber unlesbar.
      */
     int parseLine(const std::string& line) {
@@ -333,7 +333,7 @@ private:
     std::map<uint32_t, std::string> byKey_;
 };
 
-// ─── S5b: Adressbereiche für Watchpoints ─────────────────────────────────────
+// ─── S5b: Adressbereiche fuer Watchpoints ─────────────────────────────────────
 
 /**
  * @brief `A` oder `A..B` der 16-Bit-Seite.  Logisch: beide Enden im selben Segment
@@ -361,9 +361,9 @@ inline bool parseRange16(const std::string& tok, uint8_t defSeg, Addr16& lo, Add
     return true;
 }
 
-// ─── S5b: EM-Zustand für `snap diff` ─────────────────────────────────────────
+// ─── S5b: EM-Zustand fuer `snap diff` ─────────────────────────────────────────
 
-/// Was `snap` vom Erweiterungsmodul festhält (Register, Karte, DRAM).
+/// Was `snap` vom Erweiterungsmodul festhaelt (Register, Karte, DRAM).
 struct EmSnap {
     bool     valid = false;
     uint16_t r[16] = {};            ///< R0..R15 wie der Modus sie sieht
@@ -381,8 +381,8 @@ struct EmSnap {
     std::vector<uint8_t> dram;
 };
 
-/// Unterschiede zweier EM-Zustände als Textzeilen (leer = gleich).  DRAM-Bereiche
-/// zusammengefasst, höchstens @p maxRanges gelistet.
+/// Unterschiede zweier EM-Zustaende als Textzeilen (leer = gleich).  DRAM-Bereiche
+/// zusammengefasst, hoechstens @p maxRanges gelistet.
 inline std::vector<std::string> diffEm(const EmSnap& a, const EmSnap& b, int maxRanges = 40) {
     std::vector<std::string> out;
     if (!a.valid || !b.valid) return out;
@@ -514,7 +514,7 @@ public:
     const std::vector<Z8kExceptionInfo>& entries() const { return log_; }
     uint64_t total() const { return total_; }
     uint64_t count(Z8kException k) const { return perKind_[uint8_t(k) & 7]; }
-    /// Zählzeile "RESET 1 EPA 0 PRIV 2 SC 5 NMI 0 SEGT 1 VI 7 NVI 0".
+    /// Zaehlzeile "RESET 1 EPA 0 PRIV 2 SC 5 NMI 0 SEGT 1 VI 7 NVI 0".
     std::string countsText() const {
         std::string s;
         for (int k = 0; k < 8; ++k) {
@@ -531,7 +531,7 @@ private:
     uint64_t perKind_[8] = {};
 };
 
-/// Zählung je Statuscode als Zeilen "IF1   (1101)  1234" — nur Codes mit Zyklen, dazu
+/// Zaehlung je Statuscode als Zeilen "IF1   (1101)  1234" — nur Codes mit Zyklen, dazu
 /// die Summe; @p all = auch die Nullen.
 inline std::vector<std::string> statusCountLines(const Z8000& z, bool all = false) {
     std::vector<std::string> out;

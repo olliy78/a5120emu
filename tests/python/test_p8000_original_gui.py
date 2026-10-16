@@ -3,9 +3,9 @@
 Rechnerausstattung + Betriebsart (Computer mit Terminal | nur Terminal), das Terminalbild im
 gemeinsamen CRT-Widget (jeder Regler erreicht den Shader), Text kopieren, Bildschirmtastatur K7673,
 Bildschirmtastatur K7673 und Abbildung der Wirtstastatur auf die Tastenmatrix, Verbindungsdialog,
-Mehrinstanz (Konfiguration, Plattensperre) und der Mehrplatz über Loopback-Telnet.
+Mehrinstanz (Konfiguration, Plattensperre) und der Mehrplatz ueber Loopback-Telnet.
 
-Gearbeitet wird ohne Pixelvergleich gegen das Fenster (offscreen): geprüft werden Verdrahtung und
+Gearbeitet wird ohne Pixelvergleich gegen das Fenster (offscreen): geprueft werden Verdrahtung und
 Abbildung — das Bild selbst kommt aus Firmware + 8275 im Kern und ist dort getestet.
 """
 
@@ -99,7 +99,7 @@ def test_profil_modelle_arten_und_titel():
     from app import profil
     p = profil.profil("p8000")
     schluessel = [m[0] for m in p.modelle]
-    # Kern-Terminal-Modelle gibt es in der Oberfläche nicht mehr (P23a)
+    # Kern-Terminal-Modelle gibt es in der Oberflaeche nicht mehr (P23a)
     assert schluessel == ["p8000-ot", "p8000-16-ot", "p8000-8-ot", "p8000-term"]
     assert [p.modell_art(k) for k in schluessel] == ["original", "original", "original", "einheit"]
     assert [m[0] for m in p.ausstattungen()] == schluessel[:3] and p.einheit_modell() == "p8000-term"
@@ -524,7 +524,7 @@ def test_layout_105_positionen_scancodes_wie_im_eprom_abzug():
                 if sc:
                     belegt[(z, s)] = sc
         assert len(belegt) == 105
-        # Tabelle des Layouts = Kern (EPROM); das „+“ bei (1,7) hat den Code 00H und zählt im Kern nicht mit
+        # Tabelle des Layouts = Kern (EPROM); das „+“ bei (1,7) hat den Code 00H und zaehlt im Kern nicht mit
         assert {p: L.scancode(p) for p in L.TASTEN if p not in L.OHNE_KERNZAEHLUNG} == belegt
         assert L.scancode((1, 7)) == 0 and L.TASTEN[(1, 7)][1] == "+"
     finally:
@@ -532,7 +532,7 @@ def test_layout_105_positionen_scancodes_wie_im_eprom_abzug():
     # jede Position genau einmal im Bild — bis auf die zwei, die am Foto keine Kappe haben
     assert sorted(p for p, *_ in L.BILD) == sorted(set(L.TASTEN) - set(L.OHNE_KAPPE))
     assert len(L.BILD) == 104
-    # Keine zwei Tasten überdecken sich
+    # Keine zwei Tasten ueberdecken sich
     felder = [(x, y, x + b, y + L.taste_hoehe(p)) for p, x, y, b in L.BILD]
     for i, a in enumerate(felder):
         for b in felder[i + 1:]:
@@ -561,7 +561,7 @@ def test_tastenbild_folgt_dem_foto_reihenfolge_und_beschriftung():
     # Umschaltbelegung der Zeichentasten wie auf den Kappen (SHIFT oben)
     assert L.TASTEN[(0, 1)][1:3] == ("3", "@") and L.TASTEN[(4, 6)][1:3] == ("<", ">")
     assert L.TASTEN[(5, 5)][1:3] == ("+", "*") and L.TASTEN[(6, 5)][1:3] == ("#", "^")
-    # Der Wirts-SHIFT geht über die linke SHIFT-Kappe
+    # Der Wirts-SHIFT geht ueber die linke SHIFT-Kappe
     assert L.SCANCODE_POS[0x2A] == (1, 6) and L.zeichen_taste("+") == ((5, 5), False)
 
 
@@ -583,7 +583,7 @@ def test_jede_matrixposition_ist_ueber_die_bildschirmtastatur_erreichbar(qapp):
         assert kw.taste_bei(QPointF(mitte)) == pos
         QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, mitte)
     erwartet = [L.matrix_kode(*p) for p in sichtbar if p not in L.UMSCHALTER]
-    assert gedrueckt == erwartet and losgelassen == erwartet       # Drücken UND Loslassen je Taste
+    assert gedrueckt == erwartet and losgelassen == erwartet       # Druecken UND Loslassen je Taste
     assert len(set(gedrueckt)) == len(sichtbar) - len([p for p in L.UMSCHALTER if p in sichtbar])
     # Kodierung: dieselbe wie im Kern (`0x04000000 | Zeile << 8 | Spalte`)
     assert L.matrix_kode(3, 8) == 0x04000308 and L.kode_matrix(0x04000308) == (3, 8)
@@ -602,7 +602,7 @@ def test_umschalter_rasten_und_die_rechte_maustaste_haelt(qapp):
     kw.keyReleased.connect(lambda k: ereignisse.append(("aus", L.kode_matrix(k))))
     shift, ctrl, a = (1, 6), (6, 13), (2, 0)
     QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, kw.taste_rechteck(shift).center().toPoint())
-    assert ereignisse == [("an", shift)] and kw.gehalten() == {shift}      # SHIFT bleibt gedrückt
+    assert ereignisse == [("an", shift)] and kw.gehalten() == {shift}      # SHIFT bleibt gedrueckt
     QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, kw.taste_rechteck(a).center().toPoint())
     assert ereignisse[1:] == [("an", a), ("aus", a)] and kw.gehalten() == {shift}
     QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, kw.taste_rechteck(shift).center().toPoint())
@@ -610,8 +610,8 @@ def test_umschalter_rasten_und_die_rechte_maustaste_haelt(qapp):
     QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, kw.taste_rechteck(ctrl).center().toPoint())
     assert kw.gehalten() == {ctrl}
     QTest.mouseClick(kw, Qt.RightButton, Qt.NoModifier, kw.taste_rechteck(a).center().toPoint())
-    assert kw.gehalten() == {ctrl, a}                                       # rechte Taste hält jede Taste
-    kw.clear_host_keys()                                                    # Ausschalten löst alles
+    assert kw.gehalten() == {ctrl, a}                                       # rechte Taste haelt jede Taste
+    kw.clear_host_keys()                                                    # Ausschalten loest alles
     assert kw.gehalten() == set() and ("aus", ctrl) in ereignisse and ("aus", a) in ereignisse
 
 
@@ -663,7 +663,7 @@ def test_zeichen_auf_tasten_nach_den_firmwaretabellen():
     assert L.zeichen_taste("ß") == L.zeichen_taste("~") == ((0, 5), False)
     # Hauptblock vor Ziffernblock: die Ziffer 9 liegt auf (0,4), nicht auf einer der beiden anderen 9
     assert L.zeichen_taste("9") == ((0, 4), False)
-    # Jedes druckbare ASCII-Zeichen ist erreichbar — außer denen, die die Firmware nicht liefert.
+    # Jedes druckbare ASCII-Zeichen ist erreichbar — ausser denen, die die Firmware nicht liefert.
     fehlt = [chr(c) for c in range(0x20, 0x7F) if L.zeichen_taste(chr(c)) is None]
     assert fehlt == [], fehlt
     # Sondertasten
@@ -674,7 +674,7 @@ def test_zeichen_auf_tasten_nach_den_firmwaretabellen():
 
 def _ev(t, an, key, mod=None, text=""):
     """Wirtstastenereignis unmittelbar an das Widget (QTest.keyPress mit Modifikator erzeugt von sich
-    aus Shift/Strg-Ereignisse hinzu, das wäre ein anderer Test)."""
+    aus Shift/Strg-Ereignisse hinzu, das waere ein anderer Test)."""
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtGui import QKeyEvent
     mod = Qt.NoModifier if mod is None else mod
@@ -707,7 +707,7 @@ def test_wirts_shift_wird_als_shift_der_k7673_weitergegeben(qapp):
 
 def test_zeichen_mit_shift_ohne_wirts_shift_drueckt_shift_vorher(qapp):
     """AltGr+Q = „@" am Wirtsrechner: das Terminal braucht SHIFT + (0,1) — SHIFT zuerst und mit Vorlauf,
-    sonst käme „3" vor dem SHIFT (die K7673 sendet gleichzeitig erkannte Tasten zeilenweise)."""
+    sonst kaeme „3" vor dem SHIFT (die K7673 sendet gleichzeitig erkannte Tasten zeilenweise)."""
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtGui import QKeyEvent
     from PySide6.QtTest import QTest
@@ -716,7 +716,7 @@ def test_zeichen_mit_shift_ohne_wirts_shift_drueckt_shift_vorher(qapp):
     t = _widget(qapp, emu)
     t.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Q, Qt.NoModifier, "@"))
     assert emu.ereignisse == [((1, 6), True)]                   # erst nur SHIFT
-    for _ in range(100):                       # Zeitgeber unter Last großzügig abwarten
+    for _ in range(100):                       # Zeitgeber unter Last grosszuegig abwarten
         QTest.qWait(50)
         if len(emu.ereignisse) > 1:
             break
@@ -783,7 +783,7 @@ def test_fokusverlust_laesst_gehaltene_tasten_los(qapp):
 
 
 def test_f11_und_kuerzel_regel_bleiben(qapp):
-    """F11 = Vollbild wird nicht an das Terminal gegeben; Strg+Umschalt-Kürzel gehören dem Fenster."""
+    """F11 = Vollbild wird nicht an das Terminal gegeben; Strg+Umschalt-Kuerzel gehoeren dem Fenster."""
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtGui import QKeyEvent
     emu = Aufzeichner()
@@ -945,7 +945,7 @@ def test_main_kennt_instance_und_config():
 def test_plattensperre_sperrt_die_zweite_instanz_aus(qapp, umgebung, tmp_path):
     from app import instanz
     pfad = str(tmp_path / "gemeinsam.img")
-    # eine fremde, lebende Instanz hält die Platte (der Elternprozess des Tests lebt)
+    # eine fremde, lebende Instanz haelt die Platte (der Elternprozess des Tests lebt)
     Path(pfad + ".lock").write_text(str(os.getppid()), encoding="ascii")
     assert instanz.sperre_nehmen(pfad) == os.getppid()
     w = _fenster(qapp)
@@ -955,7 +955,7 @@ def test_plattensperre_sperrt_die_zweite_instanz_aus(qapp, umgebung, tmp_path):
         assert not w.platten_widget.neu_anlegen(pfad)
         assert w.platten_widget.pfad() == "" and w.emulator.hd_path(0) == ""
         assert meldungen and "gehört schon dem Prozess" in meldungen[-1]
-        # verwaiste Sperre (Prozess tot) wird übernommen
+        # verwaiste Sperre (Prozess tot) wird uebernommen
         tot = subprocess.Popen([sys.executable, "-c", "pass"])
         tot.wait()
         Path(pfad + ".lock").write_text(str(tot.pid), encoding="ascii")
@@ -967,12 +967,12 @@ def test_plattensperre_sperrt_die_zweite_instanz_aus(qapp, umgebung, tmp_path):
         _zu(w, qapp)
 
 
-# ─── Mehrplatz über Loopback-Telnet ──────────────────────────────────────────
+# ─── Mehrplatz ueber Loopback-Telnet ──────────────────────────────────────────
 
 def test_mehrplatz_taste_im_terminal_erreicht_den_rechner_und_ausgabe_das_bild(qapp):
     """Rechner (8-Bit-Teil + Originalterminal als Konsole) bietet tty0 als Telnet-Server an; eine zweite
     Terminaleinheit verbindet sich.  Hin: `pw 24 54/30` am Monitor des Rechners sendet „T0" — es steht im
-    Bild des Arbeitsplatzes.  Zurück: Taste „x" im Widget des Arbeitsplatzes → K7673 → Firmware →
+    Bild des Arbeitsplatzes.  Zurueck: Taste „x" im Widget des Arbeitsplatzes → K7673 → Firmware →
     Telnet → SIO0-A; `pr 24` zeigt 78.  (Ablauf wie `P8000TerminalOriginal.ZweiArbeitsplaetze…`.)"""
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
@@ -1034,15 +1034,15 @@ def test_mehrplatz_taste_im_terminal_erreicht_den_rechner_und_ausgabe_das_bild(q
             time.sleep(0.005)
             schritt()
         assert bis(arbeitsplatz, "T0", 4_000_000), arbeitsplatz()      # Ausgabe des Rechners → Terminalbild
-        # Der Arbeitsplatz zeigt es auch im Widget (Pixelbild geholt, Zähler gelaufen)
+        # Der Arbeitsplatz zeigt es auch im Widget (Pixelbild geholt, Zaehler gelaufen)
         widget = OriginalTerminalWidget()
         widget.set_emulator(t)
         widget.aktualisieren()
         assert widget._fb_bytes is not None and any(widget._daten)
 
-        # Rückweg: Taste „x" im Widget des Arbeitsplatzes
+        # Rueckweg: Taste „x" im Widget des Arbeitsplatzes
         QTest.keyPress(widget, Qt.Key_X)                      # gehalten wie von einer Hand: die K7673
-        for _ in range(1_500_000 // 5000):                    # entprellt über viele Abtastungen
+        for _ in range(1_500_000 // 5000):                    # entprellt ueber viele Abtastungen
             schritt()
         QTest.keyRelease(widget, Qt.Key_X)
         for _ in range(8_000_000 // 5000):
@@ -1157,7 +1157,7 @@ def test_einfuegen_am_originalterminal_kommt_ueber_die_k7673_an(qapp, umgebung):
         while gelaufen < 50_000_000 and not any(z.rstrip() == ">" for z in w.emulator.term_text(0).split("\n")):
             gelaufen += w.emulator.run(50_000)
         t = w.screen_widget
-        t.einfuegen("xyäz")                      # ä hat keine Taste: übersprungen
+        t.einfuegen("xyäz")                      # ae hat keine Taste: uebersprungen
         meldung = []
         t.einfuegenFertig.connect(lambda e, u: meldung.append((e, u)))
         gelaufen = 0

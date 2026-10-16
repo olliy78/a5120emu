@@ -1,6 +1,6 @@
 /**
  * @test I8279.* — Tastaturteil des 8279 (doc/prg710/resident.md §5): Befehle 02H/C1H,
- *       Status (Zeichenzahl, voll, Unter-/Überlauf), FIFO-Tiefe 8, Datenlesen.
+ *       Status (Zeichenzahl, voll, Unter-/Ueberlauf), FIFO-Tiefe 8, Datenlesen.
  */
 
 #include <gtest/gtest.h>
@@ -31,7 +31,7 @@ TEST(I8279, FifoHatAchtEintraegeUndMeldetUeberlauf)
     for (int i = 0; i < 8; ++i) EXPECT_TRUE(k.pushKey(static_cast<uint8_t>(i)));
     EXPECT_TRUE(k.full());
     EXPECT_EQ(k.readStatus() & (I8279::ST_VOLL | I8279::ST_ANZAHL), I8279::ST_VOLL)
-        << "8 Einträge: Zähler läuft über die drei Bit (0), Bit 3 = voll";
+        << "8 Eintraege: Zaehler laeuft ueber die drei Bit (0), Bit 3 = voll";
     EXPECT_FALSE(k.pushKey(0x55));
     EXPECT_NE(k.readStatus() & I8279::ST_UEBERLAUF, 0);
     EXPECT_EQ(k.readData(), 0) << "der verlorene Code stand nie im FIFO";
@@ -55,7 +55,7 @@ TEST(I8279, ClearAllLoeschtFifoUndZustandsbits)
     k.writeCommand(0xC1);
     EXPECT_EQ(k.readStatus(), 0);
     EXPECT_EQ(k.lastCommand(), 0xC1);
-    EXPECT_EQ(k.lastMode(), 0x02) << "Clear ändert die Betriebsart nicht";
+    EXPECT_EQ(k.lastMode(), 0x02) << "Clear aendert die Betriebsart nicht";
 }
 
 TEST(I8279, UnbekannteBefehleSindFolgenlos)

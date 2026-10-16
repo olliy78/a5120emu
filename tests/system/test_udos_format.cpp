@@ -1,7 +1,7 @@
 /**
  * @file test_udos_format.cpp
- * @brief Langsame End-to-End-Regressionswächter für den UDOS-4.3-Schreibpfad:
- *        `FORMAT`, `COPY.DISK` und der komplette Bau einer bootfähigen Systemdiskette.
+ * @brief Langsame End-to-End-Regressionswaechter fuer den UDOS-4.3-Schreibpfad:
+ *        `FORMAT`, `COPY.DISK` und der komplette Bau einer bootfaehigen Systemdiskette.
  *
  * Eigenes Executable mit ctest-Label „format_integration" (wie test_scpx_init.cpp),
  * damit die Tests aus dem Default-`tools/dev.sh test` herausfallen — sie booten UDOS,
@@ -13,19 +13,19 @@
  * | `FormatsDriveOneIntoUsableZdosDisk` | `FORMAT` einer Datenseite + Belegungskarte |
  * | `FormatsBrandNewBlankDiskette` | FRISCHE LEERDISKETTE (unformatiert) unter UDOS formatieren |
  * | `CopyDiskDuplicatesSystemDiskSectorBySector` | sektorweises Kopieren am Dateisystem vorbei |
- * | `BuildsBootableSystemDiskAndBootsFromIt` | LEERDISKETTE als `.dmk`, Systemspuren, Rückseite (Laufwerk 5), `MOVE`, Kaltstart von der selbstgebauten `.dmk` |
+ * | `BuildsBootableSystemDiskAndBootsFromIt` | LEERDISKETTE als `.dmk`, Systemspuren, Rueckseite (Laufwerk 5), `MOVE`, Kaltstart von der selbstgebauten `.dmk` |
  *
- * Guard für **zwei** Fehler, die zusammen jedes Formatieren unter UDOS verhinderten:
+ * Guard fuer **zwei** Fehler, die zusammen jedes Formatieren unter UDOS verhinderten:
  *
  * 1. **Laufwerksauswahl (K5122 Port 18H) nibbelvertauscht.** UDOS bildet sein
  *    Anwahlbyte als `LD A,77H / RLCA (LW+1)× / AND 0F0H` — also NUR das High-Nibble
  *    (`0xD0` = Laufwerk 1, alle /LCK aktiv).  Der Emulator las das High-Nibble als
  *    Motor und das (hier durchweg nullwertige) Low-Nibble als Select → „alle vier
- *    selektiert" → Laufwerk 0.  FORMAT beschrieb damit B:, verifizierte anschließend
- *    A: und meldete für JEDE Spur „DEFEKTIVE TRACK", am Ende `NOT FOR UDOS USEABLE`.
+ *    selektiert" → Laufwerk 0.  FORMAT beschrieb damit B:, verifizierte anschliessend
+ *    A: und meldete fuer JEDE Spur „DEFEKTIVE TRACK", am Ende `NOT FOR UDOS USEABLE`.
  *    Belegt an den Originalquellen, s. doc/design/07_k5122_afs.md §8.
  * 2. **Sektorkontrollblock ging beim Schreiben verloren.** FORMAT schreibt nach dem
- *    Spurformatieren Belegungskarte (Spur 23) und Verzeichnis (Spur 22) über den
+ *    Spurformatieren Belegungskarte (Spur 23) und Verzeichnis (Spur 22) ueber den
  *    normalen Datenfeld-Schreibpfad; UDOS legt die Verkettung in 4 Bytes HINTER der
  *    Daten-CRC ab.  Ohne sie ist die frische Diskette nicht lesbar
  *    („POINTER CHECK ERROR CA", doc/udos_bug1.md).
@@ -133,15 +133,15 @@ void formatiereLaufwerk1(A5120Machine& m) {
 /**
  * @test UdosFormat/FormatsDriveOneIntoUsableZdosDisk
  * @brief `FORMAT` formatiert Laufwerk 1 fehlerfrei; die frische Diskette meldet sich
- *        danach im laufenden System mit ihrem Namen und der korrekten Kapazität.
+ *        danach im laufenden System mit ihrem Namen und der korrekten Kapazitaet.
  *
  * Ablauf: UDOS 4.3 booten (A: = Kopie der Bootdiskette), Datum setzen, `FORMAT` mit
  * SYSTEMDISK=N / DRIVE=1 / ID=TESTDISK / READY=Y fahren, danach `STATUS`.
  *
- * B: ist ebenfalls eine Kopie der Bootdiskette — realitätsnah („gebrauchte Diskette
- * neu formatieren") und beidseitig UDOS, sodass UDOS beim Start auch das Rückseiten-
+ * B: ist ebenfalls eine Kopie der Bootdiskette — realitaetsnah („gebrauchte Diskette
+ * neu formatieren") und beidseitig UDOS, sodass UDOS beim Start auch das Rueckseiten-
  * Laufwerk 5 sauber einliest.  Formatiert wird (DISKCON `41`, einseitig) nur Seite 0
- * = Laufwerk 1; Laufwerk 5 bleibt die alte Rückseite.
+ * = Laufwerk 1; Laufwerk 5 bleibt die alte Rueckseite.
  *
  * Sollwerte: 77 Spuren × 26 Sektoren = 2002, davon 14 Systemsektoren (Urlader,
  * Bootabbild, Verzeichnis, Belegungskarte) → **1988 frei**
@@ -192,23 +192,23 @@ TEST(UdosFormat, FormatsDriveOneIntoUsableZdosDisk) {
 /**
  * @test UdosFormat/CopyDiskDuplicatesSystemDiskSectorBySector
  * @brief `COPY.DISK` kopiert Laufwerk 0 sektorweise auf Laufwerk 1 — samt der
- *        Sektorkontrollblöcke, sodass das Duplikat ein lesbares Dateisystem hat.
+ *        Sektorkontrollbloecke, sodass das Duplikat ein lesbares Dateisystem hat.
  *
- * Der schärfste Test des Schreibpfads: 77 Spuren × 26 Sektoren werden gelesen und
- * ohne Umweg über das Dateisystem zurückgeschrieben.  Ginge dabei die Verkettung
- * verloren (doc/udos_bug1.md), wäre das Duplikat unbrauchbar; zeigte die
+ * Der schaerfste Test des Schreibpfads: 77 Spuren × 26 Sektoren werden gelesen und
+ * ohne Umweg ueber das Dateisystem zurueckgeschrieben.  Ginge dabei die Verkettung
+ * verloren (doc/udos_bug1.md), waere das Duplikat unbrauchbar; zeigte die
  * Laufwerksauswahl auf das falsche Laufwerk, kopierte UDOS die Bootdiskette auf
  * sich selbst.
  *
- * Damit ein erfolgreicher Kopiervorgang überhaupt nachweisbar ist, wird B: zuvor mit
- * `FORMAT` geleert (Datenträgername `TESTDISK`, 1988 frei).  Nach `COPY.DISK` muss
+ * Damit ein erfolgreicher Kopiervorgang ueberhaupt nachweisbar ist, wird B: zuvor mit
+ * `FORMAT` geleert (Datentraegername `TESTDISK`, 1988 frei).  Nach `COPY.DISK` muss
  * Laufwerk 1 exakt die Kennung von Laufwerk 0 tragen (`UDOS.SYS.4.3`, 850 frei) und
  * `CAT D=1` muss die kopierten Dateien auflisten.
  *
  * ⚠ **`ERROR C4 ON TRACK 33 DRIVE 00` ist hier ERWARTET und kein Emulatorfehler:**
  * die Referenzdiskette wurde von echter Hardware eingelesen und hat auf Spur 0x33=51,
- * Seite 0 einen physisch fehlenden Sektor (S13; die übrigen 25 sind CRC-sauber).
- * UDOS meldet den defekten Sektor und kopiert weiter — der Test prüft genau das.
+ * Seite 0 einen physisch fehlenden Sektor (S13; die uebrigen 25 sind CRC-sauber).
+ * UDOS meldet den defekten Sektor und kopiert weiter — der Test prueft genau das.
  */
 TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
     TempDisk a = legeSystemdiskette("udos_copydisk_guard_A.hfe");
@@ -269,31 +269,31 @@ TEST(UdosFormat, CopyDiskDuplicatesSystemDiskSectorBySector) {
  * @brief Der komplette „neue Systemdiskette bauen"-Workflow — von der **fabrikneuen
  *        Leerdiskette** bis zum Kaltstart von der selbstgebauten `.dmk`.
  *
- * Das UDOS-Gegenstück zu `ScpxInit.CreateFormatBThenPipCopyFromBootDisk` und
+ * Das UDOS-Gegenstueck zu `ScpxInit.CreateFormatBThenPipCopyFromBootDisk` und
  * `tests/system/drivers/make_bootdisk.py`: alles, was eine Diskette zur Systemdiskette
- * macht, läuft im Emulator über den echten Schreibpfad — und zwar auf einem Medium,
+ * macht, laeuft im Emulator ueber den echten Schreibpfad — und zwar auf einem Medium,
  * das der Emulator selbst angelegt hat.
  *
  * 1. UDOS 4.3 von A: booten.
  * 2. B: ist eine **vom Floppy-Emulator angelegte Leerdiskette** (`createDisk` ohne
  *    Formatnamen: unformatiertes Medium in Laufwerksgeometrie 80×2), gebunden an eine
- *    temporäre **`.dmk`**-Datei.  Sie trägt beim Einlegen keine einzige Adressmarke —
+ *    temporaere **`.dmk`**-Datei.  Sie traegt beim Einlegen keine einzige Adressmarke —
  *    UDOS meldet sie beim Start folgerichtig als nicht initialisiert.
  * 3. B: **beidseitig** formatieren — Seite 0 (Laufwerk 1) mit `SYSTEMDISK? Y`, also
  *    inklusive Urlader (Spur 0/1/2) und Bootabbild (Spur 21), Seite 1 (Laufwerk 5)
- *    als reine Datenseite.  Auf einer Leerdiskette ist das der schärfere Fall: FORMAT
+ *    als reine Datenseite.  Auf einer Leerdiskette ist das der schaerfere Fall: FORMAT
  *    muss die Spuren komplett neu schreiben, es gibt keine alte Struktur zum Aufsetzen.
- * 4. `STATUS` beweist, dass beide Seiten jetzt gültige, leere ZDOS-Datenträger sind
+ * 4. `STATUS` beweist, dass beide Seiten jetzt gueltige, leere ZDOS-Datentraeger sind
  *    (55 bzw. 14 belegte Sektoren).
- * 5. Alle Dateien mit `MOVE * S=… D=… P=&` hinüberkopieren (`P=&` ist nötig, sonst
+ * 5. Alle Dateien mit `MOVE * S=… D=… P=&` hinueberkopieren (`P=&` ist noetig, sonst
  *    bleiben die als SECRET markierten Dateien liegen).
  * 6. `CAT` auf beiden Seiten der neuen Diskette.
  * 7. **Neue Maschine, die `.dmk` auf Laufwerk 0, Kaltstart** — sie muss UDOS 4.3
- *    hochfahren und sich selbst als `SYSDISK` / `SYSDISK.B` melden.  Damit hängt der
+ *    hochfahren und sich selbst als `SYSDISK` / `SYSDISK.B` melden.  Damit haengt der
  *    komplette Lesepfad (Boot-ROM → SYL → OS) am DMK-Container.
  *
  * Sollwerte (doc/udos_diskettenformat.md §3/§4): frisch formatiert 14 belegte
- * Sektoren (Verzeichnis + Belegungskarte), als Systemseite zusätzlich 41 für Urlader
+ * Sektoren (Verzeichnis + Belegungskarte), als Systemseite zusaetzlich 41 fuer Urlader
  * und Bootabbild → 55.
  */
 TEST(UdosFormat, BuildsBootableSystemDiskAndBootsFromIt) {

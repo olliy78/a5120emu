@@ -1,6 +1,6 @@
 // Disassembler-Tests (tools/z8000/z8k_disasm.h): Beispiele aus dem Zilog Z8000 CPU
 // User's Reference Manual (Kap. 5 Adressierungsarten, Kap. 6 Befehlsseiten), jeweils
-// mit den Worten, die die Formatbilder des Handbuchs für diesen Befehl ergeben.
+// mit den Worten, die die Formatbilder des Handbuchs fuer diesen Befehl ergeben.
 #include "tools/z8000/z8k_disasm.h"
 
 #include <gtest/gtest.h>
@@ -103,7 +103,7 @@ TEST(Z8kDisasm, UnknownAndTargets) {
     EXPECT_EQ(dis(u, &bytes), ".WORD %3600");
     EXPECT_EQ(bytes, 2);
 
-    // Sprungziel für den Debugger (step-over/where)
+    // Sprungziel fuer den Debugger (step-over/where)
     auto rd = [](uint16_t a) -> uint16_t { return a == 0x0100 ? 0xE8FF : 0; };  // JR auf sich selbst
     Line l = disasm(rd, 0x0100, false);
     EXPECT_EQ(l.text, "JR %0100");

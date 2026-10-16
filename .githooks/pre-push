@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 #
-# pre-push — die Regressionstests müssen grün sein, bevor etwas das Repo verlässt.
+# pre-push — die Regressionstests muessen gruen sein, bevor etwas das Repo verlaesst.
 #
 # Erste Verteidigungslinie: die schnelle Runde dauert ~12 s (C++ + Python) und
-# fängt den Fehlschlag hier ab, statt fünf Minuten später in der CI.  Dieselbe
-# Runde läuft nach dem Push noch einmal in GitHub Actions
+# faengt den Fehlschlag hier ab, statt fuenf Minuten spaeter in der CI.  Dieselbe
+# Runde laeuft nach dem Push noch einmal in GitHub Actions
 # (.github/workflows/ci.yml) — auf einem sauberen System, was der lokale Lauf
 # nicht leisten kann.
 #
 # Aktivierung (einmalig, pro Arbeitskopie):
 #     git config core.hooksPath .githooks
-# Prüfen:
+# Pruefen:
 #     git config --get core.hooksPath      # muss .githooks liefern
 #
-# Umgehen (nur wenn du weißt, was du tust — z.B. Push eines kaputten Zwischen-
+# Umgehen (nur wenn du weisst, was du tust — z.B. Push eines kaputten Zwischen-
 # stands auf einen eigenen Branch):
 #     git push --no-verify
 #
 # NICHT enthalten: die langsamen Format-/Boot-Disk-Tests (Label format_integration,
-# ~51 s).  Die gehören vor einen Merge nach main:
+# ~51 s).  Die gehoeren vor einen Merge nach main:
 #     tools/dev.sh test-format
 
 set -uo pipefail
@@ -32,7 +32,7 @@ c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
 
 # Git reicht die zu pushenden Refs auf stdin herein:
 #   <local ref> <local sha> <remote ref> <remote sha>
-# Bei einer reinen Löschung ist die lokale SHA nur aus Nullen — dann gibt es
+# Bei einer reinen Loeschung ist die lokale SHA nur aus Nullen — dann gibt es
 # nichts zu testen.
 only_deletions=1
 while read -r _local_ref local_sha _remote_ref _remote_sha; do
@@ -43,7 +43,7 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
 done
 
 if [ "$only_deletions" -eq 1 ]; then
-    c_ylw ">> pre-push: nur Ref-Löschungen — Tests übersprungen"
+    c_ylw ">> pre-push: nur Ref-Loeschungen — Tests uebersprungen"
     exit 0
 fi
 
@@ -54,12 +54,12 @@ c_ylw ">> pre-push: tools/dev.sh test (Regression, ohne format_integration)"
 # ausserhalb des Hooks gruen ist.  Deshalb: eigener, sofort endender Kanal.
 if ! tools/dev.sh test < /dev/null; then
     echo
-    c_red "PUSH ABGEBROCHEN — die Regressionstests sind nicht grün."
+    c_red "PUSH ABGEBROCHEN — die Regressionstests sind nicht gruen."
     echo "  Erneut ansehen:  tools/dev.sh test --output-on-failure"
     echo "  Nur ein Test:    tools/dev.sh test -R <Namensmuster>"
     echo "  Trotzdem pushen: git push --no-verify"
     exit 1
 fi
 
-c_grn ">> pre-push: alles grün — Push läuft"
+c_grn ">> pre-push: alles gruen — Push laeuft"
 exit 0

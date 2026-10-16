@@ -1,7 +1,7 @@
 /**
  * @file test_ass590069.cpp
  * @brief ASS 590069 (PRG 710): Fernschreiber an SIO-Kanal B (C5H/C7H), programmiert wie das
- *        SCPX-BIOS `B17172FS` (E2F4H), Ausgabe als Text über den Anschluss
+ *        SCPX-BIOS `B17172FS` (E2F4H), Ausgabe als Text ueber den Anschluss
  *        (doc/design/20_prg710.md AP-P8c, doc/prg710/sif1000_fernschreiber.md §3).
  */
 
@@ -48,7 +48,7 @@ struct Ass590069Test : ::testing::Test {
 
 }  // namespace
 
-/// Die Tabelle des BIOS: ITA2 in Buchstaben- und Ziffernlage, und zurück.
+/// Die Tabelle des BIOS: ITA2 in Buchstaben- und Ziffernlage, und zurueck.
 TEST(Ass590069Ita2, TabelleAusDemBios) {
     EXPECT_EQ(Ass590069::ita2NachAscii(0x03, false), 'A');
     EXPECT_EQ(Ass590069::ita2NachAscii(0x03, true), '-');
@@ -62,7 +62,7 @@ TEST(Ass590069Ita2, TabelleAusDemBios) {
     EXPECT_EQ(Ass590069::asciiNachIta2('@'), -1);
 }
 
-/// Format wie programmiert: 5 Bit, 1½ Stopp, ×64 an CTC K1 (φ/16/24) = 100 Bd; nach außen
+/// Format wie programmiert: 5 Bit, 1½ Stopp, ×64 an CTC K1 (φ/16/24) = 100 Bd; nach aussen
 /// gemeldet als 8 Bit im Zeichentakt der Leitung (7,5 Bit × 24 576 Takte).
 TEST_F(Ass590069Test, BiosProgrammiert100Baud) {
     biosInit();
@@ -83,7 +83,7 @@ TEST_F(Ass590069Test, UmschaltungWirdAusgefuehrtNichtGedruckt) {
     EXPECT_EQ(aus, "AB12C\r\n");
 }
 
-/// Empfangsrichtung: ein Zeichen vom Hub kommt als ITA2-Code im Empfänger an.
+/// Empfangsrichtung: ein Zeichen vom Hub kommt als ITA2-Code im Empfaenger an.
 TEST_F(Ass590069Test, EmpfangLegtIta2InDenEmpfaenger) {
     biosInit();
     ASSERT_TRUE(k.anschluss().empfaengerFrei());

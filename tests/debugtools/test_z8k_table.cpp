@@ -25,12 +25,12 @@ TEST(Z8kTable, BuildsAllRows) {
     EXPECT_GE(kRowCount, 430u);
     std::set<std::string> mn;
     for (auto& in : t.insns()) mn.insert(in.mn);
-    // 110 Grundbefehle der Zilog-Übersicht + B/L-Varianten + 6 EPA-Schablonen
+    // 110 Grundbefehle der Zilog-Uebersicht + B/L-Varianten + 6 EPA-Schablonen
     EXPECT_GE(mn.size(), 190u);
 }
 
-// Zu jedem ersten Befehlswort darf höchstens EINE Zeile ohne zweites Wort passen,
-// und Zeilen mit zweitem Wort müssen sich dort widerspruchsfrei unterscheiden.
+// Zu jedem ersten Befehlswort darf hoechstens EINE Zeile ohne zweites Wort passen,
+// und Zeilen mit zweitem Wort muessen sich dort widerspruchsfrei unterscheiden.
 TEST(Z8kTable, TableIsUnambiguous) {
     const Table& t = Table::get();
     for (uint32_t w = 0; w < 65536; ++w) {
@@ -146,7 +146,7 @@ TEST(Z8kTable, PrivilegedExactlyTheSystemInstructions) {
         EXPECT_EQ(in.has(Z8K_PRIV), priv.count(in.mn) == 1) << in.mn;
 }
 
-// Dekodieren über den Rückruf: nur so viele Worte wie nötig, in Reihenfolge.
+// Dekodieren ueber den Rueckruf: nur so viele Worte wie noetig, in Reihenfolge.
 TEST(Z8kCodec, FetchesOnlyWhatItNeeds) {
     const uint16_t prog[] = {0x5F00, 0x8300, 0x1234, 0xFFFF};
     std::vector<int> asked;

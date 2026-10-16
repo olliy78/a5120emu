@@ -48,7 +48,7 @@ UDOS_EIGENSCHAFTEN = [
     ("W", "W — schreibgeschützt (WRITE PROTECTED)"),
     ("E", "E — löschgeschützt (ERASE PROTECTED)"),
     ("L", "L — Eigenschaften gesperrt (LOCKED)"),
-    # Das `&&` ist kein Tippfehler: Qt liest ein einzelnes `&` als Tastenkürzel und
+    # Das `&&` ist kein Tippfehler: Qt liest ein einzelnes `&` als Tastenkuerzel und
     # verschluckt es — der UDOS-Suchoperator heisst aber `P=&`.
     ("S", "S — geheim (SECRET, ohne P=&& nicht gelistet)"),
     ("R", "R — wahlfreier Zugriff (RANDOM)"),
@@ -84,7 +84,7 @@ class PropertiesDialog(QDialog):
         self.setWindowTitle(f"Eigenschaften — {entry.name}")
         self.setMinimumWidth(520)
 
-        # Beide UDOS-Ausprägungen (ZDOS auf dem A5120, NDOS auf dem PC 1715) führen
+        # Beide UDOS-Auspraegungen (ZDOS auf dem A5120, NDOS auf dem PC 1715) fuehren
         # dieselben Kopfsektorangaben — nur CP/M nicht.
         self.udos = bool(entry.type) or tool.filesystem_type.startswith("udos")
 
@@ -179,9 +179,9 @@ class PropertiesDialog(QDialog):
             "ENTRY — Einsprungadresse; nur bei Typ P/P1 ausgewertet (hex).")
         f2.addRow("Einsprung (ENTRY)", self.f_entry)
 
-        # EIN Feld für die GANZE Liste: eine Programmdatei kann mehrere Segmente
-        # haben (`ZLINK` einer PC-1715-Diskette sechs).  Zwei Kästchen für Anfang und
-        # Länge zeigten davon nur das erste und behaupteten damit etwas Falsches.
+        # EIN Feld fuer die GANZE Liste: eine Programmdatei kann mehrere Segmente
+        # haben (`ZLINK` einer PC-1715-Diskette sechs).  Zwei Kaestchen fuer Anfang und
+        # Laenge zeigten davon nur das erste und behaupteten damit etwas Falsches.
         self.f_segs = QLineEdit(e.segments)
         self.f_segs.setPlaceholderText("z. B.  2600+1591  4000+0200")
         w = self.f_segs
@@ -273,7 +273,7 @@ class PropertiesDialog(QDialog):
         return w
 
     # ════════════════════════════════════════════════════════════════════════
-    # Übernehmen
+    # Uebernehmen
     # ════════════════════════════════════════════════════════════════════════
 
     def eigenschaften_text(self) -> str:
@@ -302,7 +302,7 @@ class PropertiesDialog(QDialog):
             aend["type"] = self.f_typ.currentData()
         neu_eig = self.eigenschaften_text()
         if neu_eig != e.attrs:
-            # Ein leeres Feld hieße „unverändert“ — alle löschen sagt man mit ";".
+            # Ein leeres Feld hiesse „unveraendert“ — alle loeschen sagt man mit ";".
             aend["properties"] = neu_eig or ";"
         if self.f_erstellt.text() != e.created:
             aend["created"] = self.f_erstellt.text()

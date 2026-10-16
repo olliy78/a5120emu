@@ -1,9 +1,9 @@
 /**
  * @test Upd765.* — Floppy-Controller µPD765/U8272 auf Sektorebene (doc/design/21_pc1715.md AP-W2):
  *       Befehle 03/04/05/06/07/08/0A/0D/0F/11, MSR-Phasen, DMA mit TC, EOT ohne TC, Nicht-DMA,
- *       Fehlerfälle (ND/MA/DE/NW/NR/WC), ungültiger Befehl, Reset, Save-State, SCP-3.0-Diskette.
+ *       Fehlerfaelle (ND/MA/DE/NW/NR/WC), ungueltiger Befehl, Reset, Save-State, SCP-3.0-Diskette.
  *
- * Testdiskette: 5 × 1024 B, 80 Zylinder, 2 Köpfe, MFM (das Format der SCP-3.0-Diskette), nur die
+ * Testdiskette: 5 × 1024 B, 80 Zylinder, 2 Koepfe, MFM (das Format der SCP-3.0-Diskette), nur die
  * Spuren, die ein Test braucht, sind formatiert.
  */
 
@@ -55,7 +55,7 @@ struct Rig {
 
     void cmd(std::initializer_list<uint8_t> bytes) {
         for (uint8_t b : bytes) {
-            ASSERT_TRUE(f.readMsr() & RQM) << "FDC nicht bereit für Befehlsbyte";
+            ASSERT_TRUE(f.readMsr() & RQM) << "FDC nicht bereit fuer Befehlsbyte";
             ASSERT_FALSE(f.readMsr() & DIO);
             f.writeData(b);
         }
@@ -106,7 +106,7 @@ struct Rig {
 
 }  // namespace
 
-// ─── MSR / Befehlsphase / ungültig ────────────────────────────────────────────
+// ─── MSR / Befehlsphase / ungueltig ────────────────────────────────────────────
 
 TEST(Upd765, MsrPhasen_IdleBefehlAusfuehrungErgebnis)
 {
@@ -115,7 +115,7 @@ TEST(Upd765, MsrPhasen_IdleBefehlAusfuehrungErgebnis)
     r.f.writeData(0x46);                                   // READ DATA MFM
     EXPECT_EQ(r.f.readMsr(), RQM | CB);                    // Befehlsphase
     for (uint8_t b : {0x00, 0x00, 0x00, 0x01, 0x03, 0x01, 0x2A, 0xFF}) r.f.writeData(b);
-    EXPECT_EQ(r.f.readMsr(), CB);                          // Ausführung (DMA): kein RQM, kein EXM
+    EXPECT_EQ(r.f.readMsr(), CB);                          // Ausfuehrung (DMA): kein RQM, kein EXM
     r.dmaIn(1024, true);
     EXPECT_EQ(r.f.readMsr(), RQM | DIO | CB);              // Ergebnisphase
     r.result(7);
@@ -129,7 +129,7 @@ TEST(Upd765, UngueltigerBefehl_ST0_80)
     EXPECT_EQ(r.f.readMsr() & (RQM | DIO | CB), RQM | DIO | CB);
     EXPECT_EQ(r.f.readData(), 0x80);
     EXPECT_EQ(r.f.readMsr(), RQM);
-    // Befehle mit unzulässigen Flag-Bits (hier MFM an SEEK) sind ebenfalls ungültig,
+    // Befehle mit unzulaessigen Flag-Bits (hier MFM an SEEK) sind ebenfalls ungueltig,
     // ebenso nicht benutzte Befehle (READ TRACK 02).
     r.f.writeData(0x4F);
     EXPECT_EQ(r.f.readData(), 0x80);
@@ -308,7 +308,7 @@ TEST(Upd765, ReadData_TcMitteImSektor_BeendetSofortOhneFehler)
     const auto d = r.dmaIn(100, true);
     EXPECT_EQ(d.size(), 100u);
     EXPECT_FALSE(r.f.drq());
-    EXPECT_EQ(r.result(7), (std::vector<uint8_t>{0x00, 0x00, 0x00, 0, 0, 2, 3}));   // R unverändert
+    EXPECT_EQ(r.result(7), (std::vector<uint8_t>{0x00, 0x00, 0x00, 0, 0, 2, 3}));   // R unveraendert
 }
 
 TEST(Upd765, ReadData_MtWechseltAufKopf1)
@@ -356,7 +356,7 @@ TEST(Upd765, WriteData_UndScanEqual_GleichUndUngleich)
     r.cmd({0x45, 0x00, 0x00, 0x00, 0x03, 0x03, 0x03, 0x2A, 0xFF});   // WRITE DATA R=3
     r.dmaOut(neu, true);
     EXPECT_EQ(r.result(7), (std::vector<uint8_t>{0x00, 0x00, 0x00, 1, 0, 1, 3}));  // EOT = R: C+1/R=1
-    // Nachbarsektoren unberührt, Sektor 3 geändert (über den Lesepfad geprüft)
+    // Nachbarsektoren unberuehrt, Sektor 3 geaendert (ueber den Lesepfad geprueft)
     r.cmd({0x46, 0x00, 0x00, 0x00, 0x03, 0x03, 0x03, 0x2A, 0xFF});
     EXPECT_EQ(r.dmaIn(1024, true), neu);
     r.result(7);
@@ -364,7 +364,7 @@ TEST(Upd765, WriteData_UndScanEqual_GleichUndUngleich)
     EXPECT_EQ(r.dmaIn(1024, true), r.sektor(0, 0, 2));
     r.result(7);
 
-    // SCAN EQUAL (Prüflesen): gleich → SH, IC = 00
+    // SCAN EQUAL (Prueflesen): gleich → SH, IC = 00
     r.cmd({0x51, 0x00, 0x00, 0x00, 0x03, 0x03, 0x03, 0x2A, 0x01});
     r.dmaOut(neu, true);
     auto e = r.result(7);
@@ -427,13 +427,13 @@ TEST(Upd765, FormatTrack_UndLesenDanach)
     const auto d = r.dmaIn(1024, true);
     EXPECT_EQ(d, std::vector<uint8_t>(1024, 0xE5));
     r.result(7);
-    // die Spur ist eine gültige Spur: parseTrack sieht fünf Sektoren ohne CRC-Fehler
+    // die Spur ist eine gueltige Spur: parseTrack sieht fuenf Sektoren ohne CRC-Fehler
     const auto secs = TrackCodec::parseTrack(r.drive.track(0));
     ASSERT_EQ(secs.size(), 5u);
     for (const auto& s : secs) { EXPECT_TRUE(s.id_crc_ok); EXPECT_TRUE(s.data_crc_ok); }
 }
 
-// ─── Fehlerfälle ──────────────────────────────────────────────────────────────
+// ─── Fehlerfaelle ──────────────────────────────────────────────────────────────
 
 TEST(Upd765, Fehler_SektorFehlt_NoData)
 {
@@ -502,7 +502,7 @@ TEST(Upd765, Fehler_SchreibschutzUndFormat_NotWritable)
     EXPECT_EQ(r.result(7), (std::vector<uint8_t>{0x40, 0x02, 0x00, 0, 0, 1, 3}));
     r.cmd({0x4D, 0x00, 0x03, 0x05, 0x35, 0xE5});
     EXPECT_EQ(r.result(7)[1], 0x02);
-    // Lesen bleibt möglich
+    // Lesen bleibt moeglich
     r.cmd({0x46, 0x00, 0x00, 0x00, 0x01, 0x03, 0x01, 0x2A, 0xFF});
     EXPECT_EQ(r.dmaIn(1024, true), r.sektor(0, 0, 1));
     r.result(7);

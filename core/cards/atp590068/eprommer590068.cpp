@@ -13,7 +13,7 @@
 #include <iterator>
 
 namespace {
-/// Anschlüsse eines PIO-Ports, wie die Karte sie sieht: Eingangsbits offen = 1 [?].
+/// Anschluesse eines PIO-Ports, wie die Karte sie sieht: Eingangsbits offen = 1 [?].
 uint8_t anschluesse(const Z80PIO::DebugState::P& p)
 {
     switch (p.mode) {
@@ -125,7 +125,7 @@ uint8_t Eprommer590068::ioRead(uint8_t port)
                 }
             }
         }
-        pio_.portAWrite(v);   // Eingangsbits von Port A = Datenausgänge des PROM
+        pio_.portAWrite(v);   // Eingangsbits von Port A = Datenausgaenge des PROM
         return pio_.ioRead(0);
     }
     if (rel < 4) return pio_.ioRead(pioPort(rel));
@@ -246,7 +246,7 @@ void Eprommer590068::brennphaseEnde()
     if (adressen) t += ", je Adresse " + std::to_string(jmin) + (jmin == jmax ? "" : "–" + std::to_string(jmax));
     t += ", Impuls " + ms1(ms(brenn_min_));
     if (brenn_max_ != brenn_min_) t += "–" + ms1(ms(brenn_max_));
-    t += ", " + std::to_string(geaendert) + " Byte geändert";
+    t += ", " + std::to_string(geaendert) + " Byte geaendert";
     log(t);
 }
 
@@ -295,7 +295,7 @@ bool Eprommer590068::einlegenDatei(const std::string& pfad, Typ typ, std::string
     }
     std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (d.size() > 2048) {
-        if (fehler) *fehler = "Abbild ist " + std::to_string(d.size()) + " Byte gross (höchstens 2048)";
+        if (fehler) *fehler = "Abbild ist " + std::to_string(d.size()) + " Byte gross (hoechstens 2048)";
         return false;
     }
     return einlegen(d, typ, pfad, fehler);
@@ -346,7 +346,7 @@ void Eprommer590068::uvLoeschen()
         if (z != 0xFF) geaendert_ = true;
         z = 0xFF;
     }
-    log(std::string("Sockel: ") + name(typ_) + " UV-gelöscht");
+    log(std::string("Sockel: ") + name(typ_) + " UV-geloescht");
 }
 
 // ─── Zustand ─────────────────────────────────────────────────────────────────

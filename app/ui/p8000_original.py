@@ -41,7 +41,7 @@ BILD_W, BILD_H = 640, 312
 #: Terminalstufe (0 dunkel, 1 normal, 2 hell) → Textur-Byte des CRT-Shaders.
 _STUFEN = bytes([0, 184, 255] + [255] * 253)
 
-#: Verzögerung zwischen einem selbst gedrückten SHIFT und dem Zeichen (Wirtszeit, ms): die K7673
+#: Verzoegerung zwischen einem selbst gedrueckten SHIFT und dem Zeichen (Wirtszeit, ms): die K7673
 #: sendet gleichzeitig erkannte Tasten in Zeilenreihenfolge — SHIFT muss vorher schon da sein.
 SHIFT_VORLAUF_MS = 150
 #: Haltezeit eines Zeichens, das vor Ablauf des Vorlaufs schon losgelassen wurde.
@@ -51,26 +51,26 @@ class OriginalTerminalWidget(ScreenWidget):
     """Der Bildschirm des Originalterminals: CRT-Widget, das ``term_framebuffer`` zeigt und die
     Tasten annimmt."""
 
-    #: Die K7673 nimmt höchstens ≈ 6,5 Zeichen je Sekunde Maschinenzeit an (gemessen 2026-10-09: 20 Zeichen
+    #: Die K7673 nimmt hoechstens ≈ 6,5 Zeichen je Sekunde Maschinenzeit an (gemessen 2026-10-09: 20 Zeichen
     #: in 3,09 s bei 4 MHz; die Matrix wird 41 Abtastungen lang entprellt, Druck UND Loslassen).  Schneller
-    #: zu füttern füllte nur die Warteschlange des Kerns — und ein Abbrechen käme ins Leere.
+    #: zu fuettern fuellte nur die Warteschlange des Kerns — und ein Abbrechen kaeme ins Leere.
     EINFUEGEN_ZEICHEN_PRO_S = 7
 
-    #: Terminalzustand (``term_flags``) hat sich geändert (Bit 3 = Zeichensatz 2, Bit 4 = CAPS).
+    #: Terminalzustand (``term_flags``) hat sich geaendert (Bit 3 = Zeichensatz 2, Bit 4 = CAPS).
     flagsChanged = Signal(int)
-    #: Zeile, Spalte, gedrückt? — jede Matrixtaste, die die Wirtstastatur an den Kern gibt
+    #: Zeile, Spalte, gedrueckt? — jede Matrixtaste, die die Wirtstastatur an den Kern gibt
     #: (die Bildschirmtastatur zeigt sie mit).
     matrixGeaendert = Signal(int, int, bool)
-    #: Die Mitschrift ist ausgefallen (Datei nicht beschreibbar): Meldung für die Statuszeile.
+    #: Die Mitschrift ist ausgefallen (Datei nicht beschreibbar): Meldung fuer die Statuszeile.
     mitschriftFehler = Signal(str)
 
     def __init__(self, parent=None, index: int = 0):
         super().__init__(parent)
         self.index = index
-        self._frame = -1                       # zuletzt gezeigter Bildzähler
+        self._frame = -1                       # zuletzt gezeigter Bildzaehler
         self._flags = -1
-        self._daten = b""                      # letztes Bild, Stufen 0…2 (für Tests)
-        #: gehaltene Wirtstasten: Qt-Kode → [(Position, gedrückt von uns)]
+        self._daten = b""                      # letztes Bild, Stufen 0…2 (fuer Tests)
+        #: gehaltene Wirtstasten: Qt-Kode → [(Position, gedrueckt von uns)]
         self._gehalten: Dict[int, List[Tuple[int, int]]] = {}
         self._shift_physisch = False
         self._ausstehend: Dict[int, QTimer] = {}
@@ -139,7 +139,7 @@ class OriginalTerminalWidget(ScreenWidget):
     def sizeHint(self) -> QSize:
         return QSize(BILD_W + 16, BILD_H + 16)
 
-    # ── Kontextmenü: das des ScreenWidget (Text kopieren, Zwischenablage einfügen) ────────────
+    # ── Kontextmenue: das des ScreenWidget (Text kopieren, Zwischenablage einfuegen) ────────────
 
     def bildschirmtext(self) -> str:
         """Der Text des Bildes: 24 Zeilen, rechts ohne Leerzeichen, durch ``\n`` getrennt."""
@@ -155,7 +155,7 @@ class OriginalTerminalWidget(ScreenWidget):
         emu = self.emulator
         if emu is None:
             return
-        # Eine Sperre für das ganze Bild (Emulation im eigenen Faden).
+        # Eine Sperre fuer das ganze Bild (Emulation im eigenen Faden).
         with kern_sperre():
             self._bild_holen(emu)
 
@@ -192,10 +192,10 @@ class OriginalTerminalWidget(ScreenWidget):
     # ── Tastatur: Wirtstaste → Matrixtasten ──────────────────────────────────
 
     def focusNextPrevChild(self, weiter: bool) -> bool:
-        return False                           # Tab gehört dem Gast
+        return False                           # Tab gehoert dem Gast
 
     def focusOutEvent(self, event):
-        self._alles_loslassen()                # sonst bliebe eine Taste im Gast hängen
+        self._alles_loslassen()                # sonst bliebe eine Taste im Gast haengen
         super().focusOutEvent(event)
 
     def _matrix(self, pos, gedrueckt: bool):
@@ -253,8 +253,8 @@ class OriginalTerminalWidget(ScreenWidget):
         pos, braucht_shift = taste
         if key == Qt.Key_Shift:
             self._shift_physisch = True
-        # Shift-Zustand dem Zeichen anpassen: fehlt er, wird er für die Dauer des Tastendrucks
-        # gedrückt; steht er fälschlich (Wirts-Shift, Zeichen ohne), für die Dauer gelöst.
+        # Shift-Zustand dem Zeichen anpassen: fehlt er, wird er fuer die Dauer des Tastendrucks
+        # gedrueckt; steht er faelschlich (Wirts-Shift, Zeichen ohne), fuer die Dauer geloest.
         umschalten = None
         if braucht_shift is not None:
             if braucht_shift and not self._shift_physisch:
@@ -267,7 +267,7 @@ class OriginalTerminalWidget(ScreenWidget):
             self._gehalten[key] = [(pos, 1)]
         else:
             self._matrix(shift_pos, umschalten)
-            self._gehalten[key] = [(shift_pos, 0 if umschalten else 2)]    # 0: von uns gedrückt, 2: von uns gelöst
+            self._gehalten[key] = [(shift_pos, 0 if umschalten else 2)]    # 0: von uns gedrueckt, 2: von uns geloest
             t = QTimer(self)
             t.setSingleShot(True)
             t.timeout.connect(lambda k=key, p=pos: self._verzoegert(k, p))
@@ -291,10 +291,10 @@ class OriginalTerminalWidget(ScreenWidget):
         if key == Qt.Key_Shift:
             self._shift_physisch = False
         taste = self._ausstehend.pop(key, None)
-        if taste is not None:                  # losgelassen, bevor das Zeichen gedrückt war
+        if taste is not None:                  # losgelassen, bevor das Zeichen gedrueckt war
             taste.stop()
             liste = self._gehalten[key]
-            # Das Zeichen trotzdem tippen: kurz gedrückt, dann beides loslassen.
+            # Das Zeichen trotzdem tippen: kurz gedrueckt, dann beides loslassen.
             pos = self._pos_zu_taste(event)
             if pos is not None:
                 self._matrix(pos, True)
@@ -313,15 +313,15 @@ class OriginalTerminalWidget(ScreenWidget):
         for pos, art in self._gehalten.pop(key, []):
             if art == 1:
                 self._matrix(pos, False)
-            elif art == 0:                     # unser SHIFT, wieder lösen
+            elif art == 0:                     # unser SHIFT, wieder loesen
                 if not self._shift_physisch:
                     self._matrix(pos, False)
-            elif art == 2:                     # Wirts-Shift, den wir gelöst hatten: wieder drücken
+            elif art == 2:                     # Wirts-Shift, den wir geloest hatten: wieder druecken
                 if self._shift_physisch:
                     self._matrix(pos, True)
 
     def mouseReleaseEvent(self, event):
-        # Mittlere Taste fügt die Auswahl ein (wie im Terminalfenster unter X11).
+        # Mittlere Taste fuegt die Auswahl ein (wie im Terminalfenster unter X11).
         if event.button() == Qt.MiddleButton and self.emulator is not None:
             cb = QGuiApplication.clipboard()
             from PySide6.QtGui import QClipboard

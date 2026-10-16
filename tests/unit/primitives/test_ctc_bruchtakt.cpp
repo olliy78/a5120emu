@@ -1,6 +1,6 @@
 /**
  * @file test_ctc_bruchtakt.cpp
- * @brief Wächter für den Bruchtakt-Zähleingang des Z80CTC (P8000 P5d,
+ * @brief Waechter fuer den Bruchtakt-Zaehleingang des Z80CTC (P8000 P5d,
  *        doc/design/25_p8000.md §10.6): 1,229 MHz (9,832 MHz ÷ 8) neben dem
  *        4-MHz-Systemtakt, ganzzahliger Phasenakkumulator.
  */
@@ -12,7 +12,7 @@
 namespace {
 constexpr uint64_t HZ = 1229000, PHI = 4000000;
 
-void zaehler(Z80CTC& c, int ch, uint8_t tc) {   // Zähler, fallende Flanke egal, ohne Interrupt
+void zaehler(Z80CTC& c, int ch, uint8_t tc) {   // Zaehler, fallende Flanke egal, ohne Interrupt
     c.ioWrite(static_cast<uint8_t>(ch), 0x45);
     c.ioWrite(static_cast<uint8_t>(ch), tc);
 }
@@ -66,7 +66,7 @@ TEST(CtcBruchtakt, ZeichenzeitNeunTausendSechshundertBaud) {
     EXPECT_EQ(f.baud_nenn, 9600u);
     const double exakt = 10.0 * 32 * 4 * static_cast<double>(PHI) / HZ;
     EXPECT_NEAR(static_cast<double>(f.zeichen_takte), exakt, 1.0);
-    // Die ganzzahlige Auskunft bleibt für alte Aufrufer gerundet verfügbar
+    // Die ganzzahlige Auskunft bleibt fuer alte Aufrufer gerundet verfuegbar
     EXPECT_EQ(ctc.teilerTakte(0), 13u);
 }
 
@@ -88,7 +88,7 @@ TEST(CtcBruchtakt, VorgabeUnveraendertGanzzahligeAuskunftUndKeinZaehlen) {
     EXPECT_EQ(ctc.teilerTakteQ16(0), 48u << 16);
     int zcto = 0;
     ctc.setZCTOCallback([&](int, bool l) { if (!l) ++zcto; });
-    ctc.clockTick(100000);                       // ohne Bruchtakt zählt nur clkTrg()
+    ctc.clockTick(100000);                       // ohne Bruchtakt zaehlt nur clkTrg()
     EXPECT_EQ(zcto, 0);
     EXPECT_EQ(ctc.getCount(0), 3);
     ctc.setzeEingangsTakt(0, HZ, PHI);
@@ -97,7 +97,7 @@ TEST(CtcBruchtakt, VorgabeUnveraendertGanzzahligeAuskunftUndKeinZaehlen) {
     EXPECT_EQ(zcto, 0);
 }
 
-// Der Merker vor serialFormatRechnenQ16 darf nichts verändern: bei jeder Eingabefolge
+// Der Merker vor serialFormatRechnenQ16 darf nichts veraendern: bei jeder Eingabefolge
 // (auch bei wechselnden Eingaben und Wiederholungen) dasselbe wie die direkte Rechnung.
 TEST(CtcBruchtakt, FormatMerkerGleichDirekterRechnung) {
     k1520::serial::SerialFormatMerker m;

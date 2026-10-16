@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-capture_format_menus.py – Greift die FORMAT.COM-Formatmenüs für die verschiedenen
+capture_format_menus.py – Greift die FORMAT.COM-Formatmenues fuer die verschiedenen
 Laufwerkstypen live aus dem A5120-Emulator ab.
 
-Welche Formate FORMAT.COM anbietet, hängt vom Laufwerkstyp ab, den das BIOS für den
-gewählten Laufwerksbuchstaben meldet (siehe doc/format.md §2/§10).  Die neuen
+Welche Formate FORMAT.COM anbietet, haengt vom Laufwerkstyp ab, den das BIOS fuer den
+gewaehlten Laufwerksbuchstaben meldet (siehe doc/format.md §2/§10).  Die neuen
 Combo-Boot-Disketten konfigurieren B:/C: als andere Laufwerkstypen, sodass sich deren
-Menüs erstmals im Emulator abgreifen lassen:
+Menues erstmals im Emulator abgreifen lassen:
 
   cpa_cpa780_combo5zoll_noclock : A:K5601  B:K5600.10 (5" 40 DD SS)  C:K5600.20 (5" 80 DD SS)
   cpa_cpa780_combo8zoll_noclock : A:K5601  B:MF3200   (8" 77 SD SS)  C:K5602.10/MF6400 (8" 77 DD SS)
 
-Der Runner bootet die passende Combo-Disk (A:), startet FORMAT.COM, wählt das Laufwerk,
-blättert mit X/Y/Z durch alle Menüseiten und dumpt jeden Bildschirm.  Es wird NICHT
-formatiert (kein Format-Key gesendet) — reines Menü-Capturing.
+Der Runner bootet die passende Combo-Disk (A:), startet FORMAT.COM, waehlt das Laufwerk,
+blaettert mit X/Y/Z durch alle Menueseiten und dumpt jeden Bildschirm.  Es wird NICHT
+formatiert (kein Format-Key gesendet) — reines Menue-Capturing.
 
 Verwendung:
   tools/dev.sh tool format_driver              # Treiber bauen (einmalig)
@@ -41,7 +41,7 @@ COMBO5   = os.path.join(DISKS, 'cpa_cpa780_combo5zoll_noclock.img')
 COMBO8   = os.path.join(DISKS, 'cpa_cpa780_combo8zoll_noclock.img')
 # noclk-Disk: bootet ohne Uhr-Abfrage direkt nach A> (alle 3 LW = K5601).
 NOCLK    = os.path.join(DISKS, 'cpa_cpa780_k5601_noclock.img')
-# Gültiges Template für die B:/C:-Slots (Menü-Capture liest das Medium nicht, aber
+# Gueltiges Template fuer die B:/C:-Slots (Menue-Capture liest das Medium nicht, aber
 # der Slot muss belegt sein, damit FORMAT den Laufwerksbuchstaben akzeptiert).
 TEMPLATE = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
 
@@ -59,17 +59,17 @@ DRIVES = {
 
 
 def make_script(drive_letter):
-    """Script: boot → FORMAT starten → Laufwerk wählen → alle Menüseiten dumpen."""
+    """Script: boot → FORMAT starten → Laufwerk waehlen → alle Menueseiten dumpen."""
     lines = [
         'boot 120',                 # Kaltstart bis A> (noclock: keine Uhr-Abfrage)
         'type FORMAT', 'enter',
         'boot 30', 'enter',         # Funktion 0 = Formatieren
         'boot 6', f'type {drive_letter}', 'enter',   # Laufwerk + Einlege-Quittung
         'boot 10', 'enter',         # Vergleichs-Lesen = j
-        'boot 8', 'dump menu_1',    # Menüseite 1
-        'type X', 'boot 4', 'dump menu_2',   # ggf. Menüseite 2
-        'type Y', 'boot 4', 'dump menu_3',   # ggf. Menüseite 3
-        'type Z', 'boot 4', 'dump menu_back', # zurück zu #1 (Konsistenz)
+        'boot 8', 'dump menu_1',    # Menueseite 1
+        'type X', 'boot 4', 'dump menu_2',   # ggf. Menueseite 2
+        'type Y', 'boot 4', 'dump menu_3',   # ggf. Menueseite 3
+        'type Z', 'boot 4', 'dump menu_back', # zurueck zu #1 (Konsistenz)
     ]
     return '\n'.join(lines) + '\n'
 
@@ -96,7 +96,7 @@ def is_menu(lines):
 
 
 def trim(lines):
-    """Menü-Zeilen bis inkl. der 'Bitte Format...'-Prompt-Zeile."""
+    """Menue-Zeilen bis inkl. der 'Bitte Format...'-Prompt-Zeile."""
     out = []
     for l in lines:
         if not l.strip() and (not out or not out[-1].strip()):
@@ -123,7 +123,7 @@ def capture(name, outdir):
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
     screens = parse_screens(proc.stdout)
-    # Eindeutige Menüseiten (Duplikate weglassen — nicht jede Combo hat 3 Seiten).
+    # Eindeutige Menueseiten (Duplikate weglassen — nicht jede Combo hat 3 Seiten).
     pages, seen = [], set()
     for lbl in ('menu_1', 'menu_2', 'menu_3'):
         if lbl in screens and is_menu(screens[lbl]):
@@ -151,7 +151,7 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('drives', nargs='*', help='Laufwerksnamen (siehe --list); leer = --all')
     p.add_argument('--all', action='store_true', help='alle Laufwerkstypen')
-    p.add_argument('--outdir', default='', help='Menüs je Laufwerk als Textdatei ablegen')
+    p.add_argument('--outdir', default='', help='Menues je Laufwerk als Textdatei ablegen')
     p.add_argument('--list', action='store_true', help='Laufwerks-Matrix zeigen')
     args = p.parse_args()
 
@@ -177,11 +177,11 @@ def main():
         r = capture(n, args.outdir)
         print(f'\n{"="*72}\n{n}  ({r["desc"]})  DPB={r["code"]}  [Laufwerk {r["letter"]}:]\n{"="*72}')
         if not r['ok']:
-            print('  !! kein Formatmenü erfasst (Boot/Navigation fehlgeschlagen)')
+            print('  !! kein Formatmenue erfasst (Boot/Navigation fehlgeschlagen)')
             all_ok = False
             continue
         for i, page in enumerate(r['pages'], 1):
-            print(f'\n--- Menüseite {i} ---')
+            print(f'\n--- Menueseite {i} ---')
             print(page)
     return 0 if all_ok else 1
 

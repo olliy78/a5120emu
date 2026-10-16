@@ -2,15 +2,15 @@
  * @file gzip_datei.h
  * @brief Abbilddateien roh oder gzip-gepackt laden und atomar speichern (miniz, third_party/miniz).
  *
- * Ein gepacktes Abbild ist eine gewöhnliche `.gz`-Datei (RFC 1952): `gunzip`, 7-Zip usw. lesen sie,
+ * Ein gepacktes Abbild ist eine gewoehnliche `.gz`-Datei (RFC 1952): `gunzip`, 7-Zip usw. lesen sie,
  * und was diese Werkzeuge schreiben, liest `laden()` — auch mehrteilige Dateien (`cat a.gz b.gz`)
- * und Köpfe mit Namen/Kommentar/Extrafeld.  Erkannt wird an den **Magic Bytes** `1F 8B`, nicht an
- * der Endung: ein umbenanntes Abbild bleibt lesbar, und `speichern()` schreibt in der Art zurück,
+ * und Koepfe mit Namen/Kommentar/Extrafeld.  Erkannt wird an den **Magic Bytes** `1F 8B`, nicht an
+ * der Endung: ein umbenanntes Abbild bleibt lesbar, und `speichern()` schreibt in der Art zurueck,
  * in der geladen wurde.
  *
- * Mitten in eine gepackte Datei kann man nicht schreiben.  Wer ein gepacktes Abbild ändert, hält
+ * Mitten in eine gepackte Datei kann man nicht schreiben.  Wer ein gepacktes Abbild aendert, haelt
  * es deshalb ganz im Speicher und schreibt es ganz neu — **atomar**: erst `<pfad>.tmp`, dann
- * `rename` über das Original.  Ein Absturz beim Schreiben lässt das Original heil.
+ * `rename` ueber das Original.  Ein Absturz beim Schreiben laesst das Original heil.
  */
 #pragma once
 #include <cstddef>
@@ -34,20 +34,20 @@ std::optional<Art> artVon(const std::string& pfad);
 /// Art, die eine NEUE Datei an @p pfad bekommt: `.gz` am Ende → Gzip, sonst Roh.
 Art artNachEndung(const std::string& pfad);
 
-/// Rohes Deflate in eine gzip-Hülle (ein Teil, ohne Namen).
+/// Rohes Deflate in eine gzip-Huelle (ein Teil, ohne Namen).
 bool packen(const uint8_t* d, size_t n, std::vector<uint8_t>& aus, int stufe = STUFE_VORGABE);
-/// Alle Teile einer gzip-Datei entpacken; prüft CRC-32 und Länge jedes Teils.
+/// Alle Teile einer gzip-Datei entpacken; prueft CRC-32 und Laenge jedes Teils.
 bool entpacken(const uint8_t* d, size_t n, std::vector<uint8_t>& aus, std::string* fehler = nullptr);
 
-/// Ganze Datei laden, gzip entpackt.  @p art (optional) erhält die gefundene Art.
+/// Ganze Datei laden, gzip entpackt.  @p art (optional) erhaelt die gefundene Art.
 bool laden(const std::string& pfad, std::vector<uint8_t>& daten, Art* art = nullptr,
            std::string* fehler = nullptr);
-/// Erste @p n Byte des INHALTS (bei gzip entpackt; liest dafür die ganze Datei).
+/// Erste @p n Byte des INHALTS (bei gzip entpackt; liest dafuer die ganze Datei).
 bool ladenAnfang(const std::string& pfad, size_t n, std::vector<uint8_t>& daten, std::string* fehler = nullptr);
-/// Inhaltsgröße: roh = Dateigröße, gzip = entpackte Größe (entpackt dafür die ganze Datei).
+/// Inhaltsgroesse: roh = Dateigroesse, gzip = entpackte Groesse (entpackt dafuer die ganze Datei).
 std::optional<uint64_t> inhaltsGroesse(const std::string& pfad);
 
-/// Ganze Datei schreiben, atomar über `<pfad>.tmp` + `rename`.
+/// Ganze Datei schreiben, atomar ueber `<pfad>.tmp` + `rename`.
 bool speichern(const std::string& pfad, const uint8_t* d, size_t n, Art art,
                int stufe = STUFE_VORGABE, std::string* fehler = nullptr);
 

@@ -111,7 +111,7 @@ class ScreenFocusGuard(QObject):
     def focus_screen(self) -> None:
         """Fokus (zurück) auf das Bildschirm-Widget, falls es sichtbar ist."""
         screen = self._screen
-        # Ein verzögerter Aufruf kann nach dem Freigeben des Fensters eintreffen
+        # Ein verzoegerter Aufruf kann nach dem Freigeben des Fensters eintreffen
         # (Tests geben ihre Fenster frei); dann ist die C++-Seite schon weg.
         if screen is not None and isValid(screen) and screen.isVisible():
             screen.setFocus(Qt.OtherFocusReason)
@@ -127,8 +127,8 @@ class ScreenFocusGuard(QObject):
             if self._belongs_to_window(obj) and not in_text_input(obj):
                 QTimer.singleShot(0, self.focus_screen)
         elif etype == QEvent.WindowActivate and obj is self._window:
-            # Rückkehr aus einer anderen Anwendung: weitertippen im Emulator,
-            # außer man hatte zuletzt bewusst in einem Eingabefeld gestanden.
+            # Rueckkehr aus einer anderen Anwendung: weitertippen im Emulator,
+            # ausser man hatte zuletzt bewusst in einem Eingabefeld gestanden.
             if not in_text_input(self._window.focusWidget()):
                 QTimer.singleShot(0, self.focus_screen)
         return False

@@ -1,15 +1,15 @@
 /**
  * @file test_mc80_kassette.cpp
- * @brief MC80 (AP M7): Kassette über den EGOS-Bandtreiber (1000H–1FFFH) an der K5020 (30H–37H).
+ * @brief MC80 (AP M7): Kassette ueber den EGOS-Bandtreiber (1000H–1FFFH) an der K5020 (30H–37H).
  *
- * - `Mc80K5020.*`: die Karte am MC80-Bus — steckbar nach dem Anlegen (der Konstruktor fährt
- *   schon powerOn()), Tore 30H–37H, Taktquelle/Profil/Kassettenmaße je Modell, am .30 der
- *   Schreibtakt über den Koppelbus aus ASP-CTC K2.
+ * - `Mc80K5020.*`: die Karte am MC80-Bus — steckbar nach dem Anlegen (der Konstruktor faehrt
+ *   schon powerOn()), Tore 30H–37H, Taktquelle/Profil/Kassettenmasse je Modell, am .30 der
+ *   Schreibtakt ueber den Koppelbus aus ASP-CTC K2.
  * - `Mc80Kassette.SpeichernUndLaden/*` (Abnahme je Modell): `KINIT 1` formatiert die Kassette,
- *   ein RAM-Programm mit Kennbyte 01 (Kommando „TST“ an 4000H, in die RAM-Kette gehängt) geht
+ *   ein RAM-Programm mit Kennbyte 01 (Kommando „TST“ an 4000H, in die RAM-Kette gehaengt) geht
  *   mit `WRITE 1,TST,01,4000,40FF` aufs Band, der RAM wird auf den Stand nach INIT
- *   zurückgesetzt, `READ 1,TST,R` holt es zurück („die RAM-Kettung wird auf die Anfangsadresse
- *   der Prozedur geführt“, [EGOS2 S.6]) — danach ist `TST` wieder ein Kommando und läuft.
+ *   zurueckgesetzt, `READ 1,TST,R` holt es zurueck („die RAM-Kettung wird auf die Anfangsadresse
+ *   der Prozedur gefuehrt“, [EGOS2 S.6]) — danach ist `TST` wieder ein Kommando und laeuft.
  * - `Mc80KassettePraeambel.LiestAuchPraeambelABH`: EGOS nimmt als erstes Byte AAH oder ABH.
  *
  * Bedienung, Belege und Annahmen: doc/mc80/kassette.md.
@@ -70,7 +70,7 @@ struct Mc80MitBand {
         return s;
     }
     /// Kommando eingeben und fahren, bis EGOS fertig ist: die Eingabezeile 24 zeigt wieder nur
-    /// den Prompt `>` (während der Ausführung steht dort das Kommando).  Rückgabe: Sekunden.
+    /// den Prompt `>` (waehrend der Ausfuehrung steht dort das Kommando).  Rueckgabe: Sekunden.
     double kommando(const char* kdo, uint64_t max = 800'000'000) {
         tippe(kdo, 0);
         tippe("\n", 0);
@@ -95,21 +95,21 @@ struct Mc80MitBand {
 
 /// Das Testprogramm: Kettenglied „TST“ an 4000H (Kennbyte 01, Abstand weiter zum Directory bei
 /// BAF8H wie das leere Glied `00 F5 7A FF`, das INIT dort anlegt), Code `LD A,5AH /
-/// LD (4100H),A / RET`, danach ein Füllmuster mit einzelnen AAH bis 40FFH.
+/// LD (4100H),A / RET`, danach ein Fuellmuster mit einzelnen AAH bis 40FFH.
 std::vector<uint8_t> programm() {
     std::vector<uint8_t> p = {0x01, 0xF5, 0x7A, 'T', 'S', 'T', 0xFF,
                               0x3E, 0x5A, 0x32, 0x00, 0x41, 0xC9};
     while (p.size() < 0x100) {
         const size_t i = p.size();
-        // Einzelne AAH, keine zwei hintereinander: EGOS braucht für ein gelesenes AAH ~2 ms
-        // (Postambelprobe 1C3A mit DI) — bei 6 000 Bit/s (.31) reicht das für EIN AAH, bei zwei
-        // in Folge geht das übernächste Byte verloren (doc/mc80/kassette.md §2, Grenze des Treibers).
+        // Einzelne AAH, keine zwei hintereinander: EGOS braucht fuer ein gelesenes AAH ~2 ms
+        // (Postambelprobe 1C3A mit DI) — bei 6 000 Bit/s (.31) reicht das fuer EIN AAH, bei zwei
+        // in Folge geht das uebernaechste Byte verloren (doc/mc80/kassette.md §2, Grenze des Treibers).
         p.push_back(i % 7 == 0 ? 0xAA : static_cast<uint8_t>(i * 37));
     }
     return p;
 }
 
-/// Boot, KINIT, Programm schreiben, RAM zurücksetzen.  Prüft das Band nach KINIT und WRITE.
+/// Boot, KINIT, Programm schreiben, RAM zuruecksetzen.  Prueft das Band nach KINIT und WRITE.
 void speichern(Mc80MitBand& r, const std::vector<uint8_t>& prog) {
     ASSERT_NE(r.m->k5020(), nullptr);
     r.boot();
@@ -119,7 +119,7 @@ void speichern(Mc80MitBand& r, const std::vector<uint8_t>& prog) {
     for (size_t i = 0; i < prog.size(); ++i) r.m->memWriteDebug(static_cast<uint16_t>(0x4000 + i), prog[i]);
 
     // FORMAT (im ROM KINIT): Bandmarke, Directory-Block 89H 'DIRECTORY', 14 leere
-    // Verzeichnisblöcke, Bandmarke [P 111C].
+    // Verzeichnisbloecke, Bandmarke [P 111C].
     const double t_kinit = r.kommando("kinit 1");
     printf("[M7] KINIT %.1f s\n", t_kinit);
     ASSERT_EQ(r.m->textZeile(23), "OK") << r.text();
@@ -140,7 +140,7 @@ void speichern(Mc80MitBand& r, const std::vector<uint8_t>& prog) {
     }
     EXPECT_TRUE(gefunden) << "Programm nicht als 256-Byte-Block auf dem Band";
 
-    // Stand nach INIT: „TST“ ist weg, die Kette läuft wieder direkt zum Directory.
+    // Stand nach INIT: „TST“ ist weg, die Kette laeuft wieder direkt zum Directory.
     r.ramWieNachInit();
 }
 
@@ -200,16 +200,16 @@ TEST(Mc80K5020, ModelleUnterscheidenTaktProfilUndKassette) {
 TEST(Mc80K5020, Mc8030SchreibtaktKommtVonAspCtcKanal2) {
     auto m = maschine(Variante::Mc8030);
     ASSERT_TRUE(m->installK5020());
-    EXPECT_FALSE(m->aspBandtakt()) << "nach dem Einschalten zählt K2 nicht";
+    EXPECT_FALSE(m->aspBandtakt()) << "nach dem Einschalten zaehlt K2 nicht";
     EXPECT_FALSE(m->k5020()->taktLiegtAn());
-    m->bus().ioWrite(0xD6, 0x47);   // EGOS MB_INIT 1F96: Zähler, Zeitkonstante folgt
+    m->bus().ioWrite(0xD6, 0x47);   // EGOS MB_INIT 1F96: Zaehler, Zeitkonstante folgt
     EXPECT_FALSE(m->k5020()->taktLiegtAn()) << "erst mit der Zeitkonstante";
     m->bus().ioWrite(0xD6, 0x02);
     EXPECT_TRUE(m->aspBandtakt());
     EXPECT_TRUE(m->k5020()->taktLiegtAn());
     m->bus().ioWrite(0xD6, 0x03);   // Kanalreset
     EXPECT_FALSE(m->k5020()->taktLiegtAn());
-    m->bus().ioWrite(0xD6, 0xA7);   // Zeitgeber statt Zähler: kein Bandtakt
+    m->bus().ioWrite(0xD6, 0xA7);   // Zeitgeber statt Zaehler: kein Bandtakt
     m->bus().ioWrite(0xD6, 0x10);
     EXPECT_FALSE(m->k5020()->taktLiegtAn());
 
@@ -222,7 +222,7 @@ TEST(Mc80K5020, EgosStelltDieKarteBeimStartEin) {
     auto m = maschine(Variante::Mc8030);
     ASSERT_TRUE(m->installK5020());
     while (m->totalCycles() < 4'000'000) m->run(5000);
-    // MB_INIT (1F8D): Vektoren B0H/B4H (Daten-PIO A/B), B8H/B6H (Steuer-PIO A/B), ASP-CTC K2 zählt.
+    // MB_INIT (1F8D): Vektoren B0H/B4H (Daten-PIO A/B), B8H/B6H (Steuer-PIO A/B), ASP-CTC K2 zaehlt.
     EXPECT_EQ(m->k5020()->pioDaten().debugState().port[0].vector, 0xB0);
     EXPECT_EQ(m->k5020()->pioDaten().debugState().port[1].vector, 0xB4);
     EXPECT_EQ(m->k5020()->pioSteuer().debugState().port[0].vector, 0xB8);
@@ -230,7 +230,7 @@ TEST(Mc80K5020, EgosStelltDieKarteBeimStartEin) {
     EXPECT_TRUE(m->k5020()->taktLiegtAn());
 }
 
-// ─── Abnahme über EGOS ───────────────────────────────────────────────────────
+// ─── Abnahme ueber EGOS ───────────────────────────────────────────────────────
 
 class Mc80Kassette : public ::testing::TestWithParam<Variante> {};
 
@@ -247,9 +247,9 @@ INSTANTIATE_TEST_SUITE_P(Modelle, Mc80Kassette, ::testing::Values(Variante::Mc80
                              return std::string(i.param == Variante::Mc8030 ? "Mc8030" : "Mc8031");
                          });
 
-// EGOS 1BF0–1C03: ein erstes Byte AAH läuft durch die Postambelprobe (BMS noch 1 → Datenbyte),
-// ABH wird ohne sie angenommen, anderes verworfen.  Die Karte reicht Präambeln unverändert durch —
-// ein Band, dessen Blöcke mit ABH beginnen, muss sich genauso laden lassen.
+// EGOS 1BF0–1C03: ein erstes Byte AAH laeuft durch die Postambelprobe (BMS noch 1 → Datenbyte),
+// ABH wird ohne sie angenommen, anderes verworfen.  Die Karte reicht Praeambeln unveraendert durch —
+// ein Band, dessen Bloecke mit ABH beginnen, muss sich genauso laden lassen.
 TEST(Mc80KassettePraeambel, LiestAuchPraeambelABH) {
     Mc80MitBand r(Variante::Mc8031);
     const auto prog = programm();

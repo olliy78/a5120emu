@@ -307,7 +307,7 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     const uint8_t num_heads = in.numHeads();
     if (num_cyls == 0 || num_heads == 0) { err = "Leeres Medium"; return false; }
 
-    // 1. Spurlänge je Zylinder: EINE UMDREHUNG in Zellen, nicht „so lang wie der Inhalt".
+    // 1. Spurlaenge je Zylinder: EINE UMDREHUNG in Zellen, nicht „so lang wie der Inhalt".
     //
     //    Die Zellenzahl einer HFE-Spur IST ihre Umdrehungszeit: `gw write` rechnet
     //    time_per_rev = Zellen / (2 × Bitrate) und streckt den Fluss dann auf die
@@ -318,7 +318,7 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     //    nichts (doc/design/16_k8915.md AP-F1).
     //
     //    Nennumdrehung (DiskMedium::nominalRpm): 5,25″ 300 U/min → 100 000 Zellen; 8″ 360 U/min →
-    //    FM 83 334, MFM (500 kbit/s) 166 667.  Ist der Inhalt länger (eine überlange oder
+    //    FM 83 334, MFM (500 kbit/s) 166 667.  Ist der Inhalt laenger (eine ueberlange oder
     //    eine eingelesene Spur, die schon ihre eigene Umdrehung mitbringt), bestimmt er.
     //    Aufgerundet auf 256 B je Seite — sonst verteilt ein Leser mit 256-B-Schlitzen
     //    (Greaseweazle) den Rest des letzten Blocks falsch auf die Seiten.
@@ -359,7 +359,7 @@ bool HfeCodec::save(const std::string& path, const DiskMedium& in, std::string& 
     hdr[0x15] = 0xFF;                                               // single_step
     for (size_t i = 0x16; i < 512; ++i) hdr[i] = 0xFF;
 
-    // 3. Track-LUT (Länge je Zylinder).
+    // 3. Track-LUT (Laenge je Zylinder).
     std::vector<uint8_t> lut(512, 0xFF);
     uint32_t blk = 2;                                               // Spurdaten ab Block 2
     for (uint8_t c = 0; c < num_cyls; ++c) {

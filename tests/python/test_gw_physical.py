@@ -1,12 +1,12 @@
 """Physische Diskette (Greaseweazle) — **ohne Hardware**.
 
-Das Laufwerk hängt nicht immer am Rechner, in der CI/CD-Kette nie.  Der Entwurf ist
-deshalb so geschnitten, dass die Hardware nur in der äußersten Schale vorkommt: alles
-unterhalb von „Aufträge und Bitzellen" ist ohne Adapter prüfbar
+Das Laufwerk haengt nicht immer am Rechner, in der CI/CD-Kette nie.  Der Entwurf ist
+deshalb so geschnitten, dass die Hardware nur in der aeussersten Schale vorkommt: alles
+unterhalb von „Auftraege und Bitzellen" ist ohne Adapter pruefbar
 (doc/design/14_physische_diskette.md §14).
 
-Hier steht deshalb ein **Ersatzlaufwerk über einer ``.hfe``-Datei**.  Es liefert
-dieselben Bitzellen, die der Adapter liefern würde — denn eine HFE-Aufnahme *ist*
+Hier steht deshalb ein **Ersatzlaufwerk ueber einer ``.hfe``-Datei**.  Es liefert
+dieselben Bitzellen, die der Adapter liefern wuerde — denn eine HFE-Aufnahme *ist*
 genau das, samt Phasenversatz und Jitter der echten Aufnahme.  Benutzt wird
 ``udos_boot_scp.hfe``: ein echter Greaseweazle-Mitschnitt einer beidseitigen
 UDOS-Diskette.
@@ -29,7 +29,7 @@ FIXTURE = "udos_boot_scp.hfe"
 
 
 # Das Ersatzlaufwerk (HfeDevice) steht in gw_fake.py — es wird auch von den
-# Oberflächentests gebraucht.
+# Oberflaechentests gebraucht.
 
 @pytest.fixture
 def hfe(fixture_disks):
@@ -37,7 +37,7 @@ def hfe(fixture_disks):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Die C-ABI für sich
+# Die C-ABI fuer sich
 # ════════════════════════════════════════════════════════════════════════════
 
 
@@ -131,7 +131,7 @@ def test_vorauslesen_fuellt_das_abbild(hfe):
 def test_disktool_oeffnet_die_physische_diskette_wie_eine_datei(hfe):
     """Die Nagelprobe: dieselbe Diskette einmal als Datei, einmal „physisch".
 
-    Erkennung, Dateisystem und Verzeichnis müssen übereinstimmen — der einzige
+    Erkennung, Dateisystem und Verzeichnis muessen uebereinstimmen — der einzige
     Unterschied ist, dass die Spuren einzeln geholt werden.
     """
     with DiskTool.open(hfe) as datei:
@@ -156,7 +156,7 @@ def test_disktool_oeffnet_die_physische_diskette_wie_eine_datei(hfe):
 
 
 def test_datei_aus_der_physischen_diskette_ist_byteweise_gleich(hfe, tmp_path):
-    """Eine Datei holen — über den Umweg Bitzellen muss dasselbe herauskommen."""
+    """Eine Datei holen — ueber den Umweg Bitzellen muss dasselbe herauskommen."""
     aus_datei = tmp_path / "aus_datei.bin"
     with DiskTool.open(hfe) as datei:
         eintraege = [e for e in datei.list() if e.size > 0]
@@ -184,17 +184,17 @@ def test_datei_aus_der_physischen_diskette_ist_byteweise_gleich(hfe, tmp_path):
     "scpx17_cpa780_k5601.hfe",
 ])
 def test_stichprobe_erkennt_dasselbe_wie_die_vollmessung(fixture_disks, name):
-    """**Der Wächter der Stichprobe: nie etwas ANDERES als die Vollmessung.**
+    """**Der Waechter der Stichprobe: nie etwas ANDERES als die Vollmessung.**
 
     Dieselbe Diskette einmal als Datei (Vollmessung) und einmal „physisch"
     (Stichprobe) muss dasselbe Dateisystem ergeben.  Ohne diesen Vergleich blieb
     unbemerkt, dass die Stichprobe drei Disketten falsch erkannte — darunter eine
     77-Spur-Diskette als 40-Spur (`udos_ss40` statt `udos_ss77`), womit die halbe
-    Diskette unsichtbar gewesen wäre.
+    Diskette unsichtbar gewesen waere.
 
     Ursache war, dass `GeometryProbe::match` Altbestand **duldet** und die Kandidaten
-    nach absoluten Zählungen ordnet: eine Stichprobe schrumpft diese Zahlen
-    ungleichmäßig und bevorzugt dadurch zu kleine Formate.  Zu wenig ist deshalb
+    nach absoluten Zaehlungen ordnet: eine Stichprobe schrumpft diese Zahlen
+    ungleichmaessig und bevorzugt dadurch zu kleine Formate.  Zu wenig ist deshalb
     nicht nur langsam — es ist falsch.
     """
     pfad = fixture_disks / name
@@ -226,14 +226,14 @@ def test_eine_leere_spur_verdirbt_nicht_die_ganze_diskette(fixture_disks):
     """Eine unformatierte Spur darf den Zellraten-Faktor nicht festlegen.
 
     `TrackSync::completeRead` ermittelt einmal je Sitzung, ob der Adapter
-    überabtastet liefert (§8.1), und behält den Faktor für die ganze Diskette.
+    ueberabtastet liefert (§8.1), und behaelt den Faktor fuer die ganze Diskette.
     Gesucht wurde er aber bei **jeder** Spur neu — und eine unformatierte Spur ist
-    Rauschen: bei irgendeinem falschen Faktor findet sich darin zufällig eine
+    Rauschen: bei irgendeinem falschen Faktor findet sich darin zufaellig eine
     Marke, die ihn festschreibt.  Danach war jede weitere Spur unlesbar
     (`scpx17_cpa780_k5601.hfe`: 6181-B-Spuren kamen als 2658 B mit einem Sektor).
 
     Sequentiell fiel das nie auf, weil leere Spuren am **Ende** liegen — das
-    Format war da längst erkannt.  Wer die Diskette in anderer Reihenfolge liest
+    Format war da laengst erkannt.  Wer die Diskette in anderer Reihenfolge liest
     (die Stichprobe der Formaterkennung tut genau das), verlor die halbe Diskette.
     """
     pfad = fixture_disks / "scpx17_cpa780_k5601.hfe"
@@ -267,8 +267,8 @@ def test_eine_leere_spur_verdirbt_nicht_die_ganze_diskette(fixture_disks):
 def test_eine_datei_laesst_sich_auf_eine_echte_diskette_schreiben(fixture_disks):
     """Der Gegenweg: geladene ``.hfe`` → echtes Laufwerk (§12.4).
 
-    Geprüft wird die ganze Kette an ZWEI verschiedenen Disketten: die Zieldiskette
-    trägt anfangs CP/A, danach muss sie die UDOS-Quelle tragen — mit derselben
+    Geprueft wird die ganze Kette an ZWEI verschiedenen Disketten: die Zieldiskette
+    traegt anfangs CP/A, danach muss sie die UDOS-Quelle tragen — mit derselben
     Dateiliste.  Nur so ist belegt, dass wirklich geschrieben und nicht bloss
     gelesen wurde.
     """
@@ -294,7 +294,7 @@ def test_eine_datei_laesst_sich_auf_eine_echte_diskette_schreiben(fixture_disks)
                 assert s.flush(120_000), "Zurückschreiben scheiterte"
                 st = s.stats
                 assert st.tracks_dirty == 0 and st.tracks_defect == 0
-                # Geschrieben UND zurückgelesen — der Verify-Lauf gehört dazu (§7.1).
+                # Geschrieben UND zurueckgelesen — der Verify-Lauf gehoert dazu (§7.1).
                 assert st.writes_done == n and st.verifies_done == n
             finally:
                 worker.stop()
@@ -316,8 +316,8 @@ def test_eine_datei_laesst_sich_auf_eine_echte_diskette_schreiben(fixture_disks)
 def test_ueberschreiben_verweigert_eine_zu_kleine_diskette(fixture_disks):
     """Passt es nicht, wird **gar nichts** geschrieben.
 
-    Eine halb überschriebene Diskette wäre das schlechteste Ergebnis: die alte ist
-    fort, die neue unvollständig.  Deshalb prüft `copyTo` die Geometrie vorher.
+    Eine halb ueberschriebene Diskette waere das schlechteste Ergebnis: die alte ist
+    fort, die neue unvollstaendig.  Deshalb prueft `copyTo` die Geometrie vorher.
     """
     quelle = fixture_disks / "udos_boot_scp.hfe"      # 80 Zylinder
     if not quelle.exists():
@@ -335,13 +335,13 @@ def test_doppelschritt_faehrt_jeden_zweiten_zylinder_an(fixture_disks):
     """Spur *n* liegt bei Doppelschritt auf dem physischen Zylinder *2n* (§12.5).
 
     So schreibt ein 40-Spur-Laufwerk (K5600.10); ein 80-Spur-Laufwerk erreicht
-    dieselben Spuren nur mit doppeltem Schritt.  **Oberhalb des Geräts bleibt alles
-    logisch**: das Abbild hat 40 Spuren, keine 80 mit Lücken — sonst müsste jede
-    Schicht darüber die Umrechnung noch einmal wissen.
+    dieselben Spuren nur mit doppeltem Schritt.  **Oberhalb des Geraets bleibt alles
+    logisch**: das Abbild hat 40 Spuren, keine 80 mit Luecken — sonst muesste jede
+    Schicht darueber die Umrechnung noch einmal wissen.
     """
     from app.gw.device import Device
 
-    d = Device.__new__(Device)              # ohne Adapter — geprüft wird nur die Lage
+    d = Device.__new__(Device)              # ohne Adapter — geprueft wird nur die Lage
     for doppelt, erwartet in ((False, [0, 1, 39]), (True, [0, 2, 78])):
         d.double_step = doppelt
         assert [d._position(c) for c in (0, 1, 39)] == erwartet, \
@@ -353,7 +353,7 @@ def test_doppelschritt_und_nur_seite_null_gehen_durch_den_dialog():
 
     Die Rechnung sitzt an EINER Stelle (`_geometrie_rechnen`): aus den physischen
     Zylindern des Laufwerks und den Haken folgt die **logische** Geometrie.  Bei
-    Doppelschritt passt nur die Hälfte der Spuren auf dieselbe Strecke.
+    Doppelschritt passt nur die Haelfte der Spuren auf dieselbe Strecke.
     """
     pytest.importorskip("PySide6")
     from PySide6.QtWidgets import QApplication
@@ -403,15 +403,15 @@ def test_nur_seite_null_liest_die_rueckseite_gar_nicht(fixture_disks):
 
 
 def test_schneiden_macht_ein_abbild_lesbar(fixture_disks, tmp_path):
-    """Der Fall, für den es gebaut ist: ungerade Spuren weg → erkennbar (§12.6).
+    """Der Fall, fuer den es gebaut ist: ungerade Spuren weg → erkennbar (§12.6).
 
     Eine 40-Spur-Diskette, die im **Doppelschritt** beschrieben und
-    **einfachschrittig** gelesen wurde, trägt auf den ungeraden Zylindern den
-    Altbestand einer früheren Formatierung.  Als Ganzes ist das keine Diskette, die
+    **einfachschrittig** gelesen wurde, traegt auf den ungeraden Zylindern den
+    Altbestand einer frueheren Formatierung.  Als Ganzes ist das keine Diskette, die
     ein Katalog kennt — nach dem Schnitt schon.
 
     Nachgestellt wird das aus einer echten Diskette: jede Spur auf den doppelten
-    Zylinder, dazwischen Müll.
+    Zylinder, dazwischen Muell.
     """
     quelle = fixture_disks / "udos_boot_scp.hfe"
     if not quelle.exists():
@@ -453,10 +453,10 @@ def test_schneiden_macht_ein_abbild_lesbar(fixture_disks, tmp_path):
 
 
 def test_schneiden_verweigert_ein_halbes_abbild(fixture_disks):
-    """Erst vollständig einlesen — der Schnitt löst vom Laufwerk.
+    """Erst vollstaendig einlesen — der Schnitt loest vom Laufwerk.
 
-    Was beim Schnitt noch ungelesen ist, bleibt es **für immer**; danach gibt es
-    keinen Nachlader mehr.  Und die Lücken machen jede spätere Erkennung unmöglich:
+    Was beim Schnitt noch ungelesen ist, bleibt es **fuer immer**; danach gibt es
+    keinen Nachlader mehr.  Und die Luecken machen jede spaetere Erkennung unmoeglich:
     eine ungelesene Spur sieht aus wie eine unformatierte, mitten im beschriebenen
     Bereich.  Genau daran scheiterte die Erkennung nach dem Schnitt.
     """
@@ -485,8 +485,8 @@ def test_schneiden_verweigert_ein_halbes_abbild(fixture_disks):
 def test_schneiden_loest_das_abbild_vom_laufwerk(fixture_disks):
     """Nach dem Schnitt darf NICHTS mehr auf die Diskette gehen.
 
-    Die Spurnummern stimmen danach nicht mehr mit den Kopfpositionen überein — ein
-    Rückschreiben ginge auf die falschen Zylinder und zerstörte die Diskette.
+    Die Spurnummern stimmen danach nicht mehr mit den Kopfpositionen ueberein — ein
+    Rueckschreiben ginge auf die falschen Zylinder und zerstoerte die Diskette.
     """
     pfad = fixture_disks / "udos_boot_scp.hfe"
     if not pfad.exists():
@@ -505,7 +505,7 @@ def test_schneiden_loest_das_abbild_vom_laufwerk(fixture_disks):
                     time.sleep(0.05)
                 geraet.geschrieben.clear()
                 t.drop_second_side()
-                # Der Schnitt selbst markiert Spuren als geändert — sie dürfen
+                # Der Schnitt selbst markiert Spuren als geaendert — sie duerfen
                 # trotzdem NICHT auf die Diskette gehen.
                 time.sleep(1.5)
                 assert geraet.geschrieben == [], \
@@ -517,9 +517,9 @@ def test_schneiden_loest_das_abbild_vom_laufwerk(fixture_disks):
 def test_die_sondenzahl_bleibt_klein():
     """Acht Spuren — nicht acht Zylinder auf beiden Seiten.
 
-    Die Rechnung über den Katalog ergab acht **(Zylinder, Kopf)-Paare**; daraus
-    versehentlich „acht Zylinder × beide Köpfe" zu machen verdoppelt die Wartezeit
-    am echten Laufwerk auf nichts.  Auf Kopf 1 genügt EINE Sonde (ein- oder
+    Die Rechnung ueber den Katalog ergab acht **(Zylinder, Kopf)-Paare**; daraus
+    versehentlich „acht Zylinder × beide Koepfe" zu machen verdoppelt die Wartezeit
+    am echten Laufwerk auf nichts.  Auf Kopf 1 genuegt EINE Sonde (ein- oder
     zweiseitig), alles Weitere entscheidet sich auf Kopf 0.
     """
     from app.core_binding.k1520disk import DiskTool, K1520DiskError
@@ -532,21 +532,21 @@ def test_die_sondenzahl_bleibt_klein():
 
 
 def test_erkennung_holt_nur_eine_stichprobe(hfe):
-    """Das Öffnen darf nicht die ganze Diskette einziehen.
+    """Das Oeffnen darf nicht die ganze Diskette einziehen.
 
     Am echten Laufwerk kostet jede Spur 0,5–0,8 s; 160 Spuren sind anderthalb
-    Minuten.  Nachgerechnet über alle Formatpaare des Katalogs trennen acht Spuren
+    Minuten.  Nachgerechnet ueber alle Formatpaare des Katalogs trennen acht Spuren
     alles, was trennbar ist — die wichtigste ist Zylinder 3, dieselbe, die das
     CP/A-BIOS liest.  Deshalb misst die Erkennung an einem nachladenden Medium nur
-    Sondenspuren; die Vollmessung ist der Rückfall, wenn nichts passt.
+    Sondenspuren; die Vollmessung ist der Rueckfall, wenn nichts passt.
 
-    Geprüft wird beides: dass es deutlich weniger Spuren sind UND dass trotzdem
-    richtig erkannt wird — eine schnelle Fehlerkennung wäre kein Fortschritt.
+    Geprueft wird beides: dass es deutlich weniger Spuren sind UND dass trotzdem
+    richtig erkannt wird — eine schnelle Fehlerkennung waere kein Fortschritt.
     """
     geraet = HfeDevice(hfe)
     gesamt = geraet.num_cyls * geraet.num_heads
     with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
-              read_ahead=False) as s:          # kein Vorauslesen: nur das Nötige
+              read_ahead=False) as s:          # kein Vorauslesen: nur das Noetige
         worker = TrackWorker(s, geraet, poll_ms=50)
         worker.start()
         try:
@@ -587,7 +587,7 @@ def test_gescheitertes_lesen_bringt_niemanden_zum_haengen(hfe):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Drift-Wächter: C-Kopf ↔ ctypes
+# Drift-Waechter: C-Kopf ↔ ctypes
 # ════════════════════════════════════════════════════════════════════════════
 #
 # Die drei Strukturen der Sync-ABI stehen zweimal: in core/api/k1520_sync_api.h und
@@ -633,7 +633,7 @@ def test_die_ctypes_struktur_passt_zum_c_kopf(c_name, py_name):
 
 
 def test_die_auftragsarten_stimmen_ueberein():
-    """`JobKind` muss dieselben Werte tragen wie die Aufzählung im C-Kopf."""
+    """`JobKind` muss dieselben Werte tragen wie die Aufzaehlung im C-Kopf."""
     from app.gw import JobKind
 
     text = HEADER.read_text("utf-8")
@@ -647,7 +647,7 @@ def test_die_auftragsarten_stimmen_ueberein():
 
 
 def test_geschriebene_spuren_werden_zurueckgelesen(hfe):
-    """Jedem Schreibvorgang folgt ein Prüf-Lesen — sonst bliebe ein Schaden blind."""
+    """Jedem Schreibvorgang folgt ein Pruef-Lesen — sonst bliebe ein Schaden blind."""
     geraet = HfeDevice(hfe)
     with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
               writable=True, read_ahead=False, write_settle_ms=50) as s:
@@ -659,15 +659,15 @@ def test_geschriebene_spuren_werden_zurueckgelesen(hfe):
         finally:
             worker.stop()
 
-    # Ohne Schreibzugriff darf gar nichts geschrieben (und nichts geprüft) worden sein.
+    # Ohne Schreibzugriff darf gar nichts geschrieben (und nichts geprueft) worden sein.
     assert geraet.geschrieben == []
 
 
 def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
-    """Der eigentliche Zweck: eine Diskette, die nicht mehr trägt, fällt auf.
+    """Der eigentliche Zweck: eine Diskette, die nicht mehr traegt, faellt auf.
 
-    Der Verify-Lauf des Gastsystems liefe gegen das Speicherabbild und sähe nichts;
-    das Prüf-Lesen gegen die Scheibe sieht es.
+    Der Verify-Lauf des Gastsystems liefe gegen das Speicherabbild und saehe nichts;
+    das Pruef-Lesen gegen die Scheibe sieht es.
     """
     geraet = HfeDevice(hfe)
     with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
@@ -676,14 +676,14 @@ def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
         worker = TrackWorker(s, geraet, poll_ms=30)
         worker.start()
         try:
-            # Erst öffnen (liest die Diskette), dann sie „beschädigen" und schreiben.
+            # Erst oeffnen (liest die Diskette), dann sie „beschaedigen" und schreiben.
             with DiskTool.open_physical(s, read_only=False) as d:
                 eintraege = [e for e in d.list() if e.size > 0]
                 assert eintraege, "Fixture ohne Dateien"
                 geraet.schadhaft = set(geraet._spuren)      # NICHTS nimmt mehr an
                 quelle = tmp_path / "PROBE.TXT"
                 quelle.write_bytes(b"schadstelle\r\n" * 4)
-                # Bei UDOS gehören die Kopfsektorangaben zur Datei; ohne sie wird
+                # Bei UDOS gehoeren die Kopfsektorangaben zur Datei; ohne sie wird
                 # nicht mehr geraten (doc/bug_disktool_Programmdatei.md §2.2).
                 (tmp_path / "PROBE.TXT.fileinfo").write_text(
                     "fs=udos\\nname=PROBE.TXT\\ntyp=A\\nsatz=128\\n")
@@ -708,12 +708,12 @@ def test_eine_schadstelle_wird_gemeldet_statt_verschwiegen(hfe, tmp_path):
 
 
 class StummesLaufwerk(HfeDevice):
-    """Ein Laufwerk, das den Schreibauftrag GAR NICHT ausführt.
+    """Ein Laufwerk, das den Schreibauftrag GAR NICHT ausfuehrt.
 
     Der Unterschied zur Schadstelle (``HfeDevice.schadhaft``): dort meldet der
-    Schreibvorgang Erfolg und erst das Prüf-Lesen entlarvt ihn.  Hier scheitert schon
+    Schreibvorgang Erfolg und erst das Pruef-Lesen entlarvt ihn.  Hier scheitert schon
     der Auftrag — und zwar bei jedem Versuch gleich, weil die Ursache nicht auf der
-    Diskette liegt, sondern am Gerät (kein Indexsignal, Adapter abgezogen).
+    Diskette liegt, sondern am Geraet (kein Indexsignal, Adapter abgezogen).
     """
 
     def __init__(self, pfad):
@@ -726,9 +726,9 @@ class StummesLaufwerk(HfeDevice):
 
 
 def test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf(hfe):
-    """Ein Gerätefehler wiederholt sich endlos — die Rückführung darf es nicht.
+    """Ein Geraetefehler wiederholt sich endlos — die Rueckfuehrung darf es nicht.
 
-    Am echten Gerät beobachtet (2026-09-14): nach dem Formatieren einer physischen
+    Am echten Geraet beobachtet (2026-09-14): nach dem Formatieren einer physischen
     Diskette meldete jede Spur ``GetFluxStatus: No Index``.  Ohne Obergrenze stellte
     sich jede Spur sofort wieder ein: der Arbeitsfaden kam nie zur Ruhe, das Abmelden
     sass seine ganze Frist ab, und das Programm sah aus, als hinge es.
@@ -757,7 +757,7 @@ def test_ein_laufwerk_das_nicht_schreibt_haelt_die_rueckfuehrung_nicht_auf(hfe):
             # Die Spur bleibt im Abbild GEAENDERT — auf einer heilen Diskette ist sie
             # noch zu retten (§7.2); deshalb zaehlt sie weiter als „zu schreiben".
             assert s.stats.tracks_dirty == gestellt
-            # Und das Abmelden kommt sofort zurück, statt seine Frist abzusitzen.
+            # Und das Abmelden kommt sofort zurueck, statt seine Frist abzusitzen.
             angefangen = time.monotonic()
             assert not s.flush(5000), "der Fehlschlag wurde als Erfolg verbucht"
             assert time.monotonic() - angefangen < 2.0, "flush hat gewartet"
@@ -775,7 +775,7 @@ def test_die_meldung_des_adapters_wird_gedeutet():
     assert "No Index" in str(gedeutet), "der Wortlaut des Adapters muss stehenbleiben"
     assert "Indexpuls" in str(gedeutet)
 
-    # Was nicht vom Gerät kommt, wird nicht umgedeutet.
+    # Was nicht vom Geraet kommt, wird nicht umgedeutet.
     fremd = RuntimeError("irgendetwas anderes")
     assert _gedeutet(fremd) is fremd
 
@@ -802,7 +802,7 @@ def test_neu_beschreiben_stellt_alles_wieder_ein(hfe):
                 time.sleep(0.05)
             assert s.stats.tracks_dirty == 0, "die Rückführung wurde nicht fertig"
             assert s.stats.tracks_defect == 0
-            # Jede bekannte Spur wurde geschrieben UND geprüft.
+            # Jede bekannte Spur wurde geschrieben UND geprueft.
             assert len(set(geraet.geschrieben)) == bekannt
             assert s.stats.verifies_done >= bekannt
         finally:
@@ -813,8 +813,8 @@ def test_neu_beschreiben_stellt_alles_wieder_ein(hfe):
 #
 # Eine TrackImage ist eine Umdrehung, braucht also einen Anfang.  Der Index ist der
 # naheliegende — aber der Spuranfang des schreibenden Rechners liegt nicht
-# zwangsläufig dort.  Schneidet man stur am Index, verliert der Sektor, der die Naht
-# überspannt, sein Datenfeld; bei UDOS reisst damit die Zeigerkette (an einer
+# zwangslaeufig dort.  Schneidet man stur am Index, verliert der Sektor, der die Naht
+# ueberspannt, sein Datenfeld; bei UDOS reisst damit die Zeigerkette (an einer
 # fremdbeschriebenen Diskette gemessen: 12 statt 46 Dateien).
 
 def _echte_spur(fixture_disks, cyl=0, head=0):
@@ -844,7 +844,7 @@ def test_naht_bleibt_am_index_wenn_kein_sektor_gespalten_ist(fixture_disks):
 def test_naht_wandert_vor_den_sektorkopf_wenn_die_naht_einen_sektor_spaltet(fixture_disks):
     """Verdrehte Spur: vor dem ersten Sektorkopf liegt ein Datenfeld — also spalten.
 
-    Geprüft wird, dass die gewählte Stelle im Vorlauf VOR einem Sektorkopf liegt und
+    Geprueft wird, dass die gewaehlte Stelle im Vorlauf VOR einem Sektorkopf liegt und
     dass danach kein Datenfeld mehr vor dem ersten Kopf steht.
     """
     from app.gw.device import naht_vor_sektorkopf, _feldanfaenge
@@ -872,18 +872,18 @@ def test_naht_bleibt_bei_null_wenn_nur_eine_umdrehung_vorliegt(fixture_disks):
 
 
 class VerdrehtesLaufwerk(HfeDevice):
-    """Ein Laufwerk, dessen Diskette NICHT am Index anfängt.
+    """Ein Laufwerk, dessen Diskette NICHT am Index anfaengt.
 
     Genau die Lage, in der eine fremdbeschriebene Diskette im Laufwerk liegt: der
-    Spuranfang des schreibenden Rechners liegt irgendwo, das Indexloch fällt mitten in
-    einen Sektor.  Die Fixture selbst trägt diesen Fall nicht mehr (sie wurde bereits
-    lückengerecht geschnitten), deshalb wird er hier hergestellt: die Spur wird zyklisch
-    **verdreht**, so dass die Naht in ein Datenfeld fällt.
+    Spuranfang des schreibenden Rechners liegt irgendwo, das Indexloch faellt mitten in
+    einen Sektor.  Die Fixture selbst traegt diesen Fall nicht mehr (sie wurde bereits
+    lueckengerecht geschnitten), deshalb wird er hier hergestellt: die Spur wird zyklisch
+    **verdreht**, so dass die Naht in ein Datenfeld faellt.
 
-    Mit ``naht=True`` verhält sich das Laufwerk wie ``Device.read_track`` am echten
-    Gerät (zwei Umdrehungen dekodieren, Schnitt vor einen Sektorkopf legen); mit ``naht=False``
+    Mit ``naht=True`` verhaelt sich das Laufwerk wie ``Device.read_track`` am echten
+    Geraet (zwei Umdrehungen dekodieren, Schnitt vor einen Sektorkopf legen); mit ``naht=False``
     wird stur am Index geschnitten — die Gegenprobe, die zeigen muss, dass der Test
-    überhaupt etwas prüft.
+    ueberhaupt etwas prueft.
     """
 
     def __init__(self, pfad, *, versatz_zellen: int, naht: bool):
@@ -908,7 +908,7 @@ class VerdrehtesLaufwerk(HfeDevice):
         verdreht = msb[v:] + msb[:v]            # dieselbe Umdrehung, anderer Anfang
 
         if self._naht:
-            # Wie am echten Gerät: eine Umdrehung mehr da, Schnitt vor einen Sektorkopf.
+            # Wie am echten Geraet: eine Umdrehung mehr da, Schnitt vor einen Sektorkopf.
             ganz = verdreht + verdreht
             start = naht_vor_sektorkopf(ganz, bitcells)
             verdreht = ganz[start:start + bitcells]
@@ -920,7 +920,7 @@ class VerdrehtesLaufwerk(HfeDevice):
 
 
 def _dateien_ueber_das_laufwerk(geraet) -> int:
-    """Diskette „physisch" öffnen und ihre Dateien zählen (0 = nicht erkannt)."""
+    """Diskette „physisch" oeffnen und ihre Dateien zaehlen (0 = nicht erkannt)."""
     from app.core_binding.k1520disk import K1520DiskError
 
     with Sync(num_cyls=geraet.num_cyls, num_heads=geraet.num_heads,
@@ -931,7 +931,7 @@ def _dateien_ueber_das_laufwerk(geraet) -> int:
             with DiskTool.open_physical(s) as d:
                 return len(d.list())
         except K1520DiskError:
-            return 0                            # Belegungskarte unlesbar o. ä.
+            return 0                            # Belegungskarte unlesbar o. ae.
         finally:
             worker.stop()
 
@@ -939,15 +939,15 @@ def _dateien_ueber_das_laufwerk(geraet) -> int:
 def test_verdrehte_fremddiskette_wird_ueber_die_naht_vollstaendig_gelesen(fixture_disks):
     """Die dritte Abweichung der Fremddiskette: Sektor 1 beginnt nicht am Index.
 
-    Ein Sektor, den die Index-Naht überspannt, verliert beim Schnitt sein Datenfeld;
+    Ein Sektor, den die Index-Naht ueberspannt, verliert beim Schnitt sein Datenfeld;
     bei UDOS reisst damit die Zeigerkette der Datei.
 
-    Wohin die Naht muss, wird im ZELLSTROM bestimmt, nicht über `Span.start`: dessen
+    Wohin die Naht muss, wird im ZELLSTROM bestimmt, nicht ueber `Span.start`: dessen
     Bruchteile beziehen sich auf die dekodierte Bytespur (hier 6041 B), die Rohspur hat
     100352 Zellen und davon ~3285 Vorlauf — ein daraus gerechneter Versatz landet im
     Gap und zerhackt gar nichts.  Stattdessen: erste Sync-Marke suchen (dort beginnt der
     Sektorkopf) und 1500 Zellen weiter schneiden.  Damit liegt die Naht im Datenfeld des
-    ersten Sektors, das ~700 Zellen nach der Sync-Marke anfängt und 2352 Zellen
+    ersten Sektors, das ~700 Zellen nach der Sync-Marke anfaengt und 2352 Zellen
     (147 Byte × 16) lang ist.
     """
     from bitarray import bitarray
@@ -970,7 +970,7 @@ def test_verdrehte_fremddiskette_wird_ueber_die_naht_vollstaendig_gelesen(fixtur
     assert stur < 46, ("der Versatz zerhackt keinen Sektor — der Test prueft nichts "
                        f"(gelesen: {stur} Dateien)")
 
-    # Und mit der Naht vor einem Sektorkopf ist die Diskette wieder vollständig.
+    # Und mit der Naht vor einem Sektorkopf ist die Diskette wieder vollstaendig.
     vor_kopf = _dateien_ueber_das_laufwerk(
         VerdrehtesLaufwerk(pfad, versatz_zellen=versatz, naht=True))
     assert vor_kopf == 46, (f"nur {vor_kopf} von 46 Dateien gelesen — der "

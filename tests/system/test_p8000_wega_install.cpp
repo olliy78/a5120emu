@@ -3,16 +3,16 @@
  * @brief P8000 Meilenstein M3 (doc/design/25_p8000.md AP P15): WEGA 3.0 im Emulator auf die
  *        Winchester installieren und von der Platte starten.
  *
- * Soll = `~/projects/robotron/P8000/doc/install_WEGA_3.1.log` (Ablauf), Datenträger = die 17
+ * Soll = `~/projects/robotron/P8000/doc/install_WEGA_3.1.log` (Ablauf), Datentraeger = die 17
  * WEGA-3.0-Disketten (doc/p8000/wega_datentraeger.md; NICHT im Repo — fehlen sie, wird der Test
- * übersprungen).  Stufen, jede mit Zwischenstand in der Ablage (`tests/support/p8000_wega.h`):
+ * uebersprungen).  Stufen, jede mit Zwischenstand in der Ablage (`tests/support/p8000_wega.h`):
  *   1 `mkfs`  : Hardwaretest, `O U`, `boot`, `sa.format` (4.1) und `sa.mkfs` /usr 13000 + / 7000
  *   2 `root`  : `sa.install` nach md(0,16000) mit root1 … root5
  *   3 `usr`   : `sa.install` nach md(0,0) mit usr1 … usr9
  *   …
  * Eine vorhandene Stufe wird geladen statt gerechnet (`K1520_P8000_NEU=1` rechnet alles neu,
- * `K1520_P8000_BIS=<stufe>` hört nach dieser Stufe auf).  Harte Taktgrenzen, Fortschrittszeile je
- * 400 Mio. Takte — ein Hänger endet mit Bild, nicht im Zeitüberlauf.
+ * `K1520_P8000_BIS=<stufe>` hoert nach dieser Stufe auf).  Harte Taktgrenzen, Fortschrittszeile je
+ * 400 Mio. Takte — ein Haenger endet mit Bild, nicht im Zeitueberlauf.
  */
 
 #include <gtest/gtest.h>
@@ -45,7 +45,7 @@ bool letzteStufe(const char* name) {
 }
 
 /// `sa.format`/`sa.verify` 4.1 (WEGA 3.1) anstelle der V1.4 der WEGA-3.0-Startdiskette (wie
-/// test_p8000_sa_format.cpp); dafür weichen die Kernvarianten `wega.n26`/`wega.n52`.
+/// test_p8000_sa_format.cpp); dafuer weichen die Kernvarianten `wega.n26`/`wega.n52`.
 ::testing::AssertionResult saFassung41(const std::string& diskette) {
     std::string f, err;
     static const FormatCatalog fk = FormatCatalog::loadDefault(&f);
@@ -114,7 +114,7 @@ void stufeMkfs(WegaLauf& l) {
         ASSERT_TRUE(kopiere(fix.path(), l.start));
     }
     ASSERT_TRUE(saFassung41(l.start));
-    {   // Platte K5504.50, Z0/K0/S1 = E5 (kein PAR; die Spursynthese ergänzt ihn nicht)
+    {   // Platte K5504.50, Z0/K0/S1 = E5 (kein PAR; die Spursynthese ergaenzt ihn nicht)
         std::string fehler;
         ASSERT_TRUE(k1520::winchester::Platte::neu(l.platte, *k1520::winchester::typNachName("K5504.50"), &fehler))
             << fehler;
@@ -137,7 +137,7 @@ void stufeMkfs(WegaLauf& l) {
     ASSERT_TRUE(frage(m, "Rewrite PAR&BTT from WDC-RAM to HD-Drive 0 ? (y/n)", "y", 8'000'000'000LL));
     ASSERT_TRUE(frage(m, "End of 'sa.format' (y/n) ?", "y"));
     ASSERT_TRUE(laufeBisPrompt(m, ":", 400'000'000)) << bild(m);
-    // sa.verify ist in test_p8000_sa_format.cpp abgedeckt und wird hier übersprungen.
+    // sa.verify ist in test_p8000_sa_format.cpp abgedeckt und wird hier uebersprungen.
     struct Fs { const char* groesse; const char* name; };
     for (const Fs& fs : {Fs{"13000", "md(0,0)"}, Fs{"7000", "md(0,16000)"}}) {
         tippeZeile(m, "ud(0,0)sa.mkfs");
@@ -208,7 +208,7 @@ void stufeNewInstall(WegaLauf& l) {
     laufe(m, 2'000'000);
 }
 
-/// Stufe 6: `init 2` — Prüfläufe, Datum/Uhrzeit, Mehrbenutzerbetrieb bis `login:` (Z. 1666–1724).
+/// Stufe 6: `init 2` — Prueflaeufe, Datum/Uhrzeit, Mehrbenutzerbetrieb bis `login:` (Z. 1666–1724).
 void stufeMehrbenutzer(WegaLauf& l) {
     P8000Machine& m = *l.m;
     tippeZeile(m, "init 2");
@@ -264,7 +264,7 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
     EXPECT_NE(b.find("wega     console"), std::string::npos) << b;  // who
     EXPECT_NE(b.find("pb.image"), std::string::npos) << b;          // ls /
     std::fprintf(stderr, "%s", b.c_str());
-    // Für den Kaltstart: Puffer zurückschreiben (wie `sync;sync` im Protokoll Z. 1851) und die Platte
+    // Fuer den Kaltstart: Puffer zurueckschreiben (wie `sync;sync` im Protokoll Z. 1851) und die Platte
     // als Zwischenstand ablegen — ohne sync findet fsck beim Start „BAD FREE LIST" und verlangt
     // „BOOT WEGA (NO SYNC!)".
     tippeZeile(m, "sync;sync");
@@ -275,7 +275,7 @@ TEST(P8000WegaInstall, InstalliertWegaAufDiePlatte) {
 }
 
 /// Kaltstart von der installierten Platte (Protokoll Z. 1852–1941): Netz ein, MON8 → RETURN → UDOS
-/// mit der Koppelsoftware → MON16 → NMI → Hardwaretest → AUTOBOOT lädt Block 0 (`pb.image` =
+/// mit der Koppelsoftware → MON16 → NMI → Hardwaretest → AUTOBOOT laedt Block 0 (`pb.image` =
 /// boot0.md, von `/etc/new.install` geschrieben) → `> boot` → `:` → `md(0,16000)wega` (boot0
 /// gibt sich beides selbst) → Mehrbenutzerbetrieb → `login:`.  Kein Save-State: nur Platte + Startdiskette aus p15_7_sync.
 TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
@@ -297,7 +297,7 @@ TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
     m.nmi();
     ASSERT_TRUE(laufeBisText(m, "MAXSEG=<0F>", 400'000'000)) << bild(m);
     // boot0.md aus Block 0 startet WEGA SELBST („> boot", „Boot", „: md(0,16000)wega" ohne
-    // Eingabe, Befund P22).  Früher wurde hier am `>` getippt — das traf nur zufällig das Fenster
+    // Eingabe, Befund P22).  Frueher wurde hier am `>` getippt — das traf nur zufaellig das Fenster
     // von Millisekunden, bevor boot0 sich die Eingabe selbst gibt.
     ASSERT_TRUE(langBisText(m, "WEGA Kernel -- Release 3.2", 2'000'000'000LL)) << bild(m);
     for (;;) {
@@ -319,7 +319,7 @@ TEST(P8000WegaInstall, KaltstartVonDerPlatteBisZurAnmeldung) {
 
 /// Zweitziel P15 — Mehrbenutzerbetrieb: im Zustand 2 startet `/etc/inittab` getty auch an tty4–7
 /// (SIO0/1 der 16-Bit-Karte, am `SerialHub`).  Ein Telnet-Client auf tty4 meldet sich als `wega`
-/// an, während die Konsole (Kern-Terminal, tty1) angemeldet ist; `who` zeigt beide.
+/// an, waehrend die Konsole (Kern-Terminal, tty1) angemeldet ist; `who` zeigt beide.
 TEST(P8000WegaInstall, ZweitesTerminalAnTty4UeberTelnet) {
     stumm();
     if (!stufeDa("p15_6_login")) GTEST_SKIP() << "kein Zwischenstand p15_6_login";
@@ -355,7 +355,7 @@ TEST(P8000WegaInstall, ZweitesTerminalAnTty4UeberTelnet) {
             const auto e = net::empfangen(s.fd(), buf, sizeof buf);
             if (e.status != net::IoStatus::Ok || e.n == 0) break;
             for (size_t j = 0; j < e.n; ++j) {
-                const uint8_t c = uint8_t(buf[j]) & 0x7F;   // getty: Software-Parität in Bit 7
+                const uint8_t c = uint8_t(buf[j]) & 0x7F;   // getty: Software-Paritaet in Bit 7
                 if (c) empfangen += char(c);
             }
         }
@@ -398,8 +398,8 @@ TEST(P8000WegaInstall, ZweitesTerminalAnTty4UeberTelnet) {
 /// Befund P15 (Gastverhalten, kein Emulatorfehler): UDOS sucht eine Datei ohne Laufwerksangabe
 /// auch auf Laufwerk 1 — SENSE DRIVE STATUS meldet dort READY, also liest es Spur 22 mit 256-B-
 /// Sektoren; eine WEGA-Diskette (9 × 512) hat keine ⇒ ST1 = 04 (No Data) ⇒ „File … Error C4"
-/// (SECTOR ADDRESS ERROR).  Mit leerem Laufwerk 1 (ST3 = 19H, nicht bereit) lädt dasselbe.
-/// Prüft nebenbei, dass ein Zwischenstand nach dem Laden wieder von der Startdiskette liest.
+/// (SECTOR ADDRESS ERROR).  Mit leerem Laufwerk 1 (ST3 = 19H, nicht bereit) laedt dasselbe.
+/// Prueft nebenbei, dass ein Zwischenstand nach dem Laden wieder von der Startdiskette liest.
 TEST(P8000WegaInstall, UdosSuchtAufLaufwerkEinsMitWegaDisketteC4) {
     stumm();
     if (!stufeDa("p15_1_mkfs") || !dateiDa(wegaDiskette("root1"))) GTEST_SKIP() << "kein Zwischenstand";
@@ -416,7 +416,7 @@ TEST(P8000WegaInstall, UdosSuchtAufLaufwerkEinsMitWegaDisketteC4) {
     }
 }
 
-/// Wächter P15: Eingabe an den laufenden WEGA-Kern (Zeichen über SIO0-B des 8-Bit-Teils →
+/// Waechter P15: Eingabe an den laufenden WEGA-Kern (Zeichen ueber SIO0-B des 8-Bit-Teils →
 /// Koppelsoftware → 16-PIO1 → `_kint` → `_rint`).  Rot war: `srlb rl4,#3` als B2C1 FFFD kannte
 /// der U8001-Kern nicht ⇒ `_kint` sprang nach `_xint`, kein Echo, keine Kommandos.
 TEST(P8000WegaInstall, KernNimmtKommandosAmTerminalAn) {
@@ -430,7 +430,7 @@ TEST(P8000WegaInstall, KernNimmtKommandosAmTerminalAn) {
     EXPECT_GE(warteAufFrage(*l.m, {"#2"}, 80'000'000), 0) << bild(*l.m);
 }
 
-/// Werkzeug (kein Wächter): Kommandos am `#`-Prompt des Zwischenstands p15_4_kern ausführen und
+/// Werkzeug (kein Waechter): Kommandos am `#`-Prompt des Zwischenstands p15_4_kern ausfuehren und
 /// das Bild drucken — `K1520_P8000_KOMMANDOS='date;ls /bin' … --gtest_also_run_disabled_tests
 /// --gtest_filter='*Kommandos*'`.
 TEST(P8000WegaInstall, DISABLED_Kommandos) {

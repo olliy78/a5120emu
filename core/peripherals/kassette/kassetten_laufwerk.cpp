@@ -20,7 +20,7 @@ namespace {
 // Zahlen: k5200.md §6 (K5200), hardware_3x.md/pk-3 (PK3), MC80.2x-Handbuch §3.1.8 (SK 1200); [?] = Annahme.
 const LaufwerksProfil kProfile[] = {
     {ProfilId::K5200_38, "K5200-38", 381.0, 1500.0, 12000.0, 0.300, 0.018, 4.0, 0.2, 3.81, 14.0, true},
-    // 19 cm/s: Zeiten außer Anlauf nicht angegeben [?] — Startzeit verdoppelt, übrige gleich.
+    // 19 cm/s: Zeiten ausser Anlauf nicht angegeben [?] — Startzeit verdoppelt, uebrige gleich.
     {ProfilId::K5200_19, "K5200-19", 190.5, 1500.0, 6000.0, 0.300, 0.036, 4.0, 0.2, 3.81, 14.0, false},
     // LW1200 = SK 1200 (MC80): 4,76 cm/s, 32 Bit/mm → 1523 Bit/s; Anlauf/Bremsweg/Suchlauf/Spalt nicht belegt [?].
     {ProfilId::LW1200, "LW1200", 47.6, 476.0, 1523.2, 0.500, 0.050, 2.0, 0.3, 3.81, 14.0, false},
@@ -29,8 +29,8 @@ const LaufwerksProfil kProfile[] = {
     {ProfilId::SK1200, "SK1200", 47.6, 476.0, 1523.2, 0.500, 0.050, 2.0, 0.3, 3.81, 14.0, false},
 };
 
-constexpr double kSchrittMax = 0.002;  ///< größte Teilschritt der Bandmechanik (s)
-constexpr double kFlushPause = 0.5;    ///< Schreibpause bis zum Zurückschreiben (s Maschinenzeit)
+constexpr double kSchrittMax = 0.002;  ///< groesste Teilschritt der Bandmechanik (s)
+constexpr double kFlushPause = 0.5;    ///< Schreibpause bis zum Zurueckschreiben (s Maschinenzeit)
 constexpr size_t kRxMax = 1u << 16;
 
 inline int64_t um(double x) { return static_cast<int64_t>(std::llround(x)); }
@@ -57,7 +57,7 @@ bool dateiLesen(const std::string& pfad, std::vector<uint8_t>& d, std::string& f
     return true;
 }
 
-/// Über eine Nebendatei schreiben, damit ein Abbruch die alte Datei nicht halbiert.
+/// Ueber eine Nebendatei schreiben, damit ein Abbruch die alte Datei nicht halbiert.
 bool dateiSchreibenAtomar(const std::string& pfad, const std::vector<uint8_t>& d, std::string& fehler) {
     const std::string tmp = pfad + ".tmp";
     {
@@ -177,7 +177,7 @@ bool KassettenLaufwerk::dateiBinden(const std::string& pfad, std::string& fehler
             return false;
         }
         m = std::make_shared<KassettenMedium>(std::move(*k));
-        // Schreibbar?  Anhängend öffnen ändert nichts am Inhalt.
+        // Schreibbar?  Anhaengend oeffnen aendert nichts am Inhalt.
         std::ofstream probe(pfad, std::ios::binary | std::ios::app);
         if (!probe) {
             fehler = "Kassettendatei nicht schreibbar: " + pfad;
@@ -229,11 +229,11 @@ void KassettenLaufwerk::pauseUndFlush(double dt) {
         return;
     }
     if (rev != rev_gesehen_) {
-        rev_gesehen_ = rev;  // noch geändert: Pause beginnt von vorn
+        rev_gesehen_ = rev;  // noch geaendert: Pause beginnt von vorn
         pause_s_ = 0;
     } else {
         pause_s_ += dt;
-        // Ein Block, der gerade geschrieben wird, ist noch nicht im Medium; erst danach zählt die Pause.
+        // Ein Block, der gerade geschrieben wird, ist noch nicht im Medium; erst danach zaehlt die Pause.
         if (pause_s_ >= kFlushPause && !wr_.aktiv) flush_faellig_ = true;
     }
 }
@@ -313,7 +313,7 @@ double KassettenLaufwerk::rampe(double v, double ziel) const {
 }
 
 /// Geschwindigkeit in Rampen auf @p ziel bringen und die Strecke aufsummieren.  Ein Vorzeichenwechsel
-/// läuft über den Stillstand.
+/// laeuft ueber den Stillstand.
 void KassettenLaufwerk::integriere(double ziel, double dt) {
     double rest = dt;
     int schutz = 0;
@@ -405,7 +405,7 @@ bool KassettenLaufwerk::schreibeByte(uint8_t b) {
     const int64_t pos = um(pos_um_);
     if (wr_.aktiv) {
         const int64_t ende = wr_.start + medium_->laengeVonBytes(wr_.bytes.size());
-        // Länger als zwei Bytelängen kein Byte gekommen: das war der Block, dies ist ein neuer.
+        // Laenger als zwei Bytelaengen kein Byte gekommen: das war der Block, dies ist ein neuer.
         if (pos - ende > 2 * medium_->laengeVonBytes(1) || wr_.bytes.size() >= kMaxBlockBytes) schreibblockAbschliessen();
     }
     if (!wr_.aktiv) {
@@ -422,7 +422,7 @@ void KassettenLaufwerk::datenSchritt(int64_t p0, int64_t p1) {
     const Seite s = medium_->aktiveSeite();
     const double va = profil_->v_arbeit_mm_s;
 
-    // ── Schreiben: der Kopf löscht, was er überfährt; der Block wird beim Abschluss abgelegt ──
+    // ── Schreiben: der Kopf loescht, was er ueberfaehrt; der Block wird beim Abschluss abgelegt ──
     if (schreibeErlaubt() && p1 > p0) medium_->loesche(s, p0, p1);
     if (wr_.aktiv) {
         const int64_t ende = wr_.start + medium_->laengeVonBytes(wr_.bytes.size());
@@ -443,7 +443,7 @@ void KassettenLaufwerk::datenSchritt(int64_t p0, int64_t p1) {
     const bool lese_ok = angewaehlt_ && wid_ && !auf_ && !hge_ && !ums_ && bereit() && v_mm_s_ != 0.0 &&
                          std::fabs(v_mm_s_) <= va * 1.05;
     if (!lese_ok) {
-        // Bei Stillstand oder anderer Betriebsart beginnt das Lesen später von vorn.
+        // Bei Stillstand oder anderer Betriebsart beginnt das Lesen spaeter von vorn.
         if (rd_.aktiv || rd_.grenze_vor != INT64_MIN || rd_.grenze_rueck != INT64_MAX) leseNeu();
         return;
     }
@@ -453,17 +453,17 @@ void KassettenLaufwerk::datenSchritt(int64_t p0, int64_t p1) {
 
     for (int umlauf = 0; umlauf < 4096; ++umlauf) {
         if (rd_.aktiv) {
-            // Bytes, deren Bandstück den Kopf schon passiert hat.
+            // Bytes, deren Bandstueck den Kopf schon passiert hat.
             while (rd_.n < rd_.folge.size()) {
                 const int64_t bis = medium_->laengeVonBytes(rd_.n + 1);
                 const bool fertig = richtung > 0 ? (rd_.anker + bis <= p1) : (rd_.anker - bis >= p1);
                 if (!fertig) break;
                 rxPush(rd_.folge[rd_.n++]);
             }
-            if (rd_.n < rd_.folge.size()) return;  // Block reicht über den Schritt hinaus
+            if (rd_.n < rd_.folge.size()) return;  // Block reicht ueber den Schritt hinaus
             rd_.aktiv = false;
         }
-        // Nächsten Block suchen, dessen Anfang (rückwärts: Ende) der Kopf in diesem Schritt überfährt.
+        // Naechsten Block suchen, dessen Anfang (rueckwaerts: Ende) der Kopf in diesem Schritt ueberfaehrt.
         if (richtung > 0) {
             const int64_t ab = std::max(p0, rd_.grenze_vor);
             const size_t i = medium_->ersterBlockAb(s, ab);
@@ -484,7 +484,7 @@ void KassettenLaufwerk::datenSchritt(int64_t p0, int64_t p1) {
             rd_.richtung = -1;
             rd_.anker = medium_->blockEnde(s, static_cast<size_t>(i));
             rd_.folge.reserve(b.size());
-            // Rückwärts kommt jedes Byte invertiert und mit umgekehrter Bitfolge, das letzte zuerst (treiber.md §2.4).
+            // Rueckwaerts kommt jedes Byte invertiert und mit umgekehrter Bitfolge, das letzte zuerst (treiber.md §2.4).
             for (size_t k = b.size(); k-- > 0;) rd_.folge.push_back(static_cast<uint8_t>(~bitrev(b[k])));
             rd_.grenze_rueck = rd_.anker - 1;
         }

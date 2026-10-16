@@ -2,12 +2,12 @@
  * @file test_disktool_cpm_roundtrip.cpp
  * @brief Kreuzprobe: das DiskTool schreibt — das ECHTE CP/A liest.
  *
- * Alle Unit-Tests des Dateisystems prüfen unsere Lesart gegen unsere eigene Lesart.
- * Diese Ebene prüft sie gegen das Betriebssystem, für das das Format gemacht wurde:
+ * Alle Unit-Tests des Dateisystems pruefen unsere Lesart gegen unsere eigene Lesart.
+ * Diese Ebene prueft sie gegen das Betriebssystem, fuer das das Format gemacht wurde:
  * eine Datei wird mit @ref CpmFileSystem auf eine echte CP/A-Bootdiskette geschrieben,
  * danach bootet der Emulator diese Diskette und `TYPE` gibt den Inhalt aus.  Geht dabei
  * irgendetwas an Blockzuordnung, Extent-Nummer, Satzzahl oder Sektorversatz daneben,
- * fällt es hier auf — und nur hier.
+ * faellt es hier auf — und nur hier.
  *
  * Die Gegenrichtung (CP/A schreibt, DiskTool liest) steht als zweiter Fall darunter.
  *
@@ -62,7 +62,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// @brief Diskette öffnen und ein CP/M-Volume darüber aufsetzen (Lebensdauer gebündelt).
+/// @brief Diskette oeffnen und ein CP/M-Volume darueber aufsetzen (Lebensdauer gebuendelt).
 struct Volume {
     std::unique_ptr<DiskImage>     disk;
     std::unique_ptr<SectorSpace>   space;

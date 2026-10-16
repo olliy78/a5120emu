@@ -1,4 +1,4 @@
-// Unit-Tests für den MACRO-80-.prn-Listing-Parser (tools/prn_listing.h).
+// Unit-Tests fuer den MACRO-80-.prn-Listing-Parser (tools/prn_listing.h).
 //
 // Deckt die Trennung "emittierte Code-/Daten-Zeile" vs. "equ/aset/leer" ab sowie
 // die Quellfeld-Erkennung (mit Label / label-los hinter Tab) und die db/DB-Falle.
@@ -14,7 +14,7 @@ using prnlst::parseLine;
 
 namespace {
 
-// Hilfsfunktion: parsen und Erfolg + Werte zurückgeben.
+// Hilfsfunktion: parsen und Erfolg + Werte zurueckgeben.
 struct R { bool ok; uint16_t addr; std::string src; };
 R run(const std::string& line){
     R r{}; r.ok = parseLine(line, r.addr, r.src); return r;
@@ -64,10 +64,10 @@ TEST(PrnListing, DataLineWithLabelAndQuotes){
     EXPECT_EQ(r.src, "BIOS33: db 'CP' ;SCP-Kennzeichen ist 'BW '");
 }
 
-// --- Zeilen, die KEINEN Loc-Counter tragen (müssen abgelehnt werden) ---------
+// --- Zeilen, die KEINEN Loc-Counter tragen (muessen abgelehnt werden) ---------
 
 TEST(PrnListing, EquLineRejected){
-    // Führende 4-Hex ist der equ-WERT, kein Loc-Counter → kein Objektbyte folgt.
+    // Fuehrende 4-Hex ist der equ-WERT, kein Loc-Counter → kein Objektbyte folgt.
     EXPECT_FALSE(run("  0800                          ccpln\tequ\t0800h").ok);
     EXPECT_FALSE(run("  0040                          ramkb\tequ\t64\t;RAM-Groesse").ok);
 }
@@ -87,15 +87,15 @@ TEST(PrnListing, CommentAndBlankLinesRejected){
     EXPECT_FALSE(run("   ").ok);
 }
 
-// --- Listing-Container: Laden aus einem String-Stream-Äquivalent --------------
+// --- Listing-Container: Laden aus einem String-Stream-Aequivalent --------------
 
 TEST(PrnListing, ListingFirstWinsPerAddress){
     prnlst::Listing L;
     uint16_t a; std::string s;
     ASSERT_TRUE(parseLine("  D200    C3 E890               BIOS00: JP\tkaltst", a, s));
     L.by_addr[a] = s;
-    // zweite Quelle für dieselbe Adresse darf die erste nicht überschreiben
-    // (das macht Listing::load via find()-Guard; hier direkt geprüft):
+    // zweite Quelle fuer dieselbe Adresse darf die erste nicht ueberschreiben
+    // (das macht Listing::load via find()-Guard; hier direkt geprueft):
     EXPECT_NE(L.find(0xD200), nullptr);
     EXPECT_EQ(*L.find(0xD200), "BIOS00: JP kaltst");
     EXPECT_EQ(L.find(0x1234), nullptr);
@@ -132,11 +132,11 @@ TEST(PrnListing, SplitSpecPathAndOffset){
     EXPECT_TRUE(prnlst::splitSpec("bios.prn@-0x100", path, off));
     EXPECT_EQ(path, "bios.prn"); EXPECT_EQ(off, -0x100);
 
-    // ungültiger Offset → false
+    // ungueltiger Offset → false
     EXPECT_FALSE(prnlst::splitSpec("bios.prn@xyz", path, off));
 }
 
-// --- labelOf: führendes Label aus der Quellzeile -----------------------------
+// --- labelOf: fuehrendes Label aus der Quellzeile -----------------------------
 
 TEST(PrnListing, LabelOfExtractsLeadingLabel){
     EXPECT_EQ(prnlst::labelOf("BIOS27: JP read ;oA Resultat"), "BIOS27");
@@ -169,7 +169,7 @@ TEST(PrnListing, LoadAppliesOffsetToKeys){
     std::filesystem::remove(tmp, ec);
 }
 
-// --- Objektbytes (für den Versatz-Abgleich `@auto`) --------------------------
+// --- Objektbytes (fuer den Versatz-Abgleich `@auto`) --------------------------
 
 TEST(PrnListing, ExtractsObjectBytes){
     uint16_t a; std::string src; std::vector<uint8_t> b;
@@ -200,7 +200,7 @@ TEST(PrnListing, LoadCollectsBytesUnderRuntimeAddresses){
     std::filesystem::remove(p);
 }
 
-// --- Quellbereich, Byteabgleich, nächstes Label (§8a AP-E4d, K8915) ----------
+// --- Quellbereich, Byteabgleich, naechstes Label (§8a AP-E4d, K8915) ----------
 
 TEST(PrnListing, SplitSpecRangeKennt_Versatz_Bereich_UndBeides){
     std::string p; long off; int lo, hi;
@@ -231,7 +231,7 @@ TEST(PrnListing, LoadNurQuellbereichUnterVersatz){
     prnlst::Listing l;
     ASSERT_EQ(l.load(p, 0xF000, false, 0x00D0, 0x03FF), 1);
     EXPECT_NE(l.find(0xF0D0), nullptr);
-    EXPECT_EQ(l.find(0xF000), nullptr) << "0000H liegt außerhalb des Quellbereichs";
+    EXPECT_EQ(l.find(0xF000), nullptr) << "0000H liegt ausserhalb des Quellbereichs";
     EXPECT_EQ(l.find(0xF400), nullptr);
     std::filesystem::remove(p);
 }
@@ -243,7 +243,7 @@ TEST(PrnListing, MatchesVergleichtDieObjektbytesDerZeile){
         << "0103  00            \tNOP\n"; }
     prnlst::Listing ohne;  ASSERT_EQ(ohne.load(p), 2);
     EXPECT_TRUE(ohne.matches(0x0100, [](uint16_t){ return uint8_t(0xFF); }))
-        << "ohne Objektbytes gibt es nichts zu prüfen";
+        << "ohne Objektbytes gibt es nichts zu pruefen";
 
     prnlst::Listing l;     ASSERT_EQ(l.load(p, 0, true), 2);
     uint8_t mem[0x200] = {};
@@ -267,7 +267,7 @@ TEST(PrnListing, LabelNearLiefertNameUndAbstand){
     EXPECT_EQ(l.labelNear(0xE960), "ISR");
     EXPECT_EQ(l.labelNear(0xE963), "ISR+3");
     EXPECT_EQ(l.labelNear(0xE95F), "");
-    EXPECT_EQ(l.labelNear(0xE963, 2), "") << "außer Reichweite";
+    EXPECT_EQ(l.labelNear(0xE963, 2), "") << "ausser Reichweite";
     std::filesystem::remove(p);
 }
 
@@ -280,6 +280,6 @@ TEST(PrnListing, LabelNearKenntAllein_stehendeLabelzeilen){
         << "0560  E6 02         \tAND 02H\n"; }
     prnlst::Listing l; ASSERT_EQ(l.load(p), 2);
     EXPECT_EQ(l.labelNear(0x0560), "L055E+2");
-    EXPECT_EQ(prnlst::labelOf(*l.find(0x055E)), "") << "by_addr bleibt unverändert";
+    EXPECT_EQ(prnlst::labelOf(*l.find(0x055E)), "") << "by_addr bleibt unveraendert";
     std::filesystem::remove(p);
 }

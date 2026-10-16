@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-# --paths: aufgelöste Pfade ausgeben und beenden.  Steht VOR den Qt- und
+# --paths: aufgeloeste Pfade ausgeben und beenden.  Steht VOR den Qt- und
 # Bindungs-Importen, damit die Auskunft auch dann kommt, wenn genau das fehlt,
 # wonach gefragt wird (DiskTool-Bibliothek, PySide6) — wie in app/main.py.
 if "--paths" in sys.argv[1:]:
@@ -32,11 +32,11 @@ if "--paths" in sys.argv[1:]:
     print(paths.describe())
     sys.exit(0)
 
-# --physical: Kommandozeile für ein ECHTES Laufwerk.  Steht hier, weil das
+# --physical: Kommandozeile fuer ein ECHTES Laufwerk.  Steht hier, weil das
 # C++-Werkzeug (`k1520disktool-cli`) den Adapter nicht ansprechen kann — der Kern
 # kennt Greaseweazle nicht, der Arbeitsfaden ist Python
 # (doc/design/14_physische_diskette.md §12.3).  Wie `--paths` VOR den Qt-Importen:
-# eine Kommandozeile darf keine Oberfläche brauchen.
+# eine Kommandozeile darf keine Oberflaeche brauchen.
 if "--physical" in sys.argv[1:]:
     from app.disktool.physical_cli import main as physical_main
     sys.exit(physical_main(sys.argv[1:]))
@@ -50,12 +50,12 @@ from app.disktool.ui.main_window import MainWindow
 def main() -> int:
     app = QApplication(sys.argv)
     # Organisation UND Name: erst damit legt QSettings eine Datei an — und nur
-    # dann merkt sich das Fenster Größe, Leisten und zuletzt geöffnete Abbilder
-    # (MainWindow._einstellungen).  Die Testläufe benennen sich bewusst nicht.
+    # dann merkt sich das Fenster Groesse, Leisten und zuletzt geoeffnete Abbilder
+    # (MainWindow._einstellungen).  Die Testlaeufe benennen sich bewusst nicht.
     app.setOrganizationName("k1520emu")
     app.setApplicationName("k1520DiskTool")
 
-    # Ctrl+C im Terminal: Qts Eventloop kehrt sonst nie nach Python zurück.
+    # Ctrl+C im Terminal: Qts Eventloop kehrt sonst nie nach Python zurueck.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     ticker = QTimer()
     ticker.start(200)
@@ -78,7 +78,7 @@ def main() -> int:
     try:
         fenster = MainWindow(abbild, ordner)
     except FileNotFoundError as e:
-        # Fehlende libk1520disk.so trägt eine erklärende, mehrzeilige Meldung.
+        # Fehlende libk1520disk.so traegt eine erklaerende, mehrzeilige Meldung.
         print(f"k1520DiskTool kann nicht starten:\n{e}", file=sys.stderr)
         return 1
 

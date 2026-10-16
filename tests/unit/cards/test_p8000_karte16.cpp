@@ -1,7 +1,7 @@
 /**
  * @file test_p8000_karte16.cpp
  * @brief 16-Bit-Rechnerkarte des P8000 ohne Kopplungsgegenseite und ohne WDC: E/A-Dekoder,
- *        Reset/SCR, RETI, Trap-Register, Single-Step-Zähler, NMI-Identifier, Parität, Wartetakte,
+ *        Reset/SCR, RETI, Trap-Register, Single-Step-Zaehler, NMI-Identifier, Paritaet, Wartetakte,
  *        Save-State und das Rig mit MON16 3.1 (doc/p8000/schaltplan_16bit.md, doc/design/25_p8000.md
  *        §10.11 AP P10b/P10c).
  */
@@ -65,11 +65,11 @@ struct P8000Karte16_ : ::testing::Test {
         k.schritt();
         ASSERT_EQ(k.cpu().lastException().kind, Z8kException::Reset);
     }
-    /// Code ab SRAM-Offset (Segment 0, 4000H + @p off), Wörter big-endian.
+    /// Code ab SRAM-Offset (Segment 0, 4000H + @p off), Woerter big-endian.
     void code(uint16_t off, std::initializer_list<uint16_t> w) {
         for (uint16_t x : w) { k.sram(off) = uint8_t(x >> 8); k.sram(uint16_t(off + 1)) = uint8_t(x); off += 2; }
     }
-    /// PSA im SRAM (4400H): Eintrag @p e (Byteoffset Z8002-Zählung) → FCW, Segment 0, Offset.
+    /// PSA im SRAM (4400H): Eintrag @p e (Byteoffset Z8002-Zaehlung) → FCW, Segment 0, Offset.
     void psa(uint16_t e, uint16_t fcw, uint16_t pc) {
         const uint16_t b = uint16_t(0x400 + e * 2);
         k.sram(uint16_t(b + 2)) = uint8_t(fcw >> 8); k.sram(uint16_t(b + 3)) = uint8_t(fcw);
@@ -136,7 +136,7 @@ TEST_F(P8000Karte16_, GeradeUndFremdeToreSindOffen_KeineSpiegel) {
         out(uint16_t(port), 0x00);
     }
     k.serialize(nachher);
-    EXPECT_EQ(vorher, nachher) << "ein unbelegtes Tor hat Zustand verändert";
+    EXPECT_EQ(vorher, nachher) << "ein unbelegtes Tor hat Zustand veraendert";
 }
 
 TEST_F(P8000Karte16_, PeripherieLiegtAmLowByte_AD8bis15Offen) {
@@ -169,7 +169,7 @@ TEST_F(P8000Karte16_, Mreset_SetztScrAufNull_LiestBit4bis7Eins) {
     EXPECT_EQ(in(L::P_SCR), 0xF0);
     out(L::P_SCR, 0x05);
     k.setResetEingang(false);
-    EXPECT_EQ(in(L::P_SCR), 0xF5) << "nur die Flanke setzt zurück";
+    EXPECT_EQ(in(L::P_SCR), 0xF5) << "nur die Flanke setzt zurueck";
 }
 
 TEST_F(P8000Karte16_, Index4_PiosUeberlebenResetDurchDieAchtBitSeite_TresetSetztSieZurueck) {
@@ -179,7 +179,7 @@ TEST_F(P8000Karte16_, Index4_PiosUeberlebenResetDurchDieAchtBitSeite_TresetSetzt
     k.setResetEingang(false);
     EXPECT_EQ(k.pio0().portARead(), 0x5A);
     out(L::P_SOFTRESET, 0);
-    EXPECT_EQ(k.pio0().portARead(), 0x5A) << "SOFTRESET hängt nicht an PIORESET−";
+    EXPECT_EQ(k.pio0().portARead(), 0x5A) << "SOFTRESET haengt nicht an PIORESET−";
     k.setTresetEingang(true);
     EXPECT_NE(k.pio0().portARead(), 0x5A);
 }
@@ -300,7 +300,7 @@ TEST_F(P8000Karte16_, RetiNurAlsFolgeEd4dAnFFE1) {
 }
 
 TEST_F(P8000Karte16_, SioBefehl38AnKanalA_BeendetDieBedienungVonKanalB) {
-    // MON16 PTY_INT/SIO_ISR: Kanal B in Bedienung, RETI über WR0 = 38H an Kanal A.
+    // MON16 PTY_INT/SIO_ISR: Kanal B in Bedienung, RETI ueber WR0 = 38H an Kanal A.
     out(0xFF87, 0x02); out(0xFF87, 0x10);   // WR2 Vektor 10H (Kanal B)
     out(0xFF87, 0x01); out(0xFF87, 0x06);   // WR1: Tx-Int, Status beeinflusst Vektor
     out(0xFF87, 0x05); out(0xFF87, 0x68);
@@ -321,20 +321,20 @@ TEST_F(P8000Karte16_, SioBefehl38AnKanalA_BeendetDieBedienungVonKanalB) {
     EXPECT_EQ(k.busLesen(ack) & 0xFF, 0x30) << "SIO0 gibt die Kette wieder frei";
 }
 
-// ─── Single-Step-Zähler CTC0 K3, Systemuhr CTC1 K2 → K3 ──────────────────────
+// ─── Single-Step-Zaehler CTC0 K3, Systemuhr CTC1 K2 → K3 ──────────────────────
 
 TEST_F(P8000Karte16_, Ctc0K3ZaehltJedenStapelzyklus_UndNurDiese) {
-    out(0xFFAF, 0x47); out(0xFFAF, 10);   // Zähler, TC 10
+    out(0xFFAF, 0x47); out(0xFFAF, 10);   // Zaehler, TC 10
     for (int i = 0; i < 3; ++i) lies(Z8kStatus::MemStack, 0, 0x4100);
-    schreib(0, 0x4100, 0);                // Datenzyklus zählt nicht
-    k.busSchreiben(mem(Z8kStatus::MemStack, 0, 0x4100, false), 0);   // Stapel schreiben zählt
+    schreib(0, 0x4100, 0);                // Datenzyklus zaehlt nicht
+    k.busSchreiben(mem(Z8kStatus::MemStack, 0, 0x4100, false), 0);   // Stapel schreiben zaehlt
     lies(Z8kStatus::MemInstrFirst, 0, 0x0000);
     lies(Z8kStatus::MemData, 0, 0x4100);
     EXPECT_EQ(k.ctc0().getCount(3), 6);
 }
 
 TEST_F(P8000Karte16_, Ctc0K3_ZaehltDieStapelzyklenEinesIret) {
-    // MON16 p.brk.s: K3 im Zählermodus, IRET liest 4 Wörter vom Stapel (Z8001 segmentiert).
+    // MON16 p.brk.s: K3 im Zaehlermodus, IRET liest 4 Woerter vom Stapel (Z8001 segmentiert).
     cpuBereit();
     code(0x000, {0x7B00});                // IRET
     k.cpu().fcw = 0xC000;
@@ -347,16 +347,16 @@ TEST_F(P8000Karte16_, Ctc0K3_ZaehltDieStapelzyklenEinesIret) {
 }
 
 TEST_F(P8000Karte16_, Systemuhr_Ctc1K2TaktetK3) {
-    out(0xFFB5, 0x47); out(0xFFB5, 2);    // K2: Zähler am BUS BAUD CLK, TC 2
-    out(0xFFB7, 0x47); out(0xFFB7, 100);  // K3: Zähler an ZC/TO2
+    out(0xFFB5, 0x47); out(0xFFB5, 2);    // K2: Zaehler am BUS BAUD CLK, TC 2
+    out(0xFFB7, 0x47); out(0xFFB7, 100);  // K3: Zaehler an ZC/TO2
     freigeben();
-    k.cpu().setResetLine(true);           // CPU aus dem Spiel, nur die Zeit läuft
+    k.cpu().setResetLine(true);           // CPU aus dem Spiel, nur die Zeit laeuft
     for (int i = 0; i < 3255; ++i) k.peripherieBus().markIntDirty(), k.ctc1().clockTick(1), k.ctc1().clockTick(0);
     // 3255 Takte ≈ 1000 Baudimpulse ⇒ ~500 ZC/TO2 ⇒ K3 mehrfach durchgelaufen
-    EXPECT_GT(k.ctc1().teilerTakteQ16(3), 0u) << "K3 kennt seine Eingangsperiode über die Kaskade";
+    EXPECT_GT(k.ctc1().teilerTakteQ16(3), 0u) << "K3 kennt seine Eingangsperiode ueber die Kaskade";
 }
 
-// ─── NMI, Identifier, Parität ────────────────────────────────────────────────
+// ─── NMI, Identifier, Paritaet ────────────────────────────────────────────────
 
 TEST_F(P8000Karte16_, NmiIdentifier_Bit0IstDerTastenpegel_Rest0_OberesByteOffen) {
     Z8kBusCycle ack;
@@ -401,7 +401,7 @@ TEST_F(P8000Karte16_, ParitaetsFehler_NurBeiScrBit3_HaeltBisScrBit3Null_LoestNmi
     EXPECT_TRUE(k.paritaetsFF()) << "gespeichert";
     out(L::P_SCR, 0x00);
     EXPECT_FALSE(k.paritaetsFF());
-    EXPECT_FALSE(k.dram().ledFehler()) << "CL_PAR− löscht auch die LED der Karte";
+    EXPECT_FALSE(k.dram().ledFehler()) << "CL_PAR− loescht auch die LED der Karte";
     EXPECT_EQ(k.busLesen(ack), 0xFFF0);
 }
 
@@ -409,7 +409,7 @@ TEST_F(P8000Karte16_, ParitaetsFehler_NurBeiScrBit3_HaeltBisScrBit3Null_LoestNmi
 
 TEST_F(P8000Karte16_, Segmenttrap_SchreibenAufNurLeseSegment_TrplIf1lUndQuittung) {
     cpuBereit();
-    // Code-MMU (System-Mode wählt sie): Segment 5 nur lesbar, Basis 010000H.
+    // Code-MMU (System-Mode waehlt sie): Segment 5 nur lesbar, Basis 010000H.
     sout(CODE_MMU, Z8010::CMD_MR, 0xD0);   // ID 0
     sout(0x00FA, Z8010::CMD_MR, 0xD1);     // Data ID 1
     sout(0x00F6, Z8010::CMD_MR, 0xD2);     // Stack ID 2
@@ -431,7 +431,7 @@ TEST_F(P8000Karte16_, Segmenttrap_SchreibenAufNurLeseSegment_TrplIf1lUndQuittung
     k.schritt();
     EXPECT_EQ(k.cpu().lastException().kind, Z8kException::SegmentTrap);
     EXPECT_EQ((k.cpu().lastException().id >> 8) & 7, 1) << "MON16 SEGMENT_TRAP: 1 = Code-MMU";
-    EXPECT_FALSE(k.cpu().segtLine()) << "Quittung nimmt /SEGT zurück";
+    EXPECT_FALSE(k.cpu().segtLine()) << "Quittung nimmt /SEGT zurueck";
     EXPECT_EQ(k.cpu().pc, 0x4100);
 }
 
@@ -490,9 +490,9 @@ TEST_F(P8000Karte16_, Rundreise_IstBitgleich_UndStelltSegtWieder) {
 
 // ─── Rig mit MON16 3.1 (P10c) ────────────────────────────────────────────────
 //
-// Ohne 8-Bit-Seite: PIO0-B5 („Daten da", DD-16) bleibt über den Pull-up 1, der Koppeltest in
-// ENTRY_ läuft in die Wartezeit ⇒ PTYPORT = 0 ⇒ Konsole = SIO0-B des 16-Bit-Teils = tty5
-// (MON16 p.init.s KP_INAKTIV).  Mit der Kopplung (P11) ginge sie über PIO0/PIO1 an tty1.
+// Ohne 8-Bit-Seite: PIO0-B5 („Daten da", DD-16) bleibt ueber den Pull-up 1, der Koppeltest in
+// ENTRY_ laeuft in die Wartezeit ⇒ PTYPORT = 0 ⇒ Konsole = SIO0-B des 16-Bit-Teils = tty5
+// (MON16 p.init.s KP_INAKTIV).  Mit der Kopplung (P11) ginge sie ueber PIO0/PIO1 an tty1.
 
 TEST_F(P8000Karte16_, Mon16_3_1_MeldetSichOhneKopplungAufTty5) {
     freigeben();
@@ -509,7 +509,7 @@ TEST_F(P8000Karte16_, Mon16_3_1_HardwaretestNachNmi_MaxSeg0F_NurWdcFehlt) {
     ASSERT_TRUE(laufeBisText(1, "* ", 50'000'000)) << "Prompt nach Testfehler (WDC fehlt)";
     EXPECT_NE(tty[1].find("P8000 Hardwaretest U8001 - Version 3.1"), std::string::npos);
     // Ohne WDC (P13) melden 52/53/54 Fehler C1 (keine Antwort); alles andere ist in Ordnung —
-    // EPROM-Prüfsummen, SRAM, PIO2, CTC, SIO, Speicher 16 Segmente, MMU 80–97.
+    // EPROM-Pruefsummen, SRAM, PIO2, CTC, SIO, Speicher 16 Segmente, MMU 80–97.
     const std::string& t = tty[1];
     for (size_t p = t.find("ERROR "); p != std::string::npos; p = t.find("ERROR ", p + 1)) {
         const std::string nr = t.substr(p + 6, 2);
@@ -520,8 +520,8 @@ TEST_F(P8000Karte16_, Mon16_3_1_HardwaretestNachNmi_MaxSeg0F_NurWdcFehlt) {
 }
 
 TEST(P8000Karte16, Mon16_3_0_LaeuftDenHardwaretestEbenso) {
-    // MON16 3.0 (Fassung des Anwendergeräts).  3.3 gibt die Konsole fest auf SIO1-A (tty6) aus
-    // und ist hier nicht geprüft (Entwurf §9 P10c).
+    // MON16 3.0 (Fassung des Anwendergeraets).  3.3 gibt die Konsole fest auf SIO1-A (tty6) aus
+    // und ist hier nicht geprueft (Entwurf §9 P10c).
     P8000Karte16::Config c;
     c.mon16 = P8000Karte16::Config::Mon16::V3_0;
     P8000Karte16 k(c);
@@ -531,7 +531,7 @@ TEST(P8000Karte16, Mon16_3_0_LaeuftDenHardwaretestEbenso) {
         const uint64_t ende = k.zeit() + max;
         while (k.zeit() < ende) {
             k.schritt();
-            // ALLE Kanäle abholen: der SIO-Test 61 wartet auf „Sendepuffer leer" (merkposten 2)
+            // ALLE Kanaele abholen: der SIO-Test 61 wartet auf „Sendepuffer leer" (merkposten 2)
             for (int i = 0; i < 4; ++i)
                 while (k.anschluss(i).senderHatZeichen()) {
                     const char ch = char(k.anschluss(i).senderNimm());

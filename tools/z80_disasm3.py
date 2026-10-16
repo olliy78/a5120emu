@@ -1166,7 +1166,7 @@ class FormatDisassembler:
         return self.generate_output()
 
 
-# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf ueberall liegen.
 ROOT = Path(__file__).resolve().parents[1]
 
 

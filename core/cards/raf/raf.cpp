@@ -92,7 +92,7 @@ bool RAF::ladeInhalt(const std::string& pfad) {
     std::ifstream f(pfad, std::ios::binary);
     if (!f) return false;
     std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    if (d.size() != mem_.size()) return false;                // Größe muss exakt passen
+    if (d.size() != mem_.size()) return false;                // Groesse muss exakt passen
     mem_ = std::move(d);
     return true;
 }

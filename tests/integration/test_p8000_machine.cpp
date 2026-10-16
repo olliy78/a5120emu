@@ -2,7 +2,7 @@
  * @file test_p8000_machine.cpp
  * @brief P8000-Maschine, 8-Bit-Seite (doc/design/25_p8000.md §10.2/§10.11 AP P7a): Laufschleife
  *        mit MON8 3.1 bis zum Monitor-Prompt auf dem Kern-Terminal, Reset-/Netz-Ein-Weg (RESI),
- *        NMI-Taste, DMA hält die CPU, keine Zusatzkarten.
+ *        NMI-Taste, DMA haelt die CPU, keine Zusatzkarten.
  */
 
 #include <gtest/gtest.h>
@@ -92,7 +92,7 @@ TEST(P8000Machine, DmaHaeltDieCpu_UrladerLiegtNachReturnBei0C00) {
     // RETURN auf „Press RETURN" ⇒ Prompt '>'; RETURN am Prompt ⇒ BOOT (MON8 RASC).
     tippe(m, "\r");
     ASSERT_TRUE(laufeBisPrompt(m, ">", 4'000'000)) << bild(m);
-    // Während eines DMA-Bytes steht die CPU: der PC ändert sich nicht.
+    // Waehrend eines DMA-Bytes steht die CPU: der PC aendert sich nicht.
     tippe(m, "\r");
     uint64_t dma_schritte = 0, cpu_lief_mit = 0;
     const uint64_t ende = m.totalCycles() + 20'000'000;
@@ -111,8 +111,8 @@ TEST(P8000Machine, DmaHaeltDieCpu_UrladerLiegtNachReturnBei0C00) {
     EXPECT_EQ(kenn, "P8000SYS");
 }
 
-// P16: Tasten ohne Qt-Gegenstück gehen über 0x02000000 + TerminalTaste (SI/SO, Caps lock) und die
-// Pfeiltasten über ihre Qt-Kodes — die Oberfläche hat keinen anderen Weg an die Terminaltasten.
+// P16: Tasten ohne Qt-Gegenstueck gehen ueber 0x02000000 + TerminalTaste (SI/SO, Caps lock) und die
+// Pfeiltasten ueber ihre Qt-Kodes — die Oberflaeche hat keinen anderen Weg an die Terminaltasten.
 TEST(P8000Machine, TerminalTastenUeberPrivateKodesUndPfeiltasten) {
     stumm();
     P8000Machine m;

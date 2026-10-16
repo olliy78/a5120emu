@@ -146,12 +146,12 @@ void I8275::frame()
     for (auto& c : cells_) c = Cell{};
     if (!ve_) return;
 
-    // Feldattribut: gilt bis zum nächsten, am Bildanfang zurückgesetzt
+    // Feldattribut: gilt bis zum naechsten, am Bildanfang zurueckgesetzt
     bool fRvv = false, fLten = false, fG0 = false, fG1 = false, fBlink = false, fHlgt = false;
     bool bildEnde = false, bildStop = false;
 
     for (int row = 0; row < rows_; ++row) {
-        if (bildStop) break;                       // F3: kein DMA mehr bis zum nächsten Bild
+        if (bildStop) break;                       // F3: kein DMA mehr bis zum naechsten Bild
         Cell* z = &cells_[static_cast<size_t>(row) * cols_];
         int pos = 0, geholt = 0;
         const int kappe = 2 * cols_;               // Schutz gegen Endlosfolgen von Attributen (transparent)

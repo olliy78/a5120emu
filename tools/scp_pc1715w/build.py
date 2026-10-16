@@ -9,7 +9,7 @@ Installer TPINSTD (aus der SCP-3.0-Programmdiskette), gemeinsame Programme (tool
 und SERTEST.  Alle Programme wurden am PC-1715W-Emulator unter SCP 3.0 gestartet (Nachweis: README.md).
 
   python3 tools/scp_pc1715w/build.py --tool build/k1520disktool            # bauen
-  python3 tools/scp_pc1715w/build.py --tool build/k1520disktool --check    # Wächter cli_scp_pc1715w
+  python3 tools/scp_pc1715w/build.py --tool build/k1520disktool --check    # Waechter cli_scp_pc1715w
 """
 import os
 import sys

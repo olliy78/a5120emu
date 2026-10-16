@@ -1,6 +1,6 @@
 /**
  * @file k8025.cpp
- * @brief K8025 ASS – Anschlußsteuerung Seriell (serial interface card) implementation.
+ * @brief K8025 ASS – Anschlusssteuerung Seriell (serial interface card) implementation.
  *
  * Implements the K8025 serial interface card for the Robotron K1520/A5120 system.
  * The card aggregates two Z80 SIOs, one Z80 CTC, and one Z80 PIO behind a
@@ -9,8 +9,8 @@
  *
  * I/O port assignment (base 0x50):
  * @code
- *   0x50–0x53  SIO A33 (sio_dfue_):         DFÜ – modem/host serial channel
- *   0x54–0x57  PIO A31 (pio_a31_):          DIL-switch readout (DFÜ config)
+ *   0x50–0x53  SIO A33 (sio_dfue_):         DFUE – modem/host serial channel
+ *   0x54–0x57  PIO A31 (pio_a31_):          DIL-switch readout (DFUE config)
  *   0x58–0x5B  CTC A34 (ctc_a34_):          Baud-rate generator (4 channels)
  *   0x5C–0x5F  SIO A32 (sio_kbd_printer_):  Keyboard (ch A) + Printer (ch B)
  * @endcode
@@ -33,12 +33,12 @@ using k1520::serial::Taktquelle;
 
 // ─── Anschluss je Schnittstelle (Entwurf 19 §3.1, §5.1, AP-S5) ──────────────
 //
-// Brücken laut Transkription §2.3.1 / §3.1 („gezeichnet" = Index 0):
+// Bruecken laut Transkription §2.3.1 / §3.1 („gezeichnet" = Index 0):
 //   DFÜ/V.24  (A33-A, X6): W1:7   gezeichnet ZRE-CTC K0, nicht gezeichnet CTC A34 K2
 //   DFÜ/IFSS  (A33-B, X5): X7–X8  ZRE-CTC K0,           X8–X9          CTC A34 K1
 //   Drucker   (A32-B, X3): fest CTC A34 K0 (§2.4)
 // Leitungen der V.24 (§2.3.2): /CTSA = V106 ∧ V107, /DCDA = V109 ∧ V107, DCDB = V107;
-// die IFSS-Kanäle haben keine Steuerleitungen — ihre /CTS- und /DCD-Eingänge (außer
+// die IFSS-Kanaele haben keine Steuerleitungen — ihre /CTS- und /DCD-Eingaenge (ausser
 // DCDB) bleiben, wie sie seit AP-S3 sind: inaktiv (RR0 D5/D3 = 0, der Gast sieht
 // dasselbe RR0 wie vor AP-S5; der Stromlaufplan der K8025 liegt nicht vor).
 
@@ -81,10 +81,10 @@ public:
     bool senderHatZeichen() const override { return kanal().senderHatZeichen(); }
     uint8_t senderNimm() override {
         uint8_t b = kanal().txGet();
-        // Die Leitung trägt nur die programmierten Datenbits (WR5 D6–5).
+        // Die Leitung traegt nur die programmierten Datenbits (WR5 D6–5).
         const uint8_t bits = kanal().format().tx_bits;
         if (bits < 8) b &= static_cast<uint8_t>((1u << bits) - 1);
-        k_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt möglich
+        k_.seriell_geaendert_ = true;   // Tx leer → Tx-Interrupt moeglich
         if (!belegt_ && abnehmer_) abnehmer_(b);
         return b;
     }
@@ -98,7 +98,7 @@ public:
     bool dtr() const override { return kanal().dtr(); }
     void setzeEingaenge(bool cts, bool dsr, bool dcd) override {
         if (s_ != DfueV24) return;   // IFSS: keine Steuerleitungen
-        // Kartenlogik A23 (§2.3.2): V106/V109 nur mit V107 wirksam; V107 zusätzlich
+        // Kartenlogik A23 (§2.3.2): V106/V109 nur mit V107 wirksam; V107 zusaetzlich
         // allein an DCDB.
         k_.sio_dfue_.channelA().setzeCTS(cts && dsr);
         k_.sio_dfue_.channelA().setzeDCD(dcd && dsr);
@@ -228,7 +228,7 @@ void K8025::updateInternalChain()
  *
  * Dispatches the read to the appropriate sub-device based on the relative
  * offset from io_base:
- * - rel 0–3  → SIO A33 (DFÜ, ports 0x50–0x53)
+ * - rel 0–3  → SIO A33 (DFUE, ports 0x50–0x53)
  * - rel 4–7  → PIO A31 (DIL switch, ports 0x54–0x57)
  * - rel 8–11 → CTC A34 (baud-rate, ports 0x58–0x5B)
  * - rel 12–15→ SIO A32 (keyboard/printer, ports 0x5C–0x5F)
@@ -258,7 +258,7 @@ uint8_t K8025::ioRead(uint8_t port)
  *
  * Dispatches the write to the appropriate sub-device based on the relative
  * offset from io_base:
- * - rel 0–3  → SIO A33 (DFÜ, ports 0x50–0x53)
+ * - rel 0–3  → SIO A33 (DFUE, ports 0x50–0x53)
  * - rel 4–7  → PIO A31 (DIL switch, ports 0x54–0x57)
  * - rel 8–11 → CTC A34 (baud-rate, ports 0x58–0x5B)
  * - rel 12–15→ SIO A32 (keyboard/printer, ports 0x5C–0x5F)
@@ -406,15 +406,15 @@ uint8_t K8025::keyboardTxGet()
     return sio_kbd_printer_.channelA().txGet();
 }
 
-// ─── DFÜ interface ────────────────────────────────────────────────────────────
+// ─── DFUE interface ────────────────────────────────────────────────────────────
 
 /**
- * @brief Inject one byte received from the DFÜ (modem/host) interface.
+ * @brief Inject one byte received from the DFUE (modem/host) interface.
  *
  * Pushes @p byte into the SIO A33 channel A RX FIFO and updates the internal
  * daisy chain.
  *
- * @param byte Received byte from the DFÜ device (modem or remote host)
+ * @param byte Received byte from the DFUE device (modem or remote host)
  */
 void K8025::dfueRxByte(uint8_t byte)
 {
@@ -423,7 +423,7 @@ void K8025::dfueRxByte(uint8_t byte)
 }
 
 /**
- * @brief Check whether SIO A33 channel A has an outgoing byte for the DFÜ interface.
+ * @brief Check whether SIO A33 channel A has an outgoing byte for the DFUE interface.
  * @return true if a TX byte is waiting in the SIO A33 channel A FIFO
  */
 bool K8025::dfueTxAvailable()
@@ -432,12 +432,12 @@ bool K8025::dfueTxAvailable()
 }
 
 /**
- * @brief Retrieve one TX byte from SIO A33 channel A (DFÜ transmit byte).
+ * @brief Retrieve one TX byte from SIO A33 channel A (DFUE transmit byte).
  *
  * Pops and returns the next byte from the SIO A33 channel A TX FIFO.
  * Behaviour is undefined if dfueTxAvailable() returns false.
  *
- * @return Byte that the CPU sent to the DFÜ device
+ * @return Byte that the CPU sent to the DFUE device
  */
 uint8_t K8025::dfueTxGet()
 {
@@ -490,9 +490,9 @@ bool K8025::clockTick(int ticks)
     // once per instruction.
     // updateInternalChain() NICHT pro Instruktion: die interne Daisy-Chain
     // (iei-Propagation der 3 Teilbausteine) wird ohnehin bei jedem Bus-Chain-Walk
-    // über setIEI() aufgefrischt (der Walk ruft setIEI VOR hasInterrupt/getIEO).
-    // Der Walk läuft nur noch, wenn die Chain dirty ist — dann ist der interne
-    // Zustand frisch.  Der Baud-CTC ohne INT_EN feuert ständig, ändert aber keinen
-    // Interrupt (clockTick(int) liefert dann false → kein unnötiges Dirty).
+    // ueber setIEI() aufgefrischt (der Walk ruft setIEI VOR hasInterrupt/getIEO).
+    // Der Walk laeuft nur noch, wenn die Chain dirty ist — dann ist der interne
+    // Zustand frisch.  Der Baud-CTC ohne INT_EN feuert staendig, aendert aber keinen
+    // Interrupt (clockTick(int) liefert dann false → kein unnoetiges Dirty).
     return ctc_a34_.clockTick(ticks);   // batched, semantik-identisch
 }

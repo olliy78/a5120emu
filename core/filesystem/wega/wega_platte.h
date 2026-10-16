@@ -3,22 +3,22 @@
  * @brief P8000-Plattenabbild (WDC, K5504.50 u. a.) mit seinen WEGA-Partitionen.
  *
  * Das Abbild ist roh/LBA (`doc/merkposten/p8000.md` Nr. 17): Sektor (Z, K, S) liegt bei
- * `((Z·Köpfe + K)·Sektoren + S−1)·512`.  **Zylinder 0 gehört dem WDC** (PAR/BTT in
- * Z0/K0/S1: `"DEFEKT"` @0, `"PARMTR"` @256, Geometrie @277…280) und liegt außerhalb
+ * `((Z·Koepfe + K)·Sektoren + S−1)·512`.  **Zylinder 0 gehoert dem WDC** (PAR/BTT in
+ * Z0/K0/S1: `"DEFEKT"` @0, `"PARMTR"` @256, Geometrie @277…280) und liegt ausserhalb
  * des Blockraums: WDC-Block 0 = Zylinder 1, und jede Defektspur der BTT verschiebt die
  * Zielspur um eine Spur (`doc/p8000/wdc_firmware.md` §6/§7).
  *
  * **Die Partitionen stehen nicht auf der Platte**, sondern im WEGA-Kern
- * (`md_sizes[]` in `uts/conf/wpar.c`, Größen aus `uts/h/mdsize.h`).  Hier gilt deshalb
- * die Standardtabelle für Laufwerk 0 (md0 /usr 0/13000, md1 swap, md2 / 16000/7000,
- * md3 /tmp 23000/4000, md4 /z 27000/60732) — und es wird nur eingehängt, was dort
- * wirklich ein plausibles Dateisystem trägt.
+ * (`md_sizes[]` in `uts/conf/wpar.c`, Groessen aus `uts/h/mdsize.h`).  Hier gilt deshalb
+ * die Standardtabelle fuer Laufwerk 0 (md0 /usr 0/13000, md1 swap, md2 / 16000/7000,
+ * md3 /tmp 23000/4000, md4 /z 27000/60732) — und es wird nur eingehaengt, was dort
+ * wirklich ein plausibles Dateisystem traegt.
  *
  * Das Abbild darf gzip-gepackt sein (`.img.gz`, erkannt an den Magic Bytes); zurueckgeschrieben
  * wird in derselben Art.
  *
- * Schreibschutz ist die Vorgabe (wie bei physischen Datenträgern); vor dem ersten
- * Zurückschreiben entsteht `<abbild>~`.
+ * Schreibschutz ist die Vorgabe (wie bei physischen Datentraegern); vor dem ersten
+ * Zurueckschreiben entsteht `<abbild>~`.
  *
  * @see doc/design/27_wega_dateisystem.md §1.1
  */

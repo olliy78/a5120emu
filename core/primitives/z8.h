@@ -1,7 +1,7 @@
 /**
  * @file z8.h
  * @brief Z8-Einchiprechner (Zilog Z8601/Z8611/Z8612/Z8681, UB 8820/8821/8840/8841 M) —
- *        generische Primitive: Kern, Registerdatei, Ports 0–3 mit Handshake, Zähler T0/T1,
+ *        generische Primitive: Kern, Registerdatei, Ports 0–3 mit Handshake, Zaehler T0/T1,
  *        UART, sechs Interrupts, externer Bus (P0/P1 gemultiplext), Save-State, Sicht.
  *
  * Wie `Z80`/`Z8000`: kennt keine Karte und keine Maschine.  Grundlage: Zilog UM0016
@@ -9,9 +9,9 @@
  * External Interface, Instruction Set).  Befunde/Annahmen mit Datenblattstelle und Test:
  * doc/p8000/z8_abdeckung.md.  Befehlstabelle: core/primitives/z8/z8_table.h.
  *
- * Takte: alles in INTERNEN Takten (XTAL/2).  step() führt einen Befehl bzw. eine
- * Interruptannahme aus und gibt die Takte zurück (Tabellenwert + Sprung + Wartetakte).
- * Die Zähler laufen mit internem Takt/4 und werden bei jedem Zugriff auf ein Peripherie-
+ * Takte: alles in INTERNEN Takten (XTAL/2).  step() fuehrt einen Befehl bzw. eine
+ * Interruptannahme aus und gibt die Takte zurueck (Tabellenwert + Sprung + Wartetakte).
+ * Die Zaehler laufen mit internem Takt/4 und werden bei jedem Zugriff auf ein Peripherie-
  * register und am Befehlsende auf die aktuelle Zeit nachgezogen — ein Registerzugriff
  * wirkt zur Zeit „Befehlsende" (Annahme [Z8-T1]).
  *
@@ -76,18 +76,18 @@ struct Z8BusZyklus {
     uint64_t  takt = 0;           ///< Zeit (interne Takte) beim Befehlsende
 };
 
-/// Zustand eines Zählers (für Sicht und Save-State).
+/// Zustand eines Zaehlers (fuer Sicht und Save-State).
 struct Z8Zaehler {
     uint8_t  anfang = 0;      ///< T-Register (geschriebener Anfangswert, 0 = 256)
     uint8_t  pre = 0;         ///< PRE-Register (Bit 7–2 Teiler, Bit 1 Takt intern (nur T1), Bit 0 Dauer)
-    uint16_t zaehler = 0;     ///< Abwärtszähler 1..256 (0 = steht auf 00H)
-    uint8_t  vorteiler = 0;   ///< 6-Bit-Abwärtszähler 1..64
+    uint16_t zaehler = 0;     ///< Abwaertszaehler 1..256 (0 = steht auf 00H)
+    uint8_t  vorteiler = 0;   ///< 6-Bit-Abwaertszaehler 1..64
     bool     getriggert = false;  ///< T1 in Trigger-/Retriggerbetrieb gestartet
-    uint64_t naechster = 0;   ///< absolute Zeit des nächsten Zählertakts (intern)
+    uint64_t naechster = 0;   ///< absolute Zeit des naechsten Zaehlertakts (intern)
     uint64_t abgelaufen = 0;  ///< Anzahl Endwerte (Sicht)
 };
 
-/// Beobachtung für den Debugger (eine Momentaufnahme, ändert nichts).
+/// Beobachtung fuer den Debugger (eine Momentaufnahme, aendert nichts).
 struct Z8Sicht {
     uint16_t pc, sp;
     uint8_t  flags, rp, imr, irq, ipr, p01m, p2m, p3m, tmr, sio;
@@ -95,7 +95,7 @@ struct Z8Sicht {
     Z8Zaehler t[2];
     bool     tout;
     uint8_t  portAus[4];      ///< Ausgangsregister
-    uint8_t  portPins[4];     ///< Pegel an den Pins (wie ein Lesen sie sähe, ohne Wirkung)
+    uint8_t  portPins[4];     ///< Pegel an den Pins (wie ein Lesen sie saehe, ohne Wirkung)
     uint8_t  rxPuffer;
     uint16_t txSchieber;      ///< 0 = Sender ruht
     uint8_t  txTeiler, rxTeiler;
@@ -117,18 +117,18 @@ public:
 
     explicit Z8(const Config& cfg = Config());
 
-    // ── Rückrufe ─────────────────────────────────────────────────────────────
-    /// Programmbus unterhalb Config::programmbus (ROM/EPROM).  Ohne Rückruf: FFH.
+    // ── Rueckrufe ─────────────────────────────────────────────────────────────
+    /// Programmbus unterhalb Config::programmbus (ROM/EPROM).  Ohne Rueckruf: FFH.
     std::function<uint8_t(uint16_t)> programmLesen;
-    /// Externer Bus (P0/P1).  Ohne Rückruf: Lesen FFH, Schreiben ohne Wirkung.
+    /// Externer Bus (P0/P1).  Ohne Rueckruf: Lesen FFH, Schreiben ohne Wirkung.
     std::function<uint8_t(const Z8BusZyklus&)>       busLesen;
     std::function<void(const Z8BusZyklus&, uint8_t)> busSchreiben;
     /// Pegel an Port 0..2 beim Lesen (optional; sonst die mit setPort() gesetzten Pegel).
-    /// Bekommt die Maske der Bits, die gerade Eingänge sind.
+    /// Bekommt die Maske der Bits, die gerade Eingaenge sind.
     std::function<uint8_t(int port, uint8_t eingaenge)> portEingang;
-    /// Ausgangspegel eines Ports haben sich geändert (pegel = alle Pins, treibt = Ausgangsmaske).
+    /// Ausgangspegel eines Ports haben sich geaendert (pegel = alle Pins, treibt = Ausgangsmaske).
     std::function<void(int port, uint8_t pegel, uint8_t treibt)> portAusgang;
-    /// Pegel an P30 (serieller Eingang) zur Zeit @p takt — für eine Leitung, die der Rechner
+    /// Pegel an P30 (serieller Eingang) zur Zeit @p takt — fuer eine Leitung, die der Rechner
     /// zeitgenau liefert (optional; sonst Pin P30 wie gesetzt).
     std::function<bool(uint64_t takt)> p30Quelle;
     /// UART: Zeichen fertig gesendet (nach dem 2. Stoppbit) bzw. empfangen (Stoppbitmitte).
@@ -136,26 +136,26 @@ public:
     std::function<void(uint8_t)> uartEmpfangen;
     /// Interrupt angenommen (Stufe, gekellerter PC, neuer PC) — Debugger/Protokoll.
     std::function<void(int irq, uint16_t alterPc, uint16_t neuerPc)> onInterrupt;
-    /// Unbelegter Opcode ausgeführt (als NOP, 6 Takte).
+    /// Unbelegter Opcode ausgefuehrt (als NOP, 6 Takte).
     std::function<void(uint16_t pc, uint8_t op)> onIllegal;
 
-    /// Aus einem Busrückruf heraus: der laufende Zyklus bekommt n Wartetakte.
+    /// Aus einem Busrueckruf heraus: der laufende Zyklus bekommt n Wartetakte.
     void addWaitCycles(int n) { waits_ += n; }
 
     // ── Pins ─────────────────────────────────────────────────────────────────
     void setResetLine(bool aktiv);   ///< /RESET; beim Loslassen Start bei 000CH
     void reset();                    ///< Resetimpuls
-    /// Eingangspegel eines ganzen Ports (P3: nur Bit 0–3 sind Eingänge; Flanken → IRQ).
+    /// Eingangspegel eines ganzen Ports (P3: nur Bit 0–3 sind Eingaenge; Flanken → IRQ).
     void setPort(int port, uint8_t pegel);
     void setPin(int port, int bit, bool pegel);
     uint8_t pinEingang(int port) const { return pinIn_[port & 3]; }
-    /// Pegel an den Pins, wie die Außenwelt sie sieht (Ausgänge getrieben, sonst 1/extern).
+    /// Pegel an den Pins, wie die Aussenwelt sie sieht (Ausgaenge getrieben, sonst 1/extern).
     uint8_t portPegel(int port) const;
-    uint8_t portTreibt(int port) const;   ///< Maske der Ausgänge
+    uint8_t portTreibt(int port) const;   ///< Maske der Ausgaenge
 
     // ── Ablauf ───────────────────────────────────────────────────────────────
     int step();
-    /// Schritte bis die Zeit @p takt erreicht ist (Rückgabe: Anzahl Befehle).
+    /// Schritte bis die Zeit @p takt erreicht ist (Rueckgabe: Anzahl Befehle).
     uint64_t laufeBis(uint64_t takt);
     uint64_t takte = 0;              ///< interne Takte seit dem Einschalten
 
@@ -165,7 +165,7 @@ public:
     uint8_t  rp = 0;
     uint16_t sp = 0;                 ///< SPH:SPL
     uint8_t  imr = 0, irqReg = 0, ipr = 0;
-    uint8_t  reg[256] = {};          ///< Allzweckregister 04..gprOben (übrige Zellen unbenutzt)
+    uint8_t  reg[256] = {};          ///< Allzweckregister 04..gprOben (uebrige Zellen unbenutzt)
 
     /// Registerdatei so, wie ein Befehl sie liest/schreibt (mit Wirkung auf Peripherie).
     uint8_t regLesen(uint8_t adr);
@@ -176,7 +176,7 @@ public:
     uint8_t arbeitsreg(unsigned n) const { return uint8_t((rp & 0xF0) | (n & 15)); }
 
     bool irqFreigegeben() const { return irqEin_; }
-    /// Prüfstand/Debugger: Freigabe des IRQ-Registers setzen (sonst nur durch EI bzw. Reset).
+    /// Pruefstand/Debugger: Freigabe des IRQ-Registers setzen (sonst nur durch EI bzw. Reset).
     void setIrqFreigabe(bool an) { irqEin_ = an; }
     bool angehalten() const { return halt_; }
     bool inReset() const { return resetLine_; }
@@ -209,7 +209,7 @@ private:
     bool irqEin_ = false;              ///< IRQ-Register freigegeben (erstes EI, UM0016 S. 102)
     int  waits_ = 0;
     uint64_t befehlsEnde_ = 0;         ///< Zeit, zu der Registerzugriffe des Befehls wirken
-    uint64_t periTakt_ = 0;            ///< bis hierhin sind Zähler/UART nachgezogen
+    uint64_t periTakt_ = 0;            ///< bis hierhin sind Zaehler/UART nachgezogen
     uint16_t lastPc_ = 0;
     uint64_t illegal_ = 0, romWrites_ = 0;
     uint64_t irqZahl_[6] = {};
@@ -223,16 +223,16 @@ private:
     uint16_t lastAddr_ = 0;            ///< zuletzt am Bus (P0-Adressnibbles)
     uint8_t p01m_ = 0x4D, p2m_ = 0xFF, p3m_ = 0;
     uint8_t lastOut_[4] = {}, lastDrv_[4] = {};
-    // Zähler / UART
+    // Zaehler / UART
     uint8_t tmr_ = 0;
     Z8Zaehler t_[2];
-    bool    lief_[2] = {false, false};   ///< Zähler lief beim letzten laufPruefen()
+    bool    lief_[2] = {false, false};   ///< Zaehler lief beim letzten laufPruefen()
     bool    tout_ = true;
     uint8_t txBits_ = 0;               ///< noch auszugebende Bits (0 = Sender ruht)
     uint8_t rxBuf_ = 0;
     uint16_t txSr_ = 0;                ///< Bit 0 = aktuell ausgegebenes Bit; 0 = ruht
     uint8_t txDiv_ = 0, rxDiv_ = 0;
-    bool    rxStart_ = false;          ///< Startflanke erkannt, Takt läuft
+    bool    rxStart_ = false;          ///< Startflanke erkannt, Takt laeuft
     uint16_t rxSr_ = 0;
     uint8_t rxBits_ = 0;
     bool    rxAlt_ = true;             ///< letzter abgetasteter Pegel (Flankensuche)
@@ -249,10 +249,10 @@ private:
     void zaehlerTakt(int n, uint64_t zeit);
     void endwert(int n, uint64_t zeit);
     void uartTakt(uint64_t zeit);
-    bool t1Intern() const;          ///< T1 zählt den internen Takt (je nach PRE1/TMR/TIN)
-    bool laeuft(int n) const;       ///< Zähler n bekommt interne Zählertakte
+    bool t1Intern() const;          ///< T1 zaehlt den internen Takt (je nach PRE1/TMR/TIN)
+    bool laeuft(int n) const;       ///< Zaehler n bekommt interne Zaehlertakte
     /// Laufzustand neu bestimmen; ein neu laufender (oder mit @p ankerN neu geladener)
-    /// Zähler zählt das erste Mal 4 Takte nach @p jetzt.
+    /// Zaehler zaehlt das erste Mal 4 Takte nach @p jetzt.
     void laufPruefen(uint64_t jetzt, bool anker0, bool anker1);
     void t1Flanke();                ///< fallende Flanke an P31 (TIN)
 
@@ -287,7 +287,7 @@ private:
     uint16_t paarLesen(uint8_t a) { return uint16_t(regLesen(a) << 8 | regLesen(uint8_t(a + 1))); }
     void     paarSchreiben(uint8_t a, uint16_t v) { regSchreiben(a, uint8_t(v >> 8)); regSchreiben(uint8_t(a + 1), uint8_t(v)); }
 
-    // Ausführung
+    // Ausfuehrung
     int  ausfuehren(uint8_t op);
     bool bedingung(unsigned cc) const;
     void setF(uint8_t f, bool an) { flags = an ? uint8_t(flags | f) : uint8_t(flags & ~f); }

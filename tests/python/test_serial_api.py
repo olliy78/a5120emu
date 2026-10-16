@@ -1,8 +1,8 @@
 """C-ABI der seriellen Schnittstellen (`k1520_serial_*`, Entwurf 19 §8, AP-S6).
 
 Kern-Bedienung ohne GUI: Anzahl/Namen/Stecker, Einstellen mit Sperren, Start/Stopp der
-Betriebsarten über Loopback.  Ports werden NIE fest angenommen — ein freier wird beim
-Test erfragt, ein Server meldet den tatsächlichen in `port_aktiv`.
+Betriebsarten ueber Loopback.  Ports werden NIE fest angenommen — ein freier wird beim
+Test erfragt, ein Server meldet den tatsaechlichen in `port_aktiv`.
 """
 
 import socket
@@ -55,7 +55,7 @@ def warte(bedingung, frist=4.0):
 
 
 def server_einstellen(e, i, **extra):
-    """Telnet-Server auf freiem Port, ohne Loop (der K8915 steckt vorgabemäßig im Loop)."""
+    """Telnet-Server auf freiem Port, ohne Loop (der K8915 steckt vorgabemaessig im Loop)."""
     assert e.serial_configure(i, betriebsart=B.SER_TELNET, rolle=B.SER_SERVER,
                               port=freier_port(), loop=False, **extra)
 
@@ -80,7 +80,7 @@ def test_list_names_connectors_v24_and_clock_sources(emu):
      ["Tastatur K7672 (A32-B)"]),
 ])
 def test_prg_lists_names_by_variant(maschine, namen, stecker, fest):
-    """PRG 710/710-1 (AP-P4): Namen nach Gerätebeschriftung, 710-1 ohne IFSS X6 (dort die Tastatur)."""
+    """PRG 710/710-1 (AP-P4): Namen nach Geraetebeschriftung, 710-1 ohne IFSS X6 (dort die Tastatur)."""
     e = B.K1520Emulator(machine=maschine)
     assert e.serial_count() == len(namen)
     infos = [e.serial_info(i) for i in range(len(namen))]
@@ -93,7 +93,7 @@ def test_prg_lists_names_by_variant(maschine, namen, stecker, fest):
 
 
 def test_pc1715_lists_printer_x4_and_v24_x5():
-    """PC 1715 (AP-4a): zwei Schnittstellen nach der Gerätebeschriftung, beide mit
+    """PC 1715 (AP-4a): zwei Schnittstellen nach der Geraetebeschriftung, beide mit
     Steuerleitungen (Drucker: 102/103/106); die Tastatur bleibt fest an SIO-A."""
     e = B.K1520Emulator(machine="pc1715")
     assert e.serial_count() == 2
@@ -140,7 +140,7 @@ def test_configure_roundtrip_and_validation(emu):
     assert not emu.serial_configure(0, betriebsart=7)
     assert not emu.serial_configure(0, taktquelle=9)
     assert not emu.serial_configure(9, port=1234)               # Index
-    assert emu.serial_config(0) == before                        # nichts übernommen
+    assert emu.serial_config(0) == before                        # nichts uebernommen
     with pytest.raises(KeyError):
         emu.serial_configure(0, gibtesnicht=1)
 
@@ -153,13 +153,13 @@ def test_strings_are_truncated_and_terminated(emu):
 
 
 def test_groesse_rule(emu):
-    """Zu kleine `groesse`: Ausgabe nur so weit, Eingabe behält den Rest."""
+    """Zu kleine `groesse`: Ausgabe nur so weit, Eingabe behaelt den Rest."""
     import ctypes
     s = B.K1520SerStatus()
     s.groesse = 2
     assert not B._lib.k1520_serial_status(emu._handle, 0, ctypes.byref(s))
     s.groesse = B.K1520SerStatus.port_aktiv.offset        # nur groesse + zustand
-    s.baud_nenn = 12345                                   # darf nicht überschrieben werden
+    s.baud_nenn = 12345                                   # darf nicht ueberschrieben werden
     assert B._lib.k1520_serial_status(emu._handle, 0, ctypes.byref(s))
     assert s.groesse == B.K1520SerStatus.port_aktiv.offset and s.baud_nenn == 12345
     k = B.K1520SerKonfig()
@@ -182,7 +182,7 @@ def test_telnet_server_connects_and_locks_fields(emu):
     with socket.create_connection(("127.0.0.1", st.port_aktiv), timeout=3) as c:
         assert warte(lambda: emu.serial_status(0).zustand == B.SER_VERBUNDEN)
         assert emu.serial_status(0).gegenstelle.startswith("127.0.0.1:")
-        # Betrieb: gesperrte Felder abgewiesen, freie übernommen.
+        # Betrieb: gesperrte Felder abgewiesen, freie uebernommen.
         assert not emu.serial_configure(0, port=freier_port())
         assert not emu.serial_configure(0, rolle=B.SER_CLIENT)
         assert emu.serial_configure(0, xonxoff=True)
@@ -250,12 +250,12 @@ def test_client_retries_until_the_server_appears(emu):
 # DFÜ/V.24, PRINTER = Drucker; K8915: DFU = DFÜ/IFSS2, PRINTER = Drucker/IFSS1 (Entwurf 19 §8).
 
 def _rx_cb(liste):
-    """ctypes-Rückruf, der jedes Byte in *liste* sammelt (Rückgabe festhalten!)."""
+    """ctypes-Rueckruf, der jedes Byte in *liste* sammelt (Rueckgabe festhalten!)."""
     return B.K1520SerialRxCb(lambda ctx, b: liste.append(b))
 
 
 def test_k8915_old_callback_pulls_the_loop_of_its_own_channel():
-    """Ein gesetzter Rückruf zieht den Loop seines Kanals, ein leerer steckt ihn
+    """Ein gesetzter Rueckruf zieht den Loop seines Kanals, ein leerer steckt ihn
     wieder — so wird sichtbar, auf welchen Kanal die Weiche zeigt."""
     e = B.K1520Emulator(machine="k8915")
     namen = [e.serial_info(i).name for i in range(e.serial_count())]
@@ -271,7 +271,7 @@ def test_k8915_old_callback_pulls_the_loop_of_its_own_channel():
     B._lib.k1520_serial_set_rx_cb(e._handle, 1, B.K1520SerialRxCb(), None)   # abmelden
     assert e.serial_config(ifs1).loop
     assert not e.serial_config(ifs2).loop
-    # Unbekannter Port: nichts geschieht (kein Absturz, keine Einstellung geändert).
+    # Unbekannter Port: nichts geschieht (kein Absturz, keine Einstellung geaendert).
     B._lib.k1520_serial_set_rx_cb(e._handle, 7, cb, None)
     B._lib.k1520_serial_send(e._handle, 7, 0x41)
     assert e.serial_config(v24).loop and e.serial_config(ifs1).loop
@@ -281,7 +281,7 @@ def test_k8915_old_callback_pulls_the_loop_of_its_own_channel():
 def test_old_callback_and_send_go_through_the_guest_and_come_back(emulator, temp_disk,
                                                                    tmp_path):
     """A5120 mit Echo-Gast auf der DFÜ/V.24: `k1520_serial_send(DFU)` legt das Byte in
-    den Empfänger, der Gast schickt es zurück, der Rückruf bekommt es — samt seinem
+    den Empfaenger, der Gast schickt es zurueck, der Rueckruf bekommt es — samt seinem
     Kontextzeiger.  Belegt ein Transport die Schnittstelle, gehen beide ins Leere."""
     import ctypes
     from serial_gast import bis_zum_prompt, echo_gast_einsetzen
@@ -300,18 +300,18 @@ def test_old_callback_and_send_go_through_the_guest_and_come_back(emulator, temp
     daten = [0x41, 0x00, 0xFF, 0x0D, 0x7E]
     for b in daten:
         B._lib.k1520_serial_send(emu._handle, 0, b)
-        emu.run(100_000)                    # > 1 Zeichenzeit bei 9600 Bd hin und zurück
+        emu.run(100_000)                    # > 1 Zeichenzeit bei 9600 Bd hin und zurueck
     emu.run(200_000)
     assert dfu == daten
     assert drucker == []
     assert set(kontexte) == {0x1234}
 
     # Ein Transport belegt die Schnittstelle: Einspeisen geht ins Leere (der Gast
-    # bekommt nichts, also landet auch in der Datei nichts), der Rückruf schweigt.
+    # bekommt nichts, also landet auch in der Datei nichts), der Rueckruf schweigt.
     datei = tmp_path / "v24.txt"
     assert emu.serial_configure(0, betriebsart=B.SER_DATEI, datei=str(datei))
     assert emu.serial_start(0)
-    emu.run(10_000)        # die Belegung erreicht die Karte mit dem nächsten Blick
+    emu.run(10_000)        # die Belegung erreicht die Karte mit dem naechsten Blick
     B._lib.k1520_serial_send(emu._handle, 0, 0x43)
     emu.run(300_000)
     emu.serial_stop(0)

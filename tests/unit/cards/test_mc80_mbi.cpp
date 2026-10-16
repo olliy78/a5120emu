@@ -1,8 +1,8 @@
 /**
  * @file test_mc80_mbi.cpp
- * @brief Magnetbandinterface MBI des MC80.2x (AP M11): Tore, PIO-B-Eingänge, Laufwerksregister
+ * @brief Magnetbandinterface MBI des MC80.2x (AP M11): Tore, PIO-B-Eingaenge, Laufwerksregister
  *        EFH, Schreibweg (Bytetakt aus CTC 2 → ÷2 → CTC 0 → CTC 3), Leseweg (Synchronisation an
- *        CTC 3, acht Bittakte an CTC 0 je Byte über das Schieberegister).  Annahmen [?] stehen in
+ *        CTC 3, acht Bittakte an CTC 0 je Byte ueber das Schieberegister).  Annahmen [?] stehen in
  *        core/cards/mc80/mbi.h.
  */
 
@@ -88,7 +88,7 @@ TEST(Mc80Mbi, LaufwerksregisterSteuertDasBand)
     m.ioWrite(0xEF, 0x06);                          // schneller Vorlauf
     takte(m, HZ);
     EXPECT_GT(m.laufwerk().positionMm(), p1 + 200.0);
-    m.ioWrite(0xEF, 0x0A);                          // schneller Rücklauf bis an den Anfang
+    m.ioWrite(0xEF, 0x0A);                          // schneller Ruecklauf bis an den Anfang
     takte(m, 3 * HZ);
     EXPECT_EQ(m.laufwerk().positionMm(), 0.0);
     // Am Anfang liegt der Vorspann unter der Lichtschranke: Bit 6 = 0 (RCK0 wartet darauf).
@@ -118,7 +118,7 @@ TEST(Mc80Mbi, SchreibenEinByteJe5Millisekunden)
     m.ioWrite(0xEF, 0x13);
     takte(m, HZ);                                   // Anlauf; Pausenpegel schreibt nichts
     EXPECT_EQ(m.geschriebeneBytes(), 0u);
-    EXPECT_TRUE(m.ctc().debugState().ch[3].intPending);   // CTC 3 zählt die Bytezeiten trotzdem
+    EXPECT_TRUE(m.ctc().debugState().ch[3].intPending);   // CTC 3 zaehlt die Bytezeiten trotzdem
     m.ioWrite(0xFE, 0x0A);                          // Daten
     takte(m, HZ);                                   // 1 s
     // 2 457 600 / 16 / 50 = 3072 Hz, ÷2 = 1536 Bit/s [?] → 192 Byte/s.
@@ -151,7 +151,7 @@ TEST(Mc80Mbi, LesenSynchronisationUndBytes)
     ASSERT_EQ(block.size(), 0x86u);
     ASSERT_TRUE(k->schreibeBlock(kassette::Seite::A, 150'000, block));
     ASSERT_TRUE(m.laufwerk().kassetteEinlegen(k));
-    // LIN0 (07A0H): PIO A Betriebsart 1, CTC 3 F7H/01H; ISY schärft CTC 0 mit C7H/08H.
+    // LIN0 (07A0H): PIO A Betriebsart 1, CTC 3 F7H/01H; ISY schaerft CTC 0 mit C7H/08H.
     m.setIEI(true);
     m.ioWrite(0xFD, 0x4F);
     m.ioWrite(0xF8, 0x08);

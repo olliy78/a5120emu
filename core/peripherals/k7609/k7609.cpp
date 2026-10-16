@@ -30,7 +30,7 @@ constexpr uint8_t kUmschalt[64] = {
     0x79, 0x78, 0x63, 0x76, 0x62, 0x6E, 0x6D, 0x00, 0x00, 0x7E, 0x5C, 0x7C, 0x00, 0x00, 0x00, 0x00,   // 30H
 };
 
-/// Taste für ein druckbares Zeichen; -1 = keine.  Bit 6 = Zeichen steht auf der Umschaltstufe.
+/// Taste fuer ein druckbares Zeichen; -1 = keine.  Bit 6 = Zeichen steht auf der Umschaltstufe.
 int tasteFuerZeichen(uint8_t ch)
 {
     for (int c = 0; c < 64; ++c)
@@ -70,7 +70,7 @@ int K7609::codesFuer(uint32_t k, bool shift, bool ctrl, uint8_t out[2])
             if (k == 0x20) {
                 code = CODE_LEERTASTE;
             } else if ((k | 0x20) >= 'a' && (k | 0x20) <= 'z') {
-                // Buchstabe = physische Taste, Stufe aus `shift` (die Tabelle führt den
+                // Buchstabe = physische Taste, Stufe aus `shift` (die Tabelle fuehrt den
                 // Grossbuchstaben als unverschoben, das OS dreht ihn nach seinem Merker).
                 code = tasteFuerZeichen(static_cast<uint8_t>(k & ~0x20u)) & 0x3F;
                 if (shift) code |= UMSCHALT_BIT;

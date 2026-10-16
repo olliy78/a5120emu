@@ -1,4 +1,4 @@
-# `where --json` liefert beide CPU-Stände und den Busmaster maschinenlesbar.
+# `where --json` liefert beide CPU-Staende und den Busmaster maschinenlesbar.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

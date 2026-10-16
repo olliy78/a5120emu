@@ -1,13 +1,13 @@
 /**
  * @file test_k6022_maschinen.cpp
  * @brief Lochstreifen-Karte K6022 als Option in allen Maschinen (doc/design/23_lochstreifen.md
- *        §3, AP-L1): Stecken nach dem Anlegen, zu spät, doppelt, Tor belegt, ohne Karte
+ *        §3, AP-L1): Stecken nach dem Anlegen, zu spaet, doppelt, Tor belegt, ohne Karte
  *        antwortet auf E0H–E7H niemand — und mit echtem Z80-Code in der Maschine ein Byte
- *        über den Stanzer (E0H) ausgeben und eines über den Leser (E4H) einlesen, beide
- *        Male über den END-Interrupt (IM 2) der hinten angehängten PIOs.
+ *        ueber den Stanzer (E0H) ausgeben und eines ueber den Leser (E4H) einlesen, beide
+ *        Male ueber den END-Interrupt (IM 2) der hinten angehaengten PIOs.
  *
  * PIO-Programmierung wie `PTAPE.6022` (tests/unit/cards/test_k6022.cpp).  Der PRG 710
- * fährt den Gasttreiber unter UDOS in `Prg710Lochband.*`; hier läuft er zusätzlich mit
+ * faehrt den Gasttreiber unter UDOS in `Prg710Lochband.*`; hier laeuft er zusaetzlich mit
  * demselben Z80-Schnipsel wie A5120 und K8915.
  */
 #include <gtest/gtest.h>
@@ -23,7 +23,7 @@
 
 namespace {
 
-// ── Lage des Schnipsels (in allen Maschinen RAM, außerhalb von ROM und Bildspeicher) ──
+// ── Lage des Schnipsels (in allen Maschinen RAM, ausserhalb von ROM und Bildspeicher) ──
 constexpr uint16_t kCode   = 0x4000;
 constexpr uint16_t kIsrSt  = 0x4100;   // END Stanzer (Vektor EEH): Merker 55H
 constexpr uint16_t kIsrLe  = 0x4110;   // END Leser   (Vektor ECH): nur EI/RETI
@@ -48,7 +48,7 @@ const std::vector<uint8_t> kProg = {
     // Ein Byte stanzen und auf END warten
     0x3E, 0xC1, 0xD3, 0xE0,             // LD A,C1H ; OUT (E0H),A   → RUF
     0xFB, 0x76,                         // EI ; HALT                 → END, ISR setzt 55H
-    // Lesen: erster RUF, dann je END ein Byte holen (= nächster RUF), Vorlauf überlesen
+    // Lesen: erster RUF, dann je END ein Byte holen (= naechster RUF), Vorlauf ueberlesen
     0xDB, 0xE4,                         // IN A,(E4H)                → RUF
     0xFB, 0x76,                         // L: EI ; HALT
     0xDB, 0xE4,                         //    IN A,(E4H)
@@ -75,7 +75,7 @@ void lade(K1520Machine& m) {
     m.memWriteDebug(kByte, 0);
 }
 
-/// Stanzen und Lesen über E0H/E4H mit Gastcode; @p cpu = PC/halted der Maschinen-CPU.
+/// Stanzen und Lesen ueber E0H/E4H mit Gastcode; @p cpu = PC/halted der Maschinen-CPU.
 void stanzenUndLesen(K1520Machine& m, Z80& cpu) {
     ASSERT_NE(m.k6022(), nullptr);
     m.k6022()->bandEinlegen({0x5A, 0x00});
@@ -91,14 +91,14 @@ void stanzenUndLesen(K1520Machine& m, Z80& cpu) {
     EXPECT_EQ(m.k6022()->leserStand().gelesen, 1u);
 }
 
-/// Ein Störer auf einem der Tore.
+/// Ein Stoerer auf einem der Tore.
 struct Belegt : BusDevice {
     uint8_t ioRead(uint8_t) override { return 0x00; }
     void ioWrite(uint8_t, uint8_t) override {}
     const char* deviceName() const override { return "Stoerer"; }
 };
 
-/// Die Bestückungsfälle je Maschine; @p neu liefert eine frische Maschine.
+/// Die Bestueckungsfaelle je Maschine; @p neu liefert eine frische Maschine.
 template <class Neu>
 void pruefeBestueckung(Neu neu) {
     // ── Ohne Option: niemand auf E0H–E7H ──────────────────────────────────────
@@ -130,7 +130,7 @@ void pruefeBestueckung(Neu neu) {
         m->reset();
         EXPECT_NE(m->k6022(), nullptr);
     }
-    // ── Nach dem ersten Lauf bzw. Reset ist die Bestückung fest ───────────────
+    // ── Nach dem ersten Lauf bzw. Reset ist die Bestueckung fest ───────────────
     {
         auto m = neu();
         m->powerOn();
@@ -197,8 +197,8 @@ TEST_F(K6022Maschine, Prg710_1) {
 
 /**
  * @test K6022Maschine.A5120_Z80StanztUndLiest
- * @brief Gastcode auf der ZVE1: OUT (E0H) stanzt, END kommt als IM-2-Interrupt EEH über die
- *        hinten angehängte Stanzer-PIO; IN (E4H) liest das Band nach dem Vorlauf (ECH).
+ * @brief Gastcode auf der ZVE1: OUT (E0H) stanzt, END kommt als IM-2-Interrupt EEH ueber die
+ *        hinten angehaengte Stanzer-PIO; IN (E4H) liest das Band nach dem Vorlauf (ECH).
  */
 TEST_F(K6022Maschine, A5120_Z80StanztUndLiest) {
     A5120Machine m;

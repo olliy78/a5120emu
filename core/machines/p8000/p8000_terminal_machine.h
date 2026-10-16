@@ -1,22 +1,22 @@
 /**
  * @file p8000_terminal_machine.h
- * @brief „P8000 Terminal" — das Originalterminal Typ 2 + K7673.09 als eigenständige Maschine
+ * @brief „P8000 Terminal" — das Originalterminal Typ 2 + K7673.09 als eigenstaendige Maschine
  *        ohne Rechner (AP P20c/P20d, Entwurf 25 §11, Entwurf 28 §7).
  *
- * Kleinste saubere Lösung für die C-ABI: ein schlanker `K1520Machine`-Wrapper um eine
- * `P8000TerminalEinheit` (`K1520_MACHINE_P8000_TERMINAL` = 5).  Die serielle Leitung XB5 hängt
+ * Kleinste saubere Loesung fuer die C-ABI: ein schlanker `K1520Machine`-Wrapper um eine
+ * `P8000TerminalEinheit` (`K1520_MACHINE_P8000_TERMINAL` = 5).  Die serielle Leitung XB5 haengt
  * am **eigenen `SerialHub` der Einheit** (ein Anschluss, Index 0) — Telnet-Client/-Server,
  * RFC 2217 oder Datei wie jede Schnittstelle; Vorgabe Telnet-**Client** auf 127.0.0.1:5000
  * (ein Rechnerprozess bietet seine ttys als Server an — Arbeitsplatzbetrieb).  Mehrere Prozesse
- * = mehrere Arbeitsplätze.
+ * = mehrere Arbeitsplaetze.
  *
  * **Zeitbasis von `run()`** = interner Z8-Takt des Terminals (3 686 400 Hz).  Kein Bus, keine
  * Disketten (alle Laufwerksfunktionen verneinen), keine Zusatzkarten.
  *
  * Tasten wie am P8000 (`keyPress`: ASCII/Qt-Kodes/`0x02000000 + TerminalTaste`, getippt mit
- * Haltezeit über die Matrix; `0x04000000 | Zeile << 8 | Spalte` = Matrixtaste drücken bis
+ * Haltezeit ueber die Matrix; `0x04000000 | Zeile << 8 | Spalte` = Matrixtaste druecken bis
  * `keyRelease` mit demselben Kode).  Bild: `framebuffer()` = Pixelbild 640 × 312 (0 dunkel,
- * 1 normal, 2 hell), Zellen über `einheit().hw()`; `keyboardLeds()` = LEDs der K7673;
+ * 1 normal, 2 hell), Zellen ueber `einheit().hw()`; `keyboardLeds()` = LEDs der K7673;
  * `bellCount()` = Klingel.  Save-State „P8TM" v1 = Konfiguration + Einheit (P8TH).
  */
 #pragma once
@@ -36,7 +36,7 @@ public:
         k1520::p8000::P8000TerminalEinheitConfig einheit;
         /// Vorgabe des Hub-Anschlusses XB5 (Telnet-Client auf 127.0.0.1:5000).
         k1520::serial::SerialKonfig leitung = vorgabeLeitung();
-        /// Gleich beim Anlegen verbinden (sonst über `k1520_serial_start`).
+        /// Gleich beim Anlegen verbinden (sonst ueber `k1520_serial_start`).
         bool verbinden = false;
         static k1520::serial::SerialKonfig vorgabeLeitung() {
             k1520::serial::SerialKonfig k;
@@ -48,13 +48,13 @@ public:
         }
     };
 
-    /// Ein Schlüssel der Terminalbestückung (`firmware`, `zeichensatz`, `teiler`) aus einem
-    /// Konfigurationstext — gemeinsam für `k1520_create_p8000_terminal` und `k1520_create_p8000`
-    /// (`terminal=original`).  Rückgabe 1 = erkannt, 0 = nicht mein Schlüssel, -1 = Fehler.
+    /// Ein Schluessel der Terminalbestueckung (`firmware`, `zeichensatz`, `teiler`) aus einem
+    /// Konfigurationstext — gemeinsam fuer `k1520_create_p8000_terminal` und `k1520_create_p8000`
+    /// (`terminal=original`).  Rueckgabe 1 = erkannt, 0 = nicht mein Schluessel, -1 = Fehler.
     static int hwSchluessel(const std::string& key, const std::string& val,
                             k1520::p8000::P8000TerminalEinheitConfig& c, std::string& fehler);
     /// Ganzer Konfigurationstext „schluessel=wert,…" (NULL/"" = Vorgabe); false + Grund.
-    /// Schlüssel: firmware (5.0), zeichensatz (ezs-dzs | dzs-ezs = Bestückung ZG1-ZG2),
+    /// Schluessel: firmware (5.0), zeichensatz (ezs-dzs | dzs-ezs = Bestueckung ZG1-ZG2),
     /// teiler (7 | 8), art (telnet | rfc2217 | datei), rolle (client | server), host, port,
     /// datei, verbinden (0 | 1).
     static bool konfigAusText(const char* text, Config& cfg, std::string& fehler);
@@ -144,7 +144,7 @@ private:
     void tastenAbgeben();
 
     const Config cfg_;
-    K1520Bus bus_;   ///< nur für die Grundklasse (keine Karten)
+    K1520Bus bus_;   ///< nur fuer die Grundklasse (keine Karten)
     k1520::p8000::P8000TerminalEinheit einheit_;
     struct Taste { uint32_t code; bool ctrl; };
     std::mutex tasten_sperre_;

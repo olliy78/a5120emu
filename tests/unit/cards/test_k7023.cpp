@@ -77,7 +77,7 @@ TEST(K7023, BasisadresseEinstellbarImKilobyteRaster)
     EXPECT_EQ(k.vramRead(0, 1), 0x42);
     bus.memWrite(0x43FF, 0x43);
     EXPECT_EQ(k.vramRead(63, 15), 0x43);
-    // Brückencodierung: nur A10-A15 wählbar
+    // Brueckencodierung: nur A10-A15 waehlbar
     K1520Bus bus2;
     K7023::Config c2;
     c2.vram_base = 0x4123;
@@ -96,8 +96,8 @@ TEST(K7023, ZeichengeneratorAbzuegeEingebettet)
     }
 }
 
-// Goldbilder aus §6 (selbst aus den Abzügen gezogen), Linien 0..10
-TEST(K7023, GoldbildGroßA)
+// Goldbilder aus §6 (selbst aus den Abzuegen gezogen), Linien 0..10
+TEST(K7023, GoldbildGrossA)
 {
     K1520Bus bus;
     K7023 k(bus);
@@ -163,7 +163,7 @@ TEST(K7023, KursorBalkLinien12Bis15VolleBreiteUndStetsHell)
             bool balken = y >= 12;
             if (balken) EXPECT_EQ(px(k, 2, 1, x, y), 0xFF) << x << "," << y;
         }
-    // Zeichen bleibt daneben unverändert sichtbar (Linie 6 von 'A')
+    // Zeichen bleibt daneben unveraendert sichtbar (Linie 6 von 'A')
     EXPECT_EQ(muster(k, 2, 1, 11)[6], "#######.");
     // ohne Bit 7 kein Balken
     k.vramWrite(2, 1, 'A');
@@ -206,20 +206,20 @@ TEST(K7023, Variante01Helligkeit)
     k.vramWrite(2, 0, 'A');
     EXPECT_EQ(px(k, 0, 0, 3, 1), normal);       // Anfangszustand normal
     k.vramWrite(1, 0, 0x07);                    // hell ein (DB1 = 1)
-    EXPECT_EQ(px(k, 0, 0, 3, 1), normal);       // davor unverändert
+    EXPECT_EQ(px(k, 0, 0, 3, 1), normal);       // davor unveraendert
     EXPECT_EQ(px(k, 2, 0, 3, 1), 0xFF);         // danach hell
     // Marke selbst ist dunkel
     for (int y = 0; y < 16; ++y)
         for (int x = 0; x < 8; ++x) EXPECT_EQ(px(k, 1, 0, x, y), 0);
-    // läuft über das Zeilenende weiter
+    // laeuft ueber das Zeilenende weiter
     k.vramWrite(0, 1, 'A');
     EXPECT_EQ(px(k, 0, 1, 3, 1), 0xFF);
-    // 09H schaltet zurück
+    // 09H schaltet zurueck
     k.vramWrite(3, 0, 0x09);
     k.vramWrite(4, 0, 'A');
     EXPECT_EQ(px(k, 4, 0, 3, 1), normal);
     EXPECT_EQ(px(k, 0, 1, 3, 1), normal);       // Folgezellen wurden nachgezogen
-    // Überschreiben der Marke 07H durch ein Zeichen nimmt "hell" zurück
+    // Ueberschreiben der Marke 07H durch ein Zeichen nimmt "hell" zurueck
     k.vramWrite(3, 0, 0x20);
     EXPECT_EQ(px(k, 4, 0, 3, 1), 0xFF);         // 07H steht noch bei 1 -> wieder hell
     k.vramWrite(1, 0, 0x20);
@@ -237,7 +237,7 @@ TEST(K7023, Variante01MarkenFamilie04Bis0F)
         k.vramWrite(1, 0, 'A');
         EXPECT_EQ(px(k, 1, 0, 3, 1), (code & 2) ? 0xFF : normal) << code;
     }
-    // Außerhalb der Familie: keine Marke (00-03, 10H, 20H ...)
+    // Ausserhalb der Familie: keine Marke (00-03, 10H, 20H ...)
     for (int code : {0x00, 0x01, 0x02, 0x03, 0x10, 0x1F}) {
         k.clearScreen(0x20);
         k.vramWrite(0, 0, static_cast<uint8_t>(code));

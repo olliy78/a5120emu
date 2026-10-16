@@ -2,12 +2,12 @@
  * @file test_raf_prg710.cpp
  * @brief Gastnachweis RAF am PRG 710-1 (doc/design/22_raf512.md §8 AP-R5): der Original-
  *        Treiber `RAF512.COM` (DKt 26.07.08, Laufwerk P:) unter SCPX 1526 V1.7 gegen die
- *        Nachbildung der Karte — der Weg, den der Anwender am Gerät benutzt (§1).
+ *        Nachbildung der Karte — der Weg, den der Anwender am Geraet benutzt (§1).
  *
  * Bootdiskette `prg710-1_scpx17_cpa640_boot.hfe` als TempDisk, der Treiber kommt mit
- * `DiskVolume::insert` darauf.  Bedienung wie in test_prg710_scpx.cpp: Tasten über
- * `keyPress` **und** `keyRelease` (am 710-1 Pflicht, Merkposten prg710.md), Bild über
- * `screenChar` (nie über den Speicher).
+ * `DiskVolume::insert` darauf.  Bedienung wie in test_prg710_scpx.cpp: Tasten ueber
+ * `keyPress` **und** `keyRelease` (am 710-1 Pflicht, Merkposten prg710.md), Bild ueber
+ * `screenChar` (nie ueber den Speicher).
  */
 #include <gtest/gtest.h>
 
@@ -31,7 +31,7 @@ constexpr uint32_t  QK_RETURN = 0x01000004;
 const char*         kDisk     = "prg710-1_scpx17_cpa640_boot.hfe";
 const char*         kGruss    = "SCPX 1526 - V 1.7 (52K)";
 
-// Texte wörtlich aus RAF512.COM.
+// Texte woertlich aus RAF512.COM.
 const char* kKapazitaet = "RAF-Gesamtkapazitaet 512K Bytes (32 Spuren zu 128 Sektoren)";
 const char* kUndef      = "RAF ist undefiniert, es folgt Loeschen Directory";
 const char* kGeladen    = "RAF ist noch wie bei letzter Benutzung geladen!";
@@ -87,7 +87,7 @@ bool bisPrompt(Prg710Machine& m, long long frist) {
     }
     return false;
 }
-/// Erst bis die letzte Zeile NICHT `A>` ist (das alte Bild überlebt die Reset-Taste),
+/// Erst bis die letzte Zeile NICHT `A>` ist (das alte Bild ueberlebt die Reset-Taste),
 /// dann bis zum neuen Prompt.
 bool bisNeuemPrompt(Prg710Machine& m, long long frist) {
     long long d = 0;
@@ -190,7 +190,7 @@ TEST_F(RafPrg710, Raf512LegtPAnUndUeberstehtReset) {
 
 /**
  * @test RafPrg710.Raf512OhneKarte
- * @brief Ohne gesteckte RAF: „Keine RAF-Karte vorhanden!", zurück am Prompt.
+ * @brief Ohne gesteckte RAF: „Keine RAF-Karte vorhanden!", zurueck am Prompt.
  */
 TEST_F(RafPrg710, Raf512OhneKarte) {
     Aufbau x("k1520_raf_prg710_ohne.hfe", false);

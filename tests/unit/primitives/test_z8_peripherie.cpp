@@ -1,7 +1,7 @@
 /**
  * @file test_z8_peripherie.cpp
- * @brief Z8-Primitive: Reset, Interrupts (IRQ/IMR/IPR, Flanken, Rangfolge), Zähler T0/T1
- *        (Vorteiler, Einzel-/Dauerbetrieb, TIN-Arten, TOUT), UART (Rahmen, Zeit, Parität,
+ * @brief Z8-Primitive: Reset, Interrupts (IRQ/IMR/IPR, Flanken, Rangfolge), Zaehler T0/T1
+ *        (Vorteiler, Einzel-/Dauerbetrieb, TIN-Arten, TOUT), UART (Rahmen, Zeit, Paritaet,
  *        Puffer), Ports 0–3 (Arten, offener Drain, Handshake), externer Bus, Save-State —
  *        gegen Zilog UM0016.  Abdeckung: doc/p8000/z8_abdeckung.md.
  */
@@ -15,10 +15,10 @@ using z8test::SerielleQuelle;
 
 namespace {
 
-/// LD reg,#v als eigener Befehl (prog-Bus 0F00H…), danach läuft die CPU in NOPs (FFH).
+/// LD reg,#v als eigener Befehl (prog-Bus 0F00H…), danach laeuft die CPU in NOPs (FFH).
 int ld(Rig& rg, uint8_t r, uint8_t v) { return rg.eins({0xE6, r, v}, 0x0F00); }
 
-/// NOPs, bis @p cond oder @p max Takte; Rückgabe: Zeitpunkt (takte) beim Eintreten.
+/// NOPs, bis @p cond oder @p max Takte; Rueckgabe: Zeitpunkt (takte) beim Eintreten.
 template <class F> uint64_t bis(Rig& rg, F cond, uint64_t max = 2000000) {
     const uint64_t t0 = rg.cpu.takte;
     while (!cond() && rg.cpu.takte - t0 < max) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
@@ -47,13 +47,13 @@ TEST(Z8Reset, SteuerregisterWieTable12AllzweckregisterBleiben) {
     rg.cpu.reg[0x40] = 0x5A;
     rg.cpu.rp = 0x70; rg.cpu.imr = 0xFF; rg.cpu.pc = 0x1234;
     rg.cpu.setResetLine(true);
-    for (int i = 0; i < 5; ++i) EXPECT_EQ(rg.cpu.step(), 1);       // gehalten: nichts läuft
+    for (int i = 0; i < 5; ++i) EXPECT_EQ(rg.cpu.step(), 1);       // gehalten: nichts laeuft
     EXPECT_EQ(rg.cpu.pc, 0x1234);
     rg.cpu.setResetLine(false);
     EXPECT_EQ(rg.cpu.step(), 5);
     EXPECT_EQ(rg.cpu.pc, 0x000C);
     EXPECT_EQ(rg.cpu.rp, 0);
-    EXPECT_EQ(rg.cpu.imr, 0x7F);                                    // nur Bit 7 gelöscht
+    EXPECT_EQ(rg.cpu.imr, 0x7F);                                    // nur Bit 7 geloescht
     EXPECT_EQ(rg.cpu.p01m(), 0x4D);
     EXPECT_EQ(rg.cpu.p2m(), 0xFF);
     EXPECT_EQ(rg.cpu.p3m(), 0x00);
@@ -126,7 +126,7 @@ TEST(Z8Irq, AnnahmeStapelrahmenVektorTakte) {
     rg.cpu.onInterrupt = [&](int n, uint16_t, uint16_t) { gesehen.push_back(n); };
     EXPECT_EQ(rg.cpu.step(), 24);
     EXPECT_EQ(rg.cpu.pc, 0x0220);
-    EXPECT_EQ(rg.cpu.imr, 0x04);                    // IMR.7 gelöscht
+    EXPECT_EQ(rg.cpu.imr, 0x04);                    // IMR.7 geloescht
     EXPECT_EQ(rg.cpu.regSicht(0xFA), 0);
     EXPECT_EQ(rg.cpu.sp, 0x6D);
     EXPECT_EQ(rg.r(0x6D), 0xA5);                    // FLAGS
@@ -222,7 +222,7 @@ TEST(Z8Irq, ScheinholenUndVektorAmExternenBus) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Zähler
+// Zaehler
 // ═════════════════════════════════════════════════════════════════════════════
 
 TEST(Z8Zaehler, T0EinzeldurchlaufZeitIstVierMalPmalT) {
@@ -230,13 +230,13 @@ TEST(Z8Zaehler, T0EinzeldurchlaufZeitIstVierMalPmalT) {
         Rig rg; rg.boot(); irqBereit(rg); rg.eins({0x8F}, 0x0F11);
         ld(rg, 0xF5, uint8_t((p & 63) << 2));        // PRE0, Einzeldurchlauf
         ld(rg, 0xF4, uint8_t(t & 255));
-        ld(rg, 0xF1, 0x03);                          // laden + zählen
+        ld(rg, 0xF1, 0x03);                          // laden + zaehlen
         const uint64_t start = rg.cpu.takte;         // Schreiben wirkt am Befehlsende
         const uint64_t t1 = bis(rg, [&] { return (rg.cpu.regSicht(0xFA) & 0x10) != 0; });
         const uint64_t soll = uint64_t(4 * p * t);
         EXPECT_GE(t1 - start, soll) << "p=" << p << " t=" << t;
         EXPECT_LT(t1 - start, soll + 6) << "p=" << p << " t=" << t;
-        EXPECT_EQ(rg.cpu.tmr() & 0x02, 0);            // Einzeldurchlauf: Freigabe gelöscht
+        EXPECT_EQ(rg.cpu.tmr() & 0x02, 0);            // Einzeldurchlauf: Freigabe geloescht
         EXPECT_EQ(rg.cpu.regSicht(0xF4), 0);          // steht auf 00
     }
 }
@@ -253,7 +253,7 @@ TEST(Z8Zaehler, DauerbetriebPeriodeUndZaehlerstandLesen) {
     // Endwerte = (vergangene Zeit) / (4·3·10)
     EXPECT_EQ(rg.cpu.zaehler(0).abgelaufen, (letzt - start) / 120);
     EXPECT_NE(rg.cpu.tmr() & 0x02, 0);
-    // Stand lesen läuft herunter: jede Änderung ist −1 bzw. 1 → 10 (Nachladen)
+    // Stand lesen laeuft herunter: jede Aenderung ist −1 bzw. 1 → 10 (Nachladen)
     int alt = rg.cpu.regSicht(0xF4), aenderungen = 0;
     while (aenderungen < 25) {
         rg.cpu.pc = 0x0800; rg.cpu.step();
@@ -309,20 +309,20 @@ TEST(Z8Zaehler, T1InternUndExternerTaktUeberTin) {
             rg.cpu.pc = 0x0800; rg.cpu.step();
         }
         // 6 Flanken = 2·3 → Endwert
-        rg.cpu.setPin(3, 1, false);   // (eine weitere ändert nichts mehr: Freigabe aus)
+        rg.cpu.setPin(3, 1, false);   // (eine weitere aendert nichts mehr: Freigabe aus)
         EXPECT_EQ(rg.cpu.zaehler(1).abgelaufen, 1u);
     }
 }
 
 TEST(Z8Zaehler, T1TorTriggerRetrigger) {
-    {   // Tor: zählt nur bei TIN = H
+    {   // Tor: zaehlt nur bei TIN = H
         Rig rg; rg.boot();
         rg.cpu.setPin(3, 1, false);
         ld(rg, 0xF3, uint8_t(1 << 2 | 1));
         ld(rg, 0xF2, 0);
-        ld(rg, 0xF1, 0x1C);                           // Torbetrieb, laden, zählen
+        ld(rg, 0xF1, 0x1C);                           // Torbetrieb, laden, zaehlen
         for (int i = 0; i < 50; ++i) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
-        EXPECT_EQ(rg.cpu.regSicht(0xF2), 0);          // 256 = 00: nichts gezählt
+        EXPECT_EQ(rg.cpu.regSicht(0xF2), 0);          // 256 = 00: nichts gezaehlt
         rg.cpu.setPin(3, 1, true);
         for (int i = 0; i < 10; ++i) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
         const uint8_t s = rg.cpu.regSicht(0xF2);
@@ -345,7 +345,7 @@ TEST(Z8Zaehler, T1TorTriggerRetrigger) {
         rg.cpu.setPin(3, 1, false); rg.cpu.setPin(3, 1, true);
         EXPECT_EQ(rg.cpu.regSicht(0xF2), s);          // nicht nachgetriggert
     }
-    {   // Retrigger: jede Flanke lädt neu
+    {   // Retrigger: jede Flanke laedt neu
         Rig rg; rg.boot();
         ld(rg, 0xF3, uint8_t(1 << 2));
         ld(rg, 0xF2, 100);
@@ -362,7 +362,7 @@ TEST(Z8Zaehler, ToutAnP36) {
     Rig rg; rg.boot();
     ld(rg, 0xF5, uint8_t(1 << 2 | 1));
     ld(rg, 0xF4, 5);                                  // Endwert alle 20 Takte
-    ld(rg, 0xF1, 0x43);                               // TOUT = T0, laden, zählen
+    ld(rg, 0xF1, 0x43);                               // TOUT = T0, laden, zaehlen
     EXPECT_NE(rg.cpu.portPegel(3) & 0x40, 0);         // TOUT beim Laden = 1
     int wechsel = 0; bool alt = true;
     const uint64_t s = rg.cpu.takte;
@@ -372,7 +372,7 @@ TEST(Z8Zaehler, ToutAnP36) {
         if (p != alt) { ++wechsel; alt = p; }
     }
     EXPECT_GE(wechsel, 18); EXPECT_LE(wechsel, 21);
-    ld(rg, 0x03, 0x00);                               // P3-Schreiben ändert P36 nicht
+    ld(rg, 0x03, 0x00);                               // P3-Schreiben aendert P36 nicht
     EXPECT_EQ((rg.cpu.portPegel(3) & 0x40) != 0, rg.cpu.tout());
     ld(rg, 0xF1, 0x02);                               // TOUT aus: P36 = Ausgangsregister
     EXPECT_EQ(rg.cpu.portPegel(3) & 0x40, 0);
@@ -420,7 +420,7 @@ TEST(Z8Uart, SendenMitUngeraderParitaet) {
         ld(rg, 0xF0, d);
         const uint64_t s = rg.cpu.takte;
         while (rg.cpu.takte - s < 8 * BIT + BIT / 2) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
-        const int p = (rg.cpu.portPegel(3) >> 7) & 1;   // Bit 7 = Parität
+        const int p = (rg.cpu.portPegel(3) >> 7) & 1;   // Bit 7 = Paritaet
         const int einsen = static_cast<int>(std::bitset<7>(d & 0x7F).count()) + p;
         EXPECT_EQ(einsen % 2, 1) << int(d);
     }
@@ -440,18 +440,18 @@ TEST(Z8Uart, EmpfangenZeitpunktPufferUndUeberschreiben) {
     EXPECT_LT(e - s, 9 * BIT + BIT / 2 + BIT / 8);
     EXPECT_EQ(rg.cpu.regSicht(0xF0), 0x4B);
     ld(rg, 0xFA, 0x00);
-    // Doppelpuffer: während das zweite Zeichen einläuft, bleibt das erste lesbar
+    // Doppelpuffer: waehrend das zweite Zeichen einlaeuft, bleibt das erste lesbar
     while (rg.cpu.takte - s < 14 * BIT) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
     EXPECT_EQ(rg.cpu.regSicht(0xF0), 0x4B);
     bis(rg, [&] { return (rg.cpu.regSicht(0xFA) & 0x08) != 0; });
-    EXPECT_EQ(rg.cpu.regSicht(0xF0), 0x6D);           // ungelesen überschrieben (kein Merker)
+    EXPECT_EQ(rg.cpu.regSicht(0xF0), 0x6D);           // ungelesen ueberschrieben (kein Merker)
     EXPECT_EQ(rg.empfangen, (std::vector<uint8_t>{0x4B, 0x6D}));
 }
 
 TEST(Z8Uart, FalschesStartbitWirdVerworfen) {
     Rig rg; rg.boot();
     uart9600(rg);
-    // kurzer Einbruch (1/4 Bit) über den Pin
+    // kurzer Einbruch (1/4 Bit) ueber den Pin
     rg.cpu.setPin(3, 0, false);
     for (uint64_t s = rg.cpu.takte; rg.cpu.takte - s < BIT / 4;) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
     rg.cpu.setPin(3, 0, true);
@@ -465,7 +465,7 @@ TEST(Z8Uart, EmpfangParitaetsfehlerInBit7) {
         SerielleQuelle q(BIT);
         rg.cpu.p30Quelle = [&](uint64_t t) { return q.pegel(t); };
         uart9600(rg, 0xC1);
-        const uint8_t d = 0x31;                       // drei Einsen → Parität 0 für ungerade
+        const uint8_t d = 0x31;                       // drei Einsen → Paritaet 0 fuer ungerade
         const uint8_t roh = uint8_t(d | (fehler ? 0x80 : 0x00));
         q.senden(rg.cpu.takte + 100, roh);
         bis(rg, [&] { return !rg.empfangen.empty(); });
@@ -477,7 +477,7 @@ TEST(Z8Uart, SeriellerBetriebUnterdruecktT0Irq4UndP30Irq3) {
     Rig rg; rg.boot(); irqBereit(rg); rg.eins({0x8F}, 0x0F11);
     uart9600(rg);
     for (int i = 0; i < 300; ++i) { rg.cpu.pc = 0x0800; rg.cpu.step(); }
-    EXPECT_EQ(rg.cpu.regSicht(0xFA) & 0x10, 0);       // T0 läuft, aber kein IRQ4
+    EXPECT_EQ(rg.cpu.regSicht(0xFA) & 0x10, 0);       // T0 laeuft, aber kein IRQ4
     EXPECT_GT(rg.cpu.zaehler(0).abgelaufen, 10u);
     rg.cpu.setPin(3, 0, false);
     EXPECT_EQ(rg.cpu.regSicht(0xFA) & 0x08, 0);
@@ -501,7 +501,7 @@ TEST(Z8Port, Port0NibbleArtenPort1Byte) {
     EXPECT_EQ(rg.cpu.portPegel(1), 0x99);
     EXPECT_EQ(rg.cpu.portTreibt(1), 0xFF);
     rg.eins({0xE4, 0x00, 0x40}); EXPECT_EQ(rg.r(0x40), 0x7E);
-    // Rückruf bei Änderung
+    // Rueckruf bei Aenderung
     bool gemeldet = false;
     for (auto& e : rg.portLog) gemeldet |= e.first == 1 && e.second == 0x99;
     EXPECT_TRUE(gemeldet);
@@ -543,7 +543,7 @@ TEST(Z8Port, HandshakeEingangPort0UndAusgangPort2) {
     EXPECT_EQ(rg.cpu.portPegel(3) & 0x20, 0);
     rg.cpu.setPort(0, 0x99);                           // neue Daten, noch nicht gelesen
     rg.cpu.setPin(3, 2, true);
-    rg.cpu.setPin(3, 2, false);                        // zweiter DAV: geschützt
+    rg.cpu.setPin(3, 2, false);                        // zweiter DAV: geschuetzt
     rg.eins({0xE4, 0x00, 0x40});
     EXPECT_EQ(rg.r(0x40), 0x12);
     EXPECT_EQ(rg.cpu.portPegel(3) & 0x20, 0);          // DAV noch 0: RDY bleibt 0
@@ -553,11 +553,11 @@ TEST(Z8Port, HandshakeEingangPort0UndAusgangPort2) {
     ld(rg, 0xF6, 0x00);
     ld(rg, 0xF7, 0x21);
     EXPECT_NE(rg.cpu.portPegel(3) & 0x40, 0);          // DAV2 = 1
-    rg.cpu.setPin(3, 1, true);                          // Gerät bereit
+    rg.cpu.setPin(3, 1, true);                          // Geraet bereit
     ld(rg, 0x02, 0x5A);
     EXPECT_EQ(rg.cpu.portPegel(3) & 0x40, 0);           // DAV ↓
     EXPECT_EQ(rg.cpu.portPegel(2), 0x5A);
-    rg.cpu.setPin(3, 1, false);                          // Gerät nimmt: RDY ↓ → DAV ↑
+    rg.cpu.setPin(3, 1, false);                          // Geraet nimmt: RDY ↓ → DAV ↑
     EXPECT_NE(rg.cpu.portPegel(3) & 0x40, 0);
     ld(rg, 0x02, 0x66);                                  // RDY = 0: DAV bleibt 1
     EXPECT_NE(rg.cpu.portPegel(3) & 0x40, 0);
@@ -631,7 +631,7 @@ TEST(Z8Stand, RundreiseMittenImSendenUndZaehlenIstBitgleich) {
     std::vector<uint8_t> st;
     a.cpu.serialize(st);
     Rig b; b.cpu.reg[0x10] = 0x99;
-    b.prog = a.prog; b.extProg = a.extProg; b.extDaten = a.extDaten;   // Speicher gehört zur Karte
+    b.prog = a.prog; b.extProg = a.extProg; b.extDaten = a.extDaten;   // Speicher gehoert zur Karte
     const uint8_t* p = st.data();
     ASSERT_TRUE(b.cpu.deserialize(p, st.data() + st.size()));
     EXPECT_EQ(p, st.data() + st.size());

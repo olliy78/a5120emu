@@ -4,10 +4,10 @@
  *        Marken-FF (MKE) und Datenfeld-Schreiben.
  *
  * Nachgestellt wird, was die Laufschleife der K8915Machine tut: ein Zugriff auf den
- * Datenport trägt Wartetakte beim Bus ein (@ref K1520Bus::addWaitCycles), die Schleife
+ * Datenport traegt Wartetakte beim Bus ein (@ref K1520Bus::addWaitCycles), die Schleife
  * holt sie ab und schreibt die Zeit mit @ref K5122::update fort.  Die Tests fahren
  * dieselbe Folge wie Boot-ROM und BIOS des K8915 (doc/design/16_k8915.md §4.3/§4.4):
- * Laufwerk wählen, `/STR` = 0 und MR (Bit5) = 0 ⇒ scharf, auf MKE warten, Kopf
+ * Laufwerk waehlen, `/STR` = 0 und MR (Bit5) = 0 ⇒ scharf, auf MKE warten, Kopf
  * ausgerollt lesen.
  *
  * @see core/cards/k5122/k5122_wait.cpp, doc/design/07_k5122_afs.md §7.7
@@ -34,8 +34,8 @@ namespace {
 constexpr uint32_t kHz     = 2'457'600;   // K8915
 constexpr int      kByte   = 78;          // 2 457 600 / 31 250 (MFM)
 
-/// 2 Zylinder, 2 Köpfe, 5 × 1024 B MFM (cpa800-artig).  Muster je Sektor:
-/// Füllbyte = Zylinder·16 + Kopf·8 + Sektor.
+/// 2 Zylinder, 2 Koepfe, 5 × 1024 B MFM (cpa800-artig).  Muster je Sektor:
+/// Fuellbyte = Zylinder·16 + Kopf·8 + Sektor.
 DiskFormat format5x1024() {
     DiskFormat f;
     f.name = "wait_5x1024";
@@ -75,7 +75,7 @@ protected:
         pfad = abbild(fmt);
         ASSERT_TRUE(card.mountDisk(0, pfad, fmt, false));
         card.ioWrite(0x10, 0xBB);          // Grundstellung: /STR = 1, MR = 1
-        card.ioWrite(0x18, 0xEE);          // Laufwerk 0 wählen, Motor an
+        card.ioWrite(0x18, 0xEE);          // Laufwerk 0 waehlen, Motor an
         lauf(20'000);                      // Anlauf (2 ms) abwarten
     }
     void TearDown() override { std::remove(pfad.c_str()); }
@@ -99,7 +99,7 @@ protected:
 
     /// Scharf machen wie ROM/BIOS: Lesesteuerwort 85H (/STR = 0, MR = 0, Kopf 0, MFM).
     void scharf(uint8_t steuerwort = 0x85) {
-        card.ioWrite(0x10, static_cast<uint8_t>(steuerwort | 0x20));   // MR = 1: Marken-FF rücksetzen
+        card.ioWrite(0x10, static_cast<uint8_t>(steuerwort | 0x20));   // MR = 1: Marken-FF ruecksetzen
         card.ioWrite(0x10, steuerwort);                                 // MR = 0: scharf
     }
     /// In Schritten von 10 Takten bis zum MKE; liefert die Wartezeit (−1 = nie).
@@ -110,7 +110,7 @@ protected:
         }
         return -1;
     }
-    /// Sektorkopf nach MKE lesen: A1… überspringen, dann FE C H R N.
+    /// Sektorkopf nach MKE lesen: A1… ueberspringen, dann FE C H R N.
     std::vector<uint8_t> kopf() {
         uint8_t b = lies();
         while (b == 0xA1) b = lies();
@@ -124,7 +124,7 @@ protected:
 
 /**
  * @test K5122Wait.LesenWartetGenauEineByteperiode
- * @brief Zwei Zugriffe ohne Zeit dazwischen: der zweite wartet genau bis zur nächsten
+ * @brief Zwei Zugriffe ohne Zeit dazwischen: der zweite wartet genau bis zur naechsten
  *        Bytegrenze (78 Takte bei 2,4576 MHz, MFM) — die CPU steht per `/WAIT`.
  */
 TEST_F(K5122Wait, LesenWartetGenauEineByteperiode) {
@@ -146,7 +146,7 @@ TEST_F(K5122Wait, LesenWartetGenauEineByteperiode) {
 
 /**
  * @test K5122Wait.OhneStrKeinWarten
- * @brief Bei `/STR` = 1 fließen keine Daten: der Datenport liefert sofort den alten
+ * @brief Bei `/STR` = 1 fliessen keine Daten: der Datenport liefert sofort den alten
  *        Inhalt, ohne Wartetakte (BIOS E902H leert ihn so) — sonst hinge die CPU.
  */
 TEST_F(K5122Wait, OhneStrKeinWarten) {
@@ -161,7 +161,7 @@ TEST_F(K5122Wait, OhneStrKeinWarten) {
  * @test K5122Wait.MkeErstNachSyncGruppeUndDannDerKopf
  * @brief Nach dem Scharfmachen ist MKE (12H Bit1) 0, bis eine Sync-Gruppe unter dem
  *        Kopf durch ist; der erste Zugriff danach liefert A1, dann FE und den Kopf.
- *        MR = 1 setzt MKE zurück; neu scharf findet den NÄCHSTEN Sektor.
+ *        MR = 1 setzt MKE zurueck; neu scharf findet den NAECHSTEN Sektor.
  */
 TEST_F(K5122Wait, MkeErstNachSyncGruppeUndDannDerKopf) {
     scharf();
@@ -177,11 +177,11 @@ TEST_F(K5122Wait, MkeErstNachSyncGruppeUndDannDerKopf) {
     EXPECT_EQ(k1[4], 3);   // 1024 B
 
     card.ioWrite(0x10, 0xA5);                      // MR = 1
-    EXPECT_FALSE(card.markeErkannt()) << "MR setzt das Marken-FF zurück";
+    EXPECT_FALSE(card.markeErkannt()) << "MR setzt das Marken-FF zurueck";
     card.ioWrite(0x10, 0x85);                      // MR = 0: neu scharf
     EXPECT_FALSE(card.markeErkannt());
     ASSERT_GE(bisMke(), 0);
-    const std::vector<uint8_t> dam = kopf();       // nächste Marke = Datenfeld (FB)
+    const std::vector<uint8_t> dam = kopf();       // naechste Marke = Datenfeld (FB)
     EXPECT_EQ(dam[0], 0xFB);
     EXPECT_EQ(dam[1], muster(0, 0, k1[3]));
 
@@ -190,16 +190,16 @@ TEST_F(K5122Wait, MkeErstNachSyncGruppeUndDannDerKopf) {
     ASSERT_GE(bisMke(), 0);
     const std::vector<uint8_t> k2 = kopf();
     ASSERT_EQ(k2[0], 0xFE);
-    EXPECT_EQ(k2[3], k1[3] % 5 + 1) << "der nächste Sektor in Drehfolge";
+    EXPECT_EQ(k2[3], k1[3] % 5 + 1) << "der naechste Sektor in Drehfolge";
 
     card.ioWrite(0x10, 0x8D);                      // /STR = 1
-    EXPECT_FALSE(card.markeErkannt()) << "/STR = 1 setzt das Marken-FF zurück";
+    EXPECT_FALSE(card.markeErkannt()) << "/STR = 1 setzt das Marken-FF zurueck";
 }
 
 /**
  * @test K5122Wait.MkeLowAktiv_InvertiertNurTorBBit1
  * @brief PRG 710: Marken-FF an Tor B Bit1 low-aktiv (Ruhe 1, erkannt 0), AP-P1c.  Die
- *        Vorgabe (high-aktiv) bleibt unverändert; `markeErkannt()` ist weiter logisch.
+ *        Vorgabe (high-aktiv) bleibt unveraendert; `markeErkannt()` ist weiter logisch.
  */
 TEST_F(K5122Wait, MkeLowAktiv_InvertiertNurTorBBit1) {
     EXPECT_FALSE(card.mkeLowAktiv()) << "Vorgabe high-aktiv";
@@ -210,26 +210,26 @@ TEST_F(K5122Wait, MkeLowAktiv_InvertiertNurTorBBit1) {
     ASSERT_GE(bisMke(), 0);
     EXPECT_TRUE(card.markeErkannt());
     EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x00) << "erkannt = low";
-    card.ioWrite(0x10, 0x8D);                      // /STR = 1: zurück
+    card.ioWrite(0x10, 0x8D);                      // /STR = 1: zurueck
     EXPECT_EQ(card.ioRead(0x12) & 0x02, 0x02);
 }
 
 /**
  * @test K5122Wait.MkeJedesSyncByte_ErstesInLiefertDasSyncByte
  * @brief PRG 710 (`setMkeJedesSyncByte`, doc/design/20_prg710.md AP-P1d/AP-P3): das ROM
- *        schlägt das Marken-FF in einer Schleife an (B5H/85H) und fragt ≈ 12 Takte später
+ *        schlaegt das Marken-FF in einer Schleife an (B5H/85H) und fragt ≈ 12 Takte spaeter
  *        ab.  Gilt die Marke „sofort“, muss das erste `IN (16H)` danach ein Sync-Byte
  *        liefern (bzw. die Marke, wenn der Kopf schon hinter der Gruppe ist) — gleich, an welcher Stelle der Gruppe der Kopf beim Scharfmachen stand.
  *        Bis AP-P3 galt die Marke schon IM ersten A1; im Daten-PIO lag dann noch das 00H
  *        davor, das ROM las es als Datenmarke und das Datenfeld kam um die Sync-Bytes
- *        verschoben an („DISKERROR C6“ am Zweitlader des PRG 710).  Geprüft über
+ *        verschoben an („DISKERROR C6“ am Zweitlader des PRG 710).  Geprueft ueber
  *        alle Phasen eines Bytefensters an vielen Stellen der Umdrehung.
  */
 TEST_F(K5122Wait, MkeJedesSyncByte_ErstesInLiefertDasSyncByte) {
     card.setMkeJedesSyncByte(true);
     int treffer = 0;
     for (int versuch = 0; versuch < 400; ++versuch) {
-        lauf(1000 + versuch * 7);                  // Phase quer über Fenster und Spur
+        lauf(1000 + versuch * 7);                  // Phase quer ueber Fenster und Spur
         long t = 0;
         for (; t < 600'000 && !card.markeErkannt(); t += 54) {
             scharf();                              // B5H/85H wie 02DDH
@@ -237,7 +237,7 @@ TEST_F(K5122Wait, MkeJedesSyncByte_ErstesInLiefertDasSyncByte) {
         }
         ASSERT_TRUE(card.markeErkannt()) << "Versuch " << versuch;
         // Ein Sync-Byte — oder, kam die Abfrage erst nach dem letzten A1, schon die Marke
-        // selbst (so auch am Gerät).  Nie das Lückenbyte VOR der Gruppe.
+        // selbst (so auch am Geraet).  Nie das Lueckenbyte VOR der Gruppe.
         const uint8_t erst = lies();
         ASSERT_TRUE(erst == 0xA1 || erst == 0xFE || erst == 0xFB)
             << "Versuch " << versuch << ": erstes Byte nach MKE " << int(erst);
@@ -253,9 +253,9 @@ TEST_F(K5122Wait, MkeJedesSyncByte_ErstesInLiefertDasSyncByte) {
 /**
  * @test K5122Wait.RauschenAufLeererSpur
  * @brief PRG 710 (`setRauschenAufLeererSpur`, doc/design/20_prg710.md AP-P3b): auf einer
- *        UNFORMATIERTEN Spur kommt ohne die Einstellung nie ein MKE (A5120/K8915: Lücke).
+ *        UNFORMATIERTEN Spur kommt ohne die Einstellung nie ein MKE (A5120/K8915: Luecke).
  *        Mit ihr erkennt der Markendecoder im Rauschen Scheinmarken (erstes Byte A1), die
- *        Bytes dahinter sind zufällig und jede Umdrehung anders — irgendwann auch ein
+ *        Bytes dahinter sind zufaellig und jede Umdrehung anders — irgendwann auch ein
  *        FEH, an dem ROM und Resident den Spurvergleich versuchen und scheitern.
  */
 TEST_F(K5122Wait, RauschenAufLeererSpur) {
@@ -283,7 +283,7 @@ TEST_F(K5122Wait, RauschenAufLeererSpur) {
         if (b == 0xFE) ++fe;
         card.ioWrite(0x10, 0xBB);
     }
-    EXPECT_GT(dahinter.size(), 200u) << "zufällige Bytes hinter der Scheinmarke";
+    EXPECT_GT(dahinter.size(), 200u) << "zufaellige Bytes hinter der Scheinmarke";
     EXPECT_GE(fe, 1) << "irgendwann ein FEH (Kennfeldmarke) — sonst endete das Warten nie";
 }
 
@@ -298,7 +298,7 @@ TEST_F(K5122Wait, MkeLoestDenPioInterruptAus) {
     for (uint8_t b : {0xF2, 0xCF, 0xF3, 0x37, 0xFD}) card.ioWrite(0x13, b);
     card.ioWrite(0x10, 0xBB);
     card.ioWrite(0x13, 0x83);
-    EXPECT_FALSE(card.hasInterrupt()) << "Freigabe ohne MKE darf nichts auslösen";
+    EXPECT_FALSE(card.hasInterrupt()) << "Freigabe ohne MKE darf nichts ausloesen";
     scharf();
     EXPECT_FALSE(card.hasInterrupt());
     ASSERT_GE(bisMke(), 0);
@@ -308,7 +308,7 @@ TEST_F(K5122Wait, MkeLoestDenPioInterruptAus) {
 
 /**
  * @test K5122Wait.UeberlaufVerliertBytes
- * @brief Die Scheibe wartet nicht: wer zu spät kommt, bekommt das zuletzt fertig
+ * @brief Die Scheibe wartet nicht: wer zu spaet kommt, bekommt das zuletzt fertig
  *        gewordene Byte ohne Warten, die dazwischen sind verloren (Handbuch §5.7).
  */
 TEST_F(K5122Wait, UeberlaufVerliertBytes) {
@@ -320,16 +320,16 @@ TEST_F(K5122Wait, UeberlaufVerliertBytes) {
     lies(&w);
     EXPECT_EQ(w, 0) << "ein fertiges Byte liegt schon im Daten-PIO";
     lies(&w);
-    EXPECT_GT(w, 0) << "das nächste kommt erst am Fensterende";
+    EXPECT_GT(w, 0) << "das naechste kommt erst am Fensterende";
     EXPECT_LE(w, kByte);
 }
 
 /**
  * @test K5122Wait.DatenfeldSchreibenUndZuruecklesen
- * @brief Wie der Schreibpfad des BIOS (EA94H): Kopf lesen, Lücke abzählen, `/WE` = 0,
+ * @brief Wie der Schreibpfad des BIOS (EA94H): Kopf lesen, Luecke abzaehlen, `/WE` = 0,
  *        Sync 00H, 3 × A1H, FBH, 1024 Datenbytes, CRC, `/WE` = 1.  Der Sektor, dessen
- *        Kopf zuletzt durchlief, trägt danach die neuen Daten — und liest sich im
- *        selben Transfer zurück.
+ *        Kopf zuletzt durchlief, traegt danach die neuen Daten — und liest sich im
+ *        selben Transfer zurueck.
  */
 TEST_F(K5122Wait, DatenfeldSchreibenUndZuruecklesen) {
     scharf();
@@ -337,7 +337,7 @@ TEST_F(K5122Wait, DatenfeldSchreibenUndZuruecklesen) {
     const std::vector<uint8_t> k = kopf();
     ASSERT_EQ(k[0], 0xFE);
     const uint8_t sektor = k[3];
-    for (int i = 0; i < 2 + 22; ++i) lies();         // CRC + Lücke 2
+    for (int i = 0; i < 2 + 22; ++i) lies();         // CRC + Luecke 2
     card.ioWrite(0x10, 0x84);                         // /WE = 0 (sonst wie 85H)
     for (int i = 0; i < 12; ++i) schreib(0x00);
     for (int i = 0; i < 3; ++i) schreib(0xA1);
@@ -345,13 +345,13 @@ TEST_F(K5122Wait, DatenfeldSchreibenUndZuruecklesen) {
     for (int i = 0; i < 1024; ++i) schreib(0x5A);
     schreib(0x12); schreib(0x34);                     // CRC (rechnet der Emulator neu)
     schreib(0x4E);
-    card.ioWrite(0x10, 0x85);                         // /WE = 1 ⇒ übernehmen
+    card.ioWrite(0x10, 0x85);                         // /WE = 1 ⇒ uebernehmen
 
     const auto sektoren = TrackCodec::parseTrack(card.drive(0).track(0));
     bool gefunden = false;
     for (const auto& s : sektoren) {
         if (s.id != sektor) {
-            EXPECT_EQ(s.data[0], muster(0, 0, s.id)) << "fremder Sektor verändert";
+            EXPECT_EQ(s.data[0], muster(0, 0, s.id)) << "fremder Sektor veraendert";
             continue;
         }
         gefunden = true;
@@ -362,7 +362,7 @@ TEST_F(K5122Wait, DatenfeldSchreibenUndZuruecklesen) {
     }
     EXPECT_TRUE(gefunden);
 
-    // Im selben Transfer zurücklesen: dieser Sektor, nächste Umdrehung.
+    // Im selben Transfer zuruecklesen: dieser Sektor, naechste Umdrehung.
     for (int runde = 0; runde < 12; ++runde) {
         card.ioWrite(0x10, 0xA5);
         card.ioWrite(0x10, 0x85);
@@ -384,10 +384,10 @@ TEST_F(K5122Wait, DatenfeldSchreibenUndZuruecklesen) {
 /**
  * @test K5122Wait.AusSektorenGebauteSpurHatNormluecken
  * @brief Eine Spur ohne eigene Aufzeichnung (hier aus einem `.img`, `bitcells` = 0) liegt
- *        mit den Normlücken von FORMAT.COM unter dem Kopf: 3 × A1, hinter dem Kennfeld
- *        22 × 4E + 12 × 00.  Mit den knappen `gapsFor()`-Lücken (11 × 4E) wäre die
- *        A1-Gruppe des Datenfelds schon vorbei, wenn das BIOS nach (F780H) − 6 Lückenbytes
- *        neu scharf macht — `.img`-Disketten gäben „BAD SECTOR“ (AP-E4f).
+ *        mit den Normluecken von FORMAT.COM unter dem Kopf: 3 × A1, hinter dem Kennfeld
+ *        22 × 4E + 12 × 00.  Mit den knappen `gapsFor()`-Luecken (11 × 4E) waere die
+ *        A1-Gruppe des Datenfelds schon vorbei, wenn das BIOS nach (F780H) − 6 Lueckenbytes
+ *        neu scharf macht — `.img`-Disketten gaeben „BAD SECTOR“ (AP-E4f).
  */
 TEST_F(K5122Wait, AusSektorenGebauteSpurHatNormluecken) {
     ASSERT_EQ(card.drive(0).track(0).bitcells, 0u);
@@ -433,7 +433,7 @@ protected:
         card.ioWrite(0x14, b);
         if (const int w = bus.takeWaitCycles()) card.update(w);
     }
-    /// Bis kurz hinter den nächsten Indexpuls — dort setzt FORMAT.COM im Index-ISR ein.
+    /// Bis kurz hinter den naechsten Indexpuls — dort setzt FORMAT.COM im Index-ISR ein.
     void bisIndex() {
         int vorher = card.debugState().indexAccum;
         for (int t = 0; t < 600'000; t += 10) {
@@ -453,8 +453,8 @@ protected:
     }
 
     /// Der Rohstrom einer Spur, wie FORMAT.COM (Verfahren 24, 5 × 1024) ihn vorbaut:
-    /// Lücke, Indexmarke C2 C2 C2 FC, je Sektor 3 × A1 + Kennfeld mit CRC, Lücke 2
-    /// (22 × 4E + 12 × 00), 3 × A1 + Datenfeld mit CRC, Lücke 3 (116 × 4E).
+    /// Luecke, Indexmarke C2 C2 C2 FC, je Sektor 3 × A1 + Kennfeld mit CRC, Luecke 2
+    /// (22 × 4E + 12 × 00), 3 × A1 + Datenfeld mit CRC, Luecke 3 (116 × 4E).
     static std::vector<uint8_t> rohstrom(uint8_t c, uint8_t h, uint8_t fuell) {
         std::vector<uint8_t> v;
         auto n = [&](uint8_t b, int k) { for (int i = 0; i < k; ++i) v.push_back(b); };
@@ -480,7 +480,7 @@ protected:
     }
 
     /// FORMAT.COM-Schreibkern (1AEDH): am Index `/WE` = 0 mit dem Schreibsteuerwort
-    /// (90H = Kopf 1, 94H = Kopf 0), Strom Byte für Byte, Lücke bis zum nächsten Index,
+    /// (90H = Kopf 1, 94H = Kopf 0), Strom Byte fuer Byte, Luecke bis zum naechsten Index,
     /// dann `/WE` = `/STR` = 1.  Liefert, wie viele Bytes geschrieben wurden.
     size_t spurSchreiben(const std::vector<uint8_t>& strom, uint8_t steuerwort) {
         bisIndex();
@@ -488,7 +488,7 @@ protected:
         size_t n = 0;
         for (uint8_t b : strom) { schreib(b); ++n; }
         int vorher = card.debugState().indexAccum;
-        for (;;) {                                     // Lücke bis zum Index (3580H)
+        for (;;) {                                     // Luecke bis zum Index (3580H)
             schreib(0x4E); ++n;
             const int jetzt = card.debugState().indexAccum;
             if (jetzt < vorher) break;
@@ -511,9 +511,9 @@ size_t finde(const TrackImage& t, const std::vector<uint8_t>& muster) {
  * @test K5122WaitFormat.GanzeSpurLiegtByteFuerByteAufDerScheibe
  * @brief FORMAT.COM des K8915 schreibt eine ganze Spur im `/WAIT`-Betrieb: jedes Byte
  *        wartet auf sein Fenster, die Spur geht beim Loslassen von `/WE` ins Medium —
- *        an die Seite, die das Schreibsteuerwort wählt (/FR), und **so, wie sie
- *        geschrieben wurde**: Indexmarke, 3 × A1, Lücke 2 mit 22 × 4E bleiben stehen
- *        (FORMAT.COMs Prüf-Lesen vergleicht die ganze Spur).  Die Sektoren sind
+ *        an die Seite, die das Schreibsteuerwort waehlt (/FR), und **so, wie sie
+ *        geschrieben wurde**: Indexmarke, 3 × A1, Luecke 2 mit 22 × 4E bleiben stehen
+ *        (FORMAT.COMs Pruef-Lesen vergleicht die ganze Spur).  Die Sektoren sind
  *        lesbar, beide CRCs stimmen, die andere Seite bleibt leer.
  */
 TEST_F(K5122WaitFormat, GanzeSpurLiegtByteFuerByteAufDerScheibe) {
@@ -542,8 +542,8 @@ TEST_F(K5122WaitFormat, GanzeSpurLiegtByteFuerByteAufDerScheibe) {
     ASSERT_NE(k1, SIZE_MAX);
     EXPECT_EQ(t.marks[k1 + 3], MarkType::Id);
     for (size_t i = 0; i < 22; ++i) EXPECT_EQ(t.bytes[k1 + 10 + i], 0x4E) << i;
-    EXPECT_EQ(t.bytes[k1 + 32], 0x00) << "Lücke 2 hat genau 22 × 4E";
-    EXPECT_TRUE(card.drive(0).track(1).empty()) << "Kopf 1 unberührt";
+    EXPECT_EQ(t.bytes[k1 + 32], 0x00) << "Luecke 2 hat genau 22 × 4E";
+    EXPECT_TRUE(card.drive(0).track(1).empty()) << "Kopf 1 unberuehrt";
 
     const auto st = card.debugState();
     EXPECT_TRUE(st.waitBetrieb);
@@ -553,10 +553,10 @@ TEST_F(K5122WaitFormat, GanzeSpurLiegtByteFuerByteAufDerScheibe) {
 
 /**
  * @test K5122WaitFormat.PruefLesenWieFormatCom
- * @brief Das Prüf-Lesen von FORMAT.COM (ISR 1B5CH): MK = 1 (Steuerwort 87H) erkennt die
+ * @brief Das Pruef-Lesen von FORMAT.COM (ISR 1B5CH): MK = 1 (Steuerwort 87H) erkennt die
  *        MFM-Indexmarke — das erste Byte nach MKE ist das erkannte C2, dann C2 C2 FC;
  *        MK = 0 (85H) erkennt A1 — dann A1 A1 A1 FE und das Kennfeld samt CRC, danach
- *        die geschriebene Lücke.  Die Byteperiode folgt der Spur (MFM, 78 Takte), nicht
+ *        die geschriebene Luecke.  Die Byteperiode folgt der Spur (MFM, 78 Takte), nicht
  *        dem MK-Bit.
  */
 TEST_F(K5122WaitFormat, PruefLesenWieFormatCom) {
@@ -588,14 +588,14 @@ TEST_F(K5122WaitFormat, PruefLesenWieFormatCom) {
 /**
  * @test K5122WaitFormat.DatenfeldDanachAnOrtUndStelle
  * @brief Nach dem Formatieren schreibt das BIOS (DISGEN) ein Datenfeld: der Sektor
- *        bekommt die neuen Daten mit neuer CRC — die Spur behält Länge, Indexmarke und
- *        Lücken (TrackCodec::writeSector statt Neubau).
+ *        bekommt die neuen Daten mit neuer CRC — die Spur behaelt Laenge, Indexmarke und
+ *        Luecken (TrackCodec::writeSector statt Neubau).
  */
 TEST_F(K5122WaitFormat, DatenfeldDanachAnOrtUndStelle) {
     spurSchreiben(rohstrom(0, 0, 0x40), 0x94);
     const std::vector<uint8_t> vorher = card.drive(0).track(0).bytes;
 
-    // BIOS-Weg: scharf, Kennfeld lesen, Lücke abzählen, /WE = 0, Datenfeld, /WE = 1.
+    // BIOS-Weg: scharf, Kennfeld lesen, Luecke abzaehlen, /WE = 0, Datenfeld, /WE = 1.
     uint8_t sektor = 0;
     for (int versuch = 0; versuch < 10 && sektor != 3; ++versuch) {
         card.ioWrite(0x10, 0xA5);
@@ -618,7 +618,7 @@ TEST_F(K5122WaitFormat, DatenfeldDanachAnOrtUndStelle) {
     card.ioWrite(0x10, 0x85);
 
     const TrackImage& t = card.drive(0).track(0);
-    ASSERT_EQ(t.bytes.size(), vorher.size()) << "Spurlänge bleibt";
+    ASSERT_EQ(t.bytes.size(), vorher.size()) << "Spurlaenge bleibt";
     EXPECT_NE(finde(t, {0xC2, 0xC2, 0xC2, 0xFC}), SIZE_MAX) << "Indexmarke bleibt";
     for (const auto& s : TrackCodec::parseTrack(t)) {
         EXPECT_TRUE(s.data_crc_ok) << int(s.id);
@@ -633,7 +633,7 @@ TEST_F(K5122WaitFormat, DatenfeldDanachAnOrtUndStelle) {
 /**
  * @test K5122WaitFormat.SeiteAusDemSchreibsteuerwortUndSchreibschutz
  * @brief 90H (/FR = 0) schreibt Kopf 1, Kopf 0 bleibt leer.  Auf einer
- *        schreibgeschützten Diskette geht nichts auf die Scheibe (FORMAT.COM fragt /WP
+ *        schreibgeschuetzten Diskette geht nichts auf die Scheibe (FORMAT.COM fragt /WP
  *        selbst ab, die Karte verwirft trotzdem).
  */
 TEST_F(K5122WaitFormat, SeiteAusDemSchreibsteuerwortUndSchreibschutz) {
@@ -645,14 +645,14 @@ TEST_F(K5122WaitFormat, SeiteAusDemSchreibsteuerwortUndSchreibschutz) {
 
     card.setWriteProtect(0, true);
     spurSchreiben(rohstrom(0, 0, 0x10), 0x94);
-    EXPECT_TRUE(card.drive(0).track(0).empty()) << "schreibgeschützt: nichts geschrieben";
+    EXPECT_TRUE(card.drive(0).track(0).empty()) << "schreibgeschuetzt: nichts geschrieben";
     EXPECT_EQ(card.debugState().waitSpuren, 1u);
 }
 
 /**
  * @test K5122WaitFormat.WaehrendDesSchreibensZeigtDebugStateDenTransfer
  * @brief Befund E4d: im `/WAIT`-Betrieb bedeuten `transferring`/`writeMode` Datenfluss
- *        zum Lesen bzw. Schreiben (nicht das Streaming des BusRq-Wegs) — sonst sähe
+ *        zum Lesen bzw. Schreiben (nicht das Streaming des BusRq-Wegs) — sonst saehe
  *        der Debugger nie einen Transfer.
  */
 TEST_F(K5122WaitFormat, WaehrendDesSchreibensZeigtDebugStateDenTransfer) {

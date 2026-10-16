@@ -1,6 +1,6 @@
 /**
  * @file test_wega_fs.cpp
- * @brief GoogleTests für @ref WegaFileSystem — das UNIX-System-III-Dateisystem des P8000.
+ * @brief GoogleTests fuer @ref WegaFileSystem — das UNIX-System-III-Dateisystem des P8000.
  *
  * ### Woher die Sollwerte stammen
  * | Sollwert | Quelle |
@@ -11,8 +11,8 @@
  * | Freiliste/Ankerbloecke, ialloc-Suche | `uts/sys/alloc.c` |
  *
  * Die Lieferdisketten (`~/Documents/K1520emu/Disketten/P8000/WEGA3.0/w30*.img`, nicht im
- * Repo) werden nur geprüft, wenn sie da sind (`K1520_WEGA_IMG` = Ordner übersteuert).
- * Alles andere läuft auf einer selbst angelegten Mini-Diskette bzw. einem Blockgerät
+ * Repo) werden nur geprueft, wenn sie da sind (`K1520_WEGA_IMG` = Ordner uebersteuert).
+ * Alles andere laeuft auf einer selbst angelegten Mini-Diskette bzw. einem Blockgeraet
  * im Speicher.
  */
 

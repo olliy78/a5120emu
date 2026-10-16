@@ -1,31 +1,31 @@
 /**
  * @file terminal.h
  * @brief P8000-Terminal (UB 8840 + 8275, Hardwarehandbuch Kap. 4) als reine Textschicht:
- *        ADM31- und VT100-Betrieb, 80 × 24 Zellen, zwei Zeichensätze, Tastatur → Bytes.
+ *        ADM31- und VT100-Betrieb, 80 × 24 Zellen, zwei Zeichensaetze, Tastatur → Bytes.
  *
  * @details
- * Unabhängig von jeder Maschine: Bytes vom Host `eingabe()`, Bytes zum Host
- * `hatAusgabe()/holeAusgabe()`, Bild über `zelle()`/`text()`.  Die Firmware des Terminals
+ * Unabhaengig von jeder Maschine: Bytes vom Host `eingabe()`, Bytes zum Host
+ * `hatAusgabe()/holeAusgabe()`, Bild ueber `zelle()`/`text()`.  Die Firmware des Terminals
  * wird NICHT emuliert (Entwurf 25 §7), nur ihr in `doc/p8000/hw_terminal.md` beschriebenes
  * Verhalten.
  *
  * **Attribute** sind — wie im Bildwiederholspeicher — Pseudozeichen (`TerminalZelle::feld`):
  * sie belegen eine Position (Leerzeichen am Schirm) und gelten bis zum Zeilenende (Feldregel).
  *
- * **Benannte Annahmen** (Handbuch widersprüchlich oder stumm; Tests halten sie fest):
+ * **Benannte Annahmen** (Handbuch widerspruechlich oder stumm; Tests halten sie fest):
  * - W2: ADM31-<FF>-Taste sendet 0CH (Tab. 4.3-6), nicht 09H der Referenzkarte.
  * - W3: <LINE DELETE> = `ESC R`, <LINE ERASE> = `ESC T` (Tab. 4.3-7).
- * - W6: VT100-`IL` fügt Leerzeilen VOR der Cursorzeile ein (ANSI); Cursor bleibt.
+ * - W6: VT100-`IL` fuegt Leerzeilen VOR der Cursorzeile ein (ANSI); Cursor bleibt.
  * - NEL (`ESC E` VT100) scrollt nicht am Schirmende (Text: „endet am Bildschirmende");
  *   IND scrollt.
  * - Zeilenumbruch sofort nach dem 80. Zeichen, in beiden Moden; in der letzten Zeile Rollen.
- * - ADM31-<ESC> bleibt im Programm-Mode wirksam (sonst käme man nie heraus).
- * - Tabs fest alle 8 Spalten.  US (1FH), FS (1CH) und übrige Steuerzeichen: ohne Wirkung.
- * - <MODE>/<VIDEO> = Neuinitialisierung: Bild gelöscht, Meldung in Zeile 1, Cursor Zeile 2,
+ * - ADM31-<ESC> bleibt im Programm-Mode wirksam (sonst kaeme man nie heraus).
+ * - Tabs fest alle 8 Spalten.  US (1FH), FS (1CH) und uebrige Steuerzeichen: ohne Wirkung.
+ * - <MODE>/<VIDEO> = Neuinitialisierung: Bild geloescht, Meldung in Zeile 1, Cursor Zeile 2,
  *   ZG1, Programm-Mode aus.  Video-Attribute aus: Attributsequenzen werden verschluckt.
  * - Off-Line: Tastenbytes werden lokal angezeigt und nicht gesendet.
- * - VT100-SGR ist kumulativ (0 löscht), ADM31-`ESC G n` setzt den Zustand ab.
- * - Kein XON/XOFF vom Terminal: der Anschluss liefert nur bei freiem Empfänger (Entwurf 25 §10.6).
+ * - VT100-SGR ist kumulativ (0 loescht), ADM31-`ESC G n` setzt den Zustand ab.
+ * - Kein XON/XOFF vom Terminal: der Anschluss liefert nur bei freiem Empfaenger (Entwurf 25 §10.6).
  */
 #pragma once
 
@@ -76,7 +76,7 @@ public:
     // ── Terminal → Host ─────────────────────────────────────────────────────
     bool    hatAusgabe() const { return !aus_.empty(); }
     uint8_t holeAusgabe() { uint8_t b = aus_.front(); aus_.pop_front(); return b; }
-    /// BREAK-Taste gedrückt und noch nicht vom Anschluss abgeholt.
+    /// BREAK-Taste gedrueckt und noch nicht vom Anschluss abgeholt.
     bool    breakAnstehend() const { return break_; }
     void    breakQuittieren() { break_ = false; }
 

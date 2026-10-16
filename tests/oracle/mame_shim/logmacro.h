@@ -1,3 +1,3 @@
-// Ersatz für MAMEs logmacro.h: Protokoll aus.
+// Ersatz fuer MAMEs logmacro.h: Protokoll aus.
 #pragma once
 #define LOG(...) do { } while (0)

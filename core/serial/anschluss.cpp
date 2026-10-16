@@ -25,7 +25,7 @@ SerialFormat serialFormatRechnen(uint8_t sioTeiler, uint8_t daten, uint8_t parit
     f.paritaet    = paritaet;
     f.stopp_halbe = stopp_halbe;
     const uint64_t bitTakte = static_cast<uint64_t>(sioTeiler) * ctcTakte;
-    if (bitTakte == 0 || sioTeiler == 0) return f;          // CTC unbekannt → ungültig
+    if (bitTakte == 0 || sioTeiler == 0) return f;          // CTC unbekannt → ungueltig
     f.baud_nenn = normBaud(static_cast<double>(phiNenn) / static_cast<double>(bitTakte));
     // Synchronbetrieb (Stoppbits 0) hat keine Zeichenzeit im Sinne des Wandlers.
     if (stopp_halbe < 2 || stopp_halbe > 4 || daten < 5 || daten > 8) return f;
@@ -54,7 +54,7 @@ SerialFormat serialFormatRechnenQ16(uint8_t sioTeiler, uint8_t daten, uint8_t pa
 }
 
 SerialFormat ersatzFormat(uint64_t phiNenn) {
-    // 9600 Bd 8N1: 10 Bit je Zeichen.  Direkt aus φ gerechnet (nicht über einen
+    // 9600 Bd 8N1: 10 Bit je Zeichen.  Direkt aus φ gerechnet (nicht ueber einen
     // SIO-Teiler), damit es auch bei einem Nenntakt ungleich 2,4576 MHz 9600 bleibt.
     SerialFormat f;
     f.baud_nenn     = 9600;

@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
         # Einstellungen → Laufwerke tab.
         self._drive_types = self.profil.standard_laufwerke()
         # Modell (A5120 / A5120.16, app/modell.py) — bestimmt den core-Parameter
-        # ``em=``.  Vorgabe A5120 ohne Erweiterung, überschrieben von der
+        # ``em=``.  Vorgabe A5120 ohne Erweiterung, ueberschrieben von der
         # restaurierten Konfiguration / der Einstellungen → Allgemein-Auswahl.
         # Nur im Profil mit Modellwahl (A5120); der K8915 bleibt immer ohne EM.
         self._model = self.profil.standard_modell()
@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         # Hardwarevarianten des Programms (PC 1715: Zeichensatz, Tastatur-ROM; AP-6) —
         # Konstruktorparameter des Kerns wie das Modell, ein Wechsel ist ein Kaltstart.
         self._hardware = self.profil.hardware_standard()
-        # Bauart der Bildschirmtastatur (hängt am Modell: PRG 710 K7609, 710-1 K7672;
+        # Bauart der Bildschirmtastatur (haengt am Modell: PRG 710 K7609, 710-1 K7672;
         # PC 1715 mit QWERTZ-ROM eigene Beschriftung).
         self._tastatur_art = self.profil.tastatur_bauart(self._model, self._hardware)
         # RAM-Floppy RAF (doc/design/22_raf512.md §7, `app/raf.py`) — wie das Modell
@@ -150,32 +150,32 @@ class MainWindow(QMainWindow):
         # sizes are honoured instead of being forced back to minimum.
         self._has_saved_layout = False
         # True, sobald der Anwender selbst eine Trennlinie gezogen hat: die
-        # Startaufteilung (:meth:`_shrink_keyboard`) hält sich dann heraus.
+        # Startaufteilung (:meth:`_shrink_keyboard`) haelt sich dann heraus.
         self._nutzer_layout = False
-        # True, solange WIR die Kästen umbauen — dann ist eine Größenänderung
+        # True, solange WIR die Kaesten umbauen — dann ist eine Groessenaenderung
         # eines Kastens nicht der Zug des Anwenders.
         self._layout_laeuft = False
         # Last "normal" (non-fullscreen/-maximized) window size, persisted so the
         # size is restored on the next start.
         self._normal_size = QSize(self.DEFAULT_WIDTH, self.DEFAULT_HEIGHT)
         # „maximiert" aus der Konfiguration, nachzuholen beim ersten Anzeigen
-        # (`showEvent`) — vorher verfällt es (siehe `_maximiert_herstellen`).
+        # (`showEvent`) — vorher verfaellt es (siehe `_maximiert_herstellen`).
         self._maximiert_nachholen = None
 
         # Die Maschine rechnet in einem EIGENEN Faden (app/emulationstakt.py), nicht
-        # im GUI-Faden — sonst friert die Oberfläche ein, sobald der Wirt den
+        # im GUI-Faden — sonst friert die Oberflaeche ein, sobald der Wirt den
         # eingestellten Takt nicht schafft.  Der Name `run_timer` bleibt (start/stop/
-        # isActive wie beim früheren QTimer).
+        # isActive wie beim frueheren QTimer).
         self.run_timer = Emulationstakt(lambda: self.emulator, self.CPU_HZ,
                                         self.frame_interval_ms, self)
         self.run_timer.bild.connect(self._bild_nach_lauf)
         self.run_timer.fehler.connect(lambda t: self._on_error(f"Emulator error: {t}"))
 
-        # Alle Bedienwege einmal anlegen (Menü und Leiste zeigen dieselben).
+        # Alle Bedienwege einmal anlegen (Menue und Leiste zeigen dieselben).
         aktionen.erzeuge_aktionen(self, self.profil.maschine, self.profil.programm)
         if self.profil.maschine != "a5120":
             self.act_ueber.setText(f"Ü&ber {self.profil.programm}…")
-        # Inhalt und Stil der Symbolleiste — aus der Konfiguration überschrieben.
+        # Inhalt und Stil der Symbolleiste — aus der Konfiguration ueberschrieben.
         self._leisten_inhalt = aktionen.standard(self.profil.maschine)
         self._hilfe = None
 
@@ -183,10 +183,10 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.setup_menus()
         # Erst jetzt: die Leiste kann Kastenschalter zeigen, und die gibt es
-        # erst, seit die Kästen stehen.
+        # erst, seit die Kaesten stehen.
         self._leiste_fuellen(self._leisten_inhalt)
         if not self.profil.laufwerke:
-            # MC80: kein Diskettenlaufwerk — Kasten, Menüs und Statusfelder gar nicht erst zeigen.
+            # MC80: kein Diskettenlaufwerk — Kasten, Menues und Statusfelder gar nicht erst zeigen.
             self._rechner_anzeigen()
 
         # Status updates
@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
         # Sektorzugriff dauert wenige Zehntelsekunden, im Sekundentakt abgetastet
         # blitzt die Leuchte praktisch nie auf.  Derselbe Takt wie die Leuchten
         # im Laufwerkskasten (DriveWidget._led_timer), und genauso billig —
-        # je Laufwerk eine Abfrage, neu gezeichnet wird nur bei echter Änderung.
+        # je Laufwerk eine Abfrage, neu gezeichnet wird nur bei echter Aenderung.
         self._lamp_timer = QTimer(self)
         self._lamp_timer.timeout.connect(self._update_drive_lamps)
         self._lamp_timer.start(120)
@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
         self.settings_widget.crtChanged.connect(self._schedule_autosave)
         self.settings_widget.speedChanged.connect(self._on_speed_selected)
         self.settings_widget.driveTypesChanged.connect(self._on_drive_types_selected)
-        # Serielle Schnittstellen: jede Änderung des Anwenders gehört in die
+        # Serielle Schnittstellen: jede Aenderung des Anwenders gehoert in die
         # Konfiguration; die Statuszeile bekommt ihre Felder fertig aus dem Reiter.
         self.serial_widget.changed.connect(self._schedule_autosave)
         self.serial_widget.statuszeile.connect(self.status_widget.set_seriell)
@@ -240,19 +240,19 @@ class MainWindow(QMainWindow):
         self.drives_widget.disk_mounted.connect(lambda *_: self._schedule_autosave())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._schedule_autosave())
         # Die Statuszeile nennt die eingelegten Abbilder — sie darf nicht bis zum
-        # nächsten Sekundentakt hinterherhinken.
+        # naechsten Sekundentakt hinterherhinken.
         self.drives_widget.disk_mounted.connect(lambda *_: self._update_drive_status())
         self.drives_widget.disk_unmounted.connect(lambda *_: self._update_drive_status())
 
         # Persist which panels are active (dock shown/hidden) whenever that changes.
         #
-        # Und ihre GRÖSSE: ein Zug an der Trennlinie zwischen zwei Kästen ändert
-        # nur die Kästen, nicht das Fenster — es gab also weder ein
+        # Und ihre GROESSE: ein Zug an der Trennlinie zwischen zwei Kaesten aendert
+        # nur die Kaesten, nicht das Fenster — es gab also weder ein
         # `resizeEvent` des Fensters noch ein Signal, und die neue Aufteilung
-        # wurde nie gespeichert (sie überlebte nur, wenn zufällig etwas anderes
-        # ein Speichern auslöste).  Ein Ereignisfilter fängt das ab; das
-        # Sammeln im Autosave-Timer sorgt dafür, dass ein Ziehen EINE Schreibung
-        # ergibt und nicht fünfzig.
+        # wurde nie gespeichert (sie ueberlebte nur, wenn zufaellig etwas anderes
+        # ein Speichern ausloeste).  Ein Ereignisfilter faengt das ab; das
+        # Sammeln im Autosave-Timer sorgt dafuer, dass ein Ziehen EINE Schreibung
+        # ergibt und nicht fuenfzig.
         for dock in (self.screen_dock, self.keyboard_dock,
                      self.drives_dock, self.settings_dock, self.eprom_dock,
                      self.lochstreifen_dock, self.kassette_dock):
@@ -261,8 +261,8 @@ class MainWindow(QMainWindow):
             dock.visibilityChanged.connect(lambda *_: self._kasten_sichtbarkeit())
             dock.dockLocationChanged.connect(lambda *_: self._schedule_autosave())
             dock.installEventFilter(self)
-        # Beim Umdocken der Tastatur ändert sich ihre Breite — und mit ihr die
-        # Höhe, die sie braucht (siehe :meth:`_tastatur_einpassen`).
+        # Beim Umdocken der Tastatur aendert sich ihre Breite — und mit ihr die
+        # Hoehe, die sie braucht (siehe :meth:`_tastatur_einpassen`).
         self.keyboard_dock.dockLocationChanged.connect(
             lambda *_: QTimer.singleShot(0, self._tastatur_einpassen))
 
@@ -285,7 +285,7 @@ class MainWindow(QMainWindow):
 
         # Die Statuszeile einmal von Hand nachziehen: das Wiederherstellen legt
         # die Disketten bewusst OHNE `disk_mounted` ein (es ist keine
-        # Nutzeraktion), sonst stünde dort bis zum ersten Sekundentakt „leer".
+        # Nutzeraktion), sonst stuende dort bis zum ersten Sekundentakt „leer".
         self._update_drive_status()
 
         # Cold start with the restored disks present, then begin running.
@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
         self.run_timer.start()
         self.screen_widget.start_display()
         # Der Takt steht sofort in der Zeile — nicht erst, wenn der Sekundentakt
-        # das erste Mal schlägt.
+        # das erste Mal schlaegt.
         self.status_widget.set_takt(self.speed_factor)
     
     def setup_ui(self):
@@ -309,18 +309,18 @@ class MainWindow(QMainWindow):
         Fenster-Resize auf ihre Minimalhöhe gebracht, damit der Bildschirm
         maximal groß ist (siehe :meth:`_shrink_keyboard`).
         """
-        # Linke bzw. rechte Spalte über die volle Höhe spannen (keine
+        # Linke bzw. rechte Spalte ueber die volle Hoehe spannen (keine
         # Bottom-Area — die Tastatur sitzt als Split in der linken Spalte).
         self.setCorner(Qt.TopLeftCorner, Qt.LeftDockWidgetArea)
         self.setCorner(Qt.BottomLeftCorner, Qt.LeftDockWidgetArea)
         self.setCorner(Qt.TopRightCorner, Qt.RightDockWidgetArea)
         self.setCorner(Qt.BottomRightCorner, Qt.RightDockWidgetArea)
 
-        # ── Kein zentrales Widget: die Docks füllen das ganze Fenster ────────
+        # ── Kein zentrales Widget: die Docks fuellen das ganze Fenster ────────
         # Wichtig: das zentrale Widget wird *versteckt*, NICHT auf 0×0 geklemmt.
         # Ein harter 0×0-Maximumsatz nimmt der Dock-Anordnung ihre elastische
         # Mitte → die Trennlinien lassen sich dann nicht mehr verschieben.  Ein
-        # verstecktes zentrales Widget belegt keinen Platz, die Docks füllen das
+        # verstecktes zentrales Widget belegt keinen Platz, die Docks fuellen das
         # Fenster und die Separatoren bleiben ziehbar.
         central = QWidget(self)
         self.setCentralWidget(central)
@@ -345,8 +345,8 @@ class MainWindow(QMainWindow):
         self.act_power.setText(aktionen.POWER_TEXT[True])
 
         # ── Statusleiste ─────────────────────────────────────────────────────
-        # Rechts der Zustand (Tempo, Laufwerke), links bleibt Platz für die
-        # flüchtigen Meldungen des Fensters.
+        # Rechts der Zustand (Tempo, Laufwerke), links bleibt Platz fuer die
+        # fluechtigen Meldungen des Fensters.
         self.status_widget = MachineStatus(profil=self.profil)
         self.statusBar().addPermanentWidget(self.status_widget)
         self.statusBar().showMessage("Bereit")
@@ -361,7 +361,7 @@ class MainWindow(QMainWindow):
         self.screen_widget.set_emulator(self.emulator)
         # Fullscreen is owned by the window (see enter/exit_fullscreen); the
         # screen only requests it via signals.  Dock-/Undock-Reparenting des
-        # QOpenGLWidget überlebt der Kontext dank aboutToBeDestroyed-Cleanup.
+        # QOpenGLWidget ueberlebt der Kontext dank aboutToBeDestroyed-Cleanup.
         self.screen_widget.toggleFullscreenRequested.connect(self.toggle_fullscreen)
         self.screen_widget.exitFullscreenRequested.connect(self.exit_fullscreen)
         self.screen_widget.einfuegenFertig.connect(self._einfuegen_fertig)
@@ -399,7 +399,7 @@ class MainWindow(QMainWindow):
         drives_scroll.setWidgetResizable(True)
         self.platten_widget = None
         if self.profil.platte:
-            # P8000: unter den Disketten der Kasten für die Winchesterplatte.
+            # P8000: unter den Disketten der Kasten fuer die Winchesterplatte.
             kasten = QWidget()
             kl = QVBoxLayout(kasten)
             kl.setContentsMargins(0, 0, 0, 0)
@@ -416,9 +416,9 @@ class MainWindow(QMainWindow):
         self.drives_dock.setWidget(drives_scroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.drives_dock)
 
-        # Reiter gestapelter Kästen (Laufwerke/Einstellungen/EPROMmer/Lochstreifen)
+        # Reiter gestapelter Kaesten (Laufwerke/Einstellungen/EPROMmer/Lochstreifen)
         # OBEN am Kasten statt Qts Vorgabe unten (Wunsch des Anwenders 2026-10-11).
-        # Gilt für jede Andockfläche; der dock_state merkt die Lage nicht, sie
+        # Gilt fuer jede Andockflaeche; der dock_state merkt die Lage nicht, sie
         # kommt immer von hier.
         from PySide6.QtWidgets import QTabWidget
         self.setTabPosition(Qt.AllDockWidgetAreas, QTabWidget.TabPosition.North)
@@ -426,9 +426,9 @@ class MainWindow(QMainWindow):
         # ── Einstellungen-Dock (rechts, getabbt; anfangs versteckt) ──────────
         self.settings_dock = QDockWidget("Einstellungen", self)
         self.settings_dock.setObjectName("settings_dock")
-        # Serielle Schnittstellen nach außen (doc/design/19 §9, AP-S10): ein Reiter
-        # IM Einstellungen-Kasten, kein eigener Kasten.  Namen und Fähigkeiten der
-        # Blöcke kommen aus dem Kern.  Das Widget (und mit ihm sein 4-Hz-Takt für
+        # Serielle Schnittstellen nach aussen (doc/design/19 §9, AP-S10): ein Reiter
+        # IM Einstellungen-Kasten, kein eigener Kasten.  Namen und Faehigkeiten der
+        # Bloecke kommen aus dem Kern.  Das Widget (und mit ihm sein 4-Hz-Takt fuer
         # die Statuszeile) lebt auch, solange der Reiter nicht obenauf liegt.
         self.serial_widget = SerialWidget(
             self.emulator, ports=self.profil.schnittstellen_ports,
@@ -440,8 +440,8 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.drives_dock, self.settings_dock)
 
         # ── EPROMmer-Dock (nur PRG 710, AP-P7c; rechts, getabbt) ─────────────
-        # Der virtuelle Sockel der ATP 590068.  Die Knöpfe im Kasten sind die
-        # Aktionen aus `app/ui/actions.py` (EPROM), dieselben wie im Menü.
+        # Der virtuelle Sockel der ATP 590068.  Die Knoepfe im Kasten sind die
+        # Aktionen aus `app/ui/actions.py` (EPROM), dieselben wie im Menue.
         self.eprom_dock = None
         self.eprom_widget = None
         if self.profil.eprommer:
@@ -461,14 +461,14 @@ class MainWindow(QMainWindow):
 
         # ── Lochstreifen-Dock (K6022, doc/design/23_lochstreifen.md §7) ───────
         # In jedem Programm angelegt, aber nur bei gesteckter Karte sichtbar und
-        # im Menü (:meth:`_lochstreifen_kasten`) — die Karte ist eine Option.
+        # im Menue (:meth:`_lochstreifen_kasten`) — die Karte ist eine Option.
         self.lochstreifen_widget = LochstreifenWidget(self.emulator)
         self.lochstreifen_dock = QDockWidget("Lochstreifen", self)
         self.lochstreifen_dock.setObjectName("lochstreifen_dock")
         self.lochstreifen_dock.setWidget(self.lochstreifen_widget)
         self.addDockWidget(Qt.RightDockWidgetArea, self.lochstreifen_dock)
         self.tabifyDockWidget(self.drives_dock, self.lochstreifen_dock)
-        # Obenauf gelegt → sofort den Stand zeigen, nicht erst beim nächsten Sekundentakt.
+        # Obenauf gelegt → sofort den Stand zeigen, nicht erst beim naechsten Sekundentakt.
         self.lochstreifen_dock.visibilityChanged.connect(
             lambda sichtbar: sichtbar and self.lochstreifen_widget.aktualisieren())
 
@@ -516,18 +516,18 @@ class MainWindow(QMainWindow):
         self._lochstreifen_kasten()
         self._kassette_kasten()
 
-        # Startaufteilung: rechte Spalte (Laufwerke) so schmal wie möglich, ohne
-        # horizontales Scrollen; Bildschirm breit.  Tastatur auf Minimalhöhe.
+        # Startaufteilung: rechte Spalte (Laufwerke) so schmal wie moeglich, ohne
+        # horizontales Scrollen; Bildschirm breit.  Tastatur auf Minimalhoehe.
         self._drives_width = self.drives_widget.sizeHint().width() + 28  # + Scrollbar
         self.resizeDocks([self.screen_dock, self.drives_dock],
                          [900, self._drives_width], Qt.Horizontal)
         self._shrink_keyboard()
 
-        # ── Tastaturfokus gehört dem emulierten Rechner ──────────────────────
+        # ── Tastaturfokus gehoert dem emulierten Rechner ──────────────────────
         # Alle Bedienelemente auf NoFocus (ein Klick auf Power/Mount/… bedient
         # sie, nimmt dem Bildschirm aber nicht die Tastatur weg) und ein
-        # Wächter, der den Fokus nach Klicks/Fensterwechsel zurückholt — sonst
-        # müsste man vor jeder Eingabe erst wieder in die Röhre klicken.
+        # Waechter, der den Fokus nach Klicks/Fensterwechsel zurueckholt — sonst
+        # muesste man vor jeder Eingabe erst wieder in die Roehre klicken.
         release_focus(self)
         self._focus_guard = ScreenFocusGuard(self, self.screen_widget)
 
@@ -548,7 +548,7 @@ class MainWindow(QMainWindow):
         Frontplatte; der Kasten „Laufwerke“ und die Lampen verschwinden, statt tot dazustehen.
         """
         hat = self.profil.modell_hat_rechner(self._model)
-        # Ein Rechner ohne Diskettenlaufwerke (MC80): Kasten und Diskettenmenüs fallen weg.
+        # Ein Rechner ohne Diskettenlaufwerke (MC80): Kasten und Diskettenmenues fallen weg.
         lw = hat and self.profil.laufwerke
         self.drives_dock.toggleViewAction().setEnabled(lw)
         self.drives_dock.toggleViewAction().setVisible(lw)
@@ -636,7 +636,7 @@ class MainWindow(QMainWindow):
             from app.ui.keyboard_k7609 import KeyboardK7609Widget
             return KeyboardK7609Widget()
         if self._tastatur_art == "k7636":
-            # Frühe A5120 (Entwurf 30, AP A5): parallele K7636 am U-Bus der K2526.
+            # Fruehe A5120 (Entwurf 30, AP A5): parallele K7636 am U-Bus der K2526.
             from app.ui.keyboard_k7636 import KeyboardK7636Widget
             return KeyboardK7636Widget()
         return KeyboardWidget()
@@ -739,11 +739,11 @@ class MainWindow(QMainWindow):
         """
         if self._has_saved_layout or self._nutzer_layout:
             return
-        # Während dieser Umbau läuft, sind die Größenänderungen der Kästen von
-        # UNS — sie dürfen nicht als Zug des Anwenders gelten.  Zurückgesetzt
-        # wird die Marke erst eine Runde der Ereignisschleife später: Qt stellt
-        # das Layout verzögert zu, die Größenänderungen kämen sonst erst nach
-        # dem Zurücksetzen an und gälten als Zug des Anwenders.
+        # Waehrend dieser Umbau laeuft, sind die Groessenaenderungen der Kaesten von
+        # UNS — sie duerfen nicht als Zug des Anwenders gelten.  Zurueckgesetzt
+        # wird die Marke erst eine Runde der Ereignisschleife spaeter: Qt stellt
+        # das Layout verzoegert zu, die Groessenaenderungen kaemen sonst erst nach
+        # dem Zuruecksetzen an und gaelten als Zug des Anwenders.
         self._layout_laeuft = True
         self._startaufteilung()
         QTimer.singleShot(0, lambda: setattr(self, "_layout_laeuft", False))
@@ -758,8 +758,8 @@ class MainWindow(QMainWindow):
         Laufwerke): dann wurde der Bildschirm gestreckt und der wirkliche
         Nachbar zusammengedrückt.
         """
-        # Tastatur auf Inhaltshöhe: sie ist eine maßstäbliche Nachbildung, die
-        # nötige Höhe hängt an der Breite, die ihr Kasten ihr lässt.
+        # Tastatur auf Inhaltshoehe: sie ist eine massstaebliche Nachbildung, die
+        # noetige Hoehe haengt an der Breite, die ihr Kasten ihr laesst.
         if (getattr(self, "keyboard_dock", None) is not None
                 and self.keyboard_dock.isVisible()
                 and not self.keyboard_dock.isFloating()):
@@ -790,7 +790,7 @@ class MainWindow(QMainWindow):
             wurde_gross = (jetzt & (Qt.WindowMaximized | Qt.WindowFullScreen)
                            and not vorher & (Qt.WindowMaximized | Qt.WindowFullScreen))
             if wurde_gross:
-                # `normalGeometry()` ist genau die Größe vor dem Maximieren.
+                # `normalGeometry()` ist genau die Groesse vor dem Maximieren.
                 normal = self.normalGeometry().size()
                 if normal.isValid() and not normal.isEmpty():
                     self._normal_size = normal
@@ -810,22 +810,22 @@ class MainWindow(QMainWindow):
                             getattr(self, "drives_dock", None),
                             getattr(self, "settings_dock", None))):
             if not self._layout_laeuft:
-                # Nicht von uns, also vom Anwender: ab jetzt rückt die
+                # Nicht von uns, also vom Anwender: ab jetzt rueckt die
                 # Startaufteilung nichts mehr zurecht.
                 self._nutzer_layout = True
             self._schedule_autosave()
         return super().eventFilter(obj, event)
 
     def resizeEvent(self, event):
-        # Die Marke VOR dem Layout-Durchlauf: die Kästen wachsen mit dem Fenster,
+        # Die Marke VOR dem Layout-Durchlauf: die Kaesten wachsen mit dem Fenster,
         # und das ist keine Anordnung des Anwenders (siehe :meth:`eventFilter`).
         self._layout_laeuft = True
         super().resizeEvent(event)
-        # Nach dem Layout-Durchlauf ausführen, sonst überschreibt QMainWindow es.
+        # Nach dem Layout-Durchlauf ausfuehren, sonst ueberschreibt QMainWindow es.
         QTimer.singleShot(0, self._shrink_keyboard)
         QTimer.singleShot(0, lambda: setattr(self, "_layout_laeuft", False))
-        # Merke die "normale" Fenstergröße (kein Vollbild/Maximiert) und persistiere
-        # sie, damit sie beim nächsten Start wiederhergestellt wird.
+        # Merke die "normale" Fenstergroesse (kein Vollbild/Maximiert) und persistiere
+        # sie, damit sie beim naechsten Start wiederhergestellt wird.
         if (not getattr(self, "_fullscreen", False)
                 and not self.isMaximized() and not self.isMinimized()):
             self._normal_size = self.size()
@@ -842,9 +842,9 @@ class MainWindow(QMainWindow):
 
         # ── Datei ────────────────────────────────────────────────────────────
         file_menu = menu_bar.addMenu("&Datei")
-        # Einlegen und Auswerfen tragen je ein Untermenü mit den bestückten
-        # Laufwerken; gefüllt wird es beim Aufklappen (_disk_menue_fuellen),
-        # denn welche Laufwerke es gibt, ändert sich mit der Bestückung.
+        # Einlegen und Auswerfen tragen je ein Untermenue mit den bestueckten
+        # Laufwerken; gefuellt wird es beim Aufklappen (_disk_menue_fuellen),
+        # denn welche Laufwerke es gibt, aendert sich mit der Bestueckung.
         for aktion in (self.act_einlegen, self.act_auswerfen):
             menue = QMenu(self)
             aktion.setMenu(menue)
@@ -884,7 +884,7 @@ class MainWindow(QMainWindow):
                 eprom_menu.addAction(getattr(self, f"act_{name}"))
 
         # (Die Geschwindigkeit wird im Einstellungen-Kasten, Reiter „Allgemein",
-        #  über ein Dropdown eingestellt; gemessen steht sie in der Statuszeile.)
+        #  ueber ein Dropdown eingestellt; gemessen steht sie in der Statuszeile.)
 
         # ── Ansicht ──────────────────────────────────────────────────────────
         view_menu = menu_bar.addMenu("&Ansicht")
@@ -924,9 +924,9 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.act_standard)
 
         # ── Werkzeuge ────────────────────────────────────────────────────────
-        # Die Nachbarprogramme derselben Installation.  Eigenes Menü, weil es
+        # Die Nachbarprogramme derselben Installation.  Eigenes Menue, weil es
         # weder Dateien noch die Maschine betrifft: hier wird ein ZWEITES
-        # Programm gestartet, das neben diesem weiterläuft.
+        # Programm gestartet, das neben diesem weiterlaeuft.
         tools_menu = menu_bar.addMenu("&Werkzeuge")
         tools_menu.addAction(self.act_disktool)
         # Der jeweils andere Emulator (dasselbe Programm, anderes Profil).
@@ -939,7 +939,7 @@ class MainWindow(QMainWindow):
         help_menu.addAction(self.act_hilfe)
         help_menu.addAction(self.act_ueber)
 
-    # ── Diskettenmenüs (je bestücktem Laufwerk ein Eintrag) ──────────────────
+    # ── Diskettenmenues (je bestuecktem Laufwerk ein Eintrag) ──────────────────
 
     def _disk_menue_fuellen(self, menue, einlegen: bool):
         """„Diskette einlegen/auswerfen" mit den vorhandenen Laufwerken füllen.
@@ -998,8 +998,8 @@ class MainWindow(QMainWindow):
         Auswerfen) bekommt einen Knopf, der es sofort aufklappt — ein Klick, der
         nichts täte, wäre die schlechtere Antwort auf „welches Laufwerk?".
         """
-        # `clear()` gäbe die Hüllen der Kastenschalter frei (s. :meth:`_aktion`);
-        # einzeln entfernen lässt sie am Leben.
+        # `clear()` gaebe die Huellen der Kastenschalter frei (s. :meth:`_aktion`);
+        # einzeln entfernen laesst sie am Leben.
         for vorhanden in list(self.controls_bar.actions()):
             self.controls_bar.removeAction(vorhanden)
         for name in namen:
@@ -1008,14 +1008,14 @@ class MainWindow(QMainWindow):
                 continue
             a = self._aktion(name)
             if a is None:
-                continue          # Name aus einer älteren Konfiguration
+                continue          # Name aus einer aelteren Konfiguration
             self.controls_bar.addAction(a)
             if a.menu() is not None:
                 knopf = self.controls_bar.widgetForAction(a)
                 if isinstance(knopf, QToolButton):
                     knopf.setPopupMode(QToolButton.InstantPopup)
         self._leisten_inhalt = list(namen)
-        # Die Knöpfe dürfen den Tastaturfokus nicht an sich ziehen — der gehört
+        # Die Knoepfe duerfen den Tastaturfokus nicht an sich ziehen — der gehoert
         # der emulierten Maschine (app/ui/focus.py).
         release_focus(self.controls_bar)
 
@@ -1084,7 +1084,7 @@ class MainWindow(QMainWindow):
             if w is not None and w.isVisible():
                 self._chrome_hidden.append(w)
                 w.hide()
-        # Falls das Bildschirm-Dock ausgeblendet war, für Vollbild einblenden.
+        # Falls das Bildschirm-Dock ausgeblendet war, fuer Vollbild einblenden.
         self._screen_was_hidden = not self.screen_dock.isVisible()
         self.screen_dock.show()
         self.screen_dock.setFloating(False)
@@ -1162,7 +1162,7 @@ class MainWindow(QMainWindow):
             "dock_state": bytes(self.saveState().toBase64()).decode("ascii"),
             # Der Inhalt der Symbolleiste steht NICHT im dock_state — Qt merkt
             # sich dort nur, wo sie liegt und ob sie sichtbar ist.  Welche
-            # Schaltflächen darin stehen, ist unsere Sache.
+            # Schaltflaechen darin stehen, ist unsere Sache.
             "toolbar": ["" if n is None else str(n) for n in self._leisten_inhalt],
             "toolbar_style": int(self.controls_bar.toolButtonStyle().value),
         }
@@ -1203,7 +1203,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         if not self.profil.laufwerke:
-            self.drives_dock.hide()        # ein gespeichertes Layout bringt ihn nicht zurück
+            self.drives_dock.hide()        # ein gespeichertes Layout bringt ihn nicht zurueck
 
     def _geometrie_herstellen(self, win: dict):
         """Größe, Lage und „maximiert" aus dem ``window``-Abschnitt herstellen.
@@ -1273,11 +1273,11 @@ class MainWindow(QMainWindow):
         """
         maximiert = bool(win.get("maximized", False))
         if not self.isVisible():
-            # Den Zustand am unsichtbaren Fenster AUSDRÜCKLICH löschen und den
-            # Wunsch merken.  Ohne das Löschen bliebe die Marke stehen, die
-            # ``restoreGeometry`` hinterlässt — und die ist eine Lüge: das
+            # Den Zustand am unsichtbaren Fenster AUSDRUECKLICH loeschen und den
+            # Wunsch merken.  Ohne das Loeschen bliebe die Marke stehen, die
+            # ``restoreGeometry`` hinterlaesst — und die ist eine Luege: das
             # Fenster geht trotzdem normal auf, aber der nachgeholte Zug hielte
-            # sie für schon erfüllt und täte nichts.  Erst ein WECHSEL am
+            # sie fuer schon erfuellt und taete nichts.  Erst ein WECHSEL am
             # sichtbaren Fenster erreicht den Fensterverwalter.
             self.setWindowState(self.windowState() & ~Qt.WindowMaximized)
             self._maximiert_nachholen = maximiert
@@ -1339,17 +1339,17 @@ class MainWindow(QMainWindow):
             self.screen_widget.update()
 
             general = data.get("general") or {}
-            # „unbegrenzt" gibt es in der Oberfläche nicht mehr — takt.stufe.
+            # „unbegrenzt" gibt es in der Oberflaeche nicht mehr — takt.stufe.
             speed = takt.stufe(general.get("speed", 1.0))
             self.settings_widget.set_speed_value(speed)
             self._apply_speed(speed)
 
-            # Modell (A5120/A5120.16) — VOR der Laufwerksbestückung setzen, denn
-            # der einzige tatsächliche Neubau der Maschine passiert unten in
+            # Modell (A5120/A5120.16) — VOR der Laufwerksbestueckung setzen, denn
+            # der einzige tatsaechliche Neubau der Maschine passiert unten in
             # _apply_drive_types (der auch das Modell an den core-Konstruktor
             # gibt).  Ein fehlender Eintrag ist die Vorgabe A5120 (ohne EM) —
-            # ältere Konfigurationen laufen damit unverändert.
-            # Alte Modellschlüssel des P8000 (p8000/-16/-8 mit Kern-Terminal) bildet
+            # aeltere Konfigurationen laufen damit unveraendert.
+            # Alte Modellschluessel des P8000 (p8000/-16/-8 mit Kern-Terminal) bildet
             # `modell_normalisieren` auf die Ausstattung mit Originalterminal ab.
             self._model = (self.profil.modell_normalisieren(general.get("model"))
                            if self.profil.modellwahl else self.profil.standard_modell())
@@ -1357,15 +1357,15 @@ class MainWindow(QMainWindow):
                 self.settings_widget.set_ausstattung_value(
                     general.get("ausstattung") or self._model)
             self.settings_widget.set_model_value(self._model)
-            # Hardwarevarianten: fehlender Schlüssel = Vorgabe (ältere Konfigurationen).
+            # Hardwarevarianten: fehlender Schluessel = Vorgabe (aeltere Konfigurationen).
             self._hardware = self.profil.hardware_normalisieren(general)
             self.settings_widget.set_hardware_value(self._hardware)
             if self.platten_widget is not None:
                 self.platten_widget.set_firmware(self._hardware.get("wdc", "4.2"))
 
-            # RAM-Disk (doc/design/22_raf512.md §7.2): fehlender Abschnitt/Schlüssel
+            # RAM-Disk (doc/design/22_raf512.md §7.2): fehlender Abschnitt/Schluessel
             # oder unbekannter Wert = keine RAF bzw. kein Stand-by — anders als bei
-            # den Disketten heisst „fehlt" hier „aus" (ältere Konfigurationen
+            # den Disketten heisst „fehlt" hier „aus" (aeltere Konfigurationen
             # kannten keine RAF).  Die Ablage der LAUFENDEN Maschine wird noch mit
             # der alten Einstellung geschrieben, bevor die neue gilt.
             self._raf_sichern()
@@ -1388,8 +1388,8 @@ class MainWindow(QMainWindow):
             self._tape = general.get("tape") is True and self.profil.tape_wahl
             self.settings_widget.set_tape_value(self._tape)
 
-            # Mitschrift des Terminals: ein FEHLENDER Schlüssel heisst „nicht anfassen“ (die
-            # Ansichts-Vorgabe trägt keinen Dateinamen), ein leerer „aus“.
+            # Mitschrift des Terminals: ein FEHLENDER Schluessel heisst „nicht anfassen“ (die
+            # Ansichts-Vorgabe traegt keinen Dateinamen), ein leerer „aus“.
             if self.profil.terminal and "mitschrift" in general:
                 pfad = str(general.get("mitschrift") or "")
                 self.settings_widget.set_mitschrift_value(pfad)
@@ -1406,23 +1406,23 @@ class MainWindow(QMainWindow):
                 self.drives_widget.load_mounts(data.get("disks") or [])
 
             # Winchesterplatte (P8000): fehlender Abschnitt = noch nicht entschieden
-            # (das Programm legt KEINE Platte von selbst an — nur über den Plattenkasten),
-            # vorhandener Abschnitt mit leerem Pfad = ausdrücklich keine Platte.
+            # (das Programm legt KEINE Platte von selbst an — nur ueber den Plattenkasten),
+            # vorhandener Abschnitt mit leerem Pfad = ausdruecklich keine Platte.
             if "platte" in data and self.platten_widget is not None:
                 self.platten_widget.zustand_anwenden(data.get("platte"))
 
-            # (Ein alter Abschnitt ``terminal`` mit der Skalierung des früheren Terminalwidgets
-            # wird übergangen; das Bild füllt das Fenster wie bei den anderen Maschinen.)
+            # (Ein alter Abschnitt ``terminal`` mit der Skalierung des frueheren Terminalwidgets
+            # wird uebergangen; das Bild fuellt das Fenster wie bei den anderen Maschinen.)
 
-            # Serielle Schnittstellen: Einstellung übernehmen und aktive wieder
+            # Serielle Schnittstellen: Einstellung uebernehmen und aktive wieder
             # aufnehmen (doc/design/19 §7.4a).  Fehlt der Abschnitt, bleibt alles,
-            # wie es ist — die Auslieferungsvorgabe trägt keinen.
+            # wie es ist — die Auslieferungsvorgabe traegt keinen.
             if "schnittstellen" in data:
                 self.serial_widget.zustand_anwenden(
                     self.profil.schnittstellen_umbenennen(data.get("schnittstellen") or {}))
 
             # EPROM-Sockel (AP-P9): Datei + Typ; fehlt der Abschnitt, bleibt der
-            # Sockel, wie er ist (Auslieferungsvorgabe und ältere Dateien).
+            # Sockel, wie er ist (Auslieferungsvorgabe und aeltere Dateien).
             if "eprom" in data and self.eprom_widget is not None:
                 self._eprom_zustand_anwenden(data.get("eprom"))
 
@@ -1469,7 +1469,7 @@ class MainWindow(QMainWindow):
                 self._apply_config(daten)
                 if config_io.ist_neuer_als_dieses_programm(daten):
                     # Die Datei bleibt unangetastet (config_io.save_config);
-                    # der Anwender soll wissen, warum Änderungen nicht bleiben.
+                    # der Anwender soll wissen, warum Aenderungen nicht bleiben.
                     meldung = (f"{os.path.basename(path)} stammt von einem neueren "
                                "Programm — Einstellungen werden nicht gespeichert.")
                     print(f"[config] {meldung}")
@@ -1528,29 +1528,29 @@ class MainWindow(QMainWindow):
         ptape_vorher = self._ptape
         tape_vorher = self._tape
         self._apply_config(vorgabe)
-        # Ein geänderter Laufwerksschacht ODER ein geändertes Modell bedeutet
+        # Ein geaenderter Laufwerksschacht ODER ein geaendertes Modell bedeutet
         # eine NEUE Maschine (:meth:`_apply_drive_types`), und die ist noch
         # nicht eingeschaltet: beim Wiederherstellen kommt das Einschalten
-        # sonst später von selbst, hier läuft die alte schon.  Ohne
-        # Bestückungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
-        # Zurücksetzen der Ansicht soll kein CP/A abwürgen.
+        # sonst spaeter von selbst, hier laeuft die alte schon.  Ohne
+        # Bestueckungs-/Modellwechsel bleibt die Maschine in Ruhe — ein
+        # Zuruecksetzen der Ansicht soll kein CP/A abwuergen.
         if (self._drive_types != vorher or self._model != modell_vorher
                 or self._hardware != hardware_vorher
                 or self._raf != raf_vorher or self._ptape != ptape_vorher
                 or self._tape != tape_vorher):
             self._cold_restart()
-        # Sofort schreiben, nicht über den sammelnden Autosave: der Anwender hat
-        # das Überschreiben eben bestätigt, es darf nicht an einem Absturz in den
-        # nächsten 400 ms hängen.
+        # Sofort schreiben, nicht ueber den sammelnden Autosave: der Anwender hat
+        # das Ueberschreiben eben bestaetigt, es darf nicht an einem Absturz in den
+        # naechsten 400 ms haengen.
         self._autosave_now()
         self.statusBar().showMessage("Standard-Konfiguration wiederhergestellt.", 4000)
 
     def _schedule_autosave(self):
         """Queue a debounced write of the current config to the default path."""
-        # Nach closeEvent nicht mehr: das Abbauen der Kästen meldet noch
+        # Nach closeEvent nicht mehr: das Abbauen der Kaesten meldet noch
         # Sichtbarkeitswechsel, und ein dann gestarteter Autosave schriebe den
-        # Stand eines geschlossenen Fensters — womöglich über die Datei, die
-        # inzwischen ein anderes Fenster führt.
+        # Stand eines geschlossenen Fensters — womoeglich ueber die Datei, die
+        # inzwischen ein anderes Fenster fuehrt.
         if (self._loading_config or getattr(self, "_geschlossen", False)
                 or getattr(self, "_autosave_timer", None) is None):
             return
@@ -1614,7 +1614,7 @@ class MainWindow(QMainWindow):
         self.act_power.setText(aktionen.POWER_TEXT[bool(checked)])
         if checked:
             # Kaltstart: Images neu mounten (setzt den K5122-Laufwerkszustand
-            # zurück — sonst bootet das Boot-ROM nicht neu), dann power_on().
+            # zurueck — sonst bootet das Boot-ROM nicht neu), dann power_on().
             self.drives_widget.remount_all()
             self._einschalten()
             self.cycles = 0
@@ -1650,7 +1650,7 @@ class MainWindow(QMainWindow):
     def _on_reset(self):
         """Reset emulator (Neustart vom Boot-ROM)."""
         # Wie beim Kaltstart: Images neu mounten setzt den K5122-Laufwerks-
-        # zustand zurück, sonst läuft der Boot-ROM-Neustart nicht an.
+        # zustand zurueck, sonst laeuft der Boot-ROM-Neustart nicht an.
         self.drives_widget.remount_all()
         self.emulator.reset()
         self.cycles = 0
@@ -1679,9 +1679,9 @@ class MainWindow(QMainWindow):
         """Bildtakt (GUI-Faden): gerechnete Takte zählen, Tastaturanzeigen holen."""
         self.cycles += cycles
         self.frame_count += 1
-        # Die Tastaturanzeigen hängen am Kommandostrom zur Tastatur, ändern
+        # Die Tastaturanzeigen haengen am Kommandostrom zur Tastatur, aendern
         # sich also mitten im Lauf; einmal je Bild abholen (die
-        # Bildschirmtastatur zeichnet nur bei echter Änderung neu).
+        # Bildschirmtastatur zeichnet nur bei echter Aenderung neu).
         if self.keyboard_dock.isVisible():
             self.keyboard_widget.set_leds(self.emulator.keyboard_leds())
     
@@ -1750,7 +1750,7 @@ class MainWindow(QMainWindow):
                 pfad, wp = "", False
             physisch = self.drives_widget.is_physical(drive)
             if not pfad and not physisch:
-                # Der Kern meldet bei manchen Behältern keinen Pfad zurück; was
+                # Der Kern meldet bei manchen Behaeltern keinen Pfad zurueck; was
                 # eingelegt wurde, weiss der Laufwerkskasten dann immer noch.
                 pfad = self.drives_widget.mounted_path(drive)
             feld.zeige(pfad, wp, physisch=physisch)
@@ -1824,7 +1824,7 @@ class MainWindow(QMainWindow):
         self.speed_factor = float(speed)
         self.run_timer.set_tempo(self.CPU_HZ, self.speed_factor)
         # Die Statuszeile nennt den eingestellten Takt — sie darf nicht bis zum
-        # nächsten Sekundentakt hinterherhinken.
+        # naechsten Sekundentakt hinterherhinken.
         if getattr(self, "status_widget", None) is not None:
             self.status_widget.set_takt(
                 self.speed_factor
@@ -1849,7 +1849,7 @@ class MainWindow(QMainWindow):
         """
         neu = self.profil.modell_normalisieren(model)
         if neu != self._model and not self._eprom_rueckfrage("Modellwechsel"):
-            # Abgebrochen: das Auswahlfeld zeigt wieder das Modell, das läuft.
+            # Abgebrochen: das Auswahlfeld zeigt wieder das Modell, das laeuft.
             self.settings_widget.set_model_value(self._model)
             return
         self._model = neu
@@ -1885,7 +1885,7 @@ class MainWindow(QMainWindow):
         vorher = self._hardware
         self._hardware = neu
         if not self._apply_drive_types(self._drive_types, cold_restart=True):
-            # Neubau fehlgeschlagen: die alte Maschine läuft weiter, das Feld zeigt sie.
+            # Neubau fehlgeschlagen: die alte Maschine laeuft weiter, das Feld zeigt sie.
             self._hardware = vorher
             self.settings_widget.set_hardware_value(vorher)
             return
@@ -1920,9 +1920,9 @@ class MainWindow(QMainWindow):
                             tape=bool(self._tape),
                             **self.profil.kern_parameter(self._model, self._hardware))
         # Die Tastatur hat ihren eigenen Quarz — bei 10 × Rechnertakt darf sie
-        # nicht zehnmal so früh wiederholen (core/peripherals/tasten_uhr.h).
+        # nicht zehnmal so frueh wiederholen (core/peripherals/tasten_uhr.h).
         emu.set_key_repeat_realtime(True)
-        # Frisch = noch nie eingeschaltet: die RAF trägt die Ablage selbst oder gar
+        # Frisch = noch nie eingeschaltet: die RAF traegt die Ablage selbst oder gar
         # nichts (_raf_sichern schreibt dann nicht).
         self._raf_frisch = True
         self._raf_laden(emu)
@@ -2126,7 +2126,7 @@ class MainWindow(QMainWindow):
         types = dt.normalize_list(types)
         em = self.profil.modell_em(self._model)
         # Stand-by: der Inhalt der ALTEN Maschine geht in die Ablage, bevor die neue
-        # sie lädt (*sichern* = False, wenn der Aufrufer das schon mit der alten
+        # sie laedt (*sichern* = False, wenn der Aufrufer das schon mit der alten
         # Einstellung getan hat — _apply_config).
         if sichern:
             self._raf_sichern()
@@ -2152,19 +2152,19 @@ class MainWindow(QMainWindow):
             self.settings_widget.set_tape_value(self._tape)
             return False
 
-        # Die Schnittstellen gehören zur Maschine (der Kern hängt den Hub an sie):
+        # Die Schnittstellen gehoeren zur Maschine (der Kern haengt den Hub an sie):
         # Stand merken, die alten beenden (Kabel ab, Port frei), an der neuen
         # wieder aufnehmen — ein Wechsel der Laufwerke soll keine Verbindung kosten.
         serielle = self.serial_widget.zustand_lesen()
         self.serial_widget.alles_beenden()
-        # Der EPROMmer-Sockel gehört zur Maschine — das gesteckte PROM samt Inhalt
-        # und „geändert“ wandert mit (wie eine eingelegte Diskette).
+        # Der EPROMmer-Sockel gehoert zur Maschine — das gesteckte PROM samt Inhalt
+        # und „geaendert“ wandert mit (wie eine eingelegte Diskette).
         eprom = self.eprom_widget.sockel_lesen() if self.eprom_widget else None
         # Lochstreifen: Stanzband in die gebundene Datei, Dateien merken — die neue
         # Maschine bindet sie wieder (Leser von vorn, Stanzer setzt die Datei fort).
         self._ptape_zustand_lesen()
         self.emulator.ptape_punch_flush()
-        # Kassette: gebundene .k52 zurückschreiben, Dateien merken.
+        # Kassette: gebundene .k52 zurueckschreiben, Dateien merken.
         self._tape_zustand_lesen()
         self.kassette_widget.sichern()
 
@@ -2190,7 +2190,7 @@ class MainWindow(QMainWindow):
         self.drives_widget.set_drive_types(types, new_emu)  # rebuild panels, clear mounts
         self.drives_widget.load_mounts(surviving)           # remount into new machine
         if self.platten_widget is not None:
-            # Die Platte gehört der Maschine: die neue bekommt dieselbe Datei (wenn das Modell
+            # Die Platte gehoert der Maschine: die neue bekommt dieselbe Datei (wenn das Modell
             # einen WDC hat — sonst bleibt der Kasten gesperrt, die Wahl aber gemerkt).
             self.platten_widget.set_verfuegbar(self.profil.modell_hat_wdc(self._model))
             self.platten_widget.set_firmware(self._hardware.get("wdc", "4.2"))
@@ -2198,7 +2198,7 @@ class MainWindow(QMainWindow):
         self.settings_widget.set_drive_types(types)         # keep dropdowns in sync (no re-emit)
         self.settings_widget.set_model_value(self._model)   # dito
         self.settings_widget.set_hardware_value(self._hardware)
-        # Der Takt hängt am Modell (PC 1715W: 3,9936 MHz).
+        # Der Takt haengt am Modell (PC 1715W: 3,9936 MHz).
         self.CPU_HZ, nenntakt = self.profil.modell_nenntakt(self._model)
         self.settings_widget.set_nenntakt(nenntakt)
         self.status_widget.set_nenntakt(nenntakt)
@@ -2207,7 +2207,7 @@ class MainWindow(QMainWindow):
         self._lochstreifen_kasten()
         self.settings_widget.set_tape_value(self._tape)
         self._kassette_kasten()
-        # Die Statuszeile führt je bestücktem Steckplatz ein Feld — ein
+        # Die Statuszeile fuehrt je bestuecktem Steckplatz ein Feld — ein
         # abgemeldetes Laufwerk muss auch dort verschwinden.  Die EM-Leuchten
         # (V1/V2) erscheinen nur, wenn das neue Modell ein Erweiterungsmodul hat.
         self.status_widget.set_drive_types(types)
@@ -2526,24 +2526,24 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Cleanup on close."""
-        # Ungespeichertes PROM: erst fragen — Abbrechen hält das Fenster offen.
+        # Ungespeichertes PROM: erst fragen — Abbrechen haelt das Fenster offen.
         if not self._eprom_rueckfrage("Beenden"):
             event.ignore()
             return
-        # Erst die Maschine anhalten (Emulationsfaden auflösen), dann sichern.
+        # Erst die Maschine anhalten (Emulationsfaden aufloesen), dann sichern.
         self.run_timer.beenden()
         # Den Stand beim Beenden IMMER wegschreiben, nicht nur eine anstehende
-        # Änderung: die letzte Aufteilung der Kästen kann von einem Ereignis
-        # stammen, das kein Speichern ausgelöst hat.
+        # Aenderung: die letzte Aufteilung der Kaesten kann von einem Ereignis
+        # stammen, das kein Speichern ausgeloest hat.
         self._autosave_timer.stop()
         self._autosave_now()
         # Stand-by: RAF-Inhalt in die Ablage (doc/design/22_raf512.md §7.1).
         self._raf_sichern()
-        # Lochstreifen: was gestanzt ist, gehört jetzt in die gebundene Datei.
+        # Lochstreifen: was gestanzt ist, gehoert jetzt in die gebundene Datei.
         self.emulator.ptape_punch_flush()
-        # Kassette: gebundene Dateien zurückschreiben (der Kern tut es verzögert).
+        # Kassette: gebundene Dateien zurueckschreiben (der Kern tut es verzoegert).
         self.kassette_widget.sichern()
-        # Winchester: geänderte Spuren zurückschreiben (der Kern tut es verzögert).
+        # Winchester: geaenderte Spuren zurueckschreiben (der Kern tut es verzoegert).
         if self.platten_widget is not None:
             self.platten_widget.sichern()
             self.platten_widget.freigeben()
@@ -2557,13 +2557,13 @@ class MainWindow(QMainWindow):
             self.screen_widget.mitschrift_abschliessen()
         self.screen_widget.stop_display()
         self.emulator.stop()
-        # Der Fokuswächter filtert ANWENDUNGSWEIT jedes Ereignis; ein geschlossenes
-        # Fenster darf ihn nicht hängen lassen (mehrere Fenster nacheinander, z. B.
+        # Der Fokuswaechter filtert ANWENDUNGSWEIT jedes Ereignis; ein geschlossenes
+        # Fenster darf ihn nicht haengen lassen (mehrere Fenster nacheinander, z. B.
         # in den GUI-Tests: jeder weitere Aufbau wurde sonst merklich teurer).
         self._focus_guard.abhaengen()
-        # Echte Laufwerke abmelden: ausstehende Spuren zurückschreiben und den
-        # Arbeitsfaden anhalten.  Ohne das bliebe eine Änderung im Abbild liegen,
-        # die auf der eingelegten Diskette nie ankäme
+        # Echte Laufwerke abmelden: ausstehende Spuren zurueckschreiben und den
+        # Arbeitsfaden anhalten.  Ohne das bliebe eine Aenderung im Abbild liegen,
+        # die auf der eingelegten Diskette nie ankaeme
         # (doc/design/14_physische_diskette.md §7).
         try:
             self.drives_widget.close_physical_sessions()

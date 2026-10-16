@@ -402,7 +402,7 @@ TEST(K3526, AttachToBus_MemDI_ViaDirectControl) {
     EXPECT_EQ(bus.memRead(0x4000), 0xCC);
 }
 
-/// Vorrangspeicher, der die Seite 4000H–40FFH übernimmt (wie das EM256).
+/// Vorrangspeicher, der die Seite 4000H–40FFH uebernimmt (wie das EM256).
 class Vorrang4000 : public MemdiDriver {
 public:
     uint8_t cell = 0x5A;
@@ -413,9 +413,9 @@ public:
 
 /**
  * @test K3526/BusMemDI_JeZugriff_NurGebrueckteGruppeSchweigt
- * @brief Bus-/MEMDI wirkt je Zugriff: zieht ein Vorrangspeicher es für 4000H, verwirft
- *   die auf Bus-/MEMDI gebrückte Gruppe 1 den Schreibzyklus; alle übrigen Adressen
- *   laufen unverändert.  Ohne Vorrangspeicher gibt es kein Bus-/MEMDI (A5120 pur).
+ * @brief Bus-/MEMDI wirkt je Zugriff: zieht ein Vorrangspeicher es fuer 4000H, verwirft
+ *   die auf Bus-/MEMDI gebrueckte Gruppe 1 den Schreibzyklus; alle uebrigen Adressen
+ *   laufen unveraendert.  Ohne Vorrangspeicher gibt es kein Bus-/MEMDI (A5120 pur).
  */
 TEST(K3526, BusMemDI_JeZugriff_NurGebrueckteGruppeSchweigt) {
     K3526 ops;
@@ -437,8 +437,8 @@ TEST(K3526, BusMemDI_JeZugriff_NurGebrueckteGruppeSchweigt) {
 
 /**
  * @test K3526/BusMemDI_GruppeAufMemdi12HoertNichtAufBusMemdi
- * @brief Eine auf MEMDI1/2 gebrückte Gruppe (memdi_source = true) ignoriert Bus-/MEMDI
- *   und schreibt mit — sie hört nur auf setMemDI (Koppelbus).
+ * @brief Eine auf MEMDI1/2 gebrueckte Gruppe (memdi_source = true) ignoriert Bus-/MEMDI
+ *   und schreibt mit — sie hoert nur auf setMemDI (Koppelbus).
  */
 TEST(K3526, BusMemDI_GruppeAufMemdi12HoertNichtAufBusMemdi) {
     K3526::A5120Config cfg;

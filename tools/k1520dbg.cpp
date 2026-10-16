@@ -24,26 +24,26 @@
  * Commands come from stdin (interactive or piped) and/or a -x script file.
  * Type `help` for the command list.  See tools/k1520dbg.md for the full manual.
  *
- * `--machine k8915` fährt statt des A5120 einen K8915 (eine CPU, A8H-Speicherbild,
+ * `--machine k8915` faehrt statt des A5120 einen K8915 (eine CPU, A8H-Speicherbild,
  * K5122 im /WAIT-Betrieb) — tools/dbg_machine.h, `help k8915`, §8a AP-E4d.
  *
  * `--raf raf128|raf512|raf2m` steckt eine RAM-Floppy (alle Maschinen); Befehl `raf`.
- * `--ausfuehrung neu|alt|kmbg` / `--laufwerke P0,P1,…` (A5120, AP A6): altes Gerät mit
+ * `--ausfuehrung neu|alt|kmbg` / `--laufwerke P0,P1,…` (A5120, AP A6): altes Geraet mit
  * K7023 64×16 + K7636; Bildschirmbefehle lesen dann die K7023 (tools/dbg_machine.h).
  * `--laderom v06|v09_1|v09_2` (A5120, AP A7): gestecktes Lade-ROM (Vorgabe v09_2 = zre.rom;
  * v06 startet BCU 880 „SYL auf Spur 1“, doc/a5120_alt/laderom.md).
- * `--tastatur k7636|k7637` (A5120, AP A7): Tastatur abweichend von der Ausführung.
+ * `--tastatur k7636|k7637` (A5120, AP A7): Tastatur abweichend von der Ausfuehrung.
  * `--format NAME`: Katalogformat, mit dem ein `.img` zuerst gemountet wird (bei .hfe/.dmk
- * Platzhalter), z. B. `k5601_ss40_26x128` für die BCU-Abbilder.
+ * Platzhalter), z. B. `k5601_ss40_26x128` fuer die BCU-Abbilder.
  * `--wdc 4.2|4.0.05|3.4.05` und `--hd <abbild>` (nur `--machine p8000-16`, P13d): WDC an der
  * 16-Bit-PIO2 bzw. Winchester an Laufwerk 0 (Kopie wie die Disketten, `--rw` = Original);
  * Befehle `wdc [r|u|d|log]`, `cpu wdc` (nur Ansicht).
  * `--ptape` steckt die Lochstreifen-Karte K6022 (SIF1000, E0H–E7H; alle Maschinen).
  * `--tape <k52>` / `--tape2 <k52>` / `--tape-card` steckt die Kassettenkarte K5020 (A5120/PRG 30H,
- *   K8915 D0H, PC 1715 D0H) und bindet die Kassettendatei an Gerät 1/2; Befehl `tape`.
+ *   K8915 D0H, PC 1715 D0H) und bindet die Kassettendatei an Geraet 1/2; Befehl `tape`.
  * `--terminal`: Originalterminal P8000 Typ 2 (P8T 5.0 + K7673.09) als Einheit, Kontext `cpu z8`
  * auf dessen Z8, Zusatzkommandos term/crt/host/key/taste/lauf (tools/dbg_p8000_terminal.h, P20a).
- * `--z8 <abzug>[@org]` [--z8-fassung ub8840|ub8820|z8681]: Z8-Prüfstand ohne Maschine
+ * `--z8 <abzug>[@org]` [--z8-fassung ub8840|ub8820|z8681]: Z8-Pruefstand ohne Maschine
  * (`cpu z8`-Kontext aus tools/dbg_z8.h; AP P19c) — z. B. Terminal-/Tastaturfirmware des P8000.
  *
  * @license MIT
@@ -113,13 +113,13 @@ static inline Snap grab(const Z80& z){
     s.I=z.I; s.R=z.R; s.IM=z.IM; s.IFF1=z.IFF1; s.cyc=z.cycles; s.halted=z.halted; s.valid=true; return s;
 }
 
-// ─── Ctrl-C während eines langen Laufs (§7) ───────────────────────────────────
+// ─── Ctrl-C waehrend eines langen Laufs (§7) ───────────────────────────────────
 // Ein `g 20000000` kann Minuten dauern (ZVE2-lastige Phasen). Ohne Ausstieg wirkt
 // das wie ein toter Debugger und man killt den Prozess (Sitzung weg). Deshalb:
-// SIGINT bricht einen laufenden `g`/`gscreen` ab und kehrt in die REPL zurück;
-// außerhalb eines Laufs bleibt Ctrl-C das gewohnte Abbrechen des Prozesses.
-static volatile sig_atomic_t g_int_flag = 0;   ///< SIGINT während eines Laufs gesehen
-static volatile sig_atomic_t g_in_run   = 0;   ///< läuft gerade ein Lauf-Kernel?
+// SIGINT bricht einen laufenden `g`/`gscreen` ab und kehrt in die REPL zurueck;
+// ausserhalb eines Laufs bleibt Ctrl-C das gewohnte Abbrechen des Prozesses.
+static volatile sig_atomic_t g_int_flag = 0;   ///< SIGINT waehrend eines Laufs gesehen
+static volatile sig_atomic_t g_in_run   = 0;   ///< laeuft gerade ein Lauf-Kernel?
 static void dbgSigInt(int){
     if (g_in_run){ g_int_flag = 1; return; }
     signal(SIGINT, SIG_DFL);
@@ -133,15 +133,15 @@ static void dbgSigInt(int){
 struct Bp { bool enabled=true; bool temp=false; std::string cond; long hits=0; long ignore=0; };
 
 #ifdef HAVE_ISOCLINE
-// ─── Tab-Vervollständigung: das ERSTE Wort gegen die Kommandonamen ────────────
-// Kommandoliste und Präfix-Matcher liegen in tools/dbg_commands.h, damit sie ohne
+// ─── Tab-Vervollstaendigung: das ERSTE Wort gegen die Kommandonamen ────────────
+// Kommandoliste und Praefix-Matcher liegen in tools/dbg_commands.h, damit sie ohne
 // Maschine unit-testbar sind (tests/debugtools/test_dbg_commands.cpp).
 //
-// Nur das erste Wort wird vervollständigt: ab dem zweiten sind die Argumente
-// Adressen, Ausdrücke und Dateinamen — dort wäre eine Kommandoliste falsch, und
-// eine Dateinamensvervollständigung hülfe nur bei einem Bruchteil der Kommandos.
-// Erkennungsmerkmal ist, dass vor dem Präfix nichts als Leerraum steht.
-// Sammelt die Treffer. Läuft INNERHALB von ic_complete_word() (s.u.), bekommt also
+// Nur das erste Wort wird vervollstaendigt: ab dem zweiten sind die Argumente
+// Adressen, Ausdruecke und Dateinamen — dort waere eine Kommandoliste falsch, und
+// eine Dateinamensvervollstaendigung huelfe nur bei einem Bruchteil der Kommandos.
+// Erkennungsmerkmal ist, dass vor dem Praefix nichts als Leerraum steht.
+// Sammelt die Treffer. Laeuft INNERHALB von ic_complete_word() (s.u.), bekommt also
 // nur das aktuelle Wort und darf es unmittelbar als Ersatz anbieten.
 static void dbgCmdMatches(ic_completion_env_t* cenv, const char* wort){
     for (const auto& m : dbgcmd::match(wort ? wort : ""))
@@ -151,12 +151,12 @@ static void dbgCmdMatches(ic_completion_env_t* cenv, const char* wort){
 // `prefix` ist die Eingabe BIS ZUM CURSOR.
 //
 // Zwei Feinheiten, beide am lebenden Terminal gefunden:
-//  * **ic_complete_word() ist Pflicht.** ic_add_completion() allein FÜGT EIN, statt
+//  * **ic_complete_word() ist Pflicht.** ic_add_completion() allein FUEGT EIN, statt
 //    zu ersetzen — aus „whe"+TAB wurde „whewhere". Erst ic_complete_word() rechnet
-//    aus, welcher Teil zu ersetzen ist, und richtet die Vorschläge daran aus.
-//  * **Nur das erste Wort.** Ab dem zweiten sind die Argumente Adressen, Ausdrücke
-//    und Dateinamen; eine Kommandoliste wäre dort schlicht falsch. Erkennbar daran,
-//    dass im Präfix noch kein Leerraum steht.
+//    aus, welcher Teil zu ersetzen ist, und richtet die Vorschlaege daran aus.
+//  * **Nur das erste Wort.** Ab dem zweiten sind die Argumente Adressen, Ausdruecke
+//    und Dateinamen; eine Kommandoliste waere dort schlicht falsch. Erkennbar daran,
+//    dass im Praefix noch kein Leerraum steht.
 static void dbgCompleter(ic_completion_env_t* cenv, const char* prefix){
     if (prefix == nullptr || strpbrk(prefix, " \t") != nullptr) return;
     ic_complete_word(cenv, prefix, dbgCmdMatches, nullptr);
@@ -208,10 +208,10 @@ int main(int argc, char** argv){
     int mc80_spe = 1;             // --spe 1|2: Zahl der SPE 2 am MC80 (AP M8)
     bool skip_selftest = false;   // --skip-selftest: K8915 ohne ROM-Selbsttest (wie ein Warmstart)
     const char* em_opt = nullptr; // --em none|em064|em256: A5120.16 mit Erweiterungsmodul
-    const char* ausf_opt = nullptr; // --ausfuehrung neu|alt|kmbg: A5120-Ausführung (Entwurf 30, AP A6)
+    const char* ausf_opt = nullptr; // --ausfuehrung neu|alt|kmbg: A5120-Ausfuehrung (Entwurf 30, AP A6)
     const char* lw_opt = nullptr;   // --laufwerke P0,P1,…: Laufwerksprofile ab A: (A5120)
     const char* laderom_opt = nullptr; // --laderom v06|v09_1|v09_2: Lade-ROM der K2526 (AP A7)
-    const char* format_opt = nullptr;  // --format NAME: Katalogformat für .img (zuerst versucht)
+    const char* format_opt = nullptr;  // --format NAME: Katalogformat fuer .img (zuerst versucht)
     const char* tastatur_opt = nullptr; // --tastatur k7636|k7637: Tastatur (A5120, AP A7)
     const char* raf_opt = nullptr; // --raf none|raf128|raf512|raf2m: RAM-Floppy auf 88H/89H
     const char* wdc_opt = nullptr; // --wdc 4.2|4.0.05|3.4.05: WDC an der 16-Bit-PIO2 (P8000, P13d)
@@ -221,7 +221,7 @@ int main(int argc, char** argv){
     bool ptape_opt = false;        // --ptape: Lochstreifen-Karte K6022 auf E0H–E7H (Entwurf 23)
     bool tape_opt = false;         // --tape/--tape2/--tape-card: Kassettenkarte K5020 (Entwurf 29)
     std::string tape1_opt, tape2_opt;
-    const char* z8_bild = nullptr; // --z8 <abzug>[@org]: Z8-Prüfstand (P19c), ohne Maschine
+    const char* z8_bild = nullptr; // --z8 <abzug>[@org]: Z8-Pruefstand (P19c), ohne Maschine
     std::string z8_fassung;        // --z8-fassung ub8840|ub8820|z8681
     bool terminal_hw = false;      // --terminal: Originalterminal P8000 Typ 2 (P20a)
     for (int i=1;i<argc;++i){
@@ -262,11 +262,11 @@ int main(int argc, char** argv){
         else if (!strcmp(argv[i],"--read-only")||!strcmp(argv[i],"--ro")) mount_mode=MOUNT_RO;
         else disk=argv[i];
     }
-    // Z8-Prüfstand (P19c): eigener Kontext ohne Maschine (tools/dbg_z8.h, `help` dort).
+    // Z8-Pruefstand (P19c): eigener Kontext ohne Maschine (tools/dbg_z8.h, `help` dort).
     if (z8_bild) return dbgz8::pruefstand(z8_bild, z8_fassung, script);
     // Originalterminal (P20a): Einheit ohne Maschine, Kontext `cpu z8` auf dem Terminal-Z8.
     if (terminal_hw) return dbgp8kt::pruefstand(script);
-    // Emulator-Log standardmäßig still (das Tool druckt selbst); für Diagnose per
+    // Emulator-Log standardmaessig still (das Tool druckt selbst); fuer Diagnose per
     // K1520DBG_LOGLEVEL=off|error|warn|info|debug|trace anhebbar (z. B. K5122 >>> READ/FORMAT).
     Level baseLvl = Level::ERROR;
     if (const char* lv = getenv("K1520DBG_LOGLEVEL")) {
@@ -293,7 +293,7 @@ int main(int argc, char** argv){
         if (!dbgm::parseAusfuehrung(ausf_opt, lw_opt, mcfg, err, laderom_opt, tastatur_opt)){ fprintf(stderr,"%s\n",err.c_str()); return 2; }
     }
     // P8000-WDC (P13d): --wdc/--hd nur mit p8000-16.  Die Platte wird wie die Disketten im
-    // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende gelöscht), mit --rw direkt.
+    // Vorgabemodus als Kopie gemountet (COW: Temp-Datei, am Ende geloescht), mit --rw direkt.
     P8000Machine::Config p8cfg;
     if (konsole_opt){
         if (art!=dbgm::Art::P8000 && art!=dbgm::Art::P8000_16){ fprintf(stderr,"--konsole gibt es nur am P8000\n"); return 2; }
@@ -356,7 +356,7 @@ int main(int argc, char** argv){
     // 16-Bit-Karte des P8000 (U8001-Kontext wie beim EM, aber MMU statt Segmentweiche); nullptr ohne `p8000-16`.
     P8000Karte16* p16 = KQ ? m.p8000()->karte16() : nullptr;
     const bool has16 = em || p16;   // es gibt einen U8001 (`cpu u8000`)
-    // WDC des P8000 (P13d): Kommando-/Statusprotokoll über `P8000Wdc::statusBeobachter`.
+    // WDC des P8000 (P13d): Kommando-/Statusprotokoll ueber `P8000Wdc::statusBeobachter`.
     P8000Wdc* wdcK = KQ ? m.p8000()->wdc() : nullptr;
     struct WdcEreignis { uint64_t t8; uint8_t alt, neu; std::array<uint8_t,9> kmd; uint8_t fehler; };
     std::deque<WdcEreignis> wdc_prot; uint64_t wdc_prot_n = 0;
@@ -369,19 +369,19 @@ int main(int argc, char** argv){
     const char* C1 = m.cpuName();            // "ZVE1" (A5120) bzw. "CPU" (K8915) in Meldungen
     if (skip_selftest){
         if (!K89) fprintf(stderr,"WARN: --skip-selftest gibt es nur am K8915 — ignoriert\n");
-        else if (dbgm::gen2(*m.k8915()))   // Gen 2: der Stub bei 0400H ist ein anderer; Weg ungeprüft
+        else if (dbgm::gen2(*m.k8915()))   // Gen 2: der Stub bei 0400H ist ein anderer; Weg ungeprueft
             fprintf(stderr,"WARN: --skip-selftest gibt es an der Gen 2 nicht — ignoriert\n");
         else {
             // Genau der Weg eines echten Warmstarts (doc/merkposten/k8915.md): steht bei
             // 0000H/0005H im RAM ein JP, springt der Stub bei FFE0H ohne Selbsttest zur
-            // Coldstart-Meldung.  Bank 1 direkt — über die CPU-Sicht läge dort das ROM.
+            // Coldstart-Meldung.  Bank 1 direkt — ueber die CPU-Sicht laege dort das ROM.
             m.k8915()->zre().bankPoke(0, 0x0000, 0xC3);
             m.k8915()->zre().bankPoke(0, 0x0005, 0xC3);
             fprintf(stderr,"K8915: Selbsttest uebersprungen (JP bei 0000H/0005H in Bank 1)\n");
         }
     }
     // Formatname ist bei .hfe/.dmk nur Platzhalter; bei .img entscheidet er.  Der K8915
-    // bootet von cpa800, der A5120 zuerst cpa780 (unverändert).
+    // bootet von cpa800, der A5120 zuerst cpa780 (unveraendert).
     const std::string pfmt = (KP||KC||KQ) ? m.base().defaultFormatName(0) : std::string();
     // --format NAME (AP A7): ein .img in anderer Geometrie, z. B. k5601_ss40_26x128 (BCU 880).
     const char* fmt1 = format_opt ? format_opt : (KP||KC||KQ) ? pfmt.c_str() : K8 ? "cpa800" : "cpa780";
@@ -450,15 +450,15 @@ int main(int argc, char** argv){
     bool hit=false; int hit_cpu=0; uint16_t hit_pc=0; std::string stop_reason;  // "we stopped" signal from a callback
     std::string screen_bp;   // #1: if set, any `g`/`gu`/`n` stops once the text VRAM shows this pattern
     int  gu_pc=-1;                              // `gu`/temp-bp target PC (<0 = inactive)
-    // Einzelschritt-Kontingent. `step_rem` = wie viele Instruktionen noch AUSGEFÜHRT
+    // Einzelschritt-Kontingent. `step_rem` = wie viele Instruktionen noch AUSGEFUEHRT
     // werden sollen; gehalten wird VOR der darauffolgenden (break-before-execute), das
-    // Kommando ist also erst mit dem Halt fertig — dafür `step_active` als Schleifen-
-    // bedingung (nicht step_rem, das schon eine Instruktion früher 0 wird).
+    // Kommando ist also erst mit dem Halt fertig — dafuer `step_active` als Schleifen-
+    // bedingung (nicht step_rem, das schon eine Instruktion frueher 0 wird).
     long step_rem=0, step2_rem=0;
     bool step_active=false, step2_active=false;
     // Wiederaufnahme genau AUF einem Haltepunkt: der Halt greift jetzt vor der
-    // Instruktion, der PC steht also noch darauf. Ohne einmaliges Überspringen hielte
-    // `g` sofort wieder am selben Breakpoint (gdb macht es genauso). Gilt nur für die
+    // Instruktion, der PC steht also noch darauf. Ohne einmaliges Ueberspringen hielte
+    // `g` sofort wieder am selben Breakpoint (gdb macht es genauso). Gilt nur fuer die
     // ERSTE Instruktion nach dem Fortsetzen, danach greift der Breakpoint wieder.
     int resume_skip1=-1, resume_skip2=-1;
     bool fin_active=false; uint16_t fin_sp=0;   // `fin`: stop once SP rises above this frame
@@ -530,17 +530,17 @@ int main(int argc, char** argv){
 
     // ─── A5120.16: U8001-Kontext (S5) ─────────────────────────────────────────
     int  cpu_ctx = 1;                           // 1 = ZVE1, 2 = ZVE2, 3 = U8001 (`cpu …`)
-    std::map<uint32_t,Bp> bp16;                 // U8001-Haltepunkte, Schlüssel seg<<16|off
+    std::map<uint32_t,Bp> bp16;                 // U8001-Haltepunkte, Schluessel seg<<16|off
     long step16_rem=0; bool step16_active=false;
     long resume_skip16=-1, gu16=-1;             // wie resume_skip1 / gu_pc
     bool fin16_active=false; uint16_t fin16_sp=0;
     uint32_t hit_key16=0;                       // Halteadresse, wenn hit_cpu==3
-    std::string ev16_why;                       // Halt vor dem nächsten U8001-Befehl (VI)
+    std::string ev16_why;                       // Halt vor dem naechsten U8001-Befehl (VI)
     int  brk_mode=0; bool brk_vi=false, brk_int16=false;   // bmode (1=→16, 2=→8), bvi, bint16
     FILE* emlog_fp=nullptr; bool emlog_file=false;          // emlog: EM-Transaktionen protokollieren
     dbg16::CallStack16 cs16;
     std::map<uint32_t,uint32_t> hist16;
-    long hist16_lo=-1, hist16_hi=-1;            // `hist … lo hi` im U8001-Kontext (Schlüssel)
+    long hist16_lo=-1, hist16_hi=-1;            // `hist … lo hi` im U8001-Kontext (Schluessel)
     long last_u16=-1, last_a16=-1, last_x16=-1;
     // ─── S5b: U8001 wie ZVE1 ────────────────────────────────────────────────────
     dbg16::SymTab16 sym16;                      // Symbole mit Segment (`<<s>>%off NAME`)
@@ -551,14 +551,14 @@ int main(int argc, char** argv){
     bool brk16_int=false, brk16_nmi=false, brk16_iret=false;    // bint/bnmi/breti im U8001-Kontext
     bool brk16_trap=false;                      // btrap: interner Trap / Segmenttrap angenommen (P8)
     dbg16::ExcLog16 exc16;                      // `trap`: Ausnahmeprotokoll des U8001 (P8)
-    long mark16=-1;                             // `mark <A>` im U8001-Kontext (Schlüssel)
+    long mark16=-1;                             // `mark <A>` im U8001-Kontext (Schluessel)
     // P8000 (AP P12): Protokolle der Karten — UA858-Status (`dma log`), Kopplung (`kopp log`), SEGT (`segt`)
     dbgp8::DmaProtokoll dmaProt;
     dbgp8::Protokoll koppProt(512), segtProt(256);
     bool brk16_segt=false;                      // bsegt: Halt vor dem ersten Befehl der SEGT-Behandlung
     std::map<std::string,dbg16::EmSnap> named_em;               // EM-Teil benannter Snapshots
     uint16_t last_pc1=0;                        // ZVE1: Beginn der laufenden Instruktion
-    std::string ev_origin;                      // Ereignishalt: wer die Flanke ausgelöst hat
+    std::string ev_origin;                      // Ereignishalt: wer die Flanke ausgeloest hat
     bool regrab_on_stop=false;                  // Halt mitten in einer Z80-Instruktion: Sicht neu holen
 
     // ─── Phase 3: helper lambdas (capture all state above by reference) ─────────
@@ -601,10 +601,10 @@ int main(int argc, char** argv){
     prnlst::Listing prn;
     // spec = "PFAD[@SPEC]" mit SPEC =
     //   OFFSET  — signiert (0x../..h/dez), wird zu jeder Listing-Adresse addiert
-    //             (Code, der nicht an der Listing-Adresse läuft),
+    //             (Code, der nicht an der Listing-Adresse laeuft),
     //   auto    — Versatz selbst bestimmen: Objektbytes im RAM suchen (§2),
-    //   labels  — nur `.MAC`: Adressen ausschließlich aus den Mxxxx-Labelankern,
-    //   noanchor— nur `.MAC`: Anker ignorieren, rein durchgezählte Längen.
+    //   labels  — nur `.MAC`: Adressen ausschliesslich aus den Mxxxx-Labelankern,
+    //   noanchor— nur `.MAC`: Anker ignorieren, rein durchgezaehlte Laengen.
     // `.MAC`/`.ASM`-Dateien (Fremdquellen ohne Adressspalte) werden dazu von
     // tools/mac_listing.h assembliert; `.prn`-Listings tragen ihre Adressen selbst.
     auto loadPrnSpec = [&](const std::string& spec)->int{
@@ -617,7 +617,7 @@ int main(int argc, char** argv){
             }
         }
         // PFAD[@OFFSET][:VON-BIS] — VON-BIS begrenzt auf einen Teil des Listings
-        // (K8915-ROM: 00D0H–03FFH läuft als Kopie bei F0D0H, §8a AP-E4d).
+        // (K8915-ROM: 00D0H–03FFH laeuft als Kopie bei F0D0H, §8a AP-E4d).
         if (mode.empty() && !prnlst::splitSpecRange(spec,path,off,src_lo,src_hi)){
             fprintf(stderr,"  bad @offset[:von-bis] in '%s'\n",spec.c_str()); return -1; }
 
@@ -641,9 +641,9 @@ int main(int argc, char** argv){
                             match.matched, match.fixed, 100.0*match.ratio,
                             match.fixed-match.matched, match.anchor_len, match.anchor_src,
                             match.candidates);
-                    // Nur einen belastbaren Versatz anwenden: eine 30-%-Übereinstimmung
-                    // heißt „anderes Build" — die Zeilen lägen dann versetzt auf fremdem
-                    // Code und die Annotation führte in die Irre.
+                    // Nur einen belastbaren Versatz anwenden: eine 30-%-Uebereinstimmung
+                    // heisst „anderes Build" — die Zeilen laegen dann versetzt auf fremdem
+                    // Code und die Annotation fuehrte in die Irre.
                     if (match.ratio < 0.60)
                         fprintf(stderr,"         → Versatz NICHT angewandt (zu unsicher). Quelle und Image "
                                        "sind verschiedene Builds;\n           notfalls '%s@%ld' erzwingen "
@@ -660,7 +660,7 @@ int main(int argc, char** argv){
                 std::string lab = prnlst::labelOf(kv.second);
                 if (!lab.empty() && sym_by_name.find(lab)==sym_by_name.end()){ symAdd(lab,kv.first); ++li; }
             }
-            fprintf(stderr,"  assembliert: %d Zeile(n) aus %s (%04X..%04X), %d Anker/%d Nachführung(en), "
+            fprintf(stderr,"  assembliert: %d Zeile(n) aus %s (%04X..%04X), %d Anker/%d Nachfuehrung(en), "
                            "%d unbekannt, %d Label → Symbole\n",
                     mr.code, path.c_str(), mr.first, mr.last, mr.anchors, mr.resyncs, mr.unknown, li);
             for (size_t i=0;i<mr.problems.size() && i<5;++i)
@@ -671,10 +671,10 @@ int main(int argc, char** argv){
         // ── .prn-Listing ─────────────────────────────────────────────────────
         // Am K8915 immer MIT Objektbytes: annotiert wird nur, solange die Bytes der
         // Zeile im Speicher stehen (prnFor) — 0000H–0FFFH ist je nach A8H das ROM
-        // oder RAM mit dem TPA, und eine ROM-Zeile über einem .COM wäre Irreführung.
+        // oder RAM mit dem TPA, und eine ROM-Zeile ueber einem .COM waere Irrefuehrung.
         if (mode=="auto"){
             // Versatz an einem eigenen Listing bestimmen — prn kann schon andere
-            // Listings samt Objektbytes tragen, die den Abgleich verfälschten.
+            // Listings samt Objektbytes tragen, die den Abgleich verfaelschten.
             prnlst::Listing probe;
             if (probe.load(path, 0, /*want_bytes=*/true) < 0){
                 fprintf(stderr,"  cannot open %s\n",path.c_str()); return -1; }
@@ -695,7 +695,7 @@ int main(int argc, char** argv){
         int n = prn.load(path, off, /*want_bytes=*/K8, src_lo, src_hi);
         if (n < 0){ fprintf(stderr,"  cannot open %s\n",path.c_str()); return n; }
         // Labels (name:) aus dem Listing als Symbole importieren (b/u/list per Name),
-        // ohne bestehende (z.B. -s-/user-) Symbole zu überschreiben.
+        // ohne bestehende (z.B. -s-/user-) Symbole zu ueberschreiben.
         int li=0;
         for (auto& kv : prn.by_addr){
             std::string lab = prnlst::labelOf(kv.second);
@@ -706,7 +706,7 @@ int main(int argc, char** argv){
             snprintf(off_s+l,sizeof off_s-l," [Quelle %04X..%04X]",src_lo,src_hi); }
         fprintf(stderr,"  loaded %d listing line(s) from %s%s, %d label(s) → symbols\n",n,path.c_str(),off_s,li);
         return n; };
-    // Annotation für eine Adresse (leer, wenn keine .prn-Quelle vorliegt).
+    // Annotation fuer eine Adresse (leer, wenn keine .prn-Quelle vorliegt).
     auto prnFor = [&](uint16_t a)->std::string{
         const std::string* s = prn.find(a);
         if (!s) return std::string();
@@ -730,7 +730,7 @@ int main(int argc, char** argv){
 
     // ─── expression evaluator ──────────────────────────────────────────────────
     // The recursive-descent parser lives in tools/expr_eval.h (maschinenfrei, unit-
-    // getestet). Hier nur die Brücke: Snap→RegView, Speicher- und Symbol-Callback.
+    // getestet). Hier nur die Bruecke: Snap→RegView, Speicher- und Symbol-Callback.
     // Genutzt von `b … if`, `disp`, `logpoint` und der `x`-Adresse.
     expreval::ReadByte exprReadByte = [&](uint16_t a){ return m.memReadDebug(a); };
     expreval::FindSym  exprFindSym  = [&](const std::string& n, uint16_t& v)->bool{
@@ -850,13 +850,13 @@ int main(int argc, char** argv){
     //      `return`s after acting, so a pending step is not also treated as a bp hit.
     m.setCpuTraceCallback([&](const Z80& z){
         const uint16_t pc=z.PC;
-        last_pc1 = pc;                                   // Auslöser von EM-Ereignissen (S5b)
+        last_pc1 = pc;                                   // Ausloeser von EM-Ereignissen (S5b)
         if (KQ && dmaProt.an) dmaProt.beobachte(m.machineCycles(), pc, m.p8000()->floppy8().dma().sicht());
         // §9 hist: profiling mode only tallies PCs and skips ALL stop logic below.
         if (hist_on){ if(hist_lo<0 || (pc>=hist_lo && pc<=hist_hi)) hist1[pc]++; return; }
         // Erste Instruktion nach einem Fortsetzen? Dann darf ein Haltepunkt AUF dieser
         // Adresse nicht erneut greifen (wir stehen ja genau darauf — break-before-execute).
-        // Das Kennzeichen gilt für genau einen Callback und wird hier verbraucht.
+        // Das Kennzeichen gilt fuer genau einen Callback und wird hier verbraucht.
         bool skip_resume_stop = false;
         if (resume_skip1 >= 0){
             skip_resume_stop = (pc == (uint16_t)resume_skip1);
@@ -870,16 +870,16 @@ int main(int argc, char** argv){
         { auto lit=logpoints.find(pc); if(lit!=logpoints.end()) logHit(z,lit->second); }
         // event breakpoints: interrupt / NMI accepted (state signature) or RETI (opcode).
         // Klassifikation in tools/event_bp.h (unit-getestet, inkl. NMI-bei-IFF1=0-Grenzfall).
-        // Beim Fortsetzen übersprungen: das RETI/RETN, auf dem wir stehen, würde sonst
+        // Beim Fortsetzen uebersprungen: das RETI/RETN, auf dem wir stehen, wuerde sonst
         // sofort wieder halten (INT/NMI erkennen ohnehin nur Flanken).
         if ((brk_int||brk_nmi||brk_reti) && !skip_resume_stop){
             uint8_t o0=0,o1=0; if(brk_reti){ o0=m.memReadDebug(pc); o1=m.memReadDebug((uint16_t)(pc+1)); }
             eventbp::Prev pv{bi_have_prev, bi_prev_sp, bi_prev_iff1};
             switch (eventbp::classify(pc, z.SP, z.IFF1, pv, brk_int, brk_nmi, brk_reti, o0, o1)){
                 case eventbp::Event::NMI: stopAt(1,z,"NMI accepted (Q240/protection?)"); break;
-                // §5: Vektor + Quellgerät + aufgelöste Tabellenadresse gleich mit anzeigen.
-                // „Gerät hat Vektor 0xFF" vs. „kein Gerät hat geantwortet" (SPURIOUS) ist der
-                // Unterschied, an dem ein Fremd-OS-Interruptsturm hängt.
+                // §5: Vektor + Quellgeraet + aufgeloeste Tabellenadresse gleich mit anzeigen.
+                // „Geraet hat Vektor 0xFF" vs. „kein Geraet hat geantwortet" (SPURIOUS) ist der
+                // Unterschied, an dem ein Fremd-OS-Interruptsturm haengt.
                 case eventbp::Event::Interrupt:{ char w[160];
                     auto& ia=m.lastIntAck();
                     uint16_t tb=(uint16_t)((z.I<<8)|(ia.vector&0xFE));
@@ -901,7 +901,7 @@ int main(int argc, char** argv){
             if (e==eventbp::Event::Interrupt || e==eventbp::Event::NMI){
                 uint16_t ret=(uint16_t)(m.memReadDebug(z.SP)|(m.memReadDebug((uint16_t)(z.SP+1))<<8));
                 std::string p=prnFor(pc), isr=symFor(pc);
-                // §5: Vektor + Quellgerät mitschreiben (bei NMI gibt es keine Quittung).
+                // §5: Vektor + Quellgeraet mitschreiben (bei NMI gibt es keine Quittung).
                 auto& ia=m.lastIntAck();
                 char via[64]="";
                 if (e==eventbp::Event::Interrupt)
@@ -923,8 +923,8 @@ int main(int argc, char** argv){
         if (tw1lo>=0 && pc>=tw1lo && pc<=tw1hi && tw_n<tw_cap){ traceLine(1,z); ++tw_n; }
         if ((brk_busrq||brk_xfer||brk_wxfer) && checkFloppyEv(1,z)) return;   // §5/§15 /BUSRQ / xfer edge
         // Einzelschritt: der Halt bricht die Instruktion ab, also erst durchlassen und
-        // beim NÄCHSTEN Callback halten — sonst käme `s` nie von der Stelle. Ergebnis
-        // ist zugleich die gdb-Semantik: nach `s` steht der PC auf dem NÄCHSTEN Befehl.
+        // beim NAECHSTEN Callback halten — sonst kaeme `s` nie von der Stelle. Ergebnis
+        // ist zugleich die gdb-Semantik: nach `s` steht der PC auf dem NAECHSTEN Befehl.
         if (step_active){
             if (step_rem<=0){ step_active=false; stopAt(1,z,"step"); return; }
             traceLine(1,z); --step_rem; return;
@@ -1011,9 +1011,9 @@ int main(int argc, char** argv){
     // ═══ A5120.16: der U8001 als dritte CPU (S5, Plan 17 §3) ═══════════════════
     // Mit EM (`--em em256|em064`) gibt es neben ZVE1/ZVE2 den U8001 auf der Steuerkarte.
     // `cpu u8000` schaltet r/s/n/u/a/b/where/hist/bt/snap/rs/x/d/e/set auf ihn um.
-    // Speicher sieht er NUR über die Segmentweiche A42 (wie ein Befehl im jetzigen
-    // Zustand: A33, N/S, Status), roh über `em:ZELLE`.  Haltepunkte greifen VOR dem
-    // Befehl: EM::setStepHook hält den U8001 an, bevor er ihn ausführt; die Zeit
+    // Speicher sieht er NUR ueber die Segmentweiche A42 (wie ein Befehl im jetzigen
+    // Zustand: A33, N/S, Status), roh ueber `em:ZELLE`.  Haltepunkte greifen VOR dem
+    // Befehl: EM::setStepHook haelt den U8001 an, bevor er ihn ausfuehrt; die Zeit
     // bleibt als Guthaben stehen und wird beim Fortsetzen nachgeholt.
     auto z16 = [&]()->Z8000& { return em ? em->u8001() : p16->cpu(); };
     auto key16 = [](uint8_t seg, uint16_t off)->uint32_t{ return (uint32_t(seg&0x7F)<<16)|off; };
@@ -1024,9 +1024,9 @@ int main(int argc, char** argv){
         Z8kBusCycle c; c.st = instr? Z8kStatus::MemInstr : Z8kStatus::MemData;
         c.system = z16().systemMode(); c.word = false; c.read = true;
         c.seg = seg; c.addr = off; return c; };
-    // Byte über die Segmentweiche (instr = Programmspeicher, für Mode 1 relevant).
-    // Ein Byte hinter dem Buszyklus @p c, ohne Nebenwirkung: am EM über die Segmentweiche A42, am P8000
-    // über die Auswahllogik und die drei UB8010 (`P8000MmuLogik16::probe`); offener Bus liest FFH.
+    // Byte ueber die Segmentweiche (instr = Programmspeicher, fuer Mode 1 relevant).
+    // Ein Byte hinter dem Buszyklus @p c, ohne Nebenwirkung: am EM ueber die Segmentweiche A42, am P8000
+    // ueber die Auswahllogik und die drei UB8010 (`P8000MmuLogik16::probe`); offener Bus liest FFH.
     auto rdbCyc16 = [&](const Z8kBusCycle& c)->uint8_t{
         if (em) return em->peek(em->cellFor16(c));
         uint8_t v; dbgp8::physByte(*p16, p16->mmu().probe(c).zugriff, 0, v); return v; };
@@ -1066,7 +1066,7 @@ int main(int argc, char** argv){
             return b; }
         return dbg16::addrText(a.seg, uint16_t(a.off+i), true); };
     // Adresse der 16-Bit-Seite aus einem Wort; Vorgabesegment = PC-Segment.
-    // Symbolauflösung der 16-Bit-Seite: erst die U8001-Tabelle (mit Segment), dann die
+    // Symbolaufloesung der 16-Bit-Seite: erst die U8001-Tabelle (mit Segment), dann die
     // Z80-Tabelle (16 Bit ⇒ PC-Segment); NAME+OFF/NAME-OFF in beiden.
     auto symVal16 = [&](const std::string& n, long& v)->bool{
         uint32_t k; if (sym16.find(n,k)){ v=(long)k; return true; }
@@ -1078,7 +1078,7 @@ int main(int argc, char** argv){
         if (!dbg16::parseAddr(tok, has16? z16().pcSeg : 0, a, symVal16)){
             fprintf(stderr,"  ? Adresse '%s' (<<seg>>off | em:ZELLE | Zahl | Symbol)\n",tok.c_str()); return false; }
         return true; };
-    // Symbol für eine Adresse der 16-Bit-Seite: genau / nächstes darunter (bt, hist).
+    // Symbol fuer eine Adresse der 16-Bit-Seite: genau / naechstes darunter (bt, hist).
     auto symAt16   = [&](uint32_t key)->std::string{ return sym16.at(key); };
     auto symNear16 = [&](uint32_t key)->std::string{ return sym16.nearest(key); };
     auto disasm16 = [&](uint8_t seg, uint16_t off, char* out, size_t n)->int{
@@ -1102,7 +1102,7 @@ int main(int argc, char** argv){
         if (z.busAck())  return "BUSAK";
         if (z.halted())  return "HALT";
         return "run"; };
-    // S5b: EM-Zustand für `snap`/`snap diff` (Register, Karte, A22, PIO A32, DRAM).
+    // S5b: EM-Zustand fuer `snap`/`snap diff` (Register, Karte, A22, PIO A32, DRAM).
     auto captureEm = [&](dbg16::EmSnap& s){
         const Z8000& z = z16();
         s = dbg16::EmSnap{}; s.valid=true;
@@ -1164,7 +1164,7 @@ int main(int argc, char** argv){
         fprintf(fp,"T3 %c%-9lld %-58s FCW=%04X R0=%04X R1=%04X R2=%04X R3=%04X SP=%04X\n",
                 rcpfx(), rc(m.cpuCycles()), l, z.fcw, z.r(0), z.r(1), z.r(2), z.r(3), sp16(z)); };
 
-    // ─── S5b: Ausdrücke in der U8001-Sicht (b … if, lp, disp, x-Adresse) ──────────
+    // ─── S5b: Ausdruecke in der U8001-Sicht (b … if, lp, disp, x-Adresse) ──────────
     // Register wie der laufende Modus sie sieht, Flags, PC/PCSEG, Karte (A33…, A53, PE);
     // Speicher [x]/[x]w/[x]l durch die Segmentweiche (Datenzugriff, big-endian),
     // [em:x] roh ins DRAM.  Grammatik und Operatoren wie bei ZVE1 (tools/expr_eval.h).
@@ -1205,7 +1205,7 @@ int main(int argc, char** argv){
     // Der Befehl, der gerade lief (bzw. zuletzt lief): Beginn aus Z8000::lastPc().
     auto lastInsn16 = [&]()->std::string{
         const Z8000& z = z16(); char l[200]; disasm16(z.lastPcSeg(), z.lastPc(), l, sizeof l); return l; };
-    // Wer hat einen Speicher-/E/A-Zugriff ausgelöst?  U8001 mit Busstatus, sonst U880.
+    // Wer hat einen Speicher-/E/A-Zugriff ausgeloest?  U8001 mit Busstatus, sonst U880.
     auto accWho = [&](const EM::Zugriff& a)->std::string{
         char b[160];
         if (a.by16){ const Z8000& z=z16();
@@ -1216,12 +1216,12 @@ int main(int argc, char** argv){
         else snprintf(b,sizeof b,"U880 [%04X] %s.PC=%04X", a.addr8, m.busMasterIsZVE2()?"ZVE2":"ZVE1", m.busMasterPC());
         return b; };
 
-    // Rückruf vor jedem Befehl des U8001 (EM: `EM::setStepHook`, P8000: `P8000Karte16::schrittHaken`).
+    // Rueckruf vor jedem Befehl des U8001 (EM: `EM::setStepHook`, P8000: `P8000Karte16::schrittHaken`).
     auto stepHook16 = [&](const Z8000& z)->bool{
-            // Ein anderer Halt (Haltepunkt, Überwachung, Ereignis) ist schon beschlossen:
-            // der U8001 läuft dann nicht mehr weiter (sonst holte er den Rest des Guthabens nach).
+            // Ein anderer Halt (Haltepunkt, Ueberwachung, Ereignis) ist schon beschlossen:
+            // der U8001 laeuft dann nicht mehr weiter (sonst holte er den Rest des Guthabens nach).
             if (hit && !hist_on) return true;
-            // Keine Befehlsgrenze: Resetablauf (RESET16 gerade gelöst), HALT, Stop-Refresh,
+            // Keine Befehlsgrenze: Resetablauf (RESET16 gerade geloest), HALT, Stop-Refresh,
             // BUSAK, laufender Wiederholungsbefehl.
             if (z.inReset() || z.halted() || z.stopped() || z.busAck() || z.inRepeat()) return false;
             const uint32_t key = pcKey16(z);
@@ -1229,7 +1229,7 @@ int main(int argc, char** argv){
             bool skip = (resume_skip16 >= 0 && key == (uint32_t)resume_skip16);
             resume_skip16 = -1;
             // Aufrufstapel: vor dem Befehl einordnen, CALL vormerken (Dekodieren kostet —
-            // aber nur, solange der U8001 läuft).
+            // aber nur, solange der U8001 laeuft).
             const uint16_t sp = sp16(z);
             cs16.onInstruction(key, sp);
             z8k::Line l = z8k::disasm([&](uint16_t o){ return rdw16(z.pcSeg,o,true); }, z.pc, z.segMode(), z.pcSeg);
@@ -1262,7 +1262,7 @@ int main(int argc, char** argv){
             }
             return false;
     };
-    // Ausnahmen des U8001 ins Protokoll (`trap`); `btrap` hält vor dem ersten Befehl der Behandlung eines
+    // Ausnahmen des U8001 ins Protokoll (`trap`); `btrap` haelt vor dem ersten Befehl der Behandlung eines
     // internen Traps (EPA/PRIV/SC) bzw. SEGT.  Auch die angenommenen Interrupts gehen in `itrace`.
     auto exHook16 = [&](const Z8kExceptionInfo& x){
         exc16.add(x);
@@ -1339,13 +1339,13 @@ int main(int argc, char** argv){
             if (hist_on || hit) return;
             // Halt GENAU an der Flanke (S5b).  Das Ereignis kommt synchron aus dem Zyklus,
             // der die Flanke erzeugt; gehalten wird
-            //  - by16: vor dem NÄCHSTEN Befehl des U8001 (sein Befehl mit dem auslösenden
+            //  - by16: vor dem NAECHSTEN Befehl des U8001 (sein Befehl mit dem ausloesenden
             //    Buszyklus ist fertig, ein Z8000-Schritt ist unteilbar); ZVE1 steht an der
             //    Befehlsgrenze, bis zu der die Maschinenzeit gerade nachgezogen wurde;
             //  - m1: VOR dem U880-Befehl, dessen M1 das FF A29 kippte (abortBeforeExecute);
             //  - sonst (E/A des U880): nach dem U880-Befehl mit dem E/A-Zyklus, vor dem
-            //    nächsten; der U8001 holt die Zeit dieses Befehls nicht mehr nach.
-            // Gezeigt wird die CPU des Kontexts; die Zeile „ausgelöst" nennt den Verursacher.
+            //    naechsten; der U8001 holt die Zeit dieses Befehls nicht mehr nach.
+            // Gezeigt wird die CPU des Kontexts; die Zeile „ausgeloest" nennt den Verursacher.
             auto origin = [&]()->std::string{
                 char b[240];
                 if (e.by16){ const Z8000& z=z16();
@@ -1375,11 +1375,11 @@ int main(int argc, char** argv){
             else if (brk_vi && e.kind==E::Vektor8)
                 fprintf(stderr,"  [vi] U880 OUT ADH=%02X → VI am U8001 (Halt bei der Quittung)\n",e.value&0xFF);
         });
-        // P8: jede angenommene Ausnahme des U8001 ins Protokoll (`trap`); `btrap` hält vor
+        // P8: jede angenommene Ausnahme des U8001 ins Protokoll (`trap`); `btrap` haelt vor
         // dem ersten Befehl der Behandlung eines internen Traps (EPA/PRIV/SC) bzw. SEGT.
         z16().onException = exHook16;
     }
-    // P8000: der U8001 der 16-Bit-Karte — dieselben Rückrufe, dazu SEGT-/Kopplungsprotokoll (AP P12a/b).
+    // P8000: der U8001 der 16-Bit-Karte — dieselben Rueckrufe, dazu SEGT-/Kopplungsprotokoll (AP P12a/b).
     if (p16){
         p16->schrittHaken = stepHook16;
         z16().onException = exHook16;
@@ -1452,7 +1452,7 @@ int main(int argc, char** argv){
             fprintf(stderr,"\n");
             return;
         }
-        if (K8){   // K8915: eine CPU; was zählt, ist das Speicherbild (A8H) und /MEMDI
+        if (K8){   // K8915: eine CPU; was zaehlt, ist das Speicherbild (A8H) und /MEMDI
             K8915Machine& k=*m.k8915();
             fprintf(stderr,"  state: A8H=%02X map=%s /MEMDI=%s 61H=%02X  %c-cyc=%lld%s\n",
                 dbgm::k8A8(k), dbgm::speicherbild(k).c_str(), dbgm::k8Memdi(k)?"1":"0",
@@ -1638,7 +1638,7 @@ int main(int argc, char** argv){
     auto diskVerify = [&](const char* path, const char* label){
         if (!path){ fprintf(stderr,"  (kein Image auf %s)\n",label); return; }
         auto img = DiskImage::open(path, std::nullopt, /*write_protect=*/true);
-        if (!img){ fprintf(stderr,"  '%s' nicht öffenbar (self-describing .hfe ok; rohe .img "
+        if (!img){ fprintf(stderr,"  '%s' nicht oeffenbar (self-describing .hfe ok; rohe .img "
                                   "braucht ein bekanntes Format)\n",path); return; }
         DiskGeometry g = img->geometry();
         fprintf(stderr,"  %s %s — Geometrie %u Zyl × %u Kopf, %s\n",label,path,
@@ -1850,18 +1850,18 @@ int main(int argc, char** argv){
                 m.isBUSRQ()?"yes":"no", zve2Active()?"ZVE2":"ZVE1",
                 k.drive,k.mounted?"mounted":"EMPTY",(unsigned)k.cylinder,(unsigned)k.head,
                 k.transferring?"READING":"idle",k.writeMode?"+WRITE":"",k.headPos,k.trackLen);
-        // §7: welche Uhr Lauf-Budgets zählen — und wie weit sie auseinanderlaufen.
+        // §7: welche Uhr Lauf-Budgets zaehlen — und wie weit sie auseinanderlaufen.
         fprintf(stderr,"  Takte: ZVE1=%llu  Maschine=%llu  (Lauf-Uhr = %s)\n",
                 (unsigned long long)m.cpuCycles(), (unsigned long long)m.machineCycles(),
                 clock_machine?"Maschine":"ZVE1");
         rst38Hint();
     };
-    // §7 Lauf-Uhr: BEIDE CPUs. `m.cpuCycles()` ist die ZVE1-Uhr; hält ZVE2 den Bus
-    // (DMA — oder ein abgestürztes ZVE2, das Millionen Instruktionen dreht), steht
-    // sie fast still und ein `g 20000000` läuft minutenlang, obwohl die Maschine
-    // längst weit gekommen ist. `clock zve1` schaltet auf das alte Verhalten zurück.
+    // §7 Lauf-Uhr: BEIDE CPUs. `m.cpuCycles()` ist die ZVE1-Uhr; haelt ZVE2 den Bus
+    // (DMA — oder ein abgestuerztes ZVE2, das Millionen Instruktionen dreht), steht
+    // sie fast still und ein `g 20000000` laeuft minutenlang, obwohl die Maschine
+    // laengst weit gekommen ist. `clock zve1` schaltet auf das alte Verhalten zurueck.
     auto runClock = [&]()->uint64_t{ return clock_machine? m.machineCycles() : m.cpuCycles(); };
-    // §7 Fortschrittsanzeige: bei langen Läufen alle 2 s eine Zeile auf stderr, damit
+    // §7 Fortschrittsanzeige: bei langen Laeufen alle 2 s eine Zeile auf stderr, damit
     // „ZVE2 dreht durch" sofort sichtbar ist statt als toter Debugger.
     auto runProgress = [&](uint64_t start, std::chrono::steady_clock::time_point& last)->void{
         using namespace std::chrono;
@@ -1930,7 +1930,7 @@ int main(int argc, char** argv){
             for (size_t i=0;i<v.size() && i<15;++i){ char l[200];
                 disasm16(uint8_t(v[i].second>>16),uint16_t(v[i].second),l,sizeof l);
                 std::string sy=symNear16(v[i].second);
-                // Name der umgebenden Routine, wenn die Zeile selbst keinen trägt.
+                // Name der umgebenden Routine, wenn die Zeile selbst keinen traegt.
                 bool own = !symAt16(v[i].second).empty();
                 fprintf(stderr,"    %6.2f%%  %6u  %s%s%s\n",100.0*v[i].first/(double)tot,v[i].first,l,
                         (sy.empty()||own)?"":"   ; in ",(sy.empty()||own)?"":sy.c_str()); }
@@ -2029,7 +2029,7 @@ int main(int argc, char** argv){
     // Stops early if a breakpoint hits.
     auto keys = [&](const std::string& t){
         if (KP){
-            // PRG: Taste drücken + loslassen (je 100 000 Takte, wie die Tests).  Return =
+            // PRG: Taste druecken + loslassen (je 100 000 Takte, wie die Tests).  Return =
             // ET1 (QK_TASTE_BASE|37H) am 710 (K7609), Qt-Return am 710-1 (K7672 → 0DH).
             uint64_t ran=0; int n=0;
             for (size_t i=0;i<t.size();++i){
@@ -2047,13 +2047,13 @@ int main(int argc, char** argv){
         }
         if (KC){
             // PC 1715: Tastatur1715 (eigener U880) braucht Entprellung — Taste 150 000 Takte
-            // gedrückt, 100 000 Pause (wie tests/support/pc1715_input.h).  Return = Qt-Return.
+            // gedrueckt, 100 000 Pause (wie tests/support/pc1715_input.h).  Return = Qt-Return.
             uint64_t ran=0; int n=0;
             for (size_t i=0;i<t.size();++i){
                 uint32_t code=decodeKey(t,i); ++n;
                 bool strg=false;
                 if (code>=0x01 && code<=0x1A && code!=0x0D) { code += 0x60; strg=true; }   // ^A..^Z = Strg + Buchstabe (\x0b = ^K)
-                else if (code<0x20 && code!=0x01000004u) code = 0x01000004u;   // CR/LF/übrige Steuerzeichen → Return
+                else if (code<0x20 && code!=0x01000004u) code = 0x01000004u;   // CR/LF/uebrige Steuerzeichen → Return
                 m.keyPress(code,false,strg); ran+=goSilent(150000);
                 if (hit){ fprintf(stderr,"   (ran %llu cyc)\n",(unsigned long long)ran); onStop(); return; }
                 m.keyRelease(code);           ran+=goSilent(100000);
@@ -2119,7 +2119,7 @@ int main(int argc, char** argv){
             // K8915: jedes Zeichen als fertiges Zeichen der K7672 (sendeZeichen) — im
             // SCP-Modus das Zeichen selbst, im DCP-Modus (SCPX) die Taste samt Umschalt/
             // Strg als Scancodes Satz 1.  So kommt auch ^C (\x03) an.  Eine Taste je
-            // 750 000 Takte (≈ 0,3 s), wie beim A5120 Drücken + Loslassen zusammen.
+            // 750 000 Takte (≈ 0,3 s), wie beim A5120 Druecken + Loslassen zusammen.
             uint64_t ran=0; int n=0;
             for (size_t i=0;i<t.size();++i){
                 uint32_t code=decodeKey(t,i); ++n;
@@ -2136,7 +2136,7 @@ int main(int argc, char** argv){
             uint32_t code=decodeKey(t,i);
             // Steuerzeichen (\x03 = ^C, \e = ESC, \t …) kennt K7637::translateKey nicht
             // als Qt-Code (→ 0x00, Taste verpufft) — als Rohbyte senden (QK_RAW_BASE);
-            // das CP/A-BIOS reicht Codes < 20H unverändert durch.
+            // das CP/A-BIOS reicht Codes < 20H unveraendert durch.
             if (code < 0x20) code |= 0x02000000u;
             m.keyPress(code,false,false); go(600000); if(hit) return;
             m.keyRelease(code);          go(150000); if(hit) return;
@@ -2312,15 +2312,15 @@ int main(int argc, char** argv){
     auto pushHistory = [&]{
         if (K8) return;                    // K8915: keine Snapshots (Savestates nur A5120)
         rev_ring.emplace_back();
-        // RAF-Inhalt (bis 2 MB) NICHT je Schritt — 200 Stände wären bis 400 MB.  `rs`/`rc`
-        // stellen daher nur das RAF-Latch zurück; benannte Snapshots nehmen den Inhalt mit.
+        // RAF-Inhalt (bis 2 MB) NICHT je Schritt — 200 Staende waeren bis 400 MB.  `rs`/`rc`
+        // stellen daher nur das RAF-Latch zurueck; benannte Snapshots nehmen den Inhalt mit.
         m.captureState(rev_ring.back(), false);
         while (rev_ring.size() > rev_cap) rev_ring.pop_front();
     };
     // Restore a snapshot and re-sync the debugger's view (call-stack history is reset).
     auto applySnapshot = [&](const A5120Machine::MachineSnapshot& s,const char* what){
         bool ok = m.restoreState(s);
-        if (!ok && !m.stateError().empty()){   // unpassende RAF: nichts übernommen
+        if (!ok && !m.stateError().empty()){   // unpassende RAF: nichts uebernommen
             fprintf(stderr,"  restore abgelehnt: %s\n",m.stateError().c_str()); return; }
         callstack.clear();                 // call history can't be reconstructed
         cs16.clear();
@@ -2367,7 +2367,7 @@ int main(int argc, char** argv){
         if (em->reset16() || (z.busAck() && em->busRq16()) || (z.stopped() && em->stop16())){
             fprintf(stderr,"  (U8001 laeuft nicht: %s — erst RESET16/BUSRQ/STOP loesen)\n",state16(z)); return true; }
         return false; };
-    // Einzelschritte laufen, bis der Schritt-Rückruf hält; höchstens 50 Mio. Takte
+    // Einzelschritte laufen, bis der Schritt-Rueckruf haelt; hoechstens 50 Mio. Takte
     // (parkt der U8001 unterwegs, z. B. per TRQ8/BUSAK, kommt er nicht mehr voran).
     auto runStep16 = [&](long k){
         step16_rem=k; step16_active=true; m.clearStop(); hit=false; armResume();
@@ -2398,7 +2398,7 @@ int main(int argc, char** argv){
         }
         if (f.empty()) fprintf(stderr,"  (Aufrufstapel leer — erst laufen/schrittweise fahren; 'bt scan' sucht im Stapel)\n");
     };
-    // `bt scan`: Stapel nach Rücksprungadressen absuchen (ohne Befehlsgeschichte, z. B.
+    // `bt scan`: Stapel nach Ruecksprungadressen absuchen (ohne Befehlsgeschichte, z. B.
     // gleich nach restore).  Segmentiert: Paare (Segmentwort 0sss ssss 0000 0000, Offset),
     // sonst einzelne Worte; plausibel ist eine Adresse, vor der ein CALL/CALR endet.
     auto bt16Scan = [&](int depth){
@@ -2445,7 +2445,7 @@ int main(int argc, char** argv){
         if (!ctx && !rawCmd) return false;
         if (!has16){ fprintf(stderr,"  (kein U8001 in dieser Maschine — A5120: --em em256, P8000: --machine p8000-16)\n"); return true; }
         Z8000& z = z16();
-        // Beobachtungspunkte auf Speicher/Ports der 16-Bit-Seite gibt es am P8000 nur für E/A (iow/iob);
+        // Beobachtungspunkte auf Speicher/Ports der 16-Bit-Seite gibt es am P8000 nur fuer E/A (iow/iob);
         // Speicher: `ml`/`mp` + Haltepunkt/`bsegt` — der Zugriffshaken der Karte meldet je Zyklus, nicht je Byte.
         if (p16 && (cmd=="wp"||cmd=="wpr"||cmd=="wb"||cmd=="wpa"||cmd=="wbr"||cmd=="wba"||cmd=="wd")){
             fprintf(stderr,"  (Speicher-Watchpoints der 16-Bit-Seite gibt es am P8000 nicht — Haltepunkt `b`, `bsegt`, E/A: iow/iob)\n");
@@ -2551,7 +2551,7 @@ int main(int argc, char** argv){
             pushHistory(); runHist(cyc,-1,-1); hist16_lo=hist16_hi=-1; return true; }
         // Watchpoints der 16-Bit-Seite: <<seg>>off (logisch, nur Zugriffe des U8001 — so,
         // wie er die Adresse ausgibt: SN + Offset) oder em:ZELLE (roh: jeder Zugriff auf die
-        // DRAM-Zelle, auch der des U880 über das Fenster).  Formen wie ZVE1.
+        // DRAM-Zelle, auch der des U880 ueber das Fenster).  Formen wie ZVE1.
         if ((cmd=="wp"||cmd=="wpr"||cmd=="wb"||cmd=="wpa"||cmd=="wbr"||cmd=="wba") && t.size()>1){
             dbg16::Addr16 lo,hi;
             if (!dbg16::parseRange16(t[1], z.pcSeg, lo, hi, symVal16)){
@@ -2617,8 +2617,8 @@ int main(int argc, char** argv){
                 fprintf(stderr,"  %s\n",l); o=uint16_t(o+len); }
             last_u16=(long)key16(a.seg,o); return true; }
         if (cmd=="a" && t.size()>2){
-            // a <adr>|. <Befehl …>  — ein Befehl, z8kasm-Syntax, über die Segmentweiche
-            // in den PROGRAMMspeicher (Status 1100; in Mode 1 zählt das).
+            // a <adr>|. <Befehl …>  — ein Befehl, z8kasm-Syntax, ueber die Segmentweiche
+            // in den PROGRAMMspeicher (Status 1100; in Mode 1 zaehlt das).
             dbg16::Addr16 a;
             if (t[1]=="."){ if(last_a16<0){ fprintf(stderr,"  (noch keine a-Adresse)\n"); return true; }
                 a.seg=uint8_t(last_a16>>16); a.off=uint16_t(last_a16); }
@@ -2732,7 +2732,7 @@ int main(int argc, char** argv){
             else ok=false;
             if (ok) fprintf(stderr,"  U8001 %s := %%%lX\n",rn.c_str(),v); else fprintf(stderr,"  ? bad register (R0..R15 RR RH RL PC PCSEG FCW)\n");
             return true; }
-        return false;   // alles Übrige (g, where, hist, snap, rs, …) wie gewohnt
+        return false;   // alles Uebrige (g, where, hist, snap, rs, …) wie gewohnt
     };
 
     // ─── P8000 (AP P12a/P12b): Kommandos zu ADP, UA858, Kopplung, MMU, Terminal ───────────────
@@ -2787,7 +2787,7 @@ int main(int argc, char** argv){
                 for (size_t i = wdc_prot.size()>n? wdc_prot.size()-n : 0; i<wdc_prot.size(); ++i){
                     const auto& e=wdc_prot[i];
                     fprintf(stderr,"  t8=%-12llu ST %d->%d %s%s",(unsigned long long)e.t8,e.alt&7,e.neu&7,stName[e.neu&7],(e.neu&0x20)?" TR":"");
-                    if ((e.alt&7)==1 && (e.neu&7)!=1){   // Kommandoblock übernommen (FW 30B7–30BF)
+                    if ((e.alt&7)==1 && (e.neu&7)!=1){   // Kommandoblock uebernommen (FW 30B7–30BF)
                         fprintf(stderr,"  Kmd %02X LW %02X:",e.kmd[0],e.kmd[1]);
                         for (int k=2;k<9;++k) fprintf(stderr," %02X",e.kmd[size_t(k)]); }
                     if ((e.neu&7)==7) fprintf(stderr,"  Fehler %02X",e.fehler);
@@ -2955,12 +2955,12 @@ int main(int argc, char** argv){
 #ifdef HAVE_ISOCLINE
     // ic_init(true) = Ausgabe des Editors auf STDERR. Das ist keine Kosmetik: der
     // ganze Debugger schreibt auf stderr (damit `… 2>&1 | tee sitzung.log` alles
-    // erwischt), und ein Prompt auf stdout würde aus der Reihe tanzen.
+    // erwischt), und ein Prompt auf stdout wuerde aus der Reihe tanzen.
     ic_init(true);
     ic_set_prompt_marker("(dbg) ", nullptr);   // Prompt exakt wie im Skriptbetrieb
     ic_enable_multiline(false);                // eine Zeile = ein Kommando
     ic_enable_hint(false);                     // keine Vorschau-Einblendung
-    ic_set_history(nullptr, -1);               // History nur im Speicher, 200 Einträge
+    ic_set_history(nullptr, -1);               // History nur im Speicher, 200 Eintraege
     ic_set_default_completer(dbgCompleter, nullptr);
 #endif
     if (start_console) consoleMode(1.0);   // --console
@@ -2969,15 +2969,15 @@ int main(int argc, char** argv){
         // read one command (echo script lines so piped sessions are readable)
         if (!pending.empty()){ line=pending.front(); pending.pop_front(); fprintf(stderr,"(dbg) %s\n",line.c_str()); }
         else {
-            // Terminal → isocline (Zeilenbearbeitung, History, Tab-Vervollständigung);
-            // Pipe/Skript → schlichtes getline mit eigenem Prompt (unverändert).
+            // Terminal → isocline (Zeilenbearbeitung, History, Tab-Vervollstaendigung);
+            // Pipe/Skript → schlichtes getline mit eigenem Prompt (unveraendert).
             // isocline erkennt eine Pipe zwar selbst, aber der Skriptpfad muss
             // buchstabengetreu bleiben: ~30 cli_dbg_-Tests pinnen den Wortlaut.
 #ifdef HAVE_ISOCLINE
             if (k1520::os::isTerminal(0)) {
                 char* rl = ic_readline("");     // Prompt kommt aus dem prompt_marker
                 if (!rl) break;                 // EOF / Ctrl-D / Ctrl-C
-                line = rl; ic_free(rl);         // History führt isocline selbst
+                line = rl; ic_free(rl);         // History fuehrt isocline selbst
             } else
 #endif
             { fprintf(stderr,"(dbg) "); if(!std::getline(std::cin,line)) break; }
@@ -3006,7 +3006,7 @@ int main(int argc, char** argv){
         const std::string& cmd=t[0];
 
         // K8915: was es nur am A5120 gibt (ZVE2, /BUSRQ-/DMA-Ereignisse, Snapshots,
-        // Savestates), wird gemeldet statt ausgeführt — nie ein Absturz (§8a AP-E4d).
+        // Savestates), wird gemeldet statt ausgefuehrt — nie ein Absturz (§8a AP-E4d).
         if (K8 && dbgm::nurA5120Kommando(cmd) && !(KQ && (cmd=="savestate"||cmd=="loadstate"))){
             fprintf(stderr,"  '%s' gibt es am %s nicht (nur A5120: ZVE2, /BUSRQ/DMA, "
                            "Snapshots/Savestates) — nicht vorhanden\n",cmd.c_str(),m.name());
@@ -3283,7 +3283,7 @@ int main(int argc, char** argv){
                     if (em && ea!=named_em.end() && eb!=named_em.end()){
                         auto d=dbg16::diffEm(ea->second,eb->second);
                         for (auto& l: d) fprintf(stderr,"    %s\n",l.c_str());
-                        if (d.empty()) fprintf(stderr,"  → EM (U8001, Karte, DRAM) unverändert\n"); } } }
+                        if (d.empty()) fprintf(stderr,"  → EM (U8001, Karte, DRAM) unveraendert\n"); } } }
             else if (t.size()>=2){ m.captureState(named_snaps[t[1]]);
                 if (em) captureEm(named_em[t[1]]);
                 fprintf(stderr,"  snapshot '%s' saved (PC=%04X)\n",t[1].c_str(),m.cpuPC()); }
@@ -3499,8 +3499,8 @@ int main(int argc, char** argv){
                 backtrace(t.size()>2?(int)parseNum(t[2]):8); bt_use_history=prev; }
             else backtrace(t.size()>1?(int)parseNum(t[1]):8); }
         else if ((cmd=="d"||cmd=="dump") && t.size()>1){
-            // §3-Gegenstück: `dump <adr> <len> <datei>` schreibt den Bereich als Binärdatei
-            // heraus (für externen Disassembler/Diff); ohne Dateinamen bleibt es der Hexdump.
+            // §3-Gegenstueck: `dump <adr> <len> <datei>` schreibt den Bereich als Binaerdatei
+            // heraus (fuer externen Disassembler/Diff); ohne Dateinamen bleibt es der Hexdump.
             if (t.size()>3){
                 uint16_t a=(uint16_t)parseNum(t[1]); int n=(int)parseNum(t[2]);
                 std::ofstream f(t[3],std::ios::binary);
@@ -3523,7 +3523,7 @@ int main(int argc, char** argv){
             if (t.size()>2 && cnt > 256 && cnt > (int)a && cnt <= 0xFFFF){
                 u_end=(uint16_t)cnt; u_range=true; cnt=0x7FFF;
                 fprintf(stderr,"  (2. Argument als END-Adresse %04X gelesen; fuer eine Anzahl < 257 angeben)\n",u_end); }
-            // läuft die Disassembly in unbeschriebenen Speicher (lauter 0xFF → "RST 38H"),
+            // laeuft die Disassembly in unbeschriebenen Speicher (lauter 0xFF → "RST 38H"),
             // ist das keine Codeausgabe, sondern Rauschen. Nach 4 solchen Zeilen abbrechen
             // und sagen, ab wo — spart das Scrollen durch 40 sinnlose Zeilen.
             int ff_run = 0;
@@ -3649,7 +3649,7 @@ int main(int argc, char** argv){
         else if (cmd=="save" && t.size()>3){ std::ofstream f(t[1],std::ios::binary);
             uint16_t a=(uint16_t)parseNum(t[2]); int n=(int)parseNum(t[3]);
             for(int i=0;i<n;++i) f.put((char)m.memReadDebug(a+i)); fprintf(stderr,"  saved %d byte(s) from %04X to %s\n",n,a,t[1].c_str()); }
-        // §3: Binärabgleich Datei ↔ RAM — „ist das die richtige Datei, derselbe Build,
+        // §3: Binaerabgleich Datei ↔ RAM — „ist das die richtige Datei, derselbe Build,
         // und wo genau nicht?" in einem Kommando (statt xxd-Ausgabe per Auge).
         else if (cmd=="verify"){
             if (t.size()<3){ fprintf(stderr,"  verify <datei> @<adr> [laenge]   Datei mit dem RAM vergleichen\n"); }
@@ -3911,7 +3911,7 @@ int main(int argc, char** argv){
             else if (w=="pio"){
                 // §4: alle drei PIOs erreichbar — die K5122-PIOs (Steuer/Daten) waren
                 // bisher nur per C++-Instrumentierung sichtbar, obwohl genau dort der
-                // Interrupt-Zustand steht, der einen Fremd-OS-Sturm erklärt.
+                // Interrupt-Zustand steht, der einen Fremd-OS-Sturm erklaert.
                 std::string which = t.size()>2? t[2] : "all";
                 auto showPio=[&](const char* name, const Z80PIO::DebugState& p){
                     fprintf(stderr,"  %s  IEI=%s IEO=%s\n",name,Y(p.iei),Y(p.ieo));
@@ -3953,11 +3953,11 @@ int main(int argc, char** argv){
                     fprintf(stderr,"  PIO B: SG=%u RAMEN=%d STOP=%d RESET16=%d TRQ8=%d PR=%d /PE=%d\n",
                             em->segment(), em->ramEnabled(), em->stop16(), em->reset16(), em->trq8(),
                             em->prLine(), !em->parityError());
-                    // S5b: Paritäts-FF A46 ist ein MERKER (Plan §7.3, G5): gesetzt bleibt er, bis PR
-                    // (PIO B6) oder eine NMI-Quittung des U8001 ihn löscht.
+                    // S5b: Paritaets-FF A46 ist ein MERKER (Plan §7.3, G5): gesetzt bleibt er, bis PR
+                    // (PIO B6) oder eine NMI-Quittung des U8001 ihn loescht.
                     fprintf(stderr,"  A46 (Paritaets-FF, Merker)=%d%s  — loeschen: PR=1 oder NMI-Quittung\n",
                             em->parityError(), em->parityError()?" FEHLER GEMERKT":"");
-                    {   // A53 zählt Stapelzugriffe rückwärts, solange A54 freigibt; NVI bei QD = 0 (Stand 7).
+                    {   // A53 zaehlt Stapelzugriffe rueckwaerts, solange A54 freigibt; NVI bei QD = 0 (Stand 7).
                         const unsigned a53=em->a53(), vl=em->a53Ladewert();
                         char rest[64]="";
                         if (em->a54Freigabe() && a53>=8) snprintf(rest,sizeof rest,", NVI nach %u weiteren Stapelzugriff(en)",a53-7);
@@ -3981,9 +3981,9 @@ int main(int argc, char** argv){
                         k.headPos, k.trackLen, k.sectorSize, k.busrq?"yes":"no");
                 fprintf(stderr,"  (dev ctc | dev pio [all|bs|k5122ctrl|k5122data] | dev sio | dev sio2 | dev em)\n"); } }
         else if (cmd=="ivt"){    // §6: IM-2-Vektortabelle auf einen Blick
-            // Für jede Interruptquelle der Daisy-Chain: programmierter Vektor →
+            // Fuer jede Interruptquelle der Daisy-Chain: programmierter Vektor →
             // Tabellenadresse (I<<8 | vec&0xFE) → dort eingetragene ISR-Adresse.
-            // Ein Gerät mit IE=1, dessen Eintrag ins Leere zeigt, ist der klassische
+            // Ein Geraet mit IE=1, dessen Eintrag ins Leere zeigt, ist der klassische
             // Fremd-OS-Fehler (Interruptsturm / Sprung nach 0xFFFF).
             bool useZ2 = t.size()>1 && (t[1]=="2"||t[1]=="zve2");
             if (useZ2 && K8){ nichtAmK8915("ZVE2 ('ivt 2')"); continue; }
@@ -3998,7 +3998,7 @@ int main(int argc, char** argv){
                 return (uint16_t)(m.memReadDebug(tb) | (m.memReadDebug((uint16_t)(tb+1))<<8)); };
             int warned=0;
             for (auto& s : m.interruptSources()){
-                // Nicht programmierte/uninteressante Quellen ausblenden, außer sie sind scharf.
+                // Nicht programmierte/uninteressante Quellen ausblenden, ausser sie sind scharf.
                 bool interesting = s.ie || s.pending || s.ius;
                 if (!interesting && !(t.size()>1 && (t[1]=="all"||t.back()=="all"))) continue;
                 uint16_t tb=(uint16_t)((z.I<<8)|(s.vector&0xFE));
@@ -4010,7 +4010,7 @@ int main(int argc, char** argv){
                         s.exact?" ":"~", s.vector, tb, ent, s.device.c_str(), st,
                         s.pending?"  pend":"", s.ius?"  ius":"");
             }
-            // Fallback-Zeile: der Bus liefert 0xFF, wenn KEIN Gerät antwortet.
+            // Fallback-Zeile: der Bus liefert 0xFF, wenn KEIN Geraet antwortet.
             {   uint16_t tb=(uint16_t)((z.I<<8)|0xFE);
                 uint16_t ent=entryAt(0xFF);
                 fprintf(stderr,"   0xFF  0x%04X  %04X    %-26s %s\n",tb,ent,
@@ -4033,7 +4033,7 @@ int main(int argc, char** argv){
                 const char letter[2] = { (char)('A'+drv), 0 };
                 diskVerify(disks[drv], (std::string(letter)+":").c_str());
             } else fprintf(stderr,"  disk verify [A|B|C|D]   Sektor-/CRC-Health aller Spuren des Originals\n"); }
-        // ══ K8915: Speicherbild (A8H) und DRAM-Bänke direkt ══
+        // ══ K8915: Speicherbild (A8H) und DRAM-Baenke direkt ══
         else if (cmd=="map"){
             if (KQ){   // P8000: ADP-Zellen je 4-KB-Seite + RFF (00H-07H)
                 for (auto& l: dbgp8::adpZeilen(m.p8000()->karte8().speicher())) fprintf(stderr,"  %s\n",l.c_str());
@@ -4208,7 +4208,7 @@ int main(int argc, char** argv){
                                     for (size_t q=0;q<16 && o+q<b.bytes.size();++q) fprintf(stderr,"%02X ",b.bytes[o+q]);
                                     fprintf(stderr,"\n"); } } } } } }
         }
-        else if (cmd=="clock"){   // §7: Uhrenwahl für Lauf-Budgets (g/gu/gscreen/hist)
+        else if (cmd=="clock"){   // §7: Uhrenwahl fuer Lauf-Budgets (g/gu/gscreen/hist)
             if (t.size()>1){
                 if (t[1]=="zve1") clock_machine=false;
                 else if (t[1]=="machine"||t[1]=="maschine") clock_machine=true;
@@ -4242,7 +4242,7 @@ int main(int argc, char** argv){
                 if (c=="zve1"||c=="1"||(KQ && (c=="u880"||c=="z80"))) cpu_ctx=1;
                 else if ((c=="zve2"||c=="2") && !KQ) cpu_ctx=2;
                 else if (KQ && c=="wdc"){
-                    // Nur Ansicht: Haltepunkte/Schritte bleiben beim U880 bzw. U8001; der WDC läuft mit.
+                    // Nur Ansicht: Haltepunkte/Schritte bleiben beim U880 bzw. U8001; der WDC laeuft mit.
                     if (!wdcK) fprintf(stderr,"  kein WDC (--machine p8000-16 --wdc 4.2 bzw. --hd <abbild>)\n");
                     else { std::vector<std::string> tw={"wdc","r"}; p8Kommando(tw);
                            fprintf(stderr,"  (WDC-Z80 nur zur Ansicht: wdc r | wdc u | wdc d | wdc log — Haltepunkte/Schritte bleiben beim U880/U8001)\n"); } }
@@ -4266,11 +4266,11 @@ int main(int argc, char** argv){
                 const bool z1 = z.isZ8001(); const int mult = z1? 2 : 1;
                 const uint8_t sg = z1? uint8_t((z.psapSeg>>8)&0x7F) : 0;
                 const uint16_t base = uint16_t(z.psapOff & 0xFF00);
-                fprintf(stderr,"  PSAP=%s (%s; gelesen über die Segmentweiche als Programmspeicher, System)\n",
+                fprintf(stderr,"  PSAP=%s (%s; gelesen ueber die Segmentweiche als Programmspeicher, System)\n",
                         dbg16::addrText(sg,base,z1).c_str(), z1?"U8001":"U8002");
                 struct E{ const char* n; uint16_t off; } es[]={{"EPA",Z8000::PSA_EPA},{"PRIV",Z8000::PSA_PRIV},
                     {"SC",Z8000::PSA_SC},{"SEGT",Z8000::PSA_SEGT},{"NMI",Z8000::PSA_NMI},{"NVI",Z8000::PSA_NVI},{"VI",Z8000::PSA_VI}};
-                // PSA-Lesen hat Status 1100 und läuft im Systemmodus.
+                // PSA-Lesen hat Status 1100 und laeuft im Systemmodus.
                 auto rw=[&](uint16_t o)->uint16_t{ Z8kBusCycle c; c.st=Z8kStatus::MemInstr; c.system=true; c.seg=sg; c.addr=uint16_t(o&~1u);
                     Z8kBusCycle c2=c; c2.addr=uint16_t(c.addr+1);
                     return uint16_t((rdbCyc16(c)<<8)|rdbCyc16(c2)); };
@@ -4288,7 +4288,7 @@ int main(int argc, char** argv){
                     if (z1) fprintf(stderr,"    VI-Kennung %02X → %s\n",id,
                                     dbg16::addrText(uint8_t((rw(p)>>8)&0x7F),rw(uint16_t(p+2)),true).c_str());
                     else    fprintf(stderr,"    VI-Kennung %02X → %%%04X\n",id,rw(p)); }
-                fprintf(stderr,"  (psa <n> = n VI-Einträge; Eintrag = PSAP+VI+2+2·(Kennung & FF))\n"); } }
+                fprintf(stderr,"  (psa <n> = n VI-Eintraege; Eintrag = PSAP+VI+2+2·(Kennung & FF))\n"); } }
         else if (cmd=="bmode"||cmd=="bvi"||cmd=="bint16"){
             if (!em){ fprintf(stderr,"  (kein EM)\n"); }
             else if (cmd=="bmode"){

@@ -80,7 +80,7 @@ void Mc80Vis2a::kommando(uint8_t op, bool hell)
                 default: break;
             }
             break;
-        case 1:   // nach oben: R -= n, unten erscheinen die alten obersten Zeilen -> füllen
+        case 1:   // nach oben: R -= n, unten erscheinen die alten obersten Zeilen -> fuellen
             if (n == 0) { roll_ = 0; anzeigeNeu(); break; }
             roll_ = static_cast<uint8_t>(roll_ - n);
             for (int d = HOEHE - n; d < HOEHE; ++d) fuelleSpeicherzeile((255 - d + roll_) & 0xFF, hell);

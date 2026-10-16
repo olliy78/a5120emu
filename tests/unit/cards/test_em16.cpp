@@ -3,9 +3,9 @@
  * @brief Unit-Tests: EM-Steuerkarte mit U8001 — der 16-Bit-Mode (S4).
  *
  * Soll aus doc/design/17_a5120_16.md §7.3/§7.4/§7.5.  Der U880 wird hier nur als
- * E/A-Zugriffe (Bus) und M1-Takte (EM::onU880M1) nachgestellt, die Zeit über
+ * E/A-Zugriffe (Bus) und M1-Takte (EM::onU880M1) nachgestellt, die Zeit ueber
  * EM::advance; die U8001-Programme sind mit z8kasm (tools/z8000/) assembliert.
- * Den Ablauf in der Maschine und unter CP/A prüfen test_em16_maschine.cpp und
+ * Den Ablauf in der Maschine und unter CP/A pruefen test_em16_maschine.cpp und
  * tests/integration/test_em16_abl.cpp.
  */
 #include <gtest/gtest.h>
@@ -78,9 +78,9 @@ const char* kKopf =
 
 /**
  * @test EM16/StartAusReset_VektorAusSegment0_Rechnet
- * @brief RESET16 = 0 ⇒ A29 fällt sofort (16-Bit-Mode), der U8001 holt FCW/PC aus
- *   Segment 0 (A33 gelöscht ⇒ Mode 0) — ein anderer Vektor in Segment 1 bleibt
- *   unberührt; das Ergebnis steht big-endian im EM-Speicher.
+ * @brief RESET16 = 0 ⇒ A29 faellt sofort (16-Bit-Mode), der U8001 holt FCW/PC aus
+ *   Segment 0 (A33 geloescht ⇒ Mode 0) — ein anderer Vektor in Segment 1 bleibt
+ *   unberuehrt; das Ergebnis steht big-endian im EM-Speicher.
  */
 TEST(EM16, StartAusReset_VektorAusSegment0_Rechnet) {
     Rig r;
@@ -121,13 +121,13 @@ TEST(EM16, Zeit_U8001Laeuft4MHzGegen245MHz) {
     EXPECT_NEAR(double(d), 4000.0, 7.0);
 }
 
-// ─── Rückweg in den 8-Bit-Mode ───────────────────────────────────────────────
+// ─── Rueckweg in den 8-Bit-Mode ───────────────────────────────────────────────
 
 /**
  * @test EM16/Rueckweg_Trq8_Mset_Busak_A29BeimNaechstenM1
  * @brief TRQ8 allein bewirkt nichts; erst MSET (µ0 → TREN) ⇒ BUSRQ ⇒ BUSAK ⇒ /R frei;
- *   A29 kippt erst mit dem nächsten M1 des U880.  TRQ8 zurück ⇒ sofort 16-Bit-Mode,
- *   der U8001 läuft hinter MSET weiter.
+ *   A29 kippt erst mit dem naechsten M1 des U880.  TRQ8 zurueck ⇒ sofort 16-Bit-Mode,
+ *   der U8001 laeuft hinter MSET weiter.
  */
 TEST(EM16, Rueckweg_Trq8_Mset_Busak_A29BeimNaechstenM1) {
     Rig r;
@@ -159,7 +159,7 @@ TEST(EM16, Rueckweg_Trq8_Mset_Busak_A29BeimNaechstenM1) {
     EXPECT_EQ(r.bus.memRead(0x4080), 0x12);
     EXPECT_EQ(r.bus.memRead(0x4081), 0x34);
     EXPECT_EQ(r.w(0x82), 0xFFFF);                      // U8001 steht
-    r.portB(N_TRQ8 | N_STOP);                          // TRQ8 zurück
+    r.portB(N_TRQ8 | N_STOP);                          // TRQ8 zurueck
     EXPECT_FALSE(r.em.mode8());
     EXPECT_FALSE(r.em.drivesMemdi(0x4000));
     r.lauf(100);
@@ -172,7 +172,7 @@ TEST(EM16, Rueckweg_Trq8_Mset_Busak_A29BeimNaechstenM1) {
 /**
  * @test EM16/A33A35_WortOutSchreibtBeide_NurAD7
  * @brief OUT an eine Adresse mit Bit 7 schreibt A33 (low) und A35 (high); Bit 7 = 0
- *   schreibt nichts; OUTB legt das Byte auf beide Hälften (Kern-Annahme, G2 misst).
+ *   schreibt nichts; OUTB legt das Byte auf beide Haelften (Kern-Annahme, G2 misst).
  */
 TEST(EM16, A33A35_WortOutSchreibtBeide_NurAD7) {
     Rig r;
@@ -187,7 +187,7 @@ TEST(EM16, A33A35_WortOutSchreibtBeide_NurAD7) {
     EXPECT_EQ(r.em.steuer16(), 0x05);
     EXPECT_EQ(r.bus.ioRead(kSt16), 0xA5);
     EXPECT_EQ(r.pioA() & 0x07, 0x05);                  // PIOA-0..2
-    // HALT verlassen (Testabkürzung): Halt-Merker löschen, PC steht schon dahinter.
+    // HALT verlassen (Testabkuerzung): Halt-Merker loeschen, PC steht schon dahinter.
     Z8kRunState rs = r.em.u8001().runState(); rs.halted = false; r.em.u8001().setRunState(rs);
     r.lauf(100);
     EXPECT_EQ(r.em.steuer16(), 0x05);                  // %017F: Bit 7 = 0 → nichts
@@ -198,17 +198,17 @@ TEST(EM16, A33A35_WortOutSchreibtBeide_NurAD7) {
     EXPECT_EQ(r.bus.ioRead(kSt16), 0x01);
     rs = r.em.u8001().runState(); rs.halted = false; r.em.u8001().setRunState(rs);
     r.lauf(100);
-    EXPECT_EQ(r.em.steuer16(), 0x02);                  // %FF80: nur AD7 zählt
+    EXPECT_EQ(r.em.steuer16(), 0x02);                  // %FF80: nur AD7 zaehlt
     EXPECT_EQ(r.bus.ioRead(kSt16), 0x77);
 }
 
 /**
  * @test EM16/Status8_WortInHighByte_InbNachA0
  * @brief Status-8 (ACH) liegt beim E/A-Lesen auf AD8–15: Wort-IN sieht es im oberen
- *   Byte; INB an GERADER Adresse liest AD8–15 und damit Status-8 (am Gerät gemessen
- *   2026-09-29: „INB liest untere Haelfte: C3H“).  Die andere Hälfte treibt niemand
- *   und AD hat keine Pull-ups: sie hält die Portadresse aus der Adressphase — am
- *   Gerät „INB %81 (ungerade, AD0-7): 81H“ (G5).  Ohne Bit 7 bleibt die ganze
+ *   Byte; INB an GERADER Adresse liest AD8–15 und damit Status-8 (am Geraet gemessen
+ *   2026-09-29: „INB liest untere Haelfte: C3H“).  Die andere Haelfte treibt niemand
+ *   und AD hat keine Pull-ups: sie haelt die Portadresse aus der Adressphase — am
+ *   Geraet „INB %81 (ungerade, AD0-7): 81H“ (G5).  Ohne Bit 7 bleibt die ganze
  *   Adresse stehen.
  */
 TEST(EM16, Status8_WortInHighByte_InbNachA0) {
@@ -237,7 +237,7 @@ TEST(EM16, Status8_WortInHighByte_InbNachA0) {
  * @brief /PR = ¬PR · /NMI-ACK (9005/1: A45 Y5 → A38 → A212/06 → A48/04): die
  *   NMI-Quittung des U8001 setzt das FF A46 wie PR (Handbuch §1.3) ⇒ /PE wieder 1.
  *   Die NMI-Quelle selbst (A27/06 = A25/09 ∨ /PER) liegt hinter einer offenen
- *   Trennstelle — die Karte löst keinen NMI aus, der Test legt ihn direkt an.
+ *   Trennstelle — die Karte loest keinen NMI aus, der Test legt ihn direkt an.
  */
 TEST(EM16, NmiQuittung_LoeschtParitaetsfehler) {
     Rig r;
@@ -266,7 +266,7 @@ TEST(EM16, NmiQuittung_LoeschtParitaetsfehler) {
 /**
  * @test EM16/VI_VektorUndStatus8AlsKennung_LoeschtVi
  * @brief ADH setzt /VI (PIO A3 = 0); die VI-Quittung liest Vektor (low) + Status-8
- *   (high) als Kennung, löscht INT (PIO A3 = 1); Sprung über die Tabelle PSA+%3C+2·v.
+ *   (high) als Kennung, loescht INT (PIO A3 = 1); Sprung ueber die Tabelle PSA+%3C+2·v.
  */
 TEST(EM16, VI_VektorUndStatus8AlsKennung_LoeschtVi) {
     Rig r;
@@ -308,7 +308,7 @@ TEST(EM16, Int16_A33Bit4_PioA4_InterruptZumU880) {
     r.bus.ioWrite(kPAc, 0x40);                         // Vektor 40H
     r.bus.ioWrite(kPAc, 0xCF); r.bus.ioWrite(kPAc, 0xFF);
     r.bus.ioWrite(kPAc, 0xB7);                         // IE, ODER, High aktiv, Maske folgt
-    r.bus.ioWrite(kPAc, 0xEF);                         // nur A4 überwacht
+    r.bus.ioWrite(kPAc, 0xEF);                         // nur A4 ueberwacht
     r.load(std::string(kKopf) + "  LD R0,#%0010\n  OUT %0080,R0\n  HALT\n");
     r.vektor(0, 0, 0x0100);
     EXPECT_FALSE(r.em.hasInterrupt());
@@ -322,8 +322,8 @@ TEST(EM16, Int16_A33Bit4_PioA4_InterruptZumU880) {
 
 /**
  * @test EM16/A53_NviNachStapelzugriffen
- * @brief A33 Bit 3 gibt A53 frei (A54); A53 zählt Stapelzugriffe rückwärts, QD fällt
- *   nach (Vorlast − 7) Zugriffen ⇒ NVI.  Vorlage 11 (am Gerät gemessen: 4), 15 ⇒ 8,
+ * @brief A33 Bit 3 gibt A53 frei (A54); A53 zaehlt Stapelzugriffe rueckwaerts, QD faellt
+ *   nach (Vorlast − 7) Zugriffen ⇒ NVI.  Vorlage 11 (am Geraet gemessen: 4), 15 ⇒ 8,
  *   12 ⇒ 5; ohne Bit 3 bleibt A53 nach Netz-Ein geladen ⇒ nie.
  */
 TEST(EM16, A53_NviNachStapelzugriffen) {
@@ -350,10 +350,10 @@ TEST(EM16, A53_NviNachStapelzugriffen) {
 
 /**
  * @test EM16/A54_SelbsthaltungNachQuittung
- * @brief Ablauf nach Handbuch §1.12: Bit 3 setzen und VOR dem Rücksprung wieder
- *   löschen — A54 hält die Freigabe, A53 zählt.  Die NVI-Quittung (Bit 3 = 0) lädt A53
- *   und hält ihn geladen: danach löst keine Stapelfolge mehr NVI aus, bis Bit 3 neu
- *   gesetzt wird.  RESET16 lässt A53/A54 unberührt.
+ * @brief Ablauf nach Handbuch §1.12: Bit 3 setzen und VOR dem Ruecksprung wieder
+ *   loeschen — A54 haelt die Freigabe, A53 zaehlt.  Die NVI-Quittung (Bit 3 = 0) laedt A53
+ *   und haelt ihn geladen: danach loest keine Stapelfolge mehr NVI aus, bis Bit 3 neu
+ *   gesetzt wird.  RESET16 laesst A53/A54 unberuehrt.
  */
 TEST(EM16, A54_SelbsthaltungNachQuittung) {
     Rig r;
@@ -378,7 +378,7 @@ TEST(EM16, A54_SelbsthaltungNachQuittung) {
     EXPECT_EQ(r.w(0x8A), 0xAAAA);     // zweite Folge ohne NVI durchgelaufen
     EXPECT_FALSE(r.em.a54Freigabe());
     EXPECT_EQ(r.em.a53(), 11);
-    r.portB(RESET16 | N_TRQ8);        // RESET16: A53/A54 unverändert
+    r.portB(RESET16 | N_TRQ8);        // RESET16: A53/A54 unveraendert
     r.lauf(10);
     EXPECT_FALSE(r.em.a54Freigabe());
     EXPECT_EQ(r.em.a53(), 11);
@@ -388,7 +388,7 @@ TEST(EM16, A54_SelbsthaltungNachQuittung) {
 
 /**
  * @test EM16/Segmentweiche_DreiModi
- * @brief Mode 0: Segment aus A33 Bit 5/6 (für alle Zugriffe); Mode 1: INSTR × N/S
+ * @brief Mode 0: Segment aus A33 Bit 5/6 (fuer alle Zugriffe); Mode 1: INSTR × N/S
  *   (System-Daten 0, System-Befehl 1 — LDR ist Programmspeicher —, Normal-Daten 2,
  *   Normal-Befehl 3); Mode 2: SN0/SN1.  Das Programm liegt in allen vier Segmenten.
  */
@@ -403,7 +403,7 @@ TEST(EM16, Segmentweiche_DreiModi) {
         "  LD R0,#%0080\n  OUT %0080,R0\n"
         "  LD R2,<<0>>%0F10\n  LDR R3,<<0>>%0F10\n"
         "  LD <<0>>%0F20,R2\n  LD <<0>>%0F22,R3\n"
-        // Normalmodus: Daten (2), Befehlsraum (3); zurück per SC
+        // Normalmodus: Daten (2), Befehlsraum (3); zurueck per SC
         "  LD R0,#%8000\n  LDCTL FCW,R0\n"
         "  LD R4,<<0>>%0F10\n  LDR R5,<<0>>%0F10\n"
         "  LD R6,#%B222\n  LD <<0>>%0F02,R6\n"
@@ -455,7 +455,7 @@ TEST(EM16, Segmentweiche_DreiModi) {
 
 /**
  * @test EM16/Stop_HaeltDenU8001An
- * @brief /STOP = 0 (PIO B3) hält den U8001 an (Zähler in A35 steht), /STOP = 1 lässt
+ * @brief /STOP = 0 (PIO B3) haelt den U8001 an (Zaehler in A35 steht), /STOP = 1 laesst
  *   ihn weiterlaufen.
  */
 TEST(EM16, Stop_HaeltDenU8001An) {
@@ -481,7 +481,7 @@ TEST(EM16, Stop_HaeltDenU8001An) {
 
 /**
  * @test EM16/Reset16_LoeschtA33A34_Neustart
- * @brief RESET16 = 1 löscht A33 und A34, setzt A29 (8-Bit-Mode); RESET16 = 0 startet
+ * @brief RESET16 = 1 loescht A33 und A34, setzt A29 (8-Bit-Mode); RESET16 = 0 startet
  *   den U8001 neu aus dem Vektor.
  */
 TEST(EM16, Reset16_LoeschtA33A34_Neustart) {
@@ -528,7 +528,7 @@ TEST(EM16, EM064_U8002_SegmenteGespiegelt) {
 /**
  * @test EM16/SaveState_MittenImLaufGleicherFortgang
  * @brief serialize/deserialize mitten im Lauf (U8001 mit laufendem LDIR): die
- *   wiederhergestellte Karte läuft bitgleich weiter.
+ *   wiederhergestellte Karte laeuft bitgleich weiter.
  */
 TEST(EM16, SaveState_MittenImLaufGleicherFortgang) {
     auto baue = [](Rig& r) {

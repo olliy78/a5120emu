@@ -9,8 +9,8 @@
  *    160 Spuren, MIT Vergleichs-Lesen; danach `PIP B:=A:ZSID.COM`, `DIR B:`.
  *  - UDOS 1715 (`FORMAT`): Laufwerk 1, 80 × 32 × 256, Anwenderdiskette; danach `COPY`/`CAT`.
  *
- * Langsam (Spur für Spur ≈ 1 Mio. Takte Maschinenzeit je Umdrehung): Label
- * `format_integration` (`tools/dev.sh test-format`).  Disketten nur über `TempDisk`.
+ * Langsam (Spur fuer Spur ≈ 1 Mio. Takte Maschinenzeit je Umdrehung): Label
+ * `format_integration` (`tools/dev.sh test-format`).  Disketten nur ueber `TempDisk`.
  * Bedienung der Formatierer: doc/merkposten/pc1715.md.
  */
 
@@ -59,16 +59,16 @@ void taste(Pc1715Machine& m, char c) { tippe(m, std::string(1, c)); }
  *        das DiskTool erkennt `scpx640`, findet SAVED.COM und bringt PROBE.TXT ein, die
  *        eine frisch gebootete Maschine mit `DIR B:` sieht.
  *
- * **Bedienpause vor `Y` (AP-5d, Gastverhalten, kein Emulatorfehler):** das SCP-BIOS zählt
- * im CTC0-K3-Interrupt (26,6 ms) ab dem letzten BIOS-Diskettenzugriff 96 Schläge herunter
+ * **Bedienpause vor `Y` (AP-5d, Gastverhalten, kein Emulatorfehler):** das SCP-BIOS zaehlt
+ * im CTC0-K3-Interrupt (26,6 ms) ab dem letzten BIOS-Diskettenzugriff 96 Schlaege herunter
  * (`F7BDH`, ≈ 2,55 s) und schaltet dann alle Laufwerke ab (`OUT 20H/21H := FFH`) und setzt
- * die Steuer-PIO zurück (Vektor 10H, Interrupt gesperrt).  INIT wählt Laufwerk und Motor
+ * die Steuer-PIO zurueck (Vektor 10H, Interrupt gesperrt).  INIT waehlt Laufwerk und Motor
  * und programmiert die PIO nur EINMAL zu Beginn.  Tippt der Test so schnell wie ein
- * Automat, fällt die Abschaltung in das Vergleichs-Lesen der Spur 0 — der Index-Interrupt
- * (Vektor 22H) kommt nie, „BAD TRACKS“.  Ein Mensch braucht für die drei Fragen länger;
- * danach feuert der Zähler bis zum nächsten BIOS-Zugriff nicht wieder.
+ * Automat, faellt die Abschaltung in das Vergleichs-Lesen der Spur 0 — der Index-Interrupt
+ * (Vektor 22H) kommt nie, „BAD TRACKS“.  Ein Mensch braucht fuer die drei Fragen laenger;
+ * danach feuert der Zaehler bis zum naechsten BIOS-Zugriff nicht wieder.
  *
- * **Format 3, nicht 0:** das SCP-1715-BIOS führt B: fest doppelseitig wie A: (16 × 256,
+ * **Format 3, nicht 0:** das SCP-1715-BIOS fuehrt B: fest doppelseitig wie A: (16 × 256,
  * Verzeichnis c2h0).  Eine mit Format 0 (DD-SS) formatierte Diskette meldet beim ersten
  * Zugriff `BIOS ERR ON: B  T: 02  S: 17` (Kopf 1 fehlt) — ebenfalls Gast, nicht Emulator.
  */
@@ -151,7 +151,7 @@ TEST(Pc1715Format, Scp1715InitFormatiertB) {
  * @test Pc1715Format.Cpa1715FormatpxFormatiertBUndPipKopiert
  * @brief CP/A 1715: `FORMATPX` → Funktion 0 → Laufwerk B → Vergleichs-Lesen j → Format 0
  *        (5 × 1024, 160 Spuren) → `FORMATIEREN beendet` ohne „SPUR DEFEKT“.  Danach
- *        `PIP B:=A:ZSID.COM`, `DIR B:`; das DiskTool findet ZSID.COM, Prüfung ohne Befund.
+ *        `PIP B:=A:ZSID.COM`, `DIR B:`; das DiskTool findet ZSID.COM, Pruefung ohne Befund.
  */
 TEST(Pc1715Format, Cpa1715FormatpxFormatiertBUndPipKopiert) {
     stumm();
@@ -184,7 +184,7 @@ TEST(Pc1715Format, Cpa1715FormatpxFormatiertBUndPipKopiert) {
     EXPECT_FALSE(enthaelt(m, "DEFEKT")) << bild(m);
     EXPECT_FALSE(enthaelt(m, "Fehler")) << bild(m);
 
-    // zurück ins CP/A: Funktionsauswahl verlassen
+    // zurueck ins CP/A: Funktionsauswahl verlassen
     ASSERT_TRUE(laufeBisText(m, "Wiederholung mit gleichen Parametern", 30'000'000)) << bild(m);
     taste(m, 'n');
     ASSERT_TRUE(laufeBisText(m, "Rueckkehr in Funktionsauswahl", 30'000'000)) << bild(m);
@@ -211,9 +211,9 @@ TEST(Pc1715Format, Cpa1715FormatpxFormatiertBUndPipKopiert) {
  * @test Pc1715Format.Udos1715FormatiertBUndKopiert
  * @brief UDOS 1715 (AP-5d): `FORMAT` → Drive `1` → 80 Spuren `J` → doppelseitig `J` →
  *        Disk-ID `TEST` → Systemdisk `N` → Bereit `J` (jede Antwort mit Return) auf einer
- *        echten Leerdiskette, alle 80 Zylinder mit Kontrolllesen, zurück am `%`.  Danach
+ *        echten Leerdiskette, alle 80 Zylinder mit Kontrolllesen, zurueck am `%`.  Danach
  *        `COPY TERMINE 1/TERMINE` und `CAT D=1`; das DiskTool erkennt `udos1715`, findet
- *        TERMINE, die Vollprüfung ist ohne Befund.
+ *        TERMINE, die Vollpruefung ist ohne Befund.
  *
  * Bedienung aus `HELP FORMAT` des Systems.  Die Leerdiskette in B: meldet UDOS beim Start
  * als `DISK INITIALIZATION ERROR C4` (Laufwerk wird angelesen) und kommt trotzdem an `%`.

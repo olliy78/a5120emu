@@ -2,16 +2,16 @@
 # K1520-Emulator — Starter des A5120, K8915, PRG710, PC1715, P8000 und MC80 Emulators UND des P8000 Terminals.  @ROOT@
 # wird beim Installieren eingesetzt.
 #
-# EINE Vorlage für beide: install.sh schreibt sie zweimal (bin/a5120emu,
+# EINE Vorlage fuer beide: install.sh schreibt sie zweimal (bin/a5120emu,
 # bin/k8915emu), und welcher Emulator startet, sagt der NAME, unter dem der
-# Starter aufgerufen wird (auch über den Verweis in ~/.local/bin).  Der K8915
+# Starter aufgerufen wird (auch ueber den Verweis in ~/.local/bin).  Der K8915
 # ist dasselbe Programm mit einem anderen Profil (app/main.py --machine k8915,
 # doc/design/18_k8915emu_oberflaeche.md §3).
 #
 # Startet die GUI aus der Laufzeitumgebung der Installation.  Bibliothek,
 # Formatkatalog und Disketten findet der Emulator selbst (app/paths.py bzw.
-# FormatCatalog über den Modulpfad); hier wird nur die Wurzel bekanntgegeben,
-# damit auch ein verschobenes oder über einen Symlink aufgerufenes Verzeichnis
+# FormatCatalog ueber den Modulpfad); hier wird nur die Wurzel bekanntgegeben,
+# damit auch ein verschobenes oder ueber einen Symlink aufgerufenes Verzeichnis
 # eindeutig ist.
 set -eu
 
@@ -25,23 +25,23 @@ ROOT="@ROOT@"
 
 K1520_HOME="$ROOT"; export K1520_HOME
 
-# Datenordner, falls der Anwender beim Installieren einen ABWEICHENDEN gewählt
-# hat; sonst bleibt die Zeile leer und app/paths.py löst den Dokumentenordner
+# Datenordner, falls der Anwender beim Installieren einen ABWEICHENDEN gewaehlt
+# hat; sonst bleibt die Zeile leer und app/paths.py loest den Dokumentenordner
 # selbst auf.  Genau deshalb wird die Vorgabe NICHT eingetragen: ein fester Pfad
-# könnte einem später umbenannten Dokumentenordner nicht mehr folgen.
+# koennte einem spaeter umbenannten Dokumentenordner nicht mehr folgen.
 K1520_DATA="@DATEN@"
 [ -n "$K1520_DATA" ] && export K1520_DATA || unset K1520_DATA
 
 # Arbeitsverzeichnis = Benutzerdaten.  Der Kern legt sein Protokoll unter
 # `logs/` im ARBEITSVERZEICHNIS an (k1520_api.cpp); ohne diesen Wechsel
-# entstünde es dort, wo der Anwender gerade zufällig steht — beim Start über das
-# Startmenü also im Heimatverzeichnis.  Der Emulator nimmt selbst keine
+# entstuende es dort, wo der Anwender gerade zufaellig steht — beim Start ueber das
+# Startmenue also im Heimatverzeichnis.  Der Emulator nimmt selbst keine
 # Dateiargumente entgegen, ein Wechsel bricht daher nichts.
 #
-# Gefragt wird die Pfadauflösung des Emulators (app/paths.py), statt die Regel
-# für den Dokumentenordner hier ein drittes Mal aufzuschreiben: sie kostet einen
-# Interpreterstart, bleibt dafür aber richtig, wenn der Anwender seinen
-# Dokumentenordner später umbenennt.  Scheitert sie, bleibt es beim
+# Gefragt wird die Pfadaufloesung des Emulators (app/paths.py), statt die Regel
+# fuer den Dokumentenordner hier ein drittes Mal aufzuschreiben: sie kostet einen
+# Interpreterstart, bleibt dafuer aber richtig, wenn der Anwender seinen
+# Dokumentenordner spaeter umbenennt.  Scheitert sie, bleibt es beim
 # Arbeitsverzeichnis — das ist eine Frage des Protokollorts, kein Startgrund.
 DATEN=$("$ROOT/venv/bin/python3" -c \
     'import sys; sys.path.insert(0, sys.argv[1]); from app import paths; print(paths.user_data_dir())' \

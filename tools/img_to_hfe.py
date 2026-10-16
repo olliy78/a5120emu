@@ -2,13 +2,13 @@
 """
 img_to_hfe.py – Wandelt eine rohe .img-Datei in eine HFE-v1-MFM-Datei.
 
-Hardcodierte Geometrie (Mini-Fixture für Tests):
+Hardcodierte Geometrie (Mini-Fixture fuer Tests):
   - 2 Zylinder (cyl 0..1)
-  - 2 Köpfe    (head 0..1)
+  - 2 Koepfe    (head 0..1)
   - 4 Sektoren × 128 B je Spur (sec 1..4)
-  - Gesamtgröße .img: 2×2×4×128 = 2048 B
+  - Gesamtgroesse .img: 2×2×4×128 = 2048 B
 
-Sektorlayout in der .img (verschränkt, wie RawSectorImage):
+Sektorlayout in der .img (verschraenkt, wie RawSectorImage):
   cyl0/head0 sec1..4, cyl0/head1 sec1..4, cyl1/head0 sec1..4, cyl1/head1 sec1..4
 
 HFE-v1-Bit-Konvention (kompatibel zu BitCodec):
@@ -17,7 +17,7 @@ HFE-v1-Bit-Konvention (kompatibel zu BitCodec):
   - A1-Sync-Zellwort: 0x4489 (fehlendes Clock-Bit bei Bit 4 von oben)
   - Ablage im HFE-Byte: LSB-first → bitreverse8 je Byte
 
-CRC-Kompatibilität zu TrackCodec::crc16 und parseTrack:
+CRC-Kompatibilitaet zu TrackCodec::crc16 und parseTrack:
   - IDCRC  = crc16([A1,A1,A1,FE,cyl,head,sec,sizecode], seed=0xFF,0xFF)
   - DATACRC = crc16([A1,A1,A1,FB]+data, seed=0xFF,0xFF)  (Standard-IBM-MFM/CCITT)
 
@@ -45,7 +45,7 @@ RPM        = 300
 
 def crc16(data: bytes, seed_hi: int = 0xFF, seed_lo: int = 0xFF) -> int:
     """
-    Byte-genaue Python-Übersetzung von sub_0407/sub_1E44 (Robotron-Z80).
+    Byte-genaue Python-Uebersetzung von sub_0407/sub_1E44 (Robotron-Z80).
     Liefert (hi<<8)|lo als 16-Bit-Wert.
     """
     def ror(x: int, k: int) -> int:
@@ -84,8 +84,8 @@ def bitreverse8(x: int) -> int:
 
 def mfm_cell_word(data_byte: int, prev_d_bit: bool) -> tuple[int, bool]:
     """
-    Erzeugt ein 16-Bit-MFM-Zellwort (MSB-first) für ein Datenbyte.
-    Gibt (zellwort, letztes_datenbit) zurück.
+    Erzeugt ein 16-Bit-MFM-Zellwort (MSB-first) fuer ein Datenbyte.
+    Gibt (zellwort, letztes_datenbit) zurueck.
     """
     w = 0
     prev = prev_d_bit
@@ -99,7 +99,7 @@ def mfm_cell_word(data_byte: int, prev_d_bit: bool) -> tuple[int, bool]:
 
 class MfmEncoder:
     """
-    Akkumuliert MFM-Zellwörter (MSB-first intern) und wandelt am Ende in
+    Akkumuliert MFM-Zellwoerter (MSB-first intern) und wandelt am Ende in
     HFE-Bytes (LSB-first, bitreverse8 je Byte).
     """
 
@@ -131,12 +131,12 @@ class MfmEncoder:
         self._prev_d = False
 
     def byte(self, b: int) -> None:
-        """Reguläres MFM-Datenbyte."""
+        """Regulaeres MFM-Datenbyte."""
         w, self._prev_d = mfm_cell_word(b, self._prev_d)
         self._push_word(w)
 
     def fill(self, b: int, count: int) -> None:
-        """Füllt count Bytes mit demselben Wert."""
+        """Fuellt count Bytes mit demselben Wert."""
         for _ in range(count):
             self.byte(b)
 
@@ -146,9 +146,9 @@ class MfmEncoder:
     def hfe_bytes(self, target_bits: int) -> bytes:
         """
         Liefert den Bitzellen-Strom als HFE-Bytes (LSB-first).
-        Wird auf target_bits aufgefüllt (mit MFM-0x4E-Gap) oder abgeschnitten.
+        Wird auf target_bits aufgefuellt (mit MFM-0x4E-Gap) oder abgeschnitten.
         """
-        # Erst auf target_bits auffüllen mit 0x4E-Gap
+        # Erst auf target_bits auffuellen mit 0x4E-Gap
         while self._bitpos < target_bits:
             w, _ = mfm_cell_word(0x4E, False)
             for i in range(15, -1, -1):
@@ -176,7 +176,7 @@ class MfmEncoder:
 
 def build_side(cyl: int, head: int, sectors: list[bytes]) -> bytes:
     """
-    Baut den MFM-Bitzellen-Strom für eine (cyl, head)-Spur.
+    Baut den MFM-Bitzellen-Strom fuer eine (cyl, head)-Spur.
     Layout je Sektor (wie TrackCodec::buildTrack + gapsFor(MFM)):
       gap4a(16×4E), IAM(C2×3 + FC), gap1(16×4E),
       je Sektor: 12×00, A1×3, FE, cyl, head, sec, sc, IDCRC×2,
@@ -188,17 +188,17 @@ def build_side(cyl: int, head: int, sectors: list[bytes]) -> bytes:
     """
     enc = MfmEncoder()
 
-    # ── Spur-Präambel ──────────────────────────────────────────────────────────
+    # ── Spur-Praeambel ──────────────────────────────────────────────────────────
     enc.fill(0x4E, 16)          # gap4a
     # IAM (MFM): 3×C2 mit dem Sonder-Sync-Zellwort 0x5224 (fehlendes Clock-Bit),
     # analog zu BitCodec::encode und TrackCodec::buildTrack + BitCodec::encode.
-    # Reguläre MFM-Codierung von C2 (0x52A4) erzeugt ein spuriöses 0x5224-Muster
+    # Regulaere MFM-Codierung von C2 (0x52A4) erzeugt ein spurioeses 0x5224-Muster
     # an der Grenze 12×00-Sync / A1-Sync, das BitCodec::decode als Sync-Lock
     # missinterpretiert und 5 Bits vor dem A1 einrastet.
     enc.sync_c2()
     enc.sync_c2()
     enc.sync_c2()
-    enc.byte(0xFC)              # IAM-Markenbyte (regulär codiert)
+    enc.byte(0xFC)              # IAM-Markenbyte (regulaer codiert)
     enc.fill(0x4E, 16)          # gap1
 
     size_code = 0               # 128 B → size_code 0
@@ -213,7 +213,7 @@ def build_side(cyl: int, head: int, sectors: list[bytes]) -> bytes:
         enc.sync_a1()           # drittes A1 — Mark-Byte folgt
         enc.byte(0xFE)          # IDAM-Mark
 
-        # ID-CRC über [A1,A1,A1,FE,cyl,head,sec_id,size_code], Seed 0xFF,0xFF
+        # ID-CRC ueber [A1,A1,A1,FE,cyl,head,sec_id,size_code], Seed 0xFF,0xFF
         id_preamble = bytes([0xA1, 0xA1, 0xA1, 0xFE,
                              cyl, head, sec_id, size_code])
         id_crc = crc16(id_preamble, 0xFF, 0xFF)
@@ -234,7 +234,7 @@ def build_side(cyl: int, head: int, sectors: list[bytes]) -> bytes:
         enc.sync_a1()
         enc.byte(0xFB)          # DAM-Mark
 
-        # Standard-IBM-MFM-Daten-CRC (CCITT) über [A1,A1,A1,FB] + Daten, Seed 0xFFFF
+        # Standard-IBM-MFM-Daten-CRC (CCITT) ueber [A1,A1,A1,FB] + Daten, Seed 0xFFFF
         # (identisch zu TrackCodec::buildTrack / parseTrack).
         data_crc = crc16(bytes([0xA1, 0xA1, 0xA1, 0xFB]) + sec_data, 0xFF, 0xFF)
 
@@ -258,7 +258,7 @@ def write_hfe(out_path: str, sides: list[list[bytes]],
     Schreibt eine HFE-v1-Datei.
 
     sides[cyl][head] = Spur-Bytes (de-interleavt, je Seite track_len/2 Bytes).
-    Die Spurdaten werden 256-B-verschränkt abgelegt.
+    Die Spurdaten werden 256-B-verschraenkt abgelegt.
     """
     # ── Alle Spurseiten bauen ────────────────────────────────────────────────
 
@@ -275,15 +275,15 @@ def write_hfe(out_path: str, sides: list[list[bytes]],
             cyl_heads.append(build_side(cyl, head, sides[cyl][head]))
         track_data.append(cyl_heads)
 
-    # Seitenlänge (einheitlich) sicherstellen
+    # Seitenlaenge (einheitlich) sicherstellen
     side_len = len(track_data[0][0])
-    track_len_bytes = side_len * num_heads  # Bytes für BEIDE Seiten
+    track_len_bytes = side_len * num_heads  # Bytes fuer BEIDE Seiten
 
     # ── Interleaved Spurdaten erzeugen ────────────────────────────────────────
     def interleave_track(heads_data: list[bytes]) -> bytes:
         """
-        Verschränkt die Spurseiten in 256-B-Blöcken: [S0_256][S1_256][S0_256]…
-        Kurze Segmente werden mit 0x88 (HFE-Gap) aufgefüllt.
+        Verschraenkt die Spurseiten in 256-B-Bloecken: [S0_256][S1_256][S0_256]…
+        Kurze Segmente werden mit 0x88 (HFE-Gap) aufgefuellt.
         """
         result = bytearray()
         total_per_side = side_len
@@ -293,7 +293,7 @@ def write_hfe(out_path: str, sides: list[list[bytes]],
                 chunk_start = offset
                 chunk_end   = min(offset + 256, total_per_side)
                 chunk       = heads_data[head][chunk_start:chunk_end]
-                # Auf 256 Bytes auffüllen
+                # Auf 256 Bytes auffuellen
                 chunk = chunk.ljust(256, b'\x88')
                 result += chunk
             offset += 256
@@ -330,7 +330,7 @@ def write_hfe(out_path: str, sides: list[list[bytes]],
     struct.pack_into('<H', hdr, 0x12, track_list_block)
     hdr[0x14] = 0xFF                    # write_allowed
     hdr[0x15] = 0xFF                    # single_step
-    # Rest mit 0xFF füllen (ab 0x16)
+    # Rest mit 0xFF fuellen (ab 0x16)
     for i in range(0x16, 512):
         hdr[i] = 0xFF
 
@@ -347,7 +347,7 @@ def write_hfe(out_path: str, sides: list[list[bytes]],
         f.write(hdr)
         f.write(lut_block)
         for cyl in range(num_cyls):
-            # Auf 512-B-Blockgrenze auffüllen
+            # Auf 512-B-Blockgrenze auffuellen
             data = bytearray(interleaved[cyl])
             pad  = (512 - len(data) % 512) % 512
             data += bytes([0x88] * pad)
@@ -359,9 +359,9 @@ def write_hfe(out_path: str, sides: list[list[bytes]],
 def load_img(path: str, num_cyls: int, num_heads: int,
              secs: int, sec_size: int) -> list[list[list[bytes]]]:
     """
-    Liest eine .img-Datei mit verschränktem Layout
+    Liest eine .img-Datei mit verschraenktem Layout
     (cyl0/h0, cyl0/h1, cyl1/h0, cyl1/h1; je Spur sec 1..secs).
-    Gibt sides[cyl][head] = Liste von sec_data-bytes zurück.
+    Gibt sides[cyl][head] = Liste von sec_data-bytes zurueck.
     """
     expected = num_cyls * num_heads * secs * sec_size
     with open(path, 'rb') as f:
@@ -385,11 +385,11 @@ def load_img(path: str, num_cyls: int, num_heads: int,
 
 # ─── Blank-HFE (leerer, formatierbarer Container) ─────────────────────────────
 
-# Seiten-Bytes je Spur des K5601-Blank-Templates.  Muss den größten §3-Track
+# Seiten-Bytes je Spur des K5601-Blank-Templates.  Muss den groessten §3-Track
 # (5×1024 B MFM ≈ 11 KB HFE-Bytes/Seite) fassen; Wert = wie das funktionierende
 # disks/cpadisk_*.hfe (len_bytes 25000 → 12500 B/Seite).
 BLANK_SIDE_LEN = 12500
-HFE_GAP        = 0x88   # HFE-Gap-Füllbyte (unformatierte Spur)
+HFE_GAP        = 0x88   # HFE-Gap-Fuellbyte (unformatierte Spur)
 
 
 def write_blank_hfe(out_path: str, num_cyls: int, num_heads: int,
@@ -397,9 +397,9 @@ def write_blank_hfe(out_path: str, num_cyls: int, num_heads: int,
     """
     Schreibt ein leeres, mountbares HFE-v1-MFM-Template (Header + LUT + Gap-Spuren).
 
-    Der Inhalt jeder Spur ist reines HFE-Gap (0x88) — FORMAT.COM überschreibt beim
-    Formatieren jede Spur bitgenau, sodass nur die Geometrie (Spuren/Seiten/Kapazität
-    pro Spur) und ein gültiger Header/LUT relevant sind.  Damit nimmt EIN Template
+    Der Inhalt jeder Spur ist reines HFE-Gap (0x88) — FORMAT.COM ueberschreibt beim
+    Formatieren jede Spur bitgenau, sodass nur die Geometrie (Spuren/Seiten/Kapazitaet
+    pro Spur) und ein gueltiger Header/LUT relevant sind.  Damit nimmt EIN Template
     jedes §3-Format der K5601-Geometrie auf.
     """
     track_len_bytes = side_len * num_heads          # beide Seiten zusammen
@@ -449,17 +449,17 @@ def main() -> None:
                     "formatierbares Template (--blank).")
     p.add_argument('out', help="Ausgabe-.hfe")
     p.add_argument('img', nargs='?',
-                   help="Eingabe-.img (Mini-Fixture-Geometrie); entfällt bei --blank")
+                   help="Eingabe-.img (Mini-Fixture-Geometrie); entfaellt bei --blank")
     p.add_argument('--blank', action='store_true',
                    help="Leeres, formatierbares HFE-Template statt Konvertierung")
     p.add_argument('--cyls', type=int, default=NUM_CYLS,
                    help=f"Zylinder (Default {NUM_CYLS}; K5601: 80)")
     p.add_argument('--heads', type=int, default=NUM_HEADS,
-                   help=f"Köpfe/Seiten (Default {NUM_HEADS}; K5601: 2)")
+                   help=f"Koepfe/Seiten (Default {NUM_HEADS}; K5601: 2)")
     p.add_argument('--side-len', type=int, default=BLANK_SIDE_LEN,
                    help=f"HFE-Bytes je Spurseite im Blank (Default {BLANK_SIDE_LEN})")
 
-    # Rückwärtskompatibilität: `img_to_hfe.py <in.img> <out.hfe>` (2 Positionals).
+    # Rueckwaertskompatibilitaet: `img_to_hfe.py <in.img> <out.hfe>` (2 Positionals).
     argv = sys.argv[1:]
     if len(argv) == 2 and not argv[0].startswith('-') and not argv[1].startswith('-') \
             and argv[0].endswith('.img'):
@@ -481,7 +481,7 @@ def main() -> None:
         return
 
     if not args.img:
-        p.error("ohne --blank wird eine Eingabe-.img benötigt")
+        p.error("ohne --blank wird eine Eingabe-.img benoetigt")
 
     print(f"Lese {args.img} ({NUM_CYLS}×{NUM_HEADS}×{SECS_TRACK}×{SEC_SIZE}B) …")
     sides = load_img(args.img, NUM_CYLS, NUM_HEADS, SECS_TRACK, SEC_SIZE)

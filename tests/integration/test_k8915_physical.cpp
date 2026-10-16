@@ -3,27 +3,27 @@
  * @brief AP-E4k (doc/design/16_k8915.md §8a): der K8915 startet von einer **spurweise
  *        gelesenen** Diskette — Ersatzsitzung ohne Greaseweazle.
  *
- * Die Scheibe liegt nicht als Datei im Speicher, sondern kommt Spur für Spur über die
+ * Die Scheibe liegt nicht als Datei im Speicher, sondern kommt Spur fuer Spur ueber die
  * Auftragswarteschlange des @ref TrackSync herein; ein Ersatz-Arbeitsfaden bedient sie
- * aus `k8915scpx_boot1.hfe` und lässt sich je Spur eine künstliche Zeit (Uhrzeit, nicht
+ * aus `k8915scpx_boot1.hfe` und laesst sich je Spur eine kuenstliche Zeit (Uhrzeit, nicht
  * Maschinenzeit) — wie das echte Laufwerk (0,5–0,8 s je Spur).
  *
  * Die Frage, die dieser Satz beantwortet (Stolperstein des Entwurfs): Nachladen blockiert
- * im `/WAIT`-Betrieb den Lauffaden, also die einzige CPU.  Läuft währenddessen ein
+ * im `/WAIT`-Betrieb den Lauffaden, also die einzige CPU.  Laeuft waehrenddessen ein
  * Zeitgeber weiter (CTC der ZRE, K3, Frist ≈ 290 ms ⇒ Fehler `R`)?  Antwort: **nein** —
  * die Maschinenzeit ist ausschliesslich die Taktzahl von `run()`, nirgends in `core/`
- * steht eine Uhr.  Wächter dafür: `LangsamesLieferungenVerschiebenKeineMaschinenzeit`
- * (gleiche Taktzahl bis zum Prompt bei 0 und bei 320 ms je Spur — länger als die
+ * steht eine Uhr.  Waechter dafuer: `LangsamesLieferungenVerschiebenKeineMaschinenzeit`
+ * (gleiche Taktzahl bis zum Prompt bei 0 und bei 320 ms je Spur — laenger als die
  * 290-ms-Frist —, gleiche Auftragsfolge, kein `ERR`).
  *
  * | Fall | Inhalt |
  * |------|--------|
  * | `KaltstartBisZumPrompt` | SCPX-Kaltstart von der „physischen“ Scheibe |
- * | `KaltstartMitVorauslesenBisZumPrompt` | wie der Betrieb in der Oberfläche (Vorauslesen an) |
+ * | `KaltstartMitVorauslesenBisZumPrompt` | wie der Betrieb in der Oberflaeche (Vorauslesen an) |
  * | `LangsameLieferungVerschiebtKeineMaschinenzeit` | Zeitgeber-Frage, s. o. |
  * | `SchreibenGehtMitZuruecklesenAufDieScheibe` | `save` → Write + Verify, Datei auf der Scheibe |
  * | `LaufwerksschlossHaeltDieSchreibzugriffeAuf` | Schreibschutz am Laufwerk ⇒ kein Auftrag |
- * | `SitzungsschlossHaeltDieScheibeUnberuehrt` | Sitzung nicht schreibend ⇒ Scheibe unverändert |
+ * | `SitzungsschlossHaeltDieScheibeUnberuehrt` | Sitzung nicht schreibend ⇒ Scheibe unveraendert |
  */
 
 #include <gtest/gtest.h>
@@ -54,10 +54,10 @@ constexpr int kSchritt = 100'000;
 
 /**
  * @class Ersatzlaufwerk
- * @brief „Greaseweazle + K5601“ aus einer `.hfe`-Fixture — lesend, schreibend, prüfend.
+ * @brief „Greaseweazle + K5601“ aus einer `.hfe`-Fixture — lesend, schreibend, pruefend.
  *
  * Der Weg ist bitgenau der des echten Adapters (HFE-Bitzellen hinein/heraus); nur USB
- * fehlt.  @p dauer ist die künstliche Uhrzeit je Auftrag.
+ * fehlt.  @p dauer ist die kuenstliche Uhrzeit je Auftrag.
  */
 class Ersatzlaufwerk {
 public:
@@ -228,7 +228,7 @@ TEST(K8915Physical, KaltstartBisZumPrompt) {
     EXPECT_TRUE(enthaelt(x.m, "A>rade"));
     EXPECT_FALSE(enthaelt(x.m, "ERR")) << vramLines(x.m);
 
-    // Der Sinn der Übung: der Kaltstart holt nur, was er anfasst — nicht die ganze Scheibe.
+    // Der Sinn der Uebung: der Kaltstart holt nur, was er anfasst — nicht die ganze Scheibe.
     const size_t gesamt = static_cast<size_t>(x.sync->stats().tracks_total);
     const size_t geholt = x.laufwerk->anzahl(SyncJobKind::Read);
     EXPECT_GT(geholt, 0u);
@@ -245,8 +245,8 @@ TEST(K8915Physical, KaltstartMitVorauslesenBisZumPrompt) {
 }
 
 TEST(K8915Physical, LangsameLieferungVerschiebtKeineMaschinenzeit) {
-    // 320 ms Uhrzeit je Spur: länger als die 290-ms-Frist des CTC-Zeitgebers (K3).
-    // Liefe der Zeitgeber während des Nachladens weiter, käme `R`/ein anderer Verlauf.
+    // 320 ms Uhrzeit je Spur: laenger als die 290-ms-Frist des CTC-Zeitgebers (K3).
+    // Liefe der Zeitgeber waehrend des Nachladens weiter, kaeme `R`/ein anderer Verlauf.
     // Maschinenzeit = Taktzahl von run(); sie darf sich um nichts verschieben.
     Aufbau schnell(0ms, false, true);
     const long long t0 = kaltstartBisPrompt(schnell.m);
@@ -261,10 +261,10 @@ TEST(K8915Physical, LangsameLieferungVerschiebtKeineMaschinenzeit) {
     ASSERT_GT(t1, 0) << vramLines(langsam.m);
     const auto verlauf1 = langsam.laufwerk->verlauf();
 
-    // Die langsame Lieferung war wirklich langsam (sonst prüft der Vergleich nichts).
+    // Die langsame Lieferung war wirklich langsam (sonst prueft der Vergleich nichts).
     EXPECT_GE(dauer, 320ms * (verlauf1.size() > 2 ? verlauf1.size() - 2 : 1) / 2);
 
-    EXPECT_EQ(t1, t0) << "Maschinenzeit bis zum Prompt hängt an der Lieferzeit";
+    EXPECT_EQ(t1, t0) << "Maschinenzeit bis zum Prompt haengt an der Lieferzeit";
     ASSERT_EQ(verlauf1.size(), verlauf0.size());
     for (size_t i = 0; i < verlauf0.size(); ++i) {
         EXPECT_EQ(verlauf1[i].cyl, verlauf0[i].cyl) << i;
@@ -286,7 +286,7 @@ TEST(K8915Physical, SchreibenGehtMitZuruecklesenAufDieScheibe) {
     ASSERT_TRUE(x.sync->flushPending(20000)) << x.sync->lastError();
     x.laufwerk->stop();
 
-    // Zurückgeschrieben UND zurückgelesen: auf jeden Write folgt ein Verify derselben Spur.
+    // Zurueckgeschrieben UND zurueckgelesen: auf jeden Write folgt ein Verify derselben Spur.
     const auto v = x.laufwerk->verlauf();
     size_t writes = 0;
     for (size_t i = 0; i < v.size(); ++i) {
@@ -295,7 +295,7 @@ TEST(K8915Physical, SchreibenGehtMitZuruecklesenAufDieScheibe) {
         bool verify = false;
         for (size_t k = i + 1; k < v.size() && !verify; ++k)
             verify = v[k].kind == SyncJobKind::Verify && v[k].cyl == v[i].cyl && v[k].head == v[i].head;
-        EXPECT_TRUE(verify) << "Write c" << int(v[i].cyl) << "h" << int(v[i].head) << " ohne Prüf-Lesen";
+        EXPECT_TRUE(verify) << "Write c" << int(v[i].cyl) << "h" << int(v[i].head) << " ohne Pruef-Lesen";
     }
     EXPECT_GT(writes, 0u);
     EXPECT_TRUE(scheibeEnthaelt(x.laufwerk->scheibe(), kEintrag))
@@ -305,7 +305,7 @@ TEST(K8915Physical, SchreibenGehtMitZuruecklesenAufDieScheibe) {
 
 TEST(K8915Physical, LaufwerksschlossHaeltDieSchreibzugriffeAuf) {
     // Sitzung darf schreiben, das Laufwerk (Haken „Write-Protect“) sperrt: die Maschine
-    // sieht Schreibschutz, es entsteht gar keine geänderte Spur, der Adapter bekommt nichts.
+    // sieht Schreibschutz, es entsteht gar keine geaenderte Spur, der Adapter bekommt nichts.
     Aufbau x(0ms, /*sitzung_schreibt=*/true, /*laufwerk_wp=*/true);
     ASSERT_GT(kaltstartBisPrompt(x.m), 0) << vramLines(x.m);
     EXPECT_TRUE(x.m.isDiskWriteProtected(0));
@@ -322,13 +322,13 @@ TEST(K8915Physical, LaufwerksschlossHaeltDieSchreibzugriffeAuf) {
 }
 
 TEST(K8915Physical, SitzungsschlossHaeltDieScheibeUnberuehrt) {
-    // Umgekehrt: das Laufwerk lässt die Maschine schreiben, die Sitzung nicht (Vorgabe im
+    // Umgekehrt: das Laufwerk laesst die Maschine schreiben, die Sitzung nicht (Vorgabe im
     // DiskTool).  Die Maschine arbeitet im Speicher, zur Scheibe geht NICHTS.
     Aufbau x(0ms, /*sitzung_schreibt=*/false, /*laufwerk_wp=*/false);
     ASSERT_GT(kaltstartBisPrompt(x.m), 0) << vramLines(x.m);
     ASSERT_TRUE(befehl(x.m, "save 2 test.com")) << vramLines(x.m);
     x.sync->flushPending(2000);
-    std::this_thread::sleep_for(200ms);   // länger als die Schreibpause (50 ms)
+    std::this_thread::sleep_for(200ms);   // laenger als die Schreibpause (50 ms)
     x.laufwerk->stop();
 
     EXPECT_EQ(x.laufwerk->anzahl(SyncJobKind::Write), 0u);

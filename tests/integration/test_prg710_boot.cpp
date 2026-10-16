@@ -11,12 +11,12 @@
  *   (710: 00A0H, 710-1: 008EH).
  * - **Status C0H heisst „Spur 0 nicht gefunden“** (256 Schritte ohne /TO = 0, 020AH),
  *   also Laufwerk fehlt oder defekt → „LWn DEF“.  Ein vorhandenes Laufwerk **ohne
- *   Diskette** findet Spur 0 (der Endlagenschalter kennt keine Diskette) und läuft in
+ *   Diskette** findet Spur 0 (der Endlagenschalter kennt keine Diskette) und laeuft in
  *   das Warten auf /RDY (0238H, 65536 Runden) → **Status C2H** → „DISKERROR C2“.
  * - Danach „NO SYSTEM“ und Sprung nach 0020H: das ROM programmiert die
  *   Speicherverwaltung neu und wartet wieder auf die Taste.
  *
- * Die Starttaste kommt seit AP-P2a/P2b über `keyPress` und die Tastaturmodelle: am 710
+ * Die Starttaste kommt seit AP-P2a/P2b ueber `keyPress` und die Tastaturmodelle: am 710
  * K7609 → 8279 der ATP (C8H/C9H), am 710-1 K7672 → SIO A32 Kanal B (§3.9).
  */
 
@@ -69,7 +69,7 @@ bool inTastaturabfrage(Prg710Machine& m) {
     return (pc >= 0x007D && pc <= 0x0084) || (pc >= 0x0160 && pc <= 0x0167);
 }
 
-/// Läuft, bis die CPU 1 Mio. Takte am Stück in der Tastaturabfrage stand; Rückgabe = Takte.
+/// Laeuft, bis die CPU 1 Mio. Takte am Stueck in der Tastaturabfrage stand; Rueckgabe = Takte.
 long long bisTastaturabfrage(Prg710Machine& m) {
     long long done = 0, drin = 0;
     while (done < kFrist) {
@@ -88,8 +88,8 @@ uint8_t status(Prg710Machine& m) {
 
 constexpr uint32_t QK_RETURN = 0x01000004;   // Qt::Key_Return
 
-/// Starttaste über die Tastaturmodelle: 710 ET1 = 37H (K7609 → 8279), 710-1 ENTER = 0DH
-/// (K7672 → SIO A32-B) — beide über denselben `keyPress`.  Das Loslassen gehört dazu: die
+/// Starttaste ueber die Tastaturmodelle: 710 ET1 = 37H (K7609 → 8279), 710-1 ENTER = 0DH
+/// (K7672 → SIO A32-B) — beide ueber denselben `keyPress`.  Das Loslassen gehoert dazu: die
 /// K7672 wiederholt eine gehaltene Taste (Firmware), der 8279 nicht.
 void starttaste(Prg710Machine& m) {
     m.keyPress(QK_RETURN, false, false);
@@ -161,7 +161,7 @@ TEST_P(Prg710Boot, StarttasteOhneDisketteDiskerrorC2) {
 
 /**
  * @test Prg710Boot.OhneLaufwerkeLwDef
- * @brief Gegenprobe Laufwerke `none` (Slot unbestückt): /TO bleibt 1, nach 256
+ * @brief Gegenprobe Laufwerke `none` (Slot unbestueckt): /TO bleibt 1, nach 256
  *        Schritten Status C0H.  Vor der Taste dasselbe Bild wie mit Laufwerken (der 710
  *        verwirft das Ergebnis); nach der Taste „LW0 DEF“, „LW1 DEF“, „NO SYSTEM“.
  */
@@ -186,7 +186,7 @@ TEST_P(Prg710Boot, OhneLaufwerkeLwDef) {
  * @test Prg710Boot.SpeicherverwaltungFolgtDemArbeitsmodell
  * @brief Arbeitsmodell §4b am echten ROM: Registerfolge (Seite = A12–A15 der
  *        E/A-Adresse) und Sichtwechsel.  Bildschirmausgaben schalten E8H[F] auf FFH
- *        und zurück auf F0H; davor/dazwischen: EBH ← 00H, 16 × (EAH[n] ← n,
+ *        und zurueck auf F0H; davor/dazwischen: EBH ← 00H, 16 × (EAH[n] ← n,
  *        E8H[n] ← 10H), E8H[0] ← 0FH, EBH ← 0FH, Kopie, E8H[0] ← 10H aus 105DH.
  */
 TEST_P(Prg710Boot, SpeicherverwaltungFolgtDemArbeitsmodell) {
@@ -197,7 +197,7 @@ TEST_P(Prg710Boot, SpeicherverwaltungFolgtDemArbeitsmodell) {
     m.setBusTrace([&](bool io, bool rd, uint16_t a, uint8_t d) {
         const uint8_t p = static_cast<uint8_t>(a);
         if (!io || rd || p < 0xE8 || p > 0xEB) return;
-        // Sicht NACH dem Schreiben (der Beobachter läuft hinter dem Gerät).
+        // Sicht NACH dem Schreiben (der Beobachter laeuft hinter dem Geraet).
         folge.push_back({p, static_cast<uint8_t>(m.bus().ioAddress() >> 12), d,
                          m.cpuPC(), m.speicher().ortVon(0x0100).quelle});
     });
@@ -262,13 +262,13 @@ TEST_P(Prg710Boot, MarkenFFRuhepegelAmTorB) {
 
 /**
  * @test Prg710Boot.StarttasteLaedtDenBootsektor
- * @brief Mit der UDOS-Bootdiskette des jeweiligen Geräts in Laufwerk 0: Starttaste →
+ * @brief Mit der UDOS-Bootdiskette des jeweiligen Geraets in Laufwerk 0: Starttaste →
  *        das ROM liest Spur 0, Sektor 1–4 (512 Byte) nach 0400H, die CRC des ROMs stimmt
  *        (Status 80H), dort steht `18 03 'SYL'`, und es springt nach 0400H.
- *        Wächter für die Markensuche im `/WAIT`-Betrieb beider Varianten: das 710-ROM
- *        schlägt das Marken-FF in einer Schleife neu an und fragt nach 12 Takten ab
- *        (02DDH, Marken-FF low-aktiv) — ohne `K5122::setMkeJedesSyncByte` hängt es
- *        dort schon vor der Taste; das 710-1-ROM schlägt einmal an und wartet (high-aktiv).
+ *        Waechter fuer die Markensuche im `/WAIT`-Betrieb beider Varianten: das 710-ROM
+ *        schlaegt das Marken-FF in einer Schleife neu an und fragt nach 12 Takten ab
+ *        (02DDH, Marken-FF low-aktiv) — ohne `K5122::setMkeJedesSyncByte` haengt es
+ *        dort schon vor der Taste; das 710-1-ROM schlaegt einmal an und wartet (high-aktiv).
  *        Was nach 0400H kommt (Zweitlader, UDOS), ist AP-P3.
  */
 TEST_P(Prg710Boot, StarttasteLaedtDenBootsektor) {
@@ -301,9 +301,9 @@ TEST_P(Prg710Boot, StarttasteLaedtDenBootsektor) {
 
 /**
  * @test Prg710Boot.TastaturAmRichtigenBaustein
- * @brief 710: ENTER kommt als 37H (ET1) im FIFO des 8279 an, ROM liest ihn über C8H;
- *        710-1: 0DH im Empfänger von SIO A32-B (RR0 Bit 0), und kein 8279 an C8H/C9H.
- *        Ohne `tastatur` (Kabel gezogen) bleibt die Abfrage hängen.
+ * @brief 710: ENTER kommt als 37H (ET1) im FIFO des 8279 an, ROM liest ihn ueber C8H;
+ *        710-1: 0DH im Empfaenger von SIO A32-B (RR0 Bit 0), und kein 8279 an C8H/C9H.
+ *        Ohne `tastatur` (Kabel gezogen) bleibt die Abfrage haengen.
  */
 TEST_P(Prg710Boot, TastaturAmRichtigenBaustein) {
     const bool v1 = GetParam() == V::Prg710_1;
@@ -351,7 +351,7 @@ TEST(Prg710Boot, Zweitlader710_1SendetEscKlammerFragezeichen11h) {
     EXPECT_NE(m.k7672().leds() & 0x80, 0) << bild(m);
 }
 
-/// Die K8025 reicht am 710-1 nur noch zwei Anschlüsse nach außen (A32-B ist die Tastatur).
+/// Die K8025 reicht am 710-1 nur noch zwei Anschluesse nach aussen (A32-B ist die Tastatur).
 TEST(Prg710Boot, SerielleAnschluesseJeVariante) {
     Prg710Machine a(cfgFuer(V::Prg710)), b(cfgFuer(V::Prg710_1));
     // K8025 (AP-P4) + Fernschreiber der ASS 590069 dahinter (AP-P8c).
@@ -362,7 +362,7 @@ TEST(Prg710Boot, SerielleAnschluesseJeVariante) {
 /**
  * @test Prg710Boot.NkmLoaderWirdMitDemPrgZeichengeneratorGerendert
  * @brief Pixelprobe: die Zellen von „NKM-LOADER“ im Bildspeicher (640 px breit, Zelle 8×12)
- *        tragen Bit für Bit die Glyphen der PRG-EPROMs A103/A123 (nicht des K8915-/A5120-Satzes),
+ *        tragen Bit fuer Bit die Glyphen der PRG-EPROMs A103/A123 (nicht des K8915-/A5120-Satzes),
  *        und die Zellen hinter dem Text sind leer.
  */
 TEST_P(Prg710Boot, NkmLoaderWirdMitDemPrgZeichengeneratorGerendert) {

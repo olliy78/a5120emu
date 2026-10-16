@@ -3,8 +3,8 @@ und `py_serial_api` (AP-T1b).
 
 Die Bindung hat bewusst keinen Zugriff auf den PC.  Deshalb: CP/A bis `A>` booten, ein
 kleines Z80-Programm in den RAM legen und CONST/CONIN der BIOS-Sprungleiste darauf
-zeigen lassen — der nächste Konsolenaufruf landet dort.  Es programmiert A33-A auf
-9600 Bd 8N1 mit RTS/DTR und schickt jedes Byte zurück; F1H nimmt DTR weg, F2H setzt
+zeigen lassen — der naechste Konsolenaufruf landet dort.  Es programmiert A33-A auf
+9600 Bd 8N1 mit RTS/DTR und schickt jedes Byte zurueck; F1H nimmt DTR weg, F2H setzt
 DTR und RTS, F3H nimmt RTS weg.
 
 **Achtung:** bei „Bitte Uhrzeit eingeben!" ist die Seite 0 noch leer (`[0001H] = 0`) —
@@ -77,7 +77,7 @@ def bis_zum_prompt(emulator, temp_disk):
 
 
 def echo_gast_einsetzen(emu):
-    """Echo-Gast an CONST/CONIN hängen und laufen lassen, bis er A33-A programmiert hat."""
+    """Echo-Gast an CONST/CONIN haengen und laufen lassen, bis er A33-A programmiert hat."""
     bios = emu.mem_read(1) | (emu.mem_read(2) << 8)    # JP WBOOT → Basis + 3
     assert emu.mem_read(0) == 0xC3 and bios > 0xC000, hex(bios)
     basis = bios - 3
@@ -86,8 +86,8 @@ def echo_gast_einsetzen(emu):
     for eintrag in (basis + 6, basis + 9):              # CONST, CONIN
         for i, b in enumerate((0xC3, ORG & 0xFF, ORG >> 8)):
             emu.mem_write(eintrag + i, b)
-    emu.key_press(ord(" ")); emu.run(300_000)          # CONIN kehrt zurück, der
-    emu.key_release(ord(" "))                           # nächste Aufruf landet im Gast
+    emu.key_press(ord(" ")); emu.run(300_000)          # CONIN kehrt zurueck, der
+    emu.key_release(ord(" "))                           # naechste Aufruf landet im Gast
     for _ in range(200):
         emu.run(100_000)
         st = emu.serial_status(V24)

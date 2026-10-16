@@ -4,10 +4,10 @@
  *        Originalterminal Typ 2 + K7673.09 — Firmware P8T 5.0 auf dem Z8, Tasten als Matrixdruck.
  *
  * (a) Hardwaretest-Banner im Bildspeicher des Originals, `O U`-Dialog bis `:` wie M2
- *     (`test_p8000_monitor16`), getippt über K7673 → Z8-Firmware → tty1;
+ *     (`test_p8000_monitor16`), getippt ueber K7673 → Z8-Firmware → tty1;
  * (c) Save-State-Rundreise der Variante am Prompt (bitgleich, beide laufen gleich weiter);
- * dazu: Matrixtasten der Oberfläche, Pixelbild, Ablehnung eines Kern-Stands.
- * Die M1/M2-Wächter (Kern-Terminal, Vorgabe) bleiben unverändert.
+ * dazu: Matrixtasten der Oberflaeche, Pixelbild, Ablehnung eines Kern-Stands.
+ * Die M1/M2-Waechter (Kern-Terminal, Vorgabe) bleiben unveraendert.
  */
 
 #include <gtest/gtest.h>
@@ -69,7 +69,7 @@ TEST(P8000TerminalOriginal, HardwaretestBannerImOriginalbildUndReturnUeberDieTas
     EXPECT_EQ(m.festeSchnittstellen().front(), "Terminal P8000 Typ 2 (tty1)");
 }
 
-/// (a) M2 über das Original: UDOS ⇒ U8000-Monitor, NMI ⇒ Hardwaretest U8001, `O U`, `boot` ⇒ `:`.
+/// (a) M2 ueber das Original: UDOS ⇒ U8000-Monitor, NMI ⇒ Hardwaretest U8001, `O U`, `boot` ⇒ `:`.
 TEST(P8000TerminalOriginal, OUDialogBisZumPromptUeberDieTastaturK7673) {
     stumm();
     k1520test::TempDisk disk{FIXTURE};
@@ -93,7 +93,7 @@ TEST(P8000TerminalOriginal, OUDialogBisZumPromptUeberDieTastaturK7673) {
     EXPECT_NE(bild(m).find("Boot"), std::string::npos) << bild(m);
 }
 
-/// Matrixtasten der Oberfläche (`0x04000000 | Zeile << 8 | Spalte`): drücken, halten, loslassen.
+/// Matrixtasten der Oberflaeche (`0x04000000 | Zeile << 8 | Spalte`): druecken, halten, loslassen.
 TEST(P8000TerminalOriginal, MatrixtasteDerOberflaecheGehtAnDenRechner) {
     stumm();
     P8000Machine m(original());
@@ -106,7 +106,7 @@ TEST(P8000TerminalOriginal, MatrixtasteDerOberflaecheGehtAnDenRechner) {
     laufe(m, 320'000);                                // 80 ms gehalten
     m.keyRelease(kode);
     laufe(m, 320'000);
-    // Ein zweites `>` in der nächsten Zeile.
+    // Ein zweites `>` in der naechsten Zeile.
     ASSERT_TRUE(laufeBisPrompt(m, ">", 20'000'000)) << bild(m);
     int prompts = 0;
     for (int z = 0; z < 24; ++z) prompts += zeile(m, z) == ">" ? 1 : 0;
@@ -114,7 +114,7 @@ TEST(P8000TerminalOriginal, MatrixtasteDerOberflaecheGehtAnDenRechner) {
 }
 
 /// (c) Save-State-Rundreise am Prompt: Laden ist die Umkehrung des Speicherns, und beide Maschinen
-/// laufen danach gleich weiter (Tastenfolge über die K7673 eingeschlossen).
+/// laufen danach gleich weiter (Tastenfolge ueber die K7673 eingeschlossen).
 TEST(P8000TerminalOriginal, SaveStateRundreiseAmPrompt) {
     stumm();
     P8000Machine a(original()), b(original());
@@ -145,9 +145,9 @@ TEST(P8000TerminalOriginal, SaveStateRundreiseAmPrompt) {
     EXPECT_EQ(a.stateBytes(), b.stateBytes());
 }
 
-/// Aufschub der Terminalkopplung: die Einheit läuft nur nach Bedarf (`TerminalHwKopplung`), das
+/// Aufschub der Terminalkopplung: die Einheit laeuft nur nach Bedarf (`TerminalHwKopplung`), das
 /// Ergebnis muss bitgleich sein zu „nach jedem Befehl" — Banner, Eingaben (Rechner → Terminal →
-/// Rechner und zurück), Lesezugriffe der Oberfläche mittendrin, Save-State zu jedem Zeitpunkt.
+/// Rechner und zurueck), Lesezugriffe der Oberflaeche mittendrin, Save-State zu jedem Zeitpunkt.
 TEST(P8000TerminalOriginal, AufschubDerKopplungIstBitgleich) {
     stumm();
     P8000Machine ohne(original()), mit(original());
@@ -157,8 +157,8 @@ TEST(P8000TerminalOriginal, AufschubDerKopplungIstBitgleich) {
     // Verglichen werden Terminal- und Maschinenabschnitt des Save-States (Kennung 4/5: Z8, RAM, Bild,
     // Tastatur, Zeiten), dazu der RAM des Rechners und sein PC.  Den Rest des Stands nicht: einige
     // Bausteine (`Z80Dma::serialize`, Kartenabschnitt) kopieren ihr Zustandsstruct roh samt
-    // Füllbytes, die bei zwei Maschinen im selben Prozess verschieden sind (getrennte Prozesse
-    // geben bitgleiche Stände — so wurde das Ganze auch über 100 Mio. Takte WEGA geprüft).
+    // Fuellbytes, die bei zwei Maschinen im selben Prozess verschieden sind (getrennte Prozesse
+    // geben bitgleiche Staende — so wurde das Ganze auch ueber 100 Mio. Takte WEGA geprueft).
     auto terminalStand = [](const std::vector<uint8_t>& v) {
         std::vector<uint8_t> r;
         for (size_t o = 5; o + 5 <= v.size();) {
@@ -198,7 +198,7 @@ TEST(P8000TerminalOriginal, AufschubDerKopplungIstBitgleich) {
             mit.run(int(kBatch));
             if (seit >= pruefe) {
                 seit = 0;
-                // Lesen der Oberfläche mittendrin (nur bei „mit"): darf nichts ändern
+                // Lesen der Oberflaeche mittendrin (nur bei „mit"): darf nichts aendern
                 (void)mit.framebuffer();
                 (void)mit.keyboardLeds();
                 ASSERT_TRUE(gleich()) << "bei " << t;
@@ -222,7 +222,7 @@ TEST(P8000TerminalOriginal, AufschubDerKopplungIstBitgleich) {
     EXPECT_EQ(mit.originalTerminal()->aufschubVerspaetet(), 0u);
 }
 
-// ─── (b) Mehrplatz: Rechner + zwei Terminal-Maschinen über Loopback-Telnet ───────────────────────
+// ─── (b) Mehrplatz: Rechner + zwei Terminal-Maschinen ueber Loopback-Telnet ───────────────────────
 
 #include <chrono>
 #include <functional>
@@ -233,7 +233,7 @@ TEST(P8000TerminalOriginal, AufschubDerKopplungIstBitgleich) {
 namespace {
 using namespace k1520::serial;
 
-/// Kanal @p name des Rechner-Hubs als Telnet-Server auf einem freien Loopback-Port; Rückgabe Port.
+/// Kanal @p name des Rechner-Hubs als Telnet-Server auf einem freien Loopback-Port; Rueckgabe Port.
 uint16_t ttyAlsServer(P8000Machine& m, const std::string& name) {
     SerialHub* hub = m.serialHub();
     for (int i = 0; i < hub->anzahl(); ++i) {
@@ -278,7 +278,7 @@ TEST(P8000TerminalOriginal, ZweiArbeitsplaetzeUeberLoopbackTelnet) {
     ASSERT_NE(p0, 0);
     ASSERT_NE(p2, 0);
     auto t0 = arbeitsplatz(p0), t2 = arbeitsplatz(p2);
-    // Verbindungsaufbau abwarten (I/O-Fäden beider Seiten).
+    // Verbindungsaufbau abwarten (I/O-Faeden beider Seiten).
     for (int i = 0; i < 200; ++i) {
         if (t0->serialHub()->status(0).zustand == Zustand::Verbunden &&
             t2->serialHub()->status(0).zustand == Zustand::Verbunden) break;
@@ -305,15 +305,15 @@ TEST(P8000TerminalOriginal, ZweiArbeitsplaetzeUeberLoopbackTelnet) {
     auto bild0 = [&] { return termBild(*t0); };
     auto bild2 = [&] { return termBild(*t2); };
     ASSERT_TRUE(bisText(konsole, "Press RETURN", 200'000'000)) << bild(m);
-    // Beide Arbeitsplätze haben ihre Einschaltmeldung (Firmware P8T 5.0 in eigener Maschine).
+    // Beide Arbeitsplaetze haben ihre Einschaltmeldung (Firmware P8T 5.0 in eigener Maschine).
     EXPECT_NE(bild0().find("ADM31/9600 baud"), std::string::npos) << bild0();
     EXPECT_NE(bild2().find("ADM31/9600 baud"), std::string::npos) << bild2();
     m.keyPress('\r', false, false);
     ASSERT_TRUE(bisText(konsole, "\n>", 20'000'000)) << bild(m);
     // MON8 `PW <port> <byte>` (U880SM.S IOPORT): MON8 richtet nur tty1 ein — SIO0-A (tty0) und
     // SIO1-A (tty2) stehen nach dem Hardwaretest auf 5 Bit.  Also wie ein Betriebssystem: WR5 =
-    // 68H (8 Bit, Sender an) über 25H bzw. 29H (Steuerregister Kanal A), dann je zwei Bytes ins Senderegister
-    // (24H bzw. 28H).  Der Rechner gibt auf seinen ttys aus, die Arbeitsplätze zeigen es.
+    // 68H (8 Bit, Sender an) ueber 25H bzw. 29H (Steuerregister Kanal A), dann je zwei Bytes ins Senderegister
+    // (24H bzw. 28H).  Der Rechner gibt auf seinen ttys aus, die Arbeitsplaetze zeigen es.
     // Die erste Eingabe am `>` nach dem Hardwaretest bootet (beobachtet, mit dem Kern-Terminal
     // ebenso — Gastverhalten): erst RETURN ⇒ „DISK ERROR“ abwarten, sonst gehen die Zeichen im Ladeversuch unter.
     m.keyPress('\r', false, false);
@@ -325,13 +325,13 @@ TEST(P8000TerminalOriginal, ZweiArbeitsplaetzeUeberLoopbackTelnet) {
         for (long long t = 0; t < 40'000'000 && !m.originalTerminal()->tastenFertig(); t += kBatch) schritt();
         for (int i = 0; i < 400; ++i) schritt();
     }
-    for (int i = 0; i < 20; ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); schritt(); }   // I/O-Fäden
+    for (int i = 0; i < 20; ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); schritt(); }   // I/O-Faeden
     ASSERT_TRUE(bisText(bild0, "T0", 4'000'000)) << bild0() << "\n--- Konsole\n" << bild(m);
     ASSERT_TRUE(bisText(bild2, "T2", 4'000'000)) << bild2() << "\n--- Konsole\n" << bild(m);
     EXPECT_EQ(bild0().find("T2"), std::string::npos);
     EXPECT_EQ(bild2().find("T0"), std::string::npos);
 
-    // Rückweg: Taste „x“ am Arbeitsplatz an tty0 (K7673 → Firmware → Telnet → SIO0-A); MON8
+    // Rueckweg: Taste „x“ am Arbeitsplatz an tty0 (K7673 → Firmware → Telnet → SIO0-A); MON8
     // `PR 24` liest das Empfangsregister und zeigt 78.
     t0->keyPress('x', false, false);
     for (long long t = 0; t < 8'000'000 && !t0->einheit().tastenFertig(); t += kBatch) schritt();

@@ -52,8 +52,8 @@ bool DiskFormat::supportsDrive(const std::string& profile_name) const {
 }
 
 Encoding DiskFormat::predominantEncoding() const {
-    // Nach ABGEDECKTEN SPUREN gewichten, nicht nach Zahl der Bereichseinträge —
-    // eine einzelne FM-Systemspur darf den MFM-Datenbereich nicht überstimmen.
+    // Nach ABGEDECKTEN SPUREN gewichten, nicht nach Zahl der Bereichseintraege —
+    // eine einzelne FM-Systemspur darf den MFM-Datenbereich nicht ueberstimmen.
     uint32_t fm = 0, mfm = 0;
     for (const auto& t : tracks) {
         const uint32_t n = static_cast<uint32_t>(t.cyl_last - t.cyl_first + 1)

@@ -78,7 +78,7 @@ TEST_F(Prg710Speicher_, SeiteFVramOderRam) {
     EXPECT_EQ(sp.ortVon(0xF7FF).quelle, Q::Ops);   // F000–F7FF bleibt RAM
     EXPECT_EQ(sp.ortVon(0xF000).quelle, Q::Ops);
     outC(0xF, 0xE8, 0xF0);
-    outC(0xF, 0xEA, 0x0F);   // Identität, wie das ROM sie schreibt
+    outC(0xF, 0xEA, 0x0F);   // Identitaet, wie das ROM sie schreibt
     EXPECT_EQ(sp.ortVon(0xF800).quelle, Q::Ops);
     EXPECT_EQ(sp.ortVon(0xF7FF).quelle, Q::Ops);
     sp.memWrite(0xFFFF, 0x5A);
@@ -142,9 +142,9 @@ TEST_F(Prg710Speicher_, AblaufDesEchtenRoms) {
     EXPECT_EQ(sp.ortVon(0x0000).quelle, Q::Zre);
     for (int s = 0; s < 16; ++s) {
         outC(s, 0xEA, uint8_t(s));
-        // Seite 0 bekommt 10H schon im ersten Durchlauf, während das ROM noch aus ihr läuft
+        // Seite 0 bekommt 10H schon im ersten Durchlauf, waehrend das ROM noch aus ihr laeuft
         outC(s, 0xE8, s == 0 ? 0x10 : (s == 15 ? 0xF0 : 0x10));
-        EXPECT_EQ(sp.ortVon(0x0000).quelle, Q::Zre) << "EBH = 0: ROM läuft weiter, Seite " << s;
+        EXPECT_EQ(sp.ortVon(0x0000).quelle, Q::Zre) << "EBH = 0: ROM laeuft weiter, Seite " << s;
     }
     outC(0, 0xE8, 0x0F);
     bus.ioWrite(0x00EB, 0x0F);

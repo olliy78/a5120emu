@@ -64,7 +64,7 @@ def taste(matrix: int) -> int:
 
 # ── Anzeigen: Bits aus `k1520_keyboard_leds` (Firmware-Register 21H) ────────
 LED_XOFF = 0x01    #: ESC [?13h/l — vom BIOS bei Strg+Pause (^S-Taste) geschaltet
-LED_READY = 0x08   #: Senden frei (DC1) — grün
+LED_READY = 0x08   #: Senden frei (DC1) — gruen
 LED_GRAPH = 0x40   #: ESC [?18h/l [?]
 LED_CAPS = 0x80    #: Feststelltaste / ESC [?11h/l
 
@@ -72,32 +72,32 @@ LED_CAPS = 0x80    #: Feststelltaste / ESC [?11h/l
 # Die K7672 hat KEINEN schwarzen Schacht wie die K7637: der graue Kunststoff
 # geht unter den Tasten weiter, der Ausschnitt ist nur im Schatten dunkler, und
 # an seinem Rand sitzt eine schmale, noch dunklere Kante.  Gemessen am Foto
-# (Tageslicht, daher dunkler als hier): Gehäuse 190/184/164, Kappenoberseite
+# (Tageslicht, daher dunkler als hier): Gehaeuse 190/184/164, Kappenoberseite
 # ~200/194/175, Kappenflanke ~138/132/116, Kante/Fuge ~40/35/27 (1–3 px breit).
-_C_BACK = QColor(0x24, 0x23, 0x20)       # Fläche neben der Tastatur
+_C_BACK = QColor(0x24, 0x23, 0x20)       # Flaeche neben der Tastatur
 _C_GEHAEUSE = QColor(0xd2, 0xcc, 0xb8)   # graue Wanne
-_C_KANTE = QColor(0xb4, 0xad, 0x98)      # Außenkante der Wanne
+_C_KANTE = QColor(0xb4, 0xad, 0x98)      # Aussenkante der Wanne
 _C_GRUND = QColor(0x92, 0x8b, 0x78)      # Grund des Ausschnitts (Schatten)
 _C_SCHATTEN = QColor(0x5e, 0x59, 0x4d)   # Kante des Ausschnitts
 _C_FLANKE = QColor(0xc4, 0xbe, 0xaa)     # Flanke der Kappe
 _C_KAPPE = QColor(0xe2, 0xde, 0xcd)      # Oberseite der Kappe
-_C_BLIND = QColor(0xae, 0xa8, 0x93)      # Blindstück links neben CAPS LOCK
+_C_BLIND = QColor(0xae, 0xa8, 0x93)      # Blindstueck links neben CAPS LOCK
 _C_TEXT = QColor(0x2c, 0x2b, 0x27)
 _C_ROT = QColor(0xc8, 0x2a, 0x2a)        # rote Zweitbeschriftung (PC-Bedeutung)
-_C_GRUEN = QColor(0x2f, 0x86, 0x4a)      # grüne Zweitbeschriftung (3270-Funktion)
+_C_GRUEN = QColor(0x2f, 0x86, 0x4a)      # gruene Zweitbeschriftung (3270-Funktion)
 _C_GRAU = QColor(0x5a, 0x58, 0x52)       # Zweitbeschriftung am Ziffernblock
 _C_FELD = QColor(0xdc, 0xd6, 0xc3)       # Lampenfeld
 _C_ACTIVE = QColor(0xd0, 0x80, 0x10)     # rastender Modifikator an
 _FARBEN = {"rot": _C_ROT, "gruen": _C_GRUEN, "grau": _C_GRAU}
 
-# ── Maße in Tastenrastern (dem Foto abgenommen, AP-UI2) ──────────────────────
+# ── Masse in Tastenrastern (dem Foto abgenommen, AP-UI2) ──────────────────────
 # Raster 55,9 px auf dem Foto; Kappe 51,8 px breit ⇒ Fuge 0,075; Mittelblock
 # beginnt 0,50 hinter DEL, Ziffernblock 0,50 hinter PF12 — das Raster selbst
-# stimmte schon.  Zu weit WIRKTEN die Abstände durch schmale Kappen (0,88) in
+# stimmte schon.  Zu weit WIRKTEN die Abstaende durch schmale Kappen (0,88) in
 # einer schwarzen Einfassung von 0,07.
-FUGE = 0.075        #: Spalt zwischen zwei Kappen (je Seite die Hälfte)
-GRUND_RAND = 0.03   #: so weit reicht der Ausschnitt über die Kappe hinaus
-KANTE_RAND = 0.025  #: dunkle Kante des Ausschnitts, außen um den Grund
+FUGE = 0.075        #: Spalt zwischen zwei Kappen (je Seite die Haelfte)
+GRUND_RAND = 0.03   #: so weit reicht der Ausschnitt ueber die Kappe hinaus
+KANTE_RAND = 0.025  #: dunkle Kante des Ausschnitts, aussen um den Grund
 ECKE = 0.10         #: Radius der Kappenecke (der Ausschnitt folgt ihr)
 
 #: (an, aus) je Lampenfarbe.
@@ -113,13 +113,13 @@ class _Taste(_Key):
     """Eine Taste der K7672 — dazu Matrixposition, Scancode und Frontbeschriftung."""
 
     matrix: int = -1
-    scan: int = -1               # aus der Firmware (D3 0080H), nur für den Hinweis
+    scan: int = -1               # aus der Firmware (D3 0080H), nur fuer den Hinweis
     front: str = ""              # Zweitbeschriftung vorn an der Kappe
     front_farbe: str = "rot"     # rot | gruen | grau
-    gruppe: str = ""             # Tastenblock (ein Ausschnitt im Gehäuse)
+    gruppe: str = ""             # Tastenblock (ein Ausschnitt im Gehaeuse)
     zeichen: str = ""            # Host-Zeichen, bei denen diese Taste aufleuchtet
-    rechts: str = ""             # Umlauttasten: großes Zeichen rechts (Ü, Ö, Ä, ß)
-    rechts_unten: bool = False   # …in der unteren statt der oberen Zeile (ß)
+    rechts: str = ""             # Umlauttasten: grosses Zeichen rechts (Ue, Oe, Ae, ss)
+    rechts_unten: bool = False   # …in der unteren statt der oberen Zeile (ss)
 
 
 def _t(x, y, low, m, scan, up="", w=1.0, h=1.0, front="", ff="rot", gruppe="haupt",
@@ -132,7 +132,7 @@ def _t(x, y, low, m, scan, up="", w=1.0, h=1.0, front="", ff="rot", gruppe="haup
                   zeichen=zeichen, rechts=rechts, rechts_unten=rechts_unten)
 
 
-#: Feste Blindstücke im Tastenfeld: (x, y, w, h, Gruppe) — keine Tasten, aber
+#: Feste Blindstuecke im Tastenfeld: (x, y, w, h, Gruppe) — keine Tasten, aber
 #: Teil des Ausschnitts.  Auf dem Foto links neben CAPS LOCK.
 BLINDSTUECKE = ((0.0, 3.5, 0.5, 1.0, "haupt"),)
 
@@ -187,7 +187,7 @@ def _build_layout_k7672() -> List[_Taste]:
     for i, (low, up, m, sc) in enumerate(ziffern):
         k.append(_t(1.0 + i, Y1, low, m, sc, up=up,
                     zeichen=low + up.replace(" ", "") + {"ß": "~", "´": "'"}.get(low, "")))
-    # ß: links oben ?, links unten ¯ (~ = 7EH, die ASCII-Lage von ß), rechts unten ß.
+    # ss: links oben ?, links unten ¯ (~ = 7EH, die ASCII-Lage von ss), rechts unten ss.
     sz = next(t for t in k if t.matrix == 0x05)
     sz.low, sz.rechts, sz.rechts_unten, sz.name = "¯", "ß", True, "ß"
     k.append(_t(13.0, Y1, "|←|", 0x67, 0x0E, name="Rücktaste |←|", zeichen="\x08"))
@@ -201,14 +201,14 @@ def _build_layout_k7672() -> List[_Taste]:
         sc = (0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19)[i]
         k.append(_t(1.5 + i, Y2, ch, m, sc, zeichen=ch + ch.lower()))
     # Umlauttasten wie auf dem Foto: links oben/unten die ASCII-Zeichen derselben
-    # Codes (DIN 66003 ↔ ASCII), rechts groß der Umlaut.
+    # Codes (DIN 66003 ↔ ASCII), rechts gross der Umlaut.
     k.append(_t(11.5, Y2, "]", 0x15, 0x1A, up="}", rechts="Ü", name="Ü (} ])",
                 zeichen="]}"))
     k.append(_t(12.5, Y2, "+", 0x55, 0x1B, up="*", zeichen="+*"))
     k.append(_t(13.5, Y2, "|←", 0x57, 0x8F, w=1.5, name="Tabulator zurück |← (Umschalt + Tab)"))
 
     # ── Reihe 3: ASDF ────────────────────────────────────────────────────────
-    # Links neben CAPS LOCK sitzt ein festes Blindstück (BLINDSTUECKE).
+    # Links neben CAPS LOCK sitzt ein festes Blindstueck (BLINDSTUECKE).
     k.append(_t(0.5, Y3, "CAPS\nLOCK", 0x26, 0x3A, w=1.25,
                 name="CAPS LOCK (Feststelltaste, Lampe CAPS)"))
     for i, (ch, m, sc) in enumerate(zip("ASDFGHJKL",
@@ -284,7 +284,7 @@ def _build_layout_k7672() -> List[_Taste]:
 class KeyboardK7672Widget(KeyboardWidget):
     """Anklickbare Nachbildung der K7672 (K8915) — Schnittstelle wie die K7637."""
 
-    #: Oben Platz für die drei Punkte über ALT1/^S/MOD2.
+    #: Oben Platz fuer die drei Punkte ueber ALT1/^S/MOD2.
     PAD = (0.35, 0.65, 0.35, 0.35)
 
     def _layout(self) -> List[_Key]:
@@ -340,17 +340,17 @@ class KeyboardK7672Widget(KeyboardWidget):
 
     # ── Zeichnen ─────────────────────────────────────────────────────────────
     #
-    # Die Ausschnitte im Gehäuse werden NICHT als Pfad vereinigt.  Bis AP-UI1
+    # Die Ausschnitte im Gehaeuse werden NICHT als Pfad vereinigt.  Bis AP-UI1
     # entstand die Einfassung je Block aus ``QPainterPath.addRect`` aller
-    # (vergrößerten, sich überlappenden) Zellen + ``simplified()`` — und Qts
-    # Pfad-Vereinigung verliert bei bestimmten Fließkomma-Lagen fast
-    # zusammenfallender Kanten ganze Teilflächen: bei rund einem Drittel aller
+    # (vergroesserten, sich ueberlappenden) Zellen + ``simplified()`` — und Qts
+    # Pfad-Vereinigung verliert bei bestimmten Fliesskomma-Lagen fast
+    # zusammenfallender Kanten ganze Teilflaechen: bei rund einem Drittel aller
     # Fensterbreiten fehlte die Einfassung von RETURN und der rechten
     # Umschalttaste, und die helle Wanne lag zwischen den Tasten (AP-UI2,
-    # Befund „rot").  Jetzt wird jede Fläche einzeln DECKEND gemalt — je Zelle
-    # ein abgerundetes Rechteck, dazu eckige Brücken zwischen Nachbarzellen,
-    # die Fugen und Innenecken schließen.  Überdeckung statt Mengenlehre: das
-    # kann nichts verlieren, bei keiner Größe.
+    # Befund „rot").  Jetzt wird jede Flaeche einzeln DECKEND gemalt — je Zelle
+    # ein abgerundetes Rechteck, dazu eckige Bruecken zwischen Nachbarzellen,
+    # die Fugen und Innenecken schliessen.  Ueberdeckung statt Mengenlehre: das
+    # kann nichts verlieren, bei keiner Groesse.
 
     def _zellen(self):
         """(x, y, w, h, Gruppe) aller Zellen im Tastenfeld — Tasten und Blindstücke."""
@@ -391,7 +391,7 @@ class KeyboardK7672Widget(KeyboardWidget):
                 oy0, oy1 = max(ay0, by0), min(ay1, by1)
                 ox0, ox1 = max(ax0, bx0), min(ax1, bx1)
                 if (abs(ax1 - bx0) < eps or abs(bx1 - ax0) < eps) and oy1 - oy0 > eps:
-                    # nebeneinander: Brücke über die ganze gemeinsame Höhe
+                    # nebeneinander: Bruecke ueber die ganze gemeinsame Hoehe
                     links, rechts = (a, b) if abs(ax1 - bx0) < eps else (b, a)
                     x0 = links[0] + links[2] / 2.0
                     x1 = rechts[0] + rechts[2] / 2.0
@@ -427,7 +427,7 @@ class KeyboardK7672Widget(KeyboardWidget):
         p.setBrush(_C_GEHAEUSE)
         p.drawRoundedRect(wanne, 0.2 * unit, 0.2 * unit)
 
-        # Ausschnitt: erst die dunkle Kante (etwas größer), darüber der Grund.
+        # Ausschnitt: erst die dunkle Kante (etwas groesser), darueber der Grund.
         self._male_flaechen(p, self.ausschnitt_flaechen(unit, ox, oy,
                                                         GRUND_RAND + KANTE_RAND),
                             _C_SCHATTEN)
@@ -506,7 +506,7 @@ class KeyboardK7672Widget(KeyboardWidget):
         if not text:
             return
         font = QFont(p.font())
-        font.setWeight(QFont.DemiBold)      # die Kappen sind kräftig bedruckt
+        font.setWeight(QFont.DemiBold)      # die Kappen sind kraeftig bedruckt
         size = max(5.0, size)
         while size > 5.0:
             font.setPixelSize(max(5, int(round(size))))
@@ -556,7 +556,7 @@ class KeyboardK7672Widget(KeyboardWidget):
         elif "\n" in key.low:
             zeilen = key.low.split("\n")
             if key.h > 1.0:
-                # RETURN: oben groß ↵, unten klein der Name — eine hohe Taste.
+                # RETURN: oben gross ↵, unten klein der Name — eine hohe Taste.
                 boxen.append((zeilen[0], oz, 0.40 * unit, L))
                 boxen.append((" ".join(zeilen[1:]), uz, 0.20 * unit, L))
             else:
@@ -594,8 +594,8 @@ class KeyboardK7672Widget(KeyboardWidget):
 
     # ── Die ECHTE Tastatur ──────────────────────────────────────────────────
 
-    #: Qt-Sondertaste → Matrixposition (nur für die Hervorhebung; gesendet wird
-    #: der Qt-Code, den der Kern selbst übersetzt — `K7672::tasteDcp`).
+    #: Qt-Sondertaste → Matrixposition (nur fuer die Hervorhebung; gesendet wird
+    #: der Qt-Code, den der Kern selbst uebersetzt — `K7672::tasteDcp`).
     _HOST_MATRIX = {
         int(Qt.Key_Return): 0x38, int(Qt.Key_Enter): 0x37, int(Qt.Key_Tab): 0x06,
         int(Qt.Key_Backtab): 0x57, int(Qt.Key_Escape): 0x56,
@@ -634,17 +634,17 @@ class KeyboardK7672Widget(KeyboardWidget):
     #: Reine Modifikatoren des PCs, die der K8915 als EIGENE Tasten braucht: im
     #: DCP-Modus meldet die K7672 Umschalt (2AH) und Strg (1DH) einzeln, damit das
     #: BIOS z. B. Umschalt+PF1 unterscheiden kann.  Der Kern setzt sie zusammen mit
-    #: der je Zeichen gewählten Umschaltung um (kein Doppel: `K7672::dcpDruecken`
+    #: der je Zeichen gewaehlten Umschaltung um (kein Doppel: `K7672::dcpDruecken`
     #: vergleicht mit dem Zustand, den der Rechner kennt).  **ALT fehlt mit Absicht**:
-    #: Qt gibt das Drücken nicht zuverlässig an das Widget (die Menüleiste wertet es
+    #: Qt gibt das Druecken nicht zuverlaessig an das Widget (die Menueleiste wertet es
     #: zuerst aus und holt sich beim Loslassen den Fokus); der ALT des K8915 ist an
     #: der Bildschirmtastatur (Matrix 6DH) zu haben.
     _MODIFIKATOREN = (int(Qt.Key_Shift), int(Qt.Key_Control))
 
     def __init__(self, *args, **kwargs):
-        # Je Host-Taste der Kern-Code, mit dem sie GEDRÜCKT wurde.  Das Loslassen
-        # muss denselben Code tragen: ändert sich die Umschaltung dazwischen
-        # (Umschalt zuerst losgelassen: `A` → `a`), träfe es sonst eine andere
+        # Je Host-Taste der Kern-Code, mit dem sie GEDRUECKT wurde.  Das Loslassen
+        # muss denselben Code tragen: aendert sich die Umschaltung dazwischen
+        # (Umschalt zuerst losgelassen: `A` → `a`), traefe es sonst eine andere
         # Taste, und die Tastenwiederholung der K7672 liefe weiter.
         self._core_down = {}
         super().__init__(*args, **kwargs)
@@ -663,7 +663,7 @@ class KeyboardK7672Widget(KeyboardWidget):
     def host_key_release(self, event):
         key = int(event.key())
         if key in self._MODIFIKATOREN:
-            # Die rastenden Umschalttasten der Nachbildung bleiben unberührt.
+            # Die rastenden Umschalttasten der Nachbildung bleiben unberuehrt.
             self._mark_up(event)
             self._core_down.pop(key, None)
             return (key, False, False)

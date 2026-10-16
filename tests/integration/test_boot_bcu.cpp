@@ -1,17 +1,17 @@
 /**
  * @file test_boot_bcu.cpp
- * @brief BCU 880 auf dem frühen A5120 (doc/design/30_a5120_fruehe_varianten.md §3.2, AP A7).
+ * @brief BCU 880 auf dem fruehen A5120 (doc/design/30_a5120_fruehe_varianten.md §3.2, AP A7).
  *
  * Die BCU-Disketten „SYL auf Spur 1“ (doc/a5120_alt/bcu/satz{1,2}_SYL_auf_Spur1) tragen auf
  * Zylinder 1 einen 768-B-Lader mit `SYL`-Kennung und Einsprung 042EH — den nimmt nur das
  * Lade-ROM **V0.6** an (doc/a5120_alt/laderom.md §3).  Der Lader holt BCU 880 V1.2 (67 Sektoren
  * ab Zylinder 2 nach D680H, eigene ZVE2-Leseroutine, CRC je Sektor per Software) und springt
- * nach D680H.  Die beiden Sätze unterscheiden sich im Bildtreiber (doc/a5120_alt/bcu.md):
+ * nach D680H.  Die beiden Saetze unterscheiden sich im Bildtreiber (doc/a5120_alt/bcu.md):
  *
- * - Satz 2 („SIOS 1SS Copy1“): 64×16 ab FC00H = K7023 → Ausführung `Alt`;
+ * - Satz 2 („SIOS 1SS Copy1“): 64×16 ab FC00H = K7023 → Ausfuehrung `Alt`;
  * - Satz 1 („BCU Kaltstart“): 80×24 ab F800H = K7024 → `Neu` mit K7636 am U-Bus.
  *
- * Tastatur in beiden: K7636 über die Tore 01H/06H der K2526.  BCU 880 V2.1 liegt nur auf
+ * Tastatur in beiden: K7636 ueber die Tore 01H/06H der K2526.  BCU 880 V2.1 liegt nur auf
  * Disketten „ohne SYL“ — die nimmt keines der vier vorhandenen Lade-ROMs an (letzter Fall).
  */
 #include <gtest/gtest.h>
@@ -58,21 +58,21 @@ bool laufeBis(A5120Machine& m, const std::string& needle, long long max_cycles) 
 
 /// Systemdiskette V1.2 „ohne SYL“ (`satz2_OhneSYL.1`, „SYS1“) als Datendiskette in B:.
 /// Die SYL-Disketten taugen nicht als Dateidiskette: der DPB der V1.2 (EC73H/EC82H: 26×128,
-/// Blöcke 1 KB, 64 Einträge, **OFF = 2**) sucht das Verzeichnis auf Zylinder 2 — dort liegt bei
-/// ihnen das System; `dir a:` listet Systemcode als namenlose Einträge.
+/// Bloecke 1 KB, 64 Eintraege, **OFF = 2**) sucht das Verzeichnis auf Zylinder 2 — dort liegt bei
+/// ihnen das System; `dir a:` listet Systemcode als namenlose Eintraege.
 constexpr const char* kDatendiskette = "bcu12_ss40-26x128_k5600-10_ohnesyl-sys1.img";
 
-/// Bis zum BCU-Prompt `A>`, dann `dir b:` über die K7636: BCU listet die Dateien der
+/// Bis zum BCU-Prompt `A>`, dann `dir b:` ueber die K7636: BCU listet die Dateien der
 /// Systemdiskette in B: (u. a. `KMBG.REL`, `EPROM.COM`).  @p ende = Taste, die die Zeile
-/// abschließt (die beiden BIOS-Fassungen lesen die K7636 verschieden, siehe Fälle).
+/// abschliesst (die beiden BIOS-Fassungen lesen die K7636 verschieden, siehe Faelle).
 void bootUndDir(A5120Machine& m, uint32_t ende) {
     ASSERT_TRUE(laufeBis(m, "\nA>", 40'000'000)) << "kein A>:\n" << bild(m);
     EXPECT_NE(bild(m).find("BCU 880 VERS 1.2"), std::string::npos) << bild(m);
     EXPECT_NE(bild(m).find("FZW/BL"), std::string::npos) << bild(m);
     // Der Kaltstart schickt der K7636 Kommando 00H (Reset, D69CH: `OUT (03H),A`) und holt das
     // Antwort-Typzeichen 80H nie ab — es wird das erste Zeichen der ersten Eingabezeile (das
-    // BDOS liest es schon beim Prompt über CONST vorab; CONOUT zeigt es als Zelle 80H).
-    // Wie am Gerät: erst eine leere Zeile, die es verbraucht, dann der eigentliche Befehl.
+    // BDOS liest es schon beim Prompt ueber CONST vorab; CONOUT zeigt es als Zelle 80H).
+    // Wie am Geraet: erst eine leere Zeile, die es verbraucht, dann der eigentliche Befehl.
     k1520test::typeKey(m, ende);
     auto prompts = [&] {
         int n = 0;
@@ -87,7 +87,7 @@ void bootUndDir(A5120Machine& m, uint32_t ende) {
     ASSERT_GE(prompts(), 2) << "zweiter Prompt fehlt:\n" << bild(m);
     k1520test::typeString(m, "dir b:");
     ASSERT_TRUE(laufeBis(m, "dir b:", 20'000'000))
-        << "Eingabe über die K7636 kommt nicht an:\n" << bild(m);
+        << "Eingabe ueber die K7636 kommt nicht an:\n" << bild(m);
     k1520test::typeKey(m, ende);
     ASSERT_TRUE(laufeBis(m, "XSUB", 30'000'000)) << "dir b: ohne Verzeichnis:\n" << bild(m);
     EXPECT_NE(bild(m).find("KMBG     REL"), std::string::npos) << bild(m);
@@ -109,8 +109,8 @@ TEST(BootIntegrationBcu, V12BisPrompt) {
     ASSERT_TRUE(m.mountDisk(0, a.path(), kFormat, false)) << m.lastError();
     TempDisk b(kDatendiskette);
     ASSERT_TRUE(m.mountDisk(1, b.path(), kFormat, false)) << m.lastError();
-    // Der CONIN dieser Fassung reicht den K7636-Code unübersetzt durch (EF34: IN 06H; RET):
-    // ET1 (FFH) käme als Rubout 7FH an.  Die Zeile schließt die Taste ↵ (A15, Code 0AH) —
+    // Der CONIN dieser Fassung reicht den K7636-Code unuebersetzt durch (EF34: IN 06H; RET):
+    // ET1 (FFH) kaeme als Rubout 7FH an.  Die Zeile schliesst die Taste ↵ (A15, Code 0AH) —
     // die BDOS-Zeileneingabe endet auf CR wie auf LF.
     bootUndDir(m, K7636::QK_TASTE_BASE | 0x37);
 }
@@ -130,16 +130,16 @@ TEST(BootIntegrationBcu, V12Bab2BisPrompt) {
     ASSERT_TRUE(m.mountDisk(0, a.path(), kFormat, false)) << m.lastError();
     TempDisk b(kDatendiskette);
     ASSERT_TRUE(m.mountDisk(1, b.path(), kFormat, false)) << m.lastError();
-    // Diese Fassung übersetzt im CONIN (Tafel EF58H → EF65H): ET1 (FFH) → 0DH.
+    // Diese Fassung uebersetzt im CONIN (Tafel EF58H → EF65H): ET1 (FFH) → 0DH.
     bootUndDir(m, QK_RETURN);
 }
 
 /**
- * @brief BCU 880 V2.1 („ohne SYL“, Satz 2.2 — laut DT-INFO „Bootfähig: Ja“) startet mit KEINEM
+ * @brief BCU 880 V2.1 („ohne SYL“, Satz 2.2 — laut DT-INFO „Bootfaehig: Ja“) startet mit KEINEM
  *        der vorhandenen Lade-ROMs: V0.9 liest Zylinder 0 und verlangt `SYL` in 0400H, V0.6
- *        liest Zylinder 1 und verlangt es dort; die Diskette trägt auf Zylinder 0 Sektor 1
+ *        liest Zylinder 1 und verlangt es dort; die Diskette traegt auf Zylinder 0 Sektor 1
  *        einen eigenen Kopf (`40 20 'BCU 880 V.24/P'` + Code), auf Zylinder 1 Systemcode.
- *        Das passende Start-EPROM liegt nicht vor (doc/a5120_alt/bcu.md §5) — dieser Fall hält
+ *        Das passende Start-EPROM liegt nicht vor (doc/a5120_alt/bcu.md §5) — dieser Fall haelt
  *        den Befund fest, statt einen Start zu erfinden.
  */
 TEST(BootIntegrationBcu, V21OhneSylStartetMitKeinemVorhandenenLaderom) {
@@ -150,8 +150,8 @@ TEST(BootIntegrationBcu, V21OhneSylStartetMitKeinemVorhandenenLaderom) {
         m.powerOn();
         TempDisk a("bcu21_ss40-26x128_k5600-10_ohnesyl-satz2-2.img");
         ASSERT_TRUE(m.mountDisk(0, a.path(), kFormat, false)) << m.lastError();
-        // Das Lade-ROM läuft ganz unterhalb 0400H (ROM bzw. seine RAM-Kopie 00BAH–03FFH);
-        // jeder Befehl ab 0400H hieße: ein geladenes Stück wurde angesprungen.
+        // Das Lade-ROM laeuft ganz unterhalb 0400H (ROM bzw. seine RAM-Kopie 00BAH–03FFH);
+        // jeder Befehl ab 0400H hiesse: ein geladenes Stueck wurde angesprungen.
         uint16_t ausDemRom = 0;
         long long befehle = 0;
         m.setCpuTraceCallback([&](const Z80& c) {
@@ -161,8 +161,8 @@ TEST(BootIntegrationBcu, V21OhneSylStartetMitKeinemVorhandenenLaderom) {
         k1520test::runCycles(m, 12'000'000);
         m.setCpuTraceCallback(nullptr);
         EXPECT_GE(m.cpuCycles(), 11'000'000u) << "Lauf zu kurz";   // ZVE1-Takte (ohne ZVE2-Anteil)
-        EXPECT_GT(befehle, 100'000) << "Befehlsrückruf kam nicht an — der Fall prüfte nichts";
-        EXPECT_EQ(ausDemRom, 0) << "Lade-ROM " << int(l) << " hat Code übergeben, PC="
+        EXPECT_GT(befehle, 100'000) << "Befehlsrueckruf kam nicht an — der Fall pruefte nichts";
+        EXPECT_EQ(ausDemRom, 0) << "Lade-ROM " << int(l) << " hat Code uebergeben, PC="
                                 << std::hex << ausDemRom;
         EXPECT_EQ(bild(m).find("BCU"), std::string::npos) << bild(m);
     }
@@ -174,8 +174,8 @@ TEST(BootIntegrationBcu, V21OhneSylStartetMitKeinemVorhandenenLaderom) {
  * `tools/bcu_v21_eigenbau.py --treiber` setzt aus der V1.2-SYL-Diskette (Lader Zylinder 1,
  * Kaltstartteil, residenter Plattentreiber F100H–F47FH) und dem V2.1-System der „ohne SYL“-
  * Diskette (`satz2_OhneSYL.2`) eine Diskette zusammen, die es nie gab (doc/a5120_alt/bcu.md §9).
- * Der Test hält fest, dass das V2.1-BDOS damit bis `A>` kommt und B: liest.  Er sagt NICHTS
- * darüber, wie ein echtes V2.1-Gerät startete.  Ausführung `Neu` + K7636: V2.1 schreibt 80×24
+ * Der Test haelt fest, dass das V2.1-BDOS damit bis `A>` kommt und B: liest.  Er sagt NICHTS
+ * darueber, wie ein echtes V2.1-Geraet startete.  Ausfuehrung `Neu` + K7636: V2.1 schreibt 80×24
  * ab F800H (CONOUT des BIOS: Zeile 50H).
  */
 TEST(BootIntegrationBcu, V21EigenbauBootet) {
@@ -191,7 +191,7 @@ TEST(BootIntegrationBcu, V21EigenbauBootet) {
     ASSERT_TRUE(m.mountDisk(1, b.path(), kFormat, false)) << m.lastError();
     ASSERT_TRUE(laufeBis(m, "\nA>", 60'000'000)) << "kein A>:\n" << bild(m);
     EXPECT_NE(bild(m).find("BCU 880 V.24-2.1"), std::string::npos) << bild(m);
-    // Wie bei V1.2 (Satz 2): CONIN ohne Übersetzung, Zeilenende = ↵ (A15); die erste Zeile
+    // Wie bei V1.2 (Satz 2): CONIN ohne Uebersetzung, Zeilenende = ↵ (A15); die erste Zeile
     // verbraucht das Typzeichen 80H der K7636.
     const uint32_t ende = K7636::QK_TASTE_BASE | 0x37;
     k1520test::typeKey(m, ende);

@@ -38,19 +38,19 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from app.core_binding import k1520 as _bindung
 
 #: Scheibe = so viele Wanduhr-Sekunden des eingestellten Tempos.  So lange wartet die
-#: ein Oberflächenaufruf höchstens (mehr, wenn der Wirt das Tempo nicht schafft).
+#: ein Oberflaechenaufruf hoechstens (mehr, wenn der Wirt das Tempo nicht schafft).
 SCHEIBE_S = 0.002
 #: Scheibe im unbegrenzten Betrieb, in Nenntakt-Sekunden.
 SCHEIBE_UNBEGRENZT_S = 0.02
-#: Höchstens so viel Rückstand (Wanduhr) wird nachgeholt; mehr verfällt, sonst
+#: Hoechstens so viel Rueckstand (Wanduhr) wird nachgeholt; mehr verfaellt, sonst
 #: raste die Maschine nach einem langsamen Abschnitt hinterher.
 RUECKSTAND_S = 0.1
-#: Höchstens so lange lässt der Faden nach einer Scheibe einem Wartenden den Vortritt.
+#: Hoechstens so lange laesst der Faden nach einer Scheibe einem Wartenden den Vortritt.
 VORTRITT_S = 0.01
 
 
 #: Alle Takte mit Faden — beim Beenden des Interpreters werden sie angehalten, BEVOR
-#: Python Daemon-Fäden einfriert: ein mitten in der Scheibe erstarrter Faden hielte die
+#: Python Daemon-Faeden einfriert: ein mitten in der Scheibe erstarrter Faden hielte die
 #: Kernsperre, und das abschliessende ``k1520_destroy`` wartete ewig (Prozess endet nicht).
 _LEBENDE: "weakref.WeakSet[Emulationstakt]" = weakref.WeakSet()
 
@@ -122,7 +122,7 @@ class Emulationstakt(QObject):
             self._laufen = False
             self._cond.notify_all()
         if threading.current_thread() is not self._faden:
-            # Die laufende Scheibe braucht womöglich die Sperre, die WIR halten
+            # Die laufende Scheibe braucht womoeglich die Sperre, die WIR halten
             # (``with kern_sperre():`` um den Aufruf) — sonst warteten beide aufeinander.
             gehalten = self._sperre._release_save() if self._sperre._is_owned() else None
             try:
@@ -207,7 +207,7 @@ class Emulationstakt(QObject):
                     if not self._laufen:
                         continue
                     n = int(emu.run(scheibe)) if emu is not None else 0
-            except Exception as e:                        # an die Oberfläche melden
+            except Exception as e:                        # an die Oberflaeche melden
                 with self._cond:
                     self._fehler = str(e)
                     self._laufen = False
@@ -220,8 +220,8 @@ class Emulationstakt(QObject):
             with self._cond:
                 self._zyklen += n
 
-            # Vortritt: wer auf die Kernsperre wartet (ein Oberflächenaufruf), kommt
-            # jetzt dran; die nächste Scheibe wartet an der Sperre, bis er fertig ist.
+            # Vortritt: wer auf die Kernsperre wartet (ein Oberflaechenaufruf), kommt
+            # jetzt dran; die naechste Scheibe wartet an der Sperre, bis er fertig ist.
             if bib.wartende > 0:
                 bis = time.monotonic() + VORTRITT_S
                 while bib.wartende > 0 and time.monotonic() < bis:

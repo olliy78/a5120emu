@@ -1,9 +1,9 @@
-"""Kaltboot über die Python-Bindung — der Weg, den auch die GUI nimmt.
+"""Kaltboot ueber die Python-Bindung — der Weg, den auch die GUI nimmt.
 
-Die C++-Integrationstests booten über `A5120Machine` direkt.  Hier läuft
+Die C++-Integrationstests booten ueber `A5120Machine` direkt.  Hier laeuft
 derselbe Boot durch `libk1520core.so` + ctypes, sodass ein Fehler in der
 ABI-Schicht (falscher Handle, abgeschnittener Zeiger, vertauschte Argumente)
-auffällt, bevor die GUI ihn zeigt.
+auffaellt, bevor die GUI ihn zeigt.
 """
 
 import pytest
@@ -24,7 +24,7 @@ def test_cold_boot_reaches_bootloader_banner(emulator, temp_disk):
 
 
 def test_cold_boot_reaches_the_cpa_banner(booted):
-    """Nach dem Bootloader lädt CP/A und meldet sich mit Version + Konfiguration."""
+    """Nach dem Bootloader laedt CP/A und meldet sich mit Version + Konfiguration."""
     # Der Banner wird zeilenweise aufgebaut; "TPA ist OK" ist die letzte Zeile,
     # erst danach steht der ganze Text auf dem Schirm.
     assert run_until_text(booted, "TPA ist OK"), (
@@ -56,7 +56,7 @@ def test_boot_from_hfe_image(emulator, temp_disk):
 
 
 def test_boot_without_disk_does_not_crash(emulator):
-    """Ohne Diskette läuft die Maschine weiter (kein Absturz, kein Hänger)."""
+    """Ohne Diskette laeuft die Maschine weiter (kein Absturz, kein Haenger)."""
     emulator.power_on()
     total = 0
     for _ in range(50):
@@ -75,7 +75,7 @@ def test_reset_restarts_from_the_boot_rom(booted):
 
 
 def test_keyboard_input_reaches_the_machine(booted):
-    """Tastendruck über die Bindung erscheint als Echo auf dem Bildschirm.
+    """Tastendruck ueber die Bindung erscheint als Echo auf dem Bildschirm.
 
     Deckt den vollen Weg GUI → `k1520_key_press` → K7637-SIO → BIOS ab: die
     Uhrzeit-Abfrage echot jede Ziffer an der Cursorposition (`00:00:00`).
@@ -99,11 +99,11 @@ def test_keyboard_input_reaches_the_machine(booted):
 def test_selector_key_lights_the_keyboard_lamp(booted):
     """Die Tastaturanzeigen am laufenden CP/A — der ganze Weg, nicht nur das Papier.
 
-    Gedrückt wird die Selektortaste ``0`` mit ihrem PHYSISCHEN Code 0xA0.  Was
+    Gedrueckt wird die Selektortaste ``0`` mit ihrem PHYSISCHEN Code 0xA0.  Was
     danach passiert, geht durch alles hindurch: BIOS kippt Bit 0 seines
     Lampenpuffers, `lampen` schickt das Kommando 52H an die Tastatur, die
     K7637 erkennt es an der FLANKENZAHL und schaltet die Anzeige G00 um.
-    Nochmal gedrückt schaltet sie wieder aus — die Kommandos negieren, sie
+    Nochmal gedrueckt schaltet sie wieder aus — die Kommandos negieren, sie
     setzen nicht (K7637-Doku §2.2.3).
     """
     from app.ui.keyboard import LED_G00, LED_G01, raw

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-#: Vorgabe des Programms: Standardausbau des Geräts (vier 256-KB-Karten = 1 MB).
+#: Vorgabe des Programms: Standardausbau des Geraets (vier 256-KB-Karten = 1 MB).
 STANDARD = "4x256K"
 
 #: Auswahl im Einstellungsdialog: (Wert, Anzeige).  Der erste Eintrag ist die Vorgabe.
@@ -40,8 +40,8 @@ TIPP = (
 )
 
 #: Werte der ersten Auswahl (bis P23b) → gleichwertige Kurzform.
-#: Bestückung bleibt dieselbe (gleiche Karten, gleiche Moduladressen) — ein gespeicherter
-#: Zwischenstand (P8KS, Fingerabdruck mit den Karten) lädt deshalb weiter.
+#: Bestueckung bleibt dieselbe (gleiche Karten, gleiche Moduladressen) — ein gespeicherter
+#: Zwischenstand (P8KS, Fingerabdruck mit den Karten) laedt deshalb weiter.
 _ALT = {"1m@0": "1x1M", "256k@0": "1x256K", "1m@0+1m@1": "2x1M"}
 
 _KURZ = re.compile(r"^([1-4])[x×](256K|1M)$", re.I)
@@ -77,7 +77,7 @@ def karten(text: str):
             aus.append((0, g))
     if not 1 <= len(aus) <= 4:
         return None
-    for i, (a, ga) in enumerate(aus):        # Überlappung (Kern: P8000Dram16::pruefe)
+    for i, (a, ga) in enumerate(aus):        # Ueberlappung (Kern: P8000Dram16::pruefe)
         for b, gb in aus[:i]:
             if a < b + gb and b < a + ga:
                 return None

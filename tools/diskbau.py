@@ -9,7 +9,7 @@ nur BESCHREIBT, was auf die Diskette gehoert (`soll()`), und alles Uebrige hier 
 
   * `main(...)`    Kommandozeile (`--tool`, `--out`, `--check`)
   * bauen          create (mit Systemspuren) -> erste Dateien einzeln -> Rest -> `check --full` ohne Befund
-  * pruefen        Wächter: Dateiliste, Inhalt, Systemspuren der Diskette in disks/ == Beschreibung
+  * pruefen        Waechter: Dateiliste, Inhalt, Systemspuren der Diskette in disks/ == Beschreibung
   * Quellen        eigener Ordner `inhalt/` , gemeinsame Programme `tools/scp_gemeinsam/`, eigene Beigaben aus ihren
                    Quellordnern (tools/disketten_beigaben.PROGRAMME: SERTEST, EM256*, RAF*, LBREAD/LBPUNCH …)
   * Texte          LIESMICH.TXT (LF in der Quelle; auf der Diskette CRLF + ^Z, auf volle Saetze aufgefuellt) und die

@@ -1,6 +1,6 @@
 /**
  * @file test_k52_codec.cpp
- * @brief `.k52`: verlustfrei, bitgleich hin und zurück, strenge Prüfung (AP K3).
+ * @brief `.k52`: verlustfrei, bitgleich hin und zurueck, strenge Pruefung (AP K3).
  */
 
 #include <gtest/gtest.h>
@@ -20,8 +20,8 @@ std::vector<uint8_t> daten(size_t n, uint8_t start = 0) {
     return d;
 }
 
-/// Ein Medium mit allem, was verloren gehen könnte: beide Seiten, Bandmarke, falsche CRC,
-/// fremde Präambel, Schreibschutz, ungewöhnliche Dichte/Geschwindigkeit/Geometrie.
+/// Ein Medium mit allem, was verloren gehen koennte: beide Seiten, Bandmarke, falsche CRC,
+/// fremde Praeambel, Schreibschutz, ungewoehnliche Dichte/Geschwindigkeit/Geometrie.
 KassettenMedium voll() {
     Geometrie g;
     g.laenge_um = 60'000'000;
@@ -124,8 +124,8 @@ TEST(K52Codec, JedeAbgeschnitteneFassungWirdAbgewiesen) {
     for (size_t n = 0; n < d.size(); ++n) {
         std::string fehler;
         const std::vector<uint8_t> teil(d.begin(), d.begin() + static_cast<std::ptrdiff_t>(n));
-        EXPECT_FALSE(k52::dekodieren(teil, fehler).has_value()) << "Länge " << n;
-        EXPECT_FALSE(fehler.empty()) << "Länge " << n;
+        EXPECT_FALSE(k52::dekodieren(teil, fehler).has_value()) << "Laenge " << n;
+        EXPECT_FALSE(fehler.empty()) << "Laenge " << n;
     }
 }
 
@@ -139,7 +139,7 @@ TEST(K52Codec, ResteHinterDemInhaltWerdenAbgewiesen) {
 
 TEST(K52Codec, UnbrauchbareBandmasseUndPassendeBloeckeWerdenGeprueft) {
     auto d = k52::kodieren(KassettenMedium());
-    // Länge (Bytes 12..15) auf 0: kein Platz für Vorspann und Marken.
+    // Laenge (Bytes 12..15) auf 0: kein Platz fuer Vorspann und Marken.
     auto x = d;
     for (int i = 12; i < 16; ++i) x[static_cast<size_t>(i)] = 0;
     std::string fehler;
@@ -149,7 +149,7 @@ TEST(K52Codec, UnbrauchbareBandmasseUndPassendeBloeckeWerdenGeprueft) {
     x = d;
     for (int i = 8; i < 12; ++i) x[static_cast<size_t>(i)] = 0;
     EXPECT_FALSE(k52::dekodieren(x, fehler));
-    // Eine absurde Blockzahl auf Seite A scheitert an der Dateilänge, ohne zu reservieren.
+    // Eine absurde Blockzahl auf Seite A scheitert an der Dateilaenge, ohne zu reservieren.
     x = d;
     const size_t seiteA = 4 + 2 + 2 + 4 + 20;  // hinter dem Kopf
     x[seiteA + 2] = 0xFF;
@@ -162,12 +162,12 @@ TEST(K52Codec, UnbrauchbareBandmasseUndPassendeBloeckeWerdenGeprueft) {
 }
 
 TEST(K52Codec, BlockDerNichtAufsBandPasstWirdAbgewiesen) {
-    // Ein Band, dessen Lücke über das Magnetband hinausführt, entsteht nur durch eine kaputte Datei.
+    // Ein Band, dessen Luecke ueber das Magnetband hinausfuehrt, entsteht nur durch eine kaputte Datei.
     KassettenMedium m;
     m.haengeAn(Seite::A, 40'000, blockBauen(daten(10)));
     auto d = k52::kodieren(m);
     const size_t seiteA = 4 + 2 + 2 + 4 + 20;
-    const size_t luecke = seiteA + 6;  // erste Lücke des ersten Blocks
+    const size_t luecke = seiteA + 6;  // erste Luecke des ersten Blocks
     d[luecke + 0] = 0xFF;
     d[luecke + 1] = 0xFF;
     d[luecke + 2] = 0xFF;

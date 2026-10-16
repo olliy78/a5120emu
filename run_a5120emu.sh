@@ -1,5 +1,5 @@
 #!/bin/bash
-# a5120emu — Starter des Emulators (Gegenstück zu run_disktool.sh)
+# a5120emu — Starter des Emulators (Gegenstueck zu run_disktool.sh)
 # Automatically activates venv and starts the GUI
 
 set -e
@@ -19,12 +19,12 @@ if [ ! -d "$VENV_DIR" ]; then
     exit 1
 fi
 
-# Den Interpreter des venv DIREKT aufrufen, nicht über `source .../activate`.
-# `activate` trägt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
+# Den Interpreter des venv DIREKT aufrufen, nicht ueber `source .../activate`.
+# `activate` traegt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
 # ein kopiertes oder mitverschobenes venv stellt damit das Verzeichnis eines
 # FREMDEN venv in den PATH, und `python3` ist dann ein anderer Interpreter mit
-# anderen Paketen — Fehlerbild: eine installierte Abhängigkeit gilt als fehlend.
-# Der direkt aufgerufene Interpreter findet sein venv über den eigenen Pfad.
+# anderen Paketen — Fehlerbild: eine installierte Abhaengigkeit gilt als fehlend.
+# Der direkt aufgerufene Interpreter findet sein venv ueber den eigenen Pfad.
 PY="$VENV_DIR/bin/python3"
 
 # Set library path

@@ -1,8 +1,8 @@
 /**
  * @file test_mc80_boot.cpp
- * @brief MC80.3x (AP M3): EGOS meldet sich auf der VIS 2a und nimmt Kommandos über die
+ * @brief MC80.3x (AP M3): EGOS meldet sich auf der VIS 2a und nimmt Kommandos ueber die
  *        Tastatur (Zeichenebene an SIO A der ASP) an.  Der Text wird per Mustervergleich
- *        gegen den EGOS-Zeichengenerator aus dem Bild zurückgewonnen (egos_text.h).
+ *        gegen den EGOS-Zeichengenerator aus dem Bild zurueckgewonnen (egos_text.h).
  *        Erwartungen: doc/mc80/egos.md §1 (Einschaltmeldung, „OK“, „>“), egos.prn.
  */
 
@@ -50,12 +50,12 @@ TEST(Mc80Boot, EgosMeldetSich) {
     EXPECT_GE(findeZeile(m, "Version 3.0/1,2"), 0) << bildText(m);
     EXPECT_NE(m.textZeile(23).find("OK"), std::string::npos) << bildText(m);
     EXPECT_EQ(m.textZeile(24).rfind(">", 0), 0u) << bildText(m);
-    // dasselbe über die C-ABI-Sicht screenChar
+    // dasselbe ueber die C-ABI-Sicht screenChar
     EXPECT_EQ(m.screenChar(0, 24), '>');
     EXPECT_EQ(m.screenChar(79, 24), ' ');
     EXPECT_EQ(m.screenChar(80, 24), 0);
     EXPECT_EQ(m.screenChar(0, 25), 0);
-    // Bild: etwas ist hell, die Anzeige hat sich geändert
+    // Bild: etwas ist hell, die Anzeige hat sich geaendert
     EXPECT_TRUE(m.fbDirty());
     int hell = 0;
     for (int i = 0; i < m.fbWidth() * m.fbHeight(); ++i) hell += m.framebuffer()[i] != 0;
@@ -65,7 +65,7 @@ TEST(Mc80Boot, EgosMeldetSich) {
 TEST(Mc80Boot, KommandoInitUndCataUeberDieTastatur) {
     Egos e;
     e.fahre(4'000'000);
-    // Kleinbuchstaben = Tastenkappe ohne Umschalter; EGOS tauscht Groß/Klein (FB7FH Bit 4).
+    // Kleinbuchstaben = Tastenkappe ohne Umschalter; EGOS tauscht Gross/Klein (FB7FH Bit 4).
     e.tippe("init");
     EXPECT_EQ(e.m->textZeile(24), ">INIT") << bildText(*e.m);
     e.tippe("\n", 4'000'000);   // INIT braucht ~2,5 Mio. Takte; Tasten davor gingen verloren
@@ -77,7 +77,7 @@ TEST(Mc80Boot, KommandoInitUndCataUeberDieTastatur) {
     e.tippe("cata", 500'000);
     EXPECT_EQ(e.m->textZeile(24), ">CATA") << bildText(*e.m);
     e.tippe("\n", 0);
-    // CATA rollt je Zeile einmal (VIS-Kommando + ~43 ms Wartezeit).  Hinter RKET läuft die
+    // CATA rollt je Zeile einmal (VIS-Kommando + ~43 ms Wartezeit).  Hinter RKET laeuft die
     // Kette durch die 2048 leeren 00H-Objekte bis 4000H (egos.md §1.4) — bis RKET warten.
     for (int i = 0; i < 400 && findeZeile(*e.m, "RKET") < 0; ++i) e.fahre(100'000);
     e.fahre(500'000);
@@ -89,7 +89,7 @@ TEST(Mc80Boot, KommandoInitUndCataUeberDieTastatur) {
     EXPECT_GE(findeZeile(*e.m, "%01.1000"), 0) << t;   // KLOG bei 1000H im Segment 1
     EXPECT_NE(e.m->vis().rollzaehler(), 0) << "das Bild muss gerollt haben";
     EXPECT_GE(e.m->bellCount(), piep_vorher);
-    // Nach 23 Zeilen wartet CATA auf ENTER (egos.prn 26BFH: SL_TST bis 11H) — die nächste Seite
+    // Nach 23 Zeilen wartet CATA auf ENTER (egos.prn 26BFH: SL_TST bis 11H) — die naechste Seite
     // setzt die leeren Objekte hinter 2800H fort.
     EXPECT_LT(findeZeile(*e.m, "%01.280C"), 0) << t;
     e.tippe("\n", 0);

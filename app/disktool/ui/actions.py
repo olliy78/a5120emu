@@ -17,11 +17,11 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 
 from app.disktool.ui.icons import icon
 
-#: (Name, Beschriftung, Symbol, Kürzel, Statustext, Methode des Fensters, rastend)
+#: (Name, Beschriftung, Symbol, Kuerzel, Statustext, Methode des Fensters, rastend)
 #:
-#: Die Beschriftung ist die des MENÜS.  Die Symbolleiste bekommt über
-#: :data:`KURZ` ein kürzeres Wort — sonst wird die Leiste so breit, dass sie
-#: schon bei 1150 px in den Überlauf (») kippt und die letzten Knöpfe verbirgt.
+#: Die Beschriftung ist die des MENUES.  Die Symbolleiste bekommt ueber
+#: :data:`KURZ` ein kuerzeres Wort — sonst wird die Leiste so breit, dass sie
+#: schon bei 1150 px in den Ueberlauf (») kippt und die letzten Knoepfe verbirgt.
 _SPEC: List[Tuple] = [
     # ── Datei ───────────────────────────────────────────────────────────────
     ("oeffnen", "Abbild &öffnen…", "open", "Ctrl+O",
@@ -68,7 +68,7 @@ _SPEC: List[Tuple] = [
      "Den ganzen Disketteninhalt in einen Ordner holen", "_alles_extrahieren", False),
     ("alles_rein", "Alles ei&nfügen…", "in-all", None,
      "Einen ganzen Ordner auf die Diskette schreiben", "_alles_einfuegen", False),
-    # Die echte Diskette: laden und überschreiben stehen NEBENEINANDER — es sind
+    # Die echte Diskette: laden und ueberschreiben stehen NEBENEINANDER — es sind
     # die beiden Richtungen desselben Wegs, und der Bediener sucht sie zusammen.
     ("physisch", "&Physische Diskette laden…", "disk-physical", "Ctrl+Shift+O",
      "Eine ECHTE Diskette in einem echten Laufwerk am Greaseweazle öffnen — "
@@ -89,8 +89,8 @@ _SPEC: List[Tuple] = [
      "schreiben — für eine frische, fehlerfreie.  Nur bereits gelesene Spuren "
      "werden geschrieben", "_neu_beschreiben", False),
     # Zurechtschneiden des SPEICHERABBILDS (§12.6) — nicht der Diskette.  Beides
-    # löst vom Laufwerk: danach stimmt die Spurnummer nicht mehr mit der
-    # Kopfposition überein, ein Rückschreiben ginge auf die falschen Zylinder.
+    # loest vom Laufwerk: danach stimmt die Spurnummer nicht mehr mit der
+    # Kopfposition ueberein, ein Rueckschreiben ginge auf die falschen Zylinder.
     ("gerade_spuren", "&Ungerade Spuren entfernen", None, None,
      "Jede zweite Spur wegwerfen — aus einer im Doppelschritt beschriebenen, aber "
      "einfachschrittig gelesenen Diskette wird das, was ein 40-Spur-Laufwerk sieht",
@@ -107,19 +107,19 @@ _SPEC: List[Tuple] = [
      "open_disk_editor", False),
     ("angaben", "Disketten&angaben…", None, None,
      "Format, Geometrie, Erkennung und Belegung im Einzelnen", "_angaben_dialog", False),
-    # Prüfen UND reparieren stehen im selben Fenster: wer den Befund liest, will
+    # Pruefen UND reparieren stehen im selben Fenster: wer den Befund liest, will
     # ihn beheben, und die Auswahl der Reparatur ergibt nur vor dem Befund Sinn.
     ("reparieren", "Dateisystem &prüfen und reparieren…", "check", "Ctrl+F",
      "Den Prüfbericht ansehen, eine Vollprüfung fahren und Befunde beheben",
      "_reparieren_dialog", False),
-    # Bewusst OHNE Tastenkürzel: gesucht wird selten, und die Kürzeltabelle des
-    # Handbuchs ist ein Vertrag, den ein selten gebrauchter Eintrag nur verwässert.
+    # Bewusst OHNE Tastenkuerzel: gesucht wird selten, und die Kuerzeltabelle des
+    # Handbuchs ist ein Vertrag, den ein selten gebrauchter Eintrag nur verwaessert.
     ("wiederherstellen", "&Gelöschte Dateien suchen…", None, None,
      "Was ein Löschen übriggelassen hat: gelöschte Dateien und Bruchstücke suchen, "
      "in den Ordner retten oder auf der Diskette wieder eintragen",
      "_wiederherstellen_dialog", False),
 
-    # ── Übertragung ─────────────────────────────────────────────────────────
+    # ── Uebertragung ─────────────────────────────────────────────────────────
     ("ordner", "&Zielordner wählen…", "folder", None,
      "Den Linux-Ordner der rechten Hälfte wählen", "_ordner_dialog", False),
     # Beides arbeitet im ORDNER des Wirtsystems, nicht auf der Diskette — dort
@@ -131,10 +131,10 @@ _SPEC: List[Tuple] = [
      "Den ausgewählten Eintrag der rechten Hälfte umbenennen", "_umbenennen", False),
 
     # Bei UDOS entsteht das `.fileinfo` IMMER — dort ist es der Unterschied
-    # zwischen einer lauffähigen Programmdatei und einer, die es nicht mehr ist.
+    # zwischen einer lauffaehigen Programmdatei und einer, die es nicht mehr ist.
     # Bei CP/M gibt es nichts zu retten, was ohne die Datei verloren ginge
     # (Nutzerbereich 0, keine Attribute ist der Normalfall): dort ist es ein
-    # Angebot für den, der eine Sammlung führt — und darum abschaltbar.
+    # Angebot fuer den, der eine Sammlung fuehrt — und darum abschaltbar.
     ("cpm_fileinfo", "Bei CP/M je Datei ein .&fileinfo anlegen", None, None,
      "Beim Herausholen aus einer CP/M-Diskette neben jede Datei eine Textdatei mit "
      "Nutzerbereich und Attributen legen.  Bei UDOS geschieht das immer — dort "
@@ -147,7 +147,7 @@ _SPEC: List[Tuple] = [
 
     # ── Werkzeuge ───────────────────────────────────────────────────────────
     # Die Nachbarprogramme derselben Installation — die beiden Emulatoren.  Sie
-    # fassen dieselben Disketten an, also gehören sie aus dem laufenden
+    # fassen dieselben Disketten an, also gehoeren sie aus dem laufenden
     # Programm heraus erreichbar.
     ("emulator", "&A5120 Emulator starten", None, None,
      "Den A5120 Emulator öffnen — er bootet von einer Diskette und läuft neben "

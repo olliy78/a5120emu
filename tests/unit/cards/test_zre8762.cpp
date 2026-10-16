@@ -1,7 +1,7 @@
 /**
  * @file test_zre8762.cpp
  * @brief ZRE 045-8762 (K8915): Speicherbild je Wert des Registers A8H nach
- *        doc/design/16_k8915.md §4.2a, /MEMDI und /MEMDI1, Brückenfeld als Konfiguration.
+ *        doc/design/16_k8915.md §4.2a, /MEMDI und /MEMDI1, Brueckenfeld als Konfiguration.
  *
  * Jede Zeile der Tabelle „Speicherbild" in §4.2a ist ein Fall: was an 0000H,
  * 1000H, 4000H, 8000H und C000H liegt (ROM / Systembus / Bank 1 / Bank 2 Viertel n).
@@ -16,8 +16,8 @@ namespace {
 
 using Q = K8915Zre::Quelle;
 
-/// Ein Gerät auf dem Systembus, das über den ganzen Adressraum antwortet und jeden
-/// Zugriff zählt — so ist „geht an den Bus" direkt beobachtbar.
+/// Ein Geraet auf dem Systembus, das ueber den ganzen Adressraum antwortet und jeden
+/// Zugriff zaehlt — so ist „geht an den Bus" direkt beobachtbar.
 struct BusSpeicher : MemDevice {
     uint8_t mem[0x10000]{};
     int     reads = 0, writes = 0;
@@ -30,7 +30,7 @@ struct Fixture : ::testing::Test {
     K8915Zre    zre{bus};
     BusSpeicher sys;
     void SetUp() override {
-        // Zwei Hälften, damit die Größe in 16 Bit passt.
+        // Zwei Haelften, damit die Groesse in 16 Bit passt.
         bus.registerMem(&sys, 0x0000, 0x8000);
         bus.registerMem(&sys, 0x8000, 0x8000);
         zre.attachToBus(bus);
@@ -61,7 +61,7 @@ const char* name(Q q) {
 
 /**
  * @test ZRE8762.SpeicherbildJeRegisterwert
- * @brief Tabelle „Speicherbild" aus §4.2a, Zeile für Zeile.
+ * @brief Tabelle „Speicherbild" aus §4.2a, Zeile fuer Zeile.
  */
 TEST_F(Fixture, SpeicherbildJeRegisterwert)
 {
@@ -107,7 +107,7 @@ TEST_F(Fixture, RomGrenzeLiegtBei1000H)
 {
     out(0x06);
     EXPECT_EQ(zre.memRead(0x0000), K8915_ZRE_BOOT_ROM[0]);          // DI
-    EXPECT_EQ(zre.memRead(0x0FFF), K8915_ZRE_BOOT_ROM[0x0FFF]);     // Prüfsumme
+    EXPECT_EQ(zre.memRead(0x0FFF), K8915_ZRE_BOOT_ROM[0x0FFF]);     // Pruefsumme
     EXPECT_EQ(zre.ortVon(0x0FFF).quelle, Q::Rom);
     EXPECT_EQ(zre.ortVon(0x1000).quelle, Q::Bus);
     EXPECT_EQ(zre.ortVon(0x3FFF).quelle, Q::Bus);
@@ -116,7 +116,7 @@ TEST_F(Fixture, RomGrenzeLiegtBei1000H)
 /**
  * @test ZRE8762.GewaehlterSpeicherErscheintNichtAmBus
  * @brief Adressen, die die Karte bedient, gehen nicht auf den Systembus (D12 → D28);
- *        nicht gewählte schon.  ROM ist schreibgeschützt.
+ *        nicht gewaehlte schon.  ROM ist schreibgeschuetzt.
  */
 TEST_F(Fixture, GewaehlterSpeicherErscheintNichtAmBus)
 {
@@ -127,13 +127,13 @@ TEST_F(Fixture, GewaehlterSpeicherErscheintNichtAmBus)
     EXPECT_EQ(zre.bankPeek(0, 0x1234), 0x5A);
     EXPECT_EQ(sys.reads + sys.writes, 0) << "Bank-1-Zugriff darf den Bus nicht erreichen";
 
-    out(0x06);                                   // 1000H jetzt Bus (K7024 im Gerät)
+    out(0x06);                                   // 1000H jetzt Bus (K7024 im Geraet)
     zre.memWrite(0x1234, 0xA5);
     EXPECT_EQ(sys.writes, 1);
     EXPECT_EQ(sys.mem[0x1234], 0xA5);
     EXPECT_EQ(zre.memRead(0x1234), 0xA5);
     EXPECT_EQ(sys.reads, 1);
-    EXPECT_EQ(zre.bankPeek(0, 0x1234), 0x5A) << "Bank 1 darunter bleibt unberührt";
+    EXPECT_EQ(zre.bankPeek(0, 0x1234), 0x5A) << "Bank 1 darunter bleibt unberuehrt";
 
     zre.memWrite(0x0000, 0x00);                  // ROM: folgenlos
     EXPECT_EQ(zre.memRead(0x0000), K8915_ZRE_BOOT_ROM[0]);
@@ -143,7 +143,7 @@ TEST_F(Fixture, GewaehlterSpeicherErscheintNichtAmBus)
 /**
  * @test ZRE8762.Bank2ViertelSindGetrennt
  * @brief Wie der RAM-Test des ROMs (F119H): je Viertel ein eigenes Kennbyte bei 4000H,
- *        danach jedes wieder lesen.  Bank 1 bei 4000H bleibt unberührt.
+ *        danach jedes wieder lesen.  Bank 1 bei 4000H bleibt unberuehrt.
  */
 TEST_F(Fixture, Bank2ViertelSindGetrennt)
 {
@@ -199,8 +199,8 @@ TEST_F(Fixture, ResetLoeschtRegister)
 /**
  * @test ZRE8762.BrueckenfeldIstKonfiguration
  * @brief Das Feld X8–X27 wirkt als Konfiguration: mit der „geraden" Verdrahtung
- *        (X27 → X26, Seite 3 an Bit3) verlöre der Stub bei FFE0H unter 87H seinen
- *        Code — genau das Argument aus §4.2a, warum diese Stellung nicht bestückt ist.
+ *        (X27 → X26, Seite 3 an Bit3) verloere der Stub bei FFE0H unter 87H seinen
+ *        Code — genau das Argument aus §4.2a, warum diese Stellung nicht bestueckt ist.
  */
 TEST(ZRE8762Config, BrueckenfeldIstKonfiguration)
 {
@@ -219,8 +219,8 @@ TEST(ZRE8762Config, BrueckenfeldIstKonfiguration)
 
 /**
  * @test ZRE8762.CtcAnPort80HUndRegisterNurSchreibbar
- * @brief AP-T1a: die CTC der ZRE liest und schreibt über 80H–83H (Zeitkonstante
- *        zurück als Zählerstand), das A8H-Register (A8H–ABH) liest den offenen Bus.
+ * @brief AP-T1a: die CTC der ZRE liest und schreibt ueber 80H–83H (Zeitkonstante
+ *        zurueck als Zaehlerstand), das A8H-Register (A8H–ABH) liest den offenen Bus.
  */
 TEST_F(Fixture, CtcAnPort80HUndRegisterNurSchreibbar)
 {
@@ -234,7 +234,7 @@ TEST_F(Fixture, CtcAnPort80HUndRegisterNurSchreibbar)
 
 /**
  * @test ZRE8762Config.OffeneKlemmeLiestH
- * @brief Eine Klemme ohne Draht (Nummer außerhalb X9–X27) ist ein offener TTL-Eingang
+ * @brief Eine Klemme ohne Draht (Nummer ausserhalb X9–X27) ist ein offener TTL-Eingang
  *        und liest H — z. B. Seite 2 dann IMMER aus Bank 1, auch nach /RESET (A8H = 0).
  */
 TEST(ZRE8762Config, OffeneKlemmeLiestH)
@@ -246,14 +246,14 @@ TEST(ZRE8762Config, OffeneKlemmeLiestH)
     zre.attachToBus(bus);
     zre.powerOn();
     EXPECT_EQ(zre.ortVon(0x8000).quelle, K8915Zre::Quelle::Bank1);
-    EXPECT_EQ(zre.ortVon(0xC000).quelle, K8915Zre::Quelle::Bus) << "Seite 3 unberührt";
+    EXPECT_EQ(zre.ortVon(0xC000).quelle, K8915Zre::Quelle::Bus) << "Seite 3 unberuehrt";
 }
 
 /**
  * @test ZRE8762.VolleEaAdresseKommtAmBusAn
  * @brief Die CPU legt bei E/A die volle Adresse an den Systembus (A8–A15 = B bzw. A),
  *        wie an der K2521/K2526.  Vorher schnitt die ZRE sie auf 8 Bit ab — die RAF
- *        (Sektor und Bytezeiger über B, doc/design/22_raf512.md §3.2) sah am K8915 nur
+ *        (Sektor und Bytezeiger ueber B, doc/design/22_raf512.md §3.2) sah am K8915 nur
  *        B = 0 und meldete sich bei `RAF512.COM` als „Keine RAF-Karte vorhanden!".
  */
 TEST_F(Fixture, VolleEaAdresseKommtAmBusAn)
@@ -278,7 +278,7 @@ TEST_F(Fixture, VolleEaAdresseKommtAmBusAn)
         0xED, 0x78,         // IN A,(C)
         0x76                // HALT
     };
-    out(0x87);                                   // Bank 1 überall
+    out(0x87);                                   // Bank 1 ueberall
     for (uint16_t a = 0; a < sizeof prog; ++a) zre.bankPoke(0, a, prog[a]);
     zre.cpu().reset();
 

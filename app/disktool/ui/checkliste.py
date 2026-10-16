@@ -28,7 +28,7 @@ class Checkliste(QTreeWidget):
 
     def __init__(self, parent=None, *, was: str = "Befund"):
         super().__init__(parent)
-        #: Wie das Ergebnis eines Schritts heißt — „Befund" (Prüfung) oder „Fund".
+        #: Wie das Ergebnis eines Schritts heisst — „Befund" (Pruefung) oder „Fund".
         self._was = was
         self.setColumnCount(3)
         self.setHeaderLabels(["", "Schritt", "Ergebnis"])
@@ -52,15 +52,15 @@ class Checkliste(QTreeWidget):
             zeile.setText(2, self._ergebnis(s))
             zeile.setToolTip(1, s.id)
             if not s.ausgefuehrt:
-                # Übersprungen: sichtbar, aber gedämpft — er ist kein Versäumnis
+                # Uebersprungen: sichtbar, aber gedaempft — er ist kein Versaeumnis
                 # des Bedieners, sondern eine Eigenschaft des Laufs.
                 grau = QBrush(self.palette().color(QPalette.Disabled,
                                                    QPalette.Text))
                 for spalte in range(3):
                     zeile.setForeground(spalte, grau)
-        # Höhe FEST auf den Inhalt: eine Höchsthöhe allein genügt nicht — die
-        # Mindesthöhe eines QTreeWidget ist grösser, und der Teiler nimmt dann
-        # die grössere.  Das Ergebnis wäre ein leerer Streifen unter der letzten
+        # Hoehe FEST auf den Inhalt: eine Hoechsthoehe allein genuegt nicht — die
+        # Mindesthoehe eines QTreeWidget ist groesser, und der Teiler nimmt dann
+        # die groessere.  Das Ergebnis waere ein leerer Streifen unter der letzten
         # Zeile, der aussieht, als fehlte dort etwas.
         hoehe = self._hoehe()
         self.setMinimumHeight(hoehe)

@@ -8,7 +8,7 @@
  * Bootdiskette `k8915scpx_cpa800_k5601_bios55k-disk900.hfe` (Diskette 900, Fassung „55 K",
  * die einzige der drei mit `PIP.COM`) als
  * TempDisk, die Treiber legt `DiskVolume::insert` darauf.  Bedienung wie in
- * test_k8915_scpx.cpp: Zeichen über die K7672 (`sendeZeichen`), Bild direkt von der K7024.
+ * test_k8915_scpx.cpp: Zeichen ueber die K7672 (`sendeZeichen`), Bild direkt von der K7024.
  */
 #include <gtest/gtest.h>
 
@@ -31,7 +31,7 @@ namespace {
 constexpr int       kSchritt = 100'000;
 constexpr long long kBefehl  = 120'000'000;
 
-// Texte wörtlich aus RAF512.COM / RAFCPM.COM.
+// Texte woertlich aus RAF512.COM / RAFCPM.COM.
 const char* kKapazitaet = "RAF-Gesamtkapazitaet 512K Bytes (32 Spuren zu 128 Sektoren)";
 const char* kUndef      = "RAF ist undefiniert, es folgt Loeschen Directory";
 const char* kGeladen    = "RAF ist noch wie bei letzter Benutzung geladen!";
@@ -72,7 +72,7 @@ std::string letzteZeile(K8915Machine& m) {
     return letzte;
 }
 
-/// Kommando tippen und bis zum nächsten Prompt (Muster test_k8915_scpx.cpp: K7672 leer,
+/// Kommando tippen und bis zum naechsten Prompt (Muster test_k8915_scpx.cpp: K7672 leer,
 /// BIOS-Tastaturpuffer F150H leer, `A>` nach dem Echo).
 bool befehl(K8915Machine& m, const std::string& cmd) {
     for (char c : cmd) m.keyboard().sendeZeichen(static_cast<uint8_t>(c));
@@ -88,7 +88,7 @@ bool befehl(K8915Machine& m, const std::string& cmd) {
 }
 
 /// Bildtext hinter dem letzten `A><cmd>` — die Ausgabe genau dieses Kommandos, auch
-/// wenn ältere Ausgaben noch im Bild stehen (die Reset-Taste löscht es nicht).
+/// wenn aeltere Ausgaben noch im Bild stehen (die Reset-Taste loescht es nicht).
 std::string ausgabe(K8915Machine& m, const std::string& cmd) {
     const std::string t = vramText(m);
     const size_t p = t.rfind("A>" + cmd);
@@ -182,7 +182,7 @@ TEST_F(RafK8915, Raf512LegtPAnUndUeberstehtReset) {
  * @brief §3.3: ist M: am K8915 schon belegt?  Unter SCPX 8915 V5.3 (Disketten-K8915)
  *        **nein** — `RAFCPM` meldet nicht „Laufwerk M: ist schon installiert!", sondern
  *        legt M: an, und M: ist benutzbar.  Belegt ist M: nur am K8915 mit Festplatte
- *        („K8915 (neu)", Kopf von `RAF2X24O.MAC`), für den die P:/O:-Fassungen entstanden.
+ *        („K8915 (neu)", Kopf von `RAF2X24O.MAC`), fuer den die P:/O:-Fassungen entstanden.
  */
 TEST_F(RafK8915, RafcpmFindetMFrei) {
     Aufbau x("k1520_raf_k8915_m.hfe", true);
@@ -200,7 +200,7 @@ TEST_F(RafK8915, RafcpmFindetMFrei) {
 
 /**
  * @test RafK8915.Raf512OhneKarte
- * @brief Ohne gesteckte RAF: „Keine RAF-Karte vorhanden!", zurück am Prompt.
+ * @brief Ohne gesteckte RAF: „Keine RAF-Karte vorhanden!", zurueck am Prompt.
  */
 TEST_F(RafK8915, Raf512OhneKarte) {
     Aufbau x("k1520_raf_k8915_ohne.hfe", false);

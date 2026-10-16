@@ -1,7 +1,7 @@
-// Minimaler Ersatz für MAMEs emu.h — gerade genug, damit MAMEs z8000.cpp/z8000.h
-// (BSD-3, unverändert heruntergeladen) als Test-ORAKEL übersetzt werden kann.
+// Minimaler Ersatz fuer MAMEs emu.h — gerade genug, damit MAMEs z8000.cpp/z8000.h
+// (BSD-3, unveraendert heruntergeladen) als Test-ORAKEL uebersetzt werden kann.
 // Kein MAME-Code steht hier; nur Namen, die jene Dateien erwarten.  Speicher und
-// E/A gehen an einen `mame_oracle_bus` des Prüfstands (tests/oracle/).
+// E/A gehen an einen `mame_oracle_bus` des Pruefstands (tests/oracle/).
 #pragma once
 #include <array>
 #include <cassert>
@@ -38,7 +38,7 @@ inline std::string string_format(const char* fmt, ...) {
 
 namespace util { class disasm_interface { public: virtual ~disasm_interface() = default; }; }
 
-/// Anschluss des Prüfstands: Adressraum (AS_*, 4 = Stapel, 5 = Spezial-E/A), Wortadresse.
+/// Anschluss des Pruefstands: Adressraum (AS_*, 4 = Stapel, 5 = Spezial-E/A), Wortadresse.
 struct mame_oracle_bus {
     std::function<u16(int space, offs_t addr)> readWord;
     std::function<void(int space, offs_t addr, u16 value, u16 mask)> writeWord;
@@ -131,7 +131,7 @@ protected:
     virtual std::unique_ptr<util::disasm_interface> create_disassembler() { return nullptr; }
 
     bool has_configured_map(int) const { return false; }
-    bool has_space(int) const { return true; }   // alle Räume getrennt melden: Status sichtbar
+    bool has_space(int) const { return true; }   // alle Raeume getrennt melden: Status sichtbar
     address_space& space(int n = 0) { spaces_[n].num = n; spaces_[n].bus = oracleBus; return spaces_[n]; }
     template <class T> state_proxy state_add(int, const char*, T&) { return {}; }
     template <class T> void save_item(T&&, const char*) {}

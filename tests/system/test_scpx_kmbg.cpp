@@ -3,12 +3,12 @@
  * @brief SCPX + Robotron-Kassettenbibliothek `KMBG.REL` schreibt und liest einen Block
  *        (doc/design/32_… AP K8, Entwurf 29).
  *
- * Das Prüfprogramm `tools/kassette/kmbgtest/kmbgtest.com` (Quelle `src/kmbgtest.mac`, gebunden
+ * Das Pruefprogramm `tools/kassette/kmbgtest/kmbgtest.com` (Quelle `src/kmbgtest.mac`, gebunden
  * mit `doc/kassette/fex/KMBG.REL`) reserviert Laufwerk 1, schreibt einen 128-Byte-Block, setzt
- * das Band um einen Block zurück, liest ihn wieder, vergleicht und gibt das Laufwerk frei.
+ * das Band um einen Block zurueck, liest ihn wieder, vergleicht und gibt das Laufwerk frei.
  * Es wird mit dem DiskTool auf eine KOPIE der SCPX-1.7-Systemdiskette gespielt (`TempDisk`) und
- * über die Tastatur gestartet.  Die Kassette ist leer und liegt am Anfang des Vorspanns (so, wie
- * man sie einlegt) — KMBG fährt beim ersten Schreiben selbst über die BOT-Marke (treiber.md §4.2).
+ * ueber die Tastatur gestartet.  Die Kassette ist leer und liegt am Anfang des Vorspanns (so, wie
+ * man sie einlegt) — KMBG faehrt beim ersten Schreiben selbst ueber die BOT-Marke (treiber.md §4.2).
  *
  * Langsam (Kaltstart + Bandlauf in Maschinenzeit) → Label `format_integration`.
  */
@@ -73,12 +73,12 @@ TEST(ScpxKmbg, SchreibtUndLiestEinenBlock) {
     A5120Machine m;
     ASSERT_TRUE(m.mountDisk(0, a.path(), "cpa780", /*wp=*/false)) << m.lastError();
     ASSERT_TRUE(m.installK5020()) << m.k5020Fehler();
-    // Die Kassette ist zurückgespult, wie ein K5200 sie nach UMS hinterlässt (es spult, bis die
+    // Die Kassette ist zurueckgespult, wie ein K5200 sie nach UMS hinterlaesst (es spult, bis die
     // Lichtschranke den Vorspann sieht, und bremst dann): in einem eigenen Laufwerk mitten im
-    // Magnetband eingelegt, reserviert, angewählt, UMS, ausgeworfen.  Ab Position 0 (Anfang des
+    // Magnetband eingelegt, reserviert, angewaehlt, UMS, ausgeworfen.  Ab Position 0 (Anfang des
     // 1-m-Vorspanns) scheitert KMBG dagegen mit Status 04: es wartet bei AEB = 0 nur
     // 65 536 × 92 Takte = 2,45 s auf das Magnetband (KMBG 048E–04A4, Adressen relativ zum Modul wie in treiber.md), bei 381 mm/s also auf
-    // höchstens ≈ 0,9 m Vorspann (Fund K8, doc/merkposten/kassette.md).
+    // hoechstens ≈ 0,9 m Vorspann (Fund K8, doc/merkposten/kassette.md).
     auto band = std::make_shared<KassettenMedium>();
     band->setPosition(3'000'000);
     {
@@ -109,7 +109,7 @@ TEST(ScpxKmbg, SchreibtUndLiestEinenBlock) {
     typeString(m, "KMBGTEST");
     typeKey(m, QK_RETURN);
     ASSERT_TRUE(runSmallUntil(m, "KMBGTEST V1", 20'000'000)) << vramText(m);
-    // Reservieren 1,4 s + Vorspann/BOT + Schreiben + Block zurück + Lesen + Freigeben 1,4 s.
+    // Reservieren 1,4 s + Vorspann/BOT + Schreiben + Block zurueck + Lesen + Freigeben 1,4 s.
     ASSERT_TRUE(runSmallUntil(m, "KMBGTEST RES=", 400'000'000, 1'000'000))
         << "PC=" << std::hex << m.cpuPC() << "\n" << vramText(m);
     ASSERT_TRUE(runSmallUntil(m, "KMBGTEST OK", 2'000'000)) << vramText(m);

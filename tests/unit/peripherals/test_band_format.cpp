@@ -24,7 +24,7 @@ std::vector<uint8_t> alleWerte() {
     return v;
 }
 
-/// Hin und zurück: schreiben → erkennen → lesen ergibt dasselbe Band.
+/// Hin und zurueck: schreiben → erkennen → lesen ergibt dasselbe Band.
 void rundweg(const std::vector<uint8_t>& band, Format f) {
     const std::vector<uint8_t> datei = lochstreifen::schreiben(band, f);
     if (!band.empty() || f != Format::Roh) EXPECT_EQ(lochstreifen::erkennen(datei), f);
@@ -37,7 +37,7 @@ void rundweg(const std::vector<uint8_t>& band, Format f) {
 }  // namespace
 
 TEST(Lochstreifenformat, KennungenSindStabil) {
-    // Die Zahlen gehen über die C-ABI (AP-L3) — nicht umnummerieren.
+    // Die Zahlen gehen ueber die C-ABI (AP-L3) — nicht umnummerieren.
     EXPECT_EQ(static_cast<int>(Format::Roh), 0);
     EXPECT_EQ(static_cast<int>(Format::IntelHex), 1);
     EXPECT_EQ(static_cast<int>(Format::AsciiArt), 2);
@@ -55,7 +55,7 @@ TEST(Lochstreifenformat, RohHinUndZurueck) {
 TEST(Lochstreifenformat, IntelHexHinUndZurueck) {
     rundweg(alleWerte(), Format::IntelHex);
     rundweg({}, Format::IntelHex);
-    rundweg({0x00}, Format::IntelHex);            // Nullen am Ende zählen mit
+    rundweg({0x00}, Format::IntelHex);            // Nullen am Ende zaehlen mit
     EXPECT_EQ(text(lochstreifen::schreiben({}, Format::IntelHex)), ":00000001FF\n");
     EXPECT_EQ(text(lochstreifen::schreiben({0x41, 0x42}, Format::IntelHex)),
               ":0200000041427B\n:00000001FF\n");
@@ -70,8 +70,8 @@ TEST(Lochstreifenformat, IntelHexUeber64KiBMitSatzart04) {
 }
 
 TEST(Lochstreifenformat, IntelHexLueckenSatzartenUndCrlf) {
-    // Lücke vor 0010H und zwischen den Sätzen = 00H; 03/05 werden überlesen, 02 setzt
-    // eine Segmentbasis (×16), nach 01 zählt nichts mehr.
+    // Luecke vor 0010H und zwischen den Saetzen = 00H; 03/05 werden ueberlesen, 02 setzt
+    // eine Segmentbasis (×16), nach 01 zaehlt nichts mehr.
     const std::string t =
         ":0400000300001234B3\r\n"
         ":0100100041AE\r\n"
@@ -95,7 +95,7 @@ TEST(Lochstreifenformat, IntelHexFehlerMitZeilennummer) {
     std::string fehler;
     EXPECT_FALSE(lochstreifen::lesen(bytes(":0100000041BE\n:0100010042BD\n"), Format::IntelHex, fehler));
     EXPECT_NE(fehler.find("Zeile 2"), std::string::npos) << fehler;
-    EXPECT_NE(fehler.find("Prüfsumme"), std::string::npos) << fehler;
+    EXPECT_NE(fehler.find("Pruefsumme"), std::string::npos) << fehler;
 
     EXPECT_TRUE(lochstreifen::lesen(bytes(":00000001FF\r\nhallo\r\n"), Format::IntelHex, fehler))
         << "nach Satzart 01 wird nichts mehr gelesen";
@@ -107,7 +107,7 @@ TEST(Lochstreifenformat, IntelHexFehlerMitZeilennummer) {
     EXPECT_NE(fehler.find("Satzart 06"), std::string::npos) << fehler;
 }
 
-/// Goldwert: das Bild, das ein Mensch im Editor sieht.  Ändert sich hier etwas, ist
+/// Goldwert: das Bild, das ein Mensch im Editor sieht.  Aendert sich hier etwas, ist
 /// §4 des Entwurfs mitzuziehen.
 TEST(Lochstreifenformat, AsciiArtGoldwert) {
     const std::string soll =
@@ -130,7 +130,7 @@ TEST(Lochstreifenformat, AsciiArtHinUndZurueck) {
 }
 
 TEST(Lochstreifenformat, AsciiArtTolerantBeimLesen) {
-    // X * # als Loch, Leerzeichen als kein Loch, CRLF, kein Hexwert, Einrückung beliebig.
+    // X * # als Loch, Leerzeichen als kein Loch, CRLF, kein Hexwert, Einrueckung beliebig.
     const std::string t =
         "; Handarbeit\r\n"
         "\r\n"
@@ -146,7 +146,7 @@ TEST(Lochstreifenformat, AsciiArtTolerantBeimLesen) {
 
 TEST(Lochstreifenformat, AsciiArtFehlerMitZeilennummer) {
     std::string fehler;
-    // Lochbild 41, daneben 42: das Lochbild zählt, der Widerspruch ist ein Fehler.
+    // Lochbild 41, daneben 42: das Lochbild zaehlt, der Widerspruch ist ein Fehler.
     EXPECT_FALSE(lochstreifen::lesen(bytes(";\n   | . O . . . o . . O |  41  A\n"
                                            "   | . O . . . o . . O |  42  B\n"),
                                      Format::AsciiArt, fehler));

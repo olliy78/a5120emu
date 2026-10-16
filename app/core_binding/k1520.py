@@ -124,7 +124,7 @@ class _GesperrteBibliothek:
     def freigeben(self):
         self.sperre.release()
 
-    # Kontext für zusammenhängende Aufrufe (``with kern_sperre():``)
+    # Kontext fuer zusammenhaengende Aufrufe (``with kern_sperre():``)
     def __enter__(self):
         self.anfordern()
         return self
@@ -134,7 +134,7 @@ class _GesperrteBibliothek:
 
     def __getattr__(self, name):
         f = _GesperrteFunktion(getattr(self._roh, name), self)
-        self.__dict__[name] = f          # nächstes Mal ohne __getattr__
+        self.__dict__[name] = f          # naechstes Mal ohne __getattr__
         return f
 
 
@@ -324,7 +324,7 @@ _lib.k1520_head_loaded.argtypes = [K1520Handle]
 _lib.k1520_head_loaded.restype = ctypes.c_bool
 
 # ─── Bisher unbenutzte, aber exportierte C-API ──────────────────────────────
-# Vollständig deklariert, damit die ctypes-Signaturen NIE von k1520_api.h
+# Vollstaendig deklariert, damit die ctypes-Signaturen NIE von k1520_api.h
 # abdriften — tests/python/test_c_api.py vergleicht Header und Bindung.
 
 # k1520_stop(K1520Handle) -> void   (laufenden run() abbrechen)
@@ -448,7 +448,7 @@ _lib.k1520_term_flags.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_flags.restype = ctypes.c_int
 _lib.k1520_term_bell_count.argtypes = [K1520Handle, ctypes.c_int]
 _lib.k1520_term_bell_count.restype = ctypes.c_uint32
-# Originalterminal (P20d): Pixelbild, Bildzähler, Matrix-/Scancode-Tasten, LEDs der K7673
+# Originalterminal (P20d): Pixelbild, Bildzaehler, Matrix-/Scancode-Tasten, LEDs der K7673
 _lib.k1520_term_framebuffer.argtypes = [K1520Handle, ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
                                         ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
 _lib.k1520_term_framebuffer.restype = ctypes.c_int
@@ -496,7 +496,7 @@ _lib.k1520_create_with_em.argtypes = [
 ]
 _lib.k1520_create_with_em.restype = K1520Handle
 
-# A5120-Ausführungen (doc/design/30_a5120_fruehe_varianten.md, AP A5)
+# A5120-Ausfuehrungen (doc/design/30_a5120_fruehe_varianten.md, AP A5)
 # k1520_create_a5120_ausfuehrung(ausfuehrung, d0..d3) -> K1520Handle
 _lib.k1520_create_a5120_ausfuehrung.argtypes = [
     ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
@@ -576,7 +576,7 @@ _lib.k1520_serial_send.restype = None
 
 # k1520_serial_set_rx_cb(K1520Handle, port: int, cb, user*) -> void
 # K1520SerialCallback = void (*)(void* ctx, uint8_t byte) — erst der Kontext, dann das
-# Byte (bis AP-T1b stand es hier vertauscht: ein Python-Rückruf bekam ctx als Byte).
+# Byte (bis AP-T1b stand es hier vertauscht: ein Python-Rueckruf bekam ctx als Byte).
 K1520SerialRxCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint8)
 _lib.k1520_serial_set_rx_cb.argtypes = [K1520Handle, ctypes.c_int,
                                         K1520SerialRxCb, ctypes.c_void_p]
@@ -751,28 +751,28 @@ def _utf8(path) -> bytes:
 MACHINE_TYPES = {"a5120": 0, "a5120-alt": 0, "a5120-kmbg": 0, "prg710": 1, "prg710-1": 1, "k8915": 2, "k8915-g2": 2, "pc1715": 3,
                  "pc1715-k7221": 3, "pc1715w": 3, "p8000": 4, "p8000-terminal": 5,
                  "mc80": 6, "mc80-31": 6, "mc80-21": 6, "mc80-22": 6}
-# (Variante, Bildschirm) für k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
+# (Variante, Bildschirm) fuer k1520_create_pc1715: Variante 0 = PC 1715, 1 = PC 1715W (AP-W3);
 # Bildschirm 0 = K7222 80×24, 1 = K7221 64×16 (am 1715W abgelehnt).
-# AP-6: wählbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
+# AP-6: waehlbare ROM-Fassungen → Parameter von k1520_create_pc1715_ex.
 PC1715_ZEICHENSAETZE = {"deutsch": 0, "polnisch": 1, "kyrillisch": 2}
 PC1715_TASTATUREN = {"s600": 0, "tast618": 1}
 PC1715_MODELLE = {"pc1715": (0, 0), "pc1715-k7221": (0, 1), "pc1715w": (1, 0)}
-# Ausführung des A5120 für k1520_create_a5120_ausfuehrung (Entwurf 30, AP A5).  "acht"
+# Ausfuehrung des A5120 fuer k1520_create_a5120_ausfuehrung (Entwurf 30, AP A5).  "acht"
 # (8″, K5602) kennt der Kern, lehnt sie aber noch ab.
 A5120_AUSFUEHRUNGEN = {"neu": 0, "alt": 1, "kmbg": 2, "acht": 3}
-# Maschinennamen der frühen Ausführungen = machine="a5120" mit ausfuehrung=… .
+# Maschinennamen der fruehen Ausfuehrungen = machine="a5120" mit ausfuehrung=… .
 A5120_AUSFUEHRUNG_MASCHINE = {"a5120-alt": "alt", "a5120-kmbg": "kmbg"}
-# Bildschirm der frühen Ausführungen: K7023 64×16 (BAB1 ab FC00H).
+# Bildschirm der fruehen Ausfuehrungen: K7023 64×16 (BAB1 ab FC00H).
 K7023_COLS, K7023_ROWS = 64, 16
-# Variante für k1520_create_prg710 (nur die PRG-Namen).
+# Variante fuer k1520_create_prg710 (nur die PRG-Namen).
 PRG_VARIANTEN = {"prg710": 0, "prg710-1": 1}
-# Variante für k1520_create_mc80 (Entwurf 31, AP M6/M12): "mc80" = MC80.30, "mc80-31" = MC80.31,
-# "mc80-21"/"mc80-22" = MC80.21/.22 (eigene Klasse Mc80_2xMachine, kennt keinen Schlüssel
-# "spe=").  Die .33 (Variante 2) lehnt der Kern ab — die Oberfläche führt sie gesperrt.
+# Variante fuer k1520_create_mc80 (Entwurf 31, AP M6/M12): "mc80" = MC80.30, "mc80-31" = MC80.31,
+# "mc80-21"/"mc80-22" = MC80.21/.22 (eigene Klasse Mc80_2xMachine, kennt keinen Schluessel
+# "spe=").  Die .33 (Variante 2) lehnt der Kern ab — die Oberflaeche fuehrt sie gesperrt.
 MC80_VARIANTEN = {"mc80": 0, "mc80-31": 1, "mc80-21": 3, "mc80-22": 4}
 #: Die Varianten des MC80.2x (Bild 528 × 256, 32 × 8 Zeichen, Tastatur als Matrix, MBI).
 MC80_2X = ("mc80-21", "mc80-22")
-# Bauform für k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
+# Bauform fuer k1520_create_k8915 (doc/design/24_k8915_varianten.md R5); "k8915" bleibt V3.
 K8915_GENERATIONEN = {"k8915": 0, "k8915-g2": 1}
 
 # Bildschirmtastatur: `QK_TASTE_BASE | Position` = physische Taste (K7609 am PRG 710,
@@ -784,14 +784,14 @@ K7609_ET1, K7609_ET2 = 0x37, 0x38
 # Textbildschirm des K7024: 80x24 Zeichen ab 0xF800 (Bit7 = Invers-Attribut).
 VRAM_BASE, VRAM_COLS, VRAM_ROWS = 0xF800, 80, 24
 
-# ── Tastendiagnose: was schickt die Oberfläche wirklich an die Maschine? ─────
+# ── Tastendiagnose: was schickt die Oberflaeche wirklich an die Maschine? ─────
 # Mit `K1520_TASTEN_LOG=1` schreibt JEDER Tastendruck eine Zeile nach stderr —
-# gleichgültig, ob er von der PC-Tastatur, der Bildschirmtastatur oder einem
+# gleichgueltig, ob er von der PC-Tastatur, der Bildschirmtastatur oder einem
 # Skript kommt (alle drei Wege laufen durch `key_press`).  Sie beantwortet die
 # drei Fragen, die man bei „die Taste tut etwas anderes als erwartet" hat:
 # WELCHER Code geht hinein, welches BYTE macht der K7637 daraus (das ist, was
 # das Betriebssystem sieht), und kommt der Druck EINMAL oder wiederholt an
-# (fehlendes Loslassen ⇒ die Tastenwiederholung des K7637 läuft weiter).
+# (fehlendes Loslassen ⇒ die Tastenwiederholung des K7637 laeuft weiter).
 _TASTEN_LOG = os.environ.get("K1520_TASTEN_LOG", "") not in ("", "0")
 
 
@@ -810,7 +810,7 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
                          ctrl: bool = False):
     try:
         byte = K1520Emulator.translate_key(keycode, shift, ctrl)
-    except Exception:                      # ältere Bibliothek ohne die Funktion
+    except Exception:                      # aeltere Bibliothek ohne die Funktion
         byte = None
     ziel = "" if byte is None else f"  → K7637 sendet 0x{byte:02X}"
     print(f"[taste] {was:11s} {_taste_klartext(keycode)}"
@@ -818,9 +818,9 @@ def _protokolliere_taste(was: str, keycode: int, shift: bool = False,
           file=sys.stderr, flush=True)
 
 
-# ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────────
-# Zahlenwerte = k1520_api.h.  Die Strukturen müssen bytegleich zum Header sein;
-# test_c_api.py/test_serial_api.py prüfen sizeof gegen die Bibliothek.
+# ─── Serielle Schnittstellen nach aussen (Entwurf 19 §8) ──────────────────────
+# Zahlenwerte = k1520_api.h.  Die Strukturen muessen bytegleich zum Header sein;
+# test_c_api.py/test_serial_api.py pruefen sizeof gegen die Bibliothek.
 SER_TELNET, SER_RFC2217, SER_DATEI = 0, 1, 2          # K1520SerBetriebsart
 SER_SERVER, SER_CLIENT = 0, 1                          # K1520SerRolle
 SER_AUS, SER_VERBINDET, SER_LAUSCHT, SER_VERBUNDEN, SER_FEHLER = 0, 1, 2, 3, 4  # K1520SerZustand
@@ -1070,8 +1070,8 @@ class K1520Emulator:
                 fest gesteckter K5020); ``"acht"`` lehnt der Kern noch ab.  Gleichwertig:
                 ``machine="a5120-alt"`` bzw. ``"a5120-kmbg"``.
         """
-        # Zuerst setzen: schlägt die Erzeugung fehl, läuft __del__ trotzdem und
-        # darf nicht über ein fehlendes Attribut stolpern.
+        # Zuerst setzen: schlaegt die Erzeugung fehl, laeuft __del__ trotzdem und
+        # darf nicht ueber ein fehlendes Attribut stolpern.
         self._handle = None
         self._drive_types = list(drive_types) if drive_types else None
         if machine not in MACHINE_TYPES:
@@ -1182,7 +1182,7 @@ class K1520Emulator:
                        em: Optional[str] = None):
         """Create a core handle, configured with per-slot drive profiles if given."""
         if not drive_types and not em:
-            return _lib.k1520_create(machine_type)  # Vorgabebestückung der Maschine
+            return _lib.k1520_create(machine_type)  # Vorgabebestueckung der Maschine
 
         drive_types = list(drive_types or [])
         names = drive_types[:4] + [None] * (4 - len(drive_types[:4]))
@@ -1244,9 +1244,9 @@ class K1520Emulator:
         return v if v >= 0 else None
 
     # ─── EPROMmer des PRG (virtueller Sockel, AP-P7b) ─────────────────────────
-    #: Typnamen des Sockels (0 = leer); Schlüssel wie k1520_eprom_type.
+    #: Typnamen des Sockels (0 = leer); Schluessel wie k1520_eprom_type.
     EPROM_TYPEN = {0: "", 1: "U555", 2: "U2716"}
-    #: Größe je Typ in Byte.
+    #: Groesse je Typ in Byte.
     EPROM_GROESSE = {1: 1024, 2: 2048}
 
     def has_eprommer(self) -> bool:
@@ -2130,7 +2130,7 @@ class K1520Emulator:
         return "\n".join("".join(chars[r * VRAM_COLS:(r + 1) * VRAM_COLS])
                           for r in range(VRAM_ROWS))
 
-    # ─── Serielle Schnittstellen nach außen (Entwurf 19 §8) ──────────────────
+    # ─── Serielle Schnittstellen nach aussen (Entwurf 19 §8) ──────────────────
 
     def serial_count(self) -> int:
         """Zahl der einstellbaren Schnittstellen (A5120, K8915 und PRG 710: 3; PRG 710-1: 2)."""

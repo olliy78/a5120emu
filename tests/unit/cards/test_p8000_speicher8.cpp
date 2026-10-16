@@ -60,7 +60,7 @@ TEST_F(P8000Speicher8_, EpromHaelfteFolgtA12DesFensters) {
 }
 
 TEST_F(P8000Speicher8_, AdpZelleAusB_InhaltAusA) {
-    // OUT (C),r: B = Seite·10H wählt die Zelle, Inhalt = D0–D2 des Datenbytes
+    // OUT (C),r: B = Seite·10H waehlt die Zelle, Inhalt = D0–D2 des Datenbytes
     outC(0x5, 0x00, 0x06);
     EXPECT_EQ(sp.adp(5), 0x06);
     EXPECT_EQ(sp.adp(4), 0x00);
@@ -72,7 +72,7 @@ TEST_F(P8000Speicher8_, AdpZelleAusB_InhaltAusA) {
     // 04H–07H schreibt den ADP nicht
     outC(0x1, 0x04, 0x07);
     EXPECT_EQ(sp.adp(1), 0x00);
-    // Lesen von 00H–03H ändert nichts und liefert FFH
+    // Lesen von 00H–03H aendert nichts und liefert FFH
     EXPECT_EQ(bus.ioRead(uint16_t(0x5000)), 0xFF);
     EXPECT_EQ(sp.adp(5), 0x07);
 }
@@ -80,11 +80,11 @@ TEST_F(P8000Speicher8_, AdpZelleAusB_InhaltAusA) {
 TEST_F(P8000Speicher8_, RffDurchInOderOutUndNurEinmalWirksam) {
     alleSeiten(0x04);
     EXPECT_FALSE(sp.rffGesetzt());
-    bus.ioWrite(0x0004, 0x00);   // OUT genügt ebenso wie IN
+    bus.ioWrite(0x0004, 0x00);   // OUT genuegt ebenso wie IN
     EXPECT_TRUE(sp.rffGesetzt());
     bus.memWrite(0x1000, 0x42);
     EXPECT_EQ(bus.memRead(0x1000), 0x42);   // DRAM
-    // zweiter Zugriff: wirkungslos, kein Zurückfallen
+    // zweiter Zugriff: wirkungslos, kein Zurueckfallen
     bus.ioRead(0x0004);
     bus.ioWrite(0x0005, 0x00);
     EXPECT_TRUE(sp.rffGesetzt());
@@ -92,12 +92,12 @@ TEST_F(P8000Speicher8_, RffDurchInOderOutUndNurEinmalWirksam) {
     // ADP bleibt auch danach beschreibbar (WEADP), RFF bleibt
     adp(1, 0x01);
     EXPECT_EQ(bus.memRead(0x1000), 0x80);
-    // /RES: RFF zurück, ADP und RAM bleiben
+    // /RES: RFF zurueck, ADP und RAM bleiben
     sp.reset();
     EXPECT_FALSE(sp.rffGesetzt());
     EXPECT_EQ(sp.adp(1), 0x01);
     EXPECT_EQ(sp.dram(0x1000), 0x42);
-    EXPECT_EQ(bus.memRead(0x1000), 0x80);   // wieder EPROM überall
+    EXPECT_EQ(bus.memRead(0x1000), 0x80);   // wieder EPROM ueberall
 }
 
 TEST_F(P8000Speicher8_, SramZweimalJe4KSeite) {
@@ -144,18 +144,18 @@ TEST_F(P8000Speicher8_, LeereSeiteLiestFF) {
     bus.memWrite(0xC000, 0x12);             // geht nirgendwohin
     EXPECT_EQ(bus.memRead(0xC000), 0xFF);
     EXPECT_EQ(sp.dram(0xC000), 0x00);
-    // Die E/A-Lücken lesen ebenfalls FF, nichts belegt
+    // Die E/A-Luecken lesen ebenfalls FF, nichts belegt
     EXPECT_EQ(bus.ioRead(0x0000), 0xFF);
 }
 
 TEST_F(P8000Speicher8_, EpromZugriffKostetZweiWartetakte) {
     EXPECT_EQ(sp.nimmWartetakte(), 0u);
-    bus.memRead(0x0000);                    // nach Reset: EPROM (auch M1/DMA zählen gleich)
+    bus.memRead(0x0000);                    // nach Reset: EPROM (auch M1/DMA zaehlen gleich)
     EXPECT_EQ(sp.nimmWartetakte(), 2u);
     bus.memRead(0x0001);
     bus.memRead(0x0002);
     EXPECT_EQ(sp.nimmWartetakte(), 4u);
-    EXPECT_EQ(sp.nimmWartetakte(), 0u);     // Abruf setzt zurück
+    EXPECT_EQ(sp.nimmWartetakte(), 0u);     // Abruf setzt zurueck
     adp(0x0, 0x04);
     adp(0x1, 0x02);
     rffRaus();
@@ -163,6 +163,6 @@ TEST_F(P8000Speicher8_, EpromZugriffKostetZweiWartetakte) {
     bus.memRead(0x1000);                    // SRAM
     EXPECT_EQ(sp.nimmWartetakte(), 0u);
     EXPECT_EQ(sp.epromZugriffe(), 3u);
-    sp.peek(0x2000);                        // peek zählt nicht
+    sp.peek(0x2000);                        // peek zaehlt nicht
     EXPECT_EQ(sp.nimmWartetakte(), 0u);
 }

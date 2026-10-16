@@ -1,6 +1,6 @@
 /**
  * @file k1520tape.cpp
- * @brief `k1520tape` — Kassettenbänder (`.k52`) anlegen, ansehen, mit Dateien füllen, Bootband bauen.
+ * @brief `k1520tape` — Kassettenbaender (`.k52`) anlegen, ansehen, mit Dateien fuellen, Bootband bauen.
  *
  * ```
  * k1520tape create   <band.k52>
@@ -9,10 +9,10 @@
  * k1520tape get      <band.k52> <datei> [--side A|B] [--file N]
  * k1520tape bootband <binaer> <band.k52> [A|B]
  * ```
- * Nur Rohblöcke: eine Datei ist eine Folge von Blöcken zu je N (Vorgabe 128, höchstens 256)
- * Datenbytes, der letzte mit 0xE5 aufgefüllt, danach eine Bandmarke.  FEX-Formate sind nicht
+ * Nur Rohbloecke: eine Datei ist eine Folge von Bloecken zu je N (Vorgabe 128, hoechstens 256)
+ * Datenbytes, der letzte mit 0xE5 aufgefuellt, danach eine Bandmarke.  FEX-Formate sind nicht
  * belegt und werden nicht erzeugt (doc/kassette/treiber.md §6.2).  Ein „File" beim Auslesen ist
- * die Blockfolge bis zur nächsten Bandmarke.
+ * die Blockfolge bis zur naechsten Bandmarke.
  *
  * Exit-Codes: 0 ok · 1 Fehler (Aufruf, Datei, Band voll).
  * @see doc/kassette/treiber.md §6.1, tools/k1520tape.md
@@ -34,7 +34,7 @@ using namespace kassette;
 
 namespace {
 
-constexpr uint32_t kBlockLuecke_um = 10'000;  // Lücke zwischen Blöcken [?] (nicht belegt)
+constexpr uint32_t kBlockLuecke_um = 10'000;  // Luecke zwischen Bloecken [?] (nicht belegt)
 constexpr uint8_t kFuell = 0xE5;
 
 int fehler(const std::string& s) {
@@ -74,7 +74,7 @@ bool seiteParsen(const std::string& s, Seite& out) {
     return false;
 }
 
-/// Hängt hinter den letzten Block an; die erste Lücke ist die Initiallücke.
+/// Haengt hinter den letzten Block an; die erste Luecke ist die Initialluecke.
 bool anhaengen(KassettenMedium& m, Seite s, const std::vector<uint8_t>& bytes) {
     uint32_t l = m.anzahlBloecke(s) == 0 ? m.geometrie().initialluecke_um : kBlockLuecke_um;
     return m.haengeAn(s, l, bytes);
@@ -133,7 +133,7 @@ int cmdPut(const std::vector<std::string>& a) {
     std::vector<uint8_t> d;
     if (!leseDatei(pos[1], d)) return fehler("kann '" + pos[1] + "' nicht lesen");
     if (d.empty()) return fehler("Datei ist leer");
-    KassettenMedium neu = *m;  // Transaktion: bei vollem Band bleibt die Datei unverändert
+    KassettenMedium neu = *m;  // Transaktion: bei vollem Band bleibt die Datei unveraendert
     for (size_t o = 0; o < d.size(); o += bl) {
         std::vector<uint8_t> teil(d.begin() + static_cast<long>(o),
                                   d.begin() + static_cast<long>(std::min(d.size(), o + bl)));
@@ -157,7 +157,7 @@ int cmdGet(const std::vector<std::string>& a) {
     if (pos.size() != 2) return fehler("get <band.k52> <datei> [--side A|B] [--file N]");
     auto m = ladeBand(pos[0]);
     if (!m) return 1;
-    // Datei N = Blockfolge zwischen den Bandmarken (Marken selbst gehören nicht dazu).
+    // Datei N = Blockfolge zwischen den Bandmarken (Marken selbst gehoeren nicht dazu).
     size_t n = m->anzahlBloecke(s), i = 0, dateien = 0;
     std::vector<uint8_t> out;
     bool gefunden = false;
@@ -190,7 +190,7 @@ int cmdBootband(const std::vector<std::string>& a) {
     if (!leseDatei(a[0], d)) return fehler("kann '" + a[0] + "' nicht lesen");
     if (d.empty() || d.size() > 512) return fehler("Bootprogramm muss 1 bis 512 Bytes lang sein");
     d.resize(512, 0x00);
-    // Lade-ROM prüft (0400H..0402H) = 'SYL' (treiber.md §6.1); Einsprung bei Versatz 34H.
+    // Lade-ROM prueft (0400H..0402H) = 'SYL' (treiber.md §6.1); Einsprung bei Versatz 34H.
     if (d[0] != 'S' || d[1] != 'Y' || d[2] != 'L')
         return fehler("Bootprogramm muss mit 'SYL' beginnen (Pruefung des Lade-ROMs); Einsprung bei Versatz 34H");
     KassettenMedium m;

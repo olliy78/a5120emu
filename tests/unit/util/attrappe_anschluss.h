@@ -3,7 +3,7 @@
  * @brief Test-Attrappe eines `SerialAnschluss` (Entwurf 19 §5.1) — statt einer Karte mit
  *        SIO: ein Sendepuffer des „Gastes", ein Empfangs-FIFO mit SIO-Tiefe 3, Leitungen.
  *
- * Zählt Überläufe: der Wandler darf NIE in ein volles FIFO liefern (Leitsatz 2).
+ * Zaehlt Ueberlaeufe: der Wandler darf NIE in ein volles FIFO liefern (Leitsatz 2).
  */
 #pragma once
 

@@ -1,15 +1,15 @@
 /**
  * @file test_wega_platte.cpp
- * @brief GoogleTests für @ref WegaPlatte — P8000-Plattenabbild mit WEGA-Partitionen.
+ * @brief GoogleTests fuer @ref WegaPlatte — P8000-Plattenabbild mit WEGA-Partitionen.
  *
  * | Sollwert | Quelle |
  * |---|---|
- * | PAR in Z0/K0/S1: "DEFEKT" @0, "PARMTR" @256, Zyl. @277 (LSB zuerst), Köpfe @279, Sektoren @280 | `doc/p8000/wdc_firmware.md` §7 |
+ * | PAR in Z0/K0/S1: "DEFEKT" @0, "PARMTR" @256, Zyl. @277 (LSB zuerst), Koepfe @279, Sektoren @280 | `doc/p8000/wdc_firmware.md` §7 |
  * | WDC-Block 0 = Zylinder 1; jede BTT-Spur ≤ Zielspur schiebt um eine Spur | ebd. §6 |
  * | md0 /usr 0/13000, md2 / 16000/7000, md3 /tmp 23000/4000, md4 /z 27000/60732 | `uts/conf/wpar.c`, `uts/h/mdsize.h` |
  *
  * Die installierte Platte aus dem P15-Lauf (`~/.cache/k1520emu/p8000_wega/
- * p15_7_sync.platte.img`) wird nur GELESEN und nur geprüft, wenn sie da ist.
+ * p15_7_sync.platte.img`) wird nur GELESEN und nur geprueft, wenn sie da ist.
  */
 
 #include <gtest/gtest.h>

@@ -1,23 +1,23 @@
 """Physische Diskette — **mit echter Hardware**.
 
-Diese Tests laufen nur, wenn ein Greaseweazle am Rechner hängt und eine Diskette im
-Laufwerk liegt.  Sie sind deshalb **standardmäßig übersprungen** und gehören nicht in
+Diese Tests laufen nur, wenn ein Greaseweazle am Rechner haengt und eine Diskette im
+Laufwerk liegt.  Sie sind deshalb **standardmaessig uebersprungen** und gehoeren nicht in
 die Regression::
 
     K1520_GW_HARDWARE=1 venv/bin/python3 -m pytest tests/python/test_gw_hardware.py -v
 
-Steuerung über Umgebungsvariablen:
+Steuerung ueber Umgebungsvariablen:
 
 ===========================  ==================================================
-``K1520_GW_HARDWARE=1``      überhaupt laufen lassen
+``K1520_GW_HARDWARE=1``      ueberhaupt laufen lassen
 ``K1520_GW_DRIVE=a``         Laufwerk am Kabel (``a``/``b``, Shugart ``0``…``3``)
 ``K1520_GW_CYLS=80``         Spuren des Laufwerks (K5601 80, K5600.10 40)
-``K1520_GW_HEADS=2``         Köpfe
+``K1520_GW_HEADS=2``         Koepfe
 ``K1520_GW_RATE=250``        Zellrate in kbit/s (5,25″ DD 250, 8″ MFM 500)
 ``K1520_GW_WRITE=1``         **beschreibt die eingelegte Diskette** — siehe unten
 ===========================  ==================================================
 
-**Geschrieben wird nur mit ``K1520_GW_WRITE=1``.**  Ein Schreibtest verändert eine
+**Geschrieben wird nur mit ``K1520_GW_WRITE=1``.**  Ein Schreibtest veraendert eine
 echte, meist einzige Diskette; welche das ist, entscheidet kein Test von sich aus
 (doc/design/14_physische_diskette.md §14).
 """
@@ -98,10 +98,10 @@ def test_auftragsweg_liest_ueber_den_arbeitsfaden(geraet, sync):
 
 
 def test_disktool_oeffnet_die_eingelegte_diskette(geraet, sync):
-    """Die eingelegte Diskette im k1520DiskTool öffnen und ihr Verzeichnis lesen.
+    """Die eingelegte Diskette im k1520DiskTool oeffnen und ihr Verzeichnis lesen.
 
     Braucht eine **lesbare** Diskette (CP/M, SCPX oder UDOS) im Laufwerk — das
-    Öffnen liest sie dabei ganz (Formaterkennung, §11.2), dauert also gut eine
+    Oeffnen liest sie dabei ganz (Formaterkennung, §11.2), dauert also gut eine
     Minute.
     """
     from app.core_binding.k1520disk import DiskTool
@@ -122,7 +122,7 @@ def test_dieselbe_spur_zweimal_gelesen_gibt_dasselbe(geraet):
     """Ein Lesevorgang muss wiederholbar sein — sonst stimmt die Abtastung nicht."""
     a, na = geraet.read_track(1, 0)
     b, nb = geraet.read_track(1, 0)
-    # Bitgleich sind zwei Aufnahmen nie (Jitter, Startwinkel); die Länge muss aber
+    # Bitgleich sind zwei Aufnahmen nie (Jitter, Startwinkel); die Laenge muss aber
     # auf ein Promille stimmen, sonst passt die Zellrate nicht zur Diskette.
     assert abs(na - nb) < na / 1000, f"{na} vs. {nb} Zellen"
 
@@ -140,11 +140,11 @@ def test_geschriebene_spur_liest_sich_zurueck(geraet):
 @pytest.mark.skipif(os.environ.get("K1520_GW_WRITE") != "1",
                     reason="beschreibt eine echte Diskette (K1520_GW_WRITE=1)")
 def test_disktool_schreibt_eine_datei_auf_die_eingelegte_diskette(geraet, tmp_path):
-    """Der ganze Schreibweg: Datei → Dateisystem → Spur → Rückführung → Diskette.
+    """Der ganze Schreibweg: Datei → Dateisystem → Spur → Rueckfuehrung → Diskette.
 
     Und der Beweis, dass sie wirklich auf der Scheibe landet: die Diskette wird
-    danach **erneut geöffnet** — dieses zweite Öffnen liest alles frisch vom
-    Laufwerk, ein Zwischenspeicher kann das Ergebnis also nicht beschönigen.
+    danach **erneut geoeffnet** — dieses zweite Oeffnen liest alles frisch vom
+    Laufwerk, ein Zwischenspeicher kann das Ergebnis also nicht beschoenigen.
 
     Dauert rund vier Minuten (zweimal die ganze Diskette lesen).
     """

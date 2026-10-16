@@ -22,7 +22,7 @@ void put32(std::vector<uint8_t>& o, uint32_t v) {
     put16(o, v >> 16);
 }
 
-/// Lesezeiger mit Grenzprüfung.
+/// Lesezeiger mit Grenzpruefung.
 struct Leser {
     const std::vector<uint8_t>& d;
     size_t p = 0;
@@ -89,7 +89,7 @@ std::optional<KassettenMedium> dekodieren(const std::vector<uint8_t>& inhalt, st
         return std::nullopt;
     }
     if (seiten != 2) {
-        fehler = ".k52 mit " + std::to_string(seiten) + " Seiten wird nicht unterstützt (erwartet 2)";
+        fehler = ".k52 mit " + std::to_string(seiten) + " Seiten wird nicht unterstuetzt (erwartet 2)";
         return std::nullopt;
     }
     const uint32_t aufnahme = r.u16();
@@ -104,10 +104,10 @@ std::optional<KassettenMedium> dekodieren(const std::vector<uint8_t>& inhalt, st
         fehler = ".k52 ist abgeschnitten (Kopf)";
         return std::nullopt;
     }
-    // Maße müssen zusammenpassen: BOT- und EOT-Marke im Magnetband, in der richtigen Reihenfolge.
+    // Masse muessen zusammenpassen: BOT- und EOT-Marke im Magnetband, in der richtigen Reihenfolge.
     const uint64_t bedarf = 2ull * g.vorspann_um + 2ull * g.marken_abstand_um + 2ull * g.marke_um + g.initialluecke_um;
     if (dichte == 0 || g.laenge_um > 0x7FFFFFFFu || bedarf >= g.laenge_um) {
-        fehler = ".k52 hat unbrauchbare Bandmaße (Dichte/Länge)";
+        fehler = ".k52 hat unbrauchbare Bandmasse (Dichte/Laenge)";
         return std::nullopt;
     }
 
@@ -122,7 +122,7 @@ std::optional<KassettenMedium> dekodieren(const std::vector<uint8_t>& inhalt, st
         }
         // Mindestens 7 Byte je Block: eine absurde Blockzahl scheitert hier, bevor etwas reserviert wird.
         if (uint64_t(n) * 7 > inhalt.size() - r.p) {
-            fehler = ".k52 ist abgeschnitten (Blockzahl größer als der Rest der Datei)";
+            fehler = ".k52 ist abgeschnitten (Blockzahl groesser als der Rest der Datei)";
             return std::nullopt;
         }
         for (uint32_t i = 0; i < n; ++i) {
@@ -135,7 +135,7 @@ std::optional<KassettenMedium> dekodieren(const std::vector<uint8_t>& inhalt, st
             std::vector<uint8_t> bytes(inhalt.begin() + r.p, inhalt.begin() + r.p + len);
             r.p += len;
             if (!m.haengeAn(s, luecke, bytes)) {
-                fehler = ".k52: Block " + std::to_string(i) + " hat keine zulässige Länge oder liegt nicht mehr auf dem Band";
+                fehler = ".k52: Block " + std::to_string(i) + " hat keine zulaessige Laenge oder liegt nicht mehr auf dem Band";
                 return std::nullopt;
             }
         }

@@ -1,5 +1,5 @@
 # --diff vergleicht zwei Abdeckungs-CSVs (ohne Emulation) — die Eingaben stehen
-# hier als Blöcke, statt im Testkommando zusammengebastelt zu werden.
+# hier als Bloecke, statt im Testkommando zusammengebastelt zu werden.
 tool:   boot_trace
 run:    --diff %a.csv% %b.csv%
 

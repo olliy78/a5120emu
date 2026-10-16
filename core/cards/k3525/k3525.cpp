@@ -22,7 +22,7 @@ uint8_t K3525::memRead(uint16_t addr) {
 
 void K3525::memWrite(uint16_t addr, uint8_t data) {
     if (!inRange(addr) || memdi_) return;
-    // Auf Bus-/MEMDI gebrückt: ein Vorrangspeicher (z. B. EM) hat den Zyklus übernommen.
+    // Auf Bus-/MEMDI gebrueckt: ein Vorrangspeicher (z. B. EM) hat den Zyklus uebernommen.
     if (!cfg_.memdi_source && bus_ && bus_->memdiActive()) return;
     mem_[addr - cfg_.base_addr] = data;
 }

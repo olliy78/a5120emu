@@ -8,11 +8,11 @@ SPDX-License-Identifier: MIT
 This file is part of the a5120emu project. See the LICENSE file in the
 project root for the full text of the MIT License.
 
-Dieses Skript disassembliert das Binärabbild des System-Bootloaders
+Dieses Skript disassembliert das Binaerabbild des System-Bootloaders
 (disks/bootsektoren/bootsec_cpa780.bin) des Robotron A5120 / CPA780.
 
-Das Skript ist vollständig in der Python-Standardbibliothek implementiert
-und benötigt kein externes Z80-Disassembler-Paket.
+Das Skript ist vollstaendig in der Python-Standardbibliothek implementiert
+und benoetigt kein externes Z80-Disassembler-Paket.
 
 Ausgabe (mit Umleitung nach /tmp/full_analysis.txt):
     Adressspalte 1 : Datei-Offset (hexadezimal)
@@ -22,7 +22,7 @@ Ausgabe (mit Umleitung nach /tmp/full_analysis.txt):
 
 Disk-Geometrie (SYL Mixed Geometry):
     Systemspuren (Track 0, 2): 26 Sektoren × 128 Byte = 3328 Byte/Spur
-    Track 1 ist Lückenspur (nicht geladen, Inhalt: 0x53)
+    Track 1 ist Lueckenspur (nicht geladen, Inhalt: 0x53)
 
 Drei Lade-Abschnitte / ORG-Bereiche:
     T0S0  (Offset 0x0000, 128 B): SYL-Kennung + Sektor-0-Stub → RAM 0x0000
@@ -30,31 +30,31 @@ Drei Lade-Abschnitte / ORG-Bereiche:
     T2S0-25 (Offset 0x1A00, 3328 B): Stage-2-Kern           → RAM 0x0D00
 
 Erzeugte Dokumentationsdateien:
-    tools/bootsec/src/*.mac — vollständig kommentierter Z80-Assemblertext (M80-Format)
+    tools/bootsec/src/*.mac — vollstaendig kommentierter Z80-Assemblertext (M80-Format)
     doc/bootsec.md          — funktionale Beschreibung (Deutsch/Englisch)
 
-Z80-Befehlsabdeckung (Untermenge des vollständigen Z80-Befehlssatzes):
+Z80-Befehlsabdeckung (Untermenge des vollstaendigen Z80-Befehlssatzes):
     Implementiert:
-      - Alle ungepräfixten 1-/2-/3-Byte-Opcodes (0x00..0xFF), soweit unten
+      - Alle ungepraefixten 1-/2-/3-Byte-Opcodes (0x00..0xFF), soweit unten
         explizit behandelt
-      - ED-Präfix: Block-Transfers (LDIR/LDDR/…), ADC HL/SBC HL, NEG, RETI,
+      - ED-Praefix: Block-Transfers (LDIR/LDDR/…), ADC HL/SBC HL, NEG, RETI,
         RETN, IM 0/1/2, LD I,A / LD A,I / LD R,A / LD A,R, RRD/RLD,
         16-Bit-Speichertransfers LD (nn),rr / LD rr,(nn)
-      - DD-Präfix: IX-Registerbefehle (LD r,(IX+d), LD (IX+d),r, INC/DEC,
+      - DD-Praefix: IX-Registerbefehle (LD r,(IX+d), LD (IX+d),r, INC/DEC,
         ADD IX,rr, PUSH/POP/JP (IX))
-      - FD-Präfix: IY-Registerbefehle (analog zu IX)
+      - FD-Praefix: IY-Registerbefehle (analog zu IX)
 
-    Nicht implementiert (fallen auf DB-Fallback zurück):
-      - CB-Präfix (komplett):  RLC/RRC/RL/RR/SLA/SRA/SRL/BIT/SET/RES auf
+    Nicht implementiert (fallen auf DB-Fallback zurueck):
+      - CB-Praefix (komplett):  RLC/RRC/RL/RR/SLA/SRA/SRL/BIT/SET/RES auf
         allen 8 Registern — insgesamt 256 Sub-Opcodes (2-Byte-Befehle)
-      - DDCB-/FDCB-Präfix (komplett):  indizierte Bit-Operationen auf
+      - DDCB-/FDCB-Praefix (komplett):  indizierte Bit-Operationen auf
         (IX+d)/(IY+d) — 4-Byte-Befehle
       - Einzelne 0xCx..0xFx-Opcodes: RST 08H/10H/18H/20H/28H/30H
         (0xCF/D7/DF/E7/EF/F7), RET C/PE/M (0xD8/E8/F8),
         CALL PO/PE/P/M (0xE4/EC/F4/FC), SBC A,n (0xDE)
 
-    Für die Analyse von bootsec.bin ist die Untermenge ausreichend,
-    da die fehlenden Befehle im Bootloader-Binärabbild nicht vorkommen.
+    Fuer die Analyse von bootsec.bin ist die Untermenge ausreichend,
+    da die fehlenden Befehle im Bootloader-Binaerabbild nicht vorkommen.
 """
 
 from pathlib import Path
@@ -62,9 +62,9 @@ import struct
 
 # ─── Konfiguration ────────────────────────────────────────────────────────────
 
-# Pfad zum Bootloader-Binärabbild (3 Systemspuren × 26 Sektoren × 128 Byte = 9984 B).
-# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf überall liegen.
-# Überschreibbar per Argument:  python3 bootsec_analyze.py <datei.bin>
+# Pfad zum Bootloader-Binaerabbild (3 Systemspuren × 26 Sektoren × 128 Byte = 9984 B).
+# Projektwurzel aus dem Skriptort ableiten — die Arbeitskopie darf ueberall liegen.
+# Ueberschreibbar per Argument:  python3 bootsec_analyze.py <datei.bin>
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,24 +75,24 @@ BOOTSEC = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_BOOTSEC
 
 if not BOOTSEC.exists():
     sys.exit(f"Bootloader-Abbild nicht gefunden: {BOOTSEC}\n"
-             f"Pfad als Argument übergeben: python3 {Path(__file__).name} <datei.bin>")
+             f"Pfad als Argument uebergeben: python3 {Path(__file__).name} <datei.bin>")
 
-# Binärdaten einlesen
+# Binaerdaten einlesen
 data = BOOTSEC.read_bytes()
 
 if len(data) < EXPECTED_SIZE:
-    sys.exit(f"{BOOTSEC} ist {len(data)} Byte groß, erwartet werden {EXPECTED_SIZE} "
+    sys.exit(f"{BOOTSEC} ist {len(data)} Byte gross, erwartet werden {EXPECTED_SIZE} "
              f"(3 Systemspuren x 26 Sektoren x 128 Byte).\n"
-             f"Die committete Datei ist nur der ERSTE Sektor (512 B) — für die volle "
+             f"Die committete Datei ist nur der ERSTE Sektor (512 B) — fuer die volle "
              f"Analyse die Systemspuren einer Bootdiskette auslesen und als Argument "
-             f"übergeben.")
+             f"uebergeben.")
 
 
 # ─── Hilfsfunktion: Vorzeichenbehaftetes Byte ─────────────────────────────────
 
 def s8(b):
     """Wandelt ein 8-Bit-Byte in eine vorzeichenbehaftete Zahl (-128..+127) um.
-    Wird für relative Sprungweiten (JR d, DJNZ d) und IX/IY-Displacements verwendet.
+    Wird fuer relative Sprungweiten (JR d, DJNZ d) und IX/IY-Displacements verwendet.
     """
     return b - 256 if b >= 128 else b
 
@@ -103,59 +103,59 @@ def z80dis(d, pc):
     """Minimaler Z80-Disassembler.
 
     Dekodiert einen einzelnen Z80-Befehl aus dem Byte-Puffer `d`
-    beginnend bei PC-Adresse `pc` (für korrekte Sprungzielrechnung).
+    beginnend bei PC-Adresse `pc` (fuer korrekte Sprungzielrechnung).
 
-    Unterstützte Befehlsgruppen (Untermenge des Z80-Befehlssatzes):
-      - Ungepräfixte Opcodes: NOP, HALT, RET, EI, DI, EXX, EX DE/HL/AF,
+    Unterstuetzte Befehlsgruppen (Untermenge des Z80-Befehlssatzes):
+      - Ungepraefixte Opcodes: NOP, HALT, RET, EI, DI, EXX, EX DE/HL/AF,
         LD r,r', LD r,n, LD rr,nn, IN/OUT, JR/JP/CALL/RET (teilweise, s.u.),
         PUSH/POP, ALU-Operationen (ADD/ADC/SUB/SBC/AND/XOR/OR/CP), DJNZ,
         RST 00H und RST 38H
-      - ED-Präfix:  LDIR/LDDR, LDI/LDD, CPIR/CPDR, CPI/CPD, INI/IND/OUTI/OUTD
+      - ED-Praefix:  LDIR/LDDR, LDI/LDD, CPIR/CPDR, CPI/CPD, INI/IND/OUTI/OUTD
                     und deren Repeat-Varianten, ADC HL/SBC HL, NEG, RETI, RETN,
                     IM 0/1/2, LD I,A / LD A,I / LD R,A / LD A,R, RRD/RLD,
                     16-Bit-Speichertransfers LD (nn),rr / LD rr,(nn)
-      - DD-Präfix:  IX-Registerbefehle (LD r,(IX+d), LD (IX+d),r,
+      - DD-Praefix:  IX-Registerbefehle (LD r,(IX+d), LD (IX+d),r,
                     INC/DEC (IX+d), ADD IX,rr, INC/DEC IX, PUSH/POP/JP (IX),
                     LD IX,nn / LD (nn),IX / LD IX,(nn))
-      - FD-Präfix:  IY-Registerbefehle (analog zu IX)
+      - FD-Praefix:  IY-Registerbefehle (analog zu IX)
 
-    Nicht implementiert (unbekannte Opcodes → DB-Direktive, Länge 1 Byte):
-      - CB-Präfix (komplett fehlend):  RLC/RRC/RL/RR/SLA/SRA/SRL r,
+    Nicht implementiert (unbekannte Opcodes → DB-Direktive, Laenge 1 Byte):
+      - CB-Praefix (komplett fehlend):  RLC/RRC/RL/RR/SLA/SRA/SRL r,
                                         BIT b,r / SET b,r / RES b,r
-      - DDCB-/FDCB-Präfix (komplett fehlend):  BIT/SET/RES/RLC/… auf (IX+d)/(IY+d)
+      - DDCB-/FDCB-Praefix (komplett fehlend):  BIT/SET/RES/RLC/… auf (IX+d)/(IY+d)
       - Folgende Einzel-Opcodes fehlen:  RST 08H..30H (0xCF/D7/DF/E7/EF/F7),
                                           RET C (0xD8), RET PE (0xE8), RET M (0xF8),
                                           CALL PO (0xE4), CALL PE (0xEC),
                                           CALL P (0xF4), CALL M (0xFC),
                                           SBC A,n (0xDE)
 
-    Rückgabe:
-        (mnemonic: str, länge: int)
+    Rueckgabe:
+        (mnemonic: str, laenge: int)
         `mnemonic` — lesbarer Z80-Assemblertext
-        `länge`    — Länge des Befehls in Bytes (1..4)
+        `laenge`    — Laenge des Befehls in Bytes (1..4)
     """
     if not d:
         return 'DB 00H', 1  # Leerer Puffer → Datenbyte
 
     b = d[0]  # aktueller Opcode
 
-    # Hilfsfunktionen für Operandenzugriff (offset relativ zu d[0])
+    # Hilfsfunktionen fuer Operandenzugriff (offset relativ zu d[0])
     def b1(): return d[1] if len(d) > 1 else 0   # zweites Byte
     def b2(): return d[2] if len(d) > 2 else 0   # drittes Byte
     def w():  return b1() | (b2() << 8)           # 16-Bit-Wort (little-endian)
     def r():  return pc + 2 + s8(b1())            # relatives Sprungziel (JR, DJNZ)
-    def r3(): return pc + 3 + s8(b2())            # relatives Sprungziel nach DD/FD-Präfix
+    def r3(): return pc + 3 + s8(b2())            # relatives Sprungziel nach DD/FD-Praefix
 
     # Registertabellen
-    rp  = ['BC', 'DE', 'HL', 'SP']    # 16-Bit-Registerpaare (für LD rr,nn usw.)
-    rp2 = ['BC', 'DE', 'HL', 'AF']    # 16-Bit-Paare für PUSH/POP (AF statt SP)
+    rp  = ['BC', 'DE', 'HL', 'SP']    # 16-Bit-Registerpaare (fuer LD rr,nn usw.)
+    rp2 = ['BC', 'DE', 'HL', 'AF']    # 16-Bit-Paare fuer PUSH/POP (AF statt SP)
     r8  = ['B', 'C', 'D', 'E', 'H', 'L', '(HL)', 'A']  # 8-Bit-Register (r-Encoding)
     cc  = ['NZ', 'Z', 'NC', 'C', 'PO', 'PE', 'P', 'M']  # Bedingungscodes (JP cc usw.)
     alu = ['ADD A,', 'ADC A,', 'SUB ', 'SBC A,',
            'AND ', 'XOR ', 'OR ', 'CP ']           # ALU-Operationen (0x80..0xBF)
     rot = ['RLCA', 'RRCA', 'RLA', 'RRA', 'DAA', 'CPL', 'SCF', 'CCF']  # Bit 0..7 Rotation/Flags
 
-    # ED-Präfix: Erweiterte Befehle (Block-Transfers, I/O, 16-Bit-Arithmetik …)
+    # ED-Praefix: Erweiterte Befehle (Block-Transfers, I/O, 16-Bit-Arithmetik …)
     blk = {
         # Block-Transfer- und -Vergleichs-/Ein-Ausgabe-Befehle
         0xA0: 'LDI',  0xA1: 'CPI',  0xA2: 'INI',  0xA3: 'OUTI',
@@ -283,7 +283,7 @@ def z80dis(d, pc):
         op, src = (b >> 3) & 7, b & 7
         return f'{alu[op]}{r8[src]}', 1
 
-    # ── Befehle 0xC0..0xFF: Sprünge, Calls, Returns, Sonderbefehle ───────────
+    # ── Befehle 0xC0..0xFF: Spruenge, Calls, Returns, Sonderbefehle ───────────
     if b == 0xC0: return 'RET NZ', 1
     if b == 0xC1: return 'POP BC', 1
     if b == 0xC2: return f'JP NZ,{w():04X}H', 3
@@ -318,8 +318,8 @@ def z80dis(d, pc):
     if b == 0xE9: return 'JP (HL)', 1                 # indirekter Sprung
     if b == 0xEB: return 'EX DE,HL', 1
     if b == 0xED:
-        # ── ED-Präfix: Erweiterte Befehle ─────────────────────────────────────
-        # Alle Einträge aus dem `blk`-Dictionary (oben definiert).
+        # ── ED-Praefix: Erweiterte Befehle ─────────────────────────────────────
+        # Alle Eintraege aus dem `blk`-Dictionary (oben definiert).
         # Befehle mit 16-Bit-Adressoperand (LD (nn),rr / LD rr,(nn))
         # sind 4 Bytes lang; alle anderen ED-Befehle sind 2 Bytes.
         b2v = b1()
@@ -341,7 +341,7 @@ def z80dis(d, pc):
     if b == 0xFE: return f'CP {b1():02X}H', 2
     if b == 0xFF: return 'RST 38H', 1
 
-    # ── DD/FD-Präfix: IX- bzw. IY-Register-Befehle ───────────────────────────
+    # ── DD/FD-Praefix: IX- bzw. IY-Register-Befehle ───────────────────────────
     # DD → IX-Register, FD → IY-Register.
     # Displacement (d) ist vorzeichenbehaftet (+/−).
     # Typische Kodierungen:
@@ -355,7 +355,7 @@ def z80dis(d, pc):
         pfx = 'IX' if b == 0xDD else 'IY'
         if len(d) < 2:
             return f'DB {b:02X}H', 1
-        b2v = d[1]       # zweiter Byte nach Präfix
+        b2v = d[1]       # zweiter Byte nach Praefix
         d2  = b2()       # drittes Byte = Displacement oder Low-Byte von nn
         d3  = d[3] if len(d) > 3 else 0  # viertes Byte = High-Byte von nn
 
@@ -416,7 +416,7 @@ def disasm_range(raw, file_base, ram_org, max_bytes=None, stop_set=None):
         stop_set   — Optional: Menge von RAM-Adressen, bei denen die Schleife
                      abbricht (z.B. bekannte Datenbereiche)
 
-    Rückgabe:
+    Rueckgabe:
         Liste von Tupeln (file_offset, ram_addr, raw_bytes, mnemonic)
     """
     i = 0
@@ -437,9 +437,9 @@ def disasm_range(raw, file_base, ram_org, max_bytes=None, stop_set=None):
 # ─── Hauptprogramm ────────────────────────────────────────────────────────────
 
 # ─── 1. Sektor 0 von Track 0: SYL-Kennung und Stub-Analyse ──────────────────
-# Sektor 0 (erste 128 Byte) enthält die SYL-Identifikation ('SYL' = 53 59 4C)
+# Sektor 0 (erste 128 Byte) enthaelt die SYL-Identifikation ('SYL' = 53 59 4C)
 # und bei Offset 0x002E den Sprungbefehl, der vom ROM nach dem Einlesen
-# ausgeführt wird: C3 40 01 = JP 0140H → Einstieg in Stage-1 (DISPATCH).
+# ausgefuehrt wird: C3 40 01 = JP 0140H → Einstieg in Stage-1 (DISPATCH).
 
 sec0 = data[0:128]  # Sektor 0 von Track 0
 
@@ -477,9 +477,9 @@ for (fo, ra, rb, mn) in rows:
     print(f"{fo:04X}  {ra:04X}  {rbs:<12}  {mn}")
 
 # ─── 3. Stage-2-Disassembly mit automatischer ORG-Erkennung ──────────────────
-# Stage-2-Code liegt in Track 2 (Track 1 ist Lückenspur mit 0x53-Füllzeichen).
+# Stage-2-Code liegt in Track 2 (Track 1 ist Lueckenspur mit 0x53-Fuellzeichen).
 # Datei-Bereich: 0x1A00 – 0x26FF (3328 Byte).
-# Die RAM-ORG lässt sich aus dem ersten JP-Befehl im Track schlussfolgern.
+# Die RAM-ORG laesst sich aus dem ersten JP-Befehl im Track schlussfolgern.
 
 print("\n" + "=" * 70)
 print("STAGE-2 Disassembly (Track2 komplett, RAM-ORG bestimmen)")
@@ -512,7 +512,7 @@ for i in range(0, min(256, len(t2code))):
         tgt = t2code[i + 1] | (t2code[i + 2] << 8)
         if 0x0100 <= tgt <= 0x4000:
             t2_org = tgt - i
-            print(f"T2 ORG geschätzt: {t2_org:04X}H  (JP {tgt:04X}H bei +{i:02X})")
+            print(f"T2 ORG geschaetzt: {t2_org:04X}H  (JP {tgt:04X}H bei +{i:02X})")
             break
 
 print(f"\n--- Stage-2 mit ORG={t2_org:04X}H ---")

@@ -1,6 +1,6 @@
 /**
  * @file kassetten_medium.cpp
- * @brief Kassettenband: Blockfolge je Seite in Bandlängen, siehe kassetten_medium.h.
+ * @brief Kassettenband: Blockfolge je Seite in Bandlaengen, siehe kassetten_medium.h.
  */
 
 #include "core/peripherals/kassette/kassetten_medium.h"
@@ -11,7 +11,7 @@
 
 namespace kassette {
 
-// ─── Hilfsfunktionen für Blöcke ──────────────────────────────────────────────
+// ─── Hilfsfunktionen fuer Bloecke ──────────────────────────────────────────────
 
 uint16_t crc16_arc(const uint8_t* daten, size_t n, uint16_t start) {
     uint16_t crc = start;
@@ -47,7 +47,7 @@ bool crcStimmt(const std::vector<uint8_t>& bytes) {
     return bytes[bytes.size() - 3] == (crc & 0xFF) && bytes[bytes.size() - 2] == (crc >> 8);
 }
 
-// ─── Maße ────────────────────────────────────────────────────────────────────
+// ─── Masse ────────────────────────────────────────────────────────────────────
 
 KassettenMedium::KassettenMedium(Geometrie g, uint32_t dichte_milli, uint32_t aufnahme_mm_s)
     : geo_(g), dichte_milli_(dichte_milli ? dichte_milli : kDichteVorgabe), aufnahme_mm_s_(aufnahme_mm_s) {}
@@ -119,7 +119,7 @@ size_t KassettenMedium::ersterBlockAb(Seite s, int64_t pos) const {
 }
 
 int KassettenMedium::letzterBlockBis(Seite s, int64_t pos) const {
-    // Enden wachsen mit dem Index: binäre Suche über blockEnde().
+    // Enden wachsen mit dem Index: binaere Suche ueber blockEnde().
     int lo = 0, hi = static_cast<int>(anzahlBloecke(s)) - 1, erg = -1;
     while (lo <= hi) {
         const int mid = (lo + hi) / 2;
@@ -155,7 +155,7 @@ bool KassettenMedium::schreibeBlock(Seite s, int64_t start, const std::vector<ui
     neu.reserve(si.bloecke.size() + 1);
     for (size_t i = 0; i < si.bloecke.size(); ++i) {
         const int64_t bs = blockStart(s, i), be = blockEnde(s, i);
-        if (bs < ende && be > start) continue;  // überschrieben: zerstört
+        if (bs < ende && be > start) continue;  // ueberschrieben: zerstoert
         neu.push_back({bs, si.bloecke[i].bytes});
     }
     neu.push_back({start, bytes});

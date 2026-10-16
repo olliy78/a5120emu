@@ -14,8 +14,8 @@ namespace {
 constexpr uint8_t BEL = 0x07, DC1 = 0x11, DC3 = 0x13, ESC = 0x1B;
 constexpr uint8_t LED_13 = 0x01, LED_FREI = 0x08;   // Firmware-Register 21H
 
-// Befehlstabelle der Firmware bei 06F8H — die Zeichen NACH dem ESC.  Die Einträge
-// hinter den Präfixen `ESC [?` und `ESC [2` sind hier ausgeschrieben.
+// Befehlstabelle der Firmware bei 06F8H — die Zeichen NACH dem ESC.  Die Eintraege
+// hinter den Praefixen `ESC [?` und `ESC [2` sind hier ausgeschrieben.
 constexpr std::array<const char*, 25> kBefehle = {
     "c", "[2;0y", "[2;1y", "[?2;1y", "[?2;2y", "[?2;4y", "[c", "Z", "[5n",
     "[?2l", "<", "[4h", "[3l",
@@ -46,7 +46,7 @@ constexpr uint8_t kScan[128] = {
     0x1F, 0x21, 0x23, 0x25, 0x27, 0x29, 0x36, 0x0E, 0x53, 0xFF, 0x4B, 0x4D, 0xFF, 0x38, 0x3D, 0x3E,   // 60H
     0x2D, 0x2F, 0x31, 0x33, 0x35, 0xFF, 0xFF, 0x39, 0xFF, 0xC8, 0x4F, 0x51, 0x1D, 0x00, 0xC5, 0xD2,   // 70H
 };
-// D3 0100H: Tastenart (Register 0DH).  Bit 6 wählt bei Bit 7 im Scancode den Vorsatz
+// D3 0100H: Tastenart (Register 0DH).  Bit 6 waehlt bei Bit 7 im Scancode den Vorsatz
 // (1 = Umschalt 2AH, 0 = Strg 1DH); 0x90…0x93 & 3FH = 10H…13H sind Buchstaben/Zeichen.
 constexpr uint8_t kArt[128] = {
     0x31, 0x33, 0x35, 0x37, 0x39, 0x7E, 0x09, 0x2D, 0xFF, 0xA7, 0xE9, 0x91, 0x00, 0x00, 0x07, 0x00,   // 00H
@@ -93,7 +93,7 @@ void K7672::connect(Z80SIO& sio, int kanal)
 void K7672::powerOn()
 {
     // Firmware 000CH: CLR 60H, dann derselbe Weg wie ESC c — Selbsttest, aber
-    // ohne DC1 (60H Bit4 ist gelöscht).
+    // ohne DC1 (60H Bit4 ist geloescht).
     unterwegs_.clear();
     leitung_frei_ = 0;
     esc_aktiv_ = false;
@@ -118,8 +118,8 @@ bool K7672::service(uint64_t now)
     bool geaendert = false;
     if (sio_) {
         Z80SIO::Channel& ch = kanal_ ? sio_->channelB() : sio_->channelA();
-        // Der Rechner sendet: jedes Byte sofort auswerten.  Die Übertragungszeit
-        // zur Tastatur ist hier vernachlässigt — das ROM sendet mit Pausen.
+        // Der Rechner sendet: jedes Byte sofort auswerten.  Die Uebertragungszeit
+        // zur Tastatur ist hier vernachlaessigt — das ROM sendet mit Pausen.
         while (ch.txAvailable()) {
             empfangeVomRechner(ch.txGet());
             geaendert = true;
@@ -130,7 +130,7 @@ bool K7672::service(uint64_t now)
             geaendert = true;
         }
     }
-    // Die Wiederholung läuft hier im ohnehin je Befehl gerufenen Pfad — nicht über
+    // Die Wiederholung laeuft hier im ohnehin je Befehl gerufenen Pfad — nicht ueber
     // einen Aufruf, den niemand macht (K7637: AP-S9).  Zeitbasis: wdh_uhr_.
     wiederholungTakt();
     return geaendert;
@@ -176,7 +176,7 @@ void K7672::befehl(const std::string& f)
     if (f == "[2;0y")      { neustart(false); return; }
     if (f == "[2;1y")      { selbsttest();    return; }
     if (f == "[?22h") {
-        // 043DH: 29H Bit0 — Scancodes statt Zeichen; zurück nur über ESC c.
+        // 043DH: 29H Bit0 — Scancodes statt Zeichen; zurueck nur ueber ESC c.
         modus_ = Modus::Dcp;
         wiederholungStopp();
         umschalt_unten_ = strg_unten_ = false;
@@ -195,18 +195,18 @@ void K7672::befehl(const std::string& f)
     if (f == "[?18h") { leds_ |= LED_GRAPH;  return; }
     if (f == "[?18l") { leds_ &= static_cast<uint8_t>(~LED_GRAPH); return; }
     // Kennung, Status, VT52/ANSI, LED-Modi: die Antworttexte fehlen in den Dumps
-    // (README), für den Selbsttest nicht nötig — erkannt und verworfen.
+    // (README), fuer den Selbsttest nicht noetig — erkannt und verworfen.
     LOG_DEBUG("K7672", "Befehl ESC %s ohne Nachbildung", f.c_str());
 }
 
 void K7672::neustart(bool mit_test)
 {
     // 000EH: AND 60H,#18H — DC3 (Bit2) und alle Modi fallen, Bit3/Bit4 bleiben.
-    // Der Speicherlöscher 7FH…04H setzt auch den DCP-Modus (29H) zurück.
+    // Der Speicherloescher 7FH…04H setzt auch den DCP-Modus (29H) zurueck.
     gesperrt_ = false;
     modus_    = Modus::Scp;
     wiederholungStopp();
-    leds_     = 0;                    // 21H liegt im Speicherlöscher 04H…7FH
+    leds_     = 0;                    // 21H liegt im Speicherloescher 04H…7FH
     if (mit_test) {
         selbsttest();
     } else {
@@ -278,7 +278,7 @@ constexpr uint32_t QK_SHIFT = 0x01000020, QK_CONTROL = 0x01000021, QK_ALT = 0x01
                    QK_DOWN = 0x01000015, QK_PGUP = 0x01000016, QK_PGDN = 0x01000017;
 
 // Grundbelegung des BIOS SCPX 8915 V5.3 (Tabelle DC1CH, Scancode → Zeichen), hier
-// umgekehrt: Zeichen → Scancode.  DIN-Belegung (Z/Y getauscht, [\] für Ä/Ö, ~ auf ß).
+// umgekehrt: Zeichen → Scancode.  DIN-Belegung (Z/Y getauscht, [\] fuer Ae/Oe, ~ auf ss).
 struct Paar { uint8_t zeichen; uint8_t code; };
 constexpr Paar kGrund[] = {
     {0x1B,0x01},{'1',0x02},{'2',0x03},{'3',0x04},{'4',0x05},{'5',0x06},{'6',0x07},
@@ -290,8 +290,8 @@ constexpr Paar kGrund[] = {
     {'x',0x2D},{'c',0x2E},{'v',0x2F},{'b',0x30},{'n',0x31},{'m',0x32},{',',0x33},
     {'.',0x34},{'-',0x35},{' ',0x39},{'*',0x37},{'/',0x7A},
 };
-// Umschaltung (Tabelle DCA5H, nach Zeichen geschlüsselt, und die Ziffernregel DAB3H:
-// '1'…'9' außer 3/7 ⇒ AND EFH): Zielzeichen ← Grundzeichen.
+// Umschaltung (Tabelle DCA5H, nach Zeichen geschluesselt, und die Ziffernregel DAB3H:
+// '1'…'9' ausser 3/7 ⇒ AND EFH): Zielzeichen ← Grundzeichen.
 constexpr Paar kUmschalt[] = {
     {'>','<'},{'=','0'},{'?','~'},{'`','\''},{'*','+'},{'^','#'},{'_','-'},{':','.'},
     {';',','},{'}',']'},{'{','['},{'|','\\'},{'@','3'},{'/','7'},
@@ -356,7 +356,7 @@ void K7672::dcpLoslassen(uint32_t schluessel)
     for (auto it = gedrueckt_.begin(); it != gedrueckt_.end(); ++it) {
         if (it->schluessel != schluessel) continue;
         sendeCode(static_cast<uint8_t>(it->code | 0x80));
-        // Was das Drücken an Umschalt/Strg verstellt hat, zurücknehmen.
+        // Was das Druecken an Umschalt/Strg verstellt hat, zuruecknehmen.
         if (it->umschalt == +1) { sendeCode(SC_UMSCHALT | 0x80); umschalt_unten_ = false; }
         if (it->umschalt == -1) { sendeCode(SC_UMSCHALT);        umschalt_unten_ = true;  }
         if (it->strg == +1)     { sendeCode(SC_STRG | 0x80);     strg_unten_ = false;     }
@@ -367,7 +367,7 @@ void K7672::dcpLoslassen(uint32_t schluessel)
 
 void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
 {
-    // Umschalttasten selbst: eigene Codes, Zustand mitführen.
+    // Umschalttasten selbst: eigene Codes, Zustand mitfuehren.
     auto modifikator = [&](uint8_t code, bool* zustand) {
         sendeCode(gedrueckt ? code : static_cast<uint8_t>(code | 0x80));
         if (zustand) *zustand = gedrueckt;
@@ -377,7 +377,7 @@ void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
         case QK_CONTROL:  modifikator(SC_STRG, &strg_unten_);         return;
         case QK_ALT:      modifikator(SC_ALT, nullptr);               return;
         case QK_CAPSLOCK:
-            // Firmware 0303H: die Feststelltaste schaltet LED 21H Bit 7 (CAPS) beim Drücken.
+            // Firmware 0303H: die Feststelltaste schaltet LED 21H Bit 7 (CAPS) beim Druecken.
             if (gedrueckt) leds_ ^= LED_CAPS;
             modifikator(SC_FESTSTELL, nullptr);
             return;
@@ -399,9 +399,9 @@ void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
             case QK_UP:    t = {0x48, true, false}; break;
             case QK_PGUP:  t = {0x49, true, false}; break;
             case QK_PGDN:  t = {0x51, true, false}; break;
-            // AP-E4m: die PC-Rücktaste trifft die Taste, mit der man unter SCPX die
+            // AP-E4m: die PC-Ruecktaste trifft die Taste, mit der man unter SCPX die
             // Eingabezeile SICHTBAR korrigiert — Kursor ← (Matrix 28H, 2AH 4BH), das
-            // BIOS macht daraus 08H (DCC2H), das BDOS löscht mit BS-Leer-BS (CA03H).
+            // BIOS macht daraus 08H (DCC2H), das BDOS loescht mit BS-Leer-BS (CA03H).
             // Die Taste |←| (Matrix 67H, 0EH) ergibt dagegen 7FH (DC1CH): „Rubout“ —
             // das BDOS nimmt das Zeichen aus dem Puffer, wiederholt es aber am Schirm
             // (CA14H), die Eingabe steht dann als „dirxx“ da.  Entf = Taste DEL
@@ -411,7 +411,7 @@ void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
             default: {
                 const uint8_t z = zeichenFuer(k, false, false);
                 if (!z || !tasteFuer(z, t)) {
-                    LOG_DEBUG("K7672", "DCP: keine Taste für Host-Code %08X", k);
+                    LOG_DEBUG("K7672", "DCP: keine Taste fuer Host-Code %08X", k);
                     return;
                 }
                 break;
@@ -420,7 +420,7 @@ void K7672::tasteDcp(uint32_t k, bool gedrueckt, bool /*shift*/, bool ctrl)
     }
     if (ctrl) t.strg = true;
     dcpDruecken(k, t);
-    // Satz-1-Typematik: der Drücken-Code wiederholt, ohne Loslassen dazwischen.
+    // Satz-1-Typematik: der Druecken-Code wiederholt, ohne Loslassen dazwischen.
     if (wiederholbarScancode(t.code)) wiederholungStart(k, std::string(1, static_cast<char>(t.code)));
     else                              wiederholungStopp();
 }
@@ -432,13 +432,13 @@ void K7672::sendeZeichen(uint8_t ch)
         sende(ch);
         return;
     }
-    // DCP-Modus: das Zeichen als Tastendruck tippen (Drücken, Loslassen).
+    // DCP-Modus: das Zeichen als Tastendruck tippen (Druecken, Loslassen).
     DcpTaste t;
     if (!tasteFuer(ch, t)) {
         LOG_WARN("K7672", "DCP: Zeichen %02X hat keine Taste", ch);
         return;
     }
-    constexpr uint32_t kTipp = 0xFFFFFFFFu;   // eigener Schlüssel, kein Host-Code
+    constexpr uint32_t kTipp = 0xFFFFFFFFu;   // eigener Schluessel, kein Host-Code
     dcpDruecken(kTipp, t);
     dcpLoslassen(kTipp);
 }
@@ -455,7 +455,7 @@ bool K7672::wiederholbarScancode(uint8_t code)
 {
     // Nur Tasten OHNE Vorsatz: der Host-Weg schickt nie einen (Umschalt/Strg kommen
     // als eigene Tasten).  Zwei Codes gibt es doppelt — Tab (0FH, Matrix 06H, ohne
-    // Dauerfunktion) und Rücktab (57H mit Vorsatz) —, der ohne Vorsatz zählt.
+    // Dauerfunktion) und Ruecktab (57H mit Vorsatz) —, der ohne Vorsatz zaehlt.
     code &= 0x7F;
     for (int m = 0; m < 128; ++m)
         if (kScan[m] == code) return (kArt[m] & 0x80) != 0;
@@ -482,7 +482,7 @@ bool K7672::wiederholbarZeichen(uint8_t z)
 
 void K7672::wiederholungStart(uint32_t schluessel, std::string bytes)
 {
-    // 01E8H: neue Taste ⇒ Zähler neu auf A0H.  Nur die zuletzt gedrückte wiederholt.
+    // 01E8H: neue Taste ⇒ Zaehler neu auf A0H.  Nur die zuletzt gedrueckte wiederholt.
     wdh_.aktiv      = true;
     wdh_.schluessel = schluessel;
     wdh_.bytes      = std::move(bytes);
@@ -498,12 +498,12 @@ void K7672::wiederholungEnde(uint32_t schluessel)
 void K7672::wiederholungTakt()
 {
     if (!wdh_.aktiv) return;
-    // Auch unter DC3 abholen, damit die gesperrte Zeit verfällt statt nachzuzählen.
+    // Auch unter DC3 abholen, damit die gesperrte Zeit verfaellt statt nachzuzaehlen.
     const uint64_t dt = wdh_uhr_.schritt(jetzt_);
-    if (gesperrt_) return;            // 0168H: unter DC3 steht der Zähler still
+    if (gesperrt_) return;            // 0168H: unter DC3 steht der Zaehler still
     wdh_.rest -= static_cast<int64_t>(dt);
     if (wdh_.rest > 0) return;
-    // Die Leitung muss frei sein, sonst staute sich der Rückstand im Empfänger;
+    // Die Leitung muss frei sein, sonst staute sich der Rueckstand im Empfaenger;
     // die echte Tastatur sendet im Takt ihres eigenen Durchlaufs, nicht des Rechners.
     if (!unterwegs_.empty()) return;
     for (char b : wdh_.bytes) sendeCode(static_cast<uint8_t>(b));
@@ -523,7 +523,7 @@ void K7672::tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl)
         // 0462H / 047EH [?]: Feststell- und GRAPH-Taste schalten Modus und Lampe um.
         if (m == MATRIX_FESTSTELL) { leds_ ^= LED_CAPS;  return; }
         if (m == MATRIX_GRAPH)     { leds_ ^= LED_GRAPH; return; }
-        // 0223H: Umschalt ⇒ zweite Tabelle; sonst Feststellung, aber nur für
+        // 0223H: Umschalt ⇒ zweite Tabelle; sonst Feststellung, aber nur fuer
         // Buchstaben (Tastenart & 3FH = 10H).
         const bool buchstabe = (kArt[m] & 0x3F) == 0x10;
         const bool um = shift || ((leds_ & LED_CAPS) && buchstabe);
@@ -550,7 +550,7 @@ void K7672::tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl)
     }
     if (m == MATRIX_KLICK) return;                    // 030BH: Tastenklick um, kein Code
     const uint8_t sc = kScan[m];
-    if (sc == 0xFF) return;                           // unbelegt: federt zurück
+    if (sc == 0xFF) return;                           // unbelegt: federt zurueck
     if (m == MATRIX_FESTSTELL) leds_ ^= LED_CAPS;     // 0303H
 
     std::string drueck, los;
@@ -570,14 +570,14 @@ void K7672::tasteMatrix(uint8_t m, bool gedrueckt, bool shift, bool ctrl)
         drueck += char(code);
         los.insert(0, 1, char(code | 0x80));
     }
-    // Umschalt-/Strg-Tasten selbst: den Zustand mitführen, den der Rechner kennt.
+    // Umschalt-/Strg-Tasten selbst: den Zustand mitfuehren, den der Rechner kennt.
     const bool ist_umschalt = !(sc & 0x80) && (code == SC_UMSCHALT || code == 0x36);
     const bool ist_strg     = !(sc & 0x80) && code == SC_STRG;
     if (ist_umschalt) umschalt_unten_ = true;
     if (ist_strg)     strg_unten_ = true;
     for (char b : drueck) sendeCode(static_cast<uint8_t>(b));
     matrix_gedrueckt_.push_back({m, los, ist_umschalt, ist_strg});
-    // Wiederholt wird, was die Firmware beim Drücken der Taste selbst sendet (0320H):
+    // Wiederholt wird, was die Firmware beim Druecken der Taste selbst sendet (0320H):
     // Vorsatz und Code, ohne Umschalt/Strg der Nachbildung (die bleiben unten).
     const bool modifikator = ist_umschalt || ist_strg || code == SC_FESTSTELL || code == SC_ALT;
     if (wiederholbar(m)) {

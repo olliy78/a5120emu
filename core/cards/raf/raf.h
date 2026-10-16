@@ -7,12 +7,12 @@
  *
  * @code
  *   basis    Datenport:  Bytezeiger im Sektor = A8–A14 (B & 7FH), A15 unbeachtet,
- *                        KEIN Autoinkrement (INIR/OTIR laufen rückwärts)
+ *                        KEIN Autoinkrement (INIR/OTIR laufen rueckwaerts)
  *   basis+1  Steuerport: 16-Bit-Latch = (A8–A15 << 8) | D0–D7 = absolute Sektornummer
  *                        samt Sperrbits
  * @endcode
  *
- * Die Karte wertet den oberen Adressbus über K1520Bus::ioAddress() aus.  Kein Takt,
+ * Die Karte wertet den oberen Adressbus ueber K1520Bus::ioAddress() aus.  Kein Takt,
  * kein /WAIT, kein Interrupt, kein Speicherfenster.
  */
 
@@ -28,7 +28,7 @@ public:
 
     struct Config {
         Typ     typ   = Typ::RAF512;
-        uint8_t basis = 0x88;   ///< Datenport; Steuerregister basis+1.  Im Emulator überall
+        uint8_t basis = 0x88;   ///< Datenport; Steuerregister basis+1.  Im Emulator ueberall
                                 ///< 88H — abweichende Werte nur in Tests (§9, F3a)
     };
 
@@ -63,24 +63,24 @@ public:
     bool     gesperrt() const   { return (latch_ & sperre_) != 0; }
 
     // ─── Debug/Test ──────────────────────────────────────────────────────────
-    /// Lineare Adresse (0 … kapazitaet()-1); außerhalb: 0xFF bzw. ignoriert.
+    /// Lineare Adresse (0 … kapazitaet()-1); ausserhalb: 0xFF bzw. ignoriert.
     uint8_t peek(uint32_t adr) const;
     void    poke(uint32_t adr, uint8_t v);
 
     // ─── Save-State (Kartenseite; die Maschinen binden es seit AP-R2 ein) ────
-    /// @param mit_inhalt false = nur Typ + Latch (Inhaltslänge 0) — für die Rückwärts-
-    ///        Historie des Debuggers, die je Schritt einen Stand zieht (bis 2 MB je Stück).
+    /// @param mit_inhalt false = nur Typ + Latch (Inhaltslaenge 0) — fuer die Rueckwaerts-
+    ///        Historie des Debuggers, die je Schritt einen Stand zieht (bis 2 MB je Stueck).
     void saveState(std::vector<uint8_t>& out, bool mit_inhalt = true) const;
-    /// false bei zu kurzem/falschem Block (dann ist nichts verändert).  Ein Block ohne
-    /// Inhalt (Länge 0) setzt nur das Latch, der Inhalt bleibt.
+    /// false bei zu kurzem/falschem Block (dann ist nichts veraendert).  Ein Block ohne
+    /// Inhalt (Laenge 0) setzt nur das Latch, der Inhalt bleibt.
     bool loadState(const uint8_t*& p, const uint8_t* end);
 
-    // ─── Stand-by-Ablage (§7.1): Rohdatei, Größe muss exakt zur Kapazität passen ─
+    // ─── Stand-by-Ablage (§7.1): Rohdatei, Groesse muss exakt zur Kapazitaet passen ─
     bool ladeInhalt(const std::string& pfad);
     bool speichereInhalt(const std::string& pfad) const;
 
 private:
-    /// Index in mem_ für den aktuellen Zugriff (Latch + A8–A14), -1 bei Sperre.
+    /// Index in mem_ fuer den aktuellen Zugriff (Latch + A8–A14), -1 bei Sperre.
     int64_t zelle() const;
 
     Config               cfg_;

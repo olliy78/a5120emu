@@ -2,9 +2,9 @@
  * @file image_codec.h
  * @brief ImageCodec – Container-Schicht: Image-Datei ⇄ @ref DiskMedium.
  *
- * Ein Container-Codec **lädt** eine Datei vollständig in das interne Diskettenabbild
- * bzw. **schreibt** das Abbild vollständig als Datei.  Kein Codec hält Dateizustand
- * über den Aufruf hinaus — genau das erlaubt den nachträglichen Formatwechsel
+ * Ein Container-Codec **laedt** eine Datei vollstaendig in das interne Diskettenabbild
+ * bzw. **schreibt** das Abbild vollstaendig als Datei.  Kein Codec haelt Dateizustand
+ * ueber den Aufruf hinaus — genau das erlaubt den nachtraeglichen Formatwechsel
  * (@ref DiskImage::saveAs).
  *
  * | Container | Endung | self-describing | braucht @ref DiskFormat |
@@ -26,7 +26,7 @@
 
 /**
  * @enum ContainerType
- * @brief Unterstützte Image-Dateiformate.
+ * @brief Unterstuetzte Image-Dateiformate.
  */
 enum class ContainerType : uint8_t {
     Img = 0,   ///< rohes Sektorimage (.img) — braucht ein DiskFormat
@@ -36,7 +36,7 @@ enum class ContainerType : uint8_t {
 
 /**
  * @namespace ImageCodec
- * @brief Fabrik + Ein-/Ausgabe für alle Container-Formate.
+ * @brief Fabrik + Ein-/Ausgabe fuer alle Container-Formate.
  */
 namespace ImageCodec {
 
@@ -46,7 +46,7 @@ ContainerType fromExtension(const std::string& path);
 /**
  * @brief Containertyp einer vorhandenen Datei bestimmen.
  *
- * HFE über die Signatur `HXCPICFE`; DMK über Endung **plus** Header-Plausibilität
+ * HFE ueber die Signatur `HXCPICFE`; DMK ueber Endung **plus** Header-Plausibilitaet
  * (DMK hat keine Magic-Zahl); sonst @ref ContainerType::Img.
  */
 ContainerType detect(const std::string& path);
@@ -57,17 +57,17 @@ bool selfDescribing(ContainerType t);     ///< Hfe/Dmk = true
 bool needsDiskFormat(ContainerType t);    ///< nur Img = true
 
 /**
- * @brief Datei vollständig in @p out laden (Geometrie inklusive).
- * @param fmt nur für @ref ContainerType::Img nötig (sonst ignoriert; nullptr erlaubt)
+ * @brief Datei vollstaendig in @p out laden (Geometrie inklusive).
+ * @param fmt nur fuer @ref ContainerType::Img noetig (sonst ignoriert; nullptr erlaubt)
  * @param err Fehlertext bei false
  */
 bool load(const std::string& path, ContainerType type,
           const DiskFormat* fmt, DiskMedium& out, std::string& err);
 
 /**
- * @brief @p in vollständig als Datei @p path schreiben (Datei wird neu erzeugt).
- * @param fmt nur für @ref ContainerType::Img nötig; dort wird zusätzlich geprüft,
- *            ob das Medium überhaupt sektorweise darstellbar ist
+ * @brief @p in vollstaendig als Datei @p path schreiben (Datei wird neu erzeugt).
+ * @param fmt nur fuer @ref ContainerType::Img noetig; dort wird zusaetzlich geprueft,
+ *            ob das Medium ueberhaupt sektorweise darstellbar ist
  *            (@ref DiskMedium::rawCompatible).
  * @param err Fehlertext bei false
  */

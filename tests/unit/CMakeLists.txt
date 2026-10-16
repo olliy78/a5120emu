@@ -15,7 +15,7 @@ k1520_add_test(z8    SRC primitives/test_z8.cpp primitives/test_z8_peripherie.cp
                      DEFS "K1520_EPROM_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
 k1520_add_test(pio   SRC primitives/test_pio.cpp   LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc   SRC primitives/test_ctc.cpp   LIBS k1520_ctc LABELS "${_lbl}")
-# P8000 P5c/P5d: Handshake-/Pinpegel-Erweiterung PIO, Bruchtakt-Zähleingang CTC
+# P8000 P5c/P5d: Handshake-/Pinpegel-Erweiterung PIO, Bruchtakt-Zaehleingang CTC
 k1520_add_test(pio_handshake  SRC primitives/test_pio_handshake.cpp  LIBS k1520_pio LABELS "${_lbl}")
 k1520_add_test(ctc_bruchtakt  SRC primitives/test_ctc_bruchtakt.cpp  LIBS k1520_ctc k1520_sio k1520_serial LABELS "${_lbl}")
 k1520_add_test(ctc_sprung     SRC primitives/test_ctc_sprung.cpp     LIBS k1520_ctc k1520_sio k1520_serial LABELS "${_lbl}")
@@ -28,9 +28,9 @@ k1520_add_test(i8275 SRC primitives/test_i8275.cpp LIBS k1520_i8275 LABELS "${_l
 k1520_add_test(upd765 SRC primitives/test_upd765.cpp LIBS k1520_upd765 k1520_testsupport LABELS "${_lbl}")
 # Z80-DMA UA858 (PC 1715W, doc/design/21_pc1715.md AP-W2a)
 k1520_add_test(z80_dma SRC primitives/test_z80_dma.cpp LIBS k1520_z80dma LABELS "${_lbl}")
-# Z80-DMA vollständig gegen das Datenblatt (P8000 AP P9c, doc/p8000/z80_dma.md)
+# Z80-DMA vollstaendig gegen das Datenblatt (P8000 AP P9c, doc/p8000/z80_dma.md)
 k1520_add_test(z80_dma_voll SRC primitives/test_z80_dma_voll.cpp LIBS k1520_z80dma LABELS "${_lbl}")
-# RETI/IUS-Verhalten über alle drei Bausteine hinweg (braucht daher den Bus).
+# RETI/IUS-Verhalten ueber alle drei Bausteine hinweg (braucht daher den Bus).
 k1520_add_test(reti  SRC primitives/test_reti.cpp
                      LIBS k1520_ctc k1520_pio k1520_sio k1520_bus LABELS "${_lbl}")
 
@@ -48,7 +48,7 @@ k1520_add_test(k5122_wait SRC cards/test_k5122_wait.cpp LIBS k1520_k5122 LABELS 
 # K5122 in der Konfiguration „1715“ (PC 1715, doc/design/21_pc1715.md AP-2)
 k1520_add_test(k5122_pc1715 SRC cards/test_k5122_pc1715.cpp LIBS k1520_k5122 LABELS "${_lbl}")
 k1520_add_test(k7024 SRC cards/test_k7024.cpp      LIBS k1520_k7024 k1520_bus LABELS "${_lbl}")
-# K7023/K7023.01 (BAB1, frühe A5120; doc/a5120_alt/k7023.md, AP A1)
+# K7023/K7023.01 (BAB1, fruehe A5120; doc/a5120_alt/k7023.md, AP A1)
 k1520_add_test(k7023 SRC cards/test_k7023.cpp      LIBS k1520_k7023 k1520_bus LABELS "${_lbl}"
                DEFS "K7023_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/EPROMS/K7023\"")
 k1520_add_test(k8025 SRC cards/test_k8025.cpp      LIBS k1520_k8025 LABELS "${_lbl}")
@@ -64,8 +64,8 @@ k1520_add_test(mc80_spe SRC cards/test_mc80_spe.cpp LIBS k1520_mc80_karten LABEL
 # CTC D4H, PIO D8H, Kette SIO > CTC > PIO, Tastaturkanal)
 k1520_add_test(mc80_vis2a SRC cards/test_mc80_vis2a.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
 k1520_add_test(mc80_asp SRC cards/test_mc80_asp.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
-# MC80.21/.22 (AP M11): Displaylogik DPL (Zeilenautomat, Bild aus den PIO-Ausgängen, Matrix) und
-# Magnetbandinterface MBI (EFH, Schreib-/Leseweg über das Schieberegister) samt E/A-Senke
+# MC80.21/.22 (AP M11): Displaylogik DPL (Zeilenautomat, Bild aus den PIO-Ausgaengen, Matrix) und
+# Magnetbandinterface MBI (EFH, Schreib-/Leseweg ueber das Schieberegister) samt E/A-Senke
 k1520_add_test(mc80_dpl SRC cards/test_mc80_dpl.cpp LIBS k1520_mc80_2x_karten LABELS "${_lbl}")
 k1520_add_test(mc80_mbi SRC cards/test_mc80_mbi.cpp LIBS k1520_mc80_2x_karten LABELS "${_lbl}")
 # K3528 der K8915 Gen 2: Speicherbild je A8H-Wert, /MEMDI (doc/design/24_k8915_varianten.md R3, AP-V4)
@@ -79,7 +79,7 @@ k1520_add_test(eprommer590068 SRC cards/test_eprommer590068.cpp LIBS k1520_atp59
 k1520_add_test(prg710_speicher SRC cards/test_prg710_speicher.cpp LIBS k1520_prg710_speicher LABELS "${_lbl}")
 # P8000 8-Bit-Karte: ADP-Speicher, RFF, EPROM-Spiegelung (doc/design/25_p8000.md §10.11 AP P5a)
 k1520_add_test(p8000_speicher8 SRC cards/test_p8000_speicher8.cpp LIBS k1520_p8000_speicher8 LABELS "${_lbl}")
-# P8000: erzeugte ROM-Header gegen die Binärabzüge (AP P5b)
+# P8000: erzeugte ROM-Header gegen die Binaerabzuege (AP P5b)
 k1520_add_test(p8000_rom SRC cards/test_p8000_rom.cpp LIBS k1520_p8000_speicher8 LABELS "${_lbl}"
                DEFS "P8000_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
 # P8000 8-Bit-Rechnerkarte: Dekoder, Kette, Reset/NMI, MON8-Rig (doc/design/25_p8000.md §10.11 AP P5e)
@@ -88,11 +88,11 @@ k1520_add_test(p8000_karte8 SRC cards/test_p8000_karte8.cpp LIBS k1520_p8000_kar
 k1520_add_test(p8000_floppy8 SRC cards/test_p8000_floppy8.cpp LIBS k1520_p8000_floppy8 k1520_testsupport LABELS "${_lbl}")
 # P8000 16-Bit-Karte: MMU-Steuerlogik (Auswahl, NBR, On-Board, SUP, TRPL/IF1L; AP P9b)
 k1520_add_test(p8000_mmu_logik SRC cards/test_p8000_mmu_logik.cpp LIBS k1520_p8000_mmu_logik16 LABELS "${_lbl}")
-# P8000 16-Bit-Teil: DRAM-Karten — Moduladressen, Grenzen, Byte/Wort, Parität (AP P10a)
+# P8000 16-Bit-Teil: DRAM-Karten — Moduladressen, Grenzen, Byte/Wort, Paritaet (AP P10a)
 k1520_add_test(p8000_dram16 SRC cards/test_p8000_dram16.cpp LIBS k1520_p8000_dram16 LABELS "${_lbl}")
 # P8000 16-Bit-Rechnerkarte: Dekoder, Reset/SCR, RETI, Trap-Register, NMI, MON16-Rig (AP P10b/c)
 k1520_add_test(p8000_karte16 SRC cards/test_p8000_karte16.cpp LIBS k1520_p8000_karte16 LABELS "${_lbl}")
-# P8000 RAM-Ausbauten (P23b): 16-MB-Karte über die MMU, MAXSEG je Ausbau; die langen
+# P8000 RAM-Ausbauten (P23b): 16-MB-Karte ueber die MMU, MAXSEG je Ausbau; die langen
 # Hardwaretests (4 × 1 MB, 16 MB) nur in der langsamen Runde.
 k1520_add_test(p8000_ram_konfig SRC cards/test_p8000_ram_konfig.cpp LIBS k1520_p8000_karte16 LABELS "${_lbl}")
 k1520_add_test(p8000_ram_konfig_lang SRC cards/test_p8000_ram_konfig.cpp LIBS k1520_p8000_karte16
@@ -100,7 +100,7 @@ k1520_add_test(p8000_ram_konfig_lang SRC cards/test_p8000_ram_konfig.cpp LIBS k1
 # P8000 WDC: Original-Firmware mit Stub-Host gegen eine TempPlatte (Entwurf 25 AP P13c)
 k1520_add_test(p8000_wdc SRC cards/test_p8000_wdc.cpp LIBS k1520_p8000_wdc LABELS "${_lbl}"
                DEFS "P8000_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
-# P24: Firmware-Fassung → Laufwerkstyp, gegen die Bytes der EPROM-Abzüge
+# P24: Firmware-Fassung → Laufwerkstyp, gegen die Bytes der EPROM-Abzuege
 k1520_add_test(p8000_wdc_rom_laufwerk SRC cards/test_p8000_wdc_rom_laufwerk.cpp LIBS k1520_p8000_wdc LABELS "${_lbl}"
                DEFS "P8000_ABZUG_DIR=\"${CMAKE_SOURCE_DIR}/doc/p8000/eproms\"")
 # ADA K6022 (Lochband, SIF1000) und ASS 590069 (Fernschreiber) des PRG 710 (AP-P8b/c)
@@ -110,7 +110,7 @@ k1520_add_test(k6022_bindung SRC cards/test_k6022_bindung.cpp LIBS k1520_k6022 L
 # AKB K5020: Kassettenanschluss mit zwei PIOs und zwei Laufwerken (doc/design/29, AP K4)
 k1520_add_test(k5020 SRC cards/test_k5020.cpp LIBS k1520_k5020 k1520_z80 LABELS "${_lbl}")
 k1520_add_test(ass590069 SRC cards/test_ass590069.cpp LIBS k1520_ass590069 LABELS "${_lbl}")
-# ATS K7028.30 des K8915: Spiegel, Rückschleife, CTC-Kette (§3.2, AP-E2)
+# ATS K7028.30 des K8915: Spiegel, Rueckschleife, CTC-Kette (§3.2, AP-E2)
 k1520_add_test(k7028 SRC cards/test_k7028.cpp      LIBS k1520_k7028 LABELS "${_lbl}")
 
 # Erweiterungsmodul EM064/EM256 (A5120.16), 8-Bit-Seite — doc/design/17_a5120_16.md §3 S1
@@ -125,7 +125,7 @@ k1520_add_test(raf   SRC cards/test_raf.cpp        LIBS k1520_raf k1520_z80 LABE
 k1520_add_test(mc80_tastatur SRC peripherals/test_mc80_tastatur.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
 k1520_add_test(k7637          SRC peripherals/test_k7637.cpp
                               LIBS k1520_k7637 k1520_sio k1520_bus LABELS "${_lbl}")
-# Parallele Tastatur K7636 an der K2526 (frühe A5120, AP A3; doc/a5120_alt/k7636.md)
+# Parallele Tastatur K7636 an der K2526 (fruehe A5120, AP A3; doc/a5120_alt/k7636.md)
 k1520_add_test(k7636          SRC peripherals/test_k7636.cpp
                               LIBS k1520_k7636 k1520_k2526 LABELS "${_lbl}"
                               DEFS "K7636_CSV=\"${CMAKE_SOURCE_DIR}/doc/a5120_alt/k7636_01_codes.csv\"")
@@ -176,27 +176,27 @@ k1520_add_test(disk_image     SRC peripherals/test_disk_image.cpp     LIBS k1520
 # Braucht KEINE Hardware — ein Ersatz-Arbeitsfaden bedient die Auftraege aus dem RAM.
 k1520_add_test(track_sync     SRC peripherals/test_track_sync.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(floppy_drive2  SRC peripherals/test_floppy_drive2.cpp  LIBS k1520_floppy2 LABELS "${_lbl}")
-# Prüft den AUSGELIEFERTEN Katalog data/formats.yaml — Pfad muss der Test kennen.
+# Prueft den AUSGELIEFERTEN Katalog data/formats.yaml — Pfad muss der Test kennen.
 k1520_add_test(format_catalog SRC peripherals/test_format_catalog.cpp LIBS k1520_floppy2 LABELS "${_lbl}"
                               DEFS K1520_FORMATS_DEFAULT="${K1520_FORMATS_DEFAULT}")
 
 # ── core/util/ ───────────────────────────────────────────────────────────────
 k1520_add_test(yaml_lite SRC util/test_yaml_lite.cpp LIBS k1520_util LABELS "${_lbl}")
-# Gepackte Abbilder: gzip-Hülle um miniz (core/util/gzip_datei.h, third_party/miniz)
+# Gepackte Abbilder: gzip-Huelle um miniz (core/util/gzip_datei.h, third_party/miniz)
 k1520_add_test(gzip_datei SRC util/test_gzip_datei.cpp LIBS k1520_gzip LABELS "${_lbl}")
-# Serielle Schnittstellen nach außen, Netzschicht (Entwurf 19 §11) — nur Loopback, nie feste Ports.
+# Serielle Schnittstellen nach aussen, Netzschicht (Entwurf 19 §11) — nur Loopback, nie feste Ports.
 k1520_add_test(serial_adresse SRC util/test_serial_adresse.cpp LIBS k1520_serial_net LABELS "${_lbl}")
 k1520_add_test(serial_netz    SRC util/test_serial_netz.cpp    LIBS k1520_serial_net LABELS "${_lbl}")
 
 # ── core/serial/ (serielle Schnittstellen nach aussen, Entwurf 19) ───────────
 k1520_add_test(telnet_codec  SRC util/test_telnet_codec.cpp  LIBS k1520_serial_codec LABELS "${_lbl}")
 k1520_add_test(rfc2217_codec SRC util/test_rfc2217_codec.cpp LIBS k1520_serial_codec LABELS "${_lbl}")
-# AP-S4: Wandler (Attrappe statt Socket) und SerialHub über Loopback-TCP — nie feste Ports.
+# AP-S4: Wandler (Attrappe statt Socket) und SerialHub ueber Loopback-TCP — nie feste Ports.
 k1520_add_test(serial_wandler SRC util/test_serial_wandler.cpp LIBS k1520_serial k1520_sio LABELS "${_lbl}")
 k1520_add_test(serial_hub     SRC util/test_serial_hub.cpp     LIBS k1520_serial LABELS "${_lbl}")
 
 # ── core/filesystem/ (k1520DiskTool) ─────────────────────────────────────────
-# Prüft gegen die AUSGELIEFERTE data/formats.yaml und die committeten Disketten.
+# Prueft gegen die AUSGELIEFERTE data/formats.yaml und die committeten Disketten.
 k1520_add_test(sector_space SRC filesystem/test_sector_space.cpp
                             LIBS k1520_fs LABELS "${_lbl}")
 k1520_add_test(fs_catalog    SRC filesystem/test_fs_catalog.cpp
@@ -245,5 +245,5 @@ k1520_add_test(pc1715_zre SRC cards/test_pc1715_zre.cpp LIBS k1520_pc1715_zre LA
 # Speicher des PC 1715W: BR 24H, 74S287, Bank 0, Bildquelle (doc/design/21_pc1715.md AP-W1)
 k1520_add_test(pc1715w_speicher SRC cards/test_pc1715w_speicher.cpp LIBS k1520_pc1715w_speicher LABELS "${_lbl}")
 
-# Zeitgrenzen der add_test()-Fälle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
+# Zeitgrenzen der add_test()-Faelle × K1520_TEST_ZEIT_FAKTOR (tests/cmake/K1520AddTest.cmake)
 k1520_test_zeiten_skalieren()

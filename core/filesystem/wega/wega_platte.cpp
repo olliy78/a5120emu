@@ -145,7 +145,7 @@ bool WegaPlatte::flush() {
         if (ec) { err_ = "Sicherungskopie " + pfad_ + "~ nicht anlegbar: " + ec.message(); return false; }
         backup_getan_ = true;
     }
-    // in der Art zurück, in der geladen wurde; atomar über <pfad>.tmp
+    // in der Art zurueck, in der geladen wurde; atomar ueber <pfad>.tmp
     if (!k1520::gzip::speichern(pfad_, buf_.data(), buf_.size(), art_, k1520::gzip::STUFE_VORGABE, &err_))
         return false;
     dirty_ = false;

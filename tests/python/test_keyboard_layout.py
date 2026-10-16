@@ -1,13 +1,13 @@
 """`app/ui/keyboard.py` — das nachgebildete K7637-Tastenfeld.
 
-Die Bildschirmtastatur ist eine *Nachbildung*: Jede Taste trägt ihren
+Die Bildschirmtastatur ist eine *Nachbildung*: Jede Taste traegt ihren
 **physischen** K7637-Code aus der BIOS-Umkodiertabelle `cp37`.  Genau daran
-kann man sich vertun, ohne dass es auffällt — ein falscher Code sieht auf dem
-Bild richtig aus und kommt im Gast als etwas anderes an.  Geprüft wird deshalb
+kann man sich vertun, ohne dass es auffaellt — ein falscher Code sieht auf dem
+Bild richtig aus und kommt im Gast als etwas anderes an.  Geprueft wird deshalb
 die Tabelle selbst, nicht das Aussehen.
 
 Der Rohcode-Weg (`RAW_BASE`) muss mit `K7637::QK_RAW_BASE` im Kern
-übereinstimmen; die C++-Seite hat dafür ihren eigenen Wächter
+uebereinstimmen; die C++-Seite hat dafuer ihren eigenen Waechter
 (`K7637.RawCode_IsSentVerbatim`).
 """
 
@@ -96,7 +96,7 @@ def test_et1_and_enter_are_two_different_keys(by_name):
 
 
 def test_printable_keys_send_ascii(keys):
-    """Buchstaben/Ziffern gehen als ASCII — der Kern reicht sie unverändert durch."""
+    """Buchstaben/Ziffern gehen als ASCII — der Kern reicht sie unveraendert durch."""
     letters = {k.low: k for k in keys if len(k.low) == 1 and k.low.isalpha()}
     assert letters["Q"].code == ord("q") and letters["Q"].shift_code == ord("Q")
     assert len(letters) == 26, "es fehlen Buchstabentasten"
@@ -106,7 +106,7 @@ def test_ascii_set_is_complete(keys):
     """Jedes druckbare ASCII-Zeichen ist auf genau einer Taste erreichbar.
 
     Die Ziffernreihe der K7637 ist bitgepaart; ein Tippfehler in einer
-    Umschaltebene fällt nur dadurch auf, dass ein Zeichen fehlt (oder doppelt
+    Umschaltebene faellt nur dadurch auf, dass ein Zeichen fehlt (oder doppelt
     ist — der Ziffernblock ist die einzige gewollte Doppelung).
     """
     reachable = set()
@@ -114,7 +114,7 @@ def test_ascii_set_is_complete(keys):
         for code in (k.code, k.shift_code):
             if code is not None and 0x20 <= code <= 0x7E:
                 reachable.add(code)
-    # Kleinbuchstaben stehen für die ungeshifteten Buchstabentasten.
+    # Kleinbuchstaben stehen fuer die ungeshifteten Buchstabentasten.
     missing = {c for c in range(0x20, 0x7F)} - reachable - set(range(0x41, 0x5B))
     assert not missing, "nicht erreichbar: " + " ".join(
         f"{chr(c)}(0x{c:02X})" for c in sorted(missing))
@@ -136,7 +136,7 @@ def test_modifiers_have_no_code(keys):
 
 
 def test_keys_do_not_overlap(keys):
-    """Zwei Tasten auf derselben Fläche wären im Bild nicht unterscheidbar."""
+    """Zwei Tasten auf derselben Flaeche waeren im Bild nicht unterscheidbar."""
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
             overlap_x = a.x < b.x + b.w - 1e-6 and b.x < a.x + a.w - 1e-6
@@ -148,7 +148,7 @@ def test_keys_do_not_overlap(keys):
 # ── Bedienung: Klick → Signal ────────────────────────────────────────────────
 
 def _click(widget, key, button=Qt.LeftButton):
-    """Eine Taste der Nachbildung anklicken (Drücken UND Loslassen)."""
+    """Eine Taste der Nachbildung anklicken (Druecken UND Loslassen)."""
     unit, ox, oy = widget._geometry()
     center = widget._rect_of(key, unit, ox, oy).center()
     for typ in (QMouseEvent.Type.MouseButtonPress, QMouseEvent.Type.MouseButtonRelease):
@@ -168,7 +168,7 @@ def widget(qapp):
 
 
 def _druecke(widget, key):
-    """Nur DRÜCKEN (ohne Loslassen) — für Tasten, die nichts senden."""
+    """Nur DRUECKEN (ohne Loslassen) — fuer Tasten, die nichts senden."""
     unit, ox, oy = widget._geometry()
     center = widget._rect_of(key, unit, ox, oy).center()
     widget.mousePressEvent(QMouseEvent(
@@ -231,7 +231,7 @@ def test_print_und_hlt_federn_trotzdem(widget):
     """PRINT und HLT sind ECHTE Tasten — sie gehen unter dem Finger nach unten.
 
     Ihr Code steht in keiner vorliegenden Tabelle (das Tastatur-EPROM fehlt),
-    also schicken sie nichts.  Eine Taste, die sich nicht einmal drücken lässt,
+    also schicken sie nichts.  Eine Taste, die sich nicht einmal druecken laesst,
     sieht aber aus wie ein Fehler der Nachbildung.
     """
     taste = next(k for k in widget._keys if k.name.startswith("PRINT"))
@@ -243,9 +243,9 @@ def test_print_und_hlt_federn_trotzdem(widget):
 
 
 def test_die_abdeckung_neben_esc_ist_keine_taste(widget):
-    """Rechts von ESC sitzt eine Abdeckung in Tastengröße, keine helle Kappe.
+    """Rechts von ESC sitzt eine Abdeckung in Tastengroesse, keine helle Kappe.
 
-    Am Gerät nachgesehen: dort ist nur schwarzes Blindmaterial.  Sie reagiert
+    Am Geraet nachgesehen: dort ist nur schwarzes Blindmaterial.  Sie reagiert
     deshalb auf gar nichts — anders als PRINT/HLT, die federn.
     """
     esc = next(k for k in widget._keys if k.name.startswith("ESC"))
@@ -270,7 +270,7 @@ def test_led_bits_match_the_core_header():
 
 
 def test_function_leds_follow_the_mask(widget):
-    """Die fünf Funktionsanzeigen zeigen, was der Kern meldet."""
+    """Die fuenf Funktionsanzeigen zeigen, was der Kern meldet."""
     widget.set_leds(kbd.LED_G00 | kbd.LED_G03)
     unit, ox, oy = widget._geometry()
     an = [name for _, _, lit, name in widget._led_spots(unit, ox, oy) if lit]
@@ -279,7 +279,7 @@ def test_function_leds_follow_the_mask(widget):
 
 
 def test_error_display_blinks_only_while_switched_on(widget):
-    """Die Fehleranzeige blinkt — der Zeitgeber läuft nur, solange sie an ist."""
+    """Die Fehleranzeige blinkt — der Zeitgeber laeuft nur, solange sie an ist."""
     assert not widget._blink_timer.isActive()
     widget.set_leds(kbd.LED_ERROR)
     assert widget._blink_timer.isActive()
@@ -288,7 +288,7 @@ def test_error_display_blinks_only_while_switched_on(widget):
 
 
 def test_lock_display_follows_the_shift_lock(widget):
-    """Die LOCK-Anzeige hängt an der Tastatur selbst, nicht am Rechner."""
+    """Die LOCK-Anzeige haengt an der Tastatur selbst, nicht am Rechner."""
     def lock_an():
         unit, ox, oy = widget._geometry()
         return next(lit for _, _, lit, name in widget._led_spots(unit, ox, oy)
@@ -336,7 +336,7 @@ def test_host_key_highlights_the_matching_key(widget):
 
 
 def test_host_special_keys_find_their_physical_key(widget):
-    """Sondertasten leuchten dort auf, wohin der Kern sie übersetzt."""
+    """Sondertasten leuchten dort auf, wohin der Kern sie uebersetzt."""
     for qtkey, beschriftung in ((Qt.Key_Return, "ET1"), (Qt.Key_Enter, "ENTER"),
                                 (Qt.Key_Up, "↑"), (Qt.Key_Tab, "→|"),
                                 (Qt.Key_F1, "PF 1")):
@@ -347,10 +347,10 @@ def test_host_special_keys_find_their_physical_key(widget):
 
 
 def test_held_modifiers_are_visible(widget):
-    """Strg gedrückt halten sieht man — beide Steuertasten leuchten."""
+    """Strg gedrueckt halten sieht man — beide Steuertasten leuchten."""
     widget.host_key_press(_taste(Qt.Key_Control, mods=Qt.ControlModifier))
     assert _hell(widget, "CTRL") and _hell(widget, "ET2")
-    # …und Strg+C hebt zusätzlich das C hervor.
+    # …und Strg+C hebt zusaetzlich das C hervor.
     widget.host_key_press(_taste(Qt.Key_C, "\x03", Qt.ControlModifier))
     assert _hell(widget, "C")
     widget.host_key_release(_taste(Qt.Key_Control, mods=Qt.NoModifier,
@@ -377,18 +377,18 @@ def test_numpad_digit_highlights_the_numeric_block(widget):
 
 
 def test_host_caps_lock_shows_on_the_emulated_keyboard(widget):
-    """Der Feststeller der PC-Tastatur überträgt sich — abgelesen am Buchstaben."""
+    """Der Feststeller der PC-Tastatur uebertraegt sich — abgelesen am Buchstaben."""
     assert not widget.lock_active()
-    widget.host_key_press(_taste(Qt.Key_A, "A"))       # Großbuchstabe ohne Shift
+    widget.host_key_press(_taste(Qt.Key_A, "A"))       # Grossbuchstabe ohne Shift
     assert widget.lock_active(), "Feststeller der echten Tastatur nicht erkannt"
     widget.host_key_press(_taste(Qt.Key_A, "a"))       # wieder klein
     assert not widget.lock_active()
 
 
 def test_onscreen_lock_uppercases_host_keys(widget):
-    """Rückrichtung: der Feststeller der Nachbildung wirkt auf die PC-Eingabe.
+    """Rueckrichtung: der Feststeller der Nachbildung wirkt auf die PC-Eingabe.
 
-    Die Feststelltaste der echten Tastatur lässt sich von einem Programm aus
+    Die Feststelltaste der echten Tastatur laesst sich von einem Programm aus
     nicht schalten; stattdessen setzt die Nachbildung den Buchstaben selbst um.
     """
     _click(widget, next(k for k in widget._keys if k.kind == "lock"))
@@ -399,7 +399,7 @@ def test_onscreen_lock_uppercases_host_keys(widget):
 
 
 def test_onscreen_ctrl_applies_to_host_keys(widget):
-    """Angeklicktes CTRL wirkt auf die nächste Taste der echten Tastatur."""
+    """Angeklicktes CTRL wirkt auf die naechste Taste der echten Tastatur."""
     _click(widget, next(k for k in widget._keys if k.kind == "ctrl"))
     assert widget.map_host_key(_taste(Qt.Key_C, "c")) == (ord("c"), False, True)
 
@@ -415,10 +415,10 @@ def test_focus_loss_clears_stuck_highlights(widget):
 # ── Aufbau: was auf dem Foto zu sehen ist ────────────────────────────────────
 
 def test_function_leds_sit_centred_above_their_keys(widget):
-    """Die fünf Anzeigen stehen mittig über SEL 0…3 und INS MD.
+    """Die fuenf Anzeigen stehen mittig ueber SEL 0…3 und INS MD.
 
     Genau die Tasten, deren Lampen CP/A schaltet (Selektor 0…3 + INS-Modus) —
-    daneben verlöre die Leiste ihre Bedeutung.
+    daneben verloere die Leiste ihre Bedeutung.
     """
     unit, ox, oy = widget._geometry()
     reihe0 = sorted((k for k in widget._keys if k.y == 0.0), key=lambda k: k.x)[:5]
@@ -453,7 +453,7 @@ def test_enter_is_labelled_letter_by_letter(by_name):
 
 
 def test_digit_row_is_flush_with_the_function_row(keys):
-    """CTRL ist EINE Taste breit — dadurch steht 1 über 1 und PF 4 über 9.
+    """CTRL ist EINE Taste breit — dadurch steht 1 ueber 1 und PF 4 ueber 9.
 
     Mit einer breiteren CTRL-Taste verrutscht die ganze Ziffernreihe um eine
     halbe Tastenbreite, und die Spalten stimmen nirgends mehr.
@@ -469,14 +469,14 @@ def test_digit_row_is_flush_with_the_function_row(keys):
     assert abs(mitte(ziffern["1"]) - mitte(fn["1"])) < 0.1
     assert abs(mitte(ziffern["2"]) - mitte(fn["2"])) < 0.1
     assert abs(mitte(ziffern["9"]) - mitte(fn["PF 4"])) < 0.1, "PF 4 steht über 9"
-    # …und zwischen PF 12 und RESET klafft keine Lücke mehr.
+    # …und zwischen PF 12 und RESET klafft keine Luecke mehr.
     assert abs(fn["RESET"].x - (fn["PF 12"].x + 1.0)) < 0.05
-    # Die Fehleranzeige steht über RESET, nicht über M.
+    # Die Fehleranzeige steht ueber RESET, nicht ueber M.
     unit, ox, oy = 40.0, 0.0, 0.0
 
 
 def test_letter_rows_step_down_to_the_right(by_name):
-    """1, Q, A, Z sind wie auf jeder Schreibmaschine schräg nach rechts versetzt."""
+    """1, Q, A, Z sind wie auf jeder Schreibmaschine schraeg nach rechts versetzt."""
     def mitte(k):
         return k.x + k.w / 2
 
@@ -493,14 +493,14 @@ def test_the_block_stays_rectangular_on_the_right(keys):
     shifts = [k for k in keys if k.kind == "shift"]
     assert ce.w > 1.0, "CE ist breiter als eine Taste"
     assert all(k.w > 1.0 for k in shifts), "beide Umschalttasten sind breit"
-    # Alle vier Spalten des Ziffernblocks beginnen bündig übereinander.
+    # Alle vier Spalten des Ziffernblocks beginnen buendig uebereinander.
     spalten = {round(k.x, 2) for k in keys
                if k.name.startswith("Ziffernblock") and k.style == "dark"}
     assert len(spalten) == 4, f"Ziffernblock nicht rechteckig: {sorted(spalten)}"
 
 
 def test_the_key_field_has_no_gaps(keys):
-    """Zwischen den Modulen ist kein Blech: jede Reihe ist lückenlos gefüllt.
+    """Zwischen den Modulen ist kein Blech: jede Reihe ist lueckenlos gefuellt.
 
     Ausgenommen ist die Funktionsreihe — sie sitzt frei auf der Wanne.
     """
@@ -512,12 +512,12 @@ def test_the_key_field_has_no_gaps(keys):
 
 
 def test_cursor_and_numeric_block_abut_the_letters(keys):
-    """Kursor- und Ziffernblock schließen direkt an den Buchstabenblock an."""
+    """Kursor- und Ziffernblock schliessen direkt an den Buchstabenblock an."""
     def rechte_kante(name):
         k = next(x for x in keys if x.name == name)
         return k.x + k.w
 
-    # Linke Kante des Kursorblocks: die Abwärtstaste steht dort ganz links.
+    # Linke Kante des Kursorblocks: die Abwaertstaste steht dort ganz links.
     kursor = next(k.x for k in keys if k.name == "Kursor abwärts")
     ziffern = min(k.x for k in keys if k.name.startswith("Ziffernblock")
                   and k.style == "dark")
@@ -529,7 +529,7 @@ def test_cursor_and_numeric_block_abut_the_letters(keys):
 
 
 def test_error_lamp_sits_above_the_reset_key(widget):
-    """Die Fehleranzeige steht über RESET — nicht über M."""
+    """Die Fehleranzeige steht ueber RESET — nicht ueber M."""
     unit, ox, oy = widget._geometry()
     reset = next(k for k in widget._keys if k.low == "RESET")
     mitte = widget._rect_of(reset, unit, ox, oy).center().x()
@@ -542,7 +542,7 @@ def test_every_code_survives_the_core_translation(keys):
     """Jeder Tastencode muss den Kern auch erreichen.
 
     `K7637::translateKey` reicht nur druckbares ASCII (0x20…0x7E) durch; alles
-    darunter fällt unter den Tisch, wenn es nicht als **Rohcode** kommt.  Genau
+    darunter faellt unter den Tisch, wenn es nicht als **Rohcode** kommt.  Genau
     daran war die ESC-Taste still wirkungslos: sie trug 0x1B als blanken
     Tastencode und sendete deshalb gar nichts.
     """
@@ -565,12 +565,12 @@ def test_every_code_survives_the_core_translation(keys):
 def test_host_keys_hit_the_key_that_does_the_job(widget, qtkey, taste):
     """Jede Host-Sondertaste hebt die Taste hervor, die sie wirklich anspricht.
 
-    Die **Rücktaste** des PC ist die Rücktaste der K7637 (`|←|`, Reihe 2
+    Die **Ruecktaste** des PC ist die Ruecktaste der K7637 (`|←|`, Reihe 2
     Position 14) — dieselbe Taste, die CP/A als Ersatz-Tabulator benutzt; die
-    **Entf**-Taste ist DEL CH.  Welche von beiden im Gast ein Zeichen löscht,
+    **Entf**-Taste ist DEL CH.  Welche von beiden im Gast ein Zeichen loescht,
     ist OS-Sache (§5.1a des Feinentwurfs).  Die **ESC-Taste** schickt 0x1B —
     vorher lag Esc auf DEL L, was im CP/A zwar auch ESC ergibt, auf der
-    Nachbildung aber die falsche Taste aufleuchten ließ.
+    Nachbildung aber die falsche Taste aufleuchten liess.
     """
     widget.host_key_press(_taste(qtkey))
     hell = [k for keys in widget._host_down.values() for k in keys]
@@ -578,7 +578,7 @@ def test_host_keys_hit_the_key_that_does_the_job(widget, qtkey, taste):
         f"{taste} leuchtet nicht: {[k.low for k in hell]}")
 
 
-# ── Beide Eingabewege müssen dasselbe schicken ──────────────────────────────
+# ── Beide Eingabewege muessen dasselbe schicken ──────────────────────────────
 
 def _klickcode(widget, key):
     """Was ein Mausklick auf diese Taste sendet."""
@@ -587,12 +587,12 @@ def _klickcode(widget, key):
 
 @pytest.mark.parametrize("zustand", ["nichts", "pc-feststeller", "lock"])
 def test_loeschtasten_bleiben_auf_der_grundebene(widget, zustand):
-    """Rücktaste und Entf bleiben in JEDEM Feststeller-Zustand, was sie sind.
+    """Ruecktaste und Entf bleiben in JEDEM Feststeller-Zustand, was sie sind.
 
     Ein eingerasteter Feststeller darf aus der Entf-Taste nicht DEL L („Zeile
-    löschen") machen: wer die Feststelltaste seines Rechners an hat, drückt
-    trotzdem Entf und keine Zeilenlöschung.  Umgeschaltet wird nur, wer die
-    Umschalttaste der ECHTEN Tastatur hält
+    loeschen") machen: wer die Feststelltaste seines Rechners an hat, drueckt
+    trotzdem Entf und keine Zeilenloeschung.  Umgeschaltet wird nur, wer die
+    Umschalttaste der ECHTEN Tastatur haelt
     (s. test_shift_reaches_the_upper_legend_of_special_keys).
     """
     if zustand == "pc-feststeller":
@@ -605,10 +605,10 @@ def test_loeschtasten_bleiben_auf_der_grundebene(widget, zustand):
 
 
 def test_host_caps_does_not_switch_special_keys(widget):
-    """Die Feststelltaste des PC macht aus Buchstaben Großbuchstaben — mehr nicht.
+    """Die Feststelltaste des PC macht aus Buchstaben Grossbuchstaben — mehr nicht.
 
-    Auf der echten Tastatur schaltet SIE keine Sondertaste um: die Rücktaste
-    bleibt die Rücktaste.  (Der Feststeller der Nachbildung dagegen schon — das
+    Auf der echten Tastatur schaltet SIE keine Sondertaste um: die Ruecktaste
+    bleibt die Ruecktaste.  (Der Feststeller der Nachbildung dagegen schon — das
     ist seine Aufgabe.)
     """
     widget._host_caps = True
@@ -623,10 +623,10 @@ def test_host_caps_does_not_switch_special_keys(widget):
     (Qt.Key_F12, 0xCC, "PF 12"),
 ])
 def test_alle_zwoelf_funktionstasten_kommen_an(widget, qtkey, code, taste):
-    """Die K7637 hat ZWÖLF PF-Tasten — F9…F12 gehören dazu.
+    """Die K7637 hat ZWOELF PF-Tasten — F9…F12 gehoeren dazu.
 
-    Ausgenommen ist allein **F11**: die fängt das Fenster für das Vollbild ab,
-    PF 11 bleibt über die Bildschirmtastatur erreichbar (darum steht sie hier
+    Ausgenommen ist allein **F11**: die faengt das Fenster fuer das Vollbild ab,
+    PF 11 bleibt ueber die Bildschirmtastatur erreichbar (darum steht sie hier
     nicht in der Liste).
     """
     widget.host_key_press(_taste(qtkey))

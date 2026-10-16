@@ -1,10 +1,10 @@
 /**
  * @file test_serial_netz.cpp
- * @brief Unit-Tests der Socket-Hülle (`core/serial/net/socket.h`, Entwurf 19 §7, §11).
+ * @brief Unit-Tests der Socket-Huelle (`core/serial/net/socket.h`, Entwurf 19 §7, §11).
  *
- * Nur Loopback, keine Namensauflösung nach außen.  **Nie feste Ports**: die Tests
- * laufen mit `ctest -j` parallel — Port 0 bzw. die Suche ab einem zufälligen hohen
- * Port, der tatsächliche Port kommt aus dem Ergebnis.
+ * Nur Loopback, keine Namensaufloesung nach aussen.  **Nie feste Ports**: die Tests
+ * laufen mit `ctest -j` parallel — Port 0 bzw. die Suche ab einem zufaelligen hohen
+ * Port, der tatsaechliche Port kommt aus dem Ergebnis.
  */
 
 #include <gtest/gtest.h>
@@ -21,7 +21,7 @@ using namespace k1520::serial::net;
 
 namespace {
 
-/// Zufälliger hoher Port für die Suchtests (Bereich unterhalb der Ephemeral-Ports).
+/// Zufaelliger hoher Port fuer die Suchtests (Bereich unterhalb der Ephemeral-Ports).
 int zufallsPort() {
     static std::mt19937 g{std::random_device{}()};
     return 20000 + static_cast<int>(g() % 10000);
@@ -49,8 +49,8 @@ Paar verbindeUndNimmAn(const Lauscher& l, const std::string& host) {
     p.client = verbindenAlle(ziele, 2000, &f);
     EXPECT_TRUE(p.client.gueltig()) << f.text;
     if (!p.client) return p;
-    // Die Verbindung steht, sobald connect zurück ist; accept kann trotzdem einen
-    // Augenblick später sehen — kurz warten statt raten.
+    // Die Verbindung steht, sobald connect zurueck ist; accept kann trotzdem einen
+    // Augenblick spaeter sehen — kurz warten statt raten.
     for (int i = 0; i < 50 && !p.server; ++i) {
         p.server = annehmen(l.sock.fd());
         if (!p.server) lesbarBinnen(l.sock.fd(), 20);
@@ -104,7 +104,7 @@ TEST(SerialNetz, LoopbackIPv4) {
 TEST(SerialNetz, LoopbackIPv6) {
     Lauscher l = lauschen(0);
     ASSERT_TRUE(l.sock) << l.fehler.text;
-    if (!l.dualStack) GTEST_SKIP() << "kein IPv6 auf diesem Rechner (Rückfall 0.0.0.0)";
+    if (!l.dualStack) GTEST_SKIP() << "kein IPv6 auf diesem Rechner (Rueckfall 0.0.0.0)";
 
     Fehler f;
     auto ziele = aufloesen("[::1]", l.port, &f);
@@ -126,7 +126,7 @@ TEST(SerialNetz, DualStackNimmtAuchIPv4AufDemSelbenSocketAn) {
     Lauscher l = lauschen(0);
     ASSERT_TRUE(l.sock) << l.fehler.text;
     if (!l.dualStack) GTEST_SKIP() << "kein IPv6";
-    // Der Dual-Stack-Socket (V6ONLY=0) muss auch v4-Clients bedienen, sonst hörte
+    // Der Dual-Stack-Socket (V6ONLY=0) muss auch v4-Clients bedienen, sonst hoerte
     // eine Gegenstelle mit „127.0.0.1" ins Leere.
     Paar p = verbindeUndNimmAn(l, "127.0.0.1");
     pruefeAustausch(p);
@@ -152,8 +152,8 @@ TEST(SerialNetz, AufloesenLehntUngueltigenHostAb) {
 }
 
 TEST(SerialNetz, BelegterPortSchiebtDieSucheUmEinsWeiter) {
-    // Erst einen Port belegen (Port 0 → tatsächlicher Port P), dann ab P suchen:
-    // die Suche darf P nicht bekommen und muss bei P+1 (oder dem nächsten freien) landen.
+    // Erst einen Port belegen (Port 0 → tatsaechlicher Port P), dann ab P suchen:
+    // die Suche darf P nicht bekommen und muss bei P+1 (oder dem naechsten freien) landen.
     Lauscher a = lauschen(0);
     ASSERT_TRUE(a.sock) << a.fehler.text;
 
@@ -178,14 +178,14 @@ TEST(SerialNetz, BelegtBleibtBelegtAuchWennNurIPv4DenPortHaelt) {
 }
 
 TEST(SerialNetz, PortpruefungFrei) {
-    // Zufälliger hoher Port; ist er zufällig belegt, liefert die Prüfung einen Vorschlag —
-    // der Test akzeptiert das, prüft aber dann die Gegenprobe.
+    // Zufaelliger hoher Port; ist er zufaellig belegt, liefert die Pruefung einen Vorschlag —
+    // der Test akzeptiert das, prueft aber dann die Gegenprobe.
     const int p = zufallsPort();
     PortPruefung r = portPruefen(p);
     ASSERT_GT(r.vorschlag, 0) << r.fehler.text;
     EXPECT_GE(r.vorschlag, p);
     EXPECT_EQ(r.frei, r.vorschlag == p);
-    // Die Prüfung hält nichts fest: der Vorschlag ist danach wirklich bindbar.
+    // Die Pruefung haelt nichts fest: der Vorschlag ist danach wirklich bindbar.
     EXPECT_TRUE(lauschen(r.vorschlag).sock);
 }
 
@@ -196,13 +196,13 @@ TEST(SerialNetz, PortpruefungBelegtLiefertNaechstenFreien) {
     PortPruefung r = portPruefen(a.port);
     EXPECT_FALSE(r.frei);
     EXPECT_GT(r.vorschlag, a.port);
-    // Nur Prüfen, nicht Lauschen: der Vorschlag ist danach noch bindbar (§7.4a).
+    // Nur Pruefen, nicht Lauschen: der Vorschlag ist danach noch bindbar (§7.4a).
     Lauscher b = lauschen(r.vorschlag);
     EXPECT_TRUE(b.sock) << b.fehler.text;
 }
 
 TEST(SerialNetz, PortpruefungOhneFreienPortLiefertNull) {
-    // Der höchste Port 65535 belegt, Prüfung ab 65535: nichts darüber → 0.
+    // Der hoechste Port 65535 belegt, Pruefung ab 65535: nichts darueber → 0.
     Lauscher a = lauschen(65535);
     if (!a.sock) GTEST_SKIP() << "Port 65535 nicht zu belegen (von anderem Lauf gehalten): " << a.fehler.text;
     PortPruefung r = portPruefen(65535);
@@ -219,7 +219,7 @@ TEST(SerialNetz, UngueltigePortwerte) {
 }
 
 TEST(SerialNetz, VerbindenAnGeschlossenenPortScheitertMitFehler) {
-    // Port beschaffen, Lauscher schließen → dort hört niemand mehr (Loopback: sofort RST).
+    // Port beschaffen, Lauscher schliessen → dort hoert niemand mehr (Loopback: sofort RST).
     int port;
     { Lauscher l = lauschen(0); ASSERT_TRUE(l.sock); port = l.port; }
 
@@ -277,7 +277,7 @@ TEST(SerialNetz, WeckerWecktDenWartendenFaden) {
     pe[0].lesen = true;
     EXPECT_EQ(warten(pe, 0), 0);   // ruhig, solange niemand weckt
 
-    // Aus einem anderen Faden wecken, während der Hauptfaden (lang) wartet.
+    // Aus einem anderen Faden wecken, waehrend der Hauptfaden (lang) wartet.
     std::thread t([&w] {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         w.wecken();
@@ -288,7 +288,7 @@ TEST(SerialNetz, WeckerWecktDenWartendenFaden) {
     EXPECT_LT(std::chrono::steady_clock::now() - t0, std::chrono::milliseconds(2000));
     t.join();
 
-    // Mehrfaches Wecken läuft nicht über, und leeren stellt die Ruhe wieder her.
+    // Mehrfaches Wecken laeuft nicht ueber, und leeren stellt die Ruhe wieder her.
     for (int i = 0; i < 3000; ++i) w.wecken();
     w.leeren();
     EXPECT_EQ(warten(pe, 0), 0);

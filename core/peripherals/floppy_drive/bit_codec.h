@@ -1,6 +1,6 @@
 /**
  * @file bit_codec.h
- * @brief BitCodec – Bitzellen ⇆ Bytes je Aufzeichnungsverfahren (MFM und FM) für HFE.
+ * @brief BitCodec – Bitzellen ⇆ Bytes je Aufzeichnungsverfahren (MFM und FM) fuer HFE.
  *
  * Nur das HFE-Backend braucht die Bitebene; sie ist hier gekapselt, damit der Rest des
  * Floppy-Stacks byteorientiert bleibt (@ref TrackImage).  @ref decode wandelt den rohen
@@ -31,7 +31,7 @@
 
 /**
  * @namespace BitCodec
- * @brief MFM-/FM-Bitzellen-Decodierung/-Encodierung für eine Spurseite.
+ * @brief MFM-/FM-Bitzellen-Decodierung/-Encodierung fuer eine Spurseite.
  */
 namespace BitCodec {
 
@@ -39,9 +39,9 @@ namespace BitCodec {
  * @brief Decodiert einen Bitzellen-Strom (eine Spurseite) in eine @ref TrackImage.
  *
  * @p cells sind die Spurseiten-Bytes, **wie in HFE gespeichert** (LSB-first je Byte).
- * Es werden die ersten @p bitcell_count Zellen ausgewertet.  Das Ergebnis trägt @p enc
+ * Es werden die ersten @p bitcell_count Zellen ausgewertet.  Das Ergebnis traegt @p enc
  * als @ref TrackImage::encoding und setzt @ref TrackImage::marks auf den Mark-Bytes
- * (FE → Id, FB/F8 → Data, FC → Index); die 0xA1/0xC2-Sync-Bytes erscheinen als reguläre
+ * (FE → Id, FB/F8 → Data, FC → Index); die 0xA1/0xC2-Sync-Bytes erscheinen als regulaere
  * Bytes mit Marke None — analog zur Ausgabe von @ref TrackCodec::buildTrack, damit
  * @ref TrackCodec::parseTrack auf beiden Quellen identisch arbeitet.
  *
@@ -52,40 +52,40 @@ namespace BitCodec {
  * Bytes) verschieben.  Mit fester Phase decodiert alles nach dem ersten Feld zu Rauschen.
  *
  * @param cells          Spurseiten-Bytes (LSB-first Zellstrom)
- * @param bitcell_count  Zahl gültiger Bitzellen (≤ cells.size()*8)
+ * @param bitcell_count  Zahl gueltiger Bitzellen (≤ cells.size()*8)
  * @param enc            erwartetes Verfahren (MFM/FM)
  * @return decodierte Spur (mit encoding == @p enc und bitcells == @p bitcell_count)
  */
 TrackImage decode(const std::vector<uint8_t>& cells, uint32_t bitcell_count, Encoding enc);
 
 /**
- * @brief Encodiert eine @ref TrackImage zurück in einen Bitzellen-Strom (eine Spurseite).
+ * @brief Encodiert eine @ref TrackImage zurueck in einen Bitzellen-Strom (eine Spurseite).
  *
  * Verfahren aus @p track.encoding.  Marken (`marks[i] != None`) werden mit dem
  * verfahrenstypischen Sonder-Clock kodiert (MFM: A1 → `0x4489`, C2 → `0x5224`;
- * FM: Sondertakt C7/D7), übrige Bytes regulär.  Das Ergebnis ist LSB-first (HFE-fähig)
- * und wird auf @p target_bitcells (auf volle Bytes aufgerundet) mit Gap aufgefüllt/getrimmt,
- * damit die ursprüngliche Spurlänge (HFE `track_len`) erhalten bleibt.
+ * FM: Sondertakt C7/D7), uebrige Bytes regulaer.  Das Ergebnis ist LSB-first (HFE-faehig)
+ * und wird auf @p target_bitcells (auf volle Bytes aufgerundet) mit Gap aufgefuellt/getrimmt,
+ * damit die urspruengliche Spurlaenge (HFE `track_len`) erhalten bleibt.
  *
  * @param track           zu kodierende Spur (mit marks[] und encoding)
  * @param target_bitcells Ziel-Bitzellenzahl (typ. @ref TrackImage::bitcells der Quelle)
- * @return Spurseiten-Bytes (LSB-first), Länge = ceil(target_bitcells/8)
+ * @return Spurseiten-Bytes (LSB-first), Laenge = ceil(target_bitcells/8)
  */
 std::vector<uint8_t> encode(const TrackImage& track, uint32_t target_bitcells);
 
 /**
- * @brief Rechnet einen ÜBERABGETASTETEN Zellstrom auf die nominale Zellrate herunter.
+ * @brief Rechnet einen UEBERABGETASTETEN Zellstrom auf die nominale Zellrate herunter.
  *
  * Manche Flux-Reader (Greaseweazle & Co.) exportieren eine DD-Diskette mit doppelter
  * Abtastrate (HFE-Header `bitrate` = 500 statt 250 kbit/s): jede MFM-Zelle belegt dann
  * @p factor Abtastwerte, und das Flankenbit liegt jitterbedingt mal im ersten, mal im
- * zweiten davon.  Ein simples Ausdünnen jeder n-ten Position verliert deshalb Flanken;
+ * zweiten davon.  Ein simples Ausduennen jeder n-ten Position verliert deshalb Flanken;
  * stattdessen wird hier **flankenintervall-quantisiert**: der Abstand zweier Flanken in
  * Abtastwerten wird durch @p factor geteilt und auf ganze Zellen gerundet.
  *
  * @param cells          Spurseiten-Bytes (LSB-first Zellstrom, wie in HFE)
- * @param bitcell_count  Zahl gültiger Abtastwerte
- * @param factor         Überabtastfaktor (>1; 1 gibt die Eingabe unverändert zurück)
+ * @param bitcell_count  Zahl gueltiger Abtastwerte
+ * @param factor         Ueberabtastfaktor (>1; 1 gibt die Eingabe unveraendert zurueck)
  * @param out_bitcells   liefert die Zahl der erzeugten Zellen
  * @return Zellstrom bei nominaler Rate (LSB-first, HFE-kompatibel)
  */
@@ -94,27 +94,27 @@ std::vector<uint8_t> downsampleCells(const std::vector<uint8_t>& cells,
                                      uint32_t& out_bitcells);
 
 /**
- * @brief Umkehrung von @ref downsampleCells — Zellstrom auf @p factor-fache Länge.
+ * @brief Umkehrung von @ref downsampleCells — Zellstrom auf @p factor-fache Laenge.
  *
  * Jede Flanke wandert auf das @p factor-fache ihrer Zellposition; die Zellen dazwischen
- * bleiben leer.  Damit dauert jede Zelle @p factor mal so lang, die Spur läuft also mit
+ * bleiben leer.  Damit dauert jede Zelle @p factor mal so lang, die Spur laeuft also mit
  * dem @p factor-ten Teil der nominalen Datenrate.
  *
- * Gebraucht beim ZURÜCKSCHREIBEN einer Spur, die mit halber Rate aufgezeichnet ist —
+ * Gebraucht beim ZURUECKSCHREIBEN einer Spur, die mit halber Rate aufgezeichnet ist —
  * die FM-Bootspur der SCP1700-Disketten (@ref TrackImage::cell_factor).  Ohne sie ginge
- * eine solche Spur mit doppelter Rate auf die Diskette und wäre für ihren Rechner
+ * eine solche Spur mit doppelter Rate auf die Diskette und waere fuer ihren Rechner
  * unlesbar.
  *
  * @param cells          Modell-Zellstrom (LSB-first, nominale Rate)
- * @param bitcell_count  Zahl gültiger Zellen
- * @param factor         Streckfaktor (>1; 1 gibt die Eingabe unverändert zurück)
+ * @param bitcell_count  Zahl gueltiger Zellen
+ * @param factor         Streckfaktor (>1; 1 gibt die Eingabe unveraendert zurueck)
  * @param out_bitcells   liefert die Zahl der erzeugten Zellen
  */
 std::vector<uint8_t> upsampleCells(const std::vector<uint8_t>& cells,
                                    uint32_t bitcell_count, uint32_t factor,
                                    uint32_t& out_bitcells);
 
-/// @brief Zahl der Adressmarken (Id/Data/Index) einer Spur — „ist da überhaupt was?"
+/// @brief Zahl der Adressmarken (Id/Data/Index) einer Spur — „ist da ueberhaupt was?"
 size_t markCount(const TrackImage& t);
 
 /**
@@ -122,11 +122,11 @@ size_t markCount(const TrackImage& t);
  *
  * Erst mit @p preferred decodieren; findet sich keine einzige Adressmarke, das andere
  * Verfahren probieren und nehmen, wenn es Marken liefert.  Genau die Regel, mit der
- * @ref HfeCodec Mischdichte-Medien lädt — und die einzige mögliche, wenn die Quelle
+ * @ref HfeCodec Mischdichte-Medien laedt — und die einzige moegliche, wenn die Quelle
  * gar keinen Kopf hat, der das Verfahren nennt (echte Diskette am Greaseweazle,
  * doc/design/14_physische_diskette.md §8.1).
  *
- * Eine markenlose Rückgabe ist **kein Fehler**, sondern eine unformatierte Spur; der
+ * Eine markenlose Rueckgabe ist **kein Fehler**, sondern eine unformatierte Spur; der
  * Aufrufer entscheidet, ob er sie als leere Spur ablegt.
  */
 TrackImage decodeAuto(const std::vector<uint8_t>& cells, uint32_t bitcell_count,

@@ -55,9 +55,9 @@ for _strom in (sys.stdout, sys.stderr):
         pass
 
 
-# --machine: Programmprofil wählen — ebenfalls vor allem anderen, denn --help und
-# die Diskettenprüfung reden schon vom Programm.  Der Schalter wird aus argv
-# entfernt, damit ihn keine spätere Auswertung (Qt, Disketten) als Datei nimmt.
+# --machine: Programmprofil waehlen — ebenfalls vor allem anderen, denn --help und
+# die Diskettenpruefung reden schon vom Programm.  Der Schalter wird aus argv
+# entfernt, damit ihn keine spaetere Auswertung (Qt, Disketten) als Datei nimmt.
 from app import profil as _profile
 
 _MASCHINE = ""
@@ -72,15 +72,15 @@ for _arg in _args:
     elif _arg.startswith("--machine="):
         _MASCHINE = _arg.split("=", 1)[1]
     elif _arg == "--mode" or _arg.startswith("--mode="):
-        # Betriebsart des P8000 (computer | terminal) für diesen Start vorwählen; sie wird danach
-        # wie jede Einstellung gemerkt.  Über die Umgebung an das Hauptfenster gereicht.
+        # Betriebsart des P8000 (computer | terminal) fuer diesen Start vorwaehlen; sie wird danach
+        # wie jede Einstellung gemerkt.  Ueber die Umgebung an das Hauptfenster gereicht.
         _wert = next(_args, "") if _arg == "--mode" else _arg.split("=", 1)[1]
         if _wert not in ("computer", "terminal"):
             print("--mode: computer oder terminal", file=sys.stderr)
             sys.exit(2)
         os.environ["K1520_BETRIEBSART"] = _wert
     elif _arg in ("--instance", "--config"):
-        # Mehrinstanzbetrieb (app/instanz.py): eigener Konfigurationsname bzw. -datei.  Über die
+        # Mehrinstanzbetrieb (app/instanz.py): eigener Konfigurationsname bzw. -datei.  Ueber die
         # Umgebung weitergereicht, damit auch ein von hier gestartetes Kindprogramm sie kennt.
         _wert = next(_args, "")
         if not _wert:
@@ -99,7 +99,7 @@ except ValueError as _e:
     sys.exit(2)
 sys.argv[1:] = _rest
 
-# --paths: aufgelöste Pfade ausgeben und beenden.  Steht VOR den Qt- und
+# --paths: aufgeloeste Pfade ausgeben und beenden.  Steht VOR den Qt- und
 # Bindungs-Importen, damit die Auskunft auch dann kommt, wenn genau das fehlt,
 # wonach gefragt wird (Kernbibliothek, PySide6).  Rauchtest des Installers,
 # siehe doc/design/13_distribution.md §3.1.
@@ -109,8 +109,8 @@ if "--paths" in sys.argv[1:]:
     sys.exit(0)
 
 # --help: ebenfalls vor den Qt-Importen, damit die Hilfe auch ohne PySide6 kommt.
-# Laufwerke, die das Profil ab Werk bestückt (A5120: A:–C: + leerer D:-Platz, also
-# vier Steckplätze; K8915: zwei) — so viele Disketten nimmt die Kommandozeile.
+# Laufwerke, die das Profil ab Werk bestueckt (A5120: A:–C: + leerer D:-Platz, also
+# vier Steckplaetze; K8915: zwei) — so viele Disketten nimmt die Kommandozeile.
 # MC80: keine Laufwerke — Disketten nimmt die Kommandozeile dort gar nicht.
 _ANZAHL_LAUFWERKE = (0 if not PROFIL.laufwerke
                      else 4 if PROFIL.maschine == "a5120" else 2)   # K8915, PRG: zwei
@@ -184,8 +184,8 @@ def main():
     app.setApplicationVersion(_version.fassung())
 
     # Ctrl+C im Terminal sauber beenden: Qts C++-Eventloop kehrt sonst nie nach
-    # Python zurück, sodass der SIGINT-Handler nie läuft.  Ein periodischer
-    # No-op-Timer hält den Interpreter am Ticken, der Handler quittet die App.
+    # Python zurueck, sodass der SIGINT-Handler nie laeuft.  Ein periodischer
+    # No-op-Timer haelt den Interpreter am Ticken, der Handler quittet die App.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     sigint_timer = QTimer()
     sigint_timer.start(200)
@@ -202,9 +202,9 @@ def main():
         window = MainWindow(CLI_DISKS, profil=PROFIL)
         window.show()
     except Exception as e:
-        # Startabbrüche des Cores (z. B. fehlender Diskettenformat-Katalog
-        # data/formats.yaml) tragen eine mehrzeilige, erklärende Meldung —
-        # unverändert ausgeben und den Emulator beenden.
+        # Startabbrueche des Cores (z. B. fehlender Diskettenformat-Katalog
+        # data/formats.yaml) tragen eine mehrzeilige, erklaerende Meldung —
+        # unveraendert ausgeben und den Emulator beenden.
         print(f"Failed to start emulator: {e}", file=sys.stderr)
         return 1
 

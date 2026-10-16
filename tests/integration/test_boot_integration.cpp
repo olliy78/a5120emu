@@ -57,7 +57,7 @@ constexpr int      kSectorBytes  = 128;     // cpa780 boot track: 128-byte secto
 constexpr int      kBootBytes    = kBootSectors * kSectorBytes;  // 512
 
 /// Laufen lassen, bis ZVE2 den DMA-Abschluss meldet ([0x03F8]==3).
-/// Bleibt hier statt in tests/support/: die Adressen sind Wissen ÜBER den
+/// Bleibt hier statt in tests/support/: die Adressen sind Wissen UEBER den
 /// Bootvorgang, nicht allgemeine Testinfrastruktur.
 bool runUntilDmaComplete(A5120Machine& m, int max_cycles = 3'000'000) {
     constexpr int batch = 2000;
@@ -270,9 +270,9 @@ TEST(BootIntegration, Stage3_FullyLoadsAndJumpsToOs) {
 // succeeded and the OS is executing — and then completes its BIOS cold-boot init
 // ("TPA ist OK!" after the RAM test).  Both encodings reach the exact same screen.
 //
-// Da diese Disk *ohne* Uhr ist (kein "Bitte Uhrzeit eingeben!"-Prompt), läuft der
+// Da diese Disk *ohne* Uhr ist (kein "Bitte Uhrzeit eingeben!"-Prompt), laeuft der
 // Kaltstart direkt bis zum interaktiven CCP "A>" durch — die Tests stoppen aber
-// früh bei "TPA ist OK!" (runUntilVramContains hält an), das ist als Boot-Nachweis
+// frueh bei "TPA ist OK!" (runUntilVramContains haelt an), das ist als Boot-Nachweis
 // ausreichend und schnell.
 
 // Budget: "TPA ist OK!" appears well before this; runUntilVramContains stops early.
@@ -306,15 +306,15 @@ TEST(BootIntegrationCpa02, ImgBootsIntoRunningCpaOs) {
 
 // ── Display-Pfad end-to-end: gerenderter Framebuffer == Zeichengenerator(VRAM) ──
 //
-// Die Banner-Tests oben prüfen nur die VRAM-*Zeichencodes* (0xF800-Bytes), nicht
-// die tatsächlich gerenderten Pixel. Ein falscher Zeichengenerator (die drei
-// historischen Charset-Bugs) ließe sie alle grün. Dieser Test schließt die Lücke:
-// nachdem das OS-Banner steht, wird für jede Zelle der Banner-Zeile der gerenderte
+// Die Banner-Tests oben pruefen nur die VRAM-*Zeichencodes* (0xF800-Bytes), nicht
+// die tatsaechlich gerenderten Pixel. Ein falscher Zeichengenerator (die drei
+// historischen Charset-Bugs) liesse sie alle gruen. Dieser Test schliesst die Luecke:
+// nachdem das OS-Banner steht, wird fuer jede Zelle der Banner-Zeile der gerenderte
 // Framebuffer-Block gegen die Chargen-Erwartung aus VRAM verglichen — Beweis, dass
 // der komplette Pfad VRAM → renderChar → Framebuffer korrekt verdrahtet ist.
 
 // Spiegelt K7024::chargenLookupLatin (dort static/intern): 8-Bit-Pixelzeile
-// (Bit7 = links) für Code+Pixelzeile aus dem verifizierten v171/v172-Satz.
+// (Bit7 = links) fuer Code+Pixelzeile aus dem verifizierten v171/v172-Satz.
 static uint8_t expectedGlyphRow(uint8_t charCode, int pixelRow) {
     uint8_t code = charCode & 0x7F;
     if (pixelRow >= 12 || code < 0x20) return 0x00;
@@ -324,8 +324,8 @@ static uint8_t expectedGlyphRow(uint8_t charCode, int pixelRow) {
 
 /**
  * @test BootIntegrationCpa02/RenderedBannerMatchesCharacterGenerator
- * @brief Der gerenderte Framebuffer der OS-Banner-Zeile stimmt Pixel-für-Pixel mit dem Zeichengenerator überein.
- * @details Selbstkonsistenz-Prüfung des Display-Pfads: für die 80 Zellen der Zeile mit
+ * @brief Der gerenderte Framebuffer der OS-Banner-Zeile stimmt Pixel-fuer-Pixel mit dem Zeichengenerator ueberein.
+ * @details Selbstkonsistenz-Pruefung des Display-Pfads: fuer die 80 Zellen der Zeile mit
  *   "CP/A, Version 25.09.89" wird jede der 12 Pixelzeilen aus dem Framebuffer mit
  *   chargenLookupLatin(VRAM-Code) verglichen (inkl. Cursor-Invertierung Zeilen 10–11).
  * @par Pass criterion  Alle 80×12 Pixelzeilen der Banner-Zeile == Zeichengenerator-Erwartung.
@@ -338,7 +338,7 @@ TEST(BootIntegrationCpa02, RenderedBannerMatchesCharacterGenerator) {
     ASSERT_TRUE(runUntilVramContains(machine, "CP/A, Version 25.09.89", kCpa02BudgetCycles))
         << "OS-Banner nie erschienen — Boot fehlgeschlagen";
 
-    // Banner-Zeile (0–23) suchen, deren 80-Zeichen-Text das Banner enthält.
+    // Banner-Zeile (0–23) suchen, deren 80-Zeichen-Text das Banner enthaelt.
     int bannerRow = -1;
     for (int row = 0; row < 24 && bannerRow < 0; ++row) {
         std::string line;
@@ -371,7 +371,7 @@ TEST(BootIntegrationCpa02, RenderedBannerMatchesCharacterGenerator) {
         }
     }
     EXPECT_EQ(mismatches, 0)
-        << mismatches << " Pixelzeilen der Banner-Zeile stimmen nicht mit dem Zeichengenerator überein";
+        << mismatches << " Pixelzeilen der Banner-Zeile stimmen nicht mit dem Zeichengenerator ueberein";
 }
 
 /**
@@ -482,16 +482,16 @@ TEST(BootIntegrationDriveBC, ClockHfe_FromDriveC) {
 
 // ─── Voller CP/A-Boot bis zur Uhrzeit-Eingabe (per-Byte-/BUSRQ-Modell) ────────
 //
-// Kanonischer „bootet vollständig durch"-Test: cpa_cpa780_k5601_clock (Boot-Disk MIT
+// Kanonischer „bootet vollstaendig durch"-Test: cpa_cpa780_k5601_clock (Boot-Disk MIT
 // Echtzeituhr, Format = cpa780 mit aktiver autom. Formaterkennung im Config) wird
-// auf A: (Laufwerk 0) gemountet und durchläuft ALLE Loader-Stufen (Boot-ROM →
-// Sekundärlader → 3. Stufe @OS.COM → CP/A-Kaltstart) bis zur Aufforderung
+// auf A: (Laufwerk 0) gemountet und durchlaeuft ALLE Loader-Stufen (Boot-ROM →
+// Sekundaerlader → 3. Stufe @OS.COM → CP/A-Kaltstart) bis zur Aufforderung
 // "Bitte Uhrzeit eingeben!".  Das ist der erwartete interaktive Endzustand des
-// Kaltstarts und der Regressionswächter für das hardware-echte per-Byte-/BUSRQ-
+// Kaltstarts und der Regressionswaechter fuer das hardware-echte per-Byte-/BUSRQ-
 // Modell der K5122 (07_k5122_afs.md §7.2): bricht eine Loader-Stufe oder die
 // Bus-Verriegelung, erreicht die VRAM diesen Text nie.
 //
-// Von A: entfällt der 8212-Laufwerkssuchlauf (B:/C:-Tests oben), daher deutlich
+// Von A: entfaellt der 8212-Laufwerkssuchlauf (B:/C:-Tests oben), daher deutlich
 // schneller als kClockBootBudget.
 TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
     A5120Machine machine;
@@ -507,39 +507,39 @@ TEST(BootIntegration, FullBootReachesTimeEntryPrompt) {
 //
 // Beide Wege der GUI (Reset-Taste, Power OFF→ON) starten die Maschine aus einem
 // bereits gebooteten CP/A neu.  Der Knackpunkt ist die Speicher-Ausbaumessung des
-// Lade-ROMs (0040H–005AH): sie schreibt ein Testbyte, lässt sich vom /WR-Strobe an
-// BS-PIO Port A unterbrechen und prüft in der ISR, ob das Byte angekommen ist.
+// Lade-ROMs (0040H–005AH): sie schreibt ein Testbyte, laesst sich vom /WR-Strobe an
+// BS-PIO Port A unterbrechen und prueft in der ISR, ob das Byte angekommen ist.
 // Wurde /WR als DAUERND aktiv modelliert, kam der Interrupt schon beim `EI` davor,
-// die ISR verglich den ALTEN Speicherinhalt — bei frischem DRAM (0xFF) unauffällig,
+// die ISR verglich den ALTEN Speicherinhalt — bei frischem DRAM (0xFF) unauffaellig,
 // nach einem Neustart aus dem Betrieb (echte Daten im RAM) meldete die Messung
 // „kein Speicher" und der Neustart lief in Zufallscode.  Beide Tests booten daher
-// erst vollständig und starten DANN neu.
+// erst vollstaendig und starten DANN neu.
 namespace {
-// Meilenstein des VOLLSTÄNDIGEN Neustarts (@OS.COM läuft und meldet sich).
+// Meilenstein des VOLLSTAENDIGEN Neustarts (@OS.COM laeuft und meldet sich).
 constexpr const char* kRebootNeedle = "Bitte Uhrzeit eingeben!";
 
-// Bildschirmspeicher vor dem Neustart unkenntlich machen.  Nötig, weil der
-// Textbildschirm für die CPU schreib-only ist: Lesen (und damit vramText())
-// bedient das K3526-Schattenram, das reset() NICHT löscht — ohne dieses Wischen
-// würde der Text des vorigen Laufs sofort „gefunden" und der Test wäre blind.
+// Bildschirmspeicher vor dem Neustart unkenntlich machen.  Noetig, weil der
+// Textbildschirm fuer die CPU schreib-only ist: Lesen (und damit vramText())
+// bedient das K3526-Schattenram, das reset() NICHT loescht — ohne dieses Wischen
+// wuerde der Text des vorigen Laufs sofort „gefunden" und der Test waere blind.
 void blankVram(A5120Machine& m) {
     k1520test::wipeVram(m);
     ASSERT_EQ(vramText(m).find(kRebootNeedle), std::string::npos)
-        << "Bildschirm-Wischen wirkungslos — der Neustart-Test wäre blind";
+        << "Bildschirm-Wischen wirkungslos — der Neustart-Test waere blind";
 }
 
-// Die 62 Prüfzellen der ROM-Ausbaumessung (0800H, +400H …) mit „benutztem" RAM
+// Die 62 Pruefzellen der ROM-Ausbaumessung (0800H, +400H …) mit „benutztem" RAM
 // belegen.  Sie ist die Stelle, an der ein Neustart aus dem Betrieb scheiterte:
 // die ISR vergleicht die Zelle gegen FFH, und stand ihr Interrupt VOR dem
-// Testschreiben, entschied der Altinhalt über „Speicher da/nicht da".  Ein frisch
-// gebootetes CP/A hinterlässt dort zufällig FFH — ohne dieses Verschmutzen liefe
+// Testschreiben, entschied der Altinhalt ueber „Speicher da/nicht da".  Ein frisch
+// gebootetes CP/A hinterlaesst dort zufaellig FFH — ohne dieses Verschmutzen liefe
 // der Test auch mit dem Fehler durch.
 void dirtyMemorySizingProbes(A5120Machine& m) {
     for (int i = 0; i < 62; ++i)
         m.memWriteDebug(static_cast<uint16_t>(0x0800 + i * 0x0400), 0x5A);
 }
 
-// Vollständiger Kaltstart bis zur Uhrzeit-Eingabe (gemeinsamer Vorlauf beider Tests).
+// Vollstaendiger Kaltstart bis zur Uhrzeit-Eingabe (gemeinsamer Vorlauf beider Tests).
 void bootToTimePrompt(A5120Machine& m) {
     ASSERT_TRUE(m.mountDisk(0, diskPath("cpa_cpa780_k5601_clock.img"), "cpa780", /*wp=*/false))
         << "could not mount cpa_cpa780_k5601_clock.img on A:: " << m.lastError();
@@ -554,16 +554,16 @@ TEST(BootIntegration, ResetFromRunningSystemRebootsFromRom) {
     ASSERT_TRUE(machine.mountDisk(0, diskPath("cpa_cpa780_k5601_clock.img"), "cpa780", /*wp=*/false))
         << machine.lastError();
     machine.powerOn();
-    // Reset mitten im Betrieb — hier, während das CP/A-Bootsystem @OS.COM lädt.
-    // Bewusst NICHT am fertigen Prompt: ein durchgebootetes CP/A hinterlässt in den
-    // Prüfzellen der Ausbaumessung zufällig FFH und fängt sich selbst mit defekter
-    // Messung noch über Restcode ab — der Fehler wäre unsichtbar.
+    // Reset mitten im Betrieb — hier, waehrend das CP/A-Bootsystem @OS.COM laedt.
+    // Bewusst NICHT am fertigen Prompt: ein durchgebootetes CP/A hinterlaesst in den
+    // Pruefzellen der Ausbaumessung zufaellig FFH und faengt sich selbst mit defekter
+    // Messung noch ueber Restcode ab — der Fehler waere unsichtbar.
     ASSERT_TRUE(runUntilVramContains(machine, "CP/A-Bootsystem", 40'000'000))
         << "Kaltstart erreichte das CP/A-Bootsystem nie";
 
     ASSERT_NO_FATAL_FAILURE(blankVram(machine));
     // Genau die Reihenfolge der GUI-Reset-Taste: Images neu mounten (setzt den
-    // K5122-Laufwerkszustand zurück), dann reset().  RAM behält dabei den Inhalt
+    // K5122-Laufwerkszustand zurueck), dann reset().  RAM behaelt dabei den Inhalt
     // des laufenden OS — anders als beim Netz-Aus.
     ASSERT_TRUE(machine.mountDisk(0, diskPath("cpa_cpa780_k5601_clock.img"), "cpa780", /*wp=*/false))
         << machine.lastError();
@@ -578,8 +578,8 @@ TEST(BootIntegration, ResetFromRunningSystemRebootsFromRom) {
         << "Reset aus dem laufenden CP/A bootete nicht durch:\n" << vramText(machine);
 }
 
-// Der vom Nutzer gemeldete Fall: Uhrzeit bestätigen, am `A>`-Prompt stehen, dann
-// Reset bzw. Power OFF→ON.  Hier läuft der System-CTC (Q302) des OS mit eigener
+// Der vom Nutzer gemeldete Fall: Uhrzeit bestaetigen, am `A>`-Prompt stehen, dann
+// Reset bzw. Power OFF→ON.  Hier laeuft der System-CTC (Q302) des OS mit eigener
 // IM2-Vektorbasis (F8H) und freigegebenen Interrupts; ohne systemweiten /RESET
 // aller Bausteine schickt der erste Timer-Interrupt nach dem `EI` des Lade-ROMs
 // die neue Boot-Kette auf einen Fantasie-Vektor aus der ROM-Seite 0.
@@ -589,7 +589,7 @@ TEST(BootIntegration, RestartFromInteractivePromptRebootsFromRom) {
         A5120Machine machine;
         ASSERT_NO_FATAL_FAILURE(bootToTimePrompt(machine));
 
-        // Uhrzeit bestätigen → CP/A erreicht den interaktiven `A>`-Prompt.
+        // Uhrzeit bestaetigen → CP/A erreicht den interaktiven `A>`-Prompt.
         typeString(machine, "12:00:00");
         typeKey(machine, QK_RETURN);
         ASSERT_TRUE(runSmallUntil(machine, "A>", 20'000'000))
@@ -603,7 +603,7 @@ TEST(BootIntegration, RestartFromInteractivePromptRebootsFromRom) {
 
         EXPECT_TRUE(runUntilPC(machine, 0x1800, 40'000'000))
             << "Neustart vom A>-Prompt erreichte Boot-Stufe 3 nicht (laufender "
-               "System-CTC des alten OS nicht zurückgesetzt?)";
+               "System-CTC des alten OS nicht zurueckgesetzt?)";
         EXPECT_TRUE(runUntilVramContains(machine, kRebootNeedle, 40'000'000))
             << "Neustart vom A>-Prompt bootete nicht durch:\n" << vramText(machine);
     }
@@ -699,7 +699,7 @@ TEST(KeyboardIntegration, TypeCommandAtCcpEchoesAndProcesses) {
 // von 100 ms.  Der Emulator wiederholte gar nicht: die Zeitbasis der Wiederholung
 // (`K7637::tick`) rief der laufende Rechner nie auf.
 //
-// Prüfung am CCP: „Q", Leertaste 1,5 s, „A" 1,5 s, „Z" — erwartet wird
+// Pruefung am CCP: „Q", Leertaste 1,5 s, „A" 1,5 s, „Z" — erwartet wird
 // „Q" + mehrere Leerzeichen + genau EIN „A" + „Z".
 TEST(KeyboardIntegration, HeldSpaceRepeatsHeldLetterDoesNot) {
     TempDisk disk("cpa_cpa780_k5601_clock.img");
@@ -735,7 +735,7 @@ TEST(KeyboardIntegration, HeldSpaceRepeatsHeldLetterDoesNot) {
     size_t i = q + 1;
     while (i < screen.size() && screen[i] == ' ') ++i;
     const size_t spaces = i - (q + 1);
-    // 1 Anschlag + Wiederholung ab 500 ms alle 100 ms über 1,5 s ≈ 12.
+    // 1 Anschlag + Wiederholung ab 500 ms alle 100 ms ueber 1,5 s ≈ 12.
     EXPECT_GE(spaces, 8u) << "gehaltene Leertaste wiederholt nicht\n"
                           << k1520test::vramLines(machine);
     EXPECT_LE(spaces, 14u) << k1520test::vramLines(machine);
@@ -744,18 +744,18 @@ TEST(KeyboardIntegration, HeldSpaceRepeatsHeldLetterDoesNot) {
         << k1520test::vramLines(machine);
 }
 
-// ─── SCPX 1526 — Boot + interaktives DIR/STAT/PIP (.COM-Laden über den Held-Bus) ─────
+// ─── SCPX 1526 — Boot + interaktives DIR/STAT/PIP (.COM-Laden ueber den Held-Bus) ─────
 //
 // disks/scpx17_cpa780_k5601.hfe (SCPX 1526 V1.7, ROBOTRON-Loader / SYL-Format) bootet vollautomatisch
-// bis zum interaktiven A>-Prompt (KEIN Uhrzeit-Prompt).  Dieser Test übt den *Laufzeit*-
-// Lesepfad: nach dem Prompt werden drei Programme ausgeführt — DIR (CCP-Built-in) sowie
+// bis zum interaktiven A>-Prompt (KEIN Uhrzeit-Prompt).  Dieser Test uebt den *Laufzeit*-
+// Lesepfad: nach dem Prompt werden drei Programme ausgefuehrt — DIR (CCP-Built-in) sowie
 // STAT und PIP (transiente .COM-Dateien, die von Diskette geladen werden).
 //
-// Regressionswächter für den os-gated „gehaltenen Bus" (core/machines/a5120/a5120.cpp run(),
-// doc/analyse_scpx_com_load.md §9.4b/§10): STAT/PIP luden früher NICHT (`SCPX ERR ON A: BAD
-// SECTOR`), weil ZVE1 im Per-Byte-/BUSRQ-Modell in den Byte-Lücken des Laufzeit-Reads mitlief
-// (Kopf-Divergenz / Matcher-INT-Korruption / verfrühter [0x0000]-Restore).  Sobald der Prompt
-// (ZVE1 @E079) einmal erreicht ist, hält der Emulator /BUSRQ über den ganzen Laufzeit-Read
+// Regressionswaechter fuer den os-gated „gehaltenen Bus" (core/machines/a5120/a5120.cpp run(),
+// doc/analyse_scpx_com_load.md §9.4b/§10): STAT/PIP luden frueher NICHT (`SCPX ERR ON A: BAD
+// SECTOR`), weil ZVE1 im Per-Byte-/BUSRQ-Modell in den Byte-Luecken des Laufzeit-Reads mitlief
+// (Kopf-Divergenz / Matcher-INT-Korruption / verfruehter [0x0000]-Restore).  Sobald der Prompt
+// (ZVE1 @E079) einmal erreicht ist, haelt der Emulator /BUSRQ ueber den ganzen Laufzeit-Read
 // (nur ZVE2 liest) — bricht das, meldet STAT wieder BAD SECTOR und "Space: 522k" erscheint nie.
 //
 // Anders als der DISABLED CP/A-Keyboard-Test unten ist die interaktive CCP-Eingabe hier stabil:
@@ -779,15 +779,15 @@ TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
     ASSERT_TRUE(runSmallUntil(machine, "BIOSG617", 30'000'000))
         << "DIR listete das Directory nicht (Eintrag BIOSG617 SYS fehlt)";
 
-    // 3. STAT.COM: wird geladen + ausgeführt → "A: R/W, Space: 522k".  Kern-Regressionscheck:
+    // 3. STAT.COM: wird geladen + ausgefuehrt → "A: R/W, Space: 522k".  Kern-Regressionscheck:
     //    scheitert der Held-Bus, endet STAT mit BAD SECTOR und diese Zeile erscheint nie.
     typeString(machine, "STAT");
     typeKey(machine, QK_RETURN);
     ASSERT_TRUE(runSmallUntil(machine, "Space: 522k", 30'000'000))
         << "STAT lud/lief nicht (kein 'Space: 522k') — vermutlich BAD SECTOR: "
-           "os-gated Held-Bus für Laufzeit-Reads gebrochen";
+           "os-gated Held-Bus fuer Laufzeit-Reads gebrochen";
 
-    // 4. PIP.COM: wird geladen → zeigt seinen '*'-Prompt (früher korrupt als '.>PIP').
+    // 4. PIP.COM: wird geladen → zeigt seinen '*'-Prompt (frueher korrupt als '.>PIP').
     typeString(machine, "PIP");
     typeKey(machine, QK_RETURN);
     ASSERT_TRUE(runSmallUntil(machine, "*", 30'000'000))
@@ -800,23 +800,23 @@ TEST(ScpxIntegration, BootThenDirStatPipLoadComFiles) {
 
 // ─── UDOS 4.3 — Kaltstart bis zur Datumsabfrage ──────────────────────────────
 //
-// disks/udos_boot_scp.hfe trägt UDOS 4.3 (Zilog-RIO-Abkömmling, KEIN CP/M) und ist
-// bitgenau von echter Hardware eingelesen.  Der Test fährt den kompletten Kaltstart:
+// disks/udos_boot_scp.hfe traegt UDOS 4.3 (Zilog-RIO-Abkoemmling, KEIN CP/M) und ist
+// bitgenau von echter Hardware eingelesen.  Der Test faehrt den kompletten Kaltstart:
 // Lade-ROM → SYL-Lader (0x0400) → Systemlader (0x4000) → residentes System → Anzeige
 // „UDOS 4.3" + „Neues Datum :".
 //
-// Regressionswächter für drei voneinander unabhängige Emulator-Korrekturen, die von
+// Regressionswaechter fuer drei voneinander unabhaengige Emulator-Korrekturen, die von
 // den drei Betriebssystemen nur UDOS trifft (doc/analyse_udos.md §13):
-//   1. Z80-Block-E/A lässt das Carry-Flag stehen (INI/IND/OUTI/OUTD + Repeat-Varianten).
-//      UDOS' ZVE2-Lesekoroutine zählt ihre 128-B-Blöcke mit `SUB 01H` / `INI` / `JR NC` —
-//      mit gelöschtem Carry lief die Schleife endlos bis in den Bildschirmspeicher.
+//   1. Z80-Block-E/A laesst das Carry-Flag stehen (INI/IND/OUTI/OUTD + Repeat-Varianten).
+//      UDOS' ZVE2-Lesekoroutine zaehlt ihre 128-B-Bloecke mit `SUB 01H` / `INI` / `JR NC` —
+//      mit geloeschtem Carry lief die Schleife endlos bis in den Bildschirmspeicher.
 //   2. K5122::endDmaTransfer() schaltet den ctrl-PIO-Port-A-Interrupt NICHT mehr
-//      eigenmächtig scharf — sonst kam ein Indexpuls-Interrupt mit Vektor 0xBA ohne
+//      eigenmaechtig scharf — sonst kam ein Indexpuls-Interrupt mit Vektor 0xBA ohne
 //      IM-2-Eintrag → RST 38H → UDOS-Monitor („BREAK …").
-//   3. LogicalSector::tail: der Sektorkontrollblock hinter der Daten-CRC (Rückwärts-/
-//      Vorwärtszeiger) überlebt den Aufbau des Lese-Streams — sonst las der Lader
-//      Gap-Füllbytes als Zeiger und brach mit „BAD POINTER IN OS" ab.
-// Fällt eine davon zurück, bleibt der Bildschirm bei der jeweiligen Fehlermeldung
+//   3. LogicalSector::tail: der Sektorkontrollblock hinter der Daten-CRC (Rueckwaerts-/
+//      Vorwaertszeiger) ueberlebt den Aufbau des Lese-Streams — sonst las der Lader
+//      Gap-Fuellbytes als Zeiger und brach mit „BAD POINTER IN OS" ab.
+// Faellt eine davon zurueck, bleibt der Bildschirm bei der jeweiligen Fehlermeldung
 // stehen und dieser Test wird rot.
 TEST(UdosIntegration, ColdBootReachesDatePrompt) {
     A5120Machine machine;
@@ -841,28 +841,28 @@ TEST(UdosIntegration, ColdBootReachesDatePrompt) {
         << "UDOS-Monitor DEBUBC43 aktiv — Interrupt-Vektor ohne IM-2-Eintrag:\n" << screen;
 }
 
-// ─── UDOS 4.3 — interaktiv: Datumseingabe + CAT lädt von Diskette ────────────
+// ─── UDOS 4.3 — interaktiv: Datumseingabe + CAT laedt von Diskette ────────────
 //
-// Fortsetzung des Kaltstart-Tests oben: hier läuft UDOS *bedient*.  Geprüft wird die
+// Fortsetzung des Kaltstart-Tests oben: hier laeuft UDOS *bedient*.  Geprueft wird die
 // ganze Kette Tastatur → Konsoltreiber → Kommandointerpreter → Dateisystem:
 //
-//   1. Datumsmaske `__.__.19__` mit „150388" füllen (der Cursor springt selbst über
+//   1. Datumsmaske `__.__.19__` mit „150388" fuellen (der Cursor springt selbst ueber
 //      die Punkte).  UDOS rechnet den Wochentag selbst aus — der 15.3.1988 war ein
 //      Dienstag; steht dort etwas anderes, rechnet die Datumsroutine falsch.
 //   2. ⚠ **UDOS invertiert die Buchstabenschreibung** (Konsoltreiber ab 0x063F):
 //      ungeshiftet getippte Kleinbuchstaben erscheinen GROSS, mit Shift klein.  Das
 //      ist Verhalten des realen A5120 (doc/analyse_udos.md §14.2).  Der Test friert
 //      beide Richtungen ein: „CAT" getippt → echot `%cat` → NONEXISTENT COMMAND;
-//      „cat" getippt → echot `%CAT` → das Kommando läuft.  Ohne diese Zusicherung
+//      „cat" getippt → echot `%CAT` → das Kommando laeuft.  Ohne diese Zusicherung
 //      merkt niemand, wenn die Wandlung kippt — die Kommandos scheitern dann nur
 //      scheinbar grundlos.
-//   3. `CAT *.* P=& F=L` lädt das transiente Programm CAT von der Diskette und gibt
+//   3. `CAT *.* P=& F=L` laedt das transiente Programm CAT von der Diskette und gibt
 //      die Detailliste aus.  Das ist der einzige Test, der den UDOS-Lesepfad im
-//      LAUFENDEN System übt (der Kaltstart-Test deckt nur die Ladekette ab) — er
-//      hängt damit an denselben drei Korrekturen wie ColdBootReachesDatePrompt.
+//      LAUFENDEN System uebt (der Kaltstart-Test deckt nur die Ladekette ab) — er
+//      haengt damit an denselben drei Korrekturen wie ColdBootReachesDatePrompt.
 //
 // Die Diskette wird aus einer TEMP-KOPIE gemountet: CAT liest zwar nur, aber das
-// Fixture ist committet und darf unter keinen Umständen verändert werden.
+// Fixture ist committet und darf unter keinen Umstaenden veraendert werden.
 TEST(UdosIntegration, DateEntryAndCatListsDirectory) {
     TempDisk a("udos_boot_scp.hfe", "udos_interactive_A.hfe");
     const std::string& aPath = a.path();
@@ -917,16 +917,16 @@ TEST(UdosIntegration, DateEntryAndCatListsDirectory) {
 
 }
 
-// ─── SCPX Laufzeit-SCHREIBEN: ERA löscht auf B: OHNE „BAD SECTOR" ─────────────
+// ─── SCPX Laufzeit-SCHREIBEN: ERA loescht auf B: OHNE „BAD SECTOR" ─────────────
 //
-// Regressionswächter für den SCPX-Write-Fix (K5122 post_write_grace_ +
+// Regressionswaechter fuer den SCPX-Write-Fix (K5122 post_write_grace_ +
 // releaseHeldRead-Guard, a5120 endPostWriteGrace + ZVE1-INT-Guard SP∈[EC00,EC10];
 // s. doc/analyse_scpx_com_load.md §11).  VOR dem Fix meldete JEDER Laufzeit-Write
 // auf B: „SCPX ERR ON B: BAD SECTOR" (der os-gated „gehaltene Bus" deckte nur den
 // Read-, nicht den Post-Write-Verify-Pfad ab → ZVE2 blieb im Reset, ein Index-ISR
-// kaperte den Handshake-Vektor).  Der Test bootet SCPX, löscht STAT.COM auf B:
-// (schreibender Directory-Zugriff) und prüft, dass KEIN BAD SECTOR erscheint und die
-// Datei tatsächlich weg ist (gefiltertes DIR → „NO FILE").
+// kaperte den Handshake-Vektor).  Der Test bootet SCPX, loescht STAT.COM auf B:
+// (schreibender Directory-Zugriff) und prueft, dass KEIN BAD SECTOR erscheint und die
+// Datei tatsaechlich weg ist (gefiltertes DIR → „NO FILE").
 //
 // Beide Laufwerke werden aus BESCHREIBBAREN TEMP-KOPIEN gemountet, damit die
 // committete Fixture disks/scpx17_cpa780_k5601.hfe garantiert unangetastet bleibt.
@@ -955,18 +955,18 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
     ASSERT_TRUE(runSmallUntil(machine, "B: STAT", 30'000'000))
         << "STAT.COM nicht auf B: (Baseline gebrochen):\n" << vramText(machine);
 
-    // Schreibender Zugriff: STAT.COM auf B: löschen.  Der eigentliche Regressionscheck.
+    // Schreibender Zugriff: STAT.COM auf B: loeschen.  Der eigentliche Regressionscheck.
     typeString(machine, "ERA B:STAT.COM");
     typeKey(machine, QK_RETURN);
     runCycles(machine, 30'000'000);   // Write + Post-Write-Verify abwarten
     EXPECT_EQ(vramText(machine).find("BAD SECTOR"), std::string::npos)
         << "ERA meldete BAD SECTOR — SCPX-Write-Fix gebrochen:\n" << vramText(machine);
 
-    // Die Datei ist tatsächlich gelöscht: gefiltertes DIR → „NO FILE".
+    // Die Datei ist tatsaechlich geloescht: gefiltertes DIR → „NO FILE".
     typeString(machine, "DIR B:STAT.COM");
     typeKey(machine, QK_RETURN);
     EXPECT_TRUE(runSmallUntil(machine, "NO FILE", 30'000'000))
-        << "STAT.COM nach ERA nicht gelöscht (kein 'NO FILE'):\n" << vramText(machine);
+        << "STAT.COM nach ERA nicht geloescht (kein 'NO FILE'):\n" << vramText(machine);
 
     machine.unmountDisk(0);
     machine.unmountDisk(1);
@@ -974,7 +974,7 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
 
 // ─── SCPX Fremdformat-Read friert NICHT ein (held-bus No-Progress-Watchdog) ──
 //
-// Regressionswächter für den No-Progress-Watchdog im gehaltenen Laufzeit-Read
+// Regressionswaechter fuer den No-Progress-Watchdog im gehaltenen Laufzeit-Read
 // (a5120.cpp: kHeldReadWatchdogCycles / held_read_watchdog_; s.
 // doc/analyse_scpx_5x1024_read.md).  SCPX ist Single-Format: ein aus einer
 // 16×256-Systemdiskette gebootetes SCPX kann eine 5×1024-Diskette NICHT lesen
@@ -987,7 +987,7 @@ TEST(ScpxIntegration, EraDeletesFileOnDriveBWithoutBadSector) {
 // bleibt bedienbar (echte HW-Semantik: der FM/MFM-Test darf nicht einfrieren).
 //
 // Trigger: leere 5×1024-Disk (createDisk cpa800) auf B:, dann DIR B: vom
-// 16×256-System.  Kernprüfung: die BAD-SECTOR-Meldung erscheint (Read terminierte)
+// 16×256-System.  Kernpruefung: die BAD-SECTOR-Meldung erscheint (Read terminierte)
 // UND das System reagiert danach noch (DIR A: listet weiter).  Ohne den Watchdog
 // erschiene die Meldung nie → runSmallUntil liefe in sein Limit → Test rot.
 TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
@@ -997,7 +997,7 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
     A5120Machine machine;
     ASSERT_TRUE(machine.mountDisk(0, diskPath("scpx17_cpa780_k5601.hfe"), "cpa780", /*wp=*/false))
         << "konnte scpx17_cpa780_k5601.hfe nicht mounten: " << machine.lastError();
-    // Leere 5×1024-Diskette (Fremdformat für das 16×256-System) auf B: erzeugen+mounten.
+    // Leere 5×1024-Diskette (Fremdformat fuer das 16×256-System) auf B: erzeugen+mounten.
     ASSERT_TRUE(machine.createDisk(1, bPath, "cpa800", /*wp=*/false)) << machine.lastError();
     machine.powerOn();
 
@@ -1014,15 +1014,15 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
         << "Fremdformat-Read terminierte nicht — No-Progress-Watchdog gebrochen (Freeze):\n"
         << vramText(machine);
 
-    // Das System läuft weiter (kein Dauer-Hänger): SCPX wiederholt den Fehl-Read
-    // einige Male, dann kehrt ZVE1 in seine CONIN-Poll-Schleife (0xE079/E07x) zurück —
-    // es bleibt NICHT am Held-Bus-Poll-Wait 0xE8B5 hängen (das wäre der Freeze).
+    // Das System laeuft weiter (kein Dauer-Haenger): SCPX wiederholt den Fehl-Read
+    // einige Male, dann kehrt ZVE1 in seine CONIN-Poll-Schleife (0xE079/E07x) zurueck —
+    // es bleibt NICHT am Held-Bus-Poll-Wait 0xE8B5 haengen (das waere der Freeze).
     runCycles(machine, 40'000'000);   // SCPX-Retries auslaufen lassen
     EXPECT_NE(machine.cpuPC(), 0xE8B5)
-        << "ZVE1 hängt weiter am Poll-Wait 0xE8B5 fest — Freeze nicht behoben";
+        << "ZVE1 haengt weiter am Poll-Wait 0xE8B5 fest — Freeze nicht behoben";
     EXPECT_GE(machine.cpuPC(), 0xE079u);   // in der Prompt-/CONIN-Region, nicht im Read-Setup
     EXPECT_LE(machine.cpuPC(), 0xE0FFu)
-        << "ZVE1 nach dem Fehler nicht zurück am Prompt (PC=0x" << std::hex << machine.cpuPC()
+        << "ZVE1 nach dem Fehler nicht zurueck am Prompt (PC=0x" << std::hex << machine.cpuPC()
         << ") — System nicht wieder bedienbar";
 
     machine.unmountDisk(0);
@@ -1038,8 +1038,8 @@ TEST(ScpxIntegration, WrongFormatReadTerminatesInsteadOfFreezing) {
 // dafuer abgelehnt.  Mit gesetztem Formatnamen bleibt es beim vorformatierten Weg —
 // dann pruefen wir wie bisher die resultierende .img-Groesse (= Geometrie).
 namespace {
-// Zielpfade als TempDisk::empty() — die Datei räumt sich am Testende selbst weg,
-// auch wenn eine Prüfung vorher abbricht.
+// Zielpfade als TempDisk::empty() — die Datei raeumt sich am Testende selbst weg,
+// auch wenn eine Pruefung vorher abbricht.
 TempDisk tmpImg(const char* tag) {
     return TempDisk::empty(std::string("create_default_") + tag + ".img");
 }
@@ -1133,18 +1133,18 @@ TEST(CreateDiskFormatted, UnbekanntesFormat_gibtFalse) {
     EXPECT_FALSE(machine.createDisk(0, path, "gibt_es_nicht", false));
 }
 
-// ── Lücke 2 entscheidet über die Lesbarkeit (AP-F1, doc/design/16_k8915.md) ──────
+// ── Luecke 2 entscheidet ueber die Lesbarkeit (AP-F1, doc/design/16_k8915.md) ──────
 //
-// Die ZVE2-Routine 1F7DH des CP/A-Bootsystems (lädt @OS.COM, 1024-B-Sektoren) liest nach
-// der ID-CRC 25 Lückenbytes (1FD8H: 1 + 17 + 1, 2038H: 1 + 6) und macht erst dann MK1
+// Die ZVE2-Routine 1F7DH des CP/A-Bootsystems (laedt @OS.COM, 1024-B-Sektoren) liest nach
+// der ID-CRC 25 Lueckenbytes (1FD8H: 1 + 17 + 1, 2038H: 1 + 6) und macht erst dann MK1
 // neu scharf.  Liegt die Sync-Gruppe des Datenfelds da schon unter dem Kopf, ist das
-// Datenfeld verpasst; gelesen wird das nächste Kennfeld als Daten → CRC-Fehler
+// Datenfeld verpasst; gelesen wird das naechste Kennfeld als Daten → CRC-Fehler
 // „RC;T,Si,Se=020001".  Eine vom DiskTool bis 2026-09-29 angelegte Diskette hatte
-// Lücke 2 = 11 × 4E + 12 × 00 (23 Bytes) und lief so am echten A5120 nicht — im Emulator
-// aber doch, weil der Lesestrom Lücke 2 fest mit 18/27 nachbaute und MK1 notfalls
-// zurücksprang.  Beide Fälle unterscheiden sich hier NUR in Lücke 2.
+// Luecke 2 = 11 × 4E + 12 × 00 (23 Bytes) und lief so am echten A5120 nicht — im Emulator
+// aber doch, weil der Lesestrom Luecke 2 fest mit 18/27 nachbaute und MK1 notfalls
+// zuruecksprang.  Beide Faelle unterscheiden sich hier NUR in Luecke 2.
 namespace {
-/// Die Fixture mit neu gebauten Spuren (Lücken wie bis 2026-09-29, Lücke 2 = @p gap2).
+/// Die Fixture mit neu gebauten Spuren (Luecken wie bis 2026-09-29, Luecke 2 = @p gap2).
 void mitLuecke2(const std::string& ziel, uint8_t gap2) {
     DiskMedium m;
     std::string err;
@@ -1168,7 +1168,7 @@ TEST(BootIntegrationLuecke2, ZuKnappeLuecke2WirdWieAmGeraetNichtGelesen) {
     ASSERT_TRUE(machine.mountDisk(0, d.path(), "cpa780", /*wp=*/false)) << machine.lastError();
     machine.powerOn();
     EXPECT_TRUE(runUntilVramContains(machine, "RC;T,Si,Se=020001", kCpa02BudgetCycles))
-        << "Lücke 2 = 11: 1F7DH muss das Datenfeld verpassen (CRC-Fehler Spur 2):\n"
+        << "Luecke 2 = 11: 1F7DH muss das Datenfeld verpassen (CRC-Fehler Spur 2):\n"
         << vramText(machine);
     EXPECT_EQ(vramText(machine).find("TPA ist OK!"), std::string::npos);
 }
@@ -1184,7 +1184,7 @@ TEST(BootIntegrationLuecke2, NormLuecke2BootetDieselbeDiskette) {
 }
 
 
-// ─── Serielle Schnittstellen nach außen (Entwurf 19 §3.1, AP-S5) ────────────
+// ─── Serielle Schnittstellen nach aussen (Entwurf 19 §3.1, AP-S5) ────────────
 
 namespace {
 std::string dateiLesen(const std::string& pfad) {
@@ -1195,12 +1195,12 @@ std::string dateiLesen(const std::string& pfad) {
 
 /**
  * @test A5120Seriell.GastSendetUeberDfueV24InEineDatei
- * @brief Maschinenprobe: der Hub der A5120Machine hat die drei Anschlüsse der K8025
+ * @brief Maschinenprobe: der Hub der A5120Machine hat die drei Anschluesse der K8025
  *        (DFÜ/V.24, DFÜ/IFSS, Drucker) und die feste Tastatur; nach dem CP/A-Kaltstart
  *        sind RTS/DTR der V.24 aus (Befund AP-S5: CP/A fasst A33 nicht an — der
  *        RTS-Halt des Wandlers darf deshalb erst greifen, wenn der Gast RTS benutzt).
  *        Ein kleines Programm programmiert dann A33-A (8N1, Takt ZRE-CTC K0 bzw.
- *        Ersatz 9600) und sendet „A5120" — über `hub.takt` im Lauf von `run()` landet
+ *        Ersatz 9600) und sendet „A5120" — ueber `hub.takt` im Lauf von `run()` landet
  *        es in der Datei.
  */
 TEST(A5120Seriell, GastSendetUeberDfueV24InEineDatei) {
@@ -1232,7 +1232,7 @@ TEST(A5120Seriell, GastSendetUeberDfueV24InEineDatei) {
     ASSERT_TRUE(hub->start(0));
 
     // DI; A33-A: WR4 44H (×16, 1 Stopp), WR3 C1H, WR5 68H (8 Bit, Tx ein);
-    // dann „A5120" über 50H, je Zeichen auf TxEmpty (RR0 D2) warten; danach JR $.
+    // dann „A5120" ueber 50H, je Zeichen auf TxEmpty (RR0 D2) warten; danach JR $.
     const uint16_t org = 0x4000, init = 0x4040, msg = 0x4050;
     const std::vector<uint8_t> code = {
         0xF3,                                   // DI

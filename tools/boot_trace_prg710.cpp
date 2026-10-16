@@ -8,9 +8,9 @@
  * Speicherverwaltung (E8H–EBH, mit Seite = A12–A15 der E/A-Adresse und dem
  * entstehenden Speicherbild), die Tastatur (710: 8279 C8H/C9H; 710-1: K8025 A32-B
  * 5EH/5FH und Baudtakt 58H) und Interrupts.  Gleiche aufeinanderfolgende Ereignisse
- * werden gefaltet (×N); bei 14H/16H zählt weder Wert noch PC.
+ * werden gefaltet (×N); bei 14H/16H zaehlt weder Wert noch PC.
  *
- * Abbruch: `--until`, Stillstand (`--stall` Takte ohne Bildänderung und ohne
+ * Abbruch: `--until`, Stillstand (`--stall` Takte ohne Bildaenderung und ohne
  * Schreibzugriff auf einen beobachteten Port) oder `-c`.  Steht die CPU beim
  * Stillstand in der Tastaturabfrage des ROMs (aus der RAM-Kopie, §4a/§4a.1), ist das
  * das Ziel von Etappe 1 → Exit 0.
@@ -188,7 +188,7 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     };
 
     // ── Beobachter ───────────────────────────────────────────────────────────
-    // Schlüssel = PC | 10000H, wenn der Befehl aus der ZRE (ROM/ZRE-RAM) kam: 0160H im ROM
+    // Schluessel = PC | 10000H, wenn der Befehl aus der ZRE (ROM/ZRE-RAM) kam: 0160H im ROM
     // und 0160H in der RAM-Kopie sind zwar dieselben Bytes, aber verschiedene Phasen.
     std::unordered_map<uint32_t, uint32_t> hist;
     std::unordered_map<uint32_t, std::string> hist_note;
@@ -264,8 +264,8 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
             }
         }
     });
-    // Speicherzugriffe der K2521 gehen nicht über den Systembus (Speicherweg =
-    // Speicherverwaltung) — Prg710Machine::setBusTrace meldet sie zusätzlich (--watch).
+    // Speicherzugriffe der K2521 gehen nicht ueber den Systembus (Speicherweg =
+    // Speicherverwaltung) — Prg710Machine::setBusTrace meldet sie zusaetzlich (--watch).
     m.setBusTrace([&](bool isIO, bool isRead, uint16_t addr, uint8_t data) {
         const uint16_t pc = insn_pc;
         if (!isIO) {
@@ -307,7 +307,7 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
     // ── Tasten (--keys) ──────────────────────────────────────────────────────
     // `<ET>` = ET1 (710: QK_TASTE_BASE|37H an der K7609) bzw. Return (710-1: K7672 → 0DH).
     // Getippt wird blockweise (ein Block endet mit `<ET>`) und immer erst, wenn die Maschine
-    // steht (Stillstand: --stall Takte ohne Bildänderung/Steuerzugriff) — also am Start-
+    // steht (Stillstand: --stall Takte ohne Bildaenderung/Steuerzugriff) — also am Start-
     // taster-Warten des ROMs, an der Datumsabfrage von UDOS usw.
     struct Taste { uint32_t code; bool et; };
     std::vector<Taste> tasten;
@@ -318,7 +318,7 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
         } else tasten.push_back({static_cast<uint8_t>(o.keys[i]), false});
     }
     size_t tasten_pos = 0;
-    // Nächster Block; false = Maschine während des Tippens angehalten (--until).
+    // Naechster Block; false = Maschine waehrend des Tippens angehalten (--until).
     auto tippeBlock = [&]() {
         while (tasten_pos < tasten.size()) {
             const Taste t = tasten[tasten_pos++];
@@ -344,7 +344,7 @@ int bootTracePrg710(const K8915TraceOpts& o, bool v1, const prnlst::Listing& prn
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
         }
         if (now - last_activity >= static_cast<uint64_t>(o.stall)) {
-            if (tasten_pos < tasten.size()) {   // Maschine steht: nächster Tastenblock
+            if (tasten_pos < tasten.size()) {   // Maschine steht: naechster Tastenblock
                 tippeBlock();
                 if (until_hit) break;
                 last_activity = m.totalCycles();

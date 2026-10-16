@@ -1,18 +1,18 @@
 /**
  * @file prg710_bedienung.h
- * @brief Bedienhelfer für die FORMAT-Wächter des PRG 710 / 710-1 (doc/design/20_prg710.md
+ * @brief Bedienhelfer fuer die FORMAT-Waechter des PRG 710 / 710-1 (doc/design/20_prg710.md
  *        AP-P5f): Bild lesen, auf Fragen warten, UDOS bzw. SCPX booten, `FORMAT` bedienen —
- *        über die Tastatur der Variante (8279 + K7609 bzw. K7672), wie ein Anwender.
+ *        ueber die Tastatur der Variante (8279 + K7609 bzw. K7672), wie ein Anwender.
  *        Benutzt von `tests/integration/test_prg710_format.cpp` und
  *        `tests/system/test_prg710_format_boot.cpp`.
  *
- * **Bedienregel aus AP-P5f — vor `READY? Y` Zeit lassen.**  UDOS-`FORMAT` wählt das
+ * **Bedienregel aus AP-P5f — vor `READY? Y` Zeit lassen.**  UDOS-`FORMAT` waehlt das
  * Laufwerk selbst (`OUT (18H)`, 5897H) und wartet dann ohne Interruptsperre bis zu
- * ≈ 1 s auf Spur 0 und /RDYL.  Läuft in dieser Zeit noch der Motornachlauf des Residenten
+ * ≈ 1 s auf Spur 0 und /RDYL.  Laeuft in dieser Zeit noch der Motornachlauf des Residenten
  * vom Laden des Programms (CTC K3, ≈ 2 s nach dem letzten Diskettenzugriff), schaltet
  * dessen ISR alle Laufwerke ab (`OUT (18H),FFH`, 710: 0A27H, 710-1: 0A57H) — FORMAT
- * meldet „ERROR C2“ und kehrt zurück.  Am Gerät liegt zwischen Laden und `Y` immer das
- * Einlegen der Diskette; die Helfer lassen dafür 8 Mio. Takte (≈ 3,3 s) laufen.
+ * meldet „ERROR C2“ und kehrt zurueck.  Am Geraet liegt zwischen Laden und `Y` immer das
+ * Einlegen der Diskette; die Helfer lassen dafuer 8 Mio. Takte (≈ 3,3 s) laufen.
  */
 #pragma once
 
@@ -113,7 +113,7 @@ inline bool bisScpxPrompt(Prg710Machine& m, long long frist) {
     return bisZeile(m, "A>", frist, 2'000'000);
 }
 
-/// Eine Taste drücken und loslassen (die K7672 wiederholt eine gehaltene Taste).
+/// Eine Taste druecken und loslassen (die K7672 wiederholt eine gehaltene Taste).
 inline void taste(Prg710Machine& m, uint32_t k) {
     m.keyPress(k, false, false);
     lauf(m, 100'000);
@@ -123,13 +123,13 @@ inline void taste(Prg710Machine& m, uint32_t k) {
 inline void tippe(Prg710Machine& m, const std::string& s) {
     for (char c : s) taste(m, static_cast<uint8_t>(c));
 }
-/// UDOS-Kommando + ET bzw. ENTER, dann bis zum nächsten `%`.
+/// UDOS-Kommando + ET bzw. ENTER, dann bis zum naechsten `%`.
 inline bool udos(Prg710Machine& m, const std::string& k, long long frist = kBefehl) {
     tippe(m, k);
     taste(m, QK_RETURN);
     return bisUdosPrompt(m, frist);
 }
-/// SCPX-Kommando + ET bzw. ENTER, dann bis zum nächsten `A>`.
+/// SCPX-Kommando + ET bzw. ENTER, dann bis zum naechsten `A>`.
 inline bool scpx(Prg710Machine& m, const std::string& k, long long frist = kBefehl) {
     tippe(m, k);
     taste(m, QK_RETURN);
@@ -137,7 +137,7 @@ inline bool scpx(Prg710Machine& m, const std::string& k, long long frist = kBefe
 }
 
 /// Netz-Ein → Starttaste (ET bzw. ENTER) → UDOS bis „Neues Datum“; false, wenn sie nicht
-/// kommt (die Diskette trägt dann kein vollständiges System).
+/// kommt (die Diskette traegt dann kein vollstaendiges System).
 inline bool udosBisDatum(Prg710Machine& m) {
     m.powerOn();
     lauf(m, 3'000'000);                              // ROM bis zur Tastaturabfrage
@@ -182,7 +182,7 @@ inline bool scpxFormatB(Prg710Machine& m, char format, bool systemkopie) {
         if (d > 2 * kFormat) return false;           // Formatieren + Systemkopie
         if (!gefragt && enthaelt(m, "DO YOU WANT A SYSTEMCOPY?:")) {
             // Erst die Ausgabe zu Ende laufen lassen: das BDOS fragt beim Schreiben die
-            // Tastatur ab (^S) und verschluckt ein zu früh getipptes Zeichen.
+            // Tastatur ab (^S) und verschluckt ein zu frueh getipptes Zeichen.
             lauf(m, 2'000'000);
             tippe(m, systemkopie ? "Y" : "N");
             gefragt = true;

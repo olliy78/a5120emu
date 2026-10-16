@@ -2,19 +2,19 @@
  * @file z80.h
  * @brief Zilog Z80 CPU Emulator – Headerdatei
  *
- * Vollständige Emulation des Z80-Mikroprozessors, wie er im Robotron A5120
- * Bürocomputer (DDR) verbaut wurde. Implementiert den kompletten dokumentierten
+ * Vollstaendige Emulation des Z80-Mikroprozessors, wie er im Robotron A5120
+ * Buerocomputer (DDR) verbaut wurde. Implementiert den kompletten dokumentierten
  * und undokumentierten Z80-Befehlssatz inklusive:
  * - Alle 8-Bit- und 16-Bit-ALU-Operationen mit korrektem Flag-Verhalten
- * - Rotations- und Schiebebefehle (CB-Präfix)
- * - Indexregister-Operationen mit IX/IY (DD/FD-Präfix)
- * - Erweiterte Befehle (ED-Präfix): Blockoperationen, I/O, NEG, RETI/RETN
+ * - Rotations- und Schiebebefehle (CB-Praefix)
+ * - Indexregister-Operationen mit IX/IY (DD/FD-Praefix)
+ * - Erweiterte Befehle (ED-Praefix): Blockoperationen, I/O, NEG, RETI/RETN
  * - Undokumentierte Befehle: SLL, IXH/IXL/IYH/IYL-Register, DDCB/FDCB-Varianten
  * - Alle drei Interruptmodi (IM 0, IM 1, IM 2) sowie NMI
- * - Zyklengenau für korrekte Taktung der Emulation
+ * - Zyklengenau fuer korrekte Taktung der Emulation
  *
- * Die Klasse verwendet Callback-Funktionen für Speicher- und I/O-Zugriffe,
- * sodass sie plattformunabhängig in beliebige Emulationsumgebungen eingebunden
+ * Die Klasse verwendet Callback-Funktionen fuer Speicher- und I/O-Zugriffe,
+ * sodass sie plattformunabhaengig in beliebige Emulationsumgebungen eingebunden
  * werden kann.
  *
  * @author Olaf Krieger
@@ -29,10 +29,10 @@
  * @class Z80
  * @brief Emuliert einen Zilog Z80 Mikroprozessor.
  *
- * Diese Klasse bildet den vollständigen Z80-Prozessor nach, einschließlich
+ * Diese Klasse bildet den vollstaendigen Z80-Prozessor nach, einschliesslich
  * aller Register, Flags, Interrupt-Logik und des gesamten Befehlssatzes.
- * Speicher- und I/O-Zugriffe werden über konfigurierbare Callback-Funktionen
- * abstrahiert, wodurch die CPU-Emulation unabhängig von der konkreten
+ * Speicher- und I/O-Zugriffe werden ueber konfigurierbare Callback-Funktionen
+ * abstrahiert, wodurch die CPU-Emulation unabhaengig von der konkreten
  * Hardwareumgebung bleibt.
  *
  * Typische Verwendung:
@@ -53,8 +53,8 @@ public:
     // =========================================================================
     /// @name Hauptregistersatz
     /// @brief Die vier 16-Bit-Registerpaare AF, BC, DE, HL, die auch als
-    ///        einzelne 8-Bit-Register angesprochen werden können.
-    ///        Die Anordnung der Bytes innerhalb der Union berücksichtigt
+    ///        einzelne 8-Bit-Register angesprochen werden koennen.
+    ///        Die Anordnung der Bytes innerhalb der Union beruecksichtigt
     ///        die Endianness der Host-Plattform.
     // =========================================================================
     ///@{
@@ -62,8 +62,8 @@ public:
     /**
      * @brief Akkumulator (A) und Flagregister (F).
      *
-     * A ist der Hauptakkumulator für arithmetische und logische Operationen.
-     * F enthält die Statusflags (S, Z, H, PV, N, C sowie undokumentiert Bit 3 und 5).
+     * A ist der Hauptakkumulator fuer arithmetische und logische Operationen.
+     * F enthaelt die Statusflags (S, Z, H, PV, N, C sowie undokumentiert Bit 3 und 5).
      */
     union {
         struct {
@@ -79,9 +79,9 @@ public:
     /**
      * @brief Universalregister B und C.
      *
-     * B wird häufig als Schleifenzähler verwendet (DJNZ-Befehl).
+     * B wird haeufig als Schleifenzaehler verwendet (DJNZ-Befehl).
      * C dient oft als Port-Nummer bei I/O-Operationen.
-     * BC wird als 16-Bit-Bytezähler bei Blockoperationen genutzt.
+     * BC wird als 16-Bit-Bytezaehler bei Blockoperationen genutzt.
      */
     union {
         struct {
@@ -97,7 +97,7 @@ public:
     /**
      * @brief Universalregister D und E.
      *
-     * DE dient häufig als Zieladresse bei Blockübertragungen (LDI, LDIR etc.).
+     * DE dient haeufig als Zieladresse bei Blockuebertragungen (LDI, LDIR etc.).
      */
     union {
         struct {
@@ -113,8 +113,8 @@ public:
     /**
      * @brief Universalregister H und L.
      *
-     * HL ist das primäre 16-Bit-Adressregister und wird für indirekte
-     * Speicherzugriffe verwendet (z. B. LD A,(HL)). Bei DD/FD-präfixierten
+     * HL ist das primaere 16-Bit-Adressregister und wird fuer indirekte
+     * Speicherzugriffe verwendet (z. B. LD A,(HL)). Bei DD/FD-praefixierten
      * Befehlen wird HL durch IX bzw. IY ersetzt.
      */
     union {
@@ -145,8 +145,8 @@ public:
 
     // =========================================================================
     /// @name Indexregister
-    /// @brief Ermöglichen indizierte Adressierung mit Displacement (IX+d, IY+d).
-    ///        Undokumentiert können auch die oberen/unteren Bytes
+    /// @brief Ermoeglichen indizierte Adressierung mit Displacement (IX+d, IY+d).
+    ///        Undokumentiert koennen auch die oberen/unteren Bytes
     ///        (IXH, IXL, IYH, IYL) einzeln angesprochen werden.
     // =========================================================================
     ///@{
@@ -155,10 +155,10 @@ public:
     ///@}
 
     // =========================================================================
-    /// @name Programmzähler und Stapelzeiger
+    /// @name Programmzaehler und Stapelzeiger
     // =========================================================================
     ///@{
-    uint16_t PC;   ///< Programmzähler (Program Counter) – zeigt auf den nächsten Befehl
+    uint16_t PC;   ///< Programmzaehler (Program Counter) – zeigt auf den naechsten Befehl
     uint16_t SP;   ///< Stapelzeiger (Stack Pointer) – zeigt auf die Spitze des Stacks
     ///@}
 
@@ -181,32 +181,32 @@ public:
     ///@}
 
     /**
-     * @brief Gesamtzähler der bisher ausgeführten Taktzyklen.
+     * @brief Gesamtzaehler der bisher ausgefuehrten Taktzyklen.
      *
      * Wird bei jedem step()-Aufruf und bei Interruptbehandlung inkrementiert.
-     * Kann zur Taktung von Peripheriegeräten und Timing-Synchronisation
+     * Kann zur Taktung von Peripheriegeraeten und Timing-Synchronisation
      * verwendet werden.
      */
     uint64_t cycles;
 
     // =========================================================================
     /// @name Z80-Statusflags
-    /// @brief Bitmasken für die einzelnen Bits des Flagregisters F.
+    /// @brief Bitmasken fuer die einzelnen Bits des Flagregisters F.
     // =========================================================================
     ///@{
-    static constexpr uint8_t FLAG_C  = 0x01;  ///< Carry-Flag (Bit 0) – Übertrag bei Addition/Subtraktion
-    static constexpr uint8_t FLAG_N  = 0x02;  ///< Subtraktions-Flag (Bit 1) – gesetzt nach Subtraktionsbefehlen, für DAA
-    static constexpr uint8_t FLAG_PV = 0x04;  ///< Parity/Overflow-Flag (Bit 2) – Parität oder arithmetischer Überlauf
+    static constexpr uint8_t FLAG_C  = 0x01;  ///< Carry-Flag (Bit 0) – Uebertrag bei Addition/Subtraktion
+    static constexpr uint8_t FLAG_N  = 0x02;  ///< Subtraktions-Flag (Bit 1) – gesetzt nach Subtraktionsbefehlen, fuer DAA
+    static constexpr uint8_t FLAG_PV = 0x04;  ///< Parity/Overflow-Flag (Bit 2) – Paritaet oder arithmetischer Ueberlauf
     static constexpr uint8_t FLAG_3  = 0x08;  ///< Undokumentiertes Flag (Bit 3) – Kopie von Bit 3 des Ergebnisses
-    static constexpr uint8_t FLAG_H  = 0x10;  ///< Half-Carry-Flag (Bit 4) – Halbübertrag (BCD-Korrektur)
+    static constexpr uint8_t FLAG_H  = 0x10;  ///< Half-Carry-Flag (Bit 4) – Halbuebertrag (BCD-Korrektur)
     static constexpr uint8_t FLAG_5  = 0x20;  ///< Undokumentiertes Flag (Bit 5) – Kopie von Bit 5 des Ergebnisses
     static constexpr uint8_t FLAG_Z  = 0x40;  ///< Zero-Flag (Bit 6) – gesetzt wenn Ergebnis Null ist
     static constexpr uint8_t FLAG_S  = 0x80;  ///< Sign-Flag (Bit 7) – Vorzeichen (Kopie von Bit 7 des Ergebnisses)
     ///@}
 
     // =========================================================================
-    /// @name Callback-Funktionen für Speicher- und I/O-Zugriffe
-    /// @brief Müssen vor der Verwendung der CPU-Emulation gesetzt werden.
+    /// @name Callback-Funktionen fuer Speicher- und I/O-Zugriffe
+    /// @brief Muessen vor der Verwendung der CPU-Emulation gesetzt werden.
     ///        Sie stellen die Verbindung zur emulierten Hardware her.
     // =========================================================================
     ///@{
@@ -217,7 +217,7 @@ public:
     ///@}
 
     // =========================================================================
-    /// @name Öffentliche Methoden
+    /// @name Oeffentliche Methoden
     // =========================================================================
     ///@{
 
@@ -225,7 +225,7 @@ public:
     Z80();
 
     /**
-     * @brief Setzt die CPU in den Ausgangszustand zurück.
+     * @brief Setzt die CPU in den Ausgangszustand zurueck.
      *
      * Alle Register werden auf 0 gesetzt, SP auf 0xFFFF, Interrupts werden
      * deaktiviert, IM auf 0 gesetzt und der HALT-Zustand aufgehoben.
@@ -233,21 +233,21 @@ public:
     void reset();
 
     /**
-     * @brief Führt einen einzelnen Z80-Befehl aus.
+     * @brief Fuehrt einen einzelnen Z80-Befehl aus.
      *
-     * Liest den Opcode an der Adresse PC, dekodiert und führt den Befehl aus.
+     * Liest den Opcode an der Adresse PC, dekodiert und fuehrt den Befehl aus.
      * Im HALT-Zustand werden nur NOP-Zyklen verbraucht (4 Takte).
      *
-     * @return Anzahl der verbrauchten Taktzyklen für diesen Befehl.
+     * @return Anzahl der verbrauchten Taktzyklen fuer diesen Befehl.
      */
     int step();
 
     /**
-     * @brief Löst einen maskierbaren Interrupt (INT) aus.
+     * @brief Loest einen maskierbaren Interrupt (INT) aus.
      *
-     * Wird nur akzeptiert, wenn IFF1 gesetzt ist. Das Verhalten hängt
+     * Wird nur akzeptiert, wenn IFF1 gesetzt ist. Das Verhalten haengt
      * vom aktuellen Interruptmodus ab:
-     * - IM 0: Führt den Befehl auf dem Datenbus aus (typisch RST).
+     * - IM 0: Fuehrt den Befehl auf dem Datenbus aus (typisch RST).
      * - IM 1: Springt zu Adresse 0x0038.
      * - IM 2: Liest die Zieladresse aus der Vektortabelle (I*256 + vector).
      *
@@ -256,7 +256,7 @@ public:
     void interrupt(uint8_t vector);
 
     /**
-     * @brief Löst einen nicht-maskierbaren Interrupt (NMI) aus.
+     * @brief Loest einen nicht-maskierbaren Interrupt (NMI) aus.
      *
      * Kann nicht deaktiviert werden. Sichert IFF1 in IFF2, deaktiviert
      * Interrupts und springt zur festen Adresse 0x0066.
@@ -304,13 +304,13 @@ private:
     void writeWord(uint16_t addr, uint16_t val);
 
     /**
-     * @brief Liest das nächste Byte an PC und inkrementiert den Programmzähler.
+     * @brief Liest das naechste Byte an PC und inkrementiert den Programmzaehler.
      * @return Gelesenes Byte.
      */
     uint8_t fetchByte();
 
     /**
-     * @brief Liest das nächste 16-Bit-Wort an PC und erhöht PC um 2.
+     * @brief Liest das naechste 16-Bit-Wort an PC und erhoeht PC um 2.
      * @return Gelesenes 16-Bit-Wort (Little-Endian).
      */
     uint16_t fetchWord();
@@ -328,7 +328,7 @@ private:
      * @brief 8-Bit-Addition: a + b.
      * @param a Erster Operand.
      * @param b Zweiter Operand.
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), C.
+     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Ueberlauf), C.
      */
     uint8_t add8(uint8_t a, uint8_t b);
 
@@ -336,7 +336,7 @@ private:
      * @brief 8-Bit-Addition mit Carry: a + b + Carry.
      * @param a Erster Operand.
      * @param b Zweiter Operand.
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), C.
+     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Ueberlauf), C.
      */
     uint8_t adc8(uint8_t a, uint8_t b);
 
@@ -344,7 +344,7 @@ private:
      * @brief 8-Bit-Subtraktion: a - b.
      * @param a Erster Operand (Minuend).
      * @param b Zweiter Operand (Subtrahend).
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), N=1, C.
+     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Ueberlauf), N=1, C.
      */
     uint8_t sub8(uint8_t a, uint8_t b);
 
@@ -352,39 +352,39 @@ private:
      * @brief 8-Bit-Subtraktion mit Carry: a - b - Carry.
      * @param a Erster Operand (Minuend).
      * @param b Zweiter Operand (Subtrahend).
-     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Überlauf), N=1, C.
+     * @return Ergebnis (8 Bit). Flags: S, Z, H, PV (Ueberlauf), N=1, C.
      */
     uint8_t sbc8(uint8_t a, uint8_t b);
 
     /**
      * @brief Logisches UND: A = A & val.
      *
-     * Setzt H-Flag, löscht N- und C-Flag. PV zeigt Parität an.
-     * @param val Operand für die UND-Verknüpfung.
+     * Setzt H-Flag, loescht N- und C-Flag. PV zeigt Paritaet an.
+     * @param val Operand fuer die UND-Verknuepfung.
      */
     void and8(uint8_t val);
 
     /**
      * @brief Logisches ODER: A = A | val.
      *
-     * Löscht H-, N- und C-Flag. PV zeigt Parität an.
-     * @param val Operand für die ODER-Verknüpfung.
+     * Loescht H-, N- und C-Flag. PV zeigt Paritaet an.
+     * @param val Operand fuer die ODER-Verknuepfung.
      */
     void or8(uint8_t val);
 
     /**
      * @brief Logisches Exklusiv-ODER: A = A ^ val.
      *
-     * Löscht H-, N- und C-Flag. PV zeigt Parität an.
-     * @param val Operand für die XOR-Verknüpfung.
+     * Loescht H-, N- und C-Flag. PV zeigt Paritaet an.
+     * @param val Operand fuer die XOR-Verknuepfung.
      */
     void xor8(uint8_t val);
 
     /**
      * @brief Vergleich (Compare): A - val, Ergebnis wird verworfen.
      *
-     * Setzt Flags wie SUB, aber der Akkumulator bleibt unverändert.
-     * Bits 3 und 5 der Flags werden vom Operanden (val) übernommen,
+     * Setzt Flags wie SUB, aber der Akkumulator bleibt unveraendert.
+     * Bits 3 und 5 der Flags werden vom Operanden (val) uebernommen,
      * nicht vom Ergebnis.
      * @param val Vergleichsoperand.
      */
@@ -393,7 +393,7 @@ private:
     /**
      * @brief 8-Bit-Inkrement: val + 1.
      *
-     * C-Flag bleibt unverändert. PV wird gesetzt bei Überlauf von 0x7F.
+     * C-Flag bleibt unveraendert. PV wird gesetzt bei Ueberlauf von 0x7F.
      * @param val Zu inkrementierender Wert.
      * @return Ergebnis (8 Bit).
      */
@@ -402,7 +402,7 @@ private:
     /**
      * @brief 8-Bit-Dekrement: val - 1.
      *
-     * C-Flag bleibt unverändert. PV wird gesetzt bei Unterlauf von 0x80.
+     * C-Flag bleibt unveraendert. PV wird gesetzt bei Unterlauf von 0x80.
      * @param val Zu dekrementierender Wert.
      * @return Ergebnis (8 Bit).
      */
@@ -428,7 +428,7 @@ private:
     /**
      * @brief 16-Bit-Addition mit Carry: a + b + Carry.
      *
-     * Alle Flags werden beeinflusst. PV zeigt 16-Bit-Überlauf an.
+     * Alle Flags werden beeinflusst. PV zeigt 16-Bit-Ueberlauf an.
      * @param a Erster Operand.
      * @param b Zweiter Operand.
      * @return Ergebnis (16 Bit).
@@ -438,7 +438,7 @@ private:
     /**
      * @brief 16-Bit-Subtraktion mit Carry: a - b - Carry.
      *
-     * Alle Flags werden beeinflusst. PV zeigt 16-Bit-Überlauf an.
+     * Alle Flags werden beeinflusst. PV zeigt 16-Bit-Ueberlauf an.
      * @param a Erster Operand (Minuend).
      * @param b Zweiter Operand (Subtrahend).
      * @return Ergebnis (16 Bit).
@@ -449,9 +449,9 @@ private:
 
     // =========================================================================
     /// @name Rotations- und Schiebebefehle
-    /// @brief Implementierung der CB-Präfix-Operationen.
-    ///        Alle Funktionen setzen S, Z, PV (Parität), Bit 3, Bit 5
-    ///        und C (herausgeschobenes Bit). H und N werden gelöscht.
+    /// @brief Implementierung der CB-Praefix-Operationen.
+    ///        Alle Funktionen setzen S, Z, PV (Paritaet), Bit 3, Bit 5
+    ///        und C (herausgeschobenes Bit). H und N werden geloescht.
     // =========================================================================
     ///@{
 
@@ -517,15 +517,15 @@ private:
 
     // =========================================================================
     /// @name Bit-Operationen
-    /// @brief BIT, RES und SET aus dem CB-Präfix-Befehlssatz.
+    /// @brief BIT, RES und SET aus dem CB-Praefix-Befehlssatz.
     // =========================================================================
     ///@{
 
     /**
      * @brief BIT b,val – Testet das angegebene Bit.
      *
-     * Z-Flag wird gesetzt wenn das Bit 0 ist. H wird gesetzt, N gelöscht.
-     * C bleibt unverändert.
+     * Z-Flag wird gesetzt wenn das Bit 0 ist. H wird gesetzt, N geloescht.
+     * C bleibt unveraendert.
      * @param bit Bitnummer (0–7).
      * @param val Zu testender Wert.
      */
@@ -535,7 +535,7 @@ private:
      * @brief RES b,val – Setzt das angegebene Bit auf 0.
      * @param bit Bitnummer (0–7).
      * @param val Eingabewert.
-     * @return Ergebnis mit gelöschtem Bit.
+     * @return Ergebnis mit geloeschtem Bit.
      */
     uint8_t res_op(uint8_t bit, uint8_t val);
 
@@ -555,45 +555,45 @@ private:
     ///@{
 
     /**
-     * @brief Berechnet die Parität eines 8-Bit-Wertes.
-     * @param val Zu prüfender Wert.
-     * @return true bei gerader Parität (gerade Anzahl gesetzter Bits).
+     * @brief Berechnet die Paritaet eines 8-Bit-Wertes.
+     * @param val Zu pruefender Wert.
+     * @return true bei gerader Paritaet (gerade Anzahl gesetzter Bits).
      */
     static bool parity(uint8_t val);
 
     ///@}
 
     // =========================================================================
-    /// @name Befehlsdekodierung und -ausführung
+    /// @name Befehlsdekodierung und -ausfuehrung
     /// @brief Jede Funktion behandelt eine Gruppe von Z80-Opcodes,
-    ///        geordnet nach Präfix-Bytes.
+    ///        geordnet nach Praefix-Bytes.
     // =========================================================================
     ///@{
 
     /**
-     * @brief Hauptdekodierung – führt unpräfixierte Opcodes (0x00–0xFF) aus.
+     * @brief Hauptdekodierung – fuehrt unpraefixierte Opcodes (0x00–0xFF) aus.
      *
-     * Umfasst: 8-Bit-Lade-/ALU-/Sprung-/Aufruf-/Rücksprungbefehle,
+     * Umfasst: 8-Bit-Lade-/ALU-/Sprung-/Aufruf-/Ruecksprungbefehle,
      * 16-Bit-Lade- und Arithmetikbefehle, I/O, Austauschbefehle,
-     * sowie Verzweigung zu den Präfix-Handlern (CB, DD, ED, FD).
-     * @param opcode Der auszuführende Opcode.
+     * sowie Verzweigung zu den Praefix-Handlern (CB, DD, ED, FD).
+     * @param opcode Der auszufuehrende Opcode.
      * @return Verbrauchte Taktzyklen.
      */
     int execMain(uint8_t opcode);
 
     /**
-     * @brief CB-Präfix-Handler – Rotations-, Schiebe- und Bitoperationen.
+     * @brief CB-Praefix-Handler – Rotations-, Schiebe- und Bitoperationen.
      *
-     * Dekodiert den zweiten Opcode nach dem CB-Präfix und führt die
-     * entsprechende Operation auf dem ausgewählten Register oder (HL) aus.
-     * @return Verbrauchte Taktzyklen (8 für Register, 12/15 für (HL)).
+     * Dekodiert den zweiten Opcode nach dem CB-Praefix und fuehrt die
+     * entsprechende Operation auf dem ausgewaehlten Register oder (HL) aus.
+     * @return Verbrauchte Taktzyklen (8 fuer Register, 12/15 fuer (HL)).
      */
     int execCB();
 
     /**
-     * @brief DD-Präfix-Handler – IX-Indexregister-Operationen.
+     * @brief DD-Praefix-Handler – IX-Indexregister-Operationen.
      *
-     * Ersetzt in den meisten Befehlen HL durch IX. Speicherzugriffe über
+     * Ersetzt in den meisten Befehlen HL durch IX. Speicherzugriffe ueber
      * (HL) werden zu (IX+d) mit vorzeichenbehaftetem 8-Bit-Displacement.
      * Undokumentiert: IXH/IXL als einzelne 8-Bit-Register.
      * @return Verbrauchte Taktzyklen.
@@ -601,7 +601,7 @@ private:
     int execDD();
 
     /**
-     * @brief ED-Präfix-Handler – Erweiterte Befehle.
+     * @brief ED-Praefix-Handler – Erweiterte Befehle.
      *
      * Umfasst: IN/OUT mit Register, SBC/ADC HL, LD (nn)/rr, NEG,
      * RETN/RETI, IM-Modi, LD I,A / LD A,I / LD R,A / LD A,R,
@@ -611,43 +611,43 @@ private:
     int execED();
 
     /**
-     * @brief FD-Präfix-Handler – IY-Indexregister-Operationen.
+     * @brief FD-Praefix-Handler – IY-Indexregister-Operationen.
      *
-     * Funktional identisch zum DD-Präfix, verwendet aber IY statt IX.
+     * Funktional identisch zum DD-Praefix, verwendet aber IY statt IX.
      * @return Verbrauchte Taktzyklen.
      */
     int execFD();
 
     /**
-     * @brief DDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IX+d).
+     * @brief DDCB-Doppelpraefix-Handler – Bit-/Rotationsoperationen auf (IX+d).
      *
      * Format: DD CB dd op – zuerst das Displacement, dann der Opcode.
-     * Bei Registeroperanden (z != 6) wird das Ergebnis zusätzlich zum
+     * Bei Registeroperanden (z != 6) wird das Ergebnis zusaetzlich zum
      * Speicher auch in das angegebene Register geschrieben (undokumentiert).
-     * @return Verbrauchte Taktzyklen (20 für BIT, 23 für andere).
+     * @return Verbrauchte Taktzyklen (20 fuer BIT, 23 fuer andere).
      */
     int execDDCB();
 
     /**
-     * @brief FDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IY+d).
+     * @brief FDCB-Doppelpraefix-Handler – Bit-/Rotationsoperationen auf (IY+d).
      *
      * Funktional identisch zu DDCB, verwendet aber IY statt IX.
-     * @return Verbrauchte Taktzyklen (20 für BIT, 23 für andere).
+     * @return Verbrauchte Taktzyklen (20 fuer BIT, 23 fuer andere).
      */
     int execFDCB();
 
     ///@}
 
     // =========================================================================
-    /// @name Bedingungsprüfung und Registerzugriff
+    /// @name Bedingungspruefung und Registerzugriff
     // =========================================================================
     ///@{
 
     /**
-     * @brief Prüft eine Sprung-/Aufruf-/Rücksprungbedingung.
+     * @brief Prueft eine Sprung-/Aufruf-/Ruecksprungbedingung.
      *
      * @param cc Bedingungscode (0=NZ, 1=Z, 2=NC, 3=C, 4=PO, 5=PE, 6=P, 7=M).
-     * @return true, wenn die Bedingung erfüllt ist.
+     * @return true, wenn die Bedingung erfuellt ist.
      */
     bool checkCondition(uint8_t cc);
 
@@ -687,7 +687,7 @@ private:
      * @brief Liest ein 16-Bit-Registerpaar anhand seines Opcode-Index (AF-Variante).
      *
      * Kodierung: 0=BC, 1=DE, 2=HL, 3=AF (statt SP).
-     * Wird für PUSH/POP-Befehle verwendet.
+     * Wird fuer PUSH/POP-Befehle verwendet.
      * @param idx Registerpaarindex (0–3).
      * @return 16-Bit-Registerwert.
      */

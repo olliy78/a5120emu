@@ -1,18 +1,18 @@
 /**
  * @file test_format_catalog.cpp
- * @brief Unit-Tests für den YAML-Diskettenformat-Katalog (`FormatCatalog`).
+ * @brief Unit-Tests fuer den YAML-Diskettenformat-Katalog (`FormatCatalog`).
  *
  * @details
  * Getestete Komponente: **FormatCatalog** (`core/peripherals/floppy_drive/format_catalog.h`),
- * der die Formatdefinitionen aus `data/formats.yaml` lädt (doc/K1520_architecture.md §8.6)
- * und die früher einkompilierten `FormatParser::builtinFormats()` ablöst.
+ * der die Formatdefinitionen aus `data/formats.yaml` laedt (doc/K1520_architecture.md §8.6)
+ * und die frueher einkompilierten `FormatParser::builtinFormats()` abloest.
  *
  * | Gruppe                | Inhalt                                                      |
  * |-----------------------|-------------------------------------------------------------|
- * | Ausgelieferter Katalog| data/formats.yaml lädt; boot-kritische Geometrien unverändert|
- * | Fehler-Isolation      | kaputte Definition wird übersprungen, gute bleiben nutzbar   |
+ * | Ausgelieferter Katalog| data/formats.yaml laedt; boot-kritische Geometrien unveraendert|
+ * | Fehler-Isolation      | kaputte Definition wird uebersprungen, gute bleiben nutzbar   |
  * | Fatale Fehler         | fehlende Datei / Syntaxfehler / leerer Katalog               |
- * | Kompatibilität        | drives:/default_for: steuern Auswahl und Standardformat      |
+ * | Kompatibilitaet        | drives:/default_for: steuern Auswahl und Standardformat      |
  * | Mischdichte           | Verfahren pro Spurbereich (FM-Systemspur + MFM-Daten)        |
  *
  * @see core/peripherals/floppy_drive/format_catalog.h
@@ -30,7 +30,7 @@
 
 namespace {
 
-/// Schreibt @p text in eine temporäre .yaml-Datei und gibt den Pfad zurück.
+/// Schreibt @p text in eine temporaere .yaml-Datei und gibt den Pfad zurueck.
 std::string writeTmp(const std::string& stem, const std::string& text) {
     const auto p = k1520test::tempPath("k1520_fmt_" + stem + ".yaml");
     std::ofstream f(p);
@@ -56,7 +56,7 @@ const char* shippedCatalog() { return K1520_FORMATS_DEFAULT; }
 
 /**
  * @test FormatCatalog/AusgelieferterKatalog_LaedtOhneBeanstandung
- * @brief data/formats.yaml lädt fehlerfrei und ohne übersprungene Definitionen.
+ * @brief data/formats.yaml laedt fehlerfrei und ohne uebersprungene Definitionen.
  * @par Kriterium  Kein fataler Fehler, issues() leer, mindestens 25 Formate.
  */
 TEST(FormatCatalog, AusgelieferterKatalog_LaedtOhneBeanstandung) {
@@ -70,16 +70,16 @@ TEST(FormatCatalog, AusgelieferterKatalog_LaedtOhneBeanstandung) {
 
 /**
  * @test FormatCatalog/Formatnamen_SindEinStabilerVertrag
- * @brief Der Katalog enthält **exakt** die erwarteten Formatnamen.
+ * @brief Der Katalog enthaelt **exakt** die erwarteten Formatnamen.
  *
- * Die Namen sind eine öffentliche Schnittstelle: Werkzeuge und Skripte
+ * Die Namen sind eine oeffentliche Schnittstelle: Werkzeuge und Skripte
  * referenzieren sie als Zeichenkette (`tests/system/drivers/format_all.py`, `make_bootdisk.py`,
  * `tools/format_driver.cpp` mounten nominell als "cpa780"/"cpa800", die
  * `format_integration`-Presets nennen die k5601_*-Geometrien beim Namen).  Ein
  * Tippfehler oder ein versehentlich entfernter Eintrag in `data/formats.yaml`
- * bricht diese Werkzeuge erst zur LAUFZEIT — eine reine Mengenprüfung
- * (`size() >= 25`) würde das nicht bemerken.
- * @par Kriterium  Namensmenge stimmt exakt; fehlende und zusätzliche werden benannt.
+ * bricht diese Werkzeuge erst zur LAUFZEIT — eine reine Mengenpruefung
+ * (`size() >= 25`) wuerde das nicht bemerken.
+ * @par Kriterium  Namensmenge stimmt exakt; fehlende und zusaetzliche werden benannt.
  */
 TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
     std::string fatal;
@@ -136,15 +136,15 @@ TEST(FormatCatalog, Formatnamen_SindEinStabilerVertrag) {
 
 /**
  * @test FormatCatalog/KapazitaetInDerBeschreibung_PasstZurGeometrie
- * @brief Eine Kapazitätsangabe wie „640K" in `description:` muss zur tatsächlichen
+ * @brief Eine Kapazitaetsangabe wie „640K" in `description:` muss zur tatsaechlichen
  *        Geometrie passen.
  *
  * Hintergrund: `cpa640`/`cpa624` waren jahrelang **einseitig** deklariert (schon in den
- * früheren einkompilierten `builtinFormats()`) und lieferten damit 320 statt 640 KB —
- * der Widerspruch zum eigenen Namen fiel niemandem auf, weil ihn nichts geprüft hat.
+ * frueheren einkompilierten `builtinFormats()`) und lieferten damit 320 statt 640 KB —
+ * der Widerspruch zum eigenen Namen fiel niemandem auf, weil ihn nichts geprueft hat.
  * Der Test liest die erste Zahl vor einem „K" aus der Beschreibung und vergleicht sie
- * mit `totalBytes()`; Formate ohne solche Angabe werden übersprungen.
- * @par Kriterium  |Angabe·1024 − totalBytes()| < 5 % für jedes Format mit K-Angabe.
+ * mit `totalBytes()`; Formate ohne solche Angabe werden uebersprungen.
+ * @par Kriterium  |Angabe·1024 − totalBytes()| < 5 % fuer jedes Format mit K-Angabe.
  */
 TEST(FormatCatalog, KapazitaetInDerBeschreibung_PasstZurGeometrie) {
     std::string fatal;
@@ -174,19 +174,19 @@ TEST(FormatCatalog, KapazitaetInDerBeschreibung_PasstZurGeometrie) {
         EXPECT_LT(std::abs(soll - ist) / soll, 0.05)
             << "Format '" << f.name << "': Beschreibung nennt " << kib
             << "K, Geometrie ergibt " << f.totalBytes() << " B ("
-            << int(f.numCylinders()) << " Zyl × " << int(f.numHeads()) << " Kopf/Köpfe)";
+            << int(f.numCylinders()) << " Zyl × " << int(f.numHeads()) << " Kopf/Koepfe)";
     }
-    EXPECT_GT(geprueft, 5) << "kaum Formate mit Kapazitätsangabe geprüft";
+    EXPECT_GT(geprueft, 5) << "kaum Formate mit Kapazitaetsangabe geprueft";
 }
 
 /**
  * @test FormatCatalog/BootKritischeGeometrien_Unveraendert
- * @brief cpa780/cpa800 haben exakt die Geometrie der früheren builtinFormats().
+ * @brief cpa780/cpa800 haben exakt die Geometrie der frueheren builtinFormats().
  *
  * Diese Erwartungswerte sind der Regressionsanker des Umbaus (§8.6.8/E2): der
- * Bootpfad hängt an der asymmetrischen cpa780-Aufteilung (Systembereich 3× 128 B,
+ * Bootpfad haengt an der asymmetrischen cpa780-Aufteilung (Systembereich 3× 128 B,
  * Datenbereich ab Zyl 1 Kopf 1).
- * @par Kriterium  Spurbereiche, Sektorzahl/-größe und Gesamtgröße wie zuvor.
+ * @par Kriterium  Spurbereiche, Sektorzahl/-groesse und Gesamtgroesse wie zuvor.
  */
 TEST(FormatCatalog, BootKritischeGeometrien_Unveraendert) {
     std::string fatal;
@@ -214,7 +214,7 @@ TEST(FormatCatalog, BootKritischeGeometrien_Unveraendert) {
         EXPECT_EQ(t.head_last,      exp780[i].hl)   << "Spurbereich " << i;
         EXPECT_EQ(t.secs_per_track, exp780[i].secs) << "Spurbereich " << i;
         EXPECT_EQ(t.bytes_per_sec,  exp780[i].bps)  << "Spurbereich " << i;
-        // Boot-Invariante: die A5120-Disketten sind durchgängig MFM (§14.5).
+        // Boot-Invariante: die A5120-Disketten sind durchgaengig MFM (§14.5).
         EXPECT_EQ(t.encoding, Encoding::MFM)        << "Spurbereich " << i;
     }
 
@@ -228,7 +228,7 @@ TEST(FormatCatalog, BootKritischeGeometrien_Unveraendert) {
 
 /**
  * @test FormatCatalog/AchtZollFormate_VerfahrenWieBisher
- * @brief mf3200 ist FM (8″-SD), mf6400 ist MFM — wie die frühere Ableitung aus dem Laufwerk.
+ * @brief mf3200 ist FM (8″-SD), mf6400 ist MFM — wie die fruehere Ableitung aus dem Laufwerk.
  * @par Kriterium  Verfahren und Geometrie stimmen; Laufwerkszuordnung passt.
  */
 TEST(FormatCatalog, AchtZollFormate_VerfahrenWieBisher) {
@@ -251,8 +251,8 @@ TEST(FormatCatalog, AchtZollFormate_VerfahrenWieBisher) {
 
 /**
  * @test FormatCatalog/JedesProfil_HatEinStandardformat
- * @brief Für jedes bestückte Laufwerksprofil benennt der Katalog ein `default_for`.
- * @par Kriterium  defaultFor() liefert für alle Profile außer "none" ein Format.
+ * @brief Fuer jedes bestueckte Laufwerksprofil benennt der Katalog ein `default_for`.
+ * @par Kriterium  defaultFor() liefert fuer alle Profile ausser "none" ein Format.
  */
 TEST(FormatCatalog, JedesProfil_HatEinStandardformat) {
     std::string fatal;
@@ -263,7 +263,7 @@ TEST(FormatCatalog, JedesProfil_HatEinStandardformat) {
         const DriveProfile& p = builtinDriveProfile(name);
         if (!p.present) continue;                      // "none" hat keine Diskette
         const DiskFormat* def = cat.defaultFor(p);
-        EXPECT_NE(def, nullptr) << "kein default_for für Profil '" << name << "'";
+        EXPECT_NE(def, nullptr) << "kein default_for fuer Profil '" << name << "'";
         if (def) EXPECT_TRUE(def->supportsDrive(name));
     }
 }
@@ -291,7 +291,7 @@ TEST(FormatCatalog, ForDrive_NurExplizitGelisteteFormate) {
     for (const DiskFormat* f : cat.forDrive(builtinDriveProfile("K5600.20")))
         EXPECT_LE(f->numHeads(), 1) << f->name;
 
-    // Unbestückter Slot bietet nichts an.
+    // Unbestueckter Slot bietet nichts an.
     EXPECT_TRUE(cat.forDrive(builtinDriveProfile("none")).empty());
 }
 
@@ -299,7 +299,7 @@ TEST(FormatCatalog, ForDrive_NurExplizitGelisteteFormate) {
 
 /**
  * @test FormatCatalog/FehlerhafteDefinition_WirdUebersprungen
- * @brief Eine kaputte Definition wird gemeldet und übersprungen; gültige bleiben nutzbar.
+ * @brief Eine kaputte Definition wird gemeldet und uebersprungen; gueltige bleiben nutzbar.
  * @par Kriterium  Nur das gute Format ist im Katalog; issues() nennt Name und Grund.
  */
 TEST(FormatCatalog, FehlerhafteDefinition_WirdUebersprungen) {
@@ -330,9 +330,9 @@ TEST(FormatCatalog, FehlerhafteDefinition_WirdUebersprungen) {
  * @test FormatCatalog/UnbekanntesLaufwerksprofil_WirdErkannt
  * @brief Ein Tippfehler im Profilnamen wird erkannt (nicht still als Default akzeptiert).
  *
- * builtinDriveProfile() liefert für unbekannte Namen das Default-Profil — die
- * Validierung prüft deshalb gegen knownDriveProfileNames() (§8.6.5 V3).
- * @par Kriterium  Format übersprungen, Meldung nennt den falschen Namen.
+ * builtinDriveProfile() liefert fuer unbekannte Namen das Default-Profil — die
+ * Validierung prueft deshalb gegen knownDriveProfileNames() (§8.6.5 V3).
+ * @par Kriterium  Format uebersprungen, Meldung nennt den falschen Namen.
  */
 TEST(FormatCatalog, UnbekanntesLaufwerksprofil_WirdErkannt) {
     std::string fatal;
@@ -358,7 +358,7 @@ TEST(FormatCatalog, UnbekanntesLaufwerksprofil_WirdErkannt) {
 /**
  * @test FormatCatalog/GeometrieKonflikt_WirdAbgelehnt
  * @brief Ein doppelseitiges Format an einem einseitigen Laufwerk wird abgelehnt (V4).
- * @par Kriterium  Format übersprungen; Meldung nennt Köpfe und Laufwerk.
+ * @par Kriterium  Format uebersprungen; Meldung nennt Koepfe und Laufwerk.
  */
 TEST(FormatCatalog, GeometrieKonflikt_WirdAbgelehnt) {
     std::string fatal;
@@ -377,13 +377,13 @@ TEST(FormatCatalog, GeometrieKonflikt_WirdAbgelehnt) {
     EXPECT_EQ(cat.find("zweiseitig_an_einseitig"), nullptr);
     ASSERT_EQ(cat.issues().size(), 1u);
     EXPECT_NE(cat.issues()[0].find("K5600.20"), std::string::npos);
-    EXPECT_NE(cat.issues()[0].find("Köpfe"), std::string::npos);
+    EXPECT_NE(cat.issues()[0].find("Koepfe"), std::string::npos);
 }
 
 /**
  * @test FormatCatalog/VerfahrensKonflikt_WirdAbgelehnt
  * @brief Ein MFM-Format an einem reinen FM-Laufwerk wird abgelehnt (V4).
- * @par Kriterium  Format übersprungen; Meldung nennt das Verfahren.
+ * @par Kriterium  Format uebersprungen; Meldung nennt das Verfahren.
  */
 TEST(FormatCatalog, VerfahrensKonflikt_WirdAbgelehnt) {
     std::string fatal;
@@ -409,8 +409,8 @@ TEST(FormatCatalog, VerfahrensKonflikt_WirdAbgelehnt) {
 
 /**
  * @test FormatCatalog/UeberlappendeSpurbereiche_WerdenAbgelehnt
- * @brief Sich überschneidende Spurbereiche sind mehrdeutig und damit ungültig (V2).
- * @par Kriterium  Format übersprungen; Meldung nennt „überlappen".
+ * @brief Sich ueberschneidende Spurbereiche sind mehrdeutig und damit ungueltig (V2).
+ * @par Kriterium  Format uebersprungen; Meldung nennt „ueberlappen".
  */
 TEST(FormatCatalog, UeberlappendeSpurbereiche_WerdenAbgelehnt) {
     std::string fatal;
@@ -429,7 +429,7 @@ TEST(FormatCatalog, UeberlappendeSpurbereiche_WerdenAbgelehnt) {
 
     EXPECT_EQ(cat.find("ueberlappend"), nullptr);
     ASSERT_EQ(cat.issues().size(), 1u);
-    EXPECT_NE(cat.issues()[0].find("überlappen"), std::string::npos);
+    EXPECT_NE(cat.issues()[0].find("ueberlappen"), std::string::npos);
 }
 
 /**
@@ -459,7 +459,7 @@ TEST(FormatCatalog, UnbekanntesFeld_IstNurHinweis) {
 /**
  * @test FormatCatalog/FehlendeDatei_IstFatalUndNenntPfade
  * @brief Ohne Katalogdatei entsteht ein fataler Fehler, der alle gesuchten Pfade nennt.
- * @par Kriterium  fatal_error nicht leer und enthält den gesuchten Pfad.
+ * @par Kriterium  fatal_error nicht leer und enthaelt den gesuchten Pfad.
  */
 TEST(FormatCatalog, FehlendeDatei_IstFatalUndNenntPfade) {
     std::string fatal;
@@ -491,8 +491,8 @@ TEST(FormatCatalog, SyntaxFehler_IstFatal) {
 
 /**
  * @test FormatCatalog/NurFehlerhafteFormate_IstFatal
- * @brief Enthält die Datei kein einziges gültiges Format, ist das ein Startabbruch.
- * @par Kriterium  fatal_error nicht leer und listet die Einzelgründe auf.
+ * @brief Enthaelt die Datei kein einziges gueltiges Format, ist das ein Startabbruch.
+ * @par Kriterium  fatal_error nicht leer und listet die Einzelgruende auf.
  */
 TEST(FormatCatalog, NurFehlerhafteFormate_IstFatal) {
     std::string fatal;
@@ -559,14 +559,14 @@ TEST(FormatCatalog, Mischdichte_VerfahrenProSpurbereich) {
     EXPECT_EQ(f->findTrack(40, 0)->encoding, Encoding::MFM);
     EXPECT_EQ(f->findTrack(40, 0)->bytes_per_sec, 1024);
 
-    // Der HFE-Header trägt nur EIN Verfahren → das der Mehrheit der Spuren.
+    // Der HFE-Header traegt nur EIN Verfahren → das der Mehrheit der Spuren.
     EXPECT_EQ(f->predominantEncoding(), Encoding::MFM);
 }
 
 /**
  * @test FormatCatalog/EncodingVorgabe_WirdVonSpurUeberschrieben
- * @brief Die Format-Vorgabe `encoding:` gilt für Spuren ohne eigene Angabe.
- * @par Kriterium  Spur ohne Angabe erbt fm, Spur mit Angabe behält mfm.
+ * @brief Die Format-Vorgabe `encoding:` gilt fuer Spuren ohne eigene Angabe.
+ * @par Kriterium  Spur ohne Angabe erbt fm, Spur mit Angabe behaelt mfm.
  */
 TEST(FormatCatalog, EncodingVorgabe_WirdVonSpurUeberschrieben) {
     std::string fatal;
@@ -584,14 +584,14 @@ TEST(FormatCatalog, EncodingVorgabe_WirdVonSpurUeberschrieben) {
     const DiskFormat* f = cat.find("vorgabe");
     ASSERT_NE(f, nullptr);
     EXPECT_EQ(f->tracks[0].encoding, Encoding::FM);    // geerbt
-    EXPECT_EQ(f->tracks[1].encoding, Encoding::MFM);   // überschrieben
+    EXPECT_EQ(f->tracks[1].encoding, Encoding::MFM);   // ueberschrieben
 }
 
 // ─── Mehrere Dateien / Override ──────────────────────────────────────────────
 
 /**
  * @test FormatCatalog/SpaetereDatei_UeberschreibtGleichenNamen
- * @brief Eine Datei höherer Priorität ersetzt ein gleichnamiges Format (User-Override).
+ * @brief Eine Datei hoeherer Prioritaet ersetzt ein gleichnamiges Format (User-Override).
  * @par Kriterium  Die Definition der zweiten Datei gewinnt; Anzahl bleibt 1.
  */
 TEST(FormatCatalog, SpaetereDatei_UeberschreibtGleichenNamen) {
@@ -622,8 +622,8 @@ TEST(FormatCatalog, SpaetereDatei_UeberschreibtGleichenNamen) {
 
 /**
  * @test FormatCatalog/SearchPaths_EnthaeltCompileDefault
- * @brief Die Suchpfadliste enthält den Build-Fallback, damit Tools ihn ohne ENV finden.
- * @par Kriterium  searchPaths() ist nicht leer und enthält K1520_FORMATS_DEFAULT.
+ * @brief Die Suchpfadliste enthaelt den Build-Fallback, damit Tools ihn ohne ENV finden.
+ * @par Kriterium  searchPaths() ist nicht leer und enthaelt K1520_FORMATS_DEFAULT.
  */
 TEST(FormatCatalog, SearchPaths_EnthaeltCompileDefault) {
     const auto paths = FormatCatalog::searchPaths();

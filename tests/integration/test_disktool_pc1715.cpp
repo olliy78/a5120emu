@@ -1,19 +1,19 @@
 /**
  * @file test_disktool_pc1715.cpp
- * @brief DiskTool für PC 1715 / 1715W (doc/design/21_pc1715.md AP-D).
+ * @brief DiskTool fuer PC 1715 / 1715W (doc/design/21_pc1715.md AP-D).
  *
- * Maßstab ist wie bei `DiskToolBootdiskette.*` und `DisktoolPrg710.*`, ob die Maschine von der
+ * Massstab ist wie bei `DiskToolBootdiskette.*` und `DisktoolPrg710.*`, ob die Maschine von der
  * gebauten Diskette startet:
  *  - **CP/A 1715 ohne Systemspuren:** der Bootkopf (`F003H`) steht in Verzeichnisplatz 0, die
- *    Laufwerks-Parametersätze in einem Platz mit Nutzerbyte `F0` — beides gehört dem Urlader S502,
- *    nicht dem Dateisystem.  Erkennung (`cpa1715`), `ls`/`get`, Schreiben lässt beide unangetastet,
+ *    Laufwerks-Parametersaetze in einem Platz mit Nutzerbyte `F0` — beides gehoert dem Urlader S502,
+ *    nicht dem Dateisystem.  Erkennung (`cpa1715`), `ls`/`get`, Schreiben laesst beide unangetastet,
  *    `fsck` meldet sie nicht.
  *  - **SCP 1715 / SCP 3.0 mit Systemspuren:** `boot-get` → `create --fs scp1715 --boot` + Dateien;
- *    der Ladekopf wird VOR dem Schreiben geprüft (A5120-SYL-Kopf abgelehnt).
- *  - **Alle PC-1715-Abzüge** (`tests/fixtures/disks/pc1715*.hfe`) gegen die Tabelle in
+ *    der Ladekopf wird VOR dem Schreiben geprueft (A5120-SYL-Kopf abgelehnt).
+ *  - **Alle PC-1715-Abzuege** (`tests/fixtures/disks/pc1715*.hfe`) gegen die Tabelle in
  *    `doc/pc1715/disketten.md`: Format, Dateisystem, Dateizahl, keine Falschmeldung.
  *
- * Disketten nur über `TempDisk`/Temp-Pfade (das DiskTool öffnet schreibend).
+ * Disketten nur ueber `TempDisk`/Temp-Pfade (das DiskTool oeffnet schreibend).
  */
 
 #include <gtest/gtest.h>
@@ -59,7 +59,7 @@ const FsCatalog& dateisysteme() {
     return c;
 }
 
-/// Temporärer Pfad samt Sicherungskopie des DiskTools, räumt sich weg.
+/// Temporaerer Pfad samt Sicherungskopie des DiskTools, raeumt sich weg.
 class TempPfad {
 public:
     explicit TempPfad(const char* name) : pfad_(k1520test::tempPath(name)) { weg(); }
@@ -170,9 +170,9 @@ static const Abzug kAbzuege[] = {
 };
 
 /**
- * @test Jeder PC-1715-Abzug wird erkannt, hat die erwartete Dateizahl und prüft (schnell UND voll)
- *       ohne Befund ab Schwere `Warnung`.  Der zweite Teil macht die Tabelle vollständig: eine neue
- *       `pc1715*.hfe` ohne Zeile hier schlägt an.
+ * @test Jeder PC-1715-Abzug wird erkannt, hat die erwartete Dateizahl und prueft (schnell UND voll)
+ *       ohne Befund ab Schwere `Warnung`.  Der zweite Teil macht die Tabelle vollstaendig: eine neue
+ *       `pc1715*.hfe` ohne Zeile hier schlaegt an.
  */
 TEST(DisktoolPc1715, ErkenntJedenAbzugMitDateizahlUndOhneFalschmeldung) {
     for (const Abzug& a : kAbzuege) {
@@ -201,7 +201,7 @@ TEST(DisktoolPc1715, ErkenntJedenAbzugMitDateizahlUndOhneFalschmeldung) {
 }
 
 /// @test Nur der Bootkopf macht aus einer Datendiskette ohne Systemspuren eine `cpa1715`: dieselbe
-///       Geometrie ohne `F003H` bleibt `cpa800` (sonst wäre jede 800K-Diskette „nicht eindeutig").
+///       Geometrie ohne `F003H` bleibt `cpa800` (sonst waere jede 800K-Diskette „nicht eindeutig").
 TEST(DisktoolPc1715, DatendisketteOhneBootkopfBleibtCpa800) {
     TempPfad pfad("k1520_pc1715_daten.hfe");
     std::string err;
@@ -218,8 +218,8 @@ TEST(DisktoolPc1715, DatendisketteOhneBootkopfBleibtCpa800) {
 }
 
 /**
- * @test Verzeichnisplatz 0 (Bootkopf) und der `F0`-Platz (Parametersätze) bleiben beim Schreiben
- *       bitgleich: `put`, `rm`, `attr` (alle Wege über das Verzeichnis) rühren sie nicht an, und
+ * @test Verzeichnisplatz 0 (Bootkopf) und der `F0`-Platz (Parametersaetze) bleiben beim Schreiben
+ *       bitgleich: `put`, `rm`, `attr` (alle Wege ueber das Verzeichnis) ruehren sie nicht an, und
  *       sie erscheinen weder als Dateien noch als Befund.
  */
 TEST(DisktoolPc1715, Cpa1715BootbereichBleibtBeimSchreibenUnangetastet) {
@@ -236,7 +236,7 @@ TEST(DisktoolPc1715, Cpa1715BootbereichBleibtBeimSchreibenUnangetastet) {
         ASSERT_EQ(vorher[1], 0xF0);
         ASSERT_EQ(vorher[0x60], 0xF0);
 
-        // Keine Datei trägt einen Namen aus Bootkopf-Bytes, keine hat den Nutzerbereich 3.
+        // Keine Datei traegt einen Namen aus Bootkopf-Bytes, keine hat den Nutzerbereich 3.
         for (const FileEntry& e : dv->list()) {
             std::string why;
             EXPECT_TRUE(CpmFileSystem::validName(e.name, &why)) << e.name << ": " << why;
@@ -256,13 +256,13 @@ TEST(DisktoolPc1715, Cpa1715BootbereichBleibtBeimSchreibenUnangetastet) {
     EXPECT_EQ(dv->profile().name, "cpa1715");
     std::vector<uint8_t> nachher;
     ASSERT_TRUE(dv->readBootImage(nachher));
-    // Platz 0 (Bootkopf) und Platz 3 (Parametersätze) bitgleich; Platz 1/2 sind Dateieinträge
-    // (@OS.COM, das gelöschte PIP.COM) und dürfen sich ändern.
+    // Platz 0 (Bootkopf) und Platz 3 (Parametersaetze) bitgleich; Platz 1/2 sind Dateieintraege
+    // (@OS.COM, das geloeschte PIP.COM) und duerfen sich aendern.
     for (int slot : {0, 3})
         EXPECT_TRUE(std::equal(vorher.begin() + slot * 32, vorher.begin() + slot * 32 + 32,
                                nachher.begin() + slot * 32))
-            << "Bootbereich (Platz " << slot << ") wurde beim Schreiben verändert";
-    // CP/M füllt auf ganze 128-B-Sätze auf: Inhalt gleich, Länge aufgerundet.
+            << "Bootbereich (Platz " << slot << ") wurde beim Schreiben veraendert";
+    // CP/M fuellt auf ganze 128-B-Saetze auf: Inhalt gleich, Laenge aufgerundet.
     auto gleichBisSatz = [](std::vector<uint8_t> ist, size_t n, uint8_t b) {
         return ist.size() == (n + 127) / 128 * 128
             && std::all_of(ist.begin(), ist.begin() + static_cast<long>(n),
@@ -325,8 +325,8 @@ TEST(DisktoolPc1715, GebauteCpa1715BootdisketteBootetBisPrompt) {
     EXPECT_EQ(zeile(m, 0), " CP/A, Version 24.05.88, TPA 100H - 0C205H");
 }
 
-/// @test Ein A5120-Bootabbild (SYL-Lader) wird für eine 1715-Diskette abgewiesen — VOR dem
-///       Anlegen (keine halbe Diskette) und beim Einspielen (Diskette unverändert).
+/// @test Ein A5120-Bootabbild (SYL-Lader) wird fuer eine 1715-Diskette abgewiesen — VOR dem
+///       Anlegen (keine halbe Diskette) und beim Einspielen (Diskette unveraendert).
 TEST(DisktoolPc1715, FremdesBootabbildWirdAbgewiesen) {
     // Ein A5120-Ladesektor: "SYL" am Anfang, nicht F003H.
     std::vector<uint8_t> syl(1024, 0xE5);
@@ -345,7 +345,7 @@ TEST(DisktoolPc1715, FremdesBootabbildWirdAbgewiesen) {
     }
 
     // boot-put auf eine vorhandene SCP-Diskette: das Profil ist `cpa_auto` (kein boot_header),
-    // aber Sektor 1 trägt schon F003H — das genügt.
+    // aber Sektor 1 traegt schon F003H — das genuegt.
     k1520test::TempDisk d("pc1715_scp1715_v0006_boot.hfe", "k1520_pc1715_syl_put.hfe");
     auto dv = oeffne(d.path(), true);
     ASSERT_NE(dv, nullptr);
@@ -361,7 +361,7 @@ TEST(DisktoolPc1715, FremdesBootabbildWirdAbgewiesen) {
 
 /**
  * @test SCP 1715: Systemspuren (20 KB) per `boot-get` herausholen, `create --fs scp1715 --boot`,
- *       alle 9 Dateien zurück — bootet bis `A>` mit dem Banner des Originals.
+ *       alle 9 Dateien zurueck — bootet bis `A>` mit dem Banner des Originals.
  */
 TEST(DisktoolPc1715, GebauteScp1715BootdisketteBootetBisPrompt) {
     stumm();
@@ -400,10 +400,10 @@ TEST(DisktoolPc1715, GebauteScp1715BootdisketteBootetBisPrompt) {
 }
 
 /**
- * @test SCP 3.0 (1715W): derselbe Mechanismus — Systemspuren übernehmen, 42 Dateien zurück,
+ * @test SCP 3.0 (1715W): derselbe Mechanismus — Systemspuren uebernehmen, 42 Dateien zurueck,
  *       bootet in der 1715W-Variante bis `A>` (nach PROFILE.SUB/MODCS).  CP/M-3-Verzeichnis:
- *       Zeitstempel-/Kennwort-/Label-Sätze erscheinen weder als Dateien noch als Befund und
- *       werden von `put` nicht überschrieben (synthetische Sätze in einer Kopie, siehe unten).
+ *       Zeitstempel-/Kennwort-/Label-Saetze erscheinen weder als Dateien noch als Befund und
+ *       werden von `put` nicht ueberschrieben (synthetische Saetze in einer Kopie, siehe unten).
  */
 TEST(DisktoolPc1715, GebauteScp30BootdisketteBootetBisPrompt) {
     stumm();
@@ -435,10 +435,10 @@ TEST(DisktoolPc1715, GebauteScp30BootdisketteBootetBisPrompt) {
 }
 
 /**
- * @test CP/M-3-Sonderplätze (Zeitstempel 21H, Label 20H, Kennwort 16…31) in SCP-3.0-Verzeichnis:
- *       nicht als Dateien, `get`/`put`/`rm` funktionieren, die Sonderplätze bleiben bitgleich,
- *       `fsck` ohne Befund ab `Warnung`.  Die echte Fixture trägt keine (nicht mit INITDIR
- *       initialisiert) — deshalb werden vier Sätze in eine Kopie geschrieben (Platz 3 jeder
+ * @test CP/M-3-Sonderplaetze (Zeitstempel 21H, Label 20H, Kennwort 16…31) in SCP-3.0-Verzeichnis:
+ *       nicht als Dateien, `get`/`put`/`rm` funktionieren, die Sonderplaetze bleiben bitgleich,
+ *       `fsck` ohne Befund ab `Warnung`.  Die echte Fixture traegt keine (nicht mit INITDIR
+ *       initialisiert) — deshalb werden vier Saetze in eine Kopie geschrieben (Platz 3 jeder
  *       4er-Gruppe, wie INITDIR es tut).
  */
 TEST(DisktoolPc1715, Scp30SonderplaetzeSindWederDateienNochBefund) {
@@ -450,8 +450,8 @@ TEST(DisktoolPc1715, Scp30SonderplaetzeSindWederDateienNochBefund) {
         ASSERT_NE(dv, nullptr);
         dv->setBackup(false);
         dateien = static_cast<int>(dv->list().size());
-        // Sonderplätze in vier FREIE Plätze am Ende des 128er-Verzeichnisses (c2h0, 4 Sektoren
-        // à 32 Plätze): 123 und 127 Zeitstempel (vierter Platz einer Gruppe, wie INITDIR),
+        // Sonderplaetze in vier FREIE Plaetze am Ende des 128er-Verzeichnisses (c2h0, 4 Sektoren
+        // à 32 Plaetze): 123 und 127 Zeitstempel (vierter Platz einer Gruppe, wie INITDIR),
         // 124 Etikett, 125 Kennwortsatz (16 + Nutzerbereich 0) zu PIP.COM; 126 bleibt frei.
         std::vector<uint8_t> s;
         uint16_t crc = 0;
@@ -488,7 +488,7 @@ TEST(DisktoolPc1715, Scp30SonderplaetzeSindWederDateienNochBefund) {
         auto dv = oeffne(d.path(), true);
         ASSERT_NE(dv, nullptr);
         dv->setBackup(false);
-        EXPECT_EQ(static_cast<int>(dv->list().size()), dateien) << "Sonderplätze erscheinen als Dateien";
+        EXPECT_EQ(static_cast<int>(dv->list().size()), dateien) << "Sonderplaetze erscheinen als Dateien";
         verzeichnis0 = roh(*dv);
         ASSERT_TRUE(lege(*dv, "NEU.TXT", std::vector<uint8_t>(3000, 'z'))) << dv->lastError();
         FileRef weg;
@@ -508,7 +508,7 @@ TEST(DisktoolPc1715, Scp30SonderplaetzeSindWederDateienNochBefund) {
     for (int slot : {123, 124, 125, 127})
         EXPECT_TRUE(std::equal(verzeichnis0.begin() + slot * 32, verzeichnis0.begin() + slot * 32 + 32,
                                nachher.begin() + slot * 32))
-            << "Sonderplatz " << slot << " wurde verändert";
+            << "Sonderplatz " << slot << " wurde veraendert";
     for (FsCheckLevel stufe : {FsCheckLevel::Schnell, FsCheckLevel::Voll}) {
         const FsCheckReport& r = dv->check(stufe, true);
         EXPECT_EQ(0, r.zaehlerAb(FsSeverity::Warnung)) << kennungen(r);

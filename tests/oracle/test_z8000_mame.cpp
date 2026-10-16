@@ -1,21 +1,21 @@
 /**
  * @file test_z8000_mame.cpp
- * @brief Differenzprüfung der U8001/U8002-Primitive gegen MAMEs z8000 (BSD-3) als ORAKEL.
+ * @brief Differenzpruefung der U8001/U8002-Primitive gegen MAMEs z8000 (BSD-3) als ORAKEL.
  *
- * MAMEs Quellen werden beim Konfigurieren heruntergeladen (fester Stand, Prüfsumme —
- * tests/oracle/CMakeLists.txt) und gegen einen Framework-Ersatz (mame_shim/) übersetzt.
+ * MAMEs Quellen werden beim Konfigurieren heruntergeladen (fester Stand, Pruefsumme —
+ * tests/oracle/CMakeLists.txt) und gegen einen Framework-Ersatz (mame_shim/) uebersetzt.
  * Nichts davon fliesst in core/ ein; verglichen wird nur das Ergebnis EINES Befehls:
  *
- *   gleicher Zufallszustand (Register beider Bänke, Flags, PC, Speicherinhalt als
+ *   gleicher Zufallszustand (Register beider Baenke, Flags, PC, Speicherinhalt als
  *   Hashfunktion der Adresse) → je CPU ein Schritt → Register, FCW, PC, alle
  *   geschriebenen Speicherbytes, E/A-Schreibzugriffe.
  *
- * Je Tabellenzeile (core/primitives/z8000/z8k_table.h) viele Zufallsfälle in den Modi
+ * Je Tabellenzeile (core/primitives/z8000/z8k_table.h) viele Zufallsfaelle in den Modi
  * Z8001 segmentiert System/Normal und Z8002 System/Normal.  Vom Handbuch als
  * „undefiniert" bezeichnete Flags/Registerteile werden ausgeblendet.  Wo MAME
- * nachweislich vom Handbuch abweicht, steht die Zeile mit Begründung in
- * kBekannteAbweichungen — sie wird gezählt und gemeldet, lässt den Test aber nicht
- * scheitern.  Takte vergleicht die Prüfung nicht (MAMEs Takte sind grob).
+ * nachweislich vom Handbuch abweicht, steht die Zeile mit Begruendung in
+ * kBekannteAbweichungen — sie wird gezaehlt und gemeldet, laesst den Test aber nicht
+ * scheitern.  Takte vergleicht die Pruefung nicht (MAMEs Takte sind grob).
  *
  * Label `mame_oracle`, nur mit -DK1520_Z8K_MAME_ORACLE=ON (braucht Netz beim Konfigurieren).
  */
@@ -36,7 +36,7 @@
 
 namespace {
 
-// ── gemeinsamer Speicher: Grundinhalt = Hash(Adresse), Schreibzugriffe als Überlagerung
+// ── gemeinsamer Speicher: Grundinhalt = Hash(Adresse), Schreibzugriffe als Ueberlagerung
 struct HashMem {
     uint32_t seed = 1;
     std::map<uint32_t, uint8_t> over;          // lineare Adresse → Byte
@@ -48,7 +48,7 @@ struct HashMem {
     uint8_t base(uint32_t a) const { return uint8_t(mix(a * 2654435761u ^ seed)); }
     uint8_t b(uint32_t a) const { auto it = over.find(a); return it == over.end() ? base(a) : it->second; }
     uint16_t w(uint32_t a) const { a &= ~1u; return uint16_t(b(a) << 8 | b(a + 1)); }
-    uint16_t io(int sp, uint16_t port) const {   // Hälften VERSCHIEDEN: prüft die Bytelage
+    uint16_t io(int sp, uint16_t port) const {   // Haelften VERSCHIEDEN: prueft die Bytelage
         port &= 0xFFFE;                           // MAME liest Wortweise an der geraden Adresse
         return uint16_t(mix(uint32_t(port) * 40503u ^ seed ^ uint32_t(sp) << 20));
     }
@@ -127,7 +127,7 @@ public:
         this->m_icount = 1;
         this->execute_run();
         // Interne Traps (SC, privilegiert) setzt MAME als Anforderung; der Eintritt
-        // gehört noch zu diesem Befehl.
+        // gehoert noch zu diesem Befehl.
         if (this->m_irq_req & (0x80 | 0x40 | 0x02)) this->Interrupt();
     }
 };
@@ -139,7 +139,7 @@ struct Ours {
     uint16_t ack = 0;                                   ///< Kennung der Quittungszyklen
     explicit Ours(bool is8001) : cpu(cfg(is8001)) {
         cpu.read = [this](const Z8kBusCycle& c) -> uint16_t {
-            if (uint8_t(c.st) >= 4 && uint8_t(c.st) <= 7) {     // Quittung: Pin fällt mit ihr
+            if (uint8_t(c.st) >= 4 && uint8_t(c.st) <= 7) {     // Quittung: Pin faellt mit ihr
                 if (c.st == Z8kStatus::SegTrapAck) cpu.setSEGT(false);
                 if (c.st == Z8kStatus::ViAck) cpu.setVI(false);
                 if (c.st == Z8kStatus::NviAck) cpu.setNVI(false);
@@ -249,18 +249,18 @@ bool skipRow(const z8k::Insn& in) {
     return false;
 }
 
-/// Bekannte, begründete Abweichungen MAME ↔ Handbuch.  Schlüssel: Mnemonik.
-/// Wert: Begründung (für den Bericht).  Wird gefüllt, sobald ein Befund belegt ist.
+/// Bekannte, begruendete Abweichungen MAME ↔ Handbuch.  Schluessel: Mnemonik.
+/// Wert: Begruendung (fuer den Bericht).  Wird gefuellt, sobald ein Befund belegt ist.
 const std::map<std::string, const char*>& kBekannteAbweichungen() {
     static const std::map<std::string, const char*> k = {
-        {"DAB", "MAME prüft die Zehnerstelle nach der Einerkorrektur ohne Übertrag: 96+64 "
+        {"DAB", "MAME prueft die Zehnerstelle nach der Einerkorrektur ohne Uebertrag: 96+64 "
                 "(=%FA) ergibt dort %00/C=0, das Handbuch (Tabelle DAB, Zeile C=0 9-F/A-F) "
                 "und wir %60/C=1."},
     };
     return k;
 }
 
-/// Nur Kodierungen, die das Handbuch als gültig beschreibt (sonst gibt es nichts zu vergleichen).
+/// Nur Kodierungen, die das Handbuch als gueltig beschreibt (sonst gibt es nichts zu vergleichen).
 bool validEncoding(const z8k::Decoded& d, const z8k::Insn& in) {
     const std::string mn = in.mn;
     const int bits = in.has(z8k::Z8K_B) ? 8 : in.has(z8k::Z8K_L) ? 32 : 16;
@@ -287,10 +287,10 @@ bool validEncoding(const z8k::Decoded& d, const z8k::Insn& in) {
         if (o.kind == z8k::Kind::IR) om = d.seg ? 3u << (o.reg & 14) : 1u << o.reg;
         if (pm & om) return false;
     }
-    // Übersetzen: RH1 wird zerstört — kein Zeiger/Zähler darf R1 (bzw. RR0) enthalten.
+    // Uebersetzen: RH1 wird zerstoert — kein Zeiger/Zaehler darf R1 (bzw. RR0) enthalten.
     if (mn.rfind("TR", 0) == 0)
         for (int i = 0; i < 3; ++i) if ((d.op[i].reg & 14) == 0) return false;
-    // Blockbefehle: Quelle, Ziel, Zähler getrennt und nicht überlappend (Handbuch).
+    // Blockbefehle: Quelle, Ziel, Zaehler getrennt und nicht ueberlappend (Handbuch).
     if (in.hasW1 && in.nops >= 3 && in.op[2].kind == z8k::Kind::RW &&
         (in.op[0].kind == z8k::Kind::IR || in.op[1].kind == z8k::Kind::IR)) {
         unsigned used = 0;
@@ -314,7 +314,7 @@ struct RowStat { int cases = 0, diffs = 0; std::string first; };
 std::string hex(uint32_t v, int n = 4) { char b[16]; std::snprintf(b, sizeof b, "%0*X", n, v); return b; }
 
 /// Ein Modus: Z8001 seg System/Normal oder Z8002 System/Normal.
-/// @p flagSweep: statt zufälliger Flags jede der 64 Belegungen C Z S V D H genau einmal
+/// @p flagSweep: statt zufaelliger Flags jede der 64 Belegungen C Z S V D H genau einmal
 /// (Matrix Befehl × Adressierungsart (= Tabellenzeile) × Flagzustand, AP P8).
 void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, RowStat>& stats,
              bool flagSweep = false) {
@@ -337,7 +337,7 @@ void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, Ro
             }
             if (!ok) continue;
             if (!validEncoding(d, in)) continue;
-            // LDCTL REFRESH: unser Zeilenzähler läuft mit der Zeit, MAMEs nicht
+            // LDCTL REFRESH: unser Zeilenzaehler laeuft mit der Zeit, MAMEs nicht
             if ((d.op[0].kind == z8k::Kind::CTL && d.op[0].value == 3) ||
                 (d.nops > 1 && d.op[1].kind == z8k::Kind::CTL && d.op[1].value == 3)) continue;
 
@@ -347,24 +347,24 @@ void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, Ro
             for (auto& r : s.R) r = uint16_t(rng());
             for (int i = 0; i < 2; ++i) { s.R14[i] = uint16_t(rng()); s.R15[i] = uint16_t(rng()); }
             if (!is8001) s.R14[1] = 0;
-            // Dynamisches Schieben: Weite im gültigen Bereich (Handbuch: −n..+n)
+            // Dynamisches Schieben: Weite im gueltigen Bereich (Handbuch: −n..+n)
             if (std::string(in.mn).rfind("SD", 0) == 0 && d.op[1].reg < 14) {
                 int bits = in.has(z8k::Z8K_B) ? 8 : in.has(z8k::Z8K_L) ? 32 : 16;
                 s.R[d.op[1].reg] = uint16_t(int(rng() % uint32_t(2 * bits + 1)) - bits);
                 if ((d.op[0].reg & (in.has(z8k::Z8K_B) ? 7 : 15)) == d.op[1].reg) continue;
             }
             if (std::string(in.mn).rfind("SD", 0) == 0 && d.op[1].reg >= 14) continue;
-            // Zählregister der Blockbefehle klein halten wäre egal: ein Schritt = ein Durchlauf.
+            // Zaehlregister der Blockbefehle klein halten waere egal: ein Schritt = ein Durchlauf.
             s.fcw = uint16_t(modeFcw | (flagSweep ? uint16_t(k << 2) : (rng() & 0x00FC)));
             s.pcSeg = is8001 ? uint8_t(rng() & 0x7F) : 0;
-            s.pc = uint16_t(rng() & 0xFEFE);   // kein Offsetüberlauf im Befehl: MAME trägt ins Segment (README)
+            s.pc = uint16_t(rng() & 0xFEFE);   // kein Offsetueberlauf im Befehl: MAME traegt ins Segment (README)
             s.psapSeg = is8001 ? uint16_t(rng() & 0x7F00) : 0;
             s.psapOff = uint16_t(rng() & 0xFF00);
             for (int i = 0; i < 6; ++i) {
                 uint32_t a = lin(s.pcSeg, uint16_t(s.pc + 2 * i));
                 for (HashMem* m : {&memA, &memB}) { m->over[a] = uint8_t(words[i] >> 8); m->over[a + 1] = uint8_t(words[i]); }
             }
-            // Befehlsworte gehören zum Grundinhalt: Überlagerung erst ab hier vergleichen.
+            // Befehlsworte gehoeren zum Grundinhalt: Ueberlagerung erst ab hier vergleichen.
             const auto pre = memA.over;
 
             State ma, oa;
@@ -384,7 +384,7 @@ void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, Ro
 
             // Bekannte Abweichung MAME: im gesicherten PC-Segmentwort (CALL/CALR, Trap-
             // und SC-Rahmen) setzt MAME Bit 15 (make_segmented_addr).  Handbuch: Format
-            // 0sss ssss 0000 0000 (Bild 7-1 nennt nur „PC SEGMENT").  Angeglichen und gezählt.
+            // 0sss ssss 0000 0000 (Bild 7-1 nennt nur „PC SEGMENT").  Angeglichen und gezaehlt.
             if (is8001) {
                 for (int bank = 0; bank < 2; ++bank)          // Trap-Rahmen: System; CALL: aktueller Modus
                 for (uint16_t k : {uint16_t(0), uint16_t(4)}) {
@@ -444,7 +444,7 @@ void runMode(bool is8001, uint16_t modeFcw, int perRow, std::map<std::string, Ro
     }
 }
 
-/// Bericht über alle Zeilen; Rückgabe = unerwartete Abweichungen.
+/// Bericht ueber alle Zeilen; Rueckgabe = unerwartete Abweichungen.
 int report(const std::map<std::string, RowStat>& stats, const char* what) {
     int cases = 0, diffs = 0, known = 0;
     std::map<std::string, std::vector<std::string>> byMn;
@@ -487,9 +487,9 @@ TEST(Z8000MameOrakel, JedeZeileJedeFlagbelegung) {
     EXPECT_EQ(report(stats, "Flagmatrix"), 0);
 }
 
-// Ausnahmen mit Quittung: NMI, SEGT (Z8001), VI, NVI aus zufälligem Zustand.  MAME:
+// Ausnahmen mit Quittung: NMI, SEGT (Z8001), VI, NVI aus zufaelligem Zustand.  MAME:
 // Anforderungsbit setzen und Interrupt() — bei uns der Pin und ein Schritt.  Verglichen
-// wie oben: Register beider Bänke, FCW, PC, Stapelrahmen (Kennung, FCW, PC), PSA-Lesen.
+// wie oben: Register beider Baenke, FCW, PC, Stapelrahmen (Kennung, FCW, PC), PSA-Lesen.
 // Nicht verglichen (MAME modelliert es nicht): Scheinholen, Statusfolge, Takte.
 TEST(Z8000MameOrakel, AusnahmenMitQuittungWieMame) {
     std::mt19937 rng(0xE7C0DE);
@@ -507,15 +507,15 @@ TEST(Z8000MameOrakel, AusnahmenMitQuittungWieMame) {
                     for (auto& r : s.R) r = uint16_t(rng());
                     for (int i = 0; i < 2; ++i) { s.R14[i] = uint16_t(rng()); s.R15[i] = uint16_t(rng()); }
                     if (!is8001) s.R14[1] = 0;
-                    s.fcw = uint16_t(modeFcw | (rng() & 0x18FC));      // VIE/NVIE zufällig
+                    s.fcw = uint16_t(modeFcw | (rng() & 0x18FC));      // VIE/NVIE zufaellig
                     if (kind == 2) s.fcw |= 0x1000;
                     if (kind == 3) s.fcw |= 0x0800;
                     s.pcSeg = is8001 ? uint8_t(rng() & 0x7F) : 0;
                     s.pc = uint16_t(rng() & 0xFFFE);
                     s.psapSeg = is8001 ? uint16_t(rng() & 0x7F00) : 0;
                     s.psapOff = uint16_t(rng() & 0xFF00);
-                    // Vektortabelle über %FFFF hinaus: wir rechnen ohne Übertrag ins Segment
-                    // (README „PC-Offset läuft im Segment über"), MAME trägt — nicht vergleichen.
+                    // Vektortabelle ueber %FFFF hinaus: wir rechnen ohne Uebertrag ins Segment
+                    // (README „PC-Offset laeuft im Segment ueber"), MAME traegt — nicht vergleichen.
                     if (kind == 2 && s.psapOff > 0xFC00) s.psapOff = 0xFC00;
                     uint16_t id = uint16_t(rng());
                     if (kind == 2 && is8001) id &= 0xFFFE;             // Z8001: Vektoren gerade (§7.6.3)

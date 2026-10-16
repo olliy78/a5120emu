@@ -51,7 +51,7 @@ def verfuegbarkeit() -> Tuple[bool, str]:
         return False, f"Die Greaseweazle-Anbindung ließ sich nicht laden: {e}"
     if not verfuegbar():
         # Der Befehl nennt DIESEN Interpreter, nicht das blosse `pip`: das Programm
-        # läuft in einem venv, ein nacktes `pip install` ginge daneben (ins System,
+        # laeuft in einem venv, ein nacktes `pip install` ginge daneben (ins System,
         # und auf neueren Distributionen scheitert es dort an PEP 668).  Dazu der
         # Pfad, damit man sieht, WOHIN installiert wird — steckt man versehentlich
         # im venv eines anderen Projekts, ist genau das die Auskunft, die fehlt.
@@ -81,7 +81,7 @@ class PhysicalSession:
     """
 
     #: Text der letzten Defektmeldung, die dem Bediener schon gezeigt wurde —
-    #: damit dieselbe Schadstelle nicht bei jedem Zeitgeber-Tick ein Fenster öffnet.
+    #: damit dieselbe Schadstelle nicht bei jedem Zeitgeber-Tick ein Fenster oeffnet.
     gemeldete_defekte: str = ""
 
     def __init__(self, sync, worker, device, *, drive: str, writable: bool,
@@ -92,9 +92,9 @@ class PhysicalSession:
         self.drive = drive
         self.writable = writable
         self.cell_rate_kbps = cell_rate_kbps
-        # Die Geometrie, mit der eingelegt wurde.  `Stats` trägt nur die Spurzahl
-        # als Produkt (tracks_total) — wer wissen will, wie viele KÖPFE es sind,
-        # bekäme sie von dort nicht zurückgerechnet.
+        # Die Geometrie, mit der eingelegt wurde.  `Stats` traegt nur die Spurzahl
+        # als Produkt (tracks_total) — wer wissen will, wie viele KOEPFE es sind,
+        # bekaeme sie von dort nicht zurueckgerechnet.
         self.num_cyls = num_cyls
         self.num_heads = num_heads
         self._zu = False

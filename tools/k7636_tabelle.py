@@ -33,7 +33,7 @@ for z in zeilen:
     out.append(f'    {{"{pos}", 0x{a:02X}, 0x{b:02X}}},  // {adr:02X}H {z["leitung"]}/{z["zeile"]}')
 
 (wurzel / "core/peripherals/k7636/k7636_tabelle.h").write_text(
-    "// ERZEUGT von tools/k7636_tabelle.py aus doc/a5120_alt/k7636_01_codes.csv - nicht von Hand ändern.\n"
+    "// ERZEUGT von tools/k7636_tabelle.py aus doc/a5120_alt/k7636_01_codes.csv - nicht von Hand aendern.\n"
     "#pragma once\n#include <cstdint>\n\n"
     "struct K7636TabellenEintrag { const char* pos; uint8_t a; uint8_t b; };\n\n"
     "/// Codetabelle K7636.01 (CTAB 1), Index = Rechenadresse 00H-7FH; a = Grund-, b = Umschaltstellung.\n"
@@ -41,6 +41,6 @@ for z in zeilen:
     encoding="utf-8")
 
 (wurzel / "app/ui/k7636_tabelle.py").write_text(
-    "\"\"\"ERZEUGT von tools/k7636_tabelle.py aus doc/a5120_alt/k7636_01_codes.csv - nicht von Hand ändern.\n\n"
+    "\"\"\"ERZEUGT von tools/k7636_tabelle.py aus doc/a5120_alt/k7636_01_codes.csv - nicht von Hand aendern.\n\n"
     "Codetabelle K7636.01 (CTAB 1): Position -> (Rechenadresse, Code a, Code b).\"\"\"\n\n"
     "POSITIONEN = {\n" + "\n".join(py) + "\n}\n", encoding="utf-8")

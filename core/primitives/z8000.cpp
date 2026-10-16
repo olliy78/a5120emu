@@ -1,6 +1,6 @@
 /**
  * @file z8000.cpp
- * @brief U8001/U8002 (≙ Z8001/Z8002) — Ausführung.  Dekodieren und Takte:
+ * @brief U8001/U8002 (≙ Z8001/Z8002) — Ausfuehrung.  Dekodieren und Takte:
  *        core/primitives/z8000/z8k_table.h.  Quelle der Semantik: Zilog Z8000
  *        CPU User's Reference Manual (Kap. 6 Befehle, Kap. 7 Ausnahmen, Kap. 8
  *        Refresh, Kap. 9 Bus).  Annahmen: core/primitives/z8000/README.md.
@@ -68,7 +68,7 @@ bool blockSpecOf(const std::string& mnIn, bool isByte, BlkSpec& s) {
 }
 
 struct Dispatch {
-    std::vector<BlkSpec> blk;     // je Tabellenzeile (nur für Op::Block gültig)
+    std::vector<BlkSpec> blk;     // je Tabellenzeile (nur fuer Op::Block gueltig)
 };
 
 int widthOf(const Insn& in) {
@@ -302,9 +302,9 @@ uint16_t Z8000::ioRead(bool special, uint16_t port, bool word) {
     if (word) return v;
     // Bytelage nach A0 wie bei Speicherzugriffen (§9.4.2): ungerade AD0..7, gerade
     // AD8..15.  §9.4.3 („Standard AD0..7, Spezial AD8..15") ist davon die Folge, weil
-    // Standard-Byteports ungerade, Spezial-Byteports gerade sein MÜSSEN.  Belegt am
+    // Standard-Byteports ungerade, Spezial-Byteports gerade sein MUESSEN.  Belegt am
     // A5120.16 (2026-09-29): `INB RL0,%0080` (gerade, Standard-E/A) liest Status-8,
-    // den A36 nur auf AD8..15 legt.  MAME wählt die Lage ebenso nach A0.
+    // den A36 nur auf AD8..15 legt.  MAME waehlt die Lage ebenso nach A0.
     return (port & 1) ? uint8_t(v) : uint8_t(v >> 8);
 }
 
@@ -583,9 +583,9 @@ int Z8000::takeException(Z8kException kind, Z8kStatus ack, uint16_t entry, uint1
 
 // Rangfolge §7.7: NMI vor Segmenttrap vor VI vor NVI (die internen Traps entstehen im
 // Befehl selbst und sind dann schon genommen).  Abgetastet am Befehlsende (§9.6.1) — hier
-// vor dem Holen des nächsten Befehls, bei einem unterbrechbaren Befehl zwischen zwei
-// Durchläufen.  Je Schritt EINE Ausnahme; stehen weitere an, folgt die nächste im nächsten
-// Schritt, bevor die Behandlungsroutine einen Befehl ausführt — so wie §7.7 es beschreibt
+// vor dem Holen des naechsten Befehls, bei einem unterbrechbaren Befehl zwischen zwei
+// Durchlaeufen.  Je Schritt EINE Ausnahme; stehen weitere an, folgt die naechste im naechsten
+// Schritt, bevor die Behandlungsroutine einen Befehl ausfuehrt — so wie §7.7 es beschreibt
 // („the old status is the PC and FCW of the previous exception's service routine").
 int Z8000::checkInterrupts() {
     Z8kStatus ack;
@@ -692,7 +692,7 @@ int Z8000::shiftOp(const Operand& dst, int w, int count, bool arith) {
     const bool sign0 = (v & s) != 0;
     bool ov = false;
     int n = count < 0 ? -count : count;
-    int steps = n > bits + 1 ? bits + 1 : n;   // danach ändert sich nichts mehr
+    int steps = n > bits + 1 ? bits + 1 : n;   // danach aendert sich nichts mehr
     bool c = flag(F_C);
     for (int i = 0; i < steps; ++i) {
         if (count > 0) {
@@ -730,7 +730,7 @@ int Z8000::blockStep(const Decoded& d, uint16_t pcNext, bool first) {
         uint32_t a = (s.t == BlkType::Cmp) ? uint32_t(regRead(o[0])) : memRead(ptr(o[0].reg), w);
         uint32_t b = memRead(ptr(o[1].reg), w);
         const uint16_t keepDH = fcw & (F_D | F_H);
-        sub(a, b, false, w, false);            // C, S, V (vorläufig) aus dem Vergleich
+        sub(a, b, false, w, false);            // C, S, V (vorlaeufig) aus dem Vergleich
         bool hit = cond(o[3].value, fcw);
         fcw = uint16_t((fcw & ~(F_D | F_H)) | keepDH);
         setFlag(F_Z, hit);
@@ -765,9 +765,9 @@ int Z8000::blockStep(const Decoded& d, uint16_t pcNext, bool first) {
     uint16_t cnt = uint16_t(r(cntReg) - 1);
     setR(cntReg, cnt);
     setFlag(F_PV, cnt == 0);
-    // LD/IN/OUT-Blockbefehle setzen Z wie V (Zähler = 0).  Das Handbuch nennt nur V; MAME
+    // LD/IN/OUT-Blockbefehle setzen Z wie V (Zaehler = 0).  Das Handbuch nennt nur V; MAME
     // (`CLR_V; CLR_Z … SET_V; SET_Z`) und der WEGA-Kern 3.2 (`_copyout`: `LDIB` + `JR Z`, sonst
-    // folgt ein LDIR mit Zähler 0 = 64 K und zerschießt den Anwenderstapel) verlangen es.
+    // folgt ein LDIR mit Zaehler 0 = 64 K und zerschiesst den Anwenderstapel) verlangen es.
     if (s.t == BlkType::Load || s.t == BlkType::In || s.t == BlkType::Out) setFlag(F_Z, cnt == 0);
     int cyc = s.rep ? (first ? d.cycles() : 0) + in.perN : d.cycles();
     if (s.rep && !stop && cnt != 0) {
@@ -1181,8 +1181,8 @@ int Z8000::execute(const Decoded& d, uint16_t pcNext) {
         break;
     }
     case Op::Epa:
-        // EPA = 1, aber kein Z8070 bestückt: niemand antwortet — als NOP der
-        // richtigen Länge (Worte sind schon geholt).  README §„EPA".
+        // EPA = 1, aber kein Z8070 bestueckt: niemand antwortet — als NOP der
+        // richtigen Laenge (Worte sind schon geholt).  README §„EPA".
         extra = 7;
         break;
     }

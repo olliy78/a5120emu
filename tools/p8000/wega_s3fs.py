@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Dateien aus einem WEGA-Dateisystem (System III, 512-B-Blöcke, Z8000 = big endian) auf
-einem P8000-Plattenabbild lesen — nur lesend, ohne Abhängigkeiten.
+"""Dateien aus einem WEGA-Dateisystem (System III, 512-B-Bloecke, Z8000 = big endian) auf
+einem P8000-Plattenabbild lesen — nur lesend, ohne Abhaengigkeiten.
 
-Gebraucht für die Testdaten `tests/fixtures/p8000/sa.format`/`sa.verify` (Fassung 4.1 aus dem
+Gebraucht fuer die Testdaten `tests/fixtures/p8000/sa.format`/`sa.verify` (Fassung 4.1 aus dem
 WEGA-3.1-Abbild von pofo.de, `doc/p8000/wdc_firmware.md` §11): auf der WEGA-3.0-Startdiskette
-steht nur `sa.format` V1.4, das die Parameterblöcke der Firmware 3.x erwartet.
+steht nur `sa.format` V1.4, das die Parameterbloecke der Firmware 3.x erwartet.
 
     wega_s3fs.py <abbild> <fs-block> ls [verzeichnis]
     wega_s3fs.py <abbild> <fs-block> get <pfad> <ziel>
 
 <fs-block> = Blocknummer des Dateisystems im Blockraum des WDC (Block 0 = Zylinder 1); im
 WEGA-3.1-Abbild /usr = 0, / = 16000.  `--vorlauf` = Sektoren vor Block 0 (Vorgabe 180 =
-1 Zylinder × 10 Köpfe × 18 Sektoren des AVR-Abbilds).
+1 Zylinder × 10 Koepfe × 18 Sektoren des AVR-Abbilds).
 """
 import argparse
 import struct
@@ -37,11 +37,11 @@ class S3fs:
     def daten(self, i):
         _mode, groesse, adr = self.inode(i)
         bloecke = adr[:10]
-        if adr[10]:   # einfach indirekt (reicht für Dateien bis 69 KB)
+        if adr[10]:   # einfach indirekt (reicht fuer Dateien bis 69 KB)
             ib = self.block(adr[10])
             bloecke += [struct.unpack(">I", ib[4 * k:4 * k + 4])[0] for k in range(128)]
         if adr[11] or adr[12]:
-            sys.exit("Datei zu groß (doppelt indirekt nicht umgesetzt)")
+            sys.exit("Datei zu gross (doppelt indirekt nicht umgesetzt)")
         out = bytearray()
         for a in bloecke:
             if len(out) >= groesse:

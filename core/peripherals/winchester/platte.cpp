@@ -31,7 +31,7 @@ uint16_t crcCcitt(uint16_t crc, uint8_t byte)
 
 const std::vector<Typ>& typen()
 {
-    // sa.format Z. 36–40 (WEGA 3.x); 1380/10/18 = WEGA-3.1-Abbild für den AVR-Emulator (§11)
+    // sa.format Z. 36–40 (WEGA 3.x); 1380/10/18 = WEGA-3.1-Abbild fuer den AVR-Emulator (§11)
     static const std::vector<Typ> t = {
         {"ROB K5504.50", {1024, 5, 18}, 1024, 1, 203, 209, 251, 253, 241, 243, "K5504.50", "k5504"},
         {"NEC D5126   ", {615, 4, 18}, 128, 12, 203, 209, 248, 250, 239, 241, "D5126", "d5126"},
@@ -60,7 +60,7 @@ const Typ* typNachKuerzel(const std::string& kuerzel)
 
 std::string kuerzelAusDateiname(const std::string& pfad)
 {
-    // `<name>.<kuerzel>.img[.gz]` — das vorletzte Stück vor der Endung `.img`, nur wenn es ein Typkürzel ist
+    // `<name>.<kuerzel>.img[.gz]` — das vorletzte Stueck vor der Endung `.img`, nur wenn es ein Typkuerzel ist
     std::string n = std::filesystem::path(pfad).filename().string();
     for (auto& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (n.size() > 3 && n.compare(n.size() - 3, 3, ".gz") == 0) n.erase(n.size() - 3);
@@ -110,8 +110,8 @@ std::optional<Geometrie> parGeometrie(const uint8_t* s)
 
 // ─── Schreibfaden ────────────────────────────────────────────────────────────
 
-/// Ein Arbeitsfaden je Platte, höchstens ein Auftrag zugleich (die Platte stößt keinen neuen an,
-/// solange einer läuft).  Er kennt nur seine Kopie und die Datei — nie den Zustand der Platte.
+/// Ein Arbeitsfaden je Platte, hoechstens ein Auftrag zugleich (die Platte stoesst keinen neuen an,
+/// solange einer laeuft).  Er kennt nur seine Kopie und die Datei — nie den Zustand der Platte.
 class Schreibfaden {
 public:
     using Auftrag = std::function<bool(std::string& fehler)>;
@@ -188,7 +188,7 @@ Platte::~Platte() { schliessen(); }
 
 bool Platte::neu(const std::string& pfad, const Typ& t, std::string* fehler, bool mit_par)
 {
-    std::vector<uint8_t> d(size_t(t.g.bytes()), 0xE5);   // Füllwert nach Formatieren
+    std::vector<uint8_t> d(size_t(t.g.bytes()), 0xE5);   // Fuellwert nach Formatieren
     if (mit_par) {                                         // unformatiert: auch Z0/K0/S1 ohne Parametersatz
         const auto par = parSektor(t);
         std::memcpy(d.data(), par.data(), par.size());
@@ -221,9 +221,9 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
     cfg_ = cfg;
     std::error_code ec;
     if (!std::filesystem::exists(pfad, ec)) { fehler_ = "Abbild nicht gefunden: " + pfad; return false; }
-    {   // geschrieben wird später im Schreibfaden — schreibgeschützt fällt HIER auf, nicht dort
+    {   // geschrieben wird spaeter im Schreibfaden — schreibgeschuetzt faellt HIER auf, nicht dort
         std::fstream probe(pfad, std::ios::in | std::ios::out | std::ios::binary);
-        if (!probe) { fehler_ = "Abbild nicht zu öffnen: " + pfad; return false; }
+        if (!probe) { fehler_ = "Abbild nicht zu oeffnen: " + pfad; return false; }
     }
     std::string lf;
     if (!gzip::laden(pfad, abbild_, &art_, &lf)) {
@@ -241,12 +241,12 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
     else if (par)           geo_ = *par;
     else if (auto g = geometrieAusGroesse(groesse)) geo_ = *g;
     else {
-        fehler_ = "Geometrie unbekannt (kein PAR-Sektor, Größe " + std::to_string(groesse) + " B)";
+        fehler_ = "Geometrie unbekannt (kein PAR-Sektor, Groesse " + std::to_string(groesse) + " B)";
         abbild_.clear();
         return false;
     }
     if (geo_.bytes() != groesse) {
-        fehler_ = "Dateigröße " + std::to_string(groesse) + " B passt nicht zu " +
+        fehler_ = "Dateigroesse " + std::to_string(groesse) + " B passt nicht zu " +
                   std::to_string(geo_.zylinder) + "/" + std::to_string(geo_.koepfe) + "/" +
                   std::to_string(geo_.sektoren);
         abbild_.clear();
@@ -259,7 +259,7 @@ bool Platte::oeffnen(const std::string& pfad, const Config& cfg)
             if (k.g == geo_) t = k;
         par_ = parSektor(t);
         par_ueberlagert_ = true;
-        LOG_INFO("WDC", "Platte %s: kein PAR-Sektor auf Z0/K0/S1 — ergänzt (%u/%u/%u)", pfad.c_str(),
+        LOG_INFO("WDC", "Platte %s: kein PAR-Sektor auf Z0/K0/S1 — ergaenzt (%u/%u/%u)", pfad.c_str(),
                  geo_.zylinder, geo_.koepfe, geo_.sektoren);
     }
     unformatiert_.assign(size_t(geo_.zylinder) * geo_.koepfe, 0);
@@ -283,7 +283,7 @@ void Platte::schliessen()
 {
     if (!offen_) return;
     if (!flush())
-        LOG_ERROR("WDC", "Platte %s: beim Schließen NICHT gesichert (%s)", pfad_.c_str(), schreibfehler_.c_str());
+        LOG_ERROR("WDC", "Platte %s: beim Schliessen NICHT gesichert (%s)", pfad_.c_str(), schreibfehler_.c_str());
     faden_.reset();   // wartet auf den Faden und beendet ihn
     cache_.clear();
     abbild_.clear();
@@ -362,7 +362,7 @@ std::vector<uint16_t> Platte::synthetisiere(int zyl, int kopf)
     std::array<uint8_t, SEKTOR> d{};
     const bool v3 = cfg_.spurformat == Spurformat::V3x;
     // 3.x: ganze Spur FF, erste Kennfeldmarke bei Byte 36, Abstand 570, Sektoren der Reihe nach
-    // (kein Interleave, kein Kopfversatz), Lücke hinter der Kennfeld-CRC FF×2 · 00×18 · FF×8
+    // (kein Interleave, kein Kopfversatz), Luecke hinter der Kennfeld-CRC FF×2 · 00×18 · FF×8
     if (v3) std::fill(s.begin(), s.end(), uint16_t(0xFF));
     for (int i = 0; i < n; ++i) {
         const int sek = v3 ? (i + 1) : SC_TAB[(i - kopf % n + n) % n];
@@ -441,7 +441,7 @@ void Platte::setzeFormatiert(int zyl, int kopf, bool f)
     if (zyl == zyl_) cache_.erase(kopf);
 }
 
-// ─── Zerlegung und Zurückschreiben ───────────────────────────────────────────
+// ─── Zerlegung und Zurueckschreiben ───────────────────────────────────────────
 
 Platte::Zerlegung Platte::zerlege(int zyl, int kopf, const std::vector<uint16_t>& st) const
 {
@@ -476,7 +476,7 @@ Platte::Zerlegung Platte::zerlege(int zyl, int kopf, const std::vector<uint16_t>
         if (gesehen[size_t(sc)]) continue;     // Doppel: das erste gilt
         gesehen[size_t(sc)] = true;
         ++z.kennfelder;
-        // nächstes Kennfeld (zyklisch) begrenzt die Suche nach dem Datenfeld
+        // naechstes Kennfeld (zyklisch) begrenzt die Suche nach dem Datenfeld
         int grenze = N;
         for (const auto& [p2, s2] : ids) {
             (void)s2;
@@ -520,7 +520,7 @@ void Platte::zurueckschreiben(int zyl, int kopf, Spur& s)
             LOG_WARN("WDC", "Platte: Sektor %d/%d/%d nicht geschrieben (%s)", zyl, kopf, sc, pfad_.c_str());
     }
     if (static_cast<int>(z.daten.size()) < geo_.sektoren)
-        LOG_WARN("WDC", "Platte: Spur %d/%d: %d Sektoren ohne gültiges Datenfeld — Abbild behält den alten Inhalt",
+        LOG_WARN("WDC", "Platte: Spur %d/%d: %d Sektoren ohne gueltiges Datenfeld — Abbild behaelt den alten Inhalt",
                  zyl, kopf, geo_.sektoren - static_cast<int>(z.daten.size()));
 }
 
@@ -559,8 +559,8 @@ bool Platte::autoFlush(uint64_t t)
 {
     ergebnisAbholen();
     if (!offen_ || !schmutzig() || t < letzt_schreiben_ + cfg_.flush_pause) return false;
-    // Zweite Schranke in WIRTSzeit: nicht öfter als alle `min_abstand_ms` in die Datei, und nie,
-    // solange der Faden noch am vorigen Auftrag sitzt — die Änderung wartet im Speicher.
+    // Zweite Schranke in WIRTSzeit: nicht oefter als alle `min_abstand_ms` in die Datei, und nie,
+    // solange der Faden noch am vorigen Auftrag sitzt — die Aenderung wartet im Speicher.
     if (schreibtGerade()) return false;
     if (je_geschrieben_ &&
         std::chrono::steady_clock::now() - letzt_datei_ < std::chrono::milliseconds(cfg_.min_abstand_ms))
@@ -573,7 +573,7 @@ bool Platte::autoFlush(uint64_t t)
 
 bool Platte::dateiSchreiben(bool warten)
 {
-    if (faden_) faden_->warten();   // ein laufender Auftrag zuerst; sein Ergebnis zählt mit
+    if (faden_) faden_->warten();   // ein laufender Auftrag zuerst; sein Ergebnis zaehlt mit
     ergebnisAbholen();
     if (abbild_neu_) {
         Schreibfaden::Auftrag a;
@@ -584,7 +584,7 @@ bool Platte::dateiSchreiben(bool warten)
                 return gzip::speichern(pfad, kopie->data(), kopie->size(), gzip::Art::Gzip, stufe, &f);
             };
         } else {
-            // Roh: nur die geänderten Sektoren, an Ort und Stelle
+            // Roh: nur die geaenderten Sektoren, an Ort und Stelle
             std::vector<std::pair<uint64_t, std::array<uint8_t, SEKTOR>>> sek;
             for (size_t i = 0; i < sektor_neu_.size(); ++i) {
                 if (!sektor_neu_[i]) continue;
@@ -596,7 +596,7 @@ bool Platte::dateiSchreiben(bool warten)
             auto liste = std::make_shared<decltype(sek)>(std::move(sek));
             a = [pfad = pfad_, liste](std::string& f) {
                 std::fstream datei(pfad, std::ios::in | std::ios::out | std::ios::binary);
-                if (!datei) { f = "nicht zu öffnen: " + pfad; return false; }
+                if (!datei) { f = "nicht zu oeffnen: " + pfad; return false; }
                 for (const auto& [off, d] : *liste) {
                     datei.seekp(static_cast<std::streamoff>(off));
                     datei.write(reinterpret_cast<const char*>(d.data()), SEKTOR);
@@ -628,7 +628,7 @@ void Platte::ergebnisAbholen()
         in_arbeit_.clear();
         return;
     }
-    // Gescheitert: wieder als ungesichert führen — der nächste Versuch schreibt den AKTUELLEN Inhalt
+    // Gescheitert: wieder als ungesichert fuehren — der naechste Versuch schreibt den AKTUELLEN Inhalt
     schreibfehler_ = e->fehler;
     LOG_WARN("WDC", "Platte: Datei nicht geschrieben (%s) — bleibt ungesichert", e->fehler.c_str());
     for (size_t i : in_arbeit_) sektor_neu_[i] = 1;

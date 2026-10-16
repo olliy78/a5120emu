@@ -1,25 +1,25 @@
 /**
  * @file track_view.h
- * @brief TrackView — eine Spur als lückenlose Folge zeichenbarer Abschnitte.
+ * @brief TrackView — eine Spur als lueckenlose Folge zeichenbarer Abschnitte.
  *
- * Für die **Anschauung**, nicht für den Betrieb: der Diskeditor des k1520DiskTool
- * zeichnet jede Spur als Ring und braucht dafür, was wo liegt — Sektor, Gap oder
+ * Fuer die **Anschauung**, nicht fuer den Betrieb: der Diskeditor des k1520DiskTool
+ * zeichnet jede Spur als Ring und braucht dafuer, was wo liegt — Sektor, Gap oder
  * unformatiert, jeweils mit Anfang und Ende als Bruchteil einer Umdrehung.
  *
  * ### Warum die Winkel ohne Drehzahl auskommen
  * Eine @ref TrackImage **ist** genau eine Umdrehung.  Der Winkel eines Bytes ist damit
- * schlicht `Position / Spurlänge` — unabhängig von Bitrate und Drehzahl, die der
+ * schlicht `Position / Spurlaenge` — unabhaengig von Bitrate und Drehzahl, die der
  * HFE-Kopf zwar nennt, die aber nur die *Zeitachse* skalieren.  Bei `.img` gibt es
- * keine echte Winkelinformation; dort liegen die Sektoren gleichmäßig, weil der
- * Container es nicht besser weiß (@ref ImgCodec baut die Spur mit
+ * keine echte Winkelinformation; dort liegen die Sektoren gleichmaessig, weil der
+ * Container es nicht besser weiss (@ref ImgCodec baut die Spur mit
  * @ref TrackCodec::buildTrack).
  *
  * ### Gap und „unformatiert" sind zwei verschiedene Dinge
- * * **unformatiert** — die Spur trägt keine einzige Adressmarke: entweder gar keine
+ * * **unformatiert** — die Spur traegt keine einzige Adressmarke: entweder gar keine
  *   Bytes (die Spur existiert nicht) oder markenloser Gap-Fluss, wie ihn
  *   `DiskImage::createBlank` schreibt.  Ein Gast kann sie formatieren.
  * * **Gap** — auf einer formatierten Spur alles, was zwischen den Sektorfeldern liegt
- *   (Sync, Lücken, IAM).  Ein Sektor reicht dabei vom Beginn seiner Sync-Gruppe bis
+ *   (Sync, Luecken, IAM).  Ein Sektor reicht dabei vom Beginn seiner Sync-Gruppe bis
  *   hinter seine Daten-CRC.
  *
  * @see doc/design/13_k1520disktool.md §19
@@ -48,7 +48,7 @@ struct TrackSpan {
     double end   = 1.0;   ///< Ende, immer > @ref start (kein Umlauf: s. u.)
 
     // ── nur bei @ref Kind::Sector ────────────────────────────────────────────
-    int      index    = -1;   ///< laufende Nummer in der Spur (Zugriffsschlüssel)
+    int      index    = -1;   ///< laufende Nummer in der Spur (Zugriffsschluessel)
     uint8_t  cyl      = 0;    ///< Zylinder AUS DEM ID-FELD (kann von der Lage abweichen)
     uint8_t  head     = 0;
     uint8_t  id       = 0;
@@ -88,26 +88,26 @@ struct TrackSpan {
      */
     uint8_t  tail_bytes  = 0;
 
-    /// @brief Gilt der Sektor als lesbar?  Beide CRCs müssen stimmen.
+    /// @brief Gilt der Sektor als lesbar?  Beide CRCs muessen stimmen.
     bool ok() const { return id_crc_ok && data_crc_ok; }
 };
 
 /**
  * @struct TrackView
- * @brief Eine ganze Spur: Kopfangaben + lückenlose Abschnittsfolge.
+ * @brief Eine ganze Spur: Kopfangaben + lueckenlose Abschnittsfolge.
  *
- * Die Abschnitte decken `[0,1)` **lückenlos und überschneidungsfrei** ab, damit die
- * Darstellung nicht raten muss und ein Treffertest über den Winkel eindeutig ist.
- * Ein Sektor, der über den Index läuft (Anfang kurz vor 1, Ende hinter 0), wird an
+ * Die Abschnitte decken `[0,1)` **lueckenlos und ueberschneidungsfrei** ab, damit die
+ * Darstellung nicht raten muss und ein Treffertest ueber den Winkel eindeutig ist.
+ * Ein Sektor, der ueber den Index laeuft (Anfang kurz vor 1, Ende hinter 0), wird an
  * der Nahtstelle in ZWEI Abschnitte mit derselben @ref TrackSpan::index geteilt —
- * sonst wäre `start < end` nicht zu halten.
+ * sonst waere `start < end` nicht zu halten.
  */
 struct TrackView {
     bool     exists    = false;  ///< false = die Spur gibt es in dieser Geometrie nicht
     bool     formatted = false;  ///< false = keine einzige Adressmarke
     Encoding encoding  = Encoding::MFM;
-    size_t   bytes     = 0;      ///< Spurlänge (eine Umdrehung)
-    int      sectors   = 0;      ///< Anzahl Sektoren (ohne die Naht-Teilstücke)
+    size_t   bytes     = 0;      ///< Spurlaenge (eine Umdrehung)
+    int      sectors   = 0;      ///< Anzahl Sektoren (ohne die Naht-Teilstuecke)
     std::vector<TrackSpan> spans;
 };
 

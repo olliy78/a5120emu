@@ -56,8 +56,8 @@ Mc80Machine::Mc80Machine(const Config& cfg)
     if (cfg_.variante == Config::Variante::Mc8031) {
         // MC80.31E: EPROM-Segmente 10H und 20H (doc/EPROMS/MC80/segmente/, je 4-KB-Abzug).
         // Lage: d = 4000H (bytegleich doc/mc80/spiele/tetris_4000_4fff.bin), f = 4000H und
-        // g = 5000H (= 2. Hälfte von hasi_4000_5fff.bin); b = 5000H, c = 6000H, h = 6000H nach
-        // den Eigenbezügen der Sprungziele; a = 7000H [?] (ohne Beleg), e (20H, 7000H?) fehlt.
+        // g = 5000H (= 2. Haelfte von hasi_4000_5fff.bin); b = 5000H, c = 6000H, h = 6000H nach
+        // den Eigenbezuegen der Sprungziele; a = 7000H [?] (ohne Beleg), e (20H, 7000H?) fehlt.
         auto s10 = std::make_unique<Mc80EpromSegment>(0x10);
         s10->abzug(0x4000, MC80_SEG10_D, sizeof(MC80_SEG10_D));
         s10->abzug(0x5000, MC80_SEG10_B, sizeof(MC80_SEG10_B));
@@ -99,8 +99,8 @@ void Mc80Machine::powerOn()
     zve_.powerOn(cfg_.ram_fill);   // zuletzt: meldet Segmentregister 00H an die SPE
     rafPowerOn();
     total_cycles_ = 0;
-    // NICHT reset(): das schlösse die Bestückung ab, und powerOn() läuft schon im Konstruktor —
-    // installK5020() danach schlüge immer fehl (Fund M7, Wächter Mc80Kassette.KarteSteckbar…).
+    // NICHT reset(): das schloesse die Bestueckung ab, und powerOn() laeuft schon im Konstruktor —
+    // installK5020() danach schluege immer fehl (Fund M7, Waechter Mc80Kassette.KarteSteckbar…).
     resetHardware();
     LOG_INFO("MC80", "%s: Netz ein", variantenName(cfg_.variante));
 }
@@ -115,8 +115,8 @@ void Mc80Machine::resetHardware()
 {
     for (auto& k : spe_) k->reset();
     zve_.reset();
-    asp_.reset();     // die ASP liefert selbst einen Rücksetzimpuls [BDA S.17]
-    tast_.reset();    // VIS 2a: /RESET lässt das Bild stehen
+    asp_.reset();     // die ASP liefert selbst einen Ruecksetzimpuls [BDA S.17]
+    tast_.reset();    // VIS 2a: /RESET laesst das Bild stehen
     k6022Reset();
     k5020Reset();
     rafReset();
@@ -166,19 +166,19 @@ int Mc80Machine::run(int max_cycles)
 void Mc80Machine::k5020Konfigurieren(K5020::Config& cfg) const
 {
     if (cfg_.variante == Config::Variante::Mc8030) {
-        // Umgebaute K5020 + LW 1200 [Entwurf 31 §2, Forum 12849]: Schreibtakt über den
+        // Umgebaute K5020 + LW 1200 [Entwurf 31 §2, Forum 12849]: Schreibtakt ueber den
         // Koppelbus aus ASP-CTC K2; Bitrate aus dem Profil LW 1200 [?] (doc/mc80/kassette.md §2).
         cfg.takt = K5020::Takt::ExternerCtc;
         cfg.profil1 = cfg.profil2 = kassette::ProfilId::LW1200;
     } else {
         // MC80.31: AKB K5020 + K5200 [hardware_3x.md §9] mit **19 cm/s** (6 000 Bit/s) [?]:
-        // EGOS' Leseinterrupt prüft jedes AAH mit gesperrten Interrupts 1,35 ms lang auf die
+        // EGOS' Leseinterrupt prueft jedes AAH mit gesperrten Interrupts 1,35 ms lang auf die
         // Postambel (1C3A: DI, DJNZ 255) — bei 12 000 Bit/s kommen in der Zeit zwei Bytes, eins
         // geht verloren; bei 6 000 Bit/s nicht (doc/mc80/kassette.md §2).
         cfg.takt = K5020::Takt::Bustakt;
         cfg.profil1 = cfg.profil2 = kassette::ProfilId::K5200_19;
     }
-    // EGOS verträgt keine BOT-/EOT-Marke und keinen langen Vorspann (kassette.md §3).
+    // EGOS vertraegt keine BOT-/EOT-Marke und keinen langen Vorspann (kassette.md §3).
     cfg.neue_kassette = kassette::Geometrie::kompaktkassette();
 }
 
@@ -191,7 +191,7 @@ void Mc80Machine::k5020Einketten(K5020& k)
 
 bool Mc80Machine::aspBandtakt() const
 {
-    // ZC/TO2 der ASP-CTC als Bittakt: nur solange Kanal 2 als Zähler (D6 = 1) läuft.
+    // ZC/TO2 der ASP-CTC als Bittakt: nur solange Kanal 2 als Zaehler (D6 = 1) laeuft.
     const auto st = const_cast<Mc80Asp&>(asp_).ctc().debugState();
     return st.ch[2].running && (st.ch[2].control & 0x40) != 0;
 }

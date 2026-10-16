@@ -50,7 +50,7 @@ Mc80Dpl::Mc80Dpl(const Config& cfg) : cfg_(cfg)
     if (periode_q16_ == 0) periode_q16_ = 1;
     ctc_.setZCTOCallback([this](int ch, bool pegel) {
         if (pegel) return;
-        if (ch == 1) zctoK1();                                  // Ende des Rücklaufs
+        if (ch == 1) zctoK1();                                  // Ende des Ruecklaufs
         else if (ch == 2 && zustand_ == Zustand::Text) ruecklauf();   // Zeilenende (TSI)
     }, 0x06);
     ctc_.setRetiNachIus(true);
@@ -108,7 +108,7 @@ bool Mc80Dpl::clockTick(int ticks)
             rl_acc_ += static_cast<uint32_t>(ticks);
             while (zustand_ == Zustand::Ruecklauf && rl_acc_ >= teiler) {
                 rl_acc_ -= teiler;
-                puls(1);       // Φ/4 an CLK/TRG1 [?]; ZC/TO1 beendet den Rücklauf (zctoK1)
+                puls(1);       // Φ/4 an CLK/TRG1 [?]; ZC/TO1 beendet den Ruecklauf (zctoK1)
                 r = true;
             }
             if (zustand_ == Zustand::Ruecklauf && zeit_ - rl_seit_ > 4 * (bahnTakte() + 1000)) {
@@ -139,7 +139,7 @@ void Mc80Dpl::puls(int kanal)
 void Mc80Dpl::zeichentakt()
 {
     ++takte_zeichen_;
-    // Die Kante zeigt, was jetzt an PIO A liegt; erst danach antwortet die DPI mit dem nächsten.
+    // Die Kante zeigt, was jetzt an PIO A liegt; erst danach antwortet die DPI mit dem naechsten.
     if (schritt_ >= 1 && schritt_ <= SPALTEN) {
         uint8_t& z = zellen_[static_cast<size_t>(zeile_)][static_cast<size_t>(schritt_ - 1)];
         const uint8_t code = static_cast<uint8_t>(a_ & 0x3F);
@@ -210,7 +210,7 @@ void Mc80Dpl::ioWrite(uint8_t port, uint8_t data)
             textBahnBeginnen(data);
         }
     }
-    tastaturPins();                     // Zeilenwahl oder Betriebsart geändert
+    tastaturPins();                     // Zeilenwahl oder Betriebsart geaendert
     updateInternalChain();
 }
 
@@ -313,7 +313,7 @@ void Mc80Dpl::onRETI()
 bool Mc80Dpl::retiAnnehmen()
 {
     if (ctc_.inBedienung()) {
-        ctc_.onRETI();                       // setRetiNachIus: höchster Kanal in Bedienung
+        ctc_.onRETI();                       // setRetiNachIus: hoechster Kanal in Bedienung
     } else if (pio_.inBedienung()) {
         pio_.setIEI(true);                   // im ED-Zyklus sperrt nur, wer in Bedienung ist
         pio_.onRETI();

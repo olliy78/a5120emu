@@ -1,11 +1,11 @@
 /**
  * @file format_catalog.cpp
- * @brief Implementierung des YAML-Formatkatalogs (Laden, Validieren, Auswählen).
+ * @brief Implementierung des YAML-Formatkatalogs (Laden, Validieren, Auswaehlen).
  *
  * Ablauf je Datei: YAML parsen (@ref yaml::parseFile) → `formats:`-Liste durchgehen →
- * jede Definition einzeln nach @ref DiskFormat übersetzen und validieren.  Eine
+ * jede Definition einzeln nach @ref DiskFormat uebersetzen und validieren.  Eine
  * fehlerhafte Definition wird mit Datei/Zeile/Name in @ref FormatCatalog::issues
- * vermerkt und **übersprungen**; korrekte Definitionen der gleichen Datei bleiben gültig.
+ * vermerkt und **uebersprungen**; korrekte Definitionen der gleichen Datei bleiben gueltig.
  *
  * @see core/peripherals/floppy_drive/format_catalog.h
  * @author Olaf Krieger
@@ -37,7 +37,7 @@ namespace {
 
 constexpr const char* kCatalogFileName = "formats.yaml";
 
-// ─── Laufwerks-Kompatibilität ────────────────────────────────────────────────
+// ─── Laufwerks-Kompatibilitaet ────────────────────────────────────────────────
 
 std::string encName(Encoding e) { return e == Encoding::FM ? "FM" : "MFM"; }
 
@@ -77,7 +77,7 @@ bool parseEncoding(const std::string& s, Encoding& out) {
     return false;
 }
 
-/// Skalar oder Liste von Skalaren → Stringliste (für `drives:` / `containers:`).
+/// Skalar oder Liste von Skalaren → Stringliste (fuer `drives:` / `containers:`).
 bool stringList(const yaml::Node& n, std::vector<std::string>& out) {
     if (n.isScalar()) { out.push_back(n.scalar); return true; }
     if (!n.isList()) return false;
@@ -88,7 +88,7 @@ bool stringList(const yaml::Node& n, std::vector<std::string>& out) {
     return true;
 }
 
-/// Wirft ein `nicht unterstütztes Feld` als Hinweis aus (V1b, nicht fatal).
+/// Wirft ein `nicht unterstuetztes Feld` als Hinweis aus (V1b, nicht fatal).
 void collectUnknownKeys(const yaml::Node& map,
                         const std::vector<std::string>& known,
                         const std::string& where,
@@ -98,11 +98,11 @@ void collectUnknownKeys(const yaml::Node& map,
             issues.push_back(where + ": unbekanntes Feld '" + e.first + "' — ignoriert");
 }
 
-// ─── Eine Formatdefinition übersetzen ────────────────────────────────────────
+// ─── Eine Formatdefinition uebersetzen ────────────────────────────────────────
 
 /**
- * Übersetzt einen `formats:`-Listeneintrag nach DiskFormat.
- * @return false → Definition ist fehlerhaft; @p why enthält den Grund.
+ * Uebersetzt einen `formats:`-Listeneintrag nach DiskFormat.
+ * @return false → Definition ist fehlerhaft; @p why enthaelt den Grund.
  */
 bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
                  std::vector<std::string>& issues, const std::string& file) {
@@ -192,27 +192,27 @@ bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
 
         int lo = 0, hi = 0;
         if (!n_cyls->isScalar() || !parseRange(n_cyls->scalar, lo, hi))
-            { why = "'cyls': ungültiger Bereich '" + n_cyls->scalar + "'"; return false; }
+            { why = "'cyls': ungueltiger Bereich '" + n_cyls->scalar + "'"; return false; }
         tf.cyl_first = static_cast<uint8_t>(lo);
         tf.cyl_last  = static_cast<uint8_t>(hi);
 
         if (!n_heads->isScalar() || !parseRange(n_heads->scalar, lo, hi) || hi > 1)
-            { why = "'heads': ungültiger Bereich '" + n_heads->scalar + "' (erlaubt 0, 1, 0-1)"; return false; }
+            { why = "'heads': ungueltiger Bereich '" + n_heads->scalar + "' (erlaubt 0, 1, 0-1)"; return false; }
         tf.head_first = static_cast<uint8_t>(lo);
         tf.head_last  = static_cast<uint8_t>(hi);
 
         long v = 0;
         if (!n_secs->isScalar() || !yaml::toInt(n_secs->scalar, v) || v < 1 || v > 255)
-            { why = "'sectors': ungültige Sektorzahl '" + n_secs->scalar + "'"; return false; }
+            { why = "'sectors': ungueltige Sektorzahl '" + n_secs->scalar + "'"; return false; }
         tf.secs_per_track = static_cast<uint8_t>(v);
 
         if (!n_size->isScalar() || !yaml::toInt(n_size->scalar, v))
-            { why = "'size': ungültige Sektorgröße '" + n_size->scalar + "'"; return false; }
+            { why = "'size': ungueltige Sektorgroesse '" + n_size->scalar + "'"; return false; }
         if (v != 128 && v != 256 && v != 512 && v != 1024)
             { why = "'size': " + std::to_string(v) + " — erlaubt sind 128, 256, 512, 1024"; return false; }
         tf.bytes_per_sec = static_cast<uint16_t>(v);
 
-        // Verfahren: Spur → Format → (später) Laufwerks-Default.
+        // Verfahren: Spur → Format → (spaeter) Laufwerks-Default.
         if (const yaml::Node* n = tn.find("encoding")) {
             if (!n->isScalar() || !parseEncoding(n->scalar, tf.encoding))
                 { why = "Spur-'encoding' muss 'fm' oder 'mfm' sein"; return false; }
@@ -232,15 +232,15 @@ bool buildFormat(const yaml::Node& node, DiskFormat& out, std::string& why,
 
         if (const yaml::Node* n = tn.find("first_sector")) {
             if (!n->isScalar() || !yaml::toInt(n->scalar, v) || v < 0 || v > 255)
-                { why = "'first_sector': ungültig"; return false; }
+                { why = "'first_sector': ungueltig"; return false; }
             tf.first_sector_id = static_cast<uint8_t>(v);
         }
 
-        // V2 — Überlappungsfreiheit
+        // V2 — Ueberlappungsfreiheit
         for (const auto& prev : out.tracks) {
             if (prev.overlaps(tf)) {
                 std::ostringstream os;
-                os << "Spurbereiche überlappen (Zyl " << int(tf.cyl_first) << '-' << int(tf.cyl_last)
+                os << "Spurbereiche ueberlappen (Zyl " << int(tf.cyl_first) << '-' << int(tf.cyl_last)
                    << ", Kopf " << int(tf.head_first) << '-' << int(tf.head_last) << ')';
                 why = os.str();
                 return false;
@@ -267,9 +267,9 @@ bool validateDrives(const DiskFormat& fmt, std::string& why) {
         return true;
     };
 
-    // V3 — Namen müssen existieren.  WICHTIG: builtinDriveProfile() liefert für
+    // V3 — Namen muessen existieren.  WICHTIG: builtinDriveProfile() liefert fuer
     // unbekannte Namen stillschweigend das Default-Profil, deshalb wird hier gegen
-    // die explizite Namensliste geprüft und nicht gegen den Rückgabewert.
+    // die explizite Namensliste geprueft und nicht gegen den Rueckgabewert.
     if (!check_known(fmt.drives, "drives"))          return false;
     if (!check_known(fmt.default_for, "default_for")) return false;
 
@@ -281,7 +281,7 @@ bool validateDrives(const DiskFormat& fmt, std::string& why) {
         }
     }
 
-    // V4 — Geometrie/Verfahren müssen zu JEDEM gelisteten Laufwerk passen.
+    // V4 — Geometrie/Verfahren muessen zu JEDEM gelisteten Laufwerk passen.
     for (const auto& d : fmt.drives) {
         std::string reason;
         if (!formatFitsDrive(fmt, builtinDriveProfile(d), &reason)) {
@@ -301,9 +301,9 @@ const char kModuleAnchor = 0;
  * @brief Verzeichnis des Moduls, in dem DIESER Code liegt.
  *
  * Bewusst **nicht** das Verzeichnis der Programmdatei: steckt der Kern in
- * `libk1520core.so` und lädt die GUI ihn per `ctypes`, dann ist die Programmdatei
- * der Python-Interpreter im venv — die mitgelieferte `formats.yaml` läge daneben
- * nirgends.  Über die Moduladresse gefragt, antwortet jeder Fall richtig: bei den
+ * `libk1520core.so` und laedt die GUI ihn per `ctypes`, dann ist die Programmdatei
+ * der Python-Interpreter im venv — die mitgelieferte `formats.yaml` laege daneben
+ * nirgends.  Ueber die Moduladresse gefragt, antwortet jeder Fall richtig: bei den
  * statisch gelinkten Werkzeugen ist das Modul die Programmdatei selbst, bei der
  * gemeinsam genutzten Bibliothek diese Bibliothek.  Damit ist eine Installation
  * frei verschiebbar (`doc/design/13_distribution.md` §6.2).
@@ -363,10 +363,10 @@ bool formatFitsDrive(const DiskFormat& fmt, const DriveProfile& prof, std::strin
     auto say = [&](const std::string& m) { if (why) *why = m; return false; };
 
     if (!prof.present)
-        return say("Slot ist unbestückt");
+        return say("Slot ist unbestueckt");
 
     if (fmt.numHeads() > prof.num_heads)
-        return say("Format braucht " + std::to_string(fmt.numHeads()) + " Köpfe, Laufwerk hat "
+        return say("Format braucht " + std::to_string(fmt.numHeads()) + " Koepfe, Laufwerk hat "
                    + std::to_string(prof.num_heads));
 
     // Beim Doppelschritt zaehlt die PHYSISCHE Ausdehnung: 40 logische Spuren mit
@@ -387,7 +387,7 @@ bool formatFitsDrive(const DiskFormat& fmt, const DriveProfile& prof, std::strin
 std::vector<std::string> FormatCatalog::searchPaths() {
     std::vector<std::string> p;
 
-    // 1) Compile-Define (Quell-/Installbaum) — sorgt dafür, dass Tests und Tools
+    // 1) Compile-Define (Quell-/Installbaum) — sorgt dafuer, dass Tests und Tools
     //    den Katalog ohne jede Umgebungsvariable finden.
     if (std::string d = K1520_FORMATS_DEFAULT; !d.empty()) p.push_back(d);
 
@@ -404,7 +404,7 @@ std::vector<std::string> FormatCatalog::searchPaths() {
     if (std::string c = homeConfigDir(); !c.empty())
         p.push_back(c + "/k1520emu/" + kCatalogFileName);
 
-    // 5) explizite Vorgabe (höchste Priorität), Dateien/Verzeichnisse getrennt
+    // 5) explizite Vorgabe (hoechste Prioritaet), Dateien/Verzeichnisse getrennt
     //    durch ':' (unixoid) bzw. ';' (Windows)
     if (const char* env = std::getenv("K1520_FORMATS"); env && *env) {
         std::stringstream ss(env);
@@ -430,8 +430,8 @@ FormatCatalog FormatCatalog::load(const std::vector<std::string>& paths,
     FormatCatalog cat;
     if (fatal_error) fatal_error->clear();
 
-    // Derselbe Katalog kann über mehrere Kandidaten erreichbar sein (z. B. absolut per
-    // Compile-Define UND relativ zum Arbeitsverzeichnis).  Ohne Deduplizierung würde er
+    // Derselbe Katalog kann ueber mehrere Kandidaten erreichbar sein (z. B. absolut per
+    // Compile-Define UND relativ zum Arbeitsverzeichnis).  Ohne Deduplizierung wuerde er
     // doppelt geladen und jede Beanstandung doppelt gemeldet.
     std::vector<std::string> seen;
 
@@ -459,7 +459,7 @@ FormatCatalog FormatCatalog::load(const std::vector<std::string>& paths,
         if (!root.isMap()) {
             if (fatal_error)
                 *fatal_error = "Formatkatalog fehlerhaft — " + path + ": erwartet eine Map "
-                               "mit dem Schlüssel 'formats'";
+                               "mit dem Schluessel 'formats'";
             return FormatCatalog{};
         }
 
@@ -469,8 +469,8 @@ FormatCatalog FormatCatalog::load(const std::vector<std::string>& paths,
                 if (fatal_error)
                     *fatal_error = "Formatkatalog fehlerhaft — " + path + ":"
                                    + std::to_string(v->line)
-                                   + ": nicht unterstützte Schema-Version '" + v->scalar
-                                   + "' (unterstützt: 1)";
+                                   + ": nicht unterstuetzte Schema-Version '" + v->scalar
+                                   + "' (unterstuetzt: 1)";
                 return FormatCatalog{};
             }
         }
@@ -479,7 +479,7 @@ FormatCatalog FormatCatalog::load(const std::vector<std::string>& paths,
         if (!list || !list->isList()) {
             if (fatal_error)
                 *fatal_error = "Formatkatalog fehlerhaft — " + path
-                               + ": Schlüssel 'formats' fehlt oder ist keine Liste";
+                               + ": Schluessel 'formats' fehlt oder ist keine Liste";
             return FormatCatalog{};
         }
 
@@ -490,20 +490,20 @@ FormatCatalog FormatCatalog::load(const std::vector<std::string>& paths,
 
             if (!buildFormat(node, fmt, why, cat.issues_, path)) {
                 // buildFormat setzt den Namen als Erstes — er steht daher auch bei
-                // späteren Fehlern zur Verfügung und gehört in die Meldung.
+                // spaeteren Fehlern zur Verfuegung und gehoert in die Meldung.
                 const std::string what = fmt.name.empty()
                                              ? std::string("Format")
                                              : ("Format '" + fmt.name + "'");
-                cat.issues_.push_back(where + ": " + what + " übersprungen — " + why);
+                cat.issues_.push_back(where + ": " + what + " uebersprungen — " + why);
                 continue;
             }
             if (!validateDrives(fmt, why)) {
                 cat.issues_.push_back(where + ": Format '" + fmt.name
-                                      + "' übersprungen — " + why);
+                                      + "' uebersprungen — " + why);
                 continue;
             }
 
-            // Gleicher Name aus einer Datei niedrigerer Priorität → ersetzen.
+            // Gleicher Name aus einer Datei niedrigerer Prioritaet → ersetzen.
             auto it = std::find_if(cat.formats_.begin(), cat.formats_.end(),
                                    [&](const DiskFormat& f) { return f.name == fmt.name; });
             if (it != cat.formats_.end()) *it = std::move(fmt);
@@ -526,7 +526,7 @@ FormatCatalog FormatCatalog::load(const std::vector<std::string>& paths,
     if (cat.formats_.empty()) {
         if (fatal_error) {
             std::ostringstream os;
-            os << "Formatkatalog enthält kein einziges gültiges Diskettenformat ("
+            os << "Formatkatalog enthaelt kein einziges gueltiges Diskettenformat ("
                << cat.sources_.front() << ").";
             for (const auto& i : cat.issues_) os << "\n  - " << i;
             *fatal_error = os.str();

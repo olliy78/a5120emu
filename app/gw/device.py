@@ -52,7 +52,7 @@ class LaufwerkMeldet(GwFehler):
 #: Meldungen der Hosttools, die NICHT an der Diskette liegen — mit dem Satz, der sagt,
 #: wo zu suchen ist.  Der Wortlaut stammt aus ``greaseweazle.usb.Ack``: die Firmware
 #: meldet eine Zahl, die Hosttools setzen den englischen Text, und der steht danach
-#: unübersetzt in der Fehlermeldung („GetFluxStatus: No Index").
+#: unuebersetzt in der Fehlermeldung („GetFluxStatus: No Index").
 _DEUTUNG = (
     ("No Index",
      "Der Adapter sieht keinen Indexpuls, also keine Umdrehung.  Meist dreht die "
@@ -128,7 +128,7 @@ def verfuegbar() -> bool:
     return True
 
 
-#: Vorlauf, der vor dem Sektorkopf noch zur Spur gehört (8 Byte à 16 Zellen).  Vor der
+#: Vorlauf, der vor dem Sektorkopf noch zur Spur gehoert (8 Byte à 16 Zellen).  Vor der
 #: Sync-Gruppe steht Gap/Vorlauf, hier ist der Schnitt also folgenlos.
 _VORLAUF_ZELLEN = 8 * 16
 
@@ -164,8 +164,8 @@ def _feldanfaenge(zellen, bis: int):
             v = (v << 1) | zellen[pos + 2 * j + 1]
         return v
 
-    #: (anfang, art, marken_position) — die Länge folgt erst unten, weil ein Datenfeld
-    #: seine Länge aus dem VORANGEHENDEN Sektorkopf bezieht.
+    #: (anfang, art, marken_position) — die Laenge folgt erst unten, weil ein Datenfeld
+    #: seine Laenge aus dem VORANGEHENDEN Sektorkopf bezieht.
     rohe = []
     for muster, art in fm.items():
         p = 0
@@ -183,7 +183,7 @@ def _feldanfaenge(zellen, bis: int):
         if p < 0:
             break
         q = p
-        while byte_bei(q) == 0xA1:               # ganze Sync-Gruppe überspringen
+        while byte_bei(q) == 0xA1:               # ganze Sync-Gruppe ueberspringen
             q += 16
         marke = byte_bei(q)
         if marke == 0xFE:
@@ -198,7 +198,7 @@ def _feldanfaenge(zellen, bis: int):
     for anfang, art, marke_bei in rohe:
         if art == "id":
             # Marke + cyl head sec sizecode + 2 CRC = 7 Byte; sizecode steuert die
-            # Länge der Datenfelder dahinter (2 Bit: 128 … 1024 B).
+            # Laenge der Datenfelder dahinter (2 Bit: 128 … 1024 B).
             code = byte_bei(marke_bei + 4 * 16)
             if code is not None:
                 groesse = 128 << (code & 0x03)
@@ -245,7 +245,7 @@ def naht_vor_sektorkopf(zellen, eine_umdrehung: int) -> int:
         Startzelle für den Schnitt — ``0``, wenn nichts zu verschieben ist.
     """
     if len(zellen) < eine_umdrehung + _VORLAUF_ZELLEN:
-        return 0                      # nur eine Umdrehung da: nichts zu wählen
+        return 0                      # nur eine Umdrehung da: nichts zu waehlen
 
     felder = _feldanfaenge(zellen, eine_umdrehung)
     if not felder:
@@ -301,10 +301,10 @@ class Device:
         #: **Doppelschritt**: die Spur *n* liegt auf dem physischen Zylinder *2n*.
         #:
         #: So schreibt ein 40-Spur-Laufwerk (K5600.10) auf eine 5,25″-Diskette; ein
-        #: 80-Spur-Laufwerk (K5601) fährt dieselben Spuren mit doppeltem Schritt an.
-        #: Der Umrechnung wegen bleibt ALLES darüber — Medium, Erkennung, Abbild —
+        #: 80-Spur-Laufwerk (K5601) faehrt dieselben Spuren mit doppeltem Schritt an.
+        #: Der Umrechnung wegen bleibt ALLES darueber — Medium, Erkennung, Abbild —
         #: in LOGISCHEN Spuren: ein so gelesenes Abbild hat 40 Spuren, keine 80 mit
-        #: Lücken.  Das ist der Unterschied zu `DiskFormat::step`, das eine
+        #: Luecken.  Das ist der Unterschied zu `DiskFormat::step`, das eine
         #: Eigenschaft der Diskette beschreibt; hier geht es um den Kopfweg.
         self.double_step = double_step
         self._motor_an = False
@@ -337,7 +337,7 @@ class Device:
         self._usb.drive_motor(self._drive.unit_id, an)
         self._motor_an = an
         if an:
-            time.sleep(0.5)      # Anlauf: die erste Umdrehung wäre sonst unbrauchbar
+            time.sleep(0.5)      # Anlauf: die erste Umdrehung waere sonst unbrauchbar
 
     def tick(self) -> None:
         """Nachlauf abarbeiten — regelmäßig aus der Leerlaufschleife rufen."""
@@ -345,7 +345,7 @@ class Device:
                 and time.monotonic() - self._letzte_arbeit > self.motor_idle_s):
             self.motor(False)
 
-    # ── Die beiden Vorgänge ─────────────────────────────────────────────────
+    # ── Die beiden Vorgaenge ─────────────────────────────────────────────────
 
     def _position(self, cyl: int) -> int:
         """Logische Spur → physischer Zylinder (§12.5)."""
@@ -368,16 +368,16 @@ class Device:
         self.motor(True)
         self._usb.seek(self._position(cyl), head)
         # Eine Umdrehung mehr lesen, als gebraucht wird: cue_at_index() schneidet
-        # anschließend genau bei Index — sonst fehlte der Anfang der Spur.
+        # anschliessend genau bei Index — sonst fehlte der Anfang der Spur.
         fluss = self._usb.read_track(revs=self.revs + 1)
         fluss.cue_at_index()
         roh = PLLTrack(clock=5e-4 / self.cell_rate_kbps, data=fluss)
         bits, _ = roh.get_revolution(0)
         eine = len(bits)
 
-        # Die zweite Umdrehung dranhängen, damit der Schnitt vor einen Sektorkopf gelegt
+        # Die zweite Umdrehung dranhaengen, damit der Schnitt vor einen Sektorkopf gelegt
         # werden kann (s. naht_vor_sektorkopf) — sonst zerhackt der Index-Schnitt den
-        # Sektor, den die Naht überspannt.
+        # Sektor, den die Naht ueberspannt.
         try:
             weiter, _ = roh.get_revolution(1)
         except Exception:                      # nur eine Umdrehung gelesen
@@ -424,7 +424,7 @@ class Device:
 
         bits = bitarray(endian="big")
         bits.frombytes(cells)
-        bits.bytereverse()                     # zurück in die interne Reihenfolge
+        bits.bytereverse()                     # zurueck in die interne Reihenfolge
         del bits[bitcells:]
 
         spur = MasterTrack(bits=bits,
@@ -432,7 +432,7 @@ class Device:
         fluss = spur.flux_for_writeout(cue_at_index=True)
 
         # Zeitbasis der Vorlage auf die des LAUFWERKS umrechnen; der Rest wird
-        # mitgeschleppt, damit sich Rundungsfehler nicht über die Spur summieren
+        # mitgeschleppt, damit sich Rundungsfehler nicht ueber die Spur summieren
         # (dasselbe Verfahren wie `gw write`, tools/write.py).
         faktor = takte_je_umdrehung / fluss.ticks_to_index
         rest = 0.0

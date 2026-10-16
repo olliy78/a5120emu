@@ -1,21 +1,21 @@
 /**
  * @file test_serielle_kopplung.cpp
- * @brief SerielleKopplung.* — zwei A5120 im selben Prozess über echtes Loopback-TCP
+ * @brief SerielleKopplung.* — zwei A5120 im selben Prozess ueber echtes Loopback-TCP
  *        (Entwurf 19 §11, AP-S8).
  *
  * @details
  * Je Fall zwei `A5120Machine`, eine als Server, eine als Client am SerialHub; die
- * Gäste sind kleine Z80-Programme direkt im RAM (kein Disketten-Boot): der **Sender**
- * schreibt ein Muster in seiner Zeichenzeit, der **Empfänger** prüft es Byte für Byte
+ * Gaeste sind kleine Z80-Programme direkt im RAM (kein Disketten-Boot): der **Sender**
+ * schreibt ein Muster in seiner Zeichenzeit, der **Empfaenger** prueft es Byte fuer Byte
  * und macht alle 1024 Byte eine „Verarbeitungspause" von 100 ms Maschinenzeit, in der
- * er per XOFF bzw. RTS-Wegnahme anhält.  Was dabei verloren, verdoppelt oder vertauscht
- * würde, zählt er im RAM als Fehler.
+ * er per XOFF bzw. RTS-Wegnahme anhaelt.  Was dabei verloren, verdoppelt oder vertauscht
+ * wuerde, zaehlt er im RAM als Fehler.
  *
  * **1× gegen 10×:** die Maschinen laufen abwechselnd in EINEM Faden, je Runde die eine
- * 1 ms, die andere 10 ms Maschinenzeit — das Verhältnis hält damit auch unter Last
- * (`ctest -j`), wo ein uhrgesteuertes Drosseln es verlöre.  Der Sender ist jeweils
- * der schnelle: das ist der Fall, in dem Rückstau und Flusssteuerung tragen müssen
- * (Leitsätze 1–2).
+ * 1 ms, die andere 10 ms Maschinenzeit — das Verhaeltnis haelt damit auch unter Last
+ * (`ctest -j`), wo ein uhrgesteuertes Drosseln es verloere.  Der Sender ist jeweils
+ * der schnelle: das ist der Fall, in dem Rueckstau und Flusssteuerung tragen muessen
+ * (Leitsaetze 1–2).
  *
  * Zwei Binaries aus dieser Quelle: die Standardregression mit 4 KiB je Richtung
  * (`k1520_test_serielle_kopplung`, ~2 s je Fall) und die volle Fassung mit 64 KiB
@@ -49,7 +49,7 @@ constexpr uint32_t kBytes = 65536;
 constexpr uint32_t kBytes = 4096;
 #endif
 
-// ── Ein Z80-Kleinstassembler: genau die Befehle, die die Testgäste brauchen ──────
+// ── Ein Z80-Kleinstassembler: genau die Befehle, die die Testgaeste brauchen ──────
 
 class Asm {
 public:
@@ -97,7 +97,7 @@ private:
 
 constexpr uint16_t kOrg    = 0x8000;
 constexpr uint16_t kFertig = 0x9000;   ///< 1 = Programm am Ende
-constexpr uint16_t kFehler = 0x9002;   ///< 16 Bit: Musterfehler beim Empfänger
+constexpr uint16_t kFehler = 0x9002;   ///< 16 Bit: Musterfehler beim Empfaenger
 constexpr uint16_t kTmp    = 0x9004;
 constexpr uint16_t kStack  = 0xA000;
 
@@ -118,7 +118,7 @@ void anfang(Asm& a, const Gast& g, uint8_t wr3) {
     a.b({0x31}); a.w(kStack);               // LD SP,kStack
     a.b({0x3E, 0x05, 0xD3, 0x0C});          // ZRE-CTC K0: Zeitgeber, Vorteiler 16, ZK folgt
     a.b({0x3E, g.ctcZk, 0xD3, 0x0C});
-    // SIO: Kanal-Reset, WR4 44H (×16, 1 Stopp, ohne Parität), WR3, WR5 EAH (DTR, 8 Bit,
+    // SIO: Kanal-Reset, WR4 44H (×16, 1 Stopp, ohne Paritaet), WR3, WR5 EAH (DTR, 8 Bit,
     // Tx ein, RTS), WR1 00H (keine Interrupts).
     for (int x : {0x18, 0x04, 0x44, 0x03, int(wr3), 0x05, 0xEA, 0x01, 0x00})
         a.b({0x3E, x, 0xD3, g.steuer});
@@ -129,7 +129,7 @@ void anfang(Asm& a, const Gast& g, uint8_t wr3) {
     a.b({0x11}); a.w(static_cast<uint16_t>(g.anzahl & 0xFFFF));
 }
 
-/// Unterprogramm „naechstes": A = nächstes Musterbyte, HL weiter (B wird benutzt).
+/// Unterprogramm „naechstes": A = naechstes Musterbyte, HL weiter (B wird benutzt).
 void musterUp(Asm& a, Muster m) {
     a.marke("naechstes");
     if (m == Muster::Binaer) {
@@ -264,13 +264,13 @@ void verbinden(A5120Machine& server, A5120Machine& client, int i, Betriebsart ar
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     ASSERT_EQ(hs.status(i).zustand, Zustand::Verbunden) << hs.status(i).meldung;
     ASSERT_EQ(hc.status(i).zustand, Zustand::Verbunden) << hc.status(i).meldung;
-    // Telnet-Verhandlung (BINARY) abwarten, bevor Daten fließen — auf Loopback ein
+    // Telnet-Verhandlung (BINARY) abwarten, bevor Daten fliessen — auf Loopback ein
     // Rundlauf; danach ist CR/NUL kein Thema mehr.
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 /// Abwechselnd laufen lassen: @p langsam 1 ms, @p schnell 10 ms Maschinenzeit je Runde,
-/// bis der Empfänger fertig ist oder die Uhrfrist abläuft.
+/// bis der Empfaenger fertig ist oder die Uhrfrist ablaeuft.
 bool laufen(A5120Machine& langsam, A5120Machine& schnell, A5120Machine& empfaenger,
             std::chrono::seconds frist, const std::function<void()>& beobachten = {}) {
     constexpr int kMs = 2458;   // 1 ms bei 2,4576 MHz
@@ -313,11 +313,11 @@ constexpr auto kFrist = std::chrono::seconds(
 
 /**
  * @test SerielleKopplung.TelnetXonXoff_4KiB / _64KiB
- * @brief DFÜ/IFSS (A33-B, keine Steuerleitungen) über Telnet.  Server = Empfänger mit
+ * @brief DFÜ/IFSS (A33-B, keine Steuerleitungen) ueber Telnet.  Server = Empfaenger mit
  *        1× Takt und „XON/XOFF beachten", Client = Sender mit 10× Takt, der ein
- *        empfangenes XOFF bis zum XON befolgt.  Der Empfänger schickt alle 1024 Byte
+ *        empfangenes XOFF bis zum XON befolgt.  Der Empfaenger schickt alle 1024 Byte
  *        XOFF, „verarbeitet" 100 ms und schickt XON — kein Byte darf fehlen, sich
- *        verdoppeln oder vertauschen (Leitsätze 1–2, §6.3).
+ *        verdoppeln oder vertauschen (Leitsaetze 1–2, §6.3).
  */
 KOPPLUNG_FALL(TelnetXonXoff)
 {
@@ -333,18 +333,18 @@ KOPPLUNG_FALL(TelnetXonXoff)
     laden(send, senderProgramm(g));
     verbinden(empf, send, kIfss, Betriebsart::Telnet, /*xonxoffServer=*/true, false);
 
-    // Rückstau: während der Pausen liegt beim schnellen Sender etwas im Sendepuffer
-    // oder beim Empfänger im Empfangspuffer — sonst hätte das XOFF nichts angehalten.
+    // Rueckstau: waehrend der Pausen liegt beim schnellen Sender etwas im Sendepuffer
+    // oder beim Empfaenger im Empfangspuffer — sonst haette das XOFF nichts angehalten.
     uint32_t staumax = 0;
     ASSERT_TRUE(laufen(empf, send, empf, kFrist, [&] {
         staumax = std::max({staumax, empf.serialHub()->status(kIfss).puffer_empfangen,
                             send.serialHub()->status(kIfss).puffer_senden});
-    })) << "Empfänger: " << lage(empf, kIfss) << "\nSender: " << lage(send, kIfss);
+    })) << "Empfaenger: " << lage(empf, kIfss) << "\nSender: " << lage(send, kIfss);
     EXPECT_GT(staumax, 0u);
-    EXPECT_EQ(wort(empf, kFehler), 0) << "Musterfehler beim Empfänger";
+    EXPECT_EQ(wort(empf, kFehler), 0) << "Musterfehler beim Empfaenger";
     EXPECT_EQ(send.memReadDebug(kFertig), 1);
     EXPECT_EQ(send.serialHub()->status(kIfss).bytes_gesendet, kBytes);
-    // + XOFF/XON des Empfängers in Gegenrichtung (je 1024 Byte ein Paar, das letzte entfällt)
+    // + XOFF/XON des Empfaengers in Gegenrichtung (je 1024 Byte ein Paar, das letzte entfaellt)
     EXPECT_EQ(empf.serialHub()->status(kIfss).bytes_gesendet, 2 * (kBytes / 1024 - 1));
     empf.serialHub()->stopAlle();
     send.serialHub()->stopAlle();
@@ -352,10 +352,10 @@ KOPPLUNG_FALL(TelnetXonXoff)
 
 /**
  * @test SerielleKopplung.Rfc2217RtsCts_4KiB / _64KiB
- * @brief DFÜ/V.24 über RFC 2217 mit Nullmodem-Kreuzung (§6.4).  Server = Sender mit
- *        10× Takt und SIO-*Auto Enables*, Client = Empfänger mit 1× Takt, der alle
- *        1024 Byte RTS wegnimmt (eigener Wandler hält sofort an, beim Server fällt über
- *        SET-CONTROL → CTS der Sender).  Binäres Muster mit allen 256 Werten — auch
+ * @brief DFÜ/V.24 ueber RFC 2217 mit Nullmodem-Kreuzung (§6.4).  Server = Sender mit
+ *        10× Takt und SIO-*Auto Enables*, Client = Empfaenger mit 1× Takt, der alle
+ *        1024 Byte RTS wegnimmt (eigener Wandler haelt sofort an, beim Server faellt ueber
+ *        SET-CONTROL → CTS der Sender).  Binaeres Muster mit allen 256 Werten — auch
  *        FFH (IAC-Verdopplung), 0DH, 11H/13H.  Gleiche Baud → kein Hinweis.
  */
 KOPPLUNG_FALL(Rfc2217RtsCts)
@@ -372,16 +372,16 @@ KOPPLUNG_FALL(Rfc2217RtsCts)
     laden(empf, empfaengerProgramm(g));
     verbinden(send, empf, kV24, Betriebsart::Rfc2217, false, false);
 
-    // Die Flusssteuerung muss wirklich gegriffen haben: der Empfänger hatte RTS weg,
-    // und beim Sender war CTS dadurch inaktiv (gekreuzt über SET-CONTROL).
+    // Die Flusssteuerung muss wirklich gegriffen haben: der Empfaenger hatte RTS weg,
+    // und beim Sender war CTS dadurch inaktiv (gekreuzt ueber SET-CONTROL).
     bool rtsWeg = false, ctsWeg = false;
     ASSERT_TRUE(laufen(empf, send, empf, kFrist, [&] {
         rtsWeg |= !empf.serialHub()->status(kV24).rts;
         ctsWeg |= !send.serialHub()->status(kV24).cts;
-    })) << "Empfänger: " << lage(empf, kV24) << "\nSender: " << lage(send, kV24);
+    })) << "Empfaenger: " << lage(empf, kV24) << "\nSender: " << lage(send, kV24);
     EXPECT_TRUE(rtsWeg);
     EXPECT_TRUE(ctsWeg);
-    EXPECT_EQ(wort(empf, kFehler), 0) << "Musterfehler beim Empfänger";
+    EXPECT_EQ(wort(empf, kFehler), 0) << "Musterfehler beim Empfaenger";
     EXPECT_EQ(send.serialHub()->status(kV24).bytes_gesendet, kBytes);
     EXPECT_EQ(empf.serialHub()->status(kV24).bytes_empfangen, kBytes);
 
@@ -391,7 +391,7 @@ KOPPLUNG_FALL(Rfc2217RtsCts)
     EXPECT_EQ(se.baud_nenn, 9600u);
     EXPECT_FALSE(ss.baud_abweichend);
     EXPECT_FALSE(se.baud_abweichend);
-    // Leitungen nach dem Lauf: beide Gäste haben RTS/DTR gesetzt → gekreuzt CTS/DSR/DCD an.
+    // Leitungen nach dem Lauf: beide Gaeste haben RTS/DTR gesetzt → gekreuzt CTS/DSR/DCD an.
     EXPECT_TRUE(ss.rts && ss.dtr && ss.cts && ss.dsr && ss.dcd);
     EXPECT_TRUE(se.rts && se.dtr && se.cts && se.dsr && se.dcd);
     send.serialHub()->stopAlle();
@@ -401,15 +401,15 @@ KOPPLUNG_FALL(Rfc2217RtsCts)
 #ifndef KOPPLUNG_VOLL
 /**
  * @test SerielleKopplung.UnterschiedlicheBaudWirdAngezeigt
- * @brief Leitsatz 3/4: Server-Gast 9600 Bd, Client-Gast 4800 Bd über RFC 2217 — die
+ * @brief Leitsatz 3/4: Server-Gast 9600 Bd, Client-Gast 4800 Bd ueber RFC 2217 — die
  *        Daten kommen trotzdem an (byteweise Verbindung), beide Seiten zeigen
- *        `baud_abweichend` mit dem Wert der Gegenseite; keine Seite ändert die
- *        Gastbaud (der Gast ist maßgeblich).
+ *        `baud_abweichend` mit dem Wert der Gegenseite; keine Seite aendert die
+ *        Gastbaud (der Gast ist massgeblich).
  */
 TEST(SerielleKopplung, UnterschiedlicheBaudWirdAngezeigt)
 {
     constexpr int kV24 = 0;
-    A5120Machine srv, cli;   // srv = Empfänger 9600 Bd, 1×; cli = Sender 4800 Bd, 10×
+    A5120Machine srv, cli;   // srv = Empfaenger 9600 Bd, 1×; cli = Sender 4800 Bd, 10×
     srv.powerOn();
     cli.powerOn();
     Gast gs{0x50, 0x51};
@@ -421,7 +421,7 @@ TEST(SerielleKopplung, UnterschiedlicheBaudWirdAngezeigt)
     verbinden(srv, cli, kV24, Betriebsart::Rfc2217, false, false);
 
     ASSERT_TRUE(laufen(srv, cli, srv, std::chrono::seconds(30)))
-        << "Empfänger: " << lage(srv, kV24) << "\nSender: " << lage(cli, kV24);
+        << "Empfaenger: " << lage(srv, kV24) << "\nSender: " << lage(cli, kV24);
     EXPECT_EQ(wort(srv, kFehler), 0);
     // SET-BAUDRATE ist um 100 ms Maschinenzeit entprellt — noch etwas laufen lassen.
     for (int n = 0; n < 50; ++n) { srv.run(2458 * 10); cli.run(2458 * 100); }

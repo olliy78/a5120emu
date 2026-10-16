@@ -8,7 +8,7 @@
 #include "core/cards/mc80/mbi.h"
 
 namespace {
-/// Takte, die das Laufwerk höchstens zusammengefasst bekommt (≈ 26 µs; ein Byte dauert 5,2 ms).
+/// Takte, die das Laufwerk hoechstens zusammengefasst bekommt (≈ 26 µs; ein Byte dauert 5,2 ms).
 constexpr int kLaufwerkScheibe = 64;
 /// Bittakt der MBI: 3072 Hz aus CTC 2 (07H/32H) ÷ 2 [?] (hardware_2x.md §7.3).
 constexpr double kBitrate = 1536.0;
@@ -20,7 +20,7 @@ Mc80Mbi::Mc80Mbi(const Config& cfg) : cfg_(cfg), lw_(cfg.profil, cfg.takt_hz)
 {
     lw_.setNeueKassette(kassette::Geometrie::kompaktkassette());
     // PIO A Betriebsart 1 mit Datenblatt-RDY (bereit ab dem Steuerwort 4FH, wieder nach jedem
-    // IN (FCH)): LIN0 liest vor dem ersten Byte nicht blind — sonst ginge die Präambel verloren.
+    // IN (FCH)): LIN0 liest vor dem ersten Byte nicht blind — sonst ginge die Praeambel verloren.
     ctc_.setZCTOCallback([this](int ch, bool pegel) {
         if (!pegel) zcto(ch);
     }, 0x05);
@@ -59,11 +59,11 @@ void Mc80Mbi::laufwerkSteuern()
     bool vor = false, rueck = false, hge = false;
     switch (efh_) {
         case 0x13: vor = capstan; break;            // Lauf 4,76 cm/s [?]
-        case 0x0A: rueck = hge = true; break;       // schneller Rücklauf [?]
+        case 0x0A: rueck = hge = true; break;       // schneller Ruecklauf [?]
         case 0x06: vor = hge = true; break;         // schneller Vorlauf [?]
         default: break;                             // 00H/11H/02H …: Band steht [?]
     }
-    // Erst beide Richtungen lösen: VOR und RCK zugleich wäre im Laufwerk ein Fehlerzustand.
+    // Erst beide Richtungen loesen: VOR und RCK zugleich waere im Laufwerk ein Fehlerzustand.
     lw_.vor(false);
     lw_.rueck(false);
     lw_.hge(hge);
@@ -99,11 +99,11 @@ void Mc80Mbi::puls(int kanal)
 
 void Mc80Mbi::zcto(int kanal)
 {
-    if (lesen()) return;                     // beim Lesen hängt das Schieberegister am Band
+    if (lesen()) return;                     // beim Lesen haengt das Schieberegister am Band
     if (kanal == 2) {                        // Halbzelle → Bittakt (÷2) [?]
         teiler_ = !teiler_;
         if (!teiler_) puls(0);
-    } else if (kanal == 0) {                 // Bytegrenze: Schieberegister übernimmt PIO A
+    } else if (kanal == 0) {                 // Bytegrenze: Schieberegister uebernimmt PIO A
         if ((fe_ & 0x08) && lw_.schreibeByte(a_)) ++n_geschrieben_;
         puls(3);                             // ISB / IVL / IPA
     }
@@ -184,7 +184,7 @@ void Mc80Mbi::ioWrite(uint8_t port, uint8_t data)
             fe_ = data;
             laufwerkSteuern();
         } else if (p == 3) {
-            pinsB();                         // Betriebsart 3: Eingänge neu anlegen
+            pinsB();                         // Betriebsart 3: Eingaenge neu anlegen
         }
     }
     updateInternalChain();
@@ -224,7 +224,7 @@ void Mc80Mbi::onRETI()
 bool Mc80Mbi::retiAnnehmen()
 {
     if (ctc_.inBedienung()) {
-        ctc_.onRETI();                       // setRetiNachIus: höchster Kanal in Bedienung
+        ctc_.onRETI();                       // setRetiNachIus: hoechster Kanal in Bedienung
     } else if (pio_.inBedienung()) {
         pio_.setIEI(true);                   // im ED-Zyklus sperrt nur, wer in Bedienung ist
         pio_.onRETI();

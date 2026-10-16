@@ -2,7 +2,7 @@
  * @file test_em.cpp
  * @brief Unit-Tests: Erweiterungsmodul EM064/EM256, 8-Bit-Seite (core/cards/em/).
  *
- * Soll aus doc/design/17_a5120_16.md §7 (Schaltpläne 062-9005/9000) und dem
+ * Soll aus doc/design/17_a5120_16.md §7 (Schaltplaene 062-9005/9000) und dem
  * Original-BIOS `biosremc.mac`/`biosrem.mac`.  Je Tor/Register ein Fall, dazu die
  * `OUT (n),A`-Falle (A liegt auf AB8–15) mit einem echten Z80.
  */
@@ -35,7 +35,7 @@ struct Rig {
         bus.ioWrite(kPBc, 0xCF); bus.ioWrite(kPBc, 0x80);
         // Wie `emina`: sofort RESET16 | /RAMEN nachschieben.  Zwischen Richtungs-
         // wort und erster Ausgabe treibt die PIO ihr Ausgaberegister (hier 00) —
-        // RESET16 = 0 für einen Augenblick, auch am echten Gerät.
+        // RESET16 = 0 fuer einen Augenblick, auch am echten Geraet.
         portB(RESET16 | N_RAMEN);
     }
     void portB(uint8_t v) { bus.ioWrite(kPB, v); }
@@ -50,7 +50,7 @@ struct Rig {
 /**
  * @test EM/NachNetzEin_8BitMode_KeineSeite
  * @brief Nach Netz-Ein ist die PIO hochohmig: RESET16 (R4:2) und /RAMEN (R4:1) sind
- *   über Pull-ups H ⇒ U8001 im Reset, 8/16 = 1, keine Seite eingeblendet.
+ *   ueber Pull-ups H ⇒ U8001 im Reset, 8/16 = 1, keine Seite eingeblendet.
  */
 TEST(EM, NachNetzEin_8BitMode_KeineSeite) {
     Rig r;
@@ -67,7 +67,7 @@ TEST(EM, NachNetzEin_8BitMode_KeineSeite) {
 /**
  * @test EM/PioA_ZeigtRegisterUndBetriebsart
  * @brief PIO Port A (alles Eingang): PIOA-0..2 = A33 = 0, /VI = 1, INT-16 = 0,
- *   N/S = L im Reset (am Gerät gemessen 2026-09-29: 48H), 8/16 = 1, TREN = 0 ⇒ 0x48.
+ *   N/S = L im Reset (am Geraet gemessen 2026-09-29: 48H), 8/16 = 1, TREN = 0 ⇒ 0x48.
  *   `ns_im_reset = true` bleibt als Gegenprobe (0x68).
  */
 TEST(EM, PioA_ZeigtRegisterUndBetriebsart) {
@@ -105,7 +105,7 @@ TEST(EM, Decoder_AchtToreAbModadr_AB8bis15Egal) {
 /**
  * @test EM/PioTore_ReihenfolgeDatenVorSteuer
  * @brief MODADR+0 = A-Daten, +1 = B-Daten, +2 = A-Steuer, +3 = B-Steuer: das BIOS
- *   programmiert Port B über ABH und schreibt RESET16|/RAMEN an A9H.
+ *   programmiert Port B ueber ABH und schreibt RESET16|/RAMEN an A9H.
  */
 TEST(EM, PioTore_ReihenfolgeDatenVorSteuer) {
     Rig r;
@@ -196,21 +196,21 @@ TEST(EM, Seite_EinblendenMitMemdi_ZelleAusSegmentUndA15A14) {
     r.bus.memWrite(0x4123, 0xAB);
     EXPECT_EQ(r.em.peek((2u << 16) | 0x8000 | 0x0123), 0xAB);
     EXPECT_EQ(r.bus.memRead(0x4123), 0xAB);
-    EXPECT_EQ(r.ops.rawPtr()[0x4123], 0x11);      // K1520-RAM unberührt
+    EXPECT_EQ(r.ops.rawPtr()[0x4123], 0x11);      // K1520-RAM unberuehrt
     r.portB(RESET16 | SG1 | N_RAMEN);             // RAM aus ⇒ wieder K1520-RAM
     EXPECT_EQ(r.bus.memRead(0x4123), 0x11);
 }
 
 /**
  * @test EM/Seite_Schreibschutz_UnterdrueckNurWRI
- * @brief WE = 0 verhindert nur WRI: der Zyklus gehört trotzdem der Karte (/MEMDI),
+ * @brief WE = 0 verhindert nur WRI: der Zyklus gehoert trotzdem der Karte (/MEMDI),
  *   also landet der Schreibzugriff weder im EM noch im K1520-RAM.
  */
 TEST(EM, Seite_Schreibschutz_UnterdrueckNurWRI) {
     Rig r;
     r.pioInit();
     r.bus.memWrite(0x6000, 0x22);
-    r.attr(6, 0x2 | 0xC);                         // PEN, schreibgeschützt, A15/A14 = 0
+    r.attr(6, 0x2 | 0xC);                         // PEN, schreibgeschuetzt, A15/A14 = 0
     r.portB(RESET16);
     r.em.poke(0x2000, 0x33);                      // Segment 0, Zelle 2000H (AB13..0)
     EXPECT_EQ(r.bus.memRead(0x6000), 0x33);
@@ -240,9 +240,9 @@ TEST(EM, EM064_SegmenteGespiegelt) {
 
 /**
  * @test EM/Reset16_Null_16BitMode_OhneU8001KeinRueckweg
- * @brief RESET16 = 0 setzt A29 sofort zurück (16-Bit-Mode): der U880 sieht keinen
- *   EM-Speicher mehr.  TRQ8 bewirkt ohne `MSET` nichts (µ0 = H ⇒ TREN = 0); zurück
- *   geht es nur über RESET16 = 1.
+ * @brief RESET16 = 0 setzt A29 sofort zurueck (16-Bit-Mode): der U880 sieht keinen
+ *   EM-Speicher mehr.  TRQ8 bewirkt ohne `MSET` nichts (µ0 = H ⇒ TREN = 0); zurueck
+ *   geht es nur ueber RESET16 = 1.
  */
 TEST(EM, Reset16_Null_16BitMode_OhneU8001KeinRueckweg) {
     Rig r;
@@ -268,7 +268,7 @@ TEST(EM, Reset16_Null_16BitMode_OhneU8001KeinRueckweg) {
 /**
  * @test EM/Vektor8_SetztVi_Reset16LoeschtA34
  * @brief ADH schreibt A34 ⇒ INT → PIO A3 (/VI) = 0.  Solange RESET16 anliegt, ist A34
- *   gelöscht (X15), und RESET16 = 1 nimmt die Anforderung zurück.
+ *   geloescht (X15), und RESET16 = 1 nimmt die Anforderung zurueck.
  */
 TEST(EM, Vektor8_SetztVi_Reset16LoeschtA34) {
     Rig r;
@@ -287,7 +287,7 @@ TEST(EM, Vektor8_SetztVi_Reset16LoeschtA34) {
 
 /**
  * @test EM/Status8Und16
- * @brief ACH schreibt A36 (nur für den U8001 sichtbar, nicht rücklesbar); AEH liest A35.
+ * @brief ACH schreibt A36 (nur fuer den U8001 sichtbar, nicht ruecklesbar); AEH liest A35.
  */
 TEST(EM, Status8Und16) {
     Rig r;
@@ -298,12 +298,12 @@ TEST(EM, Status8Und16) {
     EXPECT_EQ(r.bus.ioRead(kSt16), r.em.status16());
 }
 
-// ─── Parität ─────────────────────────────────────────────────────────────────
+// ─── Paritaet ─────────────────────────────────────────────────────────────────
 
 /**
  * @test EM/Paritaet_Testhaken_PeUndPr_Interrupt
  * @brief Der Testhaken setzt das PER-FF ⇒ /PE (B7) = 0 und bei scharfer B7-Maske ein
- *   PIO-Interrupt; PR = 1 setzt das FF zurück (und hält es zurückgesetzt).
+ *   PIO-Interrupt; PR = 1 setzt das FF zurueck (und haelt es zurueckgesetzt).
  */
 TEST(EM, Paritaet_Testhaken_PeUndPr_Interrupt) {
     Rig r;
@@ -313,7 +313,7 @@ TEST(EM, Paritaet_Testhaken_PeUndPr_Interrupt) {
     r.bus.ioWrite(kPBc, 0x97); r.bus.ioWrite(kPBc, 0x7F);   // nur B7, aktiv LOW
     r.portB(RESET16 | PR);
     r.em.injectParityError();
-    EXPECT_FALSE(r.em.parityError());             // PR hält das FF zurück
+    EXPECT_FALSE(r.em.parityError());             // PR haelt das FF zurueck
     r.portB(RESET16);
     r.em.injectParityError();
     EXPECT_TRUE(r.em.parityError());
@@ -330,8 +330,8 @@ TEST(EM, Paritaet_Testhaken_PeUndPr_Interrupt) {
 
 /**
  * @test EM/SystemReset_PioHochohmig_DramUndA22Bleiben
- * @brief /RESET: PIO zurück ⇒ Pull-ups ⇒ RESET16, /RAMEN; DRAM und Attributspeicher
- *   behalten ihren Inhalt (RAM-Floppy übersteht die Reset-Taste).
+ * @brief /RESET: PIO zurueck ⇒ Pull-ups ⇒ RESET16, /RAMEN; DRAM und Attributspeicher
+ *   behalten ihren Inhalt (RAM-Floppy uebersteht die Reset-Taste).
  */
 TEST(EM, SystemReset_PioHochohmig_DramUndA22Bleiben) {
     Rig r;

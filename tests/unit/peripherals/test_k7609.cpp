@@ -34,7 +34,7 @@ TEST(K7609, CursorTasten)
 TEST(K7609, BuchstabeIstPhysischeTasteStufeAusShift)
 {
     EXPECT_EQ(codes('Q'), std::vector<uint8_t>{0x20});
-    EXPECT_EQ(codes('q'), std::vector<uint8_t>{0x20}) << "Groß/Klein macht die Umschaltstufe, nicht das Zeichen";
+    EXPECT_EQ(codes('q'), std::vector<uint8_t>{0x20}) << "Gross/Klein macht die Umschaltstufe, nicht das Zeichen";
     EXPECT_EQ(codes('Q', true), std::vector<uint8_t>{0x60});
     EXPECT_EQ(codes('M'), std::vector<uint8_t>{0x36});
 }
@@ -87,7 +87,7 @@ TEST(K7609, ZustellungInDenFifoOhneVerlust)
     EXPECT_TRUE(k.service());
     EXPECT_EQ(kbc.count(), 4u);
     EXPECT_FALSE(k.sendetNoch());
-    EXPECT_EQ(kbc.readStatus() & I8279::ST_UEBERLAUF, 0) << "nichts ging über den Rand";
+    EXPECT_EQ(kbc.readStatus() & I8279::ST_UEBERLAUF, 0) << "nichts ging ueber den Rand";
 }
 
 TEST(K7609, LoslassenErzeugtKeinenCode)

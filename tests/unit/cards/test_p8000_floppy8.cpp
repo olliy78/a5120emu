@@ -1,8 +1,8 @@
 /**
  * @file test_p8000_floppy8.cpp
  * @brief Floppy-Seite der 8-Bit-Karte des P8000 (U8272 + UA858 + PIO2-Glue + Laufwerke):
- *        READ DATA per DMA in den DRAM, Laufwerkswahl nur über PB0–3, TC, INT an PB4,
- *        FDC-Reset über PB7, Datenratenumschaltung und das MON8-Rig (doc/design/25_p8000.md
+ *        READ DATA per DMA in den DRAM, Laufwerkswahl nur ueber PB0–3, TC, INT an PB4,
+ *        FDC-Reset ueber PB7, Datenratenumschaltung und das MON8-Rig (doc/design/25_p8000.md
  *        §10.7/§10.11 AP P5f, doc/p8000/schaltplan_8bit.md §6).
  */
 
@@ -32,7 +32,7 @@ struct P8000Floppy8_ : ::testing::Test {
 
     void SetUp() override {
         k.powerOn();
-        out(0x04, 0x00);   // RES_RFF: ab jetzt wirkt der ADP ⇒ DRAM überall
+        out(0x04, 0x00);   // RES_RFF: ab jetzt wirkt der ADP ⇒ DRAM ueberall
     }
     void out(uint8_t port, uint8_t d) { bus.ioWrite(port, d); }
     uint8_t in(uint8_t port) { return bus.ioRead(port); }
@@ -45,7 +45,7 @@ struct P8000Floppy8_ : ::testing::Test {
     static constexpr uint8_t A_5_25 = 0x1F;   // PA4 = 1 (4 MHz), Motoren aus, TC (A6) = 0
     void mountFixture() { ASSERT_TRUE(f.mount(0, disk.path(), f.laufwerke().defaultFormatName(0))); }
 
-    /// Φ-Takte ohne CPU: nur FDC und DMA laufen (die CPU würde MON8 ausführen).
+    /// Φ-Takte ohne CPU: nur FDC und DMA laufen (die CPU wuerde MON8 ausfuehren).
     void lauf(int takte) {
         for (int t = 0; t < takte;) {
             int n = 4;
@@ -74,7 +74,7 @@ struct P8000Floppy8_ : ::testing::Test {
     }
 };
 
-/// Sektor @p id der Spur Z0/K0 der Fixture, unabhängig vom FDC gelesen (zweite Kopie der Datei).
+/// Sektor @p id der Spur Z0/K0 der Fixture, unabhaengig vom FDC gelesen (zweite Kopie der Datei).
 std::vector<uint8_t> sektorAusDatei(const std::string& pfad, uint8_t id) {
     FloppyDriveV2 d(builtinDriveProfile("K5601"));
     if (!d.mount(DiskImage::open(pfad, std::nullopt, false), false)) return {};
@@ -90,13 +90,13 @@ TEST_F(P8000Floppy8_, ReadDataZ0K0S1_PerDmaInsDram_InhaltGleichDerDatei) {
     const auto soll = sektorAusDatei(zweite.path(), 1);
     ASSERT_EQ(soll.size(), 256u);
     mountFixture();
-    pio(A_5_25, 0x0E);                         // PB7 = 0 (FDC läuft), /SE0 = 0
+    pio(A_5_25, 0x0E);                         // PB7 = 0 (FDC laeuft), /SE0 = 0
     dmaLesenProgrammieren(ZIEL, 256);
     // READ DATA MFM: Z0 K0 S1 N1 (256 B) EOT = 1, GPL, DTL
     fdcCmd({0x46, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x0E, 0xFF});
     lauf(400000);
     for (int i = 0; i < 256; ++i) ASSERT_EQ(k.speicher().dram(ZIEL + i), soll[i]) << "Byte " << i;
-    EXPECT_EQ(k.speicher().dram(ZIEL + 256), 0);   // nicht darüber hinaus
+    EXPECT_EQ(k.speicher().dram(ZIEL + 256), 0);   // nicht darueber hinaus
     const auto r = fdcResult(7);
     EXPECT_EQ(r[0] & 0xC0, 0x00) << "ST0 " << int(r[0]);   // normal beendet
     EXPECT_EQ(r[1], 0x00);
@@ -107,19 +107,19 @@ TEST_F(P8000Floppy8_, LaufwerkswahlNurUeberPb0bis3_UnitImBefehlZaehltNicht) {
     k1520test::TempDisk zweite(FIXTURE, "p8000_floppy8_ref.hfe");
     const auto soll = sektorAusDatei(zweite.path(), 1);
     mountFixture();   // nur Laufwerk 0 hat eine Diskette
-    pio(A_5_25, 0x0F);                         // /SE0..3 alle 1: kein Laufwerk gewählt
+    pio(A_5_25, 0x0F);                         // /SE0..3 alle 1: kein Laufwerk gewaehlt
     EXPECT_EQ(f.gewaehlt(), -1);
-    // Befehl mit US = 0, aber keins gewählt ⇒ Not Ready (ST0 D3)
+    // Befehl mit US = 0, aber keins gewaehlt ⇒ Not Ready (ST0 D3)
     fdcCmd({0x4A, 0x00});
     lauf(2000);
     EXPECT_EQ(fdcResult(7)[0] & 0x08, 0x08);
-    // Laufwerk 1 gewählt (leer) und Befehl mit US = 0 ⇒ ebenfalls Not Ready
+    // Laufwerk 1 gewaehlt (leer) und Befehl mit US = 0 ⇒ ebenfalls Not Ready
     out(0x1E, 0x0D);
     EXPECT_EQ(f.gewaehlt(), 1);
     fdcCmd({0x4A, 0x00});
     lauf(2000);
     EXPECT_EQ(fdcResult(7)[0] & 0x08, 0x08);
-    // Laufwerk 0 gewählt, Befehl mit US = 1: gelesen wird trotzdem Laufwerk 0
+    // Laufwerk 0 gewaehlt, Befehl mit US = 1: gelesen wird trotzdem Laufwerk 0
     out(0x1E, 0x0E);
     EXPECT_EQ(f.gewaehlt(), 0);
     dmaLesenProgrammieren(ZIEL, 256);
@@ -128,7 +128,7 @@ TEST_F(P8000Floppy8_, LaufwerkswahlNurUeberPb0bis3_UnitImBefehlZaehltNicht) {
     for (int i = 0; i < 256; ++i) ASSERT_EQ(k.speicher().dram(ZIEL + i), soll[i]) << "Byte " << i;
     const auto r = fdcResult(7);
     EXPECT_EQ(r[0] & 0xC3, 0x01);    // IC = 00, Unit-Nummer des Befehls (1) im ST0
-    // zwei Laufwerke gleichzeitig gewählt ⇒ keins
+    // zwei Laufwerke gleichzeitig gewaehlt ⇒ keins
     out(0x1E, 0x0C);
     EXPECT_EQ(f.gewaehlt(), -1);
 }
@@ -136,7 +136,7 @@ TEST_F(P8000Floppy8_, LaufwerkswahlNurUeberPb0bis3_UnitImBefehlZaehltNicht) {
 TEST_F(P8000Floppy8_, TcBeendetDenTransfer_DmaBlockendeUndPa6) {
     mountFixture();
     pio(A_5_25, 0x0E);
-    // (a) DMA-Blockende: 256 Byte, EOT = 16 ⇒ ohne TC bliebe der FDC beim nächsten Sektor
+    // (a) DMA-Blockende: 256 Byte, EOT = 16 ⇒ ohne TC bliebe der FDC beim naechsten Sektor
     dmaLesenProgrammieren(ZIEL, 256);
     fdcCmd({0x46, 0x00, 0x00, 0x00, 0x01, 0x01, 0x10, 0x0E, 0xFF});
     lauf(400000);
@@ -144,7 +144,7 @@ TEST_F(P8000Floppy8_, TcBeendetDenTransfer_DmaBlockendeUndPa6) {
     EXPECT_EQ(r[0] & 0xC0, 0x00) << "ST0 " << int(r[0]);
     EXPECT_EQ(r[1] & 0x80, 0x00) << "EN: das Blockende war kein TC";
     // (b) kein TC von der DMA (DMA zu kurz freigegeben), PA6 per Software nach dem Sektor
-    dmaLesenProgrammieren(ZIEL, 4096);   // viel länger als ein Sektor: Blockende kommt nicht
+    dmaLesenProgrammieren(ZIEL, 4096);   // viel laenger als ein Sektor: Blockende kommt nicht
     fdcCmd({0x46, 0x00, 0x00, 0x00, 0x02, 0x01, 0x10, 0x0E, 0xFF});
     lauf(100000);                         // erster Sektor ist durch, FDC liest S3 weiter
     EXPECT_TRUE(f.fdc().drq() || true);
@@ -182,7 +182,7 @@ TEST_F(P8000Floppy8_, FdcImResetBisPb7Null_UndDatenrateNachPa4) {
 TEST_F(P8000Floppy8_, FdcRegisterSpiegeln22Hund23H) {
     pio(A_5_25, 0x0E);
     EXPECT_EQ(in(0x22), in(0x20));
-    fdcCmd({0x08});                       // ohne anstehenden Interrupt ⇒ ungültig: ST0 = 80H
+    fdcCmd({0x08});                       // ohne anstehenden Interrupt ⇒ ungueltig: ST0 = 80H
     lauf(100);
     EXPECT_EQ(in(0x23), 0x80);
 }
@@ -198,7 +198,7 @@ TEST_F(P8000Floppy8_, Mon8_3_1_HardwaretestOhneFehlerBisZumMonitorPrompt) {
         k.takt(n);
         f.takt(n);
         t += n;
-        for (int i = 0; i < 4; ++i) {   // alle Kanäle abholen (sonst staut sich ihr Sender: ERROR 21)
+        for (int i = 0; i < 4; ++i) {   // alle Kanaele abholen (sonst staut sich ihr Sender: ERROR 21)
             auto& a = k.anschluss(i);
             while (a.senderHatZeichen()) {
                 const char c = static_cast<char>(a.senderNimm());

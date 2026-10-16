@@ -4,14 +4,14 @@
  *        → Kaltstart von der neuen Diskette — die ganze Kette mit den Originalprogrammen.
  *
  * FORMAT.COM des K8915 programmiert die K5122 selbst: im Index-ISR (Vektor 24H) schreibt
- * es mit `/WE` = 0 den vorgebauten Rohstrom einer Spur Byte für Byte an 14H (jedes
- * `OUT` wartet per `/WAIT` auf sein Fenster), im nächsten Index-ISR (22H) liest es die
- * Spur zurück und vergleicht sie Byte für Byte (Indexmarke mit MK = 1, jedes Feld mit
- * MK = 0).  DISGEN.COM liest die Systemspuren von A: und schreibt sie über das BIOS auf
- * B: — dafür muss das BIOS B: als 5 × 1024 kennen, deshalb läuft die Kette auf der
+ * es mit `/WE` = 0 den vorgebauten Rohstrom einer Spur Byte fuer Byte an 14H (jedes
+ * `OUT` wartet per `/WAIT` auf sein Fenster), im naechsten Index-ISR (22H) liest es die
+ * Spur zurueck und vergleicht sie Byte fuer Byte (Indexmarke mit MK = 1, jedes Feld mit
+ * MK = 0).  DISGEN.COM liest die Systemspuren von A: und schreibt sie ueber das BIOS auf
+ * B: — dafuer muss das BIOS B: als 5 × 1024 kennen, deshalb laeuft die Kette auf der
  * Diskette 900 (Fassung „55 K“; auf 901 ist B: per DISGEN 16 × 256, §4.4).
  *
- * Langsam (≈ 500 Mio. Takte für 160 Spuren): Label `format_integration`
+ * Langsam (≈ 500 Mio. Takte fuer 160 Spuren): Label `format_integration`
  * (`tools/dev.sh test-format`).
  */
 
@@ -53,8 +53,8 @@ struct Kataloge {
  * @brief Das Fertig-Kriterium von AP-E4f.
  *  1. Eine echte Leerdiskette (unformatiert, `createDisk` mit leerem Formatnamen) in B:.
  *  2. FORMAT.COM, Verfahren 24 (5,25″ DS, 5 × 1024, mit Indexmarke), Spur 00–79:
- *     „FUNCTION COMPLETE“ ohne „ERROR“ — das eigene Prüf-Lesen ist also durch.
- *     `dir b:` meldet „NO FILE“; das k1520DiskTool erkennt `cpa800`, Prüfung ohne Befund.
+ *     „FUNCTION COMPLETE“ ohne „ERROR“ — das eigene Pruef-Lesen ist also durch.
+ *     `dir b:` meldet „NO FILE“; das k1520DiskTool erkennt `cpa800`, Pruefung ohne Befund.
  *  3. DISGEN.COM: „Read system tracks“ von A:, „Write system tracks“ auf B:, „Exit“.
  *     Die Systemspuren der neuen Diskette gleichen danach denen der Quelle.
  *  4. Neue Maschine, die neue Diskette in A:, Kaltstart: das BIOS „55 K“ meldet sich,
@@ -121,7 +121,7 @@ TEST(K8915Format, LeerdisketteFormatDisgenKaltstart)
         ASSERT_TRUE(m.flushDisks());
     }
 
-    // Die Systemspuren der neuen Diskette = die der Quelle (DISGEN ohne Änderung).
+    // Die Systemspuren der neuen Diskette = die der Quelle (DISGEN ohne Aenderung).
     {
         Kataloge k;
         std::string err;
@@ -153,8 +153,8 @@ TEST(K8915Format, LeerdisketteFormatDisgenKaltstart)
  * @brief AP-E5c: dieselbe Leerdiskette, aber statt DISGEN das DiskTool — FORMAT.COM
  *        (Verfahren 24) formatiert B:, `boot-get` holt die Systemspuren von A: (900),
  *        `boot-put` mit `--fs scpx8915` (ohne das Profil hat die frisch formatierte
- *        Diskette für das DiskTool keine Systemspuren) bringt sie auf B:.  Danach sind sie
- *        byteweise gleich der Quelle, und ein neuer Kaltstart von B: läuft bis `A>`.
+ *        Diskette fuer das DiskTool keine Systemspuren) bringt sie auf B:.  Danach sind sie
+ *        byteweise gleich der Quelle, und ein neuer Kaltstart von B: laeuft bis `A>`.
  */
 TEST(K8915Format, FormatDisketteGetBootPutBootetOhneDisgen)
 {
@@ -238,11 +238,11 @@ std::unique_ptr<DiskVolume> dtOeffne(const std::string& p, const std::string& fs
  * @test K8915FormatDiskTool.FrischFormatiertUndRundreise
  * @brief Verfahren 24/31 (5 × 1024, mit/ohne Indexmarke) auf Diskette 900 (B: = A:),
  *        22/37 (16 × 256) auf Diskette 901 (B: per DISGEN 16 × 256), Zylinder 00–79.
- *  1. Frisch formatiert, leer: 16 × 256 ⇒ OFF 2 / 128 Plätze (festes Offset der Regel);
+ *  1. Frisch formatiert, leer: 16 × 256 ⇒ OFF 2 / 128 Plaetze (festes Offset der Regel);
  *     5 × 1024 ⇒ `cpa800` (192 ab c0h0 — vom Medium nicht von einer leeren CP/A-
  *     Datendiskette zu unterscheiden), mit dem Hinweis auf `--fs scpx8915`.
- *  2. Der K8915 schreibt (`save`): das DiskTool findet die Datei, OFF 2 / 128 Plätze,
- *     Vollprüfung ohne Befund.
+ *  2. Der K8915 schreibt (`save`): das DiskTool findet die Datei, OFF 2 / 128 Plaetze,
+ *     Vollpruefung ohne Befund.
  *  3. Das DiskTool schreibt (ohne `--fs`): der K8915 listet beide Dateien und `type`
  *     gibt die neue aus.
  */

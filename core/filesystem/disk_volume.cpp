@@ -1890,7 +1890,7 @@ bool DiskVolume::insert(const std::string& src_path, const FileRef& ref,
     wo.text            = opt.text;
     // Liegt neben der Quelldatei ein Beiblatt (aus `extractAll`), kommen die
     // Kopfsektorangaben von dort — so behaelt auch eine EINZELN aus der Oberflaeche
-    // herübergezogene Systemdatei ihren Typ und ihr Speicherabbild.  Ausdrueckliche
+    // heruebergezogene Systemdatei ihren Typ und ihr Speicherabbild.  Ausdrueckliche
     // Angaben des Aufrufers gehen immer vor.
     // ── Rangfolge der Angaben (§2.2) ─────────────────────────────────────────
     //

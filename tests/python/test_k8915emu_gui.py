@@ -40,8 +40,8 @@ def _fenster(qapp, maschine="k8915", disks=None):
 
 
 def _menue(w, titel):
-    """Die Einträge des Menüs *titel* — sofort als Liste (die Hülle des QMenu
-    überlebt den Ausdruck sonst nicht)."""
+    """Die Eintraege des Menues *titel* — sofort als Liste (die Huelle des QMenu
+    ueberlebt den Ausdruck sonst nicht)."""
     for aktion in w.menuBar().actions():
         if aktion.text() == titel:
             return list(aktion.menu().actions())
@@ -66,11 +66,11 @@ def test_titles_and_machines_of_the_two_programs(qapp, konfig_ordner):
 
 
 def test_only_the_a5120_offers_the_a5120_16_model(qapp, konfig_ordner):
-    """Die Modellwahl A5120/A5120.16 (Erweiterungsmodul) gehört dem A5120 Emulator.
+    """Die Modellwahl A5120/A5120.16 (Erweiterungsmodul) gehoert dem A5120 Emulator.
 
     Der K8915 Emulator hat seit AP-V7b eine EIGENE Modellwahl (V3 / Gen 2,
     doc/design/24_k8915_varianten.md R5), aber ``a5120.16`` gibt es darin nicht:
-    aus seiner Konfiguration wird es zum V3, die Maschine läuft ohne EM und
+    aus seiner Konfiguration wird es zum V3, die Maschine laeuft ohne EM und
     gespeichert wird ``model: k8915`` — ein EM gibt es nur am A5120.
     """
     from app import config_io
@@ -104,7 +104,7 @@ def test_only_the_a5120_offers_the_a5120_16_model(qapp, konfig_ordner):
 # ─── Modellwahl V3 / Gen 2 (doc/design/24_k8915_varianten.md AP-V7b) ─────────
 
 def test_the_k8915_offers_v3_and_gen2_and_shows_gen1_locked(qapp, konfig_ordner):
-    """Auswahlfeld: V3 (Vorgabe) und Gen 2 wählbar, Gen 1 ausgegraut mit Grund."""
+    """Auswahlfeld: V3 (Vorgabe) und Gen 2 waehlbar, Gen 1 ausgegraut mit Grund."""
     from PySide6.QtCore import Qt
 
     w = _fenster(qapp, "k8915")
@@ -124,7 +124,7 @@ def test_the_k8915_offers_v3_and_gen2_and_shows_gen1_locked(qapp, konfig_ordner)
         assert not box.model().item(2).isEnabled()
         assert "F11" in box.itemData(2, Qt.ToolTipRole)
         assert "Kaltstart" in box.toolTip()
-        # Ohne Konfiguration (Vorgabedatei trägt kein general.model) läuft der V3.
+        # Ohne Konfiguration (Vorgabedatei traegt kein general.model) laeuft der V3.
         assert box.currentData() == "k8915"
         assert w.emulator.machine == "k8915" and w.emulator.k8915_generation() == 0
     finally:
@@ -152,7 +152,7 @@ def test_switching_the_k8915_model_rebuilds_the_machine(qapp, konfig_ordner):
     finally:
         _zu(w, qapp)
 
-    # Neustart: das gemerkte Modell kommt wieder; zurück zum V3.
+    # Neustart: das gemerkte Modell kommt wieder; zurueck zum V3.
     w = _fenster(qapp, "k8915")
     try:
         assert w._model == "k8915-g2" and w.emulator.k8915_generation() == 1
@@ -195,7 +195,7 @@ def test_k8915_refuses_an_extension_module():
 def test_k8915emu_reads_and_writes_its_own_config_and_leaves_the_others_alone(
         qapp, konfig_ordner):
     """k8915emu schreibt ``k8915emu.yaml`` — ``config.yaml``/``a5120emu.yaml``
-    bleiben unberührt, und umgekehrt."""
+    bleiben unberuehrt, und umgekehrt."""
     from app import config_io
 
     alt = konfig_ordner / "config.yaml"
@@ -244,7 +244,7 @@ def test_the_old_config_yaml_moves_once_to_a5120emu_yaml(qapp, konfig_ordner, ca
 
 
 def test_the_k8915_does_not_take_over_the_old_config(qapp, konfig_ordner):
-    """Die Altdatei gehörte dem A5120 — der K8915 lässt sie liegen."""
+    """Die Altdatei gehoerte dem A5120 — der K8915 laesst sie liegen."""
     from app import config_io, profil
 
     alt = konfig_ordner / "config.yaml"
@@ -275,7 +275,7 @@ def test_drive_count_follows_the_profile(qapp, konfig_ordner):
             assert len(w.status_widget.felder()) == zahl
             erlaubt = {w.settings_widget._drive_combos[0].itemData(i)
                        for i in range(w.settings_widget._drive_combos[0].count())}
-            # 8″-Beistellgeräte sind an jeder Maschine wählbar (kein technischer Grund
+            # 8″-Beistellgeraete sind an jeder Maschine waehlbar (kein technischer Grund
             # dagegen, s. app/drive_types.py).
             assert {"MF3200", "MF6400"} <= erlaubt
         finally:
@@ -361,7 +361,7 @@ def test_the_nmi_really_reaches_the_rom(qapp, konfig_ordner):
 
 
 def test_no_shortcut_of_the_k8915_window_steals_a_key(qapp, konfig_ordner):
-    """Derselbe Wächter wie beim A5120 — für das zweite Gesicht des Fensters."""
+    """Derselbe Waechter wie beim A5120 — fuer das zweite Gesicht des Fensters."""
     from PySide6.QtGui import QAction
     from test_gui_smoke import _als_kuerzel, _handbuch_kuerzel
 
@@ -408,7 +408,7 @@ def _scan_aus_dem_eprom():
 
 
 def test_the_k7672_keys_carry_the_scancodes_of_the_firmware(qapp):
-    """Stichprobe A, ß, PF1, RETURN, Kursor, Umschalt: Matrixposition → Scancode
+    """Stichprobe A, ss, PF1, RETURN, Kursor, Umschalt: Matrixposition → Scancode
     wie im EPROM D3 (0080H), und der Kurzhinweis nennt denselben."""
     from app.ui.keyboard_k7672 import KeyboardK7672Widget, TASTE_BASE
 
@@ -421,12 +421,12 @@ def test_the_k7672_keys_carry_the_scancodes_of_the_firmware(qapp):
         taste = nach_name.get(name) or next(k for k in kb._keys if k.low == name)
         assert scan[taste.matrix] == code, name
         assert taste.scan == code, name
-    # Jede Taste der Nachbildung: Scancode im Layout == EPROM (Tippfehlerwächter).
+    # Jede Taste der Nachbildung: Scancode im Layout == EPROM (Tippfehlerwaechter).
     for k in kb._keys:
         assert scan[k.matrix] == k.scan, k.name
         if k.code is not None:
             assert k.code == TASTE_BASE | k.matrix
-    # ↑ trägt Bit 7 = Vorsatz, und zwar Umschalt (Tastenart Bit 6) ⇒ 2A 48.
+    # ↑ traegt Bit 7 = Vorsatz, und zwar Umschalt (Tastenart Bit 6) ⇒ 2A 48.
     hoch = nach_name["Kursor aufwärts"]
     assert art[hoch.matrix] & 0x40
     assert "mit Vorsatz" in kb._tip(hoch)
@@ -527,8 +527,8 @@ def test_k7672_keys_do_not_overlap_and_return_is_one_tall_key(qapp):
 ])
 def test_k7672_umlaut_keys_are_labelled_like_the_photo(qapp, name, oben_links,
                                                        unten_links, rechts, rechts_unten):
-    """Links oben und links unten die ASCII-Zeichen, rechts groß der Umlaut
-    (beim ß in der unteren Zeile) — nicht mehr klein übereinander."""
+    """Links oben und links unten die ASCII-Zeichen, rechts gross der Umlaut
+    (beim ss in der unteren Zeile) — nicht mehr klein uebereinander."""
     from app.ui.keyboard_k7672 import KeyboardK7672Widget
 
     kb = KeyboardK7672Widget()
@@ -556,12 +556,12 @@ def _farbe_nah(c, ziel, tol=40):
     (900, 0), (1203, 0), (1275, 7), (1533, 0), (1777, 13)])
 def test_k7672_cutouts_never_lose_a_key_or_cover_one(qapp, monkeypatch, breite,
                                                      mehr_hoehe):
-    """Wächter zum Befund „rot" (AP-UI2): Qts Pfadvereinigung verlor bei rund
+    """Waechter zum Befund „rot" (AP-UI2): Qts Pfadvereinigung verlor bei rund
     einem Drittel der Breiten die Einfassung von RETURN/Umschalt rechts (1203 px
-    war eine davon).  In Kennfarben gezeichnet muss bei jeder Größe gelten:
-    jede Kappe ist Kappe (nirgends Gehäuse oder Ausschnitt darauf), jede Fuge
-    zwischen zwei Nachbarn desselben Blocks ist Ausschnitt (nie Gehäuse), und
-    zwischen den Blöcken liegt Gehäuse."""
+    war eine davon).  In Kennfarben gezeichnet muss bei jeder Groesse gelten:
+    jede Kappe ist Kappe (nirgends Gehaeuse oder Ausschnitt darauf), jede Fuge
+    zwischen zwei Nachbarn desselben Blocks ist Ausschnitt (nie Gehaeuse), und
+    zwischen den Bloecken liegt Gehaeuse."""
     from PySide6.QtGui import QColor
     from app.ui import keyboard_k7672 as mod
 
@@ -601,7 +601,7 @@ def test_k7672_cutouts_never_lose_a_key_or_cover_one(qapp, monkeypatch, breite,
             y = oy + (kb._pad[1] + (y0 + y1) / 2) * unit
             if not _farbe_nah(px(x, y), GRUND):
                 fehler.append(f"Fuge {a[5]} | {b[5]} bei ({x:.0f},{y:.0f})")
-    # Zwischen Haupt- und Mittelblock (DEL ↔ PF10): Gehäuse.
+    # Zwischen Haupt- und Mittelblock (DEL ↔ PF10): Gehaeuse.
     x = ox + (kb._pad[0] + 15.25) * unit
     y = oy + (kb._pad[1] + 2.0) * unit
     if not _farbe_nah(px(x, y), GEHAEUSE):
@@ -622,7 +622,7 @@ def test_k8915emu_boots_to_the_prompt_and_the_on_screen_keyboard_types_dir(
     diskette = temp_disk("k8915scpx_boot1.hfe")
     w = _fenster(qapp, "k8915", disks=[diskette])
     try:
-        w.run_timer.stop()          # der Test fährt die Maschine selbst
+        w.run_timer.stop()          # der Test faehrt die Maschine selbst
         emu = w.emulator
         w.keyboard_dock.show()
         qapp.processEvents()
@@ -662,12 +662,12 @@ def test_k8915emu_boots_to_the_prompt_and_the_on_screen_keyboard_types_dir(
         _zu(w, qapp)
 
 
-# ─── AP-T1a: Wege, die der Abdeckungsbau ungeprüft fand ─────────────────────
+# ─── AP-T1a: Wege, die der Abdeckungsbau ungeprueft fand ─────────────────────
 
 def test_an_unknown_machine_is_refused_with_the_known_names():
     """Profil und Bindung lehnen einen unbekannten Maschinennamen mit den bekannten
-    im Text ab (``--machine``-Tippfehler, alte Konfiguration); Groß/klein zählt
-    beim Profil nicht (der Starter übergibt klein, ein Anwender vielleicht nicht)."""
+    im Text ab (``--machine``-Tippfehler, alte Konfiguration); Gross/klein zaehlt
+    beim Profil nicht (der Starter uebergibt klein, ein Anwender vielleicht nicht)."""
     from app import profil
     from app.core_binding.k1520 import K1520Emulator
 
@@ -702,8 +702,8 @@ def test_a_failed_config_move_keeps_the_old_file_and_says_why(konfig_ordner, mon
 
 def test_host_keys_on_the_k7672_widget(qapp):
     """Host-Tasten an der Bildschirmtastatur K7672: die rastende Umschalttaste der
-    Nachbildung macht einen Host-Buchstaben groß, die Feststelltaste des PCs geht als
-    eigene Taste an den Kern (das BIOS führt die Feststellung); F1 leuchtet auf
+    Nachbildung macht einen Host-Buchstaben gross, die Feststelltaste des PCs geht als
+    eigene Taste an den Kern (das BIOS fuehrt die Feststellung); F1 leuchtet auf
     PF1-Position, Umschalt/Strg auf den Umschalttasten.  Kurzhinweise nennen
     Scancode und Vorsatz — oder „sendet nichts"."""
     from PySide6.QtCore import QEvent, Qt
@@ -735,7 +735,7 @@ def test_host_keys_on_the_k7672_widget(qapp):
 
 
 def _tasten_mitschreiben(w, monkeypatch):
-    """Was die Oberfläche an den Kern schickt: ``("p", code, shift, ctrl)``/``("r", code)``."""
+    """Was die Oberflaeche an den Kern schickt: ``("p", code, shift, ctrl)``/``("r", code)``."""
     protokoll = []
     monkeypatch.setattr(w.emulator, "key_press",
                         lambda code, shift=False, ctrl=False:
@@ -755,8 +755,8 @@ def test_the_k8915_gui_sends_modifiers_as_keys_and_drops_qt_autorepeat(
         qapp, konfig_ordner, monkeypatch):
     """AP-E4g: am K8915 gehen Umschalt/Strg als EIGENE Tasten an die K7672 (im
     DCP-Modus meldet sie 2AH/1DH einzeln), das Qt-Autorepeat wird verworfen (die
-    Tastatur wiederholt selbst), und das Loslassen trägt denselben Code wie das
-    Drücken — auch wenn die Umschaltung dazwischen fällt (`A` → `a`), sonst hinge die
+    Tastatur wiederholt selbst), und das Loslassen traegt denselben Code wie das
+    Druecken — auch wenn die Umschaltung dazwischen faellt (`A` → `a`), sonst hinge die
     Wiederholung der K7672 fest.  Am A5120 bleibt alles, wie es war."""
     from PySide6.QtCore import QEvent, Qt
     P, R = QEvent.KeyPress, QEvent.KeyRelease
@@ -765,7 +765,7 @@ def test_the_k8915_gui_sends_modifiers_as_keys_and_drops_qt_autorepeat(
     try:
         w.run_timer.stop()
         got = _tasten_mitschreiben(w, monkeypatch)
-        # ALT nicht: die Menüleiste wertet es vor dem Widget aus (s. _MODIFIKATOREN).
+        # ALT nicht: die Menueleiste wertet es vor dem Widget aus (s. _MODIFIKATOREN).
         for key, mod in ((Qt.Key_Shift, Qt.ShiftModifier), (Qt.Key_Control, Qt.ControlModifier)):
             _taste(w, P, key, mod)
             _taste(w, R, key, Qt.NoModifier)
@@ -779,8 +779,8 @@ def test_the_k8915_gui_sends_modifiers_as_keys_and_drops_qt_autorepeat(
         _taste(w, R, Qt.Key_A, Qt.NoModifier, "a")
         got.clear()
 
-        # Umschalt+A gedrückt, Umschalt zuerst losgelassen: Loslassen trägt den Code
-        # des Drückens (0x41), nicht den, den die Taste jetzt ergäbe (0x61).
+        # Umschalt+A gedrueckt, Umschalt zuerst losgelassen: Loslassen traegt den Code
+        # des Drueckens (0x41), nicht den, den die Taste jetzt ergaebe (0x61).
         _taste(w, P, Qt.Key_A, Qt.ShiftModifier, "A")
         _taste(w, R, Qt.Key_A, Qt.NoModifier, "a")
         assert got == [("p", 0x41, True, False), ("r", 0x41)]
@@ -844,7 +844,7 @@ def test_the_toolbar_dialog_offers_only_the_programs_own_actions(qapp, konfig_or
 
 def test_a_failed_start_of_the_other_emulator_is_reported(qapp, konfig_ordner,
                                                           monkeypatch):
-    """Lässt sich der andere Emulator nicht starten (Skript fehlt, Interpreter weg),
+    """Laesst sich der andere Emulator nicht starten (Skript fehlt, Interpreter weg),
     sagt ein Hinweisfenster warum — mit dem Titel des ANDEREN Programms."""
     from app import programme
     from app.ui import main_window as mw

@@ -1,6 +1,6 @@
 /**
  * @file test_scp1700_fs.cpp
- * @brief GoogleTests für die SCP1700-Diskette des A7100 (CP/M-86).
+ * @brief GoogleTests fuer die SCP1700-Diskette des A7100 (CP/M-86).
  *
  * ### Woher die Sollwerte stammen
  * Alles an der Referenzdiskette gemessen (Greaseweazle F1, 300 min⁻¹, 2026-08-18);
@@ -9,14 +9,14 @@
  * | Sollwert | Quelle |
  * |---|---|
  * | c0h0 = FM, 16×128, **halbe** Datenrate (Flusszeiten 4/8 µs) | Rohfluss gemessen |
- * | alle übrigen Spuren = MFM, 16×256 (4/6/8 µs) | Rohfluss gemessen |
- * | Verzeichnis ab c2h0, 128 Plätze, 2048-B-Blöcke, 16-Bit-Zeiger | Verzeichnis gelesen |
- * | 312 Blöcke (höchster benutzter 311) über 156 Datenspuren | nachgerechnet |
- * | 46 Dateien, 2048 Byte frei | Datenträger gelesen |
+ * | alle uebrigen Spuren = MFM, 16×256 (4/6/8 µs) | Rohfluss gemessen |
+ * | Verzeichnis ab c2h0, 128 Plaetze, 2048-B-Bloecke, 16-Bit-Zeiger | Verzeichnis gelesen |
+ * | 312 Bloecke (hoechster benutzter 311) ueber 156 Datenspuren | nachgerechnet |
+ * | 46 Dateien, 2048 Byte frei | Datentraeger gelesen |
  *
- * Das CP/A-BIOS kennt diese Disketten übrigens: „Jeder Fehler in Spur 0, Sektor 1
- * führt zur Annahme von Systemspuren (A7100-System mit 5" FM und 8272-Hardware mit
- * 128er Sektorlänge)" — `biosdsk.mac`, s. `tests/fixtures/disks/cpa_cpa780_k5601_clock.prn`.
+ * Das CP/A-BIOS kennt diese Disketten uebrigens: „Jeder Fehler in Spur 0, Sektor 1
+ * fuehrt zur Annahme von Systemspuren (A7100-System mit 5" FM und 8272-Hardware mit
+ * 128er Sektorlaenge)" — `biosdsk.mac`, s. `tests/fixtures/disks/cpa_cpa780_k5601_clock.prn`.
  *
  * @see doc/scp1700_diskettenformat.md
  * @see core/filesystem/cpm/cpm_fs.h
@@ -125,10 +125,10 @@ TEST(Scp1700, WirdOhneVorgabeErkannt) {
 
 /**
  * @test Scp1700.BootspurIstFmMitHalberDatenrate
- * @brief c0h0 trägt FM mit 128-B-Sektoren und **halber** Rate, alles Übrige MFM.
+ * @brief c0h0 traegt FM mit 128-B-Sektoren und **halber** Rate, alles Uebrige MFM.
  *
  * Der Faktor an der Spur (@ref TrackImage::cell_factor) ist keine Zierde: ohne ihn
- * ginge die Bootspur beim Zurückschreiben mit doppelter Rate auf die Diskette.
+ * ginge die Bootspur beim Zurueckschreiben mit doppelter Rate auf die Diskette.
  */
 TEST(Scp1700, BootspurIstFmMitHalberDatenrate) {
     const DiskFormat* f = formate().find("scp1700_640");
@@ -155,10 +155,10 @@ TEST(Scp1700, BootspurIstFmMitHalberDatenrate) {
 
 /**
  * @test Scp1700.BootspurZaehltVerschiedeneSektorenNichtDoppelte
- * @brief Die Bootspur wurde über die Umdrehung hinaus beschrieben — 16 IDs, 19 Marken.
+ * @brief Die Bootspur wurde ueber die Umdrehung hinaus beschrieben — 16 IDs, 19 Marken.
  *
- * Am Ende der Spur steht ein zweites Exemplar der Sektoren 1…4.  Für den Abgleich
- * mit einem Format zählen die VERSCHIEDENEN IDs; nach der rohen Zahl passte die
+ * Am Ende der Spur steht ein zweites Exemplar der Sektoren 1…4.  Fuer den Abgleich
+ * mit einem Format zaehlen die VERSCHIEDENEN IDs; nach der rohen Zahl passte die
  * Diskette zu keinem Format (@ref MeasuredTrack::uniqueSectors).
  */
 TEST(Scp1700, BootspurZaehltVerschiedeneSektorenNichtDoppelte) {
@@ -178,7 +178,7 @@ TEST(Scp1700, BootspurZaehltVerschiedeneSektorenNichtDoppelte) {
 
 /**
  * @test Scp1700.VerzeichnisUndInhaltStimmen
- * @brief Dateien, Größen und der Inhalt einer Textdatei.
+ * @brief Dateien, Groessen und der Inhalt einer Textdatei.
  */
 TEST(Scp1700, VerzeichnisUndInhaltStimmen) {
     std::string err;
@@ -293,10 +293,10 @@ TEST(Scp1700, FehlendeBlockzeigerWerdenGemeldet) {
 
 /**
  * @test Scp1700.SchreibenUndZurueckschreibenBleibtLesbar
- * @brief Datei einfügen, Datei speichern, Diskette neu öffnen — alles noch da.
+ * @brief Datei einfuegen, Datei speichern, Diskette neu oeffnen — alles noch da.
  *
  * Der Punkt ist nicht die Datei, sondern der Rundlauf durch den HFE-Codec: die
- * gemischte Diskette muss ihn überstehen, und die FM-Bootspur ihre halbe Rate
+ * gemischte Diskette muss ihn ueberstehen, und die FM-Bootspur ihre halbe Rate
  * behalten.
  */
 TEST(Scp1700, SchreibenUndZurueckschreibenBleibtLesbar) {

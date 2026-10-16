@@ -1,11 +1,11 @@
 /**
  * @file test_z8.cpp
  * @brief Z8-Primitive (core/primitives/z8.h): Befehlssatz gegen Zilog UM0016 — Matrix je
- *        Opcode und Adressierungsart mit Flags, Takte, Registerdatei.  Peripherie (Zähler,
+ *        Opcode und Adressierungsart mit Flags, Takte, Registerdatei.  Peripherie (Zaehler,
  *        UART, Interrupts, Ports, Bus) in test_z8_peripherie.cpp.
  *
  * Die Erwartungswerte kommen aus EIGENEN Referenzfunktionen, die die Datenblatt-Definition
- * wörtlich nachrechnen (vorzeichenbehafteter Bereich für V, Borgen für C/H usw.), nicht aus
+ * woertlich nachrechnen (vorzeichenbehafteter Bereich fuer V, Borgen fuer C/H usw.), nicht aus
  * der Kernrechnung.  Abdeckung: doc/p8000/z8_abdeckung.md.
  */
 #include "tests/unit/primitives/z8_rig.h"
@@ -19,7 +19,7 @@ constexpr uint8_t C = Z8::F_C, Z = Z8::F_Z, S = Z8::F_S, V = Z8::F_V, D = Z8::F_
 
 struct Ref { uint8_t r; uint8_t f; bool schreibt; };
 
-/// Datenblatt-Referenz für ADD … XOR (Table 39): Ergebnis und Flags.
+/// Datenblatt-Referenz fuer ADD … XOR (Table 39): Ergebnis und Flags.
 Ref refAlu(const std::string& mn, uint8_t d, uint8_t s, uint8_t fin) {
     Ref o{0, fin, true};
     const int ci = (fin & C) ? 1 : 0;
@@ -74,7 +74,7 @@ Ref refEin(const std::string& mn, uint8_t d, uint8_t fin) {
 const uint8_t WERTE[] = {0x00, 0x01, 0x09, 0x0F, 0x10, 0x55, 0x7F, 0x80, 0x81, 0x99, 0xAA, 0xF0, 0xFE, 0xFF};
 const uint8_t FLAGS_EIN[] = {0x00, C, uint8_t(C | Z | S | V | D | H), uint8_t(Z | V | H), uint8_t(D | Z8::F_F1 | Z8::F_F2)};
 
-/// Vorbereitung für die sechs Adressierungsarten der Zweioperandenbefehle:
+/// Vorbereitung fuer die sechs Adressierungsarten der Zweioperandenbefehle:
 /// RP = 40H; Ziel 40H (r0), Quelle 41H (r1), Zeiger 42H → 41H, 43H → 40H.
 void bereite(Rig& rg, uint8_t d, uint8_t s, uint8_t f) {
     rg.cpu.rp = 0x40;
@@ -136,7 +136,7 @@ TEST(Z8Alu, MatrixAlleOperationenAlleArtenMitFlagsUndTakten) {
                 ASSERT_EQ(rg.r(0x40), e.schreibt ? e.r : d) << o.mn << " Art " << art << " d=" << int(d) << " s=" << int(s) << " f=" << int(f);
                 ASSERT_EQ(rg.cpu.flags, e.f) << o.mn << " Art " << art << " d=" << int(d) << " s=" << int(s) << " f=" << int(f);
                 ASSERT_EQ(c, takte[art]) << o.mn << " Art " << art;
-                ASSERT_EQ(rg.r(0x41), art >= 4 ? s : s);   // Quelle unverändert
+                ASSERT_EQ(rg.r(0x41), art >= 4 ? s : s);   // Quelle unveraendert
                 ++faelle;
             }
         }
@@ -214,7 +214,7 @@ TEST(Z8Einop, IncwDecwAlleArtenUndGrenzen) {
 }
 
 TEST(Z8Einop, DaNachBcdAdditionUndSubtraktionAllePaare) {
-    // UM0016 DA-Tabelle: für jedes gültige BCD-Paar ADD/ADC/SUB/SBC, dann DA.
+    // UM0016 DA-Tabelle: fuer jedes gueltige BCD-Paar ADD/ADC/SUB/SBC, dann DA.
     auto bcd = [](int v) { return uint8_t((v / 10) << 4 | (v % 10)); };
     Rig rg; rg.boot();
     for (int a = 0; a < 100; ++a) for (int b = 0; b < 100; ++b) for (int ci = 0; ci < 2; ++ci)
@@ -244,7 +244,7 @@ TEST(Z8Einop, DaHandbuchBeispiel15plus27) {
     rg.eins({0x40, 0x5F}, 0x0110);    // DA 5FH
     EXPECT_EQ(rg.r(0x5F), 0x42);
     EXPECT_EQ(rg.cpu.flags & (C | Z | S), 0);
-    // DA @45H (Register 45H enthält 5FH)
+    // DA @45H (Register 45H enthaelt 5FH)
     rg.r(0x45) = 0x5F; rg.r(0x5F) = 0x3C; rg.cpu.flags = 0;
     rg.eins({0x41, 0x45}, 0x0120);
     EXPECT_EQ(rg.r(0x5F), 0x42);
@@ -305,7 +305,7 @@ TEST(Z8Laden, ClrUndLdBeruehrenKeineFlags) {
 
 TEST(Z8Laden, NichtVorhandeneRegisterLesenFFUndIgnorierenSchreiben) {
     Rig rg; rg.boot();
-    for (int a : {0x80, 0xA0, 0xDF}) {          // (EFH wäre im Befehl r15)
+    for (int a : {0x80, 0xA0, 0xDF}) {          // (EFH waere im Befehl r15)
         rg.r(0x40) = 0;
         rg.eins({0xE6, uint8_t(a), 0x12});            // LD a,#12H — ohne Wirkung
         rg.eins({0xE4, uint8_t(a), 0x40});            // LD 40H,a
@@ -408,7 +408,7 @@ TEST(Z8Laden, AdressnibblesVonPort0OhneAdressbetrieb) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Stapel, Aufrufe, Sprünge
+// Stapel, Aufrufe, Spruenge
 // ═════════════════════════════════════════════════════════════════════════════
 
 TEST(Z8Stapel, InternPushPopAufSplSphUnberuehrt) {
@@ -535,7 +535,7 @@ TEST(Z8Sprung, JrRueckwaertsUndDjnz) {
     EXPECT_EQ(rg.cpu.step(), 10); EXPECT_EQ(rg.cpu.pc, 0x0302);
     EXPECT_EQ(rg.r(0x16), 0);
     EXPECT_EQ(rg.cpu.flags, 0x5A);
-    rg.r(0x16) = 0;                                     // 0 → 255 Durchläufe
+    rg.r(0x16) = 0;                                     // 0 → 255 Durchlaeufe
     int n = 0;
     rg.cpu.pc = 0x0300;
     while (rg.cpu.pc == 0x0300 && n < 1000) { rg.cpu.step(); ++n; }
@@ -604,7 +604,7 @@ TEST(Z8Steuer, HaltStopNurMitZ86Option) {
 }
 
 TEST(Z8Steuer, TakteAllerOpcodesWieOpcodeKarte) {
-    // Figure 134, unabhängig von der Tabelle des Kerns hier abgeschrieben (nicht genommen).
+    // Figure 134, unabhaengig von der Tabelle des Kerns hier abgeschrieben (nicht genommen).
     static const int karte[16][16] = {
         //  0   1   2   3   4   5   6   7   8  9  A   B   C  D   E  F
         {   6,  6,  6,  6, 10, 10, 10, 10,  6, 6,10, 10,  6,10,  6, 0},  // 0
@@ -629,7 +629,7 @@ TEST(Z8Steuer, TakteAllerOpcodesWieOpcodeKarte) {
         const z8::Insn& in = z8::tabelle()[uint8_t(op)];
         if (k == 0) { EXPECT_TRUE(in.mn == z8::Mn::Ungueltig || in.mn == z8::Mn::HALT || in.mn == z8::Mn::STOP) << std::hex << op; continue; }
         EXPECT_EQ(in.takte, k) << std::hex << op;
-        // ausgeführt (DJNZ mit Zähler 1 → nicht genommen; JR/JP mit cc F/sonst Flags 0)
+        // ausgefuehrt (DJNZ mit Zaehler 1 → nicht genommen; JR/JP mit cc F/sonst Flags 0)
         Rig rg; rg.boot();
         rg.cpu.rp = 0x40; rg.cpu.sp = 0x0070;
         for (int i = 0x40; i < 0x50; ++i) rg.r(uint8_t(i)) = 0x01;

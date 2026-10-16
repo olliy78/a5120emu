@@ -89,9 +89,9 @@ bool Logger::setOutputFile(const std::string& path) {
         return true;
     }
 
-    // „/dev/null" ist die eingespielte Schreibweise für „wegwerfen" (die
-    // Werkzeugaufrufe und die CLI-Testfälle stehen voll davon).  Unter Windows
-    // heißt dieses Gerät NUL; ohne die Umsetzung legte fopen dort eine reale
+    // „/dev/null" ist die eingespielte Schreibweise fuer „wegwerfen" (die
+    // Werkzeugaufrufe und die CLI-Testfaelle stehen voll davon).  Unter Windows
+    // heisst dieses Geraet NUL; ohne die Umsetzung legte fopen dort eine reale
     // Datei C:\dev\null an — oder scheiterte, weil es C:\dev nicht gibt.
     const char* ziel = path.c_str();
 #if defined(_WIN32)

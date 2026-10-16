@@ -1,10 +1,10 @@
 /**
- * @test Z80DmaVoll.* — Z80-DMA / UA858 vollständig gegen das Datenblatt (P8000 AP P9c).
+ * @test Z80DmaVoll.* — Z80-DMA / UA858 vollstaendig gegen das Datenblatt (P8000 AP P9c).
  *
  * Transkription und Abdeckungsliste (Datenblatt-Punkt → Test): doc/p8000/z80_dma.md.
  * Die Programmierfolgen der Gastsysteme (PC 1715W, MON8) stehen in test_z80_dma.cpp; hier
  * geht es um den Baustein: jede Basisbyte-Erkennung, jede Folgebyte-Teilmenge, jede
- * Kombination Transferart × Betriebsart × Richtung × Porttyp × Adressmodus, Zähler- und
+ * Kombination Transferart × Betriebsart × Richtung × Porttyp × Adressmodus, Zaehler- und
  * Adressgrenzen, Suchen mit Maske, RDY/Force Ready, Interrupts mit Vektorbeeinflussung,
  * Impulse, Zyklen/WAIT, Befehle, Lesesequenz, Save-State und die Beobachtungsschnittstelle.
  */
@@ -80,7 +80,7 @@ struct Rig {
         return l;
     }
 
-    /// Beide Ports laden — unabhängig von „fest“: LOAD je einmal mit A und B als Quelle.
+    /// Beide Ports laden — unabhaengig von „fest“: LOAD je einmal mit A und B als Quelle.
     /// @p art WR0 D1D0, @p wr1/@p wr2 ohne Zeitsteuerbyte, @p modus WR4 D6D5.
     void programm(uint8_t art, bool aQuelle, uint16_t a, uint16_t b, uint16_t len,
                   uint8_t wr1, uint8_t wr2, uint8_t modus, uint8_t wr5 = 0x82) {
@@ -142,7 +142,7 @@ TEST(Z80DmaVoll, WR0AlleFolgebyteTeilmengen) {
         EXPECT_EQ(hi(v.startA), (m & 2) ? 0x22 : 0);
         EXPECT_EQ(lo(v.blocklaenge), (m & 4) ? 0x33 : 0);
         EXPECT_EQ(hi(v.blocklaenge), (m & 8) ? 0x44 : 0);
-        r.w({0x87});                                  // nächstes Byte ist wieder ein Basisbyte
+        r.w({0x87});                                  // naechstes Byte ist wieder ein Basisbyte
         EXPECT_TRUE(r.dma.enabled());
     }
 }
@@ -196,9 +196,9 @@ TEST(Z80DmaVoll, WR3UndWR1WR2Folgebytes) {
 // ═══ 2. Transfer-Matrix ════════════════════════════════════════════════════
 
 /// Transferart (Transfer/Search/beides) × Betriebsart (Byte/Continuous/Burst/11) × Richtung ×
-/// Porttyp A/B (Speicher/E/A) × Adressmodus A/B (−1/+1/fest/fest) — 1536 Fälle, je 5 Bytes.
-/// Geprüft: die genaue Zugriffsfolge auf dem Bus, CPU-Zwischenzyklen (nur Byte-Betrieb), Takte,
-/// Adresszähler, Bytezähler, Status, Ende-Ausgang.
+/// Porttyp A/B (Speicher/E/A) × Adressmodus A/B (−1/+1/fest/fest) — 1536 Faelle, je 5 Bytes.
+/// Geprueft: die genaue Zugriffsfolge auf dem Bus, CPU-Zwischenzyklen (nur Byte-Betrieb), Takte,
+/// Adresszaehler, Bytezaehler, Status, Ende-Ausgang.
 TEST(Z80DmaVoll, TransferMatrixArtModusRichtungPorttypAdressmodus) {
     int fehler = 0;
     for (int art = 1; art <= 3; ++art)
@@ -253,9 +253,9 @@ TEST(Z80DmaVoll, TransferMatrixArtModusRichtungPorttypAdressmodus) {
     }
 }
 
-// ═══ 3. Zähler und Adressgrenzen ═══════════════════════════════════════════
+// ═══ 3. Zaehler und Adressgrenzen ═══════════════════════════════════════════
 
-/// Blocklänge 0 ⇒ 2¹⁶ + 1 Byte, FFFFH ⇒ 2¹⁶ Byte; Adresszähler laufen über FFFFH/0000H.
+/// Blocklaenge 0 ⇒ 2¹⁶ + 1 Byte, FFFFH ⇒ 2¹⁶ Byte; Adresszaehler laufen ueber FFFFH/0000H.
 TEST(Z80DmaVoll, BlocklaengeNullUndFFFFUndAdressueberlauf) {
     for (uint16_t len : {uint16_t(0x0000), uint16_t(0xFFFF), uint16_t(0x0001)}) {
         SCOPED_TRACE(len);
@@ -273,15 +273,15 @@ TEST(Z80DmaVoll, BlocklaengeNullUndFFFFUndAdressueberlauf) {
     }
 }
 
-/// Bytezähler: Vorgabe N + 1 nach Blockende, mit setZaehlerLiestBlocklaenge N (Tabelle 1);
-/// während des Blocks in beiden Fällen die bisher bewegten Bytes.
+/// Bytezaehler: Vorgabe N + 1 nach Blockende, mit setZaehlerLiestBlocklaenge N (Tabelle 1);
+/// waehrend des Blocks in beiden Faellen die bisher bewegten Bytes.
 TEST(Z80DmaVoll, BytezaehlerVorgabeUndDatenblattTabelle1) {
     for (bool opt : {false, true}) {
         Rig r;
         r.dma.setZaehlerLiestBlocklaenge(opt);
         r.programm(1, true, 0x1000, 0x2000, 0x0102, wr1(false, 1), wr2(false, 1), 0);
         r.dma.setReady(false);
-        r.w({0x87, 0xBB, 0x06});                      // Lesemaske: Zähler L/H — sperrt!
+        r.w({0x87, 0xBB, 0x06});                      // Lesemaske: Zaehler L/H — sperrt!
         r.w({0x87});
         for (int i = 0; i < 7; ++i) { r.dma.step(); r.dma.cpuZyklus(); }
         EXPECT_EQ(r.r(), 7); EXPECT_EQ(r.r(), 0);
@@ -305,7 +305,7 @@ TEST(Z80DmaVoll, BurstGibtBusBeiRdyInaktivAbUndFaehrtFort) {
     EXPECT_EQ(r.dma.step(), 8); EXPECT_EQ(r.dma.step(), 8);
     EXPECT_TRUE(r.dma.busRequest());                  // kein Abgeben zwischen den Bytes
     r.dma.setReady(true);
-    EXPECT_FALSE(r.dma.busRequest());                 // Bus zurück
+    EXPECT_FALSE(r.dma.busRequest());                 // Bus zurueck
     EXPECT_EQ(r.dma.step(), 0);
     r.dma.setReady(false);
     EXPECT_EQ(r.fahre(5).bytes, 8);
@@ -353,13 +353,13 @@ TEST(Z80DmaVoll, RdyPolaritaetUndStatusD1) {
         EXPECT_TRUE(r.dma.busRequest());
         EXPECT_EQ(r.dma.status() & 0x02, 0);
         r.dma.setReady(!hoch);
-        r.w({0xB3, 0x87});                            // Force Ready zählt für den Bus, nicht für D1
+        r.w({0xB3, 0x87});                            // Force Ready zaehlt fuer den Bus, nicht fuer D1
         EXPECT_TRUE(r.dma.busRequest());
         EXPECT_NE(r.dma.status() & 0x02, 0);
     }
 }
 
-/// Force Ready fällt durch C3, CF, A3, Blockende, Treffer und jede Busfreigabe (UA858 §10.1 B3).
+/// Force Ready faellt durch C3, CF, A3, Blockende, Treffer und jede Busfreigabe (UA858 §10.1 B3).
 TEST(Z80DmaVoll, ForceReadyRuecksetzbedingungen) {
     for (uint8_t cmd : {uint8_t(0xC3), uint8_t(0xCF), uint8_t(0xA3)}) {
         Rig r;
@@ -404,7 +404,7 @@ TEST(Z80DmaVoll, ForceReadyRuecksetzbedingungen) {
 // ═══ 5. Suchen: Maske, Vergleich, Stopp, Tabelle 2 ═════════════════════════
 
 /// Maske × Vergleichsbyte gegen die Bytes 00H…FFH: Status D4 und Trefferstelle.  Maske 0 =
-/// Bit zählt, FFH = jedes Byte trifft.
+/// Bit zaehlt, FFH = jedes Byte trifft.
 TEST(Z80DmaVoll, SuchMaskeUndVergleichMatrix) {
     const uint8_t masken[] = {0x00, 0xFF, 0x0F, 0xF0, 0x55, 0xAA, 0xFE, 0x7F};
     const uint8_t vergl[] = {0x00, 0x42, 0xFF, 0x80, 0x13};
@@ -461,7 +461,7 @@ TEST(Z80DmaVoll, StoppBeiTrefferTabelle2) {
         }
 }
 
-/// Search + Transfer überträgt auch das Trefferbyte und läuft ohne Stopp weiter.
+/// Search + Transfer uebertraegt auch das Trefferbyte und laeuft ohne Stopp weiter.
 TEST(Z80DmaVoll, SuchenMitTransferOhneStoppUebertraegtAlles) {
     Rig r;
     for (int i = 0; i < 8; ++i) r.mem[0x3000 + i] = uint8_t(i);
@@ -496,7 +496,7 @@ TEST(Z80DmaVoll, VektorOhneUndMitStatusbeeinflussungJeGrund) {
         ASSERT_TRUE(r.dma.hasInterrupt()); EXPECT_EQ(r.dma.getVector(), 0xFB); }
     {   Rig r; interruptLauf(r, 0x23, 0x00, 3, false, 3);  // Treffer im letzten Byte + Blockende → 11
         EXPECT_EQ(r.dma.getVector(), 0x06); }
-    {   Rig r; interruptLauf(r, 0x23, 0x00, 3, false, 1);  // Treffer früher, Ende später → 11
+    {   Rig r; interruptLauf(r, 0x23, 0x00, 3, false, 1);  // Treffer frueher, Ende spaeter → 11
         EXPECT_EQ(r.dma.getVector(), 0x06); }
     {   Rig r; interruptLauf(r, 0x01, 0x00, 1, false);     // nur Transfer: kein Vergleich, kein Treffer
         EXPECT_FALSE(r.dma.hasInterrupt()); EXPECT_NE(r.dma.status() & 0x10, 0); }
@@ -514,7 +514,7 @@ TEST(Z80DmaVoll, InterruptBeiRdyMitB7UndRETI) {
     EXPECT_FALSE(r.dma.busRequest());
     EXPECT_EQ(r.dma.getVector(), 0xE0);               // V2V1 = 00
     r.w({0xB7, 0x87});                                // ISR: Enable after RETI, Enable DMA
-    EXPECT_FALSE(r.dma.busRequest());                 // IUS und B7 halten zurück
+    EXPECT_FALSE(r.dma.busRequest());                 // IUS und B7 halten zurueck
     r.dma.onRETI();
     EXPECT_TRUE(r.dma.busRequest());
     EXPECT_EQ(r.dma.step(), 8);
@@ -534,7 +534,7 @@ TEST(Z80DmaVoll, IusSperrtBusanforderungBisRETIUndIeiGatetRETI) {
     r.w({0xCF, 0xB3, 0x87});                          // neuer Block, freigegeben
     EXPECT_FALSE(r.dma.busRequest());                 // IUS sperrt die Busanforderung
     r.dma.setIEI(false);
-    r.dma.onRETI();                                   // RETI einer höherrangigen ISR
+    r.dma.onRETI();                                   // RETI einer hoeherrangigen ISR
     EXPECT_TRUE(r.dma.sicht().ius);
     r.dma.setIEI(true);
     r.dma.onRETI();
@@ -562,7 +562,7 @@ TEST(Z80DmaVoll, InterruptFreigabeSperreUndRuecksetzen) {
         r.w({0xAB});
         EXPECT_FALSE(r.dma.hasInterrupt());
     }
-    {   // AF blendet aus, AB zeigt wieder; A3 löscht IP und IUS
+    {   // AF blendet aus, AB zeigt wieder; A3 loescht IP und IUS
         Rig r;
         interruptLauf(r, 0x02, 0x30);
         r.w({0xAF});
@@ -577,7 +577,7 @@ TEST(Z80DmaVoll, InterruptFreigabeSperreUndRuecksetzen) {
         EXPECT_FALSE(r.dma.sicht().intAnstehend);
         EXPECT_FALSE(r.dma.sicht().intFreigabe);
     }
-    {   // AF lässt IUS stehen
+    {   // AF laesst IUS stehen
         Rig r;
         interruptLauf(r, 0x02, 0x30);
         r.dma.getVector();
@@ -617,7 +617,7 @@ TEST(Z80DmaVoll, ZykluslaengenMatrixUndStandard) {
             r.w({0x54, uint8_t(ta), 0x50, uint8_t(tb), 0xB3, 0x87});
             EXPECT_EQ(r.dma.step(), laenge[ta] + laenge[tb]) << ta << tb;
         }
-    // C7/CB: zurück zum Standard; Vorgabe 4 + 4, Datenblatt Speicher 3 / E/A 4
+    // C7/CB: zurueck zum Standard; Vorgabe 4 + 4, Datenblatt Speicher 3 / E/A 4
     for (bool opt : {false, true})
         for (int aIo = 0; aIo < 2; ++aIo)
             for (int bIo = 0; bIo < 2; ++bIo) {
@@ -638,7 +638,7 @@ TEST(Z80DmaVoll, ZykluslaengenMatrixUndStandard) {
 }
 
 /// /CE/WAIT (WR5 D4): Wartetakte je Zugriff — nur bei Standardzyklus oder variabel ≥ 3
-/// (Speicher) bzw. = 4 (E/A) [A9]; ohne WR5 D4 wird der Rückruf nicht gefragt.
+/// (Speicher) bzw. = 4 (E/A) [A9]; ohne WR5 D4 wird der Rueckruf nicht gefragt.
 TEST(Z80DmaVoll, WaitEingangVerlaengertZyklen) {
     struct F { bool aIo, bIo; int zeitA, zeitB; int soll; };   // zeit −1 = Standard
     const F faelle[] = {
@@ -676,10 +676,10 @@ TEST(Z80DmaVoll, ResetC3WasErTutUndWasNicht) {
     EXPECT_FALSE(v.freigegeben); EXPECT_FALSE(v.intFreigabe); EXPECT_FALSE(v.forceReady);
     EXPECT_FALSE(v.autoRestart); EXPECT_FALSE(v.waitFunktion);
     EXPECT_FALSE(v.variabelA); EXPECT_EQ(v.zyklusA, 4);
-    EXPECT_EQ(v.wr5 & 0x08, 0x08);                    // RDY-Polarität bleibt
+    EXPECT_EQ(v.wr5 & 0x08, 0x08);                    // RDY-Polaritaet bleibt
     EXPECT_EQ(v.betriebsart, 2);                      // Betriebsart bleibt
     EXPECT_EQ(v.adresseA, 0x1234); EXPECT_EQ(v.adresseB, 0x5678);
-    EXPECT_EQ(v.lesemaske, 0x06); EXPECT_EQ(v.lesePos, 2);   // Lesesequenz bleibt (A7 nötig)
+    EXPECT_EQ(v.lesemaske, 0x06); EXPECT_EQ(v.lesePos, 2);   // Lesesequenz bleibt (A7 noetig)
     EXPECT_EQ(r.dma.status() & 0x31, 0x30);
 }
 
@@ -691,7 +691,7 @@ TEST(Z80DmaVoll, LoadFesteZieladresseWirdNichtGeladen) {
         EXPECT_EQ(r.dma.adresseA(), 0x1000);
         EXPECT_EQ(r.dma.adresseB(), bm >= 2 ? 0x0000 : 0x0040) << bm;
     }
-    // Status: CF löscht D0 (Transfer erfolgt) und D5, nicht D4
+    // Status: CF loescht D0 (Transfer erfolgt) und D5, nicht D4
     Rig r;
     r.mem[0x3000] = 0x77;
     r.programm(3, true, 0x3000, 0x4000, 0, wr1(false, 1), wr2(false, 1), 1);
@@ -709,7 +709,7 @@ TEST(Z80DmaVoll, ContinueReinitStatusDisableUnbekannt) {
     r.w({0xB3, 0x87});
     r.fahre(5);
     EXPECT_EQ(r.dma.status() & 0x21, 0x01);
-    r.w({0xD3});                                      // Continue: Zähler 0, Adressen weiter, D5 = 1
+    r.w({0xD3});                                      // Continue: Zaehler 0, Adressen weiter, D5 = 1
     EXPECT_FALSE(r.dma.enabled());                    // gibt NICHT frei
     EXPECT_EQ(r.dma.bytezaehler(), 0);
     EXPECT_EQ(r.dma.adresseA(), 0x1004);
@@ -718,7 +718,7 @@ TEST(Z80DmaVoll, ContinueReinitStatusDisableUnbekannt) {
     r.w({0xB3, 0x87});
     EXPECT_EQ(r.fahre(5).bytes, 4);
     EXPECT_EQ(r.dma.adresseA(), 0x1008);
-    r.w({0x8B});                                      // D4/D5 zurück, D0 bleibt
+    r.w({0x8B});                                      // D4/D5 zurueck, D0 bleibt
     EXPECT_EQ(r.dma.status() & 0x31, 0x31);
     for (uint8_t d : {uint8_t(0x83), uint8_t(0x8F), uint8_t(0xFB), uint8_t(0xFF), uint8_t(0x86)}) {
         r.w({0x87});
@@ -728,7 +728,7 @@ TEST(Z80DmaVoll, ContinueReinitStatusDisableUnbekannt) {
     }
 }
 
-/// Jedes Steuerbyte während eines laufenden Byte-Betriebs hält die DMA an; 87 setzt fort.
+/// Jedes Steuerbyte waehrend eines laufenden Byte-Betriebs haelt die DMA an; 87 setzt fort.
 TEST(Z80DmaVoll, SchreibenWaehrendDesTransfersSperrt) {
     Rig r;
     r.programm(1, true, 0x1000, 0x2000, 9, wr1(false, 1), wr2(false, 1), 0);
@@ -780,7 +780,7 @@ TEST(Z80DmaVoll, AutoRestartLaedtNeuUndWartetAufRdy) {
     EXPECT_EQ(r.dma.step(), 8); r.dma.cpuZyklus();    // Byte 1 (1000H)
     // die CPU schreibt zwischen zwei Bytes eine neue Startadresse A und gibt wieder frei (UA858 §6)
     r.w({0x1D, 0x08, 0x10, 0x87});
-    EXPECT_EQ(r.dma.adresseA(), 0x1001);              // Adresszähler unberührt
+    EXPECT_EQ(r.dma.adresseA(), 0x1001);              // Adresszaehler unberuehrt
     EXPECT_EQ(r.dma.step(), 8);                       // Byte 2 → Blockende → Auto-Restart
     EXPECT_TRUE(r.dma.enabled());
     EXPECT_EQ(r.dma.adresseA(), 0x1008);
@@ -791,7 +791,7 @@ TEST(Z80DmaVoll, AutoRestartLaedtNeuUndWartetAufRdy) {
     r.dma.cpuZyklus();
     EXPECT_EQ(r.dma.step(), 8);
     EXPECT_EQ(r.mem[0x2000], 9);                      // zweiter Block ab 1008H
-    // Force Ready fällt am Blockende: ein Restart-Block mit B3 wartet danach auf RDY
+    // Force Ready faellt am Blockende: ein Restart-Block mit B3 wartet danach auf RDY
     r.dma.setReady(true);                             // RDY inaktiv
     r.w({0xB3, 0x87});
     r.dma.cpuZyklus();
@@ -830,7 +830,7 @@ TEST(Z80DmaVoll, SaveStateRundreiseMitErweiterungUndAltformat) {
     EXPECT_EQ(r.dma.hasInterrupt(), q.dma.hasInterrupt());
     EXPECT_EQ(r.dma.vektor(), q.dma.vektor());
 
-    // Altformat (vor P9c, ohne „DM2“-Block): lädt, Erweiterung auf Vorgaben, folgendes Byte bleibt
+    // Altformat (vor P9c, ohne „DM2“-Block): laedt, Erweiterung auf Vorgaben, folgendes Byte bleibt
     auto it = std::search(buf.begin(), buf.end(), std::begin("DM2"), std::begin("DM2") + 3);
     ASSERT_NE(it, buf.end());
     std::vector<uint8_t> alt(buf.begin(), it);
@@ -845,7 +845,7 @@ TEST(Z80DmaVoll, SaveStateRundreiseMitErweiterungUndAltformat) {
     EXPECT_FALSE(a.dma.deserialize(pk, buf.data() + buf.size() - 2));
 }
 
-/// Alle Abfragen für den Debugger sind ohne Seiteneffekt (Zustand bitgleich davor/danach).
+/// Alle Abfragen fuer den Debugger sind ohne Seiteneffekt (Zustand bitgleich davor/danach).
 TEST(Z80DmaVoll, BeobachtungOhneSeiteneffekt) {
     Rig r;
     interruptLauf(r, 0x23, 0x40, 3);
@@ -872,7 +872,7 @@ TEST(Z80DmaVoll, BeobachtungOhneSeiteneffekt) {
 // ═══ 12. Gastfolgen bitgleich ══════════════════════════════════════════════
 
 /// MON8 3.1 Hardwaretest 26 (P8000, 087CH ff.): Programm aus 0C0AH, Continuous Speicher→Speicher
-/// 257 Bytes, dann `AND 3BH` ≠ 0 und Zähler = 0100H (mit setZaehlerLiestBlocklaenge).  Zweiter
+/// 257 Bytes, dann `AND 3BH` ≠ 0 und Zaehler = 0100H (mit setZaehlerLiestBlocklaenge).  Zweiter
 /// Teil: AB 87 BF und Interrupt mit Vektor 40H.
 TEST(Z80DmaVoll, Mon8Hardwaretest26) {
     const std::vector<uint8_t> tab{0xC3, 0x7D, 0x00, 0x21, 0x00, 0x01, 0xCF, 0x14, 0x10, 0x80, 0xBD,
@@ -881,7 +881,7 @@ TEST(Z80DmaVoll, Mon8Hardwaretest26) {
     r.dma.setZaehlerLiestBlocklaenge(true);
     r.dma.setReady(false);                            // P8000: RDY = DRQ (0) bei WR5 82 → aktiv
     for (int i = 0; i < 0x101; ++i) r.mem[0x2100 + i] = uint8_t(i * 3);
-    // OTIR: nach 87 bekommt die DMA den Bus vor dem nächsten OUT
+    // OTIR: nach 87 bekommt die DMA den Bus vor dem naechsten OUT
     for (size_t i = 0; i < tab.size(); ++i) {
         r.dma.ioWrite(0, tab[i]);
         while (r.dma.busRequest()) r.dma.step();

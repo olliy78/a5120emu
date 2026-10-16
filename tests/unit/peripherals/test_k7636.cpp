@@ -2,7 +2,7 @@
  * @test K7636.* — parallele Tastatur K7636.01 an der U-Bus-Schnittstelle der K2526
  *       (doc/a5120_alt/k7636.md, k7636_01_codes.csv): Tabelle gegen die CSV, Host-Tasten,
  *       Status-/Code-Port, Kommandos mit Typzeichen-Antwort, Zeitverhalten, Dauerfunktion,
- *       Anschluss an die K2526 (und: ohne Gerät bleibt die K2526 unverändert).
+ *       Anschluss an die K2526 (und: ohne Geraet bleibt die K2526 unveraendert).
  */
 
 #include <gtest/gtest.h>
@@ -22,7 +22,7 @@ constexpr uint64_t MS = K7636::ZYKLEN_PRO_MS;
 
 uint32_t T(uint8_t adr) { return K7636::QK_TASTE_BASE | adr; }
 
-/// 06H lesen über die UBusGeraet-Schnittstelle (Lesen quittiert).
+/// 06H lesen ueber die UBusGeraet-Schnittstelle (Lesen quittiert).
 uint8_t lies06(K7636& k) { uint8_t w = 0; EXPECT_TRUE(k.ubusRead(0x06, w)); return w; }
 uint8_t status(K7636& k) { uint8_t w = 0; EXPECT_TRUE(k.ubusRead(0x01, w)); return w; }
 
@@ -45,8 +45,8 @@ TEST(K7636, TabelleStimmtMitDerCsvUeberein)
     std::getline(f, zeile);   // Kopf
     int n = 0;
     while (std::getline(f, zeile)) {
-        // Die ersten neun Felder enthalten (außer 'beschriftung', Feld 7) keine Kommas
-        // in Anführungszeichen mit Bedeutung für uns: pos,leitung,zeile,adr,loc_a,loc_b,
+        // Die ersten neun Felder enthalten (ausser 'beschriftung', Feld 7) keine Kommas
+        // in Anfuehrungszeichen mit Bedeutung fuer uns: pos,leitung,zeile,adr,loc_a,loc_b,
         // beschriftung(evtl. "…"),a,b — von hinten lesbar ist es nicht, daher ein kleiner Parser.
         std::vector<std::string> fl;
         std::string cur; bool q = false;
@@ -162,9 +162,9 @@ TEST(K7636, UnbestuecktePositionenUndSonderleitungenSchweigen)
     K7636 k; einschalten(k);
     k.keyPress(T(0x08), false, false);   // A8/Z0 nicht belegt
     k.keyPress(T(0x78), false, false);   // SL1 (X2 offen)
-    k.keyPress(T(0x59), false, false);   // F57 Steuertaste nicht bestückt
+    k.keyPress(T(0x59), false, false);   // F57 Steuertaste nicht bestueckt
     k.keyPress(T(0x58), false, false);   // F59 Netzschalter
-    k.keyPress(T(K7636::ADR_CTRL), false, false);   // A99 nicht bestückt
+    k.keyPress(T(K7636::ADR_CTRL), false, false);   // A99 nicht bestueckt
     EXPECT_FALSE(k.codeBereit());
     EXPECT_EQ(status(k), K7636::STATUS_RUHE);
 }
@@ -182,7 +182,7 @@ TEST(K7636, RuhewertUndQuittierung)
     EXPECT_EQ(status(k), 0x04) << "Status lesen quittiert nicht";
     EXPECT_EQ(lies06(k), 'x');
     EXPECT_EQ(status(k), 0x0C);
-    EXPECT_EQ(lies06(k), 'x') << "das Ausgaberegister behält den letzten Code";
+    EXPECT_EQ(lies06(k), 'x') << "das Ausgaberegister behaelt den letzten Code";
 }
 
 TEST(K7636, UnbenutztePortsBedientDasGeraetNicht)
@@ -321,7 +321,7 @@ TEST(K7636K2526, OhneGeraetBleibtDerUBusWieBisher)
     K2526 zre(bus);
     zre.attachToBus(bus);
     zre.powerOn();
-    EXPECT_EQ(zre.ioRead(0x01), 0x00) << "K7637-Verdrahtung: Standardwert unverändert";
+    EXPECT_EQ(zre.ioRead(0x01), 0x00) << "K7637-Verdrahtung: Standardwert unveraendert";
     EXPECT_EQ(zre.ioRead(0x06), 0xFF);
     zre.setKbdCode(0x41); zre.setKbdValid(0x08);
     EXPECT_EQ(zre.ioRead(0x01), 0x08);
@@ -338,11 +338,11 @@ TEST(K7636K2526, AnDerK2526BedientDieTastaturPort01UndPort06)
     zre.powerOn();                           // schaltet die Tastatur ein: Typzeichen bereit
     EXPECT_EQ(zre.ioRead(0x01) & 0x0C, 0x04);
     EXPECT_EQ(zre.ioRead(0x06), K7636::TYP);
-    EXPECT_EQ(zre.ioRead(0x01), 0x0C) << "Ruhewert — das K2526-Standardverhalten (00H) ist abgelöst";
+    EXPECT_EQ(zre.ioRead(0x01), 0x0C) << "Ruhewert — das K2526-Standardverhalten (00H) ist abgeloest";
     kbd.keyPress('j', false, false);
     EXPECT_EQ(zre.ioRead(0x01) & 0x08, 0);
     EXPECT_EQ(zre.ioRead(0x06), 'j');
-    EXPECT_EQ(zre.ioRead(0x02), 0xFF) << "übrige U-Bus-Ports wie ohne Gerät";
+    EXPECT_EQ(zre.ioRead(0x02), 0xFF) << "uebrige U-Bus-Ports wie ohne Geraet";
 }
 
 TEST(K7636K2526, KommandoUeberPort03UndNeustartDurchPowerOn)
@@ -366,7 +366,7 @@ TEST(K7636K2526, KommandoUeberPort03UndNeustartDurchPowerOn)
 
 TEST(K7636K2526, CpaTastaturerkennungLiefertTyp80)
 {
-    // Ablauf aus bioskbdc.mac (ciini1…coityp): Zeichen überlesen, Ruhestatus Bit 3 = 1,
+    // Ablauf aus bioskbdc.mac (ciini1…coityp): Zeichen ueberlesen, Ruhestatus Bit 3 = 1,
     // Reset (OUT 03H,0), dann auf Status Bit 3 = 0 warten und Typ & F0H = 80H lesen.
     K1520Bus bus;
     K2526 zre(bus);

@@ -1,9 +1,9 @@
-"""Ersatzlaufwerk für die Tests: eine ``.hfe``-Datei statt eines Greaseweazle.
+"""Ersatzlaufwerk fuer die Tests: eine ``.hfe``-Datei statt eines Greaseweazle.
 
-Liefert dieselben Bitzellen, die der Adapter liefern würde — eine HFE-Aufnahme *ist*
+Liefert dieselben Bitzellen, die der Adapter liefern wuerde — eine HFE-Aufnahme *ist*
 genau das, samt Phasenversatz und Jitter, wenn man eine echte Aufnahme nimmt.  Damit
-liegt der ganze Weg (Zustände, Warteschlange, Decodierung, Oberfläche) in der
-Regression, und die Hardware fügt nur noch USB hinzu
+liegt der ganze Weg (Zustaende, Warteschlange, Decodierung, Oberflaeche) in der
+Regression, und die Hardware fuegt nur noch USB hinzu
 (doc/design/14_physische_diskette.md §14).
 
 **Importiert ``greaseweazle`` nicht** — das Paket ist freiwillig und in der CI nie da.
@@ -17,17 +17,17 @@ import time
 
 
 class HfeDevice:
-    """Steht für „Greaseweazle + Laufwerk", liest aber aus einer ``.hfe``.
+    """Steht fuer „Greaseweazle + Laufwerk", liest aber aus einer ``.hfe``.
 
-    Genügt dem :class:`app.gw.TrackWorker`-Vertrag (``read_track``/``write_track``
+    Genuegt dem :class:`app.gw.TrackWorker`-Vertrag (``read_track``/``write_track``
     mit HFE-Bitzellen) — mehr braucht der Arbeitsfaden nicht.  Der HFE-v1-Aufbau ist
     hier von Hand gelesen, damit der Test **keine** Fremdpakete braucht.
 
     Attributes:
-        gelesen: Reihenfolge der gelesenen ``(cyl, head)`` — der Beleg dafür, dass nur
+        gelesen: Reihenfolge der gelesenen ``(cyl, head)`` — der Beleg dafuer, dass nur
             geholt wird, was gebraucht wird.
-        geschrieben: dasselbe für Schreibvorgänge.
-        verzoegerung: künstliche Lesedauer in Sekunden (Kopfweg nachstellen).
+        geschrieben: dasselbe fuer Schreibvorgaenge.
+        verzoegerung: kuenstliche Lesedauer in Sekunden (Kopfweg nachstellen).
     """
 
     #: Spuren, die nichts annehmen — Schadstelle einer echten Diskette.  Geschrieben
@@ -47,7 +47,7 @@ class HfeDevice:
             off, laenge = struct.unpack_from("<2H", roh, lut_off + c * 4)
             start, seitenlaenge = off * 512, laenge // self.num_heads
             for h in range(self.num_heads):
-                # Spurdaten liegen seitenverschränkt in 256-B-Blöcken.
+                # Spurdaten liegen seitenverschraenkt in 256-B-Bloecken.
                 seite = bytearray()
                 blocks = (seitenlaenge + 255) // 256
                 for b in range(blocks):
@@ -59,7 +59,7 @@ class HfeDevice:
         self.geschrieben: list[tuple[int, int]] = []
         self.schadhaft = set()
         self.verzoegerung = verzoegerung
-        #: Wie am echten Gerät: Spur n liegt auf dem physischen Zylinder 2n.
+        #: Wie am echten Geraet: Spur n liegt auf dem physischen Zylinder 2n.
         self.double_step = double_step
         self._sperre = threading.Lock()
 
@@ -86,10 +86,10 @@ class HfeDevice:
 
 def fake_session(hfe, *, writable=False, read_ahead=True, for_emulator=False,
                  verzoegerung=0.0):
-    """Eine :class:`app.ui.physical_disk.PhysicalSession` über einer ``.hfe``.
+    """Eine :class:`app.ui.physical_disk.PhysicalSession` ueber einer ``.hfe``.
 
     Gleiche Bauteile wie im Betrieb (echter ``Sync``, echter ``TrackWorker``), nur
-    das Gerät ist die Datei.  Der Arbeitsfaden läuft bereits.
+    das Geraet ist die Datei.  Der Arbeitsfaden laeuft bereits.
     """
     from app.gw import Sync, TrackWorker
     from app.ui.physical_disk import PhysicalSession

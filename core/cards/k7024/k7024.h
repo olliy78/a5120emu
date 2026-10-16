@@ -95,7 +95,7 @@ public:
         /**
          * @brief K7024 der K8915 Gen 2: wie forK8915(), aber mit dem A5120-Zeichensatz.
          *
-         * Die Abzüge der Gen 2 (`k8915g2_k7024_171/172.bin`) sind byteidentisch mit v171/v172
+         * Die Abzuege der Gen 2 (`k8915g2_k7024_171/172.bin`) sind byteidentisch mit v171/v172
          * des A5120 (doc/design/24_k8915_varianten.md §10) — deshalb `chargen_* = nullptr`
          * (eingebauter Satz), VRAM 1000H, keine Lesesperre.
          */
@@ -104,7 +104,7 @@ public:
         /**
          * @brief Konfiguration der K7024 im PRG 710 / 710-1 (doc/design/20_prg710.md §3.3).
          *
-         * VRAM F800H wie am A5120, aber ohne Lesesperre: die Karte antwortet nur über die
+         * VRAM F800H wie am A5120, aber ohne Lesesperre: die Karte antwortet nur ueber die
          * Speicherverwaltung (Seite F, E8H = FFH), unter F800H liegt kein weiterer Leser.
          * Zeichengenerator: die beiden 1-KB-EPROMs A103/A123 des PRG (Abzug des Anwenders,
          * doc/EPROMS/PRG710/prg710_k7024_a1{03,23}.bin), gleiche Adressierung wie A5120.

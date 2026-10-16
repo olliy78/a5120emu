@@ -78,11 +78,11 @@ Z80PIO::Z80PIO(const std::string& name) : name_(name) {}
  * - **D[3:0]=0011 (0x03)**: Simplified interrupt control (no mask)
  *   - D7: IE, D6: AND/OR, D5: H/L
  *
- * Wird die Interruptfreigabe (D7) zurückgenommen, verfällt eine bereits
+ * Wird die Interruptfreigabe (D7) zurueckgenommen, verfaellt eine bereits
  * anstehende, aber noch nicht quittierte Anforderung (`pending`) — genau darauf
  * beruht die Speicher-Ausbaumessung des A5120-Lade-ROMs: ihre ISR sperrt Port A
  * als erstes wieder und wird damit die Anforderung los, die der Stack-Push der
- * Interruptannahme über den /WR-Strobe gerade neu gesetzt hat.
+ * Interruptannahme ueber den /WR-Strobe gerade neu gesetzt hat.
  *
  * State Machine:
  * - IDLE: Ready for any control word
@@ -103,8 +103,8 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         p.ctrl_state = CtrlState::IDLE;
         // Der reale Z80PIO wertet die Mode-3-Bedingung fortlaufend (pegelbasiert)
         // aus: sobald die Maske geladen ist und der aktuelle Eingangspegel die
-        // Bedingung erfüllt, wird SOFORT ein Interrupt angefordert — auch ohne
-        // dass sich ein Eingangspin danach noch ändert. (HARDYs System-PIO- und
+        // Bedingung erfuellt, wird SOFORT ein Interrupt angefordert — auch ohne
+        // dass sich ein Eingangspin danach noch aendert. (HARDYs System-PIO- und
         // MEMDI-RDY-Test verlassen sich genau darauf.)
         if (p.mode == 3) {
             if (modus3_flanke_) p.match = bedingung(p, p.input_latch);   // nur merken
@@ -128,24 +128,24 @@ void Z80PIO::writeCtrl(Port& p, uint8_t data) {
         p.ie               = (data >> 7) & 1;
         p.int_and          = (data >> 6) & 1;
         p.int_active_high  = (data >> 5) & 1;
-        if (!p.ie) p.pending = false;   // Sperren löscht eine anstehende Anforderung
+        if (!p.ie) p.pending = false;   // Sperren loescht eine anstehende Anforderung
         if ((data >> 4) & 1)
             p.ctrl_state = CtrlState::EXPECT_MASK;   // Neubewertung erst nach Maske
         else if (p.mode == 3 && modus3_flanke_)
             p.match = bedingung(p, p.input_latch);   // flankengetriggert: nur merken
         else if (p.mode == 3)
-            checkInterrupt(p, p.input_latch);        // sonst sofort pegelbasiert prüfen
+            checkInterrupt(p, p.input_latch);        // sonst sofort pegelbasiert pruefen
         return;
     }
     if ((data & 0x0F) == 0x03) {
         // Interrupt-Freigabewort (Zilog Z80 PIO / U855: „Interrupt Disable Word“,
         // D7 = EI, D6…D4 ohne Bedeutung): schaltet NUR die Freigabe.  UND/ODER und
         // die aktive Flanke bleiben, wie das Steuerwort xx07H sie gesetzt hat.  (Bis
-        // 2026-09-28 übernahm es D6/D5 mit — ein BIOS, das erst 37H „ODER, bei high“
-        // und später 83H „frei“ schreibt, bekam dadurch „bei low“ und sofort einen
+        // 2026-09-28 uebernahm es D6/D5 mit — ein BIOS, das erst 37H „ODER, bei high“
+        // und spaeter 83H „frei“ schreibt, bekam dadurch „bei low“ und sofort einen
         // falschen Interrupt; K8915-Marken-ISR, doc/design/16_k8915.md AP-E3.)
         p.ie = (data >> 7) & 1;
-        if (!p.ie) p.pending = false;   // s.o.: Sperren löscht die Anforderung
+        if (!p.ie) p.pending = false;   // s.o.: Sperren loescht die Anforderung
         if (p.mode == 3 && modus3_flanke_) p.match = bedingung(p, p.input_latch);
         else if (p.mode == 3) checkInterrupt(p, p.input_latch);
         return;
@@ -279,8 +279,8 @@ bool Z80PIO::bedingung(const Port& p, uint8_t input) {
 
 void Z80PIO::checkInterrupt(Port& p, uint8_t new_input) {
     if (p.mode == 3 && modus3_flanke_) {
-        // Übergang Nichterfüllung → Erfüllung (U855 §6.4); der Zustand wird auch bei
-        // gesperrtem Interrupt nachgeführt, damit eine spätere Freigabe nicht auslöst.
+        // Uebergang Nichterfuellung → Erfuellung (U855 §6.4); der Zustand wird auch bei
+        // gesperrtem Interrupt nachgefuehrt, damit eine spaetere Freigabe nicht ausloest.
         const bool m = bedingung(p, new_input);
         if (m && !p.match && p.ie) p.pending = true;
         p.match = m;
@@ -293,7 +293,7 @@ void Z80PIO::checkInterrupt(Port& p, uint8_t new_input) {
     }
     if (p.mode == 3) {
         // Mask logic: int_mask bit=0 means "participate", bit=1 means "masked out"
-        // According to U855D manual page 609: "MB_n = 0 → Kanalanschluß wird zur Interrupterzeugung herangezogen"
+        // According to U855D manual page 609: "MB_n = 0 → Kanalanschluss wird zur Interrupterzeugung herangezogen"
         uint8_t unmasked_bits = ~p.int_mask;
         uint8_t active_input = new_input & unmasked_bits;
         bool triggered;
@@ -479,7 +479,7 @@ bool Z80PIO::hasInterrupt() const {
     // der bereits bedient wird (IUS=1, noch kein RETI), darf KEINEN Interrupt
     // mehr anfordern, auch wenn inzwischen ein neues `pending` aufgelaufen ist.
     // Sonst zieht die Karte /INT, die Quittung findet in getVector() aber keinen
-    // vektorfähigen Port und liefert den Fallback 0xFF → Endlos-Sturm mit
+    // vektorfaehigen Port und liefert den Fallback 0xFF → Endlos-Sturm mit
     // Pseudo-Vektor (s. doc/analyse_udos.md).  Analog zu Z80CTC::anyServiceable().
     return (porta_.iei && porta_.pending && !porta_.ius) ||
            (portb_.iei && portb_.pending && !portb_.ius);
@@ -528,12 +528,12 @@ uint8_t Z80PIO::getVector() const {
 void Z80PIO::onRETI() {
     // Clear IUS for the port being serviced
     // Port A has higher priority, check it first.
-    // Während der RETI-Dekodierung (ED-Holezyklus) gibt ein Kanal mit nur ANSTEHENDER,
+    // Waehrend der RETI-Dekodierung (ED-Holezyklus) gibt ein Kanal mit nur ANSTEHENDER,
     // noch nicht quittierter Anforderung seinen IEO frei — sperren darf dann nur ein Kanal
-    // in Bedienung (IUS).  Daher zählt für Port B hier nur porta_.ius, nicht porta_.pending
+    // in Bedienung (IUS).  Daher zaehlt fuer Port B hier nur porta_.ius, nicht porta_.pending
     // (setIEI rechnet beides ein).  Sonst bliebe B in Bedienung, wenn A gerade anfordert,
-    // und sperrte sich selbst bis zum nächsten RETI (Befund A8: BCU-KMBG verlor das
-    // Kassettenecho der Daten-PIO B, während A das nächste Byte verlangte).
+    // und sperrte sich selbst bis zum naechsten RETI (Befund A8: BCU-KMBG verlor das
+    // Kassettenecho der Daten-PIO B, waehrend A das naechste Byte verlangte).
     if (porta_.iei && porta_.ius) {
         porta_.ius = false;
     } else if (porta_.iei && portb_.ius) {
@@ -721,7 +721,7 @@ void Z80PIO::resetHandshake() {
 void Z80PIO::modusRdy(int i) {
     const Port& p = (i == 0) ? porta_ : portb_;
     bool h = (p.mode == 1) && !modus1_rdy_nach_lesen_;
-    // Port A in Modus 2: BRDY gehört der Eingabeseite des Port-A-Betriebs (leer ⇒ H)
+    // Port A in Modus 2: BRDY gehoert der Eingabeseite des Port-A-Betriebs (leer ⇒ H)
     if (i == 1 && porta_.mode == 2) h = true;
     setRdy(i, h);
     if (i == 0 && porta_.mode == 2) setRdy(1, true);   // Eingabeseite (BRDY) leer
@@ -749,7 +749,7 @@ void Z80PIO::stbEdge(int i, bool pegel) {
     h.stb = pegel;
     if (!steigend) return;
     Port& p = (i == 0) ? porta_ : portb_;
-    // Ausgabeseite: Modus 0, Port A Modus 2 — Peripherie hat das Datum übernommen
+    // Ausgabeseite: Modus 0, Port A Modus 2 — Peripherie hat das Datum uebernommen
     if (p.mode == 0 || (i == 0 && p.mode == 2)) {
         if (h.rdy) {
             setRdy(i, false);
@@ -761,7 +761,7 @@ void Z80PIO::stbEdge(int i, bool pegel) {
     const bool eingabe = (p.mode == 1 && !(i == 1 && porta_.mode == 2)) || (i == 1 && porta_.mode == 2);
     if (eingabe && h.rdy) {
         // Pegel der Pins ins Eingaberegister (offen ⇒ Pull-up)
-        // Modus 2: Daten kommen über die Port-A-Pins in das Port-A-Datenregister
+        // Modus 2: Daten kommen ueber die Port-A-Pins in das Port-A-Datenregister
         const Handshake& q = porta_.mode == 2 ? hs_[0] : h;
         const uint8_t sicht = static_cast<uint8_t>((q.ext_pegel & q.ext_mask) |
                                                    (q.pullups & ~q.ext_mask));

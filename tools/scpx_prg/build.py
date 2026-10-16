@@ -7,12 +7,12 @@ build.py  -  die SCPX-Systemdisketten des PRG 710 und PRG 710-1 bauen
 
 Format 16 x 256 (`scpx640`, wie die bisherigen PRG-Disketten).  Gemeinsam: `inhalt/` (Lader, CCP/BDOS, Dienst- und
 Entwicklungsprogramme, PROM-Programmierer PROG, CONV1 UDOS->SCP), `tools/scp_gemeinsam/` und die eigenen
-Prüfprogramme; je Gerät die BIOS-Module (`inhalt710/`, `inhalt710-1/`) und die Systemspuren (`bootabbild_*.bin`).  Die
-Anwenderdaten der früheren 710-1-Diskette (KLINGEL.DAT, RITE.DAT, ROM*.DAT, LC80PRG.DAT, DIT.*, ALCP.*, …) sind
+Pruefprogramme; je Geraet die BIOS-Module (`inhalt710/`, `inhalt710-1/`) und die Systemspuren (`bootabbild_*.bin`).  Die
+Anwenderdaten der frueheren 710-1-Diskette (KLINGEL.DAT, RITE.DAT, ROM*.DAT, LC80PRG.DAT, DIT.*, ALCP.*, …) sind
 bewusst nicht mehr dabei.  Alle Programme wurden am PRG-Emulator unter SCPX gestartet (Nachweis: README.md).
 
   python3 tools/scpx_prg/build.py --tool build/k1520disktool            # bauen
-  python3 tools/scpx_prg/build.py --tool build/k1520disktool --check    # Wächter cli_scpx_prg
+  python3 tools/scpx_prg/build.py --tool build/k1520disktool --check    # Waechter cli_scpx_prg
 """
 import os
 import sys

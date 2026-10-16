@@ -361,7 +361,7 @@ uint8_t Z80::dec8(uint8_t val) {
  * @brief 16-Bit-Addition: a + b.
  *
  * S, Z und PV bleiben erhalten. H bezieht sich auf Bit 11→12.
- * Bits 3 und 5 werden vom oberen Byte des Ergebnisses übernommen.
+ * Bits 3 und 5 werden vom oberen Byte des Ergebnisses uebernommen.
  *
  * @param a Erster Operand.
  * @param b Zweiter Operand.
@@ -873,13 +873,13 @@ int Z80::step() {
     if (traceCallback) {
         traceCallback(*this);
         // Hat der Callback einen Halt angefordert, wird die Instruktion NICHT mehr
-        // ausgeführt (break-before-execute, s. abortBeforeExecute): 0 Takte zurück,
-        // Zustand unverändert. Nur relevant, wenn ein Debugger mitläuft.
+        // ausgefuehrt (break-before-execute, s. abortBeforeExecute): 0 Takte zurueck,
+        // Zustand unveraendert. Nur relevant, wenn ein Debugger mitlaeuft.
         if (abortBeforeExecute && abortBeforeExecute())
             return 0;
     }
 
-    ei_schatten = false;   // der Befehl nach EI läuft — danach ist ein Interrupt wieder annehmbar
+    ei_schatten = false;   // der Befehl nach EI laeuft — danach ist ein Interrupt wieder annehmbar
     R = (R & 0x80) | ((R + 1) & 0x7F);
     uint8_t opcode = fetchByte();
     int c = execMain(opcode);

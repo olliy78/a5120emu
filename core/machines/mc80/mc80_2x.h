@@ -2,14 +2,14 @@
  * @file mc80_2x.h
  * @brief MC80.21/.22 (VEB Elektronik Gera) — zweite MC80-Generation im Kern (AP M11).
  *
- * Maßgeblich: doc/mc80/hardware_2x.md, doc/mc80/bsys_2x.prn (AP M10).  Der Rechner ist ein
- * K1520-Bus mit fünf Karten; nichts davon gleicht dem MC80.3x außer dem Takt, deshalb eine
+ * Massgeblich: doc/mc80/hardware_2x.md, doc/mc80/bsys_2x.prn (AP M10).  Der Rechner ist ein
+ * K1520-Bus mit fuenf Karten; nichts davon gleicht dem MC80.3x ausser dem Takt, deshalb eine
  * eigene Klasse neben @ref Mc80Machine (gleicher Maschinentyp 6, `k1520_create_mc80(3|4, …)`).
  *
  * @code
  *   ZRE  K2521  U880 2,4576 MHz, ROM 0000–0BFF = S0.1–S0.3 (MAME-Satz „ver2“: s01+s02_v2+s03_v2),
  *               RAM 0C00–0FFF (BWS 0C00–0CFF, Systemzellen, Stapel), CTC 80H, PIO 84H (Anwender)
- *   PFS  K3820  ab 2000H: Sockel 0 = mo01 (S0.4 Bandmenü), 1 leer (2400H „frei“), 2 = mo03 (S2
+ *   PFS  K3820  ab 2000H: Sockel 0 = mo01 (S0.4 Bandmenue), 1 leer (2400H „frei“), 2 = mo03 (S2
  *               EPROM-Programmierung), 3–7 = mo04–mo08 (Editor), 8–15 = mo09–mo16 (EPAS/BASEX)
  *   OPS  K3525  16 KB dRAM ab C000H (Power-on FFH wie die Karte, A2)
  *   DPL         CTC F0H, PIO F4H: Bild 8 × 32 + Analogkurven, Tastenmatrix (core/cards/mc80/dpl.h)
@@ -18,19 +18,19 @@
  * @endcode
  *
  * **.21 und .22** unterscheiden sich in den vorhandenen Unterlagen nicht greifbar (Handbuch:
- * „.22 wie .21“, eine Tabellenspalte mit Fußnote „elektronisch gesteuertes Laufwerk“ ist in der
- * Textebene verstümmelt [?]).  Beide bekommen hier denselben ROM-Satz ver2 und das SK 1200 an der
+ * „.22 wie .21“, eine Tabellenspalte mit Fussnote „elektronisch gesteuertes Laufwerk“ ist in der
+ * Textebene verstuemmelt [?]).  Beide bekommen hier denselben ROM-Satz ver2 und das SK 1200 an der
  * MBI (Register EFH = elektronisch gesteuert).  Die KMBG-Fassung des Original-Listings (Taste
  * „LAUF“, kein EFH) hat keinen Abzug.
  *
- * **Interruptkette** [HB III-16]: höchste Priorität rechts (Platz 11) — DPL, dann MBI, dann die
+ * **Interruptkette** [HB III-16]: hoechste Prioritaet rechts (Platz 11) — DPL, dann MBI, dann die
  * ZRE (IEI vom Systembus) [? Reihenfolge DPL/MBI; hardware_2x.md §2 nennt beide „auf den beiden
- * höchsten Plätzen (11, 10)“].
+ * hoechsten Plaetzen (11, 10)“].
  *
  * **Tastatur:** `keyPress` nimmt Qt-Codes bzw. ASCII; jeder Anschlag wird als Matrixtaste (mit
  * UC/CTR) 60 ms gehalten und 60 ms losgelassen [?], in Maschinenzeit — das Betriebssystem liest
  * die Matrix einmal je Bild (~17 ms) und erkennt den neuen Druck an der Flanke (TST).
- * Escape = OFF, Return = ENTER, Tab = TAB, Rück/Entf = CL, Pfeile = Kursortasten, Pause = BK.
+ * Escape = OFF, Return = ENTER, Tab = TAB, Rueck/Entf = CL, Pfeile = Kursortasten, Pause = BK.
  *
  * Kein Save-State, keine Laufwerke.  RAF/K6022/K5020 als Zusatzkarten nach der Grundregel der
  * Basisklasse (K6022 scheitert an der PPE auf E0H).
@@ -89,7 +89,7 @@ public:
     void setConsoleMode(bool) override {}
     bool consolePoll(int&, int&, char&) override { return false; }
     /// ASCII-Zeichen der Bildzelle (Zeile 0…7, Spalte 0…31) — wie die DPL sie gezeichnet hat
-    /// (nicht aus dem BWS); ' ' bei nie gezeichneten Zellen und Analogzeilen, 0 außerhalb.
+    /// (nicht aus dem BWS); ' ' bei nie gezeichneten Zellen und Analogzeilen, 0 ausserhalb.
     uint8_t screenChar(int col, int row) const override;
     std::string textZeile(int row) const;
 
@@ -97,11 +97,11 @@ public:
     void keyPress(uint32_t keycode, bool shift, bool ctrl) override;
     void keyRelease(uint32_t) override {}
     void setKeyRepeatRealtime(bool) override {}
-    /// Matrixtaste @p nr (0…37H) einreihen, wahlweise mit UC/CTR (gleichzeitig gedrückt).
+    /// Matrixtaste @p nr (0…37H) einreihen, wahlweise mit UC/CTR (gleichzeitig gedrueckt).
     void tasteEinreihen(int nr, bool uc = false, bool ctr = false);
-    /// Zeichen @p c als Anschlag einreihen; false, wenn es keine Taste dafür gibt.
+    /// Zeichen @p c als Anschlag einreihen; false, wenn es keine Taste dafuer gibt.
     bool zeichenEinreihen(char c);
-    /// Matrixnummer + UC für ASCII @p c (−1 = keine Taste).  Kleinbuchstaben = Großbuchstaben.
+    /// Matrixnummer + UC fuer ASCII @p c (−1 = keine Taste).  Kleinbuchstaben = Grossbuchstaben.
     static int tasteFuer(char c, bool& uc);
     bool tastenLeer() const;
 

@@ -1300,7 +1300,7 @@ bool UdosFileSystem::karteNeuAufbauen() {
     // Schritt 2: schreiben.  Auf den Systemspuren wird nur ERGAENZT (s. Kopfdatei) —
     // und Verzeichnis- wie Kartenspur gehoeren hier dazu, obwohl der Allokator sie
     // belegen darf: was dort belegt steht und keiner Datei gehoert, ist im Zweifel
-    // Systembereich einer fremden Ausprägung und nicht verlorener Platz.
+    // Systembereich einer fremden Auspraegung und nicht verlorener Platz.
     for (uint8_t t = 0; t < tracks_; ++t) {
         const bool reserviert = reservedTrack(t) || t == prof_.directory_track
                              || t == prof_.bitmap_track;

@@ -2,10 +2,10 @@
  * @file test_boot_alt.cpp
  * @brief CP/A auf dem A5120 „5¼″ alt“ (doc/design/30_a5120_fruehe_varianten.md, AP A6).
  *
- * Ausführung `Alt`: K7023.01 (64×16, Bildspeicher FC00H), K7636 am U-Bus der K2526, 4× K3525,
- * Wickelbrücke Port 0AH Bit 6 = BAB1.  Das CP/A-BIOS vom 25.09.89 auf den vorhandenen
+ * Ausfuehrung `Alt`: K7023.01 (64×16, Bildspeicher FC00H), K7636 am U-Bus der K2526, 4× K3525,
+ * Wickelbruecke Port 0AH Bit 6 = BAB1.  Das CP/A-BIOS vom 25.09.89 auf den vorhandenen
  * Disketten erkennt beides beim Kaltstart selbst (bioscrt.mac: Port 0AH Bit 6 → BAB1;
- * bioskbdc.mac: Typcode 80H → Tastaturtabelle `km36`) — die Diskette bleibt unverändert.
+ * bioskbdc.mac: Typcode 80H → Tastaturtabelle `km36`) — die Diskette bleibt unveraendert.
  */
 #include <gtest/gtest.h>
 
@@ -38,7 +38,7 @@ std::string bab1Text(A5120Machine& m) {
     return s;
 }
 
-/// Alle Zeilen, die je auf dem BAB1-Bild standen — der Kaltstartbericht ist länger als
+/// Alle Zeilen, die je auf dem BAB1-Bild standen — der Kaltstartbericht ist laenger als
 /// 16 Zeilen, Banner und Tastaturzeile sind beim Prompt schon hinausgeschoben.
 using Gesehen = std::set<std::string>;
 
@@ -67,24 +67,24 @@ bool laufeBis(A5120Machine& m, const std::string& needle, long long max_cycles,
     return bab1Text(m).find(needle) != std::string::npos;
 }
 
-/// Bis zum Prompt `A>` (am Zeilenanfang), dann `dir` über die K7636 tippen.
+/// Bis zum Prompt `A>` (am Zeilenanfang), dann `dir` ueber die K7636 tippen.
 void bootUndDir(A5120Machine& m) {
     Gesehen g;
     ASSERT_TRUE(laufeBis(m, "\nA>", 80'000'000, &g)) << "kein A> auf BAB1:\n" << bab1Text(m);
     EXPECT_TRUE(gesehen(g, "CP/A, Version 25.09.89")) << "kein Banner auf BAB1";
     EXPECT_TRUE(gesehen(g, "- Tastatur: K7636")) << "BIOS hat die K7636 nicht erkannt";
-    // Nichts darf auf dem K7024-Platz F800H–FBFFH landen (BAB2 wäre der falsche Treiber).
+    // Nichts darf auf dem K7024-Platz F800H–FBFFH landen (BAB2 waere der falsche Treiber).
     int bab2 = 0;
     for (int ad = 0xF800; ad < 0xFC00; ++ad)
         if (m.memReadDebug(static_cast<uint16_t>(ad)) == 'A' &&
             m.memReadDebug(static_cast<uint16_t>(ad + 1)) == '>') ++bab2;
-    EXPECT_EQ(bab2, 0) << "A> im BAB2-Bereich — BIOS hat die Brücke nicht als BAB1 gelesen";
+    EXPECT_EQ(bab2, 0) << "A> im BAB2-Bereich — BIOS hat die Bruecke nicht als BAB1 gelesen";
 
-    k1520test::runCycles(m, 5'000'000);   // Tastaturinitialisierung abschließen
+    k1520test::runCycles(m, 5'000'000);   // Tastaturinitialisierung abschliessen
     k1520test::typeString(m, "dir");
     k1520test::typeKey(m, QK_RETURN);
     ASSERT_TRUE(laufeBis(m, "A>dir", 40'000'000))
-        << "Eingabe über die K7636 kommt nicht an:\n" << bab1Text(m);
+        << "Eingabe ueber die K7636 kommt nicht an:\n" << bab1Text(m);
     ASSERT_TRUE(laufeBis(m, "A: @OS      COM", 40'000'000))
         << "dir liefert kein Verzeichnis:\n" << bab1Text(m);
 }
@@ -92,11 +92,11 @@ void bootUndDir(A5120Machine& m) {
 }  // namespace
 
 /**
- * @brief Abnahme AP A6: CP/A (Systemdiskette ohne Uhr, BIOS 25.09.89) kommt auf dem alten Gerät
- *        bis `A>`; das Bild steht im Bildspeicher FC00H, `dir` wird über die K7636 getippt.
+ * @brief Abnahme AP A6: CP/A (Systemdiskette ohne Uhr, BIOS 25.09.89) kommt auf dem alten Geraet
+ *        bis `A>`; das Bild steht im Bildspeicher FC00H, `dir` wird ueber die K7636 getippt.
  *
- * Die Laufwerke sind hier K5601 — so wie viele alte Geräte im Feld umgerüstet waren
- * (Entwurf 30 §1); die Ausführungsvorgabe 3× K5600.10 prüft der Fall darunter.
+ * Die Laufwerke sind hier K5601 — so wie viele alte Geraete im Feld umgeruestet waren
+ * (Entwurf 30 §1); die Ausfuehrungsvorgabe 3× K5600.10 prueft der Fall darunter.
  */
 TEST(BootIntegrationAlt, CpaBab1BisPrompt) {
     auto cfg = A5120Machine::Config::fuerAusfuehrung(A::Alt);
@@ -109,9 +109,9 @@ TEST(BootIntegrationAlt, CpaBab1BisPrompt) {
 }
 
 /**
- * @brief Dasselbe auf der Ausführungsvorgabe 3× K5600.10 (40 Spuren, einseitig) von einer
+ * @brief Dasselbe auf der Ausfuehrungsvorgabe 3× K5600.10 (40 Spuren, einseitig) von einer
  *        40-Spur-Systemdiskette.  Sie ist mit FORMAT.COM + CPABCGEN aus der Combo-Diskette
- *        erzeugt (tests/fixtures/README.md); ihr `@OS.COM` ist das unveränderte BIOS 25.09.89
+ *        erzeugt (tests/fixtures/README.md); ihr `@OS.COM` ist das unveraenderte BIOS 25.09.89
  *        `combo5zoll` (meldet A: als K5601 — die Formaterkennung liest die 40-Spur-Diskette
  *        trotzdem richtig).
  */

@@ -1,6 +1,6 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
-# K1520-Emulator — verteilbares Paket schnüren (Linux/macOS)
+# K1520-Emulator — verteilbares Paket schnueren (Linux/macOS)
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Baut die Kernbibliothek als Release und legt sie mit GUI, Formatkatalog,
@@ -31,14 +31,14 @@ RELOCK=no
 GW=yes
 
 # Mitgelieferte Beispieldisketten.  Bewusst eine kleine Auswahl: je eine
-# startfähige Diskette für CP/A, SCPX und UDOS plus die beiden Combo-Disketten,
+# startfaehige Diskette fuer CP/A, SCPX und UDOS plus die beiden Combo-Disketten,
 # damit ein Anwender alle drei Betriebssysteme und die Fremdlaufwerkstypen
 # ausprobieren kann, ohne dass das Paket aufgeht — dazu die Systemdiskette des
 # K8915 Emulators (901, SCPX 8915 V5.3; vom Anwender freigegeben 2026-10-01,
 # 16_k8915.md §6.23) und die vier PRG-Systemdisketten (UDOS 710/710-1, SCPX 710/710-1;
 # Entscheid des Anwenders 2026-10-03, 20_prg710.md AP-P5h) samt der UDOS-Entwicklerdiskette
-# (2026-10-06, Software als gemeinfrei erklärt, doc/udos_programme.md §6).  Dazu vier PC-1715-Disketten (SCP 1715 V0006 und V0007, CP/A 1715, UDOS1715; 21_pc1715.md
-# AP-5c — gleiche Herkunftslage wie die PRG-Abzüge: Abzüge aus dem Bestand des Anwenders).
+# (2026-10-06, Software als gemeinfrei erklaert, doc/udos_programme.md §6).  Dazu vier PC-1715-Disketten (SCP 1715 V0006 und V0007, CP/A 1715, UDOS1715; 21_pc1715.md
+# AP-5c — gleiche Herkunftslage wie die PRG-Abzuege: Abzuege aus dem Bestand des Anwenders).
 # Seit 2026-10-09: je Maschine x Betriebssystem EINE Systemdiskette, gebaut von tools/<…>/build.py
 # (cpa_a5120, cpa_pc1715, scpx_a5120, scpx_k8915, scpx_prg, scp_pc1715, scp_pc1715w; Inventur: doc/scp_inventur.md).
 # Alles aus disks/: --disks all.
@@ -59,19 +59,19 @@ pc1715w_scp30_system.hfe"
 
 usage() {
     cat <<EOF
-K1520-Emulator — Paket schnüren
+K1520-Emulator — Paket schnueren
 
   --out DIR        Ausgabeverzeichnis (Vorgabe: $OUT)
-  --build-dir DIR  Bauverzeichnis für den Release-Kern (Vorgabe: $BUILD_DIR)
+  --build-dir DIR  Bauverzeichnis fuer den Release-Kern (Vorgabe: $BUILD_DIR)
   --version V      Versionsbezeichnung (Vorgabe: tools/version.py --bau, also
                    Tag auf HEAD oder <VERSION>+g<kurzhash>[.dirty])
   --disks WAS      default | all | none — welche Beispieldisketten mitkommen
   --skip-build     vorhandene Bibliothek im Bauverzeichnis verwenden
-  --relock         packaging/requirements.lock neu auflösen (braucht Netz)
+  --relock         packaging/requirements.lock neu aufloesen (braucht Netz)
   --no-archive     nur den Baum unter dist/ erzeugen, kein .tar.gz
-  --setup          zusätzlich ein Windows-Installationsprogramm bauen (Inno
+  --setup          zusaetzlich ein Windows-Installationsprogramm bauen (Inno
                    Setup; nur unter Windows, braucht iscc im PATH)
-  --no-gw          ohne die Greaseweazle-Anbindung schnüren (kein Zugriff auf
+  --no-gw          ohne die Greaseweazle-Anbindung schnueren (kein Zugriff auf
                    echte Diskettenlaufwerke; braucht dann kein Netz zum Bauen)
   --refresh-uv     uv-Pins auf die neueste Fassung setzen und beenden
   --refresh-python Python-Pins (Windows-Setup) auffrischen und beenden
@@ -97,7 +97,7 @@ refresh_uv_pins() {
             case "$_t" in *windows*) _e=zip ;; *) _e=tar.gz ;; esac
             _s=$(curl -fsSL "https://github.com/astral-sh/uv/releases/download/$_ver/uv-$_t.$_e.sha256" \
                  | awk '{print $1}')
-            [ -n "$_s" ] || die "keine Prüfsumme für $_t"
+            [ -n "$_s" ] || die "keine Pruefsumme fuer $_t"
             printf '%-26s %s\n' "$_t" "$_s"
         done
     } > "$_tmp"
@@ -129,12 +129,12 @@ refresh_python_pins() {
     _datei=$(printf '%s' "$_liste" \
              | jq -r --arg m "$_muster" '.assets[].name | select(test($m))' \
              | sort -V | tail -1)
-    [ -n "$_datei" ] || die "kein $PBS_ZIEL-Abbild für Python $K1520_PY_VERSION in $_rel"
+    [ -n "$_datei" ] || die "kein $PBS_ZIEL-Abbild fuer Python $K1520_PY_VERSION in $_rel"
     _ver=$(printf '%s' "$_datei" | sed 's/^cpython-//; s/+.*//')
     _size=$(printf '%s' "$_liste" | jq -r --arg n "$_datei" '.assets[] | select(.name==$n) | .size')
     _sha=$(curl -fsSL "https://github.com/$PBS_REPO/releases/download/$_rel/SHA256SUMS" \
            | awk -v n="$_datei" '$2==n {print $1}')
-    [ -n "$_sha" ] || die "keine Prüfsumme für $_datei"
+    [ -n "$_sha" ] || die "keine Pruefsumme fuer $_datei"
 
     info "python-build-standalone $_rel — CPython $_ver"
     _tmp=$(mktemp)
@@ -156,7 +156,7 @@ lies_python_pins() {
     PY_SIZE=$(awk -v z="$PBS_ZIEL" '$1==z {print $2}' "$_pins")
     PY_SHA=$(awk  -v z="$PBS_ZIEL" '$1==z {print $3}' "$_pins")
     [ -n "$PY_VERSION" ] && [ -n "$PY_RELEASE" ] && [ -n "$PY_SIZE" ] && [ -n "$PY_SHA" ] \
-        || die "python_pins.txt ist unvollständig (version/release/$PBS_ZIEL)"
+        || die "python_pins.txt ist unvollstaendig (version/release/$PBS_ZIEL)"
     # Die Nebenversion MUSS zu den Wheels aus requirements.lock passen.
     case "$PY_VERSION" in
         "$K1520_PY_VERSION".*) ;;
@@ -167,8 +167,8 @@ lies_python_pins() {
 # ─── Greaseweazle-Pin auffrischen ────────────────────────────────────────────
 #
 # Die Hosttools liegen nicht auf PyPI, sondern nur als Quellarchiv am
-# GitHub-Release (Begründung im Kopf von packaging/gw_pins.txt).  Gepinnt wird
-# deshalb die ARCHIVDATEI mit Größe und Prüfsumme — dieselbe Sitte wie bei uv
+# GitHub-Release (Begruendung im Kopf von packaging/gw_pins.txt).  Gepinnt wird
+# deshalb die ARCHIVDATEI mit Groesse und Pruefsumme — dieselbe Sitte wie bei uv
 # und Python.
 
 GW_REPO=keirf/greaseweazle
@@ -185,14 +185,14 @@ refresh_gw_pins() {
     [ -n "$_size" ] && [ "$_size" != null ] \
         || die "am Release $_tag liegt kein Quellarchiv $_datei"
 
-    # Es gibt keine SHA256SUMS-Datei am Release — die Prüfsumme muss also am
+    # Es gibt keine SHA256SUMS-Datei am Release — die Pruefsumme muss also am
     # geladenen Archiv gerechnet werden.  Bei 200 KB ist das kein Thema.
-    _tmp=$(mktemp -d) || die "kein temporäres Verzeichnis anlegbar"
+    _tmp=$(mktemp -d) || die "kein temporaeres Verzeichnis anlegbar"
     fetch "$(gw_quelle_url "$_ver")" "$_tmp/$_datei"
     _sha=$(sha256_of "$_tmp/$_datei")
     _ist=$(wc -c < "$_tmp/$_datei" | tr -d ' ')
     rm -rf "$_tmp"
-    [ "$_ist" = "$_size" ] || die "Größe stimmt nicht: $_ist statt $_size"
+    [ "$_ist" = "$_size" ] || die "Groesse stimmt nicht: $_ist statt $_size"
 
     info "greaseweazle $_ver"
     _neu=$(mktemp)
@@ -215,7 +215,7 @@ lies_gw_pins() {
     GW_SIZE=$(awk -v n="$GW_DATEI" '$1==n {print $2}' "$_pins")
     GW_SHA=$(awk  -v n="$GW_DATEI" '$1==n {print $3}' "$_pins")
     [ -n "$GW_SIZE" ] && [ -n "$GW_SHA" ] \
-        || die "gw_pins.txt nennt keine Größe/Prüfsumme für $GW_DATEI"
+        || die "gw_pins.txt nennt keine Groesse/Pruefsumme fuer $GW_DATEI"
 }
 
 # ─── Greaseweazle: das wheel bauen ───────────────────────────────────────────
@@ -295,7 +295,7 @@ PYSHIM
     # den Bauvorgang, und `setuptools_scm` brach mit
     # `ContextualVersionConflict: packaging 21.3 … Requirement.parse('packaging>=26.2')`
     # ab.  Mit eigener Umgebung + `--no-build-isolation` ist bestimmt, WOMIT
-    # gebaut wird — und das Systempython bleibt unberührt.
+    # gebaut wird — und das Systempython bleibt unberuehrt.
     _bau="$_tmp/bauumgebung"
     "$_py" -m venv "$_bau" >/dev/null 2>&1 \
         || { rm -rf "$_tmp"; die "Bauumgebung nicht anlegbar (python3-venv fehlt?)"; }
@@ -363,21 +363,21 @@ esac
 NAME="k1520emu-$VERSION-$PLATFORM"
 STAGE="$OUT/$NAME"
 
-info "K1520-Emulator $VERSION für $PLATFORM"
+info "K1520-Emulator $VERSION fuer $PLATFORM"
 
 # ─── 1. Kern bauen ───────────────────────────────────────────────────────────
 #
-# Eigenes Bauverzeichnis, damit die Entwicklungsstände in build/ und
-# build_trace/ unberührt bleiben.  Zwei Einstellungen sind für ein
+# Eigenes Bauverzeichnis, damit die Entwicklungsstaende in build/ und
+# build_trace/ unberuehrt bleiben.  Zwei Einstellungen sind fuer ein
 # verteilbares Paket entscheidend:
 #
 #   K1520_FORMATS_DEFAULT=""  — sonst steht der absolute Pfad des BAURECHNERS
 #                               als Kandidat in der Bibliothek.
 #   -static-libstdc++         — die Bibliothek soll auch auf Systemen mit
-#   -static-libgcc              älterer/neuerer libstdc++ laden.
+#   -static-libgcc              aelterer/neuerer libstdc++ laden.
 
 # ACHTUNG bei der Namenswahl: `LIB` und `INCLUDE` sind unter MSVC die
-# SUCHPFADE des Übersetzers und des Binders.  Diese Variable hiess bis
+# SUCHPFADE des Uebersetzers und des Binders.  Diese Variable hiess bis
 # 2026-08-12 schlicht `LIB` — unter Linux bedeutungslos, unter Windows
 # ueberschrieb sie den Bibliothekssuchpfad, und `link.exe` suchte kernel32.lib
 # in einem „Verzeichnis" namens k1520core.dll: `LNK1104: cannot open file
@@ -394,13 +394,13 @@ if ist_windows; then K1520_DBG="k1520dbg.exe"; else K1520_DBG="k1520dbg"; fi
 # lautet die Antwort „die Bibliothek bringt sie mit", der Weg dahin ist anders:
 #
 #   GCC   -static-libstdc++/-static-libgcc, damit sie auch auf einem System mit
-#         anderer libstdc++ lädt.
-#   MSVC  -DK1520_MSVC_STATIC_CRT=ON (/MT).  Der Windows-Installer läuft
+#         anderer libstdc++ laedt.
+#   MSVC  -DK1520_MSVC_STATIC_CRT=ON (/MT).  Der Windows-Installer laeuft
 #         per-user ohne Administratorrechte und kann kein VC-Redist
 #         nachinstallieren; ohne /MT startet der Emulator auf einem frischen
-#         Windows gar nicht („VCRUNTIME140.dll fehlt").  Geprüft vom Job
-#         „Auslieferungsbau" in windows-ci.yml — die DLL hängt danach nur noch
-#         an KERNEL32.dll.  Generator Ninja, damit die Ausgabe wie überall
+#         Windows gar nicht („VCRUNTIME140.dll fehlt").  Geprueft vom Job
+#         „Auslieferungsbau" in windows-ci.yml — die DLL haengt danach nur noch
+#         an KERNEL32.dll.  Generator Ninja, damit die Ausgabe wie ueberall
 #         direkt in $BUILD_DIR liegt und nicht in einem Konfigurationsordner.
 if ist_windows; then
     LAUFZEIT_ARGS='-G Ninja -DK1520_MSVC_STATIC_CRT=ON'
@@ -527,9 +527,9 @@ cp "$SELF_DIR/icon.svg"      "$STAGE/payload/share/icons/a5120emu.svg"
 cp "$SELF_DIR/icon.ico"      "$STAGE/payload/share/icons/a5120emu.ico"
 
 # Beispieldisketten werden GEPACKT abgelegt.  Ein Diskettenabbild besteht zum
-# größten Teil aus Füllmuster (11 MB schrumpfen auf gut 1 MB), und gebraucht
+# groessten Teil aus Fuellmuster (11 MB schrumpfen auf gut 1 MB), und gebraucht
 # wird es genau einmal: beim ersten Start entpackt `paths.seed_user_disks()` es
-# in das Arbeitsverzeichnis des Anwenders.  Ungepackt lägen die Abbilder danach
+# in das Arbeitsverzeichnis des Anwenders.  Ungepackt laegen die Abbilder danach
 # doppelt auf der Platte — einmal in der Installation, einmal beim Anwender.
 #
 # Die Gliederung `<maschine>_<system>/` aus disks/ BLEIBT erhalten
@@ -565,8 +565,8 @@ case "$DISKS" in
                 warn "Beispieldiskette fehlt, wird ausgelassen: $d"
             fi
         done
-        # P8000 (2026-10-11, Entscheid des Anwenders): die WEGA-Sätze GANZ — fertig installierte
-        # Platten (*.img.gz, bleiben beim Anwender gepackt, der Emulator schließt sie so an),
+        # P8000 (2026-10-11, Entscheid des Anwenders): die WEGA-Saetze GANZ — fertig installierte
+        # Platten (*.img.gz, bleiben beim Anwender gepackt, der Emulator schliesst sie so an),
         # Startdisketten und der Installationssatz (*.dmk).
         for d in $(find "$REPO/disks" -mindepth 2 -maxdepth 2 -type f -path '*/p8000_*' \
                         \( -name '*.dmk' -o -name '*.img.gz' \) | sort); do
@@ -579,7 +579,7 @@ cp "$REPO/disks/README.md" "$STAGE/payload/share/disks/README.md" 2>/dev/null ||
 # ─── 3. Installer beilegen ───────────────────────────────────────────────────
 
 # Beigelegt wird NUR der Installer des Zielsystems.  Ein Windows-Anwender soll
-# keine .sh-Datei sehen (er hätte keine Shell dafür), ein Linux-Anwender keine
+# keine .sh-Datei sehen (er haette keine Shell dafuer), ein Linux-Anwender keine
 # .cmd.  Die .desktop-Vorlagen bleiben im Windows-Paket weg — `slim.py` dagegen
 # kommt MIT: es kann seit 2026-08-12 auch Windows (es liest die
 # PE-Importtabelle selbst, weil der Anwender kein dumpbin hat).
@@ -616,7 +616,7 @@ else
     chmod +x "$STAGE/install.sh"
 fi
 # LICENSE = der reine englische MIT-Text (GitHubs Lizenzerkennung verlangt ihn
-# unverändert), LIZENZ.txt = deutsche Übersetzung + englischer Text + Hinweis
+# unveraendert), LIZENZ.txt = deutsche Uebersetzung + englischer Text + Hinweis
 # zu den Beigaben Dritter; das Setup zeigt LIZENZ.txt als Lizenzseite.
 for _l in LICENSE LIZENZ.txt; do
     if [ -f "$REPO/$_l" ]; then cp "$REPO/$_l" "$STAGE/$_l"; fi
@@ -625,22 +625,22 @@ done
 printf '%s (%s, %s, Python %s)\n' \
     "$VERSION" "$PLATFORM" "$(date +%Y-%m-%d)" "$K1520_PY_VERSION" > "$STAGE/VERSION"
 
-# ─── 4. Abhängigkeiten festnageln ────────────────────────────────────────────
+# ─── 4. Abhaengigkeiten festnageln ────────────────────────────────────────────
 #
-# packaging/requirements.lock hält Fassungen UND Hashes fest und ist
-# eingecheckt: das Schnüren braucht damit kein Netz, jeder Bau liefert
-# dasselbe, und eine Änderung an den Abhängigkeiten ist im Diff sichtbar.
+# packaging/requirements.lock haelt Fassungen UND Hashes fest und ist
+# eingecheckt: das Schnueren braucht damit kein Netz, jeder Bau liefert
+# dasselbe, und eine Aenderung an den Abhaengigkeiten ist im Diff sichtbar.
 # Der Installer installiert mit --require-hashes.  Auffrischen: --relock.
 
 if [ "$RELOCK" = yes ]; then
-    info "requirements.lock neu auflösen (uv)"
+    info "requirements.lock neu aufloesen (uv)"
     UV=$(ensure_uv "$OUT/.tools" "$SELF_DIR/uv_pins.txt")
     UV_CACHE_DIR="$OUT/.cache-uv"; export UV_CACHE_DIR
     "$UV" pip compile "$SELF_DIR/requirements.in" \
         --python-version "$K1520_PY_VERSION" \
         --generate-hashes --quiet --no-header \
         -o "$SELF_DIR/requirements.lock" \
-        || die "Abhängigkeiten nicht auflösbar"
+        || die "Abhaengigkeiten nicht aufloesbar"
     ok "packaging/requirements.lock aktualisiert"
 fi
 
@@ -667,17 +667,17 @@ fi
 
 ARCHIV=""
 if [ "$ARCHIVE" = yes ]; then
-    info "Archiv schnüren"
+    info "Archiv schnueren"
     if ist_windows; then
         # .zip statt .tar.gz: der Explorer packt es mit einem Doppelklick aus.
         # Gepackt wird von packaging/zip_ordner.ps1 — die Git-Bash bringt kein
         # `zip` mit, ihr GNU-tar kann kein zip, und die eingebauten
         # PowerShell-Wege schreiben unter .NET Framework BACKSLASHES in die
-        # Eintragsnamen (Begründung ausführlich im Kopf jener Datei).  Sie
-        # prüft ihr Ergebnis selbst.
+        # Eintragsnamen (Begruendung ausfuehrlich im Kopf jener Datei).  Sie
+        # prueft ihr Ergebnis selbst.
         #
         # Eigene Datei statt einer `-Command`-Zeile: das Escaping durch zwei
-        # Ebenen (Bourne-Shell → PowerShell) überlebt kein `-replace '\\','/'`.
+        # Ebenen (Bourne-Shell → PowerShell) ueberlebt kein `-replace '\\','/'`.
         ARCHIV="$NAME.zip"
         powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
             -File "$(cygpath -w "$SELF_DIR/zip_ordner.ps1")" \
@@ -688,8 +688,8 @@ if [ "$ARCHIVE" = yes ]; then
         ARCHIV="$NAME.tar.gz"
         ( cd "$OUT" && tar czf "$ARCHIV" "$NAME" )
     fi
-    # Keine .sha256-Datei daneben (2026-10-11): GitHub zeigt die Prüfsumme jedes
-    # Release-Assets selbst an, und eine mitgelieferte schützt vor keinem Austausch.
+    # Keine .sha256-Datei daneben (2026-10-11): GitHub zeigt die Pruefsumme jedes
+    # Release-Assets selbst an, und eine mitgelieferte schuetzt vor keinem Austausch.
     ok "$OUT/$ARCHIV  ($(du -h "$OUT/$ARCHIV" | awk '{print $1}'))"
     printf "     sha256 %s\n" "$(sha256_of "$OUT/$ARCHIV" | awk '{print $1}')"
 fi
@@ -698,7 +698,7 @@ fi
 #
 # Das Setup installiert SELBST — Nachladen, Auspacken, Laufzeitumgebung,
 # Schlankmachen, Starter, Rauchtest, Deinstallieren.  Ein PowerShell-Skript ist
-# daran nicht mehr beteiligt (Begründung im Kopf von k1520emu.iss).  Das
+# daran nicht mehr beteiligt (Begruendung im Kopf von k1520emu.iss).  Das
 # Verzeichnis unter dist/ ist nur noch sein Rohstoff.
 
 if [ "$SETUP" = yes ]; then

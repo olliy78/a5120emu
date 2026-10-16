@@ -35,10 +35,10 @@
 class A5120Machine : public K1520Machine {
 public:
     /**
-     * @brief Laufzeit-Konfiguration der Maschine (per C-API / später GUI / Config-Datei).
+     * @brief Laufzeit-Konfiguration der Maschine (per C-API / spaeter GUI / Config-Datei).
      *
-     * Default = A5120-Standard-Bürokonfiguration: 4× 5,25"-MFM-Laufwerke (K5601).
-     * Wird über die C-API (`k1520_create_configured`) oder direkt (Tools) gesetzt.
+     * Default = A5120-Standard-Buerokonfiguration: 4× 5,25"-MFM-Laufwerke (K5601).
+     * Wird ueber die C-API (`k1520_create_configured`) oder direkt (Tools) gesetzt.
      */
     struct Config {
         /// DriveProfile-Namen je K5122-Slot (siehe builtinDriveProfile). Default: 4× K5601.
@@ -53,17 +53,17 @@ public:
         EM::A22Lesart em_a22_lesart = EM::A22Lesart::ZyklusAdresse;
 
         /**
-         * @brief Ausführung des Geräts (doc/design/30_a5120_fruehe_varianten.md, AP A5).
+         * @brief Ausfuehrung des Geraets (doc/design/30_a5120_fruehe_varianten.md, AP A5).
          *
          * - `Neu`  — A5120 „5¼″ neu“ (K3526, K7024 24×80, K7637 an der K8025): Vorgabe,
          *            bitgleich der Maschine vor AP A5.
          * - `Alt`  — A5120 „5¼″ alt“: 4× K3525 (0000/4000/8000/C000H), K7023.01 16×64 ab
-         *            FC00H (BAB1), K7636 am U-Bus der K2526, Wickelbrücke Port 0AH Bit 6 = 1
-         *            (`config_bridges` Bit 1: CP/A wählt damit BAB1).  Keine K7637.
+         *            FC00H (BAB1), K7636 am U-Bus der K2526, Wickelbruecke Port 0AH Bit 6 = 1
+         *            (`config_bridges` Bit 1: CP/A waehlt damit BAB1).  Keine K7637.
          * - `Kmbg` — wie `Alt`, dazu die K5020 fest gesteckt (30H–37H, 2× K5200).
          * - `Acht` — A5120 8″ (K5602): noch nicht umgesetzt, der Konstruktor lehnt ab.
          *
-         * Die Laufwerke stehen weiter in @ref drive_profiles; die Ausführungsvorgabe
+         * Die Laufwerke stehen weiter in @ref drive_profiles; die Ausfuehrungsvorgabe
          * (3× K5600.10 an der K5122) liefert @ref fuerAusfuehrung.  Ein EM gibt es nur am `Neu`.
          */
         enum class Ausfuehrung { Neu = 0, Alt = 1, Kmbg = 2, Acht = 3 };
@@ -72,26 +72,26 @@ public:
         /**
          * @brief Gestecktes Lade-ROM der K2526 (doc/a5120_alt/laderom.md, AP A7).
          *
-         * Vorgabe `V09_2` (= `zre.rom`, bitgleich zu bisher) in jeder Ausführung — auch
-         * CP/A auf dem alten Gerät startet damit (AP A6).  `V06` braucht nur BCU 880 von
-         * den Disketten „SYL auf Spur 1“ (liest Zylinder 1); unabhängig von der Ausführung.
+         * Vorgabe `V09_2` (= `zre.rom`, bitgleich zu bisher) in jeder Ausfuehrung — auch
+         * CP/A auf dem alten Geraet startet damit (AP A6).  `V06` braucht nur BCU 880 von
+         * den Disketten „SYL auf Spur 1“ (liest Zylinder 1); unabhaengig von der Ausfuehrung.
          */
         K2526::Laderom laderom = K2526::Laderom::V09_2;
 
         /**
-         * @brief Tastatur (AP A7).  `Vorgabe` = die der Ausführung: `Neu` → K7637 an der
+         * @brief Tastatur (AP A7).  `Vorgabe` = die der Ausfuehrung: `Neu` → K7637 an der
          *        K8025, `Alt`/`Kmbg` → K7636 am U-Bus der K2526.
          *
          * `K7636` am `Neu` ergibt K3526 + K7024 (80×24 ab F800H) + K7636 — so erwartet es
-         * BCU 880 V1.2 (FZW/BL) von den Disketten „SYL auf Spur 1“: Bildtreiber für
-         * 80×24 ab F800H, Tastatur über die Tore 01H/06H (doc/a5120_alt/bcu.md).
+         * BCU 880 V1.2 (FZW/BL) von den Disketten „SYL auf Spur 1“: Bildtreiber fuer
+         * 80×24 ab F800H, Tastatur ueber die Tore 01H/06H (doc/a5120_alt/bcu.md).
          * `K7637` an `Alt`/`Kmbg` lehnt der Konstruktor ab (dort ist die SIO-Tastatur nicht
          * verdrahtet, doc/design/32 §3 A5).
          */
         enum class Tastatur { Vorgabe = 0, K7637 = 1, K7636 = 2 };
         Tastatur tastatur = Tastatur::Vorgabe;
 
-        /// Vorgabekonfiguration einer Ausführung (Laufwerke laut Entwurf 30 §1).
+        /// Vorgabekonfiguration einer Ausfuehrung (Laufwerke laut Entwurf 30 §1).
         static Config fuerAusfuehrung(Ausfuehrung a) {
             Config c;
             c.ausfuehrung = a;
@@ -104,7 +104,7 @@ public:
     /** @brief Construct with the default configuration (4× 5,25"-MFM, K5601). */
     A5120Machine();
     /** @brief Construct and wire a full A5120 machine instance.
-     *  @param cfg Laufwerksbestückung etc. (per C-API/GUI/Config-Datei). */
+     *  @param cfg Laufwerksbestueckung etc. (per C-API/GUI/Config-Datei). */
     explicit A5120Machine(const Config& cfg);
     ~A5120Machine() override = default;
 
@@ -122,9 +122,9 @@ public:
     /**
      * @brief Maschinenweite Taktuhr — Takte BEIDER CPUs (und der DMA-Wartetakte).
      *
-     * Im Gegensatz zu cpuCycles() (nur ZVE1) kriecht sie nicht, während ZVE2 den Bus
-     * hält und ZVE1 geparkt ist.  Werkzeuge, die "laufe N Takte" anbieten, sollten
-     * darauf laufen — sonst wirkt ein ZVE2-lastiger Abschnitt wie ein Hänger.
+     * Im Gegensatz zu cpuCycles() (nur ZVE1) kriecht sie nicht, waehrend ZVE2 den Bus
+     * haelt und ZVE1 geparkt ist.  Werkzeuge, die "laufe N Takte" anbieten, sollten
+     * darauf laufen — sonst wirkt ein ZVE2-lastiger Abschnitt wie ein Haenger.
      */
     uint64_t machineCycles() const { return total_cycles_; }
 
@@ -150,19 +150,19 @@ public:
     /**
      * @brief Legt eine NEUE Diskette an und mountet sie.
      *
-     * Zwei Betriebsarten, gesteuert über @p format_name:
+     * Zwei Betriebsarten, gesteuert ueber @p format_name:
      *
      * - **LEER → echte Leerdiskette** (der Normalfall).  Das Medium ist *unformatiert*
      *   und hat die Geometrie des **Laufwerks** (K5601 80×2, K5600.10 40×1, …); es kann
-     *   anschließend vom Gastsystem formatiert werden — auch von Fremdsystemen wie UDOS,
-     *   die Nutzdaten hinter die Daten-CRC hängen.  Zulässige Ziele sind `.hfe` und
-     *   `.dmk`; ein `.img` kann eine unformatierte Diskette nicht ausdrücken und wird
+     *   anschliessend vom Gastsystem formatiert werden — auch von Fremdsystemen wie UDOS,
+     *   die Nutzdaten hinter die Daten-CRC haengen.  Zulaessige Ziele sind `.hfe` und
+     *   `.dmk`; ein `.img` kann eine unformatierte Diskette nicht ausdruecken und wird
      *   mit Fehlermeldung abgelehnt.  Ist @p path leer, lebt die Diskette nur im
-     *   Speicher, bis sie über @ref saveDiskAs gespeichert wird.
+     *   Speicher, bis sie ueber @ref saveDiskAs gespeichert wird.
      * - **GESETZT → vorformatierte Diskette** nach Katalogformat (echte IDAM/DATA-Felder
-     *   mit CRC, Nutzdaten 0xE5).  Dann ist auch `.img` als Ziel zulässig.
+     *   mit CRC, Nutzdaten 0xE5).  Dann ist auch `.img` als Ziel zulaessig.
      *
-     * Überschreibt eine vorhandene Datei.  @see DiskImage::createBlank, DiskImage::create
+     * Ueberschreibt eine vorhandene Datei.  @see DiskImage::createBlank, DiskImage::create
      */
     bool createDisk(int drive, const std::string& path,
                     const std::string& format_name, bool write_protect) override;
@@ -171,11 +171,11 @@ public:
      * @brief Speichert die gemountete Diskette unter neuem Namen/Format und bindet um.
      *
      * Der Container folgt der Endung (`.img` / `.hfe` / `.dmk`).  Ab diesem Zeitpunkt
-     * gehen alle weiteren Schreibzugriffe (verzögert) in die **neue** Datei.
+     * gehen alle weiteren Schreibzugriffe (verzoegert) in die **neue** Datei.
      *
-     * @p format_name wird **nur für `.img`** gebraucht — `.hfe`/`.dmk` sind
-     * self-describing.  Bei `.img` wird zusätzlich geprüft, ob sich das Medium
-     * überhaupt verlustfrei auf Sektor-Nutzdaten abbilden lässt
+     * @p format_name wird **nur fuer `.img`** gebraucht — `.hfe`/`.dmk` sind
+     * self-describing.  Bei `.img` wird zusaetzlich geprueft, ob sich das Medium
+     * ueberhaupt verlustfrei auf Sektor-Nutzdaten abbilden laesst
      * (@ref isDiskRawCompatible) und ob es zum Format passt.
      *
      * @return false mit Grund in @ref lastError().
@@ -186,7 +186,7 @@ public:
      * @brief Darf die gemountete Diskette als rohes Sektorimage (`.img`) gespeichert werden?
      *
      * false, sobald eine Spur unformatiert ist oder ein Sektor Nutzdaten hinter der
-     * Daten-CRC trägt (UDOS-Sektorkontrollblock) — beides ginge in einer `.img`
+     * Daten-CRC traegt (UDOS-Sektorkontrollblock) — beides ginge in einer `.img`
      * verloren.  Die GUI blendet `.img` dann aus.
      */
     bool isDiskRawCompatible(int drive) const override;
@@ -198,19 +198,19 @@ public:
     std::string diskContainer(int drive) const override;
 
     /**
-     * @brief Bedienhinweise zur eingelegten Diskette ("" = sie passt ohne Einschränkung).
+     * @brief Bedienhinweise zur eingelegten Diskette ("" = sie passt ohne Einschraenkung).
      *
-     * Je Einschränkung eine Zeile, durch `\n` getrennt — „Double Step aktiviert",
+     * Je Einschraenkung eine Zeile, durch `\n` getrennt — „Double Step aktiviert",
      * „Laufwerk liest nur jede zweite Spur", „Nur Seite 0 verwendbar".  Kein Fehler:
      * die Diskette ist gemountet und lesbar, nur eben angepasst (@ref TrackPitch).
-     * Die Oberfläche zeigt die Zeilen im Laufwerkskasten unter dem Dateinamen.
+     * Die Oberflaeche zeigt die Zeilen im Laufwerkskasten unter dem Dateinamen.
      */
     std::string diskNotice(int drive) const override;
 
-    /// @brief Geometrie der eingelegten Diskette (alles 0, wenn kein Datenträger).
+    /// @brief Geometrie der eingelegten Diskette (alles 0, wenn kein Datentraeger).
     DiskGeometry diskGeometry(int drive) const;
 
-    /// @brief Trägt die eingelegte Diskette überhaupt Adressmarken? (false = Leerdiskette)
+    /// @brief Traegt die eingelegte Diskette ueberhaupt Adressmarken? (false = Leerdiskette)
     bool isDiskFormatted(int drive) const;
 
     /**
@@ -220,32 +220,32 @@ public:
      * (@ref GeometryProbe, doc/design/13_k1520disktool.md §12.1): jede Spur wird
      * vermessen und der gemessene Spurbereichsplan gegen den Katalog gehalten.
      *
-     * Drei Fälle liefern **leer** — für die Anzeige heisst das „unbekannt":
-     *  - kein Datenträger im Laufwerk oder keine formatierte Spur;
+     * Drei Faelle liefern **leer** — fuer die Anzeige heisst das „unbekannt":
+     *  - kein Datentraeger im Laufwerk oder keine formatierte Spur;
      *  - kein Katalogformat passt (die Diskette ist deshalb trotzdem benutzbar —
      *    der K5122 liest formatagnostisch);
      *  - zwei Formate passen **gleich gut**.  Dann ist der Name geraten, und ein
-     *    geratenes Format als `.img` zu exportieren verlöre Daten.
+     *    geratenes Format als `.img` zu exportieren verloere Daten.
      *
      * Bei einem rohen Sektorimage (`.img`) wird nicht gemessen, sondern das beim
-     * Einlegen ERKLÄRTE Format zurückgegeben: ein `.img` trägt keine Adressmarken,
+     * Einlegen ERKLAERTE Format zurueckgegeben: ein `.img` traegt keine Adressmarken,
      * seine Geometrie ist Vereinbarung, nicht Befund.
      *
-     * @warning Misst über das ganze Medium.  Bei einer Diskette, die ihre Spuren
-     *          erst bei Bedarf nachlädt (physisches Laufwerk am Greaseweazle) und
-     *          noch nicht vollständig gelesen ist, kommt deshalb **leer** zurück —
-     *          eine Messung zöge dort die ganze Scheibe ein (0,5–0,8 s je Spur).
+     * @warning Misst ueber das ganze Medium.  Bei einer Diskette, die ihre Spuren
+     *          erst bei Bedarf nachlaedt (physisches Laufwerk am Greaseweazle) und
+     *          noch nicht vollstaendig gelesen ist, kommt deshalb **leer** zurueck —
+     *          eine Messung zoege dort die ganze Scheibe ein (0,5–0,8 s je Spur).
      */
     std::string detectedFormatName(int drive) const override;
 
-    /// @brief Ausstehende Änderungen aller Laufwerke sofort in die Dateien schreiben.
+    /// @brief Ausstehende Aenderungen aller Laufwerke sofort in die Dateien schreiben.
     bool flushDisks() override;
 
     /**
-     * @brief Name des laufwerkstyp-spezifischen Standardformats für einen Slot.
+     * @brief Name des laufwerkstyp-spezifischen Standardformats fuer einen Slot.
      *
-     * Das Format, das @ref createDisk bei leerem @p format_name wählt (K5601→cpa800,
-     * K5600.10→200K, …).  Leerer String, wenn der Slot unbestückt ist.
+     * Das Format, das @ref createDisk bei leerem @p format_name waehlt (K5601→cpa800,
+     * K5600.10→200K, …).  Leerer String, wenn der Slot unbestueckt ist.
      */
     std::string defaultFormatName(int drive) const override;
 
@@ -255,14 +255,14 @@ public:
      * Ein eingebautes Format passt, wenn seine Spurzahl ≤ profile.num_cyls und seine
      * Kopfzahl ≤ profile.num_heads ist (das Aufzeichnungsverfahren leitet createDisk
      * aus dem Laufwerk ab).  Das Standardformat des Slots steht an erster Stelle.
-     * Leere Liste bei unbestücktem Slot.  Für die GUI-Formatauswahl.
+     * Leere Liste bei unbestuecktem Slot.  Fuer die GUI-Formatauswahl.
      */
     std::vector<std::string> compatibleFormats(int drive) const override;
 
     /** @brief Klartextbeschreibung eines Katalogformats (leer, wenn unbekannt). */
     std::string formatDescription(const std::string& format_name) const override;
 
-    /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, übersprungene Formate). */
+    /** @brief Geladener Formatkatalog (Diagnose: Quelldateien, uebersprungene Formate). */
     const FormatCatalog& formatCatalog() const override { return lw_.formatCatalog(); }
 
     bool unmountDisk(int drive) override;
@@ -288,18 +288,18 @@ public:
      * @brief Zustand der Tastaturanzeigen (K7637-Doku §2.1/§2.2.3).
      *
      * Bit 0…4 = Funktionsanzeigen G00…G04, Bit 5 = Fehleranzeige G53 (blinkt,
-     * solange gesetzt), Bit 7 = akustisches Signal läuft.  Die Betriebsanzeige
-     * E54 hängt an der Spannung und die LOCK-Anzeige C99 am Feststeller der
+     * solange gesetzt), Bit 7 = akustisches Signal laeuft.  Die Betriebsanzeige
+     * E54 haengt an der Spannung und die LOCK-Anzeige C99 am Feststeller der
      * Tastatur selbst — beide kommen hier nicht vor.
      */
     uint8_t keyboardLeds() const override;
 
-    /// Ausführung, mit der die Maschine gebaut wurde (Config::ausfuehrung).
+    /// Ausfuehrung, mit der die Maschine gebaut wurde (Config::ausfuehrung).
     Config::Ausfuehrung ausfuehrung() const { return ausf_; }
     /// Gestecktes Lade-ROM (Config::laderom).
     K2526::Laderom laderom() const { return zre_.laderom(); }
-    /// Bildschirmkarte K7023.01 / Tastatur K7636 / RAM-Karte K3525 Nr. @p i der frühen
-    /// Ausführungen (nullptr am `Neu`).
+    /// Bildschirmkarte K7023.01 / Tastatur K7636 / RAM-Karte K3525 Nr. @p i der fruehen
+    /// Ausfuehrungen (nullptr am `Neu`).
     K7023*       k7023()       { return k7023_.get(); }
     const K7023* k7023() const { return k7023_.get(); }
     K7636*       k7636()       { return k7636_.get(); }
@@ -321,7 +321,7 @@ public:
     bool consolePoll(int& x, int& y, char& ch) override {
         return k7023_ ? false : screen_.pollTextChange(x, y, ch);
     }
-    /// Bildspeicher der K7024 bzw. K7023 direkt (Bereichsprüfung in der C-ABI/Karte).
+    /// Bildspeicher der K7024 bzw. K7023 direkt (Bereichspruefung in der C-ABI/Karte).
     uint8_t screenChar(int col, int row) const override {
         return k7023_ ? k7023_->vramRead(col, row) : screen_.vramRead(col, row);
     }
@@ -335,7 +335,7 @@ public:
         return {K8025::TASTATUR_NAME};
     }
 
-    // Alter Unterbau (K1520Machine): DFÜ = DFÜ/V.24, Drucker = A32-B.
+    // Alter Unterbau (K1520Machine): DFUE = DFÜ/V.24, Drucker = A32-B.
     using SerialCb = std::function<void(uint8_t)>;
     void setDFUECallback(SerialCb cb) override;
     void setPrinterCallback(SerialCb cb) override;
@@ -349,7 +349,7 @@ public:
     void memWriteDebug(uint16_t addr, uint8_t data) override { bus_.memWrite(addr, data); }
     /** @brief Read I/O port through the machine bus for diagnostics. */
     uint8_t ioReadDebug(uint8_t port) override { return bus_.ioRead(port); }
-    /** @brief Systembus (Tests: E/A mit vollem A0–A15, z. B. für die RAF). */
+    /** @brief Systembus (Tests: E/A mit vollem A0–A15, z. B. fuer die RAF). */
     K1520Bus& bus() { return bus_; }
     /** @brief Install a bus trace callback (io, is_read, addr, data). */
     void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
@@ -401,7 +401,7 @@ public:
     Z80PIO::DebugState k5122DataPioState() const { return afs_.dataPio().debugState(); }
     /** @brief K8025 keyboard/printer SIO (A32) state snapshot (debugger `dev sio`). */
     Z80SIO::DebugState kbdSioState()  { return ass_.sioA32().debugState(); }
-    /** @brief K8025 DFÜ SIO (A33) state snapshot (debugger `dev sio2`). */
+    /** @brief K8025 DFUE SIO (A33) state snapshot (debugger `dev sio2`). */
     Z80SIO::DebugState dfueSioState() { return ass_.sioA33().debugState(); }
     /** @brief Which CPU is the current bus master — true=ZVE2, false=ZVE1. Valid inside a
      *  bus-trace callback to attribute a memory/IO access to the CPU that issued it. */
@@ -418,8 +418,8 @@ public:
      * @brief Eine einzelne Interruptquelle der Daisy-Chain (PIO-Port, CTC-Kanal, SIO-Kanal).
      *
      * Zusammen ergeben sie die Vektor-Landkarte, die ein Fremd-OS mit eigener
-     * IM-2-Tabelle beim Hochlauf programmiert: Wer darf einen Interrupt auslösen,
-     * mit welchem Vektor — und zeigt der zugehörige Tabelleneintrag ins Leere?
+     * IM-2-Tabelle beim Hochlauf programmiert: Wer darf einen Interrupt ausloesen,
+     * mit welchem Vektor — und zeigt der zugehoerige Tabelleneintrag ins Leere?
      */
     struct IntSource {
         std::string device;          ///< z.B. "K5122 ctrl-PIO A"
@@ -429,12 +429,12 @@ public:
         bool        pending = false; ///< Anforderung steht an
         bool        ius     = false; ///< in Bedienung (IUS)
         bool        iei     = false; ///< von der Chain freigegeben
-        int         chain   = 0;     ///< Position in der Daisy-Chain (0 = höchste Priorität)
+        int         chain   = 0;     ///< Position in der Daisy-Chain (0 = hoechste Prioritaet)
     };
-    /** @brief Alle Interruptquellen der Daisy-Chain in Prioritätsreihenfolge. */
+    /** @brief Alle Interruptquellen der Daisy-Chain in Prioritaetsreihenfolge. */
     std::vector<IntSource> interruptSources() const;
 
-    /** @brief Letzte Interrupt-Quittung des Busses (Vektor + Quellgerät, `SPURIOUS`-Fall). */
+    /** @brief Letzte Interrupt-Quittung des Busses (Vektor + Quellgeraet, `SPURIOUS`-Fall). */
     const K1520Bus::IntAck& lastIntAck() const { return bus_.lastIntAck(); }
 
     // Debug
@@ -474,18 +474,18 @@ public:
         // restored. Captured so a loadstate resumes with a working keyboard, disk
         // access and a correct screen. See captureState().
         std::vector<uint8_t> device_state;
-        // v8: RAM-Floppy RAF (doc/design/22_raf512.md §5.2).  Leer = Stand älter als v8
-        // (die RAF behält ihren Zustand); sonst Kennbyte 0 = keine RAF gesteckt,
-        // 1 = RAF::saveState-Block folgt (Typ, Latch, Inhalt — bzw. Inhaltslänge 0,
+        // v8: RAM-Floppy RAF (doc/design/22_raf512.md §5.2).  Leer = Stand aelter als v8
+        // (die RAF behaelt ihren Zustand); sonst Kennbyte 0 = keine RAF gesteckt,
+        // 1 = RAF::saveState-Block folgt (Typ, Latch, Inhalt — bzw. Inhaltslaenge 0,
         // wenn ohne Inhalt erfasst).  Eigenes Feld statt Teil von device_state: es
-        // wird VOR allem anderen geprüft, ein unpassender Stand ändert nichts.
+        // wird VOR allem anderen geprueft, ein unpassender Stand aendert nichts.
         std::vector<uint8_t> raf_state;
     };
     /**
      * @brief Capture the current machine state into @p s.
      * @param raf_inhalt false = von der RAF nur Typ + Latch, nicht der Inhalt (bis 2 MB).
-     *        Für die Rückwärts-Historie des Debuggers, die vor JEDEM Vorwärtsbefehl einen
-     *        Stand zieht (`rs`, 200 Stück); benannte Snapshots und Savestates nehmen ihn mit.
+     *        Fuer die Rueckwaerts-Historie des Debuggers, die vor JEDEM Vorwaertsbefehl einen
+     *        Stand zieht (`rs`, 200 Stueck); benannte Snapshots und Savestates nehmen ihn mit.
      */
     void captureState(MachineSnapshot& s, bool raf_inhalt = true) const;
     /**
@@ -497,8 +497,8 @@ public:
      * controller (K5122 PIOs + per-drive head position) plus the K7024 screen VRAM
      * ARE captured/restored, so keyboard input, disk access AND the screen work
      * after a loadstate. Not captured: the mounted disk images (mounted separately).
-     * @return false (Grund in @ref stateError), wenn der Stand eine RAF trägt, die
-     *         Maschine aber keine oder eine andere — dann ist NICHTS verändert.
+     * @return false (Grund in @ref stateError), wenn der Stand eine RAF traegt, die
+     *         Maschine aber keine oder eine andere — dann ist NICHTS veraendert.
      *         Sonst true (the snapshot is fully applied).
      */
     bool restoreState(const MachineSnapshot& s);
@@ -528,12 +528,12 @@ protected:
 
 private:
     void wireBackplane();
-    /// RAF-Teil eines Stands prüfen und übernehmen (false + state_error_ bei Unpassendem).
+    /// RAF-Teil eines Stands pruefen und uebernehmen (false + state_error_ bei Unpassendem).
     bool rafZustandLaden(const std::vector<uint8_t>& raf_state);
 
     /** @brief Systemweiter /RESET (ZVE1 + alle peripheren Bausteine); s. .cpp. */
     void resetHardware();
-    /// Wandler takten (nur, wenn einer fällig ist) — außerhalb der heißen Schleife.
+    /// Wandler takten (nur, wenn einer faellig ist) — ausserhalb der heissen Schleife.
 #if defined(_MSC_VER)
     __declspec(noinline) void serielleSchnittstellen();
 #else
@@ -545,7 +545,7 @@ private:
     K1520Bus      bus_;
     Koppelbus     koppel_;
 
-    K2526         zre_;       // slot 4: CPU card (enthält ZVE1)
+    K2526         zre_;       // slot 4: CPU card (enthaelt ZVE1)
     K3526         ops_;       // slot 1: RAM
     K7024         screen_;    // slot 5: video
     K8025         ass_;       // slot 3: serial
@@ -554,8 +554,8 @@ private:
 
     K7637         kbd_;
 
-    // Frühe Ausführungen (Config::Ausfuehrung Alt/Kmbg): statt K3526/K7024/K7637 am Bus.
-    // Die K2526 hält nur einen Zeiger auf die K7636 (U-Bus-Gerät).
+    // Fruehe Ausfuehrungen (Config::Ausfuehrung Alt/Kmbg): statt K3526/K7024/K7637 am Bus.
+    // Die K2526 haelt nur einen Zeiger auf die K7636 (U-Bus-Geraet).
     Config::Ausfuehrung ausf_ = Config::Ausfuehrung::Neu;
     std::array<std::unique_ptr<K3525>, 4> k3525_;
     std::unique_ptr<K7023> k7023_;
@@ -563,10 +563,10 @@ private:
 
     Laufwerke     lw_;        // Laufwerksverwaltung (gemeinsamer Baustein, laufwerke.h)
 
-    /// Schnittstellen nach außen — nach den Karten deklariert, also zuerst zerstört
-    /// (hält Verweise auf die Anschlüsse der K8025).
+    /// Schnittstellen nach aussen — nach den Karten deklariert, also zuerst zerstoert
+    /// (haelt Verweise auf die Anschluesse der K8025).
     k1520::serial::SerialHub hub_{k1520::serial::PHI_NENN};
-    uint64_t serial_naechst_ = 0;   ///< nächster Blick der Wandler (Taktzahl)
+    uint64_t serial_naechst_ = 0;   ///< naechster Blick der Wandler (Taktzahl)
 
     std::atomic<bool>  stop_{false};
 
@@ -586,28 +586,28 @@ private:
     bool bus_master_zve2_  = false;   // which CPU is currently stepping (for bus-trace
                                       // attribution): true while ZVE2 steps, false for ZVE1
 
-    // ── Os-gated „gehaltener Bus" für den SCPX-Laufzeit-Read (doc/analyse_scpx_com_load.md §9.4b) ──
+    // ── Os-gated „gehaltener Bus" fuer den SCPX-Laufzeit-Read (doc/analyse_scpx_com_load.md §9.4b) ──
     // Der Boot nutzt die Per-Byte-/BUSRQ-Drossel (getunt, s. project_per_byte_busrq_model);
-    // die Laufzeit-.COM-Reads scheitern aber daran, weil ZVE1 in den Byte-Lücken mitläuft und
+    // die Laufzeit-.COM-Reads scheitern aber daran, weil ZVE1 in den Byte-Luecken mitlaeuft und
     // (1) den Kopf mit-steppt, (2) den Matcher-Mini-Stack per INT korrumpiert, (3) den
-    // Warmstart-Vektor [0x0000] verfrüht restauriert.  Sobald der interaktive Prompt (ZVE1 @E079)
+    // Warmstart-Vektor [0x0000] verfrueht restauriert.  Sobald der interaktive Prompt (ZVE1 @E079)
     // das erste Mal erreicht ist (os_running_), wird der Laufzeit-Read wie echte HW gefahren:
-    // /BUSRQ über den GANZEN Transfer halten (nur ZVE2 liest), ausgelöst am read-eindeutigen
+    // /BUSRQ ueber den GANZEN Transfer halten (nur ZVE2 liest), ausgeloest am read-eindeutigen
     // Poll-Wait (ZVE1 @E8B5 mit [EC0B]==E8B5 und aktivem Lese-Transfer), beendet, sobald ZVE2
-    // das Ergebnis über [EC0B] signalisiert.  Während des Boots (os_running_==false) inaktiv →
+    // das Ergebnis ueber [EC0B] signalisiert.  Waehrend des Boots (os_running_==false) inaktiv →
     // keine Boot-Regression.
     bool os_running_       = false;   // ZVE1 hat den interaktiven Prompt (E079) erreicht
-    bool held_read_active_ = false;   // gehaltener Laufzeit-Read läuft (ZVE1 eingefroren)
-    // No-Progress-Watchdog für den gehaltenen Read: findet ZVE2 sein Sektor-IDAM nicht
+    bool held_read_active_ = false;   // gehaltener Laufzeit-Read laeuft (ZVE1 eingefroren)
+    // No-Progress-Watchdog fuer den gehaltenen Read: findet ZVE2 sein Sektor-IDAM nicht
     // (z. B. FM-Probe 0x87 auf einer MFM-Spur → Matcher E9C8 re-armt endlos), signalisiert es
     // NIE [EC0B]≠E8B5 → ZVE1 bliebe ewig @E8B5 eingefroren.  Auf echter HW terminiert hier der
     // Index-Interrupt (Record-not-found → [EC0B]=E998, FM/MFM-Retry).  Der wird beim gehaltenen
-    // Read aber nie zugestellt (ZVE1 eingefroren, INT-Zustellung übersprungen).  Nach ~2 Umdrehungen
+    // Read aber nie zugestellt (ZVE1 eingefroren, INT-Zustellung uebersprungen).  Nach ~2 Umdrehungen
     // ohne Fortschritt geben wir daher den Bus frei (und sperren die Wieder-Engage bis [EC0B]
-    // wechselt), sodass ZVE1 läuft, seinen Index-ISR nimmt und der Timeout/Retry greift — wie beim
+    // wechselt), sodass ZVE1 laeuft, seinen Index-ISR nimmt und der Timeout/Retry greift — wie beim
     // Boot.  Verhindert das Einfrieren bei der FM/MFM-Erkennung einer nicht passenden Diskette.
     long long held_read_cycles_   = 0;      // Takte seit Engage des gehaltenen Reads
-    bool      held_read_watchdog_ = false;  // Watchdog ausgelöst → Bus frei, kein Re-Engage bis Fortschritt
+    bool      held_read_watchdog_ = false;  // Watchdog ausgeloest → Bus frei, kein Re-Engage bis Fortschritt
 
     // Monotonic cycle counter across all run() calls, fed to the Logger's gate
     // evaluation (cycle windows) once per instruction.

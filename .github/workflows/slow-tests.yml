@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Langsame Formatläufe — was der pre-push-Hook und die CI bewusst auslassen
+# Langsame Formatlaeufe — was der pre-push-Hook und die CI bewusst auslassen
 # ─────────────────────────────────────────────────────────────────────────────
 #
-#   format_integration — die Tiefe: je Laufwerkstyp EIN Format über die ganze
-#                        Diskette (Boot-Disk-Ketten, Voll-Läufe)
-#   format_matrix      — die Breite: 88 FORMAT.COM-Menüeinträge, Smoke Spur 0–2
+#   format_integration — die Tiefe: je Laufwerkstyp EIN Format ueber die ganze
+#                        Diskette (Boot-Disk-Ketten, Voll-Laeufe)
+#   format_matrix      — die Breite: 88 FORMAT.COM-Menueeintraege, Smoke Spur 0–2
 #
 # Beide sind aus der Standardregression ausgeschlossen (CLAUDE.md, Abschnitt
 # „Diskettenformatierung").
@@ -12,10 +12,10 @@
 # WIRD NUR VON HAND ANGESTOSSEN — sinnvoll vor einem Merge nach main und vor
 # einem Release.  Ein Lauf dauert ~20–40 min.
 #
-#     Actions → „Langsame Tests (Format)" → Run workflow → Umfang wählen
+#     Actions → „Langsame Tests (Format)" → Run workflow → Umfang waehlen
 #     gh workflow run slow-tests.yml --ref main -f umfang=format_matrix
 #
-# Wer das regelmäßig haben will, hängt einen Zeitplan davor:
+# Wer das regelmaessig haben will, haengt einen Zeitplan davor:
 #     on:
 #       schedule:
 #         - cron: '17 3 * * 0'      # sonntags 03:17 UTC
@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       umfang:
-        description: 'Welche Läufe'
+        description: 'Welche Laeufe'
         type: choice
         default: beide
         options: [beide, format_integration, format_matrix]
@@ -38,7 +38,7 @@ concurrency:
 
 jobs:
   format:
-    name: Formatläufe
+    name: Formatlaeufe
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -60,8 +60,8 @@ jobs:
             ccache-slow-
             ccache-linux-
 
-      # Beide Läufe schreiben dieselbe build/Testing/junit.xml — der zweite
-      # überschriebe die des ersten.  Deshalb wird sie JE Lauf weggesichert,
+      # Beide Laeufe schreiben dieselbe build/Testing/junit.xml — der zweite
+      # ueberschriebe die des ersten.  Deshalb wird sie JE Lauf weggesichert,
       # und zwar auch dann, wenn der Lauf rot war (`rc` durchreichen, sonst
       # verschluckte das `exit` des Kopierens den Fehlschlag).
       - name: format_integration
@@ -82,12 +82,12 @@ jobs:
 
       # ── Testprotokoll ──────────────────────────────────────────────────────
       # Beide Runden in EINE Seite: die Tiefe (Boot-Disk-Kette) und die Breite
-      # (88 FORMAT.COM-Menüs) stehen dann nebeneinander.  Welche davon lief,
-      # hängt an `umfang` — darum wird die Liste zur Laufzeit zusammengestellt.
+      # (88 FORMAT.COM-Menues) stehen dann nebeneinander.  Welche davon lief,
+      # haengt an `umfang` — darum wird die Liste zur Laufzeit zusammengestellt.
       - name: Testprotokoll erzeugen
         if: always()
         run: |
-          # Bewusst `if`-Blöcke statt `[ -f … ] && args+=(…)`: GitHub fährt die
+          # Bewusst `if`-Bloecke statt `[ -f … ] && args+=(…)`: GitHub faehrt die
           # Shell mit `set -e`, und ein fehlgeschlagener Test als LETZTER Befehl
           # einer Zeile beendet den Schritt — der Bericht fiele genau dann aus,
           # wenn nur eine der beiden Runden lief.
@@ -102,11 +102,11 @@ jobs:
             echo "keine JUnit-XML gefunden — kein Lauf zustande gekommen"; exit 0
           fi
           python3 tools/test_report.py "${args[@]}" \
-            --title "a5120emu — langsame Formatläufe" \
+            --title "a5120emu — langsame Formatlaeufe" \
             --out testprotokoll-langsam.html \
             --summary-md - >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Testprotokoll anhängen
+      - name: Testprotokoll anhaengen
         if: always()
         uses: actions/upload-artifact@v4
         with:

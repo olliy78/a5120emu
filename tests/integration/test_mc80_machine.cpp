@@ -1,9 +1,9 @@
 /**
  * @file test_mc80_machine.cpp
- * @brief MC80.3x als Maschine (AP M2): nach dem Einschalten führt die ZVE EGOS aus — RESET
+ * @brief MC80.3x als Maschine (AP M2): nach dem Einschalten fuehrt die ZVE EGOS aus — RESET
  *        (0776H), RESET-Kette mit KERN_RESET, Magnetband-Init und der Einschaltmeldung aus dem
- *        SPE-2-ROM, bis zur Kommandoschleife — und läuft 5 Mio. Takte ohne Absturz.  Bild und
- *        Tastatur prüft test_mc80_boot.cpp (M3); hier geprüft wird über den Programmzähler und die Systemzellen.
+ *        SPE-2-ROM, bis zur Kommandoschleife — und laeuft 5 Mio. Takte ohne Absturz.  Bild und
+ *        Tastatur prueft test_mc80_boot.cpp (M3); hier geprueft wird ueber den Programmzaehler und die Systemzellen.
  *        Adressen: doc/mc80/egos.prn.
  */
 
@@ -55,7 +55,7 @@ TEST(Mc80Maschine, EgosLaeuftDurchResetUndKetteBisZurKommandoschleife) {
     EXPECT_GE(l.m->cpuPC(), 0x02D7) << std::hex << l.m->cpuPC();
     EXPECT_LE(l.m->cpuPC(), 0x02DB) << std::hex << l.m->cpuPC();
     EXPECT_FALSE(l.m->zve().cpu().halted);
-    // Nie Code aus dem Leerbereich oder aus dem ungeöffneten Segmentfenster ausgeführt:
+    // Nie Code aus dem Leerbereich oder aus dem ungeoeffneten Segmentfenster ausgefuehrt:
     for (uint32_t a = 0x2800; a < 0xC000; ++a)
         ASSERT_FALSE(b.test(a)) << "Code bei " << std::hex << a;
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-make_bootdisk.py – Aus einer LEEREN (unformatierten) Diskette eine BOOTfähige
+make_bootdisk.py – Aus einer LEEREN (unformatierten) Diskette eine BOOTfaehige
 CP/A-Systemdiskette machen und den Boot direkt im A5120-Emulator verifizieren:
 die volle Anwenderkette FORMAT.COM → CPABCGEN.COM → Kaltstart.
 
@@ -13,22 +13,22 @@ Presets (--preset) — je Preset ein Laufwerkstyp/Format:
   k5600_10_fmt1 5¼″-40-SS K5600.10 F1: 26×128 Sp.0-1 + 5×1024 Sp.2-39       (190k)
   k5600_20_fmt1 5¼″-80-SS K5600.20 F1: 26×128 Sp.0-1 + 5×1024 Sp.2-79       (390k, C:)
 
-Ablauf (alles über tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
+Ablauf (alles ueber tools/format_driver, den Zwei-Disk-Tastatur-Treiber):
 
   1. format+gen : boote die passende Combo-/Uhr-Boot-Disk als A: (mit FORMAT.COM,
      CPABCGEN.COM + @OS.COM) und lege eine **echte Leerdiskette** als B:/C: ein.
      Dann in EINEM Lauf: `FORMAT` (Format des Presets, alle Spuren, MIT Vergleichs-
-     Lesen) → zurück ins CCP → `CPABCGEN <LW>:` → `DIR <LW>:`.
+     Lesen) → zurueck ins CCP → `CPABCGEN <LW>:` → `DIR <LW>:`.
      Der Slot bekommt per FD_PROFILES das zum Combo-BIOS passende physische Laufwerk.
   2. verify     : mounte die erzeugte Disk als A: (Ziel-Profil) und boote kalt daraus;
-     prüfe, dass CP/A hochkommt (Config-Screen + A>/@OS.COM).
+     pruefe, dass CP/A hochkommt (Config-Screen + A>/@OS.COM).
 
   Der Ausgangszustand ist IMMER eine unformatierte Leerdiskette (format_driver-
   Parameter `createB` = leerer Formatname → `A5120Machine::createDisk` legt ein
   unformatiertes Medium in der Geometrie des LAUFWERKS an, CLAUDE.md §8.7).
-  Frühere Fassungen mussten die Vorlage stattdessen mit `mk_disk_template` bzw. aus
+  Fruehere Fassungen mussten die Vorlage stattdessen mit `mk_disk_template` bzw. aus
   `disks/empty_cpa780.hfe` vorformatiert liefern, weil FORMAT.COM auf einer gap-leeren
-  Diskette hing (doc/format.md §8.2) und später `Fehler 'U' SPUR DEFEKT` meldete
+  Diskette hing (doc/format.md §8.2) und spaeter `Fehler 'U' SPUR DEFEKT` meldete
   (doc/analyse_format_leerspur.md).  Beides ist behoben.
 
   ⚠️  format_driver mountet alle Disks schreibend → A: wird IMMER als Temp-Kopie
@@ -64,17 +64,17 @@ BOOT_CLOCK      = os.path.join(DISKS, 'cpa_cpa780_k5601_clock.img')
 BOOT_8INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo8zoll_noclock.img')
 BOOT_5INCHCOMBO = os.path.join(DISKS, 'cpa_cpa780_combo5zoll_noclock.img')
 
-BLANK = ''   # createB/FD_DISKC_FMT-Formatname für „unformatierte Leerdiskette"
+BLANK = ''   # createB/FD_DISKC_FMT-Formatname fuer „unformatierte Leerdiskette"
 
 # Preset-Felder:
 #   boot        A:-Boot-Disk (FORMAT.COM + CPABCGEN.COM + @OS.COM)
 #   drive       Ziel-Laufwerksbuchstabe (B/C)
-#   prof        DriveProfile des Ziel-Laufwerks (für Boot-Verify: Ziel liegt auf A:)
-#   b_prof      DriveProfile des B:-Slots während Schritt 1 (Combo-B:-Typ)
-#   c_prof      DriveProfile des C:-Slots während Schritt 1 (Combo-C:-Typ)
+#   prof        DriveProfile des Ziel-Laufwerks (fuer Boot-Verify: Ziel liegt auf A:)
+#   b_prof      DriveProfile des B:-Slots waehrend Schritt 1 (Combo-B:-Typ)
+#   c_prof      DriveProfile des C:-Slots waehrend Schritt 1 (Combo-C:-Typ)
 #   needs_clock Kaltstart fragt Uhrzeit ab
-#   fmt_key     Auswahltaste in FORMAT.COMs Formatliste (alle Presets: Menüseite 1)
-#   fmt_nav     Tastenfolge zur richtigen Menüseite (leer = Seite 1)
+#   fmt_key     Auswahltaste in FORMAT.COMs Formatliste (alle Presets: Menueseite 1)
+#   fmt_nav     Tastenfolge zur richtigen Menueseite (leer = Seite 1)
 #   budget      Takt-Budget (Mio.) fuer den Formatierlauf; Richtwert ~12 je Spur,
 #               gemessen werden ~3–5,5 Mio. Takte je LEERER Spur.
 PRESETS = {
@@ -127,12 +127,12 @@ def _script_format_and_gen(cfg):
         'boot 10', 'enter',                         # Vergleichs-Lesen = j
         'boot 8',
     ]
-    for k in cfg['fmt_nav']:                        # zur richtigen Menüseite blättern
+    for k in cfg['fmt_nav']:                        # zur richtigen Menueseite blaettern
         lines += [f'type {k}', 'boot 3']
-    lines += [f"type {cfg['fmt_key']}", 'boot 6']   # Format auswählen
+    lines += [f"type {cfg['fmt_key']}", 'boot 6']   # Format auswaehlen
     lines += ['enter', 'boot 5']                    # von Spur 0
     lines += ['enter']                              # bis Spur = letzte
-    lines += ['boot 6', 'type j']                   # Warnung bestätigen
+    lines += ['boot 6', 'type j']                   # Warnung bestaetigen
     lines += [f"boot {cfg['budget']}", 'dump format']
     # FORMAT.COM verlassen: "Wiederholung? (j/n)" -> n, "Rueckkehr? (j, sonst Ende)" -> n
     lines += ['type n', 'boot 20', 'type n', 'boot 30']
@@ -157,10 +157,10 @@ def run_driver(script, a_path, b_path, c_path=None, profiles=None):
                darf nie beschrieben werden).
       b_path : Datei des B:-Slots.  Existiert sie nicht, legt format_driver sie als
                **Leerdiskette** an (createB = leerer Formatname); existiert sie, wird
-               sie unverändert (schreibend!) gemountet.
-      c_path : dito für den C:-Slot (FD_DISKC / FD_DISKC_FMT).
+               sie unveraendert (schreibend!) gemountet.
+      c_path : dito fuer den C:-Slot (FD_DISKC / FD_DISKC_FMT).
 
-    Liefert (stdout, stderr).  b_path/c_path bleiben liegen — der Aufrufer räumt auf.
+    Liefert (stdout, stderr).  b_path/c_path bleiben liegen — der Aufrufer raeumt auf.
     """
     fd, tmpA = tempfile.mkstemp(suffix=os.path.splitext(a_path)[1]); os.close(fd)
     shutil.copyfile(a_path, tmpA)
@@ -187,7 +187,7 @@ def run_driver(script, a_path, b_path, c_path=None, profiles=None):
 
 
 def _blank_path(suffix='.hfe'):
-    """Temp-Pfad für eine Leerdiskette — die DATEI wird bewusst nicht angelegt."""
+    """Temp-Pfad fuer eine Leerdiskette — die DATEI wird bewusst nicht angelegt."""
     fd, p = tempfile.mkstemp(suffix=suffix); os.close(fd); os.unlink(p)
     return p
 
@@ -197,7 +197,7 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--preset', default='cpa780', choices=list(PRESETS))
     p.add_argument('--out', help='Ausgabepfad der Boot-Disk (Default: Temp, wird verworfen)')
-    p.add_argument('--no-verify', action='store_true', help='Boot-Verify überspringen')
+    p.add_argument('--no-verify', action='store_true', help='Boot-Verify ueberspringen')
     p.add_argument('--quiet', action='store_true', help='nur Ergebnis-Zeilen ausgeben')
     args = p.parse_args()
 
@@ -214,7 +214,7 @@ def main():
     if not os.path.exists(cfg['boot']):
         print(f"FEHLER: Boot-Disk fehlt: {cfg['boot']}", file=sys.stderr); return 2
 
-    temps = []   # aufzuräumende Zwischendateien
+    temps = []   # aufzuraeumende Zwischendateien
 
     def cleanup():
         for t in temps:
@@ -251,7 +251,7 @@ def main():
     log(f"  OK — formatiert + CPABCGEN gemeldet; Ziel @OS.COM: {'@OS' in o1}")
 
     if args.no_verify:
-        log(f"\nFertig: {out}  (Boot-Verify übersprungen)")
+        log(f"\nFertig: {out}  (Boot-Verify uebersprungen)")
         print(f"BOOTDISK OK (no-verify): {out}")
         if out != target:
             cleanup()

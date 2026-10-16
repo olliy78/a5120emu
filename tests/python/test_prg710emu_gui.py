@@ -2,7 +2,7 @@
 
 doc/design/20_prg710.md AP-P5d: Programmprofil (Titel, Konfiguration, Takt
 2,4576 MHz), Modellwahl PRG 710 / PRG 710-1 mit Tastaturtausch, Bildschirmtastatur
-K7609 (ET ohne Kürzel), ``keyRelease`` wird gemeldet, Schnittstellenreiter je
+K7609 (ET ohne Kuerzel), ``keyRelease`` wird gemeldet, Schnittstellenreiter je
 Variante, Konfiguration getrennt von den anderen Programmen.
 """
 
@@ -85,7 +85,7 @@ def test_modellwahl_tauscht_maschine_und_tastatur(qapp, konfig_ordner):
         assert w.emulator.machine == "prg710-1" and w.emulator.prg_variant == 1
         assert isinstance(w.keyboard_widget, KeyboardK7672Widget)
         assert w.screen_widget.key_sink is w.keyboard_widget
-        # Schnittstellen je Variante: das 710-1 hat eine weniger (A32-B trägt die Tastatur).
+        # Schnittstellen je Variante: das 710-1 hat eine weniger (A32-B traegt die Tastatur).
         assert w.emulator.serial_count() == 3
         w._autosave_now()
         cfg = config_io.load_config(str(konfig_ordner / "prg710emu.yaml"))
@@ -162,7 +162,7 @@ def test_et_ohne_kuerzel_und_keyrelease(qapp, konfig_ordner):
         QTest.mouseRelease(kw, Qt.LeftButton, Qt.NoModifier, mitte)
         assert gedrueckt == [QK_TASTE_BASE | 0x37]
         assert losgelassen == [QK_TASTE_BASE | 0x37]
-        # Offene Taste: federt zurück, sendet nichts.
+        # Offene Taste: federt zurueck, sendet nichts.
         tot = next(t for t in kw._keys if t.low == "FC")
         QTest.mouseClick(kw, Qt.LeftButton, Qt.NoModifier, _mitte(kw, tot))
         assert gedrueckt == [QK_TASTE_BASE | 0x37]
@@ -269,14 +269,14 @@ def test_eprom_kasten_nur_im_prg_und_ohne_kuerzel(qapp, konfig_ordner):
         assert w._aktion("dock_eprom") is not None
         for name in EPROM_AKTIONEN:
             a = getattr(w, f"act_{name}")
-            assert a.shortcut().isEmpty(), name          # Kürzeltabelle = Vertrag
-        # Im Menü steht alles: Maschine ▸ EPROMmer und Ansicht ▸ EPROMmer.
+            assert a.shortcut().isEmpty(), name          # Kuerzeltabelle = Vertrag
+        # Im Menue steht alles: Maschine ▸ EPROMmer und Ansicht ▸ EPROMmer.
         from PySide6.QtWidgets import QMenu
         unter = [m for m in w.menuBar().findChildren(QMenu) if m.title() == "E&PROMmer"]
         assert len(unter) == 1
         assert unter[0].actions() == [getattr(w, f"act_{n}") for n in EPROM_AKTIONEN]
         assert w.act_dock_eprom in _menue(w, "&Ansicht")
-        # Die Knöpfe des Kastens sind die Aktionen selbst.
+        # Die Knoepfe des Kastens sind die Aktionen selbst.
         assert [k.defaultAction() for k in w.eprom_widget.knoepfe] == \
             [getattr(w, f"act_{n}") for n in EPROM_AKTIONEN]
         assert "dock_eprom" in actions.reihenfolge("prg710")
@@ -317,7 +317,7 @@ def test_eprom_bedienung_ueber_die_aktionen(qapp, konfig_ordner, tmp_path, monke
         w.act_eprom_entnehmen.trigger()
         assert w.emulator.eprom_type() == 0
         text = w.eprom_widget.protokoll_text()
-        for teil in ("U2716 eingelegt", "UV-gelöscht", "gespeichert nach", "U555 eingelegt",
+        for teil in ("U2716 eingelegt", "UV-geloescht", "gespeichert nach", "U555 eingelegt",
                      "entnommen"):
             assert teil in text, (teil, text)
     finally:
@@ -326,7 +326,7 @@ def test_eprom_bedienung_ueber_die_aktionen(qapp, konfig_ordner, tmp_path, monke
 
 def test_eprom_sockel_ueberlebt_den_neubau_der_maschine(qapp, konfig_ordner):
     """Ein Neubau der Maschine (Laufwerkswechsel; beim Modellwechsel fragt AP-P9 erst
-    nach) — das PROM wandert mit, samt „geändert“."""
+    nach) — das PROM wandert mit, samt „geaendert“."""
     w = _fenster(qapp)
     try:
         w.emulator.eprom_insert_data(b"\x01\x02\x03", 1, "", True)

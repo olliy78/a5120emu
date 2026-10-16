@@ -92,7 +92,7 @@ class _Laufwerk(QGroupBox):
 
     def aktualisieren(self, gesteckt: bool) -> None:
         st = self.emu.tape_status(self.nr) if gesteckt else None
-        # Ein Laufwerk, das die Maschine nicht hat (MC80.2x: nur das SK 1200), entfällt.
+        # Ein Laufwerk, das die Maschine nicht hat (MC80.2x: nur das SK 1200), entfaellt.
         self.setVisible(not (gesteckt and st is None))
         geladen = bool(st and st["loaded"])
         self.einlegen_knopf.setEnabled(gesteckt)
@@ -185,9 +185,9 @@ class _Laufwerk(QGroupBox):
 class KassetteWidget(QWidget):
     """Die zwei Laufwerke der K5020."""
 
-    #: Eine Bedienung hat Datei/Bestückung geändert — gehört in die Konfiguration.
+    #: Eine Bedienung hat Datei/Bestueckung geaendert — gehoert in die Konfiguration.
     geaendert = Signal()
-    #: Eine Zeile für die Statuszeile des Fensters.
+    #: Eine Zeile fuer die Statuszeile des Fensters.
     meldung = Signal(str)
 
     def __init__(self, emulator, parent=None):

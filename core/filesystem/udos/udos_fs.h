@@ -327,7 +327,7 @@ public:
     ///
     /// Nicht aus Vorsicht: **der Belegungsplan schuetzt den Urlader dort nicht.**  Auf
     /// der bootfaehigen Seite der Referenzdiskette stehen 35 Sektoren dieser Spuren
-    /// als frei und tragen trotzdem die Meldungstabelle des Nukleus (Wächter
+    /// als frei und tragen trotzdem die Meldungstabelle des Nukleus (Waechter
     /// `UdosFileSystem.DerBelegungsplanSchuetztDenUrladerNICHT`).  Verzeichnis- und
     /// Kartenspur gehoeren NICHT dazu — dort sagt der Plan, was belegt ist, und UDOS
     /// selbst legt Dateien dorthin.

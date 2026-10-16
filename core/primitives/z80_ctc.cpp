@@ -52,8 +52,8 @@ Z80CTC::Z80CTC(const std::string& name) : name_(name) {}
  * the pulse, level=true to clear it).
  *
  * @param cb Callback function receiving (channel, level)
- * @param kanalmaske Kanäle, deren Flanke der Rückruf wirklich auswertet (Bit n = Kanal n);
- *        nur für sie läuft clockTick(int) die Flanke als Einzeltakt, siehe dort
+ * @param kanalmaske Kanaele, deren Flanke der Rueckruf wirklich auswertet (Bit n = Kanal n);
+ *        nur fuer sie laeuft clockTick(int) die Flanke als Einzeltakt, siehe dort
  */
 void Z80CTC::setZCTOCallback(ZCTOCallback cb, uint8_t kanalmaske) {
     sichtbar(); horizont_ = 0;   // neue Beobachtungslage ⇒ Vorausschau neu
@@ -86,7 +86,7 @@ void Z80CTC::setZCTOCallback(ZCTOCallback cb, uint8_t kanalmaske) {
  * @param data Control byte or time constant value
  */
 void Z80CTC::ioWrite(uint8_t port, uint8_t data) {
-    sichtbar(); horizont_ = 0;   // Umprogrammierung: erst alte Takte verrechnen, Horizont beim nächsten Takten neu
+    sichtbar(); horizont_ = 0;   // Umprogrammierung: erst alte Takte verrechnen, Horizont beim naechsten Takten neu
     int ch = port & 0x03;
     Channel& c = ch_[ch];
 
@@ -125,7 +125,7 @@ void Z80CTC::ioWrite(uint8_t port, uint8_t data) {
 
     if (data & CTRL_RESET) {
         c.running     = false;
-        // Vorgabe: Zähler 0.  Mit setResetLaedtZeitkonstante() steht er wieder auf der
+        // Vorgabe: Zaehler 0.  Mit setResetLaedtZeitkonstante() steht er wieder auf der
         // Zeitkonstante (P8000, MON8-Hardwaretest Fehler 16); ohne geladene TC bleibt es 0.
         c.counter     = (reset_laedt_tc_ && c.timeConst != 0) ? static_cast<int>(c.timeConst) : 0;
         c.prescaleCnt = 0;
@@ -173,7 +173,7 @@ void Z80CTC::clockTick() {
         }
 
         if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
-            // Bruchtakt-Zähleingang: ganzzahliger Phasenakkumulator (s. setzeEingangsTakt)
+            // Bruchtakt-Zaehleingang: ganzzahliger Phasenakkumulator (s. setzeEingangsTakt)
             takt_acc_[i] += takt_hz_[i];
             if (takt_acc_[i] >= takt_phi_[i]) {
                 takt_acc_[i] -= takt_phi_[i];
@@ -197,14 +197,14 @@ void Z80CTC::clockTick() {
 uint64_t Z80CTC::teilerTakte(int kanal) const {
     if (kanal < 0 || kanal > 3) return 0;
     const Channel& c = ch_[kanal];
-    // Läuft der Kanal nicht, kommen keine Impulse: nicht programmiert, per D1
+    // Laeuft der Kanal nicht, kommen keine Impulse: nicht programmiert, per D1
     // angehalten, Zeitkonstante noch ausstehend oder Zeitgeber vor dem Trigger.
     if (!c.running) return 0;
     const uint64_t tc = (c.timeConst == 0) ? 256u : c.timeConst;
     if (!(c.control & CTRL_COUNTER))
         return ((c.control & CTRL_PRESCALE256) ? 256u : 16u) * tc;
 
-    // Zähler: Periode des Eingangs.  Eine (falsch verdrahtete) Schleife von
+    // Zaehler: Periode des Eingangs.  Eine (falsch verdrahtete) Schleife von
     // Quellen darf nicht endlos rekursieren — ab einer Tiefe, die keine echte
     // Kaskade erreicht, gilt der Eingang als unbekannt.
     static thread_local int tiefe = 0;
@@ -228,7 +228,7 @@ uint64_t Z80CTC::teilerTakteQ16(int kanal) const {
     // Bruchtakt: Takte je Impuls = phi/hz, in EINER Division gerechnet (gerundet).
     if (takt_hz_[kanal]) {
         // Die 64-Bit-Division kostet je Aufruf; abgefragt wird je Rechnerbefehl (Terminalkopplung),
-        // die Eingaben ändern sich nur beim Umprogrammieren.  Reine Funktion → Merker bitgleich.
+        // die Eingaben aendern sich nur beim Umprogrammieren.  Reine Funktion → Merker bitgleich.
         QMerker& m = q16Merker_[kanal];
         if (m.tc != tc || m.phi != takt_phi_[kanal] || m.hz != takt_hz_[kanal]) {
             m.tc = tc; m.phi = takt_phi_[kanal]; m.hz = takt_hz_[kanal];
@@ -293,7 +293,7 @@ void Z80CTC::reset() {
 
 bool Z80CTC::abrechnen() {
     const long long p = aufgeschoben_;
-    aufgeschoben_ = 0;                       // zuerst leeren: Rückrufe (Kaskade) dürfen clkTrg → sichtbar() rufen
+    aufgeschoben_ = 0;                       // zuerst leeren: Rueckrufe (Kaskade) duerfen clkTrg → sichtbar() rufen
     bool dirty = dirty_rest_;
     dirty_rest_ = false;
     if (p > 0) dirty |= tickSofort(static_cast<int>(p));
@@ -302,7 +302,7 @@ bool Z80CTC::abrechnen() {
 }
 
 long long Z80CTC::berechneHorizont() const {
-    // Spiegel der Vorausschau in tickSofort() für ein unendlich langes Fenster.
+    // Spiegel der Vorausschau in tickSofort() fuer ein unendlich langes Fenster.
     constexpr long long kMax = 1LL << 28;
     long long dist = kMax;
     for (int i = 0; i < 4; ++i) {
@@ -332,14 +332,14 @@ bool Z80CTC::tickSofort(int ticks) {
     if (ticks <= 0) return false;
 
     // Beobachtet ist ein Kanal, dessen ZC/TO-Flanke etwas bewirkt: Interrupt-Freigabe,
-    // Rückruf (laut Kanalmaske) oder Trigger-Betrieb (fireZCTO hält den Kanal an).  Nur die
-    // Flanke eines beobachteten Kanals muss als exakter Einzeltakt laufen; alle übrigen
-    // Zähler werden rein rechnerisch fortgeschrieben (Zustand danach byte-gleich zum
+    // Rueckruf (laut Kanalmaske) oder Trigger-Betrieb (fireZCTO haelt den Kanal an).  Nur die
+    // Flanke eines beobachteten Kanals muss als exakter Einzeltakt laufen; alle uebrigen
+    // Zaehler werden rein rechnerisch fortgeschrieben (Zustand danach byte-gleich zum
     // Einzeltaktpfad, auch zcto_active — es steht im Save-State).
-    // Unter dieser Strecke bis zur nächsten Flanke lohnt der Sprung nicht → Einzeltakte.
+    // Unter dieser Strecke bis zur naechsten Flanke lohnt der Sprung nicht → Einzeltakte.
     constexpr long long kMinSprung = 8;
     int  rest = ticks;
-    bool einzeln_gelaufen = false;   // nur dann kann sich „Interrupt anstehend" geändert haben
+    bool einzeln_gelaufen = false;   // nur dann kann sich „Interrupt anstehend" geaendert haben
     bool vorher = false;
     auto einzeltakte = [&](int n) {
         if (!einzeln_gelaufen) { vorher = anyPending(); einzeln_gelaufen = true; }
@@ -347,10 +347,10 @@ bool Z80CTC::tickSofort(int ticks) {
         rest -= n;
     };
     while (rest > 0) {
-        // Takte unmittelbar VOR der nächsten Flanke eines beobachteten Kanals (>= rest: keine im Fenster)
+        // Takte unmittelbar VOR der naechsten Flanke eines beobachteten Kanals (>= rest: keine im Fenster)
         long long dist = rest;
         bool nur_einzeln = false;
-        uint8_t tut = 0;   // Kanäle, die im Sprung etwas fortzuschreiben haben (läuft / Flankenende)
+        uint8_t tut = 0;   // Kanaele, die im Sprung etwas fortzuschreiben haben (laeuft / Flankenende)
         for (int i = 0; i < 4; ++i) {
             const Channel& c = ch_[i];
             if (!c.running) {
@@ -364,29 +364,29 @@ bool Z80CTC::tickSofort(int ticks) {
             const bool zaehler = (c.control & CTRL_COUNTER) != 0;
             const bool bruch   = zaehler && takt_any_ && takt_hz_[i];
             const int  prescale = (c.control & CTRL_PRESCALE256) ? 256 : 16;
-            // Randfälle, die die Sprungformel nicht abdeckt → Rest des Fensters Einzeltakt
+            // Randfaelle, die die Sprungformel nicht abdeckt → Rest des Fensters Einzeltakt
             if (bruch ? takt_hz_[i] >= takt_phi_[i] : (!zaehler && c.prescaleCnt >= prescale)) {
                 nur_einzeln = true;
                 break;
             }
             if (!zcto_beobachtet(i)) continue;
-            if (c.zcto_active) { dist = 0; continue; }     // Flankenende: Rückruf(true) fällig
+            if (c.zcto_active) { dist = 0; continue; }     // Flankenende: Rueckruf(true) faellig
             const long long cc = c.counter > 0 ? c.counter : 1;
             if (bruch) {
                 const uint64_t num = (uint64_t)cc * takt_phi_[i] - takt_acc_[i];
                 dist = std::min<long long>(dist, (long long)((num + takt_hz_[i] - 1) / takt_hz_[i]) - 1);
             } else if (!zaehler) {
                 dist = std::min<long long>(dist, (prescale - c.prescaleCnt) + (cc - 1) * prescale - 1);
-            }   // Zähler ohne Bruchtakt zählt nur über clkTrg()
+            }   // Zaehler ohne Bruchtakt zaehlt nur ueber clkTrg()
         }
 
         if (nur_einzeln) { einzeltakte(rest); break; }
-        if (dist >= rest) {                                // häufigster Fall: nichts Beobachtetes im Fenster
+        if (dist >= rest) {                                // haeufigster Fall: nichts Beobachtetes im Fenster
             if (tut) springe(rest, tut);
             break;
         }
         if (dist >= kMinSprung) { springe(dist, tut); rest -= (int)dist; dist = 0; }
-        einzeltakte((int)dist + 1);                        // bis einschließlich des Flankentakts
+        einzeltakte((int)dist + 1);                        // bis einschliesslich des Flankentakts
     }
     return einzeln_gelaufen && anyPending() != vorher;
 }
@@ -395,7 +395,7 @@ void Z80CTC::springe(long long skip, uint8_t kanaele) {
     for (int i = 0; i < 4; ++i) {
         if (!((kanaele >> i) & 1)) continue;
         Channel& c = ch_[i];
-        uint64_t n;                 // Zählimpulse im Sprung
+        uint64_t n;                 // Zaehlimpulse im Sprung
         bool     letzter_takt;      // fiel der letzte Impuls auf den letzten Sprungtakt?
         if (takt_any_ && c.running && (c.control & CTRL_COUNTER) && takt_hz_[i]) {
             const uint64_t sum = takt_acc_[i] + (uint64_t)skip * takt_hz_[i];
@@ -409,14 +409,14 @@ void Z80CTC::springe(long long skip, uint8_t kanaele) {
             n             = total >> sh;
             letzter_takt  = n > 0 && c.prescaleCnt == 0;
         } else {
-            c.zcto_active = false;   // Einzeltakt löscht ein anstehendes Flankenende
+            c.zcto_active = false;   // Einzeltakt loescht ein anstehendes Flankenende
             continue;
         }
         c.zcto_active = false;
         if (n == 0) continue;
         const uint64_t cc = (uint64_t)(c.counter > 0 ? c.counter : 1);
         if (n < cc) { c.counter -= (int)n; continue; }  // beobachtet: stets dieser Fall
-        // unbeobachtet: durchlaufene Nulldurchgänge nur nachladen (Zeitkonstante 0 = 256)
+        // unbeobachtet: durchlaufene Nulldurchgaenge nur nachladen (Zeitkonstante 0 = 256)
         const uint64_t tc = (c.timeConst == 0) ? 256u : c.timeConst;
         c.counter     = (int)(tc - ((n - cc) % tc));
         c.zcto_active = letzter_takt && ((n - cc) % tc == 0);
@@ -628,9 +628,9 @@ uint8_t Z80CTC::getVector() const {
  * is being serviced.
  */
 void Z80CTC::onRETI() {
-    // RETI löscht das IUS-Bit des Kanals in Bedienung.  Maßgeblich ist nur der IEI-Eingang
-    // der CTC (kein höheres Gerät in Bedienung); eine bloß ANSTEHENDE Anforderung eines
-    // höheren Kanals derselben CTC sperrt dabei nicht, sonst bliebe der Kanal in Bedienung
+    // RETI loescht das IUS-Bit des Kanals in Bedienung.  Massgeblich ist nur der IEI-Eingang
+    // der CTC (kein hoeheres Geraet in Bedienung); eine bloss ANSTEHENDE Anforderung eines
+    // hoeheren Kanals derselben CTC sperrt dabei nicht, sonst bliebe der Kanal in Bedienung
     // (Fund A8/M11: Zeilenende-Kanal der DPL stand still).  Bis 2026-10-16 galt dies nur
     // mit dem Schalter setRetiNachIus; seitdem ist es die Vorgabe (A8b).
     if (!iei_) return;

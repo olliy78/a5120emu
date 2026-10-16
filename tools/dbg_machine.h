@@ -2,25 +2,25 @@
  * @file dbg_machine.h
  * @brief Die Maschine hinter k1520dbg — A5120, K8915 (§8a AP-E4d), PRG 710/710-1 (AP-P5c) ODER PC 1715 (AP-4b).
  *
- * Der Debugger ist über Jahre am A5120 gewachsen und spricht die Maschine an rund
+ * Der Debugger ist ueber Jahre am A5120 gewachsen und spricht die Maschine an rund
  * 200 Stellen als `m.xxx()` an.  Statt jede Stelle zu verzweigen, steht hier EINE
- * Klasse mit genau diesen Methodennamen, die an die gewählte Maschine weiterreicht:
+ * Klasse mit genau diesen Methodennamen, die an die gewaehlte Maschine weiterreicht:
  *
  *  - **gemeinsam** (Lauf, Speicher in CPU-Sicht, Tastatur, Disketten, Haltepunkt-
  *    Schnittstelle): beide Maschinen haben dieselbe Semantik — Beobachter vor jedem
- *    Befehl, Halt VOR dem Befehl über `stop()` + `abortBeforeExecute`, `run()` kehrt
- *    dann mit 0 Takten zurück;
+ *    Befehl, Halt VOR dem Befehl ueber `stop()` + `abortBeforeExecute`, `run()` kehrt
+ *    dann mit 0 Takten zurueck;
  *  - **nur A5120** (ZVE2, /BUSRQ, DMA-Beobachter, Savestates, BS-PIO, K8025): am K8915
  *    ruhige Ersatzwerte (kein /BUSRQ, „ZVE2 im Reset“), damit gemeinsame Anzeigen wie
- *    `where`/`stateLine` nicht verzweigen müssen.  Die KOMMANDOS, die es nur am A5120
- *    gibt, fängt der Debugger vorher ab und meldet „nicht vorhanden“
- *    (@ref nurA5120Kommando) — hier wird nichts davon wirklich ausgeführt;
- *  - **nur K8915**: über @ref k8915() (A8H-Speicherbild, Bänke, ATS, K7672);
- *  - **nur PRG 710/710-1**: über @ref prg() (Speicherverwaltung E8H–EBH, K2521, K8025,
- *    8279/K7609 bzw. K7672 an A32-B).  Der PRG zählt wie der K8915 als „eine CPU“
+ *    `where`/`stateLine` nicht verzweigen muessen.  Die KOMMANDOS, die es nur am A5120
+ *    gibt, faengt der Debugger vorher ab und meldet „nicht vorhanden“
+ *    (@ref nurA5120Kommando) — hier wird nichts davon wirklich ausgefuehrt;
+ *  - **nur K8915**: ueber @ref k8915() (A8H-Speicherbild, Baenke, ATS, K7672);
+ *  - **nur PRG 710/710-1**: ueber @ref prg() (Speicherverwaltung E8H–EBH, K2521, K8025,
+ *    8279/K7609 bzw. K7672 an A32-B).  Der PRG zaehlt wie der K8915 als „eine CPU“
  *    (@ref einCpu) — ZVE2-/Snapshot-Kommandos sind dort ebenfalls „nicht vorhanden“.
  *
- * Header-only, weil nur k1520dbg sie benutzt; boot_trace fährt den K8915 in einem
+ * Header-only, weil nur k1520dbg sie benutzt; boot_trace faehrt den K8915 in einem
  * eigenen Zweig (tools/boot_trace_k8915.cpp).
  *
  * @license MIT
@@ -40,7 +40,7 @@
 
 namespace dbgm {
 
-/** @brief Eine Interruptquelle der Daisy-Chain (maschinenneutral, für `ivt`). */
+/** @brief Eine Interruptquelle der Daisy-Chain (maschinenneutral, fuer `ivt`). */
 using IntSource = A5120Machine::IntSource;
 
 /** @brief Maschinenwahl aus `--machine`; false bei unbekanntem Namen. */
@@ -91,13 +91,13 @@ inline bool steckeK6022(K1520Machine& m, bool an, std::string& err) {
 
 /**
  * @brief Steckt die Kassettenkarte K5020 (`--tape`, Entwurf 29 AP K5) in @p m, wenn @p an, und
- *        bindet ggf. `.k52`-Dateien an Gerät 1/2 (@p d1/@p d2; fehlende Datei = leere Kassette).
+ *        bindet ggf. `.k52`-Dateien an Geraet 1/2 (@p d1/@p d2; fehlende Datei = leere Kassette).
  */
 inline bool steckeK5020(K1520Machine& m, bool an, const std::string& d1, const std::string& d2,
                         std::string& err) {
     if (!an) return true;
     // Am KMBG (--ausfuehrung kmbg) steckt sie schon fest — dann nur die Dateien binden.
-    // MC80.2x (AP M12): das Laufwerk SK 1200 der MBI ist fest eingebaut (kein K5020, nur Gerät 1).
+    // MC80.2x (AP M12): das Laufwerk SK 1200 der MBI ist fest eingebaut (kein K5020, nur Geraet 1).
     if (!m.k5020() && m.kassettenLaufwerk(0)) {
         if (!d2.empty()) { err = "dieses Geraet hat nur ein Kassettenlaufwerk (--tape2 entfaellt)"; return false; }
         return d1.empty() || m.kassettenLaufwerk(0)->dateiBinden(d1, err);
@@ -111,12 +111,12 @@ inline bool steckeK5020(K1520Machine& m, bool an, const std::string& d1, const s
 
 /**
  * @brief `--ausfuehrung neu|alt|kmbg` und `--laufwerke P0,P1,…` (AP A6, Entwurf 30) in die
- *        A5120-Konfiguration übernehmen.
+ *        A5120-Konfiguration uebernehmen.
  *
- * @p ausf (nullptr = nicht angegeben) setzt die Ausführung samt ihrer Laufwerksvorgabe
- * (`Config::fuerAusfuehrung`, am alten Gerät 3× K5600.10); @p lw (nullptr = Vorgabe) ersetzt
- * danach die Laufwerksprofile von vorn an — z. B. `K5601`, wenn ein altes Gerät wie im Feld
- * auf die K5601 umgerüstet ist.  Das EM (`cfg.em`) bleibt erhalten.
+ * @p ausf (nullptr = nicht angegeben) setzt die Ausfuehrung samt ihrer Laufwerksvorgabe
+ * (`Config::fuerAusfuehrung`, am alten Geraet 3× K5600.10); @p lw (nullptr = Vorgabe) ersetzt
+ * danach die Laufwerksprofile von vorn an — z. B. `K5601`, wenn ein altes Geraet wie im Feld
+ * auf die K5601 umgeruestet ist.  Das EM (`cfg.em`) bleibt erhalten.
  */
 inline bool parseAusfuehrung(const char* ausf, const char* lw, A5120Machine::Config& cfg,
                              std::string& err, const char* laderom = nullptr,
@@ -130,7 +130,7 @@ inline bool parseAusfuehrung(const char* ausf, const char* lw, A5120Machine::Con
         else if (s == "v09_2") lr = K2526::Laderom::V09_2;
         else { err = "--laderom: unbekannt '" + s + "' (v06|v09_1|v09_2)"; return false; }
     }
-    // `--tastatur k7636|k7637` (AP A7): Tastatur abweichend von der Ausführung (BCU 880 V1.2:
+    // `--tastatur k7636|k7637` (AP A7): Tastatur abweichend von der Ausfuehrung (BCU 880 V1.2:
     // `neu` + K7636).
     using T = A5120Machine::Config::Tastatur;
     T ta = cfg.tastatur;
@@ -175,7 +175,7 @@ inline const char* rafName(RAF::Typ t) {
 
 /**
  * @brief Kommandos, die es am K8915 nicht gibt (ZVE2, /BUSRQ-/DMA-Ereignisse,
- *        Snapshots/Reverse/Savestates).  Unit-getestet über tests/cli.
+ *        Snapshots/Reverse/Savestates).  Unit-getestet ueber tests/cli.
  */
 inline bool nurA5120Kommando(const std::string& cmd) {
     static const std::set<std::string> s = {
@@ -221,7 +221,7 @@ inline std::string speicherbild(const K3528& ops) {
 }
 
 // ─── K8915 beider Bauformen (V3: ZRE 045-8762, Gen 2: K2521 + K3528) ─────────
-// `K8915Machine::zre()` gilt nur am V3 (assert) — jede Stelle der Werkzeuge geht über diese Weichen.
+// `K8915Machine::zre()` gilt nur am V3 (assert) — jede Stelle der Werkzeuge geht ueber diese Weichen.
 inline bool gen2(const K8915Machine& k) { return k.generation() == K8915Machine::Generation::Gen2; }
 inline uint8_t k8A8(K8915Machine& k)    { return gen2(k) ? k.ops().reg()    : k.zre().reg(); }
 inline bool k8Memdi(K8915Machine& k)    { return gen2(k) ? k.ops().memdi()  : k.zre().memdi(); }
@@ -267,8 +267,8 @@ inline std::string lampen61(uint8_t v) {
 
 class DbgMachine {
 public:
-    /// @p cfg gilt nur für den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
-    /// @p p8cfg: Vorlage für den P8000 (WDC/Platte, P13d); `karte16` setzt die Maschinenart.
+    /// @p cfg gilt nur fuer den A5120 (dort u. a. das Erweiterungsmodul des A5120.16).
+    /// @p p8cfg: Vorlage fuer den P8000 (WDC/Platte, P13d); `karte16` setzt die Maschinenart.
     explicit DbgMachine(Art art, const A5120Machine::Config& cfg = {}, const P8000Machine::Config* p8cfg = nullptr,
                         int mc80_spe = 1) {
         if (art == Art::K8915) k8_ = std::make_unique<K8915Machine>();
@@ -359,7 +359,7 @@ public:
     std::string lastError() { return base().lastError(); }
     std::string diskNotice(int d) { return base().diskNotice(d); }
 
-    // ─── Tastatur (über die Warteschlange der Maschine) ─────────────────────
+    // ─── Tastatur (ueber die Warteschlange der Maschine) ─────────────────────
     void keyPress(uint32_t k, bool sh, bool ct) { base().keyPress(k, sh, ct); }
     void keyRelease(uint32_t k) { base().keyRelease(k); }
 
@@ -369,19 +369,19 @@ public:
 
     /**
      * @brief Ein Zeichen des Textbildes (Zeile, Spalte).  A5120: Bildspeicher F800H
-     *        über die CPU-Sicht (unverändert gegenüber vor AP-E4d).  K8915: direkt von
-     *        der K7024 bei 1000H — über die CPU wäre er bei A8H-Bit0 = 1 vom RAM
-     *        verdeckt; Bit 7 (Cursor) wird ausgeblendet, sonst verschwände das
+     *        ueber die CPU-Sicht (unveraendert gegenueber vor AP-E4d).  K8915: direkt von
+     *        der K7024 bei 1000H — ueber die CPU waere er bei A8H-Bit0 = 1 vom RAM
+     *        verdeckt; Bit 7 (Cursor) wird ausgeblendet, sonst verschwaende das
      *        Zeichen unter dem Cursor aus jeder Suche.
      */
     uint8_t screenByte(int row, int col) {
         if (k8_) return (uint8_t)(k8_->screenChar(col, row) & 0x7F);
         if (p7_) return (uint8_t)(p7_->screenChar(col, row) & 0x7F);   // VRAM nur bei E8H[F]=FFH in CPU-Sicht
-        if (pc_) return (uint8_t)(pc_->screenChar(col, row) & 0x7F);   // Bild kommt per DMA, nie über mem_read
+        if (pc_) return (uint8_t)(pc_->screenChar(col, row) & 0x7F);   // Bild kommt per DMA, nie ueber mem_read
         if (p8_) return (uint8_t)(p8_->screenChar(col, row) & 0x7F);   // Kern-Terminal tty1 (80 × 24)
         if (mc_) return (uint8_t)(mc_->screenChar(col, row) & 0x7F);   // MC80: Mustervergleich des VIS-Bilds, nie mem_read
         if (m2_) return (uint8_t)(m2_->screenChar(col, row) & 0x7F);   // MC80.2x: Zelle der DPL (32 × 8), nie mem_read
-        if (a5_->k7023()) {   // altes Gerät (AP A6): K7023 64×16 ab FC00H; außerhalb = Leerzeichen
+        if (a5_->k7023()) {   // altes Geraet (AP A6): K7023 64×16 ab FC00H; ausserhalb = Leerzeichen
             if (row >= 16 || col >= 64) return 0x20;
             return (uint8_t)(a5_->screenChar(col, row) & 0x7F);
         }
@@ -459,7 +459,7 @@ public:
         if (a5_) a5_->captureState(s, raf_inhalt);
     }
     bool restoreState(const A5120Machine::MachineSnapshot& s) { return a5_ && a5_->restoreState(s); }
-    // Save-State: A5120 (v7) und P8000 (P8KS v2); die übrigen Maschinen haben keinen.
+    // Save-State: A5120 (v7) und P8000 (P8KS v2); die uebrigen Maschinen haben keinen.
     bool saveState(const std::string& p) { return p8_ ? p8_->saveState(p) : (a5_ && a5_->saveState(p)); }
     bool loadState(const std::string& p) { return p8_ ? p8_->loadState(p) : (a5_ && a5_->loadState(p)); }
     std::string stateError() const { return p8_ ? p8_->stateError() : a5_ ? a5_->stateError() : std::string(); }
@@ -752,7 +752,7 @@ private:
     std::unique_ptr<P8000Machine> p8_;
     std::unique_ptr<Mc80Machine> mc_;
     std::unique_ptr<Mc80_2xMachine> m2_;
-    Z80 dummy_zve2_;   ///< K8915: Platzhalter, nie ausgeführt (Kommandos sind abgefangen)
+    Z80 dummy_zve2_;   ///< K8915: Platzhalter, nie ausgefuehrt (Kommandos sind abgefangen)
 };
 
 }  // namespace dbgm

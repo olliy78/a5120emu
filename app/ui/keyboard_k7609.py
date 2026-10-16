@@ -36,7 +36,7 @@ from app.ui.keyboard import KeyboardWidget, _Key, qt_event_to_core_key
 TASTE_BASE = 0x03000000
 #: ET1 (CR, Starttaste des Boot-ROMs) und ET2/ST.
 ET1, ET2 = 0x37, 0x38
-#: Vorläufige Wahl (§8.7).
+#: Vorlaeufige Wahl (§8.7).
 LEERTASTE, BACKSPACE = 0x16, 0x08
 
 
@@ -46,7 +46,7 @@ def taste(code: int) -> int:
 
 
 #: (Code, Grundzeichen, Umschaltzeichen) der Zeichentasten — aus
-#: ``doc/prg710/k7609_codes.csv`` (Wächter ``test_k7609_table_matches_the_csv``).
+#: ``doc/prg710/k7609_codes.csv`` (Waechter ``test_k7609_table_matches_the_csv``).
 ZEICHEN = (
     (0x00, "1", ":"), (0x01, "2", "/"), (0x02, "3", "*"), (0x03, "4", "("),
     (0x04, "5", ")"), (0x05, "6", "="), (0x06, "7", "."), (0x07, "8", "+"),
@@ -88,7 +88,7 @@ def _blind(x, y, w=0.5) -> _Taste:
     return _Taste(x=x, y=y, w=w, style="filler", kind="dead", name="Blindmodul")
 
 
-#: Die ungeklärte Belegung beschrifteter Funktionstasten (Foto 2026-10-05).
+#: Die ungeklaerte Belegung beschrifteter Funktionstasten (Foto 2026-10-05).
 _NICHT = ("sendet nichts — Funktionstaste des PRG-Betriebs (BS610), in UDOS/SCPX "
           "ohne Code; welche Matrixposition sie hat, ist offen [?]")
 

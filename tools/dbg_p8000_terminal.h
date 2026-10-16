@@ -1,18 +1,18 @@
 /**
  * @file dbg_p8000_terminal.h
  * @brief `k1520dbg --terminal`: das Originalterminal P8000 Typ 2 (Firmware P8T 5.0 + Tastatur
- *        K7673.09, Entwurf 28) als eigenständige Einheit im Debugger.  Der Kontext `cpu z8`
- *        (tools/dbg_z8.h) arbeitet auf dem Z8 des Terminals; jeder Schritt läuft durch die
+ *        K7673.09, Entwurf 28) als eigenstaendige Einheit im Debugger.  Der Kontext `cpu z8`
+ *        (tools/dbg_z8.h) arbeitet auf dem Z8 des Terminals; jeder Schritt laeuft durch die
  *        Einheit (Video/DMA, Tastatur, Watchdog laufen mit).
  *
  * Zusatzkommandos (help):
  *   term                 Bild (24 Zeilen), Cursor, Zeichensatz, Klingel, Watchdog
- *   crt                  8275: Parameter, Cursor, Blinkphase, DMA-Zähler, Bilder
+ *   crt                  8275: Parameter, Cursor, Blinkphase, DMA-Zaehler, Bilder
  *   host <text>          Zeichen vom Rechner auf die Leitung (\e \r \n \t \xNN)
- *   key <text>           Text über die Tastaturmatrix tippen (gleiche Escapes)
+ *   key <text>           Text ueber die Tastaturmatrix tippen (gleiche Escapes)
  *   taste <name>         MODE VIDEO SI_SO ON_OFF BREAK CR ESC DEL HOME VT LF FF BS HT BACKTAB
  *                        PAGE_ERASE LINE_INSERT LINE_DELETE CHAR_INSERT CHAR_DELETE
- *   matrix <zeile> <spalte>   eine Matrixtaste drücken/loslassen
+ *   matrix <zeile> <spalte>   eine Matrixtaste druecken/loslassen
  *   lauf <ms> | ruhe     Einheit laufen lassen | bis die Firmware ruht
  *   aus                  vom Terminal gesendete Zeichen (seit dem letzten `aus`)
  *
@@ -161,8 +161,8 @@ inline const char* hilfe() {
     return "Terminal (--terminal):\n"
            "  term | crt              Bild/Cursor | 8275-Zustand\n"
            "  host <text>             Zeichen vom Rechner (\\e \\r \\n \\t \\s \\xNN)\n"
-           "  key <text> | taste <n>  über die Tastatur K7673 tippen | Funktionstaste\n"
-           "  matrix <z> <s>          Matrixtaste drücken/loslassen\n"
+           "  key <text> | taste <n>  ueber die Tastatur K7673 tippen | Funktionstaste\n"
+           "  matrix <z> <s>          Matrixtaste druecken/loslassen\n"
            "  lauf <ms> | ruhe        Einheit laufen lassen | bis die Firmware ruht\n"
            "  aus                     vom Terminal gesendete Zeichen\n";
 }
@@ -182,7 +182,7 @@ inline int pruefstand(const char* script) {
     k.zusatz = [&](const std::vector<std::string>& t, std::string& out) { return befehl(e, aus, t, aktuelleZeile, out); };
     k.zusatzHilfe = hilfe();
     k.maxSchritte = 5'000'000;
-    std::printf("P8000-Terminal Typ 2 (P8T 5.0 + K7673.09) — help für Kommandos\n");
+    std::printf("P8000-Terminal Typ 2 (P8T 5.0 + K7673.09) — help fuer Kommandos\n");
     auto quelle = [&](FILE* in, bool prompt) {
         char zeile[1024];
         for (;;) {

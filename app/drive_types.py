@@ -15,7 +15,7 @@ Laufwerk"); a slot set to it has no drive wired and takes no disk.
 from app.core_binding.k1520 import DRIVE_NONE
 
 # (short product name, core DriveProfile name, one-line description)
-# Die Kernprofile heißen seit 2026-08-03 wie die realen Laufwerke — Produktname und
+# Die Kernprofile heissen seit 2026-08-03 wie die realen Laufwerke — Produktname und
 # Kernname sind daher identisch (siehe drive_profile.cpp).
 DRIVE_TYPES = [
     ("K5601",    "K5601",    '5,25" DS 80 Spuren, MFM, 800K'),
@@ -25,10 +25,10 @@ DRIVE_TYPES = [
     ("MF6400",   "MF6400",   '8" SS 77 Spuren, FM+MFM, 600K'),
 ]
 
-# Früher benutzte technische Profilnamen -> heutige Namen.  Gespeicherte
+# Frueher benutzte technische Profilnamen -> heutige Namen.  Gespeicherte
 # Konfigurationen (app/config_io.py) tragen noch die alten Werte; ohne diese
-# Zuordnung würde normalize() sie still auf K5601 zurücksetzen und damit die
-# Laufwerksbestückung des Nutzers verändern.
+# Zuordnung wuerde normalize() sie still auf K5601 zuruecksetzen und damit die
+# Laufwerksbestueckung des Nutzers veraendern.
 LEGACY_PROFILE_NAMES = {
     "ss_525_40":     "K5600.10",
     "ss_525_80":     "K5600.20",
@@ -38,10 +38,10 @@ LEGACY_PROFILE_NAMES = {
     "mfs_525_ds80":  "K5601",    # war ein K5601-Duplikat ohne FM-Lesepfad
 }
 
-#: Physische Reichweite je Laufwerkstyp: (Zylinder, Köpfe, Zellrate kbit/s, U/min).
+#: Physische Reichweite je Laufwerkstyp: (Zylinder, Koepfe, Zellrate kbit/s, U/min).
 #:
 #: Spiegelt die `DriveProfile`-Tabelle des Kerns (core/peripherals/floppy_drive/
-#: drive_profile.cpp).  Gebraucht wird sie nur für das **echte** Laufwerk am
+#: drive_profile.cpp).  Gebraucht wird sie nur fuer das **echte** Laufwerk am
 #: Greaseweazle (doc/design/14_physische_diskette.md): dort muss die Anwendung dem
 #: Kern sagen, wie weit der Kopf fahren kann — bei einer Abbilddatei sagt das die Datei.
 GEOMETRIE = {
@@ -67,7 +67,7 @@ DEFAULT_DRIVE_TYPES = ["K5601", "K5601", "K5601", NO_DRIVE]
 NUM_SLOTS = 4
 
 # ── Je Maschine (Programmprofil, app/profil.py) ─────────────────────────────
-#: Bestückung ab Werk.  K8915: wie das Gerät des Anwenders — zwei K5601
+#: Bestueckung ab Werk.  K8915: wie das Geraet des Anwenders — zwei K5601
 #: (doc/design/16_k8915.md §6.4), Steckplatz 2/3 leer.
 _STANDARD_JE_MASCHINE = {
     "a5120": DEFAULT_DRIVE_TYPES,
@@ -82,12 +82,12 @@ _STANDARD_JE_MASCHINE = {
     # MC80.3x: keine Diskettenlaufwerke (Kassette kommt mit AP M7; Entwurf 31).
     "mc80": [NO_DRIVE, NO_DRIVE, NO_DRIVE, NO_DRIVE],
 }
-#: Wählbare Typen.  Alle Maschinen bekommen alle Typen: die Laufwerke sind reine
+#: Waehlbare Typen.  Alle Maschinen bekommen alle Typen: die Laufwerke sind reine
 #: `DriveProfile`-Daten im Kern (`builtinDriveProfile`), den Rest (Drehzahl,
 #: Zellrate) richtet `laufwerke.cpp` danach aus — es gibt keine maschinenspezifische
-#: Sperre.  Ein 8″-Beistellgerät ist an K8915 (K5122 im /WAIT-Zweig), PRG 710 und
+#: Sperre.  Ein 8″-Beistellgeraet ist an K8915 (K5122 im /WAIT-Zweig), PRG 710 und
 #: PC 1715 (DIP S8 „8″ erlaubt") anschliessbar.  Die Tabelle bleibt, damit eine
-#: Maschine bei Bedarf wieder eingeschränkt werden kann.
+#: Maschine bei Bedarf wieder eingeschraenkt werden kann.
 _ALLE_TYPEN = [core for _s, core, _d in DRIVE_TYPES]
 _TYPEN_JE_MASCHINE = {
     "a5120": _ALLE_TYPEN,

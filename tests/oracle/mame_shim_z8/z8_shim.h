@@ -1,7 +1,7 @@
-// Hülle für MAMEs z8ops.hxx (BSD-3, unverändert heruntergeladen) als Test-ORAKEL des
+// Huelle fuer MAMEs z8ops.hxx (BSD-3, unveraendert heruntergeladen) als Test-ORAKEL des
 // Z8-Kerns (AP P19c).  Kein MAME-Code steht hier: nur die Umgebung, die z8ops.hxx erwartet
 // (Registerdatei, Speicher, Stapel), nachgebildet wie MAMEs z8.cpp sie bereitstellt
-// (Registerpaar = n, n+1; Ex = Arbeitsregister; Stapel intern über SPL bzw. extern).
+// (Registerpaar = n, n+1; Ex = Arbeitsregister; Stapel intern ueber SPL bzw. extern).
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -26,7 +26,7 @@ template <int A, int W, int S, endianness_t E> struct memory_access {
     using cache = z8_mem;
 };
 
-/// Was der Prüfstand anschliesst.
+/// Was der Pruefstand anschliesst.
 struct z8_oracle_umgebung {
     std::function<uint8_t(uint8_t)> regLesen;
     std::function<void(uint8_t, uint8_t)> regSchreiben;
@@ -44,7 +44,7 @@ public:
     bool m_irq_initialized = false;
     bool intern = true;          ///< P01M.2
 
-    /// Einen Befehl ausführen; Rückgabe = MAMEs Takte (Tabelle + Zuschlag).
+    /// Einen Befehl ausfuehren; Rueckgabe = MAMEs Takte (Tabelle + Zuschlag).
     int schritt();
 
     #define INSTRUCTION(inst) void inst(uint8_t opcode, int *cycles);

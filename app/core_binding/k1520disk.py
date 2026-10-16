@@ -61,7 +61,7 @@ _U64 = ctypes.c_uint64
 BINARY = 0
 TEXT = 1
 
-# ── Öffnen / Anlegen / Speichern ────────────────────────────────────────────
+# ── Oeffnen / Anlegen / Speichern ────────────────────────────────────────────
 _lib.k1520d_open.argtypes = [_CS, _CS, ctypes.c_bool]
 _lib.k1520d_open.restype = _H
 _lib.k1520d_open_raw.argtypes = [_CS, _CS, ctypes.c_bool]
@@ -197,7 +197,7 @@ _lib.k1520d_entry_damaged.restype = ctypes.c_bool
 
 # ── UDOS-Kopfsektorangaben je Eintrag ───────────────────────────────────────
 # Einzeln deklariert statt in einer Schleife: `test_disk_c_api.py` gleicht Header,
-# Bibliothek und diese Datei MECHANISCH ab und findet nur, was hier wörtlich steht.
+# Bibliothek und diese Datei MECHANISCH ab und findet nur, was hier woertlich steht.
 _lib.k1520d_entry_start.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_entry_start.restype = ctypes.c_uint16
 _lib.k1520d_entry_record_len.argtypes = [_H, ctypes.c_int]
@@ -262,9 +262,9 @@ _lib.k1520d_track_bytes.restype = ctypes.c_int
 _lib.k1520d_track_sectors.argtypes = [_H]
 _lib.k1520d_track_sectors.restype = ctypes.c_int
 
-# Ausgeschrieben statt in einer Schleife: der Wächter
-# `test_every_header_function_has_ctypes_signatures` sucht wörtlich nach
-# `_lib.<name>.argtypes` — eine Schleife wäre für ihn unsichtbar.
+# Ausgeschrieben statt in einer Schleife: der Waechter
+# `test_every_header_function_has_ctypes_signatures` sucht woertlich nach
+# `_lib.<name>.argtypes` — eine Schleife waere fuer ihn unsichtbar.
 _lib.k1520d_span_kind.argtypes = [_H, ctypes.c_int]
 _lib.k1520d_span_kind.restype = ctypes.c_int
 _lib.k1520d_span_index.argtypes = [_H, ctypes.c_int]
@@ -325,7 +325,7 @@ _lib.k1520d_sector_plan_len.argtypes = [_H, ctypes.c_int, ctypes.c_int, ctypes.c
                                         ctypes.c_int, ctypes.c_bool]
 _lib.k1520d_sector_plan_len.restype = ctypes.c_int
 
-# ── Übertragung ─────────────────────────────────────────────────────────────
+# ── Uebertragung ─────────────────────────────────────────────────────────────
 _lib.k1520d_extract.argtypes = [_H, _CS, _CS, ctypes.c_int]
 _lib.k1520d_extract.restype = ctypes.c_bool
 _lib.k1520d_insert.argtypes = [_H, _CS, _CS, ctypes.c_int, ctypes.c_bool]
@@ -368,7 +368,7 @@ _lib.k1520d_file_first_sector.argtypes = [_H, ctypes.c_char_p,
                                           ctypes.POINTER(ctypes.c_int)]
 _lib.k1520d_file_first_sector.restype = ctypes.c_bool
 
-# ── Dateisystemprüfung (doc/design/15_dateisystempruefung.md) ───────────────
+# ── Dateisystempruefung (doc/design/15_dateisystempruefung.md) ───────────────
 _lib.k1520d_check.argtypes = [_H, ctypes.c_int, ctypes.c_bool]
 _lib.k1520d_check.restype = ctypes.c_int
 _lib.k1520d_check_complete.argtypes = [_H]
@@ -510,7 +510,7 @@ class K1520DiskError(RuntimeError):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Katalog (ohne geöffnete Diskette)
+# Katalog (ohne geoeffnete Diskette)
 # ════════════════════════════════════════════════════════════════════════════
 
 
@@ -522,7 +522,7 @@ class FileSystemInfo:
     type: str          # 'cpm' | 'udos'
     format: str        # Geometrie
     description: str
-    boot_capacity: int = 0   # Byte in den Systemspuren; 0 = nicht bootfähig
+    boot_capacity: int = 0   # Byte in den Systemspuren; 0 = nicht bootfaehig
 
     @property
     def bootable(self) -> bool:
@@ -592,22 +592,22 @@ class Entry:
     side_dir: str = ""    # 'Side0'/'Side1' — leer bei einseitigen Dateisystemen
 
     # ── UDOS-Kopfsektorangaben (bei CP/M alle 0 bzw. leer) ──────────────────
-    # Sie stehen NICHT in den Bytes der Datei, steuern aber, wie UDOS sie lädt
+    # Sie stehen NICHT in den Bytes der Datei, steuern aber, wie UDOS sie laedt
     # (doc/udos_diskettenformat.md §6/§14).
     entry: int = 0          # ENTRY — Einsprungadresse (Typ P/P1)
-    record_len: int = 0     # Satzlänge (Zuteilungseinheit)
-    block_len: int = 0      # zweite Längenangabe (Kopfsektor Offset 17)
+    record_len: int = 0     # Satzlaenge (Zuteilungseinheit)
+    block_len: int = 0      # zweite Laengenangabe (Kopfsektor Offset 17)
     segment: int = 0        # SEGMENTS: Anfang …
-    segment_len: int = 0    # … und Länge
+    segment_len: int = 0    # … und Laenge
     low_addr: int = 0       # LOW ADDRESS  \
-    high_addr: int = 0      # HIGH ADDRESS  } was der Lader zuteilen lässt
+    high_addr: int = 0      # HIGH ADDRESS  } was der Lader zuteilen laesst
     stack_size: int = 0     # STACK SIZE   /
     bytes_in_last: int = 0  # Bytes im letzten Satz (Kopfsektor 22)
     extra: int = 0          # Kopfsektor 44…47 = die vier Bytes hinter Segment 1
     segments: str = ""      # ALLE Segmente, "4400+0041 8442+0026"
     created: str = ""       # Erstellungsvermerk (Datum ODER Versionstext)
 
-    # ── CP/M-Attribute, aus ``attrs`` aufgeschlüsselt ───────────────────────
+    # ── CP/M-Attribute, aus ``attrs`` aufgeschluesselt ───────────────────────
 
     @property
     def read_only(self) -> bool:
@@ -645,7 +645,7 @@ UNFORMATTED, GAP, SECTOR = 0, 1, 2
 INFO, WARNUNG, FEHLER, GEFAHR = 0, 1, 2, 3
 #: Ebenen: worauf der Befund beruht.  ``EBENE_ERKENNUNG`` ist die Ebene 0 (§11) —
 #: sie sagt nicht, was mit dem Dateisystem ist, sondern **warum keines erkannt
-#: wurde**; sie kommt nur an einer roh geöffneten Diskette vor.
+#: wurde**; sie kommt nur an einer roh geoeffneten Diskette vor.
 EBENE_MEDIUM, EBENE_VERWALTUNG, EBENE_DATEIEN, EBENE_ERKENNUNG = 0, 1, 2, 3
 
 SCHWERE_NAME = {INFO: "Hinweis", WARNUNG: "Warnung",
@@ -667,7 +667,7 @@ class Repair:
     id: str            # stabile Kennung, z. B. "udos.karte.sektoren.sperren"
     text: str
     destructive: bool = False   # verwirft Nutzdaten oder einen Verweis darauf
-    recommended: bool = False   # höchstens einer je Befund
+    recommended: bool = False   # hoechstens einer je Befund
     guessed: bool = False       # stellt einen nicht ableitbaren Wert her
     blocked: bool = False
     blocked_why: str = ""
@@ -700,7 +700,7 @@ class Finding:
     cyl: int = -1      # -1 = ortlos (kein Sprung in den Diskeditor)
     head: int = -1
     sector: int = -1
-    #: 0..n Reparaturvorschläge; leer = der Befund ist eine reine Auskunft.
+    #: 0..n Reparaturvorschlaege; leer = der Befund ist eine reine Auskunft.
     repairs: tuple = ()
 
     @property
@@ -731,7 +731,7 @@ class Schritt:
     titel: str = ""
     ausgefuehrt: bool = True
     grund: str = ""
-    #: Befunde (Prüfung) bzw. Funde (Suche), die in diesem Schritt entstanden.
+    #: Befunde (Pruefung) bzw. Funde (Suche), die in diesem Schritt entstanden.
     treffer: int = 0
     #: Schwerste Schwere darin — bei der Suche immer ``INFO``.
     hoechste: int = 0
@@ -743,7 +743,7 @@ class Schritt:
             return "–"
         # Ein Haken auch dann, wenn etwas herauskam, solange nichts davon ein
         # Mangel ist: bei der SUCHE sind Treffer die gute Nachricht, und ein
-        # Hinweis der Prüfung („7 gelöschte Plätze") ist keiner.
+        # Hinweis der Pruefung („7 geloeschte Plaetze") ist keiner.
         return {GEFAHR: "⛔", FEHLER: "✖", WARNUNG: "⚠"}.get(self.hoechste, "✔")
 
 
@@ -753,13 +753,13 @@ class CheckReport:
 
     findings: tuple = ()
     #: ``False`` = an einer physischen Diskette waren Spuren noch nicht gelesen.
-    #: „Ohne Befund" heißt dann nur „bislang ohne Befund".
+    #: „Ohne Befund" heisst dann nur „bislang ohne Befund".
     complete: bool = True
     tracks_read: int = 0
     tracks_total: int = 0
     summary: str = ""
-    #: Lief eine **Vollprüfung**?  Nicht dasselbe wie ``complete`` (das sagt, ob
-    #: alle Spuren dafür da waren).
+    #: Lief eine **Vollpruefung**?  Nicht dasselbe wie ``complete`` (das sagt, ob
+    #: alle Spuren dafuer da waren).
     voll: bool = False
     #: Die abgearbeitete Checkliste (:class:`Schritt`), in der Reihenfolge des Laufs.
     schritte: tuple = ()
@@ -777,9 +777,9 @@ class CheckReport:
         return tuple(f for f in self.findings if f.severity >= schwere)
 
 
-#: Güte eines Fundes — die Zahlen sind ein Vertrag mit der C-ABI.
+#: Guete eines Fundes — die Zahlen sind ein Vertrag mit der C-ABI.
 BRUCHSTUECK, WAHRSCHEINLICH, SICHER = 0, 1, 2
-#: Suchtiefe: nur die Verzeichnisreste (billig) oder die ganze Oberfläche.
+#: Suchtiefe: nur die Verzeichnisreste (billig) oder die ganze Oberflaeche.
 SUCHE_VERZEICHNIS, SUCHE_OBERFLAECHE = 0, 1
 
 GUETE_NAME = {SICHER: "sicher", WAHRSCHEINLICH: "wahrscheinlich",
@@ -797,10 +797,10 @@ class RecoverFind:
     meldet.  ``blocked_why`` nennt den Grund.
     """
 
-    name: str          # "" = kein Name überliefert (Rohbereich, UDOS)
+    name: str          # "" = kein Name ueberliefert (Rohbereich, UDOS)
     type: str          # Dateityp bzw. Einordnung des Inhalts
     origin: str
-    suggestion: str    # Vorschlag für den Linux-Dateinamen — nie leer
+    suggestion: str    # Vorschlag fuer den Linux-Dateinamen — nie leer
     volume: int
     size: int
     quality: int
@@ -811,10 +811,10 @@ class RecoverFind:
     head: int = -1
     sector: int = -1
     #: **Alle** Sektoren des Fundes als ``(cyl, head, sektor_kennung)``, in
-    #: Lesereihenfolge — bei UDOS steht der Kopfsektor vorn.  Damit blättert der
-    #: Rettungsdialog durch den Fund, BEVOR etwas geschieht: „ist das überhaupt,
-    #: was ich suche?" lässt sich sonst nicht beantworten, und bei UDOS gibt es
-    #: dafür nicht einmal einen Namen.  Auf 512 Einträge begrenzt.
+    #: Lesereihenfolge — bei UDOS steht der Kopfsektor vorn.  Damit blaettert der
+    #: Rettungsdialog durch den Fund, BEVOR etwas geschieht: „ist das ueberhaupt,
+    #: was ich suche?" laesst sich sonst nicht beantworten, und bei UDOS gibt es
+    #: dafuer nicht einmal einen Namen.  Auf 512 Eintraege begrenzt.
     parts: tuple = ()
 
     @property
@@ -833,9 +833,9 @@ class RecoverReport:
 
     finds: tuple = ()
     #: ``False`` = an einer physischen Diskette waren Spuren noch nicht gelesen;
-    #: „nichts gefunden" heißt dann nur „bislang nichts gefunden".
+    #: „nichts gefunden" heisst dann nur „bislang nichts gefunden".
     complete: bool = True
-    #: Lief die Suche über die **ganze Oberfläche**?
+    #: Lief die Suche ueber die **ganze Oberflaeche**?
     voll: bool = False
     #: Die abgearbeitete Checkliste (:class:`Schritt`), in der Reihenfolge des Laufs.
     schritte: tuple = ()
@@ -862,14 +862,14 @@ class Span:
     end: float
     index: int = -1          # laufende Nummer des Sektors in der Spur
     id: int = 0              # Angaben aus dem ID-Feld …
-    cyl: int = 0             # … die von der tatsächlichen Lage abweichen dürfen
+    cyl: int = 0             # … die von der tatsaechlichen Lage abweichen duerfen
     head: int = 0
     size: int = 0
     id_crc_ok: bool = False
     data_crc_ok: bool = False
     deleted: bool = False
     #: Datenfeld ohne unterscheidbaren Inhalt (alle Bytes gleich) — so sieht ein
-    #: formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang zählt nicht mit.
+    #: formatierter, nie beschriebener Sektor aus.  Der UDOS-Anhang zaehlt nicht mit.
     blank: bool = False
     #: Bytes hinter der Daten-CRC, die KEIN Gap sind (0 = keine, UDOS = 4).
     tail_bytes: int = 0
@@ -893,7 +893,7 @@ class Track:
     exists: bool
     formatted: bool
     encoding: str            # 'MFM' | 'FM'
-    bytes: int               # Spurlänge (eine Umdrehung)
+    bytes: int               # Spurlaenge (eine Umdrehung)
     sectors: int
     spans: List[Span]
 
@@ -925,7 +925,7 @@ class DiskTool:
         self._h = handle
         self._path = path
 
-    # ── Öffnen / Anlegen ────────────────────────────────────────────────────
+    # ── Oeffnen / Anlegen ────────────────────────────────────────────────────
 
     @classmethod
     def open(cls, path, filesystem: Optional[str] = None,
@@ -1283,10 +1283,10 @@ class DiskTool:
         """Mehrzeiliger Überblick als Text (Datenträger, Belegung, Auffälligkeiten)."""
         return _s(_lib.k1520d_check_report(self._h))
 
-    # ── Dateisystemprüfung ──────────────────────────────────────────────────
+    # ── Dateisystempruefung ──────────────────────────────────────────────────
     #
-    # Beim Öffnen läuft automatisch eine Schnellprüfung; ``findings()`` liefert
-    # ihr Ergebnis, ohne dass jemand ``check()`` rufen müsste.
+    # Beim Oeffnen laeuft automatisch eine Schnellpruefung; ``findings()`` liefert
+    # ihr Ergebnis, ohne dass jemand ``check()`` rufen muesste.
 
     def check(self, *, voll: bool = False, nachladen: bool = True) -> "CheckReport":
         """Neu prüfen und den Bericht liefern.  **Ändert die Diskette nicht.**
@@ -1368,9 +1368,9 @@ class DiskTool:
             raise K1520DiskError(self._fail())
         return getan
 
-    # ── Wiederherstellung gelöschter Dateien (Entwurf §13) ──────────────────
+    # ── Wiederherstellung geloeschter Dateien (Entwurf §13) ──────────────────
     #
-    # Anders als die Prüfung läuft die Suche **nicht** von selbst beim Öffnen: sie
+    # Anders als die Pruefung laeuft die Suche **nicht** von selbst beim Oeffnen: sie
     # kostet, und sie beantwortet eine Frage, die niemand gestellt hat.
 
     def recover_scan(self, *, voll: bool = False,
@@ -1455,7 +1455,7 @@ class DiskTool:
         if not _lib.k1520d_recover_restore(self._h, i, _b(name)):
             raise K1520DiskError(self._fail())
 
-    # ── Übertragung ─────────────────────────────────────────────────────────
+    # ── Uebertragung ─────────────────────────────────────────────────────────
 
     def _fail(self) -> str:
         return _s(_lib.k1520d_last_error(self._h)) or "unbekannter Fehler"
@@ -1495,7 +1495,7 @@ class DiskTool:
         if not ok:
             raise K1520DiskError(self._fail())
 
-    #: :attr:`last_insert_problem` — gewöhnlicher Ablauf (auch der normale Fehler).
+    #: :attr:`last_insert_problem` — gewoehnlicher Ablauf (auch der normale Fehler).
     INSERT_OK = 0
     #: UDOS-Familie, und es gibt weder ``.fileinfo`` noch Sammelbeiblatt.
     INSERT_ANGABEN_FEHLEN = 1
@@ -1648,7 +1648,7 @@ class DiskTool:
     def medium_heads(self) -> int:
         return int(_lib.k1520d_medium_heads(self._h))
 
-    #: Spurzustände (siehe :meth:`track_state`).
+    #: Spurzustaende (siehe :meth:`track_state`).
     SPUR_UNBEKANNT, SPUR_SAUBER, SPUR_GEAENDERT = 0, 1, 2
 
     def track_state(self, cyl: int, head: int) -> int:

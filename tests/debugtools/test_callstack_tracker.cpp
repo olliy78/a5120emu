@@ -1,4 +1,4 @@
-// Unit-Tests für den History-Backtrace-Tracker (tools/callstack_tracker.h).
+// Unit-Tests fuer den History-Backtrace-Tracker (tools/callstack_tracker.h).
 #include "tools/callstack_tracker.h"
 #include <gtest/gtest.h>
 #include <array>
@@ -14,7 +14,7 @@ struct Mem {
         uint16_t i=a; for(uint8_t x:bytes) b[i++]=x;
     }
 };
-// Eine Instruktionsfolge (Start-PCs in Ausführungsreihenfolge) einspeisen.
+// Eine Instruktionsfolge (Start-PCs in Ausfuehrungsreihenfolge) einspeisen.
 void feed(CallStackTracker& t, const Mem& m, std::initializer_list<uint16_t> pcs){
     for(uint16_t pc:pcs) t.onInstruction(pc,[&](uint16_t a){return m(a);});
 }

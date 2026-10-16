@@ -5,19 +5,19 @@
  * Herkunft: doc/k8915g2/karten.md §2, doc/k8915g2/zre_rom.md §3.1/§8,
  * doc/design/24_k8915_varianten.md R1–R3.
  *
- * **Hypothese [?, F2/F20]:** welche Karte das Gerät des Anwenders wirklich trägt und auf
+ * **Hypothese [?, F2/F20]:** welche Karte das Geraet des Anwenders wirklich traegt und auf
  * welchem Port ihr Register liegt, ist offen; belegt ist nur das Verhalten aus dem ROM
- * (A8H = 06H/0EH/87H/8FH).  Die Brücken stehen deshalb als @ref Belegung, Vorgabe
+ * (A8H = 06H/0EH/87H/8FH).  Die Bruecken stehen deshalb als @ref Belegung, Vorgabe
  * „V3-kompatibel“ (wie die 045-8762: Seite 0 = Bit 0, Seite 1 = Bit 1, Seiten 2+3 = Bit 2,
  * /MEMDI = Bit 7).
  *
- * **Speicherpfad wie K8915Zre:** die Karte meldet ihren Speicher NICHT über
+ * **Speicherpfad wie K8915Zre:** die Karte meldet ihren Speicher NICHT ueber
  * K1520Bus::registerMem an.  Die CPU der ZRE fragt zuerst @ref memRead/@ref memWrite;
- * die Karte entscheidet je 4-KB-Slot, ob K3528, die ZRE (K2521, über @ref setZreWeg) oder
+ * die Karte entscheidet je 4-KB-Slot, ob K3528, die ZRE (K2521, ueber @ref setZreWeg) oder
  * der Systembus antwortet.  Ein von K3528 oder ZRE bedienter Zugriff erscheint NICHT auf
  * dem Systembus (Annahme wie V3).
  *
- * Vorrang: K3528-Seite gewählt → K3528; sonst 0000–0FFF und kein /MEMDI → ZRE; sonst Bus.
+ * Vorrang: K3528-Seite gewaehlt → K3528; sonst 0000–0FFF und kein /MEMDI → ZRE; sonst Bus.
  * Das Register ist nur schreibbar (Lesen → FFH, offener Datenbus [?]).
  * Nicht modelliert: 1-KB-Ausblendadresse, Ausbau .10/.20 (48/32 KB), Bank 2.
  */
@@ -89,7 +89,7 @@ public:
     uint8_t ramPeek(uint16_t addr) const { return ram_[addr]; }
     void    ramPoke(uint16_t addr, uint8_t v) { ram_[addr] = v; }
 
-    /** @brief Beobachter für RAM- und ZRE-Zugriffe (nicht für den Bus), Signatur wie K1520Bus::BusTrace. */
+    /** @brief Beobachter fuer RAM- und ZRE-Zugriffe (nicht fuer den Bus), Signatur wie K1520Bus::BusTrace. */
     void setMemTrace(K1520Bus::BusTrace cb) { mem_trace_ = std::move(cb); }
 
     const Config& config() const { return cfg_; }

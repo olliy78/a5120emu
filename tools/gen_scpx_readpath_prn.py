@@ -22,7 +22,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-# Regionen des Lesepfads: (Startadresse für den Disassembler, lo, hi einschließlich).
+# Regionen des Lesepfads: (Startadresse fuer den Disassembler, lo, hi einschliesslich).
 REGIONS = [
     (0xE9C8, 0xE9C8, 0xEA2A),   # Lese-Koroutine-Setup + IDAM-Matcher (Herz)
     (0xEA9A, 0xEA9A, 0xEAB0),   # DATA-Feld-Lesung
@@ -31,7 +31,7 @@ REGIONS = [
     (0xD098, 0xD098, 0xD0B0),   # BAD-SECTOR-Handler
 ]
 
-# Kommentare je Adresse (deutsch, wie im Repo üblich). Fehlt eine Adresse, bleibt die
+# Kommentare je Adresse (deutsch, wie im Repo ueblich). Fehlt eine Adresse, bleibt die
 # Zeile unkommentiert (nur Disasm). Labels kommen aus tools/scpx1526.sym (via -s).
 COMMENTS = {
     0xE9C8: "[ZVE1/ZVE2 Lese-Koroutine, an [0000]=JP E9C8 gepoist] Selbstmod-Setup: HL=20B9",
@@ -40,28 +40,28 @@ COMMENTS = {
     0xE9D1: "LD SP,EC0D → Mini-Stack auf den Template-Block (SCHICHT-2-KORRUPTIONSZIEL: "
             "ein CTC-INT pusht hierhin die Matcher-PC, s. analyse §5)",
     0xE9D4: "POP DE: DE = [EC0D/EC0E] = IDAM-CRC-Sollwert (16-Bit)",
-    0xE9D5: "EXX → CRC-Soll ins Schattenregister D'/E' (Vergleich später @EA12/EA17)",
-    0xE9D6: "HL = [EC03/EC04] = Soll Sektor-ID / Größe-Code",
+    0xE9D5: "EXX → CRC-Soll ins Schattenregister D'/E' (Vergleich spaeter @EA12/EA17)",
+    0xE9D6: "HL = [EC03/EC04] = Soll Sektor-ID / Groesse-Code",
     0xE9D9: "BC = [EC01/EC02] = Soll Zylinder / Kopf",
     0xE9DD: "DE = FE / A1: FE = IDAM-Adressmarke, A1 = MFM-Sync (Sollbytes)",
     0xE9E0: "K5122-Steuerwort B9 → Port 10 (Lesekopf/Verfahren scharf)",
     0xE9E6: "MATCHER-Schleifenkopf: LD A,B5 (0x85 = MFM-Lesemarke) → Port 10",
     0xE9EA: "CRC-Steuerwort [EC05] → Port 10",
-    0xE9EF: "IN (16H): nächstes Stream-Byte vom K5122-Datenseparator lesen",
+    0xE9EF: "IN (16H): naechstes Stream-Byte vom K5122-Datenseparator lesen",
     0xE9F1: "OUT (14H): Byte quittieren/durchreichen",
-    0xE9F3: "IN (16H) / CP E: auf A1-Sync (E=A1) prüfen …",
-    0xE9F6: "… JR Z: A1-Sync-Bytes überspringen (Schleife bis != A1)",
-    0xE9F8: "CP D: auf FE (IDAM-Adressmarke, D=FE) prüfen",
-    0xE9FB: "JR NZ,E9E6: keine Marke → Matcher weiter (Byte-für-Byte-Suche)",
-    0xE9FD: "CP C: ZYLINDER-Vergleich (Soll C=[EC01]) — SCHICHT-1-Mismatch schlägt HIER zu "
+    0xE9F3: "IN (16H) / CP E: auf A1-Sync (E=A1) pruefen …",
+    0xE9F6: "… JR Z: A1-Sync-Bytes ueberspringen (Schleife bis != A1)",
+    0xE9F8: "CP D: auf FE (IDAM-Adressmarke, D=FE) pruefen",
+    0xE9FB: "JR NZ,E9E6: keine Marke → Matcher weiter (Byte-fuer-Byte-Suche)",
+    0xE9FD: "CP C: ZYLINDER-Vergleich (Soll C=[EC01]) — SCHICHT-1-Mismatch schlaegt HIER zu "
             "(Kopf divergiert → cyl passt nicht → 43× Retry → BAD SECTOR)",
-    0xE9FE: "JR NZ,E9E6: Zylinder falsch → nächste Marke suchen",
+    0xE9FE: "JR NZ,E9E6: Zylinder falsch → naechste Marke suchen",
     0xEA02: "CP B: KOPF-Vergleich (Soll B=[EC02])",
     0xEA07: "CP L: SEKTOR-Vergleich (Soll L=[EC03])",
-    0xEA0C: "CP H: GRÖSSE-Vergleich (Soll H=[EC04])",
+    0xEA0C: "CP H: GROESSE-Vergleich (Soll H=[EC04])",
     0xEA11: "EXX: auf CRC-Schattenregister (D'/E' = IDAM-CRC-Soll) umschalten",
     0xEA12: "CP D': IDAM-CRC-Hi gegen [EC0D] — SCHICHT-2-Korruption trifft HIER "
-            "(Stream-CRC korrekt, D' vom INT überschrieben → Fail)",
+            "(Stream-CRC korrekt, D' vom INT ueberschrieben → Fail)",
     0xEA15: "JR NZ,E9E5: CRC-Hi falsch → Matcher-Neustart",
     0xEA17: "CP E': IDAM-CRC-Lo gegen [EC0E]",
     0xEA1A: "JR NZ,E9E5: CRC-Lo falsch → Matcher-Neustart",
@@ -119,7 +119,7 @@ def main():
     commented = 0
     for entry, lo, hi in REGIONS:
         # Jede Region mit ihrem EIGENEN Entry disassemblieren → korrekte Ausrichtung
-        # (ein globaler Merge würde den Rumpf durch fehlausgerichtete Nachbar-Läufe zerstören).
+        # (ein globaler Merge wuerde den Rumpf durch fehlausgerichtete Nachbar-Laeufe zerstoeren).
         decoded = disasm_region(rambin, entry)
         lines.append(f";  ---- {lo:04X}..{hi:04X} ----")
         addr = lo

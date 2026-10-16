@@ -29,7 +29,7 @@ from app.core_binding.k1520 import (
     K1520Emulator, PTAPE_FMT_ASCII, PTAPE_FMT_IHEX, PTAPE_FMT_RAW,
 )
 
-#: (Kennung, Name, Endungen, Erklärung) in der Reihenfolge des Dialogs.
+#: (Kennung, Name, Endungen, Erklaerung) in der Reihenfolge des Dialogs.
 FORMATE = [
     (PTAPE_FMT_RAW, "Roh", "*.ptp *.bin",
      "Ein Byte je Sprosse, genau wie gestanzt — ohne Kopf und ohne Umsetzung.  "

@@ -197,9 +197,9 @@ public:
          */
         bool getCTS() const;
 
-        // ─── Abfrage- und Leitungsweg für Schnittstellen nach außen (AP-S3) ────
+        // ─── Abfrage- und Leitungsweg fuer Schnittstellen nach aussen (AP-S3) ────
         // doc/design/19_serielle_schnittstellen.md §6.2/§6.4.  Alles hier liest
-        // die REGISTER (wr[]), nicht die abgeleiteten Felder — die überleben einen
+        // die REGISTER (wr[]), nicht die abgeleiteten Felder — die ueberleben einen
         // Kanalreset, die Register nicht.
 
         /// Zeichenformat eines Kanals, wie es der Gast programmiert hat.
@@ -231,17 +231,17 @@ public:
         bool breakSenden() const { return (wr[5] & 0x10) != 0; } ///< Break senden (WR5 D4)
         bool autoEnables() const { return (wr[3] & 0x20) != 0; } ///< WR3 D5
 
-        /// Eingänge /CTS, /DCD — true = aktiv (Pin low; so zeigt es RR0 D5/D3).
+        /// Eingaenge /CTS, /DCD — true = aktiv (Pin low; so zeigt es RR0 D5/D3).
         /// Vorgabe nach dem Einschalten: INAKTIV.  Grund: so lief die Emulation bis
-        /// AP-S3 (RR0 D5/D3 = 0, niemand setzte die Eingänge); jeder heutige Gast-
-        /// pfad (K8025/K7637, K7028/K7672/Drucker/Prüfstecker) sieht damit dasselbe
-        /// RR0 wie vorher.  Auto Enables setzt kein bekannter Gast (Messung über die
-        /// volle Regression + test-format, AP-S3) — sonst stünde deren Sender still.
-        /// Ein Kanalreset ändert die Eingänge nicht (sie sind Pins, keine Register).
+        /// AP-S3 (RR0 D5/D3 = 0, niemand setzte die Eingaenge); jeder heutige Gast-
+        /// pfad (K8025/K7637, K7028/K7672/Drucker/Pruefstecker) sieht damit dasselbe
+        /// RR0 wie vorher.  Auto Enables setzt kein bekannter Gast (Messung ueber die
+        /// volle Regression + test-format, AP-S3) — sonst stuende deren Sender still.
+        /// Ein Kanalreset aendert die Eingaenge nicht (sie sind Pins, keine Register).
         bool cts() const { return cts_; }
         bool dcd() const { return dcd_; }
         /// Pegelwechsel an /CTS bzw. /DCD.  Bei freigegebenem Ext/Status-Interrupt
-        /// (WR1 D0) hält RR0 den Stand zur Zeit der Änderung fest und der Kanal
+        /// (WR1 D0) haelt RR0 den Stand zur Zeit der Aenderung fest und der Kanal
         /// fordert einen Ext/Status-Interrupt an, bis „Reset Ext/Status“ (WR0
         /// Befehl 2) das Latch freigibt; ohne Freigabe folgt RR0 dem Eingang.
         void setzeCTS(bool aktiv);
@@ -253,9 +253,9 @@ public:
 
         /// Wandlerseite (§5.1/§6.1).  „Sender hat Zeichen“: Tx-Puffer belegt und
         /// — bei Auto Enables — /CTS aktiv.  Abnehmen mit txGet(), einspeisen mit
-        /// rxByte().  „Empfänger hat Platz“: FIFO nicht voll und — bei Auto Enables —
+        /// rxByte().  „Empfaenger hat Platz“: FIFO nicht voll und — bei Auto Enables —
         /// /DCD aktiv.  Rx/Tx-Enable (WR3 D0/WR5 D3) werden bewusst NICHT
-        /// ausgewertet, wie in den übrigen Pfaden dieses Bausteins.
+        /// ausgewertet, wie in den uebrigen Pfaden dieses Bausteins.
         bool senderHatZeichen() const { return txAvailable(); }
         bool empfaengerFrei() const;
 
@@ -270,15 +270,15 @@ public:
 
         /**
          * @brief Letztes physisch empfangenes Byte (Datenpfad hinter dem
-         *        Empfangsschieberegister, unabhängig vom FIFO-Füllstand).
+         *        Empfangsschieberegister, unabhaengig vom FIFO-Fuellstand).
          *
          * Die echte U856/Z80-SIO hat am Datenregister keinen "leer"-Zustand — es ist
          * der Ausgang des FIFOs, kein separat abschaltbarer Bustreiber. Liest die CPU,
-         * während der Empfangs-FIFO leer ist, kommt daher **das zuletzt empfangene
-         * Byte** zurück, nicht FFH (`doc/design/16_k8915.md` §8a AP-E4c, Befund aus
-         * AP-E2: K8915-BIOS `LISTST` liest 42H ohne RR0-Prüfung und erwartet dort das
+         * waehrend der Empfangs-FIFO leer ist, kommt daher **das zuletzt empfangene
+         * Byte** zurueck, nicht FFH (`doc/design/16_k8915.md` §8a AP-E4c, Befund aus
+         * AP-E2: K8915-BIOS `LISTST` liest 42H ohne RR0-Pruefung und erwartet dort das
          * zuletzt empfangene XON/XOFF). Das Datenblatt (`doc/trascripted/SIO_U856D.md`)
-         * beschreibt diesen Grenzfall nicht ausdrücklich; `last_rx` wie alle anderen
+         * beschreibt diesen Grenzfall nicht ausdruecklich; `last_rx` wie alle anderen
          * Kanalregister mit dem Reset auf 00H gesetzt (Annahme, keine Messung).
          */
         uint8_t last_rx = 0x00;
@@ -340,7 +340,7 @@ public:
         bool tx_int_enable = false;
         /// Betriebsart „Interrupt beim ersten Zeichen" (WR1 D4–D3 = 01): scharf nach dem
         /// Setzen der Betriebsart und nach WR0-Befehl 4 („Enable Int on Next Rx
-        /// Character"), vom nächsten empfangenen Zeichen verbraucht.
+        /// Character"), vom naechsten empfangenen Zeichen verbraucht.
         bool rx_int_first_only = false;
         bool status_affects_vector = false;
 
@@ -351,14 +351,14 @@ public:
         bool dcd_latch = false;       ///< DCD state latch for change detection
         bool sync_latch = false;      ///< Sync status latch
         bool break_rx_  = false;      ///< Eingang: Break wird empfangen (AP-S3)
-        bool ext_latch_ = false;      ///< RR0 D3/D5/D7 festgehalten (Ext/Status-Änderung)
+        bool ext_latch_ = false;      ///< RR0 D3/D5/D7 festgehalten (Ext/Status-Aenderung)
         uint8_t ext_rr0_ = 0;         ///< festgehaltener Stand von RR0 D3/D5/D7
 
-        /// RR0 D3/D5/D7 aus den Eingängen (ungelatcht).
+        /// RR0 D3/D5/D7 aus den Eingaengen (ungelatcht).
         uint8_t extStatusEingaenge() const {
             return static_cast<uint8_t>((dcd_ ? 0x08 : 0) | (cts_ ? 0x20 : 0) | (break_rx_ ? 0x80 : 0));
         }
-        /// Eine Ext/Status-Quelle hat sich geändert (Datenblatt Befehl 2, RR0 D3/D5/D7).
+        /// Eine Ext/Status-Quelle hat sich geaendert (Datenblatt Befehl 2, RR0 D3/D5/D7).
         void extStatusGeaendert();
 
         // ─── Receive state machine ──────────────────────────────────────────
@@ -384,15 +384,15 @@ public:
         /**
          * @brief Empfangsinterrupt bei JEDEM Zeichen frei (WR1 D4–D3 = 10 oder 11)?
          *
-         * Maßgeblich ist `rx_int_mode` aus processWR1 — bis 2026-10-01 las diese
-         * Funktion D3–D2 statt D4–D3 und ließ 10H/13H ohne Empfangsinterrupt.
+         * Massgeblich ist `rx_int_mode` aus processWR1 — bis 2026-10-01 las diese
+         * Funktion D3–D2 statt D4–D3 und liess 10H/13H ohne Empfangsinterrupt.
          */
         bool rxIntEnabled() const;
 
         /**
-         * @brief Löst ein soeben in den FIFO gelegtes Zeichen den Empfangsinterrupt aus?
+         * @brief Loest ein soeben in den FIFO gelegtes Zeichen den Empfangsinterrupt aus?
          *
-         * Eine Stelle für alle Empfangswege (asynchron, synchron, SDLC): „jedes
+         * Eine Stelle fuer alle Empfangswege (asynchron, synchron, SDLC): „jedes
          * Zeichen" (10/11) oder „erstes Zeichen" (01, einmal je Scharfmachen).
          * Verbraucht die Scharfstellung der Betriebsart 01.
          */
@@ -496,7 +496,7 @@ public:
     /**
      * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).
      *
-     * Beide Kanäle gehen in den Einschaltzustand (alle WRs 0, leere FIFOs, keine
+     * Beide Kanaele gehen in den Einschaltzustand (alle WRs 0, leere FIFOs, keine
      * Interruptanforderung, kein IUS).  Verdrahtung (Takt-Callback, Name) bleibt.
      */
     void reset() {
@@ -544,10 +544,10 @@ private:
      * @return true if channel has pending interrupt
      */
     bool channelHasInterrupt(const Channel& ch) const;
-    /// Wie channelHasInterrupt(), aber ohne bereits bediente Kanäle (IUS).
+    /// Wie channelHasInterrupt(), aber ohne bereits bediente Kanaele (IUS).
     bool channelRequests(const Channel& ch) const;
-    /// RR2 von Kanal B: der Vektor, den eine Quittung JETZT liefern würde, ohne zu
-    /// quittieren (kein IUS, keine gelöschte Anforderung).  Mit „status affects
+    /// RR2 von Kanal B: der Vektor, den eine Quittung JETZT liefern wuerde, ohne zu
+    /// quittieren (kein IUS, keine geloeschte Anforderung).  Mit „status affects
     /// vector" und ohne anstehende Anforderung V3–V1 = 011 (Datenblatt).
     uint8_t rr2Vektor() const;
 

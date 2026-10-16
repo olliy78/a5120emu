@@ -2,7 +2,7 @@
  * @file test_mc80_asp.cpp
  * @brief ASP des MC80.3x (AP M3): Portlage SIO D0H/CTC D4H/PIO D8H (A-Steuer = D9H), EGOS-Init
  *        (egos.prn 03EBH ff.), Tastaturkanal SIO A (Rx-Vektor FFFCH, Senden), Kette SIO > CTC >
- *        PIO, CTC-K3-Anstoß 91H/01H ohne Doppelinterrupt.  Quelle: doc/mc80/hardware_3x.md §6.
+ *        PIO, CTC-K3-Anstoss 91H/01H ohne Doppelinterrupt.  Quelle: doc/mc80/hardware_3x.md §6.
  */
 
 #include <gtest/gtest.h>
@@ -91,7 +91,7 @@ TEST(Mc80Asp, KetteSioVorCtcVorPio) {
     a.bus.signalRETI();
     ASSERT_TRUE(a.intAn());
     EXPECT_EQ(a.bus.interruptAcknowledge(), 0xEE);
-    a.out(0xD7, 0x03);             // K3 rücksetzen
+    a.out(0xD7, 0x03);             // K3 ruecksetzen
     a.bus.signalRETI();
     // PIO: A-Steuer ist D9H (nicht DAH)
     a.out(0xD9, 0xE0);             // Vektorwort (Bit 0 = 0)
@@ -99,7 +99,7 @@ TEST(Mc80Asp, KetteSioVorCtcVorPio) {
     a.out(0xD9, 0x87);             // Interrupt ein
     EXPECT_EQ(a.asp.pio().debugState().port[0].vector, 0xE0);
     EXPECT_EQ(a.asp.pio().debugState().port[0].mode, 1);
-    EXPECT_EQ(a.asp.pio().debugState().port[1].vector, 0xFF) << "Kanal B unberührt";
+    EXPECT_EQ(a.asp.pio().debugState().port[1].vector, 0xFF) << "Kanal B unberuehrt";
 }
 
 }  // namespace

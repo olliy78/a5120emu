@@ -7,13 +7,13 @@
  * (0157H), UDOS-Resident (0633H) und SCPX-BIOS `B15x` (E082H/E097H) benutzen:
  *
  * - **Befehle** an C9H: `02H` Betriebsart (kodierte Abtastung, N-Tasten-Rollover),
- *   `C1H` Clear (FIFO und Zustandsbits).  Die übrigen Befehle (Taktteiler, Anzeige-RAM,
+ *   `C1H` Clear (FIFO und Zustandsbits).  Die uebrigen Befehle (Taktteiler, Anzeige-RAM,
  *   Sperren, Fehlerbetrieb) werden gespeichert/ignoriert und mit `LOG_DEBUG` protokolliert —
- *   der Anzeigeteil fehlt absichtlich (auf der ATP hängt keine Anzeige am 8279 [?]).
+ *   der Anzeigeteil fehlt absichtlich (auf der ATP haengt keine Anzeige am 8279 [?]).
  * - **Status** (Lesen C9H): Bit 0–2 = Zeichenzahl im FIFO, Bit 3 = FIFO voll, Bit 4 =
- *   Unterlauf (Lesen aus leerem FIFO), Bit 5 = Überlauf (Eintrag in vollen FIFO).
- * - **Daten** (Lesen C8H) holt den ältesten Eintrag; aus dem leeren FIFO FFH.
- * - FIFO 8 Einträge.  Die Tasten kommen von außen (@ref pushKey) als fertiger Code
+ *   Unterlauf (Lesen aus leerem FIFO), Bit 5 = Ueberlauf (Eintrag in vollen FIFO).
+ * - **Daten** (Lesen C8H) holt den aeltesten Eintrag; aus dem leeren FIFO FFH.
+ * - FIFO 8 Eintraege.  Die Tasten kommen von aussen (@ref pushKey) als fertiger Code
  *   `S C RRR CCC`; die Abtastung selbst ist nicht nachgebildet.
  */
 
@@ -29,20 +29,20 @@ public:
         ST_ANZAHL = 0x07, ST_VOLL = 0x08, ST_UNTERLAUF = 0x10, ST_UEBERLAUF = 0x20,
     };
 
-    /** @brief /RESET: FIFO leer, Zustandsbits gelöscht, Betriebsart = Vorgabe (0). */
+    /** @brief /RESET: FIFO leer, Zustandsbits geloescht, Betriebsart = Vorgabe (0). */
     void reset();
 
     /** @brief Port 1 (C9H) schreiben: Befehl. */
     void writeCommand(uint8_t cmd);
     /** @brief Port 1 (C9H) lesen: Status. */
     uint8_t readStatus() const;
-    /** @brief Port 0 (C8H) lesen: nächster FIFO-Eintrag (FFH bei leerem FIFO). */
+    /** @brief Port 0 (C8H) lesen: naechster FIFO-Eintrag (FFH bei leerem FIFO). */
     uint8_t readData();
     /** @brief Port 0 (C8H) schreiben: Anzeige-RAM — nicht nachgebildet, nur protokolliert. */
     void writeData(uint8_t d);
 
     /**
-     * @brief Eine Taste in den FIFO (von der Tastatur).  Voller FIFO: Überlauf, der
+     * @brief Eine Taste in den FIFO (von der Tastatur).  Voller FIFO: Ueberlauf, der
      *        Code geht verloren.
      * @return true, wenn eingetragen.
      */

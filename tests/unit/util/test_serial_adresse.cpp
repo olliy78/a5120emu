@@ -2,7 +2,7 @@
  * @file test_serial_adresse.cpp
  * @brief Unit-Tests der Host-Klassifikation (`core/serial/net/adresse.h`, Entwurf 19 §7.3).
  *
- * Rein textuell — kein Netz, keine Namensauflösung.
+ * Rein textuell — kein Netz, keine Namensaufloesung.
  */
 
 #include <gtest/gtest.h>
@@ -16,12 +16,12 @@ using namespace k1520::serial::net;
 TEST(SerialAdresse, IPv4) {
     EXPECT_EQ(adresseKlassifizieren("127.0.0.1"), AdressArt::IPv4);
     EXPECT_EQ(adresseKlassifizieren("192.168.1.20"), AdressArt::IPv4);
-    EXPECT_EQ(adresseKlassifizieren("  10.0.0.1 "), AdressArt::IPv4);  // Ränder werden getrimmt
+    EXPECT_EQ(adresseKlassifizieren("  10.0.0.1 "), AdressArt::IPv4);  // Raender werden getrimmt
 }
 
 TEST(SerialAdresse, IPv4ZuGrosseOktettIstKeinHostname) {
-    // „300.1.1.1" sähe nach Labelregeln wie ein Hostname aus; das numerische letzte
-    // Label (RFC 1123 §2.1) schließt es aus.
+    // „300.1.1.1" saehe nach Labelregeln wie ein Hostname aus; das numerische letzte
+    // Label (RFC 1123 §2.1) schliesst es aus.
     EXPECT_EQ(adresseKlassifizieren("300.1.1.1"), AdressArt::Ungueltig);
     EXPECT_EQ(adresseKlassifizieren("1.2.3"), AdressArt::Ungueltig);
     EXPECT_EQ(adresseKlassifizieren("12345"), AdressArt::Ungueltig);
@@ -90,6 +90,6 @@ TEST(SerialAdresse, UngueltigeHostnamen) {
     EXPECT_EQ(adresseKlassifizieren(".a"), AdressArt::Ungueltig);
     EXPECT_EQ(adresseKlassifizieren("ho_st"), AdressArt::Ungueltig);
     EXPECT_EQ(adresseKlassifizieren("ho st"), AdressArt::Ungueltig);
-    EXPECT_EQ(adresseKlassifizieren("host:5000"), AdressArt::Ungueltig);   // Port gehört in ein eigenes Feld
+    EXPECT_EQ(adresseKlassifizieren("host:5000"), AdressArt::Ungueltig);   // Port gehoert in ein eigenes Feld
     EXPECT_EQ(adresseKlassifizieren("h\xC3\xA4st"), AdressArt::Ungueltig);  // UTF-8-Umlaut
 }

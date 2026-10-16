@@ -103,17 +103,17 @@ class Pty:
 
         **Nie blind weitertippen.**  Der Zeileneditor (isocline) schaltet den
         Rohmodus mit ``tcsetattr(..., TCSAFLUSH)`` ein (``third_party/isocline/
-        src/tty.c``): alles, was WÄHREND eines laufenden Befehls getippt wurde,
-        verwirft er, sobald die nächste Eingabeaufforderung aufgeht — das
-        Terminal hat es zwar im Kanonikmodus schon zurückgeschrieben, der
+        src/tty.c``): alles, was WAEHREND eines laufenden Befehls getippt wurde,
+        verwirft er, sobald die naechste Eingabeaufforderung aufgeht — das
+        Terminal hat es zwar im Kanonikmodus schon zurueckgeschrieben, der
         Debugger bekommt es aber nie zu sehen.
 
         Genau daran fiel dieser Test auf einer belasteten Maschine um: `gscreen`
-        brauchte dort länger als die Pause danach, `b 0x0100` ging im Rauschen
+        brauchte dort laenger als die Pause danach, `b 0x0100` ging im Rauschen
         unter, der Haltepunkt wurde nie gesetzt — und das Programm lief
-        erwartungsgemäß durch.  Sichtbar war nur „Haltepunkt griff nicht", was
+        erwartungsgemaess durch.  Sichtbar war nur „Haltepunkt griff nicht", was
         in die falsche Richtung zeigt.  Deshalb wartet jeder Befehl hier auf
-        seine eigene Rückmeldung.
+        seine eigene Rueckmeldung.
         """
         if not self.warte_auf_prompt():
             return False

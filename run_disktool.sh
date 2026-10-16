@@ -1,6 +1,6 @@
 #!/bin/bash
-# k1520DiskTool — Starter (Gegenstück zu run_a5120emu.sh)
-# Aktiviert das venv, setzt den Bibliothekspfad und startet die Oberfläche.
+# k1520DiskTool — Starter (Gegenstueck zu run_a5120emu.sh)
+# Aktiviert das venv, setzt den Bibliothekspfad und startet die Oberflaeche.
 
 set -e
 
@@ -24,12 +24,12 @@ if [ ! -f "$BUILD_DIR/libk1520disk.so" ]; then
     exit 1
 fi
 
-# Den Interpreter des venv DIREKT aufrufen, nicht über `source .../activate`.
-# `activate` trägt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
+# Den Interpreter des venv DIREKT aufrufen, nicht ueber `source .../activate`.
+# `activate` traegt den Pfad des venv ABSOLUT ein (er stammt aus dem Erzeugen);
 # ein kopiertes oder mitverschobenes venv stellt damit das Verzeichnis eines
 # FREMDEN venv in den PATH, und `python3` ist dann ein anderer Interpreter mit
-# anderen Paketen — Fehlerbild: eine installierte Abhängigkeit gilt als fehlend.
-# Der direkt aufgerufene Interpreter findet sein venv über den eigenen Pfad.
+# anderen Paketen — Fehlerbild: eine installierte Abhaengigkeit gilt als fehlend.
+# Der direkt aufgerufene Interpreter findet sein venv ueber den eigenen Pfad.
 export LD_LIBRARY_PATH="$BUILD_DIR:$LD_LIBRARY_PATH"
 
 exec "$VENV_DIR/bin/python3" "$PROJECT_DIR/app/disktool/main.py" "$@"

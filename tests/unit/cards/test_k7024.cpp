@@ -296,7 +296,7 @@ TEST(K7024, MemRead_ReturnsWrittenValue)
 {
     K1520Bus bus;
     K7024::A5120Config cfg;
-    cfg.read_protect = false;           // Lesesperre inaktiv → K7024 ist über den Bus lesbar
+    cfg.read_protect = false;           // Lesesperre inaktiv → K7024 ist ueber den Bus lesbar
     K7024 screen(bus, cfg);             // registriert sich im Ctor selbst am Bus (attachToBus)
 
     bus.memWrite(0xF800, 0x41);
@@ -395,7 +395,7 @@ TEST_F(K7024Test, FramebufferDimensions)
 //
 // Korrektur: read_protect (X13/X14) ist die *Lesesperre* und steuert isReadable()
 // — ob der K7024 bei CPU-Lesezugriffen den Datenbus treibt (/DIEN).  isWritable()
-// ist davon UNABHÄNGIG und immer true (die CPU schreibt den Bildschirm stets).
+// ist davon UNABHAENGIG und immer true (die CPU schreibt den Bildschirm stets).
 
 /**
  * @test K7024Test/Config_ReadProtect_True_NotReadable
@@ -469,13 +469,13 @@ TEST_F(K7024Test, VramRows_AreIndependent)
                 << "Cell (0,1) should be blank at fb_y=" << py;
 }
 
-// ─── 10. Zeichengenerator-Inhalt: Golden-Glyphen + Charset-Integrität ─────────
+// ─── 10. Zeichengenerator-Inhalt: Golden-Glyphen + Charset-Integritaet ─────────
 //
 // Diese Gruppe nagelt den *Inhalt* des Zeichengenerators fest (Codepfad
-// charCode → v171/v172-Lookup → Framebuffer-Pixel). Die bisherigen Tests prüften
-// nur die Karten-Mechanik bzw. "irgendein Pixel gesetzt" — das ließ die drei
+// charCode → v171/v172-Lookup → Framebuffer-Pixel). Die bisherigen Tests prueften
+// nur die Karten-Mechanik bzw. "irgendein Pixel gesetzt" — das liess die drei
 // historischen Charset-Bugs (Versalschrift-ROM ohne Kleinbuchstaben, Kyrillisch-
-// Verwechslung, falsche untere Zeilenebene) allesamt grün durchlaufen. Die
+// Verwechslung, falsche untere Zeilenebene) allesamt gruen durchlaufen. Die
 // Golden-Werte stammen aus dem verifizierten v171/v172-Satz (fb_ocr: 0 Abweichungen).
 
 // Packt die 8 Pixel einer Framebuffer-Zeile der Zelle (col,row) in ein Byte
@@ -517,7 +517,7 @@ static void expectGlyph(K7024& screen, uint8_t code, const uint8_t golden[12], c
 
 /**
  * @test K7024Test/GoldenGlyph_SpaceUppercaseLowercaseDigitPunct
- * @brief Die exakten 12-Zeilen-Bitmaps repräsentativer Glyphen entsprechen dem v171/v172-Satz.
+ * @brief Die exakten 12-Zeilen-Bitmaps repraesentativer Glyphen entsprechen dem v171/v172-Satz.
  * @details Deckt alle Bug-Klassen ab: Versal 'A', echter Klein-Glyph 'a', Descender 'g'
  *   (Zeilen 8–11), Ziffer '0' und Punktuation '.' (untere Ebene v172), sowie das leere Space.
  * @par Pass criterion  Alle 12 gerenderten Pixelzeilen == Golden-Bitmap je Glyph.
@@ -534,10 +534,10 @@ TEST_F(K7024Test, GoldenGlyph_SpaceUppercaseLowercaseDigitPunct)
 
 /**
  * @test K7024Test/Charset_LowercaseDiffersFromUppercase
- * @brief Jeder Kleinbuchstabe 0x61–0x7A rendert eine andere Glyphe als sein Großbuchstabe 0x41–0x5A.
- * @details Direkter Guard gegen das Versalschrift-ROM (Kleinbuchstaben unprogrammiert → würden
- *   auf die Großbuchstaben-Bitmap zurückfallen). Beim korrekten A5120-Satz sind 0 Paare identisch.
- * @par Pass criterion  Für alle 26 Buchstaben unterscheidet sich mind. eine Pixelzeile.
+ * @brief Jeder Kleinbuchstabe 0x61–0x7A rendert eine andere Glyphe als sein Grossbuchstabe 0x41–0x5A.
+ * @details Direkter Guard gegen das Versalschrift-ROM (Kleinbuchstaben unprogrammiert → wuerden
+ *   auf die Grossbuchstaben-Bitmap zurueckfallen). Beim korrekten A5120-Satz sind 0 Paare identisch.
+ * @par Pass criterion  Fuer alle 26 Buchstaben unterscheidet sich mind. eine Pixelzeile.
  */
 TEST_F(K7024Test, Charset_LowercaseDiffersFromUppercase)
 {
@@ -587,8 +587,8 @@ TEST_F(K7024Test, Charset_DescendersUseLowerRows)
 // ─── 11. K8915-Konfiguration: eigener Zeichengenerator (012-6820) ────────────
 //
 // Der K8915 nutzt dieselbe K7024-Karte, aber ein anderes VRAM-Fenster (0x1000
-// statt 0xF800) und eine eigene EPROM-Bestückung (Y411/Y412 statt v171/v172;
-// A10 fest auf Masse ⇒ nur die lateinische Hälfte erreichbar). Siehe
+// statt 0xF800) und eine eigene EPROM-Bestueckung (Y411/Y412 statt v171/v172;
+// A10 fest auf Masse ⇒ nur die lateinische Haelfte erreichbar). Siehe
 // doc/design/16_k8915.md §3.3.
 
 /**
@@ -683,13 +683,13 @@ TEST(K7024, DefaultConfig_StillUsesA5120Charset)
 /**
  * @test K7024Prg710.ConfigForPrg710
  * @brief forPrg710(): VRAM F800H wie am A5120, aber ohne Lesesperre (AP-P1c); die
- *        Vorgabe-Config bleibt unverändert (Lesesperre an).
+ *        Vorgabe-Config bleibt unveraendert (Lesesperre an).
  */
 TEST(K7024Prg710, ConfigForPrg710) {
     const K7024::A5120Config c = K7024::A5120Config::forPrg710();
     EXPECT_EQ(c.vram_base_hi, 0xF8);
     EXPECT_FALSE(c.read_protect);
-    EXPECT_TRUE(K7024::A5120Config{}.read_protect) << "Vorgabe unverändert";
+    EXPECT_TRUE(K7024::A5120Config{}.read_protect) << "Vorgabe unveraendert";
     K1520Bus bus;
     K7024 k(bus, c);
     EXPECT_TRUE(k.isReadable());
@@ -702,7 +702,7 @@ TEST(K7024Prg710, ConfigForPrg710) {
  * @brief forPrg710() rendert den Satz der beiden PRG-EPROMs A103/A123 (1 KB je Baustein,
  *        Adressierung wie A5120: code*8+zeile, Bit 7 = linke Pixelspalte).  Der PRG-Satz ist
  *        reines ISO-646-IRV (kein Umlaut) mit 5 px breiten Glyphen — 'A' unterscheidet sich
- *        also vom 7 px breiten A5120-'A'.  Zusätzlich je EPROM eine FNV-1a-Prüfsumme der
+ *        also vom 7 px breiten A5120-'A'.  Zusaetzlich je EPROM eine FNV-1a-Pruefsumme der
  *        eingebetteten Tabelle gegen die Datei (doc/EPROMS/PRG710/prg710_k7024_a1{03,23}.bin).
  */
 TEST(K7024Prg710, ZeichengeneratorAusDenPrgEproms) {
@@ -721,7 +721,7 @@ TEST(K7024Prg710, ZeichengeneratorAusDenPrgEproms) {
     K7024 k2(bus2);
     k2.vramWrite(0, 0, 0x41);
     glyphBitmap(k2.getFramebuffer(), 0, 0, a5120);
-    EXPECT_NE(std::memcmp(got, a5120, 12), 0) << "PRG- und A5120-Satz müssten sich unterscheiden";
+    EXPECT_NE(std::memcmp(got, a5120, 12), 0) << "PRG- und A5120-Satz muessten sich unterscheiden";
 
     auto fnv = [](const uint8_t* p) {
         uint32_t h = 0x811C9DC5u;

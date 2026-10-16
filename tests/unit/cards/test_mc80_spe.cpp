@@ -1,7 +1,7 @@
 /**
  * @file test_mc80_spe.cpp
  * @brief SPE 2 des MC80.3x + Segmentfenster (AP M2): ROM 2000H–27FFH, Leerbereich
- *        2800H–3FFFH = 00H, ROM-Block nicht segmentabhängig, RAM-Segment 4000H–BFFFH über das
+ *        2800H–3FFFH = 00H, ROM-Block nicht segmentabhaengig, RAM-Segment 4000H–BFFFH ueber das
  *        Segmentregister, 1-KB-Sperren B0H–B3H (A10–A15), nach Reset frei.
  *        doc/mc80/hardware_3x.md §3.2/§4, doc/mc80/egos.md §1 Punkte 4–5.
  */
@@ -41,7 +41,7 @@ TEST_F(Mc80SpeTest, RomBlock2000Bis27FF) {
 }
 
 TEST_F(Mc80SpeTest, LeerbereichLiest00) {
-    // M1: nur mit 00H läuft die ROM-Kette über 2048 leere Objekte bis 4000H weiter.
+    // M1: nur mit 00H laeuft die ROM-Kette ueber 2048 leere Objekte bis 4000H weiter.
     for (uint32_t a = 0x2800; a < 0x4000; ++a)
         ASSERT_EQ(bus.memRead(static_cast<uint16_t>(a)), 0x00) << std::hex << a;
 }
@@ -85,7 +85,7 @@ TEST_F(Mc80SpeTest, FensterGrenzen) {
     EXPECT_EQ(bus.memRead(0x3FFF), 0x00);        // Leerbereich, nicht RAM
     bus.memWrite(0x3FFF, 0x99);
     EXPECT_EQ(spe1.ramPeek(0x4000), 0x00);
-    bus.memWrite(0xC000, 0x99);                   // gehört der ZVE (hier: niemand)
+    bus.memWrite(0xC000, 0x99);                   // gehoert der ZVE (hier: niemand)
     EXPECT_EQ(spe1.ramPeek(0xBFFF), 0x00);
 }
 
@@ -172,7 +172,7 @@ struct Mc80EpromSegmentTest : ::testing::Test {
 
 TEST_F(Mc80EpromSegmentTest, NurDasGewaehlteSegmentIstSichtbar) {
     segment(0x00);
-    EXPECT_EQ(bus.memRead(0x4000), 0xFF);                 // keins gewählt: offener Bus
+    EXPECT_EQ(bus.memRead(0x4000), 0xFF);                 // keins gewaehlt: offener Bus
     segment(0x10);
     EXPECT_EQ(bus.memRead(0x4000), MC80_SEG10_D[0]);
     EXPECT_EQ(bus.memRead(0x4FFF), MC80_SEG10_D[0xFFF]);
@@ -188,11 +188,11 @@ TEST_F(Mc80EpromSegmentTest, EpromLiestNurUndWirdNieBeschrieben) {
     segment(0x10);
     bus.memWrite(0x4000, static_cast<uint8_t>(~MC80_SEG10_D[0]));
     EXPECT_EQ(bus.memRead(0x4000), MC80_SEG10_D[0]);
-    // Schreiben bei gewähltem EPROM-Segment erreicht auch das (abgewählte) RAM nicht
+    // Schreiben bei gewaehltem EPROM-Segment erreicht auch das (abgewaehlte) RAM nicht
     segment(0x01);
     EXPECT_EQ(bus.memRead(0x4000), 0x00);
-    // RAM und EPROM zugleich gewählt: das Schreiben trifft das RAM, gelesen wird nach
-    // Anmeldereihenfolge (RAM zuerst) -- am Gerät wäre das ein Buskonflikt.
+    // RAM und EPROM zugleich gewaehlt: das Schreiben trifft das RAM, gelesen wird nach
+    // Anmeldereihenfolge (RAM zuerst) -- am Geraet waere das ein Buskonflikt.
     segment(0x11);
     bus.memWrite(0x4001, 0x5A);
     segment(0x01);

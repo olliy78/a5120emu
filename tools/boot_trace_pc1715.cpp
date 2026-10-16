@@ -6,10 +6,10 @@
  *
  * Protokolliert werden die Floppy-Ansteuerung (00H–07H, SE/MO-Register 20H/21H), ROM
  * ein/aus (24H–2BH), BWS-Register (34H), 8275 (18H/19H) und Interrupts.  Gleiche
- * aufeinanderfolgende Ereignisse werden gefaltet (×N); beim Datenport (00H/02H) zählt
+ * aufeinanderfolgende Ereignisse werden gefaltet (×N); beim Datenport (00H/02H) zaehlt
  * weder Wert noch PC.
  *
- * Abbruch: `--until`, Stillstand (`--stall` Takte ohne Bildänderung und ohne
+ * Abbruch: `--until`, Stillstand (`--stall` Takte ohne Bildaenderung und ohne
  * Schreibzugriff auf einen beobachteten Port) oder `-c`.  Steht beim Stillstand eine
  * Bildzeile `A>` (bzw. `%`), ist das das Ziel von Etappe 2 → Exit 0.
  *
@@ -78,7 +78,7 @@ const char* portNameW(uint8_t p) {
     return "";
 }
 /// Ereignis-Ports.  Am 1715W schaltet das BIOS das Bankregister 24H bei JEDEM Aufruf (auch im
-/// Leerlauf der Konsolenabfrage) — es zählt deshalb nicht als Steuerzugriff.
+/// Leerlauf der Konsolenabfrage) — es zaehlt deshalb nicht als Steuerzugriff.
 bool beobachtetW(uint8_t p) {
     return p <= 0x07 || (p >= 0x18 && p <= 0x23) || (p >= 0x28 && p <= 0x2B) || (p >= 0x34 && p <= 0x37);
 }
@@ -323,7 +323,7 @@ int bootTracePc1715(const K8915TraceOpts& o, const prnlst::Listing& prn, bool w)
             until_hit = true; until_cyc = now; until_pc = m.cpuPC(); break;
         }
         if (now - last_activity >= static_cast<uint64_t>(o.stall)) {
-            if (tasten_pos < tasten.size()) {   // Maschine steht: nächster Tastenblock
+            if (tasten_pos < tasten.size()) {   // Maschine steht: naechster Tastenblock
                 tippeBlock();
                 if (until_hit) break;
                 last_activity = m.totalCycles();

@@ -1,16 +1,16 @@
 /**
  * @file senke.h
- * @brief Schreibsenke für E/A-Tore ohne Nachbildung (MC80.2x, AP M11).
+ * @brief Schreibsenke fuer E/A-Tore ohne Nachbildung (MC80.2x, AP M11).
  *
  * Belegt im MC80.21/.22 (doc/mc80/hardware_2x.md §3/§4/§8):
  *   - **00H–0FH „intern belegt“**, darunter 01H/02H = Schreibfreigabe/-sperre der Steckeinheit
  *     „4 KByte dRAM mit Schreibsperre“ (U202).  Ob die OPS K3525 der .21/.22 die Sperre hat, sagt
  *     das Handbuch nicht [?]; das Betriebssystem gibt beim Start nur frei (RSP, 60 × OUT 01H) und
- *     sperrt nie → die Sperre wird nicht nachgebildet, die Ausgaben werden nur gezählt.
+ *     sperrt nie → die Sperre wird nicht nachgebildet, die Ausgaben werden nur gezaehlt.
  *   - **E0H–E8H EPROM-Programmiereinheit (PPE)**: ohne Schaltplan nur als Senke (Entwurf 31 §6:
- *     erst in einer späteren Etappe).
+ *     erst in einer spaeteren Etappe).
  *
- * Schreiben wird verworfen (und gezählt), Lesen liefert FFH [? offener Datenbus].  Die Tore sind
+ * Schreiben wird verworfen (und gezaehlt), Lesen liefert FFH [? offener Datenbus].  Die Tore sind
  * angemeldet, damit keine Zusatzkarte (z. B. die K6022 auf E0H–E7H) dort steckbar ist.
  */
 

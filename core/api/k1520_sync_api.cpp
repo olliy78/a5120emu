@@ -1,9 +1,9 @@
 /**
  * @file k1520_sync_api.cpp
- * @brief Implementierung der C-ABI für die physische Diskette (beide Bibliotheken).
+ * @brief Implementierung der C-ABI fuer die physische Diskette (beide Bibliotheken).
  *
- * Die Datei ist absichtlich dünn: sie packt Handles aus und reicht an @ref TrackSync
- * weiter.  Die ganze Logik (Prioritäten, Zustände, Blockade) steht dort.
+ * Die Datei ist absichtlich duenn: sie packt Handles aus und reicht an @ref TrackSync
+ * weiter.  Die ganze Logik (Prioritaeten, Zustaende, Blockade) steht dort.
  *
  * @see core/api/k1520_sync_api.h
  * @see doc/design/14_physische_diskette.md

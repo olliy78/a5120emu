@@ -2,7 +2,7 @@
  * @file eprommer590068.h
  * @brief EPROMmer der ATP 590068 (PRG 710) mit **virtuellem Sockel** — AP-P7b.
  *
- * Befund aus `PROG` (UDOS, V3.1) und `PROG.COM` (SCPX, V1.1), ausführlich in
+ * Befund aus `PROG` (UDOS, V3.1) und `PROG.COM` (SCPX, V1.1), ausfuehrlich in
  * `doc/prg710/eprommer.md`, Plan `doc/design/20_prg710.md` §3.4/AP-P7:
  *
  * @code
@@ -16,27 +16,27 @@
  * @endcode
  *
  * Die PIO ist wie die der K2521 adressiert: **B/A an AB0, C/D an AB1** (belegt durch die
- * Steuerwörter an D2H/D3H und 86H).  **Ein** Sockel, **kein** Löschen über Software
- * (Löschen = Bedienung, UV-Gerät).
+ * Steuerwoerter an D2H/D3H und 86H).  **Ein** Sockel, **kein** Loeschen ueber Software
+ * (Loeschen = Bedienung, UV-Geraet).
  *
  * **Nur Belegtes wirkt:**
- * - Lesen (`IN (D0H)`): PROM steckt und Bit 4 → Byte an der Adresse (auf die Größe des
+ * - Lesen (`IN (D0H)`): PROM steckt und Bit 4 → Byte an der Adresse (auf die Groesse des
  *   PROM begrenzt), sonst FFH.
  * - Brennen an der **fallenden Flanke von Bit 2**, wenn PROM steckt, Bit 4, Bit 0 und
  *   Bit 1 gesetzt und der eingestellte Typ zum PROM passt: `Zelle &= Daten` (nur 1 → 0
  *   wie am echten EPROM).  Bits von Port A, die auf Eingang stehen, gelten als 1 (offen)
  *   `[?]`.
  * - Die Impulsbreite wird gemessen und protokolliert, aber **nicht bewertet**: wie ein
- *   PROM auf einen zu kurzen Impuls reagiert, belegt die Software nicht.  Außerhalb der
+ *   PROM auf einen zu kurzen Impuls reagiert, belegt die Software nicht.  Ausserhalb der
  *   Datenblattwerte (U555 0,1–1 ms, U2716 45–55 ms) gibt es einen Hinweis im Protokoll.
  * - Falscher Typ: Lesen geht, Brennen bleibt ohne Wirkung — beides mit Protokolleintrag
  *   `[?]` (Plan §8.6).
  *
- * **Protokoll** (Oberfläche, Debugger): Textzeilen mit Maschinentakt in einem Ringpuffer;
+ * **Protokoll** (Oberflaeche, Debugger): Textzeilen mit Maschinentakt in einem Ringpuffer;
  * Spannungswechsel, Typwahl, Sockel, je Lese- bzw. Programmierphase eine Zusammenfassung,
  * Fehlbedienung.  Kein Eintrag je Byte (U555: 100 × 1024 Impulse).
  *
- * Sperre: der Sockel wird aus dem Oberflächenfaden bedient, der Bus aus dem Lauffaden.
+ * Sperre: der Sockel wird aus dem Oberflaechenfaden bedient, der Bus aus dem Lauffaden.
  */
 
 #pragma once
@@ -55,7 +55,7 @@ public:
 
     struct Config {
         uint8_t  basis  = 0xD0;          ///< PIO D0H–D3H, Steuerregister basis+4
-        uint32_t takt_hz = 2'457'600;    ///< für die Impulsbreite in ms (Protokoll)
+        uint32_t takt_hz = 2'457'600;    ///< fuer die Impulsbreite in ms (Protokoll)
     };
 
     /// Steuerregister D4H (Bitbedeutung aus PROG geschlossen, doc/prg710/eprommer.md §2).
@@ -77,7 +77,7 @@ public:
     /** @brief /RESET: PIO in den Einschaltzustand, Steuerregister 00H [?]; der Sockel bleibt. */
     void reset();
 
-    /// Anschlüsse von ZRE-PIO Port A (Bit 0 = Typ).  Leer = immer 2 KB.
+    /// Anschluesse von ZRE-PIO Port A (Bit 0 = Typ).  Leer = immer 2 KB.
     void setTypwahl(std::function<uint8_t()> f) { typwahl_ = std::move(f); }
     /// Maschinentakte (Impulsbreite, Protokoll).  Leer = 0.
     void setZeit(std::function<uint64_t()> f)  { zeit_ = std::move(f); }
@@ -89,21 +89,21 @@ public:
 
     // ─── Virtueller Sockel (Bedienung) ───────────────────────────────────────
     /**
-     * @brief PROM einlegen.  @p typ Keiner = aus der Größe (≤ 1 KB U555, ≤ 2 KB U2716);
-     *        kürzere Daten werden mit FFH aufgefüllt.  false bei zu großen Daten.
+     * @brief PROM einlegen.  @p typ Keiner = aus der Groesse (≤ 1 KB U555, ≤ 2 KB U2716);
+     *        kuerzere Daten werden mit FFH aufgefuellt.  false bei zu grossen Daten.
      */
     bool einlegen(const std::vector<uint8_t>& daten, Typ typ, const std::string& datei,
                   std::string* fehler = nullptr);
-    /// Rohes `.bin` einlegen (Typ wie @ref einlegen).  Die Datei bleibt die Bindung für speichern().
+    /// Rohes `.bin` einlegen (Typ wie @ref einlegen).  Die Datei bleibt die Bindung fuer speichern().
     bool einlegenDatei(const std::string& pfad, Typ typ = Typ::Keiner, std::string* fehler = nullptr);
-    /// Fabrikneues (gelöschtes) PROM einlegen: alles FFH, ohne Datei.
+    /// Fabrikneues (geloeschtes) PROM einlegen: alles FFH, ohne Datei.
     void einlegenLeer(Typ typ);
-    /// Nach dem Hinübertragen auf eine neue Maschine: „geändert“ wiederherstellen.
+    /// Nach dem Hinuebertragen auf eine neue Maschine: „geaendert“ wiederherstellen.
     void markiereGeaendert() { std::lock_guard<std::mutex> lk(sperre_); geaendert_ = true; }
     void entnehmen();
     /// Inhalt als rohes `.bin` schreiben; leerer Pfad = an die gebundene Datei.  Bindet neu.
     bool speichern(const std::string& pfad, std::string* fehler = nullptr);
-    /// UV-Löschen (Bedienung): alles FFH.
+    /// UV-Loeschen (Bedienung): alles FFH.
     void uvLoeschen();
 
     // ─── Zustand ─────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ public:
     Typ                  typ() const;                ///< Typ des gesteckten PROM (Keiner = leer)
     std::vector<uint8_t> inhalt() const;
     std::string          datei() const;
-    bool                 geaendert() const;          ///< seit Einlegen/Speichern gebrannt oder gelöscht
+    bool                 geaendert() const;          ///< seit Einlegen/Speichern gebrannt oder geloescht
     uint8_t              steuerregister() const;
     Typ                  eingestellterTyp() const;   ///< aus ZRE-PIO 84H Bit 0
     uint16_t             adresse() const;            ///< A0–A10 wie gerade angelegt
@@ -120,7 +120,7 @@ public:
 
     /// Alle Protokollzeilen im Ringpuffer ("takt: text").
     std::vector<std::string> protokoll() const;
-    /// Nur die Zeilen seit dem letzten Aufruf (ein Abnehmer: die Oberfläche).
+    /// Nur die Zeilen seit dem letzten Aufruf (ein Abnehmer: die Oberflaeche).
     std::vector<std::string> protokollNeu();
 
     Z80PIO& pio() { return pio_; }
@@ -164,7 +164,7 @@ private:
     std::vector<uint16_t> impulse_je_adresse_;
     std::vector<uint8_t>  vorher_;
     bool     brenn_gewarnt_ = false, breite_gewarnt_ = false;
-    // Zähler
+    // Zaehler
     uint64_t lese_gesamt_ = 0, impulse_gesamt_ = 0;
     // Protokoll
     std::deque<std::string> protokoll_;

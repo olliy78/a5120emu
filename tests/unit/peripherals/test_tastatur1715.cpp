@@ -23,7 +23,7 @@ struct Prueffeld {
     Prueffeld() {
         t.byteOut = [this](uint8_t b) { bytes.push_back(b); zeiten.push_back(t.tastaturTakte()); };
     }
-    // Ruhezeit nach dem Einschalten: das ROM räumt erst seine Register auf
+    // Ruhezeit nach dem Einschalten: das ROM raeumt erst seine Register auf
     void ruhe(uint64_t n = 4 * D) { t.runTastaturTakte(n); }
 };
 using Bytes = std::vector<uint8_t>;
@@ -80,7 +80,7 @@ TEST(Tastatur1715, ZuKurzerDruckWirdEntprellt) {
     Prueffeld f;
     f.ruhe();
     f.t.press(7, 5);
-    f.t.runTastaturTakte(2 * D);  // zwei Durchläufe genügen nicht (gemessen: 12 000 Takte)
+    f.t.runTastaturTakte(2 * D);  // zwei Durchlaeufe genuegen nicht (gemessen: 12 000 Takte)
     f.t.releaseAll();
     f.t.runTastaturTakte(10 * D);
     EXPECT_TRUE(f.bytes.empty());
@@ -93,7 +93,7 @@ TEST(Tastatur1715, ZuKurzerDruckWirdEntprellt) {
 }
 
 TEST(Tastatur1715, GedruecktIstEins_NichtGedruecktIstNull) {
-    // Matrix von außen: die Abfrage liest nur gedrückte Positionen als 1
+    // Matrix von aussen: die Abfrage liest nur gedrueckte Positionen als 1
     Prueffeld f;
     f.t.press(12, 3);
     EXPECT_TRUE(f.t.isPressed(12, 3));
@@ -180,20 +180,20 @@ TEST(Tastatur1715, LedWechselBeiLockUndSiSo) {
     f.t.runTastaturTakte(3 * D);
     EXPECT_TRUE(f.t.ledSiSo());
     EXPECT_TRUE(f.bytes.empty());
-    // Zeichen trägt Statusbit 2
+    // Zeichen traegt Statusbit 2
     f.t.press(7, 5);
     f.t.runTastaturTakte(8 * D);
     f.t.releaseAll();
     f.t.runTastaturTakte(3 * D);
     EXPECT_EQ(f.bytes, (Bytes{0xE4, 0x61}));
-    // zweiter Druck schaltet zurück
+    // zweiter Druck schaltet zurueck
     f.bytes.clear();
     f.t.press(8, 7);
     f.t.runTastaturTakte(5 * D);
     f.t.releaseAll();
     f.t.runTastaturTakte(3 * D);
     EXPECT_FALSE(f.t.ledSiSo());
-    // LOCK: erster Druck schaltet sofort ein, Großbuchstaben, Statusbit 3
+    // LOCK: erster Druck schaltet sofort ein, Grossbuchstaben, Statusbit 3
     f.t.press(8, 5);
     f.t.runTastaturTakte(5 * D);
     EXPECT_TRUE(f.t.ledLock());
@@ -204,7 +204,7 @@ TEST(Tastatur1715, LedWechselBeiLockUndSiSo) {
     EXPECT_EQ(f.bytes, (Bytes{0xE8, 0x41}));
     f.t.releaseAll();
     f.t.runTastaturTakte(3 * D);
-    // nächster Druck schaltet erst beim Loslassen aus
+    // naechster Druck schaltet erst beim Loslassen aus
     f.t.press(8, 5);
     f.t.runTastaturTakte(5 * D);
     f.t.releaseAll();
@@ -216,7 +216,7 @@ TEST(Tastatur1715, TippeZeichenkette) {
     Prueffeld f;
     f.ruhe();
     f.t.tippe("Ab 1!\r");
-    // A (Shift), b, Leer, 1, ! (Shift), Wagenrücklauf
+    // A (Shift), b, Leer, 1, ! (Shift), Wagenruecklauf
     EXPECT_EQ(f.bytes, (Bytes{0xE2, 0x41, 0xE0, 0x62, 0xE0, 0x20, 0xE0, 0x31, 0xE2, 0x21, 0xE0, 0x9E}));
 }
 
@@ -250,7 +250,7 @@ TEST(Tastatur1715, ZeichentabelleStimmtMitDemRomUeberein) {
                 f.t.runTastaturTakte(8 * D);
                 if (f.bytes.empty()) continue;  // unbelegte Stellen senden nichts
                 ASSERT_EQ(f.bytes.size(), 2u) << sp << "," << ze;
-                // Rückwärts: erzeugt unser Zeichen für diesen Code dieselbe Position?
+                // Rueckwaerts: erzeugt unser Zeichen fuer diesen Code dieselbe Position?
                 const uint8_t code = f.bytes[1];
                 if (code >= 0x20 && code < 0x7F) {
                     Tastatur1715::Taste k;
@@ -326,7 +326,7 @@ TEST(Tastatur1715, Tast618YUndZSindVertauscht) {
 
 // Jede Zeichentaste, durch das TAST_618 gefahren, liefert den Code der Tabelle; und jedes
 // druckbare Zeichen, das die Tabelle kennt, erzeugt durch das ROM wieder genau dieses Zeichen
-// (wie ZeichentabelleStimmtMitDemRomUeberein für S600).
+// (wie ZeichentabelleStimmtMitDemRomUeberein fuer S600).
 TEST(Tastatur1715, Tast618ZeichentabelleStimmtMitDemRomUeberein) {
     int geprueft = 0;
     for (int sp = 0; sp < 13; sp++)

@@ -1,7 +1,7 @@
 /**
  * @file test_mc80_dpl.cpp
- * @brief Displaylogik DPL des MC80.2x (AP M11): Tore, Zeilenautomat (Zeichentakt, Rücklauf,
- *        Analogbahn), Bild aus den PIO-Ausgängen, Tastenmatrix, BREAK, Ersatz-Zeichengenerator.
+ * @brief Displaylogik DPL des MC80.2x (AP M11): Tore, Zeilenautomat (Zeichentakt, Ruecklauf,
+ *        Analogbahn), Bild aus den PIO-Ausgaengen, Tastenmatrix, BREAK, Ersatz-Zeichengenerator.
  *        Zeitannahmen [?] stehen in core/cards/mc80/dpl.h und werden hier festgehalten.
  */
 
@@ -24,7 +24,7 @@ void takte(Mc80Dpl& d, int n)
     }
 }
 
-/// BSYS-Einrichtung (TII/INI): K0 Zähler mit Interrupt ZK 1, K2 Zähler ZK 33, K1 Rücklauf D0H,
+/// BSYS-Einrichtung (TII/INI): K0 Zaehler mit Interrupt ZK 1, K2 Zaehler ZK 33, K1 Ruecklauf D0H,
 /// PIO A/B Ausgabe.
 void einrichten(Mc80Dpl& d)
 {
@@ -37,7 +37,7 @@ void einrichten(Mc80Dpl& d)
     d.ioWrite(0xF7, 0x0F);
 }
 
-/// Bis zum nächsten Zeichentakt (höchstens @p max Takte).
+/// Bis zum naechsten Zeichentakt (hoechstens @p max Takte).
 bool bisZeichentakt(Mc80Dpl& d, int max = 20'000)
 {
     const uint64_t z0 = d.zeichentakte();
@@ -60,14 +60,14 @@ TEST(Mc80Dpl, ToreF0BisF7)
     EXPECT_EQ(bus.ioOwner(0xF8), nullptr);
     bus.ioWrite(0xF2, 0x47);
     bus.ioWrite(0xF2, 0x21);
-    EXPECT_EQ(bus.ioRead(0xF2), 0x21);              // CTC K2 liest den Zählerstand
+    EXPECT_EQ(bus.ioRead(0xF2), 0x21);              // CTC K2 liest den Zaehlerstand
 }
 
 TEST(Mc80Dpl, ZeichentaktUndRuecklauf)
 {
     Mc80Dpl d;
     einrichten(d);
-    // Nach /RESET Rücklauf; K1 (Φ/4, ZK D0H) beendet ihn nach 832 Takten.
+    // Nach /RESET Ruecklauf; K1 (Φ/4, ZK D0H) beendet ihn nach 832 Takten.
     takte(d, 800);
     EXPECT_EQ(d.zeichentakte(), 0u);
     ASSERT_TRUE(bisZeichentakt(d, 300));
@@ -79,7 +79,7 @@ TEST(Mc80Dpl, ZeichentaktUndRuecklauf)
     EXPECT_EQ(d.zeichentakte(), z + 1);
     // Jeder Zeichentakt fordert K0 (DPI) an.
     EXPECT_TRUE(d.ctc().debugState().ch[0].intPending);
-    // Nach 33 Takten ZC/TO2 (TSI angefordert) und Rücklauf: 832 Takte kein Zeichentakt.
+    // Nach 33 Takten ZC/TO2 (TSI angefordert) und Ruecklauf: 832 Takte kein Zeichentakt.
     while (!d.ctc().debugState().ch[2].intPending) takte(d, 1);
     const uint64_t n = d.zeichentakte();
     takte(d, 800);
@@ -92,13 +92,13 @@ TEST(Mc80Dpl, ZeileAusDenPioAusgaengen)
 {
     Mc80Dpl d;
     einrichten(d);
-    takte(d, 900);                                  // Rücklauf vorbei
+    takte(d, 900);                                  // Ruecklauf vorbei
     // TSI: Zeilenlage auf PIO B (Zeile 2 → BWS-Adresse 40H → CPL = BFH), Leerzeichen auf PIO A.
     d.ioWrite(0xF6, 0xBF);
     d.ioWrite(0xF4, 0x20);
     ASSERT_TRUE(bisZeichentakt(d));                 // Schritt 0: Leerzeichen bei Strahlvorlauf
     const std::string text = "HALLO MC80";
-    for (char c : text) {                           // DPI: nächstes Zeichen nach jedem Takt
+    for (char c : text) {                           // DPI: naechstes Zeichen nach jedem Takt
         d.ioWrite(0xF4, static_cast<uint8_t>(c >= 0x40 ? c - 0x40 : c));
         ASSERT_TRUE(bisZeichentakt(d));
     }
@@ -124,8 +124,8 @@ TEST(Mc80Dpl, AnalogbahnErsetztDieFolgendeZeile)
     takte(d, 900);
     d.ioWrite(0xF6, 0xFF);                          // Textzeile 0
     d.ioWrite(0xF4, 0x20);
-    while (!d.ctc().debugState().ch[2].intPending) takte(d, 1);   // TSI → Rücklauf
-    // ANL: Z-Signal analog, erste Position, dann auf TI1 (Ende des Rücklaufs) warten.
+    while (!d.ctc().debugState().ch[2].intPending) takte(d, 1);   // TSI → Ruecklauf
+    // ANL: Z-Signal analog, erste Position, dann auf TI1 (Ende des Ruecklaufs) warten.
     d.ioWrite(0xF4, 0x80);
     d.ioWrite(0xF6, 0x10);
     d.ioWrite(0xF1, 0xC1);
@@ -136,7 +136,7 @@ TEST(Mc80Dpl, AnalogbahnErsetztDieFolgendeZeile)
         d.ioWrite(0xF6, static_cast<uint8_t>(0x11 + i / 2));
         takte(d, 21);
     }
-    d.ioWrite(0xF4, 0x20);                          // zurück auf Text (TI0)
+    d.ioWrite(0xF4, 0x20);                          // zurueck auf Text (TI0)
     EXPECT_EQ(d.bahnen(), b0 + 1);
     ASSERT_TRUE(d.analogZeile(1));
     EXPECT_FALSE(d.analogZeile(0));
@@ -200,7 +200,7 @@ TEST(Mc80Dpl, ErsatzZeichengeneratorEindeutig)
 
 TEST(Mc80Dpl, RetiGehoertDemKanalInBedienung)
 {
-    // TSI (K2) in Bedienung, K0 fordert schon wieder an: retiAnnehmen() löscht K2.
+    // TSI (K2) in Bedienung, K0 fordert schon wieder an: retiAnnehmen() loescht K2.
     Mc80Dpl d;
     einrichten(d);
     takte(d, 900);
@@ -210,7 +210,7 @@ TEST(Mc80Dpl, RetiGehoertDemKanalInBedienung)
     }
     while (d.ctc().debugState().ch[0].intPending) { d.getVector(); d.retiAnnehmen(); }
     EXPECT_EQ(d.getVector(), 0x04);                 // TSI
-    d.ctc().clkTrg(0, true);                        // K0 fordert an, während der TSI läuft
+    d.ctc().clkTrg(0, true);                        // K0 fordert an, waehrend der TSI laeuft
     d.ctc().clkTrg(0, false);
     ASSERT_TRUE(d.ctc().debugState().ch[0].intPending);
     EXPECT_TRUE(d.retiAnnehmen());

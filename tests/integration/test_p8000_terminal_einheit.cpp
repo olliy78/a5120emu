@@ -23,7 +23,7 @@ using namespace k1520::serial;
 
 namespace {
 
-/// Rechnerkanal (SIO des Gastes): sendet aus `gast`, empfängt in `empfangen`, 9600 Bd 8N2 bei 4 MHz.
+/// Rechnerkanal (SIO des Gastes): sendet aus `gast`, empfaengt in `empfangen`, 9600 Bd 8N2 bei 4 MHz.
 struct KarteStub : SerialAnschluss {
     std::deque<uint8_t> gast;
     std::string empfangen;
@@ -67,7 +67,7 @@ TEST(P8000TerminalEinheit, TasteAWirdAlsAGesendet)
     ASSERT_TRUE(t.zeichenTaste('a', false));
     laufe(t, 400);
     EXPECT_EQ(k.empfangen, "a");
-    ASSERT_TRUE(t.zeichenTaste('A', false));       // SHIFT + a über die Matrix
+    ASSERT_TRUE(t.zeichenTaste('A', false));       // SHIFT + a ueber die Matrix
     ASSERT_TRUE(t.zeichenTaste('c', true));        // CTRL-C
     laufe(t, 800);
     EXPECT_EQ(k.empfangen, "aA\x03");
@@ -85,7 +85,7 @@ TEST(P8000TerminalEinheit, HostLoeschtDasBildMitEscKlammer2J)
     laufe(t, 200);
     EXPECT_EQ(zl(t, 1), "Zeile");
     k.senden("\x1b[2J");
-    laufe(t, 300);                                 // Löschen dauert ≈ 65 ms
+    laufe(t, 300);                                 // Loeschen dauert ≈ 65 ms
     for (int z = 0; z < 24; ++z) EXPECT_EQ(zl(t, z), "") << z;
     // auch die 8275-Zellen sind leer
     auto& hw = static_cast<HwTerminalGeraet&>(t).einheit().hw();
@@ -147,7 +147,7 @@ TEST(P8000TerminalEinheit, SaveStateDerKopplungSetztFort)
     EXPECT_EQ(zl(b, 1), "abc");
 }
 
-/// Eigenständiger Betrieb („P8000 Terminal"): der Hub der Einheit als Telnet-Server, ein Client
+/// Eigenstaendiger Betrieb („P8000 Terminal"): der Hub der Einheit als Telnet-Server, ein Client
 /// spielt den Rechner.
 TEST(P8000TerminalEinheit, TelnetAmHubDerEinheit)
 {

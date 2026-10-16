@@ -1,4 +1,4 @@
-"""Mitschrift des Terminals (``app/mitschrift.py``): Rohbytes → Text → angehängte Datei."""
+"""Mitschrift des Terminals (``app/mitschrift.py``): Rohbytes → Text → angehaengte Datei."""
 
 from app.mitschrift import LEERLAUF_S, Mitschrift
 
@@ -23,7 +23,7 @@ def test_zeilen_kommen_sofort_die_angefangene_nach_dem_leerlauf(tmp_path):
     m.schreibe(b"root\r\n% ")
     assert f.read_text() == "login: root\n"
     m.takt()
-    assert f.read_text() == "login: root\n"          # zu früh
+    assert f.read_text() == "login: root\n"          # zu frueh
     uhr.t += LEERLAUF_S + 0.1
     m.takt()
     assert f.read_text() == "login: root\n% "        # der Prompt ist da
@@ -38,7 +38,7 @@ def test_escape_folgen_und_steuerzeichen_fallen_weg_auch_ueber_lesegrenzen(tmp_p
 
 def test_rueckschritt_nimmt_das_letzte_zeichen_der_zeile_zurueck(tmp_path):
     m, _, f = _m(tmp_path)
-    m.schreibe(b"lx\x08 \x08s\n")                    # Echo eines Rückschritts: BS SP BS
+    m.schreibe(b"lx\x08 \x08s\n")                    # Echo eines Rueckschritts: BS SP BS
     assert f.read_text() == "ls\n"
 
 
@@ -49,7 +49,7 @@ def test_eine_vorhandene_datei_wird_angehaengt(tmp_path):
     m.schreibe(b"neu\n")
     m.abschliessen()
     assert f.read_text(encoding="utf-8") == "frueher\nneu\n"
-    m2 = Mitschrift(str(f))                          # erneutes Öffnen ändert nichts am Bestand
+    m2 = Mitschrift(str(f))                          # erneutes Oeffnen aendert nichts am Bestand
     assert f.read_text(encoding="utf-8") == "frueher\nneu\n" and m2.aktiv
 
 

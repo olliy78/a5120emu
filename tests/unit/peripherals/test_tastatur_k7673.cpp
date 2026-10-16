@@ -2,9 +2,9 @@
  * @file test_tastatur_k7673.cpp
  * @brief Tastatur K7673.09 (AP P20b, Entwurf 28 §5): Verhaltensmodell gegen die ORIGINAL-
  *        Firmware auf dem Z8-Kern (Differenzialtest), Leitungsprotokoll, Wiederholung,
- *        3-Tasten-Grenze, LEDs, Überlauf, Save-State.
+ *        3-Tasten-Grenze, LEDs, Ueberlauf, Save-State.
  *
- * Der Firmware-Prüfstand ist der aus der Praxisprobe P19c (test_z8_firmware.cpp): Matrix an
+ * Der Firmware-Pruefstand ist der aus der Praxisprobe P19c (test_z8_firmware.cpp): Matrix an
  * P0/P1 (Zeile = P2.0–2), Sendefreigabe P30 = 0, P31 = 0; Takt P36 / Daten P37 werden an
  * steigenden Taktflanken dekodiert.  Gleiche Zeitbasis: interne Takte bei gleichem Quarz.
  */
@@ -90,7 +90,7 @@ std::string hex(const std::vector<uint8_t>& v) {
     return s;
 }
 
-/// Ein Ablauf: Liste (Zeit, Zeile, Spalte, gedrückt) — auf beiden Seiten gleich ausgeführt.
+/// Ein Ablauf: Liste (Zeit, Zeile, Spalte, gedrueckt) — auf beiden Seiten gleich ausgefuehrt.
 struct Schritt { uint64_t t; int z, s; bool an; };
 
 void ablauf(const std::vector<Schritt>& folge, uint64_t ende, Firmware& fw, Modell& m) {
@@ -119,7 +119,7 @@ TEST(TastaturK7673Diff, EinschaltenSendetAAWieDieFirmware)
     EXPECT_EQ(fw.dek.bytes[0].start, m.dek.bytes[0].start);
 }
 
-/// Jede der 128 Matrixpositionen: drücken (300 ms), loslassen — gleiche Codefolge
+/// Jede der 128 Matrixpositionen: druecken (300 ms), loslassen — gleiche Codefolge
 /// (Make, E0, Folgen, Break) und Zeitpunkte im Rahmen der Abtastung.
 TEST(TastaturK7673Diff, JedeMatrixpositionGleicheCodefolge)
 {
@@ -150,7 +150,7 @@ TEST(TastaturK7673Diff, WiederholungDerZuletztGedruecktenTaste)
     for (uint8_t x : b) makes += x == 0x02;
     EXPECT_GE(makes, 9);
     EXPECT_LE(makes, 12);
-    // erste Wiederholung frühestens 50 Ticks (500 ms) nach dem Make
+    // erste Wiederholung fruehestens 50 Ticks (500 ms) nach dem Make
     std::vector<uint64_t> t;
     for (auto& x : m.dek.bytes) if (x.wert == 0x02) t.push_back(x.start);
     ASSERT_GE(t.size(), 2u);
@@ -210,7 +210,7 @@ TEST(TastaturK7673Diff, LedTastenSchaltenEinmalJeDruck)
     EXPECT_EQ(m.k.leds(), 0x06);   // CAPS + MODE an, ON/OFF zweimal = aus
 }
 
-// Echtzeit-Betrieb: die Ticks der Wiederholung kommen von außen (Wirtsuhr), nicht aus der
+// Echtzeit-Betrieb: die Ticks der Wiederholung kommen von aussen (Wirtsuhr), nicht aus der
 // Maschinenzeit — eine lange gehaltene Taste wiederholt bei schnellem Rechner nicht schneller.
 TEST(TastaturK7673, WiederholungMitExternenTicksFolgtNurDenTicks)
 {
@@ -222,7 +222,7 @@ TEST(TastaturK7673, WiederholungMitExternenTicksFolgtNurDenTicks)
     k.laufeBis(2000 * MS);                         // 2 s Maschinenzeit, aber kein einziger Tick
     EXPECT_EQ(k.gesendet().size(), 1u) << "nur das Make, keine Wiederholung ohne Ticks";
     EXPECT_TRUE(k.wiederholungLaeuft());
-    k.tickExtern(TastaturK7673::VERZOEGERUNG - 1); // eine Rundenlänge vor der Verzögerung
+    k.tickExtern(TastaturK7673::VERZOEGERUNG - 1); // eine Rundenlaenge vor der Verzoegerung
     k.laufeBis(2100 * MS);
     EXPECT_EQ(k.gesendet().size(), 1u);
     k.tickExtern(1);
@@ -231,7 +231,7 @@ TEST(TastaturK7673, WiederholungMitExternenTicksFolgtNurDenTicks)
     k.loslassen(2, 0);
     k.laufeBis(2400 * MS);
     EXPECT_FALSE(k.wiederholungLaeuft());
-    // Zurück auf die interne Zeitbasis: kein Schwall, die Uhr läuft weiter
+    // Zurueck auf die interne Zeitbasis: kein Schwall, die Uhr laeuft weiter
     k.setTickExtern(false);
     k.laufeBis(2600 * MS);
     EXPECT_FALSE(k.tickExtern());

@@ -1,9 +1,9 @@
 /**
  * @file test_floppy_drive2.cpp
- * @brief GoogleTests für FloppyDriveV2 (DriveProfile + gemountete DiskImage).
+ * @brief GoogleTests fuer FloppyDriveV2 (DriveProfile + gemountete DiskImage).
  *
  * Getestete Komponenten:
- *   - FloppyDriveV2::mount (Erfolg, Kompatibilitätsprüfungen)
+ *   - FloppyDriveV2::mount (Erfolg, Kompatibilitaetspruefungen)
  *   - FloppyDriveV2::track (Spur laden, nichtleer, Sektoren korrekt)
  *   - FloppyDriveV2::step  (Begrenzung 0 .. num_cyls-1)
  *   - Schreib-Roundtrip via mutableTrack + markTrackDirty + flush + readTrack
@@ -40,7 +40,7 @@ static DiskFormat makeFormat_2cyl_1head_2sec() {
     return fmt;
 }
 
-/** Temporäre .img-Datei; alle Bytes mit Sektor-ID-Füller. */
+/** Temporaere .img-Datei; alle Bytes mit Sektor-ID-Fueller. */
 static std::string makeTmpImg(const DiskFormat& fmt, const std::string& suffix = "") {
     const auto path = k1520test::tempPath(("k1520_drv2_" + fmt.name + suffix + ".img"));
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
@@ -59,7 +59,7 @@ static std::string makeTmpImg(const DiskFormat& fmt, const std::string& suffix =
     return path;
 }
 
-/** Öffnet ein rohes Sektorimage über die DiskImage-Fabrik. */
+/** Oeffnet ein rohes Sektorimage ueber die DiskImage-Fabrik. */
 static std::unique_ptr<DiskImage> openImg(const std::string& path,
                                           const DiskFormat& fmt,
                                           bool wp = false) {
@@ -117,7 +117,7 @@ TEST(FloppyDriveV2, Mount_ZuVieleSpuren_Inkompatibel) {
 }
 
 TEST(FloppyDriveV2, Mount_FalschesVerfahren_Inkompatibel) {
-    // MF3200 unterstützt nur FM; ein MFM-Image passt nicht.
+    // MF3200 unterstuetzt nur FM; ein MFM-Image passt nicht.
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt);
 
@@ -202,7 +202,7 @@ TEST(FloppyDriveV2, Step_InwardBegrenztAufMaxCyl) {
     drv.seek(79);
     EXPECT_EQ(drv.currentCylinder(), 79u);
 
-    // Weiterer Schritt inward darf 79 nicht überschreiten
+    // Weiterer Schritt inward darf 79 nicht ueberschreiten
     drv.step(true);
     EXPECT_EQ(drv.currentCylinder(), 79u);
 
@@ -245,13 +245,13 @@ TEST(FloppyDriveV2, Step_InOutRoundtrip) {
 
 /**
  * Spur modifizieren via mutableTrack + markTrackDirty + flush, dann per
- * neuem RawSectorImage nachlesen — Änderung muss persistieren.
+ * neuem RawSectorImage nachlesen — Aenderung muss persistieren.
  */
 TEST(FloppyDriveV2, SchreibRoundtrip_AenderungPersistiert) {
     auto fmt  = makeFormat_2cyl_1head_2sec();
     auto path = makeTmpImg(fmt, "_rw");
 
-    // Neue Spur mit abgeänderten Sektordaten bauen
+    // Neue Spur mit abgeaenderten Sektordaten bauen
     const uint8_t geaendert = 0xAB;
     std::vector<LogicalSector> sektoren;
     for (uint8_t id = 1; id <= 2; ++id) {
@@ -265,7 +265,7 @@ TEST(FloppyDriveV2, SchreibRoundtrip_AenderungPersistiert) {
     }
     TrackImage neueSpur = TrackCodec::buildTrack(sektoren, Encoding::MFM);
 
-    // Laufwerk mounten, Spur ersetzen und zurückschreiben.
+    // Laufwerk mounten, Spur ersetzen und zurueckschreiben.
     {
         FloppyDriveV2 drv(builtinDriveProfile("K5601"));
         ASSERT_TRUE(drv.mount(openImg(path, fmt)));
@@ -275,7 +275,7 @@ TEST(FloppyDriveV2, SchreibRoundtrip_AenderungPersistiert) {
         EXPECT_TRUE(drv.flush());
     }
 
-    // Datei neu öffnen und nachlesen.
+    // Datei neu oeffnen und nachlesen.
     auto check = openImg(path, fmt);
     ASSERT_NE(check, nullptr);
 
@@ -320,9 +320,9 @@ TEST(FloppyDriveV2, Geometry_OhneMount_Leer) {
 /**
  * @test FloppyDriveV2/Mount_LeerdisketteWirdAkzeptiert
  * @brief Eine unformatierte Diskette muss sich in JEDES Laufwerk mounten lassen —
- *        sonst könnte das Gastsystem sie gar nicht erst formatieren.  Ihr
+ *        sonst koennte das Gastsystem sie gar nicht erst formatieren.  Ihr
  *        Vorschlagsverfahren (hier MFM) darf dabei nicht gegen ein FM-Laufwerk
- *        geprüft werden, weil noch keine einzige Spur beschrieben ist.
+ *        geprueft werden, weil noch keine einzige Spur beschrieben ist.
  */
 TEST(FloppyDriveV2, Mount_LeerdisketteWirdAkzeptiert) {
     FloppyDriveV2 drv(builtinDriveProfile("MF3200"));   // 77 Spuren, nur FM

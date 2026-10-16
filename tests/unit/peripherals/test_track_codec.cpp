@@ -1,12 +1,12 @@
 /**
  * @file test_track_codec.cpp
- * @brief GoogleTests für TrackCodec (FM/MFM-Spur aufbauen/parsen) und TrackImage::nextMark.
+ * @brief GoogleTests fuer TrackCodec (FM/MFM-Spur aufbauen/parsen) und TrackImage::nextMark.
  *
  * @details
  * Getestete Komponenten:
  *   - TrackCodec::crc16 (Standard-IBM-CRC-16-CCITT)
  *   - TrackCodec::crc16Ccitt
- *   - TrackCodec::buildTrack / parseTrack (MFM + FM, verschiedene Sektorgrößen)
+ *   - TrackCodec::buildTrack / parseTrack (MFM + FM, verschiedene Sektorgroessen)
  *   - TrackImage::nextMark (zyklische Markensuche)
  *
  * ERSTES Ziel: die Standard-CCITT-CRC empirisch absichern (Abschnitt unten).
@@ -38,36 +38,36 @@ static LogicalSector makeSector(uint8_t cyl, uint8_t head, uint8_t id,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 1: CRC-16-CCITT-Zwischenzustände
+// GRUPPE 1: CRC-16-CCITT-Zwischenzustaende
 // Absicherung, dass die Standard-CCITT-crc16 die erwarteten Zwischenwerte an den
-// Feldgrenzen liefert (eine CRC über [A1,A1,A1,FB,...] mit Seed 0xFF,0xFF).
+// Feldgrenzen liefert (eine CRC ueber [A1,A1,A1,FB,...] mit Seed 0xFF,0xFF).
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(TrackCodecCrc, CCITT_Zustand_nach_A1A1A1_ist_CDB4) {
-    // CCITT-Zustand nach der 3×A1-Sync-Präambel (Seed 0xFF,0xFF) ist 0xCDB4.
+    // CCITT-Zustand nach der 3×A1-Sync-Praeambel (Seed 0xFF,0xFF) ist 0xCDB4.
     const uint8_t in[] = {0xA1, 0xA1, 0xA1};
     EXPECT_EQ(TrackCodec::crc16(in, 3, 0xFF, 0xFF), 0xCDB4u);
 }
 
 TEST(TrackCodecCrc, MFM_DatenCrc_Seed_A1A1A1FB_ist_E295) {
     // Standard-IBM-MFM-Daten-CRC: crc16([A1,A1,A1,FB], 0xFF,0xFF) == 0xE295 —
-    // Standard-CCITT über [A1,A1,A1,FB]+data.
+    // Standard-CCITT ueber [A1,A1,A1,FB]+data.
     const uint8_t in[] = {0xA1, 0xA1, 0xA1, 0xFB};
     EXPECT_EQ(TrackCodec::crc16(in, 4, 0xFF, 0xFF), 0xE295u);
 }
 
 TEST(TrackCodecCrc, CCITT_ist_praeambelunabhaengig) {
-    // Standard-CCITT: die CRC über [A1,A1,A1,FB]+data ab Seed 0xFFFF entspricht der
-    // Fortführung ab dem Zwischenzustand nach [A1,A1,A1] über [FB]+data.
+    // Standard-CCITT: die CRC ueber [A1,A1,A1,FB]+data ab Seed 0xFFFF entspricht der
+    // Fortfuehrung ab dem Zwischenzustand nach [A1,A1,A1] ueber [FB]+data.
     std::vector<uint8_t> data(128, 0xAB);
 
-    // Fortführung ab dem CCITT-Zwischenzustand nach [A1,A1,A1] über [FB]+data
+    // Fortfuehrung ab dem CCITT-Zwischenzustand nach [A1,A1,A1] ueber [FB]+data
     std::vector<uint8_t> old_input;
     old_input.push_back(0xFB);
     old_input.insert(old_input.end(), data.begin(), data.end());
     uint16_t old_crc = TrackCodec::crc16(old_input.data(), old_input.size(), 0xCD, 0xB4);
 
-    // Volle CRC: Seed 0xFFFF über [A1,A1,A1,FB] + data
+    // Volle CRC: Seed 0xFFFF ueber [A1,A1,A1,FB] + data
     std::vector<uint8_t> new_input;
     new_input.push_back(0xA1); new_input.push_back(0xA1);
     new_input.push_back(0xA1); new_input.push_back(0xFB);
@@ -78,7 +78,7 @@ TEST(TrackCodecCrc, CCITT_ist_praeambelunabhaengig) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 2: MFM buildTrack → parseTrack Roundtrip (verschiedene Größen)
+// GRUPPE 2: MFM buildTrack → parseTrack Roundtrip (verschiedene Groessen)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MfmRoundtrip : public ::testing::TestWithParam<uint16_t> {};
@@ -150,12 +150,12 @@ TEST(TrackCodecFm, Roundtrip128B) {
     // gap_fill = 0xFF vorhanden
     bool hatGapFF = std::find(track.bytes.begin(), track.bytes.end(), 0xFF)
                     != track.bytes.end();
-    EXPECT_TRUE(hatGapFF) << "FM-Spur enthält kein Gap-Füllbyte 0xFF";
+    EXPECT_TRUE(hatGapFF) << "FM-Spur enthaelt kein Gap-Fuellbyte 0xFF";
 
     // Kein 0xA1 vor den Marken (FM hat keinen A1-Sync)
     for (size_t i = 0; i < track.bytes.size(); ++i) {
         if (track.marks[i] == MarkType::Id || track.marks[i] == MarkType::Data) {
-            // Byte direkt vor der Marke darf kein 0xA1 sein (sonst wäre es MFM-Sync)
+            // Byte direkt vor der Marke darf kein 0xA1 sein (sonst waere es MFM-Sync)
             if (i > 0) {
                 EXPECT_NE(track.bytes[i - 1], 0xA1u)
                     << "0xA1 direkt vor FM-Marke bei Position " << i;
@@ -210,7 +210,7 @@ TEST(TrackCodecMarks, MfmDataMarkAuf0xFB) {
 }
 
 TEST(TrackCodecMarks, MfmKeinMarkAufA1Sync) {
-    // Die drei A1-Sync-Bytes vor dem Mark-Byte dürfen keine Marke tragen
+    // Die drei A1-Sync-Bytes vor dem Mark-Byte duerfen keine Marke tragen
     LogicalSector sec = makeSector(0, 0, 1, 128);
     TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
 
@@ -267,11 +267,11 @@ TEST(TrackImageNextMark, FindetNaechsteMarkeVonPos) {
     t.marks = {MarkType::None, MarkType::Id, MarkType::None,
                MarkType::Data, MarkType::None};
 
-    // Ab 0: nächste beliebige Marke = Position 1 (Id)
+    // Ab 0: naechste beliebige Marke = Position 1 (Id)
     EXPECT_EQ(t.nextMark(0), 1u);
-    // Ab 1: nächste beliebige Marke = Position 1 selbst
+    // Ab 1: naechste beliebige Marke = Position 1 selbst
     EXPECT_EQ(t.nextMark(1), 1u);
-    // Ab 2: nächste beliebige Marke = Position 3 (Data)
+    // Ab 2: naechste beliebige Marke = Position 3 (Data)
     EXPECT_EQ(t.nextMark(2), 3u);
 }
 
@@ -314,12 +314,12 @@ TEST(TrackImageNextMark, ZyklischNachEndeWraparound) {
     t.bytes = {0xFE, 0x4E, 0x4E};
     t.marks = {MarkType::Id, MarkType::None, MarkType::None};
 
-    // Ab 1: muss zur 0 zurück
+    // Ab 1: muss zur 0 zurueck
     EXPECT_EQ(t.nextMark(1, MarkType::Id), 0u);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GRUPPE 7: Mehrere Sektoren MFM — vollständiger Roundtrip
+// GRUPPE 7: Mehrere Sektoren MFM — vollstaendiger Roundtrip
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST(TrackCodecMfm, DreiSektoren128B_AlleGruen) {
@@ -409,9 +409,9 @@ TEST(TrackCodecTail, OhneTail_BitgleichZuReinemGap) {
 //   - MFM (Z-Pfad  @0205): buf[0..3] verworfen, buf[4] mit FE verglichen.
 // Damit das IDAM matcht, muss der Resync NICHT auf das FE-Mark-Byte landen,
 // sondern davor:  FM → markPos-1,  MFM → markPos-4 (1 Sync-Byte + 3×A1).
-// Empirisch via boot_trace -z bestätigt (FM-Default: buf[0]=A1, buf[1]=FE).
+// Empirisch via boot_trace -z bestaetigt (FM-Default: buf[0]=A1, buf[1]=FE).
 // Diese Tests sichern, dass buildTrack genau dieses Layout liefert (Grundlage
-// für die Resync-Offset-Logik im K5122, Phase 2).
+// fuer die Resync-Offset-Logik im K5122, Phase 2).
 // ─────────────────────────────────────────────────────────────────────────────
 
 static size_t findIdMark(const TrackImage& t) {
@@ -452,7 +452,7 @@ TEST(RomReadKalibrierung, MFM_ZPfad_buf4_ist_FE_nach_3xA1) {
 TEST(RomReadKalibrierung, ResyncTarget_FM_Match_markPos_minus_1) {
     TrackImage t = TrackCodec::buildTrack({makeSector(0, 0, 1, 128)}, Encoding::FM);
     size_t mark = findIdMark(t);
-    // Resync zur Id-Marke (von ihr aus gesucht; nextMark schließt pos ein).
+    // Resync zur Id-Marke (von ihr aus gesucht; nextMark schliesst pos ein).
     size_t r = TrackCodec::romReadResyncTarget(t, mark, Encoding::FM);
     ASSERT_NE(r, SIZE_MAX);
     EXPECT_EQ(r, mark - 1);
@@ -468,7 +468,7 @@ TEST(RomReadKalibrierung, ResyncTarget_MFM_Match_markPos_minus_4) {
     EXPECT_EQ(t.bytes[r + 4], 0xFE);   // buf[4] = FE
 }
 
-// buildFaithfulReadTrack ist der tatsächlich gestreamte Boot-Lese-Stream: 4×A1-Sync, der
+// buildFaithfulReadTrack ist der tatsaechlich gestreamte Boot-Lese-Stream: 4×A1-Sync, der
 // gemeinsame Modus, den ROM-Boot-Read (1 Wegwerf + 3 Reads, FE bei buf[4]) UND SYL-Lader
 // (skip-A1-Schleife) gleichzeitig bedienen.
 
@@ -482,7 +482,7 @@ TEST(RomReadKalibrierung, FaithfulRead_MFM_4xA1_buf4_ist_FE) {
     size_t r = TrackCodec::romReadResyncTarget(t, mark, Encoding::MFM);
     ASSERT_NE(r, SIZE_MAX);
     EXPECT_EQ(r, mark - 4);
-    EXPECT_EQ(t.bytes[r + 0], 0xA1) << "buf[0] = A1 (ROM verwirft, SYL überspringt)";
+    EXPECT_EQ(t.bytes[r + 0], 0xA1) << "buf[0] = A1 (ROM verwirft, SYL ueberspringt)";
     EXPECT_EQ(t.bytes[r + 1], 0xA1) << "buf[1] = A1";
     EXPECT_EQ(t.bytes[r + 2], 0xA1) << "buf[2] = A1";
     EXPECT_EQ(t.bytes[r + 3], 0xA1) << "buf[3] = A1";
@@ -513,16 +513,16 @@ TEST(RomReadKalibrierung, FaithfulRead_StandardCrc_parseTrackValidiert) {
 
 /**
  * @test TrackCodec/ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb
- * @brief Ein verfälschtes Größenfeld in der Adressmarke darf keine unmögliche
- *        Sektorgröße erzeugen.
+ * @brief Ein verfaelschtes Groessenfeld in der Adressmarke darf keine unmoegliche
+ *        Sektorgroesse erzeugen.
  *
- * Das Größenfeld der IBM-IDAM ist 2 Bit breit (0..3 = 128..1024 B).  Auf einer
- * gestörten Spur (Schreibabbruch, halb formatierte Diskette) steht dort aber ein
+ * Das Groessenfeld der IBM-IDAM ist 2 Bit breit (0..3 = 128..1024 B).  Auf einer
+ * gestoerten Spur (Schreibabbruch, halb formatierte Diskette) steht dort aber ein
  * beliebiges Byte.  Ohne Maske lieferte `parseTrack` daraus z. B. 4096 B, und der
- * anschließende Neuaufbau der Spur brach mit `std::invalid_argument`
- * („TrackCodec: ungültige Sektorgröße") ab — als **unbehandelte** Ausnahme, die
+ * anschliessende Neuaufbau der Spur brach mit `std::invalid_argument`
+ * („TrackCodec: ungueltige Sektorgroesse") ab — als **unbehandelte** Ausnahme, die
  * den kompletten Emulator beendete (beobachtet beim Formatieren einer real
- * eingelesenen Leerdiskette).  Ab Schiebeweiten ≥ 32 war es zusätzlich
+ * eingelesenen Leerdiskette).  Ab Schiebeweiten ≥ 32 war es zusaetzlich
  * undefiniertes Verhalten.
  */
 TEST(TrackCodec, ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb) {
@@ -535,21 +535,21 @@ TEST(TrackCodec, ParseTrack_VerfaelschtesGroessenfeldStuerztNichtAb) {
     }
     TrackImage t = TrackCodec::buildTrack(secs, Encoding::MFM);
 
-    // Größenfeld der ersten Adressmarke verfälschen (Byte 4 hinter der Id-Marke).
+    // Groessenfeld der ersten Adressmarke verfaelschen (Byte 4 hinter der Id-Marke).
     const size_t idPos = t.nextMark(0, MarkType::Id);
     ASSERT_NE(idPos, SIZE_MAX);
     ASSERT_LT(idPos + 4, t.bytes.size());
-    t.bytes[idPos + 4] = 0xFD;          // unmaskiert wäre das 128<<253
+    t.bytes[idPos + 4] = 0xFD;          // unmaskiert waere das 128<<253
 
     std::vector<LogicalSector> parsed;
     ASSERT_NO_THROW(parsed = TrackCodec::parseTrack(t));
     ASSERT_FALSE(parsed.empty());
 
-    // Jede gemeldete Größe muss eine echte IBM-Sektorgröße sein …
+    // Jede gemeldete Groesse muss eine echte IBM-Sektorgroesse sein …
     for (const auto& s : parsed)
         EXPECT_TRUE(s.size == 128 || s.size == 256 || s.size == 512 || s.size == 1024)
-            << "unmögliche Sektorgröße " << s.size;
-    // … und der verfälschte Sektor faellt ueber die ID-CRC auf.
+            << "unmoegliche Sektorgroesse " << s.size;
+    // … und der verfaelschte Sektor faellt ueber die ID-CRC auf.
     EXPECT_FALSE(parsed.front().id_crc_ok);
 
     // Der Neuaufbau darf ebenfalls nicht werfen (das war der Absturzpfad).
@@ -962,18 +962,18 @@ TEST(TrackCodecErase, LoeschenUndNeuAnlegenErgibtWiederEineVolleSpur) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Der CRC-Dialekt „Präambel nicht mitgerechnet"
+// Der CRC-Dialekt „Praeambel nicht mitgerechnet"
 //
-// Standard-IBM rechnet die drei 0xA1 der Sync-Präambel in die CRC ein.  Der
+// Standard-IBM rechnet die drei 0xA1 der Sync-Praeambel in die CRC ein.  Der
 // Controller, der `udos_ds77_k5601_fremdsync.hfe` beschrieben hat, setzt das
 // CRC-Register erst beim Marken-Byte auf 0xFFFF — nachgemessen an ALLEN 4004
 // ID-Feldern dieser Diskette (die 4004 Datenfelder derselben Diskette sind
-// dagegen Standard).  Beide Sitten gelten, sonst wäre jeder Sektor rot.
+// dagegen Standard).  Beide Sitten gelten, sonst waere jeder Sektor rot.
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
 
-/// Setzt die ID-CRC eines Sektors auf den Wert des Dialekts (ohne A1-Präambel).
+/// Setzt die ID-CRC eines Sektors auf den Wert des Dialekts (ohne A1-Praeambel).
 void schreibeDialektIdCrc(TrackImage& track) {
     for (size_t i = 0; i + 6 < track.bytes.size(); ++i) {
         if (track.marks[i] != MarkType::Id) continue;
@@ -994,7 +994,7 @@ TEST(TrackCodecCrcDialekt, IdCrcOhnePraeambelGiltAlsGueltig) {
     TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
     ASSERT_FALSE(track.empty());
 
-    // Kontrolle: von buildTrack geschrieben (Standard-Sitte) ist die CRC gültig.
+    // Kontrolle: von buildTrack geschrieben (Standard-Sitte) ist die CRC gueltig.
     auto standard = TrackCodec::parseTrack(track);
     ASSERT_EQ(standard.size(), 1u);
     ASSERT_TRUE(standard[0].id_crc_ok);
@@ -1009,9 +1009,9 @@ TEST(TrackCodecCrcDialekt, IdCrcOhnePraeambelGiltAlsGueltig) {
 }
 
 TEST(TrackCodecCrcDialekt, EineWirklichFalscheCrcBleibtFalsch) {
-    // Der Dialekt kostet genau ein Bit Trennschärfe: zwei von 65536 Zufallswerten
-    // gehen durch statt einem.  Eine verfälschte CRC muss weiterhin auffallen —
-    // sonst wäre die Prüfung wertlos.
+    // Der Dialekt kostet genau ein Bit Trennschaerfe: zwei von 65536 Zufallswerten
+    // gehen durch statt einem.  Eine verfaelschte CRC muss weiterhin auffallen —
+    // sonst waere die Pruefung wertlos.
     LogicalSector sec = makeSector(5, 1, 3, 128, 0x5A);
     TrackImage track = TrackCodec::buildTrack({sec}, Encoding::MFM);
     ASSERT_FALSE(track.empty());
@@ -1028,8 +1028,8 @@ TEST(TrackCodecCrcDialekt, EineWirklichFalscheCrcBleibtFalsch) {
 }
 
 TEST(TrackCodecCrcDialekt, GeloeschterSektorWirdGegenSeinEigenesMarkenbytePrueft) {
-    // Das Marken-Byte geht in die CRC ein.  Bei einem gelöschten Sektor ist es 0xF8,
-    // nicht 0xFB — wer 0xFB annimmt, erklärt jeden gelöschten Sektor für schadhaft.
+    // Das Marken-Byte geht in die CRC ein.  Bei einem geloeschten Sektor ist es 0xF8,
+    // nicht 0xFB — wer 0xFB annimmt, erklaert jeden geloeschten Sektor fuer schadhaft.
     // buildTrack schreibt (noch) immer 0xFB, der Fall wird deshalb hier von Hand
     // hergestellt: Marken-Byte tauschen und die CRC nach Standard-Sitte nachziehen.
     LogicalSector sec = makeSector(2, 0, 1, 128, 0x33);
@@ -1051,17 +1051,17 @@ TEST(TrackCodecCrcDialekt, GeloeschterSektorWirdGegenSeinEigenesMarkenbytePrueft
 
     auto parsed = TrackCodec::parseTrack(track);
     ASSERT_EQ(parsed.size(), 1u);
-    EXPECT_TRUE(parsed[0].deleted) << "der Sektor gilt nicht als gelöscht";
+    EXPECT_TRUE(parsed[0].deleted) << "der Sektor gilt nicht als geloescht";
     EXPECT_TRUE(parsed[0].data_crc_ok)
         << "die Daten-CRC eines geloeschten Sektors (Marke 0xF8) wurde gegen 0xFB geprueft";
 }
 
-// ─── Normlücken (AP-F1, doc/design/16_k8915.md) ─────────────────────────────────
+// ─── Normluecken (AP-F1, doc/design/16_k8915.md) ─────────────────────────────────
 //
 // Eine aus Sektoren gebaute Spur (DiskTool `create`, Emulator „Leere Diskette“, .img →
-// Medium) muss so aussehen wie eine am Gerät formatierte: Lücke 1 = 50, Lücke 2 = 22
-// (MFM) bzw. 11 (FM), Lücke 3 nach Sektorgröße, und die ganze Spur passt in EINE
-// Umdrehung.  Die knappen Lücken bis 2026-09-29 (16/11/24, keine Lücke 4b) las der
+// Medium) muss so aussehen wie eine am Geraet formatierte: Luecke 1 = 50, Luecke 2 = 22
+// (MFM) bzw. 11 (FM), Luecke 3 nach Sektorgroesse, und die ganze Spur passt in EINE
+// Umdrehung.  Die knappen Luecken bis 2026-09-29 (16/11/24, keine Luecke 4b) las der
 // Emulator, der echte A5120 nicht.
 
 namespace {
@@ -1081,7 +1081,7 @@ TEST(TrackCodecNormluecken, SpurenDerKatalogformatePassenInEineUmdrehung) {
         {"cpa780/800 Daten 5x1024",  Encoding::MFM,  5, 1024, 6250, 116},
         {"16x256 MFM",               Encoding::MFM, 16, 256,  6250, 54},
         {"9x512 MFM",                Encoding::MFM,  9, 512,  6250, 84},
-        {"10x512 MFM (Lücke 3 gekürzt)", Encoding::MFM, 10, 512, 6250, 36},
+        {"10x512 MFM (Luecke 3 gekuerzt)", Encoding::MFM, 10, 512, 6250, 36},
         {"8 Zoll SD 26x128 FM",      Encoding::FM,  26, 128,  5208, 27},
         {"8 Zoll DD 26x256 MFM",     Encoding::MFM, 26, 256, 10416, 54},
         {"SCP1700-Bootspur 16x128 FM", Encoding::FM, 16, 128, 3125, 27},
@@ -1093,24 +1093,24 @@ TEST(TrackCodecNormluecken, SpurenDerKatalogformatePassenInEineUmdrehung) {
         EXPECT_EQ(g.track_len, f.umdrehung);
         EXPECT_EQ(g.gap3, f.gap3);
         const TrackImage t = TrackCodec::buildTrack(sek, f.enc);
-        EXPECT_EQ(t.size(), f.umdrehung) << "Spur = genau eine Umdrehung (Lücke 4b bis zum Index)";
+        EXPECT_EQ(t.size(), f.umdrehung) << "Spur = genau eine Umdrehung (Luecke 4b bis zum Index)";
 
         const auto p = TrackCodec::parseTrack(t);
         ASSERT_EQ(p.size(), static_cast<size_t>(f.n));
         const bool mfm = f.enc == Encoding::MFM;
-        // Abstand ID-CRC-Ende → Datenmarke = Lücke 2 + Sync + A1-Gruppe.
+        // Abstand ID-CRC-Ende → Datenmarke = Luecke 2 + Sync + A1-Gruppe.
         const size_t soll = mfm ? 22 + 12 + 3 : 11 + 6;
         for (const auto& s : p) {
             EXPECT_TRUE(s.id_crc_ok && s.data_crc_ok);
             EXPECT_EQ(s.data_pos - (s.id_pos + 7), soll) << "Sektor " << int(s.id);
         }
-        EXPECT_LE(p.back().end_pos + f.gap3, f.umdrehung) << "letzter Sektor läuft über den Index";
+        EXPECT_LE(p.back().end_pos + f.gap3, f.umdrehung) << "letzter Sektor laeuft ueber den Index";
     }
 }
 
 TEST(TrackCodecNormluecken, VorspannWieFormatCom) {
     // 80 × 4E, 12 × 00, C2 C2 C2 FC, 50 × 4E — so schreibt FORMAT.COM (K8915 §4.4) und so
-    // steht es auf den Greaseweazle-Abzügen.
+    // steht es auf den Greaseweazle-Abzuegen.
     const TrackImage t = TrackCodec::buildTrack(spurAus(5, 1024), Encoding::MFM);
     size_t i = 0;
     for (; i < 80; ++i) ASSERT_EQ(t.bytes[i], 0x4E) << i;

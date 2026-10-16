@@ -1,8 +1,8 @@
 # boot_trace --cpu u8000 (S5): jeden U8001-Befehl eine Zeile.  Vorlauf 1 legt
 # em16abl.com auf die Diskettenkopie, Vorlauf 2 bootet im Debugger, startet es und
 # sichert den Zustand am ersten Wechsel in den 16-Bit-Mode; der gemessene Lauf
-# setzt dort fort (alle Läufe im selben Temp-Verzeichnis, daher relativer Pfad).
-# `-p`: nicht am „Boot" (erster ZVE1-PC ≥ 0400H, z. B. eine Timer-ISR) aufhören.
+# setzt dort fort (alle Laeufe im selben Temp-Verzeichnis, daher relativer Pfad).
+# `-p`: nicht am „Boot" (erster ZVE1-PC ≥ 0400H, z. B. eine Timer-ISR) aufhoeren.
 tool:      boot_trace
 disk:      cpa_cpa780_k5601_noclock.img
 file vorlauf.dbg:

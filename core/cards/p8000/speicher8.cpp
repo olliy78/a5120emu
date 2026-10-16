@@ -1,6 +1,6 @@
 /**
  * @file speicher8.cpp
- * @brief ADP-gebanktes Speichergerät der P8000-8-Bit-Karte — siehe speicher8.h.
+ * @brief ADP-gebanktes Speichergeraet der P8000-8-Bit-Karte — siehe speicher8.h.
  */
 
 #include "core/cards/p8000/speicher8.h"
@@ -51,13 +51,13 @@ uint8_t P8000Speicher8::memRead(uint16_t addr) {
     const uint8_t s = selekt(addr);
     if (s & 1) { warte_ += WARTETAKTE_JE_ZUGRIFF; ++eprom_zugriffe_; }
     if (s != 0 && (s & (s - 1)))
-        LOG_DEBUG("P8000MEM", "Mehrfachselektion lesend @%04X (Select %X): UND der Bänke", addr, s);
+        LOG_DEBUG("P8000MEM", "Mehrfachselektion lesend @%04X (Select %X): UND der Baenke", addr, s);
     return peek(addr);
 }
 
 void P8000Speicher8::memWrite(uint16_t addr, uint8_t d) {
     const uint8_t s = selekt(addr);
-    // PROM-CE aktiv ⇒ der WAIT-Generator läuft auch bei Schreibzugriffen
+    // PROM-CE aktiv ⇒ der WAIT-Generator laeuft auch bei Schreibzugriffen
     if (s & 1) { warte_ += WARTETAKTE_JE_ZUGRIFF; ++eprom_zugriffe_; }
     if (s & 2) sram_[addr & 0x7FF] = d;
     if (s & 4) dram_[addr] = d;

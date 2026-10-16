@@ -2,15 +2,15 @@
  * @file prg_boot.cpp
  * @brief Siehe prg_boot.h.
  *
- * Belege der Unterscheidung (Abzüge aus doc/design/20_prg710.md §5.4, nachgemessen
+ * Belege der Unterscheidung (Abzuege aus doc/design/20_prg710.md §5.4, nachgemessen
  * 2026-10-02 an den Fixtures `prg710_*`/`prg710-1_*`):
  *
- *  - **UDOS:** Spur 2 trägt den Zweitlader (1000H).  Er setzt den IM-2-Vektor des CTC
+ *  - **UDOS:** Spur 2 traegt den Zweitlader (1000H).  Er setzt den IM-2-Vektor des CTC
  *    Kanal 3: `LD HL,09FFH` (710) bzw. `LD HL,0A2FH` (710-1), danach `LD (0FE6H),HL`
  *    → Bytefolge `21 FF 09 22 E6 0F` bzw. `21 2F 0A 22 E6 0F` (Zweitlader Offset 14H;
- *    `doc/prg710/resident.md` §2).  Der A5120-UDOS-Lader trägt sie nicht.
+ *    `doc/prg710/resident.md` §2).  Der A5120-UDOS-Lader traegt sie nicht.
  *  - **SCPX:** das BIOS ab Byte 6144 greift auf die Tastatur zu — 710 (V1.5 und V1.7/K7609)
- *    über den 8279 (`IN (C8H)`, `IN/OUT (C9H)`), 710-1 über die K7672 an der K8025
+ *    ueber den 8279 (`IN (C8H)`, `IN/OUT (C9H)`), 710-1 ueber die K7672 an der K8025
  *    (`LD C,5EH`, `IN (5FH)`).  Gemessen: `B152V24` 5 Zugriffe C8H/C9H, 0 auf 5EH/5FH;
  *    `B17272V2` 0 bzw. 2; `B152IFSS` (710) 5 bzw. 4 — die IFSS-Ports 5EH/5FH sind also
  *    allein kein Merkmal.

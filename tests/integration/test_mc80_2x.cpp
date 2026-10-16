@@ -1,12 +1,12 @@
 /**
  * @file test_mc80_2x.cpp
- * @brief MC80.21/.22 (AP M11): das Betriebssystem (ROM-Satz ver2, bsys_2x.prn) meldet sich über
- *        die Displaylogik mit dem Menü, nimmt Tasten über die Matrix an und speichert/lädt ein
- *        Programm über die MBI auf die Kassette.
+ * @brief MC80.21/.22 (AP M11): das Betriebssystem (ROM-Satz ver2, bsys_2x.prn) meldet sich ueber
+ *        die Displaylogik mit dem Menue, nimmt Tasten ueber die Matrix an und speichert/laedt ein
+ *        Programm ueber die MBI auf die Kassette.
  *
- * Erwartungen aus doc/mc80/bsys_2x.prn: BSK (04ACH) schreibt Menütabelle 1 rückwärts ab 05B5H
+ * Erwartungen aus doc/mc80/bsys_2x.prn: BSK (04ACH) schreibt Menuetabelle 1 rueckwaerts ab 05B5H
  * („0270  TASTENTEST“, „049D  INIT“, „0600  BAND“), danach Tabelle 2 (3FFFH = 00H → Editor …),
- * und setzt „>“ in Spalte 5 der gewählten Zeile (PRE 053EH).  Bandmenü MBM (2000H): „MAGNETBAND :“,
+ * und setzt „>“ in Spalte 5 der gewaehlten Zeile (PRE 053EH).  Bandmenue MBM (2000H): „MAGNETBAND :“,
  * „SCHREIBEN“/„LESEN“/„LOESCHEN“; Parameter „AB BLOCK-NR.:“, „ADRESSE VON .... BIS ....“, „NAME :“.
  */
 
@@ -48,7 +48,7 @@ struct Bsys {
         const uint64_t ziel = m->totalCycles() + takte;
         while (m->totalCycles() < ziel) m->run(5000);
     }
-    /// Läuft, bis @p teil im Bild steht (höchstens @p max Takte).  @return Zeile oder −1.
+    /// Laeuft, bis @p teil im Bild steht (hoechstens @p max Takte).  @return Zeile oder −1.
     int bisText(const std::string& teil, uint64_t max) {
         const uint64_t ziel = m->totalCycles() + max;
         while (m->totalCycles() < ziel) {
@@ -63,7 +63,7 @@ struct Bsys {
         fahre(nach);
     }
     void tippe(const std::string& s, uint64_t nach = 500'000) {
-        for (char c : s) EXPECT_TRUE(m->zeichenEinreihen(c)) << "keine Taste für '" << c << "'";
+        for (char c : s) EXPECT_TRUE(m->zeichenEinreihen(c)) << "keine Taste fuer '" << c << "'";
         tasten(nach);
     }
     void taste(int nr, uint64_t nach = 500'000) {
@@ -92,14 +92,14 @@ TEST(Mc80_2x, BsysMeldetSich)
         EXPECT_EQ(z0, "0270 >TASTENTEST") << bildText(*b.m);
         EXPECT_EQ(b.m->textZeile(1), "049D  INIT") << bildText(*b.m);
         EXPECT_EQ(b.m->textZeile(2), "0600  BAND") << bildText(*b.m);
-        // Menütabelle 2 (3FFFH = 00H) und 3 (5FFFH = 00H) folgen: Editor-ROMs im PFS.
+        // Menuetabelle 2 (3FFFH = 00H) und 3 (5FFFH = 00H) folgen: Editor-ROMs im PFS.
         EXPECT_EQ(b.m->textZeile(3), "3000  EDITOR") << bildText(*b.m);
         EXPECT_EQ(b.m->textZeile(6), "4000  BASIC-80.2") << bildText(*b.m);
         // Dieselben Zeichen per Mustervergleich aus dem Bitmap (Ersatz-U402 [?]).
         for (int s = 0; s < 32; ++s)
             EXPECT_EQ(b.m->dpl().zeichenAusBild(1, s), b.m->screenChar(s, 1)) << "Spalte " << s;
         EXPECT_EQ(b.m->dpl().zeichenAusBild(0, 6), 'T');
-        // Die DPL zeichnet aus den PIO-Ausgängen, nicht aus dem BWS — beide stimmen überein.
+        // Die DPL zeichnet aus den PIO-Ausgaengen, nicht aus dem BWS — beide stimmen ueberein.
         for (int s = 0; s < 32; ++s) {
             const uint8_t bws = b.m->memReadDebug(static_cast<uint16_t>(0x0C00 + s));
             EXPECT_EQ(b.m->dpl().zelle(0, s), bws & 0x3F) << "Spalte " << s;
@@ -116,8 +116,8 @@ TEST(Mc80_2x, SpeicherUndTore)
     EXPECT_EQ(m.memReadDebug(0x0600), 0xCD);           // BAND: CALL MBM (ver2)
     EXPECT_EQ(m.memReadDebug(0x2000), 0xC5);           // MBM: PUSH BC (mo01)
     EXPECT_EQ(m.memReadDebug(0x2400), 0xFF);           // Sockel 1 leer („frei“)
-    EXPECT_EQ(m.memReadDebug(0x3FFF), 0x00);           // Menütabelle 2 vorhanden (mo08)
-    EXPECT_EQ(m.memReadDebug(0x5FFF), 0x00);           // Menütabelle 3 vorhanden (mo16)
+    EXPECT_EQ(m.memReadDebug(0x3FFF), 0x00);           // Menuetabelle 2 vorhanden (mo08)
+    EXPECT_EQ(m.memReadDebug(0x5FFF), 0x00);           // Menuetabelle 3 vorhanden (mo16)
     EXPECT_EQ(m.memReadDebug(0x6000), 0xFF);           // kein Prozessprogramm → BSK
     m.memWriteDebug(0x2000, 0x00);                     // EPROM: Schreiben wirkungslos
     EXPECT_EQ(m.memReadDebug(0x2000), 0xC5);
@@ -169,8 +169,8 @@ TEST(Mc80_2x, BildwechselEtwa50Hertz)
 
 TEST(Mc80_2x, TastaturMatrixFuehrtMenueAus)
 {
-    // Kursor zweimal hinunter, ENTER: das Menü springt auf die Adresse der Zeile (PRE/HDL) —
-    // „0600  BAND“ → Magnetbandmenü MBM (2000H).
+    // Kursor zweimal hinunter, ENTER: das Menue springt auf die Adresse der Zeile (PRE/HDL) —
+    // „0600  BAND“ → Magnetbandmenue MBM (2000H).
     Bsys b;
     ASSERT_EQ(b.bisText("TASTENTEST", 20'000'000), 0);
     b.taste(T_RUNTER);
@@ -179,14 +179,14 @@ TEST(Mc80_2x, TastaturMatrixFuehrtMenueAus)
     EXPECT_EQ(findeZeile(*b.m, "MAGNETBAND :"), 0) << bildText(*b.m);
     EXPECT_GE(findeZeile(*b.m, "SCHREIBEN"), 1) << bildText(*b.m);
     EXPECT_GE(findeZeile(*b.m, "LOESCHEN"), 1) << bildText(*b.m);
-    // OFF verlässt das Bandmenü (Cy = 1 → JP BSY = Neustart) zurück ins Hauptmenü.
+    // OFF verlaesst das Bandmenue (Cy = 1 → JP BSY = Neustart) zurueck ins Hauptmenue.
     b.taste(T_OFF, 3'000'000);
     EXPECT_EQ(findeZeile(*b.m, "TASTENTEST"), 0) << bildText(*b.m);
 }
 
 namespace {
 
-/// Bandmenü öffnen (Hauptmenü → 3. Zeile „0600  BAND“).
+/// Bandmenue oeffnen (Hauptmenue → 3. Zeile „0600  BAND“).
 void bandmenue(Bsys& b)
 {
     ASSERT_GE(b.bisText("TASTENTEST", 20'000'000), 0);
@@ -196,7 +196,7 @@ void bandmenue(Bsys& b)
     ASSERT_EQ(findeZeile(*b.m, "MAGNETBAND :"), 0) << bildText(*b.m);
 }
 
-/// Läuft, bis das Bandmenü wieder steht (nach MWR0/MRD0 springt BAND zurück nach MBM).
+/// Laeuft, bis das Bandmenue wieder steht (nach MWR0/MRD0 springt BAND zurueck nach MBM).
 bool bisBandmenue(Bsys& b, uint64_t max)
 {
     const uint64_t ziel = b.m->totalCycles() + max;
@@ -221,8 +221,8 @@ void parameter(Bsys& b, const char* bln, const char* von, const char* bis)
 TEST(Mc80_2x, KassetteSpeichernLaden)
 {
     // Handbuch 4.3 / bsys_2x.prn MBM 2000H: SCHREIBEN → „AB BLOCK-NR.:“ 0001, „ADRESSE VON …
-    // BIS …“ C000/C07F, „NAME :“ → MWR0 (Vorlücke ≈ 27 s, Bandmarke, Kennzeichnungsblock,
-    // Datenblock 0001, Bandmarke).  Danach RAM löschen, LESEN ab Block 0001 nach C000.
+    // BIS …“ C000/C07F, „NAME :“ → MWR0 (Vorluecke ≈ 27 s, Bandmarke, Kennzeichnungsblock,
+    // Datenblock 0001, Bandmarke).  Danach RAM loeschen, LESEN ab Block 0001 nach C000.
     Bsys b;
     auto medium = std::make_shared<kassette::KassettenMedium>(kassette::Geometrie::kompaktkassette());
     ASSERT_TRUE(b.m->mbi().laufwerk().kassetteEinlegen(medium));
@@ -249,14 +249,14 @@ TEST(Mc80_2x, KassetteSpeichernLaden)
     EXPECT_EQ(name[2], 0xFF);
     const auto& daten = medium->block(s, 2).bytes;
     ASSERT_EQ(daten.size(), 0x86u);
-    EXPECT_EQ(daten[1], 0x00);                         // BLN 0001, höherwertiges Byte zuerst
+    EXPECT_EQ(daten[1], 0x00);                         // BLN 0001, hoeherwertiges Byte zuerst
     EXPECT_EQ(daten[2], 0x01);
     for (int i = 0; i < 0x80; ++i) ASSERT_EQ(daten[static_cast<size_t>(3 + i)], static_cast<uint8_t>(i * 7 + 3));
-    EXPECT_EQ(kassette::crc16_arc(daten.data() + 1, 2 + 0x80 + 2), 0);   // CRC über BLN + Daten
+    EXPECT_EQ(kassette::crc16_arc(daten.data() + 1, 2 + 0x80 + 2), 0);   // CRC ueber BLN + Daten
     EXPECT_EQ(daten.back(), 0xAA);
     EXPECT_TRUE(medium->block(s, 3).bandmarke());
 
-    // RAM löschen, zurücklesen.
+    // RAM loeschen, zuruecklesen.
     for (int i = 0; i < 0x80; ++i) b.m->memWriteDebug(static_cast<uint16_t>(0xC000 + i), 0x00);
     b.taste(T_RUNTER);                                  // „> LESEN“
     b.taste(T_ENTER, 1'000'000);

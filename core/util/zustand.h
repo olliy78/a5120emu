@@ -1,9 +1,9 @@
 /**
  * @file zustand.h
- * @brief Ein Durchlauf für Speichern UND Laden von Gerätezustand (Save-State P8KS, Entwurf 25
+ * @brief Ein Durchlauf fuer Speichern UND Laden von Geraetezustand (Save-State P8KS, Entwurf 25
  *        §10.2): jedes Feld steht genau einmal in der Feldliste einer `visit(ZAr&)`-Funktion,
- *        beide Richtungen können nicht auseinanderlaufen.  Little-Endian, unabhängig vom Wirt.
- *        (Muster: `Ar` in core/primitives/upd765.cpp, hier als Header für mehrere Bausteine.)
+ *        beide Richtungen koennen nicht auseinanderlaufen.  Little-Endian, unabhaengig vom Wirt.
+ *        (Muster: `Ar` in core/primitives/upd765.cpp, hier als Header fuer mehrere Bausteine.)
  */
 #pragma once
 #include <cstddef>

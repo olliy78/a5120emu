@@ -3,8 +3,8 @@
  * @brief Implementierung des minimalen YAML-Subset-Parsers.
  *
  * Zweistufig: die Datei wird zuerst in eine Liste bedeutungstragender Zeilen
- * (Einrückung + Text + Zeilennummer) zerlegt, danach rekursiv über die Einrückung
- * in Maps/Listen zerlegt.  Flow-Ausdrücke (`[…]`, `{…}`) werden von einem eigenen
+ * (Einrueckung + Text + Zeilennummer) zerlegt, danach rekursiv ueber die Einrueckung
+ * in Maps/Listen zerlegt.  Flow-Ausdruecke (`[…]`, `{…}`) werden von einem eigenen
  * zeichenweisen Parser innerhalb einer Zeile verarbeitet.
  *
  * @see core/util/yaml_lite.h
@@ -49,7 +49,7 @@ std::string trim(const std::string& s) {
     return s.substr(a, b - a + 1);
 }
 
-/// Entfernt einen Kommentar (`#`) außerhalb von Quotes bis Zeilenende.
+/// Entfernt einen Kommentar (`#`) ausserhalb von Quotes bis Zeilenende.
 std::string stripComment(const std::string& s) {
     bool in_sq = false, in_dq = false;
     for (size_t i = 0; i < s.size(); ++i) {
@@ -70,7 +70,7 @@ std::string stripComment(const std::string& s) {
     return s;
 }
 
-/// Hebt Quotes auf und löst `\"`/`\\` in doppelt gequoteten Skalaren auf.
+/// Hebt Quotes auf und loest `\"`/`\\` in doppelt gequoteten Skalaren auf.
 std::string unquote(const std::string& s) {
     if (s.size() >= 2 && s.front() == '\'' && s.back() == '\'')
         return s.substr(1, s.size() - 2);
@@ -86,7 +86,7 @@ std::string unquote(const std::string& s) {
 }
 
 /**
- * Position des Key-Doppelpunkts: erstes ':' außerhalb von Quotes und außerhalb
+ * Position des Key-Doppelpunkts: erstes ':' ausserhalb von Quotes und ausserhalb
  * von Flow-Klammern, dem ein Leerzeichen oder das Zeilenende folgt.
  */
 size_t findKeyColon(const std::string& s) {
@@ -141,7 +141,7 @@ struct FlowParser {
         return false;
     }
 
-    /// Skalar bis zum nächsten Trennzeichen der aktuellen Flow-Ebene.
+    /// Skalar bis zum naechsten Trennzeichen der aktuellen Flow-Ebene.
     std::string readPlainScalar() {
         const size_t start = i;
         bool in_sq = false, in_dq = false;
@@ -195,14 +195,14 @@ struct FlowParser {
             while (true) {
                 skipWs();
                 const std::string key = readPlainScalar();
-                if (key.empty()) return fail("leerer Schlüssel in Flow-Map");
+                if (key.empty()) return fail("leerer Schluessel in Flow-Map");
                 skipWs();
                 if (i >= s.size() || s[i] != ':') return fail("':' nach '" + key + "' erwartet");
                 ++i;
                 Node val;
                 if (!parseValue(val)) return false;
                 for (const auto& e : out.entries)
-                    if (e.first == key) return fail("doppelter Schlüssel '" + key + "'");
+                    if (e.first == key) return fail("doppelter Schluessel '" + key + "'");
                 out.entries.emplace_back(key, std::move(val));
                 skipWs();
                 if (i >= s.size()) return fail("'}' fehlt");
@@ -224,11 +224,11 @@ bool parseInlineValue(const std::string& value, int line, Node& out, Error& err)
     if (value.empty()) { out.type = NodeType::Null; out.line = line; return true; }
 
     if (value[0] == '&' || value[0] == '*')
-        { err.line = line; err.message = "Anchors/Aliases werden nicht unterstützt"; return false; }
+        { err.line = line; err.message = "Anchors/Aliases werden nicht unterstuetzt"; return false; }
     if (value[0] == '|' || value[0] == '>')
-        { err.line = line; err.message = "mehrzeilige Skalare werden nicht unterstützt"; return false; }
+        { err.line = line; err.message = "mehrzeilige Skalare werden nicht unterstuetzt"; return false; }
     if (value[0] == '!')
-        { err.line = line; err.message = "Tags werden nicht unterstützt"; return false; }
+        { err.line = line; err.message = "Tags werden nicht unterstuetzt"; return false; }
 
     if (value[0] == '[' || value[0] == '{') {
         FlowParser fp(value, line, &err);
@@ -248,7 +248,7 @@ bool parseInlineValue(const std::string& value, int line, Node& out, Error& err)
     return true;
 }
 
-// ── Block-Parser (über die Einrückung) ───────────────────────────────────────
+// ── Block-Parser (ueber die Einrueckung) ───────────────────────────────────────
 
 struct Line {
     int         indent = 0;
@@ -295,8 +295,8 @@ bool BlockParser::parseList(int indent, Node& out) {
     while (pos < lines.size() && lines[pos].indent == indent && isListItem(lines[pos].text)) {
         Line& l = lines[pos];
 
-        // Text hinter dem '-' als virtuelle, tiefer eingerückte Zeile behandeln —
-        // so trägt ein "- key: wert" seine Folgezeilen (gleiche Spalte) mit.
+        // Text hinter dem '-' als virtuelle, tiefer eingerueckte Zeile behandeln —
+        // so traegt ein "- key: wert" seine Folgezeilen (gleiche Spalte) mit.
         size_t c = 1;
         while (c < l.text.size() && l.text[c] == ' ') ++c;
         const std::string content       = l.text.substr(c);
@@ -321,7 +321,7 @@ bool BlockParser::parseList(int indent, Node& out) {
     }
 
     if (pos < lines.size() && lines[pos].indent > indent)
-        return fail(lines[pos].no, "unerwartete Einrückung");
+        return fail(lines[pos].no, "unerwartete Einrueckung");
 
     return true;
 }
@@ -333,7 +333,7 @@ bool BlockParser::parseMap(int indent, Node& out) {
     while (pos < lines.size() && lines[pos].indent == indent) {
         const Line& l = lines[pos];
         if (isListItem(l.text))
-            return fail(l.no, "Listeneintrag '-' innerhalb einer Map erwartet einen Schlüssel");
+            return fail(l.no, "Listeneintrag '-' innerhalb einer Map erwartet einen Schluessel");
 
         const size_t colon = findKeyColon(l.text);
         if (colon == std::string::npos)
@@ -342,15 +342,15 @@ bool BlockParser::parseMap(int indent, Node& out) {
         const std::string key   = unquote(trim(l.text.substr(0, colon)));
         const std::string value = trim(l.text.substr(colon + 1));
         const int         line  = l.no;
-        if (key.empty()) return fail(line, "leerer Schlüssel");
+        if (key.empty()) return fail(line, "leerer Schluessel");
         for (const auto& e : out.entries)
-            if (e.first == key) return fail(line, "doppelter Schlüssel '" + key + "'");
+            if (e.first == key) return fail(line, "doppelter Schluessel '" + key + "'");
 
         ++pos;
 
         Node val;
         if (value.empty()) {
-            // Verschachtelter Block (tiefer eingerückt) oder leerer Wert.
+            // Verschachtelter Block (tiefer eingerueckt) oder leerer Wert.
             if (pos < lines.size() && lines[pos].indent > indent) {
                 if (!parseBlock(lines[pos].indent, val)) return false;
             } else {
@@ -364,14 +364,14 @@ bool BlockParser::parseMap(int indent, Node& out) {
     }
 
     if (pos < lines.size() && lines[pos].indent > indent)
-        return fail(lines[pos].no, "unerwartete Einrückung");
+        return fail(lines[pos].no, "unerwartete Einrueckung");
 
     return true;
 }
 
 }  // namespace
 
-// ─── Öffentliche Schnittstelle ───────────────────────────────────────────────
+// ─── Oeffentliche Schnittstelle ───────────────────────────────────────────────
 
 bool parse(const std::string& text, Node& out, Error& err) {
     BlockParser bp;
@@ -384,12 +384,12 @@ bool parse(const std::string& text, Node& out, Error& err) {
         ++no;
         if (!raw.empty() && raw.back() == '\r') raw.pop_back();
 
-        // Einrückung bestimmen (Tabs sind nicht erlaubt).
+        // Einrueckung bestimmen (Tabs sind nicht erlaubt).
         size_t ind = 0;
         while (ind < raw.size() && (raw[ind] == ' ' || raw[ind] == '\t')) {
             if (raw[ind] == '\t') {
                 err.line = no;
-                err.message = "Tabulator in der Einrückung — bitte Leerzeichen verwenden";
+                err.message = "Tabulator in der Einrueckung — bitte Leerzeichen verwenden";
                 return false;
             }
             ++ind;
@@ -399,7 +399,7 @@ bool parse(const std::string& text, Node& out, Error& err) {
         if (body.empty()) continue;                      // Leer-/Kommentarzeile
         if (body == "---" || body == "...") {
             err.line = no;
-            err.message = "Dokumenttrenner ('---') werden nicht unterstützt";
+            err.message = "Dokumenttrenner ('---') werden nicht unterstuetzt";
             return false;
         }
         bp.lines.push_back({static_cast<int>(ind), body, no});
@@ -411,7 +411,7 @@ bool parse(const std::string& text, Node& out, Error& err) {
 
     if (bp.pos != bp.lines.size()) {
         err.line = bp.lines[bp.pos].no;
-        err.message = "unerwartete Einrückung";
+        err.message = "unerwartete Einrueckung";
         return false;
     }
     return true;

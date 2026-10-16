@@ -36,7 +36,7 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     bus_.registerIO(&afs_, 0x10, 9);
     bus_.registerIO(&ass_, 0x50, 16);
     // ASS 590069 (C4H–C7H, Fernschreiber): in beiden Varianten — der Treiber `B17x72FS`
-    // liegt auf den Disketten (AP-P8).  Die ADA K6022 (E0H–E7H, Lochband über SIF1000) ist
+    // liegt auf den Disketten (AP-P8).  Die ADA K6022 (E0H–E7H, Lochband ueber SIF1000) ist
     // seit Entwurf 23 (AP-L1) eine Option wie in den anderen Maschinen: installK6022().
     fs_.attachToBus(bus_);
     // Tastatur: 710 = K7609 am 8279 der ATP (C8H–C9H, D0H–D3H); 710-1 = K7672 an A32-B
@@ -55,7 +55,7 @@ Prg710Machine::Prg710Machine(const Config& cfg)
         atp_.eprommer().setZeit([this] { return total_cycles_; });
     }
     // Speicherweg der CPU: Speicherverwaltung; ZRE-Fenster und VRAM gehen an die Karten.
-    // (mem_trace_: Beobachter des Debuggers — Speicher der CPU geht nicht über den Systembus.)
+    // (mem_trace_: Beobachter des Debuggers — Speicher der CPU geht nicht ueber den Systembus.)
     zre_.setSpeicherweg(
         [this](uint16_t a) {
             const uint8_t v = speicher_.memRead(a);
@@ -73,11 +73,11 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     // K5122 auf /WAIT (keine ZVE2); Marken-FF: PRG 710 low-aktiv, 710-1 high-aktiv (§4a.1).
     afs_.setSynchronisation(K5122::Synchronisation::Wait);
     afs_.setMkeLowAktiv(variante_ == Config::Variante::Prg710);
-    // Marken-FF an jedem Sync-Byte: das 710-ROM schlägt das FF in einer engen Schleife
+    // Marken-FF an jedem Sync-Byte: das 710-ROM schlaegt das FF in einer engen Schleife
     // neu an (02DDH, AP-P1d); beide Varianten tragen dieselbe K5122.
     afs_.setMkeJedesSyncByte(true);
     // Unformatierte Spur/Seite = Rauschen mit Scheinmarken (AP-P3b): ROM und Resident
-    // warten ohne Zeitablauf auf eine Marke; am Gerät beendet erst das Rauschen das Warten.
+    // warten ohne Zeitablauf auf eine Marke; am Geraet beendet erst das Rauschen das Warten.
     afs_.setRauschenAufLeererSpur(true);
     interruptKetteSetzen();
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
@@ -87,17 +87,17 @@ Prg710Machine::Prg710Machine(const Config& cfg)
     zre_.setZCTOCallback([this](int ch, bool lvl) {
         if (ch == 0)
             for (int i = 0; i < 4; ++i) ass_.ctcA34().clkTrg(i, lvl);
-    }, 0x01);   // nur ZC/TO0 geht nach außen
+    }, 0x01);   // nur ZC/TO0 geht nach aussen
     ass_.setzeZreTakt([this] { return zre_.ctc().teilerTakte(0); });
-    // Am 710-1 ist A32-B die Tastatur (fest verdrahtet, nicht nach außen); AP-P4 benennt neu.
-    // Namen nach der Gerätebeschriftung (DRUCK.DOK, §3.7/§3.9), Reihenfolge = C-ABI-Index.
-    // A33-B (52H/53H) ist am PRG unbelegt [?] und geht nicht nach außen; am 710-1 trägt
+    // Am 710-1 ist A32-B die Tastatur (fest verdrahtet, nicht nach aussen); AP-P4 benennt neu.
+    // Namen nach der Geraetebeschriftung (DRUCK.DOK, §3.7/§3.9), Reihenfolge = C-ABI-Index.
+    // A33-B (52H/53H) ist am PRG unbelegt [?] und geht nicht nach aussen; am 710-1 traegt
     // A32-B die Tastatur K7672 (9-poliger D-SUB statt IFSS X6).
     ass_.benenne(K8025::DfueV24,   "V.24",                    "X4");
     ass_.benenne(K8025::Drucker,   "IFSS Hauptdrucker",       "X6");
     ass_.benenne(K8025::ZifssA32A, "ZIFSS Zusatzdrucker",     "X5");
     for (auto* a : serielleAnschluesse()) hub_.registriere(*a);
-    // Der V.24-Treiber taktet über CTC A34 Kanal 2 (5AH, DRUCK.DOK §1) = Taktquelle 1
+    // Der V.24-Treiber taktet ueber CTC A34 Kanal 2 (5AH, DRUCK.DOK §1) = Taktquelle 1
     // („CTC A34 K2“); die A5120-Vorgabe 0 (ZRE-CTC K0, W1:7) ist hier nicht die Belegung.
     k1520::serial::SerialKonfig k = hub_.konfig(0);
     k.taktquelle = 1;
@@ -106,7 +106,7 @@ Prg710Machine::Prg710Machine(const Config& cfg)
 
 void Prg710Machine::interruptKetteSetzen()
 {
-    // Interruptkette (vorläufig [?], §3.1/AP-P1c): K5122 → K2521 (CTC, PIO) → K8025.
+    // Interruptkette (vorlaeufig [?], §3.1/AP-P1c): K5122 → K2521 (CTC, PIO) → K8025.
     // AP-P8: K6022 (Stanzer vor Leser, nur gesteckt) und 590069 dahinter — Stellung [?].
     // Anders als am A5120/K8915 (Entwurf 23 §2: hinten) bleibt die K6022 hier VOR dem
     // Fernschreiber, wie sie bis AP-L1 fest steckte.
@@ -117,7 +117,7 @@ void Prg710Machine::interruptKetteSetzen()
     }
     bus_.appendInterruptChain(&fs_.sio());
     bus_.appendInterruptChain(&fs_.ctc());
-    // K5020 (Entwurf 29, AP K5): hinten angehängt, Daten- vor Steuer-PIO — am Gerät unbelegt [?]
+    // K5020 (Entwurf 29, AP K5): hinten angehaengt, Daten- vor Steuer-PIO — am Geraet unbelegt [?]
     if (k5020_) {
         bus_.appendInterruptChain(&k5020_->pioDaten());
         bus_.appendInterruptChain(&k5020_->pioSteuer());
@@ -144,7 +144,7 @@ void Prg710Machine::resetHardware()
     ass_.reset();
     atp_.reset();            // 8279: FIFO leer
     k6022Reset();            // K6022 (gesteckt?): PIOs; Band im Leser und Stanzband bleiben
-    k5020Reset();             // K5020 (gesteckt?): PIOs zurück, Bänder bleiben liegen
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurueck, Baender bleiben liegen
     fs_.reset();
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();
@@ -189,7 +189,7 @@ void Prg710Machine::keyRelease(uint32_t k)
 
 void Prg710Machine::tastenAbgeben()
 {
-    // Erst unter Sperre umhängen, dann ohne Sperre abgeben (wie K8915Machine).
+    // Erst unter Sperre umhaengen, dann ohne Sperre abgeben (wie K8915Machine).
     std::deque<TastenEreignis> jetzt;
     {
         std::lock_guard<std::mutex> lk(tasten_sperre_);
@@ -235,7 +235,7 @@ int Prg710Machine::run(int max_cycles)
 
         int used = cpu.step();
         if (used == 0 && stop_.load(std::memory_order_relaxed)) break;   // Debugger-Halt
-        // /WAIT der K5122: die CPU stand, die Zeit vergeht für alle anderen mit.
+        // /WAIT der K5122: die CPU stand, die Zeit vergeht fuer alle anderen mit.
         if (const int w = bus_.takeWaitCycles(); w > 0) {
             used += w;
             cpu.cycles += static_cast<uint64_t>(w);

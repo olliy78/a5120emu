@@ -5,15 +5,15 @@ Versionswerkzeug (doc/ci_pipeline.md §7.1) — nur Standardbibliothek.
     tools/version.py                      Bauversion (wie --bau)
     tools/version.py --basis              Inhalt von VERSION
     tools/version.py --bau                0.3.0-beta+g1a2b3c4 | 0.3.0-beta.2 (Tag auf HEAD)
-    tools/version.py --windows            X.Y.Z.B für VersionInfoVersion des Installers
+    tools/version.py --windows            X.Y.Z.B fuer VersionInfoVersion des Installers
     tools/version.py --beispielordner     Beispieldisketten_v03[-beta.2|-test]
-    tools/version.py --vorab              Rückgabewert 0 = Vorabversion
-    tools/version.py --pruefe-tag v0.3.0-beta.1   Rückgabewert ≠ 0, wenn das Tag nicht zu VERSION passt
-    tools/version.py --pruefe-release 0.3.0-beta.1  (dev.sh release) Version gültig, frei, größer als alle Tags
-    tools/version.py --release-basis 0.3.0-beta.1   Basis, die VERSION dafür tragen muss
+    tools/version.py --vorab              Rueckgabewert 0 = Vorabversion
+    tools/version.py --pruefe-tag v0.3.0-beta.1   Rueckgabewert ≠ 0, wenn das Tag nicht zu VERSION passt
+    tools/version.py --pruefe-release 0.3.0-beta.1  (dev.sh release) Version gueltig, frei, groesser als alle Tags
+    tools/version.py --release-basis 0.3.0-beta.1   Basis, die VERSION dafuer tragen muss
     tools/version.py --naechste-basis 0.3.0         VERSION nach der Endfassung (0.4.0-beta)
 
-Die Logik selbst steht in app/version.py (die Oberfläche braucht sie in einer
+Die Logik selbst steht in app/version.py (die Oberflaeche braucht sie in einer
 Installation ebenfalls); diese Datei ist nur die Kommandozeile davor.
 """
 import argparse
@@ -25,11 +25,11 @@ WURZEL = Path(__file__).resolve().parents[1]
 
 
 def _lade():
-    # Kein Bytecode: das Werkzeug läuft auch in Repos (dev.sh release, CI), deren
+    # Kein Bytecode: das Werkzeug laeuft auch in Repos (dev.sh release, CI), deren
     # Arbeitsbaum SAUBER sein muss — ein `app/__pycache__/` machte ihn unsauber.
     sys.dont_write_bytecode = True
     # Per Dateipfad statt `import app.version`: `app/__init__.py` und die
-    # Oberfläche sollen hier nicht mitgeladen werden (kein Qt, kein venv).
+    # Oberflaeche sollen hier nicht mitgeladen werden (kein Qt, kein venv).
     spec = importlib.util.spec_from_file_location("k1520_version", WURZEL / "app" / "version.py")
     mod = importlib.util.module_from_spec(spec)
     sys.modules["k1520_version"] = mod          # dataclass-/Typing-Hilfen finden das Modul
@@ -51,7 +51,7 @@ def main(argv=None) -> int:
     g.add_argument("--release-basis", metavar="VERSION")
     g.add_argument("--naechste-basis", metavar="VERSION")
     p.add_argument("--wurzel", type=Path, default=WURZEL,
-                   help="anderes Repo/Verzeichnis mit VERSION (für Tests)")
+                   help="anderes Repo/Verzeichnis mit VERSION (fuer Tests)")
     a = p.parse_args(argv)
     try:
         if a.basis:

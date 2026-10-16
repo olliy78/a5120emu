@@ -36,7 +36,7 @@ P8000MmuLogik16::P8000MmuLogik16(const Config& cfg) : cfg_(cfg) { powerOn(); }
 void P8000MmuLogik16::powerOn() {
     for (auto& m : mmu_) m.powerOn();
     nbr_ = cfg_.nbrStart;                 // DS8282 ohne Reset (Plan §1.3)
-    trpl_ = if1l_ = if1lStufe1_ = 0;      // DL374 ohne Reset — Startwert gewählt
+    trpl_ = if1l_ = if1lStufe1_ = 0;      // DL374 ohne Reset — Startwert gewaehlt
     retiVorher_ = 0;
     segtPegel_ = false;
     letzterZyklus_ = Z8kBusCycle{};
@@ -65,7 +65,7 @@ void P8000MmuLogik16::segtNachfuehren() {
 
 P8000MmuLogik16::Wahl P8000MmuLogik16::auswahl(uint8_t status, bool system, bool segUser, bool sn6,
                                                bool datenSeite, bool onBoard) {
-    // Wörtlich nach schaltplan_16bit.md §1.2; K = IMEML (1 = kein On-Board-Zugriff).
+    // Woertlich nach schaltplan_16bit.md §1.2; K = IMEML (1 = kein On-Board-Zugriff).
     const bool ist3 = (status & 0x8) != 0;
     const bool ist2 = (status & 0x4) != 0;
     const bool ins = !system;                    // IN/S−: 1 = Normal
@@ -174,7 +174,7 @@ P8000MmuLogik16::Zugriff P8000MmuLogik16::zyklus(const Z8kBusCycle& c) {
     }
     segtNachfuehren();
     if (flanke && onSegtEreignis) onSegtEreignis(letztesSegt_);
-    // IF1L-Stufe 1 übernimmt am Zyklusende [L6].
+    // IF1L-Stufe 1 uebernimmt am Zyklusende [L6].
     if (st == ST_IF1 || (cfg_.if1lAuchStatus1100 && st == ST_INSTR)) if1lStufe1_ = uint8_t(c.addr & 0xFF);
 
     ++zyklen_[uint8_t(z.wahl) & 3];
@@ -212,7 +212,7 @@ void P8000MmuLogik16::spezialSchreiben(uint16_t port, uint16_t ad) {
     const uint8_t code = uint8_t(port >> 8);
     for (int i = 0; i < 3; ++i)
         if (cs & (1u << i)) mmu_[i].kommandoSchreiben(code, uint8_t(ad >> 8));
-    segtNachfuehren();   // %10 nimmt /SEGT zurück
+    segtNachfuehren();   // %10 nimmt /SEGT zurueck
 }
 
 // ─── Register FFC1–FFF9 (+ FFB9) ─────────────────────────────────────────────
@@ -263,7 +263,7 @@ P8000MmuLogik16::Probe P8000MmuLogik16::probe(const Z8kBusCycle& c) const {
         pr.nsHigh[i] = in.mz[i].nsHigh;
         e[i].adresse = pr.mmu[i].adresse;
         e[i].phys = pr.mmu[i].phys;
-        // SUP wie zyklus(): eigene Verletzung oder laufender SUP bis Befehlsende (nicht über %D).
+        // SUP wie zyklus(): eigene Verletzung oder laufender SUP bis Befehlsende (nicht ueber %D).
         e[i].sup = (pr.mmu[i].geprueft && pr.mmu[i].verletzung) ||
                    (mmu_[i].supBisBefehlsende() && st != ST_IF1);
     }
@@ -310,7 +310,7 @@ bool P8000MmuLogik16::deserialize(const uint8_t*& p, const uint8_t* end) {
     std::array<Z8010, 3> neu;
     for (auto& m : neu)
         if (!m.deserialize(q, end)) return false;
-    // Erst jetzt übernehmen — ein Fehler lässt den Ist-Zustand stehen.
+    // Erst jetzt uebernehmen — ein Fehler laesst den Ist-Zustand stehen.
     mmu_ = neu;
     scr_ = scr & 0x0F; nbr_ = nbr; trpl_ = trpl; if1l_ = if1l; if1lStufe1_ = st1; retiVorher_ = reti;
     led_ = led;

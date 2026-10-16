@@ -1,12 +1,12 @@
 /**
  * @file atp590068.h
- * @brief ATP 590068 — „Adapter für Tastatur und Programmierzusatz“ des PRG 710.
+ * @brief ATP 590068 — „Adapter fuer Tastatur und Programmierzusatz“ des PRG 710.
  *
  * Belegt (doc/design/20_prg710.md §3.4, doc/prg710/resident.md §5):
- * - **8279 an C8H (Daten) / C9H (Befehl/Status)** für die Tastatur K7609.
+ * - **8279 an C8H (Daten) / C9H (Befehl/Status)** fuer die Tastatur K7609.
  * - **EPROMmer D0H–D4H** (AP-P7b): PIO + Steuerregister + virtueller Sockel,
  *   @ref Eprommer590068 (doc/prg710/eprommer.md).
- * Das Peripheriemodell (Tasten) hängt die Maschine an @ref kbc.
+ * Das Peripheriemodell (Tasten) haengt die Maschine an @ref kbc.
  */
 
 #pragma once

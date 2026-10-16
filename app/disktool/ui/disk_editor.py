@@ -47,27 +47,27 @@ if TYPE_CHECKING:                                   # pragma: no cover
 #: Bytes je Zeile im Hexfeld — ein 1024-B-Sektor ergibt damit 32 Zeilen.
 HEX_BREITE = 32
 
-#: Ab dieser Ringhöhe (Pixel) werden Trennlinien gezeichnet.
+#: Ab dieser Ringhoehe (Pixel) werden Trennlinien gezeichnet.
 MIN_LINIE = 5.0
 
-FARBE_OK          = QColor("#3fa34d")   # Sektor mit Daten, beide CRCs gültig
+FARBE_OK          = QColor("#3fa34d")   # Sektor mit Daten, beide CRCs gueltig
 # Ein formatierter, aber nie beschriebener Sektor: dieselbe Farbe, nur blass.  Es ist
 # kein anderer Zustand, sondern derselbe mit weniger Inhalt — deshalb kein eigener
-# Farbton, sondern eine hellere Tönung desselben Grüns.
-FARBE_OK_LEER     = QColor("#a8dcae")   # Sektor ohne Daten (Datenfeld einförmig)
+# Farbton, sondern eine hellere Toenung desselben Gruens.
+FARBE_OK_LEER     = QColor("#a8dcae")   # Sektor ohne Daten (Datenfeld einfoermig)
 FARBE_DEFEKT      = QColor("#cc2b2b")   # Sektor mit CRC-Fehler
 FARBE_GAP         = QColor("#e8912a")   # Gap zwischen den Sektorfeldern
 FARBE_UNFORMAT    = QColor("#b8b8b8")   # unformatiert / markenloser Gap-Fluss
 # Schwarz heisst NICHT „leer", sondern „noch keine Aussage": die Spur wurde vom
 # echten Laufwerk noch nicht geholt.  Sie von „unformatiert" (grau) zu trennen ist
-# wesentlich — das eine ist eine Feststellung über die Diskette, das andere keine.
+# wesentlich — das eine ist eine Feststellung ueber die Diskette, das andere keine.
 FARBE_UNBEKANNT   = QColor("#101010")   # noch nicht gelesen (physisches Laufwerk)
 FARBE_LINIE       = QColor("#000000")
 FARBE_HINTERGRUND = QColor("#ffffff")
 FARBE_AUSWAHL     = QColor("#1060d0")
 
 
-#: Länge des UDOS-Sektorkontrollblocks hinter der Daten-CRC (§1.1 des Datenformats).
+#: Laenge des UDOS-Sektorkontrollblocks hinter der Daten-CRC (§1.1 des Datenformats).
 UDOS_TAIL = 4
 
 
@@ -261,7 +261,7 @@ class DiskSurface(QWidget):
         if spur >= len(self.tracks[kopf]):
             return None
 
-        # Bildschirm-y wächst nach unten; theta ist der übliche mathematische Winkel.
+        # Bildschirm-y waechst nach unten; theta ist der uebliche mathematische Winkel.
         theta = math.degrees(math.atan2(-dy, dx))
         roh = (90.0 - theta) if kopf == 0 else (theta - 90.0)
         anteil = (roh % 360.0) / 360.0
@@ -280,8 +280,8 @@ class DiskSurface(QWidget):
         if span.kind == SECTOR:
             if not span.ok:
                 return FARBE_DEFEKT
-            # Leer heisst „Datenfeld einförmig" — der UDOS-Anhang hinter der
-            # Daten-CRC zählt NICHT mit: er trägt die Dateiverkettung und ist auch
+            # Leer heisst „Datenfeld einfoermig" — der UDOS-Anhang hinter der
+            # Daten-CRC zaehlt NICHT mit: er traegt die Dateiverkettung und ist auch
             # auf einer frisch formatierten Diskette belegt.
             return FARBE_OK_LEER if getattr(span, "blank", False) else FARBE_OK
         if span.kind == GAP:
@@ -413,7 +413,7 @@ class DiskSurface(QWidget):
         t = self.treffer(event.position())
         if t and t[2] is None:
             # Unbekannte Spur angeklickt: der Bediener will SIE sehen, also darf sie
-            # jetzt geholt werden — das ist ein ausdrücklicher Wunsch, kein Beiwerk.
+            # jetzt geholt werden — das ist ein ausdruecklicher Wunsch, kein Beiwerk.
             self.track_requested.emit(t[0], t[1])
             super().mousePressEvent(event)
             return
@@ -440,7 +440,7 @@ class _Waehler(QWidget):
 
     #: Neuer Wert (durch Eingabe oder Knopf).
     changed = Signal(int)
-    #: Ein Knopf wurde gedrückt: ±1 (die Schrittweite bestimmt der Empfänger).
+    #: Ein Knopf wurde gedrueckt: ±1 (die Schrittweite bestimmt der Empfaenger).
     stepped = Signal(int)
 
     def __init__(self, beschriftung: str, breite: int = 52, parent=None):
@@ -449,7 +449,7 @@ class _Waehler(QWidget):
         self.plus = QPushButton("+")
         for k in (self.minus, self.plus):
             k.setFixedWidth(26)
-            k.setAutoRepeat(True)          # gedrückt halten blättert weiter
+            k.setAutoRepeat(True)          # gedrueckt halten blaettert weiter
         self.feld = QLineEdit()
         self.feld.setFixedWidth(breite)
         self.feld.setAlignment(Qt.AlignRight)
@@ -475,7 +475,7 @@ class _Waehler(QWidget):
         try:
             self.changed.emit(int(text, 10))
         except ValueError:
-            pass                            # stehenlassen; setValue korrigiert später
+            pass                            # stehenlassen; setValue korrigiert spaeter
 
     def value(self) -> Optional[int]:
         try:
@@ -514,7 +514,7 @@ class NewTrackDialog(QDialog):
         self.setMinimumWidth(430)
 
         self.f_pos = QSpinBox()
-        self.f_pos.setRange(0, tool.medium_cylinders)      # ein Platz mehr: anhängen
+        self.f_pos.setRange(0, tool.medium_cylinders)      # ein Platz mehr: anhaengen
         self.f_pos.setValue(max(0, min(vorschlag, tool.medium_cylinders)))
         self.f_pos.setToolTip(
             "Die Nummer, die die NEUE Spur bekommt.  Alles von dort an rückt nach "
@@ -526,7 +526,7 @@ class NewTrackDialog(QDialog):
         self.f_mfm.setToolTip(
             "Verfahren der neuen Spur.  Es folgt NICHT dem Nachbarn — gemischte "
             "Formate sind gerade der Zweck.")
-        # Vorbelegung: was der künftige Vorgänger hat.  Das ist der übliche Fall;
+        # Vorbelegung: was der kuenftige Vorgaenger hat.  Das ist der uebliche Fall;
         # der Wechsel bleibt ein bewusster Griff.
         self.f_mfm.setCurrentIndex(0 if self._nachbar_mfm(vorschlag) else 1)
 
@@ -625,7 +625,7 @@ class NewSectorDialog(QDialog):
         self.f_mfm.addItem("MFM (Double Density)", True)
         self.f_mfm.addItem("FM (Single Density)", False)
         self.f_mfm.setCurrentIndex(0 if spur.encoding != "FM" else 1)
-        # FM und MFM lassen sich in EINER Spur nicht mischen — das Verfahren hängt
+        # FM und MFM lassen sich in EINER Spur nicht mischen — das Verfahren haengt
         # am Bit-Codec der ganzen Spur.  Nur eine leere Spur darf es noch festlegen.
         self.f_mfm.setEnabled(not vorhanden)
 
@@ -693,8 +693,8 @@ class NewSectorDialog(QDialog):
         """
         laengen = sorted(round((s.end - s.start) * self.spur.bytes)
                          for s in self.spur.spans if s.kind == GAP)
-        # Der Index-Gap ist der längste und untypisch — der Median trifft die
-        # gewöhnlichen Zwischenräume.
+        # Der Index-Gap ist der laengste und untypisch — der Median trifft die
+        # gewoehnlichen Zwischenraeume.
         return laengen[len(laengen) // 2] if laengen else 24
 
     def werte(self) -> dict:
@@ -759,7 +759,7 @@ class DiskEditorWindow(QDialog):
     Datei** — ein Sektoreditor, dessen „Speichern“ nichts speichert, wäre eine Falle.
     """
 
-    #: Signal an das Hauptfenster: die Diskette hat sich geändert.
+    #: Signal an das Hauptfenster: die Diskette hat sich geaendert.
     disk_changed = Signal()
 
     def __init__(self, tool: "DiskTool", parent=None):
@@ -767,7 +767,7 @@ class DiskEditorWindow(QDialog):
         self.tool = tool
         self.setWindowTitle(f"Diskeditor — {tool.path}")
         # Ein QDialog bekommt vom Fensterverwalter sonst keinen Maximieren-Knopf —
-        # ausgerechnet hier, wo mehr Fläche mehr Diskette bedeutet.
+        # ausgerechnet hier, wo mehr Flaeche mehr Diskette bedeutet.
         self.setWindowFlags(Qt.Window
                             | Qt.WindowMinMaxButtonsHint
                             | Qt.WindowCloseButtonHint)
@@ -775,16 +775,16 @@ class DiskEditorWindow(QDialog):
         self.setSizeGripEnabled(True)
 
         self.aktuell: Optional[tuple] = None      # (Kopf, Spur, Sektornummer)
-        self._im_umbau = False                   # gegen Rückkopplung beim Auffrischen
-        # Ob hinter der Daten-CRC ein Kontrollblock steht, weiß nicht der Sektor,
-        # sondern das DATEISYSTEM — deshalb einmal beim Öffnen bestimmt.  Nur ZDOS
-        # (A5120) hat einen; UDOS1715/NDOS hält alles im Sektor.
+        self._im_umbau = False                   # gegen Rueckkopplung beim Auffrischen
+        # Ob hinter der Daten-CRC ein Kontrollblock steht, weiss nicht der Sektor,
+        # sondern das DATEISYSTEM — deshalb einmal beim Oeffnen bestimmt.  Nur ZDOS
+        # (A5120) hat einen; UDOS1715/NDOS haelt alles im Sektor.
         self.udos = (tool.filesystem_type == "udos")
 
         self.surface = DiskSurface()
         self.surface.sector_clicked.connect(self.select_sector)
 
-        # ── Unterer Teil: Wähler, Angaben, CRC, Hexfeld, Knöpfe ─────────────
+        # ── Unterer Teil: Waehler, Angaben, CRC, Hexfeld, Knoepfe ─────────────
         self.w_seite = _Waehler("Seite", 34)
         self.w_spur = _Waehler("Spur", 44)
         self.w_sektor = _Waehler("Sektor", 44)
@@ -798,7 +798,7 @@ class DiskEditorWindow(QDialog):
         self.w_sektor.stepped.connect(lambda d: self._schritt_sektor(d))
 
         self.info = QLabel("Kein Sektor gewählt — auf einen Sektor klicken.")
-        # KEIN Umbruch: eine zweite Zeile hier kostet Höhe, die der Scheibe fehlt.
+        # KEIN Umbruch: eine zweite Zeile hier kostet Hoehe, die der Scheibe fehlt.
         self.info.setWordWrap(False)
         self.info.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
@@ -821,15 +821,15 @@ class DiskEditorWindow(QDialog):
         self.crc_feld.textChanged.connect(self._crc_bewerten)
         self.crc_urteil = QLabel("")
 
-        # Die CRC steht in derselben Zeile wie die Wähler — sie gehört zur Auswahl,
-        # nicht zu den Angaben, und spart so eine Zeile Höhe.
+        # Die CRC steht in derselben Zeile wie die Waehler — sie gehoert zur Auswahl,
+        # nicht zu den Angaben, und spart so eine Zeile Hoehe.
         wahlzeile.addWidget(QLabel("Daten-CRC:"))
         wahlzeile.addWidget(self.crc_feld)
         wahlzeile.addWidget(self.crc_urteil)
         wahlzeile.addStretch(1)
 
-        # ── UDOS-Nachspann: die Dateiverkettung, änderbar ───────────────────
-        # Sie zu ändern ist etwas anderes, als die Nutzdaten zu ändern — deshalb ein
+        # ── UDOS-Nachspann: die Dateiverkettung, aenderbar ───────────────────
+        # Sie zu aendern ist etwas anderes, als die Nutzdaten zu aendern — deshalb ein
         # eigenes Feld.  Links die vier Rohbytes (das ist die Wahrheit auf dem
         # Medium), rechts, was sie bedeuten.
         self.tail_feld = QLineEdit()
@@ -843,7 +843,7 @@ class DiskEditorWindow(QDialog):
         self.tail_feld.textChanged.connect(self._tail_deuten)
         # Die gedeuteten Zeiger sind **Verweise**: die Kette einer UDOS-Datei liegt
         # physisch verstreut (Sektor 6, 7, 12, 23, 1, …), und wer ihr folgen will,
-        # sollte die Werte nicht abtippen müssen.
+        # sollte die Werte nicht abtippen muessen.
         self.tail_deutung = QLabel("")
         self.tail_deutung.setTextFormat(Qt.RichText)
         self.tail_deutung.setTextInteractionFlags(Qt.TextSelectableByMouse
@@ -851,8 +851,8 @@ class DiskEditorWindow(QDialog):
         self.tail_deutung.setToolTip("Anklicken springt zu diesem Sektor.")
         self.tail_deutung.linkActivated.connect(self._zeiger_folgen)
 
-        # Alles zum Sektor in EINER Zeile: Format, Größe, die vier Rohbytes, ihre
-        # Deutung.  Eine eigene Zeile für den Anhang kostete Höhe, die im Fenster
+        # Alles zum Sektor in EINER Zeile: Format, Groesse, die vier Rohbytes, ihre
+        # Deutung.  Eine eigene Zeile fuer den Anhang kostete Hoehe, die im Fenster
         # der Scheibe fehlt.
         angaben = QHBoxLayout()
         angaben.setContentsMargins(0, 0, 0, 0)
@@ -862,7 +862,7 @@ class DiskEditorWindow(QDialog):
         angaben.addStretch(1)
         self.angaben_widget = QWidget()
         self.angaben_widget.setLayout(angaben)
-        # Zunächst weg — ob es einen Nachspann gibt, entscheidet der ANGEZEIGTE
+        # Zunaechst weg — ob es einen Nachspann gibt, entscheidet der ANGEZEIGTE
         # Sektor (`_zeige_sektor`), nicht das erkannte Dateisystem.
         self.tail_feld.setVisible(False)
         self.tail_deutung.setVisible(False)
@@ -874,12 +874,12 @@ class DiskEditorWindow(QDialog):
             "Hier steht der Inhalt des gewählten Sektors.\n"
             "Geändert wird ausschließlich die Hexspalte; Offset und ASCII-Deutung "
             "sind Anzeige.")
-        # ÜBERSCHREIBEN statt Einfügen: in einem Hexdump sind die Spalten fest.
-        # Beim Einfügen verschöbe jede getippte Ziffer den Rest der Zeile, und die
-        # ASCII-Spalte liesse sich nicht mehr verlässlich nachziehen.
+        # UEBERSCHREIBEN statt Einfuegen: in einem Hexdump sind die Spalten fest.
+        # Beim Einfuegen verschoebe jede getippte Ziffer den Rest der Zeile, und die
+        # ASCII-Spalte liesse sich nicht mehr verlaesslich nachziehen.
         self.hex.setOverwriteMode(True)
-        # Auch eine Änderung der DATEN macht die CRC ungültig — das Urteil muss
-        # beides im Blick haben, sonst stünde „gültig“ neben veränderten Bytes.
+        # Auch eine Aenderung der DATEN macht die CRC ungueltig — das Urteil muss
+        # beides im Blick haben, sonst stuende „gueltig“ neben veraenderten Bytes.
         self.hex.textChanged.connect(self._hex_geaendert)
 
         self.btn_reload = QPushButton("Reload Sektor")
@@ -903,8 +903,8 @@ class DiskEditorWindow(QDialog):
         self.btn_neu.clicked.connect(self.new_sector)
         self.btn_loeschen.clicked.connect(self.delete_sector)
 
-        # Ganze SPUREN — eine Ebene über den Sektoren.  Getrennt beschriftet, weil
-        # „Spur löschen" etwas anderes ist als „Sektor löschen": es verschiebt die
+        # Ganze SPUREN — eine Ebene ueber den Sektoren.  Getrennt beschriftet, weil
+        # „Spur loeschen" etwas anderes ist als „Sektor loeschen": es verschiebt die
         # ganze Diskette dahinter.
         self.btn_spur_neu = QPushButton("Spur einfügen")
         self.btn_spur_weg = QPushButton("Spur löschen")
@@ -954,8 +954,8 @@ class DiskEditorWindow(QDialog):
         lay.addWidget(teiler, 1)
         self._enable(False)
 
-        # Solange die Diskette noch wächst (echtes Laufwerk), die Ansicht nachführen.
-        # Der Zeitgeber hält sich selbst an: sind alle Spuren bekannt, hört er auf.
+        # Solange die Diskette noch waechst (echtes Laufwerk), die Ansicht nachfuehren.
+        # Der Zeitgeber haelt sich selbst an: sind alle Spuren bekannt, hoert er auf.
         self.surface.track_requested.connect(self._spur_anfordern)
         self._nachlauf = QTimer(self)
         self._nachlauf.setInterval(1000)
@@ -980,7 +980,7 @@ class DiskEditorWindow(QDialog):
             self._nachlauf.stop()               # Diskette weg — nichts mehr zu holen
             return
         if not any(t is None for seite in self.surface.tracks for t in seite):
-            self._nachlauf.stop()               # vollständig, es gibt nichts mehr
+            self._nachlauf.stop()               # vollstaendig, es gibt nichts mehr
 
     def _spur_anfordern(self, seite: int, spur: int) -> None:
         """Eine noch ungelesene Spur auf Wunsch jetzt holen.
@@ -1008,7 +1008,7 @@ class DiskEditorWindow(QDialog):
                      (FARBE_DEFEKT, "CRC-Fehler"),
                      (FARBE_GAP, "Gap"), (FARBE_UNFORMAT, "unformatiert")]
         # „Noch nicht gelesen" gibt es nur an einem nachladenden Medium; bei einer
-        # Datei stünde ein Eintrag in der Legende, der nie vorkommt.
+        # Datei stuende ein Eintrag in der Legende, der nie vorkommt.
         if any(t is None for seite in self.surface.tracks for t in seite):
             eintraege.append((FARBE_UNBEKANNT, "noch nicht gelesen"))
         for farbe, text in eintraege:
@@ -1034,12 +1034,12 @@ class DiskEditorWindow(QDialog):
         self.btn_save.setEnabled(schreibbar)
         self.btn_loeschen.setEnabled(schreibbar)
         # Anlegen geht auch auf einer LEEREN Spur — dort gibt es keinen Sektor zu
-        # wählen, und genau dann braucht man den Knopf am dringendsten.
+        # waehlen, und genau dann braucht man den Knopf am dringendsten.
         self.btn_neu.setEnabled(not self.tool.read_only
                                 and self.surface.cylinders > 0)
-        # Ganze Spuren ändern die GEOMETRIE des Abbilds — erst recht nichts für
-        # eine schreibgeschützt geöffnete Diskette.  Sie hingen bisher an gar
-        # nichts und liessen sich auch im Nur-Lesen-Zustand auslösen.
+        # Ganze Spuren aendern die GEOMETRIE des Abbilds — erst recht nichts fuer
+        # eine schreibgeschuetzt geoeffnete Diskette.  Sie hingen bisher an gar
+        # nichts und liessen sich auch im Nur-Lesen-Zustand ausloesen.
         aendern = not self.tool.read_only and self.surface.cylinders > 0
         self.btn_spur_neu.setEnabled(aendern)
         self.btn_spur_weg.setEnabled(aendern and self.surface.cylinders > 1)
@@ -1047,7 +1047,7 @@ class DiskEditorWindow(QDialog):
             self.hinweis.setText("Diskette ist schreibgeschützt geöffnet — "
                                  "„Nur lesen“ im Hauptfenster abwählen zum Ändern.")
 
-    # ── Sektor wählen und anzeigen ──────────────────────────────────────────
+    # ── Sektor waehlen und anzeigen ──────────────────────────────────────────
 
     def select_sector(self, head: int, cyl: int, index: int) -> bool:
         """Einen Sektor in den Editor holen.  False = gibt es nicht (mehr)."""
@@ -1072,8 +1072,8 @@ class DiskEditorWindow(QDialog):
         marke = "  · Datenmarke F8 (gelöscht)" if span and span.deleted else ""
         id_crc = "" if not span or span.id_crc_ok else "  · ID-CRC FEHLERHAFT"
 
-        # Bei UDOS hängt hinter der Daten-CRC ein 4-Byte-Kontrollblock — der Sektor
-        # ist damit tatsächlich größer als sein ID-Feld sagt, und die beiden Zeiger
+        # Bei UDOS haengt hinter der Daten-CRC ein 4-Byte-Kontrollblock — der Sektor
+        # ist damit tatsaechlich groesser als sein ID-Feld sagt, und die beiden Zeiger
         # darin sind die Dateiverkettung.  CP/M kennt das nicht; dort bleibt die
         # Angabe weg, statt eine leere Spalte zu zeigen.
         verfahren = f"IBM-{spur.encoding}"
@@ -1081,7 +1081,7 @@ class DiskEditorWindow(QDialog):
         # Zwei Wege zur selben Frage — und beide werden gebraucht:
         #
         # * **Der Sektor selbst**: steht hinter der Daten-CRC etwas anderes als
-        #   Gap-Füllbytes, ist der Anhang belegt.  Das trägt auch eine gemischte
+        #   Gap-Fuellbytes, ist der Anhang belegt.  Das traegt auch eine gemischte
         #   oder gar nicht erkannte Diskette — dort ist es die einzige Auskunft.
         # * **Das Dateisystem**: auf einer FRISCH FORMATIERTEN UDOS-Diskette lautet
         #   der Kontrollblock nie beschriebener Sektoren `4E 4E 4E 4E`
@@ -1097,9 +1097,9 @@ class DiskEditorWindow(QDialog):
         if anhang_da:
             anhang = self.tool.sector_tail(cyl, head, index)[:UDOS_TAIL]
             verfahren += " + UDOS-Erweiterung"
-            # Nutzdaten + Kontrollblock.  Die Daten-CRC wird hier NICHT mitgezählt —
-            # bei CP/M steht sie ebenso wenig in der Größe, und sie hat ihr eigenes
-            # Feld.  Sonst zählte dieselbe Angabe je Dateisystem etwas anderes.
+            # Nutzdaten + Kontrollblock.  Die Daten-CRC wird hier NICHT mitgezaehlt —
+            # bei CP/M steht sie ebenso wenig in der Groesse, und sie hat ihr eigenes
+            # Feld.  Sonst zaehlte dieselbe Angabe je Dateisystem etwas anderes.
             groesse = f"{len(daten)}+{UDOS_TAIL} Byte"
             self.tail_feld.blockSignals(True)
             self.tail_feld.setText(anhang.hex(" ").upper())
@@ -1108,14 +1108,14 @@ class DiskEditorWindow(QDialog):
         self.info.setText(f"Format: {verfahren},  Größe: {groesse}{marke}{id_crc}")
 
         self.crc_feld.setText(f"{crc:04X}")
-        self._im_umbau = True                 # kein Auffrischen beim Befüllen
+        self._im_umbau = True                 # kein Auffrischen beim Befuellen
         self.hex.setPlainText(hexdump(daten))
         self._im_umbau = False
         self._enable(True)
         self._crc_bewerten()
         return True
 
-    # ── Navigation über die Wähler ──────────────────────────────────────────
+    # ── Navigation ueber die Waehler ──────────────────────────────────────────
 
     def _spur_von(self, seite: int, spur: int):
         """Die Spur aus der eingelesenen Ansicht; ``None``, wenn es sie nicht gibt."""
@@ -1168,7 +1168,7 @@ class DiskEditorWindow(QDialog):
         elif seite is None and spur is None:
             treffer = next((x for x in sektoren if x.index == i_alt), sektoren[0])
         else:
-            # Beim Spur-/Seitenwechsel möglichst denselben Sektor weiterzeigen.
+            # Beim Spur-/Seitenwechsel moeglichst denselben Sektor weiterzeigen.
             gleiche = next((x for x in sektoren
                             if i_alt is not None and x.index == i_alt), None)
             treffer = gleiche or sektoren[0]
@@ -1339,7 +1339,7 @@ class DiskEditorWindow(QDialog):
             self.crc_urteil.setText(f"ungültig — richtig wäre {soll:04X}")
             self.crc_urteil.setStyleSheet("color: #cc2b2b;")
 
-    # ── Knöpfe ──────────────────────────────────────────────────────────────
+    # ── Knoepfe ──────────────────────────────────────────────────────────────
 
     def reload_sector(self) -> bool:
         if self.aktuell is None:
@@ -1361,7 +1361,7 @@ class DiskEditorWindow(QDialog):
             return False
         return True
 
-    # ── Sektoren anlegen und löschen (§19.4) ────────────────────────────────
+    # ── Sektoren anlegen und loeschen (§19.4) ────────────────────────────────
 
     def _aktuelle_stelle(self) -> tuple:
         """``(Seite, Spur)`` — die gerade gezeigte Stelle, auch ohne gewählten Sektor."""
@@ -1398,7 +1398,7 @@ class DiskEditorWindow(QDialog):
         w = dialog.werte()
         _, _, getroffen = dialog.betroffen()
         if getroffen:
-            # Ihr Modell erlaubt das Überschreiben ausdrücklich — unbeabsichtigt
+            # Ihr Modell erlaubt das Ueberschreiben ausdruecklich — unbeabsichtigt
             # soll es trotzdem nicht passieren.
             antwort = QMessageBox.question(
                 self, "Überschreiben?",
@@ -1419,7 +1419,7 @@ class DiskEditorWindow(QDialog):
         self.disk_changed.emit()
         self._speichern_oder_melden()
 
-        # Den neuen Sektor gleich anzeigen — er ist ja der Grund für den Aufwand.
+        # Den neuen Sektor gleich anzeigen — er ist ja der Grund fuer den Aufwand.
         neu = next((s for s in self.tool.track(cyl, head).spans
                     if s.kind == SECTOR and s.id == w["id"]), None)
         if neu is not None:
@@ -1533,7 +1533,7 @@ class DiskEditorWindow(QDialog):
         self.disk_changed.emit()
         self._speichern_oder_melden()
 
-        # Weiterzeigen: der nächste vorhandene Sektor, sonst die leere Spur.
+        # Weiterzeigen: der naechste vorhandene Sektor, sonst die leere Spur.
         uebrig = self._sektoren(head, cyl)
         if uebrig:
             self.select_sector(head, cyl, uebrig[min(index, len(uebrig) - 1)].index)
@@ -1565,7 +1565,7 @@ class DiskEditorWindow(QDialog):
             QMessageBox.warning(self, "Nicht lesbar", "Die CRC ist 16 Bit breit.")
             return False
 
-        # Der UDOS-Nachspann gehört zum Sektor und wird deshalb mit demselben
+        # Der UDOS-Nachspann gehoert zum Sektor und wird deshalb mit demselben
         # „Save“ geschrieben — getrennt vom Datenfeld, damit die vorhandene CRC
         # dabei nicht angefasst wird.
         anhang = None
@@ -1595,9 +1595,9 @@ class DiskEditorWindow(QDialog):
         try:
             self.tool.flush()
         except K1520DiskError as e:
-            # Der häufigste Fall: ein `.img` ist ein reines Sektorabbild und hat gar
+            # Der haeufigste Fall: ein `.img` ist ein reines Sektorabbild und hat gar
             # kein CRC-Feld — eine absichtlich falsche CRC ist dort nicht darstellbar.
-            # Die Änderung steht trotzdem im Speicher; der Weg heraus ist ein
+            # Die Aenderung steht trotzdem im Speicher; der Weg heraus ist ein
             # Containerwechsel, und der steht in der Meldung.
             QMessageBox.warning(
                 self, "Nicht in die Datei geschrieben",

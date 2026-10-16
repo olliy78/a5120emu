@@ -16,7 +16,7 @@ auf die schnellste Stufe ab).
 
 from __future__ import annotations
 
-#: Nenntakt des A5120 in Hertz (deckt sich mit der Vorgabe des Kerns für die K5122).
+#: Nenntakt des A5120 in Hertz (deckt sich mit der Vorgabe des Kerns fuer die K5122).
 NENNTAKT_HZ = 2_450_000
 
 #: Derselbe Wert, wie er dem Anwender gezeigt wird.

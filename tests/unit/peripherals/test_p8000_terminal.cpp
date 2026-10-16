@@ -1,7 +1,7 @@
 /**
  * @file test_p8000_terminal.cpp
  * @brief P8000-Terminal (doc/p8000/hw_terminal.md §3–§6, Entwurf 25 P6): je Zeile der
- *        Tabellen ein Fall; Widersprüche W2/W3/W6 als benannte Annahme (siehe terminal.h).
+ *        Tabellen ein Fall; Widersprueche W2/W3/W6 als benannte Annahme (siehe terminal.h).
  */
 
 #include <gtest/gtest.h>
@@ -19,7 +19,7 @@ using T = TerminalTaste;
 
 namespace {
 
-/// Terminal im gewünschten Modus mit leerem Bild, Cursor oben links.
+/// Terminal im gewuenschten Modus mit leerem Bild, Cursor oben links.
 Terminal frisch(TerminalModus m = TerminalModus::ADM31) {
     Terminal t;
     if (m == TerminalModus::VT100) {
@@ -50,7 +50,7 @@ void cursor(const Terminal& t, int z, int s) {
     EXPECT_EQ(t.spalte(), s);
 }
 
-/// Bild mit Zeilen "Z0".."Z23" in Spalte 0.. füllen.
+/// Bild mit Zeilen "Z0".."Z23" in Spalte 0.. fuellen.
 void fuelleZeilen(Terminal& t) {
     for (int z = 0; z < 24; ++z) {
         if (t.modus() == TerminalModus::ADM31)
@@ -155,7 +155,7 @@ TEST(P8000Terminal, TastaturCtrlTabelle45)
     Terminal t = frisch();
     t.zeichenTaste('@', true);
     EXPECT_EQ(alsText(t), std::string(1, '\0'));
-    for (char c = 'A'; c <= 'Z'; ++c) {   // CTRL a/A … z/Z = 01 … 1A, Klein- wie Großbuchstabe
+    for (char c = 'A'; c <= 'Z'; ++c) {   // CTRL a/A … z/Z = 01 … 1A, Klein- wie Grossbuchstabe
         t.zeichenTaste(static_cast<uint8_t>(c), true);
         t.zeichenTaste(static_cast<uint8_t>(c + 32), true);
         EXPECT_EQ(alsText(t), std::string(2, static_cast<char>(c - 'A' + 1))) << c;
@@ -233,7 +233,7 @@ TEST(P8000Terminal, RollenNachDer24Zeile)
     Terminal t = frisch();
     t.eingabe("\x1b=" "7 ");   // Zeile 24, Spalte 1
     t.eingabe("unten");
-    t.eingabe(std::string(75, '.'));   // Zeile füllen → Umbruch am Ende der letzten Zeile
+    t.eingabe(std::string(75, '.'));   // Zeile fuellen → Umbruch am Ende der letzten Zeile
     EXPECT_EQ(zl(t, 22).substr(0, 5), "unten");
     EXPECT_EQ(zl(t, 23), "");
     cursor(t, 23, 0);
@@ -392,7 +392,7 @@ TEST(P8000Terminal, Adm31_CIN_ESC_Q)
     Terminal t = frisch();
     t.eingabe("abcdef\x1b=" "\x20\x22\x1b" "Q");
     EXPECT_EQ(zl(t, 0), "ab cdef");
-    t.eingabe("\x1b=" "\x20\x20" + std::string(77, 'z'));   // Zeile bis zum Ende füllen
+    t.eingabe("\x1b=" "\x20\x20" + std::string(77, 'z'));   // Zeile bis zum Ende fuellen
     t.eingabe("\x1b=" "\x20\x20\x1b" "Q");
     EXPECT_EQ(t.text(0)[0], ' ');
     EXPECT_EQ(t.text(0).size(), 80u);   // letztes Zeichen ging verloren, Zeile bleibt 80 breit
@@ -405,9 +405,9 @@ TEST(P8000Terminal, Adm31_HVP_ESC_Gleich)
     cursor(t, 0, 0);
     t.eingabe("\x1b=" "7o");         // Zeile 24 = 37H, Spalte 80 = 6FH
     cursor(t, 23, 79);
-    t.eingabe("\x1b=" "\x7f\x7f");   // zu groß → letzte Position
+    t.eingabe("\x1b=" "\x7f\x7f");   // zu gross → letzte Position
     cursor(t, 23, 79);
-    t.eingabe("\x1b=" "  ");         // 20H/20H zurück
+    t.eingabe("\x1b=" "  ");         // 20H/20H zurueck
     cursor(t, 0, 0);
     t.eingabe("\x1b=" "\x30\x40");
     cursor(t, 16, 32);
@@ -503,7 +503,7 @@ TEST(P8000Terminal, FeldregelAttributWirktNurInnerhalbDerZeile)
     EXPECT_EQ(t.wirksamesAttribut(0, 0), 0);
     EXPECT_EQ(t.wirksamesAttribut(0, 3), ATTR_INVERS);
     EXPECT_EQ(t.wirksamesAttribut(0, 79), ATTR_INVERS);   // bis Zeilenende
-    EXPECT_EQ(t.wirksamesAttribut(1, 0), 0);               // nächste Zeile unberührt
+    EXPECT_EQ(t.wirksamesAttribut(1, 0), 0);               // naechste Zeile unberuehrt
 }
 
 TEST(P8000Terminal, FeldAufhebungDurchGleichesAttribut0UndUeberschreiben)
@@ -512,7 +512,7 @@ TEST(P8000Terminal, FeldAufhebungDurchGleichesAttribut0UndUeberschreiben)
     t.eingabe("\x1b" "G2" "ab\x1b" "G0" "cd");
     EXPECT_EQ(t.wirksamesAttribut(0, 2), ATTR_BLINK);
     EXPECT_EQ(t.wirksamesAttribut(0, 4), 0);
-    t.eingabe("\x1e" "x");   // sichtbares Zeichen überschreibt das Pseudozeichen
+    t.eingabe("\x1e" "x");   // sichtbares Zeichen ueberschreibt das Pseudozeichen
     EXPECT_FALSE(t.zelle(0, 0).feld);
     EXPECT_EQ(t.wirksamesAttribut(0, 2), 0);
 }
@@ -664,7 +664,7 @@ TEST(P8000Terminal, Vt100_IL_VorDerCursorzeile_W6)
     EXPECT_EQ(zl(t, 2), "");
     EXPECT_EQ(zl(t, 3), "");
     EXPECT_EQ(zl(t, 4), "Z2");
-    EXPECT_EQ(zl(t, 23), "Z21");   // Überlauf unten verloren
+    EXPECT_EQ(zl(t, 23), "Z21");   // Ueberlauf unten verloren
     cursor(t, 2, 4);
 }
 
@@ -735,7 +735,7 @@ TEST(P8000Terminal, Vt100_SaveRestoreCursor)
 TEST(P8000Terminal, Vt100_SteuerzeichenInnerhalbEinerFolge)
 {
     Terminal t = vt();
-    t.eingabe("\x1b[3\r;4H");   // CR läuft mit, die Folge bleibt intakt
+    t.eingabe("\x1b[3\r;4H");   // CR laeuft mit, die Folge bleibt intakt
     cursor(t, 2, 3);
 }
 
@@ -743,7 +743,7 @@ TEST(P8000Terminal, Adm31UndVt100DeutenEscEUnterschiedlich)
 {
     Terminal a = frisch();
     a.eingabe("abc\x1b" "E");
-    EXPECT_EQ(zl(a, 0), "");        // LIN: Leerzeile eingefügt
+    EXPECT_EQ(zl(a, 0), "");        // LIN: Leerzeile eingefuegt
     Terminal v = vt();
     v.eingabe("abc\x1b" "E");
     EXPECT_EQ(zl(v, 0), "abc");     // NEL
@@ -754,7 +754,7 @@ TEST(P8000Terminal, Adm31UndVt100DeutenEscEUnterschiedlich)
 
 namespace {
 
-/// Gegenseite einer Karte: der Gast sendet aus `gast`, empfängt in `empfangen`.
+/// Gegenseite einer Karte: der Gast sendet aus `gast`, empfaengt in `empfangen`.
 struct KarteStub : k1520::serial::SerialAnschluss {
     std::deque<uint8_t> gast;
     std::vector<uint8_t> empfangen;
@@ -790,7 +790,7 @@ TEST(P8000TerminalAnschluss, ZeichenKommenImZeichentaktAnDerAn)
     a.takt(1);
     EXPECT_EQ(zl(t, 0), "a");
     a.takt(999);
-    EXPECT_EQ(zl(t, 0), "a");   // erst nach einer Zeichenzeit das nächste
+    EXPECT_EQ(zl(t, 0), "a");   // erst nach einer Zeichenzeit das naechste
     a.takt(1);
     EXPECT_EQ(zl(t, 0), "ab");
     a.takt(1000);
@@ -799,7 +799,7 @@ TEST(P8000TerminalAnschluss, ZeichenKommenImZeichentaktAnDerAn)
 }
 
 /// Firmware `p8t.init.s` (serielle Eingabe): 00H/7FH verworfen, Bit 7 ausgeblendet — WEGA-getty
-/// sendet „login:" mit Software-Parität in Bit 7 (P15).
+/// sendet „login:" mit Software-Paritaet in Bit 7 (P15).
 TEST(P8000TerminalAnschluss, Bit7WirdAusgeblendetNulUndDelVerworfen)
 {
     KarteStub k;

@@ -58,8 +58,8 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
 {
     // ── ZVE1 (Haupt-CPU) mit K1520-Bus und Q240-Schutz verdrahten ───────────
     // Alle Speicherzugriffe von ZVE1 werden durch die Q240-Schutzlogik (spa_)
-    // gefiltert.  Lesezugriffe auf geschützte Segmente geben 0xFF zurück und
-    // lösen eine NMI aus; Schreibzugriffe werden verworfen.
+    // gefiltert.  Lesezugriffe auf geschuetzte Segmente geben 0xFF zurueck und
+    // loesen eine NMI aus; Schreibzugriffe werden verworfen.
     // Wenn /SPS-ESR aktiv ist (spa_.isTableWriteEnabled()), gehen Lese-/
     // Schreibzugriffe in die Schutztabelle, nicht in den Speicher.
     cpu_.readByte = [this](uint16_t a) -> uint8_t {
@@ -82,8 +82,8 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
         }
         bus_.memWrite(a, d);
         // /WR-Strobe (Port A A5) NACH dem Schreiben pulsen: die Speicher-Ausbau-
-        // messung des Lade-ROMs und HARDYs RDY-Test lösen ihren Interrupt genau
-        // hierüber aus und prüfen in der ISR, ob das Byte angekommen ist.
+        // messung des Lade-ROMs und HARDYs RDY-Test loesen ihren Interrupt genau
+        // hierueber aus und pruefen in der ISR, ob das Byte angekommen ist.
         pulseWriteStrobe();
     };
     // Volle E/A-Adresse auf den Bus: AB8–15 wertet der Attributspeicher des EM256 aus.
@@ -92,18 +92,18 @@ K2526::K2526(K1520Bus& bus, const A5120Config& cfg)
     cpu_.retiCallback = [this]()                     { bus_.signalRETI(); };
 
     // ── ZVE2 (DMA-CPU) mit K1520-Bus verdrahten (ohne Q240-Schutz) ──────────
-    // ZVE2 teilt denselben Bus mit ZVE1.  Der DMA-Code läuft unter OS-Kontrolle
+    // ZVE2 teilt denselben Bus mit ZVE1.  Der DMA-Code laeuft unter OS-Kontrolle
     // und darf auf alle Speicherbereiche zugreifen (kein Q240-Filter).
-    // Kein retiCallback: ZVE2 führt keine Interrupt-Service-Routinen aus.
+    // Kein retiCallback: ZVE2 fuehrt keine Interrupt-Service-Routinen aus.
     zve2_.readByte  = [this](uint16_t a)           { return bus_.memRead(a); };
     zve2_.writeByte = [this](uint16_t a, uint8_t d){ bus_.memWrite(a, d); };
     zve2_.readPort  = [this](uint16_t p)           { return bus_.ioRead(p); };
     zve2_.writePort = [this](uint16_t p, uint8_t d){ bus_.ioWrite(p, d); };
 
-    // ── BS-PIO Port-A-Ausgangs-Callback: A7 = MEMDI1/2 der Rückverdrahtung ──
+    // ── BS-PIO Port-A-Ausgangs-Callback: A7 = MEMDI1/2 der Rueckverdrahtung ──
     // NICHT Bus-/MEMDI (X1 C09): das zieht je Zugriff ein Vorrangspeicher (EM),
-    // s. K1520Bus::memRead.  Auf MEMDI1/2 hört am A5120 keine Gruppe — deshalb
-    // läuft HARDYs MEMDI-Test (A7 setzen, weiterrechnen) durch.
+    // s. K1520Bus::memRead.  Auf MEMDI1/2 hoert am A5120 keine Gruppe — deshalb
+    // laeuft HARDYs MEMDI-Test (A7 setzen, weiterrechnen) durch.
     bs_pio_.setPortAOutputCallback([this](uint8_t data) {
         memdi12_ = (data >> 7) & 1;
         if (memdi12_cb_) memdi12_cb_(memdi12_);
@@ -154,52 +154,52 @@ void K2526::powerOn()
     LOG_INFO("K2526", "Power-on: Lade-ROM aktiv (0000H-03FFH)");
 
     // ── Periphere Bausteine der Karte auf /RESET-Zustand ───────────────────
-    // Der System-CTC (Q302) muss mit: sonst zählt er nach einem Reset aus dem
+    // Der System-CTC (Q302) muss mit: sonst zaehlt er nach einem Reset aus dem
     // laufenden Betrieb mit der IM2-Vektorbasis des alten OS weiter und der erste
     // Timer-Interrupt nach dem `EI` des Lade-ROMs springt ins Leere.
     ctc_.reset();
     if (ubus_geraet_) ubus_geraet_->ubusReset();   // Tastatur K7636 wird mit eingeschaltet
     bs_pio_.reset();   // wird direkt darunter neu programmiert (Mode 3 + Richtungen)
 
-    // ── Q240 Schutztabelle zurücksetzen ────────────────────────────────────
+    // ── Q240 Schutztabelle zuruecksetzen ────────────────────────────────────
     spa_.reset();
     sps_ind_      = false;
-    // Port-A-Eingänge: pull-high, ABER die dynamischen Bus-Strobes /M1 (A0) und
+    // Port-A-Eingaenge: pull-high, ABER die dynamischen Bus-Strobes /M1 (A0) und
     // /RDY (A6) liegen im laufenden System praktisch dauernd aktiv (aktiv-LOW):
     // /M1 pulst bei jedem Opcode-Fetch, /RDY bei jeder Speicherantwort. Der PIO
     // tastet sie pegelbasiert ab; damit HARDYs PIO-Selbsttest (Maske FEH: A0
-    // aktiv-LOW → Interrupt) auslöst, werden sie als aktiv (0) modelliert.
+    // aktiv-LOW → Interrupt) ausloest, werden sie als aktiv (0) modelliert.
     // /WR (A5) ist dagegen ein echter STROBE und bleibt hier inaktiv (high) — er
-    // wird pro ZVE1-Schreibzyklus gepulst (pulseWriteStrobe()). Nur so löst die
+    // wird pro ZVE1-Schreibzyklus gepulst (pulseWriteStrobe()). Nur so loest die
     // Ausbaumessung des Lade-ROMs bzw. HARDYs MEMDI-RDY-Test (Maske 9FH: A5&A6
     // aktiv-LOW → Interrupt) DURCH den Schreibbefehl aus statt schon beim EI davor.
-    // Die Bits sind ausschließlich Interruptquellen — HARDY liest Port A sonst nur
-    // in seiner MEMDI-Toggle-Routine, wo dank Richtungsmaske (0x7F) nur Bit7 zählt.
+    // Die Bits sind ausschliesslich Interruptquellen — HARDY liest Port A sonst nur
+    // in seiner MEMDI-Toggle-Routine, wo dank Richtungsmaske (0x7F) nur Bit7 zaehlt.
     port_a_inputs_= 0xFF & ~0x41u;   // A0=/M1, A6=/RDY aktiv-LOW; A5=/WR ruhend high
     int_bs_active_= false;
     zve2_wait_    = false;
     zve2_reset_   = true;    // ZVE2 (DMA-CPU) am Power-on in Reset halten (Port 04H
-                            //   bit0=0) — sonst würde ein Neustart aus einem bereits
+                            //   bit0=0) — sonst wuerde ein Neustart aus einem bereits
                             //   gebooteten Zustand die alte ZVE2 stehen lassen und der
                             //   Boot-DMA-Handshake nicht neu anlaufen (Kaltstart-Fix).
     shutdown_req_ = false;
-    LOG_INFO("K2526", "Q240: Schutztabelle zurückgesetzt (alle Segmente ungeschützt)");
+    LOG_INFO("K2526", "Q240: Schutztabelle zurueckgesetzt (alle Segmente ungeschuetzt)");
 
     // ── BS-PIO im Bitmode (Mode 3) initialisieren ─────────────────────────
     // Port A (08H Data, 09H Ctrl): Richtungsmaske 0x7F
-    //   A7=MEMDI1/2 = Ausgang(0), A6-A0 = Eingänge(1) → 0111 1111 = 0x7F
+    //   A7=MEMDI1/2 = Ausgang(0), A6-A0 = Eingaenge(1) → 0111 1111 = 0x7F
     bs_pio_.ioWrite(1, 0xCF);  // Port A: Mode 3 (11xx1111)
     bs_pio_.ioWrite(1, 0x7F);  // Port A: Richtungsmaske
 
     // Port B (0AH Data, 0BH Ctrl): Richtungsmaske 0xE2
     //   B0=/LD-ROM     Ausgang(0), B1=/INT-BS    Eingang(1)
     //   B2=/SPS-ESR    Ausgang(0), B3=/WAIT-ZVE2 Ausgang(0)
-    //   B4=/SA         Ausgang(0), B5-B7 Config  Eingänge(1)
+    //   B4=/SA         Ausgang(0), B5-B7 Config  Eingaenge(1)
     //   → 1110 0010 = 0xE2
     bs_pio_.ioWrite(3, 0xCF);  // Port B: Mode 3
     bs_pio_.ioWrite(3, 0xE2);  // Port B: Richtungsmaske
 
-    // Konfigurationsbrücken (B5-B7) und /INT-BS (B1, inaktiv=1) einspeisen
+    // Konfigurationsbruecken (B5-B7) und /INT-BS (B1, inaktiv=1) einspeisen
     bs_pio_.portBWrite(buildPortBInputs());
 
     LOG_INFO("K2526", "BS-PIO Mode 3 init: PortA-dir=0x7F, PortB-dir=0xE2");
@@ -216,8 +216,8 @@ bool K2526::clockTick(int ticks)
     // Advance the CTC by the number of CPU T-states the last instruction took
     // (not once per instruction): the CTC prescaler divides the *system clock*,
     // so ticking per-instruction ran every timer ~6x too slow.  clockTick(ticks)
-    // ist semantik-identisch zur Pro-Takt-Schleife, überspringt aber die teure
-    // Iteration, wenn im Fenster keine ZC/TO-Flanke fällt (s. Z80CTC).
+    // ist semantik-identisch zur Pro-Takt-Schleife, ueberspringt aber die teure
+    // Iteration, wenn im Fenster keine ZC/TO-Flanke faellt (s. Z80CTC).
     return ctc_.clockTick(ticks);
 }
 
@@ -246,7 +246,7 @@ uint8_t K2526::ioRead(uint8_t port)
         if (ubus_geraet_ && ubus_geraet_->ubusRead(port, result))
             return result;
         switch (port) {
-            case 0x01:  // /UCS2: Tastengültigkeitsabfrage
+            case 0x01:  // /UCS2: Tastengueltigkeitsabfrage
                 result = ubus_kbd_valid_;
                 LOG_DEBUG("K2526", "U-Bus IN 01H (/UCS2 Kbd-Valid) => 0x%02X", result);
                 break;
@@ -297,24 +297,24 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
             case 0x00:
                 // /INT-BS: OS-Ebenen-Wechsel anfordern.
                 // Aktiviert den /INT-BS-Eingang (B1=0) der BS-PIO, was einen
-                // BS-PIO-Interrupt auslöst, sofern der OS ihn konfiguriert hat.
-                // Der int_bs_active_-Zustand bleibt bis zum nächsten /RES-SPA erhalten.
+                // BS-PIO-Interrupt ausloest, sofern der OS ihn konfiguriert hat.
+                // Der int_bs_active_-Zustand bleibt bis zum naechsten /RES-SPA erhalten.
                 int_bs_active_ = true;
                 bs_pio_.portBWrite(buildPortBInputs());
                 LOG_INFO("K2526", "U-Bus OUT 00H (/INT-BS): OS-Ebenen-Wechsel angefordert");
                 break;
 
             case 0x02:
-                // /RES-SPA: Speicherschutz-Verletzungsindikator zurücksetzen.
-                // Löscht SPS-Ind (A3) und die NMI-Anforderung des Q240.
+                // /RES-SPA: Speicherschutz-Verletzungsindikator zuruecksetzen.
+                // Loescht SPS-Ind (A3) und die NMI-Anforderung des Q240.
                 // Wird vom OS-NMI-Handler aufgerufen, um die Verletzung zu quittieren.
                 spa_.resetViolation();
                 sps_ind_       = false;
-                int_bs_active_ = false;     // /INT-BS-Latch mit zurücksetzen
+                int_bs_active_ = false;     // /INT-BS-Latch mit zuruecksetzen
                 updatePortAInputs();
                 bus_.clearNMI();
                 bs_pio_.portBWrite(buildPortBInputs());
-                LOG_INFO("K2526", "U-Bus OUT 02H (/RES-SPA): SPS-Indikator zurückgesetzt");
+                LOG_INFO("K2526", "U-Bus OUT 02H (/RES-SPA): SPS-Indikator zurueckgesetzt");
                 break;
 
             case 0x03:  // /UCS4: Fehlerlampe / INS-MODE-Anzeige
@@ -328,10 +328,10 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
                 //   bit0=1 → ZVE2 (neu) starten bei PC=0000H.
                 // Wichtig: Der Boot-ROM ruft CALL 0194 (mit OUT 04H, bit0=1) VOR
                 // JEDER DMA-Runde auf. ZVE2 muss daher bei bit0=1 IMMER neu von
-                // PC=0000H starten (→ JP 01DD lädt cyl/sector aus [03F3]/[03F5]
-                // frisch), nicht nur beim Übergang Reset→Lauf. Sonst liefe die
+                // PC=0000H starten (→ JP 01DD laedt cyl/sector aus [03F3]/[03F5]
+                // frisch), nicht nur beim Uebergang Reset→Lauf. Sonst liefe die
                 // zweite Runde mit veralteten IDAM-Registern (cyl der Vorrunde)
-                // und die IDAM-Suche fände nie einen Treffer. ZVE2 führt erst
+                // und die IDAM-Suche faende nie einen Treffer. ZVE2 fuehrt erst
                 // aus, sobald /BUSRQ assertiert ist (BUSAK-Freigabe, HW Abschn. 6.4).
                 if (!(data & 0x01)) {
                     if (!zve2_reset_) {
@@ -372,8 +372,8 @@ void K2526::ioWrite(uint8_t port, uint8_t data)
 //
 // Dekodiert alle Ausgangsbits von Port B nach dem folgenden Schema:
 //   B0 /LD-ROM    (active low):  1=ROM aktiv,  0=ROM aus
-//   B2 /SPS-ESR   (active low):  0=Q240 Schreibmodus, 1=normale Prüfung
-//   B3 /WAIT-ZVE2 (active low):  0=ZVE2 wartet, 1=ZVE2 läuft
+//   B2 /SPS-ESR   (active low):  0=Q240 Schreibmodus, 1=normale Pruefung
+//   B3 /WAIT-ZVE2 (active low):  0=ZVE2 wartet, 1=ZVE2 laeuft
 //   B4 /SA        (active low):  0=Netzausschaltung angefordert
 
 /**
@@ -404,19 +404,19 @@ void K2526::onBSPIOPortBOut(uint8_t data)
 
     // ── B2: /SPS-ESR – Q240 Schutztabellen-Schreibmodus ─────────────────
     // B2=0 (active low): ZVE1-Speicherzugriffe gehen in Schutztabelle.
-    // B2=1: normaler Betrieb, Q240 prüft Zugriffe gegen Schutztabelle.
+    // B2=1: normaler Betrieb, Q240 prueft Zugriffe gegen Schutztabelle.
     bool sps_esr = !(data & 0x04);
     if (spa_.isTableWriteEnabled() != sps_esr) {
         spa_.enableTableWrite(sps_esr);
         LOG_INFO("K2526", "Q240 /SPS-ESR=%d: Schutztabellen-%s (PortB=0x%02X)",
                  (int)!sps_esr,
-                 sps_esr ? "Schreibmodus aktiv" : "Prüfmodus aktiv",
+                 sps_esr ? "Schreibmodus aktiv" : "Pruefmodus aktiv",
                  data);
     }
 
     // ── B3: /WAIT-ZVE2 – ZVE2 anhalten/freigeben ─────────────────────────
-    // B3=0 (active low): zve2Step() gibt 0 zurück (keine Ausführung).
-    // B3=1: ZVE2 läuft normal.
+    // B3=0 (active low): zve2Step() gibt 0 zurueck (keine Ausfuehrung).
+    // B3=1: ZVE2 laeuft normal.
     bool new_wait = !(data & 0x08);
     if (new_wait != zve2_wait_) {
         zve2_wait_ = new_wait;
@@ -470,24 +470,24 @@ void K2526::updatePortAInputs()
 }
 
 /**
- * @brief /WR-Strobe (Port A A5) für einen ZVE1-Schreibzyklus pulsen.
+ * @brief /WR-Strobe (Port A A5) fuer einen ZVE1-Schreibzyklus pulsen.
  *
- * LOW während des Zyklus, danach wieder HIGH. Der PIO latcht im Bitmodus eine
- * einmal erfüllte Interruptbedingung (`pending`), das kurze Fenster genügt also.
+ * LOW waehrend des Zyklus, danach wieder HIGH. Der PIO latcht im Bitmodus eine
+ * einmal erfuellte Interruptbedingung (`pending`), das kurze Fenster genuegt also.
  */
 void K2526::pulseWriteStrobe()
 {
-    // Heißer Pfad (jeder ZVE1-Schreibzugriff): nur arbeiten, wenn Port A überhaupt
+    // Heisser Pfad (jeder ZVE1-Schreibzugriff): nur arbeiten, wenn Port A ueberhaupt
     // scharf ist. Im Normalbetrieb ist die Port-A-Interruptquelle abgeschaltet.
     if (!bs_pio_.portAIntEnabled()) return;
 
     const bool int_before = bs_pio_.hasInterrupt();
-    port_a_inputs_ &= ~0x20u;              // /WR aktiv (LOW) — Schreibzyklus läuft
+    port_a_inputs_ &= ~0x20u;              // /WR aktiv (LOW) — Schreibzyklus laeuft
     bs_pio_.portAWrite(port_a_inputs_);
     port_a_inputs_ |= 0x20u;               // /WR wieder inaktiv (HIGH)
     bs_pio_.portAWrite(port_a_inputs_);
     // Der Strobe entsteht ausserhalb eines I/O-Zugriffs; die Interrupt-Chain der
-    // Run-Loop würde ihn im Schnellpfad überspringen (vgl. K5122-Index-IRQ).
+    // Run-Loop wuerde ihn im Schnellpfad ueberspringen (vgl. K5122-Index-IRQ).
     if (!int_before && bs_pio_.hasInterrupt())
         bus_.markIntDirty();
 }
@@ -513,10 +513,10 @@ uint8_t K2526::buildPortBInputs() const
 // ─── InterruptSlave – Interne Daisy-Chain: IEI → CTC → BS-PIO → IEO ─────────
 //
 // Originalschaltung (Abb. 1):
-//   CTC am Ende der 1. Prioritätenkette (Systembus)    – höhere Prio
-//   BS-PIO am Ende der 2. Prioritätenkette (Koppelbus) – niedrigere Prio
+//   CTC am Ende der 1. Prioritaetenkette (Systembus)    – hoehere Prio
+//   BS-PIO am Ende der 2. Prioritaetenkette (Koppelbus) – niedrigere Prio
 //
-// Emulatorvereinfachung: eine zusammengeführte Kette (CTC vor BS-PIO).
+// Emulatorvereinfachung: eine zusammengefuehrte Kette (CTC vor BS-PIO).
 
 /**
  * @brief Set /IEI from the upstream interrupt chain.

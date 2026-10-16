@@ -12,7 +12,7 @@ namespace k1520::serial::net {
 
 namespace {
 
-// Eigene ASCII-Prädikate statt <cctype>: unabhängig von der Locale, und Bytes
+// Eigene ASCII-Praedikate statt <cctype>: unabhaengig von der Locale, und Bytes
 // ≥ 128 (UTF-8 im Feld) sind damit sicher KEIN Hostnamenzeichen.
 bool istZiffer(char c) { return c >= '0' && c <= '9'; }
 bool istBuchstabe(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }

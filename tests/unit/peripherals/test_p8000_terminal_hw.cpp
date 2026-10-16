@@ -93,7 +93,7 @@ TEST(P8000TerminalHw, ZeilenDmaBedientJedeAnforderungUndBildHat62Komma8Hz)
     EXPECT_LE(bilder, 63u);
     EXPECT_EQ(t.dmaAnforderungen() - a0, (t.dmaBedient() - d0));
     EXPECT_GE(t.dmaAnforderungen() - a0, (bilder - 1) * 24);
-    // Zeilentabelle 1780H: 24 Einträge, Zeile n bei 1000H + 50H·n (nach dem Einschalten)
+    // Zeilentabelle 1780H: 24 Eintraege, Zeile n bei 1000H + 50H·n (nach dem Einschalten)
     for (int z = 0; z < 24; ++z) EXPECT_EQ(t.zeilenAdresse(z), 0x1000 + 0x50 * z) << z;
 }
 
@@ -110,7 +110,7 @@ TEST(P8000TerminalHw, ZellenDes8275UndCursor)
     EXPECT_EQ(t.bwsByte(0, 79), 0x80);
     EXPECT_TRUE(t.bildZelle(0, 79).empty);
     EXPECT_TRUE(t.zelle(0, 79).feld);
-    // Cursor blinkt (Unterstrich): über 1 s mal sichtbar, mal nicht, immer an (1, 0)
+    // Cursor blinkt (Unterstrich): ueber 1 s mal sichtbar, mal nicht, immer an (1, 0)
     int an = 0, aus = 0;
     for (int i = 0; i < 64; ++i) {
         t.laufeBis(t.takte() + 16 * MS);
@@ -161,7 +161,7 @@ TEST(P8000TerminalHw, OhneTastaturBleibtDieFirmwareInDerTastaturwarte)
     t.hostByte('X');
     t.laufeBis(t.takte() + 50 * MS);
     for (int z = 1; z < 24; ++z) EXPECT_EQ(zl(t, z), "");
-    EXPECT_EQ(t.watchdogResets(), 0u);   // Bild läuft weiter, VSYN kommt
+    EXPECT_EQ(t.watchdogResets(), 0u);   // Bild laeuft weiter, VSYN kommt
 }
 
 TEST(P8000TerminalHw, HostzeichenKlingelUndSchieberegister)
@@ -174,7 +174,7 @@ TEST(P8000TerminalHw, HostzeichenKlingelUndSchieberegister)
     EXPECT_EQ(t.klingel(), 1u);
     EXPECT_EQ(t.cursorZeile(), 1);
     EXPECT_EQ(t.cursorSpalte(), 5);
-    // Tastatur: Byte voll → IRQ1 → Firmware liest und setzt per C000H zurück
+    // Tastatur: Byte voll → IRQ1 → Firmware liest und setzt per C000H zurueck
     t.tastaturByte(0x1E);   // „a" Make
     EXPECT_TRUE(t.tastaturRegisterVoll());
     t.laufeBis(t.takte() + 5 * MS);
@@ -347,7 +347,7 @@ TEST(P8000TerminalHw, ZeichensatzWechselGiltFuerDasGanzeBild)
     auto zelle = [&] { uint8_t m[12]; for (int l = 0; l < 12; ++l) m[l] = muster(e.hw(), 0, 0, l); return std::vector<uint8_t>(m, m + 12); };
     const std::vector<uint8_t> ezs(P8T_ZG_EZS + '[' * 16, P8T_ZG_EZS + '[' * 16 + 12);
     const std::vector<uint8_t> dzs(P8T_ZG_DZS + '[' * 16, P8T_ZG_DZS + '[' * 16 + 12);
-    ASSERT_NE(ezs, dzs);                          // „[" ↔ „Ä"
+    ASSERT_NE(ezs, dzs);                          // „[" ↔ „Ae"
     EXPECT_EQ(zelle(), ezs);
     ASSERT_TRUE(e.taste(TerminalTaste::SI_SO));   // Strobe 2000H
     e.tastenAbwarten();

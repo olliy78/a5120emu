@@ -2,16 +2,16 @@
  * @file disk_medium.h
  * @brief DiskMedium – DAS interne, bitstrom-orientierte Diskettenabbild.
  *
- * Der Emulator hält eine gemountete Diskette **vollständig im Speicher**: je (Zylinder,
+ * Der Emulator haelt eine gemountete Diskette **vollstaendig im Speicher**: je (Zylinder,
  * Kopf) eine @ref TrackImage, also der decodierte Vollumdrehungsstrom mit Gaps, Sync,
  * Adressmarken (@ref TrackImage::marks), Datenfeldern und **echten CRCs**.  Dateiformate
  * (`.img` / `.hfe` / `.dmk`) sind nur noch **Container-Codecs** davor (@ref ImageCodec);
- * sie arbeiten nie direkt auf der Datei, während das Gastsystem läuft.
+ * sie arbeiten nie direkt auf der Datei, waehrend das Gastsystem laeuft.
  *
  * Daraus folgt, was mit den alten dateigebundenen Backends nicht ging:
- *   - Fremd-Dateisysteme bleiben erhalten (UDOS hängt je Sektor einen Kontrollblock
+ *   - Fremd-Dateisysteme bleiben erhalten (UDOS haengt je Sektor einen Kontrollblock
  *     **hinter** die Daten-CRC — ein rohes Sektorimage verliert ihn, s. @ref rawCompatible);
- *   - das Containerformat ist nachträglich wechselbar (`DiskImage::saveAs`);
+ *   - das Containerformat ist nachtraeglich wechselbar (`DiskImage::saveAs`);
  *   - eine **echte Leerdiskette** (unformatierte Spuren) ist darstellbar und kann vom
  *     Gastsystem formatiert werden.
  *
@@ -30,47 +30,47 @@
 
 /**
  * @enum TrackState
- * @brief Verhältnis einer Spur im Abbild zu ihrem Original.
+ * @brief Verhaeltnis einer Spur im Abbild zu ihrem Original.
  *
  * Bei einer **datei**gebundenen Diskette gibt es @ref Unknown nicht: der Container-Codec
- * füllt beim Laden jede Spur.  Der Zustand wird erst bei einer **physischen** Diskette
+ * fuellt beim Laden jede Spur.  Der Zustand wird erst bei einer **physischen** Diskette
  * interessant, die spurweise nachgeladen wird
  * (doc/design/14_physische_diskette.md §4, doc/design/09_floppy_drive.md §12.2).
  */
 enum class TrackState : uint8_t {
     Unknown,  ///< noch nie vom Original gelesen — der Inhalt ist **bedeutungslos**
-    Clean,    ///< gelesen und seither nicht geändert
-    Dirty     ///< im Abbild geändert, noch nicht zurückgeschrieben
+    Clean,    ///< gelesen und seither nicht geaendert
+    Dirty     ///< im Abbild geaendert, noch nicht zurueckgeschrieben
 };
 
 /**
  * @class TrackLoader
- * @brief Nachlader für unbekannte Spuren — die Brücke zum echten Laufwerk.
+ * @brief Nachlader fuer unbekannte Spuren — die Bruecke zum echten Laufwerk.
  *
  * Implementiert von @ref TrackSync.  Das Medium kennt hiervon nur die zwei Methoden;
- * es weiß nichts über Warteschlangen, Fäden, USB oder Greaseweazle.
+ * es weiss nichts ueber Warteschlangen, Faeden, USB oder Greaseweazle.
  */
 class TrackLoader {
 public:
     virtual ~TrackLoader() = default;
 
     /// @brief Spur beschaffen — **blockiert**, bis sie da ist (oder es scheitert).
-    /// @return false, wenn sie nicht beschafft werden konnte (Zeitüberschreitung,
-    ///         Gerätefehler, Abmeldung).  Der Aufrufer bekommt dann die leere Spur.
+    /// @return false, wenn sie nicht beschafft werden konnte (Zeitueberschreitung,
+    ///         Geraetefehler, Abmeldung).  Der Aufrufer bekommt dann die leere Spur.
     virtual bool ensureLoaded(uint8_t cyl, uint8_t head) = 0;
 
-    /// @brief Meldung, dass eine Spur im Abbild geändert wurde (Rückführung anmelden).
+    /// @brief Meldung, dass eine Spur im Abbild geaendert wurde (Rueckfuehrung anmelden).
     virtual void trackChanged(uint8_t cyl, uint8_t head) = 0;
 };
 
 /**
  * @struct DiskGeometry
- * @brief Geometrieabfrage für UI/Validierung (Zylinder × Köpfe + vorherrschendes Verfahren).
+ * @brief Geometrieabfrage fuer UI/Validierung (Zylinder × Koepfe + vorherrschendes Verfahren).
  */
 struct DiskGeometry {
     uint8_t  num_cyls  = 0;
     uint8_t  num_heads = 0;
-    bool     uniform   = false;          ///< true = alle Spuren gleich (Info für UI)
+    bool     uniform   = false;          ///< true = alle Spuren gleich (Info fuer UI)
     Encoding encoding  = Encoding::MFM;  ///< vorherrschendes Verfahren der Diskette
 };
 
@@ -88,7 +88,7 @@ public:
     DiskMedium(uint8_t num_cyls, uint8_t num_heads, Encoding default_enc);
 
     /**
-     * @brief Geometrie ändern; vorhandene Spuren bleiben an ihrer (cyl, head)-Position.
+     * @brief Geometrie aendern; vorhandene Spuren bleiben an ihrer (cyl, head)-Position.
      *
      * Wird von den Codecs beim Laden benutzt (die Datei bestimmt die Geometrie) und
      * beim Anlegen einer Leerdiskette (das DriveProfile bestimmt sie).
@@ -100,60 +100,60 @@ public:
     Encoding defaultEncoding() const { return default_enc_; }
     void     setDefaultEncoding(Encoding e) { default_enc_ = e; }
 
-    /// @brief Nenndrehzahl des Laufwerks, für das die Diskette gedacht ist (300 = 5,25″,
-    ///        360 = 8″).  Nur für Flussabbilder: eine HFE-Spur ist genau eine Umdrehung
-    ///        lang, und wie viele Zellen das sind, hängt an der Drehzahl (AP-F1).
+    /// @brief Nenndrehzahl des Laufwerks, fuer das die Diskette gedacht ist (300 = 5,25″,
+    ///        360 = 8″).  Nur fuer Flussabbilder: eine HFE-Spur ist genau eine Umdrehung
+    ///        lang, und wie viele Zellen das sind, haengt an der Drehzahl (AP-F1).
     ///        Gesetzt von DiskImage::create (aus der Laufwerksliste des Formats) und
     ///        HfeCodec::load (Kopf); sonst 300.
     uint16_t nominalRpm() const { return rpm_; }
     void     setNominalRpm(uint16_t rpm) { rpm_ = (rpm == 360) ? 360 : 300; }
 
-    /// @brief Geometrie + vorherrschendes Verfahren (für UI/Mount-Prüfung).
+    /// @brief Geometrie + vorherrschendes Verfahren (fuer UI/Mount-Pruefung).
     DiskGeometry geometry() const;
 
     /**
-     * @brief Spur (cyl, head); leeres TrackImage, wenn außerhalb der Geometrie.
+     * @brief Spur (cyl, head); leeres TrackImage, wenn ausserhalb der Geometrie.
      *
-     * **Der Nachladepunkt.**  Hängt ein @ref TrackLoader am Medium und ist die Spur
+     * **Der Nachladepunkt.**  Haengt ein @ref TrackLoader am Medium und ist die Spur
      * @ref TrackState::Unknown, wird sie hier beschafft — der Aufruf **blockiert** so
      * lange (≈ 0,5–0,8 s an einem echten Laufwerk).  Das ist gewollt: es ist die einzige
-     * Stelle, durch die jeder Verbraucher geht (Controller über @ref FloppyDriveV2,
-     * DiskTool über `DiskVolume`, Erkennung über `GeometryProbe`).
+     * Stelle, durch die jeder Verbraucher geht (Controller ueber @ref FloppyDriveV2,
+     * DiskTool ueber `DiskVolume`, Erkennung ueber `GeometryProbe`).
      *
-     * Für medienweite Reihenläufe **@ref peek benutzen** — sonst zieht eine beiläufige
+     * Fuer medienweite Reihenlaeufe **@ref peek benutzen** — sonst zieht eine beilaeufige
      * Statusabfrage die ganze Diskette ein (doc/design/09_floppy_drive.md §12.3).
      */
     const TrackImage& track(uint8_t cyl, uint8_t head) const;
 
-    /// @brief Wie @ref track, aber **ohne** je nachzuladen (Reihenläufe, Codecs, Anzeige).
+    /// @brief Wie @ref track, aber **ohne** je nachzuladen (Reihenlaeufe, Codecs, Anzeige).
     const TrackImage& peek(uint8_t cyl, uint8_t head) const;
 
     /**
-     * @brief Modifizierbarer Zugriff auf eine Spur; markiert sie sofort als geändert.
+     * @brief Modifizierbarer Zugriff auf eine Spur; markiert sie sofort als geaendert.
      *
      * Der Aufrufer darf die Spur in-place patchen (Schreibpfad des Controllers).
-     * Liegt (cyl, head) außerhalb der Geometrie, wird eine Dummy-Spur geliefert.
+     * Liegt (cyl, head) ausserhalb der Geometrie, wird eine Dummy-Spur geliefert.
      */
     TrackImage& mutableTrack(uint8_t cyl, uint8_t head);
 
-    /// @brief Spur ersetzen (Formatierlauf, Codec-Ladepfad); markiert sie als geändert.
+    /// @brief Spur ersetzen (Formatierlauf, Codec-Ladepfad); markiert sie als geaendert.
     void setTrack(uint8_t cyl, uint8_t head, TrackImage t);
 
-    /// @brief Spur als geändert markieren (nach externem Patch über @ref mutableTrack).
+    /// @brief Spur als geaendert markieren (nach externem Patch ueber @ref mutableTrack).
     void markDirty(uint8_t cyl, uint8_t head);
 
     bool dirty() const { return dirty_any_; }
     bool trackDirty(uint8_t cyl, uint8_t head) const;
-    /// @brief Alle Dirty-Bits löschen (nach erfolgreichem Speichern).
+    /// @brief Alle Dirty-Bits loeschen (nach erfolgreichem Speichern).
     void clearDirty();
 
     /**
-     * @brief Änderungszähler — steigt bei **jeder** Spuränderung.
+     * @brief Aenderungszaehler — steigt bei **jeder** Spuraenderung.
      *
      * Der Autosave (@ref DiskImage::autoFlush) erkennt daran, ob seit der letzten
-     * Prüfung noch geschrieben wurde, und wartet damit auf eine **Schreibpause**
+     * Pruefung noch geschrieben wurde, und wartet damit auf eine **Schreibpause**
      * statt blind alle n Takte die ganze Datei neu zu codieren.  Ohne das schriebe
-     * ein Formatier-/Kopierlauf (hunderte Spuren am Stück) die Image-Datei dutzendfach.
+     * ein Formatier-/Kopierlauf (hunderte Spuren am Stueck) die Image-Datei dutzendfach.
      */
     uint64_t revision() const { return revision_; }
 
@@ -167,47 +167,47 @@ public:
 
     /// @brief true, wenn **keine** Spur mehr unbekannt ist.
     ///
-    /// Nur dann sind @ref formatted und @ref rawCompatible endgültige Aussagen über die
-    /// Diskette; solange nicht, sind sie Aussagen über das bisher Gelesene.
+    /// Nur dann sind @ref formatted und @ref rawCompatible endgueltige Aussagen ueber die
+    /// Diskette; solange nicht, sind sie Aussagen ueber das bisher Gelesene.
     bool complete() const;
 
     /// @brief Zahl der noch unbekannten Spuren (Anzeige „x von y gelesen").
     size_t unknownCount() const;
 
     /**
-     * @brief Alle Spuren für unbekannt erklären — beim Binden an eine physische Quelle.
+     * @brief Alle Spuren fuer unbekannt erklaeren — beim Binden an eine physische Quelle.
      *
      * Der Inhalt bleibt stehen (er ist ohnehin bedeutungslos), damit die Geometrie und
-     * die Puffer nicht neu gebaut werden müssen.
+     * die Puffer nicht neu gebaut werden muessen.
      */
     void markAllUnknown();
 
     /**
      * @brief Ladepfad des Nachladers: Inhalt setzen und die Spur als @ref TrackState::Clean
-     *        führen — **ohne** Dirty-Markierung und ohne @ref revision zu erhöhen.
+     *        fuehren — **ohne** Dirty-Markierung und ohne @ref revision zu erhoehen.
      *
      * Der Unterschied zu @ref setTrack ist der springende Punkt: eine frisch **gelesene**
-     * Spur ist nicht geändert, sie darf also nicht zurückgeschrieben werden.
+     * Spur ist nicht geaendert, sie darf also nicht zurueckgeschrieben werden.
      */
     void loadTrack(uint8_t cyl, uint8_t head, TrackImage t);
 
-    /// @brief Eine einzelne Spur für sauber erklären (Rückführung erledigt).
+    /// @brief Eine einzelne Spur fuer sauber erklaeren (Rueckfuehrung erledigt).
     void clearTrackDirty(uint8_t cyl, uint8_t head);
 
     /**
-     * @brief Zustand aus einer Momentaufnahme zurückholen (Transaktions-Rücknahme).
+     * @brief Zustand aus einer Momentaufnahme zurueckholen (Transaktions-Ruecknahme).
      *
      * Anders als eine schlichte Zuweisung markiert dies jede Spur, deren Inhalt sich
-     * dadurch **ändert**, als geändert.  Bei einer physischen Diskette ist das
-     * unerlässlich: was schon auf der echten Diskette steht, holt keine Kopie im
-     * Speicher zurück — nur die Rückführung stellt es richtig
+     * dadurch **aendert**, als geaendert.  Bei einer physischen Diskette ist das
+     * unerlaesslich: was schon auf der echten Diskette steht, holt keine Kopie im
+     * Speicher zurueck — nur die Rueckfuehrung stellt es richtig
      * (doc/design/09_floppy_drive.md §11.3).
      */
     void restoreFrom(const DiskMedium& snapshot);
 
-    /// @brief Trägt mindestens eine Spur Adressmarken? (false = unformatierte Leerdiskette)
+    /// @brief Traegt mindestens eine Spur Adressmarken? (false = unformatierte Leerdiskette)
     ///
-    /// Urteilt über das **bisher Bekannte** — siehe @ref complete.
+    /// Urteilt ueber das **bisher Bekannte** — siehe @ref complete.
     bool formatted() const;
 
     /**
@@ -215,34 +215,34 @@ public:
      *
      * Kriterien (siehe doc/design/09_floppy_drive.md §5):
      *   1. mindestens ein Sektor (@ref TrackCodec::parseTrack),
-     *   2. alle ID- und Daten-CRCs gültig,
-     *   3. hinter jeder Daten-CRC ausschließlich Gap-Füllbytes (0x4E / 0xFF / 0x00)
+     *   2. alle ID- und Daten-CRCs gueltig,
+     *   3. hinter jeder Daten-CRC ausschliesslich Gap-Fuellbytes (0x4E / 0xFF / 0x00)
      *      **oder** ein reiner Schreibnachlauf auf einer MFM-Spur: erstes Byte 4E/4F
-     *      (das geschriebene Lückenbyte), letztes Byte versetzte Lücke (Drehung von
+     *      (das geschriebene Lueckenbyte), letztes Byte versetzte Luecke (Drehung von
      *      4E oder 90H) — die Naht, an der ein an Ort und Stelle geschriebenes
-     *      Datenfeld in die alte Aufzeichnung übergeht (doc/design/16_k8915.md AP-E5b).
+     *      Datenfeld in die alte Aufzeichnung uebergeht (doc/design/16_k8915.md AP-E5b).
      *
-     * Punkt 3 ist der Auslöser: UDOS schreibt dort seinen Sektorkontrollblock
-     * (Verkettungszeiger), der in einem `.img` ersatzlos verschwände.  Dessen erstes
-     * Byte ist ein Sektorindex oder FFH, nie 4E/4F — deshalb hält die Ausnahme ihn nicht
-     * für einen Nachlauf.
-     * Das Ergebnis wird je Spur gecacht und bei Änderung der Spur verworfen.
+     * Punkt 3 ist der Ausloeser: UDOS schreibt dort seinen Sektorkontrollblock
+     * (Verkettungszeiger), der in einem `.img` ersatzlos verschwaende.  Dessen erstes
+     * Byte ist ein Sektorindex oder FFH, nie 4E/4F — deshalb haelt die Ausnahme ihn nicht
+     * fuer einen Nachlauf.
+     * Das Ergebnis wird je Spur gecacht und bei Aenderung der Spur verworfen.
      */
     bool trackRawCompatible(uint8_t cyl, uint8_t head) const;
 
     /**
      * @brief Darf das gesamte Medium als `.img` gespeichert werden?
      *
-     * true, wenn das Medium überhaupt @ref formatted ist **und jede nicht-leere Spur**
-     * @ref trackRawCompatible ist.  **Leere (unformatierte) Spuren sind zulässig** —
-     * sie erscheinen im `.img` als Füllbytes; viele echte Images tragen ein bis drei
+     * true, wenn das Medium ueberhaupt @ref formatted ist **und jede nicht-leere Spur**
+     * @ref trackRawCompatible ist.  **Leere (unformatierte) Spuren sind zulaessig** —
+     * sie erscheinen im `.img` als Fuellbytes; viele echte Images tragen ein bis drei
      * leere Zusatzspuren am Ende.  Eine **komplett** unformatierte Diskette (Leerdiskette)
-     * ist dagegen nie `.img`-fähig: ein rohes Sektorimage kann „nicht formatiert" nicht
-     * ausdrücken.
+     * ist dagegen nie `.img`-faehig: ein rohes Sektorimage kann „nicht formatiert" nicht
+     * ausdruecken.
      */
     bool rawCompatible() const;
 
-    /// @brief Grund, warum das Medium nicht `.img`-fähig ist (für Fehlermeldungen).
+    /// @brief Grund, warum das Medium nicht `.img`-faehig ist (fuer Fehlermeldungen).
     /// @return "" wenn alles passt, sonst z. B. "Spur 12/1" oder "unformatiert".
     std::string rawIncompatibleReason() const;
 
@@ -253,7 +253,7 @@ private:
     bool valid(uint8_t cyl, uint8_t head) const {
         return cyl < num_cyls_ && head < num_heads_;
     }
-    /// @brief Rechnet @ref trackRawCompatible für eine Spur aus (ohne Cache).
+    /// @brief Rechnet @ref trackRawCompatible fuer eine Spur aus (ohne Cache).
     static bool computeRawCompatible(const TrackImage& t);
 
     uint8_t  num_cyls_    = 0;
@@ -264,12 +264,12 @@ private:
     std::vector<TrackImage> tracks_;
     std::vector<uint8_t>    dirty_;       ///< je Spur 0/1
     /// je Spur 0/1 — 0 = @ref TrackState::Unknown.  Vorgabe **1**: eine aus einer Datei
-    /// geladene oder frisch angelegte Diskette ist vollständig bekannt.
+    /// geladene oder frisch angelegte Diskette ist vollstaendig bekannt.
     std::vector<uint8_t>    known_;
     TrackLoader*            loader_    = nullptr;   ///< nullptr = Dateibindung
     bool                    dirty_any_ = false;
-    uint64_t                revision_  = 0;   ///< +1 je Spuränderung (Autosave-Ruhepause)
+    uint64_t                revision_  = 0;   ///< +1 je Spuraenderung (Autosave-Ruhepause)
 
-    /// Tri-state-Cache für @ref trackRawCompatible: -1 unbekannt, 0 nein, 1 ja.
+    /// Tri-state-Cache fuer @ref trackRawCompatible: -1 unbekannt, 0 nein, 1 ja.
     mutable std::vector<int8_t> raw_ok_;
 };

@@ -93,7 +93,7 @@ uint8_t Mc80Zve::memRead(uint16_t a)
 void Mc80Zve::memWrite(uint16_t a, uint8_t d)
 {
     if (a < RAM_BASIS) return;                       // ROM schluckt den Schreibzyklus
-    if (schreibschutz_ && a >= SCHUTZ_BASIS) return; // geschützt: wirkungslos
+    if (schreibschutz_ && a >= SCHUTZ_BASIS) return; // geschuetzt: wirkungslos
     ram_[a - RAM_BASIS] = d;
 }
 

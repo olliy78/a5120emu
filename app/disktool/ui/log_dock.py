@@ -24,7 +24,7 @@ class LogDock(QDockWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__("Protokoll", parent)
-        self.setObjectName("protokoll")          # für saveState()
+        self.setObjectName("protokoll")          # fuer saveState()
         self.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
 
         self.text = QPlainTextEdit()

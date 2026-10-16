@@ -24,10 +24,10 @@ import os
 
 from app import paths
 
-#: Interne Schlüssel — stehen so in der Konfiguration (``machine.raf``).
+#: Interne Schluessel — stehen so in der Konfiguration (``machine.raf``).
 KEINE = "none"
 
-#: (Schlüssel, Anzeigename) in der Reihenfolge des Auswahlfelds.
+#: (Schluessel, Anzeigename) in der Reihenfolge des Auswahlfelds.
 TYPEN = [
     (KEINE, "keine"),
     ("raf128", "RAF 128 (128 KByte)"),
@@ -41,7 +41,7 @@ TIPP = ("RAM-Floppy des ZWG der AdW auf E/A 88H/89H.  Unter CP/A und SCPX mit "
         "eingebautem RAF-Treiber legt M: selbst an.  Der Inhalt übersteht RESET.  "
         "Ein Wechsel schaltet die Maschine aus und neu ein.")
 
-#: Hinweistext am Stand-by-Kästchen.
+#: Hinweistext am Stand-by-Kaestchen.
 STANDBY_TIPP = ("Wie die Stand-by-Versorgung 5PG: der Inhalt der RAM-Disk wird beim "
                 "Beenden, beim Ausschalten und vor jedem Neuaufbau der Maschine in "
                 "den Konfigurationsordner geschrieben und beim Einschalten wieder "

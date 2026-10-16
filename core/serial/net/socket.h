@@ -1,13 +1,13 @@
 /**
  * @file socket.h
- * @brief Dünne Socket-Hülle für POSIX und Winsock2 (Entwurf 19 §5, §7).
+ * @brief Duenne Socket-Huelle fuer POSIX und Winsock2 (Entwurf 19 §5, §7).
  *
  * Alles hier ist nicht blockierend und kennt weder Telnet noch die Maschine; es ist die
- * unterste Schicht des späteren `SerialHub`.  Die Kopfdatei zieht bewusst KEINE
- * Systemkopfdateien herein (kein `winsock2.h`/`windows.h` in fremden Übersetzungseinheiten).
+ * unterste Schicht des spaeteren `SerialHub`.  Die Kopfdatei zieht bewusst KEINE
+ * Systemkopfdateien herein (kein `winsock2.h`/`windows.h` in fremden Uebersetzungseinheiten).
  *
  * Fehler werden als `Fehler` (Systemcode + Text) gemeldet; `belegt` unterscheidet
- * „Port schon vergeben" von allem anderen, weil nur das die Portsuche (§7.2) auslöst.
+ * „Port schon vergeben" von allem anderen, weil nur das die Portsuche (§7.2) ausloest.
  *
  * @see doc/design/19_serielle_schnittstellen.md
  */
@@ -32,12 +32,12 @@ struct Fehler {
 };
 
 /// Winsock einmal je Prozess starten (unter POSIX ein No-op).  Mehrfach aufrufbar und
-/// threadsicher; der spätere `SerialHub` ruft sie vor dem ersten Socket.  Es gibt
-/// bewusst kein `WSACleanup` — der Prozess räumt auf, und ein Paar aus Start/Ende würde
+/// threadsicher; der spaetere `SerialHub` ruft sie vor dem ersten Socket.  Es gibt
+/// bewusst kein `WSACleanup` — der Prozess raeumt auf, und ein Paar aus Start/Ende wuerde
 /// mit anderen Nutzern von Winsock im Prozess (Python-`socket`) kollidieren.
 bool netzStarten(Fehler* f = nullptr);
 
-/// Besitzender Socket (nur verschiebbar, schließt im Destruktor).
+/// Besitzender Socket (nur verschiebbar, schliesst im Destruktor).
 class Socket {
 public:
     Socket() = default;
@@ -69,37 +69,37 @@ bool keinVerzoegern(SockFd fd);   ///< TCP_NODELAY (Terminalbetrieb)
 /// Ergebnis eines Lausch-Versuchs.
 struct Lauscher {
     Socket sock;
-    int    port = 0;       ///< TATSÄCHLICHER Port (bei Port 0 vom System gewählt)
-    Fehler fehler;         ///< gesetzt (code != 0), wenn `sock` ungültig ist
-    bool   dualStack = false;   ///< `::` mit V6ONLY=0 (sonst Rückfall 0.0.0.0)
+    int    port = 0;       ///< TATSAECHLICHER Port (bei Port 0 vom System gewaehlt)
+    Fehler fehler;         ///< gesetzt (code != 0), wenn `sock` ungueltig ist
+    bool   dualStack = false;   ///< `::` mit V6ONLY=0 (sonst Rueckfall 0.0.0.0)
 };
 
 /// Ein Versuch: an Port `port` (0 = beliebig) auf ALLEN Schnittstellen lauschen —
-/// Dual-Stack `::` (`IPV6_V6ONLY=0`), Rückfall `0.0.0.0`, wenn IPv6 fehlt.
+/// Dual-Stack `::` (`IPV6_V6ONLY=0`), Rueckfall `0.0.0.0`, wenn IPv6 fehlt.
 /// POSIX: `SO_REUSEADDR` (sonst schiebt ein alter TIME_WAIT den Port weiter);
-/// Windows: `SO_EXCLUSIVEADDRUSE` (dort würde `SO_REUSEADDR` einen belegten Port
+/// Windows: `SO_EXCLUSIVEADDRUSE` (dort wuerde `SO_REUSEADDR` einen belegten Port
 /// „erfolgreich" doppelt binden).  Der Socket ist nicht blockierend.
-/// Bei belegtem Port: `fehler.belegt == true`, KEIN Rückfall auf IPv4 (der Dual-Stack-Bind
+/// Bei belegtem Port: `fehler.belegt == true`, KEIN Rueckfall auf IPv4 (der Dual-Stack-Bind
 /// scheitert auch bei einem IPv4-Belegten Port mit EADDRINUSE).
 Lauscher lauschen(int port);
 
-/// §7.2 (Start von Hand): ab `ab` aufwärts bis 65535, solange `belegt`; jeder andere
-/// Fehler bricht ab.  Ist alles belegt, bleibt `sock` ungültig und `fehler.belegt` gesetzt.
+/// §7.2 (Start von Hand): ab `ab` aufwaerts bis 65535, solange `belegt`; jeder andere
+/// Fehler bricht ab.  Ist alles belegt, bleibt `sock` ungueltig und `fehler.belegt` gesetzt.
 Lauscher lauschenMitSuche(int ab);
 
-/// Ergebnis der reinen Prüfung (§7.4a: Start beim Programmstart, nichts lauschen lassen).
+/// Ergebnis der reinen Pruefung (§7.4a: Start beim Programmstart, nichts lauschen lassen).
 struct PortPruefung {
     bool frei = false;      ///< `port` war frei
-    int  vorschlag = 0;     ///< `port` wenn frei, sonst nächster freier darüber; 0 = keiner
+    int  vorschlag = 0;     ///< `port` wenn frei, sonst naechster freier darueber; 0 = keiner
     Fehler fehler;          ///< anderer Fehler als „belegt" (dann `vorschlag == 0`)
 };
 
-/// Ist Port `port` frei?  Sonst der nächste freie darüber (bis 65535).  Bindet zur Probe
-/// und schließt sofort wieder — wie `lauschen`, also mit denselben Sockeloptionen, damit
-/// „frei" hier und „bindbar" beim späteren Starten dasselbe heißen.
+/// Ist Port `port` frei?  Sonst der naechste freie darueber (bis 65535).  Bindet zur Probe
+/// und schliesst sofort wieder — wie `lauschen`, also mit denselben Sockeloptionen, damit
+/// „frei" hier und „bindbar" beim spaeteren Starten dasselbe heissen.
 PortPruefung portPruefen(int port);
 
-/// Eine anstehende Verbindung annehmen; ungültiger Socket, wenn keine da ist.
+/// Eine anstehende Verbindung annehmen; ungueltiger Socket, wenn keine da ist.
 /// Der neue Socket ist nicht blockierend und hat `TCP_NODELAY`.
 Socket annehmen(SockFd lauscher, Fehler* f = nullptr);
 
@@ -109,14 +109,14 @@ Socket annehmen(SockFd lauscher, Fehler* f = nullptr);
 /// Leer, wenn der Socket nicht verbunden ist.
 std::string gegenstelle(SockFd fd);
 
-// ── Auflösung und Verbinden ──────────────────────────────────────────────────
+// ── Aufloesung und Verbinden ──────────────────────────────────────────────────
 
-/// Eine aufgelöste Adresse (undurchsichtig, `sockaddr_storage`-groß).
+/// Eine aufgeloeste Adresse (undurchsichtig, `sockaddr_storage`-gross).
 struct Ziel {
     unsigned char roh[128] = {};
     int           laenge  = 0;
     int           familie = 0;    ///< AF_INET / AF_INET6
-    std::string   text;           ///< numerisch, für Meldungen
+    std::string   text;           ///< numerisch, fuer Meldungen
     bool ist6() const;
 };
 
@@ -126,19 +126,19 @@ struct Ziel {
 std::vector<Ziel> aufloesen(const std::string& host, int port, Fehler* f = nullptr);
 
 /// Nicht blockierendes `connect` mit Zeitgrenze (ms).  Bei Erfolg ein verbundener,
-/// nicht blockierender Socket mit `TCP_NODELAY`; sonst ungültig und `f` gesetzt.
+/// nicht blockierender Socket mit `TCP_NODELAY`; sonst ungueltig und `f` gesetzt.
 Socket verbinden(const Ziel& ziel, int fristMs, Fehler* f = nullptr);
 
-/// Die Adressen der Reihe nach probieren; `fristMs` gilt für ALLE Versuche zusammen
-/// (Dauerversuch des Clients, §7.1: „länger als 1000 ms → gescheitert").  Fehler =
+/// Die Adressen der Reihe nach probieren; `fristMs` gilt fuer ALLE Versuche zusammen
+/// (Dauerversuch des Clients, §7.1: „laenger als 1000 ms → gescheitert").  Fehler =
 /// der des letzten Versuchs.
 Socket verbindenAlle(const std::vector<Ziel>& ziele, int fristMs, Fehler* f = nullptr);
 
 // ── Ein-/Ausgabe ────────────────────────────────────────────────────────────
 
 enum class IoStatus {
-    Ok,           ///< `n` Bytes übertragen (bei `empfangen` > 0)
-    Warten,       ///< würde blockieren (EWOULDBLOCK) — `n == 0`
+    Ok,           ///< `n` Bytes uebertragen (bei `empfangen` > 0)
+    Warten,       ///< wuerde blockieren (EWOULDBLOCK) — `n == 0`
     Geschlossen,  ///< Gegenstelle hat geschlossen (nur `empfangen`)
     Fehler,       ///< harter Fehler, siehe `fehler`
 };
@@ -158,13 +158,13 @@ struct PollEintrag {
     SockFd fd = kUngueltig;
     bool   lesen = false;        ///< Wunsch: auf Lesbarkeit (bzw. eingehende Verbindung) warten
     bool   schreiben = false;    ///< Wunsch: auf Schreibbarkeit (bzw. fertiges connect) warten
-    bool   lesbar = false;       ///< Ergebnis (auch bei Hangup, damit `empfangen` es erfährt)
+    bool   lesbar = false;       ///< Ergebnis (auch bei Hangup, damit `empfangen` es erfaehrt)
     bool   beschreibbar = false;
     bool   fehler = false;       ///< POLLERR/POLLNVAL
 };
 
-/// Wartet höchstens `timeoutMs` (-1 = unbegrenzt) und füllt die Ergebnisfelder.
-/// Rückgabe: Zahl der Einträge mit Ereignis, -1 bei Fehler.  EINTR wird als 0 gemeldet.
+/// Wartet hoechstens `timeoutMs` (-1 = unbegrenzt) und fuellt die Ergebnisfelder.
+/// Rueckgabe: Zahl der Eintraege mit Ereignis, -1 bei Fehler.  EINTR wird als 0 gemeldet.
 int warten(std::vector<PollEintrag>& eintraege, int timeoutMs);
 
 // ── Weck-Socketpaar ─────────────────────────────────────────────────────────

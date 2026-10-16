@@ -1,12 +1,12 @@
 /**
  * @file test_serial_hub.cpp
- * @brief `SerialHub` über echtes Loopback-TCP (Entwurf 19 §7, §11): Telnet- und
+ * @brief `SerialHub` ueber echtes Loopback-TCP (Entwurf 19 §7, §11): Telnet- und
  *        RFC-2217-Rundlauf zwischen zwei Hubs, Dauerversuch des Clients, Abweisen am
  *        belegten Server, Portsuche/Wiederaufnahme, Sperrregel, Loop, Datei.
  *
- * **Nie feste Ports** (ctest -j): Server auf Port 0 bzw. ab einem zufälligen hohen Port,
- * der tatsächliche Port kommt aus dem Status.  Gewartet wird auf ZUSTÄNDE mit Frist,
- * nicht mit festen Pausen — die Maschine „läuft" dabei im Testfaden (`Uhrwerk`).
+ * **Nie feste Ports** (ctest -j): Server auf Port 0 bzw. ab einem zufaelligen hohen Port,
+ * der tatsaechliche Port kommt aus dem Status.  Gewartet wird auf ZUSTAENDE mit Frist,
+ * nicht mit festen Pausen — die Maschine „laeuft" dabei im Testfaden (`Uhrwerk`).
  */
 
 #include <gtest/gtest.h>
@@ -41,7 +41,7 @@ using std::chrono::milliseconds;
 
 namespace {
 
-/// Eine „Maschine": Attrappe + Hub (die Attrappe lebt länger als der Hub).
+/// Eine „Maschine": Attrappe + Hub (die Attrappe lebt laenger als der Hub).
 struct Seite {
     AttrappeAnschluss a;
     SerialHub hub;
@@ -63,7 +63,7 @@ struct Uhrwerk {
             }
         }
     }
-    /// Bis `bedingung` gilt, höchstens `ms` Uhrzeit.
+    /// Bis `bedingung` gilt, hoechstens `ms` Uhrzeit.
     bool warte(const std::function<bool()>& bedingung, int ms) {
         const auto ende = Uhr::now() + milliseconds(ms);
         while (Uhr::now() < ende) {
@@ -104,7 +104,7 @@ uint16_t freierPort() {
     return static_cast<uint16_t>(p.vorschlag);
 }
 
-/// Server A und Client B verbinden (Betriebsart b); false = Zeitüberschreitung.
+/// Server A und Client B verbinden (Betriebsart b); false = Zeitueberschreitung.
 bool verbinde(Uhrwerk& u, Seite& a, Seite& b, Betriebsart art) {
     if (!a.hub.konfigurieren(0, server(art)) || !a.hub.start(0)) return false;
     const uint16_t port = a.st().port_aktiv;
@@ -141,7 +141,7 @@ TEST(SerialHub, TelnetRundlaufZwischenZweiHubs) {
     }, 5000)) << "B: '" << b.a.gelesenText() << "' A: '" << a.a.gelesenText() << "'";
     EXPECT_EQ(a.st().bytes_gesendet, hin.size());
     EXPECT_EQ(b.st().bytes_empfangen, hin.size());
-    // Telnet: Eingänge = „verbunden".
+    // Telnet: Eingaenge = „verbunden".
     EXPECT_TRUE(a.a.cts);
     EXPECT_TRUE(a.a.dcd);
     EXPECT_EQ(a.a.ueberlauf, 0u);
@@ -177,9 +177,9 @@ TEST(SerialHub, Rfc2217RundlaufMitNullmodemLeitungenUndBaudhinweis) {
         return sa.baud_gegenseite == 1200 && sa.baud_abweichend &&
                sb.baud_gegenseite == 9600 && sb.baud_abweichend;
     }, 3000)) << a.st().baud_gegenseite << " / " << b.st().baud_gegenseite;
-    EXPECT_EQ(a.st().baud_nenn, 9600u);   // die Anfrage hat den Gast nicht verändert
+    EXPECT_EQ(a.st().baud_nenn, 9600u);   // die Anfrage hat den Gast nicht veraendert
 
-    // B hebt RTS → A sieht CTS; Daten fließen in beide Richtungen.
+    // B hebt RTS → A sieht CTS; Daten fliessen in beide Richtungen.
     b.a.rtsAus = true;
     ASSERT_TRUE(u.warte([&] { return a.a.cts; }, 3000));
     a.a.sende("vom Server");
@@ -211,7 +211,7 @@ TEST(SerialHub, Rfc2217ZeigtFormatUndLeitungenDerGegenseite) {
                (sb.leitungen_gegenseite_bekannt & CTS);
     }, 3000));
     const SerialStatus sa = a.st(), sb = b.st();
-    // Server sieht den Wunsch des Clients: 7E1 (Parität 2 = gerade, 2 halbe Stoppbits).
+    // Server sieht den Wunsch des Clients: 7E1 (Paritaet 2 = gerade, 2 halbe Stoppbits).
     EXPECT_EQ(sa.daten_gegenseite, 7);
     EXPECT_EQ(sa.paritaet_gegenseite, 2);
     EXPECT_EQ(sa.stopp_halbe_gegenseite, 2);
@@ -255,7 +255,7 @@ TEST(SerialHub, BelegterPortVonHandSuchtWeiterAutomatischKommtNurEinVorschlag) {
     EXPECT_EQ(st.zustand, Zustand::Aus);
     EXPECT_GT(st.port_vorschlag, p);
     EXPECT_NE(st.meldung.find("belegt"), std::string::npos) << st.meldung;
-    EXPECT_EQ(s.hub.konfig(0).port, p);   // das Feld trägt die Oberfläche nach
+    EXPECT_EQ(s.hub.konfig(0).port, p);   // das Feld traegt die Oberflaeche nach
 
     SerialKonfig k = s.hub.konfig(0);
     k.port = st.port_vorschlag;
@@ -272,7 +272,7 @@ TEST(SerialHub, ImBetriebSindNurDieGesperrtenFelderGesperrt) {
     SerialKonfig k = s.hub.konfig(0);
     k.port = 4711;
     EXPECT_FALSE(s.hub.konfigurieren(0, k));
-    EXPECT_EQ(s.hub.konfig(0).port, 0u);   // nichts übernommen
+    EXPECT_EQ(s.hub.konfig(0).port, 0u);   // nichts uebernommen
     k = s.hub.konfig(0);
     k.betriebsart = Betriebsart::Rfc2217;
     EXPECT_FALSE(s.hub.konfigurieren(0, k));
@@ -298,14 +298,14 @@ TEST(SerialHub, LoopBeendetDieVerbindungUndSperrtDenStart) {
     SerialKonfig k = a.hub.konfig(0);
     k.loop = true;
     ASSERT_TRUE(a.hub.konfigurieren(0, k));
-    EXPECT_EQ(a.zustand(), Zustand::Aus);   // Server hört auf zu lauschen
+    EXPECT_EQ(a.zustand(), Zustand::Aus);   // Server hoert auf zu lauschen
     EXPECT_FALSE(a.hub.start(0));
     EXPECT_FALSE(a.hub.startAuto(0));
     EXPECT_EQ(a.zustand(), Zustand::Aus);
     // Der Client merkt die Trennung und geht in den Dauerversuch.
     // … und zwar sofort, nicht erst, wenn der I/O-Faden des Servers von selbst aufwacht.
     EXPECT_TRUE(u.warte([&] { return b.zustand() == Zustand::Verbindet; }, 500));
-    // Loop wirkt: der Gast hört sich selbst.
+    // Loop wirkt: der Gast hoert sich selbst.
     a.a.sende("echo");
     EXPECT_TRUE(u.warte([&] { return a.a.gelesenText() == "echo"; }, 3000));
 }
@@ -335,7 +335,7 @@ TEST(SerialClientDauerversuch, VerbindetBeimNaechstenTaktNachdemDerServerStartet
     SerialStatus sb = b.st();
     EXPECT_EQ(sb.zustand, Zustand::Verbindet);
     EXPECT_GE(sb.versuche, 2u);
-    EXPECT_LE(sb.versuche, 4u);   // alle 1000 ms, nicht öfter
+    EXPECT_LE(sb.versuche, 4u);   // alle 1000 ms, nicht oefter
     EXPECT_FALSE(sb.meldung.empty()) << "letzter Grund fehlt";
 
     ASSERT_TRUE(a.hub.konfigurieren(0, server(Betriebsart::Telnet, port)));
@@ -343,7 +343,7 @@ TEST(SerialClientDauerversuch, VerbindetBeimNaechstenTaktNachdemDerServerStartet
     if (a.st().port_aktiv != port) GTEST_SKIP() << "Port inzwischen fremd belegt";
     const auto t0 = Uhr::now();
     ASSERT_TRUE(u.warte([&] { return b.zustand() == Zustand::Verbunden; }, 3000));
-    EXPECT_LE(Uhr::now() - t0, milliseconds(1500)) << "nicht beim nächsten Takt verbunden";
+    EXPECT_LE(Uhr::now() - t0, milliseconds(1500)) << "nicht beim naechsten Takt verbunden";
     EXPECT_TRUE(u.warte([&] { return a.zustand() == Zustand::Verbunden; }, 1000));
     EXPECT_EQ(b.st().versuche, 0u);
     EXPECT_TRUE(b.st().meldung.empty());
@@ -383,7 +383,7 @@ TEST(SerialClientDauerversuch, TrennenBeendetDieVersucheSofort) {
 
     ASSERT_TRUE(a.hub.konfigurieren(0, server(Betriebsart::Telnet, port)));
     ASSERT_TRUE(a.hub.start(0));
-    u.laufe(1500);   // länger als ein Versuchsabstand
+    u.laufe(1500);   // laenger als ein Versuchsabstand
     EXPECT_EQ(a.zustand(), Zustand::Lauscht);
     EXPECT_EQ(b.zustand(), Zustand::Aus);
 }
@@ -401,7 +401,7 @@ TEST(SerialClientDauerversuch, ZweiterClientWirdAbgewiesenDerErsteBleibt) {
     net::Socket zweiter = net::verbindenAlle(ziele, 2000, &f);
     ASSERT_TRUE(zweiter) << f.text;
 
-    // Der Server nimmt an, schreibt „belegt" und schließt.
+    // Der Server nimmt an, schreibt „belegt" und schliesst.
     std::string empfangen;
     bool zu = false;
     const auto ende = Uhr::now() + milliseconds(3000);
@@ -442,20 +442,20 @@ TEST(SerialDatei, SchreibtUeberschreibtUndHaengtBeimWiederaufnehmenAn) {
     ASSERT_TRUE(s.hub.start(0));
     EXPECT_EQ(s.zustand(), Zustand::Verbunden);
     s.a.sende("abc");
-    // Ohne Beenden: spätestens nach 0,5 s steht es in der Datei.
+    // Ohne Beenden: spaetestens nach 0,5 s steht es in der Datei.
     EXPECT_TRUE(u.warte([&] { return dateiInhalt(pfad) == "abc"; }, 3000)) << dateiInhalt(pfad);
-    EXPECT_TRUE(s.a.cts);   // Eingänge wie „verbunden"
+    EXPECT_TRUE(s.a.cts);   // Eingaenge wie „verbunden"
     s.hub.stop(0);
     EXPECT_EQ(s.zustand(), Zustand::Aus);
 
-    // Wiederaufnahme: anhängend.
+    // Wiederaufnahme: anhaengend.
     ASSERT_TRUE(s.hub.startAuto(0));
     s.a.sende("def");
     ASSERT_TRUE(u.warte([&] { return s.a.gastSendet.empty(); }, 3000));
     s.hub.stop(0);   // schreibt den Rest
     EXPECT_EQ(dateiInhalt(pfad), "abcdef");
 
-    // Start von Hand: überschreibend.
+    // Start von Hand: ueberschreibend.
     ASSERT_TRUE(s.hub.start(0));
     s.a.sende("g");
     ASSERT_TRUE(u.warte([&] { return s.a.gastSendet.empty(); }, 3000));
@@ -470,7 +470,7 @@ TEST(SerialDatei, NichtOeffnbareDateiIstEinFehler) {
     SerialKonfig k;
     k.betriebsart = Betriebsart::Datei;
     ASSERT_TRUE(s.hub.konfigurieren(0, k));
-    EXPECT_FALSE(s.hub.start(0));   // keine Datei gewählt
+    EXPECT_FALSE(s.hub.start(0));   // keine Datei gewaehlt
     EXPECT_EQ(s.zustand(), Zustand::Fehler);
 
     k.datei = k1520test::tempPath("k1520_test_gibt_es_nicht") + "/unter/druck.txt";
@@ -500,9 +500,9 @@ TEST(SerialDatei, SchreibfehlerSetztDenZustandFehler) {
 
 // ─── Fehlerwege und Gegenseiten ohne Hub (AP-T1b) ──────────────────────────
 //
-// Die Rundläufe oben sprechen Hub gegen Hub — beide Seiten benehmen sich.  Hier ist die
+// Die Rundlaeufe oben sprechen Hub gegen Hub — beide Seiten benehmen sich.  Hier ist die
 // Gegenseite ein roher Socket im Testfaden: sie schickt zerrissene oder unsinnige
-// Telnet-Sequenzen, bricht mitten im Rückstau ab oder spricht RFC 2217 Befehl für Befehl.
+// Telnet-Sequenzen, bricht mitten im Rueckstau ab oder spricht RFC 2217 Befehl fuer Befehl.
 
 namespace {
 
@@ -557,7 +557,7 @@ std::string muster(size_t n) {
 }
 
 /// Schnelles Format (1 Takt je Bit, 10 Takte je Zeichen): je `takt` ein Zeichen je
-/// Richtung — hält die Rückstau-Tests kurz.
+/// Richtung — haelt die Rueckstau-Tests kurz.
 SerialFormat schnell() { return serialFormatRechnen(1, 8, 0, 2, 1); }
 
 }  // namespace
@@ -571,7 +571,7 @@ TEST(SerialHubGegenseite, TelnetZerrisseneUndUnsinnigeSequenzenKommenSauberAn) {
     ASSERT_TRUE(c.s);
     ASSERT_TRUE(u.warte([&] { return a.zustand() == Zustand::Verbunden; }, 3000));
 
-    // Jedes Stück einzeln über die Leitung, damit der Codec wirklich mitten in einer
+    // Jedes Stueck einzeln ueber die Leitung, damit der Codec wirklich mitten in einer
     // Sequenz neu ansetzen muss.
     auto stueck = [&](const std::string& s) {
         ASSERT_TRUE(c.schick(s));
@@ -579,11 +579,11 @@ TEST(SerialHubGegenseite, TelnetZerrisseneUndUnsinnigeSequenzenKommenSauberAn) {
     };
     stueck("A\xFF");                 // IAC IAC = 0xFF, zerrissen
     stueck("\xFF" "B");
-    stueck("\xFF");                  // WILL ECHO in drei Stücken
+    stueck("\xFF");                  // WILL ECHO in drei Stuecken
     stueck("\xFB");
     stueck("\x01" "C");
     const std::string sb = std::string("\xFF\xFA\x99", 3) + std::string(3000, 'x') + "\xFF\xF0";
-    stueck(sb.substr(0, 1500));      // Unterverhandlung über SUB_MAX, zerrissen
+    stueck(sb.substr(0, 1500));      // Unterverhandlung ueber SUB_MAX, zerrissen
     stueck(sb.substr(1500));
     stueck("\xFF\xF1" "D");          // NOP
     stueck("\xFF\xFD\x63" "E");      // DO <unbekannte Option> → WONT, keine Nutzdaten
@@ -610,7 +610,7 @@ TEST(SerialHubGegenseite, AbbruchImRueckstauVerliertNichtsUndDerServerLauschtWei
     ASSERT_TRUE(u.warte([&] { return a.zustand() == Zustand::Verbunden; }, 3000));
 
     // Der Gast liest NICHT: FIFO voll → Empfangspuffer voll → der Socket wird nicht mehr
-    // gelesen (Rückstau).  12 KiB passen sonst in keinen Puffer des Wandlers.
+    // gelesen (Rueckstau).  12 KiB passen sonst in keinen Puffer des Wandlers.
     const std::string m = muster(12000);
     ASSERT_TRUE(c.schick(m));
     uint64_t z = u.z;
@@ -626,7 +626,7 @@ TEST(SerialHubGegenseite, AbbruchImRueckstauVerliertNichtsUndDerServerLauschtWei
     EXPECT_EQ(a.a.fifo.size(), 3u);
     EXPECT_EQ(a.a.ueberlauf, 0u);
 
-    // Die Gegenseite legt auf, während der Rückstau steht — sauber (FIN): erst die
+    // Die Gegenseite legt auf, waehrend der Rueckstau steht — sauber (FIN): erst die
     // Telnet-Verhandlung des Servers lesen, sonst schickt close() mit ungelesenen Daten
     // ein RST, und Winsock verwirft dann, was noch im Socketpuffer des Servers liegt
     // (das ist der Fall ResetImRueckstauTrenntSauber).
@@ -643,9 +643,9 @@ TEST(SerialHubGegenseite, AbbruchImRueckstauVerliertNichtsUndDerServerLauschtWei
     EXPECT_EQ(a.a.ueberlauf, 0u);
     EXPECT_EQ(a.st().port_aktiv, port);
     EXPECT_TRUE(a.st().gegenstelle.empty());
-    EXPECT_FALSE(a.a.cts) << "Kabel ab: Eingänge inaktiv";
+    EXPECT_FALSE(a.a.cts) << "Kabel ab: Eingaenge inaktiv";
 
-    // Und der nächste Client wird bedient.
+    // Und der naechste Client wird bedient.
     RohClient c2(port);
     ASSERT_TRUE(c2.s);
     EXPECT_TRUE(u.warte([&] { return a.zustand() == Zustand::Verbunden; }, 3000));
@@ -670,7 +670,7 @@ TEST(SerialHubGegenseite, ResetImRueckstauTrenntSauber) {
     ASSERT_EQ(a.st().puffer_empfangen, Wandler::PUFFER);
 
     // RST statt FIN (SO_LINGER 0): was der Kern noch nicht ausgeliefert hat, darf
-    // verloren gehen — aber nichts verdreht, kein Überlauf, der Server lauscht weiter.
+    // verloren gehen — aber nichts verdreht, kein Ueberlauf, der Server lauscht weiter.
     struct linger l{};
     l.l_onoff  = 1;
     l.l_linger = 0;
@@ -684,7 +684,7 @@ TEST(SerialHubGegenseite, ResetImRueckstauTrenntSauber) {
     u.z = z;
     ASSERT_TRUE(u.warte([&] { return a.zustand() == Zustand::Lauscht; }, 5000));
     // Auf die Zustellung WARTEN statt eine feste Zeit zu laufen: die Maschinenzeit schreitet
-    // je Schleifendurchlauf (sleep 1 ms) fort, und Windows schläft dabei ~15 ms statt 1 ms —
+    // je Schleifendurchlauf (sleep 1 ms) fort, und Windows schlaeft dabei ~15 ms statt 1 ms —
     // 100 "ms" brachten dort nur ein Drittel des Puffers zum Gast.
     u.warte([&] { return a.a.gelesen.size() >= Wandler::PUFFER; }, 5000);
     const std::string g = a.a.gelesenText();
@@ -750,12 +750,12 @@ TEST(SerialHubGegenseite, Rfc2217ServerBeantwortetJedenBefehlMitDemGastwert) {
     ASSERT_TRUE(antwort(A::Signatur, nullptr, &t));
     EXPECT_EQ(t.rfind("k1520emu ", 0), 0u) << t;
 
-    // Formatwünsche der Gegenseite ändern NICHTS — Antwort = Gastwert (Leitsatz 4).
+    // Formatwuensche der Gegenseite aendern NICHTS — Antwort = Gastwert (Leitsatz 4).
     k.sendeDatenbits(5);
     befehl();
     ASSERT_TRUE(antwort(A::Datenbits, &w));
     EXPECT_EQ(w, 7u);
-    k.sendeParitaet(1);   // NONE gewünscht
+    k.sendeParitaet(1);   // NONE gewuenscht
     befehl();
     ASSERT_TRUE(antwort(A::Paritaet, &w));
     EXPECT_EQ(w, r2::paritaetNetz(2));   // EVEN
@@ -765,7 +765,7 @@ TEST(SerialHubGegenseite, Rfc2217ServerBeantwortetJedenBefehlMitDemGastwert) {
     EXPECT_EQ(w, 2u);
     EXPECT_EQ(a.st().daten, 7u);
 
-    // Fluss: Hardware gewünscht → Einstellung des Anwenders (keine) zurück.
+    // Fluss: Hardware gewuenscht → Einstellung des Anwenders (keine) zurueck.
     k.sendeSteuerung(r2::FLUSS_HARDWARE);
     befehl();
     ASSERT_TRUE(antwort(A::Steuerung, &w));
@@ -804,7 +804,7 @@ TEST(SerialHubGegenseite, Rfc2217ServerBeantwortetJedenBefehlMitDemGastwert) {
     ASSERT_TRUE(antwort(A::Steuerung, &w));
     EXPECT_TRUE(u.warte([&] { return !a.a.brkEin; }, 2000));
 
-    // Break des Gastes → NOTIFY-LINESTATE, sobald die Maske es zulässt.
+    // Break des Gastes → NOTIFY-LINESTATE, sobald die Maske es zulaesst.
     k.sendeLineStateMaske(0x10);
     befehl();
     ASSERT_TRUE(antwort(A::LineStateMaske, &w));
@@ -818,7 +818,7 @@ TEST(SerialHubGegenseite, Rfc2217ServerBeantwortetJedenBefehlMitDemGastwert) {
     EXPECT_EQ(w & 0x10u, 0x10u);
     a.a.brkAus = false;
 
-    // FLOWCONTROL-SUSPEND: der Server hält seine Sendung an, RESUME gibt sie frei.
+    // FLOWCONTROL-SUSPEND: der Server haelt seine Sendung an, RESUME gibt sie frei.
     k.sendeFlussHalt(true);
     befehl();
     ASSERT_TRUE(antwort(A::FlussHalt));
@@ -831,13 +831,13 @@ TEST(SerialHubGegenseite, Rfc2217ServerBeantwortetJedenBefehlMitDemGastwert) {
     ASSERT_TRUE(antwort(A::FlussWeiter));
     EXPECT_TRUE(u.warte([&] { pumpe(); return daten == "angehalten"; }, 3000)) << daten;
 
-    // PURGE wird bestätigt.
+    // PURGE wird bestaetigt.
     k.sendeLeeren(r2::PURGE_BEIDE);
     befehl();
     ASSERT_TRUE(antwort(A::Leeren, &w));
     EXPECT_EQ(w, r2::PURGE_BEIDE);
 
-    // Unvollständiger COM-PORT-Befehl (Baud mit 2 statt 4 Byte) bringt nichts durcheinander.
+    // Unvollstaendiger COM-PORT-Befehl (Baud mit 2 statt 4 Byte) bringt nichts durcheinander.
     ASSERT_TRUE(c.schick(std::string("\xFF\xFA\x2C\x01\x00\x25\xFF\xF0", 8)));
     k.sende(reinterpret_cast<const uint8_t*>("weiter"), 6);
     befehl();
@@ -851,7 +851,7 @@ TEST(SerialHubGegenseite, ClientUeberIpv6NenntDieGegenstelleInKlammern) {
     Seite a, b;
     Uhrwerk u{{&a, &b}};
     {
-        // Probe an einem eigenen Lauscher (nicht am Server — der nähme sie als Client).
+        // Probe an einem eigenen Lauscher (nicht am Server — der naehme sie als Client).
         net::Lauscher probe = net::lauschen(0);
         net::Fehler f;
         const auto ziele = net::aufloesen("::1", probe.port, &f);
@@ -874,7 +874,7 @@ TEST(SerialHubGegenseite, ClientUeberIpv6NenntDieGegenstelleInKlammern) {
 TEST(SerialClientDauerversuch, UnaufloesbarerNameBleibtImVersuchUndNenntDenGrund) {
     Seite b;
     Uhrwerk u{{&b}};
-    // .invalid ist reserviert (RFC 2606) und wird nie aufgelöst.
+    // .invalid ist reserviert (RFC 2606) und wird nie aufgeloest.
     SerialKonfig k = client(Betriebsart::Telnet, 5000);
     k.host = "k1520-test.invalid";
     ASSERT_TRUE(b.hub.konfigurieren(0, k));
@@ -882,7 +882,7 @@ TEST(SerialClientDauerversuch, UnaufloesbarerNameBleibtImVersuchUndNenntDenGrund
     ASSERT_TRUE(u.warte([&] { return !b.st().meldung.empty(); }, 8000));
     const SerialStatus s = b.st();
     EXPECT_EQ(s.zustand, Zustand::Verbindet) << "ein Namensfehler ist kein FEHLER (DHCP, §7.1)";
-    EXPECT_NE(s.meldung.find("nicht auflösbar"), std::string::npos) << s.meldung;
+    EXPECT_NE(s.meldung.find("nicht aufloesbar"), std::string::npos) << s.meldung;
     b.hub.stop(0);
     EXPECT_EQ(b.zustand(), Zustand::Aus);
 }
@@ -900,14 +900,14 @@ TEST(SerialDatei, SchreibfehlerBeimBeendenBleibtSichtbar) {
     ASSERT_TRUE(s.hub.konfigurieren(0, k));
     ASSERT_TRUE(s.hub.startAuto(0));
     s.a.sende("x");
-    // Sofort beenden, bevor die 0,5 s um sind: der Rest geht beim Schließen hinaus —
+    // Sofort beenden, bevor die 0,5 s um sind: der Rest geht beim Schliessen hinaus —
     // und dessen Fehler darf nicht verschluckt werden.
     ASSERT_TRUE(u.warte([&] { return s.a.gastSendet.empty(); }, 2000));
     s.hub.stop(0);
     EXPECT_EQ(s.zustand(), Zustand::Fehler);
     EXPECT_NE(s.st().meldung.find("Schreibfehler"), std::string::npos) << s.st().meldung;
     EXPECT_EQ(s.st().port_aktiv, 0u);
-    // Ein neuer Start ist möglich (FEHLER ist kein aktiver Zustand).
+    // Ein neuer Start ist moeglich (FEHLER ist kein aktiver Zustand).
     k.datei = k1520test::tempPath("k1520_test_serial_nach_fehler.txt");
     ASSERT_TRUE(s.hub.konfigurieren(0, k));
     EXPECT_TRUE(s.hub.start(0));
@@ -917,7 +917,7 @@ TEST(SerialDatei, SchreibfehlerBeimBeendenBleibtSichtbar) {
 }
 
 /// Faden-Modell (hub.h): Bedienung aus JEDEM Faden.  Ein dritter Faden fragt Status,
-/// Einstellung und Info ab, während der Testfaden Verbindungen auf- und abbaut und der
+/// Einstellung und Info ab, waehrend der Testfaden Verbindungen auf- und abbaut und der
 /// Emulationsfaden taktet.  Unter `-fsanitize=thread` gefahren (AP-T1b), sonst ein
 /// schlichter Rauchtest gegen Verklemmen.
 TEST(SerialHubNebenlaeufig, StatusAusDrittemFadenWaehrendAufUndAbbau) {

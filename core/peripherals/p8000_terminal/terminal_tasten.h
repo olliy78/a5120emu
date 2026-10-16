@@ -1,12 +1,12 @@
 /**
  * @file terminal_tasten.h
- * @brief Tastenkodes der Oberfläche → Terminaltaste (P8000, Kern- wie Originalterminal).
+ * @brief Tastenkodes der Oberflaeche → Terminaltaste (P8000, Kern- wie Originalterminal).
  *
  * Kodes (k1520_key_press / k1520_term_key): druckbares ASCII und Steuerzeichen 01H–1FH, die
  * Qt-Kodes Return/Enter/Escape/Backspace/Tab/Delete, die Pfeiltasten (<BS> <VT> <FF> <LF>), Pos1,
- * Shift+Tab (BACKTAB) und `0x02000000 + TerminalTaste` für Tasten ohne Qt-Gegenstück.  Caps lock
+ * Shift+Tab (BACKTAB) und `0x02000000 + TerminalTaste` fuer Tasten ohne Qt-Gegenstueck.  Caps lock
  * (0x02000100/0x02000101) und Matrixkodes (0x04000000 | Zeile << 8 | Spalte) behandelt der
- * Aufrufer, weil sie vom Terminal abhängen.
+ * Aufrufer, weil sie vom Terminal abhaengen.
  */
 #pragma once
 

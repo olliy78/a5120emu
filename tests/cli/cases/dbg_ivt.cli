@@ -1,4 +1,4 @@
-# IM-2-Vektortabelle inkl. Fallback-Zeile für den geräteloses-0xFF-Fall.
+# IM-2-Vektortabelle inkl. Fallback-Zeile fuer den geraeteloses-0xFF-Fall.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

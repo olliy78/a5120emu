@@ -46,9 +46,9 @@ def main() -> None:
     parser.add_argument("symbol", help="C++ symbol name (e.g. ZRE_BOOT_ROM)")
     parser.add_argument("out_path", help="Output .h file path")
     parser.add_argument("--weitere", action="append", default=[], metavar="BIN",
-                        help="weitere .bin, hinter bin_path angehängt (mehrfach, in Reihenfolge)")
+                        help="weitere .bin, hinter bin_path angehaengt (mehrfach, in Reihenfolge)")
     parser.add_argument("--anhaengen", action="store_true",
-                        help="an eine bestehende Ausgabedatei anhängen (ohne #pragma once/#include)")
+                        help="an eine bestehende Ausgabedatei anhaengen (ohne #pragma once/#include)")
     args = parser.parse_args()
     convert(args.bin_path, args.symbol, args.out_path, args.weitere, args.anhaengen)
 

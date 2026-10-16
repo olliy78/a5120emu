@@ -1,10 +1,10 @@
 /**
  * @file test_k3525.cpp
- * @brief Unit-Tests der K3525 (16-KB-dRAM-Karte der frühen A5120, AP A2).
+ * @brief Unit-Tests der K3525 (16-KB-dRAM-Karte der fruehen A5120, AP A2).
  *
- * Geprüft: Lesen/Schreiben, Brückenfeld Startadresse (4-KB-Raster), Ablehnung
- * unzulässiger Basen, vier Karten = 64 KB am Bus, Power-on 0xFF, /MEMDI1/2
- * (setMemDI) und Bus-/MEMDI je Zugriff, Überdeckung durch ein Lese-ROM,
+ * Geprueft: Lesen/Schreiben, Brueckenfeld Startadresse (4-KB-Raster), Ablehnung
+ * unzulaessiger Basen, vier Karten = 64 KB am Bus, Power-on 0xFF, /MEMDI1/2
+ * (setMemDI) und Bus-/MEMDI je Zugriff, Ueberdeckung durch ein Lese-ROM,
  * load()/fill()/restore().
  */
 
@@ -20,7 +20,7 @@ K3525 karte(uint16_t base, bool memdi_source = false) {
     return K3525(c);
 }
 
-/// Vorrangspeicher, der die Seite 4000H–40FFH übernimmt (wie das EM256).
+/// Vorrangspeicher, der die Seite 4000H–40FFH uebernimmt (wie das EM256).
 class Vorrang4000 : public MemdiDriver {
 public:
     uint8_t cell = 0x5A;
@@ -29,7 +29,7 @@ public:
     void memWrite(uint16_t, uint8_t d) override { cell = d; }
 };
 
-/// Nur lesbares ROM über 0000–03FF.
+/// Nur lesbares ROM ueber 0000–03FF.
 class Rom : public MemDevice {
 public:
     uint8_t memRead(uint16_t) override { return 0xC3; }
@@ -65,7 +65,7 @@ TEST(K3525, AdressenAusserhalbWerdenIgnoriert) {
 }
 
 TEST(K3525, BasisImVierKBRasterBeliebig) {
-    // X8/X9: 4-KB-Raster, 16 KB zusammenhängend (karten.md §5)
+    // X8/X9: 4-KB-Raster, 16 KB zusammenhaengend (karten.md §5)
     for (uint16_t b : {0x1000, 0x2000, 0x3000, 0x5000, 0xC000}) {
         auto k = karte(b);
         k.memWrite(b, 0x77);
@@ -92,11 +92,11 @@ TEST(K3525, VierKartenErgeben64KBAmBus) {
     }
     bus.memWrite(0x4000, 0xA1);
     bus.memWrite(0x3FFF, 0xA2);
-    EXPECT_EQ(k0.rawPtr()[0x3FFF], 0xA2);   // Kartengrenze: jede Seite für sich
+    EXPECT_EQ(k0.rawPtr()[0x3FFF], 0xA2);   // Kartengrenze: jede Seite fuer sich
     EXPECT_EQ(k1.rawPtr()[0], 0xA1);
 }
 
-// Der Bus lehnt Überlappung nicht ab (Doku in k1520_bus.h behauptet es): Lesen = letzte
+// Der Bus lehnt Ueberlappung nicht ab (Doku in k1520_bus.h behauptet es): Lesen = letzte
 // Karte gewinnt, Schreiben geht an beide — wie doppelt belegte Adressen am echten Bus.
 TEST(K3525, UeberlappendeKarten_LesenLetzteGewinntSchreibenAnBeide) {
     K1520Bus bus;
@@ -164,7 +164,7 @@ TEST(K3525, FillLoadRestore) {
     k.fill(0x00);
     EXPECT_EQ(k.memRead(0xC123), 0x00);
     const uint8_t blk[3] = {1, 2, 3};
-    k.load(0x3FFE, blk, 3);                     // über das Ende hinaus: abgeschnitten
+    k.load(0x3FFE, blk, 3);                     // ueber das Ende hinaus: abgeschnitten
     EXPECT_EQ(k.memRead(0xFFFE), 1);
     EXPECT_EQ(k.memRead(0xFFFF), 2);
     k.setMemDI(true);

@@ -1,7 +1,7 @@
 """Der Python-Wrapper `K1520Emulator` — Verhalten, nicht nur Erreichbarkeit.
 
-`test_c_api.py` prüft, dass die Signaturen zusammenpassen; hier geht es um die
-Semantik der Wrapper-Methoden: Rückgabetypen, Fehlerpfade, Zustandswechsel.
+`test_c_api.py` prueft, dass die Signaturen zusammenpassen; hier geht es um die
+Semantik der Wrapper-Methoden: Rueckgabetypen, Fehlerpfade, Zustandswechsel.
 """
 
 import pytest
@@ -12,7 +12,7 @@ pytestmark = requires_core
 
 
 def test_create_with_drive_configuration():
-    """`K1520Emulator(drive_types)` verdrahtet die Laufwerksbestückung."""
+    """`K1520Emulator(drive_types)` verdrahtet die Laufwerksbestueckung."""
     from app.core_binding.k1520 import K1520Emulator
 
     emu = K1520Emulator(["K5601", "MF3200", "none", "none"])
@@ -24,7 +24,7 @@ def test_create_with_drive_configuration():
 def test_unknown_drive_type_falls_back_silently():
     """Dokumentiert das IST-Verhalten: der Kern lehnt unbekannte Profile NICHT ab.
 
-    `k1520_create_configured` fällt still auf das Standardprofil (K5601) zurück
+    `k1520_create_configured` faellt still auf das Standardprofil (K5601) zurueck
     und `k1520_last_init_error` bleibt leer.  Der Schutz liegt allein auf der
     GUI-Seite in `app.drive_types.normalize()` — wer die C-API direkt benutzt,
     bekommt einen stillschweigend anderen Laufwerkstyp.
@@ -36,7 +36,7 @@ def test_unknown_drive_type_falls_back_silently():
 
 
 def test_run_returns_executed_cycles(emulator):
-    """`run()` läuft bis zur nächsten Befehlsgrenze — leichte Überschreitung ok."""
+    """`run()` laeuft bis zur naechsten Befehlsgrenze — leichte Ueberschreitung ok."""
     emulator.power_on()
     done = emulator.run(50_000)
     assert 50_000 <= done < 50_000 + 100
@@ -90,13 +90,13 @@ def test_mount_rejects_unknown_format(emulator, temp_disk):
 
 
 def test_create_disk_writes_a_mountable_image(emulator, tmp_path):
-    """`create_disk` legt eine gültig formatierte Leerdiskette an und mountet sie."""
+    """`create_disk` legt eine gueltig formatierte Leerdiskette an und mountet sie."""
     target = tmp_path / "leer.img"
     assert emulator.create_disk(0, str(target), "cpa780", False), emulator.last_error()
     assert target.exists() and target.stat().st_size > 0
     assert emulator.is_disk_active(0)
 
-    # Erneut mountbar — also ein gültiges Abbild, kein halber Schreibvorgang.
+    # Erneut mountbar — also ein gueltiges Abbild, kein halber Schreibvorgang.
     other = None
     from app.core_binding.k1520 import K1520Emulator
     other = K1520Emulator()
@@ -130,7 +130,7 @@ def test_drive_status_flags_are_boolean(emulator, temp_disk):
 
 
 def test_motor_starts_during_boot(emulator, temp_disk):
-    """Der Spindelmotor läuft während des Bootens an (Laufwerksanzeige der GUI)."""
+    """Der Spindelmotor laeuft waehrend des Bootens an (Laufwerksanzeige der GUI)."""
     emulator.mount_disk(0, temp_disk("cpa_cpa780_k5601_clock.img"), "cpa780", False)
     emulator.power_on()
     for _ in range(100):
@@ -151,7 +151,7 @@ def test_screen_text_shape(emulator):
 
 def test_pc1715w_bootet_scp30_bis_prompt(temp_disk):
     """PC 1715W (AP-W3): ``machine="pc1715w"`` — S550 → SCP-3.0-Lader → SCP3.SYS → ``A>``,
-    Bild über ``k1520_screen_char`` (Bild-RAM der CRT-Karte), ``dir`` über die Tastatur."""
+    Bild ueber ``k1520_screen_char`` (Bild-RAM der CRT-Karte), ``dir`` ueber die Tastatur."""
     from app.core_binding.k1520 import K1520Emulator
 
     emu = K1520Emulator(machine="pc1715w")
@@ -183,9 +183,9 @@ def test_pc1715w_bootet_scp30_bis_prompt(temp_disk):
 
 def test_p8000_zeigt_banner_am_terminal_und_nimmt_tasten(temp_disk):
     """P8000 (AP P7b): ``machine="p8000"`` — MON8 3.1 meldet sich am Kern-Terminal (tty1) mit
-    dem Hardwaretest-Banner, danach „Press RETURN"; ein Return über die Terminal-Tastenwege
-    führt zum Prompt `>`.  Bild sowohl über ``screen_text`` (k1520_screen_char) als auch
-    über ``term_text``/``term_char``/``term_cursor``."""
+    dem Hardwaretest-Banner, danach „Press RETURN"; ein Return ueber die Terminal-Tastenwege
+    fuehrt zum Prompt `>`.  Bild sowohl ueber ``screen_text`` (k1520_screen_char) als auch
+    ueber ``term_text``/``term_char``/``term_cursor``."""
     from app.core_binding.k1520 import K1520Emulator
 
     emu = K1520Emulator(machine="p8000", p8000={"mon8": "3.1"})
@@ -203,7 +203,7 @@ def test_p8000_zeigt_banner_am_terminal_und_nimmt_tasten(temp_disk):
     assert emu.term_char(0, 0, zeile) == "U"
     assert emu.term_cursor(0) is not None and emu.term_mode(0) == 0
     assert emu.term_send(0, "\r")
-    for _ in range(1000):                       # höchstens 5 Mio. Takte (C++-Wächter: 4 Mio.)
+    for _ in range(1000):                       # hoechstens 5 Mio. Takte (C++-Waechter: 4 Mio.)
         emu.run(5_000)
         if any(z.rstrip() == ">" for z in emu.term_text(0).split("\n")):
             break
@@ -212,7 +212,7 @@ def test_p8000_zeigt_banner_am_terminal_und_nimmt_tasten(temp_disk):
 
 def test_p8000_mit_originalterminal_und_eigenstaendiges_terminal():
     """AP P20d: ``p8000={"terminal": "original"}`` — das Banner steht im Bild des Originalterminals
-    (Firmware P8T 5.0), Return geht über die K7673; ``machine="p8000-terminal"`` zeigt die
+    (Firmware P8T 5.0), Return geht ueber die K7673; ``machine="p8000-terminal"`` zeigt die
     Einschaltmeldung und ein Pixelbild 640 × 312."""
     from app.core_binding.k1520 import K1520Emulator
 
@@ -243,10 +243,10 @@ def test_p8000_mit_originalterminal_und_eigenstaendiges_terminal():
 
 
 def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
-    """PC 1715 (AP-4b): jede maschinenneutrale C-ABI-Funktion wirkt am Gerät oder meldet
+    """PC 1715 (AP-4b): jede maschinenneutrale C-ABI-Funktion wirkt am Geraet oder meldet
     ihren Ruhewert — Boot von der SCP-Diskette bis `A>`, Format erkannt, Lampen, Tastatur
     (`dir` + Return), Zeile 24 (CP/A-Statuszeile) lesbar, Reset, NMI, Leerdiskette,
-    save_as und PRG/EPROM-Funktionen am falschen Gerät."""
+    save_as und PRG/EPROM-Funktionen am falschen Geraet."""
     from app.core_binding.k1520 import K1520Emulator, _lib
 
     emu = K1520Emulator(machine="pc1715")
@@ -287,7 +287,7 @@ def test_pc1715_c_abi_komplett(tmp_path, temp_disk):
     assert emu.create_disk(1, str(tmp_path / "leer.hfe"), ""), emu.last_error()
     assert emu.save_disk_as(1, str(tmp_path / "leer2.hfe")), emu.last_error()
     assert emu.disk_path(1).endswith("leer2.hfe")
-    # Reset: Urlader läuft wieder an
+    # Reset: Urlader laeuft wieder an
     emu.reset()
     assert emu.run(100_000) > 0
     # Funktionen fremder Maschinen melden Ruhewerte

@@ -1,6 +1,6 @@
 /**
  * @file egos_text.cpp
- * @brief Textrückgewinnung aus dem VIS-2a-Bild (Mustervergleich gegen den EGOS-ZG).
+ * @brief Textrueckgewinnung aus dem VIS-2a-Bild (Mustervergleich gegen den EGOS-ZG).
  * @see egos_text.h
  */
 
@@ -54,7 +54,7 @@ std::array<uint16_t, Mc80Vis2a::BREITE> spalten(const Mc80Vis2a& vis, int yb, in
     return sp;
 }
 
-/// Musterbyte für doppelte Höhe: jedes Bit zweifach (egos.prn 0170H ZEICHEN_DOPPELT).
+/// Musterbyte fuer doppelte Hoehe: jedes Bit zweifach (egos.prn 0170H ZEICHEN_DOPPELT).
 uint16_t doppelt(uint8_t g)
 {
     uint16_t r = 0;
@@ -95,7 +95,7 @@ std::string erkenne(const std::array<uint16_t, Mc80Vis2a::BREITE>& sp, const std
             else ++x;
             continue;
         }
-        text += '?';   // belegt, aber kein Zeichen: bis zur nächsten Leerspalte überspringen
+        text += '?';   // belegt, aber kein Zeichen: bis zur naechsten Leerspalte ueberspringen
         while (x < Mc80Vis2a::BREITE && sp[static_cast<size_t>(x)] != 0) ++x;
     }
     while (!text.empty() && text.back() == ' ') text.pop_back();
@@ -129,7 +129,7 @@ std::vector<std::string> egosText(const Mc80Vis2a& vis, const std::function<uint
     std::vector<std::string> z(EGOS_TEXTZEILEN);
     for (int i = 0; i < EGOS_TEXTZEILEN; ++i)
         z[static_cast<size_t>(i)] = erkenne(spalten(vis, basis(vis, i), 8), glyphen, lb, 1);
-    // Doppelt hohe Zeichen stehen auf der Zeilenbasis und reichen in die Zeile darüber.
+    // Doppelt hohe Zeichen stehen auf der Zeilenbasis und reichen in die Zeile darueber.
     for (int i = 1; i < EGOS_TEXTZEILEN; ++i) {
         const std::string d = erkenne(spalten(vis, basis(vis, i), 16), glyphen, lb, 2);
         if (erkannt(d) > erkannt(z[static_cast<size_t>(i)]) + erkannt(z[static_cast<size_t>(i - 1)])) {

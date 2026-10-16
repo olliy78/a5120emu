@@ -3,16 +3,16 @@
  * @brief Parallele Tastatur K7636 (K7636.01, lateinisch) an der U-Bus-Schnittstelle der K2526.
  *
  * Verhaltensmodell nach `doc/a5120_alt/k7636.md` (AP A3a) und der Codetabelle
- * `doc/a5120_alt/k7636_01_codes.csv`; Entwurf 30 §3.3.  Die Tastatur hat am echten Gerät einen
+ * `doc/a5120_alt/k7636_01_codes.csv`; Entwurf 30 §3.3.  Die Tastatur hat am echten Geraet einen
  * eigenen U880 (Matrix 16 × 8, ROM Y708); nachgebildet ist ihr Verhalten an Stecker X1, nicht
  * der Prozessor.  Sie steckt am U-Bus der K2526 (E/A 00H–07H) und wird dort als
  * @ref UBusGeraet angeschlossen (`K2526::setUBusGeraet`) — **nur zuschaltbar**: ohne Anschluss
- * bleibt die K2526 (und damit die K7637-Verdrahtung des A5120) unverändert.
+ * bleibt die K2526 (und damit die K7637-Verdrahtung des A5120) unveraendert.
  *
  * Ports (Richtung aus Sicht der CPU):
- * - `06H` IN  (/UCS1) Tastencode bzw. Typzeichen; **Lesen quittiert** (/UINT zurück) [?, k7636.md §4]
+ * - `06H` IN  (/UCS1) Tastencode bzw. Typzeichen; **Lesen quittiert** (/UINT zurueck) [?, k7636.md §4]
  * - `01H` IN  (/UCS2) Status: Bit 3 = /UINT (**0 = Code liegt bereit**, Ruhewert 1), Bit 2 =
- *   „CTRL gedrückt“ (0 = gedrückt; die K7636 treibt es nicht → 1).  Ruhewert `0CH`.
+ *   „CTRL gedrueckt“ (0 = gedrueckt; die K7636 treibt es nicht → 1).  Ruhewert `0CH`.
  * - `03H` OUT (/UCS4) Kommando (Reset, Steuern, Fehlerlampe/Signal/SHIFT, Spezial).  **Jedes
  *   Kommando wird mit dem Typzeichen `80H` beantwortet** (CP/A wartet darauf, `lmp36w`).
  * - `05H` OUT (/UCS3) von der K7636 nicht benutzt.
@@ -78,11 +78,11 @@ public:
     /// @return true, wenn ein neuer Code im Register bereitsteht.
     bool service(uint64_t now_cycles);
 
-    /// Zeitbasis der Dauerfunktion (wie K7637): Echtzeit für die Oberfläche.
+    /// Zeitbasis der Dauerfunktion (wie K7637): Echtzeit fuer die Oberflaeche.
     void setRepeatRealtime(bool an) { repeat_uhr_.setEchtzeit(an); }
     void setRepeatClockSource(TastenUhr::Quelle q) { repeat_uhr_.setQuelle(q); }
 
-    // ── Anzeigen (für die Bildschirmtastatur und Tests) ──────────────────────
+    // ── Anzeigen (fuer die Bildschirmtastatur und Tests) ──────────────────────
     bool codeBereit() const       { return out_valid_; }
     bool shiftLampe() const       { return lock_ || kommando_shift_; }   ///< LED C99
     bool lockAktiv() const        { return lock_; }
@@ -91,17 +91,17 @@ public:
     bool insModeLampe() const     { return (led_ & 0x10) != 0; }          ///< LED E15
     bool fehlerLampe() const      { return fehler_; }
     bool signalAktiv() const      { return cur_cycle_ < signal_bis_; }
-    unsigned signalZaehler() const { return signale_; }   ///< Anzahl ausgelöster Töne
+    unsigned signalZaehler() const { return signale_; }   ///< Anzahl ausgeloester Toene
     unsigned verloren() const     { return verloren_; }   ///< bei vollem Puffer verworfene Tasten
 
     // ── Tabelle ──────────────────────────────────────────────────────────────
     /// Code der Rechenadresse @p adr in Grund- (false) bzw. Umschaltstellung (true); 0 = keiner.
     static uint8_t code(uint8_t adr, bool umschalt);
-    /// Position (z. B. "C01") der Rechenadresse; "" = unbestückt.
+    /// Position (z. B. "C01") der Rechenadresse; "" = unbestueckt.
     static const char* position(uint8_t adr);
     /// Ist @p code ein Dauerfunktionscode (Liste 07 04 05 20 06 5F)?
     static bool istDauerCode(uint8_t code);
-    /// Taste für ein ASCII-Zeichen suchen; @p umschalt = Zeichen steht in Stufe b.
+    /// Taste fuer ein ASCII-Zeichen suchen; @p umschalt = Zeichen steht in Stufe b.
     static bool findeZeichen(uint8_t zeichen, uint8_t& adr, bool& umschalt);
 
 private:
@@ -116,7 +116,7 @@ private:
     bool     out_valid_ = false;
     uint8_t  out_code_  = 0xFF;
     uint64_t cur_cycle_ = 0;
-    uint64_t naechster_code_ = 0;   ///< frühester Zeitpunkt für den nächsten Tastencode (21 ms)
+    uint64_t naechster_code_ = 0;   ///< fruehester Zeitpunkt fuer den naechsten Tastencode (21 ms)
 
     bool shift_phys_ = false;       ///< SHIFT-Taste (7FH) gehalten
     bool lock_ = false;             ///< LOCK (77H) eingerastet

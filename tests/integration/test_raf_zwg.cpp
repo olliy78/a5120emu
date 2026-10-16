@@ -1,21 +1,21 @@
 /**
  * @file test_raf_zwg.cpp
- * @brief ZWG-Prüfprogramme `RAFTEST.COM` (M80, 13.2.87, Quelle doc/raf512/RAFTEST.MAC) und
+ * @brief ZWG-Pruefprogramme `RAFTEST.COM` (M80, 13.2.87, Quelle doc/raf512/RAFTEST.MAC) und
  *        `RAFQUICK.COM` (Turbo Pascal 3, 03/86) gegen die Nachbildung der RAF512 am A5120
  *        unter CP/A (doc/design/22_raf512.md §8 AP-R6).
  *
- * `RAFTEST` hat keinen Dialog für die Kartenadresse: sie steht im „PATCH AREA" am
- * Programmanfang (`RFCtl`/`RFDat`, Dateiversatz 22H/23H, Vorgabe 8FH/8EH) und wurde am Gerät
- * mit DDT umgesetzt.  Der Test tut dasselbe auf der Kopie (89H/88H) und prüft, dass das
+ * `RAFTEST` hat keinen Dialog fuer die Kartenadresse: sie steht im „PATCH AREA" am
+ * Programmanfang (`RFCtl`/`RFDat`, Dateiversatz 22H/23H, Vorgabe 8FH/8EH) und wurde am Geraet
+ * mit DDT umgesetzt.  Der Test tut dasselbe auf der Kopie (89H/88H) und prueft, dass das
  * Programm die Adresse so meldet.  Der Logikanalysator-Ausgang (`LogAnlzTrig equ 1`, PIO
  * 84H/86H) geht am A5120 ins Leere — dort liegt keine PIO.
  *
- * Geprüft wird nur, was `RAFTEST` selbst auf den Schirm schreibt, plus der Karteninhalt über
+ * Geprueft wird nur, was `RAFTEST` selbst auf den Schirm schreibt, plus der Karteninhalt ueber
  * `RAF::peek`:
  *  - Typ „5", Bereich 0…FFFH (alle 4096 Sektoren = 512 KByte), „Q" (Zufallsmuster schreiben,
  *    wiederholt lesen und vergleichen): ein voller Durchgang (`*`) ohne Fehlerzeile `Raf=`.
  *  - Sperrmuster 90H und 10H (A15 bzw. nur A12, §3.2): Schreiben verpufft, Lesen liefert FFH
- *    (`Raf=FF`), der Inhalt der Karte bleibt unverändert; Muster 00H öffnet wieder, „O" findet
+ *    (`Raf=FF`), der Inhalt der Karte bleibt unveraendert; Muster 00H oeffnet wieder, „O" findet
  *    den alten Inhalt und schreibt ihn byteweise neu (Steuerbyte 21H, „Rewrite 1 BYTE").
  */
 #include <gtest/gtest.h>
@@ -46,8 +46,8 @@ using k1520test::visibleText;
 namespace {
 
 constexpr long long kBootBudget = 90'000'000;
-constexpr long long kDialog     = 60'000'000;     // bis zur nächsten Eingabeaufforderung
-constexpr long long kDurchgang  = 600'000'000;    // ein voller Prüfdurchgang über 512 KByte
+constexpr long long kDialog     = 60'000'000;     // bis zur naechsten Eingabeaufforderung
+constexpr long long kDurchgang  = 600'000'000;    // ein voller Pruefdurchgang ueber 512 KByte
 const char*         kCpa        = "cpa_cpa780_k5601_noclock.img";
 const char*         kMenue      = "O  :";          // „( ? W D L V S P )   C  R  Q  F  T  O  : "
 const char*         kLauf       = "Test until Keyboard input.";
@@ -102,7 +102,7 @@ bool bisAufforderung(A5120Machine& m, const std::string& endung, long long frist
     return false;
 }
 
-/// Eingabe tippen, RETURN, bis zur nächsten Aufforderung.
+/// Eingabe tippen, RETURN, bis zur naechsten Aufforderung.
 bool eingabe(A5120Machine& m, const std::string& s, const std::string& endung) {
     typeString(m, s);
     typeKey(m, k1520test::QK_RETURN);
@@ -116,8 +116,8 @@ std::string nach(A5120Machine& m, const std::string& marke) {
     return p == std::string::npos ? std::string() : t.substr(p + marke.size());
 }
 
-/// Laufenden Prüfdurchgang bis zum ersten `*` (Durchgang vollständig) fahren, dann mit
-/// einer beliebigen Taste ins Menü zurück.  Liefert den Text des Durchgangs.
+/// Laufenden Pruefdurchgang bis zum ersten `*` (Durchgang vollstaendig) fahren, dann mit
+/// einer beliebigen Taste ins Menue zurueck.  Liefert den Text des Durchgangs.
 std::string durchgang(A5120Machine& m) {
     std::string t;
     for (long long d = 0; d < kDurchgang; d += 1'000'000) {
@@ -130,7 +130,7 @@ std::string durchgang(A5120Machine& m) {
     return t;
 }
 
-/// Bereich (hex) über „C" setzen, Steuerbyte unverändert (21H).
+/// Bereich (hex) ueber „C" setzen, Steuerbyte unveraendert (21H).
 void bereich(A5120Machine& m, const std::string& von, const std::string& bis) {
     typeString(m, "c");
     ASSERT_TRUE(bisAufforderung(m, "Other Range (y) :")) << vramLines(m);
@@ -144,7 +144,7 @@ void bereich(A5120Machine& m, const std::string& von, const std::string& bis) {
     ASSERT_TRUE(bisAufforderung(m, kMenue)) << vramLines(m);
 }
 
-/// Sperrmuster über „P" setzen; liefert die Antwort von `PROTYPE`.
+/// Sperrmuster ueber „P" setzen; liefert die Antwort von `PROTYPE`.
 std::string muster(A5120Machine& m, const std::string& hex) {
     typeString(m, "p");
     EXPECT_TRUE(bisAufforderung(m, "NEW(hex) =")) << vramLines(m);
@@ -170,7 +170,7 @@ protected:
 /**
  * @test RafZwg.RaftestTyp5VollerDurchgangUndSperrmuster
  * @brief `RAFTEST` Typ „5" an 88H/89H: Vollauf 0…FFFH fehlerfrei; Sperrmuster 90H/10H sperren
- *        (FFH, Schreiben verpufft), 00H öffnet.
+ *        (FFH, Schreiben verpufft), 00H oeffnet.
  */
 TEST_F(RafZwg, RaftestTyp5VollerDurchgangUndSperrmuster) {
     TempDisk disk(kCpa, "k1520_raf_zwg.img");
@@ -199,12 +199,12 @@ TEST_F(RafZwg, RaftestTyp5VollerDurchgangUndSperrmuster) {
     ASSERT_NO_FATAL_FAILURE(bereich(m, "0", "fff"));
     typeString(m, "q");
     std::string t = durchgang(m);
-    EXPECT_NE(t.find('*'), std::string::npos) << "kein vollständiger Durchgang\n" << vramLines(m);
+    EXPECT_NE(t.find('*'), std::string::npos) << "kein vollstaendiger Durchgang\n" << vramLines(m);
     EXPECT_EQ(t.find("Raf="), std::string::npos) << vramLines(m);
     EXPECT_FALSE(m.raf()->gesperrt());   // RAFTEST sperrt nicht von selbst
 
     // Sperrmuster nur auf Sektor 0…3; Puffer vorher auf ein festes Byte, damit ein
-    // durchgekommener Schreibzugriff am Inhalt sichtbar würde.
+    // durchgekommener Schreibzugriff am Inhalt sichtbar wuerde.
     ASSERT_NO_FATAL_FAILURE(bereich(m, "0", "3"));
     const std::vector<uint8_t> vorher = inhalt(*m.raf(), 512);
     for (const char* p : {"90", "10"}) {
@@ -226,7 +226,7 @@ TEST_F(RafZwg, RaftestTyp5VollerDurchgangUndSperrmuster) {
         EXPECT_EQ(inhalt(*m.raf(), 512), vorher) << "Schreiben bei Sperre muss verpuffen";
     }
 
-    // 00H öffnet: „O" liest den alten Inhalt (≠ 55H) und schreibt jedes falsche Byte neu.
+    // 00H oeffnet: „O" liest den alten Inhalt (≠ 55H) und schreibt jedes falsche Byte neu.
     t = muster(m, "0");
     EXPECT_NE(t.find(" NOT Protected"), std::string::npos) << vramLines(m);
     typeString(m, "o");
@@ -236,13 +236,13 @@ TEST_F(RafZwg, RaftestTyp5VollerDurchgangUndSperrmuster) {
                                                     << vramLines(m);
     EXPECT_EQ(inhalt(*m.raf(), 512), std::vector<uint8_t>(512, 0x55));
 
-    k1520test::typeCtrl(m, 'C');   // ^C im Menü → Warmstart
+    k1520test::typeCtrl(m, 'C');   // ^C im Menue → Warmstart
     EXPECT_TRUE(bisAufforderung(m, "A>")) << vramLines(m);
 }
 
 namespace {
 
-/// Zähler unter der Beschriftung @p titel in der Mittelspalte des RAFQUICK-Schirms
+/// Zaehler unter der Beschriftung @p titel in der Mittelspalte des RAFQUICK-Schirms
 /// (Spalten 36–41; Zeile darunter = Laufzahl, zwei darunter = Fehlerzahl).  -1 = nicht lesbar.
 int quickZaehler(A5120Machine& m, const std::string& titel, int abstand) {
     const std::string t = visibleText(m);
@@ -262,11 +262,11 @@ int quickZaehler(A5120Machine& m, const std::string& titel, int abstand) {
 
 /**
  * @test RafZwg.RafquickZerstoerungsfreiOhneFehler
- * @brief `RAFQUICK.COM` (Turbo Pascal 3, ZWG 03/86): 8 Bänke, Datenport 88H aus der
+ * @brief `RAFQUICK.COM` (Turbo Pascal 3, ZWG 03/86): 8 Baenke, Datenport 88H aus der
  *        Auswahl.  Die Bildschirmsteuerung des Programms ist auf die SCP-Positionierung
  *        installiert (`ESC`, Zeile + 80H, Spalte + 80H) — dieselbe, die das CP/A-BIOS des
- *        A5120 versteht, das Formular steht also richtig.  Mindestens zwei Datenläufe und
- *        ein Adresslauf ohne Fehler; in der Pause ist der Karteninhalt unverändert, nach der
+ *        A5120 versteht, das Formular steht also richtig.  Mindestens zwei Datenlaeufe und
+ *        ein Adresslauf ohne Fehler; in der Pause ist der Karteninhalt unveraendert, nach der
  *        Reset-Taste ebenso und CP/A steht wieder am Prompt.
  */
 TEST_F(RafZwg, RafquickZerstoerungsfreiOhneFehler) {
@@ -283,7 +283,7 @@ TEST_F(RafZwg, RafquickZerstoerungsfreiOhneFehler) {
     ASSERT_TRUE(runSmallUntilVisible(m, "A>", kBootBudget)) << vramLines(m);
     ASSERT_TRUE(bisAufforderung(m, "A>")) << vramLines(m);
 
-    // Altinhalt, den ein zerstörungsfreier Test stehen lassen muss.
+    // Altinhalt, den ein zerstoerungsfreier Test stehen lassen muss.
     RAF& raf = *m.raf();
     for (uint32_t i = 0; i < raf.kapazitaet(); ++i) raf.poke(i, uint8_t(i * 7 ^ (i >> 7)));
     const std::vector<uint8_t> vorher = inhalt(raf, raf.kapazitaet());
@@ -306,12 +306,12 @@ TEST_F(RafZwg, RafquickZerstoerungsfreiOhneFehler) {
     EXPECT_EQ(quickZaehler(m, "A-Lauf", 3), 0) << "Adressfehler\n" << vramLines(m);
     EXPECT_NE(visibleText(m).find("88,89h"), std::string::npos) << vramLines(m);
 
-    // Leertaste = Pause: `exmonitor` hält am Ende der Bank bzw. des Adresslaufs — dort ist
-    // jeder Sektor zurückgeschrieben; erkannt an stehenden Zählern und stehendem Inhalt.
-    // NICHT mit `x` beenden: das Programm ist mit Endadresse CCC0H übersetzt, seine globalen Variablen
+    // Leertaste = Pause: `exmonitor` haelt am Ende der Bank bzw. des Adresslaufs — dort ist
+    // jeder Sektor zurueckgeschrieben; erkannt an stehenden Zaehlern und stehendem Inhalt.
+    // NICHT mit `x` beenden: das Programm ist mit Endadresse CCC0H uebersetzt, seine globalen Variablen
     // liegen auf C955H…CCBFH und damit im BDOS dieses CP/A (C400H) — das Programm selbst
-    // läuft (es spricht die Konsole über die BIOS-Vektoren an), der Warmstart danach
-    // nicht mehr (Befund AP-R6).  Zurück also über die Reset-Taste, wie am Gerät.
+    // laeuft (es spricht die Konsole ueber die BIOS-Vektoren an), der Warmstart danach
+    // nicht mehr (Befund AP-R6).  Zurueck also ueber die Reset-Taste, wie am Geraet.
     typeString(m, " ");
     k1520test::runCycles(m, 60'000'000);
     const int d0 = quickZaehler(m, "D-Lauf", 1), a0 = quickZaehler(m, "A-Lauf", 1);
@@ -320,11 +320,11 @@ TEST_F(RafZwg, RafquickZerstoerungsfreiOhneFehler) {
     EXPECT_TRUE(inhalt(raf, raf.kapazitaet()) == pause) << "Programm steht nicht in der Pause";
     EXPECT_EQ(quickZaehler(m, "D-Lauf", 1), d0) << vramLines(m);
     EXPECT_EQ(quickZaehler(m, "A-Lauf", 1), a0) << vramLines(m);
-    EXPECT_TRUE(pause == vorher) << "RAFQUICK muss zerstörungsfrei sein";
+    EXPECT_TRUE(pause == vorher) << "RAFQUICK muss zerstoerungsfrei sein";
 
     k1520test::wipeVram(m);
     m.reset();
     ASSERT_TRUE(runSmallUntilVisible(m, "A>", kBootBudget)) << vramLines(m);
     EXPECT_TRUE(bisAufforderung(m, "A>")) << vramLines(m);
-    EXPECT_TRUE(inhalt(raf, raf.kapazitaet()) == vorher) << "RESET erhält den Inhalt";
+    EXPECT_TRUE(inhalt(raf, raf.kapazitaet()) == vorher) << "RESET erhaelt den Inhalt";
 }

@@ -11,7 +11,7 @@
 
 namespace {
 
-/// Qt-Tastencodes (Qt::Key), soweit die Matrix eine Taste dafür hat.
+/// Qt-Tastencodes (Qt::Key), soweit die Matrix eine Taste dafuer hat.
 constexpr uint32_t QT_ESCAPE = 0x01000000, QT_TAB = 0x01000001, QT_BACKSPACE = 0x01000003,
                    QT_RETURN = 0x01000004, QT_ENTER = 0x01000005, QT_DELETE = 0x01000007,
                    QT_PAUSE = 0x01000008, QT_LEFT = 0x01000012, QT_UP = 0x01000013,
@@ -66,8 +66,8 @@ Mc80_2xMachine::Mc80_2xMachine(const Config& cfg)
     sys_.attachToBus(bus_);
     ppe_.attachToBus(bus_);
     bus_.setInterruptChain({&dpl_, &mbi_, &zre_});   // DPL Platz 11, MBI Platz 10 [?], ZRE
-    // RETI-Verteilung nach dem Datenblatt (Z80CTC::setRetiNachIus): das RETI gehört dem obersten
-    // Gerät in Bedienung; ein höheres, das nur anfordert, sperrt es nicht.  Ohne das blieb der
+    // RETI-Verteilung nach dem Datenblatt (Z80CTC::setRetiNachIus): das RETI gehoert dem obersten
+    // Geraet in Bedienung; ein hoeheres, das nur anfordert, sperrt es nicht.  Ohne das blieb der
     // Zeilenende-Kanal der DPL in Bedienung, weil der Zeichentakt-Kanal beim RETI des TSI schon
     // wieder anforderte — das Bild stand nach der ersten Zeile.
     zre_.cpu().retiCallback = [this]() {
@@ -102,7 +102,7 @@ void Mc80_2xMachine::powerOn()
     }
     taste_akt_ = {-1, false, false};
     taste_unten_ = false;
-    resetHardware();          // nicht reset(): das schlösse die Bestückung ab (Fund M7)
+    resetHardware();          // nicht reset(): das schloesse die Bestueckung ab (Fund M7)
     LOG_INFO("MC80", "%s: Netz ein", variantenName(cfg_.variante));
 }
 
@@ -219,7 +219,7 @@ void Mc80_2xMachine::keyPress(uint32_t keycode, bool /*shift*/, bool ctrl)
     bool uc = false;
     const int nr = tasteFuer(static_cast<char>(keycode), uc);
     if (nr < 0) return;
-    // CTR: dritte Ebene (40H–5FH → 00H–1FH, TST); nur für Buchstaben und @[\]^ sinnvoll.
+    // CTR: dritte Ebene (40H–5FH → 00H–1FH, TST); nur fuer Buchstaben und @[\]^ sinnvoll.
     tasteEinreihen(nr, uc, ctrl);
 }
 

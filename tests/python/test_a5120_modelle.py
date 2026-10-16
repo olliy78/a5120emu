@@ -1,6 +1,6 @@
-"""A5120-Ausführungen in Bindung und Oberfläche — Entwurf 30, AP A5.
+"""A5120-Ausfuehrungen in Bindung und Oberflaeche — Entwurf 30, AP A5.
 
-Die Bestückung selbst prüfen die C++-Wächter (`A5120Ausfuehrung.*`); hier geht es um den
+Die Bestueckung selbst pruefen die C++-Waechter (`A5120Ausfuehrung.*`); hier geht es um den
 Weg ``k1520_create_a5120_ausfuehrung`` → ``K1520Emulator(ausfuehrung=…)`` bzw.
 ``machine="a5120-alt"``, um die Modellzeilen des Programmprofils ``a5120emu`` (zwei neue
 Modelle, 8″ gesperrt), die Bildschirmtastatur je Modell (K7636 ⇄ K7637) und darum, dass
@@ -104,12 +104,12 @@ def test_migration_fehlendes_modell_ist_neu():
     p = profil.profil("a5120")
     assert p.modell_normalisieren(None) == "a5120"
     assert p.modell_normalisieren("") == "a5120"
-    assert p.modell_normalisieren("a5120-8") == "a5120"   # gesperrt = nicht wählbar
-    # Andere Programme kennen die frühen A5120 nicht.
+    assert p.modell_normalisieren("a5120-8") == "a5120"   # gesperrt = nicht waehlbar
+    # Andere Programme kennen die fruehen A5120 nicht.
     assert profil.profil("k8915").modell_normalisieren("a5120-alt") == "k8915"
 
 
-# ── Oberfläche ───────────────────────────────────────────────────────────────
+# ── Oberflaeche ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
 def konfig_ordner(tmp_path, monkeypatch):
@@ -169,7 +169,7 @@ def test_modellwahl_tauscht_maschine_und_tastatur(qapp, konfig_ordner):
     finally:
         _zu(w, qapp)
 
-    # Neustart: das gemerkte Modell kommt wieder; zurück zum „neu“ mit der K7637.
+    # Neustart: das gemerkte Modell kommt wieder; zurueck zum „neu“ mit der K7637.
     w = _fenster(qapp)
     try:
         assert w._model == "a5120-kmbg" and w.emulator.ausfuehrung == "kmbg"

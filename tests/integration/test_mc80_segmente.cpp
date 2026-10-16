@@ -1,7 +1,7 @@
 /**
  * @file test_mc80_segmente.cpp
  * @brief MC80.31E (AP M4): EPROM-Segmente 10H/20H am Segmentfenster.  Die Programme aus
- *        doc/EPROMS/MC80/segmente/ werden von EGOS über seine eigene Kette gefunden
+ *        doc/EPROMS/MC80/segmente/ werden von EGOS ueber seine eigene Kette gefunden
  *        (Kettenglied `FE adrL adrH seg` = Segmentwechsel) und laufen aus dem EPROM.
  */
 
@@ -43,9 +43,9 @@ struct Egos31 {
 };
 
 /// Nach INIT ein Kettenglied `FE adrL adrH seg` an den Anfang des freien RAM-Blocks (4000H,
-/// Segment 1) legen: EGOS' eigene Kette (egos.md §1.3, [P 097D]) läuft dann im EPROM-Segment
-/// weiter.  Wie die Kette am Gerät in die EPROM-Segmente führt, ist aus den Abzügen nicht
-/// ersichtlich [?] -- kein ROM-Abzug enthält ein Glied nach 10H/20H.
+/// Segment 1) legen: EGOS' eigene Kette (egos.md §1.3, [P 097D]) laeuft dann im EPROM-Segment
+/// weiter.  Wie die Kette am Geraet in die EPROM-Segmente fuehrt, ist aus den Abzuegen nicht
+/// ersichtlich [?] -- kein ROM-Abzug enthaelt ein Glied nach 10H/20H.
 void verkette(Egos31& e, uint16_t adr, uint8_t seg)
 {
     e.fahre(4'000'000);
@@ -60,8 +60,8 @@ void verkette(Egos31& e, uint16_t adr, uint8_t seg)
 
 struct Lauf { int imFenster = 0; uint16_t pcMin = 0xFFFF, pcMax = 0; };
 
-/// Kommando tippen, Eingabe auslösen, dann @p befehle Befehle einzeln fahren und die
-/// Programmzähler im Segmentfenster einsammeln.
+/// Kommando tippen, Eingabe ausloesen, dann @p befehle Befehle einzeln fahren und die
+/// Programmzaehler im Segmentfenster einsammeln.
 Lauf starte(Egos31& e, const char* kdo, int befehle)
 {
     e.tippe(kdo, 500'000);
@@ -92,7 +92,7 @@ TEST(Mc80Segmente, TetrisLaeuftAusSegment10H) {
     Egos31 e;
     verkette(e, 0x4000, 0x10);
     const Lauf l = starte(e, "te", 400'000);
-    EXPECT_GT(l.imFenster, 100'000) << "Programmzähler nicht im EPROM-Segment";
+    EXPECT_GT(l.imFenster, 100'000) << "Programmzaehler nicht im EPROM-Segment";
     EXPECT_GE(l.pcMin, 0x4000);
     EXPECT_LT(l.pcMax, 0x5000);   // Abzug d = 4000H–4FFFH
     // Vorspann des Spiels (Text per Mustervergleich aus dem Bild)

@@ -66,8 +66,8 @@ KOPIEREN_TEXT = "Bildschirminhalt als Text kopieren"
 EINFUEGEN_TEXT = "Zwischenablage über Tastatur einfügen"
 EINFUEGEN_ABBRECHEN_TEXT = "Einfügen abbrechen"
 
-#: Zeichen, die auf der (US-)Tastatur mit Umschalt entstehen — für das synthetische Tastenereignis
-#: beim Einfügen; die Maschine bekommt das Zeichen selbst, Umschalt ist nur das Begleitbit.
+#: Zeichen, die auf der (US-)Tastatur mit Umschalt entstehen — fuer das synthetische Tastenereignis
+#: beim Einfuegen; die Maschine bekommt das Zeichen selbst, Umschalt ist nur das Begleitbit.
 _MIT_UMSCHALT = set('!"#$%&()*+:<>?@^_{|}~')
 
 
@@ -128,7 +128,7 @@ class CRTParams:
 
     # Filterstufen einzeln abschaltbar (Checkboxen im CRT-Reiter).  Aus heisst:
     # die Stufe wird neutral geschaltet (Shader-Uniform), die Reglerwerte bleiben
-    # erhalten.  (Kontrast, Krümmung und Ecken-Rundung haben dafür ihren Regler.)
+    # erhalten.  (Kontrast, Kruemmung und Ecken-Rundung haben dafuer ihren Regler.)
     vignette_on: bool = True
 
     STUFEN = ("vignette_on",)
@@ -355,7 +355,7 @@ class ScreenWidget(QOpenGLWidget):
     # Kept for backward compatibility with callers/tests referencing them.
     COLS = 80
     ROWS = 24
-    #: Eingaberate von „Zwischenablage über Tastatur einfügen" (Zeichen je Wirtssekunde).
+    #: Eingaberate von „Zwischenablage ueber Tastatur einfuegen" (Zeichen je Wirtssekunde).
     EINFUEGEN_ZEICHEN_PRO_S = 120
     WIDTH = FB_WIDTH
     HEIGHT = FB_HEIGHT
@@ -371,7 +371,7 @@ class ScreenWidget(QOpenGLWidget):
         self.emulator = None
         self.params = CRTParams()
         # Bildschirmtastatur, die Host-Tasten mitanzeigen darf (s. _map_key);
-        # ohne sie geht die Eingabe unverändert direkt an den Kern.
+        # ohne sie geht die Eingabe unveraendert direkt an den Kern.
         self.key_sink = None
 
         # Power state: when off, the tube is dark and the framebuffer is not
@@ -380,8 +380,8 @@ class ScreenWidget(QOpenGLWidget):
 
         # Latest framebuffer bytes waiting to be uploaded to the GL texture.
         self._fb_bytes: Optional[bytes] = None
-        # Bildgröße aus dem Kern (A5120/K8915/PRG: 640x288; PC 1715: 640x300 mit
-        # Statuszeile bzw. 512x255 am K7221).  Ändert sie sich, wird die Textur
+        # Bildgroesse aus dem Kern (A5120/K8915/PRG: 640x288; PC 1715: 640x300 mit
+        # Statuszeile bzw. 512x255 am K7221).  Aendert sie sich, wird die Textur
         # im GL-Kontext neu angelegt (paintGL).
         self._fb_w = FB_WIDTH
         self._fb_h = FB_HEIGHT
@@ -409,11 +409,11 @@ class ScreenWidget(QOpenGLWidget):
         self.setMinimumSize(320, 240)
         self.setFocusPolicy(Qt.StrongFocus)
 
-        # Rechtsklick: Text kopieren / Zwischenablage über die Tastatur einfügen.
+        # Rechtsklick: Text kopieren / Zwischenablage ueber die Tastatur einfuegen.
         self._einfueger = TastenEinfueger(self.eingabe_druecken, self.eingabe_loslassen, self,
                                           rate=self.EINFUEGEN_ZEICHEN_PRO_S)
         self._einfueger.fertig.connect(self._einfuegen_fertig)
-        self._eingabe_ereignis = None          # das gerade „gedrückte“ Zeichen (für das Loslassen)
+        self._eingabe_ereignis = None          # das gerade „gedrueckte“ Zeichen (fuer das Loslassen)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._kontextmenue)
 
@@ -443,9 +443,9 @@ class ScreenWidget(QOpenGLWidget):
     def sizeHint(self) -> QSize:
         return QSize(640, 480)  # 4:3
 
-    # ── Rechtsklick: Text kopieren, Zwischenablage einfügen ───────────────────
+    # ── Rechtsklick: Text kopieren, Zwischenablage einfuegen ───────────────────
 
-    #: Ein Hinweis nach dem Einfügen („N Zeichen, M übersprungen"); das Hauptfenster zeigt ihn.
+    #: Ein Hinweis nach dem Einfuegen („N Zeichen, M uebersprungen"); das Hauptfenster zeigt ihn.
     einfuegenFertig = Signal(int, int)
 
     def kontextmenue_bauen(self) -> QMenu:
@@ -474,7 +474,7 @@ class ScreenWidget(QOpenGLWidget):
         """
         if self.emulator is None:
             return ""
-        # PC 1715: Statuszeile; MC80: 25 EGOS-Textzeilen (aus dem Bitmap zurückgewonnen).
+        # PC 1715: Statuszeile; MC80: 25 EGOS-Textzeilen (aus dem Bitmap zurueckgewonnen).
         maschine = str(getattr(self.emulator, "machine", ""))
         roh = (self.emulator.screen_text(25) if maschine.startswith(("pc1715", "mc80"))
                else self.emulator.screen_text())
@@ -513,7 +513,7 @@ class ScreenWidget(QOpenGLWidget):
         if not " " <= c <= "~":
             return None
         mods = Qt.ShiftModifier if (c.isupper() or c in _MIT_UMSCHALT) else Qt.NoModifier
-        return QKeyEvent(art, ord(c.upper()), mods, c)    # Qt::Key_* = ASCII (Buchstaben groß)
+        return QKeyEvent(art, ord(c.upper()), mods, c)    # Qt::Key_* = ASCII (Buchstaben gross)
 
     def eingabe_druecken(self, c: str) -> bool:
         """Ein Zeichen wie von der Wirtstastatur drücken — durch die Bildschirmtastatur, also mit
@@ -557,13 +557,13 @@ class ScreenWidget(QOpenGLWidget):
             self.toggleFullscreenRequested.emit()
             event.accept()
             return
-        # Escape verlässt ggf. das Vollbild; das Fenster ignoriert das Signal,
-        # wenn kein Vollbild aktiv ist.  ESC wird zusätzlich an den Emulator
+        # Escape verlaesst ggf. das Vollbild; das Fenster ignoriert das Signal,
+        # wenn kein Vollbild aktiv ist.  ESC wird zusaetzlich an den Emulator
         # gereicht (CP/A braucht die ESC-Taste), s.u.
         if key == Qt.Key_Escape and event.modifiers() == Qt.NoModifier:
             self.exitFullscreenRequested.emit()
 
-        # Alle übrigen Tasten an den K7637/Core weiterleiten.  Ohne diese
+        # Alle uebrigen Tasten an den K7637/Core weiterleiten.  Ohne diese
         # Weiterleitung erreichte bisher KEINE Host-Eingabe den Emulator.
         if self._forward_key_press(event):
             event.accept()
@@ -605,7 +605,7 @@ class ScreenWidget(QOpenGLWidget):
 
     def focusOutEvent(self, event):
         # Ohne Fokus kommt kein Loslassen mehr an — sonst bliebe die zuletzt
-        # gedrückte Taste auf der Nachbildung für immer hell.
+        # gedrueckte Taste auf der Nachbildung fuer immer hell.
         if self.key_sink is not None:
             self.key_sink.clear_host_keys()
         super().focusOutEvent(event)
@@ -630,7 +630,7 @@ class ScreenWidget(QOpenGLWidget):
     def _on_update(self):
         if not self.emulator or not self._powered:
             return
-        # EINE Sperre für das ganze Bild: die Emulation läuft in einem eigenen
+        # EINE Sperre fuer das ganze Bild: die Emulation laeuft in einem eigenen
         # Faden (app/emulationstakt.py), sonst wartete jeder Aufruf eine Scheibe ab.
         with kern_sperre():
             self._bild_holen()
@@ -638,7 +638,7 @@ class ScreenWidget(QOpenGLWidget):
     def _bild_holen(self):
         if not self.emulator.is_framebuffer_dirty():
             return
-        # Bildgröße kann sich mit der Maschine ändern (PC 1715: K7221/K7222).
+        # Bildgroesse kann sich mit der Maschine aendern (PC 1715: K7221/K7222).
         groesse = self.emulator.framebuffer_size()
         if groesse and groesse != (self._fb_w, self._fb_h):
             self._fb_w, self._fb_h = groesse

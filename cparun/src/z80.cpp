@@ -2,8 +2,8 @@
  * @file z80.cpp
  * @brief Zilog Z80 CPU Emulator – Implementierung
  *
- * Enthält die vollständige Implementierung der Z80-CPU-Emulation für den
- * Robotron A5120 Bürocomputer. Alle Befehle werden zyklengenau ausgeführt
+ * Enthaelt die vollstaendige Implementierung der Z80-CPU-Emulation fuer den
+ * Robotron A5120 Buerocomputer. Alle Befehle werden zyklengenau ausgefuehrt
  * mit korrekter Behandlung aller dokumentierten und undokumentierten Flags.
  *
  * Die Implementierung ist in folgende Abschnitte gegliedert:
@@ -12,9 +12,9 @@
  * - 8-Bit- und 16-Bit-ALU-Operationen
  * - Rotations- und Schiebebefehle
  * - Bit-Operationen (BIT, RES, SET)
- * - Registerzugriff über Opcode-Index
+ * - Registerzugriff ueber Opcode-Index
  * - Interruptbehandlung (INT, NMI)
- * - Befehlsdekodierung nach Präfix (unpräfixiert, CB, DD, ED, FD, DDCB, FDCB)
+ * - Befehlsdekodierung nach Praefix (unpraefixiert, CB, DD, ED, FD, DDCB, FDCB)
  *
  * @author Olaf Krieger
  * @license MIT License
@@ -34,7 +34,7 @@ Z80::Z80() {
 }
 
 /**
- * @brief Setzt alle CPU-Register und den internen Zustand auf Anfangswerte zurück.
+ * @brief Setzt alle CPU-Register und den internen Zustand auf Anfangswerte zurueck.
  *
  * Nach dem Reset:
  * - Alle Haupt- und Schattenregister sind 0
@@ -43,7 +43,7 @@ Z80::Z80() {
  * - Interrupts sind deaktiviert (IFF1=IFF2=false)
  * - Interruptmodus ist 0
  * - HALT-Zustand ist aufgehoben
- * - Taktzyklenzähler ist 0
+ * - Taktzyklenzaehler ist 0
  */
 void Z80::reset() {
     AF = BC = DE = HL = 0;
@@ -63,13 +63,13 @@ void Z80::reset() {
 // =============================================================================
 
 /**
- * @brief Berechnet die Parität eines 8-Bit-Wertes mittels XOR-Faltung.
+ * @brief Berechnet die Paritaet eines 8-Bit-Wertes mittels XOR-Faltung.
  *
- * Durch schrittweises XOR-Falten (4→2→1 Bit) wird die Parität
+ * Durch schrittweises XOR-Falten (4→2→1 Bit) wird die Paritaet
  * effizient ohne Schleife berechnet.
  *
- * @param val Zu prüfender Wert.
- * @return true bei gerader Parität (gerade Anzahl gesetzter Bits).
+ * @param val Zu pruefender Wert.
+ * @return true bei gerader Paritaet (gerade Anzahl gesetzter Bits).
  */
 bool Z80::parity(uint8_t val) {
     val ^= val >> 4;
@@ -86,7 +86,7 @@ bool Z80::parity(uint8_t val) {
  * @brief Liest ein 16-Bit-Wort aus dem Speicher (Little-Endian).
  *
  * Das niederwertige Byte liegt an der niedrigeren Adresse,
- * das höherwertige Byte an addr+1 – entsprechend der Z80-Konvention.
+ * das hoeherwertige Byte an addr+1 – entsprechend der Z80-Konvention.
  *
  * @param addr Startadresse des zu lesenden Wortes.
  * @return Gelesenes 16-Bit-Wort.
@@ -106,9 +106,9 @@ void Z80::writeWord(uint16_t addr, uint16_t val) {
 }
 
 /**
- * @brief Liest das nächste Byte an der Adresse PC und inkrementiert PC.
+ * @brief Liest das naechste Byte an der Adresse PC und inkrementiert PC.
  *
- * Wird für den Abruf von Opcodes und unmittelbaren Operanden verwendet.
+ * Wird fuer den Abruf von Opcodes und unmittelbaren Operanden verwendet.
  *
  * @return Gelesenes Byte.
  */
@@ -119,9 +119,9 @@ uint8_t Z80::fetchByte() {
 }
 
 /**
- * @brief Liest das nächste 16-Bit-Wort an PC und erhöht PC um 2.
+ * @brief Liest das naechste 16-Bit-Wort an PC und erhoeht PC um 2.
  *
- * Wird für 16-Bit-Immediates und Adressen verwendet.
+ * Wird fuer 16-Bit-Immediates und Adressen verwendet.
  *
  * @return Gelesenes 16-Bit-Wort (Little-Endian).
  */
@@ -163,15 +163,15 @@ uint16_t Z80::pop() {
 
 // =============================================================================
 /// @name 8-Bit-ALU-Operationen
-/// @brief Arithmetische und logische 8-Bit-Operationen mit vollständiger
+/// @brief Arithmetische und logische 8-Bit-Operationen mit vollstaendiger
 ///        Flag-Berechnung (S, Z, H, PV, N, C sowie undokumentierte Bits 3 und 5).
 // =============================================================================
 
 /**
  * @brief 8-Bit-Addition: a + b.
  *
- * Flags: S, Z, H (Halbübertrag Bit 3→4), PV (Überlauf), C (Übertrag).
- * N wird gelöscht. Bits 3 und 5 werden vom Ergebnis übernommen.
+ * Flags: S, Z, H (Halbuebertrag Bit 3→4), PV (Ueberlauf), C (Uebertrag).
+ * N wird geloescht. Bits 3 und 5 werden vom Ergebnis uebernommen.
  *
  * @param a Erster Operand.
  * @param b Zweiter Operand.
@@ -191,7 +191,7 @@ uint8_t Z80::add8(uint8_t a, uint8_t b) {
 /**
  * @brief 8-Bit-Addition mit Carry: a + b + C.
  *
- * Wie add8(), aber das bestehende Carry-Flag wird als zusätzlicher Summand einbezogen.
+ * Wie add8(), aber das bestehende Carry-Flag wird als zusaetzlicher Summand einbezogen.
  *
  * @param a Erster Operand.
  * @param b Zweiter Operand.
@@ -212,7 +212,7 @@ uint8_t Z80::adc8(uint8_t a, uint8_t b) {
 /**
  * @brief 8-Bit-Subtraktion: a - b.
  *
- * Flags: S, Z, H (Halbübertrag), PV (Überlauf), C (Borgen). N wird gesetzt.
+ * Flags: S, Z, H (Halbuebertrag), PV (Ueberlauf), C (Borgen). N wird gesetzt.
  *
  * @param a Minuend.
  * @param b Subtrahend.
@@ -232,7 +232,7 @@ uint8_t Z80::sub8(uint8_t a, uint8_t b) {
 /**
  * @brief 8-Bit-Subtraktion mit Carry: a - b - C.
  *
- * Wie sub8(), aber das bestehende Carry-Flag wird zusätzlich subtrahiert.
+ * Wie sub8(), aber das bestehende Carry-Flag wird zusaetzlich subtrahiert.
  *
  * @param a Minuend.
  * @param b Subtrahend.
@@ -253,9 +253,9 @@ uint8_t Z80::sbc8(uint8_t a, uint8_t b) {
 /**
  * @brief Logisches UND: A = A & val.
  *
- * H-Flag wird gesetzt, N und C gelöscht. PV zeigt gerade Parität an.
+ * H-Flag wird gesetzt, N und C geloescht. PV zeigt gerade Paritaet an.
  *
- * @param val Operand für die UND-Verknüpfung.
+ * @param val Operand fuer die UND-Verknuepfung.
  */
 void Z80::and8(uint8_t val) {
     A &= val;
@@ -267,9 +267,9 @@ void Z80::and8(uint8_t val) {
 /**
  * @brief Logisches ODER: A = A | val.
  *
- * H, N und C werden gelöscht. PV zeigt gerade Parität an.
+ * H, N und C werden geloescht. PV zeigt gerade Paritaet an.
  *
- * @param val Operand für die ODER-Verknüpfung.
+ * @param val Operand fuer die ODER-Verknuepfung.
  */
 void Z80::or8(uint8_t val) {
     A |= val;
@@ -281,9 +281,9 @@ void Z80::or8(uint8_t val) {
 /**
  * @brief Logisches Exklusiv-ODER: A = A ^ val.
  *
- * H, N und C werden gelöscht. PV zeigt gerade Parität an.
+ * H, N und C werden geloescht. PV zeigt gerade Paritaet an.
  *
- * @param val Operand für die XOR-Verknüpfung.
+ * @param val Operand fuer die XOR-Verknuepfung.
  */
 void Z80::xor8(uint8_t val) {
     A ^= val;
@@ -295,9 +295,9 @@ void Z80::xor8(uint8_t val) {
 /**
  * @brief Vergleich (Compare): A - val, ohne das Ergebnis zu speichern.
  *
- * Flags werden wie bei SUB gesetzt, A bleibt unverändert.
+ * Flags werden wie bei SUB gesetzt, A bleibt unveraendert.
  * Besonderheit: Bits 3 und 5 der Flags werden vom Operanden val
- * übernommen, nicht vom Ergebnis – dies ist dokumentiertes Z80-Verhalten.
+ * uebernommen, nicht vom Ergebnis – dies ist dokumentiertes Z80-Verhalten.
  *
  * @param val Vergleichswert.
  */
@@ -314,8 +314,8 @@ void Z80::cp8(uint8_t val) {
 /**
  * @brief 8-Bit-Inkrement: val + 1.
  *
- * Das C-Flag bleibt unverändert. PV wird gesetzt, wenn val == 0x7F
- * (Überlauf von positiv nach negativ im Zweierkomplement).
+ * Das C-Flag bleibt unveraendert. PV wird gesetzt, wenn val == 0x7F
+ * (Ueberlauf von positiv nach negativ im Zweierkomplement).
  *
  * @param val Zu inkrementierender Wert.
  * @return Inkrementiertes Ergebnis.
@@ -332,7 +332,7 @@ uint8_t Z80::inc8(uint8_t val) {
 /**
  * @brief 8-Bit-Dekrement: val - 1.
  *
- * Das C-Flag bleibt unverändert. N wird gesetzt. PV wird gesetzt,
+ * Das C-Flag bleibt unveraendert. N wird gesetzt. PV wird gesetzt,
  * wenn val == 0x80 (Unterlauf von negativ nach positiv).
  *
  * @param val Zu dekrementierender Wert.
@@ -355,7 +355,7 @@ uint8_t Z80::dec8(uint8_t val) {
  * @brief 16-Bit-Addition: a + b.
  *
  * S, Z und PV bleiben erhalten. H bezieht sich auf Bit 11→12.
- * Bits 3 und 5 werden vom oberen Byte des Ergebnisses übernommen.
+ * Bits 3 und 5 werden vom oberen Byte des Ergebnisses uebernommen.
  *
  * @param a Erster Operand.
  * @param b Zweiter Operand.
@@ -374,7 +374,7 @@ uint16_t Z80::add16(uint16_t a, uint16_t b) {
  * @brief 16-Bit-Addition mit Carry: a + b + C.
  *
  * Im Gegensatz zu add16() werden alle Flags neu gesetzt.
- * PV zeigt 16-Bit-Überlauf an (Vorzeichenüberlauf).
+ * PV zeigt 16-Bit-Ueberlauf an (Vorzeichenueberlauf).
  *
  * @param a Erster Operand.
  * @param b Zweiter Operand.
@@ -396,7 +396,7 @@ uint16_t Z80::adc16(uint16_t a, uint16_t b) {
  * @brief 16-Bit-Subtraktion mit Carry: a - b - C.
  *
  * Alle Flags werden gesetzt. N wird gesetzt.
- * PV zeigt 16-Bit-Vorzeichenüberlauf an.
+ * PV zeigt 16-Bit-Vorzeichenueberlauf an.
  *
  * @param a Minuend.
  * @param b Subtrahend.
@@ -416,9 +416,9 @@ uint16_t Z80::sbc16(uint16_t a, uint16_t b) {
 
 // =============================================================================
 /// @name Rotations- und Schiebebefehle
-/// @brief CB-Präfix-Operationen. Alle Funktionen setzen S, Z, PV (Parität)
+/// @brief CB-Praefix-Operationen. Alle Funktionen setzen S, Z, PV (Paritaet)
 ///        sowie die undokumentierten Bits 3 und 5 vom Ergebnis.
-///        H und N werden gelöscht, C erhält das herausgeschobene Bit.
+///        H und N werden geloescht, C erhaelt das herausgeschobene Bit.
 // =============================================================================
 
 /**
@@ -572,8 +572,8 @@ uint8_t Z80::srl(uint8_t val) {
  *
  * Z- und PV-Flag werden gesetzt, wenn das Bit 0 ist.
  * S-Flag wird gesetzt, wenn Bit 7 getestet wird und gesetzt ist.
- * H wird gesetzt, N gelöscht. C bleibt unverändert.
- * Bits 3 und 5 werden vom Testoperanden (val) übernommen.
+ * H wird gesetzt, N geloescht. C bleibt unveraendert.
+ * Bits 3 und 5 werden vom Testoperanden (val) uebernommen.
  *
  * @param b Bitnummer (0–7).
  * @param val Zu testender Wert.
@@ -586,13 +586,13 @@ void Z80::bit_op(uint8_t b, uint8_t val) {
 }
 
 /**
- * @brief RES b,val – Löscht (Reset) ein bestimmtes Bit.
+ * @brief RES b,val – Loescht (Reset) ein bestimmtes Bit.
  *
  * Keine Flags werden beeinflusst.
  *
  * @param b Bitnummer (0–7).
  * @param val Eingabewert.
- * @return Wert mit gelöschtem Bit b.
+ * @return Wert mit geloeschtem Bit b.
  */
 uint8_t Z80::res_op(uint8_t b, uint8_t val) {
     return val & ~(1 << b);
@@ -612,15 +612,15 @@ uint8_t Z80::set_op(uint8_t b, uint8_t val) {
 }
 
 // =============================================================================
-/// @name Registerzugriff über Opcode-Index
-/// @brief Ermöglichen generischen Zugriff auf Register anhand der im
+/// @name Registerzugriff ueber Opcode-Index
+/// @brief Ermoeglichen generischen Zugriff auf Register anhand der im
 ///        Z80-Opcode kodierten 3-Bit-Register-Indizes.
 // =============================================================================
 
 /**
  * @brief Liest ein 8-Bit-Register anhand seines Opcode-Index.
  *
- * Kodierung gemäß Z80-Befehlssatz:
+ * Kodierung gemaess Z80-Befehlssatz:
  * - 0=B, 1=C, 2=D, 3=E, 4=H, 5=L, 6=(HL), 7=A
  *
  * Bei Index 6 wird der Wert indirekt aus dem Speicher an Adresse HL gelesen.
@@ -667,7 +667,7 @@ void Z80::setReg8(uint8_t idx, uint8_t val) {
  * @brief Liest ein 16-Bit-Registerpaar (SP-Variante).
  *
  * Kodierung: 0=BC, 1=DE, 2=HL, 3=SP.
- * Wird für Befehle verwendet, die SP als viertes Registerpaar nutzen.
+ * Wird fuer Befehle verwendet, die SP als viertes Registerpaar nutzen.
  *
  * @param idx Registerpaarindex (untere 2 Bit).
  * @return 16-Bit-Registerwert.
@@ -700,7 +700,7 @@ void Z80::setReg16(uint8_t idx, uint16_t val) {
  * @brief Liest ein 16-Bit-Registerpaar (AF-Variante).
  *
  * Kodierung: 0=BC, 1=DE, 2=HL, 3=AF.
- * Wird für PUSH/POP-Befehle verwendet, bei denen AF statt SP
+ * Wird fuer PUSH/POP-Befehle verwendet, bei denen AF statt SP
  * das vierte Registerpaar ist.
  *
  * @param idx Registerpaarindex (untere 2 Bit).
@@ -731,9 +731,9 @@ void Z80::setReg16AF(uint8_t idx, uint16_t val) {
 }
 
 /**
- * @brief Prüft eine Sprung-/Aufruf-/Rücksprungbedingung.
+ * @brief Prueft eine Sprung-/Aufruf-/Ruecksprungbedingung.
  *
- * Die 8 möglichen Bedingungscodes und ihre Bedeutung:
+ * Die 8 moeglichen Bedingungscodes und ihre Bedeutung:
  * - 0: NZ (Not Zero) – Z-Flag ist nicht gesetzt
  * - 1: Z  (Zero) – Z-Flag ist gesetzt
  * - 2: NC (No Carry) – C-Flag ist nicht gesetzt
@@ -744,7 +744,7 @@ void Z80::setReg16AF(uint8_t idx, uint16_t val) {
  * - 7: M  (Minus) – S-Flag ist gesetzt
  *
  * @param cc Bedingungscode (0–7).
- * @return true, wenn die Bedingung erfüllt ist.
+ * @return true, wenn die Bedingung erfuellt ist.
  */
 bool Z80::checkCondition(uint8_t cc) {
     switch (cc) {
@@ -765,20 +765,20 @@ bool Z80::checkCondition(uint8_t cc) {
 // =============================================================================
 
 /**
- * @brief Löst einen maskierbaren Interrupt (INT) aus.
+ * @brief Loest einen maskierbaren Interrupt (INT) aus.
  *
  * Der Interrupt wird nur akzeptiert, wenn IFF1 gesetzt ist.
  * Nach Akzeptanz:
  * - HALT wird aufgehoben
- * - IFF1 und IFF2 werden gelöscht (Interrupts gesperrt)
+ * - IFF1 und IFF2 werden geloescht (Interrupts gesperrt)
  * - R-Register wird inkrementiert
  *
- * Das Verhalten hängt vom Interruptmodus ab:
+ * Das Verhalten haengt vom Interruptmodus ab:
  * - **IM 0**: Der Vektor wird als RST-Befehl interpretiert (vector & 0x38). 13 Takte.
  * - **IM 1**: Fester Sprung zu Adresse 0x0038, Vektor wird ignoriert. 13 Takte.
  * - **IM 2**: Vektortabelle – Zieladresse wird aus (I*256 + (vector & 0xFE)) gelesen. 19 Takte.
  *
- * @param vector Interruptvektor vom Peripheriegerät.
+ * @param vector Interruptvektor vom Peripheriegeraet.
  */
 void Z80::interrupt(uint8_t vector) {
     if (!IFF1) return;
@@ -809,11 +809,11 @@ void Z80::interrupt(uint8_t vector) {
 }
 
 /**
- * @brief Löst einen nicht-maskierbaren Interrupt (NMI) aus.
+ * @brief Loest einen nicht-maskierbaren Interrupt (NMI) aus.
  *
- * Der NMI kann nicht deaktiviert werden und hat höchste Priorität.
+ * Der NMI kann nicht deaktiviert werden und hat hoechste Prioritaet.
  * - HALT wird aufgehoben
- * - IFF1 wird in IFF2 gesichert, dann IFF1 gelöscht
+ * - IFF1 wird in IFF2 gesichert, dann IFF1 geloescht
  * - PC wird auf den Stack gelegt
  * - Sprung zur festen Adresse 0x0066
  * - 11 Taktzyklen
@@ -829,15 +829,15 @@ void Z80::nmi() {
 }
 
 // =============================================================================
-/// @name Befehlsausführung
-/// @brief Hauptschleife und Dekodierungsfunktionen für den Z80-Befehlssatz.
+/// @name Befehlsausfuehrung
+/// @brief Hauptschleife und Dekodierungsfunktionen fuer den Z80-Befehlssatz.
 // =============================================================================
 
 /**
- * @brief Führt einen einzelnen Z80-Befehl aus und gibt die verbrauchten Takte zurück.
+ * @brief Fuehrt einen einzelnen Z80-Befehl aus und gibt die verbrauchten Takte zurueck.
  *
  * Im HALT-Zustand werden nur NOP-Zyklen verbraucht (4 Takte), ohne den
- * Programmzähler zu verändern. Der Prozessor verlässt HALT durch einen
+ * Programmzaehler zu veraendern. Der Prozessor verlaesst HALT durch einen
  * Interrupt oder NMI.
  *
  * @return Anzahl der verbrauchten Taktzyklen.
@@ -856,19 +856,19 @@ int Z80::step() {
 }
 
 /**
- * @brief Dekodiert und führt einen unpräfixierten Z80-Opcode aus.
+ * @brief Dekodiert und fuehrt einen unpraefixierten Z80-Opcode aus.
  *
- * Dies ist der Haupt-Befehlsdekoder für alle Opcodes 0x00–0xFF.
+ * Dies ist der Haupt-Befehlsdekoder fuer alle Opcodes 0x00–0xFF.
  * Die Opcodes werden in folgende Gruppen unterteilt:
  * - 0x00–0x3F: Verschiedene Befehle (LD 16-Bit, INC/DEC, Rotationen, DAA, etc.)
  * - 0x40–0x7F: LD r,r' (Register-zu-Register-Laden, 0x76 = HALT)
  * - 0x80–0xBF: ALU-Operationen A,r (ADD, ADC, SUB, SBC, AND, XOR, OR, CP)
- * - 0xC0–0xFF: Sprünge, Aufrufe, Rücksprünge, I/O, Präfix-Weiterleitung
+ * - 0xC0–0xFF: Spruenge, Aufrufe, Rueckspruenge, I/O, Praefix-Weiterleitung
  *
- * Die Opcode-Felder x, y, z, p, q werden gemäß der Z80-Dekodierungstabelle
+ * Die Opcode-Felder x, y, z, p, q werden gemaess der Z80-Dekodierungstabelle
  * extrahiert, auch wenn die meisten Befehle direkt per case behandelt werden.
  *
- * @param opcode Der auszuführende Opcode.
+ * @param opcode Der auszufuehrende Opcode.
  * @return Verbrauchte Taktzyklen.
  */
 int Z80::execMain(uint8_t opcode) {
@@ -1113,18 +1113,18 @@ int Z80::execMain(uint8_t opcode) {
 }
 
 /**
- * @brief CB-Präfix-Handler – Rotationen, Schiebebefehle und Bit-Operationen.
+ * @brief CB-Praefix-Handler – Rotationen, Schiebebefehle und Bit-Operationen.
  *
- * Dekodiert den zweiten Opcode und führt die entsprechende Operation aus:
+ * Dekodiert den zweiten Opcode und fuehrt die entsprechende Operation aus:
  * - x=0 (0x00–0x3F): Rotationen/Shifts (RLC, RRC, RL, RR, SLA, SRA, SLL, SRL)
  * - x=1 (0x40–0x7F): BIT-Test
- * - x=2 (0x80–0xBF): RES (Bit löschen)
+ * - x=2 (0x80–0xBF): RES (Bit loeschen)
  * - x=3 (0xC0–0xFF): SET (Bit setzen)
  *
  * z bestimmt das Quell-/Zielregister (0=B...6=(HL)...7=A).
  * y bestimmt je nach x die konkrete Operation bzw. die Bitnummer.
  *
- * @return Verbrauchte Taktzyklen (8 für Register, 12 für BIT (HL), 15 für andere (HL)).
+ * @return Verbrauchte Taktzyklen (8 fuer Register, 12 fuer BIT (HL), 15 fuer andere (HL)).
  */
 int Z80::execCB() {
     R = (R & 0x80) | ((R + 1) & 0x7F);
@@ -1165,17 +1165,17 @@ int Z80::execCB() {
 }
 
 /**
- * @brief DD-Präfix-Handler – IX-Indexregister-Operationen.
+ * @brief DD-Praefix-Handler – IX-Indexregister-Operationen.
  *
- * Das DD-Präfix modifiziert nachfolgende Befehle wie folgt:
+ * Das DD-Praefix modifiziert nachfolgende Befehle wie folgt:
  * - HL-Referenzen werden durch IX ersetzt
  * - (HL)-Speicherzugriffe werden zu (IX+d) mit vorzeichenbehaftetem Displacement
- * - Undokumentiert: H/L können als IXH/IXL einzeln angesprochen werden
+ * - Undokumentiert: H/L koennen als IXH/IXL einzeln angesprochen werden
  *
  * Bei nicht-IX-relevanten Opcodes wird der Befehl als normaler
- * unpräfixierter Befehl über execMain() ausgeführt.
+ * unpraefixierter Befehl ueber execMain() ausgefuehrt.
  *
- * Spezialfall: DD CB leitet an execDDCB() weiter (Doppelpräfix).
+ * Spezialfall: DD CB leitet an execDDCB() weiter (Doppelpraefix).
  *
  * @return Verbrauchte Taktzyklen.
  */
@@ -1281,12 +1281,12 @@ int Z80::execDD() {
 }
 
 /**
- * @brief FD-Präfix-Handler – IY-Indexregister-Operationen.
+ * @brief FD-Praefix-Handler – IY-Indexregister-Operationen.
  *
  * Funktional identisch zu execDD(), ersetzt aber IX durch IY.
- * Alle Kommentare und Erläuterungen aus execDD() gelten analog.
+ * Alle Kommentare und Erlaeuterungen aus execDD() gelten analog.
  *
- * Spezialfall: FD CB leitet an execFDCB() weiter (Doppelpräfix).
+ * Spezialfall: FD CB leitet an execFDCB() weiter (Doppelpraefix).
  *
  * @return Verbrauchte Taktzyklen.
  */
@@ -1384,16 +1384,16 @@ int Z80::execFD() {
 }
 
 /**
- * @brief DDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IX+d).
+ * @brief DDCB-Doppelpraefix-Handler – Bit-/Rotationsoperationen auf (IX+d).
  *
  * Besonderheit im Befehlsformat: Das Displacement-Byte kommt vor dem Opcode:
- * DD CB dd op (nicht DD CB op dd wie man erwarten könnte).
+ * DD CB dd op (nicht DD CB op dd wie man erwarten koennte).
  *
  * Bei Registeroperanden (z != 6) wird das Ergebnis sowohl in den Speicher
- * geschrieben als auch zusätzlich in das angegebene Register kopiert.
+ * geschrieben als auch zusaetzlich in das angegebene Register kopiert.
  * Dies ist undokumentiertes, aber konsistentes Z80-Verhalten.
  *
- * @return Verbrauchte Taktzyklen (20 für BIT, 23 für Rotationen/RES/SET).
+ * @return Verbrauchte Taktzyklen (20 fuer BIT, 23 fuer Rotationen/RES/SET).
  */
 int Z80::execDDCB() {
     int8_t d = (int8_t)fetchByte();
@@ -1441,12 +1441,12 @@ int Z80::execDDCB() {
 }
 
 /**
- * @brief FDCB-Doppelpräfix-Handler – Bit-/Rotationsoperationen auf (IY+d).
+ * @brief FDCB-Doppelpraefix-Handler – Bit-/Rotationsoperationen auf (IY+d).
  *
  * Funktional identisch zu execDDCB(), nutzt aber IY statt IX.
- * Siehe execDDCB() für Details zum Befehlsformat und undokumentierten Verhalten.
+ * Siehe execDDCB() fuer Details zum Befehlsformat und undokumentierten Verhalten.
  *
- * @return Verbrauchte Taktzyklen (20 für BIT, 23 für Rotationen/RES/SET).
+ * @return Verbrauchte Taktzyklen (20 fuer BIT, 23 fuer Rotationen/RES/SET).
  */
 int Z80::execFDCB() {
     int8_t d = (int8_t)fetchByte();
@@ -1494,23 +1494,23 @@ int Z80::execFDCB() {
 }
 
 /**
- * @brief ED-Präfix-Handler – Erweiterte Z80-Befehle.
+ * @brief ED-Praefix-Handler – Erweiterte Z80-Befehle.
  *
- * Enthält spezielle Befehle, die nicht in das Hauptopcode-Schema passen:
- * - **I/O mit Register**: IN r,(C) / OUT (C),r – Port-Zugriffe über Registerpaar BC
- * - **16-Bit-Arithmetik**: SBC HL,rr / ADC HL,rr mit vollständigen Flags
- * - **16-Bit-Laden**: LD (nn),rr / LD rr,(nn) für alle Registerpaare
+ * Enthaelt spezielle Befehle, die nicht in das Hauptopcode-Schema passen:
+ * - **I/O mit Register**: IN r,(C) / OUT (C),r – Port-Zugriffe ueber Registerpaar BC
+ * - **16-Bit-Arithmetik**: SBC HL,rr / ADC HL,rr mit vollstaendigen Flags
+ * - **16-Bit-Laden**: LD (nn),rr / LD rr,(nn) fuer alle Registerpaare
  * - **NEG**: Negiert den Akkumulator (0 - A)
- * - **RETN/RETI**: Rücksprung aus (nicht-)maskierbaren Interrupts
+ * - **RETN/RETI**: Ruecksprung aus (nicht-)maskierbaren Interrupts
  * - **Interruptmodus**: IM 0/1/2
  * - **Spezialregister**: LD I,A / LD A,I / LD R,A / LD A,R
  * - **BCD-Rotation**: RRD / RLD – Rotation von BCD-Ziffern zwischen A und (HL)
- * - **Blockbefehle**: LDI, LDIR, LDD, LDDR – Speicherblockübertragung
+ * - **Blockbefehle**: LDI, LDIR, LDD, LDDR – Speicherblockuebertragung
  * - **Blocksuch**: CPI, CPIR, CPD, CPDR – Speicherblockvergleich
  * - **Block-I/O**: INI, INIR, IND, INDR, OUTI, OTIR, OUTD, OTDR
  *
  * Die Repeat-Varianten (R-Suffix) wiederholen den Befehl durch Dekrementieren
- * von PC um 2, bis die Abbruchbedingung erfüllt ist.
+ * von PC um 2, bis die Abbruchbedingung erfuellt ist.
  *
  * @return Verbrauchte Taktzyklen.
  */

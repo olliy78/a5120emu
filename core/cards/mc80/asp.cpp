@@ -88,7 +88,7 @@ uint8_t Mc80Asp::getVector() const
 
 void Mc80Asp::onRETI()
 {
-    // Nur der höchste Baustein in Bedienung nimmt das RETI an (Daisy-Chain).
+    // Nur der hoechste Baustein in Bedienung nimmt das RETI an (Daisy-Chain).
     sio_.onRETI();
     ctc_.onRETI();
     pio_.onRETI();

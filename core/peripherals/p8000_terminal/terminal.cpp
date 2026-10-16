@@ -138,7 +138,7 @@ void Terminal::steuerzeichen(uint8_t c) {
     case 0x0D: s_ = 0; break;
     case 0x1E: z_ = s_ = 0; break;
     case ESC: zu_ = Zustand::Esc; break;
-    default: break;   // übrige Steuerzeichen: keine Wirkung
+    default: break;   // uebrige Steuerzeichen: keine Wirkung
     }
 }
 
@@ -212,7 +212,7 @@ void Terminal::escZeichen(uint8_t c) {
     switch (c) {   // ADM31
     case 'I': {    // CBT: linear, endet an HOME
         const int p = z_ * SPALTEN + s_;
-        // Zeilenlänge 80 ist durch 8 teilbar: die Tabstopps des linearen Bildes sind die der Zeile
+        // Zeilenlaenge 80 ist durch 8 teilbar: die Tabstopps des linearen Bildes sind die der Zeile
         const int q = p % 8 ? p - p % 8 : std::max(0, p - 8);
         z_ = q / SPALTEN; s_ = q % SPALTEN;
         break;

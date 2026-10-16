@@ -1,8 +1,8 @@
 # Gepinnte uv-Fassung, mit der die Pakete ihre Laufzeitumgebung einrichten.
 #
-# Der Installer lädt genau diese Fassung und prüft sie gegen die hier
-# hinterlegte Prüfsumme.  Die Prüfsumme reist damit MIT dem Paket — eine
-# nebenher heruntergeladene .sha256-Datei würde nur Übertragungsfehler
+# Der Installer laedt genau diese Fassung und prueft sie gegen die hier
+# hinterlegte Pruefsumme.  Die Pruefsumme reist damit MIT dem Paket — eine
+# nebenher heruntergeladene .sha256-Datei wuerde nur Uebertragungsfehler
 # abdecken, nicht eine ausgetauschte Quelle.
 #
 # Aktualisieren:  packaging/build_payload.sh --refresh-uv

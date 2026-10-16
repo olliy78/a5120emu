@@ -1,21 +1,21 @@
-"""RAM-Floppy RAF in der Oberfläche (AP-R4, doc/design/22_raf512.md §7).
+"""RAM-Floppy RAF in der Oberflaeche (AP-R4, doc/design/22_raf512.md §7).
 
-Geprüft in allen drei Programmen (a5120emu, k8915emu, prg710emu):
+Geprueft in allen drei Programmen (a5120emu, k8915emu, prg710emu):
 
-* Auswahlfeld „RAM-Disk" und Stand-by-Kästchen unter *Einstellungen ▸ Allgemein*;
-  das Kästchen ist nur mit gesteckter RAF wählbar.
+* Auswahlfeld „RAM-Disk" und Stand-by-Kaestchen unter *Einstellungen ▸ Allgemein*;
+  das Kaestchen ist nur mit gesteckter RAF waehlbar.
 * Jeder Typ erzeugt die Maschine neu, mit passendem ``raf_variant``.
-* Stand-by: Inhalt übersteht Aus/Ein und einen Neustart des Programms (Ablage
-  ``raf_<programm>.bin`` im Konfigurationsordner); ohne Kästchen keine Datei.
-* Eine Ablage falscher Größe wird nicht geladen (Statuszeile, kein
-  Meldungsfenster — conftest lässt jedes unerwartete scheitern) und beim nächsten
+* Stand-by: Inhalt uebersteht Aus/Ein und einen Neustart des Programms (Ablage
+  ``raf_<programm>.bin`` im Konfigurationsordner); ohne Kaestchen keine Datei.
+* Eine Ablage falscher Groesse wird nicht geladen (Statuszeile, kein
+  Meldungsfenster — conftest laesst jedes unerwartete scheitern) und beim naechsten
   Sichern ersetzt.
 * Konfiguration ``machine.raf``/``machine.raf_standby``: schreiben, lesen,
   fehlend/unbekannt = aus; die Vorgabedateien tragen ``none``/``false``.
 * Das Handbuch beschreibt die RAF.
 
-Inhalt wird über ``raf_load`` einer präparierten Datei gesetzt und über
-``raf_peek`` geprüft — ohne Gastsystem.
+Inhalt wird ueber ``raf_load`` einer praeparierten Datei gesetzt und ueber
+``raf_peek`` geprueft — ohne Gastsystem.
 """
 
 import dataclasses
@@ -81,7 +81,7 @@ def _stichproben(emu, daten: bytes):
         assert emu.raf_peek(adr) == daten[adr], hex(adr)
 
 
-# ─── Auswahlfeld und Kästchen ────────────────────────────────────────────────
+# ─── Auswahlfeld und Kaestchen ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("maschine", PROGRAMME)
 def test_auswahlfeld_und_kaestchen_in_jedem_programm(qapp, konfig_ordner, maschine):
@@ -97,7 +97,7 @@ def test_auswahlfeld_und_kaestchen_in_jedem_programm(qapp, konfig_ordner, maschi
         assert "88H/89H" in sw.raf_combo.toolTip()
         assert "RAF512.COM" in sw.raf_combo.toolTip()
         assert "Stand-by 5PG" in sw.raf_standby_box.text()
-        # Werkszustand: keine Karte, Kästchen aus und gesperrt.
+        # Werkszustand: keine Karte, Kaestchen aus und gesperrt.
         assert sw.raf_value() == "none"
         assert not sw.raf_standby_box.isChecked()
         assert not sw.raf_standby_box.isEnabled()
@@ -189,7 +189,7 @@ def test_konfiguration_schreiben_und_lesen(qapp, konfig_ordner, maschine):
 
 @pytest.mark.parametrize("abschnitt", [
     None,                                       # kein Abschnitt machine
-    {},                                         # Abschnitt ohne Schlüssel
+    {},                                         # Abschnitt ohne Schluessel
     {"raf": "raf999", "raf_standby": "ja"},     # unbekannt
     "kaputt",                                   # kein Verzeichnis
 ])

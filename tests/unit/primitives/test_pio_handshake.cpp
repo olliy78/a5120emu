@@ -1,8 +1,8 @@
 /**
  * @file test_pio_handshake.cpp
- * @brief Wächter für die additive Handshake-/Pinpegel-Erweiterung des Z80PIO
- *        (P8000 P5c, doc/design/25_p8000.md §10.3): RDY-Ausgänge, /STB-Flanken
- *        Modus 0/1/2 nach Zilog-Datenblatt, Pinpegel mit Pull-up und Rücklesen.
+ * @brief Waechter fuer die additive Handshake-/Pinpegel-Erweiterung des Z80PIO
+ *        (P8000 P5c, doc/design/25_p8000.md §10.3): RDY-Ausgaenge, /STB-Flanken
+ *        Modus 0/1/2 nach Zilog-Datenblatt, Pinpegel mit Pull-up und Ruecklesen.
  *        Das Vorgabeverhalten (setASTB/setBSTB/portAWrite) deckt test_pio.cpp ab.
  */
 #include <gtest/gtest.h>
@@ -48,7 +48,7 @@ TEST(PioHandshake, Modus0_SchreibenRdyHoch_SteigendeStbFlankeRdyTiefUndInterrupt
     f.pio.setStbA(false);                       // fallende Flanke: nichts
     EXPECT_TRUE(f.pio.ardy());
     EXPECT_FALSE(f.pio.hasInterrupt());
-    f.pio.setStbA(true);                        // steigend: Datum übernommen
+    f.pio.setStbA(true);                        // steigend: Datum uebernommen
     EXPECT_FALSE(f.pio.ardy());
     EXPECT_TRUE(f.pio.hasInterrupt());
     EXPECT_EQ(f.pio.getVector(), 0x20);
@@ -73,22 +73,22 @@ TEST(PioHandshake, Modus1_StbSteigendUebernimmtPinsRdyTiefBisCpuLiest) {
     f.pio.setExternA(0xA7);
     f.pio.setStbA(false);
     EXPECT_TRUE(f.pio.ardy());
-    EXPECT_FALSE(f.pio.hasInterrupt()) << "Übernahme/Interrupt erst an der steigenden Flanke";
-    f.pio.setExternA(0x3C);                     // Daten dürfen sich bis zur Flanke ändern
+    EXPECT_FALSE(f.pio.hasInterrupt()) << "Uebernahme/Interrupt erst an der steigenden Flanke";
+    f.pio.setExternA(0x3C);                     // Daten duerfen sich bis zur Flanke aendern
     f.pio.setStbA(true);
     EXPECT_FALSE(f.pio.ardy());
     EXPECT_TRUE(f.pio.hasInterrupt());
     EXPECT_EQ(f.pio.getVector(), 0x30);
     EXPECT_EQ(f.pio.ioRead(A_DAT), 0x3C);
     EXPECT_TRUE(f.pio.ardy()) << "CPU-Lesen ⇒ RDY H";
-    // Solange das Register voll ist, übernimmt ein weiterer Strobe nichts
+    // Solange das Register voll ist, uebernimmt ein weiterer Strobe nichts
     f.pio.setExternA(0x11);
     f.pio.setStbA(false);
-    f.pio.setStbA(true);                        // RDY war H: übernimmt 0x11
+    f.pio.setStbA(true);                        // RDY war H: uebernimmt 0x11
     EXPECT_EQ(f.pio.ioRead(A_DAT), 0x11);
     f.pio.setExternA(0x22);
     f.pio.setStbA(false);
-    f.pio.setStbA(true);                        // RDY ist jetzt H nach Lesen ⇒ übernimmt
+    f.pio.setStbA(true);                        // RDY ist jetzt H nach Lesen ⇒ uebernimmt
     f.pio.setExternA(0x33);
     f.pio.setStbA(false);
     f.pio.setStbA(true);                        // RDY L (nicht gelesen) ⇒ ignoriert
@@ -152,11 +152,11 @@ TEST(PioHandshake, PinpegelOffeneEingaengeMitPullupUndRuecklesen) {
     modus(f.pio, B_CTL, 3);
     f.pio.ioWrite(B_CTL, 0x0F);                 // B0–3 Eingang, B4–7 Ausgang
     f.pio.ioWrite(B_DAT, 0xA0);
-    EXPECT_EQ(f.pio.pinsB(0xFF), 0xAF) << "offene Eingänge lesen H (Pull-up), Ausgänge ihr Register";
-    EXPECT_EQ(f.pio.pinsB(0x00), 0xA0) << "ohne Pull-up lesen offene Eingänge L";
+    EXPECT_EQ(f.pio.pinsB(0xFF), 0xAF) << "offene Eingaenge lesen H (Pull-up), Ausgaenge ihr Register";
+    EXPECT_EQ(f.pio.pinsB(0x00), 0xA0) << "ohne Pull-up lesen offene Eingaenge L";
     f.pio.setExternB(0x04, 0x0F);               // Treiber zieht B0–3 auf 0100
     EXPECT_EQ(f.pio.pinsB(0xFF), 0xA4);
-    EXPECT_EQ(f.pio.ioRead(B_DAT), 0xA4) << "CPU liest Eingänge von den Pins, Ausgänge zurück";
+    EXPECT_EQ(f.pio.ioRead(B_DAT), 0xA4) << "CPU liest Eingaenge von den Pins, Ausgaenge zurueck";
     f.pio.setExternB(0x00, 0x00);               // Treiber weg ⇒ wieder Pull-up
     EXPECT_EQ(f.pio.ioRead(B_DAT) & 0x0F, 0x0F);
 }
@@ -199,7 +199,7 @@ TEST(PioHandshake, HandshakeZustandSichertUndLaedt) {
 
 // ─── Modus 3 flankengetriggert (setModus3Flanke, P8000 P7d; U855 §6.4) ──────────
 namespace {
-/// Port B: Modus 3, alle Eingänge, Vektor 12H, „ODER, aktiv high", Maske FEH (nur B0).
+/// Port B: Modus 3, alle Eingaenge, Vektor 12H, „ODER, aktiv high", Maske FEH (nur B0).
 void kinit(Z80PIO& p) {
     p.ioWrite(B_CTL, 0x12);
     p.ioWrite(B_CTL, 0xCF);
@@ -211,7 +211,7 @@ void kinit(Z80PIO& p) {
 
 TEST(PioModus3Flanke, VorgabeLoestBeimLadenDerMaskeAus) {
     Fix f;
-    f.pio.setExternB(0x01, 0x01);   // B0 = 1: Bedingung schon erfüllt
+    f.pio.setExternB(0x01, 0x01);   // B0 = 1: Bedingung schon erfuellt
     kinit(f.pio);
     EXPECT_TRUE(f.pio.hasInterrupt()) << "Vorgabe pegelbasiert (HARDY am A5120)";
 }
@@ -222,12 +222,12 @@ TEST(PioModus3Flanke, ErfuellteBedingungBeimFreigebenLoestNichtAus_ErstDerWechse
     f.pio.setExternB(0x01, 0x01);
     kinit(f.pio);                   // KINIT der WEGA-Startdiskette: INT_8 liegt auf 1
     EXPECT_FALSE(f.pio.hasInterrupt());
-    f.pio.setExternB(0x00, 0x01);   // Bedingung fällt weg …
+    f.pio.setExternB(0x00, 0x01);   // Bedingung faellt weg …
     EXPECT_FALSE(f.pio.hasInterrupt());
-    f.pio.setExternB(0x01, 0x01);   // … und tritt wieder ein ⇒ Übergang ⇒ Interrupt
+    f.pio.setExternB(0x01, 0x01);   // … und tritt wieder ein ⇒ Uebergang ⇒ Interrupt
     EXPECT_TRUE(f.pio.hasInterrupt());
     EXPECT_EQ(f.pio.getVector(), 0x12);
-    f.pio.setExternB(0x01, 0x01);   // unverändert ⇒ kein weiterer
+    f.pio.setExternB(0x01, 0x01);   // unveraendert ⇒ kein weiterer
     f.pio.onRETI();
     EXPECT_FALSE(f.pio.hasInterrupt());
 }
@@ -238,7 +238,7 @@ TEST(PioModus3Flanke, WechselBeiGesperrtemInterruptLoestSpaeterNichtAus) {
     f.pio.setExternB(0x00, 0x01);
     kinit(f.pio);
     f.pio.ioWrite(B_CTL, 0x03);     // Interrupt sperren
-    f.pio.setExternB(0x01, 0x01);   // Übergang, aber gesperrt
-    f.pio.ioWrite(B_CTL, 0x83);     // freigeben: Bedingung steht, kein neuer Übergang
+    f.pio.setExternB(0x01, 0x01);   // Uebergang, aber gesperrt
+    f.pio.ioWrite(B_CTL, 0x83);     // freigeben: Bedingung steht, kein neuer Uebergang
     EXPECT_FALSE(f.pio.hasInterrupt());
 }

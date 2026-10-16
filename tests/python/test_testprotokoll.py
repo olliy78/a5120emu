@@ -1,13 +1,13 @@
 """@test Testprotokoll-Generator (`tools/test_report.py`): JUnit-XML → HTML.
 
-Warum eine eigene Ebene dafür: die Seite ist das, was in der CI von einem Lauf
-ÜBRIG BLEIBT.  Verschluckt sie einen Fehlschlag, sieht ein roter Lauf grün aus —
-und das fällt niemandem auf, weil der Erzeuger selbst nie rot wird.  Geprüft
+Warum eine eigene Ebene dafuer: die Seite ist das, was in der CI von einem Lauf
+UEBRIG BLEIBT.  Verschluckt sie einen Fehlschlag, sieht ein roter Lauf gruen aus —
+und das faellt niemandem auf, weil der Erzeuger selbst nie rot wird.  Geprueft
 wird deshalb vor allem, was NICHT verlorengehen darf: der Fehlschlag, seine
-Ausgabe, der Rückgabewert, die Zuordnung zur Ebene.
+Ausgabe, der Rueckgabewert, die Zuordnung zur Ebene.
 
-Ausdrücklich NICHT geprüft: das Aussehen.  Ob eine Karte 12 oder 14 Pixel
-Innenabstand hat, gehört in kein Testprotokoll.
+Ausdruecklich NICHT geprueft: das Aussehen.  Ob eine Karte 12 oder 14 Pixel
+Innenabstand hat, gehoert in kein Testprotokoll.
 """
 
 import importlib.util
@@ -26,10 +26,10 @@ def _lade_werkzeug():
 
     Nicht `sys.path`+`import test_report`: pytest importiert Testdateien ohne
     Paket, sodass ein `tests/python/test_report.py` denselben Modulnamen belegen
-    würde — der Import holte dann die Testdatei statt des Werkzeugs (genau so
-    beim Schreiben dieser Datei passiert: 16 Fälle rot mit
-    „module 'test_report' has no attribute …").  Deshalb heißt diese Datei
-    `test_testprotokoll.py` UND das Werkzeug wird über seinen Pfad geladen.
+    wuerde — der Import holte dann die Testdatei statt des Werkzeugs (genau so
+    beim Schreiben dieser Datei passiert: 16 Faelle rot mit
+    „module 'test_report' has no attribute …").  Deshalb heisst diese Datei
+    `test_testprotokoll.py` UND das Werkzeug wird ueber seinen Pfad geladen.
     """
     spec = importlib.util.spec_from_file_location("k1520_test_report", SCRIPT)
     modul = importlib.util.module_from_spec(spec)
@@ -42,7 +42,7 @@ tr = _lade_werkzeug()
 
 
 def _xml(faelle: str, **kopf) -> str:
-    """Minimale ctest-artige JUnit-XML mit den übergebenen <testcase>-Zeilen."""
+    """Minimale ctest-artige JUnit-XML mit den uebergebenen <testcase>-Zeilen."""
     attrs = " ".join(f'{k}="{v}"' for k, v in kopf.items())
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -102,7 +102,7 @@ def test_ebene_kommt_aus_dem_ctest_label(rot):
 
 
 def test_querlabel_gilt_nicht_als_ebene(rot):
-    """`fast`/`slow` sind Eigenschaften, keine Ebenen — sonst hieße die Ebene `fast`."""
+    """`fast`/`slow` sind Eigenschaften, keine Ebenen — sonst hiesse die Ebene `fast`."""
     lauf = tr.lies_junit(rot, "L")
     assert all(f.ebene != "fast" for f in lauf.faelle)
     assert "fast" in lauf.faelle[0].querlabel
@@ -116,14 +116,14 @@ def test_zustaende_werden_unterschieden(rot):
 
 
 def test_ausgabe_nur_beim_fehlschlag(rot):
-    """Die Ausgabe der bestandenen Fälle bläht die Seite ohne Nutzen auf."""
+    """Die Ausgabe der bestandenen Faelle blaeht die Seite ohne Nutzen auf."""
     faelle = {f.name: f for f in tr.lies_junit(rot, "L").faelle}
     assert "0x0168" in faelle["BootIntegration.Stage3"].ausgabe
     assert faelle["Z80Test.NOP"].ausgabe == ""
 
 
 def test_pytest_xml_ohne_label_wird_ueber_den_dateinamen_zugeordnet(tmp_path):
-    """`pytest --junit-xml` schreibt keine cmake_labels; der Name trägt die Ebene."""
+    """`pytest --junit-xml` schreibt keine cmake_labels; der Name traegt die Ebene."""
     p = tmp_path / "python.xml"
     p.write_text(
         '<?xml version="1.0"?><testsuites><testsuite name="pytest" tests="1">'
@@ -136,7 +136,7 @@ def test_pytest_xml_ohne_label_wird_ueber_den_dateinamen_zugeordnet(tmp_path):
 # ─── Erzeugte Seite ──────────────────────────────────────────────────────────
 
 def test_html_ist_eigenstaendig_und_zeigt_den_fehlschlag(rot, tmp_path):
-    """Kein Nachladen (Actions-Artefakt wird offline geöffnet), Fehler sichtbar."""
+    """Kein Nachladen (Actions-Artefakt wird offline geoeffnet), Fehler sichtbar."""
     ziel = tmp_path / "p.html"
     assert tr.main([f"Lauf:{rot}", "-o", str(ziel)]) == 0
     seite = ziel.read_text(encoding="utf-8")
@@ -171,12 +171,12 @@ def test_markdown_kurzfassung_nennt_die_fehlschlaege(rot, capsys):
     md = capsys.readouterr().out
     assert "| ❌ Windows |" in md
     assert "BootIntegration.Stage3" in md
-    # Die Statuszeile gehört auf stderr, sonst landet sie in der GitHub-
+    # Die Statuszeile gehoert auf stderr, sonst landet sie in der GitHub-
     # Zusammenfassung (`--summary-md - >> $GITHUB_STEP_SUMMARY`).
     assert "test_report:" not in md
 
 
-# ─── Rückgabewerte: davon hängt ab, ob die CI rot wird ───────────────────────
+# ─── Rueckgabewerte: davon haengt ab, ob die CI rot wird ───────────────────────
 
 def test_fail_on_error_meldet_den_fehlschlag(rot, gruen, tmp_path):
     ziel = str(tmp_path / "p.html")
@@ -199,8 +199,8 @@ def test_kaputte_xml_ist_kein_absturz(tmp_path):
     ("Windows:build/junit.xml", "Windows", "build/junit.xml"),
     ("Tiefe (format_integration):a.xml", "Tiefe (format_integration)", "a.xml"),
     ("build/Testing/junit.xml", "junit", "build/Testing/junit.xml"),
-    # Ein einzelner Buchstabe ist ein Laufwerk, kein Name — sonst hieße der Lauf
-    # „C" und der Pfad wäre auf „\lauf.xml" abgeschnitten.
+    # Ein einzelner Buchstabe ist ein Laufwerk, kein Name — sonst hiesse der Lauf
+    # „C" und der Pfad waere auf „\lauf.xml" abgeschnitten.
     ("C:/lauf.xml", "lauf", "C:/lauf.xml"),
 ])
 def test_laufname_vor_dem_doppelpunkt(eintrag, name, pfad):

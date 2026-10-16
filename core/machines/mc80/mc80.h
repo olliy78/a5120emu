@@ -2,11 +2,11 @@
  * @file mc80.h
  * @brief MC80 (VEB Elektronik Gera) — sechste Maschine des Kerns (K1520_MACHINE_MC80 = 6).
  *
- * Stand AP M2 (doc/design/32_… §6, Entwurf doc/design/31_mc80.md): **Gerüst** —
+ * Stand AP M2 (doc/design/32_… §6, Entwurf doc/design/31_mc80.md): **Geruest** —
  * ZVE (`Mc80Zve`: U880 2,4576 MHz, EGOS-ROM 0000H–1FFFH, 16 KB RAM C000H–FFFFH, CTC 80H,
- * PIO 84H = Segmentregister über Tor B/85H, RAM-Steuerung 8CH/8DH) und SPE 2 (`Mc80Spe2`:
+ * PIO 84H = Segmentregister ueber Tor B/85H, RAM-Steuerung 8CH/8DH) und SPE 2 (`Mc80Spe2`:
  * ROM 2000H–27FFH, leere Fassungen bis 3FFFH lesen 00H, RAM-Segment 4000H–BFFFH).  EGOS
- * läuft nach dem Einschalten durch RESET und die RESET-Kette bis zur Kommandoschleife; Bild
+ * laeuft nach dem Einschalten durch RESET und die RESET-Kette bis zur Kommandoschleife; Bild
  * (VIS 2a, C0H), ASP (SIO/CTC/PIO, D0H) und Tastatur (Zeichenebene an SIO A) seit M3,
  * Programmsegmente in M4, Kassette (K5020 als steckbare Option an 30H) seit M7.
  *
@@ -16,7 +16,7 @@
  *
  * Interruptkette: ZVE (CTC → PIO) → ASP (SIO → CTC → PIO) [? Reihenfolge der KARTEN ist
  * nicht belegt (hardware_3x.md §7); EGOS benutzt nur ASP-Quellen, die Reihenfolge der
- * ZVE davor ist für EGOS gleichgültig].  Text: `screenChar` per Mustervergleich
+ * ZVE davor ist fuer EGOS gleichgueltig].  Text: `screenChar` per Mustervergleich
  * (`core/cards/mc80/egos_text.h`).  Keine Laufwerke (alle Diskettenfunktionen verneinen).  Kein Save-State.
  */
 
@@ -46,10 +46,10 @@ public:
     };
 
     static constexpr uint32_t CPU_HZ = Mc80Zve::CPU_HZ;
-    /// Bildgröße der VIS 2a (512 × 256, ein Byte je Bildpunkt 00H/FFH, Zeile 0 oben).
+    /// Bildgroesse der VIS 2a (512 × 256, ein Byte je Bildpunkt 00H/FFH, Zeile 0 oben).
     static constexpr int FB_BREITE = Mc80Vis2a::BREITE;
     static constexpr int FB_HOEHE  = Mc80Vis2a::HOEHE;
-    /// Textrückgewinnung: 25 Zeilen, höchstens 80 Spalten (Proportionalschrift → Spalte =
+    /// Textrueckgewinnung: 25 Zeilen, hoechstens 80 Spalten (Proportionalschrift → Spalte =
     /// Zeichenindex in der Zeile, nicht Bildposition).
     static constexpr int TEXT_SPALTEN = 80;
 
@@ -75,7 +75,7 @@ public:
     void setConsoleMode(bool) override {}
     bool consolePoll(int&, int&, char&) override { return false; }
     /// Zeichen @p col der EGOS-Textzeile @p row (0…24), per Mustervergleich; Leerzeichen
-    /// hinter dem Zeilenende, 0 außerhalb.
+    /// hinter dem Zeilenende, 0 ausserhalb.
     uint8_t screenChar(int col, int row) const override;
     /// Ganze Textzeile (Mustervergleich, ohne Leerzeichen am Ende).
     std::string textZeile(int row) const;
@@ -141,7 +141,7 @@ public:
     // Debugger/Werkzeuge (AP M8): Befehlsbeobachter und Bus-Protokoll.
     void setCpuTraceCallback(std::function<void(const Z80&)> cb) { zve_.cpu().traceCallback = std::move(cb); }
     void setBusTrace(K1520Bus::BusTrace cb) { bus_.setTraceCallback(std::move(cb)); }
-    /// Koppelbus ASP → K5020 (MC80.30): ASP-CTC K2 läuft als Zähler (EGOS MB_INIT `47H,02H`).
+    /// Koppelbus ASP → K5020 (MC80.30): ASP-CTC K2 laeuft als Zaehler (EGOS MB_INIT `47H,02H`).
     bool aspBandtakt() const;
 
 protected:
@@ -157,7 +157,7 @@ protected:
 
 private:
     static Config pruefe(const Config& cfg);
-    /// Systemweiter /RESET ohne Abschluss der Bestückung (aus powerOn() und reset()).
+    /// Systemweiter /RESET ohne Abschluss der Bestueckung (aus powerOn() und reset()).
     void resetHardware();
 
     const Config cfg_;
@@ -171,7 +171,7 @@ private:
     Mc80Asp   asp_;
     Mc80Tastatur tast_;
 
-    // Textrückgewinnung, gepuffert je VIS-Revision
+    // Textrueckgewinnung, gepuffert je VIS-Revision
     mutable uint64_t text_revision_ = ~0ull;
     mutable std::vector<std::string> text_;
 

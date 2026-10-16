@@ -37,7 +37,7 @@ TempDisk TempDisk::empty(const std::string& file_name) {
     TempDisk t;
     t.path_ = k1520test::tempPath("k1520_" + file_name);
     std::error_code ec;
-    fs::remove(t.path_, ec);          // Rest eines früheren Laufs wegräumen
+    fs::remove(t.path_, ec);          // Rest eines frueheren Laufs wegraeumen
     return t;
 }
 

@@ -9,52 +9,52 @@
  * AP P9b (doc/design/25_p8000.md §10.11).  Abdeckungsliste: doc/p8000/mmu_logik_abdeckung.md.
  *
  * Kennt keinen Speicher und keine CPU: die Karte (P10) reicht jeden Buszyklus des U8001 herein
- * und bekommt das ZIEL zurück (On-Board-EPROM/-SRAM/leer oder Hauptspeicher mit 24-Bit-
- * Busadresse, unterdrückt ja/nein, Wartetakte).  /SEGT geht über `onSegt` an die CPU.
+ * und bekommt das ZIEL zurueck (On-Board-EPROM/-SRAM/leer oder Hauptspeicher mit 24-Bit-
+ * Busadresse, unterdrueckt ja/nein, Wartetakte).  /SEGT geht ueber `onSegt` an die CPU.
  *
  * @code
- *   Auswahl (nur Speicherzyklen, nicht On-Board) — Gatter Bl. 5, wörtlich nachgebildet:
+ *   Auswahl (nur Speicherzyklen, nicht On-Board) — Gatter Bl. 5, woertlich nachgebildet:
  *     System-Mode                                   → Code-MMU  (Befehl, Daten, Stack)
  *     Normal, SCR.2 = 1 (SEG USR), SN6 = 0          → Data-MMU
  *     Normal, SEG USR, SN6 = 1                      → Stack-MMU
  *     Normal, SEG USR = 0, Status 11xx (Holen)      → Code-MMU
  *     Normal, SEG USR = 0, Status 10xx, Adr-High < NBR → Data-MMU
- *     dto., Adr-High ≥ NBR                          → Stack-MMU   (Status 1001 zählt NICHT)
- *   Die gewählte MMU sieht N/S = L, die beiden anderen N/S = H (Mode %D0–%D2: MST, NMS = 0).
+ *     dto., Adr-High ≥ NBR                          → Stack-MMU   (Status 1001 zaehlt NICHT)
+ *   Die gewaehlte MMU sieht N/S = L, die beiden anderen N/S = H (Mode %D0–%D2: MST, NMS = 0).
  *   Data-/Stack-MMU haben SN6 fest L.  /CS bei Spezial-E/A: AD1 = Code, AD2 = Data, AD3 = Stack
  *   (low-aktiv, mehrere zugleich).  MMU aus (SCR.1 = 0): Busadresse = SN·64K + Offset, A23 = 0.
- *   On-Board: SCR.0 = 0 ∧ SN = 0 ∧ Offset < 8000H — unabhängig von MMU ON und CPU-Modus;
+ *   On-Board: SCR.0 = 0 ∧ SN = 0 ∧ Offset < 8000H — unabhaengig von MMU ON und CPU-Modus;
  *   0000–3FFF EPROM, 4000–5FFF SRAM (2 KB, 4 Spiegel), 6000–7FFF leer; +1 Wartetakt.
  *
  *   E/A (Standard, ungerade):  FFC1 SCR r/w (Bit 4–7 lesen 1) · FFC9 SBR (kein Speicher) ·
  *   FFD1 NBR r/w · FFD9 LEDEIN (Idx 4) bzw. SNVR (Idx 1) · FFE1 RETI w · FFE9 SOFTRESET w ·
- *   FFF1 TRPL r · FFF9 IF1L r · FFB9 LEDAUS (Idx 4, anderer Dekoder, hier mitgeführt).
+ *   FFF1 TRPL r · FFF9 IF1L r · FFB9 LEDAUS (Idx 4, anderer Dekoder, hier mitgefuehrt).
  * @endcode
  *
- * Benannte Annahmen (Lücken der Quellen; Messfragen in schaltplan_16bit.md §11):
+ * Benannte Annahmen (Luecken der Quellen; Messfragen in schaltplan_16bit.md §11):
  *  [L1] Gleichheit Adresse-High = NBR → Stack-MMU (Plan: 74S85 A>B, Kaskadenrichtung nur
  *       abgeleitet).  **WEGA rechnet umgekehrt** (`nsseg`/`getmem`: `cpb rh7,NBR; jr ugt` ⇒
- *       Gleichheit = Data) — umschaltbar über `Config::nbrGleichheitStack`.
+ *       Gleichheit = Data) — umschaltbar ueber `Config::nbrGleichheitStack`.
  *  [L2] Flipflop 4D16 (/OE des NBR-Latch): Q folgt dem LAUFENDEN Zyklus (Q = SN1–SN5 alle 0);
- *       die asynchronen Eingänge (/R = Zugriff FFD1, /S = Zugriff FFC9) wirken nur während des
+ *       die asynchronen Eingaenge (/R = Zugriff FFD1, /S = Zugriff FFC9) wirken nur waehrend des
  *       E/A-Zyklus selbst und hinterlassen keinen Zustand.  Bei Q = 1 (Segment 0/1/64/65)
- *       schweben die Vergleichereingänge ⇒ wirksames NBR = FFH.
- *  [L3] FFC9 (SELSYSBRKREG−) speichert nichts; Lesen liefert den offenen Bus (`leer8`).  Gestützt
- *       von MON16 `p.test.s`: Testschritt 84 (SBR-Rücklesen) läuft nur auf Index-0-Hardware.
+ *       schweben die Vergleichereingaenge ⇒ wirksames NBR = FFH.
+ *  [L3] FFC9 (SELSYSBRKREG−) speichert nichts; Lesen liefert den offenen Bus (`leer8`).  Gestuetzt
+ *       von MON16 `p.test.s`: Testschritt 84 (SBR-Ruecklesen) laeuft nur auf Index-0-Hardware.
  *  [L4] SCR lesend: Bit 4–7 = 1 (Index 1 laut Handbuch fest High; Index 4 ohne Angabe).
- *  [L5] /CS während /RESET aktiv ⇒ nach MRESET MSEN = 1, TRNS = 0 in allen drei MMUs (Handbuch
+ *  [L5] /CS waehrend /RESET aktiv ⇒ nach MRESET MSEN = 1, TRNS = 0 in allen drei MMUs (Handbuch
  *       §2.2: „Master-Enable-Flag in den MMUs nicht auf Null"; [TB] §7.2.1).  `Config::csBeimReset`.
- *  [L6] IF1L-Stufe 1 (3D20) übernimmt LAD0–7 am ENDE jedes Zyklus mit Status 1101 (Handbuch:
+ *  [L6] IF1L-Stufe 1 (3D20) uebernimmt LAD0–7 am ENDE jedes Zyklus mit Status 1101 (Handbuch:
  *       „erstes Befehlswort"; Plan: Y4 oder Y5 unsicher → `Config::if1lAuchStatus1100`).  Stufe 2
  *       (1D20) und TRPL takten mit der Flanke der SAMMELleitung /SEGT (inaktiv → aktiv) mitten im
- *       verletzenden Zyklus ⇒ verletzt das Holen selbst, steht in IF1L noch der Vorgänger (wie
+ *       verletzenden Zyklus ⇒ verletzt das Holen selbst, steht in IF1L noch der Vorgaenger (wie
  *       ISN/IOFF der Z8010).  Eine zweite MMU, die bei schon gezogener Leitung zieht, taktet nicht.
  *  [L7] Unbeschaltetes TRAD (MMU ON, keine MMU treibt) liest sich als 1 (TTL offen) ⇒ A8–A23 =
  *       FFFFH.  Treiben mehrere MMUs (TRNS = 0 oder MST = 0), gilt verdrahtetes UND; ebenso beim
- *       Lesen mehrerer per /CS gewählter MMUs und bei gleichen IDs in der Trap-Quittung.
- *  [L8] /SUP sperrt SYSDS (Bl. 9) für JEDEN Hauptspeicherzyklus — Schreiben wirkt nicht, Lesen
+ *       Lesen mehrerer per /CS gewaehlter MMUs und bei gleichen IDs in der Trap-Quittung.
+ *  [L8] /SUP sperrt SYSDS (Bl. 9) fuer JEDEN Hauptspeicherzyklus — Schreiben wirkt nicht, Lesen
  *       liefert den offenen Bus (welches Datum: karte16.h [K7]) —, auch bei MMU aus; der
- *       On-Board-Speicher hängt nicht an SYSDS.
+ *       On-Board-Speicher haengt nicht an SYSDS.
  *  [L9] Die Register FFC1–FFF9 sind an A1/A2 nicht dekodiert (D13 ohne LAD1/2, 3D24 nur LAD3–5)
  *       ⇒ jedes erscheint 4-fach (FFC1/3/5/7 …); ebenso LEDAUS FFB9–FFBF.
  *  [L10] Schreib-Strobes (LEDEIN, LEDAUS, SOFTRESET, RETI) wirken nur beim Schreiben; Lesen aller
@@ -65,7 +65,7 @@
  *       unmittelbar nach EDH an FFE1.
  *
  * Save-State: serialize()/deserialize(), Version 1 (Register, Trap-Latches, LED, /SEGT-Pegel,
- * 3 × Z8010 v1).  Zähler und „letzter Zugriff" sind Beobachtung, nicht Zustand.
+ * 3 × Z8010 v1).  Zaehler und „letzter Zugriff" sind Beobachtung, nicht Zustand.
  *
  * @license MIT
  */
@@ -99,7 +99,7 @@ public:
     static constexpr uint8_t SCR_BDMEM_AUS = 0x01;  ///< BD MEM ON−: 1 = On-Board aus
     static constexpr uint8_t SCR_MMU_ON    = 0x02;  ///< MMU ONH: Adresstreiber auf TRAD
     static constexpr uint8_t SCR_SEG_USR   = 0x04;  ///< segmentierte Anwender
-    static constexpr uint8_t SCR_PARITAET  = 0x08;  ///< CLR PARITY−: 1 = Paritätsfehler annehmen
+    static constexpr uint8_t SCR_PARITAET  = 0x08;  ///< CLR PARITY−: 1 = Paritaetsfehler annehmen
 
     enum class Mmu : uint8_t { Code = 0, Data = 1, Stack = 2 };
     /// Welche MMU im Zyklus N/S = L sah.
@@ -108,7 +108,7 @@ public:
     static const char* wahlName(Wahl w);
     static const char* zielName(Ziel z);
 
-    /// Was ein Buszyklus bewirkt — die Karte führt den Zugriff damit aus.
+    /// Was ein Buszyklus bewirkt — die Karte fuehrt den Zugriff damit aus.
     struct Zugriff {
         Ziel     ziel = Ziel::Keins;
         /// Hauptspeicher: Busadresse A0–A23.  On-Board: Byteadresse im Baustein
@@ -134,14 +134,14 @@ public:
     std::function<void()> onReti;
 
     // ── Bus ─────────────────────────────────────────────────────────────────
-    /// Jeder CPU-Buszyklus.  Nur Status 8–D erreicht ein Ziel; die übrigen ändern nichts.
+    /// Jeder CPU-Buszyklus.  Nur Status 8–D erreicht ein Ziel; die uebrigen aendern nichts.
     Zugriff zyklus(const Z8kBusCycle& c);
-    /// Segmenttrap-Quittung (Status 0100): Kennwort AD0–15 [L7]; nimmt /SEGT zurück.
+    /// Segmenttrap-Quittung (Status 0100): Kennwort AD0–15 [L7]; nimmt /SEGT zurueck.
     uint16_t segtQuittung();
-    /// Spezial-E/A (Status 0011) an die per /CS (AD1/2/3 = L) gewählten MMUs; Befehl = AD8–15.
+    /// Spezial-E/A (Status 0011) an die per /CS (AD1/2/3 = L) gewaehlten MMUs; Befehl = AD8–15.
     uint16_t spezialLesen(uint16_t port);
     void     spezialSchreiben(uint16_t port, uint16_t ad);
-    /// Bitmaske der durch /CS gewählten MMUs (Bit 0 Code, 1 Data, 2 Stack).
+    /// Bitmaske der durch /CS gewaehlten MMUs (Bit 0 Code, 1 Data, 2 Stack).
     static uint8_t csMaske(uint16_t port) { return uint8_t((~port >> 1) & 7); }
 
     /// Standard-E/A dieses Blocks (Byte an ungerader Adresse = AD0–7).
@@ -168,7 +168,7 @@ public:
         bool            nsHigh[3] = {true, true, true};   ///< N/S-Eingang je MMU
         uint8_t         nbrWirksam = 0;                   ///< nach [L2]
     };
-    /// Was zyklus() für @p c ergäbe — ohne Zustand, Flags, REF/CHG, SEGT, Latches zu berühren.
+    /// Was zyklus() fuer @p c ergaebe — ohne Zustand, Flags, REF/CHG, SEGT, Latches zu beruehren.
     Probe probe(const Z8kBusCycle& c) const;
 
     struct SegtEreignis {
@@ -203,7 +203,7 @@ public:
 
     // ── Save-State ──────────────────────────────────────────────────────────
     void serialize(std::vector<uint8_t>& out) const;
-    /// Stellt auch den /SEGT-Pegel über `onSegt` wieder her.
+    /// Stellt auch den /SEGT-Pegel ueber `onSegt` wieder her.
     bool deserialize(const uint8_t*& p, const uint8_t* end);
 
 private:

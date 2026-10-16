@@ -3,23 +3,23 @@
  * @brief Der A5120 als Konsolenanwendung: Terminal-Rohmodus, Tastenabbildung,
  *        differenzielles Zeichnen des 80x24-Textbildschirms.
  *
- * Damit lässt sich `k1520dbg` als **interaktiver Emulator** benutzen: tippen wie
- * an der Maschine, während die Haltepunkte scharf bleiben. Genau das kann sonst
- * nichts — die Oberfläche hat keine Haltepunkte, der Debugger hatte keine lebende
+ * Damit laesst sich `k1520dbg` als **interaktiver Emulator** benutzen: tippen wie
+ * an der Maschine, waehrend die Haltepunkte scharf bleiben. Genau das kann sonst
+ * nichts — die Oberflaeche hat keine Haltepunkte, der Debugger hatte keine lebende
  * Eingabe.
  *
- * Warum das überhaupt verlustfrei geht: der K7024 ist ein **Zeichenbildschirm**,
- * kein Pixelgerät (`core/cards/k7024/k7024.cpp`). Jede VRAM-Zelle ab 0xF800
- * trägt in Bit [6:0] den Zeichencode und in Bit 7 den Cursor; Codes unter 0x20
- * sind leer. Ein Terminal kann den Schirm also Zelle für Zelle wiedergeben — es
+ * Warum das ueberhaupt verlustfrei geht: der K7024 ist ein **Zeichenbildschirm**,
+ * kein Pixelgeraet (`core/cards/k7024/k7024.cpp`). Jede VRAM-Zelle ab 0xF800
+ * traegt in Bit [6:0] den Zeichencode und in Bit 7 den Cursor; Codes unter 0x20
+ * sind leer. Ein Terminal kann den Schirm also Zelle fuer Zelle wiedergeben — es
  * geht nichts verloren.
  *
- * Aufbau (alles header-only, wie der übrige Werkzeugkasten):
- *   - RawMode      RAII: Terminal in den Rohmodus und zuverlässig zurück
+ * Aufbau (alles header-only, wie der uebrige Werkzeugkasten):
+ *   - RawMode      RAII: Terminal in den Rohmodus und zuverlaessig zurueck
  *   - Keyboard     nichtblockierendes Lesen + Escape-Sequenzen -> K7637-Codes
- *   - ScreenDiff   zeichnet nur geänderte Zellen (sonst flimmert es bei 50 Hz)
+ *   - ScreenDiff   zeichnet nur geaenderte Zellen (sonst flimmert es bei 50 Hz)
  *
- * Getestet über ein Pseudoterminal: `tests/python/test_dbg_konsole.py`.
+ * Getestet ueber ein Pseudoterminal: `tests/python/test_dbg_konsole.py`.
  *
  * @license MIT
  */
@@ -55,12 +55,12 @@
 namespace k1520term {
 
 // ─── Tastencodes ─────────────────────────────────────────────────────────────
-// Sonderwerte von Keyboard::read(); alles >= 0 ist ein Code für
+// Sonderwerte von Keyboard::read(); alles >= 0 ist ein Code fuer
 // A5120Machine::keyPress() (ASCII 0x20..0x7E oder eine K7637::QK_*-Konstante).
 constexpr int KEY_NONE   = -1;   ///< nichts angeschlagen
-constexpr int KEY_LEAVE  = -2;   ///< Ctrl-] — zurück in den Debugger
+constexpr int KEY_LEAVE  = -2;   ///< Ctrl-] — zurueck in den Debugger
 
-// K7637-Konstanten hier gespiegelt, damit der Header allein übersetzbar bleibt
+// K7637-Konstanten hier gespiegelt, damit der Header allein uebersetzbar bleibt
 // (dieselben Werte wie core/peripherals/k7637/k7637.h — dort steht die Herkunft).
 constexpr int QK_ESCAPE    = 0x01000000;
 constexpr int QK_TAB       = 0x01000001;
@@ -76,13 +76,13 @@ constexpr int QK_F1        = 0x01000030;
 // ─── Rohmodus ────────────────────────────────────────────────────────────────
 
 /**
- * @brief Schaltet das Terminal in den Rohmodus und beim Zerstören zurück.
+ * @brief Schaltet das Terminal in den Rohmodus und beim Zerstoeren zurueck.
  *
  * Drei Dinge werden bewusst abgeschaltet:
- *   - **ICANON/ECHO** — sonst käme jede Taste erst nach Enter an, und das
- *     Terminal schriebe sie zusätzlich selbst auf den Schirm.
- *   - **ISIG** — Ctrl-C gehört dem GAST (CP/M-Programme brechen damit ab). Ohne
- *     das bräche stattdessen der Debugger den Lauf ab. Der Rückweg ist Ctrl-].
+ *   - **ICANON/ECHO** — sonst kaeme jede Taste erst nach Enter an, und das
+ *     Terminal schriebe sie zusaetzlich selbst auf den Schirm.
+ *   - **ISIG** — Ctrl-C gehoert dem GAST (CP/M-Programme brechen damit ab). Ohne
+ *     das braeche stattdessen der Debugger den Lauf ab. Der Rueckweg ist Ctrl-].
  *   - **IXON** — Ctrl-S/Ctrl-Q sind Zeichen wie andere auch, keine Flusssteuerung.
  */
 class RawMode {
@@ -104,7 +104,7 @@ public:
         mode &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
         SetConsoleMode(in, mode);
         // Ohne VIRTUAL_TERMINAL_PROCESSING druckt die Konsole die ANSI-Sequenzen
-        // als Text, statt sie auszuführen (Windows 10 1511+ kann es).
+        // als Text, statt sie auszufuehren (Windows 10 1511+ kann es).
         if (GetConsoleMode(out, &saved_out_)) {
             SetConsoleMode(out, saved_out_ | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
             out_saved_ = true;
@@ -145,18 +145,18 @@ private:
 // ─── Tastatur ────────────────────────────────────────────────────────────────
 
 /**
- * @brief Liest höchstens eine Taste, nichtblockierend, und bildet sie ab.
+ * @brief Liest hoechstens eine Taste, nichtblockierend, und bildet sie ab.
  *
  * Die Krux sind die **Escape-Sequenzen**: ein Pfeil oben kommt als `ESC [ A`,
- * die ESC-TASTE als einzelnes `ESC`. Unterscheiden lässt sich das nur über die
+ * die ESC-TASTE als einzelnes `ESC`. Unterscheiden laesst sich das nur ueber die
  * Zeit — kommt nach einem ESC innerhalb einer kurzen Frist nichts nach, war es
- * die Taste. Deshalb der Puffer über Aufrufe hinweg plus @ref kEscFrames.
+ * die Taste. Deshalb der Puffer ueber Aufrufe hinweg plus @ref kEscFrames.
  */
 class Keyboard {
 public:
     /// Wie viele Aufrufe ein einzelnes ESC warten darf, bevor es als ESC-TASTE
-    /// gilt. Bei 20 ms Rahmentakt sind zwei Aufrufe ~40 ms — länger als jede
-    /// Sequenz braucht, kürzer als ein Mensch merkt.
+    /// gilt. Bei 20 ms Rahmentakt sind zwei Aufrufe ~40 ms — laenger als jede
+    /// Sequenz braucht, kuerzer als ein Mensch merkt.
     static constexpr int kEscFrames = 2;
 
     int read() {
@@ -171,7 +171,7 @@ public:
             int consumed = 0;
             const int key = decodeEscape(consumed);
             if (key != KEY_NONE) { drop(consumed); esc_wait_ = 0; return key; }
-            // Unvollständig: noch etwas warten, dann als ESC-Taste werten.
+            // Unvollstaendig: noch etwas warten, dann als ESC-Taste werten.
             if (buf_.size() == 1 && ++esc_wait_ >= kEscFrames) {
                 drop(1); esc_wait_ = 0; return QK_ESCAPE;
             }
@@ -235,8 +235,8 @@ private:
 #endif
     }
 
-    /// Versucht, am Pufferanfang eine vollständige Sequenz zu erkennen.
-    /// @return Tastencode und @p consumed, oder KEY_NONE wenn (noch) unvollständig.
+    /// Versucht, am Pufferanfang eine vollstaendige Sequenz zu erkennen.
+    /// @return Tastencode und @p consumed, oder KEY_NONE wenn (noch) unvollstaendig.
     int decodeEscape(int& consumed) {
         if (buf_.size() < 2) return KEY_NONE;
         const unsigned char b1 = buf_[1];
@@ -281,18 +281,18 @@ private:
 // ─── Bildschirm ──────────────────────────────────────────────────────────────
 
 /**
- * @brief Zeichnet den 80x24-Textbildschirm und schreibt nur, was sich änderte.
+ * @brief Zeichnet den 80x24-Textbildschirm und schreibt nur, was sich aenderte.
  *
- * Ein Vollbild je Rahmen (50 Hz x 1920 Zellen) lässt jedes Terminal flimmern und
+ * Ein Vollbild je Rahmen (50 Hz x 1920 Zellen) laesst jedes Terminal flimmern und
  * flutet eine SSH-Strecke. Deshalb wird der letzte Stand gehalten und nur die
- * geänderte Zelle neu gesetzt.
+ * geaenderte Zelle neu gesetzt.
  */
 class ScreenDiff {
 public:
     static constexpr int kCols = 80;
     static constexpr int kRows = 24;
 
-    /// Erzwingt beim nächsten Zeichnen ein Vollbild (nach Wiedereintritt).
+    /// Erzwingt beim naechsten Zeichnen ein Vollbild (nach Wiedereintritt).
     void invalidate() { last_.assign(kCols * kRows, 0xFFu); cursor_ = -1; }
 
     /**
@@ -344,7 +344,7 @@ public:
         if (!o.empty()) { fwrite(o.data(), 1, o.size(), out); fflush(out); }
     }
 
-    /// Vollbild löschen und Cursor nach Hause (beim Eintritt in den Konsolenmodus).
+    /// Vollbild loeschen und Cursor nach Hause (beim Eintritt in den Konsolenmodus).
     static void clear(FILE* out) { fputs("\x1b[2J\x1b[H", out); fflush(out); }
 
 private:

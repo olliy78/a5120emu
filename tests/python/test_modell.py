@@ -1,7 +1,7 @@
 """`app/modell.py` — Modellwahl A5120/A5120.16.
 
 Reine Python-Logik ohne Kern und ohne Qt: die eine Stelle, die einen
-Modellschlüssel (``general.model`` der Konfiguration) auf den core-``em``-
+Modellschluessel (``general.model`` der Konfiguration) auf den core-``em``-
 Parameter von ``K1520Emulator`` und den Anzeigenamen abbildet.
 """
 
@@ -18,7 +18,7 @@ def test_a5120_16_maps_to_em256():
 
 
 def test_normalize_falls_back_to_the_default():
-    """Ältere/fremde Konfigurationen ohne (oder mit unbekanntem) Eintrag."""
+    """Aeltere/fremde Konfigurationen ohne (oder mit unbekanntem) Eintrag."""
     for wert in (None, "", "   ", "unbekannt", "EM256", 42):
         assert modell.normalize(wert) == modell.DEFAULT_MODEL
 

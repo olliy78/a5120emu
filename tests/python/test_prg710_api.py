@@ -1,8 +1,8 @@
-"""PRG 710 / PRG 710-1 über die Python-Bindung (AP-P5b) — der Weg der Oberfläche (P5d).
+"""PRG 710 / PRG 710-1 ueber die Python-Bindung (AP-P5b) — der Weg der Oberflaeche (P5d).
 
-C++-Wächter (`Prg710Boot.*`, `Prg710Udos.*`) fahren die Maschine direkt; hier läuft
-dasselbe durch ctypes: Bauen beider Varianten, Starttaste über die C-ABI
-(`QK_TASTE_BASE | Position` bzw. Qt-Return), Bild über `k1520_screen_char`
+C++-Waechter (`Prg710Boot.*`, `Prg710Udos.*`) fahren die Maschine direkt; hier laeuft
+dasselbe durch ctypes: Bauen beider Varianten, Starttaste ueber die C-ABI
+(`QK_TASTE_BASE | Position` bzw. Qt-Return), Bild ueber `k1520_screen_char`
 (nie `mem_read`: die CPU sieht das VRAM nur bei E8H[F] = FFH), Laufwerksanzeigen,
 Speicherverwaltung, Schnittstellenbelegung je Variante (AP-P4).
 """
@@ -20,7 +20,7 @@ FIXTURE = {"prg710": "prg710_udos43_k5601_mrs_boot.hfe",
 
 
 def _zeilen(emu):
-    # Nicht druckbare Zeichen (00H, 0DH der Zeilenenden) zählen wie Leerraum.
+    # Nicht druckbare Zeichen (00H, 0DH der Zeilenenden) zaehlen wie Leerraum.
     return ["".join(c if " " <= c < "\x7f" else " " for c in z).rstrip()
             for z in emu.screen_text().split("\n")]
 
@@ -57,7 +57,7 @@ def test_andere_maschinen_haben_keine_prg_diagnose():
 
 
 def test_schnittstellen_je_variante():
-    """AP-P4: 710 = 3 Anschlüsse, 710-1 = 2 (Kanal B trägt die Tastatur K7672); AP-P8c:
+    """AP-P4: 710 = 3 Anschluesse, 710-1 = 2 (Kanal B traegt die Tastatur K7672); AP-P8c:
     dahinter je der Fernschreiber (ASS 590069)."""
     from app.core_binding.k1520 import K1520Emulator
 
@@ -91,7 +91,7 @@ def test_ohne_diskette_nkm_loader_und_bei_start_diskerror(name, variante):
     assert _zeilen(emu)[0] == "NKM-LOADER"
     assert all(z == "" for z in _zeilen(emu)[1:]), "vor der Taste nichts weiter"
 
-    # Die Taste kommt über die C-ABI an: ohne sie bliebe es bei einer Zeile.
+    # Die Taste kommt ueber die C-ABI an: ohne sie bliebe es bei einer Zeile.
     _tippe(emu, QT_KEY_RETURN)
     emu.run(10_000_000)
     zeilen = _zeilen(emu)
@@ -134,7 +134,7 @@ def test_udos_bootet_bis_zum_datum_und_anzeigen_folgen_dem_laufwerk(name, varian
             break
     assert erreicht, "\n".join(_zeilen(emu))
     assert gesehen["led"] and gesehen["motor"], gesehen
-    # UDOS im Arbeitsmodell §4b: Abbildung frei, Seiten 0–E OPS-RAM in Identität.
+    # UDOS im Arbeitsmodell §4b: Abbildung frei, Seiten 0–E OPS-RAM in Identitaet.
     emu.run(1_000_000)
     assert emu.prg_freigabe() == 0x0F
     for n in range(15):
@@ -152,18 +152,18 @@ def test_wiederholung_in_echtzeit_ist_am_prg_ansprechbar(name, variante):
     _lib.k1520_set_key_repeat_realtime(emu._handle, False)
 
 
-# ─── EPROMmer (AP-P7b): virtueller Sockel über die C-ABI ─────────────────────
+# ─── EPROMmer (AP-P7b): virtueller Sockel ueber die C-ABI ─────────────────────
 
 @pytest.mark.parametrize("name,variante", VARIANTEN)
 def test_eprom_sockel_ueber_die_bindung(name, variante, tmp_path):
-    """Einlegen (Datei, leer), Inhalt, Speichern, UV-Löschen, Entnehmen, Protokoll."""
+    """Einlegen (Datei, leer), Inhalt, Speichern, UV-Loeschen, Entnehmen, Protokoll."""
     from app.core_binding.k1520 import K1520Emulator
 
     emu = K1520Emulator(machine=name)
     assert emu.has_eprommer()
     assert emu.eprom_type() == 0                      # Sockel leer
     abbild = tmp_path / "quelle.bin"
-    abbild.write_bytes(bytes(range(256)) * 3)          # 768 B → U555, aufgefüllt
+    abbild.write_bytes(bytes(range(256)) * 3)          # 768 B → U555, aufgefuellt
     emu.eprom_insert(str(abbild))
     assert emu.eprom_type() == 1
     inhalt = emu.eprom_read()
@@ -177,7 +177,7 @@ def test_eprom_sockel_ueber_die_bindung(name, variante, tmp_path):
     assert ziel.read_bytes() == b"\xff" * 1024 and not emu.eprom_modified()
     assert emu.eprom_path() == str(ziel)
 
-    # Aus dem Speicher (die Oberfläche trägt so den Sockel auf eine neue Maschine).
+    # Aus dem Speicher (die Oberflaeche traegt so den Sockel auf eine neue Maschine).
     emu.eprom_insert_data(b"\x12\x34", 2, "x.bin", True)
     assert emu.eprom_type() == 2 and emu.eprom_modified() and emu.eprom_path() == "x.bin"
     assert emu.eprom_read()[:3] == b"\x12\x34\xff"
@@ -216,14 +216,14 @@ def test_andere_maschinen_haben_keinen_eprommer():
 @pytest.mark.parametrize("name,variante", VARIANTEN)
 def test_lochband_ueber_die_c_abi(name, variante, tmp_path):
     """AP-P8b: Band einlegen/entnehmen, Stand, Stanzband leer speichern, Stanzer aus/ein.
-    Das Stanzen selbst prüft `Prg710Lochband.*` (UDOS); hier nur der Weg durch die C-ABI."""
+    Das Stanzen selbst prueft `Prg710Lochband.*` (UDOS); hier nur der Weg durch die C-ABI."""
     from app.core_binding.k1520 import K1520Emulator
 
     emu = K1520Emulator(machine=name, ptape=True)   # seit AP-L1 eine Option (Entwurf 23)
     assert emu.ptape_installed()
     band = tmp_path / "band ä.ptp"           # Umlaut: UTF-8-Pfad bis in den Kern
     band.write_bytes(b"HALLO\r\n")
-    st = emu.ptape_reader_status()      # seit AP-L3 zusätzlich "file"/"format"
+    st = emu.ptape_reader_status()      # seit AP-L3 zusaetzlich "file"/"format"
     assert {k: st[k] for k in ("inserted", "pos", "len", "at_end")} == \
         {"inserted": False, "pos": 0, "len": 0, "at_end": False}
     assert emu.ptape_load(str(band))

@@ -1,7 +1,7 @@
 /**
  * @file test_p8000_rom.cpp
- * @brief Die erzeugten ROM-Header des P8000 stimmen mit den Binärabzügen in
- *        doc/p8000/eproms/ überein (doc/design/25_p8000.md §10.5, AP P5b).
+ * @brief Die erzeugten ROM-Header des P8000 stimmen mit den Binaerabzuegen in
+ *        doc/p8000/eproms/ ueberein (doc/design/25_p8000.md §10.5, AP P5b).
  */
 
 #include <gtest/gtest.h>
@@ -47,7 +47,7 @@ TEST(P8000Rom, HeaderGleichAbzug) {
 // ─── MON16 (AP P10a) ─────────────────────────────────────────────────────────
 
 namespace {
-/// Prüfsumme wie MON16 `p.test.s` CRC_TEST (jedes zweite Byte ab @p start, @p n Bytes).
+/// Pruefsumme wie MON16 `p.test.s` CRC_TEST (jedes zweite Byte ab @p start, @p n Bytes).
 uint16_t mon16Crc(const uint8_t* img, unsigned start, unsigned n) {
     auto rr = [](uint8_t x) { return uint8_t((x >> 1) | (x << 7)); };
     uint8_t h = 0xFF, l = 0xFF;
@@ -61,7 +61,7 @@ uint16_t mon16Crc(const uint8_t* img, unsigned start, unsigned n) {
     return uint16_t((h << 8) | l);
 }
 
-/// Feld = 1H/1L verschränkt (0000–1FFF), dann 2H/2L (2000–3FFF); gerade Adresse = H = D8–15.
+/// Feld = 1H/1L verschraenkt (0000–1FFF), dann 2H/2L (2000–3FFF); gerade Adresse = H = D8–15.
 template <size_t N>
 void pruefe16(const uint8_t (&feld)[N], const std::string& version) {
     ASSERT_EQ(N, 16384u) << version;
@@ -73,7 +73,7 @@ void pruefe16(const uint8_t (&feld)[N], const std::string& version) {
         for (size_t i = 0; i < e.size(); ++i)
             ASSERT_EQ(feld[basis + 2 * i], e[i]) << version << " " << teil[t] << " Byte " << i;
     }
-    // Die Monitor-Selbstprüfung (Testschritt 40) muss mit dem Feld bestehen.
+    // Die Monitor-Selbstpruefung (Testschritt 40) muss mit dem Feld bestehen.
     auto w = [&](unsigned a) { return uint16_t((feld[a] << 8) | feld[a + 1]); };
     EXPECT_EQ(mon16Crc(feld, 0x0000, 0x1000), w(0x3FF0)) << version << " 1H";
     EXPECT_EQ(mon16Crc(feld, 0x0001, 0x1000), w(0x3FF4)) << version << " 1L";
@@ -92,8 +92,8 @@ TEST(P8000Rom, Mon16HeaderGleichDenVierEinzelabzuegen) {
 }
 
 TEST(P8000Rom, Mon16_3_3_ZusammengefuehrterAbzugIstFalsch) {
-    // full/MON16_3.3 (pofo.de) weicht in 2L ab 3001H ab; die Prüfsumme 2L stimmt dort nicht —
-    // deshalb ist rom_mon16.h aus den Einzelabzügen erzeugt.  Wächter gegen ein „Vereinfachen".
+    // full/MON16_3.3 (pofo.de) weicht in 2L ab 3001H ab; die Pruefsumme 2L stimmt dort nicht —
+    // deshalb ist rom_mon16.h aus den Einzelabzuegen erzeugt.  Waechter gegen ein „Vereinfachen".
     const auto full = abzug("16BIT/full/MON16_3.3");
     ASSERT_EQ(full.size(), 16384u);
     EXPECT_NE(mon16Crc(full.data(), 0x2001, 0x0FF8), uint16_t((full[0x3FFC] << 8) | full[0x3FFD]));

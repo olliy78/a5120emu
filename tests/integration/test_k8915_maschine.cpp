@@ -3,9 +3,9 @@
  * @brief K8915Machine ohne Boot: die Wege, die weder der Selbsttest noch SCPX
  *        durchlaufen (AP-T1a, doc/design/16_k8915.md §8a).
  *
- * Gefunden mit dem Abdeckungsbau: DFÜ-Rückruf/-Senden (SIO2-A) lief in keinem Test,
+ * Gefunden mit dem Abdeckungsbau: DFUE-Rueckruf/-Senden (SIO2-A) lief in keinem Test,
  * die Fehlerwege des gemeinsamen Laufwerksbausteins `Laufwerke` (A5120 UND K8915,
- * Meldungen gehen über `k1520_last_error` in den Laufwerkskasten) ebensowenig,
+ * Meldungen gehen ueber `k1520_last_error` in den Laufwerkskasten) ebensowenig,
  * dazu die Durchreichungen der Maschine (Container, Schreibschutz, Konsolenmodus).
  * Kein CPU-Lauf — die Bausteine werden direkt angefasst, jeder Fall < 1 s.
  */
@@ -22,7 +22,7 @@
 
 namespace {
 
-/// Freier Temp-Pfad, der am Ende des Falls wieder weggeräumt wird.
+/// Freier Temp-Pfad, der am Ende des Falls wieder weggeraeumt wird.
 struct TempDatei {
     std::string pfad;
     explicit TempDatei(const std::string& name)
@@ -41,21 +41,21 @@ bool enthaelt(const std::string& s, const std::string& teil) {
 
 /**
  * @test K8915Machine.DfueUndDruckerHaengenAnIhremEigenenKanal
- * @brief Drucker = SIO1-B („Drucker/IFSS1"), DFÜ = SIO2-A („DFÜ/IFSS2") (AP-E4c, AP-S5).  Ein
- *        Rückruf ERSETZT den Loop (Prüfstecker) nur auf seinem Kanal: SIO1-A schleift weiter,
- *        SIO1-B/SIO2-A gehen nach außen und kommen NICHT als Echo zurück.  Von außen
- *        gesendete Bytes landen im Empfänger des jeweiligen Kanals.
+ * @brief Drucker = SIO1-B („Drucker/IFSS1"), DFUE = SIO2-A („DFÜ/IFSS2") (AP-E4c, AP-S5).  Ein
+ *        Rueckruf ERSETZT den Loop (Pruefstecker) nur auf seinem Kanal: SIO1-A schleift weiter,
+ *        SIO1-B/SIO2-A gehen nach aussen und kommen NICHT als Echo zurueck.  Von aussen
+ *        gesendete Bytes landen im Empfaenger des jeweiligen Kanals.
  */
 TEST(K8915Machine, DfueUndDruckerHaengenAnIhremEigenenKanal)
 {
-    K8915Machine m;                       // Vorgabe: Prüfstecker gesteckt
+    K8915Machine m;                       // Vorgabe: Pruefstecker gesteckt
     m.powerOn();
     std::vector<uint8_t> drucker, dfue;
     m.setPrinterCallback([&](uint8_t b) { drucker.push_back(b); });
     m.setDFUECallback([&](uint8_t b) { dfue.push_back(b); });
 
     K1520Bus& bus = m.bus();
-    // WR5 = 68H wie das BIOS (8 Bit, Sender frei): seit AP-S5 trägt die Leitung das
+    // WR5 = 68H wie das BIOS (8 Bit, Sender frei): seit AP-S5 traegt die Leitung das
     // programmierte Format — eine unprogrammierte SIO sendet 5 Bit.
     for (uint8_t steuer : {0x41, 0x43, 0x51}) {
         bus.ioWrite(steuer, 0x05);
@@ -63,7 +63,7 @@ TEST(K8915Machine, DfueUndDruckerHaengenAnIhremEigenenKanal)
     }
     bus.ioWrite(0x40, 0x31);              // SIO1-A Daten
     bus.ioWrite(0x42, 0x32);              // SIO1-B Daten = Drucker
-    bus.ioWrite(0x50, 0x33);              // SIO2-A Daten = DFÜ
+    bus.ioWrite(0x50, 0x33);              // SIO2-A Daten = DFUE
     // Seit AP-S5 taktet der SerialHub der Maschine die Zeichen (ohne CPU-Lauf
     // hier von Hand, wie im Maschinenlauf: Hub + Kartentakt).
     for (uint64_t z = 0; z < 100'000; z += 16) {
@@ -73,10 +73,10 @@ TEST(K8915Machine, DfueUndDruckerHaengenAnIhremEigenenKanal)
 
     EXPECT_EQ(drucker, std::vector<uint8_t>{0x32});
     EXPECT_EQ(dfue, std::vector<uint8_t>{0x33});
-    EXPECT_EQ(m.ioReadDebug(0x41) & 0x01, 0x01) << "SIO1-A bleibt zurückgeschleift";
+    EXPECT_EQ(m.ioReadDebug(0x41) & 0x01, 0x01) << "SIO1-A bleibt zurueckgeschleift";
     EXPECT_EQ(m.ioReadDebug(0x40), 0x31);
-    EXPECT_EQ(m.ioReadDebug(0x43) & 0x01, 0x00) << "Drucker: kein Echo neben dem Rückruf";
-    EXPECT_EQ(m.ioReadDebug(0x51) & 0x01, 0x00) << "DFÜ: kein Echo neben dem Rückruf";
+    EXPECT_EQ(m.ioReadDebug(0x43) & 0x01, 0x00) << "Drucker: kein Echo neben dem Rueckruf";
+    EXPECT_EQ(m.ioReadDebug(0x51) & 0x01, 0x00) << "DFUE: kein Echo neben dem Rueckruf";
 
     m.dfueSend(0x61);
     m.printerSend(0x13);                  // XOFF des Druckers
@@ -89,15 +89,15 @@ TEST(K8915Machine, DfueUndDruckerHaengenAnIhremEigenenKanal)
 /**
  * @test K8915Machine.LaufwerkeMeldenJedenFehlerwegMitGrund
  * @brief Der gemeinsame Baustein `Laufwerke`: jeder abgelehnte Aufruf liefert false
- *        UND einen Grund in lastError() (der steht in der Oberfläche).  Am K8915 sind
- *        C:/D: unbestückt — die Meldung „Kein Laufwerk an Slot" ist dort erreichbar.
+ *        UND einen Grund in lastError() (der steht in der Oberflaeche).  Am K8915 sind
+ *        C:/D: unbestueckt — die Meldung „Kein Laufwerk an Slot" ist dort erreichbar.
  */
 TEST(K8915Machine, LaufwerkeMeldenJedenFehlerwegMitGrund)
 {
     K8915Machine m;
     TempDatei hfe("fehler.hfe"), img("fehler.img");
 
-    // Einhängen
+    // Einhaengen
     EXPECT_FALSE(m.mountDisk(4, hfe.pfad, "cpa800", false));
     EXPECT_TRUE(enthaelt(m.lastError(), "Invalid drive")) << m.lastError();
     EXPECT_FALSE(m.mountDisk(2, hfe.pfad, "cpa800", false));
@@ -136,7 +136,7 @@ TEST(K8915Machine, LaufwerkeMeldenJedenFehlerwegMitGrund)
     EXPECT_TRUE(enthaelt(m.lastError(), "Kein Datentraeger in Laufwerk 1")) << m.lastError();
 
     ASSERT_TRUE(m.createDisk(0, hfe.pfad, "", false)) << m.lastError();
-    EXPECT_TRUE(m.lastError().empty()) << "Erfolg räumt die alte Meldung weg";
+    EXPECT_TRUE(m.lastError().empty()) << "Erfolg raeumt die alte Meldung weg";
     EXPECT_FALSE(m.saveDiskAs(0, img.pfad, ""));
     EXPECT_TRUE(enthaelt(m.lastError(), "Diskettenformats")) << m.lastError();
     EXPECT_FALSE(m.saveDiskAs(0, img.pfad, "gibtsnicht"));
@@ -147,8 +147,8 @@ TEST(K8915Machine, LaufwerkeMeldenJedenFehlerwegMitGrund)
 
 /**
  * @test K8915Machine.LaufwerksanzeigenFolgenDerDiskette
- * @brief Durchreichungen an `Laufwerke`: Container, `.img`-Fähigkeit, Schreibschutz,
- *        eingehängtes Abbild von außen (`mountDiskImage`), Aushängen.
+ * @brief Durchreichungen an `Laufwerke`: Container, `.img`-Faehigkeit, Schreibschutz,
+ *        eingehaengtes Abbild von aussen (`mountDiskImage`), Aushaengen.
  */
 TEST(K8915Machine, LaufwerksanzeigenFolgenDerDiskette)
 {
@@ -166,7 +166,7 @@ TEST(K8915Machine, LaufwerksanzeigenFolgenDerDiskette)
     EXPECT_EQ(m.diskContainer(1), "img");
     EXPECT_TRUE(m.isDiskRawCompatible(1));
     EXPECT_EQ(m.detectedFormatName(1), "cpa800");
-    EXPECT_FALSE(m.isDiskRawCompatible(3)) << "unbestückt";
+    EXPECT_FALSE(m.isDiskRawCompatible(3)) << "unbestueckt";
     EXPECT_EQ(m.diskContainer(3), "");
 
     ASSERT_TRUE(m.mountDiskImage(1, DiskImage::createBlank(80, 2, Encoding::MFM), false))
@@ -179,7 +179,7 @@ TEST(K8915Machine, LaufwerksanzeigenFolgenDerDiskette)
 
 /**
  * @test K8915Machine.KonsolenmodusMeldetBildschirmaenderungen
- * @brief Konsolenmodus (`k1520_console_*`): jede Änderung im Bildspeicher der K7024
+ * @brief Konsolenmodus (`k1520_console_*`): jede Aenderung im Bildspeicher der K7024
  *        bei 1000H kommt als (Spalte, Zeile, Zeichen) heraus; ohne Modus nichts.
  */
 TEST(K8915Machine, KonsolenmodusMeldetBildschirmaenderungen)

@@ -17,14 +17,14 @@
 #   system/       FORMAT/CPABCGEN/SCPX/HARDY                     (Minuten)
 #   python/       pytest: C-ABI + GUI
 #
-# Auswahl über Labels statt über handgepflegte Ausschlusslisten:
+# Auswahl ueber Labels statt ueber handgepflegte Ausschlusslisten:
 #
 #   ctest -L unit            nur Unit-Tests
 #   ctest -L integration     nur Maschinen-Integrationstests
-#   ctest -LE format_integration   alles außer den langsamen (= tools/dev.sh test)
+#   ctest -LE format_integration   alles ausser den langsamen (= tools/dev.sh test)
 #
-# Jeder Test trägt sein Ebenen-Label plus `fast` oder `slow`.  Die langsamen
-# tragen ZUSÄTZLICH das historische Label `format_integration`, weil dev.sh und
+# Jeder Test traegt sein Ebenen-Label plus `fast` oder `slow`.  Die langsamen
+# tragen ZUSAETZLICH das historische Label `format_integration`, weil dev.sh und
 # die Dokumentation darauf verweisen.
 
 include(FetchContent)
@@ -52,8 +52,8 @@ add_subdirectory(integration)
 add_subdirectory(cli)
 add_subdirectory(system)
 add_subdirectory(python)
-# Differenzprüfung U8001/U8002 gegen MAMEs z8000 — nur auf Wunsch (Netz), tools/dev.sh test-oracle
-option(K1520_Z8K_MAME_ORACLE "U8001-Primitive gegen MAMEs z8000 prüfen (lädt MAME-Quellen)" OFF)
+# Differenzpruefung U8001/U8002 gegen MAMEs z8000 — nur auf Wunsch (Netz), tools/dev.sh test-oracle
+option(K1520_Z8K_MAME_ORACLE "U8001-Primitive gegen MAMEs z8000 pruefen (laedt MAME-Quellen)" OFF)
 if(K1520_Z8K_MAME_ORACLE)
     add_subdirectory(oracle)
 endif()

@@ -59,10 +59,10 @@ NAMENLOS = "diskette"
 #: Name des maschinenlesbaren Verzeichnisses im Archiv.
 INVENTAR_DATEI = "diskarchive.yaml"
 
-#: Fassung des Datenformats von :data:`INVENTAR_DATEI` (Schlüssel ``diskarchive``).
+#: Fassung des Datenformats von :data:`INVENTAR_DATEI` (Schluessel ``diskarchive``).
 #:
-#: Erhöht wird sie nur, wenn ein Leser der alten Fassung das Archiv **falsch**
-#: verstünde.  Neue Schlüssel kommen ohne Erhöhung hinzu — wer liest, überliest
+#: Erhoeht wird sie nur, wenn ein Leser der alten Fassung das Archiv **falsch**
+#: verstuende.  Neue Schluessel kommen ohne Erhoehung hinzu — wer liest, ueberliest
 #: Unbekanntes; das ist die ganze Verabredung zur Erweiterbarkeit.
 INVENTAR_VERSION = 1
 
@@ -275,7 +275,7 @@ def inhaltsverzeichnis(tool: "DiskTool", quelle: str = "",
 # Maschinenlesbares Verzeichnis (`diskarchive.yaml`)
 # ════════════════════════════════════════════════════════════════════════════
 
-#: Kopf der `diskarchive.yaml` — das Format erklärt sich selbst, wie das
+#: Kopf der `diskarchive.yaml` — das Format erklaert sich selbst, wie das
 #: Inhaltsverzeichnis auch.  Ein Archiv aus dieser Sammlung soll in zwanzig
 #: Jahren auch ohne dieses Werkzeug auswertbar sein.
 INVENTAR_KOPF = """\

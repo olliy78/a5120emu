@@ -7,21 +7,21 @@
  *
  * **Ports** [BDA S.18]: D0 SIO-A-Daten, D1 SIO-A-Steuer, D2/D3 Kanal B; D4–D7 CTC K0–K3;
  * D8 PIO-A-Daten, **D9 PIO-A-Steuer**, DA/DB Kanal B (anders als bei der ZVE-PIO).  Die
- * Bausteine zählen genauso (0 = A-Daten, 1 = A-Steuer, 2 = B-Daten, 3 = B-Steuer).
+ * Bausteine zaehlen genauso (0 = A-Daten, 1 = A-Steuer, 2 = B-Daten, 3 = B-Steuer).
  *
  * **Interruptkette in der Karte:** IEI → SIO → CTC → PIO → IEO [BDA S.18, HW88 Bl.6].
  * EGOS setzt SIO-WR2 = F0H (Status beeinflusst Vektor: Rx A = FFFCH) und CTC-Vektor E8H
  * (K3 = FFEEH, K1 = FFEAH).
  *
- * **Takte:** CTC K0/K1 zählen den halben Systemtakt und liefern über je ein ÷2-Flipflop den
+ * **Takte:** CTC K0/K1 zaehlen den halben Systemtakt und liefern ueber je ein ÷2-Flipflop den
  * ×16-Takt der SIO A/B (hardware_3x.md §6.2).  Die SIO arbeitet hier auf **Zeichenebene**
- * (wie bei den übrigen Maschinen): Zeichen kommen über @ref empfange an, gesendete holt
- * die Tastatur über @ref nimmGesendet ab; die Zeichendauer setzt die Gegenstelle.  Die
- * Zählerkanäle K0–K2 bekommen deshalb keinen Eingangstakt; K3 (Zeitgeber) läuft im
+ * (wie bei den uebrigen Maschinen): Zeichen kommen ueber @ref empfange an, gesendete holt
+ * die Tastatur ueber @ref nimmGesendet ab; die Zeichendauer setzt die Gegenstelle.  Die
+ * Zaehlerkanaele K0–K2 bekommen deshalb keinen Eingangstakt; K3 (Zeitgeber) laeuft im
  * Systemtakt.
  *
  * Kanal A: /DCD und /CTS sind fest aktiv (die Tastatur steht immer; WR3 = 61H verlangt
- * Auto-Enables).  Kanal B: offen (kein IFSS-Gerät) [Annahme].
+ * Auto-Enables).  Kanal B: offen (kein IFSS-Geraet) [Annahme].
  */
 
 #pragma once
@@ -42,7 +42,7 @@ public:
 
     void attachToBus(K1520Bus& bus);
     void reset();
-    /// Systemtakte; true = Interruptzustand kann sich geändert haben.
+    /// Systemtakte; true = Interruptzustand kann sich geaendert haben.
     bool clockTick(int ticks) { return ctc_.clockTick(ticks); }
 
     // ─── BusDevice ───────────────────────────────────────────────────────────
@@ -59,9 +59,9 @@ public:
     const char* intDeviceName() const override;
 
     // ─── Tastaturkanal (SIO A) ───────────────────────────────────────────────
-    /// Empfänger frei (Rx-FIFO nicht voll, Rx ein)?
+    /// Empfaenger frei (Rx-FIFO nicht voll, Rx ein)?
     bool tastaturEmpfaengerFrei() const;
-    /// Zeichen der Tastatur an SIO A übergeben.
+    /// Zeichen der Tastatur an SIO A uebergeben.
     void empfange(uint8_t b);
     /// Hat der Rechner an SIO A ein Zeichen gesendet?  Dann holen (7 Bit).
     bool hatGesendet() const;

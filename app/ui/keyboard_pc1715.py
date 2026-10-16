@@ -40,7 +40,7 @@ from PySide6.QtGui import QColor
 
 from app.ui.keyboard import KeyboardWidget, _Key, qt_event_to_core_key
 
-#: Farben nach dem Foto: schwarzes Gehäuse, graue eckige Kappen der Blöcke rechts.
+#: Farben nach dem Foto: schwarzes Gehaeuse, graue eckige Kappen der Bloecke rechts.
 _C_WANNE = QColor(0x24, 0x24, 0x24)
 _C_GRAU_SOCKEL = QColor(0x3a, 0x3a, 0x3a)
 _C_GRAU = QColor(0x52, 0x52, 0x50)
@@ -69,7 +69,7 @@ def taste(position: int) -> int:
 #: REP (8,6), SI/SO (8,7).
 CTRL, SHIFT_L, SHIFT_R = pos(8, 0), pos(8, 1), pos(8, 4)
 LOCK, REP, SISO = pos(8, 5), pos(8, 6), pos(8, 7)
-#: Die Taste, die das ROM für Return sendet (ET, 9EH — `Pc1715Tastatur.SondertastenReturnEscapeTab`).
+#: Die Taste, die das ROM fuer Return sendet (ET, 9EH — `Pc1715Tastatur.SondertastenReturnEscapeTab`).
 ET = pos(3, 4)
 
 #: Zeichentasten: (Spalte, Zeile, Grundzeichen, Umschaltzeichen) — Tabelle S600.
@@ -90,9 +90,9 @@ ZEICHEN = (
 _ZEICHEN: Dict[int, Tuple[str, str]] = {pos(c, z): (lo, up) for c, z, lo, up in ZEICHEN}
 
 #: TAST_618 (QWERTZ, AP-6): die Positionen, an denen sich das ROM vom S600 unterscheidet —
-#: Position → (unverschoben, Shift).  Gegen das ROM geprüft von
+#: Position → (unverschoben, Shift).  Gegen das ROM geprueft von
 #: ``Tastatur1715.Tast618ZeichentabelleStimmtMitDemRomUeberein`` (C++, dieselbe Liste) und
-#: `doc/pc1715/tastatur.md` §6.  Alle übrigen Tasten sind wie beim S600.
+#: `doc/pc1715/tastatur.md` §6.  Alle uebrigen Tasten sind wie beim S600.
 ZEICHEN_618_ABWEICHUNG: Dict[int, Tuple[str, str]] = {
     pos(1, 2): ("3", "@"), pos(3, 0): ("}", "]"), pos(3, 2): ("~", "+"),
     pos(3, 5): ("{", "["), pos(4, 2): ("0", "="), pos(4, 4): ("-", "_"),
@@ -103,7 +103,7 @@ ZEICHEN_618_ABWEICHUNG: Dict[int, Tuple[str, str]] = {
 }
 _ZEICHEN_618: Dict[int, Tuple[str, str]] = {**_ZEICHEN, **ZEICHEN_618_ABWEICHUNG}
 
-#: Sondertasten ohne Zeichen: Position → (Beschriftung, Name für den Hinweis).
+#: Sondertasten ohne Zeichen: Position → (Beschriftung, Name fuer den Hinweis).
 #: Namen der Codes ≥ 80H nach `kbdcpt` im CP/A-BIOS (Befund §6).
 SONDER = {
     pos(8, 2): ("ESC", "ESC (1BH)"),
@@ -161,7 +161,7 @@ def _blind(x, y, w=0.5, led="") -> _Taste:
 
 
 #: Aufschriften der Kappen, wo das Foto vom ASCII-Zeichen des S600 abweicht (ISO 646:
-#: ``¤`` auf der 4, Überstrich auf der ``^``-Taste) — nur Beschriftung, gesendet wird die
+#: ``¤`` auf der 4, Ueberstrich auf der ``^``-Taste) — nur Beschriftung, gesendet wird die
 #: Matrixposition; das Zeichen entscheidet das ROM.
 _KAPPE_S600 = {pos(0, 2): ("4", "¤"), pos(5, 2): ("^", "‾")}
 
@@ -284,14 +284,14 @@ def _build_layout_pc1715(zeichen: Optional[Dict[int, Tuple[str, str]]] = None) -
     return k
 
 
-#: Hosttasten ohne Zeichen, die der Kern nicht übersetzt → physische Taste.
+#: Hosttasten ohne Zeichen, die der Kern nicht uebersetzt → physische Taste.
 _HOST_POS = {
     int(Qt.Key_Up): pos(5, 7), int(Qt.Key_Down): pos(3, 7),
     int(Qt.Key_Left): pos(12, 3), int(Qt.Key_Right): pos(6, 3),
     int(Qt.Key_Delete): pos(6, 6), int(Qt.Key_Insert): pos(5, 6),
 }
 _HOST_POS.update({int(Qt.Key_F1) + n - 1: FTASTEN[n] for n in range(1, 13)})
-#: Hosttasten, die der Kern als Zeichen übersetzt — für die Hervorhebung.
+#: Hosttasten, die der Kern als Zeichen uebersetzt — fuer die Hervorhebung.
 _HOST_HERVOR = {
     int(Qt.Key_Return): ET, int(Qt.Key_Enter): ET, int(Qt.Key_Escape): pos(8, 2),
     int(Qt.Key_Tab): pos(12, 6), int(Qt.Key_Backtab): pos(12, 6),
@@ -320,11 +320,11 @@ class KeyboardPc1715Widget(KeyboardWidget):
         # Oberklasse ruft diese Methode, bevor er fertig ist).
         self._rep = False
         self._rastend: Dict[int, bool] = {LOCK: False, SISO: False}   # LOCK, SI/SO
-        self._gehalten: List[int] = []     # beim Druck mitgedrückte Umschalter (Positionen)
+        self._gehalten: List[int] = []     # beim Druck mitgedrueckte Umschalter (Positionen)
         self._zeichen_pos: Optional[int] = None
 
     # ── Anzeigen: zwei gelbe Leuchten (LOCK, SI/SO) — sie zeigen den MITGEZEICHNETEN
-    # Zustand der Nachbildung; maßgeblich ist das ROM (Statuszeile von CP/A) ──────
+    # Zustand der Nachbildung; massgeblich ist das ROM (Statuszeile von CP/A) ──────
 
     def _led_spots(self, unit, ox, oy):
         spots = []
@@ -376,7 +376,7 @@ class KeyboardPc1715Widget(KeyboardWidget):
         if not isinstance(key, _Taste) or key.pos < 0:
             return                      # Blindmodul
         if key.kind in ("shift", "ctrl", "rep"):
-            # Umschalter: nur merken; gedrückt wird beim nächsten Tastenklick.
+            # Umschalter: nur merken; gedrueckt wird beim naechsten Tastenklick.
             if key.kind == "rep":
                 self._rep = not self._rep
             elif key.kind == "ctrl":
@@ -387,7 +387,7 @@ class KeyboardPc1715Widget(KeyboardWidget):
             return
         if key.kind == "toggle":
             self._rastend[key.pos] = not self._rastend[key.pos]
-        # Gemerkte Umschalter VOR der Zeichentaste einzeln drücken.
+        # Gemerkte Umschalter VOR der Zeichentaste einzeln druecken.
         self._gehalten = ([CTRL] if self._ctrl else []) + ([SHIFT_L] if self._shift else []) \
             + ([REP] if self._rep else [])
         for p in self._gehalten:
@@ -403,7 +403,7 @@ class KeyboardPc1715Widget(KeyboardWidget):
             return
         if self._pressed_code is not None:
             self.keyReleased.emit(int(self._pressed_code))
-        # Umschalter in umgekehrter Reihenfolge lösen; sie galten nur für diese Taste.
+        # Umschalter in umgekehrter Reihenfolge loesen; sie galten nur fuer diese Taste.
         for p in reversed(self._gehalten):
             self.keyReleased.emit(taste(p))
         self._gehalten = []

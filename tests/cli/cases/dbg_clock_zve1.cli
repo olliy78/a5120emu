@@ -1,4 +1,4 @@
-# `clock zve1` schaltet die Lauf-Uhr auf ZVE1 zurück.
+# `clock zve1` schaltet die Lauf-Uhr auf ZVE1 zurueck.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

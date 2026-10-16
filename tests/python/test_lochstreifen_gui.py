@@ -1,10 +1,10 @@
-"""Lochstreifen in der Oberfläche (doc/design/23_lochstreifen.md §7, AP-L4).
+"""Lochstreifen in der Oberflaeche (doc/design/23_lochstreifen.md §7, AP-L4).
 
-Das Kästchen *Einstellungen ▸ Allgemein ▸ Lochstreifen (SIF1000, K6022)* gibt es in
-allen drei Programmen (Vorgabe aus); es steckt die K6022 über einen Neuaufbau der
+Das Kaestchen *Einstellungen ▸ Allgemein ▸ Lochstreifen (SIF1000, K6022)* gibt es in
+allen drei Programmen (Vorgabe aus); es steckt die K6022 ueber einen Neuaufbau der
 Maschine.  Der Kasten „Lochstreifen" erscheint nur mit gesteckter Karte.  Datei- und
 Formatdialog werden ersetzt (``lochstreifen_format_dialog.frage``) — ein ``exec()``
-stünde headless bis zum Zeitüberlauf.  Der Fernschreiber bleibt im Reiter
+stuende headless bis zum Zeitueberlauf.  Der Fernschreiber bleibt im Reiter
 „Schnittstellen“.
 """
 
@@ -34,7 +34,7 @@ def formatwahl(monkeypatch):
     """Formatdialog ersetzen; merkt, wer mit welcher Vorauswahl gefragt wurde."""
     from app.ui import lochstreifen_format_dialog as fd
     gefragt = []
-    antwort = {"fmt": None}             # None = die Vorauswahl übernehmen
+    antwort = {"fmt": None}             # None = die Vorauswahl uebernehmen
 
     def frage(parent, pfad, stanzer):
         vorschlag = fd.vorauswahl(pfad)
@@ -59,7 +59,7 @@ def _zu(w, qapp):
 
 
 def _menue(w, titel):
-    """Die Einträge des Menüs *titel* (als Liste — die Hülle des Menüs lebt nicht lange)."""
+    """Die Eintraege des Menues *titel* (als Liste — die Huelle des Menues lebt nicht lange)."""
     for a in w.menuBar().actions():
         if a.text() == titel:
             return list(a.menu().actions())

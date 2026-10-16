@@ -1,10 +1,10 @@
-"""`app/ui/keyboard_k7636.py` — Bildschirmtastatur K7636.01 (frühe A5120, AP A3).
+"""`app/ui/keyboard_k7636.py` — Bildschirmtastatur K7636.01 (fruehe A5120, AP A3).
 
-Geprüft wird die TABELLE, nicht das Aussehen: ein falscher Code sieht auf dem Bild richtig
-aus.  Die erzeugte Python-Tabelle muss mit `doc/a5120_alt/k7636_01_codes.csv` übereinstimmen
-(bis auf die zwei dokumentierten Berichtigungen), jede bestückte Position mit Code braucht
+Geprueft wird die TABELLE, nicht das Aussehen: ein falscher Code sieht auf dem Bild richtig
+aus.  Die erzeugte Python-Tabelle muss mit `doc/a5120_alt/k7636_01_codes.csv` uebereinstimmen
+(bis auf die zwei dokumentierten Berichtigungen), jede bestueckte Position mit Code braucht
 eine Kappe, keine Position darf doppelt belegt sein, und der Code einer Kappe ist die
-physische Position (``TASTE_BASE | Rechenadresse``) — Gegenstück ``K7636::QK_TASTE_BASE``.
+physische Position (``TASTE_BASE | Rechenadresse``) — Gegenstueck ``K7636::QK_TASTE_BASE``.
 """
 
 import csv
@@ -22,11 +22,11 @@ from app.ui.k7636_tabelle import POSITIONEN
 REPO = Path(__file__).resolve().parents[2]
 CSV = REPO / "doc/a5120_alt/k7636_01_codes.csv"
 
-#: Berichtigungen gegenüber der gedruckten Tabelle (k7636.md §6): Position → (a, b)
+#: Berichtigungen gegenueber der gedruckten Tabelle (k7636.md §6): Position → (a, b)
 KORREKTUR = {"A15": (0x0A, 0x0A), "C02": (0x73, 0x53)}
 
 #: Positionen mit Code, die absichtlich keine Kappe haben: E00 (Beschriftung fehlt, kein
-#: Tastenfeld), F57 (Abdeckbaustein der Steuertaste, auf der .01 nicht bestückt).
+#: Tastenfeld), F57 (Abdeckbaustein der Steuertaste, auf der .01 nicht bestueckt).
 OHNE_KAPPE = {"E00", "F57"}
 #: Modifier/Sonderleitungen und Lampen: kein Code oder kein Tastenfeld
 KEIN_TASTENCODE = {"SL1", "SL2", "SL3", "SL4", "SL5", "SL6", "A99"}

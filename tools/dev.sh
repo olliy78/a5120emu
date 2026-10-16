@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 #
-# dev.sh — reproduzierbarer Build-&-Test-Workflow für a5120emu.
+# dev.sh — reproduzierbarer Build-&-Test-Workflow fuer a5120emu.
 #
 # Motivation: Es gibt ZWEI Build-Verzeichnisse mit GLEICHEN Tool-Namen
 #   build/        LOG_LEVEL=3  — Normalbetrieb: Unit-/Integrationstests, GUI, Tools
-#   build_trace/  LOG_LEVEL=5  — tiefes TRACE-Logging für boot_trace
+#   build_trace/  LOG_LEVEL=5  — tiefes TRACE-Logging fuer boot_trace
 # Wer ein Tool/Test aus einem NICHT neu gebauten Dir startet, testet alte
-# Objektdateien („stale objects") und wird in die Irre geführt (mehrfach passiert).
+# Objektdateien („stale objects") und wird in die Irre gefuehrt (mehrfach passiert).
 #
 # GARANTIE dieses Scripts: jeder test/trace/tool-Aufruf baut ZUERST das passende
 # Dir (`cmake --build` nutzt CMakes echtes Dependency-Tracking und baut nur
-# Geändertes — schnell, wenn nichts zu tun ist) und MELDET, ob etwas neu gebaut
+# Geaendertes — schnell, wenn nichts zu tun ist) und MELDET, ob etwas neu gebaut
 # wurde.  Damit testet man IMMER den aktuellen Quellstand.  Tools/Tests NIEMALS
-# direkt aus build*/ aufrufen — immer über dieses Script.
+# direkt aus build*/ aufrufen — immer ueber dieses Script.
 #
-# Hinweis: einen verlässlichen READ-ONLY-Frischetest gibt es bei CMake+Make nicht
-# (`make -q` ist auf den generierten Makefiles unzuverlässig).  Deshalb prüft
-# „sauber?" = „cmake --build ausführen und sehen, ob es etwas zu tun gab".
+# Hinweis: einen verlaesslichen READ-ONLY-Frischetest gibt es bei CMake+Make nicht
+# (`make -q` ist auf den generierten Makefiles unzuverlaessig).  Deshalb prueft
+# „sauber?" = „cmake --build ausfuehren und sehen, ob es etwas zu tun gab".
 #
 # Benutzung:
 #   tools/dev.sh build [trace]        build/ bauen (+ build_trace/ bei 'trace')
@@ -27,13 +27,13 @@
 #                                     K1520_TEST_VOLL=1 druckt alles.
 #   tools/dev.sh test-all [ctest-args] wie test, ABER inkl. beider Format-Label
 #   tools/dev.sh test-format [args]   NUR die langsamen format_integration-Boot-Disk-Tests
-#   tools/dev.sh test-matrix [args]   NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menü
+#   tools/dev.sh test-matrix [args]   NUR die 88 Format-Matrix-Tests (jedes FORMAT.COM-Menue
 #                                     jedes Laufwerkstyps, Leerdiskette, Smoke Spur 0-2)
 #   tools/dev.sh test-wega [args]     NUR P8000-WEGA-Installation (Label wega_install, lang,
 #                                     braucht die WEGA-Disketten ausserhalb des Repos)
 #   tools/dev.sh test-python [args]   NUR die Python-Ebene (C-ABI + GUI, Label python)
 #   tools/dev.sh test-oracle [args]   U8001/U8002-Primitive gegen MAMEs z8000 (Differenz-
-#                                     prüfung, Label mame_oracle, eigenes build_oracle/,
+#                                     pruefung, Label mame_oracle, eigenes build_oracle/,
 #                                     braucht beim ersten Mal Netz)
 #   tools/dev.sh test-level <ebene>   NUR eine Testebene (unit|debugtools|integration|
 #                                     cli|system|python) — entspricht `ctest -L <ebene>`
@@ -41,7 +41,7 @@
 #   tools/dev.sh tool  <name> [args]  build/ bauen, dann build/<name> starten
 #                                     (floppy_diag, k1520dbg, kbd_test, boot_trace…)
 #   tools/dev.sh win   [ctest-args]   Cross-Bau nach Windows (MinGW) + Tests unter
-#                                     wine — lokale Vorprüfung der Portierung
+#                                     wine — lokale Vorpruefung der Portierung
 #   tools/dev.sh check                build/ + build_trace/ bauen + Frische melden
 #   tools/dev.sh rebuild              build/ + build_trace/ von Grund auf neu (rm -rf)
 #   tools/dev.sh release <version>    Vorabversion (0.3.0-beta.1, 0.3.0-rc.1) oder Endfassung
@@ -49,7 +49,7 @@
 #                                     Rueckfrage pushen (doc/ci_pipeline.md §7.3).  Optionen:
 #                                     --ohne-push  --zweig-egal  --trocken (nur ausgeben)
 #
-# K1520_JOBS=<n> setzt die Testparallelität (Vorgabe: nproc).
+# K1520_JOBS=<n> setzt die Testparallelitaet (Vorgabe: nproc).
 #
 set -euo pipefail
 
@@ -59,17 +59,17 @@ cd "$PROJECT_DIR"
 # Build-Dir → LOG_LEVEL
 declare -A LOG_LEVEL=( [build]=3 [build_trace]=5 [build_win]=3 [build_oracle]=3 )
 # Build-Dir → CMAKE_BUILD_TYPE.  Ohne Typ baut GCC mit -O0 (keine Optimierung) →
-# der Z80-Interpreter läuft ~5-8x zu langsam.  build/ = Release (-O3, Normalbetrieb
+# der Z80-Interpreter laeuft ~5-8x zu langsam.  build/ = Release (-O3, Normalbetrieb
 # + Tests), build_trace/ = RelWithDebInfo (-O2 -g, schnell UND mit Host-Symbolen
-# fürs Trace-Werkzeug).
+# fuers Trace-Werkzeug).
 declare -A BUILD_TYPE=( [build]=Release [build_trace]=RelWithDebInfo [build_win]=Release [build_oracle]=Release )
 
 # ─── Windows (Git-Bash/MSYS unter GitHub Actions oder auf einem Windows-Rechner) ──
 # Zwei Unterschiede, beide zwingend:
-#  * Generator: CMake nähme sonst „Visual Studio 17 2022" — einen MEHRKONFIGURATIONS-
+#  * Generator: CMake naehme sonst „Visual Studio 17 2022" — einen MEHRKONFIGURATIONS-
 #    Generator.  Der legt die Programme nach build/Release/ statt build/, und ctest
 #    verlangt ein `-C Release`.  Damit stimmte kein einziger eingespielter Pfad mehr
-#    (build/k1520_test_k2526, build/k1520dbg …).  Ninja ist einkonfigurativ und hält
+#    (build/k1520_test_k2526, build/k1520dbg …).  Ninja ist einkonfigurativ und haelt
 #    das Layout identisch zu Linux.  Die MSVC-Umgebung (vcvars) muss die aufrufende
 #    Shell schon gesetzt haben — der Windows-Workflow tut das.
 #  * Programmnamen tragen `.exe`.
@@ -80,35 +80,35 @@ esac
 EXE=""; GENERATOR=()
 if [ "$WINDOWS" = 1 ]; then EXE=".exe"; GENERATOR=(-G Ninja); fi
 
-# ─── Testparallelität ────────────────────────────────────────────────────────
+# ─── Testparallelitaet ────────────────────────────────────────────────────────
 # ctest startet JEDEN Testfall als eigenen Prozess (gtest_discover_tests macht aus
-# jedem TEST einen ctest-Fall).  Serieller Lauf heißt deshalb: 909 Prozessstarts
+# jedem TEST einen ctest-Fall).  Serieller Lauf heisst deshalb: 909 Prozessstarts
 # nacheinander.  Messung 2026-08-12: 36 s seriell → 14 s mit -j16; unter wine
 # (Cross-Bau) sogar 15 min → 15 s, weil dort jeder Start ~0,5 s kostet.
 #
 # Voraussetzung ist, dass kein Testfall einen FESTEN Dateinamen unter /tmp
-# benutzt — sonst greifen zwei gleichzeitig auf dieselbe Datei zu.  Dafür gibt es
+# benutzt — sonst greifen zwei gleichzeitig auf dieselbe Datei zu.  Dafuer gibt es
 # k1520test::tempPath() (tests/support/temp_path.h); unter Linux fiele ein
-# Verstoß nicht auf, unter Windows schlägt er als „Sharing violation" zu.
+# Verstoss nicht auf, unter Windows schlaegt er als „Sharing violation" zu.
 #
-# Seit 2026-08-19 gilt das auch für die langsamen Formatläufe: `run_ctest` setzt
-# -j$JOBS überall dort, wo der Aufrufer keins nennt.  Sie fahren FORMAT.COM über
+# Seit 2026-08-19 gilt das auch fuer die langsamen Formatlaeufe: `run_ctest` setzt
+# -j$JOBS ueberall dort, wo der Aufrufer keins nennt.  Sie fahren FORMAT.COM ueber
 # ganze Disketten und sind E/A-gebunden, laufen aber trotzdem deutlich besser
 # nebeneinander — test-matrix seriell ~13 min, mit -j Minuten.  Wer eine eigene
-# Zahl braucht, gibt sie mit (slow-tests.yml tut das für test-matrix: -j4), und
+# Zahl braucht, gibt sie mit (slow-tests.yml tut das fuer test-matrix: -j4), und
 # die gewinnt.
 #
 # Kernzahl: `nproc` ist coreutils und in der Git-Bash nicht garantiert; Windows
-# setzt dafür NUMBER_OF_PROCESSORS in der Umgebung.  Ohne diesen Zwischenschritt
-# fiele es dort stillschweigend auf 4 zurück — auf dem heutigen Runner zufällig
-# richtig, auf einem größeren Rechner die Hälfte verschenkt.
+# setzt dafuer NUMBER_OF_PROCESSORS in der Umgebung.  Ohne diesen Zwischenschritt
+# fiele es dort stillschweigend auf 4 zurueck — auf dem heutigen Runner zufaellig
+# richtig, auf einem groesseren Rechner die Haelfte verschenkt.
 JOBS="${K1520_JOBS:-$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")}"
 
 # ─── Testprotokoll (JUnit-XML) ───────────────────────────────────────────────
-# Jeder ctest-Lauf legt zusätzlich eine Maschinenfassung seines Ergebnisses ab;
+# Jeder ctest-Lauf legt zusaetzlich eine Maschinenfassung seines Ergebnisses ab;
 # daraus baut `tools/test_report.py` die HTML-Seite, die die CI als Artefakt
-# anhängt.  Kostet nichts (ctest schreibt sie beim Laufen mit) und ist auch
-# lokal nützlich: nach jedem `tools/dev.sh test` liegt der letzte Lauf da.
+# anhaengt.  Kostet nichts (ctest schreibt sie beim Laufen mit) und ist auch
+# lokal nuetzlich: nach jedem `tools/dev.sh test` liegt der letzte Lauf da.
 #
 #     tools/dev.sh test
 #     python3 tools/test_report.py build/Testing/junit.xml -o protokoll.html
@@ -116,7 +116,7 @@ JOBS="${K1520_JOBS:-$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")}"
 # ACHTUNG, der Pfad ist RELATIV ZUM BUILD-VERZEICHNIS, nicht zum Arbeits-
 # verzeichnis — `--output-junit build/Testing/junit.xml` schriebe nach
 # `build/build/Testing/…`.  Deshalb steht er hier EINMAL und relativ; damit
-# stimmt er für build/ wie für build_win/ (Cross-Bau) ohne Fallunterscheidung.
+# stimmt er fuer build/ wie fuer build_win/ (Cross-Bau) ohne Fallunterscheidung.
 JUNIT=(--output-junit Testing/junit.xml)
 
 c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -126,14 +126,14 @@ c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
 configure_if_needed() {
     local dir="$1" extra=()
     # build_win/ ist der Cross-Bau nach Windows (MinGW + wine, siehe `win`).
-    # Die Python-Ebene bleibt dort AUS: sie lädt die Bibliothek per ctypes aus
+    # Die Python-Ebene bleibt dort AUS: sie laedt die Bibliothek per ctypes aus
     # einem LINUX-Python — eine .dll kann sie nicht laden.
     if [ "$dir" = build_win ]; then
         extra=(-DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/cmake/toolchain-mingw64.cmake"
                -DBUILD_PYTHON_TESTS=OFF)
     fi
-    # build_oracle/ = eigenes Verzeichnis für das MAME-Orakel der U8001-Primitive
-    # (lädt MAME-Quellen beim Konfigurieren; build/ bleibt davon unberührt).
+    # build_oracle/ = eigenes Verzeichnis fuer das MAME-Orakel der U8001-Primitive
+    # (laedt MAME-Quellen beim Konfigurieren; build/ bleibt davon unberuehrt).
     if [ "$dir" = build_oracle ]; then
         extra=(-DK1520_Z8K_MAME_ORACLE=ON -DBUILD_PYTHON_TESTS=OFF)
     fi
@@ -144,7 +144,7 @@ configure_if_needed() {
     fi
 }
 
-# Baut <dir> über CMakes echtes Dependency-Tracking und meldet aktuell/neu-gebaut.
+# Baut <dir> ueber CMakes echtes Dependency-Tracking und meldet aktuell/neu-gebaut.
 # Bricht bei Build-Fehler hart ab (zeigt das Log).
 build_dir() {
     local dir="$1" log; log="$(mktemp)"
@@ -154,16 +154,16 @@ build_dir() {
     fi
     if grep -qE "Building |Linking |Generating " "$log"; then
         c_ylw ">> $dir: NEU GEBAUT ($(grep -cE 'Linking ' "$log") Targets gelinkt)"
-        # `|| true` ist hier NICHT Zierrat: läuft der Bau NUR neu durch CMakes
-        # Generate-Schritt (Log enthält „Generating", aber keine einzige
+        # `|| true` ist hier NICHT Zierrat: laeuft der Bau NUR neu durch CMakes
+        # Generate-Schritt (Log enthaelt „Generating", aber keine einzige
         # „Building CXX"/„Linking"-Zeile), findet dieses grep nichts und liefert
         # 1 — und mit `set -euo pipefail` (Zeile 42) reisst das die ganze
-        # Funktion mit, BEVOR ctest überhaupt startet.  Nach aussen sieht das
+        # Funktion mit, BEVOR ctest ueberhaupt startet.  Nach aussen sieht das
         # aus wie eine rote Regression: der pre-push-Hook bricht ab und meldet
-        # „die Regressionstests sind nicht grün", obwohl kein Test gelaufen ist.
-        # Genau so am 2026-08-16 einen Push abgelehnt.  Ausgelöst wird der Fall
+        # „die Regressionstests sind nicht gruen", obwohl kein Test gelaufen ist.
+        # Genau so am 2026-08-16 einen Push abgelehnt.  Ausgeloest wird der Fall
         # von jedem `file(GLOB … CONFIGURE_DEPENDS)` (tests/python, tests/cli),
-        # sobald dort eine Datei dazu- oder wegkommt: der nächste Bau ist dann
+        # sobald dort eine Datei dazu- oder wegkommt: der naechste Bau ist dann
         # ein reiner Konfigurationslauf.
         grep -E "Building CXX|Linking " "$log" | sed 's/^/     /' | tail -8 || true
     else
@@ -248,9 +248,9 @@ case "$cmd" in
         if [ "${1:-}" = "trace" ] || [ "${1:-}" = "all" ]; then build_dir build_trace; fi ;;
     test)
         build_dir build
-        # Standard-Regression: die langsamen Format-Läufe NICHT mit ausführen —
-        # LABEL format_integration (Boot-Disk-Kette) und format_matrix (88 Menüs).
-        # Für nur diese: test-format bzw. test-matrix; für ALLES: test-all.
+        # Standard-Regression: die langsamen Format-Laeufe NICHT mit ausfuehren —
+        # LABEL format_integration (Boot-Disk-Kette) und format_matrix (88 Menues).
+        # Fuer nur diese: test-format bzw. test-matrix; fuer ALLES: test-all.
         c_ylw ">> ctest (build/, -j$JOBS) [ohne format_integration/format_matrix]"
         run_ctest build -LE "format_(integration|matrix)|wega_install" \
               -j"$JOBS" "$@" ;;
@@ -295,14 +295,14 @@ case "$cmd" in
         build_dir build
         c_ylw ">> build/$name$EXE $*"; exec "build/$name$EXE" "$@" ;;
     win)
-        # LOKALE Windows-Vorprüfung: nach Windows cross-übersetzen (MinGW-w64) und
+        # LOKALE Windows-Vorpruefung: nach Windows cross-uebersetzen (MinGW-w64) und
         # die Tests unter wine laufen lassen.  Findet Portierungsfehler in Sekunden
         # statt in 10-Minuten-CI-Runden — ersetzt sie aber NICHT: MinGW ist GCC,
-        # die verbindliche Prüfung ist .github/workflows/windows-ci.yml
-        # (Begründung im Kopf von cmake/toolchain-mingw64.cmake).
+        # die verbindliche Pruefung ist .github/workflows/windows-ci.yml
+        # (Begruendung im Kopf von cmake/toolchain-mingw64.cmake).
         build_dir build_win
         # Unter wine ist -j der Unterschied zwischen 15 Minuten und 15 Sekunden
-        # (jeder Prozessstart ~0,5 s) — Begründung oben bei JOBS.
+        # (jeder Prozessstart ~0,5 s) — Begruendung oben bei JOBS.
         c_ylw ">> ctest (build_win/, unter wine, -j$JOBS) [ohne format_integration/format_matrix]"
         WINEDEBUG="${WINEDEBUG:--all}" \
         run_ctest build_win -LE "format_(integration|matrix)|wega_install" \

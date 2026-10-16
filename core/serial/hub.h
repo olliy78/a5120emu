@@ -1,6 +1,6 @@
 /**
  * @file hub.h
- * @brief `SerialHub` — die seriellen Schnittstellen einer Maschine nach außen
+ * @brief `SerialHub` — die seriellen Schnittstellen einer Maschine nach aussen
  *        (Entwurf 19 §5, §7).
  *
  * @details
@@ -13,25 +13,25 @@
  *   SerialHub hub_;                               // Member der Maschine
  *   hub_.registriere(k8025_.anschlussV24());      // im Konstruktor, VOR dem ersten Lauf
  *   …
- *   hub_.takt(total_cycles_);                     // im Lauf, dort wo service() läuft
+ *   hub_.takt(total_cycles_);                     // im Lauf, dort wo service() laeuft
  * @endcode
- * Registrieren nur beim Aufbau (nicht nebenläufig zu `takt`/`status`).  Der Anschluss
- * muss länger leben als der Hub.
+ * Registrieren nur beim Aufbau (nicht nebenlaeufig zu `takt`/`status`).  Der Anschluss
+ * muss laenger leben als der Hub.
  *
  * **Faden-Modell:**
  *   - Emulationsfaden: nur `takt()` → `Wandler::takt` (Wandler-Mutex, kein Hub-Mutex).
  *   - GUI-Faden (oder jeder andere): `konfigurieren`, `start`, `startAuto`, `stop`,
  *     `status`, `info`, `konfig` — unter dem Hub-Mutex, kurz, nie blockierend auf Netz.
- *   - I/O-Faden: läuft nur, solange mindestens eine Schnittstelle aktiv ist; wartet mit
+ *   - I/O-Faden: laeuft nur, solange mindestens eine Schnittstelle aktiv ist; wartet mit
  *     `poll`/`WSAPoll` auf alle Sockets plus ein Weck-Socketpaar, bearbeitet unter dem
  *     Hub-Mutex (nicht blockierende Sockets).  Sperrreihenfolge immer Hub → Wandler.
  *   - Verbinder-Faden (Client): je Verbindungsversuch ein kurzlebiger, abgekoppelter
- *     Faden für `getaddrinfo` + `connect` (beide können blockieren — Namensauflösung
+ *     Faden fuer `getaddrinfo` + `connect` (beide koennen blockieren — Namensaufloesung
  *     sekundenlang), damit weder der I/O-Faden noch „Trennen" darauf warten.
  *
- * Zustände (§7.1): Server AUS → LAUSCHT ⇄ VERBUNDEN; Client AUS → VERBINDET ⇄ VERBUNDEN
+ * Zustaende (§7.1): Server AUS → LAUSCHT ⇄ VERBUNDEN; Client AUS → VERBINDET ⇄ VERBUNDEN
  * (Dauerversuch alle 1000 ms Uhrzeit, bis „Trennen"); Datei AUS → VERBUNDEN (= Datei
- * offen).  FEHLER nur für das, was ein neuer Versuch nicht behebt.
+ * offen).  FEHLER nur fuer das, was ein neuer Versuch nicht behebt.
  *
  * @see doc/design/19_serielle_schnittstellen.md
  */
@@ -74,7 +74,7 @@ struct SerialKonfig {
     Betriebsart betriebsart = Betriebsart::Telnet;
     Rolle       rolle       = Rolle::Server;
     std::string host        = "127.0.0.1";
-    /// 1–65535.  0 = „vom System gewählt" — nur für Tests (nie feste Ports); ohne
+    /// 1–65535.  0 = „vom System gewaehlt" — nur fuer Tests (nie feste Ports); ohne
     /// Portsuche und ohne Wiederaufnahme.
     uint16_t    port        = 5000;
     bool        loop = false, rtscts_bruecke = false, xonxoff = false;
@@ -91,7 +91,7 @@ struct SerialKonfig {
 /// Zustand (↔ `K1520SerStatus`).
 struct SerialStatus {
     Zustand     zustand = Zustand::Aus;
-    uint16_t    port_aktiv = 0;          ///< Server: tatsächlicher Port (§7.2)
+    uint16_t    port_aktiv = 0;          ///< Server: tatsaechlicher Port (§7.2)
     std::string gegenstelle;             ///< "192.168.1.5:40122" / "[::1]:5000"
     std::string meldung;                 ///< Fehler, letzter Grund, Hinweis (§7.1/§7.4a)
     uint32_t    baud_nenn = 0;
@@ -120,37 +120,37 @@ public:
     SerialHub& operator=(const SerialHub&) = delete;
 
     // ── Aufbau ───────────────────────────────────────────────────────────────
-    /// Anschluss aufnehmen; Rückgabe = Index.  Nur beim Aufbau der Maschine.
+    /// Anschluss aufnehmen; Rueckgabe = Index.  Nur beim Aufbau der Maschine.
     int registriere(SerialAnschluss& anschluss);
     int anzahl() const { return static_cast<int>(eintraege_.size()); }
-    Wandler& wandler(int i);   ///< Index muss gültig sein
+    Wandler& wandler(int i);   ///< Index muss gueltig sein
 
     // ── Emulationsfaden ─────────────────────────────────────────────────────
-    /// @return frühester nächster Blick aller Wandler (UINT64_MAX ohne Anschluss) —
+    /// @return fruehester naechster Blick aller Wandler (UINT64_MAX ohne Anschluss) —
     ///         bis dahin darf die Maschine den Aufruf auslassen.  Springt ihr
-    ///         Taktzähler zurück, ruft sie sofort wieder (die Wandler fangen neu an).
+    ///         Taktzaehler zurueck, ruft sie sofort wieder (die Wandler fangen neu an).
     uint64_t takt(uint64_t zyklus);
-    /// /RESET der Maschine: `Wandler::gastZurueckgesetzt` für alle (AP-S5).
+    /// /RESET der Maschine: `Wandler::gastZurueckgesetzt` fuer alle (AP-S5).
     void gastZurueckgesetzt();
 
     // ── Bedienung (jeder Faden) ─────────────────────────────────────────────
     SerialInfo info(int i) const;
     SerialKonfig konfig(int i) const;
-    /// Übernehmen.  Während aktiv: geänderte gesperrte Felder → false, NICHTS übernommen.
-    /// Loop setzen beendet eine aktive Verbindung (§6.5).  Ungültiger Index/Port → false.
+    /// Uebernehmen.  Waehrend aktiv: geaenderte gesperrte Felder → false, NICHTS uebernommen.
+    /// Loop setzen beendet eine aktive Verbindung (§6.5).  Ungueltiger Index/Port → false.
     bool konfigurieren(int i, const SerialKonfig& k);
     /// Start von Hand: Server mit Portsuche (§7.2), Client in den Dauerversuch, Datei
-    /// überschreibend.  false bei Loop, Fehler (Zustand FEHLER + Meldung).  Schon aktiv → true.
+    /// ueberschreibend.  false bei Loop, Fehler (Zustand FEHLER + Meldung).  Schon aktiv → true.
     bool start(int i);
     /// Wiederaufnahme (§7.4a): Server NUR auf dem eingestellten Port — belegt → false,
-    /// Zustand AUS, `port_vorschlag` + Meldung; Datei anhängend.  Loop → false.
+    /// Zustand AUS, `port_vorschlag` + Meldung; Datei anhaengend.  Loop → false.
     bool startAuto(int i);
     /// Beenden/Trennen — sofort; auch die Versuche eines Clients enden.
     void stop(int i);
     void stopAlle();
     SerialStatus status(int i) const;
 
-    /// Abstand der Client-Versuche (Vorgabe 1000 ms, §7.1).  Nur für Tests verstellen.
+    /// Abstand der Client-Versuche (Vorgabe 1000 ms, §7.1).  Nur fuer Tests verstellen.
     void setzeVersuchAbstand(std::chrono::milliseconds ms);
 
     using Uhr = std::chrono::steady_clock;

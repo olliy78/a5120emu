@@ -3,10 +3,10 @@
  * @brief PRG 710 / 710-1 EPROMmer (doc/design/20_prg710.md AP-P7b, doc/prg710/eprommer.md):
  *        das Programm `PROG` (UDOS, V3.1) bedient den virtuellen Sockel der ATP 590068.
  *
- * Wächter für Lesen UND Brennen in einem Lauf: `C` (PROM kopieren) liest das eingelegte
+ * Waechter fuer Lesen UND Brennen in einem Lauf: `C` (PROM kopieren) liest das eingelegte
  * Quell-PROM in den Puffer 4000H, fordert „COPY-PROM STECKEN“ — der Test legt ein leeres
  * PROM in denselben Sockel —, brennt und vergleicht.  Das gebrannte Abbild muss dem Quell-
- * Abbild bytegleich sein; dazu meldet `E` (Löschkontrolle) „PROM GELOESCHT“ bzw.
+ * Abbild bytegleich sein; dazu meldet `E` (Loeschkontrolle) „PROM GELOESCHT“ bzw.
  * „PROM NICHT GELOESCHT“.
  */
 
@@ -31,8 +31,8 @@ std::unique_ptr<Prg710Machine> maschine(V v) {
     return std::make_unique<Prg710Machine>(c);
 }
 
-/// Prüfmuster: Daten in den ersten und letzten 100H Byte (A8–A10 werden gebraucht), Rest FFH
-/// (das 2716-Verfahren pulst FFH nicht — kürzt den Lauf).
+/// Pruefmuster: Daten in den ersten und letzten 100H Byte (A8–A10 werden gebraucht), Rest FFH
+/// (das 2716-Verfahren pulst FFH nicht — kuerzt den Lauf).
 std::vector<uint8_t> muster(size_t n) {
     std::vector<uint8_t> d(n, 0xFF);
     for (size_t i = 0; i < 0x100; ++i) {
@@ -43,7 +43,7 @@ std::vector<uint8_t> muster(size_t n) {
     return d;
 }
 
-/// Bis UDOS am `%` steht und `PROG` seine Eröffnungsfrage stellt.
+/// Bis UDOS am `%` steht und `PROG` seine Eroeffnungsfrage stellt.
 void progStarten(Prg710Machine& m, k1520test::TempDisk& disk) {
     ASSERT_TRUE(m.mountDisk(0, disk, m.defaultFormatName(0), false)) << m.lastError();
     ASSERT_TRUE(udosBisDatum(m)) << bild(m);
@@ -63,7 +63,7 @@ void antworte(Prg710Machine& m, const std::string& frage, const std::string& ant
     tippe(m, antwort);
 }
 
-/// Eröffnungsfrage: Werte ändern auf 1 Byte Breite, @p kb K-Byte, keine Negation.
+/// Eroeffnungsfrage: Werte aendern auf 1 Byte Breite, @p kb K-Byte, keine Negation.
 void typWaehlen(Prg710Machine& m, const char* kb) {
     tippe(m, "J");
     antworte(m, "VERARBEITUNGSBREITE 1 ODER 2 BYTE ?", "1");
@@ -127,7 +127,7 @@ TEST_P(Prg710Eprom, KopiertU2716Bytegleich) {
 
 /**
  * @test Prg710Eprom.KopiertU555Bytegleich
- * @brief Typ 1 KB (U555, 2708-artig) über die Eröffnungsfrage: 84H Bit 0 = 0, 100 Durchläufe
+ * @brief Typ 1 KB (U555, 2708-artig) ueber die Eroeffnungsfrage: 84H Bit 0 = 0, 100 Durchlaeufe
  *        mit ≈ 0,8-ms-Impulsen; Ergebnis bytegleich, Impulsbreite im Datenblatt (0,1–1 ms).
  */
 TEST_P(Prg710Eprom, KopiertU555Bytegleich) {
@@ -155,7 +155,7 @@ TEST_P(Prg710Eprom, KopiertU555Bytegleich) {
  *        Vergleich meldet PROM-Fehler, das Protokoll nennt den falschen Typ (Modell `[?]`).
  */
 TEST_P(Prg710Eprom, FalscherTypBrenntNicht) {
-    if (GetParam() == V::Prg710_1) GTEST_SKIP() << "Bedienweg wie am 710, einmal genügt";
+    if (GetParam() == V::Prg710_1) GTEST_SKIP() << "Bedienweg wie am 710, einmal genuegt";
     k1520test::TempDisk disk(udosDiskette(GetParam()));
     auto m = maschine(GetParam());
     auto quelle = std::vector<uint8_t>(2048, 0xFF);

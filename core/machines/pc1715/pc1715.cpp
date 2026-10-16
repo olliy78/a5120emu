@@ -39,7 +39,7 @@ struct Pc1715Machine::W : public BusDevice {
     Z80Dma          dma;
     Z80CTC          ctc2{"PC1715W-CTC2"};
     Upd765          fdc;
-    uint8_t krfd = 0x30;   ///< nach /RESET [?]: das Latch DS8282 hat keinen Rücksetzeingang;
+    uint8_t krfd = 0x30;   ///< nach /RESET [?]: das Latch DS8282 hat keinen Ruecksetzeingang;
                            ///< S550 schreibt als Erstes 30H — bis dahin FDC im Reset
     uint8_t mos  = 0x00;
     uint8_t kon;           ///< DIP S8, Vorgabe FFH (Bit 0 = 1: 8″-Formate erlaubt)
@@ -56,7 +56,7 @@ struct Pc1715Machine::W : public BusDevice {
     void ioWrite(uint8_t port, uint8_t d) override {
         if (uint8_t(port - 0x1C) < 4) { fdc.write((port & 1) != 0, d); return; }
         if (uint8_t(port - 0x20) < 4) {               // KRFD
-            if ((d ^ krfd) & 0x40) LOG_DEBUG("PC1715W", "U8272 %s", (d & 0x40) ? "läuft" : "im Reset");
+            if ((d ^ krfd) & 0x40) LOG_DEBUG("PC1715W", "U8272 %s", (d & 0x40) ? "laeuft" : "im Reset");
             krfd = d;
             fdc.setReset((d & 0x40) == 0);
             tcNeu();
@@ -103,7 +103,7 @@ Pc1715Machine::Pc1715Machine(const Config& cfg)
     , hub_(cfg.variante == Config::Variante::Pc1715W ? uint64_t(CPU_HZ_W) : k1520::serial::PHI_NENN)
 {
     zre_.attachToBus(bus_);
-    // Tastatur → SIO0 Kanal A (§3.7): fertiges Zeichen am Stoppbit; der Empfänger nimmt es in
+    // Tastatur → SIO0 Kanal A (§3.7): fertiges Zeichen am Stoppbit; der Empfaenger nimmt es in
     // seinen 3-Byte-FIFO, der Empfangsinterrupt wird neu bewertet.  Aufruf nur im Lauffaden.
     kbd_.byteOut = [this](uint8_t b) {
         zre_.sio().channelA().rxByte(b);
@@ -118,17 +118,17 @@ Pc1715Machine::Pc1715Machine(const Config& cfg)
         afs_.setPortlage(K5122::Portlage::Pc1715);
         bus_.registerIO(&afs_, 0x00, 8);
         bus_.registerIO(&afs_, 0x20, 4);
-        // /WAIT-Synchronisation (§1.5.3.6: IN/OUT ohne bereitstehendes Byte hält die CPU an).
+        // /WAIT-Synchronisation (§1.5.3.6: IN/OUT ohne bereitstehendes Byte haelt die CPU an).
         // Marken-FF high-aktiv (Vorgabe): S502 0490H `IN A,(06H) / AND 02H / JR Z` wartet auf 1.
         afs_.setSynchronisation(K5122::Synchronisation::Wait);
-        // Interruptkette (§3.3, Servicehandbuch §1.2.3 „Prioritätenkette“): die Steuer-PIO der
+        // Interruptkette (§3.3, Servicehandbuch §1.2.3 „Prioritaetenkette“): die Steuer-PIO der
         // FD-Steuerung ist das vorderste Glied, dann CTC → SIO der ZRE → Steckplatz.  Die
-        // Daten-PIO zeigt das Bild nicht; im Modell hängt sie innerhalb der K5122 hinter der
+        // Daten-PIO zeigt das Bild nicht; im Modell haengt sie innerhalb der K5122 hinter der
         // Steuer-PIO und meldet nie (S502/BIOS geben ihr kein Interruptwort) [?].
         bus_.setInterruptChain({&afs_, &zre_});
     }
     zre_.cpu().abortBeforeExecute = [this] { return stop_.load(std::memory_order_relaxed); };
-    // Schnittstellen nach außen (Entwurf 19): Drucker X4 (SIO0-A Sender), V.24 X5 (SIO0-B);
+    // Schnittstellen nach aussen (Entwurf 19): Drucker X4 (SIO0-A Sender), V.24 X5 (SIO0-B);
     // Reihenfolge = C-ABI-Index.
     for (auto* a : serielleAnschluesse()) hub_.registriere(*a);
 }
@@ -154,7 +154,7 @@ void Pc1715Machine::bauW()
     cpu.readByte  = [this](uint16_t a) { return w_->spk.read(a); };
     cpu.writeByte = [this](uint16_t a, uint8_t d) { w_->spk.write(a, d); };
 
-    // UA858: eigene Zyklen über den Bus — dieselbe Bankabbildung wie die CPU (§2.5).  Die
+    // UA858: eigene Zyklen ueber den Bus — dieselbe Bankabbildung wie die CPU (§2.5).  Die
     // Adressen 40H/41H sind der DACK-Zugang zum U8272 (AB0 = 0 MSR, 1 Daten); nur die DMA
     // benutzt sie.  Ein DMA-Schreiben auf 40H bleibt wirkungslos [?] (S550-Blindlauf, §4.5).
     w.dma.memRead   = [this](uint16_t a) { return bus_.memRead(a); };
@@ -263,7 +263,7 @@ void Pc1715Machine::resetHardware()
         w.dma.setReady(!w.fdc.drq());
     }
     k6022Reset();            // K6022 (gesteckt?): PIOs; Band und Stanzband bleiben
-    k5020Reset();             // K5020 (gesteckt?): PIOs zurück, Bänder bleiben liegen
+    k5020Reset();             // K5020 (gesteckt?): PIOs zurueck, Baender bleiben liegen
     rafReset();              // RAF (gesteckt?): nur das Latch sperrt, der Inhalt bleibt
     hub_.gastZurueckgesetzt();   // XOFF-/RTS-Halt des alten Gastes gilt nicht weiter
     serial_naechst_ = 0;
@@ -296,10 +296,10 @@ void Pc1715Machine::reset()
 namespace {
 // Umschalter der Matrix (doc/pc1715/tastatur.md §4): CTRL (8,0), Shift links (8,1).
 constexpr int CTRL_SP = 8, CTRL_ZE = 0, SHIFT_SP = 8, SHIFT_ZE = 1;
-// Durchläufe: Vorlauf, bis das ROM einen einzeln gedrückten Umschalter erkannt hat (4);
-// Mindestzeit, die eine Taste unten bleibt (Entprellung = 3 Durchläufe + Phase: 6), und die Pause
-// danach, in der das ROM sie als losgelassen verbucht (3).  Gilt für die Warteschlange, nicht für
-// den Anwender: ein kurzer Anschlag der Oberfläche wird so gestreckt statt verschluckt.
+// Durchlaeufe: Vorlauf, bis das ROM einen einzeln gedrueckten Umschalter erkannt hat (4);
+// Mindestzeit, die eine Taste unten bleibt (Entprellung = 3 Durchlaeufe + Phase: 6), und die Pause
+// danach, in der das ROM sie als losgelassen verbucht (3).  Gilt fuer die Warteschlange, nicht fuer
+// den Anwender: ein kurzer Anschlag der Oberflaeche wird so gestreckt statt verschluckt.
 constexpr uint64_t UMSCHALT_VORLAUF = 4, HALTE_MIN = 6, PAUSE_MIN = 3;
 
 /// Hostcode → Zeichen (0 = keins); Ctrl-Codes 1…26 werden zum Kleinbuchstaben.
@@ -318,7 +318,7 @@ char zeichenFuer(uint32_t k, bool ctrl)
 }
 }  // namespace
 
-// Abfragedurchläufe der Tastatur-CPU in Rechnertakten (5865 Takte bei ≈ 700 kHz je Durchlauf);
+// Abfragedurchlaeufe der Tastatur-CPU in Rechnertakten (5865 Takte bei ≈ 700 kHz je Durchlauf);
 // der Rechnertakt ist der der Variante.
 uint64_t Pc1715Machine::durchlaeufe(uint64_t n) const
 {
@@ -377,7 +377,7 @@ void Pc1715Machine::tastenVerarbeiten()
         Tastatur1715::Taste t;
         const char c = zeichenFuer(e.code, e.ctrl);
         if (!c || !kbd_.tasteFuerDiese(c, t) || gehalten_.count(e.code)) {
-            arbeit_.pop_front();     // keine Taste dafür / schon gedrückt (Wiederholung der Oberfläche)
+            arbeit_.pop_front();     // keine Taste dafuer / schon gedrueckt (Wiederholung der Oberflaeche)
             continue;
         }
         const bool umschalten = t.shift || e.ctrl;
@@ -427,7 +427,7 @@ int Pc1715Machine::run(int max_cycles)
 
         int used = cpu.step();
         if (used == 0 && stop_.load(std::memory_order_relaxed)) break;   // Debugger-Halt
-        // /WAIT der K5122: die CPU stand, die Zeit vergeht für alle anderen mit.
+        // /WAIT der K5122: die CPU stand, die Zeit vergeht fuer alle anderen mit.
         if (const int w = bus_.takeWaitCycles(); w > 0) {
             used += w;
             cpu.cycles += static_cast<uint64_t>(w);
@@ -437,13 +437,13 @@ int Pc1715Machine::run(int max_cycles)
 
         afs_.update(used);
         if (!arbeit_.empty()) tastenVerarbeiten();
-        // Tastatur-CPU in Paketen von ≥ 32 Takten nachführen (Rahmenende ≤ 32 Takte verspätet).
+        // Tastatur-CPU in Paketen von ≥ 32 Takten nachfuehren (Rahmenende ≤ 32 Takte verspaetet).
         kbd_rest_ += used;
         if (kbd_rest_ >= 32) { kbd_.run(kbd_rest_); kbd_rest_ = 0; }
         bool dirty = zre_.clockTick(used);
         dirty |= k6022Takt(used);   // Lochstreifen (gesteckt?)
         dirty |= k5020Takt(used);   // Kassette (gesteckt?)
-        // Schnittstellen nach außen: der Wandler arbeitet nur alle 1/16 Zeichenzeit.
+        // Schnittstellen nach aussen: der Wandler arbeitet nur alle 1/16 Zeichenzeit.
         if (total_cycles_ >= serial_naechst_) {
             serial_naechst_ = hub_.takt(total_cycles_);
             dirty |= zre_.nimmSeriellGeaendert();
@@ -464,8 +464,8 @@ int Pc1715Machine::run(int max_cycles)
 // ─── Laufschleife PC 1715W ───────────────────────────────────────────────────
 //
 // Solange der UA858 den Bus fordert (`busRequest`), steht die CPU; je Schritt bewegt die DMA
-// ein Byte über den Bus (Bankregeln von `Pc1715wSpeicher`).  Im Continuous-Betrieb hält sie den
-// Bus auch ohne RDY — dann vergeht nur Zeit.  Der U8272 bekommt die Takte über tick().
+// ein Byte ueber den Bus (Bankregeln von `Pc1715wSpeicher`).  Im Continuous-Betrieb haelt sie den
+// Bus auch ohne RDY — dann vergeht nur Zeit.  Der U8272 bekommt die Takte ueber tick().
 int Pc1715Machine::runW(int max_cycles)
 {
     tastenAbgeben();

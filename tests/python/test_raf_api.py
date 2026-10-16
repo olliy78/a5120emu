@@ -1,4 +1,4 @@
-"""RAM-Floppy RAF über C-ABI und Python-Bindung (AP-R3, doc/design/22_raf512.md §6)."""
+"""RAM-Floppy RAF ueber C-ABI und Python-Bindung (AP-R3, doc/design/22_raf512.md §6)."""
 
 import pytest
 
@@ -22,7 +22,7 @@ def test_anlegen_je_maschine_und_typ(maschine, typ):
     assert emu.raf_variant == typ
     emu.power_on()
     assert emu.raf_peek(0) in range(256)
-    assert emu.raf_peek(GROESSE[typ]) == 0xFF   # hinter der Kapazität
+    assert emu.raf_peek(GROESSE[typ]) == 0xFF   # hinter der Kapazitaet
 
 
 @pytest.mark.parametrize("maschine", MASCHINEN)
@@ -85,5 +85,5 @@ def test_load_save_rundreise_und_falsche_groesse(tmp_path):
     falsch = tmp_path / "falsch.bin"
     falsch.write_bytes(b"\x00" * 1000)
     assert emu.raf_load(falsch) is False
-    assert emu.raf_peek(12345) == daten[12345]   # unverändert
+    assert emu.raf_peek(12345) == daten[12345]   # unveraendert
     assert emu.raf_load(tmp_path / "gibtsnicht.bin") is False

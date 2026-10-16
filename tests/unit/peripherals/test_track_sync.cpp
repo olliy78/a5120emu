@@ -1,12 +1,12 @@
 /**
  * @file test_track_sync.cpp
- * @brief TrackSync — Spurzustände, Prioritäten, Blockade, Rückführung.
+ * @brief TrackSync — Spurzustaende, Prioritaeten, Blockade, Rueckfuehrung.
  *
  * **Ohne Hardware.**  Das echte Laufwerk wird durch einen *Ersatz-Arbeitsfaden*
  * vertreten, der seine Spuren aus einem zweiten `DiskMedium` im Speicher holt und
- * dorthin zurückschreibt — über denselben Weg (HFE-Bitzellen), den der
- * Greaseweazle-Arbeitsfaden benutzt.  Damit liegt alles unterhalb von „Aufträge und
- * Bitzellen" in der Regression; die Hardware fügt nur noch USB hinzu.
+ * dorthin zurueckschreibt — ueber denselben Weg (HFE-Bitzellen), den der
+ * Greaseweazle-Arbeitsfaden benutzt.  Damit liegt alles unterhalb von „Auftraege und
+ * Bitzellen" in der Regression; die Hardware fuegt nur noch USB hinzu.
  *
  * @see doc/design/14_physische_diskette.md §14
  * @author Olaf Krieger
@@ -38,7 +38,7 @@ using namespace std::chrono_literals;
 constexpr uint8_t kCyls  = 8;
 constexpr uint8_t kHeads = 2;
 
-/// @brief Eine erkennbare IBM-Spur bauen (Sektor-ID trägt Zylinder und Kopf).
+/// @brief Eine erkennbare IBM-Spur bauen (Sektor-ID traegt Zylinder und Kopf).
 TrackImage baueSpur(uint8_t cyl, uint8_t head, uint8_t sektoren = 4) {
     std::vector<LogicalSector> s;
     for (uint8_t i = 0; i < sektoren; ++i) {
@@ -64,7 +64,7 @@ DiskMedium echteDiskette() {
 
 /**
  * @class Ersatzfaden
- * @brief Steht für „Greaseweazle + Laufwerk": holt Aufträge und bedient sie aus dem RAM.
+ * @brief Steht fuer „Greaseweazle + Laufwerk": holt Auftraege und bedient sie aus dem RAM.
  *
  * Der Weg ist bitgenau derselbe wie beim echten Adapter — @ref BitCodec::encode auf der
  * Geberseite, @ref TrackSync::completeRead mit HFE-Bitzellen auf der Nehmerseite.
@@ -116,14 +116,14 @@ public:
         if (faden_.joinable()) faden_.join();
     }
 
-    /// @brief Aufträge anhalten (der Faden holt weiter ab, liefert aber nicht).
+    /// @brief Auftraege anhalten (der Faden holt weiter ab, liefert aber nicht).
     void anhalten() { angehalten_ = true; }
     void freigeben() {
         { std::lock_guard<std::mutex> l(m_); angehalten_ = false; }
         cv_.notify_all();
     }
 
-    /// @brief Reihenfolge der bedienten Aufträge (Prio, cyl, head).
+    /// @brief Reihenfolge der bedienten Auftraege (Prio, cyl, head).
     std::vector<SyncJob> verlauf() const {
         std::lock_guard<std::mutex> l(m_);
         return verlauf_;
@@ -140,7 +140,7 @@ private:
             if (!sync_.takeJob(j, 50)) continue;
             if (j.kind == SyncJobKind::Stop) return;
 
-            {   // Haltepunkt für die Tests, die die Warteschlange beobachten wollen.
+            {   // Haltepunkt fuer die Tests, die die Warteschlange beobachten wollen.
                 std::unique_lock<std::mutex> l(m_);
                 cv_.wait(l, [this] { return !angehalten_ || sync_.stopped(); });
                 if (sync_.stopped()) { sync_.failJob(j.id, "Ende"); return; }
@@ -217,7 +217,7 @@ TrackSyncSpec spec(bool schreibbar = false, bool vorauslesen = false,
     return s;
 }
 
-/// @brief Wartet, bis @p pred zutrifft (oder die Frist abläuft).
+/// @brief Wartet, bis @p pred zutrifft (oder die Frist ablaeuft).
 template <typename F>
 bool warteBis(F pred, std::chrono::milliseconds frist = 3000ms) {
     const auto ende = std::chrono::steady_clock::now() + frist;
@@ -230,7 +230,7 @@ bool warteBis(F pred, std::chrono::milliseconds frist = 3000ms) {
 
 }  // namespace
 
-// ─── Zustände ────────────────────────────────────────────────────────────────
+// ─── Zustaende ────────────────────────────────────────────────────────────────
 
 TEST(TrackSync, FrischGemounteteDisketteIstVollstaendigUnbekannt) {
     DiskMedium abbild;
@@ -436,7 +436,7 @@ TEST(TrackSync, VorauslesenBeginntBeimZuletztGebrauchtenZylinder) {
             << "Vorauslesen springt quer ueber die Diskette";
 }
 
-// ─── Rückführung ─────────────────────────────────────────────────────────────
+// ─── Rueckfuehrung ─────────────────────────────────────────────────────────────
 
 TEST(TrackSync, GeaenderteSpurLandetAufDerDiskette) {
     DiskMedium scheibe = echteDiskette();
@@ -635,7 +635,7 @@ TEST(TrackSync, StatistikZaehltGelesenGeaendertUndLaufend) {
     faden.stop();
 }
 
-// ─── Rücknahme einer Stapeloperation ─────────────────────────────────────────
+// ─── Ruecknahme einer Stapeloperation ─────────────────────────────────────────
 
 TEST(TrackSync, RuecknahmeStelltDieSpurWiederAlsAenderungEin) {
     // Bei einer physischen Diskette holt das Zurueckkopieren im Speicher nichts von
@@ -873,18 +873,18 @@ TEST(TrackSync, WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt) {
 
 /**
  * @test TrackSync/EinSchonDefekterSektorDarfDefektZurueckkommen
- * @brief Eine Spur mit Schadstelle IM ABBILD lässt sich zurückschreiben.
+ * @brief Eine Spur mit Schadstelle IM ABBILD laesst sich zurueckschreiben.
  *
- * Der Prüf-Vergleich verlangte von jedem zurückgelesenen Sektor eine gültige
- * Prüfsumme — auch von einem, der schon im Abbild kaputt war.  Damit liess sich eine
- * solche Spur **nie** zurückschreiben: das Schreiben gelang, der Vergleich meldete
- * „Prüfsumme des Datenfeldes falsch", die Spur galt als Schadstelle.
+ * Der Pruef-Vergleich verlangte von jedem zurueckgelesenen Sektor eine gueltige
+ * Pruefsumme — auch von einem, der schon im Abbild kaputt war.  Damit liess sich eine
+ * solche Spur **nie** zurueckschreiben: das Schreiben gelang, der Vergleich meldete
+ * „Pruefsumme des Datenfeldes falsch", die Spur galt als Schadstelle.
  *
- * Das gibt es wirklich: die SCP1700-Bootspur des A7100 wurde in einem Zug über den
+ * Das gibt es wirklich: die SCP1700-Bootspur des A7100 wurde in einem Zug ueber den
  * Index hinaus beschrieben, ihre letzte Sektorkopie ist von der Naht abgeschnitten
- * und trägt eine ungültige Daten-CRC (`doc/scp1700_diskettenformat.md` §1.1).
- * Verglichen wird bei so einem Bruchstück nur noch die **Lage**; für jeden heilen
- * Sektor gilt die volle Strenge weiter (die übrigen Tests hier).
+ * und traegt eine ungueltige Daten-CRC (`doc/scp1700_diskettenformat.md` §1.1).
+ * Verglichen wird bei so einem Bruchstueck nur noch die **Lage**; fuer jeden heilen
+ * Sektor gilt die volle Strenge weiter (die uebrigen Tests hier).
  */
 TEST(TrackSync, EinSchonDefekterSektorDarfDefektZurueckkommen) {
     DiskMedium scheibe = echteDiskette();
@@ -915,11 +915,11 @@ TEST(TrackSync, EinSchonDefekterSektorDarfDefektZurueckkommen) {
     EXPECT_FALSE(drauf.back().data_crc_ok);
 }
 
-// ─── Lesewiederholung bei falscher Prüfsumme ─────────────────────────────────
+// ─── Lesewiederholung bei falscher Pruefsumme ─────────────────────────────────
 //
 // Eine Spurseite wird nur EINE Umdrehung lang abgetastet.  Auf einer gealterten
 // Diskette liefert das gelegentlich einen Sektor mit falscher Daten-CRC, der beim
-// nächsten Versuch fehlerfrei zurückkommt — an der P8000-Diskette von 1988
+// naechsten Versuch fehlerfrei zurueckkommt — an der P8000-Diskette von 1988
 // beobachtet (ein Sektor unter 2560, danach dreimal fehlerfrei nachgelesen).
 // Ohne Wiederholung wanderte dieser Ausrutscher unbemerkt in eine Datei.
 
@@ -990,18 +990,18 @@ TEST(TrackSync, EineHeileSpurWirdNiemalsZweimalGelesen) {
 
 /**
  * @test TrackSync/WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt
- * @brief Ein Leseauftrag darf eine inzwischen GEÄNDERTE Spur nicht überschreiben.
+ * @brief Ein Leseauftrag darf eine inzwischen GEAENDERTE Spur nicht ueberschreiben.
  *
- * Der Gegenstück zu @ref TrackSync/WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt,
- * nur für den gewöhnlichen **Lese**auftrag — und der Fall, in dem es am meisten weh
+ * Der Gegenstueck zu @ref TrackSync/WirdWaehrendDesPruefLesensGeschriebenGiltDerNeueInhalt,
+ * nur fuer den gewoehnlichen **Lese**auftrag — und der Fall, in dem es am meisten weh
  * tut: beim Formatieren einer physischen Diskette holt der Vorausleser gerade die
  * Spur, die das Gastsystem im selben Moment formatiert.  Das Fenster ist eine ganze
- * Spurlänge breit (0,5–0,8 s am echten Gerät) und wird bei jedem Formatierlauf
+ * Spurlaenge breit (0,5–0,8 s am echten Geraet) und wird bei jedem Formatierlauf
  * getroffen.
  *
- * Ohne die Prüfung ersetzte @ref DiskMedium::loadTrack den frisch formatierten Inhalt
- * durch den alten Scheibeninhalt und löschte dabei `dirty` — die Spur wäre **nie**
- * zurückgeschrieben worden, ohne eine einzige Meldung.
+ * Ohne die Pruefung ersetzte @ref DiskMedium::loadTrack den frisch formatierten Inhalt
+ * durch den alten Scheibeninhalt und loeschte dabei `dirty` — die Spur waere **nie**
+ * zurueckgeschrieben worden, ohne eine einzige Meldung.
  */
 TEST(TrackSync, WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt) {
     DiskMedium abbild;
@@ -1013,7 +1013,7 @@ TEST(TrackSync, WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt) {
     ASSERT_EQ(lesen.kind, SyncJobKind::Read);
     ASSERT_EQ(lesen.prio, SyncPriority::Readahead);
 
-    // … und währenddessen formatiert das Gastsystem genau sie.
+    // … und waehrenddessen formatiert das Gastsystem genau sie.
     abbild.setTrack(lesen.cyl, lesen.head, baueSpur(lesen.cyl, lesen.head, 8));
 
     // Was der Adapter jetzt abliefert, ist veraltet.
@@ -1022,7 +1022,7 @@ TEST(TrackSync, WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt) {
     const auto       zellen = BitCodec::encode(alt, bc);
     ASSERT_TRUE(sync.completeRead(lesen.id, zellen.data(), zellen.size(), bc));
 
-    // Der Inhalt des Gastes steht noch da — und die Spur gilt weiter als GEÄNDERT.
+    // Der Inhalt des Gastes steht noch da — und die Spur gilt weiter als GEAENDERT.
     EXPECT_EQ(TrackCodec::parseTrack(abbild.peek(lesen.cyl, lesen.head)).size(), 8u);
     EXPECT_EQ(abbild.state(lesen.cyl, lesen.head), TrackState::Dirty);
 
@@ -1039,13 +1039,13 @@ TEST(TrackSync, WirdWaehrendDesLesensGeschriebenGiltDerNeueInhalt) {
 
 /**
  * @test TrackSync/DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst
- * @brief Prio 3 ruht bei Rückstand — auch während dessen Ruhefrist.
+ * @brief Prio 3 ruht bei Rueckstand — auch waehrend dessen Ruhefrist.
  *
- * Vorher trat das Vorauslesen nur *hinter* Prio 2 zurück.  Solange eine geänderte
+ * Vorher trat das Vorauslesen nur *hinter* Prio 2 zurueck.  Solange eine geaenderte
  * Spur aber noch ihre Schreibpause absitzt, ist Prio 2 nicht abrufbar — und der
- * Adapter las in genau dieser Lücke Spuren ein, die das Gastsystem im nächsten
- * Augenblick überschreibt.  Bei einem Formatierlauf ist das jede Spur: lesen,
- * überschreiben, schreiben, prüfen — dreifache Arbeit für nichts.
+ * Adapter las in genau dieser Luecke Spuren ein, die das Gastsystem im naechsten
+ * Augenblick ueberschreibt.  Bei einem Formatierlauf ist das jede Spur: lesen,
+ * ueberschreiben, schreiben, pruefen — dreifache Arbeit fuer nichts.
  */
 TEST(TrackSync, DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst) {
     DiskMedium abbild;
@@ -1054,15 +1054,15 @@ TEST(TrackSync, DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst) {
 
     abbild.setTrack(3, 0, baueSpur(3, 0));   // das Gastsystem formatiert eine Spur
 
-    // Der nächste Auftrag ist die Rückführung — NICHT das Vorauslesen einer der
-    // 15 noch unbekannten Spuren, das ohne Ruhefrist sofort zu haben wäre.
+    // Der naechste Auftrag ist die Rueckfuehrung — NICHT das Vorauslesen einer der
+    // 15 noch unbekannten Spuren, das ohne Ruhefrist sofort zu haben waere.
     SyncJob j;
     ASSERT_TRUE(sync.takeJob(j, 2000));
     EXPECT_EQ(j.kind, SyncJobKind::Write);
     EXPECT_EQ(j.cyl, 3);
     ASSERT_TRUE(sync.completeWrite(j.id));
 
-    // Ist nichts mehr offen, läuft es wie gehabt weiter.
+    // Ist nichts mehr offen, laeuft es wie gehabt weiter.
     ASSERT_TRUE(sync.takeJob(j, 2000));
     EXPECT_EQ(j.kind, SyncJobKind::Read);
     EXPECT_EQ(j.prio, SyncPriority::Readahead);
@@ -1070,12 +1070,12 @@ TEST(TrackSync, DasVorauslesenRuhtSolangeEtwasZurueckzuschreibenIst) {
 
 /**
  * @test TrackSync/DieRueckfuehrungFaehrtFahrstuhl
- * @brief Zurückgeschrieben wird in Fahrtrichtung, nicht nach Alter — und die
- *        Rückfahrt holt ab, was dabei übersprungen wurde.
+ * @brief Zurueckgeschrieben wird in Fahrtrichtung, nicht nach Alter — und die
+ *        Rueckfahrt holt ab, was dabei uebersprungen wurde.
  *
  * Nach Eintreffreihenfolge nimmt der Synchronisierer immer die HINTERSTE Spur,
- * während das Gastsystem vorn arbeitet: jedes Auftragspaar fährt die ganze Strecke
- * hin und zurück, und der Weg wächst mit dem Rückstand.  Am Formatierlauf gemessen
+ * waehrend das Gastsystem vorn arbeitet: jedes Auftragspaar faehrt die ganze Strecke
+ * hin und zurueck, und der Weg waechst mit dem Rueckstand.  Am Formatierlauf gemessen
  * (20 Zylinder, `FD_PHYSICAL_B`): 399 → 146 Spuren Kopfweg.
  */
 TEST(TrackSync, DieRueckfuehrungFaehrtFahrstuhl) {
@@ -1089,7 +1089,7 @@ TEST(TrackSync, DieRueckfuehrungFaehrtFahrstuhl) {
     abbild.setTrack(1, 0, baueSpur(1, 0));
     std::this_thread::sleep_for(80ms);            // beide sind zur Ruhe gekommen
 
-    // Der Kopf steht auf 0: nach Alter käme Spur 5 zuerst, im Fahrstuhl kommt 1.
+    // Der Kopf steht auf 0: nach Alter kaeme Spur 5 zuerst, im Fahrstuhl kommt 1.
     SyncJob j;
     ASSERT_TRUE(sync.takeJob(j, 1000));
     EXPECT_EQ(j.cyl, 1);

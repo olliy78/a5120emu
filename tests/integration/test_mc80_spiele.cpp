@@ -1,12 +1,12 @@
 /**
  * @file test_mc80_spiele.cpp
- * @brief MC80 (AP M5): die Speicherabzüge doc/mc80/spiele/ werden wie mit dem Debugger-Befehl
- *        `load` bzw. k1520_mem_load (= memWriteDebug Byte für Byte) in den RAM geladen,
- *        über EGOS' Kommandokette gestartet und müssen laufen: Programmzähler im Spiel,
- *        Bild ändert sich.
+ * @brief MC80 (AP M5): die Speicherabzuege doc/mc80/spiele/ werden wie mit dem Debugger-Befehl
+ *        `load` bzw. k1520_mem_load (= memWriteDebug Byte fuer Byte) in den RAM geladen,
+ *        ueber EGOS' Kommandokette gestartet und muessen laufen: Programmzaehler im Spiel,
+ *        Bild aendert sich.
  *
  * Kettung (egos.md §1.3): jeder Eintrag ist `Kennbyte, Abstand(2), Name, FFH, Code`; der
- * Abstand zeigt (ab Byte 3) auf den nächsten Eintrag.  PHARAO/WALL werden mit `RKET 01,4000,adr`
+ * Abstand zeigt (ab Byte 3) auf den naechsten Eintrag.  PHARAO/WALL werden mit `RKET 01,4000,adr`
  * an 4000H verkettet; der Test legt dasselbe Glied (`01 <adr-4003H> FF`, leerer Name) selbst ab.
  */
 
@@ -44,7 +44,7 @@ struct Mc80Rechner {
         while (!m->tastatur().leer()) m->run(5000);
         fahre(nach);
     }
-    /// Wie der Debugger-Befehl `load <datei> <adr>` (k1520_mem_load): Byte für Byte durch den
+    /// Wie der Debugger-Befehl `load <datei> <adr>` (k1520_mem_load): Byte fuer Byte durch den
     /// Maschinen-Speicherpfad im gerade sichtbaren Segment.
     size_t lade(const std::string& datei, uint16_t adr) {
         std::ifstream f(std::string(MC80_SPIELE_DIR) + "/" + datei, std::ios::binary);
@@ -87,7 +87,7 @@ struct Lauf {
     uint16_t pcEnde = 0;
 };
 
-/// Kommando eingeben, Eingabe auslösen, dann einzeln fahren und den Programmzähler
+/// Kommando eingeben, Eingabe ausloesen, dann einzeln fahren und den Programmzaehler
 /// einsammeln.  Das Bild wird vor dem Kommando, in der Mitte und am Ende verglichen.
 Lauf starte(Mc80Rechner& r, const char* kdo, uint16_t von, uint16_t bis, int befehle = 600'000)
 {
@@ -112,9 +112,9 @@ Lauf starte(Mc80Rechner& r, const char* kdo, uint16_t von, uint16_t bis, int bef
     return l;
 }
 
-/// Gemeinsame Abnahme: der Programmzähler ist nennenswert im Spiel (also keine dauerhafte
-/// ROM-Warteschleife nach dem Start) und das Bild hat sich gegenüber dem Zustand vor dem
-/// Kommando geändert.
+/// Gemeinsame Abnahme: der Programmzaehler ist nennenswert im Spiel (also keine dauerhafte
+/// ROM-Warteschleife nach dem Start) und das Bild hat sich gegenueber dem Zustand vor dem
+/// Kommando geaendert.
 void erwarteLaeuft(const Lauf& l, const Mc80Rechner& r)
 {
     ::testing::Test::RecordProperty("imSpiel", l.imSpiel);
@@ -124,9 +124,9 @@ void erwarteLaeuft(const Lauf& l, const Mc80Rechner& r)
     printf("[Spiel] imSpiel=%d imRom=%d von=%d pcEnde=%04X bildNachStart=%zu bildSpaeter=%zu\n",
            l.imSpiel, l.imRom, l.proben, l.pcEnde, l.bildNachStart, l.bildSpaeter);
     EXPECT_GT(l.imSpiel, l.proben / 10)
-        << "Programmzähler kaum im Spiel (imSpiel=" << l.imSpiel << " imRom=" << l.imRom
+        << "Programmzaehler kaum im Spiel (imSpiel=" << l.imSpiel << " imRom=" << l.imRom
         << " pcEnde=" << std::hex << l.pcEnde << ")\n" << r.text();
-    EXPECT_GT(l.bildNachStart, 500u) << "Bild unverändert\n" << r.text();
+    EXPECT_GT(l.bildNachStart, 500u) << "Bild unveraendert\n" << r.text();
     EXPECT_GT(l.bildSpaeter, 0u) << "Bild steht (Spiel lebt nicht weiter)\n" << r.text();
 }
 

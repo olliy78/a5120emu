@@ -1,4 +1,4 @@
-# `breti on`: Fortsetzen nach einem RETI-Halt hält beim nächsten RETI wieder.
+# `breti on`: Fortsetzen nach einem RETI-Halt haelt beim naechsten RETI wieder.
 tool:   k1520dbg
 disk:   cpa_cpa780_k5601_clock.img
 run:    %DISK%

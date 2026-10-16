@@ -1,4 +1,4 @@
-// Integrationstest für A5120Machine::captureState / restoreState (Snapshot/Reverse).
+// Integrationstest fuer A5120Machine::captureState / restoreState (Snapshot/Reverse).
 #include "core/machines/a5120/a5120.h"
 #include <gtest/gtest.h>
 #include <cstdio>
@@ -7,9 +7,9 @@
 
 namespace {
 A5120Machine::MachineSnapshot* heapSnap(){ return new A5120Machine::MachineSnapshot(); }
-// Pro Test EINDEUTIGER Pfad: bei paralleler Ausführung (ctest -j) würden sonst
+// Pro Test EINDEUTIGER Pfad: bei paralleler Ausfuehrung (ctest -j) wuerden sonst
 // mehrere Save/Load-Tests dieselbe Datei gleichzeitig schreiben/lesen → Race →
-// sporadische Fehlschläge.  Der Testname macht den Pfad kollisionsfrei.
+// sporadische Fehlschlaege.  Der Testname macht den Pfad kollisionsfrei.
 std::string tmpStatePath(){
     const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
     std::string name = info ? info->name() : "unknown";
@@ -25,11 +25,11 @@ TEST(MachineSnapshot, RamRoundTrip){
     A5120Machine::MachineSnapshot s;
     m.captureState(s);
 
-    // RAM verändern …
+    // RAM veraendern …
     for (uint16_t i=0;i<16;++i) m.memWriteDebug(0x6000+i, 0x00);
     EXPECT_EQ(m.memReadDebug(0x6005), 0x00);
 
-    // … und zurückrollen
+    // … und zurueckrollen
     EXPECT_TRUE(m.restoreState(s));
     for (uint16_t i=0;i<16;++i)
         EXPECT_EQ(m.memReadDebug(0x6000+i), (uint8_t)(0xA0+i));
@@ -92,11 +92,11 @@ TEST(MachineSnapshot, SaveAndLoadStateRoundTrip){
     std::remove(path.c_str());
 }
 
-// ── K7024-VRAM überlebt save/load (doc/feature_requests/interaktive_programme.md #2) ─────
+// ── K7024-VRAM ueberlebt save/load (doc/feature_requests/interaktive_programme.md #2) ─────
 
 // Der Bildschirminhalt (VRAM 0xF800–0xFFFF, im K7024 gehalten, nicht im OPS-RAM)
-// muss einen savestate→loadstate überleben, sonst ist `screen` nach dem Laden leer
-// und bildschirmbasiertes Weiterarbeiten (gscreen/keyuntil) unmöglich.
+// muss einen savestate→loadstate ueberleben, sonst ist `screen` nach dem Laden leer
+// und bildschirmbasiertes Weiterarbeiten (gscreen/keyuntil) unmoeglich.
 TEST(MachineSnapshot, ScreenVramSurvivesSaveLoad){
     std::string path = tmpStatePath();
     A5120Machine a; a.powerOn(); a.run(400000);
@@ -113,12 +113,12 @@ TEST(MachineSnapshot, ScreenVramSurvivesSaveLoad){
     std::remove(path.c_str());
 }
 
-// ── Tastatur-Subsystem überlebt save/load (Kernanforderung) ──────────────────
+// ── Tastatur-Subsystem ueberlebt save/load (Kernanforderung) ──────────────────
 
 // Eine getippte Taste landet (nach der 9600-Baud-Serial-Latenz) im Tastatur-SIO
-// RX-FIFO. Genau dieser Geräteszustand muss einen savestate→loadstate überleben,
+// RX-FIFO. Genau dieser Geraeteszustand muss einen savestate→loadstate ueberleben,
 // damit die Tastatur nach dem Laden funktioniert (RAM+CPU allein reichen nicht —
-// der SIO-/K7637-/Timer-Zustand lebt außerhalb des RAM).
+// der SIO-/K7637-/Timer-Zustand lebt ausserhalb des RAM).
 TEST(MachineSnapshot, KeyboardSioSurvivesSaveLoad){
     std::string path = tmpStatePath();
     A5120Machine a; a.powerOn();
@@ -128,7 +128,7 @@ TEST(MachineSnapshot, KeyboardSioSurvivesSaveLoad){
     ASSERT_GT(before.ch[0].rxQueued, 0u);      // Byte steht im Tastatur-SIO (Kanal A)
 
     A5120Machine::MachineSnapshot s; a.captureState(s);
-    EXPECT_FALSE(s.device_state.empty());      // Geräteszustand wurde mitgesichert
+    EXPECT_FALSE(s.device_state.empty());      // Geraeteszustand wurde mitgesichert
 
     ASSERT_TRUE(a.saveState(path));
 
@@ -139,7 +139,7 @@ TEST(MachineSnapshot, KeyboardSioSurvivesSaveLoad){
     std::remove(path.c_str());
 }
 
-// In-Memory captureState/restoreState rollt den Tastatur-SIO-Zustand exakt zurück.
+// In-Memory captureState/restoreState rollt den Tastatur-SIO-Zustand exakt zurueck.
 TEST(MachineSnapshot, KeyboardSioRoundTripInMemory){
     A5120Machine m; m.powerOn();
     m.keyPress('Z', false, false);
@@ -148,45 +148,45 @@ TEST(MachineSnapshot, KeyboardSioRoundTripInMemory){
     ASSERT_GT(before.ch[0].rxQueued, 0u);
 
     A5120Machine::MachineSnapshot s; m.captureState(s);
-    // SIO leeren (Byte auslesen) und prüfen, dass es weg ist …
-    m.run(2000000);                            // ZVE1 läuft weiter; FIFO kann sich ändern
-    // … dann zurückrollen und denselben FIFO-Füllstand erwarten.
+    // SIO leeren (Byte auslesen) und pruefen, dass es weg ist …
+    m.run(2000000);                            // ZVE1 laeuft weiter; FIFO kann sich aendern
+    // … dann zurueckrollen und denselben FIFO-Fuellstand erwarten.
     EXPECT_TRUE(m.restoreState(s));
     EXPECT_EQ(m.kbdSioState().ch[0].rxQueued, before.ch[0].rxQueued);
 }
 
-// Legacy-v1-Snapshots (ohne device_state) müssen weiterhin laden.
+// Legacy-v1-Snapshots (ohne device_state) muessen weiterhin laden.
 TEST(MachineSnapshot, LegacyV1StateWithoutDeviceStateStillLoads){
     // Ein leerer device_state (wie bei v1) wird von restoreState toleriert.
     A5120Machine m; m.powerOn(); m.run(400000);
     A5120Machine::MachineSnapshot s; m.captureState(s);
     s.device_state.clear();                    // v1-Verhalten simulieren
-    EXPECT_TRUE(m.restoreState(s));            // kein Absturz, Geräte behalten ihren Zustand
+    EXPECT_TRUE(m.restoreState(s));            // kein Absturz, Geraete behalten ihren Zustand
 }
 
 TEST(MachineSnapshot, LoadStateRejectsMissingAndGarbage){
     A5120Machine m; m.powerOn();
     EXPECT_FALSE(m.loadState("/nonexistent/k1520/does-not-exist.bin"));
-    // Eine Datei mit falscher Magic wird abgelehnt (Maschine unverändert).
+    // Eine Datei mit falscher Magic wird abgelehnt (Maschine unveraendert).
     std::string path = tmpStatePath();
     { FILE* f = std::fopen(path.c_str(), "wb"); std::fputs("NOTASTATEFILE....", f); std::fclose(f); }
     EXPECT_FALSE(m.loadState(path));
     std::remove(path.c_str());
 }
 
-// ─── Laufwerksbestückung (A5120Machine::Config / C-API) ────────────────────────
-// Default = 4× 5,25"-MFM (K5601); per Config (C-API/GUI/Config-Datei) überschreibbar.
-// k5122State() liefert den Zustand des aktuell gewählten Laufwerks (Default: Slot 0).
+// ─── Laufwerksbestueckung (A5120Machine::Config / C-API) ────────────────────────
+// Default = 4× 5,25"-MFM (K5601); per Config (C-API/GUI/Config-Datei) ueberschreibbar.
+// k5122State() liefert den Zustand des aktuell gewaehlten Laufwerks (Default: Slot 0).
 
 // ─── break-before-execute (Debugger-Halt) ────────────────────────────────────
 // Fordert ein Trace-Callback mitten in der Instruktionsvorbereitung den Halt an
 // (stop()), darf die Instruktion NICHT mehr laufen: der Zustand, den der Callback
 // gemeldet hat, muss danach exakt der Maschinenzustand sein. Sonst zeigt ein
-// Debugger die eine Adresse an und jede Folgeabfrage die nächste
+// Debugger die eine Adresse an und jede Folgeabfrage die naechste
 // (s. tools/k1520dbg.md §2/§8).
 TEST(MachineRunControl, StopFromTraceCallbackHaltsBeforeTheInstruction){
     A5120Machine m; m.powerOn();
-    // Erst ein Stück laufen lassen, damit wir mitten im Lade-ROM stehen.
+    // Erst ein Stueck laufen lassen, damit wir mitten im Lade-ROM stehen.
     m.run(20000);
     const uint16_t target = m.cpuPC();
 
@@ -199,14 +199,14 @@ TEST(MachineRunControl, StopFromTraceCallbackHaltsBeforeTheInstruction){
     m.clearStop();
     int used = m.run(50000);
 
-    EXPECT_EQ(seen_pc, target);               // Callback sah die nächste Instruktion …
+    EXPECT_EQ(seen_pc, target);               // Callback sah die naechste Instruktion …
     EXPECT_EQ(m.cpuPC(), seen_pc);            // … und genau dort steht die Maschine
     EXPECT_EQ(m.cpuDebug().cycles, seen_cyc); // keine Takte verbraucht
     EXPECT_EQ(used, 0);
-    m.setCpuTraceCallback({});                // Lambda fängt lokale Referenzen
+    m.setCpuTraceCallback({});                // Lambda faengt lokale Referenzen
 }
 
-// Ohne Halt läuft alles wie bisher — die Rückfrage darf den Normalbetrieb nicht bremsen.
+// Ohne Halt laeuft alles wie bisher — die Rueckfrage darf den Normalbetrieb nicht bremsen.
 TEST(MachineRunControl, TraceCallbackWithoutStopRunsNormally){
     A5120Machine m; m.powerOn();
     int calls = 0;
@@ -218,7 +218,7 @@ TEST(MachineRunControl, TraceCallbackWithoutStopRunsNormally){
 }
 
 TEST(MachineConfig, DefaultIst4xK5601){
-    A5120Machine m;   // ohne Config → Default-Bürokonfiguration
+    A5120Machine m;   // ohne Config → Default-Buerokonfiguration
     EXPECT_EQ(m.k5122State().driveProfileName, "K5601");
 }
 
@@ -233,6 +233,6 @@ TEST(MachineConfig, UnbekanntesProfilFaelltAufDefault){
     A5120Machine::Config cfg;
     cfg.drive_profiles[0] = "gibtsnicht";
     A5120Machine m(cfg);
-    // builtinDriveProfile liefert für unbekannte Namen das Default-Profil.
+    // builtinDriveProfile liefert fuer unbekannte Namen das Default-Profil.
     EXPECT_EQ(m.k5122State().driveProfileName, "K5601");
 }

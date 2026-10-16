@@ -1,9 +1,9 @@
-// Unit-Tests für den MACRO-80-Quelltext-Assembler (tools/mac_listing.h).
+// Unit-Tests fuer den MACRO-80-Quelltext-Assembler (tools/mac_listing.h).
 //
 // Kernanspruch: aus reinem `.MAC`-Quelltext (ORG 0, keine Adressspalte) dieselbe
 // Adresse→Quellzeile-Tabelle bauen, die prn_listing.h aus einem .prn-Listing zieht —
-// inklusive korrekter Opcode-LÄNGEN (sonst verschiebt sich alles Folgende) und der
-// Objektbytes für den Versatz-Abgleich.
+// inklusive korrekter Opcode-LAENGEN (sonst verschiebt sich alles Folgende) und der
+// Objektbytes fuer den Versatz-Abgleich.
 #include "tools/mac_listing.h"
 #include <gtest/gtest.h>
 #include <cstdio>
@@ -12,7 +12,7 @@
 
 namespace {
 
-// Eine temporäre Quelldatei mit dem übergebenen Inhalt anlegen.
+// Eine temporaere Quelldatei mit dem uebergebenen Inhalt anlegen.
 std::string writeTmp(const std::string& name, const std::string& body){
     std::string p = k1520test::tempPath(name);
     std::ofstream f(p); f << body; f.close();
@@ -45,7 +45,7 @@ std::vector<uint8_t> bytesAt(const maclst::Image& img, uint16_t addr, int n){
 
 } // namespace
 
-// ─── Zahlen + Ausdrücke ──────────────────────────────────────────────────────
+// ─── Zahlen + Ausdruecke ──────────────────────────────────────────────────────
 TEST(MacListing, ParsesMacro80Numbers){
     long v;
     EXPECT_TRUE (maclst::parseNum("0FFH", v)); EXPECT_EQ(v, 255);
@@ -54,7 +54,7 @@ TEST(MacListing, ParsesMacro80Numbers){
     EXPECT_TRUE (maclst::parseNum("123",  v)); EXPECT_EQ(v, 123);
     EXPECT_TRUE (maclst::parseNum("'A'",  v)); EXPECT_EQ(v, 'A');
     EXPECT_FALSE(maclst::parseNum("M0EB8",v));      // Symbol, keine Zahl
-    EXPECT_FALSE(maclst::parseNum("FFH",  v));      // MACRO-80: Hex braucht führende Ziffer
+    EXPECT_FALSE(maclst::parseNum("FFH",  v));      // MACRO-80: Hex braucht fuehrende Ziffer
 }
 
 TEST(MacListing, EvaluatesExpressions){
@@ -67,9 +67,9 @@ TEST(MacListing, EvaluatesExpressions){
     EXPECT_TRUE(unres);
 }
 
-// ─── Opcode-Längen (der eigentliche Zweck) ───────────────────────────────────
+// ─── Opcode-Laengen (der eigentliche Zweck) ───────────────────────────────────
 TEST(MacListing, ComputesInstructionLengthsAndAddresses){
-    // Genau die Sequenz, deren Längen in der UDOS-Analyse von Hand gezählt wurden.
+    // Genau die Sequenz, deren Laengen in der UDOS-Analyse von Hand gezaehlt wurden.
     auto a = run(
         "\tLD\tSP,0D00H\n"       // 3  @0000
         "\tCALL\tM028C\n"        // 3  @0003
@@ -121,7 +121,7 @@ TEST(MacListing, EncodesRepresentativeInstructions){
 TEST(MacListing, EncodesRelativeJumpsRelativeToTheirOwnAddress){
     auto a = run(
         "START:\tNOP\n"
-        "\tJR\tSTART\n"          // 18 FD  (zurück über 1 NOP + 2 Bytes JR)
+        "\tJR\tSTART\n"          // 18 FD  (zurueck ueber 1 NOP + 2 Bytes JR)
         "\tDJNZ\tSTART\n"        // 10 FB
         , 0, false);
     ASSERT_TRUE(a.ok);
@@ -135,7 +135,7 @@ TEST(MacListing, HandlesOrgEquDsDbDw){
         "\tORG\t0100H\n"
         "\tDB\t1,2,'AB'\n"       // 4 Bytes @0100
         "\tDW\t1234H\n"          // 2 Bytes @0104
-        "\tDS\tSIZE\n"           // 4 Bytes Lücke
+        "\tDS\tSIZE\n"           // 4 Bytes Luecke
         "\tNOP\n"                // @010A
         , 0, false);
     ASSERT_TRUE(a.ok);
@@ -160,7 +160,7 @@ TEST(MacListing, AddressOffsetRelocatesTheTable){
 
 // ─── Mxxxx-Adressanker ───────────────────────────────────────────────────────
 TEST(MacListing, MxxxxLabelsActAsAddressAnchors){
-    // Der Anker zieht den Adresszähler auf die im Labelnamen codierte Adresse —
+    // Der Anker zieht den Adresszaehler auf die im Labelnamen codierte Adresse —
     // ein einzelner nicht erkannter Befehl verschiebt damit nicht alles Folgende.
     auto a = run(
         "\tNOP\n"
@@ -232,7 +232,7 @@ TEST(MacListing, DetectsSourceFileSuffix){
 
 TEST(MacListing, VerdictReflectsMatchQuality){
     // Nur teilweise passende Quelle (anderer Build) muss als solche gemeldet werden —
-    // „passt die Quelle überhaupt zu diesem Image?" ist die eigentliche Frage.
+    // „passt die Quelle ueberhaupt zu diesem Image?" ist die eigentliche Frage.
     auto a = run(
         "\tLD\tA,05H\n\tADD\tA,07H\n\tAND\t0FH\n\tOUT\t(04H),A\n"
         "\tLD\tA,0AAH\n\tIN\tA,(12H)\n\tXOR\t55H\n\tNOP\n\tNOP\n"
@@ -246,7 +246,7 @@ TEST(MacListing, VerdictReflectsMatchQuality){
     EXPECT_DOUBLE_EQ(exact.ratio, 1.0);
     EXPECT_STREQ(exact.verdict(), "identischer Build");
 
-    // Hälfte des Codes verändern → gleiches Programm, anderer Build.
+    // Haelfte des Codes veraendern → gleiches Programm, anderer Build.
     for (uint16_t x = 0x0210; x < 0x0220; ++x) mem[x] ^= 0xFF;
     auto partial = maclst::findOffset(a.img, [&](uint16_t x){ return mem[x]; }, 8);
     ASSERT_TRUE(partial.found);
@@ -264,7 +264,7 @@ TEST(MacListing, PrefersGloballyBestOffsetOverFirstAnchorHit){
         "\tLD\tB,09H\n\tDEC\tB\n\tCP\t0C3H\n\tSCF\n\tCCF\n\tHALT\n", 0, false);
     ASSERT_TRUE(a.ok);
     std::vector<uint8_t> mem(0x10000, 0x00);
-    for (auto& kv : a.img.byte) mem[(uint16_t)(kv.first + 0x4000)] = kv.second;   // vollständig
+    for (auto& kv : a.img.byte) mem[(uint16_t)(kv.first + 0x4000)] = kv.second;   // vollstaendig
     // Teilkopie an anderer Stelle (nur die ersten 10 Bytes) als Ablenkung.
     for (auto& kv : a.img.byte) if (kv.first < 10) mem[(uint16_t)(kv.first + 0x0800)] = kv.second;
     auto m = maclst::findOffset(a.img, [&](uint16_t x){ return mem[x]; }, 8);
@@ -272,13 +272,13 @@ TEST(MacListing, PrefersGloballyBestOffsetOverFirstAnchorHit){
     EXPECT_EQ(m.offset, 0x4000);
 }
 
-// ─── Vollständiger Rundlauf gegen den Disassembler ───────────────────────────
-// Der Encoder wird aus tools/z80dis_min.h abgeleitet; diese Invariante prüft die
-// von Hand geschriebene Hälfte (Schlüssel-Normalisierung, Operanden-Klassifikation,
-// Byte-Patching) über den GANZEN Befehlssatz statt an Stichproben:
+// ─── Vollstaendiger Rundlauf gegen den Disassembler ───────────────────────────
+// Der Encoder wird aus tools/z80dis_min.h abgeleitet; diese Invariante prueft die
+// von Hand geschriebene Haelfte (Schluessel-Normalisierung, Operanden-Klassifikation,
+// Byte-Patching) ueber den GANZEN Befehlssatz statt an Stichproben:
 //   Disassemblat einer Kodierung → als Quellzeile assemblieren → wieder
 //   disassemblieren MUSS denselben Text ergeben.
-// (Redundante DD/FD-Präfixe kanonisiert der Assembler bewusst weg — deshalb wird
+// (Redundante DD/FD-Praefixe kanonisiert der Assembler bewusst weg — deshalb wird
 // der TEXT verglichen, nicht die Ausgangsbytes.)
 TEST(MacListing, RoundTripsEveryDecodableInstruction){
     auto disasmOf = [](const std::vector<uint8_t>& b){
@@ -321,7 +321,7 @@ TEST(MacListing, RoundTripsEveryDecodableInstruction){
 // `SET` ist doppelt belegt: Pseudobefehl `NAME SET wert` vs. Z80-Befehl `SET b,r`.
 // Ohne Label ist der Z80-Befehl gemeint — sonst verschwindet er spurlos aus dem
 // Assemblat (gefunden vom Rundlauf-Test oben; in DEBUBC43.MAC verschob das die
-// Adressen um 7 Stellen, bis ein Mxxxx-Anker sie zurückzog).
+// Adressen um 7 Stellen, bis ein Mxxxx-Anker sie zurueckzog).
 TEST(MacListing, SetIsInstructionWithoutLabelAndPseudoOpWithOne){
     auto a = run("\tSET\t0,B\n"          // CB C0
                  "\tRES\t7,A\n"          // CB BF

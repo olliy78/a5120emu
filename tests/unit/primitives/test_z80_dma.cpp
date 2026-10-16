@@ -50,7 +50,7 @@ TEST(Z80Dma, FloppyLesenFdcNachSpeicher) {
     Rig r;
     for (int i = 0; i < 300; i++) r.fdc.push_back(uint8_t(i));
     r.floppy(0x7D, 0x2000, 256, 0x01);        // B->A: FDC -> Speicher
-    EXPECT_EQ(r.lauf(), 256);                 // Länge-1 programmiert, 256 Bytes
+    EXPECT_EQ(r.lauf(), 256);                 // Laenge-1 programmiert, 256 Bytes
     for (int i = 0; i < 256; i++) ASSERT_EQ(r.ram[0x2000 + i], uint8_t(i)) << i;
     EXPECT_EQ(r.ram[0x2100], 0);
     EXPECT_EQ(r.fdcPos, 256u);
@@ -87,7 +87,7 @@ TEST(Z80Dma, FloppySchreibenSpeicherNachFdc) {
 TEST(Z80Dma, DoppelLoadMitRichtungswechselVersorgtBeidePorts) {
     Rig r;
     r.floppy(0x7D, 0x2000, 4, 0x01);
-    // vor Enable: A-Zähler = A-Start (1. LOAD, A war Quelle), B-Zähler = 41H (2. LOAD, B Quelle)
+    // vor Enable: A-Zaehler = A-Start (1. LOAD, A war Quelle), B-Zaehler = 41H (2. LOAD, B Quelle)
     EXPECT_EQ(r.dma.adresseA(), 0x2000);
     EXPECT_EQ(r.dma.adresseB(), 0x0041);
 }
@@ -140,7 +140,7 @@ TEST(Z80Dma, StatusLesenBBundSiebenMalIN) {
     uint8_t st = r.dma.ioRead(0);
     EXPECT_EQ(st & 0x20, 0);
     EXPECT_EQ(st & 0x01, 1);
-    EXPECT_EQ(r.dma.ioRead(0), 4);            // Zähler L = übertragene Bytes
+    EXPECT_EQ(r.dma.ioRead(0), 4);            // Zaehler L = uebertragene Bytes
     EXPECT_EQ(r.dma.ioRead(0), 0);
     EXPECT_EQ(r.dma.ioRead(0), 0x04);         // Adresse A = 2004H
     EXPECT_EQ(r.dma.ioRead(0), 0x20);
@@ -169,8 +169,8 @@ TEST(Z80Dma, PruefLesenContinueReinitStatus) {
     EXPECT_NE(r.dma.status() & 0x20, 0);
     EXPECT_FALSE(r.dma.blockEndeErreicht());
     EXPECT_EQ(r.dma.bytezaehler(), 0);
-    EXPECT_EQ(r.lauf(), 4);                  // gleiche Länge noch einmal
-    EXPECT_EQ(r.dma.adresseA(), 0x2008);     // Adresse läuft weiter
+    EXPECT_EQ(r.lauf(), 4);                  // gleiche Laenge noch einmal
+    EXPECT_EQ(r.dma.adresseA(), 0x2008);     // Adresse laeuft weiter
     EXPECT_TRUE(r.dma.hasInterrupt());
 }
 
@@ -178,14 +178,14 @@ TEST(Z80Dma, ForceReadyOhneRdy) {
     Rig r;
     for (int i = 0; i < 4; i++) r.ram[0x0600 + i] = uint8_t(i + 1);
     // Blindlauf in der Form von Lader/BIOS/INIT (mit 01 CF vor B3): Speicher fest -> 40H, Force Ready.
-    // Die S550-Form ohne `01 CF` lädt nur A; Port B bliebe nach Datenblatt bei 0 [?].
+    // Die S550-Form ohne `01 CF` laedt nur A; Port B bliebe nach Datenblatt bei 0 [?].
     // P9c: die Richtung (05) muss VOR 87 stehen — jedes Steuerbyte sperrt die DMA (Datenblatt).
     r.w({0xC3, 0x7D, 0xBA, 0x06, 0x01, 0x00, 0x24, 0x28, 0x80, 0x85, 0x40, 0x82, 0xCF, 0x01, 0xCF, 0x05, 0xB3, 0x87});
     r.dma.setReady(true);                    // RDY inaktiv (low-aktiv)
     EXPECT_TRUE(r.dma.busRequest());
     EXPECT_EQ(r.dma.step(), 8);
-    // P9c: im Byte-Betrieb setzt die Busfreigabe nach dem Byte Force Ready zurück (UA858 §10.1
-    // B3: „so erfolgt lediglich die Übertragung eines Bytes“) — das zweite Byte wartet auf RDY.
+    // P9c: im Byte-Betrieb setzt die Busfreigabe nach dem Byte Force Ready zurueck (UA858 §10.1
+    // B3: „so erfolgt lediglich die Uebertragung eines Bytes“) — das zweite Byte wartet auf RDY.
     r.dma.cpuZyklus();
     EXPECT_FALSE(r.dma.busRequest());
     EXPECT_EQ(r.dma.step(), 0);
@@ -232,7 +232,7 @@ TEST(Z80Dma, DekrementUndAutoRestart) {
     r.w({0xC3, 0x79, 0x03, 0x01, 0x03, 0x00, 0x04, 0x10, 0x80, 0xAD, 0x00, 0x02, 0xA2, 0xCF, 0x05, 0xCF, 0xB3, 0x87});
     for (int i = 0; i < 4; i++) r.dma.step();
     EXPECT_EQ(r.ram[0x200], 4); EXPECT_EQ(r.ram[0x203], 1);
-    // Auto-Restart: läuft von vorn weiter
+    // Auto-Restart: laeuft von vorn weiter
     EXPECT_TRUE(r.dma.enabled());
     EXPECT_EQ(r.dma.adresseA(), 0x0103);
     EXPECT_EQ(r.dma.adresseB(), 0x0200);
@@ -243,7 +243,7 @@ TEST(Z80Dma, FolgebytesNachWR4MitIntCtlPulseVektor) {
     r.fdc.assign(4, 3);
     r.dma.setIEI(true);
     // Interrupt-Steuerbyte 1AH: Blockende + Pulse-Byte (33H) + Vektor (66H) folgen;
-    // ein falsch einsortiertes Folgebyte würde als Befehl laufen und das Ergebnis verfälschen
+    // ein falsch einsortiertes Folgebyte wuerde als Befehl laufen und das Ergebnis verfaelschen
     r.w({0xC3, 0x7D, 0x00, 0x20, 0x01, 0x00, 0x14, 0x28, 0x95, 0x41, 0x1A, 0x33, 0x66,
          0x82, 0xCF, 0x01, 0xCF, 0xAB, 0x87});
     r.lauf();
@@ -253,7 +253,7 @@ TEST(Z80Dma, FolgebytesNachWR4MitIntCtlPulseVektor) {
     EXPECT_EQ(r.dma.getVector(), 0x66);
 }
 
-// P9c: B7 gibt NICHT frei, sondern hält die Busanforderung bis zum RETI zurück (Zilog S. 53:
+// P9c: B7 gibt NICHT frei, sondern haelt die Busanforderung bis zum RETI zurueck (Zilog S. 53:
 // ISR gibt B7, 87, RETI).  Vorher gab B7 + RETI frei — kein Gastsystem benutzt B7.
 TEST(Z80Dma, EnableNachRETI) {
     Rig r;
@@ -295,8 +295,8 @@ TEST(Z80Dma, SaveStateRundreise) {
 } // namespace
 
 /**
- * @test Statusbyte D1/D3 sind Leitungszustände (AP-W3, Datenblatt RR0: D1 = 0 „RDY aktiv",
- *       D3 = 0 „Interrupt anstehend").  S550 0539H prüft nach dem Lesen D1: steht RDY noch
+ * @test Statusbyte D1/D3 sind Leitungszustaende (AP-W3, Datenblatt RR0: D1 = 0 „RDY aktiv",
+ *       D3 = 0 „Interrupt anstehend").  S550 0539H prueft nach dem Lesen D1: steht RDY noch
  *       (= der U8272 will weitere Bytes), gilt der Auftrag als gescheitert.  Vorher stand D1
  *       fest auf 0 — der Urlader verwarf jeden gelesenen Sektor und versuchte es endlos neu.
  */

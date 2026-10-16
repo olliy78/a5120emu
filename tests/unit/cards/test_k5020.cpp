@@ -73,7 +73,7 @@ struct K5020Test : ::testing::Test {
         for (uint8_t v : {0xFF, 0xFD}) bus.ioWrite(SBC, v);
         for (uint8_t v : {0xFF, 0x80}) bus.ioWrite(SAC, v);
     }
-    /// Gerät 1 reservieren und anwählen, bereit abwarten.
+    /// Geraet 1 reservieren und anwaehlen, bereit abwarten.
     void geraet1Bereit(std::shared_ptr<KassettenMedium> m, double pos_mm = 30'000) {
         k().laufwerk(0).kassetteEinlegen(std::move(m));
         k().laufwerk(0).positionSetzen(static_cast<int64_t>(pos_mm * 1000));
@@ -94,7 +94,7 @@ struct K5020Test : ::testing::Test {
 
 }  // namespace
 
-// ─── Steuer-PIO: Ausgänge (RES / AWA / TRV / TRR / HGE / AUF) ───────────────
+// ─── Steuer-PIO: Ausgaenge (RES / AWA / TRV / TRR / HGE / AUF) ───────────────
 
 TEST_F(K5020Test, ResUndAwaFolgenDerFunktionstabelle) {
     steuerInit();
@@ -105,27 +105,27 @@ TEST_F(K5020Test, ResUndAwaFolgenDerFunktionstabelle) {
     EXPECT_TRUE(l1.reserviert());
     EXPECT_FALSE(l2.reserviert());
     EXPECT_FALSE(l1.angewaehlt());
-    bus.ioWrite(SA, 0x09);   // reserviert + angewählt
+    bus.ioWrite(SA, 0x09);   // reserviert + angewaehlt
     EXPECT_TRUE(l1.reserviert());
     EXPECT_TRUE(l1.angewaehlt());
     EXPECT_EQ(k().angewaehlt(), 0);
-    bus.ioWrite(SA, 0x06);   // KMBG 2 angewählt, KMBG 1 nicht reserviert
+    bus.ioWrite(SA, 0x06);   // KMBG 2 angewaehlt, KMBG 1 nicht reserviert
     EXPECT_FALSE(l1.reserviert());
     EXPECT_FALSE(l1.angewaehlt());
     EXPECT_TRUE(l2.angewaehlt());
     EXPECT_TRUE(l2.reserviert()) << "06: Bit 0 = 0 = RES2";
 }
 
-// AP K7: die Rückleitungen gelten auch dann, wenn sie sich seit dem Reset nicht geändert haben.
-// Beim Reset steht die Steuer-PIO noch nicht im Modus 3, ihr Eingaberegister übernimmt die Pegel
-// erst nach dem Steuerwort — sonst liest das Lade-ROM FFH und hält ein LEERES Gerät 1 für bereit
-// (/NIB1 = 1) und Magnetband unter der Lichtschranke; es spult dort endlos statt Gerät 2 zu nehmen.
+// AP K7: die Rueckleitungen gelten auch dann, wenn sie sich seit dem Reset nicht geaendert haben.
+// Beim Reset steht die Steuer-PIO noch nicht im Modus 3, ihr Eingaberegister uebernimmt die Pegel
+// erst nach dem Steuerwort — sonst liest das Lade-ROM FFH und haelt ein LEERES Geraet 1 fuer bereit
+// (/NIB1 = 1) und Magnetband unter der Lichtschranke; es spult dort endlos statt Geraet 2 zu nehmen.
 TEST_F(K5020Test, LeeresGeraetIstNachDerRomInitNichtBereit) {
     steuerInit();
-    bus.ioWrite(SA, 0x09);                 // Gerät 1 reserviert + angewählt (ROM 02C9, E = 09H)
-    EXPECT_EQ(b() & 0x18, 0) << "/NIB1 und /NIB2 = 0: kein Gerät hat eine Kassette";
+    bus.ioWrite(SA, 0x09);                 // Geraet 1 reserviert + angewaehlt (ROM 02C9, E = 09H)
+    EXPECT_EQ(b() & 0x18, 0) << "/NIB1 und /NIB2 = 0: kein Geraet hat eine Kassette";
     EXPECT_EQ(b() & 0x04, 0) << "KSB";
-    bus.ioWrite(SA, 0x06);                 // Gerät 2 (E = 06H)
+    bus.ioWrite(SA, 0x06);                 // Geraet 2 (E = 06H)
     EXPECT_EQ(b() & 0x18, 0);
 }
 
@@ -147,11 +147,11 @@ TEST_F(K5020Test, TransportNurAmAngewaehltenGeraet) {
     geraet1Bereit(dreiBloecke());
     k().laufwerk(1).kassetteEinlegen(dreiBloecke());
     auto& l1 = k().laufwerk(0);
-    bus.ioWrite(SA, 0x19);   // vorwärts
+    bus.ioWrite(SA, 0x19);   // vorwaerts
     sek(0.1);
     EXPECT_NEAR(l1.geschwindigkeitMmS(), 381.0, 0.5);
     EXPECT_EQ(k().laufwerk(1).geschwindigkeitMmS(), 0.0);
-    bus.ioWrite(SA, 0x29);   // rückwärts (TRR)
+    bus.ioWrite(SA, 0x29);   // rueckwaerts (TRR)
     sek(0.3);
     EXPECT_NEAR(l1.geschwindigkeitMmS(), -381.0, 0.5);
     bus.ioWrite(SA, 0x01);   // nur reserviert: Transportbits wirken ohne Auswahl nicht
@@ -162,10 +162,10 @@ TEST_F(K5020Test, TransportNurAmAngewaehltenGeraet) {
 
 TEST_F(K5020Test, HgeMitTransportIstSuchlauf) {
     geraet1Bereit(dreiBloecke());
-    bus.ioWrite(SA, 0x59);   // vorwärts, hohe Geschwindigkeit
+    bus.ioWrite(SA, 0x59);   // vorwaerts, hohe Geschwindigkeit
     sek(0.5);
     EXPECT_NEAR(k().laufwerk(0).geschwindigkeitMmS(), 1500.0, 1.0);
-    bus.ioWrite(SA, 0x69);   // rückwärts, hohe Geschwindigkeit
+    bus.ioWrite(SA, 0x69);   // rueckwaerts, hohe Geschwindigkeit
     sek(1.0);
     EXPECT_NEAR(k().laufwerk(0).geschwindigkeitMmS(), -1500.0, 1.0);
 }
@@ -174,7 +174,7 @@ TEST_F(K5020Test, TrvPlusTrrIstUmspulenUndNibFaelltWaehrenddessen) {
     geraet1Bereit(dreiBloecke(), 5'000);
     ASSERT_TRUE(b() & 0x10) << "bereit";
     bus.ioWrite(SA, 0x39);   // UMS
-    bus.ioWrite(SA, 0x09);   // ROM nimmt UMS eine Instruktion später zurück (0320/0322): das Gerät merkt es sich
+    bus.ioWrite(SA, 0x09);   // ROM nimmt UMS eine Instruktion spaeter zurueck (0320/0322): das Geraet merkt es sich
     EXPECT_TRUE(k().laufwerk(0).umspulenAktiv());
     sek(0.05);
     EXPECT_FALSE(b() & 0x10) << "/NIB = 0 beim Umspulen";
@@ -194,13 +194,13 @@ TEST_F(K5020Test, AufNurBeiBeschreibbarerKassetteSonstStaEins) {
     EXPECT_FALSE(k().laufwerk(0).bewegt());
     bus.ioWrite(SB, 0x00);
     EXPECT_FALSE(b() & 0x40);
-    // beschreibbar: kein STA, AUF kommt am Gerät an
+    // beschreibbar: kein STA, AUF kommt am Geraet an
     m->setSchreibschutz(A, false);
     bus.ioWrite(SB, 0x02);
     EXPECT_FALSE(b() & 0x40);
 }
 
-// ─── Steuer-PIO: Eingänge (AEB / AZV / KSB / NIB / BMS) ─────────────────────
+// ─── Steuer-PIO: Eingaenge (AEB / AZV / KSB / NIB / BMS) ─────────────────────
 
 TEST_F(K5020Test, AebFolgtDemAngewaehltenGeraetMitBitSiebenEinsBeiMagnetband) {
     geraet1Bereit(dreiBloecke(), 500);   // Vorspann
@@ -233,16 +233,16 @@ TEST_F(K5020Test, AzvKsbUndNibJeGeraet) {
     auto m1 = dreiBloecke();
     k().laufwerk(0).kassetteEinlegen(m1);
     k().laufwerk(1).kassetteEinlegen(dreiBloecke());
-    bus.ioWrite(SA, 0x09);   // Gerät 1: reserviert (Bit 1 = 0), Bit 0 = 1 -> Gerät 2 nicht
+    bus.ioWrite(SA, 0x09);   // Geraet 1: reserviert (Bit 1 = 0), Bit 0 = 1 -> Geraet 2 nicht
     EXPECT_EQ(b() & 0x01, 0) << "AZV 0 = 38 cm/s";
     bus.ioWrite(SA, 0x06);
-    EXPECT_NE(b() & 0x01, 0) << "AZV 1 = 19 cm/s am Gerät 2";
+    EXPECT_NE(b() & 0x01, 0) << "AZV 1 = 19 cm/s am Geraet 2";
     // NIB
     bus.ioWrite(SA, 0x00);
     EXPECT_EQ(b() & 0x18, 0) << "noch nicht angelaufen";
     sek(0.31);
     EXPECT_EQ(b() & 0x18, 0x18) << "/NIB1 und /NIB2: 1 = bereit";
-    bus.ioWrite(SA, 0x02);   // nur Gerät 2 reserviert
+    bus.ioWrite(SA, 0x02);   // nur Geraet 2 reserviert
     sek(0.01);
     EXPECT_EQ(b() & 0x18, 0x08);
     // KSB
@@ -279,7 +279,7 @@ TEST_F(K5020Test, BmsFolgtDemBlockUndHaeltNochEtwa108Mikrosekunden) {
 // ─── Byteausgabe / Zeitfehler ────────────────────────────────────────────────
 
 namespace {
-/// Aufnahmebereit: AUF zuerst, dann VOR, 60 ms Vorlücke (BD S.13).
+/// Aufnahmebereit: AUF zuerst, dann VOR, 60 ms Vorluecke (BD S.13).
 void aufnahmeStarten(K5020Test& t) {
     t.bus.ioWrite(SB, 0x02);
     t.bus.ioWrite(SA, 0x19);
@@ -302,7 +302,7 @@ TEST_F(K5020Test, ZeitfehlerBeiZuLangsamemSchreibenZwoelfUndSechsKBit) {
         EXPECT_EQ(b() & 0x80, 0) << profil(p).name << ": nach 0,8 Bytezeiten noch kein ZF";
         sek(bz * 0.4);
         EXPECT_NE(b() & 0x80, 0) << profil(p).name << ": kein neues Zeichen -> ZF";
-        bus.ioWrite(DA, 0x55);   // nächste Übernahme löscht ZF
+        bus.ioWrite(DA, 0x55);   // naechste Uebernahme loescht ZF
         EXPECT_EQ(b() & 0x80, 0);
     }
 }
@@ -322,7 +322,7 @@ TEST_F(K5020Test, ByteausgabeImTaktEinBlockMitEchoOhneZeitfehler) {
         std::vector<uint8_t> echo;
         size_t n = 0;
         bool zf = false;
-        // Das Schreiben ist an die Bytezeit gebunden: nachlegen, sobald die Karte übernommen hat (ARDY aus).
+        // Das Schreiben ist an die Bytezeit gebunden: nachlegen, sobald die Karte uebernommen hat (ARDY aus).
         for (long t = 0; t < static_cast<long>(0.4 * HZ) && echo.size() < blk.size(); t += 100) {
             k().clockTick(100);
             if (n < blk.size() && !k().pioDaten().ardy()) bus.ioWrite(DA, blk[n++]);
@@ -331,7 +331,7 @@ TEST_F(K5020Test, ByteausgabeImTaktEinBlockMitEchoOhneZeitfehler) {
         }
         EXPECT_FALSE(zf) << profil(p).name;
         EXPECT_EQ(n, blk.size());
-        EXPECT_EQ(echo, blk) << profil(p).name << ": Lese-nach-Schreiben liefert Präambel bis Postambel";
+        EXPECT_EQ(echo, blk) << profil(p).name << ": Lese-nach-Schreiben liefert Praeambel bis Postambel";
         sek(0.1);
         EXPECT_EQ(k().verloreneBytes(), 0u);
         bus.ioWrite(SA, 0x09);   // VOR aus
@@ -343,16 +343,16 @@ TEST_F(K5020Test, ByteausgabeImTaktEinBlockMitEchoOhneZeitfehler) {
     }
 }
 
-// AP M7 (MC80.30, umgebaute K5020): Schreibtakt über den Koppelbus von außen.  Ohne Takt
-// übernimmt das Schieberegister kein Byte (ARDY bleibt, kein ZF, nichts aufs Band); sobald er
-// anliegt, geht das wartende Byte sofort und die übrigen im Takt des Profils (LW 1200).
+// AP M7 (MC80.30, umgebaute K5020): Schreibtakt ueber den Koppelbus von aussen.  Ohne Takt
+// uebernimmt das Schieberegister kein Byte (ARDY bleibt, kein ZF, nichts aufs Band); sobald er
+// anliegt, geht das wartende Byte sofort und die uebrigen im Takt des Profils (LW 1200).
 TEST_F(K5020Test, ExternerTaktSperrtUndGibtDieAusgabeFrei) {
     K5020::Config c;
     c.takt = K5020::Takt::ExternerCtc;
     c.profil1 = ProfilId::LW1200;
     neu(c);
     bool takt = false;
-    EXPECT_TRUE(k().taktLiegtAn()) << "ohne Rückruf gilt der Takt als vorhanden";
+    EXPECT_TRUE(k().taktLiegtAn()) << "ohne Rueckruf gilt der Takt als vorhanden";
     k().setExternerTakt([&takt] { return takt; });
     EXPECT_FALSE(k().taktLiegtAn());
     auto m = std::make_shared<KassettenMedium>();
@@ -366,10 +366,10 @@ TEST_F(K5020Test, ExternerTaktSperrtUndGibtDieAusgabeFrei) {
     EXPECT_EQ(b() & 0x80, 0) << "ohne Takt kein Zeitfehler";
     takt = true;
     sek(0.001);
-    EXPECT_FALSE(k().pioDaten().ardy()) << "Takt da: Byte übernommen";
+    EXPECT_FALSE(k().pioDaten().ardy()) << "Takt da: Byte uebernommen";
     bus.ioWrite(DA, 0x55);
     sek(bz * 0.8);
-    EXPECT_TRUE(k().pioDaten().ardy()) << "nächstes Byte erst nach einer Bytezeit (LW 1200)";
+    EXPECT_TRUE(k().pioDaten().ardy()) << "naechstes Byte erst nach einer Bytezeit (LW 1200)";
     sek(bz * 0.4);
     EXPECT_FALSE(k().pioDaten().ardy());
 }
@@ -414,7 +414,7 @@ TEST_F(K5020Test, EingabeMitBlindeingabeUndVerlustOhneBrdy) {
     bus.ioWrite(SA, 0x09);
     sek(0.1);
 
-    // Mit Blindeingabe: Block 1 vollständig (Präambel + 100 + CRC + Postambel)
+    // Mit Blindeingabe: Block 1 vollstaendig (Praeambel + 100 + CRC + Postambel)
     const uint64_t v0 = k().verloreneBytes();
     k().laufwerk(0).positionSetzen(m->blockStart(A, 1) - 30'000);
     bus.ioRead(DB);
@@ -454,7 +454,7 @@ TEST_F(K5020Test, DatenPioHatVorrangVorDerSteuerPio) {
         irq = bus.isINT();
     }
     ASSERT_TRUE(irq) << "AEB 0 -> 1";
-    // Zusätzlich fordert die Daten-PIO ein Byte an (Scheinausgabe, FEX routins.mac): sie hat Vorrang.
+    // Zusaetzlich fordert die Daten-PIO ein Byte an (Scheinausgabe, FEX routins.mac): sie hat Vorrang.
     bus.ioWrite(DA, 0x00);
     EXPECT_EQ(interruptQuittieren(), 0xF2);
     EXPECT_EQ(interruptQuittieren(), 0xE0);
@@ -479,7 +479,7 @@ TEST_F(K5020Test, ResetLaesstDieBaenderLiegenUndLaesstAlleLeitungenFallen) {
 
 namespace {
 
-/// Z80 mit dem echten Boot-ROM (0000–03FF) und RAM darüber; Kassettenkarte auf 30H.
+/// Z80 mit dem echten Boot-ROM (0000–03FF) und RAM darueber; Kassettenkarte auf 30H.
 struct RomRig {
     K1520Bus bus;
     K5020 karte;
@@ -533,13 +533,13 @@ TEST(K5020Rom, InitFolgeDesLadeRomsStelltDieKarteWieBeschriebenEin) {
     EXPECT_EQ(sa.dir, 0x80);
     EXPECT_EQ(sb.mode, 3);
     EXPECT_EQ(sb.dir, 0xFD);
-    // 02BE: E = 09H -> Gerät 1 reserviert und angewählt; 02DC: /NIB1 lag an (sonst Sprung nach 0397)
+    // 02BE: E = 09H -> Geraet 1 reserviert und angewaehlt; 02DC: /NIB1 lag an (sonst Sprung nach 0397)
     EXPECT_EQ(r.cpu.E, 0x09);
     EXPECT_TRUE(r.karte.laufwerk(0).reserviert());
     EXPECT_TRUE(r.karte.laufwerk(0).angewaehlt());
     EXPECT_FALSE(r.karte.laufwerk(1).reserviert());
     EXPECT_NE(r.cpu.PC, 0x03B0);
-    // Daten-PIO ist noch unberührt (erst 0357 ff.)
+    // Daten-PIO ist noch unberuehrt (erst 0357 ff.)
     EXPECT_EQ(r.karte.pioDaten().debugState().port[1].ie, false);
 }
 
@@ -556,7 +556,7 @@ TEST(K5020Rom, LiestEinBootbandMitVierBloeckenUndPruefSyl) {
     }
     r.karte.laufwerk(0).kassetteEinlegen(m);
     r.karte.laufwerk(0).positionSetzen(900'000);
-    // 0434 = Bootsektor-Code ausführen, nachdem die Signatur stimmte (0388–038D)
+    // 0434 = Bootsektor-Code ausfuehren, nachdem die Signatur stimmte (0388–038D)
     ASSERT_TRUE(r.laufeBis(0x0434, 120'000'000)) << "PC=" << std::hex << r.cpu.PC;
     for (size_t i = 0; i < bootdaten.size(); ++i)
         ASSERT_EQ(r.ram[0x400 + i], bootdaten[i]) << "Byte " << i;
