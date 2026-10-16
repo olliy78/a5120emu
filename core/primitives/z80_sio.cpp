@@ -458,11 +458,13 @@ uint8_t Z80SIO::rr2Vektor() const {
 }
 
 void Z80SIO::onRETI() {
-    // Clear IUS for whichever channel was being serviced
-    // Channel A has higher priority, check it first
-    if (ch_a_.iei && ch_a_.ius) {
+    // Wie Z80CTC/Z80PIO::onRETI (A8b): RETI löscht das IUS-Bit des Kanals in Bedienung,
+    // wenn kein höheres Gerät in Bedienung ist (iei_).  Eine bloß anstehende Anforderung
+    // von Kanal A darf B nicht an der Freigabe hindern.
+    if (!iei_) return;
+    if (ch_a_.ius) {
         ch_a_.ius = false;
-    } else if (ch_b_.iei && ch_b_.ius) {
+    } else if (ch_b_.ius) {
         ch_b_.ius = false;
     }
 }

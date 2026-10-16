@@ -628,21 +628,16 @@ uint8_t Z80CTC::getVector() const {
  * is being serviced.
  */
 void Z80CTC::onRETI() {
-    if (reti_nach_ius_) {                    // s. setRetiNachIus: höchster Kanal in Bedienung
-        for (auto& c : ch_) {
-            if (c.ius) {
-                c.ius = false;
-                return;
-            }
-        }
-        return;
-    }
-    // Clear IUS flag for the channel that was being serviced
-    // Only the channel with IEI=true and IUS=true should be cleared
-    for (int i = 0; i < 4; i++) {
-        if (ch_[i].iei && ch_[i].ius) {
-            ch_[i].ius = false;
-            return;  // Only one channel can be under service
+    // RETI löscht das IUS-Bit des Kanals in Bedienung.  Maßgeblich ist nur der IEI-Eingang
+    // der CTC (kein höheres Gerät in Bedienung); eine bloß ANSTEHENDE Anforderung eines
+    // höheren Kanals derselben CTC sperrt dabei nicht, sonst bliebe der Kanal in Bedienung
+    // (Fund A8/M11: Zeilenende-Kanal der DPL stand still).  Bis 2026-10-16 galt dies nur
+    // mit dem Schalter setRetiNachIus; seitdem ist es die Vorgabe (A8b).
+    if (!iei_) return;
+    for (auto& c : ch_) {
+        if (c.ius) {
+            c.ius = false;
+            return;
         }
     }
 }

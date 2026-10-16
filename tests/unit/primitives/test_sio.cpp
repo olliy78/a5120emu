@@ -978,3 +978,28 @@ TEST(Z80SIO, Wr0Befehl7AnKanalA_WirktWieRetiAuchFuerKanalB) {
     EXPECT_TRUE(sio.channelA().ius);
     EXPECT_FALSE(sio.channelB().ius);
 }
+
+TEST(Z80SIO, RetiLoeschtIusVonBAuchWennAAnfordert) {
+    // A8b: B in Bedienung, A fordert gerade an (Tx-Puffer leer): das RETI gehört B.
+    // Vorher blieb B in Bedienung, weil A (anstehend) B den IEI nahm.
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.channelB().ius = true;
+    sio.ioWrite(1, 0x01); sio.ioWrite(1, 0x02);   // Ch A WR1: Tx-Interrupt
+    sio.ioWrite(1, 0x05); sio.ioWrite(1, 0x68);
+    sio.ioWrite(0, 0x41);
+    sio.channelA().txGet();
+    sio.setIEI(true);
+    ASSERT_TRUE(sio.hasInterrupt());                // A fordert an
+    sio.onRETI();
+    EXPECT_FALSE(sio.channelB().ius);
+}
+
+TEST(Z80SIO, RetiOhneIeiLoeschtKeinIus) {
+    Z80SIO sio;
+    sio.setIEI(true);
+    sio.channelB().ius = true;
+    sio.setIEI(false);
+    sio.onRETI();
+    EXPECT_TRUE(sio.channelB().ius);
+}

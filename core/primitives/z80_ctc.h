@@ -269,14 +269,11 @@ public:
      */
     void setIntAusVerwirftAnforderung(bool an) { int_aus_verwirft_ = an; }
     /**
-     * RETI-Lesart nach dem Datenblatt (Vorgabe aus = bisherige Lesart aller Maschinen, Kandidat
-     * A8b): während des ED-Holezyklus gibt ein Kanal mit nur ANSTEHENDER Anforderung seinen IEO
-     * frei — das RETI gehört dem höchsten Kanal in Bedienung, auch wenn ein höherer gerade
-     * anfordert.  Mit dem Schalter löscht onRETI() genau diesen Kanal und sieht dabei weder die
-     * internen IEI noch den äußeren; wer ihn setzt, muss das RETI selbst nur dem obersten Gerät
-     * in Bedienung geben (MC80.2x, AP M11: die DPL-CTC fordert alle 64,5 µs an; ohne den Schalter
-     * blieb der Zeilenende-Kanal K2 in Bedienung, sobald K0 beim RETI des TSI schon wieder
-     * anforderte).  Wächter `Z80CTC.RetiNachIusLoeschtDenKanalInBedienung`.
+     * RETI-Lesart nach dem Datenblatt — seit A8b (2026-10-16) IMMER wirksam: onRETI() löscht
+     * das IUS-Bit des höchsten Kanals in Bedienung, sofern die CTC ihren IEI-Eingang hat; eine
+     * bloß ANSTEHENDE Anforderung eines höheren Kanals sperrt dabei nicht (Fund A8/M11).
+     * Der Schalter bleibt nur der Quellkompatibilität halber und hat keine Wirkung mehr.
+     * Wächter `Z80CTC.RetiNachIusLoeschtDenKanalInBedienung`.
      */
     void setRetiNachIus(bool an) { reti_nach_ius_ = an; }
     /// Ist irgendein Kanal in Bedienung (IUS)?

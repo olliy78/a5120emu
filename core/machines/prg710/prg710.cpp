@@ -224,7 +224,7 @@ int Prg710Machine::run(int max_cycles)
         }
         bus_.updateInterruptChain();
 
-        if (bus_.isINT() && cpu.IFF1) {
+        if (bus_.isINT() && cpu.interruptAnnehmbar()) {
             const uint8_t vec = bus_.interruptAcknowledge();
             cpu.interrupt(vec);
         }
