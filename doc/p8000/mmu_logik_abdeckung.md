@@ -17,7 +17,7 @@ und MON16 `p.test.s` (github.com/OlliL/P8000). Die Tests formulieren die Erwartu
 | SN6 nur an der Code-MMU, Data/Stack fest L (§1.1) | ja | `Zeile3_…`, `MehrereTreiberVerdrahtetesUnd`, `MmuEinOhneTreiberSchwebtAufEins` |
 | Auswahltabelle, 6 Zeilen (§1.2) | ja, Gatter wörtlich | `Zeile1_…` bis `Zeile6_…`; `GatterGebenHoechstensEineMmuUndFolgenDerTabelle` (16 Status × 2⁵); `AlleZyklusartenMalZustaende` (62 208 Zyklen je Gleichheitsregel: 16 Status × N/S × 8 SCR × 9 Segmente × 9 Offsets × 3 NBR × R/W, mit Ziel und Busadresse) |
 | Status 1001 wird nicht ausgewertet (§1.2) | ja | `Status1001WirdNichtAusgewertet`, Matrix |
-| NBR-Gleichheit → Stack (§1.2, Kaskadenrichtung abgeleitet) | ja, umschaltbar [L1] | `NbrGleichheitGehtAnStack`, `NbrGleichheitNachWegaGehtAnData`, Matrix mit beiden Regeln |
+| NBR-Gleichheit → Stack (§1.2; **durch Originalplan bestätigt**, Fußnote [L1]) | ja, umschaltbar [L1] | `NbrGleichheitGehtAnStack`, `NbrGleichheitNachWegaGehtAnData`, Matrix mit beiden Regeln |
 | NBR: DS8282, Bit n ↔ A(n+8), lesbar, kein Reset (§1.3) | ja; Startwert `Config::nbrStart` | `NbrLesenSchreibenStartwertUndUeberlebtReset` |
 | 4D16: /OE des NBR bei SN1–5 = 0 hochohmig (§1.3, Deutung unsicher) | ja [L2] | `NbrLatchHochohmigInSegment0_1_64_65` |
 | FFC9 SELSYSBRKREG (Index 4 „frei") | ohne Speicher [L3] | `SbrFfc9SpeichertNichts`, `Mon16ErkennungIndexAbEins` |
@@ -51,12 +51,15 @@ und MON16 `p.test.s` (github.com/OlliL/P8000). Die Tests formulieren die Erwartu
 | MON16 `p.test.s` vor Schritt 84 | Erkennung Index ≥ 1: `ld r12,@<01>0100` im System-Mode, Code-MMU verletzt ⇒ unterdrückt ⇒ offener Bus ≠ 0 ⇒ SEG-USR-Weg, **SBR-Test 84 entfällt** | `Mon16ErkennungIndexAbEins` — stützt [L3] und [L8] zugleich: ohne [L8] läse r12 = 0, MON16 nähme Index 0 an und prüfte FFC9 |
 | MON16 `SEGMENT_TRAP_TEST` | Testschritte 85–90 (Limit/Read-Only, Data/Stack, je 62 Segmente, Durchreich-MMUs 80/81/82 parallel) | `Mon16Testschritte85bis90` |
 | WEGA `mmu.h`, `mch.s` | Konstanten F6/FA/FC/F0, nichtsegmentierter Anwender in 3F, Kern nur über die Code-MMU | `CsAusLad123`, `WegaNichtsegmentierterAnwender` |
-| WEGA `mch.s` `nsseg`/`getmem`/`putmem` | `cpb rh7,NBREAK; jr ugt` ⇒ **Gleichheit = Data** — Widerspruch zu §1.2 | [L1], `NbrGleichheitNachWegaGehtAnData` |
+| WEGA `mch.s` `nsseg`/`getmem`/`putmem` | `cpb rh7,NBREAK; jr ugt` ⇒ Gleichheit = Data in der Software — **folgenlos**: `estabur()` (`ureg.c`) hält den Block mit Adress-High = NBR frei (`u_break = sg_limit_daten + 1`, `nd + ns ≤ 255`), er liegt immer in der Lücke zwischen Daten und Stack | [L1], `NbrGleichheitNachWegaGehtAnData` |
 
 ## Offen (Messfragen)
 
-1. **NBR-Gleichheit** [L1]: Plan (abgeleitet) sagt Stack, WEGA rechnet Data. Am Gerät: NBR = 80H,
-   nichtsegmentierter Anwender in 3F, Zugriff auf 80xx — welche MMU (VTR nach Verletzung)?
+1. ~~**NBR-Gleichheit** [L1]~~ — **erledigt**: durch den Originalplan bestätigt (Ms 889255-2, Bl. 5,
+   Index 1 und 4: 74S85 2D32/1D32, nur Q(A>B) von 2D32 an D29/D28 ⇒ Gleichheit = Stack), MAME rechnet
+   ebenso (`s8k_cpu.cpp`: `seg_offs < nbr` ⇒ Data); WEGA-Software folgenlos (s. o.).  Hinweis und
+   Quellen: Issue #1 (OlliL).  Eine Messung am Gerät (NBR = 80H, nichtsegmentierter Anwender in 3F,
+   Zugriff auf 80xx — welche MMU?) steht weiter aus, ist aber keine offene Frage mehr.
 2. **4D16** [L2] (Frage §11.3 des Plans) — nur relevant, wenn ein nichtsegmentierter Anwender in
    Segment 0/1 läuft.
 3. **/CS bei RESET** [L5]: MR der MMUs direkt nach Netz-Ein lesen (`sinb rh0, %00FC` vor `ENTRY_`

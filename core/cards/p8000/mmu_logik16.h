@@ -32,9 +32,14 @@
  * @endcode
  *
  * Benannte Annahmen (Luecken der Quellen; Messfragen in schaltplan_16bit.md §11):
- *  [L1] Gleichheit Adresse-High = NBR → Stack-MMU (Plan: 74S85 A>B, Kaskadenrichtung nur
- *       abgeleitet).  **WEGA rechnet umgekehrt** (`nsseg`/`getmem`: `cpb rh7,NBR; jr ugt` ⇒
- *       Gleichheit = Data) — umschaltbar ueber `Config::nbrGleichheitStack`.
+ *  [L1] Gleichheit Adresse-High = NBR → Stack-MMU.  **Durch den Originalplan bestaetigt**
+ *       (Ms 889255-2, Bl. 5, Index 1 und 4: 74S85 2D32/1D32, nur Q(A>B) von 2D32 geht an
+ *       D29/D28 ⇒ Gleichheit liefert A>B = 0 ⇒ MSTACK; MAME `s8k_cpu.cpp` rechnet ebenso:
+ *       `seg_offs < nbr` ⇒ Data).  Nicht am Geraet gemessen.  WEGA rechnet in der Software
+ *       umgekehrt (`nsseg`/`getmem`: `cpb rh7,NBR; jr ugt` ⇒ Gleichheit = Data), aber folgenlos:
+ *       `estabur()` setzt `u_break = sg_limit_daten + 1` und lehnt `nd + ns > 255` ab, der Block
+ *       mit Adress-High = NBR liegt immer in der Luecke zwischen Daten und Stack.
+ *       `Config::nbrGleichheitStack` bleibt umschaltbar (Gegenprobe der WEGA-Rechnung).
  *  [L2] Flipflop 4D16 (/OE des NBR-Latch): Q folgt dem LAUFENDEN Zyklus (Q = SN1–SN5 alle 0);
  *       die asynchronen Eingaenge (/R = Zugriff FFD1, /S = Zugriff FFC9) wirken nur waehrend des
  *       E/A-Zyklus selbst und hinterlassen keinen Zustand.  Bei Q = 1 (Segment 0/1/64/65)

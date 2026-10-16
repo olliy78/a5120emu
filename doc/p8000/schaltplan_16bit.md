@@ -102,9 +102,13 @@ Damit (nur Speicherzyklen, IST3 = 1):
 - Der Status „Stack" (1001) wird **nicht** ausgewertet; Data/Stack hängt im nichtsegmentierten Fall
   **allein am NBR-Vergleich**, im segmentierten allein an SN6.
 - **Gleichheit:** `A>B` mit A = NBR, B = Adresse A15–A8 ⇒ Adresse-High **= NBR → Stack-MMU**
-  (Handbuch: „unklar"). *gelesen (74S85-Kaskade, A = Latch, B = LAD), Kaskadenrichtung abgeleitet.*
-  **Widerspruch (P9b):** WEGA `mch.s` (`nsseg`, `getmem`, `putmem`: `cpb rh7, NBREAK; jr ugt` ⇒ Stack)
-  rechnet Gleichheit als **Data**. Emulator: Vorgabe Plan, umschaltbar (`mmu_logik_abdeckung.md`).
+  (Handbuch: „unklar"). *gelesen (74S85-Kaskade 1D32 → 2D32, A = Latch, B = LAD; nur Q(A>B) von 2D32 geht
+  an D29/D28), **Kaskadenrichtung durch den Originalplan bestätigt** (Ms 889255-2, Bl. 5, Index 1 und 4:
+  1D32 mit A>B = L, A=B = H, A<B = L; Hinweis in Issue #1, MAME rechnet ebenso). Nicht am Gerät gemessen.*
+  **Software (P9b):** WEGA `mch.s` (`nsseg`, `getmem`, `putmem`: `cpb rh7, NBREAK; jr ugt`) rechnet
+  Gleichheit als **Data** — folgenlos: `estabur()` hält den Block mit Adress-High = NBR frei
+  (`u_break = sg_limit_daten + 1`, `nd + ns ≤ 255`). Emulator: Vorgabe Plan, umschaltbar
+  (`mmu_logik_abdeckung.md`).
 - Die Segmentnummer, die die CPU im nichtsegmentierten Normal-Mode ausgibt, geht unverändert (SN0–5)
   an Data-/Stack-/Code-MMU; „Segment 63" ist also eine Eigenschaft der CPU-Ausgabe bzw. der
   MMU-Programmierung, nicht der Logik. *abgeleitet.*
@@ -439,7 +443,7 @@ Funktionales auf (dort: TRPL und IF1L-Endstufe beide mit `SEGT` getaktet — bes
 | # | Handbuch | Plan | Folge für den Emulator |
 |---|---|---|---|
 | B1 | MMU-Adressdekodierung nicht beschrieben | /CS = LAD1/2/3 (Code/Data/Stack), N/S-Eingang = Auswahl, NMS = 0 | Z8010-Modell mit /CS je Low-Byte-Bit, N/S von der Auswahllogik |
-| B2 | NBR-Gleichheit „unklar" | Adresse-High ≥ NBR → Stack | Vergleich `>=` |
+| B2 | NBR-Gleichheit „unklar" | Adresse-High ≥ NBR → Stack (durch Originalplan bestätigt) | Vergleich `>=` |
 | B3 | Stack-/Datenzyklus | Status 1001 wird nicht ausgewertet | nur NBR bzw. SN6 |
 | B4 | MMU aus = „lokale Adresse" | BUSA16–22 = SN0–6, A23 = 0 | phys = SN·64K + Offset |
 | B5 | On-Board „Segment 0" | Fenster 0000–7FFF in Seg. 0, unabhängig von MMU ON/Modus; 6000–7FFF leer | Lesewert 6000–7FFF messen |

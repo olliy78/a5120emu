@@ -170,7 +170,9 @@ TEST_F(P8000MmuLogikTabelle, NbrGleichheitGehtAnStack) {
 }
 
 TEST(P8000MmuLogik, NbrGleichheitNachWegaGehtAnData) {
-    // [L1] Gegenstueck: WEGA nsseg/getmem (`cpb rh7,NBREAK; jr ugt`) ⇒ Gleichheit = Data.
+    // [L1] Gegenstueck: WEGA nsseg/getmem (`cpb rh7,NBREAK; jr ugt`) ⇒ Gleichheit = Data.  Die Hardware
+    // rechnet Stack (Originalplan Bl. 5, Issue #1); WEGA haelt den Block mit High = NBR frei, die
+    // Rechnung ist dort folgenlos — dieser Fall prueft nur die Umschaltung.
     L::Config c;
     c.nbrGleichheitStack = false;
     L l(c);
