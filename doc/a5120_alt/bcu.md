@@ -1,6 +1,6 @@
 # BCU 880 auf dem frühen A5120 — AP A7
 
-Stand 2026-10-15 (§9: Experiment A7b), Zweig `kassette_mc80`.  Grundlage: die Abbilder `doc/a5120_alt/bcu/*/disk.img`
+Stand 2026-10-16 (§9: Experiment A7b, §10: Modell und Disketten in der Oberfläche), Zweig `kassette_mc80`.  Grundlage: die Abbilder `doc/a5120_alt/bcu/*/disk.img`
 (+ `DT-INFO.TXT`, `.td0` als Beleg), Disassemblat mit `tools/z80_disasm2.py`, Läufe im Emulator
 (`boot_trace`/`k1520dbg --laderom v06`).  Wächter: `BootIntegrationBcu.*`
 (`tests/integration/test_boot_bcu.cpp`).
@@ -303,3 +303,64 @@ dem Start-EPROM kommen [?, Schluss aus dem Fehlen und aus dem Kopf, s. u.].
 5. Das Start-EPROM selbst und damit „wie startete eine ‚ohne SYL‘-Diskette wirklich“ ist durch den
    Versuch **nicht** geklärt; er zeigt nur, dass das V2.1-System **sonst nichts Fremdes braucht**
    (kein anderes Bild-/Tastaturgerät, gleiche K5122-Tore), sobald Kaltstart und Plattentreiber vorhanden sind.
+
+## 10. In der Oberfläche: Modell „A5120 BCU 880“, Disketten und Bänder in `disks/`
+
+Stand 2026-10-16.  Wächter: `BootIntegrationBcu.LieferdisketteBootetImModellBcu`, `cli_bcu_a5120`,
+`py_a5120_modelle` (`test_modell_bcu_baut_lade_rom_v06_und_k7636`,
+`test_bcu_lieferdiskette_bootet_ueber_die_bindung`), `py_c_api`, `py_packaging`
+(`test_bcu_disketten_und_baender_sind_in_der_vorgabeauswahl`), `BcuKassette.FormatiertSchreibtLiest`
+(Beispielband).
+
+### 10.1 Modell und C-ABI
+
+- **C-ABI** `k1520_create_a5120_konfig(ausfuehrung, laderom, tastatur, d0..d3)` (additiv;
+  `k1520_create_a5120_ausfuehrung(a, …)` = `…_konfig(a, 0, 0, …)`), Abfragen `k1520_a5120_laderom`
+  (0 V0.9_2, 1 V0.9_1, 2 V0.6) und `k1520_a5120_tastatur` (1 K7637, 2 K7636, wie gebaut).
+  Python `K1520Emulator(laderom="v09_2"|"v09_1"|"v06", tastatur="vorgabe"|"k7637"|"k7636")`
+  (am PC 1715 bleibt `tastatur` das Tastatur-ROM `s600`/`tast618`), Eigenschaften `laderom`/`tastatur`.
+- **Modell** `a5120-bcu` „A5120 BCU 880 (Lade-ROM V0.6)“ im Profil `a5120emu`: Kern-Maschine
+  `a5120-alt` (K7023 64×16 = Satz 2) mit `laderom="v06"`, `tastatur="k7636"` über das neue
+  Profilfeld `modell_kernwahl` (`Programmprofil.kern_parameter`).  Konfiguration: fehlt
+  `general.model`, bleibt es der A5120 „neu“; sonst ändert sich nichts an alten Konfigurationen.
+- **Die Laufwerke stellt das Modell NICHT um** (Merkposten a5120_alt Nr. 14).  Die Disketten haben
+  40 Spuren; im 80-Spur-Laufwerk K5601 (Vorgabe der Oberfläche) wird Doppelschritt eingestellt
+  („Double Step aktiviert“), das V0.6 findet den Lader auf Zylinder 1 dann nicht — nachgeprüft:
+  K5601 → kein `A>` in 40 Mio. Takten, K5600.10 → `A>` nach 9 Mio. Takten.  Der Anwender stellt A:/B:
+  auf K5600.10 (Handbuch „BCU 880“).
+- Mit dem Kästchen *Kassette* ergibt das Modell dieselbe Maschine wie die Ausführung `Kmbg` mit V0.6
+  (beide stecken die K5020 über `installK5020()`, `a5120.cpp`) — die Bestückung von `BcuKassette.*`.
+
+### 10.2 Disketten und Bänder (`tools/bcu_a5120/build.py`)
+
+| Datei in `disks/` | Herkunft |
+|-------------------|----------|
+| `a5120_bcu/a5120_bcu12_k5600-10_start-syl.hfe` | Beleg `satz2_SYL_auf_Spur1/disk.img`, mit `k1520disktool save-as … --fs cpa_auto` nach HFE gewandelt (die Diskette trägt kein Dateisystem, das `--fs` braucht nur die Wandlung) |
+| `a5120_bcu/a5120_bcu12_k5600-10_arbeit-sys1.hfe` | Beleg `satz2_OhneSYL.1/disk.img` („SYS1“), `save-as` (CP/M erkannt) |
+| `a5120_bcu/bcu_kassette_formatiert.k52` | im Lauf von `BcuKassette.FormatiertSchreibtLiest` nach `B:INIT` (Gerät 2) mit `K1520_BEISPIELBAND=<pfad>` geschrieben: Seite A ein Block = Bandmarke `AA 00 00 AA`, 134 392 µm hinter dem Bandanfang |
+| `a5120_bandtest/bandtest_boot.k52` | Kopie der Fixture `tests/fixtures/kassette/bandtest_boot.k52` — **Demo, Eigenbau** (`tools/kassette/bandtest/`) |
+
+Die Belege bleiben unverändert (das Skript liest Kopien); die Wandlung ist deterministisch und
+wird zurückgewandelt geprüft (`.hfe` → `.img` = Beleg, bytegleich).  `--check` (Wächter `cli_bcu_a5120`)
+wandelt erneut und vergleicht, prüft das Bootband gegen die Fixture und die Kassette auf „genau eine
+Bandmarke“; der Test `BcuKassette` vergleicht das Beispielband blockweise (ohne Lücken, die an der
+Laufzeit des Treibers hängen) mit dem, was INIT schreibt.  Ins Paket kommen alle vier
+(`DISKS_DEFAULT`), `seed_user_disks()` kennt dafür `*.k52`.
+
+### 10.3 Befund: kein Kassettentreiber unter CP/A und SCPX
+
+- **CP/A** hat keinen Kassettentreiber und kein Kassettenlaufwerk: das BIOS hält nur den
+  Interruptplatz frei — Quelltext des BIOS (`tests/fixtures/disks/cpa_cpa780_k5601_noclock.prn`,
+  „Belegung der Interruptsaeule durch das BIOS“): „Kassetten werden ausserhalb des BIOS bedient und
+  benoetigen Interruptsaeulenplatz von 0c0h..0cfh!!“ (gleich in allen fünf `cpa_cpa780_*.prn`).  Ein
+  Programm, das diese Plätze nutzt, liegt nicht vor [?].
+- **SCPX 1.7** hat nur die Robotron-Bibliothek `KMBG.REL` (`doc/kassette/fex/KMBG.REL`, treiber.md
+  §6.2: kein Dateiformat, Aufruf mit C = Befehl) — kein Laufwerk, kein Formatierprogramm.  Auf der
+  Systemdiskette `disks/a5120_scpx17/` liegen deshalb `KMBG.REL` (zum Binden eigener Programme) und
+  das Prüfprogramm `KMBGTEST.COM` (`tools/kassette/kmbgtest/`, Wächter `ScpxKmbg.*`); `BANDTEST` nicht
+  (es ist ein Bootband, kein SCPX-Programm).  Ob die SCPX-BIOS-Module selbst die K5020 ansprechen,
+  ist nicht disassembliert [?]; das Fehlen eines Kassettenprogramms auf der Hardy-Diskette spricht
+  dagegen.
+- Ein eigener Kassettentreiber oder ein Formatierprogramm für CP/A oder SCPX wird **nicht** gebaut
+  (Anwenderentscheid 2026-10-16) — das wäre Eigenbau ohne Vorbild.  Formatieren und Dateiablage gibt
+  es nur unter BCU 880 (§8).

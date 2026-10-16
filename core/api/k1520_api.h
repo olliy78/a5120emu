@@ -105,6 +105,26 @@ K1520_API K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
 K1520_API int k1520_a5120_ausfuehrung(K1520Handle h);
 
 /**
+ * @brief A5120 mit Ausfuehrung, Lade-ROM und Tastatur (doc/a5120_alt/bcu.md, Modell „BCU 880“).
+ *
+ * Wie k1520_create_a5120_ausfuehrung, dazu die beiden Groessen, die bisher nur die Werkzeuge
+ * waehlen konnten (`A5120Machine::Config::laderom`/`tastatur`):
+ * @param laderom   0 = V0.9_2 (`zre.rom`, Vorgabe aller Ausfuehrungen), 1 = V0.9_1,
+ *                  2 = V0.6 (liest Zylinder 1 — BCU 880 von den Disketten „SYL auf Spur 1“).
+ * @param tastatur  0 = Vorgabe der Ausfuehrung (neu: K7637, alt/KMBG: K7636), 1 = K7637
+ *                  (am alt/KMBG abgelehnt), 2 = K7636 (am „neu“: K7024 80×24 + K7636).
+ * Unbekannte Werte → NULL mit Grund in k1520_last_init_error.  Mit (a, 0, 0, …) bitgleich zu
+ * k1520_create_a5120_ausfuehrung(a, …).
+ */
+K1520_API K1520Handle k1520_create_a5120_konfig(int ausfuehrung, int laderom, int tastatur,
+                                                const char* drive0, const char* drive1,
+                                                const char* drive2, const char* drive3);
+/** @brief Gestecktes Lade-ROM eines A5120 (0 V0.9_2, 1 V0.9_1, 2 V0.6); -1 bei einer anderen Maschine. */
+K1520_API int k1520_a5120_laderom(K1520Handle h);
+/** @brief Tastatur eines A5120, wie gebaut: 1 = K7637, 2 = K7636; -1 bei einer anderen Maschine. */
+K1520_API int k1520_a5120_tastatur(K1520Handle h);
+
+/**
  * @brief PC 1715 (K1520_MACHINE_PC1715), doc/design/21_pc1715.md AP-1b.
  *
  * @param variante    0 = PC 1715, 1 = PC 1715W (seit AP-W3; nur mit bildschirm 0, sonst NULL mit Grund)

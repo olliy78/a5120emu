@@ -480,16 +480,35 @@ K1520Handle k1520_create_with_em(K1520MachineType type,
 K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
                                            const char* d0, const char* d1,
                                            const char* d2, const char* d3) {
+    return k1520_create_a5120_konfig(ausfuehrung, 0, 0, d0, d1, d2, d3);
+}
+
+K1520Handle k1520_create_a5120_konfig(int ausfuehrung, int laderom, int tastatur,
+                                      const char* d0, const char* d1,
+                                      const char* d2, const char* d3) {
     using A = A5120Machine::Config::Ausfuehrung;
+    using T = A5120Machine::Config::Tastatur;
     g_init_error.clear();
     if (ausfuehrung < 0 || ausfuehrung > 3) {
         g_init_error = "Unbekannte A5120-Ausfuehrung " + std::to_string(ausfuehrung) +
                        " (0 neu, 1 alt, 2 KMBG, 3 8 Zoll)";
         return nullptr;
     }
+    if (laderom < 0 || laderom > 2) {
+        g_init_error = "Unbekanntes Lade-ROM " + std::to_string(laderom) +
+                       " (0 V0.9_2, 1 V0.9_1, 2 V0.6)";
+        return nullptr;
+    }
+    if (tastatur < 0 || tastatur > 2) {
+        g_init_error = "Unbekannte Tastatur " + std::to_string(tastatur) +
+                       " (0 Vorgabe der Ausfuehrung, 1 K7637, 2 K7636)";
+        return nullptr;
+    }
     setup_logging();
     try {
         A5120Machine::Config cfg = A5120Machine::Config::fuerAusfuehrung(static_cast<A>(ausfuehrung));
+        cfg.laderom  = static_cast<K2526::Laderom>(laderom);
+        cfg.tastatur = static_cast<T>(tastatur);   // K7637 am alt/KMBG: der Konstruktor wirft
         const char* names[4] = { d0, d1, d2, d3 };
         for (int i = 0; i < 4; ++i)
             if (names[i] && names[i][0]) cfg.drive_profiles[i] = names[i];
@@ -508,6 +527,17 @@ K1520Handle k1520_create_a5120_ausfuehrung(int ausfuehrung,
 int k1520_a5120_ausfuehrung(K1520Handle h) {
     auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
     return a ? static_cast<int>(a->ausfuehrung()) : -1;
+}
+
+int k1520_a5120_laderom(K1520Handle h) {
+    auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
+    return a ? static_cast<int>(a->laderom()) : -1;
+}
+
+int k1520_a5120_tastatur(K1520Handle h) {
+    auto* a = dynamic_cast<A5120Machine*>(toMachine(h));
+    if (!a) return -1;
+    return a->k7636() ? 2 : 1;   // wie gebaut: mit K7636 am U-Bus oder K7637 an der K8025
 }
 
 const char* k1520_em_variant(K1520Handle h) {
