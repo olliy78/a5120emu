@@ -452,7 +452,7 @@ k1520disktool create kombi.hfe --fs bcu880_kombi --boot disks/bootsektoren/boot_
 k1520disktool put kombi.hfe datei.txt            # liegt ab Zylinder 5; BCU sieht sie in A:
 ```
 
-Fertige Diskette: `disks/a5120_bcu/a5120_bcu12_k5600-10_kombi-eigenbau.hfe` (nicht im Paket). Kombi-Abbild aus
+Fertige Diskette: `disks/a5120_bcu/a5120_bcu12_k5600-10_kombi40-eigenbau.hfe` (nicht im Paket). Kombi-Abbild aus
 einem anderen V1.2-Startabbild: `python3 tools/bcu_kombi_bau.py <boot_syl.bin> <aus.bin>` (prüft die
 V1.2-Erwartungen vor dem Ändern). Offen: Verhalten am echten Gerät [?]; 80-Spur-/zweiseitige Varianten
 (DPB EC73H wäre dort nicht mehr frei).
