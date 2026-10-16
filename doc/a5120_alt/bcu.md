@@ -335,7 +335,7 @@ Stand 2026-10-16.  Wächter: `BootIntegrationBcu.LieferdisketteBootetImModellBcu
 
 | Datei in `disks/` | Herkunft |
 |-------------------|----------|
-| `a5120_bcu/a5120_bcu12_k5600-10_start-syl.hfe` | Beleg `satz2_SYL_auf_Spur1/disk.img`, mit `k1520disktool save-as … --fs cpa_auto` nach HFE gewandelt (die Diskette trägt kein Dateisystem, das `--fs` braucht nur die Wandlung) |
+| `a5120_bcu/a5120_bcu12_k5600-10_start-syl.hfe` | seit §11 **gebaut**: `create --fs bcu880_syl --boot disks/bootsektoren/boot_bcu12_syl_k7023.bin`, zurückgewandelt = Beleg `satz2_SYL_auf_Spur1/disk.img` (vorher: `save-as … --fs cpa_auto`) (die Diskette trägt kein Dateisystem, das `--fs` braucht nur die Wandlung) |
 | `a5120_bcu/a5120_bcu12_k5600-10_arbeit-sys1.hfe` | Beleg `satz2_OhneSYL.1/disk.img` („SYS1“), `save-as` (CP/M erkannt) |
 | `a5120_bcu/bcu_kassette_formatiert.k52` | im Lauf von `BcuKassette.FormatiertSchreibtLiest` nach `B:INIT` (Gerät 2) mit `K1520_BEISPIELBAND=<pfad>` geschrieben: Seite A ein Block = Bandmarke `AA 00 00 AA`, 134 392 µm hinter dem Bandanfang |
 | `a5120_bandtest/bandtest_boot.k52` | Kopie der Fixture `tests/fixtures/kassette/bandtest_boot.k52` — **Demo, Eigenbau** (`tools/kassette/bandtest/`) |
@@ -364,3 +364,61 @@ Laufzeit des Treibers hängen) mit dem, was INIT schreibt.  Ins Paket kommen all
 - Ein eigener Kassettentreiber oder ein Formatierprogramm für CP/A oder SCPX wird **nicht** gebaut
   (Anwenderentscheid 2026-10-16) — das wäre Eigenbau ohne Vorbild.  Formatieren und Dateiablage gibt
   es nur unter BCU 880 (§8).
+
+## 11. DiskTool: BCU-Disketten lesen, schreiben, bauen; SYSGEN (2026-10-16)
+
+**Ausgangsbefund:** `k1520disktool info` erkannte die Startdiskette „SYL auf Spur 1“ nicht
+(„Verzeichnisplatz 0 ist kein gültiger Eintrag“) — zu Recht: das BIOS (OFF = 2) sucht sein
+Verzeichnis ab Zylinder 2, und dort liegt bei dieser Diskette das System (§2). Die Arbeitsdiskette
+„ohne SYL“ wurde dagegen schon als `cpa_auto` gelesen (CP/A-Regel für 40 × 26 × 128 = DPB der BCU:
+1-KB-Blöcke, 64 Plätze, OFF 2, Versatz 6); das ist nicht zu ändern, nur zu benennen.
+
+### 11.1 Zwei Profile in `data/formats.yaml`
+
+| Profil | Aufbau | Erkennung | Bootabbild (`boot-get`/`boot-put`/`create --boot`) |
+|---|---|---|---|
+| `bcu880_syl` | Zylinder 0 leer, **1 = SYL-Lader** (6 Sektoren), 2–4 = System; **kein Dateibereich** (`nur_boot`) | automatisch, **SYL-Lader als positiver Nachweis** (Kennung + CRC 0407–06FD gegen 06FE/06FF) | 5 Zylinder = 16 640 B (`disks/bootsektoren/boot_bcu12_syl_k7023.bin`, `…_k7024.bin`) |
+| `bcu880` | System auf Zylinder 0–1 („ohne SYL“, so schreibt es SYSGEN), Dateisystem ab Zylinder 2 | nur `--fs bcu880` (`detect: false`; die Diskette liest die Erkennung ohnehin als `cpa_auto`) | 2 Zylinder = 6 656 B (`boot_bcu12_ohnesyl.bin`) |
+
+- **Eine Startdiskette trägt keine Dateien** (`FsProfile::nur_boot`): `put`/`rm`/`attr`/`mkdir`/Rettung
+  werden mit Begründung verweigert (eine Datei ab Zylinder 5 sähe BCU nie), `ls` ist leer, freier Platz 0.
+  Lesen und Schreiben des **Bootabbilds** gehen — das ist das „Lesen und Schreiben“ dieser Diskette.
+  Dateien gehören auf die Arbeitsdiskette (`bcu880`).
+- **Das Bootabbild wird VOR dem Schreiben geprüft** (`bcuBootabbildproblem`): `bcu880_syl` verlangt auf
+  Zylinder 1 den SYL-Lader mit stimmiger Selbstprüfung und die vom Lader verlangte Systemlänge
+  (Offset 5/6 = Bytes ab Zylinder 2); `bcu880` verlangt die Kennung „BCU 880“. Ein CP/A-Bootabbild, ein
+  „ohne SYL“-Abbild auf einer Startdiskette oder ein beschädigter Lader gibt eine Diskette, die heil
+  aussieht und nicht startet — deshalb Ablehnung, und `create` legt dann **nichts** an.
+- **Bau:** `k1520disktool create neu.hfe --fs bcu880_syl --boot disks/bootsektoren/boot_bcu12_syl_k7023.bin`
+  ergibt die ausgelieferte Startdiskette **sektorgleich** zum Beleg (Wächter
+  `DisktoolBcu.BautDieStartdisketteSektorgleichNach`). K7023 (64×16, Satz 2) und K7024 (80×24, Satz 1)
+  unterscheiden sich im Bildtreiber, nicht im Aufbau; das Abbild entscheidet, welches Gerät es bedient.
+  Arbeitsdiskette: `create arbeit.hfe --fs bcu880 --boot disks/bootsektoren/boot_bcu12_ohnesyl.bin`, dann
+  `put` — von BCU gelistet, Warmstart (`^C`) von ihr geht (`DisktoolBcu.GebauteDisketteBootetUndListetDieDateien`).
+- **Packaging:** `tools/bcu_a5120/build.py` (von `packaging/build_payload.sh` für die Beispieldisketten
+  vorausgesetzt, Wächter `cli_bcu_a5120`) **baut** die Startdiskette jetzt aus dem Bootabbild mit
+  `create --boot`, prüft die Rückwandlung gegen den Beleg und die Bootabbilder gegen `boot-get` der Belege.
+  Neue Startdiskette ohne Beleg: dasselbe `create` mit dem Abbild der gewünschten Fassung.
+
+### 11.2 SYSGEN.COM der Diskette
+
+`SYSGEN.COM` (1280 B) ist das **unveränderte Digital-Research-SYSGEN VER 2.0**: liest/schreibt über die
+BIOS-Sprungleiste (SELDSK +18H, SETTRK +1BH, SETSEC +1EH, SETDMA +21H, READ +24H, WRITE +27H) die
+Spuren **0–1 mit 26 Sektoren in Folge** (Parameter 0128H = 2, 0129H = 26, Sektortafel 012AH = 1…26,
+Puffer ab 0900H); Laufwerke nur A–D.
+- **Bootfähige Disketten:** ja, aber **nur den Aufbau „ohne SYL“** — SYSGEN kopiert genau die Spuren, die
+  das Profil `bcu880` als Bootabbild führt. Im Emulator nachgewiesen
+  (`DisktoolBcu.SysgenSchreibtDieSystemspurenDerArbeitsdiskette`: Quelle B:, Ziel C: = vom Werkzeug
+  angelegte Leerdiskette; danach sind die Systemspuren byteweise `boot_bcu12_ohnesyl.bin`). Eine
+  **Startdiskette „SYL auf Spur 1“ kann SYSGEN nicht erzeugen**: Lader auf Zylinder 1 und System ab
+  Zylinder 2 liegen außerhalb dessen, was es anfasst (und Zylinder 2 ist das Verzeichnis). Das geht nur
+  mit dem DiskTool (§11.1). Ob eine mit SYSGEN gemachte „ohne SYL“-Diskette am Gerät **startet**, hängt am
+  Start-EPROM, das fehlt (§5) — als **Warmstart-Quelle in A:** ist sie nachgewiesen (§8.1).
+- **Bootfähige Kassetten:** nein. SYSGEN spricht nur die BIOS-Plattenfunktionen für A–D an; der
+  Kassettentreiber `KMBG.REL` hängt sich am **BDOS-Einsprung** ein (§8.1) und stellt F: als Dateigerät
+  bereit — SYSGEN erreicht F: nicht (Laufwerksname außerhalb A–D wird abgewiesen). Das Lade-ROM bootet
+  zwar von Kassette (Bootband `SYL`, `doc/merkposten/kassette.md`), ein BCU-Systemband gibt es aber weder als
+  Beleg noch als Werkzeug; es wäre ein Eigenbau (Lader + 8,5-KB-System in Bandblöcken) — nicht gebaut.
+- **Tastatur-Falle beim Ausprobieren:** SYSGEN (wie INIT, §8.1) wartet auf **0DH**. Satz 1 (K7024) übersetzt
+  ET1 → 0DH im CONIN und läuft durch; Satz 2 (K7023) reicht 0AH durch und käme nicht über „THEN TYPE RETURN“ (aus dem Code, `CP 0DH` / `JNZ` bei 0240H; nicht gelaufen).
+

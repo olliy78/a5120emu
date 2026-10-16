@@ -9,10 +9,18 @@ build.py  -  BCU-880-Disketten und Beispielbaender des fruehen A5120 in disks/ l
   disks/a5120_bcu/bcu_kassette_formatiert.k52            Kassette, von BCU-INIT formatiert (s. u.)
   disks/a5120_bandtest/bandtest_boot.k52                 Demo-Bootband (Eigenbau, tools/kassette/bandtest/)
 
-Die beiden Disketten sind die Belege doc/a5120_alt/bcu/satz2_SYL_auf_Spur1/disk.img und
-satz2_OhneSYL.1/disk.img (NIE aendern), mit dem DiskTool unveraendert nach .hfe gewandelt
-(`save-as`, Format k5601_ss40_26x128 erkannt; die SYL-Diskette traegt kein Dateisystem, daher
-`--fs cpa_auto` nur fuer die Wandlung).  Inhalt sektorgleich (Rueckwandlung nach .img = Beleg).
+Die beiden Disketten gehen auf die Belege doc/a5120_alt/bcu/satz2_SYL_auf_Spur1/disk.img und
+satz2_OhneSYL.1/disk.img zurueck (NIE aendern):
+
+  * Die **Arbeitsdiskette** ist der Beleg, mit dem DiskTool unveraendert nach .hfe gewandelt
+    (`save-as`).  Ihre Systemspuren sind das Bootabbild disks/bootsektoren/boot_bcu12_ohnesyl.bin.
+  * Die **Startdiskette** wird GEBAUT: `create --fs bcu880_syl --boot boot_bcu12_syl_k7023.bin`
+    (das Bootabbild = Zylinder 0-4 des Belegs; das DiskTool prueft Lader und Selbstpruefung vor dem
+    Anlegen).  Gegenprobe: zurueck nach .img muss der Beleg sein, Sektor fuer Sektor — damit ist
+    der Bau aus dem Bootabbild bewiesen, und jeder kann sich mit demselben Aufruf eine neue
+    Startdiskette (auch mit dem K7024-Treiber: boot_bcu12_syl_k7024.bin) bauen.
+
+Die Bootabbilder sind `boot-get` der Belege; ``--check`` vergleicht auch das.
 
 Die formatierte Kassette entsteht im Lauf von BCU 880 selbst (Test BcuKassette.FormatiertSchreibtLiest,
 `B:INIT` an Geraet 2 = F:) und wird dort mit dem Inhalt in disks/ verglichen (Bloecke, nicht die
@@ -45,12 +53,24 @@ import disketten_beigaben as _db  # noqa: E402  (Ordner je Diskette)
 
 BELEGE = os.path.join(REPO, 'doc', 'a5120_alt', 'bcu')
 
-#: Diskette in disks/ -> (Beleg, Zusatzargumente der Wandlung)
+BOOTSEKTOREN = os.path.join(REPO, 'disks', 'bootsektoren')
+
+#: Diskette in disks/ -> (Beleg, Zusatzargumente der Wandlung)  — ueber `save-as` gewandelt
 DISKETTEN = {
-    'a5120_bcu12_k5600-10_start-syl.hfe':
-        (os.path.join(BELEGE, 'satz2_SYL_auf_Spur1', 'disk.img'), ['--fs', 'cpa_auto']),
     'a5120_bcu12_k5600-10_arbeit-sys1.hfe':
         (os.path.join(BELEGE, 'satz2_OhneSYL.1', 'disk.img'), []),
+}
+#: Diskette in disks/ -> (Beleg, Dateisystem, Bootabbild) — mit `create --boot` GEBAUT
+GEBAUT = {
+    'a5120_bcu12_k5600-10_start-syl.hfe':
+        (os.path.join(BELEGE, 'satz2_SYL_auf_Spur1', 'disk.img'), 'bcu880_syl',
+         os.path.join(BOOTSEKTOREN, 'boot_bcu12_syl_k7023.bin')),
+}
+#: Bootabbild in disks/bootsektoren/ -> Beleg, dem es mit `boot-get` entnommen ist
+BOOTABBILDER = {
+    'boot_bcu12_syl_k7023.bin': os.path.join(BELEGE, 'satz2_SYL_auf_Spur1', 'disk.img'),
+    'boot_bcu12_syl_k7024.bin': os.path.join(BELEGE, 'satz1_SYL_auf_Spur1', 'disk.img'),
+    'boot_bcu12_ohnesyl.bin':   os.path.join(BELEGE, 'satz2_OhneSYL.1', 'disk.img'),
 }
 BOOTBAND = 'bandtest_boot.k52'
 BOOTBAND_QUELLE = os.path.join(REPO, 'tests', 'fixtures', 'kassette', BOOTBAND)
@@ -78,6 +98,37 @@ def _wandeln(tool, beleg, ziel, extra, tmp):
     _lauf(tool, 'save-as', ziel, rueck, *extra)
     if not filecmp.cmp(rueck, beleg, shallow=False):
         sys.exit(f'{os.path.basename(ziel)}: Rueckwandlung weicht vom Beleg ab')
+
+
+def _bauen(tool, beleg, fs, boot, ziel, tmp):
+    """Diskette mit `create --boot` bauen; Gegenprobe: zurueck nach .img ist der Beleg."""
+    if os.path.exists(ziel):
+        os.remove(ziel)
+    _lauf(tool, 'create', ziel, '--fs', fs, '--boot', boot)
+    rueck = os.path.join(tmp, 'rueck_gebaut.img')
+    if os.path.exists(rueck):
+        os.remove(rueck)
+    _lauf(tool, 'save-as', ziel, rueck, '--fs', fs)
+    if not filecmp.cmp(rueck, beleg, shallow=False):
+        sys.exit(f'{os.path.basename(ziel)}: die gebaute Diskette weicht vom Beleg '
+                 f'{os.path.relpath(beleg, REPO)} ab')
+
+
+def _bootabbilder_ok(tool, tmp):
+    """Die Bootabbilder in disks/bootsektoren/ sind `boot-get` ihrer Belege."""
+    ok = True
+    for name, beleg in BOOTABBILDER.items():
+        kopie = os.path.join(tmp, 'beleg_' + name + '.img')
+        shutil.copyfile(beleg, kopie)
+        aus = os.path.join(tmp, name)
+        _lauf(tool, 'boot-get', kopie, aus)
+        ist = os.path.join(BOOTSEKTOREN, name)
+        if os.path.isfile(ist) and filecmp.cmp(ist, aus, shallow=False):
+            print(f'{name}: ok')
+        else:
+            print(f'{name}: fehlt oder ist nicht boot-get von {os.path.relpath(beleg, REPO)}')
+            ok = False
+    return ok
 
 
 def k52_bloecke(pfad):
@@ -123,6 +174,13 @@ def bauen(tool, wurzel):
             os.makedirs(os.path.dirname(ziel), exist_ok=True)
             _wandeln(tool, beleg, ziel, extra, tmp)
             print(f'{name}: gewandelt')
+        if not _bootabbilder_ok(tool, tmp):
+            return 1
+        for name, (beleg, fs, boot) in GEBAUT.items():
+            ziel = _db.diskpfad(wurzel, name)
+            os.makedirs(os.path.dirname(ziel), exist_ok=True)
+            _bauen(tool, beleg, fs, boot, ziel, tmp)
+            print(f'{name}: gebaut aus {os.path.relpath(boot, REPO)}')
     ziel = _db.diskpfad(wurzel, BOOTBAND)
     os.makedirs(os.path.dirname(ziel), exist_ok=True)
     shutil.copyfile(BOOTBAND_QUELLE, ziel)
@@ -148,6 +206,18 @@ def pruefen(tool, wurzel):
                 print(f'{name}: ok')
             else:
                 print(f'{name}: ist nicht die Wandlung von {os.path.relpath(beleg, REPO)}'); ok = False
+        ok = _bootabbilder_ok(tool, tmp) and ok
+        for name, (beleg, fs, boot) in GEBAUT.items():
+            ist = _db.diskpfad(wurzel, name)
+            if not os.path.isfile(ist):
+                print(f'{name}: fehlt'); ok = False
+                continue
+            soll = os.path.join(tmp, name)
+            _bauen(tool, beleg, fs, boot, soll, tmp)
+            if filecmp.cmp(ist, soll, shallow=False):
+                print(f'{name}: ok')
+            else:
+                print(f'{name}: ist nicht der Bau aus {os.path.relpath(boot, REPO)}'); ok = False
     band = _db.diskpfad(wurzel, BOOTBAND)
     if os.path.isfile(band) and filecmp.cmp(band, BOOTBAND_QUELLE, shallow=False):
         print(f'{BOOTBAND}: ok')

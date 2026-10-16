@@ -776,6 +776,9 @@ FsInfo CpmFileSystem::info() const {
     i.used_bytes  = static_cast<uint64_t>(belegt - dir_blocks_) * prof_.block_size;
     i.free_bytes  = static_cast<uint64_t>(total_blocks_ - belegt) * prof_.block_size;
     i.files       = static_cast<int>(list().size());
+    // Reine Startdiskette: der Bereich hinter den Systemspuren ist fuer das Geraet kein
+    // Dateibereich (FsProfile::nur_boot) — „111 KB frei“ waere eine falsche Auskunft.
+    if (prof_.nur_boot) i.total_bytes = i.free_bytes = 0;
 
     // Blockzeiger, die hinter den Datenbereich zeigen, sind ein sicheres Zeichen fuer
     // ein falsch gewaehltes Profil — genau deshalb gehoeren sie in den Bericht.

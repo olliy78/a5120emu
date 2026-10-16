@@ -84,6 +84,8 @@ struct FsProfile {
     ///        geschrieben, die der K8915-Lader mit `C` abweist.  `pc1715` (AP-D): das
     ///        Wort `F002H`/`F003H` (Bytes `02|03 F0`), das der Urlader S502 des PC 1715
     ///        als Einziges prueft — ein A5120-Lader (`SYL`) besteht es nicht.
+    ///        `bcu` / `bcu_syl` (BCU 880): Bootabbild einer BCU-Diskette — Kennung
+    ///        „BCU 880“ im System bzw. SYL-Lader auf Zylinder 1 mit gueltiger CRC.
     std::string boot_header;
 
     /// @brief Nur CP/M: der **Bootbereich steht im Verzeichnis** (CP/A 1715 ohne
@@ -94,6 +96,13 @@ struct FsProfile {
     ///        und die Erkennung dieses Profils verlangt den Bootkopf ausdruecklich
     ///        (sonst waere jede Datendiskette zugleich `cpa800` und `cpa1715`).
     bool dir_boot = false;
+
+    /// @brief Nur CP/M: eine reine **Startdiskette** — der Bereich hinter den Systemspuren
+    ///        ist KEIN Dateibereich fuer das Geraet (BCU 880 „SYL auf Spur 1“: das System
+    ///        liegt auf Zylinder 2-4, genau dort sucht das BIOS sein Verzeichnis).  Lesen
+    ///        und Bootabbild gehen, `put`/`rm`/`attr`/`mkdir` werden verweigert, weil
+    ///        eine so geschriebene Datei am Geraet nie auftaeuchte.
+    bool nur_boot = false;
 
     // ── nur FsType::Cpm ──────────────────────────────────────────────────────
     uint32_t block_size  = 2048;   ///< Zuordnungseinheit

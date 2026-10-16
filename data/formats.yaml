@@ -731,6 +731,41 @@ filesystems:
     detect:      false
     boot_header: pc1715
 
+  # ══ BCU 880 (frueher A5120, doc/a5120_alt/bcu.md) ═════════════════════════
+  # 40 Zylinder einseitig, 26×128, DPB der BCU V1.2 (EC73H): 1-KB-Bloecke, 64 Plaetze, OFF 2,
+  # Sektorversatz 6 — deckungsgleich mit dem, was die CP/A-Regel fuer diese Geometrie rechnet.
+  #
+  # `bcu880` — Arbeitsdiskette „ohne SYL“: System auf Zylinder 0-1 (so schreibt es SYSGEN; dort
+  # holt der Warmstart es), Verzeichnis ab Zylinder 2.  EIGENER GRUND: der Name fuer
+  # `create --fs bcu880 --boot` und die Kennungspruefung des Bootabbilds.  `detect: false` —
+  # die Erkennung liest solche Disketten schon als `cpa_auto`.
+  - name:        bcu880
+    description: "BCU 880 V1.2 — Arbeitsdiskette „ohne SYL“, System Zylinder 0-1, Dateisystem ab Zylinder 2"
+    format:      k5601_ss40_26x128
+    type:        cpm
+    data_start:  { cyl: 2, head: 0 }
+    block_size:  1024
+    dir_entries: 64
+    skew:        6
+    detect:      false
+    boot_header: bcu
+
+  # `bcu880_syl` — Startdiskette „SYL auf Spur 1“: Zylinder 1 Sektoren 1-6 = SYL-Lader (das
+  # Lade-ROM V0.6 holt ihn nach 0400H), ab Zylinder 2 das System.  Das BIOS sucht sein Verzeichnis
+  # ab Zylinder 2 — es liegt dort das System; die Diskette ist reine Startdiskette (`nur_boot`).
+  # Erkannt wird sie am SYL-Lader (Kennung + Selbstpruefung-CRC) als POSITIVEM Nachweis.
+  # 5 Systemzylinder: 0 (leer), 1 (Lader), 2-4 (System, 67 Sektoren).
+  - name:        bcu880_syl
+    description: "BCU 880 V1.2 — Startdiskette „SYL auf Spur 1“ (Lade-ROM V0.6), reine Startdiskette"
+    format:      k5601_ss40_26x128
+    type:        cpm
+    data_start:  { cyl: 5, head: 0 }
+    block_size:  1024
+    dir_entries: 64
+    skew:        6
+    boot_header: bcu_syl
+    nur_boot:    true
+
   # ══ SCP1700 / CP/M-86 (A7100) ══════════════════════════════════════════════
   # CP/M-86 führt dasselbe Verzeichnis wie CP/M 2.2 — 32-B-Einträge, Extents,
   # 128-B-Sätze.  Nachgemessen am Referenzdatenträger (Verzeichnis bei c2h0,

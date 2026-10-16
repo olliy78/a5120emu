@@ -91,6 +91,9 @@ TEST(FsCatalog, ProfilnamenSindEinStabilerVertrag) {
         // WEGA (P8000, UNIX System III): andere Familie, beschreibt sich selbst
         // (doc/design/27_wega_dateisystem.md) — ein Eintrag fuer die 720-K-Diskette.
         "wega720",
+        // BCU 880: Arbeitsdiskette „ohne SYL“ (Name, `detect: false`) und die Startdiskette
+        // „SYL auf Spur 1“ (erkannt am Lader; `nur_boot`).
+        "bcu880", "bcu880_syl",
     };
     for (const auto& n : erwartet)
         EXPECT_NE(cat.find(n), nullptr) << "Dateisystem '" << n << "' fehlt";

@@ -79,7 +79,7 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     const std::string where = file + ":" + std::to_string(node.line);
     collectUnknownKeys(node,
                        {"name", "description", "format", "type", "data_start",
-                        "containers", "detect_rank", "detect", "boot_header", "dir_boot",
+                        "containers", "detect_rank", "detect", "boot_header", "dir_boot", "nur_boot",
                         "block_size", "dir_entries", "skew", "os",
                         "sides_separate", "boot_track", "directory_track",
                         "bitmap_track", "usable_tracks"},
@@ -160,8 +160,9 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
     }
     if (const yaml::Node* n = node.find("boot_header")) {
         if (!n->isScalar() || (n->scalar != "k8915" && n->scalar != "pc1715"
+                               && n->scalar != "bcu" && n->scalar != "bcu_syl"
                                && !n->scalar.empty()))
-            { why = "'boot_header' muss k8915 oder pc1715 sein (oder fehlen)"; return false; }
+            { why = "'boot_header' muss k8915, pc1715, bcu oder bcu_syl sein (oder fehlen)"; return false; }
         out.boot_header = n->scalar;
     }
     if (const yaml::Node* n = node.find("dir_boot")) {
@@ -173,6 +174,15 @@ bool buildProfile(const yaml::Node& node, const FormatCatalog& formats, FsProfil
             { why = "'dir_boot' gilt nur fuer CP/M"; return false; }
         if (b && out.boot_header != "pc1715")
             { why = "'dir_boot' verlangt 'boot_header: pc1715'"; return false; }
+    }
+
+    if (const yaml::Node* n = node.find("nur_boot")) {
+        bool b = false;
+        if (!n->isScalar() || !yaml::toBool(n->scalar, b))
+            { why = "'nur_boot' muss true/false sein"; return false; }
+        out.nur_boot = b;
+        if (b && out.type != FsType::Cpm)
+            { why = "'nur_boot' gilt nur fuer CP/M"; return false; }
     }
 
     // ── typabhaengige Felder ─────────────────────────────────────────────────
