@@ -403,11 +403,37 @@ def test_mc80_can_be_created_and_reports_its_type():
     finally:
         _lib.k1520_destroy(h)
 
-    for variante, konfig, grund in ((2, None, b"MC80.33"), (3, None, b"MC80.21"),
-                                    (4, None, b"MC80.22"), (9, None, b"Variante"),
-                                    (0, b"spe=3", b"spe"), (0, b"vis=1", b"vis")):
+    for variante, konfig, grund in ((2, None, b"MC80.33"), (9, None, b"Variante"),
+                                    (0, b"spe=3", b"spe"), (0, b"vis=1", b"vis"),
+                                    (3, b"spe=1", b"MC80.2x")):
         assert not _lib.k1520_create_mc80(variante, konfig)
         assert grund in _lib.k1520_last_init_error()
+
+
+def test_mc80_2x_through_the_c_abi():
+    """AP M11: MC80.21/.22 (`k1520_create_mc80(3|4)`) — Typ 6, Bild 528 × 256 aus der
+    Displaylogik, `k1520_screen_char` = Zeichen der DPL (8 × 32), Menü des Betriebssystems;
+    Kassette = Laufwerk 0 der eingebauten MBI ohne `k1520_tape_install`."""
+    from app.core_binding.k1520 import _lib, K1520Handle
+
+    for variante in (3, 4):
+        handle = _lib.k1520_create_mc80(variante, None)
+        assert handle, _lib.k1520_last_init_error()
+        h = K1520Handle(handle)
+        try:
+            assert _lib.k1520_machine_type(h) == 6
+            assert (_lib.k1520_fb_width(h), _lib.k1520_fb_height(h)) == (528, 256)
+            assert _lib.k1520_mem_read(h, 0x0000) == 0x31          # LD SP,1000H (ROM ver2)
+            for _ in range(40):
+                _lib.k1520_run(h, 500_000)
+            zeile = bytes(_lib.k1520_screen_char(h, c, 2) for c in range(32)).decode().rstrip()
+            assert zeile == "0600  BAND"
+            assert _lib.k1520_tape_installed(h)
+            assert _lib.k1520_tape_new(h, 0)
+            assert not _lib.k1520_tape_new(h, 1)                 # nur ein Laufwerk
+            assert b"Laufwerk 1" in _lib.k1520_tape_error(h)
+        finally:
+            _lib.k1520_destroy(h)
 
 
 def test_mc80_screen_and_keyboard_through_the_c_abi():

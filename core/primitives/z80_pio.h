@@ -115,6 +115,8 @@ public:
      * K2526::pulseWriteStrobe()).
      */
     bool    portAIntEnabled() const { return porta_.ie; }
+    /// Ist ein Port in Bedienung (IUS)?  (RETI-Verteilung durch die Karte, MC80.2x AP M11)
+    bool    inBedienung() const { return porta_.ius || portb_.ius; }
 
     /**
      * @brief Hardware-Reset (/RESET-Leitung des K1520-Backplane).

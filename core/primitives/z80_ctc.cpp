@@ -628,6 +628,15 @@ uint8_t Z80CTC::getVector() const {
  * is being serviced.
  */
 void Z80CTC::onRETI() {
+    if (reti_nach_ius_) {                    // s. setRetiNachIus: höchster Kanal in Bedienung
+        for (auto& c : ch_) {
+            if (c.ius) {
+                c.ius = false;
+                return;
+            }
+        }
+        return;
+    }
     // Clear IUS flag for the channel that was being serviced
     // Only the channel with IEI=true and IUS=true should be cleared
     for (int i = 0; i < 4; i++) {

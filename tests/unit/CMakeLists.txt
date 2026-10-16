@@ -64,6 +64,10 @@ k1520_add_test(mc80_spe SRC cards/test_mc80_spe.cpp LIBS k1520_mc80_karten LABEL
 # CTC D4H, PIO D8H, Kette SIO > CTC > PIO, Tastaturkanal)
 k1520_add_test(mc80_vis2a SRC cards/test_mc80_vis2a.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
 k1520_add_test(mc80_asp SRC cards/test_mc80_asp.cpp LIBS k1520_mc80_karten LABELS "${_lbl}")
+# MC80.21/.22 (AP M11): Displaylogik DPL (Zeilenautomat, Bild aus den PIO-Ausgängen, Matrix) und
+# Magnetbandinterface MBI (EFH, Schreib-/Leseweg über das Schieberegister) samt E/A-Senke
+k1520_add_test(mc80_dpl SRC cards/test_mc80_dpl.cpp LIBS k1520_mc80_2x_karten LABELS "${_lbl}")
+k1520_add_test(mc80_mbi SRC cards/test_mc80_mbi.cpp LIBS k1520_mc80_2x_karten LABELS "${_lbl}")
 # K3528 der K8915 Gen 2: Speicherbild je A8H-Wert, /MEMDI (doc/design/24_k8915_varianten.md R3, AP-V4)
 k1520_add_test(k3528 SRC cards/test_k3528.cpp      LIBS k1520_k3528 LABELS "${_lbl}")
 # PFS K3820 (16 × 2708), von keiner Maschine benutzt (doc/design/24_k8915_varianten.md AP-V11)

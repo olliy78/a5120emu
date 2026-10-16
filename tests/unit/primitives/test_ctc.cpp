@@ -1066,3 +1066,32 @@ TEST(Z80CTC, IntAusVerwirftAnforderungNurMitSchalter) {
         EXPECT_EQ(ctc.hasInterrupt(), !schalter) << "Schalter " << schalter;
     }
 }
+
+TEST(Z80CTC, RetiNachIusLoeschtDenKanalInBedienung) {
+    // K2 in Bedienung, K0 fordert gerade an (MC80.2x-DPL: Zeichentakt beim RETI des TSI).
+    // Datenblatt: im ED-Holezyklus sperrt nur ein Kanal IN BEDIENUNG — das RETI gehört K2.
+    // Bisherige Lesart (Schalter aus): K2 sieht wegen K0 keinen IEI und bleibt in Bedienung.
+    for (bool schalter : {false, true}) {
+        Z80CTC ctc;
+        ctc.setRetiNachIus(schalter);
+        ctc.setIEI(true);
+        ctc.ioWrite(0, 0x00);                         // Vektorbasis
+        ctc.ioWrite(0, 0xC7); ctc.ioWrite(0, 0x01);   // K0 Zähler, Interrupt, ZK 1
+        ctc.ioWrite(2, 0xC7); ctc.ioWrite(2, 0x01);   // K2 ebenso
+        ctc.clkTrg(2, false);
+        ASSERT_TRUE(ctc.hasInterrupt());
+        EXPECT_EQ(ctc.getVector(), 0x04);             // K2 angenommen → in Bedienung
+        EXPECT_TRUE(ctc.inBedienung());
+        ctc.clkTrg(0, false);                         // K0 fordert an (höhere Priorität)
+        ctc.setIEI(true);                             // Kette neu bewerten (wie die Karte es tut)
+        ctc.onRETI();
+        EXPECT_EQ(ctc.debugState().ch[2].ius, !schalter) << "Schalter " << schalter;
+        EXPECT_TRUE(ctc.debugState().ch[0].intPending);
+        if (schalter) {
+            EXPECT_FALSE(ctc.inBedienung());
+            EXPECT_EQ(ctc.getVector(), 0x00);         // jetzt K0
+            ctc.onRETI();
+            EXPECT_FALSE(ctc.inBedienung());
+        }
+    }
+}
