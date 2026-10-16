@@ -172,6 +172,8 @@ k1520_add_test(img_codec      SRC peripherals/test_img_codec.cpp      LIBS k1520
 k1520_add_test(hfe_codec      SRC peripherals/test_hfe_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(dmk_codec      SRC peripherals/test_dmk_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 k1520_add_test(disk_image     SRC peripherals/test_disk_image.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")
+# CopyQM (.cqm, nur Lesen).  Echtdaten-Gegenprobe nur mit K1520_CQM_DIR (sonst uebersprungen).
+k1520_add_test(cqm_codec      SRC peripherals/test_cqm_codec.cpp      LIBS k1520_floppy2 LABELS "${_lbl}")
 # Physische Diskette am Greaseweazle: Spurzustaende + Auftragswarteschlange (§14).
 # Braucht KEINE Hardware — ein Ersatz-Arbeitsfaden bedient die Auftraege aus dem RAM.
 k1520_add_test(track_sync     SRC peripherals/test_track_sync.cpp     LIBS k1520_floppy2 LABELS "${_lbl}")

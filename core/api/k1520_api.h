@@ -327,7 +327,7 @@ K1520_API bool k1520_save_disk_as(K1520Handle h, int drive,
 K1520_API bool k1520_disk_raw_compatible(K1520Handle h, int drive);
 /** @brief Currently bound image file of a slot ("" = memory only / empty drive). */
 K1520_API const char* k1520_disk_path(K1520Handle h, int drive);
-/** @brief Container of the bound file ("img" | "hfe" | "dmk"; "" = none). */
+/** @brief Container of the bound file ("img" | "hfe" | "dmk" | "cqm"; "" = none). */
 K1520_API const char* k1520_disk_container(K1520Handle h, int drive);
 /**
  * @brief Catalog format DETECTED on the mounted disk ("" = unknown).

@@ -678,6 +678,9 @@ public:
 
     bool dirty() const;
 
+    /// @brief Kopfdaten (inkl. Kommentartext) eines CopyQM-Abbilds; nullptr bei anderen Containern.
+    const CqmCodec::SourceInfo* cqmInfo() const { return disk_ ? disk_->cqmInfo() : nullptr; }
+
     /**
      * @brief Aenderungen in die gebundene Datei schreiben.
      *

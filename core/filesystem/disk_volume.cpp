@@ -1103,6 +1103,14 @@ std::unique_ptr<DiskVolume> DiskVolume::oeffnenMit(std::unique_ptr<DiskImage> vo
     const std::string ext   = vorhanden ? std::string("hfe") : endung(path);
     const bool        istImg = (ext == "img");
 
+    // CopyQM-Abbilder sind nur lesbar (der Codec kann nicht schreiben): die Diskette
+    // wird schreibgeschuetzt geoeffnet, Aenderungen gingen sonst nur in den Speicher.
+    // Das Abbild kommt per `export`/`saveAs` in .img/.hfe/.dmk heraus.
+    if (ext == "cqm") {
+        read_only      = true;
+        dv->read_only_ = true;
+    }
+
     // ── Fall A': die CP/A-Regel ausdruecklich anfordern ──────────────────────
     // `--fs cpa_auto` heisst „nicht im Katalog nachsehen, rechnen" — die Geometrie
     // wird trotzdem erkannt, denn ohne sie gibt es nichts zu rechnen.
@@ -2901,6 +2909,11 @@ void DiskVolume::setReadOnly(bool ro) {
                       "nur gemessen — Schreiben ist gesperrt. Erst einen passenden "
                       "Eintrag in data/formats.yaml anlegen (die Meldung von `measure` "
                       "taugt als Vorlage).";
+        return;
+    }
+    if (!ro && disk_ && disk_->container() == ContainerType::Cqm) {
+        last_error_ = "CopyQM-Abbilder (.cqm) sind nur lesbar — erst als .img, .hfe oder "
+                      ".dmk exportieren.";
         return;
     }
     read_only_ = ro;

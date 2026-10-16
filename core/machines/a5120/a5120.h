@@ -194,7 +194,7 @@ public:
     /// @brief Aktuell gebundene Image-Datei eines Slots ("" = nur im Speicher/leer).
     std::string diskPath(int drive) const override;
 
-    /// @brief Containerformat der gebundenen Datei ("img" | "hfe" | "dmk"; "" = keine).
+    /// @brief Containerformat der gebundenen Datei ("img" | "hfe" | "dmk" | "cqm"; "" = keine).
     std::string diskContainer(int drive) const override;
 
     /**

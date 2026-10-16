@@ -135,6 +135,9 @@ struct FsProfile {
         if (ext_lower == "img") return allow_img;
         if (ext_lower == "hfe") return allow_hfe;
         if (ext_lower == "dmk") return allow_dmk;
+        // CopyQM legt nur Sektor-Nutzdaten ab (wie .img): kein Gap-Anhang, keine
+        // Sonderspuren — was ein .img nicht traegt, traegt auch ein .cqm nicht.
+        if (ext_lower == "cqm") return allow_img;
         return false;
     }
 };

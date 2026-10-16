@@ -43,7 +43,8 @@ typedef enum {
 
 /**
  * @brief Diskette oeffnen.
- * @param path       `.img`, `.hfe` oder `.dmk`
+ * @param path       `.img`, `.hfe`, `.dmk` oder `.cqm` (CopyQM, nur lesbar: wird immer
+ *                   schreibgeschuetzt geoeffnet)
  * @param fs_name    Dateisystem erzwingen; NULL oder "" = erkennen
  * @param read_only  **so oeffnen, dass nichts kaputtgehen kann.**  Beim blossen
  *                   Lesen ist das die richtige Wahl; Aendern verlangt danach den

@@ -65,6 +65,16 @@ std::unique_ptr<DiskImage> DiskImage::open(const std::string& path,
             img->binding_writable_ = info.write_allowed;
             break;
         }
+        case ContainerType::Cqm: {
+            // CopyQM kennt nur das Lesen: die Datei wird nie zurueckgeschrieben, auch
+            // nicht vom Autosave.  Schreibzugriffe des Gastes bleiben im Medium, und
+            // saveAs() in .hfe/.dmk/.img geht.
+            CqmCodec::SourceInfo info;
+            ok = CqmCodec::load(path, img->medium_, &info, err);
+            img->cqm_info_         = info;
+            img->binding_writable_ = false;
+            break;
+        }
         default:
             if (!fmt.has_value()) return nullptr;   // .img braucht die Geometrie
             ok = ImageCodec::load(path, ContainerType::Img, &fmt.value(), img->medium_, err);
@@ -259,6 +269,7 @@ bool DiskImage::saveAs(const std::string& path, std::optional<DiskFormat> fmt) {
     container_        = ImageCodec::fromExtension(path);
     disk_format_      = (container_ == ContainerType::Img) ? fmt : std::nullopt;
     binding_writable_ = true;
+    cqm_info_.reset();
     medium_.clearDirty();
     dirty_since_      = 0;
     return true;

@@ -9,6 +9,7 @@
  */
 
 #include "core/peripherals/floppy_drive/image_codec.h"
+#include "core/peripherals/floppy_drive/cqm_codec.h"
 #include "core/peripherals/floppy_drive/dmk_codec.h"
 #include "core/peripherals/floppy_drive/hfe_codec.h"
 #include "core/peripherals/floppy_drive/img_codec.h"
@@ -35,12 +36,15 @@ bool endetAuf(const std::string& path, const char* suffix) {
 ContainerType ImageCodec::fromExtension(const std::string& path) {
     if (endetAuf(path, ".hfe")) return ContainerType::Hfe;
     if (endetAuf(path, ".dmk")) return ContainerType::Dmk;
+    if (endetAuf(path, ".cqm")) return ContainerType::Cqm;
     return ContainerType::Img;
 }
 
 ContainerType ImageCodec::detect(const std::string& path) {
     // HFE traegt eine echte Signatur → hat Vorrang vor der Endung.
     if (HfeCodec::isHfe(path)) return ContainerType::Hfe;
+    // CQM traegt Kennung + Kopfpruefbyte → ebenfalls Vorrang vor der Endung.
+    if (CqmCodec::isCqm(path)) return ContainerType::Cqm;
     // DMK hat keine Magic-Zahl: nur akzeptieren, wenn Endung UND Header passen.
     if (endetAuf(path, ".dmk") && DmkCodec::looksLikeDmk(path)) return ContainerType::Dmk;
     return ContainerType::Img;
@@ -50,6 +54,7 @@ const char* ImageCodec::name(ContainerType t) {
     switch (t) {
         case ContainerType::Hfe: return "hfe";
         case ContainerType::Dmk: return "dmk";
+        case ContainerType::Cqm: return "cqm";
         default:                 return "img";
     }
 }
@@ -58,12 +63,14 @@ const char* ImageCodec::extension(ContainerType t) {
     switch (t) {
         case ContainerType::Hfe: return ".hfe";
         case ContainerType::Dmk: return ".dmk";
+        case ContainerType::Cqm: return ".cqm";
         default:                 return ".img";
     }
 }
 
 bool ImageCodec::selfDescribing(ContainerType t) { return t != ContainerType::Img; }
 bool ImageCodec::needsDiskFormat(ContainerType t) { return t == ContainerType::Img; }
+bool ImageCodec::writable(ContainerType t) { return t != ContainerType::Cqm; }
 
 bool ImageCodec::load(const std::string& path, ContainerType type,
                       const DiskFormat* fmt, DiskMedium& out, std::string& err) {
@@ -72,6 +79,8 @@ bool ImageCodec::load(const std::string& path, ContainerType type,
             return HfeCodec::load(path, out, nullptr, err);
         case ContainerType::Dmk:
             return DmkCodec::load(path, out, nullptr, err);
+        case ContainerType::Cqm:
+            return CqmCodec::load(path, out, nullptr, err);
         default:
             if (!fmt) {
                 err = "Rohes Sektorimage (.img) braucht ein Diskettenformat: " + path;
@@ -88,6 +97,8 @@ bool ImageCodec::save(const std::string& path, ContainerType type,
             return HfeCodec::save(path, in, err);
         case ContainerType::Dmk:
             return DmkCodec::save(path, in, err);
+        case ContainerType::Cqm:
+            return CqmCodec::save(path, in, err);
         default:
             if (!fmt) {
                 err = "Rohes Sektorimage (.img) braucht ein Diskettenformat: " + path;

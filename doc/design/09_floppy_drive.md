@@ -275,12 +275,19 @@ Spuren in der Reihenfolge (0,0) (0,1) (1,0) (1,1) …, je Spur:
 * Damit ist DMK — wie HFE — verlustfrei für Gap-Inhalte, Sektorkontrollblöcke,
   Mischdichte und unformatierte Spuren.
 
+### 4.3a `.cqm` — CopyQM (`CqmCodec`), nur Lesen
+
+RLE-gepackter Sektorstrom wie ein `.img`, Geometrie aus dem 133-Byte-Kopf, Pruefwert mit
+Tabellenfehler.  Die `DiskImage`-Bindung ist nie beschreibbar.  Voller Entwurf:
+`doc/design/33_cqm.md`, Merkposten `doc/merkposten/cqm.md`.
+
 ### 4.4 Erkennung beim Öffnen
 
 | Signatur / Endung | Container |
 |-------------------|-----------|
 | `HXCPICFE`        | HFE v1    |
 | `HXCHFEV3`        | abgelehnt (nicht implementiert) |
+| `CQ` **und** Kopfpruefbyte (Summe der 133 Kopfbytes ≡ 0) | CQM (nur lesbar) |
 | Endung `.dmk` **und** plausibler DMK-Header | DMK |
 | sonst             | Img (verlangt `DiskFormat`) |
 

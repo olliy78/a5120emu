@@ -12,6 +12,7 @@
  * | Img       | `.img` | nein            | **ja** (Geometrie + Sektorlayout) |
  * | Hfe       | `.hfe` | ja (Header/LUT) | nein |
  * | Dmk       | `.dmk` | ja (Header/IDAM-Tabelle) | nein |
+ * | Cqm       | `.cqm` | ja (Kopf) — **nur lesbar** | nein |
  *
  * @see doc/design/09_floppy_drive.md §4
  * @author Olaf Krieger
@@ -31,7 +32,8 @@
 enum class ContainerType : uint8_t {
     Img = 0,   ///< rohes Sektorimage (.img) — braucht ein DiskFormat
     Hfe,       ///< HxC Floppy Emulator v1 (.hfe) — Bitzellen, self-describing
-    Dmk        ///< David Keil's Disk Image (.dmk) — Spur-Bytes + IDAM-Tabelle
+    Dmk,       ///< David Keil's Disk Image (.dmk) — Spur-Bytes + IDAM-Tabelle
+    Cqm        ///< CopyQM (.cqm) — RLE-gepackte Sektoren, **nur lesbar** (save() scheitert)
 };
 
 /**
@@ -46,15 +48,17 @@ ContainerType fromExtension(const std::string& path);
 /**
  * @brief Containertyp einer vorhandenen Datei bestimmen.
  *
- * HFE ueber die Signatur `HXCPICFE`; DMK ueber Endung **plus** Header-Plausibilitaet
- * (DMK hat keine Magic-Zahl); sonst @ref ContainerType::Img.
+ * HFE ueber die Signatur `HXCPICFE`; CQM ueber `CQ` + Kopfpruefbyte (Endung egal);
+ * DMK ueber Endung **plus** Header-Plausibilitaet (DMK hat keine Magic-Zahl); sonst
+ * @ref ContainerType::Img.
  */
 ContainerType detect(const std::string& path);
 
-const char* name(ContainerType t);        ///< "img" | "hfe" | "dmk"
-const char* extension(ContainerType t);   ///< ".img" | ".hfe" | ".dmk"
-bool selfDescribing(ContainerType t);     ///< Hfe/Dmk = true
+const char* name(ContainerType t);        ///< "img" | "hfe" | "dmk" | "cqm"
+const char* extension(ContainerType t);   ///< ".img" | ".hfe" | ".dmk" | ".cqm"
+bool selfDescribing(ContainerType t);     ///< Hfe/Dmk/Cqm = true
 bool needsDiskFormat(ContainerType t);    ///< nur Img = true
+bool writable(ContainerType t);           ///< Cqm = false (nur lesbar), sonst true
 
 /**
  * @brief Datei vollstaendig in @p out laden (Geometrie inklusive).

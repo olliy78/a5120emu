@@ -198,6 +198,7 @@ if(BUILD_K1520)
         core/peripherals/floppy_drive/img_codec.cpp
         core/peripherals/floppy_drive/hfe_codec.cpp
         core/peripherals/floppy_drive/dmk_codec.cpp
+        core/peripherals/floppy_drive/cqm_codec.cpp
         core/peripherals/floppy_drive/image_codec.cpp
         core/peripherals/floppy_drive/disk_image.cpp
         core/peripherals/floppy_drive/track_sync.cpp

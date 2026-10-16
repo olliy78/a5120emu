@@ -512,6 +512,11 @@ int cmd_info(const Optionen& o) {
     std::cout << "\n";
     if (!v->detection().remarks.empty())
         std::cout << "Medium:      " << v->detection().remarks << "\n";
+    if (const CqmCodec::SourceInfo* cq = v->cqmInfo()) {
+        std::cout << "CopyQM:      " << cq->description;
+        if (!cq->comment.empty()) std::cout << " — Kommentar: " << cq->comment;
+        std::cout << "\n";
+    }
 
     for (int i = 0; i < v->volumeCount(); ++i) {
         const FsInfo info = v->volumeInfo(i);
@@ -1443,7 +1448,7 @@ int cmd_measure(const Optionen& o) {
     auto disk = DiskImage::open(o.rest[1], std::nullopt, /*write_protect=*/true);
     if (!disk) {
         std::cerr << "Fehler: Abbild nicht ladbar (selbstbeschreibend muss es sein — "
-                     ".hfe oder .dmk): " << o.rest[1] << "\n";
+                     ".hfe, .dmk oder .cqm): " << o.rest[1] << "\n";
         return kFehler;
     }
     const std::vector<MeasuredTrack> gemessen = GeometryProbe::measure(disk->medium());

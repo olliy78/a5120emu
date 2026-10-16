@@ -26,6 +26,7 @@
 
 #pragma once
 #include "disk_format.h"
+#include "cqm_codec.h"
 #include "disk_medium.h"
 #include "image_codec.h"
 #include "track_image.h"
@@ -64,9 +65,11 @@ public:
     /**
      * @brief Vorhandene Image-Datei laden und binden.
      *
-     * Der Container wird per @ref ImageCodec::detect bestimmt (HFE-Signatur, DMK-Header,
-     * sonst `.img`).  @p fmt ist **nur** fuer `.img` noetig — `.hfe`/`.dmk` sind
-     * self-describing.
+     * Der Container wird per @ref ImageCodec::detect bestimmt (HFE-Signatur, CQM-Kopf,
+     * DMK-Header, sonst `.img`).  @p fmt ist **nur** fuer `.img` noetig — `.hfe`/`.dmk`/
+     * `.cqm` sind self-describing.  Ein `.cqm` ist **nur lesbar**: die Bindung ist nie
+     * beschreibbar (@ref bindingWritable), der Autosave schweigt; `saveAs` in einen
+     * anderen Container geht.
      *
      * @return DiskImage oder nullptr bei Fehler (Datei/Format/Signatur).
      */
@@ -161,6 +164,12 @@ public:
     ///        (ueberabgetasteter Flux-Mitschnitt, schreibgeschuetzte Datei).
     bool bindingWritable() const { return binding_writable_; }
 
+    /// @brief Kopfdaten eines geladenen CopyQM-Abbilds (nullptr bei anderen Containern).
+    ///        Der Kommentartext des Abbilds steht in `cqmInfo()->comment`.
+    const CqmCodec::SourceInfo* cqmInfo() const {
+        return cqm_info_.has_value() ? &cqm_info_.value() : nullptr;
+    }
+
     /**
      * @brief Geaenderte Spuren in die gebundene Datei schreiben.
      * @return true auch dann, wenn nichts zu tun war (keine Bindung / nicht schmutzig).
@@ -213,6 +222,7 @@ private:
     std::optional<DiskFormat> disk_format_;           ///< nur bei .img
     bool          write_protect_   = false;
     bool          binding_writable_ = true;
+    std::optional<CqmCodec::SourceInfo> cqm_info_;    ///< nur bei geladenem .cqm
     std::string   last_error_;
 
     /// Maschinentakt der zuletzt BEOBACHTETEN Spuraenderung (0 = sauber) …
