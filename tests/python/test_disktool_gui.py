@@ -2249,8 +2249,9 @@ def _dialog_startpunkte(window, monkeypatch) -> dict:
     from PySide6.QtWidgets import QFileDialog, QInputDialog
     gesehen = {}
 
-    monkeypatch.setattr(QInputDialog, "getText",
-                        lambda *a, **k: ("Testdiskette", True))
+    from PySide6.QtWidgets import QDialog
+    from app.disktool.ui.archiv_dialog import ArchivDialog
+    monkeypatch.setattr(ArchivDialog, "exec", lambda self: QDialog.Accepted)
 
     def datei(titel_index):
         def haken(parent, titel, verzeichnis="", *a, **k):

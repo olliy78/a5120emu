@@ -55,7 +55,8 @@ def _parser() -> argparse.ArgumentParser:
   rm  <muster…>               Dateien loeschen             [--write]
   save-as <ziel.hfe>          die ganze Diskette als Abbild sichern
   archive <ziel.zip>          Abbild + Dateien + beide Inhaltsverzeichnisse
-                              [--label "Aufkleber"]
+                              [--label "Aufkleber"] [--herkunft-datei meta.yaml]
+                              [--herkunft schluessel=wert] [--beilage datei[=name]]
   (save-as und archive ersetzen eine vorhandene Datei nur mit --force)
   rewrite                     Diskette neu beschreiben     [--write]
 
@@ -104,6 +105,8 @@ Beispiele:
     z.add_argument("--label", metavar="TEXT",
                    help="Beschriftung der Diskette (der Aufkleber) fuer archive; "
                         "ohne sie gilt der Datentraegername")
+    from app.disktool import archiv_meta
+    archiv_meta.add_argumente(p.add_argument_group("archive: Herkunft und Beschreibung"))
     z.add_argument("-l", "--long", action="store_true", help="ausfuehrliches ls")
     z.add_argument("-q", "--quiet", action="store_true",
                    help="keine Fortschrittsanzeige")
@@ -341,7 +344,7 @@ def _cmd_archive(d, o) -> int:
       Stapelbetrieb ist derselbe Zieldateiname zweimal ein Tippfehler, der sonst
       die erste Diskette vernichtet — und die liegt dann schon wieder im Schrank.
     """
-    from app.disktool.archive import create_archive
+    from app.disktool.archive import NAMENLOS, create_archive, dateiname
 
     ziel, grund = _zieldatei(o)
     if ziel is None:
@@ -349,8 +352,15 @@ def _cmd_archive(d, o) -> int:
         return 1
 
     bezeichnung = o.label or (d.volumes()[0].label if d.volumes() else "")
-    ziel = create_archive(d, ziel, text_mode=o.text, bezeichnung=bezeichnung,
-                          herkunft=f"Echtes Laufwerk {o.drive.upper()} am Greaseweazle")
+    from app.disktool import archiv_meta
+    try:
+        prov, beil = archiv_meta.aus_optionen(o, stamm=dateiname(bezeichnung) or NAMENLOS)
+        ziel = create_archive(d, ziel, text_mode=o.text, bezeichnung=bezeichnung,
+                              herkunft=f"Echtes Laufwerk {o.drive.upper()} am Greaseweazle",
+                              provenance=prov or None, beilagen=beil or None)
+    except archiv_meta.ArchivMetaFehler as e:
+        print(f"Fehler: {e}", file=sys.stderr)
+        return 2
     print(f"archiviert: {ziel} ({ziel.stat().st_size} Byte)")
     return 0
 
@@ -388,6 +398,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         if _ziel is None:
             print(f"Fehler: {_grund}", file=sys.stderr)
             return 1
+    if o.befehl == "archive":
+        # Auch die Herkunftsangaben VOR dem Laufwerk (Beilagen lesen, Namen pruefen).
+        from app.disktool import archiv_meta
+        try:
+            archiv_meta.aus_optionen(o)
+        except archiv_meta.ArchivMetaFehler as e:
+            print(f"Fehler: {e}", file=sys.stderr)
+            return 2
     if o.raw and o.befehl not in ("save-as", "rewrite", "info"):
         print(f"Fehler: --raw gibt es ohne Dateisystem — '{o.befehl}' braucht eines.",
               file=sys.stderr)

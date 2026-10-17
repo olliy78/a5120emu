@@ -922,6 +922,20 @@ Was beim Weiterarbeiten zu wissen ist:
   die ERSTE Diskette); dann entfallen `.hfe`, `image:` und `source_container` (die
   Metadaten gälten nur für die erste Diskette), das `.txt` sagt es.  Die Abbilder des
   Satzes sind seine Einzelarchive.
+- **`provenance`/`beilagen` ohne Skript befüllbar** (2026-10-17, `app/disktool/archiv_meta.py`).
+  **Die Prüfregeln stehen NUR dort** (Schlüssel `[a-z][a-z0-9_]*`; Beilagenname ohne Pfadanteile/`..`/
+  `dateien/`/Namen, die das Archiv selbst vergibt; 4 MiB; Doppelte; Latin-1/UTF-8-Erkennung, NUL = keine
+  Textdatei) und werden von `create_archive` selbst durchgesetzt — also auch für `pofo_archive.py`
+  (das mit `unterordner=True` seine `dateien_fat/…` behält). Wege: `python3 -m app.disktool.archive`
+  und `k1520disktool --physical archive` (`--herkunft-datei`, `--herkunft k=v`, `--beilage datei[=name]`,
+  `--beilage-kodierung`; Eingabefehler Exit 2, VOR dem Laufwerk geprüft; das C++-`k1520disktool` hat
+  keinen `archive`-Befehl) und der Archiv-Dialog (`ui/archiv_dialog.py`, ersetzt die Beschriftungsfrage;
+  einklappbarer Bereich, Fehler als Zeile im Dialog, nie Meldungsfenster; Werte ausser Beilagen unter
+  `archiv/herkunft` in den Einstellungen, „Zurück auf leer" vergisst sie). Leere Felder = kein Schlüssel;
+  nichts angegeben = Archiv bitgleich wie vorher. Feste Felder: `source_url`, `set_name`, `version`,
+  `web_label`, `note`; `hinweise` ist stets eine Liste. Die `source_container`-Angaben einer `.cqm`
+  bleiben daneben stehen. Wächter: `test_archiv_meta.py` (`py_archiv_meta`), darunter der Rundlauf
+  „Beilage nie auf der Diskette".
 - **Zwei Auszugs-Fallen aus der P8000-Sammlung** (2026-10-17): **(1)** CP/M-Namen sind
   beliebige Bytes (OS/M-Disketten tragen UNIX-Namen `/Z/HOFFM`, `GW/ZSID.DOC`); `extractAll`
   macht außerhalb von UNIX-Dateisystemen `/` zu `_` (wie `:`), sonst bricht der Auszug ab bzw.

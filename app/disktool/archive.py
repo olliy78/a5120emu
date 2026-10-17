@@ -278,6 +278,7 @@ _HERKUNFT_ZEILEN = (
     ("web_label", "Etikett (Web)"), ("source_sha256", "sha256 der Quelle"),
     ("container_description", "Container"), ("container_comment", "Container-Kommentar"),
     ("disks", "Disketten"), ("disk_index", "Diskette Nr."),
+    ("note", "Bemerkung"),
 )
 
 
@@ -668,6 +669,11 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
         ziel = ziel.with_suffix(".zip")
 
     stamm = dateiname(bezeichnung) or Path(tool.path).stem or NAMENLOS
+    # Eine Regel fuer alle Aufrufer (CLI, Dialog, Sammlungsskript): archiv_meta.py.
+    from app.disktool.archiv_meta import pruefe_beilagen, pruefe_schluessel
+    for k in provenance or ():
+        pruefe_schluessel(k)
+    pruefe_beilagen(beilagen, stamm=stamm, unterordner=True)
     text = inhaltsverzeichnis(tool, bezeichnung=bezeichnung, herkunft=herkunft,
                               provenance=provenance, beilagen=tuple(beilagen or ()),
                               ohne_abbild=ohne_abbild)
@@ -718,20 +724,55 @@ def create_archive(tool: "DiskTool", zip_path, text_mode: bool = False,
     return ziel
 
 
-def main(argv=None) -> int:                          # pragma: no cover
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if not 2 <= len(argv) <= 3:
-        print("Aufruf: python3 -m app.disktool.archive <abbild> <archiv.zip>"
-              " [beschriftung]", file=sys.stderr)
-        return 1
+def main(argv=None) -> int:
+    import argparse
+    from app.disktool import archiv_meta
+
+    p = argparse.ArgumentParser(
+        prog="python3 -m app.disktool.archive",
+        description="Eine Diskette (Abbild) als .zip archivieren: Abbild als .hfe, alle "
+                    "Dateien, lesbares und maschinenlesbares Inhaltsverzeichnis.")
+    p.add_argument("abbild")
+    p.add_argument("archiv", metavar="archiv.zip")
+    p.add_argument("beschriftung", nargs="?", default="",
+                   help="Beschriftung der Diskette (wie --bezeichnung)")
+    p.add_argument("--bezeichnung", metavar="TEXT", default="",
+                   help="Beschriftung der Diskette (der Aufkleber); benennt die "
+                        "Dateien im Archiv")
+    p.add_argument("--ohne-abbild", action="store_true",
+                   help="kein .hfe ins Archiv (nur Dateien und Verzeichnisse)")
+    p.add_argument("--text", action="store_true", help="Zeilenenden umsetzen")
+    p.add_argument("--force", action="store_true", help="vorhandenes Archiv ersetzen")
+    archiv_meta.add_argumente(p.add_argument_group("Herkunft und Beschreibung"))
+    o = p.parse_args(sys.argv[1:] if argv is None else argv)
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from app.core_binding.k1520disk import DiskTool, K1520DiskError
 
+    bezeichnung = o.bezeichnung or o.beschriftung
+    ziel = Path(o.archiv)
+    if ziel.suffix.lower() != ".zip":
+        ziel = ziel.with_suffix(".zip")
     try:
-        with DiskTool.open(argv[0]) as d:            # schreibgeschuetzt — nur lesen
-            ziel = create_archive(d, argv[1],
-                                  bezeichnung=argv[2] if len(argv) > 2 else "")
+        # ERST die Eingaben, dann die Diskette: ein Tippfehler soll sofort auffallen.
+        stamm = dateiname(bezeichnung) or Path(o.abbild).stem or NAMENLOS
+        prov, beil = archiv_meta.aus_optionen(o, stamm=stamm)
+        archiv_meta.pruefe_beilagen(beil, stamm=stamm)
+    except archiv_meta.ArchivMetaFehler as e:
+        print(f"Fehler: {e}", file=sys.stderr)
+        return 2
+    if ziel.exists() and not o.force:
+        print(f"Fehler: {ziel} gibt es schon - mit --force ersetzen.", file=sys.stderr)
+        return 2
+
+    try:
+        with DiskTool.open(o.abbild) as d:           # schreibgeschuetzt - nur lesen
+            ziel = create_archive(d, ziel, text_mode=o.text, bezeichnung=bezeichnung,
+                                  provenance=prov or None, beilagen=beil or None,
+                                  ohne_abbild=o.ohne_abbild)
+    except archiv_meta.ArchivMetaFehler as e:
+        print(f"Fehler: {e}", file=sys.stderr)
+        return 2
     except K1520DiskError as e:
         print(f"Fehler: {e}", file=sys.stderr)
         return 1

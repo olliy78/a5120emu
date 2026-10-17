@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import paths
+from app.disktool.ui.archiv_dialog import ArchivDialog
 from app.disktool.archive import NAMENLOS, create_archive, dateiname
 
 from app.core_binding.k1520disk import (
@@ -1844,7 +1845,8 @@ class MainWindow(QMainWindow):
         self.log(f"Gespeichert unter {path}")
         return True
 
-    def archive(self, zip_path, bezeichnung: str = "") -> bool:
+    def archive(self, zip_path, bezeichnung: str = "", provenance: dict = None,
+                beilagen: dict = None) -> bool:
         """Abbild (.hfe), alle Dateien und ein Inhaltsverzeichnis in eine `.zip`.
 
         Reine Leseoperation — auch mit gesetztem Schreibschutz benutzbar.
@@ -1854,6 +1856,9 @@ class MainWindow(QMainWindow):
         **physischen** Diskette ist sie die einzige Auskunft darüber, welche
         Diskette das war — es gibt keinen Dateinamen, aus dem sich etwas ableiten
         liesse.
+
+        `provenance`/`beilagen`: Herkunftsangaben und Beschreibungsdateien aus dem
+        Archiv-Dialog (``archiv_meta``); leer = das Archiv wie ohne sie.
         """
         if self.tool is None:
             return False
@@ -1865,8 +1870,10 @@ class MainWindow(QMainWindow):
         try:
             ziel = create_archive(self.tool, zip_path, text_mode=self.text_mode,
                                   bezeichnung=bezeichnung,
-                                  herkunft=self._bezeichnung())
-        except (K1520DiskError, OSError) as e:
+                                  herkunft=self._bezeichnung(),
+                                  provenance=provenance or None,
+                                  beilagen=beilagen or None)
+        except (K1520DiskError, OSError, ValueError) as e:
             self._fehler("Archivieren", str(e))
             return False
         self.log(f"Archiviert: {ziel}")
@@ -2030,25 +2037,6 @@ class MainWindow(QMainWindow):
         if pfad:
             self.save_as(pfad)
 
-    def _beschriftung_erfragen(self) -> str | None:
-        """Nach der Beschriftung der Diskette fragen — der Text auf dem Aufkleber.
-
-        Sie ist der Name, unter dem das Archiv abgelegt wird.  Bei einer
-        physischen Diskette gibt es sonst gar keinen: `tool.path` ist leer, und
-        `Path("").with_suffix(".zip")` warf hier bis 2026-08-18 einen
-        `ValueError` mitten in den Klickweg.
-
-        Returns:
-            Die Beschriftung, oder ``None``, wenn abgebrochen wurde.
-        """
-        text, ok = QInputDialog.getText(
-            self, "Diskette benennen",
-            "Beschriftung der Diskette (z. B. der Text auf dem Aufkleber).\n"
-            "Daraus entstehen der Dateiname des Archivs und der Eintrag im\n"
-            "Inhaltsverzeichnis:",
-            text=self._beschriftung_vorschlag())
-        return text.strip() if ok else None
-
     def _beschriftung_vorschlag(self) -> str:
         """Was in der Frage nach der Beschriftung schon dortsteht.
 
@@ -2071,15 +2059,20 @@ class MainWindow(QMainWindow):
     def _archivieren_dialog(self) -> None:
         if self.tool is None:
             return
-        bezeichnung = self._beschriftung_erfragen()
-        if bezeichnung is None:
+        dlg = ArchivDialog(
+            self._beschriftung_vorschlag(), self, self._einstellungen(),
+            stamm_fn=lambda b: dateiname(b) or Path(self.tool.path).stem or NAMENLOS,
+            start_ordner=self._neben_der_diskette())
+        if dlg.exec() != QDialog.Accepted:
             return
+        bezeichnung = dlg.bezeichnung()
         vorschlag = str(Path(self._neben_der_diskette())
                         / ((dateiname(bezeichnung) or NAMENLOS) + ".zip"))
         pfad, _ = QFileDialog.getSaveFileName(
             self, "Archivieren", vorschlag, "ZIP-Archiv (*.zip)")
         if pfad:
-            self.archive(pfad, bezeichnung=bezeichnung)
+            self.archive(pfad, bezeichnung=bezeichnung,
+                         provenance=dlg.provenance(), beilagen=dlg.beilagen())
 
     def _bootabbild_sichern_dialog(self) -> None:
         if self.tool is None or self.tool.boot_area_size(0) == 0:

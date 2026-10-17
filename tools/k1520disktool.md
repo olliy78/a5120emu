@@ -810,6 +810,14 @@ Sitzungsschalter: `--drive a|b|0…3`, `--cyls`, `--heads`, `--rate`, `--rpm`,
   das maschinenlesbare `diskarchive.yaml`. `--label` ist der **Aufkleber** (ohne ihn
   gilt der Datenträgername); er benennt auch die Dateien im Archiv, denn eine
   physische Diskette hat keinen Dateinamen.
+* **Herkunft und Beschreibung im Archiv** (`archive`, ebenso `python3 -m app.disktool.archive
+  <abbild> <archiv.zip> [--bezeichnung T] [--ohne-abbild] [--text] [--force]`):
+  `--herkunft-datei meta.yaml|json` (Schlüssel/Wert -> `provenance:` in `diskarchive.yaml`),
+  `--herkunft schluessel=wert` (mehrfach, überschreibt die Datei; Schlüssel nur `a-z0-9_`;
+  `hinweise=` hängt eine Zeile an), `--beilage datei.txt[=name]` (mehrfach; Beiblatt an der
+  Wurzel der `.zip`, nie unter `dateien/`; Text bis 4 MiB, Latin-1/UTF-8 wird erkannt, sonst
+  `--beilage-kodierung`). Ungültige Angaben (Pfadanteile, `..`, Namenskollision, Binärdatei,
+  zu groß, schlechter Schlüssel) enden mit Exit 2, bevor das Laufwerk angefasst wird.
 * **`save-as` und `archive` ersetzen keine vorhandene Datei** — dafür `--force`.
   Der Aufruf bricht ab und erfindet keinen Ausweichnamen; geprüft wird, **bevor**
   das Laufwerk anläuft (sonst kämen zwei Minuten Einlesen und danach der Abbruch).

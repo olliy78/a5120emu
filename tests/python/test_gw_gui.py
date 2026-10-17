@@ -923,12 +923,16 @@ def test_disktool_archiviert_eine_physische_diskette(app, hfe, tmp_path, monkeyp
     ziel = tmp_path / "archiv.zip"
     gefragt = []
 
-    def _beschriftung(parent, titel, frage, **kw):
-        gefragt.append((titel, frage, kw.get("text", "")))
-        return "UDOS 4.3 Nr. 7", True
+    from PySide6.QtWidgets import QDialog
 
-    monkeypatch.setattr("app.disktool.ui.main_window.QInputDialog.getText",
-                        _beschriftung)
+    from app.disktool.ui.archiv_dialog import ArchivDialog
+
+    def _beschriftung(dlg):
+        gefragt.append(("Archivieren", "Text auf dem Aufkleber", dlg.bezeichnung()))
+        dlg.f_bezeichnung.setText("UDOS 4.3 Nr. 7")
+        return QDialog.Accepted
+
+    monkeypatch.setattr(ArchivDialog, "exec", _beschriftung)
     monkeypatch.setattr("app.disktool.ui.main_window.QFileDialog.getSaveFileName",
                         lambda parent, titel, vorschlag, filter_: (str(ziel), filter_))
 
@@ -973,8 +977,9 @@ def test_disktool_bricht_das_archivieren_ohne_beschriftung_ab(app, hfe, monkeypa
     sitzung = fake_session(hfe, read_ahead=False)
     monkeypatch.setattr(physical_disk.PhysicalSession, "start",
                         classmethod(lambda cls, **kw: sitzung))
-    monkeypatch.setattr("app.disktool.ui.main_window.QInputDialog.getText",
-                        lambda *a, **k: ("", False))
+    from PySide6.QtWidgets import QDialog
+    from app.disktool.ui.archiv_dialog import ArchivDialog
+    monkeypatch.setattr(ArchivDialog, "exec", lambda self: QDialog.Rejected)
 
     def _kein_dialog(*a, **k):
         raise AssertionError("der Dateidialog ging trotz Abbruch auf")

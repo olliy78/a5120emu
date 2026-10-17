@@ -682,6 +682,19 @@ Gedacht als Langzeitablage: aus dem Textteil allein lässt sich in zwanzig Jahre
 noch nachvollziehen, was auf der Diskette stand. Archivieren ist eine reine
 Leseoperation und geht auch mit gesetztem Schreibschutz.
 
+**Herkunft und Beschreibung (optional).** Im Archivieren-Dialog klappt der Bereich
+*Herkunft und Beschreibung* auf: Quelle/URL, Satz/Titel, Version, Etikett und eine
+Bemerkung, dazu eine Tabelle *Weitere Angaben* (freie Schlüssel aus Kleinbuchstaben,
+Ziffern und Unterstrich) und die Liste *Beschreibungsdateien*. Die Angaben stehen im
+Inhaltsverzeichnis und unter `provenance:` in der `diskarchive.yaml`; die
+Beschreibungsdateien (Text, höchstens 4 MiB, Latin-1 oder UTF-8 wird erkannt und nach
+UTF-8 übernommen) liegen an der Wurzel der `.zip` – **nicht** unter `dateien/` und
+damit nie auf der Diskette. Leere Felder erzeugen nichts; bleibt alles leer, ist das
+Archiv wie ohne den Bereich. Die zuletzt benutzten Angaben (nicht die Dateien) merkt sich
+das Programm; *Zurück auf leer* vergisst sie. Auf der Kommandozeile:
+`python3 -m app.disktool.archive abbild.img archiv.zip --herkunft-datei meta.yaml
+--herkunft version=2 --beilage beschreibung.txt`.
+
 **`diskarchive.yaml` — für die Inventur einer Sammlung.** Dieselbe Auskunft für
 Programme: je Datei ihr Pfad im Archiv, Verzeichnis und Name, die Größe und eine
 SHA-256-Prüfsumme, dazu die Prüfsumme des Abbilds als Kennzeichen der Diskette
